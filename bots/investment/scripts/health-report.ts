@@ -839,7 +839,7 @@ function buildDecision(
       {
         active: Number(runtimeView.metrics?.exitReady || 0) > 0 || Number(runtimeView.metrics?.adjustReady || 0) > 0 || runtimeView.tuningStatus === 'position_runtime_tuning_attention',
         level: Number(runtimeView.metrics?.exitReady || 0) > 0 ? 'high' : 'medium',
-        reason: `position runtime — ${runtimeView.headline} / action ${runtimeView.autonomousActionStatus || 'autonomous_action_blocked_by_safety'} / tuning ${runtimeView.tuningStatus}${runtimeView.tuningSuggestion ? ` ${runtimeView.tuningSuggestion.exchange} ${runtimeView.tuningSuggestion.status}` : ''} / dispatch ${runtimeView.dispatchStatus} ${runtimeView.dispatchCandidates || 0}건 / queue waiting ${runtimeView.marketQueue?.waitingMarketOpen || 0} retrying ${runtimeView.marketQueue?.retrying || 0}`,
+        reason: `position runtime — ${runtimeView.headline} / action ${runtimeView.autonomousActionStatus || 'autonomous_action_blocked_by_safety'} / tuning ${runtimeView.tuningStatus}${runtimeView.tuningSuggestion ? ` ${runtimeView.tuningSuggestion.exchange} ${runtimeView.tuningSuggestion.status}` : ''} / dispatch ${runtimeView.dispatchStatus} ${runtimeView.dispatchCandidates || 0}건 / queue waiting ${runtimeView.marketQueue?.waitingMarketOpen || 0} retrying ${runtimeView.marketQueue?.retrying || 0}${runtimeView.marketQueueWaitingSample ? ` / waiting ${runtimeView.marketQueueWaitingSample}` : ''}${runtimeView.marketQueueRetrySample ? ` / retry ${runtimeView.marketQueueRetrySample}` : ''}`,
       },
       {
         active: strategyFeedbackOutcomes?.status === 'strategy_feedback_outcome_attention',
@@ -1138,6 +1138,24 @@ function buildPositionStrategyRemediationDecisionReason({
 }
 
 function buildPositionRuntimeSnapshot(runtimeReport, runtimeTuning, runtimeDispatch) {
+  let marketQueueEntries = Array.isArray(runtimeDispatch?.marketQueue?.entries) ? runtimeDispatch.marketQueue.entries : [];
+  if (!marketQueueEntries.length && runtimeDispatch?.marketQueue?.file && fs.existsSync(runtimeDispatch.marketQueue.file)) {
+    try {
+      const parsed = JSON.parse(fs.readFileSync(runtimeDispatch.marketQueue.file, 'utf8'));
+      marketQueueEntries = Array.isArray(parsed?.entries) ? parsed.entries : [];
+    } catch {}
+  }
+  const waitingEntries = marketQueueEntries.filter((entry) => String(entry?.waitingReason || '').includes('장외'));
+  const retryEntries = marketQueueEntries.filter((entry) => String(entry?.waitingReason || '') === 'retry_scheduled');
+  const waitingSample = waitingEntries[0]
+    ? `${waitingEntries[0]?.candidate?.exchange || 'n/a'}/${waitingEntries[0]?.candidate?.symbol || 'n/a'} (${waitingEntries[0]?.waitingReason || 'market_wait'})`
+    : null;
+  const retrySample = retryEntries.length > 0
+    ? retryEntries
+      .slice(0, 2)
+      .map((entry) => `${entry?.candidate?.exchange || 'n/a'}/${entry?.candidate?.symbol || 'n/a'} (${entry?.reason || 'retry'})`)
+      .join(', ')
+    : null;
   const decision = runtimeReport?.decision || {};
   const metrics = decision.metrics || {};
   const suggestions = Array.isArray(runtimeTuning?.suggestions) ? runtimeTuning.suggestions : [];
@@ -1182,6 +1200,8 @@ function buildPositionRuntimeSnapshot(runtimeReport, runtimeTuning, runtimeDispa
     dispatchFailedCount: failedCount,
     dispatchExecutedCount: executedCount,
     marketQueue: runtimeDispatch?.marketQueue || null,
+    marketQueueWaitingSample: waitingSample,
+    marketQueueRetrySample: retrySample,
     autonomousActionStatus,
     reportCommand: 'npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:position-runtime -- --json',
     tuningCommand: topSuggestion?.exchange
@@ -1205,6 +1225,7 @@ function buildPositionRuntimeLines(report) {
     `  active ${runtimeView.metrics?.active || 0} / fast-lane ${runtimeView.metrics?.fastLane || 0} / adjust ${runtimeView.metrics?.adjustReady || 0} / exit ${runtimeView.metrics?.exitReady || 0} / critical validation ${runtimeView.metrics?.staleValidation || 0}`,
     `  tuning: ${runtimeView.tuningStatus || 'unknown'}${suggestion ? ` / ${suggestion.exchange} ${suggestion.status} ${suggestion.currentAverageCadenceMs || 'n/a'} -> ${suggestion.recommendedCadenceMs || 'n/a'}` : ''}`,
     `  dispatch: ${runtimeView.dispatchStatus || 'unknown'} / candidates ${runtimeView.dispatchCandidates || 0}${topCandidate ? ` / top ${topCandidate.exchange}/${topCandidate.symbol} ${topCandidate.action} ${topCandidate.urgency}` : ''}`,
+    `  queue: waiting ${runtimeView.marketQueue?.waitingMarketOpen || 0} / retrying ${runtimeView.marketQueue?.retrying || 0}${runtimeView.marketQueueWaitingSample ? ` / waiting ${runtimeView.marketQueueWaitingSample}` : ''}${runtimeView.marketQueueRetrySample ? ` / retry ${runtimeView.marketQueueRetrySample}` : ''}`,
     `  runtime report: ${runtimeView.reportCommand}`,
     `  runtime tuning: ${runtimeView.tuningCommand}`,
     `  runtime dispatch: ${runtimeView.dispatchCommand}`,

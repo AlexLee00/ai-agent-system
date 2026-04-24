@@ -238,6 +238,24 @@ function buildHealthCheckRemediationView(remediation, hygiene, remediationHistor
 }
 
 function buildHealthCheckRuntimeView(runtimeReport, runtimeTuning, runtimeDispatch) {
+  let marketQueueEntries = Array.isArray(runtimeDispatch?.marketQueue?.entries) ? runtimeDispatch.marketQueue.entries : [];
+  if (!marketQueueEntries.length && runtimeDispatch?.marketQueue?.file && fs.existsSync(runtimeDispatch.marketQueue.file)) {
+    try {
+      const parsed = JSON.parse(fs.readFileSync(runtimeDispatch.marketQueue.file, 'utf8'));
+      marketQueueEntries = Array.isArray(parsed?.entries) ? parsed.entries : [];
+    } catch {}
+  }
+  const waitingEntries = marketQueueEntries.filter((entry) => String(entry?.waitingReason || '').includes('장외'));
+  const retryEntries = marketQueueEntries.filter((entry) => String(entry?.waitingReason || '') === 'retry_scheduled');
+  const waitingSample = waitingEntries[0]
+    ? `${waitingEntries[0]?.candidate?.exchange || 'n/a'}/${waitingEntries[0]?.candidate?.symbol || 'n/a'} (${waitingEntries[0]?.waitingReason || 'market_wait'})`
+    : null;
+  const retrySample = retryEntries.length > 0
+    ? retryEntries
+      .slice(0, 2)
+      .map((entry) => `${entry?.candidate?.exchange || 'n/a'}/${entry?.candidate?.symbol || 'n/a'} (${entry?.reason || 'retry'})`)
+      .join(', ')
+    : null;
   const decision = runtimeReport?.decision || {};
   const metrics = decision.metrics || {};
   const suggestions = Array.isArray(runtimeTuning?.suggestions) ? runtimeTuning.suggestions : [];
@@ -282,6 +300,8 @@ function buildHealthCheckRuntimeView(runtimeReport, runtimeTuning, runtimeDispat
     dispatchFailedCount: failedCount,
     dispatchExecutedCount: executedCount,
     marketQueue: runtimeDispatch?.marketQueue || null,
+    marketQueueWaitingSample: waitingSample,
+    marketQueueRetrySample: retrySample,
     autonomousActionStatus,
     reportCommand: 'npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:position-runtime -- --json',
     tuningCommand: topSuggestion?.exchange
@@ -1072,7 +1092,7 @@ async function main() {
             positionRuntimeAutotuneCommand: runtimeView.autotuneCommand,
             positionRuntimeAutopilotCommand: runtimeView.autopilotCommand,
           },
-          msg: `⚠️ [투자팀 루나 헬스] position runtime loop\n${runtimeView.headline}\naction status: ${runtimeView.autonomousActionStatus || 'autonomous_action_blocked_by_safety'}\nactive ${active} / fast-lane ${runtimeView.metrics?.fastLane || 0} / adjust ${adjustReady} / exit ${exitReady} / critical validation ${criticalValidation}\ntuning ${runtimeView.tuningStatus}${topSuggestion ? ` / ${topSuggestion.exchange} ${topSuggestion.status} ${topSuggestion.currentAverageCadenceMs || 'n/a'} -> ${topSuggestion.recommendedCadenceMs || 'n/a'}` : ''}\ndispatch ${runtimeView.dispatchStatus} / candidates ${runtimeView.dispatchCandidates}${topCandidate ? ` / top ${topCandidate.exchange}/${topCandidate.symbol} ${topCandidate.action} ${topCandidate.urgency}` : ''}\nqueue waiting ${runtimeView.marketQueue?.waitingMarketOpen || 0} / retrying ${runtimeView.marketQueue?.retrying || 0}\noperator note: debug commands are available in alert payload.meta`,
+          msg: `⚠️ [투자팀 루나 헬스] position runtime loop\n${runtimeView.headline}\naction status: ${runtimeView.autonomousActionStatus || 'autonomous_action_blocked_by_safety'}\nactive ${active} / fast-lane ${runtimeView.metrics?.fastLane || 0} / adjust ${adjustReady} / exit ${exitReady} / critical validation ${criticalValidation}\ntuning ${runtimeView.tuningStatus}${topSuggestion ? ` / ${topSuggestion.exchange} ${topSuggestion.status} ${topSuggestion.currentAverageCadenceMs || 'n/a'} -> ${topSuggestion.recommendedCadenceMs || 'n/a'}` : ''}\ndispatch ${runtimeView.dispatchStatus} / candidates ${runtimeView.dispatchCandidates}${topCandidate ? ` / top ${topCandidate.exchange}/${topCandidate.symbol} ${topCandidate.action} ${topCandidate.urgency}` : ''}\nqueue waiting ${runtimeView.marketQueue?.waitingMarketOpen || 0} / retrying ${runtimeView.marketQueue?.retrying || 0}${runtimeView.marketQueueWaitingSample ? `\nwaiting sample: ${runtimeView.marketQueueWaitingSample}` : ''}${runtimeView.marketQueueRetrySample ? `\nretry sample: ${runtimeView.marketQueueRetrySample}` : ''}\noperator note: debug commands are available in alert payload.meta`,
         });
       }
     } else if (state[key]) {
