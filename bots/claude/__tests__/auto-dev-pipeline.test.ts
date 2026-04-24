@@ -542,6 +542,48 @@ async function test_bash_is_fail_closed_without_allowlist() {
   console.log('✅ auto-dev: Bash is fail-closed without allowlist');
 }
 
+async function test_lock_heartbeat_sidecar_enforces_parent_liveness() {
+  const tmpRoot = makeTempRoot();
+  const doc = makeDoc(tmpRoot, 'CODEX_HEARTBEAT_PID.md', '# Heartbeat\npid');
+  const spawnedScripts = [];
+
+  const { mocks } = makeMocks(tmpRoot, {
+    child_process: {
+      execFileSync: (command) => {
+        if (command === 'rg') throw new Error('no match');
+        return '';
+      },
+      execSync: () => '',
+      spawn: (_command, args = []) => {
+        spawnedScripts.push(String(args[1] || ''));
+        const child = {
+          killed: false,
+          kill: () => { child.killed = true; },
+          on: () => child,
+          unref: () => {},
+        };
+        return child;
+      },
+    },
+  });
+
+  await withMocks(mocks, async pipeline => {
+    const result = await pipeline.processAutoDevDocument(doc, {
+      test: true,
+      force: true,
+    });
+    assert.strictEqual(result.ok, true);
+  }, testEnv(tmpRoot));
+
+  assert.ok(spawnedScripts.length > 0, 'heartbeat sidecar must be spawned');
+  const sidecarScript = spawnedScripts.join('\n');
+  assert.match(sidecarScript, /process\.ppid\s*!==\s*ownerPid/);
+  assert.match(sidecarScript, /process\.kill\(pid,\s*0\)/);
+
+  fs.rmSync(tmpRoot, { recursive: true, force: true });
+  console.log('✅ auto-dev: lock heartbeat sidecar validates parent liveness');
+}
+
 async function test_review_cycle_uses_execution_context() {
   const tmpRoot = makeTempRoot();
   const doc = makeDoc(tmpRoot, 'CODEX_REVIEW_SCOPE.md', '# Review\nscope');
@@ -744,6 +786,7 @@ async function main() {
     test_completed_state_clears_active_error,
     test_launchd_plist_defaults_are_safe,
     test_bash_is_fail_closed_without_allowlist,
+    test_lock_heartbeat_sidecar_enforces_parent_liveness,
     test_review_cycle_uses_execution_context,
     test_test_scope_is_executed_in_non_test_mode,
     test_test_scope_rejects_unsafe_shell_command,

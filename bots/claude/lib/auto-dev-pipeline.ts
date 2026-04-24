@@ -314,6 +314,8 @@ function startLockHeartbeat(lockHandle, intervalMs = DEFAULT_LOCK_HEARTBEAT_MS) 
   if (!lockHandle?.acquired || !(safeInterval > 0)) return () => {};
   const token = toSafeString(lockHandle?.payload?.token);
   const lockPath = toSafeString(lockHandle?.lockPath);
+  const ownerPid = Number(lockHandle?.payload?.pid || process.pid);
+  const ownerStartedAt = toSafeString(lockHandle?.payload?.startedAt);
 
   // Fallback heartbeat (same process). 이 타이머는 동기식 장기 작업 중에는 멈출 수 있다.
   const timer = setInterval(() => {
@@ -330,12 +332,24 @@ function startLockHeartbeat(lockHandle, intervalMs = DEFAULT_LOCK_HEARTBEAT_MS) 
         'const fs = require("fs");',
         `const lockPath = ${JSON.stringify(lockPath)};`,
         `const token = ${JSON.stringify(token)};`,
+        `const ownerPid = ${Number.isFinite(ownerPid) ? ownerPid : process.pid};`,
+        `const ownerStartedAt = ${JSON.stringify(ownerStartedAt)};`,
         `const intervalMs = ${Math.max(1000, Math.floor(safeInterval))};`,
+        'function ownerAlive(pid) {',
+        '  try {',
+        '    process.kill(pid, 0);',
+        '    return true;',
+        '  } catch (_) {',
+        '    return false;',
+        '  }',
+        '}',
         'function tick() {',
         '  try {',
+        '    if (process.ppid !== ownerPid || !ownerAlive(ownerPid)) { process.exit(0); return; }',
         '    if (!fs.existsSync(lockPath)) { process.exit(0); return; }',
         '    const raw = fs.readFileSync(lockPath, "utf8");',
         '    const parsed = JSON.parse(raw);',
+        '    if (!parsed || Number(parsed.pid || 0) !== ownerPid || String(parsed.startedAt || "") !== ownerStartedAt) { process.exit(0); return; }',
         '    if (!parsed || parsed.token !== token) { process.exit(0); return; }',
         '    parsed.updatedAt = new Date().toISOString();',
         '    fs.writeFileSync(lockPath, JSON.stringify(parsed, null, 2), "utf8");',
