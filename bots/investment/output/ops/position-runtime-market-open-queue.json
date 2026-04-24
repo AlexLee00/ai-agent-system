@@ -1,5 +1,59 @@
 {
   "version": 1,
-  "updatedAt": "2026-04-24T14:58:30.498Z",
-  "entries": []
+  "updatedAt": "2026-04-24T18:20:34.311Z",
+  "entries": [
+    {
+      "queueKey": "kis_overseas:live:live:kis_overseas:POET:normal:kis_overseas:POET:normal:ADJUST",
+      "createdAt": "2026-04-24T16:34:48.844Z",
+      "updatedAt": "2026-04-24T18:20:15.198Z",
+      "candidate": {
+        "exchange": "kis_overseas",
+        "symbol": "POET",
+        "tradeMode": "normal",
+        "strategyName": "Routed equity_swing",
+        "setupType": "equity_swing",
+        "action": "ADJUST",
+        "command": "npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:partial-adjust -- --symbol=POET --exchange=kis_overseas --trade-mode=normal --json",
+        "previewCommand": "npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:partial-adjust -- --symbol=POET --exchange=kis_overseas --trade-mode=normal --json",
+        "manualExecuteCommand": "npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:partial-adjust -- --symbol=POET --exchange=kis_overseas --trade-mode=normal --execute --confirm=partial-adjust --json",
+        "autonomousExecuteCommand": "npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:partial-adjust -- --symbol=POET --exchange=kis_overseas --trade-mode=normal --execute --confirm=position-runtime-autopilot --run-context=position-runtime-autopilot --json",
+        "runner": "runtime:partial-adjust",
+        "runnerArgs": {
+          "json": true,
+          "symbol": "POET",
+          "confirm": "position-runtime-autopilot",
+          "execute": true,
+          "exchange": "kis_overseas",
+          "trade-mode": "normal",
+          "run-context": "position-runtime-autopilot"
+        },
+        "executionPolicy": {
+          "autonomy": "autonomous_allowed",
+          "needsUserApproval": false,
+          "requiresMarketOpen": true,
+          "postActionAlertOnly": true
+        },
+        "executionScope": "kis_overseas:live:live:kis_overseas:POET:normal:kis_overseas:POET:normal:ADJUST",
+        "brokerScope": "kis_overseas:live:live:kis_overseas:POET:kis_overseas:POET:normal",
+        "brokerAccountId": "kis_overseas:live:live",
+        "positionId": "kis_overseas:POET:normal",
+        "isHardExit": false,
+        "urgency": "normal",
+        "executionAllowed": true,
+        "guardReasons": [],
+        "sourceQualityBlocked": false,
+        "validationSeverity": "warning",
+        "cadenceMs": 20000,
+        "regime": "trending_bull",
+        "reasonCode": "profit_lock_candidate"
+      },
+      "reason": "child_process_error",
+      "waitingReason": "retry_scheduled",
+      "attempts": 1,
+      "retryCount": 1,
+      "nextRetryAt": "2026-04-24T18:25:15.198Z",
+      "lastAttemptAt": "2026-04-24T18:20:15.198Z",
+      "lastStatus": "autonomous_action_retrying"
+    }
+  ]
 }
