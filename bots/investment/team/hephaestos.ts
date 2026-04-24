@@ -635,6 +635,8 @@ async function closeOpenJournalForSymbol(
     symbol,
     side: 'buy',
     market: 'crypto',
+    exchange: 'binance',
+    tradeMode: tradeMode || getInvestmentTradeMode(),
     entryPrice: entry.entry_price,
     exitPrice,
     pnl: pnlAmount,

@@ -115,10 +115,27 @@ export function notifyTrade({ symbol, side, amount, price, totalUsdt, paper, exc
               : side === 'absorb'    ? '🔄 BTC 흡수'
               : side === 'liquidate' ? '💱 미추적 청산'
               : '✅ 체결';
+  const isDomestic = exchange === 'kis';
+  const isOverseas = exchange === 'kis_overseas';
+  const currency = isDomestic ? '₩' : '$';
+  const formatPrice = (value) => {
+    const numeric = Number(value || 0);
+    if (!Number.isFinite(numeric)) return '-';
+    if (isDomestic) return `${currency}${Math.round(numeric).toLocaleString()}`;
+    if (Math.abs(numeric) < 1) return `${currency}${numeric.toFixed(5)}`;
+    if (Math.abs(numeric) < 100) return `${currency}${numeric.toFixed(3)}`;
+    return `${currency}${numeric.toLocaleString()}`;
+  };
+  const formatValue = (value) => {
+    const numeric = Number(value || 0);
+    if (!Number.isFinite(numeric)) return '-';
+    const fixed = isDomestic ? Math.round(numeric).toLocaleString() : numeric.toFixed(2);
+    return `${currency}${fixed}`;
+  };
   const lines = [
     `${tag}${emoji} 체결 — ${symbol}`,
-    `수량: ${amount?.toFixed(6)} / 가격: $${price?.toLocaleString()}`,
-    `총액: $${totalUsdt?.toFixed(2)}`,
+    `수량: ${isDomestic ? Number(amount || 0).toLocaleString() : Number(amount || 0).toFixed(6)} / 가격: ${formatPrice(price)}`,
+    `총액: ${formatValue(totalUsdt)}`,
   ];
   if (tpPrice && slPrice && price) {
     const isDynamic = tpslSource && tpslSource !== 'fixed' && tpslSource !== 'fixed_fallback';
@@ -347,12 +364,14 @@ export function notifyDailyJournal(date, records = []) {
  * 매매 청산 알림 — 포지션 종료 시 PnL 결산
  */
 export function notifySettlement({
-  symbol, side, entryPrice, exitPrice, pnl, holdDuration, weeklyPnl, winRate, totalTrades, wins, paper,
+  symbol, side, entryPrice, exitPrice, pnl, holdDuration, weeklyPnl, winRate, totalTrades, wins, paper, exchange = null, tradeMode = null,
   market = 'crypto', pnlPercent = null, maxFavorable = null, maxAdverse = null,
   signalAccuracy = null, executionSpeed = null,
   qualityFlag = null, incidentLink = null,
 }) {
-  const tag     = formatExecutionTag(paper);
+  const inferredExchange = exchange
+    || (market === 'domestic' ? 'kis' : market === 'overseas' ? 'kis_overseas' : 'binance');
+  const tag     = formatExecutionTag({ paper, exchange: inferredExchange, tradeMode });
   const dir     = side === 'buy' ? 'LONG' : 'SHORT';
   const pnlSign = (pnl || 0) >= 0 ? '+' : '';
   const currency = market === 'domestic' ? '₩' : '$';
@@ -372,7 +391,7 @@ export function notifySettlement({
     SMALL_DIVIDER,
     `진입: ${currency}${formatSettlementPrice(entryPrice)}`,
     `청산: ${currency}${formatSettlementPrice(exitPrice)}${pricePct}`,
-    `수익: ${pnlSign}${currency}${Math.abs(pnl || 0).toFixed(2)}`,
+    `손익: ${pnlSign}${currency}${Math.abs(pnl || 0).toFixed(2)}`,
   ];
   if (holdDuration) lines.push(`보유 시간: ${holdDuration}`);
   if (pnlPercent != null) lines.push(`실현 수익률: ${pnlPercent >= 0 ? '+' : ''}${Number(pnlPercent).toFixed(2)}%`);
