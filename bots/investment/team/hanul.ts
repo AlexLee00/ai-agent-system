@@ -60,6 +60,7 @@ const KIS_RULES = {
 };
 
 const KIS_ORDER_CASH_BUFFER_KRW = 10_000;
+const KIS_DOMESTIC_BUY_SLIPPAGE_BUFFER_DEFAULT = 1.01;
 
 const KIS_OVERSEAS_RULES = {
   MIN_ORDER_USD: getMarketOrderRule('kis_overseas')?.minOrderAmount ?? 200,
@@ -170,6 +171,7 @@ function inferHanulBlockCode(reason = '', market = 'domestic') {
   if (reason.includes('장종료')) return 'market_closed';
   if (reason.includes('현재가 조회 실패')) return 'quote_lookup_failed';
   if (reason.includes('최소 주문금액 미달')) return 'min_order_notional';
+  if (reason.includes('1주 안전단가 미달')) return 'min_order_one_share_buffer';
   if (reason.includes('최대 주문금액 초과')) return 'max_order_notional';
   if (reason.includes('포지션 없음')) return 'missing_position';
   if (reason.includes('심볼 아님')) return 'invalid_symbol';
@@ -408,6 +410,22 @@ export function applyHanulStockSizingFloor(amount, {
     reason: `sizing floor 적용 (${numericAmount.toLocaleString()} ${currency} → ${floor.toLocaleString()} ${currency})`,
     code: 'sizing_floor_applied',
   };
+}
+
+async function getHanulDomesticBufferedUnitPrice(symbol) {
+  if (!isKisSymbol(symbol)) return null;
+  try {
+    const kis = await getKis();
+    if (typeof kis?.getDomesticPrice !== 'function') return null;
+    const currentPrice = Number(await kis.getDomesticPrice(symbol, isKisPaper()));
+    if (!(currentPrice > 0)) return null;
+    const slippageBuffer = Number(kis?.KIS_DOMESTIC_BUY_SLIPPAGE_BUFFER || KIS_DOMESTIC_BUY_SLIPPAGE_BUFFER_DEFAULT);
+    const safeSlippageBuffer = slippageBuffer > 0 ? slippageBuffer : KIS_DOMESTIC_BUY_SLIPPAGE_BUFFER_DEFAULT;
+    const bufferedUnitPrice = Math.ceil(currentPrice * safeSlippageBuffer);
+    return { currentPrice, bufferedUnitPrice, slippageBuffer: safeSlippageBuffer };
+  } catch {
+    return null;
+  }
 }
 
 function isEffectivePartialExit({ entrySize = 0, soldAmount = 0, partialExitRatio = 1 } = {}) {
@@ -836,10 +854,14 @@ async function checkKisRisk(signal) {
         if (!(currentPrice > 0)) {
           return { approved: false, reason: `${symbol} 국내 현재가 0원 응답 — 거래불가 종목으로 판단 (${accountModeLabel})` };
         }
-        if (amountKrw < currentPrice) {
+        const slippageBuffer = Number(kis?.KIS_DOMESTIC_BUY_SLIPPAGE_BUFFER || KIS_DOMESTIC_BUY_SLIPPAGE_BUFFER_DEFAULT);
+        const safeSlippageBuffer = slippageBuffer > 0 ? slippageBuffer : KIS_DOMESTIC_BUY_SLIPPAGE_BUFFER_DEFAULT;
+        const bufferedUnitPrice = Math.ceil(currentPrice * safeSlippageBuffer);
+        if (amountKrw < bufferedUnitPrice) {
           return {
             approved: false,
-            reason: `1주 가격 미달 (${amountKrw?.toLocaleString()}원 < ${currentPrice.toLocaleString()}원, ${accountModeLabel})`,
+            reason: `1주 안전단가 미달 (${amountKrw?.toLocaleString()}원 < ${bufferedUnitPrice.toLocaleString()}원, 현재가 ${currentPrice.toLocaleString()}원, ${accountModeLabel})`,
+            code: 'min_order_one_share_buffer',
           };
         }
       }
@@ -965,9 +987,15 @@ export async function executeSignal(signal) {
   const domesticMinOrderKrw = action === ACTIONS.BUY
     ? await getDynamicMinOrderAmount('kis', signalTradeMode)
     : 0;
+  const domesticBufferedUnit = action === ACTIONS.BUY
+    ? await getHanulDomesticBufferedUnitPrice(symbol)
+    : null;
+  const domesticEffectiveMinOrderKrw = action === ACTIONS.BUY
+    ? Math.max(domesticMinOrderKrw, Number(domesticBufferedUnit?.bufferedUnitPrice || 0))
+    : domesticMinOrderKrw;
   const domesticSizingFloor = applyHanulStockSizingFloor(domesticBuySizing.amount, {
     action,
-    minOrder: domesticMinOrderKrw,
+    minOrder: domesticEffectiveMinOrderKrw,
     maxOrder: KIS_RULES.MAX_ORDER_KRW,
     currency: 'KRW',
   });
@@ -992,13 +1020,21 @@ export async function executeSignal(signal) {
         meta: {
           originalAmount: amountKrw,
           sizedAmount: domesticBuySizing.amount,
-          minOrder: domesticMinOrderKrw,
+          minOrder: domesticEffectiveMinOrderKrw,
+          baseMinOrder: domesticMinOrderKrw,
+          oneShareBufferedPrice: domesticBufferedUnit?.bufferedUnitPrice || null,
         },
       });
     }
 
     if (domesticSizingFloor.adjusted) {
       console.log(`  🧱 [sizing floor] ${symbol} ${domesticSizingFloor.reason}`);
+      if (domesticBufferedUnit?.bufferedUnitPrice > domesticMinOrderKrw) {
+        console.log(
+          `  🧮 [1주 안전단가] ${symbol} 현재가 ${domesticBufferedUnit.currentPrice.toLocaleString()}원, `
+          + `안전단가 ${domesticBufferedUnit.bufferedUnitPrice.toLocaleString()}원 적용`,
+        );
+      }
     }
 
     const approvalGuard = await enforceHanulNemesisApproval(effectiveSignal, 'domestic');

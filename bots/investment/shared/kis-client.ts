@@ -44,7 +44,7 @@ const KIS_ORDER_MIN_INTERVAL_MS = 980;
 const KIS_RATE_LIMIT_RETRY_MS = 1100;
 const KIS_RATE_LIMIT_MAX_RETRIES = 2;
 const KIS_DEBUG_ENABLED = process.env.KIS_DEBUG === '1';
-const KIS_DOMESTIC_BUY_SLIPPAGE_BUFFER = 1.01;
+export const KIS_DOMESTIC_BUY_SLIPPAGE_BUFFER = 1.01;
 
 const _requestState = {
   paper: {
