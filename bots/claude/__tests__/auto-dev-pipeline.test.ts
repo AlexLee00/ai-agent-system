@@ -11,6 +11,7 @@ const Module = require('module');
 const path = require('path');
 const os = require('os');
 const fs = require('fs');
+const crypto = require('crypto');
 
 const PIPELINE_PATH = path.resolve(__dirname, '../lib/auto-dev-pipeline.ts');
 const AUTO_DEV_PLIST_PATH = path.resolve(__dirname, '../launchd/ai.claude.auto-dev.plist');
@@ -19,11 +20,35 @@ function makeTempRoot() {
   return fs.mkdtempSync(path.join(os.tmpdir(), 'claude-auto-dev-'));
 }
 
+function withRequiredMetadata(body, overrides = {}) {
+  const writeScope = overrides.write_scope || ['bots/claude/**'];
+  const testScope = overrides.test_scope || ['npm --prefix bots/claude run test:auto-dev'];
+  const lines = [
+    '---',
+    `target_team: ${overrides.target_team || 'claude'}`,
+    `owner_agent: ${overrides.owner_agent || 'codex'}`,
+    `risk_tier: ${overrides.risk_tier || 'normal'}`,
+    'write_scope:',
+    ...writeScope.map(item => `  - ${item}`),
+    'test_scope:',
+    ...testScope.map(item => `  - ${item}`),
+    `autonomy_level: ${overrides.autonomy_level || 'supervised_l4'}`,
+    `requires_live_execution: ${overrides.requires_live_execution ?? false}`,
+    '---',
+    '',
+    body,
+  ];
+  return lines.join('\n');
+}
+
 function makeDoc(tmpRoot, fileName = 'CODEX_SAMPLE.md', content = '# A\nx') {
   const autoDir = path.join(tmpRoot, 'docs', 'auto_dev');
   fs.mkdirSync(autoDir, { recursive: true });
   const filePath = path.join(autoDir, fileName);
-  fs.writeFileSync(filePath, content, 'utf8');
+  const normalizedContent = /target_team\s*:/.test(content)
+    ? content
+    : withRequiredMetadata(content);
+  fs.writeFileSync(filePath, normalizedContent, 'utf8');
   return filePath;
 }
 
@@ -104,8 +129,17 @@ function testEnv(tmpRoot, extra = {}) {
   return {
     CLAUDE_AUTO_DEV_STATE_FILE: path.join(tmpRoot, 'auto-dev-state.json'),
     CLAUDE_AUTO_DEV_RUN_HARD_TESTS: 'false',
+    CLAUDE_AUTO_DEV_LOCK_FILE: path.join(tmpRoot, 'claude-auto-dev.lock'),
+    CLAUDE_AUTO_DEV_JOB_LOCK_DIR: path.join(tmpRoot, 'claude-auto-dev-job-locks'),
+    CLAUDE_AUTO_DEV_WORKTREE_DIR: path.join(tmpRoot, 'claude-auto-dev-worktrees'),
     ...extra,
   };
+}
+
+function computeJobId(tmpRoot, filePath, content) {
+  const relPath = path.relative(tmpRoot, filePath).replace(/\\/g, '/');
+  const contentHash = crypto.createHash('sha1').update(content || '').digest('hex').slice(0, 16);
+  return crypto.createHash('sha1').update(`${relPath}:${contentHash}`).digest('hex').slice(0, 16);
 }
 
 async function test_stages_define_required_lifecycle() {
@@ -345,12 +379,143 @@ async function test_state_file_override_is_used() {
   console.log('✅ auto-dev: CLAUDE_AUTO_DEV_STATE_FILE override works');
 }
 
+async function test_missing_metadata_is_blocked() {
+  const tmpRoot = makeTempRoot();
+  const autoDir = path.join(tmpRoot, 'docs', 'auto_dev');
+  fs.mkdirSync(autoDir, { recursive: true });
+  const doc = path.join(autoDir, 'CODEX_MISSING_METADATA.md');
+  fs.writeFileSync(doc, '# Missing\nmetadata 없음', 'utf8');
+  const { mocks } = makeMocks(tmpRoot);
+
+  await withMocks(mocks, async pipeline => {
+    const result = await pipeline.processAutoDevDocument(doc, { test: true, force: true });
+    assert.strictEqual(result.ok, true);
+    assert.strictEqual(result.skipped, true);
+    assert.strictEqual(result.reason, 'blocked_missing_metadata');
+    assert.strictEqual(result.job.status, 'blocked');
+  }, testEnv(tmpRoot));
+
+  fs.rmSync(tmpRoot, { recursive: true, force: true });
+  console.log('✅ auto-dev: missing metadata is fail-closed');
+}
+
+async function test_non_claude_target_is_routed() {
+  const tmpRoot = makeTempRoot();
+  const doc = makeDoc(
+    tmpRoot,
+    'CODEX_LUNA_SCOPE.md',
+    withRequiredMetadata('# Luna\nscope', { target_team: 'luna' })
+  );
+  const { mocks } = makeMocks(tmpRoot);
+
+  await withMocks(mocks, async pipeline => {
+    const result = await pipeline.processAutoDevDocument(doc, { test: true, force: true });
+    assert.strictEqual(result.ok, true);
+    assert.strictEqual(result.skipped, true);
+    assert.strictEqual(result.reason, 'routed_non_claude');
+    assert.strictEqual(result.job.status, 'routed');
+  }, testEnv(tmpRoot));
+
+  fs.rmSync(tmpRoot, { recursive: true, force: true });
+  console.log('✅ auto-dev: non-claude target docs are routed');
+}
+
+async function test_global_lock_blocks_parallel_pipeline() {
+  const tmpRoot = makeTempRoot();
+  makeDoc(tmpRoot, 'CODEX_LOCK.md', '# Lock\ntest');
+  const lockPath = path.join(tmpRoot, 'claude-auto-dev.lock');
+  fs.writeFileSync(lockPath, JSON.stringify({
+    token: 'lock-token',
+    pid: 1234,
+    hostname: 'test-host',
+    startedAt: new Date().toISOString(),
+  }, null, 2), 'utf8');
+  const { mocks } = makeMocks(tmpRoot);
+
+  await withMocks(mocks, async pipeline => {
+    const result = await pipeline.runAutoDevPipeline({ once: true, test: true });
+    assert.strictEqual(result.ok, true);
+    assert.strictEqual(result.results[0].reason, 'locked_global');
+  }, testEnv(tmpRoot, { CLAUDE_AUTO_DEV_LOCK_FILE: lockPath }));
+
+  fs.rmSync(tmpRoot, { recursive: true, force: true });
+  console.log('✅ auto-dev: global lock blocks parallel run');
+}
+
+async function test_job_lock_blocks_duplicate_document_execution() {
+  const tmpRoot = makeTempRoot();
+  const doc = makeDoc(tmpRoot, 'CODEX_JOB_LOCK.md', '# Lock\ndup');
+  const content = fs.readFileSync(doc, 'utf8');
+  const jobId = computeJobId(tmpRoot, doc, content);
+  const lockDir = path.join(tmpRoot, 'claude-auto-dev-job-locks');
+  fs.mkdirSync(lockDir, { recursive: true });
+  fs.writeFileSync(path.join(lockDir, `${jobId}.lock`), JSON.stringify({
+    token: 'job-lock-token',
+    pid: 2222,
+    hostname: 'test-host',
+    startedAt: new Date().toISOString(),
+  }, null, 2), 'utf8');
+  const { mocks } = makeMocks(tmpRoot);
+
+  await withMocks(mocks, async pipeline => {
+    const result = await pipeline.processAutoDevDocument(doc, { test: true, force: true });
+    assert.strictEqual(result.ok, true);
+    assert.strictEqual(result.skipped, true);
+    assert.strictEqual(result.reason, 'locked_job');
+  }, testEnv(tmpRoot, { CLAUDE_AUTO_DEV_JOB_LOCK_DIR: lockDir }));
+
+  fs.rmSync(tmpRoot, { recursive: true, force: true });
+  console.log('✅ auto-dev: job lock blocks duplicate execution');
+}
+
+async function test_completed_state_clears_active_error() {
+  const tmpRoot = makeTempRoot();
+  const doc = makeDoc(tmpRoot, 'CODEX_CLEAR_ERROR.md', '# A\nx');
+  let call = 0;
+  const { mocks } = makeMocks(tmpRoot, {
+    '../src/reviewer': {
+      runReview: async () => {
+        call += 1;
+        if (call === 1) return { summary: { pass: false }, message: 'review failed once' };
+        return { summary: { pass: true }, message: 'review ok' };
+      },
+    },
+  });
+
+  await withMocks(mocks, async pipeline => {
+    const failed = await pipeline.processAutoDevDocument(doc, {
+      test: true,
+      force: true,
+      maxRevisionPasses: 0,
+    });
+    assert.strictEqual(failed.ok, false);
+  }, testEnv(tmpRoot));
+
+  await withMocks(mocks, async pipeline => {
+    const succeeded = await pipeline.processAutoDevDocument(doc, {
+      test: true,
+      force: true,
+      maxRevisionPasses: 1,
+    });
+    assert.strictEqual(succeeded.ok, true);
+    assert.strictEqual(succeeded.job.status, 'completed');
+    assert.strictEqual('error' in succeeded.job, false);
+    assert.ok(succeeded.job.lastError, 'completed 상태에 lastError는 보존되어야 함');
+    assert.ok(Array.isArray(succeeded.job.events));
+    assert.ok(succeeded.job.events.some(event => event.type === 'job_completed_after_failure'));
+  }, testEnv(tmpRoot));
+
+  fs.rmSync(tmpRoot, { recursive: true, force: true });
+  console.log('✅ auto-dev: completed state clears active error and keeps history in events');
+}
+
 async function test_launchd_plist_defaults_are_safe() {
   const plist = fs.readFileSync(AUTO_DEV_PLIST_PATH, 'utf8');
   assert.match(plist, /<key>CLAUDE_AUTO_DEV_ENABLED<\/key>\s*<string>false<\/string>/);
   assert.match(plist, /<key>CLAUDE_AUTO_DEV_SHADOW<\/key>\s*<string>true<\/string>/);
   assert.match(plist, /<key>CLAUDE_AUTO_DEV_EXECUTE_IMPLEMENTATION<\/key>\s*<string>false<\/string>/);
   assert.match(plist, /<key>CLAUDE_AUTO_DEV_RUN_HARD_TESTS<\/key>\s*<string>false<\/string>/);
+  assert.match(plist, /<key>KeepAlive<\/key>\s*<false\/>/);
   console.log('✅ auto-dev: launchd plist safe defaults verified');
 }
 
@@ -366,6 +531,11 @@ async function main() {
     test_review_failure_triggers_single_revise_loop,
     test_test_failure_triggers_single_revise_loop,
     test_state_file_override_is_used,
+    test_missing_metadata_is_blocked,
+    test_non_claude_target_is_routed,
+    test_global_lock_blocks_parallel_pipeline,
+    test_job_lock_blocks_duplicate_document_execution,
+    test_completed_state_clears_active_error,
     test_launchd_plist_defaults_are_safe,
   ];
 

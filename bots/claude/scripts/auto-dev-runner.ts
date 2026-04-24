@@ -39,6 +39,12 @@ async function main() {
   const enabled = process.env.CLAUDE_AUTO_DEV_ENABLED === 'true' || once || test;
   if (!enabled) {
     console.log('[auto-dev] Kill Switch OFF — CLAUDE_AUTO_DEV_ENABLED=true 설정 필요');
+    if (process.env.CLAUDE_AUTO_DEV_DISABLED_IDLE === 'true') {
+      const idleMs = Number(process.env.CLAUDE_AUTO_DEV_DISABLED_IDLE_MS || 10 * 60 * 1000);
+      while (true) {
+        await sleep(idleMs);
+      }
+    }
     return;
   }
 
