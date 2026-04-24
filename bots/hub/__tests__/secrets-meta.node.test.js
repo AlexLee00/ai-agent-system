@@ -2,7 +2,13 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { isSecretKey, buildFieldMeta, buildCategoryMeta, buildRequiredSummary } = require('../lib/secrets-meta.js');
+const {
+  isSecretKey,
+  buildFieldMeta,
+  buildCategoryMeta,
+  buildRequiredSummary,
+  summarizeCategoryCompleteness,
+} = require('../lib/secrets-meta.js');
 
 test('isSecretKey: exact and suffix secret keys', () => {
   const positives = [
@@ -31,6 +37,7 @@ test('buildFieldMeta: array values', () => {
   assert.equal(r.kind, 'array');
   assert.equal(r.count, 3);
   assert.equal(r.present, true);
+  assert.equal(r.element_schema.kind, 'number');
   // 원시값 배열은 element_keys 없음
   assert.equal('element_keys' in r, false);
 });
@@ -40,6 +47,8 @@ test('buildFieldMeta: array of objects shows element_keys not values', () => {
   assert.equal(r.kind, 'array');
   assert.equal(r.count, 1);
   assert.deepEqual(r.element_keys, ['user_id', 'secret']);
+  assert.equal(r.element_schema.kind, 'nested');
+  assert.equal(r.element_schema.fields.secret.kind, 'secret');
   // 실제 값 미노출
   const s = JSON.stringify(r);
   assert.equal(s.includes('real-uid'), false);
@@ -159,4 +168,26 @@ test('buildRequiredSummary: required summary values not leaked', () => {
   assert.equal(s.includes('real-uid'), false);
   assert.equal(s.includes('real-name'), false);
   assert.equal(s.includes('real-oc'), false);
+});
+
+test('summarizeCategoryCompleteness: required category is not over-reported by defaults', () => {
+  const s = summarizeCategoryCompleteness('justin', {
+    korea_law: { user_id: '', user_name: '', oc: '', base_url: 'https://www.law.go.kr' },
+  });
+  assert.equal(s.present, false);
+  assert.equal(s.ready, false);
+  assert.equal(s.required_missing, 3);
+  assert.equal(s.required_present, 0);
+  assert.equal(s.secret_present, false);
+});
+
+test('summarizeCategoryCompleteness: required category ready=true when required fields are present', () => {
+  const s = summarizeCategoryCompleteness('justin', {
+    korea_law: { user_id: 'uid', user_name: 'name', oc: 'real-oc', base_url: 'https://www.law.go.kr' },
+  });
+  assert.equal(s.present, true);
+  assert.equal(s.ready, true);
+  assert.equal(s.required_missing, 0);
+  assert.equal(s.required_present, 3);
+  assert.equal(s.secret_present, true);
 });

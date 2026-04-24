@@ -295,11 +295,20 @@ async function secretsRoute(req: SecretsRequest, res: SecretsResponse): Promise<
 
 // ─── Secret Metadata (값 미노출) ─────────────────────────────────────────────
 
-const { isSecretKey, buildFieldMeta, buildCategoryMeta, buildRequiredSummary } = require('../secrets-meta.js') as {
+const { isSecretKey, buildFieldMeta, buildCategoryMeta, buildRequiredSummary, summarizeCategoryCompleteness } = require('../secrets-meta.js') as {
   isSecretKey: (key: string) => boolean;
   buildFieldMeta: (key: string, value: unknown) => Record<string, unknown>;
   buildCategoryMeta: (data: Dict) => Record<string, Record<string, unknown>>;
   buildRequiredSummary: (category: string, data: Dict) => { missing: string[]; present: string[] } | null;
+  summarizeCategoryCompleteness: (category: string, data: Dict) => {
+    present: boolean;
+    ready: boolean;
+    field_count: number;
+    secret_present: boolean;
+    required_total: number | null;
+    required_present: number | null;
+    required_missing: number | null;
+  };
 };
 
 type MetaRequest = {
@@ -334,17 +343,41 @@ async function secretsMetaRoute(req: MetaRequest, res: MetaResponse): Promise<Me
 }
 
 async function secretsMetaAllRoute(_req: MetaRequest, res: MetaResponse): Promise<MetaResponse | void> {
-  const categories: Record<string, { present: boolean; field_count: number }> = {};
+  const categories: Record<string, {
+    present: boolean;
+    ready: boolean;
+    field_count: number;
+    secret_present: boolean;
+    required_total: number | null;
+    required_present: number | null;
+    required_missing: number | null;
+  }> = {};
   for (const [name, handler] of Object.entries(CATEGORY_HANDLERS)) {
     try {
       const data = handler();
-      const keys = Object.keys(data);
-      categories[name] = { present: keys.length > 0, field_count: keys.length };
+      categories[name] = summarizeCategoryCompleteness(name, data);
     } catch {
-      categories[name] = { present: false, field_count: 0 };
+      categories[name] = {
+        present: false,
+        ready: false,
+        field_count: 0,
+        secret_present: false,
+        required_total: null,
+        required_present: null,
+        required_missing: null,
+      };
     }
   }
   return res.json({ ok: true, values_redacted: true, categories });
 }
 
-export { secretsRoute, secretsMetaRoute, secretsMetaAllRoute, isSecretKey, buildFieldMeta, buildCategoryMeta, buildRequiredSummary };
+export {
+  secretsRoute,
+  secretsMetaRoute,
+  secretsMetaAllRoute,
+  isSecretKey,
+  buildFieldMeta,
+  buildCategoryMeta,
+  buildRequiredSummary,
+  summarizeCategoryCompleteness,
+};

@@ -3,7 +3,13 @@
 // Secret Metadata 헬퍼 단위 테스트
 // 값 노출 없이 presence/kind만 반환하는지 검증
 
-const { isSecretKey, buildFieldMeta, buildCategoryMeta, buildRequiredSummary } = require('../lib/secrets-meta');
+const {
+  isSecretKey,
+  buildFieldMeta,
+  buildCategoryMeta,
+  buildRequiredSummary,
+  summarizeCategoryCompleteness,
+} = require('../lib/secrets-meta');
 
 // ─── isSecretKey ─────────────────────────────────────────────────────────────
 
@@ -63,6 +69,7 @@ describe('buildFieldMeta', () => {
     expect(result.kind).toBe('array');
     expect(result.count).toBe(3);
     expect(result.present).toBe(true);
+    expect(result.element_schema.kind).toBe('number');
     expect('element_keys' in result).toBe(false);
   });
 
@@ -71,6 +78,8 @@ describe('buildFieldMeta', () => {
     expect(result.kind).toBe('array');
     expect(result.count).toBe(1);
     expect(result.element_keys).toEqual(['user_id', 'secret']);
+    expect(result.element_schema.kind).toBe('nested');
+    expect(result.element_schema.fields.secret.kind).toBe('secret');
     expect(JSON.stringify(result)).not.toContain('real');
     expect(JSON.stringify(result)).not.toContain('val');
   });
@@ -196,5 +205,29 @@ describe('buildRequiredSummary', () => {
     expect(s).not.toContain('real-uid');
     expect(s).not.toContain('real-name');
     expect(s).not.toContain('real-oc');
+  });
+});
+
+describe('summarizeCategoryCompleteness', () => {
+  it('required category is not over-reported by defaults', () => {
+    const s = summarizeCategoryCompleteness('justin', {
+      korea_law: { user_id: '', user_name: '', oc: '', base_url: 'https://www.law.go.kr' },
+    });
+    expect(s.present).toBe(false);
+    expect(s.ready).toBe(false);
+    expect(s.required_missing).toBe(3);
+    expect(s.required_present).toBe(0);
+    expect(s.secret_present).toBe(false);
+  });
+
+  it('required category ready=true when required fields are present', () => {
+    const s = summarizeCategoryCompleteness('justin', {
+      korea_law: { user_id: 'uid', user_name: 'name', oc: 'real-oc', base_url: 'https://www.law.go.kr' },
+    });
+    expect(s.present).toBe(true);
+    expect(s.ready).toBe(true);
+    expect(s.required_missing).toBe(0);
+    expect(s.required_present).toBe(3);
+    expect(s.secret_present).toBe(true);
   });
 });
