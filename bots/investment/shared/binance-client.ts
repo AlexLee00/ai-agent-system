@@ -4,7 +4,8 @@
  *
  * 기본 동작:
  * 1) BINANCE_USE_MCP=true (default) 이면 MCP 브리지 우선
- * 2) MCP 실패 시 CCXT 직접 호출 fallback
+ * 2) 조회성 action은 MCP 실패 시 CCXT 직접 호출 fallback
+ *    주문성 action(market_buy/sell)은 fail-closed 처리
  *
  * 재귀 방지:
  * - MCP 서버 내부 Node 브리지에서는 BINANCE_MCP_BRIDGE=1 + BINANCE_USE_MCP=false 설정
@@ -20,6 +21,10 @@ import { loadSecrets } from './secrets.ts';
 const BINANCE_MCP_ENABLED_DEFAULT = String(process.env.BINANCE_USE_MCP ?? 'true').toLowerCase() !== 'false';
 const BINANCE_MCP_BRIDGE_MODE = process.env.BINANCE_MCP_BRIDGE === '1';
 const BINANCE_MCP_TIMEOUT_MS = Math.max(4_000, Number(process.env.BINANCE_MCP_TIMEOUT_MS || 20_000));
+const BINANCE_MCP_MUTATING_ACTIONS = new Set([
+  'market_buy',
+  'market_sell',
+]);
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -96,6 +101,8 @@ export function getBinanceExchange() {
 
 async function runBinanceMcpBridge(action, payload = {}) {
   if (!shouldUseBinanceMcp()) return null;
+  const normalizedAction = String(action || '').trim().toLowerCase();
+  const isMutatingAction = BINANCE_MCP_MUTATING_ACTIONS.has(normalizedAction);
   try {
     const { stdout } = await execFileAsync(
       'python3',
@@ -125,6 +132,15 @@ async function runBinanceMcpBridge(action, payload = {}) {
     }
     return parsed;
   } catch (error) {
+    if (isMutatingAction) {
+      const failClosed = /** @type {any} */ (new Error(`Binance MCP bridge failed (${action}): ${error?.message || error}`));
+      failClosed.code = 'binance_mcp_mutating_bridge_failed';
+      failClosed.meta = {
+        action: normalizedAction || null,
+        failClosed: true,
+      };
+      throw failClosed;
+    }
     console.warn(`  ⚠️ [BINANCE MCP] bridge 실패 (${action}) — direct fallback: ${error?.message || error}`);
     return null;
   }

@@ -36,6 +36,31 @@ export function get(sql, params = []) {
   return schemaDb.get(sql, params);
 }
 
+/**
+ * 스키마 트랜잭션 래퍼
+ * - callback 내에서는 동일 DB 세션/트랜잭션을 공유한다.
+ */
+export async function withTransaction(fn) {
+  if (typeof fn !== 'function') throw new Error('withTransaction requires callback function');
+  return pgPool.transaction(SCHEMA, async (client) => {
+    const tx = {
+      query: async (sql, params = []) => {
+        const result = await client.query(sql, params);
+        return result.rows || [];
+      },
+      run: async (sql, params = []) => {
+        const result = await client.query(sql, params);
+        return { rowCount: result.rowCount, rows: result.rows || [] };
+      },
+      get: async (sql, params = []) => {
+        const result = await client.query(sql, params);
+        return result.rows?.[0] || null;
+      },
+    };
+    return fn(tx, client);
+  });
+}
+
 // ─── 스키마 초기화 ──────────────────────────────────────────────────
 
 export async function initSchema() {
@@ -270,6 +295,9 @@ export async function initSchema() {
     ['tp_price', 'DOUBLE PRECISION'], ['sl_price', 'DOUBLE PRECISION'],
     ['tp_order_id', 'TEXT'], ['sl_order_id', 'TEXT'],
     ['tp_sl_set', 'BOOLEAN DEFAULT false'],
+    ['partial_exit', 'BOOLEAN DEFAULT false'],
+    ['partial_exit_ratio', 'DOUBLE PRECISION'],
+    ['remaining_amount', 'DOUBLE PRECISION'],
     ['trade_mode', `TEXT DEFAULT 'normal'`],
     ['execution_origin', `TEXT DEFAULT 'strategy'`],
     ['quality_flag', `TEXT DEFAULT 'trusted'`],
@@ -2080,7 +2108,7 @@ export function close() {
 }
 
 export default {
-  query, run, get, initSchema,
+  query, run, get, withTransaction, initSchema,
   insertAnalysis, getRecentAnalysis,
   insertSignal, updateSignalStatus, updateSignalApproval, updateSignalAmount, updateSignalBlock, getSignalById, getPendingSignals, getApprovedSignals,
   insertTrade, getTradeHistory, getLatestTradeBySignalId, getSameDayTrade,

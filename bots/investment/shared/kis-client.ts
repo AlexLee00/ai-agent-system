@@ -55,6 +55,12 @@ export const KIS_DOMESTIC_BUY_SLIPPAGE_BUFFER = 1.01;
 const KIS_MCP_ENABLED_DEFAULT = String(process.env.KIS_USE_MCP ?? 'true').toLowerCase() !== 'false';
 const KIS_MCP_BRIDGE_MODE = process.env.KIS_MCP_BRIDGE === '1';
 const KIS_MCP_TIMEOUT_MS = Math.max(4_000, Number(process.env.KIS_MCP_TIMEOUT_MS || 20_000));
+const KIS_MCP_MUTATING_ACTIONS = new Set([
+  'domestic_buy',
+  'domestic_sell',
+  'overseas_buy',
+  'overseas_sell',
+]);
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const KIS_MCP_SERVER_PATH = process.env.KIS_MCP_SERVER_PATH || path.resolve(__dirname, '../scripts/kis-market-mcp-server.py');
@@ -189,6 +195,8 @@ function parseJsonFromMixedStdout(stdout = '') {
 
 async function runKisMcpBridge(action, payload = {}) {
   if (!shouldUseKisMcp()) return null;
+  const normalizedAction = String(action || '').trim().toLowerCase();
+  const isMutatingAction = KIS_MCP_MUTATING_ACTIONS.has(normalizedAction);
   try {
     const { stdout } = await execFileAsync(
       'python3',
@@ -218,6 +226,16 @@ async function runKisMcpBridge(action, payload = {}) {
     }
     return parsed;
   } catch (error) {
+    const message = `KIS MCP bridge failed (${action}): ${error?.message || error}`;
+    if (isMutatingAction) {
+      const failClosed = /** @type {any} */ (new Error(message));
+      failClosed.code = 'kis_mcp_mutating_bridge_failed';
+      failClosed.meta = {
+        action: normalizedAction || null,
+        failClosed: true,
+      };
+      throw failClosed;
+    }
     console.warn(`  ⚠️ [KIS MCP] bridge 실패 (${action}) — direct fallback: ${error?.message || error}`);
     return null;
   }
@@ -804,7 +822,8 @@ export async function getOverseasOrderFillByOrdNo({
         SORT_SQN: 'DS',
         ORD_DT: '',
         ORD_GNO_BRNO: '',
-        ODNO: normalizedOrdNo,
+        // KIS 해외 inquire-ccnl은 ODNO 직접 조회를 지원하지 않아 빈 값으로 호출 후 로컬 필터링한다.
+        ODNO: '',
         CTX_AREA_NK200: '',
         CTX_AREA_FK200: '',
       },
