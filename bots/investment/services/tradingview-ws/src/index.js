@@ -18,6 +18,8 @@
 
 import { WebSocketServer, WebSocket } from 'ws';
 import http from 'http';
+import { execFile } from 'child_process';
+import { promisify } from 'util';
 import { Registry, Gauge, Counter, collectDefaultMetrics } from 'prom-client';
 
 const TV_WS_PORT = parseInt(process.env.TV_WS_PORT || '8082', 10);
@@ -27,6 +29,14 @@ const HUB_BASE = process.env.HUB_BASE_URL || 'http://localhost:7788';
 const HUB_TOKEN = process.env.HUB_AUTH_TOKEN || '';
 const RECONNECT_DELAY_BASE_MS = 2000;
 const MAX_RECONNECT_ATTEMPTS = 10;
+const RUNTIME_REEVAL_ENABLED = process.env.TV_RUNTIME_REEVAL_ENABLED === 'true';
+const RUNTIME_REEVAL_PREFIX = process.env.TV_RUNTIME_REEVAL_PREFIX || '/Users/alexlee/projects/ai-agent-system/bots/investment';
+const RUNTIME_REEVAL_COOLDOWN_MS = parseInt(process.env.TV_RUNTIME_REEVAL_COOLDOWN_MS || '45000', 10);
+const RUNTIME_REEVAL_TIMEFRAMES = String(process.env.TV_RUNTIME_REEVAL_TIMEFRAMES || '1h,4h')
+  .split(',')
+  .map((item) => item.trim())
+  .filter(Boolean);
+const execFileAsync = promisify(execFile);
 
 // Prometheus 메트릭스
 const registry = new Registry();
@@ -63,6 +73,7 @@ let tvWs = null;
 let reconnectAttempts = 0;
 let reconnectTimer = null;
 let staleCheckTimer = null;
+const runtimeReevalCooldowns = new Map();
 
 function connectTradingView() {
   // dovudo/tradingview-websocket 패턴: wss://data.tradingview.com/socket.io/websocket
@@ -158,7 +169,60 @@ function processOhlcvUpdate(msg) {
 
       broadcastToClients(barPayload);
       publishToHub(sub.symbol, sub.timeframe, barPayload);
+      triggerRuntimeReevaluation(sub.symbol, sub.timeframe, barPayload).catch(() => {});
     }
+  }
+}
+
+function inferRuntimeScope(tvSymbol = '') {
+  if (!tvSymbol) return null;
+  if (tvSymbol.startsWith('BINANCE:')) {
+    const raw = tvSymbol.replace('BINANCE:', '');
+    const normalized = raw.endsWith('USDT') ? `${raw.slice(0, -4)}/USDT` : raw;
+    return { symbol: normalized, exchange: 'binance' };
+  }
+  if (tvSymbol.startsWith('KRX:')) {
+    return { symbol: tvSymbol.replace('KRX:', ''), exchange: 'kis' };
+  }
+  if (/^(NASDAQ|NYSE|AMEX):/.test(tvSymbol)) {
+    return { symbol: tvSymbol.split(':')[1] || null, exchange: 'kis_overseas' };
+  }
+  return null;
+}
+
+async function triggerRuntimeReevaluation(tvSymbol, timeframe, barPayload) {
+  if (!RUNTIME_REEVAL_ENABLED) return;
+  if (!RUNTIME_REEVAL_TIMEFRAMES.includes(String(timeframe || ''))) return;
+  const scope = inferRuntimeScope(tvSymbol);
+  if (!scope?.symbol || !scope?.exchange) return;
+
+  const key = `${scope.exchange}:${scope.symbol}:${timeframe}`;
+  const now = Date.now();
+  const previous = runtimeReevalCooldowns.get(key) || 0;
+  if (now - previous < RUNTIME_REEVAL_COOLDOWN_MS) return;
+  runtimeReevalCooldowns.set(key, now);
+
+  try {
+    const { stdout } = await execFileAsync('npm', [
+      '--prefix',
+      RUNTIME_REEVAL_PREFIX,
+      'run',
+      'runtime:position-reeval-event',
+      '--',
+      `--symbol=${scope.symbol}`,
+      `--exchange=${scope.exchange}`,
+      '--event-source=tradingview_ws',
+      '--attention-type=tv_live_bar',
+      `--attention-reason=${timeframe} bar update`,
+      `--timeframe=${timeframe}`,
+      '--json',
+    ], {
+      encoding: 'utf8',
+      maxBuffer: 1024 * 1024 * 4,
+    });
+    console.log(`[TV-WS] runtime reevaluation ${key}: ${String(stdout || '').trim().slice(0, 240)}`);
+  } catch (err) {
+    console.warn(`[TV-WS] runtime reevaluation 실패 ${key}: ${err?.message || err}`);
   }
 }
 

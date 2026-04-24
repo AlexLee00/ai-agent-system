@@ -9,11 +9,12 @@ function parseArgs(argv = []) {
   const args = {
     symbol: null,
     exchange: null,
-    tradeMode: 'normal',
+    tradeMode: null,
     minutesBack: 180,
     eventSource: 'position_watch',
     attentionType: null,
     attentionReason: null,
+    timeframe: null,
     persist: true,
     json: false,
   };
@@ -27,6 +28,7 @@ function parseArgs(argv = []) {
     else if (raw.startsWith('--event-source=')) args.eventSource = raw.split('=').slice(1).join('=') || 'position_watch';
     else if (raw.startsWith('--attention-type=')) args.attentionType = raw.split('=').slice(1).join('=') || null;
     else if (raw.startsWith('--attention-reason=')) args.attentionReason = raw.split('=').slice(1).join('=') || null;
+    else if (raw.startsWith('--timeframe=')) args.timeframe = raw.split('=').slice(1).join('=') || null;
   }
   return args;
 }
@@ -70,6 +72,7 @@ export async function runPositionReevaluationEvent(args = {}) {
     attentionReason: args.attentionReason || null,
     eventPayload: {
       requestedAt: new Date().toISOString(),
+      timeframe: args.timeframe || null,
     },
   });
 
