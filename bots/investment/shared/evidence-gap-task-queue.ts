@@ -5,6 +5,7 @@ import path from 'node:path';
 
 export const DEFAULT_EXTERNAL_EVIDENCE_GAP_QUEUE_FILE = '/Users/alexlee/projects/ai-agent-system/bots/investment/output/ops/position-runtime-evidence-gap-queue.json';
 const INVESTMENT_BOT_PREFIX = '/Users/alexlee/projects/ai-agent-system/bots/investment';
+const OPEN_TASK_MAX_AGE_MS = 3 * 60 * 60 * 1000;
 
 function ensureDir(file) {
   const dir = path.dirname(file);
@@ -43,6 +44,22 @@ function readQueueRaw(file = DEFAULT_EXTERNAL_EVIDENCE_GAP_QUEUE_FILE) {
   } catch {
     return emptyState(file);
   }
+}
+
+function pruneOpenTasks(tasks = [], nowMs = Date.now()) {
+  return (Array.isArray(tasks) ? tasks : []).map((task) => {
+    const status = String(task?.status || '');
+    if (!['queued', 'retrying', 'running'].includes(status)) return task;
+    const baseTime = task?.updatedAt || task?.createdAt || null;
+    const ageMs = baseTime ? (nowMs - new Date(baseTime).getTime()) : 0;
+    if (!(ageMs > OPEN_TASK_MAX_AGE_MS)) return task;
+    return {
+      ...task,
+      status: 'expired',
+      updatedAt: new Date(nowMs).toISOString(),
+      resolution: 'stale_open_task_pruned',
+    };
+  });
 }
 
 function writeQueueRaw(payload = null, file = DEFAULT_EXTERNAL_EVIDENCE_GAP_QUEUE_FILE) {
@@ -109,17 +126,19 @@ function queueTaskIfNeeded(payload, {
 
 export function readExternalEvidenceGapTaskQueue(file = DEFAULT_EXTERNAL_EVIDENCE_GAP_QUEUE_FILE) {
   const payload = readQueueRaw(file);
-  const queued = (payload.tasks || []).filter((task) => task?.status === 'queued').length;
-  const retrying = (payload.tasks || []).filter((task) => task?.status === 'retrying').length;
-  const running = (payload.tasks || []).filter((task) => task?.status === 'running').length;
+  const tasks = pruneOpenTasks(payload.tasks);
+  if (JSON.stringify(tasks) !== JSON.stringify(payload.tasks || [])) {
+    writeQueueRaw({ ...payload, tasks }, file);
+  }
   return {
     ...payload,
+    tasks,
     summary: {
       scopes: Object.keys(payload.states || {}).length,
-      tasks: (payload.tasks || []).length,
-      queued,
-      retrying,
-      running,
+      tasks: tasks.length,
+      queued: tasks.filter((task) => task?.status === 'queued').length,
+      retrying: tasks.filter((task) => task?.status === 'retrying').length,
+      running: tasks.filter((task) => task?.status === 'running').length,
     },
   };
 }
@@ -146,6 +165,7 @@ export function updateExternalEvidenceGapTaskQueue({
     };
   }
   const payload = readQueueRaw(file);
+  payload.tasks = pruneOpenTasks(payload.tasks);
   const scopeKey = normalizeKey({ symbol, exchange, tradeMode });
   const now = new Date();
   const nowIso = now.toISOString();
@@ -229,4 +249,3 @@ export function updateExternalEvidenceGapTaskQueue({
     file,
   };
 }
-
