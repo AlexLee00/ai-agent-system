@@ -22,6 +22,8 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 
 let _secrets = null;
 let _hubInitDone = false;
+let _hubInitFailedAt = 0;
+const HUB_INIT_RETRY_MS = 15_000;
 const _warnedKeys = new Set();
 
 function warnOnce(key, message) {
@@ -107,6 +109,9 @@ function applyDevSafetyOverrides(secrets) {
  */
 export async function initHubSecrets() {
   if (_hubInitDone) return !!_secrets;
+  if (_hubInitFailedAt > 0 && (Date.now() - _hubInitFailedAt) < HUB_INIT_RETRY_MS) {
+    return false;
+  }
 
   const [hubConfig, hubLlm] = await Promise.all([
     _hubClient.fetchHubSecrets('config'),
@@ -173,11 +178,12 @@ export async function initHubSecrets() {
       paper_mode: c.paper_mode !== false,
     });
     _hubInitDone = true;
+    _hubInitFailedAt = 0;
     return true;
   }
 
   loadSecrets();
-  _hubInitDone = true;
+  _hubInitFailedAt = Date.now();
   return false;
 }
 

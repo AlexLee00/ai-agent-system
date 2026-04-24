@@ -41,6 +41,8 @@ type BillingBudget = {
 
 let _config: LlmConfig | null = null;
 let _hubInitDone = false;
+let _hubInitFailedAt = 0;
+const HUB_INIT_RETRY_MS = 15_000;
 
 function loadConfigLocal(): LlmConfig {
   try {
@@ -53,6 +55,9 @@ function loadConfigLocal(): LlmConfig {
 
 export async function initHubConfig(): Promise<boolean> {
   if (_hubInitDone) return !!_config;
+  if (_hubInitFailedAt > 0 && (Date.now() - _hubInitFailedAt) < HUB_INIT_RETRY_MS) {
+    return false;
+  }
 
   const hubData = (await fetchHubSecrets('llm')) as LlmConfig | null;
   if (hubData) {
@@ -67,11 +72,12 @@ export async function initHubConfig(): Promise<boolean> {
       billing: hubData.billing || {},
     };
     _hubInitDone = true;
+    _hubInitFailedAt = 0;
     return true;
   }
 
   _config = loadConfigLocal();
-  _hubInitDone = true;
+  _hubInitFailedAt = Date.now();
   return false;
 }
 
