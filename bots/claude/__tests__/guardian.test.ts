@@ -141,7 +141,52 @@ async function test_layer4_parses_npm_audit() {
   console.log('✅ guardian: layer4_dependencyVulnerabilities parses npm audit');
 }
 
-// ─── Test 6: Kill Switch — reportToTelegram 스킵 ─────────────────────
+// ─── Test 6: layer6_networkAudit — self-scan false positive 제외 ─────
+
+async function test_layer6_ignores_guardian_self_file() {
+  const tmpDir = path.join(os.tmpdir(), `test-guardian-self-${Date.now()}`);
+  fs.mkdirSync(tmpDir, { recursive: true });
+
+  const selfFile = path.join(tmpDir, 'bots/claude/src/guardian.ts');
+  const externalFile = path.join(tmpDir, 'bots/investment/shared/suspicious.ts');
+  fs.mkdirSync(path.dirname(selfFile), { recursive: true });
+  fs.mkdirSync(path.dirname(externalFile), { recursive: true });
+  fs.writeFileSync(selfFile, '// detector self file');
+  fs.writeFileSync(externalFile, '// external suspicious usage');
+
+  const mocks = makeGuardianMocks({
+    '../../../packages/core/lib/env': { PROJECT_ROOT: tmpDir },
+    child_process: {
+      execSync: (cmd) => {
+        if (cmd.includes('grep -rl') && cmd.includes('pastebin.com')) {
+          return `${selfFile}\n${externalFile}`;
+        }
+        if (cmd.includes('grep -rl')) return selfFile;
+        return '';
+      },
+    },
+  });
+
+  try {
+    await withMocks(mocks, async (guardian) => {
+      const issues = await guardian.layer6_networkAudit();
+      assert.ok(Array.isArray(issues), 'layer6는 배열 반환');
+      assert.ok(
+        issues.some(item => String(item.desc || '').includes(path.relative(tmpDir, externalFile))),
+        '외부 파일 이슈는 유지되어야 함',
+      );
+      assert.ok(
+        !issues.some(item => String(item.desc || '').includes(path.relative(tmpDir, selfFile))),
+        'guardian self file은 self-scan에서 제외되어야 함',
+      );
+    });
+  } finally {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  }
+  console.log('✅ guardian: layer6_networkAudit ignores guardian self file');
+}
+
+// ─── Test 7: Kill Switch — reportToTelegram 스킵 ─────────────────────
 
 async function test_guardian_respects_kill_switch() {
   const postAlarmCalls = [];
@@ -177,6 +222,7 @@ async function main() {
     test_layer3_detects_suspicious_packages,
     test_runFullSecurityScan_has_severity,
     test_layer4_parses_npm_audit,
+    test_layer6_ignores_guardian_self_file,
     test_guardian_respects_kill_switch,
   ];
 

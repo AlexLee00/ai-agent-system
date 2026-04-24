@@ -32,6 +32,11 @@ const reviewer      = require('./reviewer');
 const ROOT         = env.PROJECT_ROOT;
 const GITIGNORE    = path.join(ROOT, '.gitignore');
 const PACKAGE_JSON = path.join(ROOT, 'package.json');
+const GUARDIAN_SELF_FILES = new Set([
+  path.join(ROOT, 'bots', 'claude', 'src', 'guardian.ts'),
+  path.join(ROOT, 'bots', 'claude', 'src', 'guardian.js'),
+  path.join(ROOT, 'bots', 'claude', '__tests__', 'guardian.test.ts'),
+].map(file => path.resolve(file)));
 
 const REQUIRED_IGNORE_PATTERNS = ['secrets.json', '.env', '*.pem'];
 const SUSPICIOUS_PACKAGES = ['xmrig', 'coinhive', 'crypto-miner', 'keylogger', 'cryptonight'];
@@ -56,6 +61,17 @@ const SECRET_PATTERNS = [
   /"password"\s*:\s*"[^"]{8,}"/,    // Hardcoded password
   /telegram_bot_token.*[:=]\s*["']?[0-9]+:[a-zA-Z0-9_-]{35}["']?/i, // Telegram token
 ];
+
+function shouldIgnoreNetworkAuditHit(filePath) {
+  if (!filePath) return true;
+  const resolved = path.resolve(String(filePath).trim());
+  if (GUARDIAN_SELF_FILES.has(resolved)) return true;
+
+  // detector definition 자체는 self-scan false positive이므로 제외한다.
+  if (resolved.endsWith(`${path.sep}bots${path.sep}claude${path.sep}src${path.sep}guardian.ts`)) return true;
+  if (resolved.endsWith(`${path.sep}bots${path.sep}claude${path.sep}src${path.sep}guardian.js`)) return true;
+  return false;
+}
 
 function safeExec(command, options = {}) {
   try {
@@ -208,13 +224,17 @@ function layer6_networkAudit() {
         `grep -v node_modules | grep -v ".git" | head -5`
       );
       if (found) {
-        found.split('\n').filter(Boolean).forEach(f => {
+        found.split('\n')
+          .map(item => item.trim())
+          .filter(Boolean)
+          .filter(filePath => !shouldIgnoreNetworkAuditHit(filePath))
+          .forEach(f => {
           issues.push({
             severity: 'HIGH',
             desc: `의심 도메인(${domain}) 하드코딩: ${path.relative(ROOT, f)}`,
             layer: 6,
           });
-        });
+          });
       }
     }
   } catch {}
