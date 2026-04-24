@@ -6,7 +6,9 @@
   "main": "src/hub.ts",
   "scripts": {
     "start": "tsx src/hub.ts",
-    "local-llm-policy": "tsx scripts/local-llm-policy-report.ts"
+    "local-llm-policy": "tsx scripts/local-llm-policy-report.ts",
+    "test": "node scripts/run-tests.js",
+    "test:secrets-meta": "node --test __tests__/secrets-meta.node.test.js"
   },
   "dependencies": {
     "express": "^4.21.2",
