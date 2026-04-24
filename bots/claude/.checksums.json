@@ -12,6 +12,7 @@
   "bots/blog/lib/health-memory-bridge.js": "eccea731de5befb070e45febaa183b84a855a8a188b3278979807533cb6ee3d0",
   "bots/darwin/lib/autonomy-level.js": "abdfabc7b40b3e160454aa1d412abd4a29058ee796b2dbf7bc775b24ce675656",
   "bots/darwin/lib/research-tasks.js": "2694777edd88f063354c5bad7aa960454efc60f9205e4fa2b146c0efb0db2d8e",
+  "bots/hub/lib/secrets-meta.js": "f8458b9778698717066ffe44917183a096db493d08581d9b8400a26286ffb4ff",
   "bots/legal/lib/appraisal-store.js": "c778cbd38e357125c304c4fbafc838108f6c575d02630d380115f6f9c0db48e0",
   "bots/legal/lib/atlas-client.js": "c6fff32b6fe577c3833b5aa653eda9fe3bbd983758ceb86f6ca42d73c7f36663",
   "bots/legal/lib/atlas.js": "eb8b2694fe2b7ad19e8f98b79b95cec24fb31cbe32534b633d5febed4fb089c3",
