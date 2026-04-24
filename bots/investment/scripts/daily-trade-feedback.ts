@@ -30,6 +30,9 @@ import { buildPositionReevaluationSummary } from './position-reevaluation-summar
 import { buildRuntimeMinOrderPressureReport } from './runtime-min-order-pressure-report.ts';
 import { buildRuntimeLearningLoopReport } from './runtime-learning-loop-report.ts';
 import { buildRuntimePositionStrategyAudit } from './runtime-position-strategy-audit.ts';
+import { runPositionRuntimeReport } from './runtime-position-runtime-report.ts';
+import { runPositionRuntimeTuning } from './runtime-position-runtime-tuning.ts';
+import { runPositionRuntimeDispatch } from './runtime-position-runtime-dispatch.ts';
 import { buildPositionStrategyHygieneRemediationPlan, runPositionStrategyHygiene } from './runtime-position-strategy-hygiene.ts';
 import {
   buildPositionStrategyRemediationRefreshState,
@@ -430,6 +433,47 @@ function buildPositionReevaluationLine(reevaluationSummary) {
   return `🔁 reeval: ${reevaluationSummary.decision.status} | HOLD ${metrics.holds || 0} / ADJUST ${metrics.adjusts || 0} / EXIT ${metrics.exits || 0}`;
 }
 
+function buildPositionRuntimeView(runtimeReport, runtimeTuning, runtimeDispatch) {
+  const decision = runtimeReport?.decision || {};
+  const metrics = decision.metrics || {};
+  const suggestions = Array.isArray(runtimeTuning?.suggestions) ? runtimeTuning.suggestions : [];
+  const topSuggestion = suggestions[0] || null;
+  const candidates = Array.isArray(runtimeDispatch?.candidates) ? runtimeDispatch.candidates : [];
+  return {
+    status: decision.status || 'position_runtime_unknown',
+    headline: decision.headline || 'runtime state unavailable',
+    metrics: {
+      total: Number(metrics.total || 0),
+      active: Number(metrics.active || 0),
+      exitReady: Number(metrics.exitReady || 0),
+      adjustReady: Number(metrics.adjustReady || 0),
+      staleValidation: Number(metrics.staleValidation || 0),
+      fastLane: Number(metrics.fastLane || 0),
+    },
+    tuningStatus: runtimeTuning?.status || 'position_runtime_tuning_unknown',
+    tuningSuggestion: topSuggestion,
+    dispatchStatus: runtimeDispatch?.status || 'position_runtime_dispatch_unknown',
+    dispatchCandidates: candidates.length,
+    dispatchTopCandidate: candidates[0] || null,
+    reportCommand: 'npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:position-runtime -- --json',
+    tuningCommand: topSuggestion?.exchange
+      ? `npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:position-runtime-tuning -- --exchange=${topSuggestion.exchange} --json`
+      : 'npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:position-runtime-tuning -- --json',
+    dispatchCommand: 'npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:position-runtime-dispatch -- --json',
+  };
+}
+
+function buildPositionRuntimeLine(runtimeView) {
+  if (!runtimeView) return null;
+  const suggestion = runtimeView.tuningSuggestion || null;
+  return `⚙️ runtime: ${runtimeView.status} | active ${runtimeView.metrics?.active || 0} / fast ${runtimeView.metrics?.fastLane || 0} / adjust ${runtimeView.metrics?.adjustReady || 0} / exit ${runtimeView.metrics?.exitReady || 0}${suggestion ? ` | tune ${suggestion.exchange} ${suggestion.status}` : ''}`;
+}
+
+function buildPositionRuntimeCommandLine(runtimeView) {
+  if (!runtimeView) return null;
+  return `🚦 runtime dispatch: ${runtimeView.dispatchCommand}`;
+}
+
 function buildMinOrderPressureLine(minOrderPressureSummary) {
   if (!minOrderPressureSummary || minOrderPressureSummary.error || !minOrderPressureSummary.decision) return null;
   const decision = minOrderPressureSummary.decision || {};
@@ -578,7 +622,7 @@ function buildDailyFeedbackMemoryQuery(dateKst, feedback, screeningSummary, reev
   ].filter(Boolean).join(' ');
 }
 
-function buildTelegramMessage(dateKst, feedback, analystAccuracy, screeningSummary, reevaluationSummary, minOrderPressureSummary, learningLoopSummary, positionStrategyAuditSummary, positionStrategyHygieneSummary, positionStrategyRemediationSummary, positionStrategyRemediationHistorySummary) {
+function buildTelegramMessage(dateKst, feedback, analystAccuracy, screeningSummary, reevaluationSummary, minOrderPressureSummary, learningLoopSummary, positionStrategyAuditSummary, positionStrategyHygieneSummary, positionStrategyRemediationSummary, positionStrategyRemediationHistorySummary, positionRuntimeView) {
   const remediationLines = buildDailyFeedbackRemediationLines(
     positionStrategyRemediationSummary,
     positionStrategyRemediationHistorySummary,
@@ -593,6 +637,8 @@ function buildTelegramMessage(dateKst, feedback, analystAccuracy, screeningSumma
   if (screeningLine) lines.push(screeningLine);
   const reevaluationLine = buildPositionReevaluationLine(reevaluationSummary);
   if (reevaluationLine) lines.push(reevaluationLine);
+  const runtimeLine = buildPositionRuntimeLine(positionRuntimeView);
+  if (runtimeLine) lines.push(runtimeLine);
   const minOrderPressureLine = buildMinOrderPressureLine(minOrderPressureSummary);
   if (minOrderPressureLine) lines.push(minOrderPressureLine);
   const learningLoopLine = buildLearningLoopLine(learningLoopSummary);
@@ -608,6 +654,8 @@ function buildTelegramMessage(dateKst, feedback, analystAccuracy, screeningSumma
   if (remediationLines.remediationRefreshCommandLine) lines.push(remediationLines.remediationRefreshCommandLine);
   if (remediationLines.remediationNextCommandLine) lines.push(remediationLines.remediationNextCommandLine);
   if (remediationLines.remediationCommandLine) lines.push(remediationLines.remediationCommandLine);
+  const runtimeCommandLine = buildPositionRuntimeCommandLine(positionRuntimeView);
+  if (runtimeCommandLine) lines.push(runtimeCommandLine);
   const positionStrategyHygieneCommandLine = buildPositionStrategyHygieneCommandLine(positionStrategyHygieneSummary);
   if (positionStrategyHygieneCommandLine) lines.push(positionStrategyHygieneCommandLine);
   if (Array.isArray(feedback.nextActions) && feedback.nextActions.length > 0) {
@@ -620,7 +668,7 @@ function buildTelegramMessage(dateKst, feedback, analystAccuracy, screeningSumma
   return lines.join('\n');
 }
 
-async function storeDailyFeedbackRag(dateKst, feedback, analystAccuracy, screeningSummary, reevaluationSummary, minOrderPressureSummary, learningLoopSummary, positionStrategyAuditSummary, positionStrategyHygieneSummary, positionStrategyRemediationSummary, positionStrategyRemediationHistorySummary) {
+async function storeDailyFeedbackRag(dateKst, feedback, analystAccuracy, screeningSummary, reevaluationSummary, minOrderPressureSummary, learningLoopSummary, positionStrategyAuditSummary, positionStrategyHygieneSummary, positionStrategyRemediationSummary, positionStrategyRemediationHistorySummary, positionRuntimeView) {
   const hygieneRemediationPlan = positionStrategyHygieneSummary?.remediationPlan
     || buildPositionStrategyHygieneRemediationPlan(positionStrategyHygieneSummary);
   const remediationView = buildDailyFeedbackRemediationView(positionStrategyRemediationSummary, positionStrategyRemediationHistorySummary);
@@ -636,6 +684,7 @@ async function storeDailyFeedbackRag(dateKst, feedback, analystAccuracy, screeni
     `거래 ${feedback.stats.total}건 / 승률 ${(feedback.stats.winRate * 100).toFixed(1)}% / 손익 $${feedback.stats.totalPnl.toFixed(2)}`,
     buildScreeningLine(screeningSummary),
     buildPositionReevaluationLine(reevaluationSummary),
+    buildPositionRuntimeLine(positionRuntimeView),
     buildMinOrderPressureLine(minOrderPressureSummary),
     buildLearningLoopLine(learningLoopSummary),
     buildPositionStrategyCoverageLine(positionStrategyAuditSummary),
@@ -647,6 +696,7 @@ async function storeDailyFeedbackRag(dateKst, feedback, analystAccuracy, screeni
     remediationLines.remediationRefreshCommandLine,
     remediationLines.remediationNextCommandLine,
     remediationLines.remediationCommandLine,
+    buildPositionRuntimeCommandLine(positionRuntimeView),
     buildPositionStrategyHygieneCommandLine(positionStrategyHygieneSummary),
     `다음 액션: ${(feedback.nextActions || []).join(' / ') || '없음'}`,
   ].filter(Boolean).join('\n');
@@ -659,6 +709,7 @@ async function storeDailyFeedbackRag(dateKst, feedback, analystAccuracy, screeni
     analyst_accuracy: analystAccuracy || {},
     screening_summary: screeningSummary || {},
     reevaluation_summary: reevaluationSummary?.decision || {},
+    position_runtime: positionRuntimeView || {},
     min_order_pressure_summary: minOrderPressureSummary?.decision || {},
     learning_loop_summary: learningLoopSummary?.decision || {},
     position_strategy_audit: positionStrategyAuditSummary || {},
@@ -693,6 +744,16 @@ async function runDailyTradeFeedback({ dateKst, dryRun = false }) {
   const analystAccuracy = await fetchDailyAnalystAccuracy(dateKst);
   const screeningSummary = await fetchScreeningSummary();
   const reevaluationSummary = await fetchPositionReevaluationSummary();
+  const positionRuntimeReport = await runPositionRuntimeReport({ json: true, limit: 200 }).catch((error) => ({
+    error: String(error?.message || error),
+  }));
+  const positionRuntimeTuning = await runPositionRuntimeTuning({ json: true }).catch((error) => ({
+    error: String(error?.message || error),
+  }));
+  const positionRuntimeDispatch = await runPositionRuntimeDispatch({ json: true, limit: 20 }).catch((error) => ({
+    error: String(error?.message || error),
+  }));
+  const positionRuntimeView = buildPositionRuntimeView(positionRuntimeReport, positionRuntimeTuning, positionRuntimeDispatch);
   const minOrderPressureSummary = await fetchMinOrderPressureSummary();
   const learningLoopSummary = await buildRuntimeLearningLoopReport({ days: 14, json: true }).catch((error) => ({
     error: String(error?.message || error),
@@ -719,10 +780,10 @@ async function runDailyTradeFeedback({ dateKst, dryRun = false }) {
   const hygieneRemediationPlan = positionStrategyHygieneSummary?.remediationPlan
     || buildPositionStrategyHygieneRemediationPlan(positionStrategyHygieneSummary);
   const resolvedRemediationRefreshState = remediationView.remediationRefreshState;
-  const message = buildTelegramMessage(dateKst, feedback, analystAccuracy, screeningSummary, reevaluationSummary, minOrderPressureSummary, learningLoopSummary, positionStrategyAuditSummary, positionStrategyHygieneSummary, positionStrategyRemediationSummary, positionStrategyRemediationHistorySummary);
+  const message = buildTelegramMessage(dateKst, feedback, analystAccuracy, screeningSummary, reevaluationSummary, minOrderPressureSummary, learningLoopSummary, positionStrategyAuditSummary, positionStrategyHygieneSummary, positionStrategyRemediationSummary, positionStrategyRemediationHistorySummary, positionRuntimeView);
 
   try {
-    await storeDailyFeedbackRag(dateKst, feedback, analystAccuracy, screeningSummary, reevaluationSummary, minOrderPressureSummary, learningLoopSummary, positionStrategyAuditSummary, positionStrategyHygieneSummary, positionStrategyRemediationSummary, positionStrategyRemediationHistorySummary);
+    await storeDailyFeedbackRag(dateKst, feedback, analystAccuracy, screeningSummary, reevaluationSummary, minOrderPressureSummary, learningLoopSummary, positionStrategyAuditSummary, positionStrategyHygieneSummary, positionStrategyRemediationSummary, positionStrategyRemediationHistorySummary, positionRuntimeView);
   } catch (error) {
     console.warn(`  ⚠️ [daily-feedback] RAG 저장 실패(무시): ${error?.message || error}`);
   }
@@ -755,7 +816,7 @@ async function runDailyTradeFeedback({ dateKst, dryRun = false }) {
         event_type: 'daily_feedback',
         alert_level: 1,
         message: finalMessage,
-        payload: { dateKst, feedback, analystAccuracy, screeningSummary, reevaluationSummary, minOrderPressureSummary, learningLoopSummary, positionStrategyAuditSummary, positionStrategyHygieneSummary, remediationFlat, remediationSummary, hygieneRemediationPlan, ...remediationPayload },
+        payload: { dateKst, feedback, analystAccuracy, screeningSummary, reevaluationSummary, positionRuntimeReport, positionRuntimeTuning, positionRuntimeDispatch, positionRuntimeView, minOrderPressureSummary, learningLoopSummary, positionStrategyAuditSummary, positionStrategyHygieneSummary, remediationFlat, remediationSummary, hygieneRemediationPlan, ...remediationPayload },
       });
       await dailyFeedbackMemory.remember(finalMessage, 'episodic', {
         importance: 0.7,
@@ -766,6 +827,12 @@ async function runDailyTradeFeedback({ dateKst, dryRun = false }) {
           tradeCount: feedback.stats.total,
           totalPnl: feedback.stats.totalPnl,
           winRate: feedback.stats.winRate,
+          positionRuntimeStatus: positionRuntimeView?.status || null,
+          positionRuntimeHeadline: positionRuntimeView?.headline || null,
+          positionRuntimeActive: positionRuntimeView?.metrics?.active || 0,
+          positionRuntimeExitReady: positionRuntimeView?.metrics?.exitReady || 0,
+          positionRuntimeAdjustReady: positionRuntimeView?.metrics?.adjustReady || 0,
+          positionRuntimeDispatchCommand: positionRuntimeView?.dispatchCommand || null,
           hygieneStatus: hygieneRemediationPlan?.status || null,
           hygieneExchange: hygieneRemediationPlan?.recommendedExchange || null,
           ...buildDailyFeedbackRemediationMemoryMetadata(
@@ -792,6 +859,21 @@ async function runDailyTradeFeedback({ dateKst, dryRun = false }) {
     analystAccuracy,
     screeningSummary,
     reevaluationSummary,
+    positionRuntimeReport,
+    positionRuntimeTuning,
+    positionRuntimeDispatch,
+    positionRuntimeView,
+    positionRuntimeStatus: positionRuntimeView.status,
+    positionRuntimeHeadline: positionRuntimeView.headline,
+    positionRuntimeMetrics: positionRuntimeView.metrics,
+    positionRuntimeTuningStatus: positionRuntimeView.tuningStatus,
+    positionRuntimeTuningSuggestion: positionRuntimeView.tuningSuggestion,
+    positionRuntimeDispatchStatus: positionRuntimeView.dispatchStatus,
+    positionRuntimeDispatchCandidates: positionRuntimeView.dispatchCandidates,
+    positionRuntimeDispatchTopCandidate: positionRuntimeView.dispatchTopCandidate,
+    positionRuntimeReportCommand: positionRuntimeView.reportCommand,
+    positionRuntimeTuningCommand: positionRuntimeView.tuningCommand,
+    positionRuntimeDispatchCommand: positionRuntimeView.dispatchCommand,
     minOrderPressureSummary,
     learningLoopSummary,
     positionStrategyAuditSummary,

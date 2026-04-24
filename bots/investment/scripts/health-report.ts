@@ -29,6 +29,9 @@ import { runExecutionAttachBackfill } from './runtime-execution-attach-backfill.
 import { buildRuntimePositionStrategyAudit } from './runtime-position-strategy-audit.ts';
 import { buildPositionStrategyHygieneRemediationPlan, runPositionStrategyHygiene } from './runtime-position-strategy-hygiene.ts';
 import { runPositionStrategyRemediation } from './runtime-position-strategy-remediation.ts';
+import { runPositionRuntimeReport } from './runtime-position-runtime-report.ts';
+import { runPositionRuntimeTuning } from './runtime-position-runtime-tuning.ts';
+import { runPositionRuntimeDispatch } from './runtime-position-runtime-dispatch.ts';
 import { normalizeDuplicateStrategyProfiles } from './normalize-duplicate-strategy-profiles.ts';
 import { retireOrphanStrategyProfiles } from './retire-orphan-strategy-profiles.ts';
 import { backfillTradeIncidentLinks } from './backfill-trade-incident-links.ts';
@@ -675,6 +678,9 @@ function buildDecision(
   duplicateStrategyNormalization,
   orphanStrategyRetirement,
   executionRiskApprovalGuardHealth,
+  positionRuntimeReport,
+  positionRuntimeTuning,
+  positionRuntimeDispatch,
 ) {
   const topBlock = signalBlockHealth.top[0] || null;
   const topReasonGroup = signalBlockHealth.topReasonGroups?.[0] || null;
@@ -701,6 +707,11 @@ function buildDecision(
   const duplicateNormalizationSummary = duplicateStrategyNormalization?.summary || {};
   const orphanRetirementSummary = orphanStrategyRetirement?.summary || {};
   const remediationView = buildFlatRemediationSnapshot(positionStrategyRemediation);
+  const runtimeView = buildPositionRuntimeSnapshot(
+    positionRuntimeReport,
+    positionRuntimeTuning,
+    positionRuntimeDispatch,
+  );
   return buildHealthDecision({
     warnings: [
       {
@@ -824,6 +835,11 @@ function buildDecision(
         active: ['regime_strategy_tuning_needed', 'regime_strategy_monitor'].includes(runtimeLearningLoop?.decision?.status),
         level: runtimeLearningLoop?.decision?.status === 'regime_strategy_monitor' ? 'low' : 'medium',
         reason: `learning loop — ${runtimeLearningLoop?.decision?.headline || '레짐별 전략 튜닝 필요'} / top suggestion ${runtimeLearningLoop?.sections?.strategy?.runtimeSuggestionTop?.key || 'n/a'} ${runtimeLearningLoop?.decision?.status === 'regime_strategy_monitor' ? `current ${runtimeLearningLoop?.sections?.strategy?.runtimeSuggestionTop?.current ?? runtimeLearningLoop?.sections?.strategy?.runtimeSuggestionTop?.governance?.current ?? 'n/a'} (already applied)` : `-> ${runtimeLearningLoop?.sections?.strategy?.runtimeSuggestionTop?.suggested ?? 'n/a'}`} / next command npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime-suggest -- --json${latestOpsSnapshot?.capturedAt ? ` / latest snapshot ${latestOpsSnapshot.capturedAt}` : ''}`,
+      },
+      {
+        active: Number(runtimeView.metrics?.exitReady || 0) > 0 || Number(runtimeView.metrics?.adjustReady || 0) > 0 || runtimeView.tuningStatus === 'position_runtime_tuning_attention',
+        level: Number(runtimeView.metrics?.exitReady || 0) > 0 ? 'high' : 'medium',
+        reason: `position runtime — ${runtimeView.headline} / tuning ${runtimeView.tuningStatus}${runtimeView.tuningSuggestion ? ` ${runtimeView.tuningSuggestion.exchange} ${runtimeView.tuningSuggestion.status}` : ''} / dispatch ${runtimeView.dispatchStatus} ${runtimeView.dispatchCandidates || 0}건 / next command ${runtimeView.dispatchCommand}`,
       },
       {
         active: strategyFeedbackOutcomes?.status === 'strategy_feedback_outcome_attention',
@@ -1121,6 +1137,52 @@ function buildPositionStrategyRemediationDecisionReason({
   return `position strategy remediation — ${remediationView.headline || positionStrategyRemediation?.decision?.headline || positionStrategyHygiene?.decision?.headline || '포지션 전략 위생 점검 필요'} / duplicate managed ${remediationView.duplicateManaged ?? positionStrategyAudit?.duplicateManagedProfileScopes ?? 0} / orphan ${remediationView.orphanProfiles ?? positionStrategyOrphans ?? 0} / unmatched managed ${remediationView.unmatchedManaged ?? positionStrategyAudit?.unmatchedManagedPositions ?? 0}${(remediationView.trendHistoryCount !== undefined || positionStrategyRemediationHistory) ? ` / history changed ${remediationView.trendChanged ? 'yes' : 'no'} / next changed ${remediationView.trendNextChanged ? 'yes' : 'no'}${remediationView.trendNextChanged ? ` (${remediationView.nextCommandPrevious || positionStrategyRemediationHistory?.nextCommandTransition?.previous || 'none'} -> ${remediationView.nextCommandCurrent || positionStrategyRemediationHistory?.nextCommandTransition?.current || 'none'})` : ''} / history age ${remediationView.trendAgeMinutes ?? positionStrategyRemediationHistory?.ageMinutes ?? 'n/a'}m / history stale ${remediationView.trendStale ? 'yes' : 'no'} / duplicate delta ${((remediationView.trendDuplicateDelta ?? positionStrategyRemediationHistory?.delta?.duplicateManaged ?? 0) >= 0) ? '+' : ''}${(remediationView.trendDuplicateDelta ?? positionStrategyRemediationHistory?.delta?.duplicateManaged) || 0} / orphan delta ${((remediationView.trendOrphanDelta ?? positionStrategyRemediationHistory?.delta?.orphanProfiles ?? 0) >= 0) ? '+' : ''}${(remediationView.trendOrphanDelta ?? positionStrategyRemediationHistory?.delta?.orphanProfiles) || 0}` : ''}${remediationView.refreshReason ? ` / ${remediationView.refreshReason}` : ''} / duplicate apply ${duplicateStrategyNormalization?.decision?.safeToApply === true ? 'yes' : 'no'} / orphan apply ${orphanStrategyRetirement?.decision?.safeToApply === true ? 'yes' : 'no'} / next command ${remediationView.nextCommand || 'npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:position-strategy-remediation -- --json'}`;
 }
 
+function buildPositionRuntimeSnapshot(runtimeReport, runtimeTuning, runtimeDispatch) {
+  const decision = runtimeReport?.decision || {};
+  const metrics = decision.metrics || {};
+  const suggestions = Array.isArray(runtimeTuning?.suggestions) ? runtimeTuning.suggestions : [];
+  const topSuggestion = suggestions[0] || null;
+  const candidates = Array.isArray(runtimeDispatch?.candidates) ? runtimeDispatch.candidates : [];
+  return {
+    status: decision.status || 'position_runtime_unknown',
+    headline: decision.headline || 'runtime state unavailable',
+    metrics: {
+      total: Number(metrics.total || 0),
+      active: Number(metrics.active || 0),
+      exitReady: Number(metrics.exitReady || 0),
+      adjustReady: Number(metrics.adjustReady || 0),
+      staleValidation: Number(metrics.staleValidation || 0),
+      fastLane: Number(metrics.fastLane || 0),
+    },
+    tuningStatus: runtimeTuning?.status || 'position_runtime_tuning_unknown',
+    tuningSuggestion: topSuggestion,
+    dispatchStatus: runtimeDispatch?.status || 'position_runtime_dispatch_unknown',
+    dispatchCandidates: candidates.length,
+    dispatchTopCandidate: candidates[0] || null,
+    reportCommand: 'npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:position-runtime -- --json',
+    tuningCommand: topSuggestion?.exchange
+      ? `npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:position-runtime-tuning -- --exchange=${topSuggestion.exchange} --json`
+      : 'npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:position-runtime-tuning -- --json',
+    dispatchCommand: 'npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:position-runtime-dispatch -- --json',
+  };
+}
+
+function buildPositionRuntimeLines(report) {
+  const runtimeView = report.positionRuntimeView || {};
+  const suggestion = runtimeView.tuningSuggestion || null;
+  const topCandidate = runtimeView.dispatchTopCandidate || null;
+  return [
+    `  runtime status: ${runtimeView.status || 'unknown'}`,
+    `  runtime headline: ${runtimeView.headline || 'n/a'}`,
+    `  active ${runtimeView.metrics?.active || 0} / fast-lane ${runtimeView.metrics?.fastLane || 0} / adjust ${runtimeView.metrics?.adjustReady || 0} / exit ${runtimeView.metrics?.exitReady || 0} / critical validation ${runtimeView.metrics?.staleValidation || 0}`,
+    `  tuning: ${runtimeView.tuningStatus || 'unknown'}${suggestion ? ` / ${suggestion.exchange} ${suggestion.status} ${suggestion.currentAverageCadenceMs || 'n/a'} -> ${suggestion.recommendedCadenceMs || 'n/a'}` : ''}`,
+    `  dispatch: ${runtimeView.dispatchStatus || 'unknown'} / candidates ${runtimeView.dispatchCandidates || 0}${topCandidate ? ` / top ${topCandidate.exchange}/${topCandidate.symbol} ${topCandidate.action} ${topCandidate.urgency}` : ''}`,
+    `  runtime report: ${runtimeView.reportCommand}`,
+    `  runtime tuning: ${runtimeView.tuningCommand}`,
+    `  runtime dispatch: ${runtimeView.dispatchCommand}`,
+  ];
+}
+
 function formatText(report) {
   const sections = [
     {
@@ -1407,6 +1469,12 @@ function formatText(report) {
         : ['  position strategy audit 정보 없음'],
     },
     {
+      title: '■ position runtime',
+      lines: report.positionRuntimeReport
+        ? buildPositionRuntimeLines(report)
+        : ['  position runtime 정보 없음'],
+    },
+    {
       title: null,
       lines: buildHealthDecisionSection({
         title: '■ 운영 판단',
@@ -1484,6 +1552,9 @@ async function buildReport() {
   const positionStrategyAudit = await buildRuntimePositionStrategyAudit({ json: true }).catch(() => null);
   const positionStrategyHygiene = await runPositionStrategyHygiene({ json: true }).catch(() => null);
   const positionStrategyRemediation = await runPositionStrategyRemediation({ json: true }).catch(() => null);
+  const positionRuntimeReport = await runPositionRuntimeReport({ json: true, limit: 200 }).catch(() => null);
+  const positionRuntimeTuning = await runPositionRuntimeTuning({ json: true }).catch(() => null);
+  const positionRuntimeDispatch = await runPositionRuntimeDispatch({ json: true, limit: 20 }).catch(() => null);
   const positionStrategyRemediationHistory = positionStrategyRemediation?.remediationHistory || null;
   const hygieneRecommendedExchange = positionStrategyHygiene?.recommendedExchange?.exchange || null;
   const duplicateStrategyNormalization = await normalizeDuplicateStrategyProfiles({ apply: false, exchange: hygieneRecommendedExchange }).catch(() => null);
@@ -1498,6 +1569,7 @@ async function buildReport() {
   const cryptoGateActionPlan = buildCryptoGateActionPlan(capitalGuardBreakdown);
   const executionAttachView = buildExecutionAttachSnapshot(executionAttachAudit, executionAttachBackfill);
   const remediationView = buildFlatRemediationSnapshot(positionStrategyRemediation);
+  const positionRuntimeView = buildPositionRuntimeSnapshot(positionRuntimeReport, positionRuntimeTuning, positionRuntimeDispatch);
   const kisCapabilityHealth = await loadKisCapabilityHealth();
   const decision = buildDecision(
     serviceRows,
@@ -1531,6 +1603,9 @@ async function buildReport() {
     duplicateStrategyNormalization,
     orphanStrategyRetirement,
     executionRiskApprovalGuardHealth,
+    positionRuntimeReport,
+    positionRuntimeTuning,
+    positionRuntimeDispatch,
   );
 
   const report = {
@@ -1629,6 +1704,21 @@ async function buildReport() {
     positionStrategyRemediationNextCommandChanged: remediationView.nextCommandChanged,
     positionStrategyRemediationNextCommandPrevious: remediationView.nextCommandPrevious,
     positionStrategyRemediationNextCommandCurrent: remediationView.nextCommandCurrent,
+    positionRuntimeReport,
+    positionRuntimeTuning,
+    positionRuntimeDispatch,
+    positionRuntimeView,
+    positionRuntimeStatus: positionRuntimeView.status,
+    positionRuntimeHeadline: positionRuntimeView.headline,
+    positionRuntimeMetrics: positionRuntimeView.metrics,
+    positionRuntimeTuningStatus: positionRuntimeView.tuningStatus,
+    positionRuntimeTuningSuggestion: positionRuntimeView.tuningSuggestion,
+    positionRuntimeDispatchStatus: positionRuntimeView.dispatchStatus,
+    positionRuntimeDispatchCandidates: positionRuntimeView.dispatchCandidates,
+    positionRuntimeDispatchTopCandidate: positionRuntimeView.dispatchTopCandidate,
+    positionRuntimeReportCommand: positionRuntimeView.reportCommand,
+    positionRuntimeTuningCommand: positionRuntimeView.tuningCommand,
+    positionRuntimeDispatchCommand: positionRuntimeView.dispatchCommand,
     duplicateStrategyNormalization,
     orphanStrategyRetirement,
     latestOpsSnapshot,

@@ -18,6 +18,9 @@ import { publishAlert } from '../shared/alert-publisher.ts';
 import { validateTradeReview } from './validate-trade-review.ts';
 import { buildRuntimeLearningLoopReport } from './runtime-learning-loop-report.ts';
 import { runCollectionAudit } from './runtime-collection-audit.ts';
+import { runPositionRuntimeReport } from './runtime-position-runtime-report.ts';
+import { runPositionRuntimeTuning } from './runtime-position-runtime-tuning.ts';
+import { runPositionRuntimeDispatch } from './runtime-position-runtime-dispatch.ts';
 import { backfillTradeIncidentLinks } from './backfill-trade-incident-links.ts';
 import { buildPositionStrategyHygieneRemediationPlan, runPositionStrategyHygiene } from './runtime-position-strategy-hygiene.ts';
 import { runPositionStrategyRemediation } from './runtime-position-strategy-remediation.ts';
@@ -215,6 +218,36 @@ function buildHealthCheckRemediationView(remediation, hygiene, remediationHistor
     remediationNormalizeApplyCommand: remediationCommands.normalizeApply || remediationActionNormalizeApplyCommand || null,
     remediationRetireDryRunCommand: remediationCommands.retireDryRun || remediationActionRetireDryRunCommand || null,
     remediationRetireApplyCommand: remediationCommands.retireApply || remediationActionRetireApplyCommand || null,
+  };
+}
+
+function buildHealthCheckRuntimeView(runtimeReport, runtimeTuning, runtimeDispatch) {
+  const decision = runtimeReport?.decision || {};
+  const metrics = decision.metrics || {};
+  const suggestions = Array.isArray(runtimeTuning?.suggestions) ? runtimeTuning.suggestions : [];
+  const topSuggestion = suggestions[0] || null;
+  const candidates = Array.isArray(runtimeDispatch?.candidates) ? runtimeDispatch.candidates : [];
+  return {
+    status: decision.status || 'position_runtime_unknown',
+    headline: decision.headline || 'runtime state unavailable',
+    metrics: {
+      total: Number(metrics.total || 0),
+      active: Number(metrics.active || 0),
+      exitReady: Number(metrics.exitReady || 0),
+      adjustReady: Number(metrics.adjustReady || 0),
+      staleValidation: Number(metrics.staleValidation || 0),
+      fastLane: Number(metrics.fastLane || 0),
+    },
+    tuningStatus: runtimeTuning?.status || 'position_runtime_tuning_unknown',
+    tuningSuggestion: topSuggestion,
+    dispatchStatus: runtimeDispatch?.status || 'position_runtime_dispatch_unknown',
+    dispatchCandidates: candidates.length,
+    dispatchTopCandidate: candidates[0] || null,
+    reportCommand: 'npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:position-runtime -- --json',
+    tuningCommand: topSuggestion?.exchange
+      ? `npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:position-runtime-tuning -- --exchange=${topSuggestion.exchange} --json`
+      : 'npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:position-runtime-tuning -- --json',
+    dispatchCommand: 'npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:position-runtime-dispatch -- --json',
   };
 }
 
@@ -817,6 +850,59 @@ async function main() {
         key,
         level: 1,
         msg: `ℹ️ [루나 헬스] position strategy remediation 점검 실패\n${e.message}`,
+      });
+    }
+  }
+
+  try {
+    const runtimeReport = await runPositionRuntimeReport({ json: true, limit: 200 });
+    const runtimeTuning = await runPositionRuntimeTuning({ json: true }).catch(() => null);
+    const runtimeDispatch = await runPositionRuntimeDispatch({ json: true, limit: 20 }).catch(() => null);
+    const runtimeView = buildHealthCheckRuntimeView(runtimeReport, runtimeTuning, runtimeDispatch);
+    const key = 'position-runtime-loop';
+    const active = Number(runtimeView.metrics?.active || 0);
+    const adjustReady = Number(runtimeView.metrics?.adjustReady || 0);
+    const exitReady = Number(runtimeView.metrics?.exitReady || 0);
+    const criticalValidation = Number(runtimeView.metrics?.staleValidation || 0);
+    const topCandidate = runtimeView.dispatchTopCandidate || null;
+    const topSuggestion = runtimeView.tuningSuggestion || null;
+    const shouldAlert = exitReady > 0 || adjustReady > 0 || criticalValidation > 0 || runtimeView.tuningStatus === 'position_runtime_tuning_attention';
+    if (shouldAlert) {
+      if (hsm.canAlert(state, key)) {
+        issues.push({
+          key,
+          level: exitReady > 0 || criticalValidation > 0 ? 2 : 1,
+          meta: {
+            positionRuntimeView: runtimeView,
+            positionRuntimeStatus: runtimeView.status,
+            positionRuntimeHeadline: runtimeView.headline,
+            positionRuntimeMetrics: runtimeView.metrics,
+            positionRuntimeTuningStatus: runtimeView.tuningStatus,
+            positionRuntimeTuningSuggestion: runtimeView.tuningSuggestion,
+            positionRuntimeDispatchStatus: runtimeView.dispatchStatus,
+            positionRuntimeDispatchCandidates: runtimeView.dispatchCandidates,
+            positionRuntimeDispatchTopCandidate: runtimeView.dispatchTopCandidate,
+            positionRuntimeReportCommand: runtimeView.reportCommand,
+            positionRuntimeTuningCommand: runtimeView.tuningCommand,
+            positionRuntimeDispatchCommand: runtimeView.dispatchCommand,
+          },
+          msg: `⚠️ [루나 헬스] position runtime loop\n${runtimeView.headline}\nactive ${active} / fast-lane ${runtimeView.metrics?.fastLane || 0} / adjust ${adjustReady} / exit ${exitReady} / critical validation ${criticalValidation}\ntuning ${runtimeView.tuningStatus}${topSuggestion ? ` / ${topSuggestion.exchange} ${topSuggestion.status} ${topSuggestion.currentAverageCadenceMs || 'n/a'} -> ${topSuggestion.recommendedCadenceMs || 'n/a'}` : ''}\ndispatch ${runtimeView.dispatchStatus} / candidates ${runtimeView.dispatchCandidates}${topCandidate ? ` / top ${topCandidate.exchange}/${topCandidate.symbol} ${topCandidate.action} ${topCandidate.urgency}` : ''}\ncommands:\n- ${runtimeView.reportCommand}\n- ${runtimeView.tuningCommand}\n- ${runtimeView.dispatchCommand}`,
+        });
+      }
+    } else if (state[key]) {
+      recovers.push({
+        key,
+        msg: '✅ [루나 헬스] position runtime loop 안정화\nruntime adjust/exit/critical validation attention 없음 — 자동 감지',
+      });
+      hsm.clearAlert(state, key);
+    }
+  } catch (e) {
+    const key = 'position-runtime-loop-check-failed';
+    if (hsm.canAlert(state, key)) {
+      issues.push({
+        key,
+        level: 1,
+        msg: `ℹ️ [루나 헬스] position runtime loop 점검 실패\n${e.message}`,
       });
     }
   }
