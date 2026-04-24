@@ -1,6 +1,35 @@
-# 세션 인수인계 — 2026-04-24 (CODEX_LUNA_AUTOTRADE_LIFECYCLE_PHASE6_DEEP_PLAN 검증 — 74차 세션)
+# 세션 인수인계 — 2026-04-25 (CODEX_BLOG_L5_OMNICHANNEL_MARKETING_PLAN P0 구현 — 75차 세션)
 
-## 완료 요약 ✅ (74차 세션)
+## 완료 요약 ✅ (75차 세션) — CODEX_BLOG_L5_OMNICHANNEL_MARKETING_PLAN P0
+
+### 블로팀 L5 옴니채널 마케팅 P0 구현
+
+- **migration 021** (`bots/blog/migrations/021-omnichannel-marketing-os.sql`): marketing_campaigns / platform_variants / publish_queue / creative_quality / channel_metrics 5개 테이블 추가. OPS DB에 반드시 migration 실행 필요.
+- **meta-graph-config.ts** (`packages/core/lib/meta-graph-config.ts`): Meta 통합 credential resolver 신규. Instagram/Facebook 설정 분리.
+- **omnichannel 모듈** (`bots/blog/lib/omnichannel/`): campaign-planner / platform-variant-builder / publish-queue / creative-quality-gate 4개 파일 신규.
+- **facebook-publisher.ts**: `getInstagramConfig()` 의존 제거 → `getFacebookConfigFromMeta()` 전환 완료.
+- **check-instagram-readiness.ts**: 3단계 readiness (`credentialReady`/`assetReady`/`publishReady`) 분리. `hostedRecovery=true`를 `needsAttention=false`로 숨기지 않고 `recoveryStatus: 'recoverable'`로 명시.
+- **doctor-social-publish.ts**: `hostedRecovery=recoverable` → `area: 'social.instagram.recovering'` 분류, `prepare:instagram-media` 자동 처리 안내.
+- **auto-instagram-publish.ts / auto-facebook-publish.ts**: queue-first → strategy_native → legacy naver_post fallback 순서로 재설계.
+- **strategy-evolver.ts + strategy-loader.ts**: `campaignMix` / `platformTargets` / `engagementPolicy` / `attributionPolicy` / `socialNativeRequired` 필드 추가 (기존 필드 하위 호환).
+
+### 검증 결과
+- `check:instagram` → `publishReady: false, credentialReady: true, assetReady: false, recoveryStatus: 'recoverable'` (L5 기준 정확)
+- `check:facebook` → `ready: true` 정상
+- `doctor:social` → `area: 'social.instagram.recovering'` (기존 숨김 동작 수정)
+- `auto-instagram-publish --dry-run` → queue-first 경로 작동, DB 마이그레이션 전이라 legacy fallback으로 안전 처리
+- `auto-facebook-publish --dry-run` → 동일 검증 통과
+- Jest 13/13 통과 (omnichannel-campaign-planner + creative-quality-gate)
+
+### 다음 세션 필수 작업
+1. **OPS DB migration 실행**: `psql -d jay -f bots/blog/migrations/021-omnichannel-marketing-os.sql`
+2. **P0 완료 기준 검증**: migration 후 `auto-instagram-publish --dry-run`에서 queue-first 경로 완전 동작 확인
+3. **doctor:marketing "소셜은 네이버 파생 중심" 추천 제거**: strategy_native 성공 기록 3건 이상 누적 후 자동 해소
+4. **P1 구현**: Meta Insights 수집 확장 / Revenue Attribution 고도화 / 독립 콘텐츠 생성 파이프라인
+
+---
+
+## 이전 세션 요약 ✅ (74차 세션)
 
 ### Phase 6 구현 검증 + 완전자율 폐루프 확인
 
