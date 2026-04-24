@@ -971,6 +971,14 @@ function buildFlatRemediationSnapshot(positionStrategyRemediation) {
   const actionNormalizeApplyCommand = positionStrategyRemediation?.remediationActionNormalizeApplyCommand || flat?.actionNormalizeApplyCommand || commandsBase?.normalizeApply || null;
   const actionRetireDryRunCommand = positionStrategyRemediation?.remediationActionRetireDryRunCommand || flat?.actionRetireDryRunCommand || commandsBase?.retireDryRun || null;
   const actionRetireApplyCommand = positionStrategyRemediation?.remediationActionRetireApplyCommand || flat?.actionRetireApplyCommand || commandsBase?.retireApply || null;
+  const autonomousStatus = positionStrategyRemediation?.remediationAutonomousStatus || positionStrategyRemediation?.remediationAutonomous?.status || 'autonomous_action_blocked_by_safety';
+  const autonomousReason = positionStrategyRemediation?.remediationAutonomousReason || positionStrategyRemediation?.remediationAutonomous?.reason || null;
+  const autonomousContext = positionStrategyRemediation?.remediationAutonomousContext || positionStrategyRemediation?.remediationAutonomous?.context || null;
+  const observationHint = !refreshState?.stale && autonomousReason === 'autonomous_apply_disabled'
+    ? 'history는 최신이며 자동 apply는 비활성 상태라 normalize/retire dry-run 관찰이 우선입니다.'
+    : (!refreshState?.stale && autonomousContext?.stableEnough === true && autonomousContext?.safeEnough === false
+      ? `history는 최신이며 safe cycle이 아직 부족합니다. duplicate ${autonomousContext?.duplicateConsecutiveSafeCycles || 0}/${autonomousContext?.safeCycles || 'n/a'}, orphan ${autonomousContext?.orphanConsecutiveSafeCycles || 0}/${autonomousContext?.safeCycles || 'n/a'}.`
+      : null);
   const commands = {
     report: actionReportCommand || null,
     history: actionHistoryCommand || null,
@@ -1018,6 +1026,10 @@ function buildFlatRemediationSnapshot(positionStrategyRemediation) {
     refreshStale: positionStrategyRemediation?.remediationRefreshStale ?? flat?.refreshStale ?? refreshState?.stale ?? null,
     refreshReason: positionStrategyRemediation?.remediationRefreshReason || flat?.refreshReason || refreshState?.reason || null,
     refreshCommand,
+    autonomousStatus,
+    autonomousReason,
+    autonomousContext,
+    observationHint,
     reportCommand: commands.report,
     historyCommand: commands.history,
     normalizeDryRunCommand: commands.normalizeDryRun,
@@ -1102,8 +1114,8 @@ function buildPositionStrategyAuditRemediationLines(report) {
         `  remediation headline: ${report.positionStrategyRemediationHeadline || report.positionStrategyRemediation.decision?.headline || 'n/a'}`,
         `  remediation next: ${report.positionStrategyRemediationNextCommand || 'n/a'}`,
         `  remediation refresh state: needed ${report.positionStrategyRemediationRefreshNeeded ? 'yes' : 'no'} / stale ${report.positionStrategyRemediationRefreshStale ? 'yes' : 'no'} / command ${report.positionStrategyRemediationRefreshCommand || report.positionStrategyRemediationRefresh?.command || 'n/a'}`,
-        ...(report.positionStrategyRemediationRefreshReason || report.positionStrategyRemediationRefresh?.reason
-          ? [`  remediation refresh: ${report.positionStrategyRemediationRefreshReason || report.positionStrategyRemediationRefresh?.reason}`]
+        ...(report.positionStrategyRemediationObservationHint || report.positionStrategyRemediationRefreshReason || report.positionStrategyRemediationRefresh?.reason
+          ? [`  remediation note: ${report.positionStrategyRemediationObservationHint || report.positionStrategyRemediationRefreshReason || report.positionStrategyRemediationRefresh?.reason}`]
           : []),
       ]
       : []),
@@ -1134,7 +1146,7 @@ function buildPositionStrategyRemediationDecisionReason({
   orphanStrategyRetirement,
   positionStrategyOrphans,
 }) {
-  return `position strategy remediation — ${remediationView.headline || positionStrategyRemediation?.decision?.headline || positionStrategyHygiene?.decision?.headline || '포지션 전략 위생 점검 필요'} / duplicate managed ${remediationView.duplicateManaged ?? positionStrategyAudit?.duplicateManagedProfileScopes ?? 0} / orphan ${remediationView.orphanProfiles ?? positionStrategyOrphans ?? 0} / unmatched managed ${remediationView.unmatchedManaged ?? positionStrategyAudit?.unmatchedManagedPositions ?? 0}${(remediationView.trendHistoryCount !== undefined || positionStrategyRemediationHistory) ? ` / history changed ${remediationView.trendChanged ? 'yes' : 'no'} / next changed ${remediationView.trendNextChanged ? 'yes' : 'no'}${remediationView.trendNextChanged ? ` (${remediationView.nextCommandPrevious || positionStrategyRemediationHistory?.nextCommandTransition?.previous || 'none'} -> ${remediationView.nextCommandCurrent || positionStrategyRemediationHistory?.nextCommandTransition?.current || 'none'})` : ''} / history age ${remediationView.trendAgeMinutes ?? positionStrategyRemediationHistory?.ageMinutes ?? 'n/a'}m / history stale ${remediationView.trendStale ? 'yes' : 'no'} / duplicate delta ${((remediationView.trendDuplicateDelta ?? positionStrategyRemediationHistory?.delta?.duplicateManaged ?? 0) >= 0) ? '+' : ''}${(remediationView.trendDuplicateDelta ?? positionStrategyRemediationHistory?.delta?.duplicateManaged) || 0} / orphan delta ${((remediationView.trendOrphanDelta ?? positionStrategyRemediationHistory?.delta?.orphanProfiles ?? 0) >= 0) ? '+' : ''}${(remediationView.trendOrphanDelta ?? positionStrategyRemediationHistory?.delta?.orphanProfiles) || 0}` : ''}${remediationView.refreshReason ? ` / ${remediationView.refreshReason}` : ''} / duplicate apply ${duplicateStrategyNormalization?.decision?.safeToApply === true ? 'yes' : 'no'} / orphan apply ${orphanStrategyRetirement?.decision?.safeToApply === true ? 'yes' : 'no'} / next command ${remediationView.nextCommand || 'npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:position-strategy-remediation -- --json'}`;
+  return `position strategy remediation — ${remediationView.headline || positionStrategyRemediation?.decision?.headline || positionStrategyHygiene?.decision?.headline || '포지션 전략 위생 점검 필요'} / duplicate managed ${remediationView.duplicateManaged ?? positionStrategyAudit?.duplicateManagedProfileScopes ?? 0} / orphan ${remediationView.orphanProfiles ?? positionStrategyOrphans ?? 0} / unmatched managed ${remediationView.unmatchedManaged ?? positionStrategyAudit?.unmatchedManagedPositions ?? 0}${(remediationView.trendHistoryCount !== undefined || positionStrategyRemediationHistory) ? ` / history changed ${remediationView.trendChanged ? 'yes' : 'no'} / next changed ${remediationView.trendNextChanged ? 'yes' : 'no'}${remediationView.trendNextChanged ? ` (${remediationView.nextCommandPrevious || positionStrategyRemediationHistory?.nextCommandTransition?.previous || 'none'} -> ${remediationView.nextCommandCurrent || positionStrategyRemediationHistory?.nextCommandTransition?.current || 'none'})` : ''} / history age ${remediationView.trendAgeMinutes ?? positionStrategyRemediationHistory?.ageMinutes ?? 'n/a'}m / history stale ${remediationView.trendStale ? 'yes' : 'no'} / duplicate delta ${((remediationView.trendDuplicateDelta ?? positionStrategyRemediationHistory?.delta?.duplicateManaged ?? 0) >= 0) ? '+' : ''}${(remediationView.trendDuplicateDelta ?? positionStrategyRemediationHistory?.delta?.duplicateManaged) || 0} / orphan delta ${((remediationView.trendOrphanDelta ?? positionStrategyRemediationHistory?.delta?.orphanProfiles ?? 0) >= 0) ? '+' : ''}${(remediationView.trendOrphanDelta ?? positionStrategyRemediationHistory?.delta?.orphanProfiles) || 0}` : ''}${remediationView.observationHint ? ` / ${remediationView.observationHint}` : (remediationView.refreshReason ? ` / ${remediationView.refreshReason}` : '')} / duplicate apply ${duplicateStrategyNormalization?.decision?.safeToApply === true ? 'yes' : 'no'} / orphan apply ${orphanStrategyRetirement?.decision?.safeToApply === true ? 'yes' : 'no'} / next command ${remediationView.nextCommand || 'npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:position-strategy-remediation -- --json'}`;
 }
 
 function buildPositionRuntimeSnapshot(runtimeReport, runtimeTuning, runtimeDispatch) {

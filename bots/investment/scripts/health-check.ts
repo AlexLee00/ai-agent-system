@@ -172,6 +172,14 @@ function buildHealthCheckRemediationView(remediation, hygiene, remediationHistor
   const remediationActionNormalizeApplyCommand = remediation?.remediationActionNormalizeApplyCommand || remediationFlat?.actionNormalizeApplyCommand || remediationCommandsBase?.normalizeApply || remediationSummary?.actions?.normalizeApplyCommand || null;
   const remediationActionRetireDryRunCommand = remediation?.remediationActionRetireDryRunCommand || remediationFlat?.actionRetireDryRunCommand || remediationCommandsBase?.retireDryRun || remediationSummary?.actions?.retireDryRunCommand || null;
   const remediationActionRetireApplyCommand = remediation?.remediationActionRetireApplyCommand || remediationFlat?.actionRetireApplyCommand || remediationCommandsBase?.retireApply || remediationSummary?.actions?.retireApplyCommand || null;
+  const remediationAutonomousStatus = remediation?.remediationAutonomousStatus || remediation?.remediationAutonomous?.status || 'autonomous_action_blocked_by_safety';
+  const remediationAutonomousReason = remediation?.remediationAutonomousReason || remediation?.remediationAutonomous?.reason || null;
+  const remediationAutonomousContext = remediation?.remediationAutonomousContext || remediation?.remediationAutonomous?.context || null;
+  const remediationObservationHint = !remediationRefreshStale && remediationAutonomousReason === 'autonomous_apply_disabled'
+    ? 'history는 최신이며 자동 apply는 비활성 상태입니다. normalize/retire dry-run으로 duplicate·orphan 후보를 계속 관찰합니다.'
+    : (!remediationRefreshStale && remediationAutonomousContext?.stableEnough === true && remediationAutonomousContext?.safeEnough === false
+      ? `history는 최신이며 safe cycle이 아직 부족합니다. duplicate ${remediationAutonomousContext?.duplicateConsecutiveSafeCycles || 0}/${remediationAutonomousContext?.safeCycles || 'n/a'}, orphan ${remediationAutonomousContext?.orphanConsecutiveSafeCycles || 0}/${remediationAutonomousContext?.safeCycles || 'n/a'}.`
+      : null);
   const remediationCommands = {
     report: remediationActionReportCommand || null,
     autonomousApply: remediationActionAutonomousApplyCommand || null,
@@ -236,6 +244,10 @@ function buildHealthCheckRemediationView(remediation, hygiene, remediationHistor
     remediationActionNormalizeApplyCommand,
     remediationActionRetireDryRunCommand,
     remediationActionRetireApplyCommand,
+    remediationAutonomousStatus,
+    remediationAutonomousReason,
+    remediationAutonomousContext,
+    remediationObservationHint,
     remediationReportCommand: remediationCommands.report || remediationActionReportCommand || null,
     remediationHistoryCommand: remediationCommands.history || remediationActionHistoryCommand || null,
     remediationNormalizeDryRunCommand: remediationCommands.normalizeDryRun || remediationActionNormalizeDryRunCommand || null,
@@ -961,7 +973,7 @@ async function main() {
         const remediationRefreshStale = remediationView.remediationRefreshStale;
         const remediationRefreshReason = remediationView.remediationRefreshReason;
         const remediationRefreshCommand = remediationView.remediationRefreshCommand;
-        const remediationRefreshHint = remediationRefreshReason || null;
+        const remediationRefreshHint = remediationView.remediationObservationHint || remediationRefreshReason || null;
         const remediationTrend = remediationView.remediationTrend;
         const remediationNextCommand = remediationView.remediationNextCommand;
         const remediationNextCommandTransition = remediationView.remediationNextCommandTransition;
@@ -986,7 +998,9 @@ async function main() {
         }
         const remediationAlertLevel = remediationRefreshStale
           ? 2
-          : (Number(hygiene?.audit?.duplicateManagedProfileScopes || 0) > 0 || Number(hygiene?.audit?.unmatchedManagedPositions || 0) > 0 ? 2 : 1);
+          : ((remediationView.remediationAutonomousContext?.stableEnough === true && remediationView.remediationAutonomousContext?.safeEnough === false)
+            ? 1
+            : (Number(hygiene?.audit?.duplicateManagedProfileScopes || 0) > 0 || Number(hygiene?.audit?.unmatchedManagedPositions || 0) > 0 ? 2 : 1));
         issues.push({
           key,
           level: remediationAlertLevel,
@@ -1041,11 +1055,13 @@ async function main() {
             recommendedExchange,
             remediationPlan,
             remediationActions,
-            remediationAutonomousStatus: remediation?.remediationAutonomousStatus || 'autonomous_action_blocked_by_safety',
-            remediationAutonomousReason: remediation?.remediationAutonomousReason || null,
+            remediationAutonomousStatus: remediationView.remediationAutonomousStatus,
+            remediationAutonomousReason: remediationView.remediationAutonomousReason,
+            remediationAutonomousContext: remediationView.remediationAutonomousContext || null,
+            remediationObservationHint: remediationView.remediationObservationHint || null,
             remediationAutonomousVerify: remediation?.remediationAutonomousVerify || null,
           },
-          msg: `⚠️ [투자팀 루나 헬스] position strategy remediation\n${remediationHeadline}\naction status: ${remediation?.remediationAutonomousStatus || 'autonomous_action_blocked_by_safety'}${remediation?.remediationAutonomousReason ? ` (${remediation.remediationAutonomousReason})` : ''}\nduplicate managed scopes ${remediationDuplicateManaged} / orphan profiles ${remediationOrphanProfiles} / unmatched managed ${remediationUnmatchedManaged}${remediationHistoryLine ? `\n${remediationHistoryLine}` : ''}${remediationRefreshHint ? `\n${remediationRefreshHint}` : ''}${recommendedExchange ? `\nrecommended exchange: ${recommendedExchange}` : ''}${duplicateSample ? `\nduplicate sample: ${duplicateSample.exchange}/${duplicateSample.symbol} keeper=${duplicateSample.keeperProfileId} retirements=${duplicateSample.retirements?.length || 0}` : ''}${orphanSample ? `\norphan sample: ${orphanSample.exchange}/${orphanSample.symbol} ${orphanSample.tradeMode} ${orphanSample.lifecycleStatus}` : ''}\noperator note: debug commands are available in alert payload.meta`,
+          msg: `⚠️ [투자팀 루나 헬스] position strategy remediation\n${remediationHeadline}\naction status: ${remediationView.remediationAutonomousStatus}${remediationView.remediationAutonomousReason ? ` (${remediationView.remediationAutonomousReason})` : ''}\nduplicate managed scopes ${remediationDuplicateManaged} / orphan profiles ${remediationOrphanProfiles} / unmatched managed ${remediationUnmatchedManaged}${remediationHistoryLine ? `\n${remediationHistoryLine}` : ''}${remediationRefreshHint ? `\n${remediationRefreshHint}` : ''}${recommendedExchange ? `\nrecommended exchange: ${recommendedExchange}` : ''}${duplicateSample ? `\nduplicate sample: ${duplicateSample.exchange}/${duplicateSample.symbol} keeper=${duplicateSample.keeperProfileId} retirements=${duplicateSample.retirements?.length || 0}` : ''}${orphanSample ? `\norphan sample: ${orphanSample.exchange}/${orphanSample.symbol} ${orphanSample.tradeMode} ${orphanSample.lifecycleStatus}` : ''}\noperator note: debug commands are available in alert payload.meta`,
         });
       }
     } else if (state[key] || state[legacyKey]) {
