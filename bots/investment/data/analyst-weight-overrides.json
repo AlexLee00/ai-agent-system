@@ -2,25 +2,25 @@
   "default": {
     "taMtf": 0.3,
     "onchain": 0.4,
-    "sentiment": 0.25,
-    "news": 0.15
+    "sentiment": 0.2,
+    "news": 0.1
   },
   "crypto": {
     "taMtf": 0.3,
     "onchain": 0.4,
-    "sentiment": 0.25,
-    "news": 0.15
+    "sentiment": 0.2,
+    "news": 0.1
   },
   "stocksPaper": {
     "taMtf": 0.3,
     "onchain": 0.4,
-    "sentiment": 0.25,
-    "news": 0.15
+    "sentiment": 0.2,
+    "news": 0.1
   },
   "stocksLive": {
     "taMtf": 0.3,
     "onchain": 0.4,
-    "sentiment": 0.25,
-    "news": 0.15
+    "sentiment": 0.2,
+    "news": 0.1
   }
 }

@@ -6,5 +6,21 @@
     "appliedFrom": 0.35,
     "appliedTo": 0.4,
     "appliedAt": "2026-04-23T03:39:20.568Z"
+  },
+  "sophia": {
+    "evidenceKey": "0.2000:5",
+    "accuracy": 0.2,
+    "sampleCount": 5,
+    "appliedFrom": 0.25,
+    "appliedTo": 0.2,
+    "appliedAt": "2026-04-24T23:00:46.944Z"
+  },
+  "hermes": {
+    "evidenceKey": "0.2000:5",
+    "accuracy": 0.2,
+    "sampleCount": 5,
+    "appliedFrom": 0.15,
+    "appliedTo": 0.1,
+    "appliedAt": "2026-04-24T23:00:46.944Z"
   }
 }
