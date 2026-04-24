@@ -125,7 +125,34 @@ async function test_runReview_force_executes() {
   console.log('✅ reviewer: runReview executes with force=true');
 }
 
-// ─── Test 6: analyzeChanges — 빈 diff ────────────────────────────────
+// ─── Test 6: runReview — docs-only 변경은 TS 체크 생략 ───────────────
+
+async function test_runReview_docs_only_skips_typescript_check() {
+  const executed = [];
+  const mocks = makeReviewerMocks({
+    child_process: {
+      execSync: (cmd) => {
+        executed.push(cmd);
+        if (cmd.includes('git diff')) return 'docs/auto_dev/CODEX_DOC_ONLY.md';
+        if (cmd.includes('git log')) return 'abc1234 feat(claude): docs only';
+        if (cmd.includes('npm test')) return '5 passing\n0 failing';
+        if (cmd.includes('npx tsc')) throw new Error('tsc should be skipped for docs-only changes');
+        return '';
+      },
+    },
+  });
+
+  await withMocks(mocks, async (reviewer) => {
+    const result = await reviewer.runReview({ force: true, test: true });
+    assert.strictEqual(result.skipped, true, 'docs-only 변경은 리뷰 스킵');
+    assert.strictEqual(result.files.length, 0, 'docs-only 변경은 JS/TS 파일 없음');
+  });
+
+  assert.ok(!executed.some((cmd) => cmd.includes('npx tsc')), 'docs-only 변경 시 npx tsc 미실행');
+  console.log('✅ reviewer: docs-only change skips TypeScript check');
+}
+
+// ─── Test 7: analyzeChanges — 빈 diff ────────────────────────────────
 
 async function test_analyzeChanges_empty_diff() {
   const mocks = makeReviewerMocks({
@@ -141,7 +168,7 @@ async function test_analyzeChanges_empty_diff() {
   console.log('✅ reviewer: analyzeChanges handles empty diff');
 }
 
-// ─── Test 7: reportToTelegram — postAlarm 호출 ───────────────────────
+// ─── Test 8: reportToTelegram — postAlarm 호출 ───────────────────────
 
 async function test_reportToTelegram_calls_postAlarm() {
   const postAlarmCalls = [];
@@ -173,6 +200,7 @@ async function main() {
     test_testCoverageDelta_detects_regression,
     test_runReview_kill_switch_off_skips,
     test_runReview_force_executes,
+    test_runReview_docs_only_skips_typescript_check,
     test_analyzeChanges_empty_diff,
     test_reportToTelegram_calls_postAlarm,
   ];

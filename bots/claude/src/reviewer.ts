@@ -264,7 +264,9 @@ async function runReview(options = {}) {
 
   const files    = await getChangedFiles({ ...options, rootDir });
   const jsFiles  = files.filter(file => /\.(m?js|cjs|ts|tsx)$/i.test(file));
-  const tsIssues = runTypeScriptCheck({ rootDir });
+  const tsIssues = jsFiles.length > 0
+    ? runTypeScriptCheck({ rootDir })
+    : [];
 
   if (jsFiles.length === 0 && tsIssues.length === 0) {
     const message = '✅ 코드 리뷰 스킵 — 변경된 JS/TS 파일이 없습니다.';
