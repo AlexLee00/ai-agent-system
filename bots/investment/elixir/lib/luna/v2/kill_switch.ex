@@ -24,6 +24,23 @@ defmodule Luna.V2.KillSwitch do
     LUNA_RAG_ENABLED=true          → Agentic RAG 활성
   """
 
+  @runtime_override_file "/Users/alexlee/projects/ai-agent-system/bots/investment/output/ops/position-runtime-overrides.json"
+
+  defp runtime_override(key) when is_atom(key) do
+    with true <- File.exists?(@runtime_override_file),
+         {:ok, raw} <- File.read(@runtime_override_file),
+         {:ok, overrides} <- Jason.decode(raw),
+         value when not is_nil(value) <- Map.get(overrides, Atom.to_string(key)) do
+      value
+    else
+      _ -> nil
+    end
+  end
+
+  defp get_env_override(key, fallback) when is_atom(key) do
+    runtime_override(key) || Application.get_env(:luna, key, fallback)
+  end
+
   def v2_enabled?, do: Application.get_env(:luna, :v2_enabled, false)
   def commander_enabled?, do: Application.get_env(:luna, :commander_enabled, false)
   def mapek_enabled?, do: Application.get_env(:luna, :mapek_enabled, false)
@@ -54,21 +71,21 @@ defmodule Luna.V2.KillSwitch do
   def position_watch_enabled?, do: Application.get_env(:luna, :position_watch_enabled, true)
 
   def position_watch_interval_ms,
-    do: Application.get_env(:luna, :position_watch_interval_ms, 60_000)
+    do: get_env_override(:position_watch_interval_ms, 60_000)
 
-  def position_watch_idle_ms, do: Application.get_env(:luna, :position_watch_idle_ms, 60_000)
+  def position_watch_idle_ms, do: get_env_override(:position_watch_idle_ms, 60_000)
 
   def position_watch_crypto_realtime_ms,
-    do: Application.get_env(:luna, :position_watch_crypto_realtime_ms, 15_000)
+    do: get_env_override(:position_watch_crypto_realtime_ms, 15_000)
 
   def position_watch_stock_realtime_ms,
-    do: Application.get_env(:luna, :position_watch_stock_realtime_ms, 15_000)
+    do: get_env_override(:position_watch_stock_realtime_ms, 15_000)
 
   def position_watch_stock_offhours_ms,
-    do: Application.get_env(:luna, :position_watch_stock_offhours_ms, 300_000)
+    do: get_env_override(:position_watch_stock_offhours_ms, 300_000)
 
   def position_watch_fallback_ms,
-    do: Application.get_env(:luna, :position_watch_fallback_ms, 60_000)
+    do: get_env_override(:position_watch_fallback_ms, 60_000)
 
   def position_watch_stop_loss_pct,
     do: Application.get_env(:luna, :position_watch_stop_loss_pct, 0.05)

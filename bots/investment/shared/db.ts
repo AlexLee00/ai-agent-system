@@ -1264,6 +1264,7 @@ export async function getPositionStrategyProfile(symbol, {
 
 export async function getActivePositionStrategyProfiles({
   exchange = null,
+  symbol = null,
   status = 'active',
   limit = 500,
 } = {}) {
@@ -1273,6 +1274,10 @@ export async function getActivePositionStrategyProfiles({
   if (exchange) {
     params.push(exchange);
     conditions.push(`exchange = $${params.length}`);
+  }
+  if (symbol) {
+    params.push(symbol);
+    conditions.push(`symbol = $${params.length}`);
   }
   if (status) {
     params.push(status);

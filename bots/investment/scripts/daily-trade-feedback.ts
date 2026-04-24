@@ -460,6 +460,10 @@ function buildPositionRuntimeView(runtimeReport, runtimeTuning, runtimeDispatch)
       ? `npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:position-runtime-tuning -- --exchange=${topSuggestion.exchange} --json`
       : 'npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:position-runtime-tuning -- --json',
     dispatchCommand: 'npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:position-runtime-dispatch -- --json',
+    autotuneCommand: topSuggestion?.exchange
+      ? `npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:position-runtime-autotune -- --exchange=${topSuggestion.exchange} --apply --confirm=runtime-autotune --json`
+      : 'npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:position-runtime-autotune -- --apply --confirm=runtime-autotune --json',
+    autopilotCommand: 'npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:position-runtime-autopilot -- --execute --apply-tuning --execute-dispatch --confirm=position-runtime-autopilot --json',
   };
 }
 
@@ -472,6 +476,11 @@ function buildPositionRuntimeLine(runtimeView) {
 function buildPositionRuntimeCommandLine(runtimeView) {
   if (!runtimeView) return null;
   return `🚦 runtime dispatch: ${runtimeView.dispatchCommand}`;
+}
+
+function buildPositionRuntimeAutopilotLine(runtimeView) {
+  if (!runtimeView) return null;
+  return `🤖 runtime autopilot: ${runtimeView.autopilotCommand}`;
 }
 
 function buildMinOrderPressureLine(minOrderPressureSummary) {
@@ -656,6 +665,8 @@ function buildTelegramMessage(dateKst, feedback, analystAccuracy, screeningSumma
   if (remediationLines.remediationCommandLine) lines.push(remediationLines.remediationCommandLine);
   const runtimeCommandLine = buildPositionRuntimeCommandLine(positionRuntimeView);
   if (runtimeCommandLine) lines.push(runtimeCommandLine);
+  const runtimeAutopilotLine = buildPositionRuntimeAutopilotLine(positionRuntimeView);
+  if (runtimeAutopilotLine) lines.push(runtimeAutopilotLine);
   const positionStrategyHygieneCommandLine = buildPositionStrategyHygieneCommandLine(positionStrategyHygieneSummary);
   if (positionStrategyHygieneCommandLine) lines.push(positionStrategyHygieneCommandLine);
   if (Array.isArray(feedback.nextActions) && feedback.nextActions.length > 0) {
@@ -697,6 +708,7 @@ async function storeDailyFeedbackRag(dateKst, feedback, analystAccuracy, screeni
     remediationLines.remediationNextCommandLine,
     remediationLines.remediationCommandLine,
     buildPositionRuntimeCommandLine(positionRuntimeView),
+    buildPositionRuntimeAutopilotLine(positionRuntimeView),
     buildPositionStrategyHygieneCommandLine(positionStrategyHygieneSummary),
     `다음 액션: ${(feedback.nextActions || []).join(' / ') || '없음'}`,
   ].filter(Boolean).join('\n');
@@ -736,6 +748,8 @@ async function storeDailyFeedbackRag(dateKst, feedback, analystAccuracy, screeni
     position_strategy_hygiene_remediation: hygieneRemediationPlan || {},
     position_strategy_hygiene_recommended_exchange: positionStrategyHygieneSummary?.recommendedExchange?.exchange || null,
     position_strategy_hygiene_recommended_count: Number(positionStrategyHygieneSummary?.recommendedExchange?.count || 0),
+    position_runtime_autotune_command: positionRuntimeView?.autotuneCommand || null,
+    position_runtime_autopilot_command: positionRuntimeView?.autopilotCommand || null,
   }, 'luna');
 }
 
@@ -833,6 +847,8 @@ async function runDailyTradeFeedback({ dateKst, dryRun = false }) {
           positionRuntimeExitReady: positionRuntimeView?.metrics?.exitReady || 0,
           positionRuntimeAdjustReady: positionRuntimeView?.metrics?.adjustReady || 0,
           positionRuntimeDispatchCommand: positionRuntimeView?.dispatchCommand || null,
+          positionRuntimeAutotuneCommand: positionRuntimeView?.autotuneCommand || null,
+          positionRuntimeAutopilotCommand: positionRuntimeView?.autopilotCommand || null,
           hygieneStatus: hygieneRemediationPlan?.status || null,
           hygieneExchange: hygieneRemediationPlan?.recommendedExchange || null,
           ...buildDailyFeedbackRemediationMemoryMetadata(
@@ -874,6 +890,8 @@ async function runDailyTradeFeedback({ dateKst, dryRun = false }) {
     positionRuntimeReportCommand: positionRuntimeView.reportCommand,
     positionRuntimeTuningCommand: positionRuntimeView.tuningCommand,
     positionRuntimeDispatchCommand: positionRuntimeView.dispatchCommand,
+    positionRuntimeAutotuneCommand: positionRuntimeView.autotuneCommand,
+    positionRuntimeAutopilotCommand: positionRuntimeView.autopilotCommand,
     minOrderPressureSummary,
     learningLoopSummary,
     positionStrategyAuditSummary,

@@ -7,12 +7,14 @@ import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
 function parseArgs(argv = []) {
   const args = {
     exchange: null,
+    symbol: null,
     json: false,
     limit: 50,
   };
   for (const raw of argv) {
     if (raw === '--json') args.json = true;
     else if (raw.startsWith('--exchange=')) args.exchange = raw.split('=').slice(1).join('=') || null;
+    else if (raw.startsWith('--symbol=')) args.symbol = raw.split('=').slice(1).join('=') || null;
     else if (raw.startsWith('--limit=')) args.limit = Math.max(1, Number(raw.split('=').slice(1).join('=') || 50));
   }
   return args;
@@ -61,6 +63,7 @@ function renderText(payload = {}) {
 export async function runPositionRuntimeReport(args = {}) {
   const profiles = await db.getActivePositionStrategyProfiles({
     exchange: args.exchange || null,
+    symbol: args.symbol || null,
     limit: args.limit || 50,
   });
   const rows = (profiles || []).map((row) => ({

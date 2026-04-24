@@ -248,6 +248,10 @@ function buildHealthCheckRuntimeView(runtimeReport, runtimeTuning, runtimeDispat
       ? `npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:position-runtime-tuning -- --exchange=${topSuggestion.exchange} --json`
       : 'npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:position-runtime-tuning -- --json',
     dispatchCommand: 'npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:position-runtime-dispatch -- --json',
+    autotuneCommand: topSuggestion?.exchange
+      ? `npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:position-runtime-autotune -- --exchange=${topSuggestion.exchange} --apply --confirm=runtime-autotune --json`
+      : 'npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:position-runtime-autotune -- --apply --confirm=runtime-autotune --json',
+    autopilotCommand: 'npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:position-runtime-autopilot -- --execute --apply-tuning --execute-dispatch --confirm=position-runtime-autopilot --json',
   };
 }
 
@@ -885,8 +889,10 @@ async function main() {
             positionRuntimeReportCommand: runtimeView.reportCommand,
             positionRuntimeTuningCommand: runtimeView.tuningCommand,
             positionRuntimeDispatchCommand: runtimeView.dispatchCommand,
+            positionRuntimeAutotuneCommand: runtimeView.autotuneCommand,
+            positionRuntimeAutopilotCommand: runtimeView.autopilotCommand,
           },
-          msg: `⚠️ [루나 헬스] position runtime loop\n${runtimeView.headline}\nactive ${active} / fast-lane ${runtimeView.metrics?.fastLane || 0} / adjust ${adjustReady} / exit ${exitReady} / critical validation ${criticalValidation}\ntuning ${runtimeView.tuningStatus}${topSuggestion ? ` / ${topSuggestion.exchange} ${topSuggestion.status} ${topSuggestion.currentAverageCadenceMs || 'n/a'} -> ${topSuggestion.recommendedCadenceMs || 'n/a'}` : ''}\ndispatch ${runtimeView.dispatchStatus} / candidates ${runtimeView.dispatchCandidates}${topCandidate ? ` / top ${topCandidate.exchange}/${topCandidate.symbol} ${topCandidate.action} ${topCandidate.urgency}` : ''}\ncommands:\n- ${runtimeView.reportCommand}\n- ${runtimeView.tuningCommand}\n- ${runtimeView.dispatchCommand}`,
+          msg: `⚠️ [루나 헬스] position runtime loop\n${runtimeView.headline}\nactive ${active} / fast-lane ${runtimeView.metrics?.fastLane || 0} / adjust ${adjustReady} / exit ${exitReady} / critical validation ${criticalValidation}\ntuning ${runtimeView.tuningStatus}${topSuggestion ? ` / ${topSuggestion.exchange} ${topSuggestion.status} ${topSuggestion.currentAverageCadenceMs || 'n/a'} -> ${topSuggestion.recommendedCadenceMs || 'n/a'}` : ''}\ndispatch ${runtimeView.dispatchStatus} / candidates ${runtimeView.dispatchCandidates}${topCandidate ? ` / top ${topCandidate.exchange}/${topCandidate.symbol} ${topCandidate.action} ${topCandidate.urgency}` : ''}\ncommands:\n- ${runtimeView.reportCommand}\n- ${runtimeView.tuningCommand}\n- ${runtimeView.dispatchCommand}\n- ${runtimeView.autotuneCommand}\n- ${runtimeView.autopilotCommand}`,
         });
       }
     } else if (state[key]) {

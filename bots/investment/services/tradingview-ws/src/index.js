@@ -32,10 +32,21 @@ const MAX_RECONNECT_ATTEMPTS = 10;
 const RUNTIME_REEVAL_ENABLED = process.env.TV_RUNTIME_REEVAL_ENABLED === 'true';
 const RUNTIME_REEVAL_PREFIX = process.env.TV_RUNTIME_REEVAL_PREFIX || '/Users/alexlee/projects/ai-agent-system/bots/investment';
 const RUNTIME_REEVAL_COOLDOWN_MS = parseInt(process.env.TV_RUNTIME_REEVAL_COOLDOWN_MS || '45000', 10);
+const RUNTIME_REEVAL_ACTIVE_ONLY = process.env.TV_RUNTIME_REEVAL_ACTIVE_ONLY === 'true';
 const RUNTIME_REEVAL_TIMEFRAMES = String(process.env.TV_RUNTIME_REEVAL_TIMEFRAMES || '1h,4h')
   .split(',')
   .map((item) => item.trim())
   .filter(Boolean);
+const RUNTIME_REEVAL_TIMEFRAMES_BY_EXCHANGE = String(process.env.TV_RUNTIME_REEVAL_TIMEFRAMES_BY_EXCHANGE || '')
+  .split(';')
+  .map((item) => item.trim())
+  .filter(Boolean)
+  .reduce((acc, item) => {
+    const [exchange, rawList] = item.split(':');
+    if (!exchange || !rawList) return acc;
+    acc[exchange.trim()] = rawList.split(',').map((value) => value.trim()).filter(Boolean);
+    return acc;
+  }, {});
 const execFileAsync = promisify(execFile);
 
 // Prometheus 메트릭스
@@ -74,6 +85,19 @@ let reconnectAttempts = 0;
 let reconnectTimer = null;
 let staleCheckTimer = null;
 const runtimeReevalCooldowns = new Map();
+const runtimeActiveScopeCache = new Map();
+
+function extractJsonObject(raw = '') {
+  const text = String(raw || '').trim();
+  const start = text.indexOf('{');
+  const end = text.lastIndexOf('}');
+  if (start < 0 || end <= start) return null;
+  try {
+    return JSON.parse(text.slice(start, end + 1));
+  } catch {
+    return null;
+  }
+}
 
 function connectTradingView() {
   // dovudo/tradingview-websocket 패턴: wss://data.tradingview.com/socket.io/websocket
@@ -192,9 +216,14 @@ function inferRuntimeScope(tvSymbol = '') {
 
 async function triggerRuntimeReevaluation(tvSymbol, timeframe, barPayload) {
   if (!RUNTIME_REEVAL_ENABLED) return;
-  if (!RUNTIME_REEVAL_TIMEFRAMES.includes(String(timeframe || ''))) return;
   const scope = inferRuntimeScope(tvSymbol);
   if (!scope?.symbol || !scope?.exchange) return;
+  const allowedTimeframes = RUNTIME_REEVAL_TIMEFRAMES_BY_EXCHANGE[scope.exchange] || RUNTIME_REEVAL_TIMEFRAMES;
+  if (!allowedTimeframes.includes(String(timeframe || ''))) return;
+  if (RUNTIME_REEVAL_ACTIVE_ONLY) {
+    const active = await hasActiveRuntimeScope(scope);
+    if (!active) return;
+  }
 
   const key = `${scope.exchange}:${scope.symbol}:${timeframe}`;
   const now = Date.now();
@@ -223,6 +252,39 @@ async function triggerRuntimeReevaluation(tvSymbol, timeframe, barPayload) {
     console.log(`[TV-WS] runtime reevaluation ${key}: ${String(stdout || '').trim().slice(0, 240)}`);
   } catch (err) {
     console.warn(`[TV-WS] runtime reevaluation 실패 ${key}: ${err?.message || err}`);
+  }
+}
+
+async function hasActiveRuntimeScope(scope) {
+  const key = `${scope.exchange}:${scope.symbol}`;
+  const cached = runtimeActiveScopeCache.get(key);
+  const now = Date.now();
+  if (cached && now - cached.checkedAt < 60_000) return cached.active;
+  try {
+    const { stdout } = await execFileAsync('npm', [
+      '--prefix',
+      RUNTIME_REEVAL_PREFIX,
+      'run',
+      'runtime:position-runtime',
+      '--',
+      `--exchange=${scope.exchange}`,
+      `--symbol=${scope.symbol}`,
+      '--limit=10',
+      '--json',
+    ], {
+      encoding: 'utf8',
+      maxBuffer: 1024 * 1024 * 4,
+    });
+    const parsed = extractJsonObject(stdout) || {};
+    const active = Array.isArray(parsed?.rows)
+      ? parsed.rows.some((row) => row?.symbol === scope.symbol && row?.exchange === scope.exchange && row?.runtimeState)
+      : false;
+    runtimeActiveScopeCache.set(key, { checkedAt: now, active });
+    return active;
+  } catch (err) {
+    console.warn(`[TV-WS] active runtime scope 확인 실패 ${key}: ${err?.message || err}`);
+    runtimeActiveScopeCache.set(key, { checkedAt: now, active: false });
+    return false;
   }
 }
 

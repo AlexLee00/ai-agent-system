@@ -1164,6 +1164,10 @@ function buildPositionRuntimeSnapshot(runtimeReport, runtimeTuning, runtimeDispa
       ? `npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:position-runtime-tuning -- --exchange=${topSuggestion.exchange} --json`
       : 'npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:position-runtime-tuning -- --json',
     dispatchCommand: 'npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:position-runtime-dispatch -- --json',
+    autotuneCommand: topSuggestion?.exchange
+      ? `npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:position-runtime-autotune -- --exchange=${topSuggestion.exchange} --apply --confirm=runtime-autotune --json`
+      : 'npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:position-runtime-autotune -- --apply --confirm=runtime-autotune --json',
+    autopilotCommand: 'npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:position-runtime-autopilot -- --execute --apply-tuning --execute-dispatch --confirm=position-runtime-autopilot --json',
   };
 }
 
@@ -1180,6 +1184,8 @@ function buildPositionRuntimeLines(report) {
     `  runtime report: ${runtimeView.reportCommand}`,
     `  runtime tuning: ${runtimeView.tuningCommand}`,
     `  runtime dispatch: ${runtimeView.dispatchCommand}`,
+    `  runtime autotune: ${runtimeView.autotuneCommand}`,
+    `  runtime autopilot: ${runtimeView.autopilotCommand}`,
   ];
 }
 
@@ -1719,6 +1725,8 @@ async function buildReport() {
     positionRuntimeReportCommand: positionRuntimeView.reportCommand,
     positionRuntimeTuningCommand: positionRuntimeView.tuningCommand,
     positionRuntimeDispatchCommand: positionRuntimeView.dispatchCommand,
+    positionRuntimeAutotuneCommand: positionRuntimeView.autotuneCommand,
+    positionRuntimeAutopilotCommand: positionRuntimeView.autopilotCommand,
     duplicateStrategyNormalization,
     orphanStrategyRetirement,
     latestOpsSnapshot,
