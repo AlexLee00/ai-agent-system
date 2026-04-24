@@ -5,6 +5,9 @@ defmodule Luna.V2.MarketHoursGate do
   - crypto: 24/7 (항상 활성)
   - domestic: KST 평일 09:00~15:30 + 한국 휴장일 반영
   - overseas: America/New_York 평일 09:30~16:00 + NYSE 휴장일 반영 (DST 자동)
+
+  참고:
+  런타임 환경이 UTC-only time zone DB일 수 있어, timezone DB 의존 없이 UTC 기준 계산으로 동작한다.
   """
 
   @kst_tz "Asia/Seoul"
@@ -37,60 +40,60 @@ defmodule Luna.V2.MarketHoursGate do
   end
 
   def status(:domestic, now_utc) do
-    now_kst = to_zone(now_utc, @kst_tz)
+    now_kst = DateTime.add(now_utc, 9 * 3600, :second)
     market_date = DateTime.to_date(now_kst)
-    open_at = at_time!(market_date, @domestic_open, @kst_tz)
-    close_at = at_time!(market_date, @domestic_close, @kst_tz)
+    open_at = domestic_open_utc_for_date(market_date)
+    close_at = domestic_close_utc_for_date(market_date)
     holiday? = domestic_holiday?(market_date)
     weekday? = weekday?(market_date)
 
     within_session? =
-      DateTime.compare(now_kst, open_at) in [:eq, :gt] and
-        DateTime.compare(now_kst, close_at) == :lt
+      DateTime.compare(now_utc, open_at) in [:eq, :gt] and
+        DateTime.compare(now_utc, close_at) == :lt
 
     open? = weekday? and not holiday? and within_session?
-    next_open_at = if open?, do: open_at, else: next_open_datetime(:domestic, now_kst)
+    next_open_at = if open?, do: open_at, else: next_open_datetime(:domestic, now_utc)
 
     %{
       market: :domestic,
       timezone: @kst_tz,
       open: open?,
       session: if(open?, do: :open, else: :closed),
-      reason: domestic_reason(now_kst, holiday?, weekday?, open_at, close_at),
+      reason: domestic_reason(now_utc, holiday?, weekday?, open_at, close_at),
       market_date: market_date,
       opens_at: if(open?, do: open_at, else: next_open_at),
       closes_at: close_at,
-      seconds_until_open: if(open?, do: 0, else: seconds_between(next_open_at, now_kst)),
-      seconds_until_close: if(open?, do: seconds_between(close_at, now_kst), else: 0)
+      seconds_until_open: if(open?, do: 0, else: seconds_between(next_open_at, now_utc)),
+      seconds_until_close: if(open?, do: seconds_between(close_at, now_utc), else: 0)
     }
   end
 
   def status(:overseas, now_utc) do
-    now_ny = to_zone(now_utc, @ny_tz)
-    market_date = DateTime.to_date(now_ny)
-    open_at = at_time!(market_date, @overseas_open, @ny_tz)
-    close_at = at_time!(market_date, @overseas_close, @ny_tz)
+    ny_now = ny_local_datetime(now_utc)
+    market_date = DateTime.to_date(ny_now)
+    open_at = ny_open_utc_for_date(market_date)
+    close_at = ny_close_utc_for_date(market_date)
     holiday? = overseas_holiday?(market_date)
     weekday? = weekday?(market_date)
 
     within_session? =
-      DateTime.compare(now_ny, open_at) in [:eq, :gt] and
-        DateTime.compare(now_ny, close_at) == :lt
+      DateTime.compare(now_utc, open_at) in [:eq, :gt] and
+        DateTime.compare(now_utc, close_at) == :lt
 
     open? = weekday? and not holiday? and within_session?
-    next_open_at = if open?, do: open_at, else: next_open_datetime(:overseas, now_ny)
+    next_open_at = if open?, do: open_at, else: next_open_datetime(:overseas, now_utc)
 
     %{
       market: :overseas,
       timezone: @ny_tz,
       open: open?,
       session: if(open?, do: :open, else: :closed),
-      reason: overseas_reason(now_ny, holiday?, weekday?, open_at, close_at),
+      reason: overseas_reason(now_utc, holiday?, weekday?, open_at, close_at),
       market_date: market_date,
       opens_at: if(open?, do: open_at, else: next_open_at),
       closes_at: close_at,
-      seconds_until_open: if(open?, do: 0, else: seconds_between(next_open_at, now_ny)),
-      seconds_until_close: if(open?, do: seconds_between(close_at, now_ny), else: 0)
+      seconds_until_open: if(open?, do: 0, else: seconds_between(next_open_at, now_utc)),
+      seconds_until_close: if(open?, do: seconds_between(close_at, now_utc), else: 0)
     }
   end
 
@@ -120,23 +123,31 @@ defmodule Luna.V2.MarketHoursGate do
 
   # ─── Internal ───────────────────────────────────────────────────
 
-  defp to_zone(datetime, timezone) do
-    case DateTime.shift_zone(datetime, timezone) do
-      {:ok, zoned} ->
-        zoned
-
-      {:error, _} when timezone == @kst_tz ->
-        DateTime.add(datetime, 9 * 3600, :second)
-
-      {:error, _} ->
-        datetime
-    end
+  defp utc_datetime!(date, {hour, minute, second}) do
+    {:ok, naive} = NaiveDateTime.new(date, Time.new!(hour, minute, second))
+    DateTime.from_naive!(naive, "Etc/UTC")
   end
 
-  defp at_time!(date, {hour, minute, second}, timezone) do
-    {:ok, naive} = NaiveDateTime.new(date, Time.new!(hour, minute, second))
-    {:ok, datetime} = DateTime.from_naive(naive, timezone)
-    datetime
+  defp domestic_open_utc_for_date(date) do
+    date
+    |> utc_datetime!(@domestic_open)
+    |> DateTime.add(-9 * 3600, :second)
+  end
+
+  defp domestic_close_utc_for_date(date) do
+    date
+    |> utc_datetime!(@domestic_close)
+    |> DateTime.add(-9 * 3600, :second)
+  end
+
+  defp ny_open_utc_for_date(date) do
+    offset_hours = if us_dst_for_local_date?(date), do: 4, else: 5
+    date |> utc_datetime!(@overseas_open) |> DateTime.add(offset_hours * 3600, :second)
+  end
+
+  defp ny_close_utc_for_date(date) do
+    offset_hours = if us_dst_for_local_date?(date), do: 4, else: 5
+    date |> utc_datetime!(@overseas_close) |> DateTime.add(offset_hours * 3600, :second)
   end
 
   defp weekday?(date), do: Date.day_of_week(date) in 1..5
@@ -167,35 +178,37 @@ defmodule Luna.V2.MarketHoursGate do
     end
   end
 
-  defp next_open_datetime(:domestic, now_kst) do
+  defp next_open_datetime(:domestic, now_utc) do
+    now_kst = DateTime.add(now_utc, 9 * 3600, :second)
     date = DateTime.to_date(now_kst)
-    open_today = at_time!(date, @domestic_open, @kst_tz)
+    open_today = domestic_open_utc_for_date(date)
 
     cond do
-      domestic_trading_day?(date) and DateTime.compare(now_kst, open_today) == :lt ->
+      domestic_trading_day?(date) and DateTime.compare(now_utc, open_today) == :lt ->
         open_today
 
       true ->
         next_date = find_next_trading_day(Date.add(date, 1), &domestic_trading_day?/1)
-        at_time!(next_date, @domestic_open, @kst_tz)
+        domestic_open_utc_for_date(next_date)
     end
   end
 
-  defp next_open_datetime(:overseas, now_ny) do
-    date = DateTime.to_date(now_ny)
-    open_today = at_time!(date, @overseas_open, @ny_tz)
+  defp next_open_datetime(:overseas, now_utc) do
+    ny_now = ny_local_datetime(now_utc)
+    date = DateTime.to_date(ny_now)
+    open_today = ny_open_utc_for_date(date)
 
     cond do
-      overseas_trading_day?(date) and DateTime.compare(now_ny, open_today) == :lt ->
+      overseas_trading_day?(date) and DateTime.compare(now_utc, open_today) == :lt ->
         open_today
 
       true ->
         next_date = find_next_trading_day(Date.add(date, 1), &overseas_trading_day?/1)
-        at_time!(next_date, @overseas_open, @ny_tz)
+        ny_open_utc_for_date(next_date)
     end
   end
 
-  defp next_open_datetime(_, now), do: now
+  defp next_open_datetime(_, now_utc), do: now_utc
 
   defp find_next_trading_day(date, predicate) do
     if predicate.(date), do: date, else: find_next_trading_day(Date.add(date, 1), predicate)
@@ -213,7 +226,7 @@ defmodule Luna.V2.MarketHoursGate do
     cache_fetch({:domestic_holiday, Date.to_iso8601(date)}, 21_600, fn ->
       case Jay.Core.Repo.query(
              "SELECT holiday_flag FROM ska.environment_factors WHERE date = $1 LIMIT 1",
-             [Date.to_iso8601(date)]
+             [date]
            ) do
         {:ok, %{rows: [[flag]]}} -> flag in [true, 1, "t", "true"]
         _ -> false
@@ -224,10 +237,45 @@ defmodule Luna.V2.MarketHoursGate do
   defp overseas_holiday?(date) do
     # 관측일이 전년도/차년도에 걸칠 수 있어 양쪽 연도를 함께 확인한다.
     years = [date.year - 1, date.year, date.year + 1]
+    Enum.any?(years, fn year -> MapSet.member?(nyse_holidays_for_year(year), date) end)
+  end
 
-    Enum.any?(years, fn year ->
-      MapSet.member?(nyse_holidays_for_year(year), date)
-    end)
+  defp ny_local_datetime(now_utc) do
+    DateTime.add(now_utc, ny_offset_seconds_for_utc(now_utc), :second)
+  end
+
+  defp ny_offset_seconds_for_utc(now_utc) do
+    if us_dst_for_utc?(now_utc), do: -4 * 3600, else: -5 * 3600
+  end
+
+  defp us_dst_for_utc?(%DateTime{} = dt_utc) do
+    year = dt_utc.year
+    dst_start_utc = dst_start_utc(year)
+    dst_end_utc = dst_end_utc(year)
+
+    DateTime.compare(dt_utc, dst_start_utc) in [:eq, :gt] and
+      DateTime.compare(dt_utc, dst_end_utc) == :lt
+  end
+
+  defp us_dst_for_local_date?(date) do
+    year = date.year
+    start_date = nth_weekday_of_month(year, 3, 7, 2)
+    end_date = nth_weekday_of_month(year, 11, 7, 1)
+
+    Date.compare(date, start_date) in [:eq, :gt] and
+      Date.compare(date, end_date) == :lt
+  end
+
+  # UTC 기준 DST 시작: 3월 둘째 주 일요일 07:00Z (02:00 ET)
+  defp dst_start_utc(year) do
+    date = nth_weekday_of_month(year, 3, 7, 2)
+    utc_datetime!(date, {7, 0, 0})
+  end
+
+  # UTC 기준 DST 종료: 11월 첫째 주 일요일 06:00Z (02:00 ET)
+  defp dst_end_utc(year) do
+    date = nth_weekday_of_month(year, 11, 7, 1)
+    utc_datetime!(date, {6, 0, 0})
   end
 
   defp nyse_holidays_for_year(year) do
