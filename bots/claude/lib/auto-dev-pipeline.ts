@@ -667,6 +667,7 @@ function ensureExecutionContext(job, options = {}) {
   );
   const baseSha = runGit(['rev-parse', 'HEAD'], ROOT, 10000);
   runGit(['worktree', 'add', '--detach', worktreePath, baseSha], ROOT, 20000);
+  ensureWorktreeDependencyLinks(worktreePath);
 
   return {
     ok: true,
@@ -681,6 +682,22 @@ function ensureExecutionContext(job, options = {}) {
       profile: runtimeConfig.profile,
     },
   };
+}
+
+function ensureWorktreeDependencyLinks(worktreePath) {
+  const rootNodeModules = path.join(ROOT, 'node_modules');
+  const worktreeNodeModules = path.join(worktreePath, 'node_modules');
+  if (!fs.existsSync(rootNodeModules) || fs.existsSync(worktreeNodeModules)) return;
+
+  try {
+    fs.symlinkSync(
+      rootNodeModules,
+      worktreeNodeModules,
+      process.platform === 'win32' ? 'junction' : 'dir',
+    );
+  } catch (error) {
+    // 링크 생성 실패는 치명 오류로 만들지 않고 하드 테스트 단계에서 명확히 드러나도록 둔다.
+  }
 }
 
 function ensureDir(dir) {
