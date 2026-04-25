@@ -1,7 +1,7 @@
 {
   "file": "/Users/alexlee/projects/ai-agent-system/bots/investment/output/ops/position-runtime-evidence-gap-queue.json",
   "version": 1,
-  "updatedAt": "2026-04-25T03:51:24.467Z",
+  "updatedAt": "2026-04-25T03:53:26.979Z",
   "states": {
     "kis_overseas:DTE:validation": {
       "scopeKey": "kis_overseas:DTE:validation",
@@ -9,13 +9,13 @@
       "exchange": "kis_overseas",
       "tradeMode": "validation",
       "evidenceCount": 0,
-      "consecutiveGapCount": 1022,
+      "consecutiveGapCount": 1023,
       "threshold": 3,
       "cooldownMinutes": 60,
-      "lastSeenAt": "2026-04-25T03:51:15.632Z",
+      "lastSeenAt": "2026-04-25T03:53:26.979Z",
       "lastEvidenceAt": null,
       "lastQueuedAt": "2026-04-25T03:51:15.632Z",
-      "status": "evidence_gap_task_queued"
+      "status": "evidence_gap_observed"
     },
     "kis_overseas:POET:validation": {
       "scopeKey": "kis_overseas:POET:validation",
