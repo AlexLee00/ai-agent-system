@@ -36,6 +36,9 @@ const { claimNextPublishJob, markPublishSuccess, markPublishFailure } = require(
 const { evaluateAndSaveQuality } = require(
   path.join(env.PROJECT_ROOT, 'bots/blog/lib/omnichannel/creative-quality-gate.ts')
 );
+const { recordMarketingAssetOutcome } = require(
+  path.join(env.PROJECT_ROOT, 'bots/blog/lib/omnichannel/asset-memory.ts')
+);
 const { createMarketingCampaignFromSignals } = require(
   path.join(env.PROJECT_ROOT, 'bots/blog/lib/omnichannel/campaign-planner.ts')
 );
@@ -151,6 +154,13 @@ async function hasFacebookPublishToday() {
   }
 }
 
+async function recordAssetOutcomeSafe(payload = {}) {
+  if (DRY_RUN) return;
+  await recordMarketingAssetOutcome(payload).catch((error) => {
+    console.warn('[facebook-auto] asset-memory 기록 실패:', String(error?.message || error));
+  });
+}
+
 /**
  * strategy_native 경로: 큐 job → quality gate → native message → publish
  */
@@ -173,12 +183,28 @@ async function publishFromQueue(queueJob) {
       message: `[블로팀] Facebook strategy_native 발행 quality gate 차단\n점수=${qr.scoreTotal}\n이유=${qr.reasons.blocked.join(', ')}`,
       team: 'blog', bot: 'auto-facebook-publish', level: 'warn',
     }), () => console.log('[DEV] quality gate blocked')).catch(() => {});
+    await recordAssetOutcomeSafe({
+      variant,
+      qualityScore: qr.scoreTotal,
+      gateResult: qr.gateResult,
+      publishStatus: 'blocked',
+      failureKind: 'quality_gate',
+      metadata: { blockedReasons: qr.reasons?.blocked || [] },
+    });
     return { ok: false, reason: 'quality_gate_blocked' };
   }
 
   const message = variant.body || variant.caption || variant.title || '';
   if (!message) {
     await markPublishFailure(queueId, { error: 'empty_message', failureKind: 'unknown' });
+    await recordAssetOutcomeSafe({
+      variant,
+      qualityScore: qr.scoreTotal,
+      gateResult: qr.gateResult,
+      publishStatus: 'failed',
+      failureKind: 'unknown',
+      metadata: { reason: 'empty_message' },
+    });
     return { ok: false, reason: 'empty_message' };
   }
 
@@ -198,6 +224,14 @@ async function publishFromQueue(queueJob) {
       sourceMode: 'strategy_native',
       variantId: variant.variant_id,
     });
+    await recordAssetOutcomeSafe({
+      variant,
+      qualityScore: qr.scoreTotal,
+      gateResult: qr.gateResult,
+      publishStatus: 'published',
+      failureKind: '',
+      metadata: { postId: result?.postId || null },
+    });
     console.log(`[facebook-auto][native] 발행 성공 fbPostId=${result.postId}`);
     return { ok: true, result };
   } catch (err) {
@@ -205,6 +239,14 @@ async function publishFromQueue(queueJob) {
     await markPublishFailure(queueId, { error: err.message, failureKind: 'publish' });
     await reportPublishFailure('facebook', variant.title || 'strategy_native', detailedError, {
       sourceMode: 'strategy_native',
+    });
+    await recordAssetOutcomeSafe({
+      variant,
+      qualityScore: qr.scoreTotal,
+      gateResult: qr.gateResult,
+      publishStatus: 'failed',
+      failureKind: 'publish',
+      metadata: { error: String(err?.message || err) },
     });
     return { ok: false, reason: 'publish_failed', error: err };
   }

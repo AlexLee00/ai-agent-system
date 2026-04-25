@@ -14,6 +14,7 @@ const kst = require('../../../../packages/core/lib/kst');
 const { loadStrategyBundle } = require('../strategy-loader.ts');
 const { buildPlatformVariants } = require('./platform-variant-builder.ts');
 const { enqueueMarketingVariants } = require('./publish-queue.ts');
+const { ensureMarketingOsSchema } = require('./marketing-os-schema.ts');
 
 /** 간단한 ulid-like ID 생성 (외부 의존 없이) */
 function generateId(prefix = 'camp') {
@@ -36,6 +37,7 @@ async function createMarketingCampaignFromSignals({
   sourceSignal = null,
   dryRun = false,
 } = {}) {
+  await ensureMarketingOsSchema();
   const { plan, directives } = loadStrategyBundle();
   const strategyVersion = String(plan?.weekOf || kst.today());
   const campaignId = generateId('camp');
@@ -92,6 +94,7 @@ async function createMarketingCampaignFromSignals({
  */
 async function getTodayActiveCampaignCount() {
   try {
+    await ensureMarketingOsSchema();
     const rows = await pgPool.query('blog', `
       SELECT COUNT(*)::int AS cnt
       FROM blog.marketing_campaigns

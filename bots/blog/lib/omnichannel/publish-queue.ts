@@ -11,6 +11,7 @@
 
 const pgPool = require('../../../../packages/core/lib/pg-pool');
 const kst = require('../../../../packages/core/lib/kst');
+const { ensureMarketingOsSchema } = require('./marketing-os-schema.ts');
 
 function generateId(prefix = 'q') {
   const ts = Date.now().toString(36).toUpperCase();
@@ -54,6 +55,7 @@ function getDefaultScheduledAt(platform) {
  * @returns {Promise<Array>} 삽입된 queue jobs
  */
 async function enqueueMarketingVariants({ campaignId, variants = [], dryRun = false }) {
+  await ensureMarketingOsSchema();
   const jobs = [];
   const today = kst.today();
 
@@ -117,6 +119,7 @@ async function enqueueMarketingVariants({ campaignId, variants = [], dryRun = fa
  */
 async function claimNextPublishJob(platform, { dryRun = false } = {}) {
   try {
+    await ensureMarketingOsSchema();
     const rows = await pgPool.query('blog', `
       UPDATE blog.marketing_publish_queue
       SET status = 'preparing',
@@ -163,6 +166,7 @@ async function claimNextPublishJob(platform, { dryRun = false } = {}) {
  * 발행 성공 처리
  */
 async function markPublishSuccess(queueId, { publishedAt = null } = {}) {
+  await ensureMarketingOsSchema();
   await pgPool.query('blog', `
     UPDATE blog.marketing_publish_queue
     SET status = 'published',
@@ -181,6 +185,7 @@ async function markPublishSuccess(queueId, { publishedAt = null } = {}) {
  * @param {boolean} [opts.block] - true이면 status=blocked (재시도 안 함)
  */
 async function markPublishFailure(queueId, { error, failureKind = 'unknown', block = false } = {}) {
+  await ensureMarketingOsSchema();
   const newStatus = block ? 'blocked' : 'failed';
   await pgPool.query('blog', `
     UPDATE blog.marketing_publish_queue
@@ -197,6 +202,7 @@ async function markPublishFailure(queueId, { error, failureKind = 'unknown', blo
  */
 async function getTodayQueuedCount(platform) {
   try {
+    await ensureMarketingOsSchema();
     const rows = await pgPool.query('blog', `
       SELECT COUNT(*)::int AS cnt
       FROM blog.marketing_publish_queue
@@ -215,6 +221,7 @@ async function getTodayQueuedCount(platform) {
  */
 async function getTodayPublishedCount(platform) {
   try {
+    await ensureMarketingOsSchema();
     const rows = await pgPool.query('blog', `
       SELECT COUNT(*)::int AS cnt
       FROM blog.marketing_publish_queue

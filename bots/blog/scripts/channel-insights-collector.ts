@@ -5,8 +5,12 @@ const path = require('path');
 const env = require('../../../packages/core/lib/env');
 const pgPool = require(path.join(env.PROJECT_ROOT, 'packages/core/lib/pg-pool'));
 const { ensureBlogCoreSchema } = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/schema.ts'));
-const { getInstagramConfig } = require(path.join(env.PROJECT_ROOT, 'packages/core/lib/instagram-graph.ts'));
 const { analyzeMarketingToRevenue } = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/marketing-revenue-correlation.ts'));
+const {
+  collectOmnichannelMetaInsights,
+  upsertMarketingChannelMetrics,
+} = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/omnichannel/meta-insights.ts'));
+const { ensureMarketingOsSchema } = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/omnichannel/marketing-os-schema.ts'));
 
 function parseArgs(argv = []) {
   return {
@@ -64,11 +68,7 @@ async function collectSocialExecutionStats(channel, days = 7) {
     SELECT
       COUNT(*)::int AS event_count,
       COALESCE(COUNT(*) FILTER (WHERE COALESCE(metadata->>'ok', 'false') = 'true'), 0)::int AS ok_count,
-      COALESCE(COUNT(*) FILTER (WHERE COALESCE(metadata->>'ok', 'false') <> 'true'), 0)::int AS failed_count,
-      COALESCE(COUNT(*) FILTER (WHERE COALESCE(metadata->>'failure_kind', '') = 'auth'), 0)::int AS auth_failed_count,
-      COALESCE(COUNT(*) FILTER (WHERE COALESCE(metadata->>'failure_kind', '') = 'upload'), 0)::int AS upload_failed_count,
-      COALESCE(COUNT(*) FILTER (WHERE COALESCE(metadata->>'failure_kind', '') = 'publish'), 0)::int AS publish_failed_count,
-      COALESCE(COUNT(*) FILTER (WHERE COALESCE(metadata->>'failure_kind', '') = 'unknown'), 0)::int AS unknown_failed_count
+      COALESCE(COUNT(*) FILTER (WHERE COALESCE(metadata->>'ok', 'false') <> 'true'), 0)::int AS failed_count
     FROM agent.event_lake
     WHERE event_type = 'blog_phase1_social_execution_result'
       AND team = 'blog'
@@ -78,78 +78,51 @@ async function collectSocialExecutionStats(channel, days = 7) {
       AND created_at >= NOW() - ($2::text || ' days')::interval
   `, [channel, days]).catch(() => null);
 
-  const eventCount = Number(row?.event_count || 0);
-  const okCount = Number(row?.ok_count || 0);
-  const failedCount = Number(row?.failed_count || 0);
-  const authFailedCount = Number(row?.auth_failed_count || 0);
-  const uploadFailedCount = Number(row?.upload_failed_count || 0);
-  const publishFailedCount = Number(row?.publish_failed_count || 0);
-  const unknownFailedCount = Number(row?.unknown_failed_count || 0);
-
   return {
     channel,
     source: 'event_lake',
-    status: failedCount > 0 ? 'watch' : (eventCount > 0 ? 'ok' : 'warming_up'),
-    publishedCount: okCount,
+    status: Number(row?.failed_count || 0) > 0 ? 'watch' : (Number(row?.event_count || 0) > 0 ? 'ok' : 'warming_up'),
+    publishedCount: Number(row?.ok_count || 0),
     views: 0,
     comments: 0,
     likes: 0,
     engagementRate: 0,
     metadata: {
       windowDays: days,
-      eventCount,
-      okCount,
-      failedCount,
-      authFailedCount,
-      uploadFailedCount,
-      publishFailedCount,
-      unknownFailedCount,
-      note: 'blog_phase1_social_execution_result 기반 집계',
+      eventCount: Number(row?.event_count || 0),
+      okCount: Number(row?.ok_count || 0),
+      failedCount: Number(row?.failed_count || 0),
+      note: 'event_lake fallback 집계',
     },
   };
 }
 
-async function collectInstagramChannelStats(days = 7) {
-  const execStats = await collectSocialExecutionStats('instagram', days);
-  const config = await getInstagramConfig().catch(() => null);
-  return {
-    ...execStats,
+function mergeChannelInsight(metaItem, fallbackItem) {
+  const base = metaItem || fallbackItem || {};
+  const fallback = fallbackItem || {};
+  const merged = {
+    channel: base.channel || fallback.channel || 'unknown',
+    source: base.source || fallback.source || 'unknown',
+    status: base.status || fallback.status || 'warming_up',
+    publishedCount: Math.max(Number(base.publishedCount || 0), Number(fallback.publishedCount || 0)),
+    views: Number(base.views || fallback.views || 0),
+    comments: Number(base.comments || fallback.comments || 0),
+    likes: Number(base.likes || fallback.likes || 0),
+    engagementRate: Number(base.engagementRate || fallback.engagementRate || 0),
     metadata: {
-      ...(execStats.metadata || {}),
-      credentialSource: config?.credentialSource || null,
-      hasAccessToken: Boolean(config?.accessToken),
-      hasIgUserId: Boolean(config?.igUserId),
+      ...(fallback.metadata || {}),
+      ...(base.metadata || {}),
     },
   };
-}
 
-async function collectFacebookChannelStats(days = 7) {
-  const config = await getInstagramConfig().catch(() => null);
-  const hasBusinessAccount = Boolean(config?.businessAccountId);
-  const hasPageId = Boolean(config?.pageId);
-  const hasAccessToken = Boolean(config?.accessToken);
-  const readyForPublish = hasPageId && hasAccessToken;
-  return {
-    channel: 'facebook',
-    source: 'meta_config',
-    status: readyForPublish ? 'warming_up' : 'disabled',
-    publishedCount: 0,
-    views: 0,
-    comments: 0,
-    likes: 0,
-    engagementRate: 0,
-    metadata: {
-      windowDays: days,
-      hasBusinessAccount,
-      hasPageId,
-      hasAccessToken,
-      note: readyForPublish
-        ? 'Facebook 페이지 게시 준비됨 — 실운영 게시/인사이트 수집 확장 가능'
-        : hasBusinessAccount
-          ? 'Meta 비즈니스 계정은 준비됐지만 page_id 또는 access_token이 부족함'
-        : 'facebook business/page 연결 정보 없음',
-    },
-  };
+  // 권한 부족은 최우선으로 유지
+  if (String(base.status || '') === 'needs_permission') {
+    merged.status = 'needs_permission';
+  } else if (String(base.status || '') === 'error' && String(fallback.status || '') !== 'warming_up') {
+    merged.status = fallback.status || 'watch';
+  }
+
+  return merged;
 }
 
 async function upsertChannelPerformance(snapshotDate, item, revenueSignal = 0, dryRun = false) {
@@ -205,27 +178,48 @@ async function upsertChannelPerformance(snapshotDate, item, revenueSignal = 0, d
 async function main() {
   const args = parseArgs(process.argv.slice(2));
   await ensureBlogCoreSchema();
+  await ensureMarketingOsSchema().catch((error) => {
+    console.warn('[channel-insights] marketing OS schema ensure 실패:', String(error?.message || error));
+  });
 
   const snapshotDate = args.date || new Date().toISOString().slice(0, 10);
   const revenue = await analyzeMarketingToRevenue(14).catch(() => null);
   const revenueSignal = Number(revenue?.revenueImpactPct || 0);
 
-  const items = await Promise.all([
+  const [naver, metaInsights, instagramFallback, facebookFallback] = await Promise.all([
     collectNaverBlogStats(args.days),
-    collectInstagramChannelStats(args.days),
-    collectFacebookChannelStats(args.days),
+    collectOmnichannelMetaInsights({
+      days: args.days,
+      date: snapshotDate,
+      dryRun: args.dryRun,
+    }),
+    collectSocialExecutionStats('instagram', args.days),
+    collectSocialExecutionStats('facebook', args.days),
   ]);
 
+  const instagram = mergeChannelInsight(metaInsights?.instagram, instagramFallback);
+  const facebook = mergeChannelInsight(metaInsights?.facebook, facebookFallback);
+
+  const items = [naver, instagram, facebook];
   const persisted = [];
   for (const item of items) {
     persisted.push(await upsertChannelPerformance(snapshotDate, item, revenueSignal, args.dryRun));
   }
+
+  const metricsWritten = await upsertMarketingChannelMetrics(metaInsights?.metricRows || [], {
+    dryRun: args.dryRun,
+  });
 
   const payload = {
     snapshotDate,
     dryRun: args.dryRun,
     revenueSignal,
     channels: persisted,
+    marketingMetrics: {
+      metricDate: metaInsights?.metricDate || snapshotDate,
+      rows: metaInsights?.metricRows || [],
+      written: metricsWritten,
+    },
   };
 
   if (args.json) {
@@ -237,6 +231,7 @@ async function main() {
   for (const item of persisted) {
     console.log(`- ${item.channel}: status=${item.status} published=${item.published_count} views=${item.views} engagement=${item.engagement_rate}`);
   }
+  console.log(`[channel-insights] marketing_channel_metrics=${metricsWritten} rows`);
 }
 
 main().catch((error) => {

@@ -8,6 +8,8 @@
  * Kill Switch: BLOG_REVENUE_CORRELATION_ENABLED=true 일 때만 활성
  */
 
+const { buildTrackingLink } = require('./omnichannel/revenue-attribution.ts');
+
 function isEnabled() {
   return process.env.BLOG_REVENUE_CORRELATION_ENABLED === 'true';
 }
@@ -20,34 +22,24 @@ function getSkaBaseUrl() {
  * 포스팅별 UTM 추적 링크 생성
  * 글 본문 CTA에 삽입하여 스카팀 예약 유입 추적
  * @param {string} postId
- * @param {'naver'|'instagram'|'facebook'} platform
+ * @param {'naver'|'instagram'|'facebook'|'naver_blog'|'instagram_reel'|'instagram_feed'|'instagram_story'|'facebook_page'} platform
  * @param {string} [postDate]
  * @param {string} [variantLabel]
+ * @param {object} [context]
  */
-function generateTrackingLink(postId, platform, postDate = '', variantLabel = '') {
-  const utmSource = platform;
-  const utmMedium = platform === 'naver' ? 'blog' : platform === 'instagram' ? 'reel' : 'post';
-  const utmCampaign = `post_${String(postId).replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 30)}`;
-  const safeVariant = String(variantLabel || '').replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 30);
-  const utmContentParts = [utmMedium];
-  if (postDate) utmContentParts.push(postDate);
-  if (safeVariant) utmContentParts.push(safeVariant);
-  const utmContent = utmContentParts.join('_');
-
-  const params = new URLSearchParams({
-    utm_source: utmSource,
-    utm_medium: utmMedium,
-    utm_campaign: utmCampaign,
-    utm_content: utmContent,
+function generateTrackingLink(postId, platform, postDate = '', variantLabel = '', context = {}) {
+  return buildTrackingLink({
+    postId: String(postId || ''),
+    platform,
+    postDate,
+    variantLabel,
+    campaignId: context?.campaignId || '',
+    variantId: context?.variantId || '',
+    brandAxis: context?.brandAxis || 'mixed',
+    objective: context?.objective || 'awareness',
+    utmNaming: context?.utmNaming || 'brand_axis__platform__objective',
+    baseUrl: getSkaBaseUrl(),
   });
-
-  return {
-    url: `${getSkaBaseUrl()}?${params.toString()}`,
-    utm_source: utmSource,
-    utm_medium: utmMedium,
-    utm_campaign: utmCampaign,
-    utm_content: utmContent,
-  };
 }
 
 /**

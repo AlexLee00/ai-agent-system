@@ -11,6 +11,7 @@ const env = require('../../../packages/core/lib/env');
 jest.mock('../../../packages/core/lib/pg-pool', () => ({
   query: jest.fn().mockResolvedValue([{ cnt: 0 }]),
   get: jest.fn().mockResolvedValue(null),
+  run: jest.fn().mockResolvedValue(undefined),
 }));
 jest.mock('../../../packages/core/lib/mode-guard', () => ({
   runIfOps: jest.fn((_key, _ops, dev) => Promise.resolve(dev())),
@@ -125,6 +126,8 @@ describe('platform-variant-builder', () => {
     expect(variant.caption).toContain('커피랑도서관');
     expect(Array.isArray(variant.hashtags)).toBe(true);
     expect(variant.hashtags.some(h => h.includes('스터디카페') || h.includes('커피랑도서관'))).toBe(true);
+    expect(variant.tracking_url).toContain('utm_source=instagram');
+    expect(variant.tracking_url).toContain('utm_campaign=');
   });
 
   test('buildInstagramReelVariant — seungho_dad 브랜드 키워드 포함', () => {
@@ -150,6 +153,8 @@ describe('platform-variant-builder', () => {
     expect(variant.caption || variant.body).toBeTruthy();
     const content = (variant.caption || variant.body || '');
     expect(content.includes('예약') || content.includes('자리')).toBe(true);
+    expect(variant.tracking_url).toContain('utm_source=facebook');
+    expect(variant.tracking_url).toContain('utm_medium=post');
   });
 
   test('buildPlatformVariants — 2개 variant 생성 (dryRun)', async () => {

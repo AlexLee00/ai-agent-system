@@ -104,12 +104,13 @@ describe('ska-revenue-bridge', () => {
 
 describe('attribution-tracker', () => {
   const tracker = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/attribution-tracker.ts'));
+  const revenueAttribution = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/omnichannel/revenue-attribution.ts'));
 
   test('generateTrackingLink — naver 플랫폼', () => {
     const link = tracker.generateTrackingLink('post123', 'naver', '2026-04-19');
     expect(link.utm_source).toBe('naver');
     expect(link.utm_medium).toBe('blog');
-    expect(link.utm_campaign).toMatch(/post_post123/);
+    expect(link.utm_campaign).toMatch(/naver_blog/);
     expect(link.url).toContain('utm_source=naver');
   });
 
@@ -120,10 +121,32 @@ describe('attribution-tracker', () => {
     expect(link.url).toContain('utm_source=instagram');
   });
 
+  test('generateTrackingLink — instagram_reel 세분화 플랫폼', () => {
+    const link = tracker.generateTrackingLink('post456', 'instagram_reel', '2026-04-19', 'native', {
+      campaignId: 'camp_1',
+      variantId: 'var_1',
+      brandAxis: 'cafe_library',
+      objective: 'conversion',
+    });
+    expect(link.utm_source).toBe('instagram');
+    expect(link.utm_medium).toBe('reel');
+    expect(link.utm_campaign).toContain('cafe_library');
+    expect(link.attribution_key).toContain('camp_1');
+    expect(link.url).toContain('utm_medium=reel');
+  });
+
   test('generateTrackingLink — facebook 플랫폼', () => {
     const link = tracker.generateTrackingLink('post789', 'facebook');
     expect(link.utm_source).toBe('facebook');
     expect(link.utm_medium).toBe('post');
+  });
+
+  test('revenue-attribution — low confidence decay bounded', () => {
+    const high = revenueAttribution.computeLowConfidenceDecay(0.9, 0, 0.6);
+    const low = revenueAttribution.computeLowConfidenceDecay(0.2, 5, 0.6);
+    expect(high).toBe(1);
+    expect(low).toBeGreaterThanOrEqual(0.4);
+    expect(low).toBeLessThan(1);
   });
 
   test('recordPublishAttribution — disabled 시 조기 반환', async () => {

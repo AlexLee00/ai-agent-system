@@ -38,6 +38,9 @@ const { claimNextPublishJob, markPublishSuccess, markPublishFailure } = require(
 const { evaluateAndSaveQuality } = require(
   path.join(env.PROJECT_ROOT, 'bots/blog/lib/omnichannel/creative-quality-gate.ts')
 );
+const { recordMarketingAssetOutcome } = require(
+  path.join(env.PROJECT_ROOT, 'bots/blog/lib/omnichannel/asset-memory.ts')
+);
 const { createMarketingCampaignFromSignals } = require(
   path.join(env.PROJECT_ROOT, 'bots/blog/lib/omnichannel/campaign-planner.ts')
 );
@@ -194,6 +197,13 @@ async function notifyDailyStatus(stats) {
   ).catch(() => {});
 }
 
+async function recordAssetOutcomeSafe(payload = {}) {
+  if (DRY_RUN) return;
+  await recordMarketingAssetOutcome(payload).catch((error) => {
+    console.warn('[insta-auto] asset-memory 기록 실패:', String(error?.message || error));
+  });
+}
+
 /**
  * strategy_native 경로: 큐에서 job을 claim해 quality gate → prepare → publish.
  */
@@ -219,6 +229,14 @@ async function publishFromQueue(queueJob) {
       message: `[블로팀] 인스타 strategy_native 발행 quality gate 차단\n점수=${qr.scoreTotal}\n이유=${qr.reasons.blocked.join(', ')}\n자동 재생성 대기`,
       team: 'blog', bot: 'auto-instagram-publish', level: 'warn',
     }), () => console.log('[DEV] quality gate blocked')).catch(() => {});
+    await recordAssetOutcomeSafe({
+      variant,
+      qualityScore: qr.scoreTotal,
+      gateResult: qr.gateResult,
+      publishStatus: 'blocked',
+      failureKind: 'quality_gate',
+      metadata: { blockedReasons: qr.reasons?.blocked || [] },
+    });
     return { ok: false, reason: 'quality_gate_blocked' };
   }
 
@@ -245,6 +263,14 @@ async function publishFromQueue(queueJob) {
   if (!reelPath) {
     console.warn('[insta-auto] strategy_native: 릴스 파일 없음 — failed');
     await markPublishFailure(queueId, { error: 'no_reel_file', failureKind: 'asset_prepare' });
+    await recordAssetOutcomeSafe({
+      variant,
+      qualityScore: qr.scoreTotal,
+      gateResult: qr.gateResult,
+      publishStatus: 'failed',
+      failureKind: 'asset_prepare',
+      metadata: { reason: 'no_reel_file' },
+    });
     return { ok: false, reason: 'no_reel_file' };
   }
 
@@ -263,6 +289,14 @@ async function publishFromQueue(queueJob) {
       buildInstagramFailureDetail(e, { reelPath }),
       { sourceMode: 'strategy_native' }
     );
+    await recordAssetOutcomeSafe({
+      variant,
+      qualityScore: qr.scoreTotal,
+      gateResult: qr.gateResult,
+      publishStatus: 'failed',
+      failureKind,
+      metadata: { stage: 'prepare', error: String(e?.message || e) },
+    });
     return { ok: false, reason: 'prepare_failed', error: e };
   }
 
@@ -272,6 +306,14 @@ async function publishFromQueue(queueJob) {
     const msg = 'Instagram 공개 비디오 URL이 준비되지 않았습니다';
     await markPublishFailure(queueId, { error: msg, failureKind: 'media_url' });
     await reportPublishFailure('instagram', variant.title || 'strategy_native', msg, { sourceMode: 'strategy_native' });
+    await recordAssetOutcomeSafe({
+      variant,
+      qualityScore: qr.scoreTotal,
+      gateResult: qr.gateResult,
+      publishStatus: 'failed',
+      failureKind: 'media_url',
+      metadata: { stage: 'verify_public_url' },
+    });
     return { ok: false, reason: 'no_public_url' };
   }
 
@@ -295,6 +337,14 @@ async function publishFromQueue(queueJob) {
       sourceMode: 'strategy_native',
       variantId: variant.variant_id,
     });
+    await recordAssetOutcomeSafe({
+      variant,
+      qualityScore: qr.scoreTotal,
+      gateResult: qr.gateResult,
+      publishStatus: 'published',
+      failureKind: '',
+      metadata: { publishId: result?.publishId || null, previewBundle },
+    });
     console.log(`[insta-auto][native] 발행 성공 publishId=${result.publishId}`);
     return { ok: true, result };
   } catch (e) {
@@ -304,6 +354,14 @@ async function publishFromQueue(queueJob) {
       buildInstagramFailureDetail(e, { reelPath, previewBundle }),
       { sourceMode: 'strategy_native', failureKind }
     );
+    await recordAssetOutcomeSafe({
+      variant,
+      qualityScore: qr.scoreTotal,
+      gateResult: qr.gateResult,
+      publishStatus: 'failed',
+      failureKind,
+      metadata: { stage: 'publish', error: String(e?.message || e) },
+    });
     return { ok: false, reason: 'publish_failed', error: e, failureKind };
   }
 }

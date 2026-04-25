@@ -5,6 +5,7 @@ const fs = require('fs');
 const path = require('path');
 const env = require('../../../packages/core/lib/env');
 const kst = require('../../../packages/core/lib/kst');
+const pgPool = require('../../../packages/core/lib/pg-pool');
 const { aggregateOperationalPatterns } = require('./feedback-learner.ts');
 const { readExperimentPlaybook } = require('./experiment-os.ts');
 const { readRecentBlogEvalCases } = require('./eval-case-telemetry.ts');
@@ -73,6 +74,168 @@ function buildHotspotTrend(currentHotspot, previousHotspot, previousWeekOf = nul
     currentCategory: currentHotspot.category || null,
     previousCategory: previousHotspot.category || null,
   };
+}
+
+function computeLowExposureSignal(rows = [], threshold = 3) {
+  const normalized = Array.isArray(rows)
+    ? rows.map((row) => ({
+        day: String(row?.day || ''),
+        inboundCount: Number(row?.inbound_count ?? row?.inboundCount ?? 0),
+        neighborPosted: Number(row?.neighbor_posted ?? row?.neighborPosted ?? 0),
+      }))
+    : [];
+
+  let consecutiveNoInboundDays = 0;
+  for (const row of normalized) {
+    if (row.inboundCount > 0) break;
+    consecutiveNoInboundDays += 1;
+  }
+  const daysWithNoInbound = normalized.filter((row) => row.inboundCount === 0).length;
+  const totalInbound = normalized.reduce((sum, row) => sum + row.inboundCount, 0);
+  const totalNeighborPosted = normalized.reduce((sum, row) => sum + row.neighborPosted, 0);
+  const activeDays = normalized.filter((row) => row.inboundCount > 0 || row.neighborPosted > 0).length;
+  const numericThreshold = Math.max(1, Number(threshold || 3));
+  const needsEscalation = (
+    consecutiveNoInboundDays >= numericThreshold
+    || (daysWithNoInbound >= numericThreshold + 1 && totalInbound <= 1)
+    || (daysWithNoInbound >= numericThreshold && activeDays <= 1)
+  );
+
+  return {
+    code: needsEscalation ? 'low_exposure_accumulated' : 'normal',
+    threshold: numericThreshold,
+    windowDays: normalized.length,
+    rows: normalized,
+    consecutiveNoInboundDays,
+    daysWithNoInbound,
+    totalInbound,
+    totalNeighborPosted,
+    activeDays,
+    needsEscalation,
+  };
+}
+
+async function readLowExposureSignal(threshold = 3) {
+  try {
+    const rows = await pgPool.query('blog', `
+      WITH days AS (
+        SELECT generate_series(
+          (timezone('Asia/Seoul', now())::date - interval '6 days')::date,
+          timezone('Asia/Seoul', now())::date,
+          interval '1 day'
+        )::date AS day
+      ),
+      inbound AS (
+        SELECT
+          timezone('Asia/Seoul', detected_at)::date AS day,
+          COUNT(*)::int AS inbound_count
+        FROM blog.comments
+        WHERE detected_at >= now() - interval '7 days'
+        GROUP BY 1
+      ),
+      neighbor AS (
+        SELECT
+          timezone('Asia/Seoul', created_at)::date AS day,
+          COUNT(*) FILTER (WHERE status = 'posted')::int AS neighbor_posted
+        FROM blog.neighbor_comments
+        WHERE created_at >= now() - interval '7 days'
+        GROUP BY 1
+      )
+      SELECT
+        d.day::text AS day,
+        COALESCE(i.inbound_count, 0)::int AS inbound_count,
+        COALESCE(n.neighbor_posted, 0)::int AS neighbor_posted
+      FROM days d
+      LEFT JOIN inbound i USING (day)
+      LEFT JOIN neighbor n USING (day)
+      ORDER BY d.day DESC
+    `);
+    return computeLowExposureSignal(rows, threshold);
+  } catch {
+    return computeLowExposureSignal([], threshold);
+  }
+}
+
+function applyLowExposureFeedbackToPlan(plan = {}, exposureSignal = null) {
+  const signal = exposureSignal && typeof exposureSignal === 'object' ? exposureSignal : null;
+  if (!signal?.needsEscalation) {
+    return {
+      ...plan,
+      engagementExposureSignal: signal || null,
+    };
+  }
+
+  const next = {
+    ...plan,
+    engagementExposureSignal: {
+      ...signal,
+      escalatedAt: new Date().toISOString(),
+    },
+  };
+
+  const focus = Array.isArray(next.focus) ? [...next.focus] : [];
+  const recommendations = Array.isArray(next.recommendations) ? [...next.recommendations] : [];
+  const directives = next.executionDirectives && typeof next.executionDirectives === 'object'
+    ? { ...next.executionDirectives }
+    : {};
+  const executionTargets = directives.executionTargets && typeof directives.executionTargets === 'object'
+    ? { ...directives.executionTargets }
+    : {};
+  const engagementPolicy = directives.engagementPolicy && typeof directives.engagementPolicy === 'object'
+    ? { ...directives.engagementPolicy }
+    : {};
+  const creativePolicy = directives.creativePolicy && typeof directives.creativePolicy === 'object'
+    ? { ...directives.creativePolicy }
+    : {};
+  const titlePolicy = directives.titlePolicy && typeof directives.titlePolicy === 'object'
+    ? { ...directives.titlePolicy }
+    : {};
+  const hashtagPolicy = directives.hashtagPolicy && typeof directives.hashtagPolicy === 'object'
+    ? { ...directives.hashtagPolicy }
+    : {};
+
+  const boost = Math.min(4, Math.max(1, Number(signal.consecutiveNoInboundDays || 0) - Number(signal.threshold || 3) + 1));
+
+  executionTargets.neighborCommentTargetPerCycle = Math.max(
+    Number(executionTargets.neighborCommentTargetPerCycle || 1),
+    Number(engagementPolicy.outboundNeighborCommentTarget || 2),
+  ) + boost;
+  executionTargets.sympathyTargetPerCycle = Math.max(
+    Number(executionTargets.sympathyTargetPerCycle || 1),
+    Number(engagementPolicy.sympathyTarget || 3),
+  ) + Math.max(1, Math.ceil(boost / 2));
+  executionTargets.instagramRegistrationsPerCycle = Math.max(1, Number(executionTargets.instagramRegistrationsPerCycle || 1)) + 1;
+  executionTargets.facebookRegistrationsPerCycle = Math.max(1, Number(executionTargets.facebookRegistrationsPerCycle || 1));
+
+  engagementPolicy.outboundNeighborCommentTarget = Number(executionTargets.neighborCommentTargetPerCycle || 2);
+  engagementPolicy.sympathyTarget = Number(executionTargets.sympathyTargetPerCycle || 3);
+  engagementPolicy.lowExposureEscalated = true;
+  engagementPolicy.lowExposureSignalCode = 'low_exposure_accumulated';
+  engagementPolicy.lowExposureObservedAt = new Date().toISOString();
+  engagementPolicy.lowExposureWindowDays = Number(signal.windowDays || 0);
+
+  creativePolicy.reelHookIntensity = 'high';
+  creativePolicy.thumbnailAggro = 'high';
+  creativePolicy.storyInteractionMode = 'poll_cta';
+  titlePolicy.tone = 'amplify';
+  hashtagPolicy.mode = 'aggressive';
+  hashtagPolicy.focusTags = Array.from(new Set([...(Array.isArray(hashtagPolicy.focusTags) ? hashtagPolicy.focusTags : []), '#노출확대', '#유입강화']));
+
+  directives.executionTargets = executionTargets;
+  directives.engagementPolicy = engagementPolicy;
+  directives.creativePolicy = creativePolicy;
+  directives.titlePolicy = titlePolicy;
+  directives.hashtagPolicy = hashtagPolicy;
+  directives.socialNativeRequired = true;
+  next.executionDirectives = directives;
+
+  focus.unshift(`low_exposure_accumulated 대응: 댓글 유입 부족(${signal.daysWithNoInbound}/${signal.windowDays}일) 구간에 노출형 전략을 증폭`);
+  recommendations.unshift(`최근 ${signal.windowDays}일 기준 inbound ${signal.totalInbound}건, 연속 무유입 ${signal.consecutiveNoInboundDays}일로 low_exposure_accumulated 신호가 발생해 이웃댓글/공감/릴스 훅 강도를 상향합니다.`);
+  recommendations.push('댓글 유입 부족 구간에서는 질문형 오프닝과 저장/공유 유도 문구를 우선 적용해 노출 루프를 먼저 복구합니다.');
+
+  next.focus = [...new Set(focus.filter(Boolean))];
+  next.recommendations = [...new Set(recommendations.filter(Boolean))];
+  return next;
 }
 
 function applyMarketingFeedbackToPlan(plan = {}, marketingDigest = null) {
@@ -650,7 +813,10 @@ async function evolveStrategy(diagnosis = {}, options = {}) {
   const operationalPlan = await applyOperationalFeedbackToPlan(basePlan);
   const experimentPlan = await applyExperimentFeedbackToPlan(operationalPlan);
   const evalPlan = await applyEvalFeedbackToPlan(experimentPlan, previousPlan);
-  const rollbackPlan = applyDecayAndRollback(evalPlan, previousPlan);
+  const threshold = Number(evalPlan?.executionDirectives?.engagementPolicy?.lowExposureEscalationThreshold || 3);
+  const exposureSignal = await readLowExposureSignal(threshold);
+  const exposurePlan = applyLowExposureFeedbackToPlan(evalPlan, exposureSignal);
+  const rollbackPlan = applyDecayAndRollback(exposurePlan, previousPlan);
   const plan = {
     ...rollbackPlan,
     dailyMixPolicy: buildDailyMixPolicy(rollbackPlan, diagnosis, previousPlan),
@@ -689,4 +855,6 @@ module.exports = {
   applyMarketingFeedbackToPlan,
   applyOperationalFeedbackToPlan,
   buildExecutionDirectives,
+  computeLowExposureSignal,
+  applyLowExposureFeedbackToPlan,
 };
