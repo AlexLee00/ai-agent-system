@@ -397,8 +397,8 @@ function buildContext({ github, npm, webSources, audit, cache }) {
 }
 
 // ─── LLM 체인 ──────────────────────────────────────────────────────
-// 아처는 문서 기준 Claude Sonnet 급 분석 품질을 우선하고,
-// OpenAI/Groq는 가용성·비용 fallback으로 사용한다.
+// selector/runtime override 기반 체인 사용.
+// fallback 성공 시 실제 provider/model 메타를 결과에 남긴다.
 const ARCHER_CHAIN = config.LLM_CHAIN || [
   { provider: 'anthropic', model: 'claude-sonnet-4-6', maxTokens: 4096, temperature: 0.2 },
   { provider: 'openai', model: config.OPENAI.model, maxTokens: config.OPENAI.maxTokens, temperature: config.OPENAI.temperature },
@@ -415,6 +415,7 @@ async function analyze(data, cache = {}) {
   const contextText = buildContext({ ...data, cache: { ...cache, packageUsage: data.packageUsage || {} } });
 
   let raw;
+  let llmMeta = null;
   try {
     const { text, provider, model: usedModel, attempt } = await callWithFallback({
       chain:        ARCHER_CHAIN,
@@ -429,7 +430,17 @@ async function analyze(data, cache = {}) {
         requestType: 'architecture_review',
       },
     });
-    if (attempt > 1) {
+    const fallbackUsed = Number(attempt || 1) > 1;
+    const degradedFallback = ['local', 'groq'].includes(String(provider || '').toLowerCase());
+    llmMeta = {
+      provider: provider || null,
+      model: usedModel || null,
+      attempt: Number(attempt || 1),
+      source: fallbackUsed ? 'fallback' : 'selector',
+      fallbackUsed,
+      degradedFallback,
+    };
+    if (fallbackUsed) {
       console.log(`  ↳ [아처] LLM 폴백: ${provider}/${usedModel} (시도 ${attempt})`);
     }
     raw = text;
@@ -447,6 +458,7 @@ async function analyze(data, cache = {}) {
 
   try {
     const parsed = JSON.parse(jsonMatch[0]);
+    if (llmMeta) parsed._llm_meta = llmMeta;
     return normalizeAnalysis(parsed, data);
   } catch (e) {
     console.warn('  ⚠️ [아처] JSON 파싱 오류:', e.message);

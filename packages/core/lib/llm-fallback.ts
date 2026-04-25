@@ -107,6 +107,8 @@ type ProviderCallResult = {
   raw: unknown;
   text: string;
   usage: ProviderUsage | null;
+  provider?: string | null;
+  model?: string | null;
 };
 
 type OAuthStore = {
@@ -752,27 +754,39 @@ async function _callProvider(
   switch (provider) {
     case 'anthropic': {
       const resp = await _callAnthropic(normalizedOpts);
-      return { raw: resp, text: _extractText(resp, 'anthropic'), usage: resp.usage };
+      return { raw: resp, text: _extractText(resp, 'anthropic'), usage: resp.usage, provider, model };
     }
     case 'openai': {
       const resp = await _callOpenAI(normalizedOpts);
-      return { raw: resp, text: _extractText(resp, 'openai'), usage: resp.usage };
+      return { raw: resp, text: _extractText(resp, 'openai'), usage: resp.usage, provider, model };
     }
     case 'openai-oauth': {
       const resp = await _callOpenAIOAuth(normalizedOpts);
-      return { raw: resp, text: _extractText(resp, 'openai'), usage: resp.usage };
+      return {
+        raw: resp,
+        text: _extractText(resp, 'openai'),
+        usage: resp.usage,
+        provider: resp?._openclaw?.provider || provider,
+        model: resp?._openclaw?.model || model,
+      };
     }
     case 'claude-code': {
       const resp = await _callClaudeCode(normalizedOpts);
-      return { raw: resp, text: _extractText(resp, 'claude-code'), usage: resp.usage };
+      return {
+        raw: resp,
+        text: _extractText(resp, 'claude-code'),
+        usage: resp.usage,
+        provider,
+        model: resp?._claudeCode?.model || model,
+      };
     }
     case 'groq': {
       const resp = await _callGroq(normalizedOpts);
-      return { raw: resp, text: _extractText(resp, 'groq'), usage: resp.usage };
+      return { raw: resp, text: _extractText(resp, 'groq'), usage: resp.usage, provider, model };
     }
     case 'gemini': {
       const resp = await _callGemini(normalizedOpts);
-      return { raw: resp, text: _extractText(resp, 'gemini'), usage: null };
+      return { raw: resp, text: _extractText(resp, 'gemini'), usage: null, provider, model };
     }
     case 'local': {
       const localClient = require('./local-llm-client');
@@ -785,7 +799,7 @@ async function _callProvider(
         baseUrl: runtimeProfile?.local_llm_base_url || null,
       });
       if (!result) throw new Error('로컬 LLM 응답 없음');
-      return { raw: null, text: result.trim(), usage: null };
+      return { raw: null, text: result.trim(), usage: null, provider, model };
     }
     case 'ollama': {
       const ollamaClient = require('./local-llm-client');
@@ -799,7 +813,7 @@ async function _callProvider(
         timeoutMs: cfg.timeoutMs || 10000,
       });
       if (!result) throw new Error('Ollama LLM 응답 없음');
-      return { raw: null, text: result.trim(), usage: null };
+      return { raw: null, text: result.trim(), usage: null, provider, model };
     }
     default:
       throw new Error(`알 수 없는 provider: ${provider}`);
@@ -839,10 +853,10 @@ function _inferRuntimePurpose(logMeta: FallbackLogMeta = {}) {
  * @param {number|null} [opts.timeoutMs]
  * @param {string|null} [opts.team]
  * @param {string|null} [opts.purpose]
- * @returns {Promise<{text, provider, model, attempt}>}
+ * @returns {Promise<{text, provider, model, attempt, fallbackUsed, degradedFallback, source}>}
  * @throws 모든 체인 실패 시 마지막 오류를 throw
  */
-export async function callWithFallback({ chain, systemPrompt, userPrompt, logMeta = {}, timeoutMs = null, team = null, purpose = null }: { chain: FallbackChainEntry[]; systemPrompt: string; userPrompt: string; logMeta?: FallbackLogMeta; timeoutMs?: number | null; team?: string | null; purpose?: string | null; }): Promise<{ text: string; provider: string; model: string; attempt: number; }> {
+export async function callWithFallback({ chain, systemPrompt, userPrompt, logMeta = {}, timeoutMs = null, team = null, purpose = null }: { chain: FallbackChainEntry[]; systemPrompt: string; userPrompt: string; logMeta?: FallbackLogMeta; timeoutMs?: number | null; team?: string | null; purpose?: string | null; }): Promise<{ text: string; provider: string; model: string; attempt: number; fallbackUsed: boolean; degradedFallback: boolean; source: 'selector' | 'fallback'; }> {
   await initHubConfig();
 
   // ★ 긴급 차단 체크
@@ -921,7 +935,14 @@ export async function callWithFallback({ chain, systemPrompt, userPrompt, logMet
     const t0      = Date.now();
     const attempt = i + 1;
     try {
-      const { text, usage } = await _callProvider(cfg, systemPrompt, userPrompt, timeoutMs, runtimeProfile);
+      const result = await _callProvider(cfg, systemPrompt, userPrompt, timeoutMs, runtimeProfile);
+      const text = result.text;
+      const usage = result.usage;
+      const resolvedProvider = String(result.provider || cfg.provider || '').trim() || cfg.provider;
+      const resolvedModel = String(result.model || cfg.model || '').trim() || cfg.model;
+      const fallbackUsed = i > 0;
+      const degradedFallback = ['local', 'groq'].includes(resolvedProvider.toLowerCase());
+      const source = fallbackUsed ? 'fallback' : 'selector';
       const latencyMs = Date.now() - t0;
       _recordProviderSuccess(cfg.provider);
       const tokensIn  = usage?.input_tokens  || usage?.prompt_tokens     || 0;
@@ -933,7 +954,7 @@ export async function callWithFallback({ chain, systemPrompt, userPrompt, logMet
           logLLMCall({
             team:         logMeta.team,
             bot:          logMeta.bot  || logMeta.team,
-            model:        cfg.model,
+            model:        resolvedModel,
             requestType:  logMeta.requestType,
             inputTokens:  tokensIn,
             outputTokens: tokensOut,
@@ -950,8 +971,8 @@ export async function callWithFallback({ chain, systemPrompt, userPrompt, logMet
         trackTokens({
           bot:       logMeta.bot  || logMeta.team,
           team:      logMeta.team,
-          model:     cfg.model,
-          provider:  cfg.provider,
+          model:     resolvedModel,
+          provider:  resolvedProvider,
           taskType:  logMeta.requestType || 'unknown',
           tokensIn,
           tokensOut,
@@ -963,8 +984,8 @@ export async function callWithFallback({ chain, systemPrompt, userPrompt, logMet
         selectorKey: logMeta.selectorKey,
         agentName: logMeta.agentName,
         team: logMeta.team,
-        provider: cfg.provider,
-        model: cfg.model,
+        provider: resolvedProvider,
+        model: resolvedModel,
         isPrimary: i === 0,
         latencyMs,
         success: true,
@@ -974,24 +995,32 @@ export async function callWithFallback({ chain, systemPrompt, userPrompt, logMet
       }).catch(() => {});
 
       traceCollector.recordGeneration(trace, {
-        model: cfg.model,
-        provider: cfg.provider,
+        model: resolvedModel,
+        provider: resolvedProvider,
         route: traceRoute,
         inputTokens: tokensIn,
         outputTokens: tokensOut,
         latencyMs,
-        status: i > 0 ? 'fallback' : 'success',
-        fallbackUsed: i > 0,
-        fallbackProvider: i > 0 ? cfg.provider : null,
+        status: fallbackUsed ? 'fallback' : 'success',
+        fallbackUsed,
+        fallbackProvider: fallbackUsed ? resolvedProvider : null,
         confidence: null,
         qualityScore: null,
       });
 
-      if (i > 0) {
-        console.log(`  ↳ [폴백] ${cfg.provider}/${cfg.model} (시도 ${attempt}) 성공`);
+      if (fallbackUsed) {
+        console.log(`  ↳ [폴백] ${resolvedProvider}/${resolvedModel} (시도 ${attempt}) 성공`);
       }
 
-      return { text, provider: cfg.provider, model: cfg.model, attempt };
+      return {
+        text,
+        provider: resolvedProvider,
+        model: resolvedModel,
+        attempt,
+        fallbackUsed,
+        degradedFallback,
+        source,
+      };
 
     } catch (e) {
       lastError = e;

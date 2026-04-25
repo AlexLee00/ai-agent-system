@@ -56,6 +56,19 @@ const DEFAULT_TARGET_TEAM = String(process.env.CLAUDE_AUTO_DEV_TARGET_TEAM || 'c
 const AUTO_DEV_ARTIFACT_DIR = process.env.CLAUDE_AUTO_DEV_ARTIFACT_DIR ||
   path.join(WORKSPACE, 'claude-auto-dev-artifacts');
 const DEFAULT_AUTO_DEV_PROFILE = 'shadow';
+const AUTO_DEV_IMPLEMENTATION_MODEL_ALLOWLIST = {
+  'claude-code/sonnet': {
+    provider: 'claude-code',
+    model: 'claude-code/sonnet',
+    cliModelArg: 'sonnet',
+  },
+  'claude-code/opus': {
+    provider: 'claude-code',
+    model: 'claude-code/opus',
+    cliModelArg: 'opus',
+  },
+};
+const DEFAULT_AUTO_DEV_IMPLEMENTATION_MODEL = 'claude-code/sonnet';
 const AUTO_DEV_PROFILES = {
   shadow: {
     label: 'shadow',
@@ -66,6 +79,7 @@ const AUTO_DEV_PROFILES = {
     runHardTests: false,
     cleanupWorktree: true,
     integrationMode: 'patch',
+    implementationModel: DEFAULT_AUTO_DEV_IMPLEMENTATION_MODEL,
   },
   supervised_l4: {
     label: 'supervised_l4',
@@ -76,6 +90,7 @@ const AUTO_DEV_PROFILES = {
     runHardTests: false,
     cleanupWorktree: true,
     integrationMode: 'patch',
+    implementationModel: DEFAULT_AUTO_DEV_IMPLEMENTATION_MODEL,
   },
   autonomous_l5: {
     label: 'autonomous_l5',
@@ -86,6 +101,7 @@ const AUTO_DEV_PROFILES = {
     runHardTests: true,
     cleanupWorktree: true,
     integrationMode: 'cherry_pick',
+    implementationModel: DEFAULT_AUTO_DEV_IMPLEMENTATION_MODEL,
   },
 };
 const AUTO_DEV_PROFILE_ALIASES = {
@@ -177,6 +193,86 @@ function normalizeIntegrationMode(value, fallback = 'patch') {
   return fallback;
 }
 
+function normalizeImplementationModel(value) {
+  const input = toSafeString(value).toLowerCase();
+  if (!input) return null;
+  if (input === 'sonnet') return 'claude-code/sonnet';
+  if (input === 'opus') return 'claude-code/opus';
+  if (input.startsWith('claude-code/')) {
+    return Object.prototype.hasOwnProperty.call(AUTO_DEV_IMPLEMENTATION_MODEL_ALLOWLIST, input) ? input : null;
+  }
+  return null;
+}
+
+function resolveImplementationModelPolicy({
+  profile = null,
+  compatibilityMode = false,
+  options = {},
+  envVars = process.env,
+  ignoredLegacyModelOverrides = [],
+  profileName = DEFAULT_AUTO_DEV_PROFILE,
+} = {}) {
+  const profileModel = normalizeImplementationModel(profile?.implementationModel || DEFAULT_AUTO_DEV_IMPLEMENTATION_MODEL)
+    || DEFAULT_AUTO_DEV_IMPLEMENTATION_MODEL;
+  let model = profileModel;
+  let source = 'profile';
+  let error = null;
+
+  const optionOverrideRaw = toSafeString(
+    options.implementationModel
+    || options.model
+    || options.autoDevModel
+  );
+  const envOverrideRaw = toSafeString(
+    envVars.CLAUDE_AUTO_DEV_MODEL
+    || envVars.CLAUDE_CODE_MODEL
+  );
+
+  if (compatibilityMode) {
+    const chosenRaw = optionOverrideRaw || envOverrideRaw;
+    if (chosenRaw) {
+      const normalized = normalizeImplementationModel(chosenRaw);
+      if (!normalized) {
+        error = `지원하지 않는 auto_dev implementation model: ${chosenRaw}`;
+      } else {
+        model = normalized;
+        source = optionOverrideRaw ? 'compat_option' : 'compat_env';
+      }
+    }
+  } else {
+    if (optionOverrideRaw) ignoredLegacyModelOverrides.push('option:implementationModel');
+    if (envOverrideRaw) ignoredLegacyModelOverrides.push('env:CLAUDE_AUTO_DEV_MODEL');
+  }
+
+  const allowlisted = AUTO_DEV_IMPLEMENTATION_MODEL_ALLOWLIST[model];
+  if (!allowlisted) {
+    error = error || `allowlist에 없는 auto_dev implementation model: ${model || 'none'}`;
+  }
+  if (profileName === 'autonomous_l5' && model !== DEFAULT_AUTO_DEV_IMPLEMENTATION_MODEL && !compatibilityMode) {
+    error = error || `autonomous_l5는 profile 모델(${DEFAULT_AUTO_DEV_IMPLEMENTATION_MODEL})만 허용됩니다`;
+  }
+
+  return {
+    implementationProvider: allowlisted?.provider || 'claude-code',
+    implementationModel: allowlisted?.model || model || DEFAULT_AUTO_DEV_IMPLEMENTATION_MODEL,
+    implementationCliModelArg: allowlisted?.cliModelArg || 'sonnet',
+    implementationModelSource: source,
+    modelPolicyError: error,
+  };
+}
+
+function buildImplementationModelMeta(runtimeConfig = {}, extra = {}) {
+  return {
+    provider: runtimeConfig.implementationProvider || 'claude-code',
+    model: runtimeConfig.implementationModel || DEFAULT_AUTO_DEV_IMPLEMENTATION_MODEL,
+    cliModelArg: runtimeConfig.implementationCliModelArg || 'sonnet',
+    source: runtimeConfig.implementationModelSource || 'profile',
+    fallbackUsed: false,
+    degradedFallback: false,
+    ...extra,
+  };
+}
+
 function resolveAutoDevRuntimeConfig(options = {}, envVars = process.env) {
   const profileName = normalizeAutoDevProfileName(options.profile || envVars.CLAUDE_AUTO_DEV_PROFILE);
   const profile = AUTO_DEV_PROFILES[profileName] || AUTO_DEV_PROFILES[DEFAULT_AUTO_DEV_PROFILE];
@@ -202,6 +298,7 @@ function resolveAutoDevRuntimeConfig(options = {}, envVars = process.env) {
     integrationMode: profile.integrationMode,
     allowDirtyBase: false,
     ignoredLegacyOverrides: [],
+    ignoredLegacyModelOverrides: [],
   };
 
   const envOverrides = {
@@ -257,6 +354,19 @@ function resolveAutoDevRuntimeConfig(options = {}, envVars = process.env) {
   }
 
   config.dryRun = Boolean(options.test || options.dryRun || !config.executeImplementation);
+  const modelPolicy = resolveImplementationModelPolicy({
+    profile,
+    compatibilityMode,
+    options,
+    envVars,
+    ignoredLegacyModelOverrides: config.ignoredLegacyModelOverrides,
+    profileName,
+  });
+  config.implementationProvider = modelPolicy.implementationProvider;
+  config.implementationModel = modelPolicy.implementationModel;
+  config.implementationCliModelArg = modelPolicy.implementationCliModelArg;
+  config.implementationModelSource = modelPolicy.implementationModelSource;
+  config.modelPolicyError = modelPolicy.modelPolicyError || null;
   return config;
 }
 
@@ -954,19 +1064,20 @@ function formatStageMessage(job, stageId, details = '') {
   return lines.join('\n');
 }
 
-async function sendStageAlarm(job, stageId, details = '', options = {}) {
+async function sendStageAlarm(job, stageId, details = '', options = {}, payload = null) {
   const runtimeConfig = getRuntimeConfig(options);
   const shadow = options.shadow ?? runtimeConfig.shadow;
   const message = formatStageMessage(job, stageId, details);
   if (shadow || options.test) {
     console.log(`[auto-dev] [SHADOW] ${stageId}: ${job.analysis?.relPath || job.relPath}`);
-    return { ok: true, shadow: true, message };
+    return { ok: true, shadow: true, message, payload };
   }
   return postAlarm({
     message,
     team: 'claude',
     alertLevel: stageId === 'failed' ? 3 : 2,
     fromBot: 'auto-dev',
+    payload: payload || undefined,
   });
 }
 
@@ -1070,34 +1181,62 @@ async function runClaudeImplementation(job, mode, options = {}, failureContext =
   const runtimeConfig = getRuntimeConfig(options);
   const dryRun = runtimeConfig.dryRun;
   const cwd = executionContext?.cwd || ROOT;
+  const modelMeta = buildImplementationModelMeta(runtimeConfig);
 
   if (dryRun) {
-    return { pass: true, skipped: true, message: `[auto-dev] ${mode} dry-run` };
+    return { pass: true, skipped: true, message: `[auto-dev] ${mode} dry-run`, modelMeta };
+  }
+  if (runtimeConfig.modelPolicyError) {
+    return {
+      pass: false,
+      skipped: false,
+      error: `model_policy_blocked: ${runtimeConfig.modelPolicyError}`,
+      modelMeta,
+    };
   }
 
   const toolPolicy = resolveAllowedToolsPolicy(options);
   if (!toolPolicy.ok) {
-    return { pass: false, skipped: false, error: toolPolicy.error };
+    return { pass: false, skipped: false, error: toolPolicy.error, modelMeta };
   }
   const timeout = Number(process.env.CLAUDE_AUTO_DEV_TIMEOUT_MS || 60 * 60 * 1000);
   const prompt = buildClaudePrompt(job, mode, failureContext, toolPolicy);
   const cli = resolveClaudeCliCommand();
 
   if (!cli.ok) {
-    return { pass: false, skipped: false, error: cli.error };
+    return { pass: false, skipped: false, error: cli.error, modelMeta };
   }
 
   try {
-    const output = execFileSync(cli.command, ['--print', prompt, '--allowedTools', toolPolicy.serialized], {
+    const output = execFileSync(cli.command, [
+      '--print',
+      prompt,
+      '--model',
+      modelMeta.cliModelArg,
+      '--allowedTools',
+      toolPolicy.serialized,
+    ], {
       cwd,
       encoding: 'utf8',
       timeout,
       stdio: ['ignore', 'pipe', 'pipe'],
     });
-    return { pass: true, skipped: false, output: output.slice(-4000), cli: cli.resolvedPath || cli.command };
+    return {
+      pass: true,
+      skipped: false,
+      output: output.slice(-4000),
+      cli: cli.resolvedPath || cli.command,
+      modelMeta,
+    };
   } catch (error) {
     const stderr = String(error.stderr || error.stdout || error.message || '');
-    return { pass: false, skipped: false, error: stderr.slice(-4000), cli: cli.resolvedPath || cli.command };
+    return {
+      pass: false,
+      skipped: false,
+      error: stderr.slice(-4000),
+      cli: cli.resolvedPath || cli.command,
+      modelMeta,
+    };
   }
 }
 
@@ -1686,6 +1825,7 @@ function formatImplementationCompletionSection(summary = {}) {
   const changedFilesValue = changedFiles.length > 0
     ? changedFiles.slice(0, 20).map(file => `\`${file}\``).join(', ')
     : 'none';
+  const modelMeta = summary.implementationModelMeta || {};
   const lines = [
     '<!-- auto_dev:implementation_completed -->',
     '## Implementation Completed',
@@ -1696,6 +1836,12 @@ function formatImplementationCompletionSection(summary = {}) {
     `- integration_mode: \`${summary.integration?.mode || summary.integration?.integrationMode || 'none'}\``,
     `- changed_files_count: ${changedFiles.length}`,
     `- changed_files: ${changedFilesValue}`,
+    `- implementation_model_provider: \`${modelMeta.provider || 'claude-code'}\``,
+    `- implementation_model: \`${modelMeta.model || DEFAULT_AUTO_DEV_IMPLEMENTATION_MODEL}\``,
+    `- implementation_cli_model_arg: \`${modelMeta.cliModelArg || 'sonnet'}\``,
+    `- implementation_model_source: \`${modelMeta.source || 'profile'}\``,
+    `- implementation_fallback_used: ${modelMeta.fallbackUsed === true}`,
+    `- implementation_degraded_fallback: ${modelMeta.degradedFallback === true}`,
     `- review: ${summary.review?.pass ? 'PASS' : 'UNKNOWN'}${summary.review?.message ? ` - ${summarizeCompletionText(summary.review.message, 220)}` : ''}`,
     `- test: ${summary.test?.pass ? 'PASS' : 'UNKNOWN'}${summary.test?.message ? ` - ${summarizeCompletionText(summary.test.message, 220)}` : ''}`,
   ];
@@ -1741,6 +1887,7 @@ function writeArchiveManifest({
   review = null,
   test = null,
   integration = null,
+  implementationModelMeta = null,
 } = {}) {
   if (!archivedPath) return null;
   const archivedAbsolute = path.join(ROOT, archivedPath);
@@ -1762,6 +1909,7 @@ function writeArchiveManifest({
     review: review ? { pass: review.pass, message: review.message } : null,
     test: test ? { pass: test.pass, message: test.message } : null,
     integration: integration || null,
+    implementationModelMeta: implementationModelMeta || null,
   };
   fs.writeFileSync(manifestPath, JSON.stringify(manifest, null, 2), 'utf8');
   return relativeToRoot(manifestPath);
@@ -1927,6 +2075,7 @@ async function processAutoDevDocument(filePath, options = {}) {
   const job = { id, filePath, relPath, title: path.basename(filePath, '.md'), contentHash };
   const maxRevisionPasses = Number(options.maxRevisionPasses ?? process.env.CLAUDE_AUTO_DEV_MAX_REVISIONS ?? 1);
   const runtimeConfig = getRuntimeConfig(options);
+  const implementationModelMeta = buildImplementationModelMeta(runtimeConfig);
   const staleRunningJob = state.jobs[id]?.status === 'running' ? state.jobs[id] : null;
   if (!options.force && staleRunningJob && !isTimestampStale(staleRunningJob.updatedAt, DEFAULT_RUNNING_STALE_MS)) {
     return { ok: true, skipped: true, reason: 'already_running', job: staleRunningJob };
@@ -1963,6 +2112,7 @@ async function processAutoDevDocument(filePath, options = {}) {
     updateJobState(job, 'received', {
       contentHash,
       profile: runtimeConfig.profile,
+      implementationModelMeta,
       lock: {
         global: false,
         job: true,
@@ -1984,6 +2134,7 @@ async function processAutoDevDocument(filePath, options = {}) {
     updateJobState(job, 'analysis', {
       analysis,
       contentHash,
+      implementationModelMeta,
       targetTeam: policy.targetTeam,
       writeScope: policy.writeScope,
       riskTier: policy.riskTier,
@@ -1996,6 +2147,7 @@ async function processAutoDevDocument(filePath, options = {}) {
       const blockedJob = updateJobState(job, policy.decision, {
         contentHash,
         reason: policy.reason,
+        implementationModelMeta,
         targetTeam: policy.targetTeam,
         writeScope: policy.writeScope,
         riskTier: policy.riskTier,
@@ -2011,6 +2163,7 @@ async function processAutoDevDocument(filePath, options = {}) {
       const blockedJob = updateJobState(job, contextResult.stage || 'blocked_dirty_worktree', {
         contentHash,
         reason: contextResult.reason || 'execution context unavailable',
+        implementationModelMeta,
         policyDecision: 'blocked_dirty_worktree',
         targetTeam: policy.targetTeam,
         writeScope: policy.writeScope,
@@ -2030,6 +2183,7 @@ async function processAutoDevDocument(filePath, options = {}) {
     updateJobState(job, 'plan', {
       plan,
       beforeStatus,
+      implementationModelMeta,
       executionContext: {
         mode: executionContext.mode,
         cwd: executionContext.cwd,
@@ -2044,9 +2198,20 @@ async function processAutoDevDocument(filePath, options = {}) {
       profile: runtimeConfig.profile,
     });
     await setAgentStatus('plan', job);
-    await sendStageAlarm(job, 'plan', `구현계획 수립 완료\n\n${plan.slice(0, 1800)}`, options);
+    await sendStageAlarm(
+      job,
+      'plan',
+      `구현계획 수립 완료\n\n${plan.slice(0, 1800)}`,
+      options,
+      {
+        event_type: 'auto_dev_stage_plan',
+        profile: runtimeConfig.profile,
+        implementationModelMeta,
+      },
+    );
 
     updateJobState(job, 'implementation', {
+      implementationModelMeta,
       targetTeam: policy.targetTeam,
       writeScope: policy.writeScope,
       riskTier: policy.riskTier,
@@ -2056,6 +2221,7 @@ async function processAutoDevDocument(filePath, options = {}) {
     await setAgentStatus('implementation', job);
     const implementation = await runClaudeImplementation(job, 'implementation', options, '', executionContext);
     if (!implementation.pass) throw new Error(`implementation failed: ${implementation.error}`);
+    const resolvedImplementationModelMeta = implementation.modelMeta || implementationModelMeta;
 
     let reviewResult;
     for (let pass = 0; pass <= maxRevisionPasses; pass++) {
@@ -2126,6 +2292,7 @@ async function processAutoDevDocument(filePath, options = {}) {
             review: reviewResult,
             test: testResult,
             integration: integrationResult,
+            implementationModelMeta: resolvedImplementationModelMeta,
           });
           if (!archiveManifestPath) {
             throw new Error('archive_manifest_not_created');
@@ -2137,6 +2304,7 @@ async function processAutoDevDocument(filePath, options = {}) {
           const completion = writeImplementationCompletionSummary(completionTarget, {
             completedAt: implementationCompletedAt,
             profile: runtimeConfig.profile,
+            implementationModelMeta: resolvedImplementationModelMeta,
             changedFiles: newlyChangedFiles,
             review: reviewResult,
             test: testResult,
@@ -2201,6 +2369,7 @@ async function processAutoDevDocument(filePath, options = {}) {
       completedAt: nowIso(),
       implementationStatus: implementationCompletedAt ? IMPLEMENTATION_COMPLETED_MARKER : null,
       implementationCompletedAt,
+      implementationModelMeta: resolvedImplementationModelMeta,
       profile: runtimeConfig.profile,
       targetTeam: policy.targetTeam,
       writeScope: policy.writeScope,
@@ -2222,7 +2391,19 @@ async function processAutoDevDocument(filePath, options = {}) {
       : integrationResult.exported
       ? `통합 산출물: patch exported\n- ${integrationResult.patchPath}`
       : '통합 산출물: 없음';
-    await sendStageAlarm(job, 'completed', `리뷰/테스트 통과\n\n${testResult.message}\n\n${changedPreview}\n\n${integrationPreview}`, options);
+    await sendStageAlarm(
+      job,
+      'completed',
+      `리뷰/테스트 통과\n\n${testResult.message}\n\n${changedPreview}\n\n${integrationPreview}`,
+      options,
+      {
+        event_type: 'auto_dev_stage_completed',
+        profile: runtimeConfig.profile,
+        implementationModelMeta: resolvedImplementationModelMeta,
+        archivedPath: archivedPath || null,
+        archiveManifestPath: archiveManifestPath || null,
+      },
+    );
     await markAgentDone();
     return {
       ok: true,
@@ -2248,6 +2429,7 @@ async function processAutoDevDocument(filePath, options = {}) {
       newlyChangedFiles,
       contentHash,
       profile: runtimeConfig.profile,
+      implementationModelMeta,
       worktreeCleanup: cleanupResult,
       integration: integrationResult || null,
       integrationRollback: integrationRollback || null,
@@ -2267,7 +2449,18 @@ async function processAutoDevDocument(filePath, options = {}) {
         }
         : null,
     });
-    await sendStageAlarm({ ...job, analysis: job.analysis || { title: job.title, relPath } }, 'failed', error.message, { ...options, shadow: options.shadow });
+    await sendStageAlarm(
+      { ...job, analysis: job.analysis || { title: job.title, relPath } },
+      'failed',
+      error.message,
+      { ...options, shadow: options.shadow },
+      {
+        event_type: 'auto_dev_stage_failed',
+        profile: runtimeConfig.profile,
+        implementationModelMeta,
+        error: error.message,
+      },
+    );
     await markAgentError(error.message);
     return { ok: false, error: error.message, job: failedJob };
   } finally {
@@ -2301,6 +2494,12 @@ async function runAutoDevPipeline(options = {}) {
         runHardTests: runtimeConfig.runHardTests,
         cleanupWorktree: runtimeConfig.cleanupWorktree,
         integrationMode: runtimeConfig.integrationMode,
+        compatibilityMode: runtimeConfig.compatibilityMode,
+        implementationProvider: runtimeConfig.implementationProvider,
+        implementationModel: runtimeConfig.implementationModel,
+        implementationCliModelArg: runtimeConfig.implementationCliModelArg,
+        implementationModelSource: runtimeConfig.implementationModelSource,
+        modelPolicyError: runtimeConfig.modelPolicyError || null,
       },
       lock: {
         acquired: false,
@@ -2352,6 +2551,12 @@ async function runAutoDevPipeline(options = {}) {
       runHardTests: runtimeConfig.runHardTests,
       cleanupWorktree: runtimeConfig.cleanupWorktree,
       integrationMode: runtimeConfig.integrationMode,
+      compatibilityMode: runtimeConfig.compatibilityMode,
+      implementationProvider: runtimeConfig.implementationProvider,
+      implementationModel: runtimeConfig.implementationModel,
+      implementationCliModelArg: runtimeConfig.implementationCliModelArg,
+      implementationModelSource: runtimeConfig.implementationModelSource,
+      modelPolicyError: runtimeConfig.modelPolicyError || null,
     },
     lock: {
       acquired: true,

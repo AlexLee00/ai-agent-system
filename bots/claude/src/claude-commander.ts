@@ -14,7 +14,7 @@
 const fs      = require('fs');
 const path    = require('path');
 const os      = require('os');
-const { execSync, spawn } = require('child_process');
+const { execSync, spawn, spawnSync } = require('child_process');
 process.env.PG_DIRECT = process.env.PG_DIRECT || 'true';
 const pgPool = require('../../../packages/core/lib/pg-pool');
 const { initHubConfig } = require('../../../packages/core/lib/llm-keys');
@@ -91,6 +91,10 @@ const NLP_LEARNINGS_PATH = getNamedIntentLearningPath('jay');
 
 // 텔레그램 메시지 최대 길이 (안전 마진 포함)
 const TG_MAX_CHARS = 3500;
+const COMMANDER_CLAUDE_MODEL_ALLOWLIST = {
+  'claude-code/sonnet': { provider: 'claude-code', model: 'claude-code/sonnet', cliModelArg: 'sonnet' },
+  'claude-code/opus': { provider: 'claude-code', model: 'claude-code/opus', cliModelArg: 'opus' },
+};
 
 function runCommandAsync(command, args = [], opts = {}) {
   const {
@@ -167,6 +171,45 @@ function parseBool(value, defaultValue = false) {
   return defaultValue;
 }
 
+function normalizeCommanderClaudeModel(value) {
+  const input = String(value || '').trim().toLowerCase();
+  if (!input) return null;
+  if (input === 'sonnet') return 'claude-code/sonnet';
+  if (input === 'opus') return 'claude-code/opus';
+  if (input.startsWith('claude-code/')) {
+    return Object.prototype.hasOwnProperty.call(COMMANDER_CLAUDE_MODEL_ALLOWLIST, input) ? input : null;
+  }
+  return null;
+}
+
+function resolveCommanderClaudeModel(args = {}, envVars = process.env) {
+  const argOverrideRaw = String(args.model || args.claude_model || '').trim();
+  const envOverrideRaw = String(envVars.CLAUDE_COMMANDER_MODEL || '').trim();
+  const selectedRaw = argOverrideRaw || envOverrideRaw || 'claude-code/sonnet';
+  const normalized = normalizeCommanderClaudeModel(selectedRaw);
+  if (!normalized) {
+    return {
+      ok: false,
+      error: `지원하지 않는 commander Claude model: ${selectedRaw}`,
+    };
+  }
+  const allowlisted = COMMANDER_CLAUDE_MODEL_ALLOWLIST[normalized];
+  return {
+    ok: true,
+    provider: allowlisted.provider,
+    model: allowlisted.model,
+    cliModelArg: allowlisted.cliModelArg,
+    source: argOverrideRaw ? 'arg_override' : envOverrideRaw ? 'env_override' : 'policy_default',
+    fallbackUsed: false,
+    degradedFallback: false,
+  };
+}
+
+function formatCommanderModelLine(modelPolicy = null) {
+  if (!modelPolicy) return '';
+  return `[llm model=${modelPolicy.model} cli=${modelPolicy.cliModelArg} source=${modelPolicy.source}]`;
+}
+
 // ─── 명령 핸들러 ─────────────────────────────────────────────────────
 
 /**
@@ -236,10 +279,18 @@ async function handleRunArcher() {
 async function handleAskClaude(args) {
   const query = (args.query || '').trim();
   if (!query) return { ok: false, error: '질문 내용 없음' };
+  const modelPolicy = resolveCommanderClaudeModel(args);
+  if (!modelPolicy.ok) return { ok: false, error: modelPolicy.error };
 
   let result;
   try {
-    result = await runCommandAsync('claude', ['-p', query, '--dangerously-skip-permissions'], {
+    result = await runCommandAsync('claude', [
+      '-p',
+      query,
+      '--model',
+      modelPolicy.cliModelArg,
+      '--dangerously-skip-permissions',
+    ], {
       cwd: PROJECT_ROOT,
       timeout: 280000,
       env: { ...process.env },
@@ -252,13 +303,14 @@ async function handleAskClaude(args) {
 
   const response = (result.stdout || '').trim();
   if (!response) return { ok: false, error: '빈 응답' };
+  const decorated = `${formatCommanderModelLine(modelPolicy)}\n${response}`;
 
   // 텔레그램 길이 제한 처리
-  const message = response.length > TG_MAX_CHARS
-    ? response.slice(0, TG_MAX_CHARS) + '\n\n…(이하 생략)'
-    : response;
+  const message = decorated.length > TG_MAX_CHARS
+    ? decorated.slice(0, TG_MAX_CHARS) + '\n\n…(이하 생략)'
+    : decorated;
 
-  return { ok: true, message };
+  return { ok: true, message, data: { llm: modelPolicy } };
 }
 
 /**
@@ -393,6 +445,8 @@ async function saveLearning(entry) {
 async function handleAnalyzeUnknown(args) {
   const text = (args.text || '').trim();
   if (!text) return { ok: false, error: '분석할 텍스트 없음' };
+  const modelPolicy = resolveCommanderClaudeModel(args);
+  if (!modelPolicy.ok) return { ok: false, error: modelPolicy.error };
 
   const prompt = `너는 AI 봇 시스템 제이(Jay)의 NLP 개선 담당이다.
 제이가 처리하지 못한 사용자 메시지: "${text}"
@@ -443,26 +497,40 @@ async function handleAnalyzeUnknown(args) {
   "reason": "판단 근거 한 줄"
 }`;
 
-  const result = spawnSync('claude', ['-p', prompt, '--dangerously-skip-permissions'], {
-    cwd:      PROJECT_ROOT,
-    timeout:  120000, // 2분
-    env:      { ...process.env },
-    encoding: 'utf8',
-  });
-
-  if (result.error) return { ok: false, error: result.error.message };
-  if (result.status !== 0) return { ok: false, error: (result.stderr || '').slice(0, 300) };
+  let result;
+  try {
+    result = await runCommandAsync('claude', [
+      '-p',
+      prompt,
+      '--model',
+      modelPolicy.cliModelArg,
+      '--dangerously-skip-permissions',
+    ], {
+      cwd: PROJECT_ROOT,
+      timeout: 120000,
+      env: { ...process.env },
+      allowExitCodes: [0],
+    });
+  } catch (e) {
+    const errMsg = (e.stderr || '').trim().slice(0, 300);
+    return { ok: false, error: errMsg || e.message };
+  }
 
   const output = (result.stdout || '').trim();
+  const modelLine = formatCommanderModelLine(modelPolicy);
 
   // JSON 추출
   let parsed;
   try {
     const jsonMatch = output.match(/\{[\s\S]*\}/);
-    if (!jsonMatch) return { ok: true, message: output.slice(0, TG_MAX_CHARS) };
+    if (!jsonMatch) {
+      const plain = `${modelLine}\n${output}`.slice(0, TG_MAX_CHARS);
+      return { ok: true, message: plain, data: { llm: modelPolicy } };
+    }
     parsed = JSON.parse(jsonMatch[0]);
   } catch {
-    return { ok: true, message: output.slice(0, TG_MAX_CHARS) };
+    const plain = `${modelLine}\n${output}`.slice(0, TG_MAX_CHARS);
+    return { ok: true, message: plain, data: { llm: modelPolicy } };
   }
 
   // 유효한 패턴 제안 → 저장 (intent-parser.js가 5분마다 리로드)
@@ -482,11 +550,11 @@ async function handleAnalyzeUnknown(args) {
     }
   }
 
-  const userMsg = (parsed.user_response || output).slice(0, TG_MAX_CHARS);
+  const userMsg = `${modelLine}\n${parsed.user_response || output}`.slice(0, TG_MAX_CHARS);
   const patternAdded = (parsed.pattern && parsed.intent && parsed.intent !== 'unknown')
     ? `\n\n💡 패턴 학습: \`${parsed.pattern}\` → ${parsed.intent}` : '';
 
-  return { ok: true, message: userMsg + patternAdded };
+  return { ok: true, message: userMsg + patternAdded, data: { llm: modelPolicy } };
 }
 
 // ─── 팀원 정체성 점검·학습 ───────────────────────────────────────────
@@ -1023,7 +1091,21 @@ async function main() {
   }
 }
 
-main().catch(e => {
-  console.error(`[클로드] 치명적 오류:`, e);
-  process.exit(1);
-});
+module.exports = {
+  HANDLERS,
+  processCommands,
+  __test__: {
+    resolveCommanderClaudeModel,
+    formatCommanderModelLine,
+    handleAskClaude,
+    handleAnalyzeUnknown,
+    runCommandAsync,
+  },
+};
+
+if (require.main === module) {
+  main().catch(e => {
+    console.error(`[클로드] 치명적 오류:`, e);
+    process.exit(1);
+  });
+}

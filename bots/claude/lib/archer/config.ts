@@ -195,8 +195,9 @@ module.exports = {
   },
 
   // ─── Archer LLM 체인 ────────────────────────────────────────────
-  // 문서 기준 아처는 Claude Sonnet 급 분석 품질을 우선한다.
-  // 따라서 primary는 Anthropic, 비용/가용성 fallback은 OpenAI → Groq 순으로 둔다.
+  // Archer 모델 정책은 selector/runtime override가 단일 진실원이다.
+  // 기본 정책은 claude-code/sonnet 품질 우선이며, 체인/순서는
+  // `claude.archer.tech_analysis` selector + runtime override 결과를 그대로 따른다.
   LLM_CHAIN: selectLLMChain('claude.archer.tech_analysis', {
     policyOverride: sharedConfig.RUNTIME?.llmSelectorOverrides?.['claude.archer.tech_analysis'],
   }),

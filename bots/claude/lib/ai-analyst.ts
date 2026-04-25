@@ -167,7 +167,7 @@ async function analyzeWithAI(results, elapsed, level) {
     level,
     policyOverride,
   });
-  const model  = chain[0]?.model || 'gpt-5.4';
+  const primaryModel = chain[0]?.model || 'gpt-5.4';
 
   // 1. 이슈 항목 추출
   const issues = results.flatMap(r =>
@@ -192,7 +192,7 @@ async function analyzeWithAI(results, elapsed, level) {
     .map(i => `${i.timestamp}: ${i.diagnosis} (${i.trend})`).join('\n') || null;
 
   // 4. LLM 호출
-  const { text } = await callWithFallback({
+  const { text, provider, model: usedModel, attempt } = await callWithFallback({
     chain,
     systemPrompt: SYSTEM_PROMPT,
     userPrompt: buildUserPrompt(issues, patterns, newErrors, prevInsights, elapsed, summary),
@@ -214,10 +214,18 @@ async function analyzeWithAI(results, elapsed, level) {
   }
   if (!parsed.diagnosis) return null;
   parsed = normalizeInsight(parsed, summary);
+  const fallbackUsed = Number(attempt || 1) > 1;
+  const degradedFallback = ['local', 'groq'].includes(String(provider || '').toLowerCase());
 
   const insight = {
     ...parsed,
-    model,
+    provider: provider || null,
+    model: usedModel || primaryModel,
+    primaryModel,
+    attempt: Number(attempt || 1),
+    fallbackUsed,
+    degradedFallback,
+    source: fallbackUsed ? 'fallback' : 'selector',
     timestamp:  kstNow(),
     issueCount: issues.length,
   };

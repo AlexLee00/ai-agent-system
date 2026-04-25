@@ -27,11 +27,11 @@ const cfg = require('./config');
 
 const SCHEMA  = 'reservation';   // shadow_log는 reservation 스키마
 
-// 폴백 체인: gpt-4o → gpt-4o-mini → llama-4-scout (무료)
+// selectorKey 기반 체인 사용 (config/runtime override 우선)
 const LLM_CHAIN = selectLLMChain('claude.lead.system_issue_triage', {
   policyOverride: cfg.RUNTIME?.llmSelectorOverrides?.['claude.lead.system_issue_triage'],
 });
-const MODEL   = LLM_CHAIN[0].model;  // 로그 표시용
+const PRIMARY_MODEL = LLM_CHAIN[0].model;  // selector primary 표시용
 const TEAM    = 'claude-lead';
 const CONTEXT = 'system_issue_triage';
 
@@ -359,6 +359,7 @@ async function evaluateWithClaudeLead(results) {
 
   let llmResult = null;
   let llmError  = null;
+  let llmMeta = null;
 
   try {
     const { text, provider, model: usedModel, attempt } = await callWithFallback({
@@ -374,13 +375,27 @@ async function evaluateWithClaudeLead(results) {
         requestType: 'system_issue_triage',
       },
     });
-    if (attempt > 1 || usedModel !== MODEL) {
+    const fallbackUsed = Number(attempt || 1) > 1;
+    const degradedFallback = ['local', 'groq'].includes(String(provider || '').toLowerCase());
+    llmMeta = {
+      provider: provider || null,
+      model: usedModel || null,
+      attempt: Number(attempt || 1),
+      source: fallbackUsed ? 'fallback' : 'selector',
+      fallbackUsed,
+      degradedFallback,
+      primaryModel: PRIMARY_MODEL,
+    };
+    if (fallbackUsed || usedModel !== PRIMARY_MODEL) {
       console.log(`  ↳ [클로드 팀장] LLM 폴백: ${provider}/${usedModel} (시도 ${attempt})`);
     }
     // ```json ... ``` 마크다운 블록 제거
     const json = text.replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/, '');
     llmResult = JSON.parse(json);
     if (!llmResult.decision) llmResult = null;
+    if (llmResult && llmMeta) {
+      llmResult._llm_meta = llmMeta;
+    }
   } catch (e) {
     llmError = e.message?.slice(0, 150) ?? '알 수 없는 오류';
   }
@@ -459,7 +474,12 @@ async function evaluateWithClaudeLead(results) {
   // shadow: 기록만 (실행 없음)
   // auto_low: 저위험 이슈만 자동 실행
   // auto_all: 모든 이슈 자동 실행
+  const degradedFallbackGuard = llmMeta?.degradedFallback === true;
   if (llmResult?.action === 'run_doctor' && leadMode !== 'shadow') {
+    if (degradedFallbackGuard) {
+      console.log('  ⚠️ [클로드 팀장] degraded fallback(local/groq) 결과는 자율 복구 지시를 차단하고 shadow 기록만 유지');
+      return;
+    }
     const isLow      = _isLowRisk(issues);
     const shouldRun  = leadMode === 'auto_all' || (leadMode === 'auto_low' && isLow);
 

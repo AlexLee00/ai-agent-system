@@ -267,6 +267,10 @@ async function test_completed_document_is_updated_after_actual_implementation() 
     assert.match(content, /implementation_completed_at:/);
     assert.match(content, /<!-- auto_dev:implementation_completed -->/);
     assert.match(content, /## Implementation Completed/);
+    assert.match(content, /implementation_model_provider:\s*`claude-code`/);
+    assert.match(content, /implementation_model:\s*`claude-code\/sonnet`/);
+    assert.match(content, /implementation_cli_model_arg:\s*`sonnet`/);
+    assert.match(content, /implementation_model_source:\s*`profile`/);
     assert.deepStrictEqual(pipeline.listAutoDevDocuments(), []);
   }, testEnv(tmpRoot, {
     CLAUDE_AUTO_DEV_EXECUTE_IMPLEMENTATION: 'true',
@@ -626,6 +630,11 @@ async function test_profile_resolver_maps_runtime_profiles() {
     assert.strictEqual(shadow.shadow, true);
     assert.strictEqual(shadow.executeImplementation, false);
     assert.strictEqual(shadow.integrationMode, 'patch');
+    assert.strictEqual(shadow.implementationProvider, 'claude-code');
+    assert.strictEqual(shadow.implementationModel, 'claude-code/sonnet');
+    assert.strictEqual(shadow.implementationCliModelArg, 'sonnet');
+    assert.strictEqual(shadow.implementationModelSource, 'profile');
+    assert.strictEqual(shadow.modelPolicyError, null);
 
     const supervised = pipeline.resolveAutoDevRuntimeConfig({ profile: 'supervised_l4' }, {});
     assert.strictEqual(supervised.enabled, true);
@@ -639,6 +648,11 @@ async function test_profile_resolver_maps_runtime_profiles() {
     assert.strictEqual(autonomous.archiveOnSuccess, true);
     assert.strictEqual(autonomous.runHardTests, true);
     assert.strictEqual(autonomous.integrationMode, 'cherry_pick');
+    assert.strictEqual(autonomous.implementationProvider, 'claude-code');
+    assert.strictEqual(autonomous.implementationModel, 'claude-code/sonnet');
+    assert.strictEqual(autonomous.implementationCliModelArg, 'sonnet');
+    assert.strictEqual(autonomous.implementationModelSource, 'profile');
+    assert.strictEqual(autonomous.modelPolicyError, null);
   }, testEnv(tmpRoot));
 
   fs.rmSync(tmpRoot, { recursive: true, force: true });
@@ -657,6 +671,7 @@ async function test_profile_authoritative_blocks_legacy_overrides() {
       CLAUDE_AUTO_DEV_ARCHIVE_ON_SUCCESS: 'true',
       CLAUDE_AUTO_DEV_RUN_HARD_TESTS: 'true',
       CLAUDE_AUTO_DEV_INTEGRATION_MODE: 'cherry_pick',
+      CLAUDE_AUTO_DEV_MODEL: 'claude-code/opus',
       CLAUDE_AUTO_DEV_COMPAT_MODE: 'false',
     });
 
@@ -667,9 +682,14 @@ async function test_profile_authoritative_blocks_legacy_overrides() {
     assert.strictEqual(runtime.archiveOnSuccess, false);
     assert.strictEqual(runtime.runHardTests, false);
     assert.strictEqual(runtime.integrationMode, 'patch');
+    assert.strictEqual(runtime.implementationModel, 'claude-code/sonnet');
+    assert.strictEqual(runtime.implementationCliModelArg, 'sonnet');
+    assert.strictEqual(runtime.implementationModelSource, 'profile');
+    assert.strictEqual(runtime.modelPolicyError, null);
     assert.ok(runtime.ignoredLegacyOverrides.includes('env:enabled'));
     assert.ok(runtime.ignoredLegacyOverrides.includes('env:executeImplementation'));
     assert.ok(runtime.ignoredLegacyOverrides.includes('env:CLAUDE_AUTO_DEV_INTEGRATION_MODE'));
+    assert.ok(runtime.ignoredLegacyModelOverrides.includes('env:CLAUDE_AUTO_DEV_MODEL'));
   }, testEnv(tmpRoot));
 
   fs.rmSync(tmpRoot, { recursive: true, force: true });
@@ -688,6 +708,7 @@ async function test_profile_compatibility_mode_allows_legacy_overrides() {
       CLAUDE_AUTO_DEV_ARCHIVE_ON_SUCCESS: 'true',
       CLAUDE_AUTO_DEV_RUN_HARD_TESTS: 'true',
       CLAUDE_AUTO_DEV_INTEGRATION_MODE: 'cherry_pick',
+      CLAUDE_AUTO_DEV_MODEL: 'claude-code/opus',
       CLAUDE_AUTO_DEV_COMPAT_MODE: 'true',
     });
 
@@ -697,10 +718,99 @@ async function test_profile_compatibility_mode_allows_legacy_overrides() {
     assert.strictEqual(runtime.archiveOnSuccess, true);
     assert.strictEqual(runtime.runHardTests, true);
     assert.strictEqual(runtime.integrationMode, 'cherry_pick');
+    assert.strictEqual(runtime.implementationModel, 'claude-code/opus');
+    assert.strictEqual(runtime.implementationCliModelArg, 'opus');
+    assert.strictEqual(runtime.implementationModelSource, 'compat_env');
+    assert.strictEqual(runtime.modelPolicyError, null);
   }, testEnv(tmpRoot));
 
   fs.rmSync(tmpRoot, { recursive: true, force: true });
   console.log('✅ auto-dev: compatibility mode allows legacy env overrides');
+}
+
+async function test_profile_compatibility_mode_blocks_unallowlisted_model() {
+  const tmpRoot = makeTempRoot();
+  const { mocks } = makeMocks(tmpRoot);
+
+  await withMocks(mocks, async pipeline => {
+    const runtime = pipeline.resolveAutoDevRuntimeConfig({}, {
+      CLAUDE_AUTO_DEV_PROFILE: 'autonomous_l5',
+      CLAUDE_AUTO_DEV_COMPAT_MODE: 'true',
+      CLAUDE_AUTO_DEV_MODEL: 'claude-code/haiku',
+    });
+    assert.strictEqual(runtime.implementationModel, 'claude-code/sonnet');
+    assert.match(String(runtime.modelPolicyError || ''), /지원하지 않는 auto_dev implementation model/i);
+  }, testEnv(tmpRoot));
+
+  fs.rmSync(tmpRoot, { recursive: true, force: true });
+  console.log('✅ auto-dev: compatibility mode blocks unallowlisted implementation model');
+}
+
+async function test_implementation_model_policy_failure_is_fail_closed() {
+  const tmpRoot = makeTempRoot();
+  const doc = makeDoc(tmpRoot, 'CODEX_MODEL_POLICY_BLOCK.md', '# Model\npolicy block');
+  const { mocks } = makeMocks(tmpRoot);
+
+  await withMocks(mocks, async pipeline => {
+    const result = await pipeline.processAutoDevDocument(doc, {
+      force: true,
+      test: false,
+      dryRun: false,
+      executeImplementation: true,
+      compatibilityMode: true,
+      implementationModel: 'claude-code/haiku',
+      maxRevisionPasses: 0,
+    });
+    assert.strictEqual(result.ok, false);
+    assert.match(String(result.error || ''), /model_policy_blocked/i);
+  }, testEnv(tmpRoot, {
+    CLAUDE_AUTO_DEV_EXECUTE_IMPLEMENTATION: 'true',
+  }));
+
+  fs.rmSync(tmpRoot, { recursive: true, force: true });
+  console.log('✅ auto-dev: unsupported implementation model fails closed before execution');
+}
+
+async function test_implementation_invocation_includes_model_arg() {
+  const tmpRoot = makeTempRoot();
+  const doc = makeDoc(tmpRoot, 'CODEX_MODEL_ARG.md', '# Model\narg');
+  const claudeCalls = [];
+  const { mocks } = makeMocks(tmpRoot, {
+    child_process: {
+      execFileSync: (command, args = []) => {
+        if (command === 'bash') return '/usr/local/bin/claude\n';
+        if (command === 'claude') {
+          claudeCalls.push(args);
+          return 'ok';
+        }
+        if (command === 'rg') throw new Error('no match');
+        return '';
+      },
+      execSync: () => '',
+    },
+  });
+
+  await withMocks(mocks, async pipeline => {
+    const result = await pipeline.processAutoDevDocument(doc, {
+      force: true,
+      test: false,
+      dryRun: false,
+      executeImplementation: true,
+      maxRevisionPasses: 0,
+    });
+    assert.strictEqual(result.ok, true);
+  }, testEnv(tmpRoot, {
+    CLAUDE_AUTO_DEV_EXECUTE_IMPLEMENTATION: 'true',
+  }));
+
+  assert.ok(claudeCalls.length > 0, 'claude CLI should be invoked');
+  const firstCall = claudeCalls[0].map(String);
+  const modelFlagIndex = firstCall.indexOf('--model');
+  assert.ok(modelFlagIndex >= 0, 'implementation CLI must include --model');
+  assert.strictEqual(firstCall[modelFlagIndex + 1], 'sonnet');
+
+  fs.rmSync(tmpRoot, { recursive: true, force: true });
+  console.log('✅ auto-dev: implementation invocation includes explicit --model sonnet');
 }
 
 async function test_bash_is_fail_closed_without_allowlist() {
@@ -917,6 +1027,10 @@ async function test_archive_manifest_is_created() {
     assert.ok(fs.existsSync(path.join(tmpRoot, result.job.archiveManifestPath)));
     const manifest = JSON.parse(fs.readFileSync(path.join(tmpRoot, result.job.archiveManifestPath), 'utf8'));
     assert.strictEqual(manifest.implementationStatus, 'auto_dev_implementation_completed');
+    assert.strictEqual(manifest.implementationModelMeta?.provider, 'claude-code');
+    assert.strictEqual(manifest.implementationModelMeta?.model, 'claude-code/sonnet');
+    assert.strictEqual(manifest.implementationModelMeta?.cliModelArg, 'sonnet');
+    assert.strictEqual(manifest.implementationModelMeta?.source, 'profile');
     const archivedContent = fs.readFileSync(path.join(tmpRoot, result.job.archivedPath), 'utf8');
     assert.match(archivedContent, /implementation_status: auto_dev_implementation_completed/);
     assert.match(archivedContent, /## Implementation Completed/);
@@ -1277,6 +1391,27 @@ async function test_status_snapshot_includes_profile_worktree_patch_counts() {
   console.log('✅ auto-dev: status snapshot includes profile/worktree/patch counts');
 }
 
+async function test_selector_agents_persist_actual_fallback_model_metadata() {
+  const aiAnalystSrc = fs.readFileSync(path.resolve(__dirname, '../lib/ai-analyst.ts'), 'utf8');
+  const leadSrc = fs.readFileSync(path.resolve(__dirname, '../lib/claude-lead-brain.ts'), 'utf8');
+  const archerSrc = fs.readFileSync(path.resolve(__dirname, '../lib/archer/analyzer.ts'), 'utf8');
+
+  assert.ok(aiAnalystSrc.includes('const { text, provider, model: usedModel, attempt } = await callWithFallback('));
+  assert.ok(aiAnalystSrc.includes('fallbackUsed'));
+  assert.ok(aiAnalystSrc.includes('degradedFallback'));
+  assert.ok(aiAnalystSrc.includes('source: fallbackUsed ? \'fallback\' : \'selector\''));
+
+  assert.ok(leadSrc.includes('const { text, provider, model: usedModel, attempt } = await callWithFallback('));
+  assert.ok(leadSrc.includes('llmResult._llm_meta = llmMeta'));
+  assert.ok(leadSrc.includes('degradedFallbackGuard'));
+  assert.ok(leadSrc.includes('run_doctor'));
+
+  assert.ok(archerSrc.includes('const { text, provider, model: usedModel, attempt } = await callWithFallback('));
+  assert.ok(archerSrc.includes('parsed._llm_meta = llmMeta'));
+
+  console.log('✅ auto-dev: selector agents persist actual fallback model metadata');
+}
+
 async function main() {
   console.log('=== Auto Dev Pipeline 테스트 시작 ===\n');
   const tests = [
@@ -1301,6 +1436,9 @@ async function main() {
     test_profile_resolver_maps_runtime_profiles,
     test_profile_authoritative_blocks_legacy_overrides,
     test_profile_compatibility_mode_allows_legacy_overrides,
+    test_profile_compatibility_mode_blocks_unallowlisted_model,
+    test_implementation_model_policy_failure_is_fail_closed,
+    test_implementation_invocation_includes_model_arg,
     test_bash_is_fail_closed_without_allowlist,
     test_lock_heartbeat_sidecar_enforces_parent_liveness,
     test_review_cycle_uses_execution_context,
@@ -1313,6 +1451,7 @@ async function main() {
     test_cherry_pick_integration_commits_and_applies_patch,
     test_cherry_pick_failure_aborts_and_fails_closed,
     test_status_snapshot_includes_profile_worktree_patch_counts,
+    test_selector_agents_persist_actual_fallback_model_metadata,
   ];
 
   let passed = 0;

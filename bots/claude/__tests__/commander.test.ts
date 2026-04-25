@@ -81,6 +81,23 @@ function makeCommanderMocks(overrides = {}) {
   };
 }
 
+async function withCommanderModule(mocks, fn) {
+  const original = Module._load;
+  Module._load = function patchedLoad(request, parent, isMain) {
+    if (request in mocks) return mocks[request];
+    return original.call(this, request, parent, isMain);
+  };
+
+  try {
+    delete require.cache[COMMANDER_PATH];
+    const commander = require(COMMANDER_PATH);
+    return await fn(commander);
+  } finally {
+    Module._load = original;
+    delete require.cache[COMMANDER_PATH];
+  }
+}
+
 // Commander를 임포트하지 않고 HANDLERS만 검사하기 위해
 // 파일에서 직접 HANDLERS 패턴을 grep으로 추출
 function getHandlerNamesFromSource() {
@@ -238,6 +255,145 @@ async function test_polling_interval_maintained() {
   console.log('✅ commander: 30-second polling interval maintained');
 }
 
+// ─── Test 12: direct Claude model policy resolver 존재 ──────────────────
+
+async function test_direct_claude_model_resolver_exists() {
+  const src = fs.readFileSync(COMMANDER_PATH, 'utf8');
+  assert.ok(src.includes('function resolveCommanderClaudeModel'), 'resolveCommanderClaudeModel 존재');
+  assert.ok(src.includes('COMMANDER_CLAUDE_MODEL_ALLOWLIST'), 'commander model allowlist 존재');
+  assert.ok(src.includes('지원하지 않는 commander Claude model'), '미지원 모델 fail-visible 메시지 존재');
+  console.log('✅ commander: direct Claude model resolver exists');
+}
+
+// ─── Test 13: ask_claude는 --model을 명시해야 함 ──────────────────────
+
+async function test_ask_claude_pins_model_and_emits_meta() {
+  const src = fs.readFileSync(COMMANDER_PATH, 'utf8');
+  assert.ok(src.includes('async function handleAskClaude'), 'handleAskClaude 존재');
+  assert.ok(src.includes("'-p'"), 'claude -p 호출 존재');
+  assert.ok(src.includes("'--model'"), 'ask_claude에 --model 포함');
+  assert.ok(src.includes('modelPolicy.cliModelArg'), 'ask_claude model cli arg 사용');
+  assert.ok(src.includes('formatCommanderModelLine(modelPolicy)'), 'ask_claude output model line 포함');
+  assert.ok(src.includes('data: { llm: modelPolicy }'), 'ask_claude data.llm 메타 포함');
+  console.log('✅ commander: ask_claude pins model and emits metadata');
+}
+
+// ─── Test 14: analyze_unknown도 --model을 명시해야 함 ─────────────────
+
+async function test_analyze_unknown_pins_model_and_emits_meta() {
+  const src = fs.readFileSync(COMMANDER_PATH, 'utf8');
+  assert.ok(src.includes('async function handleAnalyzeUnknown'), 'handleAnalyzeUnknown 존재');
+  assert.ok(src.includes("'--model'"), 'analyze_unknown에 --model 포함');
+  assert.ok(src.includes('modelPolicy.cliModelArg'), 'analyze_unknown model cli arg 사용');
+  assert.ok(src.includes('const modelLine = formatCommanderModelLine(modelPolicy);'), 'analyze_unknown model line 포함');
+  assert.ok(src.includes('data: { llm: modelPolicy }'), 'analyze_unknown data.llm 메타 포함');
+  console.log('✅ commander: analyze_unknown pins model and emits metadata');
+}
+
+// ─── Test 15: ask_claude 실제 실행 argv/메타 검증 ───────────────────────
+
+async function test_ask_claude_runtime_invocation_uses_model_arg() {
+  const spawnCalls = [];
+  const { mocks } = (() => {
+    const localMocks = makeCommanderMocks({
+      child_process: {
+        execSync: () => '',
+        spawnSync: () => ({ status: 0, stdout: '', stderr: '' }),
+        spawn: (command, args) => {
+          spawnCalls.push({ command, args: Array.isArray(args) ? [...args] : [] });
+          const child = {
+            stdout: {
+              on: (evt, cb) => {
+                if (evt === 'data') setImmediate(() => cb(Buffer.from('runtime ask response')));
+              },
+            },
+            stderr: { on: () => {} },
+            on: (evt, cb) => {
+              if (evt === 'close') setImmediate(() => cb(0));
+              return child;
+            },
+            kill: () => {},
+          };
+          return child;
+        },
+      },
+    });
+    return { mocks: localMocks };
+  })();
+
+  await withCommanderModule(mocks, async commander => {
+    const result = await commander.__test__.handleAskClaude({ query: 'model check' });
+    assert.strictEqual(result.ok, true);
+    assert.ok(result.message.includes('[llm model=claude-code/sonnet cli=sonnet source=policy_default]'));
+    assert.strictEqual(result.data?.llm?.model, 'claude-code/sonnet');
+    assert.strictEqual(result.data?.llm?.cliModelArg, 'sonnet');
+  });
+
+  assert.ok(spawnCalls.length > 0, 'spawn should be called');
+  const first = spawnCalls[0];
+  assert.strictEqual(first.command, 'claude');
+  const idx = first.args.indexOf('--model');
+  assert.ok(idx >= 0, 'runtime argv should include --model');
+  assert.strictEqual(first.args[idx + 1], 'sonnet');
+  console.log('✅ commander: ask_claude runtime invocation includes --model and llm metadata');
+}
+
+// ─── Test 16: analyze_unknown 실제 실행 argv/메타 검증 ─────────────────
+
+async function test_analyze_unknown_runtime_invocation_uses_model_arg() {
+  const spawnCalls = [];
+  const modelJson = JSON.stringify({
+    user_response: '분석 완료',
+    intent: 'unknown',
+    args: {},
+    pattern: null,
+    reason: '테스트',
+  });
+
+  const { mocks } = (() => {
+    const localMocks = makeCommanderMocks({
+      child_process: {
+        execSync: () => '',
+        spawnSync: () => ({ status: 0, stdout: '', stderr: '' }),
+        spawn: (command, args) => {
+          spawnCalls.push({ command, args: Array.isArray(args) ? [...args] : [] });
+          const child = {
+            stdout: {
+              on: (evt, cb) => {
+                if (evt === 'data') setImmediate(() => cb(Buffer.from(modelJson)));
+              },
+            },
+            stderr: { on: () => {} },
+            on: (evt, cb) => {
+              if (evt === 'close') setImmediate(() => cb(0));
+              return child;
+            },
+            kill: () => {},
+          };
+          return child;
+        },
+      },
+    });
+    return { mocks: localMocks };
+  })();
+
+  await withCommanderModule(mocks, async commander => {
+    const result = await commander.__test__.handleAnalyzeUnknown({ text: '미분류 질문 테스트' });
+    assert.strictEqual(result.ok, true);
+    assert.ok(result.message.includes('[llm model=claude-code/sonnet cli=sonnet source=policy_default]'));
+    assert.strictEqual(result.data?.llm?.model, 'claude-code/sonnet');
+    assert.strictEqual(result.data?.llm?.cliModelArg, 'sonnet');
+  });
+
+  assert.ok(spawnCalls.length > 0, 'spawn should be called');
+  const first = spawnCalls[0];
+  assert.strictEqual(first.command, 'claude');
+  const idx = first.args.indexOf('--model');
+  assert.ok(idx >= 0, 'runtime argv should include --model');
+  assert.strictEqual(first.args[idx + 1], 'sonnet');
+  console.log('✅ commander: analyze_unknown runtime invocation includes --model and llm metadata');
+}
+
 // ─── 실행 ─────────────────────────────────────────────────────────────
 
 async function main() {
@@ -255,6 +411,11 @@ async function main() {
     test_processCommands_handles_unknown_command,
     test_nlp_intents_include_new_commands,
     test_polling_interval_maintained,
+    test_direct_claude_model_resolver_exists,
+    test_ask_claude_pins_model_and_emits_meta,
+    test_analyze_unknown_pins_model_and_emits_meta,
+    test_ask_claude_runtime_invocation_uses_model_arg,
+    test_analyze_unknown_runtime_invocation_uses_model_arg,
   ];
 
   let passed = 0, failed = 0;
