@@ -1,7 +1,7 @@
 {
   "file": "/Users/alexlee/projects/ai-agent-system/bots/investment/output/ops/position-runtime-evidence-gap-queue.json",
   "version": 1,
-  "updatedAt": "2026-04-25T03:46:35.254Z",
+  "updatedAt": "2026-04-25T03:51:24.467Z",
   "states": {
     "kis_overseas:DTE:validation": {
       "scopeKey": "kis_overseas:DTE:validation",
@@ -9,13 +9,13 @@
       "exchange": "kis_overseas",
       "tradeMode": "validation",
       "evidenceCount": 0,
-      "consecutiveGapCount": 1018,
+      "consecutiveGapCount": 1022,
       "threshold": 3,
       "cooldownMinutes": 60,
-      "lastSeenAt": "2026-04-25T03:46:29.262Z",
+      "lastSeenAt": "2026-04-25T03:51:15.632Z",
       "lastEvidenceAt": null,
-      "lastQueuedAt": "2026-04-25T02:51:08.407Z",
-      "status": "evidence_gap_observed"
+      "lastQueuedAt": "2026-04-25T03:51:15.632Z",
+      "status": "evidence_gap_task_queued"
     },
     "kis_overseas:POET:validation": {
       "scopeKey": "kis_overseas:POET:validation",
@@ -23,12 +23,12 @@
       "exchange": "kis_overseas",
       "tradeMode": "validation",
       "evidenceCount": 0,
-      "consecutiveGapCount": 738,
+      "consecutiveGapCount": 742,
       "threshold": 3,
       "cooldownMinutes": 60,
-      "lastSeenAt": "2026-04-25T03:46:30.876Z",
+      "lastSeenAt": "2026-04-25T03:51:17.187Z",
       "lastEvidenceAt": null,
-      "lastQueuedAt": "2026-04-25T02:48:44.436Z",
+      "lastQueuedAt": "2026-04-25T03:48:54.572Z",
       "status": "evidence_gap_observed"
     },
     "kis_overseas:AGPU:validation": {
@@ -37,12 +37,12 @@
       "exchange": "kis_overseas",
       "tradeMode": "validation",
       "evidenceCount": 0,
-      "consecutiveGapCount": 706,
+      "consecutiveGapCount": 711,
       "threshold": 3,
       "cooldownMinutes": 60,
-      "lastSeenAt": "2026-04-25T03:46:24.991Z",
+      "lastSeenAt": "2026-04-25T03:51:22.978Z",
       "lastEvidenceAt": null,
-      "lastQueuedAt": "2026-04-25T02:48:50.995Z",
+      "lastQueuedAt": "2026-04-25T03:49:00.601Z",
       "status": "evidence_gap_observed"
     },
     "kis:005870:normal": {
@@ -51,12 +51,12 @@
       "exchange": "kis",
       "tradeMode": "normal",
       "evidenceCount": 0,
-      "consecutiveGapCount": 1017,
+      "consecutiveGapCount": 1021,
       "threshold": 3,
       "cooldownMinutes": 60,
-      "lastSeenAt": "2026-04-25T03:46:32.450Z",
+      "lastSeenAt": "2026-04-25T03:51:18.738Z",
       "lastEvidenceAt": null,
-      "lastQueuedAt": "2026-04-25T02:48:46.070Z",
+      "lastQueuedAt": "2026-04-25T03:48:56.117Z",
       "status": "evidence_gap_observed"
     },
     "kis:005870:validation": {
@@ -65,12 +65,12 @@
       "exchange": "kis",
       "tradeMode": "validation",
       "evidenceCount": 0,
-      "consecutiveGapCount": 1017,
+      "consecutiveGapCount": 1021,
       "threshold": 3,
       "cooldownMinutes": 60,
-      "lastSeenAt": "2026-04-25T03:46:33.855Z",
+      "lastSeenAt": "2026-04-25T03:51:20.296Z",
       "lastEvidenceAt": null,
-      "lastQueuedAt": "2026-04-25T02:48:47.832Z",
+      "lastQueuedAt": "2026-04-25T03:48:57.875Z",
       "status": "evidence_gap_observed"
     },
     "kis:012320:validation": {
@@ -79,12 +79,12 @@
       "exchange": "kis",
       "tradeMode": "validation",
       "evidenceCount": 0,
-      "consecutiveGapCount": 1017,
+      "consecutiveGapCount": 1021,
       "threshold": 3,
       "cooldownMinutes": 60,
-      "lastSeenAt": "2026-04-25T03:46:35.254Z",
+      "lastSeenAt": "2026-04-25T03:51:21.613Z",
       "lastEvidenceAt": null,
-      "lastQueuedAt": "2026-04-25T02:48:49.233Z",
+      "lastQueuedAt": "2026-04-25T03:48:59.229Z",
       "status": "evidence_gap_observed"
     },
     "binance:ZEC/USDT:normal": {
@@ -107,12 +107,12 @@
       "exchange": "kis_overseas",
       "tradeMode": "normal",
       "evidenceCount": 0,
-      "consecutiveGapCount": 600,
+      "consecutiveGapCount": 605,
       "threshold": 3,
       "cooldownMinutes": 60,
-      "lastSeenAt": "2026-04-25T03:46:26.532Z",
+      "lastSeenAt": "2026-04-25T03:51:24.467Z",
       "lastEvidenceAt": null,
-      "lastQueuedAt": "2026-04-25T02:48:52.892Z",
+      "lastQueuedAt": "2026-04-25T03:49:02.367Z",
       "status": "evidence_gap_observed"
     }
   },
@@ -754,11 +754,12 @@
       "exchange": "kis_overseas",
       "tradeMode": "validation",
       "taskType": "collection_refresh",
-      "status": "queued",
+      "status": "expired",
       "reason": "최근 외부 에비던스 없음. agent는 내부 분석 결과에만 의존해야 합니다.",
       "createdAt": "2026-04-25T00:48:33.345Z",
-      "updatedAt": "2026-04-25T00:48:33.345Z",
-      "command": "npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:position-reeval-event -- --symbol=POET --exchange=kis_overseas --trade-mode=validation --event-source=evidence-gap --attention-type=evidence_gap_refresh --json"
+      "updatedAt": "2026-04-25T03:48:41.469Z",
+      "command": "npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:position-reeval-event -- --symbol=POET --exchange=kis_overseas --trade-mode=validation --event-source=evidence-gap --attention-type=evidence_gap_refresh --json",
+      "resolution": "stale_open_task_pruned"
     },
     {
       "taskId": "kis_overseas:POET:validation:tradingview_refresh:modmfby9",
@@ -767,11 +768,12 @@
       "exchange": "kis_overseas",
       "tradeMode": "validation",
       "taskType": "tradingview_refresh",
-      "status": "queued",
+      "status": "expired",
       "reason": "최근 외부 에비던스 없음. agent는 내부 분석 결과에만 의존해야 합니다.",
       "createdAt": "2026-04-25T00:48:33.345Z",
-      "updatedAt": "2026-04-25T00:48:33.345Z",
-      "command": "npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:position-reeval-event -- --symbol=POET --exchange=kis_overseas --trade-mode=validation --event-source=tradingview_refresh --attention-type=tradingview_refresh --json"
+      "updatedAt": "2026-04-25T03:48:41.469Z",
+      "command": "npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:position-reeval-event -- --symbol=POET --exchange=kis_overseas --trade-mode=validation --event-source=tradingview_refresh --attention-type=tradingview_refresh --json",
+      "resolution": "stale_open_task_pruned"
     },
     {
       "taskId": "kis_overseas:POET:validation:backtest_refresh:modmfby9",
@@ -780,11 +782,12 @@
       "exchange": "kis_overseas",
       "tradeMode": "validation",
       "taskType": "backtest_refresh",
-      "status": "queued",
+      "status": "expired",
       "reason": "최근 외부 에비던스 없음. agent는 내부 분석 결과에만 의존해야 합니다.",
       "createdAt": "2026-04-25T00:48:33.345Z",
-      "updatedAt": "2026-04-25T00:48:33.345Z",
-      "command": "npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime-active-backtest -- --symbol=POET --market=kis_overseas --attention=evidence_gap_refresh --source=position_watch --json"
+      "updatedAt": "2026-04-25T03:48:41.469Z",
+      "command": "npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime-active-backtest -- --symbol=POET --market=kis_overseas --attention=evidence_gap_refresh --source=position_watch --json",
+      "resolution": "stale_open_task_pruned"
     },
     {
       "taskId": "kis:005870:normal:collection_refresh:modmfdcv",
@@ -793,11 +796,12 @@
       "exchange": "kis",
       "tradeMode": "normal",
       "taskType": "collection_refresh",
-      "status": "queued",
+      "status": "expired",
       "reason": "최근 외부 에비던스 없음. agent는 내부 분석 결과에만 의존해야 합니다.",
       "createdAt": "2026-04-25T00:48:35.167Z",
-      "updatedAt": "2026-04-25T00:48:35.167Z",
-      "command": "npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:position-reeval-event -- --symbol=005870 --exchange=kis --trade-mode=normal --event-source=evidence-gap --attention-type=evidence_gap_refresh --json"
+      "updatedAt": "2026-04-25T03:48:41.469Z",
+      "command": "npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:position-reeval-event -- --symbol=005870 --exchange=kis --trade-mode=normal --event-source=evidence-gap --attention-type=evidence_gap_refresh --json",
+      "resolution": "stale_open_task_pruned"
     },
     {
       "taskId": "kis:005870:normal:tradingview_refresh:modmfdcv",
@@ -806,11 +810,12 @@
       "exchange": "kis",
       "tradeMode": "normal",
       "taskType": "tradingview_refresh",
-      "status": "queued",
+      "status": "expired",
       "reason": "최근 외부 에비던스 없음. agent는 내부 분석 결과에만 의존해야 합니다.",
       "createdAt": "2026-04-25T00:48:35.167Z",
-      "updatedAt": "2026-04-25T00:48:35.167Z",
-      "command": "npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:position-reeval-event -- --symbol=005870 --exchange=kis --trade-mode=normal --event-source=tradingview_refresh --attention-type=tradingview_refresh --json"
+      "updatedAt": "2026-04-25T03:48:41.469Z",
+      "command": "npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:position-reeval-event -- --symbol=005870 --exchange=kis --trade-mode=normal --event-source=tradingview_refresh --attention-type=tradingview_refresh --json",
+      "resolution": "stale_open_task_pruned"
     },
     {
       "taskId": "kis:005870:normal:backtest_refresh:modmfdcv",
@@ -819,11 +824,12 @@
       "exchange": "kis",
       "tradeMode": "normal",
       "taskType": "backtest_refresh",
-      "status": "queued",
+      "status": "expired",
       "reason": "최근 외부 에비던스 없음. agent는 내부 분석 결과에만 의존해야 합니다.",
       "createdAt": "2026-04-25T00:48:35.167Z",
-      "updatedAt": "2026-04-25T00:48:35.167Z",
-      "command": "npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime-active-backtest -- --symbol=005870 --market=kis --attention=evidence_gap_refresh --source=position_watch --json"
+      "updatedAt": "2026-04-25T03:48:41.469Z",
+      "command": "npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime-active-backtest -- --symbol=005870 --market=kis --attention=evidence_gap_refresh --source=position_watch --json",
+      "resolution": "stale_open_task_pruned"
     },
     {
       "taskId": "kis:005870:validation:collection_refresh:modmfemk",
@@ -832,11 +838,12 @@
       "exchange": "kis",
       "tradeMode": "validation",
       "taskType": "collection_refresh",
-      "status": "queued",
+      "status": "expired",
       "reason": "최근 외부 에비던스 없음. agent는 내부 분석 결과에만 의존해야 합니다.",
       "createdAt": "2026-04-25T00:48:36.812Z",
-      "updatedAt": "2026-04-25T00:48:36.812Z",
-      "command": "npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:position-reeval-event -- --symbol=005870 --exchange=kis --trade-mode=validation --event-source=evidence-gap --attention-type=evidence_gap_refresh --json"
+      "updatedAt": "2026-04-25T03:48:41.469Z",
+      "command": "npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:position-reeval-event -- --symbol=005870 --exchange=kis --trade-mode=validation --event-source=evidence-gap --attention-type=evidence_gap_refresh --json",
+      "resolution": "stale_open_task_pruned"
     },
     {
       "taskId": "kis:005870:validation:tradingview_refresh:modmfemk",
@@ -845,11 +852,12 @@
       "exchange": "kis",
       "tradeMode": "validation",
       "taskType": "tradingview_refresh",
-      "status": "queued",
+      "status": "expired",
       "reason": "최근 외부 에비던스 없음. agent는 내부 분석 결과에만 의존해야 합니다.",
       "createdAt": "2026-04-25T00:48:36.812Z",
-      "updatedAt": "2026-04-25T00:48:36.812Z",
-      "command": "npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:position-reeval-event -- --symbol=005870 --exchange=kis --trade-mode=validation --event-source=tradingview_refresh --attention-type=tradingview_refresh --json"
+      "updatedAt": "2026-04-25T03:48:41.469Z",
+      "command": "npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:position-reeval-event -- --symbol=005870 --exchange=kis --trade-mode=validation --event-source=tradingview_refresh --attention-type=tradingview_refresh --json",
+      "resolution": "stale_open_task_pruned"
     },
     {
       "taskId": "kis:005870:validation:backtest_refresh:modmfemk",
@@ -858,11 +866,12 @@
       "exchange": "kis",
       "tradeMode": "validation",
       "taskType": "backtest_refresh",
-      "status": "queued",
+      "status": "expired",
       "reason": "최근 외부 에비던스 없음. agent는 내부 분석 결과에만 의존해야 합니다.",
       "createdAt": "2026-04-25T00:48:36.812Z",
-      "updatedAt": "2026-04-25T00:48:36.812Z",
-      "command": "npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime-active-backtest -- --symbol=005870 --market=kis --attention=evidence_gap_refresh --source=position_watch --json"
+      "updatedAt": "2026-04-25T03:48:41.469Z",
+      "command": "npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime-active-backtest -- --symbol=005870 --market=kis --attention=evidence_gap_refresh --source=position_watch --json",
+      "resolution": "stale_open_task_pruned"
     },
     {
       "taskId": "kis:012320:validation:collection_refresh:modmffoz",
@@ -871,11 +880,12 @@
       "exchange": "kis",
       "tradeMode": "validation",
       "taskType": "collection_refresh",
-      "status": "queued",
+      "status": "expired",
       "reason": "최근 외부 에비던스 없음. agent는 내부 분석 결과에만 의존해야 합니다.",
       "createdAt": "2026-04-25T00:48:38.195Z",
-      "updatedAt": "2026-04-25T00:48:38.195Z",
-      "command": "npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:position-reeval-event -- --symbol=012320 --exchange=kis --trade-mode=validation --event-source=evidence-gap --attention-type=evidence_gap_refresh --json"
+      "updatedAt": "2026-04-25T03:48:41.469Z",
+      "command": "npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:position-reeval-event -- --symbol=012320 --exchange=kis --trade-mode=validation --event-source=evidence-gap --attention-type=evidence_gap_refresh --json",
+      "resolution": "stale_open_task_pruned"
     },
     {
       "taskId": "kis:012320:validation:tradingview_refresh:modmffoz",
@@ -884,11 +894,12 @@
       "exchange": "kis",
       "tradeMode": "validation",
       "taskType": "tradingview_refresh",
-      "status": "queued",
+      "status": "expired",
       "reason": "최근 외부 에비던스 없음. agent는 내부 분석 결과에만 의존해야 합니다.",
       "createdAt": "2026-04-25T00:48:38.195Z",
-      "updatedAt": "2026-04-25T00:48:38.195Z",
-      "command": "npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:position-reeval-event -- --symbol=012320 --exchange=kis --trade-mode=validation --event-source=tradingview_refresh --attention-type=tradingview_refresh --json"
+      "updatedAt": "2026-04-25T03:48:41.469Z",
+      "command": "npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:position-reeval-event -- --symbol=012320 --exchange=kis --trade-mode=validation --event-source=tradingview_refresh --attention-type=tradingview_refresh --json",
+      "resolution": "stale_open_task_pruned"
     },
     {
       "taskId": "kis:012320:validation:backtest_refresh:modmffoz",
@@ -897,11 +908,12 @@
       "exchange": "kis",
       "tradeMode": "validation",
       "taskType": "backtest_refresh",
-      "status": "queued",
+      "status": "expired",
       "reason": "최근 외부 에비던스 없음. agent는 내부 분석 결과에만 의존해야 합니다.",
       "createdAt": "2026-04-25T00:48:38.195Z",
-      "updatedAt": "2026-04-25T00:48:38.195Z",
-      "command": "npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime-active-backtest -- --symbol=012320 --market=kis --attention=evidence_gap_refresh --source=position_watch --json"
+      "updatedAt": "2026-04-25T03:48:41.469Z",
+      "command": "npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime-active-backtest -- --symbol=012320 --market=kis --attention=evidence_gap_refresh --source=position_watch --json",
+      "resolution": "stale_open_task_pruned"
     },
     {
       "taskId": "kis_overseas:AGPU:validation:collection_refresh:modmfgsk",
@@ -910,11 +922,12 @@
       "exchange": "kis_overseas",
       "tradeMode": "validation",
       "taskType": "collection_refresh",
-      "status": "queued",
+      "status": "expired",
       "reason": "최근 외부 에비던스 없음. agent는 내부 분석 결과에만 의존해야 합니다.",
       "createdAt": "2026-04-25T00:48:39.620Z",
-      "updatedAt": "2026-04-25T00:48:39.620Z",
-      "command": "npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:position-reeval-event -- --symbol=AGPU --exchange=kis_overseas --trade-mode=validation --event-source=evidence-gap --attention-type=evidence_gap_refresh --json"
+      "updatedAt": "2026-04-25T03:48:41.469Z",
+      "command": "npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:position-reeval-event -- --symbol=AGPU --exchange=kis_overseas --trade-mode=validation --event-source=evidence-gap --attention-type=evidence_gap_refresh --json",
+      "resolution": "stale_open_task_pruned"
     },
     {
       "taskId": "kis_overseas:AGPU:validation:tradingview_refresh:modmfgsk",
@@ -923,11 +936,12 @@
       "exchange": "kis_overseas",
       "tradeMode": "validation",
       "taskType": "tradingview_refresh",
-      "status": "queued",
+      "status": "expired",
       "reason": "최근 외부 에비던스 없음. agent는 내부 분석 결과에만 의존해야 합니다.",
       "createdAt": "2026-04-25T00:48:39.620Z",
-      "updatedAt": "2026-04-25T00:48:39.620Z",
-      "command": "npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:position-reeval-event -- --symbol=AGPU --exchange=kis_overseas --trade-mode=validation --event-source=tradingview_refresh --attention-type=tradingview_refresh --json"
+      "updatedAt": "2026-04-25T03:48:41.469Z",
+      "command": "npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:position-reeval-event -- --symbol=AGPU --exchange=kis_overseas --trade-mode=validation --event-source=tradingview_refresh --attention-type=tradingview_refresh --json",
+      "resolution": "stale_open_task_pruned"
     },
     {
       "taskId": "kis_overseas:AGPU:validation:backtest_refresh:modmfgsk",
@@ -936,11 +950,12 @@
       "exchange": "kis_overseas",
       "tradeMode": "validation",
       "taskType": "backtest_refresh",
-      "status": "queued",
+      "status": "expired",
       "reason": "최근 외부 에비던스 없음. agent는 내부 분석 결과에만 의존해야 합니다.",
       "createdAt": "2026-04-25T00:48:39.620Z",
-      "updatedAt": "2026-04-25T00:48:39.620Z",
-      "command": "npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime-active-backtest -- --symbol=AGPU --market=kis_overseas --attention=evidence_gap_refresh --source=position_watch --json"
+      "updatedAt": "2026-04-25T03:48:41.469Z",
+      "command": "npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime-active-backtest -- --symbol=AGPU --market=kis_overseas --attention=evidence_gap_refresh --source=position_watch --json",
+      "resolution": "stale_open_task_pruned"
     },
     {
       "taskId": "kis_overseas:POET:normal:collection_refresh:modmfhzo",
@@ -949,11 +964,12 @@
       "exchange": "kis_overseas",
       "tradeMode": "normal",
       "taskType": "collection_refresh",
-      "status": "queued",
+      "status": "expired",
       "reason": "최근 외부 에비던스 없음. agent는 내부 분석 결과에만 의존해야 합니다.",
       "createdAt": "2026-04-25T00:48:41.172Z",
-      "updatedAt": "2026-04-25T00:48:41.172Z",
-      "command": "npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:position-reeval-event -- --symbol=POET --exchange=kis_overseas --trade-mode=normal --event-source=evidence-gap --attention-type=evidence_gap_refresh --json"
+      "updatedAt": "2026-04-25T03:48:41.469Z",
+      "command": "npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:position-reeval-event -- --symbol=POET --exchange=kis_overseas --trade-mode=normal --event-source=evidence-gap --attention-type=evidence_gap_refresh --json",
+      "resolution": "stale_open_task_pruned"
     },
     {
       "taskId": "kis_overseas:POET:normal:tradingview_refresh:modmfhzo",
@@ -962,11 +978,12 @@
       "exchange": "kis_overseas",
       "tradeMode": "normal",
       "taskType": "tradingview_refresh",
-      "status": "queued",
+      "status": "expired",
       "reason": "최근 외부 에비던스 없음. agent는 내부 분석 결과에만 의존해야 합니다.",
       "createdAt": "2026-04-25T00:48:41.172Z",
-      "updatedAt": "2026-04-25T00:48:41.172Z",
-      "command": "npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:position-reeval-event -- --symbol=POET --exchange=kis_overseas --trade-mode=normal --event-source=tradingview_refresh --attention-type=tradingview_refresh --json"
+      "updatedAt": "2026-04-25T03:48:41.469Z",
+      "command": "npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:position-reeval-event -- --symbol=POET --exchange=kis_overseas --trade-mode=normal --event-source=tradingview_refresh --attention-type=tradingview_refresh --json",
+      "resolution": "stale_open_task_pruned"
     },
     {
       "taskId": "kis_overseas:POET:normal:backtest_refresh:modmfhzo",
@@ -975,11 +992,12 @@
       "exchange": "kis_overseas",
       "tradeMode": "normal",
       "taskType": "backtest_refresh",
-      "status": "queued",
+      "status": "expired",
       "reason": "최근 외부 에비던스 없음. agent는 내부 분석 결과에만 의존해야 합니다.",
       "createdAt": "2026-04-25T00:48:41.172Z",
-      "updatedAt": "2026-04-25T00:48:41.172Z",
-      "command": "npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime-active-backtest -- --symbol=POET --market=kis_overseas --attention=evidence_gap_refresh --source=position_watch --json"
+      "updatedAt": "2026-04-25T03:48:41.469Z",
+      "command": "npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime-active-backtest -- --symbol=POET --market=kis_overseas --attention=evidence_gap_refresh --source=position_watch --json",
+      "resolution": "stale_open_task_pruned"
     },
     {
       "taskId": "kis_overseas:DTE:validation:collection_refresh:modmidwj",
@@ -988,11 +1006,12 @@
       "exchange": "kis_overseas",
       "tradeMode": "validation",
       "taskType": "collection_refresh",
-      "status": "queued",
+      "status": "expired",
       "reason": "최근 외부 에비던스 없음. agent는 내부 분석 결과에만 의존해야 합니다.",
       "createdAt": "2026-04-25T00:50:55.843Z",
-      "updatedAt": "2026-04-25T00:50:55.843Z",
-      "command": "npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:position-reeval-event -- --symbol=DTE --exchange=kis_overseas --trade-mode=validation --event-source=evidence-gap --attention-type=evidence_gap_refresh --json"
+      "updatedAt": "2026-04-25T03:51:04.905Z",
+      "command": "npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:position-reeval-event -- --symbol=DTE --exchange=kis_overseas --trade-mode=validation --event-source=evidence-gap --attention-type=evidence_gap_refresh --json",
+      "resolution": "stale_open_task_pruned"
     },
     {
       "taskId": "kis_overseas:DTE:validation:tradingview_refresh:modmidwj",
@@ -1001,11 +1020,12 @@
       "exchange": "kis_overseas",
       "tradeMode": "validation",
       "taskType": "tradingview_refresh",
-      "status": "queued",
+      "status": "expired",
       "reason": "최근 외부 에비던스 없음. agent는 내부 분석 결과에만 의존해야 합니다.",
       "createdAt": "2026-04-25T00:50:55.843Z",
-      "updatedAt": "2026-04-25T00:50:55.843Z",
-      "command": "npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:position-reeval-event -- --symbol=DTE --exchange=kis_overseas --trade-mode=validation --event-source=tradingview_refresh --attention-type=tradingview_refresh --json"
+      "updatedAt": "2026-04-25T03:51:04.905Z",
+      "command": "npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:position-reeval-event -- --symbol=DTE --exchange=kis_overseas --trade-mode=validation --event-source=tradingview_refresh --attention-type=tradingview_refresh --json",
+      "resolution": "stale_open_task_pruned"
     },
     {
       "taskId": "kis_overseas:DTE:validation:backtest_refresh:modmidwj",
@@ -1014,10 +1034,284 @@
       "exchange": "kis_overseas",
       "tradeMode": "validation",
       "taskType": "backtest_refresh",
-      "status": "queued",
+      "status": "expired",
       "reason": "최근 외부 에비던스 없음. agent는 내부 분석 결과에만 의존해야 합니다.",
       "createdAt": "2026-04-25T00:50:55.843Z",
-      "updatedAt": "2026-04-25T00:50:55.843Z",
+      "updatedAt": "2026-04-25T03:51:04.905Z",
+      "command": "npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime-active-backtest -- --symbol=DTE --market=kis_overseas --attention=evidence_gap_refresh --source=position_watch --json",
+      "resolution": "stale_open_task_pruned"
+    },
+    {
+      "taskId": "kis_overseas:POET:validation:collection_refresh:modsv9nw",
+      "scopeKey": "kis_overseas:POET:validation",
+      "symbol": "POET",
+      "exchange": "kis_overseas",
+      "tradeMode": "validation",
+      "taskType": "collection_refresh",
+      "status": "queued",
+      "reason": "최근 외부 에비던스 없음. agent는 내부 분석 결과에만 의존해야 합니다.",
+      "createdAt": "2026-04-25T03:48:54.572Z",
+      "updatedAt": "2026-04-25T03:48:54.572Z",
+      "command": "npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:position-reeval-event -- --symbol=POET --exchange=kis_overseas --trade-mode=validation --event-source=evidence-gap --attention-type=evidence_gap_refresh --json"
+    },
+    {
+      "taskId": "kis_overseas:POET:validation:tradingview_refresh:modsv9nw",
+      "scopeKey": "kis_overseas:POET:validation",
+      "symbol": "POET",
+      "exchange": "kis_overseas",
+      "tradeMode": "validation",
+      "taskType": "tradingview_refresh",
+      "status": "queued",
+      "reason": "최근 외부 에비던스 없음. agent는 내부 분석 결과에만 의존해야 합니다.",
+      "createdAt": "2026-04-25T03:48:54.572Z",
+      "updatedAt": "2026-04-25T03:48:54.572Z",
+      "command": "npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:position-reeval-event -- --symbol=POET --exchange=kis_overseas --trade-mode=validation --event-source=tradingview_refresh --attention-type=tradingview_refresh --json"
+    },
+    {
+      "taskId": "kis_overseas:POET:validation:backtest_refresh:modsv9nw",
+      "scopeKey": "kis_overseas:POET:validation",
+      "symbol": "POET",
+      "exchange": "kis_overseas",
+      "tradeMode": "validation",
+      "taskType": "backtest_refresh",
+      "status": "queued",
+      "reason": "최근 외부 에비던스 없음. agent는 내부 분석 결과에만 의존해야 합니다.",
+      "createdAt": "2026-04-25T03:48:54.572Z",
+      "updatedAt": "2026-04-25T03:48:54.572Z",
+      "command": "npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime-active-backtest -- --symbol=POET --market=kis_overseas --attention=evidence_gap_refresh --source=position_watch --json"
+    },
+    {
+      "taskId": "kis:005870:normal:collection_refresh:modsvaut",
+      "scopeKey": "kis:005870:normal",
+      "symbol": "005870",
+      "exchange": "kis",
+      "tradeMode": "normal",
+      "taskType": "collection_refresh",
+      "status": "queued",
+      "reason": "최근 외부 에비던스 없음. agent는 내부 분석 결과에만 의존해야 합니다.",
+      "createdAt": "2026-04-25T03:48:56.117Z",
+      "updatedAt": "2026-04-25T03:48:56.117Z",
+      "command": "npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:position-reeval-event -- --symbol=005870 --exchange=kis --trade-mode=normal --event-source=evidence-gap --attention-type=evidence_gap_refresh --json"
+    },
+    {
+      "taskId": "kis:005870:normal:tradingview_refresh:modsvaut",
+      "scopeKey": "kis:005870:normal",
+      "symbol": "005870",
+      "exchange": "kis",
+      "tradeMode": "normal",
+      "taskType": "tradingview_refresh",
+      "status": "queued",
+      "reason": "최근 외부 에비던스 없음. agent는 내부 분석 결과에만 의존해야 합니다.",
+      "createdAt": "2026-04-25T03:48:56.117Z",
+      "updatedAt": "2026-04-25T03:48:56.117Z",
+      "command": "npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:position-reeval-event -- --symbol=005870 --exchange=kis --trade-mode=normal --event-source=tradingview_refresh --attention-type=tradingview_refresh --json"
+    },
+    {
+      "taskId": "kis:005870:normal:backtest_refresh:modsvaut",
+      "scopeKey": "kis:005870:normal",
+      "symbol": "005870",
+      "exchange": "kis",
+      "tradeMode": "normal",
+      "taskType": "backtest_refresh",
+      "status": "queued",
+      "reason": "최근 외부 에비던스 없음. agent는 내부 분석 결과에만 의존해야 합니다.",
+      "createdAt": "2026-04-25T03:48:56.117Z",
+      "updatedAt": "2026-04-25T03:48:56.117Z",
+      "command": "npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime-active-backtest -- --symbol=005870 --market=kis --attention=evidence_gap_refresh --source=position_watch --json"
+    },
+    {
+      "taskId": "kis:005870:validation:collection_refresh:modsvc7n",
+      "scopeKey": "kis:005870:validation",
+      "symbol": "005870",
+      "exchange": "kis",
+      "tradeMode": "validation",
+      "taskType": "collection_refresh",
+      "status": "queued",
+      "reason": "최근 외부 에비던스 없음. agent는 내부 분석 결과에만 의존해야 합니다.",
+      "createdAt": "2026-04-25T03:48:57.875Z",
+      "updatedAt": "2026-04-25T03:48:57.875Z",
+      "command": "npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:position-reeval-event -- --symbol=005870 --exchange=kis --trade-mode=validation --event-source=evidence-gap --attention-type=evidence_gap_refresh --json"
+    },
+    {
+      "taskId": "kis:005870:validation:tradingview_refresh:modsvc7n",
+      "scopeKey": "kis:005870:validation",
+      "symbol": "005870",
+      "exchange": "kis",
+      "tradeMode": "validation",
+      "taskType": "tradingview_refresh",
+      "status": "queued",
+      "reason": "최근 외부 에비던스 없음. agent는 내부 분석 결과에만 의존해야 합니다.",
+      "createdAt": "2026-04-25T03:48:57.875Z",
+      "updatedAt": "2026-04-25T03:48:57.875Z",
+      "command": "npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:position-reeval-event -- --symbol=005870 --exchange=kis --trade-mode=validation --event-source=tradingview_refresh --attention-type=tradingview_refresh --json"
+    },
+    {
+      "taskId": "kis:005870:validation:backtest_refresh:modsvc7n",
+      "scopeKey": "kis:005870:validation",
+      "symbol": "005870",
+      "exchange": "kis",
+      "tradeMode": "validation",
+      "taskType": "backtest_refresh",
+      "status": "queued",
+      "reason": "최근 외부 에비던스 없음. agent는 내부 분석 결과에만 의존해야 합니다.",
+      "createdAt": "2026-04-25T03:48:57.875Z",
+      "updatedAt": "2026-04-25T03:48:57.875Z",
+      "command": "npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime-active-backtest -- --symbol=005870 --market=kis --attention=evidence_gap_refresh --source=position_watch --json"
+    },
+    {
+      "taskId": "kis:012320:validation:collection_refresh:modsvd99",
+      "scopeKey": "kis:012320:validation",
+      "symbol": "012320",
+      "exchange": "kis",
+      "tradeMode": "validation",
+      "taskType": "collection_refresh",
+      "status": "queued",
+      "reason": "최근 외부 에비던스 없음. agent는 내부 분석 결과에만 의존해야 합니다.",
+      "createdAt": "2026-04-25T03:48:59.229Z",
+      "updatedAt": "2026-04-25T03:48:59.229Z",
+      "command": "npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:position-reeval-event -- --symbol=012320 --exchange=kis --trade-mode=validation --event-source=evidence-gap --attention-type=evidence_gap_refresh --json"
+    },
+    {
+      "taskId": "kis:012320:validation:tradingview_refresh:modsvd99",
+      "scopeKey": "kis:012320:validation",
+      "symbol": "012320",
+      "exchange": "kis",
+      "tradeMode": "validation",
+      "taskType": "tradingview_refresh",
+      "status": "queued",
+      "reason": "최근 외부 에비던스 없음. agent는 내부 분석 결과에만 의존해야 합니다.",
+      "createdAt": "2026-04-25T03:48:59.229Z",
+      "updatedAt": "2026-04-25T03:48:59.229Z",
+      "command": "npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:position-reeval-event -- --symbol=012320 --exchange=kis --trade-mode=validation --event-source=tradingview_refresh --attention-type=tradingview_refresh --json"
+    },
+    {
+      "taskId": "kis:012320:validation:backtest_refresh:modsvd99",
+      "scopeKey": "kis:012320:validation",
+      "symbol": "012320",
+      "exchange": "kis",
+      "tradeMode": "validation",
+      "taskType": "backtest_refresh",
+      "status": "queued",
+      "reason": "최근 외부 에비던스 없음. agent는 내부 분석 결과에만 의존해야 합니다.",
+      "createdAt": "2026-04-25T03:48:59.229Z",
+      "updatedAt": "2026-04-25T03:48:59.229Z",
+      "command": "npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime-active-backtest -- --symbol=012320 --market=kis --attention=evidence_gap_refresh --source=position_watch --json"
+    },
+    {
+      "taskId": "kis_overseas:AGPU:validation:collection_refresh:modsvebd",
+      "scopeKey": "kis_overseas:AGPU:validation",
+      "symbol": "AGPU",
+      "exchange": "kis_overseas",
+      "tradeMode": "validation",
+      "taskType": "collection_refresh",
+      "status": "queued",
+      "reason": "최근 외부 에비던스 없음. agent는 내부 분석 결과에만 의존해야 합니다.",
+      "createdAt": "2026-04-25T03:49:00.601Z",
+      "updatedAt": "2026-04-25T03:49:00.601Z",
+      "command": "npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:position-reeval-event -- --symbol=AGPU --exchange=kis_overseas --trade-mode=validation --event-source=evidence-gap --attention-type=evidence_gap_refresh --json"
+    },
+    {
+      "taskId": "kis_overseas:AGPU:validation:tradingview_refresh:modsvebd",
+      "scopeKey": "kis_overseas:AGPU:validation",
+      "symbol": "AGPU",
+      "exchange": "kis_overseas",
+      "tradeMode": "validation",
+      "taskType": "tradingview_refresh",
+      "status": "queued",
+      "reason": "최근 외부 에비던스 없음. agent는 내부 분석 결과에만 의존해야 합니다.",
+      "createdAt": "2026-04-25T03:49:00.601Z",
+      "updatedAt": "2026-04-25T03:49:00.601Z",
+      "command": "npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:position-reeval-event -- --symbol=AGPU --exchange=kis_overseas --trade-mode=validation --event-source=tradingview_refresh --attention-type=tradingview_refresh --json"
+    },
+    {
+      "taskId": "kis_overseas:AGPU:validation:backtest_refresh:modsvebd",
+      "scopeKey": "kis_overseas:AGPU:validation",
+      "symbol": "AGPU",
+      "exchange": "kis_overseas",
+      "tradeMode": "validation",
+      "taskType": "backtest_refresh",
+      "status": "queued",
+      "reason": "최근 외부 에비던스 없음. agent는 내부 분석 결과에만 의존해야 합니다.",
+      "createdAt": "2026-04-25T03:49:00.601Z",
+      "updatedAt": "2026-04-25T03:49:00.601Z",
+      "command": "npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime-active-backtest -- --symbol=AGPU --market=kis_overseas --attention=evidence_gap_refresh --source=position_watch --json"
+    },
+    {
+      "taskId": "kis_overseas:POET:normal:collection_refresh:modsvfof",
+      "scopeKey": "kis_overseas:POET:normal",
+      "symbol": "POET",
+      "exchange": "kis_overseas",
+      "tradeMode": "normal",
+      "taskType": "collection_refresh",
+      "status": "queued",
+      "reason": "최근 외부 에비던스 없음. agent는 내부 분석 결과에만 의존해야 합니다.",
+      "createdAt": "2026-04-25T03:49:02.367Z",
+      "updatedAt": "2026-04-25T03:49:02.367Z",
+      "command": "npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:position-reeval-event -- --symbol=POET --exchange=kis_overseas --trade-mode=normal --event-source=evidence-gap --attention-type=evidence_gap_refresh --json"
+    },
+    {
+      "taskId": "kis_overseas:POET:normal:tradingview_refresh:modsvfof",
+      "scopeKey": "kis_overseas:POET:normal",
+      "symbol": "POET",
+      "exchange": "kis_overseas",
+      "tradeMode": "normal",
+      "taskType": "tradingview_refresh",
+      "status": "queued",
+      "reason": "최근 외부 에비던스 없음. agent는 내부 분석 결과에만 의존해야 합니다.",
+      "createdAt": "2026-04-25T03:49:02.367Z",
+      "updatedAt": "2026-04-25T03:49:02.367Z",
+      "command": "npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:position-reeval-event -- --symbol=POET --exchange=kis_overseas --trade-mode=normal --event-source=tradingview_refresh --attention-type=tradingview_refresh --json"
+    },
+    {
+      "taskId": "kis_overseas:POET:normal:backtest_refresh:modsvfof",
+      "scopeKey": "kis_overseas:POET:normal",
+      "symbol": "POET",
+      "exchange": "kis_overseas",
+      "tradeMode": "normal",
+      "taskType": "backtest_refresh",
+      "status": "queued",
+      "reason": "최근 외부 에비던스 없음. agent는 내부 분석 결과에만 의존해야 합니다.",
+      "createdAt": "2026-04-25T03:49:02.367Z",
+      "updatedAt": "2026-04-25T03:49:02.367Z",
+      "command": "npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime-active-backtest -- --symbol=POET --market=kis_overseas --attention=evidence_gap_refresh --source=position_watch --json"
+    },
+    {
+      "taskId": "kis_overseas:DTE:validation:collection_refresh:modsyai8",
+      "scopeKey": "kis_overseas:DTE:validation",
+      "symbol": "DTE",
+      "exchange": "kis_overseas",
+      "tradeMode": "validation",
+      "taskType": "collection_refresh",
+      "status": "queued",
+      "reason": "최근 외부 에비던스 없음. agent는 내부 분석 결과에만 의존해야 합니다.",
+      "createdAt": "2026-04-25T03:51:15.632Z",
+      "updatedAt": "2026-04-25T03:51:15.632Z",
+      "command": "npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:position-reeval-event -- --symbol=DTE --exchange=kis_overseas --trade-mode=validation --event-source=evidence-gap --attention-type=evidence_gap_refresh --json"
+    },
+    {
+      "taskId": "kis_overseas:DTE:validation:tradingview_refresh:modsyai8",
+      "scopeKey": "kis_overseas:DTE:validation",
+      "symbol": "DTE",
+      "exchange": "kis_overseas",
+      "tradeMode": "validation",
+      "taskType": "tradingview_refresh",
+      "status": "queued",
+      "reason": "최근 외부 에비던스 없음. agent는 내부 분석 결과에만 의존해야 합니다.",
+      "createdAt": "2026-04-25T03:51:15.632Z",
+      "updatedAt": "2026-04-25T03:51:15.632Z",
+      "command": "npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:position-reeval-event -- --symbol=DTE --exchange=kis_overseas --trade-mode=validation --event-source=tradingview_refresh --attention-type=tradingview_refresh --json"
+    },
+    {
+      "taskId": "kis_overseas:DTE:validation:backtest_refresh:modsyai8",
+      "scopeKey": "kis_overseas:DTE:validation",
+      "symbol": "DTE",
+      "exchange": "kis_overseas",
+      "tradeMode": "validation",
+      "taskType": "backtest_refresh",
+      "status": "queued",
+      "reason": "최근 외부 에비던스 없음. agent는 내부 분석 결과에만 의존해야 합니다.",
+      "createdAt": "2026-04-25T03:51:15.632Z",
+      "updatedAt": "2026-04-25T03:51:15.632Z",
       "command": "npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime-active-backtest -- --symbol=DTE --market=kis_overseas --attention=evidence_gap_refresh --source=position_watch --json"
     }
   ]
