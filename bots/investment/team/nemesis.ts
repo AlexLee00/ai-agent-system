@@ -769,6 +769,7 @@ export async function evaluateSignal(signal, opts = {}) {
   let dynamicTPSL;
   let marketRegime = null;
   let adaptiveResult: any = null; // SEC-004: finalVerdict 계산을 위해 스코프 상단 선언
+  let riskApprovalPreview: any = null;
 
   // ── v2: 조정 계수 ──
   if (action === ACTIONS.BUY) {
@@ -962,7 +963,7 @@ export async function evaluateSignal(signal, opts = {}) {
       }
     }
 
-    const riskApprovalPreview = buildRiskApprovalPreview({
+    riskApprovalPreview = buildRiskApprovalPreview({
       signal,
       amountUsdt,
       totalUsdt,
@@ -1110,7 +1111,7 @@ export async function evaluateSignal(signal, opts = {}) {
     nemesis_verdict: finalVerdict,
     approved_at: new Date().toISOString(),
     risk_approval_preview: riskApprovalPreview,
-    risk_approval_application: riskApprovalPreview.application,
+    risk_approval_application: riskApprovalPreview?.application || null,
     agent_role_state: nemesisRoleState
       ? {
           mission: nemesisRoleState.mission || null,
