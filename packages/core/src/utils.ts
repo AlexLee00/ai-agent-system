@@ -7,6 +7,17 @@
  */
 
 const path = require('path');
+const os = require('os');
+
+function getWorkspaceRoot() {
+  const home = process.env.AI_AGENT_HOME
+    || process.env.JAY_HOME
+    || path.join(os.homedir(), '.ai-agent-system');
+  return process.env.AI_AGENT_WORKSPACE
+    || process.env.JAY_WORKSPACE
+    || process.env.OPENCLAW_WORKSPACE
+    || path.join(home, 'workspace');
+}
 
 function delay(ms) {
   return new Promise(r => setTimeout(r, ms));
@@ -22,7 +33,7 @@ function getTodayKST() {
 }
 
 function getWorkspacePath(...parts) {
-  return path.join(process.env.HOME, '.openclaw', 'workspace', ...parts);
+  return path.join(getWorkspaceRoot(), ...parts);
 }
 
-module.exports = { delay, log, getTodayKST, getWorkspacePath };
+module.exports = { delay, log, getTodayKST, getWorkspacePath, getWorkspaceRoot };

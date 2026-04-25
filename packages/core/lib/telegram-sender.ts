@@ -197,9 +197,10 @@ const RUNTIME_ROOT = process.env.HUB_RUNTIME_DIR
   || path.join(os.homedir(), '.ai-agent-system', 'hub');
 const WORKSPACE    = path.join(RUNTIME_ROOT, 'telegram');
 const PENDING_FILE = path.join(WORKSPACE, 'pending-telegrams.jsonl');
-const LEGACY_WORKSPACE = process.env.OPENCLAW_WORKSPACE
-  || path.join(process.env.HOME || '/tmp', '.openclaw', 'workspace');
-const LEGACY_PENDING_FILE = path.join(LEGACY_WORKSPACE, 'pending-telegrams.jsonl');
+const LEGACY_WORKSPACE = process.env.OPENCLAW_WORKSPACE || '';
+const LEGACY_PENDING_FILE = LEGACY_WORKSPACE
+  ? path.join(LEGACY_WORKSPACE, 'pending-telegrams.jsonl')
+  : '';
 const TG_MAX       = 4096 - 20;  // Telegram 최대 길이 여유 확보
 const MOBILE_DIVIDER = '──────────';
 
@@ -249,6 +250,7 @@ function _savePending(team: string, message: string): void {
 
 function _migrateLegacyPendingQueue(): void {
   try {
+    if (!LEGACY_PENDING_FILE) return;
     if (!fs.existsSync(LEGACY_PENDING_FILE)) return;
     if (path.resolve(LEGACY_PENDING_FILE) === path.resolve(PENDING_FILE)) return;
 

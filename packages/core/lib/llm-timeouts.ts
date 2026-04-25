@@ -2,7 +2,15 @@ import path from 'node:path';
 import os from 'node:os';
 import fs from 'node:fs';
 
-export const OVERRIDE_FILE = path.join(os.homedir(), '.openclaw', 'workspace', 'llm-timeouts.json');
+const AI_AGENT_HOME = process.env.AI_AGENT_HOME
+  || process.env.JAY_HOME
+  || path.join(os.homedir(), '.ai-agent-system');
+const AI_AGENT_WORKSPACE = process.env.AI_AGENT_WORKSPACE
+  || process.env.JAY_WORKSPACE
+  || process.env.OPENCLAW_WORKSPACE
+  || path.join(AI_AGENT_HOME, 'workspace');
+
+export const OVERRIDE_FILE = path.join(AI_AGENT_WORKSPACE, 'llm-timeouts.json');
 
 const DEFAULTS = {
   'meta-llama/llama-4-scout-17b-16e-instruct': 5_000,

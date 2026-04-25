@@ -139,11 +139,23 @@ export const OPENCLAW_PORT = IS_OPS
   ? parseInt(process.env.OPENCLAW_PORT || '18789', 10)
   : -1;
 
-export const OPENCLAW_WORKSPACE = process.env.OPENCLAW_WORKSPACE ||
-  path.join(os.homedir(), '.openclaw', 'workspace');
+export const AI_AGENT_HOME = process.env.AI_AGENT_HOME
+  || process.env.JAY_HOME
+  || path.join(os.homedir(), '.ai-agent-system');
 
-export const OPENCLAW_LOGS = process.env.OPENCLAW_LOGS ||
-  path.join(os.homedir(), '.openclaw', 'logs');
+export const AI_AGENT_WORKSPACE = process.env.AI_AGENT_WORKSPACE
+  || process.env.JAY_WORKSPACE
+  || process.env.OPENCLAW_WORKSPACE
+  || path.join(AI_AGENT_HOME, 'workspace');
+
+export const AI_AGENT_LOGS = process.env.AI_AGENT_LOGS
+  || process.env.JAY_LOGS
+  || process.env.OPENCLAW_LOGS
+  || path.join(AI_AGENT_HOME, 'logs');
+
+// Backward-compatible aliases only. New code should use AI_AGENT_* names.
+export const OPENCLAW_WORKSPACE = process.env.OPENCLAW_WORKSPACE || AI_AGENT_WORKSPACE;
+export const OPENCLAW_LOGS = process.env.OPENCLAW_LOGS || AI_AGENT_LOGS;
 
 export const LOCAL_LLM_BASE_URL = process.env.LOCAL_LLM_BASE_URL || (
   IS_OPS

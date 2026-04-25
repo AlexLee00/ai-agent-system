@@ -5,7 +5,15 @@ const { isExpectedIdleService, isOptionalService } = require('./service-ownershi
 
 type HealthState = Record<string, string>;
 
-const STATE_FILE = path.join(os.homedir(), '.openclaw', 'workspace', 'health-check-state.json');
+const AI_AGENT_HOME = process.env.AI_AGENT_HOME
+  || process.env.JAY_HOME
+  || path.join(os.homedir(), '.ai-agent-system');
+const AI_AGENT_WORKSPACE = process.env.AI_AGENT_WORKSPACE
+  || process.env.JAY_WORKSPACE
+  || process.env.OPENCLAW_WORKSPACE
+  || path.join(AI_AGENT_HOME, 'workspace');
+
+const STATE_FILE = path.join(AI_AGENT_WORKSPACE, 'health-check-state.json');
 const ALERT_COOLDOWN_MS = 30 * 60 * 1000;
 
 const TEAM_PREFIXES: Record<string, string> = {

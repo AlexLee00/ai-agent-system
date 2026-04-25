@@ -1,16 +1,16 @@
 {
-  "generated_at": "2026-04-25T21:05:51.432Z",
+  "generated_at": "2026-04-25T21:13:13.623Z",
   "scan_patterns": [
     "hub-alarm-client",
     "openclaw-client",
     "HUB_ALARM_",
     "OPENCLAW_"
   ],
-  "total_matches": 267,
-  "unique_files": 118,
+  "total_matches": 279,
+  "unique_files": 124,
   "categories": {
     "hub_alarm_native": 67,
-    "legacy_openclaw_compat": 200
+    "legacy_openclaw_compat": 212
   },
   "files": {
     "bots/blog/__tests__/dpo-learning.test.ts": [
@@ -1113,6 +1113,38 @@
         "match": "const alarmShimStatus = run(tsxBin, [path.join(scriptDir, 'hub-alarm-client-shim-smoke.ts')]);"
       }
     ],
+    "bots/hub/scripts/runtime-workspace-independence-smoke.ts": [
+      {
+        "file": "bots/hub/scripts/runtime-workspace-independence-smoke.ts",
+        "line": 66,
+        "category": "legacy_openclaw_compat",
+        "match": "OPENCLAW_WORKSPACE: null,"
+      },
+      {
+        "file": "bots/hub/scripts/runtime-workspace-independence-smoke.ts",
+        "line": 69,
+        "category": "legacy_openclaw_compat",
+        "match": "OPENCLAW_LOGS: null,"
+      },
+      {
+        "file": "bots/hub/scripts/runtime-workspace-independence-smoke.ts",
+        "line": 81,
+        "category": "legacy_openclaw_compat",
+        "match": "assert.equal(env.OPENCLAW_WORKSPACE, expectedWorkspace);"
+      },
+      {
+        "file": "bots/hub/scripts/runtime-workspace-independence-smoke.ts",
+        "line": 98,
+        "category": "legacy_openclaw_compat",
+        "match": "OPENCLAW_WORKSPACE: legacyWorkspace,"
+      },
+      {
+        "file": "bots/hub/scripts/runtime-workspace-independence-smoke.ts",
+        "line": 102,
+        "category": "legacy_openclaw_compat",
+        "match": "assert.equal(env.OPENCLAW_WORKSPACE, legacyWorkspace);"
+      }
+    ],
     "bots/hub/scripts/telegram-pending-queue-migration-smoke.ts": [
       {
         "file": "bots/hub/scripts/telegram-pending-queue-migration-smoke.ts",
@@ -1354,15 +1386,35 @@
       },
       {
         "file": "packages/core/lib/env.ts",
-        "line": 142,
+        "line": 148,
         "category": "legacy_openclaw_compat",
-        "match": "export const OPENCLAW_WORKSPACE = process.env.OPENCLAW_WORKSPACE ||"
+        "match": "|| process.env.OPENCLAW_WORKSPACE"
       },
       {
         "file": "packages/core/lib/env.ts",
-        "line": 145,
+        "line": 153,
         "category": "legacy_openclaw_compat",
-        "match": "export const OPENCLAW_LOGS = process.env.OPENCLAW_LOGS ||"
+        "match": "|| process.env.OPENCLAW_LOGS"
+      },
+      {
+        "file": "packages/core/lib/env.ts",
+        "line": 157,
+        "category": "legacy_openclaw_compat",
+        "match": "export const OPENCLAW_WORKSPACE = process.env.OPENCLAW_WORKSPACE || AI_AGENT_WORKSPACE;"
+      },
+      {
+        "file": "packages/core/lib/env.ts",
+        "line": 158,
+        "category": "legacy_openclaw_compat",
+        "match": "export const OPENCLAW_LOGS = process.env.OPENCLAW_LOGS || AI_AGENT_LOGS;"
+      }
+    ],
+    "packages/core/lib/health-state-manager.ts": [
+      {
+        "file": "packages/core/lib/health-state-manager.ts",
+        "line": 13,
+        "category": "legacy_openclaw_compat",
+        "match": "|| process.env.OPENCLAW_WORKSPACE"
       }
     ],
     "packages/core/lib/hub-alarm-client.js": [
@@ -1402,7 +1454,7 @@
         "file": "packages/core/lib/hub-alarm-client.ts",
         "line": 20,
         "category": "legacy_openclaw_compat",
-        "match": "|| path.join(env.OPENCLAW_WORKSPACE, 'recent-alerts.json');"
+        "match": "|| path.join(env.AI_AGENT_WORKSPACE || env.OPENCLAW_WORKSPACE, 'recent-alerts.json');"
       },
       {
         "file": "packages/core/lib/hub-alarm-client.ts",
@@ -1489,6 +1541,22 @@
         "match": "console.warn('[hub-alarm-client] legacy webhook curl 폴백 성공');"
       }
     ],
+    "packages/core/lib/intent-store.ts": [
+      {
+        "file": "packages/core/lib/intent-store.ts",
+        "line": 41,
+        "category": "legacy_openclaw_compat",
+        "match": "|| process.env.OPENCLAW_WORKSPACE"
+      }
+    ],
+    "packages/core/lib/llm-control/snapshot.ts": [
+      {
+        "file": "packages/core/lib/llm-control/snapshot.ts",
+        "line": 12,
+        "category": "legacy_openclaw_compat",
+        "match": "|| process.env.OPENCLAW_WORKSPACE"
+      }
+    ],
     "packages/core/lib/llm-control/tester-support.ts": [
       {
         "file": "packages/core/lib/llm-control/tester-support.ts",
@@ -1519,6 +1587,14 @@
         "line": 154,
         "category": "legacy_openclaw_compat",
         "match": "OPENCLAW_CONFIG,"
+      }
+    ],
+    "packages/core/lib/llm-timeouts.ts": [
+      {
+        "file": "packages/core/lib/llm-timeouts.ts",
+        "line": 10,
+        "category": "legacy_openclaw_compat",
+        "match": "|| process.env.OPENCLAW_WORKSPACE"
       }
     ],
     "packages/core/lib/openclaw-client.js": [
@@ -1606,7 +1682,7 @@
         "file": "packages/core/lib/telegram-sender.ts",
         "line": 200,
         "category": "legacy_openclaw_compat",
-        "match": "const LEGACY_WORKSPACE = process.env.OPENCLAW_WORKSPACE"
+        "match": "const LEGACY_WORKSPACE = process.env.OPENCLAW_WORKSPACE || '';"
       }
     ],
     "packages/core/REPORTING_HUB_PLAN.md": [
@@ -1631,6 +1707,14 @@
         "line": 15,
         "category": "legacy_openclaw_compat",
         "match": "const { postAlarm } = require('../lib/openclaw-client');"
+      }
+    ],
+    "packages/core/src/utils.ts": [
+      {
+        "file": "packages/core/src/utils.ts",
+        "line": 18,
+        "category": "legacy_openclaw_compat",
+        "match": "|| process.env.OPENCLAW_WORKSPACE"
       }
     ],
     "README.md": [

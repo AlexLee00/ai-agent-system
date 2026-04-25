@@ -2,11 +2,11 @@
 
 This inventory tracks the Hub alarm migration surface. `hub_alarm_native` entries are the desired path; `legacy_openclaw_compat` entries are compatibility shims or remaining migration targets.
 
-- generated_at: 2026-04-25T21:05:51.432Z
-- total_matches: 267
-- unique_files: 118
+- generated_at: 2026-04-25T21:13:13.623Z
+- total_matches: 279
+- unique_files: 124
 - hub_alarm_native: 67
-- legacy_openclaw_compat: 200
+- legacy_openclaw_compat: 212
 
 ## Files
 
@@ -318,6 +318,13 @@ This inventory tracks the Hub alarm migration surface. `hub_alarm_native` entrie
 ### `bots/hub/scripts/run-tests.js`
 - L43 [hub_alarm_native]: `const alarmShimStatus = run(tsxBin, [path.join(scriptDir, 'hub-alarm-client-shim-smoke.ts')]);`
 
+### `bots/hub/scripts/runtime-workspace-independence-smoke.ts`
+- L66 [legacy_openclaw_compat]: `OPENCLAW_WORKSPACE: null,`
+- L69 [legacy_openclaw_compat]: `OPENCLAW_LOGS: null,`
+- L81 [legacy_openclaw_compat]: `assert.equal(env.OPENCLAW_WORKSPACE, expectedWorkspace);`
+- L98 [legacy_openclaw_compat]: `OPENCLAW_WORKSPACE: legacyWorkspace,`
+- L102 [legacy_openclaw_compat]: `assert.equal(env.OPENCLAW_WORKSPACE, legacyWorkspace);`
+
 ### `bots/hub/scripts/telegram-pending-queue-migration-smoke.ts`
 - L51 [legacy_openclaw_compat]: `OPENCLAW_WORKSPACE: legacyWorkspace,`
 
@@ -393,8 +400,13 @@ This inventory tracks the Hub alarm migration surface. `hub_alarm_native` entrie
 ### `packages/core/lib/env.ts`
 - L138 [legacy_openclaw_compat]: `export const OPENCLAW_PORT = IS_OPS`
 - L139 [legacy_openclaw_compat]: `? parseInt(process.env.OPENCLAW_PORT || '18789', 10)`
-- L142 [legacy_openclaw_compat]: `export const OPENCLAW_WORKSPACE = process.env.OPENCLAW_WORKSPACE ||`
-- L145 [legacy_openclaw_compat]: `export const OPENCLAW_LOGS = process.env.OPENCLAW_LOGS ||`
+- L148 [legacy_openclaw_compat]: `|| process.env.OPENCLAW_WORKSPACE`
+- L153 [legacy_openclaw_compat]: `|| process.env.OPENCLAW_LOGS`
+- L157 [legacy_openclaw_compat]: `export const OPENCLAW_WORKSPACE = process.env.OPENCLAW_WORKSPACE || AI_AGENT_WORKSPACE;`
+- L158 [legacy_openclaw_compat]: `export const OPENCLAW_LOGS = process.env.OPENCLAW_LOGS || AI_AGENT_LOGS;`
+
+### `packages/core/lib/health-state-manager.ts`
+- L13 [legacy_openclaw_compat]: `|| process.env.OPENCLAW_WORKSPACE`
 
 ### `packages/core/lib/hub-alarm-client.js`
 - L5 [hub_alarm_native]: `module.exports = loadTsSourceBridge(__dirname, 'hub-alarm-client');`
@@ -404,7 +416,7 @@ This inventory tracks the Hub alarm migration surface. `hub_alarm_native` entrie
 - L5 [hub_alarm_native]: `* legacy OpenClaw webhook은 HUB_ALARM_LEGACY_OPENCLAW_FALLBACK=true일 때만 사용한다.`
 - L16 [hub_alarm_native]: `const HUB_ALARM_TIMEOUT_MS = Math.max(1000, Number(process.env.HUB_ALARM_TIMEOUT_MS || 5000) || 5000);`
 - L19 [hub_alarm_native]: `const RECENT_ALERT_SNAPSHOT_PATH = String(process.env.HUB_ALARM_RECENT_ALERTS_PATH || '').trim()`
-- L20 [legacy_openclaw_compat]: `|| path.join(env.OPENCLAW_WORKSPACE, 'recent-alerts.json');`
+- L20 [legacy_openclaw_compat]: `|| path.join(env.AI_AGENT_WORKSPACE || env.OPENCLAW_WORKSPACE, 'recent-alerts.json');`
 - L166 [hub_alarm_native]: `|| process.env.HUB_ALARM_LEGACY_OPENCLAW_HOOKS_TOKEN`
 - L167 [legacy_openclaw_compat]: `|| process.env.OPENCLAW_HOOKS_TOKEN`
 - L287 [hub_alarm_native]: `return _readBooleanEnv('HUB_ALARM_LEGACY_OPENCLAW_FALLBACK', 'OPENCLAW_LEGACY_FALLBACK');`
@@ -420,12 +432,21 @@ This inventory tracks the Hub alarm migration surface. `hub_alarm_native` entrie
 - L548 [hub_alarm_native]: `console.warn(`[hub-alarm-client] legacy webhook 실패: ${error.message}`);`
 - L551 [hub_alarm_native]: `console.warn('[hub-alarm-client] legacy webhook curl 폴백 성공');`
 
+### `packages/core/lib/intent-store.ts`
+- L41 [legacy_openclaw_compat]: `|| process.env.OPENCLAW_WORKSPACE`
+
+### `packages/core/lib/llm-control/snapshot.ts`
+- L12 [legacy_openclaw_compat]: `|| process.env.OPENCLAW_WORKSPACE`
+
 ### `packages/core/lib/llm-control/tester-support.ts`
 - L6 [legacy_openclaw_compat]: `const OPENCLAW_CONFIG = path.join(process.env.HOME || '', '.openclaw/openclaw.json');`
 - L51 [legacy_openclaw_compat]: `const cfg = JSON.parse(fs.readFileSync(OPENCLAW_CONFIG, 'utf-8'));`
 - L139 [legacy_openclaw_compat]: `const cfg = JSON.parse(fs.readFileSync(OPENCLAW_CONFIG, 'utf-8'));`
 - L149 [legacy_openclaw_compat]: `fs.writeFileSync(OPENCLAW_CONFIG, JSON.stringify(cfg, null, 2) + '\n');`
 - L154 [legacy_openclaw_compat]: `OPENCLAW_CONFIG,`
+
+### `packages/core/lib/llm-timeouts.ts`
+- L10 [legacy_openclaw_compat]: `|| process.env.OPENCLAW_WORKSPACE`
 
 ### `packages/core/lib/openclaw-client.js`
 - L3 [hub_alarm_native]: `module.exports = require('./hub-alarm-client');`
@@ -448,10 +469,13 @@ This inventory tracks the Hub alarm migration surface. `hub_alarm_native` entrie
 
 ### `packages/core/lib/telegram-sender.ts`
 - L31 [hub_alarm_native]: `const hubAlarmClient = require('./hub-alarm-client');`
-- L200 [legacy_openclaw_compat]: `const LEGACY_WORKSPACE = process.env.OPENCLAW_WORKSPACE`
+- L200 [legacy_openclaw_compat]: `const LEGACY_WORKSPACE = process.env.OPENCLAW_WORKSPACE || '';`
 
 ### `packages/core/scripts/publish-python-report.ts`
 - L15 [legacy_openclaw_compat]: `const { postAlarm } = require('../lib/openclaw-client');`
+
+### `packages/core/src/utils.ts`
+- L18 [legacy_openclaw_compat]: `|| process.env.OPENCLAW_WORKSPACE`
 
 ### `scripts/api-usage-report.ts`
 - L30 [legacy_openclaw_compat]: `const openclawClient = require('../packages/core/lib/openclaw-client');`

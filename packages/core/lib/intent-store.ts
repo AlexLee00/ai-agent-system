@@ -32,9 +32,19 @@ function q(schema: string, table: string): string {
   return `${safeSchema(schema)}.${table}`;
 }
 
+function getAgentWorkspace(): string {
+  const home = process.env.AI_AGENT_HOME
+    || process.env.JAY_HOME
+    || path.join(os.homedir(), '.ai-agent-system');
+  return process.env.AI_AGENT_WORKSPACE
+    || process.env.JAY_WORKSPACE
+    || process.env.OPENCLAW_WORKSPACE
+    || path.join(home, 'workspace');
+}
+
 function getIntentLearningPath(explicitPath = ''): string {
   if (explicitPath) return explicitPath;
-  return path.join(os.homedir(), '.openclaw', 'workspace', 'nlp-learnings.json');
+  return path.join(getAgentWorkspace(), 'nlp-learnings.json');
 }
 
 function getNamedIntentLearningPath(name = 'jay'): string {
@@ -42,7 +52,7 @@ function getNamedIntentLearningPath(name = 'jay'): string {
   if (!normalized || normalized === 'jay' || normalized === 'default') {
     return getIntentLearningPath();
   }
-  return path.join(os.homedir(), '.openclaw', 'workspace', `${normalized}-nlp-learnings.json`);
+  return path.join(getAgentWorkspace(), `${normalized}-nlp-learnings.json`);
 }
 
 function readIntentLearnings(filePath = ''): { path: string; items: LearningItem[] } {

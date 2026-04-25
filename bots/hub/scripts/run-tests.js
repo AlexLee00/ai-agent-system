@@ -48,6 +48,8 @@ function main() {
     if (postAlarmStatus !== 0) process.exit(postAlarmStatus);
     const openClawIndependenceStatus = run(tsxBin, [path.join(scriptDir, 'openclaw-independence-smoke.ts')]);
     if (openClawIndependenceStatus !== 0) process.exit(openClawIndependenceStatus);
+    const runtimeWorkspaceStatus = run(tsxBin, [path.join(scriptDir, 'runtime-workspace-independence-smoke.ts')]);
+    if (runtimeWorkspaceStatus !== 0) process.exit(runtimeWorkspaceStatus);
     const tgPendingMigrationStatus = run(tsxBin, [path.join(scriptDir, 'telegram-pending-queue-migration-smoke.ts')]);
     if (tgPendingMigrationStatus !== 0) process.exit(tgPendingMigrationStatus);
     const tgHubSecretsStatus = run(tsxBin, [path.join(scriptDir, 'telegram-hub-secrets-smoke.ts')]);
