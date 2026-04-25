@@ -1,11 +1,11 @@
 {
   "version": 1,
-  "updatedAt": "2026-04-24T23:03:31.691Z",
+  "updatedAt": "2026-04-25T00:17:40.179Z",
   "entries": [
     {
       "queueKey": "kis_overseas:live:live:kis_overseas:POET:normal:kis_overseas:POET:normal:ADJUST",
       "createdAt": "2026-04-24T16:34:48.844Z",
-      "updatedAt": "2026-04-24T23:03:07.264Z",
+      "updatedAt": "2026-04-25T00:17:17.587Z",
       "candidate": {
         "exchange": "kis_overseas",
         "symbol": "POET",
@@ -53,6 +53,59 @@
       "retryCount": 0,
       "nextRetryAt": null,
       "lastAttemptAt": "2026-04-24T18:20:15.198Z",
+      "lastStatus": "autonomous_action_queued"
+    },
+    {
+      "queueKey": "kis_overseas:live:live:kis_overseas:AGPU:validation:kis_overseas:AGPU:validation:EXIT",
+      "createdAt": "2026-04-25T00:02:56.671Z",
+      "updatedAt": "2026-04-25T00:17:17.588Z",
+      "candidate": {
+        "exchange": "kis_overseas",
+        "symbol": "AGPU",
+        "tradeMode": "validation",
+        "strategyName": "Routed mean_reversion",
+        "setupType": "mean_reversion",
+        "action": "EXIT",
+        "command": "npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:strategy-exit -- --symbol=AGPU --exchange=kis_overseas --trade-mode=validation --json",
+        "previewCommand": "npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:strategy-exit -- --symbol=AGPU --exchange=kis_overseas --trade-mode=validation --json",
+        "manualExecuteCommand": "npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:strategy-exit -- --symbol=AGPU --exchange=kis_overseas --trade-mode=validation --execute --confirm=strategy-exit --json",
+        "autonomousExecuteCommand": "npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:strategy-exit -- --symbol=AGPU --exchange=kis_overseas --trade-mode=validation --execute --confirm=position-runtime-autopilot --run-context=position-runtime-autopilot --json",
+        "runner": "runtime:strategy-exit",
+        "runnerArgs": {
+          "json": true,
+          "symbol": "AGPU",
+          "confirm": "position-runtime-autopilot",
+          "execute": true,
+          "exchange": "kis_overseas",
+          "trade-mode": "validation",
+          "run-context": "position-runtime-autopilot"
+        },
+        "executionPolicy": {
+          "autonomy": "hard_exit_required",
+          "needsUserApproval": false,
+          "requiresMarketOpen": true,
+          "postActionAlertOnly": true
+        },
+        "executionScope": "kis_overseas:live:live:kis_overseas:AGPU:validation:kis_overseas:AGPU:validation:EXIT",
+        "brokerScope": "kis_overseas:live:live:kis_overseas:AGPU:kis_overseas:AGPU:validation",
+        "brokerAccountId": "kis_overseas:live:live",
+        "positionId": "kis_overseas:AGPU:validation",
+        "isHardExit": true,
+        "urgency": "high",
+        "executionAllowed": true,
+        "guardReasons": [],
+        "sourceQualityBlocked": false,
+        "validationSeverity": "critical",
+        "cadenceMs": 20000,
+        "regime": "trending_bull",
+        "reasonCode": "stop_loss_threshold"
+      },
+      "reason": "미국 장외 시간 (ET 기준 2026-04-24)",
+      "waitingReason": "미국 장외 시간 (ET 기준 2026-04-24)",
+      "attempts": 0,
+      "retryCount": 0,
+      "nextRetryAt": null,
+      "lastAttemptAt": null,
       "lastStatus": "autonomous_action_queued"
     }
   ]

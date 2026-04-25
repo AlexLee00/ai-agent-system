@@ -1,7 +1,7 @@
 {
   "file": "/Users/alexlee/projects/ai-agent-system/bots/investment/output/ops/position-runtime-evidence-gap-queue.json",
   "version": 1,
-  "updatedAt": "2026-04-24T23:03:30.137Z",
+  "updatedAt": "2026-04-25T00:17:38.755Z",
   "states": {
     "kis_overseas:DTE:validation": {
       "scopeKey": "kis_overseas:DTE:validation",
@@ -9,12 +9,12 @@
       "exchange": "kis_overseas",
       "tradeMode": "validation",
       "evidenceCount": 0,
-      "consecutiveGapCount": 782,
+      "consecutiveGapCount": 844,
       "threshold": 3,
       "cooldownMinutes": 60,
-      "lastSeenAt": "2026-04-24T23:03:20.286Z",
+      "lastSeenAt": "2026-04-25T00:17:29.857Z",
       "lastEvidenceAt": null,
-      "lastQueuedAt": "2026-04-24T22:48:40.914Z",
+      "lastQueuedAt": "2026-04-24T23:48:47.191Z",
       "status": "evidence_gap_observed"
     },
     "kis_overseas:POET:validation": {
@@ -23,12 +23,12 @@
       "exchange": "kis_overseas",
       "tradeMode": "validation",
       "evidenceCount": 0,
-      "consecutiveGapCount": 502,
+      "consecutiveGapCount": 564,
       "threshold": 3,
       "cooldownMinutes": 60,
-      "lastSeenAt": "2026-04-24T23:03:21.845Z",
+      "lastSeenAt": "2026-04-25T00:17:31.332Z",
       "lastEvidenceAt": null,
-      "lastQueuedAt": "2026-04-24T22:46:17.331Z",
+      "lastQueuedAt": "2026-04-24T23:46:25.646Z",
       "status": "evidence_gap_observed"
     },
     "kis_overseas:AGPU:validation": {
@@ -37,12 +37,12 @@
       "exchange": "kis_overseas",
       "tradeMode": "validation",
       "evidenceCount": 0,
-      "consecutiveGapCount": 471,
+      "consecutiveGapCount": 533,
       "threshold": 3,
       "cooldownMinutes": 60,
-      "lastSeenAt": "2026-04-24T23:03:28.444Z",
+      "lastSeenAt": "2026-04-25T00:17:37.289Z",
       "lastEvidenceAt": null,
-      "lastQueuedAt": "2026-04-24T22:46:23.705Z",
+      "lastQueuedAt": "2026-04-24T23:46:31.476Z",
       "status": "evidence_gap_observed"
     },
     "kis:005870:normal": {
@@ -51,12 +51,12 @@
       "exchange": "kis",
       "tradeMode": "normal",
       "evidenceCount": 0,
-      "consecutiveGapCount": 781,
+      "consecutiveGapCount": 843,
       "threshold": 3,
       "cooldownMinutes": 60,
-      "lastSeenAt": "2026-04-24T23:03:23.338Z",
+      "lastSeenAt": "2026-04-25T00:17:32.821Z",
       "lastEvidenceAt": null,
-      "lastQueuedAt": "2026-04-24T22:46:18.856Z",
+      "lastQueuedAt": "2026-04-24T23:46:27.104Z",
       "status": "evidence_gap_observed"
     },
     "kis:005870:validation": {
@@ -65,12 +65,12 @@
       "exchange": "kis",
       "tradeMode": "validation",
       "evidenceCount": 0,
-      "consecutiveGapCount": 781,
+      "consecutiveGapCount": 843,
       "threshold": 3,
       "cooldownMinutes": 60,
-      "lastSeenAt": "2026-04-24T23:03:25.104Z",
+      "lastSeenAt": "2026-04-25T00:17:34.254Z",
       "lastEvidenceAt": null,
-      "lastQueuedAt": "2026-04-24T22:46:20.644Z",
+      "lastQueuedAt": "2026-04-24T23:46:28.724Z",
       "status": "evidence_gap_observed"
     },
     "kis:012320:validation": {
@@ -79,12 +79,12 @@
       "exchange": "kis",
       "tradeMode": "validation",
       "evidenceCount": 0,
-      "consecutiveGapCount": 781,
+      "consecutiveGapCount": 843,
       "threshold": 3,
       "cooldownMinutes": 60,
-      "lastSeenAt": "2026-04-24T23:03:26.732Z",
+      "lastSeenAt": "2026-04-25T00:17:35.606Z",
       "lastEvidenceAt": null,
-      "lastQueuedAt": "2026-04-24T22:46:22.181Z",
+      "lastQueuedAt": "2026-04-24T23:46:30.130Z",
       "status": "evidence_gap_observed"
     },
     "binance:ZEC/USDT:normal": {
@@ -107,12 +107,12 @@
       "exchange": "kis_overseas",
       "tradeMode": "normal",
       "evidenceCount": 0,
-      "consecutiveGapCount": 365,
+      "consecutiveGapCount": 427,
       "threshold": 3,
       "cooldownMinutes": 60,
-      "lastSeenAt": "2026-04-24T23:03:30.137Z",
+      "lastSeenAt": "2026-04-25T00:17:38.755Z",
       "lastEvidenceAt": null,
-      "lastQueuedAt": "2026-04-24T22:46:25.445Z",
+      "lastQueuedAt": "2026-04-24T23:46:33.245Z",
       "status": "evidence_gap_observed"
     }
   },
