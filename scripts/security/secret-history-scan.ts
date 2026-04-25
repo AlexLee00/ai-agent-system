@@ -11,7 +11,8 @@ const path = require('node:path');
 
 type Rule = {
   name: string;
-  pattern: string;
+  gitPattern: string;
+  valuePattern: RegExp;
 };
 
 type Finding = {
@@ -25,16 +26,56 @@ type Finding = {
 const REPO_ROOT = path.resolve(__dirname, '..', '..');
 
 const RULES: Rule[] = [
-  { name: 'openai_key', pattern: String.raw`sk-(proj-)?[A-Za-z0-9_-]{32,}` },
-  { name: 'anthropic_key', pattern: String.raw`sk-ant-[A-Za-z0-9_-]{32,}` },
-  { name: 'groq_key', pattern: String.raw`gsk_[A-Za-z0-9]{30,}` },
-  { name: 'github_pat', pattern: String.raw`github_pat_[A-Za-z0-9_]{20,}` },
-  { name: 'github_ghp', pattern: String.raw`ghp_[A-Za-z0-9]{20,}` },
-  { name: 'slack_token', pattern: String.raw`xox[baprs]-[A-Za-z0-9-]{20,}` },
-  { name: 'aws_access_key', pattern: String.raw`AKIA[0-9A-Z]{16}` },
-  { name: 'telegram_bot_token', pattern: String.raw`[0-9]{6,12}:[A-Za-z0-9_-]{30,}` },
-  { name: 'google_oauth_secret', pattern: String.raw`GOCSPX-[A-Za-z0-9_-]{20,}` },
-  { name: 'private_key_block', pattern: String.raw`-----BEGIN [A-Z ]*PRIVATE KEY-----` },
+  {
+    name: 'openai_key',
+    gitPattern: String.raw`sk-[A-Za-z0-9_-]{32,}`,
+    valuePattern: /\bsk-(?:proj-)?(?=[A-Za-z0-9_-]{32,}\b)(?=[A-Za-z0-9_-]*[0-9_])[A-Za-z0-9_-]+\b/g,
+  },
+  {
+    name: 'anthropic_key',
+    gitPattern: String.raw`sk-ant-[A-Za-z0-9_-]{32,}`,
+    valuePattern: /\bsk-ant-[A-Za-z0-9_-]{32,}\b/g,
+  },
+  {
+    name: 'groq_key',
+    gitPattern: String.raw`gsk_[A-Za-z0-9]{30,}`,
+    valuePattern: /\bgsk_[A-Za-z0-9]{30,}\b/g,
+  },
+  {
+    name: 'github_pat',
+    gitPattern: String.raw`github_pat_[A-Za-z0-9_]{20,}`,
+    valuePattern: /\bgithub_pat_[A-Za-z0-9_]{20,}\b/g,
+  },
+  {
+    name: 'github_ghp',
+    gitPattern: String.raw`ghp_[A-Za-z0-9]{20,}`,
+    valuePattern: /\bghp_[A-Za-z0-9]{20,}\b/g,
+  },
+  {
+    name: 'slack_token',
+    gitPattern: String.raw`xox[baprs]-[A-Za-z0-9-]{20,}`,
+    valuePattern: /\bxox[baprs]-[A-Za-z0-9-]{20,}\b/g,
+  },
+  {
+    name: 'aws_access_key',
+    gitPattern: String.raw`AKIA[0-9A-Z]{16}`,
+    valuePattern: /\bAKIA[0-9A-Z]{16}\b/g,
+  },
+  {
+    name: 'telegram_bot_token',
+    gitPattern: String.raw`[0-9]{6,12}:[A-Za-z0-9_-]{30,}`,
+    valuePattern: /\b\d{6,12}:[A-Za-z0-9_-]{30,}\b/g,
+  },
+  {
+    name: 'google_oauth_secret',
+    gitPattern: String.raw`GOCSPX-[A-Za-z0-9_-]{20,}`,
+    valuePattern: /\bGOCSPX-[A-Za-z0-9_-]{20,}\b/g,
+  },
+  {
+    name: 'private_key_block',
+    gitPattern: String.raw`-----BEGIN [A-Z ]*PRIVATE KEY-----`,
+    valuePattern: /-----BEGIN [A-Z ]*PRIVATE KEY-----/g,
+  },
 ];
 
 function runGit(args: string[]): string {
@@ -56,7 +97,7 @@ function scanRule(rule: Rule): Finding[] {
     '--all',
     '--pickaxe-regex',
     '-S',
-    rule.pattern,
+    rule.gitPattern,
     '--name-only',
     '--format=%x1e%H%x09%ad%x09%s',
     '--date=iso-strict',
@@ -74,6 +115,7 @@ function scanRule(rule: Rule): Finding[] {
     if (!/^[0-9a-f]{40}$/.test(commit || '')) continue;
 
     for (const file of lines.slice(1)) {
+      if (!hasConfirmedMatch(commit, file, rule)) continue;
       findings.push({
         rule: rule.name,
         commit: commit.slice(0, 12),
@@ -84,6 +126,17 @@ function scanRule(rule: Rule): Finding[] {
     }
   }
   return findings;
+}
+
+function hasConfirmedMatch(commit: string, file: string, rule: Rule): boolean {
+  const result = spawnSync('git', ['show', `${commit}:${file}`], {
+    cwd: REPO_ROOT,
+    encoding: 'utf8',
+    maxBuffer: 1024 * 1024 * 16,
+  });
+  if (result.status !== 0 || !result.stdout) return false;
+  rule.valuePattern.lastIndex = 0;
+  return rule.valuePattern.test(result.stdout);
 }
 
 function dedupe(findings: Finding[]): Finding[] {

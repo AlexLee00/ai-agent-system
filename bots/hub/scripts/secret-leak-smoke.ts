@@ -26,7 +26,7 @@ const MAX_SCAN_BYTES = 2 * 1024 * 1024;
 
 const RULES: Rule[] = [
   { name: 'private_key_block', pattern: /-----BEGIN [A-Z ]*PRIVATE KEY-----/g },
-  { name: 'openai_key', pattern: /\bsk-(?:proj-)?[A-Za-z0-9_-]{32,}\b/g },
+  { name: 'openai_key', pattern: /\bsk-(?:proj-)?(?=[A-Za-z0-9_-]{32,}\b)(?=[A-Za-z0-9_-]*[0-9_])[A-Za-z0-9_-]+\b/g },
   { name: 'anthropic_key', pattern: /\bsk-ant-[A-Za-z0-9_-]{32,}\b/g },
   { name: 'groq_key', pattern: /\bgsk_[A-Za-z0-9]{30,}\b/g },
   { name: 'github_pat', pattern: /\bgithub_pat_[A-Za-z0-9_]{20,}\b/g },
