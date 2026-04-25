@@ -66,6 +66,15 @@ async function run({ sessionId, market, symbol, decision: decisionOverride = nul
   const amountUsdt = risk?.approved
     ? (risk.adjustedAmount ?? decision.amount_usdt)
     : (decision.amount_usdt ?? 0);
+  const approvalUpdate = risk?.approved
+    ? buildSignalApprovalUpdate({
+        ...risk,
+        status: SIGNAL_STATUS.APPROVED,
+      })
+    : null;
+  const initialStatus = risk
+    ? (risk.approved ? SIGNAL_STATUS.APPROVED : SIGNAL_STATUS.REJECTED)
+    : SIGNAL_STATUS.PENDING;
 
   const signalInsert = await db.insertSignalIfFresh({
     symbol,
@@ -73,11 +82,12 @@ async function run({ sessionId, market, symbol, decision: decisionOverride = nul
     amountUsdt,
     confidence: decision.confidence,
     reasoning: `[노드:${NODE_ID}] ${decision.reasoning || ''}`.slice(0, 255),
+    status: initialStatus,
     exchange: market,
     analystSignals,
     tradeMode: decision?.trade_mode || null,
-    nemesisVerdict: risk?.nemesis_verdict ?? null,
-    approvedAt: risk?.approved_at ?? null,
+    nemesisVerdict: approvalUpdate?.nemesisVerdict ?? risk?.nemesis_verdict ?? null,
+    approvedAt: approvalUpdate?.approvedAt ?? risk?.approved_at ?? null,
   });
   const signalId = signalInsert.id;
 
@@ -98,13 +108,6 @@ async function run({ sessionId, market, symbol, decision: decisionOverride = nul
   if (risk) {
     if (risk.approved) {
       status = SIGNAL_STATUS.APPROVED;
-      await db.updateSignalApproval(signalId, buildSignalApprovalUpdate({
-        ...risk,
-        status: SIGNAL_STATUS.APPROVED,
-      }));
-      if (risk.adjustedAmount != null) {
-        await db.updateSignalAmount(signalId, risk.adjustedAmount);
-      }
       await persistRiskApprovalRationaleAtSave({
         signalId,
         symbol,

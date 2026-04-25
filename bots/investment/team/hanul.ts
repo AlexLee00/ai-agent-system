@@ -1297,17 +1297,43 @@ function isEffectivePartialExit({ entrySize = 0, soldAmount = 0, partialExitRati
   return sold < baseline;
 }
 
+export async function listHanulExecutableSignals(exchange, tradeMode = getInvestmentTradeMode()) {
+  const [pendingSignals, approvedSignals] = await Promise.all([
+    db.getPendingSignals(exchange, tradeMode),
+    db.getApprovedSignals(exchange, tradeMode),
+  ]);
+  const signalsById = new Map();
+  for (const signal of [...pendingSignals, ...approvedSignals]) {
+    signalsById.set(signal.id, signal);
+  }
+  const signals = [...signalsById.values()].sort((a, b) => {
+    const aTime = new Date(a.created_at || 0).getTime();
+    const bTime = new Date(b.created_at || 0).getTime();
+    return aTime - bTime;
+  });
+  return {
+    signals,
+    pendingCount: pendingSignals.length,
+    approvedCount: approvedSignals.length,
+  };
+}
+
 async function processPendingHanulSignals({ exchange, label, execute, delayMs = 1100 }) {
   const startedAt = Date.now();
   const tradeMode = getInvestmentTradeMode();
-  console.log(`[한울] ${label} pending 조회 시작 ${JSON.stringify({ pool: getInvestmentPoolStats() })}`);
-  const signals = await db.getPendingSignals(exchange, tradeMode);
-  logHanulPhase(`${label} pending 조회 완료`, startedAt, { signal_count: signals.length, trade_mode: tradeMode });
+  console.log(`[한울] ${label} 실행대상 조회 시작 ${JSON.stringify({ pool: getInvestmentPoolStats() })}`);
+  const { signals, pendingCount, approvedCount } = await listHanulExecutableSignals(exchange, tradeMode);
+  logHanulPhase(`${label} 실행대상 조회 완료`, startedAt, {
+    signal_count: signals.length,
+    pending_count: pendingCount,
+    approved_count: approvedCount,
+    trade_mode: tradeMode,
+  });
   if (signals.length === 0) {
-    console.log(`[한울] 대기 ${label} 신호 없음 (trade_mode=${tradeMode})`);
+    console.log(`[한울] 대기/승인 ${label} 신호 없음 (trade_mode=${tradeMode})`);
     return [];
   }
-  console.log(`[한울] ${signals.length}개 ${label} 신호 처리 시작 (trade_mode=${tradeMode})`);
+  console.log(`[한울] ${signals.length}개 ${label} 신호 처리 시작 (pending=${pendingCount}, approved=${approvedCount}, trade_mode=${tradeMode})`);
   const results = [];
   for (const signal of signals) {
     const signalStartedAt = Date.now();

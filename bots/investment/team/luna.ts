@@ -124,6 +124,80 @@ function applyExistingPositionStrategyBias(signalData, existingStrategyProfile =
   };
 }
 
+export function buildLunaRiskEvaluationSignal(signalData = {}) {
+  return {
+    ...signalData,
+    amount_usdt: signalData.amount_usdt ?? signalData.amountUsdt ?? null,
+    trade_mode: signalData.trade_mode ?? signalData.tradeMode ?? null,
+  };
+}
+
+export function buildLunaSignalPersistencePlan(signalData = {}, riskResult = null, riskError = null, context = {}) {
+  const symbol = context.symbol || signalData.symbol || null;
+  const action = context.action || signalData.action || null;
+  const exchange = context.exchange || signalData.exchange || null;
+  const decision = context.decision || {};
+
+  if (riskError) {
+    return {
+      status: SIGNAL_STATUS.FAILED,
+      signalData: { ...signalData },
+      approvalUpdate: null,
+      blockUpdate: {
+        status: SIGNAL_STATUS.FAILED,
+        reason: `nemesis_error:${String(riskError.message || 'unknown').slice(0, 180)}`,
+        code: 'nemesis_error',
+        meta: {
+          exchange,
+          symbol,
+          action,
+          amount: decision.amount_usdt ?? signalData.amountUsdt ?? null,
+          confidence: decision.confidence ?? signalData.confidence ?? null,
+        },
+      },
+      outcome: 'failed',
+    };
+  }
+
+  if (riskResult?.approved) {
+    const approvalUpdate = buildSignalApprovalUpdate({
+      ...riskResult,
+      status: SIGNAL_STATUS.APPROVED,
+    });
+    return {
+      status: SIGNAL_STATUS.APPROVED,
+      signalData: {
+        ...signalData,
+        amountUsdt: riskResult.adjustedAmount ?? signalData.amountUsdt,
+        nemesisVerdict: approvalUpdate.nemesisVerdict,
+        approvedAt: approvalUpdate.approvedAt,
+      },
+      approvalUpdate,
+      blockUpdate: null,
+      outcome: 'approved',
+    };
+  }
+
+  return {
+    status: SIGNAL_STATUS.REJECTED,
+    signalData: { ...signalData },
+    approvalUpdate: null,
+    blockUpdate: {
+      status: SIGNAL_STATUS.REJECTED,
+      reason: riskResult?.reason || 'risk_rejected',
+      code: 'risk_rejected',
+      meta: {
+        exchange,
+        symbol,
+        action,
+        amount: decision.amount_usdt ?? signalData.amountUsdt ?? null,
+        adjustedAmount: riskResult?.adjustedAmount ?? null,
+      },
+    },
+    outcome: 'rejected',
+  };
+}
+
 /**
  * @typedef {Object} TradeSignal
  * @property {string} symbol
@@ -1487,7 +1561,7 @@ export async function orchestrate(symbols, exchange = 'binance', params = null) 
   }
 
   console.log(`\n🏦 [루나] 포트폴리오 최종 판단...`);
-  const portfolio_decision = await getPortfolioDecision(symbolDecisions, portfolio, exchange);
+  let portfolio_decision = await getPortfolioDecision(symbolDecisions, portfolio, exchange);
   let approvedCount = 0;
   let rejectedCount = 0;
   let failedCount   = 0;
@@ -1599,20 +1673,53 @@ export async function orchestrate(symbols, exchange = 'binance', params = null) 
       continue;
     }
 
-    const signalInsert = await db.insertSignalIfFresh(signalData);
+    const taAnalysis = _symAnalyses.find(a => a.metadata?.atrRatio != null);
+    const atrRatio   = taAnalysis?.metadata?.atrRatio ?? null;
+    const currentPrice = taAnalysis?.metadata?.currentPrice ?? null;
+    let riskResult = null;
+    let riskError = null;
+    try {
+      riskResult = await evaluateSignal(
+        buildLunaRiskEvaluationSignal(signalData),
+        { totalUsdt: portfolio.totalAsset, atrRatio, currentPrice, persist: false }
+      );
+    } catch (e) {
+      riskError = e;
+    }
+
+    const persistencePlan = buildLunaSignalPersistencePlan(signalData, riskResult, riskError, {
+      exchange,
+      symbol: dec.symbol,
+      action: dec.action,
+      decision: dec,
+    });
+    const persistedSignal = persistencePlan.signalData;
+    const signalInsert = await db.insertSignalIfFresh({
+      ...persistedSignal,
+      status: persistencePlan.status,
+      nemesisVerdict: persistencePlan.approvalUpdate?.nemesisVerdict ?? persistedSignal.nemesisVerdict ?? null,
+      approvedAt: persistencePlan.approvalUpdate?.approvedAt ?? persistedSignal.approvedAt ?? null,
+    });
     const signalId = signalInsert.id;
     if (signalInsert.duplicate) {
       console.log(`  ⏭️ [루나] 최근 중복 신호 스킵: ${dec.symbol} ${dec.action} (${signalInsert.dedupeWindowMinutes}분 내 기존 signal=${signalId})`);
       continue;
     }
 
-    console.log(`  ✅ [루나] 신호 저장: ${signalId} (${dec.symbol} ${dec.action})`);
-    await notifySignal({ ...signalData, paper: paperMode, exchange, tradeMode: signalData.tradeMode || null });
+    if (persistencePlan.blockUpdate) {
+      await db.updateSignalBlock(signalId, persistencePlan.blockUpdate).catch((error) => {
+        console.warn(`  ⚠️ [루나] ${dec.symbol}: block meta 저장 실패 (${error.message})`);
+      });
+    }
+
+    console.log(`  ✅ [루나] 신호 저장: ${signalId} (${dec.symbol} ${dec.action}, status=${persistencePlan.status})`);
+    await notifySignal({ ...persistedSignal, paper: paperMode, exchange, tradeMode: persistedSignal.tradeMode || null, status: persistencePlan.status });
 
     // RAG 저장: 투자 신호 이력을 rag_trades에 학습 데이터로 기록
     try {
       const content = [
         `${dec.symbol} ${dec.action} 신호`,
+        `상태: ${persistencePlan.status}`,
         `신뢰도: ${dec.confidence || '?'}`,
         `판단: ${(dec.reasoning || '').slice(0, 100)}`,
       ].join(' | ');
@@ -1622,53 +1729,32 @@ export async function orchestrate(symbols, exchange = 'binance', params = null) 
         confidence: dec.confidence,
         exchange,
         paper_mode: paperMode,
+        status: persistencePlan.status,
       }, 'luna');
     } catch (e) {
       console.warn('[luna] RAG 저장 실패 (무시):', e.message);
     }
 
-    try {
-      // 최근 TA 분석에서 atrRatio 추출 (아리아가 저장한 메타데이터)
-      const taAnalysis = _symAnalyses.find(a => a.metadata?.atrRatio != null);
-      const atrRatio   = taAnalysis?.metadata?.atrRatio ?? null;
-      const currentPrice = taAnalysis?.metadata?.currentPrice ?? null;
-
-      const riskResult = await evaluateSignal(
-        { id: signalId, ...signalData },
-        { totalUsdt: portfolio.totalAsset, atrRatio, currentPrice }
-      );
-      if (riskResult.approved) {
-        console.log(`  ✅ [네메시스] 승인: $${riskResult.adjustedAmount}${riskResult.tpPrice ? ` TP=${riskResult.tpPrice?.toFixed(2)} SL=${riskResult.slPrice?.toFixed(2)}` : ''}`);
-        await db.updateSignalApproval(signalId, buildSignalApprovalUpdate(riskResult));
-        approvedCount++;
-        results.push({
-          symbol: dec.symbol, signalId, ...dec,
-          adjustedAmount: riskResult.adjustedAmount,
-          // 동적 TP/SL (applied=true일 때만 전달)
-          tpPrice: riskResult.tpPrice ?? null,
-          slPrice: riskResult.slPrice ?? null,
-          tpslSource: riskResult.tpslSource ?? null,
-        });
-      } else {
-        console.log(`  🚫 [네메시스] 거부: ${riskResult.reason}`);
-        await db.updateSignalStatus(signalId, 'rejected');
-        rejectedCount++;
-      }
-    } catch (e) {
-      console.warn(`  ⚠️ [네메시스] 리스크 평가 실패 → failed 처리: ${e.message}`);
-      await db.updateSignalBlock(signalId, {
-        status: SIGNAL_STATUS.FAILED,
-        reason: `nemesis_error:${String(e.message || 'unknown').slice(0, 180)}`,
-        code: 'nemesis_error',
-        meta: {
-          exchange,
-          symbol: dec.symbol,
-          action: dec.action,
-          amount: dec.amount_usdt,
-          confidence: dec.confidence,
-        },
-      }).catch(() => {});
+    if (riskError) {
+      console.warn(`  ⚠️ [네메시스] 리스크 평가 실패 → failed 저장: ${riskError.message}`);
       failedCount++;
+      continue;
+    }
+
+    if (riskResult?.approved) {
+      console.log(`  ✅ [네메시스] 승인: $${riskResult.adjustedAmount}${riskResult.tpPrice ? ` TP=${riskResult.tpPrice?.toFixed(2)} SL=${riskResult.slPrice?.toFixed(2)}` : ''}`);
+      approvedCount++;
+      results.push({
+        symbol: dec.symbol, signalId, ...dec,
+        adjustedAmount: riskResult.adjustedAmount,
+        // 동적 TP/SL (applied=true일 때만 전달)
+        tpPrice: riskResult.tpPrice ?? null,
+        slPrice: riskResult.slPrice ?? null,
+        tpslSource: riskResult.tpslSource ?? null,
+      });
+    } else {
+      console.log(`  🚫 [네메시스] 거부: ${riskResult?.reason || 'risk_rejected'}`);
+      rejectedCount++;
     }
   }
 

@@ -561,6 +561,7 @@ export async function insertSignal({
   amountUsdt,
   confidence,
   reasoning,
+  status = 'pending',
   exchange = 'binance',
   analystSignals = null,
   tradeMode = null,
@@ -579,7 +580,7 @@ export async function insertSignal({
   const effectiveTradeMode = tradeMode || getInvestmentTradeMode();
   const rows = await query(
     `INSERT INTO signals (symbol, action, amount_usdt, confidence, reasoning, status, exchange, analyst_signals, trade_mode, nemesis_verdict, approved_at, partial_exit_ratio, strategy_family, strategy_quality, strategy_readiness, strategy_route, execution_origin, quality_flag, exclude_from_learning, incident_link)
-     VALUES ($1, $2, $3, $4, $5, 'pending', $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)
      RETURNING id`,
     [
       symbol,
@@ -587,6 +588,7 @@ export async function insertSignal({
       amountUsdt ?? null,
       confidence ?? null,
       reasoning ?? null,
+      status || 'pending',
       exchange,
       analystSignals ?? null,
       effectiveTradeMode,
@@ -690,6 +692,7 @@ export async function getRecentBlockedSignalByCode({
  *   amountUsdt?: number|null,
  *   confidence?: number|null,
  *   reasoning?: string|null,
+ *   status?: string|null,
  *   exchange?: string,
  *   analystSignals?: object|null,
  *   tradeMode?: string|null,
@@ -703,6 +706,7 @@ export async function insertSignalIfFresh({
   amountUsdt,
   confidence,
   reasoning,
+  status = 'pending',
   exchange = 'binance',
   analystSignals = null,
   tradeMode = null,
@@ -745,6 +749,7 @@ export async function insertSignalIfFresh({
     amountUsdt,
     confidence,
     reasoning,
+    status: status || 'pending',
     exchange,
     analystSignals,
     tradeMode: effectiveTradeMode,
