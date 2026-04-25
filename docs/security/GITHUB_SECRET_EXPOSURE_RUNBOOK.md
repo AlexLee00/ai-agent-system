@@ -24,7 +24,13 @@
 ./node_modules/.bin/tsx scripts/security/secret-history-scan.ts
 ```
 
-이 검사는 `git log --all --pickaxe-regex` 기반으로 고신뢰 토큰 패턴이 들어가거나 제거된 커밋과 파일만 보여준다. 값 자체는 출력하지 않는다.
+이 검사는 기본적으로 `main`과 `origin/main`을 대상으로 고신뢰 토큰 패턴이 들어가거나 제거된 커밋과 파일만 보여준다. 값 자체는 출력하지 않는다.
+
+로컬 stale branch/tag까지 포함한 전체 ref 감사가 필요하면 다음처럼 실행한다.
+
+```bash
+SECRET_HISTORY_SCAN_ALL_REFS=1 ./node_modules/.bin/tsx scripts/security/secret-history-scan.ts
+```
 
 ## 노출 후보 발견 시 처리 순서
 

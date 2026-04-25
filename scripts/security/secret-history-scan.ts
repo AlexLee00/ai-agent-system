@@ -24,6 +24,9 @@ type Finding = {
 };
 
 const REPO_ROOT = path.resolve(__dirname, '..', '..');
+const REF_SCOPE = process.env.SECRET_HISTORY_SCAN_ALL_REFS === '1'
+  ? ['--all']
+  : ['refs/heads/main', 'refs/remotes/origin/main'];
 
 const RULES: Rule[] = [
   {
@@ -94,13 +97,13 @@ function runGit(args: string[]): string {
 function scanRule(rule: Rule): Finding[] {
   const output = runGit([
     'log',
-    '--all',
     '--pickaxe-regex',
     '-S',
     rule.gitPattern,
     '--name-only',
     '--format=%x1e%H%x09%ad%x09%s',
     '--date=iso-strict',
+    ...REF_SCOPE,
     '--',
     '.',
     ':(exclude)node_modules',
