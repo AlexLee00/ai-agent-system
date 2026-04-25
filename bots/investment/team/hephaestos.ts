@@ -4940,17 +4940,47 @@ export async function executeSignal(signal) {
     return { success: true, trade };
 
   } catch (e) {
-    const pendingReconcileEligible = (() => {
+    let pendingSourceError = e;
+    const syntheticBridgePendingEligible = (() => {
       const code = String(e?.code || '').trim().toLowerCase();
+      if (code !== 'binance_mcp_mutating_bridge_failed') return false;
+      return Boolean(clientOrderId) && (action === ACTIONS.BUY || action === ACTIONS.SELL);
+    })();
+    if (syntheticBridgePendingEligible) {
+      const bridgeMeta = e?.meta && typeof e.meta === 'object' ? e.meta : {};
+      const syntheticPendingError = /** @type {any} */ (new Error(
+        `order_fill_unverified:${symbol}:bridge_error_after_submit:0:0`,
+      ));
+      syntheticPendingError.code = 'order_fill_unverified';
+      syntheticPendingError.meta = {
+        symbol,
+        side: String(action || '').trim().toLowerCase() || null,
+        orderSymbol: String(bridgeMeta.orderSymbol || bridgeMeta.symbol || symbol || '').trim().toUpperCase() || symbol,
+        orderId: bridgeMeta.orderId || null,
+        clientOrderId: bridgeMeta.clientOrderId || clientOrderId || null,
+        status: String(bridgeMeta.status || 'bridge_error_after_submit').trim().toLowerCase() || 'bridge_error_after_submit',
+        amount: Number(bridgeMeta.amount || 0),
+        filled: Number(bridgeMeta.filled || 0),
+        price: Number(bridgeMeta.price || 0),
+        cost: Number(bridgeMeta.cost || 0),
+        amountUsdt: Number(bridgeMeta.amountUsdt || amountUsdt || 0),
+        submittedAtMs,
+        source: 'binance_mcp_mutating_bridge_failed',
+      };
+      syntheticPendingError.cause = e;
+      pendingSourceError = syntheticPendingError;
+    }
+    const pendingReconcileEligible = (() => {
+      const code = String(pendingSourceError?.code || '').trim().toLowerCase();
       if (code === 'order_pending_fill_verification') return true;
       if (code === 'order_fill_unverified') {
-        const meta = e?.meta && typeof e.meta === 'object' ? e.meta : {};
+        const meta = pendingSourceError?.meta && typeof pendingSourceError.meta === 'object' ? pendingSourceError.meta : {};
         return Boolean(meta?.orderId || meta?.clientOrderId);
       }
       return false;
     })();
     if (pendingReconcileEligible) {
-      const pendingMeta = e?.meta && typeof e.meta === 'object' ? e.meta : {};
+      const pendingMeta = pendingSourceError?.meta && typeof pendingSourceError.meta === 'object' ? pendingSourceError.meta : {};
       const pendingOrderSymbol = String(pendingMeta.orderSymbol || pendingMeta.symbol || symbol || '').trim().toUpperCase() || symbol;
       const pendingOrder = {
         id: pendingMeta.orderId || null,
@@ -5249,19 +5279,19 @@ export async function executeSignal(signal) {
       };
     }
 
-    console.error(`  ❌ 실행 오류: ${e.message}`);
-    const failureCode = e?.code === 'sell_amount_below_minimum'
+    console.error(`  ❌ 실행 오류: ${pendingSourceError.message}`);
+    const failureCode = pendingSourceError?.code === 'sell_amount_below_minimum'
       ? 'sell_amount_below_minimum'
       : 'broker_execution_error';
-    await persistFailure(e.message, {
+    await persistFailure(pendingSourceError.message, {
       code: failureCode,
       meta: {
-        error: String(e.message).slice(0, 240),
-        ...(e?.meta || {}),
+        error: String(pendingSourceError.message).slice(0, 240),
+        ...(pendingSourceError?.meta || {}),
       },
     });
-    await notifyError(`헤파이스토스 - ${symbol} ${action}`, e);
-    return { success: false, error: e.message };
+    await notifyError(`헤파이스토스 - ${symbol} ${action}`, pendingSourceError);
+    return { success: false, error: pendingSourceError.message };
   }
 }
 

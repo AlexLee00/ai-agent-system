@@ -148,6 +148,10 @@ async function runBinanceMcpBridge(action, payload = {}) {
       failClosed.meta = {
         action: normalizedAction || null,
         failClosed: true,
+        symbol: String(payload?.symbol || '').trim().toUpperCase() || null,
+        clientOrderId: payload?.clientOrderId || payload?.newClientOrderId || null,
+        amountUsdt: Number(payload?.amountUsdt || 0) || null,
+        amount: Number(payload?.amount || 0) || null,
       };
       throw failClosed;
     }
