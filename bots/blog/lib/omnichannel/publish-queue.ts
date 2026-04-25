@@ -10,6 +10,7 @@
  */
 
 const pgPool = require('../../../../packages/core/lib/pg-pool');
+const crypto = require('crypto');
 const kst = require('../../../../packages/core/lib/kst');
 const { ensureMarketingOsSchema } = require('./marketing-os-schema.ts');
 
@@ -24,10 +25,9 @@ class QueueUnavailableError extends Error {
   }
 }
 
-function generateId(prefix = 'q') {
-  const ts = Date.now().toString(36).toUpperCase();
-  const rand = Math.random().toString(36).slice(2, 8).toUpperCase();
-  return `${prefix}_${ts}_${rand}`;
+function buildDeterministicQueueId(idempotencyKey = '') {
+  const digest = crypto.createHash('sha1').update(String(idempotencyKey || ''), 'utf8').digest('hex').slice(0, 12);
+  return `q_${digest}`;
 }
 
 /**
@@ -65,13 +65,16 @@ function getDefaultScheduledAt(platform) {
  * @param {boolean} [opts.dryRun]
  * @returns {Promise<Array>} 삽입된 queue jobs
  */
-async function enqueueMarketingVariants({ campaignId, variants = [], dryRun = false }) {
+async function enqueueMarketingVariants({
+  campaignId,
+  variants = [],
+  dryRun = false,
+}) {
   await ensureMarketingOsSchema();
   const jobs = [];
   const today = kst.today();
 
   for (const variant of variants) {
-    const queueId = generateId('q');
     const scheduledAt = getDefaultScheduledAt(variant.platform);
     const idempotencyKey = buildIdempotencyKey({
       campaignId,
@@ -79,6 +82,7 @@ async function enqueueMarketingVariants({ campaignId, variants = [], dryRun = fa
       variantId: variant.variant_id,
       scheduledDate: today,
     });
+    const queueId = buildDeterministicQueueId(idempotencyKey);
 
     const job = {
       queue_id: queueId,
@@ -91,34 +95,87 @@ async function enqueueMarketingVariants({ campaignId, variants = [], dryRun = fa
       failure_kind: null,
       idempotency_key: idempotencyKey,
       dry_run: dryRun,
+      enqueue_status: dryRun ? 'dry_run' : 'pending',
+      persisted: dryRun ? false : true,
     };
 
-    if (!dryRun) {
-      await pgPool.query('blog', `
+    if (dryRun) {
+      jobs.push(job);
+      continue;
+    }
+
+    const rows = await pgPool.query('blog', `
+      WITH inserted AS (
         INSERT INTO blog.marketing_publish_queue
           (queue_id, variant_id, platform, scheduled_at, status,
            attempt_count, last_error, failure_kind, idempotency_key, dry_run)
         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
         ON CONFLICT (idempotency_key) DO NOTHING
-      `, [
-        job.queue_id,
-        job.variant_id,
-        job.platform,
-        job.scheduled_at,
-        job.status,
-        job.attempt_count,
-        job.last_error,
-        job.failure_kind,
-        job.idempotency_key,
-        job.dry_run,
-      ]);
+        RETURNING
+          queue_id, variant_id, platform, scheduled_at, status,
+          attempt_count, last_error, failure_kind, idempotency_key, dry_run, TRUE AS inserted
+      ),
+      existing AS (
+        SELECT
+          queue_id, variant_id, platform, scheduled_at, status,
+          attempt_count, last_error, failure_kind, idempotency_key, dry_run, FALSE AS inserted
+        FROM blog.marketing_publish_queue
+        WHERE idempotency_key = $9
+      )
+      SELECT * FROM inserted
+      UNION ALL
+      SELECT * FROM existing
+      WHERE NOT EXISTS (SELECT 1 FROM inserted)
+      LIMIT 1
+    `, [
+      job.queue_id,
+      job.variant_id,
+      job.platform,
+      job.scheduled_at,
+      job.status,
+      job.attempt_count,
+      job.last_error,
+      job.failure_kind,
+      job.idempotency_key,
+      job.dry_run,
+    ]);
+    const row = rows?.[0] || null;
+    if (!row) {
+      jobs.push({
+        ...job,
+        enqueue_status: 'missing',
+        persisted: false,
+      });
+      continue;
     }
-
-    jobs.push(job);
+    const inserted = row.inserted === true || row.inserted === 't' || row.inserted === 1;
+    jobs.push({
+      ...job,
+      queue_id: row.queue_id,
+      status: row.status,
+      attempt_count: Number(row.attempt_count || 0),
+      scheduled_at: row.scheduled_at,
+      last_error: row.last_error || null,
+      failure_kind: row.failure_kind || null,
+      enqueue_status: inserted ? 'inserted' : 'existing',
+      persisted: true,
+    });
   }
 
   console.log(`[publish-queue] ${jobs.length}개 큐 삽입 campaign=${campaignId} dryRun=${dryRun}`);
   return jobs;
+}
+
+async function hydrateQueueJobVariant(job = null) {
+  if (!job?.variant_id) return { ...(job || {}), variant: null };
+  const varRows = await pgPool.query('blog', `
+    SELECT v.*, c.brand_axis, c.objective, c.source_signal
+    FROM blog.marketing_platform_variants v
+    JOIN blog.marketing_campaigns c ON c.campaign_id = v.campaign_id
+    WHERE v.variant_id = $1
+  `, [job.variant_id]);
+  const variant = varRows?.[0] || null;
+  return { ...job, variant };
 }
 
 /**
@@ -184,19 +241,42 @@ async function claimNextPublishJob(platform, { dryRun = false, scheduleHorizonHo
 
     const job = rows[0];
 
-    // variant 정보도 함께 로드
-    const varRows = await pgPool.query('blog', `
-      SELECT v.*, c.brand_axis, c.objective, c.source_signal
-      FROM blog.marketing_platform_variants v
-      JOIN blog.marketing_campaigns c ON c.campaign_id = v.campaign_id
-      WHERE v.variant_id = $1
-    `, [job.variant_id]);
-
-    const variant = varRows?.[0] || null;
-    return { ...job, variant };
+    return hydrateQueueJobVariant(job);
   } catch (err) {
     console.warn(`[publish-queue] claimNextPublishJob 실패 platform=${platform}:`, err.message);
     throw new QueueUnavailableError(String(err?.message || err || 'claim_failed'));
+  }
+}
+
+/**
+ * queue_id를 지정해 단일 job을 claim.
+ * social_native_required에서 방금 생성된 queue를 직접 집어서 실행할 때 사용.
+ * @param {string} queueId
+ * @param {object} [opts]
+ * @param {boolean} [opts.dryRun]
+ * @returns {Promise<object|null>}
+ */
+async function claimPublishJobByQueueId(queueId, { dryRun = false } = {}) {
+  if (!queueId) return null;
+  try {
+    await ensureMarketingOsSchema();
+    const rows = await pgPool.query('blog', `
+      UPDATE blog.marketing_publish_queue
+      SET status = 'preparing',
+          attempt_count = attempt_count + 1,
+          updated_at = NOW()
+      WHERE queue_id = $1
+        AND dry_run = $2
+        AND status = 'queued'
+      RETURNING
+        queue_id, variant_id, platform, scheduled_at,
+        status, attempt_count, idempotency_key, dry_run
+    `, [queueId, dryRun]);
+    if (!rows || rows.length === 0) return null;
+    return hydrateQueueJobVariant(rows[0]);
+  } catch (err) {
+    console.warn(`[publish-queue] claimPublishJobByQueueId 실패 queueId=${queueId}:`, err.message);
+    throw new QueueUnavailableError(String(err?.message || err || 'claim_by_id_failed'));
   }
 }
 
@@ -277,10 +357,12 @@ async function getTodayPublishedCount(platform) {
 module.exports = {
   enqueueMarketingVariants,
   claimNextPublishJob,
+  claimPublishJobByQueueId,
   markPublishSuccess,
   markPublishFailure,
   getTodayQueuedCount,
   getTodayPublishedCount,
   buildIdempotencyKey,
+  buildDeterministicQueueId,
   QueueUnavailableError,
 };

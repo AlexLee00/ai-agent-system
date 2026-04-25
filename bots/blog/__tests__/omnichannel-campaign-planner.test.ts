@@ -47,6 +47,19 @@ describe('publish-queue', () => {
     expect(key).toContain('2026-04-25');
   });
 
+  test('buildDeterministicQueueId — 동일 key는 동일 queue_id', () => {
+    const idempotencyKey = queue.buildIdempotencyKey({
+      campaignId: 'camp_123',
+      platform: 'instagram_reel',
+      variantId: 'var_456',
+      scheduledDate: '2026-04-25',
+    });
+    const first = queue.buildDeterministicQueueId(idempotencyKey);
+    const second = queue.buildDeterministicQueueId(idempotencyKey);
+    expect(first).toBe(second);
+    expect(first.startsWith('q_')).toBe(true);
+  });
+
   test('enqueueMarketingVariants — dryRun 시 DB 호출 없음', async () => {
     const variants = [
       {
@@ -71,6 +84,8 @@ describe('publish-queue', () => {
     expect(jobs).toHaveLength(1);
     expect(jobs[0].platform).toBe('instagram_reel');
     expect(jobs[0].dry_run).toBe(true);
+    expect(jobs[0].enqueue_status).toBe('dry_run');
+    expect(jobs[0].persisted).toBe(false);
     // dryRun=true이므로 INSERT 없음
     expect(pgPool.query).not.toHaveBeenCalledWith(
       expect.any(String),
@@ -113,6 +128,23 @@ describe('publish-queue', () => {
 // ── platform-variant-builder ──────────────────────────────────────────────────
 describe('platform-variant-builder', () => {
   const builder = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/omnichannel/platform-variant-builder.ts'));
+
+  test('buildVariantId — 동일 입력이면 동일 ID', () => {
+    const first = builder.buildVariantId({
+      campaignId: 'camp_test',
+      platform: 'instagram_reel',
+      strategyVersion: '2026-W17',
+      cycleDate: '2026-04-25',
+    });
+    const second = builder.buildVariantId({
+      campaignId: 'camp_test',
+      platform: 'instagram_reel',
+      strategyVersion: '2026-W17',
+      cycleDate: '2026-04-25',
+    });
+    expect(first).toBe(second);
+    expect(first.startsWith('var_')).toBe(true);
+  });
 
   test('buildInstagramReelVariant — cafe_library 브랜드 키워드 포함', () => {
     const variant = builder.buildInstagramReelVariant({
@@ -173,5 +205,26 @@ describe('platform-variant-builder', () => {
     const platforms = variants.map(v => v.platform);
     expect(platforms).toContain('instagram_reel');
     expect(platforms).toContain('facebook_page');
+  });
+});
+
+describe('campaign-planner deterministic id', () => {
+  const planner = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/omnichannel/campaign-planner.ts'));
+
+  test('buildCampaignId — 동일 입력이면 동일 ID', () => {
+    const first = planner.buildCampaignId({
+      brandAxis: 'cafe_library',
+      objective: 'awareness',
+      strategyVersion: '2026-W17',
+      cycleDate: '2026-04-25',
+    });
+    const second = planner.buildCampaignId({
+      brandAxis: 'cafe_library',
+      objective: 'awareness',
+      strategyVersion: '2026-W17',
+      cycleDate: '2026-04-25',
+    });
+    expect(first).toBe(second);
+    expect(first.startsWith('camp_')).toBe(true);
   });
 });

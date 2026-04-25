@@ -33,6 +33,16 @@ async function getOpenAiCodexOauthStatus() {
   };
 }
 
+function getOpenAiCodexCanaryMode() {
+  const explicitMode = String(process.env.OPENAI_CODEX_OAUTH_CANARY_MODE || process.env.OPENAI_CODEX_CANARY_MODE || '').trim().toLowerCase();
+  if (explicitMode) return explicitMode;
+
+  const legacyApiMode = String(process.env.OPENAI_OAUTH_ENDPOINT_MODE || process.env.OPENAI_OAUTH_API_MODE || '').trim().toLowerCase();
+  if (legacyApiMode) return legacyApiMode;
+
+  return 'chatgpt_backend';
+}
+
 function getOpenAiOAuthCanaryMode() {
   return String(process.env.OPENAI_OAUTH_ENDPOINT_MODE || process.env.OPENAI_OAUTH_API_MODE || 'responses').trim().toLowerCase();
 }
@@ -43,6 +53,75 @@ function getOpenAiOAuthCanaryModel() {
 
 function getOpenAiOAuthBaseUrl() {
   return String(process.env.OPENAI_OAUTH_BASE_URL || process.env.OPENAI_BASE_URL || 'https://api.openai.com/v1').replace(/\/+$/, '');
+}
+
+function getOpenAiCodexBackendBaseUrl() {
+  return String(process.env.OPENAI_CODEX_BACKEND_BASE_URL || process.env.OPENAI_CODEX_OAUTH_BACKEND_BASE_URL || 'https://chatgpt.com/backend-api').replace(/\/+$/, '');
+}
+
+function isPublicOpenAiApiCanaryMode(mode) {
+  return ['api', 'public_api', 'responses', 'chat', 'chat_completions', 'chat-completions'].includes(mode);
+}
+
+function summarizeWhamUsagePayload(payload) {
+  if (!payload || typeof payload !== 'object') return {};
+  const rateLimit = payload.rate_limit || payload.rateLimit || null;
+  return {
+    ...(payload.plan_type || payload.planType ? { plan_type: String(payload.plan_type || payload.planType) } : {}),
+    ...(rateLimit && typeof rateLimit === 'object' ? { rate_limit_present: true } : {}),
+  };
+}
+
+async function runOpenAiCodexBackendCanary(tokenRecord, source) {
+  const accessToken = String(tokenRecord?.access_token || '').trim();
+  const accountId = String(tokenRecord?.account_id || '').trim();
+  const baseUrl = getOpenAiCodexBackendBaseUrl();
+  const endpoint = 'wham/usage';
+  const url = `${baseUrl}/${endpoint}`;
+
+  try {
+    const headers = {
+      Authorization: `Bearer ${accessToken}`,
+      'User-Agent': 'CodexBar',
+    };
+    if (accountId) headers['ChatGPT-Account-Id'] = accountId;
+
+    const response = await fetch(url, {
+      method: 'GET',
+      headers,
+      signal: AbortSignal.timeout(Number(process.env.OPENAI_CODEX_OAUTH_CANARY_TIMEOUT_MS || process.env.OPENAI_OAUTH_CANARY_TIMEOUT_MS || 15_000)),
+    });
+    const contentType = String(response.headers.get('content-type') || '');
+    const payload = contentType.includes('json') ? await response.json().catch(() => ({})) : {};
+    const message = String(payload?.error?.message || payload?.message || '').slice(0, 400);
+    return {
+      ok: response.ok,
+      ...(response.ok ? {} : { error: 'chatgpt_backend_canary_failed' }),
+      details: {
+        enabled: true,
+        source,
+        canary_mode: 'chatgpt_backend',
+        endpoint,
+        status: response.status,
+        account_id_present: Boolean(accountId),
+        ...summarizeWhamUsagePayload(payload),
+        ...(message ? { message } : {}),
+      },
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      error: 'chatgpt_backend_canary_error',
+      details: {
+        enabled: true,
+        source,
+        canary_mode: 'chatgpt_backend',
+        endpoint,
+        account_id_present: Boolean(accountId),
+        message: String(error?.message || error).slice(0, 400),
+      },
+    };
+  }
 }
 
 async function runOpenAiApiCanary(token, source) {
@@ -106,6 +185,7 @@ async function runOpenAiApiCanary(token, source) {
 
 async function runOpenAiCodexOauthCanary() {
   const status = await getOpenAiCodexOauthStatus();
+  const canaryMode = getOpenAiCodexCanaryMode();
   if (!status.enabled) {
     return { ok: false, error: 'experimental_disabled', details: { enabled: false } };
   }
@@ -113,12 +193,18 @@ async function runOpenAiCodexOauthCanary() {
     return { ok: false, error: 'token_expired', details: { enabled: true } };
   }
   if (status.has_token) {
-    return runOpenAiApiCanary(status.token?.access_token, status.metadata?.source || 'hub_token_store');
+    if (isPublicOpenAiApiCanaryMode(canaryMode)) {
+      return runOpenAiApiCanary(status.token?.access_token, status.metadata?.source || 'hub_token_store');
+    }
+    return runOpenAiCodexBackendCanary(status.token, status.metadata?.source || 'hub_token_store');
   }
 
   const local = readOpenAiCodexLocalCredentials({ allowKeychainPrompt: false });
   if (local.ok) {
-    return runOpenAiApiCanary(local.token?.access_token, local.source);
+    if (isPublicOpenAiApiCanaryMode(canaryMode)) {
+      return runOpenAiApiCanary(local.token?.access_token, local.source);
+    }
+    return runOpenAiCodexBackendCanary(local.token, local.source);
   }
   return {
     ok: false,

@@ -1,11 +1,11 @@
 {
   "version": 1,
-  "updatedAt": "2026-04-25T03:51:25.914Z",
+  "updatedAt": "2026-04-25T14:59:56.698Z",
   "entries": [
     {
       "queueKey": "kis_overseas:live:live:kis_overseas:POET:normal:kis_overseas:POET:normal:ADJUST",
       "createdAt": "2026-04-24T16:34:48.844Z",
-      "updatedAt": "2026-04-25T03:51:04.228Z",
+      "updatedAt": "2026-04-25T14:59:30.483Z",
       "candidate": {
         "exchange": "kis_overseas",
         "symbol": "POET",
@@ -47,8 +47,8 @@
         "regime": "trending_bull",
         "reasonCode": "profit_lock_candidate"
       },
-      "reason": "미국 장외 시간 (ET 기준 2026-04-24)",
-      "waitingReason": "미국 장외 시간 (ET 기준 2026-04-24)",
+      "reason": "미국 주말 (토요일, ET 기준 2026-04-25)",
+      "waitingReason": "미국 주말 (토요일, ET 기준 2026-04-25)",
       "attempts": 0,
       "retryCount": 0,
       "nextRetryAt": null,
@@ -58,7 +58,7 @@
     {
       "queueKey": "kis_overseas:live:live:kis_overseas:AGPU:validation:kis_overseas:AGPU:validation:EXIT",
       "createdAt": "2026-04-25T00:02:56.671Z",
-      "updatedAt": "2026-04-25T03:51:04.228Z",
+      "updatedAt": "2026-04-25T14:59:30.483Z",
       "candidate": {
         "exchange": "kis_overseas",
         "symbol": "AGPU",
@@ -100,8 +100,8 @@
         "regime": "trending_bull",
         "reasonCode": "stop_loss_threshold"
       },
-      "reason": "미국 장외 시간 (ET 기준 2026-04-24)",
-      "waitingReason": "미국 장외 시간 (ET 기준 2026-04-24)",
+      "reason": "미국 주말 (토요일, ET 기준 2026-04-25)",
+      "waitingReason": "미국 주말 (토요일, ET 기준 2026-04-25)",
       "attempts": 0,
       "retryCount": 0,
       "nextRetryAt": null,

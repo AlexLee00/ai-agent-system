@@ -8,6 +8,7 @@
  */
 
 const path = require('path');
+const crypto = require('crypto');
 const env = require('../../../../packages/core/lib/env');
 const pgPool = require('../../../../packages/core/lib/pg-pool');
 const kst = require('../../../../packages/core/lib/kst');
@@ -16,11 +17,70 @@ const { buildPlatformVariants } = require('./platform-variant-builder.ts');
 const { enqueueMarketingVariants } = require('./publish-queue.ts');
 const { ensureMarketingOsSchema } = require('./marketing-os-schema.ts');
 
-/** 간단한 ulid-like ID 생성 (외부 의존 없이) */
-function generateId(prefix = 'camp') {
-  const ts = Date.now().toString(36).toUpperCase();
-  const rand = Math.random().toString(36).slice(2, 8).toUpperCase();
-  return `${prefix}_${ts}_${rand}`;
+function normalizeSegment(value, fallback = 'na') {
+  const normalized = String(value || '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '');
+  return normalized || fallback;
+}
+
+function stableDigest(input) {
+  return crypto.createHash('sha1').update(String(input || ''), 'utf8').digest('hex').slice(0, 12);
+}
+
+function buildCampaignKey({
+  brandAxis = 'cafe_library',
+  objective = 'awareness',
+  strategyVersion = '',
+  cycleDate = '',
+} = {}) {
+  return [
+    normalizeSegment(brandAxis),
+    normalizeSegment(objective),
+    normalizeSegment(strategyVersion || 'unknown'),
+    normalizeSegment(cycleDate || kst.today()),
+  ].join('__');
+}
+
+function buildCampaignId({
+  brandAxis = 'cafe_library',
+  objective = 'awareness',
+  strategyVersion = '',
+  cycleDate = '',
+} = {}) {
+  const datePart = String(cycleDate || kst.today()).replace(/[^0-9]/g, '').slice(0, 8) || '00000000';
+  const brandPart = normalizeSegment(brandAxis).slice(0, 16);
+  const objectivePart = normalizeSegment(objective).slice(0, 16);
+  const digest = stableDigest(`${brandPart}|${objectivePart}|${normalizeSegment(strategyVersion || 'unknown')}|${datePart}`);
+  return `camp_${datePart}_${brandPart}_${objectivePart}_${digest}`;
+}
+
+function buildScheduledSummary(scheduled = []) {
+  /** @type {Record<string, {total:number, inserted:number, existing:number, queued:number, preparing:number, blocked:number, failed:number}>} */
+  const summary = {};
+  for (const item of (scheduled || [])) {
+    const platform = String(item?.platform || 'unknown');
+    if (!summary[platform]) {
+      summary[platform] = {
+        total: 0,
+        inserted: 0,
+        existing: 0,
+        queued: 0,
+        preparing: 0,
+        blocked: 0,
+        failed: 0,
+      };
+    }
+    summary[platform].total += 1;
+    if (item?.enqueue_status === 'inserted') summary[platform].inserted += 1;
+    if (item?.enqueue_status === 'existing') summary[platform].existing += 1;
+    if (item?.status === 'queued') summary[platform].queued += 1;
+    if (item?.status === 'preparing') summary[platform].preparing += 1;
+    if (item?.status === 'blocked') summary[platform].blocked += 1;
+    if (item?.status === 'failed') summary[platform].failed += 1;
+  }
+  return summary;
 }
 
 /**
@@ -39,11 +99,24 @@ async function createMarketingCampaignFromSignals({
 } = {}) {
   await ensureMarketingOsSchema();
   const { plan, directives } = loadStrategyBundle();
+  const cycleDate = kst.today();
   const strategyVersion = String(plan?.weekOf || kst.today());
-  const campaignId = generateId('camp');
+  const campaignKey = buildCampaignKey({
+    brandAxis,
+    objective,
+    strategyVersion,
+    cycleDate,
+  });
+  const campaignId = buildCampaignId({
+    brandAxis,
+    objective,
+    strategyVersion,
+    cycleDate,
+  });
 
-  const campaign = {
+  let campaign = {
     campaign_id: campaignId,
+    campaign_key: campaignKey,
     brand_axis: brandAxis,
     objective,
     source_signal: sourceSignal ? JSON.stringify(sourceSignal) : null,
@@ -52,11 +125,18 @@ async function createMarketingCampaignFromSignals({
   };
 
   if (!dryRun) {
-    await pgPool.query('blog', `
+    const rows = await pgPool.query('blog', `
       INSERT INTO blog.marketing_campaigns
         (campaign_id, brand_axis, objective, source_signal, strategy_version, status)
       VALUES ($1, $2, $3, $4::jsonb, $5, $6)
-      ON CONFLICT (campaign_id) DO NOTHING
+      ON CONFLICT (campaign_id) DO UPDATE SET
+        brand_axis = EXCLUDED.brand_axis,
+        objective = EXCLUDED.objective,
+        source_signal = COALESCE(EXCLUDED.source_signal, blog.marketing_campaigns.source_signal),
+        strategy_version = EXCLUDED.strategy_version,
+        status = EXCLUDED.status,
+        updated_at = NOW()
+      RETURNING campaign_id, brand_axis, objective, source_signal, strategy_version, status
     `, [
       campaign.campaign_id,
       campaign.brand_axis,
@@ -65,27 +145,51 @@ async function createMarketingCampaignFromSignals({
       campaign.strategy_version,
       campaign.status,
     ]);
+    const row = rows?.[0];
+    if (row) {
+      campaign = {
+        ...campaign,
+        campaign_id: row.campaign_id,
+        brand_axis: row.brand_axis,
+        objective: row.objective,
+        source_signal: row.source_signal ? JSON.stringify(row.source_signal) : campaign.source_signal,
+        strategy_version: row.strategy_version,
+        status: row.status,
+      };
+    }
   }
 
-  console.log(`[campaign-planner] 캠페인 생성: ${campaignId} brand=${brandAxis} obj=${objective} dryRun=${dryRun}`);
+  console.log(`[campaign-planner] 캠페인 준비: ${campaignId} key=${campaignKey} brand=${brandAxis} obj=${objective} dryRun=${dryRun}`);
 
   const variants = await buildPlatformVariants({
     campaign,
     directives,
     dryRun,
+    strategyVersion,
+    cycleDate,
+    campaignKey,
   });
 
   const scheduled = await enqueueMarketingVariants({
-    campaignId,
+    campaignId: campaign.campaign_id,
     variants,
     dryRun,
+    strategyVersion,
+    cycleDate,
+    campaignKey,
   });
 
+  const queueSummaryByPlatform = buildScheduledSummary(scheduled);
+
   return {
-    campaignId,
+    campaignId: campaign.campaign_id,
+    campaignKey,
+    strategyVersion,
+    cycleDate,
     campaign,
     variants,
     scheduled,
+    queueSummaryByPlatform,
   };
 }
 
@@ -133,4 +237,6 @@ module.exports = {
   createMarketingCampaignFromSignals,
   getTodayActiveCampaignCount,
   getTodayNativePublishCount,
+  buildCampaignId,
+  buildCampaignKey,
 };

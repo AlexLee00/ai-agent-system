@@ -30,7 +30,7 @@ const { ensurePublishLogSchema, reportPublishSuccess, reportPublishFailure } = r
 const { resolveInstagramHostedMediaUrl } = require(
   path.join(env.PROJECT_ROOT, 'packages/core/lib/instagram-image-host.ts')
 );
-const { claimNextPublishJob, markPublishSuccess, markPublishFailure } = require(
+const { claimNextPublishJob, claimPublishJobByQueueId, markPublishSuccess, markPublishFailure } = require(
   path.join(env.PROJECT_ROOT, 'bots/blog/lib/omnichannel/publish-queue.ts')
 );
 const { evaluateAndSaveQuality } = require(
@@ -174,6 +174,18 @@ async function notifyQueueUnavailable(detail = '') {
     () => postAlarm({ message, team: 'blog', bot: 'auto-facebook-publish', level: 'warn' }),
     () => console.log('[DEV]', message),
   ).catch(() => {});
+}
+
+function summarizeScheduledRowsForPlatform(scheduled = [], platform = '') {
+  const rows = (scheduled || []).filter((item) => item?.platform === platform);
+  if (!rows.length) return `${platform}:0`;
+  return rows.map((row) => {
+    const queueId = row?.queue_id || 'no_queue';
+    const status = row?.status || 'unknown';
+    const enqueueStatus = row?.enqueue_status || 'unknown';
+    const persisted = row?.persisted === false ? 'not-persisted' : 'persisted';
+    return `${queueId}:${status}:${enqueueStatus}:${persisted}`;
+  }).join(', ');
 }
 
 /**
@@ -358,6 +370,8 @@ async function main() {
   // ── 2. 전략이 social_native_required이면 새 캠페인 생성 ────────────────
   let nativeRequired = false;
   let newCampaignQueued = false;
+  let newCampaignResult = null;
+  let targetQueueId = '';
   try {
     const { directives } = require(
       path.join(env.PROJECT_ROOT, 'bots/blog/lib/strategy-loader.ts')
@@ -365,8 +379,21 @@ async function main() {
     nativeRequired = directives?.socialNativeRequired === true;
     if (nativeRequired) {
       console.log('[facebook-auto] social_native_required — 새 campaign 생성');
-      await createMarketingCampaignFromSignals({ brandAxis: 'cafe_library', objective: 'awareness', dryRun: DRY_RUN });
-      newCampaignQueued = true;
+      newCampaignResult = await createMarketingCampaignFromSignals({
+        brandAxis: 'cafe_library',
+        objective: 'awareness',
+        dryRun: DRY_RUN,
+      });
+      const scheduled = Array.isArray(newCampaignResult?.scheduled) ? newCampaignResult.scheduled : [];
+      const platformRows = scheduled.filter((item) => item?.platform === 'facebook_page');
+      const eligible = platformRows.find((item) => item?.persisted !== false && (item?.status === 'queued' || item?.status === 'preparing'));
+      newCampaignQueued = Boolean(eligible || (DRY_RUN && platformRows.length > 0));
+      targetQueueId = String(eligible?.queue_id || '');
+      if (!newCampaignQueued) {
+        const summary = summarizeScheduledRowsForPlatform(scheduled, 'facebook_page');
+        throw new Error(`social_native_required_platform_queue_missing: ${summary}`);
+      }
+      console.log(`[facebook-auto] social_native_required queue summary: ${summarizeScheduledRowsForPlatform(scheduled, 'facebook_page')}`);
     }
   } catch (e) {
     console.warn('[facebook-auto] 전략 로드 또는 campaign 생성 실패:', e.message);
@@ -384,10 +411,15 @@ async function main() {
   if (newCampaignQueued) {
     let newJob = null;
     try {
-      newJob = await claimNextPublishJob('facebook_page', {
-        dryRun: DRY_RUN,
-        scheduleHorizonHours: QUEUE_CLAIM_HORIZON_HOURS,
-      });
+      if (targetQueueId) {
+        newJob = await claimPublishJobByQueueId(targetQueueId, { dryRun: DRY_RUN });
+      }
+      if (!newJob) {
+        newJob = await claimNextPublishJob('facebook_page', {
+          dryRun: DRY_RUN,
+          scheduleHorizonHours: QUEUE_CLAIM_HORIZON_HOURS,
+        });
+      }
     } catch (error) {
       await notifyQueueUnavailable(String(error?.message || error));
       throw new Error(`queue_unavailable_after_regen: ${String(error?.message || error)}`);
@@ -402,8 +434,9 @@ async function main() {
         console.log('[facebook-auto][dry-run] social_native_required queue empty 시뮬레이션 종료');
         return;
       }
+      const queueSummary = summarizeScheduledRowsForPlatform(newCampaignResult?.scheduled || [], 'facebook_page');
       await runIfOps('blog-fb-native-required-queue-empty', () => postAlarm({
-        message: '[블로팀] Facebook social_native_required 경로에서 queue claim 결과 없음 (fail-closed)',
+        message: `[블로팀] Facebook social_native_required 경로에서 queue claim 결과 없음 (fail-closed)\nsummary=${queueSummary}\ncampaign=${newCampaignResult?.campaignId || 'unknown'}`,
         team: 'blog',
         bot: 'auto-facebook-publish',
         level: 'warn',
@@ -415,8 +448,9 @@ async function main() {
       console.log('[facebook-auto][dry-run] social_native_required not queued 시뮬레이션 종료');
       return;
     }
+    const queueSummary = summarizeScheduledRowsForPlatform(newCampaignResult?.scheduled || [], 'facebook_page');
     await runIfOps('blog-fb-native-required-not-queued', () => postAlarm({
-      message: '[블로팀] Facebook social_native_required 경로에서 새 campaign이 queue로 등록되지 않았습니다 (fail-closed)',
+      message: `[블로팀] Facebook social_native_required 경로에서 새 campaign queue 등록 확인 실패 (fail-closed)\nsummary=${queueSummary}\ncampaign=${newCampaignResult?.campaignId || 'unknown'}`,
       team: 'blog',
       bot: 'auto-facebook-publish',
       level: 'warn',

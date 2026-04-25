@@ -30,6 +30,17 @@ describe('publish-queue fail-closed', () => {
     });
   });
 
+  test('claimPublishJobByQueueId — schema/DB 오류 시 QueueUnavailableError throw', async () => {
+    ensureMarketingOsSchema.mockRejectedValueOnce(new Error('schema_down'));
+
+    await expect(
+      queue.claimPublishJobByQueueId('q_test_1', { dryRun: false })
+    ).rejects.toMatchObject({
+      name: 'QueueUnavailableError',
+      code: 'queue_unavailable',
+    });
+  });
+
   test('claimNextPublishJob — stale preparing 복구 및 retry exhaustion 차단 쿼리 선행', async () => {
     // stale 복구 update, retry 차단 update, claim update
     pgPool.query

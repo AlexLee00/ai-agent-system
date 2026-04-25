@@ -58,6 +58,10 @@ function main() {
     if (openAiOauthStatus !== 0) process.exit(openAiOauthStatus);
     const openAiOauthTokenStoreStatus = run(tsxBin, [path.join(scriptDir, 'openai-oauth-token-store-smoke.ts')]);
     if (openAiOauthTokenStoreStatus !== 0) process.exit(openAiOauthTokenStoreStatus);
+    const openAiCodexBackendDirectStatus = run(tsxBin, [path.join(scriptDir, 'openai-codex-backend-direct-smoke.ts')]);
+    if (openAiCodexBackendDirectStatus !== 0) process.exit(openAiCodexBackendDirectStatus);
+    const openAiCodexBackendCanaryStatus = run(tsxBin, [path.join(scriptDir, 'openai-codex-chatgpt-backend-canary-smoke.ts')]);
+    if (openAiCodexBackendCanaryStatus !== 0) process.exit(openAiCodexBackendCanaryStatus);
     const openAiOauthCanaryStatus = run(tsxBin, [path.join(scriptDir, 'openai-oauth-canary-permission-smoke.ts')]);
     if (openAiOauthCanaryStatus !== 0) process.exit(openAiOauthCanaryStatus);
     const claudeOauthStatus = run(tsxBin, [path.join(scriptDir, 'claude-code-oauth-direct-smoke.ts')]);
@@ -65,7 +69,9 @@ function main() {
     process.exit(run(tsxBin, [path.join(scriptDir, 'runtime-profile-settings-smoke.ts')]));
   }
   if (target === 'runtime') {
-    process.exit(run(tsxBin, [path.join(scriptDir, 'launchd-callback-secret-smoke.ts')]));
+    const launchdStatus = run(tsxBin, [path.join(scriptDir, 'launchd-callback-secret-smoke.ts')]);
+    if (launchdStatus !== 0) process.exit(launchdStatus);
+    process.exit(run(tsxBin, [path.join(scriptDir, 'telegram-topic-routing-live-smoke.ts')]));
   }
   if (target === 'all') {
     const secretsStatus = run(process.execPath, ['--test', '__tests__/secrets-meta.node.test.js']);

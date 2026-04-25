@@ -8,23 +8,59 @@
  */
 
 const pgPool = require('../../../../packages/core/lib/pg-pool');
+const crypto = require('crypto');
 const kst = require('../../../../packages/core/lib/kst');
 const { buildTrackingLink } = require('./revenue-attribution.ts');
 const { writeInstagramNativeVariant } = require('./instagram-native-writer.ts');
 const { writeFacebookNativeVariant } = require('./facebook-native-writer.ts');
 const { ensureMarketingOsSchema } = require('./marketing-os-schema.ts');
 
-function generateId(prefix = 'var') {
-  const ts = Date.now().toString(36).toUpperCase();
-  const rand = Math.random().toString(36).slice(2, 8).toUpperCase();
-  return `${prefix}_${ts}_${rand}`;
+function normalizeSegment(value, fallback = 'na') {
+  const normalized = String(value || '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '');
+  return normalized || fallback;
+}
+
+function stableDigest(input) {
+  return crypto.createHash('sha1').update(String(input || ''), 'utf8').digest('hex').slice(0, 12);
+}
+
+function buildVariantId({
+  campaignId = '',
+  platform = '',
+  strategyVersion = '',
+  cycleDate = '',
+} = {}) {
+  const datePart = String(cycleDate || kst.today()).replace(/[^0-9]/g, '').slice(0, 8) || '00000000';
+  const platformPart = normalizeSegment(platform).slice(0, 18);
+  const digest = stableDigest([
+    normalizeSegment(campaignId),
+    platformPart,
+    normalizeSegment(strategyVersion || 'unknown'),
+    datePart,
+  ].join('|'));
+  return `var_${datePart}_${platformPart}_${digest}`;
 }
 
 /**
  * Instagram Reel variant 빌드
  */
-function buildInstagramReelVariant({ campaignId, brandAxis, objective, directives = {} }) {
-  const variantId = generateId('var');
+function buildInstagramReelVariant({
+  campaignId,
+  brandAxis,
+  objective,
+  directives = {},
+  strategyVersion = '',
+  cycleDate = '',
+}) {
+  const variantId = buildVariantId({
+    campaignId,
+    platform: 'instagram_reel',
+    strategyVersion,
+    cycleDate,
+  });
   const isCafe = brandAxis === 'cafe_library' || brandAxis === 'mixed';
   const tracking = buildTrackingLink({
     postId: campaignId,
@@ -61,7 +97,12 @@ function buildInstagramReelVariant({ campaignId, brandAxis, objective, directive
  * Facebook Page variant 빌드
  */
 function buildFacebookPageVariant({ campaignId, brandAxis, objective, directives = {} }) {
-  const variantId = generateId('var');
+  const variantId = buildVariantId({
+    campaignId,
+    platform: 'facebook_page',
+    strategyVersion: directives?.strategyVersion || '',
+    cycleDate: directives?.cycleDate || '',
+  });
   const isCafe = brandAxis === 'cafe_library' || brandAxis === 'mixed';
   const tracking = buildTrackingLink({
     postId: campaignId,
@@ -96,19 +137,44 @@ function buildFacebookPageVariant({ campaignId, brandAxis, objective, directives
 /**
  * Campaign에서 플랫폼별 variant를 생성하고 DB에 저장.
  */
-async function buildPlatformVariants({ campaign, directives = {}, dryRun = false }) {
+async function buildPlatformVariants({
+  campaign,
+  directives = {},
+  dryRun = false,
+  strategyVersion = '',
+  cycleDate = '',
+  campaignKey = '',
+}) {
   if (!dryRun) {
     await ensureMarketingOsSchema();
   }
   const { campaign_id: campaignId, brand_axis: brandAxis, objective } = campaign;
   const variants = [];
+  const variantDirectives = {
+    ...directives,
+    strategyVersion: strategyVersion || directives?.strategyVersion || '',
+    cycleDate: cycleDate || directives?.cycleDate || '',
+    campaignKey: campaignKey || directives?.campaignKey || '',
+  };
 
   // 인스타그램 릴스 variant
-  const instagramVariant = buildInstagramReelVariant({ campaignId, brandAxis, objective, directives });
+  const instagramVariant = buildInstagramReelVariant({
+    campaignId,
+    brandAxis,
+    objective,
+    directives: variantDirectives,
+    strategyVersion: variantDirectives.strategyVersion,
+    cycleDate: variantDirectives.cycleDate,
+  });
   variants.push(instagramVariant);
 
   // 페이스북 페이지 variant
-  const facebookVariant = buildFacebookPageVariant({ campaignId, brandAxis, objective, directives });
+  const facebookVariant = buildFacebookPageVariant({
+    campaignId,
+    brandAxis,
+    objective,
+    directives: variantDirectives,
+  });
   variants.push(facebookVariant);
 
   if (!dryRun) {
@@ -118,7 +184,17 @@ async function buildPlatformVariants({ campaign, directives = {}, dryRun = false
           (variant_id, campaign_id, platform, source_mode, title, body, caption,
            hashtags, cta, asset_refs, tracking_url, quality_score, quality_status)
         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::jsonb, $11, $12, $13)
-        ON CONFLICT (variant_id) DO NOTHING
+        ON CONFLICT (variant_id) DO UPDATE SET
+          title = EXCLUDED.title,
+          body = EXCLUDED.body,
+          caption = EXCLUDED.caption,
+          hashtags = EXCLUDED.hashtags,
+          cta = EXCLUDED.cta,
+          asset_refs = COALESCE(EXCLUDED.asset_refs, blog.marketing_platform_variants.asset_refs),
+          tracking_url = EXCLUDED.tracking_url,
+          quality_score = EXCLUDED.quality_score,
+          quality_status = EXCLUDED.quality_status,
+          updated_at = NOW()
       `, [
         v.variant_id,
         v.campaign_id,
@@ -145,4 +221,5 @@ module.exports = {
   buildPlatformVariants,
   buildInstagramReelVariant,
   buildFacebookPageVariant,
+  buildVariantId,
 };

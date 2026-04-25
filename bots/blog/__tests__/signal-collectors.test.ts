@@ -113,6 +113,13 @@ describe('brand-mention-collector', () => {
   test('BRAND_KEYWORDS — 정의됨', () => {
     expect(brandCollector.BRAND_KEYWORDS).toBeInstanceOf(Array);
     expect(brandCollector.BRAND_KEYWORDS.length).toBeGreaterThan(0);
+    expect(brandCollector.BRAND_KEYWORDS).toEqual(expect.arrayContaining([
+      '커피랑도서관',
+      '커피랑도서관 분당서현점',
+      '분당서현',
+      '서현역 스터디카페',
+      '승호아빠',
+    ]));
   });
 
   test('analyzeSentiment — 부정 키워드 감지', () => {
