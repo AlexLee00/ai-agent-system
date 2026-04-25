@@ -321,6 +321,20 @@ function normalizeDisplayText(value: unknown): string {
   return text;
 }
 
+function getPayloadHeadline(payload: NormalizedPayload): string {
+  if (!payload || typeof payload !== 'object') return '';
+  const detailLine = Array.isArray(payload.details)
+    ? payload.details.map((line) => normalizeDisplayText(line)).find(Boolean)
+    : '';
+  return [
+    payload.title,
+    payload.summary,
+    payload.detail,
+    detailLine,
+    payload.action,
+  ].map((value) => normalizeDisplayText(value)).find(Boolean) || '';
+}
+
 function compactSectionTitle(title: string): string {
   return compactLine(normalizeDisplayText(title).replace(/[━═─]/g, ' ').replace(/\s+/g, ' ').trim(), 40);
 }
@@ -543,18 +557,35 @@ export function normalizeEvent({
   payload?: unknown;
 } = {}): NormalizedEvent {
   const validated = validatePayloadSchema(payload);
-  if (validated.warnings.length > 0) {
-    console.warn(`[reporting-hub] payload normalized with warnings: ${validated.warnings.join(', ')}`);
+  const rawFromBot = normalizeDisplayText(from_bot);
+  const rawTeam = normalizeDisplayText(team);
+  const rawMessage = normalizeMessageText(normalizeDisplayText(message));
+  const payloadHeadline = getPayloadHeadline(validated.payload);
+  const warnings = [...validated.warnings];
+
+  let finalMessage = rawMessage || payloadHeadline;
+  if (!rawMessage && payloadHeadline) {
+    warnings.push('message_filled_from_payload');
+  }
+  if (!finalMessage) {
+    warnings.push('message_missing_or_invalid');
+    if (!rawFromBot) warnings.push('from_bot_defaulted_unknown');
+    if (!rawTeam) warnings.push('team_defaulted_general');
+    finalMessage = '유효한 본문 없음 (payload 확인 필요)';
+  }
+
+  if (warnings.length > 0) {
+    console.warn(`[reporting-hub] payload normalized with warnings: ${warnings.join(', ')}`);
   }
   const normalized = {
-    from_bot: String(from_bot || 'unknown'),
-    team: String(team || 'general'),
+    from_bot: rawFromBot || 'unknown',
+    team: rawTeam || 'general',
     event_type: String(event_type || 'report'),
     alert_level: Number.isFinite(Number(alert_level)) ? Number(alert_level) : 2,
-    message: normalizeMessageText(message),
+    message: finalMessage,
     payload: validated.payload,
   };
-  recordPayloadWarnings(normalized, validated.warnings);
+  recordPayloadWarnings(normalized, warnings);
   return normalized;
 }
 

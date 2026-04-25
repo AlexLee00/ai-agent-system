@@ -105,6 +105,15 @@ let _topicIds: TopicIdMap | null = null;
 let _telegramBotToken: string | null = null;
 let _darwinTelegramBotToken: string | null = null;
 
+function _normalizeAlertText(value: unknown): string {
+  if (value == null) return '';
+  const text = String(value).trim();
+  if (!text) return '';
+  const lowered = text.toLowerCase();
+  if (['undefined', 'null', 'nan', '[object object]'].includes(lowered)) return '';
+  return text;
+}
+
 function _sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -351,7 +360,10 @@ export async function postAlarm({
     return { ok: false, error: 'no_token' };
   }
 
-  const normalizedTeam = TEAM_TOPIC[team as keyof typeof TEAM_TOPIC] || 'general';
+  const safeFromBot = _normalizeAlertText(fromBot) || 'unknown';
+  const requestedTeam = _normalizeAlertText(team) || 'general';
+  const safeMessage = _normalizeAlertText(message) || '유효한 본문 없음 (payload 확인 필요)';
+  const normalizedTeam = TEAM_TOPIC[requestedTeam as keyof typeof TEAM_TOPIC] || 'general';
   const prefix = alertLevel >= 3 ? `🚨 [긴급 alert_level=${alertLevel}] ` : '';
   const { groupId, topicIds } = await _getTopicInfo();
   const topicId = topicIds?.[normalizedTeam] || topicIds?.general || null;
@@ -361,22 +373,22 @@ export async function postAlarm({
 
   if (Array.isArray(inlineKeyboard) && inlineKeyboard.length > 0) {
     const inlineResult = await _sendInlineTelegram({
-      message: `${prefix}${message}`,
-      team,
-      fromBot,
+      message: `${prefix}${safeMessage}`,
+      team: requestedTeam,
+      fromBot: safeFromBot,
       topicId,
       groupId,
       inlineKeyboard,
     });
     if (inlineResult?.ok) {
-      _recordRecentAlertSnapshot({ message, team, alertLevel, fromBot, payload });
+      _recordRecentAlertSnapshot({ message: safeMessage, team: requestedTeam, alertLevel, fromBot: safeFromBot, payload });
     }
     return inlineResult;
   }
 
   const requestPayload = {
-    message: `${prefix}[${fromBot}→${team}] ${message}`,
-    name: fromBot,
+    message: `${prefix}[${safeFromBot}→${requestedTeam}] ${safeMessage}`,
+    name: safeFromBot,
     agentId: 'main',
     ...(sessionKey ? { sessionKey } : {}),
     deliver: true,
@@ -399,7 +411,7 @@ export async function postAlarm({
 
     const body = await res.json().catch(() => null);
     if (res.ok) {
-      _recordRecentAlertSnapshot({ message, team, alertLevel, fromBot, payload });
+      _recordRecentAlertSnapshot({ message: safeMessage, team: requestedTeam, alertLevel, fromBot: safeFromBot, payload });
     }
     return { ok: res.ok, status: res.status, body };
   } catch (e) {
@@ -408,7 +420,7 @@ export async function postAlarm({
     const fallback = _postHookViaCurl({ token, payload: requestPayload });
     if (fallback.ok) {
       console.warn('[openclaw-client] webhook curl 폴백 성공');
-      _recordRecentAlertSnapshot({ message, team, alertLevel, fromBot, payload });
+      _recordRecentAlertSnapshot({ message: safeMessage, team: requestedTeam, alertLevel, fromBot: safeFromBot, payload });
       return fallback;
     }
     return { ok: false, error: fallback.error || error.message };
