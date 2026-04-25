@@ -2,7 +2,7 @@
 
 This inventory tracks the Hub alarm migration surface. `hub_alarm_native` entries are the desired path; `legacy_openclaw_compat` entries are compatibility shims or remaining migration targets.
 
-- generated_at: 2026-04-25T21:18:16.605Z
+- generated_at: 2026-04-25T21:25:03.645Z
 - total_matches: 271
 - unique_files: 122
 - hub_alarm_native: 67
@@ -316,7 +316,7 @@ This inventory tracks the Hub alarm migration surface. `hub_alarm_native` entrie
 - L192 [legacy_openclaw_compat]: `else process.env.OPENCLAW_LEGACY_FALLBACK = originalLegacyFallback;`
 
 ### `bots/hub/scripts/run-tests.js`
-- L43 [hub_alarm_native]: `const alarmShimStatus = run(tsxBin, [path.join(scriptDir, 'hub-alarm-client-shim-smoke.ts')]);`
+- L45 [hub_alarm_native]: `const alarmShimStatus = run(tsxBin, [path.join(scriptDir, 'hub-alarm-client-shim-smoke.ts')]);`
 
 ### `bots/hub/scripts/runtime-workspace-independence-smoke.ts`
 - L66 [legacy_openclaw_compat]: `OPENCLAW_WORKSPACE: null,`

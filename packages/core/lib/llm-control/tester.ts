@@ -9,8 +9,8 @@ const {
   classifySpeedTestError,
 } = require('./tester-support');
 
-const GEMINI_CLIENT_ID = '681255809395-oo8ft2oprdrnp9e3aqf6av3hmdib135j.apps.googleusercontent.com';
-const GEMINI_CLIENT_SECRET = 'REMOVED_GOOGLE_OAUTH_SECRET';
+const GEMINI_CLIENT_ID_ENV = 'GEMINI_CODE_ASSIST_CLIENT_ID';
+const GEMINI_CLIENT_SECRET_ENV = 'GEMINI_CODE_ASSIST_CLIENT_SECRET';
 const CODE_ASSIST_ENDPOINT = 'https://cloudcode-pa.googleapis.com';
 const CODE_ASSIST_VERSION = 'v1internal';
 const PROVIDER_ENDPOINTS = {
@@ -105,6 +105,27 @@ function buildGeminiThinkingConfig(model) {
   return undefined;
 }
 
+function resolveGeminiOAuthClient(profile = {}) {
+  const clientId = String(
+    profile.clientId ||
+    profile.client_id ||
+    process.env[GEMINI_CLIENT_ID_ENV] ||
+    ''
+  ).trim();
+  const clientSecret = String(
+    profile.clientSecret ||
+    profile.client_secret ||
+    process.env[GEMINI_CLIENT_SECRET_ENV] ||
+    ''
+  ).trim();
+
+  if (!clientId || !clientSecret) {
+    throw new Error(`gemini_oauth_client_not_configured: set ${GEMINI_CLIENT_ID_ENV}/${GEMINI_CLIENT_SECRET_ENV} or auth profile clientId/clientSecret`);
+  }
+
+  return { clientId, clientSecret };
+}
+
 async function refreshGeminiToken() {
   const profiles = JSON.parse(fs.readFileSync(AUTH_PROFILES_FILE, 'utf-8'));
   const profile = Object.values(profiles.profiles ?? {})
@@ -115,11 +136,12 @@ async function refreshGeminiToken() {
     return profile.access;
   }
 
+  const { clientId, clientSecret } = resolveGeminiOAuthClient(profile);
   const body = new URLSearchParams({
     grant_type: 'refresh_token',
     refresh_token: profile.refresh,
-    client_id: GEMINI_CLIENT_ID,
-    client_secret: GEMINI_CLIENT_SECRET,
+    client_id: clientId,
+    client_secret: clientSecret,
   }).toString();
 
   const data = await httpPost('https://oauth2.googleapis.com/token', body, {

@@ -21,6 +21,8 @@ function main() {
     process.exit(run(process.execPath, ['--test', '__tests__/secrets-meta.node.test.js']));
   }
   if (target === 'unit') {
+    const secretLeakStatus = run(tsxBin, [path.join(scriptDir, 'secret-leak-smoke.ts')]);
+    if (secretLeakStatus !== 0) process.exit(secretLeakStatus);
     const jestStatus = run(jestBin, [
       '__tests__/request-context.test.ts',
       '__tests__/llm-request-schema.test.ts',

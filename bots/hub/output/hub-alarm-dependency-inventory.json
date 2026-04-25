@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-04-25T21:18:16.605Z",
+  "generated_at": "2026-04-25T21:25:03.645Z",
   "scan_patterns": [
     "hub-alarm-client",
     "openclaw-client",
@@ -1108,7 +1108,7 @@
     "bots/hub/scripts/run-tests.js": [
       {
         "file": "bots/hub/scripts/run-tests.js",
-        "line": 43,
+        "line": 45,
         "category": "hub_alarm_native",
         "match": "const alarmShimStatus = run(tsxBin, [path.join(scriptDir, 'hub-alarm-client-shim-smoke.ts')]);"
       }

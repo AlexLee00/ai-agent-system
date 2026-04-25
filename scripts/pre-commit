@@ -132,6 +132,19 @@ if [ -n "$JS_STAGED" ]; then
   done
 fi
 
+# ─── 3.25. 고신뢰 토큰 시그니처 전체 스캔 ────────────────────────────────
+# staged 파일 검사만으로는 provider 고유 토큰 모양을 놓칠 수 있으므로,
+# tracked 파일 전체를 값 비노출(redacted) 방식으로 한 번 더 검사한다.
+SECRET_LEAK_SMOKE="$REPO_ROOT/bots/hub/scripts/secret-leak-smoke.ts"
+TSX_BIN="$REPO_ROOT/node_modules/.bin/tsx"
+if [ -f "$SECRET_LEAK_SMOKE" ] && [ -x "$TSX_BIN" ]; then
+  if ! "$TSX_BIN" "$SECRET_LEAK_SMOKE"; then
+    BLOCKED=1
+  fi
+else
+  echo -e "${YELLOW}⚠️  secret-leak-smoke 실행 불가 — node_modules 설치 후 재검사 권장${NC}"
+fi
+
 # ─── 3.5. gitignore 우회 차단 (SEC-005 재발 방지) ────────────────────────
 # 이미 추적 중인 파일은 gitignore 효과 없음. staged 파일 중 gitignore 규칙에
 # 해당하는 것들은 -f(force) 옵션으로만 추가 가능하므로, 실수로 강제 추적되는

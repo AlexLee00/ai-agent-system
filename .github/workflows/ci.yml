@@ -47,15 +47,7 @@ jobs:
           echo "✅ All files passed"
 
       - name: Check for secrets in code
-        run: |
-          echo "=== Secret Scan ==="
-          if grep -rn "sk-ant-api03-[a-zA-Z0-9_-]\{20,\}\|gsk_[a-zA-Z0-9]\{30,\}" \
-            --include="*.js" --include="*.json" --include="*.yaml" --include="*.plist" \
-            . | grep -v node_modules | grep -v "example\|YOUR_KEY"; then
-            echo "❌ Secrets detected in code!"
-            exit 1
-          fi
-          echo "✅ No secrets found"
+        run: ./node_modules/.bin/tsx bots/hub/scripts/secret-leak-smoke.ts
 
   deploy:
     name: 운영 배포 (맥 스튜디오)

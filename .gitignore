@@ -47,8 +47,14 @@ __pycache__/
 
 # 민감 정보
 secrets.json
+auth-profiles.json
+speed-test-keys.json
+token-store.json
 pickko-kiosk-seen.json
+*.pem
 *.key
+*.p12
+*.pfx
 *api_key*
 *api-key*
 
