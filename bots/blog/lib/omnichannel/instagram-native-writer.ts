@@ -143,6 +143,7 @@ function writeInstagramNativeVariant({
         objective,
         hookIntensity,
         thumbnailAggro,
+        preferredCategory: preferredCategory || '',
       },
     },
   };
@@ -151,4 +152,3 @@ function writeInstagramNativeVariant({
 module.exports = {
   writeInstagramNativeVariant,
 };
-

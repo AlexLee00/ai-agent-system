@@ -38,6 +38,12 @@ const { claimNextPublishJob, markPublishSuccess, markPublishFailure } = require(
 const { evaluateAndSaveQuality } = require(
   path.join(env.PROJECT_ROOT, 'bots/blog/lib/omnichannel/creative-quality-gate.ts')
 );
+const {
+  classifyInstagramError,
+  resolveInstagramFailureKind,
+} = require(
+  path.join(env.PROJECT_ROOT, 'bots/blog/lib/omnichannel/instagram-error-classifier.ts')
+);
 const { recordMarketingAssetOutcome } = require(
   path.join(env.PROJECT_ROOT, 'bots/blog/lib/omnichannel/asset-memory.ts')
 );
@@ -52,6 +58,7 @@ const { publishInstagramReel, buildHostedVideoUrl, verifyPublicMediaUrl } = requ
 );
 
 const DRY_RUN = process.argv.includes('--dry-run');
+const QUEUE_CLAIM_HORIZON_HOURS = 12;
 const INSTAGRAM_READINESS_COMMAND = `npm --prefix ${path.join(env.PROJECT_ROOT, 'bots/blog')} run check:instagram -- --json`;
 const SOCIAL_DOCTOR_COMMAND = `npm --prefix ${path.join(env.PROJECT_ROOT, 'bots/blog')} run doctor:social -- --json`;
 const BLOG_OPS_DOCTOR_COMMAND = `npm --prefix ${path.join(env.PROJECT_ROOT, 'bots/blog')} run doctor:ops -- --json`;
@@ -96,12 +103,14 @@ function inferQaSheetPathFromReel(reelPath = '') {
   return String(reelPath).replace(/\.mp4$/i, '_qa.jpg');
 }
 
-function ensureHostedInstagramMedia(reelPath, coverPath = '') {
+function ensureHostedInstagramMedia(reelPath, coverPath = '', qaSheetPath = '') {
   if (!reelPath) return null;
   const scriptPath = path.join(env.PROJECT_ROOT, 'bots/blog/scripts/prepare-instagram-media.ts');
   const args = [scriptPath, '--json', '--no-thumb', '--video', reelPath];
   if (coverPath) args.push('--cover', coverPath);
   else args.push('--no-cover');
+  if (qaSheetPath) args.push('--qa', qaSheetPath);
+  else args.push('--no-qa');
   if (DRY_RUN) args.push('--dry-run');
 
   const output = execFileSync('node', args, {
@@ -117,6 +126,124 @@ function ensureHostedInstagramMedia(reelPath, coverPath = '') {
   }
 }
 
+function extractCaptionHook(caption = '') {
+  return String(caption || '').split('\n')[0].trim();
+}
+
+function inferNativeCategory(variant = {}) {
+  const hint = variant?.asset_refs?.generation_hint || {};
+  const preferred = String(
+    hint.preferredCategory || hint.category || variant?.preferred_category || ''
+  ).trim();
+  if (preferred) return preferred;
+  const brandAxis = String(hint.brandAxis || variant?.brand_axis || '').trim();
+  if (brandAxis === 'seungho_dad') return '개발기획과컨설팅';
+  if (brandAxis === 'mixed') return '최신IT트렌드';
+  return '홈페이지와App';
+}
+
+function resolveNativeReelFromLibrary(variant = {}) {
+  try {
+    const {
+      findReelPathForTitle,
+      findReelCoverPathForTitle,
+      findReelQaSheetPathForTitle,
+    } = require(
+      path.join(env.PROJECT_ROOT, 'bots/blog/lib/shortform-files.ts')
+    );
+    const title = String(variant.title || '').trim();
+    const hook = extractCaptionHook(variant.caption || '');
+    const reelPath = findReelPathForTitle(title) || findReelPathForTitle(hook) || '';
+    if (!reelPath) return null;
+    return {
+      reelPath,
+      coverPath: findReelCoverPathForTitle(title) || findReelCoverPathForTitle(hook) || '',
+      qaSheetPath: findReelQaSheetPathForTitle(title) || findReelQaSheetPathForTitle(hook) || '',
+      source: 'library_match',
+    };
+  } catch (error) {
+    console.warn('[insta-auto] native 릴스 라이브러리 탐색 실패:', String(error?.message || error));
+    return null;
+  }
+}
+
+function renderNativeReelForVariant(variant = {}) {
+  const scriptPath = path.join(env.PROJECT_ROOT, 'bots/blog/scripts/render-shortform.ts');
+  const title = String(variant.title || '').trim() || 'strategy_native_reel';
+  const category = inferNativeCategory(variant);
+  const args = [scriptPath, '--json', '--title', title, '--category', category];
+  const blogUrl = String(variant.tracking_url || '').trim();
+  if (blogUrl) args.push('--blog-url', blogUrl);
+  if (DRY_RUN) args.push('--dry-run');
+  const output = execFileSync('node', args, {
+    cwd: path.join(env.PROJECT_ROOT, 'bots/blog'),
+    encoding: 'utf8',
+    stdio: ['ignore', 'pipe', 'pipe'],
+  }).trim();
+
+  let payload = {};
+  try {
+    payload = JSON.parse(output || '{}');
+  } catch {
+    payload = JSON.parse(extractJsonObjectText(output) || '{}');
+  }
+
+  const render = payload?.render || {};
+  const reelPath = render.outputPath || payload.outputPath || '';
+  if (!reelPath) {
+    throw new Error('native_reel_render_missing_output');
+  }
+  return {
+    reelPath,
+    coverPath: render.coverPath || inferCoverPathFromReel(reelPath),
+    qaSheetPath: render.qaSheetPath || inferQaSheetPathFromReel(reelPath),
+    source: 'render_shortform',
+  };
+}
+
+async function persistVariantAssetRefs(variantId = '', assetRefs = null) {
+  if (DRY_RUN || !variantId || !assetRefs) return;
+  await pgPool.query('blog', `
+    UPDATE blog.marketing_platform_variants
+    SET asset_refs = $2::jsonb,
+        updated_at = NOW()
+    WHERE variant_id = $1
+  `, [variantId, JSON.stringify(assetRefs)]);
+}
+
+async function ensureStrategyNativeInstagramAssets(variant = null) {
+  if (!variant || variant.platform !== 'instagram_reel' || variant.source_mode !== 'strategy_native') {
+    return { variant, assetRefs: variant?.asset_refs || null, source: null };
+  }
+
+  const assetRefs = variant.asset_refs || {};
+  if (assetRefs.reelPath || assetRefs.reelPublicUrl) {
+    return { variant, assetRefs, source: 'existing' };
+  }
+
+  const resolved = resolveNativeReelFromLibrary(variant) || renderNativeReelForVariant(variant);
+  if (!resolved?.reelPath) {
+    throw new Error('native_reel_asset_unresolved');
+  }
+
+  const mergedAssetRefs = {
+    ...assetRefs,
+    reelPath: resolved.reelPath,
+    coverPath: resolved.coverPath || assetRefs.coverPath || '',
+    qaSheetPath: resolved.qaSheetPath || assetRefs.qaSheetPath || '',
+    generation_hint: {
+      ...(assetRefs.generation_hint || {}),
+      category: inferNativeCategory(variant),
+      resolutionSource: resolved.source || 'unknown',
+      resolvedAt: new Date().toISOString(),
+    },
+  };
+
+  await persistVariantAssetRefs(variant.variant_id, mergedAssetRefs);
+  variant.asset_refs = mergedAssetRefs;
+  return { variant, assetRefs: mergedAssetRefs, source: resolved.source || 'unknown' };
+}
+
 function buildPreviewBundle({ staged = null, reelPath = '', coverPath = '', qaSheetPath = '' } = {}) {
   const parts = [
     staged?.reel?.publicUrl ? `reel=${staged.reel.publicUrl}` : (reelPath ? `reel=${reelPath}` : ''),
@@ -124,17 +251,6 @@ function buildPreviewBundle({ staged = null, reelPath = '', coverPath = '', qaSh
     staged?.qaSheet?.publicUrl ? `qa=${staged.qaSheet.publicUrl}` : (qaSheetPath ? `qa=${qaSheetPath}` : ''),
   ].filter(Boolean);
   return parts.join(' / ');
-}
-
-function classifyInstagramError(error) {
-  const msg = String(error?.message || error || '').toLowerCase();
-  if (msg.includes('access token') || msg.includes('token') || msg.includes('oauth')) return 'auth';
-  if (msg.includes('prepare') || msg.includes('staged') || msg.includes('공개 비디오 파일')) return 'asset_prepare';
-  if (msg.includes('공개 비디오 url') || msg.includes('url이 아직 응답')) return 'media_url';
-  if (msg.includes('container') || msg.includes('status_code') || msg.includes('processing')) return 'container_processing';
-  if (msg.includes('rate limit') || msg.includes('429')) return 'rate_limit';
-  if (msg.includes('publish') || msg.includes('media_publish')) return 'publish';
-  return 'unknown';
 }
 
 function buildInstagramFailureDetail(error, { reelPath = '', previewBundle = '' } = {}) {
@@ -229,6 +345,32 @@ async function publishFromQueue(queueJob) {
     return { ok: false, reason: 'variant_not_found' };
   }
 
+  try {
+    await ensureStrategyNativeInstagramAssets(variant);
+  } catch (error) {
+    const failureKind = resolveInstagramFailureKind(error, {
+      fallback: 'asset_prepare',
+      preferAssetOnUnknown: true,
+    });
+    const message = String(error?.message || error);
+    await markPublishFailure(queueId, { error: message, failureKind });
+    await reportPublishFailure(
+      'instagram',
+      variant.title || 'strategy_native',
+      buildInstagramFailureDetail(message, {}),
+      { sourceMode: 'strategy_native', failureKind }
+    );
+    await recordAssetOutcomeSafe({
+      variant,
+      qualityScore: null,
+      gateResult: 'recoverable',
+      publishStatus: 'failed',
+      failureKind,
+      metadata: { stage: 'native_asset_resolve', error: message },
+    });
+    return { ok: false, reason: 'native_asset_resolve_failed', error };
+  }
+
   const config = await getInstagramConfig().catch(() => ({}));
   const qr = await evaluateAndSaveQuality({ variant, config, dryRun: DRY_RUN });
 
@@ -321,7 +463,7 @@ async function publishFromQueue(queueJob) {
   let staged = null;
   let previewBundle = '';
   try {
-    staged = ensureHostedInstagramMedia(reelPath, coverPath);
+    staged = ensureHostedInstagramMedia(reelPath, coverPath, qaSheetPath);
     previewBundle = buildPreviewBundle({ staged, reelPath, coverPath, qaSheetPath });
     console.log(`[insta-auto][native] 공개 미디어 준비 완료: ${staged?.reel?.targetPath || 'ok'}`);
   } catch (e) {
@@ -467,7 +609,7 @@ async function publishFromNaverPost() {
 
   let staged = null, previewBundle = '';
   try {
-    staged = ensureHostedInstagramMedia(reelPath, coverPath);
+    staged = ensureHostedInstagramMedia(reelPath, coverPath, qaSheetPath);
     previewBundle = buildPreviewBundle({ staged, reelPath, coverPath, qaSheetPath });
   } catch (e) {
     console.warn('[insta-auto][legacy] prepare 실패:', e.message);
@@ -505,7 +647,10 @@ async function main() {
   // ── 1. Queue-first: strategy_native 큐 확인 ────────────────────────────
   let queueJob = null;
   try {
-    queueJob = await claimNextPublishJob('instagram_reel', { dryRun: DRY_RUN });
+    queueJob = await claimNextPublishJob('instagram_reel', {
+      dryRun: DRY_RUN,
+      scheduleHorizonHours: QUEUE_CLAIM_HORIZON_HOURS,
+    });
   } catch (error) {
     await notifyQueueUnavailable(String(error?.message || error));
     throw new Error(`queue_unavailable: ${String(error?.message || error)}`);
@@ -550,7 +695,10 @@ async function main() {
   if (newCampaignQueued) {
     let newJob = null;
     try {
-      newJob = await claimNextPublishJob('instagram_reel', { dryRun: DRY_RUN });
+      newJob = await claimNextPublishJob('instagram_reel', {
+        dryRun: DRY_RUN,
+        scheduleHorizonHours: QUEUE_CLAIM_HORIZON_HOURS,
+      });
     } catch (error) {
       await notifyQueueUnavailable(String(error?.message || error));
       throw new Error(`queue_unavailable_after_regen: ${String(error?.message || error)}`);
@@ -563,29 +711,29 @@ async function main() {
       return;
     }
     if (nativeRequired) {
+      if (DRY_RUN) {
+        console.log('[insta-auto][dry-run] social_native_required queue empty 시뮬레이션 종료');
+        return;
+      }
       await runIfOps('blog-insta-native-required-queue-empty', () => postAlarm({
         message: '[블로팀] 인스타 social_native_required 경로에서 queue claim 결과 없음 (fail-closed)',
         team: 'blog',
         bot: 'auto-instagram-publish',
         level: 'warn',
       }), () => console.log('[DEV] native required queue empty')).catch(() => {});
-      if (DRY_RUN) {
-        console.log('[insta-auto][dry-run] social_native_required queue empty 시뮬레이션 종료');
-        return;
-      }
       throw new Error('social_native_required_queue_empty');
     }
   } else if (nativeRequired) {
+    if (DRY_RUN) {
+      console.log('[insta-auto][dry-run] social_native_required not queued 시뮬레이션 종료');
+      return;
+    }
     await runIfOps('blog-insta-native-required-not-queued', () => postAlarm({
       message: '[블로팀] 인스타 social_native_required 경로에서 새 campaign이 queue로 등록되지 않았습니다 (fail-closed)',
       team: 'blog',
       bot: 'auto-instagram-publish',
       level: 'warn',
     }), () => console.log('[DEV] native required not queued')).catch(() => {});
-    if (DRY_RUN) {
-      console.log('[insta-auto][dry-run] social_native_required not queued 시뮬레이션 종료');
-      return;
-    }
     throw new Error('social_native_required_not_queued');
   }
 

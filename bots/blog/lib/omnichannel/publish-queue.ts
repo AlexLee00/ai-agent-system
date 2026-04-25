@@ -126,11 +126,13 @@ async function enqueueMarketingVariants({ campaignId, variants = [], dryRun = fa
  * @param {string} platform
  * @param {object} [opts]
  * @param {boolean} [opts.dryRun]
+ * @param {number} [opts.scheduleHorizonHours]
  * @returns {Promise<object|null>}
  */
-async function claimNextPublishJob(platform, { dryRun = false } = {}) {
+async function claimNextPublishJob(platform, { dryRun = false, scheduleHorizonHours = 2 } = {}) {
   try {
     await ensureMarketingOsSchema();
+    const horizonHours = Math.max(0, Number(scheduleHorizonHours) || 0);
     // stale preparing 복구: lease 시간 초과 시 queued로 복귀
     await pgPool.query('blog', `
       UPDATE blog.marketing_publish_queue
@@ -168,7 +170,7 @@ async function claimNextPublishJob(platform, { dryRun = false } = {}) {
         WHERE q.platform = $1
           AND q.status = 'queued'
           AND q.dry_run = $2
-          AND q.scheduled_at <= NOW() + INTERVAL '2 hours'
+          AND q.scheduled_at <= NOW() + (($3::text || ' hours')::interval)
         ORDER BY q.scheduled_at ASC
         LIMIT 1
         FOR UPDATE SKIP LOCKED
@@ -176,7 +178,7 @@ async function claimNextPublishJob(platform, { dryRun = false } = {}) {
       RETURNING
         queue_id, variant_id, platform, scheduled_at,
         status, attempt_count, idempotency_key, dry_run
-    `, [platform, dryRun]);
+    `, [platform, dryRun, horizonHours]);
 
     if (!rows || rows.length === 0) return null;
 

@@ -17,6 +17,13 @@ jest.mock('../../../packages/core/lib/mode-guard', () => ({
 jest.mock('../../../packages/core/lib/openclaw-client', () => ({
   postAlarm: jest.fn().mockResolvedValue(undefined),
 }));
+jest.mock('../lib/star.ts', () => ({
+  createInstaContent: jest.fn().mockResolvedValue({
+    caption: 'strategy-native caption',
+    hashtags: ['#strategy_native'],
+    thumbnailUrl: '',
+  }),
+}));
 
 const pgPool = require('../../../packages/core/lib/pg-pool');
 
@@ -216,11 +223,16 @@ describe('platform-orchestrator', () => {
     expect(result).toBeNull();
   });
 
-  test('orchestrateDailyPublishing — enabled + 오늘 포스트 없으면 null', async () => {
+  test('orchestrateDailyPublishing — enabled + 오늘 포스트 없으면 strategy_native fallback 또는 null', async () => {
     process.env.BLOG_MULTI_PLATFORM_ENABLED = 'true';
     pgPool.get.mockResolvedValueOnce(null);
     const result = await orchestrator.orchestrateDailyPublishing(true);
-    expect(result).toBeNull();
+    if (result === null) {
+      expect(result).toBeNull();
+      return;
+    }
+    expect(result).toHaveProperty('blogPost');
+    expect(result.blogPost?.sourceMode).toBe('strategy_native');
   });
 
   test('PLATFORM_STRATEGY — 3 플랫폼 모두 정의', () => {

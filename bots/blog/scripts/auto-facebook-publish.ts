@@ -44,6 +44,7 @@ const { createMarketingCampaignFromSignals } = require(
 );
 
 const DRY_RUN = process.argv.includes('--dry-run');
+const QUEUE_CLAIM_HORIZON_HOURS = 12;
 const FACEBOOK_READINESS_COMMAND = `npm --prefix ${path.join(env.PROJECT_ROOT, 'bots/blog')} run check:facebook -- --json`;
 const SOCIAL_DOCTOR_COMMAND = `npm --prefix ${path.join(env.PROJECT_ROOT, 'bots/blog')} run doctor:social -- --json`;
 const BLOG_OPS_DOCTOR_COMMAND = `npm --prefix ${path.join(env.PROJECT_ROOT, 'bots/blog')} run doctor:ops -- --json`;
@@ -338,7 +339,10 @@ async function main() {
   // ── 1. Queue-first: strategy_native 큐 확인 ────────────────────────────
   let queueJob = null;
   try {
-    queueJob = await claimNextPublishJob('facebook_page', { dryRun: DRY_RUN });
+    queueJob = await claimNextPublishJob('facebook_page', {
+      dryRun: DRY_RUN,
+      scheduleHorizonHours: QUEUE_CLAIM_HORIZON_HOURS,
+    });
   } catch (error) {
     await notifyQueueUnavailable(String(error?.message || error));
     throw new Error(`queue_unavailable: ${String(error?.message || error)}`);
@@ -380,7 +384,10 @@ async function main() {
   if (newCampaignQueued) {
     let newJob = null;
     try {
-      newJob = await claimNextPublishJob('facebook_page', { dryRun: DRY_RUN });
+      newJob = await claimNextPublishJob('facebook_page', {
+        dryRun: DRY_RUN,
+        scheduleHorizonHours: QUEUE_CLAIM_HORIZON_HOURS,
+      });
     } catch (error) {
       await notifyQueueUnavailable(String(error?.message || error));
       throw new Error(`queue_unavailable_after_regen: ${String(error?.message || error)}`);
@@ -391,29 +398,29 @@ async function main() {
       return;
     }
     if (nativeRequired) {
+      if (DRY_RUN) {
+        console.log('[facebook-auto][dry-run] social_native_required queue empty 시뮬레이션 종료');
+        return;
+      }
       await runIfOps('blog-fb-native-required-queue-empty', () => postAlarm({
         message: '[블로팀] Facebook social_native_required 경로에서 queue claim 결과 없음 (fail-closed)',
         team: 'blog',
         bot: 'auto-facebook-publish',
         level: 'warn',
       }), () => console.log('[DEV] native required queue empty')).catch(() => {});
-      if (DRY_RUN) {
-        console.log('[facebook-auto][dry-run] social_native_required queue empty 시뮬레이션 종료');
-        return;
-      }
       throw new Error('social_native_required_queue_empty');
     }
   } else if (nativeRequired) {
+    if (DRY_RUN) {
+      console.log('[facebook-auto][dry-run] social_native_required not queued 시뮬레이션 종료');
+      return;
+    }
     await runIfOps('blog-fb-native-required-not-queued', () => postAlarm({
       message: '[블로팀] Facebook social_native_required 경로에서 새 campaign이 queue로 등록되지 않았습니다 (fail-closed)',
       team: 'blog',
       bot: 'auto-facebook-publish',
       level: 'warn',
     }), () => console.log('[DEV] native required not queued')).catch(() => {});
-    if (DRY_RUN) {
-      console.log('[facebook-auto][dry-run] social_native_required not queued 시뮬레이션 종료');
-      return;
-    }
     throw new Error('social_native_required_not_queued');
   }
 

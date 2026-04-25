@@ -43,5 +43,19 @@ describe('publish-queue fail-closed', () => {
     expect(String(pgPool.query.mock.calls[0][1] || '')).toContain('stale_preparing_requeued');
     expect(String(pgPool.query.mock.calls[1][1] || '')).toContain('retry_exhausted');
   });
-});
 
+  test('claimNextPublishJob — schedule horizon 옵션을 claim 쿼리에 반영', async () => {
+    pgPool.query
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([]);
+
+    await queue.claimNextPublishJob('instagram_reel', {
+      dryRun: false,
+      scheduleHorizonHours: 12,
+    });
+
+    expect(String(pgPool.query.mock.calls[2][1] || '')).toContain("($3::text || ' hours')::interval");
+    expect(pgPool.query.mock.calls[2][2]).toEqual(['instagram_reel', false, 12]);
+  });
+});
