@@ -18,6 +18,10 @@ const MIN_REQUEST_INTERVAL_MS = 20 * 1000;
 let _lastGraphRequestAt = 0;
 const DEFAULT_CONTAINER_POLL_MS = 10 * 1000;
 const DEFAULT_CONTAINER_MAX_ATTEMPTS = 6;
+const DEFAULT_PUBLIC_MEDIA_MAX_WAIT_MS = 5 * 60 * 1000;
+const DEFAULT_PUBLIC_MEDIA_INITIAL_DELAY_MS = 5 * 1000;
+const DEFAULT_PUBLIC_MEDIA_MAX_DELAY_MS = 60 * 1000;
+const DEFAULT_PUBLIC_MEDIA_BACKOFF_MULTIPLIER = 1.8;
 
 function readStoreInstagramConfig() {
   try {
@@ -201,7 +205,7 @@ async function waitForContainerReady(config, creationId, { maxAttempts = DEFAULT
   throw new Error(`Instagram media container 준비 대기 초과: ${JSON.stringify(lastPayload || {})}`);
 }
 
-async function verifyPublicMediaUrl(url) {
+async function probePublicMediaUrl(url) {
   const response = await fetch(url, {
     method: 'HEAD',
   }).catch(() => null);
@@ -233,6 +237,52 @@ async function verifyPublicMediaUrl(url) {
   };
 }
 
+async function verifyPublicMediaUrl(url, {
+  maxWaitMs = DEFAULT_PUBLIC_MEDIA_MAX_WAIT_MS,
+  initialDelayMs = DEFAULT_PUBLIC_MEDIA_INITIAL_DELAY_MS,
+  maxDelayMs = DEFAULT_PUBLIC_MEDIA_MAX_DELAY_MS,
+  backoffMultiplier = DEFAULT_PUBLIC_MEDIA_BACKOFF_MULTIPLIER,
+} = {}) {
+  const waitLimitMs = Math.max(0, Number(maxWaitMs) || 0);
+  const maxDelay = Math.max(1000, Number(maxDelayMs) || DEFAULT_PUBLIC_MEDIA_MAX_DELAY_MS);
+  const factor = Math.max(1.1, Number(backoffMultiplier) || DEFAULT_PUBLIC_MEDIA_BACKOFF_MULTIPLIER);
+  let delayMs = Math.max(1000, Number(initialDelayMs) || DEFAULT_PUBLIC_MEDIA_INITIAL_DELAY_MS);
+  const startedAt = Date.now();
+  let attempt = 0;
+  let lastResult = { ok: false, status: 0, method: 'fetch' };
+
+  while (true) {
+    attempt += 1;
+    lastResult = await probePublicMediaUrl(url);
+    if (lastResult.ok) {
+      return {
+        ...lastResult,
+        attempts: attempt,
+        elapsedMs: Date.now() - startedAt,
+      };
+    }
+    if (waitLimitMs <= 0) {
+      return {
+        ...lastResult,
+        attempts: attempt,
+        elapsedMs: Date.now() - startedAt,
+      };
+    }
+    const elapsed = Date.now() - startedAt;
+    const nextElapsed = elapsed + delayMs;
+    if (nextElapsed > waitLimitMs) {
+      return {
+        ...lastResult,
+        attempts: attempt,
+        elapsedMs: elapsed,
+        timeout: true,
+      };
+    }
+    await new Promise((resolve) => setTimeout(resolve, delayMs));
+    delayMs = Math.min(maxDelay, Math.round(delayMs * factor));
+  }
+}
+
 async function publishInstagramReel({
   videoUrl,
   caption,
@@ -252,9 +302,13 @@ async function publishInstagramReel({
   }
 
   ensureReady(config);
-  const mediaCheck = await verifyPublicMediaUrl(videoUrl);
+  const mediaCheck = await verifyPublicMediaUrl(videoUrl, {
+    maxWaitMs: Number(process.env.INSTAGRAM_MEDIA_URL_MAX_WAIT_MS || DEFAULT_PUBLIC_MEDIA_MAX_WAIT_MS),
+    initialDelayMs: Number(process.env.INSTAGRAM_MEDIA_URL_INITIAL_DELAY_MS || DEFAULT_PUBLIC_MEDIA_INITIAL_DELAY_MS),
+    maxDelayMs: Number(process.env.INSTAGRAM_MEDIA_URL_MAX_DELAY_MS || DEFAULT_PUBLIC_MEDIA_MAX_DELAY_MS),
+  });
   if (!mediaCheck.ok) {
-    throw new Error(`Instagram 공개 비디오 URL이 아직 응답하지 않습니다: HTTP ${mediaCheck.status || 'unknown'} (${mediaCheck.method})`);
+    throw new Error(`Instagram 공개 비디오 URL이 아직 응답하지 않습니다: HTTP ${mediaCheck.status || 'unknown'} (${mediaCheck.method}) attempts=${mediaCheck.attempts || 1} elapsedMs=${mediaCheck.elapsedMs || 0}`);
   }
   const creation = await postJson(createRequest.url, createRequest.body, config.accessToken);
   const creationId = creation.id || creation.creation_id;
