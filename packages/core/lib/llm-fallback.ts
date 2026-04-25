@@ -7,7 +7,7 @@
  * 지원 provider:
  *   anthropic — claude-sonnet-4-6 등 (Anthropic SDK)
  *   openai    — gpt-4o
- *   openai-oauth — Hub에 수집된 OpenAI Codex OAuth 토큰으로 OpenAI API 직접 호출
+ *   openai-oauth — Hub에 수집된 OpenAI Codex OAuth 토큰으로 ChatGPT Codex backend 직접 호출
  *   claude-code — Claude Code CLI 비대화식 실행
  *   groq      — llama-4-scout 등 (Groq SDK / OpenAI-compat)
  *   gemini    — gemini-2.5-flash (Google Generative AI SDK)
@@ -115,6 +115,7 @@ type OAuthStore = {
     access_token?: string;
     expires?: number | string;
     expires_at?: string;
+    account_id?: string;
   };
 };
 
@@ -122,6 +123,7 @@ type OAuthProviderToken = {
   access_token?: string;
   expires?: number | string;
   expires_at?: string;
+  account_id?: string;
 };
 
 type OAuthProviderStore = {
@@ -134,6 +136,7 @@ type OAuthSecretPayload = {
   access_token?: string;
   expires?: number | string;
   expires_at?: string;
+  account_id?: string;
 };
 
 type ExecFileErrorLike = {
@@ -159,6 +162,7 @@ type ClaudeCodeResponse = {
 // ── 그루크 계정 라운드로빈 인덱스 ────────────────────────────────────
 let _groqIdx = 0;
 let _oauthToken: string | null = null;
+let _oauthAccountId: string | null = null;
 let _oauthTokenExpiry = 0;
 let _evalTableReady = false;
 const OAUTH_CACHE_TTL = 300_000;
@@ -258,8 +262,27 @@ function _parseOAuthExpiry(value: number | string | undefined | null): number | 
   return Number.isFinite(parsed) ? parsed : null;
 }
 
-function _cacheOpenAIOAuthToken(token: string, expiresAt: number | null = null): string {
+function _decodeJwtPayload(token: string): Record<string, any> | null {
+  const parts = String(token || '').split('.');
+  if (parts.length < 2) return null;
+  try {
+    return JSON.parse(Buffer.from(parts[1], 'base64url').toString('utf8'));
+  } catch {
+    return null;
+  }
+}
+
+function _extractOpenAICodexAccountId(token: string, fallback?: string | null): string | null {
+  const direct = String(fallback || '').trim();
+  if (direct) return direct;
+  const payload = _decodeJwtPayload(token);
+  const claim = payload?.['https://api.openai.com/auth']?.chatgpt_account_id;
+  return typeof claim === 'string' && claim.trim() ? claim.trim() : null;
+}
+
+function _cacheOpenAIOAuthToken(token: string, expiresAt: number | null = null, accountId: string | null = null): string {
   _oauthToken = token;
+  _oauthAccountId = accountId;
   const safeExpiry = expiresAt && expiresAt > Date.now()
     ? Math.min(expiresAt - 30_000, Date.now() + OAUTH_CACHE_TTL)
     : Date.now() + OAUTH_CACHE_TTL;
@@ -269,16 +292,20 @@ function _cacheOpenAIOAuthToken(token: string, expiresAt: number | null = null):
 
 function _extractUsableOpenAIOAuthToken(
   token: OAuthProviderToken | OAuthStore['openai_oauth'] | OAuthSecretPayload | null | undefined,
-): { token: string; expiresAt: number | null } | null {
+): { token: string; expiresAt: number | null; accountId: string | null } | null {
   const accessToken = String(token?.access_token || '').trim();
   if (!accessToken) return null;
 
   const expiresAt = _parseOAuthExpiry(token?.expires_at || token?.expires);
   if (expiresAt && expiresAt <= Date.now() + 60_000) return null;
-  return { token: accessToken, expiresAt };
+  return {
+    token: accessToken,
+    expiresAt,
+    accountId: _extractOpenAICodexAccountId(accessToken, token?.account_id || null),
+  };
 }
 
-function _readOpenAIOAuthTokenStore(): { token: string; expiresAt: number | null } | null {
+function _readOpenAIOAuthTokenStore(): { token: string; expiresAt: number | null; accountId: string | null } | null {
   try {
     const store = JSON.parse(fs.readFileSync(OAUTH_PROVIDER_STORE_PATH, 'utf8')) as OAuthProviderStore;
     const providers = store?.providers || {};
@@ -330,30 +357,47 @@ async function _callOpenAI({
 }
 
 async function _getOAuthToken(): Promise<string | null> {
-  if (_oauthToken && Date.now() < _oauthTokenExpiry) return _oauthToken;
+  const credential = await _getOAuthCredential();
+  return credential?.token || null;
+}
+
+async function _getOAuthCredential(): Promise<{ token: string; accountId: string | null } | null> {
+  if (_oauthToken && Date.now() < _oauthTokenExpiry) {
+    return { token: _oauthToken, accountId: _oauthAccountId };
+  }
 
   const envToken = String(process.env.OPENAI_OAUTH_ACCESS_TOKEN || process.env.OPENAI_CODEX_ACCESS_TOKEN || '').trim();
   if (envToken) {
-    return _cacheOpenAIOAuthToken(envToken);
+    const accountId = _extractOpenAICodexAccountId(envToken, process.env.OPENAI_CODEX_ACCOUNT_ID || process.env.OPENAI_OAUTH_ACCOUNT_ID || null);
+    return { token: _cacheOpenAIOAuthToken(envToken, null, accountId), accountId };
   }
 
   const providerStoreToken = _readOpenAIOAuthTokenStore();
   if (providerStoreToken) {
-    return _cacheOpenAIOAuthToken(providerStoreToken.token, providerStoreToken.expiresAt);
+    return {
+      token: _cacheOpenAIOAuthToken(providerStoreToken.token, providerStoreToken.expiresAt, providerStoreToken.accountId),
+      accountId: providerStoreToken.accountId,
+    };
   }
 
   try {
     const store = JSON.parse(fs.readFileSync(STORE_PATH, 'utf8')) as OAuthStore;
     const legacyToken = _extractUsableOpenAIOAuthToken(store?.openai_oauth || null);
     if (legacyToken) {
-      return _cacheOpenAIOAuthToken(legacyToken.token, legacyToken.expiresAt);
+      return {
+        token: _cacheOpenAIOAuthToken(legacyToken.token, legacyToken.expiresAt, legacyToken.accountId),
+        accountId: legacyToken.accountId,
+      };
     }
   } catch { /* DEV나 미동기화 상태면 Hub 경유 */ }
 
   const data = await fetchHubSecrets('openai_oauth') as OAuthSecretPayload | null;
   const hubToken = _extractUsableOpenAIOAuthToken(data);
   if (hubToken) {
-    return _cacheOpenAIOAuthToken(hubToken.token, hubToken.expiresAt);
+    return {
+      token: _cacheOpenAIOAuthToken(hubToken.token, hubToken.expiresAt, hubToken.accountId),
+      accountId: hubToken.accountId,
+    };
   }
 
   return null;
@@ -361,6 +405,17 @@ async function _getOAuthToken(): Promise<string | null> {
 
 function _getOpenAIOAuthBaseUrl(): string {
   return String(process.env.OPENAI_OAUTH_BASE_URL || process.env.OPENAI_BASE_URL || 'https://api.openai.com/v1').replace(/\/+$/, '');
+}
+
+function _getOpenAICodexBackendBaseUrl(): string {
+  return String(process.env.OPENAI_CODEX_BACKEND_BASE_URL || process.env.OPENAI_CODEX_OAUTH_BACKEND_BASE_URL || 'https://chatgpt.com/backend-api').replace(/\/+$/, '');
+}
+
+function _resolveOpenAICodexResponsesUrl(): string {
+  const baseUrl = _getOpenAICodexBackendBaseUrl();
+  if (baseUrl.endsWith('/codex/responses')) return baseUrl;
+  if (baseUrl.endsWith('/codex')) return `${baseUrl}/responses`;
+  return `${baseUrl}/codex/responses`;
 }
 
 function _createTimeoutSignal(timeoutMs: number): { signal: AbortSignal; cleanup: () => void } {
@@ -447,6 +502,173 @@ async function _postOpenAIJson({
     });
     const parsed = await _readJsonResponse(res);
     return { status: res.status, ok: res.ok, body: parsed };
+  } finally {
+    cleanup();
+  }
+}
+
+function _buildOpenAICodexRequestBody({
+  model,
+  temperature,
+  systemPrompt,
+  userPrompt,
+}: {
+  model: string;
+  temperature: number;
+  systemPrompt: string;
+  userPrompt: string;
+}): Record<string, unknown> {
+  const body: Record<string, unknown> = {
+    model: model.replace(/^openai-oauth\//, '').replace(/^openai-codex\//, ''),
+    store: false,
+    stream: true,
+    instructions: systemPrompt || '',
+    input: [
+      {
+        role: 'user',
+        content: [{ type: 'input_text', text: userPrompt || '' }],
+      },
+    ],
+    text: { verbosity: 'medium' },
+    include: ['reasoning.encrypted_content'],
+    prompt_cache_key: `hub_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`,
+    tool_choice: 'auto',
+    parallel_tool_calls: true,
+  };
+  if (process.env.OPENAI_CODEX_BACKEND_ENABLE_TEMPERATURE === 'true' && temperature !== undefined) {
+    body.temperature = temperature;
+  }
+  return body;
+}
+
+async function _readSseEvents(res: Response): Promise<any[]> {
+  if (!res.body) return [];
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+  const events: any[] = [];
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      let idx = buffer.indexOf('\n\n');
+      while (idx !== -1) {
+        const chunk = buffer.slice(0, idx);
+        buffer = buffer.slice(idx + 2);
+        const data = chunk
+          .split('\n')
+          .filter((line) => line.startsWith('data:'))
+          .map((line) => line.slice(5).trim())
+          .join('\n')
+          .trim();
+        if (data && data !== '[DONE]') {
+          try {
+            events.push(JSON.parse(data));
+          } catch {
+            // Ignore malformed SSE fragments and keep consuming the stream.
+          }
+        }
+        idx = buffer.indexOf('\n\n');
+      }
+    }
+  } finally {
+    try { await reader.cancel(); } catch {}
+    try { reader.releaseLock(); } catch {}
+  }
+  return events;
+}
+
+function _extractOpenAICodexStreamResult(events: any[]): { text: string; response: any | null } {
+  const deltas: string[] = [];
+  const doneTexts: string[] = [];
+  let finalResponse: any | null = null;
+  for (const event of events) {
+    const type = String(event?.type || '');
+    if (type === 'error') {
+      throw new Error(`Codex error: ${String(event?.message || event?.code || 'unknown').slice(0, 400)}`);
+    }
+    if (type === 'response.failed') {
+      throw new Error(String(event?.response?.error?.message || 'Codex response failed').slice(0, 400));
+    }
+    if (typeof event?.delta === 'string' && type.includes('output_text')) {
+      deltas.push(event.delta);
+    }
+    if (type === 'response.output_text.done' && typeof event?.text === 'string') {
+      doneTexts.push(event.text);
+    }
+    if (type === 'response.done' || type === 'response.completed' || type === 'response.incomplete') {
+      finalResponse = event.response || null;
+    }
+  }
+  const streamedText = deltas.join('').trim();
+  if (streamedText) return { text: streamedText, response: finalResponse };
+  const doneText = doneTexts.join('\n').trim();
+  if (doneText) return { text: doneText, response: finalResponse };
+  return { text: _extractResponsesText(finalResponse || {}), response: finalResponse };
+}
+
+async function _callOpenAICodexBackendResponses({
+  token,
+  accountId,
+  model,
+  temperature,
+  systemPrompt,
+  userPrompt,
+  timeoutMs,
+}: {
+  token: string;
+  accountId: string | null;
+  model: string;
+  temperature: number;
+  systemPrompt: string;
+  userPrompt: string;
+  timeoutMs: number;
+}) {
+  const resolvedAccountId = _extractOpenAICodexAccountId(token, accountId);
+  if (!resolvedAccountId) throw new Error('OpenAI Codex OAuth account_id 없음');
+  const url = _resolveOpenAICodexResponsesUrl();
+  const body = _buildOpenAICodexRequestBody({ model, temperature, systemPrompt, userPrompt });
+  const { signal, cleanup } = _createTimeoutSignal(timeoutMs);
+  try {
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'chatgpt-account-id': resolvedAccountId,
+        originator: 'pi',
+        'User-Agent': `pi (hub ${process.platform}; ${process.arch})`,
+        'OpenAI-Beta': 'responses=experimental',
+        accept: 'text/event-stream',
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify(body),
+      signal,
+    });
+    if (!res.ok) {
+      const message = String((await _readJsonResponse(res))?.error?.message || `HTTP ${res.status}`).slice(0, 400);
+      const error = new Error(`OpenAI Codex backend 호출 실패: ${message}`) as Error & { status?: number; responseBody?: any };
+      error.status = res.status;
+      throw error;
+    }
+    const events = await _readSseEvents(res);
+    const { text, response } = _extractOpenAICodexStreamResult(events);
+    if (!text) throw new Error('OpenAI Codex backend 빈 응답');
+    const usage = _normalizeResponsesUsage(response?.usage);
+    return {
+      choices: [{ message: { content: text } }],
+      usage: usage ? {
+        prompt_tokens: usage.prompt_tokens || usage.input_tokens || 0,
+        completion_tokens: usage.completion_tokens || usage.output_tokens || 0,
+        total_tokens: (usage.prompt_tokens || usage.input_tokens || 0) + (usage.completion_tokens || usage.output_tokens || 0),
+      } : null,
+      _openaiOAuth: {
+        provider: 'openai-oauth',
+        model,
+        endpoint: 'codex.responses',
+        responseId: response?.id || null,
+      },
+    };
   } finally {
     cleanup();
   }
@@ -571,10 +793,14 @@ async function _callOpenAIOAuthChat({
 
 async function _callOpenAIOAuth({ model, maxTokens, temperature = 0.1, systemPrompt, userPrompt, timeoutMs = 30000 }: ProviderCallOptions) {
   const resolvedTimeoutMs = timeoutMs ?? 30000;
-  const token = await _getOAuthToken();
-  if (!token) throw new Error('OpenAI OAuth 토큰 없음');
+  const credential = await _getOAuthCredential();
+  if (!credential?.token) throw new Error('OpenAI OAuth 토큰 없음');
+  const token = credential.token;
 
-  const mode = String(process.env.OPENAI_OAUTH_ENDPOINT_MODE || process.env.OPENAI_OAUTH_API_MODE || 'responses').trim().toLowerCase();
+  const mode = String(process.env.OPENAI_OAUTH_ENDPOINT_MODE || process.env.OPENAI_OAUTH_API_MODE || 'codex_backend').trim().toLowerCase();
+  if (['codex_backend', 'chatgpt_backend', 'openai-codex', 'openai_codex'].includes(mode)) {
+    return _callOpenAICodexBackendResponses({ token, accountId: credential.accountId, model, temperature, systemPrompt, userPrompt, timeoutMs: resolvedTimeoutMs });
+  }
   if (mode === 'chat' || mode === 'chat.completions') {
     return _callOpenAIOAuthChat({ token, model, maxTokens, temperature, systemPrompt, userPrompt, timeoutMs: resolvedTimeoutMs });
   }
