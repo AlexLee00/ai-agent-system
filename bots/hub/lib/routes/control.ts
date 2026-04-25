@@ -768,16 +768,7 @@ export async function controlCallbackRoute(req: any, res: any) {
     const run = await getRun(parsed.runId);
     if (!run) return res.status(404).json({ ok: false, error: 'run_not_found' });
 
-    if (parsed.action === 'details') {
-      return res.json({
-        ok: true,
-        run_id: parsed.runId,
-        status: run.status,
-        details: run,
-      });
-    }
-
-    if (!['approve', 'reject', 'cancel'].includes(parsed.action)) {
+    if (!['approve', 'reject', 'cancel', 'details'].includes(parsed.action)) {
       return res.status(400).json({ ok: false, error: 'unsupported_callback_action' });
     }
 
@@ -788,6 +779,15 @@ export async function controlCallbackRoute(req: any, res: any) {
         error: trustedSource.error,
         run_id: run.id,
         status: run.status,
+      });
+    }
+
+    if (parsed.action === 'details') {
+      return res.json({
+        ok: true,
+        run_id: parsed.runId,
+        status: run.status,
+        details: run,
       });
     }
 

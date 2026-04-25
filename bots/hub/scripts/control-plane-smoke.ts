@@ -131,6 +131,7 @@ async function main() {
       );
 
       const approveCallbackData = mutatingPlanResp.body.approval.callback_data.approve;
+      const detailsCallbackData = mutatingPlanResp.body.approval.callback_data.details;
       const trustedCallbackHeaders = {
         'x-hub-control-callback-secret': smokeCallbackSecret,
       };
@@ -158,6 +159,18 @@ async function main() {
       assert(
         callbackWithoutSecretResp.body.error === 'approval_callback_untrusted_source',
         'expected callback trusted-source error',
+      );
+
+      const detailsWithoutSecretResp = await requestJson(baseUrl, smokeToken, '/hub/control/callback', {
+        callback_data: detailsCallbackData,
+      });
+      assert(
+        detailsWithoutSecretResp.status === 403,
+        `expected details callback without trusted header blocked 403, got ${detailsWithoutSecretResp.status}`,
+      );
+      assert(
+        detailsWithoutSecretResp.body.error === 'approval_callback_untrusted_source',
+        'expected details callback trusted-source error',
       );
 
       const wrongActorResp = await requestJson(baseUrl, smokeToken, '/hub/control/callback', {
