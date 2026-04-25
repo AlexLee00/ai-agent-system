@@ -8,7 +8,7 @@ const pgPool = require('../../../packages/core/lib/pg-pool') as {
 };
 const {
   readRecentAlertSnapshot,
-} = require('../../../packages/core/lib/openclaw-client') as {
+} = require('../../../packages/core/lib/hub-alarm-client') as {
   readRecentAlertSnapshot: (limit?: number) => any[];
 };
 
@@ -50,8 +50,7 @@ type ActiveMuteRow = {
   mute_until: string;
 };
 
-const LAUNCHD_SERVICES: LaunchdService[] = [
-  { id: 'ai.openclaw.gateway', name: 'OpenClaw 게이트웨이' },
+const CORE_LAUNCHD_SERVICES: LaunchdService[] = [
   { id: 'ai.orchestrator', name: '오케스트레이터' },
   { id: 'ai.reservation.monitor', name: '앤디(네이버모니터)' },
   { id: 'ai.kiosk.monitor', name: '지미(키오스크)' },
@@ -59,6 +58,10 @@ const LAUNCHD_SERVICES: LaunchdService[] = [
   { id: 'ai.invest.dev', name: '루나 Phase0 DEV' },
   { id: 'ai.claude.dexter', name: '덱스터' },
   { id: 'ai.claude.archer', name: '아처' },
+];
+
+const LEGACY_COMPAT_SERVICES: LaunchdService[] = [
+  { id: 'ai.openclaw.gateway', name: 'OpenClaw 게이트웨이 (legacy compat)' },
 ];
 
 function checkLaunchd(serviceId: string): LaunchdStatus {
@@ -140,9 +143,18 @@ export async function buildStatus(): Promise<string> {
     const lines = [`🤖 JayLabs 시스템 현황`, `📅 ${kstNow} KST`, ``];
 
     lines.push(`⚙️ 서비스`);
-    for (const service of LAUNCHD_SERVICES) {
+    for (const service of CORE_LAUNCHD_SERVICES) {
       const { running, pid } = checkLaunchd(service.id);
       const icon = running ? '✅' : '❌';
+      const pidText = pid ? ` (PID ${pid})` : '';
+      lines.push(`  ${icon} ${service.name}${pidText}`);
+    }
+    lines.push('');
+
+    lines.push(`🧩 Legacy 호환`);
+    for (const service of LEGACY_COMPAT_SERVICES) {
+      const { running, pid } = checkLaunchd(service.id);
+      const icon = running ? '✅' : '⚪';
       const pidText = pid ? ` (PID ${pid})` : '';
       lines.push(`  ${icon} ${service.name}${pidText}`);
     }

@@ -782,12 +782,12 @@ function buildSystemLogSummary(rawText = '') {
 
   const targets = target === 'all'
     ? [
-        { label: '제이 mainbot', out: path.join(os.homedir(), '.openclaw/logs/mainbot.log'), err: path.join(os.homedir(), '.openclaw/logs/mainbot-error.log') },
+        { label: '제이 runtime', out: path.join(os.homedir(), '.openclaw/logs/orchestrator.log'), err: path.join(os.homedir(), '.openclaw/logs/orchestrator-error.log') },
         { label: 'OpenClaw gateway', out: path.join(os.homedir(), '.openclaw/logs/gateway.log'), err: path.join(os.homedir(), '.openclaw/logs/gateway.err.log') },
       ]
     : target === 'gateway'
       ? [{ label: 'OpenClaw gateway', out: path.join(os.homedir(), '.openclaw/logs/gateway.log'), err: path.join(os.homedir(), '.openclaw/logs/gateway.err.log') }]
-      : [{ label: '제이 mainbot', out: path.join(os.homedir(), '.openclaw/logs/mainbot.log'), err: path.join(os.homedir(), '.openclaw/logs/mainbot-error.log') }];
+      : [{ label: '제이 runtime', out: path.join(os.homedir(), '.openclaw/logs/orchestrator.log'), err: path.join(os.homedir(), '.openclaw/logs/orchestrator-error.log') }];
 
   const lines = ['🧾 최근 시스템 로그'];
   for (const item of targets) {

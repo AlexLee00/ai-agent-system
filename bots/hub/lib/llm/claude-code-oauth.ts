@@ -13,6 +13,7 @@ export interface ClaudeCodeRequest {
 export function callClaudeCodeOAuth(req: ClaudeCodeRequest): Promise<LLMCallResponse> {
   const started = Date.now();
   const timeoutMs = req.timeoutMs ?? 60_000;
+  const claudeCodeBin = process.env.CLAUDE_CODE_BIN || 'claude';
 
   return new Promise((resolve) => {
     const args = [
@@ -26,7 +27,7 @@ export function callClaudeCodeOAuth(req: ClaudeCodeRequest): Promise<LLMCallResp
     if (req.jsonSchema) args.push('--json-schema', JSON.stringify(req.jsonSchema));
     if (req.maxBudgetUsd != null) args.push('--max-budget-usd', String(req.maxBudgetUsd));
 
-    const proc = spawn('claude', args, {
+    const proc = spawn(claudeCodeBin, args, {
       stdio: ['ignore', 'pipe', 'pipe'],
       env: { ...process.env, ANTHROPIC_API_KEY: '' },
     });

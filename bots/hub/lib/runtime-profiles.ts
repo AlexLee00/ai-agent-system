@@ -1,7 +1,7 @@
 type RuntimeProfileValue = string | number | boolean | string[] | undefined;
 
 type RuntimeProfile = {
-  openclaw_agent?: string;
+  runtime_agent?: string;
   claude_code_name?: string;
   claude_code_settings?: string;
   local_llm_base_url?: string;
@@ -34,13 +34,23 @@ const LOCAL_LLM_BASE_URL = 'http://127.0.0.1:11434';
 const GROQ_SCOUT_ROUTE = 'groq/llama-3.1-8b-instant';
 const GROQ_VERSATILE_ROUTE = 'groq/llama-3.3-70b-versatile';
 const OPENAI_FAST_ROUTE = 'openai-oauth/gpt-5.4-mini';
+const HUB_CLAUDE_CODE_SETTINGS_DIR = `${process.env.PROJECT_ROOT || '/Users/alexlee/projects/ai-agent-system'}/bots/hub/config/claude-code`;
+const CLAUDE_CODE_SETTINGS: Record<string, string> = {
+  'blog-writer': `${HUB_CLAUDE_CODE_SETTINGS_DIR}/blog-writer.settings.json`,
+  'claude-ops': `${HUB_CLAUDE_CODE_SETTINGS_DIR}/claude-ops.settings.json`,
+  'darwin-research': `${HUB_CLAUDE_CODE_SETTINGS_DIR}/darwin-research.settings.json`,
+  'justin-legal': `${HUB_CLAUDE_CODE_SETTINGS_DIR}/justin-legal.settings.json`,
+  'luna-ops': `${HUB_CLAUDE_CODE_SETTINGS_DIR}/luna-ops.settings.json`,
+  'sigma-data': `${HUB_CLAUDE_CODE_SETTINGS_DIR}/sigma-data.settings.json`,
+  'video-edi': `${HUB_CLAUDE_CODE_SETTINGS_DIR}/video-edi.settings.json`,
+};
 
 export const PROFILES: Record<string, TeamProfiles> = {
   "blog": {
     "default": {
-      "openclaw_agent": "blog-writer",
+      "runtime_agent": "blog-writer",
       "claude_code_name": "blog-writer",
-      "claude_code_settings": "/Users/alexlee/.openclaw/.claude/blog-writer.settings.json",
+      "claude_code_settings": CLAUDE_CODE_SETTINGS["blog-writer"],
       "local_llm_base_url": "http://127.0.0.1:11434",
       "primary_routes": [
         "claude-code/sonnet",
@@ -52,9 +62,9 @@ export const PROFILES: Record<string, TeamProfiles> = {
       ]
     },
     "writer": {
-      "openclaw_agent": "blog-writer",
+      "runtime_agent": "blog-writer",
       "claude_code_name": "blog-writer",
-      "claude_code_settings": "/Users/alexlee/.openclaw/.claude/blog-writer.settings.json",
+      "claude_code_settings": CLAUDE_CODE_SETTINGS["blog-writer"],
       "local_llm_base_url": "http://127.0.0.1:11434",
       "primary_routes": [
         "claude-code/sonnet",
@@ -66,9 +76,9 @@ export const PROFILES: Record<string, TeamProfiles> = {
       ]
     },
     "social": {
-      "openclaw_agent": "blog-writer",
+      "runtime_agent": "blog-writer",
       "claude_code_name": "blog-writer",
-      "claude_code_settings": "/Users/alexlee/.openclaw/.claude/blog-writer.settings.json",
+      "claude_code_settings": CLAUDE_CODE_SETTINGS["blog-writer"],
       "local_llm_base_url": "http://127.0.0.1:11434",
       "primary_routes": [
         "openai-oauth/gpt-5.4-mini",
@@ -79,9 +89,9 @@ export const PROFILES: Record<string, TeamProfiles> = {
       ]
     },
     "curriculum": {
-      "openclaw_agent": "blog-writer",
+      "runtime_agent": "blog-writer",
       "claude_code_name": "blog-writer",
-      "claude_code_settings": "/Users/alexlee/.openclaw/.claude/blog-writer.settings.json",
+      "claude_code_settings": CLAUDE_CODE_SETTINGS["blog-writer"],
       "local_llm_base_url": "http://127.0.0.1:11434",
       "primary_routes": [
         "claude-code/sonnet",
@@ -92,9 +102,9 @@ export const PROFILES: Record<string, TeamProfiles> = {
       ]
     },
     "image-local": {
-      "openclaw_agent": "blog-writer",
+      "runtime_agent": "blog-writer",
       "claude_code_name": "blog-writer",
-      "claude_code_settings": "/Users/alexlee/.openclaw/.claude/blog-writer.settings.json",
+      "claude_code_settings": CLAUDE_CODE_SETTINGS["blog-writer"],
       "local_llm_base_url": "http://127.0.0.1:11434",
       "local_image": true,
       "engine": "comfyui",
@@ -106,9 +116,9 @@ export const PROFILES: Record<string, TeamProfiles> = {
       "max_retries": 3
     },
     "gemma-topic": {
-      "openclaw_agent": "blog-writer",
+      "runtime_agent": "blog-writer",
       "claude_code_name": "blog-writer",
-      "claude_code_settings": "/Users/alexlee/.openclaw/.claude/blog-writer.settings.json",
+      "claude_code_settings": CLAUDE_CODE_SETTINGS["blog-writer"],
       "provider": "groq",
       "model": "llama-3.1-8b-instant",
       "timeout_ms": 10000,
@@ -118,9 +128,9 @@ export const PROFILES: Record<string, TeamProfiles> = {
   },
   "luna": {
     "default": {
-      "openclaw_agent": "luna-ops",
+      "runtime_agent": "luna-ops",
       "claude_code_name": "luna-ops",
-      "claude_code_settings": "/Users/alexlee/.openclaw/.claude/luna-ops.settings.json",
+      "claude_code_settings": CLAUDE_CODE_SETTINGS["luna-ops"],
       "local_llm_base_url": "http://127.0.0.1:11434",
       "primary_routes": [
         "openai-oauth/gpt-5.4",
@@ -132,9 +142,9 @@ export const PROFILES: Record<string, TeamProfiles> = {
       ]
     },
     "analyst": {
-      "openclaw_agent": "luna-ops",
+      "runtime_agent": "luna-ops",
       "claude_code_name": "luna-ops",
-      "claude_code_settings": "/Users/alexlee/.openclaw/.claude/luna-ops.settings.json",
+      "claude_code_settings": CLAUDE_CODE_SETTINGS["luna-ops"],
       "local_llm_base_url": "http://127.0.0.1:11434",
       "primary_routes": [
         "openai-oauth/gpt-5.4",
@@ -146,9 +156,9 @@ export const PROFILES: Record<string, TeamProfiles> = {
       ]
     },
     "validator": {
-      "openclaw_agent": "luna-ops",
+      "runtime_agent": "luna-ops",
       "claude_code_name": "luna-ops",
-      "claude_code_settings": "/Users/alexlee/.openclaw/.claude/luna-ops.settings.json",
+      "claude_code_settings": CLAUDE_CODE_SETTINGS["luna-ops"],
       "local_llm_base_url": "http://127.0.0.1:11434",
       "primary_routes": [
         "claude-code/sonnet",
@@ -160,9 +170,9 @@ export const PROFILES: Record<string, TeamProfiles> = {
       ]
     },
     "commander": {
-      "openclaw_agent": "luna-ops",
+      "runtime_agent": "luna-ops",
       "claude_code_name": "luna-ops",
-      "claude_code_settings": "/Users/alexlee/.openclaw/.claude/luna-ops.settings.json",
+      "claude_code_settings": CLAUDE_CODE_SETTINGS["luna-ops"],
       "local_llm_base_url": "http://127.0.0.1:11434",
       "primary_routes": [
         "openai-oauth/gpt-5.4",
@@ -174,9 +184,9 @@ export const PROFILES: Record<string, TeamProfiles> = {
     },
     // 🔴 CRITICAL — 실시간 매매 판단 경로, local 제외, 즉시 fallback
     "exit_decision": {
-      "openclaw_agent": "luna-ops",
+      "runtime_agent": "luna-ops",
       "claude_code_name": "luna-ops",
-      "claude_code_settings": "/Users/alexlee/.openclaw/.claude/luna-ops.settings.json",
+      "claude_code_settings": CLAUDE_CODE_SETTINGS["luna-ops"],
       "primary_routes": [
         GROQ_VERSATILE_ROUTE
       ],
@@ -188,9 +198,9 @@ export const PROFILES: Record<string, TeamProfiles> = {
       "critical": true
     },
     "portfolio_decision": {
-      "openclaw_agent": "luna-ops",
+      "runtime_agent": "luna-ops",
       "claude_code_name": "luna-ops",
-      "claude_code_settings": "/Users/alexlee/.openclaw/.claude/luna-ops.settings.json",
+      "claude_code_settings": CLAUDE_CODE_SETTINGS["luna-ops"],
       "primary_routes": [
         GROQ_VERSATILE_ROUTE
       ],
@@ -202,9 +212,9 @@ export const PROFILES: Record<string, TeamProfiles> = {
       "critical": true
     },
     "decision_rationale": {
-      "openclaw_agent": "luna-ops",
+      "runtime_agent": "luna-ops",
       "claude_code_name": "luna-ops",
-      "claude_code_settings": "/Users/alexlee/.openclaw/.claude/luna-ops.settings.json",
+      "claude_code_settings": CLAUDE_CODE_SETTINGS["luna-ops"],
       "primary_routes": [
         "claude-code/sonnet"
       ],
@@ -217,9 +227,9 @@ export const PROFILES: Record<string, TeamProfiles> = {
   },
   "darwin": {
     "default": {
-      "openclaw_agent": "darwin-research",
+      "runtime_agent": "darwin-research",
       "claude_code_name": "darwin-research",
-      "claude_code_settings": "/Users/alexlee/.openclaw/.claude/darwin-research.settings.json",
+      "claude_code_settings": CLAUDE_CODE_SETTINGS["darwin-research"],
       "local_llm_base_url": "http://127.0.0.1:11434",
       "primary_routes": [
         "claude-code/sonnet",
@@ -231,9 +241,9 @@ export const PROFILES: Record<string, TeamProfiles> = {
       ]
     },
     "research": {
-      "openclaw_agent": "darwin-research",
+      "runtime_agent": "darwin-research",
       "claude_code_name": "darwin-research",
-      "claude_code_settings": "/Users/alexlee/.openclaw/.claude/darwin-research.settings.json",
+      "claude_code_settings": CLAUDE_CODE_SETTINGS["darwin-research"],
       "local_llm_base_url": "http://127.0.0.1:11434",
       "primary_routes": [
         "claude-code/sonnet",
@@ -245,9 +255,9 @@ export const PROFILES: Record<string, TeamProfiles> = {
       ]
     },
     "synthesis": {
-      "openclaw_agent": "darwin-research",
+      "runtime_agent": "darwin-research",
       "claude_code_name": "darwin-research",
-      "claude_code_settings": "/Users/alexlee/.openclaw/.claude/darwin-research.settings.json",
+      "claude_code_settings": CLAUDE_CODE_SETTINGS["darwin-research"],
       "local_llm_base_url": "http://127.0.0.1:11434",
       "primary_routes": [
         "openai-oauth/gpt-5.4",
@@ -259,9 +269,9 @@ export const PROFILES: Record<string, TeamProfiles> = {
       ]
     },
     "review": {
-      "openclaw_agent": "darwin-research",
+      "runtime_agent": "darwin-research",
       "claude_code_name": "darwin-research",
-      "claude_code_settings": "/Users/alexlee/.openclaw/.claude/darwin-research.settings.json",
+      "claude_code_settings": CLAUDE_CODE_SETTINGS["darwin-research"],
       "local_llm_base_url": "http://127.0.0.1:11434",
       "primary_routes": [
         "claude-code/sonnet",
@@ -274,9 +284,9 @@ export const PROFILES: Record<string, TeamProfiles> = {
   },
   "justin": {
     "default": {
-      "openclaw_agent": "justin-legal",
+      "runtime_agent": "justin-legal",
       "claude_code_name": "justin-legal",
-      "claude_code_settings": "/Users/alexlee/.openclaw/.claude/justin-legal.settings.json",
+      "claude_code_settings": CLAUDE_CODE_SETTINGS["justin-legal"],
       "local_llm_base_url": "http://127.0.0.1:11434",
       "primary_routes": [
         "claude-code/sonnet",
@@ -288,9 +298,9 @@ export const PROFILES: Record<string, TeamProfiles> = {
       ]
     },
     "citation": {
-      "openclaw_agent": "justin-legal",
+      "runtime_agent": "justin-legal",
       "claude_code_name": "justin-legal",
-      "claude_code_settings": "/Users/alexlee/.openclaw/.claude/justin-legal.settings.json",
+      "claude_code_settings": CLAUDE_CODE_SETTINGS["justin-legal"],
       "local_llm_base_url": "http://127.0.0.1:11434",
       "primary_routes": [
         "claude-code/sonnet",
@@ -302,9 +312,9 @@ export const PROFILES: Record<string, TeamProfiles> = {
       ]
     },
     "analysis": {
-      "openclaw_agent": "justin-legal",
+      "runtime_agent": "justin-legal",
       "claude_code_name": "justin-legal",
-      "claude_code_settings": "/Users/alexlee/.openclaw/.claude/justin-legal.settings.json",
+      "claude_code_settings": CLAUDE_CODE_SETTINGS["justin-legal"],
       "local_llm_base_url": "http://127.0.0.1:11434",
       "primary_routes": [
         "openai-oauth/gpt-5.4",
@@ -315,9 +325,9 @@ export const PROFILES: Record<string, TeamProfiles> = {
       ]
     },
     "opinion": {
-      "openclaw_agent": "justin-legal",
+      "runtime_agent": "justin-legal",
       "claude_code_name": "justin-legal",
-      "claude_code_settings": "/Users/alexlee/.openclaw/.claude/justin-legal.settings.json",
+      "claude_code_settings": CLAUDE_CODE_SETTINGS["justin-legal"],
       "local_llm_base_url": "http://127.0.0.1:11434",
       "primary_routes": [
         "claude-code/sonnet",
@@ -331,9 +341,9 @@ export const PROFILES: Record<string, TeamProfiles> = {
   },
   "sigma": {
     "default": {
-      "openclaw_agent": "sigma-data",
+      "runtime_agent": "sigma-data",
       "claude_code_name": "sigma-data",
-      "claude_code_settings": "/Users/alexlee/.openclaw/.claude/sigma-data.settings.json",
+      "claude_code_settings": CLAUDE_CODE_SETTINGS["sigma-data"],
       "local_llm_base_url": "http://127.0.0.1:11434",
       "primary_routes": [
         GROQ_SCOUT_ROUTE,
@@ -345,9 +355,9 @@ export const PROFILES: Record<string, TeamProfiles> = {
       ]
     },
     "quality": {
-      "openclaw_agent": "sigma-data",
+      "runtime_agent": "sigma-data",
       "claude_code_name": "sigma-data",
-      "claude_code_settings": "/Users/alexlee/.openclaw/.claude/sigma-data.settings.json",
+      "claude_code_settings": CLAUDE_CODE_SETTINGS["sigma-data"],
       "local_llm_base_url": "http://127.0.0.1:11434",
       "primary_routes": [
         "claude-code/sonnet",
@@ -359,9 +369,9 @@ export const PROFILES: Record<string, TeamProfiles> = {
       ]
     },
     "experiment": {
-      "openclaw_agent": "sigma-data",
+      "runtime_agent": "sigma-data",
       "claude_code_name": "sigma-data",
-      "claude_code_settings": "/Users/alexlee/.openclaw/.claude/sigma-data.settings.json",
+      "claude_code_settings": CLAUDE_CODE_SETTINGS["sigma-data"],
       "local_llm_base_url": "http://127.0.0.1:11434",
       "primary_routes": [
         "openai-oauth/gpt-5.4",
@@ -373,9 +383,9 @@ export const PROFILES: Record<string, TeamProfiles> = {
       ]
     },
     "analysis": {
-      "openclaw_agent": "sigma-data",
+      "runtime_agent": "sigma-data",
       "claude_code_name": "sigma-data",
-      "claude_code_settings": "/Users/alexlee/.openclaw/.claude/sigma-data.settings.json",
+      "claude_code_settings": CLAUDE_CODE_SETTINGS["sigma-data"],
       "local_llm_base_url": "http://127.0.0.1:11434",
       "primary_routes": [
         "openai-oauth/gpt-5.4",
@@ -389,9 +399,9 @@ export const PROFILES: Record<string, TeamProfiles> = {
   },
   "claude": {
     "default": {
-      "openclaw_agent": "claude-ops",
+      "runtime_agent": "claude-ops",
       "claude_code_name": "claude-ops",
-      "claude_code_settings": "/Users/alexlee/.openclaw/.claude/claude-ops.settings.json",
+      "claude_code_settings": CLAUDE_CODE_SETTINGS["claude-ops"],
       "local_llm_base_url": "http://127.0.0.1:11434",
       "primary_routes": [
         GROQ_SCOUT_ROUTE,
@@ -403,9 +413,9 @@ export const PROFILES: Record<string, TeamProfiles> = {
       ]
     },
     "reporting": {
-      "openclaw_agent": "claude-ops",
+      "runtime_agent": "claude-ops",
       "claude_code_name": "claude-ops",
-      "claude_code_settings": "/Users/alexlee/.openclaw/.claude/claude-ops.settings.json",
+      "claude_code_settings": CLAUDE_CODE_SETTINGS["claude-ops"],
       "local_llm_base_url": "http://127.0.0.1:11434",
       "primary_routes": [
         "claude-code/sonnet",
@@ -417,9 +427,9 @@ export const PROFILES: Record<string, TeamProfiles> = {
       ]
     },
     "triage": {
-      "openclaw_agent": "claude-ops",
+      "runtime_agent": "claude-ops",
       "claude_code_name": "claude-ops",
-      "claude_code_settings": "/Users/alexlee/.openclaw/.claude/claude-ops.settings.json",
+      "claude_code_settings": CLAUDE_CODE_SETTINGS["claude-ops"],
       "local_llm_base_url": "http://127.0.0.1:11434",
       "primary_routes": [
         "openai-oauth/gpt-5.4",
@@ -431,9 +441,9 @@ export const PROFILES: Record<string, TeamProfiles> = {
       ]
     },
     "lead": {
-      "openclaw_agent": "claude-ops",
+      "runtime_agent": "claude-ops",
       "claude_code_name": "claude-ops",
-      "claude_code_settings": "/Users/alexlee/.openclaw/.claude/claude-ops.settings.json",
+      "claude_code_settings": CLAUDE_CODE_SETTINGS["claude-ops"],
       "local_llm_base_url": "http://127.0.0.1:11434",
       "primary_routes": [
         "openai-oauth/gpt-5.4",
@@ -447,9 +457,9 @@ export const PROFILES: Record<string, TeamProfiles> = {
   },
   "orchestrator": {
     "default": {
-      "openclaw_agent": "claude-ops",
+      "runtime_agent": "claude-ops",
       "claude_code_name": "claude-ops",
-      "claude_code_settings": "/Users/alexlee/.openclaw/.claude/claude-ops.settings.json",
+      "claude_code_settings": CLAUDE_CODE_SETTINGS["claude-ops"],
       "local_llm_base_url": "http://127.0.0.1:11434",
       "primary_routes": [
         "openai-oauth/gpt-5.4",
@@ -461,9 +471,9 @@ export const PROFILES: Record<string, TeamProfiles> = {
       ]
     },
     "intent": {
-      "openclaw_agent": "claude-ops",
+      "runtime_agent": "claude-ops",
       "claude_code_name": "claude-ops",
-      "claude_code_settings": "/Users/alexlee/.openclaw/.claude/claude-ops.settings.json",
+      "claude_code_settings": CLAUDE_CODE_SETTINGS["claude-ops"],
       "local_llm_base_url": "http://127.0.0.1:11434",
       "primary_routes": [
         "openai-oauth/gpt-5.4",
@@ -474,9 +484,9 @@ export const PROFILES: Record<string, TeamProfiles> = {
       ]
     },
     "fallback": {
-      "openclaw_agent": "claude-ops",
+      "runtime_agent": "claude-ops",
       "claude_code_name": "claude-ops",
-      "claude_code_settings": "/Users/alexlee/.openclaw/.claude/claude-ops.settings.json",
+      "claude_code_settings": CLAUDE_CODE_SETTINGS["claude-ops"],
       "local_llm_base_url": "http://127.0.0.1:11434",
       "primary_routes": [
         "claude-code/sonnet",
@@ -487,9 +497,9 @@ export const PROFILES: Record<string, TeamProfiles> = {
       ]
     },
     "gemma-insight": {
-      "openclaw_agent": "claude-ops",
+      "runtime_agent": "claude-ops",
       "claude_code_name": "claude-ops",
-      "claude_code_settings": "/Users/alexlee/.openclaw/.claude/claude-ops.settings.json",
+      "claude_code_settings": CLAUDE_CODE_SETTINGS["claude-ops"],
       "provider": "groq",
       "model": "llama-3.1-8b-instant",
       "timeout_ms": 10000,
@@ -499,9 +509,9 @@ export const PROFILES: Record<string, TeamProfiles> = {
   },
   "ska": {
     "default": {
-      "openclaw_agent": "claude-ops",
+      "runtime_agent": "claude-ops",
       "claude_code_name": "claude-ops",
-      "claude_code_settings": "/Users/alexlee/.openclaw/.claude/claude-ops.settings.json",
+      "claude_code_settings": CLAUDE_CODE_SETTINGS["claude-ops"],
       "local_llm_base_url": "http://127.0.0.1:11434",
       "primary_routes": [
         "openai-oauth/gpt-5.4",
@@ -514,9 +524,9 @@ export const PROFILES: Record<string, TeamProfiles> = {
       ]
     },
     "gemma-insight": {
-      "openclaw_agent": "claude-ops",
+      "runtime_agent": "claude-ops",
       "claude_code_name": "claude-ops",
-      "claude_code_settings": "/Users/alexlee/.openclaw/.claude/claude-ops.settings.json",
+      "claude_code_settings": CLAUDE_CODE_SETTINGS["claude-ops"],
       "provider": "groq",
       "model": "llama-3.1-8b-instant",
       "timeout_ms": 10000,
@@ -524,9 +534,9 @@ export const PROFILES: Record<string, TeamProfiles> = {
       "temperature": 0.7
     },
     "monitoring": {
-      "openclaw_agent": "claude-ops",
+      "runtime_agent": "claude-ops",
       "claude_code_name": "claude-ops",
-      "claude_code_settings": "/Users/alexlee/.openclaw/.claude/claude-ops.settings.json",
+      "claude_code_settings": CLAUDE_CODE_SETTINGS["claude-ops"],
       "local_llm_base_url": "http://127.0.0.1:11434",
       "primary_routes": [
         "openai-oauth/gpt-5.4",
@@ -538,9 +548,9 @@ export const PROFILES: Record<string, TeamProfiles> = {
       ]
     },
     "reporting": {
-      "openclaw_agent": "claude-ops",
+      "runtime_agent": "claude-ops",
       "claude_code_name": "claude-ops",
-      "claude_code_settings": "/Users/alexlee/.openclaw/.claude/claude-ops.settings.json",
+      "claude_code_settings": CLAUDE_CODE_SETTINGS["claude-ops"],
       "local_llm_base_url": "http://127.0.0.1:11434",
       "primary_routes": [
         "claude-code/sonnet",
@@ -554,9 +564,9 @@ export const PROFILES: Record<string, TeamProfiles> = {
   },
   "worker": {
     "default": {
-      "openclaw_agent": "claude-ops",
+      "runtime_agent": "claude-ops",
       "claude_code_name": "claude-ops",
-      "claude_code_settings": "/Users/alexlee/.openclaw/.claude/claude-ops.settings.json",
+      "claude_code_settings": CLAUDE_CODE_SETTINGS["claude-ops"],
       "local_llm_base_url": "http://127.0.0.1:11434",
       "primary_routes": [
         GROQ_SCOUT_ROUTE,
@@ -568,9 +578,9 @@ export const PROFILES: Record<string, TeamProfiles> = {
       ]
     },
     "assistant": {
-      "openclaw_agent": "claude-ops",
+      "runtime_agent": "claude-ops",
       "claude_code_name": "claude-ops",
-      "claude_code_settings": "/Users/alexlee/.openclaw/.claude/claude-ops.settings.json",
+      "claude_code_settings": CLAUDE_CODE_SETTINGS["claude-ops"],
       "local_llm_base_url": "http://127.0.0.1:11434",
       "primary_routes": [
         GROQ_SCOUT_ROUTE,
@@ -582,9 +592,9 @@ export const PROFILES: Record<string, TeamProfiles> = {
       ]
     },
     "intake": {
-      "openclaw_agent": "claude-ops",
+      "runtime_agent": "claude-ops",
       "claude_code_name": "claude-ops",
-      "claude_code_settings": "/Users/alexlee/.openclaw/.claude/claude-ops.settings.json",
+      "claude_code_settings": CLAUDE_CODE_SETTINGS["claude-ops"],
       "local_llm_base_url": "http://127.0.0.1:11434",
       "primary_routes": [
         "claude-code/sonnet",
@@ -597,9 +607,9 @@ export const PROFILES: Record<string, TeamProfiles> = {
   },
   "editor": {
     "default": {
-      "openclaw_agent": "video-edi",
+      "runtime_agent": "video-edi",
       "claude_code_name": "video-edi",
-      "claude_code_settings": "/Users/alexlee/.openclaw/.claude/video-edi.settings.json",
+      "claude_code_settings": CLAUDE_CODE_SETTINGS["video-edi"],
       "local_llm_base_url": "http://127.0.0.1:11434",
       "primary_routes": [
         GROQ_SCOUT_ROUTE,
@@ -613,9 +623,9 @@ export const PROFILES: Record<string, TeamProfiles> = {
   },
   "video": {
     "default": {
-      "openclaw_agent": "video-edi",
+      "runtime_agent": "video-edi",
       "claude_code_name": "video-edi",
-      "claude_code_settings": "/Users/alexlee/.openclaw/.claude/video-edi.settings.json",
+      "claude_code_settings": CLAUDE_CODE_SETTINGS["video-edi"],
       "local_llm_base_url": "http://127.0.0.1:11434",
       "primary_routes": [
         "openai-oauth/gpt-5.4",
@@ -628,9 +638,9 @@ export const PROFILES: Record<string, TeamProfiles> = {
       ]
     },
     "editing": {
-      "openclaw_agent": "video-edi",
+      "runtime_agent": "video-edi",
       "claude_code_name": "video-edi",
-      "claude_code_settings": "/Users/alexlee/.openclaw/.claude/video-edi.settings.json",
+      "claude_code_settings": CLAUDE_CODE_SETTINGS["video-edi"],
       "local_llm_base_url": "http://127.0.0.1:11434",
       "primary_routes": [
         "openai-oauth/gpt-5.4",
@@ -642,9 +652,9 @@ export const PROFILES: Record<string, TeamProfiles> = {
       ]
     },
     "analysis": {
-      "openclaw_agent": "video-edi",
+      "runtime_agent": "video-edi",
       "claude_code_name": "video-edi",
-      "claude_code_settings": "/Users/alexlee/.openclaw/.claude/video-edi.settings.json",
+      "claude_code_settings": CLAUDE_CODE_SETTINGS["video-edi"],
       "local_llm_base_url": "http://127.0.0.1:11434",
       "primary_routes": [
         "openai-oauth/gpt-5.4",
@@ -656,9 +666,9 @@ export const PROFILES: Record<string, TeamProfiles> = {
       ]
     },
     "stt": {
-      "openclaw_agent": "video-edi",
+      "runtime_agent": "video-edi",
       "claude_code_name": "video-edi",
-      "claude_code_settings": "/Users/alexlee/.openclaw/.claude/video-edi.settings.json",
+      "claude_code_settings": CLAUDE_CODE_SETTINGS["video-edi"],
       "local_llm_base_url": "http://127.0.0.1:11434",
       "primary_routes": [
         "openai/whisper-1"
@@ -669,9 +679,9 @@ export const PROFILES: Record<string, TeamProfiles> = {
       "direct_endpoint": "https://api.openai.com/v1/audio/transcriptions"
     },
     "review": {
-      "openclaw_agent": "video-edi",
+      "runtime_agent": "video-edi",
       "claude_code_name": "video-edi",
-      "claude_code_settings": "/Users/alexlee/.openclaw/.claude/video-edi.settings.json",
+      "claude_code_settings": CLAUDE_CODE_SETTINGS["video-edi"],
       "local_llm_base_url": "http://127.0.0.1:11434",
       "primary_routes": [
         "claude-code/sonnet",

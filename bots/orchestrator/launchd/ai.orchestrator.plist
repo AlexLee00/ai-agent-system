@@ -8,8 +8,6 @@
 		<string>/Users/alexlee</string>
 		<key>MODE</key>
 		<string>ops</string>
-		<key>MAINBOT_QUEUE_CONSUMER_ENABLED</key>
-		<string>false</string>
 		<key>NODE_ENV</key>
 		<string>production</string>
 		<key>PATH</key>

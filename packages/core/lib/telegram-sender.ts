@@ -26,8 +26,9 @@
 
 const fs   = require('fs');
 const path = require('path');
+const os = require('os');
 const env = require('./env');
-const openclawClient = require('./openclaw-client');
+const hubAlarmClient = require('./hub-alarm-client');
 const { publishToWebhook } = require('./reporting-hub');
 
 type TeamKey =
@@ -44,46 +45,127 @@ type TeamKey =
   | 'legal'
   | 'justin';
 
+type TelegramTopicId = string | number;
+
 type SecretPayload = {
   telegram_bot_token?: string;
   telegram_group_id?: string;
   telegram_chat_id?: string;
-  telegram_topic_ids?: Record<string, string>;
+  telegram_topic_ids?: Record<string, TelegramTopicId>;
+};
+
+type HubSecretStore = {
+  telegram?: {
+    bot_token?: string;
+    telegram_bot_token?: string;
+    group_id?: string | number;
+    telegram_group_id?: string | number;
+    chat_id?: string | number;
+    telegram_chat_id?: string | number;
+    topic_ids?: Record<string, string | number | null | undefined>;
+    telegram_topic_ids?: Record<string, string | number | null | undefined>;
+  };
+  reservation?: {
+    telegram_bot_token?: string;
+    telegram_group_id?: string | number;
+    telegram_chat_id?: string | number;
+    telegram_topic_ids?: Record<string, string | number | null | undefined>;
+  };
 };
 
 type SendOptions = {
   replyMarkup?: unknown;
   disableWebPagePreview?: boolean;
   chatId?: string;
-  threadId?: string | null;
+  threadId?: TelegramTopicId | null;
 };
 
 type BatchEntry = {
   lines: string[];
   timer: NodeJS.Timeout | null;
-  threadId: string | null;
+  threadId: TelegramTopicId | null;
 };
 
 // ── 시크릿 로드 (lazy, 캐싱) ─────────────────────────────────────────
 const SECRETS_PATH = path.join(__dirname, '../../../bots/reservation/secrets.json');
+const HUB_SECRETS_PATH = path.join(env.PROJECT_ROOT, 'bots', 'hub', 'secrets-store.json');
 let _cachedSecrets: SecretPayload | null = null;
+
+function _normalizeTopicIds(raw: Record<string, string | number | null | undefined> | undefined): Record<string, TelegramTopicId> {
+  const normalized: Record<string, TelegramTopicId> = {};
+  for (const [key, value] of Object.entries(raw || {})) {
+    if (value == null || value === '') continue;
+    normalized[key] = typeof value === 'number' ? value : String(value);
+  }
+  return normalized;
+}
+
+function _normalizeHubTelegramSecrets(store: HubSecretStore): SecretPayload {
+  const telegram = store?.telegram || {};
+  const reservation = store?.reservation || {};
+  return {
+    telegram_bot_token: String(
+      telegram.bot_token
+      || telegram.telegram_bot_token
+      || reservation.telegram_bot_token
+      || '',
+    ),
+    telegram_group_id: String(
+      telegram.group_id
+      || telegram.telegram_group_id
+      || reservation.telegram_group_id
+      || '',
+    ),
+    telegram_chat_id: String(
+      telegram.chat_id
+      || telegram.telegram_chat_id
+      || reservation.telegram_chat_id
+      || '',
+    ),
+    telegram_topic_ids: {
+      ..._normalizeTopicIds(reservation.telegram_topic_ids),
+      ..._normalizeTopicIds(telegram.topic_ids || telegram.telegram_topic_ids),
+    },
+  };
+}
 
 function _secrets(): SecretPayload {
   if (!_cachedSecrets) {
+    let legacySecrets: SecretPayload = {};
+    let hubSecrets: SecretPayload = {};
     try { _cachedSecrets = JSON.parse(fs.readFileSync(SECRETS_PATH, 'utf-8')) as SecretPayload; }
-    catch { _cachedSecrets = {}; }
+    catch { legacySecrets = {}; }
+    if (_cachedSecrets) legacySecrets = _cachedSecrets;
+
+    try {
+      hubSecrets = _normalizeHubTelegramSecrets(JSON.parse(fs.readFileSync(HUB_SECRETS_PATH, 'utf-8')) as HubSecretStore);
+    } catch { hubSecrets = {}; }
+
+    _cachedSecrets = {
+      ...legacySecrets,
+      ...hubSecrets,
+      telegram_topic_ids: {
+        ...(legacySecrets.telegram_topic_ids || {}),
+        ...(hubSecrets.telegram_topic_ids || {}),
+      },
+    };
   }
   return _cachedSecrets;
 }
 
-const _token  = () => _secrets().telegram_bot_token || process.env.TELEGRAM_BOT_TOKEN || '';
+const _token  = () => process.env.TELEGRAM_BOT_TOKEN || _secrets().telegram_bot_token || '';
 // Forum Topic 발송용 chat_id: 그룹 ID 우선, 없으면 개인 chat_id 폴백
-const _chatId = () => _secrets().telegram_group_id  || _secrets().telegram_chat_id || process.env.TELEGRAM_CHAT_ID || '';
+const _chatId = () => process.env.TELEGRAM_CHAT_ID || _secrets().telegram_group_id  || _secrets().telegram_chat_id || '';
 const _topics = () => _secrets().telegram_topic_ids || {};
 
 function _alertsDisabled(): boolean {
-  // Temporary global kill switch per operator request.
-  return true;
+  const raw = String(
+    process.env.TELEGRAM_ALERTS_DISABLED
+    || process.env.HUB_ALARMS_DISABLED
+    || process.env.ALERTS_DISABLED
+    || ''
+  ).trim().toLowerCase();
+  return ['1', 'true', 'yes', 'y', 'on'].includes(raw);
 }
 
 // ── Team → secrets.json 키 매핑 ──────────────────────────────────────
@@ -103,15 +185,21 @@ const TOPIC_KEYS = {
   'justin':      'legal',
 };
 
-function _getThreadId(team: string): string | null {
+function _getThreadId(team: string): TelegramTopicId | null {
   const key = TOPIC_KEYS[team as TeamKey] ?? 'general';
   const ids = _topics();
   return ids[key] ?? ids['general'] ?? null;
 }
 
 // ── Pending Queue ─────────────────────────────────────────────────────
-const WORKSPACE    = path.join(process.env.HOME || '/tmp', '.openclaw', 'workspace');
+const RUNTIME_ROOT = process.env.HUB_RUNTIME_DIR
+  || process.env.JAY_RUNTIME_DIR
+  || path.join(os.homedir(), '.ai-agent-system', 'hub');
+const WORKSPACE    = path.join(RUNTIME_ROOT, 'telegram');
 const PENDING_FILE = path.join(WORKSPACE, 'pending-telegrams.jsonl');
+const LEGACY_WORKSPACE = process.env.OPENCLAW_WORKSPACE
+  || path.join(process.env.HOME || '/tmp', '.openclaw', 'workspace');
+const LEGACY_PENDING_FILE = path.join(LEGACY_WORKSPACE, 'pending-telegrams.jsonl');
 const TG_MAX       = 4096 - 20;  // Telegram 최대 길이 여유 확보
 const MOBILE_DIVIDER = '──────────';
 
@@ -145,7 +233,7 @@ const PENDING_MAX_QUEUE = 50;               // 큐 최대 50건
 
 function _savePending(team: string, message: string): void {
   try {
-    if (!fs.existsSync(WORKSPACE)) return;
+    fs.mkdirSync(WORKSPACE, { recursive: true });
     // 큐 크기 제한
     if (fs.existsSync(PENDING_FILE)) {
       const lines = fs.readFileSync(PENDING_FILE, 'utf-8').split('\n').filter(Boolean);
@@ -157,6 +245,31 @@ function _savePending(team: string, message: string): void {
     const entry = JSON.stringify({ team, message, savedAt: new Date().toISOString(), retries: 0 });
     fs.appendFileSync(PENDING_FILE, entry + '\n', 'utf-8');
   } catch { /* 유실보다 무시가 낫다 */ }
+}
+
+function _migrateLegacyPendingQueue(): void {
+  try {
+    if (!fs.existsSync(LEGACY_PENDING_FILE)) return;
+    if (path.resolve(LEGACY_PENDING_FILE) === path.resolve(PENDING_FILE)) return;
+
+    fs.mkdirSync(WORKSPACE, { recursive: true });
+    if (!fs.existsSync(PENDING_FILE)) {
+      fs.renameSync(LEGACY_PENDING_FILE, PENDING_FILE);
+      return;
+    }
+
+    const legacyLines = fs.readFileSync(LEGACY_PENDING_FILE, 'utf-8');
+    if (legacyLines.trim()) {
+      const current = fs.readFileSync(PENDING_FILE, 'utf-8');
+      const merged = current.endsWith('\n') || current.length === 0
+        ? `${current}${legacyLines}`
+        : `${current}\n${legacyLines}`;
+      fs.writeFileSync(PENDING_FILE, merged, 'utf-8');
+    }
+    fs.unlinkSync(LEGACY_PENDING_FILE);
+  } catch (error: any) {
+    console.warn(`⚠️ [telegram-sender] legacy pending queue migration 실패: ${error?.message || error}`);
+  }
 }
 
 // ── 파일명 누출 방어 (BUG-006) ────────────────────────────────────────
@@ -177,6 +290,15 @@ function _isUrgent(message: string): boolean {
 // ── Throttle 설정 ─────────────────────────────────────────────────────
 const MIN_INTERVAL_MS = 1500;  // 텔레그램 초당 제한 대응 (최대 ~30msg/sec, 여유 확보)
 let _lastSentAt = 0;
+let _lastSendError = '';
+
+function _setLastSendError(message: string): void {
+  _lastSendError = String(message || '').slice(0, 400);
+}
+
+export function getLastTelegramSendError(): string {
+  return _lastSendError;
+}
 
 // ── 배치 설정 ─────────────────────────────────────────────────────────
 const BATCH_WINDOW_MS = 2000;  // 동일 팀 메시지를 2초 내 합치기
@@ -187,10 +309,14 @@ const _batchBuffer = new Map<string, BatchEntry>();
 /**
  * @returns {{ ok: boolean, code: number, retryAfter: number }}
  */
-async function _trySend(text: string, threadId: string | null, options: SendOptions = {}) {
+async function _trySend(text: string, threadId: TelegramTopicId | null, options: SendOptions = {}) {
   const token  = _token();
   const chatId = options.chatId || _chatId();
-  if (!token || !chatId) return { ok: false, code: 0, retryAfter: 0 };
+  _setLastSendError('');
+  if (!token || !chatId) {
+    _setLastSendError('telegram_credentials_missing');
+    return { ok: false, code: 0, retryAfter: 0 };
+  }
 
   const body: Record<string, unknown> = { chat_id: chatId, text, parse_mode: 'HTML' };
   if (threadId) body.message_thread_id = threadId;
@@ -213,8 +339,10 @@ async function _trySend(text: string, threadId: string | null, options: SendOpti
 
     // 429: Rate Limit — retry_after(초) 준수
     const retryAfter = code === 429 ? (data.parameters?.retry_after ?? 5) : 0;
+    _setLastSendError(data.description || data.error_code || `telegram_api_error_${code}`);
     return { ok: false, code, retryAfter };
-  } catch {
+  } catch (error: any) {
+    _setLastSendError(error?.message || 'telegram_fetch_failed');
     return { ok: false, code: 0, retryAfter: 0 };
   }
 }
@@ -225,7 +353,7 @@ async function _trySend(text: string, threadId: string | null, options: SendOpti
  * 429 발생 시 retry_after 준수, 기타 실패 시 3초 간격 재시도.
  * @returns {Promise<boolean>}
  */
-async function _doSend(text: string, threadId: string | null, options: SendOptions = {}): Promise<boolean> {
+async function _doSend(text: string, threadId: TelegramTopicId | null, options: SendOptions = {}): Promise<boolean> {
   // Throttle: 마지막 발송으로부터 MIN_INTERVAL_MS 확보
   const now  = Date.now();
   const wait = _lastSentAt + MIN_INTERVAL_MS - now;
@@ -236,6 +364,16 @@ async function _doSend(text: string, threadId: string | null, options: SendOptio
     _lastSentAt = Date.now();
     const { ok, code, retryAfter } = await _trySend(text, threadId, options);
     if (ok) return true;
+
+    if (
+      code === 400
+      && threadId != null
+      && /message thread not found/i.test(_lastSendError)
+    ) {
+      console.warn(`⚠️ [telegram-sender] topic id 무효 — 그룹 루트로 재시도 (thread=${threadId})`);
+      const retryWithoutThread = await _trySend(text, null, options);
+      if (retryWithoutThread.ok) return true;
+    }
 
     if (code === 429 && retryAfter > 0) {
       console.warn(`⚠️ [telegram-sender] Rate Limit (429) — ${retryAfter}초 대기 후 재시도 (${i}/${MAX_TRIES})`);
@@ -324,6 +462,31 @@ export async function send(team: string, message: string): Promise<boolean> {
   buf.timer = setTimeout(() => _flushBatch(team), BATCH_WINDOW_MS);
 
   return true;  // 배치 버퍼 추가 성공
+}
+
+/**
+ * Hub /hub/alarm 전용 직접 발송 경로.
+ *
+ * OPS 모드의 일반 send()는 reporting-hub → postAlarm()을 거치므로 Hub alarm route에서
+ * 호출하면 재귀가 생긴다. 이 함수는 Hub가 canonical alarm transport가 된 뒤에도
+ * OpenClaw fallback 없이 Telegram topic으로 바로 전달하기 위한 escape hatch다.
+ */
+export async function sendFromHubAlarm(team: string, message: string, options: SendOptions = {}): Promise<boolean> {
+  if (_alertsDisabled()) return false;
+  const normalized = _normalizeForMobile(message);
+
+  if (_isFilenameLeak(normalized)) {
+    console.warn(`🚫 [telegram-sender] Hub alarm 파일명 누출 차단 (team=${team}): ${normalized.slice(0, 60)}`);
+    return false;
+  }
+
+  const threadId = options.threadId ?? _getThreadId(team);
+  const text = normalized.slice(0, TG_MAX);
+  const ok = await _doSend(text, threadId, options);
+  if (ok) return true;
+  console.warn(`⚠️ [telegram-sender] Hub alarm 직접 발송 실패 — 대기큐 저장 (team=${team})`);
+  _savePending(team, normalized);
+  return false;
 }
 
 async function sendBuffered(team: string, message: string): Promise<boolean> {
@@ -450,11 +613,20 @@ export async function sendCritical(team: string, message: string): Promise<boole
   return results.every(Boolean);
 }
 
+export async function sendCriticalFromHubAlarm(team: string, message: string): Promise<boolean> {
+  const full = `🚨 [${team}] CRITICAL\n${message}`;
+  const tasks = [sendFromHubAlarm('emergency', full)];
+  if (team !== 'emergency') tasks.push(sendFromHubAlarm(team, `🚨 CRITICAL\n${message}`));
+  const results = await Promise.all(tasks);
+  return results.every(Boolean);
+}
+
 /**
  * 대기큐 재발송 (재시작 시 호출)
  * 구형 포맷 { message, chatId } 와 신형 포맷 { team, message } 모두 처리.
  */
 export async function flushPending() {
+  _migrateLegacyPendingQueue();
   if (!fs.existsSync(PENDING_FILE)) return;
 
   let lines: string[];
@@ -495,4 +667,20 @@ export async function flushPending() {
     if (!remaining.length) fs.unlinkSync(PENDING_FILE);
     else fs.writeFileSync(PENDING_FILE, remaining.join('\n') + '\n', 'utf-8');
   } catch { /* 무시 */ }
+}
+
+export function _testOnly_getPendingQueuePaths(): {
+  runtimeRoot: string;
+  workspace: string;
+  pendingFile: string;
+  legacyWorkspace: string;
+  legacyPendingFile: string;
+} {
+  return {
+    runtimeRoot: RUNTIME_ROOT,
+    workspace: WORKSPACE,
+    pendingFile: PENDING_FILE,
+    legacyWorkspace: LEGACY_WORKSPACE,
+    legacyPendingFile: LEGACY_PENDING_FILE,
+  };
 }

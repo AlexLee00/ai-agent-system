@@ -88,7 +88,7 @@ async function collectViaHub() {
   const [lunaPositions, lunaTrades, claudeEvents, skaReservations, opsErrors] = await Promise.all([
     hub.queryOpsDb("select count(*)::int as open_positions from positions where amount > 0", 'investment'),
     hub.queryOpsDb("select count(*)::int as trades_today from trades where executed_at::date = (now() at time zone 'Asia/Seoul')::date", 'investment'),
-    hub.queryOpsDb("select count(*)::int as system_events_today from mainbot_queue where created_at::date = (now() at time zone 'Asia/Seoul')::date", 'claude'),
+    hub.queryOpsDb("select count(*)::int as system_events_today from bot_commands where created_at::date = (now() at time zone 'Asia/Seoul')::date", 'claude'),
     hub.queryOpsDb("select count(*)::int as reservations_today from reservations where date = to_char(now() at time zone 'Asia/Seoul', 'YYYY-MM-DD')", 'reservation'),
     hub.fetchOpsErrors(180),
   ]);

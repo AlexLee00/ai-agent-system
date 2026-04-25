@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import yaml from 'js-yaml';
 import * as env from '../../../../packages/core/lib/env.js';
+import { getProviderRecord } from '../oauth/token-store';
 
 const CONFIG_YAML = path.join(env.PROJECT_ROOT, 'bots/investment/config.yaml');
 const SECRETS_STORE = path.join(env.PROJECT_ROOT, 'bots/hub/secrets-store.json');
@@ -182,6 +183,18 @@ const CATEGORY_HANDLERS: Record<string, CategoryHandler> = {
   },
 
   openai_oauth: () => {
+    const imported = getProviderRecord('openai-codex-oauth');
+    const importedToken = imported?.token || {};
+    if (typeof importedToken.access_token === 'string' && importedToken.access_token) {
+      return {
+        access_token: importedToken.access_token,
+        model: imported?.metadata?.model || 'gpt-5.4',
+        provider: imported?.metadata?.provider_name || 'openai-codex',
+        source: imported?.metadata?.source || 'hub_oauth_token_store',
+        expires_at: importedToken.expires_at || '',
+      };
+    }
+
     const store = loadSecretsStore();
     const d = store?.openai_oauth || {};
     return {

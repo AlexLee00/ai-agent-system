@@ -6,10 +6,9 @@
 
 제이(Jay)는 AI 봇 시스템의 총괄 오케스트레이터.
 - **OpenClaw 에이전트**: 사장님과 Telegram 자연어 대화
-- **orchestrator runtime**: OpenClaw alert/webhook fanout과 legacy `mainbot_queue` 소비를 함께 맡는 백그라운드 프로세스
-  - legacy queue consumer는 `MAINBOT_QUEUE_CONSUMER_ENABLED=false`로 단계적 비활성화 가능
-  - 2026-04-14 기준 OPS live는 `MAINBOT_QUEUE_CONSUMER_ENABLED=false` 상태로 정상 운영 중
-  - 해당 설정에서는 queue polling뿐 아니라 queue-specific cleanup도 같이 건너뜀
+- **orchestrator runtime**: Jay housekeeping loop를 맡는 백그라운드 프로세스
+  - `mainbot_queue` 소비는 런타임에서 은퇴했고, 현재 alert fanout은 Hub alarm / Telegram topic 경로가 담당
+  - 남은 역할은 Telegram pending flush, 아침 브리핑, mute/confirm/bot_commands cleanup, 팀장 identity check
   - legacy queue publish도 `MAINBOT_QUEUE_PUBLISH_ENABLED=true`일 때만 opt-in으로 허용
   - DB live table도 같은 날 read-only compatibility view 구조로 freeze 적용됨
 - **팀장 지휘**: bot_commands DB를 통해 스카/루나/클로드팀에 명령 전달
@@ -17,9 +16,8 @@
 ## 아키텍처
 
 ```
-사장님(Telegram) → OpenClaw(Jay/Gemini) → bot_commands → 팀장 커맨더
-                                        ← alert publisher / webhook ← 팀봇 알람
-                                        ← mainbot_queue (legacy)    ← 구형 producer
+사장님(Telegram) → Jay/Hub control plane → bot_commands → 팀장 커맨더
+                                      ← Hub alarm / Telegram topics ← 팀봇 알람
 ```
 
 ## 핵심 파일
@@ -28,8 +26,9 @@
 |------|------|
 | `src/orchestrator.ts` | 현재 source of truth 엔트리 |
 | `dist/ts-runtime/bots/orchestrator/src/orchestrator.js` | 실제 launchd 런타임 엔트리 |
-| `src/mainbot.js` | 호환 alias 엔트리 |
-| `src/router.js` | 인텐트 → 핸들러 매핑 + bot_commands + legacy queue 소비 |
+| `src/jay-runtime.ts` | Jay housekeeping loop |
+| `src/mainbot.js` | 은퇴한 호환 alias 엔트리 |
+| `src/router.js` | 인텐트 → 핸들러 매핑 + bot_commands |
 | `src/filter.js` | 무음·중복·야간 필터 |
 | `src/dashboard.js` | /status 빌더 |
 
@@ -88,8 +87,8 @@
 ## launchd
 
 - `ai.orchestrator` — orchestrator runtime KeepAlive, 2초 폴링
-  - 필요 시 `MAINBOT_QUEUE_CONSUMER_ENABLED=false`로 queue polling만 끄고 다른 loop는 유지 가능
-  - 현재 OPS live trial도 같은 설정으로 정상 통과
+  - `mainbot_queue` polling은 은퇴 완료. Jay runtime housekeeping만 수행
+  - runtime lock은 OpenClaw workspace가 아니라 Jay runtime dir을 사용
 - 재시작: `launchctl kickstart -k gui/$(id -u)/ai.orchestrator`
 
 ## token_usage 테이블 (claude-team.db)

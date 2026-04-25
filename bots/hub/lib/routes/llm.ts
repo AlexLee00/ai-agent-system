@@ -3,47 +3,57 @@ const { callClaudeCodeOAuth } = require('../llm/claude-code-oauth');
 const { callGroqFallback } = require('../llm/groq-fallback');
 const { callWithFallback } = require('../llm/unified-caller');
 const { loadGroqAccounts } = require('../llm/secrets-loader');
+const { getLlmAdmissionState } = require('../llm/admission-control');
+const { parseLlmCallPayload } = require('../llm/request-schema');
 const { getAllCircuitStatuses, resetCircuit } = require('../../../../packages/core/lib/local-circuit-breaker');
 
-const VALID_ABSTRACT_MODELS = new Set(['anthropic_haiku', 'anthropic_sonnet', 'anthropic_opus']);
-
 // POST /hub/llm/call — Primary(Claude Code OAuth) + Fallback(Groq) 체인
-export async function llmCallRoute(req: any, res: any) {
-  const body = req.body ?? {};
-
-  if (!body.prompt || typeof body.prompt !== 'string') {
-    return res.status(400).json({ error: 'prompt (string) required' });
+export async function llmCallRoute(req, res) {
+  const context = req.hubRequestContext || {};
+  const parsed = parseLlmCallPayload(req.body);
+  if (!parsed.ok) {
+    return res.status(400).json({
+      ok: false,
+      error: parsed.error,
+      traceId: context.traceId || null,
+    });
   }
-  if (!VALID_ABSTRACT_MODELS.has(body.abstractModel)) {
-    return res.status(400).json({ error: 'abstractModel required: anthropic_haiku | anthropic_sonnet | anthropic_opus' });
-  }
+  const body = parsed.data;
+  const normalizedRequest = {
+    ...body,
+    callerTeam: body.callerTeam || context.callerTeam || undefined,
+    agent: body.agent || context.agent || undefined,
+    urgency: body.urgency || context.priority || undefined,
+    traceId: context.traceId || undefined,
+  };
 
   try {
-    const resp = await callWithFallback({
-      prompt: body.prompt,
-      abstractModel: body.abstractModel,
-      systemPrompt: body.systemPrompt,
-      jsonSchema: body.jsonSchema,
-      timeoutMs: body.timeoutMs ?? 60_000,
-      maxBudgetUsd: body.maxBudgetUsd,
-      agent: body.agent,
-      callerTeam: body.callerTeam,
-      urgency: body.urgency,
-      taskType: body.taskType,
-    });
+    const resp = await callWithFallback(normalizedRequest);
 
-    logRouting(resp, body).catch((err: Error) =>
+    logRouting(resp, normalizedRequest).catch((err) =>
       console.error('[llm] routing log 기록 실패:', err.message)
     );
 
-    return res.json(resp);
-  } catch (err: any) {
-    return res.status(500).json({ ok: false, provider: 'failed', durationMs: 0, error: err.message });
+    return res.json({
+      ...resp,
+      traceId: context.traceId || null,
+      admission: {
+        queued: Boolean(res.locals?.llmAdmissionQueued),
+      },
+    });
+  } catch (err) {
+    return res.status(500).json({
+      ok: false,
+      provider: 'failed',
+      durationMs: 0,
+      error: err.message,
+      traceId: context.traceId || null,
+    });
   }
 }
 
 // POST /hub/llm/oauth — Claude Code OAuth 단독 호출
-export async function llmOAuthRoute(req: any, res: any) {
+export async function llmOAuthRoute(req, res) {
   const body = req.body ?? {};
   if (!body.prompt || typeof body.prompt !== 'string') {
     return res.status(400).json({ error: 'prompt (string) required' });
@@ -59,13 +69,13 @@ export async function llmOAuthRoute(req: any, res: any) {
       maxBudgetUsd: body.maxBudgetUsd,
     });
     return res.json(resp);
-  } catch (err: any) {
+  } catch (err) {
     return res.status(500).json({ ok: false, provider: 'failed', durationMs: 0, error: err.message });
   }
 }
 
 // POST /hub/llm/groq — Groq 단독 호출
-export async function llmGroqRoute(req: any, res: any) {
+export async function llmGroqRoute(req, res) {
   const body = req.body ?? {};
   if (!body.prompt || typeof body.prompt !== 'string') {
     return res.status(400).json({ error: 'prompt (string) required' });
@@ -80,18 +90,18 @@ export async function llmGroqRoute(req: any, res: any) {
       temperature: body.temperature,
     });
     return res.json(resp);
-  } catch (err: any) {
+  } catch (err) {
     return res.status(500).json({ ok: false, provider: 'failed', durationMs: 0, error: err.message });
   }
 }
 
 // GET /hub/llm/stats — provider × team × agent 다차원 집계
-export async function llmStatsRoute(req: any, res: any) {
+export async function llmStatsRoute(req, res) {
   const hours = Math.min(Math.max(Number(req.query?.hours ?? 24), 1), 168);
-  const team = req.query?.team as string | undefined;
+  const team = req.query?.team;
 
   const teamFilter = team ? 'AND caller_team = $2' : '';
-  const params: any[] = team ? [hours, team] : [hours];
+  const params = team ? [hours, team] : [hours];
 
   try {
     const [summaryRes, byAgentRes, byHourRes] = await Promise.all([
@@ -137,9 +147,9 @@ export async function llmStatsRoute(req: any, res: any) {
     ]);
 
     const summary = summaryRes;
-    const totalCalls = summary.reduce((s: number, r: any) => s + Number(r.total_calls), 0);
-    const totalCost = summary.reduce((s: number, r: any) => s + Number(r.total_cost_usd || 0), 0);
-    const totalSuccess = summary.reduce((s: number, r: any) => s + Number(r.success_count), 0);
+    const totalCalls = summary.reduce((s, r) => s + Number(r.total_calls), 0);
+    const totalCost = summary.reduce((s, r) => s + Number(r.total_cost_usd || 0), 0);
+    const totalSuccess = summary.reduce((s, r) => s + Number(r.success_count), 0);
 
     return res.json({
       ok: true,
@@ -155,8 +165,9 @@ export async function llmStatsRoute(req: any, res: any) {
         success_rate: totalCalls > 0 ? totalSuccess / totalCalls : 0,
         provider_share: computeProviderShare(summary),
       },
+      admission: getLlmAdmissionState(),
     });
-  } catch (err: any) {
+  } catch (err) {
     return res.json({
       ok: true,
       hours,
@@ -166,17 +177,18 @@ export async function llmStatsRoute(req: any, res: any) {
       by_agent: [],
       by_hour: [],
       totals: { total_calls: 0, total_cost_usd: 0, success_rate: 0, provider_share: {} },
+      admission: getLlmAdmissionState(),
       note: err.message.includes('does not exist') ? 'llm_routing_log 테이블 미생성 — 마이그레이션 필요' : undefined,
     });
   }
 }
 
 // GET /hub/llm/load-tests — 최근 부하 테스트 결과 조회
-export async function llmLoadTestsRoute(req: any, res: any) {
+export async function llmLoadTestsRoute(req, res) {
   const limit = Math.min(Math.max(Number(req.query?.limit ?? 20), 1), 100);
-  const scenario = req.query?.scenario as string | undefined;
+  const scenario = req.query?.scenario;
   const whereClause = scenario ? 'WHERE scenario = $1' : '';
-  const params: any[] = scenario ? [scenario, limit] : [limit];
+  const params = scenario ? [scenario, limit] : [limit];
 
   try {
     const [rows, scenarioRows] = await Promise.all([
@@ -215,11 +227,11 @@ export async function llmLoadTestsRoute(req: any, res: any) {
       `),
     ]);
 
-    const normalizedRows = rows.map((row: any) => ({
+    const normalizedRows = rows.map((row) => ({
       ...row,
       notes: parseLoadTestNotes(row.notes),
     }));
-    const scenarioSummary = scenarioRows.map((row: any) => ({
+    const scenarioSummary = scenarioRows.map((row) => ({
       ...row,
       notes: parseLoadTestNotes(row.notes),
     }));
@@ -232,7 +244,7 @@ export async function llmLoadTestsRoute(req: any, res: any) {
       scenario_summary: scenarioSummary,
       results: normalizedRows,
     });
-  } catch (err: any) {
+  } catch (err) {
     return res.json({
       ok: true,
       count: 0,
@@ -246,9 +258,9 @@ export async function llmLoadTestsRoute(req: any, res: any) {
 }
 
 // GET /hub/llm/circuit — local Ollama circuit breaker 상태 조회 + 리셋
-export async function llmCircuitRoute(req: any, res: any) {
+export async function llmCircuitRoute(req, res) {
   if (req.method === 'DELETE') {
-    const target = req.query?.target as string | undefined;
+    const target = req.query?.target;
     if (target) {
       resetCircuit(decodeURIComponent(target));
       return res.json({ ok: true, reset: target });
@@ -257,21 +269,21 @@ export async function llmCircuitRoute(req: any, res: any) {
   }
 
   const statuses = getAllCircuitStatuses();
-  const hasOpen = Object.values(statuses).some((s: any) => s.state === 'OPEN' || s.state === 'HALF_OPEN');
+  const hasOpen = Object.values(statuses).some((s) => s.state === 'OPEN' || s.state === 'HALF_OPEN');
   return res.json({ ok: true, local_llm_circuits: statuses, any_open: hasOpen });
 }
 
-function computeProviderShare(rows: any[]): Record<string, number> {
-  const total = rows.reduce((s: number, r: any) => s + Number(r.total_calls), 0);
+function computeProviderShare(rows) {
+  const total = rows.reduce((s, r) => s + Number(r.total_calls), 0);
   if (total === 0) return {};
-  const share: Record<string, number> = {};
+  const share = {};
   for (const r of rows) {
     share[r.provider] = (share[r.provider] || 0) + Number(r.total_calls) / total;
   }
   return share;
 }
 
-function parseLoadTestNotes(notes: any): any {
+function parseLoadTestNotes(notes) {
   if (!notes || typeof notes !== 'string') return notes;
   try {
     return JSON.parse(notes);
@@ -280,7 +292,7 @@ function parseLoadTestNotes(notes: any): any {
   }
 }
 
-async function logRouting(resp: any, body: any): Promise<void> {
+async function logRouting(resp, body) {
   await pgPool.run('public', `
     INSERT INTO llm_routing_log (
       created_at, provider, agent, caller_team, abstract_model,
@@ -296,6 +308,6 @@ async function logRouting(resp: any, body: any): Promise<void> {
     resp.totalCostUsd ?? 0,
     resp.fallbackCount ?? 0,
     resp.error ?? null,
-    resp.sessionId ?? null,
+    resp.sessionId ?? body.traceId ?? null,
   ]);
 }

@@ -8,7 +8,7 @@ const path = require('path');
 const HOME = os.homedir();
 
 const LOG_TARGETS = [
-  { team: 'orchestrator', bot: 'jay', label: '제이 mainbot', path: path.join(HOME, '.openclaw', 'logs', 'mainbot-error.log') },
+  { team: 'orchestrator', bot: 'jay', label: '제이 runtime', path: path.join(HOME, '.openclaw', 'logs', 'orchestrator-error.log') },
   { team: 'orchestrator', bot: 'openclaw', label: 'OpenClaw gateway', path: path.join(HOME, '.openclaw', 'logs', 'gateway.err.log') },
   { team: 'reservation', bot: 'ska', label: '스카 commander', path: path.join(HOME, '.openclaw', 'workspace', 'logs', 'ska-commander-error.log') },
   { team: 'reservation', bot: 'naver', label: '네이버 ops', path: '/tmp/naver-ops-mode.log' },

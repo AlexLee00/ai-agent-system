@@ -6,9 +6,15 @@
   "main": "src/hub.ts",
   "scripts": {
     "start": "tsx src/hub.ts",
+    "alarm:digest-worker": "tsx scripts/alarm-digest-worker.ts",
     "local-llm-policy": "tsx scripts/local-llm-policy-report.ts",
-    "test": "node scripts/run-tests.js",
-    "test:secrets-meta": "node --test __tests__/secrets-meta.node.test.js"
+    "inventory:hub-alarm": "tsx scripts/generate-hub-alarm-inventory.ts",
+    "inventory:openclaw": "tsx scripts/generate-openclaw-inventory.ts",
+    "test": "node scripts/run-tests.js all",
+    "test:unit": "node scripts/run-tests.js unit",
+    "test:secrets-meta": "node --test __tests__/secrets-meta.node.test.js",
+    "check:runtime": "node scripts/run-tests.js runtime",
+    "check:l5": "node scripts/run-tests.js all && node scripts/run-tests.js runtime && tsx scripts/generate-hub-alarm-inventory.ts"
   },
   "dependencies": {
     "express": "^4.21.2",

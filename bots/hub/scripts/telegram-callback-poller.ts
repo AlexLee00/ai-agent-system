@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import env from '../../../packages/core/lib/env.legacy.js';
+import { resolveHubCallbackTarget } from '../lib/telegram/callback-router';
 
 const STORE_PATH = path.join(env.PROJECT_ROOT, 'bots', 'hub', 'secrets-store.json');
 const OFFSET_FILE = '/tmp/telegram-callback-offset.json';
@@ -48,6 +49,10 @@ function getBotToken(): string {
 
 function getHubToken(): string {
   return String(process.env.HUB_AUTH_TOKEN || '').trim();
+}
+
+function getControlCallbackSecret(): string {
+  return String(process.env.HUB_CONTROL_CALLBACK_SECRET || '').trim();
 }
 
 function readOffset(): number {
@@ -129,10 +134,11 @@ async function getUpdates(botToken: string, offset: number): Promise<TelegramUpd
   return Array.isArray(data.result) ? data.result : [];
 }
 
-async function forwardToDarwinCallback(callbackQuery: CallbackQuery): Promise<unknown> {
+async function forwardCallback(callbackQuery: CallbackQuery): Promise<unknown> {
   const callbackData = String(callbackQuery?.data || '');
-  if (!callbackData.startsWith('darwin_')) {
-    console.log(`[poller] 스킵 (darwin_ 아님): ${callbackData}`);
+  const target = resolveHubCallbackTarget(callbackData);
+  if (!target) {
+    console.log(`[poller] 스킵 (미지원 callback): ${callbackData}`);
     return { skipped: true };
   }
 
@@ -141,9 +147,13 @@ async function forwardToDarwinCallback(callbackQuery: CallbackQuery): Promise<un
   if (hubToken) {
     headers.Authorization = `Bearer ${hubToken}`;
   }
+  const callbackSecret = getControlCallbackSecret();
+  if (callbackSecret) {
+    headers['x-hub-control-callback-secret'] = callbackSecret;
+  }
 
-  console.log(`[poller] 콜백 전달: ${callbackData}`);
-  const res = await fetch(`${HUB_BASE}/hub/darwin/callback`, {
+  console.log(`[poller] 콜백 전달(${target.mode}): ${callbackData}`);
+  const res = await fetch(`${HUB_BASE}${target.route}`, {
     method: 'POST',
     headers,
     body: JSON.stringify({
@@ -178,7 +188,7 @@ async function pollLoop(): Promise<void> {
       const updates = await getUpdates(botToken, offset);
       for (const update of updates) {
         if (update.callback_query) {
-          await forwardToDarwinCallback(update.callback_query);
+          await forwardCallback(update.callback_query);
         }
         offset = Number(update.update_id || 0) + 1;
         saveOffset(offset);

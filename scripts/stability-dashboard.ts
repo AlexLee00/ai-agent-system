@@ -85,11 +85,11 @@ async function collectStabilityMetrics() {
     skaReservations = Number(rows[0]?.cnt ?? 0);
   } catch {}
 
-  // ── 크래시 횟수 (mainbot_queue error 기준) ─────────────────────
+  // ── 명령 오류 횟수 (Jay bot_commands 기준) ────────────────────
   let crashCount = 0;
   try {
     const rows = await pgPool.query('claude',
-      `SELECT COUNT(*) AS cnt FROM mainbot_queue
+      `SELECT COUNT(*) AS cnt FROM bot_commands
        WHERE status = 'error'
          AND created_at > to_char(now() - INTERVAL '${DAYS} days', 'YYYY-MM-DD HH24:MI:SS')`
     );

@@ -140,6 +140,7 @@ LaunchAgents.disabled/
 # Hub 시크릿 저장소 (절대 공개 금지)
 # Hub 시크릿 저장소
 bots/hub/secrets-store.json
+bots/hub/output/oauth/
 
 # ─── 자동 생성 런타임 파일 (깃 제외) ───
 

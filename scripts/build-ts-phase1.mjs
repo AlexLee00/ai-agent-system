@@ -375,6 +375,7 @@ const runtimeEntryPoints = [
   path.join(root, 'bots/orchestrator/n8n/setup-ska-workflows.ts'),
   path.join(root, 'bots/orchestrator/src/dashboard.ts'),
   path.join(root, 'bots/orchestrator/src/filter.ts'),
+  path.join(root, 'bots/orchestrator/src/jay-runtime.ts'),
   path.join(root, 'bots/orchestrator/src/mainbot.ts'),
   path.join(root, 'bots/orchestrator/src/router.ts'),
   path.join(root, 'bots/orchestrator/src/sigma-daily.ts'),

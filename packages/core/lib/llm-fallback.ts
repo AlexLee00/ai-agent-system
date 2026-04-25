@@ -7,6 +7,7 @@
  * 지원 provider:
  *   anthropic — claude-sonnet-4-6 등 (Anthropic SDK)
  *   openai    — gpt-4o
+ *   openai-oauth — Hub에 수집된 OpenAI Codex OAuth 토큰으로 OpenAI API 직접 호출
  *   claude-code — Claude Code CLI 비대화식 실행
  *   groq      — llama-4-scout 등 (Groq SDK / OpenAI-compat)
  *   gemini    — gemini-2.5-flash (Google Generative AI SDK)
@@ -42,10 +43,7 @@ const { selectRuntime } = require('./runtime-selector');
 const env = require('./env');
 const fs = require('fs');
 const path = require('path');
-const { execFile, spawn } = require('child_process');
-const { promisify } = require('util');
-const execFileAsync = promisify(execFile);
-const OPENCLAW_BIN = process.env.OPENCLAW_BIN || '/opt/homebrew/bin/openclaw';
+const { spawn } = require('child_process');
 
 type FallbackChainEntry = {
   provider: string;
@@ -79,6 +77,7 @@ type ProviderFailureState = {
 };
 
 type RuntimeProfile = {
+  runtime_agent?: string;
   openclaw_agent?: string;
   claude_code_name?: string;
   claude_code_settings?: string;
@@ -114,11 +113,27 @@ type ProviderCallResult = {
 type OAuthStore = {
   openai_oauth?: {
     access_token?: string;
+    expires?: number | string;
+    expires_at?: string;
   };
+};
+
+type OAuthProviderToken = {
+  access_token?: string;
+  expires?: number | string;
+  expires_at?: string;
+};
+
+type OAuthProviderStore = {
+  providers?: Record<string, {
+    token?: OAuthProviderToken | null;
+  } | null>;
 };
 
 type OAuthSecretPayload = {
   access_token?: string;
+  expires?: number | string;
+  expires_at?: string;
 };
 
 type ExecFileErrorLike = {
@@ -141,24 +156,6 @@ type ClaudeCodeResponse = {
   is_error?: boolean;
 };
 
-type OpenClawAgentResponse = {
-  status?: string;
-  summary?: string;
-  runId?: string | null;
-  result?: {
-    payloads?: Array<{ text?: string }>;
-    meta?: {
-      durationMs?: number | null;
-      agentMeta?: {
-        provider?: string;
-        model?: string;
-        lastCallUsage?: { input?: number; output?: number; total?: number };
-        usage?: { input?: number; output?: number; total?: number };
-      };
-    };
-  };
-};
-
 // ── 그루크 계정 라운드로빈 인덱스 ────────────────────────────────────
 let _groqIdx = 0;
 let _oauthToken: string | null = null;
@@ -166,6 +163,8 @@ let _oauthTokenExpiry = 0;
 let _evalTableReady = false;
 const OAUTH_CACHE_TTL = 300_000;
 const STORE_PATH = path.join(env.PROJECT_ROOT, 'bots', 'hub', 'secrets-store.json');
+const OAUTH_PROVIDER_STORE_PATH = process.env.HUB_OAUTH_STORE_FILE
+  || path.join(env.PROJECT_ROOT, 'bots', 'hub', 'output', 'oauth', 'token-store.json');
 const EVAL_EXCLUDED_PROVIDERS = new Set(['openai-oauth', 'openai', 'anthropic']);
 const MAX_CONSECUTIVE_FAILURES = 5;
 const FAILURE_COOLDOWN_MS = 60_000;
@@ -248,6 +247,54 @@ async function _callAnthropic({ model, maxTokens, temperature = 0.1, systemPromp
   });
 }
 
+function _parseOAuthExpiry(value: number | string | undefined | null): number | null {
+  if (value == null || value === '') return null;
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  const raw = String(value).trim();
+  if (!raw) return null;
+  const numeric = Number(raw);
+  if (Number.isFinite(numeric) && numeric > 0) return numeric;
+  const parsed = Date.parse(raw);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function _cacheOpenAIOAuthToken(token: string, expiresAt: number | null = null): string {
+  _oauthToken = token;
+  const safeExpiry = expiresAt && expiresAt > Date.now()
+    ? Math.min(expiresAt - 30_000, Date.now() + OAUTH_CACHE_TTL)
+    : Date.now() + OAUTH_CACHE_TTL;
+  _oauthTokenExpiry = Math.max(Date.now() + 1_000, safeExpiry);
+  return _oauthToken;
+}
+
+function _extractUsableOpenAIOAuthToken(
+  token: OAuthProviderToken | OAuthStore['openai_oauth'] | OAuthSecretPayload | null | undefined,
+): { token: string; expiresAt: number | null } | null {
+  const accessToken = String(token?.access_token || '').trim();
+  if (!accessToken) return null;
+
+  const expiresAt = _parseOAuthExpiry(token?.expires_at || token?.expires);
+  if (expiresAt && expiresAt <= Date.now() + 60_000) return null;
+  return { token: accessToken, expiresAt };
+}
+
+function _readOpenAIOAuthTokenStore(): { token: string; expiresAt: number | null } | null {
+  try {
+    const store = JSON.parse(fs.readFileSync(OAUTH_PROVIDER_STORE_PATH, 'utf8')) as OAuthProviderStore;
+    const providers = store?.providers || {};
+    const candidates = [
+      providers['openai-codex-oauth']?.token,
+      providers['openai-oauth']?.token,
+      providers['openai_oauth']?.token,
+    ];
+    for (const candidate of candidates) {
+      const usable = _extractUsableOpenAIOAuthToken(candidate || null);
+      if (usable) return usable;
+    }
+  } catch { /* token-store 미생성/미동기화 상태면 legacy/Hub 경로로 폴백 */ }
+  return null;
+}
+
 /** @param {{ model: string, maxTokens: number, temperature?: number, systemPrompt: string, userPrompt: string, baseURL?: string|null }} input */
 async function _callOpenAI({
   model,
@@ -285,130 +332,262 @@ async function _callOpenAI({
 async function _getOAuthToken(): Promise<string | null> {
   if (_oauthToken && Date.now() < _oauthTokenExpiry) return _oauthToken;
 
+  const envToken = String(process.env.OPENAI_OAUTH_ACCESS_TOKEN || process.env.OPENAI_CODEX_ACCESS_TOKEN || '').trim();
+  if (envToken) {
+    return _cacheOpenAIOAuthToken(envToken);
+  }
+
+  const providerStoreToken = _readOpenAIOAuthTokenStore();
+  if (providerStoreToken) {
+    return _cacheOpenAIOAuthToken(providerStoreToken.token, providerStoreToken.expiresAt);
+  }
+
   try {
     const store = JSON.parse(fs.readFileSync(STORE_PATH, 'utf8')) as OAuthStore;
-    if (store?.openai_oauth?.access_token) {
-      _oauthToken = store.openai_oauth.access_token;
-      _oauthTokenExpiry = Date.now() + OAUTH_CACHE_TTL;
-      return _oauthToken;
+    const legacyToken = _extractUsableOpenAIOAuthToken(store?.openai_oauth || null);
+    if (legacyToken) {
+      return _cacheOpenAIOAuthToken(legacyToken.token, legacyToken.expiresAt);
     }
   } catch { /* DEV나 미동기화 상태면 Hub 경유 */ }
 
   const data = await fetchHubSecrets('openai_oauth') as OAuthSecretPayload | null;
-  if (data?.access_token) {
-    _oauthToken = data.access_token;
-    _oauthTokenExpiry = Date.now() + OAUTH_CACHE_TTL;
-    return _oauthToken;
+  const hubToken = _extractUsableOpenAIOAuthToken(data);
+  if (hubToken) {
+    return _cacheOpenAIOAuthToken(hubToken.token, hubToken.expiresAt);
   }
 
   return null;
 }
 
-async function _callOpenAIOAuth({ model, maxTokens, temperature = 0.1, systemPrompt, userPrompt, timeoutMs = 30000, local = false, runtimeProfile = null }: ProviderCallOptions) {
-  const resolvedTimeoutMs = timeoutMs ?? 30000;
-  const openclawAgent = String(runtimeProfile?.openclaw_agent || process.env.OPENCLAW_AGENT || 'main').trim() || 'main';
-  const prompt = [
-    '[SYSTEM]',
-    systemPrompt || '',
-    '',
-    '[USER]',
-    userPrompt || '',
-  ].join('\n');
+function _getOpenAIOAuthBaseUrl(): string {
+  return String(process.env.OPENAI_OAUTH_BASE_URL || process.env.OPENAI_BASE_URL || 'https://api.openai.com/v1').replace(/\/+$/, '');
+}
 
-  const args = [
-    'agent',
-    '--agent', openclawAgent,
-    '--json',
-    '--message', prompt,
-    '--timeout', String(Math.max(10, Math.ceil(resolvedTimeoutMs / 1000))),
-  ];
-  if (local) args.push('--local');
+function _createTimeoutSignal(timeoutMs: number): { signal: AbortSignal; cleanup: () => void } {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), Math.max(1, timeoutMs));
+  return {
+    signal: controller.signal,
+    cleanup: () => clearTimeout(timer),
+  };
+}
 
-  let stdout = '';
-  let stderr = '';
-  let lastError: ExecFileErrorLike | null = null;
-  for (let attempt = 1; attempt <= 2; attempt += 1) {
-    try {
-      const result = await execFileAsync(OPENCLAW_BIN, args, {
-        timeout: resolvedTimeoutMs + 5000,
-        maxBuffer: 2 * 1024 * 1024,
-        env: {
-          ...process.env,
-          OPENCLAW_AGENT: openclawAgent,
-        },
-      });
-      stdout = result.stdout || '';
-      stderr = result.stderr || '';
-      lastError = null;
-      break;
-    } catch (error) {
-      const execError = error as ExecFileErrorLike;
-      lastError = execError;
-      stdout = execError?.stdout || '';
-      stderr = execError?.stderr || execError?.message || '';
-      if (attempt < 2) {
-        console.warn(`[llm-fallback] openai-oauth OpenClaw 재시도 (${attempt}/2): agent=${openclawAgent}`);
-        await new Promise((resolve) => setTimeout(resolve, 1200));
-      }
+async function _readJsonResponse(res: Response): Promise<any> {
+  const text = await res.text();
+  if (!text) return null;
+  try {
+    return JSON.parse(text);
+  } catch {
+    return { error: { message: text.slice(0, 500) } };
+  }
+}
+
+function _extractResponsesText(resp: any): string {
+  if (typeof resp?.output_text === 'string' && resp.output_text.trim()) {
+    return resp.output_text.trim();
+  }
+  const pieces: string[] = [];
+  for (const item of Array.isArray(resp?.output) ? resp.output : []) {
+    for (const content of Array.isArray(item?.content) ? item.content : []) {
+      const text = typeof content?.text === 'string'
+        ? content.text
+        : (typeof content?.content === 'string' ? content.content : '');
+      if (text.trim()) pieces.push(text.trim());
     }
   }
+  return pieces.join('\n').trim();
+}
 
-  if (lastError) {
-    const exitCode = lastError?.code ?? 'unknown';
-    const signal = lastError?.signal || '';
-    const stderrText = String(stderr || '').trim();
-    const stdoutText = String(stdout || '').trim();
-    const sandboxNote = (
-      stderrText.includes('sessions.json.lock')
-      && stderrText.includes('EPERM')
-    )
-      ? ' | note=sandbox_or_fs_lock_restriction'
-      : '';
-    const detail = [
-      `agent=${openclawAgent}`,
-      `exit=${exitCode}`,
-      signal ? `signal=${signal}` : null,
-      stderrText ? `stderr=${stderrText.slice(0, 400)}` : null,
-      stdoutText ? `stdout=${stdoutText.slice(0, 240)}` : null,
-    ].filter(Boolean).join(' | ');
-    throw new Error(`OpenClaw agent 실행 실패: ${detail}${sandboxNote}`);
-  }
+function _normalizeResponsesUsage(usage: any): ProviderUsage | null {
+  if (!usage || typeof usage !== 'object') return null;
+  const input = Number(usage.input_tokens ?? usage.prompt_tokens ?? 0) || 0;
+  const output = Number(usage.output_tokens ?? usage.completion_tokens ?? 0) || 0;
+  return {
+    prompt_tokens: input,
+    completion_tokens: output,
+    input_tokens: input,
+    output_tokens: output,
+  };
+}
 
-  const output = String(stdout || '').trim();
-  if (!output) {
-    throw new Error(`OpenClaw agent 빈 응답${stderr ? `: ${String(stderr).slice(0, 160)}` : ''}`);
-  }
+function _shouldRetryWithoutTemperature(status: number, body: any): boolean {
+  const message = String(body?.error?.message || body?.message || '').toLowerCase();
+  return status === 400 && message.includes('temperature');
+}
 
-  let parsed: OpenClawAgentResponse;
+function _shouldFallbackResponsesToChat(status: number, body: any): boolean {
+  const message = String(body?.error?.message || body?.message || '').toLowerCase();
+  return (
+    status === 404 ||
+    (status === 400 && message.includes('responses') && (message.includes('not supported') || message.includes('unknown')))
+  );
+}
+
+async function _postOpenAIJson({
+  url,
+  token,
+  body,
+  timeoutMs,
+}: {
+  url: string;
+  token: string;
+  body: Record<string, unknown>;
+  timeoutMs: number;
+}): Promise<{ status: number; ok: boolean; body: any }> {
+  const { signal, cleanup } = _createTimeoutSignal(timeoutMs);
   try {
-    parsed = JSON.parse(output) as OpenClawAgentResponse;
-  } catch {
-    throw new Error(`OpenClaw agent JSON 파싱 실패: ${output.slice(0, 160)}`);
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(body),
+      signal,
+    });
+    const parsed = await _readJsonResponse(res);
+    return { status: res.status, ok: res.ok, body: parsed };
+  } finally {
+    cleanup();
+  }
+}
+
+async function _callOpenAIOAuthResponses({
+  token,
+  model,
+  maxTokens,
+  temperature,
+  systemPrompt,
+  userPrompt,
+  timeoutMs,
+}: {
+  token: string;
+  model: string;
+  maxTokens: number;
+  temperature: number;
+  systemPrompt: string;
+  userPrompt: string;
+  timeoutMs: number;
+}) {
+  const baseUrl = _getOpenAIOAuthBaseUrl();
+  const url = `${baseUrl}/responses`;
+  const baseBody: Record<string, unknown> = {
+    model,
+    input: [
+      {
+        role: 'system',
+        content: [{ type: 'input_text', text: systemPrompt || '' }],
+      },
+      {
+        role: 'user',
+        content: [{ type: 'input_text', text: userPrompt || '' }],
+      },
+    ],
+    max_output_tokens: maxTokens,
+  };
+  const withTemperature = {
+    ...baseBody,
+    temperature,
+  };
+
+  let result = await _postOpenAIJson({ url, token, body: withTemperature, timeoutMs });
+  if (!result.ok && _shouldRetryWithoutTemperature(result.status, result.body)) {
+    result = await _postOpenAIJson({ url, token, body: baseBody, timeoutMs });
+  }
+  if (!result.ok) {
+    const message = String(result.body?.error?.message || result.body?.message || `HTTP ${result.status}`).slice(0, 400);
+    const error = new Error(`OpenAI OAuth Responses 호출 실패: ${message}`) as Error & { status?: number; responseBody?: any };
+    error.status = result.status;
+    error.responseBody = result.body;
+    throw error;
   }
 
-  if (parsed?.status !== 'ok') {
-    throw new Error(`OpenClaw agent 실패: ${parsed?.summary || parsed?.status || 'unknown'}`);
-  }
-
-  const text = parsed?.result?.payloads?.[0]?.text || '';
-  const usage = parsed?.result?.meta?.agentMeta?.lastCallUsage || parsed?.result?.meta?.agentMeta?.usage || null;
-  const provider = parsed?.result?.meta?.agentMeta?.provider || 'openai-codex';
-  const usedModel = parsed?.result?.meta?.agentMeta?.model || model || 'gpt-5.4';
-
+  const text = _extractResponsesText(result.body);
+  if (!text) throw new Error('OpenAI OAuth Responses 빈 응답');
+  const usage = _normalizeResponsesUsage(result.body?.usage);
   return {
     choices: [{ message: { content: text } }],
     usage: usage ? {
-      prompt_tokens: usage.input || 0,
-      completion_tokens: usage.output || 0,
-      total_tokens: usage.total || ((usage.input || 0) + (usage.output || 0)),
+      prompt_tokens: usage.prompt_tokens || usage.input_tokens || 0,
+      completion_tokens: usage.completion_tokens || usage.output_tokens || 0,
+      total_tokens: (usage.prompt_tokens || usage.input_tokens || 0) + (usage.completion_tokens || usage.output_tokens || 0),
     } : null,
-    _openclaw: {
-      provider,
-      model: usedModel,
-      runId: parsed?.runId || null,
-      durationMs: parsed?.result?.meta?.durationMs || null,
+    _openaiOAuth: {
+      provider: 'openai-oauth',
+      model,
+      endpoint: 'responses',
+      responseId: result.body?.id || null,
     },
   };
+}
+
+async function _callOpenAIOAuthChat({
+  token,
+  model,
+  maxTokens,
+  temperature,
+  systemPrompt,
+  userPrompt,
+  timeoutMs,
+}: {
+  token: string;
+  model: string;
+  maxTokens: number;
+  temperature: number;
+  systemPrompt: string;
+  userPrompt: string;
+  timeoutMs: number;
+}) {
+  const baseUrl = _getOpenAIOAuthBaseUrl();
+  const url = `${baseUrl}/chat/completions`;
+  const body = {
+    model,
+    max_tokens: maxTokens,
+    temperature,
+    messages: [
+      { role: 'system', content: systemPrompt || '' },
+      { role: 'user', content: userPrompt || '' },
+    ],
+  };
+  let result = await _postOpenAIJson({ url, token, body, timeoutMs });
+  if (!result.ok && _shouldRetryWithoutTemperature(result.status, result.body)) {
+    const { temperature: _omit, ...withoutTemperature } = body;
+    result = await _postOpenAIJson({ url, token, body: withoutTemperature, timeoutMs });
+  }
+  if (!result.ok) {
+    const message = String(result.body?.error?.message || result.body?.message || `HTTP ${result.status}`).slice(0, 400);
+    throw new Error(`OpenAI OAuth Chat 호출 실패: ${message}`);
+  }
+  return {
+    ...result.body,
+    _openaiOAuth: {
+      provider: 'openai-oauth',
+      model,
+      endpoint: 'chat.completions',
+      responseId: result.body?.id || null,
+    },
+  };
+}
+
+async function _callOpenAIOAuth({ model, maxTokens, temperature = 0.1, systemPrompt, userPrompt, timeoutMs = 30000 }: ProviderCallOptions) {
+  const resolvedTimeoutMs = timeoutMs ?? 30000;
+  const token = await _getOAuthToken();
+  if (!token) throw new Error('OpenAI OAuth 토큰 없음');
+
+  const mode = String(process.env.OPENAI_OAUTH_ENDPOINT_MODE || process.env.OPENAI_OAUTH_API_MODE || 'responses').trim().toLowerCase();
+  if (mode === 'chat' || mode === 'chat.completions') {
+    return _callOpenAIOAuthChat({ token, model, maxTokens, temperature, systemPrompt, userPrompt, timeoutMs: resolvedTimeoutMs });
+  }
+
+  try {
+    return await _callOpenAIOAuthResponses({ token, model, maxTokens, temperature, systemPrompt, userPrompt, timeoutMs: resolvedTimeoutMs });
+  } catch (error) {
+    const err = error as Error & { status?: number; responseBody?: any };
+    if (_shouldFallbackResponsesToChat(Number(err.status || 0), err.responseBody)) {
+      return _callOpenAIOAuthChat({ token, model, maxTokens, temperature, systemPrompt, userPrompt, timeoutMs: resolvedTimeoutMs });
+    }
+    throw error;
+  }
 }
 
 async function _callClaudeCode({ model, maxTokens, systemPrompt, userPrompt, timeoutMs = 45000, runtimeProfile = null }: ProviderCallOptions) {
@@ -766,8 +945,8 @@ async function _callProvider(
         raw: resp,
         text: _extractText(resp, 'openai'),
         usage: resp.usage,
-        provider: resp?._openclaw?.provider || provider,
-        model: resp?._openclaw?.model || model,
+        provider: resp?._openaiOAuth?.provider || provider,
+        model: resp?._openaiOAuth?.model || model,
       };
     }
     case 'claude-code': {
@@ -869,7 +1048,7 @@ export async function callWithFallback({ chain, systemPrompt, userPrompt, logMet
   const runtimeTeam = String(team || logMeta.team || '').trim() || null;
   const runtimePurpose = String(purpose || _inferRuntimePurpose(logMeta)).trim() || 'default';
   const runtimeProfile = runtimeTeam ? await selectRuntime(runtimeTeam, runtimePurpose) : null;
-  const runtimeOpenClawAgent = String(runtimeProfile?.openclaw_agent || '').trim() || null;
+  const runtimeAgent = String(runtimeProfile?.runtime_agent || runtimeProfile?.openclaw_agent || '').trim() || null;
   const runtimeClaudeCodeName = String(runtimeProfile?.claude_code_name || '').trim() || null;
   const runtimeSelectionReason = runtimeProfile ? 'team-runtime-profile' : 'env-fallback';
   const traceRoute = logMeta.selectorKey || logMeta.requestType || null;
@@ -962,7 +1141,7 @@ export async function callWithFallback({ chain, systemPrompt, userPrompt, logMet
             success: true,
             runtimeTeam,
             runtimePurpose,
-            runtimeOpenClawAgent,
+            runtimeAgent,
             runtimeClaudeCodeName,
             runtimeSelectionReason,
           });
@@ -1039,7 +1218,7 @@ export async function callWithFallback({ chain, systemPrompt, userPrompt, logMet
             errorMsg:    (e as Error).message?.slice(0, 200),
             runtimeTeam,
             runtimePurpose,
-            runtimeOpenClawAgent,
+            runtimeAgent,
             runtimeClaudeCodeName,
             runtimeSelectionReason,
           });

@@ -11,6 +11,15 @@
   </array>
   <key>WorkingDirectory</key>
   <string>/Users/alexlee/projects/ai-agent-system/bots/hub</string>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key>
+    <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+    <key>HUB_AUTH_TOKEN</key>
+    <string>__SET_IN_LOCAL_LAUNCHAGENT__</string>
+    <key>HUB_CONTROL_CALLBACK_SECRET</key>
+    <string>__SET_IN_LOCAL_LAUNCHAGENT__</string>
+  </dict>
   <key>RunAtLoad</key>
   <true/>
   <key>KeepAlive</key>

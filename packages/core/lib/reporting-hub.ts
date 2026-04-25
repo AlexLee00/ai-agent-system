@@ -1,6 +1,6 @@
 const fs = require('fs');
 const { runWithN8nFallback } = require('./n8n-runner');
-const openclawClient = require('./openclaw-client');
+const hubAlarmClient = require('./hub-alarm-client');
 
 const ALERT_LEVEL_LABELS = {
   1: '안내',
@@ -659,7 +659,7 @@ export async function publishToWebhook({
     };
   }
   try {
-    const result = await openclawClient.postAlarm({
+    const result = await hubAlarmClient.postAlarm({
       message: normalized.message,
       team: normalized.team,
       alertLevel: normalized.alert_level,
