@@ -1,16 +1,16 @@
 {
-  "generated_at": "2026-04-25T20:58:02.085Z",
+  "generated_at": "2026-04-25T21:05:51.432Z",
   "scan_patterns": [
     "hub-alarm-client",
     "openclaw-client",
     "HUB_ALARM_",
     "OPENCLAW_"
   ],
-  "total_matches": 263,
-  "unique_files": 117,
+  "total_matches": 267,
+  "unique_files": 118,
   "categories": {
     "hub_alarm_native": 67,
-    "legacy_openclaw_compat": 196
+    "legacy_openclaw_compat": 200
   },
   "files": {
     "bots/blog/__tests__/dpo-learning.test.ts": [
@@ -859,6 +859,32 @@
         "line": 1,
         "category": "hub_alarm_native",
         "match": "const { _testOnly_isHubAlarmDeliveryAccepted } = require('../../../packages/core/lib/hub-alarm-client.ts');"
+      }
+    ],
+    "bots/hub/scripts/openclaw-independence-smoke.ts": [
+      {
+        "file": "bots/hub/scripts/openclaw-independence-smoke.ts",
+        "line": 5,
+        "category": "legacy_openclaw_compat",
+        "match": "const OPENCLAW_GATEWAY_LABEL = 'ai.openclaw.gateway';"
+      },
+      {
+        "file": "bots/hub/scripts/openclaw-independence-smoke.ts",
+        "line": 11,
+        "category": "legacy_openclaw_compat",
+        "match": "const gateway = ownership.getServiceOwnership(OPENCLAW_GATEWAY_LABEL);"
+      },
+      {
+        "file": "bots/hub/scripts/openclaw-independence-smoke.ts",
+        "line": 14,
+        "category": "legacy_openclaw_compat",
+        "match": "assert(!coreLabels.includes(OPENCLAW_GATEWAY_LABEL), 'OpenClaw gateway must not be a Hub core service');"
+      },
+      {
+        "file": "bots/hub/scripts/openclaw-independence-smoke.ts",
+        "line": 15,
+        "category": "legacy_openclaw_compat",
+        "match": "assert(!hubLabels.includes(OPENCLAW_GATEWAY_LABEL), 'OpenClaw gateway must not be part of Hub service readiness labels');"
       }
     ],
     "bots/hub/scripts/openclaw-postalarm-fallback-smoke.ts": [

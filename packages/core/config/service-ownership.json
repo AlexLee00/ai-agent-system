@@ -1,5 +1,5 @@
 [
-  { "label": "ai.openclaw.gateway", "owner": "launchd", "core": true },
+  { "label": "ai.openclaw.gateway", "owner": "retired", "retired": true, "optional": true, "expectedIdle": true },
   { "label": "ai.n8n.server", "owner": "launchd", "core": true },
   { "label": "ai.mlx.server", "owner": "launchd" },
 
@@ -52,7 +52,7 @@
   { "label": "ai.worker.nextjs", "owner": "launchd", "healthUrl": "http://127.0.0.1:4001" },
   { "label": "ai.worker.lead", "owner": "launchd" },
   { "label": "ai.worker.task-runner", "owner": "launchd" },
-  { "label": "ai.hub.resource-api", "owner": "launchd", "healthUrl": "http://127.0.0.1:7788/hub/health" },
+  { "label": "ai.hub.resource-api", "owner": "launchd", "core": true, "healthUrl": "http://127.0.0.1:7788/hub/health" },
 
   { "label": "ai.orchestrator", "owner": "retired", "retired": true }
 ]

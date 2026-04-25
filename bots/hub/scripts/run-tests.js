@@ -46,6 +46,8 @@ function main() {
     if (alarmEnvStatus !== 0) process.exit(alarmEnvStatus);
     const postAlarmStatus = run(tsxBin, [path.join(scriptDir, 'openclaw-postalarm-fallback-smoke.ts')]);
     if (postAlarmStatus !== 0) process.exit(postAlarmStatus);
+    const openClawIndependenceStatus = run(tsxBin, [path.join(scriptDir, 'openclaw-independence-smoke.ts')]);
+    if (openClawIndependenceStatus !== 0) process.exit(openClawIndependenceStatus);
     const tgPendingMigrationStatus = run(tsxBin, [path.join(scriptDir, 'telegram-pending-queue-migration-smoke.ts')]);
     if (tgPendingMigrationStatus !== 0) process.exit(tgPendingMigrationStatus);
     const tgHubSecretsStatus = run(tsxBin, [path.join(scriptDir, 'telegram-hub-secrets-smoke.ts')]);

@@ -123,6 +123,6 @@ VALUES (
 
 ## 운영 체크리스트
 
-- `ai.openclaw.gateway` 중지 시에도 `/hub/alarm` 경로가 응답하는지
+- retired `ai.openclaw.gateway` 없이 `/hub/alarm`이 Hub-native 경로로 응답하는지
 - `/hub/oauth/:provider/status`가 expiry/canary를 제공하는지
 - 토큰/시크릿 문자열이 로그/응답에 노출되지 않는지

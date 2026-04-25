@@ -54,7 +54,8 @@ GET  /hub/legal/case/:id/report    — 최신 감정서 조회
 
 ## 운영 해석
 - `/hub/health/ready`
-  - 코어 서비스(`ai.openclaw.gateway`, `ai.orchestrator`, `ai.n8n.server`) 기준 readiness 신호
+  - 코어 서비스(`ai.hub.resource-api`, `ai.n8n.server`) 기준 readiness 신호
+  - `ai.openclaw.gateway`는 retired/optional/expected-idle로만 보존하며 readiness 기준에서 제외
   - `readiness_summary.core_service_total`, `core_service_down`, `resource_warn_count` 포함
 - `/hub/services/status`
   - 허브가 직접 보는 핵심 launchd 서비스만 반환

@@ -2,11 +2,11 @@
 
 This inventory tracks the Hub alarm migration surface. `hub_alarm_native` entries are the desired path; `legacy_openclaw_compat` entries are compatibility shims or remaining migration targets.
 
-- generated_at: 2026-04-25T20:58:02.085Z
-- total_matches: 263
-- unique_files: 117
+- generated_at: 2026-04-25T21:05:51.432Z
+- total_matches: 267
+- unique_files: 118
 - hub_alarm_native: 67
-- legacy_openclaw_compat: 196
+- legacy_openclaw_compat: 200
 
 ## Files
 
@@ -270,6 +270,12 @@ This inventory tracks the Hub alarm migration surface. `hub_alarm_native` entrie
 
 ### `bots/hub/scripts/openclaw-hub-alarm-smoke.ts`
 - L1 [hub_alarm_native]: `const { _testOnly_isHubAlarmDeliveryAccepted } = require('../../../packages/core/lib/hub-alarm-client.ts');`
+
+### `bots/hub/scripts/openclaw-independence-smoke.ts`
+- L5 [legacy_openclaw_compat]: `const OPENCLAW_GATEWAY_LABEL = 'ai.openclaw.gateway';`
+- L11 [legacy_openclaw_compat]: `const gateway = ownership.getServiceOwnership(OPENCLAW_GATEWAY_LABEL);`
+- L14 [legacy_openclaw_compat]: `assert(!coreLabels.includes(OPENCLAW_GATEWAY_LABEL), 'OpenClaw gateway must not be a Hub core service');`
+- L15 [legacy_openclaw_compat]: `assert(!hubLabels.includes(OPENCLAW_GATEWAY_LABEL), 'OpenClaw gateway must not be part of Hub service readiness labels');`
 
 ### `bots/hub/scripts/openclaw-postalarm-fallback-smoke.ts`
 - L6 [hub_alarm_native]: `const CLIENT_PATH = require.resolve('../../../packages/core/lib/hub-alarm-client.ts');`

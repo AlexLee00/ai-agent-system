@@ -31,7 +31,6 @@ function isOptionalService(label) {
 
 function getHubServiceLabels() {
   return [
-    'ai.openclaw.gateway',
     'ai.claude.commander',
     'ai.claude.dexter',
     'ai.ska.commander',
