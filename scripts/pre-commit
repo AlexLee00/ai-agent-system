@@ -10,6 +10,7 @@ YELLOW='\033[1;33m'
 GREEN='\033[0;32m'
 NC='\033[0m'
 
+REPO_ROOT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
 BLOCKED=0
 
 echo "🔒 보안 검사 실행 중..."
