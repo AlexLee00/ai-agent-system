@@ -2,7 +2,7 @@
 
 This inventory tracks the Hub alarm migration surface. `hub_alarm_native` entries are the desired path; `legacy_openclaw_compat` entries are compatibility shims or remaining migration targets.
 
-- generated_at: 2026-04-25T13:19:23.092Z
+- generated_at: 2026-04-25T13:31:40.451Z
 - total_matches: 263
 - unique_files: 117
 - hub_alarm_native: 67
