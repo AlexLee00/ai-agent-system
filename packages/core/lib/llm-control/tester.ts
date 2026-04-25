@@ -228,7 +228,7 @@ async function testOpenAICompat(provider, modelId, apiKey, prompt) {
   };
   if (provider === 'openrouter') {
     headers['HTTP-Referer'] = 'https://github.com/ai-agent-system';
-    headers['X-Title'] = 'openclaw-speed-test';
+    headers['X-Title'] = 'hub-speed-test';
   }
 
   const isReasoningModel = /^o\d/.test(model);

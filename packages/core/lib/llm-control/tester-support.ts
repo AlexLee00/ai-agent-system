@@ -2,10 +2,20 @@
 'use strict';
 
 const path = require('path');
+const os = require('os');
 
-const OPENCLAW_CONFIG = path.join(process.env.HOME || '', '.openclaw/openclaw.json');
-const AUTH_PROFILES_FILE = path.join(process.env.HOME || '', '.openclaw/agents/main/agent/auth-profiles.json');
-const SPEED_TEST_KEYS_FILE = path.join(process.env.HOME || '', '.openclaw/speed-test-keys.json');
+const AI_AGENT_HOME = process.env.AI_AGENT_HOME
+  || process.env.JAY_HOME
+  || path.join(os.homedir(), '.ai-agent-system');
+const LLM_CONTROL_DIR = process.env.HUB_LLM_CONTROL_DIR
+  || process.env.JAY_LLM_CONTROL_DIR
+  || path.join(AI_AGENT_HOME, 'llm-control');
+const LLM_CONTROL_CONFIG = process.env.HUB_LLM_CONTROL_CONFIG
+  || path.join(LLM_CONTROL_DIR, 'models.json');
+const AUTH_PROFILES_FILE = process.env.HUB_LLM_AUTH_PROFILES_FILE
+  || path.join(LLM_CONTROL_DIR, 'auth-profiles.json');
+const SPEED_TEST_KEYS_FILE = process.env.HUB_LLM_SPEED_TEST_KEYS_FILE
+  || path.join(LLM_CONTROL_DIR, 'speed-test-keys.json');
 const INVEST_SECRETS_FILE = path.resolve(__dirname, '../../../../bots/investment/secrets.json');
 
 const PROVIDER_ENV_KEYS = {
@@ -47,8 +57,29 @@ const SPEED_TEST_MODEL_CATALOG = {
   ]),
 };
 
+function buildDefaultModelsConfig() {
+  const models = {};
+  for (const ids of Object.values(SPEED_TEST_MODEL_CATALOG)) {
+    for (const id of ids) models[id] = {};
+  }
+  return { agents: { defaults: { models, model: { primary: null, fallbacks: [] } } } };
+}
+
+function readJsonOrDefault(fs, filePath, fallback) {
+  try {
+    return JSON.parse(fs.readFileSync(filePath, 'utf-8'));
+  } catch {
+    return fallback;
+  }
+}
+
+function writeJsonFile(fs, filePath, payload) {
+  fs.mkdirSync(path.dirname(filePath), { recursive: true });
+  fs.writeFileSync(filePath, JSON.stringify(payload, null, 2) + '\n');
+}
+
 function loadModels(fs, { modelArg } = {}) {
-  const cfg = JSON.parse(fs.readFileSync(OPENCLAW_CONFIG, 'utf-8'));
+  const cfg = readJsonOrDefault(fs, LLM_CONTROL_CONFIG, buildDefaultModelsConfig());
   const allModels = cfg?.agents?.defaults?.models ?? {};
 
   const supported = Object.keys(allModels)
@@ -101,7 +132,7 @@ function loadSpeedTestKeys(fs) {
 }
 
 function loadOpenAIKey(fs) {
-  const profiles = JSON.parse(fs.readFileSync(AUTH_PROFILES_FILE, 'utf-8'));
+  const profiles = readJsonOrDefault(fs, AUTH_PROFILES_FILE, { profiles: {} });
   const profile = Object.values(profiles.profiles ?? {}).find((item) => item.provider === 'openai');
   return profile?.key ?? process.env.OPENAI_API_KEY ?? null;
 }
@@ -136,7 +167,10 @@ function loadProviderKey(fs, provider) {
 }
 
 function applyFastest(fs, results) {
-  const cfg = JSON.parse(fs.readFileSync(OPENCLAW_CONFIG, 'utf-8'));
+  const cfg = readJsonOrDefault(fs, LLM_CONTROL_CONFIG, buildDefaultModelsConfig());
+  cfg.agents = cfg.agents || {};
+  cfg.agents.defaults = cfg.agents.defaults || {};
+  cfg.agents.defaults.model = cfg.agents.defaults.model || {};
   const geminiValid = results.filter((item) => item.ok && item.provider === 'google-gemini-cli');
   if (geminiValid.length === 0) return null;
 
@@ -146,12 +180,14 @@ function applyFastest(fs, results) {
   const otherList = results.filter((item) => item.ok && !['google-gemini-cli', 'ollama'].includes(item.provider)).map((item) => item.modelId);
   cfg.agents.defaults.model.fallbacks = [...geminiRest, ...ollamaList, ...otherList];
 
-  fs.writeFileSync(OPENCLAW_CONFIG, JSON.stringify(cfg, null, 2) + '\n');
+  writeJsonFile(fs, LLM_CONTROL_CONFIG, cfg);
   return geminiValid[0].modelId;
 }
 
 module.exports = {
-  OPENCLAW_CONFIG,
+  AI_AGENT_HOME,
+  LLM_CONTROL_DIR,
+  LLM_CONTROL_CONFIG,
   AUTH_PROFILES_FILE,
   SPEED_TEST_KEYS_FILE,
   INVEST_SECRETS_FILE,

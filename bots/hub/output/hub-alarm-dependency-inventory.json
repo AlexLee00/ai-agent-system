@@ -1,16 +1,16 @@
 {
-  "generated_at": "2026-04-25T21:13:13.623Z",
+  "generated_at": "2026-04-25T21:18:16.605Z",
   "scan_patterns": [
     "hub-alarm-client",
     "openclaw-client",
     "HUB_ALARM_",
     "OPENCLAW_"
   ],
-  "total_matches": 279,
-  "unique_files": 124,
+  "total_matches": 271,
+  "unique_files": 122,
   "categories": {
     "hub_alarm_native": 67,
-    "legacy_openclaw_compat": 212
+    "legacy_openclaw_compat": 204
   },
   "files": {
     "bots/blog/__tests__/dpo-learning.test.ts": [
@@ -1273,26 +1273,6 @@
         "match": "const { postAlarm } = require(path.join(__dirname, '../../../packages/core/lib/openclaw-client'));"
       }
     ],
-    "bots/worker/web/server.js": [
-      {
-        "file": "bots/worker/web/server.js",
-        "line": 217,
-        "category": "legacy_openclaw_compat",
-        "match": "const OPENCLAW_CONFIG_FILE = path.join(process.env.HOME || '', '.openclaw/openclaw.json');"
-      },
-      {
-        "file": "bots/worker/web/server.js",
-        "line": 354,
-        "category": "legacy_openclaw_compat",
-        "match": "if (!fs.existsSync(OPENCLAW_CONFIG_FILE)) return [];"
-      },
-      {
-        "file": "bots/worker/web/server.js",
-        "line": 355,
-        "category": "legacy_openclaw_compat",
-        "match": "const config = JSON.parse(fs.readFileSync(OPENCLAW_CONFIG_FILE, 'utf8'));"
-      }
-    ],
     "docs/design/DESIGN_TEAM_JAY_AUTONOMOUS_ORCHESTRATION.md": [
       {
         "file": "docs/design/DESIGN_TEAM_JAY_AUTONOMOUS_ORCHESTRATION.md",
@@ -1555,38 +1535,6 @@
         "line": 12,
         "category": "legacy_openclaw_compat",
         "match": "|| process.env.OPENCLAW_WORKSPACE"
-      }
-    ],
-    "packages/core/lib/llm-control/tester-support.ts": [
-      {
-        "file": "packages/core/lib/llm-control/tester-support.ts",
-        "line": 6,
-        "category": "legacy_openclaw_compat",
-        "match": "const OPENCLAW_CONFIG = path.join(process.env.HOME || '', '.openclaw/openclaw.json');"
-      },
-      {
-        "file": "packages/core/lib/llm-control/tester-support.ts",
-        "line": 51,
-        "category": "legacy_openclaw_compat",
-        "match": "const cfg = JSON.parse(fs.readFileSync(OPENCLAW_CONFIG, 'utf-8'));"
-      },
-      {
-        "file": "packages/core/lib/llm-control/tester-support.ts",
-        "line": 139,
-        "category": "legacy_openclaw_compat",
-        "match": "const cfg = JSON.parse(fs.readFileSync(OPENCLAW_CONFIG, 'utf-8'));"
-      },
-      {
-        "file": "packages/core/lib/llm-control/tester-support.ts",
-        "line": 149,
-        "category": "legacy_openclaw_compat",
-        "match": "fs.writeFileSync(OPENCLAW_CONFIG, JSON.stringify(cfg, null, 2) + '\\n');"
-      },
-      {
-        "file": "packages/core/lib/llm-control/tester-support.ts",
-        "line": 154,
-        "category": "legacy_openclaw_compat",
-        "match": "OPENCLAW_CONFIG,"
       }
     ],
     "packages/core/lib/llm-timeouts.ts": [

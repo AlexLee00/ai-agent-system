@@ -16,6 +16,7 @@ const kst = require('../../../packages/core/lib/kst');
  */
 
 const path        = require('path');
+const os          = require('os');
 const http        = require('http');
 const { randomUUID } = require('crypto');
 const { spawn, spawnSync }   = require('child_process');
@@ -213,8 +214,18 @@ const app = express();
 const wsClients = new Set();
 let chatWss = null;
 let taskEventClient = null;
-const SPEED_TEST_LATEST_FILE = path.join(process.env.HOME || '', '.openclaw/workspace/llm-speed-test-latest.json');
-const OPENCLAW_CONFIG_FILE = path.join(process.env.HOME || '', '.openclaw/openclaw.json');
+const AI_AGENT_HOME = process.env.AI_AGENT_HOME
+  || process.env.JAY_HOME
+  || path.join(os.homedir(), '.ai-agent-system');
+const AI_AGENT_WORKSPACE = process.env.AI_AGENT_WORKSPACE
+  || process.env.JAY_WORKSPACE
+  || path.join(AI_AGENT_HOME, 'workspace');
+const LLM_CONTROL_DIR = process.env.HUB_LLM_CONTROL_DIR
+  || process.env.JAY_LLM_CONTROL_DIR
+  || path.join(AI_AGENT_HOME, 'llm-control');
+const SPEED_TEST_LATEST_FILE = path.join(AI_AGENT_WORKSPACE, 'llm-speed-test-latest.json');
+const LLM_CONTROL_CONFIG_FILE = process.env.HUB_LLM_CONTROL_CONFIG
+  || path.join(LLM_CONTROL_DIR, 'models.json');
 const ROOT_DIR = path.join(__dirname, '..', '..', '..', '..');
 const SPEED_TEST_REVIEW_SCRIPT = path.join(ROOT_DIR, 'scripts', 'reviews', 'llm-selector-speed-review.js');
 const SPEED_TEST_DAILY_SCRIPT = path.join(ROOT_DIR, 'scripts', 'reviews', 'llm-selector-speed-daily.js');
@@ -351,8 +362,8 @@ function loadLatestSpeedSnapshot() {
 
 function loadSpeedTestTargets() {
   try {
-    if (!fs.existsSync(OPENCLAW_CONFIG_FILE)) return [];
-    const config = JSON.parse(fs.readFileSync(OPENCLAW_CONFIG_FILE, 'utf8'));
+    if (!fs.existsSync(LLM_CONTROL_CONFIG_FILE)) return [];
+    const config = JSON.parse(fs.readFileSync(LLM_CONTROL_CONFIG_FILE, 'utf8'));
     const models = config?.agents?.defaults?.models || {};
     return Object.keys(models)
       .map((modelId) => {
@@ -5849,11 +5860,14 @@ app.use((err, req, res, _next) => {
 // ── Claude Code (SSE 스트리밍 + DB 동기화) ───────────────────────────
 const NODE_BIN         = '/opt/homebrew/bin/node';
 const CLAUDE_CLI       = process.env.CLAUDE_CODE_CLI || '/opt/homebrew/lib/node_modules/@anthropic-ai/claude-code/cli.js';
-const { PROJECT_ROOT: CLAUDE_WORKDIR } = require('../../../packages/core/lib/env.js');
-const CLAUDE_SPAWN_LOG = require('path').join(require('os').homedir(), '.openclaw', 'workspace', 'logs', 'claude-code-spawns.jsonl');
+const { PROJECT_ROOT: CLAUDE_WORKDIR, AI_AGENT_WORKSPACE: CLAUDE_RUNTIME_WORKSPACE } = require('../../../packages/core/lib/env.js');
+const CLAUDE_SPAWN_LOG = path.join(CLAUDE_RUNTIME_WORKSPACE || AI_AGENT_WORKSPACE, 'logs', 'claude-code-spawns.jsonl');
 
 function logClaudeSpawn(event) {
-  try { require('fs').appendFileSync(CLAUDE_SPAWN_LOG, JSON.stringify({ ts: new Date().toISOString(), ...event }) + '\n'); } catch {}
+  try {
+    fs.mkdirSync(path.dirname(CLAUDE_SPAWN_LOG), { recursive: true });
+    fs.appendFileSync(CLAUDE_SPAWN_LOG, JSON.stringify({ ts: new Date().toISOString(), ...event }) + '\n');
+  } catch {}
 }
 
 function spawnClaude(sessionId, message) {

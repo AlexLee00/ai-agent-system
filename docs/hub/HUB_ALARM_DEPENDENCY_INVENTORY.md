@@ -2,11 +2,11 @@
 
 This inventory tracks the Hub alarm migration surface. `hub_alarm_native` entries are the desired path; `legacy_openclaw_compat` entries are compatibility shims or remaining migration targets.
 
-- generated_at: 2026-04-25T21:13:13.623Z
-- total_matches: 279
-- unique_files: 124
+- generated_at: 2026-04-25T21:18:16.605Z
+- total_matches: 271
+- unique_files: 122
 - hub_alarm_native: 67
-- legacy_openclaw_compat: 212
+- legacy_openclaw_compat: 204
 
 ## Files
 
@@ -368,11 +368,6 @@ This inventory tracks the Hub alarm migration surface. `hub_alarm_native` entrie
 ### `bots/worker/lib/approval.ts`
 - L17 [legacy_openclaw_compat]: `const { postAlarm } = require(path.join(__dirname, '../../../packages/core/lib/openclaw-client'));`
 
-### `bots/worker/web/server.js`
-- L217 [legacy_openclaw_compat]: `const OPENCLAW_CONFIG_FILE = path.join(process.env.HOME || '', '.openclaw/openclaw.json');`
-- L354 [legacy_openclaw_compat]: `if (!fs.existsSync(OPENCLAW_CONFIG_FILE)) return [];`
-- L355 [legacy_openclaw_compat]: `const config = JSON.parse(fs.readFileSync(OPENCLAW_CONFIG_FILE, 'utf8'));`
-
 ### `docs/SESSION_HANDOFF_2026-04-17.md`
 - L2886 [legacy_openclaw_compat]: `- 토큰 우선순위 체인: runtime → env(OPENCLAW_BROWSER_TOKEN/GATEWAY_TOKEN) → config 파일`
 
@@ -437,13 +432,6 @@ This inventory tracks the Hub alarm migration surface. `hub_alarm_native` entrie
 
 ### `packages/core/lib/llm-control/snapshot.ts`
 - L12 [legacy_openclaw_compat]: `|| process.env.OPENCLAW_WORKSPACE`
-
-### `packages/core/lib/llm-control/tester-support.ts`
-- L6 [legacy_openclaw_compat]: `const OPENCLAW_CONFIG = path.join(process.env.HOME || '', '.openclaw/openclaw.json');`
-- L51 [legacy_openclaw_compat]: `const cfg = JSON.parse(fs.readFileSync(OPENCLAW_CONFIG, 'utf-8'));`
-- L139 [legacy_openclaw_compat]: `const cfg = JSON.parse(fs.readFileSync(OPENCLAW_CONFIG, 'utf-8'));`
-- L149 [legacy_openclaw_compat]: `fs.writeFileSync(OPENCLAW_CONFIG, JSON.stringify(cfg, null, 2) + '\n');`
-- L154 [legacy_openclaw_compat]: `OPENCLAW_CONFIG,`
 
 ### `packages/core/lib/llm-timeouts.ts`
 - L10 [legacy_openclaw_compat]: `|| process.env.OPENCLAW_WORKSPACE`
