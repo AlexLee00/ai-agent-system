@@ -4658,6 +4658,8 @@ export async function executeSignal(signal) {
     /** @type {any} */
     let trade;
     let executionMeta = null;
+    let executionClientOrderId = null;
+    let executionSubmittedAtMs = null;
 
     if (action === ACTIONS.BUY) {
       let promoted = [];
@@ -4830,8 +4832,8 @@ export async function executeSignal(signal) {
         console.log(`  🎛️ [execution tone] ${symbol} 책임계획 반영 x${responsibilitySizing.multiplier.toFixed(2)} (${responsibilitySizing.reason})`);
       }
 
-      const buySubmittedAtMs = Date.now();
-      const buyClientOrderId = !effectivePaperMode
+      executionSubmittedAtMs = Date.now();
+      executionClientOrderId = !effectivePaperMode
         ? buildDeterministicClientOrderId({
             signalId,
             symbol,
@@ -4840,8 +4842,8 @@ export async function executeSignal(signal) {
           })
         : null;
       const order = await marketBuy(symbol, actualAmount, effectivePaperMode, {
-        clientOrderId: buyClientOrderId,
-        submittedAtMs: buySubmittedAtMs,
+        clientOrderId: executionClientOrderId,
+        submittedAtMs: executionSubmittedAtMs,
       });
       const settledUsdt = Number(order.cost || (Number(order.filled || 0) * Number(order.price || order.average || 0)) || actualAmount);
       trade = {
@@ -4944,7 +4946,7 @@ export async function executeSignal(signal) {
     const syntheticBridgePendingEligible = (() => {
       const code = String(e?.code || '').trim().toLowerCase();
       if (code !== 'binance_mcp_mutating_bridge_failed') return false;
-      return Boolean(clientOrderId) && (action === ACTIONS.BUY || action === ACTIONS.SELL);
+      return Boolean(executionClientOrderId) && (action === ACTIONS.BUY || action === ACTIONS.SELL);
     })();
     if (syntheticBridgePendingEligible) {
       const bridgeMeta = e?.meta && typeof e.meta === 'object' ? e.meta : {};
@@ -4957,14 +4959,14 @@ export async function executeSignal(signal) {
         side: String(action || '').trim().toLowerCase() || null,
         orderSymbol: String(bridgeMeta.orderSymbol || bridgeMeta.symbol || symbol || '').trim().toUpperCase() || symbol,
         orderId: bridgeMeta.orderId || null,
-        clientOrderId: bridgeMeta.clientOrderId || clientOrderId || null,
+        clientOrderId: bridgeMeta.clientOrderId || executionClientOrderId || null,
         status: String(bridgeMeta.status || 'bridge_error_after_submit').trim().toLowerCase() || 'bridge_error_after_submit',
         amount: Number(bridgeMeta.amount || 0),
         filled: Number(bridgeMeta.filled || 0),
         price: Number(bridgeMeta.price || 0),
         cost: Number(bridgeMeta.cost || 0),
         amountUsdt: Number(bridgeMeta.amountUsdt || amountUsdt || 0),
-        submittedAtMs,
+        submittedAtMs: executionSubmittedAtMs,
         source: 'binance_mcp_mutating_bridge_failed',
       };
       syntheticPendingError.cause = e;
