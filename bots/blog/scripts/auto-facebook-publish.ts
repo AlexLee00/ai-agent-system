@@ -161,6 +161,20 @@ async function recordAssetOutcomeSafe(payload = {}) {
   });
 }
 
+async function notifyQueueUnavailable(detail = '') {
+  const message = [
+    '[블로팀] Facebook queue-first 확인 실패 (fail-closed)',
+    '큐 상태를 확인할 수 없어 legacy fallback 발행을 중단합니다.',
+    detail ? `detail=${detail}` : '',
+  ].filter(Boolean).join('\n');
+
+  await runIfOps(
+    'blog-fb-queue-unavailable',
+    () => postAlarm({ message, team: 'blog', bot: 'auto-facebook-publish', level: 'warn' }),
+    () => console.log('[DEV]', message),
+  ).catch(() => {});
+}
+
 /**
  * strategy_native 경로: 큐 job → quality gate → native message → publish
  */
@@ -172,26 +186,45 @@ async function publishFromQueue(queueJob) {
   }
 
   const qr = await evaluateAndSaveQuality({ variant, config: {}, dryRun: DRY_RUN });
-  if (qr.gateResult === 'blocked') {
-    console.warn(`[facebook-auto][native] quality gate BLOCKED score=${qr.scoreTotal}`);
+  if (qr.gateResult === 'blocked' || qr.gateResult === 'recoverable') {
+    const isRecoverable = qr.gateResult === 'recoverable';
+    console.warn(`[facebook-auto][native] quality gate ${isRecoverable ? 'RECOVERABLE' : 'BLOCKED'} score=${qr.scoreTotal}`);
     await markPublishFailure(queueId, {
-      error: `quality_gate_blocked: ${qr.reasons.blocked.join('; ')}`,
-      failureKind: 'quality_gate',
-      block: true,
+      error: isRecoverable
+        ? `quality_gate_recoverable: ${(qr.reasons.recoverable || []).join('; ')}`
+        : `quality_gate_blocked: ${(qr.reasons.blocked || []).join('; ')}`,
+      failureKind: isRecoverable ? 'quality_gate_recoverable' : 'quality_gate',
+      block: !isRecoverable,
     });
     await runIfOps('blog-fb-quality-block', () => postAlarm({
-      message: `[블로팀] Facebook strategy_native 발행 quality gate 차단\n점수=${qr.scoreTotal}\n이유=${qr.reasons.blocked.join(', ')}`,
+      message: isRecoverable
+        ? `[블로팀] Facebook strategy_native 발행 quality gate recoverable\n점수=${qr.scoreTotal}\n이유=${(qr.reasons.recoverable || []).join(', ')}\n게시 중단 후 자동 재생성 진행`
+        : `[블로팀] Facebook strategy_native 발행 quality gate 차단\n점수=${qr.scoreTotal}\n이유=${(qr.reasons.blocked || []).join(', ')}`,
       team: 'blog', bot: 'auto-facebook-publish', level: 'warn',
     }), () => console.log('[DEV] quality gate blocked')).catch(() => {});
+
+    if (isRecoverable) {
+      await createMarketingCampaignFromSignals({
+        brandAxis: variant.brand_axis || 'cafe_library',
+        objective: variant.objective || 'engagement',
+        dryRun: DRY_RUN,
+      }).catch((error) => {
+        console.warn('[facebook-auto] recoverable 재생성 campaign 실패:', String(error?.message || error));
+      });
+    }
+
     await recordAssetOutcomeSafe({
       variant,
       qualityScore: qr.scoreTotal,
       gateResult: qr.gateResult,
-      publishStatus: 'blocked',
-      failureKind: 'quality_gate',
-      metadata: { blockedReasons: qr.reasons?.blocked || [] },
+      publishStatus: isRecoverable ? 'failed' : 'blocked',
+      failureKind: isRecoverable ? 'quality_gate_recoverable' : 'quality_gate',
+      metadata: {
+        blockedReasons: qr.reasons?.blocked || [],
+        recoverableReasons: qr.reasons?.recoverable || [],
+      },
     });
-    return { ok: false, reason: 'quality_gate_blocked' };
+    return { ok: false, reason: isRecoverable ? 'quality_gate_recoverable' : 'quality_gate_blocked' };
   }
 
   const message = variant.body || variant.caption || variant.title || '';
@@ -303,7 +336,13 @@ async function main() {
   console.log(`[facebook-auto] 시작 dryRun=${DRY_RUN}`);
 
   // ── 1. Queue-first: strategy_native 큐 확인 ────────────────────────────
-  const queueJob = await claimNextPublishJob('facebook_page', { dryRun: DRY_RUN }).catch(() => null);
+  let queueJob = null;
+  try {
+    queueJob = await claimNextPublishJob('facebook_page', { dryRun: DRY_RUN });
+  } catch (error) {
+    await notifyQueueUnavailable(String(error?.message || error));
+    throw new Error(`queue_unavailable: ${String(error?.message || error)}`);
+  }
 
   if (queueJob) {
     console.log(`[facebook-auto] queue-first: job=${queueJob.queue_id} variant=${queueJob.variant_id}`);
@@ -313,12 +352,13 @@ async function main() {
   }
 
   // ── 2. 전략이 social_native_required이면 새 캠페인 생성 ────────────────
+  let nativeRequired = false;
   let newCampaignQueued = false;
   try {
     const { directives } = require(
       path.join(env.PROJECT_ROOT, 'bots/blog/lib/strategy-loader.ts')
     ).loadStrategyBundle();
-    const nativeRequired = directives?.socialNativeRequired === true;
+    nativeRequired = directives?.socialNativeRequired === true;
     if (nativeRequired) {
       console.log('[facebook-auto] social_native_required — 새 campaign 생성');
       await createMarketingCampaignFromSignals({ brandAxis: 'cafe_library', objective: 'awareness', dryRun: DRY_RUN });
@@ -326,15 +366,55 @@ async function main() {
     }
   } catch (e) {
     console.warn('[facebook-auto] 전략 로드 또는 campaign 생성 실패:', e.message);
+    if (nativeRequired) {
+      await runIfOps('blog-fb-native-required-create-failed', () => postAlarm({
+        message: `[블로팀] Facebook social_native_required 경로에서 campaign 생성 실패 (fail-closed)\n${String(e?.message || e)}`,
+        team: 'blog',
+        bot: 'auto-facebook-publish',
+        level: 'warn',
+      }), () => console.log('[DEV] native required create failed')).catch(() => {});
+      throw new Error(`social_native_required_campaign_create_failed: ${String(e?.message || e)}`);
+    }
   }
 
   if (newCampaignQueued) {
-    const newJob = await claimNextPublishJob('facebook_page', { dryRun: DRY_RUN }).catch(() => null);
+    let newJob = null;
+    try {
+      newJob = await claimNextPublishJob('facebook_page', { dryRun: DRY_RUN });
+    } catch (error) {
+      await notifyQueueUnavailable(String(error?.message || error));
+      throw new Error(`queue_unavailable_after_regen: ${String(error?.message || error)}`);
+    }
     if (newJob) {
       await publishFromQueue(newJob);
       console.log('[facebook-auto] 완료 (new-campaign queue)');
       return;
     }
+    if (nativeRequired) {
+      await runIfOps('blog-fb-native-required-queue-empty', () => postAlarm({
+        message: '[블로팀] Facebook social_native_required 경로에서 queue claim 결과 없음 (fail-closed)',
+        team: 'blog',
+        bot: 'auto-facebook-publish',
+        level: 'warn',
+      }), () => console.log('[DEV] native required queue empty')).catch(() => {});
+      if (DRY_RUN) {
+        console.log('[facebook-auto][dry-run] social_native_required queue empty 시뮬레이션 종료');
+        return;
+      }
+      throw new Error('social_native_required_queue_empty');
+    }
+  } else if (nativeRequired) {
+    await runIfOps('blog-fb-native-required-not-queued', () => postAlarm({
+      message: '[블로팀] Facebook social_native_required 경로에서 새 campaign이 queue로 등록되지 않았습니다 (fail-closed)',
+      team: 'blog',
+      bot: 'auto-facebook-publish',
+      level: 'warn',
+    }), () => console.log('[DEV] native required not queued')).catch(() => {});
+    if (DRY_RUN) {
+      console.log('[facebook-auto][dry-run] social_native_required not queued 시뮬레이션 종료');
+      return;
+    }
+    throw new Error('social_native_required_not_queued');
   }
 
   // ── 3. Legacy naver_post fallback ────────────────────────────────────────

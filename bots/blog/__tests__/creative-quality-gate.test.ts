@@ -24,7 +24,7 @@ describe('creative-quality-gate', () => {
     caption: `📚 지금 바로 스터디룸 예약하세요!\n\n커피랑도서관 분당서현점입니다.\n조용하고 집중되는 공간에서 공부하세요.\n\n▶ 예약 링크는 바이오에서!\n\n#스터디카페 #커피랑도서관 #분당서현 #서현역스터디카페`,
     cta: '▶ 예약 링크 바이오에서 확인',
     hashtags: ['#스터디카페', '#커피랑도서관', '#분당서현', '#서현역스터디카페'],
-    asset_refs: null,
+    asset_refs: { reelPublicUrl: 'https://example.com/reel.mp4' },
   };
 
   test('runCreativeQualityGate — 정상 variant 통과', () => {
@@ -33,7 +33,7 @@ describe('creative-quality-gate', () => {
       config: { accessToken: 'tok', igUserId: 'ig123' },
     });
     expect(result.scoreTotal).toBeGreaterThan(gate.GATE_THRESHOLD_BLOCK);
-    expect(['passed', 'recoverable']).toContain(result.gateResult);
+    expect(result.gateResult).toBe('passed');
     expect(result.passed).toBe(true);
   });
 
@@ -71,6 +71,8 @@ describe('creative-quality-gate', () => {
     });
     // api_readiness는 full이 아님
     expect(result.reasons.recoverable.some(r => r.includes('prepare:instagram-media'))).toBe(true);
+    expect(result.gateResult).toBe('recoverable');
+    expect(result.passed).toBe(false);
   });
 
   test('evaluateAndSaveQuality — dryRun 시 DB 저장 안 함', async () => {

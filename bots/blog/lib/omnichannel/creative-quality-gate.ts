@@ -200,7 +200,7 @@ function runCreativeQualityGate({ variant, config = {} }) {
     scoreTotal,
     scores: { brandScore, hookScore, ctaScore, policyScore, visualScore, apiReadinessScore },
     reasons: { passed: passedReasons, blocked: blockedReasons, recoverable: recoverableReasons },
-    passed: gateResult === 'passed' || gateResult === 'recoverable',
+    passed: gateResult === 'passed',
     recoverable: gateResult === 'recoverable',
   };
 }

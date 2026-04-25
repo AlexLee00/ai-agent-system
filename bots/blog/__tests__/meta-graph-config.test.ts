@@ -4,11 +4,12 @@
  * meta-graph-config 테스트
  */
 
-const path = require('path');
-const env = require('../../../packages/core/lib/env');
-
 // hub-client mock
-jest.mock(path.join(env.PROJECT_ROOT, 'packages/core/lib/hub-client'), () => ({
+jest.mock('../../../packages/core/lib/env', () => ({
+  PROJECT_ROOT: '/Users/alexlee/projects/ai-agent-system',
+}));
+
+jest.mock('../../../packages/core/lib/hub-client', () => ({
   fetchHubSecrets: jest.fn().mockResolvedValue({
     access_token: 'hub_tok',
     ig_user_id: 'hub_ig',
@@ -20,7 +21,7 @@ jest.mock(path.join(env.PROJECT_ROOT, 'packages/core/lib/hub-client'), () => ({
   }),
 }));
 
-jest.mock(path.join(env.PROJECT_ROOT, 'packages/core/lib/instagram-token-manager.ts'), () => ({
+jest.mock('../../../packages/core/lib/instagram-token-manager.ts', () => ({
   getInstagramTokenConfig: jest.fn().mockReturnValue({
     accessToken: '',
     igUserId: '',
@@ -47,7 +48,7 @@ jest.mock('fs', () => ({
   existsSync: jest.fn().mockReturnValue(false),
 }));
 
-const metaConfig = require(path.join(env.PROJECT_ROOT, 'packages/core/lib/meta-graph-config.ts'));
+const metaConfig = require('../../../packages/core/lib/meta-graph-config.ts');
 
 describe('meta-graph-config', () => {
   test('getMetaGraphConfig — hub 우선 credential 반환', async () => {
@@ -73,7 +74,7 @@ describe('meta-graph-config', () => {
   });
 
   test('getMetaGraphConfig — hub 실패 시 graceful fallback', async () => {
-    const { fetchHubSecrets } = require(path.join(env.PROJECT_ROOT, 'packages/core/lib/hub-client'));
+    const { fetchHubSecrets } = require('../../../packages/core/lib/hub-client');
     fetchHubSecrets.mockRejectedValueOnce(new Error('hub down'));
     const config = await metaConfig.getMetaGraphConfig().catch(() => null);
     // 에러가 전파되거나 null/기본값 반환 — 둘 다 허용

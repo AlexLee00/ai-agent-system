@@ -13,6 +13,17 @@ const pgPool = require('../../../../packages/core/lib/pg-pool');
 const kst = require('../../../../packages/core/lib/kst');
 const { ensureMarketingOsSchema } = require('./marketing-os-schema.ts');
 
+const DEFAULT_PREPARING_LEASE_MINUTES = 20;
+const DEFAULT_MAX_ATTEMPTS = 4;
+
+class QueueUnavailableError extends Error {
+  constructor(message = 'queue_unavailable') {
+    super(message);
+    this.name = 'QueueUnavailableError';
+    this.code = 'queue_unavailable';
+  }
+}
+
 function generateId(prefix = 'q') {
   const ts = Date.now().toString(36).toUpperCase();
   const rand = Math.random().toString(36).slice(2, 8).toUpperCase();
@@ -120,6 +131,31 @@ async function enqueueMarketingVariants({ campaignId, variants = [], dryRun = fa
 async function claimNextPublishJob(platform, { dryRun = false } = {}) {
   try {
     await ensureMarketingOsSchema();
+    // stale preparing 복구: lease 시간 초과 시 queued로 복귀
+    await pgPool.query('blog', `
+      UPDATE blog.marketing_publish_queue
+      SET status = 'queued',
+          last_error = COALESCE(last_error, 'stale_preparing_requeued'),
+          updated_at = NOW()
+      WHERE platform = $1
+        AND dry_run = $2
+        AND status = 'preparing'
+        AND updated_at < NOW() - (($3::text || ' minutes')::interval)
+    `, [platform, dryRun, DEFAULT_PREPARING_LEASE_MINUTES]);
+
+    // 과도 재시도는 자동 차단
+    await pgPool.query('blog', `
+      UPDATE blog.marketing_publish_queue
+      SET status = 'blocked',
+          failure_kind = COALESCE(failure_kind, 'retry_exhausted'),
+          last_error = COALESCE(last_error, 'max_attempts_exhausted'),
+          updated_at = NOW()
+      WHERE platform = $1
+        AND dry_run = $2
+        AND status IN ('queued', 'preparing')
+        AND attempt_count >= $3
+    `, [platform, dryRun, DEFAULT_MAX_ATTEMPTS]);
+
     const rows = await pgPool.query('blog', `
       UPDATE blog.marketing_publish_queue
       SET status = 'preparing',
@@ -158,7 +194,7 @@ async function claimNextPublishJob(platform, { dryRun = false } = {}) {
     return { ...job, variant };
   } catch (err) {
     console.warn(`[publish-queue] claimNextPublishJob 실패 platform=${platform}:`, err.message);
-    return null;
+    throw new QueueUnavailableError(String(err?.message || err || 'claim_failed'));
   }
 }
 
@@ -244,4 +280,5 @@ module.exports = {
   getTodayQueuedCount,
   getTodayPublishedCount,
   buildIdempotencyKey,
+  QueueUnavailableError,
 };
