@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-04-25T13:31:40.451Z",
+  "generated_at": "2026-04-25T20:58:02.085Z",
   "scan_patterns": [
     "hub-alarm-client",
     "openclaw-client",
@@ -666,7 +666,7 @@
     "bots/hub/scripts/claude-code-oauth-direct-smoke.ts": [
       {
         "file": "bots/hub/scripts/claude-code-oauth-direct-smoke.ts",
-        "line": 21,
+        "line": 22,
         "category": "legacy_openclaw_compat",
         "match": "openclawAgent: process.env.OPENCLAW_AGENT || null"
       }

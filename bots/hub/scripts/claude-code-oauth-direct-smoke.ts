@@ -9,6 +9,7 @@ const originalCapturePath = process.env.CLAUDE_CODE_SMOKE_CAPTURE;
 async function main() {
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'claude-code-oauth-smoke-'));
   const fakeClaudePath = path.join(tmpDir, 'fake-claude.mjs');
+  const fakeClaudeBudgetErrorPath = path.join(tmpDir, 'fake-claude-budget-error.mjs');
   const capturePath = path.join(tmpDir, 'capture.json');
 
   fs.writeFileSync(fakeClaudePath, `#!/usr/bin/env node
@@ -32,6 +33,21 @@ process.stdout.write(JSON.stringify({
 }));
 `, 'utf8');
   fs.chmodSync(fakeClaudePath, 0o755);
+
+  fs.writeFileSync(fakeClaudeBudgetErrorPath, `#!/usr/bin/env node
+process.stdout.write(JSON.stringify({
+  type: 'result',
+  subtype: 'error_max_budget_usd',
+  is_error: true,
+  duration_api_ms: 7,
+  total_cost_usd: 0.045,
+  modelUsage: { sonnet: { costUSD: 0.045 } },
+  session_id: 'claude-budget-error-session',
+  errors: ['Reached maximum budget ($0.02)']
+}));
+process.exit(1);
+`, 'utf8');
+  fs.chmodSync(fakeClaudeBudgetErrorPath, 0o755);
 
   process.env.CLAUDE_CODE_BIN = fakeClaudePath;
   process.env.CLAUDE_CODE_SMOKE_CAPTURE = capturePath;
@@ -65,6 +81,18 @@ process.stdout.write(JSON.stringify({
   assert(capture.argv.includes('--json-schema'));
   assert(capture.argv.includes('--max-budget-usd'));
   assert(!capture.argv.some((arg: string) => String(arg).toLowerCase().includes('openclaw')));
+
+  process.env.CLAUDE_CODE_BIN = fakeClaudeBudgetErrorPath;
+  const budgetError = await callClaudeCodeOAuth({
+    prompt: 'Budget failure smoke.',
+    model: 'sonnet',
+    timeoutMs: 5000,
+    maxBudgetUsd: 0.02,
+  });
+  assert.equal(budgetError.ok, false);
+  assert.equal(budgetError.provider, 'failed');
+  assert.match(String(budgetError.error || ''), /error_max_budget_usd|maximum budget/i);
+  assert.equal(budgetError.sessionId, 'claude-budget-error-session');
 
   console.log(JSON.stringify({
     ok: true,

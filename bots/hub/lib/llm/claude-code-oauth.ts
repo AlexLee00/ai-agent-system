@@ -53,6 +53,20 @@ export function callClaudeCodeOAuth(req: ClaudeCodeRequest): Promise<LLMCallResp
         return;
       }
       if (code !== 0) {
+        const parsedError = parseClaudeCodeJson(stdout);
+        if (parsedError) {
+          resolve({
+            ok: false,
+            provider: 'failed',
+            durationMs,
+            apiDurationMs: parsedError.duration_api_ms,
+            totalCostUsd: parsedError.total_cost_usd,
+            modelUsage: parsedError.modelUsage,
+            sessionId: parsedError.session_id,
+            error: summarizeClaudeCodeError(parsedError, code),
+          });
+          return;
+        }
         resolve({ ok: false, provider: 'failed', durationMs, error: `exit ${code}: ${stderr.trim().slice(0, 300)}` });
         return;
       }
@@ -91,4 +105,27 @@ export function callClaudeCodeOAuth(req: ClaudeCodeRequest): Promise<LLMCallResp
       });
     });
   });
+}
+
+function parseClaudeCodeJson(stdout: string): any | null {
+  const text = String(stdout || '').trim();
+  if (!text) return null;
+  try {
+    return JSON.parse(text);
+  } catch {
+    return null;
+  }
+}
+
+function summarizeClaudeCodeError(parsed: any, code: number | null): string {
+  const parts = [
+    parsed?.api_error_status,
+    parsed?.subtype,
+    Array.isArray(parsed?.errors) ? parsed.errors.join('; ') : null,
+    parsed?.error,
+  ]
+    .map((part) => String(part || '').trim())
+    .filter(Boolean);
+  const message = parts.length > 0 ? parts.join(': ') : `exit ${code}`;
+  return message.slice(0, 500);
 }

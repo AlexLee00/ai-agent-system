@@ -2,7 +2,7 @@
 
 This inventory tracks the Hub alarm migration surface. `hub_alarm_native` entries are the desired path; `legacy_openclaw_compat` entries are compatibility shims or remaining migration targets.
 
-- generated_at: 2026-04-25T13:31:40.451Z
+- generated_at: 2026-04-25T20:58:02.085Z
 - total_matches: 263
 - unique_files: 117
 - hub_alarm_native: 67
@@ -229,7 +229,7 @@ This inventory tracks the Hub alarm migration surface. `hub_alarm_native` entrie
 - L17 [hub_alarm_native]: `return Math.min(1000, Math.max(10, Number(process.env.HUB_ALARM_DIGEST_LIMIT || 300) || 300));`
 
 ### `bots/hub/scripts/claude-code-oauth-direct-smoke.ts`
-- L21 [legacy_openclaw_compat]: `openclawAgent: process.env.OPENCLAW_AGENT || null`
+- L22 [legacy_openclaw_compat]: `openclawAgent: process.env.OPENCLAW_AGENT || null`
 
 ### `bots/hub/scripts/generate-hub-alarm-inventory.ts`
 - L8 [hub_alarm_native]: `const outputMarkdownPath = path.join(projectRoot, 'docs', 'hub', 'HUB_ALARM_DEPENDENCY_INVENTORY.md');`
