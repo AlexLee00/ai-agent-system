@@ -100,6 +100,7 @@ const localCircuitBreaker = {
 };
 
 const LATEST_OPS_SNAPSHOT_FILE = path.resolve(__dirname, '..', 'output', 'ops', 'parallel-ops-snapshot.json');
+const LATEST_OPS_SNAPSHOT_STALE_HOURS = 24;
 
 function loadLatestOpsSnapshot() {
   try {
@@ -108,6 +109,20 @@ function loadLatestOpsSnapshot() {
   } catch {
     return null;
   }
+}
+
+function getSnapshotAgeHours(capturedAt) {
+  const ts = capturedAt ? new Date(capturedAt).getTime() : NaN;
+  if (!Number.isFinite(ts)) return null;
+  return Math.max(0, Math.round(((Date.now() - ts) / 3600000) * 10) / 10);
+}
+
+function formatSnapshotSummary(snapshot, weakest, weakestMode) {
+  if (!snapshot?.capturedAt) return null;
+  const ageHours = getSnapshotAgeHours(snapshot.capturedAt);
+  const ageText = ageHours == null ? 'age n/a' : ageHours < 24 ? `${ageHours.toFixed(1)}h ago` : `${(ageHours / 24).toFixed(1)}d ago`;
+  const prefix = ageHours != null && ageHours > LATEST_OPS_SNAPSHOT_STALE_HOURS ? 'stale snapshot' : 'latest snapshot';
+  return `${prefix} ${snapshot.capturedAt} / ${weakest?.regime || 'n/a'} / ${weakestMode} / ${ageText}`;
 }
 
 function getWeakestRegimeSummary(runtimeLearningLoop) {
@@ -685,6 +700,14 @@ function buildDecision(
   const topBlock = signalBlockHealth.top[0] || null;
   const topReasonGroup = signalBlockHealth.topReasonGroups?.[0] || null;
   const recentTopReasonGroup = recentSignalBlockHealth.topReasonGroups?.[0] || null;
+  const { weakest: latestSnapshotWeakest, weakestMode: latestSnapshotWeakestMode } = getWeakestRegimeSummary(
+    latestOpsSnapshot?.health?.runtimeLearningLoop,
+  );
+  const latestSnapshotSummary = formatSnapshotSummary(
+    latestOpsSnapshot,
+    latestSnapshotWeakest,
+    latestSnapshotWeakestMode,
+  );
   const saturatedLane = tradeLaneHealth.lanes.find((lane) => lane.atLimit);
   const nearLimitLane = tradeLaneHealth.lanes.find((lane) => lane.nearLimit);
   const pressureLane = recentLaneBlockPressure.topLane || null;
@@ -834,7 +857,7 @@ function buildDecision(
       {
         active: ['regime_strategy_tuning_needed', 'regime_strategy_monitor'].includes(runtimeLearningLoop?.decision?.status),
         level: runtimeLearningLoop?.decision?.status === 'regime_strategy_monitor' ? 'low' : 'medium',
-        reason: `learning loop — ${runtimeLearningLoop?.decision?.headline || '레짐별 전략 튜닝 필요'} / top suggestion ${runtimeLearningLoop?.sections?.strategy?.runtimeSuggestionTop?.key || 'n/a'} ${runtimeLearningLoop?.decision?.status === 'regime_strategy_monitor' ? `current ${runtimeLearningLoop?.sections?.strategy?.runtimeSuggestionTop?.current ?? runtimeLearningLoop?.sections?.strategy?.runtimeSuggestionTop?.governance?.current ?? 'n/a'} (already applied)` : `-> ${runtimeLearningLoop?.sections?.strategy?.runtimeSuggestionTop?.suggested ?? 'n/a'}`} / next command npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime-suggest -- --json${latestOpsSnapshot?.capturedAt ? ` / latest snapshot ${latestOpsSnapshot.capturedAt}` : ''}`,
+        reason: `learning loop — ${runtimeLearningLoop?.decision?.headline || '레짐별 전략 튜닝 필요'} / top suggestion ${runtimeLearningLoop?.sections?.strategy?.runtimeSuggestionTop?.key || 'n/a'} ${runtimeLearningLoop?.decision?.status === 'regime_strategy_monitor' ? `current ${runtimeLearningLoop?.sections?.strategy?.runtimeSuggestionTop?.current ?? runtimeLearningLoop?.sections?.strategy?.runtimeSuggestionTop?.governance?.current ?? 'n/a'} (already applied)` : `-> ${runtimeLearningLoop?.sections?.strategy?.runtimeSuggestionTop?.suggested ?? 'n/a'}`} / next command npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime-suggest -- --json${latestSnapshotSummary ? ` / ${latestSnapshotSummary}` : ''}`,
       },
       {
         active: Number(runtimeView.metrics?.exitReady || 0) > 0 || Number(runtimeView.metrics?.adjustReady || 0) > 0 || runtimeView.tuningStatus === 'position_runtime_tuning_attention',
@@ -1423,6 +1446,7 @@ function formatText(report) {
       lines: report.runtimeLearningLoop
         ? (() => {
           const { weakest: latestWeakest, weakestMode: latestWeakestMode } = getWeakestRegimeSummary(report.latestOpsSnapshot?.health?.runtimeLearningLoop);
+          const latestSnapshotSummary = formatSnapshotSummary(report.latestOpsSnapshot, latestWeakest, latestWeakestMode);
           const strategyFeedbackOutcomes = report.runtimeLearningLoop.sections?.collect?.strategyFeedbackOutcomes || null;
           const strategyFeedbackWeak = strategyFeedbackOutcomes?.weak || strategyFeedbackOutcomes?.weakest || null;
           const strategyFeedbackTrend = strategyFeedbackOutcomes?.trend || null;
@@ -1457,7 +1481,7 @@ function formatText(report) {
             ...(strategyFeedbackTrend ? [`  feedback trend: history ${strategyFeedbackTrend.historyCount || 0} / tagged Δ${strategyFeedbackTrend.delta?.total ?? 0} / closed Δ${strategyFeedbackTrend.delta?.closed ?? 0} / pnl Δ${strategyFeedbackTrend.delta?.pnlSummary ?? strategyFeedbackTrend.delta?.pnlNet ?? 0}`] : []),
             ...(strategyFeedbackWeak ? [`  feedback weakest: ${strategyFeedbackWeak.familyBias || 'n/a'} / ${strategyFeedbackWeak.family || 'n/a'} / ${strategyFeedbackWeak.executionKind || 'n/a'} / avg ${strategyFeedbackWeak.avgPnlPercent ?? 'n/a'}%`] : []),
             ...(riskApprovalTopModel ? [`  risk top model: ${riskApprovalTopModel.model || 'n/a'} / adjust ${riskApprovalTopModel.adjust || 0} / reject ${riskApprovalTopModel.reject || 0} / pass ${riskApprovalTopModel.pass || 0}`] : []),
-            ...(report.latestOpsSnapshot?.capturedAt ? [`  latest snapshot: ${report.latestOpsSnapshot.capturedAt} / ${latestWeakest?.regime || 'n/a'} / ${latestWeakestMode}`] : []),
+            ...(latestSnapshotSummary ? [`  ${latestSnapshotSummary}`] : []),
             `  next command: npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime-suggest -- --json`,
             ...((report.runtimeLearningLoop.decision?.nextActions || []).slice(0, 3).map((item) => `  next: ${item}`)),
           ];
@@ -1629,6 +1653,10 @@ async function buildReport() {
     limit: 500,
   }).catch(() => null);
   const latestOpsSnapshot = loadLatestOpsSnapshot();
+  const { weakest: latestOpsWeakest, weakestMode: latestOpsWeakestMode } = getWeakestRegimeSummary(
+    latestOpsSnapshot?.health?.runtimeLearningLoop,
+  );
+  const latestSnapshotSummary = formatSnapshotSummary(latestOpsSnapshot, latestOpsWeakest, latestOpsWeakestMode);
   const cryptoGateActionPlan = buildCryptoGateActionPlan(capitalGuardBreakdown);
   const executionAttachView = buildExecutionAttachSnapshot(executionAttachAudit, executionAttachBackfill);
   const remediationView = buildFlatRemediationSnapshot(positionStrategyRemediation);

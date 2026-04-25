@@ -75,6 +75,7 @@ const ALL_SERVICES = [
 const NORMAL_EXIT_CODES = new Set([0, -9, -15]);
 const LOCAL_LLM_HEALTH_HISTORY_FILE = '/tmp/investment-local-llm-health-history.jsonl';
 const LATEST_OPS_SNAPSHOT_FILE = '/Users/alexlee/projects/ai-agent-system/bots/investment/output/ops/parallel-ops-snapshot.json';
+const LATEST_OPS_SNAPSHOT_STALE_HOURS = 24;
 const INVESTMENT_BOT_PREFIX = '/Users/alexlee/projects/ai-agent-system/bots/investment';
 const MCP_HEALTH_CHECK_TIMEOUT_MS = 25_000;
 const MCP_HEALTH_PROBES = [
@@ -99,6 +100,20 @@ function loadLatestOpsSnapshot() {
   } catch {
     return null;
   }
+}
+
+function getSnapshotAgeHours(capturedAt) {
+  const ts = capturedAt ? new Date(capturedAt).getTime() : NaN;
+  if (!Number.isFinite(ts)) return null;
+  return Math.max(0, Math.round(((Date.now() - ts) / 3600000) * 10) / 10);
+}
+
+function formatSnapshotSummary(snapshot, weakest, weakestMode) {
+  if (!snapshot?.capturedAt) return null;
+  const ageHours = getSnapshotAgeHours(snapshot.capturedAt);
+  const ageText = ageHours == null ? 'age n/a' : ageHours < 24 ? `${ageHours.toFixed(1)}h ago` : `${(ageHours / 24).toFixed(1)}d ago`;
+  const prefix = ageHours != null && ageHours > LATEST_OPS_SNAPSHOT_STALE_HOURS ? 'stale snapshot' : 'latest snapshot';
+  return `${prefix}: ${snapshot.capturedAt} / ${weakest?.regime || 'n/a'} / ${weakestMode} / ${ageText}`;
 }
 
 function getWeakestRegimeSummary(runtimeLearningLoop) {
@@ -727,6 +742,7 @@ async function main() {
       const { weakest: latestWeakest, weakestMode: latestWeakestMode } = getWeakestRegimeSummary(
         latestOpsSnapshot?.health?.runtimeLearningLoop,
       );
+      const latestSnapshotSummary = formatSnapshotSummary(latestOpsSnapshot, latestWeakest, latestWeakestMode);
       if (suggestionAlreadyApplied) {
         hsm.clearAlert(state, 'learning-loop-regime-tuning');
       }
@@ -736,7 +752,7 @@ async function main() {
         issues.push({
           key,
           level: suggestionAlreadyApplied ? 1 : 2,
-          msg: `${suggestionAlreadyApplied ? 'ℹ️' : '⚠️'} [투자팀 루나 헬스] regime strategy ${suggestionAlreadyApplied ? 'monitor' : 'tuning'}\n${learningLoop.decision.headline}\nweakest: ${learningLoop?.sections?.collect?.regimePerformance?.weakestRegime?.regime || 'n/a'} / ${learningLoop?.sections?.collect?.regimePerformance?.weakestRegime?.worstMode?.tradeMode || 'n/a'}\ntop suggestion: ${topSuggestion?.key || 'n/a'} ${suggestionAlreadyApplied ? `${topSuggestionCurrent} (already applied)` : `${topSuggestionCurrent} -> ${topSuggestionSuggested}`} (${topSuggestion?.action || 'n/a'})${latestOpsSnapshot?.capturedAt ? `\nlatest snapshot: ${latestOpsSnapshot.capturedAt} / ${latestWeakest?.regime || 'n/a'} / ${latestWeakestMode}` : ''}\nnext command: npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime-suggest -- --json`,
+          msg: `${suggestionAlreadyApplied ? 'ℹ️' : '⚠️'} [투자팀 루나 헬스] regime strategy ${suggestionAlreadyApplied ? 'monitor' : 'tuning'}\n${learningLoop.decision.headline}\nweakest: ${learningLoop?.sections?.collect?.regimePerformance?.weakestRegime?.regime || 'n/a'} / ${learningLoop?.sections?.collect?.regimePerformance?.weakestRegime?.worstMode?.tradeMode || 'n/a'}\ntop suggestion: ${topSuggestion?.key || 'n/a'} ${suggestionAlreadyApplied ? `${topSuggestionCurrent} (already applied)` : `${topSuggestionCurrent} -> ${topSuggestionSuggested}`} (${topSuggestion?.action || 'n/a'})${latestSnapshotSummary ? `\n${latestSnapshotSummary}` : ''}\nnext command: npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime-suggest -- --json`,
         });
       }
     } else if (state['learning-loop-regime-tuning'] || state['learning-loop-regime-monitor']) {
