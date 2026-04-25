@@ -165,6 +165,7 @@ async function checkInvestmentPostgres(items) {
               AND pnl_percent IS NOT NULL
               AND entry_value > 0
               AND pnl_amount IS NOT NULL
+              AND ABS(pnl_amount) > 0.000001
               AND ABS(pnl_percent - ROUND((pnl_amount / entry_value)::numeric, 6)) <= 0.0005
           `),
           pgPool.get('investment', `

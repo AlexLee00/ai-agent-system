@@ -19,6 +19,8 @@ const SERVICE_LABEL_MAP = {
   'investment-market-alert-overseas-close': 'ai.investment.market-alert-overseas-close',
   'investment-market-alert-domestic-open': 'ai.investment.market-alert-domestic-open',
   'investment-market-alert-crypto-daily': 'ai.investment.market-alert-crypto-daily',
+  'unrealized-pnl': 'ai.investment.unrealized-pnl',
+  'ai.luna.tradingview-ws': 'ai.luna.tradingview-ws',
   'openclaw-model-sync': 'ai.openclaw.model-sync',
   'mlx-server': 'ai.mlx.server',
 };
