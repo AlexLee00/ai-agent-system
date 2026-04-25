@@ -14,6 +14,7 @@ const pgPool = require('../../../packages/core/lib/pg-pool');
 const { createSchemaDbHelpers } = require('../../../packages/core/lib/db/helpers');
 import { getInvestmentTradeMode, getExecutionMode, getBrokerAccountMode } from './secrets.ts';
 import { getSignalDedupeWindowMinutes } from './runtime-config.ts';
+import { resolveLunaAutonomyPhase } from './autonomy-phase.ts';
 
 const SCHEMA = 'investment';
 let _schemaInitPromise = null;
@@ -453,6 +454,7 @@ export async function initSchema() {
       setup_type                TEXT,
       strategy_family           TEXT,
       family_bias               TEXT,
+      autonomy_phase            TEXT,
       review_status             TEXT DEFAULT 'pending',
       review_result             JSONB DEFAULT '{}'::jsonb,
       policy_suggestions        JSONB DEFAULT '[]'::jsonb,
@@ -464,6 +466,7 @@ export async function initSchema() {
   try { await run(`CREATE INDEX IF NOT EXISTS idx_pcr_symbol ON position_closeout_reviews(symbol, exchange, created_at DESC)`); } catch { /* 무시 */ }
   try { await run(`CREATE INDEX IF NOT EXISTS idx_pcr_review_status ON position_closeout_reviews(review_status, created_at DESC)`); } catch { /* 무시 */ }
   try { await run(`CREATE UNIQUE INDEX IF NOT EXISTS idx_pcr_idempotency ON position_closeout_reviews(idempotency_key) WHERE idempotency_key IS NOT NULL`); } catch { /* 무시 */ }
+  try { await run(`ALTER TABLE position_closeout_reviews ADD COLUMN IF NOT EXISTS autonomy_phase TEXT`); } catch { /* 무시 */ }
 
   // ── external_evidence_events (외부 에비던스 레저) ──
   await run(`
@@ -1968,6 +1971,7 @@ export async function insertCloseoutReview({
   setupType = null,
   strategyFamily = null,
   familyBias = null,
+  autonomyPhase = null,
   reviewStatus = 'pending',
   reviewResult = {},
   policySuggestions = [],
@@ -1987,9 +1991,9 @@ export async function insertCloseoutReview({
         closeout_type, closeout_reason, planned_ratio, executed_ratio,
         planned_notional, executed_notional, slippage_pct, fee_total,
         pnl_realized, pnl_remaining_unrealized, regime, setup_type,
-        strategy_family, family_bias, review_status, review_result,
+        strategy_family, family_bias, autonomy_phase, review_status, review_result,
         policy_suggestions, idempotency_key)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25)
      RETURNING id`,
     [
       signalId || null, tradeId || null, journalId || null,
@@ -2005,6 +2009,7 @@ export async function insertCloseoutReview({
       pnlRemainingUnrealized != null ? Number(pnlRemainingUnrealized) : null,
       regime || null, setupType || null,
       strategyFamily || null, familyBias || null,
+      autonomyPhase || resolveLunaAutonomyPhase(Date.now()),
       reviewStatus || 'pending',
       JSON.stringify(reviewResult ?? {}),
       JSON.stringify(policySuggestions ?? []),

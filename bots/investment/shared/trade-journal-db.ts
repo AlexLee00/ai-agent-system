@@ -61,6 +61,7 @@
 import { get, query, run } from './db.ts';
 import { computeTradeExcursions } from './trade-review-metrics.ts';
 import { getInvestmentTradeMode } from './secrets.ts';
+import { resolveLunaAutonomyPhase } from './autonomy-phase.ts';
 import { createRequire } from 'module';
 const kst = createRequire(import.meta.url)('../../../packages/core/lib/kst');
 const hiringContract = createRequire(import.meta.url)('../../../packages/core/lib/hiring-contract');
@@ -306,6 +307,7 @@ export async function initJournalSchema() {
       strategy_quality  VARCHAR,
       strategy_readiness DOUBLE PRECISION,
       strategy_route    JSONB,
+      autonomy_phase    VARCHAR,
       execution_origin  VARCHAR DEFAULT 'strategy',
       quality_flag      VARCHAR DEFAULT 'trusted',
       exclude_from_learning BOOLEAN DEFAULT false,
@@ -323,6 +325,7 @@ export async function initJournalSchema() {
   try { await run(`ALTER TABLE trade_journal ADD COLUMN IF NOT EXISTS strategy_quality VARCHAR`); } catch { /* 이미 있으면 무시 */ }
   try { await run(`ALTER TABLE trade_journal ADD COLUMN IF NOT EXISTS strategy_readiness DOUBLE PRECISION`); } catch { /* 이미 있으면 무시 */ }
   try { await run(`ALTER TABLE trade_journal ADD COLUMN IF NOT EXISTS strategy_route JSONB`); } catch { /* 이미 있으면 무시 */ }
+  try { await run(`ALTER TABLE trade_journal ADD COLUMN IF NOT EXISTS autonomy_phase VARCHAR`); } catch { /* 이미 있으면 무시 */ }
   try { await run(`ALTER TABLE trade_journal ADD COLUMN IF NOT EXISTS execution_origin VARCHAR DEFAULT 'strategy'`); } catch { /* 이미 있으면 무시 */ }
   try { await run(`ALTER TABLE trade_journal ADD COLUMN IF NOT EXISTS quality_flag VARCHAR DEFAULT 'trusted'`); } catch { /* 이미 있으면 무시 */ }
   try { await run(`ALTER TABLE trade_journal ADD COLUMN IF NOT EXISTS exclude_from_learning BOOLEAN DEFAULT false`); } catch { /* 이미 있으면 무시 */ }
@@ -356,6 +359,7 @@ export async function initJournalSchema() {
       position_size_original DOUBLE PRECISION,
       position_size_approved DOUBLE PRECISION,
 
+      autonomy_phase         VARCHAR,
       created_at             BIGINT NOT NULL
     )
   `);
@@ -364,6 +368,7 @@ export async function initJournalSchema() {
   try { await run(`ALTER TABLE trade_rationale ADD COLUMN IF NOT EXISTS analyst_signals JSONB DEFAULT '{}'::jsonb`); } catch { /* 무시 */ }
   try { await run(`ALTER TABLE trade_rationale ADD COLUMN IF NOT EXISTS strategy_config JSONB DEFAULT '{}'::jsonb`); } catch { /* 무시 */ }
   try { await run(`ALTER TABLE trade_rationale ADD COLUMN IF NOT EXISTS debate_log JSONB DEFAULT '{}'::jsonb`); } catch { /* 무시 */ }
+  try { await run(`ALTER TABLE trade_rationale ADD COLUMN IF NOT EXISTS autonomy_phase VARCHAR`); } catch { /* 무시 */ }
 
   // ── trade_review: 사후 평가 ────────────────────────────────────────
   await run(`
@@ -490,6 +495,7 @@ export async function insertJournalEntry(entry) {
   const now = Date.now();
   try {
     const effectiveEntryTime = entry.entry_time ?? now;
+    const autonomyPhase = entry.autonomy_phase || resolveLunaAutonomyPhase(effectiveEntryTime);
     await run(
       `INSERT INTO trade_journal (
         trade_id, signal_id, market, exchange, symbol, is_paper, trade_mode,
@@ -497,10 +503,10 @@ export async function insertJournalEntry(entry) {
         signal_time, decision_time, execution_time, signal_to_exec_ms,
         tp_price, sl_price, tp_order_id, sl_order_id, tp_sl_set, tp_sl_mode, tp_sl_error,
         market_regime, market_regime_confidence,
-        strategy_family, strategy_quality, strategy_readiness, strategy_route,
+        strategy_family, strategy_quality, strategy_readiness, strategy_route, autonomy_phase,
         execution_origin, quality_flag, exclude_from_learning, incident_link,
         status, created_at
-      ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+      ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
       [
         entry.trade_id, entry.signal_id ?? null,
         entry.market, entry.exchange, entry.symbol, entry.is_paper ?? true, entry.trade_mode || getInvestmentTradeMode(),
@@ -519,6 +525,7 @@ export async function insertJournalEntry(entry) {
         entry.strategy_quality ?? null,
         entry.strategy_readiness ?? null,
         entry.strategy_route ? JSON.stringify(entry.strategy_route) : null,
+        autonomyPhase,
         entry.execution_origin || 'strategy',
         entry.quality_flag || 'trusted',
         entry.exclude_from_learning === true,
@@ -970,6 +977,7 @@ export async function insertRationale(rationaleData) {
   const now = Date.now();
   try {
     const analystSignals = _buildAnalystSignalsJson(rationaleData);
+    const autonomyPhase = rationaleData.autonomy_phase || resolveLunaAutonomyPhase(now);
     await run(
       `INSERT INTO trade_rationale (
         trade_id, signal_id,
@@ -978,9 +986,9 @@ export async function insertRationale(rationaleData) {
         luna_decision, luna_reasoning, luna_confidence,
         nemesis_verdict, nemesis_notes,
         position_size_original, position_size_approved,
-        analyst_signals, strategy_config, debate_log,
+        analyst_signals, strategy_config, debate_log, autonomy_phase,
         created_at
-      ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+      ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
       [
         rationaleData.trade_id ?? null, rationaleData.signal_id ?? null,
         rationaleData.aria_signal ?? null, rationaleData.sophia_signal ?? null,
@@ -994,6 +1002,7 @@ export async function insertRationale(rationaleData) {
         JSON.stringify(analystSignals),
         JSON.stringify(rationaleData.strategy_config || {}),
         JSON.stringify(rationaleData.debate_log || {}),
+        autonomyPhase,
         now,
       ],
     );
