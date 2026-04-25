@@ -118,6 +118,7 @@
     "runtime:kis-order-pending-reconcile:write": "node scripts/runtime-kis-order-pending-reconcile.ts --write --confirm-live --json",
     "runtime:binance-order-pending-reconcile-smoke": "node scripts/runtime-binance-order-pending-reconcile-smoke.ts --json",
     "runtime:binance-mcp-client-orderid-smoke": "node scripts/runtime-binance-mcp-client-orderid-smoke.ts",
+    "runtime:luna-l5-canary": "node scripts/luna-l5-signal-save-smoke.ts --json",
     "runtime:luna-l5-signal-save-smoke": "node scripts/luna-l5-signal-save-smoke.ts",
     "runtime:escalate-candidates": "node scripts/runtime-escalate-candidates-report.ts",
     "runtime:escalate-candidates-history": "node scripts/runtime-escalate-candidates-history.ts",
