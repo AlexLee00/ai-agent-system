@@ -7,9 +7,11 @@ import * as db from '../shared/db.ts';
 import {
   buildBinancePendingReconcilePayload,
   computeBinancePendingRecordedProgress,
+  enqueueClientOrderPendingRetry,
   processBinancePendingJournalRepairQueue,
   processBinancePendingReconcileQueue,
   resolveBinancePendingQueueState,
+  shouldBlockUsdtFallbackAfterBtcPairError,
 } from '../team/hephaestos.ts';
 
 function parseMeta(value = null) {
@@ -32,6 +34,11 @@ async function runBinancePendingQueuePathSmoke() {
     zeroToFilled: `${marker}-zero-to-filled`,
     partialToClosed: `${marker}-partial-to-closed`,
     applyFailRetry: `${marker}-apply-fail-retry`,
+    btcPairOpen: `${marker}-btc-pair-open`,
+    btcPairClosed: `${marker}-btc-pair-closed`,
+    clientOrderRecover: `${marker}-client-order-recover`,
+    missingOrderId: `${marker}-missing-order-id`,
+    unsupportedQuote: `${marker}-unsupported-quote`,
   };
 
   await db.initSchema();
@@ -103,6 +110,112 @@ async function runBinancePendingQueuePathSmoke() {
         },
       },
     },
+    {
+      id: ids.btcPairOpen,
+      symbol: 'KITE/USDT',
+      action: 'BUY',
+      amountUsdt: 95,
+      blockMeta: {
+        pendingReconcile: {
+          exchange: 'binance',
+          market: 'crypto',
+          symbol: 'KITE/USDT',
+          orderSymbol: 'KITE/BTC',
+          action: 'BUY',
+          orderId: 'SMOKE-O4',
+          expectedQty: 4,
+          filledQty: 0,
+          recordedFilledQty: 0,
+          recordedCost: 0,
+          followUpRequired: true,
+        },
+      },
+    },
+    {
+      id: ids.btcPairClosed,
+      symbol: 'RAY/USDT',
+      action: 'BUY',
+      amountUsdt: 75,
+      blockMeta: {
+        pendingReconcile: {
+          exchange: 'binance',
+          market: 'crypto',
+          symbol: 'RAY/USDT',
+          orderSymbol: 'RAY/BTC',
+          action: 'BUY',
+          orderId: 'SMOKE-O5',
+          expectedQty: 2,
+          filledQty: 0,
+          recordedFilledQty: 0,
+          recordedCost: 0,
+          btcReferencePrice: 100000,
+          followUpRequired: true,
+        },
+      },
+    },
+    {
+      id: ids.missingOrderId,
+      symbol: 'SMOKENID/USDT',
+      action: 'BUY',
+      amountUsdt: 66,
+      blockMeta: {
+        pendingReconcile: {
+          exchange: 'binance',
+          market: 'crypto',
+          symbol: 'SMOKENID/USDT',
+          orderSymbol: 'SMOKENID/BTC',
+          action: 'BUY',
+          expectedQty: 1.5,
+          filledQty: 0,
+          recordedFilledQty: 0,
+          recordedCost: 0,
+          followUpRequired: true,
+        },
+      },
+    },
+    {
+      id: ids.clientOrderRecover,
+      symbol: 'CIDREC/USDT',
+      action: 'BUY',
+      amountUsdt: 72,
+      blockMeta: {
+        pendingReconcile: {
+          exchange: 'binance',
+          market: 'crypto',
+          symbol: 'CIDREC/USDT',
+          orderSymbol: 'CIDREC/USDT',
+          action: 'BUY',
+          clientOrderId: 'SMOKE-CID-1',
+          submittedAtMs: Date.now() - 60_000,
+          expectedQty: 3,
+          filledQty: 0,
+          recordedFilledQty: 0,
+          recordedCost: 0,
+          followUpRequired: true,
+        },
+      },
+    },
+    {
+      id: ids.unsupportedQuote,
+      symbol: 'FDTEST/USDT',
+      action: 'BUY',
+      amountUsdt: 70,
+      blockMeta: {
+        pendingReconcile: {
+          exchange: 'binance',
+          market: 'crypto',
+          symbol: 'FDTEST/USDT',
+          orderSymbol: 'FDTEST/FDUSD',
+          action: 'BUY',
+          orderId: 'SMOKE-O6',
+          expectedQty: 2.5,
+          filledQty: 0,
+          recordedFilledQty: 0,
+          recordedCost: 0,
+          followUpRequired: true,
+        },
+      },
+    },
   ];
 
   try {
@@ -115,19 +228,49 @@ async function runBinancePendingQueuePathSmoke() {
     }
 
     const fetchOrderMap = {
-      'SMOKE-O1': { id: 'SMOKE-O1', status: 'closed', amount: 5, filled: 5, price: 2, average: 2, cost: 10 },
-      'SMOKE-O2': { id: 'SMOKE-O2', status: 'closed', amount: 5, filled: 5, price: 3, average: 3, cost: 15 },
-      'SMOKE-O3': { id: 'SMOKE-O3', status: 'closed', amount: 3, filled: 3, price: 4, average: 4, cost: 12 },
+      'OID:SMOKE-O1': { id: 'SMOKE-O1', orderId: 'SMOKE-O1', status: 'closed', amount: 5, filled: 5, price: 2, average: 2, cost: 10 },
+      'OID:SMOKE-O2': { id: 'SMOKE-O2', orderId: 'SMOKE-O2', status: 'closed', amount: 5, filled: 5, price: 3, average: 3, cost: 15 },
+      'OID:SMOKE-O3': { id: 'SMOKE-O3', orderId: 'SMOKE-O3', status: 'closed', amount: 3, filled: 3, price: 4, average: 4, cost: 12 },
+      'OID:SMOKE-O4': { id: 'SMOKE-O4', orderId: 'SMOKE-O4', status: 'open', amount: 4, filled: 4, price: 5, average: 5, cost: 20 },
+      'OID:SMOKE-O5': { id: 'SMOKE-O5', orderId: 'SMOKE-O5', status: 'closed', amount: 2, filled: 2, price: 0.0001, average: 0.0001, cost: 0.0002 },
+      'OID:SMOKE-O6': { id: 'SMOKE-O6', orderId: 'SMOKE-O6', status: 'closed', amount: 2.5, filled: 2.5, price: 1.01, average: 1.01, cost: 2.525 },
+      'CID:SMOKE-CID-1': { id: 'SMOKE-O7', orderId: 'SMOKE-O7', clientOrderId: 'SMOKE-CID-1', status: 'closed', amount: 3, filled: 3, price: 7, average: 7, cost: 21 },
     };
+    const fetchOrderSymbolCalls = [];
+    const openOrderChecks = [];
+    const applyDeltaCalls = [];
 
     const queueResult = await processBinancePendingReconcileQueue({
       tradeModes: ['normal'],
       limit: 20,
       delayMs: 0,
       deps: {
-        fetchOrder: async (orderId) => fetchOrderMap[String(orderId)] || null,
-        isOrderStillOpen: async () => false,
+        fetchOrder: async (orderRef, orderSymbol) => {
+          const ref = (orderRef && typeof orderRef === 'object') ? orderRef : { orderId: orderRef };
+          const orderId = ref?.orderId ? String(ref.orderId) : null;
+          const clientOrderId = ref?.clientOrderId ? String(ref.clientOrderId) : null;
+          fetchOrderSymbolCalls.push({
+            orderId: orderId || null,
+            clientOrderId: clientOrderId || null,
+            orderSymbol: String(orderSymbol || ref?.symbol || ''),
+          });
+          if (orderId && fetchOrderMap[`OID:${orderId}`]) return fetchOrderMap[`OID:${orderId}`];
+          if (clientOrderId && fetchOrderMap[`CID:${clientOrderId}`]) return fetchOrderMap[`CID:${clientOrderId}`];
+          return null;
+        },
+        isOrderStillOpen: async (symbol, orderId) => {
+          openOrderChecks.push({ symbol: String(symbol || ''), orderId: String(orderId || '') });
+          return String(orderId) === 'SMOKE-O4';
+        },
         applyDelta: async ({ payload, deltaFilledQty, deltaCost, orderPrice }) => {
+          applyDeltaCalls.push({
+            signalId: payload.signalId,
+            symbol: payload.symbol,
+            orderSymbol: payload.orderSymbol || payload.symbol,
+            deltaFilledQty: Number(deltaFilledQty || 0),
+            deltaCost: Number(deltaCost || 0),
+            orderPrice: Number(orderPrice || 0),
+          });
           if (payload.signalId === ids.applyFailRetry) {
             throw new Error('apply_failed_smoke');
           }
@@ -146,10 +289,11 @@ async function runBinancePendingQueuePathSmoke() {
       },
     });
 
-    assert.equal(queueResult.candidates, 3);
-    assert.equal(queueResult.processed, 3);
-    assert.equal(queueResult.summary.completed, 2);
-    assert.equal(queueResult.summary.failed, 1);
+    assert.equal(queueResult.candidates, 8);
+    assert.equal(queueResult.processed, 8);
+    assert.equal(queueResult.summary.completed, 4);
+    assert.equal(queueResult.summary.partial, 1);
+    assert.equal(queueResult.summary.failed, 3);
 
     const afterZero = await db.getSignalById(ids.zeroToFilled);
     const zeroMeta = parseMeta(afterZero?.block_meta);
@@ -172,17 +316,160 @@ async function runBinancePendingQueuePathSmoke() {
     assert.equal(Number(failMeta?.pendingReconcile?.recordedFilledQty || 0), 1);
     assert.equal(Boolean(failMeta?.pendingReconcile?.followUpRequired), true);
 
+    const afterBtcPairOpen = await db.getSignalById(ids.btcPairOpen);
+    const btcPairOpenMeta = parseMeta(afterBtcPairOpen?.block_meta);
+    assert.equal(afterBtcPairOpen?.block_code, 'partial_fill_pending');
+    assert.equal(String(btcPairOpenMeta?.pendingReconcile?.orderSymbol || ''), 'KITE/BTC');
+    assert.equal(String(btcPairOpenMeta?.pendingReconcile?.queueStatus || ''), 'partial_pending');
+    assert.equal(Boolean(btcPairOpenMeta?.pendingReconcile?.followUpRequired), true);
+    assert.ok(fetchOrderSymbolCalls.some((call) => call.orderId === 'SMOKE-O4' && call.orderSymbol === 'KITE/BTC'));
+    assert.ok(openOrderChecks.some((call) => call.orderId === 'SMOKE-O4' && call.symbol === 'KITE/BTC'));
+
+    const afterBtcPairClosed = await db.getSignalById(ids.btcPairClosed);
+    const btcPairClosedMeta = parseMeta(afterBtcPairClosed?.block_meta);
+    assert.equal(afterBtcPairClosed?.block_code, 'order_reconciled');
+    assert.equal(String(btcPairClosedMeta?.pendingReconcile?.orderSymbol || ''), 'RAY/BTC');
+    assert.equal(Number(btcPairClosedMeta?.pendingReconcile?.recordedFilledQty || 0), 2);
+    assert.equal(Number(btcPairClosedMeta?.pendingReconcile?.recordedCost || 0), 20);
+    const btcPairApplyCall = applyDeltaCalls.find((call) => call.signalId === ids.btcPairClosed);
+    assert.ok(btcPairApplyCall, 'BTC pair closed apply call 존재');
+    assert.equal(Number(btcPairApplyCall?.orderPrice || 0), 10);
+    assert.equal(Number(btcPairApplyCall?.deltaCost || 0), 20);
+
+    const afterMissingOrderId = await db.getSignalById(ids.missingOrderId);
+    assert.equal(afterMissingOrderId?.status, 'failed');
+    assert.equal(afterMissingOrderId?.block_code, 'manual_reconcile_required');
+
+    const afterClientOrderRecover = await db.getSignalById(ids.clientOrderRecover);
+    const clientRecoverMeta = parseMeta(afterClientOrderRecover?.block_meta);
+    assert.equal(afterClientOrderRecover?.status, 'executed');
+    assert.equal(afterClientOrderRecover?.block_code, 'order_reconciled');
+    assert.equal(String(clientRecoverMeta?.pendingReconcile?.clientOrderId || ''), 'SMOKE-CID-1');
+    assert.equal(Number(clientRecoverMeta?.pendingReconcile?.recordedFilledQty || 0), 3);
+    assert.ok(fetchOrderSymbolCalls.some((call) => call.clientOrderId === 'SMOKE-CID-1'));
+
+    const afterUnsupportedQuote = await db.getSignalById(ids.unsupportedQuote);
+    assert.equal(afterUnsupportedQuote?.status, 'failed');
+    assert.equal(afterUnsupportedQuote?.block_code, 'manual_reconcile_required');
+
     return {
       queueProcessed: queueResult.processed,
       queueCompleted: queueResult.summary.completed,
+      queuePartial: queueResult.summary.partial,
       queueFailed: queueResult.summary.failed,
+      btcPairOpenCode: afterBtcPairOpen?.block_code || null,
+      btcPairClosedCode: afterBtcPairClosed?.block_code || null,
+      clientOrderRecoverCode: afterClientOrderRecover?.block_code || null,
+      missingOrderIdCode: afterMissingOrderId?.block_code || null,
+      unsupportedQuoteCode: afterUnsupportedQuote?.block_code || null,
     };
   } finally {
     await db.run(
       `DELETE FROM signals WHERE id = ANY($1::text[])`,
-      [[ids.zeroToFilled, ids.partialToClosed, ids.applyFailRetry]],
+      [[
+        ids.zeroToFilled,
+        ids.partialToClosed,
+        ids.applyFailRetry,
+        ids.btcPairOpen,
+        ids.btcPairClosed,
+        ids.clientOrderRecover,
+        ids.missingOrderId,
+        ids.unsupportedQuote,
+      ]],
     ).catch(() => {});
   }
+}
+
+function runBtcPairFallbackGuardSmoke() {
+  const orderAttemptedError = {
+    code: 'btc_pair_post_order_reconcile_required',
+    meta: { orderAttempted: true },
+  };
+  const pendingFillError = {
+    code: 'order_pending_fill_verification',
+    meta: { orderAttempted: true },
+  };
+  const preOrderError = new Error('markets_load_failed');
+
+  assert.equal(shouldBlockUsdtFallbackAfterBtcPairError(orderAttemptedError), true);
+  assert.equal(shouldBlockUsdtFallbackAfterBtcPairError(pendingFillError), true);
+  assert.equal(shouldBlockUsdtFallbackAfterBtcPairError(preOrderError), false);
+
+  return {
+    orderAttemptedBlocked: shouldBlockUsdtFallbackAfterBtcPairError(orderAttemptedError),
+    pendingBlocked: shouldBlockUsdtFallbackAfterBtcPairError(pendingFillError),
+    preOrderAllowed: !shouldBlockUsdtFallbackAfterBtcPairError(preOrderError),
+  };
+}
+
+async function runPendingEnqueueFailureSmoke() {
+  const persistCalls = [];
+  const notifyCalls = [];
+  const result = await enqueueClientOrderPendingRetry({
+    signalId: `enqueue-failure-${Date.now()}`,
+    symbol: 'ENQF/USDT',
+    action: 'BUY',
+    amountUsdt: 55,
+    signalTradeMode: 'normal',
+    effectivePaperMode: false,
+    pendingOrder: {
+      orderId: null,
+      clientOrderId: 'SMOKE-CID-ENQUEUE-FAIL',
+      orderSymbol: 'ENQF/USDT',
+      status: 'unknown',
+      submittedAtMs: Date.now(),
+      amount: 0,
+      filled: 0,
+      recoveryError: 'lookup_transient_smoke',
+    },
+    pendingMeta: {
+      source: 'smoke',
+    },
+    pendingFilled: 0,
+    pendingRawPrice: 0,
+    pendingRawCost: 0,
+    persistFailure: async (reason, options = {}) => {
+      persistCalls.push({
+        reason: String(reason || ''),
+        code: String(options?.code || ''),
+        meta: options?.meta || null,
+      });
+    },
+    signal: {
+      id: 'ENQUEUE-FAILURE-REGRESSION',
+      reasoning: 'enqueue failure regression',
+    },
+    deps: {
+      markSignal: async () => {
+        throw new Error('mark_signal_failed_smoke');
+      },
+      reconcileLivePositions: async () => {
+        throw new Error('should_not_reconcile_when_enqueue_failed');
+      },
+      notifyError: async (title, error) => {
+        notifyCalls.push({
+          title: String(title || ''),
+          error: String(error?.message || error || ''),
+        });
+      },
+    },
+  });
+
+  assert.equal(result.success, false);
+  assert.equal(result.code, 'pending_reconcile_enqueue_failed');
+  assert.equal(result.pendingReconcile, false);
+  assert.equal(result.clientOrderId, 'SMOKE-CID-ENQUEUE-FAIL');
+  assert.equal(persistCalls.length, 1);
+  assert.equal(persistCalls[0]?.code, 'pending_reconcile_enqueue_failed');
+  assert.equal(String(persistCalls[0]?.meta?.clientOrderId || ''), 'SMOKE-CID-ENQUEUE-FAIL');
+  assert.equal(notifyCalls.length, 1);
+  assert.ok(String(notifyCalls[0]?.error || '').includes('mark_signal_failed_smoke'));
+
+  return {
+    resultCode: result.code,
+    persistCode: persistCalls[0]?.code || null,
+    notifyCount: notifyCalls.length,
+  };
 }
 
 async function runBinancePendingQueueActualApplySmoke() {
@@ -452,8 +739,17 @@ export async function runBinanceOrderPendingReconcileSmoke() {
     expectedQty: 100,
     orderStillOpen: false,
   });
-  assert.equal(openNoLongerOpen.code, 'order_reconciled');
-  assert.equal(openNoLongerOpen.followUpRequired, false);
+  assert.equal(openNoLongerOpen.code, 'partial_fill_pending');
+  assert.equal(openNoLongerOpen.followUpRequired, true);
+
+  const unknownNoLongerOpen = resolveBinancePendingQueueState({
+    status: 'unknown',
+    filledQty: 100,
+    expectedQty: 100,
+    orderStillOpen: false,
+  });
+  assert.equal(unknownNoLongerOpen.code, 'order_reconciled');
+  assert.equal(unknownNoLongerOpen.followUpRequired, false);
 
   const applyFailed = computeBinancePendingRecordedProgress({
     exchangeFilledQty: 30,
@@ -484,16 +780,21 @@ export async function runBinanceOrderPendingReconcileSmoke() {
   const queuePath = await runBinancePendingQueuePathSmoke();
   const actualApplyPath = await runBinancePendingQueueActualApplySmoke();
   const journalRepairPath = await runBinancePendingJournalRepairSmoke();
+  const btcFallbackGuardPath = runBtcPairFallbackGuardSmoke();
+  const pendingEnqueueFailurePath = await runPendingEnqueueFailureSmoke();
 
   return {
     ok: true,
     openStillOpen: openStillOpen.code,
     openNoLongerOpen: openNoLongerOpen.code,
+    unknownNoLongerOpen: unknownNoLongerOpen.code,
     applyFailedNextRecorded: applyFailed.nextRecordedFilledQty,
     applySucceededNextRecorded: applySucceeded.nextRecordedFilledQty,
     queuePath,
     actualApplyPath,
     journalRepairPath,
+    btcFallbackGuardPath,
+    pendingEnqueueFailurePath,
   };
 }
 

@@ -25,6 +25,10 @@ const BINANCE_MCP_MUTATING_ACTIONS = new Set([
   'market_buy',
   'market_sell',
 ]);
+const BINANCE_ORDER_RECONCILE_WINDOW_MS = Math.max(
+  60_000,
+  Number(process.env.BINANCE_ORDER_RECONCILE_WINDOW_MS || (30 * 60_000)),
+);
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -47,6 +51,12 @@ function normalizeSymbol(symbol = '') {
     return `${base}/USDT`;
   }
   return `${text}/USDT`;
+}
+
+function normalizeClientOrderId(value = '') {
+  const text = String(value || '').trim();
+  if (!text) return null;
+  return text.slice(0, 36);
 }
 
 function parseJsonFromMixedStdout(stdout = '') {
@@ -173,6 +183,49 @@ export function normalizeBinanceOrderResult(orderLike = {}) {
   };
 }
 
+function extractOrderClientId(orderLike = {}) {
+  return orderLike?.clientOrderId?.toString?.()
+    ?? orderLike?.origClientOrderId?.toString?.()
+    ?? orderLike?.info?.clientOrderId?.toString?.()
+    ?? orderLike?.info?.origClientOrderId?.toString?.()
+    ?? null;
+}
+
+function resolveFetchOrderRef(orderRef, symbolFallback = '') {
+  if (orderRef && typeof orderRef === 'object' && !Array.isArray(orderRef)) {
+    return {
+      symbol: normalizeSymbol(orderRef.symbol || symbolFallback || ''),
+      orderId: String(orderRef.orderId || '').trim() || null,
+      clientOrderId: normalizeClientOrderId(orderRef.clientOrderId || orderRef.origClientOrderId || ''),
+      submittedAtMs: toFiniteNumber(orderRef.submittedAtMs, 0) || null,
+      side: String(orderRef.side || '').trim().toLowerCase() || null,
+      allowAllOrdersFallback: orderRef.allowAllOrdersFallback !== false,
+    };
+  }
+  return {
+    symbol: normalizeSymbol(symbolFallback || ''),
+    orderId: String(orderRef || '').trim() || null,
+    clientOrderId: null,
+    submittedAtMs: null,
+    side: null,
+    allowAllOrdersFallback: true,
+  };
+}
+
+function getAllOrdersTimeWindow(submittedAtMs = null) {
+  const now = Date.now();
+  if (!submittedAtMs || submittedAtMs <= 0) {
+    const startTime = now - BINANCE_ORDER_RECONCILE_WINDOW_MS;
+    return { startTime, endTime: now };
+  }
+  const startTime = Math.max(0, Math.round(submittedAtMs - BINANCE_ORDER_RECONCILE_WINDOW_MS));
+  const endTime = Math.round(submittedAtMs + BINANCE_ORDER_RECONCILE_WINDOW_MS);
+  return {
+    startTime: Math.min(startTime, now),
+    endTime: Math.max(endTime, now),
+  };
+}
+
 function normalizeTickerSnapshot(symbol, ticker = {}) {
   const normalizedSymbol = normalizeSymbol(symbol || ticker?.symbol || '');
   return {
@@ -250,65 +303,220 @@ export async function getUsdtFreeBalance() {
   return toFiniteNumber(balance?.free?.USDT, 0);
 }
 
-export async function createBinanceMarketBuy(symbol, amountUsdt) {
+export async function createBinanceMarketBuy(symbol, amountUsdt, options = {}) {
   const normalizedSymbol = normalizeSymbol(symbol);
   const quoteOrderQty = toFiniteNumber(amountUsdt, 0);
+  const clientOrderId = normalizeClientOrderId(options?.clientOrderId || options?.newClientOrderId || '');
   if (quoteOrderQty <= 0) {
     throw new Error(`invalid_quote_order_qty:${amountUsdt}`);
+  }
+  const smokeCaptureEnabled = process.env.BINANCE_MCP_SMOKE_CAPTURE === '1' && process.env.NODE_ENV === 'test';
+  if (smokeCaptureEnabled) {
+    const smokeOrderId = `SMOKE-BUY-${Date.now()}`;
+    return normalizeBinanceOrderResult({
+      id: smokeOrderId,
+      orderId: smokeOrderId,
+      clientOrderId,
+      symbol: normalizedSymbol,
+      side: 'buy',
+      status: 'closed',
+      amount: quoteOrderQty,
+      filled: quoteOrderQty,
+      price: 1,
+      average: 1,
+      cost: quoteOrderQty,
+    });
   }
 
   const bridged = await runBinanceMcpBridge('market_buy', {
     symbol: normalizedSymbol,
     amountUsdt: quoteOrderQty,
+    clientOrderId,
   });
   if (bridged?.order) return normalizeBinanceOrderResult(bridged.order);
 
   const ex = getBinanceExchange();
+  const params = { quoteOrderQty };
+  if (clientOrderId) params.newClientOrderId = clientOrderId;
   const rawOrder = await ex.createOrder(
     normalizedSymbol,
     'market',
     'buy',
     undefined,
     undefined,
-    { quoteOrderQty },
+    params,
   );
   return normalizeBinanceOrderResult(rawOrder);
 }
 
-export async function createBinanceMarketSell(symbol, amount) {
+export async function createBinanceMarketSell(symbol, amount, options = {}) {
   const normalizedSymbol = normalizeSymbol(symbol);
   const quantity = toFiniteNumber(amount, 0);
+  const clientOrderId = normalizeClientOrderId(options?.clientOrderId || options?.newClientOrderId || '');
   if (quantity <= 0) {
     throw new Error(`invalid_sell_quantity:${amount}`);
+  }
+  const smokeCaptureEnabled = process.env.BINANCE_MCP_SMOKE_CAPTURE === '1' && process.env.NODE_ENV === 'test';
+  if (smokeCaptureEnabled) {
+    const smokeOrderId = `SMOKE-SELL-${Date.now()}`;
+    return normalizeBinanceOrderResult({
+      id: smokeOrderId,
+      orderId: smokeOrderId,
+      clientOrderId,
+      symbol: normalizedSymbol,
+      side: 'sell',
+      status: 'closed',
+      amount: quantity,
+      filled: quantity,
+      price: 1,
+      average: 1,
+      cost: quantity,
+    });
   }
 
   const bridged = await runBinanceMcpBridge('market_sell', {
     symbol: normalizedSymbol,
     amount: quantity,
+    clientOrderId,
   });
   if (bridged?.order) return normalizeBinanceOrderResult(bridged.order);
 
   const ex = getBinanceExchange();
-  const rawOrder = await ex.createOrder(normalizedSymbol, 'market', 'sell', quantity);
+  const params = {};
+  if (clientOrderId) params.newClientOrderId = clientOrderId;
+  const rawOrder = await ex.createOrder(normalizedSymbol, 'market', 'sell', quantity, undefined, params);
   return normalizeBinanceOrderResult(rawOrder);
 }
 
-export async function fetchBinanceOrder(orderId, symbol) {
+export async function fetchBinanceAllOrders(symbol, {
+  startTime = null,
+  endTime = null,
+  limit = 200,
+} = {}) {
   const normalizedSymbol = normalizeSymbol(symbol);
-  const idText = String(orderId || '').trim();
-  if (!idText) {
-    throw new Error('fetchBinanceOrder requires orderId');
+  const start = toFiniteNumber(startTime, 0) || null;
+  const end = toFiniteNumber(endTime, 0) || null;
+  const safeLimit = Math.max(1, Math.min(1000, Math.round(Number(limit || 200))));
+
+  const bridged = await runBinanceMcpBridge('all_orders', {
+    symbol: normalizedSymbol,
+    startTime: start,
+    endTime: end,
+    limit: safeLimit,
+  });
+  if (Array.isArray(bridged?.orders)) {
+    return bridged.orders.map((order) => normalizeBinanceOrderResult(order));
+  }
+
+  const ex = getBinanceExchange();
+  const params = {};
+  if (end) params.endTime = Math.round(end);
+  const orders = await ex.fetchOrders(normalizedSymbol, start ? Math.round(start) : undefined, safeLimit, params);
+  return (orders || []).map((order) => normalizeBinanceOrderResult(order));
+}
+
+export async function fetchBinanceOrder(orderRef, symbol = '') {
+  const ref = resolveFetchOrderRef(orderRef, symbol);
+  const { symbol: normalizedSymbol, orderId, clientOrderId } = ref;
+  if (!normalizedSymbol) {
+    throw new Error('fetchBinanceOrder requires symbol');
+  }
+  if (!orderId && !clientOrderId) {
+    throw new Error('fetchBinanceOrder requires orderId or clientOrderId');
   }
 
   const bridged = await runBinanceMcpBridge('fetch_order', {
     symbol: normalizedSymbol,
-    orderId: idText,
+    orderId,
+    clientOrderId,
+    submittedAtMs: ref.submittedAtMs,
+    side: ref.side,
+    allowAllOrdersFallback: ref.allowAllOrdersFallback !== false,
   });
   if (bridged?.order) return normalizeBinanceOrderResult(bridged.order);
 
   const ex = getBinanceExchange();
-  const rawOrder = await ex.fetchOrder(idText, normalizedSymbol);
-  return normalizeBinanceOrderResult(rawOrder);
+  const lookupErrors = [];
+
+  if (orderId) {
+    try {
+      const byOrderId = await ex.fetchOrder(orderId, normalizedSymbol);
+      if (byOrderId) return normalizeBinanceOrderResult(byOrderId);
+    } catch (error) {
+      lookupErrors.push(error);
+    }
+  }
+
+  if (clientOrderId) {
+    try {
+      let byClientId = null;
+      if (orderId) {
+        byClientId = await ex.fetchOrder(orderId, normalizedSymbol, {
+          origClientOrderId: clientOrderId,
+        });
+      } else if (typeof ex.privateGetOrder === 'function') {
+        await ex.loadMarkets();
+        const market = ex.market(normalizedSymbol);
+        const marketId = market?.id || normalizedSymbol.replace('/', '');
+        const rawByClientId = await ex.privateGetOrder({
+          symbol: marketId,
+          origClientOrderId: clientOrderId,
+        });
+        byClientId = typeof ex.parseOrder === 'function'
+          ? ex.parseOrder(rawByClientId, market)
+          : rawByClientId;
+      }
+      if (byClientId) return normalizeBinanceOrderResult(byClientId);
+    } catch (error) {
+      lookupErrors.push(error);
+    }
+  }
+
+  if (clientOrderId && ref.allowAllOrdersFallback !== false) {
+    const { startTime, endTime } = getAllOrdersTimeWindow(ref.submittedAtMs);
+    try {
+      const orders = await fetchBinanceAllOrders(normalizedSymbol, {
+        startTime,
+        endTime,
+        limit: 1000,
+      });
+      const side = ref.side || null;
+      const matches = (orders || []).filter((order) => {
+        const normalizedClient = normalizeClientOrderId(extractOrderClientId(order) || '');
+        if (!normalizedClient || normalizedClient !== clientOrderId) return false;
+        if (side && String(order?.side || '').toLowerCase() !== side) return false;
+        return true;
+      });
+      if (matches.length === 1) return matches[0];
+      if (matches.length > 1) {
+        const ambiguousError = /** @type {any} */ (new Error(
+          `binance_order_lookup_ambiguous:${normalizedSymbol}:${clientOrderId}:${matches.length}`,
+        ));
+        ambiguousError.code = 'binance_order_lookup_ambiguous';
+        ambiguousError.meta = {
+          symbol: normalizedSymbol,
+          clientOrderId,
+          count: matches.length,
+        };
+        throw ambiguousError;
+      }
+      const notFoundError = /** @type {any} */ (new Error(
+        `binance_order_lookup_not_found:${normalizedSymbol}:${clientOrderId}`,
+      ));
+      notFoundError.code = 'binance_order_lookup_not_found';
+      notFoundError.meta = {
+        symbol: normalizedSymbol,
+        clientOrderId,
+      };
+      throw notFoundError;
+    } catch (error) {
+      lookupErrors.push(error);
+    }
+  }
+
+  const lastError = lookupErrors[lookupErrors.length - 1];
+  if (lastError) throw lastError;
+  throw new Error(`binance_order_lookup_failed:${normalizedSymbol}:${orderId || clientOrderId || 'unknown'}`);
 }
 
 export async function getBinanceOpenOrders(symbol = '') {

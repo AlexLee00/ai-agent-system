@@ -148,38 +148,75 @@ try {{
   }} else if (action === 'market_buy') {{
     const symbol = normalizeSymbol(payload.symbol || 'BTC/USDT');
     const amountUsdt = asNumber(payload.amountUsdt ?? payload.amount, 0);
+    const clientOrderId = String(payload.clientOrderId || payload.newClientOrderId || '').trim() || null;
     if (!(amountUsdt > 0)) throw new Error('market_buy requires positive amountUsdt');
-    const order = await binance.createBinanceMarketBuy(symbol, amountUsdt);
+    const order = await binance.createBinanceMarketBuy(symbol, amountUsdt, {{
+      clientOrderId,
+    }});
     console.log(JSON.stringify({{
       status: 'ok',
       action,
       symbol,
       amountUsdt,
+      clientOrderId,
       order,
     }}));
   }} else if (action === 'market_sell') {{
     const symbol = normalizeSymbol(payload.symbol || 'BTC/USDT');
     const amount = asNumber(payload.amount, 0);
+    const clientOrderId = String(payload.clientOrderId || payload.newClientOrderId || '').trim() || null;
     if (!(amount > 0)) throw new Error('market_sell requires positive amount');
-    const order = await binance.createBinanceMarketSell(symbol, amount);
+    const order = await binance.createBinanceMarketSell(symbol, amount, {{
+      clientOrderId,
+    }});
     console.log(JSON.stringify({{
       status: 'ok',
       action,
       symbol,
       amount,
+      clientOrderId,
       order,
     }}));
   }} else if (action === 'fetch_order') {{
     const symbol = normalizeSymbol(payload.symbol || 'BTC/USDT');
     const orderId = String(payload.orderId || '').trim();
-    if (!orderId) throw new Error('fetch_order requires orderId');
-    const order = await binance.fetchBinanceOrder(orderId, symbol);
+    const clientOrderId = String(payload.clientOrderId || payload.origClientOrderId || '').trim();
+    if (!orderId && !clientOrderId) throw new Error('fetch_order requires orderId or clientOrderId');
+    const order = await binance.fetchBinanceOrder({{
+      symbol,
+      orderId: orderId || null,
+      clientOrderId: clientOrderId || null,
+      submittedAtMs: Number(payload.submittedAtMs || 0) || null,
+      side: payload.side || null,
+      allowAllOrdersFallback: payload.allowAllOrdersFallback !== false,
+    }});
     console.log(JSON.stringify({{
       status: 'ok',
       action,
       symbol,
       orderId,
+      clientOrderId: clientOrderId || null,
       order,
+    }}));
+  }} else if (action === 'all_orders') {{
+    const symbol = normalizeSymbol(payload.symbol || 'BTC/USDT');
+    const startTime = Number(payload.startTime || payload.submittedAtMs || 0) || null;
+    const endTime = Number(payload.endTime || 0) || null;
+    const limit = Number(payload.limit || 200) || 200;
+    const orders = await binance.fetchBinanceAllOrders(symbol, {{
+      startTime,
+      endTime,
+      limit,
+    }});
+    console.log(JSON.stringify({{
+      status: 'ok',
+      action,
+      symbol,
+      count: Array.isArray(orders) ? orders.length : 0,
+      startTime,
+      endTime,
+      limit,
+      orders: Array.isArray(orders) ? orders : [],
     }}));
   }} else if (action === 'open_orders') {{
     const symbol = String(payload.symbol || '').trim();
@@ -432,11 +469,15 @@ def run_server(deps):
             return {"status": "error", "message": str(exc)}
 
     @mcp.tool()
-    def get_binance_order(symbol: str = "BTC/USDT", order_id: str = "") -> dict:
+    def get_binance_order(symbol: str = "BTC/USDT", order_id: str = "", client_order_id: str = "") -> dict:
         try:
             return run_node_binance_bridge(
                 "fetch_order",
-                {"symbol": symbol, "orderId": order_id},
+                {
+                    "symbol": symbol,
+                    "orderId": order_id,
+                    "clientOrderId": client_order_id,
+                },
             )
         except Exception as exc:
             return {"status": "error", "message": str(exc)}

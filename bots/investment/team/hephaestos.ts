@@ -74,6 +74,21 @@ function parseSignalBlockMeta(blockMeta = null) {
   return {};
 }
 
+function isSyntheticOrTestSignalContext({
+  signalId = null,
+  reasoning = null,
+} = {}) {
+  const idText = String(signalId || '').trim().toLowerCase();
+  const reasoningText = String(reasoning || '').trim().toLowerCase();
+  if (process.env.NODE_ENV === 'test') return true;
+  if (process.env.INVESTMENT_SUPPRESS_TEST_ALERTS === '1') return true;
+  if (idText.startsWith('smoke-') || idText.includes('-smoke-')) return true;
+  if (reasoningText.includes('pending reconcile smoke')) return true;
+  if (reasoningText.includes('smoke test')) return true;
+  if (reasoningText.includes('unit test')) return true;
+  return false;
+}
+
 async function loadSignalPendingReconcileMeta(signalId = null) {
   if (!signalId) return {};
   const signal = await db.getSignalById(signalId).catch(() => null);
@@ -91,12 +106,180 @@ function inferOrderFillPrice(order = {}) {
   return 0;
 }
 
+function getQuoteAsset(symbol = '') {
+  const normalized = String(symbol || '').trim().toUpperCase();
+  if (!normalized.includes('/')) return '';
+  const [, quote] = normalized.split('/');
+  return String(quote || '').trim().toUpperCase();
+}
+
+async function normalizePendingReconcileOrderUnits({
+  signalSymbol = '',
+  orderSymbol = '',
+  filledQty = 0,
+  price = 0,
+  cost = 0,
+  pendingMeta = {},
+  signalId = null,
+} = {}) {
+  const normalizedSignalSymbol = String(signalSymbol || '').trim().toUpperCase();
+  const normalizedOrderSymbol = String(orderSymbol || normalizedSignalSymbol).trim().toUpperCase() || normalizedSignalSymbol;
+  const signalQuote = getQuoteAsset(normalizedSignalSymbol);
+  const orderQuote = getQuoteAsset(normalizedOrderSymbol);
+  const normalizedFilled = Math.max(0, Number(filledQty || 0));
+  const rawPrice = Math.max(0, Number(price || 0));
+  const rawCost = Math.max(0, Number(cost || (normalizedFilled * rawPrice)));
+
+  if (!signalQuote || !orderQuote || signalQuote === orderQuote) {
+    return {
+      convertedPrice: rawPrice,
+      convertedCost: rawCost,
+      conversionApplied: false,
+      conversionRate: null,
+      conversionPair: null,
+      rawPrice,
+      rawCost,
+      signalQuote,
+      orderQuote,
+    };
+  }
+
+  if (signalQuote === 'USDT' && orderQuote === 'BTC') {
+    const pendingBtcRef = Math.max(0, Number(pendingMeta?.btcReferencePrice || 0));
+    const fallbackBtcRef = Math.max(0, Number(pendingMeta?.lastBtcUsdtPrice || 0));
+    let btcUsdtPrice = pendingBtcRef || fallbackBtcRef;
+    if (btcUsdtPrice <= 0) {
+      btcUsdtPrice = await fetchTicker('BTC/USDT').catch(() => 0);
+    }
+    if (!Number.isFinite(btcUsdtPrice) || btcUsdtPrice <= 0) {
+      const conversionError = /** @type {any} */ (new Error(
+        `pending_reconcile_quote_conversion_unavailable:${normalizedSignalSymbol}:${normalizedOrderSymbol}`,
+      ));
+      conversionError.code = 'pending_reconcile_quote_conversion_unavailable';
+      conversionError.meta = {
+        signalId: signalId || null,
+        signalSymbol: normalizedSignalSymbol,
+        orderSymbol: normalizedOrderSymbol,
+        signalQuote,
+        orderQuote,
+      };
+      throw conversionError;
+    }
+    return {
+      convertedPrice: rawPrice > 0 ? (rawPrice * btcUsdtPrice) : 0,
+      convertedCost: rawCost > 0 ? (rawCost * btcUsdtPrice) : (normalizedFilled * rawPrice * btcUsdtPrice),
+      conversionApplied: true,
+      conversionRate: btcUsdtPrice,
+      conversionPair: 'BTC/USDT',
+      rawPrice,
+      rawCost,
+      signalQuote,
+      orderQuote,
+    };
+  }
+
+  const unsupportedError = /** @type {any} */ (new Error(
+    `pending_reconcile_quote_conversion_unsupported:${normalizedSignalSymbol}:${normalizedOrderSymbol}:${orderQuote}->${signalQuote}`,
+  ));
+  unsupportedError.code = 'pending_reconcile_quote_conversion_unsupported';
+  unsupportedError.meta = {
+    signalId: signalId || null,
+    signalSymbol: normalizedSignalSymbol,
+    orderSymbol: normalizedOrderSymbol,
+    signalQuote,
+    orderQuote,
+  };
+  throw unsupportedError;
+}
+
+function isPendingReconcileQuoteConversionError(error = null) {
+  const code = String(error?.code || '').trim().toLowerCase();
+  return (
+    code === 'pending_reconcile_quote_conversion_unavailable'
+    || code === 'pending_reconcile_quote_conversion_unsupported'
+  );
+}
+
+function isDefinitiveBinanceOrderLookupError(errorCode = null) {
+  const code = String(errorCode || '').trim().toLowerCase();
+  return code === 'binance_order_lookup_not_found' || code === 'binance_order_lookup_ambiguous';
+}
+
+export function shouldBlockUsdtFallbackAfterBtcPairError(error = null) {
+  if (!error || typeof error !== 'object') return false;
+  if (error?.meta?.orderAttempted === true) return true;
+  const code = String(error?.code || '').trim().toLowerCase();
+  return (
+    code === 'order_pending_fill_verification'
+    || code === 'order_fill_unverified'
+    || code === 'btc_pair_order_execution_error'
+    || code === 'btc_pair_post_order_reconcile_required'
+  );
+}
+
+function buildBtcPairPendingReconcileError(cause, {
+  signalSymbol,
+  orderSymbol,
+  orderId = null,
+  clientOrderId = null,
+  status = 'unknown',
+  amount = 0,
+  filled = 0,
+  usdtPrice = 0,
+  usdtCost = 0,
+  pairPriceBtc = 0,
+  btcReferencePrice = 0,
+  submittedAtMs = null,
+  reasonCode = 'order_pending_fill_verification',
+} = {}) {
+  const normalizedAmount = Math.max(0, Number(amount || 0));
+  const normalizedFilled = Math.max(0, Number(filled || 0));
+  const normalizedUsdtPrice = Math.max(0, Number(usdtPrice || 0));
+  const normalizedUsdtCost = Math.max(
+    0,
+    Number(usdtCost || (normalizedFilled > 0 && normalizedUsdtPrice > 0 ? (normalizedFilled * normalizedUsdtPrice) : 0)),
+  );
+  const pendingError = /** @type {any} */ (new Error(
+    `${reasonCode}:${signalSymbol}:${String(status || 'unknown').toLowerCase()}:${normalizedFilled}:${normalizedUsdtPrice}:${normalizedUsdtCost}`,
+  ));
+  pendingError.code = 'order_pending_fill_verification';
+  pendingError.meta = {
+    symbol: String(signalSymbol || '').trim().toUpperCase(),
+    orderSymbol: String(orderSymbol || signalSymbol || '').trim().toUpperCase(),
+    side: 'buy',
+    orderId: orderId ? String(orderId) : null,
+    clientOrderId: clientOrderId ? String(clientOrderId) : null,
+    status: String(status || 'unknown').trim().toLowerCase() || 'unknown',
+    amount: normalizedAmount,
+    filled: normalizedFilled,
+    price: normalizedUsdtPrice,
+    cost: normalizedUsdtCost,
+    pairPriceBtc: Math.max(0, Number(pairPriceBtc || 0)),
+    btcReferencePrice: Math.max(0, Number(btcReferencePrice || 0)),
+    submittedAtMs: toEpochMs(submittedAtMs),
+    source: 'btc_pair_direct_buy',
+    orderAttempted: true,
+    reasonCode,
+  };
+  pendingError.originalCode = String(cause?.code || '').trim() || null;
+  if (cause?.message) {
+    pendingError.originalMessage = String(cause.message).slice(0, 240);
+  }
+  if (cause) {
+    pendingError.cause = cause;
+  }
+  return pendingError;
+}
+
 async function normalizeBinanceMarketOrderExecution(symbol, side, rawOrder = null, {
   maxAttempts = 4,
   pollDelayMs = 900,
+  expectedClientOrderId = null,
+  submittedAtMs = null,
 } = {}) {
   let latest = rawOrder || {};
-  const orderId = extractOrderId(latest);
+  const orderId = extractExchangeOrderId(latest);
+  const clientOrderId = extractClientOrderId(latest) || (expectedClientOrderId ? String(expectedClientOrderId) : null);
   let attempt = 0;
 
   while (attempt <= maxAttempts) {
@@ -109,7 +292,9 @@ async function normalizeBinanceMarketOrderExecution(symbol, side, rawOrder = nul
       const normalizedCost = toPositiveNumber(latest?.cost, filled * fillPrice);
       return {
         ...latest,
-        id: orderId || latest?.id || null,
+        id: orderId || latest?.id || clientOrderId || null,
+        orderId: orderId || latest?.orderId || latest?.info?.orderId || null,
+        clientOrderId,
         side: side || latest?.side || null,
         status: status || 'closed',
         filled,
@@ -120,11 +305,18 @@ async function normalizeBinanceMarketOrderExecution(symbol, side, rawOrder = nul
       };
     }
 
-    if (!orderId || attempt === maxAttempts) break;
+    if ((!orderId && !clientOrderId) || attempt === maxAttempts) break;
     attempt += 1;
     await delay(pollDelayMs * attempt);
     try {
-      const fetched = await fetchBinanceOrder(orderId, symbol);
+      const fetched = await fetchBinanceOrder({
+        symbol,
+        orderId,
+        clientOrderId,
+        submittedAtMs,
+        side,
+        allowAllOrdersFallback: true,
+      });
       if (fetched && typeof fetched === 'object') latest = fetched;
     } catch {
       // fetchOrder 미지원/일시 실패는 마지막 원본 응답으로 판정
@@ -146,16 +338,18 @@ async function normalizeBinanceMarketOrderExecution(symbol, side, rawOrder = nul
       symbol,
       side,
       orderId: orderId || null,
+      clientOrderId,
       status: lastStatus,
       amount: lastAmount,
       filled: lastFilled,
       price: lastPrice,
       cost: lastCost,
+      submittedAtMs: submittedAtMs || null,
       attempts: maxAttempts + 1,
     };
     throw pendingError;
   }
-  if (orderId && isOpenPendingStatus) {
+  if ((orderId || clientOrderId) && isOpenPendingStatus) {
     const pendingError = /** @type {any} */ (new Error(
       `order_pending_fill_verification:${symbol}:${lastStatus}:0:0:0`,
     ));
@@ -164,11 +358,13 @@ async function normalizeBinanceMarketOrderExecution(symbol, side, rawOrder = nul
       symbol,
       side,
       orderId: orderId || null,
+      clientOrderId,
       status: lastStatus,
       amount: lastAmount,
       filled: 0,
       price: 0,
       cost: 0,
+      submittedAtMs: submittedAtMs || null,
       attempts: maxAttempts + 1,
     };
     throw pendingError;
@@ -182,9 +378,11 @@ async function normalizeBinanceMarketOrderExecution(symbol, side, rawOrder = nul
     symbol,
     side,
     orderId: orderId || null,
+    clientOrderId,
     status: lastStatus,
     filled: lastFilled,
     price: lastPrice,
+    submittedAtMs: submittedAtMs || null,
     attempts: maxAttempts + 1,
   };
   throw verifyError;
@@ -211,21 +409,32 @@ export async function fetchTicker(symbol) {
 /**
  * 시장가 매수 (PAPER_MODE: 모의 주문)
  */
-async function marketBuy(symbol, amountUsdt, paperMode) {
+async function marketBuy(symbol, amountUsdt, paperMode, {
+  clientOrderId = null,
+  submittedAtMs = null,
+} = {}) {
   if (paperMode) {
     const price  = await fetchTicker(symbol).catch(() => 0);
     const filled = price > 0 ? amountUsdt / price : 0;
     console.log(`  📄 [헤파이스토스] PAPER BUY ${symbol} $${amountUsdt} @ ~$${price?.toLocaleString()}`);
     return { filled, price, dryRun: true };
   }
-  const rawOrder = await createBinanceMarketBuy(symbol, amountUsdt);
-  return normalizeBinanceMarketOrderExecution(symbol, 'buy', rawOrder);
+  const rawOrder = await createBinanceMarketBuy(symbol, amountUsdt, {
+    clientOrderId,
+  });
+  return normalizeBinanceMarketOrderExecution(symbol, 'buy', rawOrder, {
+    expectedClientOrderId: clientOrderId,
+    submittedAtMs,
+  });
 }
 
 /**
  * 시장가 매도 (PAPER_MODE: 모의 주문)
  */
-async function marketSell(symbol, amount, paperMode) {
+async function marketSell(symbol, amount, paperMode, {
+  clientOrderId = null,
+  submittedAtMs = null,
+} = {}) {
   if (paperMode) {
     const price     = await fetchTicker(symbol).catch(() => 0);
     const totalUsdt = amount * price;
@@ -257,8 +466,13 @@ async function marketSell(symbol, amount, paperMode) {
     };
     throw error;
   }
-  const rawOrder = await createBinanceMarketSell(symbol, normalizedAmount);
-  return normalizeBinanceMarketOrderExecution(symbol, 'sell', rawOrder);
+  const rawOrder = await createBinanceMarketSell(symbol, normalizedAmount, {
+    clientOrderId,
+  });
+  return normalizeBinanceMarketOrderExecution(symbol, 'sell', rawOrder, {
+    expectedClientOrderId: clientOrderId,
+    submittedAtMs,
+  });
 }
 
 async function getMinSellAmount(symbol) {
@@ -284,6 +498,23 @@ export function resolveBinancePendingQueueState({
   const filled = Math.max(0, Number(filledQty || 0));
   const expected = Math.max(0, Number(expectedQty || 0));
   const closed = normalizedStatus === 'closed' || normalizedStatus === 'filled';
+  const openLike = BINANCE_PENDING_RECONCILE_OPEN_STATUSES.has(normalizedStatus);
+
+  // open/new/partial 상태는 절대 completed로 닫지 않는다.
+  if (openLike) {
+    if (filled > BINANCE_PENDING_RECONCILE_EPSILON) {
+      return {
+        code: 'partial_fill_pending',
+        queueStatus: 'partial_pending',
+        followUpRequired: true,
+      };
+    }
+    return {
+      code: 'order_pending_reconcile',
+      queueStatus: 'queued',
+      followUpRequired: true,
+    };
+  }
 
   if (closed && filled > BINANCE_PENDING_RECONCILE_EPSILON) {
     return {
@@ -328,7 +559,17 @@ export function buildBinancePendingReconcilePayload(signal = {}) {
   const symbol = String(pendingMeta.symbol || signal.symbol || '').trim().toUpperCase();
   const action = String(pendingMeta.action || signal.action || '').trim().toUpperCase();
   const orderId = pendingMeta.orderId ? String(pendingMeta.orderId) : null;
-  if (!symbol || !action || !orderId) return null;
+  const clientOrderId = pendingMeta.clientOrderId ? String(pendingMeta.clientOrderId) : null;
+  if (!symbol || !action || (!orderId && !clientOrderId)) return null;
+  const orderSymbol = String(pendingMeta.orderSymbol || symbol).trim().toUpperCase() || symbol;
+  const submittedAtMs = toEpochMs(
+    pendingMeta.submittedAt
+      || pendingMeta.submittedAtMs
+      || signal.created_at
+      || signal.approved_at
+      || signal.updated_at
+      || null,
+  );
 
   return {
     signal,
@@ -340,6 +581,9 @@ export function buildBinancePendingReconcilePayload(signal = {}) {
     tradeMode: signal.trade_mode || pendingMeta.tradeMode || getInvestmentTradeMode(),
     paperMode: pendingMeta.paperMode === true,
     orderId,
+    clientOrderId,
+    orderSymbol,
+    submittedAtMs,
     expectedQty: Number(pendingMeta.expectedQty || 0),
     recordedFilledQty: Number(pendingMeta.recordedFilledQty ?? pendingMeta.filledQty ?? 0),
     recordedCost: Number(pendingMeta.recordedCost || 0),
@@ -348,12 +592,19 @@ export function buildBinancePendingReconcilePayload(signal = {}) {
   };
 }
 
-async function isBinanceOrderStillOpen(symbol, orderId) {
-  if (!symbol || !orderId) return null;
+async function isBinanceOrderStillOpen(symbol, orderId, clientOrderId = null) {
+  if (!symbol || (!orderId && !clientOrderId)) return null;
   try {
     const openOrders = await getBinanceOpenOrders(symbol);
     const targetOrderId = String(orderId);
-    return (openOrders || []).some((order) => String(extractOrderId(order) || '') === targetOrderId);
+    const targetClientOrderId = String(clientOrderId || '').trim();
+    return (openOrders || []).some((order) => {
+      const currentOrderId = String(extractExchangeOrderId(order) || '');
+      const currentClientOrderId = String(extractClientOrderId(order) || '');
+      if (targetOrderId && currentOrderId && currentOrderId === targetOrderId) return true;
+      if (targetClientOrderId && currentClientOrderId && currentClientOrderId === targetClientOrderId) return true;
+      return false;
+    });
   } catch {
     return null;
   }
@@ -437,14 +688,16 @@ function buildPendingReconcileQualityContext(signal = null) {
 function buildPendingReconcileDeltaIncidentLink({
   signalId = null,
   orderId = null,
+  clientOrderId = null,
   action = null,
   targetFilledQty = 0,
 } = {}) {
   const normalizedTarget = Number(Math.max(0, Number(targetFilledQty || 0))).toFixed(8);
+  const orderKey = String(orderId || clientOrderId || 'none');
   return [
     'pending_reconcile_delta',
     String(signalId || 'none'),
-    String(orderId || 'none'),
+    orderKey,
     String(action || 'none').toLowerCase(),
     normalizedTarget,
   ].join(':');
@@ -480,11 +733,13 @@ async function getPendingReconcileAppliedSnapshot({
   symbol = null,
   side = null,
   orderId = null,
+  clientOrderId = null,
 } = {}) {
-  if (!signalId || !symbol || !side || !orderId) {
+  const orderKey = String(orderId || clientOrderId || '').trim();
+  if (!signalId || !symbol || !side || !orderKey) {
     return { appliedFilledQty: 0, appliedCost: 0 };
   }
-  const prefix = `pending_reconcile_delta:${signalId}:${orderId}:${String(side).toLowerCase()}:`;
+  const prefix = `pending_reconcile_delta:${signalId}:${orderKey}:${String(side).toLowerCase()}:`;
   const likePattern = `${escapeLikePattern(prefix)}%`;
   const row = await db.get(
     `SELECT
@@ -787,11 +1042,13 @@ async function applyBinancePendingReconcileDelta({
   const deltaIncidentLink = buildPendingReconcileDeltaIncidentLink({
     signalId: payload.signalId,
     orderId: payload.orderId,
+    clientOrderId: payload.clientOrderId,
     action: payload.action,
     targetFilledQty,
   });
   const side = payload.action === ACTIONS.BUY ? 'buy' : 'sell';
-  const lockKey = `pending_reconcile_apply:${payload.signalId}:${payload.orderId || 'none'}:${side}`;
+  const orderKeyForLock = payload.orderId || payload.clientOrderId || 'none';
+  const lockKey = `pending_reconcile_apply:${payload.signalId}:${orderKeyForLock}:${side}`;
 
   const transactional = await db.withTransaction(async (tx) => {
     await acquirePendingReconcileTxLock(tx, lockKey);
@@ -1149,7 +1406,7 @@ async function markBinanceOrderPendingReconcileSignal(signalId, {
       ? `주문 정산 완료 (${filledQty.toFixed(8)} @ ${price > 0 ? price.toFixed(8) : 'N/A'})`
       : state.code === 'partial_fill_pending'
         ? `부분체결 대기 (${filledQty.toFixed(8)} / ${expectedQty > 0 ? expectedQty.toFixed(8) : '?'})`
-        : `주문 접수됨 — 체결 대기 (orderId=${orderMeta?.orderId || 'N/A'})`;
+        : `주문 접수됨 — 체결 대기 (orderKey=${orderMeta?.orderId || orderMeta?.clientOrderId || 'N/A'})`;
 
   await db.updateSignalBlock(signalId, {
     status: SIGNAL_STATUS.EXECUTED,
@@ -1163,11 +1420,20 @@ async function markBinanceOrderPendingReconcileSignal(signalId, {
       exchange: 'binance',
       market: 'crypto',
       symbol,
+      orderSymbol: String(orderMeta?.orderSymbol || basePendingMeta?.orderSymbol || symbol || '').trim().toUpperCase() || symbol,
       action,
       tradeMode,
       amountUsdt: Number(amountUsdt || 0),
       paperMode: Boolean(paperMode),
       orderId: orderMeta?.orderId || null,
+      clientOrderId: orderMeta?.clientOrderId || basePendingMeta?.clientOrderId || null,
+      submittedAt: orderMeta?.submittedAt
+        || (orderMeta?.submittedAtMs ? new Date(Number(orderMeta.submittedAtMs)).toISOString() : null)
+        || basePendingMeta?.submittedAt
+        || new Date().toISOString(),
+      submittedAtMs: Number(orderMeta?.submittedAtMs || 0) > 0
+        ? Number(orderMeta.submittedAtMs)
+        : (Number(basePendingMeta?.submittedAtMs || 0) > 0 ? Number(basePendingMeta.submittedAtMs) : undefined),
       verificationStatus: String(orderMeta?.status || 'unknown'),
       expectedQty,
       filledQty,
@@ -1176,6 +1442,18 @@ async function markBinanceOrderPendingReconcileSignal(signalId, {
       lastAppliedFilledDelta: safeAppliedFilled,
       lastAppliedCostDelta: safeAppliedCost,
       price,
+      rawPrice: Number(orderMeta?.rawPrice || 0) > 0 ? Number(orderMeta.rawPrice) : undefined,
+      rawCost: Number(orderMeta?.rawCost || 0) > 0 ? Number(orderMeta.rawCost) : undefined,
+      quoteAsset: orderMeta?.quoteAsset || basePendingMeta?.quoteAsset || undefined,
+      signalQuoteAsset: orderMeta?.signalQuoteAsset || basePendingMeta?.signalQuoteAsset || undefined,
+      quoteConversionApplied: Boolean(orderMeta?.quoteConversionApplied),
+      quoteConversionPair: orderMeta?.quoteConversionPair || basePendingMeta?.quoteConversionPair || undefined,
+      quoteConversionRate: Number(orderMeta?.quoteConversionRate || 0) > 0
+        ? Number(orderMeta.quoteConversionRate)
+        : (Number(basePendingMeta?.quoteConversionRate || 0) > 0 ? Number(basePendingMeta.quoteConversionRate) : undefined),
+      btcReferencePrice: Number(orderMeta?.btcReferencePrice || 0) > 0
+        ? Number(orderMeta.btcReferencePrice)
+        : (Number(basePendingMeta?.btcReferencePrice || 0) > 0 ? Number(basePendingMeta.btcReferencePrice) : undefined),
       queueStatus,
       followUpRequired,
       reconcileError: reconcileError ? String(reconcileError).slice(0, 240) : null,
@@ -1234,30 +1512,88 @@ export async function processBinancePendingReconcileQueue({
   const results = [];
   for (const row of candidates) {
     const payload = buildBinancePendingReconcilePayload(row);
-    if (!payload || !payload.followUpRequired) continue;
+    if (!payload) {
+      const rowMeta = parseSignalBlockMeta(row?.block_meta);
+      const pendingMeta = rowMeta?.pendingReconcile && typeof rowMeta.pendingReconcile === 'object'
+        ? rowMeta.pendingReconcile
+        : null;
+      if (pendingMeta?.followUpRequired === true && !pendingMeta?.orderId && !pendingMeta?.clientOrderId) {
+        const reason = 'pending reconcile 키(orderId/clientOrderId) 누락 — 자동 정산 불가, 수동 정산 필요';
+        await db.updateSignalBlock(row.id, {
+          status: SIGNAL_STATUS.FAILED,
+          reason: reason.slice(0, 180),
+          code: 'manual_reconcile_required',
+          meta: {
+            exchange: 'binance',
+            symbol: row.symbol,
+            action: row.action,
+            pendingReconcile: pendingMeta,
+          },
+        }).catch(() => {});
+        if (!isSyntheticOrTestSignalContext({ signalId: row.id, reasoning: row.reasoning })) {
+          await notifyError(`헤파이스토스 pending reconcile 수동 정산 필요 — ${row.symbol} ${row.action}`, reason).catch(() => {});
+        }
+        results.push({
+          signalId: row.id,
+          symbol: row.symbol,
+          action: row.action,
+          code: 'manual_reconcile_required',
+          status: 'missing_order_keys',
+          error: reason,
+        });
+      }
+      continue;
+    }
+    if (!payload.followUpRequired) continue;
     try {
       const side = payload.action === ACTIONS.BUY ? 'buy' : 'sell';
+      const order = await fetchOrderFn({
+        symbol: payload.orderSymbol || payload.symbol,
+        orderId: payload.orderId || null,
+        clientOrderId: payload.clientOrderId || null,
+        submittedAtMs: payload.submittedAtMs || null,
+        side,
+        allowAllOrdersFallback: true,
+      }, payload.orderSymbol || payload.symbol);
+      const status = String(order?.status || '').trim().toLowerCase() || 'unknown';
+      const filledQty = Math.max(0, Number(order?.filled || 0));
+      const expectedQty = Math.max(payload.expectedQty, Number(order?.amount || 0));
+      const resolvedOrderId = extractExchangeOrderId(order) || payload.orderId || null;
+      const resolvedClientOrderId = extractClientOrderId(order) || payload.clientOrderId || null;
       const appliedSnapshot = await getPendingReconcileAppliedSnapshot({
         signalId: payload.signalId,
         symbol: payload.symbol,
         side,
-        orderId: payload.orderId,
+        orderId: resolvedOrderId,
+        clientOrderId: resolvedClientOrderId,
       });
       const effectiveRecordedFilledQty = Math.max(payload.recordedFilledQty, Number(appliedSnapshot.appliedFilledQty || 0));
       const effectiveRecordedCost = Math.max(payload.recordedCost, Number(appliedSnapshot.appliedCost || 0));
       const effectivePayload = {
         ...payload,
+        orderId: resolvedOrderId,
+        clientOrderId: resolvedClientOrderId,
         recordedFilledQty: effectiveRecordedFilledQty,
         recordedCost: effectiveRecordedCost,
       };
-
-      const order = await fetchOrderFn(payload.orderId, payload.symbol);
-      const status = String(order?.status || '').trim().toLowerCase() || 'unknown';
-      const filledQty = Math.max(0, Number(order?.filled || 0));
-      const expectedQty = Math.max(payload.expectedQty, Number(order?.amount || 0));
-      const price = Math.max(0, Number(order?.price || order?.average || 0));
-      const cost = Math.max(0, Number(order?.cost || (filledQty * price)));
-      const orderStillOpen = await isOrderStillOpenFn(payload.symbol, payload.orderId);
+      const rawPrice = Math.max(0, Number(order?.price || order?.average || 0));
+      const rawCost = Math.max(0, Number(order?.cost || (filledQty * rawPrice)));
+      const quoteNormalized = await normalizePendingReconcileOrderUnits({
+        signalSymbol: payload.symbol,
+        orderSymbol: payload.orderSymbol || payload.symbol,
+        filledQty,
+        price: rawPrice,
+        cost: rawCost,
+        pendingMeta: payload.pendingMeta,
+        signalId: payload.signalId,
+      });
+      const price = quoteNormalized.convertedPrice;
+      const cost = quoteNormalized.convertedCost;
+      const orderStillOpen = await isOrderStillOpenFn(
+        payload.orderSymbol || payload.symbol,
+        resolvedOrderId,
+        resolvedClientOrderId,
+      );
       const state = resolveBinancePendingQueueState({
         status,
         filledQty,
@@ -1308,12 +1644,23 @@ export async function processBinancePendingReconcileQueue({
           tradeMode: applyResult?.tradeModeUsed || payload.tradeMode,
           paperMode: payload.paperMode,
           orderMeta: {
-            orderId: payload.orderId,
+            orderId: resolvedOrderId,
+            clientOrderId: resolvedClientOrderId,
+            orderSymbol: payload.orderSymbol || payload.symbol,
+            submittedAtMs: payload.submittedAtMs || null,
             status,
             amount: expectedQty,
             filled: filledQty,
             price,
             cost,
+            rawPrice: quoteNormalized.rawPrice,
+            rawCost: quoteNormalized.rawCost,
+            quoteConversionApplied: quoteNormalized.conversionApplied,
+            quoteConversionRate: quoteNormalized.conversionRate,
+            quoteConversionPair: quoteNormalized.conversionPair,
+            quoteAsset: quoteNormalized.orderQuote,
+            signalQuoteAsset: quoteNormalized.signalQuote,
+            btcReferencePrice: quoteNormalized.conversionRate,
           },
           existingRecordedFilledQty: effectiveRecordedFilledQty,
           existingRecordedCost: effectiveRecordedCost,
@@ -1341,6 +1688,7 @@ export async function processBinancePendingReconcileQueue({
       results.push({
         signalId: payload.signalId,
         symbol: payload.symbol,
+        orderSymbol: payload.orderSymbol || payload.symbol,
         action: payload.action,
         code: applyError
           ? 'reconcile_apply_failed'
@@ -1354,13 +1702,47 @@ export async function processBinancePendingReconcileQueue({
       });
 
     } catch (error) {
+      if (isPendingReconcileQuoteConversionError(error)) {
+        const reason = `pending reconcile 단위 환산 불가 — 수동 정산 필요 (${String(error?.message || error).slice(0, 96)})`;
+        await db.updateSignalBlock(payload.signalId, {
+          status: SIGNAL_STATUS.FAILED,
+          reason: reason.slice(0, 180),
+          code: 'manual_reconcile_required',
+          meta: {
+            exchange: 'binance',
+            symbol: payload.symbol,
+            action: payload.action,
+            orderId: payload.orderId || null,
+            clientOrderId: payload.clientOrderId || null,
+            orderSymbol: payload.orderSymbol || payload.symbol,
+            pendingReconcile: payload.pendingMeta || null,
+            conversionError: String(error?.message || error).slice(0, 240),
+            ...(error?.meta || {}),
+          },
+        }).catch(() => {});
+        if (!isSyntheticOrTestSignalContext({ signalId: payload.signalId, reasoning: payload.signal?.reasoning })) {
+          await notifyError(`헤파이스토스 pending reconcile 수동 정산 필요 — ${payload.symbol} ${payload.action}`, reason).catch(() => {});
+        }
+        results.push({
+          signalId: payload.signalId,
+          symbol: payload.symbol,
+          action: payload.action,
+          code: 'manual_reconcile_required',
+          status: 'quote_conversion_failed',
+          error: String(error?.message || error),
+        });
+        if (delayMs > 0) await delay(delayMs);
+        continue;
+      }
       await db.mergeSignalBlockMeta(payload.signalId, {
         pendingReconcile: {
           ...payload.pendingMeta,
           exchange: 'binance',
           symbol: payload.symbol,
+          orderSymbol: payload.orderSymbol || payload.symbol,
           action: payload.action,
           orderId: payload.orderId,
+          clientOrderId: payload.clientOrderId || null,
           queueStatus: 'queued',
           followUpRequired: true,
           reconcileError: String(error?.message || error).slice(0, 240),
@@ -1383,7 +1765,11 @@ export async function processBinancePendingReconcileQueue({
     completed: results.filter((item) => item.code === 'order_reconciled').length,
     partial: results.filter((item) => item.code === 'partial_fill_pending').length,
     queued: results.filter((item) => item.code === 'order_pending_reconcile').length,
-    failed: results.filter((item) => item.code === 'reconcile_fetch_failed' || item.code === 'reconcile_apply_failed').length,
+    failed: results.filter(
+      (item) => item.code === 'reconcile_fetch_failed'
+        || item.code === 'reconcile_apply_failed'
+        || item.code === 'manual_reconcile_required',
+    ).length,
   };
 
   return {
@@ -1553,12 +1939,60 @@ function roundSellAmount(symbol, amount) {
   }
 }
 
+function extractExchangeOrderId(orderLike) {
+  if (!orderLike) return null;
+  return orderLike.orderId?.toString?.()
+    ?? orderLike.info?.orderId?.toString?.()
+    ?? orderLike.id?.toString?.()
+    ?? null;
+}
+
+function extractClientOrderId(orderLike) {
+  if (!orderLike) return null;
+  return orderLike.clientOrderId?.toString?.()
+    ?? orderLike.origClientOrderId?.toString?.()
+    ?? orderLike.info?.clientOrderId?.toString?.()
+    ?? orderLike.info?.origClientOrderId?.toString?.()
+    ?? null;
+}
+
 function extractOrderId(orderLike) {
   if (!orderLike) return null;
-  return orderLike.id?.toString?.()
-    ?? orderLike.orderId?.toString?.()
-    ?? orderLike.clientOrderId?.toString?.()
+  return extractExchangeOrderId(orderLike)
+    ?? extractClientOrderId(orderLike)
     ?? null;
+}
+
+function toEpochMs(value = null) {
+  if (value == null) return null;
+  if (typeof value === 'number') {
+    return Number.isFinite(value) && value > 0 ? Math.round(value) : null;
+  }
+  const parsed = Date.parse(String(value));
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+}
+
+function sanitizeClientOrderIdPart(value = '', fallback = 'x') {
+  const text = String(value || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]/g, '');
+  if (!text) return fallback;
+  return text;
+}
+
+function buildDeterministicClientOrderId({
+  signalId = null,
+  symbol = '',
+  action = 'buy',
+  scope = 'main',
+} = {}) {
+  const normalizedAction = String(action || 'buy').trim().toLowerCase() === 'sell' ? 's' : 'b';
+  const symbolPart = sanitizeClientOrderIdPart(String(symbol || '').replace('/', ''), 'sym').slice(0, 8);
+  const signalPart = sanitizeClientOrderIdPart(signalId || `sig${Date.now()}`, 'sig').slice(-12);
+  const scopePart = sanitizeClientOrderIdPart(scope || 'main', 'main').slice(0, 8);
+  const raw = `ln_${normalizedAction}_${scopePart}_${symbolPart}_${signalPart}`;
+  return raw.slice(0, 36);
 }
 
 function extractOcoOrderIds(ocoResponse) {
@@ -3060,7 +3494,19 @@ async function executeSellTrade({
   partialExitRatio = null,
   qualityContext = null,
 }) {
-  const order = await marketSell(symbol, amount, sellPaperMode);
+  const sellSubmittedAtMs = Date.now();
+  const sellClientOrderId = !sellPaperMode
+    ? buildDeterministicClientOrderId({
+        signalId,
+        symbol,
+        action: ACTIONS.SELL,
+        scope: effectivePositionTradeMode || 'main',
+      })
+    : null;
+  const order = await marketSell(symbol, amount, sellPaperMode, {
+    clientOrderId: sellClientOrderId,
+    submittedAtMs: sellSubmittedAtMs,
+  });
   const soldAmount = Number(order.filled || order.amount || amount || 0);
   const sellPrice = Number(order.price || order.average || 0);
   const settledUsdt = Number(order.totalUsdt || order.cost || (soldAmount * sellPrice));
@@ -3729,14 +4175,15 @@ export async function simulateBuyDecision({ symbol, amountUsdt = 100 }) {
  * @returns {Promise<any|null>} 성공 시 결과 객체, BTC 페어 없거나 미추적 BTC 없으면 null
  */
 async function _tryBuyWithBtcPair(symbol, base, signalId, signal, paperMode) {
-  const capitalPolicy = getCapitalConfig('binance', signal?.trade_mode || getInvestmentTradeMode());
-  const minOrderUsdt = await getDynamicMinOrderAmount('binance', signal?.trade_mode || getInvestmentTradeMode());
+  const signalTradeMode = signal?.trade_mode || getInvestmentTradeMode();
+  const capitalPolicy = getCapitalConfig('binance', signalTradeMode);
+  const minOrderUsdt = await getDynamicMinOrderAmount('binance', signalTradeMode);
   if (base === 'BTC') return null;  // BTC 자체는 흡수 블록에서 처리
 
   // 미추적 BTC 확인
   const walletBal    = await getExchange().fetchBalance();
   const walletBtc    = walletBal.free?.BTC || 0;
-  const trackedBtcPos = await db.getLivePosition('BTC/USDT', null, getInvestmentTradeMode()).catch(() => null);
+  const trackedBtcPos = await db.getLivePosition('BTC/USDT', null, signalTradeMode).catch(() => null);
   const trackedBtc   = trackedBtcPos?.amount || 0;
   const untrackedBtc = walletBtc - trackedBtc;
 
@@ -3758,79 +4205,167 @@ async function _tryBuyWithBtcPair(symbol, base, signalId, signal, paperMode) {
 
   // ETH/BTC 현재가 → 살 수 있는 코인 수량
   const pairTicker = await ex.fetchTicker(btcPair);
-  const btcPerCoin = pairTicker.last;  // 1 ETH = N BTC
+  const btcPerCoin = Number(pairTicker.last || 0);  // 1 ETH = N BTC
+  if (!Number.isFinite(btcPerCoin) || btcPerCoin <= 0) return null;
   const coinAmount = untrackedBtc / btcPerCoin;
 
   console.log(`  💱 [헤파이스토스] BTC 직접 매수: ${untrackedBtc.toFixed(6)} BTC → ${coinAmount.toFixed(6)} ${base} (${btcPair})`);
 
-  // 시장가 매수
+  // 시장가 매수 (주문 시도 이후 오류는 fallback 재매수 금지)
   let order;
+  let orderStatus = 'closed';
+  let orderId = null;
+  let clientOrderId = null;
+  const submittedAtMs = Date.now();
+  let pairPriceBtc = btcPerCoin;
+  let filledCoin = coinAmount;
   if (paperMode) {
-    order = { filled: coinAmount, price: btcPerCoin, dryRun: true };
+    order = {
+      id: null,
+      amount: coinAmount,
+      filled: coinAmount,
+      price: btcPerCoin,
+      average: btcPerCoin,
+      cost: coinAmount * btcPerCoin,
+      status: 'closed',
+      dryRun: true,
+      normalized: true,
+    };
     console.log(`  📄 [헤파이스토스] PAPER BUY ${btcPair} ${coinAmount.toFixed(6)} @ ${btcPerCoin}`);
   } else {
-    order = await ex.createOrder(btcPair, 'market', 'buy', coinAmount);
-  }
-
-  const filledCoin  = order.filled || coinAmount;
-  const usdPrice    = await fetchTicker(symbol).catch(() => btcPrice * btcPerCoin);
-  const usdEquiv    = filledCoin * usdPrice;
-
-  // DB 포지션 등록 (USDT 환산 기준)
-  await db.upsertPosition({
-    symbol,
-    amount: filledCoin,
-    avgPrice: usdPrice,
-    unrealizedPnl: 0,
-    paper: paperMode,
-    exchange: 'binance',
-    tradeMode: signal?.trade_mode || getInvestmentTradeMode(),
-  });
-
-  // TP/SL OCO — /USDT 페어 기준 설정 (일관성 유지)
-  const normalizedProtection = normalizeProtectiveExitPrices(symbol, usdPrice, usdPrice * 1.06, usdPrice * 0.97, 'fixed');
-  const tpPrice = normalizedProtection.tpPrice;
-  const slPrice = normalizedProtection.slPrice;
-  let protectionSnapshot = buildProtectionSnapshot();
-  if (!paperMode && usdPrice > 0) {
+    clientOrderId = buildDeterministicClientOrderId({
+      signalId,
+      symbol: btcPair,
+      action: ACTIONS.BUY,
+      scope: 'btc_pair',
+    });
     try {
-      const protection = await placeBinanceProtectiveExit(symbol, filledCoin, usdPrice, tpPrice, slPrice);
-      protectionSnapshot = buildProtectionSnapshot(protection);
-      if (protection.ok) {
-        console.log(`  🛡️ TP/SL OCO (${symbol}): TP=${tpPrice} SL=${slPrice}`);
-      } else if (isStopLossOnlyMode(protection.mode)) {
-        console.warn(`  ⚠️ TP/SL OCO 미지원 → SL-only 보호주문 설정: SL=${slPrice}`);
-      } else {
-        throw new Error(protection.error || 'protective_exit_failed');
-      }
-    } catch (e) {
-      protectionSnapshot = buildProtectionSnapshot(null, e.message);
-      console.warn(`  ⚠️ TP/SL 설정 실패: ${e.message}`);
-      await notifyError(`헤파이스토스 TP/SL 설정 실패 — ${symbol}`, e);
+      const rawOrder = await ex.createOrder(
+        btcPair,
+        'market',
+        'buy',
+        coinAmount,
+        undefined,
+        { newClientOrderId: clientOrderId },
+      );
+      order = await normalizeBinanceMarketOrderExecution(btcPair, 'buy', rawOrder, {
+        expectedClientOrderId: clientOrderId,
+        submittedAtMs,
+      });
+    } catch (orderError) {
+      const errorMeta = orderError?.meta && typeof orderError.meta === 'object' ? orderError.meta : {};
+      const pendingAmount = Math.max(0, Number(errorMeta.amount || coinAmount || 0));
+      const pendingFilled = Math.max(0, Number(errorMeta.filled || 0));
+      const pendingPairPrice = Math.max(0, Number(errorMeta.price || btcPerCoin || 0));
+      const pendingOrderId = errorMeta.orderId || null;
+      const pendingClientOrderId = errorMeta.clientOrderId || clientOrderId || null;
+      const pendingStatus = String(errorMeta.status || orderError?.code || 'unknown').trim().toLowerCase() || 'unknown';
+      const pendingUsdtPrice = await fetchTicker(symbol).catch(() => btcPrice * (pendingPairPrice > 0 ? pendingPairPrice : btcPerCoin));
+      const pendingCostBtc = Math.max(0, Number(errorMeta.cost || 0));
+      const pendingCostUsdt = pendingCostBtc > 0 && btcPrice > 0
+        ? (pendingCostBtc * btcPrice)
+        : (pendingFilled * pendingUsdtPrice);
+      throw buildBtcPairPendingReconcileError(orderError, {
+        signalSymbol: symbol,
+        orderSymbol: btcPair,
+        orderId: pendingOrderId,
+        clientOrderId: pendingClientOrderId,
+        status: pendingStatus,
+        amount: pendingAmount,
+        filled: pendingFilled,
+        usdtPrice: pendingUsdtPrice,
+        usdtCost: pendingCostUsdt,
+        pairPriceBtc: pendingPairPrice || btcPerCoin,
+        btcReferencePrice: btcPrice,
+        submittedAtMs,
+      });
     }
+    orderStatus = String(order?.status || 'closed').trim().toLowerCase() || 'closed';
+    orderId = extractExchangeOrderId(order);
+    clientOrderId = extractClientOrderId(order) || clientOrderId;
+    pairPriceBtc = Math.max(0, Number(order?.price || order?.average || btcPerCoin || 0));
+    filledCoin = Math.max(0, Number(order?.filled || coinAmount || 0));
   }
 
-  const trade = {
-    signalId, symbol,
-    side:      'buy',
-    amount:    filledCoin,
-    price:     usdPrice,
-    totalUsdt: usdEquiv,
-    paper:     paperMode,
-    exchange:  'binance',
-    tpPrice, slPrice,
-    ...protectionSnapshot,
-    tpslSource: 'fixed',
-    ...buildSignalQualityContext(signal),
-  };
-  await db.insertTrade(trade);
-  await db.updateSignalStatus(signalId, SIGNAL_STATUS.EXECUTED);
+  const usdPrice = await fetchTicker(symbol).catch(() => btcPrice * (pairPriceBtc > 0 ? pairPriceBtc : btcPerCoin));
+  const usdEquiv = filledCoin * usdPrice;
 
-  await notifyTrade({
-    ...trade,
-    tradeMode: getInvestmentTradeMode(),
-    memo: `BTC 직접 매수 (${btcPair}) — 미추적 BTC ${untrackedBtc.toFixed(6)} 활용${paperMode ? ' [PAPER]' : ''}`,
-  }).catch(() => {});
+  try {
+    // DB 포지션 등록 (USDT 환산 기준)
+    await db.upsertPosition({
+      symbol,
+      amount: filledCoin,
+      avgPrice: usdPrice,
+      unrealizedPnl: 0,
+      paper: paperMode,
+      exchange: 'binance',
+      tradeMode: signalTradeMode,
+    });
+
+    // TP/SL OCO — /USDT 페어 기준 설정 (일관성 유지)
+    const normalizedProtection = normalizeProtectiveExitPrices(symbol, usdPrice, usdPrice * 1.06, usdPrice * 0.97, 'fixed');
+    const tpPrice = normalizedProtection.tpPrice;
+    const slPrice = normalizedProtection.slPrice;
+    let protectionSnapshot = buildProtectionSnapshot();
+    if (!paperMode && usdPrice > 0) {
+      try {
+        const protection = await placeBinanceProtectiveExit(symbol, filledCoin, usdPrice, tpPrice, slPrice);
+        protectionSnapshot = buildProtectionSnapshot(protection);
+        if (protection.ok) {
+          console.log(`  🛡️ TP/SL OCO (${symbol}): TP=${tpPrice} SL=${slPrice}`);
+        } else if (isStopLossOnlyMode(protection.mode)) {
+          console.warn(`  ⚠️ TP/SL OCO 미지원 → SL-only 보호주문 설정: SL=${slPrice}`);
+        } else {
+          throw new Error(protection.error || 'protective_exit_failed');
+        }
+      } catch (e) {
+        protectionSnapshot = buildProtectionSnapshot(null, e.message);
+        console.warn(`  ⚠️ TP/SL 설정 실패: ${e.message}`);
+        await notifyError(`헤파이스토스 TP/SL 설정 실패 — ${symbol}`, e);
+      }
+    }
+
+    const trade = {
+      signalId, symbol,
+      side:      'buy',
+      amount:    filledCoin,
+      price:     usdPrice,
+      totalUsdt: usdEquiv,
+      paper:     paperMode,
+      exchange:  'binance',
+      tpPrice, slPrice,
+      ...protectionSnapshot,
+      tpslSource: 'fixed',
+      ...buildSignalQualityContext(signal),
+    };
+    await db.insertTrade(trade);
+    await db.updateSignalStatus(signalId, SIGNAL_STATUS.EXECUTED);
+
+    await notifyTrade({
+      ...trade,
+      tradeMode: signalTradeMode,
+      memo: `BTC 직접 매수 (${btcPair}) — 미추적 BTC ${untrackedBtc.toFixed(6)} 활용${paperMode ? ' [PAPER]' : ''}`,
+    }).catch(() => {});
+  } catch (persistError) {
+    if (!paperMode) {
+      throw buildBtcPairPendingReconcileError(persistError, {
+        signalSymbol: symbol,
+        orderSymbol: btcPair,
+        orderId,
+        clientOrderId,
+        status: orderStatus || 'unknown',
+        amount: Number(order?.amount || coinAmount || 0),
+        filled: filledCoin,
+        usdtPrice: usdPrice,
+        usdtCost: usdEquiv,
+        pairPriceBtc,
+        btcReferencePrice: btcPrice,
+        submittedAtMs,
+        reasonCode: 'btc_pair_post_order_reconcile_required',
+      });
+    }
+    throw persistError;
+  }
 
   return { success: true, btcDirect: true, btcPair, amount: filledCoin, price: usdPrice };
 }
@@ -3932,6 +4467,114 @@ async function _liquidateUntrackedForCapital(excludeBasesInput, paperMode) {
 }
 
 // ─── 신호 실행 ──────────────────────────────────────────────────────
+
+export async function enqueueClientOrderPendingRetry({
+  signalId,
+  symbol,
+  action,
+  amountUsdt = 0,
+  signalTradeMode = 'normal',
+  effectivePaperMode = false,
+  pendingOrder = {},
+  pendingMeta = {},
+  pendingFilled = 0,
+  pendingRawPrice = 0,
+  pendingRawCost = 0,
+  persistFailure = async () => {},
+  signal = null,
+  deps = {},
+} = {}) {
+  const markSignalFn = typeof deps?.markSignal === 'function'
+    ? deps.markSignal
+    : markBinanceOrderPendingReconcileSignal;
+  const reconcilePositionsFn = typeof deps?.reconcileLivePositions === 'function'
+    ? deps.reconcileLivePositions
+    : reconcileLivePositionsWithBrokerBalance;
+  const notifyErrorFn = typeof deps?.notifyError === 'function'
+    ? deps.notifyError
+    : notifyError;
+
+  try {
+    await markSignalFn(signalId, {
+      symbol,
+      action,
+      amountUsdt,
+      tradeMode: signalTradeMode,
+      paperMode: effectivePaperMode,
+      orderMeta: {
+        orderId: null,
+        clientOrderId: pendingOrder?.clientOrderId || null,
+        orderSymbol: pendingOrder?.orderSymbol || symbol,
+        submittedAtMs: pendingOrder?.submittedAtMs || null,
+        status: pendingOrder?.status || 'unknown',
+        amount: Number(pendingOrder?.amount || 0),
+        filled: pendingFilled,
+        price: 0,
+        cost: 0,
+        rawPrice: pendingRawPrice,
+        rawCost: pendingRawCost,
+        quoteConversionApplied: false,
+        quoteConversionRate: null,
+        quoteConversionPair: null,
+        quoteAsset: null,
+        signalQuoteAsset: null,
+        btcReferencePrice: null,
+      },
+      existingRecordedFilledQty: 0,
+      existingRecordedCost: 0,
+      appliedFilledQty: 0,
+      appliedCost: 0,
+      reconcileError: pendingOrder?.recoveryError || 'client_order_lookup_retry',
+      orderStillOpen: null,
+      pendingMeta,
+    });
+  } catch (markError) {
+    const reason = `${symbol} pending reconcile 큐 기록 실패 — 자동 재시도 상태 저장 실패`;
+    await persistFailure(reason, {
+      code: 'pending_reconcile_enqueue_failed',
+      meta: {
+        exchange: 'binance',
+        symbol,
+        action,
+        orderId: null,
+        clientOrderId: pendingOrder?.clientOrderId || null,
+        orderSymbol: pendingOrder?.orderSymbol || symbol,
+        status: pendingOrder?.status || 'unknown',
+        submittedAtMs: pendingOrder?.submittedAtMs || null,
+        recoveryError: pendingOrder?.recoveryError || null,
+        enqueueError: String(markError?.message || markError).slice(0, 240),
+        source: pendingMeta?.source || null,
+        orderAttempted: true,
+      },
+    });
+    if (!isSyntheticOrTestSignalContext({ signalId, reasoning: signal?.reasoning })) {
+      await notifyErrorFn(`헤파이스토스 pending reconcile 큐 기록 실패 — ${symbol} ${action}`, markError).catch(() => {});
+    }
+    return {
+      success: false,
+      pendingReconcile: false,
+      code: 'pending_reconcile_enqueue_failed',
+      verificationStatus: pendingOrder?.status || 'unknown',
+      orderId: null,
+      clientOrderId: pendingOrder?.clientOrderId || null,
+      orderSymbol: pendingOrder?.orderSymbol || symbol,
+      error: String(markError?.message || markError),
+    };
+  }
+
+  await reconcilePositionsFn().catch(() => []);
+  console.warn(`  ⚠️ ${symbol} orderId 미확인(clientOrderId=${pendingOrder?.clientOrderId || 'N/A'}) — pending reconcile 재시도 큐로 유지`);
+  return {
+    success: true,
+    pendingReconcile: true,
+    orderId: null,
+    clientOrderId: pendingOrder?.clientOrderId || null,
+    orderSymbol: pendingOrder?.orderSymbol || symbol,
+    verificationStatus: pendingOrder?.status || 'unknown',
+    queuedForRetry: true,
+    error: pendingOrder?.recoveryError || null,
+  };
+}
 
 /**
  * 단일 바이낸스 신호 실행
@@ -4064,7 +4707,10 @@ export async function executeSignal(signal) {
         const btcResult = await _tryBuyWithBtcPair(symbol, base, signalId, signal, effectivePaperMode);
         if (btcResult) return btcResult;
       } catch (e) {
-        console.warn(`  ⚠️ BTC 직접 매수 실패 (USDT 전환 폴백): ${e.message}`);
+        if (shouldBlockUsdtFallbackAfterBtcPairError(e)) {
+          throw e;
+        }
+        console.warn(`  ⚠️ BTC 직접 매수 실패 (주문 전 오류, USDT 전환 폴백): ${e.message}`);
       }
 
       // USDT 폴백: BTC 페어 없는 종목일 때 BTC → USDT → 매수
@@ -4184,7 +4830,19 @@ export async function executeSignal(signal) {
         console.log(`  🎛️ [execution tone] ${symbol} 책임계획 반영 x${responsibilitySizing.multiplier.toFixed(2)} (${responsibilitySizing.reason})`);
       }
 
-      const order = await marketBuy(symbol, actualAmount, effectivePaperMode);
+      const buySubmittedAtMs = Date.now();
+      const buyClientOrderId = !effectivePaperMode
+        ? buildDeterministicClientOrderId({
+            signalId,
+            symbol,
+            action: action || ACTIONS.BUY,
+            scope: signalTradeMode || 'main',
+          })
+        : null;
+      const order = await marketBuy(symbol, actualAmount, effectivePaperMode, {
+        clientOrderId: buyClientOrderId,
+        submittedAtMs: buySubmittedAtMs,
+      });
       const settledUsdt = Number(order.cost || (Number(order.filled || 0) * Number(order.price || order.average || 0)) || actualAmount);
       trade = {
         signalId,
@@ -4282,11 +4940,24 @@ export async function executeSignal(signal) {
     return { success: true, trade };
 
   } catch (e) {
-    if (e?.code === 'order_pending_fill_verification') {
+    const pendingReconcileEligible = (() => {
+      const code = String(e?.code || '').trim().toLowerCase();
+      if (code === 'order_pending_fill_verification') return true;
+      if (code === 'order_fill_unverified') {
+        const meta = e?.meta && typeof e.meta === 'object' ? e.meta : {};
+        return Boolean(meta?.orderId || meta?.clientOrderId);
+      }
+      return false;
+    })();
+    if (pendingReconcileEligible) {
       const pendingMeta = e?.meta && typeof e.meta === 'object' ? e.meta : {};
+      const pendingOrderSymbol = String(pendingMeta.orderSymbol || pendingMeta.symbol || symbol || '').trim().toUpperCase() || symbol;
       const pendingOrder = {
         id: pendingMeta.orderId || null,
         orderId: pendingMeta.orderId || null,
+        clientOrderId: pendingMeta.clientOrderId || null,
+        orderSymbol: pendingOrderSymbol,
+        submittedAtMs: toEpochMs(pendingMeta.submittedAtMs || pendingMeta.submittedAt || signal?.created_at || null),
         status: String(pendingMeta.status || 'unknown').trim().toLowerCase() || 'unknown',
         amount: Number(pendingMeta.amount || 0),
         filled: Number(pendingMeta.filled || 0),
@@ -4294,10 +4965,152 @@ export async function executeSignal(signal) {
         average: Number(pendingMeta.price || 0),
         cost: Number(pendingMeta.cost || (Number(pendingMeta.filled || 0) * Number(pendingMeta.price || 0))),
       };
-      const pendingFilled = Math.max(0, Number(pendingOrder.filled || 0));
-      const pendingPrice = Math.max(0, Number(pendingOrder.price || pendingOrder.average || 0));
-      const pendingCost = Math.max(0, Number(pendingOrder.cost || (pendingFilled * pendingPrice)));
-      const orderStillOpen = await isBinanceOrderStillOpen(symbol, pendingOrder.orderId).catch(() => null);
+      let pendingFilled = Math.max(0, Number(pendingOrder.filled || 0));
+      let pendingRawPrice = Math.max(0, Number(pendingOrder.price || pendingOrder.average || 0));
+      let pendingRawCost = Math.max(0, Number(pendingOrder.cost || (pendingFilled * pendingRawPrice)));
+
+      if (!pendingOrder.orderId && pendingOrder.clientOrderId) {
+        try {
+          const recoveredOrder = await fetchBinanceOrder({
+            symbol: pendingOrder.orderSymbol || symbol,
+            clientOrderId: pendingOrder.clientOrderId,
+            submittedAtMs: pendingOrder.submittedAtMs || null,
+            side: action === ACTIONS.BUY ? 'buy' : 'sell',
+            allowAllOrdersFallback: true,
+          });
+          if (recoveredOrder && typeof recoveredOrder === 'object') {
+            pendingOrder.orderId = extractExchangeOrderId(recoveredOrder) || null;
+            pendingOrder.clientOrderId = extractClientOrderId(recoveredOrder) || pendingOrder.clientOrderId;
+            pendingOrder.status = String(recoveredOrder.status || pendingOrder.status || 'unknown').trim().toLowerCase() || 'unknown';
+            pendingOrder.amount = Number(recoveredOrder.amount || pendingOrder.amount || 0);
+            pendingOrder.filled = Number(recoveredOrder.filled || pendingOrder.filled || 0);
+            pendingOrder.price = Number(recoveredOrder.price || recoveredOrder.average || pendingOrder.price || 0);
+            pendingOrder.average = Number(recoveredOrder.average || pendingOrder.price || 0);
+            pendingOrder.cost = Number(recoveredOrder.cost || (pendingOrder.filled * pendingOrder.price) || 0);
+          }
+        } catch (recoveryError) {
+          pendingOrder.recoveryError = String(recoveryError?.message || recoveryError).slice(0, 240);
+          pendingOrder.recoveryErrorCode = String(recoveryError?.code || '').trim().toLowerCase() || null;
+        }
+        pendingFilled = Math.max(0, Number(pendingOrder.filled || 0));
+        pendingRawPrice = Math.max(0, Number(pendingOrder.price || pendingOrder.average || 0));
+        pendingRawCost = Math.max(0, Number(pendingOrder.cost || (pendingFilled * pendingRawPrice)));
+      }
+
+      if (!pendingOrder.orderId) {
+        const hasClientOrderKey = Boolean(pendingOrder.clientOrderId);
+        const definitiveLookupFailure = isDefinitiveBinanceOrderLookupError(pendingOrder.recoveryErrorCode);
+        if (!hasClientOrderKey || definitiveLookupFailure) {
+          const reason = definitiveLookupFailure
+            ? `${symbol} clientOrderId 조회 결과가 확정 실패(${pendingOrder.recoveryErrorCode}) — 수동 정산 필요`
+            : `${symbol} 주문 식별키(orderId/clientOrderId) 누락 — 자동 pending reconcile 불가 (수동 정산 필요)`;
+          await persistFailure(reason, {
+            code: 'manual_reconcile_required',
+            meta: {
+              exchange: 'binance',
+              symbol,
+              action,
+              orderId: null,
+              clientOrderId: pendingOrder.clientOrderId || null,
+              orderSymbol: pendingOrder.orderSymbol || symbol,
+              status: pendingOrder.status,
+              amount: Number(pendingOrder.amount || 0),
+              filled: pendingFilled,
+              rawPrice: pendingRawPrice,
+              rawCost: pendingRawCost,
+              submittedAtMs: pendingOrder.submittedAtMs || null,
+              recoveryError: pendingOrder.recoveryError || null,
+              recoveryErrorCode: pendingOrder.recoveryErrorCode || null,
+              source: pendingMeta?.source || null,
+              orderAttempted: true,
+            },
+          });
+          if (!isSyntheticOrTestSignalContext({ signalId, reasoning: signal?.reasoning })) {
+            await notifyError(`헤파이스토스 pending reconcile 수동 정산 필요 — ${symbol} ${action}`, reason).catch(() => {});
+          }
+          return {
+            success: false,
+            manualReconcileRequired: true,
+            code: 'manual_reconcile_required',
+            verificationStatus: pendingOrder.status,
+            clientOrderId: pendingOrder.clientOrderId || null,
+            orderSymbol: pendingOrder.orderSymbol || symbol,
+            error: reason,
+          };
+        }
+
+        return enqueueClientOrderPendingRetry({
+          signalId,
+          symbol,
+          action,
+          amountUsdt,
+          signalTradeMode,
+          effectivePaperMode,
+          pendingOrder,
+          pendingMeta,
+          pendingFilled,
+          pendingRawPrice,
+          pendingRawCost,
+          persistFailure,
+          signal,
+        });
+      }
+
+      const pendingQuoteNormalized = await normalizePendingReconcileOrderUnits({
+        signalSymbol: symbol,
+        orderSymbol: pendingOrder.orderSymbol || symbol,
+        filledQty: pendingFilled,
+        price: pendingRawPrice,
+        cost: pendingRawCost,
+        pendingMeta,
+        signalId,
+      }).catch(async (quoteError) => {
+        if (isPendingReconcileQuoteConversionError(quoteError)) {
+          const reason = `${symbol} pending reconcile 단위 환산 불가 — 수동 정산 필요`;
+          await persistFailure(reason, {
+            code: 'manual_reconcile_required',
+            meta: {
+              exchange: 'binance',
+              symbol,
+              action,
+              orderId: pendingOrder.orderId || null,
+              clientOrderId: pendingOrder.clientOrderId || null,
+              orderSymbol: pendingOrder.orderSymbol || symbol,
+              status: pendingOrder.status,
+              amount: Number(pendingOrder.amount || 0),
+              filled: pendingFilled,
+              rawPrice: pendingRawPrice,
+              rawCost: pendingRawCost,
+              conversionError: String(quoteError?.message || quoteError).slice(0, 240),
+              ...(quoteError?.meta || {}),
+            },
+          });
+          if (!isSyntheticOrTestSignalContext({ signalId, reasoning: signal?.reasoning })) {
+            await notifyError(`헤파이스토스 pending reconcile 수동 정산 필요 — ${symbol} ${action}`, reason).catch(() => {});
+          }
+          return null;
+        }
+        throw quoteError;
+      });
+      if (!pendingQuoteNormalized) {
+        return {
+          success: false,
+          manualReconcileRequired: true,
+          code: 'manual_reconcile_required',
+          verificationStatus: pendingOrder.status,
+          orderId: pendingOrder.orderId || null,
+          clientOrderId: pendingOrder.clientOrderId || null,
+          orderSymbol: pendingOrder.orderSymbol || symbol,
+          error: 'pending_reconcile_quote_conversion_failed',
+        };
+      }
+      const pendingPrice = pendingQuoteNormalized.convertedPrice;
+      const pendingCost = pendingQuoteNormalized.convertedCost;
+      const orderStillOpen = await isBinanceOrderStillOpen(
+        pendingOrder.orderSymbol || symbol,
+        pendingOrder.orderId,
+        pendingOrder.clientOrderId || null,
+      ).catch(() => null);
       const state = resolveBinancePendingQueueState({
         status: pendingOrder.status,
         filledQty: pendingFilled,
@@ -4310,6 +5123,7 @@ export async function executeSignal(signal) {
         symbol,
         side,
         orderId: pendingOrder.orderId || null,
+        clientOrderId: pendingOrder.clientOrderId || null,
       });
       const effectiveRecordedFilledQty = Math.max(0, Number(appliedSnapshot.appliedFilledQty || 0));
       const effectiveRecordedCost = Math.max(0, Number(appliedSnapshot.appliedCost || 0));
@@ -4322,6 +5136,10 @@ export async function executeSignal(signal) {
         tradeMode: signalTradeMode,
         paperMode: effectivePaperMode,
         orderId: pendingOrder.orderId || null,
+        clientOrderId: pendingOrder.clientOrderId || null,
+        orderSymbol: pendingOrder.orderSymbol || symbol,
+        submittedAtMs: pendingOrder.submittedAtMs || null,
+        pendingMeta,
         expectedQty: Number(pendingOrder.amount || 0),
         recordedFilledQty: effectiveRecordedFilledQty,
         recordedCost: effectiveRecordedCost,
@@ -4371,11 +5189,22 @@ export async function executeSignal(signal) {
           paperMode: effectivePaperMode,
           orderMeta: {
             orderId: pendingOrder.orderId,
+            clientOrderId: pendingOrder.clientOrderId || null,
+            orderSymbol: pendingOrder.orderSymbol || symbol,
+            submittedAtMs: pendingOrder.submittedAtMs || null,
             status: pendingOrder.status,
             amount: pendingOrder.amount,
             filled: pendingFilled,
             price: pendingPrice,
             cost: pendingCost,
+            rawPrice: pendingQuoteNormalized.rawPrice,
+            rawCost: pendingQuoteNormalized.rawCost,
+            quoteConversionApplied: pendingQuoteNormalized.conversionApplied,
+            quoteConversionRate: pendingQuoteNormalized.conversionRate,
+            quoteConversionPair: pendingQuoteNormalized.conversionPair,
+            quoteAsset: pendingQuoteNormalized.orderQuote,
+            signalQuoteAsset: pendingQuoteNormalized.signalQuote,
+            btcReferencePrice: pendingQuoteNormalized.conversionRate,
           },
           existingRecordedFilledQty: effectiveRecordedFilledQty,
           existingRecordedCost: effectiveRecordedCost,
@@ -4391,6 +5220,7 @@ export async function executeSignal(signal) {
           success: false,
           pendingReconcile: true,
           orderId: pendingOrder.orderId || null,
+          clientOrderId: pendingOrder.clientOrderId || null,
           verificationStatus: pendingOrder.status,
           error: `pending_reconcile_mark_failed:${markError?.message || markError}`,
         };
@@ -4412,6 +5242,8 @@ export async function executeSignal(signal) {
         trade: applyResult?.trade || null,
         applyFailed: Boolean(applyError),
         orderId: pendingOrder.orderId || null,
+        clientOrderId: pendingOrder.clientOrderId || null,
+        orderSymbol: pendingOrder.orderSymbol || symbol,
         verificationStatus: pendingOrder.status,
         error: applyError ? String(applyError?.message || applyError) : null,
       };
