@@ -6,6 +6,7 @@
  * history and prints suggested commands. It never deletes refs by itself.
  */
 const { spawnSync } = require('node:child_process');
+const fs = require('node:fs');
 const path = require('node:path');
 
 type HistoryFinding = {
@@ -30,6 +31,25 @@ const REPO_ROOT = path.resolve(__dirname, '..', '..');
 const TSX_BIN = path.join(REPO_ROOT, 'node_modules', '.bin', 'tsx');
 const HISTORY_SCAN = path.join(REPO_ROOT, 'scripts', 'security', 'secret-history-scan.ts');
 const PROTECTED_BRANCHES = new Set(['main']);
+
+function usage() {
+  return [
+    'Usage:',
+    '  npm run -s security:stale-ref-plan -- [--output <file>]',
+    '',
+    'The plan is read-only. Use --output to persist the JSON plan for later guarded cleanup.',
+  ].join('\n');
+}
+
+function readOption(args: string[], name: string): string | null {
+  const index = args.indexOf(name);
+  if (index < 0) return null;
+  const value = args[index + 1];
+  if (!value || value.startsWith('--')) {
+    throw new Error(`${name} requires a value`);
+  }
+  return value;
+}
 
 function run(command: string, args: string[], options: { env?: Record<string, string> } = {}) {
   return spawnSync(command, args, {
@@ -177,6 +197,13 @@ function buildCommands(classified: ReturnType<typeof classifyRefs>, worktrees: W
 }
 
 function main() {
+  const argv = process.argv.slice(2);
+  if (argv.includes('--help') || argv.includes('-h')) {
+    console.log(usage());
+    process.exit(0);
+  }
+  const outputFile = readOption(argv, '--output');
+  const outputPath = outputFile ? path.resolve(REPO_ROOT, outputFile) : null;
   const allRefsScan = scanAllRefs();
   const worktrees = parseWorktrees();
   const staleRefs = collectStaleRefs(allRefsScan.findings || []);
@@ -184,8 +211,11 @@ function main() {
   const commands = buildCommands(classified, worktrees);
   const payload = {
     ok: staleRefs.length === 0,
+    plan_version: 1,
+    generated_at: new Date().toISOString(),
     destructive: false,
     note: 'read-only plan; commands are suggestions and were not executed',
+    ...(outputPath ? { output_file: outputPath } : {}),
     findings_count: allRefsScan.findings?.length || 0,
     stale_refs_count: staleRefs.length,
     stale_refs: staleRefs.map((ref) => ref.replace(/^refs\/(heads|tags|remotes)\//, '$1/')),
@@ -206,9 +236,17 @@ function main() {
       : [
           'Confirm stale refs are no longer needed before running any command.',
           'Stop or remove locked agent worktrees before deleting their branches.',
+          outputPath
+            ? 'Reuse this plan with security:stale-ref-cleanup -- --plan-file <file> to avoid rescanning refs.'
+            : 'Optionally rerun with --output <file> to persist this plan for fast dry-runs.',
           'Run npm run -s security:post-rewrite-doctor after cleanup.',
         ],
   };
+
+  if (outputPath) {
+    fs.mkdirSync(path.dirname(outputPath), { recursive: true });
+    fs.writeFileSync(outputPath, `${JSON.stringify(payload, null, 2)}\n`);
+  }
 
   console.log(JSON.stringify(payload, null, 2));
   process.exit(0);

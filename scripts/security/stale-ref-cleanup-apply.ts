@@ -10,6 +10,7 @@
  * Locked worktrees require the additional --locked-worktrees flag.
  */
 const { spawnSync } = require('node:child_process');
+const fs = require('node:fs');
 const path = require('node:path');
 
 type Plan = {
@@ -37,11 +38,25 @@ const CONFIRM_VALUE = 'delete-stale-secret-refs';
 function usage() {
   return [
     'Usage:',
-    '  npm run -s security:stale-ref-cleanup -- [--tags] [--branches] [--remote-refs] [--worktrees] [--locked-worktrees] [--prune-worktrees] [--apply]',
+    '  npm run -s security:stale-ref-cleanup -- [--plan-file <file>] [--tags] [--branches] [--remote-refs] [--worktrees] [--locked-worktrees] [--prune-worktrees] [--apply]',
     '',
     'Default is dry-run. To execute selected scopes:',
     `  SECURITY_STALE_REF_CLEANUP_CONFIRM=${CONFIRM_VALUE} npm run -s security:stale-ref-cleanup -- --apply --tags`,
+    '',
+    'Reuse a saved plan to avoid a slow all-ref rescan:',
+    '  npm run -s security:stale-ref-plan -- --output /tmp/stale-ref-plan.json',
+    '  npm run -s security:stale-ref-cleanup -- --plan-file /tmp/stale-ref-plan.json --tags',
   ].join('\n');
+}
+
+function readOption(args: string[], name: string): string | null {
+  const index = args.indexOf(name);
+  if (index < 0) return null;
+  const value = args[index + 1];
+  if (!value || value.startsWith('--')) {
+    throw new Error(`${name} requires a value`);
+  }
+  return value;
 }
 
 function parseJsonOutput(stdout: string): Plan {
@@ -58,7 +73,12 @@ function run(command: string, args: string[]) {
   });
 }
 
-function runPlan(): Plan {
+function runPlan(planFile?: string): Plan {
+  if (planFile) {
+    const planPath = path.resolve(REPO_ROOT, planFile);
+    return JSON.parse(fs.readFileSync(planPath, 'utf8'));
+  }
+
   const result = run(TSX_BIN, [PLAN_SCRIPT]);
   if (result.error) throw result.error;
   if (result.status !== 0 && !result.stdout) {
@@ -170,6 +190,7 @@ function main() {
   }
 
   const apply = args.has('--apply');
+  const planFile = readOption(argv, '--plan-file');
   const scopeFlags = ['--tags', '--branches', '--remote-refs', '--worktrees', '--prune-worktrees'];
   const selectedScopes = scopeFlags.filter((flag) => args.has(flag));
   if (selectedScopes.length === 0) {
@@ -193,7 +214,7 @@ function main() {
     process.exit(1);
   }
 
-  const plan = runPlan();
+  const plan = runPlan(planFile || undefined);
   const actions = buildActions(plan, args);
   const results = actions.map((action) => executeAction(action, apply));
   const failed = results.filter((result) => result.status === 'failed');
@@ -202,6 +223,7 @@ function main() {
     ok: failed.length === 0,
     applied: apply,
     destructive: apply,
+    plan_source: planFile ? path.resolve(REPO_ROOT, planFile) : 'generated',
     selected_scopes: selectedScopes,
     actions_count: actions.length,
     applied_count: results.filter((result) => result.status === 'applied').length,
