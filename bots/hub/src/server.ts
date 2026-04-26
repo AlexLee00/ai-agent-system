@@ -1,8 +1,9 @@
 const env = require('../../../packages/core/lib/env');
 const pgPool = require('../../../packages/core/lib/pg-pool');
 const { createHubApp } = require('./app');
+const { configureHttpServer, parsePositiveIntEnv } = require('./server-hardening');
 
-const SHUTDOWN_TIMEOUT_MS = 10000;
+const SHUTDOWN_TIMEOUT_MS = parsePositiveIntEnv('HUB_SHUTDOWN_TIMEOUT_MS', 10000);
 const UNCAUGHT_OVERFLOW_LIMIT = 3;
 const UNCAUGHT_RESET_MS = 5 * 60 * 1000;
 
@@ -15,12 +16,15 @@ const runtime = {
 };
 
 let uncaughtCount = 0;
+let unhandledRejectionCount = 0;
 let uncaughtResetTimer = null;
+let processHooksRegistered = false;
 
 function resetUncaughtOverflowTimer() {
   if (uncaughtResetTimer) clearTimeout(uncaughtResetTimer);
   uncaughtResetTimer = setTimeout(() => {
     uncaughtCount = 0;
+    unhandledRejectionCount = 0;
     uncaughtResetTimer = null;
   }, UNCAUGHT_RESET_MS);
   uncaughtResetTimer.unref?.();
@@ -42,6 +46,7 @@ async function gracefulShutdown(reason, exitCode = 0) {
 
   try {
     if (runtime.server) {
+      runtime.server.closeIdleConnections?.();
       await new Promise((resolve) => {
         runtime.server.close(() => resolve());
       });
@@ -57,6 +62,8 @@ async function gracefulShutdown(reason, exitCode = 0) {
 }
 
 function registerProcessHooks() {
+  if (processHooksRegistered) return;
+  processHooksRegistered = true;
   process.on('SIGTERM', () => { gracefulShutdown('SIGTERM', 0).catch(() => {}); });
   process.on('SIGINT', () => { gracefulShutdown('SIGINT', 0).catch(() => {}); });
   process.on('uncaughtException', (error) => {
@@ -68,7 +75,15 @@ function registerProcessHooks() {
     }
   });
   process.on('unhandledRejection', (error) => {
-    console.error('[hub] unhandledRejection:', error);
+    unhandledRejectionCount += 1;
+    resetUncaughtOverflowTimer();
+    console.error(`[hub] unhandledRejection #${unhandledRejectionCount}:`, error);
+    if (unhandledRejectionCount >= UNCAUGHT_OVERFLOW_LIMIT) {
+      gracefulShutdown('unhandled_rejection_overflow', 1).catch(() => {});
+    }
+  });
+  process.on('warning', (warning) => {
+    console.warn('[hub] process warning:', warning?.name || 'Warning', warning?.message || warning);
   });
 }
 
@@ -89,6 +104,13 @@ export function startHubServer() {
     if (bindHost === '0.0.0.0') {
       console.warn('⚠️  Hub가 모든 인터페이스(0.0.0.0)에 바인딩됨 — 운영 환경에서는 권장하지 않음');
     }
+  });
+  configureHttpServer(runtime.server, {
+    onFatalError: () => {
+      if (!runtime.isShuttingDown) {
+        gracefulShutdown('server_error', 1).catch(() => {});
+      }
+    },
   });
 
   runtime.server.on('connection', (socket) => {

@@ -1,6 +1,8 @@
 #!/usr/bin/env tsx
 // @ts-nocheck
 
+const fs = require('node:fs');
+const path = require('node:path');
 const { PROFILES } = require('../lib/runtime-profiles.ts');
 
 const PLACEHOLDER_RE = /(__SET_|CHANGE_ME|REPLACE_ME|TODO|PLACEHOLDER|changeme)/i;
@@ -21,6 +23,14 @@ function baseUrl() {
 
 function timeoutMs() {
   return Math.max(5000, Number(process.env.HUB_TEAM_LLM_DRILL_TIMEOUT_MS || 45_000) || 45_000);
+}
+
+function reportOutputPath(live) {
+  const raw = String(process.env.HUB_TEAM_LLM_DRILL_OUTPUT || '').trim();
+  if (/^(none|false|0|-)$/.test(raw)) return null;
+  if (raw) return path.resolve(raw);
+  if (!live && !flag('HUB_TEAM_LLM_DRILL_WRITE_REPORT')) return null;
+  return path.resolve(__dirname, '..', 'output', 'team-llm-route-drill-live.json');
 }
 
 function scenarios() {
@@ -193,16 +203,24 @@ async function main() {
       checks.push(await callScenario(scenario, token));
     }
     const failed = checks.filter((check) => !check.ok);
-    console.log(JSON.stringify({
+    const outputJson = reportOutputPath(live);
+    const report = {
       ok: failed.length === 0,
       mode: live ? 'live' : 'mock',
       base_url: live ? baseUrl() : 'mock',
+      generated_at: new Date().toISOString(),
       checked: checks.length,
       failed: failed.length,
       oauth_primary_checks: checks.filter((check) => ['openai-oauth', 'claude-code-oauth'].includes(check.details?.expected_provider)).length,
       non_oauth_primary_checks: checks.filter((check) => !['openai-oauth', 'claude-code-oauth'].includes(check.details?.expected_provider)).length,
       checks,
-    }, null, 2));
+      output_json: outputJson,
+    };
+    if (outputJson) {
+      fs.mkdirSync(path.dirname(outputJson), { recursive: true });
+      fs.writeFileSync(outputJson, `${JSON.stringify(report, null, 2)}\n`, 'utf8');
+    }
+    console.log(JSON.stringify(report, null, 2));
     process.exit(failed.length === 0 ? 0 : 1);
   } finally {
     restoreFetch?.();

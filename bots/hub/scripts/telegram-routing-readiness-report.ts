@@ -82,17 +82,25 @@ async function telegramApi(token: string, method: string, payload: Record<string
   };
 }
 
+function describeFetchError(error: unknown): string {
+  if (!(error instanceof Error)) return String(error || 'telegram_fetch_failed');
+  const cause = (error as Error & { cause?: unknown }).cause;
+  const causeMessage = cause instanceof Error ? cause.message : String(cause || '').trim();
+  return causeMessage ? `${error.message}: ${causeMessage}` : error.message;
+}
+
 async function telegramApiWithRetry(token: string, method: string, payload: Record<string, unknown>) {
   let lastError: unknown = null;
-  for (let attempt = 1; attempt <= 2; attempt += 1) {
+  const maxAttempts = 4;
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
     try {
       return await telegramApi(token, method, payload);
     } catch (error) {
       lastError = error;
-      if (attempt < 2) await new Promise((resolve) => setTimeout(resolve, 350));
+      if (attempt < maxAttempts) await new Promise((resolve) => setTimeout(resolve, 250 * attempt));
     }
   }
-  throw lastError instanceof Error ? lastError : new Error(String(lastError || 'telegram_fetch_failed'));
+  throw new Error(describeFetchError(lastError));
 }
 
 async function validateTopic({
@@ -119,7 +127,7 @@ async function validateTopic({
       }
       lastError = String(result.body?.description || `telegram_http_${result.status}`);
     } catch (error: any) {
-      lastError = String(error?.message || error || 'telegram_fetch_failed');
+      lastError = describeFetchError(error);
     }
 
     if (attempt < 2) await new Promise((resolve) => setTimeout(resolve, 350));

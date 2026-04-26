@@ -1,16 +1,10 @@
 const express = require('express');
-const rateLimitModule = require('express-rate-limit');
-const rateLimit = rateLimitModule.default || rateLimitModule;
 const { authMiddleware } = require('../lib/auth');
 const { llmAdmissionMiddleware } = require('../lib/llm/admission-control');
+const { hubErrorHandler } = require('./middleware/error-handler');
 const { hubRequestContextMiddleware } = require('./middleware/request-context');
+const { createHubRateLimiters } = require('./rate-limiters');
 const { registerHubRoutes } = require('./route-registry');
-
-function parsePositiveIntEnv(name, fallback) {
-  const parsed = Number(process.env[name]);
-  if (!Number.isFinite(parsed) || parsed <= 0) return fallback;
-  return Math.floor(parsed);
-}
 
 export function createHubApp(options) {
   const app = express();
@@ -47,40 +41,12 @@ export function createHubApp(options) {
     next();
   });
 
-  const generalLimiter = rateLimit({
-    windowMs: 60 * 1000,
-    max: 200,
-    standardHeaders: true,
-    legacyHeaders: false,
-    message: { error: 'rate limit exceeded (200/min)' },
-  });
-
-  const pgLimiter = rateLimit({
-    windowMs: 60 * 1000,
-    max: 120,
-    standardHeaders: true,
-    legacyHeaders: false,
-    message: { error: 'DB query rate limit exceeded (120/min)' },
-  });
-
-  const secretsRateLimitPerMinute = parsePositiveIntEnv('HUB_SECRETS_RATE_LIMIT_PER_MIN', 240);
-  const secretsLimiter = rateLimit({
-    windowMs: 60 * 1000,
-    max: secretsRateLimitPerMinute,
-    standardHeaders: true,
-    legacyHeaders: false,
-    message: { error: `secrets rate limit exceeded (${secretsRateLimitPerMinute}/min)` },
-  });
-
-  const llmRateLimitPerMinute = parsePositiveIntEnv('HUB_LLM_RATE_LIMIT_PER_MIN', 120);
-  const llmLimiter = rateLimit({
-    windowMs: 60 * 1000,
-    max: llmRateLimitPerMinute,
-    standardHeaders: true,
-    legacyHeaders: false,
-    message: { error: `LLM rate limit exceeded (${llmRateLimitPerMinute}/min)` },
-    skip: (req) => String(req.headers['x-hub-load-test'] || '').trim() === '1',
-  });
+  const {
+    generalLimiter,
+    pgLimiter,
+    secretsLimiter,
+    llmLimiter,
+  } = createHubRateLimiters();
 
   registerHubRoutes(app, {
     isShuttingDown,
@@ -92,6 +58,8 @@ export function createHubApp(options) {
     llmLimiter,
     llmAdmissionMiddleware,
   });
+
+  app.use(hubErrorHandler);
 
   return app;
 }

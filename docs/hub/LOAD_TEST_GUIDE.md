@@ -36,6 +36,12 @@ npm --prefix bots/hub run readiness
 # 실행 중인 Hub API live drill
 HUB_BASE_URL="http://127.0.0.1:7788" HUB_AUTH_TOKEN="..." npm --prefix bots/hub run live:drill
 
+# 배포 host runtime 배선 점검(launchd secret/OAuth/Telegram topic)
+npm --prefix bots/hub run check:runtime
+
+# 강검증: runtime 배선 + 11개 팀 실제 /hub/llm/call + Telegram topic
+npm --prefix bots/hub run check:runtime:live-llm
+
 # LLM 관련 Jest 스모크
 npx jest --testPathPatterns="bots/hub/__tests__/load/llm-load" --runInBand
 npx jest --testPathPatterns="bots/hub/__tests__/circuit-breaker" --runInBand
@@ -45,6 +51,12 @@ npx jest --testPathPatterns="bots/hub/__tests__/local-ollama" --runInBand
 `readiness`는 retired gateway 독립성, OpenAI OAuth mock 경로, Claude Code OAuth CLI adapter, Telegram secret source, token-store 존재 여부를 redacted JSON으로 묶어 보여준다. `status=warn`은 배포 host에서 확인할 runtime 배선 이슈가 남았다는 뜻이며, `required_failures > 0`이면 live OAuth/Telegram 테스트 전에 먼저 수정한다.
 
 `live:drill`은 실행 중인 Hub의 `/hub/health/*`, `/hub/oauth/:provider/status`, 알람 digest/suppress dry-run을 호출한다. OAuth 토큰이나 Telegram credential 값은 출력하지 않는다. CI/로컬 계약 검증만 필요하면 `npm --prefix bots/hub run live:drill:mock`으로 네트워크 없이 실행한다.
+
+`check:runtime`은 배포 host의 설치 LaunchAgent/`launchctl` 기준 callback secret, Hub auth token, OAuth readiness, Telegram forum topic 12개를 확인한다. 사용자-visible 메시지는 보내지 않고 Telegram `sendChatAction`만 사용한다.
+
+`check:runtime:live-llm`은 `check:runtime`에 11개 팀의 실제 `/hub/llm/call`을 추가한다. OpenAI OAuth와 Claude Code OAuth를 실제로 밟으므로, 릴리즈 직전/장애 복구 직후/모델 라우팅 변경 직후에만 실행한다.
+
+`check:runtime:live-llm` 실행 시 마지막 팀별 LLM 라우팅 결과는 `bots/hub/output/team-llm-route-drill-live.json`에 기록된다. 토큰/계정 식별자는 포함하지 않으며, 이 파일은 로컬 런타임 증빙용이라 Git에는 포함하지 않는다.
 
 ---
 
@@ -135,6 +147,8 @@ VALUES (
 
 - `npm --prefix bots/hub run readiness`에서 required failure가 없는지
 - `npm --prefix bots/hub run live:drill`에서 live Hub endpoint required failure가 없는지
+- `npm --prefix bots/hub run check:runtime`에서 launchd secret/OAuth/Telegram topic이 pass인지
+- 릴리즈 직전에는 `npm --prefix bots/hub run check:runtime:live-llm`으로 11개 팀 실제 LLM 호출까지 pass인지
 - retired gateway process 없이 `/hub/alarm`이 Hub-native 경로로 응답하는지
 - `/hub/oauth/:provider/status`가 expiry/canary를 제공하는지
 - 토큰/시크릿 문자열이 로그/응답에 노출되지 않는지

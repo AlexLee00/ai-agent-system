@@ -24,6 +24,19 @@ async function main() {
     if (response.status !== 503 || body.startup_complete !== false) {
       throw new Error('startup readiness contract mismatch');
     }
+
+    const invalidJsonResponse = await fetch(`${baseUrl}/hub/alarm`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: '{"invalid"',
+    });
+    const invalidJsonBody = await invalidJsonResponse.json();
+    if (invalidJsonResponse.status !== 400 || invalidJsonBody.error !== 'invalid_json_body') {
+      throw new Error('invalid JSON error boundary contract mismatch');
+    }
+    if (JSON.stringify(invalidJsonBody).includes('SyntaxError')) {
+      throw new Error('invalid JSON response leaked stack detail');
+    }
   });
 
   const shutdownApp = createHubApp({

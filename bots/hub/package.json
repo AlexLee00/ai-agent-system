@@ -17,11 +17,13 @@
     "telegram:routing-readiness": "tsx scripts/telegram-routing-readiness-report.ts",
     "local-llm-policy": "tsx scripts/local-llm-policy-report.ts",
     "inventory:hub-alarm": "tsx scripts/generate-hub-alarm-inventory.ts",
-    "test": "node scripts/run-tests.js all",
-    "test:unit": "node scripts/run-tests.js unit",
+    "test": "tsx scripts/run-tests.ts all",
+    "test:unit": "tsx scripts/run-tests.ts unit",
     "test:secrets-meta": "node --test __tests__/secrets-meta.node.test.js",
-    "check:runtime": "node scripts/run-tests.js runtime",
-    "check:l5": "node scripts/run-tests.js all && node scripts/run-tests.js runtime && tsx scripts/generate-hub-alarm-inventory.ts"
+    "check:runtime": "tsx scripts/run-tests.ts runtime",
+    "check:runtime:live-llm": "tsx scripts/run-tests.ts runtime-live",
+    "check:l5": "tsx scripts/run-tests.ts all && tsx scripts/run-tests.ts runtime && tsx scripts/generate-hub-alarm-inventory.ts",
+    "check:l5:live-llm": "tsx scripts/run-tests.ts all && tsx scripts/run-tests.ts runtime-live && tsx scripts/generate-hub-alarm-inventory.ts"
   },
   "dependencies": {
     "express": "^4.21.2",
