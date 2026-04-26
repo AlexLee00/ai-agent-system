@@ -2,11 +2,11 @@
 
 This inventory tracks the Hub alarm migration surface. `hub_alarm_native` entries are the desired path; `legacy_openclaw_compat` entries are compatibility shims or remaining migration targets.
 
-- generated_at: 2026-04-26T02:53:52.648Z
-- total_matches: 271
-- unique_files: 122
+- generated_at: 2026-04-26T03:53:33.117Z
+- total_matches: 272
+- unique_files: 123
 - hub_alarm_native: 67
-- legacy_openclaw_compat: 204
+- legacy_openclaw_compat: 205
 
 ## Files
 
@@ -327,6 +327,9 @@ This inventory tracks the Hub alarm migration surface. `hub_alarm_native` entrie
 
 ### `bots/hub/scripts/telegram-pending-queue-migration-smoke.ts`
 - L51 [legacy_openclaw_compat]: `OPENCLAW_WORKSPACE: legacyWorkspace,`
+
+### `bots/hub/scripts/telegram-routing-readiness-report.ts`
+- L152 [legacy_openclaw_compat]: `const legacyWorkspace = String(process.env.OPENCLAW_WORKSPACE || '').trim();`
 
 ### `bots/investment/scripts/pre-market-screen.ts`
 - L34 [legacy_openclaw_compat]: `const OPENCLAW_DIR = join(homedir(), '.openclaw');`

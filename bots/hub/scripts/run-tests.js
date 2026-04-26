@@ -83,7 +83,9 @@ function main() {
   if (target === 'runtime') {
     const launchdStatus = run(tsxBin, [path.join(scriptDir, 'launchd-callback-secret-smoke.ts')]);
     if (launchdStatus !== 0) process.exit(launchdStatus);
-    process.exit(run(tsxBin, [path.join(scriptDir, 'telegram-topic-routing-live-smoke.ts')]));
+    const telegramTopicStatus = run(tsxBin, [path.join(scriptDir, 'telegram-topic-routing-live-smoke.ts')]);
+    if (telegramTopicStatus !== 0) process.exit(telegramTopicStatus);
+    process.exit(run(tsxBin, [path.join(scriptDir, 'telegram-routing-readiness-report.ts')]));
   }
   if (target === 'all') {
     const secretsStatus = run(process.execPath, ['--test', '__tests__/secrets-meta.node.test.js']);

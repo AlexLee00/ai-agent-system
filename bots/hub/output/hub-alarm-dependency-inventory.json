@@ -1,16 +1,16 @@
 {
-  "generated_at": "2026-04-26T02:53:52.648Z",
+  "generated_at": "2026-04-26T03:53:33.117Z",
   "scan_patterns": [
     "hub-alarm-client",
     "openclaw-client",
     "HUB_ALARM_",
     "OPENCLAW_"
   ],
-  "total_matches": 271,
-  "unique_files": 122,
+  "total_matches": 272,
+  "unique_files": 123,
   "categories": {
     "hub_alarm_native": 67,
-    "legacy_openclaw_compat": 204
+    "legacy_openclaw_compat": 205
   },
   "files": {
     "bots/blog/__tests__/dpo-learning.test.ts": [
@@ -1151,6 +1151,14 @@
         "line": 51,
         "category": "legacy_openclaw_compat",
         "match": "OPENCLAW_WORKSPACE: legacyWorkspace,"
+      }
+    ],
+    "bots/hub/scripts/telegram-routing-readiness-report.ts": [
+      {
+        "file": "bots/hub/scripts/telegram-routing-readiness-report.ts",
+        "line": 152,
+        "category": "legacy_openclaw_compat",
+        "match": "const legacyWorkspace = String(process.env.OPENCLAW_WORKSPACE || '').trim();"
       }
     ],
     "bots/investment/scripts/pre-market-screen.ts": [
