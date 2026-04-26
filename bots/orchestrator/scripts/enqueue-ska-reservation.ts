@@ -56,7 +56,7 @@ async function main() {
     const commandArgs = {
       command: 'register_reservation',
       raw_text: rawText,
-      source: 'openclaw_exec',
+      source: 'hub_control_exec',
       manual_retry: manualRetry,
       reservation,
       reservations: null,

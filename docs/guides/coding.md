@@ -167,7 +167,7 @@ bots/reservation/
 │   └── validation.js               전화번호/날짜/시간 정규화
 ├── scripts/
 │   ├── session-close.js            세션 마감 자동화
-│   ├── deploy-context.js           OpenClaw 컨텍스트 배포
+│   ├── deploy-context.js           Hub/팀 컨텍스트 배포
 │   ├── reload-monitor.sh           빠른 재시작 (문법 체크 → 재시작, E2E 없음)
 │   └── lib/                        스크립트 공유 모듈
 ├── context/
@@ -381,7 +381,7 @@ API 키가 노출됐거나 의심될 때 즉시 실행:
 ## 3. 경로 관리
 
 ```javascript
-const WORKSPACE = path.join(process.env.HOME, '.openclaw', 'workspace');
+const WORKSPACE = process.env.AI_AGENT_RUNTIME_DIR || path.join(process.env.HOME, 'Library', 'Application Support', 'ai-agent-system');
 
 const DB_PATH     = path.join(WORKSPACE, 'state.db');       // SQLite DB
 const LOCK_FILE   = path.join(WORKSPACE, 'naver-monitor.lock');
@@ -398,7 +398,7 @@ const LOG_DIR     = '/tmp/';                                 // 로그는 /tmp/
 ### DB 위치 및 구조
 
 ```
-~/.openclaw/workspace/state.db  (WAL 모드)
+AI_AGENT_RUNTIME_DIR/state.db  (WAL 모드)
 
 reservations      네이버 예약 상태 추적
 cancelled_keys    취소 처리 중복 방지
@@ -462,7 +462,7 @@ upsertReservation(bookingId, {
 
 ## 5. 텔레그램 알림 (lib/telegram.js)
 
-### OpenClaw 우회 — Bot API 직접 호출
+### Hub alarm 우회 — Bot API 직접 호출
 
 ```javascript
 const { sendTelegram, flushPendingTelegrams } = require('../lib/telegram');
@@ -708,7 +708,7 @@ node /path/to/script.js >> "$LOG" 2>&1
 
 ---
 
-## 12. OpenClaw / LLM 연동 패턴
+## 12. Hub / LLM 연동 패턴
 
 ### BOOT.md 컨텍스트 설계 원칙
 
@@ -750,7 +750,7 @@ node scripts/session-close.js \
 
 ### Anthropic SDK 직접 호출 패턴 (Python)
 
-OpenClaw를 통하지 않고 Python 코드에서 Claude API를 직접 호출할 때 (forecast.py 월간 진단 등):
+Hub selector를 통하지 않고 Python 코드에서 Claude API를 직접 호출할 때 (forecast.py 월간 진단 등):
 
 ```python
 import anthropic
@@ -799,7 +799,7 @@ except Exception as e:
 
 ## 13. 모델 선택 가이드
 
-### 현재 OpenClaw 스택 (스카봇)
+### 현재 Hub/LLM 스택 (스카봇)
 
 | 순서 | 모델 | 용도 | TTFT | 비용 |
 |------|------|------|------|------|
@@ -821,7 +821,7 @@ except Exception as e:
 
 | 봇 | Primary | Fallback | 이유 |
 |----|---------|---------|------|
-| 스카봇 (OpenClaw) | `gemini-2.5-flash` | `claude-haiku-4-5` | 무료 OAuth, 고빈도 |
+| 스카봇 (Hub selector) | `gemini-2.5-flash` | `claude-haiku-4-5` | 무료 OAuth, 고빈도 |
 | 스카봇 LLM 진단 (직접 호출) | `claude-haiku-4-5-20251001` | — | 저비용, 분석 충분 |
 | 클로드팀 아처 (주간 기술 분석) | `claude-sonnet-4-6` | — | 복잡한 패치 티켓 생성 |
 | 클로드팀 덱스터 (일일 리포트) | `claude-haiku-4-5-20251001` | — | 비용 최적화 |
@@ -839,7 +839,7 @@ except Exception as e:
 ### 모델 교체 CLI
 
 ```bash
-openclaw models set google-gemini-cli/gemini-2.5-flash
+node bots/hub/scripts/check-llm-route.js --model google-gemini-cli/gemini-2.5-flash
 # prefix 주의: google-gemini-cli/ (일반 gemini/ 아님)
 ```
 
@@ -957,7 +957,7 @@ function checkKillSwitch() {
 
 ```bash
 # 긴급 상황 시 킬 스위치 활성화
-touch ~/.openclaw/workspace/KILL_SWITCH
+touch "$AI_AGENT_RUNTIME_DIR/KILL_SWITCH"
 ```
 
 #### 거래 감사 로그 (Audit Trail)
@@ -1186,7 +1186,7 @@ tb.sendMessage('archer', 'dexter', 'alert', 'critical', 'CVE-2026-XXXX', cve);
   GitHub Releases API  — 의존성 업데이트 (claude-code, node, python, anthropic-sdk)
   npm Registry         — 패키지 최신 버전
   npm audit            — 보안 취약점 (CVE)
-  웹 서칭 8개          — Anthropic 뉴스/API Changelog, OpenClaw, HuggingFace, AI 블로그
+  웹 서칭 8개          — Anthropic 뉴스/API Changelog, Hub/agent orchestration, HuggingFace, AI 블로그
 
 ❌ 수집 금지 (루나팀 담당)
   BTC / ETH 가격       → 루나팀 oracle.js
@@ -1337,7 +1337,7 @@ function parseJsonResponse(text) {
 | 날짜 | 내용 |
 |------|------|
 | 2026-02-24 | 최초 작성 (secrets, WORKSPACE, MAX_RETRIES, archive 패턴) |
-| 2026-02-27 | 전면 업데이트 — SQLite/DB, telegram 직접 발송, CLI stdout JSON, args.js, exit code, launchd, OpenClaw/LLM 연동, 모델 비교표, 암호화 패턴 추가 |
+| 2026-02-27 | 전면 업데이트 — SQLite/DB, telegram 직접 발송, CLI stdout JSON, args.js, exit code, launchd, Hub/LLM 연동, 모델 비교표, 암호화 패턴 추가 |
 | 2026-02-27 | **코딩가이드 목적 재정의 + work-history/coding-guide 세션마감 자동화** — coding-guide.md: 핵심 원칙 섹션 추가, 목적 재정의 외 2건 |
 | 2026-02-27 | **코딩가이드 Security by Design 전면 적용** — Security by Design 원칙 선언 (어기면 코드가 실행 안 되는 구조) 외 4건 |
 | 2026-02-27 | **pre-commit 훅 설치 및 공유 인프라 플랜 완료 검증** — scripts/pre-commit 설치 (.git/hooks/ 등록 + chmod +x) 외 2건 |
@@ -1361,8 +1361,8 @@ function parseJsonResponse(text) {
 | 2026-02-27 | **CL-006 코딩가이드 기준 전체 코드 리팩토링** — maskPhone/maskName 함수 추가 (lib/formatting.js) 외 5건 |
 | 2026-02-27 | **pickko-daily-audit/summary 실행 시간 23:50으로 변경** — pickko-daily-audit 22:00→23:50 (plist 수정 + launchd 재등록) 외 1건 |
 | 2026-02-28 | **pickko-daily-audit 스케줄 22:00 원복** — pickko-daily-audit 23:50→22:00 원복 (plist 수정 + launchd 재등록) |
-| 2026-02-28 | **OpenClaw v2026.2.26 업데이트 및 재시작** — openclaw gateway restart (완전 중지 후 재시작) 외 2건 |
-| 2026-02-28 | **스카 재부팅** — openclaw gateway restart → 스카 부팅 완료 (durationMs=59s) |
+| 2026-02-28 | **legacy gateway v2026.2.26 업데이트 및 재시작** — legacy gateway restart (완전 중지 후 재시작) 외 2건 |
+| 2026-02-28 | **스카 재부팅** — legacy gateway restart → 스카 부팅 완료 (durationMs=59s) |
 | 2026-02-28 | **매출 보고 일반이용 합산 수정** — pickko-daily-summary.js: 23:50 자동 보고 합계에 일반이용(스터디카페) 포함 외 3건 |
 | 2026-02-28 | **미해결 알림 해제 + 매출 일반이용 합산 수정** — 픽코 취소 실패 알림 수동 resolved 처리 (2026-02-27 18:00 A2) 외 5건 |
 | 2026-02-28 | **고아 프로세스 자동 정리 추가** — start-ops.sh cleanup_old()에 고아 tail -f 프로세스 자동 정리 추가 (2시간 재시작마다 실행) |
@@ -1387,8 +1387,8 @@ function parseJsonResponse(text) {
 | 2026-03-02 | **SKA-P05~P08 루나팀 패턴 적용 + deploy-ops.sh** — lib/error-tracker.js 연속 오류 카운터 (naver-monitor+kiosk-monitor 통합) 외 4건 |
 | 2026-03-02 | **3중 가동/중지 lib/health.js + deploy-ops.sh** — lib/health.js 3중 가동(preflightSystemCheck/ConnCheck)+3중 중지(shutdownDB/Cleanup/registerShutdownHandlers) 외 4건 |
 | 2026-03-02 | **하트비트 오늘예약현황 추가 + scar→ska 정리 + 절대규칙 등록** — getTodayStats() DB함수 추가 (네이버+키오스크 합계) 외 4건 |
-| 2026-03-02 | **OpenClaw 공식문서 검토 + 속도테스트 프로바이더 등록 + LLM_DOCS Cerebras/SambaNova 추가** — 루나팀 분석가 프로바이더 분산(onchain→cerebras, sentiment→sambanova) 외 6건 |
-| 2026-03-02 | **OpenClaw OC-001~009 보안·설정 개선 전체 완료** — OC-001 qwen CRITICAL 제거(fallbacks에서 제거) 외 8건 |
+| 2026-03-02 | **legacy gateway 공식문서 검토 + 속도테스트 프로바이더 등록 + LLM_DOCS Cerebras/SambaNova 추가** — 루나팀 분석가 프로바이더 분산(onchain→cerebras, sentiment→sambanova) 외 6건 |
+| 2026-03-02 | **legacy gateway OC-001~009 보안·설정 개선 전체 완료** — OC-001 qwen CRITICAL 제거(fallbacks에서 제거) 외 8건 |
 | 2026-03-02 | **루나팀 다중심볼+KIS통합강화** — 절대규칙 업데이트(루나팀=암호화폐·국내외주식) 외 4건 |
 | 2026-03-02 | **registry.json 현황 업데이트 + KIS Yahoo폴백** — registry.json 루나팀 실제 상태 반영(온체인·뉴스·감성 dev로 정정) 외 3건 |
 | 2026-03-02 | **LU-035리서처+LU-024리포터+ETH실매수** — LU-035 강세/약세 리서처 signal-aggregator 통합 완성 외 3건 |
@@ -1415,7 +1415,7 @@ function parseJsonResponse(text) {
 | 2026-03-04 | **메인봇 문서화 + time-mode 연동 + 전체 sendTelegram 교체 완료** — MAINBOT.md 최신화 외 4건 |
 | 2026-03-04 | **API 문서 분석 기반 개선사항 적용** — parse_mode HTML 추가 (telegram.js + mainbot.js) 외 2건 |
 | 2026-03-04 | **LLM키통합+알람버그수정+덱스터패턴학습** — packages/core/lib/llm-keys.js 공용 LLM 키 로더 외 3건 |
-| 2026-03-04 | **제이 중심 지휘 체계 + 루나팀 고도화** — 제이 OpenClaw 에이전트 전환 외 10건 |
+| 2026-03-04 | **제이 중심 지휘 체계 + 루나팀 고도화** — 제이 Hub 에이전트 전환 외 10건 |
 | 2026-03-04 | **팀 기능 문서화 및 제이 NLP 고도화** — TEAMS.md 문서 작성 외 6건 |
 | 2026-03-04 | **제이↔클로드 통신·NLP자동개선·정체성유지시스템** — 제이↔클로드 직접 통신 채널 (ask_claude) 외 4건 |
 | 2026-03-05 | **출금지연제 자동예약 + 덱스터 Phase C** — 출금지연제 delay 감지·ETA 계산·Telegram 안내 외 8건 |
@@ -1424,8 +1424,8 @@ function parseJsonResponse(text) {
 | 2026-03-05 | **취소 루틴 버그 수정 (블러/키 충돌)** — page.click(body)→Escape 키 수정(상세보기 블러 문제) 외 3건 |
 | 2026-03-05 | **루나팀 국내/국외 모의투자 배포** — 국내장 모의투자 활성화 (ai.investment.domestic) 외 4건 |
 | 2026-03-05 | **LLM 토큰 이력 DB 기록 + 거래 일지 스크립트** — llm-client.js Groq/OpenAI 토큰·응답시간 DB 기록 외 3건 |
-| 2026-03-05 | **OpenClaw 업데이트 + 제이 RAG 연동 + e2e 데이터 정리** — OpenClaw 2026.2.26→2026.3.2 업데이트 외 2건 |
-| 2026-03-05 | **예약 시간 파싱 버그 수정 + OpenClaw 복구 + 덱스터 오탐 수정** — naver-monitor 정오 종료시간 파싱 버그 수정 외 6건 |
+| 2026-03-05 | **legacy gateway 업데이트 + 제이 RAG 연동 + e2e 데이터 정리** — legacy gateway 2026.2.26→2026.3.2 업데이트 외 2건 |
+| 2026-03-05 | **예약 시간 파싱 버그 수정 + legacy gateway 복구 + 덱스터 오탐 수정** — naver-monitor 정오 종료시간 파싱 버그 수정 외 6건 |
 | 2026-03-05 | **스카 pickko-query/cancel-cmd 경로 누락 버그 수정** — CLAUDE_NOTES.md 명령 테이블 절대경로 수정 외 1건 |
 | 2026-03-06 | **미해결 알림 반복 + tool_code 누출 버그 수정** — pickko-alerts-resolve.js 신규 (수동 해결 CLI) 외 2건 |
 | 2026-03-06 | **Day 4 — 루나팀 매매일지 시스템** — trade-journal-db.js 신규 (5개 테이블 + DB함수) 외 5건 |
@@ -1498,8 +1498,8 @@ function parseJsonResponse(text) {
 <!-- session-close:2026-03-06:day-4-루나팀-매매일지-시스템 -->
 <!-- session-close:2026-03-06:미해결-알림-반복-tool_code-누출-버그-수정 -->
 <!-- session-close:2026-03-05:스카-pickkoquerycancelcmd-경로-누락- -->
-<!-- session-close:2026-03-05:예약-시간-파싱-버그-수정-openclaw-복구-덱스터 -->
-<!-- session-close:2026-03-05:openclaw-업데이트-제이-rag-연동-e2e-데이 -->
+<!-- session-close:2026-03-05:예약-시간-파싱-버그-수정-legacy-gateway-복구-덱스터 -->
+<!-- session-close:2026-03-05:legacy-gateway-업데이트-제이-rag-연동-e2e-데이 -->
 <!-- session-close:2026-03-05:llm-토큰-이력-db-기록-거래-일지-스크립트 -->
 <!-- session-close:2026-03-05:루나팀-국내국외-모의투자-배포 -->
 <!-- session-close:2026-03-05:취소-루틴-버그-수정-블러키-충돌 -->
@@ -1532,8 +1532,8 @@ function parseJsonResponse(text) {
 <!-- session-close:2026-03-02:lu035리서처lu024리포터eth실매수 -->
 <!-- session-close:2026-03-02:registryjson-현황-업데이트-kis-yahoo -->
 <!-- session-close:2026-03-02:루나팀-다중심볼kis통합강화 -->
-<!-- session-close:2026-03-02:openclaw-oc001009-보안설정-개선-전체-완 -->
-<!-- session-close:2026-03-02:openclaw-공식문서-검토-속도테스트-프로바이더-등 -->
+<!-- session-close:2026-03-02:legacy-gateway-oc001009-보안설정-개선-전체-완 -->
+<!-- session-close:2026-03-02:legacy-gateway-공식문서-검토-속도테스트-프로바이더-등 -->
 <!-- session-close:2026-03-02:하트비트-오늘예약현황-추가-scarska-정리-절대규칙 -->
 <!-- session-close:2026-03-02:3중-가동중지-libhealthjs-deployopss -->
 <!-- session-close:2026-03-02:skap05p08-루나팀-패턴-적용-deployopss -->
@@ -1559,7 +1559,7 @@ function parseJsonResponse(text) {
 <!-- session-close:2026-02-28:미해결-알림-해제-매출-일반이용-합산-수정 -->
 <!-- session-close:2026-02-28:매출-보고-일반이용-합산-수정 -->
 <!-- session-close:2026-02-28:스카-재부팅 -->
-<!-- session-close:2026-02-28:openclaw-v2026226-업데이트-및-재시작 -->
+<!-- session-close:2026-02-28:legacy-gateway-v2026226-업데이트-및-재시작 -->
 <!-- session-close:2026-02-28:pickkodailyaudit-스케줄-2200-원복 -->
 <!-- session-close:2026-02-27:pickkodailyauditsummary-실행-시간- -->
 <!-- session-close:2026-02-27:cl006-코딩가이드-기준-전체-코드-리팩토링 -->

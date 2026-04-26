@@ -6,7 +6,6 @@
  * 사용법:
  *   node scripts/deploy-context.js --list
  *   node scripts/deploy-context.js --bot=reservation
- *   node scripts/deploy-context.js --bot=reservation --target=openclaw
  *   node scripts/deploy-context.js --bot=reservation --target=claude-code
  *   node scripts/deploy-context.js --all
  *   node scripts/deploy-context.js --bot=reservation --sync
@@ -27,7 +26,6 @@ else    console.log(`
 사용법:
   node scripts/deploy-context.js --list
   node scripts/deploy-context.js --bot=reservation
-  node scripts/deploy-context.js --bot=reservation --target=openclaw
   node scripts/deploy-context.js --bot=reservation --target=claude-code
   node scripts/deploy-context.js --all
   node scripts/deploy-context.js --bot=reservation --sync

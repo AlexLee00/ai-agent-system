@@ -76,7 +76,7 @@ async function main() {
   const lines = [];
   lines.push(`📈 통합 LLM 사용량 리포트 (${days}일)`);
   lines.push('');
-  lines.push(`제이(OpenClaw): ${fmt(jayReport.total.totalTokens)} tok / ${fmt(jayReport.total.calls)}회`);
+  lines.push(`제이(Hub): ${fmt(jayReport.total.totalTokens)} tok / ${fmt(jayReport.total.calls)}회`);
 
   const tokenTop = tokenTrackerRows.slice(0, 8);
   if (tokenTop.length) {

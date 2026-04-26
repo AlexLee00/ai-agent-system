@@ -123,7 +123,7 @@
 2. severity, dedupe, throttle, quiet-hours 정책을 reporting-hub로 승격
 3. remaining `rag.store(...)` matches are now mostly helper adapters, shared-client aliases, search-only consumers, or test/legacy paths; keep pruning non-current surfaces while reporting-hub remains the canonical current write path
 4. reporter/rebecca/night-handler 문구를 공용 notice/report formatter로 추가 통일
-5. canonical transport (`openclaw-client.ts`, `reporting-hub.ts`) 바깥 non-blog current delivery는 사실상 1차 정리 완료 상태로 유지
+5. canonical transport (`hub-alarm-client.ts`, `reporting-hub.ts`) 바깥 non-blog current delivery는 사실상 1차 정리 완료 상태로 유지
 
 ## Current Output Insight Helpers
 

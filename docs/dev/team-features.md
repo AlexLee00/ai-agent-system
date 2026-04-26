@@ -22,7 +22,7 @@
 
 | 이름 | 파일 | 역할 |
 |------|------|------|
-| **스카** | `bots/reservation/` | 메인봇 (OpenClaw 자연어 처리) |
+| **스카** | `bots/reservation/` | 메인봇 (Hub/selector 자연어 처리) |
 | **앤디** | `auto/monitors/naver-monitor.js` | 네이버 스마트플레이스 모니터링 (5분) |
 | **지미** | `auto/monitors/pickko-kiosk-monitor.js` | 키오스크 예약 감지 → 네이버 차단/해제 (30분) |
 | **레베카** | `bots/ska/src/rebecca.py` | 매출·예측 분석봇 (Prophet) |
@@ -256,7 +256,7 @@ npm run archer:fetch-only   # 수집만 (디버그)
 
 ### 팀 상태 DB (Team Bus)
 
-**위치**: `~/.openclaw/workspace/claude-team.db`
+**위치**: Hub/Jay runtime DB
 **모듈**: `lib/team-bus.js`
 
 ```bash
@@ -309,13 +309,13 @@ npm run patch:status        # 패치 현황 콘솔
 
 **위치**: `bots/orchestrator/`
 **상태**: ✅ OPS 운영 중 (launchd: `ai.orchestrator`, KeepAlive)
-**설명**: 현재 주 경로는 OpenClaw webhook/alert publisher이며, 오케스트레이터는 `mainbot_queue` legacy 큐와 사용자 명령 라우팅을 함께 관리한다. 큐로 들어온 알람은 필터링/배치/무음 처리 후 텔레그램으로 fanout된다. legacy queue consumer는 `MAINBOT_QUEUE_CONSUMER_ENABLED=false`로 단계적으로 비활성화할 수 있고, 2026-04-14 기준 OPS live trial도 정상 통과했다.
+**설명**: 현재 주 경로는 Hub alarm publisher이며, 오케스트레이터는 `mainbot_queue` legacy 큐와 사용자 명령 라우팅을 함께 관리한다. 큐로 들어온 알람은 필터링/배치/무음 처리 후 텔레그램으로 fanout된다. legacy queue consumer는 `MAINBOT_QUEUE_CONSUMER_ENABLED=false`로 단계적으로 비활성화할 수 있고, 2026-04-14 기준 OPS live trial도 정상 통과했다.
 
 ### 핵심 기능
 
 | 기능 | 설명 |
 |------|------|
-| 알람 통합 | OpenClaw webhook/alert publisher를 기본으로 받고, 남은 legacy 큐 입력도 함께 소비 |
+| 알람 통합 | Hub alarm publisher를 기본으로 받고, 남은 legacy 큐 입력도 함께 소비 |
 | 필터링 | 무음/야간 보류/배치 집약 3단계 |
 | 명령 파싱 | 슬래시→키워드→Groq Scout 3단계 파싱 |
 | LLM 토큰 추적 | 전 봇 무료/유료 토큰 사용 통합 기록 |

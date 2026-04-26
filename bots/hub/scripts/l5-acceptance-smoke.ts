@@ -34,9 +34,6 @@ async function main() {
   const originalEnv = {
     HUB_AUTH_TOKEN: process.env.HUB_AUTH_TOKEN,
     HUB_CONTROL_PLANNER_FORCE_HEURISTIC: process.env.HUB_CONTROL_PLANNER_FORCE_HEURISTIC,
-    HUB_ALARM_LEGACY_OPENCLAW_FALLBACK: process.env.HUB_ALARM_LEGACY_OPENCLAW_FALLBACK,
-    OPENCLAW_LEGACY_FALLBACK: process.env.OPENCLAW_LEGACY_FALLBACK,
-    OPENCLAW_PORT: process.env.OPENCLAW_PORT,
     TELEGRAM_BOT_TOKEN: process.env.TELEGRAM_BOT_TOKEN,
     TELEGRAM_CHAT_ID: process.env.TELEGRAM_CHAT_ID,
     TELEGRAM_ALERTS_DISABLED: process.env.TELEGRAM_ALERTS_DISABLED,
@@ -50,9 +47,6 @@ async function main() {
 
   process.env.HUB_AUTH_TOKEN = 'l5-acceptance-token';
   process.env.HUB_CONTROL_PLANNER_FORCE_HEURISTIC = '1';
-  process.env.HUB_ALARM_LEGACY_OPENCLAW_FALLBACK = 'false';
-  process.env.OPENCLAW_LEGACY_FALLBACK = 'false';
-  process.env.OPENCLAW_PORT = '18789';
   process.env['TELEGRAM_' + 'BOT_TOKEN'] = 'l5-acceptance-smoke-fixture';
   process.env.TELEGRAM_CHAT_ID = '123456';
   process.env.TELEGRAM_ALERTS_DISABLED = 'false';

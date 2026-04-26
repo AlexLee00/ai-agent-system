@@ -67,7 +67,7 @@ async function main() {
     provider: result.provider,
     model: result.model,
     endpoint: calls[0].url,
-    openclaw_used: false,
+    legacy_gateway_used: false,
   }));
 }
 

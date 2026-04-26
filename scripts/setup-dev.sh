@@ -146,13 +146,6 @@ else
   ok "claude-code 설치 완료"
 fi
 
-if command -v openclaw >/dev/null 2>&1; then
-  ok "openclaw 이미 설치됨"
-else
-  npm install -g openclaw
-  ok "openclaw 설치 완료"
-fi
-
 step "4/10" "프로젝트 클론 및 의존성"
 if [ -d "$PROJECT_DIR/.git" ]; then
   ok "프로젝트 이미 클론됨: $PROJECT_DIR"

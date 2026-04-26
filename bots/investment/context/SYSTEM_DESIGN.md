@@ -194,7 +194,7 @@ npm run journal:tg       # 텔레그램 전송
 
 ---
 
-## 상태 파일 (~/.openclaw/investment-state.json)
+## 상태 파일 (~/.ai-agent-system/investment/investment-state.json)
 
 ```json
 {

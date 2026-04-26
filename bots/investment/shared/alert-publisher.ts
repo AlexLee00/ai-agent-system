@@ -2,7 +2,7 @@
 /**
  * shared/alert-publisher.ts — 루나팀 알람 발행 클라이언트 (ESM)
  *
- * OpenClaw webhook 경유로 전달한다.
+ * Hub alarm 경유로 전달한다.
  */
 
 import { createRequire } from 'module';
@@ -67,7 +67,7 @@ function updateIncidentCache(signature: string | null, message: string): {
 }
 
 /**
- * OpenClaw webhook으로 알람 발행
+ * Hub alarm으로 알람 발행
  * @param {object} opts
  * @param {string} opts.from_bot     발신 봇 ID (luna, jason, tyler, molly, chris...)
  * @param {string} [opts.team]       팀명 (기본: investment)

@@ -89,7 +89,7 @@ ps aux | grep -E 'claude.*CODEX|claude.*--print'
 
 - Dedup 윈도우: 1분 (동일 메시지 재발송 차단)
 - Rate Limit: 20건/시간
-- 상태 파일: `~/.openclaw/workspace/codex-notifier-state.json`
+- 상태 파일: Claude runtime notifier state store
 
 ---
 
@@ -165,6 +165,6 @@ node bots/claude/scripts/codex-notifier-runner.ts
 | 알림 안 옴 | Kill Switch OFF | `CLAUDE_CODEX_NOTIFIER_ENABLED=true` |
 | Shadow 로그만 나옴 | SHADOW=true | `CLAUDE_NOTIFIER_SHADOW=false` |
 | 프로세스 감지 안 됨 | 명령줄 패턴 불일치 | `ps aux`로 프로세스 형태 확인 후 감지 정규식 조정 |
-| 중복 알림 | dedup 오동작 | `~/.openclaw/workspace/codex-notifier-state.json` 삭제 |
+| 중복 알림 | dedup 오동작 | Claude runtime notifier state 초기화 |
 | 서비스 시작 안 됨 | Kill Switch OFF 상태 | 서비스는 자동 재실행 (KeepAlive=true), 30초 대기 후 종료 |
 | auto_dev 문서가 구현되지 않음 | Auto Dev Kill Switch OFF | `CLAUDE_AUTO_DEV_ENABLED=true` 및 `ai.claude.auto-dev` 상태 확인 |

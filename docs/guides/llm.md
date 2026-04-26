@@ -17,7 +17,7 @@
 7. [xAI Grok API](#7-xai-grok-api)
 8. [DeepSeek + Qwen (MLX 로컬)](#8-deepseek--qwen-mlx-로컬)
 9. [Telegram Bot API](#9-telegram-bot-api)
-10. [OpenClaw Gateway](#10-openclaw-gateway)
+10. [Legacy Gateway (Retired)](#10-legacy-gateway-retired)
 11. [멀티에이전트 시스템용 모델 선택 가이드](#11-멀티에이전트-시스템용-모델-선택-가이드)
 
 ---
@@ -216,7 +216,7 @@ Orchestrator (Sonnet 4.6)
 | 모델 ID | 컨텍스트 | 최대 출력 | 상태 |
 |---------|---------|---------|------|
 | `gemini-2.5-pro` | 1,048,576 | 65,536 | GA — 최고 성능 |
-| `gemini-2.5-flash` | 1,048,576 | 65,536 | GA ← **현재 권장** (OpenClaw 운영 중) |
+| `gemini-2.5-flash` | 1,048,576 | 65,536 | GA ← **현재 권장** (Hub selector 후보) |
 | `gemini-3.1-pro-preview` | — | — | Preview — 3세대 최신 |
 | `gemini-3-flash-preview` | — | — | Preview — 3세대 Flash |
 | `gemini-3.1-flash-lite-preview` | — | — | Preview — 최경량 |
@@ -259,7 +259,7 @@ Orchestrator (Sonnet 4.6)
 | 비용 | 무료 (개인계정) | 무료 티어 + 유료 |
 | 컨텍스트 캐싱 | **지원 안 함** | 지원 |
 
-현재 openclaw가 OAuth 경로로 사용 중 → 캐싱 불가, RPD 상대적으로 유리
+현재 Hub selector가 OAuth/API key 경로를 직접 관리한다. OAuth 경로는 캐싱 불가, RPD 상대적으로 유리하다.
 
 ### 2.5 Function Calling (Node.js)
 
@@ -303,8 +303,8 @@ const results = await Promise.all(
 ### 2.6 gemini-2.0-flash → gemini-2.5-flash 마이그레이션 ✅ 완료
 
 ```bash
-# openclaw.json 변경
-openclaw models set google-gemini-cli/gemini-2.5-flash
+# Hub/team selector 설정 변경
+# 팀별 selector config 또는 Hub LLM route 정책에서 모델을 교체한다.
 
 # 주의사항:
 # - 2.5-flash는 thinking 토큰 있음 (thinking_budget 파라미터로 제어)
@@ -1028,9 +1028,9 @@ AI 응답을 생성하면서 실시간으로 텍스트를 사용자에게 스트
 
 ---
 
-## 10. OpenClaw Gateway
+## 10. Legacy Gateway (Retired)
 
-> **현재 설치 버전: 2026.2.26** | 최신: 2026.3.3
+> 과거 운영 기록이다. 현재 LLM 호출 표준 경로는 `Hub -> team selector -> agent`이며, 새 운영 절차는 Hub/selector 문서를 따른다.
 
 ### 10.1 주요 변경사항
 
@@ -1044,8 +1044,7 @@ AI 응답을 생성하면서 실시간으로 텍스트를 사용자에게 스트
 ### 10.2 현재 운영 설정
 
 ```bash
-# 운영 모델: google-gemini-cli/gemini-2.5-flash (OAuth)
-openclaw models set google-gemini-cli/gemini-2.5-flash
+# 운영 모델은 Hub/team selector에서 관리한다.
 
 # Fallback 1: anthropic/claude-haiku-4-5
 # Fallback 2: ollama/qwen2.5:7b
@@ -1057,9 +1056,7 @@ openclaw models set google-gemini-cli/gemini-2.5-flash
 ### 10.3 업그레이드 시 주의사항
 
 ```bash
-# 현재: 2026.2.26 (ClawJacked 패치됨 — 즉시 업그레이드 불필요)
-# 업그레이드 방법:
-npm update -g openclaw
+# 은퇴 경로: 새 설치/업그레이드하지 않는다.
 
 # 2026.3.x breaking changes:
 # - tools.profile 기본값 변경 (coding → messaging)

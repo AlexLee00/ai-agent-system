@@ -5,7 +5,7 @@
 `mainbot_queue` is no longer the preferred alert path.
 
 Current preferred path:
-- team producers -> alert publisher / OpenClaw webhook
+- team producers -> alert publisher / Hub alarm webhook
 - orchestrator -> filter / batch / Telegram fanout
 
 `mainbot_queue` no longer exists on the live DB surface as an active or

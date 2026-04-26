@@ -13,7 +13,7 @@
 const path     = require('path');
 const ROOT     = path.join(__dirname, '..');
 const pgPool   = require(path.join(ROOT, 'packages/core/lib/pg-pool'));
-const openclawClient = require(path.join(ROOT, 'packages/core/lib/openclaw-client'));
+const hubAlarmClient = require(path.join(ROOT, 'packages/core/lib/hub-alarm-client'));
 
 const SCHEMA = 'reservation';
 
@@ -214,7 +214,7 @@ async function main() {
       await collectDailyKPI(today);
       const report = await weeklyReport();
       console.log(report);
-      await openclawClient.postAlarm({
+      await hubAlarmClient.postAlarm({
         team: 'general',
         message: report,
         alertLevel: 1,

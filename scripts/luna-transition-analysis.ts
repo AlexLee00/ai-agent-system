@@ -15,7 +15,7 @@
 const path   = require('path');
 const ROOT   = path.join(__dirname, '..');
 const shadow = require(path.join(ROOT, 'packages/core/lib/shadow-mode'));
-const openclawClient = require(path.join(ROOT, 'packages/core/lib/openclaw-client'));
+const hubAlarmClient = require(path.join(ROOT, 'packages/core/lib/hub-alarm-client'));
 
 const SEND_TG = process.argv.includes('--telegram');
 
@@ -89,7 +89,7 @@ async function main() {
   console.log(report);
 
   if (SEND_TG) {
-    const result = await openclawClient.postAlarm({
+    const result = await hubAlarmClient.postAlarm({
       team: 'general',
       message: report,
       alertLevel: 1,

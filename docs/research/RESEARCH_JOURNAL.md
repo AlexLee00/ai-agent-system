@@ -209,11 +209,11 @@
 - 이유: 외부 의존성 제로, 동일 서버에서 운영, WAL 모드로 동시 접근 안전
 
 **팀장 간 소통: sessions_send 대신 State Bus**
-- OpenClaw `sessions_send`가 아직 실험적 상태 → State Bus의 `agent_events` 기반으로 대체
+- legacy gateway `sessions_send`가 아직 실험적 상태 → State Bus의 `agent_events` 기반으로 대체
 - team-comm.js를 추상화 계층으로 두어 향후 sessions_send 전환 용이하게 설계
 
 **이중 모드 (Normal/Emergency): 인프라 장애 기반**
-- OpenClaw/스카야 3분 이상 다운 시 비상 모드 전환
+- legacy gateway/스카야 3분 이상 다운 시 비상 모드 전환
 - 팀장 미구축이므로 팀장 무응답 기반 전환은 3주차로 연기
 
 **독터 블랙리스트 설계**
@@ -228,7 +228,7 @@
 ### 시행착오
 - **tmux 세션명**: CLAUDE.md에 "skaya"로 기록됐으나 실제는 "ska". launchd plist 기준으로 수정
 - **덱스터 오류 이력 무한 누적**: `cleanup()` 함수가 구현됐으나 호출 코드가 없었던 버그. 7일 보존 + `markResolved()`로 근본 수정
-- **openclaw.js IPv6 파싱 오탐**: `::1` 주소를 `split(':')` 하면 `''` → wildcard로 오인. bracket notation 처리 추가
+- **legacy gateway IPv6 파싱 오탐**: `::1` 주소를 `split(':')` 하면 `''` → wildcard로 오인. bracket notation 처리 추가
 - **insertReview 파라미터**: `insertReview(review)` 아닌 `insertReview(tradeId, review)` — ESM과 CJS 혼재 시 함수 시그니처 확인 필요
 
 ### 기술 인사이트
@@ -272,7 +272,7 @@
 
 - **Node.js + Playwright** — 웹 자동화
 - **SQLite (better-sqlite3)** — 상태 저장
-- **OpenClaw** — AI 게이트웨이 (Gemini-2.5-flash)
+- **legacy gateway** — AI 게이트웨이 (Gemini-2.5-flash)
 - **텔레그램 봇** — 사용자 인터페이스
 - **macOS launchd** — 프로세스 스케줄링
 
@@ -430,9 +430,9 @@ naver-seen.json, naver-seen-dev.json, pickko-kiosk-seen.json,
 
 ---
 
-### DEC-006 | 텔레그램 직접 호출 (OpenClaw 우회)
+### DEC-006 | 텔레그램 직접 호출 (legacy gateway 우회)
 
-**배경:** 알림을 `openclaw agent --deliver` 명령으로 보내고 있었다.
+**배경:** 알림을 legacy gateway `agent --deliver` 명령으로 보내고 있었다.
 
 **문제 발견:** 텔레그램으로 "Heartbeat OK" 같은 내용이 전송돼야 하는데, LLM이 메시지를 읽고 재해석해서 다른 내용으로 발송됨. 야간 보류 알림도 LLM을 거치면서 유실.
 
@@ -521,7 +521,7 @@ Method-4: li[start] 순회                    (최후 수단)
 
 ### DEC-011 | BOOT 최적화 전략 (7분 → 54초)
 
-**배경:** OpenClaw 게이트웨이 재시작 시 봇이 현황을 파악하는 데 7분이 걸렸다.
+**배경:** legacy gateway 재시작 시 봇이 현황을 파악하는 데 7분이 걸렸다.
 
 **원인 분석:**
 - BOOT.md에 여러 파일 읽기 지시 포함 (`--sync` 명령)
@@ -623,7 +623,7 @@ node scripts/session-close.js \
 - HANDOFF.md에 마감 블록 추가
 - DEV_SUMMARY.md 타임라인 항목 추가
 - BOOT.md 재생성
-- OpenClaw 배포
+- legacy gateway 배포
 
 **결과:** 세션 마감이 "번거로운 일"에서 "버튼 하나"가 됐다. 히스토리 기록 누락이 거의 없어졌다.
 
@@ -732,7 +732,7 @@ bots/
 - 해결책: BOOT.md 인라인 컨텍스트
 
 **③ LLM의 창의적(?) 재해석**
-- 텔레그램 알림을 openclaw로 보냈을 때 LLM이 내용을 재해석
+- 텔레그램 알림을 legacy gateway로 보냈을 때 LLM이 내용을 재해석
 - 해결책: 텔레그램 직접 호출로 LLM 우회
 
 ---
@@ -936,7 +936,7 @@ async function callLLM(agentName, systemPrompt, userMessage, maxTokens = 512) {
 **이유:**
 - BTC ±3% 급등락 시 30분 기다리지 않고 즉시 사이클 실행 필요 (긴급 트리거)
 - launchd 자체는 정각 주기가 아니라 "5분 뒤 다시 확인"만 담당
-- 상태 파일 `~/.openclaw/investment-state.json`에 `lastCycleAt` + `lastBtcPrice` 저장
+- 상태 파일 `investment-state.json`에 `lastCycleAt` + `lastBtcPrice` 저장
 
 ```js
 async function shouldRunCycle(symbols) {

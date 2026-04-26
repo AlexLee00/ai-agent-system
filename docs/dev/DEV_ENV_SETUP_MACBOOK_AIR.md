@@ -26,7 +26,7 @@
 | Homebrew | 5.1.1 | 최신 |
 | tmux | 설치됨 | 설치 |
 | Claude Code | 2.1.87 | 동일 |
-| OpenClaw | 2026.3.24 | 동일 |
+| Hub control/alarm | local | 동일 |
 | n8n | 2.13.4 | **미설치** (OPS 전용) |
 
 ### 0-2. Homebrew 패키지 (formula)
@@ -56,7 +56,7 @@ OPS 설치됨: cursor font-meslo-lg-nerd-font iterm2 maccy orbstack raycast rect
 ```
 @anthropic-ai/claude-code@2.1.87
 n8n@2.13.4          ← OPS 전용, DEV 불필요
-openclaw@2026.3.24
+hub-control local runtime
 ```
 
 ### 0-5. 환경변수 (.zprofile)
@@ -85,7 +85,7 @@ source ~/.orbstack/shell/init.zsh 2>/dev/null || :
 | 4001 | 워커 웹 | 개발 시 로컬 실행 |
 | 5432 | PostgreSQL | SSH 터널 / Tailscale |
 | 5678 | n8n | Hub 경유 |
-| 18789 | OpenClaw | 불필요 (OPS 전용) |
+| 7788 | Hub resource API | OPS 전용 |
 
 ### 0-7. PostgreSQL 스키마 & 테이블
 
@@ -129,7 +129,7 @@ ai.claude.archer / commander / dexter / dexter.daily / dexter.quick / health-che
 ai.env.setup
 ai.investment.argos / commander / crypto / domestic / health-check / market-alert-* (6개) / overseas / prescreen-* (2개) / reporter / unrealized-pnl
 ai.n8n.server
-ai.openclaw.gateway / model-sync
+ai.hub.resource-api / model-sync
 ai.ops.platform.backend / frontend
 ai.orchestrator
 ai.ska.commander / dashboard / db-backup / etl / eve / eve-crawl / forecast-* (3개) / health-check / kiosk-monitor / log-report / log-rotate / naver-monitor / pickko-* (3개) / rebecca / rebecca-weekly / today-audit
@@ -210,7 +210,7 @@ brew install --cask \
 
 ```bash
 npm install -g @anthropic-ai/claude-code
-npm install -g openclaw
+npm --prefix bots/hub install
 ```
 
 > n8n은 OPS 전용 — 미설치.
@@ -469,7 +469,7 @@ curl -s -X POST http://localhost:7788/hub/pg/query \
 | n8n | 설치 + 운영 (localhost:5678) | 미설치 — Hub 경유 |
 | launchd 서비스 | 63개 가동 | 없음 |
 | cron 배포 | 5분마다 deploy.sh | 없음 |
-| OpenClaw | 포트 18789 | 미설치 |
+| Hub | 포트 7788 | 로컬 런타임 |
 | Hub | 서버 (포트 7788) | 클라이언트 (HUB_BASE_URL) |
 | 역할 | 24/7 에이전트 실행 | 코드 개발 + git push |
 | 배포 흐름 | git pull + 자동 재시작 | git push → OPS가 pull |

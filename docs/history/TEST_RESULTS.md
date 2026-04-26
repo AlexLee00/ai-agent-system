@@ -12,7 +12,7 @@
 | `node bots/investment/scripts/health-check.ts` | ⚠️ launchd 경로는 여전히 sandbox 제약으로 실패 |
 | `REPO_ROOT=... PROJECT_ROOT=... node bots/investment/scripts/health-report.ts --json` | ⚠️ `pg-pool`에서 `[EPERM]` 실패 |
 | `REPO_ROOT=... PROJECT_ROOT=... node bots/investment/scripts/parallel-ops-report.ts --json` | ✅ `status=needs_attention`, `health-report 조회 실패` 유지 |
-| `REPO_ROOT=... PROJECT_ROOT=... node bots/investment/scripts/parallel-ops-report.ts --publish` | ⚠️ alert 경로 호출은 성공했으나 `openclaw`/Telegram fetch 및 `127.0.0.1:18789` 연결 실패 경고 발생 |
+| `REPO_ROOT=... PROJECT_ROOT=... node bots/investment/scripts/parallel-ops-report.ts --publish` | ⚠️ alert 경로 호출은 성공했으나 `legacy-gateway`/Telegram fetch 및 `127.0.0.1:18789` 연결 실패 경고 발생 |
 | `node bots/investment/scripts/parallel-ops-history.ts --json --no-append` | ✅ 비교 JSON 출력, `historyCount=0`, `warnDelta=null` |
 
 ## 2026-04-16
@@ -26,7 +26,7 @@
 | `node scripts/health-report.ts --json` | ⚠️ `pg-pool` 경로에서 `[EPERM]` 실패 |
 | `npm run parallel-report -- --json` | ✅ report JSON 출력, `status=needs_attention`, `health-report 조회 실패` 유지 |
 | `npm run parallel-history -- --json --no-append` | ✅ 히스토리 비교 JSON 출력, `historyCount=0`, `warnDelta=null` |
-| `npm run parallel-report -- --publish` | ⚠️ alert 경로 호출은 성공했으나 `openclaw`/Telegram fetch 및 `127.0.0.1:18789` 연결 실패 경고 발생 |
+| `npm run parallel-report -- --publish` | ⚠️ alert 경로 호출은 성공했으나 `legacy-gateway`/Telegram fetch 및 `127.0.0.1:18789` 연결 실패 경고 발생 |
 
 ## 2026-03-29
 
@@ -407,7 +407,7 @@
 |--------|------|
 | `node --check bots/reservation/lib/study-room-pricing.js` | ✅ `A1/A2 00:00~09:00 = 2,500원` 반영 후 문법 통과 |
 | `node - <<'EOF' ... calcStudyRoomAmount(...) ... EOF` | ✅ `A1 08:00~09:00 = 5,000`, `A1 09:00~11:20 = 17,500`, `B 10:30~13:20 = 36,000`, `A1 17:30~18:20 = 7,000` 확인 |
-| `env PICKKO_HEADLESS=1 node bots/reservation/scripts/pickko-revenue-backfill.js --from=2026-03 --to=2026-03` | ✅ 3월 전체 재집계 완료, 오류 `0건`, CSV `/Users/alexlee/.openclaw/workspace/revenue-history.csv` 31행 갱신 |
+| `env PICKKO_HEADLESS=1 node bots/reservation/scripts/pickko-revenue-backfill.js --from=2026-03 --to=2026-03` | ✅ 3월 전체 재집계 완료, 오류 `0건`, CSV `/Users/alexlee/.legacy-gateway/workspace/revenue-history.csv` 31행 갱신 |
 | `node - <<'EOF' ... syncSkaSalesToWorker('test-company') ... EOF` | ✅ worker `test-company` 미러 재동기화 `updated=12`, `expectedRows=299` |
 | `node --input-type=module - <<'EOF' ... SELECT date, pickko_study_room, general_revenue FROM reservation.daily_summary ... EOF` | ✅ 대표 값 재확인: `2026-03-01 113000/113800`, `2026-03-12 135000/265000`, `2026-03-17 74500/290000`, `2026-03-21 156000/132000`, `2026-03-22 136000/173800` |
 
@@ -594,11 +594,11 @@
 | `node --check scripts/reviews/daily-ops-report.js` | ✅ |
 | `node scripts/reviews/daily-ops-report.js --json` | ✅ `runtimeRestrictions` 섹션, selector primary issue, gateway post-restart guidance 반영 확인 |
 
-### 제이/OpenClaw gateway fallback readiness + concurrency 안정화
+### 제이/legacy gateway gateway fallback readiness + concurrency 안정화
 
 | 테스트 | 결과 |
 |--------|------|
-| `node --check bots/orchestrator/lib/openclaw-config.js` | ✅ |
+| `node --check bots/orchestrator/lib/legacy-gateway-config.js` | ✅ |
 | `node --check bots/orchestrator/scripts/check-jay-gateway-primary.js` | ✅ |
 | `node --check bots/orchestrator/scripts/prepare-jay-gateway-switch.js` | ✅ |
 | `node --check bots/orchestrator/scripts/log-jay-gateway-experiment.js` | ✅ |
@@ -609,7 +609,7 @@
 | `node bots/orchestrator/scripts/prune-jay-gateway-fallbacks.js` | ✅ 현재 fallback `11`, ready fallback `4`, 권장 체인 계산 확인 |
 | `node bots/orchestrator/scripts/prune-jay-gateway-fallbacks.js --apply` | ✅ 라이브 fallback chain `11 -> 4` 적용 |
 | `node bots/orchestrator/scripts/tune-jay-gateway-concurrency.js --apply --max=1 --subagents=2` | ✅ 라이브 concurrency `1/2` 적용 |
-| `launchctl kickstart -k gui/$(id -u)/ai.openclaw.gateway` | ✅ gateway 재기동 |
+| `launchctl kickstart -k gui/$(id -u)/ai.hub.resource-api` | ✅ gateway 재기동 |
 | `node scripts/reviews/jay-gateway-experiment-daily.js` | ✅ 최신 창에서 `rate limit=76`, `active=33`, `retry burst runs=13`, `max attempts per run=4` 확인 |
 | `node bots/orchestrator/scripts/log-jay-gateway-experiment.js` | ✅ `마지막 gateway 재기동 이후: rate limit 0 / auth missing 0 / retry burst 0` 확인 |
 | `node scripts/reviews/jay-gateway-experiment-review.js` | ✅ `post-restart rate limit/auth missing/retry burst` 출력 확인 |
@@ -1183,14 +1183,14 @@
 | DuckDB 5개 테이블 생성 확인 | ✅ |
 | schema_migrations v4 등록 | ✅ |
 
-### Day 5 — OpenClaw 멀티에이전트 (2026-03-06)
+### Day 5 — legacy gateway 멀티에이전트 (2026-03-06)
 
 | 테스트 | 결과 |
 |--------|------|
 | team-comm sendToTeamLead | ✅ |
 | team-comm getPendingMessages 수신 | ✅ |
 | heartbeat.js require 정상 | ✅ |
-| openclaw.json teamLeads 등록 | ✅ |
+| legacy-selector-config teamLeads 등록 | ✅ |
 | SOUL.md 3개 생성 (ska/claude-lead/luna) | ✅ |
 | 통합 검증 24/24 | ✅ |
 
@@ -1267,7 +1267,7 @@
 | DexterMode Emergency→Normal 복귀 | ✅ |
 | DexterMode 상태 파일 지속 | ✅ |
 | team-leads.js 핵심 봇 점검 | ✅ |
-| openclaw.js launchd+포트+메모리 | ✅ |
+| legacy-gateway.js launchd+포트+메모리 | ✅ |
 | llm-cost.js 예산 임계 | ✅ |
 | workspace-git.js uncommitted 감지 | ✅ |
 | dexter.js v2 모듈 통합 | ✅ |
@@ -1293,7 +1293,7 @@
 
 | 수정 | 결과 |
 |------|------|
-| openclaw.js IPv6 `[::1]` 파싱 수정 | ✅ 실행 시 status: ok |
+| legacy-gateway.js IPv6 `[::1]` 파싱 수정 | ✅ 실행 시 status: ok |
 | dexter-quickcheck.js 수동 실행 | ✅ 이상 없음 |
 
 ---
@@ -1531,7 +1531,7 @@
 | `node scripts/reviews/llm-selector-speed-daily.js --skip-test --json` | ✅ `primaryHealth=rate_limited`, `latestPrimaryResult.errorClass=rate_limited` 노출 확인 |
 | `node scripts/reviews/llm-selector-speed-review.js` (후속) | ✅ `primaryFallbackCandidate=google-gemini-cli/gemini-2.5-flash-lite` 노출 확인 |
 | `node scripts/reviews/llm-selector-speed-daily.js --skip-test --json` (후속) | ✅ `primaryFallbackPolicy.decision=temporary_fallback_candidate`, `consecutivePrimaryIssues=3` 확인 |
-| `~/.openclaw/openclaw.json` 모델 레지스트리 갱신 | ✅ `gemini-2.5-flash-lite` 추가, `groq/moonshotai/kimi-k2-instruct-0905` 교체, `cerebras/gpt-oss-120b` 제거 완료 |
+| `~/.legacy-gateway/legacy-selector-config` 모델 레지스트리 갱신 | ✅ `gemini-2.5-flash-lite` 추가, `groq/moonshotai/kimi-k2-instruct-0905` 교체, `cerebras/gpt-oss-120b` 제거 완료 |
 | `docs/GEMINI_FLASH_TEMPORARY_FALLBACK_POLICY_2026-03-22.md` 작성 | ✅ `flash -> flash-lite` 임시 전환 조건 / 금지 조건 / 롤백 조건 / 관찰 절차 문서화 완료 |
 ## 2026-03-22 — 스카 자동 모니터링 로직 정렬 / kiosk-monitor 재가동
 

@@ -4,7 +4,7 @@
 /**
  * migrations/001_team_bus.js — 클로드팀 통신 버스 스키마
  *
- * DB 위치: ~/.openclaw/workspace/claude-team.db
+ * DB 위치: AI_AGENT_WORKSPACE/claude-team.db
  * 테이블:
  *   - agent_state   : 에이전트 상태 공유 버스
  *   - messages      : 에이전트 간 메시지 큐

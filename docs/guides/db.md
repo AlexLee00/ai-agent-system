@@ -58,8 +58,8 @@
 - launchd 친화적 운영 데이터
 
 대표 예:
-- `~/.openclaw/workspace/state.db`
-- `~/.openclaw/workspace/claude-team.db`
+- Hub/Jay 런타임 SQLite 상태 DB
+- 팀별 `bots/<team>/data/*.db` 또는 `output/ops/*.db`
 
 ### DuckDB
 

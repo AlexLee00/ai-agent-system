@@ -25,7 +25,7 @@ function makeRes() {
   };
 }
 
-describe('OpenClaw-compatible local OAuth import', () => {
+describe('Hub local OAuth import', () => {
   let tempRoot;
 
   beforeEach(() => {
@@ -62,7 +62,7 @@ describe('OpenClaw-compatible local OAuth import', () => {
     expect(result.token.expires_at).toBe('2030-01-01T00:00:00.000Z');
   });
 
-  test('uses OpenClaw Codex Keychain service/account when explicitly allowed', () => {
+  test('uses Codex Keychain service/account when explicitly allowed', () => {
     const codexHome = path.join(tempRoot, '.codex');
     fs.mkdirSync(codexHome, { recursive: true });
     const execSync = jest.fn(() => JSON.stringify({

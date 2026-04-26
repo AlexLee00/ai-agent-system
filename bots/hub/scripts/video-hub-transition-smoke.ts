@@ -39,7 +39,7 @@ function main() {
 
   console.log(JSON.stringify({
     ok: true,
-    config_openclaw_free: true,
+    config_legacy_gateway_free: true,
     direct_model_pins: false,
     selectors,
   }));

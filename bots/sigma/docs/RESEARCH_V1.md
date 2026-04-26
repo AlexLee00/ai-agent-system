@@ -27,7 +27,7 @@
 
 2. **Hermes가 `agentskills.io` 오픈 표준 준수** — Hermes README 확인 결과 "Compatible with the [agentskills.io](https://agentskills.io) open standard" 명시. **MCP Server 설계 시 이 표준과 호환 설계 추가 필요**.
 
-3. **Hermes에 `hermes claw migrate` 기능** — OpenClaw → Hermes 이주 공식 지원. **기존 `packages/core/lib/openclaw-client.*` 향후 Hermes 전환 경로 가능**. 단, 본 리모델링 범위는 아님 (시그마팀은 OpenClaw 경유 알림만 사용).
+3. **Hermes에 `hermes claw migrate` 기능** — retired gateway → Hermes 이주 공식 지원. **기존 legacy alarm shim은 향후 Hermes 전환 경로 가능**. 단, 본 리모델링 범위는 아님 (시그마팀은 Hub alarm 경유 알림만 사용).
 
 ### 1.2 설계 일관성 확인 5건
 
@@ -114,7 +114,7 @@
   > "The self-improving AI agent built by Nous Research. It's the only agent with a built-in learning loop — it creates skills from experience, improves them during use, nudges itself to persist knowledge, searches its own past conversations, and builds a deepening model of who you are across sessions."
   > "A closed learning loop — Agent-curated memory with periodic nudges. Autonomous skill creation after complex tasks. Skills self-improve during use. FTS5 session search with LLM summarization for cross-session recall. **Compatible with the agentskills.io open standard**."
   > "Delegates and parallelizes — Spawn isolated subagents for parallel workstreams. Write Python scripts that call tools via RPC, collapsing multi-step pipelines into zero-context-cost turns."
-  > "`hermes claw migrate` — Migrate from OpenClaw (if coming from OpenClaw)"
+  > "`hermes claw migrate` — Migrate from a retired gateway"
 - **시그마팀 적용**:
   1. `agentskills.io` 표준 호환 설계 — 시그마 MCP tool이 Hermes 생태계에서 즉시 사용 가능
   2. **FTS5 + LLM summarization for cross-session recall** — 시그마 `agent-memory`에 FTS5 추가 검토 (현재 pgvector만)
@@ -159,7 +159,7 @@ Jido README 확인 결과 원본 설계의 모든 가정(Agent/Action/Signal/Dir
 
 > **§5.2.6 추가 (30차 보강)** — Sigma MCP Server는 `agentskills.io` 오픈 표준을 준수하도록 설계. 이로써:
 > - Hermes Agent 사용자가 시그마 skill을 즉시 활용 가능
-> - 향후 `hermes claw migrate` 경로로 OpenClaw 사용자도 접근 가능
+> - 향후 `hermes claw migrate` 경로로 retired gateway 사용자도 접근 가능
 > - 표준 YAML frontmatter 형식 따름 (name/description/tools/model)
 
 ### 3.3 §5.3 완전 자율 운영 — **Constitutional AI 원칙 목록 추가**
@@ -287,7 +287,7 @@ Hermes README의 "FTS5 session search with LLM summarization" 언급 관련:
 | 아이디어 | 기각 사유 |
 |----------|-----------|
 | Hermes Agent 자체 전면 도입 | 시그마팀 목적은 "메타 오케스트레이터"이지 "사용자 대화 에이전트"가 아님. Hermes는 Telegram/Discord 대화형 에이전트로 설계. 패턴만 차용 |
-| `hermes claw migrate` 실행 | OpenClaw는 시스템 알람 허브, 시그마팀은 소비자일 뿐. 이주는 별개 프로젝트 |
+| `hermes claw migrate` 실행 | Hub alarm은 시스템 알람 허브, 시그마팀은 소비자일 뿐. 이주는 별개 프로젝트 |
 | E-SPL의 weight update 부분 | 시그마는 LLM 모델 훈련 권한 없음. context update만 채택 |
 | AI Scientist v2 직접 도입 | 다윈팀 영역. 시그마는 트리거만 |
 | DSPy/GEPA SDK 도입 | Python 의존성 추가. Jido 생태계에 맞춰 Elixir 네이티브 유지. E-SPL 알고리즘만 포팅 |

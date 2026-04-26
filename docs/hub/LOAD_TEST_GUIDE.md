@@ -42,7 +42,7 @@ npx jest --testPathPatterns="bots/hub/__tests__/circuit-breaker" --runInBand
 npx jest --testPathPatterns="bots/hub/__tests__/local-ollama" --runInBand
 ```
 
-`readiness`는 OpenClaw 독립성, OpenAI OAuth mock 경로, Claude Code OAuth CLI adapter, Telegram secret source, token-store 존재 여부를 redacted JSON으로 묶어 보여준다. `status=warn`은 배포 host에서 확인할 runtime 배선 이슈가 남았다는 뜻이며, `required_failures > 0`이면 live OAuth/Telegram 테스트 전에 먼저 수정한다.
+`readiness`는 retired gateway 독립성, OpenAI OAuth mock 경로, Claude Code OAuth CLI adapter, Telegram secret source, token-store 존재 여부를 redacted JSON으로 묶어 보여준다. `status=warn`은 배포 host에서 확인할 runtime 배선 이슈가 남았다는 뜻이며, `required_failures > 0`이면 live OAuth/Telegram 테스트 전에 먼저 수정한다.
 
 `live:drill`은 실행 중인 Hub의 `/hub/health/*`, `/hub/oauth/:provider/status`, 알람 digest/suppress dry-run을 호출한다. OAuth 토큰이나 Telegram credential 값은 출력하지 않는다. CI/로컬 계약 검증만 필요하면 `npm --prefix bots/hub run live:drill:mock`으로 네트워크 없이 실행한다.
 
@@ -135,6 +135,6 @@ VALUES (
 
 - `npm --prefix bots/hub run readiness`에서 required failure가 없는지
 - `npm --prefix bots/hub run live:drill`에서 live Hub endpoint required failure가 없는지
-- retired `ai.openclaw.gateway` 없이 `/hub/alarm`이 Hub-native 경로로 응답하는지
+- retired gateway process 없이 `/hub/alarm`이 Hub-native 경로로 응답하는지
 - `/hub/oauth/:provider/status`가 expiry/canary를 제공하는지
 - 토큰/시크릿 문자열이 로그/응답에 노출되지 않는지

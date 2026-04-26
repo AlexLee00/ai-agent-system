@@ -2,7 +2,10 @@
 # auto-commit.sh - ai-agent-system 변경사항 자동 커밋 & 푸시
 
 REPO_DIR="${PROJECT_ROOT:-$HOME/projects/ai-agent-system}"
-LOG_FILE="$HOME/.openclaw/logs/auto-commit.log"
+LOG_DIR="${AI_AGENT_LOGS:-${JAY_LOGS:-$HOME/.ai-agent-system/logs}}"
+LOG_FILE="$LOG_DIR/auto-commit.log"
+
+mkdir -p "$LOG_DIR"
 
 log() {
   echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1" >> "$LOG_FILE"

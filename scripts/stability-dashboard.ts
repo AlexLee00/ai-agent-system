@@ -240,9 +240,9 @@ if (require.main === module) {
     printDashboard(metrics);
 
     if (SEND_TG) {
-      const openclawClient = require('../packages/core/lib/openclaw-client');
+      const hubAlarmClient = require('../packages/core/lib/hub-alarm-client');
       const report = buildDailyStabilityReport(metrics);
-      const ok = (await openclawClient.postAlarm({
+      const ok = (await hubAlarmClient.postAlarm({
         team: 'general',
         message: report,
         alertLevel: 1,

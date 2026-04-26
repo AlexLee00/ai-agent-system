@@ -127,7 +127,7 @@ async function oauthImportLocalRoute(req, res) {
       ok: false,
       error: {
         code: 'local_import_not_supported',
-        message: `${provider} does not support OpenClaw-compatible local import`,
+        message: `${provider} does not support Hub local CLI credential import`,
       },
     });
   }
@@ -146,7 +146,7 @@ async function oauthImportLocalRoute(req, res) {
       dry_run: dryRun,
       error: {
         code: imported.error || 'local_import_failed',
-        message: 'OpenClaw-compatible local credential source was not found or could not be parsed',
+        message: 'Hub local CLI credential source was not found or could not be parsed',
       },
       details: imported.details || {},
     }));

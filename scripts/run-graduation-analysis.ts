@@ -15,7 +15,7 @@
 const path   = require('path');
 const ROOT   = path.join(__dirname, '..');
 const grad   = require(path.join(ROOT, 'packages/core/lib/llm-graduation'));
-const openclawClient = require(path.join(ROOT, 'packages/core/lib/openclaw-client'));
+const hubAlarmClient = require(path.join(ROOT, 'packages/core/lib/hub-alarm-client'));
 
 const SEND_TG = process.argv.includes('--telegram');
 const TEAMS   = ['ska', 'claude-lead', 'luna'];
@@ -66,7 +66,7 @@ async function main() {
   ].join('\n');
 
   if (SEND_TG) {
-    const ok = (await openclawClient.postAlarm({
+    const ok = (await hubAlarmClient.postAlarm({
       team: 'claude-lead',
       message: approvalGuide,
       alertLevel: 2,

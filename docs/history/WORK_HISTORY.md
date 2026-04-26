@@ -353,7 +353,7 @@
   - `node bots/investment/scripts/health-check.ts` → launchd 경로는 여전히 sandbox 제약으로 비정상 종료
   - `REPO_ROOT=... PROJECT_ROOT=... node bots/investment/scripts/health-report.ts --json` → `[EPERM]` at `node_modules/pg-pool/index.js:45:11`
   - `REPO_ROOT=... PROJECT_ROOT=... node bots/investment/scripts/parallel-ops-report.ts --json` → `needs_attention`
-  - `REPO_ROOT=... PROJECT_ROOT=... node bots/investment/scripts/parallel-ops-report.ts --publish` → openclaw/Telegram fetch 실패 및 `127.0.0.1:18789` 연결 실패
+  - `REPO_ROOT=... PROJECT_ROOT=... node bots/investment/scripts/parallel-ops-report.ts --publish` → legacy-gateway/Telegram fetch 실패 및 `127.0.0.1:18789` 연결 실패
 - 해석:
   - 코드 로딩 문제는 줄였지만, launchd/Mix.PubSub/pg-pool EPERM 및 알림 전달 경로 불능은 그대로 남아 있다.
   - current baseline 대비 regression은 없고, 기존 sandbox blocker를 다시 확인한 세션이다.
@@ -408,7 +408,7 @@
   - `node scripts/parallel-ops-snapshot.ts --json` → JSON snapshot 출력 성공
   - `node scripts/health-check.ts` → `launchctl list` 단계에서 sandbox 제약으로 실패
   - `node scripts/health-report.ts --json` → `pg-pool` `[EPERM]`로 실패
-  - `npm run parallel-report -- --publish` → alert 경로는 호출됐지만 `openclaw`/Telegram fetch 및 `127.0.0.1:18789` 연결 실패 경고 발생
+  - `npm run parallel-report -- --publish` → alert 경로는 호출됐지만 `legacy-gateway`/Telegram fetch 및 `127.0.0.1:18789` 연결 실패 경고 발생
 - 해석:
   - 스냅샷 실행 자체는 복구됐지만, launchd/Mix/DB 경로는 여전히 현재 샌드박스에서 완전 검증 불가다.
   - current baseline 대비 regression은 없고, 기존 blocker(launchctl/Mix.PubSub/pg-pool EPERM)는 유지된다.
@@ -1156,13 +1156,13 @@
 - `bots/claude/.checksums.json`은 세션 말미에 재갱신했지만, unrelated 로컬 변경(`night-handler.js`, reservation 일부 파일)도 함께 반영돼 체크섬 커밋은 의도적으로 보류했다.
 - 문서/리포트 기준점은 `8c73f64 feat(reports): enrich daily ops interpretation`까지 원격 반영 완료이며, 체크섬은 관련 작업 정리 후 재갱신이 필요하다.
 
-### 12주차 후속 (2026-03-22) — 제이/OpenClaw gateway fallback hygiene + concurrency 보수화
+### 12주차 후속 (2026-03-22) — 제이/legacy gateway gateway fallback hygiene + concurrency 보수화
 
 핵심 구현:
-- `bots/orchestrator/lib/openclaw-config.js`
+- `bots/orchestrator/lib/legacy-gateway-config.js`
   - provider `configured`와 실제 `authReady`를 분리하도록 readiness 계산 추가
   - `fallbackReadiness`, `readyFallbacks`, `unreadyFallbacks` 노출
-  - `updateOpenClawGatewayFallbacks()`, `updateOpenClawGatewayConcurrency()` 추가
+  - `updatelegacy gatewayGatewayFallbacks()`, `updatelegacy gatewayGatewayConcurrency()` 추가
 - `bots/orchestrator/scripts/check-jay-gateway-primary.js`
   - 후보 점검 결과에 `authReady`, ready/unready fallback 개수, 즉시 사용 가능 fallback 목록 포함
 - `bots/orchestrator/scripts/prepare-jay-gateway-switch.js`
@@ -1177,7 +1177,7 @@
   - `maxConcurrent`, `subagents.maxConcurrent`를 보수적으로 조정하는 CLI 추가
 
 세션 맥락:
-- 5개 자동화 리포트를 종합한 결과, 가장 직접적인 운영 병목은 `OpenClaw gateway / LLM rate limit`이었다.
+- 5개 자동화 리포트를 종합한 결과, 가장 직접적인 운영 병목은 `legacy gateway gateway / LLM rate limit`이었다.
 - 초기 로그를 보면 `Gemini rate limit` 뒤에 `groq`, `cerebras` auth missing이 대량으로 이어져 실제 병목과 noisy failover가 섞여 있었다.
 - 또한 동일 `runId`가 `2~4회` 반복 기록돼, 현재 남은 핵심은 fallback 부족보다 `retry burst`라는 점이 확인됐다.
 
@@ -1185,10 +1185,10 @@
 - `node bots/orchestrator/scripts/check-jay-gateway-primary.js` ✅
   - 기존 fallback `11개`, ready fallback `4개`, unready fallback `7개` 확인
 - `node bots/orchestrator/scripts/prune-jay-gateway-fallbacks.js --apply` ✅
-  - 라이브 `openclaw.json` fallback을 ready provider만 남도록 정리
+  - 라이브 `legacy-selector-config` fallback을 ready provider만 남도록 정리
 - `node bots/orchestrator/scripts/tune-jay-gateway-concurrency.js --apply --max=1 --subagents=2` ✅
   - 라이브 concurrency를 `1/2`로 보수화
-- `launchctl kickstart -k gui/$(id -u)/ai.openclaw.gateway` ✅
+- `launchctl kickstart -k gui/$(id -u)/ai.hub.resource-api` ✅
   - gateway 재기동
 - 후속 `check-jay-gateway-primary.js` ✅
   - `fallback 개수=4`, `ready fallback 개수=4`, `unready fallback 개수=0`
@@ -2247,7 +2247,7 @@
   - `PLATFORM_IMPLEMENTATION_TRACKER.md`
   - 위 문서가 최신 상태가 아니면 drain 단계가 중단되도록 보강
 - `scripts/post-reboot.sh`를 현재 운영 구조 기준 전사 복구 점검형으로 확장
-  - orchestrator / OpenClaw / n8n
+  - orchestrator / legacy gateway / n8n
   - worker web / nextjs / lead / task-runner
   - investment commander / markets / reporter / argos / alerts / prescreen
   - blog node-server / daily / health-check
@@ -2344,7 +2344,7 @@
 
 핵심 구현:
 - `jay-gateway-experiment-daily.js`가 스냅샷 저장 실패 시에도 기존 누적 스냅샷 기반 review를 계속 출력하고, `snapshotError / persisted` 상태를 명시하도록 보강
-- `log-jay-gateway-experiment.js`와 `jay-gateway-experiment-daily.js`가 `~/.openclaw/workspace` 쓰기 실패 시 repo 내부 `tmp/jay-gateway-experiments.jsonl` fallback 저장을 사용하도록 보강
+- `log-jay-gateway-experiment.js`와 `jay-gateway-experiment-daily.js`가 `~/.legacy-gateway/workspace` 쓰기 실패 시 repo 내부 `tmp/jay-gateway-experiments.jsonl` fallback 저장을 사용하도록 보강
 - `daily-ops-report.js`가 `process.execPath` 기준으로 health script를 실행하고, `health_report_failed_launchctl / health_report_failed_probe_unavailable` source와 `healthError`를 함께 노출하도록 정리
 - `daily-ops-report.js`가 `현재 활성 이슈 / 누적 반복 이슈 / 입력 실패`를 분리해 시스템 문제와 입력 실패를 구분해서 읽도록 재구성
 - `ska-sales-forecast-daily-review.js`에 `actionItems`를 추가해 `bias_tuning / weekday_tuning / manual_review / shadow_readiness`를 즉시 조치 항목으로 제공
@@ -2384,7 +2384,7 @@
 ### 12주차 후속 (2026-03-18) — LLM selector 리포트에 speed-test 스냅샷 결합
 
 핵심 구현:
-- `scripts/speed-test.js`가 최신 측정 결과를 `~/.openclaw/workspace/llm-speed-test-latest.json`에 저장하도록 확장
+- `scripts/speed-test.js`가 최신 측정 결과를 `~/.legacy-gateway/workspace/llm-speed-test-latest.json`에 저장하도록 확장
 - `scripts/llm-selector-report.js`가 selector의 `primary/fallback chain`과 최근 속도 스냅샷을 함께 출력하도록 확장
 - 텍스트 출력에서는 각 체인 항목 옆에 `TTFT/총응답시간` 또는 실패 사유를 붙이고, JSON 출력에는 `speedTest` 스냅샷을 포함
 
@@ -2895,7 +2895,7 @@
 
 세션 맥락:
 - 제이 모델 정책은 이미 코드상 분리돼 있었지만, 운영자가 설정 파일과 문서에서 바로 찾을 수 있는 상태는 아니었다.
-- 이번 단계에서 OpenClaw 기본 모델과 제이 앱 커스텀 모델을 구분한 채, 운영 오버라이드 값을 한 곳에서 보이게 만들었다.
+- 이번 단계에서 legacy gateway 기본 모델과 제이 앱 커스텀 모델을 구분한 채, 운영 오버라이드 값을 한 곳에서 보이게 만들었다.
 
 의사결정 이유:
 - gateway primary를 즉시 바꾸기보다, 먼저 운영 설정과 문서에서 같은 언어로 읽히게 만드는 것이 내부 MVP와 운영 안정성에 더 유리하다.
@@ -2909,21 +2909,21 @@
 ### 12주차 후속 (2026-03-18) — 제이 gateway primary 정합성 점검 레이어 추가
 
 핵심 구현:
-- `openclaw.json` 실제 gateway primary를 읽는 [openclaw-config.js](/Users/alexlee/projects/ai-agent-system/bots/orchestrator/lib/openclaw-config.js) 추가
-- `runtime_config.jayModels.gatewayPrimary`와 `~/.openclaw/openclaw.json`의 실제 primary를 비교하는 [check-jay-gateway-primary.js](/Users/alexlee/projects/ai-agent-system/bots/orchestrator/scripts/check-jay-gateway-primary.js) 추가
-- `/jay-models` 응답에 `runtime_config 기준 / openclaw.json 실제값 / 정합성`을 함께 표시하도록 보강
-- 필요 시 `--apply`로 OpenClaw primary를 runtime_config 기준으로 동기화할 수 있는 운영 준비 경로 추가
+- `legacy-selector-config` 실제 gateway primary를 읽는 [legacy-gateway-config.js](/Users/alexlee/projects/ai-agent-system/bots/orchestrator/lib/legacy-gateway-config.js) 추가
+- `runtime_config.jayModels.gatewayPrimary`와 `~/.legacy-gateway/legacy-selector-config`의 실제 primary를 비교하는 [check-jay-gateway-primary.js](/Users/alexlee/projects/ai-agent-system/bots/orchestrator/scripts/check-jay-gateway-primary.js) 추가
+- `/jay-models` 응답에 `runtime_config 기준 / legacy-selector-config 실제값 / 정합성`을 함께 표시하도록 보강
+- 필요 시 `--apply`로 legacy gateway primary를 runtime_config 기준으로 동기화할 수 있는 운영 준비 경로 추가
 
 세션 맥락:
-- 제이 모델 정책은 이미 코드와 runtime_config에서 분리돼 있었지만, 외부 OpenClaw 설정의 실제값까지 한 번에 읽는 운영 도구는 없었다.
+- 제이 모델 정책은 이미 코드와 runtime_config에서 분리돼 있었지만, 외부 legacy gateway 설정의 실제값까지 한 번에 읽는 운영 도구는 없었다.
 - 이번 단계에서 “무엇을 기준값으로 보고, 실제값은 무엇이며, 둘이 맞는가”를 먼저 확인하는 절차를 고정했다.
 
 의사결정 이유:
-- 외부 OpenClaw 설정을 바로 바꾸기보다 정합성 점검 레이어를 먼저 두는 것이 내부 MVP와 운영 안정성에 더 유리하다.
+- 외부 legacy gateway 설정을 바로 바꾸기보다 정합성 점검 레이어를 먼저 두는 것이 내부 MVP와 운영 안정성에 더 유리하다.
 - 이 방식은 추후 SaaS에서 앱 정책과 플랫폼 기본 정책을 분리 관리할 때도 그대로 확장 가능하다.
 
 검증:
-- `node --check bots/orchestrator/lib/openclaw-config.js`
+- `node --check bots/orchestrator/lib/legacy-gateway-config.js`
 - `node --check bots/orchestrator/scripts/check-jay-gateway-primary.js`
 - `node --check bots/orchestrator/src/router.js`
 - `node bots/orchestrator/scripts/check-jay-gateway-primary.js --json`
@@ -2941,11 +2941,11 @@
 - 이번 단계에서 운영자가 모델 변경을 감으로 하지 않도록, 후보와 권장 판단을 같은 점검 레이어에 넣었다.
 
 의사결정 이유:
-- 현재는 runtime_config와 openclaw.json이 일치하고 오케스트레이터 헬스도 안정 구간이라, 즉시 전환보다 유지가 더 합리적이다.
+- 현재는 runtime_config와 legacy-selector-config이 일치하고 오케스트레이터 헬스도 안정 구간이라, 즉시 전환보다 유지가 더 합리적이다.
 - 후보 프로필을 미리 정리해 두면 추후 SaaS 확장 시 workspace별 모델 정책도 같은 구조로 비교 가능하다.
 
 검증:
-- `node --check bots/orchestrator/lib/openclaw-config.js`
+- `node --check bots/orchestrator/lib/legacy-gateway-config.js`
 - `node --check bots/orchestrator/scripts/check-jay-gateway-primary.js`
 - `node --check bots/orchestrator/src/router.js`
 - `node bots/orchestrator/scripts/check-jay-gateway-primary.js`
@@ -2958,7 +2958,7 @@
 - 전환 후보를 `Gemini Flash 유지 / Groq GPT-OSS 전환 / Anthropic Haiku 전환` 3개로 고정
 - 전환 단계를 `hold / compare / switch` 3단계로 고정해, 운영자가 언제 유지하고 언제 비교하며 언제 실제 전환할지 같은 판단 틀로 읽게 정리
 - `log-jay-gateway-experiment.js`를 추가해 gateway 로그, 제이 usage, health-report, primary 정합성을 한 번에 스냅샷으로 남길 수 있게 정리
-- 실험 로그는 기본적으로 `~/.openclaw/workspace/jay-gateway-experiments.jsonl`에 append되어, 이후 전환 전후 비교 근거로 재사용 가능
+- 실험 로그는 기본적으로 `~/.legacy-gateway/workspace/jay-gateway-experiments.jsonl`에 append되어, 이후 전환 전후 비교 근거로 재사용 가능
 - `jay-gateway-experiment-review.js`를 추가해 누적 스냅샷을 `hold / compare / sync_first` 권장 판단으로 읽을 수 있게 정리
 - `jay-gateway-experiment-daily.js`를 추가해 기록과 리뷰를 한 번에 실행하는 일일 운영 진입점을 고정
 - `jay-gateway-change-compare.js`를 추가해 실제 전환 시점을 기준으로 전/후 24시간 개선 여부를 `improved / neutral / regressed`로 판정할 수 있게 정리
@@ -2973,7 +2973,7 @@
 - 비교 기준이 있어야 이후 SaaS 확장 시에도 workspace별 모델 정책 전환을 일관되게 판단할 수 있다.
 
 검증:
-- `node --check bots/orchestrator/lib/openclaw-config.js`
+- `node --check bots/orchestrator/lib/legacy-gateway-config.js`
 - `node --check bots/orchestrator/scripts/check-jay-gateway-primary.js`
 - `node --check bots/orchestrator/src/router.js`
 - `node bots/orchestrator/scripts/check-jay-gateway-primary.js`
@@ -2982,15 +2982,15 @@
 
 핵심 구현:
 - `bots/orchestrator/lib/jay-model-policy.js` 신규 추가
-- 제이 모델 체계를 `OpenClaw gateway 기본 primary`와 `제이 앱 커스텀 정책`으로 분리
+- 제이 모델 체계를 `legacy gateway gateway 기본 primary`와 `제이 앱 커스텀 정책`으로 분리
 - `intent-parser.js`의 `gpt-5-mini -> gemini-2.5-flash` 명령 해석 정책을 집약 파일로 이동
 - `router.js`의 자유대화 fallback 체인을 집약 파일로 이동
 - `error-log-daily-review.js`에 `최근 3시간 활성 오류`와 `하루 누적 오류`를 분리
-- 종료된 `OpenClaw gateway rate limit`이 현재 장애처럼 과장되지 않도록 보정
+- 종료된 `legacy gateway gateway rate limit`이 현재 장애처럼 과장되지 않도록 보정
 - `onchain-data.js`에서 `nextFundingTime` 비정상 값 방어 추가
 
 세션 맥락:
-- 제이는 실제로 하나의 모델을 쓰는 구조가 아니라, OpenClaw 기본 모델과 제이 앱 레벨 모델 정책이 섞여 있었다.
+- 제이는 실제로 하나의 모델을 쓰는 구조가 아니라, legacy gateway 기본 모델과 제이 앱 레벨 모델 정책이 섞여 있었다.
 - 운영자 입장에서 “왜 Gemini인데 GPT도 쓰는가”를 이해하기 어렵던 상태를 먼저 문서와 코드 레이어로 정리했다.
 - 동시에 개인 텔레그램 알림에서 종료된 장애가 계속 현재 문제처럼 올라오던 구조를 완화했다.
 
@@ -3379,7 +3379,7 @@
 - mainbot.js await 누락(items is not iterable)
 - groupAllowFrom 미설정(그룹 메시지 드롭)
 - OpenAI Groq rate limit → gemini 전환
-- OpenClaw requireMention 기본값 변경 대응(groups.*.requireMention=false)
+- legacy gateway requireMention 기본값 변경 대응(groups.*.requireMention=false)
 <!-- session-close:2026-03-11:제이-무응답-4종-버그-수정 -->
 
 ### 🔧 naver-monitor kst 누락 수정
@@ -3613,16 +3613,16 @@
 - 테스트: 24/24 케이스 통과
 - 체크섬 갱신 (9개 파일)
 
-### OpenClaw 게이트웨이 설정 오류 수정
-- **원인**: `~/.openclaw/openclaw.json`에 `agents.teamLeads` 미인식 키 → config 유효성 실패 → exitCode: 1 반복
-- **수정**: `openclaw doctor --fix` → 키 자동 제거
-- **패턴 이력 초기화**: OpenClaw 메모리 반복 패턴 8건 삭제
-- **덱스터 결과**: ❌ 0건, ⚠️ 2건 (OpenClaw 메모리 518MB — 추이 관찰)
+### legacy gateway 게이트웨이 설정 오류 수정
+- **원인**: `~/.legacy-gateway/legacy-selector-config`에 `agents.teamLeads` 미인식 키 → config 유효성 실패 → exitCode: 1 반복
+- **수정**: `legacy-gateway doctor --fix` → 키 자동 제거
+- **패턴 이력 초기화**: legacy gateway 메모리 반복 패턴 8건 삭제
+- **덱스터 결과**: ❌ 0건, ⚠️ 2건 (legacy gateway 메모리 518MB — 추이 관찰)
 
 ### 변경 파일
 - `bots/orchestrator/lib/intent-parser.js` (전면 재작성)
 - `bots/orchestrator/src/router.js` (대규모 확장)
-- `~/.openclaw/openclaw.json` (코드 외 설정 파일)
+- `~/.legacy-gateway/legacy-selector-config` (코드 외 설정 파일)
 
 ---
 
@@ -3672,12 +3672,12 @@
 - markResolved() 추가 (오탐 근본 수정 — ok 복귀 시 error 이력 자동 삭제)
 <!-- session-close:2026-03-07:day-6-독터-보안-ops-dev-분리 -->
 
-### ✨ Day 5 — OpenClaw 멀티에이전트 구조
+### ✨ Day 5 — legacy gateway 멀티에이전트 구조
 - packages/core/lib/team-comm.js 신규 (팀장 간 소통, State Bus 기반)
 - packages/core/lib/heartbeat.js 신규 (팀장 생존 확인 + 이벤트 폴링)
-- openclaw.json agents.teamLeads 등록 (ska / claude-lead / luna)
+- legacy-selector-config agents.teamLeads 등록 (ska / claude-lead / luna)
 - SOUL.md 3개 생성 (ska / claude-lead / luna — 팀장 페르소나)
-<!-- session-close:2026-03-06:day-5-openclaw-멀티에이전트 -->
+<!-- session-close:2026-03-06:day-5-legacy-gateway-멀티에이전트 -->
 
 ### ✨ PostgreSQL 단일 DB 통합 마이그레이션 완료 (Phase 5~6)
 - forecast.py psycopg2 마이그레이션
@@ -3759,7 +3759,7 @@
 - 국외장 서비스 확인 (ai.investment.overseas)
 - 포트폴리오 프롬프트 심볼 환각 버그 수정 (luna.js)
 - 덱스터 신호 exchange 불일치 감지 추가 (database.js)
-- Claude API 크레딧 소비 원인 분석 (OpenClaw Gemini OAuth 만료→Haiku 폴백)
+- Claude API 크레딧 소비 원인 분석 (legacy gateway Gemini OAuth 만료→Haiku 폴백)
 <!-- session-close:2026-03-05:루나팀-국내국외-모의투자-배포 -->
 
 ### ✨ LLM 토큰 이력 DB 기록 + 거래 일지 스크립트
@@ -3769,21 +3769,21 @@
 - scripts/trading-journal.js 신규 (매매일지 CLI)
 <!-- session-close:2026-03-05:llm-토큰-이력-db-기록-거래-일지-스크립트 -->
 
-### ✨ OpenClaw 업데이트 + 제이 RAG 연동 + e2e 데이터 정리
-- OpenClaw 2026.2.26→2026.3.2 업데이트
+### ✨ legacy gateway 업데이트 + 제이 RAG 연동 + e2e 데이터 정리
+- legacy gateway 2026.2.26→2026.3.2 업데이트
 - 제이 TOOLS.md RAG 검색 섹션 추가 (system_docs 12건 임베딩)
 - state.db e2e 테스트 데이터 4건 삭제 (2099-01-01)
-<!-- session-close:2026-03-05:openclaw-업데이트-제이-rag-연동-e2e-데이 -->
+<!-- session-close:2026-03-05:legacy-gateway-업데이트-제이-rag-연동-e2e-데이 -->
 
-### 🔧 예약 시간 파싱 버그 수정 + OpenClaw 복구 + 덱스터 오탐 수정
+### 🔧 예약 시간 파싱 버그 수정 + legacy gateway 복구 + 덱스터 오탐 수정
 - naver-monitor 정오 종료시간 파싱 버그 수정
 - pickko-accurate 경로 버그 수정
 - logs.js Rate Limit 오탐 수정
-- OpenClaw gemini-2.5-flash 복원
-- OpenClaw fallback#3 gpt-4o 추가
+- legacy gateway gemini-2.5-flash 복원
+- legacy gateway fallback#3 gpt-4o 추가
 - start-gateway.sh 래퍼 스크립트 생성(groq 키 하드코딩 제거)
 - state.db 오류 예약 수동처리
-<!-- session-close:2026-03-05:예약-시간-파싱-버그-수정-openclaw-복구-덱스터 -->
+<!-- session-close:2026-03-05:예약-시간-파싱-버그-수정-legacy-gateway-복구-덱스터 -->
 
 ### 🔧 스카 pickko-query/cancel-cmd 경로 누락 버그 수정
 - CLAUDE_NOTES.md 명령 테이블 절대경로 수정
@@ -3811,7 +3811,7 @@
 
 **완료 항목:**
 - 제이 LLM Groq → Gemini 2.5 Flash 교체 (`intent-parser.js`, `token-tracker.js`)
-- 제이 OpenClaw 에이전트 전환 — IDENTITY/MEMORY/TOOLS/HEARTBEAT.md 전면 교체
+- 제이 legacy gateway 에이전트 전환 — IDENTITY/MEMORY/TOOLS/HEARTBEAT.md 전면 교체
 - mainbot.js Telegram 폴링 제거 (알람 큐 처리 전용화)
 - bot_commands 테이블 추가 (DB 마이그레이션 v4)
 - 스카 커맨더 (`ska.js`) 신설 — `ai.ska.commander` launchd 등록
@@ -3823,14 +3823,14 @@
 
 **현재 지휘 체계:**
 ```
-사장님(텔레그램) → 제이(OpenClaw) → bot_commands → 스카/루나/클로드 커맨더
+사장님(텔레그램) → 제이(legacy gateway) → bot_commands → 스카/루나/클로드 커맨더
                                   ← mainbot_queue ← 팀봇 알람
 ```
 
 ---
 
 ### ✨ 제이 중심 지휘 체계 + 루나팀 고도화
-- 제이 OpenClaw 에이전트 전환
+- 제이 legacy gateway 에이전트 전환
 - mainbot.js Telegram 폴링 제거
 - bot_commands 테이블 추가(v4)
 - 스카 커맨더 신설(ai.ska.commander)
@@ -3918,7 +3918,7 @@
 ### ✨ API 문서 분석 기반 개선사항 적용
 - parse_mode HTML 추가 (telegram.js + mainbot.js)
 - 4096자 메시지 분할 로직 (mainbot.js)
-- LLM_DOCS.md 업데이트 (Telegram 9.5 + Groq 신모델 + OpenClaw + Claude 자동 캐싱)
+- LLM_DOCS.md 업데이트 (Telegram 9.5 + Groq 신모델 + legacy gateway + Claude 자동 캐싱)
 <!-- session-close:2026-03-04:api-문서-분석-기반-개선사항-적용 -->
 
 ### ✨ LLM키통합+알람버그수정+덱스터패턴학습
@@ -3973,7 +3973,7 @@
 
 ### ✨ 클로드팀 고도화 v2.0 (커밋 `3956782`)
 - **Axis 1 — 덱스터↔아처 팀 통신 버스**:
-  - `migrations/001_team_bus.js`: `~/.openclaw/workspace/claude-team.db` 스키마 (4테이블)
+  - `migrations/001_team_bus.js`: `~/.legacy-gateway/workspace/claude-team.db` 스키마 (4테이블)
     - `agent_state`: 에이전트 상태 공유 (idle/running/error), `messages`: 에이전트 간 메시지 큐
     - `tech_digest`: 아처 기술 소화 이력, `check_history`: 덱스터 체크 실행 이력
   - `lib/team-bus.js`: 에이전트 상태·메시지큐·기술소화이력·체크이력 API
@@ -4039,17 +4039,17 @@
 - 절대규칙 기본언어 한국어 추가
 <!-- session-close:2026-03-02:하트비트-오늘예약현황-추가-scarska-정리-절대규칙 -->
 
-### ✨ OpenClaw 공식문서 검토 + 속도테스트 프로바이더 등록 + LLM_DOCS Cerebras/SambaNova 추가
+### ✨ legacy gateway 공식문서 검토 + 속도테스트 프로바이더 등록 + LLM_DOCS Cerebras/SambaNova 추가
 - 루나팀 분석가 프로바이더 분산(onchain→cerebras, sentiment→sambanova)
 - 루나팀 LLM 후보군 등록(llm-candidates.json + speed-test --luna)
-- OpenClaw 공식문서 검토 및 개선 항목 분류
+- legacy gateway 공식문서 검토 및 개선 항목 분류
 - LLM_DOCS.md Cerebras/SambaNova 섹션 추가(§4·§5)
 - 즉시 조치 3개(NVM path 수정·보안감사·세션정리)
 - 속도테스트기 5개 프로바이더 추가(xai/mistral/together/fireworks/deepinfra)
-- improvement-ideas.md OpenClaw 개선 백로그(OC-001~009) 추가
-<!-- session-close:2026-03-02:openclaw-공식문서-검토-속도테스트-프로바이더-등 -->
+- improvement-ideas.md legacy gateway 개선 백로그(OC-001~009) 추가
+<!-- session-close:2026-03-02:legacy-gateway-공식문서-검토-속도테스트-프로바이더-등 -->
 
-### ✨ OpenClaw OC-001~009 보안·설정 개선 전체 완료
+### ✨ legacy gateway OC-001~009 보안·설정 개선 전체 완료
 - OC-001 qwen CRITICAL 제거(fallbacks에서 제거)
 - OC-002 denyCommands 무효 6개→canvas.eval 교체
 - OC-003 botToken→tokenFile 파일 분리(chmod 600)
@@ -4059,7 +4059,7 @@
 - OC-007 멀티에이전트 스킵(루나팀 standalone)
 - OC-008 include분리 스킵(불필요)
 - OC-009 configured,missing 3개 모델 제거
-<!-- session-close:2026-03-02:openclaw-oc001009-보안설정-개선-전체-완 -->
+<!-- session-close:2026-03-02:legacy-gateway-oc001009-보안설정-개선-전체-완 -->
 
 ### ✨ 루나팀 다중심볼+KIS통합강화
 - 절대규칙 업데이트(루나팀=암호화폐·국내외주식)
@@ -4324,14 +4324,14 @@
 - pickko-daily-audit 23:50→22:00 원복 (plist 수정 + launchd 재등록)
 <!-- session-close:2026-02-28:pickkodailyaudit-스케줄-2200-원복 -->
 
-### ⚙️ OpenClaw v2026.2.26 업데이트 및 재시작
-- openclaw gateway restart (완전 중지 후 재시작)
-- openclaw v2026.2.19-2 → v2026.2.26 업데이트
+### ⚙️ legacy gateway v2026.2.26 업데이트 및 재시작
+- legacy-gateway gateway restart (완전 중지 후 재시작)
+- legacy-gateway v2026.2.19-2 → v2026.2.26 업데이트
 - 텔레그램 업데이트 완료 알림 전송
-<!-- session-close:2026-02-28:openclaw-v2026226-업데이트-및-재시작 -->
+<!-- session-close:2026-02-28:legacy-gateway-v2026226-업데이트-및-재시작 -->
 
 ### ⚙️ 스카 재부팅
-- openclaw gateway restart → 스카 부팅 완료 (durationMs=59s)
+- legacy-gateway gateway restart → 스카 부팅 완료 (durationMs=59s)
 <!-- session-close:2026-02-28:스카-재부팅 -->
 
 ### 🔧 매출 보고 일반이용 합산 수정
@@ -4387,7 +4387,7 @@
 - **README.md** — 10봇 전체 아키텍처 다이어그램 추가
 - **iPad Termius SSH** 설정 완료 (로컬 192.168.45.176 / Tailscale 100.124.124.65)
 - **~/.zshrc** alias 등록 (`ska`, `skalog`, `skastatus`)
-- OpenClaw 공식 문서 전체 학습 + 투자팀 멀티에이전트 설계
+- legacy gateway 공식 문서 전체 학습 + 투자팀 멀티에이전트 설계
 - 2026 LLM·트레이딩봇 커뮤니티 리서치 (`docs/RESEARCH_2026.md`)
 
 ### 스카봇 — 기능
@@ -4405,7 +4405,7 @@
 - **lib/args.js** 불리언 플래그 지원 (`--key`를 단독 사용 시 true)
 - **bug-report.js** 인라인 parseArgs 제거 → `lib/args` 통합
 
-### OpenClaw 최적화
+### legacy gateway 최적화
 - **BOOT 속도 7분→50초** (8.4× 개선) — `deployer.js` IDENTITY+MEMORY 인라인화, `--sync` 제거, DEV_SUMMARY/HANDOFF BOOT 제외, 7턴→2턴
 - **BOOT 54초** 2회 연속 검증 확인 (gemini-2.5-flash)
 
@@ -4575,7 +4575,7 @@
 ### 스카봇 — 인프라
 - **JSON → SQLite 마이그레이션** — `state.db` 단일 파일, AES-256-GCM 암호화, 6개 JSON → 4개 테이블
 - **lib/crypto.js** — AES-256-GCM 암호화/복호화, SHA256 kiosk 해시 키
-- **lib/telegram.js** — Telegram Bot API 직접 발송 (openclaw 우회), 3회 재시도
+- **lib/telegram.js** — Telegram Bot API 직접 발송 (legacy-gateway 우회), 3회 재시도
 - **lib/pickko.js** `fetchPickkoEntries()` 공유 함수 추출 (4개 스크립트가 재활용)
 - `fetchPickkoEntries` `sortBy='sd_regdate'` + `receiptDate` 옵션 추가
 - **session-close 라이브러리** — `scripts/lib/` 모듈화, `session-close.js` CLI
@@ -4599,7 +4599,7 @@
   - `unblockNaverSlot()`: suspended 슬롯 클릭 → fillAvailablePopup → verifyBlockInGrid
   - `clickRoomSuspendedSlot()`, `selectAvailableStatus()`, `fillAvailablePopup()` 신규 함수
 
-### OpenClaw
+### legacy gateway
 - **gemini-2.0-flash → gemini-2.5-flash** 모델 교체 (운영 중)
 - LLM API 속도 테스트 결과 기록 (groq 1위 203ms, gemini 4위 608ms)
 
@@ -4653,7 +4653,7 @@
 - `validation.js` 24:00 지원
 - 야간 알림 차단 + `flushPendingAlerts` 09:00 일괄 발송
 
-### OpenClaw
+### legacy gateway
 - gemini-2.0-flash → gemini-2.5-flash 교체 (첫 번째 시도, deprecated 대응)
 
 ---
@@ -4663,7 +4663,7 @@
 ### 인프라
 - **RAG 시스템** 구축 (`~/projects/rag-system`, FastAPI + ChromaDB, 포트 8100, Python 3.12)
 - naver-monitor.js RAG 연동 (예약 이력 자동 저장)
-- OpenClaw Gemini 모델 전환 (텔레그램 응답 정상화)
+- legacy gateway Gemini 모델 전환 (텔레그램 응답 정상화)
 
 ### 스카봇 — 인프라
 - **BOOT.md** 자동 기억 복원 시스템 구축
@@ -4701,7 +4701,7 @@
 | 2026-02-25 | 키오스크 모니터 + 안정화 8건 |
 | 2026-02-26 | SQLite 마이그레이션 + 매출 분리 + NLP E2E 100% |
 | 2026-02-27 | 공유 인프라 + 백그라운드 전환 + BOOT 8.4× 개선 |
-| 2026-02-28 | ETL 버그 수정 + OpenClaw 업데이트 + ska DB 백필 |
+| 2026-02-28 | ETL 버그 수정 + legacy gateway 업데이트 + ska DB 백필 |
 | 2026-03-01 | 루나팀 Phase 0 드라이런 + 덱스터 + 아처 + KIS 크리스 구현 |
 | 2026-03-03 | 스카팀 고도화 v3.0 + 루나팀 크립토 OPS 전환 + 실행체인 버그 수정 + ETH→USDT |
 | 2026-03-04 | RC 세션 폭발 버그 수정 + tmux/RC 전체 제거 + 루나팀 Phase 3 고도화 + DuckDB WAL 버그 수정 + 암호화폐 OPS 전환 |
@@ -4928,8 +4928,8 @@ page.click(body)→Escape 키 수정(상세보기 블러 문제) | toCancelKey b
 ### LLM 토큰 이력 DB 기록 + 거래 일지
 llm-client.js Groq/OpenAI 토큰·응답시간 DB 기록 | token_usage 테이블 duration_ms 컬럼 | scripts/trading-journal.js 신규
 
-### OpenClaw 업데이트 + 제이 RAG 연동
-OpenClaw 2026.2.26→2026.3.2 | TOOLS.md RAG 검색 섹션(system_docs 12건 임베딩) | state.db e2e 테스트 데이터 삭제
+### legacy gateway 업데이트 + 제이 RAG 연동
+legacy gateway 2026.2.26→2026.3.2 | TOOLS.md RAG 검색 섹션(system_docs 12건 임베딩) | state.db e2e 테스트 데이터 삭제
 
 ### 덱스터 AI 분석 레이어 + 2-티어 퀵체크
 - bots/claude/lib/ai-analyst.js: OpenAI gpt-4o-mini/4o 종합 진단, dexter-insights.json (최대 20개 FIFO)
@@ -5096,7 +5096,7 @@ RAG/MessageEnvelope/trace/StateBus/tool-logger/llm-cache/mode-guard 통합 | qua
 - `scripts/speed-test.js`가 이제 전 모델 실패와 snapshot 저장 실패를 실제 non-zero exit로 올리도록 보강되어, selector speed 자동화가 false success를 기록하지 않게 정리
 - Gemini 요청은 모델별 thinking budget을 분기해 `gemini-2.5-pro`는 `thinkingBudget=-1`, `gemini-2.5-flash/flash-lite`는 `thinkingBudget=0`을 사용하도록 수정
 - `scripts/reviews/llm-selector-speed-review.js`는 최신 실패 모델과 `errorClass`를 직접 보여주도록 보강
-- `~/.openclaw/openclaw.json` 모델 레지스트리를 최신 운영 기준으로 갱신
+- `~/.legacy-gateway/legacy-selector-config` 모델 레지스트리를 최신 운영 기준으로 갱신
   - 추가: `google-gemini-cli/gemini-2.5-flash-lite`
   - 교체: `groq/moonshotai/kimi-k2-instruct-0905`
   - 제거: `cerebras/gpt-oss-120b` (현재 계정/런타임 404)

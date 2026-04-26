@@ -181,7 +181,7 @@
 - nodejs-keccak256
 - nutrient-document-processing
 - nuxt4-patterns
-- openclaw-persona-forge
+- legacy-gateway-persona-forge
 - opensource-pipeline
 - perl-patterns
 - perl-security

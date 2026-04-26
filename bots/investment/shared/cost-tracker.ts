@@ -23,12 +23,11 @@ import { fileURLToPath }                              from 'url';
 import { createRequire }                              from 'module';
 import yaml                                           from 'js-yaml';
 import { getTradingMode }                             from './secrets.ts';
-import { getInvestmentStateFile, getLegacyInvestmentStateFile } from './market-cycle-support.ts';
+import { getInvestmentStateFile } from './market-cycle-support.ts';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const kst = createRequire(import.meta.url)('../../../packages/core/lib/kst');
 const COST_FILE = getInvestmentStateFile('investment-cost.json');
-const LEGACY_COST_FILE = getLegacyInvestmentStateFile('investment-cost.json');
 
 // claude-haiku-4-5 단가 ($ per 토큰)
 export const HAIKU_PRICING = {
@@ -80,8 +79,7 @@ class CostTracker extends EventEmitter {
 
   _load() {
     try {
-      const sourceFile = existsSync(COST_FILE) ? COST_FILE : LEGACY_COST_FILE;
-      const data = JSON.parse(readFileSync(sourceFile, 'utf8'));
+      const data = JSON.parse(readFileSync(COST_FILE, 'utf8'));
       if (data.date  === getKSTDate())  this.todayUsage = data.usage       || 0;
       if (data.month === getKSTMonth()) this.monthUsage = data.month_usage || 0;
     } catch {}

@@ -49,7 +49,7 @@
 | 테스트 수정 | codex-implementation-agent | 테스트 실패 메시지를 포함해 수정 재실행 |
 | 구현 완료 | auto-dev-orchestrator | 상태 저장, 종료 알림, team-bus 완료 기록 |
 
-상태 파일은 `~/.openclaw/workspace/claude-auto-dev-state.json`이며, 수동 실행은 `npm --prefix bots/claude run auto-dev:once`로 가능하다. 테스트나 스모크에서는 `CLAUDE_AUTO_DEV_STATE_FILE`로 상태 파일을 분리한다.
+상태 파일은 Claude runtime state store에 두며, 수동 실행은 `npm --prefix bots/claude run auto-dev:once`로 가능하다. 테스트나 스모크에서는 `CLAUDE_AUTO_DEV_STATE_FILE`로 상태 파일을 분리한다.
 
 ## 5. 다음 단계 후보
 

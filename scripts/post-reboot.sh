@@ -180,12 +180,10 @@ check_periodic() {
   fi
 }
 
-log "🔧 인프라 (OpenClaw / n8n / Hub / MLX)"
+log "🔧 인프라 (Hub / n8n / MLX)"
 check_svc      "ai.mlx.server"          "MLX LLM 서버"
 check_svc      "ai.hub.resource-api"    "Hub 리소스 API"
-check_svc      "ai.openclaw.gateway"    "OpenClaw 게이트웨이"
 check_svc      "ai.n8n.server"          "n8n 워크플로우 서버"
-check_periodic "ai.openclaw.model-sync" "OpenClaw 모델 싱크"
 check_periodic "ai.env.setup"           "환경 설정"
 
 log "💹 투자팀"

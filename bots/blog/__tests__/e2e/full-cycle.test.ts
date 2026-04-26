@@ -23,7 +23,7 @@ jest.mock('../../../../packages/core/lib/llm-keys', () => ({
 jest.mock('../../../../packages/core/lib/mode-guard', () => ({
   runIfOps: jest.fn((_key, ops, _dev) => (ops ? Promise.resolve(ops()) : Promise.resolve(null))),
 }));
-jest.mock('../../../../packages/core/lib/openclaw-client', () => ({
+jest.mock('../../../../packages/core/lib/hub-alarm-client', () => ({
   postAlarm: jest.fn().mockResolvedValue(undefined),
 }));
 jest.mock('../../../../packages/core/lib/llm-fallback', () => ({
@@ -33,7 +33,7 @@ jest.mock('../../../../packages/core/lib/llm-fallback', () => ({
 }));
 
 const pgPool = require('../../../../packages/core/lib/pg-pool');
-const { postAlarm } = require('../../../../packages/core/lib/openclaw-client');
+const { postAlarm } = require('../../../../packages/core/lib/hub-alarm-client');
 
 // ─── 시나리오 1: 일일 3 플랫폼 발행 + 매출 연동 ─────────────────────────────
 

@@ -219,7 +219,7 @@ AgentOffice(커뮤니티) 비교:
   hire_agent 도구로 자율 고용 (우리 hiring-contract 유사!)
   SQLite+Ollama 임베딩 메모리
 
-③ Star-Office-UI — OpenClaw AI팀용 픽셀 대시보드, Flask+Phaser
+③ Star-Office-UI — legacy gateway AI팀용 픽셀 대시보드, Flask+Phaser
 ④ Pixel Agent Desk — Electron, Claude Code hooks, 활동 히트맵, 토큰 분석, PiP
 ⑤ Mission Control — Monitor Grid + Pixel Office + 실시간 시각화
 ```
@@ -320,7 +320,7 @@ GStack 흡수 대상:
 
 ```
 출시: 2026-03 초, 31K+ stars, MIT, 셀프호스트
-핵심: "OpenClaw이 직원이라면, Paperclip은 회사"
+핵심: "legacy gateway가 직원이라면, Paperclip은 회사"
 스택: Node.js + 임베디드 PostgreSQL + React 대시보드
 
 아키텍처:
@@ -376,7 +376,7 @@ Paperclip에서 흡수할 패턴:
 [19] GStack: github.com/garrytan/gstack (54.2K stars)
 [20] GStack vs Superpowers: particula.tech/blog/superpowers-vs-gstack
 [21] Agent Frameworks 2026: agentconn.com/blog/best-open-source-ai-agent-frameworks-2026
-[22] GStack Guide: openclawapi.org/en/blog/2026-03-24-gstack-beginners-guide
+[22] GStack Guide: legacy gateway community guide
 [23] Paperclip: github.com/paperclipai/paperclip
 [24] Paperclip Analysis: medium.com/@alexrozdolskiy (org chart for agents)
 [25] Paperclip Tutorial: paperclipai.info
@@ -394,9 +394,9 @@ Paperclip에서 흡수할 패턴:
 ### 15-1. 커뮤니티 통합 사례
 
 **Mission Control (jeturing/mission-control)** — 우리 워커웹과 80% 동일 스택!
-Next.js + SQLite + OpenClaw Gateway. 칸반 보드(MissionQueue.tsx) + AI 계획(PlanningTab.tsx)
+Next.js + SQLite + legacy gateway. 칸반 보드(MissionQueue.tsx) + AI 계획(PlanningTab.tsx)
 + 에이전트 패널(AgentsSidebar.tsx) + 실시간 이벤트(LiveFeed.tsx) + 태스크 생성(TaskModal.tsx).
-API: tasks(CRUD+계획+디스패치), agents(관리), openclaw(프록시), webhooks(완료).
+API: tasks(CRUD+계획+디스패치), agents(관리), legacy gateway proxy, webhooks(완료).
 
 **AgentOffice** — Phaser.js(픽셀 렌더링) + React(UI 오버레이) 하이브리드.
 Canvas 위에 React: Chat, TaskBoard, SystemLog, Inspector, Layout Editor.
@@ -438,7 +438,7 @@ Python + Yahoo Finance + MCP Protocol (218★). 멀티 에이전트 토론:
 Technical Analyst(볼린저+RSI+MACD) + Sentiment Analyst(Reddit 감성+모멘텀)
 + Risk Manager(변동성+드로다운+평균회귀) → STRONG BUY~STRONG SELL + 신뢰도.
 백테스팅: Supertrend +31.5%(Sharpe 2.1), Bollinger +18.3%(Sharpe 3.4).
-OpenClaw 통합: Telegram→OpenClaw→trading.py→tradingview-mcp→Yahoo Finance.
+legacy gateway 통합: Telegram→legacy gateway→trading.py→tradingview-mcp→Yahoo Finance.
 
 ### 16-2. 접근법 B: 차트 제어 MCP (tradesdontlie + ulianbass fork)
 

@@ -4,7 +4,7 @@
 /**
  * migrations/002_dexter_patterns.js — 덱스터 오류 이력 테이블
  *
- * DB 위치: ~/.openclaw/workspace/claude-team.db
+ * DB 위치: AI_AGENT_WORKSPACE/claude-team.db
  * 테이블:
  *   - dexter_error_log : 체크 실행 시 발견된 오류/경고 항목 누적
  */
@@ -34,7 +34,9 @@ if (require.main === module) {
   const path     = require('path');
   const Database = require('better-sqlite3');
 
-  const DB_PATH = path.join(os.homedir(), '.openclaw', 'workspace', 'claude-team.db');
+  const home = process.env.AI_AGENT_HOME || process.env.JAY_HOME || path.join(os.homedir(), '.ai-agent-system');
+  const workspace = process.env.AI_AGENT_WORKSPACE || process.env.JAY_WORKSPACE || path.join(home, 'workspace');
+  const DB_PATH = path.join(workspace, 'claude-team.db');
   const db = new Database(DB_PATH);
   db.pragma('journal_mode = WAL');
 

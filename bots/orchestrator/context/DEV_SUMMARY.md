@@ -5,7 +5,7 @@
 ## 시스템 역할
 
 제이(Jay)는 AI 봇 시스템의 총괄 오케스트레이터.
-- **OpenClaw 에이전트**: 사장님과 Telegram 자연어 대화
+- **Hub control/Telegram 에이전트**: 사장님과 Telegram 자연어 대화 및 승인 흐름
 - **orchestrator runtime**: Jay housekeeping loop를 맡는 백그라운드 프로세스
   - `mainbot_queue` 소비는 런타임에서 은퇴했고, 현재 alert fanout은 Hub alarm / Telegram topic 경로가 담당
   - 남은 역할은 Telegram pending flush, 아침 브리핑, mute/confirm/bot_commands cleanup, 팀장 identity check
@@ -70,7 +70,7 @@
 
 - **제이 인텐트 파싱**: 4단계 (slash → learned → keyword → LLM fallback)
   - `slash`: `/명령어` 정적 매핑
-  - `learned`: `~/.openclaw/workspace/nlp-learnings.json` (5분 리로드, Claude가 자동 학습)
+  - `learned`: Hub/Jay runtime learning store (5분 리로드, Claude가 자동 학습)
   - `keyword`: 정적 패턴 24개 (구어체 포함)
   - `llm`: LLM_FALLBACK (현재 Gemini 2.5 Flash — 변경 가능)
 - **미인식 명령 자동 개선**: default case → analyze_unknown → claude -p → 패턴 추출 → nlp-learnings.json
@@ -86,9 +86,9 @@
 
 ## launchd
 
-- `ai.orchestrator` — orchestrator runtime KeepAlive, 2초 폴링
+  - `ai.orchestrator` — orchestrator runtime KeepAlive, 2초 폴링
   - `mainbot_queue` polling은 은퇴 완료. Jay runtime housekeeping만 수행
-  - runtime lock은 OpenClaw workspace가 아니라 Jay runtime dir을 사용
+  - runtime lock은 Jay runtime dir을 사용
 - 재시작: `launchctl kickstart -k gui/$(id -u)/ai.orchestrator`
 
 ## token_usage 테이블 (claude-team.db)
@@ -109,9 +109,9 @@ token_usage (id, bot_name, team, model, provider, is_free, task_type,
 
 | 날짜 | 제목 | 내용 |
 |------|------|------|
-| 2026-03-05 | **OpenClaw 업데이트 + 제이 RAG 연동 + e2e 데이터 정리** | OpenClaw 2026.2.26→2026.3.2 업데이트 외 2건 |
+| 2026-03-05 | **retired gateway 업데이트 + 제이 RAG 연동 + e2e 데이터 정리** | legacy gateway 2026.2.26→2026.3.2 업데이트 외 2건 |
 | 2026-03-08 | **Phase 1 — 루나팀 전환판단 + LLM졸업실전 + 덱스터팀장봇연동** | shadow-mode.js getTeamMode/setTeamMode 추가 외 14건 |
 | 2026-03-12 | **워커웹 UI개선 및 매출데이터 정합성 수정** | DataTable 페이지네이션(10건/pageSize prop) 외 6건 |
 <!-- session-close:2026-03-12:워커웹-ui개선-및-매출데이터-정합성-수정 -->
 <!-- session-close:2026-03-08:phase-1-루나팀-전환판단-llm졸업실전-덱스터팀장 -->
-<!-- session-close:2026-03-05:openclaw-업데이트-제이-rag-연동-e2e-데이 -->
+<!-- session-close:2026-03-05:legacy-gateway-업데이트-제이-rag-연동-e2e-데이 -->

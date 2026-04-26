@@ -14,7 +14,7 @@
 
 const path   = require('path');
 const ROOT   = path.join(__dirname, '..');
-const openclawClient = require(path.join(ROOT, 'packages/core/lib/openclaw-client'));
+const hubAlarmClient = require(path.join(ROOT, 'packages/core/lib/hub-alarm-client'));
 const shadow = require(path.join(ROOT, 'packages/core/lib/shadow-mode'));
 const logger = require(path.join(ROOT, 'packages/core/lib/llm-logger'));
 const cache  = require(path.join(ROOT, 'packages/core/lib/llm-cache'));
@@ -255,7 +255,7 @@ async function main() {
   }
 
   if (SEND_TG) {
-    const ok = (await openclawClient.postAlarm({
+    const ok = (await hubAlarmClient.postAlarm({
       team: 'general',
       message: report,
       alertLevel: 1,
@@ -265,7 +265,7 @@ async function main() {
 
     // 졸업 후보 있으면 클로드 Topic에 상세 발송
     if (metrics.system.graduation_candidates > 0 && metrics.system.graduation_report) {
-      await openclawClient.postAlarm({
+      await hubAlarmClient.postAlarm({
         team: 'claude-lead',
         message: `🎓 LLM 졸업 후보 ${metrics.system.graduation_candidates}건\n⚠️ 마스터 승인 후 적용\n\n${metrics.system.graduation_report.slice(0, 500)}`,
         alertLevel: 2,
@@ -277,7 +277,7 @@ async function main() {
       const revertLines = metrics.system.graduation_reverted
         .map(r => `  • [${r.team}/${r.context}] ${r.decision} — ${r.mismatchRate} 불일치`)
         .join('\n');
-      await openclawClient.postAlarm({
+      await hubAlarmClient.postAlarm({
         team: 'claude-lead',
         message:
           `↩️ LLM 졸업 규칙 자동 복귀 ${metrics.system.graduation_reverted.length}건\n` +

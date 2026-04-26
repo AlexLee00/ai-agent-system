@@ -46,7 +46,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/).
   - `packages/core/lib/gemma-pilot.js`를 default import로 바꿔 CommonJS shim과의 named import 충돌을 해결
 - 의미:
   - snapshot/report/history 흐름이 Gemma shim 로딩 단계에서 바로 죽는 문제는 제거됐다.
-  - 다만 `launchctl` sandbox 제한, Elixir `Mix.PubSub` `:eperm`, `pg-pool` `[EPERM]`, 그리고 openclaw/Telegram 전달 실패는 여전히 남아 있다.
+  - 다만 `launchctl` sandbox 제한, Elixir `Mix.PubSub` `:eperm`, `pg-pool` `[EPERM]`, 그리고 legacy-gateway/Telegram 전달 실패는 여전히 남아 있다.
 
 ## 13주차 운영 점검 (2026-04-16) — Luna parallel ops 런타임 호환성 보강
 
@@ -1059,13 +1059,13 @@ Format based on [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/).
 - `node --check scripts/reviews/daily-ops-report.js` | ✅
 - `node scripts/reviews/daily-ops-report.js --json` | ✅ `runtimeRestrictions`, selector primary issue, post-restart gateway guidance 반영 확인
 
-## 12주차 후속 (2026-03-22) — 제이/OpenClaw gateway fallback readiness + concurrency 안정화
+## 12주차 후속 (2026-03-22) — 제이/legacy gateway gateway fallback readiness + concurrency 안정화
 
 ### 변경 사항 (changed)
-- `bots/orchestrator/lib/openclaw-config.js`
+- `bots/orchestrator/lib/legacy-gateway-config.js`
   - provider `configured`와 `authReady`를 분리하도록 readiness 계산 추가
   - `fallbackReadiness`, `readyFallbacks`, `unreadyFallbacks` 노출
-  - `updateOpenClawGatewayFallbacks()`, `updateOpenClawGatewayConcurrency()` 추가
+  - `updatelegacy gatewayGatewayFallbacks()`, `updatelegacy gatewayGatewayConcurrency()` 추가
 - `bots/orchestrator/scripts/check-jay-gateway-primary.js`
   - candidate별 `authReady`, ready/unready fallback 개수, 즉시 사용 가능 fallback 출력 추가
 - `bots/orchestrator/scripts/prepare-jay-gateway-switch.js`
@@ -1083,7 +1083,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/).
   - `maxConcurrent`, `subagents.maxConcurrent`를 보수적으로 조정하는 CLI 추가
 
 ### 운영 반영 (ops)
-- `~/.openclaw/openclaw.json`
+- `~/.legacy-gateway/legacy-selector-config`
   - fallback chain `11 -> 4` 축소
   - 현재 fallback:
     - `openai/gpt-4o-mini`
@@ -1095,7 +1095,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/).
     - `subagents.maxConcurrent=2`
 
 ### 검증
-- `node --check bots/orchestrator/lib/openclaw-config.js` | ✅
+- `node --check bots/orchestrator/lib/legacy-gateway-config.js` | ✅
 - `node --check bots/orchestrator/scripts/check-jay-gateway-primary.js` | ✅
 - `node --check bots/orchestrator/scripts/prepare-jay-gateway-switch.js` | ✅
 - `node --check bots/orchestrator/scripts/log-jay-gateway-experiment.js` | ✅
@@ -1105,7 +1105,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/).
 - `node bots/orchestrator/scripts/check-jay-gateway-primary.js` | ✅ `ready fallback=4`, `unready fallback=0` 확인
 - `node bots/orchestrator/scripts/prune-jay-gateway-fallbacks.js --apply` | ✅ 라이브 fallback chain 정리
 - `node bots/orchestrator/scripts/tune-jay-gateway-concurrency.js --apply --max=1 --subagents=2` | ✅ 라이브 concurrency 조정
-- `launchctl kickstart -k gui/$(id -u)/ai.openclaw.gateway` | ✅ gateway 재기동
+- `launchctl kickstart -k gui/$(id -u)/ai.hub.resource-api` | ✅ gateway 재기동
 - `node scripts/reviews/jay-gateway-experiment-daily.js` | ✅ 최신 24시간 창에서 `retry burst runs=13`, `max attempts per run=4` 기준 남은 병목 확인
 - `node bots/orchestrator/scripts/log-jay-gateway-experiment.js` | ✅ `마지막 gateway 재기동 이후: rate limit 0 / auth missing 0 / retry burst 0` 확인
 - `node scripts/reviews/jay-gateway-experiment-review.js` | ✅ `post-restart rate limit/auth missing/retry burst` 출력 확인
@@ -1693,7 +1693,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/).
   - `PLATFORM_IMPLEMENTATION_TRACKER.md`
   - 위 문서 상태가 기준을 통과하지 않으면 `pre-reboot.sh --drain-now`가 중단되도록 보강
 - `scripts/post-reboot.sh`를 현재 운영 구조 기준 전사 점검형으로 확장
-  - orchestrator / OpenClaw / n8n
+  - orchestrator / legacy gateway / n8n
   - worker web / nextjs / lead / task-runner
   - investment commander / markets / reporter / argos / alerts / prescreen
   - blog node-server / daily / health-check
@@ -1819,7 +1819,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/).
   - 투자 성향 / 매매 내역 / 보유 포지션 / 신호 요약 줄 수를 줄여 한 화면 가독성을 높였다
 - 자동화 리포트 출력을 운영 액션 중심으로 보강
   - `jay-gateway-experiment-daily.js`는 스냅샷 저장 실패 시에도 기존 누적 스냅샷 기준 리뷰를 계속 출력하도록 강인성을 높였다
-  - `log-jay-gateway-experiment.js` / `jay-gateway-experiment-daily.js`는 `~/.openclaw/workspace` 쓰기 실패 시 repo 내부 `tmp/jay-gateway-experiments.jsonl` fallback 저장으로 기록을 유지한다
+  - `log-jay-gateway-experiment.js` / `jay-gateway-experiment-daily.js`는 `~/.legacy-gateway/workspace` 쓰기 실패 시 repo 내부 `tmp/jay-gateway-experiments.jsonl` fallback 저장으로 기록을 유지한다
   - `daily-ops-report.js`는 `health_report_failed_probe_unavailable`와 실제 `healthError`를 함께 노출해 입력 실패 원인을 더 명확히 구분한다
   - `daily-ops-report.js`는 `현재 활성 이슈 / 누적 반복 이슈 / 입력 실패`를 분리해 시스템 문제와 리포트 입력 실패를 구분해서 본다
   - `ska-sales-forecast-daily-review.js`는 `actionItems`를 추가해 `bias_tuning / weekday_tuning / manual_review / shadow_readiness`를 바로 읽을 수 있게 정리했다
@@ -1827,7 +1827,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/).
   - `trading-journal.js`는 거래 없음 대비 분석 비용이 큰 경우 `no-trade high-cost` 경고를 추가하도록 보강했다
   - `weekly-trade-review.js`는 종료 거래가 없어도 미결 포지션/주간 usage/다음 조치를 남기며, `date_kst::date` 비교로 주간 usage 0 버그를 수정했다
   - `jay-llm-daily-review.js`는 DB 접근 실패 시 `dbStatsStatus=partial`, `dbSourceErrors`, `session_usage_fallback` 기반 모델별 사용량을 함께 보여준다
-- `speed-test.js`가 최신 측정 결과를 `~/.openclaw/workspace/llm-speed-test-latest.json`에 저장하도록 확장
+- `speed-test.js`가 최신 측정 결과를 `~/.legacy-gateway/workspace/llm-speed-test-latest.json`에 저장하도록 확장
 - `llm-selector-report.js`가 공용 selector의 `primary/fallback chain`과 최근 speed-test 스냅샷을 함께 출력하도록 확장
 - 투자팀 운영 모드 용어 정리
   - `executionMode = live/paper`
@@ -1849,9 +1849,9 @@ Format based on [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/).
   - `WORK_HISTORY.md`
   - `RESEARCH_JOURNAL.md`
 - 제이 모델 정책을 `orchestrator/config.json > runtime_config.jayModels`와 연결
-  - OpenClaw 기본 모델과 제이 앱 커스텀 모델을 운영 설정 문맥에서도 분리
+  - legacy gateway 기본 모델과 제이 앱 커스텀 모델을 운영 설정 문맥에서도 분리
   - `/jay-models`와 자연어 질의로 현재 모델 체계를 바로 조회 가능하게 추가
-  - `check-jay-gateway-primary.js`로 `runtime_config`와 실제 `openclaw.json` primary 정합성 점검 가능하게 추가
+  - `check-jay-gateway-primary.js`로 `runtime_config`와 실제 `legacy-selector-config` primary 정합성 점검 가능하게 추가
   - gateway primary 후보 프로필과 현재 권장 판단(hold/sync_first)까지 운영 스크립트에서 바로 확인 가능하게 추가
   - gateway 전환 실험 기준을 `hold / compare / switch` 3단계로 문서화
   - `log-jay-gateway-experiment.js`로 gateway 로그 / 제이 usage / health-report를 함께 기록하는 실험 스냅샷 경로 추가
@@ -1885,12 +1885,12 @@ Format based on [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/).
 - 장전/장마감 투자 알림 과도한 본문 길이 보정
   - 긴 심볼 나열, 상세 투자 성향, 매매/포지션 장문 나열을 요약형으로 축소
 - 제이 Gateway 자동화 일일 러너 강인성 보강
-  - `~/.openclaw/workspace` 쓰기 실패가 나더라도 기존 스냅샷 리뷰는 계속 생성되도록 불변식을 회복했다
+  - `~/.legacy-gateway/workspace` 쓰기 실패가 나더라도 기존 스냅샷 리뷰는 계속 생성되도록 불변식을 회복했다
 - 일일 운영 분석 입력 실패 해석 보강
   - 단순 `hold`만 남기지 않고 어떤 팀 health-report 입력이 실패했는지 `healthError`로 함께 표시한다
 
 ### 문서 (docs)
-- 개발계획에 `OpenClaw`를 `LLM API 현황` 조회 전용 그룹으로 추가하는 후속 작업을 내일 진행할 항목으로 기록
+- 개발계획에 `legacy gateway`를 `LLM API 현황` 조회 전용 그룹으로 추가하는 후속 작업을 내일 진행할 항목으로 기록
 - 워커 팀 참조 문서에 `LLM API 현황`, `블로그 URL 입력`, 속도 테스트 콘솔 반영
 - 워커 모니터링 진입점과 투자 실행 모드 기준을 세션 문서/팀 문서에 반영
 - 워커 모니터링 운영 지표와 `018-monitoring-history`, `019-monitoring-change-notes` 마이그레이션 경로를 팀 참조 문서/구현 추적 문서에 반영
@@ -2021,7 +2021,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/).
 
 ### Fixed
 - ska_query 패턴 bare `|통계` 제거 → "캐시 통계" 오매칭 버그 수정
-- OpenClaw `openclaw.json` `agents.teamLeads` 미인식 키 → `openclaw doctor --fix` 제거
+- legacy gateway `legacy-selector-config` `agents.teamLeads` 미인식 키 → `legacy-gateway doctor --fix` 제거
 
 ---
 
@@ -2033,8 +2033,8 @@ Format based on [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/).
 
 ### Changed
 - **DB 아키텍처 전면 통합**: SQLite 2종 + DuckDB 2종 → PostgreSQL 17 단일 DB (`jay`)
-  - `~/.openclaw/workspace/state.db` → `reservation` 스키마
-  - `~/.openclaw/workspace/claude-team.db` → `claude` 스키마
+  - `~/.legacy-gateway/workspace/state.db` → `reservation` 스키마
+  - `~/.legacy-gateway/workspace/claude-team.db` → `claude` 스키마
   - `bots/investment/db/investment.duckdb` → `investment` 스키마
   - `bots/ska/db/ska.duckdb` → `ska` 스키마
 
@@ -2064,7 +2064,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/).
 - **State Bus agent_events/agent_tasks** (`bots/reservation/lib/state-bus.js`)
   - 팀원↔팀장 비동기 소통 채널 (emitEvent, createTask 등 7개 함수)
 - **덱스터 v2 체크 모듈** (`bots/claude/lib/checks/`)
-  - team-leads / openclaw / llm-cost / workspace-git
+  - team-leads / legacy-gateway / llm-cost / workspace-git
 - **DexterMode 이중 모드** (`bots/claude/lib/dexter-mode.js`)
   - Normal ↔ Emergency 자동 전환 + 알림 버퍼링
 - **LLM 인프라** (`packages/core/lib/`)
@@ -2074,7 +2074,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/).
 - **루나팀 매매일지** (`bots/investment/shared/trade-journal-db.js`)
   - 5개 테이블: trade_journal / rationale / review / performance_daily / luna_monitor
   - hephaestos/nemesis 자동 기록 연동, 텔레그램 리포트
-- **OpenClaw 멀티에이전트 구조** (`packages/core/lib/`)
+- **legacy gateway 멀티에이전트 구조** (`packages/core/lib/`)
   - team-comm.js: 팀장 간 소통 (State Bus 기반, sessions_send 대체)
   - heartbeat.js: 팀장 생존 확인 + 이벤트 폴링
   - SOUL.md 3개 (ska / claude-lead / luna)
@@ -2089,7 +2089,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/).
 ### Fixed
 - **덱스터 오류 이력 무한 누적** — cleanup() 미호출 버그, 7일 보존으로 수정
 - **덱스터 오탐 근본 수정** — markResolved() 추가 (ok 복귀 시 error 이력 즉시 삭제)
-- **openclaw.js IPv6 파싱 오탐** — bracket notation `[::1]` 처리 추가
+- **legacy-gateway.js IPv6 파싱 오탐** — bracket notation `[::1]` 처리 추가
 - **미해결 알림 반복 + tool_code 누출** (pickko-alerts-resolve.js 신규)
 
 ### Security
@@ -2147,15 +2147,15 @@ Format based on [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/).
   - `tp_price`, `sl_price`, `tp_order_id`, `sl_order_id`, `tp_sl_set` 컬럼 추가
 
 - **덱스터 v2 체크 모듈** (`bots/claude/lib/checks/`)
-  - `team-leads.js`: 핵심 봇 프로세스 건강 (OpenClaw/앤디/지미/루나크립토/tmux:ska)
-  - `openclaw.js`: OpenClaw 게이트웨이 상태 (launchd+포트+메모리)
+  - `team-leads.js`: 핵심 봇 프로세스 건강 (legacy gateway/앤디/지미/루나크립토/tmux:ska)
+  - `legacy-gateway.js`: legacy gateway 게이트웨이 상태 (launchd+포트+메모리)
   - `llm-cost.js`: LLM 비용 모니터링 (일간/월간, 예산 $10 기준)
   - `workspace-git.js`: 워크스페이스 Git 건강 점검
 
 - **DexterMode 이중 모드** (`bots/claude/lib/dexter-mode.js`)
-  - Normal ↔ Emergency 자동 전환 (OpenClaw/스카야 3분 이상 다운 시)
+  - Normal ↔ Emergency 자동 전환 (legacy gateway/스카야 3분 이상 다운 시)
   - Emergency 중 알림 버퍼링 + 복구 시 일괄 발송
-  - 상태 파일: `~/.openclaw/workspace/dexter-mode-state.json`
+  - 상태 파일: `~/.legacy-gateway/workspace/dexter-mode-state.json`
 
 - **덱스터 v2 통합** (`bots/claude/src/dexter.js`)
   - v2 체크 모듈 4개 추가 (에러 격리 적용)
@@ -2165,13 +2165,13 @@ Format based on [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/).
   - 팀장 봇 프로세스 빠른 점검 추가
 
 ### Fixed
-- **openclaw.js IPv6 파싱 버그**
+- **legacy-gateway.js IPv6 파싱 버그**
   - `[::1]:18789` 주소를 `split(':')[0]` → `[` 로 파싱하는 버그 수정
   - IPv6 bracket notation 명시적 처리: `[::1]` → loopback 인식
   - IPv6 wildcard 추가: `::`, `0:0:0:0:0:0:0:0`
 
 - **dexter-quickcheck.js false positive**
-  - v2 openclaw 포트 체크(lsof 기반) 제거 → 기존 launchd 체크로 충분
+  - v2 legacy-gateway 포트 체크(lsof 기반) 제거 → 기존 launchd 체크로 충분
   - 5분 주기 퀵체크에서 CRITICAL "포트 미바인딩" 오경보 해소
 
 ### Changed
@@ -2185,7 +2185,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/).
 - LLM 토큰 이력 DB (`bots/orchestrator/lib/token-tracker.js`)
 - 덱스터 AI 분석 레이어 (`bots/claude/lib/ai-analyst.js`)
 - 덱스터 퀵체크 2-티어 체계 (5분 + 1시간)
-- OpenClaw 2026.3.2 업데이트
+- legacy gateway 2026.3.2 업데이트
 
 ### Fixed
 - 덱스터 Phase C 버그 수정
@@ -2261,11 +2261,11 @@ Format based on [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/).
 - 루나 실시간 알림/주간 리뷰 메시지의 구분선과 장문 근거를 단축
 - 오케스트레이터
   - `jay-model-policy.js` 신규
-  - 제이 모델 체계를 `OpenClaw gateway 기본 모델`과 `제이 앱 레벨 커스텀 모델 정책`으로 분리
+  - 제이 모델 체계를 `legacy gateway gateway 기본 모델`과 `제이 앱 레벨 커스텀 모델 정책`으로 분리
   - `intent-parser.js`, `router.js`가 제이 모델 정책 파일을 공통 참조하도록 정리
 - 운영 리뷰
   - `error-log-daily-review.js`에 `최근 3시간 활성 오류`와 `하루 누적 오류`를 분리
-  - 종료된 `OpenClaw gateway rate limit`이 현재 장애처럼 과장되지 않도록 보정
+  - 종료된 `legacy gateway gateway rate limit`이 현재 장애처럼 과장되지 않도록 보정
 - 투자
   - `onchain-data.js`에서 비정상 `nextFundingTime` 방어 추가
   - `PEPEUSDT Invalid time value` 로그 노이즈 완화
@@ -2315,7 +2315,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/).
   - `llm-selector-speed-review.js`가 `primaryFallbackCandidate`도 함께 출력해 현재 primary가 unhealthy일 때 같은 provider 안의 안전한 대체 후보(`gemini-2.5-flash-lite`)를 바로 제시하도록 보강
   - `llm-selector-speed-review.js`가 최근 snapshot history를 읽어 `primaryFallbackPolicy`를 계산하고, 연속 rate-limit 시 `temporary_fallback_candidate` 신호를 출력하도록 확장
   - `GEMINI_FLASH_TEMPORARY_FALLBACK_POLICY_2026-03-22.md`를 추가해 `gemini-2.5-flash -> gemini-2.5-flash-lite` 임시 전환 조건, 금지 조건, 롤백 조건을 운영 문서로 고정
-  - 운영 모델 레지스트리 `~/.openclaw/openclaw.json`에 `gemini-2.5-flash-lite`, `groq/moonshotai/kimi-k2-instruct-0905`를 반영하고 `cerebras/gpt-oss-120b`는 현재 404 기준으로 제거
+  - 운영 모델 레지스트리 `~/.legacy-gateway/legacy-selector-config`에 `gemini-2.5-flash-lite`, `groq/moonshotai/kimi-k2-instruct-0905`를 반영하고 `cerebras/gpt-oss-120b`는 현재 404 기준으로 제거
 - 비디오
   - `bots/video/scripts/check-capcut-readiness.js`를 추가해 과제 5 전 CapCutAPI/CapCut Desktop 준비 상태를 점검하도록 정리
   - readiness 검증 결과 `create_draft / save_draft`는 정상이나 draft 저장 위치가 CapCut Desktop 프로젝트 폴더가 아니라 `CapCutAPI` repo 내부 `dfd_cat_*`임을 문서에 반영

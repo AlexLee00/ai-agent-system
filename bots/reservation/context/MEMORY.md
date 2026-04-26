@@ -114,7 +114,7 @@ ps aux | grep -E "start-ops|naver-monitor" | grep -v grep
 
 # 종료
 pkill -f "start-ops.sh"; pkill -f "naver-monitor"
-rm -f ~/.openclaw/workspace/naver-monitor.lock
+rm -f "$AI_AGENT_RUNTIME_DIR/naver-monitor.lock"
 ```
 
 ### Heartbeat 모니터 생존 체크 (필수)
@@ -152,8 +152,8 @@ rm -f ~/.openclaw/workspace/naver-monitor.lock
 
 ```
 /tmp/naver-ops-mode.log              ← 실시간 로그
-~/.openclaw/workspace/.pickko-alerts.jsonl  ← 알람 저장소
-~/.openclaw/workspace/naver-bookings-full.json ← 파싱 데이터
+reservation runtime alerts store     ← 알람 저장소
+reservation runtime bookings cache   ← 파싱 데이터
 ```
 
 ---
@@ -216,7 +216,7 @@ tail -f /tmp/naver-ops-mode.log
 ### 프로세스 종료
 ```bash
 pkill -f "naver-monitor"
-rm -f ~/.openclaw/workspace/naver-monitor.lock
+rm -f "$AI_AGENT_RUNTIME_DIR/naver-monitor.lock"
 ```
 
 ---

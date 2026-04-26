@@ -19,9 +19,9 @@
 	<key>RunAtLoad</key>
 	<false/>
 	<key>StandardErrorPath</key>
-	<string>/Users/alexlee/.openclaw/logs/auto-commit.err.log</string>
+	<string>/Users/alexlee/.ai-agent-system/logs/auto-commit.err.log</string>
 	<key>StandardOutPath</key>
-	<string>/Users/alexlee/.openclaw/logs/auto-commit.log</string>
+	<string>/Users/alexlee/.ai-agent-system/logs/auto-commit.log</string>
 	<key>StartInterval</key>
 	<integer>21600</integer>
 </dict>

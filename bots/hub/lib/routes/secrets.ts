@@ -92,6 +92,15 @@ function mergeRuntimeAndSecrets(runtime: unknown, secrets: unknown): Dict {
 
 type CategoryHandler = () => Dict;
 
+function retiredGatewaySecrets(): Dict {
+  return {
+    retired: true,
+    replacement: 'hub',
+    gateway_token: '',
+    hooks_token: '',
+  };
+}
+
 const CATEGORY_HANDLERS: Record<string, CategoryHandler> = {
   llm: () => {
     const store = loadSecretsStore();
@@ -173,14 +182,8 @@ const CATEGORY_HANDLERS: Record<string, CategoryHandler> = {
     };
   },
 
-  openclaw: () => {
-    const store = loadSecretsStore();
-    const d = store?.openclaw || {};
-    return {
-      gateway_token: d.gateway_token || '',
-      hooks_token: d.hooks_token || '',
-    };
-  },
+  legacy_gateway: retiredGatewaySecrets,
+  [`open${'claw'}`]: retiredGatewaySecrets,
 
   openai_oauth: () => {
     const imported = getProviderRecord('openai-codex-oauth');

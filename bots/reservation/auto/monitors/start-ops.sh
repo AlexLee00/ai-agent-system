@@ -184,7 +184,7 @@ cleanup_old() {
   log "  🔓 Chrome SingletonLock 제거 완료"
 
   # 고아 tail -f 프로세스 정리
-  ORPHAN_TAILS=$(pgrep -f "tail -f.*(openclaw|pickko|naver-ops)" 2>/dev/null)
+  ORPHAN_TAILS=$(pgrep -f "tail -f.*(pickko|naver-ops|ska-)" 2>/dev/null)
   if [ -n "$ORPHAN_TAILS" ]; then
     log "  🧹 고아 tail 프로세스 정리 (PID: $ORPHAN_TAILS)"
     echo "$ORPHAN_TAILS" | xargs kill 2>/dev/null

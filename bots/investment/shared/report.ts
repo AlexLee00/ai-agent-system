@@ -2,7 +2,7 @@
 /**
  * shared/report.js — 루나팀 알림 리포터 (Phase 3-A ESM)
  *
- * 모든 알림은 OpenClaw webhook 경유를 우선 사용한다.
+ * 모든 알림은 Hub alarm 경유를 우선 사용한다.
  */
 
 import { createRequire } from 'module';

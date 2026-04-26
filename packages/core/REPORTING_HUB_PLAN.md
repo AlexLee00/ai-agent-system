@@ -81,7 +81,7 @@
 
 최근 재집계 기준으로 남는 non-legacy current direct `postAlarm(...)`는 사실상 아래 둘로 압축된다.
 - blog current surface
-- canonical transport 자체 (`openclaw-client.ts`, `reporting-hub.ts`)
+- canonical transport 자체 (`hub-alarm-client.ts`, `reporting-hub.ts`)
 
 즉 blog current fanout을 별도 배치로 다루면, non-blog current delivery는 사실상 reporting-hub rail 정리 1차가 닫힌 상태다.
 

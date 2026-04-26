@@ -58,27 +58,13 @@ const INVESTMENT_RUNTIME_DIR = process.env.INVESTMENT_RUNTIME_DIR
   || path.join(AI_AGENT_WORKSPACE, 'investment');
 const INVESTMENT_STATE_DIR = process.env.INVESTMENT_STATE_DIR
   || path.join(AI_AGENT_HOME, 'investment');
-const LEGACY_INVESTMENT_RUNTIME_DIR = path.join(os.homedir(), '.openclaw', 'workspace');
-const LEGACY_INVESTMENT_STATE_DIR = path.join(os.homedir(), '.openclaw');
 
 function runtimeFile(filename) {
   return path.join(INVESTMENT_RUNTIME_DIR, filename);
 }
 
-function legacyRuntimeFile(filename) {
-  return path.join(LEGACY_INVESTMENT_RUNTIME_DIR, filename);
-}
-
 function stateFile(filename) {
   return path.join(INVESTMENT_STATE_DIR, filename);
-}
-
-function legacyStateFile(filename) {
-  return path.join(LEGACY_INVESTMENT_STATE_DIR, filename);
-}
-
-function firstExistingPath(paths) {
-  return paths.find((candidate) => fs.existsSync(candidate)) || paths[0];
 }
 
 function ensureParentDir(filePath) {
@@ -112,16 +98,12 @@ function loadBotIdentity() {
 
 // ─── Self-lock ─────────────────────────────────────────────────────
 const LOCK_PATH                 = runtimeFile('luna-commander.lock');
-const LEGACY_LOCK_PATH          = legacyRuntimeFile('luna-commander.lock');
 const PAUSE_FLAG                = runtimeFile('luna-paused.flag');
-const LEGACY_PAUSE_FLAG         = legacyRuntimeFile('luna-paused.flag');
 const WITHDRAW_SCHED_FILE       = runtimeFile('withdraw-schedule.json');
-const LEGACY_WITHDRAW_SCHED_FILE = legacyRuntimeFile('withdraw-schedule.json');
 
 function acquireLock() {
-  for (const lockPath of [LOCK_PATH, LEGACY_LOCK_PATH]) {
-    if (!fs.existsSync(lockPath)) continue;
-    const old = fs.readFileSync(lockPath, 'utf8').trim();
+  if (fs.existsSync(LOCK_PATH)) {
+    const old = fs.readFileSync(LOCK_PATH, 'utf8').trim();
     const oldPid = Number(old);
     try {
       if (Number.isInteger(oldPid) && oldPid > 0) {
@@ -129,9 +111,9 @@ function acquireLock() {
         console.log(`${BOT_NAME} 커맨더 이미 실행 중 (PID: ${old})`);
         process.exit(0);
       }
-      fs.unlinkSync(lockPath);
+      fs.unlinkSync(LOCK_PATH);
     } catch {
-      try { fs.unlinkSync(lockPath); } catch {}
+      try { fs.unlinkSync(LOCK_PATH); } catch {}
     }
   }
   ensureParentDir(LOCK_PATH);
@@ -307,14 +289,13 @@ function saveWithdrawSchedule({ unlockAt, usdtBalance, network, address }) {
  * unlockAt이 현재보다 과거면 즉시 출금 실행
  */
 async function checkWithdrawSchedule() {
-  const scheduleFile = firstExistingPath([WITHDRAW_SCHED_FILE, LEGACY_WITHDRAW_SCHED_FILE]);
-  if (!fs.existsSync(scheduleFile)) return;
+  if (!fs.existsSync(WITHDRAW_SCHED_FILE)) return;
 
   let sched;
   try {
-    sched = JSON.parse(fs.readFileSync(scheduleFile, 'utf8'));
+    sched = JSON.parse(fs.readFileSync(WITHDRAW_SCHED_FILE, 'utf8'));
   } catch {
-    fs.unlinkSync(scheduleFile);
+    fs.unlinkSync(WITHDRAW_SCHED_FILE);
     return;
   }
 
@@ -332,7 +313,7 @@ async function checkWithdrawSchedule() {
 
   // 해제 시각 도래 → 예약 파일 삭제 후 출금 실행
   console.log(`[루나] 출금지연 해제 확인 → 자동 출금 시작`);
-  fs.unlinkSync(scheduleFile);
+  fs.unlinkSync(WITHDRAW_SCHED_FILE);
 
   const result = await handleUpbitWithdrawOnly();
   if (result.ok) {
@@ -444,13 +425,10 @@ function handlePauseTrading(args) {
  */
 function handleResumeTrading() {
   try {
-    const pauseFiles = [PAUSE_FLAG, LEGACY_PAUSE_FLAG].filter((filePath) => fs.existsSync(filePath));
-    if (pauseFiles.length === 0) {
+    if (!fs.existsSync(PAUSE_FLAG)) {
       return { ok: true, message: '이미 실행 중 상태입니다.' };
     }
-    for (const filePath of pauseFiles) {
-      try { fs.unlinkSync(filePath); } catch {}
-    }
+    try { fs.unlinkSync(PAUSE_FLAG); } catch {}
     return { ok: true, message: '거래 재개 완료. 다음 사이클(최대 5분)부터 정상 실행됩니다.' };
   } catch (e) {
     return { ok: false, error: e.message };
@@ -627,14 +605,13 @@ function handleForceReport() {
  */
 function handleGetStatus() {
   try {
-    const statusFile = firstExistingPath([stateFile('investment-state.json'), legacyStateFile('investment-state.json')]);
+    const statusFile = stateFile('investment-state.json');
     if (!fs.existsSync(statusFile)) {
       return { ok: true, status: 'unknown', message: '상태 파일 없음' };
     }
     const state   = JSON.parse(fs.readFileSync(statusFile, 'utf8'));
-    const pauseFile = firstExistingPath([PAUSE_FLAG, LEGACY_PAUSE_FLAG]);
-    const paused  = fs.existsSync(pauseFile);
-    const pauseInfo = paused ? JSON.parse(fs.readFileSync(pauseFile, 'utf8')) : null;
+    const paused  = fs.existsSync(PAUSE_FLAG);
+    const pauseInfo = paused ? JSON.parse(fs.readFileSync(PAUSE_FLAG, 'utf8')) : null;
 
     return {
       ok: true,

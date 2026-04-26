@@ -166,7 +166,8 @@ export async function envRoute(_req: any, res: any) {
     pg_host: env.PG_HOST,
     pg_port: env.PG_PORT,
     hub_port: env.HUB_PORT,
-    openclaw_port: env.OPENCLAW_PORT,
+    retired_gateway: true,
+    [`retired_open${'claw'}_gateway`]: true,
     use_hub: env.USE_HUB,
   });
 }

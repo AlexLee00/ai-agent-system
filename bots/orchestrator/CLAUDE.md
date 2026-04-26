@@ -14,16 +14,16 @@
   write.js — 일일 리포트 작성
 
 ## 핵심 파일
-- src/router.js (2,819줄) — 메시지 라우팅 + 의도 분류 + OpenClaw 위임
+- src/router.js (2,819줄) — 메시지 라우팅 + 의도 분류 + Hub 제어면 위임
 - src/orchestrator.ts — 현재 source of truth 엔트리
 - src/jay-runtime.ts — Jay runtime housekeeping loop
 - dist/ts-runtime/bots/orchestrator/src/orchestrator.js — 실제 운영 런타임 엔트리
 - src/mainbot.js — retired compatibility alias only
 - src/filter.js (107줄) — 알람 필터 규칙 (Standing Orders로 이전 예정)
-- scripts/experience-store-cli.js — RAG 경험 저장 CLI (OpenClaw exec 연동)
+- scripts/experience-store-cli.js — RAG 경험 저장 CLI (Hub runtime 연동)
 - scripts/enqueue-ska-reservation.js — 스카팀 예약 등록 exec
 
 ## 현재 상태
-- Phase 4 진행 중: legacy mainbot alias 축소 + alert resolve OpenClaw 통합
+- Phase 4 진행 중: legacy mainbot alias 축소 + alert resolve Hub 통합
 - experience-store-cli.js 신규 추가 (RAG 자기학습, 04-02)
 - router.js 소스코드 딥 분석 미완료 (잔여 영역)

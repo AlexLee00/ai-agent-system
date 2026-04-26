@@ -1,9 +1,9 @@
 // @ts-nocheck
 /**
- * scripts/api-usage-report.js — 레거시 OpenClaw API 로그 리포트
+ * scripts/api-usage-report.js — Hub-native API 로그 리포트
  *
  * 범위:
- *   - ~/.openclaw/api-usage.jsonl 기반
+ *   - ~/.ai-agent-system/api-usage.jsonl 기반
  *   - provider/model 단위 일일 사용량
  *   - Jay 전체 세션 사용량이나 DB 통합 로그는 포함하지 않음
  *
@@ -27,10 +27,11 @@
 const fs     = require('fs');
 const path   = require('path');
 const os     = require('os');
-const openclawClient = require('../packages/core/lib/openclaw-client');
+const hubAlarmClient = require('../packages/core/lib/hub-alarm-client');
 
-const LOG_FILE         = path.join(os.homedir(), '.openclaw', 'api-usage.jsonl');
-const SPEED_TEST_KEYS  = path.join(os.homedir(), '.openclaw', 'speed-test-keys.json');
+const AI_AGENT_HOME    = process.env.AI_AGENT_HOME || process.env.JAY_HOME || path.join(os.homedir(), '.ai-agent-system');
+const LOG_FILE         = path.join(AI_AGENT_HOME, 'api-usage.jsonl');
+const SPEED_TEST_KEYS  = path.join(AI_AGENT_HOME, 'llm-control', 'speed-test-keys.json');
 
 // 무료 API 일일 토큰 한도 (TPD = Tokens Per Day)
 const DAILY_LIMITS = {
@@ -119,7 +120,7 @@ function usageBar(used, limit, width = 20) {
 
 // ─── Telegram 전송 ─────────────────────────────────────────────────
 function sendTelegram(text) {
-  return openclawClient.postAlarm({
+  return hubAlarmClient.postAlarm({
     team: 'claude-lead',
     message: text,
     alertLevel: 1,
@@ -135,7 +136,7 @@ async function main() {
   const totalCalls  = entries.reduce((s, e) => s + e.calls, 0);
   const totalTokens = entries.reduce((s, e) => s + e.totalTokens, 0);
 
-  log(bold(`\n📊 OpenClaw API 로그 리포트 — ${todayKST} (KST)`));
+  log(bold(`\n📊 Hub API 로그 리포트 — ${todayKST} (KST)`));
   log(dim('─'.repeat(70)));
 
   if (entries.length === 0) {

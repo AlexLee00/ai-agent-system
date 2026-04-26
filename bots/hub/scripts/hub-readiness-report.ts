@@ -159,7 +159,7 @@ function aggregate(checks: Check[]) {
 async function main() {
   const checks: Check[] = [
     runSmoke('secret-leak-smoke.ts', true),
-    runSmoke('openclaw-independence-smoke.ts', true),
+    runSmoke('legacy-gateway-independence-smoke.ts', true),
     runSmoke('runtime-workspace-independence-smoke.ts', true),
     runSmoke('llm-control-independence-smoke.ts', true),
     runSmoke('openai-oauth-direct-smoke.ts', true),

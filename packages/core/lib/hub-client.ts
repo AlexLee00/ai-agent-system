@@ -80,7 +80,6 @@ function getSecretsSuccessTtl(category: string): number {
     case 'openai_oauth':
       return 60000;
     case 'telegram':
-    case 'openclaw':
     case 'reservation':
     case 'reservation-shared':
       return 30000;
@@ -95,7 +94,6 @@ function getSecretsRateLimitTtl(category: string): number {
     case 'openai_oauth':
       return 15000;
     case 'telegram':
-    case 'openclaw':
     case 'reservation':
     case 'reservation-shared':
       return 10000;

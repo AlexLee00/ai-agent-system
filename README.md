@@ -46,11 +46,11 @@ Node.js Monorepo • PostgreSQL + pgvector • MLX Local LLMs • $0 Cost
                                    │
               ┌────────────────────┼────────────────────┐
               │                    │                     │
-     ┌────────┴────────┐  ┌───────┴───────┐  ┌─────────┴────────┐
-     │   Hub (:7788)   │  │  OpenClaw CLI │  │  Telegram (12ch) │
-     │  Secrets/PG/API │  │  Webhooks/SO  │  │  Alerts/Reports  │
-     └────────┬────────┘  └───────┬───────┘  └─────────┬────────┘
-              │                   │                     │
+     ┌────────┴────────┐  ┌─────────┴────────┐
+     │   Hub (:7788)   │  │  Telegram (12ch) │
+     │ Secrets/PG/API  │  │  Alerts/Reports  │
+     └────────┬────────┘  └─────────┬────────┘
+              │                     │
   ┌───────────┼───────────────────┼─────────────────────┼──────────┐
   │           │                   │                     │          │
   ▼           ▼                   ▼                     ▼          ▼
@@ -104,7 +104,7 @@ The system continuously improves through three layers of feedback:
 | **Embeddings** | MLX Qwen3-Embedding-0.6B (1024-dim, fully local) |
 | **Cloud LLMs** | Groq (free, fallback), OpenAI/Anthropic (selective) |
 | **Hardware** | Mac Studio M4 Max 36GB (OPS) + MacBook Air M3 (DEV) |
-| **Orchestration** | launchd (76 services), OpenClaw CLI, Hub API (:7788) |
+| **Orchestration** | launchd (76 services), Hub API (:7788) |
 | **Communication** | Telegram Bot API (12 topic channels) |
 | **CI/CD** | GitHub Actions + deploy.sh (5-min cron) |
 | **VPN** | Tailscale (DEV ↔ OPS secure tunnel) |
@@ -118,7 +118,7 @@ ai-agent-system/
 │   └── lib/
 │       ├── hiring-contract.js    # Dynamic agent selection (ε-greedy)
 │       ├── llm-fallback.js       # Multi-provider LLM with chain fallback
-│       ├── openclaw-client.js    # Telegram alerts & Standing Orders
+│       ├── hub-alarm-client.js   # Hub-routed Telegram alerts & Standing Orders
 │       ├── pg-pool.js            # PostgreSQL connection pool
 │       ├── agent-registry.js     # Agent CRUD & scoring
 │       └── skills/               # Team-specific skill modules

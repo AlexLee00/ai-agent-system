@@ -4,7 +4,7 @@
 
 ## 목표
 
-- 스카 예약 알림을 `OpenClaw hook -> Telegram topic` 단일 경로로 통일한다.
+- 스카 예약 알림을 `Hub alarm -> Telegram topic` 단일 경로로 통일한다.
 - 개인 채팅으로 새는 직접 Telegram 발송 경로를 제거한다.
 - 비슷한 내용을 다른 배치가 반복 발행하는 리포트를 줄여 운영 피로를 낮춘다.
 - "즉시 조치 필요"와 "참고용 리포트"를 더 분명하게 구분한다.
@@ -27,7 +27,7 @@
 
 남은 주의점:
 
-- `packages/core/lib/openclaw-client*`
+- legacy alarm shim
   - hook 실패 시 `curl` 폴백은 유지
   - 다만 이 폴백도 여전히 `to=group:topic` 대상이라 개인 DM은 아님
 - `packages/core/lib/telegram-sender*`, `reporting-hub*`
@@ -132,12 +132,12 @@
 ### 이미 안전한 경로
 
 - `packages/core/lib/telegram-sender*`
-  - `OPS`에서는 이미 `openclawClient.postAlarm()`을 우선 사용한다.
+  - `OPS`에서는 이미 `hubAlarmClient.postAlarm()`을 우선 사용한다.
   - `sendDirect()`도 `OPS`에서는 비활성화되어 있다.
   - 즉 현재 운영 서버에서 이 모듈은 기본적으로 topic 라우팅 쪽으로 간다.
 
 - `scripts/api-usage-report.legacy.js`
-  - 텔레그램 전송 플래그가 있어도 실제 발송은 `openclawClient.postAlarm()` 사용
+  - 텔레그램 전송 플래그가 있어도 실제 발송은 `hubAlarmClient.postAlarm()` 사용
   - direct Telegram API 경로가 아님
 
 ### 남겨야 하는 direct API
@@ -160,7 +160,7 @@
   - `reporting-hub telegram_api target` 유지
 
 - `직접 Bot API 호출`이 남아 있어도 아래 조건이면 유지:
-  - OpenClaw topic broadcast로 대체 불가
+  - Hub topic broadcast로 대체 불가
   - callback/approval/특정 대상 direct delivery가 목적
 
 - 반대로 아래는 제거 대상:

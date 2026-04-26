@@ -5,14 +5,14 @@
 ## 현재 상태
 
 - **orchestrator runtime** ✅ 실행 중 (ai.orchestrator, 알람 큐 처리 전용)
-- **OpenClaw** ✅ 실행 중 (ai.openclaw.gateway, Jay 페르소나 로드됨)
+- **Hub control plane** ✅ 실행 중 (ai.hub.resource-api, Jay 페르소나/승인 흐름)
 - **스카 커맨더** ✅ 실행 중 (ai.ska.commander)
 - **루나 커맨더** ✅ 실행 중 (ai.investment.commander)
 - **클로드 커맨더** ✅ 실행 중 (ai.claude.commander)
 
 ## 최근 주요 변경 (2026-03-04)
 
-1. **제이 OpenClaw 전환**: IDENTITY.md/MEMORY.md/TOOLS.md/HEARTBEAT.md 교체
+1. **제이 Hub 전환**: IDENTITY.md/MEMORY.md/TOOLS.md/HEARTBEAT.md 교체
 2. **알람 큐 runtime 슬림화**: Telegram 폴링 제거, 알람 큐 처리만 담당
 3. **bot_commands 테이블**: DB 마이그레이션 v4, 팀장 지휘 채널
 4. **팀장 커맨더 3종**: ska.js, luna-commander.cjs, claude-commander.js
@@ -23,12 +23,12 @@
 9. **팀장·팀원 정체성 유지**: identity-checker.js + 각 팀장 checkXxxTeamIdentity() + loadBotIdentity()
 10. **/dexter·/archer**: 정적 응답 → bot_commands 실제 실행 전환
 
-<!-- session-close:2026-03-05:openclaw-업데이트-제이-rag-연동-e2e-데이 -->
-#### 2026-03-05 ✨ OpenClaw 업데이트 + 제이 RAG 연동 + e2e 데이터 정리
-- OpenClaw 2026.2.26→2026.3.2 업데이트
+<!-- session-close:2026-03-05:legacy-gateway-업데이트-제이-rag-연동-e2e-데이 -->
+#### 2026-03-05 ✨ legacy gateway 업데이트 + 제이 RAG 연동 + e2e 데이터 정리
+- legacy gateway 2026.2.26→2026.3.2 업데이트
 - 제이 TOOLS.md RAG 검색 섹션 추가 (system_docs 12건 임베딩)
 - state.db e2e 테스트 데이터 4건 삭제 (2099-01-01)
-<!-- session-close:2026-03-05:openclaw-업데이트-제이-rag-연동-e2e-데이:end -->
+<!-- session-close:2026-03-05:legacy-gateway-업데이트-제이-rag-연동-e2e-데이:end -->
 
 <!-- session-close:2026-03-08:phase-1-루나팀-전환판단-llm졸업실전-덱스터팀장 -->
 #### 2026-03-08 ✨ Phase 1 — 루나팀 전환판단 + LLM졸업실전 + 덱스터팀장봇연동
@@ -76,16 +76,16 @@
 launchctl kickstart -k gui/$(id -u)/ai.orchestrator
 ```
 
-### OpenClaw 재시작 (Jay 페르소나 리로드)
+### Hub 재시작 (Jay 제어면 리로드)
 ```bash
-launchctl kickstart -k gui/$(id -u)/ai.openclaw.gateway
+launchctl kickstart -k gui/$(id -u)/ai.hub.resource-api
 ```
 
 ### bot_commands 수동 테스트
 ```bash
-sqlite3 ~/.openclaw/workspace/claude-team.db \
+sqlite3 "$AI_AGENT_RUNTIME_DB" \
   "INSERT INTO bot_commands (to_bot, command, args) VALUES ('ska', 'query_today_stats', '{}')"
 # 30초 후 결과 확인:
-sqlite3 ~/.openclaw/workspace/claude-team.db \
+sqlite3 "$AI_AGENT_RUNTIME_DB" \
   "SELECT status, result FROM bot_commands ORDER BY created_at DESC LIMIT 1"
 ```

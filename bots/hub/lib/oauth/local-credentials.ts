@@ -131,7 +131,7 @@ function parseClaudeOauth(rawOauth) {
 function codexSourceMetadata(source, codexHome, authPath, account) {
   return {
     source,
-    imported_from: 'openclaw_compatible_local_credentials',
+    imported_from: 'hub_local_cli_credentials',
     codex_home: codexHome,
     auth_path: authPath,
     keychain_service: CODEX_KEYCHAIN_SERVICE,
@@ -142,7 +142,7 @@ function codexSourceMetadata(source, codexHome, authPath, account) {
 function claudeSourceMetadata(source, credentialPath) {
   return {
     source,
-    imported_from: 'openclaw_compatible_local_credentials',
+    imported_from: 'hub_local_cli_credentials',
     credential_path: credentialPath,
     keychain_service: CLAUDE_CLI_KEYCHAIN_SERVICE,
     runtime_contract: 'hub_uses_claude_code_cli_adapter_for_calls',
@@ -192,7 +192,7 @@ function readOpenAiCodexLocalCredentials(options = {}) {
   try {
     fileFallbackExpiry = fs.statSync(sources.auth_path).mtimeMs + 3600 * 1000;
   } catch {
-    // Keep the conservative one-hour fallback used by OpenClaw.
+    // Keep a conservative one-hour fallback when the token payload lacks exp.
   }
   const fileToken = parseCodexAuthRecord(fileRaw, fileFallbackExpiry);
   if (fileToken) {

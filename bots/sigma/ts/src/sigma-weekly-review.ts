@@ -19,7 +19,7 @@ const PROJECT_ROOT = path.resolve(
 );
 
 const { query } = require(path.join(PROJECT_ROOT, 'packages/core/lib/pg-pool'));
-const openclaw = require(path.join(PROJECT_ROOT, 'packages/core/lib/hub-alarm-client.js'));
+const hubAlarm = require(path.join(PROJECT_ROOT, 'packages/core/lib/hub-alarm-client.js'));
 
 const SIGMA_HTTP_PORT = process.env.SIGMA_HTTP_PORT || '4010';
 const SIGMA_V2_ENDPOINT =
@@ -145,7 +145,7 @@ async function sendViaTelegramElixir(msg: string): Promise<void> {
     // fallback
   }
 
-  await openclaw.postAlarm({
+  await hubAlarm.postAlarm({
     message: msg,
     team: 'sigma',
     fromBot: 'sigma-weekly-review',

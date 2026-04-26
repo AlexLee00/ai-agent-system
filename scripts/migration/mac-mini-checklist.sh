@@ -26,7 +26,7 @@ echo "  □ Tailscale 설치 + 맥북과 동일 계정 로그인"
 echo "  □ PostgreSQL 17: brew install postgresql@17 && brew services start postgresql@17"
 echo "  □ createdb jay && psql jay -c 'CREATE SCHEMA claude; CREATE SCHEMA reservation; CREATE SCHEMA investment; CREATE SCHEMA ska; CREATE EXTENSION IF NOT EXISTS pgcrypto;'"
 echo "  □ Claude Code CLI 설치 + Anthropic 인증"
-echo "  □ OpenClaw 설치: npm install -g @openclaw/gateway"
+echo "  □ Hub runtime secret/launchd 설정"
 echo ""
 
 # ── Phase B: 시스템 복제 ──────────────────────────────────────────
@@ -41,9 +41,9 @@ echo "  □ PostgreSQL 데이터 이관:"
 echo "      맥북: pg_dump jay > /tmp/jay_\$(date +%Y%m%d).sql"
 echo "      전송: scp /tmp/jay_*.sql mac-mini:/tmp/"
 echo "      복원: psql jay < /tmp/jay_*.sql"
-echo "  □ OpenClaw 워크스페이스 복사:"
-echo "      scp -r ~/.openclaw mac-mini:~/"
-echo "  □ ~/.openclaw/ 하위 설정 확인 (SOUL.md, config, models)"
+echo "  □ AI Agent 워크스페이스 복사:"
+echo "      scp -r ~/.ai-agent-system mac-mini:~/"
+echo "  □ ~/.ai-agent-system/ 하위 runtime/logs/backups 확인"
 echo ""
 
 # ── Phase C: 병렬 운영 검증 ───────────────────────────────────────
@@ -97,7 +97,7 @@ if [ "$VERIFY" = "--verify" ]; then
   check "investment 스키마"   "psql jay -c 'SELECT 1 FROM investment.trades LIMIT 1' -q"
   check "secrets.json 존재"   "[ -f bots/reservation/secrets.json ]"
   check "secrets.json 권한"   "[ \"\$(stat -f '%A' bots/reservation/secrets.json 2>/dev/null || stat -c '%a' bots/reservation/secrets.json)\" = '600' ]"
-  check "OpenClaw 포트"       "curl -s http://127.0.0.1:18789 &>/dev/null || nc -z 127.0.0.1 18789"
+  check "Hub health"          "curl -s http://127.0.0.1:18789/hub/health &>/dev/null || nc -z 127.0.0.1 18789"
   check "npm install 완료"    "[ -d node_modules ]"
   check "ska venv 존재"       "[ -d bots/ska/venv ]"
 

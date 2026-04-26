@@ -98,7 +98,7 @@ async function main() {
       ok: true,
       provider: result.provider,
       endpoint: calls[0].url,
-      openclaw_used: false,
+      legacy_gateway_used: false,
     }));
   } finally {
     fs.rmSync(tempRoot, { recursive: true, force: true });

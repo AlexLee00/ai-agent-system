@@ -8,6 +8,14 @@ const { safeReadSnapshots } = require('./jay-gateway-experiment-review.js');
 
 const DEFAULT_WINDOW_HOURS = 24;
 
+function getAiAgentHome() {
+  return process.env.AI_AGENT_HOME || process.env.JAY_HOME || path.join(os.homedir(), '.ai-agent-system');
+}
+
+function getAiAgentWorkspace() {
+  return process.env.AI_AGENT_WORKSPACE || process.env.JAY_WORKSPACE || path.join(getAiAgentHome(), 'workspace');
+}
+
 function parseArgs(argv = process.argv.slice(2)) {
   const pivotArg = argv.find((arg) => arg.startsWith('--pivot='));
   const beforeArg = argv.find((arg) => arg.startsWith('--before-hours='));
@@ -25,7 +33,7 @@ function parseArgs(argv = process.argv.slice(2)) {
     pivotTs,
     beforeHours: Math.max(1, Number(beforeArg?.split('=')[1] || DEFAULT_WINDOW_HOURS)),
     afterHours: Math.max(1, Number(afterArg?.split('=')[1] || DEFAULT_WINDOW_HOURS)),
-    inputPath: inputArg?.split('=').slice(1).join('=') || path.join(os.homedir(), '.openclaw', 'workspace', 'jay-gateway-experiments.jsonl'),
+    inputPath: inputArg?.split('=').slice(1).join('=') || path.join(getAiAgentWorkspace(), 'jay-gateway-experiments.jsonl'),
     json: argv.includes('--json'),
   };
 }
@@ -62,7 +70,7 @@ function summarizeWindow(rows) {
           capturedAt: latest.capturedAt,
           experimentStage: latest.experimentStage,
           runtimePrimary: latest.primaryCheck?.runtimePrimary || null,
-          openclawPrimary: latest.primaryCheck?.openclawPrimary || null,
+          selectorPrimary: latest.primaryCheck?.selectorPrimary || null,
           aligned: latest.primaryCheck?.aligned ?? null,
           rateLimitCount: Number(latest.gatewayMetrics?.rateLimitCount || 0),
           activeRateLimitCount: Number(latest.gatewayMetrics?.activeRateLimitCount || 0),

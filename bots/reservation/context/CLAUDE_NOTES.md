@@ -9,7 +9,7 @@
 
 ## ⛔ 전 팀 공통 — 소스코드 수정 절대 금지 (2026-03-11)
 
-> **OpenClaw 에이전트(스카)를 포함한 모든 자동화 봇에 적용. 예외 없음.**
+> **Hub/스카 자동화 봇을 포함한 모든 자동화 봇에 적용. 예외 없음.**
 
 ### 금지 행동 목록
 
@@ -51,7 +51,7 @@
 
 | 봇 이름 | 파일 | 역할 |
 |---------|------|------|
-| **스카** | `bots/reservation/` | 메인봇 (스카, 자연어 처리·OpenClaw) |
+| **스카** | `bots/reservation/` | 메인봇 (스카, 자연어 처리·Hub 연동) |
 | **앤디** | `auto/monitors/naver-monitor.ts` | 네이버 스마트플레이스 모니터링 |
 | **지미** | `auto/monitors/pickko-kiosk-monitor.ts` | 키오스크 예약 감지 |
 | **레베카** | `bots/ska/` (Python) | 매출·예측 분석봇 |
@@ -159,9 +159,9 @@ function log(msg) {
 |------|------|
 | 현재 모델 | `google-gemini-cli/gemini-2.5-flash` (2026-03-03 교체 완료) |
 | 모델 자기 인식 | 모델이 뭔지 물어보면 반드시 "gemini-2.5-flash"라고 답할 것 |
-| 알림 발송 방식 | Telegram Bot API 직접 발송 (24시간 즉시 전송 — openclaw 경유 안 함) |
+| 알림 발송 방식 | Telegram Bot API/Hub alarm 경로 직접 발송 (24시간 즉시 전송) |
 | 야간 알림 | 즉시 발송 — 야간 보류 로직 제거됨 (2026-02-26) |
-| 알람 저장소 | `~/.openclaw/workspace/state.db` alerts 테이블 (2026-02-26 마이그레이션, `.pickko-alerts.jsonl` 폐기) |
+| 알람 저장소 | reservation/Hub 런타임 alerts 테이블 (2026-02-26 마이그레이션, `.pickko-alerts.jsonl` 폐기) |
 | `sent: false` 항목 | 발송 실패 건 — 재시도됨 |
 | alerts `resolved` | error 타입만 `false`, 나머지 `true` (자동 관리) |
 | 버그 발견 시 | `node dist/ts-runtime/bots/reservation/src/bug-report.js --new` 로 등록 후 클로드에게 보고 |
@@ -570,7 +570,7 @@ node ~/projects/ai-agent-system/dist/ts-runtime/bots/reservation/manual/reports/
 ```
 
 ### 저장 위치
-- 버그 데이터: `~/.openclaw/workspace/bug-tracker.json`
+- 버그 데이터: reservation/Hub runtime bug tracker
 - HANDOFF.md 갱신: `context/HANDOFF.md` 직접 수정 (deploy 없이 자동 반영)
 
 ### 스카가 버그를 발견했을 때 (즉시 실행)
@@ -673,7 +673,7 @@ open (스카 등록) → in_progress (클로드 조치 중) → resolved (수정
 **스카 행동 변경:**
 - 없음 — 내부 저장소 변경, 외부 인터페이스 동일
 - `.pickko-alerts.jsonl` 파일은 더 이상 사용하지 않음 (state.db alerts 테이블 사용)
-- 상태 파일 참조 시 `~/.openclaw/workspace/state.db` 사용 (JSON 파일 참조 금지)
+- 상태 파일 참조 시 reservation/Hub runtime DB 사용 (JSON 파일 참조 금지)
 
 ---
 
@@ -783,7 +783,7 @@ open (스카 등록) → in_progress (클로드 조치 중) → resolved (수정
 **변경 이유:** 스카가 발견한 버그를 구조화·추적하고, 유지보수 이력을 HANDOFF.md에 자동 반영
 
 **변경 내용:**
-- `bug-tracker.json` 신규 생성 (`~/.openclaw/workspace/`) — 버그+유지보수 통합 저장
+- `bug-tracker.json` 신규 생성 (reservation runtime store) — 버그+유지보수 통합 저장
 - `bug-report.js` 신규 생성 (`src/`) — 스카·클로드 공용 CLI
 - `HANDOFF.md` — 🐛 이슈 / 🔧 유지보수 마커 섹션 추가 (자동 갱신)
 - 오늘 처리한 BUG-001(불안정성), BUG-002(재감지 루프), BUG-003(알림 관리) + MAINT-001~004 초기 등록
@@ -824,7 +824,7 @@ open (스카 등록) → in_progress (클로드 조치 중) → resolved (수정
 
 **변경 내용:**
 - `CLAUDE_NOTES.md` 신규 생성 — 클로드가 스카에게 전달하는 전용 파일
-- `registry.json` openclaw 파일 목록에 추가 → 배포 시 자동 포함
+- `registry.json` 배포 파일 목록에 추가 → 배포 시 자동 포함
 - BOOT.md 읽기 순서 5번에 `CLAUDE_NOTES.md` 추가
 - `deploy-context.js` — `updateSystemStatus()` 추가 (배포 시 클로드 메모리에 시스템 현황 자동 갱신)
 

@@ -2,9 +2,18 @@
 'use strict';
 
 const fs = require('fs');
+const os = require('os');
 const path = require('path');
 
-const HISTORY_FILE = path.join(process.env.HOME || '', '.openclaw/workspace/llm-speed-test-history.jsonl');
+function getAiAgentHome() {
+  return process.env.AI_AGENT_HOME || process.env.JAY_HOME || path.join(os.homedir(), '.ai-agent-system');
+}
+
+function getAiAgentWorkspace() {
+  return process.env.AI_AGENT_WORKSPACE || process.env.JAY_WORKSPACE || path.join(getAiAgentHome(), 'workspace');
+}
+
+const HISTORY_FILE = path.join(getAiAgentWorkspace(), 'llm-speed-test-history.jsonl');
 
 function parseArgs(argv = process.argv.slice(2)) {
   const days = Math.max(1, Number(argv.find((arg) => arg.startsWith('--days='))?.split('=')[1] || 7));

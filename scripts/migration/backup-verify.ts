@@ -8,7 +8,7 @@
  *   1. pg_dump 실행 가능 여부
  *   2. 백업 파일 생성 + 크기 확인
  *   3. secrets.json 존재 + 권한 600 확인
- *   4. OpenClaw 워크스페이스 존재 확인
+ *   4. AI Agent 워크스페이스 존재 확인
  *   5. 복구 테스트 (DEV 임시 DB에 pg_restore)
  *
  * 사용법:
@@ -23,9 +23,9 @@ const path = require('path');
 const os   = require('os');
 
 const ROOT         = path.join(__dirname, '../..');
-const BACKUP_DIR   = path.join(os.homedir(), '.openclaw', 'workspace', 'backups');
+const WORKSPACE_DIR = process.env.AI_AGENT_WORKSPACE || path.join(os.homedir(), '.ai-agent-system', 'workspace');
+const BACKUP_DIR   = process.env.AI_AGENT_BACKUP_DIR || path.join(WORKSPACE_DIR, 'backups');
 const SECRETS_PATH = path.join(ROOT, 'bots', 'reservation', 'secrets.json');
-const OPENCLAW_DIR = path.join(os.homedir(), '.openclaw');
 
 const DO_BACKUP       = process.argv.includes('--backup');
 const DO_RESTORE_TEST = process.argv.includes('--restore-test');
@@ -104,13 +104,9 @@ async function main() {
     record('secrets.json 존재', 'fail', `없음: ${SECRETS_PATH}`);
   }
 
-  // ── 6. OpenClaw 워크스페이스 확인 ────────────────────────────────
-  const ocCheck = fs.existsSync(OPENCLAW_DIR);
-  record('~/.openclaw 존재', ocCheck ? 'pass' : 'fail', OPENCLAW_DIR);
-
-  const soulPath = path.join(OPENCLAW_DIR, 'agents', 'main', 'agent', 'SOUL.md');
-  record('SOUL.md 존재', fs.existsSync(soulPath) ? 'pass' : 'warn',
-    fs.existsSync(soulPath) ? soulPath : '없음 (OpenClaw 미구성 가능성)');
+  // ── 6. AI Agent 워크스페이스 확인 ────────────────────────────────
+  const workspaceCheck = fs.existsSync(WORKSPACE_DIR);
+  record('AI Agent 워크스페이스 존재', workspaceCheck ? 'pass' : 'warn', WORKSPACE_DIR);
 
   // ── 7. 복구 테스트 ────────────────────────────────────────────────
   if (DO_RESTORE_TEST) {

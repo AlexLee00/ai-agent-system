@@ -135,10 +135,6 @@ export const LAUNCHD_AVAILABLE = IS_OPS
   ? (process.env.LAUNCHD_AVAILABLE !== 'false')
   : (process.env.LAUNCHD_AVAILABLE === 'true');
 
-export const OPENCLAW_PORT = IS_OPS
-  ? parseInt(process.env.OPENCLAW_PORT || '18789', 10)
-  : -1;
-
 export const AI_AGENT_HOME = process.env.AI_AGENT_HOME
   || process.env.JAY_HOME
   || path.join(os.homedir(), '.ai-agent-system');
@@ -151,10 +147,9 @@ export const AI_AGENT_LOGS = process.env.AI_AGENT_LOGS
   || process.env.JAY_LOGS
   || path.join(AI_AGENT_HOME, 'logs');
 
-// Backward-compatible aliases only. They intentionally resolve to Hub-native
-// paths so legacy imports cannot silently steer runtime state back to OpenClaw.
-export const OPENCLAW_WORKSPACE = AI_AGENT_WORKSPACE;
-export const OPENCLAW_LOGS = AI_AGENT_LOGS;
+// Retired runtime aliases are intentionally not exported. Runtime state must
+// flow through Hub-native AI_AGENT_* / JAY_* names so legacy gateway settings
+// cannot steer active services back to retired paths.
 
 export const LOCAL_LLM_BASE_URL = process.env.LOCAL_LLM_BASE_URL || (
   IS_OPS

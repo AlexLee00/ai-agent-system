@@ -354,7 +354,7 @@ async function storeExperience({
   why = '',
   details = {},
   team = 'general',
-  sourceBot = 'openclaw',
+  sourceBot = 'hub',
   successOnly = true,
 }: ExperienceInput): Promise<number | null> {
   const content = String(userInput || '').trim();

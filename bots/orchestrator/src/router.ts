@@ -1949,7 +1949,7 @@ function getSkaStatus() {
 
 function isPickkoAlertResolveCommand(text = '') {
   // DEPRECATED:
-  // OpenClaw 자연어 답장 해제가 주 경로가 되면 제거 대상이다.
+  // Hub topic 자연어 답장 해제가 주 경로가 되면 제거 대상이다.
   // 현재 orchestrator 직접 수신 경로가 아직 살아 있어 하위 호환으로 유지한다.
   const normalized = String(text || '').replace(/\s+/g, '').toLowerCase();
   if (!normalized) return false;
@@ -1971,7 +1971,7 @@ function isPickkoAlertResolveCommand(text = '') {
 
 async function runPickkoAlertsResolveDirect() {
   // DEPRECATED:
-  // OpenClaw thread context 기반 자연어 해제가 주 경로가 되면 제거 대상이다.
+  // Hub thread context 기반 자연어 해제가 주 경로가 되면 제거 대상이다.
   const root = path.join(__dirname, '..', '..', '..');
   const script = path.join(root, 'dist', 'ts-runtime', 'bots', 'reservation', 'manual', 'reports', 'pickko-alerts-resolve.js');
   const result = await runNodeScriptJson(script, [], 60_000);
@@ -2823,7 +2823,7 @@ async function route(msg, sendReply) {
   const start = Date.now();
   try {
     // DEPRECATED:
-    // OpenClaw topic 답장 해제가 기본 경로지만, orchestrator 직접 수신 하위 호환을 남긴다.
+    // Hub topic 답장 해제가 기본 경로지만, orchestrator 직접 수신 하위 호환을 남긴다.
     if (isPickkoAlertResolveCommand(msg.text || '')) {
       const response = await runPickkoAlertsResolveDirect();
       await sendReply(response);

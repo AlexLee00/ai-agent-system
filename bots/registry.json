@@ -82,7 +82,7 @@
             "patchRequestFile": "docs/auto_dev/PATCH_REQUEST.md (자동 구현 인박스)"
           },
           "teamBus": {
-            "db": "~/.openclaw/workspace/claude-team.db",
+            "db": "~/.ai-agent-system/workspace/claude-team.db",
             "tables": [
               "agent_state",
               "messages",
@@ -104,7 +104,7 @@
           },
           "outputs": {
             "inbox": "docs/auto_dev/*.md",
-            "stateFile": "~/.openclaw/workspace/claude-auto-dev-state.json",
+            "stateFile": "~/.ai-agent-system/workspace/claude-auto-dev-state.json",
             "startAlarm": "구현계획 수립 완료",
             "finishAlarm": "리뷰/테스트 통과 후 구현 완료"
           }
@@ -139,19 +139,6 @@
         ]
       },
       "deployTargets": [
-        {
-          "type": "openclaw",
-          "loginType": "api",
-          "workspace": "~/.openclaw/workspace",
-          "bootFile": "BOOT.md",
-          "files": [
-            "IDENTITY.md",
-            "MEMORY.md",
-            "DEV_SUMMARY.md",
-            "HANDOFF.md",
-            "CLAUDE_NOTES.md"
-          ]
-        },
         {
           "type": "claude-code",
           "loginType": "account",
@@ -371,9 +358,9 @@
           "overseas": "/tmp/investment-overseas.log"
         },
         "stateFiles": {
-          "crypto": "~/.openclaw/investment-state.json",
-          "domestic": "~/.openclaw/investment-domestic-state.json",
-          "overseas": "~/.openclaw/investment-overseas-state.json"
+          "crypto": "~/.ai-agent-system/investment/investment-state.json",
+          "domestic": "~/.ai-agent-system/investment/investment-domestic-state.json",
+          "overseas": "~/.ai-agent-system/investment/investment-overseas-state.json"
         },
         "opsRequirements": [
           "PAPER_MODE=false 환경변수 설정 (현재 paper 단계)",
@@ -560,10 +547,10 @@
     }
   },
   "loaderTypes": {
-    "openclaw": {
-      "description": "OpenClaw 게이트웨이 - API 로그인 모델",
-      "bootMechanism": "boot-md hook (gateway:startup 이벤트)",
-      "contextFormat": "markdown files in workspace"
+    "hub-control": {
+      "description": "Hub control plane - 팀별 selector/agent orchestration",
+      "bootMechanism": "Hub request context + Telegram approval callback",
+      "contextFormat": "Hub-native request/trace payload"
     },
     "claude-code": {
       "description": "Claude Code - 계정 로그인",

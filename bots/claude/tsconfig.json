@@ -32,7 +32,7 @@
     "__tests__/codex-plan-notifier.test.ts",
     "../../packages/core/lib/env.ts",
     "../../packages/core/lib/env.js",
-    "../../packages/core/lib/openclaw-client.js",
+    "../../packages/core/lib/hub-alarm-client.js",
     "../../packages/core/lib/skills.js",
     "../../packages/core/lib/skills/index.ts",
     "../../packages/core/lib/skills/code-review.ts",

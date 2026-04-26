@@ -20,7 +20,7 @@ async function main() {
       response: args.response,
       result: args.result,
       team: args.team || 'general',
-      sourceBot: args.sourceBot || args['source-bot'] || 'openclaw',
+      sourceBot: args.sourceBot || args['source-bot'] || 'hub',
       details: {},
     };
 

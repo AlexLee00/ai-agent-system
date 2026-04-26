@@ -1,4 +1,4 @@
-# 팀 런타임 셀렉터 설계 — Hub가 팀별 OpenClaw/Claude 런타임을 중앙 선택
+# 팀 런타임 셀렉터 설계 — Hub가 팀별 레거시/Claude 런타임을 중앙 선택
 
 > 작성: Codex
 > 작성일: 2026-04-03
@@ -17,7 +17,7 @@
 ```
 현재:
   각 봇 launchd/plist/env가 직접
-    OPENCLAW_AGENT
+    retired gateway agent env alias
     CLAUDE_CODE_NAME
     CLAUDE_CODE_SETTINGS
   를 알고 있어야 함
@@ -30,7 +30,7 @@
 
 목표:
   Hub → selectRuntime(team, purpose)
-      → openclaw_agent
+      → runtime_agent
       → claude_code_name
       → claude_code_settings
       → llm route chain
@@ -64,9 +64,9 @@
 {
   "team": "blog",
   "purpose": "writer",
-  "openclaw_agent": "blog-writer",
+  "runtime_agent": "blog-writer",
   "claude_code_name": "blog-writer",
-  "claude_code_settings": "/Users/alexlee/.openclaw/.claude/blog-writer.settings.json",
+  "claude_code_settings": "/Users/alexlee/projects/ai-agent-system/bots/hub/config/claude-code/blog-writer.settings.json",
   "local_llm_base_url": "http://127.0.0.1:11434",
   "primary_routes": [
     "claude-code/sonnet",
@@ -110,7 +110,7 @@ CREATE TABLE IF NOT EXISTS agent.runtime_profiles (
   id SERIAL PRIMARY KEY,
   team VARCHAR(50) NOT NULL,
   purpose VARCHAR(50) NOT NULL DEFAULT 'default',
-  openclaw_agent VARCHAR(100),
+  runtime_agent VARCHAR(100),
   claude_code_name VARCHAR(100),
   claude_code_settings VARCHAR(255),
   local_llm_base_url VARCHAR(255),
@@ -169,9 +169,9 @@ GET /hub/runtime/select?team=blog&purpose=writer
   "profile": {
     "team": "blog",
     "purpose": "writer",
-    "openclaw_agent": "blog-writer",
+    "runtime_agent": "blog-writer",
     "claude_code_name": "blog-writer",
-    "claude_code_settings": "/Users/alexlee/.openclaw/.claude/blog-writer.settings.json",
+    "claude_code_settings": "/Users/alexlee/projects/ai-agent-system/bots/hub/config/claude-code/blog-writer.settings.json",
     "local_llm_base_url": "http://127.0.0.1:11434",
     "primary_routes": ["claude-code/sonnet", "openai-oauth/gpt-5.4"],
     "fallback_routes": ["local/qwen2.5-7b", "google-gemini-cli/gemini-2.5-flash"],
@@ -213,7 +213,7 @@ orchestrator:
 
 ```
 현재:
-  process.env.OPENCLAW_AGENT
+  retired gateway agent env alias
   process.env.CLAUDE_CODE_NAME
   process.env.CLAUDE_CODE_SETTINGS
   를 직접 읽음
@@ -257,7 +257,7 @@ selector는 이미 공용화 시작
   "team": "blog",
   "purpose": "writer",
   "selected_runtime": {
-    "openclaw_agent": "blog-writer",
+    "runtime_agent": "blog-writer",
     "claude_code_name": "blog-writer"
   },
   "selected_routes": [

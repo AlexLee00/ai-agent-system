@@ -13,7 +13,7 @@ const coreRuntimeFiles = [
   'packages/core/lib/env.js',
   'packages/core/lib/hub-client.js',
   'packages/core/lib/kst.js',
-  'packages/core/lib/openclaw-client.js',
+  'packages/core/lib/hub-alarm-client.js',
   'packages/core/lib/pg-pool.js',
   'packages/core/lib/reservation-rag.js',
   'packages/core/lib/runtime-config-loader.js',

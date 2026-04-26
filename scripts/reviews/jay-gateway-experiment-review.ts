@@ -5,6 +5,14 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 
+function getAiAgentHome() {
+  return process.env.AI_AGENT_HOME || process.env.JAY_HOME || path.join(os.homedir(), '.ai-agent-system');
+}
+
+function getAiAgentWorkspace() {
+  return process.env.AI_AGENT_WORKSPACE || process.env.JAY_WORKSPACE || path.join(getAiAgentHome(), 'workspace');
+}
+
 function parseArgs(argv = process.argv.slice(2)) {
   const daysArg = argv.find((arg) => arg.startsWith('--days='));
   const inputArg = argv.find((arg) => arg.startsWith('--input='));
@@ -12,7 +20,7 @@ function parseArgs(argv = process.argv.slice(2)) {
   return {
     days,
     json: argv.includes('--json'),
-    inputPath: inputArg?.split('=').slice(1).join('=') || path.join(os.homedir(), '.openclaw', 'workspace', 'jay-gateway-experiments.jsonl'),
+    inputPath: inputArg?.split('=').slice(1).join('=') || path.join(getAiAgentWorkspace(), 'jay-gateway-experiments.jsonl'),
   };
 }
 
@@ -81,7 +89,7 @@ function buildReview(rows, days, inputPath) {
   let reason = '최근 스냅샷 기준 정합성과 활성 오류가 안정 구간입니다.';
   if (latest && latest.primaryCheck && latest.primaryCheck.aligned === false) {
     recommendation = 'sync_first';
-    reason = '최신 스냅샷에서 runtime_config와 openclaw.json primary가 불일치합니다.';
+    reason = '최신 스냅샷에서 runtime selector와 Hub control primary가 불일치합니다.';
   } else if (activeSnapshots > 0 || stageCounts.compare > 0) {
     recommendation = 'compare';
     reason = '최근 스냅샷에서 활성 rate limit 또는 compare 단계가 관찰되어 후보 비교가 필요합니다.';
@@ -108,7 +116,7 @@ function buildReview(rows, days, inputPath) {
           capturedAt: latest.capturedAt,
           experimentStage: latest.experimentStage,
           runtimePrimary: latest.primaryCheck?.runtimePrimary || null,
-          openclawPrimary: latest.primaryCheck?.openclawPrimary || null,
+          selectorPrimary: latest.primaryCheck?.selectorPrimary || null,
           aligned: latest.primaryCheck?.aligned ?? null,
           rateLimitCount: Number(latest.gatewayMetrics?.rateLimitCount || 0),
           uniqueRateLimitIncidentCount: Number(latest.gatewayMetrics?.uniqueRateLimitIncidentCount || 0),
@@ -171,7 +179,7 @@ function printHuman(review) {
     lines.push('최신 스냅샷:');
     lines.push(`- 시각: ${review.latestSnapshot.capturedAt}`);
     lines.push(`- 단계: ${review.latestSnapshot.experimentStage}`);
-    lines.push(`- primary: ${review.latestSnapshot.runtimePrimary} / ${review.latestSnapshot.openclawPrimary}`);
+    lines.push(`- primary: ${review.latestSnapshot.runtimePrimary} / ${review.latestSnapshot.selectorPrimary}`);
     lines.push(`- 정합성: ${review.latestSnapshot.aligned ? '일치' : '불일치'}`);
     lines.push(`- rate limit: ${review.latestSnapshot.rateLimitCount}건 (활성 ${review.latestSnapshot.activeRateLimitCount}건)`);
     lines.push(`- unique incidents: ${review.latestSnapshot.uniqueRateLimitIncidentCount}건 (활성 ${review.latestSnapshot.activeUniqueRateLimitIncidentCount}건)`);

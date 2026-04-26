@@ -27,7 +27,7 @@ import {
 import { publishAlert } from '../shared/alert-publisher.ts';
 import { resolveSymbolsWithFallback } from '../shared/universe-fallback.ts';
 import { getMockUntradableSymbolCooldownMinutes } from '../shared/runtime-config.ts';
-import { getInvestmentStateFile, getLegacyInvestmentStateFile } from '../shared/market-cycle-support.ts';
+import { getInvestmentStateFile } from '../shared/market-cycle-support.ts';
 import { createRequire } from 'module';
 const kst = createRequire(import.meta.url)('../../../packages/core/lib/kst');
 
@@ -35,12 +35,6 @@ const PRESCREENED_FILE = {
   domestic: getInvestmentStateFile('domestic-prescreened.json'),
   overseas: getInvestmentStateFile('overseas-prescreened.json'),
   crypto:   getInvestmentStateFile('crypto-prescreened.json'),
-};
-
-const LEGACY_PRESCREENED_FILE = {
-  domestic: getLegacyInvestmentStateFile('domestic-prescreened.json'),
-  overseas: getLegacyInvestmentStateFile('overseas-prescreened.json'),
-  crypto:   getLegacyInvestmentStateFile('crypto-prescreened.json'),
 };
 
 const PRESCREENED_TTL_MS     = 4  * 3600 * 1000;  // 4시간 유효 (정규)
@@ -81,10 +75,7 @@ function getLearningLoopNextCommand(learningLoopSummary) {
 }
 
 function getReadablePreScreenedFile(market) {
-  const current = PRESCREENED_FILE[market];
-  if (current && existsSync(current)) return current;
-  const legacy = LEGACY_PRESCREENED_FILE[market];
-  return legacy && existsSync(legacy) ? legacy : current;
+  return PRESCREENED_FILE[market];
 }
 
 async function filterMockUntradablePrescreenSymbols(market, symbols, tradeMode = getInvestmentTradeMode()) {

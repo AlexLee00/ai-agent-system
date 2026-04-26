@@ -58,7 +58,7 @@ tail /tmp/pre-reboot.log
 | 2 | 루나팀 서비스 정지 (ai.invest.dev/fund/tpsl) |
 | 3 | 클로드팀 서비스 정지 (dexter/archer) |
 | 4 | 스카팀 모니터 종료 (naver-monitor/kiosk-monitor) |
-| 5 | OpenClaw 게이트웨이 정지 |
+| 5 | retired gateway 정지 |
 | 6 | launchd 서비스 스냅샷 → `/tmp/pre-reboot-services.txt` |
 | 7 | 재부팅 시각 기록 → `/tmp/last-reboot-time.txt` |
 | 8 | 텔레그램 알림 발송 |
@@ -84,7 +84,7 @@ bash ~/projects/ai-agent-system/scripts/post-reboot.sh
 **post-reboot.sh 점검 서비스:**
 | 서비스 | 종류 | 정상 조건 |
 |--------|------|-----------|
-| ai.openclaw.gateway | KeepAlive | PID 있음 |
+| ai.hub.resource-api | KeepAlive | PID 있음 |
 | ai.ska.naver-monitor | KeepAlive | PID 있음 |
 | ai.ska.kiosk-monitor | 10분 주기 | 등록됨 |
 | ai.invest.dev | 10분 주기 | 등록됨 |

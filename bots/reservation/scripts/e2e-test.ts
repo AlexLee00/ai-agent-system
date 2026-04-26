@@ -214,8 +214,8 @@ async function runTests() {
     if (t2.getCount() !== 0) throw new Error('success 후 파일 미삭제');
   });
 
-  // ─── 8. OpenClaw topic 알림 (publishReservationAlert) ─────────────
-  console.log('\n[8] OpenClaw topic 알림 (publishReservationAlert)');
+  // ─── 8. Hub topic 알림 (publishReservationAlert) ─────────────
+  console.log('\n[8] Hub topic 알림 (publishReservationAlert)');
   const { publishReservationAlert } = require('../lib/alert-client');
 
   await step('publishReservationAlert 전달 확인', async () => {

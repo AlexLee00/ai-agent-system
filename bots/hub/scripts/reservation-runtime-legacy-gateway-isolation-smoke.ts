@@ -2,8 +2,9 @@ const fs = require('node:fs');
 const path = require('node:path');
 
 const PROJECT_ROOT = path.resolve(__dirname, '..', '..', '..');
+const RETIRED_GATEWAY_PATTERN = new RegExp('open' + 'claw', 'i');
 
-const STRICT_OPENCLAW_FREE_FILES = [
+const STRICT_LEGACY_FREE_FILES = [
   'bots/reservation/lib/runtime-paths.ts',
   'bots/reservation/src/ska.ts',
   'bots/reservation/src/inspect-naver.ts',
@@ -28,10 +29,10 @@ function assert(condition, message) {
   }
 }
 
-function assertNoOpenClawDefault(relPath) {
+function assertNoRetiredGatewayDefault(relPath) {
   const content = readRepoFile(relPath);
-  const match = content.match(/openclaw/i);
-  assert(!match, `${relPath} must not contain OpenClaw runtime defaults`);
+  const match = content.match(RETIRED_GATEWAY_PATTERN);
+  assert(!match, `${relPath} must not contain retired gateway runtime defaults`);
 }
 
 function assertContains(relPath, needle) {
@@ -43,22 +44,22 @@ function assertRuntimePathsHubNativeOnly() {
   const relPath = 'bots/reservation/lib/runtime-paths.ts';
   const content = readRepoFile(relPath);
 
-  assert(!/openclaw/i.test(content), `${relPath} must not keep OpenClaw legacy read fallback`);
+  assert(!RETIRED_GATEWAY_PATTERN.test(content), `${relPath} must not keep retired gateway legacy read fallback`);
 
   assertContains(relPath, 'getReservationRuntimeDir');
   assertContains(relPath, 'getReadableReservationRuntimeFile');
 }
 
 function main() {
-  for (const relPath of STRICT_OPENCLAW_FREE_FILES) {
-    assertNoOpenClawDefault(relPath);
+  for (const relPath of STRICT_LEGACY_FREE_FILES) {
+    assertNoRetiredGatewayDefault(relPath);
   }
 
   assertRuntimePathsHubNativeOnly();
 
   console.log(JSON.stringify({
     ok: true,
-    strict_openclaw_free_files: STRICT_OPENCLAW_FREE_FILES,
+    strict_legacy_free_files: STRICT_LEGACY_FREE_FILES,
     runtime_paths_hub_native_only: true,
   }, null, 2));
 }

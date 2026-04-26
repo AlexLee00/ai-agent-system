@@ -106,7 +106,7 @@ bots/claude/
   Dexter → agent_tasks → Doctor (팀장 경유)
 
 Emergency 모드 (자동 전환 조건):
-  - OpenClaw 게이트웨이 3분+ 다운
+  - Hub control/alarm gateway 3분+ 다운
   - 스카야 텔레그램 봇 3분+ 다운
 
 Emergency 모드:

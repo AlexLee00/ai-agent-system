@@ -242,10 +242,10 @@ node /Users/alexlee/projects/ai-agent-system/bots/blog/scripts/check-n8n-pipelin
   - `ai.worker.lead`
   - `ai.worker.task-runner`
 - 대표 로그
-  - `~/.openclaw/workspace/logs/worker-web.log`
-  - `~/.openclaw/workspace/logs/worker-web-error.log`
-  - `~/.openclaw/workspace/logs/worker-nextjs.log`
-  - `~/.openclaw/workspace/logs/worker-lead.log`
+  - `~/Library/Logs/ai-agent-system/worker-web.log`
+  - `~/Library/Logs/ai-agent-system/worker-web-error.log`
+  - `~/Library/Logs/ai-agent-system/worker-nextjs.log`
+  - `~/Library/Logs/ai-agent-system/worker-lead.log`
 
 - API health
   - `http://127.0.0.1:4000/api/health`
@@ -258,23 +258,25 @@ node /Users/alexlee/projects/ai-agent-system/bots/blog/scripts/check-n8n-pipelin
 - 운영 설정 마이그레이션
   - `node /Users/alexlee/projects/ai-agent-system/bots/worker/migrations/017-system-preferences.js`
 
-### Orchestrator / OpenClaw / N8N
+### Orchestrator / Hub / N8N
 
 - 대표 launchd
   - `ai.orchestrator.mainbot`
-  - `ai.openclaw.gateway`
+  - `ai.hub.resource-api`
+  - `ai.telegram.callback-poller`
   - `ai.orchestrator.health-check`
 - 대표 로그
-  - `~/.openclaw/workspace/logs/openclaw-gateway.log`
-  - `~/.openclaw/workspace/logs/openclaw-gateway-error.log`
-  - `~/.openclaw/workspace/logs/mainbot.log`
-  - `~/.openclaw/workspace/logs/mainbot-error.log`
+  - `~/Library/Logs/ai-agent-system/hub-resource-api.log`
+  - `~/Library/Logs/ai-agent-system/hub-resource-api-error.log`
+  - `~/Library/Logs/ai-agent-system/telegram-callback-poller.log`
+  - `~/Library/Logs/ai-agent-system/mainbot.log`
+  - `~/Library/Logs/ai-agent-system/mainbot-error.log`
 
 - critical path와 webhook은 config 기준으로 점검
   - [bots/orchestrator/config.json](/Users/alexlee/projects/ai-agent-system/bots/orchestrator/config.json)
   - [bots/orchestrator/scripts/check-n8n-critical-path.js](/Users/alexlee/projects/ai-agent-system/bots/orchestrator/scripts/check-n8n-critical-path.js)
 - 제이 모델 정책 확인 순서
-  - OpenClaw gateway 기본 모델: [openclaw.json](/Users/alexlee/.openclaw/openclaw.json)
+  - Hub LLM 라우트/셀렉터 정책: [llm.ts](/Users/alexlee/projects/ai-agent-system/bots/hub/lib/routes/llm.ts)
   - 제이 앱 레벨 모델 정책: [jay-model-policy.js](/Users/alexlee/projects/ai-agent-system/bots/orchestrator/lib/jay-model-policy.js)
   - 운영 오버라이드 값: [config.json](/Users/alexlee/projects/ai-agent-system/bots/orchestrator/config.json)의 `runtime_config.jayModels`
   - 정합성 점검 스크립트: [check-jay-gateway-primary.js](/Users/alexlee/projects/ai-agent-system/bots/orchestrator/scripts/check-jay-gateway-primary.js)
@@ -321,10 +323,10 @@ node /Users/alexlee/projects/ai-agent-system/bots/blog/scripts/check-n8n-pipelin
   - `ai.ska.rebecca`
   - `ai.ska.eve`
 - 대표 로그
-  - `~/.openclaw/workspace/logs/naver-monitor.log`
-  - `~/.openclaw/workspace/logs/naver-monitor-error.log`
-  - `~/.openclaw/workspace/logs/kiosk-monitor.log`
-  - `~/.openclaw/workspace/logs/kiosk-monitor-error.log`
+  - `~/Library/Logs/ai-agent-system/naver-monitor.log`
+  - `~/Library/Logs/ai-agent-system/naver-monitor-error.log`
+  - `~/Library/Logs/ai-agent-system/kiosk-monitor.log`
+  - `~/Library/Logs/ai-agent-system/kiosk-monitor-error.log`
 
 ### Investment
 
@@ -338,8 +340,8 @@ node /Users/alexlee/projects/ai-agent-system/bots/blog/scripts/check-n8n-pipelin
   - `ai.investment.overseas.validation` (`validation` 검증거래 레일, 선택적)
   - `ai.investment.argos`
 - 대표 로그
-  - `~/.openclaw/workspace/logs/luna-commander.log`
-  - `~/.openclaw/workspace/logs/luna-commander-error.log`
+  - `~/Library/Logs/ai-agent-system/luna-commander.log`
+  - `~/Library/Logs/ai-agent-system/luna-commander-error.log`
   - `/tmp/investment-crypto.log`
   - `/tmp/investment-crypto.err.log`
   - `/tmp/investment-crypto-validation.log`
@@ -459,7 +461,7 @@ launchctl bootout gui/$(id -u) /Users/alexlee/projects/ai-agent-system/bots/inve
 4. 부팅 후 자동 점검
    - `ai.agent.post-reboot` launchd가 [post-reboot.sh](/Users/alexlee/projects/ai-agent-system/scripts/post-reboot.sh)를 자동 실행한다.
    - 점검 대상은 현재 운영 기준으로 아래를 포함한다.
-     - orchestrator / OpenClaw / n8n
+     - orchestrator / Hub / n8n
      - worker web / nextjs / lead / task-runner
      - investment commander / markets / reporter / argos / alerts / prescreen
      - blog node-server / daily / health-check
@@ -490,9 +492,10 @@ launchctl bootout gui/$(id -u) /Users/alexlee/projects/ai-agent-system/bots/inve
 - Claude/Dexter
   - quickcheck/dexter 결과를 본 뒤 필요한 경우만 재시작
   - `launchctl kickstart -k gui/$(id -u)/ai.claude.dexter`
-- Orchestrator/OpenClaw
+- Orchestrator/Hub
   - `launchctl kickstart -k gui/$(id -u)/ai.orchestrator`
-  - `launchctl kickstart -k gui/$(id -u)/ai.openclaw.gateway`
+  - `launchctl kickstart -k gui/$(id -u)/ai.hub.resource-api`
+  - `launchctl kickstart -k gui/$(id -u)/ai.telegram.callback-poller`
 - Blog node server
   - `launchctl kickstart -k gui/$(id -u)/ai.blog.node-server`
 
@@ -513,12 +516,12 @@ launchctl bootout gui/$(id -u) /Users/alexlee/projects/ai-agent-system/bots/inve
 5. 여전히 실패하면 config/network 문제로 분기
 
 권장 순서 예:
-- worker 화면 불가
+  - worker 화면 불가
   - `node bots/worker/scripts/health-report.js --json`
   - `curl -s http://127.0.0.1:4000/api/health`
   - `curl -s -I http://127.0.0.1:4001`
   - `curl -s http://127.0.0.1:4001/admin/monitoring`
-  - `tail -n 100 ~/.openclaw/workspace/logs/worker-web-error.log`
+  - `tail -n 100 ~/Library/Logs/ai-agent-system/worker-web-error.log`
 - blog API 불가
   - `node bots/blog/scripts/health-report.js --json`
   - `curl -s http://127.0.0.1:3100/health`
@@ -557,7 +560,7 @@ launchctl bootout gui/$(id -u) /Users/alexlee/projects/ai-agent-system/bots/inve
 | 증상 | 먼저 볼 것 | 다음 조치 |
 |---|---|---|
 | 워커 웹 접속 불가 | `worker health-report`, `4000/4001 curl`, `/admin/monitoring`, `worker-web-error.log` | `ai.worker.web`, `ai.worker.nextjs` kickstart |
-| 제이/오케스트레이터 응답 이상 | `orchestrator health-report`, gateway log, critical path check | `ai.orchestrator.mainbot`, `ai.openclaw.gateway` kickstart |
+| 제이/오케스트레이터 응답 이상 | `orchestrator health-report`, Hub API log, critical path check | `ai.orchestrator.mainbot`, `ai.hub.resource-api` kickstart |
 | 예약 경고 반복 | `reservation health-report`, `pickko-verify`, alerts state | monitor reload, alert resolve, DB 상태 동기화 |
 | 스카 예측 리포트 이상 | daily/weekly review, `ska.forecast_results` 최근값 | config 보정, shadow 비교 확인 |
 | 루나 거래 0건 지속 | investment health, trading journal, paper/live mode | runtime_config/threshold 점검 |

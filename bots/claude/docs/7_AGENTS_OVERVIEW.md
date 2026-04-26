@@ -47,7 +47,7 @@ claude-commander (팀장)
 | patterns | 코드 패턴 |
 | selfDiagnosis | 자기 진단 |
 | teamLeads | 팀장 봇 상태 |
-| openclaw | OpenClaw 게이트웨이 |
+| hub | Hub control/alarm gateway |
 | llmCost | LLM 비용 추적 |
 | billing | 청구 현황 |
 | workspaceGit | Git 상태 |
@@ -208,7 +208,7 @@ docs/auto_dev/*.md
   → 구현 완료 + 종료 알림
 ```
 
-상태 파일: `~/.openclaw/workspace/claude-auto-dev-state.json`
+상태 파일: Hub/Claude runtime state store
 
 ---
 

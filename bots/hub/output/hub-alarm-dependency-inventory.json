@@ -1,124 +1,124 @@
 {
-  "generated_at": "2026-04-26T11:17:51.217Z",
+  "generated_at": "2026-04-26T13:51:28.650Z",
   "scan_patterns": [
     "hub-alarm-client",
     "openclaw-client",
     "HUB_ALARM_",
     "OPENCLAW_"
   ],
-  "total_matches": 268,
-  "unique_files": 122,
+  "total_matches": 148,
+  "unique_files": 97,
   "categories": {
-    "hub_alarm_native": 113,
-    "legacy_openclaw_compat": 155
+    "hub_alarm_native": 148,
+    "legacy_gateway_compat": 0
   },
   "files": {
     "bots/blog/__tests__/dpo-learning.test.ts": [
       {
         "file": "bots/blog/__tests__/dpo-learning.test.ts",
         "line": 18,
-        "category": "legacy_openclaw_compat",
-        "match": "jest.mock('../../../packages/core/lib/openclaw-client', () => ({"
+        "category": "hub_alarm_native",
+        "match": "jest.mock('../../../packages/core/lib/hub-alarm-client', () => ({"
       }
     ],
     "bots/blog/__tests__/dpo-self-rewarding.test.ts": [
       {
         "file": "bots/blog/__tests__/dpo-self-rewarding.test.ts",
         "line": 20,
-        "category": "legacy_openclaw_compat",
-        "match": "jest.mock('../../../packages/core/lib/openclaw-client', () => ({"
+        "category": "hub_alarm_native",
+        "match": "jest.mock('../../../packages/core/lib/hub-alarm-client', () => ({"
       }
     ],
     "bots/blog/__tests__/e2e/full-cycle.test.ts": [
       {
         "file": "bots/blog/__tests__/e2e/full-cycle.test.ts",
         "line": 26,
-        "category": "legacy_openclaw_compat",
-        "match": "jest.mock('../../../../packages/core/lib/openclaw-client', () => ({"
+        "category": "hub_alarm_native",
+        "match": "jest.mock('../../../../packages/core/lib/hub-alarm-client', () => ({"
       },
       {
         "file": "bots/blog/__tests__/e2e/full-cycle.test.ts",
         "line": 36,
-        "category": "legacy_openclaw_compat",
-        "match": "const { postAlarm } = require('../../../../packages/core/lib/openclaw-client');"
+        "category": "hub_alarm_native",
+        "match": "const { postAlarm } = require('../../../../packages/core/lib/hub-alarm-client');"
       }
     ],
     "bots/blog/__tests__/evolution-cycle.test.ts": [
       {
         "file": "bots/blog/__tests__/evolution-cycle.test.ts",
         "line": 20,
-        "category": "legacy_openclaw_compat",
-        "match": "jest.mock('../../../packages/core/lib/openclaw-client', () => ({"
+        "category": "hub_alarm_native",
+        "match": "jest.mock('../../../packages/core/lib/hub-alarm-client', () => ({"
       }
     ],
     "bots/blog/__tests__/load/stress.test.ts": [
       {
         "file": "bots/blog/__tests__/load/stress.test.ts",
         "line": 26,
-        "category": "legacy_openclaw_compat",
-        "match": "jest.mock('../../../../packages/core/lib/openclaw-client', () => ({"
+        "category": "hub_alarm_native",
+        "match": "jest.mock('../../../../packages/core/lib/hub-alarm-client', () => ({"
       }
     ],
     "bots/blog/__tests__/omnichannel-campaign-planner.test.ts": [
       {
         "file": "bots/blog/__tests__/omnichannel-campaign-planner.test.ts",
         "line": 19,
-        "category": "legacy_openclaw_compat",
-        "match": "jest.mock('../../../packages/core/lib/openclaw-client', () => ({"
+        "category": "hub_alarm_native",
+        "match": "jest.mock('../../../packages/core/lib/hub-alarm-client', () => ({"
       }
     ],
     "bots/blog/__tests__/phase1-publish-reporter.test.ts": [
       {
         "file": "bots/blog/__tests__/phase1-publish-reporter.test.ts",
         "line": 18,
-        "category": "legacy_openclaw_compat",
-        "match": "jest.mock('../../../packages/core/lib/openclaw-client', () => ({"
+        "category": "hub_alarm_native",
+        "match": "jest.mock('../../../packages/core/lib/hub-alarm-client', () => ({"
       },
       {
         "file": "bots/blog/__tests__/phase1-publish-reporter.test.ts",
         "line": 22,
-        "category": "legacy_openclaw_compat",
-        "match": "const { postAlarm } = require('../../../packages/core/lib/openclaw-client');"
+        "category": "hub_alarm_native",
+        "match": "const { postAlarm } = require('../../../packages/core/lib/hub-alarm-client');"
       }
     ],
     "bots/blog/__tests__/phase6-self-rewarding.test.ts": [
       {
         "file": "bots/blog/__tests__/phase6-self-rewarding.test.ts",
         "line": 17,
-        "category": "legacy_openclaw_compat",
-        "match": "jest.mock('../../../packages/core/lib/openclaw-client', () => ({"
+        "category": "hub_alarm_native",
+        "match": "jest.mock('../../../packages/core/lib/hub-alarm-client', () => ({"
       }
     ],
     "bots/blog/__tests__/platform-orchestration.test.ts": [
       {
         "file": "bots/blog/__tests__/platform-orchestration.test.ts",
         "line": 17,
-        "category": "legacy_openclaw_compat",
-        "match": "jest.mock('../../../packages/core/lib/openclaw-client', () => ({"
+        "category": "hub_alarm_native",
+        "match": "jest.mock('../../../packages/core/lib/hub-alarm-client', () => ({"
       }
     ],
     "bots/blog/__tests__/revenue-attribution.test.ts": [
       {
         "file": "bots/blog/__tests__/revenue-attribution.test.ts",
         "line": 21,
-        "category": "legacy_openclaw_compat",
-        "match": "jest.mock('../../../packages/core/lib/openclaw-client', () => ({"
+        "category": "hub_alarm_native",
+        "match": "jest.mock('../../../packages/core/lib/hub-alarm-client', () => ({"
       }
     ],
     "bots/blog/__tests__/self-rewarding-rag.test.ts": [
       {
         "file": "bots/blog/__tests__/self-rewarding-rag.test.ts",
         "line": 17,
-        "category": "legacy_openclaw_compat",
-        "match": "jest.mock('../../../packages/core/lib/openclaw-client', () => ({"
+        "category": "hub_alarm_native",
+        "match": "jest.mock('../../../packages/core/lib/hub-alarm-client', () => ({"
       }
     ],
     "bots/blog/__tests__/signal-collectors.test.ts": [
       {
         "file": "bots/blog/__tests__/signal-collectors.test.ts",
         "line": 17,
-        "category": "legacy_openclaw_compat",
-        "match": "jest.mock('../../../packages/core/lib/openclaw-client', () => ({"
+        "category": "hub_alarm_native",
+        "match": "jest.mock('../../../packages/core/lib/hub-alarm-client', () => ({"
       }
     ],
     "bots/blog/lib/ab-testing.ts": [
@@ -253,92 +253,92 @@
       {
         "file": "bots/claude/__tests__/auto-dev-pipeline.test.ts",
         "line": 77,
-        "category": "legacy_openclaw_compat",
-        "match": "'../../../packages/core/lib/openclaw-client': {"
+        "category": "hub_alarm_native",
+        "match": "'../../../packages/core/lib/hub-alarm-client': {"
       }
     ],
     "bots/claude/__tests__/builder.test.ts": [
       {
         "file": "bots/claude/__tests__/builder.test.ts",
         "line": 21,
-        "category": "legacy_openclaw_compat",
-        "match": "'../../../packages/core/lib/openclaw-client': {"
+        "category": "hub_alarm_native",
+        "match": "'../../../packages/core/lib/hub-alarm-client': {"
       },
       {
         "file": "bots/claude/__tests__/builder.test.ts",
         "line": 145,
-        "category": "legacy_openclaw_compat",
-        "match": "'../../../packages/core/lib/openclaw-client': {"
+        "category": "hub_alarm_native",
+        "match": "'../../../packages/core/lib/hub-alarm-client': {"
       }
     ],
     "bots/claude/__tests__/codex-plan-notifier.test.ts": [
       {
         "file": "bots/claude/__tests__/codex-plan-notifier.test.ts",
         "line": 39,
-        "category": "legacy_openclaw_compat",
-        "match": "'../../../packages/core/lib/openclaw-client': {"
+        "category": "hub_alarm_native",
+        "match": "'../../../packages/core/lib/hub-alarm-client': {"
       },
       {
         "file": "bots/claude/__tests__/codex-plan-notifier.test.ts",
         "line": 204,
-        "category": "legacy_openclaw_compat",
-        "match": "'../../../packages/core/lib/openclaw-client': {"
+        "category": "hub_alarm_native",
+        "match": "'../../../packages/core/lib/hub-alarm-client': {"
       }
     ],
     "bots/claude/__tests__/commander.test.ts": [
       {
         "file": "bots/claude/__tests__/commander.test.ts",
         "line": 53,
-        "category": "legacy_openclaw_compat",
-        "match": "'../../../packages/core/lib/openclaw-client': {"
+        "category": "hub_alarm_native",
+        "match": "'../../../packages/core/lib/hub-alarm-client': {"
       }
     ],
     "bots/claude/__tests__/e2e/full-flow.test.ts": [
       {
         "file": "bots/claude/__tests__/e2e/full-flow.test.ts",
         "line": 21,
-        "category": "legacy_openclaw_compat",
-        "match": "'../../../packages/core/lib/openclaw-client': { postAlarm: async () => {} },"
+        "category": "hub_alarm_native",
+        "match": "'../../../packages/core/lib/hub-alarm-client': { postAlarm: async () => {} },"
       },
       {
         "file": "bots/claude/__tests__/e2e/full-flow.test.ts",
         "line": 22,
-        "category": "legacy_openclaw_compat",
-        "match": "'../../../../packages/core/lib/openclaw-client': { postAlarm: async () => {} },"
+        "category": "hub_alarm_native",
+        "match": "'../../../../packages/core/lib/hub-alarm-client': { postAlarm: async () => {} },"
       },
       {
         "file": "bots/claude/__tests__/e2e/full-flow.test.ts",
         "line": 176,
-        "category": "legacy_openclaw_compat",
-        "match": "'../../../packages/core/lib/openclaw-client': { postAlarm: async () => {} },"
+        "category": "hub_alarm_native",
+        "match": "'../../../packages/core/lib/hub-alarm-client': { postAlarm: async () => {} },"
       }
     ],
     "bots/claude/__tests__/guardian.test.ts": [
       {
         "file": "bots/claude/__tests__/guardian.test.ts",
         "line": 19,
-        "category": "legacy_openclaw_compat",
-        "match": "'../../../packages/core/lib/openclaw-client': {"
+        "category": "hub_alarm_native",
+        "match": "'../../../packages/core/lib/hub-alarm-client': {"
       },
       {
         "file": "bots/claude/__tests__/guardian.test.ts",
         "line": 194,
-        "category": "legacy_openclaw_compat",
-        "match": "'../../../packages/core/lib/openclaw-client': {"
+        "category": "hub_alarm_native",
+        "match": "'../../../packages/core/lib/hub-alarm-client': {"
       }
     ],
     "bots/claude/__tests__/reviewer.test.ts": [
       {
         "file": "bots/claude/__tests__/reviewer.test.ts",
         "line": 26,
-        "category": "legacy_openclaw_compat",
-        "match": "'../../../packages/core/lib/openclaw-client': {"
+        "category": "hub_alarm_native",
+        "match": "'../../../packages/core/lib/hub-alarm-client': {"
       },
       {
         "file": "bots/claude/__tests__/reviewer.test.ts",
         "line": 176,
-        "category": "legacy_openclaw_compat",
-        "match": "'../../../packages/core/lib/openclaw-client': {"
+        "category": "hub_alarm_native",
+        "match": "'../../../packages/core/lib/hub-alarm-client': {"
       }
     ],
     "bots/claude/lib/auto-dev-pipeline.ts": [
@@ -355,62 +355,6 @@
         "line": 28,
         "category": "hub_alarm_native",
         "match": "const { postAlarm } = require('../../../packages/core/lib/hub-alarm-client');"
-      }
-    ],
-    "bots/claude/lib/checks/openclaw.ts": [
-      {
-        "file": "bots/claude/lib/checks/openclaw.ts",
-        "line": 31,
-        "category": "legacy_openclaw_compat",
-        "match": "const { LAUNCHD_AVAILABLE, OPENCLAW_PORT: ENV_OPENCLAW_PORT } = require('../../../../packages/core/lib/env');"
-      },
-      {
-        "file": "bots/claude/lib/checks/openclaw.ts",
-        "line": 33,
-        "category": "legacy_openclaw_compat",
-        "match": "const OPENCLAW_SERVICE = 'ai.openclaw.gateway';"
-      },
-      {
-        "file": "bots/claude/lib/checks/openclaw.ts",
-        "line": 34,
-        "category": "legacy_openclaw_compat",
-        "match": "const OPENCLAW_PORT    = ENV_OPENCLAW_PORT > 0 ? ENV_OPENCLAW_PORT : 18789;"
-      },
-      {
-        "file": "bots/claude/lib/checks/openclaw.ts",
-        "line": 166,
-        "category": "legacy_openclaw_compat",
-        "match": "const launchd = getLaunchdStatus(OPENCLAW_SERVICE);"
-      },
-      {
-        "file": "bots/claude/lib/checks/openclaw.ts",
-        "line": 189,
-        "category": "legacy_openclaw_compat",
-        "match": "const portInfo = getPortBindingInfo(OPENCLAW_PORT);"
-      },
-      {
-        "file": "bots/claude/lib/checks/openclaw.ts",
-        "line": 193,
-        "category": "legacy_openclaw_compat",
-        "match": "label:  `OpenClaw 포트 ${OPENCLAW_PORT} 바인딩`,"
-      },
-      {
-        "file": "bots/claude/lib/checks/openclaw.ts",
-        "line": 199,
-        "category": "legacy_openclaw_compat",
-        "match": "label:  `OpenClaw 포트 ${OPENCLAW_PORT} 바인딩`,"
-      },
-      {
-        "file": "bots/claude/lib/checks/openclaw.ts",
-        "line": 205,
-        "category": "legacy_openclaw_compat",
-        "match": "label:  `OpenClaw 포트 ${OPENCLAW_PORT} 바인딩`,"
-      },
-      {
-        "file": "bots/claude/lib/checks/openclaw.ts",
-        "line": 254,
-        "category": "legacy_openclaw_compat",
-        "match": "_restartService: OPENCLAW_SERVICE,"
       }
     ],
     "bots/claude/lib/codex-plan-notifier.ts": [
@@ -495,8 +439,8 @@
       {
         "file": "bots/claude/tsconfig.json",
         "line": 35,
-        "category": "legacy_openclaw_compat",
-        "match": "\"../../packages/core/lib/openclaw-client.js\","
+        "category": "hub_alarm_native",
+        "match": "\"../../packages/core/lib/hub-alarm-client.js\","
       }
     ],
     "bots/darwin/__tests__/research-monitor-smoke.test.ts": [
@@ -595,14 +539,6 @@
         "match": "const claimLeaseMinutes = Math.max(1, Number(process.env.HUB_ALARM_DIGEST_CLAIM_LEASE_MINUTES || 15) || 15);"
       }
     ],
-    "bots/hub/lib/routes/services.ts": [
-      {
-        "file": "bots/hub/lib/routes/services.ts",
-        "line": 169,
-        "category": "legacy_openclaw_compat",
-        "match": "openclaw_port: env.OPENCLAW_PORT,"
-      }
-    ],
     "bots/hub/scripts/alarm-digest-worker.ts": [
       {
         "file": "bots/hub/scripts/alarm-digest-worker.ts",
@@ -623,14 +559,6 @@
         "match": "return Math.min(1000, Math.max(10, Number(process.env.HUB_ALARM_DIGEST_LIMIT || 300) || 300));"
       }
     ],
-    "bots/hub/scripts/claude-code-oauth-direct-smoke.ts": [
-      {
-        "file": "bots/hub/scripts/claude-code-oauth-direct-smoke.ts",
-        "line": 22,
-        "category": "legacy_openclaw_compat",
-        "match": "openclawAgent: process.env.OPENCLAW_AGENT || null"
-      }
-    ],
     "bots/hub/scripts/generate-hub-alarm-inventory.ts": [
       {
         "file": "bots/hub/scripts/generate-hub-alarm-inventory.ts",
@@ -640,51 +568,27 @@
       },
       {
         "file": "bots/hub/scripts/generate-hub-alarm-inventory.ts",
-        "line": 11,
+        "line": 13,
         "category": "hub_alarm_native",
         "match": "'hub-alarm-client',"
       },
       {
         "file": "bots/hub/scripts/generate-hub-alarm-inventory.ts",
-        "line": 12,
-        "category": "legacy_openclaw_compat",
-        "match": "'openclaw-client',"
-      },
-      {
-        "file": "bots/hub/scripts/generate-hub-alarm-inventory.ts",
-        "line": 13,
+        "line": 15,
         "category": "hub_alarm_native",
         "match": "'HUB_ALARM_',"
       },
       {
         "file": "bots/hub/scripts/generate-hub-alarm-inventory.ts",
-        "line": 14,
-        "category": "legacy_openclaw_compat",
-        "match": "'OPENCLAW_',"
-      },
-      {
-        "file": "bots/hub/scripts/generate-hub-alarm-inventory.ts",
-        "line": 18,
+        "line": 20,
         "category": "hub_alarm_native",
         "match": "if (match.includes('hub-alarm-client') || match.includes('HUB_ALARM_')) return 'hub_alarm_native';"
       },
       {
         "file": "bots/hub/scripts/generate-hub-alarm-inventory.ts",
-        "line": 19,
-        "category": "legacy_openclaw_compat",
-        "match": "if (match.includes('openclaw-client') || match.includes('OPENCLAW_')) return 'legacy_openclaw_compat';"
-      },
-      {
-        "file": "bots/hub/scripts/generate-hub-alarm-inventory.ts",
-        "line": 38,
+        "line": 40,
         "category": "hub_alarm_native",
         "match": "'!docs/hub/HUB_ALARM_DEPENDENCY_INVENTORY.md',"
-      },
-      {
-        "file": "bots/hub/scripts/generate-hub-alarm-inventory.ts",
-        "line": 40,
-        "category": "legacy_openclaw_compat",
-        "match": "'!docs/hub/OPENCLAW_CLIENT_INVENTORY.md',"
       }
     ],
     "bots/hub/scripts/hub-alarm-client-shim-smoke.ts": [
@@ -696,27 +600,9 @@
       },
       {
         "file": "bots/hub/scripts/hub-alarm-client-shim-smoke.ts",
-        "line": 2,
-        "category": "legacy_openclaw_compat",
-        "match": "const openClawShim = require('../../../packages/core/lib/openclaw-client.ts');"
-      },
-      {
-        "file": "bots/hub/scripts/hub-alarm-client-shim-smoke.ts",
         "line": 9,
         "category": "hub_alarm_native",
         "match": "assert(typeof hubAlarmClient.postAlarm === 'function', 'expected hub-alarm-client postAlarm export');"
-      },
-      {
-        "file": "bots/hub/scripts/hub-alarm-client-shim-smoke.ts",
-        "line": 10,
-        "category": "legacy_openclaw_compat",
-        "match": "assert(typeof openClawShim.postAlarm === 'function', 'expected openclaw-client shim postAlarm export');"
-      },
-      {
-        "file": "bots/hub/scripts/hub-alarm-client-shim-smoke.ts",
-        "line": 11,
-        "category": "legacy_openclaw_compat",
-        "match": "assert(openClawShim.postAlarm === hubAlarmClient.postAlarm, 'expected openclaw-client shim to re-export hub implementation');"
       }
     ],
     "bots/hub/scripts/hub-alarm-env-smoke.ts": [
@@ -730,101 +616,13 @@
         "file": "bots/hub/scripts/hub-alarm-env-smoke.ts",
         "line": 26,
         "category": "hub_alarm_native",
-        "match": "HUB_ALARM_LEGACY_OPENCLAW_FALLBACK: 'true',"
+        "match": "HUB_ALARM_LEGACY_WEBHOOK_FALLBACK: 'true',"
       },
       {
         "file": "bots/hub/scripts/hub-alarm-env-smoke.ts",
-        "line": 27,
-        "category": "legacy_openclaw_compat",
-        "match": "OPENCLAW_LEGACY_FALLBACK: null,"
-      },
-      {
-        "file": "bots/hub/scripts/hub-alarm-env-smoke.ts",
-        "line": 31,
+        "line": 35,
         "category": "hub_alarm_native",
-        "match": "'expected HUB_ALARM_LEGACY_OPENCLAW_FALLBACK=true to enable fallback',"
-      },
-      {
-        "file": "bots/hub/scripts/hub-alarm-env-smoke.ts",
-        "line": 36,
-        "category": "hub_alarm_native",
-        "match": "HUB_ALARM_LEGACY_OPENCLAW_FALLBACK: null,"
-      },
-      {
-        "file": "bots/hub/scripts/hub-alarm-env-smoke.ts",
-        "line": 37,
-        "category": "legacy_openclaw_compat",
-        "match": "OPENCLAW_LEGACY_FALLBACK: 'true',"
-      },
-      {
-        "file": "bots/hub/scripts/hub-alarm-env-smoke.ts",
-        "line": 41,
-        "category": "legacy_openclaw_compat",
-        "match": "'expected legacy OPENCLAW_LEGACY_FALLBACK=true to remain compatible',"
-      },
-      {
-        "file": "bots/hub/scripts/hub-alarm-env-smoke.ts",
-        "line": 46,
-        "category": "hub_alarm_native",
-        "match": "HUB_ALARM_LEGACY_OPENCLAW_FALLBACK: null,"
-      },
-      {
-        "file": "bots/hub/scripts/hub-alarm-env-smoke.ts",
-        "line": 47,
-        "category": "legacy_openclaw_compat",
-        "match": "OPENCLAW_LEGACY_FALLBACK: null,"
-      }
-    ],
-    "bots/hub/scripts/hub-alarm-import-transition-smoke.ts": [
-      {
-        "file": "bots/hub/scripts/hub-alarm-import-transition-smoke.ts",
-        "line": 49,
-        "category": "legacy_openclaw_compat",
-        "match": "'openclaw-client',"
-      },
-      {
-        "file": "bots/hub/scripts/hub-alarm-import-transition-smoke.ts",
-        "line": 60,
-        "category": "legacy_openclaw_compat",
-        "match": "'migrated Hub alarm scopes must not import openclaw-client directly',"
-      }
-    ],
-    "bots/hub/scripts/l5-acceptance-smoke.ts": [
-      {
-        "file": "bots/hub/scripts/l5-acceptance-smoke.ts",
-        "line": 37,
-        "category": "hub_alarm_native",
-        "match": "HUB_ALARM_LEGACY_OPENCLAW_FALLBACK: process.env.HUB_ALARM_LEGACY_OPENCLAW_FALLBACK,"
-      },
-      {
-        "file": "bots/hub/scripts/l5-acceptance-smoke.ts",
-        "line": 38,
-        "category": "legacy_openclaw_compat",
-        "match": "OPENCLAW_LEGACY_FALLBACK: process.env.OPENCLAW_LEGACY_FALLBACK,"
-      },
-      {
-        "file": "bots/hub/scripts/l5-acceptance-smoke.ts",
-        "line": 39,
-        "category": "legacy_openclaw_compat",
-        "match": "OPENCLAW_PORT: process.env.OPENCLAW_PORT,"
-      },
-      {
-        "file": "bots/hub/scripts/l5-acceptance-smoke.ts",
-        "line": 53,
-        "category": "hub_alarm_native",
-        "match": "process.env.HUB_ALARM_LEGACY_OPENCLAW_FALLBACK = 'false';"
-      },
-      {
-        "file": "bots/hub/scripts/l5-acceptance-smoke.ts",
-        "line": 54,
-        "category": "legacy_openclaw_compat",
-        "match": "process.env.OPENCLAW_LEGACY_FALLBACK = 'false';"
-      },
-      {
-        "file": "bots/hub/scripts/l5-acceptance-smoke.ts",
-        "line": 55,
-        "category": "legacy_openclaw_compat",
-        "match": "process.env.OPENCLAW_PORT = '18789';"
+        "match": "HUB_ALARM_LEGACY_WEBHOOK_FALLBACK: null,"
       }
     ],
     "bots/hub/scripts/openclaw-hub-alarm-smoke.ts": [
@@ -835,50 +633,18 @@
         "match": "const { _testOnly_isHubAlarmDeliveryAccepted } = require('../../../packages/core/lib/hub-alarm-client.ts');"
       }
     ],
-    "bots/hub/scripts/openclaw-independence-smoke.ts": [
-      {
-        "file": "bots/hub/scripts/openclaw-independence-smoke.ts",
-        "line": 5,
-        "category": "legacy_openclaw_compat",
-        "match": "const OPENCLAW_GATEWAY_LABEL = 'ai.openclaw.gateway';"
-      },
-      {
-        "file": "bots/hub/scripts/openclaw-independence-smoke.ts",
-        "line": 11,
-        "category": "legacy_openclaw_compat",
-        "match": "const gateway = ownership.getServiceOwnership(OPENCLAW_GATEWAY_LABEL);"
-      },
-      {
-        "file": "bots/hub/scripts/openclaw-independence-smoke.ts",
-        "line": 14,
-        "category": "legacy_openclaw_compat",
-        "match": "assert(!coreLabels.includes(OPENCLAW_GATEWAY_LABEL), 'OpenClaw gateway must not be a Hub core service');"
-      },
-      {
-        "file": "bots/hub/scripts/openclaw-independence-smoke.ts",
-        "line": 15,
-        "category": "legacy_openclaw_compat",
-        "match": "assert(!hubLabels.includes(OPENCLAW_GATEWAY_LABEL), 'OpenClaw gateway must not be part of Hub service readiness labels');"
-      }
-    ],
     "bots/hub/scripts/openclaw-postalarm-fallback-smoke.ts": [
       {
         "file": "bots/hub/scripts/openclaw-postalarm-fallback-smoke.ts",
-        "line": 6,
+        "line": 5,
         "category": "hub_alarm_native",
         "match": "const CLIENT_PATH = require.resolve('../../../packages/core/lib/hub-alarm-client.ts');"
       },
       {
         "file": "bots/hub/scripts/openclaw-postalarm-fallback-smoke.ts",
-        "line": 17,
-        "category": "hub_alarm_native",
-        "match": "process.env.HUB_ALARM_RECENT_ALERTS_PATH = path.join(tempWorkspace, 'recent-alerts.json');"
-      },
-      {
-        "file": "bots/hub/scripts/openclaw-postalarm-fallback-smoke.ts",
         "line": 18,
         "category": "hub_alarm_native",
-        "match": "process.env.HUB_ALARM_LEGACY_OPENCLAW_HOOKS_TOKEN = 'smoke-hooks-token';"
+        "match": "process.env.HUB_ALARM_RECENT_ALERTS_PATH = path.join(tempWorkspace, 'recent-alerts.json');"
       },
       {
         "file": "bots/hub/scripts/openclaw-postalarm-fallback-smoke.ts",
@@ -889,282 +655,124 @@
       {
         "file": "bots/hub/scripts/openclaw-postalarm-fallback-smoke.ts",
         "line": 23,
-        "category": "legacy_openclaw_compat",
-        "match": "delete process.env.OPENCLAW_WORKSPACE;"
+        "category": "hub_alarm_native",
+        "match": "delete process.env.HUB_ALARM_LEGACY_WEBHOOK_FALLBACK;"
       },
       {
         "file": "bots/hub/scripts/openclaw-postalarm-fallback-smoke.ts",
         "line": 24,
-        "category": "legacy_openclaw_compat",
-        "match": "delete process.env.OPENCLAW_HOOKS_TOKEN;"
+        "category": "hub_alarm_native",
+        "match": "delete process.env.HUB_ALARM_LEGACY_HOOKS_TOKEN;"
       },
       {
         "file": "bots/hub/scripts/openclaw-postalarm-fallback-smoke.ts",
-        "line": 25,
-        "category": "legacy_openclaw_compat",
-        "match": "delete process.env.OPENCLAW_CLIENT_SKIP_HUB_ALARM;"
-      },
-      {
-        "file": "bots/hub/scripts/openclaw-postalarm-fallback-smoke.ts",
-        "line": 26,
-        "category": "legacy_openclaw_compat",
-        "match": "delete process.env.OPENCLAW_LEGACY_FALLBACK;"
-      },
-      {
-        "file": "bots/hub/scripts/openclaw-postalarm-fallback-smoke.ts",
-        "line": 50,
+        "line": 48,
         "category": "hub_alarm_native",
         "match": "const { postAlarm } = require('../../../packages/core/lib/hub-alarm-client.ts');"
       },
       {
         "file": "bots/hub/scripts/openclaw-postalarm-fallback-smoke.ts",
-        "line": 67,
+        "line": 65,
         "category": "hub_alarm_native",
-        "match": "process.env.HUB_ALARM_LEGACY_OPENCLAW_FALLBACK = 'true';"
+        "match": "process.env.HUB_ALARM_LEGACY_WEBHOOK_FALLBACK = 'true';"
       },
       {
         "file": "bots/hub/scripts/openclaw-postalarm-fallback-smoke.ts",
-        "line": 101,
+        "line": 66,
+        "category": "hub_alarm_native",
+        "match": "process.env.HUB_ALARM_LEGACY_HOOKS_TOKEN = 'smoke-hooks-token';"
+      },
+      {
+        "file": "bots/hub/scripts/openclaw-postalarm-fallback-smoke.ts",
+        "line": 93,
         "category": "hub_alarm_native",
         "match": "const { postAlarm } = require('../../../packages/core/lib/hub-alarm-client.ts');"
       },
       {
         "file": "bots/hub/scripts/openclaw-postalarm-fallback-smoke.ts",
-        "line": 144,
+        "line": 132,
         "category": "hub_alarm_native",
         "match": "const { postAlarm } = require('../../../packages/core/lib/hub-alarm-client.ts');"
       },
       {
         "file": "bots/hub/scripts/openclaw-postalarm-fallback-smoke.ts",
-        "line": 161,
+        "line": 149,
         "category": "hub_alarm_native",
         "match": "const originalHubRecentAlertsPath = process.env.HUB_ALARM_RECENT_ALERTS_PATH;"
       },
       {
         "file": "bots/hub/scripts/openclaw-postalarm-fallback-smoke.ts",
-        "line": 162,
+        "line": 150,
         "category": "hub_alarm_native",
-        "match": "const originalHubLegacyHooksToken = process.env.HUB_ALARM_LEGACY_OPENCLAW_HOOKS_TOKEN;"
+        "match": "const originalHubLegacyHooksToken = process.env.HUB_ALARM_LEGACY_HOOKS_TOKEN;"
       },
       {
         "file": "bots/hub/scripts/openclaw-postalarm-fallback-smoke.ts",
-        "line": 163,
+        "line": 151,
         "category": "hub_alarm_native",
         "match": "const originalHubSkipDirect = process.env.HUB_ALARM_SKIP_DIRECT;"
       },
       {
         "file": "bots/hub/scripts/openclaw-postalarm-fallback-smoke.ts",
-        "line": 164,
+        "line": 152,
         "category": "hub_alarm_native",
-        "match": "const originalHubLegacyFallback = process.env.HUB_ALARM_LEGACY_OPENCLAW_FALLBACK;"
+        "match": "const originalHubLegacyFallback = process.env.HUB_ALARM_LEGACY_WEBHOOK_FALLBACK;"
       },
       {
         "file": "bots/hub/scripts/openclaw-postalarm-fallback-smoke.ts",
-        "line": 165,
-        "category": "legacy_openclaw_compat",
-        "match": "const originalOpenClawWorkspace = process.env.OPENCLAW_WORKSPACE;"
-      },
-      {
-        "file": "bots/hub/scripts/openclaw-postalarm-fallback-smoke.ts",
-        "line": 166,
-        "category": "legacy_openclaw_compat",
-        "match": "const originalOpenClawHooksToken = process.env.OPENCLAW_HOOKS_TOKEN;"
-      },
-      {
-        "file": "bots/hub/scripts/openclaw-postalarm-fallback-smoke.ts",
-        "line": 167,
-        "category": "legacy_openclaw_compat",
-        "match": "const originalOpenClawSkipHubAlarm = process.env.OPENCLAW_CLIENT_SKIP_HUB_ALARM;"
-      },
-      {
-        "file": "bots/hub/scripts/openclaw-postalarm-fallback-smoke.ts",
-        "line": 168,
-        "category": "legacy_openclaw_compat",
-        "match": "const originalLegacyFallback = process.env.OPENCLAW_LEGACY_FALLBACK;"
-      },
-      {
-        "file": "bots/hub/scripts/openclaw-postalarm-fallback-smoke.ts",
-        "line": 177,
+        "line": 161,
         "category": "hub_alarm_native",
         "match": "if (originalHubRecentAlertsPath == null) delete process.env.HUB_ALARM_RECENT_ALERTS_PATH;"
       },
       {
         "file": "bots/hub/scripts/openclaw-postalarm-fallback-smoke.ts",
-        "line": 178,
+        "line": 162,
         "category": "hub_alarm_native",
         "match": "else process.env.HUB_ALARM_RECENT_ALERTS_PATH = originalHubRecentAlertsPath;"
       },
       {
         "file": "bots/hub/scripts/openclaw-postalarm-fallback-smoke.ts",
-        "line": 179,
+        "line": 163,
         "category": "hub_alarm_native",
-        "match": "if (originalHubLegacyHooksToken == null) delete process.env.HUB_ALARM_LEGACY_OPENCLAW_HOOKS_TOKEN;"
+        "match": "if (originalHubLegacyHooksToken == null) delete process.env.HUB_ALARM_LEGACY_HOOKS_TOKEN;"
       },
       {
         "file": "bots/hub/scripts/openclaw-postalarm-fallback-smoke.ts",
-        "line": 180,
+        "line": 164,
         "category": "hub_alarm_native",
-        "match": "else process.env.HUB_ALARM_LEGACY_OPENCLAW_HOOKS_TOKEN = originalHubLegacyHooksToken;"
+        "match": "else process.env.HUB_ALARM_LEGACY_HOOKS_TOKEN = originalHubLegacyHooksToken;"
       },
       {
         "file": "bots/hub/scripts/openclaw-postalarm-fallback-smoke.ts",
-        "line": 181,
+        "line": 165,
         "category": "hub_alarm_native",
         "match": "if (originalHubSkipDirect == null) delete process.env.HUB_ALARM_SKIP_DIRECT;"
       },
       {
         "file": "bots/hub/scripts/openclaw-postalarm-fallback-smoke.ts",
-        "line": 182,
+        "line": 166,
         "category": "hub_alarm_native",
         "match": "else process.env.HUB_ALARM_SKIP_DIRECT = originalHubSkipDirect;"
       },
       {
         "file": "bots/hub/scripts/openclaw-postalarm-fallback-smoke.ts",
-        "line": 183,
+        "line": 167,
         "category": "hub_alarm_native",
-        "match": "if (originalHubLegacyFallback == null) delete process.env.HUB_ALARM_LEGACY_OPENCLAW_FALLBACK;"
+        "match": "if (originalHubLegacyFallback == null) delete process.env.HUB_ALARM_LEGACY_WEBHOOK_FALLBACK;"
       },
       {
         "file": "bots/hub/scripts/openclaw-postalarm-fallback-smoke.ts",
-        "line": 184,
+        "line": 168,
         "category": "hub_alarm_native",
-        "match": "else process.env.HUB_ALARM_LEGACY_OPENCLAW_FALLBACK = originalHubLegacyFallback;"
-      },
-      {
-        "file": "bots/hub/scripts/openclaw-postalarm-fallback-smoke.ts",
-        "line": 185,
-        "category": "legacy_openclaw_compat",
-        "match": "if (originalOpenClawWorkspace == null) delete process.env.OPENCLAW_WORKSPACE;"
-      },
-      {
-        "file": "bots/hub/scripts/openclaw-postalarm-fallback-smoke.ts",
-        "line": 186,
-        "category": "legacy_openclaw_compat",
-        "match": "else process.env.OPENCLAW_WORKSPACE = originalOpenClawWorkspace;"
-      },
-      {
-        "file": "bots/hub/scripts/openclaw-postalarm-fallback-smoke.ts",
-        "line": 187,
-        "category": "legacy_openclaw_compat",
-        "match": "if (originalOpenClawHooksToken == null) delete process.env.OPENCLAW_HOOKS_TOKEN;"
-      },
-      {
-        "file": "bots/hub/scripts/openclaw-postalarm-fallback-smoke.ts",
-        "line": 188,
-        "category": "legacy_openclaw_compat",
-        "match": "else process.env.OPENCLAW_HOOKS_TOKEN = originalOpenClawHooksToken;"
-      },
-      {
-        "file": "bots/hub/scripts/openclaw-postalarm-fallback-smoke.ts",
-        "line": 189,
-        "category": "legacy_openclaw_compat",
-        "match": "if (originalOpenClawSkipHubAlarm == null) delete process.env.OPENCLAW_CLIENT_SKIP_HUB_ALARM;"
-      },
-      {
-        "file": "bots/hub/scripts/openclaw-postalarm-fallback-smoke.ts",
-        "line": 190,
-        "category": "legacy_openclaw_compat",
-        "match": "else process.env.OPENCLAW_CLIENT_SKIP_HUB_ALARM = originalOpenClawSkipHubAlarm;"
-      },
-      {
-        "file": "bots/hub/scripts/openclaw-postalarm-fallback-smoke.ts",
-        "line": 191,
-        "category": "legacy_openclaw_compat",
-        "match": "if (originalLegacyFallback == null) delete process.env.OPENCLAW_LEGACY_FALLBACK;"
-      },
-      {
-        "file": "bots/hub/scripts/openclaw-postalarm-fallback-smoke.ts",
-        "line": 192,
-        "category": "legacy_openclaw_compat",
-        "match": "else process.env.OPENCLAW_LEGACY_FALLBACK = originalLegacyFallback;"
+        "match": "else process.env.HUB_ALARM_LEGACY_WEBHOOK_FALLBACK = originalHubLegacyFallback;"
       }
     ],
     "bots/hub/scripts/run-tests.js": [
       {
         "file": "bots/hub/scripts/run-tests.js",
-        "line": 45,
+        "line": 47,
         "category": "hub_alarm_native",
         "match": "const alarmShimStatus = run(tsxBin, [path.join(scriptDir, 'hub-alarm-client-shim-smoke.ts')]);"
-      }
-    ],
-    "bots/hub/scripts/runtime-workspace-independence-smoke.ts": [
-      {
-        "file": "bots/hub/scripts/runtime-workspace-independence-smoke.ts",
-        "line": 66,
-        "category": "legacy_openclaw_compat",
-        "match": "OPENCLAW_WORKSPACE: null,"
-      },
-      {
-        "file": "bots/hub/scripts/runtime-workspace-independence-smoke.ts",
-        "line": 69,
-        "category": "legacy_openclaw_compat",
-        "match": "OPENCLAW_LOGS: null,"
-      },
-      {
-        "file": "bots/hub/scripts/runtime-workspace-independence-smoke.ts",
-        "line": 81,
-        "category": "legacy_openclaw_compat",
-        "match": "assert.equal(env.OPENCLAW_WORKSPACE, expectedWorkspace);"
-      },
-      {
-        "file": "bots/hub/scripts/runtime-workspace-independence-smoke.ts",
-        "line": 98,
-        "category": "legacy_openclaw_compat",
-        "match": "OPENCLAW_WORKSPACE: legacyWorkspace,"
-      },
-      {
-        "file": "bots/hub/scripts/runtime-workspace-independence-smoke.ts",
-        "line": 102,
-        "category": "legacy_openclaw_compat",
-        "match": "assert.equal(env.OPENCLAW_WORKSPACE, legacyWorkspace);"
-      }
-    ],
-    "bots/hub/scripts/telegram-pending-queue-migration-smoke.ts": [
-      {
-        "file": "bots/hub/scripts/telegram-pending-queue-migration-smoke.ts",
-        "line": 66,
-        "category": "legacy_openclaw_compat",
-        "match": "OPENCLAW_WORKSPACE: legacyWorkspace,"
-      }
-    ],
-    "bots/hub/scripts/telegram-routing-readiness-report.ts": [
-      {
-        "file": "bots/hub/scripts/telegram-routing-readiness-report.ts",
-        "line": 152,
-        "category": "legacy_openclaw_compat",
-        "match": "const legacyWorkspace = String(process.env.OPENCLAW_WORKSPACE || '').trim();"
-      }
-    ],
-    "bots/investment/scripts/pre-market-screen.ts": [
-      {
-        "file": "bots/investment/scripts/pre-market-screen.ts",
-        "line": 34,
-        "category": "legacy_openclaw_compat",
-        "match": "const OPENCLAW_DIR = join(homedir(), '.openclaw');"
-      },
-      {
-        "file": "bots/investment/scripts/pre-market-screen.ts",
-        "line": 37,
-        "category": "legacy_openclaw_compat",
-        "match": "domestic: join(OPENCLAW_DIR, 'domestic-prescreened.json'),"
-      },
-      {
-        "file": "bots/investment/scripts/pre-market-screen.ts",
-        "line": 38,
-        "category": "legacy_openclaw_compat",
-        "match": "overseas: join(OPENCLAW_DIR, 'overseas-prescreened.json'),"
-      },
-      {
-        "file": "bots/investment/scripts/pre-market-screen.ts",
-        "line": 39,
-        "category": "legacy_openclaw_compat",
-        "match": "crypto:   join(OPENCLAW_DIR, 'crypto-prescreened.json'),"
-      },
-      {
-        "file": "bots/investment/scripts/pre-market-screen.ts",
-        "line": 155,
-        "category": "legacy_openclaw_compat",
-        "match": "mkdirSync(OPENCLAW_DIR, { recursive: true });"
       }
     ],
     "bots/orchestrator/lib/steward/daily-summary.ts": [
@@ -1186,7 +794,7 @@
     "bots/orchestrator/src/router.ts": [
       {
         "file": "bots/orchestrator/src/router.ts",
-        "line": 106,
+        "line": 105,
         "category": "hub_alarm_native",
         "match": "} = require('../../../packages/core/lib/hub-alarm-client');"
       }
@@ -1194,41 +802,17 @@
     "bots/orchestrator/src/steward.ts": [
       {
         "file": "bots/orchestrator/src/steward.ts",
-        "line": 16,
+        "line": 15,
         "category": "hub_alarm_native",
         "match": "const { postAlarm } = require('../../../packages/core/lib/hub-alarm-client');"
-      }
-    ],
-    "bots/reservation/context/ALERT_REPORT_CLEANUP_PLAN.md": [
-      {
-        "file": "bots/reservation/context/ALERT_REPORT_CLEANUP_PLAN.md",
-        "line": 30,
-        "category": "legacy_openclaw_compat",
-        "match": "- `packages/core/lib/openclaw-client*`"
-      }
-    ],
-    "bots/reservation/src/bug-report.ts": [
-      {
-        "file": "bots/reservation/src/bug-report.ts",
-        "line": 37,
-        "category": "legacy_openclaw_compat",
-        "match": "const WORKSPACE    = process.env.OPENCLAW_WORKSPACE"
       }
     ],
     "bots/reservation/tsconfig.json": [
       {
         "file": "bots/reservation/tsconfig.json",
         "line": 23,
-        "category": "legacy_openclaw_compat",
-        "match": "\"../../packages/core/lib/openclaw-client.ts\","
-      }
-    ],
-    "bots/sigma/docs/RESEARCH_V1.md": [
-      {
-        "file": "bots/sigma/docs/RESEARCH_V1.md",
-        "line": 30,
-        "category": "legacy_openclaw_compat",
-        "match": "3. **Hermes에 `hermes claw migrate` 기능** — OpenClaw → Hermes 이주 공식 지원. **기존 `packages/core/lib/openclaw-client.*` 향후 Hermes 전환 경로 가능**. 단, 본 리모델링 범위는 아님 (시그마팀은 OpenClaw 경유 알림만 사용)."
+        "category": "hub_alarm_native",
+        "match": "\"../../packages/core/lib/hub-alarm-client.ts\","
       }
     ],
     "bots/sigma/ts/src/sigma-daily-report.ts": [
@@ -1236,7 +820,7 @@
         "file": "bots/sigma/ts/src/sigma-daily-report.ts",
         "line": 19,
         "category": "hub_alarm_native",
-        "match": "const openclaw = require(path.join(PROJECT_ROOT, 'packages/core/lib/hub-alarm-client.js'));"
+        "match": "const hubAlarm = require(path.join(PROJECT_ROOT, 'packages/core/lib/hub-alarm-client.js'));"
       }
     ],
     "bots/sigma/ts/src/sigma-weekly-review.ts": [
@@ -1244,7 +828,7 @@
         "file": "bots/sigma/ts/src/sigma-weekly-review.ts",
         "line": 22,
         "category": "hub_alarm_native",
-        "match": "const openclaw = require(path.join(PROJECT_ROOT, 'packages/core/lib/hub-alarm-client.js'));"
+        "match": "const hubAlarm = require(path.join(PROJECT_ROOT, 'packages/core/lib/hub-alarm-client.js'));"
       }
     ],
     "bots/worker/lib/approval.ts": [
@@ -1258,125 +842,21 @@
     "docs/design/DESIGN_TEAM_JAY_AUTONOMOUS_ORCHESTRATION.md": [
       {
         "file": "docs/design/DESIGN_TEAM_JAY_AUTONOMOUS_ORCHESTRATION.md",
-        "line": 32,
-        "category": "legacy_openclaw_compat",
-        "match": "1. **OpenClaw 분리**: `openclaw-client`, `.openclaw/workspace`, port `18789`, OpenClaw auth profile store는 모두 compatibility layer로 낮춘다."
-      },
-      {
-        "file": "docs/design/DESIGN_TEAM_JAY_AUTONOMOUS_ORCHESTRATION.md",
         "line": 106,
         "category": "hub_alarm_native",
-        "match": "- `hub-alarm-client`가 OpenClaw webhook보다 우선되는 구조로 이동했다."
-      },
-      {
-        "file": "docs/design/DESIGN_TEAM_JAY_AUTONOMOUS_ORCHESTRATION.md",
-        "line": 118,
-        "category": "legacy_openclaw_compat",
-        "match": "- `packages/core/lib/openclaw-client.ts`: 현재는 shim이지만 여전히 많은 팀 import가 남아 있다."
-      },
-      {
-        "file": "docs/design/DESIGN_TEAM_JAY_AUTONOMOUS_ORCHESTRATION.md",
-        "line": 119,
-        "category": "legacy_openclaw_compat",
-        "match": "- `packages/core/lib/openclaw-client.legacy.js`: legacy loader."
+        "match": "- `hub-alarm-client`가 retired webhook보다 우선되는 구조로 이동했다."
       },
       {
         "file": "docs/design/DESIGN_TEAM_JAY_AUTONOMOUS_ORCHESTRATION.md",
         "line": 541,
         "category": "hub_alarm_native",
-        "match": "- `openclaw-client` import를 `hub-alarm-client`로 팀별 이관한다."
-      },
-      {
-        "file": "docs/design/DESIGN_TEAM_JAY_AUTONOMOUS_ORCHESTRATION.md",
-        "line": 542,
-        "category": "legacy_openclaw_compat",
-        "match": "- `OPENCLAW_*` env는 `HUB_*` 이름을 우선하고 legacy fallback으로만 유지한다."
-      },
-      {
-        "file": "docs/design/DESIGN_TEAM_JAY_AUTONOMOUS_ORCHESTRATION.md",
-        "line": 589,
-        "category": "legacy_openclaw_compat",
-        "match": "- `openclaw-client` shim은 compile-time compatibility만 남기고 network fallback은 기본 비활성화한다."
-      },
-      {
-        "file": "docs/design/DESIGN_TEAM_JAY_AUTONOMOUS_ORCHESTRATION.md",
-        "line": 590,
-        "category": "legacy_openclaw_compat",
-        "match": "- `OPENCLAW_*` env fallback은 migration window 이후 제거한다."
+        "match": "- legacy alarm shim import를 `hub-alarm-client`로 팀별 이관한다."
       },
       {
         "file": "docs/design/DESIGN_TEAM_JAY_AUTONOMOUS_ORCHESTRATION.md",
         "line": 625,
         "category": "hub_alarm_native",
         "match": "- `readRecentAlertSnapshot` import를 `hub-alarm-client`로 변경."
-      }
-    ],
-    "docs/design/DESIGN_TEAM_RUNTIME_SELECTOR.md": [
-      {
-        "file": "docs/design/DESIGN_TEAM_RUNTIME_SELECTOR.md",
-        "line": 20,
-        "category": "legacy_openclaw_compat",
-        "match": "OPENCLAW_AGENT"
-      },
-      {
-        "file": "docs/design/DESIGN_TEAM_RUNTIME_SELECTOR.md",
-        "line": 216,
-        "category": "legacy_openclaw_compat",
-        "match": "process.env.OPENCLAW_AGENT"
-      }
-    ],
-    "docs/SESSION_HANDOFF_2026-04-17.md": [
-      {
-        "file": "docs/SESSION_HANDOFF_2026-04-17.md",
-        "line": 2886,
-        "category": "legacy_openclaw_compat",
-        "match": "- 토큰 우선순위 체인: runtime → env(OPENCLAW_BROWSER_TOKEN/GATEWAY_TOKEN) → config 파일"
-      }
-    ],
-    "packages/core/lib/env.ts": [
-      {
-        "file": "packages/core/lib/env.ts",
-        "line": 138,
-        "category": "legacy_openclaw_compat",
-        "match": "export const OPENCLAW_PORT = IS_OPS"
-      },
-      {
-        "file": "packages/core/lib/env.ts",
-        "line": 139,
-        "category": "legacy_openclaw_compat",
-        "match": "? parseInt(process.env.OPENCLAW_PORT || '18789', 10)"
-      },
-      {
-        "file": "packages/core/lib/env.ts",
-        "line": 148,
-        "category": "legacy_openclaw_compat",
-        "match": "|| process.env.OPENCLAW_WORKSPACE"
-      },
-      {
-        "file": "packages/core/lib/env.ts",
-        "line": 153,
-        "category": "legacy_openclaw_compat",
-        "match": "|| process.env.OPENCLAW_LOGS"
-      },
-      {
-        "file": "packages/core/lib/env.ts",
-        "line": 157,
-        "category": "legacy_openclaw_compat",
-        "match": "export const OPENCLAW_WORKSPACE = process.env.OPENCLAW_WORKSPACE || AI_AGENT_WORKSPACE;"
-      },
-      {
-        "file": "packages/core/lib/env.ts",
-        "line": 158,
-        "category": "legacy_openclaw_compat",
-        "match": "export const OPENCLAW_LOGS = process.env.OPENCLAW_LOGS || AI_AGENT_LOGS;"
-      }
-    ],
-    "packages/core/lib/health-state-manager.ts": [
-      {
-        "file": "packages/core/lib/health-state-manager.ts",
-        "line": 13,
-        "category": "legacy_openclaw_compat",
-        "match": "|| process.env.OPENCLAW_WORKSPACE"
       }
     ],
     "packages/core/lib/hub-alarm-client.js": [
@@ -1396,135 +876,57 @@
       },
       {
         "file": "packages/core/lib/hub-alarm-client.ts",
-        "line": 5,
-        "category": "hub_alarm_native",
-        "match": "* legacy OpenClaw webhook은 HUB_ALARM_LEGACY_OPENCLAW_FALLBACK=true일 때만 사용한다."
-      },
-      {
-        "file": "packages/core/lib/hub-alarm-client.ts",
-        "line": 16,
+        "line": 14,
         "category": "hub_alarm_native",
         "match": "const HUB_ALARM_TIMEOUT_MS = Math.max(1000, Number(process.env.HUB_ALARM_TIMEOUT_MS || 5000) || 5000);"
       },
       {
         "file": "packages/core/lib/hub-alarm-client.ts",
-        "line": 19,
+        "line": 17,
         "category": "hub_alarm_native",
         "match": "const RECENT_ALERT_SNAPSHOT_PATH = String(process.env.HUB_ALARM_RECENT_ALERTS_PATH || '').trim()"
       },
       {
         "file": "packages/core/lib/hub-alarm-client.ts",
-        "line": 20,
-        "category": "legacy_openclaw_compat",
-        "match": "|| path.join(env.AI_AGENT_WORKSPACE || env.OPENCLAW_WORKSPACE, 'recent-alerts.json');"
-      },
-      {
-        "file": "packages/core/lib/hub-alarm-client.ts",
-        "line": 166,
-        "category": "hub_alarm_native",
-        "match": "|| process.env.HUB_ALARM_LEGACY_OPENCLAW_HOOKS_TOKEN"
-      },
-      {
-        "file": "packages/core/lib/hub-alarm-client.ts",
-        "line": 167,
-        "category": "legacy_openclaw_compat",
-        "match": "|| process.env.OPENCLAW_HOOKS_TOKEN"
-      },
-      {
-        "file": "packages/core/lib/hub-alarm-client.ts",
-        "line": 287,
-        "category": "hub_alarm_native",
-        "match": "return _readBooleanEnv('HUB_ALARM_LEGACY_OPENCLAW_FALLBACK', 'OPENCLAW_LEGACY_FALLBACK');"
-      },
-      {
-        "file": "packages/core/lib/hub-alarm-client.ts",
-        "line": 324,
+        "line": 267,
         "category": "hub_alarm_native",
         "match": "signal: AbortSignal.timeout(HUB_ALARM_TIMEOUT_MS),"
       },
       {
         "file": "packages/core/lib/hub-alarm-client.ts",
-        "line": 363,
+        "line": 306,
         "category": "hub_alarm_native",
         "match": "console.warn(`[hub-alarm-client] recent alert snapshot 저장 실패: ${(error as Error).message}`);"
       },
       {
         "file": "packages/core/lib/hub-alarm-client.ts",
-        "line": 396,
+        "line": 339,
         "category": "hub_alarm_native",
         "match": "console.warn('[hub-alarm-client] inline telegram 발송 실패: bot token/group id 미설정');"
       },
       {
         "file": "packages/core/lib/hub-alarm-client.ts",
-        "line": 425,
+        "line": 368,
         "category": "hub_alarm_native",
         "match": "console.warn(`[hub-alarm-client] inline telegram 429 — ${delayMs}ms 후 재시도`);"
       },
       {
         "file": "packages/core/lib/hub-alarm-client.ts",
-        "line": 436,
+        "line": 379,
         "category": "hub_alarm_native",
         "match": "console.warn(`[hub-alarm-client] inline telegram 실패: ${error.message}`);"
       },
       {
         "file": "packages/core/lib/hub-alarm-client.ts",
-        "line": 476,
+        "line": 415,
         "category": "hub_alarm_native",
-        "match": "const hubDirectBlocked = _readBooleanEnv('HUB_ALARM_SKIP_DIRECT', 'OPENCLAW_CLIENT_SKIP_HUB_ALARM');"
+        "match": "const hubDirectBlocked = _readBooleanEnv('HUB_ALARM_SKIP_DIRECT');"
       },
       {
         "file": "packages/core/lib/hub-alarm-client.ts",
-        "line": 491,
+        "line": 437,
         "category": "hub_alarm_native",
-        "match": "console.warn(`[hub-alarm-client] hub alarm failed (legacy OpenClaw fallback disabled): ${hubResult.error}`);"
-      },
-      {
-        "file": "packages/core/lib/hub-alarm-client.ts",
-        "line": 499,
-        "category": "hub_alarm_native",
-        "match": "console.warn(`[hub-alarm-client] hub alarm legacy fallback: ${hubResult.error}`);"
-      },
-      {
-        "file": "packages/core/lib/hub-alarm-client.ts",
-        "line": 514,
-        "category": "hub_alarm_native",
-        "match": "console.warn('[hub-alarm-client] hooks_token 미설정');"
-      },
-      {
-        "file": "packages/core/lib/hub-alarm-client.ts",
-        "line": 548,
-        "category": "hub_alarm_native",
-        "match": "console.warn(`[hub-alarm-client] legacy webhook 실패: ${error.message}`);"
-      },
-      {
-        "file": "packages/core/lib/hub-alarm-client.ts",
-        "line": 551,
-        "category": "hub_alarm_native",
-        "match": "console.warn('[hub-alarm-client] legacy webhook curl 폴백 성공');"
-      }
-    ],
-    "packages/core/lib/intent-store.ts": [
-      {
-        "file": "packages/core/lib/intent-store.ts",
-        "line": 41,
-        "category": "legacy_openclaw_compat",
-        "match": "|| process.env.OPENCLAW_WORKSPACE"
-      }
-    ],
-    "packages/core/lib/llm-control/snapshot.ts": [
-      {
-        "file": "packages/core/lib/llm-control/snapshot.ts",
-        "line": 12,
-        "category": "legacy_openclaw_compat",
-        "match": "|| process.env.OPENCLAW_WORKSPACE"
-      }
-    ],
-    "packages/core/lib/llm-timeouts.ts": [
-      {
-        "file": "packages/core/lib/llm-timeouts.ts",
-        "line": 10,
-        "category": "legacy_openclaw_compat",
-        "match": "|| process.env.OPENCLAW_WORKSPACE"
+        "match": "console.warn(`[hub-alarm-client] hub alarm failed: ${hubResult.error}`);"
       }
     ],
     "packages/core/lib/openclaw-client.js": [
@@ -1538,45 +940,9 @@
     "packages/core/lib/openclaw-client.legacy.js": [
       {
         "file": "packages/core/lib/openclaw-client.legacy.js",
-        "line": 13,
-        "category": "legacy_openclaw_compat",
-        "match": "const coreSourcePath = path.join(current, 'packages/core/lib/openclaw-client.ts');"
-      },
-      {
-        "file": "packages/core/lib/openclaw-client.legacy.js",
-        "line": 31,
-        "category": "legacy_openclaw_compat",
-        "match": "path.join(__dirname, 'openclaw-client.ts'),"
-      },
-      {
-        "file": "packages/core/lib/openclaw-client.legacy.js",
-        "line": 32,
-        "category": "legacy_openclaw_compat",
-        "match": "...(repoRoot ? [path.join(repoRoot, 'packages/core/lib/openclaw-client.ts')] : []),"
-      },
-      {
-        "file": "packages/core/lib/openclaw-client.legacy.js",
-        "line": 33,
-        "category": "legacy_openclaw_compat",
-        "match": "path.resolve(__dirname, '../../../../packages/core/lib/openclaw-client.ts'),"
-      },
-      {
-        "file": "packages/core/lib/openclaw-client.legacy.js",
-        "line": 34,
-        "category": "legacy_openclaw_compat",
-        "match": "path.resolve(__dirname, '../../../../../packages/core/lib/openclaw-client.ts'),"
-      },
-      {
-        "file": "packages/core/lib/openclaw-client.legacy.js",
-        "line": 35,
-        "category": "legacy_openclaw_compat",
-        "match": "path.resolve(__dirname, '../../../../../../packages/core/lib/openclaw-client.ts'),"
-      },
-      {
-        "file": "packages/core/lib/openclaw-client.legacy.js",
-        "line": 42,
-        "category": "legacy_openclaw_compat",
-        "match": "throw new Error(`Unable to locate openclaw-client.ts runtime source (checked: ${candidates.join(', ')})`);"
+        "line": 5,
+        "category": "hub_alarm_native",
+        "match": "module.exports = require('./hub-alarm-client');"
       }
     ],
     "packages/core/lib/openclaw-client.ts": [
@@ -1588,7 +954,7 @@
       },
       {
         "file": "packages/core/lib/openclaw-client.ts",
-        "line": 13,
+        "line": 11,
         "category": "hub_alarm_native",
         "match": "} from './hub-alarm-client';"
       }
@@ -1607,262 +973,126 @@
         "line": 31,
         "category": "hub_alarm_native",
         "match": "const hubAlarmClient = require('./hub-alarm-client');"
-      },
-      {
-        "file": "packages/core/lib/telegram-sender.ts",
-        "line": 211,
-        "category": "legacy_openclaw_compat",
-        "match": "const LEGACY_WORKSPACE = process.env.OPENCLAW_WORKSPACE || '';"
       }
     ],
     "packages/core/REPORTING_HUB_PLAN.md": [
       {
         "file": "packages/core/REPORTING_HUB_PLAN.md",
         "line": 84,
-        "category": "legacy_openclaw_compat",
-        "match": "- canonical transport 자체 (`openclaw-client.ts`, `reporting-hub.ts`)"
+        "category": "hub_alarm_native",
+        "match": "- canonical transport 자체 (`hub-alarm-client.ts`, `reporting-hub.ts`)"
       }
     ],
     "packages/core/REPORTING_INVENTORY.md": [
       {
         "file": "packages/core/REPORTING_INVENTORY.md",
         "line": 126,
-        "category": "legacy_openclaw_compat",
-        "match": "5. canonical transport (`openclaw-client.ts`, `reporting-hub.ts`) 바깥 non-blog current delivery는 사실상 1차 정리 완료 상태로 유지"
+        "category": "hub_alarm_native",
+        "match": "5. canonical transport (`hub-alarm-client.ts`, `reporting-hub.ts`) 바깥 non-blog current delivery는 사실상 1차 정리 완료 상태로 유지"
       }
     ],
     "packages/core/scripts/publish-python-report.ts": [
       {
         "file": "packages/core/scripts/publish-python-report.ts",
-        "line": 15,
+        "line": 12,
         "category": "hub_alarm_native",
         "match": "const { postAlarm } = require('../lib/hub-alarm-client');"
-      }
-    ],
-    "packages/core/src/utils.ts": [
-      {
-        "file": "packages/core/src/utils.ts",
-        "line": 18,
-        "category": "legacy_openclaw_compat",
-        "match": "|| process.env.OPENCLAW_WORKSPACE"
       }
     ],
     "README.md": [
       {
         "file": "README.md",
         "line": 121,
-        "category": "legacy_openclaw_compat",
-        "match": "│       ├── openclaw-client.js    # Telegram alerts & Standing Orders"
+        "category": "hub_alarm_native",
+        "match": "│       ├── hub-alarm-client.js   # Hub-routed Telegram alerts & Standing Orders"
       }
     ],
     "scripts/api-usage-report.ts": [
       {
         "file": "scripts/api-usage-report.ts",
         "line": 30,
-        "category": "legacy_openclaw_compat",
-        "match": "const openclawClient = require('../packages/core/lib/openclaw-client');"
+        "category": "hub_alarm_native",
+        "match": "const hubAlarmClient = require('../packages/core/lib/hub-alarm-client');"
       }
     ],
     "scripts/build-reservation-runtime.mjs": [
       {
         "file": "scripts/build-reservation-runtime.mjs",
         "line": 16,
-        "category": "legacy_openclaw_compat",
-        "match": "'packages/core/lib/openclaw-client.js',"
+        "category": "hub_alarm_native",
+        "match": "'packages/core/lib/hub-alarm-client.js',"
       }
     ],
     "scripts/build-ts-phase1.mjs": [
       {
         "file": "scripts/build-ts-phase1.mjs",
         "line": 57,
-        "category": "legacy_openclaw_compat",
-        "match": "path.join(root, 'packages/core/lib/openclaw-client.ts'),"
+        "category": "hub_alarm_native",
+        "match": "path.join(root, 'packages/core/lib/hub-alarm-client.ts'),"
       }
     ],
     "scripts/collect-kpi.ts": [
       {
         "file": "scripts/collect-kpi.ts",
         "line": 16,
-        "category": "legacy_openclaw_compat",
-        "match": "const openclawClient = require(path.join(ROOT, 'packages/core/lib/openclaw-client'));"
-      }
-    ],
-    "scripts/launchd/ai.openclaw.gateway.plist": [
-      {
-        "file": "scripts/launchd/ai.openclaw.gateway.plist",
-        "line": 11,
-        "category": "legacy_openclaw_compat",
-        "match": "<key>OPENCLAW_GATEWAY_PORT</key>"
-      },
-      {
-        "file": "scripts/launchd/ai.openclaw.gateway.plist",
-        "line": 13,
-        "category": "legacy_openclaw_compat",
-        "match": "<key>OPENCLAW_GATEWAY_TOKEN</key>"
-      },
-      {
-        "file": "scripts/launchd/ai.openclaw.gateway.plist",
-        "line": 15,
-        "category": "legacy_openclaw_compat",
-        "match": "<key>OPENCLAW_LAUNCHD_LABEL</key>"
-      },
-      {
-        "file": "scripts/launchd/ai.openclaw.gateway.plist",
-        "line": 17,
-        "category": "legacy_openclaw_compat",
-        "match": "<key>OPENCLAW_SERVICE_KIND</key>"
-      },
-      {
-        "file": "scripts/launchd/ai.openclaw.gateway.plist",
-        "line": 19,
-        "category": "legacy_openclaw_compat",
-        "match": "<key>OPENCLAW_SERVICE_MARKER</key>"
-      },
-      {
-        "file": "scripts/launchd/ai.openclaw.gateway.plist",
-        "line": 21,
-        "category": "legacy_openclaw_compat",
-        "match": "<key>OPENCLAW_SERVICE_VERSION</key>"
-      },
-      {
-        "file": "scripts/launchd/ai.openclaw.gateway.plist",
-        "line": 23,
-        "category": "legacy_openclaw_compat",
-        "match": "<key>OPENCLAW_SYSTEMD_UNIT</key>"
-      }
-    ],
-    "scripts/lib/deployer.ts": [
-      {
-        "file": "scripts/lib/deployer.ts",
-        "line": 13,
-        "category": "legacy_openclaw_compat",
-        "match": "const OPENCLAW_CONFIG = path.join(process.env.HOME, '.openclaw', 'openclaw.json');"
-      },
-      {
-        "file": "scripts/lib/deployer.ts",
-        "line": 47,
-        "category": "legacy_openclaw_compat",
-        "match": "const cfg = JSON.parse(fs.readFileSync(OPENCLAW_CONFIG, 'utf-8'));"
+        "category": "hub_alarm_native",
+        "match": "const hubAlarmClient = require(path.join(ROOT, 'packages/core/lib/hub-alarm-client'));"
       }
     ],
     "scripts/luna-transition-analysis.ts": [
       {
         "file": "scripts/luna-transition-analysis.ts",
         "line": 18,
-        "category": "legacy_openclaw_compat",
-        "match": "const openclawClient = require(path.join(ROOT, 'packages/core/lib/openclaw-client'));"
-      }
-    ],
-    "scripts/migrate/02-setup.sh": [
-      {
-        "file": "scripts/migrate/02-setup.sh",
-        "line": 161,
-        "category": "legacy_openclaw_compat",
-        "match": "OPENCLAW_BIN=\"$(ls \"$NODE_BIN_DIR/../lib/node_modules/openclaw/dist/index.js\" 2>/dev/null || echo \"\")\""
-      },
-      {
-        "file": "scripts/migrate/02-setup.sh",
-        "line": 163,
-        "category": "legacy_openclaw_compat",
-        "match": "if [[ -n \"$OPENCLAW_BIN\" && -f \"$PLIST\" ]]; then"
-      },
-      {
-        "file": "scripts/migrate/02-setup.sh",
-        "line": 176,
-        "category": "legacy_openclaw_compat",
-        "match": "args[1] = '$OPENCLAW_BIN'"
-      }
-    ],
-    "scripts/migration/backup-verify.ts": [
-      {
-        "file": "scripts/migration/backup-verify.ts",
-        "line": 28,
-        "category": "legacy_openclaw_compat",
-        "match": "const OPENCLAW_DIR = path.join(os.homedir(), '.openclaw');"
-      },
-      {
-        "file": "scripts/migration/backup-verify.ts",
-        "line": 108,
-        "category": "legacy_openclaw_compat",
-        "match": "const ocCheck = fs.existsSync(OPENCLAW_DIR);"
-      },
-      {
-        "file": "scripts/migration/backup-verify.ts",
-        "line": 109,
-        "category": "legacy_openclaw_compat",
-        "match": "record('~/.openclaw 존재', ocCheck ? 'pass' : 'fail', OPENCLAW_DIR);"
-      },
-      {
-        "file": "scripts/migration/backup-verify.ts",
-        "line": 111,
-        "category": "legacy_openclaw_compat",
-        "match": "const soulPath = path.join(OPENCLAW_DIR, 'agents', 'main', 'agent', 'SOUL.md');"
+        "category": "hub_alarm_native",
+        "match": "const hubAlarmClient = require(path.join(ROOT, 'packages/core/lib/hub-alarm-client'));"
       }
     ],
     "scripts/run-graduation-analysis.ts": [
       {
         "file": "scripts/run-graduation-analysis.ts",
         "line": 18,
-        "category": "legacy_openclaw_compat",
-        "match": "const openclawClient = require(path.join(ROOT, 'packages/core/lib/openclaw-client'));"
+        "category": "hub_alarm_native",
+        "match": "const hubAlarmClient = require(path.join(ROOT, 'packages/core/lib/hub-alarm-client'));"
       }
     ],
     "scripts/speed-test.ts": [
       {
         "file": "scripts/speed-test.ts",
-        "line": 41,
-        "category": "legacy_openclaw_compat",
-        "match": "const openclawClient = require('../packages/core/lib/openclaw-client');"
-      },
-      {
-        "file": "scripts/speed-test.ts",
-        "line": 44,
-        "category": "legacy_openclaw_compat",
-        "match": "OPENCLAW_CONFIG,"
-      },
-      {
-        "file": "scripts/speed-test.ts",
-        "line": 229,
-        "category": "legacy_openclaw_compat",
-        "match": "const current = JSON.parse(fs.readFileSync(OPENCLAW_CONFIG, 'utf-8'))?.agents?.defaults?.model?.primary;"
-      },
-      {
-        "file": "scripts/speed-test.ts",
-        "line": 239,
-        "category": "legacy_openclaw_compat",
-        "match": "const updated = JSON.parse(fs.readFileSync(OPENCLAW_CONFIG, 'utf-8'));"
+        "line": 42,
+        "category": "hub_alarm_native",
+        "match": "const hubAlarmClient = require('../packages/core/lib/hub-alarm-client');"
       }
     ],
     "scripts/stability-dashboard.ts": [
       {
         "file": "scripts/stability-dashboard.ts",
         "line": 243,
-        "category": "legacy_openclaw_compat",
-        "match": "const openclawClient = require('../packages/core/lib/openclaw-client');"
+        "category": "hub_alarm_native",
+        "match": "const hubAlarmClient = require('../packages/core/lib/hub-alarm-client');"
       }
     ],
     "scripts/weekly-stability-report.ts": [
       {
         "file": "scripts/weekly-stability-report.ts",
         "line": 17,
-        "category": "legacy_openclaw_compat",
-        "match": "const openclawClient = require(path.join(ROOT, 'packages/core/lib/openclaw-client'));"
+        "category": "hub_alarm_native",
+        "match": "const hubAlarmClient = require(path.join(ROOT, 'packages/core/lib/hub-alarm-client'));"
       }
     ],
     "scripts/weekly-team-report.ts": [
       {
         "file": "scripts/weekly-team-report.ts",
         "line": 15,
-        "category": "legacy_openclaw_compat",
-        "match": "const openclawClient = require('../packages/core/lib/openclaw-client');"
+        "category": "hub_alarm_native",
+        "match": "const hubAlarmClient = require('../packages/core/lib/hub-alarm-client');"
       }
     ],
     "tsconfig.json": [
       {
         "file": "tsconfig.json",
         "line": 20,
-        "category": "legacy_openclaw_compat",
-        "match": "\"packages/core/lib/openclaw-client.js\","
+        "category": "hub_alarm_native",
+        "match": "\"packages/core/lib/hub-alarm-client.js\","
       }
     ]
   }

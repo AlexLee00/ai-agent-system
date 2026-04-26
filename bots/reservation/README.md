@@ -20,7 +20,7 @@
         ↓
 [Postgres] ← 예약 이력 + AES-256-GCM 암호화 + agent_state / pickko_lock / pending_blocks
         ↓
-[Telegram/OpenClaw] ← 운영 알람·리포트
+[Telegram/Hub] ← 운영 알람·리포트
 ```
 
 ---

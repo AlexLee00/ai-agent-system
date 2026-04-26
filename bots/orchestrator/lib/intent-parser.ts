@@ -77,9 +77,9 @@ const SLASH_MAP = {
   '/unrec':       { intent: 'unrecognized_report', args: {} },
   '/promotions':  { intent: 'promotion_candidates', args: {} },
   '/ops-health': { intent: 'ops_health', args: {} },
+  '/hub-health': { intent: 'orchestrator_health', args: {} },
   '/orchestrator-health': { intent: 'orchestrator_health', args: {} },
   '/jay-health': { intent: 'orchestrator_health', args: {} },
-  '/openclaw-health': { intent: 'orchestrator_health', args: {} },
   '/reporting-health': { intent: 'reporting_health', args: {} },
   '/feedback-health': { intent: 'feedback_health', args: {} },
   '/intent-health': { intent: 'intent_engine_health', args: {} },
@@ -198,7 +198,7 @@ const KEYWORD_PATTERNS = [
   { re: /(루나|luna).*(오류|에러|로그|상태로그)|투자팀.*(오류|에러|로그)/i, intent: 'team_logs', args: { team: 'luna' } },
   { re: /(스카|ska).*(오류|에러|로그|상태로그)|예약팀.*(오류|에러|로그)/i, intent: 'team_logs', args: { team: 'ska' } },
   { re: /(클로드|claude).*(오류|에러|로그|상태로그)|덱스터.*(오류|에러|로그)/i, intent: 'team_logs', args: { team: 'claude' } },
-  { re: /(오케스트레이터|제이|jay).*(헬스|건강|운영.*상태|운영상태|운영.*리포트|헬스.*리포트|헬스.*보고)|오픈클로.*(헬스|건강|운영.*상태|운영.*리포트)/i, intent: 'orchestrator_health', args: {} },
+  { re: /(오케스트레이터|제이|jay|허브|hub).*(헬스|건강|운영.*상태|운영상태|운영.*리포트|헬스.*리포트|헬스.*보고)/i, intent: 'orchestrator_health', args: {} },
   { re: /(리포팅|reporting|알림.*파이프라인|레포팅).*(프로듀서|봇별|랭킹|순위)|payload.*(프로듀서|랭킹|순위)/i, intent: 'reporting_health', args: { query: 'producers' } },
   { re: /(리포팅|reporting|알림.*파이프라인|레포팅).*(요약|한눈|브리핑)|payload.*(요약|한눈)/i, intent: 'reporting_health', args: { query: 'summary' } },
   { re: /(리포팅|reporting|알림.*파이프라인|레포팅).*(헬스|건강|상태|리포트|보고)|payload.*(경고|헬스|상태)/i, intent: 'reporting_health', args: {} },
@@ -325,16 +325,16 @@ const KEYWORD_PATTERNS = [
   { re: /캐시.*(현황|통계|적중|조회|hit)|cache.*(stats|현황|적중|통계)/i,      intent: 'cache_stats' },
   { re: /LLM.*(비용.*상세|팀별.*비용|cost.*detail)|토큰.*(상세|팀별|breakdown)/i, intent: 'llm_cost' },
   { re: /졸업.*(현황|후보|리포트|목록)|LLM.*졸업|graduation.*(현황|report)/i,  intent: 'llm_graduation' },
-  { re: /(제이|jay).*(모델|LLM|API|primary|fallback)|(오픈클로|openclaw).*(모델|primary|fallback)|무슨\s*모델\s*써|어떤\s*모델\s*써/i, intent: 'jay_model_policy' },
+  { re: /(제이|jay|허브|hub).*(모델|LLM|API|primary|fallback)|무슨\s*모델\s*써|어떤\s*모델\s*써/i, intent: 'jay_model_policy' },
   { re: /(LLM|모델).*(셀렉터|selector|체인|fallback|폴백).*(보여|조회|리포트|현황)|selector.*(report|show|status)|현재.*(LLM|모델).*(체인|폴백)/i, intent: 'llm_selector_report' },
 
   // ── 시스템 안정성·텔레그램 ──
   { re: /안정성.*(현황|대시보드|dashboard)|stability.*(현황|report|대시보드)|시스템.*안정/i, intent: 'stability' },
   { re: /텔레그램.*(상태|연결|폴링|봇.*상태)|telegram.*(status|connected|polling)/i,       intent: 'telegram_status' },
-  { re: /(오픈클로|openclaw|게이트웨이|gateway).*(상태|연결|어때|괜찮|살아)|제이.*(텔레그램|연결).*(어때|상태)/i,              intent: 'telegram_status' },
+  { re: /(허브|hub|게이트웨이|gateway).*(상태|연결|어때|괜찮|살아)|제이.*(텔레그램|연결).*(어때|상태)/i,              intent: 'telegram_status' },
   { re: /속도.*(체크|테스트|측정|확인)|speed.*(check|test)|제일.*빠른.*모델|빠른.*모델.*뭐/i, intent: 'speed_test' },
   { re: /(최근|최신)?.*(오류|에러|로그).*(보여|확인|요약)|log.*(check|summary|error)|로그.*(확인|체크)|최근.*오류.*보여/i, intent: 'system_logs' },
-  { re: /(mainbot|메인봇|제이|오픈클로|게이트웨이|gateway).*(오류|에러|로그)|오픈클로.*(무슨\s*문제|문제\s*있|에러)|제이.*로그/i, intent: 'system_logs' },
+  { re: /(mainbot|메인봇|제이|허브|hub|게이트웨이|gateway).*(오류|에러|로그)|제이.*로그/i, intent: 'system_logs' },
   // ── 미인식 패턴 리포트 ──
   { re: /미인식.*(명령|패턴|목록)|unrecognized.*(list|report)/i, intent: 'unrecognized_report' },
   { re: /자동.*(학습|반영).*(후보|목록|현황)|학습.*후보.*보여|promot(e|ion).*(candidate|list)|반영.*후보/i, intent: 'promotion_candidates' },
@@ -375,7 +375,7 @@ const KEYWORD_PATTERNS = [
   { re: /예약|스터디|카페|손님/i,             intent: 'ska'  },
 
   // ── 마지막: 일반 상태 ──
-  { re: /제이.*(상태|현황|어때)|오픈클로.*(상태|현황|어때)|상태|현황|status|다들.*살아|모두.*어때/i, intent: 'status' },
+  { re: /제이.*(상태|현황|어때)|허브.*(상태|현황|어때)|hub.*(status|상태)|상태|현황|status|다들.*살아|모두.*어때/i, intent: 'status' },
 ];
 
 function extractTarget(text) {

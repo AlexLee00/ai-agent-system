@@ -21,7 +21,8 @@ for arg in "$@"; do
 done
 
 PROJECT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
-BACKUP_DIR="$HOME/.openclaw/workspace/backups"
+AI_AGENT_WORKSPACE_DIR="${AI_AGENT_WORKSPACE:-$HOME/.ai-agent-system/workspace}"
+BACKUP_DIR="${AI_AGENT_BACKUP_DIR:-$AI_AGENT_WORKSPACE_DIR/backups}"
 LAUNCHD_DIR="$PROJECT_DIR/scripts/launchd"
 
 # ── 색상 ────────────────────────────────────────────────────────────
@@ -82,7 +83,7 @@ LATEST=$(ls "$BACKUP_DIR"/*.sql 2>/dev/null | sort -r | head -1 || true)
 if [ -z "$LATEST" ]; then
   err "백업 없음 — 복구 불가"
   echo "  먼저 맥미니에서 백업을 가져오세요:"
-  echo "  scp mac-mini:~/.openclaw/workspace/backups/jay_latest.sql $BACKUP_DIR/"
+  echo "  scp mac-mini:~/.ai-agent-system/workspace/backups/jay_latest.sql $BACKUP_DIR/"
   exit 1
 fi
 AGE=$(( ($(date +%s) - $(stat -f '%m' "$LATEST" 2>/dev/null || stat -c '%Y' "$LATEST")) / 3600 ))

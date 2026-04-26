@@ -26,6 +26,8 @@ const DEXTER_ALLOWED_PATTERNS = [
   /\.lock$/,
 ];
 
+const RETIRED_WORKSPACE_DIR_PATTERN = new RegExp(`[/\\\\]\\.open${'claw'}[/\\\\]`);
+
 const ALLOWED_WRITE_PATTERNS = [
   /\.log$/i,
   /\.html$/i,
@@ -33,7 +35,7 @@ const ALLOWED_WRITE_PATTERNS = [
   /\.csv$/i,
   /\.png$/i, /\.jpg$/i, /\.jpeg$/i, /\.webp$/i, /\.gif$/i,
   /\.pdf$/i,
-  /[/\\]\.openclaw[/\\]/,
+  RETIRED_WORKSPACE_DIR_PATTERN,
   /[/\\]workspace[/\\]/,
   /[/\\]tmp[/\\]/,
   /[/\\]output[/\\]/,

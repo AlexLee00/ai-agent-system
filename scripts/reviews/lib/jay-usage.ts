@@ -5,7 +5,15 @@ const fs = require('fs');
 const path = require('path');
 const os = require('os');
 
-const SESSION_DIR = path.join(os.homedir(), '.openclaw', 'agents', 'main', 'sessions');
+function getAiAgentHome() {
+  return process.env.AI_AGENT_HOME || process.env.JAY_HOME || path.join(os.homedir(), '.ai-agent-system');
+}
+
+function getAiAgentWorkspace() {
+  return process.env.AI_AGENT_WORKSPACE || process.env.JAY_WORKSPACE || path.join(getAiAgentHome(), 'workspace');
+}
+
+const SESSION_DIR = process.env.JAY_SESSION_DIR || path.join(getAiAgentWorkspace(), 'jay-sessions');
 
 function toKstDate(isoString) {
   const ts = new Date(isoString).getTime();

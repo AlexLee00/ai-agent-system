@@ -70,12 +70,12 @@
 
 | ID | 컴포넌트 | 이슈 | 해결일 | 해결 방법 |
 |----|----------|------|--------|----------|
-| KI-F01 | openclaw.js | IPv6 `[::1]` 파싱 버그 → false positive CRITICAL 알림 | 2026-03-06 | bracket notation 파싱 추가 |
+| KI-F01 | retired-gateway check | IPv6 `[::1]` 파싱 버그 → false positive CRITICAL 알림 | 2026-03-06 | bracket notation 파싱 추가 |
 | KI-F05 | seed-three-teams.js | hermes 이름 충돌 — 기존 뉴스분석가와 새 스캘핑 실행 동명 | 2026-04-03 | hermes→swift 이름 변경 (a4ec4ce) |
 | KI-F06 | hiring-contract.js | selectBestAgent 팀 격리 미흡 — 시그마팀 요청에 루나팀 에이전트 선택 | 2026-04-03 | team 주어지면 getAgentsByTeam 우선 (a4ec4ce) |
 | KI-F07 | seed-three-teams.js | 새 role(analyst_short/long/watcher 등) exact match 실패 | 2026-04-03 | 7개 role → analyst 정규화 + DB UPDATE |
 | KI-F08 | trade-journal-db.js | 에이전트 이름 하드코딩 컬럼(aria_signal/hermes_accurate) | 2026-04-03 | JSONB 동적 구조 전환 (Phase B-1 완료) |
-| KI-F02 | dexter-quickcheck.js | v2 openclaw lsof 체크 false positive | 2026-03-06 | 중복 체크 제거 (launchd 충분) |
+| KI-F02 | dexter-quickcheck.js | v2 retired gateway lsof 체크 false positive | 2026-03-06 | 중복 체크 제거 (launchd 충분) |
 | KI-F03 | test-nlp-e2e.js | 스크립트 경로 `src/` 고정 → 파일 이동 후 0/27 실패 | 2026-03-06 | `SCRIPT_DIRS` 매핑 + resolveScript() |
 | KI-F04 | 덱스터 | npm_audit false positive (duckdb→tar 취약점) | 2026-03-06 | `--clear-patterns --label=npm_audit` 이력 삭제 |
 | KI-F05 | 스카 | 네이버 홈화면 복귀 문제 | 2026-03-03 | 현재 방식 유지 (낮은 우선순위) |

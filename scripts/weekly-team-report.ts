@@ -12,7 +12,7 @@
 
 const pgPool = require('../packages/core/lib/pg-pool');
 const rag    = require('../packages/core/lib/rag');
-const openclawClient = require('../packages/core/lib/openclaw-client');
+const hubAlarmClient = require('../packages/core/lib/hub-alarm-client');
 
 const args    = process.argv.slice(2);
 const daysArg = args.find(a => a.startsWith('--days='));
@@ -228,16 +228,16 @@ async function main() {
 
   // 텔레그램 발송
   try {
-    const sent = await openclawClient.postAlarm({
+    const sent = await hubAlarmClient.postAlarm({
       team: 'claude-lead',
       message: report,
       alertLevel: 1,
       fromBot: 'weekly-team-report',
     });
     if (!sent?.ok) throw new Error(sent?.error || `status_${sent?.status || 'unknown'}`);
-    console.log('\n✅ OpenClaw 발송 완료');
+    console.log('\n✅ Hub alarm 발송 완료');
   } catch (e) {
-    console.warn('\n⚠️ OpenClaw 발송 실패:', e.message);
+    console.warn('\n⚠️ Hub alarm 발송 실패:', e.message);
   }
 
   // RAG 저장

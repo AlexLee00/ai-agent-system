@@ -435,7 +435,7 @@ CREATE TABLE research.diagnoses (
   → 스카우트가 아처의 수집 패턴을 참조/확장
   → 아처는 클로드팀에 유지, 스카우트는 연구 전문 서칭
 
-self-improving 스킬 (~/.openclaw/workspace/skills/self-improving/):
+self-improving 스킬 (Hub/runtime skills store):
   → memory.md(HOT), corrections.md, domains/
   → 연구팀이 이 데이터를 분석하여 시스템 개선에 활용
 

@@ -10,13 +10,13 @@
 ```
 사용자 (Telegram)
     ↕
-제이 (OpenClaw — 유일한 Telegram 창구)
+제이 (Hub — 유일한 Telegram 창구)
     ├── 스카 커맨더 (bot_commands 폴링 30초)
     ├── 루나 커맨더 (bot_commands 폴링 30초)
     └── 클로드 커맨더 (bot_commands 폴링 30초)
 ```
 
-명령 채널: `~/.openclaw/workspace/claude-team.db` → `bot_commands` 테이블
+명령 채널: Hub runtime state DB → `bot_commands` 테이블
 
 ---
 

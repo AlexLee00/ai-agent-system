@@ -17,7 +17,7 @@ jest.mock('../../../packages/core/lib/llm-keys', () => ({
 jest.mock('../../../packages/core/lib/mode-guard', () => ({
   runIfOps: jest.fn((_key, _ops, dev) => Promise.resolve(dev())),
 }));
-jest.mock('../../../packages/core/lib/openclaw-client', () => ({
+jest.mock('../../../packages/core/lib/hub-alarm-client', () => ({
   postAlarm: jest.fn().mockResolvedValue(undefined),
 }));
 jest.mock('../../../packages/core/lib/llm-fallback', () => ({

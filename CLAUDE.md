@@ -41,7 +41,7 @@ Layer 1: 팀원 봇 (규칙) — 실행·보고
 
 ```
 OPS: Mac Studio M4 Max 36GB (24/7 운영)
-  Hub(:7788), PostgreSQL(:5432), n8n(:5678), MLX(:11434), OpenClaw(:18789)
+  Hub(:7788), PostgreSQL(:5432), n8n(:5678), MLX(:11434)
 DEV: MacBook Air M3 (개발 전용, Tailscale 연결)
 배포: git push → 5분 cron 자동 pull + GitHub Actions CI (self-hosted runner OPS)
 DB: PostgreSQL 단일 (jay DB) + pgvector — 별도 DB 추가 금지

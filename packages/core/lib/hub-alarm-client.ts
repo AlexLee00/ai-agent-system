@@ -2,16 +2,14 @@
  * packages/core/lib/hub-alarm-client.js — Hub alarm 클라이언트
  *
  * 모든 봇 알람을 Hub /hub/alarm으로 우선 전달한다.
- * legacy OpenClaw webhook은 HUB_ALARM_LEGACY_OPENCLAW_FALLBACK=true일 때만 사용한다.
+ * Legacy webhook fallback은 retired 상태이며 사용하지 않는다.
  */
 
 const fs = require('fs');
 const path = require('path');
-const { spawnSync } = require('child_process');
 const env = require('./env.legacy.js');
 const { fetchHubSecrets } = require('./hub-client.legacy.js');
 
-const HOOK_URL = 'http://127.0.0.1:18789/hooks/agent';
 const TIMEOUT_MS = 30_000;
 const HUB_ALARM_TIMEOUT_MS = Math.max(1000, Number(process.env.HUB_ALARM_TIMEOUT_MS || 5000) || 5000);
 const STORE_PATH = path.join(env.PROJECT_ROOT, 'bots', 'hub', 'secrets-store.json');
@@ -41,9 +39,6 @@ const TEAM_TOPIC = {
 type TopicIdMap = Record<string, string>;
 
 type HubAlarmStore = {
-  hub_alarm?: {
-    legacy_hooks_token?: string;
-  };
   telegram?: {
     group_id?: string;
     topic_ids?: TopicIdMap;
@@ -101,7 +96,6 @@ type RecentAlertSnapshotRow = {
   created_at: string;
 };
 
-let _token: string | null = null;
 let _groupId: string | null = null;
 let _topicIds: TopicIdMap | null = null;
 let _telegramBotToken: string | null = null;
@@ -137,15 +131,6 @@ function _readBooleanEnv(...names: string[]): boolean {
   return false;
 }
 
-function _readStoreToken() {
-  try {
-    const store = JSON.parse(fs.readFileSync(STORE_PATH, 'utf8')) as HubAlarmStore;
-    return store?.hub_alarm?.legacy_hooks_token || '';
-  } catch {
-    return '';
-  }
-}
-
 function _readStoreTopicInfo() {
   try {
     const store = JSON.parse(fs.readFileSync(STORE_PATH, 'utf8')) as HubAlarmStore;
@@ -156,17 +141,6 @@ function _readStoreTopicInfo() {
   } catch {
     return { groupId: '', topicIds: {} };
   }
-}
-
-async function _getToken(): Promise<string> {
-  if (_token) return _token;
-
-  _token = process.env.HUB_ALARM_LEGACY_HOOKS_TOKEN
-    || process.env.HUB_ALARM_LEGACY_OPENCLAW_HOOKS_TOKEN
-    || process.env.OPENCLAW_HOOKS_TOKEN
-    || _readStoreToken()
-    || '';
-  return _token;
 }
 
 async function _getTopicInfo(): Promise<{ groupId: string; topicIds: TopicIdMap }> {
@@ -216,32 +190,6 @@ async function _getDarwinTelegramBotToken(): Promise<string> {
   return _darwinTelegramBotToken;
 }
 
-function _postHookViaCurl({ token, payload }: { token: string; payload: Record<string, unknown> }) {
-  try {
-    const result = spawnSync('curl', [
-      '-sS',
-      '-X', 'POST',
-      HOOK_URL,
-      '-H', 'Content-Type: application/json',
-      '-H', `Authorization: Bearer ${token}`,
-      '--data', JSON.stringify(payload),
-    ], {
-      encoding: 'utf8',
-      timeout: TIMEOUT_MS,
-    }) as { error?: Error; status?: number; stderr?: string; stdout?: string };
-
-    if (result.error) return { ok: false, error: result.error.message };
-    if (result.status !== 0) {
-      return { ok: false, error: result.stderr?.trim() || `curl_exit_${result.status}` };
-    }
-
-    const body = JSON.parse(result.stdout || '{}');
-    return { ok: body?.ok === true, status: 200, body };
-  } catch (e) {
-    return { ok: false, error: (e as Error).message };
-  }
-}
-
 function _extractEventType(message: string, payload: unknown): string | null {
   const payloadEventType = (
     payload &&
@@ -280,10 +228,6 @@ function _isHubAlarmDeliveryAccepted(response: Response, body: any): boolean {
     return body?.delivered === true;
   }
   return true;
-}
-
-function _isLegacyOpenClawFallbackEnabled(): boolean {
-  return _readBooleanEnv('HUB_ALARM_LEGACY_OPENCLAW_FALLBACK', 'OPENCLAW_LEGACY_FALLBACK');
 }
 
 async function _postAlarmViaHub({
@@ -453,10 +397,6 @@ export async function postAlarm({
   const prefix = alertLevel >= 3 ? `🚨 [긴급 alert_level=${alertLevel}] ` : '';
   const { groupId, topicIds } = await _getTopicInfo();
   const topicId = topicIds?.[normalizedTeam] || topicIds?.general || null;
-  const to = groupId
-    ? (topicId ? `${groupId}:topic:${topicId}` : groupId)
-    : undefined;
-
   if (Array.isArray(inlineKeyboard) && inlineKeyboard.length > 0) {
     const inlineResult = await _sendInlineTelegram({
       message: `${prefix}${safeMessage}`,
@@ -472,87 +412,36 @@ export async function postAlarm({
     return inlineResult;
   }
 
-  const hubDirectBlocked = _readBooleanEnv('HUB_ALARM_SKIP_DIRECT', 'OPENCLAW_CLIENT_SKIP_HUB_ALARM');
-  if (!hubDirectBlocked) {
-    const hubResult = await _postAlarmViaHub({
-      message: safeMessage,
-      team: requestedTeam,
-      alertLevel,
-      fromBot: safeFromBot,
-      payload,
-    });
-    if (hubResult?.ok) {
-      _recordRecentAlertSnapshot({ message: safeMessage, team: requestedTeam, alertLevel, fromBot: safeFromBot, payload });
-      return hubResult;
-    }
-    if (hubResult?.error) {
-      if (!_isLegacyOpenClawFallbackEnabled()) {
-        console.warn(`[hub-alarm-client] hub alarm failed (legacy OpenClaw fallback disabled): ${hubResult.error}`);
-        return {
-          ok: false,
-          source: 'hub_alarm',
-          error: hubResult.error,
-          fallback: 'disabled',
-        };
-      }
-      console.warn(`[hub-alarm-client] hub alarm legacy fallback: ${hubResult.error}`);
-    }
-  }
-
-  if (!_isLegacyOpenClawFallbackEnabled()) {
+  const hubDirectBlocked = _readBooleanEnv('HUB_ALARM_SKIP_DIRECT');
+  if (hubDirectBlocked) {
     return {
       ok: false,
       source: 'hub_alarm',
-      error: hubDirectBlocked ? 'hub_alarm_skipped' : 'hub_alarm_not_delivered',
+      error: 'hub_alarm_skipped',
       fallback: 'disabled',
     };
   }
 
-  const token = await _getToken();
-  if (!token) {
-    console.warn('[hub-alarm-client] hooks_token 미설정');
-    return { ok: false, error: 'no_token' };
+  const hubResult = await _postAlarmViaHub({
+    message: safeMessage,
+    team: requestedTeam,
+    alertLevel,
+    fromBot: safeFromBot,
+    payload,
+  });
+  if (hubResult?.ok) {
+    _recordRecentAlertSnapshot({ message: safeMessage, team: requestedTeam, alertLevel, fromBot: safeFromBot, payload });
+    return hubResult;
   }
-
-  const requestPayload = {
-    message: `${prefix}[${safeFromBot}→${requestedTeam}] ${safeMessage}`,
-    name: safeFromBot,
-    agentId: 'main',
-    ...(sessionKey ? { sessionKey } : {}),
-    deliver: true,
-    channel: 'telegram',
-    to,
-    wakeMode: 'now',
-    timeoutSeconds: TIMEOUT_MS / 1000,
+  if (hubResult?.error) {
+    console.warn(`[hub-alarm-client] hub alarm failed: ${hubResult.error}`);
+  }
+  return {
+    ok: false,
+    source: 'hub_alarm',
+    error: hubResult?.error || 'hub_alarm_not_delivered',
+    fallback: 'disabled',
   };
-
-  try {
-    const res = await fetch(HOOK_URL, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${token}`,
-      },
-      body: JSON.stringify(requestPayload),
-      signal: AbortSignal.timeout(TIMEOUT_MS),
-    });
-
-    const body = await res.json().catch(() => null);
-    if (res.ok) {
-      _recordRecentAlertSnapshot({ message: safeMessage, team: requestedTeam, alertLevel, fromBot: safeFromBot, payload });
-    }
-    return { ok: res.ok, status: res.status, body };
-  } catch (e) {
-    const error = e as ExecError;
-    console.warn(`[hub-alarm-client] legacy webhook 실패: ${error.message}`);
-    const fallback = _postHookViaCurl({ token, payload: requestPayload });
-    if (fallback.ok) {
-      console.warn('[hub-alarm-client] legacy webhook curl 폴백 성공');
-      _recordRecentAlertSnapshot({ message: safeMessage, team: requestedTeam, alertLevel, fromBot: safeFromBot, payload });
-      return fallback;
-    }
-    return { ok: false, error: fallback.error || error.message };
-  }
 }
 
 export function readRecentAlertSnapshot(limit = 10): RecentAlertSnapshotRow[] {
@@ -561,12 +450,4 @@ export function readRecentAlertSnapshot(limit = 10): RecentAlertSnapshotRow[] {
 
 export function _testOnly_isHubAlarmDeliveryAccepted(response: { ok: boolean }, body: any): boolean {
   return _isHubAlarmDeliveryAccepted(response as Response, body);
-}
-
-export function _testOnly_isLegacyOpenClawFallbackEnabled(): boolean {
-  return _isLegacyOpenClawFallbackEnabled();
-}
-
-export function _testOnly_isLegacyWebhookFallbackEnabled(): boolean {
-  return _isLegacyOpenClawFallbackEnabled();
 }

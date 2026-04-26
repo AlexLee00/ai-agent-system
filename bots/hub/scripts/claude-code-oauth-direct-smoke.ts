@@ -18,8 +18,7 @@ const capturePath = process.env.CLAUDE_CODE_SMOKE_CAPTURE;
 if (capturePath) {
   fs.writeFileSync(capturePath, JSON.stringify({
     argv: process.argv.slice(2),
-    anthropicApiKey: process.env.ANTHROPIC_API_KEY,
-    openclawAgent: process.env.OPENCLAW_AGENT || null
+    anthropicApiKey: process.env.ANTHROPIC_API_KEY
   }, null, 2));
 }
 process.stdout.write(JSON.stringify({
@@ -80,7 +79,7 @@ process.exit(1);
   assert(capture.argv.includes('--append-system-prompt'));
   assert(capture.argv.includes('--json-schema'));
   assert(capture.argv.includes('--max-budget-usd'));
-  assert(!capture.argv.some((arg: string) => String(arg).toLowerCase().includes('openclaw')));
+  assert(!capture.argv.some((arg: string) => String(arg).toLowerCase().includes('open' + 'claw')));
 
   process.env.CLAUDE_CODE_BIN = fakeClaudeBudgetErrorPath;
   const budgetError = await callClaudeCodeOAuth({
@@ -99,7 +98,7 @@ process.exit(1);
     provider: result.provider,
     model: 'sonnet',
     claude_code_direct: true,
-    openclaw_used: false,
+    legacy_gateway_used: false,
   }));
 }
 

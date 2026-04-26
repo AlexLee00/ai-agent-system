@@ -255,7 +255,7 @@ userMemories 기준, 보안 감사와 별개로 진행 중이던 작업들:
 ┌─────────────────────────────────────────────────────────────┐
 │ B. launchd 유지 (OS-level daemon)                             │
 ├─────────────────────────────────────────────────────────────┤
-│ • ai.openclaw.gateway                                        │
+│ • ai.hub.resource-api                                        │
 │ • ai.n8n.server                                              │
 │ • ai.mlx.server                                              │
 │                                                              │
@@ -2507,7 +2507,7 @@ app.put('/api/milestones/:id',
 **`bots/reservation/src/ska.ts` (171줄)** — ✅ 매우 견고:
 - **bot_commands 테이블 폴링** (5초 간격) — 백그라운드 큐 워커
 - **HTTP 엔드포인트 없음** — 외부 공격 표면 최소
-- 제이(OpenClaw)의 명령만 수신 처리 (Telegram 수신/발신 없음)
+- 제이(Hub control plane)의 명령만 수신 처리 (Telegram 수신/발신 없음)
 - Self-lock (PID 기반 중복 실행 방지)
 - `initHubSecrets` 가동 시 시크릿 로드
 - 화이트리스트 핸들러 디스패처
@@ -2879,11 +2879,11 @@ core 라이브러리 위임. 추가 심각 이슈 발견 가능성 낮음.
 - `child_process`/`execSync`/`eval` 0건
 
 **토큰 처리**:
-- `readOpenClawGatewayTokenFromConfig()` — `~/.openclaw/openclaw.json`에서 안전 읽기
+- `readRetiredGatewayTokenFromConfig()` — retired gateway config에서 안전 읽기
 - try-catch 안전 실패 (오류 시 빈 문자열)
 - `parsed?.gateway?.auth?.token` optional chaining
 - **콘솔 로깅 없음**
-- 토큰 우선순위 체인: runtime → env(OPENCLAW_BROWSER_TOKEN/GATEWAY_TOKEN) → config 파일
+- 토큰 우선순위 체인: runtime → retired browser/gateway token env alias → config 파일
 
 ### ✅ blog 나머지 9개 대형 파일 일괄 스캔 — 모두 clean
 
@@ -3190,7 +3190,7 @@ milestone-api-idor.test.ts (71줄, 7 assertions) — 7/7 통과
 
 2. **Hermes가 `agentskills.io` 오픈 표준 준수**: Sigma MCP Server를 이 표준에 맞춰 설계하면 Hermes 95K★ 생태계와 즉시 호환. 원본 §5.2에 §5.2.6 추가.
 
-3. **`hermes claw migrate` 기능 존재**: OpenClaw→Hermes 이주 공식 지원. 시그마 범위 밖이지만 향후 로드맵.
+3. **`hermes claw migrate` 기능 존재**: legacy gateway→Hermes 이주 공식 지원. 시그마 범위 밖이지만 향후 로드맵.
 
 ### 📝 원본 설계 Delta (7건 변경/추가)
 

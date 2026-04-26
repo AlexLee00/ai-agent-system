@@ -23,32 +23,20 @@ function withEnv(patch, fn) {
 
 function main() {
   withEnv({
-    HUB_ALARM_LEGACY_OPENCLAW_FALLBACK: 'true',
-    OPENCLAW_LEGACY_FALLBACK: null,
+    HUB_ALARM_LEGACY_WEBHOOK_FALLBACK: 'true',
   }, () => {
     assert(
-      hubAlarmClient._testOnly_isLegacyWebhookFallbackEnabled() === true,
-      'expected HUB_ALARM_LEGACY_OPENCLAW_FALLBACK=true to enable fallback',
+      !Object.prototype.hasOwnProperty.call(hubAlarmClient, '_testOnly_isLegacyWebhookFallbackEnabled'),
+      'expected retired legacy webhook fallback helper to be absent',
     );
   });
 
   withEnv({
-    HUB_ALARM_LEGACY_OPENCLAW_FALLBACK: null,
-    OPENCLAW_LEGACY_FALLBACK: 'true',
+    HUB_ALARM_LEGACY_WEBHOOK_FALLBACK: null,
   }, () => {
     assert(
-      hubAlarmClient._testOnly_isLegacyWebhookFallbackEnabled() === true,
-      'expected legacy OPENCLAW_LEGACY_FALLBACK=true to remain compatible',
-    );
-  });
-
-  withEnv({
-    HUB_ALARM_LEGACY_OPENCLAW_FALLBACK: null,
-    OPENCLAW_LEGACY_FALLBACK: null,
-  }, () => {
-    assert(
-      hubAlarmClient._testOnly_isLegacyWebhookFallbackEnabled() === false,
-      'expected fallback disabled by default',
+      !Object.prototype.hasOwnProperty.call(hubAlarmClient, '_testOnly_isLegacyWebhookFallbackEnabled'),
+      'expected fallback helper to remain absent by default',
     );
   });
 

@@ -288,12 +288,10 @@ stop_service_if_registered "ai.agent.auto-commit" "auto-commit"
 stop_service_if_registered "ai.agent.nightly-sync" "nightly-sync"
 stop_service_if_registered "ai.agent.post-reboot" "post-reboot (자기 자신)"
 
-log "🔧 인프라 (OpenClaw / n8n / Hub / MLX)"
-stop_service_if_registered "ai.openclaw.gateway" "OpenClaw 게이트웨이"
+log "🔧 인프라 (Hub / n8n / MLX)"
 stop_service_if_registered "ai.n8n.server" "n8n 서버"
 stop_service_if_registered "ai.hub.resource-api" "Hub 리소스 API"
 stop_service_if_registered "ai.mlx.server" "MLX LLM 서버"
-stop_service_if_registered "ai.openclaw.model-sync" "OpenClaw 모델 싱크"
 stop_service_if_registered "ai.env.setup" "환경 설정"
 
 snapshot_services

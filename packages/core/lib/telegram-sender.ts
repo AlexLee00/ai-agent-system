@@ -487,7 +487,7 @@ export async function send(team: string, message: string): Promise<boolean> {
  *
  * OPS 모드의 일반 send()는 reporting-hub → postAlarm()을 거치므로 Hub alarm route에서
  * 호출하면 재귀가 생긴다. 이 함수는 Hub가 canonical alarm transport가 된 뒤에도
- * OpenClaw fallback 없이 Telegram topic으로 바로 전달하기 위한 escape hatch다.
+ * legacy fallback 없이 Telegram topic으로 바로 전달하기 위한 escape hatch다.
  */
 export async function sendFromHubAlarm(team: string, message: string, options: SendOptions = {}): Promise<boolean> {
   if (_alertsDisabled()) return false;
@@ -580,7 +580,7 @@ async function sendDirect(chatId: string, message: string, options: SendOptions 
   }
 
   if (env.IS_OPS) {
-    console.warn('[telegram-sender] sendDirect는 OPS에서 비활성화됨 — OpenClaw topic 라우팅 사용');
+    console.warn('[telegram-sender] sendDirect는 OPS에서 비활성화됨 — Hub topic 라우팅 사용');
     return false;
   }
 

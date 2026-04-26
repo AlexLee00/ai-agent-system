@@ -13,7 +13,6 @@
  *   - /tmp/pickko-*.log (kiosk-monitor, verify, daily-audit, daily-summary)
  *   - /tmp/ska-*.log (health-check, db-backup)
  *   - AI Agent reservation runtime/log-report-*.log
- *   - legacy OpenClaw 날짜별 로그 (migration window 동안 오래된 파일 삭제만)
  *
  * 보관: 7일 (KEEP_DAYS)
  * 최소 크기: 1KB 이상일 때만 로테이션
@@ -103,27 +102,6 @@ function purgeOldArchives(filePath) {
     });
 }
 
-// ── OpenClaw 날짜별 로그 정리 ─────────────────────────────────────────────
-
-function purgeOpenclawLogs() {
-  const dir = '/tmp/openclaw';
-  if (!fs.existsSync(dir)) return;
-
-  const cutoff = Date.now() - KEEP_DAYS * 24 * 60 * 60 * 1000;
-
-  fs.readdirSync(dir)
-    .filter(f => f.startsWith('openclaw-') && f.endsWith('.log'))
-    .forEach(f => {
-      const full = path.join(dir, f);
-      try {
-        if (fs.statSync(full).mtimeMs < cutoff) {
-          fs.unlinkSync(full);
-          console.log(`[로그 정리] OpenClaw 삭제: ${f}`);
-        }
-      } catch { /* 삭제 실패 무시 */ }
-    });
-}
-
 // ── 메인 ─────────────────────────────────────────────────────────────────
 
 function main() {
@@ -146,8 +124,6 @@ function main() {
       skipped++;
     }
   }
-
-  purgeOpenclawLogs();
 
   console.log(`[로그 로테이션] 완료 — 로테이션 ${rotated}개, 스킵 ${skipped}개`);
   buildReservationCliInsight({

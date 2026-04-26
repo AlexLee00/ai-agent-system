@@ -21,7 +21,7 @@
 
 - **결론 먼저**: "정상 경로는 L5 완전자율로 자동 진행. 예외만 수동 검토 필요."
 - **수치 포함**: "비용 $0.12/일 (anthropic), 로컬 무비용"
-- **알림 채널**: OpenClaw (Telegram) → darwin 팀 채널
+- **알림 채널**: Hub alarm → Telegram darwin 팀 채널
 
 ## 4. 자동 알림 트리거
 

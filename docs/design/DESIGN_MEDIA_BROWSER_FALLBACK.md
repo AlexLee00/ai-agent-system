@@ -3,9 +3,9 @@
 > 작성: Codex
 > 작성일: 2026-04-03
 > 근거:
-> - OpenClaw browser / browser-login / chrome extension relay 문서
+> - retired gateway browser / browser-login / chrome extension relay 문서
 > - OpenAI Speech-to-Text / Image Generation 공식 문서
-> - SeaArt x OpenClaw, Web2Labs Studio x OpenClaw 사례
+> - SeaArt/Web2Labs Studio 계열 browser orchestration 사례
 > 상태: 설계 단계
 
 ---
@@ -13,7 +13,7 @@
 ## 1. 한 줄 결론
 
 STT와 이미지 생성은 `브라우저를 메인 처리 엔진`으로 쓰기보다,
-`전용 API/전용 엔진을 메인`으로 두고 `OpenClaw + Chrome MCP 브라우저 자동화`를 fallback/rescue lane으로 두는 것이 가장 안정적이다.
+`전용 API/전용 엔진을 메인`으로 두고 `Hub + Chrome MCP 브라우저 자동화`를 fallback/rescue lane으로 두는 것이 가장 안정적이다.
 
 즉:
 
@@ -23,7 +23,7 @@ Primary:
   Image -> 전용 이미지 생성 API
 
 Fallback:
-  OpenClaw browser / Chrome relay / MCP
+  Hub browser / Chrome relay / MCP
   -> 로그인, 업로드, 생성, 결과 다운로드, 로컬 저장
 ```
 
@@ -54,21 +54,21 @@ Fallback:
 
 ## 3. 사례 분석 요약
 
-### OpenClaw 공식 브라우저 도구
+### Retired gateway 공식 브라우저 도구
 
-- OpenClaw는 browser tool, browser login, Chrome extension relay를 공식 지원한다
+- Retired gateway 계열은 browser tool, browser login, Chrome extension relay를 공식 지원한다
 - 강점:
   - 기존 Chrome 탭 제어
   - 스냅샷/타이핑/클릭/업로드
   - 로그인 세션 활용
 - 공식 문서가 암시하는 기본 용도는 `웹 작업 자동화`이지, 미디어 생성 자체의 전용 처리기는 아니다
 
-### SeaArt x OpenClaw
+### SeaArt x browser orchestration
 
 - 이미지 생성 사례는 `브라우저를 직접 누르는 것`보다 `전용 이미지 skill`에 가깝다
-- 즉 OpenClaw가 orchestration을 맡고, 실제 생성은 전용 이미지 서비스가 수행한다
+- 즉 browser orchestration layer가 조율을 맡고, 실제 생성은 전용 이미지 서비스가 수행한다
 
-### Web2Labs Studio x OpenClaw
+### Web2Labs Studio x browser orchestration
 
 - STT/영상 편집 사례도 핵심은 `전용 미디어 파이프라인 skill`
 - 브라우저는 로그인/업로드/결과 수집 표면으로 해석하는 것이 자연스럽다
@@ -92,7 +92,7 @@ media router:
     - blog/image-browser
 
 browser fallback lane:
-  OpenClaw browser profile
+  Hub browser profile
   -> open target site
   -> ensure login
   -> upload file or paste prompt
@@ -123,7 +123,7 @@ browser fallback lane:
 
 브라우저 fallback 기본 흐름:
 
-1. OpenClaw browser profile 선택
+1. Hub browser profile 선택
 2. 대상 전사 웹 툴 접속
 3. 로그인 확인
 4. 오디오 업로드
@@ -149,7 +149,7 @@ browser fallback lane:
 
 브라우저 fallback 기본 흐름:
 
-1. OpenClaw browser profile 선택
+1. Hub browser profile 선택
 2. 대상 이미지 생성 웹 툴 접속
 3. 로그인 확인
 4. 프롬프트 입력
@@ -203,7 +203,7 @@ browser fallback lane:
 ### 2차
 
 - browser task runner 추가
-- OpenClaw browser 명령 래퍼 추가
+- Hub browser 명령 래퍼 추가
 - download/save/timeout/retry 표준화
 
 ### 3차

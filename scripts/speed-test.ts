@@ -27,21 +27,22 @@
  *   - Fireworks AI (무료 크레딧)    → FIREWORKS_API_KEY
  *   - DeepInfra (무료 티어)         → DEEPINFRA_API_KEY
  *
- * 키 설정: ~/.openclaw/speed-test-keys.json
+ * 키 설정: ~/.ai-agent-system/llm-control/speed-test-keys.json
  *
  * 사용법:
  *   npx tsx scripts/speed-test.ts              # 전체 테스트
  *   npx tsx scripts/speed-test.ts --runs=3     # 반복 횟수 지정
- *   npx tsx scripts/speed-test.ts --apply      # 결과를 openclaw.json에 자동 반영
+ *   npx tsx scripts/speed-test.ts --apply      # 결과를 Hub LLM control config에 자동 반영
  *   npx tsx scripts/speed-test.ts --model=gemini-2.5-flash,llama-4-scout
  */
 
 const fs     = require('fs');
 const path   = require('path');
-const openclawClient = require('../packages/core/lib/openclaw-client');
+const os     = require('os');
+const hubAlarmClient = require('../packages/core/lib/hub-alarm-client');
 const { writeLatestSpeedSnapshot } = require('../packages/core/lib/llm-control/service');
 const {
-  OPENCLAW_CONFIG,
+  LLM_CONTROL_CONFIG,
   loadModels,
   loadProviderKey,
   applyFastest,
@@ -54,8 +55,10 @@ const {
 } = require('../packages/core/lib/llm-control/tester');
 
 // ─── 설정 ──────────────────────────────────────────────────────────────────
-const SPEED_TEST_LATEST_FILE = path.join(process.env.HOME, '.openclaw/workspace/llm-speed-test-latest.json');
-const SPEED_TEST_HISTORY_FILE = path.join(process.env.HOME, '.openclaw/workspace/llm-speed-test-history.jsonl');
+const AI_AGENT_HOME = process.env.AI_AGENT_HOME || process.env.JAY_HOME || path.join(os.homedir(), '.ai-agent-system');
+const AI_AGENT_WORKSPACE = process.env.AI_AGENT_WORKSPACE || process.env.JAY_WORKSPACE || path.join(AI_AGENT_HOME, 'workspace');
+const SPEED_TEST_LATEST_FILE = path.join(AI_AGENT_WORKSPACE, 'llm-speed-test-latest.json');
+const SPEED_TEST_HISTORY_FILE = path.join(AI_AGENT_WORKSPACE, 'llm-speed-test-history.jsonl');
 const TEST_PROMPT          = 'Reply with exactly one word: ok';
 
 // ─── 유틸 ──────────────────────────────────────────────────────────────────
@@ -101,7 +104,7 @@ function sendTelegramNotify(results, { applied, recommended, current } = {}) {
   }
 
   const text = `⚡ LLM 속도 테스트 결과 (${dateStr})\n\n${top3}${statusLine}\n\n❌ 실패: ${failed}개`;
-  return openclawClient.postAlarm({
+  return hubAlarmClient.postAlarm({
     team: 'claude-lead',
     message: text,
     alertLevel: 1,
@@ -160,7 +163,7 @@ async function main() {
       ctx.keys[provider] = key;
       log(`🔑 ${provider.padEnd(14)} API 키 ${green('✅')}`);
     } else {
-      log(`${yellow('⚠️')}  ${provider.padEnd(14)} API 키 없음 — ${dim('~/.openclaw/speed-test-keys.json 에 추가')}`);
+      log(`${yellow('⚠️')}  ${provider.padEnd(14)} API 키 없음 — ${dim('~/.ai-agent-system/llm-control/speed-test-keys.json 에 추가')}`);
     }
   }
 
@@ -226,7 +229,7 @@ async function main() {
   }
   log(dim('─'.repeat(64)));
 
-  const current = JSON.parse(fs.readFileSync(OPENCLAW_CONFIG, 'utf-8'))?.agents?.defaults?.model?.primary;
+  const current = JSON.parse(fs.readFileSync(LLM_CONTROL_CONFIG, 'utf-8'))?.agents?.defaults?.model?.primary;
   log(`\n  현재 primary: ${dim(current)}`);
 
   const fastest = results.find(r => r.ok);
@@ -236,8 +239,8 @@ async function main() {
     if (doApply) {
       appliedModel = applyFastest(fs, results);
       if (appliedModel) {
-        const updated = JSON.parse(fs.readFileSync(OPENCLAW_CONFIG, 'utf-8'));
-        log(`\n✅ openclaw.json 업데이트 완료`);
+        const updated = JSON.parse(fs.readFileSync(LLM_CONTROL_CONFIG, 'utf-8'));
+        log(`\n✅ Hub LLM control config 업데이트 완료`);
         log(`   primary:   ${appliedModel}`);
         log(`   fallbacks: ${(updated?.agents?.defaults?.model?.fallbacks || []).join(', ')}`);
       } else {

@@ -149,7 +149,7 @@ function pendingQueueSummary() {
     || path.join(os.homedir(), '.ai-agent-system', 'hub');
   const workspace = path.join(runtimeRoot, 'telegram');
   const activePending = path.join(workspace, 'pending-telegrams.jsonl');
-  const legacyWorkspace = String(process.env.OPENCLAW_WORKSPACE || '').trim();
+  const legacyWorkspace = String(process.env.HUB_TELEGRAM_LEGACY_PENDING_WORKSPACE || '').trim();
   const legacyPending = legacyWorkspace ? path.join(legacyWorkspace, 'pending-telegrams.jsonl') : '';
   const quarantineFiles = fs.existsSync(workspace)
     ? fs.readdirSync(workspace)

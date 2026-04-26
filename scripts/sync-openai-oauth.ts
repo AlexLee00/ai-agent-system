@@ -3,9 +3,8 @@
 
 const fs = require('fs');
 const path = require('path');
-const os = require('os');
+const { readOpenAiCodexLocalCredentials } = require('../bots/hub/lib/oauth/local-credentials.ts');
 
-const AUTH_PATH = path.join(os.homedir(), '.openclaw', 'agents', 'main', 'agent', 'auth-profiles.json');
 const STORE_PATH = path.join(__dirname, '..', 'bots', 'hub', 'secrets-store.json');
 
 function loadJson(filePath, fallback = null) {
@@ -16,38 +15,22 @@ function loadJson(filePath, fallback = null) {
   }
 }
 
-function pickOpenAIOAuthProfile(authData) {
-  const profiles = authData?.profiles || {};
-  const lastGood = authData?.lastGood || {};
-  const preferredKey = lastGood['openai-codex'];
-  const preferred = preferredKey ? profiles[preferredKey] : null;
-  if (preferred?.type === 'oauth' && preferred?.provider === 'openai-codex' && preferred?.access) {
-    return preferred;
-  }
-
-  for (const profile of Object.values(profiles)) {
-    if (profile?.type === 'oauth' && profile?.provider === 'openai-codex' && profile?.access) {
-      return profile;
-    }
-  }
-  return null;
-}
-
 function sync() {
-  const authData = loadJson(AUTH_PATH, {});
-  const profile = pickOpenAIOAuthProfile(authData);
-  if (!profile) {
-    throw new Error('openai-codex OAuth 프로필을 찾지 못했습니다');
+  const credentials = readOpenAiCodexLocalCredentials({ allowKeychainPrompt: process.env.ALLOW_KEYCHAIN_PROMPT === 'true' });
+  if (!credentials?.ok || !credentials.token?.access_token) {
+    throw new Error(`openai-codex OAuth 프로필을 찾지 못했습니다: ${credentials?.error || 'missing_token'}`);
   }
 
   const store = loadJson(STORE_PATH, {}) || {};
   store.openai_oauth = {
-    access_token: profile.access || '',
+    access_token: credentials.token.access_token || '',
+    refresh_token: credentials.token.refresh_token || '',
     model: 'gpt-5.4',
     provider: 'openai-codex',
     synced_at: new Date().toISOString(),
-    expires: profile.expires || null,
-    account_id: profile.accountId || null,
+    expires: credentials.token.expires_at || null,
+    account_id: credentials.token.account_id || null,
+    source: credentials.source,
   };
 
   fs.writeFileSync(STORE_PATH, `${JSON.stringify(store, null, 2)}\n`);

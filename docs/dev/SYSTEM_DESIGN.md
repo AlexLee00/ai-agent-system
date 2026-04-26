@@ -88,7 +88,7 @@ skastatus # → launchctl list | grep ai.ska
 | 구성요소            | 도구              | 역할                     | 상태        |
 |-----------------|-----------------|------------------------|-----------|
 | LLM 엔진          | Ollama          | 로컬 LLM 모델 실행            | ⏳ 맥미니 후   |
-| AI 에이전트 게이트웨이   | OpenClaw        | 멀티채널 AI 에이전트 허브         | ✅ 운영 중    |
+| AI 에이전트 게이트웨이   | Hub control     | 멀티채널 AI 에이전트 허브         | ✅ 운영 중    |
 | 봇 프레임워크         | n8n             | 멀티 에이전트 워크플로우 관리        | ⏳ 맥미니 후   |
 | 원격 접속           | Tailscale       | 외부에서 봇 접속 (100.124.124.65) | ✅ **완료** |
 | 브라우저 자동화        | Playwright      | 네이버 스마트플레이스 / 픽코 자동화    | ✅ OPS 운영 중 |
@@ -585,7 +585,7 @@ export OLLAMA_NUM_GPU=99            # GPU 레이어 최대화 (M4 Pro)
 
 ---
 
-## 7. OpenClaw 설정
+## 7. Hub/Selector 설정
 
 ### 현재 운영 모델 (2026-02-27)
 
@@ -604,11 +604,11 @@ export OLLAMA_NUM_GPU=99            # GPU 레이어 최대화 (M4 Pro)
 ### 멀티에이전트 구성 (맥미니 이전 후)
 
 ```json5
-// openclaw.json 추가 예정
+// Hub/team selector 설정 예시
 {
   "agents": {
     "list": [
-      { "id": "main",       "workspace": "~/.openclaw/workspace" },
+      { "id": "main",       "workspace": "$AI_AGENT_RUNTIME_DIR" },
       { "id": "ska",        "workspace": "~/bots/reservation/context" },
       { "id": "investment", "workspace": "~/bots/investment/context" }
     ]
@@ -624,7 +624,7 @@ export OLLAMA_NUM_GPU=99            # GPU 레이어 최대화 (M4 Pro)
 context/ (소스, git 관리)
     │
     ▼ node deploy-context.js --bot=<name>
-    ├── → ~/.openclaw/workspace/ (봇 기억)
+    ├── → Hub/team runtime store (봇 기억)
     └── → ~/.claude/memory/ (Claude Code 기억)
 ```
 
@@ -643,7 +643,7 @@ node scripts/deploy-context.js --bot=reservation --sync  # 역동기화
 |------|------|------|------|
 | 네이버 모니터링 | naver-monitor.js | 5분 | ✅ OPS |
 | OPS 자동 재시작 | start-ops.sh (launchd KeepAlive) | 즉시 | ✅ |
-| Heartbeat 알람 | OpenClaw 내장 | 30분 | ✅ |
+| Heartbeat 알람 | Hub alarm governor | 30분 | ✅ |
 | 픽코 키오스크 모니터 | pickko-kiosk-monitor.js | 30분 | ✅ |
 | 매출 일일 보고 | pickko-daily-summary.js | 00:00 | ✅ |
 | 컨텍스트 보존 | nightly-sync.sh + launchd | 00:00 | ✅ |
@@ -673,7 +673,7 @@ node scripts/deploy-context.js --bot=reservation --sync  # 역동기화
 
 | 항목 | 상태 |
 |------|------|
-| OpenClaw 설치 + Gemini/Claude/Ollama Fallback Chain | ✅ |
+| Hub selector + Gemini/Claude/Ollama Fallback Chain | ✅ |
 | 텔레그램 봇 연결 (@SCAFE8282_BOT) | ✅ |
 | 예약관리봇 100% 완성 (Stage [1-9] + 키오스크 모니터) | ✅ |
 | OPS 모드 launchd KeepAlive + 헤드리스 실운영 | ✅ |
@@ -765,7 +765,7 @@ ai-agent-system/
 
 | ID | 항목 | 내용 |
 |----|------|------|
-| M-001 | OpenClaw cron 주기적 sync | `~/.openclaw/cron/jobs.json`에 1~2시간 주기 `--sync` 추가 |
+| M-001 | Hub runtime 주기적 sync | Hub scheduler에 1~2시간 주기 sync 추가 |
 | M-002 | IS-001 네이버 홈화면 복귀 이슈 | 캘린더 → 홈화면 복귀 자동화 미완성 |
 | M-003 | RAG 서버 자동 시작 | launchd plist 추가 (현재 수동 실행) |
 

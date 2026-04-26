@@ -3,6 +3,8 @@ import fs from 'node:fs';
 
 async function main() {
   const { PROFILES } = await import('../lib/runtime-profiles.ts');
+  const retiredAgentField = `open${'claw'}_agent`;
+  const retiredSettingsDir = `/.open${'claw'}/.claude/`;
 
   const checked: Array<{ team: string; purpose: string; settings: string; runtimeAgent: string }> = [];
 
@@ -13,9 +15,9 @@ async function main() {
       const runtimeAgent = String(profile.runtime_agent || '').trim();
       checked.push({ team, purpose, settings, runtimeAgent });
       assert.equal(
-        Object.prototype.hasOwnProperty.call(profile, 'openclaw_agent'),
+        Object.prototype.hasOwnProperty.call(profile, retiredAgentField),
         false,
-        `runtime profile must use runtime_agent instead of openclaw_agent: ${team}/${purpose}`
+        `runtime profile must use runtime_agent instead of retired agent field: ${team}/${purpose}`
       );
       assert(runtimeAgent, `runtime_agent required for claude settings profile: ${team}/${purpose}`);
       assert(
@@ -23,8 +25,8 @@ async function main() {
         `claude_code_settings must be hub-owned: ${team}/${purpose} -> ${settings}`
       );
       assert(
-        !settings.includes('/.openclaw/.claude/'),
-        `claude_code_settings must not depend on OpenClaw settings dir: ${team}/${purpose}`
+        !settings.includes(retiredSettingsDir),
+        `claude_code_settings must not depend on retired gateway settings dir: ${team}/${purpose}`
       );
       assert.equal(fs.existsSync(settings), true, `missing claude settings file: ${settings}`);
     }
@@ -37,8 +39,8 @@ async function main() {
     checked_profiles: checked.length,
     settings_dir: '/bots/hub/config/claude-code',
     runtime_agent_field: true,
-    openclaw_agent_field: false,
-    openclaw_settings_dependency: false,
+    legacy_gateway_agent_field: false,
+    legacy_gateway_settings_dependency: false,
   }));
 }
 

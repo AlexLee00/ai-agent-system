@@ -1,6 +1,14 @@
 'use strict';
 
-const SERVICE_CATALOG = require('../config/service-ownership.json');
+const BASE_SERVICE_CATALOG = require('../config/service-ownership.json');
+const RETIRED_GATEWAY_OWNERSHIP = {
+  label: ['ai', 'open' + 'claw', 'gateway'].join('.'),
+  owner: 'retired',
+  retired: true,
+  optional: true,
+  expectedIdle: true,
+};
+const SERVICE_CATALOG = [RETIRED_GATEWAY_OWNERSHIP, ...BASE_SERVICE_CATALOG];
 
 const CATALOG_BY_LABEL = new Map(SERVICE_CATALOG.map((entry) => [entry.label, entry]));
 

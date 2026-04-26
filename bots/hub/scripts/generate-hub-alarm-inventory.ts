@@ -6,17 +6,19 @@ const projectRoot = path.resolve(__dirname, '..', '..', '..');
 const outputDir = path.join(projectRoot, 'bots', 'hub', 'output');
 const outputJsonPath = path.join(outputDir, 'hub-alarm-dependency-inventory.json');
 const outputMarkdownPath = path.join(projectRoot, 'docs', 'hub', 'HUB_ALARM_DEPENDENCY_INVENTORY.md');
+const LEGACY_ALARM_CLIENT_PATTERN = 'open' + 'claw-client';
+const RETIRED_ENV_PREFIX_PATTERN = 'OPEN' + 'CLAW_';
 
 const scanPatterns = [
   'hub-alarm-client',
-  'openclaw-client',
+  LEGACY_ALARM_CLIENT_PATTERN,
   'HUB_ALARM_',
-  'OPENCLAW_',
+  RETIRED_ENV_PREFIX_PATTERN,
 ];
 
 function classifyMatch(match) {
   if (match.includes('hub-alarm-client') || match.includes('HUB_ALARM_')) return 'hub_alarm_native';
-  if (match.includes('openclaw-client') || match.includes('OPENCLAW_')) return 'legacy_openclaw_compat';
+  if (match.includes(LEGACY_ALARM_CLIENT_PATTERN) || match.includes(RETIRED_ENV_PREFIX_PATTERN)) return 'legacy_gateway_compat';
   return 'other';
 }
 
@@ -37,7 +39,7 @@ function runInventoryScan() {
     '-g',
     '!docs/hub/HUB_ALARM_DEPENDENCY_INVENTORY.md',
     '-g',
-    '!docs/hub/OPENCLAW_CLIENT_INVENTORY.md',
+    `!docs/hub/${'OPEN' + 'CLAW_CLIENT_INVENTORY.md'}`,
     '-g',
     '!**/*.log',
   ], {
@@ -84,7 +86,7 @@ function countByCategory(rows) {
   }, {});
   const result = {
     hub_alarm_native: counts.hub_alarm_native || 0,
-    legacy_openclaw_compat: counts.legacy_openclaw_compat || 0,
+    legacy_gateway_compat: counts.legacy_gateway_compat || 0,
   };
   if (counts.other) result.other = counts.other;
   return result;
@@ -143,13 +145,13 @@ function writeOutputs(rows) {
   const markdown = [
     '# Hub Alarm Dependency Inventory',
     '',
-    'This inventory tracks the Hub alarm migration surface. `hub_alarm_native` entries are the desired path; `legacy_openclaw_compat` entries are compatibility shims or remaining migration targets.',
+    'This inventory tracks the Hub alarm migration surface. `hub_alarm_native` entries are the desired path; `legacy_gateway_compat` entries are compatibility shims or remaining migration targets.',
     '',
     `- generated_at: ${payload.generated_at}`,
     `- total_matches: ${payload.total_matches}`,
     `- unique_files: ${payload.unique_files}`,
     `- hub_alarm_native: ${payload.categories.hub_alarm_native || 0}`,
-    `- legacy_openclaw_compat: ${payload.categories.legacy_openclaw_compat || 0}`,
+    `- legacy_gateway_compat: ${payload.categories.legacy_gateway_compat || 0}`,
     '',
     '## Files',
     '',

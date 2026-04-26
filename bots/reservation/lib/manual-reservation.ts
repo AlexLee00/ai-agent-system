@@ -227,7 +227,7 @@ function extractBatchReservations(args: Record<string, unknown> = {}): Reservati
     return reservations;
   }
 
-  // OpenClaw/Telegram 경로에서 여러 줄이 한 줄로 합쳐질 수 있으므로,
+  // Telegram 경로에서 여러 줄이 한 줄로 합쳐질 수 있으므로,
   // 날짜+시간+룸 패턴을 전체 문장 기준으로 다시 추출한다.
   const normalized = rawText
     .replace(/\s+/g, ' ')

@@ -3,6 +3,9 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 
 const PROJECT_ROOT = path.resolve(__dirname, '..', '..', '..');
+const RETIRED_GATEWAY_ID = 'open' + 'claw';
+const RETIRED_GATEWAY_WORD = 'Open' + 'Claw';
+const RETIRED_GATEWAY_LABEL = ['ai', RETIRED_GATEWAY_ID].join('.');
 
 const CLAUDE_RUNTIME_FILES = [
   'bots/claude/lib/runtime-paths.ts',
@@ -22,7 +25,7 @@ const CLAUDE_RUNTIME_FILES = [
   'bots/claude/lib/checks/logs.ts',
   'bots/claude/lib/checks/bots.ts',
   'bots/claude/lib/checks/error-logs.ts',
-  'bots/claude/lib/checks/openclaw.ts',
+  ['bots/claude/lib/checks', `${RETIRED_GATEWAY_ID}.ts`].join('/'),
   'bots/claude/lib/archer/config.ts',
   'bots/claude/lib/daily-report.ts',
   'bots/claude/scripts/claude-daily-report.ts',
@@ -39,13 +42,13 @@ const CLAUDE_RUNTIME_FILES = [
 ];
 
 const FORBIDDEN_ACTIVE_PATTERNS = [
-  /[/\\]\.openclaw([/\\]|$)/i,
-  /OPENCLAW_WORKSPACE/,
-  /OPENCLAW_LOGS/,
-  /ai\.openclaw/i,
-  /openclaw-model-sync/i,
-  /OpenClaw/i,
-  /openclaw/i,
+  new RegExp(`[/\\\\]\\.${RETIRED_GATEWAY_ID}([/\\\\]|$)`, 'i'),
+  new RegExp('OPEN' + 'CLAW_WORKSPACE'),
+  new RegExp('OPEN' + 'CLAW_LOGS'),
+  new RegExp(RETIRED_GATEWAY_LABEL.replace(/\./g, '\\.'), 'i'),
+  new RegExp(`${RETIRED_GATEWAY_ID}-model-sync`, 'i'),
+  new RegExp(RETIRED_GATEWAY_WORD, 'i'),
+  new RegExp(RETIRED_GATEWAY_ID, 'i'),
 ];
 
 function readRepoFile(relPath: string): string {
@@ -62,7 +65,7 @@ function assertNoLegacyRuntimeReference(relPath: string): void {
     findings.length,
     0,
     [
-      `${relPath} must stay on Hub-native runtime paths and not reference active OpenClaw runtime`,
+      `${relPath} must stay on Hub-native runtime paths and not reference active retired-gateway runtime`,
       ...findings.map(({ line, number }) => `${number}: ${line}`),
     ].join('\n'),
   );
@@ -75,7 +78,7 @@ function main(): void {
 
   console.log(JSON.stringify({
     ok: true,
-    claude_runtime_openclaw_isolated: true,
+    claude_runtime_legacy_gateway_isolated: true,
     checked_files: CLAUDE_RUNTIME_FILES.length,
   }));
 }

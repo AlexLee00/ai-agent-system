@@ -10,7 +10,6 @@ const { execSync } = require('child_process');
 const { log, expandHome, normalizeFiles } = require('./utils');
 
 const ROOT = path.resolve(__dirname, '..', '..');
-const OPENCLAW_CONFIG = path.join(process.env.HOME, '.openclaw', 'openclaw.json');
 
 // 최근 미해결 에러 알림 조회 (BOOT.md 인라인용)
 // psql execSync 방식으로 PostgreSQL reservation 스키마 직접 조회 (sync 컨텍스트 유지)
@@ -41,109 +40,12 @@ function getRecentErrorAlerts(botId) {
   }
 }
 
-// openclaw.json에서 실제 실행 중인 primary 모델을 읽음
-function readOpenClawPrimaryModel() {
-  try {
-    const cfg = JSON.parse(fs.readFileSync(OPENCLAW_CONFIG, 'utf-8'));
-    return cfg?.agents?.defaults?.model?.primary || null;
-  } catch {
-    return null;
-  }
-}
-
 function formatModelLabel(value) {
   const text = String(value || '').trim();
   if (!text) return '-';
   const lowered = text.toLowerCase();
   if (lowered === 'undefined' || lowered === 'null' || lowered === 'nan') return '-';
   return text;
-}
-
-// ─── openclaw 배포 ────────────────────────────────────────────────────────
-function deployOpenclaw(bot, botId, target, contextDir) {
-  const workspace = expandHome(target.workspace);
-  log(`\n  📦 [openclaw] → ${workspace}`);
-
-  if (!fs.existsSync(workspace)) {
-    fs.mkdirSync(workspace, { recursive: true });
-    log(`  📁 워크스페이스 생성`);
-  }
-
-  for (const { src, dest } of normalizeFiles(target.files)) {
-    const srcPath = path.join(contextDir, src);
-    const destPath = path.join(workspace, dest);
-    if (!fs.existsSync(srcPath)) { log(`  ⚠️  없음(스킵): ${src}`); continue; }
-    fs.copyFileSync(srcPath, destPath);
-    log(`  ✅ ${src} → ${dest} (${fs.statSync(destPath).size}B)`);
-  }
-
-  if (target.bootFile) {
-    generateOpenclawBoot(bot, botId, target, workspace);
-  }
-}
-
-function generateOpenclawBoot(bot, botId, target, workspace) {
-  // BOOT 속도 최적화:
-  // - IDENTITY.md + MEMORY.md → 인라인 포함 (별도 LLM 읽기 턴 불필요)
-  // - CLAUDE_NOTES.md → 1회 읽기 (행동 지침, 31KB라 인라인 제외)
-  // - DEV_SUMMARY.md / HANDOFF.md → BOOT에서 제외 (필요 시 on-demand 참조)
-  // - --sync 단계 제거 (BOOT 시 불필요한 1턴 절감)
-  // 결과: 7턴(~7분) → 2턴(~2분)
-  const INLINE_FILES = ['IDENTITY.md', 'MEMORY.md'];
-  const READ_FILES   = ['CLAUDE_NOTES.md'];
-
-  // 인라인 섹션 빌드 (배포된 workspace 파일에서 읽음)
-  let inlinedSections = '';
-  for (const filename of INLINE_FILES) {
-    const filePath = path.join(workspace, filename);
-    if (fs.existsSync(filePath)) {
-      const fileContent = fs.readFileSync(filePath, 'utf-8');
-      inlinedSections += `\n\n---\n\n## 📄 ${filename} (인라인)\n\n${fileContent}`;
-    }
-  }
-
-  const readList = READ_FILES.map((f, i) => `${i + 1}. \`${f}\``).join('\n');
-  const recentErrors = getRecentErrorAlerts(botId);
-
-  const content = `# BOOT - ${bot.name}
-
-> 자동 생성 파일 (deploy-context.js). 직접 수정하지 마세요.
-> 수정 필요 시: bots/${bot.contextPath.split('/').slice(-2, -1)[0]}/context/ 수정 후 재배포.
-${inlinedSections}${recentErrors}
-
----
-
-## 시작 절차
-
-아래 파일 **1개만** 읽으세요 (IDENTITY/MEMORY는 위에 인라인 포함됨):
-
-${readList}
-
-## 봇 정보
-
-| 항목 | 내용 |
-|------|------|
-| 이름 | ${bot.name} |
-| 역할 | ${bot.description} |
-| 모델 | ${formatModelLabel(readOpenClawPrimaryModel() || bot.model?.primary)} |
-| 상태 | ${bot.status} |
-
-## ⚠️ BOOT 중 텔레그램 절대 규칙
-
-파일을 읽고 학습하는 동안 **텔레그램으로 아무것도 보내지 마세요.**
-
-금지 사항 (위반 시 BUG-006 재발):
-- 파일명 단독 전송 금지 ("HANDOFF.md", "CLAUDE_NOTES.md" 등)
-- 읽고 있는 내용 중간 보고 금지
-- "읽는 중...", "학습 중..." 등 진행 상태 보고 금지
-- 내부 독백, 메모 전송 금지
-
-올바른 행동:
-- 모든 파일 학습 완전히 완료 후 **아무것도 전송하지 말 것**
-- 사장님이 먼저 말 걸 때까지 **침묵 대기**
-`;
-  fs.writeFileSync(path.join(workspace, target.bootFile), content);
-  log(`  🔄 ${target.bootFile} 자동 생성`);
 }
 
 // ─── claude-code 배포 ─────────────────────────────────────────────────────
@@ -239,8 +141,7 @@ function updateSystemStatus(deployedBotId, registry) {
   const emoji = { ops: '✅', dev: '🔧', planned: '⏳' };
   const rows = Object.entries(registry.bots).map(([id, b]) => {
     const deployTargets = Array.isArray(b.deployTargets) ? b.deployTargets : [];
-    const oc = deployTargets.find(t => t.type === 'openclaw');
-    const loginType = oc ? `${oc.type}/${oc.loginType}` : (deployTargets[0]?.type || '-');
+    const loginType = deployTargets[0]?.type || '-';
     return `| ${emoji[b.status] || '❓'} | \`${id}\` | ${b.name} | ${formatModelLabel(b.model?.primary)} | ${loginType} |`;
   }).join('\n');
 
@@ -274,7 +175,6 @@ ${history.join('\n')}
 | 봇 컨텍스트 | \`~/projects/ai-agent-system/bots/<봇ID>/context/\` |
 | 배포 명령 | \`node scripts/deploy-context.js --bot=<봇ID>\` |
 | 스카 OPS 로그 | \`/tmp/naver-ops-mode.log\` |
-| OpenClaw 워크스페이스 | \`~/.openclaw/workspace/\` |
 | 클로드 메모리 | \`~/.claude/projects/-Users-alexlee/memory/\` |
 `;
 
@@ -308,9 +208,7 @@ function deployBot(botId, registry, targetTypeFilter = null) {
   for (const target of deployTargets) {
     if (targetTypeFilter && target.type !== targetTypeFilter) continue;
 
-    if (target.type === 'openclaw') {
-      deployOpenclaw(bot, botId, target, contextDir);
-    } else if (target.type === 'claude-code') {
+    if (target.type === 'claude-code') {
       deployClaudeCode(bot, botId, target, contextDir);
     } else {
       log(`  ⚠️  [${target.type}] 미지원 타입 - 스킵 (향후 추가 예정)`);

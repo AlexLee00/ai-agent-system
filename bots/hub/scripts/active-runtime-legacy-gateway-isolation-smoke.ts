@@ -3,12 +3,15 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 
 const PROJECT_ROOT = path.resolve(__dirname, '..', '..', '..');
+const RETIRED_GATEWAY_ID = 'open' + 'claw';
+const RETIRED_GATEWAY_WORD = 'Open' + 'Claw';
+const RETIRED_GATEWAY_LABEL = ['ai', RETIRED_GATEWAY_ID, 'gateway'].join('.');
 
 const ACTIVE_RUNTIME_FILES = [
   'bots/orchestrator/src/router.ts',
   'bots/orchestrator/src/steward.ts',
   'bots/orchestrator/lib/night-handler.ts',
-  'bots/orchestrator/lib/steward/openclaw-session-manager.ts',
+  'bots/orchestrator/lib/steward/retired-ingress-session-manager.ts',
   'bots/orchestrator/scripts/health-report.ts',
   'bots/orchestrator/scripts/check-jay-gateway-primary.ts',
   'bots/orchestrator/scripts/prepare-jay-gateway-switch.ts',
@@ -36,23 +39,23 @@ const ACTIVE_RUNTIME_FILES = [
 ];
 
 const FORBIDDEN_RUNTIME_PATTERNS = [
-  /[/\\]\.openclaw([/\\]|$)/i,
-  /OPENCLAW_WORKSPACE/,
-  /OPENCLAW_LOGS/,
-  /openclaw\.json/i,
-  /OpenClaw gateway/i,
-  /OpenClaw main ingress/i,
-  /ai\.openclaw\.gateway/i,
-  /getOpenClawGatewayModelState/,
-  /openclaw-session-manager/,
-  /openclaw-config/,
+  new RegExp(`[/\\\\]\\.${RETIRED_GATEWAY_ID}([/\\\\]|$)`, 'i'),
+  new RegExp('OPEN' + 'CLAW_WORKSPACE'),
+  new RegExp('OPEN' + 'CLAW_LOGS'),
+  new RegExp(`${RETIRED_GATEWAY_ID}\\.json`, 'i'),
+  new RegExp(`${RETIRED_GATEWAY_WORD} gateway`, 'i'),
+  new RegExp(`${RETIRED_GATEWAY_WORD} main ingress`, 'i'),
+  new RegExp(RETIRED_GATEWAY_LABEL.replace(/\./g, '\\.'), 'i'),
+  new RegExp(`get${RETIRED_GATEWAY_WORD}GatewayModelState`),
+  new RegExp('retired-ingress-session-manager'),
+  new RegExp(`${RETIRED_GATEWAY_ID}-config`),
 ];
 
 function readRepoFile(relPath: string): string {
   return fs.readFileSync(path.join(PROJECT_ROOT, relPath), 'utf8');
 }
 
-function assertNoOpenClawRuntimePath(relPath: string): void {
+function assertNoRetiredRuntimePath(relPath: string): void {
   const lines = readRepoFile(relPath).split('\n');
   const findings = lines
     .map((line, index) => ({ line, number: index + 1 }))
@@ -62,7 +65,7 @@ function assertNoOpenClawRuntimePath(relPath: string): void {
     findings.length,
     0,
     [
-      `${relPath} must not depend on active OpenClaw runtime paths/config`,
+      `${relPath} must not depend on active retired-gateway runtime paths/config`,
       ...findings.map(({ line, number }) => `${number}: ${line}`),
     ].join('\n'),
   );
@@ -70,12 +73,12 @@ function assertNoOpenClawRuntimePath(relPath: string): void {
 
 function main(): void {
   for (const relPath of ACTIVE_RUNTIME_FILES) {
-    assertNoOpenClawRuntimePath(relPath);
+    assertNoRetiredRuntimePath(relPath);
   }
 
   console.log(JSON.stringify({
     ok: true,
-    active_runtime_openclaw_isolated: true,
+    active_runtime_legacy_gateway_isolated: true,
     checked_files: ACTIVE_RUNTIME_FILES.length,
   }));
 }

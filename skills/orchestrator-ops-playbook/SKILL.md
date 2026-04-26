@@ -1,18 +1,18 @@
 ---
 name: orchestrator-ops-playbook
-description: Use when operating, debugging, or improving the orchestrator and OpenClaw stack in this repository, especially when working on alert publisher/webhook fanout, legacy mainbot queue flow, orchestrator runtime behavior, unified ops health, critical n8n webhook delivery, or briefing and batch formatting.
+description: Use when operating, debugging, or improving the orchestrator and Hub control stack in this repository, especially when working on alert publisher/webhook fanout, legacy mainbot queue flow, orchestrator runtime behavior, unified ops health, critical n8n webhook delivery, or briefing and batch formatting.
 ---
 
 # Orchestrator Ops Playbook
 
-이 스킬은 제이 오케스트레이터와 OpenClaw 운영 흐름을 다룰 때 사용한다.
+이 스킬은 제이 오케스트레이터와 Hub 운영 흐름을 다룰 때 사용한다.
 
 주요 대상:
 
 - alert publisher / webhook fanout
 - `mainbot_queue` (legacy queue rail)
 - `orchestrator runtime`
-- OpenClaw gateway
+- Hub control/alarm gateway
 - `critical webhook`
 - `/ops-health`
 - 브리핑/배치 포맷

@@ -25,7 +25,7 @@
         ↓                                   ↓
 [픽코 키오스크] ← 예약 등록+결제 완료 / 취소 상태 변경
         ↓ Heartbeat (30분 주기)
-[Telegram/OpenClaw] ← 운영 결과 알람
+[Telegram/Hub alarm] ← 운영 결과 알람
         ↓
 [RAG API] ← 예약 이력 저장 (http://localhost:8100)
 ```
@@ -62,7 +62,7 @@
 | `lib/browser.js` | getPickkoLaunchOptions, setupDialogHandler | ✅ |
 | `lib/pickko.ts` | loginToPickko(), fetchPickkoEntries() — 픽코 어드민 일괄 조회 공통 함수 | ✅ |
 | `src/bug-report.ts` | 버그·유지보수 추적 CLI; HANDOFF_FILE = `context/HANDOFF.md` 직접 참조 (deploy 순서 의존성 제거) | ✅ 수정 |
-| `scripts/speed-test.js` | LLM API 속도 테스트 툴 (--apply로 openclaw.json 자동 반영) | ✅ |
+| `scripts/speed-test.js` | LLM API 속도 테스트 툴 (--apply로 team selector 설정 반영) | ✅ |
 | `secrets.json` | 네이버/픽코 로그인 정보 + db_encryption_key(64자 hex) + db_key_pepper | ✅ |
 
 **운영 엔트리:** `dist/ts-runtime/bots/reservation/.../*.js`
@@ -126,7 +126,7 @@ nohup bash start-ops.sh > /dev/null 2>&1 &
 
 ## 🗄️ 상태 DB 구조 (2026-02-26 마이그레이션)
 
-**파일:** `~/.openclaw/workspace/state.db` (WAL 모드)
+**파일:** reservation/Hub runtime `state.db` (WAL 모드)
 
 | 테이블 | 용도 | 암호화 |
 |--------|------|--------|
@@ -162,7 +162,7 @@ curl -s -X POST http://localhost:8100/ask \
 
 ---
 
-## 🤖 OpenClaw 에이전트 구성 (2026-02-24 업데이트)
+## 🤖 Legacy Gateway 에이전트 구성 (2026-02-24 기록)
 
 | 항목 | 값 |
 |------|-----|
@@ -172,7 +172,7 @@ curl -s -X POST http://localhost:8100/ask \
 | Fallback 2 | `ollama/qwen2.5:7b` (느림, 비상용) |
 | 채널 | Telegram (@SCAFE8282_BOT) |
 | 사장님 chat_id | `<YOUR_CHAT_ID>` |
-| 워크스페이스 | `~/.openclaw/workspace/` |
+| 워크스페이스 | retired legacy workspace |
 
 **Ollama 주의:** Homebrew 빌드는 M1에서 MLX GPU 가속 안됨 → ~4분 응답, Telegram 봇에 사용 불가.
 
@@ -189,7 +189,7 @@ curl -s -X POST http://localhost:8100/ask \
 | 2026-02-22 23:37 | **OPS 모드 전환** (사장님 협의) | ✅ 실운영 시작 |
 | 2026-02-23 오전 | RAG 시스템 구축 | ChromaDB + FastAPI 완성 |
 | 2026-02-23 오전 | naver-monitor.js RAG 연동 | 예약 자동 저장 |
-| 2026-02-23 오전 | OpenClaw Gemini 모델 전환 | 텔레그램 응답 정상화 |
+| 2026-02-23 오전 | legacy gateway Gemini 모델 전환 | 텔레그램 응답 정상화 |
 | 2026-02-23 오전 | BOOT.md 자동 기억 복원 | 게이트웨이 재시작 시 자동 학습 |
 | 2026-02-23 오후 | process.exit(0) 버그 수정 | 픽코 성공이 실패로 오인되던 문제 해결 |
 | 2026-02-23 오후 | DEV/OPS 데이터 파일 분리 | naver-seen-dev.json / naver-seen.json |
@@ -253,8 +253,8 @@ curl -s -X POST http://localhost:8100/ask \
 | 2026-02-27 | **CL-006 코딩가이드 기준 전체 코드 리팩토링** | maskPhone/maskName 함수 추가 (lib/formatting.js) 외 5건 |
 | 2026-02-27 | **pickko-daily-audit/summary 실행 시간 23:50으로 변경** | pickko-daily-audit 22:00→23:50 (plist 수정 + launchd 재등록) 외 1건 |
 | 2026-02-28 | **pickko-daily-audit 스케줄 22:00 원복** | pickko-daily-audit 23:50→22:00 원복 (plist 수정 + launchd 재등록) |
-| 2026-02-28 | **OpenClaw v2026.2.26 업데이트 및 재시작** | openclaw gateway restart (완전 중지 후 재시작) 외 2건 |
-| 2026-02-28 | **스카 재부팅** | openclaw gateway restart → 스카 부팅 완료 (durationMs=59s) |
+| 2026-02-28 | **legacy gateway v2026.2.26 업데이트 및 재시작** | legacy gateway restart (완전 중지 후 재시작) 외 2건 |
+| 2026-02-28 | **스카 재부팅** | legacy gateway restart → 스카 부팅 완료 (durationMs=59s) |
 | 2026-02-28 | **매출 보고 일반이용 합산 수정** | pickko-daily-summary.js: 23:50 자동 보고 합계에 일반이용(스터디카페) 포함 외 3건 |
 | 2026-02-28 | **미해결 알림 해제 + 매출 일반이용 합산 수정** | 픽코 취소 실패 알림 수동 resolved 처리 (2026-02-27 18:00 A2) 외 5건 |
 | 2026-02-28 | **고아 프로세스 자동 정리 추가** | start-ops.sh cleanup_old()에 고아 tail -f 프로세스 자동 정리 추가 (2시간 재시작마다 실행) |
@@ -283,7 +283,7 @@ curl -s -X POST http://localhost:8100/ask \
 | 2026-03-04 | **LLM키통합+알람버그수정+덱스터패턴학습** | packages/core/lib/llm-keys.js 공용 LLM 키 로더 외 3건 |
 | 2026-03-05 | **헬스체크 회복 로직 + 제이 할루시네이션 방지 + db-backup 수정** | health-check.js 회복 감지·알림·state 저장 로직 추가 외 4건 |
 | 2026-03-05 | **취소 루틴 버그 수정 (블러/키 충돌)** | page.click(body)→Escape 키 수정(상세보기 블러 문제) 외 3건 |
-| 2026-03-05 | **예약 시간 파싱 버그 수정 + OpenClaw 복구 + 덱스터 오탐 수정** | naver-monitor 정오 종료시간 파싱 버그 수정 외 6건 |
+| 2026-03-05 | **예약 시간 파싱 버그 수정 + legacy gateway 복구 + 덱스터 오탐 수정** | naver-monitor 정오 종료시간 파싱 버그 수정 외 6건 |
 | 2026-03-05 | **스카 pickko-query/cancel-cmd 경로 누락 버그 수정** | CLAUDE_NOTES.md 명령 테이블 절대경로 수정 외 1건 |
 | 2026-03-06 | **미해결 알림 반복 + tool_code 누출 버그 수정** | pickko-alerts-resolve.js 신규 (수동 해결 CLI) 외 2건 |
 | 2026-03-11 | **제이 무응답 4종 버그 수정** | mainbot.js await 누락(items is not iterable) 외 3건 |
@@ -296,7 +296,7 @@ curl -s -X POST http://localhost:8100/ask \
 <!-- session-close:2026-03-11:제이-무응답-4종-버그-수정 -->
 <!-- session-close:2026-03-06:미해결-알림-반복-tool_code-누출-버그-수정 -->
 <!-- session-close:2026-03-05:스카-pickkoquerycancelcmd-경로-누락- -->
-<!-- session-close:2026-03-05:예약-시간-파싱-버그-수정-openclaw-복구-덱스터 -->
+<!-- session-close:2026-03-05:예약-시간-파싱-버그-수정-legacy-gateway-복구-덱스터 -->
 <!-- session-close:2026-03-05:취소-루틴-버그-수정-블러키-충돌 -->
 <!-- session-close:2026-03-05:헬스체크-회복-로직-제이-할루시네이션-방지-dbback -->
 <!-- session-close:2026-03-04:llm키통합알람버그수정덱스터패턴학습 -->
@@ -326,7 +326,7 @@ curl -s -X POST http://localhost:8100/ask \
 <!-- session-close:2026-02-28:미해결-알림-해제-매출-일반이용-합산-수정 -->
 <!-- session-close:2026-02-28:매출-보고-일반이용-합산-수정 -->
 <!-- session-close:2026-02-28:스카-재부팅 -->
-<!-- session-close:2026-02-28:openclaw-v2026226-업데이트-및-재시작 -->
+<!-- session-close:2026-02-28:legacy-gateway-v2026226-업데이트-및-재시작 -->
 <!-- session-close:2026-02-28:pickkodailyaudit-스케줄-2200-원복 -->
 <!-- session-close:2026-02-27:pickkodailyauditsummary-실행-시간- -->
 <!-- session-close:2026-02-27:cl006-코딩가이드-기준-전체-코드-리팩토링 -->
@@ -367,7 +367,7 @@ curl -s -X POST http://localhost:8100/ask \
 
 ```
 ⏸ naver-monitor.ts    마이그레이션 후 일시 중단 → dist runtime 기준 재시작 필요
-⏸ OpenClaw 게이트웨이  마이그레이션 후 일시 중단 → 재시작 필요
+⏸ legacy gateway 마이그레이션 후 일시 중단 → Hub 전환 상태 확인 필요
 ✅ Heartbeat           1시간 주기, 09:00~22:00 텔레그램 전송 (재시작 후 복구)
 ✅ pickko-cancel.js    네이버 취소 → 픽코 자동 취소 (PICKKO_CANCEL_ENABLE=1)
 ✅ pickko-verify.ts    needsVerify() 기반 재검증 (자동: 08:00/14:00/20:00, launchd)
@@ -385,7 +385,7 @@ curl -s -X POST http://localhost:8100/ask \
 
 **재시작 명령:**
 ```bash
-launchctl load ~/Library/LaunchAgents/ai.openclaw.gateway.plist
+launchctl load ~/Library/LaunchAgents/ai.hub.resource-api.plist
 cd ~/projects/ai-agent-system/bots/reservation && nohup bash auto/monitors/start-ops.sh > /dev/null 2>&1 &
 ```
 
@@ -400,8 +400,8 @@ cd ~/projects/ai-agent-system/bots/reservation && nohup bash auto/monitors/start
 - 병렬 실행 가능 (3개 브라우저 동시 테스트 성공)
 - 세션 복구 문제: 브라우저 강제 종료 후 재시작 시 `Default/Current Session` 파일 삭제 필요
   ```bash
-  rm -f ~/.openclaw/workspace/naver-profile/Default/"Current Session"
-  rm -f ~/.openclaw/workspace/naver-profile/Default/"Current Tabs"
+  rm -f "$AI_AGENT_BROWSER_PROFILE/Default/Current Session"
+  rm -f "$AI_AGENT_BROWSER_PROFILE/Default/Current Tabs"
   ```
 
 ---

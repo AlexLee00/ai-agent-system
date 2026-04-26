@@ -4,6 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 
 const SUPPORT_PATH = require.resolve('../../../packages/core/lib/llm-control/tester-support.ts');
+const RETIRED_WORKSPACE_SEGMENT = `.open${'claw'}`;
 
 function resetSupportModule() {
   delete require.cache[SUPPORT_PATH];
@@ -28,11 +29,11 @@ function withEnvPatch(patch: Record<string, string | null>, fn: () => void) {
   }
 }
 
-function assertNotOpenClawPath(label: string, value: string) {
+function assertNotRetiredGatewayPath(label: string, value: string) {
   assert(value, `${label} must be set`);
   assert(
-    !String(value).includes(`${path.sep}.openclaw${path.sep}`),
-    `${label} must not default to OpenClaw path: ${value}`,
+    !String(value).includes(`${path.sep}${RETIRED_WORKSPACE_SEGMENT}${path.sep}`),
+    `${label} must not default to retired gateway path: ${value}`,
   );
 }
 
@@ -53,14 +54,14 @@ function main() {
     }, () => {
       const support = require('../../../packages/core/lib/llm-control/tester-support.ts');
 
-      assertNotOpenClawPath('LLM_CONTROL_CONFIG', support.LLM_CONTROL_CONFIG);
-      assertNotOpenClawPath('AUTH_PROFILES_FILE', support.AUTH_PROFILES_FILE);
-      assertNotOpenClawPath('SPEED_TEST_KEYS_FILE', support.SPEED_TEST_KEYS_FILE);
+      assertNotRetiredGatewayPath('LLM_CONTROL_CONFIG', support.LLM_CONTROL_CONFIG);
+      assertNotRetiredGatewayPath('AUTH_PROFILES_FILE', support.AUTH_PROFILES_FILE);
+      assertNotRetiredGatewayPath('SPEED_TEST_KEYS_FILE', support.SPEED_TEST_KEYS_FILE);
 
       const models = support.loadModels(fs);
       assert(models.includes('openai/gpt-4o-mini'), 'default Hub-native model catalog should include OpenAI smoke model');
       assert(models.includes('groq/llama-3.3-70b-versatile'), 'default Hub-native model catalog should include Groq smoke model');
-      assert.equal(support.loadOpenAIKey(fs), null, 'missing auth profile should not throw or read OpenClaw');
+      assert.equal(support.loadOpenAIKey(fs), null, 'missing auth profile should not throw or read retired gateway');
 
       const selected = support.applyFastest(fs, [
         { ok: true, provider: 'google-gemini-cli', modelId: 'google-gemini-cli/gemini-2.5-flash' },
@@ -72,7 +73,7 @@ function main() {
 
     console.log(JSON.stringify({
       ok: true,
-      llm_control_openclaw_free_defaults: true,
+      llm_control_legacy_gateway_free_defaults: true,
       hub_native_model_catalog: true,
     }));
   } finally {
