@@ -24,11 +24,34 @@ defmodule Luna.V2.KillSwitch do
     LUNA_RAG_ENABLED=true          → Agentic RAG 활성
   """
 
-  @runtime_override_file "/Users/alexlee/projects/ai-agent-system/bots/investment/output/ops/position-runtime-overrides.json"
+  @runtime_override_filename "position-runtime-overrides.json"
+  @legacy_runtime_override_file "/Users/alexlee/projects/ai-agent-system/bots/investment/output/ops/position-runtime-overrides.json"
+
+  defp runtime_override_file do
+    runtime_dir =
+      System.get_env("INVESTMENT_OPS_RUNTIME_DIR") ||
+        Path.join([System.user_home!(), ".ai-agent-system", "investment", "ops"])
+
+    Path.join(runtime_dir, @runtime_override_filename)
+  rescue
+    _ -> @legacy_runtime_override_file
+  end
+
+  defp runtime_override_read_file do
+    file = runtime_override_file()
+
+    if File.exists?(file) do
+      file
+    else
+      @legacy_runtime_override_file
+    end
+  end
 
   defp runtime_override(key) when is_atom(key) do
-    with true <- File.exists?(@runtime_override_file),
-         {:ok, raw} <- File.read(@runtime_override_file),
+    file = runtime_override_read_file()
+
+    with true <- File.exists?(file),
+         {:ok, raw} <- File.read(file),
          {:ok, overrides} <- Jason.decode(raw),
          value when not is_nil(value) <- Map.get(overrides, Atom.to_string(key)) do
       value

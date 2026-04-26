@@ -2,8 +2,14 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
+import {
+  investmentOpsLegacyFile,
+  investmentOpsRuntimeFile,
+} from './runtime-ops-path.ts';
 
-export const DEFAULT_EXTERNAL_EVIDENCE_GAP_QUEUE_FILE = '/Users/alexlee/projects/ai-agent-system/bots/investment/output/ops/position-runtime-evidence-gap-queue.json';
+export const EXTERNAL_EVIDENCE_GAP_QUEUE_FILENAME = 'position-runtime-evidence-gap-queue.json';
+export const LEGACY_EXTERNAL_EVIDENCE_GAP_QUEUE_FILE = investmentOpsLegacyFile(EXTERNAL_EVIDENCE_GAP_QUEUE_FILENAME);
+export const DEFAULT_EXTERNAL_EVIDENCE_GAP_QUEUE_FILE = investmentOpsRuntimeFile(EXTERNAL_EVIDENCE_GAP_QUEUE_FILENAME);
 const INVESTMENT_BOT_PREFIX = '/Users/alexlee/projects/ai-agent-system/bots/investment';
 const OPEN_TASK_MAX_AGE_MS = 3 * 60 * 60 * 1000;
 
@@ -30,10 +36,26 @@ function emptyState(file) {
   };
 }
 
+function isDefaultQueueFile(file = DEFAULT_EXTERNAL_EVIDENCE_GAP_QUEUE_FILE) {
+  return path.resolve(String(file || '')) === path.resolve(DEFAULT_EXTERNAL_EVIDENCE_GAP_QUEUE_FILE);
+}
+
+function resolveQueueReadFile(file = DEFAULT_EXTERNAL_EVIDENCE_GAP_QUEUE_FILE) {
+  if (
+    isDefaultQueueFile(file)
+    && !fs.existsSync(file)
+    && fs.existsSync(LEGACY_EXTERNAL_EVIDENCE_GAP_QUEUE_FILE)
+  ) {
+    return LEGACY_EXTERNAL_EVIDENCE_GAP_QUEUE_FILE;
+  }
+  return file;
+}
+
 function readQueueRaw(file = DEFAULT_EXTERNAL_EVIDENCE_GAP_QUEUE_FILE) {
-  if (!fs.existsSync(file)) return emptyState(file);
+  const readFile = resolveQueueReadFile(file);
+  if (!fs.existsSync(readFile)) return emptyState(file);
   try {
-    const raw = JSON.parse(String(fs.readFileSync(file, 'utf8') || '{}'));
+    const raw = JSON.parse(String(fs.readFileSync(readFile, 'utf8') || '{}'));
     return {
       file,
       version: Number(raw?.version || 1),

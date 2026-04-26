@@ -5,9 +5,15 @@ import fs from 'node:fs';
 import path from 'node:path';
 import * as db from '../shared/db.ts';
 import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
+import {
+  investmentOpsLegacyFile,
+  investmentOpsRuntimeFile,
+} from '../shared/runtime-ops-path.ts';
 import { runPositionRuntimeTuning } from './runtime-position-runtime-tuning.ts';
 
-const OVERRIDE_FILE = '/Users/alexlee/projects/ai-agent-system/bots/investment/output/ops/position-runtime-overrides.json';
+export const POSITION_RUNTIME_OVERRIDE_FILENAME = 'position-runtime-overrides.json';
+export const LEGACY_POSITION_RUNTIME_OVERRIDE_FILE = investmentOpsLegacyFile(POSITION_RUNTIME_OVERRIDE_FILENAME);
+export const OVERRIDE_FILE = investmentOpsRuntimeFile(POSITION_RUNTIME_OVERRIDE_FILENAME);
 
 function parseArgs(argv = []) {
   const args = {
@@ -27,8 +33,11 @@ function parseArgs(argv = []) {
 
 function loadOverrides() {
   try {
-    if (!fs.existsSync(OVERRIDE_FILE)) return {};
-    return JSON.parse(fs.readFileSync(OVERRIDE_FILE, 'utf8')) || {};
+    const readFile = !fs.existsSync(OVERRIDE_FILE) && fs.existsSync(LEGACY_POSITION_RUNTIME_OVERRIDE_FILE)
+      ? LEGACY_POSITION_RUNTIME_OVERRIDE_FILE
+      : OVERRIDE_FILE;
+    if (!fs.existsSync(readFile)) return {};
+    return JSON.parse(fs.readFileSync(readFile, 'utf8')) || {};
   } catch {
     return {};
   }

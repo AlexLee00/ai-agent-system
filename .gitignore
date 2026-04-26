@@ -72,6 +72,11 @@ bots/reservation/.playwright-headed
 # 덱스터 운영 이력 파일
 bots/claude/dexter-fixes.json
 
+# 투자팀 주기성 런타임 상태 파일 (기본 위치: ~/.ai-agent-system/investment/ops)
+bots/investment/output/ops/position-runtime-evidence-gap-queue.json
+bots/investment/output/ops/position-runtime-market-open-queue.json
+bots/investment/output/ops/position-runtime-overrides.json
+
 # 비디오팀 — 대용량 미디어 파일
 *.mp4
 *.m4a

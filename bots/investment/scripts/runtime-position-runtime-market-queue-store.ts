@@ -3,8 +3,14 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
+import {
+  investmentOpsLegacyFile,
+  investmentOpsRuntimeFile,
+} from '../shared/runtime-ops-path.ts';
 
-export const DEFAULT_POSITION_RUNTIME_MARKET_QUEUE_FILE = '/Users/alexlee/projects/ai-agent-system/bots/investment/output/ops/position-runtime-market-open-queue.json';
+export const POSITION_RUNTIME_MARKET_QUEUE_FILENAME = 'position-runtime-market-open-queue.json';
+export const LEGACY_POSITION_RUNTIME_MARKET_QUEUE_FILE = investmentOpsLegacyFile(POSITION_RUNTIME_MARKET_QUEUE_FILENAME);
+export const DEFAULT_POSITION_RUNTIME_MARKET_QUEUE_FILE = investmentOpsRuntimeFile(POSITION_RUNTIME_MARKET_QUEUE_FILENAME);
 
 function ensureDir(file) {
   const dir = path.dirname(file);
@@ -59,8 +65,24 @@ function normalizeQueue(rows = []) {
     .sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
 }
 
+function isDefaultMarketQueueFile(file = DEFAULT_POSITION_RUNTIME_MARKET_QUEUE_FILE) {
+  return path.resolve(String(file || '')) === path.resolve(DEFAULT_POSITION_RUNTIME_MARKET_QUEUE_FILE);
+}
+
+function resolveMarketQueueReadFile(file = DEFAULT_POSITION_RUNTIME_MARKET_QUEUE_FILE) {
+  if (
+    isDefaultMarketQueueFile(file)
+    && !fs.existsSync(file)
+    && fs.existsSync(LEGACY_POSITION_RUNTIME_MARKET_QUEUE_FILE)
+  ) {
+    return LEGACY_POSITION_RUNTIME_MARKET_QUEUE_FILE;
+  }
+  return file;
+}
+
 export function readPositionRuntimeMarketQueue(file = DEFAULT_POSITION_RUNTIME_MARKET_QUEUE_FILE) {
-  if (!fs.existsSync(file)) {
+  const readFile = resolveMarketQueueReadFile(file);
+  if (!fs.existsSync(readFile)) {
     return {
       file,
       updatedAt: null,
@@ -68,7 +90,7 @@ export function readPositionRuntimeMarketQueue(file = DEFAULT_POSITION_RUNTIME_M
     };
   }
   try {
-    const raw = JSON.parse(String(fs.readFileSync(file, 'utf8') || '{}'));
+    const raw = JSON.parse(String(fs.readFileSync(readFile, 'utf8') || '{}'));
     const entries = normalizeQueue(Array.isArray(raw?.entries) ? raw.entries : []);
     return {
       file,
