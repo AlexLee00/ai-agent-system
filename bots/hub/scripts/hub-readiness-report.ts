@@ -41,7 +41,7 @@ function runSmoke(script: string, required = true): Check {
     required,
     details: {
       exit_code: status,
-      ...(stderr ? { error: stderr.split(/\r?\n/).slice(-1)[0] } : {}),
+      ...(status !== 0 && stderr ? { error: stderr.split(/\r?\n/).slice(-1)[0] } : {}),
     },
   };
 }
