@@ -2,7 +2,7 @@
 
 This inventory tracks the Hub alarm migration surface. `hub_alarm_native` entries are the desired path; `legacy_openclaw_compat` entries are compatibility shims or remaining migration targets.
 
-- generated_at: 2026-04-25T21:25:03.645Z
+- generated_at: 2026-04-26T02:53:52.648Z
 - total_matches: 271
 - unique_files: 122
 - hub_alarm_native: 67
@@ -457,7 +457,7 @@ This inventory tracks the Hub alarm migration surface. `hub_alarm_native` entrie
 
 ### `packages/core/lib/telegram-sender.ts`
 - L31 [hub_alarm_native]: `const hubAlarmClient = require('./hub-alarm-client');`
-- L200 [legacy_openclaw_compat]: `const LEGACY_WORKSPACE = process.env.OPENCLAW_WORKSPACE || '';`
+- L201 [legacy_openclaw_compat]: `const LEGACY_WORKSPACE = process.env.OPENCLAW_WORKSPACE || '';`
 
 ### `packages/core/scripts/publish-python-report.ts`
 - L15 [legacy_openclaw_compat]: `const { postAlarm } = require('../lib/openclaw-client');`

@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-04-25T21:25:03.645Z",
+  "generated_at": "2026-04-26T02:53:52.648Z",
   "scan_patterns": [
     "hub-alarm-client",
     "openclaw-client",
@@ -1628,7 +1628,7 @@
       },
       {
         "file": "packages/core/lib/telegram-sender.ts",
-        "line": 200,
+        "line": 201,
         "category": "legacy_openclaw_compat",
         "match": "const LEGACY_WORKSPACE = process.env.OPENCLAW_WORKSPACE || '';"
       }

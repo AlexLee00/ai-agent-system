@@ -58,6 +58,8 @@ function main() {
     if (tgPendingMigrationStatus !== 0) process.exit(tgPendingMigrationStatus);
     const tgHubSecretsStatus = run(tsxBin, [path.join(scriptDir, 'telegram-hub-secrets-smoke.ts')]);
     if (tgHubSecretsStatus !== 0) process.exit(tgHubSecretsStatus);
+    const tgTopicPrecedenceStatus = run(tsxBin, [path.join(scriptDir, 'telegram-topic-routing-precedence-smoke.ts')]);
+    if (tgTopicPrecedenceStatus !== 0) process.exit(tgTopicPrecedenceStatus);
     const controlPlaneStatus = run(tsxBin, [path.join(scriptDir, 'control-plane-smoke.ts')]);
     if (controlPlaneStatus !== 0) process.exit(controlPlaneStatus);
     const acceptanceStatus = run(tsxBin, [path.join(scriptDir, 'l5-acceptance-smoke.ts')]);

@@ -154,8 +154,9 @@ function _secrets(): SecretPayload {
 }
 
 const _token  = () => process.env.TELEGRAM_BOT_TOKEN || _secrets().telegram_bot_token || '';
-// Forum Topic 발송용 chat_id: 그룹 ID 우선, 없으면 개인 chat_id 폴백
-const _chatId = () => process.env.TELEGRAM_CHAT_ID || _secrets().telegram_group_id  || _secrets().telegram_chat_id || '';
+// Forum Topic 발송용 chat_id: TELEGRAM_CHAT_ID는 개인 fallback으로 쓰이는 경우가 많다.
+// topic-enabled send는 반드시 그룹 ID를 먼저 잡아야 message_thread_id가 적용된다.
+const _chatId = () => process.env.TELEGRAM_GROUP_ID || _secrets().telegram_group_id || process.env.TELEGRAM_CHAT_ID || _secrets().telegram_chat_id || '';
 const _topics = () => _secrets().telegram_topic_ids || {};
 
 function _alertsDisabled(): boolean {
