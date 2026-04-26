@@ -1,11 +1,11 @@
 {
   "version": 1,
-  "updatedAt": "2026-04-26T00:19:31.005Z",
+  "updatedAt": "2026-04-26T03:03:17.582Z",
   "entries": [
     {
       "queueKey": "kis_overseas:live:live:kis_overseas:POET:normal:kis_overseas:POET:normal:ADJUST",
       "createdAt": "2026-04-24T16:34:48.844Z",
-      "updatedAt": "2026-04-26T00:19:07.836Z",
+      "updatedAt": "2026-04-26T03:02:46.075Z",
       "candidate": {
         "exchange": "kis_overseas",
         "symbol": "POET",
@@ -58,7 +58,7 @@
     {
       "queueKey": "kis_overseas:live:live:kis_overseas:AGPU:validation:kis_overseas:AGPU:validation:EXIT",
       "createdAt": "2026-04-25T00:02:56.671Z",
-      "updatedAt": "2026-04-26T00:19:07.836Z",
+      "updatedAt": "2026-04-26T03:02:46.075Z",
       "candidate": {
         "exchange": "kis_overseas",
         "symbol": "AGPU",
