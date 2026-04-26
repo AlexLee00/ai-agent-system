@@ -64,6 +64,12 @@ npm run -s security:stale-ref-cleanup -- --plan-file /tmp/stale-ref-plan.json --
 SECURITY_STALE_REF_CLEANUP_CONFIRM=delete-stale-secret-refs npm run -s security:stale-ref-cleanup -- --plan-file /tmp/stale-ref-plan.json --apply --tags
 ```
 
+저장된 계획에는 repo root, 현재 branch, `HEAD`, `origin/main` 메타데이터가 포함된다. cleanup은 기본적으로 이 값이 현재 checkout과 다르면 중단한다. 오래된 계획을 의도적으로 재사용해야 한다면 먼저 내용을 다시 검토한 뒤 `--allow-stale-plan`을 명시한다.
+
+```bash
+npm run -s security:stale-ref-cleanup -- --plan-file /tmp/stale-ref-plan.json --allow-stale-plan --tags
+```
+
 `--worktrees`는 기본적으로 locked worktree를 스킵한다. locked worktree까지 정리하려면 소유 에이전트를 먼저 정지하고 `--locked-worktrees`를 추가한다.
 
 ## 노출 후보 발견 시 처리 순서

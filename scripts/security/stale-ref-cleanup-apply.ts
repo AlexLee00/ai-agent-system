@@ -15,6 +15,14 @@ const path = require('node:path');
 
 type Plan = {
   ok: boolean;
+  plan_version?: number;
+  generated_at?: string;
+  git?: {
+    repo_root?: string;
+    current_branch?: string | null;
+    head?: string | null;
+    origin_main?: string | null;
+  };
   classified?: {
     local_branches?: string[];
     worktree_branches?: Array<{ branch: string; worktree: string; locked: boolean }>;
@@ -38,7 +46,7 @@ const CONFIRM_VALUE = 'delete-stale-secret-refs';
 function usage() {
   return [
     'Usage:',
-    '  npm run -s security:stale-ref-cleanup -- [--plan-file <file>] [--tags] [--branches] [--remote-refs] [--worktrees] [--locked-worktrees] [--prune-worktrees] [--apply]',
+    '  npm run -s security:stale-ref-cleanup -- [--plan-file <file>] [--allow-stale-plan] [--tags] [--branches] [--remote-refs] [--worktrees] [--locked-worktrees] [--prune-worktrees] [--apply]',
     '',
     'Default is dry-run. To execute selected scopes:',
     `  SECURITY_STALE_REF_CLEANUP_CONFIRM=${CONFIRM_VALUE} npm run -s security:stale-ref-cleanup -- --apply --tags`,
@@ -46,6 +54,8 @@ function usage() {
     'Reuse a saved plan to avoid a slow all-ref rescan:',
     '  npm run -s security:stale-ref-plan -- --output /tmp/stale-ref-plan.json',
     '  npm run -s security:stale-ref-cleanup -- --plan-file /tmp/stale-ref-plan.json --tags',
+    '',
+    'Saved plans are validated against the current repo/HEAD by default. Use --allow-stale-plan only after manual review.',
   ].join('\n');
 }
 
@@ -73,6 +83,15 @@ function run(command: string, args: string[]) {
   });
 }
 
+function runGit(args: string[], allowFailure = false): string {
+  const result = run('git', args);
+  if (result.error) throw result.error;
+  if (result.status !== 0 && !allowFailure) {
+    throw new Error(`git ${args.join(' ')} failed: ${result.stderr || result.status}`);
+  }
+  return (result.stdout || '').trim();
+}
+
 function runPlan(planFile?: string): Plan {
   if (planFile) {
     const planPath = path.resolve(REPO_ROOT, planFile);
@@ -85,6 +104,66 @@ function runPlan(planFile?: string): Plan {
     throw new Error(`cleanup plan failed: ${result.stderr || result.status}`);
   }
   return parseJsonOutput(result.stdout || '{}');
+}
+
+function currentGitMetadata() {
+  return {
+    repo_root: REPO_ROOT,
+    current_branch: runGit(['branch', '--show-current'], true) || null,
+    head: runGit(['rev-parse', 'HEAD'], true) || null,
+    origin_main: runGit(['rev-parse', 'origin/main'], true) || null,
+  };
+}
+
+function failPlanValidation(error: string, details: Record<string, unknown>): never {
+  console.error(JSON.stringify({
+    ok: false,
+    applied: false,
+    error,
+    ...details,
+  }, null, 2));
+  process.exit(1);
+}
+
+function validateSavedPlan(plan: Plan, planFile: string | null, args: Set<string>) {
+  if (!planFile) return;
+  if (plan.plan_version !== 1) {
+    failPlanValidation('unsupported_plan_version', {
+      plan_file: path.resolve(REPO_ROOT, planFile),
+      expected_plan_version: 1,
+      actual_plan_version: plan.plan_version ?? null,
+    });
+  }
+
+  const plannedGit = plan.git || {};
+  const currentGit = currentGitMetadata();
+  if (!plannedGit.repo_root || path.resolve(plannedGit.repo_root) !== REPO_ROOT) {
+    failPlanValidation('plan_repo_mismatch', {
+      plan_file: path.resolve(REPO_ROOT, planFile),
+      planned_repo_root: plannedGit.repo_root || null,
+      current_repo_root: REPO_ROOT,
+    });
+  }
+
+  if (args.has('--allow-stale-plan')) return;
+
+  if (plannedGit.head && currentGit.head && plannedGit.head !== currentGit.head) {
+    failPlanValidation('stale_plan_head_mismatch', {
+      plan_file: path.resolve(REPO_ROOT, planFile),
+      planned_head: plannedGit.head,
+      current_head: currentGit.head,
+      override: 'rerun security:stale-ref-plan or pass --allow-stale-plan after manual review',
+    });
+  }
+
+  if (plannedGit.origin_main && currentGit.origin_main && plannedGit.origin_main !== currentGit.origin_main) {
+    failPlanValidation('stale_plan_origin_main_mismatch', {
+      plan_file: path.resolve(REPO_ROOT, planFile),
+      planned_origin_main: plannedGit.origin_main,
+      current_origin_main: currentGit.origin_main,
+      override: 'rerun security:stale-ref-plan or pass --allow-stale-plan after manual review',
+    });
+  }
 }
 
 function buildActions(plan: Plan, args: Set<string>): Action[] {
@@ -215,6 +294,7 @@ function main() {
   }
 
   const plan = runPlan(planFile || undefined);
+  validateSavedPlan(plan, planFile, args);
   const actions = buildActions(plan, args);
   const results = actions.map((action) => executeAction(action, apply));
   const failed = results.filter((result) => result.status === 'failed');

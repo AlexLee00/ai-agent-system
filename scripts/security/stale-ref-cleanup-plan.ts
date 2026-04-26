@@ -196,6 +196,15 @@ function buildCommands(classified: ReturnType<typeof classifyRefs>, worktrees: W
   return commands;
 }
 
+function collectGitMetadata() {
+  return {
+    repo_root: REPO_ROOT,
+    current_branch: runGit(['branch', '--show-current'], true) || null,
+    head: runGit(['rev-parse', 'HEAD'], true) || null,
+    origin_main: runGit(['rev-parse', 'origin/main'], true) || null,
+  };
+}
+
 function main() {
   const argv = process.argv.slice(2);
   if (argv.includes('--help') || argv.includes('-h')) {
@@ -213,6 +222,7 @@ function main() {
     ok: staleRefs.length === 0,
     plan_version: 1,
     generated_at: new Date().toISOString(),
+    git: collectGitMetadata(),
     destructive: false,
     note: 'read-only plan; commands are suggestions and were not executed',
     ...(outputPath ? { output_file: outputPath } : {}),
