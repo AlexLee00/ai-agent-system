@@ -127,18 +127,6 @@ async function run() {
   items.push(analyzeLog(cfg.LOGS.domestic, '루나팀 (국내주식 사이클)'));
   items.push(analyzeLog(cfg.LOGS.overseas, '루나팀 (해외주식 사이클)'));
 
-  // OpenClaw 로그 (디렉토리 내 최신 파일)
-  if (pathExists(cfg.LOGS.openclaw)) {
-    try {
-      const files = fs.readdirSync(cfg.LOGS.openclaw)
-        .filter(f => f.endsWith('.log'))
-        .sort().reverse();
-      if (files.length > 0) {
-        items.push(analyzeLog(path.join(cfg.LOGS.openclaw, files[0]), 'OpenClaw 게이트웨이'));
-      }
-    } catch { /* openclaw 로그 없음 */ }
-  }
-
   // 덱스터 자신의 이전 로그
   if (pathExists(cfg.LOGS.dexter)) {
     const sizeMB = fs.statSync(cfg.LOGS.dexter).size / 1024 / 1024;

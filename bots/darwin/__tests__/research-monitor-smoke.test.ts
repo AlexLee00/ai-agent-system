@@ -28,7 +28,7 @@ async function main() {
         ],
       };
     }
-    if (request === '../../../packages/core/lib/openclaw-client') {
+    if (request === '../../../packages/core/lib/hub-alarm-client') {
       return {
         postAlarm: async (payload: AlarmPayload) => {
           alarmCalls.push(payload);

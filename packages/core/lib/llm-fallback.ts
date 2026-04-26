@@ -78,7 +78,6 @@ type ProviderFailureState = {
 
 type RuntimeProfile = {
   runtime_agent?: string;
-  openclaw_agent?: string;
   claude_code_name?: string;
   claude_code_settings?: string;
   local_llm_base_url?: string;
@@ -1274,7 +1273,7 @@ export async function callWithFallback({ chain, systemPrompt, userPrompt, logMet
   const runtimeTeam = String(team || logMeta.team || '').trim() || null;
   const runtimePurpose = String(purpose || _inferRuntimePurpose(logMeta)).trim() || 'default';
   const runtimeProfile = runtimeTeam ? await selectRuntime(runtimeTeam, runtimePurpose) : null;
-  const runtimeAgent = String(runtimeProfile?.runtime_agent || runtimeProfile?.openclaw_agent || '').trim() || null;
+  const runtimeAgent = String(runtimeProfile?.runtime_agent || '').trim() || null;
   const runtimeClaudeCodeName = String(runtimeProfile?.claude_code_name || '').trim() || null;
   const runtimeSelectionReason = runtimeProfile ? 'team-runtime-profile' : 'env-fallback';
   const traceRoute = logMeta.selectorKey || logMeta.requestType || null;

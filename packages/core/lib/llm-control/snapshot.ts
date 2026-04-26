@@ -9,7 +9,6 @@ const AI_AGENT_HOME = process.env.AI_AGENT_HOME
   || path.join(process.env.HOME || '/tmp', '.ai-agent-system');
 const AI_AGENT_WORKSPACE = process.env.AI_AGENT_WORKSPACE
   || process.env.JAY_WORKSPACE
-  || process.env.OPENCLAW_WORKSPACE
   || path.join(AI_AGENT_HOME, 'workspace');
 const SPEED_TEST_LATEST_FILE = path.join(AI_AGENT_WORKSPACE, 'llm-speed-test-latest.json');
 const SPEED_TEST_HISTORY_FILE = path.join(AI_AGENT_WORKSPACE, 'llm-speed-test-history.jsonl');

@@ -8,7 +8,7 @@
  *   - naver-monitor 로그 staleness: 15분 이상 무활동 → 크래시루프 감지
  *   - 스케줄 서비스: 비정상 종료 코드 감지
  *
- * 중복 알림 방지: ~/.openclaw/workspace/health-check-state.json
+ * 중복 알림 방지: ~/.ai-agent-system/workspace/health-check-state.json
  *   - 같은 서비스 경고는 30분 내 재발송 안 함
  *
  * 실행: node scripts/health-check.js

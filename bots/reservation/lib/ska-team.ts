@@ -1,8 +1,8 @@
 import fs from 'fs';
 import path from 'path';
-import os from 'os';
 import { execFileSync } from 'child_process';
 const { safeWriteFile } = require('../../../packages/core/lib/file-guard');
+const { getReservationRuntimeFile } = require('./runtime-paths');
 
 export interface SkaTeamMember {
   id: string;
@@ -14,7 +14,7 @@ export interface SkaTeamMember {
   continuous?: boolean;
 }
 
-export const BOT_ID_DIR = path.join(os.homedir(), '.openclaw', 'workspace', 'bot-identities');
+export const BOT_ID_DIR = getReservationRuntimeFile('bot-identities');
 
 export const SKA_TEAM: SkaTeamMember[] = [
   {

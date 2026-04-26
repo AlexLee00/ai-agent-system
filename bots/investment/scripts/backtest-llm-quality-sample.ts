@@ -5,6 +5,7 @@ import { createRequire } from 'module';
 import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
 import { runBacktest } from '../team/chronos.ts';
 import * as db from '../shared/db.ts';
+import { callViaHub } from '../shared/hub-llm-client.ts';
 
 const require = createRequire(import.meta.url);
 const {
@@ -12,7 +13,6 @@ const {
   LOCAL_MODEL_FAST,
   LOCAL_MODEL_DEEP,
 } = require('../../../packages/core/lib/local-llm-client.js');
-const { callWithFallback } = require('../../../packages/core/lib/llm-fallback.js');
 
 const DEFAULT_SYMBOL = 'BTC/USDT';
 const DEFAULT_FROM = '2025-01-01';
@@ -134,24 +134,18 @@ async function callStructuredModel(spec, prompt, { maxTokens = 256, temperature 
 
     const systemPrompt = prompt.find((item) => item.role === 'system')?.content || '';
     const userPrompt = prompt.find((item) => item.role === 'user')?.content || '';
-    const { text } = await callWithFallback({
-      chain: [{ provider, model, maxTokens, temperature, timeoutMs }],
-      systemPrompt,
-      userPrompt,
-      logMeta: {
-        team: 'investment',
-        bot: 'chronos-quality-sample',
-        requestType: 'backtest_quality_eval',
-      },
-      timeoutMs,
-      team: 'investment',
-      purpose: 'backtest_quality_eval',
+    const hubResult = await callViaHub('chronos', systemPrompt, userPrompt, {
+      maxTokens,
+      urgency: timeoutMs >= 60000 ? 'high' : 'normal',
     });
-    const parsed = safeJsonParse(text);
+    if (!hubResult.ok) {
+      throw new Error(`hub_llm_failed:${hubResult.error || 'unknown'}`);
+    }
+    const parsed = safeJsonParse(hubResult.text);
     return {
       ok: parsed != null,
       latencyMs: Date.now() - startedAt,
-      provider,
+      provider: hubResult.provider || provider,
       model,
       parsed,
       error: parsed == null ? 'json_parse_failed' : null,

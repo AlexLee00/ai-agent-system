@@ -2,11 +2,11 @@
 
 This inventory tracks the Hub alarm migration surface. `hub_alarm_native` entries are the desired path; `legacy_openclaw_compat` entries are compatibility shims or remaining migration targets.
 
-- generated_at: 2026-04-26T03:53:33.117Z
-- total_matches: 272
-- unique_files: 123
-- hub_alarm_native: 67
-- legacy_openclaw_compat: 205
+- generated_at: 2026-04-26T11:17:51.217Z
+- total_matches: 268
+- unique_files: 122
+- hub_alarm_native: 113
+- legacy_openclaw_compat: 155
 
 ## Files
 
@@ -52,62 +52,52 @@ This inventory tracks the Hub alarm migration surface. `hub_alarm_native` entrie
 - L17 [legacy_openclaw_compat]: `jest.mock('../../../packages/core/lib/openclaw-client', () => ({`
 
 ### `bots/blog/lib/ab-testing.ts`
-- L11 [legacy_openclaw_compat]: `const { postAlarm } = require('../../../packages/core/lib/openclaw-client');`
+- L11 [hub_alarm_native]: `const { postAlarm } = require('../../../packages/core/lib/hub-alarm-client');`
 
 ### `bots/blog/lib/blo.ts`
-- L95 [legacy_openclaw_compat]: `const { postAlarm }                                 = require('../../../packages/core/lib/openclaw-client');`
+- L95 [hub_alarm_native]: `const { postAlarm }                                 = require('../../../packages/core/lib/hub-alarm-client');`
 
 ### `bots/blog/lib/commenter.ts`
-- L13 [legacy_openclaw_compat]: `const { postAlarm } = require('../../../packages/core/lib/openclaw-client');`
-- L26 [legacy_openclaw_compat]: `const NAVER_MONITOR_WS_FILE = path.join(env.OPENCLAW_WORKSPACE, 'naver-monitor-ws.txt');`
-- L110 [legacy_openclaw_compat]: `|| process.env.OPENCLAW_BROWSER_TOKEN`
-- L111 [legacy_openclaw_compat]: `|| process.env.OPENCLAW_GATEWAY_TOKEN`
-- L124 [legacy_openclaw_compat]: `profileDir: expandHome(runtime.profileDir || path.join(env.OPENCLAW_WORKSPACE, 'naver-profile')),`
+- L13 [hub_alarm_native]: `const { postAlarm } = require('../../../packages/core/lib/hub-alarm-client');`
 
 ### `bots/blog/lib/curriculum-planner.ts`
-- L21 [legacy_openclaw_compat]: `const { postAlarm } = require('../../../packages/core/lib/openclaw-client');`
+- L20 [hub_alarm_native]: `const { postAlarm } = require('../../../packages/core/lib/hub-alarm-client');`
 
 ### `bots/blog/lib/evolution-cycle.ts`
-- L13 [legacy_openclaw_compat]: `const { postAlarm } = require('../../../packages/core/lib/openclaw-client');`
+- L13 [hub_alarm_native]: `const { postAlarm } = require('../../../packages/core/lib/hub-alarm-client');`
 
 ### `bots/blog/lib/img-gen-doctor.ts`
-- L13 [legacy_openclaw_compat]: `const { postAlarm } = require('../../../packages/core/lib/openclaw-client');`
+- L13 [hub_alarm_native]: `const { postAlarm } = require('../../../packages/core/lib/hub-alarm-client');`
 
 ### `bots/blog/lib/insta-crosspost.ts`
-- L23 [legacy_openclaw_compat]: `const { postAlarm } = require('../../../packages/core/lib/openclaw-client');`
+- L23 [hub_alarm_native]: `const { postAlarm } = require('../../../packages/core/lib/hub-alarm-client');`
 
 ### `bots/blog/lib/instagram-story.ts`
-- L13 [legacy_openclaw_compat]: `const { postAlarm } = require('../../../packages/core/lib/openclaw-client');`
+- L13 [hub_alarm_native]: `const { postAlarm } = require('../../../packages/core/lib/hub-alarm-client');`
 
 ### `bots/blog/lib/platform-orchestrator.ts`
-- L16 [legacy_openclaw_compat]: `const { postAlarm } = require('../../../packages/core/lib/openclaw-client');`
+- L16 [hub_alarm_native]: `const { postAlarm } = require('../../../packages/core/lib/hub-alarm-client');`
 
 ### `bots/blog/lib/publish-reporter.ts`
-- L11 [legacy_openclaw_compat]: `const { postAlarm } = require('../../../packages/core/lib/openclaw-client');`
-
-### `bots/blog/lib/richer.ts`
-- L26 [legacy_openclaw_compat]: `const NAVER_MONITOR_WS_FILE = path.join(env.OPENCLAW_WORKSPACE, 'naver-monitor-ws.txt');`
+- L11 [hub_alarm_native]: `const { postAlarm } = require('../../../packages/core/lib/hub-alarm-client');`
 
 ### `bots/blog/lib/self-rewarding/marketing-dpo.ts`
-- L13 [legacy_openclaw_compat]: `const { postAlarm } = require('../../../../packages/core/lib/openclaw-client');`
+- L13 [hub_alarm_native]: `const { postAlarm } = require('../../../../packages/core/lib/hub-alarm-client');`
 
 ### `bots/blog/lib/signals/brand-mention-collector.ts`
-- L11 [legacy_openclaw_compat]: `const { postAlarm } = require('../../../../packages/core/lib/openclaw-client');`
+- L11 [hub_alarm_native]: `const { postAlarm } = require('../../../../packages/core/lib/hub-alarm-client');`
 
 ### `bots/blog/lib/signals/competitor-monitor.ts`
-- L12 [legacy_openclaw_compat]: `const { postAlarm } = require('../../../../packages/core/lib/openclaw-client');`
+- L12 [hub_alarm_native]: `const { postAlarm } = require('../../../../packages/core/lib/hub-alarm-client');`
 
 ### `bots/blog/scripts/auto-facebook-publish.ts`
-- L23 [legacy_openclaw_compat]: `const { postAlarm } = require('../../../packages/core/lib/openclaw-client');`
+- L23 [hub_alarm_native]: `const { postAlarm } = require('../../../packages/core/lib/hub-alarm-client');`
 
 ### `bots/blog/scripts/auto-instagram-publish.ts`
-- L31 [legacy_openclaw_compat]: `const { postAlarm } = require('../../../packages/core/lib/openclaw-client');`
-
-### `bots/blog/scripts/collect-views.ts`
-- L16 [legacy_openclaw_compat]: `const NAVER_MONITOR_WS_FILE = path.join(env.OPENCLAW_WORKSPACE, 'naver-monitor-ws.txt');`
+- L31 [hub_alarm_native]: `const { postAlarm } = require('../../../packages/core/lib/hub-alarm-client');`
 
 ### `bots/blog/scripts/compute-attribution.ts`
-- L13 [legacy_openclaw_compat]: `const { postAlarm } = require('../../../packages/core/lib/openclaw-client');`
+- L13 [hub_alarm_native]: `const { postAlarm } = require('../../../packages/core/lib/hub-alarm-client');`
 
 ### `bots/claude/__tests__/auto-dev-pipeline.test.ts`
 - L77 [legacy_openclaw_compat]: `'../../../packages/core/lib/openclaw-client': {`
@@ -137,10 +127,10 @@ This inventory tracks the Hub alarm migration surface. `hub_alarm_native` entrie
 - L176 [legacy_openclaw_compat]: `'../../../packages/core/lib/openclaw-client': {`
 
 ### `bots/claude/lib/auto-dev-pipeline.ts`
-- L20 [legacy_openclaw_compat]: `const { postAlarm } = require('../../../packages/core/lib/openclaw-client');`
+- L20 [hub_alarm_native]: `const { postAlarm } = require('../../../packages/core/lib/hub-alarm-client');`
 
 ### `bots/claude/lib/autofix.ts`
-- L28 [legacy_openclaw_compat]: `const { postAlarm } = require('../../../packages/core/lib/openclaw-client');`
+- L28 [hub_alarm_native]: `const { postAlarm } = require('../../../packages/core/lib/hub-alarm-client');`
 
 ### `bots/claude/lib/checks/openclaw.ts`
 - L31 [legacy_openclaw_compat]: `const { LAUNCHD_AVAILABLE, OPENCLAW_PORT: ENV_OPENCLAW_PORT } = require('../../../../packages/core/lib/env');`
@@ -154,68 +144,68 @@ This inventory tracks the Hub alarm migration surface. `hub_alarm_native` entrie
 - L254 [legacy_openclaw_compat]: `_restartService: OPENCLAW_SERVICE,`
 
 ### `bots/claude/lib/codex-plan-notifier.ts`
-- L26 [legacy_openclaw_compat]: `const { postAlarm } = require('../../../packages/core/lib/openclaw-client');`
+- L26 [hub_alarm_native]: `const { postAlarm } = require('../../../packages/core/lib/hub-alarm-client');`
 
 ### `bots/claude/lib/doctor.ts`
-- L594 [legacy_openclaw_compat]: `const { postAlarm } = require('../../../packages/core/lib/openclaw-client');`
-- L904 [legacy_openclaw_compat]: `const { postAlarm } = require('../../../packages/core/lib/openclaw-client');`
+- L594 [hub_alarm_native]: `const { postAlarm } = require('../../../packages/core/lib/hub-alarm-client');`
+- L904 [hub_alarm_native]: `const { postAlarm } = require('../../../packages/core/lib/hub-alarm-client');`
 
 ### `bots/claude/lib/mainbot-client.ts`
-- L12 [legacy_openclaw_compat]: `const { postAlarm } = require('../../../packages/core/lib/openclaw-client');`
+- L12 [hub_alarm_native]: `const { postAlarm } = require('../../../packages/core/lib/hub-alarm-client');`
 
 ### `bots/claude/lib/reporter.ts`
-- L11 [legacy_openclaw_compat]: `const { postAlarm } = require('../../../packages/core/lib/openclaw-client');`
+- L11 [hub_alarm_native]: `const { postAlarm } = require('../../../packages/core/lib/hub-alarm-client');`
 
 ### `bots/claude/lib/telegram-reporter.ts`
-- L20 [legacy_openclaw_compat]: `const { postAlarm } = require('../../../packages/core/lib/openclaw-client');`
+- L20 [hub_alarm_native]: `const { postAlarm } = require('../../../packages/core/lib/hub-alarm-client');`
 
 ### `bots/claude/src/builder.ts`
-- L25 [legacy_openclaw_compat]: `const { postAlarm } = require('../../../packages/core/lib/openclaw-client');`
+- L25 [hub_alarm_native]: `const { postAlarm } = require('../../../packages/core/lib/hub-alarm-client');`
 
 ### `bots/claude/src/guardian.ts`
-- L28 [legacy_openclaw_compat]: `const { postAlarm } = require('../../../packages/core/lib/openclaw-client');`
+- L28 [hub_alarm_native]: `const { postAlarm } = require('../../../packages/core/lib/hub-alarm-client');`
 
 ### `bots/claude/src/quality-report.ts`
-- L6 [legacy_openclaw_compat]: `const { postAlarm } = require('../../../packages/core/lib/openclaw-client');`
+- L6 [hub_alarm_native]: `const { postAlarm } = require('../../../packages/core/lib/hub-alarm-client');`
 
 ### `bots/claude/src/reviewer.ts`
-- L25 [legacy_openclaw_compat]: `const { postAlarm } = require('../../../packages/core/lib/openclaw-client');`
+- L25 [hub_alarm_native]: `const { postAlarm } = require('../../../packages/core/lib/hub-alarm-client');`
 
 ### `bots/claude/tsconfig.json`
 - L35 [legacy_openclaw_compat]: `"../../packages/core/lib/openclaw-client.js",`
 
 ### `bots/darwin/__tests__/research-monitor-smoke.test.ts`
-- L31 [legacy_openclaw_compat]: `if (request === '../../../packages/core/lib/openclaw-client') {`
+- L31 [hub_alarm_native]: `if (request === '../../../packages/core/lib/hub-alarm-client') {`
 
 ### `bots/darwin/__tests__/research-task-runner-smoke.test.ts`
-- L27 [legacy_openclaw_compat]: `if (request === '../../../packages/core/lib/openclaw-client') {`
+- L27 [hub_alarm_native]: `if (request === '../../../packages/core/lib/hub-alarm-client') {`
 
 ### `bots/darwin/lib/applicator.ts`
-- L108 [legacy_openclaw_compat]: `const { postAlarm }: { postAlarm: (payload: AlarmPayload) => Promise<{ ok?: boolean } | null> } = require('../../../packages/core/lib/openclaw-client');`
+- L95 [hub_alarm_native]: `const { postAlarm }: { postAlarm: (payload: AlarmPayload) => Promise<{ ok?: boolean } | null> } = require('../../../packages/core/lib/hub-alarm-client');`
 
 ### `bots/darwin/lib/event-reminders.ts`
-- L8 [legacy_openclaw_compat]: `const { postAlarm } = require('../../../packages/core/lib/openclaw-client');`
+- L8 [hub_alarm_native]: `const { postAlarm } = require('../../../packages/core/lib/hub-alarm-client');`
 
 ### `bots/darwin/lib/implementor.ts`
-- L12 [legacy_openclaw_compat]: `const { postAlarm } = require('../../../packages/core/lib/openclaw-client');`
+- L12 [hub_alarm_native]: `const { postAlarm } = require('../../../packages/core/lib/hub-alarm-client');`
 
 ### `bots/darwin/lib/research-monitor.ts`
-- L65 [legacy_openclaw_compat]: `const { postAlarm }: { postAlarm: (payload: AlarmPayload) => Promise<unknown> } = require('../../../packages/core/lib/openclaw-client');`
+- L65 [hub_alarm_native]: `const { postAlarm }: { postAlarm: (payload: AlarmPayload) => Promise<unknown> } = require('../../../packages/core/lib/hub-alarm-client');`
 
 ### `bots/darwin/lib/research-scanner.ts`
-- L26 [legacy_openclaw_compat]: `const { postAlarm } = require('../../../packages/core/lib/openclaw-client');`
+- L26 [hub_alarm_native]: `const { postAlarm } = require('../../../packages/core/lib/hub-alarm-client');`
 
 ### `bots/darwin/lib/verifier.ts`
-- L12 [legacy_openclaw_compat]: `const { postAlarm } = require('../../../packages/core/lib/openclaw-client');`
+- L12 [hub_alarm_native]: `const { postAlarm } = require('../../../packages/core/lib/hub-alarm-client');`
 
 ### `bots/darwin/scripts/darwin-weekly-ops-report.ts`
-- L15 [legacy_openclaw_compat]: `const { postAlarm } = require(path.join(PROJECT_ROOT, "packages/core/lib/openclaw-client"));`
+- L15 [hub_alarm_native]: `const { postAlarm } = require(path.join(PROJECT_ROOT, "packages/core/lib/hub-alarm-client"));`
 
 ### `bots/darwin/scripts/darwin-weekly-review.ts`
-- L15 [legacy_openclaw_compat]: `const { postAlarm } = require(path.join(PROJECT_ROOT, "packages/core/lib/openclaw-client"));`
+- L15 [hub_alarm_native]: `const { postAlarm } = require(path.join(PROJECT_ROOT, "packages/core/lib/hub-alarm-client"));`
 
 ### `bots/darwin/scripts/research-task-runner.ts`
-- L4 [legacy_openclaw_compat]: `const { postAlarm } = require('../../../packages/core/lib/openclaw-client');`
+- L4 [hub_alarm_native]: `const { postAlarm } = require('../../../packages/core/lib/hub-alarm-client');`
 
 ### `bots/hub/lib/routes/alarm.ts`
 - L229 [hub_alarm_native]: `const claimLeaseMinutes = Math.max(1, Number(process.env.HUB_ALARM_DIGEST_CLAIM_LEASE_MINUTES || 15) || 15);`
@@ -259,6 +249,10 @@ This inventory tracks the Hub alarm migration surface. `hub_alarm_native` entrie
 - L41 [legacy_openclaw_compat]: `'expected legacy OPENCLAW_LEGACY_FALLBACK=true to remain compatible',`
 - L46 [hub_alarm_native]: `HUB_ALARM_LEGACY_OPENCLAW_FALLBACK: null,`
 - L47 [legacy_openclaw_compat]: `OPENCLAW_LEGACY_FALLBACK: null,`
+
+### `bots/hub/scripts/hub-alarm-import-transition-smoke.ts`
+- L49 [legacy_openclaw_compat]: `'openclaw-client',`
+- L60 [legacy_openclaw_compat]: `'migrated Hub alarm scopes must not import openclaw-client directly',`
 
 ### `bots/hub/scripts/l5-acceptance-smoke.ts`
 - L37 [hub_alarm_native]: `HUB_ALARM_LEGACY_OPENCLAW_FALLBACK: process.env.HUB_ALARM_LEGACY_OPENCLAW_FALLBACK,`
@@ -326,7 +320,7 @@ This inventory tracks the Hub alarm migration surface. `hub_alarm_native` entrie
 - L102 [legacy_openclaw_compat]: `assert.equal(env.OPENCLAW_WORKSPACE, legacyWorkspace);`
 
 ### `bots/hub/scripts/telegram-pending-queue-migration-smoke.ts`
-- L51 [legacy_openclaw_compat]: `OPENCLAW_WORKSPACE: legacyWorkspace,`
+- L66 [legacy_openclaw_compat]: `OPENCLAW_WORKSPACE: legacyWorkspace,`
 
 ### `bots/hub/scripts/telegram-routing-readiness-report.ts`
 - L152 [legacy_openclaw_compat]: `const legacyWorkspace = String(process.env.OPENCLAW_WORKSPACE || '').trim();`
@@ -339,16 +333,16 @@ This inventory tracks the Hub alarm migration surface. `hub_alarm_native` entrie
 - L155 [legacy_openclaw_compat]: `mkdirSync(OPENCLAW_DIR, { recursive: true });`
 
 ### `bots/orchestrator/lib/steward/daily-summary.ts`
-- L4 [legacy_openclaw_compat]: `const { postAlarm } = require('../../../../packages/core/lib/openclaw-client');`
+- L4 [hub_alarm_native]: `const { postAlarm } = require('../../../../packages/core/lib/hub-alarm-client');`
 
 ### `bots/orchestrator/src/dashboard.ts`
 - L11 [hub_alarm_native]: `} = require('../../../packages/core/lib/hub-alarm-client') as {`
 
 ### `bots/orchestrator/src/router.ts`
-- L106 [legacy_openclaw_compat]: `} = require('../../../packages/core/lib/openclaw-client');`
+- L106 [hub_alarm_native]: `} = require('../../../packages/core/lib/hub-alarm-client');`
 
 ### `bots/orchestrator/src/steward.ts`
-- L16 [legacy_openclaw_compat]: `const { postAlarm } = require('../../../packages/core/lib/openclaw-client');`
+- L16 [hub_alarm_native]: `const { postAlarm } = require('../../../packages/core/lib/hub-alarm-client');`
 
 ### `bots/reservation/context/ALERT_REPORT_CLEANUP_PLAN.md`
 - L30 [legacy_openclaw_compat]: `- `packages/core/lib/openclaw-client*``
@@ -363,13 +357,13 @@ This inventory tracks the Hub alarm migration surface. `hub_alarm_native` entrie
 - L30 [legacy_openclaw_compat]: `3. **Hermes에 `hermes claw migrate` 기능** — OpenClaw → Hermes 이주 공식 지원. **기존 `packages/core/lib/openclaw-client.*` 향후 Hermes 전환 경로 가능**. 단, 본 리모델링 범위는 아님 (시그마팀은 OpenClaw 경유 알림만 사용).`
 
 ### `bots/sigma/ts/src/sigma-daily-report.ts`
-- L19 [legacy_openclaw_compat]: `const openclaw = require(path.join(PROJECT_ROOT, 'packages/core/lib/openclaw-client.js'));`
+- L19 [hub_alarm_native]: `const openclaw = require(path.join(PROJECT_ROOT, 'packages/core/lib/hub-alarm-client.js'));`
 
 ### `bots/sigma/ts/src/sigma-weekly-review.ts`
-- L22 [legacy_openclaw_compat]: `const openclaw = require(path.join(PROJECT_ROOT, 'packages/core/lib/openclaw-client.js'));`
+- L22 [hub_alarm_native]: `const openclaw = require(path.join(PROJECT_ROOT, 'packages/core/lib/hub-alarm-client.js'));`
 
 ### `bots/worker/lib/approval.ts`
-- L17 [legacy_openclaw_compat]: `const { postAlarm } = require(path.join(__dirname, '../../../packages/core/lib/openclaw-client'));`
+- L17 [hub_alarm_native]: `const { postAlarm } = require(path.join(__dirname, '../../../packages/core/lib/hub-alarm-client'));`
 
 ### `docs/SESSION_HANDOFF_2026-04-17.md`
 - L2886 [legacy_openclaw_compat]: `- 토큰 우선순위 체인: runtime → env(OPENCLAW_BROWSER_TOKEN/GATEWAY_TOKEN) → config 파일`
@@ -460,10 +454,10 @@ This inventory tracks the Hub alarm migration surface. `hub_alarm_native` entrie
 
 ### `packages/core/lib/telegram-sender.ts`
 - L31 [hub_alarm_native]: `const hubAlarmClient = require('./hub-alarm-client');`
-- L201 [legacy_openclaw_compat]: `const LEGACY_WORKSPACE = process.env.OPENCLAW_WORKSPACE || '';`
+- L211 [legacy_openclaw_compat]: `const LEGACY_WORKSPACE = process.env.OPENCLAW_WORKSPACE || '';`
 
 ### `packages/core/scripts/publish-python-report.ts`
-- L15 [legacy_openclaw_compat]: `const { postAlarm } = require('../lib/openclaw-client');`
+- L15 [hub_alarm_native]: `const { postAlarm } = require('../lib/hub-alarm-client');`
 
 ### `packages/core/src/utils.ts`
 - L18 [legacy_openclaw_compat]: `|| process.env.OPENCLAW_WORKSPACE`

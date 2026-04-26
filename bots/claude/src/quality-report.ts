@@ -3,7 +3,7 @@
 
 // 품질 검사 통합 리포트 — 리뷰어+가디언+빌더 결과를 1건으로 묶어 발송
 
-const { postAlarm } = require('../../../packages/core/lib/openclaw-client');
+const { postAlarm } = require('../../../packages/core/lib/hub-alarm-client');
 const kst = require('../../../packages/core/lib/kst');
 const reviewer = require('./reviewer');
 const guardian = require('./guardian');

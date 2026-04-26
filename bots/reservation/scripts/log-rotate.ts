@@ -12,8 +12,8 @@
  *   - /tmp/naver-ops-mode.log (가장 빠르게 성장)
  *   - /tmp/pickko-*.log (kiosk-monitor, verify, daily-audit, daily-summary)
  *   - /tmp/ska-*.log (health-check, db-backup)
- *   - ~/.openclaw/workspace/log-report-*.log
- *   - /tmp/openclaw/openclaw-YYYY-MM-DD.log (날짜별 → 오래된 파일 삭제만)
+ *   - AI Agent reservation runtime/log-report-*.log
+ *   - legacy OpenClaw 날짜별 로그 (migration window 동안 오래된 파일 삭제만)
  *
  * 보관: 7일 (KEEP_DAYS)
  * 최소 크기: 1KB 이상일 때만 로테이션
@@ -23,9 +23,9 @@
 const fs   = require('fs');
 const path = require('path');
 const { buildReservationCliInsight } = require('../lib/cli-insight');
+const { getReservationRuntimeDir } = require('../lib/runtime-paths');
 
-const HOME      = process.env.HOME;
-const WORKSPACE = path.join(HOME, '.openclaw', 'workspace');
+const WORKSPACE = getReservationRuntimeDir();
 const KEEP_DAYS = 7;
 const MIN_BYTES = 1024; // 1KB 미만 스킵
 

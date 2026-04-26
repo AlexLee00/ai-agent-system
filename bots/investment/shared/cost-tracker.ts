@@ -12,7 +12,7 @@
  * 기능:
  *   - 매 Haiku 호출마다 비용 계산 및 일일·월간 누계
  *   - 예산 초과 시 BUDGET_EXCEEDED 이벤트 emit
- *   - 파일 영속 (~/.openclaw/investment-cost.json)
+ *   - 파일 영속 (AI Agent investment state 디렉터리)
  *   - 긴급 트리거(emergency=true) 호출은 예산 초과여도 실행
  */
 
@@ -20,14 +20,15 @@ import { EventEmitter }                                from 'events';
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'fs';
 import { join, dirname }                              from 'path';
 import { fileURLToPath }                              from 'url';
-import { homedir }                                    from 'os';
 import { createRequire }                              from 'module';
 import yaml                                           from 'js-yaml';
 import { getTradingMode }                             from './secrets.ts';
+import { getInvestmentStateFile, getLegacyInvestmentStateFile } from './market-cycle-support.ts';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const kst = createRequire(import.meta.url)('../../../packages/core/lib/kst');
-const COST_FILE = join(homedir(), '.openclaw', 'investment-cost.json');
+const COST_FILE = getInvestmentStateFile('investment-cost.json');
+const LEGACY_COST_FILE = getLegacyInvestmentStateFile('investment-cost.json');
 
 // claude-haiku-4-5 단가 ($ per 토큰)
 export const HAIKU_PRICING = {
@@ -79,7 +80,8 @@ class CostTracker extends EventEmitter {
 
   _load() {
     try {
-      const data = JSON.parse(readFileSync(COST_FILE, 'utf8'));
+      const sourceFile = existsSync(COST_FILE) ? COST_FILE : LEGACY_COST_FILE;
+      const data = JSON.parse(readFileSync(sourceFile, 'utf8'));
       if (data.date  === getKSTDate())  this.todayUsage = data.usage       || 0;
       if (data.month === getKSTMonth()) this.monthUsage = data.month_usage || 0;
     } catch {}
@@ -87,7 +89,7 @@ class CostTracker extends EventEmitter {
 
   _save() {
     try {
-      const dir = join(homedir(), '.openclaw');
+      const dir = dirname(COST_FILE);
       if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
       writeFileSync(COST_FILE, JSON.stringify({
         date:          this.todayDate,

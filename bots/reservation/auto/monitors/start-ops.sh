@@ -13,8 +13,10 @@
 cd "$(dirname "$0")"
 
 BOT_DIR="$(cd ../.. && pwd)"
-LOCK_FILE="$HOME/.openclaw/workspace/naver-monitor.lock"
-SELF_LOCK="$HOME/.openclaw/workspace/start-ops.lock"
+WORKSPACE_DIR="${AI_AGENT_WORKSPACE:-${JAY_WORKSPACE:-$HOME/.ai-agent-system/workspace}}"
+mkdir -p "$WORKSPACE_DIR"
+LOCK_FILE="$WORKSPACE_DIR/naver-monitor.lock"
+SELF_LOCK="$WORKSPACE_DIR/start-ops.lock"
 LOG_FILE="/tmp/naver-ops-mode.log"
 SKA_RUNTIME_HOME="${SKA_RUNTIME_HOME:-$HOME/.ska}"
 NAVER_BROWSER_PROFILE_ROOT="${NAVER_BROWSER_PROFILE_ROOT:-$SKA_RUNTIME_HOME/browser-profiles}"

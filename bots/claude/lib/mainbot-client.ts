@@ -4,12 +4,12 @@
 /**
  * lib/mainbot-client.js — 클로드팀 알람 발행 클라이언트 (CJS)
  *
- * OpenClaw webhook 경유로 전달하고, 실패 시 queue/n8n 정책에 따른다.
+ * Hub alarm 경유로 전달하고, 실패 시 queue/n8n 정책에 따른다.
  */
 
 const os = require('os');
 const path = require('path');
-const { postAlarm } = require('../../../packages/core/lib/openclaw-client');
+const { postAlarm } = require('../../../packages/core/lib/hub-alarm-client');
 const { updateCriticalIncidentCache } = require('../../../packages/core/lib/critical-incident.js');
 
 const ALERT_DEDUPE_PATH = path.join(os.tmpdir(), 'claude-alert-dedupe.json');
@@ -44,7 +44,7 @@ function updateIncidentCache(signature, message) {
 }
 
 /**
- * 클로드팀 알람 발행 → OpenClaw webhook 우선
+ * 클로드팀 알람 발행 → Hub alarm 우선
  * @param {object} opts
  * @param {string} opts.from_bot     발신 봇 ID (dexter, archer)
  * @param {string} [opts.team]       팀명 (기본: claude)

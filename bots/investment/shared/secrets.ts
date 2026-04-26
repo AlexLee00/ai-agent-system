@@ -23,6 +23,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 let _secrets = null;
 let _hubInitDone = false;
 let _hubInitFailedAt = 0;
+let _hubInitPromise = null;
 const HUB_INIT_RETRY_MS = 15_000;
 const _warnedKeys = new Set();
 
@@ -109,10 +110,18 @@ function applyDevSafetyOverrides(secrets) {
  */
 export async function initHubSecrets() {
   if (_hubInitDone) return !!_secrets;
+  if (_hubInitPromise) return _hubInitPromise;
   if (_hubInitFailedAt > 0 && (Date.now() - _hubInitFailedAt) < HUB_INIT_RETRY_MS) {
     return false;
   }
 
+  _hubInitPromise = initHubSecretsOnce().finally(() => {
+    _hubInitPromise = null;
+  });
+  return _hubInitPromise;
+}
+
+async function initHubSecretsOnce() {
   const [hubConfig, hubLlm] = await Promise.all([
     _hubClient.fetchHubSecrets('config'),
     _hubClient.fetchHubSecrets('llm'),

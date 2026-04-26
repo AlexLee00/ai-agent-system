@@ -2,6 +2,7 @@
 'use strict';
 
 const path = require('path');
+const { AI_AGENT_WORKSPACE } = require('../../../packages/core/lib/env');
 const pgPool = require(path.join(__dirname, '../../../packages/core/lib/pg-pool'));
 const {
   getAnthropicKey,
@@ -19,7 +20,7 @@ const { getWorkerLLMSelectorOverrides } = require('./runtime-config.ts');
 const SCHEMA = 'worker';
 const PREFERENCE_KEY = 'worker_monitoring_llm_api';
 const ALLOWED_APIS = ['groq', 'claude-code', 'anthropic', 'openai', 'gemini'];
-const SPEED_TEST_LATEST_FILE = path.join(process.env.HOME || '', '.openclaw/workspace/llm-speed-test-latest.json');
+const SPEED_TEST_LATEST_FILE = path.join(AI_AGENT_WORKSPACE, 'llm-speed-test-latest.json');
 
 const API_CATALOG = {
   groq: {

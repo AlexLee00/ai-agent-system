@@ -31,6 +31,12 @@
     <string>__SET_IN_LOCAL_LAUNCHAGENT__</string>
     <key>HUB_LLM_RATE_LIMIT_PER_MIN</key>
     <string>120</string>
+    <key>HUB_SECRETS_RATE_LIMIT_PER_MIN</key>
+    <string>240</string>
+    <key>HUB_LLM_MAX_QUEUE</key>
+    <string>128</string>
+    <key>HUB_LLM_QUEUE_TIMEOUT_MS</key>
+    <string>15000</string>
   </dict>
 
   <key>RunAtLoad</key>

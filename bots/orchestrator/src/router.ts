@@ -18,13 +18,12 @@ const { setMute, clearMute, listMutes, parseDuration, setMuteByEvent, clearMuteB
 const { flushMorningQueue, buildMorningBriefingWithOps, getLunaRiskSnapshot } = require('../lib/night-handler');
 const { buildCostReport }                = require('../lib/token-tracker');
 const { invalidate }                     = require('../lib/response-cache');
-const { callWithFallback }               = require('../../../packages/core/lib/llm-fallback');
+const { callHubLlm }                     = require('../../../packages/core/lib/hub-client');
 const {
   buildJayChatFallbackChain,
   buildIntentParsePolicy,
   getGatewayPrimaryModel,
 } = require('../lib/jay-model-policy');
-const { getOpenClawGatewayModelState } = require('../lib/openclaw-config');
 
 const path     = require('path');
 const os       = require('os');
@@ -103,11 +102,41 @@ const {
 } = require('../../../packages/core/lib/reporting-hub');
 const {
   readRecentAlertSnapshot,
-} = require('../../../packages/core/lib/openclaw-client');
+} = require('../../../packages/core/lib/hub-alarm-client');
 const {
   getPromotionPendingHealth,
   getPendingCommandHealth,
 } = require('../../../packages/core/lib/health-db');
+
+function getAiAgentHome() {
+  return process.env.AI_AGENT_HOME
+    || process.env.JAY_HOME
+    || path.join(os.homedir(), '.ai-agent-system');
+}
+
+function getAiAgentWorkspace() {
+  return process.env.AI_AGENT_WORKSPACE
+    || process.env.JAY_WORKSPACE
+    || path.join(getAiAgentHome(), 'workspace');
+}
+
+function getAiAgentLogs() {
+  return process.env.AI_AGENT_LOGS
+    || process.env.JAY_LOGS
+    || path.join(getAiAgentHome(), 'logs');
+}
+
+function runtimeLogPath(fileName) {
+  return path.join(getAiAgentLogs(), fileName);
+}
+
+function workspacePath(...segments) {
+  return path.join(getAiAgentWorkspace(), ...segments);
+}
+
+function investmentStatePath(fileName) {
+  return path.join(process.env.INVESTMENT_STATE_DIR || path.join(getAiAgentHome(), 'investment'), fileName);
+}
 
 // 블로그팀 커리큘럼 플래너 (lazy-load: blog 봇이 없는 환경에서도 오케스트레이터 기동 가능)
 let _curriculumPlanner = null;
@@ -539,23 +568,17 @@ async function buildIntentEngineHealthReport() {
 }
 
 function buildJayModelPolicyReport() {
-  const gatewayPrimary = getGatewayPrimaryModel();
-  const gatewayState = getOpenClawGatewayModelState();
+  const hubPrimary = getGatewayPrimaryModel();
   const intentPolicy = buildIntentParsePolicy();
   const chatChain = buildJayChatFallbackChain();
-  const aligned = gatewayState.ok && gatewayState.primary === gatewayPrimary;
-  const recommendation = aligned
-    ? '현재는 Gemini Flash 유지가 기본 권장입니다. 변경보다 비교 데이터 축적이 우선입니다.'
-    : '먼저 runtime_config와 openclaw.json primary를 일치시키는 것이 우선입니다.';
 
   return [
     '🤖 제이 모델 정책',
     '',
-    '1. OpenClaw gateway 기본 모델',
-    `  runtime_config 기준: ${gatewayPrimary}`,
-    `  openclaw.json 실제값: ${gatewayState.primary || '확인 불가'}`,
-    `  정합성: ${aligned ? '일치' : '불일치'}`,
-    `  기준 파일: ${gatewayState.filePath || '~/.openclaw/openclaw.json'}`,
+    '1. Hub 기본 모델 정책',
+    `  runtime_config 기준: ${hubPrimary}`,
+    '  실행 경로: Hub → team selector → agent',
+    '  legacy gateway: retired / optional / expected-idle',
     '',
     '2. 제이 명령 해석(intent parse)',
     `  primary: ${intentPolicy.primary.provider} / ${intentPolicy.primary.model}`,
@@ -568,14 +591,12 @@ function buildJayModelPolicyReport() {
     '운영 설정 위치:',
     '  - bots/orchestrator/config.json > runtime_config.jayModels',
     '  - bots/orchestrator/lib/jay-model-policy.js',
-    '  - bots/orchestrator/scripts/check-jay-gateway-primary.js',
     '',
     '해석 원칙:',
-    '  - gateway 기본 모델과 제이 앱 커스텀 정책은 별도 축입니다.',
+    '  - Hub 기본 모델과 제이 앱 커스텀 정책은 별도 축입니다.',
     '  - intent parse와 chat fallback은 운영 목적이 달라 분리 유지합니다.',
-    '  - gateway primary 변경 전에는 runtime_config와 openclaw.json 정합성을 먼저 확인합니다.',
     '',
-    `권장 판단: ${recommendation}`,
+    '권장 판단: Hub-native selector 기준으로 비교 데이터를 축적하고, retired gateway는 복구 대상에서 제외합니다.',
   ].join('\n');
 }
 
@@ -699,13 +720,18 @@ async function delegateToTeamLead(team, text) {
   }
 }
 
-async function geminiChatFallback(text) {
+async function hubChatFallback(text) {
   try {
-    const { text: responseText } = await callWithFallback({
-      chain: buildJayChatFallbackChain(),
+    const { text: responseText } = await callHubLlm({
+      callerTeam: 'orchestrator',
+      agent: 'jay',
+      selectorKey: 'orchestrator.jay.chat_fallback',
+      taskType: 'chat_fallback',
+      abstractModel: 'anthropic_haiku',
       systemPrompt: '너는 AI 봇 시스템의 총괄 허브 제이(Jay)야. 마스터(Alex)가 운영하는 스카팀(스터디카페 관리), 루나팀(암호화폐 자동매매), 클로드팀(시스템 유지보수) 에이전트들을 관리해. 친근하고 간결한 한국어로 답해. 명령 처리 외의 일반 대화에 짧게 응답해. 과장하지 말고, 모르면 모른다고 말해.',
-      userPrompt: text,
-      logMeta: { team: 'orchestrator', purpose: 'fallback', bot: 'jay', requestType: 'chat_fallback' },
+      prompt: text,
+      timeoutMs: 20000,
+      maxBudgetUsd: 0.02,
     });
     return responseText?.trim() || null;
   } catch { return null; }
@@ -719,8 +745,8 @@ async function handleChatFallback(text) {
       if (resp) return `💬 ${resp}`;
     }
   }
-  // 2단계: Gemini Flash 자유 대화
-  const resp = await geminiChatFallback(text);
+  // 2단계: Hub selector 기반 자유 대화
+  const resp = await hubChatFallback(text);
   if (resp) return `💬 ${resp}`;
   return `❓ 명령을 이해하지 못했습니다.\n/help 로 명령 목록을 확인하세요.`;
 }
@@ -782,12 +808,12 @@ function buildSystemLogSummary(rawText = '') {
 
   const targets = target === 'all'
     ? [
-        { label: '제이 runtime', out: path.join(os.homedir(), '.openclaw/logs/orchestrator.log'), err: path.join(os.homedir(), '.openclaw/logs/orchestrator-error.log') },
-        { label: 'OpenClaw gateway', out: path.join(os.homedir(), '.openclaw/logs/gateway.log'), err: path.join(os.homedir(), '.openclaw/logs/gateway.err.log') },
+        { label: '제이 runtime', out: runtimeLogPath('orchestrator.log'), err: runtimeLogPath('orchestrator-error.log') },
+        { label: 'legacy gateway (retired)', out: runtimeLogPath('gateway.log'), err: runtimeLogPath('gateway.err.log') },
       ]
     : target === 'gateway'
-      ? [{ label: 'OpenClaw gateway', out: path.join(os.homedir(), '.openclaw/logs/gateway.log'), err: path.join(os.homedir(), '.openclaw/logs/gateway.err.log') }]
-      : [{ label: '제이 runtime', out: path.join(os.homedir(), '.openclaw/logs/orchestrator.log'), err: path.join(os.homedir(), '.openclaw/logs/orchestrator-error.log') }];
+      ? [{ label: 'legacy gateway (retired)', out: runtimeLogPath('gateway.log'), err: runtimeLogPath('gateway.err.log') }]
+      : [{ label: '제이 runtime', out: runtimeLogPath('orchestrator.log'), err: runtimeLogPath('orchestrator-error.log') }];
 
   const lines = ['🧾 최근 시스템 로그'];
   for (const item of targets) {
@@ -813,12 +839,12 @@ function buildTeamLogSummary(team = '') {
       ]
     : value === 'ska'
       ? [
-          { label: '스카 commander', out: path.join(os.homedir(), '.openclaw/workspace/logs/ska-commander.log'), err: path.join(os.homedir(), '.openclaw/workspace/logs/ska-commander-error.log') },
+          { label: '스카 commander', out: runtimeLogPath('ska-commander.log'), err: runtimeLogPath('ska-commander-error.log') },
         ]
       : value === 'claude'
         ? [
-            { label: '클로드 commander', out: path.join(os.homedir(), '.openclaw/workspace/logs/claude-commander.log'), err: path.join(os.homedir(), '.openclaw/workspace/logs/claude-commander-error.log') },
-            { label: '클로드 dashboard', out: path.join(os.homedir(), '.openclaw/workspace/logs/claude-health-dashboard.log'), err: path.join(os.homedir(), '.openclaw/workspace/logs/claude-health-dashboard-error.log') },
+            { label: '클로드 commander', out: runtimeLogPath('claude-commander.log'), err: runtimeLogPath('claude-commander-error.log') },
+            { label: '클로드 dashboard', out: runtimeLogPath('claude-health-dashboard.log'), err: runtimeLogPath('claude-health-dashboard-error.log') },
           ]
         : [];
 
@@ -1829,7 +1855,7 @@ function getMostRecentAlertWithEventType() {
  */
 function getLunaStatus() {
   try {
-    const investState = path.join(os.homedir(), '.openclaw', 'investment-state.json');
+    const investState = investmentStatePath('investment-state.json');
     if (!fs.existsSync(investState)) return '📊 루나팀 상태 파일 없음';
     const s = JSON.parse(fs.readFileSync(investState, 'utf8'));
     const lines = ['📊 루나팀 현황'];
@@ -1910,7 +1936,7 @@ function getMarketStatus(market = 'all') {
  */
 function getSkaStatus() {
   try {
-    const stateFile = path.join(os.homedir(), '.openclaw', 'workspace', 'health-check-state.json');
+    const stateFile = workspacePath('health-check-state.json');
     if (!fs.existsSync(stateFile)) return '📊 스카팀 상태 파일 없음';
     const s = JSON.parse(fs.readFileSync(stateFile, 'utf8'));
     const lines = ['📊 스카팀 현황'];

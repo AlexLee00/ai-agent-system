@@ -27,9 +27,9 @@
 	<key>RunAtLoad</key>
 	<true/>
 	<key>StandardErrorPath</key>
-	<string>/Users/alexlee/.openclaw/workspace/logs/ska-commander-error.log</string>
+	<string>/Users/alexlee/.ai-agent-system/logs/ska-commander-error.log</string>
 	<key>StandardOutPath</key>
-	<string>/Users/alexlee/.openclaw/workspace/logs/ska-commander.log</string>
+	<string>/Users/alexlee/.ai-agent-system/logs/ska-commander.log</string>
 	<key>ThrottleInterval</key>
 	<integer>10</integer>
 	<key>WorkingDirectory</key>

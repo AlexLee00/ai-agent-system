@@ -17,7 +17,7 @@ const HUB_ALARM_TIMEOUT_MS = Math.max(1000, Number(process.env.HUB_ALARM_TIMEOUT
 const STORE_PATH = path.join(env.PROJECT_ROOT, 'bots', 'hub', 'secrets-store.json');
 const TELEGRAM_RETRY_ATTEMPTS = 2;
 const RECENT_ALERT_SNAPSHOT_PATH = String(process.env.HUB_ALARM_RECENT_ALERTS_PATH || '').trim()
-  || path.join(env.AI_AGENT_WORKSPACE || env.OPENCLAW_WORKSPACE, 'recent-alerts.json');
+  || path.join(env.AI_AGENT_WORKSPACE, 'recent-alerts.json');
 const RECENT_ALERT_LIMIT = 50;
 
 const TEAM_TOPIC = {
@@ -41,8 +41,8 @@ const TEAM_TOPIC = {
 type TopicIdMap = Record<string, string>;
 
 type HubAlarmStore = {
-  openclaw?: {
-    hooks_token?: string;
+  hub_alarm?: {
+    legacy_hooks_token?: string;
   };
   telegram?: {
     group_id?: string;
@@ -140,7 +140,7 @@ function _readBooleanEnv(...names: string[]): boolean {
 function _readStoreToken() {
   try {
     const store = JSON.parse(fs.readFileSync(STORE_PATH, 'utf8')) as HubAlarmStore;
-    return store?.openclaw?.hooks_token || '';
+    return store?.hub_alarm?.legacy_hooks_token || '';
   } catch {
     return '';
   }
@@ -161,8 +161,7 @@ function _readStoreTopicInfo() {
 async function _getToken(): Promise<string> {
   if (_token) return _token;
 
-  const hubData = await fetchHubSecrets('openclaw') as { hooks_token?: string } | null;
-  _token = hubData?.hooks_token
+  _token = process.env.HUB_ALARM_LEGACY_HOOKS_TOKEN
     || process.env.HUB_ALARM_LEGACY_OPENCLAW_HOOKS_TOKEN
     || process.env.OPENCLAW_HOOKS_TOKEN
     || _readStoreToken()

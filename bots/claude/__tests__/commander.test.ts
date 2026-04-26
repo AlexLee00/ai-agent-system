@@ -16,7 +16,7 @@ const fs     = require('fs');
 
 const COMMANDER_PATH = path.resolve(__dirname, '../src/claude-commander.ts');
 
-const LOCK_PATH = path.join(os.homedir(), '.openclaw', 'workspace', 'claude-commander.lock');
+const LOCK_PATH = path.join(os.homedir(), '.ai-agent-system', 'workspace', 'claude-commander.lock');
 
 function makeCommanderMocks(overrides = {}) {
   return {
@@ -50,7 +50,7 @@ function makeCommanderMocks(overrides = {}) {
       markDone:  async () => {},
       markError: async () => {},
     },
-    '../../../packages/core/lib/openclaw-client': {
+    '../../../packages/core/lib/hub-alarm-client': {
       postAlarm: async () => {},
     },
     '../lib/codex-plan-notifier': {

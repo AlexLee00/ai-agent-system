@@ -31,6 +31,7 @@ const {
   isManualPickkoPriorityActive,
 } = require('../../lib/state-bus');
 const { getReservationKioskMonitorConfig } = require('../../lib/runtime-config');
+const { getReservationRuntimeDir, getReservationRuntimeFile } = require('../../lib/runtime-paths');
 const { createKioskSlotRunnerService } = require('../../lib/kiosk-slot-runner-service');
 const { createKioskAuditService } = require('../../lib/kiosk-audit-service');
 const { createKioskVerifyService } = require('../../lib/kiosk-verify-service');
@@ -51,8 +52,8 @@ const PICKKO_PW = SECRETS.pickko_pw;
 const NAVER_ID = SECRETS.naver_id;
 const NAVER_PW = SECRETS.naver_pw;
 
-const WORKSPACE = path.join(process.env.HOME, '.openclaw', 'workspace');
-const NAVER_WS_FILE = path.join(WORKSPACE, 'naver-monitor-ws.txt');
+const WORKSPACE = getReservationRuntimeDir();
+const NAVER_WS_FILE = getReservationRuntimeFile('naver-monitor-ws.txt');
 const BOOKING_URL = 'https://partner.booking.naver.com/bizes/596871/booking-calendar-view';
 const KIOSK_MONITOR_RUNTIME = getReservationKioskMonitorConfig();
 const BROWSER_RUNTIME = getReservationBrowserConfig();

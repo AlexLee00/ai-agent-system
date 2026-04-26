@@ -276,8 +276,13 @@ export async function callLLM(agentName, systemPrompt, userPrompt, maxTokens = 5
   const hub = getHubLLM();
   const hubEnabled = hub.isHubEnabled();
   const hubShadow  = hub.isHubShadow();
+  const directFallbackEnabled = Boolean(hub.isDirectFallbackEnabled?.());
 
-  // ── Hub 직접 활성 모드 (INVESTMENT_LLM_HUB_ENABLED=true, Shadow=false) ──
+  if (!hubEnabled && !hubShadow && !directFallbackEnabled) {
+    throw new Error('Investment LLM Hub routing is disabled; 직접 LLM 경로는 INVESTMENT_LLM_DIRECT_FALLBACK=true일 때만 허용');
+  }
+
+  // ── Hub 직접 활성 모드 (기본값 true, Shadow=false) ──
   if (hubEnabled && !hubShadow) {
     const result = await hub.callViaHub(agentName, systemPrompt, userPrompt, {
       maxTokens,
@@ -286,8 +291,10 @@ export async function callLLM(agentName, systemPrompt, userPrompt, maxTokens = 5
       urgency: agentName === 'luna' ? 'high' : 'medium',
     });
     if (result.ok) return result.text;
-    // Hub 실패 시 직접 호출로 폴백
-    console.warn(`[llm-client] Hub 실패(${result.error}) → 직접 호출 폴백`);
+    if (!directFallbackEnabled) {
+      throw new Error(`Hub LLM 호출 실패: ${result.error || 'unknown'} — 직접 LLM 폴백은 INVESTMENT_LLM_DIRECT_FALLBACK=true일 때만 허용`);
+    }
+    console.warn(`[llm-client] Hub 실패(${result.error}) → 명시적 직접 호출 폴백`);
   }
 
   // ── 직접 호출 (기존 로직) ──

@@ -8,7 +8,7 @@
  *   - bot_commands 테이블 폴링 (30초 간격)
  *   - 명령 처리: run_check, run_full, run_fix, daily_report, run_archer
  *
- * NOTE: Telegram 수신/발신 없음. 제이(Jay, OpenClaw)의 명령을 받아 실행.
+ * NOTE: Telegram 수신/발신 없음. Hub/Jay 명령 큐를 받아 실행.
  */
 
 const fs      = require('fs');
@@ -19,6 +19,7 @@ process.env.PG_DIRECT = process.env.PG_DIRECT || 'true';
 const pgPool = require('../../../packages/core/lib/pg-pool');
 const { initHubConfig } = require('../../../packages/core/lib/llm-keys');
 const teamBus = require('../lib/team-bus');
+const runtimePaths = require('../lib/runtime-paths.js');
 const {
   AUTO_PROMOTE_DEFAULTS,
   normalizeIntentText,
@@ -68,7 +69,7 @@ function loadBotIdentity() {
 }
 
 // ─── Self-lock ─────────────────────────────────────────────────────
-const LOCK_PATH = path.join(os.homedir(), '.openclaw', 'workspace', 'claude-commander.lock');
+const LOCK_PATH = runtimePaths.workspacePath('claude-commander.lock');
 
 function acquireLock() {
   if (fs.existsSync(LOCK_PATH)) {
@@ -559,7 +560,7 @@ async function handleAnalyzeUnknown(args) {
 
 // ─── 팀원 정체성 점검·학습 ───────────────────────────────────────────
 
-const CLAUDE_BOT_ID_DIR = path.join(os.homedir(), '.openclaw', 'workspace', 'bot-identities');
+const CLAUDE_BOT_ID_DIR = runtimePaths.workspacePath('bot-identities');
 
 const CLAUDE_TEAM = [
   {

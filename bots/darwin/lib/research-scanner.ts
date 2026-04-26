@@ -23,7 +23,7 @@ const eventLake = require('../../../packages/core/lib/event-lake');
 const hiringContract = require('../../../packages/core/lib/hiring-contract');
 const registry = require('../../../packages/core/lib/agent-registry');
 const pgPool = require('../../../packages/core/lib/pg-pool');
-const { postAlarm } = require('../../../packages/core/lib/openclaw-client');
+const { postAlarm } = require('../../../packages/core/lib/hub-alarm-client');
 const kst = require('../../../packages/core/lib/kst');
 
 const MAX_EVALUATIONS_PER_RUN = 40;

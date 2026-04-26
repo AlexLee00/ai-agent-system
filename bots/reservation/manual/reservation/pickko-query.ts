@@ -16,14 +16,13 @@
  */
 
 const fs = require('fs');
-const path = require('path');
 const { parseArgs } = require('../../lib/args');
 const { fail } = require('../../lib/cli');
 const { createAgentMemory } = require('../../../../packages/core/lib/agent-memory');
 const { buildReservationCliInsight } = require('../../lib/cli-insight');
+const { getReadableReservationRuntimeFile } = require('../../lib/runtime-paths');
 
-const WORKSPACE = path.join(process.env.HOME, '.openclaw', 'workspace');
-const BOOKINGS_FILE = path.join(WORKSPACE, 'naver-bookings-full.json');
+const BOOKINGS_FILE = getReadableReservationRuntimeFile('naver-bookings-full.json');
 
 const ARGS = parseArgs(process.argv);
 const queryMemory = createAgentMemory({ agentId: 'reservation.pickko-query', team: 'reservation' });

@@ -7,8 +7,7 @@ const { execFile } = require('child_process');
 const { promisify } = require('util');
 
 const { logToolCall } = require('../../../packages/core/lib/tool-logger');
-const { callWithFallback } = require('../../../packages/core/lib/llm-fallback');
-const { selectLLMChain } = require('../../../packages/core/lib/llm-model-selector');
+const { callHubLlm } = require('../../../packages/core/lib/hub-client');
 const { enhanceCriticWithRAG } = require('./video-rag');
 
 const execFileAsync = promisify(execFile);
@@ -148,24 +147,20 @@ function mapSubtitleIssues(issues) {
 
 async function callCriticLLM(prompt) {
   const startedAt = Date.now();
-  const response = await callWithFallback({
-    chain: selectLLMChain('video.critic'),
+  const response = await callHubLlm({
+    callerTeam: TEAM_NAME,
+    agent: 'critic',
+    selectorKey: 'video.critic',
+    taskType: 'critic_subtitle_review',
+    abstractModel: 'anthropic_sonnet',
     systemPrompt: [
       '당신은 비디오 자막 RED 리뷰어다.',
       '주어진 자막 청크에서 IT 전문용어 오류, 맞춤법 오류, 길이 문제를 찾아 JSON 배열만 반환하라.',
       '[{ "entry": 번호, "type": "typo"|"terminology"|"length", "current": "현재 텍스트", "fix": "수정 텍스트" }]',
       '오류가 없으면 반드시 []만 반환하라.',
     ].join('\n'),
-    userPrompt: prompt,
+    prompt,
     timeoutMs: LLM_TIMEOUT_MS,
-    logMeta: {
-      team: TEAM_NAME,
-      purpose: 'review',
-      bot: 'critic-agent',
-      agentName: 'critic',
-      selectorKey: 'video.critic',
-      requestType: 'critic_subtitle_review',
-    },
   });
   const durationMs = Date.now() - startedAt;
 

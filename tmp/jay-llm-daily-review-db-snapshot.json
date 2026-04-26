@@ -1,0 +1,13 @@
+{
+  "capturedAt": "2026-04-26T12:19:08.694Z",
+  "periodDays": 1,
+  "data": {
+    "rows": [],
+    "history": [],
+    "errors": {},
+    "errorCodes": {
+      "llmUsage": "ok",
+      "parseHistory": "ok"
+    }
+  }
+}

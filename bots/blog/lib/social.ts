@@ -1,7 +1,6 @@
 'use strict';
 const kst = require('../../../packages/core/lib/kst');
-const { selectLLMChain } = require('../../../packages/core/lib/llm-model-selector');
-const { getBlogLLMSelectorOverrides } = require('./runtime-config.ts');
+const { callHubLlm } = require('../../../packages/core/lib/hub-client');
 
 /**
  * bots/blog/lib/social.ts — 소셜(SOCIAL) 봇
@@ -14,7 +13,6 @@ const { getBlogLLMSelectorOverrides } = require('./runtime-config.ts');
  * 비용: gpt-4o-mini(N40/N42) 유료(저렴), Nano Banana(N41) 무료 → OpenAI High 폴백 유료
  */
 
-const { callWithFallback } = require('../../../packages/core/lib/llm-fallback');
 const { generateInstaCard } = require('./img-gen.ts');
 const { loadStrategyBundle, normalizeExecutionDirectives } = require('./strategy-loader.ts');
 const env = require('../../../packages/core/lib/env');
@@ -42,7 +40,6 @@ const SUMMARIZE_SYSTEM = `
 `.trim();
 
 async function summarizeForInsta(content, count = 3) {
-  const selectorOverrides = getBlogLLMSelectorOverrides();
   const userPrompt = `
 다음 블로그 포스팅에서 가장 핵심적인 섹션 ${count}개를 선정하고,
 각 섹션을 15~20자 이내 인스타 카드용 한줄 요약으로 변환하세요.
@@ -51,13 +48,14 @@ async function summarizeForInsta(content, count = 3) {
 ${content.slice(0, 6000)}
 `.trim();
 
-  const result = await callWithFallback({
-    chain: selectLLMChain('blog.social.summarize', {
-      policyOverride: selectorOverrides['blog.social.summarize'],
-    }),
+  const result = await callHubLlm({
+    callerTeam: 'blog',
+    agent: 'social',
+    selectorKey: 'blog.social.summarize',
+    taskType: 'insta_summarize',
     systemPrompt: SUMMARIZE_SYSTEM,
-    userPrompt,
-    logMeta: { team: 'blog', purpose: 'social', bot: 'social', requestType: 'insta_summarize' },
+    prompt: userPrompt,
+    maxTokens: 1024,
   });
 
   try {
@@ -155,7 +153,6 @@ function buildStrategyCta(title = '', strategy = null) {
 }
 
 async function generateInstaCaption(content, title, category, strategy = null) {
-  const selectorOverrides = getBlogLLMSelectorOverrides();
   const plan = strategy || loadStrategyBundle().plan;
   const userPrompt = `
 다음 블로그 포스팅의 인스타그램 캡션과 해시태그를 생성하세요.
@@ -170,13 +167,14 @@ ${buildStrategyCaptionHint(plan)}
 ${content.slice(0, 3000)}
 `.trim();
 
-  const result = await callWithFallback({
-    chain: selectLLMChain('blog.social.caption', {
-      policyOverride: selectorOverrides['blog.social.caption'],
-    }),
+  const result = await callHubLlm({
+    callerTeam: 'blog',
+    agent: 'social',
+    selectorKey: 'blog.social.caption',
+    taskType: 'insta_caption',
     systemPrompt: CAPTION_SYSTEM,
-    userPrompt,
-    logMeta: { team: 'blog', purpose: 'social', bot: 'social', requestType: 'insta_caption' },
+    prompt: userPrompt,
+    maxTokens: 1200,
   });
 
   try {

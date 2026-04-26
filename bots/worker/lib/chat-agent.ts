@@ -5,9 +5,7 @@ const { randomUUID } = require('crypto');
 const path = require('path');
 const pgPool = require(path.join(__dirname, '../../../packages/core/lib/pg-pool'));
 const kst = require(path.join(__dirname, '../../../packages/core/lib/kst'));
-const { callWithFallback } = require(path.join(__dirname, '../../../packages/core/lib/llm-fallback'));
-const { selectLLMChain } = require(path.join(__dirname, '../../../packages/core/lib/llm-model-selector'));
-const { getWorkerLLMSelectorOverrides } = require('./runtime-config.ts');
+const { callHubLlm } = require(path.join(__dirname, '../../../packages/core/lib/hub-client'));
 const {
   createLearnedPatternReloader,
   createPromotedIntentExampleLoader,
@@ -298,7 +296,6 @@ function parseRuleIntent(text, session) {
 }
 
 async function parseLlmIntent(text) {
-  const selectorOverrides = getWorkerLLMSelectorOverrides();
   const baseSystemPrompt = [
     '당신은 워커팀 자연어 업무 분류기다.',
     '반드시 JSON만 반환한다.',
@@ -313,13 +310,29 @@ async function parseLlmIntent(text) {
   try {
     const dynamicExamples = await loadDynamicExamples();
     const systemPrompt = injectDynamicExamples(baseSystemPrompt, dynamicExamples);
-    const result = await callWithFallback({
-      chain: selectLLMChain('worker.chat.task_intake', {
-        policyOverride: selectorOverrides['worker.chat.task_intake'],
-      }),
+    const result = await callHubLlm({
+      callerTeam: 'worker',
+      agent: 'intake',
+      selectorKey: 'worker.chat.task_intake',
+      taskType: 'task_intake',
+      abstractModel: 'anthropic_haiku',
       systemPrompt,
-      userPrompt,
-      logMeta: { team: 'worker', purpose: 'intake', bot: 'worker-chat', requestType: 'task_intake' },
+      prompt: userPrompt,
+      timeoutMs: 20000,
+      maxBudgetUsd: 0.03,
+      jsonSchema: {
+        type: 'object',
+        additionalProperties: true,
+        required: ['intent'],
+        properties: {
+          intent: { type: 'string' },
+          title: { anyOf: [{ type: 'string' }, { type: 'null' }] },
+          type: { anyOf: [{ type: 'string' }, { type: 'null' }] },
+          datetime: { anyOf: [{ type: 'string' }, { type: 'null' }] },
+          scope: { anyOf: [{ type: 'string' }, { type: 'null' }] },
+          target: { anyOf: [{ type: 'string' }, { type: 'null' }] },
+        },
+      },
     });
     const cleaned = result.text.replace(/```json?\n?/gi, '').replace(/```/g, '').trim();
     return JSON.parse(cleaned);

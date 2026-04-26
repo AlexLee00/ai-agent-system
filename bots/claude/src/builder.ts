@@ -22,7 +22,7 @@ const path    = require('path');
 const fs      = require('fs');
 const { execSync } = require('child_process');
 
-const { postAlarm } = require('../../../packages/core/lib/openclaw-client');
+const { postAlarm } = require('../../../packages/core/lib/hub-alarm-client');
 const env          = require('../../../packages/core/lib/env');
 const reviewer     = require('./reviewer');
 

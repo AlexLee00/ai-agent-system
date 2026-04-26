@@ -5,7 +5,8 @@ const puppeteer = require('puppeteer');
 const fs = require('fs');
 const path = require('path');
 const { getNaverLaunchOptions, isHeadedMode } = require('../lib/browser');
-const WORKSPACE = path.join(process.env.HOME, '.openclaw', 'workspace');
+const { getReservationRuntimeDir, ensureParentDir } = require('../lib/runtime-paths');
+const WORKSPACE = getReservationRuntimeDir();
 
 async function inspect() {
   const browser = await puppeteer.launch(getNaverLaunchOptions());
@@ -51,7 +52,9 @@ async function inspect() {
 
     console.log(JSON.stringify(elements, null, 2));
 
-    fs.writeFileSync(path.join(WORKSPACE, 'naver-home.html'), html);
+    const outputPath = path.join(WORKSPACE, 'naver-home.html');
+    ensureParentDir(outputPath);
+    fs.writeFileSync(outputPath, html);
     console.log('\n✅ HTML이 naver-home.html에 저장됨');
 
     console.log(`\n현재 모드: ${isHeadedMode('naver') ? 'headed' : 'headless'}`);

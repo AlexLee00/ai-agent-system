@@ -140,9 +140,7 @@ function checkLaunchd(items) {
     { id: 'ai.claude.archer',         label: '클로드팀 아처 (launchd)' },
     { id: 'ai.claude.commander',      label: '클로드팀 커맨더 (launchd)' },
     // 제이팀
-    { id: 'ai.openclaw.gateway',        label: '제이팀 OpenClaw 게이트웨이 (launchd)' },
-    { id: 'ai.openclaw.model-sync',     label: '제이팀 OpenClaw 모델동기화 (launchd)', optional: true },
-    { id: 'ai.orchestrator',            label: '제이팀 오케스트레이터 (launchd)', retired: true },
+    { id: 'ai.orchestrator',            label: '제이팀 오케스트레이터 (launchd)' },
     // 스카팀 — 핵심
     { id: 'ai.ska.naver-monitor',       label: '스카팀 앤디 네이버모니터 (launchd)' },
     { id: 'ai.ska.kiosk-monitor',       label: '스카팀 지미 키오스크모니터 (launchd)' },

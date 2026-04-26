@@ -8,7 +8,7 @@
  * Kill Switch: BLOG_SIGNAL_COLLECTOR_ENABLED=true
  */
 
-const { postAlarm } = require('../../../../packages/core/lib/openclaw-client');
+const { postAlarm } = require('../../../../packages/core/lib/hub-alarm-client');
 const { runIfOps } = require('../../../../packages/core/lib/mode-guard');
 const pgPool = require('../../../../packages/core/lib/pg-pool');
 

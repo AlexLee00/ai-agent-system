@@ -63,12 +63,13 @@ export function createHubApp(options) {
     message: { error: 'DB query rate limit exceeded (120/min)' },
   });
 
+  const secretsRateLimitPerMinute = parsePositiveIntEnv('HUB_SECRETS_RATE_LIMIT_PER_MIN', 240);
   const secretsLimiter = rateLimit({
     windowMs: 60 * 1000,
-    max: 60,
+    max: secretsRateLimitPerMinute,
     standardHeaders: true,
     legacyHeaders: false,
-    message: { error: 'secrets rate limit exceeded (60/min)' },
+    message: { error: `secrets rate limit exceeded (${secretsRateLimitPerMinute}/min)` },
   });
 
   const llmRateLimitPerMinute = parsePositiveIntEnv('HUB_LLM_RATE_LIMIT_PER_MIN', 120);

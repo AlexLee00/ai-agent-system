@@ -62,7 +62,7 @@ interface ResearchMetrics {
 
 const rag: RagStore = require('../../../packages/core/lib/rag');
 const pgPool: PgPool = require('../../../packages/core/lib/pg-pool');
-const { postAlarm }: { postAlarm: (payload: AlarmPayload) => Promise<unknown> } = require('../../../packages/core/lib/openclaw-client');
+const { postAlarm }: { postAlarm: (payload: AlarmPayload) => Promise<unknown> } = require('../../../packages/core/lib/hub-alarm-client');
 const kst: KstClient = require('../../../packages/core/lib/kst');
 
 const SCHEMA = 'reservation';

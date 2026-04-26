@@ -43,7 +43,7 @@
         "restartTimeoutWindowMinutes": 15,
         "restartTimeoutFailThreshold": 3,
         "degradeOnCritical": true,
-        "degradeOnOpenclawMemory": true,
+        "degradeOnHubControlPlane": true,
         "degradeOnCodeIntegrity": true
       }
     },

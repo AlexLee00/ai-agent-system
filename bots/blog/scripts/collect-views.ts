@@ -13,7 +13,11 @@ const { getBlogCommenterConfig } = require('../lib/runtime-config.ts');
 const { getViewCollectionCandidates, recordPerformancePartial } = require('../lib/publ.ts');
 
 const NAV_TIMEOUT_MS = 45000;
-const NAVER_MONITOR_WS_FILE = path.join(env.OPENCLAW_WORKSPACE, 'naver-monitor-ws.txt');
+const BLOG_BROWSER_RUNTIME_DIR = env.AI_AGENT_WORKSPACE || path.join(os.homedir(), '.ai-agent-system', 'workspace');
+const NAVER_MONITOR_WS_FILE = process.env.BLOG_NAVER_MONITOR_WS_FILE
+  || path.join(BLOG_BROWSER_RUNTIME_DIR, 'naver-monitor-ws.txt');
+const DEFAULT_NAVER_PROFILE_DIR = process.env.BLOG_NAVER_PROFILE_DIR
+  || path.join(BLOG_BROWSER_RUNTIME_DIR, 'naver-profile');
 
 function parseArgs(argv = process.argv.slice(2)) {
   const get = (name) => argv.find((arg) => arg.startsWith(`--${name}=`))?.split('=').slice(1).join('=');
@@ -245,7 +249,7 @@ async function withBrowser(fn, { headful = false } = {}) {
   }
 
   const config = getBlogCommenterConfig();
-  const profileDir = expandHome(config.profileDir || '~/.openclaw/workspace/naver-profile');
+  const profileDir = expandHome(config.profileDir || DEFAULT_NAVER_PROFILE_DIR);
   let tempProfileDir = null;
   let browser = null;
 

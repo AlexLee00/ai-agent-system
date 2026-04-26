@@ -10,7 +10,6 @@ const AI_AGENT_HOME = process.env.AI_AGENT_HOME
   || path.join(os.homedir(), '.ai-agent-system');
 const AI_AGENT_WORKSPACE = process.env.AI_AGENT_WORKSPACE
   || process.env.JAY_WORKSPACE
-  || process.env.OPENCLAW_WORKSPACE
   || path.join(AI_AGENT_HOME, 'workspace');
 
 const STATE_FILE = path.join(AI_AGENT_WORKSPACE, 'health-check-state.json');

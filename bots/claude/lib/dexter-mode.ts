@@ -8,7 +8,7 @@
  *   → 기존과 동일하게 덱스터가 점검하고 텔레그램으로 직접 보고
  *
  * Emergency 모드 진입 조건:
- *   1. 인프라 기반: OpenClaw 또는 스카야 3분 이상 다운
+ *   1. 인프라 기반: 스카야 3분 이상 다운
  *   2. Phase 2: 클로드(팀장) 10분 무응답 → 자동 전환
  *
  * Emergency 모드 동작:
@@ -16,14 +16,15 @@
  *   → Groq LLM 임시 판단 대행 ("응급 처치만, 수술은 안 함")
  *   → 복구 시 밀린 알림 일괄 반환 (caller가 telegram으로 발송)
  *
- * 상태 파일: ~/.openclaw/workspace/dexter-mode-state.json  (run 간 지속)
- * 비상 로그: ~/.openclaw/workspace/dexter-emergency.log
+ * 상태 파일: AI_AGENT_WORKSPACE/dexter-mode-state.json  (run 간 지속)
+ * 비상 로그: AI_AGENT_WORKSPACE/dexter-emergency.log
  */
 
 const fs   = require('fs');
 const os   = require('os');
 const path = require('path');
 const https = require('https');
+const runtimePaths = require('./runtime-paths.js');
 
 const MODES = {
   NORMAL:    'normal',
@@ -37,8 +38,8 @@ const EMERGENCY_THRESHOLD_MIN = 3;
 // dexter-quickcheck.js는 pollAgentEvents 미포함 → full 체크(1h)만 갱신
 const TEAM_LEAD_TIMEOUT_MS = 90 * 60 * 1000;
 
-const STATE_FILE     = path.join(os.homedir(), '.openclaw', 'workspace', 'dexter-mode-state.json');
-const EMERGENCY_LOG  = path.join(os.homedir(), '.openclaw', 'workspace', 'dexter-emergency.log');
+const STATE_FILE     = runtimePaths.workspacePath('dexter-mode-state.json');
+const EMERGENCY_LOG  = runtimePaths.workspacePath('dexter-emergency.log');
 
 // 기본 상태 구조
 function defaultState() {
@@ -252,26 +253,20 @@ class DexterMode {
    * 점검 결과 기반 Emergency 모드 전환 판단
    * dexter.js / dexter-quickcheck.js 점검 완료 후 호출
    *
-   * @param {boolean} openclawOk   OpenClaw 게이트웨이 정상 여부
    * @param {boolean} skayaOk      스카야(tmux:ska) 정상 여부
    * @returns {{ flushed: object[] }}  Emergency 해제 시 밀린 알림 배열
    */
-  checkModeTransition(openclawOk, skayaOk = true) {
+  checkModeTransition(skayaOk = true) {
     try {
-      this._updateServiceDown('openclaw', !openclawOk);
       this._updateServiceDown('skaya',    !skayaOk);
 
-      const openclawDownMin = this._minutesDown('openclaw');
       const skayaDownMin    = this._minutesDown('skaya');
-      const shouldEmergency = openclawDownMin > EMERGENCY_THRESHOLD_MIN ||
-                              skayaDownMin    > EMERGENCY_THRESHOLD_MIN;
+      const shouldEmergency = skayaDownMin > EMERGENCY_THRESHOLD_MIN;
 
       let flushed = [];
 
       if (shouldEmergency && this.state.mode === MODES.NORMAL) {
-        const reason = openclawDownMin > EMERGENCY_THRESHOLD_MIN
-          ? `OpenClaw 게이트웨이 ${Math.round(openclawDownMin)}분 다운`
-          : `스카야 텔레그램 봇 ${Math.round(skayaDownMin)}분 다운`;
+        const reason = `스카야 텔레그램 봇 ${Math.round(skayaDownMin)}분 다운`;
         this.enterEmergency(reason);
       } else if (!shouldEmergency && !this.isClaudeLeadUnresponsive() && this.state.mode === MODES.EMERGENCY) {
         // 인프라 복구 + 팀장 응답 정상 → Normal 복귀

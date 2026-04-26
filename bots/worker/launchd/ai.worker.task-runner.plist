@@ -21,9 +21,9 @@
 	<key>RunAtLoad</key>
 	<true/>
 	<key>StandardErrorPath</key>
-	<string>/Users/alexlee/.openclaw/workspace/logs/worker-task-runner-error.log</string>
+	<string>/Users/alexlee/.ai-agent-system/logs/worker-task-runner-error.log</string>
 	<key>StandardOutPath</key>
-	<string>/Users/alexlee/.openclaw/workspace/logs/worker-task-runner.log</string>
+	<string>/Users/alexlee/.ai-agent-system/logs/worker-task-runner.log</string>
 	<key>ThrottleInterval</key>
 	<integer>10</integer>
 	<key>WorkingDirectory</key>

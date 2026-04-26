@@ -23,7 +23,9 @@ const { parseNaverBlogUrl } = require('../../../packages/core/lib/naver-blog-url
 const { isExcludedReferencePost } = require('./reference-exclusions.ts');
 
 const DEV_HUB_READONLY = env.IS_DEV && !!env.HUB_BASE_URL && !process.env.PG_DIRECT;
-const NAVER_MONITOR_WS_FILE = path.join(env.OPENCLAW_WORKSPACE, 'naver-monitor-ws.txt');
+const BLOG_BROWSER_RUNTIME_DIR = env.AI_AGENT_WORKSPACE || path.join(os.homedir(), '.ai-agent-system', 'workspace');
+const NAVER_MONITOR_WS_FILE = process.env.BLOG_NAVER_MONITOR_WS_FILE
+  || path.join(BLOG_BROWSER_RUNTIME_DIR, 'naver-monitor-ws.txt');
 
 async function filterPublishedBlogHits(hits) {
   if (!hits?.length) return [];

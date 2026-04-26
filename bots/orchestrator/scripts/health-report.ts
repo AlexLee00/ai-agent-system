@@ -33,8 +33,8 @@ const {
   buildResolvedWebhookHealth,
 } = require('../../../packages/core/lib/health-provider');
 
-const CONTINUOUS = ['ai.orchestrator', 'ai.openclaw.gateway', 'ai.n8n.server'];
-const ALL_SERVICES = ['ai.orchestrator', 'ai.openclaw.gateway', 'ai.n8n.server'];
+const CONTINUOUS = ['ai.orchestrator', 'ai.n8n.server'];
+const ALL_SERVICES = ['ai.orchestrator', 'ai.n8n.server'];
 const NORMAL_EXIT_CODES = DEFAULT_NORMAL_EXIT_CODES;
 const ORCHESTRATOR_HEALTH_CONFIG = getOrchestratorHealthConfig();
 const N8N_HEALTH_URL = process.env.N8N_HEALTH_URL || ORCHESTRATOR_HEALTH_CONFIG.n8nHealthUrl;
@@ -114,7 +114,7 @@ function buildActionLines(report) {
   const lines = [];
 
   if (report.serviceHealth.warnCount > 0) {
-    lines.push('  - launchd 경고 서비스 확인: launchctl list | rg "ai\\.(orchestrator|openclaw\\.gateway|n8n\\.server)"');
+    lines.push('  - launchd 경고 서비스 확인: launchctl list | rg "ai\\.(orchestrator|n8n\\.server)"');
   }
   if (!report.criticalWebhookHealth.n8nHealthy) {
     lines.push('  - n8n 서버 상태 확인: /ops-health alerts 또는 launchctl print gui/$(id -u)/ai.n8n.server');

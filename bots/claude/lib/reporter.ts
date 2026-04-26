@@ -8,7 +8,7 @@ const kst = require('../../../packages/core/lib/kst');
 
 const fs     = require('fs');
 const cfg    = require('./config');
-const { postAlarm } = require('../../../packages/core/lib/openclaw-client');
+const { postAlarm } = require('../../../packages/core/lib/hub-alarm-client');
 
 const STATUS_ICON = { ok: '✅', warn: '⚠️', error: '❌' };
 

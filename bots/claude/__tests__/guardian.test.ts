@@ -16,7 +16,7 @@ const GUARDIAN_PATH = path.resolve(__dirname, '../src/guardian.ts');
 
 function makeGuardianMocks(overrides = {}) {
   return {
-    '../../../packages/core/lib/openclaw-client': {
+    '../../../packages/core/lib/hub-alarm-client': {
       postAlarm: async () => ({ ok: true }),
     },
     '../../../packages/core/lib/env': {
@@ -191,7 +191,7 @@ async function test_layer6_ignores_guardian_self_file() {
 async function test_guardian_respects_kill_switch() {
   const postAlarmCalls = [];
   const mocks = makeGuardianMocks({
-    '../../../packages/core/lib/openclaw-client': {
+    '../../../packages/core/lib/hub-alarm-client': {
       postAlarm: async (p) => { postAlarmCalls.push(p); },
     },
   });

@@ -4,7 +4,7 @@
 const fs = require('fs');
 const path = require('path');
 const env = require('../../../packages/core/lib/env');
-const { callWithFallback } = require(path.join(env.PROJECT_ROOT, 'packages/core/lib/llm-fallback.js'));
+const { callHubLlm } = require(path.join(env.PROJECT_ROOT, 'packages/core/lib/hub-client'));
 const { blog: blogSkills } = require(path.join(env.PROJECT_ROOT, 'packages/core/lib/skills/index.js'));
 const { writeGeneralPost, GEMS_SYSTEM_PROMPT } = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/gems-writer.ts'));
 
@@ -151,16 +151,15 @@ async function main() {
 `.trim();
 
     try {
-      const result = await withTimeout(callWithFallback({
-        chain: [
-          { provider: 'openai-oauth', model: 'gpt-5.4', maxTokens: 2600, temperature: 0.7, timeoutMs: 25000 },
-          { provider: 'claude-code', model: 'sonnet', maxTokens: 2600, temperature: 0.7, timeoutMs: 25000 },
-          { provider: 'gemini', model: 'google-gemini-cli/gemini-2.5-flash', maxTokens: 2600, temperature: 0.7, timeoutMs: 25000 },
-        ],
+      const result = await withTimeout(callHubLlm({
+        callerTeam: 'blog',
+        agent: 'book-review-draft',
+        selectorKey: 'blog.book_review.preview',
+        taskType: 'book_review_preview',
         systemPrompt: GEMS_SYSTEM_PROMPT,
-        userPrompt: prompt,
+        prompt,
+        maxTokens: 2600,
         timeoutMs: 25000,
-        logMeta: { team: 'blog', purpose: 'writer', bot: 'book-review-draft', requestType: 'book_review_preview' },
       }), 30000, 'fast_draft_timeout');
 
       const content = String(result.text || '').trim();
@@ -169,7 +168,7 @@ async function main() {
         title,
         content,
         charCount: content.length,
-        model: `${result.provider}/${result.model}`,
+        model: result.selected_route || result.model || result.provider || 'hub',
       };
     } catch (error) {
       console.warn(`[book-review draft] fast draft fallback 사용: ${error.message}`);

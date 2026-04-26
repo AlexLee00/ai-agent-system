@@ -11,8 +11,7 @@ const sharp = require('sharp');
 const Tesseract = require('tesseract.js');
 
 const { logToolCall } = require('../../../packages/core/lib/tool-logger');
-const { callWithFallback } = require('../../../packages/core/lib/llm-fallback');
-const { selectLLMChain } = require('../../../packages/core/lib/llm-model-selector');
+const { callHubLlm } = require('../../../packages/core/lib/hub-client');
 
 const execFileAsync = promisify(execFile);
 
@@ -64,7 +63,7 @@ function ensureSceneIndexerConfig(config = {}) {
     ocr_lang: String(config?.scene_indexer?.ocr_lang || 'eng'),
     ocr_workers: Number(config?.scene_indexer?.ocr_workers || DEFAULT_OCR_WORKERS),
     llm_batch_size: Number(config?.scene_indexer?.llm_batch_size || 8),
-    llm_model: String(config?.scene_indexer?.llm_model || 'gpt-4o-mini'),
+    runtime_purpose: String(config?.scene_indexer?.runtime_purpose || 'analysis'),
     llm_timeout_ms: Number(config?.scene_indexer?.llm_timeout_ms || 15000),
   };
 }
@@ -416,7 +415,7 @@ function fallbackClassifyFrame(frame) {
   };
 }
 
-async function callSceneClassifier(batch, modelName, timeoutMs) {
+async function callSceneClassifier(batch, runtimePurpose, timeoutMs) {
   const prompt = [
     '다음은 FlutterFlow 노코드 개발 도구의 화면 OCR 텍스트입니다.',
     '각 프레임에 대해 JSON 배열로만 답하세요.',
@@ -431,23 +430,19 @@ async function callSceneClassifier(batch, modelName, timeoutMs) {
   ].join('\n');
 
   const startedAt = Date.now();
-  const response = await callWithFallback({
-    chain: selectLLMChain('video.scene-indexer'),
+  const response = await callHubLlm({
+    callerTeam: TEAM_NAME,
+    agent: 'scene-indexer',
+    selectorKey: 'video.scene-indexer',
+    taskType: 'scene_classification',
+    abstractModel: 'anthropic_sonnet',
     systemPrompt: [
       '당신은 FlutterFlow 비디오 편집용 장면 분류기다.',
       '입력된 OCR 텍스트를 보고 각 프레임을 설명과 장면 타입으로 분류한다.',
       '반드시 JSON 객체 하나만 반환하고 형식은 { "frames": [ ... ] } 여야 한다.',
     ].join('\n'),
-    userPrompt: `${prompt}\n\n응답 형식: { "frames": [ ... ] }`,
+    prompt: `${prompt}\n\n응답 형식: { "frames": [ ... ] }`,
     timeoutMs,
-    logMeta: {
-      team: TEAM_NAME,
-      purpose: 'editing',
-      bot: 'scene-indexer',
-      agentName: 'scene-indexer',
-      selectorKey: 'video.scene-indexer',
-      requestType: 'scene_classification',
-    },
   });
   const text = response?.text || '';
   const parsed = JSON.parse(text);
@@ -457,7 +452,7 @@ async function callSceneClassifier(batch, modelName, timeoutMs) {
     bot: BOT_NAME,
     success: true,
     duration_ms: Date.now() - startedAt,
-    metadata: { model: response.model || modelName, provider: response.provider, batchSize: batch.length },
+    metadata: { model: response.model || 'hub-runtime', provider: response.provider, batchSize: batch.length },
   });
 
   if (!Array.isArray(frames)) {
@@ -474,7 +469,7 @@ async function classifyScenes(ocrResults, config = {}) {
   for (let index = 0; index < ocrResults.length; index += batchSize) {
     const batch = ocrResults.slice(index, index + batchSize);
     try {
-      const classified = await callSceneClassifier(batch, resolved.llm_model, resolved.llm_timeout_ms);
+      const classified = await callSceneClassifier(batch, resolved.runtime_purpose, resolved.llm_timeout_ms);
       const byId = new Map(classified.map((item) => [Number(item.frame_id), item]));
       for (const frame of batch) {
         const item = byId.get(Number(frame.frame_id));

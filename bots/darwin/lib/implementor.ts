@@ -7,9 +7,9 @@
 const fs = require('fs');
 const path = require('path');
 const { execFileSync } = require('child_process');
-const { callWithFallback } = require('../../../packages/core/lib/llm-fallback');
+const { callHubLlm } = require('../../../packages/core/lib/hub-client');
 const { createLogger } = require('../../../packages/core/lib/central-logger');
-const { postAlarm } = require('../../../packages/core/lib/openclaw-client');
+const { postAlarm } = require('../../../packages/core/lib/hub-alarm-client');
 const eventLake = require('../../../packages/core/lib/event-lake');
 const proposalStore = require('./proposal-store');
 const autonomyLevel = require('./autonomy-level');
@@ -31,16 +31,8 @@ const logger = createLogger('implementor', { team: 'darwin' });
 
 type ExecFileOptions = Omit<import('child_process').ExecFileSyncOptionsWithStringEncoding, 'encoding'>;
 
-interface FallbackResponse {
+interface HubLlmResponse {
   text?: string;
-}
-
-interface FallbackRequest {
-  systemPrompt: string;
-  userPrompt: string;
-  chain: Array<Record<string, unknown>>;
-  logMeta: Record<string, unknown>;
-  timeoutMs: number;
 }
 
 interface AlarmPayload {
@@ -245,7 +237,7 @@ function _hasStagedChanges() {
 }
 
 function _extractFiles(
-  rawText: string | FallbackResponse,
+  rawText: string | HubLlmResponse,
   proposalId: string | null = null,
   proposal: ProposalRecord | null = null
 ): ExtractedFile[] {
@@ -351,7 +343,11 @@ async function triggerImplementation(proposalId: string): Promise<ApplyResult> {
   }
 
   try {
-    const implementationResult = await callWithFallback({
+    const implementationResult = await callHubLlm({
+      callerTeam: 'darwin',
+      agent: 'synthesis',
+      taskType: 'auto_implementation',
+      abstractModel: 'anthropic_sonnet',
       systemPrompt: `당신은 팀 제이의 프로토타입 개발자(edison)입니다.
 연구 제안을 실제 Node.js 코드로 구현하세요.
 
@@ -362,7 +358,7 @@ async function triggerImplementation(proposalId: string): Promise<ApplyResult> {
 - 기존 패턴을 따르고 외부 비밀값 하드코딩 금지
 - 출력 경로는 반드시 repo-relative 경로
 - bare filename만 필요하면 같은 폴더 기준으로 묶어서 출력`,
-      userPrompt: `논문: ${proposal.paper?.title || proposal.title || 'unknown'}
+      prompt: `논문: ${proposal.paper?.title || proposal.title || 'unknown'}
 
 안전 출력 베이스:
 ${_resolveProposalBaseDir(proposalId, proposal)}
@@ -375,13 +371,8 @@ ${proposal.prototype || ''}
 
 현재 상태:
 ${JSON.stringify(proposal.verification || {})}`,
-      chain: [
-        { provider: 'openai-oauth', model: 'gpt-5.4', maxTokens: 4000, temperature: 0.3 },
-        { provider: 'groq', model: 'meta-llama/llama-4-scout-17b-16e-instruct', maxTokens: 4000, temperature: 0.3 },
-      ],
-      logMeta: { team: 'darwin', bot: 'edison', requestType: 'auto_implementation' },
       timeoutMs: 45_000,
-    } as FallbackRequest) as FallbackResponse | string;
+    }) as HubLlmResponse | string;
 
     const files = _extractFiles(implementationResult, proposalId, proposal);
     logger.info(`LLM 출력 파싱 완료: ${files.length}개 파일`);

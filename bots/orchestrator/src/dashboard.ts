@@ -60,9 +60,7 @@ const CORE_LAUNCHD_SERVICES: LaunchdService[] = [
   { id: 'ai.claude.archer', name: '아처' },
 ];
 
-const LEGACY_COMPAT_SERVICES: LaunchdService[] = [
-  { id: 'ai.openclaw.gateway', name: 'OpenClaw 게이트웨이 (legacy compat)' },
-];
+const LEGACY_COMPAT_SERVICES: LaunchdService[] = [];
 
 function checkLaunchd(serviceId: string): LaunchdStatus {
   try {

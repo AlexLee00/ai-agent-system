@@ -24,7 +24,7 @@ async function main() {
     if (request === '../lib/research-tasks') {
       return taskApi;
     }
-    if (request === '../../../packages/core/lib/openclaw-client') {
+    if (request === '../../../packages/core/lib/hub-alarm-client') {
       return { postAlarm: async () => {} };
     }
     return originalLoad.call(this, request, parent, isMain);

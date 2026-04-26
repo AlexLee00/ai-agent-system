@@ -137,10 +137,18 @@ const CONTINUOUS = [
   'ai.investment.commander',
 ];
 
+const INVESTMENT_RUNTIME_DIR = process.env.INVESTMENT_RUNTIME_DIR
+  || path.join(
+    process.env.AI_AGENT_WORKSPACE
+      || process.env.JAY_WORKSPACE
+      || path.join(process.env.HOME || '', '.ai-agent-system', 'workspace'),
+    'investment',
+  );
+
 const CONTINUOUS_RUNTIME_CHECKS = {
   'ai.investment.commander': {
     type: 'lockfile',
-    path: path.join(process.env.HOME || '', '.openclaw', 'workspace', 'luna-commander.lock'),
+    path: path.join(INVESTMENT_RUNTIME_DIR, 'luna-commander.lock'),
     description: '루나 commander 실행 중',
   },
 };

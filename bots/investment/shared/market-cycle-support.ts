@@ -1,17 +1,67 @@
 // @ts-nocheck
-import { mkdirSync, readFileSync, writeFileSync } from 'fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs';
 import { homedir } from 'os';
-import { join } from 'path';
+import { basename, dirname, join } from 'path';
 
 const BANNER_WIDTH = 60;
 
-export function getOpenClawStateFile(filename) {
+function getAiAgentHome() {
+  return process.env.AI_AGENT_HOME || process.env.JAY_HOME || join(homedir(), '.ai-agent-system');
+}
+
+function getAiAgentWorkspace() {
+  return process.env.AI_AGENT_WORKSPACE || process.env.JAY_WORKSPACE || join(getAiAgentHome(), 'workspace');
+}
+
+export function getInvestmentStateDir() {
+  return process.env.INVESTMENT_STATE_DIR || join(getAiAgentHome(), 'investment');
+}
+
+export function getInvestmentRuntimeDir() {
+  return process.env.INVESTMENT_RUNTIME_DIR || join(getAiAgentWorkspace(), 'investment');
+}
+
+export function getInvestmentStateFile(filename) {
+  return join(getInvestmentStateDir(), filename);
+}
+
+export function getLegacyInvestmentStateFile(filename) {
   return join(homedir(), '.openclaw', filename);
+}
+
+export function getInvestmentRuntimeFile(filename) {
+  return join(getInvestmentRuntimeDir(), filename);
+}
+
+export function getLegacyInvestmentRuntimeFile(filename) {
+  return join(homedir(), '.openclaw', 'workspace', filename);
+}
+
+export function investmentRuntimeFileExists(filename) {
+  return existsSync(getInvestmentRuntimeFile(filename)) || existsSync(getLegacyInvestmentRuntimeFile(filename));
+}
+
+export function getReadableInvestmentRuntimeFile(filename) {
+  const current = getInvestmentRuntimeFile(filename);
+  if (existsSync(current)) return current;
+  const legacy = getLegacyInvestmentRuntimeFile(filename);
+  return existsSync(legacy) ? legacy : current;
+}
+
+function getReadableStateFile(stateFile) {
+  if (existsSync(stateFile)) return stateFile;
+  const legacy = getLegacyInvestmentStateFile(basename(stateFile));
+  return existsSync(legacy) ? legacy : stateFile;
+}
+
+// Backward-compatible alias. New code should call getInvestmentStateFile().
+export function getOpenClawStateFile(filename) {
+  return getInvestmentStateFile(filename);
 }
 
 export function loadJsonState(stateFile, fallbackState = {}) {
   try {
-    return JSON.parse(readFileSync(stateFile, 'utf8'));
+    return JSON.parse(readFileSync(getReadableStateFile(stateFile), 'utf8'));
   } catch {
     return { ...fallbackState };
   }
@@ -19,7 +69,7 @@ export function loadJsonState(stateFile, fallbackState = {}) {
 
 export function saveJsonState(stateFile, state) {
   try {
-    mkdirSync(join(homedir(), '.openclaw'), { recursive: true });
+    mkdirSync(dirname(stateFile), { recursive: true });
     writeFileSync(stateFile, JSON.stringify(state, null, 2));
   } catch (error) {
     console.warn(`  ⚠️ 상태 저장 실패: ${error.message}`);

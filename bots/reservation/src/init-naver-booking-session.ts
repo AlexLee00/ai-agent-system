@@ -12,9 +12,10 @@ const puppeteer = require('puppeteer');
 const path = require('path');
 const readline = require('readline');
 const { getNaverLaunchOptions, isHeadedMode } = require('../lib/browser');
+const { getReservationRuntimeDir, ensureDir } = require('../lib/runtime-paths');
 
-const WORKSPACE = path.join(process.env.HOME, '.openclaw', 'workspace');
-const NAVER_PROFILE = path.join(WORKSPACE, 'naver-profile');
+const WORKSPACE = getReservationRuntimeDir();
+const NAVER_PROFILE = path.join(WORKSPACE, 'naver-booking-profile');
 const BOOKING_URL = 'https://partner.booking.naver.com/bizes/596871/booking-calendar-view';
 
 function waitForEnter(msg) {
@@ -28,6 +29,7 @@ function waitForEnter(msg) {
   console.log('🔐 naver-booking-profile 세션 초기화');
   console.log(`   Profile: ${NAVER_PROFILE}`);
   console.log(`   URL: ${BOOKING_URL}\n`);
+  ensureDir(NAVER_PROFILE);
 
   if (!isHeadedMode('naver')) {
     console.log('ℹ️ 기본값은 headless입니다. 수동 로그인 초기화는 PLAYWRIGHT_HEADLESS=false 또는 NAVER_HEADLESS=0으로 실행하는 것을 권장합니다.\n');

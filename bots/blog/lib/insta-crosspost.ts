@@ -20,7 +20,7 @@ const { parseInstagramAuthError } = require(
 );
 const pgPool = require('../../../packages/core/lib/pg-pool');
 const { runIfOps } = require('../../../packages/core/lib/mode-guard');
-const { postAlarm } = require('../../../packages/core/lib/openclaw-client');
+const { postAlarm } = require('../../../packages/core/lib/hub-alarm-client');
 
 /**
  * @typedef {{

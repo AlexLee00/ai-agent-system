@@ -13,7 +13,12 @@ const os       = require('os');
 const fs       = require('fs');
 const Database = require('better-sqlite3');
 
-const DB_PATH = path.join(os.homedir(), '.openclaw', 'workspace', 'claude-team.db');
+function getAiAgentWorkspace() {
+  const home = process.env.AI_AGENT_HOME || process.env.JAY_HOME || path.join(os.homedir(), '.ai-agent-system');
+  return process.env.AI_AGENT_WORKSPACE || process.env.JAY_WORKSPACE || path.join(home, 'workspace');
+}
+
+const DB_PATH = path.join(getAiAgentWorkspace(), 'claude-team.db');
 
 function run() {
   const dir = path.dirname(DB_PATH);

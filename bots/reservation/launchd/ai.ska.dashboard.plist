@@ -31,10 +31,10 @@
   <true/>
 
   <key>StandardOutPath</key>
-  <string>/Users/alexlee/.openclaw/workspace/logs/ska-dashboard.log</string>
+  <string>/Users/alexlee/.ai-agent-system/logs/ska-dashboard.log</string>
 
   <key>StandardErrorPath</key>
-  <string>/Users/alexlee/.openclaw/workspace/logs/ska-dashboard-error.log</string>
+  <string>/Users/alexlee/.ai-agent-system/logs/ska-dashboard-error.log</string>
 
   <key>ThrottleInterval</key>
   <integer>10</integer>

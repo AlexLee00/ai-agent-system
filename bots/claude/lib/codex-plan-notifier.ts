@@ -23,10 +23,11 @@ const crypto  = require('crypto');
 const { execSync } = require('child_process');
 
 const env = require('../../../packages/core/lib/env');
-const { postAlarm } = require('../../../packages/core/lib/openclaw-client');
+const { postAlarm } = require('../../../packages/core/lib/hub-alarm-client');
+const runtimePaths = require('./runtime-paths.js');
 
 const ROOT       = env.PROJECT_ROOT;
-const WORKSPACE  = path.join(os.homedir(), '.openclaw', 'workspace');
+const WORKSPACE  = runtimePaths.workspaceDir();
 const STATE_FILE = path.join(WORKSPACE, 'codex-notifier-state.json');
 const AUTO_DEV_REL_DIR = 'docs/auto_dev';
 

@@ -218,6 +218,34 @@ const TEAM_SELECTOR_DEFAULTS: Record<string, any> = {
         { provider: 'openai-oauth', model: 'gpt-5.4', maxTokens: 8000, temperature: 0.5 },
       ],
     },
+    'feedback.analyze': {
+      primary: { provider: 'openai-oauth', model: 'gpt-5.4-mini', maxTokens: 700, temperature: 0.1 },
+      fallbacks: [
+        { provider: 'claude-code', model: 'claude-code/sonnet', maxTokens: 700, temperature: 0.1 },
+        { provider: 'groq', model: 'llama-3.1-8b-instant', maxTokens: 700, temperature: 0.1 },
+      ],
+    },
+    'commenter.reply': {
+      primary: { provider: 'groq', model: 'llama-3.1-8b-instant', maxTokens: 600, temperature: 0.65, timeoutMs: 15000 },
+      fallbacks: [
+        { provider: 'openai-oauth', model: 'gpt-5.4-mini', maxTokens: 600, temperature: 0.5, timeoutMs: 12000 },
+        { provider: 'claude-code', model: 'claude-code/sonnet', maxTokens: 600, temperature: 0.75, timeoutMs: 12000 },
+      ],
+    },
+    'commenter.neighbor': {
+      primary: { provider: 'groq', model: 'llama-3.1-8b-instant', maxTokens: 700, temperature: 0.7, timeoutMs: 15000 },
+      fallbacks: [
+        { provider: 'openai-oauth', model: 'gpt-5.4-mini', maxTokens: 700, temperature: 0.55, timeoutMs: 12000 },
+        { provider: 'claude-code', model: 'claude-code/sonnet', maxTokens: 700, temperature: 0.8, timeoutMs: 15000 },
+      ],
+    },
+    'book_review.preview': {
+      primary: { provider: 'openai-oauth', model: 'gpt-5.4', maxTokens: 2600, temperature: 0.7, timeoutMs: 25000 },
+      fallbacks: [
+        { provider: 'claude-code', model: 'claude-code/sonnet', maxTokens: 2600, temperature: 0.7, timeoutMs: 25000 },
+        { provider: 'gemini', model: 'google-gemini-cli/gemini-2.5-flash', maxTokens: 2600, temperature: 0.7, timeoutMs: 25000 },
+      ],
+    },
     _fallback: {
       primary: { provider: 'openai-oauth', model: 'gpt-5.4', maxTokens: 1024, temperature: 0.1 },
       fallbacks: [
@@ -315,6 +343,36 @@ const TEAM_SELECTOR_DEFAULTS: Record<string, any> = {
       fallbacks: [],
     },
   },
+  ska: {
+    'parsing.level3': {
+      primary: { provider: 'claude-code', model: 'claude-code/opus', maxTokens: 2000, temperature: 0.1, timeoutMs: 15000 },
+      fallbacks: [
+        { provider: 'openai-oauth', model: 'gpt-5.4', maxTokens: 2000, temperature: 0.1, timeoutMs: 15000 },
+        { provider: 'groq', model: 'meta-llama/llama-4-scout-17b-16e-instruct', maxTokens: 2000, temperature: 0.1, timeoutMs: 10000 },
+      ],
+    },
+    'selector.generate': {
+      primary: { provider: 'claude-code', model: 'claude-code/opus', maxTokens: 1000, temperature: 0.1, timeoutMs: 10000 },
+      fallbacks: [
+        { provider: 'openai-oauth', model: 'gpt-5.4', maxTokens: 1000, temperature: 0.1, timeoutMs: 10000 },
+        { provider: 'groq', model: 'meta-llama/llama-4-scout-17b-16e-instruct', maxTokens: 1000, temperature: 0.1, timeoutMs: 8000 },
+      ],
+    },
+    classify: {
+      primary: { provider: 'claude-code', model: 'claude-code/sonnet', maxTokens: 500, temperature: 0, timeoutMs: 8000 },
+      fallbacks: [
+        { provider: 'groq', model: 'meta-llama/llama-4-scout-17b-16e-instruct', maxTokens: 500, temperature: 0, timeoutMs: 6000 },
+        { provider: 'openai-oauth', model: 'gpt-5.4-mini', maxTokens: 500, temperature: 0, timeoutMs: 8000 },
+      ],
+    },
+    _fallback: {
+      primary: { provider: 'openai-oauth', model: 'gpt-5.4-mini', maxTokens: 1000, temperature: 0.1 },
+      fallbacks: [
+        { provider: 'claude-code', model: 'claude-code/sonnet', maxTokens: 1000, temperature: 0.1 },
+        { provider: 'groq', model: 'llama-3.1-8b-instant', maxTokens: 1000, temperature: 0.1 },
+      ],
+    },
+  },
 };
 
 const AGENT_MODEL_REGISTRY: Record<string, Record<string, string | null>> = {
@@ -339,6 +397,10 @@ const AGENT_MODEL_REGISTRY: Record<string, Record<string, string | null>> = {
     'social-caption': 'blog.social.caption',
     'curriculum-recommend': 'blog.curriculum.recommend',
     'curriculum-generate': 'blog.curriculum.generate',
+    'feedback-learner': 'blog.feedback.analyze',
+    commenter: 'blog.commenter.reply',
+    'neighbor-commenter': 'blog.commenter.neighbor',
+    'book-review-draft': 'blog.book_review.preview',
   },
   worker: {
     foreman: null,
@@ -360,6 +422,39 @@ const AGENT_MODEL_REGISTRY: Record<string, Record<string, string | null>> = {
     'narration-analyzer': 'video.narration-analyzer',
     refiner: 'video.refiner',
     'intro-outro-handler': 'video.intro-outro',
+  },
+  luna: {
+    default: 'investment.agent_policy',
+    luna: 'investment.agent_policy',
+    analyst: 'investment.agent_policy',
+    validator: 'investment.agent_policy',
+    commander: 'investment.agent_policy',
+    nemesis: 'investment.agent_policy',
+    oracle: 'investment.agent_policy',
+    hermes: 'investment.agent_policy',
+    sophia: 'investment.agent_policy',
+    zeus: 'investment.agent_policy',
+    athena: 'investment.agent_policy',
+    argos: 'investment.agent_policy',
+    scout: 'investment.agent_policy',
+    chronos: 'investment.agent_policy',
+  },
+  investment: {
+    luna: 'investment.agent_policy',
+    nemesis: 'investment.agent_policy',
+    oracle: 'investment.agent_policy',
+    hermes: 'investment.agent_policy',
+    sophia: 'investment.agent_policy',
+    zeus: 'investment.agent_policy',
+    athena: 'investment.agent_policy',
+    argos: 'investment.agent_policy',
+    scout: 'investment.agent_policy',
+    chronos: 'investment.agent_policy',
+  },
+  ska: {
+    'parsing-guard': 'ska.parsing.level3',
+    'selector-generator': 'ska.selector.generate',
+    'error-classifier': 'ska.classify',
   },
 };
 
@@ -457,6 +552,10 @@ function buildSelectorRegistry(): Record<string, any> {
     'blog.star.caption': () => resolveFromTeamDefault('blog.star.caption'),
     'blog.curriculum.recommend': () => resolveFromTeamDefault('blog.curriculum.recommend'),
     'blog.curriculum.generate': () => resolveFromTeamDefault('blog.curriculum.generate'),
+    'blog.feedback.analyze': () => resolveFromTeamDefault('blog.feedback.analyze'),
+    'blog.commenter.reply': () => resolveFromTeamDefault('blog.commenter.reply'),
+    'blog.commenter.neighbor': () => resolveFromTeamDefault('blog.commenter.neighbor'),
+    'blog.book_review.preview': () => resolveFromTeamDefault('blog.book_review.preview'),
 
 
     'core._default': () => resolveFromTeamDefault('core._default'),
@@ -465,6 +564,17 @@ function buildSelectorRegistry(): Record<string, any> {
 
     'video._default': () => resolveFromTeamDefault('video._default'),
     'video.step-proposal': () => resolveFromTeamDefault('video.step-proposal'),
+    'video.critic': () => resolveFromTeamDefault('video.critic'),
+    'video.subtitle-correction': () => resolveFromTeamDefault('video.subtitle-correction'),
+    'video.scene-indexer': () => resolveFromTeamDefault('video.scene-indexer'),
+    'video.narration-analyzer': () => resolveFromTeamDefault('video.narration-analyzer'),
+    'video.refiner': () => resolveFromTeamDefault('video.refiner'),
+    'video.intro-outro': () => resolveFromTeamDefault('video.intro-outro'),
+
+    'ska._default': () => resolveFromTeamDefault('ska._default'),
+    'ska.parsing.level3': () => resolveFromTeamDefault('ska.parsing.level3'),
+    'ska.selector.generate': () => resolveFromTeamDefault('ska.selector.generate'),
+    'ska.classify': () => resolveFromTeamDefault('ska.classify'),
 
     'sigma.agent_policy': ({ agentName }: SelectorOptions = {}) => {
       const SIGMA_ROUTES: Record<string, { route: string; chain: LLMChainEntry[] }> = {
@@ -503,6 +613,7 @@ function buildSelectorRegistry(): Record<string, any> {
         athena: 'groq_scout',
         argos: 'groq_scout',
         scout: 'groq_scout',
+        chronos: 'openai_perf',
       };
       const configuredRoutes = isObject(policyOverride?.agentRoutes) ? { ...defaultRoutes, ...policyOverride.agentRoutes } : defaultRoutes;
       const openaiMiniModel = policyOverride?.openaiMiniModel || 'gpt-4o-mini';
@@ -532,6 +643,8 @@ function buildSelectorRegistry(): Record<string, any> {
           { provider: 'groq', model: groqCompetitionModels[0] || 'openai/gpt-oss-20b' },
           { provider: 'groq', model: groqCompetitionModels[1] || groqScoutModel },
           { provider: 'openai-oauth', model: openaiPerfModel },
+          { provider: 'claude-code', model: 'claude-code/sonnet', maxTokens: 1024, temperature: 0.1 },
+          { provider: 'gemini', model: 'google-gemini-cli/gemini-2.5-flash', maxTokens: 1024, temperature: 0.1 },
         ],
         openai_mini: [
           { provider: 'openai-oauth', model: openaiMiniModel },
@@ -549,6 +662,8 @@ function buildSelectorRegistry(): Record<string, any> {
           { provider: 'groq', model: groqScoutModel },
           { provider: 'groq', model: groqCompetitionModels[0] || 'openai/gpt-oss-20b' },
           { provider: 'openai-oauth', model: openaiMiniModel },
+          { provider: 'claude-code', model: 'claude-code/sonnet', maxTokens: 1024, temperature: 0.1 },
+          { provider: 'gemini', model: 'google-gemini-cli/gemini-2.5-flash', maxTokens: 1024, temperature: 0.1 },
         ],
         local_fast: [
           { provider: 'groq', model: groqScoutModel },
@@ -648,7 +763,7 @@ export function describeAgentModel(team: string, agentName: string, selectorOpti
   if (!selectorKey) {
     return { team, agent: agentName, selectorKey: null, selected: false, description: null, chain: [] };
   }
-  const description = describeLLMSelector(selectorKey, selectorOptions[selectorKey] || {});
+  const description = describeLLMSelector(selectorKey, { agentName, ...(selectorOptions[selectorKey] || {}) });
   return {
     team,
     agent: agentName,

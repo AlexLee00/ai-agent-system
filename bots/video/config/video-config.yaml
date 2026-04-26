@@ -51,10 +51,8 @@ whisper:
 
 # 자막 교정 LLM
 subtitle_correction:
-  llm_provider: openai
-  llm_model: gpt-4o-mini
-  fallback_provider: google
-  fallback_model: gemini-2.5-flash
+  hub_selector: video.subtitle-correction
+  runtime_purpose: editing
   max_retries: 2
   temperature: 0.1
 
@@ -67,7 +65,8 @@ scene_indexer:
   ocr_lang: eng
   ocr_workers: 2
   llm_batch_size: 8
-  llm_model: gpt-4o-mini
+  hub_selector: video.scene-indexer
+  runtime_purpose: analysis
   llm_timeout_ms: 15000
 
 # 나레이션 분석
@@ -75,7 +74,8 @@ narration_analyzer:
   segment_min_sec: 10
   segment_max_sec: 60
   correct_subtitle: true
-  llm_model: gpt-4o-mini
+  hub_selector: video.narration-analyzer
+  runtime_purpose: analysis
   llm_timeout_ms: 15000
   offline_segment_count_short: 4
   offline_segment_count_medium: 5
@@ -105,7 +105,8 @@ step_proposal:
   auto_confirm_threshold: 0.8
   red_required_below: 0.5
   blue_required_below_red: 50
-  red_model: gpt-4o-mini
+  hub_selector: video.step-proposal
+  runtime_purpose: editing
   blue_max_alternatives: 3
 
 # 인트로/아웃트로
@@ -116,7 +117,8 @@ intro_outro:
   default_text_color: white
   default_font_size: 72
   fade_duration_sec: 0.5
-  llm_model: gpt-4o-mini
+  hub_selector: video.intro-outro
+  runtime_purpose: editing
   llm_timeout_ms: 15000
   fallback_enabled: true
 

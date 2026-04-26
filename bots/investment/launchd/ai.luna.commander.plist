@@ -28,13 +28,13 @@
 
     <!-- LLM Hub 라우팅 (Shadow 먼저, 검증 후 ENABLED=true) -->
     <key>LUNA_LLM_HUB_ENABLED</key>
-    <string>false</string>
+    <string>true</string>
     <key>LUNA_LLM_HUB_SHADOW</key>
-    <string>true</string>
-    <key>INVESTMENT_LLM_HUB_ENABLED</key>
     <string>false</string>
-    <key>INVESTMENT_LLM_HUB_SHADOW</key>
+    <key>INVESTMENT_LLM_HUB_ENABLED</key>
     <string>true</string>
+    <key>INVESTMENT_LLM_HUB_SHADOW</key>
+    <string>false</string>
 
     <key>LUNA_HTTP_PORT</key>
     <string>4030</string>

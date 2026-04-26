@@ -9,10 +9,10 @@ const puppeteer = require('puppeteer');
 
 const pgPool = require('../../../packages/core/lib/pg-pool');
 const env = require('../../../packages/core/lib/env');
-const { callWithFallback } = require('../../../packages/core/lib/llm-fallback');
-const { postAlarm } = require('../../../packages/core/lib/openclaw-client');
+const { callHubLlm } = require('../../../packages/core/lib/hub-client');
+const { postAlarm } = require('../../../packages/core/lib/hub-alarm-client');
 const { parseNaverBlogUrl } = require('../../../packages/core/lib/naver-blog-url');
-const { getBlogCommenterConfig, getBlogNeighborCommenterConfig, getBlogLLMSelectorOverrides } = require('./runtime-config.ts');
+const { getBlogCommenterConfig, getBlogNeighborCommenterConfig } = require('./runtime-config.ts');
 const { loadStrategyBundle, resolveExecutionTarget } = require('./strategy-loader.ts');
 const { writeBlogEvalCase } = require('./eval-case-telemetry.ts');
 
@@ -23,7 +23,11 @@ const DEFAULT_SUMMARY_LEN = 220;
 const BROWSER_CONNECT_TIMEOUT_MS = 5000;
 const BROWSER_PROTOCOL_TIMEOUT_MS = 180000;
 const NAVER_NAVIGATION_TIMEOUT_MS = 45000;
-const NAVER_MONITOR_WS_FILE = path.join(env.OPENCLAW_WORKSPACE, 'naver-monitor-ws.txt');
+const BLOG_BROWSER_RUNTIME_DIR = env.AI_AGENT_WORKSPACE || path.join(os.homedir(), '.ai-agent-system', 'workspace');
+const NAVER_MONITOR_WS_FILE = process.env.BLOG_NAVER_MONITOR_WS_FILE
+  || path.join(BLOG_BROWSER_RUNTIME_DIR, 'naver-monitor-ws.txt');
+const DEFAULT_NAVER_PROFILE_DIR = process.env.BLOG_NAVER_PROFILE_DIR
+  || path.join(BLOG_BROWSER_RUNTIME_DIR, 'naver-profile');
 const BLOG_COMMENTER_DEBUG_DIR = path.join(env.PROJECT_ROOT, 'tmp', 'blog-commenter-debug');
 const BLOG_OPS_DIR = path.join(env.PROJECT_ROOT, 'bots', 'blog', 'output', 'ops');
 const BLOG_NEIGHBOR_COLLECT_DIAG_PATH = path.join(BLOG_OPS_DIR, 'neighbor-collect-diagnostics.json');
@@ -37,15 +41,6 @@ function shouldCaptureHeavyCommentDebug() {
   return process.env.BLOG_COMMENTER_TRACE === 'true' || process.env.BLOG_COMMENTER_HEAVY_DEBUG === 'true';
 }
 
-function buildCommenterFallbackChain(maxTokens, temperature) {
-  return [
-    { provider: 'groq', model: 'meta-llama/llama-4-scout-17b-16e-instruct', maxTokens, temperature: Math.min(temperature, 0.7), timeoutMs: 15000 },
-    { provider: 'openai-oauth', model: 'gpt-5.4-mini', maxTokens, temperature, timeoutMs: 12000 },
-    { provider: 'claude-code', model: 'claude-code/sonnet', maxTokens, temperature, timeoutMs: 12000 },
-    { provider: 'gemini', model: 'google-gemini-cli/gemini-2.5-flash', maxTokens, temperature: Math.min(temperature, 0.7) },
-  ];
-}
-
 function nowKstHour() {
   return Number(new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Seoul' })).getHours());
 }
@@ -56,17 +51,6 @@ function expandHome(value) {
   if (raw === '~') return os.homedir();
   if (raw.startsWith('~/')) return path.join(os.homedir(), raw.slice(2));
   return raw;
-}
-
-function readOpenClawGatewayTokenFromConfig() {
-  try {
-    const configPath = path.join(os.homedir(), '.openclaw', 'openclaw.json');
-    const raw = fs.readFileSync(configPath, 'utf8');
-    const parsed = JSON.parse(raw);
-    return String(parsed?.gateway?.auth?.token || '').trim();
-  } catch {
-    return '';
-  }
 }
 
 function readNaverMonitorWsEndpoint() {
@@ -107,9 +91,10 @@ function getCommenterConfig() {
   const derivedMaxDetectPerCycle = Math.max(Number(runtime.maxDetectPerCycle || 20), replyTargetPerCycle * 2);
   const browserToken = String(
     runtime.browserToken
-    || process.env.OPENCLAW_BROWSER_TOKEN
-    || process.env.OPENCLAW_GATEWAY_TOKEN
-    || readOpenClawGatewayTokenFromConfig()
+    || process.env.BLOG_BROWSER_TOKEN
+    || process.env.BLOG_GATEWAY_TOKEN
+    || process.env.JAY_BROWSER_TOKEN
+    || process.env.JAY_GATEWAY_TOKEN
     || ''
   ).trim();
   return {
@@ -121,7 +106,7 @@ function getCommenterConfig() {
     browserHttpUrl: String(runtime.browserHttpUrl || '').trim(),
     browserWsEndpoint: String(runtime.browserWsEndpoint || '').trim(),
     browserToken,
-    profileDir: expandHome(runtime.profileDir || path.join(env.OPENCLAW_WORKSPACE, 'naver-profile')),
+    profileDir: expandHome(runtime.profileDir || DEFAULT_NAVER_PROFILE_DIR),
     pageReadMinSec: Number(runtime.pageReadMinSec || 30),
     pageReadMaxSec: Number(runtime.pageReadMaxSec || 90),
     typingMinSec: Number(runtime.typingMinSec || 20),
@@ -1373,7 +1358,6 @@ async function getPostSummary(postUrl, { testMode = false } = {}) {
 }
 
 async function generateReply(postTitle, postSummary, commentText) {
-  const selectorOverrides = getBlogLLMSelectorOverrides();
   const systemPrompt = [
     '너는 IT 블로그 운영자다.',
     '네이버 블로그 댓글에 사람이 직접 쓴 것처럼 자연스럽고 따뜻한 한국어 답글을 JSON으로만 작성한다.',
@@ -1398,14 +1382,14 @@ async function generateReply(postTitle, postSummary, commentText) {
     '',
     'JSON만 응답: {"reply":"답글 내용","tone":"질문형|공감형|정보형"}',
   ].join('\n');
-  const chain = Array.isArray(selectorOverrides['blog.commenter.reply']?.chain)
-    ? selectorOverrides['blog.commenter.reply'].chain
-    : buildCommenterFallbackChain(600, 0.75);
-  let result = await callWithFallback({
-    chain,
+  let result = await callHubLlm({
+    callerTeam: 'blog',
+    agent: 'commenter',
+    selectorKey: 'blog.commenter.reply',
+    taskType: 'reply',
     systemPrompt,
-    userPrompt,
-    logMeta: { team: 'blog', purpose: 'commenter', bot: 'commenter', requestType: 'reply' },
+    prompt: userPrompt,
+    maxTokens: 600,
   });
   let reply = normalizeText(result?.text || '');
   let tone = '';
@@ -1422,10 +1406,13 @@ async function generateReply(postTitle, postSummary, commentText) {
   }
 
   if (!reply || reply.length < 70) {
-    result = await callWithFallback({
-      chain,
+    result = await callHubLlm({
+      callerTeam: 'blog',
+      agent: 'commenter',
+      selectorKey: 'blog.commenter.reply',
+      taskType: 'reply_retry',
       systemPrompt,
-      userPrompt: [
+      prompt: [
         userPrompt,
         '',
         '추가 지시:',
@@ -1435,7 +1422,7 @@ async function generateReply(postTitle, postSummary, commentText) {
         '반드시 70자 이상 160자 이하로 맞춰주세요.',
         'JSON만 응답하세요.',
       ].join('\n'),
-      logMeta: { team: 'blog', purpose: 'commenter', bot: 'commenter', requestType: 'reply_retry' },
+      maxTokens: 600,
     });
     reply = normalizeText(result?.text || reply);
     try {
@@ -2043,10 +2030,6 @@ async function collectNeighborCandidates({ testMode = false, persist = true, col
 }
 
 async function generateNeighborComment(postTitle, postSummary, candidate, extraGuidance = '') {
-  const selectorOverrides = getBlogLLMSelectorOverrides();
-  const chain = Array.isArray(selectorOverrides['blog.commenter.neighbor']?.chain)
-    ? selectorOverrides['blog.commenter.neighbor'].chain
-    : buildCommenterFallbackChain(700, 0.8);
   const isNonNeighborVisit = String(candidate?.source_type || '') === 'commenter_network';
 
   const systemPrompt = [
@@ -2082,11 +2065,14 @@ async function generateNeighborComment(postTitle, postSummary, candidate, extraG
     'JSON만 응답: {"comment":"댓글 내용","tone":"친근형|공감형|관찰형"}',
   ].filter(Boolean).join('\n');
 
-  const result = await callWithFallback({
-    chain,
+  const result = await callHubLlm({
+    callerTeam: 'blog',
+    agent: 'neighbor-commenter',
+    selectorKey: 'blog.commenter.neighbor',
+    taskType: 'comment',
     systemPrompt,
-    userPrompt,
-    logMeta: { team: 'blog', purpose: 'neighbor-commenter', bot: 'neighbor-commenter', requestType: 'comment' },
+    prompt: userPrompt,
+    maxTokens: 700,
   });
 
   let text = normalizeText(result?.text || '');

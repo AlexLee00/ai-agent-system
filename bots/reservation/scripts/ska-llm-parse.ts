@@ -1,3 +1,4 @@
+// @ts-nocheck
 /**
  * ska-llm-parse.ts — 스카팀 LLM 파싱 PortAgent 스크립트
  *
@@ -21,10 +22,16 @@
 
 'use strict';
 
-const { callWithFallback } = require('../../../packages/core/lib/llm-fallback');
+const { callHubLlm } = require('../../../packages/core/lib/hub-client');
 const { SKA_CHAIN_REGISTRY } = require('../lib/ska-llm-chains');
 
-async function readInput(): Promise<string> {
+function agentForChain(chainId) {
+  if (chainId === 'ska.selector.generate') return 'selector-generator';
+  if (chainId === 'ska.classify') return 'error-classifier';
+  return 'parsing-guard';
+}
+
+async function readInput() {
   // --payload=<base64> 인수 우선 (Elixir System.cmd 경유)
   const payloadArg = process.argv.find((a) => a.startsWith('--payload='));
   if (payloadArg) {
@@ -42,7 +49,7 @@ async function readInput(): Promise<string> {
 async function main() {
   const raw = await readInput();
 
-  let payload: any;
+  let payload;
   try {
     payload = JSON.parse(raw);
   } catch {
@@ -59,25 +66,26 @@ async function main() {
   }
 
   try {
-    const result = await callWithFallback({
-      chain,
+    const agent = String(meta.agent || agentForChain(chain_id)).replace(/_/g, '-');
+    const result = await callHubLlm({
+      callerTeam: 'ska',
+      agent,
+      selectorKey: chain_id,
+      taskType: chain_id,
       systemPrompt: system_prompt,
-      userPrompt: user_prompt,
-      logMeta: {
-        team: 'ska',
-        bot: meta.agent || 'parsing_guard',
-        requestType: chain_id,
-        ...meta,
-      },
+      prompt: user_prompt,
+      maxTokens: chain[0]?.maxTokens || 1000,
+      urgency: chain_id === 'ska.parsing.level3' ? 'high' : 'normal',
+      cacheEnabled: false,
     });
 
     process.stdout.write(JSON.stringify({
       text: result.text,
       provider: result.provider,
-      model: result.model,
+      model: result.selected_route || result.model,
     }));
     process.exit(0);
-  } catch (err: any) {
+  } catch (err) {
     process.stdout.write(JSON.stringify({ error: err?.message || String(err) }));
     process.exit(1);
   }

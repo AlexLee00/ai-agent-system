@@ -5,7 +5,7 @@
  * launchd로 매일 09:00 KST 실행
  */
 
-const { postAlarm } = require('../../../packages/core/lib/openclaw-client');
+const { postAlarm } = require('../../../packages/core/lib/hub-alarm-client');
 
 interface AlarmPayload {
   message: string;
@@ -61,7 +61,7 @@ const EVENTS: ReminderEvent[] = [
 
   // CC P0 운영 확인
   { start: '2026-04-08', end: '2026-04-08', team: 'claude',
-    message: '⚡ CC P0 운영 확인\n연속 실패 제한 + Strict Write\nllm-fallback _providerFailures 동작 확인' },
+    message: '⚡ CC P0 운영 확인\n연속 실패 제한 + Strict Write\nHub LLM provider cooldown 동작 확인' },
 
   // Gemma 4 운영 상태 점검
   { start: '2026-04-14', end: '2026-04-14', team: 'general',

@@ -8,21 +8,8 @@ const fs: typeof import('fs') = require('fs');
 const path: typeof import('path') = require('path');
 const { execFileSync }: typeof import('child_process') = require('child_process');
 
-interface FallbackResponse {
+interface HubLlmResponse {
   text?: string;
-}
-
-interface FallbackRequest {
-  systemPrompt: string;
-  userPrompt: string;
-  chain: Array<{
-    provider: string;
-    model: string;
-    maxTokens: number;
-    temperature: number;
-  }>;
-  logMeta: Record<string, unknown>;
-  timeoutMs: number;
 }
 
 interface PgPool {
@@ -87,9 +74,9 @@ interface AnalysisSummaryResult {
   summary: string;
 }
 
-const { callWithFallback }: {
-  callWithFallback: (request: FallbackRequest) => Promise<FallbackResponse | string>;
-} = require('../../../packages/core/lib/llm-fallback');
+const { callHubLlm }: {
+  callHubLlm: (request: Record<string, unknown>) => Promise<HubLlmResponse | string>;
+} = require('../../../packages/core/lib/hub-client');
 const pgPool: PgPool = require('../../../packages/core/lib/pg-pool');
 const githubClient: GitHubClient = require('../../../packages/core/lib/github-client');
 const env: EnvModule = require('../../../packages/core/lib/env');
@@ -508,7 +495,11 @@ async function executeSkillCreation(task: ResearchTask): Promise<SkillCreationRe
     const skillName = task.skillName || `auto-${String(task.id || '').toLowerCase()}`;
     const skillPath = path.join(REPO_ROOT, 'packages', 'core', 'lib', 'skills', skillDir, `${skillName}.js`);
 
-    const generated = await callWithFallback({
+    const generated = await callHubLlm({
+      callerTeam: 'darwin',
+      agent: 'synthesis',
+      taskType: 'skill_creation',
+      abstractModel: 'anthropic_sonnet',
       systemPrompt: `당신은 팀 제이의 스킬 개발자입니다.
 GitHub/논문에서 발견한 패턴을 Node.js 스킬 모듈로 구현하세요.
 
@@ -518,17 +509,12 @@ GitHub/논문에서 발견한 패턴을 Node.js 스킬 모듈로 구현하세요
 - JSDoc 포함
 - node --check 통과 가능한 코드
 - 외부 네트워크/비밀값/I/O 의존 금지`,
-      userPrompt: `## 과제: ${task.title}
+      prompt: `## 과제: ${task.title}
 ## 설명: ${task.description}
 ## 소스 분석 결과:
 ${JSON.stringify(task.sourceAnalysis || {}, null, 2)}
 
 파일 경로: packages/core/lib/skills/${skillDir}/${skillName}.js`,
-      chain: [
-        { provider: 'openai-oauth', model: 'gpt-5.4', maxTokens: 3000, temperature: 0.3 },
-        { provider: 'groq', model: 'meta-llama/llama-4-scout-17b-16e-instruct', maxTokens: 3000, temperature: 0.3 },
-      ],
-      logMeta: { team: 'darwin', bot: 'edison', requestType: 'skill_creation' },
       timeoutMs: 45_000,
     });
 

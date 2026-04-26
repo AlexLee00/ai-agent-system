@@ -3,7 +3,7 @@
 /**
  * scripts/backup-db.js — PostgreSQL reservation 스키마 자동 백업
  *
- * 백업: ~/.openclaw/workspace/backups/reservation-YYYY-MM-DD.sql
+ * 백업: AI Agent reservation runtime/backups/reservation-YYYY-MM-DD.sql
  * 보관: 최근 7일치
  * 방식: pg_dump (PostgreSQL 네이티브 백업)
  *
@@ -17,8 +17,9 @@ const zlib = require('zlib');
 const { execSync } = require('child_process');
 const { publishReservationAlert } = require('../lib/alert-client');
 const { createAgentMemory } = require('../../../packages/core/lib/agent-memory');
+const { getReservationRuntimeFile } = require('../lib/runtime-paths');
 
-const BACKUP_DIR = path.join(process.env.HOME, '.openclaw', 'workspace', 'backups');
+const BACKUP_DIR = getReservationRuntimeFile('backups');
 const KEEP_DAYS = 7;
 const KEEP_RAW_DAYS = 2;
 const DB_NAME = 'jay';

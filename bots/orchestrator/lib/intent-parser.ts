@@ -11,12 +11,8 @@
  * parse_source: 'slash' | 'keyword' | 'learned' | 'llm' | 'failed'
  */
 
-const https = require('https');
-const { trackTokens } = require('./token-tracker');
-const logger = require('../../../packages/core/lib/llm-logger');
-const { getGeminiKey, getOpenAIKey } = require('../../../packages/core/lib/llm-keys');
 const pgPool = require('../../../packages/core/lib/pg-pool');
-const { buildIntentParsePolicy } = require('./jay-model-policy');
+const { callHubLlm } = require('../../../packages/core/lib/hub-client');
 const {
   createLearnedPatternReloader,
   createPromotedIntentExampleLoader,
@@ -46,14 +42,6 @@ const loadDynamicExamples = createPromotedIntentExampleLoader({
   maxTextLength: 60,
   confidence: 0.9,
 });
-
-// ─── LLM 폴백 설정 ───────────────────────────────────────────────────
-
-const INTENT_POLICY = buildIntentParsePolicy();
-const INTENT_PRIMARY_MODEL = INTENT_POLICY.primary.model;
-const INTENT_PRIMARY_PROVIDER = INTENT_POLICY.primary.provider;
-const INTENT_FALLBACK_MODEL = INTENT_POLICY.fallback.model;
-const INTENT_FALLBACK_PROVIDER = INTENT_POLICY.fallback.provider;
 
 // ─── 1단계: 슬래시 명령 ──────────────────────────────────────────────
 
@@ -531,141 +519,66 @@ claude_ask는 반드시 query 포함 (트리거 문구 제외한 실제 질문)
 mute/unmute는 target 포함 (all|luna|ska|dexter|archer|claude)
 mute는 duration 포함 (예: "1h", "30m", "1d")`;
 
-async function runIntentModel({ provider, model, key, body, hostname, path }) {
+function parseIntentJson(content) {
+  try {
+    const jsonMatch = String(content || '').match(/\{[\s\S]*\}/);
+    if (!jsonMatch) return null;
+    const json = JSON.parse(jsonMatch[0]);
+    if (!json.intent) return null;
+    return {
+      intent: json.intent,
+      args: json.args || {},
+      source: 'llm',
+      confidence: json.confidence || 0.8,
+    };
+  } catch {
+    return null;
+  }
+}
+
+async function runIntentModel({ systemPrompt, text }) {
   const startedAt = Date.now();
-  return new Promise((resolve) => {
-    const payload = Buffer.from(JSON.stringify(body));
-    const req = https.request({
-      hostname,
-      path,
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${key}`,
-        'Content-Type': 'application/json',
-        'Content-Length': payload.length,
+  try {
+    const result = await callHubLlm({
+      callerTeam: 'orchestrator',
+      agent: 'jay',
+      selectorKey: 'orchestrator.jay.intent',
+      taskType: 'command_parse',
+      abstractModel: 'anthropic_haiku',
+      systemPrompt,
+      prompt: text,
+      timeoutMs: 9000,
+      maxBudgetUsd: 0.02,
+      jsonSchema: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['intent', 'args', 'confidence'],
+        properties: {
+          intent: { type: 'string' },
+          args: { type: 'object' },
+          confidence: { type: 'number' },
+        },
       },
-    }, (res) => {
-      let raw = '';
-      res.on('data', d => raw += d);
-      res.on('end', async () => {
-        try {
-          const parsed = JSON.parse(raw);
-          const usage = parsed.usage || {};
-          const inputTokens = usage.prompt_tokens || 0;
-          const outputTokens = usage.completion_tokens || 0;
-          const latencyMs = Date.now() - startedAt;
-
-          await Promise.allSettled([
-            trackTokens({
-              bot: '제이',
-              team: 'orchestrator',
-              model,
-              provider,
-              taskType: 'command_parse',
-              tokensIn: inputTokens,
-              tokensOut: outputTokens,
-              durationMs: latencyMs,
-            }),
-            logger.logLLMCall({
-              team: 'orchestrator',
-              bot: 'jay',
-              model,
-              requestType: 'command_parse',
-              inputTokens,
-              outputTokens,
-              latencyMs,
-              success: !parsed.error,
-              errorMsg: parsed.error?.message || null,
-            }),
-          ]);
-
-          if (parsed.error) {
-            resolve(null);
-            return;
-          }
-
-          const content = parsed.choices?.[0]?.message?.content?.trim() || '';
-          const jsonMatch = content.match(/\{[\s\S]*\}/);
-          if (!jsonMatch) {
-            resolve(null);
-            return;
-          }
-
-          const json = JSON.parse(jsonMatch[0]);
-          if (!json.intent) {
-            resolve(null);
-            return;
-          }
-
-          resolve({
-            intent: json.intent,
-            args: json.args || {},
-            source: 'llm',
-            confidence: json.confidence || 0.8,
-            model,
-            provider,
-            tokensIn: inputTokens,
-            tokensOut: outputTokens,
-          });
-        } catch {
-          resolve(null);
-        }
-      });
     });
-    req.on('error', () => resolve(null));
-    req.setTimeout(8000, () => { req.destroy(); resolve(null); });
-    req.write(payload);
-    req.end();
-  });
+    const parsed = parseIntentJson(result.text);
+    if (!parsed) return null;
+    return {
+      ...parsed,
+      model: result.model || result.selected_route,
+      provider: result.provider,
+      durationMs: Date.now() - startedAt,
+      traceId: result.traceId || null,
+    };
+  } catch {
+    return null;
+  }
 }
 
 async function parseLLMFallback(text) {
   // 동적 Few-shot 예시 주입 (unrecognized_intents에서 승인된 예시)
   const dynamicExamples = await loadDynamicExamples();
   const systemPrompt = injectDynamicExamples(SYSTEM_PROMPT_BASE, dynamicExamples);
-
-  const openAIKey = getOpenAIKey();
-  if (openAIKey) {
-    const openAIResult = await runIntentModel({
-      provider: INTENT_PRIMARY_PROVIDER,
-      model: INTENT_PRIMARY_MODEL,
-      key: openAIKey,
-      hostname: 'api.openai.com',
-      path: '/v1/chat/completions',
-      body: {
-        model: INTENT_PRIMARY_MODEL,
-        messages: [
-          { role: 'system', content: systemPrompt },
-          { role: 'user', content: text },
-        ],
-        max_completion_tokens: 200,
-        temperature: 0,
-        response_format: { type: 'json_object' },
-      },
-    });
-    if (openAIResult) return openAIResult;
-  }
-
-  const geminiKey = getGeminiKey();
-  if (!geminiKey) return null;
-
-  return runIntentModel({
-    provider: INTENT_FALLBACK_PROVIDER,
-    model: INTENT_FALLBACK_MODEL,
-    key: geminiKey,
-    hostname: 'generativelanguage.googleapis.com',
-    path: '/v1beta/openai/chat/completions',
-    body: {
-      model: INTENT_FALLBACK_MODEL,
-      messages: [
-        { role: 'system', content: systemPrompt },
-        { role: 'user', content: text },
-      ],
-      max_tokens: 200,
-      temperature: 0,
-      response_format: { type: 'json_object' },
-    },
-  });
+  return runIntentModel({ systemPrompt, text });
 }
 
 // ─── 통합 파서 ───────────────────────────────────────────────────────

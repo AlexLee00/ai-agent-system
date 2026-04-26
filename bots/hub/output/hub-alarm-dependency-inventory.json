@@ -1,16 +1,16 @@
 {
-  "generated_at": "2026-04-26T03:53:33.117Z",
+  "generated_at": "2026-04-26T11:17:51.217Z",
   "scan_patterns": [
     "hub-alarm-client",
     "openclaw-client",
     "HUB_ALARM_",
     "OPENCLAW_"
   ],
-  "total_matches": 272,
-  "unique_files": 123,
+  "total_matches": 268,
+  "unique_files": 122,
   "categories": {
-    "hub_alarm_native": 67,
-    "legacy_openclaw_compat": 205
+    "hub_alarm_native": 113,
+    "legacy_openclaw_compat": 155
   },
   "files": {
     "bots/blog/__tests__/dpo-learning.test.ts": [
@@ -125,168 +125,128 @@
       {
         "file": "bots/blog/lib/ab-testing.ts",
         "line": 11,
-        "category": "legacy_openclaw_compat",
-        "match": "const { postAlarm } = require('../../../packages/core/lib/openclaw-client');"
+        "category": "hub_alarm_native",
+        "match": "const { postAlarm } = require('../../../packages/core/lib/hub-alarm-client');"
       }
     ],
     "bots/blog/lib/blo.ts": [
       {
         "file": "bots/blog/lib/blo.ts",
         "line": 95,
-        "category": "legacy_openclaw_compat",
-        "match": "const { postAlarm }                                 = require('../../../packages/core/lib/openclaw-client');"
+        "category": "hub_alarm_native",
+        "match": "const { postAlarm }                                 = require('../../../packages/core/lib/hub-alarm-client');"
       }
     ],
     "bots/blog/lib/commenter.ts": [
       {
         "file": "bots/blog/lib/commenter.ts",
         "line": 13,
-        "category": "legacy_openclaw_compat",
-        "match": "const { postAlarm } = require('../../../packages/core/lib/openclaw-client');"
-      },
-      {
-        "file": "bots/blog/lib/commenter.ts",
-        "line": 26,
-        "category": "legacy_openclaw_compat",
-        "match": "const NAVER_MONITOR_WS_FILE = path.join(env.OPENCLAW_WORKSPACE, 'naver-monitor-ws.txt');"
-      },
-      {
-        "file": "bots/blog/lib/commenter.ts",
-        "line": 110,
-        "category": "legacy_openclaw_compat",
-        "match": "|| process.env.OPENCLAW_BROWSER_TOKEN"
-      },
-      {
-        "file": "bots/blog/lib/commenter.ts",
-        "line": 111,
-        "category": "legacy_openclaw_compat",
-        "match": "|| process.env.OPENCLAW_GATEWAY_TOKEN"
-      },
-      {
-        "file": "bots/blog/lib/commenter.ts",
-        "line": 124,
-        "category": "legacy_openclaw_compat",
-        "match": "profileDir: expandHome(runtime.profileDir || path.join(env.OPENCLAW_WORKSPACE, 'naver-profile')),"
+        "category": "hub_alarm_native",
+        "match": "const { postAlarm } = require('../../../packages/core/lib/hub-alarm-client');"
       }
     ],
     "bots/blog/lib/curriculum-planner.ts": [
       {
         "file": "bots/blog/lib/curriculum-planner.ts",
-        "line": 21,
-        "category": "legacy_openclaw_compat",
-        "match": "const { postAlarm } = require('../../../packages/core/lib/openclaw-client');"
+        "line": 20,
+        "category": "hub_alarm_native",
+        "match": "const { postAlarm } = require('../../../packages/core/lib/hub-alarm-client');"
       }
     ],
     "bots/blog/lib/evolution-cycle.ts": [
       {
         "file": "bots/blog/lib/evolution-cycle.ts",
         "line": 13,
-        "category": "legacy_openclaw_compat",
-        "match": "const { postAlarm } = require('../../../packages/core/lib/openclaw-client');"
+        "category": "hub_alarm_native",
+        "match": "const { postAlarm } = require('../../../packages/core/lib/hub-alarm-client');"
       }
     ],
     "bots/blog/lib/img-gen-doctor.ts": [
       {
         "file": "bots/blog/lib/img-gen-doctor.ts",
         "line": 13,
-        "category": "legacy_openclaw_compat",
-        "match": "const { postAlarm } = require('../../../packages/core/lib/openclaw-client');"
+        "category": "hub_alarm_native",
+        "match": "const { postAlarm } = require('../../../packages/core/lib/hub-alarm-client');"
       }
     ],
     "bots/blog/lib/insta-crosspost.ts": [
       {
         "file": "bots/blog/lib/insta-crosspost.ts",
         "line": 23,
-        "category": "legacy_openclaw_compat",
-        "match": "const { postAlarm } = require('../../../packages/core/lib/openclaw-client');"
+        "category": "hub_alarm_native",
+        "match": "const { postAlarm } = require('../../../packages/core/lib/hub-alarm-client');"
       }
     ],
     "bots/blog/lib/instagram-story.ts": [
       {
         "file": "bots/blog/lib/instagram-story.ts",
         "line": 13,
-        "category": "legacy_openclaw_compat",
-        "match": "const { postAlarm } = require('../../../packages/core/lib/openclaw-client');"
+        "category": "hub_alarm_native",
+        "match": "const { postAlarm } = require('../../../packages/core/lib/hub-alarm-client');"
       }
     ],
     "bots/blog/lib/platform-orchestrator.ts": [
       {
         "file": "bots/blog/lib/platform-orchestrator.ts",
         "line": 16,
-        "category": "legacy_openclaw_compat",
-        "match": "const { postAlarm } = require('../../../packages/core/lib/openclaw-client');"
+        "category": "hub_alarm_native",
+        "match": "const { postAlarm } = require('../../../packages/core/lib/hub-alarm-client');"
       }
     ],
     "bots/blog/lib/publish-reporter.ts": [
       {
         "file": "bots/blog/lib/publish-reporter.ts",
         "line": 11,
-        "category": "legacy_openclaw_compat",
-        "match": "const { postAlarm } = require('../../../packages/core/lib/openclaw-client');"
-      }
-    ],
-    "bots/blog/lib/richer.ts": [
-      {
-        "file": "bots/blog/lib/richer.ts",
-        "line": 26,
-        "category": "legacy_openclaw_compat",
-        "match": "const NAVER_MONITOR_WS_FILE = path.join(env.OPENCLAW_WORKSPACE, 'naver-monitor-ws.txt');"
+        "category": "hub_alarm_native",
+        "match": "const { postAlarm } = require('../../../packages/core/lib/hub-alarm-client');"
       }
     ],
     "bots/blog/lib/self-rewarding/marketing-dpo.ts": [
       {
         "file": "bots/blog/lib/self-rewarding/marketing-dpo.ts",
         "line": 13,
-        "category": "legacy_openclaw_compat",
-        "match": "const { postAlarm } = require('../../../../packages/core/lib/openclaw-client');"
+        "category": "hub_alarm_native",
+        "match": "const { postAlarm } = require('../../../../packages/core/lib/hub-alarm-client');"
       }
     ],
     "bots/blog/lib/signals/brand-mention-collector.ts": [
       {
         "file": "bots/blog/lib/signals/brand-mention-collector.ts",
         "line": 11,
-        "category": "legacy_openclaw_compat",
-        "match": "const { postAlarm } = require('../../../../packages/core/lib/openclaw-client');"
+        "category": "hub_alarm_native",
+        "match": "const { postAlarm } = require('../../../../packages/core/lib/hub-alarm-client');"
       }
     ],
     "bots/blog/lib/signals/competitor-monitor.ts": [
       {
         "file": "bots/blog/lib/signals/competitor-monitor.ts",
         "line": 12,
-        "category": "legacy_openclaw_compat",
-        "match": "const { postAlarm } = require('../../../../packages/core/lib/openclaw-client');"
+        "category": "hub_alarm_native",
+        "match": "const { postAlarm } = require('../../../../packages/core/lib/hub-alarm-client');"
       }
     ],
     "bots/blog/scripts/auto-facebook-publish.ts": [
       {
         "file": "bots/blog/scripts/auto-facebook-publish.ts",
         "line": 23,
-        "category": "legacy_openclaw_compat",
-        "match": "const { postAlarm } = require('../../../packages/core/lib/openclaw-client');"
+        "category": "hub_alarm_native",
+        "match": "const { postAlarm } = require('../../../packages/core/lib/hub-alarm-client');"
       }
     ],
     "bots/blog/scripts/auto-instagram-publish.ts": [
       {
         "file": "bots/blog/scripts/auto-instagram-publish.ts",
         "line": 31,
-        "category": "legacy_openclaw_compat",
-        "match": "const { postAlarm } = require('../../../packages/core/lib/openclaw-client');"
-      }
-    ],
-    "bots/blog/scripts/collect-views.ts": [
-      {
-        "file": "bots/blog/scripts/collect-views.ts",
-        "line": 16,
-        "category": "legacy_openclaw_compat",
-        "match": "const NAVER_MONITOR_WS_FILE = path.join(env.OPENCLAW_WORKSPACE, 'naver-monitor-ws.txt');"
+        "category": "hub_alarm_native",
+        "match": "const { postAlarm } = require('../../../packages/core/lib/hub-alarm-client');"
       }
     ],
     "bots/blog/scripts/compute-attribution.ts": [
       {
         "file": "bots/blog/scripts/compute-attribution.ts",
         "line": 13,
-        "category": "legacy_openclaw_compat",
-        "match": "const { postAlarm } = require('../../../packages/core/lib/openclaw-client');"
+        "category": "hub_alarm_native",
+        "match": "const { postAlarm } = require('../../../packages/core/lib/hub-alarm-client');"
       }
     ],
     "bots/claude/__tests__/auto-dev-pipeline.test.ts": [
@@ -385,16 +345,16 @@
       {
         "file": "bots/claude/lib/auto-dev-pipeline.ts",
         "line": 20,
-        "category": "legacy_openclaw_compat",
-        "match": "const { postAlarm } = require('../../../packages/core/lib/openclaw-client');"
+        "category": "hub_alarm_native",
+        "match": "const { postAlarm } = require('../../../packages/core/lib/hub-alarm-client');"
       }
     ],
     "bots/claude/lib/autofix.ts": [
       {
         "file": "bots/claude/lib/autofix.ts",
         "line": 28,
-        "category": "legacy_openclaw_compat",
-        "match": "const { postAlarm } = require('../../../packages/core/lib/openclaw-client');"
+        "category": "hub_alarm_native",
+        "match": "const { postAlarm } = require('../../../packages/core/lib/hub-alarm-client');"
       }
     ],
     "bots/claude/lib/checks/openclaw.ts": [
@@ -457,78 +417,78 @@
       {
         "file": "bots/claude/lib/codex-plan-notifier.ts",
         "line": 26,
-        "category": "legacy_openclaw_compat",
-        "match": "const { postAlarm } = require('../../../packages/core/lib/openclaw-client');"
+        "category": "hub_alarm_native",
+        "match": "const { postAlarm } = require('../../../packages/core/lib/hub-alarm-client');"
       }
     ],
     "bots/claude/lib/doctor.ts": [
       {
         "file": "bots/claude/lib/doctor.ts",
         "line": 594,
-        "category": "legacy_openclaw_compat",
-        "match": "const { postAlarm } = require('../../../packages/core/lib/openclaw-client');"
+        "category": "hub_alarm_native",
+        "match": "const { postAlarm } = require('../../../packages/core/lib/hub-alarm-client');"
       },
       {
         "file": "bots/claude/lib/doctor.ts",
         "line": 904,
-        "category": "legacy_openclaw_compat",
-        "match": "const { postAlarm } = require('../../../packages/core/lib/openclaw-client');"
+        "category": "hub_alarm_native",
+        "match": "const { postAlarm } = require('../../../packages/core/lib/hub-alarm-client');"
       }
     ],
     "bots/claude/lib/mainbot-client.ts": [
       {
         "file": "bots/claude/lib/mainbot-client.ts",
         "line": 12,
-        "category": "legacy_openclaw_compat",
-        "match": "const { postAlarm } = require('../../../packages/core/lib/openclaw-client');"
+        "category": "hub_alarm_native",
+        "match": "const { postAlarm } = require('../../../packages/core/lib/hub-alarm-client');"
       }
     ],
     "bots/claude/lib/reporter.ts": [
       {
         "file": "bots/claude/lib/reporter.ts",
         "line": 11,
-        "category": "legacy_openclaw_compat",
-        "match": "const { postAlarm } = require('../../../packages/core/lib/openclaw-client');"
+        "category": "hub_alarm_native",
+        "match": "const { postAlarm } = require('../../../packages/core/lib/hub-alarm-client');"
       }
     ],
     "bots/claude/lib/telegram-reporter.ts": [
       {
         "file": "bots/claude/lib/telegram-reporter.ts",
         "line": 20,
-        "category": "legacy_openclaw_compat",
-        "match": "const { postAlarm } = require('../../../packages/core/lib/openclaw-client');"
+        "category": "hub_alarm_native",
+        "match": "const { postAlarm } = require('../../../packages/core/lib/hub-alarm-client');"
       }
     ],
     "bots/claude/src/builder.ts": [
       {
         "file": "bots/claude/src/builder.ts",
         "line": 25,
-        "category": "legacy_openclaw_compat",
-        "match": "const { postAlarm } = require('../../../packages/core/lib/openclaw-client');"
+        "category": "hub_alarm_native",
+        "match": "const { postAlarm } = require('../../../packages/core/lib/hub-alarm-client');"
       }
     ],
     "bots/claude/src/guardian.ts": [
       {
         "file": "bots/claude/src/guardian.ts",
         "line": 28,
-        "category": "legacy_openclaw_compat",
-        "match": "const { postAlarm } = require('../../../packages/core/lib/openclaw-client');"
+        "category": "hub_alarm_native",
+        "match": "const { postAlarm } = require('../../../packages/core/lib/hub-alarm-client');"
       }
     ],
     "bots/claude/src/quality-report.ts": [
       {
         "file": "bots/claude/src/quality-report.ts",
         "line": 6,
-        "category": "legacy_openclaw_compat",
-        "match": "const { postAlarm } = require('../../../packages/core/lib/openclaw-client');"
+        "category": "hub_alarm_native",
+        "match": "const { postAlarm } = require('../../../packages/core/lib/hub-alarm-client');"
       }
     ],
     "bots/claude/src/reviewer.ts": [
       {
         "file": "bots/claude/src/reviewer.ts",
         "line": 25,
-        "category": "legacy_openclaw_compat",
-        "match": "const { postAlarm } = require('../../../packages/core/lib/openclaw-client');"
+        "category": "hub_alarm_native",
+        "match": "const { postAlarm } = require('../../../packages/core/lib/hub-alarm-client');"
       }
     ],
     "bots/claude/tsconfig.json": [
@@ -543,88 +503,88 @@
       {
         "file": "bots/darwin/__tests__/research-monitor-smoke.test.ts",
         "line": 31,
-        "category": "legacy_openclaw_compat",
-        "match": "if (request === '../../../packages/core/lib/openclaw-client') {"
+        "category": "hub_alarm_native",
+        "match": "if (request === '../../../packages/core/lib/hub-alarm-client') {"
       }
     ],
     "bots/darwin/__tests__/research-task-runner-smoke.test.ts": [
       {
         "file": "bots/darwin/__tests__/research-task-runner-smoke.test.ts",
         "line": 27,
-        "category": "legacy_openclaw_compat",
-        "match": "if (request === '../../../packages/core/lib/openclaw-client') {"
+        "category": "hub_alarm_native",
+        "match": "if (request === '../../../packages/core/lib/hub-alarm-client') {"
       }
     ],
     "bots/darwin/lib/applicator.ts": [
       {
         "file": "bots/darwin/lib/applicator.ts",
-        "line": 108,
-        "category": "legacy_openclaw_compat",
-        "match": "const { postAlarm }: { postAlarm: (payload: AlarmPayload) => Promise<{ ok?: boolean } | null> } = require('../../../packages/core/lib/openclaw-client');"
+        "line": 95,
+        "category": "hub_alarm_native",
+        "match": "const { postAlarm }: { postAlarm: (payload: AlarmPayload) => Promise<{ ok?: boolean } | null> } = require('../../../packages/core/lib/hub-alarm-client');"
       }
     ],
     "bots/darwin/lib/event-reminders.ts": [
       {
         "file": "bots/darwin/lib/event-reminders.ts",
         "line": 8,
-        "category": "legacy_openclaw_compat",
-        "match": "const { postAlarm } = require('../../../packages/core/lib/openclaw-client');"
+        "category": "hub_alarm_native",
+        "match": "const { postAlarm } = require('../../../packages/core/lib/hub-alarm-client');"
       }
     ],
     "bots/darwin/lib/implementor.ts": [
       {
         "file": "bots/darwin/lib/implementor.ts",
         "line": 12,
-        "category": "legacy_openclaw_compat",
-        "match": "const { postAlarm } = require('../../../packages/core/lib/openclaw-client');"
+        "category": "hub_alarm_native",
+        "match": "const { postAlarm } = require('../../../packages/core/lib/hub-alarm-client');"
       }
     ],
     "bots/darwin/lib/research-monitor.ts": [
       {
         "file": "bots/darwin/lib/research-monitor.ts",
         "line": 65,
-        "category": "legacy_openclaw_compat",
-        "match": "const { postAlarm }: { postAlarm: (payload: AlarmPayload) => Promise<unknown> } = require('../../../packages/core/lib/openclaw-client');"
+        "category": "hub_alarm_native",
+        "match": "const { postAlarm }: { postAlarm: (payload: AlarmPayload) => Promise<unknown> } = require('../../../packages/core/lib/hub-alarm-client');"
       }
     ],
     "bots/darwin/lib/research-scanner.ts": [
       {
         "file": "bots/darwin/lib/research-scanner.ts",
         "line": 26,
-        "category": "legacy_openclaw_compat",
-        "match": "const { postAlarm } = require('../../../packages/core/lib/openclaw-client');"
+        "category": "hub_alarm_native",
+        "match": "const { postAlarm } = require('../../../packages/core/lib/hub-alarm-client');"
       }
     ],
     "bots/darwin/lib/verifier.ts": [
       {
         "file": "bots/darwin/lib/verifier.ts",
         "line": 12,
-        "category": "legacy_openclaw_compat",
-        "match": "const { postAlarm } = require('../../../packages/core/lib/openclaw-client');"
+        "category": "hub_alarm_native",
+        "match": "const { postAlarm } = require('../../../packages/core/lib/hub-alarm-client');"
       }
     ],
     "bots/darwin/scripts/darwin-weekly-ops-report.ts": [
       {
         "file": "bots/darwin/scripts/darwin-weekly-ops-report.ts",
         "line": 15,
-        "category": "legacy_openclaw_compat",
-        "match": "const { postAlarm } = require(path.join(PROJECT_ROOT, \"packages/core/lib/openclaw-client\"));"
+        "category": "hub_alarm_native",
+        "match": "const { postAlarm } = require(path.join(PROJECT_ROOT, \"packages/core/lib/hub-alarm-client\"));"
       }
     ],
     "bots/darwin/scripts/darwin-weekly-review.ts": [
       {
         "file": "bots/darwin/scripts/darwin-weekly-review.ts",
         "line": 15,
-        "category": "legacy_openclaw_compat",
-        "match": "const { postAlarm } = require(path.join(PROJECT_ROOT, \"packages/core/lib/openclaw-client\"));"
+        "category": "hub_alarm_native",
+        "match": "const { postAlarm } = require(path.join(PROJECT_ROOT, \"packages/core/lib/hub-alarm-client\"));"
       }
     ],
     "bots/darwin/scripts/research-task-runner.ts": [
       {
         "file": "bots/darwin/scripts/research-task-runner.ts",
         "line": 4,
-        "category": "legacy_openclaw_compat",
-        "match": "const { postAlarm } = require('../../../packages/core/lib/openclaw-client');"
+        "category": "hub_alarm_native",
+        "match": "const { postAlarm } = require('../../../packages/core/lib/hub-alarm-client');"
       }
     ],
     "bots/hub/lib/routes/alarm.ts": [
@@ -813,6 +773,20 @@
         "line": 47,
         "category": "legacy_openclaw_compat",
         "match": "OPENCLAW_LEGACY_FALLBACK: null,"
+      }
+    ],
+    "bots/hub/scripts/hub-alarm-import-transition-smoke.ts": [
+      {
+        "file": "bots/hub/scripts/hub-alarm-import-transition-smoke.ts",
+        "line": 49,
+        "category": "legacy_openclaw_compat",
+        "match": "'openclaw-client',"
+      },
+      {
+        "file": "bots/hub/scripts/hub-alarm-import-transition-smoke.ts",
+        "line": 60,
+        "category": "legacy_openclaw_compat",
+        "match": "'migrated Hub alarm scopes must not import openclaw-client directly',"
       }
     ],
     "bots/hub/scripts/l5-acceptance-smoke.ts": [
@@ -1148,7 +1122,7 @@
     "bots/hub/scripts/telegram-pending-queue-migration-smoke.ts": [
       {
         "file": "bots/hub/scripts/telegram-pending-queue-migration-smoke.ts",
-        "line": 51,
+        "line": 66,
         "category": "legacy_openclaw_compat",
         "match": "OPENCLAW_WORKSPACE: legacyWorkspace,"
       }
@@ -1197,8 +1171,8 @@
       {
         "file": "bots/orchestrator/lib/steward/daily-summary.ts",
         "line": 4,
-        "category": "legacy_openclaw_compat",
-        "match": "const { postAlarm } = require('../../../../packages/core/lib/openclaw-client');"
+        "category": "hub_alarm_native",
+        "match": "const { postAlarm } = require('../../../../packages/core/lib/hub-alarm-client');"
       }
     ],
     "bots/orchestrator/src/dashboard.ts": [
@@ -1213,16 +1187,16 @@
       {
         "file": "bots/orchestrator/src/router.ts",
         "line": 106,
-        "category": "legacy_openclaw_compat",
-        "match": "} = require('../../../packages/core/lib/openclaw-client');"
+        "category": "hub_alarm_native",
+        "match": "} = require('../../../packages/core/lib/hub-alarm-client');"
       }
     ],
     "bots/orchestrator/src/steward.ts": [
       {
         "file": "bots/orchestrator/src/steward.ts",
         "line": 16,
-        "category": "legacy_openclaw_compat",
-        "match": "const { postAlarm } = require('../../../packages/core/lib/openclaw-client');"
+        "category": "hub_alarm_native",
+        "match": "const { postAlarm } = require('../../../packages/core/lib/hub-alarm-client');"
       }
     ],
     "bots/reservation/context/ALERT_REPORT_CLEANUP_PLAN.md": [
@@ -1261,24 +1235,24 @@
       {
         "file": "bots/sigma/ts/src/sigma-daily-report.ts",
         "line": 19,
-        "category": "legacy_openclaw_compat",
-        "match": "const openclaw = require(path.join(PROJECT_ROOT, 'packages/core/lib/openclaw-client.js'));"
+        "category": "hub_alarm_native",
+        "match": "const openclaw = require(path.join(PROJECT_ROOT, 'packages/core/lib/hub-alarm-client.js'));"
       }
     ],
     "bots/sigma/ts/src/sigma-weekly-review.ts": [
       {
         "file": "bots/sigma/ts/src/sigma-weekly-review.ts",
         "line": 22,
-        "category": "legacy_openclaw_compat",
-        "match": "const openclaw = require(path.join(PROJECT_ROOT, 'packages/core/lib/openclaw-client.js'));"
+        "category": "hub_alarm_native",
+        "match": "const openclaw = require(path.join(PROJECT_ROOT, 'packages/core/lib/hub-alarm-client.js'));"
       }
     ],
     "bots/worker/lib/approval.ts": [
       {
         "file": "bots/worker/lib/approval.ts",
         "line": 17,
-        "category": "legacy_openclaw_compat",
-        "match": "const { postAlarm } = require(path.join(__dirname, '../../../packages/core/lib/openclaw-client'));"
+        "category": "hub_alarm_native",
+        "match": "const { postAlarm } = require(path.join(__dirname, '../../../packages/core/lib/hub-alarm-client'));"
       }
     ],
     "docs/design/DESIGN_TEAM_JAY_AUTONOMOUS_ORCHESTRATION.md": [
@@ -1636,7 +1610,7 @@
       },
       {
         "file": "packages/core/lib/telegram-sender.ts",
-        "line": 201,
+        "line": 211,
         "category": "legacy_openclaw_compat",
         "match": "const LEGACY_WORKSPACE = process.env.OPENCLAW_WORKSPACE || '';"
       }
@@ -1661,8 +1635,8 @@
       {
         "file": "packages/core/scripts/publish-python-report.ts",
         "line": 15,
-        "category": "legacy_openclaw_compat",
-        "match": "const { postAlarm } = require('../lib/openclaw-client');"
+        "category": "hub_alarm_native",
+        "match": "const { postAlarm } = require('../lib/hub-alarm-client');"
       }
     ],
     "packages/core/src/utils.ts": [

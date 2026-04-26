@@ -5,15 +5,16 @@
  * lib/bug-report.js — 덱스터 버그 레포트 등록
  *
  * 코드 수정 없이 자동 처리 불가한 이슈를 버그 트래커에 등록.
- * 스카팀 버그 트래커 (~/.openclaw/workspace/bug-tracker.json)와
+ * 스카팀 버그 트래커 (AI_AGENT_WORKSPACE/bug-tracker.json)와
  * 별도 투자봇 이슈 파일을 모두 사용.
  */
 
 const fs   = require('fs');
 const path = require('path');
 const os   = require('os');
+const runtimePaths = require('./runtime-paths.js');
 
-const TRACKER_PATH = path.join(os.homedir(), '.openclaw', 'workspace', 'bug-tracker.json');
+const TRACKER_PATH = runtimePaths.workspacePath('bug-tracker.json');
 const DEXTER_LOG   = path.join(os.homedir(), 'projects', 'ai-agent-system', 'bots', 'claude', 'dexter-issues.json');
 
 function loadTracker(filePath) {

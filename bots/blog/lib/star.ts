@@ -1,7 +1,6 @@
 'use strict';
 const kst = require('../../../packages/core/lib/kst');
-const { selectLLMChain } = require('../../../packages/core/lib/llm-model-selector');
-const { getBlogLLMSelectorOverrides } = require('./runtime-config.ts');
+const { callHubLlm } = require('../../../packages/core/lib/hub-client');
 const env = require('../../../packages/core/lib/env');
 
 /**
@@ -16,7 +15,6 @@ const env = require('../../../packages/core/lib/env');
  * 산출물: insta_content.html (Safari 복붙) + reel MP4
  */
 
-const { callWithFallback } = require('../../../packages/core/lib/llm-fallback');
 const { buildShortformPlan } = require('./shortform-planner.ts');
 const { renderShortformReel } = require('./shortform-renderer.ts');
 const { SHORTFORM_DEFAULT_DURATION_SEC } = require('./shortform-planner.ts');
@@ -49,7 +47,6 @@ const SUMMARIZE_SYSTEM = `
 `.trim();
 
 async function summarizeForInsta(content, count = 3) {
-  const selectorOverrides = getBlogLLMSelectorOverrides();
   const userPrompt = `
 다음 블로그 포스팅에서 가장 핵심적인 섹션 ${count}개를 선정하고,
 각 섹션을 15~20자 이내 인스타 카드용 한줄 요약으로 변환하세요.
@@ -58,13 +55,14 @@ async function summarizeForInsta(content, count = 3) {
 ${content.slice(0, 6000)}
 `.trim();
 
-  const result = await callWithFallback({
-    chain: selectLLMChain('blog.star.summarize', {
-      policyOverride: selectorOverrides['blog.star.summarize'],
-    }),
+  const result = await callHubLlm({
+    callerTeam: 'blog',
+    agent: 'star',
+    selectorKey: 'blog.star.summarize',
+    taskType: 'insta_summarize',
     systemPrompt: SUMMARIZE_SYSTEM,
-    userPrompt,
-    logMeta: { team: 'blog', purpose: 'social', bot: 'social', requestType: 'insta_summarize' },
+    prompt: userPrompt,
+    maxTokens: 1024,
   });
 
   try {
@@ -124,7 +122,6 @@ function buildStrategyCta(strategy = null) {
 }
 
 async function generateInstaCaption(content, title, category, strategy = null) {
-  const selectorOverrides = getBlogLLMSelectorOverrides();
   const directives = normalizeExecutionDirectives(strategy);
   const userPrompt = `
 다음 블로그 포스팅의 인스타그램 캡션과 해시태그를 생성하세요.
@@ -140,13 +137,14 @@ CTA 스타일: ${directives.creativePolicy.ctaStyle}
 ${content.slice(0, 3000)}
 `.trim();
 
-  const result = await callWithFallback({
-    chain: selectLLMChain('blog.star.caption', {
-      policyOverride: selectorOverrides['blog.star.caption'],
-    }),
+  const result = await callHubLlm({
+    callerTeam: 'blog',
+    agent: 'star',
+    selectorKey: 'blog.star.caption',
+    taskType: 'insta_caption',
     systemPrompt: CAPTION_SYSTEM,
-    userPrompt,
-    logMeta: { team: 'blog', purpose: 'social', bot: 'social', requestType: 'insta_caption' },
+    prompt: userPrompt,
+    maxTokens: 1200,
   });
 
   try {

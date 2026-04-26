@@ -22,7 +22,7 @@ const path    = require('path');
 const { execSync } = require('child_process');
 
 const skills       = require('../../../packages/core/lib/skills');
-const { postAlarm } = require('../../../packages/core/lib/openclaw-client');
+const { postAlarm } = require('../../../packages/core/lib/hub-alarm-client');
 const env          = require('../../../packages/core/lib/env');
 
 const DEFAULT_ROOT = env.PROJECT_ROOT;

@@ -17,13 +17,14 @@ const crypto = require('crypto');
 const { execFileSync, execSync, spawn } = require('child_process');
 
 const env = require('../../../packages/core/lib/env');
-const { postAlarm } = require('../../../packages/core/lib/openclaw-client');
+const { postAlarm } = require('../../../packages/core/lib/hub-alarm-client');
 const teamBus = require('./team-bus');
+const runtimePaths = require('./runtime-paths.js');
 
 const ROOT = env.PROJECT_ROOT;
 const AUTO_DEV_DIR = path.join(ROOT, 'docs', 'auto_dev');
 const AUTO_DEV_ARCHIVE_DIR = path.join(ROOT, 'docs', 'archive', 'codex-completed');
-const WORKSPACE = path.join(os.homedir(), '.openclaw', 'workspace');
+const WORKSPACE = runtimePaths.workspaceDir();
 const STATE_FILE = process.env.CLAUDE_AUTO_DEV_STATE_FILE ||
   path.join(WORKSPACE, 'claude-auto-dev-state.json');
 const AUTO_DEV_LOCK_FILE = process.env.CLAUDE_AUTO_DEV_LOCK_FILE ||

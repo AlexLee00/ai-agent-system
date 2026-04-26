@@ -7,8 +7,7 @@ const { execFile } = require('child_process');
 const { promisify } = require('util');
 
 const { logToolCall } = require('../../../packages/core/lib/tool-logger');
-const { callWithFallback } = require('../../../packages/core/lib/llm-fallback');
-const { selectLLMChain } = require('../../../packages/core/lib/llm-model-selector');
+const { callHubLlm } = require('../../../packages/core/lib/hub-client');
 
 const execFileAsync = promisify(execFile);
 
@@ -51,7 +50,7 @@ function ensureIntroOutroConfig(config = {}) {
     default_text_color: String(config?.intro_outro?.default_text_color || 'white'),
     default_font_size: Number(config?.intro_outro?.default_font_size || 72),
     fade_duration_sec: Number(config?.intro_outro?.fade_duration_sec || 0.5),
-    llm_model: String(config?.intro_outro?.llm_model || 'gpt-4o-mini'),
+    runtime_purpose: String(config?.intro_outro?.runtime_purpose || 'editing'),
     fallback_enabled: Boolean(typeof config?.intro_outro?.fallback_enabled === 'boolean' ? config.intro_outro.fallback_enabled : true),
   };
 }
@@ -109,28 +108,24 @@ async function normalizeClipToTarget(filePath, outputPath, options) {
 async function callTitleCardPlanner(prompt, title, options, config) {
   const introOutro = ensureIntroOutroConfig(config);
   const startedAt = Date.now();
-  const response = await callWithFallback({
-    chain: selectLLMChain('video.intro-outro'),
+  const response = await callHubLlm({
+    callerTeam: TEAM_NAME,
+    agent: 'intro-outro-handler',
+    selectorKey: 'video.intro-outro',
+    taskType: 'intro_outro_plan',
+    abstractModel: 'anthropic_sonnet',
     systemPrompt: [
       '당신은 FFmpeg 제목 카드 기획기다.',
       '입력된 조건에 맞는 제목 카드 사양을 JSON 객체 하나로만 반환한다.',
       '{ "bgColor": "black", "textColor": "white", "fontSize": 72, "title": "...", "subtitle": "...", "fadeInSec": 0.5, "fadeOutSec": 0.5 }',
     ].join('\n'),
-    userPrompt: [
+    prompt: [
       `title=${title}`,
       `prompt=${prompt}`,
       `durationSec=${options.durationSec}`,
       `target=${options.targetWidth}x${options.targetHeight}@${options.targetFps}`,
       `logo=${options.logoPath || 'none'}`,
     ].join('\n'),
-    logMeta: {
-      team: TEAM_NAME,
-      purpose: 'editing',
-      bot: 'intro-outro-handler',
-      agentName: 'intro-outro-handler',
-      selectorKey: 'video.intro-outro',
-      requestType: 'intro_outro_plan',
-    },
   });
   const content = response?.text || '{}';
   const parsed = JSON.parse(content);
@@ -138,7 +133,7 @@ async function callTitleCardPlanner(prompt, title, options, config) {
     bot: BOT_NAME,
     success: true,
     duration_ms: Date.now() - startedAt,
-    metadata: { model: response.model || introOutro.llm_model, provider: response.provider },
+    metadata: { model: response.model || 'hub-runtime', provider: response.provider },
   });
 
   return parsed;

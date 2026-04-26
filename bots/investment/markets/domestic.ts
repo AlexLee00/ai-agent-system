@@ -28,7 +28,7 @@ import { tracker } from '../shared/cost-tracker.ts';
 import { parseUniverseCliFlags } from '../shared/screening-runtime.ts';
 import { resolveSymbolsWithFallback, resolveManagedPositionUniverse, appendHeldSymbols, capDynamicUniverse } from '../shared/universe-fallback.ts';
 import {
-  getOpenClawStateFile,
+  getInvestmentStateFile,
   loadJsonState,
   saveJsonState,
   shouldRunFixedIntervalCycle,
@@ -49,7 +49,7 @@ process.env.INVESTMENT_MARKET = 'domestic';
 
 // ─── 30분 주기 상태 파일 ────────────────────────────────────────────
 
-const STATE_FILE     = getOpenClawStateFile('investment-domestic-state.json');
+const STATE_FILE     = getInvestmentStateFile('investment-domestic-state.json');
 const CYCLE_INTERVAL = 30 * 60 * 1000;  // 30분
 
 function loadState() {

@@ -18,7 +18,7 @@ const TEST_ROOT = '/';
 
 function makeBuilderMocks(overrides = {}) {
   return {
-    '../../../packages/core/lib/openclaw-client': {
+    '../../../packages/core/lib/hub-alarm-client': {
       postAlarm: async () => ({ ok: true }),
     },
     '../../../packages/core/lib/env': {
@@ -142,7 +142,7 @@ async function test_runElixirCompile_skips_missing_dir() {
 async function test_reportBuildStatus_calls_postAlarm() {
   const postAlarmCalls = [];
   const mocks = makeBuilderMocks({
-    '../../../packages/core/lib/openclaw-client': {
+    '../../../packages/core/lib/hub-alarm-client': {
       postAlarm: async (p) => { postAlarmCalls.push(p); return { ok: true }; },
     },
   });

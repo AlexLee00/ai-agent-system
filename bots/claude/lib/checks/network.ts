@@ -30,26 +30,26 @@ function ping(endpoint, timeoutMs = 5000) {
   });
 }
 
-// OpenClaw 게이트웨이 포트 18789 바인딩 확인
-async function checkOpenClawPort(items) {
-  const ep = { host: '127.0.0.1', port: 18789, path: '/health', https: false };
+// Hub resource API health 확인
+async function checkHubHealth(items) {
+  const ep = { host: '127.0.0.1', port: 18790, path: '/hub/health', https: false };
   const r  = await ping(ep, 3000);
   if (!r.ok) {
     // 포트 바인딩 자체를 lsof로 확인
     const { execSync } = require('child_process');
     try {
-      const lsofOut = execSync('lsof -i :18789 -sTCP:LISTEN 2>/dev/null | wc -l', { encoding: 'utf8', timeout: 3000 }).trim();
+      const lsofOut = execSync('lsof -i :18790 -sTCP:LISTEN 2>/dev/null | wc -l', { encoding: 'utf8', timeout: 3000 }).trim();
       const listening = parseInt(lsofOut, 10) > 1;
       items.push({
-        label:  'OpenClaw 게이트웨이 (포트 18789)',
+        label:  'Hub resource API (포트 18790)',
         status: listening ? 'ok' : 'warn',
         detail: listening ? '포트 바인딩 확인 (HTTP 응답 없음)' : '포트 미바인딩 — launchd 확인',
       });
     } catch {
-      items.push({ label: 'OpenClaw 게이트웨이 (포트 18789)', status: 'warn', detail: '포트 확인 실패' });
+      items.push({ label: 'Hub resource API (포트 18790)', status: 'warn', detail: '포트 확인 실패' });
     }
   } else {
-    items.push({ label: 'OpenClaw 게이트웨이 (포트 18789)', status: 'ok', detail: `응답 ${r.ms}ms (HTTP ${r.code})` });
+    items.push({ label: 'Hub resource API (포트 18790)', status: 'ok', detail: `응답 ${r.ms}ms (HTTP ${r.code})` });
   }
 }
 
@@ -116,8 +116,8 @@ async function run() {
     }
   }
 
-  // OpenClaw 포트 + Tailscale + SSH — 순차 실행
-  await checkOpenClawPort(items);
+  // Hub 포트 + Tailscale + SSH — 순차 실행
+  await checkHubHealth(items);
   checkTailscale(items);
   checkSshFailedLogins(items);
 

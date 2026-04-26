@@ -9,19 +9,19 @@
  * - alert_level 2~3 (warn/error): gpt-4o-mini
  * - 이슈 없을 때: LLM 미호출
  *
- * 인사이트 저장소: ~/.openclaw/workspace/dexter-insights.json (최대 20개 FIFO)
+ * 인사이트 저장소: AI_AGENT_WORKSPACE/dexter-insights.json (최대 20개 FIFO)
  */
 
 const fs     = require('fs');
 const path   = require('path');
 const os     = require('os');
 
-const { callWithFallback }          = require('../../../packages/core/lib/llm-fallback');
-const { selectLLMChain }            = require('../../../packages/core/lib/llm-model-selector');
+const { callHubLlm }                = require('../../../packages/core/lib/hub-client');
 const { getPatterns, getNewErrors } = require('./error-history');
 const cfg = require('./config');
+const runtimePaths = require('./runtime-paths.js');
 
-const INSIGHTS_FILE = path.join(os.homedir(), '.openclaw', 'workspace', 'dexter-insights.json');
+const INSIGHTS_FILE = runtimePaths.workspacePath('dexter-insights.json');
 const MAX_INSIGHTS  = 20;
 
 // KST 타임스탬프
@@ -162,12 +162,7 @@ function normalizeInsight(parsed, summary) {
  */
 
 async function analyzeWithAI(results, elapsed, level) {
-  const policyOverride = cfg.RUNTIME?.llmSelectorOverrides?.['claude.dexter.ai_analyst'];
-  const chain = selectLLMChain('claude.dexter.ai_analyst', {
-    level,
-    policyOverride,
-  });
-  const primaryModel = chain[0]?.model || 'gpt-5.4';
+  const selectorKey = 'claude.dexter.ai_analyst';
 
   // 1. 이슈 항목 추출
   const issues = results.flatMap(r =>
@@ -192,18 +187,16 @@ async function analyzeWithAI(results, elapsed, level) {
     .map(i => `${i.timestamp}: ${i.diagnosis} (${i.trend})`).join('\n') || null;
 
   // 4. LLM 호출
-  const { text, provider, model: usedModel, attempt } = await callWithFallback({
-    chain,
+  const { text, provider, model: usedModel, fallbackCount, selected_route: selectedRoute } = await callHubLlm({
+    callerTeam: 'claude',
+    agent: 'ai-analyst',
+    selectorKey,
+    taskType: 'system_diagnosis',
+    abstractModel: level >= 4 ? 'anthropic_sonnet' : 'anthropic_haiku',
     systemPrompt: SYSTEM_PROMPT,
-    userPrompt: buildUserPrompt(issues, patterns, newErrors, prevInsights, elapsed, summary),
-    logMeta: {
-      team: 'claude',
-      purpose: 'triage',
-      bot: 'dexter',
-      agentName: 'dexter',
-      selectorKey: 'claude.dexter.ai_analyst',
-      requestType: 'system_diagnosis',
-    },
+    prompt: buildUserPrompt(issues, patterns, newErrors, prevInsights, elapsed, summary),
+    timeoutMs: 30000,
+    maxBudgetUsd: 0.05,
   });
 
   let parsed;
@@ -214,7 +207,9 @@ async function analyzeWithAI(results, elapsed, level) {
   }
   if (!parsed.diagnosis) return null;
   parsed = normalizeInsight(parsed, summary);
-  const fallbackUsed = Number(attempt || 1) > 1;
+  const attempt = Number(fallbackCount || 0) + 1;
+  const primaryModel = selectedRoute || usedModel || selectorKey;
+  const fallbackUsed = Number(fallbackCount || 0) > 0;
   const degradedFallback = ['local', 'groq'].includes(String(provider || '').toLowerCase());
 
   const insight = {

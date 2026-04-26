@@ -7,7 +7,6 @@ const AI_AGENT_HOME = process.env.AI_AGENT_HOME
   || path.join(os.homedir(), '.ai-agent-system');
 const AI_AGENT_WORKSPACE = process.env.AI_AGENT_WORKSPACE
   || process.env.JAY_WORKSPACE
-  || process.env.OPENCLAW_WORKSPACE
   || path.join(AI_AGENT_HOME, 'workspace');
 
 export const OVERRIDE_FILE = path.join(AI_AGENT_WORKSPACE, 'llm-timeouts.json');

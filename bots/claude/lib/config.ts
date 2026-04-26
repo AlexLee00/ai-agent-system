@@ -4,6 +4,7 @@
 const fs   = require('fs');
 const os   = require('os');
 const path = require('path');
+const runtimePaths = require('./runtime-paths.js');
 
 const HOME    = os.homedir();
 const ROOT    = path.join(HOME, 'projects', 'ai-agent-system');
@@ -114,7 +115,7 @@ module.exports = {
     crypto:   '/tmp/investment-crypto.log',
     domestic: '/tmp/investment-domestic.log',
     overseas: '/tmp/investment-overseas.log',
-    openclaw: path.join(HOME, '.openclaw', 'logs'),
+    hub:      runtimePaths.logsDir(),
     dexter:   '/tmp/dexter.log',
     fixes:    path.join(HOME, 'projects', 'ai-agent-system', 'bots', 'claude', 'dexter-fixes.json'),
   },
@@ -187,7 +188,7 @@ module.exports = {
           restartTimeoutWindowMinutes: 15,
           restartTimeoutFailThreshold: 3,
           degradeOnCritical: true,
-          degradeOnOpenclawMemory: true,
+          degradeOnHubControlPlane: true,
           degradeOnCodeIntegrity: true,
         },
       },

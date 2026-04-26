@@ -36,7 +36,7 @@ function makeNotifierMocks(overrides = {}) {
     '../../../packages/core/lib/env': {
       PROJECT_ROOT: path.join(os.tmpdir(), 'test-codex-notifier'),
     },
-    '../../../packages/core/lib/openclaw-client': {
+    '../../../packages/core/lib/hub-alarm-client': {
       postAlarm: async () => {},
     },
     child_process: {
@@ -201,7 +201,7 @@ async function test_sendTelegram_dedup_prevents_duplicate() {
 
   const mocks = makeNotifierMocks({
     '../../../packages/core/lib/env': { PROJECT_ROOT: tmpDir },
-    '../../../packages/core/lib/openclaw-client': {
+    '../../../packages/core/lib/hub-alarm-client': {
       postAlarm: async (p) => { sentMessages.push(p); },
     },
   });

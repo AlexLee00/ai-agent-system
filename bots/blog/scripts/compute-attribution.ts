@@ -10,7 +10,7 @@
 
 const { initHubConfig } = require('../../../packages/core/lib/llm-keys');
 const { runIfOps } = require('../../../packages/core/lib/mode-guard');
-const { postAlarm } = require('../../../packages/core/lib/openclaw-client');
+const { postAlarm } = require('../../../packages/core/lib/hub-alarm-client');
 const skaRevenueBridge = require('../lib/ska-revenue-bridge');
 const pgPool = require('../../../packages/core/lib/pg-pool');
 

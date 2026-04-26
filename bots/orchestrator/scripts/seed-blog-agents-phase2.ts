@@ -4,6 +4,10 @@
 const { registerAgent } = require('../../../packages/core/lib/agent-registry');
 const pgPool = require('../../../packages/core/lib/pg-pool');
 
+function runtimeConfig(purpose = 'writer') {
+  return { llm_management: 'runtime-managed', runtime_team: 'blog', runtime_purpose: purpose };
+}
+
 const NEW_BLOG_AGENTS = [
   {
     name: 'answer',
@@ -11,7 +15,7 @@ const NEW_BLOG_AGENTS = [
     team: 'blog',
     role: 'writer',
     specialty: '분석리포트작가',
-    llm_model: 'openai-oauth/gpt-5.4',
+    config: runtimeConfig('writer'),
     dot_character: { color: '#3b82f6', accessory: 'chart' },
   },
   {
@@ -20,7 +24,7 @@ const NEW_BLOG_AGENTS = [
     team: 'blog',
     role: 'writer',
     specialty: '교육튜토리얼작가',
-    llm_model: 'openai-oauth/gpt-5.4',
+    config: runtimeConfig('curriculum'),
     dot_character: { color: '#8b5cf6', accessory: 'book' },
   },
   {
@@ -29,7 +33,7 @@ const NEW_BLOG_AGENTS = [
     team: 'blog',
     role: 'planner',
     specialty: 'IT커리큘럼기획',
-    llm_model: 'openai-oauth/gpt-5.4',
+    config: runtimeConfig('curriculum'),
     dot_character: { color: '#f59e0b', accessory: 'compass' },
   },
   {
@@ -38,7 +42,7 @@ const NEW_BLOG_AGENTS = [
     team: 'blog',
     role: 'planner',
     specialty: '트렌드기획',
-    llm_model: 'groq/llama-3.1-8b-instant',
+    config: runtimeConfig('default'),
     dot_character: { color: '#ec4899', accessory: 'compass' },
   },
   {
@@ -47,7 +51,7 @@ const NEW_BLOG_AGENTS = [
     team: 'blog',
     role: 'planner',
     specialty: '감성주제기획',
-    llm_model: 'groq/llama-3.1-8b-instant',
+    config: runtimeConfig('default'),
     dot_character: { color: '#d946ef', accessory: 'compass' },
   },
   {
@@ -56,7 +60,7 @@ const NEW_BLOG_AGENTS = [
     team: 'blog',
     role: 'researcher',
     specialty: '도서정보수집',
-    llm_model: 'groq/llama-3.1-8b-instant',
+    config: runtimeConfig('default'),
     dot_character: { color: '#14b8a6', accessory: 'book' },
   },
   {
@@ -65,7 +69,7 @@ const NEW_BLOG_AGENTS = [
     team: 'blog',
     role: 'researcher',
     specialty: '심리학수집',
-    llm_model: 'groq/llama-3.1-8b-instant',
+    config: runtimeConfig('default'),
     dot_character: { color: '#06b6d4', accessory: 'magnifier' },
   },
   {
@@ -74,7 +78,7 @@ const NEW_BLOG_AGENTS = [
     team: 'blog',
     role: 'researcher',
     specialty: 'SEO분석수집',
-    llm_model: 'groq/llama-3.1-8b-instant',
+    config: runtimeConfig('default'),
     dot_character: { color: '#22c55e', accessory: 'chart' },
   },
   {
@@ -83,7 +87,7 @@ const NEW_BLOG_AGENTS = [
     team: 'blog',
     role: 'editor',
     specialty: '문체통일+SEO최적화편집',
-    llm_model: 'openai-oauth/gpt-5.4',
+    config: runtimeConfig('writer'),
     dot_character: { color: '#f97316', accessory: 'pen' },
   },
   {
@@ -92,7 +96,7 @@ const NEW_BLOG_AGENTS = [
     team: 'blog',
     role: 'reviewer',
     specialty: '품질검증+AI탐지체크',
-    llm_model: 'claude-code/sonnet',
+    config: runtimeConfig('writer'),
     dot_character: { color: '#ef4444', accessory: 'shield' },
   },
 ];

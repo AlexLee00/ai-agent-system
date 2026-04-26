@@ -28,6 +28,7 @@ const { formatVipBadge } = require('../../lib/vip');
 const { updateAgentState } = require('../../lib/state-bus');
 const { getNaverLaunchOptions, isHeadedMode } = require('../../lib/browser');
 const { getReservationNaverMonitorConfig } = require('../../lib/runtime-config');
+const { getReservationRuntimeDir, getReservationRuntimeFile, getReservationBrowserProfileRoot, ensureDir } = require('../../lib/runtime-paths');
 const {
   chooseCanonicalReservationIdForSlot,
 } = require('../../lib/naver-monitor-helpers');
@@ -73,12 +74,11 @@ const rag = require('../../../../packages/core/lib/rag-safe');
 const { storeReservationEvent } = require('../../../../packages/core/lib/reservation-rag');
 const { createSkaReporter } = require('../../lib/ska-failure-reporter');
 
-const WORKSPACE = path.join(process.env.HOME, '.openclaw', 'workspace');
-const SKA_RUNTIME_HOME = process.env.SKA_RUNTIME_HOME || path.join(process.env.HOME, '.ska');
+const WORKSPACE = getReservationRuntimeDir();
 const NAVER_BROWSER_PROFILE_ROOT =
-  process.env.NAVER_BROWSER_PROFILE_ROOT || path.join(SKA_RUNTIME_HOME, 'browser-profiles');
+  process.env.NAVER_BROWSER_PROFILE_ROOT || getReservationBrowserProfileRoot();
 const HEADED_FLAG_PATH = path.join(__dirname, '..', '..', '.playwright-headed');
-const NAVER_WS_FILE = path.join(WORKSPACE, 'naver-monitor-ws.txt');
+const NAVER_WS_FILE = getReservationRuntimeFile('naver-monitor-ws.txt');
 const NAVER_URL = 'https://new.smartplace.naver.com/bizes/place/3990161';
 const MODE = IS_OPS ? 'ops' : 'dev';
 const MONITOR_INTERVAL = parseInt(process.env.NAVER_INTERVAL_MS || (MODE === 'ops' ? '300000' : '120000'), 10);
@@ -457,6 +457,7 @@ const naverDetachedRecoveryService = createNaverDetachedRecoveryService({
 });
 
 async function monitorBookings() {
+  ensureDir(WORKSPACE);
   const LOCK_FILE = path.join(WORKSPACE, `naver-monitor${getModeSuffix()}.lock`);
   if (fs.existsSync(LOCK_FILE)) {
     const oldPid = parseInt(fs.readFileSync(LOCK_FILE, 'utf-8').trim(), 10);

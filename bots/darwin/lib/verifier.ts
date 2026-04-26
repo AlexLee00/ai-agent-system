@@ -7,9 +7,9 @@
 const fs = require('fs');
 const path = require('path');
 const { execFileSync } = require('child_process');
-const { callWithFallback } = require('../../../packages/core/lib/llm-fallback');
+const { callHubLlm } = require('../../../packages/core/lib/hub-client');
 const { createLogger } = require('../../../packages/core/lib/central-logger');
-const { postAlarm } = require('../../../packages/core/lib/openclaw-client');
+const { postAlarm } = require('../../../packages/core/lib/hub-alarm-client');
 const eventLake = require('../../../packages/core/lib/event-lake');
 const rag = require('../../../packages/core/lib/rag');
 const { runFullVerification } = require('../../../packages/core/lib/skills/verify-loop');
@@ -21,16 +21,8 @@ const logger = createLogger('verifier', { team: 'darwin' });
 
 type ExecFileOptions = Omit<import('child_process').ExecFileSyncOptionsWithStringEncoding, 'encoding'>;
 
-interface FallbackResponse {
+interface HubLlmResponse {
   text?: string;
-}
-
-interface FallbackRequest {
-  systemPrompt: string;
-  userPrompt: string;
-  chain: Array<Record<string, unknown>>;
-  logMeta: Record<string, unknown>;
-  timeoutMs: number;
 }
 
 interface AlarmPayload {
@@ -178,7 +170,11 @@ async function triggerVerification(proposalId: string, branchName: string): Prom
     });
     const fileContents = _loadContents(changedFiles).slice(0, 8);
 
-    const verificationResult = await callWithFallback({
+    const verificationResult = await callHubLlm({
+      callerTeam: 'darwin',
+      agent: 'review',
+      taskType: 'auto_verification',
+      abstractModel: 'anthropic_sonnet',
       systemPrompt: `당신은 팀 제이의 연구 검증자(proof-r)입니다.
 다윈 자동 구현 결과를 검증하세요.
 
@@ -190,20 +186,15 @@ async function triggerVerification(proposalId: string, branchName: string): Prom
 5. 스타일/패턴 적합성
 
 반드시 PASS 또는 FAIL을 명시하고, 5개 항목별 짧은 판정을 포함하세요.`,
-      userPrompt: `제안 ID: ${proposalId}
+      prompt: `제안 ID: ${proposalId}
 논문: ${proposal.title || proposal.paper?.title || 'unknown'}
 변경 파일:
 ${fileContents.map((file) => `--- ${file.path} ---\n${file.content}`).join('\n\n')}
 
 사전 자동 검증 리포트:
 ${verification.summary}`,
-      chain: [
-        { provider: 'openai-oauth', model: 'gpt-5.4', maxTokens: 2200, temperature: 0.2 },
-        { provider: 'groq', model: 'meta-llama/llama-4-scout-17b-16e-instruct', maxTokens: 2200, temperature: 0.2 },
-      ],
-      logMeta: { team: 'darwin', bot: 'proof-r', requestType: 'auto_verification' },
       timeoutMs: 30_000,
-    } as FallbackRequest) as FallbackResponse | string;
+    }) as HubLlmResponse | string;
 
     const verificationText = String(
       (typeof verificationResult === 'string' ? verificationResult : verificationResult?.text) || ''

@@ -12,8 +12,7 @@
  */
 
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'fs';
-import { homedir } from 'os';
-import { join } from 'path';
+import { dirname } from 'path';
 
 import * as db from '../shared/db.ts';
 import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
@@ -28,15 +27,20 @@ import {
 import { publishAlert } from '../shared/alert-publisher.ts';
 import { resolveSymbolsWithFallback } from '../shared/universe-fallback.ts';
 import { getMockUntradableSymbolCooldownMinutes } from '../shared/runtime-config.ts';
+import { getInvestmentStateFile, getLegacyInvestmentStateFile } from '../shared/market-cycle-support.ts';
 import { createRequire } from 'module';
 const kst = createRequire(import.meta.url)('../../../packages/core/lib/kst');
 
-const OPENCLAW_DIR = join(homedir(), '.openclaw');
-
 const PRESCREENED_FILE = {
-  domestic: join(OPENCLAW_DIR, 'domestic-prescreened.json'),
-  overseas: join(OPENCLAW_DIR, 'overseas-prescreened.json'),
-  crypto:   join(OPENCLAW_DIR, 'crypto-prescreened.json'),
+  domestic: getInvestmentStateFile('domestic-prescreened.json'),
+  overseas: getInvestmentStateFile('overseas-prescreened.json'),
+  crypto:   getInvestmentStateFile('crypto-prescreened.json'),
+};
+
+const LEGACY_PRESCREENED_FILE = {
+  domestic: getLegacyInvestmentStateFile('domestic-prescreened.json'),
+  overseas: getLegacyInvestmentStateFile('overseas-prescreened.json'),
+  crypto:   getLegacyInvestmentStateFile('crypto-prescreened.json'),
 };
 
 const PRESCREENED_TTL_MS     = 4  * 3600 * 1000;  // 4시간 유효 (정규)
@@ -76,6 +80,13 @@ function getLearningLoopNextCommand(learningLoopSummary) {
   return nextActions.find((item) => typeof item === 'string' && item.startsWith('npm --prefix')) || null;
 }
 
+function getReadablePreScreenedFile(market) {
+  const current = PRESCREENED_FILE[market];
+  if (current && existsSync(current)) return current;
+  const legacy = LEGACY_PRESCREENED_FILE[market];
+  return legacy && existsSync(legacy) ? legacy : current;
+}
+
 async function filterMockUntradablePrescreenSymbols(market, symbols, tradeMode = getInvestmentTradeMode()) {
   if (market !== 'domestic' || !Array.isArray(symbols) || symbols.length === 0) return symbols;
   const cooldownMinutes = getMockUntradableSymbolCooldownMinutes();
@@ -109,7 +120,7 @@ async function filterMockUntradablePrescreenSymbols(market, symbols, tradeMode =
  * @returns {{ symbols: string[], savedAt: number, ... } | null}
  */
 export function loadPreScreened(market) {
-  const file = PRESCREENED_FILE[market];
+  const file = getReadablePreScreenedFile(market);
   if (!file || !existsSync(file)) return null;
   try {
     const data  = JSON.parse(readFileSync(file, 'utf8'));
@@ -129,7 +140,7 @@ export function loadPreScreened(market) {
  * @returns {{ symbols: string[], savedAt: number, ... } | null}
  */
 export function loadPreScreenedFallback(market) {
-  const file = PRESCREENED_FILE[market];
+  const file = getReadablePreScreenedFile(market);
   if (!file || !existsSync(file)) return null;
   try {
     const data  = JSON.parse(readFileSync(file, 'utf8'));
@@ -152,7 +163,7 @@ export function savePreScreened(market, symbols, meta = {}) {
   const file = PRESCREENED_FILE[market];
   if (!file) return;
   try {
-    mkdirSync(OPENCLAW_DIR, { recursive: true });
+    mkdirSync(dirname(file), { recursive: true });
     writeFileSync(file, JSON.stringify({ symbols, savedAt: Date.now(), ...meta }, null, 2));
   } catch (e) {
     console.warn(`  ⚠️ 장전 스크리닝 저장 실패: ${e.message}`);

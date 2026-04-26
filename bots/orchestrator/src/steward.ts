@@ -12,11 +12,21 @@ const launchdManager = require('../lib/steward/launchd-manager');
 const telegramManager = require('../lib/steward/telegram-manager');
 const dailySummary = require('../lib/steward/daily-summary');
 const readmeUpdater = require('../lib/steward/readme-updater');
-const openclawSessionManager = require('../lib/steward/openclaw-session-manager');
-const { postAlarm } = require('../../../packages/core/lib/openclaw-client');
+const { postAlarm } = require('../../../packages/core/lib/hub-alarm-client');
 const env = require('../../../packages/core/lib/env');
 const memoryConsolidator = require('../../../packages/core/lib/agent-memory-consolidator');
 const localLLMClient = require('../../../packages/core/lib/local-llm-client');
+
+function getRetiredGatewayState() {
+  return {
+    ok: true,
+    retired: true,
+    changed: false,
+    updated: [],
+    skipped: [],
+    gatewayRestarted: false,
+  };
+}
 
 function parseArgs(argv = process.argv.slice(2)) {
   const modeArg = argv.find((arg) => arg.startsWith('--mode='));
@@ -50,7 +60,7 @@ async function runDaily() {
 async function runHourly() {
   console.log('[steward] 매시 모드 시작');
   const sync = envSync.checkSync();
-  const sessionRepair = openclawSessionManager.reconcileMainIngressSessions();
+  const sessionRepair = getRetiredGatewayState();
   if (sync.synced === false && sync.behind > 0) {
     await postAlarm({
       message: `⚠️ [스튜어드] ${sync.hostname} 동기화 필요: origin/main보다 ${sync.behind}건 뒤처짐`,
@@ -59,15 +69,6 @@ async function runHourly() {
       fromBot: 'steward',
     });
   }
-  if (sessionRepair.changed) {
-    await postAlarm({
-      message: `ℹ️ [스튜어드] OpenClaw main ingress 세션 ${sessionRepair.updated.length}건을 ${sessionRepair.preferredModel}로 정규화했습니다.`,
-      team: 'general',
-      alertLevel: 1,
-      fromBot: 'steward',
-    });
-  }
-
   // 로컬 LLM 헬스체크 (Step 2)
   let llmHealth = null;
   try {
@@ -129,13 +130,13 @@ function runStatus() {
   const health = launchdManager.checkHealth();
   const topics = telegramManager.listTopics();
   const suspicious = gitHygiene.scanTracked();
-  const sessionRepair = openclawSessionManager.reconcileMainIngressSessions({ restartGateway: false });
+  const sessionRepair = getRetiredGatewayState();
 
   console.log(`코덱스: 활성 ${codex.active}, 아카이브 ${codex.archived}`);
   console.log(`동기화: ${sync.synced === true ? '✅' : sync.synced === false ? '⚠️' : '❓'} ${sync.hostname || ''} ${sync.local || ''}`.trim());
   console.log(`launchd: ${health.total}서비스, ${health.running}실행`);
   console.log(`텔레그램: ${topics.filter((item) => item.configured).length}/${topics.length} 토픽`);
-  console.log(`openclaw ingress: ${sessionRepair.ok ? `${sessionRepair.updated.length}건 보정 필요` : '확인 실패'}`);
+  console.log('legacy gateway ingress: retired');
   console.log(`git 위생: ${suspicious.length}건 의심`);
 
   return { codex, sync, health, topics, suspicious, sessionRepair };

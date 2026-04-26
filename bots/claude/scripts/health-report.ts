@@ -105,7 +105,7 @@ function isBenignShadowMismatch(data = {}) {
 
   if (!pairMostlyMonitorEscalate) return false;
 
-  const benignReasons = new Set(['code_integrity', 'openclaw_memory', 'swap_pressure']);
+  const benignReasons = new Set(['code_integrity', 'hub_control_plane', 'swap_pressure']);
   return topReasons.length > 0
     && topReasons.every((entry) => benignReasons.has(String(entry?.reason || '')));
 }

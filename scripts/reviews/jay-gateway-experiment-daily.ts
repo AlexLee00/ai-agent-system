@@ -4,10 +4,19 @@
 const os = require('os');
 const path = require('path');
 
+function requireTsOrJs(jsPath) {
+  try {
+    return require(jsPath);
+  } catch (error) {
+    if (error?.code !== 'MODULE_NOT_FOUND') throw error;
+    return require(jsPath.replace(/\.js$/, '.ts'));
+  }
+}
+
 const {
   buildSnapshot,
   persistSnapshotWithFallback,
-} = require('../../bots/orchestrator/scripts/log-jay-gateway-experiment.js');
+} = requireTsOrJs('../../bots/orchestrator/scripts/log-jay-gateway-experiment.js');
 const {
   safeReadSnapshots,
   buildReview,
@@ -17,6 +26,14 @@ const {
 const DEFAULT_HOURS = 24;
 const DEFAULT_REVIEW_DAYS = 7;
 
+function getAiAgentHome() {
+  return process.env.AI_AGENT_HOME || process.env.JAY_HOME || path.join(os.homedir(), '.ai-agent-system');
+}
+
+function getAiAgentWorkspace() {
+  return process.env.AI_AGENT_WORKSPACE || process.env.JAY_WORKSPACE || path.join(getAiAgentHome(), 'workspace');
+}
+
 function parseArgs(argv = process.argv.slice(2)) {
   const hoursArg = argv.find((arg) => arg.startsWith('--hours='));
   const daysArg = argv.find((arg) => arg.startsWith('--days='));
@@ -24,7 +41,7 @@ function parseArgs(argv = process.argv.slice(2)) {
   return {
     hours: Math.max(1, Number(hoursArg?.split('=')[1] || DEFAULT_HOURS)),
     reviewDays: Math.max(1, Number(daysArg?.split('=')[1] || DEFAULT_REVIEW_DAYS)),
-    outputPath: outputArg?.split('=').slice(1).join('=') || path.join(os.homedir(), '.openclaw', 'workspace', 'jay-gateway-experiments.jsonl'),
+    outputPath: outputArg?.split('=').slice(1).join('=') || path.join(getAiAgentWorkspace(), 'jay-selector-experiments.jsonl'),
     json: argv.includes('--json'),
   };
 }
@@ -63,7 +80,7 @@ function buildRun({ hours, reviewDays, outputPath }) {
 
 function printHuman(run) {
   const lines = [];
-  lines.push('🤖 제이 gateway 일일 실험 실행');
+  lines.push('🤖 제이 Hub selector 일일 실험 실행');
   lines.push('');
   lines.push(`저장 파일: ${run.outputPath}`);
   if (run.snapshot) {

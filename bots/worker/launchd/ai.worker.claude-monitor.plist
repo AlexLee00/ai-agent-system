@@ -18,9 +18,9 @@
 	<key>RunAtLoad</key>
 	<false/>
 	<key>StandardErrorPath</key>
-	<string>/Users/alexlee/.openclaw/workspace/logs/claude-monitor-error.log</string>
+	<string>/Users/alexlee/.ai-agent-system/logs/claude-monitor-error.log</string>
 	<key>StandardOutPath</key>
-	<string>/Users/alexlee/.openclaw/workspace/logs/claude-monitor.log</string>
+	<string>/Users/alexlee/.ai-agent-system/logs/claude-monitor.log</string>
 	<key>StartInterval</key>
 	<integer>60</integer>
 	<key>WorkingDirectory</key>

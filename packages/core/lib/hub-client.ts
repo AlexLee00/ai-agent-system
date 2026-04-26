@@ -11,6 +11,45 @@ type HubFetchResponse = {
   profile?: any;
 };
 
+type HubLlmCallRequest = {
+  callerTeam: string;
+  agent: string;
+  selectorKey?: string;
+  taskType?: string;
+  abstractModel?: 'anthropic_haiku' | 'anthropic_sonnet' | 'anthropic_opus';
+  prompt: string;
+  systemPrompt?: string;
+  jsonSchema?: any;
+  timeoutMs?: number;
+  maxTokens?: number;
+  maxBudgetUsd?: number;
+  preferredApi?: string;
+  groqModel?: string;
+  configuredProviders?: string[];
+  urgency?: 'low' | 'normal' | 'high' | 'critical';
+  priority?: 'low' | 'normal' | 'high' | 'critical';
+  cacheEnabled?: boolean;
+  cacheType?: string;
+};
+
+type HubLlmCallResponse = {
+  ok: boolean;
+  text: string;
+  result?: string;
+  provider?: string;
+  model?: string;
+  selected_route?: string;
+  fallbackCount?: number;
+  attempted_providers?: string[];
+  durationMs?: number;
+  traceId?: string | null;
+  admission?: {
+    queued?: boolean;
+  };
+  error?: string;
+  raw?: any;
+};
+
 const cache = new Map<string, CacheEntry>();
 const warnCache = new Map<string, number>();
 
@@ -92,6 +131,32 @@ function fetchJsonViaCurl(url: string, authToken: string, timeoutMs: number): Hu
       `Authorization: Bearer ${authToken}`,
       '-H',
       'Content-Type: application/json',
+      url,
+    ], {
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+    });
+    return JSON.parse(raw);
+  } catch {
+    return null;
+  }
+}
+
+function postJsonViaCurl(url: string, authToken: string, payload: any, timeoutMs: number): any | null {
+  try {
+    const seconds = Math.max(1, Math.ceil(timeoutMs / 1000));
+    const raw = execFileSync('/usr/bin/curl', [
+      '-sS',
+      '--max-time',
+      String(seconds),
+      '-X',
+      'POST',
+      '-H',
+      `Authorization: Bearer ${authToken}`,
+      '-H',
+      'Content-Type: application/json',
+      '--data',
+      JSON.stringify(payload),
       url,
     ], {
       encoding: 'utf8',
@@ -364,6 +429,93 @@ export async function fetchHubRuntimeProfile(team: string, purpose = 'default', 
     const message = err.name === 'AbortError' ? '타임아웃' : err.message;
     console.warn(`[hub-client] runtime ${team}/${purpose}: ${message}`);
     return null;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+export async function callHubLlm(request: HubLlmCallRequest): Promise<HubLlmCallResponse> {
+  const callerTeam = String(request?.callerTeam || '').trim();
+  const agent = String(request?.agent || '').trim();
+  const prompt = String(request?.prompt || '').trim();
+  if (!callerTeam) throw new Error('callerTeam required for Hub LLM call');
+  if (!agent) throw new Error('agent required for Hub LLM call');
+  if (!prompt) throw new Error('prompt required for Hub LLM call');
+  if (!env.HUB_BASE_URL) throw new Error('HUB_BASE_URL required for Hub LLM call');
+  if (!env.HUB_AUTH_TOKEN) throw new Error('HUB_AUTH_TOKEN required for Hub LLM call');
+
+  const timeoutMs = Math.max(1000, Number(request.timeoutMs || 30000) || 30000);
+  const payload = {
+    ...request,
+    callerTeam,
+    agent,
+    prompt,
+    abstractModel: request.abstractModel || 'anthropic_sonnet',
+    taskType: request.taskType || 'default',
+  };
+  const url = `${env.HUB_BASE_URL}/hub/llm/call`;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs + 1000);
+
+  try {
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${env.HUB_AUTH_TOKEN}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(payload),
+      signal: controller.signal,
+    });
+
+    const body = await res.json().catch(() => ({}));
+    if (!res.ok || body?.ok === false) {
+      const reason = String(body?.error || body?.reason || `HTTP ${res.status}`).trim();
+      throw new Error(`hub_llm_call_failed:${reason}`);
+    }
+
+    const text = String(body?.result || body?.text || '').trim();
+    if (!text) throw new Error('hub_llm_call_failed:empty_response');
+    return {
+      ok: true,
+      text,
+      result: text,
+      provider: body?.provider,
+      model: body?.model || body?.selected_route,
+      selected_route: body?.selected_route || body?.model,
+      fallbackCount: Number(body?.fallbackCount || 0),
+      attempted_providers: Array.isArray(body?.attempted_providers) ? body.attempted_providers : [],
+      durationMs: Number(body?.durationMs || 0),
+      traceId: body?.traceId || null,
+      admission: body?.admission || null,
+      raw: body,
+    };
+  } catch (error) {
+    if (shouldUseCurlFallback(error, url)) {
+      const body = postJsonViaCurl(url, env.HUB_AUTH_TOKEN, payload, timeoutMs);
+      if (body?.ok !== false) {
+        const text = String(body?.result || body?.text || '').trim();
+        if (text) {
+          return {
+            ok: true,
+            text,
+            result: text,
+            provider: body?.provider,
+            model: body?.model || body?.selected_route,
+            selected_route: body?.selected_route || body?.model,
+            fallbackCount: Number(body?.fallbackCount || 0),
+            attempted_providers: Array.isArray(body?.attempted_providers) ? body.attempted_providers : [],
+            durationMs: Number(body?.durationMs || 0),
+            traceId: body?.traceId || null,
+            admission: body?.admission || null,
+            raw: body,
+          };
+        }
+      }
+    }
+    const err = error as Error & { name?: string };
+    const message = err.name === 'AbortError' ? '타임아웃' : err.message;
+    throw new Error(`hub_llm_call_failed:${message}`);
   } finally {
     clearTimeout(timer);
   }

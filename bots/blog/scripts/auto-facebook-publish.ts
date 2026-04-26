@@ -20,7 +20,7 @@ const path = require('path');
 const env = require('../../../packages/core/lib/env');
 const pgPool = require('../../../packages/core/lib/pg-pool');
 const { runIfOps } = require('../../../packages/core/lib/mode-guard');
-const { postAlarm } = require('../../../packages/core/lib/openclaw-client');
+const { postAlarm } = require('../../../packages/core/lib/hub-alarm-client');
 const { publishFacebookPost, checkFacebookPublishReadiness } = require(
   path.join(env.PROJECT_ROOT, 'bots/blog/lib/facebook-publisher.ts')
 );

@@ -10,7 +10,7 @@
 const { execSync } = require('child_process');
 const pgPool = require('../../../packages/core/lib/pg-pool');
 const { runIfOps } = require('../../../packages/core/lib/mode-guard');
-const { postAlarm } = require('../../../packages/core/lib/openclaw-client');
+const { postAlarm } = require('../../../packages/core/lib/hub-alarm-client');
 
 const DRAW_THINGS_URL = process.env.BLOG_IMAGE_BASE_URL || 'http://127.0.0.1:7860';
 const DISK_WARN_BYTES = 5_000_000_000; // 5GB

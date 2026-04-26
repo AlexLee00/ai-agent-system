@@ -76,7 +76,6 @@ const KEY_SERVICES = [
   { label: 'ai.investment.crypto',    name: '루나(크립토)' },
   { label: 'ai.ska.naver-monitor',    name: '앤디' },
   { label: 'ai.ska.commander',        name: '스카커맨더' },
-  { label: 'ai.openclaw.gateway',     name: 'OpenClaw' },
   { label: 'ai.ska.rebecca',          name: '레베카' },
 ];
 

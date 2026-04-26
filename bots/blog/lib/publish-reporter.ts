@@ -8,7 +8,7 @@
  */
 
 const pgPool = require('../../../packages/core/lib/pg-pool');
-const { postAlarm } = require('../../../packages/core/lib/openclaw-client');
+const { postAlarm } = require('../../../packages/core/lib/hub-alarm-client');
 const { writeBlogEvalCase } = require('./eval-case-telemetry.ts');
 
 const PLATFORM_LABELS = { naver: '네이버 블로그', instagram: '인스타그램', facebook: '페이스북' };

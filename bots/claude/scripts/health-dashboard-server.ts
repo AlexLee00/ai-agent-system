@@ -26,13 +26,14 @@ const {
 // getAllPoolStats는 module.exports에 포함됨
 const { LEAD_MODES, _getLeadMode } = require('../lib/claude-lead-brain');
 const cfg = require('../lib/config');
+const runtimePaths = require('../lib/runtime-paths.js');
 
 const args    = process.argv.slice(2);
 const portArg = args.find(a => a.startsWith('--port='));
 const PORT    = portArg ? parseInt(portArg.split('=')[1]) : 3032;
 
 const HTML_FILE = path.join(__dirname, 'health-dashboard.html');
-const WORKSPACE_LOG_DIR = path.join(os.homedir(), '.openclaw', 'workspace', 'logs');
+const WORKSPACE_LOG_DIR = runtimePaths.logsDir();
 
 function getAvailableMemoryGB() {
   try {
@@ -187,7 +188,7 @@ function isSoftShadowMatchRow(row) {
 function detectShadowMismatchReasons(summary = '') {
   const text = String(summary || '').toLowerCase();
   const reasons = [];
-  if (text.includes('openclaw') || text.includes('게이트웨이')) reasons.push('openclaw_memory');
+  if (text.includes('hub') || text.includes('허브')) reasons.push('hub_control_plane');
   if (text.includes('swap')) reasons.push('swap_pressure');
   if (text.includes('고아 node') || text.includes('orphan node')) reasons.push('orphan_nodes');
   if (text.includes('덱스터 full') || text.includes('덱스터 quick') || text.includes('덱스터 일일보고')) reasons.push('dexter_launchd');

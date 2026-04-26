@@ -11,7 +11,7 @@
  */
 
 const config = require('./config');
-const { callWithFallback } = require('../../../../packages/core/lib/llm-fallback');
+const { callHubLlm } = require('../../../../packages/core/lib/hub-client');
 
 function normalizeDateLabel(value) {
   if (!value) return '';
@@ -396,13 +396,9 @@ function buildContext({ github, npm, webSources, audit, cache }) {
   return lines.join('\n');
 }
 
-// ─── LLM 체인 ──────────────────────────────────────────────────────
-// selector/runtime override 기반 체인 사용.
-// fallback 성공 시 실제 provider/model 메타를 결과에 남긴다.
-const ARCHER_CHAIN = config.LLM_CHAIN || [
-  { provider: 'anthropic', model: 'claude-sonnet-4-6', maxTokens: 4096, temperature: 0.2 },
-  { provider: 'openai', model: config.OPENAI.model, maxTokens: config.OPENAI.maxTokens, temperature: config.OPENAI.temperature },
-];
+// ─── LLM selector ──────────────────────────────────────────────────
+// Hub selector/runtime override 기반 체인 사용.
+const ARCHER_SELECTOR_KEY = config.LLM_SELECTOR_KEY || 'claude.archer.tech_analysis';
 
 // ─── 메인 분석 함수 ──────────────────────────────────────────────────
 
@@ -417,20 +413,20 @@ async function analyze(data, cache = {}) {
   let raw;
   let llmMeta = null;
   try {
-    const { text, provider, model: usedModel, attempt } = await callWithFallback({
-      chain:        ARCHER_CHAIN,
+    const { text, provider, model: usedModel, fallbackCount, selected_route: selectedRoute } = await callHubLlm({
+      callerTeam:   'claude',
+      agent:        'archer',
+      selectorKey:  ARCHER_SELECTOR_KEY,
+      taskType:     'architecture_review',
+      abstractModel: 'anthropic_sonnet',
       systemPrompt: SYSTEM_PROMPT,
-      userPrompt:   contextText,
-      logMeta: {
-        team: 'claude',
-        purpose: 'reporting',
-        bot: 'archer',
-        agentName: 'archer',
-        selectorKey: 'claude.archer.tech_analysis',
-        requestType: 'architecture_review',
-      },
+      prompt:       contextText,
+      maxTokens:    config.OPENAI?.maxTokens || 4096,
+      timeoutMs:    config.TIMEOUTS?.openaiTimeout || 60000,
+      maxBudgetUsd: 0.08,
     });
-    const fallbackUsed = Number(attempt || 1) > 1;
+    const attempt = Number(fallbackCount || 0) + 1;
+    const fallbackUsed = Number(fallbackCount || 0) > 0;
     const degradedFallback = ['local', 'groq'].includes(String(provider || '').toLowerCase());
     llmMeta = {
       provider: provider || null,
@@ -439,6 +435,7 @@ async function analyze(data, cache = {}) {
       source: fallbackUsed ? 'fallback' : 'selector',
       fallbackUsed,
       degradedFallback,
+      primaryModel: selectedRoute || usedModel || ARCHER_SELECTOR_KEY,
     };
     if (fallbackUsed) {
       console.log(`  ↳ [아처] LLM 폴백: ${provider}/${usedModel} (시도 ${attempt})`);

@@ -24,6 +24,7 @@ const { execSync } = require('child_process');
 const reporter = require('../lib/telegram-reporter');
 const pgPool   = require('../../../packages/core/lib/pg-pool');
 const kst      = require('../../../packages/core/lib/kst');
+const runtimePaths = require('../lib/runtime-paths.js');
 
 const AGENTS = [
   { name: '덱스터',    label: 'ai.claude.dexter.quick' },
@@ -106,10 +107,7 @@ function fetchAgentStatus() {
 
 async function fetchNlpStats() {
   try {
-    const patternFile = path.join(
-      os.homedir(),
-      '.openclaw', 'workspace', 'claude-intent-patterns.json'
-    );
+    const patternFile = runtimePaths.workspacePath('claude-intent-patterns.json');
     if (!fs.existsSync(patternFile)) return null;
     const patterns = JSON.parse(fs.readFileSync(patternFile, 'utf8'));
     const allPatterns = Object.values(patterns).flat();

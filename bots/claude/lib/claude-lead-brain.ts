@@ -4,7 +4,7 @@
 /**
  * bots/claude/lib/claude-lead-brain.js — 클로드 팀장 두뇌
  *
- * 덱스터가 감지한 이슈를 Anthropic Sonnet으로 종합 판단.
+ * 덱스터가 감지한 이슈를 Hub selector 경유 Sonnet급 체인으로 종합 판단.
  * Shadow Mode: 판단 결과는 shadow_log에만 기록 (기존 알림에 영향 없음).
  *
  * 판단 영역:
@@ -20,18 +20,15 @@
  */
 
 const pgPool    = require('../../../packages/core/lib/pg-pool');
-const { callWithFallback } = require('../../../packages/core/lib/llm-fallback');
-const { selectLLMChain } = require('../../../packages/core/lib/llm-model-selector');
+const { callHubLlm } = require('../../../packages/core/lib/hub-client');
 const stateBus  = require('./state-bus-bridge.js');
 const cfg = require('./config');
 
 const SCHEMA  = 'reservation';   // shadow_log는 reservation 스키마
 
-// selectorKey 기반 체인 사용 (config/runtime override 우선)
-const LLM_CHAIN = selectLLMChain('claude.lead.system_issue_triage', {
-  policyOverride: cfg.RUNTIME?.llmSelectorOverrides?.['claude.lead.system_issue_triage'],
-});
-const PRIMARY_MODEL = LLM_CHAIN[0].model;  // selector primary 표시용
+// Hub selector/runtime override 기반 체인 사용.
+const LLM_SELECTOR_KEY = 'claude.lead.system_issue_triage';
+const PRIMARY_MODEL = LLM_SELECTOR_KEY;  // selector primary 표시용
 const TEAM    = 'claude-lead';
 const CONTEXT = 'system_issue_triage';
 
@@ -69,7 +66,7 @@ function _getAdaptiveLeadConfig() {
     restartTimeoutWindowMinutes: Number(adaptive.restartTimeoutWindowMinutes || 15),
     restartTimeoutFailThreshold: Number(adaptive.restartTimeoutFailThreshold || 3),
     degradeOnCritical: adaptive.degradeOnCritical !== false,
-    degradeOnOpenclawMemory: adaptive.degradeOnOpenclawMemory !== false,
+    degradeOnHubControlPlane: adaptive.degradeOnHubControlPlane !== false,
     degradeOnCodeIntegrity: adaptive.degradeOnCodeIntegrity !== false,
   };
 }
@@ -129,9 +126,15 @@ async function _getRecentRestartTimeoutLabels(windowMinutes = 15, failThreshold 
   }
 }
 
-function _isOpenClawMemoryIssue(issue) {
+function _isHubControlPlaneIssue(issue) {
   const text = `${issue?.checkName || ''} ${issue?.label || ''} ${issue?.detail || ''}`.toLowerCase();
-  return text.includes('openclaw') && (text.includes('메모리') || text.includes('memory'));
+  return (text.includes('hub') || text.includes('허브')) && (
+    text.includes('control') ||
+    text.includes('resource') ||
+    text.includes('port') ||
+    text.includes('health') ||
+    text.includes('헬스')
+  );
 }
 
 function _isCodeIntegrityIssue(issue) {
@@ -159,8 +162,8 @@ async function _resolveAdaptiveLeadMode(issues) {
   if (adaptive.degradeOnCritical && issues.some(i => i.status === 'critical')) {
     reasons.push('critical_issue');
   }
-  if (adaptive.degradeOnOpenclawMemory && issues.some(_isOpenClawMemoryIssue)) {
-    reasons.push('openclaw_memory');
+  if (adaptive.degradeOnHubControlPlane && issues.some(_isHubControlPlaneIssue)) {
+    reasons.push('hub_control_plane');
   }
   if (adaptive.degradeOnCodeIntegrity && issues.some(_isCodeIntegrityIssue)) {
     reasons.push('code_integrity');
@@ -362,20 +365,19 @@ async function evaluateWithClaudeLead(results) {
   let llmMeta = null;
 
   try {
-    const { text, provider, model: usedModel, attempt } = await callWithFallback({
-      chain:        LLM_CHAIN,
+    const { text, provider, model: usedModel, fallbackCount, selected_route: selectedRoute } = await callHubLlm({
+      callerTeam:   'claude',
+      agent:        'lead',
+      selectorKey:  LLM_SELECTOR_KEY,
+      taskType:     'system_issue_triage',
+      abstractModel: 'anthropic_sonnet',
       systemPrompt: SYSTEM_PROMPT,
-      userPrompt:   _buildUserPrompt(issues, ragContext),
-      logMeta: {
-        team: 'claude',
-        purpose: 'lead',
-        bot: 'claude-lead',
-        agentName: 'lead',
-        selectorKey: 'claude.lead.system_issue_triage',
-        requestType: 'system_issue_triage',
-      },
+      prompt:       _buildUserPrompt(issues, ragContext),
+      timeoutMs:    30000,
+      maxBudgetUsd: 0.05,
     });
-    const fallbackUsed = Number(attempt || 1) > 1;
+    const attempt = Number(fallbackCount || 0) + 1;
+    const fallbackUsed = Number(fallbackCount || 0) > 0;
     const degradedFallback = ['local', 'groq'].includes(String(provider || '').toLowerCase());
     llmMeta = {
       provider: provider || null,
@@ -384,9 +386,9 @@ async function evaluateWithClaudeLead(results) {
       source: fallbackUsed ? 'fallback' : 'selector',
       fallbackUsed,
       degradedFallback,
-      primaryModel: PRIMARY_MODEL,
+      primaryModel: selectedRoute || usedModel || PRIMARY_MODEL,
     };
-    if (fallbackUsed || usedModel !== PRIMARY_MODEL) {
+    if (fallbackUsed) {
       console.log(`  ↳ [클로드 팀장] LLM 폴백: ${provider}/${usedModel} (시도 ${attempt})`);
     }
     // ```json ... ``` 마크다운 블록 제거

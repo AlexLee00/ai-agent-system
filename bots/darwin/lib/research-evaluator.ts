@@ -4,20 +4,7 @@
  * 다윈 논문 평가기 — 한국어 요약 + 적합성 점수
  */
 
-interface FallbackRequest {
-  chain: Array<{
-    provider: string;
-    model: string;
-    maxTokens: number;
-    temperature: number;
-  }>;
-  systemPrompt: string;
-  userPrompt: string;
-  logMeta: Record<string, unknown>;
-  timeoutMs: number;
-}
-
-interface FallbackResponse {
+interface HubLlmResponse {
   text?: string;
 }
 
@@ -35,9 +22,9 @@ interface EvaluationResult {
   reason: string;
 }
 
-const { callWithFallback }: {
-  callWithFallback: (request: FallbackRequest) => Promise<FallbackResponse>;
-} = require('../../../packages/core/lib/llm-fallback');
+const { callHubLlm }: {
+  callHubLlm: (request: Record<string, unknown>) => Promise<HubLlmResponse>;
+} = require('../../../packages/core/lib/hub-client');
 
 const SYSTEM_PROMPT = `당신은 팀 제이의 연구 분석가입니다.
 팀 제이는 113개 AI 에이전트를 운영하는 멀티에이전트 자동화 플랫폼입니다.
@@ -59,20 +46,13 @@ const SYSTEM_PROMPT = `당신은 팀 제이의 연구 분석가입니다.
 
 async function evaluatePaper(paper: PaperCandidate): Promise<EvaluationResult> {
   try {
-    const result = await callWithFallback({
-      chain: [
-        { provider: 'groq', model: 'meta-llama/llama-4-scout-17b-16e-instruct', maxTokens: 220, temperature: 0.3 },
-        { provider: 'openai-oauth', model: 'gpt-5.4-mini', maxTokens: 220, temperature: 0.3 },
-      ],
+    const result = await callHubLlm({
+      callerTeam: 'darwin',
+      agent: 'research',
+      taskType: 'paper_evaluation',
+      abstractModel: 'anthropic_haiku',
       systemPrompt: SYSTEM_PROMPT,
-      userPrompt: `제목: ${paper.title}\n초록: ${paper.summary}`,
-      logMeta: {
-        team: 'darwin',
-        bot: 'research-scanner',
-        requestType: 'paper_evaluation',
-        domain: paper.domain,
-        source: paper.source,
-      },
+      prompt: `제목: ${paper.title}\n초록: ${paper.summary}`,
       timeoutMs: 15_000,
     });
 

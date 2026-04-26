@@ -14,8 +14,9 @@
 const fs   = require('fs');
 const path = require('path');
 const os   = require('os');
+const runtimePaths = require('../runtime-paths.js');
 
-const STATE_FILE = path.join(os.homedir(), '.openclaw', 'workspace', 'dexter-state.json');
+const STATE_FILE = runtimePaths.workspacePath('dexter-state.json');
 
 // 상태 파일 로드
 function loadState() {

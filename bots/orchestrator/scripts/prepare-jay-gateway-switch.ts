@@ -3,7 +3,7 @@
 
 const { buildPayload } = require('./check-jay-gateway-primary');
 
-const DEFAULT_CANDIDATE = 'groq_speed';
+const DEFAULT_CANDIDATE = 'hub_selector_current';
 
 function parseArgs(argv = process.argv.slice(2)) {
   const candidateArg = argv.find((arg) => arg.startsWith('--candidate='));
@@ -20,17 +20,17 @@ function buildPlan(candidateKey) {
     throw new Error(`unknown candidate: ${candidateKey}`);
   }
 
-  const recommended = payload.aligned && candidate.configured && candidate.authReady;
+  const recommended = candidate.configured && candidate.authReady;
   const currentPrimary = payload.runtimePrimary;
   const preflightChecks = [
     {
-      step: '정합성 확인',
+      step: 'Hub selector chain 확인',
       command: 'node /Users/alexlee/projects/ai-agent-system/bots/orchestrator/scripts/check-jay-gateway-primary.js --json',
       required: true,
-      passCondition: 'runtime_config와 openclaw.json primary가 일치해야 한다.',
+      passCondition: 'selectorRoutes가 비어 있지 않고 retiredGateway=true 이어야 한다.',
     },
     {
-      step: '최근 실험 상태 기록',
+      step: '최근 selector 실험 상태 기록',
       command: 'node /Users/alexlee/projects/ai-agent-system/scripts/reviews/jay-gateway-experiment-daily.js --hours=24 --days=7 --json',
       required: true,
       passCondition: '최근 권장 판단이 hold 또는 compare 범위로 읽혀야 한다.',
@@ -39,18 +39,18 @@ function buildPlan(candidateKey) {
       step: '후보 provider 사용 가능 여부',
       command: 'node /Users/alexlee/projects/ai-agent-system/bots/orchestrator/scripts/check-jay-gateway-primary.js --json',
       required: true,
-      passCondition: `${candidate.model} 후보의 configured=true 그리고 authReady=true 이어야 한다.`,
+      passCondition: `${candidate.model} 후보가 Hub selector chain 또는 runtime primary에 포함되어야 한다.`,
     },
   ];
 
   const executionSteps = [
     {
-      step: 'runtime_config 변경',
-      action: `bots/orchestrator/config.json 의 runtime_config.jayModels.gatewayPrimary 를 ${candidate.model} 로 변경`,
+      step: 'selector override 변경',
+      action: `bots/orchestrator/config.json 또는 Hub selector registry에서 ${candidate.model} 후보를 반영`,
     },
     {
-      step: 'OpenClaw 설정 동기화',
-      action: 'node /Users/alexlee/projects/ai-agent-system/bots/orchestrator/scripts/check-jay-gateway-primary.js --apply',
+      step: 'Hub LLM smoke',
+      action: 'npm --prefix /Users/alexlee/projects/ai-agent-system/bots/hub run test:unit',
     },
     {
       step: '오케스트레이터 헬스 재확인',
@@ -67,9 +67,9 @@ function buildPlan(candidateKey) {
   ];
 
   const rollbackCriteria = [
-    '전환 후 active rate limit 이 증가하면 즉시 rollback 검토',
-    '오케스트레이터 health-report 가 hold 를 벗어나면 rollback 우선',
-    'compare 결과가 regressed 이면 Gemini Flash 로 복귀',
+    '전환 후 provider cooldown이 증가하면 이전 selector override로 복귀',
+    '오케스트레이터 health-report가 hold를 벗어나면 변경 중단',
+    '팀별 LLM 호출 smoke가 실패하면 Hub selector 변경을 되돌림',
   ];
 
   return {
@@ -84,10 +84,10 @@ function buildPlan(candidateKey) {
       cons: candidate.cons,
     },
     recommendation: {
-      action: recommended ? 'prepare_compare' : 'blocked',
+      action: recommended ? 'prepare_selector_compare' : 'blocked',
       reason: recommended
-        ? `${candidate.label} 후보는 현재 설정에서 사용 가능하며, 비교 실험 준비가 가능합니다.`
-        : `${candidate.label} 후보는 현재 설정, auth readiness, 또는 정합성 조건이 맞지 않아 바로 준비할 수 없습니다.`,
+        ? `${candidate.label} 후보는 현재 Hub selector 기준으로 사용 가능하며, 비교 실험 준비가 가능합니다.`
+        : `${candidate.label} 후보는 현재 selector chain 또는 readiness 조건이 맞지 않아 바로 준비할 수 없습니다.`,
     },
     fallbackReadiness: {
       readyFallbacks: payload.readyFallbacks,
@@ -101,7 +101,7 @@ function buildPlan(candidateKey) {
 
 function printHuman(plan) {
   const lines = [];
-  lines.push('🤖 제이 gateway 전환 준비 계획');
+  lines.push('🤖 제이 Hub selector 전환 준비 계획');
   lines.push('');
   lines.push(`현재 primary: ${plan.currentPrimary}`);
   lines.push(`후보: ${plan.candidate.label} (${plan.candidate.model})`);

@@ -1,14 +1,14 @@
 import fs from 'fs';
-import path from 'path';
 import { publishReservationAlert } from './alert-client';
 import { log } from './utils';
 const { loadSecrets } = require('./secrets');
+const { getReservationRuntimeDir } = require('./runtime-paths');
 
 const TEAM_NAME = '스카팀';
 const SECRETS = loadSecrets();
 const BOT_TOKEN = SECRETS.telegram_bot_token;
 const DEFAULT_CHAT_ID = SECRETS.telegram_chat_id;
-const WORKSPACE = path.join(process.env.HOME || '', '.openclaw', 'workspace');
+const WORKSPACE = getReservationRuntimeDir();
 
 export function tryTelegramSend(message: string, chatId = DEFAULT_CHAT_ID): Promise<boolean> {
   void message;

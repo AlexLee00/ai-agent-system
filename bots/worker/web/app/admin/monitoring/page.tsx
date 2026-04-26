@@ -425,7 +425,7 @@ export default function WorkerMonitoringPage() {
           <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
             <p className="text-xs font-medium text-slate-500">API 대상</p>
             <p className="mt-2 text-lg font-semibold text-slate-900">{speedTestConsole.summary?.targetCount || 0}</p>
-            <p className="mt-1 text-xs text-slate-500">openclaw.json 기준</p>
+            <p className="mt-1 text-xs text-slate-500">Hub selector 기준</p>
           </div>
           <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
             <p className="text-xs font-medium text-slate-500">측정 결과</p>

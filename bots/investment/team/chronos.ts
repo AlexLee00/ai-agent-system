@@ -24,12 +24,10 @@ import {
 } from '../shared/ta-indicators.ts';
 const kst = createRequire(import.meta.url)('../../../packages/core/lib/kst');
 const {
-  callLocalLLMJSON,
   isLocalLLMAvailable,
   LOCAL_MODEL_DEEP,
   LOCAL_MODEL_FAST,
 } = createRequire(import.meta.url)('../../../packages/core/lib/local-llm-client');
-const { callWithFallback } = createRequire(import.meta.url)('../../../packages/core/lib/llm-fallback.js');
 import { callViaHub, isHubEnabled } from '../shared/hub-llm-client.ts';
 
 // ─── 크로노스 가드 ───────────────────────────────────────────────────
@@ -296,39 +294,22 @@ async function callChronosStructuredModel(modelSpec, prompt, { maxTokens = 256, 
 
   const systemPrompt = prompt.find((item) => item.role === 'system')?.content || '';
   const userPrompt = prompt.find((item) => item.role === 'user')?.content || '';
-  let text: string;
-  if (isHubEnabled()) {
-    const hubResult = await callViaHub('chronos', systemPrompt, userPrompt, { maxTokens });
-    if (hubResult.ok) {
-      text = hubResult.text;
-    } else {
-      const fallbackResult = await callWithFallback({
-        chain: [{ provider, model, maxTokens, temperature, timeoutMs }],
-        systemPrompt, userPrompt,
-        logMeta: { team: 'investment', bot: 'chronos', requestType: 'backtest_quality_eval' },
-        timeoutMs, team: 'investment', purpose: 'backtest_quality_eval',
-      });
-      text = fallbackResult.text;
-    }
-  } else {
-    const fallbackResult = await callWithFallback({
-      chain: [{ provider, model, maxTokens, temperature, timeoutMs }],
-      systemPrompt,
-      userPrompt,
-      logMeta: {
-        team: 'investment',
-        bot: 'chronos',
-        requestType: 'backtest_quality_eval',
-      },
-      timeoutMs,
-      team: 'investment',
-      purpose: 'backtest_quality_eval',
-    });
-    text = fallbackResult.text;
+
+  if (!isHubEnabled()) {
+    throw new Error('Chronos LLM requires Hub routing; set INVESTMENT_LLM_HUB_ENABLED=true or unset the variable');
   }
+
+  const hubResult = await callViaHub('chronos', systemPrompt, userPrompt, {
+    maxTokens,
+    urgency: timeoutMs >= 60000 ? 'high' : 'normal',
+  });
+  if (!hubResult.ok) {
+    throw new Error(`Chronos Hub LLM failed: ${hubResult.error || 'unknown'}`);
+  }
+
   return {
-    parsed: safeJsonParse(text),
-    source: provider,
+    parsed: safeJsonParse(hubResult.text),
+    source: hubResult.provider || provider,
     model: modelSpec,
   };
 }

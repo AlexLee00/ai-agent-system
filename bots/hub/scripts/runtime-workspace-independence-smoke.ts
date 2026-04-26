@@ -96,16 +96,33 @@ function main() {
       JAY_HOME: null,
       JAY_WORKSPACE: null,
       OPENCLAW_WORKSPACE: legacyWorkspace,
+      AI_AGENT_LOGS: null,
+      JAY_LOGS: null,
+      OPENCLAW_LOGS: path.join(tempDir, 'legacy-openclaw-logs'),
     }, () => {
       const env = require('../../../packages/core/lib/env.legacy.js');
-      assert.equal(env.AI_AGENT_WORKSPACE, legacyWorkspace);
-      assert.equal(env.OPENCLAW_WORKSPACE, legacyWorkspace);
+      const utils = require('../../../packages/core/src/utils.ts');
+      const timeouts = require('../../../packages/core/lib/llm-timeouts.js');
+      const snapshot = require('../../../packages/core/lib/llm-control/snapshot.ts');
+      const healthState = require('../../../packages/core/lib/health-state-manager.ts');
+      const intentStore = require('../../../packages/core/lib/intent-store.ts');
+
+      assert.equal(env.AI_AGENT_WORKSPACE, expectedWorkspace);
+      assert.equal(env.OPENCLAW_WORKSPACE, expectedWorkspace);
+      assert.equal(env.AI_AGENT_LOGS, path.join(agentHome, 'logs'));
+      assert.equal(env.OPENCLAW_LOGS, path.join(agentHome, 'logs'));
+      assertNeutralPath('AI_AGENT_WORKSPACE with legacy env present', env.AI_AGENT_WORKSPACE);
+      assertNeutralPath('utils.getWorkspacePath with legacy env present', utils.getWorkspacePath('probe.json'));
+      assertNeutralPath('llm-timeouts override with legacy env present', timeouts.OVERRIDE_FILE);
+      assertNeutralPath('speed snapshot latest with legacy env present', snapshot.SPEED_TEST_LATEST_FILE);
+      assertNeutralPath('health state file with legacy env present', healthState.STATE_FILE);
+      assertNeutralPath('intent learning path with legacy env present', intentStore.getIntentLearningPath());
     });
 
     console.log(JSON.stringify({
       ok: true,
       default_workspace_openclaw_free: true,
-      legacy_openclaw_workspace_explicit_only: true,
+      openclaw_env_cannot_override_core_runtime_paths: true,
     }));
   } finally {
     fs.rmSync(tempDir, { recursive: true, force: true });

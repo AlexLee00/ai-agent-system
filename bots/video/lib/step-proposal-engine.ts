@@ -4,8 +4,7 @@
 const fs = require('fs');
 const path = require('path');
 
-const { callWithFallback } = require('../../../packages/core/lib/llm-fallback');
-const { selectLLMChain } = require('../../../packages/core/lib/llm-model-selector');
+const { callHubLlm } = require('../../../packages/core/lib/hub-client');
 const { listKeywordMatches, matchByEmbedding } = require('./sync-matcher');
 
 function clamp01(value, fallback = 0.5) {
@@ -23,7 +22,7 @@ function ensureStepConfig(config) {
     auto_confirm_threshold: Number(config?.step_proposal?.auto_confirm_threshold || 0.8),
     red_required_below: Number(config?.step_proposal?.red_required_below || 0.5),
     blue_required_below_red: Number(config?.step_proposal?.blue_required_below_red || 50),
-    red_model: String(config?.step_proposal?.red_model || 'gpt-4o-mini'),
+    runtime_purpose: String(config?.step_proposal?.runtime_purpose || 'editing'),
     blue_max_alternatives: Number(config?.step_proposal?.blue_max_alternatives || 3),
     step_types: config?.step_proposal?.step_types || ['sync_match', 'cut', 'transition', 'video_insert', 'audio_sync', 'intro', 'outro'],
   };
@@ -224,18 +223,14 @@ async function attachRedEvaluation(steps, config = {}) {
     ].join('\n');
 
     try {
-      const result = await callWithFallback({
-        chain: selectLLMChain('video.step-proposal'),
+      const result = await callHubLlm({
+        callerTeam: 'video',
+        agent: 'edi',
+        selectorKey: 'video.step-proposal',
+        taskType: 'step_red_evaluation',
+        abstractModel: 'anthropic_haiku',
         systemPrompt,
-        userPrompt,
-        logMeta: {
-          team: 'video',
-          purpose: 'editing',
-          bot: 'step-proposal-engine',
-          agentName: 'edi',
-          selectorKey: 'video.step-proposal',
-          requestType: 'step_red_evaluation',
-        },
+        prompt: userPrompt,
       });
       const parsed = safeJsonParseObject(result.text);
       nextSteps.push({

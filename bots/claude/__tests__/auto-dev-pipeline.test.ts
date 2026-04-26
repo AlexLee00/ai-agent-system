@@ -74,7 +74,7 @@ function makeMocks(tmpRoot, overrides = {}) {
     alarms,
     mocks: {
       '../../../packages/core/lib/env': { PROJECT_ROOT: tmpRoot },
-      '../../../packages/core/lib/openclaw-client': {
+      '../../../packages/core/lib/hub-alarm-client': {
         postAlarm: async payload => {
           alarms.push(payload);
           return { ok: true };
@@ -1396,17 +1396,20 @@ async function test_selector_agents_persist_actual_fallback_model_metadata() {
   const leadSrc = fs.readFileSync(path.resolve(__dirname, '../lib/claude-lead-brain.ts'), 'utf8');
   const archerSrc = fs.readFileSync(path.resolve(__dirname, '../lib/archer/analyzer.ts'), 'utf8');
 
-  assert.ok(aiAnalystSrc.includes('const { text, provider, model: usedModel, attempt } = await callWithFallback('));
+  assert.ok(aiAnalystSrc.includes('await callHubLlm({'));
+  assert.ok(aiAnalystSrc.includes("const selectorKey = 'claude.dexter.ai_analyst'"));
   assert.ok(aiAnalystSrc.includes('fallbackUsed'));
   assert.ok(aiAnalystSrc.includes('degradedFallback'));
   assert.ok(aiAnalystSrc.includes('source: fallbackUsed ? \'fallback\' : \'selector\''));
 
-  assert.ok(leadSrc.includes('const { text, provider, model: usedModel, attempt } = await callWithFallback('));
+  assert.ok(leadSrc.includes('await callHubLlm({'));
+  assert.ok(leadSrc.includes("selectorKey:  LLM_SELECTOR_KEY"));
   assert.ok(leadSrc.includes('llmResult._llm_meta = llmMeta'));
   assert.ok(leadSrc.includes('degradedFallbackGuard'));
   assert.ok(leadSrc.includes('run_doctor'));
 
-  assert.ok(archerSrc.includes('const { text, provider, model: usedModel, attempt } = await callWithFallback('));
+  assert.ok(archerSrc.includes('await callHubLlm({'));
+  assert.ok(archerSrc.includes('selectorKey:  ARCHER_SELECTOR_KEY'));
   assert.ok(archerSrc.includes('parsed._llm_meta = llmMeta'));
 
   console.log('✅ auto-dev: selector agents persist actual fallback model metadata');

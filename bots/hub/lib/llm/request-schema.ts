@@ -11,6 +11,7 @@ const LlmCallBodySchema = z.object({
   timeoutMs: z.number().int().positive().max(180_000).optional(),
   maxBudgetUsd: z.number().positive().optional(),
   agent: z.string().trim().min(1).max(120).optional(),
+  selectorKey: z.string().trim().min(1).max(160).optional(),
   callerTeam: z.string().trim().min(1).max(120).optional(),
   urgency: z.enum(VALID_PRIORITY).optional(),
   taskType: z.string().trim().min(1).max(120).optional(),

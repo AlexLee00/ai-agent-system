@@ -1,119 +1,133 @@
 // @ts-nocheck
 'use strict';
 
-const { getGatewayPrimaryModel } = require('../lib/jay-model-policy');
 const {
-  getOpenClawGatewayModelState,
-  updateOpenClawGatewayPrimary,
-} = require('../lib/openclaw-config');
+  getGatewayPrimaryModel,
+  buildIntentParsePolicy,
+  buildJayChatFallbackChain,
+} = require('../lib/jay-model-policy');
 
-function buildPayload() {
-  const runtimePrimary = getGatewayPrimaryModel();
-  const gatewayState = getOpenClawGatewayModelState();
-  const candidateProfiles = [
+function formatSelectorEntry(entry = {}) {
+  const provider = String(entry.provider || entry.route || '').trim();
+  const model = String(entry.model || '').trim();
+  if (provider && model && model.startsWith(`${provider}/`)) return model;
+  if (provider && model) return `${provider}/${model}`;
+  return provider || model || 'unknown';
+}
+
+function buildCandidateProfiles(chain) {
+  const chainRoutes = new Set(chain.map(formatSelectorEntry));
+  const candidates = [
     {
-      key: 'gemini_stable',
-      model: 'google-gemini-cli/gemini-2.5-flash',
-      label: 'Gemini Flash 유지',
-      pros: ['무료 OAuth 기반', '현재 운영 primary와 동일', '현재 정합성 점검 결과와 잘 맞음'],
-      cons: ['rate limit burst 이력 존재', '제이 intent 모델과 공급자 축이 다름'],
-      configured: gatewayState.availableProviders.includes('google-gemini-cli'),
-      authReady: gatewayState.readyProviders.includes('google-gemini-cli'),
+      key: 'hub_selector_current',
+      model: getGatewayPrimaryModel(),
+      label: '현재 Hub selector primary 유지',
+      pros: ['Hub → team selector → agent 표준 경로와 일치', 'retired gateway 설정 동기화가 필요 없음'],
+      cons: ['전환 전후 비교 지표는 Hub selector 로그 기준으로 다시 축적 필요'],
     },
     {
       key: 'groq_speed',
       model: 'groq/openai/gpt-oss-20b',
-      label: 'Groq GPT-OSS 전환',
-      pros: ['자유대화 fallback 체인과 축이 맞음', '응답속도 개선 가능성'],
-      cons: ['gateway 전역 primary 변경 영향 범위 큼', '명령형 GPT 분리 구조와는 별도 검증 필요'],
-      configured: gatewayState.availableProviders.includes('groq'),
-      authReady: gatewayState.readyProviders.includes('groq'),
+      label: 'Groq speed lane 관찰',
+      pros: ['저지연 후보', 'fallback burst 관찰에 적합'],
+      cons: ['provider cooldown이 누적되면 자동 우회 필요'],
     },
     {
-      key: 'anthropic_safe',
-      model: 'anthropic/claude-haiku-4-5',
-      label: 'Anthropic Haiku 전환',
-      pros: ['짧은 운영 질의에 안정적', '비상용 품질 안전판 역할 가능'],
-      cons: ['유료 호출', '현재 primary/fallback 체계와 비용 구조가 달라짐'],
-      configured: gatewayState.availableProviders.includes('anthropic'),
-      authReady: gatewayState.readyProviders.includes('anthropic'),
+      key: 'openai_oauth',
+      model: 'openai-oauth/gpt-4o-mini',
+      label: 'OpenAI OAuth lane 관찰',
+      pros: ['Hub OAuth 직접 호출 검증 대상', '운영 요약/분류에 안정적'],
+      cons: ['계정 scope와 budget 상태를 별도 health로 확인해야 함'],
+    },
+    {
+      key: 'claude_code_oauth',
+      model: 'claude-code/sonnet',
+      label: 'Claude Code OAuth lane 관찰',
+      pros: ['코드/운영 분석 quality lane', 'Hub 직접 OAuth 전환 목표와 일치'],
+      cons: ['CLI/OAuth store 상태와 cooldown을 함께 관찰해야 함'],
     },
   ];
-  const aligned = gatewayState.ok ? gatewayState.primary === runtimePrimary : false;
-  const recommendation = aligned
-    ? {
-        action: 'hold',
-        reason: '현재 runtime_config와 openclaw.json이 일치하고, 오케스트레이터 헬스도 안정 구간입니다. primary 변경보다 비교 기준을 더 쌓는 것이 우선입니다.',
-      }
-    : {
-        action: 'sync_first',
-        reason: '현재 기준값과 실제 OpenClaw primary가 다릅니다. 모델 변경 실험 전에 먼저 정합성을 맞춰야 합니다.',
-      };
-  const experimentCriteria = [
-    {
-      stage: 'hold',
-      when: 'runtime_config와 openclaw.json이 일치하고, 오케스트레이터 health-report가 hold 구간일 때',
-      focus: '현재 primary 유지, 제이 일일 LLM 리뷰와 gateway rate limit 재발 여부 관찰',
-    },
-    {
-      stage: 'compare',
-      when: 'gateway rate limit이 반복되거나, fallback 의존이 늘거나, 체감 응답속도 불만이 누적될 때',
-      focus: 'Gemini 유지안과 Groq/Anthropic 후보를 비교한다. 핵심 지표는 응답시간, rate limit 빈도, fallback 진입률, 운영비용이다.',
-    },
-    {
-      stage: 'switch',
-      when: '비교 로그에서 대체 후보가 더 낮은 rate limit, 더 나은 응답시간 또는 더 안정적인 성공률을 보이고, 정합성 점검이 완료됐을 때',
-      focus: 'runtime_config 변경 → openclaw.json 동기화(--apply) → 헬스/리뷰 재관찰 순서로 전환한다.',
-    },
-  ];
+
+  return candidates.map((candidate) => {
+    const configured = chainRoutes.has(candidate.model) || candidate.model === getGatewayPrimaryModel();
+    return {
+      ...candidate,
+      configured,
+      authReady: configured,
+    };
+  });
+}
+
+function buildPayload() {
+  const runtimePrimary = getGatewayPrimaryModel();
+  const intentPolicy = buildIntentParsePolicy();
+  const chatFallbackChain = buildJayChatFallbackChain();
+  const selectorRoutes = chatFallbackChain.map(formatSelectorEntry);
+  const candidateProfiles = buildCandidateProfiles(chatFallbackChain);
+  const readyFallbacks = selectorRoutes.filter(Boolean);
+
   return {
+    retiredGateway: true,
     runtimePrimary,
-    openclawConfigReadable: gatewayState.ok,
-    openclawPath: gatewayState.filePath,
-    openclawPrimary: gatewayState.primary,
-    openclawFallbackCount: gatewayState.fallbacks.length,
-    readyFallbackCount: gatewayState.readyFallbacks.length,
-    unreadyFallbackCount: gatewayState.unreadyFallbacks.length,
-    readyFallbacks: gatewayState.readyFallbacks,
-    unreadyFallbacks: gatewayState.unreadyFallbacks,
-    availableProviders: gatewayState.availableProviders,
-    readyProviders: gatewayState.readyProviders,
-    authPath: gatewayState.authPath,
-    aligned,
-    recommendation,
+    selectorPrimary: runtimePrimary,
+    selectorKey: 'orchestrator.jay.chat_fallback',
+    intentSelectorKey: 'orchestrator.jay.intent',
+    intentPolicy,
+    chatFallbackChain,
+    selectorRoutes,
+    fallbackCount: selectorRoutes.length,
+    readyFallbackCount: readyFallbacks.length,
+    unreadyFallbackCount: 0,
+    readyFallbacks,
+    unreadyFallbacks: [],
+    availableProviders: Array.from(new Set(chatFallbackChain.map((entry) => entry.provider).filter(Boolean))),
+    readyProviders: Array.from(new Set(chatFallbackChain.map((entry) => entry.provider).filter(Boolean))),
+    aligned: true,
+    recommendation: {
+      action: 'use_hub_selector',
+      reason: 'Jay 모델 경로는 Hub → team selector → agent 표준 경로로 고정합니다. retired gateway 설정 파일과 동기화하지 않습니다.',
+    },
     candidateProfiles,
-    experimentCriteria,
-    error: gatewayState.error || null,
+    experimentCriteria: [
+      {
+        stage: 'hold',
+        when: 'Hub selector chain이 정상 응답하고 provider cooldown이 짧은 시간 내 복구될 때',
+        focus: '현재 selector 유지, 팀별 LLM 호출 성공률과 cooldown 재발 여부 관찰',
+      },
+      {
+        stage: 'compare',
+        when: 'fallback 의존이 늘거나 특정 provider cooldown이 반복될 때',
+        focus: 'Hub selector override 후보를 비교한다. 핵심 지표는 latency, cooldown 빈도, fallback 진입률, 비용이다.',
+      },
+      {
+        stage: 'switch',
+        when: '대체 후보가 더 안정적인 성공률과 낮은 cooldown을 보이고 회귀 스모크가 통과할 때',
+        focus: 'runtime_config/selector override 변경 → Hub LLM smoke → 팀별 호출 테스트 순서로 전환한다.',
+      },
+    ],
+    error: null,
   };
 }
 
 function printHuman(payload) {
   const lines = [
-    '🤖 제이 gateway primary 점검',
+    '🤖 제이 Hub selector primary 점검',
     '',
     `runtime_config 기준: ${payload.runtimePrimary || '-'}`,
-    `openclaw.json 기준: ${payload.openclawPrimary || '확인 불가'}`,
-    `fallback 개수: ${payload.openclawFallbackCount}`,
+    `selector key: ${payload.selectorKey}`,
+    `fallback 개수: ${payload.fallbackCount}`,
     `ready fallback 개수: ${payload.readyFallbackCount}`,
-    `unready fallback 개수: ${payload.unreadyFallbackCount}`,
-    `정합성: ${payload.aligned ? '일치' : '불일치'}`,
-    `사용 가능 provider: ${payload.availableProviders.length ? payload.availableProviders.join(', ') : '확인 불가'}`,
-    `실사용 준비 provider: ${payload.readyProviders.length ? payload.readyProviders.join(', ') : '없음'}`,
-    `설정 파일: ${payload.openclawPath}`,
-    `agent auth 파일: ${payload.authPath}`,
+    `정합성: ${payload.aligned ? '표준 경로 사용' : '확인 필요'}`,
+    `사용 가능 provider: ${payload.availableProviders.length ? payload.availableProviders.join(', ') : '없음'}`,
+    '',
+    `권장 판단: ${payload.recommendation.action}`,
+    `- ${payload.recommendation.reason}`,
+    '',
+    '현재 selector chain:',
   ];
-  if (payload.error) {
-    lines.push(`오류: ${payload.error}`);
+  for (const route of payload.selectorRoutes) {
+    lines.push(`- ${route}`);
   }
-  if (payload.unreadyFallbacks.length) {
-    lines.push(`미준비 fallback: ${payload.unreadyFallbacks.join(', ')}`);
-  }
-  if (payload.readyFallbacks.length) {
-    lines.push(`즉시 사용 가능 fallback: ${payload.readyFallbacks.join(', ')}`);
-  }
-  lines.push('');
-  lines.push(`권장 판단: ${payload.recommendation.action}`);
-  lines.push(`- ${payload.recommendation.reason}`);
   lines.push('');
   lines.push('후보 프로필:');
   for (const profile of payload.candidateProfiles) {
@@ -130,22 +144,13 @@ function printHuman(payload) {
     lines.push(`  when: ${criterion.when}`);
     lines.push(`  focus: ${criterion.focus}`);
   }
-  if (!payload.aligned) {
-    lines.push('');
-    lines.push('권장: runtime_config.jayModels.gatewayPrimary와 openclaw.json primary를 먼저 맞춘 뒤 운영 비교를 진행합니다.');
-    lines.push('필요하면 --apply 로 openclaw.json primary를 runtime_config 기준으로 동기화할 수 있습니다.');
-  }
   return lines.join('\n');
 }
 
 async function main() {
   const args = new Set(process.argv.slice(2));
   if (args.has('--apply')) {
-    const runtimePrimary = getGatewayPrimaryModel();
-    const result = updateOpenClawGatewayPrimary(runtimePrimary);
-    console.log(`동기화 완료: ${result.primary}`);
-    console.log(`설정 파일: ${result.filePath}`);
-    return;
+    throw new Error('retired gateway 설정 동기화는 비활성화되었습니다. Hub selector override 경로를 사용하세요.');
   }
 
   const payload = buildPayload();

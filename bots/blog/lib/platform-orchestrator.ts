@@ -13,7 +13,7 @@
  *   페이스북:     일 1편, 10:00 크로스포스트
  */
 
-const { postAlarm } = require('../../../packages/core/lib/openclaw-client');
+const { postAlarm } = require('../../../packages/core/lib/hub-alarm-client');
 const { runIfOps } = require('../../../packages/core/lib/mode-guard');
 const pgPool = require('../../../packages/core/lib/pg-pool');
 const { loadStrategyBundle } = require('./strategy-loader.ts');

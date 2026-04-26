@@ -27,9 +27,9 @@
 	<key>RunAtLoad</key>
 	<true/>
 	<key>StandardErrorPath</key>
-	<string>/Users/alexlee/.openclaw/logs/orchestrator-error.log</string>
+	<string>/Users/alexlee/.ai-agent-system/logs/orchestrator-error.log</string>
 	<key>StandardOutPath</key>
-	<string>/Users/alexlee/.openclaw/logs/orchestrator.log</string>
+	<string>/Users/alexlee/.ai-agent-system/logs/orchestrator.log</string>
 	<key>ThrottleInterval</key>
 	<integer>10</integer>
 	<key>WorkingDirectory</key>

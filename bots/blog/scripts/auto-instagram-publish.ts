@@ -28,7 +28,7 @@ const { reportPublishSuccess, reportPublishFailure } = require(
   path.join(env.PROJECT_ROOT, 'bots/blog/lib/publish-reporter.ts')
 );
 const { runIfOps } = require('../../../packages/core/lib/mode-guard');
-const { postAlarm } = require('../../../packages/core/lib/openclaw-client');
+const { postAlarm } = require('../../../packages/core/lib/hub-alarm-client');
 const { ensureReelQaSheet } = require(
   path.join(env.PROJECT_ROOT, 'bots/blog/lib/shortform-renderer.ts')
 );

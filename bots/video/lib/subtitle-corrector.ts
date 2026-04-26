@@ -6,8 +6,7 @@ const path = require('path');
 
 const { logToolCall } = require('../../../packages/core/lib/tool-logger');
 const { publishToWebhook } = require('../../../packages/core/lib/reporting-hub');
-const { callWithFallback } = require('../../../packages/core/lib/llm-fallback');
-const { selectLLMChain } = require('../../../packages/core/lib/llm-model-selector');
+const { callHubLlm } = require('../../../packages/core/lib/hub-client');
 const { createAgentMemory } = require('../../../packages/core/lib/agent-memory');
 
 const BOT_NAME = 'subtitle-corrector';
@@ -96,18 +95,14 @@ function rebuildChunkWithOriginalStructure(originalChunk, correctedChunk) {
 }
 
 async function callSharedCorrection(chunkText) {
-  const response = await callWithFallback({
-    chain: selectLLMChain('video.subtitle-correction'),
+  const response = await callHubLlm({
+    callerTeam: TEAM_NAME,
+    agent: 'subtitle-corrector',
+    selectorKey: 'video.subtitle-correction',
+    taskType: 'subtitle_correction',
+    abstractModel: 'anthropic_sonnet',
     systemPrompt: SYSTEM_PROMPT,
-    userPrompt: chunkText,
-    logMeta: {
-      team: TEAM_NAME,
-      purpose: 'editing',
-      bot: BOT_NAME,
-      agentName: 'subtitle-corrector',
-      selectorKey: 'video.subtitle-correction',
-      requestType: 'subtitle_correction',
-    },
+    prompt: chunkText,
   });
 
   const text = String(response?.text || '').trim();

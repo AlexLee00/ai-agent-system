@@ -8,7 +8,7 @@
  *   node scripts/team-check.js [--team=claude|ska|luna|all] [--telegram]
  *
  * 출력:
- *   stdout → JSON { success, message }  (OpenClaw/스카 호환)
+ *   stdout → JSON { success, message }  (Hub/스카 호환)
  *   stderr → 사람 읽기용 콘솔
  *
  * npm scripts (bots/claude):
@@ -50,7 +50,7 @@ const TEAMS = {
   ska: {
     name:      '스카팀',
     checks:    ['ska', 'bots'],
-    botFilter: ['스카팀', 'OpenClaw'],
+    botFilter: ['스카팀', 'Hub'],
   },
   luna: {
     name:      '루나팀',
@@ -162,7 +162,7 @@ async function main() {
   // 제이 큐 발행 (--telegram 플래그 시)
   if (doTelegram) publishToMainBot({ from_bot: 'dexter', event_type: 'report', alert_level: 1, message });
 
-  // OpenClaw/스카 호환 JSON (stdout)
+  // Hub/스카 호환 JSON (stdout)
   console.log(JSON.stringify({ success: true, message }));
 }
 

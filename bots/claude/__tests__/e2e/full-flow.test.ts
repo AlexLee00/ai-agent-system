@@ -18,8 +18,8 @@ const fs      = require('fs');
 // ─── 공통 외부 의존성 모킹 ────────────────────────────────────────────
 
 const BASE_MOCKS = {
-  '../../../packages/core/lib/openclaw-client': { postAlarm: async () => {} },
-  '../../../../packages/core/lib/openclaw-client': { postAlarm: async () => {} },
+  '../../../packages/core/lib/hub-alarm-client': { postAlarm: async () => {} },
+  '../../../../packages/core/lib/hub-alarm-client': { postAlarm: async () => {} },
   '../../../packages/core/lib/env': { PROJECT_ROOT: path.join(os.tmpdir(), 'e2e-test') },
   '../../../../packages/core/lib/env': { PROJECT_ROOT: path.join(os.tmpdir(), 'e2e-test') },
   '../../../packages/core/lib/pg-pool': {
@@ -173,7 +173,7 @@ async function scenario_doctor_verify_loop_flow() {
 async function scenario_telegram_reporter_5_channels() {
   const reporterMocks = {
     ...BASE_MOCKS,
-    '../../../packages/core/lib/openclaw-client': { postAlarm: async () => {} },
+    '../../../packages/core/lib/hub-alarm-client': { postAlarm: async () => {} },
     '../../../packages/core/lib/kst': {
       now: () => new Date('2026-04-18T10:00:00+09:00'),
     },

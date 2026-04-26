@@ -17,7 +17,7 @@
  */
 
 const path    = require('path');
-const { postAlarm } = require('../../../packages/core/lib/openclaw-client');
+const { postAlarm } = require('../../../packages/core/lib/hub-alarm-client');
 const kst     = require('../../../packages/core/lib/kst');
 const pgPool  = require('../../../packages/core/lib/pg-pool');
 

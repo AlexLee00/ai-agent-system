@@ -8,20 +8,7 @@ const fs: typeof import('fs') = require('fs');
 const path: typeof import('path') = require('path');
 const { execSync }: typeof import('child_process') = require('child_process');
 
-interface FallbackRequest {
-  chain: Array<{
-    provider: string;
-    model: string;
-    maxTokens: number;
-    temperature: number;
-  }>;
-  systemPrompt: string;
-  userPrompt: string;
-  logMeta: Record<string, unknown>;
-  timeoutMs: number;
-}
-
-interface FallbackResponse {
+interface HubLlmResponse {
   text?: string;
 }
 
@@ -102,10 +89,10 @@ interface ApplyResult {
   proposalId: string | null;
 }
 
-const { callWithFallback }: {
-  callWithFallback: (request: FallbackRequest) => Promise<FallbackResponse>;
-} = require('../../../packages/core/lib/llm-fallback');
-const { postAlarm }: { postAlarm: (payload: AlarmPayload) => Promise<{ ok?: boolean } | null> } = require('../../../packages/core/lib/openclaw-client');
+const { callHubLlm }: {
+  callHubLlm: (request: Record<string, unknown>) => Promise<HubLlmResponse>;
+} = require('../../../packages/core/lib/hub-client');
+const { postAlarm }: { postAlarm: (payload: AlarmPayload) => Promise<{ ok?: boolean } | null> } = require('../../../packages/core/lib/hub-alarm-client');
 const eventLake: EventLake = require('../../../packages/core/lib/event-lake');
 const proposalStore: ProposalStore = require('./proposal-store');
 const autonomyLevel: AutonomyLevelModule = require('./autonomy-level');
@@ -130,11 +117,11 @@ function toErrorMessage(err: unknown): string {
 }
 
 async function generateProposal(paper: Partial<ResearchPaper>): Promise<string> {
-  const result = await callWithFallback({
-    chain: [
-      { provider: 'groq', model: 'meta-llama/llama-4-scout-17b-16e-instruct', maxTokens: 800, temperature: 0.5 },
-      { provider: 'openai-oauth', model: 'gpt-5.4-mini', maxTokens: 800, temperature: 0.5 },
-    ],
+  const result = await callHubLlm({
+    callerTeam: 'darwin',
+    agent: 'synthesis',
+    taskType: 'proposal_generation',
+    abstractModel: 'anthropic_sonnet',
     systemPrompt: `당신은 팀 제이의 기술 적용 전문가(graft)입니다.
 ${TEAM_CONTEXT}
 
@@ -147,7 +134,7 @@ ${TEAM_CONTEXT}
 예상 효과: (1~2줄)
 구현 난이도: (★~★★★★★)
 필요 파일: (수정/생성할 파일 경로)`,
-    userPrompt: `논문: ${paper.title}
+    prompt: `논문: ${paper.title}
 요약: ${paper.korean_summary}
 적합성: ${paper.relevance_score}점
 이유: ${paper.reason}${paper.github ? `
@@ -155,18 +142,17 @@ ${TEAM_CONTEXT}
 ## GitHub 소스 분석 (${paper.github.owner}/${paper.github.repo})
 ⭐ ${paper.github.stars} | 📝 ${paper.github.language} | 📂 ${paper.github.files}파일
 ${paper.github.summary}` : ''}`,
-    logMeta: { team: 'darwin', bot: 'graft', requestType: 'proposal_generation' },
     timeoutMs: 12_000,
   });
   return result.text || '';
 }
 
 async function generatePrototype(paper: Partial<ResearchPaper>, proposal: string): Promise<string> {
-  const result = await callWithFallback({
-    chain: [
-      { provider: 'groq', model: 'meta-llama/llama-4-scout-17b-16e-instruct', maxTokens: 1200, temperature: 0.3 },
-      { provider: 'openai-oauth', model: 'gpt-5.4-mini', maxTokens: 1200, temperature: 0.3 },
-    ],
+  const result = await callHubLlm({
+    callerTeam: 'darwin',
+    agent: 'synthesis',
+    taskType: 'prototype_generation',
+    abstractModel: 'anthropic_sonnet',
     systemPrompt: `당신은 팀 제이의 프로토타입 개발자(edison)입니다.
 ${TEAM_CONTEXT}
 
@@ -175,8 +161,7 @@ Node.js (ES5, require) 스타일로 작성.
 반드시 module.exports로 함수를 내보내세요.
 실제 외부 API 호출은 하지 말고, 구조와 로직만 작성하세요.
 주석으로 "여기서 실제 API 호출" 표시.`,
-    userPrompt: `논문: ${paper.title}\n적용 방안:\n${proposal}`,
-    logMeta: { team: 'darwin', bot: 'edison', requestType: 'prototype_generation' },
+    prompt: `논문: ${paper.title}\n적용 방안:\n${proposal}`,
     timeoutMs: 15_000,
   });
   return result.text || '';

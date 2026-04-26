@@ -7,8 +7,7 @@ const { execFile } = require('child_process');
 const { promisify } = require('util');
 
 const { logToolCall } = require('../../../packages/core/lib/tool-logger');
-const { callWithFallback } = require('../../../packages/core/lib/llm-fallback');
-const { selectLLMChain } = require('../../../packages/core/lib/llm-model-selector');
+const { callHubLlm } = require('../../../packages/core/lib/hub-client');
 
 const { loadEDL, saveEDL, applyPatch } = require('./edl-builder');
 const { normalizeAudio } = require('./ffmpeg-preprocess');
@@ -152,22 +151,18 @@ function splitLongLine(text) {
 
 async function callSharedRefine(prompt) {
   const startedAt = Date.now();
-  const response = await callWithFallback({
-    chain: selectLLMChain('video.refiner'),
+  const response = await callHubLlm({
+    callerTeam: TEAM_NAME,
+    agent: 'refiner',
+    selectorKey: 'video.refiner',
+    taskType: 'subtitle_refine',
+    abstractModel: 'anthropic_sonnet',
     systemPrompt: [
       '당신은 FlutterFlow 강의 자막 보정기다.',
       '자막 문맥을 자연스럽게 다듬고, 수정된 텍스트만 반환한다.',
     ].join('\n'),
-    userPrompt: prompt,
+    prompt,
     timeoutMs: LLM_TIMEOUT_MS,
-    logMeta: {
-      team: TEAM_NAME,
-      purpose: 'editing',
-      bot: 'refiner-agent',
-      agentName: 'refiner',
-      selectorKey: 'video.refiner',
-      requestType: 'subtitle_refine',
-    },
   });
   const durationMs = Date.now() - startedAt;
 

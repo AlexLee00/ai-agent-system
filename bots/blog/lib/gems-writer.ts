@@ -16,13 +16,12 @@ const toolLogger          = require('../../../packages/core/lib/tool-logger');
 const llmCache            = require('../../../packages/core/lib/llm-cache');
 const { getTraceId }      = require('../../../packages/core/lib/trace');
 const { chunkedGenerate } = require('../../../packages/core/lib/chunked-llm');
-const { callWithFallback } = require('../../../packages/core/lib/llm-fallback');
-const { selectLLMChain } = require('../../../packages/core/lib/llm-model-selector');
+const { callHubLlm } = require('../../../packages/core/lib/hub-client');
 const { weatherToContext, estimateCost, loadPersonaGuide } = require('../../../packages/core/lib/blog-utils');
 const env = require('../../../packages/core/lib/env');
 const { buildBlogSkillBundle } = require(path.join(env.PROJECT_ROOT, 'packages/core/lib/skills/blog/skill-loader.js'));
 const { buildAIBriefingSectionOrder, buildAIBriefingChecklist } = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/ai-briefing.ts'));
-const { getBlogGenerationRuntimeConfig, getBlogLLMSelectorOverrides } = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/runtime-config.ts'));
+const { getBlogGenerationRuntimeConfig } = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/runtime-config.ts'));
 const { calculateSectionChars, buildCharCountInstruction } = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/section-ratio.ts'));
 const { isExcludedReferenceTitle, isExcludedReferenceFilename } = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/reference-exclusions.ts'));
 const { detectTitlePattern } = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/performance-diagnostician.ts'));
@@ -33,30 +32,17 @@ const BLOG_WRITER_TIMEOUT_MS = Number(generationRuntimeConfig.writerTimeoutMs ||
 const BLOG_CONTINUE_TIMEOUT_MS = Number(generationRuntimeConfig.continueTimeoutMs || BLOG_WRITER_TIMEOUT_MS);
 const BLOG_CHUNK_TIMEOUT_MS = Number(generationRuntimeConfig.chunkTimeoutMs || Math.max(BLOG_WRITER_TIMEOUT_MS, 120000));
 
-// 폴백 체인: gpt-4o → gpt-4o-mini → gemini-2.5-flash
-const GEMS_LLM_CHAIN = selectLLMChain('blog.gems.writer', {
-  policyOverride: getBlogLLMSelectorOverrides()['blog.gems.writer'],
-});
-
-function _buildForcedChainEntry(modelRef, maxTokens = 16000, temperature = 0.85) {
-  const normalized = String(modelRef || '').trim();
-  if (!normalized) return null;
-  const divider = normalized.indexOf('/');
-  if (divider <= 0) return null;
-  const provider = normalized.slice(0, divider).trim();
-  const model = normalized.slice(divider + 1).trim();
-  if (!provider || !model) return null;
-  return { provider, model, maxTokens, temperature };
-}
-
-function _resolveGemsChain(maxTokens = 16000, temperature = 0.85) {
-  const forced = _buildForcedChainEntry(process.env.BLOG_LLM_MODEL, maxTokens, temperature);
-  if (forced) return [forced];
-  return GEMS_LLM_CHAIN.map((entry) => ({
-    ...entry,
-    maxTokens: Number(entry?.maxTokens || maxTokens),
-    temperature: Number(entry?.temperature ?? temperature),
-  }));
+async function callGemsWriterLlm({ systemPrompt, userPrompt, taskType, maxTokens = 16000, timeoutMs = BLOG_WRITER_TIMEOUT_MS }) {
+  return callHubLlm({
+    callerTeam: 'blog',
+    agent: 'gems',
+    selectorKey: 'blog.gems.writer',
+    taskType,
+    systemPrompt,
+    prompt: userPrompt,
+    maxTokens,
+    timeoutMs,
+  });
 }
 
 // ─── ai-agent-system 프로젝트 컨텍스트 ──────────────────────────────
@@ -1382,22 +1368,19 @@ ${_buildVariationBlock(sectionVariation)}
   let usedModel = 'gpt-4o';
   let fallbackUsed = false;
   let content;
-  const llmChain = _resolveGemsChain(16000, 0.85);
-
   try {
-    const result = await callWithFallback({
-      chain:        llmChain,
+    const result = await callGemsWriterLlm({
       systemPrompt: GEMS_SYSTEM_PROMPT,
       userPrompt,
+      taskType: 'general_post',
       timeoutMs: BLOG_WRITER_TIMEOUT_MS,
-      logMeta: { team: 'blog', purpose: 'writer', bot: 'blog-gems', requestType: 'general_post' },
     });
     content      = result.text;
-    usedModel    = result.model;
-    fallbackUsed = result.attempt > 1;
-    if (fallbackUsed) console.log(`[젬스] LLM 폴백 발생: ${result.provider}/${result.model} (시도 ${result.attempt})`);
+    usedModel    = result.selected_route || result.model || result.provider || 'hub';
+    fallbackUsed = Number(result.fallbackCount || 0) > 0;
+    if (fallbackUsed) console.log(`[젬스] LLM 폴백 발생: ${usedModel} (${result.fallbackCount} fallback)`);
   } finally {
-    await toolLogger.logToolCall('llm', 'callWithFallback', {
+    await toolLogger.logToolCall('llm', 'callHubLlm', {
       bot: 'blog-gems', success: !!content,
       duration_ms: Date.now() - startTime,
       metadata: { model: usedModel, category, trace_id: getTraceId(), fallback_used: fallbackUsed },
@@ -1413,14 +1396,13 @@ ${_buildVariationBlock(sectionVariation)}
     // 마지막 800자만 컨텍스트로 전달 (전체 내용 전달 시 LLM이 새 글을 시작하는 문제 방지)
     const tailContext    = content.slice(-800);
     const continuePrompt = `[이전 내용 끝부분 (이미 작성됨 — 절대 반복 금지)]\n${tailContext}\n\n[지시] 위 내용이 끊긴 부분에서 바로 이어서 작성하라. 앞 내용은 이미 완성되었으므로 반드시 끊긴 지점부터 시작하라. 새 글을 처음부터 쓰지 말 것. 남은 섹션을 모두 완성하고 마지막에 _THE_END_ 를 적어라.`;
-    const GEMS_CONTINUE_CHAIN = _resolveGemsChain(Number(generationRuntimeConfig.continueMaxTokens || 8000), 0.85);
     try {
-      const cont = await callWithFallback({
-        chain:        GEMS_CONTINUE_CHAIN,
+      const cont = await callGemsWriterLlm({
         systemPrompt: GEMS_SYSTEM_PROMPT,
-        userPrompt:   continuePrompt,
+        userPrompt: continuePrompt,
+        taskType: 'general_post_continue',
+        maxTokens: Number(generationRuntimeConfig.continueMaxTokens || 8000),
         timeoutMs: BLOG_CONTINUE_TIMEOUT_MS,
-        logMeta: { team: 'blog', purpose: 'writer', bot: 'blog-gems', requestType: 'general_post_continue' },
       });
       // LLM이 새 글을 처음부터 시작한 경우 감지 (첫 줄이 # 제목 + 분량이 원본의 50% 이상이면 재시작으로 간주)
       const contFirstLine = cont.text.trim().split('\n')[0] || '';
@@ -1442,7 +1424,7 @@ ${_buildVariationBlock(sectionVariation)}
       console.warn(`[젬스] 이어쓰기 실패 (무시): ${e.message}`);
     }
 
-    await toolLogger.logToolCall('llm', 'callWithFallback', {
+    await toolLogger.logToolCall('llm', 'callHubLlm', {
       bot: 'blog-gems', success: true,
       duration_ms: Date.now() - startTime,
       metadata: { model: usedModel, type: 'continue', category, trace_id: getTraceId() },
@@ -1593,21 +1575,18 @@ ${content}
   let usedModel = 'gpt-4o';
   let fallbackUsed = false;
   let repaired;
-  const llmChain = _resolveGemsChain(16000, 0.85);
-
   try {
-    const result = await callWithFallback({
-      chain:        llmChain,
+    const result = await callGemsWriterLlm({
       systemPrompt: GEMS_SYSTEM_PROMPT,
-      userPrompt:   repairPrompt,
+      userPrompt: repairPrompt,
+      taskType: 'general_post_repair',
       timeoutMs: BLOG_WRITER_TIMEOUT_MS,
-      logMeta: { team: 'blog', purpose: 'writer', bot: 'blog-gems', requestType: 'general_post_repair' },
     });
     repaired     = result.text;
-    usedModel    = result.model;
-    fallbackUsed = result.attempt > 1;
+    usedModel    = result.selected_route || result.model || result.provider || 'hub';
+    fallbackUsed = Number(result.fallbackCount || 0) > 0;
   } finally {
-    await toolLogger.logToolCall('llm', 'callWithFallback', {
+    await toolLogger.logToolCall('llm', 'callHubLlm', {
       bot: 'blog-gems',
       success: !!repaired,
       duration_ms: Date.now() - startTime,
@@ -1653,7 +1632,7 @@ ${content}
  */
 async function writeGeneralPostChunked(category, researchData, sectionVariation = {}) {
   const today    = new Date().toLocaleDateString('ko-KR');
-  const model    = _resolveGemsChain(4096, 0.75);
+  const model    = 'hub:blog.gems.writer';
 
   const weather         = researchData.weather || {};
   const itNews          = researchData.it_news || [];
@@ -1798,6 +1777,10 @@ ${linkingBlock}
 
   const result = await chunkedGenerate(GEMS_SYSTEM_PROMPT, chunks, {
     model,
+    selectorKey: 'blog.gems.writer',
+    callerTeam: 'blog',
+    agent: 'gems',
+    taskType: 'general_post_chunked',
     contextCarry: 200,
     maxRetries:   Number(generationRuntimeConfig.writerMaxRetries || 1),
     timeoutMs: BLOG_CHUNK_TIMEOUT_MS,

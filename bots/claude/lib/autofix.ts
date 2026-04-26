@@ -25,7 +25,7 @@ const { execSync } = require('child_process');
 const cfg  = require('./config');
 const bugReport = require('./bug-report');
 const { buildNoticeEvent, renderNoticeEvent } = require('../../../packages/core/lib/reporting-hub');
-const { postAlarm } = require('../../../packages/core/lib/openclaw-client');
+const { postAlarm } = require('../../../packages/core/lib/hub-alarm-client');
 
 // ── 봇 이름 (변경 시 이 상수만 수정)
 const BOT_NAME = '덱스터';
@@ -36,7 +36,6 @@ const ALLOWED_AUTOFIX_ACTIONS = new Set([
   'secrets-perm',     // secrets.json 권한 600
   'log-rotation',     // 로그 로테이션 (백업 후 비움)
   'checksums-update', // 체크섬 갱신 (git 커밋 변경만)
-  'openclaw-restart', // OpenClaw launchctl 재시작
   'bug-report',       // 버그 레포트 DB 등록
 ]);
 
@@ -197,34 +196,6 @@ function fixChecksums(results, fixes) {
   } catch { /* git 없으면 무시 */ }
 }
 
-// OpenClaw 메모리 자동 재시작
-// openclaw.js에서 _autoRestart: true 플래그가 세팅된 경우 처리
-async function fixOpenClawMemory(results, fixes) {
-  const section = results.find(r => r.name === 'OpenClaw 게이트웨이');
-  if (!section) return;
-
-  const item = section.items.find(i => i._autoRestart && i._restartService);
-  if (!item) return;
-
-  const svc = item._restartService;
-  try {
-    execSync(`launchctl stop "${svc}"`, { timeout: 5000 });
-    await new Promise(r => setTimeout(r, 3000)); // 프로세스 완전 종료 대기
-    execSync(`launchctl start "${svc}"`, { timeout: 5000 });
-    fixes.push({
-      label:  'OpenClaw 자동 재시작',
-      status: 'ok',
-      detail: `${svc} 재시작 완료 — 원인: ${item._restartReason || item.detail}`,
-    });
-  } catch (e) {
-    fixes.push({
-      label:  'OpenClaw 자동 재시작 실패',
-      status: 'warn',
-      detail: `${svc}: ${e.message}`,
-    });
-  }
-}
-
 // 버그 레포트 등록 대상 판별 + 등록
 async function reportBugs(results, fixes) {
   const BUG_TRIGGERS = [
@@ -275,7 +246,6 @@ async function run(results) {
   fixSecretsPermissions(fixes);
   fixLogRotation(fixes);
   fixChecksums(results, fixes);
-  await fixOpenClawMemory(results, fixes);
   await reportBugs(results, fixes);
 
   return fixes;

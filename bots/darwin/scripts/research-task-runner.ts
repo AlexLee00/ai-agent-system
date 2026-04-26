@@ -1,7 +1,7 @@
 'use strict';
 
 const tasks = require('../lib/research-tasks');
-const { postAlarm } = require('../../../packages/core/lib/openclaw-client');
+const { postAlarm } = require('../../../packages/core/lib/hub-alarm-client');
 const { execFileSync } = require('child_process');
 const path = require('path');
 const autonomyLevel = require('../lib/autonomy-level');

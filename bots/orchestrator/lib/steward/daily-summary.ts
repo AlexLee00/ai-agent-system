@@ -1,7 +1,7 @@
 // @ts-nocheck
 'use strict';
 
-const { postAlarm } = require('../../../../packages/core/lib/openclaw-client');
+const { postAlarm } = require('../../../../packages/core/lib/hub-alarm-client');
 const trackerSync = require('./tracker-sync');
 const codexManager = require('./codex-manager');
 const gitHygiene = require('./git-hygiene');

@@ -24,8 +24,9 @@ const { execSync } = require('child_process');
 const reporter = require('../lib/telegram-reporter');
 const pgPool   = require('../../../packages/core/lib/pg-pool');
 const kst      = require('../../../packages/core/lib/kst');
+const runtimePaths = require('../lib/runtime-paths.js');
 
-const STATE_FILE = path.join(os.homedir(), '.openclaw', 'workspace', 'codex-notifier-state.json');
+const STATE_FILE = runtimePaths.workspacePath('codex-notifier-state.json');
 
 // ─── 추가 통계 수집 ────────────────────────────────────────────────────
 

@@ -29,9 +29,9 @@
 	<key>RunAtLoad</key>
 	<false/>
 	<key>StandardErrorPath</key>
-	<string>/Users/alexlee/.openclaw/workspace/logs/worker-nextjs-error.log</string>
+	<string>/Users/alexlee/.ai-agent-system/logs/worker-nextjs-error.log</string>
 	<key>StandardOutPath</key>
-	<string>/Users/alexlee/.openclaw/workspace/logs/worker-nextjs.log</string>
+	<string>/Users/alexlee/.ai-agent-system/logs/worker-nextjs.log</string>
 	<key>ThrottleInterval</key>
 	<integer>10</integer>
 	<key>WorkingDirectory</key>

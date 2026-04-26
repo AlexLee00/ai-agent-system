@@ -12,7 +12,7 @@
  *   스터디룸 (A1/A2/B)   → pickko_study_room + room_amounts_json (use-day allocation)
  *
  * 완료 후 예측용 CSV 자동 생성:
- *   ~/.openclaw/workspace/revenue-history.csv
+ *   AI Agent reservation runtime/revenue-history.csv
  *   컬럼: date, day_of_week, is_weekend, study_cafe, room_a1, room_a2, room_b, study_room_total, total
  *
  * 사용법:
@@ -33,13 +33,13 @@ const { loginToPickko, fetchPickkoEntries } = require('../lib/pickko');
 const { upsertDailySummary, getDailySummariesInRange } = require('../lib/db');
 const { fetchMonthlyRevenue, fetchDailyDetail } = require('../lib/pickko-stats');
 const { buildRoomAmountsFromEntries } = require('../lib/study-room-pricing');
+const { getReservationRuntimeFile, ensureParentDir } = require('../lib/runtime-paths');
 
 const SECRETS   = loadSecrets();
 const PICKKO_ID = SECRETS.pickko_id;
 const PICKKO_PW = SECRETS.pickko_pw;
 
-const WORKSPACE = path.join(process.env.HOME, '.openclaw', 'workspace');
-const CSV_PATH  = path.join(WORKSPACE, 'revenue-history.csv');
+const CSV_PATH  = getReservationRuntimeFile('revenue-history.csv');
 
 // ─── CLI 인자 파싱 ─────────────────────────────────────────────
 const argv    = process.argv.slice(2);
@@ -186,6 +186,7 @@ async function exportCsv(from, to) {
     ].join(','));
   }
 
+  ensureParentDir(CSV_PATH);
   fs.writeFileSync(CSV_PATH, lines.join('\n') + '\n', 'utf-8');
   log(`\n📊 예측용 CSV 저장: ${CSV_PATH}  (${rows.length}행)`);
   log('   컬럼: date, day_of_week, is_weekend, study_cafe, room_a1, room_a2, room_b, study_room_total, total');

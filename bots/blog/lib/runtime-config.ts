@@ -125,7 +125,7 @@ const DEFAULTS = {
     browserHttpUrl: 'http://127.0.0.1:18791',
     browserWsEndpoint: '',
     browserToken: '',
-    profileDir: '~/.openclaw/workspace/naver-profile',
+    profileDir: '~/.ai-agent-system/workspace/naver-profile',
     pageReadMinSec: 30,
     pageReadMaxSec: 90,
     typingMinSec: 20,

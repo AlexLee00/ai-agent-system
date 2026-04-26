@@ -32,7 +32,8 @@ import { parseUniverseCliFlags } from '../shared/screening-runtime.ts';
 import { resolveSymbolsWithFallback, resolveManagedPositionUniverse, appendHeldSymbols, capDynamicUniverse } from '../shared/universe-fallback.ts';
 import { syncPositionsAtMarketOpen } from '../shared/position-sync.ts';
 import {
-  getOpenClawStateFile,
+  getInvestmentStateFile,
+  investmentRuntimeFileExists,
   loadJsonState,
   saveJsonState,
   logMarketCycleStart,
@@ -55,7 +56,7 @@ const EMERGENCY_CHG = 0.03;  // BTC ±3% 긴급 트리거
 function getStateFile() {
   const tradeMode = getInvestmentTradeMode();
   const suffix = tradeMode === 'validation' ? '-validation' : '';
-  return getOpenClawStateFile(`investment-state${suffix}.json`);
+  return getInvestmentStateFile(`investment-state${suffix}.json`);
 }
 
 function loadState() {
@@ -397,8 +398,7 @@ if (isDirectExecution(import.meta.url)) {
 
       console.log(getMarketExecutionModeInfo('crypto', '암호화폐').logLine);
 
-      const PAUSE_FLAG = join(homedir(), '.openclaw', 'workspace', 'luna-paused.flag');
-      if (!force && existsSync(PAUSE_FLAG)) {
+      if (!force && investmentRuntimeFileExists('luna-paused.flag')) {
         console.log('⏸ 거래 일시정지 플래그 감지 — 사이클 스킵 (재개: resume_trading 명령)');
         return [];
       }

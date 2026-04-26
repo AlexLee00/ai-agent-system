@@ -38,7 +38,6 @@ function getAgentWorkspace(): string {
     || path.join(os.homedir(), '.ai-agent-system');
   return process.env.AI_AGENT_WORKSPACE
     || process.env.JAY_WORKSPACE
-    || process.env.OPENCLAW_WORKSPACE
     || path.join(home, 'workspace');
 }
 

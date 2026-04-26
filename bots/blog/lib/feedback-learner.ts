@@ -7,9 +7,7 @@
  */
 
 const pgPool = require('../../../packages/core/lib/pg-pool');
-const { selectLLMChain } = require('../../../packages/core/lib/llm-model-selector');
-const { callWithFallback } = require('../../../packages/core/lib/llm-fallback');
-const { getBlogLLMSelectorOverrides } = require('./runtime-config.ts');
+const { callHubLlm } = require('../../../packages/core/lib/hub-client');
 
 async function getPostDateColumn() {
   try {
@@ -50,20 +48,20 @@ const DIFF_ANALYSIS_SYSTEM = `
  */
 async function recordFeedback(postId, originalTitle, modifiedTitle, originalContentHash, modifiedContentHash) {
   try {
-    const selectorOverrides = getBlogLLMSelectorOverrides();
     const userPrompt = `
 원본 제목: ${originalTitle}
 수정된 제목: ${modifiedTitle}
 내용 변경: ${originalContentHash !== modifiedContentHash ? '본문 수정됨' : '본문 변경 없음'}
 `.trim();
 
-    const result = await callWithFallback({
-      chain: selectLLMChain('blog.feedback.analyze', {
-        policyOverride: selectorOverrides['blog.feedback.analyze'] || selectorOverrides['blog.social.summarize'],
-      }),
+    const result = await callHubLlm({
+      callerTeam: 'blog',
+      agent: 'feedback-learner',
+      selectorKey: 'blog.feedback.analyze',
+      taskType: 'feedback_analyze',
       systemPrompt: DIFF_ANALYSIS_SYSTEM,
-      userPrompt,
-      logMeta: { team: 'blog', purpose: 'feedback', bot: 'feedback-learner' },
+      prompt: userPrompt,
+      maxTokens: 700,
     });
 
     let parsed = { feedback_type: 'unknown', summary: '' };

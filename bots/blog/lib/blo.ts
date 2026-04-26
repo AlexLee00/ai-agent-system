@@ -92,7 +92,7 @@ const hiringContract                                = require('../../../packages
 const { createMessage }                             = require('../../../packages/core/lib/message-envelope');
 const { startTrace, withTrace, getTraceId }         = require('../../../packages/core/lib/trace');
 const { runIfOps }                                  = require('../../../packages/core/lib/mode-guard');
-const { postAlarm }                                 = require('../../../packages/core/lib/openclaw-client');
+const { postAlarm }                                 = require('../../../packages/core/lib/hub-alarm-client');
 const {
   buildReportEvent,
   renderReportEvent,

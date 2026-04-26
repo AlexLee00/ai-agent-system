@@ -145,17 +145,16 @@ export const AI_AGENT_HOME = process.env.AI_AGENT_HOME
 
 export const AI_AGENT_WORKSPACE = process.env.AI_AGENT_WORKSPACE
   || process.env.JAY_WORKSPACE
-  || process.env.OPENCLAW_WORKSPACE
   || path.join(AI_AGENT_HOME, 'workspace');
 
 export const AI_AGENT_LOGS = process.env.AI_AGENT_LOGS
   || process.env.JAY_LOGS
-  || process.env.OPENCLAW_LOGS
   || path.join(AI_AGENT_HOME, 'logs');
 
-// Backward-compatible aliases only. New code should use AI_AGENT_* names.
-export const OPENCLAW_WORKSPACE = process.env.OPENCLAW_WORKSPACE || AI_AGENT_WORKSPACE;
-export const OPENCLAW_LOGS = process.env.OPENCLAW_LOGS || AI_AGENT_LOGS;
+// Backward-compatible aliases only. They intentionally resolve to Hub-native
+// paths so legacy imports cannot silently steer runtime state back to OpenClaw.
+export const OPENCLAW_WORKSPACE = AI_AGENT_WORKSPACE;
+export const OPENCLAW_LOGS = AI_AGENT_LOGS;
 
 export const LOCAL_LLM_BASE_URL = process.env.LOCAL_LLM_BASE_URL || (
   IS_OPS

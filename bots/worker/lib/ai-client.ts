@@ -4,28 +4,30 @@
 /**
  * bots/worker/lib/ai-client.js — 워커팀 공용 LLM 호출 래퍼
  *
- * 워커팀도 공용 llm-fallback 체인을 사용해
- * 공급자 전환 / 비용 로깅 / 장애 폴백 정책을 같이 따른다.
+ * 워커팀도 Hub LLM 경로를 사용해 공급자 전환 / 비용 로깅 / 장애 폴백
+ * 정책을 한 곳에서 따른다.
  */
 
 const path = require('path');
-const { callWithFallback } = require(path.join(__dirname, '../../../packages/core/lib/llm-fallback'));
-const {
-  buildSingleChain,
-  selectLLMChain,
-} = require(path.join(__dirname, '../../../packages/core/lib/llm-model-selector'));
+const { callHubLlm } = require(path.join(__dirname, '../../../packages/core/lib/hub-client'));
 const {
   getWorkerMonitoringPreference,
   isProviderConfigured,
 } = require('./llm-api-monitoring.ts');
-const { getWorkerLLMSelectorOverrides } = require('./runtime-config.ts');
 
 async function callLLM(model, system, user, maxTokens = 1024, logMeta = {}) {
-  const result = await callWithFallback({
-    chain: buildSingleChain(model, maxTokens, 0.1),
+  const result = await callHubLlm({
+    callerTeam: 'worker',
+    agent: 'ai-fallback',
+    selectorKey: 'worker.ai.fallback',
+    taskType: logMeta.requestType || 'ai_question',
+    abstractModel: 'anthropic_haiku',
     systemPrompt: system,
-    userPrompt: user,
-    logMeta: { team: 'worker', purpose: 'assistant', bot: 'ai-client', requestType: 'ai_question', ...logMeta },
+    prompt: user,
+    maxTokens,
+    groqModel: model,
+    timeoutMs: 30000,
+    maxBudgetUsd: 0.03,
   });
   return result.text;
 }
@@ -35,25 +37,27 @@ async function callLLMWithFallback(groqModel, system, user, maxTokens = 1024, lo
   const preferredApi = forcedPreferredApi || await getWorkerMonitoringPreference().catch(() => 'groq');
   const configuredProviders = ['groq', 'claude-code', 'anthropic', 'gemini', 'openai']
     .filter((provider) => isProviderConfigured(provider));
-  const selectorOverrides = getWorkerLLMSelectorOverrides();
-  const chain = selectLLMChain('worker.ai.fallback', {
+
+  const result = await callHubLlm({
+    callerTeam: 'worker',
+    agent: 'ai-fallback',
+    selectorKey: 'worker.ai.fallback',
+    taskType: logMeta.requestType || 'ai_question',
+    abstractModel: 'anthropic_haiku',
+    systemPrompt: system,
+    prompt: user,
+    maxTokens,
     groqModel,
     preferredApi,
     configuredProviders,
-    maxTokens,
-    policyOverride: selectorOverrides['worker.ai.fallback'],
+    timeoutMs: 30000,
+    maxBudgetUsd: 0.03,
   });
-
-  const result = await callWithFallback({
-    chain,
-    systemPrompt: system,
-    userPrompt: user,
-    logMeta: { team: 'worker', purpose: 'assistant', bot: 'ai-client', requestType: 'ai_question', preferredApi, ...logMeta },
-  });
-  const resolvedModel = String(result.model || '');
-  const modelId = resolvedModel.startsWith(`${result.provider}/`)
+  const resolvedModel = String(result.model || result.selected_route || result.provider || 'hub');
+  const provider = String(result.provider || '').replace(/-oauth$/, '');
+  const modelId = resolvedModel === provider || resolvedModel.startsWith(`${provider}/`) || resolvedModel.includes('/')
     ? resolvedModel
-    : `${result.provider}/${resolvedModel}`;
+    : `${provider}/${resolvedModel}`;
   return { text: result.text, model: modelId, preferredApi };
 }
 

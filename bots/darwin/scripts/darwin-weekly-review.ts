@@ -12,7 +12,7 @@ const PROJECT_ROOT = path.resolve(__dirname, "../../..");
 const { query } = require(
   path.join(PROJECT_ROOT, "packages/core/lib/pg-pool")
 );
-const { postAlarm } = require(path.join(PROJECT_ROOT, "packages/core/lib/openclaw-client"));
+const { postAlarm } = require(path.join(PROJECT_ROOT, "packages/core/lib/hub-alarm-client"));
 
 interface QueryResultRow {
   [key: string]: unknown;

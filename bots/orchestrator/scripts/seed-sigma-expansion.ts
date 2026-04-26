@@ -3,6 +3,10 @@
 
 const { registerAgent } = require('../../../packages/core/lib/agent-registry');
 
+function runtimeConfig(purpose = 'analysis') {
+  return { llm_management: 'runtime-managed', runtime_team: 'sigma', runtime_purpose: purpose };
+}
+
 const NEW_SIGMA_AGENTS = [
   {
     name: 'hawk',
@@ -10,7 +14,7 @@ const NEW_SIGMA_AGENTS = [
     team: 'sigma',
     role: 'analyst',
     specialty: '비판적분석+리스크발견+실패패턴+병목탐지',
-    llm_model: 'groq/llama-4-scout',
+    config: runtimeConfig('analysis'),
     dot_character: { color: '#ef4444', accessory: 'magnifier' },
   },
   {
@@ -19,7 +23,7 @@ const NEW_SIGMA_AGENTS = [
     team: 'sigma',
     role: 'analyst',
     specialty: '낙관적분석+성공패턴확대+기회발견+강점강화',
-    llm_model: 'groq/llama-4-scout',
+    config: runtimeConfig('analysis'),
     dot_character: { color: '#22c55e', accessory: 'chart' },
   },
   {
@@ -28,7 +32,7 @@ const NEW_SIGMA_AGENTS = [
     team: 'sigma',
     role: 'analyst',
     specialty: '장기추세분석+주간월간트렌드+구조적변화감지',
-    llm_model: 'groq/qwen/qwen3-32b',
+    config: runtimeConfig('analysis'),
     dot_character: { color: '#8b5cf6', accessory: 'glasses' },
   },
   {
@@ -37,7 +41,7 @@ const NEW_SIGMA_AGENTS = [
     team: 'sigma',
     role: 'workflow',
     specialty: '워크플로우최적화+핸드오프분석+LLM비용분석+병목제거',
-    llm_model: 'groq/qwen/qwen3-32b',
+    config: runtimeConfig('quality'),
     dot_character: { color: '#f97316', accessory: 'compass' },
   },
   {
@@ -46,7 +50,7 @@ const NEW_SIGMA_AGENTS = [
     team: 'sigma',
     role: 'rag',
     specialty: 'RAG대도서관관리+triplet축적+지식그래프+StandingOrders승격',
-    llm_model: 'claude-code/sonnet',
+    config: runtimeConfig('analysis'),
     dot_character: { color: '#14b8a6', accessory: 'book' },
   },
   {
@@ -55,7 +59,7 @@ const NEW_SIGMA_AGENTS = [
     team: 'sigma',
     role: 'predictor',
     specialty: '성과예측+매매예측+트래픽예측+리소스예측',
-    llm_model: 'openai-oauth/gpt-5.4',
+    config: runtimeConfig('analysis'),
     dot_character: { color: '#3b82f6', accessory: 'chart' },
   },
 ];

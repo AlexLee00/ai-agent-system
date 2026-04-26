@@ -591,7 +591,7 @@ function checkLaunchdHealth() {
 async function recoverDownServices(downServices) {
   if (!downServices || downServices.length === 0) return [];
 
-  const { postAlarm } = require('../../../packages/core/lib/openclaw-client');
+  const { postAlarm } = require('../../../packages/core/lib/hub-alarm-client');
   const results = [];
   const uid = process.getuid ? process.getuid() : execSync('id -u', { encoding: 'utf8' }).trim();
 
@@ -901,7 +901,7 @@ async function executeWithVerifyLoop(taskType, params = {}, requestedBy = 'claud
     if (attempt >= MAX_RETRY) {
       // 3회 모두 실패 — 긴급 알림
       try {
-        const { postAlarm } = require('../../../packages/core/lib/openclaw-client');
+        const { postAlarm } = require('../../../packages/core/lib/hub-alarm-client');
         await postAlarm({
           message: `🚨 [독터] Verify Loop 최종 실패\n작업: ${taskType}\n${MAX_RETRY}회 시도 후 검증 실패\n상세: ${verified.detail}`,
           team: 'claude',

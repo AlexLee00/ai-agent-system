@@ -3,11 +3,10 @@
  *
  * 장문 콘텐츠를 섹션 그룹별로 나눠 호출하고,
  * 이전 청크 마지막 일부를 다음 청크 입력에 넘겨 연결성을 유지한다.
- * 실제 LLM 호출은 공용 llm-fallback 체인을 사용한다.
+ * 실제 LLM 호출은 Hub LLM 라우터를 사용한다.
  */
 
-const { callWithFallback } = require('./llm-fallback');
-const { selectLLMChain } = require('./llm-model-selector');
+const { callHubLlm } = require('./hub-client');
 
 type ChunkInput = {
   id: string;
@@ -24,6 +23,10 @@ type ChunkResult = {
 
 type GenerateOptions = {
   model?: string | unknown[];
+  selectorKey?: string;
+  callerTeam?: string;
+  agent?: string;
+  taskType?: string;
   contextCarry?: number;
   maxRetries?: number;
   timeoutMs?: number;
@@ -31,14 +34,14 @@ type GenerateOptions = {
   logMeta?: Record<string, unknown>;
 };
 
-function _buildChain(model: string | unknown[], maxTokens: number): unknown[] {
-  if (Array.isArray(model)) return model;
-
+function _resolveSelectorKey(model: string | unknown[], selectorKey?: string): string {
+  if (selectorKey) return selectorKey;
+  if (typeof model === 'string' && model.startsWith('hub:')) return model.slice('hub:'.length);
+  if (typeof model === 'string' && model.startsWith('selector:')) return model.slice('selector:'.length);
   if (model === 'gpt4o') {
-    return selectLLMChain('core.chunked.gpt4o', { maxTokens });
+    return 'core.chunked.gpt4o';
   }
-
-  return selectLLMChain('core.chunked.default', { maxTokens });
+  return 'core.chunked.default';
 }
 
 async function chunkedGenerate(systemPrompt: string, chunks: ChunkInput[], options: GenerateOptions = {}): Promise<{
@@ -54,7 +57,12 @@ async function chunkedGenerate(systemPrompt: string, chunks: ChunkInput[], optio
     timeoutMs,
     onChunkComplete,
     logMeta = {},
+    selectorKey,
+    callerTeam = String(logMeta.team || 'core'),
+    agent = String(logMeta.bot || 'chunked-llm'),
+    taskType = String(logMeta.requestType || 'chunked_generate'),
   } = options;
+  const resolvedSelectorKey = _resolveSelectorKey(model, selectorKey);
 
   const results: ChunkResult[] = [];
   let previousTail = '';
@@ -73,15 +81,15 @@ async function chunkedGenerate(systemPrompt: string, chunks: ChunkInput[], optio
       try {
         console.log(`[분할생성] 청크 ${chunk.id} (${i + 1}/${chunks.length})${attempts > 0 ? ` 재시도${attempts}` : ''}`);
 
-        const result = await callWithFallback({
-          chain: _buildChain(model, 4096),
+        const result = await callHubLlm({
+          callerTeam,
+          agent,
+          selectorKey: resolvedSelectorKey,
+          taskType: `${taskType}:${chunk.id}`,
           systemPrompt,
-          userPrompt: fullPrompt,
+          prompt: fullPrompt,
+          maxTokens: 4096,
           timeoutMs,
-          logMeta: {
-            ...logMeta,
-            requestType: `${String(logMeta.requestType || 'chunked_generate')}:${chunk.id}`,
-          },
         });
 
         const charCount = result.text.length;
@@ -109,7 +117,7 @@ async function chunkedGenerate(systemPrompt: string, chunks: ChunkInput[], optio
       id: chunk.id,
       content: bestResult.text,
       charCount: bestResult.text.length,
-      model: `${bestResult.provider}/${bestResult.model}`,
+      model: `${bestResult.provider || 'hub'}/${bestResult.model || resolvedSelectorKey}`,
     });
     previousTail = bestResult.text.slice(-contextCarry);
 

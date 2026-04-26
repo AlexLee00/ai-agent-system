@@ -23,7 +23,7 @@ function makeReviewerMocks(overrides = {}) {
       },
       callLLM: async () => ({ text: '코드 품질 양호.' }),
     },
-    '../../../packages/core/lib/openclaw-client': {
+    '../../../packages/core/lib/hub-alarm-client': {
       postAlarm: async () => ({ ok: true }),
     },
     '../../../packages/core/lib/env': {
@@ -173,7 +173,7 @@ async function test_analyzeChanges_empty_diff() {
 async function test_reportToTelegram_calls_postAlarm() {
   const postAlarmCalls = [];
   const mocks = makeReviewerMocks({
-    '../../../packages/core/lib/openclaw-client': {
+    '../../../packages/core/lib/hub-alarm-client': {
       postAlarm: async (p) => { postAlarmCalls.push(p); return { ok: true }; },
     },
   });

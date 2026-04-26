@@ -12,8 +12,9 @@ const path    = require('path');
 const fs      = require('fs');
 const os      = require('os');
 const Database = require('better-sqlite3');
+const runtimePaths = require('../lib/runtime-paths.js');
 
-const DB_PATH         = path.join(os.homedir(), '.openclaw', 'workspace', 'claude-team.db');
+const DB_PATH         = runtimePaths.workspacePath('claude-team.db');
 const MIGRATIONS_DIR  = path.join(__dirname, '..', 'migrations');
 
 function main() {

@@ -7,10 +7,10 @@
  * 역할:
  *   - bot_commands 테이블 폴링 (30초 간격)
  *   - 명령 처리: pause_trading, resume_trading, force_report, get_status
- *   - 일시정지: ~/.openclaw/workspace/luna-paused.flag 파일로 제어
+ *   - 일시정지: AI Agent investment runtime flag 파일로 제어
  *     → crypto.js가 시작 시 이 파일 존재 여부로 스킵 판단
  *
- * NOTE: Telegram 수신/발신 없음. 제이(Jay, OpenClaw)의 명령을 받아 실행.
+ * NOTE: Telegram 수신/발신 없음. 제이(Jay)의 명령을 받아 실행.
  */
 
 const fs      = require('fs');
@@ -48,6 +48,43 @@ const NLP_LEARNINGS_PATH = getNamedIntentLearningPath('jay');
 const TG_MAX_CHARS = 3500;
 const INTENT_SCHEMA = 'investment';
 
+const AI_AGENT_HOME = process.env.AI_AGENT_HOME
+  || process.env.JAY_HOME
+  || path.join(os.homedir(), '.ai-agent-system');
+const AI_AGENT_WORKSPACE = process.env.AI_AGENT_WORKSPACE
+  || process.env.JAY_WORKSPACE
+  || path.join(AI_AGENT_HOME, 'workspace');
+const INVESTMENT_RUNTIME_DIR = process.env.INVESTMENT_RUNTIME_DIR
+  || path.join(AI_AGENT_WORKSPACE, 'investment');
+const INVESTMENT_STATE_DIR = process.env.INVESTMENT_STATE_DIR
+  || path.join(AI_AGENT_HOME, 'investment');
+const LEGACY_INVESTMENT_RUNTIME_DIR = path.join(os.homedir(), '.openclaw', 'workspace');
+const LEGACY_INVESTMENT_STATE_DIR = path.join(os.homedir(), '.openclaw');
+
+function runtimeFile(filename) {
+  return path.join(INVESTMENT_RUNTIME_DIR, filename);
+}
+
+function legacyRuntimeFile(filename) {
+  return path.join(LEGACY_INVESTMENT_RUNTIME_DIR, filename);
+}
+
+function stateFile(filename) {
+  return path.join(INVESTMENT_STATE_DIR, filename);
+}
+
+function legacyStateFile(filename) {
+  return path.join(LEGACY_INVESTMENT_STATE_DIR, filename);
+}
+
+function firstExistingPath(paths) {
+  return paths.find((candidate) => fs.existsSync(candidate)) || paths[0];
+}
+
+function ensureParentDir(filePath) {
+  fs.mkdirSync(path.dirname(filePath), { recursive: true });
+}
+
 // ─── 정체성 로더 (LLM 없이 파일 기반) ──────────────────────────────
 let BOT_IDENTITY = {
   name:    '루나 커맨더',
@@ -74,20 +111,30 @@ function loadBotIdentity() {
 }
 
 // ─── Self-lock ─────────────────────────────────────────────────────
-const LOCK_PATH           = path.join(os.homedir(), '.openclaw', 'workspace', 'luna-commander.lock');
-const PAUSE_FLAG          = path.join(os.homedir(), '.openclaw', 'workspace', 'luna-paused.flag');
-const WITHDRAW_SCHED_FILE = path.join(os.homedir(), '.openclaw', 'workspace', 'withdraw-schedule.json');
+const LOCK_PATH                 = runtimeFile('luna-commander.lock');
+const LEGACY_LOCK_PATH          = legacyRuntimeFile('luna-commander.lock');
+const PAUSE_FLAG                = runtimeFile('luna-paused.flag');
+const LEGACY_PAUSE_FLAG         = legacyRuntimeFile('luna-paused.flag');
+const WITHDRAW_SCHED_FILE       = runtimeFile('withdraw-schedule.json');
+const LEGACY_WITHDRAW_SCHED_FILE = legacyRuntimeFile('withdraw-schedule.json');
 
 function acquireLock() {
-  if (fs.existsSync(LOCK_PATH)) {
-    const old = fs.readFileSync(LOCK_PATH, 'utf8').trim();
+  for (const lockPath of [LOCK_PATH, LEGACY_LOCK_PATH]) {
+    if (!fs.existsSync(lockPath)) continue;
+    const old = fs.readFileSync(lockPath, 'utf8').trim();
+    const oldPid = Number(old);
     try {
-      process.kill(Number(old), 0);
-      console.log(`${BOT_NAME} 커맨더 이미 실행 중 (PID: ${old})`);
-      process.exit(0);
+      if (Number.isInteger(oldPid) && oldPid > 0) {
+        process.kill(oldPid, 0);
+        console.log(`${BOT_NAME} 커맨더 이미 실행 중 (PID: ${old})`);
+        process.exit(0);
+      }
+      fs.unlinkSync(lockPath);
+    } catch {
+      try { fs.unlinkSync(lockPath); } catch {}
     }
-    catch { fs.unlinkSync(LOCK_PATH); }
   }
+  ensureParentDir(LOCK_PATH);
   fs.writeFileSync(LOCK_PATH, String(process.pid));
   process.on('exit', () => { try { fs.unlinkSync(LOCK_PATH); } catch {} });
   ['SIGTERM', 'SIGINT'].forEach(s => process.on(s, () => process.exit(0)));
@@ -96,7 +143,7 @@ function acquireLock() {
 // ─── 알림 발행 ──────────────────────────────────────────────────────
 
 /**
- * OpenClaw webhook을 통해 운영 알림 발행
+ * Hub alarm webhook을 통해 운영 알림 발행
  * @param {string} message   - 발송할 메시지
  * @param {number} level     - 알람 레벨 (1=info, 2=warn, 3=error)
  */
@@ -250,6 +297,7 @@ async function saveLearning(entry) {
  */
 function saveWithdrawSchedule({ unlockAt, usdtBalance, network, address }) {
   const data = { unlockAt, usdtBalance, network, address, savedAt: new Date().toISOString() };
+  ensureParentDir(WITHDRAW_SCHED_FILE);
   fs.writeFileSync(WITHDRAW_SCHED_FILE, JSON.stringify(data, null, 2));
   console.log(`[루나] 출금 예약 저장: ${unlockAt}`);
 }
@@ -259,13 +307,14 @@ function saveWithdrawSchedule({ unlockAt, usdtBalance, network, address }) {
  * unlockAt이 현재보다 과거면 즉시 출금 실행
  */
 async function checkWithdrawSchedule() {
-  if (!fs.existsSync(WITHDRAW_SCHED_FILE)) return;
+  const scheduleFile = firstExistingPath([WITHDRAW_SCHED_FILE, LEGACY_WITHDRAW_SCHED_FILE]);
+  if (!fs.existsSync(scheduleFile)) return;
 
   let sched;
   try {
-    sched = JSON.parse(fs.readFileSync(WITHDRAW_SCHED_FILE, 'utf8'));
+    sched = JSON.parse(fs.readFileSync(scheduleFile, 'utf8'));
   } catch {
-    fs.unlinkSync(WITHDRAW_SCHED_FILE);
+    fs.unlinkSync(scheduleFile);
     return;
   }
 
@@ -283,7 +332,7 @@ async function checkWithdrawSchedule() {
 
   // 해제 시각 도래 → 예약 파일 삭제 후 출금 실행
   console.log(`[루나] 출금지연 해제 확인 → 자동 출금 시작`);
-  fs.unlinkSync(WITHDRAW_SCHED_FILE);
+  fs.unlinkSync(scheduleFile);
 
   const result = await handleUpbitWithdrawOnly();
   if (result.ok) {
@@ -310,7 +359,7 @@ async function checkWithdrawSchedule() {
 
 // ─── 팀원 정체성 점검·학습 ───────────────────────────────────────────
 
-const BOT_ID_DIR   = path.join(os.homedir(), '.openclaw', 'workspace', 'bot-identities');
+const BOT_ID_DIR   = runtimeFile('bot-identities');
 const TEAM_AGENTS  = path.join(__dirname, 'team');
 
 const LUNA_TEAM = [
@@ -382,6 +431,7 @@ function checkLunaTeamIdentity() {
 function handlePauseTrading(args) {
   try {
     const reason = args.reason || '제이 명령';
+    ensureParentDir(PAUSE_FLAG);
     fs.writeFileSync(PAUSE_FLAG, JSON.stringify({ paused_at: new Date().toISOString(), reason }));
     return { ok: true, message: `거래 일시정지 설정 (이유: ${reason})\n다음 사이클부터 스킵됩니다.` };
   } catch (e) {
@@ -394,10 +444,13 @@ function handlePauseTrading(args) {
  */
 function handleResumeTrading() {
   try {
-    if (!fs.existsSync(PAUSE_FLAG)) {
+    const pauseFiles = [PAUSE_FLAG, LEGACY_PAUSE_FLAG].filter((filePath) => fs.existsSync(filePath));
+    if (pauseFiles.length === 0) {
       return { ok: true, message: '이미 실행 중 상태입니다.' };
     }
-    fs.unlinkSync(PAUSE_FLAG);
+    for (const filePath of pauseFiles) {
+      try { fs.unlinkSync(filePath); } catch {}
+    }
     return { ok: true, message: '거래 재개 완료. 다음 사이클(최대 5분)부터 정상 실행됩니다.' };
   } catch (e) {
     return { ok: false, error: e.message };
@@ -574,13 +627,14 @@ function handleForceReport() {
  */
 function handleGetStatus() {
   try {
-    const stateFile = path.join(os.homedir(), '.openclaw', 'investment-state.json');
-    if (!fs.existsSync(stateFile)) {
+    const statusFile = firstExistingPath([stateFile('investment-state.json'), legacyStateFile('investment-state.json')]);
+    if (!fs.existsSync(statusFile)) {
       return { ok: true, status: 'unknown', message: '상태 파일 없음' };
     }
-    const state   = JSON.parse(fs.readFileSync(stateFile, 'utf8'));
-    const paused  = fs.existsSync(PAUSE_FLAG);
-    const pauseInfo = paused ? JSON.parse(fs.readFileSync(PAUSE_FLAG, 'utf8')) : null;
+    const state   = JSON.parse(fs.readFileSync(statusFile, 'utf8'));
+    const pauseFile = firstExistingPath([PAUSE_FLAG, LEGACY_PAUSE_FLAG]);
+    const paused  = fs.existsSync(pauseFile);
+    const pauseInfo = paused ? JSON.parse(fs.readFileSync(pauseFile, 'utf8')) : null;
 
     return {
       ok: true,

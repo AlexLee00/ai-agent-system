@@ -23,6 +23,7 @@ const { execSync } = require('child_process');
 
 const { publishToMainBot } = require('../lib/mainbot-client.js');
 const cfg = require('../lib/config.ts');
+const runtimePaths = require('../lib/runtime-paths.js');
 const {
   isElixirOwnedService,
   isExpectedIdleService,
@@ -31,11 +32,11 @@ const {
 
 // v2: 핵심 봇 프로세스 빠른 점검 모듈
 const teamLeadsCheck = require('../lib/checks/team-leads.legacy.js');
-// NOTE: openclawCheck (lsof 기반 포트 검사)는 1시간 주기 dexter.js에서만 실행
+// NOTE: Legacy gateway checks are retired; Hub health is covered by dexter full checks.
 
 // ── 상수 ─────────────────────────────────────────────────────────────
 
-const STATE_FILE    = path.join(os.homedir(), '.openclaw', 'workspace', 'quickcheck-state.json');
+const STATE_FILE    = runtimePaths.workspacePath('quickcheck-state.json');
 const ALERT_CD_MS = Number(cfg.RUNTIME?.quickcheck?.alertCooldownMs || (60 * 60 * 1000));
 const RESTART_CD_MS = Number(cfg.RUNTIME?.quickcheck?.restartCooldownMs || (30 * 60 * 1000));
 const MAX_RESTARTS = Number(cfg.RUNTIME?.quickcheck?.maxRestarts || 3);
@@ -44,7 +45,6 @@ const DISK_CRITICAL = Number(cfg.RUNTIME?.quickcheck?.diskCriticalPercent || 90)
 // ── 핵심 서비스 목록 ──────────────────────────────────────────────────
 // restartable: Playwright 기반 서비스는 zombie chrome 위험으로 false
 const SERVICES = [
-  { id: 'ai.openclaw.gateway',      label: 'OpenClaw 게이트웨이',     restartable: true  },
   { id: 'ai.ska.commander',         label: '스카 커맨더',             restartable: true  },
   { id: 'ai.investment.crypto',     label: '루나 크립토',             restartable: true  },
   { id: 'ai.investment.commander',  label: '루나 커맨더',             restartable: true  },
@@ -257,8 +257,7 @@ async function main() {
   } catch { /* 팀장 점검 실패 — 기존 체크에 영향 없음 */ }
 
   // ── 2. 디스크 위기 체크 ─────────────────────────────────────────────
-  // NOTE: OpenClaw 포트/보안 점검은 1시간 주기 dexter.js (openclaw.js 모듈)에서 수행
-  //       퀵체크에서는 launchd 프로세스 생존 체크(위 SERVICES 목록)만으로 충분
+  // NOTE: Hub 상태는 full 체크에서 처리하고, 퀵체크는 핵심 launchd 생존만 본다.
   const diskUsage = getDiskUsage();
   const diskPrev  = state.disk || {};
 

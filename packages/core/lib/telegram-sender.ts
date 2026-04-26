@@ -159,6 +159,10 @@ const _token  = () => process.env.TELEGRAM_BOT_TOKEN || _secrets().telegram_bot_
 const _chatId = () => process.env.TELEGRAM_GROUP_ID || _secrets().telegram_group_id || process.env.TELEGRAM_CHAT_ID || _secrets().telegram_chat_id || '';
 const _topics = () => _secrets().telegram_topic_ids || {};
 
+function _allowRootFallback(): boolean {
+  return ['1', 'true', 'yes', 'y', 'on'].includes(String(process.env.TELEGRAM_ALLOW_ROOT_FALLBACK || '').trim().toLowerCase());
+}
+
 function _alertsDisabled(): boolean {
   const raw = String(
     process.env.TELEGRAM_ALERTS_DISABLED
@@ -192,13 +196,19 @@ function _getThreadId(team: string): TelegramTopicId | null {
   return ids[key] ?? ids['general'] ?? null;
 }
 
+function _resolvePendingThreadId(entry: Record<string, any>, team: string): TelegramTopicId | null {
+  const current = _getThreadId(team);
+  if (current != null) return current;
+  return entry.threadId ?? null;
+}
+
 // ── Pending Queue ─────────────────────────────────────────────────────
 const RUNTIME_ROOT = process.env.HUB_RUNTIME_DIR
   || process.env.JAY_RUNTIME_DIR
   || path.join(os.homedir(), '.ai-agent-system', 'hub');
 const WORKSPACE    = path.join(RUNTIME_ROOT, 'telegram');
 const PENDING_FILE = path.join(WORKSPACE, 'pending-telegrams.jsonl');
-const LEGACY_WORKSPACE = process.env.OPENCLAW_WORKSPACE || '';
+const LEGACY_WORKSPACE = process.env.HUB_TELEGRAM_LEGACY_PENDING_WORKSPACE || '';
 const LEGACY_PENDING_FILE = LEGACY_WORKSPACE
   ? path.join(LEGACY_WORKSPACE, 'pending-telegrams.jsonl')
   : '';
@@ -373,9 +383,14 @@ async function _doSend(text: string, threadId: TelegramTopicId | null, options: 
       && threadId != null
       && /message thread not found/i.test(_lastSendError)
     ) {
-      console.warn(`⚠️ [telegram-sender] topic id 무효 — 그룹 루트로 재시도 (thread=${threadId})`);
-      const retryWithoutThread = await _trySend(text, null, options);
-      if (retryWithoutThread.ok) return true;
+      if (_allowRootFallback()) {
+        console.warn(`⚠️ [telegram-sender] topic id 무효 — 명시 허용에 따라 그룹 루트로 재시도 (thread=${threadId})`);
+        const retryWithoutThread = await _trySend(text, null, options);
+        if (retryWithoutThread.ok) return true;
+      } else {
+        console.warn(`⚠️ [telegram-sender] topic id 무효 — 루트 fallback 차단, pending queue로 보류 (thread=${threadId})`);
+        return false;
+      }
     }
 
     if (code === 429 && retryAfter > 0) {
@@ -659,7 +674,7 @@ export async function flushPending() {
     const team = entry.team || 'general';
     const ok = env.IS_OPS
       ? await send(team, entry.message)
-      : await _doSend(entry.message, entry.threadId ?? _getThreadId(team));
+      : await _doSend(entry.message, _resolvePendingThreadId(entry, team));
     if (!ok) {
       entry.retries = retries;
       remaining.push(JSON.stringify(entry));

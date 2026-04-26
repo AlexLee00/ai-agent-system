@@ -3,6 +3,7 @@
 const kst = require('../../../packages/core/lib/kst');
 const path = require('path');
 const fs = require('fs');
+const os = require('os');
 const { spawn } = require('child_process');
 const {
   buildSnippetEvent,
@@ -26,6 +27,14 @@ const billingGuard = require('../../../packages/core/lib/billing-guard');
 const pgPool = require('../../../packages/core/lib/pg-pool');
 
 const SCHEMA = 'claude';
+
+function getAiAgentHome() {
+  return process.env.AI_AGENT_HOME || process.env.JAY_HOME || path.join(os.homedir(), '.ai-agent-system');
+}
+
+function getInvestmentStateFile(filename) {
+  return path.join(process.env.INVESTMENT_STATE_DIR || path.join(getAiAgentHome(), 'investment'), filename);
+}
 
 function formatGuardScope(scope = '') {
   const normalized = String(scope || '').trim().toLowerCase();
@@ -340,8 +349,8 @@ function pushUniqueLine(lines, line) {
 }
 
 function getLunaRiskSnapshot() {
-  const statePath = path.join(process.env.HOME || '', '.openclaw', 'investment-state.json');
-  const costPath = path.join(process.env.HOME || '', '.openclaw', 'investment-cost.json');
+  const statePath = getInvestmentStateFile('investment-state.json');
+  const costPath = getInvestmentStateFile('investment-cost.json');
   const state = readJsonFileSafe(statePath);
   const cost = readJsonFileSafe(costPath);
   const lines = [];

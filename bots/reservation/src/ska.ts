@@ -10,7 +10,7 @@
  *               query_today_stats, query_alerts, restart_andy, restart_jimmy
  *   - 결과를 bot_commands.status='done', result=JSON으로 업데이트
  *
- * NOTE: Telegram 수신/발신 없음. 제이(Jay, OpenClaw)의 명령을 받아 실행.
+ * NOTE: Telegram 수신/발신 없음. 제이(Jay)의 명령을 받아 실행.
  */
 
 const fs = require('fs');
@@ -29,6 +29,10 @@ const { checkSkaTeamIdentity } = require('../lib/ska-team');
 const { createSkaCommandHandlers } = require('../lib/ska-command-handlers');
 const { createSkaIntentLearning } = require('../lib/ska-intent-learning');
 const { createSkaCommandQueue } = require('../lib/ska-command-queue');
+const {
+  getReservationRuntimeFile,
+  ensureParentDir,
+} = require('../lib/runtime-paths');
 
 // ─── 봇 정보 ─────────────────────────────────────────────────────────
 const BOT_NAME       = '스카';
@@ -82,7 +86,7 @@ function loadBotIdentity() {
 }
 
 // ─── Self-lock ─────────────────────────────────────────────────────
-const LOCK_PATH = path.join(os.homedir(), '.openclaw', 'workspace', 'ska.lock');
+const LOCK_PATH = getReservationRuntimeFile('ska.lock');
 
 function isActiveSkaProcess(pid) {
   if (!pid || Number.isNaN(pid)) return false;
@@ -110,8 +114,9 @@ function isActiveSkaProcess(pid) {
 }
 
 function acquireLock() {
-  if (fs.existsSync(LOCK_PATH)) {
-    const old = fs.readFileSync(LOCK_PATH, 'utf8').trim();
+  for (const lockPath of [LOCK_PATH]) {
+    if (!fs.existsSync(lockPath)) continue;
+    const old = fs.readFileSync(lockPath, 'utf8').trim();
     const oldPid = Number(old);
 
     if (isActiveSkaProcess(oldPid)) {
@@ -120,10 +125,11 @@ function acquireLock() {
     }
 
     try {
-      fs.unlinkSync(LOCK_PATH);
+      fs.unlinkSync(lockPath);
       console.log(`[스카] stale lock 정리 (PID: ${old || 'unknown'})`);
     } catch {}
   }
+  ensureParentDir(LOCK_PATH);
   safeWriteFile(LOCK_PATH, String(process.pid), 'ska');
   process.on('exit', () => { try { fs.unlinkSync(LOCK_PATH); } catch {} });
   ['SIGTERM', 'SIGINT'].forEach(s => process.on(s, () => process.exit(0)));

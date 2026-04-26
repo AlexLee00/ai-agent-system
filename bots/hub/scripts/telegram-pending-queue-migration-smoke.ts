@@ -4,6 +4,7 @@ import path from 'node:path';
 
 const TELEGRAM_SENDER_TS = require.resolve('../../../packages/core/lib/telegram-sender.ts');
 const ENV_TS = require.resolve('../../../packages/core/lib/env.ts');
+const originalFetch = globalThis.fetch;
 
 function assert(condition: unknown, message: string): asserts condition {
   if (!condition) throw new Error(message);
@@ -36,24 +37,47 @@ async function main() {
   const runtimeDir = path.join(tempDir, 'runtime');
   const legacyWorkspace = path.join(tempDir, 'legacy-workspace');
   const legacyPending = path.join(legacyWorkspace, 'pending-telegrams.jsonl');
+  const storePath = path.join(tempDir, 'bots', 'hub', 'secrets-store.json');
 
   fs.mkdirSync(legacyWorkspace, { recursive: true });
+  fs.mkdirSync(path.dirname(storePath), { recursive: true });
+  fs.writeFileSync(storePath, `${JSON.stringify({
+    telegram: {
+      ['bot_' + 'token']: 'pending-topic-rebind-bot-token-fixture',
+      group_id: '-1001234567890',
+      topic_ids: {
+        luna: 4242,
+        general: 1,
+      },
+    },
+  })}\n`, 'utf8');
   fs.writeFileSync(legacyPending, `${JSON.stringify({
-    team: 'general',
+    team: 'luna',
     message: 'legacy pending queue smoke',
     savedAt: new Date().toISOString(),
     retries: 0,
+    threadId: 15,
   })}\n`, 'utf8');
+  const calls: Array<{ body: any }> = [];
 
   try {
     await withEnvPatch({
       HUB_RUNTIME_DIR: runtimeDir,
-      OPENCLAW_WORKSPACE: legacyWorkspace,
+      HUB_TELEGRAM_LEGACY_PENDING_WORKSPACE: legacyWorkspace,
       PROJECT_ROOT: tempDir,
       MODE: 'dev',
       TELEGRAM_BOT_TOKEN: null,
       TELEGRAM_CHAT_ID: null,
     }, async () => {
+      globalThis.fetch = (async (_input: RequestInfo | URL, init?: RequestInit) => {
+        const body = JSON.parse(String(init?.body || '{}'));
+        calls.push({ body });
+        return new Response(JSON.stringify({ ok: true, result: { message_id: calls.length } }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }) as typeof fetch;
+
       resetSenderModule();
       const sender = require('../../../packages/core/lib/telegram-sender.ts');
       const paths = sender._testOnly_getPendingQueuePaths();
@@ -67,18 +91,18 @@ async function main() {
       await sender.flushPending();
 
       assert(!fs.existsSync(legacyPending), 'expected legacy pending queue to be migrated');
-      assert(fs.existsSync(paths.pendingFile), 'expected runtime pending queue file after migration');
-
-      const migratedContent = fs.readFileSync(paths.pendingFile, 'utf8');
+      assert(!fs.existsSync(paths.pendingFile), 'expected delivered migrated queue to be removed');
+      assert(calls.length === 1, 'expected one Telegram send attempt for migrated pending queue');
       assert(
-        migratedContent.includes('legacy pending queue smoke'),
-        'expected migrated runtime queue to keep legacy message',
+        calls[0].body.message_thread_id === 4242,
+        `expected migrated pending queue to rebind current topic id, got: ${calls[0].body.message_thread_id}`,
       );
     });
 
     console.log('telegram_pending_queue_migration_smoke_ok');
   } finally {
     resetSenderModule();
+    globalThis.fetch = originalFetch;
     fs.rmSync(tempDir, { recursive: true, force: true });
   }
 }

@@ -14,7 +14,7 @@
 const path   = require('path');
 const pgPool = require(path.join(__dirname, '../../../packages/core/lib/pg-pool'));
 const { getSecret } = require('./secrets.ts');
-const { postAlarm } = require(path.join(__dirname, '../../../packages/core/lib/openclaw-client'));
+const { postAlarm } = require(path.join(__dirname, '../../../packages/core/lib/hub-alarm-client'));
 const {
   buildNoticeEvent,
   renderNoticeEvent,

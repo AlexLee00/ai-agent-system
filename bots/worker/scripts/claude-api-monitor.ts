@@ -19,6 +19,7 @@ const https = require('https');
 
 const kst    = require('../../../packages/core/lib/kst');
 const pgPool = require('../../../packages/core/lib/pg-pool');
+const { AI_AGENT_LOGS } = require('../../../packages/core/lib/env');
 const {
   buildNoticeEvent,
   renderNoticeEvent,
@@ -32,7 +33,7 @@ const {
   appendIncidentLine,
 } = require('../lib/critical-alerts.legacy');
 
-const SPAWN_LOG   = path.join(os.homedir(), '.openclaw', 'workspace', 'logs', 'claude-code-spawns.jsonl');
+const SPAWN_LOG   = path.join(AI_AGENT_LOGS, 'claude-code-spawns.jsonl');
 const CONFIG_YAML = path.join(__dirname, '../../investment/config.yaml');
 const monitorMemory = createAgentMemory({ agentId: 'worker.claude-api-monitor', team: 'worker' });
 

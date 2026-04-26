@@ -9,8 +9,6 @@
 
 const path = require('path');
 const os   = require('os');
-const { selectLLMChain } = require('../../../../packages/core/lib/llm-model-selector');
-const sharedConfig = require('../config');
 
 const HOME = os.homedir();
 const ROOT = path.join(HOME, 'projects', 'ai-agent-system');
@@ -194,13 +192,10 @@ module.exports = {
     logFile:          '/tmp/archer.log',
   },
 
-  // ─── Archer LLM 체인 ────────────────────────────────────────────
+  // ─── Archer LLM selector ─────────────────────────────────────────
   // Archer 모델 정책은 selector/runtime override가 단일 진실원이다.
-  // 기본 정책은 claude-code/sonnet 품질 우선이며, 체인/순서는
-  // `claude.archer.tech_analysis` selector + runtime override 결과를 그대로 따른다.
-  LLM_CHAIN: selectLLMChain('claude.archer.tech_analysis', {
-    policyOverride: sharedConfig.RUNTIME?.llmSelectorOverrides?.['claude.archer.tech_analysis'],
-  }),
+  // 실제 체인/순서는 Hub /hub/llm/call 이 selectorKey를 해석해 결정한다.
+  LLM_SELECTOR_KEY: 'claude.archer.tech_analysis',
 
   // 하위 호환성 유지 — 기존 참조가 있더라도 OpenAI fallback 설정값은 계속 노출
   OPENAI: {
@@ -212,7 +207,6 @@ module.exports = {
   // ─── 시크릿 파일 경로 (github_token 등) ─────────────────────────
   SECRETS_PATHS: [
     path.join(ROOT, 'bots', 'claude', 'secrets.json'),
-    path.join(HOME, '.openclaw', 'secrets.json'),
   ],
 
 };

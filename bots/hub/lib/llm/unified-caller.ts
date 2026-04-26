@@ -11,6 +11,7 @@ const { checkCache, saveCache } = require('./cache');
 const { selectRuntimeProfile } = require('../runtime-profiles');
 const { getGroqFallback } = require('../../../../packages/core/lib/llm-models');
 const { callWithFallback: callCoreWithFallback } = require('../../../../packages/core/lib/llm-fallback');
+const { describeAgentModel, selectLLMChain } = require('../../../../packages/core/lib/llm-model-selector');
 const sender = require('../../../../packages/core/lib/telegram-sender');
 
 const CLAUDE_CODE_MODEL = {
@@ -62,7 +63,12 @@ async function callWithFallback(req) {
     }
   }
 
-  // 2. Build chain from runtime-profiles or legacy 2-step
+  // 2. Build chain from the Hub selector registry, runtime-profiles, or legacy 2-step.
+  const selectorChain = _resolveSelectorChain(req, team);
+  if (selectorChain) {
+    return _callWithSelectorChain(req, selectorChain, team);
+  }
+
   const profile = req.agent ? selectRuntimeProfile(team, req.agent) : null;
   const hasChain = !!(profile && ((profile.primary_routes && profile.primary_routes.length) || (profile.fallback_routes && profile.fallback_routes.length)));
 
@@ -70,6 +76,64 @@ async function callWithFallback(req) {
     return _callWithProfileChain(req, profile, team);
   }
   return _callLegacy(req, team);
+}
+
+function _resolveSelectorChain(req, team) {
+  try {
+    if (req.selectorKey) {
+      const chain = selectLLMChain(String(req.selectorKey), {
+        maxTokens: req.maxTokens,
+        agentName: req.agent,
+        preferredApi: req.preferredApi,
+        groqModel: req.groqModel,
+        configuredProviders: req.configuredProviders,
+      });
+      return chain && chain.length ? { selectorKey: String(req.selectorKey), chain } : null;
+    }
+    if (req.agent) {
+      const resolved = describeAgentModel(team, String(req.agent));
+      if (resolved?.selected && Array.isArray(resolved.chain) && resolved.chain.length > 0) {
+        return { selectorKey: resolved.selectorKey, chain: resolved.chain };
+      }
+    }
+  } catch (e) {
+    console.warn(`[llm/unified] selector chain 해석 실패 (${team}/${req.agent || req.selectorKey || 'unknown'}): ${e.message}`);
+  }
+  return null;
+}
+
+async function _callWithSelectorChain(req, selectorChain, team) {
+  const chainTimeout = req.timeoutMs || 30_000;
+  const attempts = [];
+
+  for (const entry of selectorChain.chain) {
+    const route = _chainEntryToRoute(entry);
+    const result = await _callRoute(route, req, entry.timeoutMs || chainTimeout, entry);
+    if (result.ok) {
+      if (req.cacheEnabled && result.result) _saveCache(req, result).catch(() => {});
+      return {
+        ...result,
+        provider: _routeToProvider(route),
+        selected_route: route,
+        selectorKey: selectorChain.selectorKey,
+        fallbackCount: attempts.length,
+        attempted_providers: attempts.map(a => a.provider),
+      };
+    }
+    attempts.push({ provider: route, error: result.error || 'unknown', durationMs: result.durationMs });
+    console.warn(`[llm/unified] ${selectorChain.selectorKey}:${route} 실패 (${result.error}) → 다음 시도`);
+  }
+
+  await _notifyFallbackExhaustion(req, attempts, team);
+  return {
+    ok: false,
+    provider: 'failed',
+    durationMs: attempts.reduce((s, a) => s + a.durationMs, 0),
+    error: `fallback_exhausted: ${(attempts[attempts.length - 1] || {}).error || 'unknown'}`,
+    attempted_providers: attempts.map(a => a.provider),
+    fallbackCount: attempts.length,
+    selectorKey: selectorChain.selectorKey,
+  };
 }
 
 async function _callWithProfileChain(req, profile, team) {
@@ -116,7 +180,7 @@ async function _callLegacy(req, _team) {
   return { ...fallback, provider: fallback.ok ? 'groq' : 'failed', primaryError: primary.error, fallbackCount: 1, cacheHit: false };
 }
 
-async function _callRoute(route, req, timeoutMs) {
+async function _callRoute(route, req, timeoutMs, chainEntry = {}) {
   const normalizedRoute = _normalizeRoute(route, req.abstractModel);
 
   if (normalizedRoute.startsWith('claude-code/')) {
@@ -125,7 +189,13 @@ async function _callRoute(route, req, timeoutMs) {
   }
   if (normalizedRoute.startsWith('groq/')) {
     const model = normalizedRoute.slice('groq/'.length);
-    return callGroqFallback({ prompt: req.prompt, model, systemPrompt: req.systemPrompt });
+    return callGroqFallback({
+      prompt: req.prompt,
+      model,
+      systemPrompt: req.systemPrompt,
+      maxTokens: chainEntry.maxTokens,
+      temperature: chainEntry.temperature,
+    });
   }
   if (normalizedRoute.startsWith('local/')) {
     const model = normalizedRoute.slice('local/'.length);
@@ -137,9 +207,25 @@ async function _callRoute(route, req, timeoutMs) {
     || normalizedRoute.startsWith('google-gemini-cli/')
     || normalizedRoute.startsWith('gemini/')
   ) {
-    return _callViaCoreFallback(normalizedRoute, req, timeoutMs);
+    return _callViaCoreFallback(normalizedRoute, req, timeoutMs, chainEntry);
   }
   return { ok: false, provider: 'failed', error: `unsupported_provider:${route}`, durationMs: 0 };
+}
+
+function _chainEntryToRoute(entry) {
+  const provider = String(entry?.provider || '').trim();
+  const model = String(entry?.model || '').trim();
+  if (!provider || !model) return model || provider;
+  if (provider === 'anthropic') {
+    const family = model.includes('haiku') ? 'haiku' : model.includes('opus') ? 'opus' : 'sonnet';
+    return `claude-code/${family}`;
+  }
+  if (provider === 'claude-code') return model.startsWith('claude-code/') ? model : `claude-code/${model}`;
+  if (provider === 'groq') return model.startsWith('groq/') ? model : `groq/${model}`;
+  if (provider === 'openai-oauth') return model.startsWith('openai-oauth/') ? model : `openai-oauth/${model}`;
+  if (provider === 'openai') return model.startsWith('openai/') ? model : `openai/${model}`;
+  if (provider === 'gemini') return model.startsWith('google-gemini-cli/') || model.startsWith('gemini/') ? model : `gemini/${model}`;
+  return model.includes('/') ? model : `${provider}/${model}`;
 }
 
 function _isProviderSupported(route) {
@@ -178,7 +264,7 @@ function _normalizeRoute(route, abstractModel = 'anthropic_sonnet') {
   return route;
 }
 
-async function _callViaCoreFallback(route, req, timeoutMs) {
+async function _callViaCoreFallback(route, req, timeoutMs, chainEntry = {}) {
   const provider = _routeToProvider(route);
   const model = route.startsWith('gemini/') ? route.slice('gemini/'.length) : route;
   const started = Date.now();
@@ -188,8 +274,8 @@ async function _callViaCoreFallback(route, req, timeoutMs) {
       chain: [{
         provider,
         model,
-        maxTokens: 1024,
-        temperature: 0.3,
+        maxTokens: chainEntry.maxTokens || 1024,
+        temperature: chainEntry.temperature ?? 0.3,
         timeoutMs,
       }],
       systemPrompt: req.systemPrompt || '',

@@ -7,7 +7,9 @@
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 NODE="/opt/homebrew/bin/tsx"
 RUNTIME_SCRIPT="/Users/alexlee/projects/ai-agent-system/bots/reservation/auto/scheduled/pickko-daily-summary.ts"
-LOCK_FILE="$HOME/.openclaw/workspace/pickko-daily-summary.lock"
+WORKSPACE_DIR="${AI_AGENT_WORKSPACE:-${JAY_WORKSPACE:-$HOME/.ai-agent-system/workspace}}"
+mkdir -p "$WORKSPACE_DIR"
+LOCK_FILE="$WORKSPACE_DIR/pickko-daily-summary.lock"
 LOG_FILE="/tmp/pickko-daily-summary.log"
 
 # 중복 실행 방지

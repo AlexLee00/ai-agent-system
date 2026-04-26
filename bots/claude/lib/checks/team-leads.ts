@@ -5,7 +5,7 @@
  * checks/team-leads.js — 핵심 봇 프로세스 건강 점검
  *
  * 현재 점검 대상 (실제 존재하는 프로세스):
- *   1. launchd 핵심 서비스 (naver-monitor, kiosk-monitor, openclaw.gateway, investment.crypto, ska.commander)
+ *   1. launchd 핵심 서비스 (naver-monitor, kiosk-monitor, investment.crypto, ska.commander)
  *
  * 점검하지 않는 것:
  *   - tmux 세션 (2026-03-08 제거: 스카 텔레그램봇은 제이가 담당, ska.commander로 대체)
@@ -21,16 +21,20 @@ const {
   isExpectedIdleService,
   isRetiredService,
 } = require('../../../../packages/core/lib/service-ownership.js');
+const runtimePaths = require('../runtime-paths.js');
 
 // crashed 알람 쿨다운: 동일 서비스 1시간 이내 중복 발송 방지
 const CRASH_COOLDOWN_MS = 60 * 60 * 1000;
-const STATE_FILE = path.join(process.env.HOME, '.openclaw', 'workspace', 'team-leads-state.json');
+const STATE_FILE = runtimePaths.workspacePath('team-leads-state.json');
 
 function loadState() {
   try { return JSON.parse(fs.readFileSync(STATE_FILE, 'utf-8')); } catch { return {}; }
 }
 function saveState(state) {
-  try { fs.writeFileSync(STATE_FILE, JSON.stringify(state, null, 2)); } catch { /* ignore */ }
+  try {
+    fs.mkdirSync(path.dirname(STATE_FILE), { recursive: true });
+    fs.writeFileSync(STATE_FILE, JSON.stringify(state, null, 2));
+  } catch { /* ignore */ }
 }
 function canAlert(state, key) {
   const last = state[key];
@@ -40,7 +44,6 @@ function canAlert(state, key) {
 // ── 핵심 launchd 서비스 ────────────────────────────────────────────
 // bots.js가 전체 서비스를 점검하므로, 여기서는 가장 중요한 것만 집중 점검
 const CRITICAL_SERVICES = [
-  { id: 'ai.openclaw.gateway',      label: 'OpenClaw 게이트웨이',     key: 'openclaw' },
   { id: 'ai.ska.naver-monitor',     label: '앤디 (네이버모니터)',      key: 'naver_monitor' },
   { id: 'ai.ska.kiosk-monitor',     label: '지미 (키오스크모니터)',    key: 'kiosk_monitor' },
   { id: 'ai.investment.crypto',     label: '루나 크립토 사이클',       key: 'luna_crypto' },
@@ -158,15 +161,6 @@ async function run() {
 }
 
 /**
- * OpenClaw 게이트웨이 정상 여부 반환 (dexter-mode 연동용)
- * @returns {boolean}
- */
-function isOpenClawOk(teamLeadsResult) {
-  const item = (teamLeadsResult?.items || []).find(i => i._key === 'openclaw');
-  return !item || item.status !== 'error';
-}
-
-/**
  * 스카 커맨더 정상 여부 반환 (dexter-mode 연동용)
  * @returns {boolean}
  */
@@ -175,4 +169,4 @@ function isSkayaOk(teamLeadsResult) {
   return !item || item.status !== 'error';
 }
 
-module.exports = { run, isOpenClawOk, isSkayaOk };
+module.exports = { run, isSkayaOk };

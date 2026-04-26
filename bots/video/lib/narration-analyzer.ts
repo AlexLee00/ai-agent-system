@@ -6,8 +6,7 @@ const os = require('os');
 const path = require('path');
 
 const { logToolCall } = require('../../../packages/core/lib/tool-logger');
-const { callWithFallback } = require('../../../packages/core/lib/llm-fallback');
-const { selectLLMChain } = require('../../../packages/core/lib/llm-model-selector');
+const { callHubLlm } = require('../../../packages/core/lib/hub-client');
 const { generateSubtitle } = require('./whisper-client');
 const { correctFile } = require('./subtitle-corrector');
 const { probeDurationMs } = require('./ffmpeg-preprocess');
@@ -24,7 +23,7 @@ function ensureNarrationConfig(config = {}) {
         ? config.narration_analyzer.correct_subtitle
         : true
     ),
-    llm_model: String(config?.narration_analyzer?.llm_model || 'gpt-4o-mini'),
+    runtime_purpose: String(config?.narration_analyzer?.runtime_purpose || 'analysis'),
     llm_timeout_ms: Number(config?.narration_analyzer?.llm_timeout_ms || 15000),
     offline_segment_count_short: Number(config?.narration_analyzer?.offline_segment_count_short || 4),
     offline_segment_count_medium: Number(config?.narration_analyzer?.offline_segment_count_medium || 5),
@@ -376,7 +375,7 @@ async function transcribeNarration(audioPath, config, options = {}) {
   return rawSrtPath;
 }
 
-async function callNarrationAnalyzer(entries, modelName, timeoutMs) {
+async function callNarrationAnalyzer(entries, runtimePurpose, timeoutMs) {
   const payload = entries.map((entry) => ({
     index: entry.index,
     start_s: entry.startSec,
@@ -391,23 +390,19 @@ async function callNarrationAnalyzer(entries, modelName, timeoutMs) {
   ].join('\n');
 
   const startedAt = Date.now();
-  const response = await callWithFallback({
-    chain: selectLLMChain('video.narration-analyzer'),
+  const response = await callHubLlm({
+    callerTeam: TEAM_NAME,
+    agent: 'narration-analyzer',
+    selectorKey: 'video.narration-analyzer',
+    taskType: 'narration_segment_analysis',
+    abstractModel: 'anthropic_sonnet',
     systemPrompt: [
       '당신은 FlutterFlow 강의용 나레이션 구간 분석기다.',
       '자막 엔트리를 의미 단위 구간으로 묶어 JSON 객체 하나만 반환한다.',
       '형식은 { "segments": [ ... ] } 이어야 한다.',
     ].join('\n'),
-    userPrompt: prompt,
+    prompt,
     timeoutMs,
-    logMeta: {
-      team: TEAM_NAME,
-      purpose: 'analysis',
-      bot: 'narration-analyzer',
-      agentName: 'narration-analyzer',
-      selectorKey: 'video.narration-analyzer',
-      requestType: 'narration_segment_analysis',
-    },
   });
   const text = response?.text || '';
   const parsed = JSON.parse(text);
@@ -417,7 +412,7 @@ async function callNarrationAnalyzer(entries, modelName, timeoutMs) {
     bot: BOT_NAME,
     success: true,
     duration_ms: Date.now() - startedAt,
-    metadata: { model: response.model || modelName, provider: response.provider, entryCount: entries.length },
+    metadata: { model: response.model || 'hub-runtime', provider: response.provider, entryCount: entries.length },
   });
 
   return segments;
@@ -426,7 +421,7 @@ async function callNarrationAnalyzer(entries, modelName, timeoutMs) {
 async function analyzeSegments(entries, config = {}) {
   const resolved = ensureNarrationConfig(config);
   try {
-    const segments = await callNarrationAnalyzer(entries, resolved.llm_model, resolved.llm_timeout_ms);
+    const segments = await callNarrationAnalyzer(entries, resolved.runtime_purpose, resolved.llm_timeout_ms);
     if (!Array.isArray(segments) || !segments.length) {
       return mechanicalSegments(entries, resolved);
     }

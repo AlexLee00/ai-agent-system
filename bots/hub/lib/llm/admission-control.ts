@@ -6,8 +6,8 @@ function parseEnvNumber(name, fallback, minValue) {
 }
 
 const DEFAULT_MAX_IN_FLIGHT = parseEnvNumber('HUB_LLM_MAX_IN_FLIGHT', 16, 1);
-const DEFAULT_MAX_QUEUE = parseEnvNumber('HUB_LLM_MAX_QUEUE', 48, 0);
-const DEFAULT_QUEUE_TIMEOUT_MS = parseEnvNumber('HUB_LLM_QUEUE_TIMEOUT_MS', 2500, 100);
+const DEFAULT_MAX_QUEUE = parseEnvNumber('HUB_LLM_MAX_QUEUE', 128, 0);
+const DEFAULT_QUEUE_TIMEOUT_MS = parseEnvNumber('HUB_LLM_QUEUE_TIMEOUT_MS', 15000, 100);
 const DEFAULT_RETRY_AFTER_MS = parseEnvNumber('HUB_LLM_RETRY_AFTER_MS', 1000, 200);
 
 let inFlight = 0;

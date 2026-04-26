@@ -12,14 +12,13 @@
 const toolLogger = require('../../../packages/core/lib/tool-logger');
 const llmCache   = require('../../../packages/core/lib/llm-cache');
 const { getTraceId }      = require('../../../packages/core/lib/trace');
-const { callWithFallback } = require('../../../packages/core/lib/llm-fallback');
-const { selectLLMChain } = require('../../../packages/core/lib/llm-model-selector');
+const { callHubLlm } = require('../../../packages/core/lib/hub-client');
 const { weatherToContext, estimateCost, loadPersonaGuide } = require('../../../packages/core/lib/blog-utils');
 const env = require('../../../packages/core/lib/env');
 const path = require('path');
 const { buildBlogSkillBundle } = require(path.join(env.PROJECT_ROOT, 'packages/core/lib/skills/blog/skill-loader.js'));
 const { buildAIBriefingSectionOrder, buildAIBriefingChecklist } = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/ai-briefing.ts'));
-const { getBlogGenerationRuntimeConfig, getBlogLLMSelectorOverrides } = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/runtime-config.ts'));
+const { getBlogGenerationRuntimeConfig } = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/runtime-config.ts'));
 const { calculateSectionChars, buildCharCountInstruction } = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/section-ratio.ts'));
 const { AgentMemory } = require('../../../packages/core/lib/agent-memory');
 
@@ -28,10 +27,18 @@ const BLOG_WRITER_TIMEOUT_MS = Number(generationRuntimeConfig.writerTimeoutMs ||
 const BLOG_CONTINUE_TIMEOUT_MS = Number(generationRuntimeConfig.continueTimeoutMs || BLOG_WRITER_TIMEOUT_MS);
 const BLOG_CHUNK_TIMEOUT_MS = Number(generationRuntimeConfig.chunkTimeoutMs || Math.max(BLOG_WRITER_TIMEOUT_MS, 120000));
 
-// 폴백 체인: gpt-4o → gpt-4o-mini → gemini-2.5-flash
-const POS_LLM_CHAIN = selectLLMChain('blog.pos.writer', {
-  policyOverride: getBlogLLMSelectorOverrides()['blog.pos.writer'],
-});
+async function callPosWriterLlm({ systemPrompt, userPrompt, taskType, maxTokens = 16000, timeoutMs = BLOG_WRITER_TIMEOUT_MS }) {
+  return callHubLlm({
+    callerTeam: 'blog',
+    agent: 'pos',
+    selectorKey: 'blog.pos.writer',
+    taskType,
+    systemPrompt,
+    prompt: userPrompt,
+    maxTokens,
+    timeoutMs,
+  });
+}
 
 // ─── ai-agent-system 프로젝트 컨텍스트 (AI 탐지 우회용) ─────────────
 
@@ -385,19 +392,18 @@ ${_buildVariationBlock(sectionVariation)}
   let content;
 
   try {
-    const result = await callWithFallback({
-      chain:        POS_LLM_CHAIN,
+    const result = await callPosWriterLlm({
       systemPrompt: POS_SYSTEM_PROMPT,
       userPrompt,
+      taskType: 'lecture_post',
       timeoutMs: BLOG_WRITER_TIMEOUT_MS,
-      logMeta: { team: 'blog', purpose: 'writer', bot: 'blog-pos', requestType: 'lecture_post' },
     });
     content      = result.text;
-    usedModel    = result.model;
-    fallbackUsed = result.attempt > 1;
-    if (fallbackUsed) console.log(`[포스] LLM 폴백 발생: ${result.provider}/${result.model} (시도 ${result.attempt})`);
+    usedModel    = result.selected_route || result.model || result.provider || 'hub';
+    fallbackUsed = Number(result.fallbackCount || 0) > 0;
+    if (fallbackUsed) console.log(`[포스] LLM 폴백 발생: ${usedModel} (${result.fallbackCount} fallback)`);
   } finally {
-    await toolLogger.logToolCall('llm', 'callWithFallback', {
+    await toolLogger.logToolCall('llm', 'callHubLlm', {
       bot: 'blog-pos', success: !!content,
       duration_ms: Date.now() - startTime,
       metadata: { model: usedModel, lecture_num: lectureNumber, trace_id: getTraceId(), fallback_used: fallbackUsed },
@@ -413,15 +419,13 @@ ${_buildVariationBlock(sectionVariation)}
     // 마지막 800자만 컨텍스트로 전달 (전체 내용 전달 시 LLM이 새 글을 시작하는 문제 방지)
     const tailContext    = content.slice(-800);
     const continuePrompt = `[이전 내용 끝부분 (이미 작성됨 — 절대 반복 금지)]\n${tailContext}\n\n[지시] 위 내용이 끊긴 부분에서 바로 이어서 작성하라. 앞 내용은 이미 완성되었으므로 반드시 끊긴 지점부터 시작하라. 새 글을 처음부터 쓰지 말 것. 남은 섹션을 모두 완성하고 마지막에 _THE_END_ 를 적어라.`;
-    const POS_CONTINUE_CHAIN = POS_LLM_CHAIN.map(c => ({ ...c, maxTokens: Number(generationRuntimeConfig.continueMaxTokens || 8000) }));
-
     try {
-      const cont = await callWithFallback({
-        chain:        POS_CONTINUE_CHAIN,
+      const cont = await callPosWriterLlm({
         systemPrompt: POS_SYSTEM_PROMPT,
-        userPrompt:   continuePrompt,
+        userPrompt: continuePrompt,
+        taskType: 'lecture_post_continue',
+        maxTokens: Number(generationRuntimeConfig.continueMaxTokens || 8000),
         timeoutMs: BLOG_CONTINUE_TIMEOUT_MS,
-        logMeta: { team: 'blog', purpose: 'writer', bot: 'blog-pos', requestType: 'lecture_post_continue' },
       });
       // LLM이 새 글을 처음부터 시작한 경우 감지 (첫 줄이 # 제목 + 분량이 원본의 50% 이상이면 재시작으로 간주)
       const contFirstLine = cont.text.trim().split('\n')[0] || '';
@@ -521,17 +525,16 @@ ${content}
   let repaired;
 
   try {
-    const result = await callWithFallback({
-      chain:        POS_LLM_CHAIN,
+    const result = await callPosWriterLlm({
       systemPrompt: POS_SYSTEM_PROMPT,
-      userPrompt:   repairPrompt,
-      logMeta: { team: 'blog', purpose: 'writer', bot: 'blog-pos', requestType: 'lecture_post_repair' },
+      userPrompt: repairPrompt,
+      taskType: 'lecture_post_repair',
     });
     repaired     = result.text;
-    usedModel    = result.model;
-    fallbackUsed = result.attempt > 1;
+    usedModel    = result.selected_route || result.model || result.provider || 'hub';
+    fallbackUsed = Number(result.fallbackCount || 0) > 0;
   } finally {
-    await toolLogger.logToolCall('llm', 'callWithFallback', {
+    await toolLogger.logToolCall('llm', 'callHubLlm', {
       bot: 'blog-pos',
       success: !!repaired,
       duration_ms: Date.now() - startTime,
@@ -563,7 +566,7 @@ const { chunkedGenerate } = require('../../../packages/core/lib/chunked-llm');
 
 /**
  * 4그룹으로 나눠서 호출 → 합쳐서 하나의 강의 포스팅 완성
- * 환경변수 BLOG_LLM_MODEL이 없으면 blog.pos.writer 체인을 그대로 사용
+ * Hub selector blog.pos.writer를 사용해 청크별로 호출한다.
  *
  * @param {number} lectureNumber
  * @param {string} lectureTitle
@@ -581,7 +584,7 @@ async function writeLecturePostChunked(lectureNumber, lectureTitle, researchData
   const experimentWeakLaneSummary = String(researchData.strategy_experiment_weak_lane || '').trim();
 
   const weatherContext  = weatherToContext(weather);
-  const model           = process.env.BLOG_LLM_MODEL || POS_LLM_CHAIN;
+  const model           = 'hub:blog.pos.writer';
 
   const experienceBlock = realExperiences.length > 0
     ? realExperiences.map((ep, i) => `${i + 1}. [${ep.type}] ${ep.content}`).join('\n')
@@ -718,6 +721,10 @@ ${experimentWeakLaneSummary ? `\n[최근 실험 약세 레인]\n${experimentWeak
   const startTime = Date.now();
   const result    = await chunkedGenerate(POS_SYSTEM_PROMPT, chunks, {
     model,
+    selectorKey: 'blog.pos.writer',
+    callerTeam: 'blog',
+    agent: 'pos',
+    taskType: 'lecture_post_chunked',
     contextCarry: 200,
     maxRetries:   Number(generationRuntimeConfig.writerMaxRetries || 1),
     timeoutMs: BLOG_CHUNK_TIMEOUT_MS,

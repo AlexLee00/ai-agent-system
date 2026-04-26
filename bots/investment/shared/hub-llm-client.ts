@@ -3,7 +3,7 @@
  * shared/hub-llm-client.ts — Hub /hub/llm/call HTTP 클라이언트 (Phase LUNA_REMODEL Phase 1)
  *
  * Kill Switch:
- *   INVESTMENT_LLM_HUB_ENABLED=true  → Hub 경유 활성
+ *   INVESTMENT_LLM_HUB_ENABLED=false → 긴급 시 Hub 우회
  *   INVESTMENT_LLM_HUB_SHADOW=true   → Shadow Mode (Hub 호출 후 결과 비교, 실제 응답은 직접 호출)
  *
  * 반환: { ok, text, provider, costUsd, latencyMs, error? }
@@ -18,7 +18,7 @@ const HUB_BASE = process.env.HUB_BASE_URL || 'http://localhost:7788';
 const HUB_TIMEOUT_MS = 65_000;
 
 export function isHubEnabled(): boolean {
-  return process.env.INVESTMENT_LLM_HUB_ENABLED === 'true';
+  return process.env.INVESTMENT_LLM_HUB_ENABLED !== 'false';
 }
 
 export function isHubShadow(): boolean {
@@ -38,6 +38,10 @@ export function normalizeHubUrgency(value: unknown): HubUrgency {
 
 export function getHubCallerTeam(): string {
   return String(process.env.INVESTMENT_LLM_HUB_TEAM || 'luna').trim() || 'luna';
+}
+
+export function isDirectFallbackEnabled(): boolean {
+  return process.env.INVESTMENT_LLM_DIRECT_FALLBACK === 'true';
 }
 
 // agentName → abstract model 매핑 (Hub LLM Routing 기준)
@@ -86,6 +90,7 @@ export function buildHubLlmCallPayload(
     callerTeam:    options.callerTeam || getHubCallerTeam(),
     urgency,
     taskType:      'trade_signal',
+    selectorKey:   'investment.agent_policy',
     market:        options.market || null,
     symbol:        options.symbol || null,
     maxTokens:     options.maxTokens,

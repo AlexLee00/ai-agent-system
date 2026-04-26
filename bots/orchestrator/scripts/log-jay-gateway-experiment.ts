@@ -12,8 +12,17 @@ const { collectJayUsage } = require('../../../scripts/reviews/lib/jay-usage');
 const DEFAULT_HOURS = 24;
 const ACTIVE_WINDOW_HOURS = 3;
 const REPO_ROOT = path.join(__dirname, '..', '..', '..');
-const DEFAULT_WORKSPACE_OUTPUT = path.join(os.homedir(), '.openclaw', 'workspace', 'jay-gateway-experiments.jsonl');
-const FALLBACK_OUTPUT = path.join(REPO_ROOT, 'tmp', 'jay-gateway-experiments.jsonl');
+const FALLBACK_OUTPUT = path.join(REPO_ROOT, 'tmp', 'jay-selector-experiments.jsonl');
+
+function getAiAgentHome() {
+  return process.env.AI_AGENT_HOME || process.env.JAY_HOME || path.join(os.homedir(), '.ai-agent-system');
+}
+
+function getAiAgentWorkspace() {
+  return process.env.AI_AGENT_WORKSPACE || process.env.JAY_WORKSPACE || path.join(getAiAgentHome(), 'workspace');
+}
+
+const DEFAULT_WORKSPACE_OUTPUT = path.join(getAiAgentWorkspace(), 'jay-selector-experiments.jsonl');
 
 function parseArgs(argv = process.argv.slice(2)) {
   const hoursArg = argv.find((arg) => arg.startsWith('--hours='));
@@ -28,164 +37,41 @@ function parseArgs(argv = process.argv.slice(2)) {
   };
 }
 
-function safeReadLines(filePath) {
-  try {
-    if (!fs.existsSync(filePath)) return [];
-    return fs.readFileSync(filePath, 'utf8').split('\n').filter(Boolean);
-  } catch {
-    return [];
-  }
-}
-
-function findLastLineIndex(lines, pattern) {
-  for (let i = lines.length - 1; i >= 0; i -= 1) {
-    if (pattern.test(lines[i])) return i;
-  }
-  return -1;
-}
-
-function parseLogTimestamp(line) {
-  const match = line.match(/^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z)/);
-  if (!match) return null;
-  const ts = new Date(match[1]).getTime();
-  return Number.isFinite(ts) ? ts : null;
-}
-
-function filterRecentLines(lines, hours) {
-  const minTs = Date.now() - (hours * 60 * 60 * 1000);
-  return lines.filter((line) => {
-    const ts = parseLogTimestamp(line);
-    return Number.isFinite(ts) && ts >= minTs;
-  });
-}
-
-function getLastTimestamp(lines, pattern) {
-  for (let i = lines.length - 1; i >= 0; i -= 1) {
-    if (!pattern.test(lines[i])) continue;
-    const ts = parseLogTimestamp(lines[i]);
-    if (Number.isFinite(ts)) return new Date(ts).toISOString();
-  }
-  return null;
-}
-
-function countMatches(lines, pattern) {
-  return lines.reduce((sum, line) => sum + (pattern.test(line) ? 1 : 0), 0);
-}
-
-function countUniqueIncidents(lines, pattern) {
-  const seen = new Set();
-  for (const line of lines) {
-    if (!pattern.test(line)) continue;
-    const ts = parseLogTimestamp(line);
-    const normalized = line
-      .replace(/lane=[^ ]+/g, 'lane=*')
-      .replace(/durationMs=\d+/g, 'durationMs=*')
-      .trim();
-    const key = `${Number.isFinite(ts) ? ts : 'na'}|${normalized}`;
-    seen.add(key);
-  }
-  return seen.size;
-}
-
-function summarizeEmbeddedRateLimitRuns(lines) {
-  const counts = {};
-  for (const line of lines) {
-    if (!/API rate limit reached/i.test(line)) continue;
-    const match = line.match(/runId=([A-Za-z0-9._:-]+)/);
-    if (!match) continue;
-    const runId = match[1];
-    counts[runId] = (counts[runId] || 0) + 1;
-  }
-  const entries = Object.entries(counts).map(([runId, count]) => ({ runId, count }));
-  return {
-    uniqueRunCount: entries.length,
-    retryBurstCount: entries.filter((item) => item.count > 1).length,
-    maxAttemptsPerRun: entries.reduce((max, item) => Math.max(max, item.count), 0),
-    topBurstRuns: entries
-      .filter((item) => item.count > 1)
-      .sort((a, b) => b.count - a.count)
-      .slice(0, 5),
-  };
-}
-
-function summarizeGatewayWindow({ errLines, outLines, activeLines, observedHours, windowLabel }) {
-  const rateLimitPattern = /API rate limit reached/i;
-  const failoverPattern = /FailoverError/i;
-  const providerAuthMissingPattern = /No API key found for provider/i;
-  const staleSocketPattern = /health-monitor: restarting \(reason: stale-socket\)/i;
-  const schemaSnapshotPattern = /google tool schema snapshot/i;
-
-  const rateLimitCount = countMatches(errLines, rateLimitPattern);
-  const activeRateLimitCount = countMatches(activeLines, rateLimitPattern);
-  const providerAuthMissingCount = countMatches(errLines, providerAuthMissingPattern);
-  const uniqueRateLimitIncidentCount = countUniqueIncidents(errLines, rateLimitPattern);
-  const activeUniqueRateLimitIncidentCount = countUniqueIncidents(activeLines, rateLimitPattern);
-  const failoverErrorCount = countMatches(errLines, failoverPattern);
-  const nonAuthFailoverErrorCount = errLines.reduce((sum, line) => {
-    if (!failoverPattern.test(line)) return sum;
-    if (providerAuthMissingPattern.test(line)) return sum;
-    return sum + 1;
-  }, 0);
-  const embeddedRateLimitRuns = summarizeEmbeddedRateLimitRuns(errLines);
-  const activeEmbeddedRateLimitRuns = summarizeEmbeddedRateLimitRuns(activeLines);
-
-  return {
-    windowLabel,
-    observedHours,
-    lineCount: errLines.length,
-    rateLimitCount,
-    uniqueRateLimitIncidentCount,
-    failoverErrorCount,
-    nonAuthFailoverErrorCount,
-    providerAuthMissingCount,
-    embeddedRateLimitRuns,
-    activeEmbeddedRateLimitRuns,
-    staleSocketRestartCount: countMatches(outLines, staleSocketPattern),
-    schemaSnapshotCount: countMatches(outLines, schemaSnapshotPattern),
-    activeRateLimitCount,
-    activeUniqueRateLimitIncidentCount,
-    lastRateLimitAt: getLastTimestamp(errLines, rateLimitPattern),
-    lastStaleSocketRestartAt: getLastTimestamp(outLines, staleSocketPattern),
-  };
-}
-
 function summarizeGatewayLogs(hours) {
-  const gatewayErrPath = path.join(os.homedir(), '.openclaw', 'logs', 'gateway.err.log');
-  const gatewayLogPath = path.join(os.homedir(), '.openclaw', 'logs', 'gateway.log');
-  const errAllLines = safeReadLines(gatewayErrPath);
-  const outAllLines = safeReadLines(gatewayLogPath);
-  const errLines = filterRecentLines(errAllLines, hours);
-  const outLines = filterRecentLines(outAllLines, hours);
-  const activeLines = filterRecentLines(errLines, ACTIVE_WINDOW_HOURS);
-  const restartMarkerPattern = /^\[start-gateway\]/;
-  const lastRestartErrIndex = findLastLineIndex(errAllLines, restartMarkerPattern);
-  const lastRestartOutIndex = findLastLineIndex(outAllLines, restartMarkerPattern);
-  const postRestartErrLines = lastRestartErrIndex >= 0 ? errAllLines.slice(lastRestartErrIndex + 1) : [];
-  const postRestartOutLines = lastRestartOutIndex >= 0 ? outAllLines.slice(lastRestartOutIndex + 1) : [];
-  const postRestartActiveLines = filterRecentLines(postRestartErrLines, ACTIVE_WINDOW_HOURS);
-
   return {
+    retiredGateway: true,
     observedHours: hours,
     paths: {
-      errorLog: gatewayErrPath,
-      outputLog: gatewayLogPath,
+      errorLog: null,
+      outputLog: null,
     },
-    ...summarizeGatewayWindow({
-      errLines,
-      outLines,
-      activeLines,
-      observedHours: hours,
-      windowLabel: 'rolling',
-    }),
-    postRestart: lastRestartErrIndex >= 0 || lastRestartOutIndex >= 0
-      ? summarizeGatewayWindow({
-          errLines: postRestartErrLines,
-          outLines: postRestartOutLines,
-          activeLines: postRestartActiveLines,
-          observedHours: hours,
-          windowLabel: 'post_restart',
-        })
-      : null,
+    windowLabel: 'hub_selector',
+    lineCount: 0,
+    rateLimitCount: 0,
+    uniqueRateLimitIncidentCount: 0,
+    failoverErrorCount: 0,
+    nonAuthFailoverErrorCount: 0,
+    providerAuthMissingCount: 0,
+    embeddedRateLimitRuns: {
+      uniqueRunCount: 0,
+      retryBurstCount: 0,
+      maxAttemptsPerRun: 0,
+      topBurstRuns: [],
+    },
+    activeEmbeddedRateLimitRuns: {
+      uniqueRunCount: 0,
+      retryBurstCount: 0,
+      maxAttemptsPerRun: 0,
+      topBurstRuns: [],
+    },
+    staleSocketRestartCount: 0,
+    schemaSnapshotCount: 0,
+    activeRateLimitCount: 0,
+    activeUniqueRateLimitIncidentCount: 0,
+    lastRateLimitAt: null,
+    lastStaleSocketRestartAt: null,
+    postRestart: null,
+    note: 'retired gateway 로그는 더 이상 운영 판단에 사용하지 않습니다. Hub selector usage/cooldown 지표를 기준으로 전환합니다.',
   };
 }
 
@@ -202,8 +88,15 @@ function topJayUsageModels(jayUsage, limit = 5) {
 }
 
 function safeExecJson(scriptPath, args = []) {
+  const resolvedScriptPath = fs.existsSync(scriptPath)
+    ? scriptPath
+    : scriptPath.replace(/\.js$/, '.ts');
+  const command = resolvedScriptPath.endsWith('.ts') ? 'npx' : process.execPath;
+  const commandArgs = resolvedScriptPath.endsWith('.ts')
+    ? ['tsx', resolvedScriptPath, ...args]
+    : [resolvedScriptPath, ...args];
   try {
-    const raw = execFileSync(process.execPath, [scriptPath, ...args], {
+    const raw = execFileSync(command, commandArgs, {
       cwd: REPO_ROOT,
       encoding: 'utf8',
       stdio: ['ignore', 'pipe', 'pipe'],
@@ -237,7 +130,7 @@ function buildSnapshot(hours) {
     [`--days=${Math.max(1, Math.ceil(hours / 24))}`, '--json'],
   );
 
-  const snapshot = {
+  return {
     capturedAt: new Date().toISOString(),
     observedHours: hours,
     experimentStage: deriveExperimentStage({
@@ -246,8 +139,9 @@ function buildSnapshot(hours) {
       orchestratorHealth: healthReport.ok ? healthReport.data : null,
     }),
     primaryCheck: {
+      retiredGateway: true,
       runtimePrimary: primaryCheck.runtimePrimary,
-      openclawPrimary: primaryCheck.openclawPrimary,
+      selectorPrimary: primaryCheck.selectorPrimary,
       aligned: primaryCheck.aligned,
       recommendation: primaryCheck.recommendation,
       candidates: primaryCheck.candidateProfiles.map((profile) => ({
@@ -289,8 +183,6 @@ function buildSnapshot(hours) {
           error: jayReview.error,
         },
   };
-
-  return snapshot;
 }
 
 function persistSnapshot(snapshot, outputPath) {
@@ -325,26 +217,17 @@ function persistSnapshotWithFallback(snapshot, preferredOutputPath) {
 
 function printHuman(snapshot, outputPath, willWrite) {
   const lines = [];
-  lines.push('🤖 제이 gateway 전환 실험 로그');
+  lines.push('🤖 제이 Hub selector 전환 실험 로그');
   lines.push('');
   lines.push(`기록 시각: ${snapshot.capturedAt}`);
   lines.push(`관찰 구간: 최근 ${snapshot.observedHours}시간`);
   lines.push(`현재 단계: ${snapshot.experimentStage}`);
-  lines.push(`정합성: ${snapshot.primaryCheck.aligned ? '일치' : '불일치'}`);
-  lines.push(`runtime/openclaw primary: ${snapshot.primaryCheck.runtimePrimary} / ${snapshot.primaryCheck.openclawPrimary || '확인 불가'}`);
+  lines.push(`정합성: ${snapshot.primaryCheck.aligned ? '표준 경로 사용' : '확인 필요'}`);
+  lines.push(`runtime/selector primary: ${snapshot.primaryCheck.runtimePrimary} / ${snapshot.primaryCheck.selectorPrimary || '확인 불가'}`);
   lines.push('');
-  lines.push('gateway 지표:');
-  lines.push(`- rate limit: ${snapshot.gatewayMetrics.rateLimitCount}건 (최근 ${ACTIVE_WINDOW_HOURS}시간 활성 ${snapshot.gatewayMetrics.activeRateLimitCount}건)`);
-  lines.push(`- unique rate limit incidents: ${snapshot.gatewayMetrics.uniqueRateLimitIncidentCount}건 (최근 ${ACTIVE_WINDOW_HOURS}시간 활성 ${snapshot.gatewayMetrics.activeUniqueRateLimitIncidentCount}건)`);
-  lines.push(`- failover error: ${snapshot.gatewayMetrics.failoverErrorCount}건 (auth missing 제외 ${snapshot.gatewayMetrics.nonAuthFailoverErrorCount}건)`);
-  lines.push(`- provider auth missing: ${snapshot.gatewayMetrics.providerAuthMissingCount}건`);
-  lines.push(`- embedded unique runs: ${snapshot.gatewayMetrics.embeddedRateLimitRuns.uniqueRunCount}건 (재시도 burst ${snapshot.gatewayMetrics.embeddedRateLimitRuns.retryBurstCount}건, 최대 ${snapshot.gatewayMetrics.embeddedRateLimitRuns.maxAttemptsPerRun}회)`);
-  lines.push(`- stale socket restart: ${snapshot.gatewayMetrics.staleSocketRestartCount}건`);
-  lines.push(`- 마지막 rate limit: ${snapshot.gatewayMetrics.lastRateLimitAt || '없음'}`);
-  if (snapshot.gatewayMetrics.postRestart) {
-    lines.push('- 마지막 gateway 재기동 이후:');
-    lines.push(`  rate limit ${snapshot.gatewayMetrics.postRestart.rateLimitCount}건 / auth missing ${snapshot.gatewayMetrics.postRestart.providerAuthMissingCount}건 / retry burst ${snapshot.gatewayMetrics.postRestart.embeddedRateLimitRuns.retryBurstCount}건 / 최대 ${snapshot.gatewayMetrics.postRestart.embeddedRateLimitRuns.maxAttemptsPerRun}회`);
-  }
+  lines.push('retired gateway 지표:');
+  lines.push(`- ${snapshot.gatewayMetrics.note}`);
+  lines.push(`- legacy rate limit: ${snapshot.gatewayMetrics.rateLimitCount}건 (활성 ${snapshot.gatewayMetrics.activeRateLimitCount}건)`);
   lines.push('');
   lines.push('제이 usage:');
   lines.push(`- 총 호출: ${snapshot.jayUsage.totalCalls}회`);

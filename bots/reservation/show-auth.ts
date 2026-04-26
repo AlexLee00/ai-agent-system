@@ -1,10 +1,10 @@
 const puppeteer = require('puppeteer');
 const fs = require('fs');
-const path = require('path');
+const { getReservationRuntimeFile } = require('./lib/runtime-paths');
 
 (async () => {
   const ws = fs.readFileSync(
-    path.join(process.env.HOME, '.openclaw/workspace/naver-monitor-ws.txt'),
+    getReservationRuntimeFile('naver-monitor-ws.txt'),
     'utf8',
   ).trim();
   const browser = await puppeteer.connect({ browserWSEndpoint: ws });
