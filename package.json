@@ -25,6 +25,7 @@
     "security:scan-history": "tsx scripts/security/secret-history-scan.ts",
     "security:post-rewrite-doctor": "tsx scripts/security/post-rewrite-doctor.ts",
     "security:stale-ref-plan": "tsx scripts/security/stale-ref-cleanup-plan.ts",
+    "security:stale-ref-cleanup": "tsx scripts/security/stale-ref-cleanup-apply.ts",
     "weekly-report": "node scripts/weekly-team-report.js",
     "weekly-report:30": "node scripts/weekly-team-report.js --days=30"
   },

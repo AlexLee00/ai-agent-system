@@ -44,6 +44,15 @@ npm run -s security:post-rewrite-doctor
 npm run -s security:stale-ref-plan
 ```
 
+정리 실행은 별도 apply 스크립트를 사용한다. 기본값은 dry-run이며, 실제 삭제에는 `--apply`와 확인 env가 모두 필요하다. scope는 반드시 명시한다.
+
+```bash
+npm run -s security:stale-ref-cleanup -- --tags
+SECURITY_STALE_REF_CLEANUP_CONFIRM=delete-stale-secret-refs npm run -s security:stale-ref-cleanup -- --apply --tags
+```
+
+`--worktrees`는 기본적으로 locked worktree를 스킵한다. locked worktree까지 정리하려면 소유 에이전트를 먼저 정지하고 `--locked-worktrees`를 추가한다.
+
 ## 노출 후보 발견 시 처리 순서
 
 1. 해당 provider 콘솔에서 credential을 즉시 revoke/rotate 한다.
@@ -55,8 +64,9 @@ npm run -s security:stale-ref-plan
 7. `git push --force-with-lease origin main` 후 모든 clone은 fresh clone 또는 hard reset 절차를 따른다.
 8. `security:post-rewrite-doctor`로 로컬 stale refs를 확인한다.
 9. `security:stale-ref-plan`으로 정리 명령 후보를 생성한다.
-10. 필요한 ref만 수동 삭제하고 locked worktree는 소유 에이전트를 먼저 정지한다.
-11. GitHub Actions/branch protection/배포 런타임을 다시 검증한다.
+10. 필요한 scope만 `security:stale-ref-cleanup`으로 dry-run 확인 후 apply한다.
+11. locked worktree는 소유 에이전트를 먼저 정지한 뒤 별도 scope로 정리한다.
+12. GitHub Actions/branch protection/배포 런타임을 다시 검증한다.
 
 ## History rewrite 주의
 
