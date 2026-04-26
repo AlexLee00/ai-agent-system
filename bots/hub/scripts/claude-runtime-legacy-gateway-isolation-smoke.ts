@@ -25,7 +25,7 @@ const CLAUDE_RUNTIME_FILES = [
   'bots/claude/lib/checks/logs.ts',
   'bots/claude/lib/checks/bots.ts',
   'bots/claude/lib/checks/error-logs.ts',
-  ['bots/claude/lib/checks', `${RETIRED_GATEWAY_ID}.ts`].join('/'),
+  'bots/claude/lib/checks/retired-gateway.ts',
   'bots/claude/lib/archer/config.ts',
   'bots/claude/lib/daily-report.ts',
   'bots/claude/scripts/claude-daily-report.ts',

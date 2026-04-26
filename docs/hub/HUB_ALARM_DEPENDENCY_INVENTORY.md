@@ -2,10 +2,10 @@
 
 This inventory tracks the Hub alarm migration surface. `hub_alarm_native` entries are the desired path; `legacy_gateway_compat` entries are compatibility shims or remaining migration targets.
 
-- generated_at: 2026-04-26T13:51:28.650Z
-- total_matches: 148
-- unique_files: 97
-- hub_alarm_native: 148
+- generated_at: 2026-04-26T14:16:51.552Z
+- total_matches: 144
+- unique_files: 93
+- hub_alarm_native: 144
 - legacy_gateway_compat: 0
 
 ## Files
@@ -211,19 +211,20 @@ This inventory tracks the Hub alarm migration surface. `hub_alarm_native` entrie
 - L20 [hub_alarm_native]: `if (match.includes('hub-alarm-client') || match.includes('HUB_ALARM_')) return 'hub_alarm_native';`
 - L40 [hub_alarm_native]: `'!docs/hub/HUB_ALARM_DEPENDENCY_INVENTORY.md',`
 
-### `bots/hub/scripts/hub-alarm-client-shim-smoke.ts`
-- L1 [hub_alarm_native]: `const hubAlarmClient = require('../../../packages/core/lib/hub-alarm-client.ts');`
-- L9 [hub_alarm_native]: `assert(typeof hubAlarmClient.postAlarm === 'function', 'expected hub-alarm-client postAlarm export');`
+### `bots/hub/scripts/hub-alarm-delivery-acceptance-smoke.ts`
+- L1 [hub_alarm_native]: `const { _testOnly_isHubAlarmDeliveryAccepted } = require('../../../packages/core/lib/hub-alarm-client.ts');`
 
 ### `bots/hub/scripts/hub-alarm-env-smoke.ts`
 - L1 [hub_alarm_native]: `const hubAlarmClient = require('../../../packages/core/lib/hub-alarm-client.ts');`
 - L26 [hub_alarm_native]: `HUB_ALARM_LEGACY_WEBHOOK_FALLBACK: 'true',`
 - L35 [hub_alarm_native]: `HUB_ALARM_LEGACY_WEBHOOK_FALLBACK: null,`
 
-### `bots/hub/scripts/openclaw-hub-alarm-smoke.ts`
-- L1 [hub_alarm_native]: `const { _testOnly_isHubAlarmDeliveryAccepted } = require('../../../packages/core/lib/hub-alarm-client.ts');`
+### `bots/hub/scripts/hub-alarm-no-legacy-shim-smoke.ts`
+- L20 [hub_alarm_native]: `const hubAlarmClient = require('../../../packages/core/lib/hub-alarm-client.ts');`
+- L21 [hub_alarm_native]: `assert(typeof hubAlarmClient.postAlarm === 'function', 'expected hub-alarm-client postAlarm export');`
+- L24 [hub_alarm_native]: `'expected delivery acceptance helper to be exported by hub-alarm-client',`
 
-### `bots/hub/scripts/openclaw-postalarm-fallback-smoke.ts`
+### `bots/hub/scripts/hub-postalarm-no-legacy-fallback-smoke.ts`
 - L5 [hub_alarm_native]: `const CLIENT_PATH = require.resolve('../../../packages/core/lib/hub-alarm-client.ts');`
 - L18 [hub_alarm_native]: `process.env.HUB_ALARM_RECENT_ALERTS_PATH = path.join(tempWorkspace, 'recent-alerts.json');`
 - L21 [hub_alarm_native]: `process.env.HUB_ALARM_SKIP_DIRECT = 'false';`
@@ -246,9 +247,6 @@ This inventory tracks the Hub alarm migration surface. `hub_alarm_native` entrie
 - L166 [hub_alarm_native]: `else process.env.HUB_ALARM_SKIP_DIRECT = originalHubSkipDirect;`
 - L167 [hub_alarm_native]: `if (originalHubLegacyFallback == null) delete process.env.HUB_ALARM_LEGACY_WEBHOOK_FALLBACK;`
 - L168 [hub_alarm_native]: `else process.env.HUB_ALARM_LEGACY_WEBHOOK_FALLBACK = originalHubLegacyFallback;`
-
-### `bots/hub/scripts/run-tests.js`
-- L47 [hub_alarm_native]: `const alarmShimStatus = run(tsxBin, [path.join(scriptDir, 'hub-alarm-client-shim-smoke.ts')]);`
 
 ### `bots/orchestrator/lib/steward/daily-summary.ts`
 - L4 [hub_alarm_native]: `const { postAlarm } = require('../../../../packages/core/lib/hub-alarm-client');`
@@ -299,16 +297,6 @@ This inventory tracks the Hub alarm migration surface. `hub_alarm_native` entrie
 - L379 [hub_alarm_native]: `console.warn(`[hub-alarm-client] inline telegram 실패: ${error.message}`);`
 - L415 [hub_alarm_native]: `const hubDirectBlocked = _readBooleanEnv('HUB_ALARM_SKIP_DIRECT');`
 - L437 [hub_alarm_native]: `console.warn(`[hub-alarm-client] hub alarm failed: ${hubResult.error}`);`
-
-### `packages/core/lib/openclaw-client.js`
-- L3 [hub_alarm_native]: `module.exports = require('./hub-alarm-client');`
-
-### `packages/core/lib/openclaw-client.legacy.js`
-- L5 [hub_alarm_native]: `module.exports = require('./hub-alarm-client');`
-
-### `packages/core/lib/openclaw-client.ts`
-- L4 [hub_alarm_native]: `* New code should import ./hub-alarm-client. This file stays in place so older`
-- L11 [hub_alarm_native]: `} from './hub-alarm-client';`
 
 ### `packages/core/lib/reporting-hub.ts`
 - L3 [hub_alarm_native]: `const hubAlarmClient = require('./hub-alarm-client');`

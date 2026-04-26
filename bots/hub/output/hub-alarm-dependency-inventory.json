@@ -1,15 +1,15 @@
 {
-  "generated_at": "2026-04-26T13:51:28.650Z",
+  "generated_at": "2026-04-26T14:16:51.552Z",
   "scan_patterns": [
     "hub-alarm-client",
     "openclaw-client",
     "HUB_ALARM_",
     "OPENCLAW_"
   ],
-  "total_matches": 148,
-  "unique_files": 97,
+  "total_matches": 144,
+  "unique_files": 93,
   "categories": {
-    "hub_alarm_native": 148,
+    "hub_alarm_native": 144,
     "legacy_gateway_compat": 0
   },
   "files": {
@@ -591,18 +591,12 @@
         "match": "'!docs/hub/HUB_ALARM_DEPENDENCY_INVENTORY.md',"
       }
     ],
-    "bots/hub/scripts/hub-alarm-client-shim-smoke.ts": [
+    "bots/hub/scripts/hub-alarm-delivery-acceptance-smoke.ts": [
       {
-        "file": "bots/hub/scripts/hub-alarm-client-shim-smoke.ts",
+        "file": "bots/hub/scripts/hub-alarm-delivery-acceptance-smoke.ts",
         "line": 1,
         "category": "hub_alarm_native",
-        "match": "const hubAlarmClient = require('../../../packages/core/lib/hub-alarm-client.ts');"
-      },
-      {
-        "file": "bots/hub/scripts/hub-alarm-client-shim-smoke.ts",
-        "line": 9,
-        "category": "hub_alarm_native",
-        "match": "assert(typeof hubAlarmClient.postAlarm === 'function', 'expected hub-alarm-client postAlarm export');"
+        "match": "const { _testOnly_isHubAlarmDeliveryAccepted } = require('../../../packages/core/lib/hub-alarm-client.ts');"
       }
     ],
     "bots/hub/scripts/hub-alarm-env-smoke.ts": [
@@ -625,154 +619,158 @@
         "match": "HUB_ALARM_LEGACY_WEBHOOK_FALLBACK: null,"
       }
     ],
-    "bots/hub/scripts/openclaw-hub-alarm-smoke.ts": [
+    "bots/hub/scripts/hub-alarm-no-legacy-shim-smoke.ts": [
       {
-        "file": "bots/hub/scripts/openclaw-hub-alarm-smoke.ts",
-        "line": 1,
+        "file": "bots/hub/scripts/hub-alarm-no-legacy-shim-smoke.ts",
+        "line": 20,
         "category": "hub_alarm_native",
-        "match": "const { _testOnly_isHubAlarmDeliveryAccepted } = require('../../../packages/core/lib/hub-alarm-client.ts');"
+        "match": "const hubAlarmClient = require('../../../packages/core/lib/hub-alarm-client.ts');"
+      },
+      {
+        "file": "bots/hub/scripts/hub-alarm-no-legacy-shim-smoke.ts",
+        "line": 21,
+        "category": "hub_alarm_native",
+        "match": "assert(typeof hubAlarmClient.postAlarm === 'function', 'expected hub-alarm-client postAlarm export');"
+      },
+      {
+        "file": "bots/hub/scripts/hub-alarm-no-legacy-shim-smoke.ts",
+        "line": 24,
+        "category": "hub_alarm_native",
+        "match": "'expected delivery acceptance helper to be exported by hub-alarm-client',"
       }
     ],
-    "bots/hub/scripts/openclaw-postalarm-fallback-smoke.ts": [
+    "bots/hub/scripts/hub-postalarm-no-legacy-fallback-smoke.ts": [
       {
-        "file": "bots/hub/scripts/openclaw-postalarm-fallback-smoke.ts",
+        "file": "bots/hub/scripts/hub-postalarm-no-legacy-fallback-smoke.ts",
         "line": 5,
         "category": "hub_alarm_native",
         "match": "const CLIENT_PATH = require.resolve('../../../packages/core/lib/hub-alarm-client.ts');"
       },
       {
-        "file": "bots/hub/scripts/openclaw-postalarm-fallback-smoke.ts",
+        "file": "bots/hub/scripts/hub-postalarm-no-legacy-fallback-smoke.ts",
         "line": 18,
         "category": "hub_alarm_native",
         "match": "process.env.HUB_ALARM_RECENT_ALERTS_PATH = path.join(tempWorkspace, 'recent-alerts.json');"
       },
       {
-        "file": "bots/hub/scripts/openclaw-postalarm-fallback-smoke.ts",
+        "file": "bots/hub/scripts/hub-postalarm-no-legacy-fallback-smoke.ts",
         "line": 21,
         "category": "hub_alarm_native",
         "match": "process.env.HUB_ALARM_SKIP_DIRECT = 'false';"
       },
       {
-        "file": "bots/hub/scripts/openclaw-postalarm-fallback-smoke.ts",
+        "file": "bots/hub/scripts/hub-postalarm-no-legacy-fallback-smoke.ts",
         "line": 23,
         "category": "hub_alarm_native",
         "match": "delete process.env.HUB_ALARM_LEGACY_WEBHOOK_FALLBACK;"
       },
       {
-        "file": "bots/hub/scripts/openclaw-postalarm-fallback-smoke.ts",
+        "file": "bots/hub/scripts/hub-postalarm-no-legacy-fallback-smoke.ts",
         "line": 24,
         "category": "hub_alarm_native",
         "match": "delete process.env.HUB_ALARM_LEGACY_HOOKS_TOKEN;"
       },
       {
-        "file": "bots/hub/scripts/openclaw-postalarm-fallback-smoke.ts",
+        "file": "bots/hub/scripts/hub-postalarm-no-legacy-fallback-smoke.ts",
         "line": 48,
         "category": "hub_alarm_native",
         "match": "const { postAlarm } = require('../../../packages/core/lib/hub-alarm-client.ts');"
       },
       {
-        "file": "bots/hub/scripts/openclaw-postalarm-fallback-smoke.ts",
+        "file": "bots/hub/scripts/hub-postalarm-no-legacy-fallback-smoke.ts",
         "line": 65,
         "category": "hub_alarm_native",
         "match": "process.env.HUB_ALARM_LEGACY_WEBHOOK_FALLBACK = 'true';"
       },
       {
-        "file": "bots/hub/scripts/openclaw-postalarm-fallback-smoke.ts",
+        "file": "bots/hub/scripts/hub-postalarm-no-legacy-fallback-smoke.ts",
         "line": 66,
         "category": "hub_alarm_native",
         "match": "process.env.HUB_ALARM_LEGACY_HOOKS_TOKEN = 'smoke-hooks-token';"
       },
       {
-        "file": "bots/hub/scripts/openclaw-postalarm-fallback-smoke.ts",
+        "file": "bots/hub/scripts/hub-postalarm-no-legacy-fallback-smoke.ts",
         "line": 93,
         "category": "hub_alarm_native",
         "match": "const { postAlarm } = require('../../../packages/core/lib/hub-alarm-client.ts');"
       },
       {
-        "file": "bots/hub/scripts/openclaw-postalarm-fallback-smoke.ts",
+        "file": "bots/hub/scripts/hub-postalarm-no-legacy-fallback-smoke.ts",
         "line": 132,
         "category": "hub_alarm_native",
         "match": "const { postAlarm } = require('../../../packages/core/lib/hub-alarm-client.ts');"
       },
       {
-        "file": "bots/hub/scripts/openclaw-postalarm-fallback-smoke.ts",
+        "file": "bots/hub/scripts/hub-postalarm-no-legacy-fallback-smoke.ts",
         "line": 149,
         "category": "hub_alarm_native",
         "match": "const originalHubRecentAlertsPath = process.env.HUB_ALARM_RECENT_ALERTS_PATH;"
       },
       {
-        "file": "bots/hub/scripts/openclaw-postalarm-fallback-smoke.ts",
+        "file": "bots/hub/scripts/hub-postalarm-no-legacy-fallback-smoke.ts",
         "line": 150,
         "category": "hub_alarm_native",
         "match": "const originalHubLegacyHooksToken = process.env.HUB_ALARM_LEGACY_HOOKS_TOKEN;"
       },
       {
-        "file": "bots/hub/scripts/openclaw-postalarm-fallback-smoke.ts",
+        "file": "bots/hub/scripts/hub-postalarm-no-legacy-fallback-smoke.ts",
         "line": 151,
         "category": "hub_alarm_native",
         "match": "const originalHubSkipDirect = process.env.HUB_ALARM_SKIP_DIRECT;"
       },
       {
-        "file": "bots/hub/scripts/openclaw-postalarm-fallback-smoke.ts",
+        "file": "bots/hub/scripts/hub-postalarm-no-legacy-fallback-smoke.ts",
         "line": 152,
         "category": "hub_alarm_native",
         "match": "const originalHubLegacyFallback = process.env.HUB_ALARM_LEGACY_WEBHOOK_FALLBACK;"
       },
       {
-        "file": "bots/hub/scripts/openclaw-postalarm-fallback-smoke.ts",
+        "file": "bots/hub/scripts/hub-postalarm-no-legacy-fallback-smoke.ts",
         "line": 161,
         "category": "hub_alarm_native",
         "match": "if (originalHubRecentAlertsPath == null) delete process.env.HUB_ALARM_RECENT_ALERTS_PATH;"
       },
       {
-        "file": "bots/hub/scripts/openclaw-postalarm-fallback-smoke.ts",
+        "file": "bots/hub/scripts/hub-postalarm-no-legacy-fallback-smoke.ts",
         "line": 162,
         "category": "hub_alarm_native",
         "match": "else process.env.HUB_ALARM_RECENT_ALERTS_PATH = originalHubRecentAlertsPath;"
       },
       {
-        "file": "bots/hub/scripts/openclaw-postalarm-fallback-smoke.ts",
+        "file": "bots/hub/scripts/hub-postalarm-no-legacy-fallback-smoke.ts",
         "line": 163,
         "category": "hub_alarm_native",
         "match": "if (originalHubLegacyHooksToken == null) delete process.env.HUB_ALARM_LEGACY_HOOKS_TOKEN;"
       },
       {
-        "file": "bots/hub/scripts/openclaw-postalarm-fallback-smoke.ts",
+        "file": "bots/hub/scripts/hub-postalarm-no-legacy-fallback-smoke.ts",
         "line": 164,
         "category": "hub_alarm_native",
         "match": "else process.env.HUB_ALARM_LEGACY_HOOKS_TOKEN = originalHubLegacyHooksToken;"
       },
       {
-        "file": "bots/hub/scripts/openclaw-postalarm-fallback-smoke.ts",
+        "file": "bots/hub/scripts/hub-postalarm-no-legacy-fallback-smoke.ts",
         "line": 165,
         "category": "hub_alarm_native",
         "match": "if (originalHubSkipDirect == null) delete process.env.HUB_ALARM_SKIP_DIRECT;"
       },
       {
-        "file": "bots/hub/scripts/openclaw-postalarm-fallback-smoke.ts",
+        "file": "bots/hub/scripts/hub-postalarm-no-legacy-fallback-smoke.ts",
         "line": 166,
         "category": "hub_alarm_native",
         "match": "else process.env.HUB_ALARM_SKIP_DIRECT = originalHubSkipDirect;"
       },
       {
-        "file": "bots/hub/scripts/openclaw-postalarm-fallback-smoke.ts",
+        "file": "bots/hub/scripts/hub-postalarm-no-legacy-fallback-smoke.ts",
         "line": 167,
         "category": "hub_alarm_native",
         "match": "if (originalHubLegacyFallback == null) delete process.env.HUB_ALARM_LEGACY_WEBHOOK_FALLBACK;"
       },
       {
-        "file": "bots/hub/scripts/openclaw-postalarm-fallback-smoke.ts",
+        "file": "bots/hub/scripts/hub-postalarm-no-legacy-fallback-smoke.ts",
         "line": 168,
         "category": "hub_alarm_native",
         "match": "else process.env.HUB_ALARM_LEGACY_WEBHOOK_FALLBACK = originalHubLegacyFallback;"
-      }
-    ],
-    "bots/hub/scripts/run-tests.js": [
-      {
-        "file": "bots/hub/scripts/run-tests.js",
-        "line": 47,
-        "category": "hub_alarm_native",
-        "match": "const alarmShimStatus = run(tsxBin, [path.join(scriptDir, 'hub-alarm-client-shim-smoke.ts')]);"
       }
     ],
     "bots/orchestrator/lib/steward/daily-summary.ts": [
@@ -927,36 +925,6 @@
         "line": 437,
         "category": "hub_alarm_native",
         "match": "console.warn(`[hub-alarm-client] hub alarm failed: ${hubResult.error}`);"
-      }
-    ],
-    "packages/core/lib/openclaw-client.js": [
-      {
-        "file": "packages/core/lib/openclaw-client.js",
-        "line": 3,
-        "category": "hub_alarm_native",
-        "match": "module.exports = require('./hub-alarm-client');"
-      }
-    ],
-    "packages/core/lib/openclaw-client.legacy.js": [
-      {
-        "file": "packages/core/lib/openclaw-client.legacy.js",
-        "line": 5,
-        "category": "hub_alarm_native",
-        "match": "module.exports = require('./hub-alarm-client');"
-      }
-    ],
-    "packages/core/lib/openclaw-client.ts": [
-      {
-        "file": "packages/core/lib/openclaw-client.ts",
-        "line": 4,
-        "category": "hub_alarm_native",
-        "match": "* New code should import ./hub-alarm-client. This file stays in place so older"
-      },
-      {
-        "file": "packages/core/lib/openclaw-client.ts",
-        "line": 11,
-        "category": "hub_alarm_native",
-        "match": "} from './hub-alarm-client';"
       }
     ],
     "packages/core/lib/reporting-hub.ts": [
