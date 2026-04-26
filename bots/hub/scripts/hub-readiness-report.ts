@@ -27,6 +27,22 @@ function hasUsableSecret(value: string | undefined): boolean {
   return text.length >= 12 && !PLACEHOLDER_RE.test(text);
 }
 
+function readLaunchctlEnv(name: string): string {
+  const result = spawnSync('launchctl', ['getenv', name], {
+    encoding: 'utf8',
+    maxBuffer: 1024 * 64,
+  });
+  if (Number(result.status ?? 1) !== 0) return '';
+  return String(result.stdout || '').trim();
+}
+
+function runtimeSecretSource(name: string): string | null {
+  const launchctlValue = readLaunchctlEnv(name);
+  if (hasUsableSecret(launchctlValue)) return `launchctl:${name}`;
+  if (hasUsableSecret(process.env[name])) return `process.env:${name}`;
+  return null;
+}
+
 function runSmoke(script: string, required = true): Check {
   const result = spawnSync(tsxBin, [path.join(hubRoot, 'scripts', script)], {
     cwd: hubRoot,
@@ -112,16 +128,18 @@ function hubSecretsCheck(): Check {
 }
 
 function runtimeSecretCheck(): Check {
-  const callbackSecret = hasUsableSecret(process.env.HUB_CONTROL_CALLBACK_SECRET);
-  const hubAuth = hasUsableSecret(process.env.HUB_AUTH_TOKEN);
+  const callbackSecretSource = runtimeSecretSource('HUB_CONTROL_CALLBACK_SECRET');
+  const hubAuthSource = runtimeSecretSource('HUB_AUTH_TOKEN');
   const allowProcessEnv = isEnabledFlag(process.env.HUB_LAUNCHD_SMOKE_ALLOW_PROCESS_ENV);
   return {
-    name: 'runtime_secret_env_presence',
-    status: callbackSecret && hubAuth ? 'pass' : 'warn',
+    name: 'runtime_secret_presence',
+    status: callbackSecretSource && hubAuthSource ? 'pass' : 'warn',
     required: false,
     details: {
-      hub_control_callback_secret_configured: callbackSecret,
-      hub_auth_token_configured: hubAuth,
+      hub_control_callback_secret_configured: Boolean(callbackSecretSource),
+      hub_auth_token_configured: Boolean(hubAuthSource),
+      hub_control_callback_secret_source: callbackSecretSource,
+      hub_auth_token_source: hubAuthSource,
       process_env_allowed_for_launchd_smoke: allowProcessEnv,
     },
   };
