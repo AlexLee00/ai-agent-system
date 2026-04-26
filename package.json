@@ -23,6 +23,7 @@
     "typecheck:darwin": "bash bots/darwin/scripts/typecheck-darwin-ts.sh",
     "security:scan": "tsx bots/hub/scripts/secret-leak-smoke.ts",
     "security:scan-history": "tsx scripts/security/secret-history-scan.ts",
+    "security:post-rewrite-doctor": "tsx scripts/security/post-rewrite-doctor.ts",
     "weekly-report": "node scripts/weekly-team-report.js",
     "weekly-report:30": "node scripts/weekly-team-report.js --days=30"
   },

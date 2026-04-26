@@ -32,6 +32,12 @@
 SECRET_HISTORY_SCAN_ALL_REFS=1 ./node_modules/.bin/tsx scripts/security/secret-history-scan.ts
 ```
 
+History rewrite 직후 로컬 clone이 어떤 stale ref를 붙잡고 있는지 확인하려면 다음 doctor를 실행한다. 이 명령은 읽기 전용이며 branch/tag를 삭제하지 않는다.
+
+```bash
+npm run -s security:post-rewrite-doctor
+```
+
 ## 노출 후보 발견 시 처리 순서
 
 1. 해당 provider 콘솔에서 credential을 즉시 revoke/rotate 한다.
@@ -41,7 +47,8 @@ SECRET_HISTORY_SCAN_ALL_REFS=1 ./node_modules/.bin/tsx scripts/security/secret-h
 5. `main` force push 영향 범위를 공지하고 배포/작업자를 일시 정지한다.
 6. `git filter-repo` 또는 BFG로 history에서 값/파일을 제거한다.
 7. `git push --force-with-lease origin main` 후 모든 clone은 fresh clone 또는 hard reset 절차를 따른다.
-8. GitHub Actions/branch protection/배포 런타임을 다시 검증한다.
+8. `security:post-rewrite-doctor`로 로컬 stale refs를 확인한다.
+9. GitHub Actions/branch protection/배포 런타임을 다시 검증한다.
 
 ## History rewrite 주의
 
