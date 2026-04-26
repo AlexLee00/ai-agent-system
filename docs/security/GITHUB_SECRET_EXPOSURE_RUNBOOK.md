@@ -70,6 +70,8 @@ SECURITY_STALE_REF_CLEANUP_CONFIRM=delete-stale-secret-refs npm run -s security:
 npm run -s security:stale-ref-cleanup -- --plan-file /tmp/stale-ref-plan.json --allow-stale-plan --tags
 ```
 
+실제 `--apply`는 현재 checkout이 `main`이고 `HEAD == origin/main`일 때만 진행된다. plan이 맞더라도 로컬이 push 전 커밋이거나 다른 브랜치라면 dry-run만 허용하고 apply는 중단한다.
+
 `--worktrees`는 기본적으로 locked worktree를 스킵한다. locked worktree까지 정리하려면 소유 에이전트를 먼저 정지하고 `--locked-worktrees`를 추가한다.
 
 ## 노출 후보 발견 시 처리 순서

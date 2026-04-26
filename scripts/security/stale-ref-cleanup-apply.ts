@@ -42,6 +42,7 @@ const REPO_ROOT = path.resolve(__dirname, '..', '..');
 const TSX_BIN = path.join(REPO_ROOT, 'node_modules', '.bin', 'tsx');
 const PLAN_SCRIPT = path.join(REPO_ROOT, 'scripts', 'security', 'stale-ref-cleanup-plan.ts');
 const CONFIRM_VALUE = 'delete-stale-secret-refs';
+const APPLY_BRANCH = 'main';
 
 function usage() {
   return [
@@ -50,6 +51,8 @@ function usage() {
     '',
     'Default is dry-run. To execute selected scopes:',
     `  SECURITY_STALE_REF_CLEANUP_CONFIRM=${CONFIRM_VALUE} npm run -s security:stale-ref-cleanup -- --apply --tags`,
+    '',
+    `Apply mode also requires the current checkout to be ${APPLY_BRANCH} with HEAD equal to origin/${APPLY_BRANCH}.`,
     '',
     'Reuse a saved plan to avoid a slow all-ref rescan:',
     '  npm run -s security:stale-ref-plan -- --output /tmp/stale-ref-plan.json',
@@ -156,6 +159,15 @@ function validateSavedPlan(plan: Plan, planFile: string | null, args: Set<string
     });
   }
 
+  if (plannedGit.current_branch && currentGit.current_branch && plannedGit.current_branch !== currentGit.current_branch) {
+    failPlanValidation('stale_plan_branch_mismatch', {
+      plan_file: path.resolve(REPO_ROOT, planFile),
+      planned_branch: plannedGit.current_branch,
+      current_branch: currentGit.current_branch,
+      override: 'rerun security:stale-ref-plan or pass --allow-stale-plan after manual review',
+    });
+  }
+
   if (plannedGit.origin_main && currentGit.origin_main && plannedGit.origin_main !== currentGit.origin_main) {
     failPlanValidation('stale_plan_origin_main_mismatch', {
       plan_file: path.resolve(REPO_ROOT, planFile),
@@ -164,6 +176,35 @@ function validateSavedPlan(plan: Plan, planFile: string | null, args: Set<string
       override: 'rerun security:stale-ref-plan or pass --allow-stale-plan after manual review',
     });
   }
+}
+
+function validateApplyRuntime(apply: boolean) {
+  if (!apply) return;
+  const currentGit = currentGitMetadata();
+  if (currentGit.current_branch !== APPLY_BRANCH) {
+    failPlanValidation('apply_requires_main_branch', {
+      current_branch: currentGit.current_branch,
+      required_branch: APPLY_BRANCH,
+    });
+  }
+  if (!currentGit.head || !currentGit.origin_main || currentGit.head !== currentGit.origin_main) {
+    failPlanValidation('apply_requires_head_equal_origin_main', {
+      current_head: currentGit.head,
+      origin_main: currentGit.origin_main,
+    });
+  }
+}
+
+function summarizeActions(actions: Action[]) {
+  const byScope: Record<string, number> = {};
+  for (const action of actions) {
+    byScope[action.scope] = (byScope[action.scope] || 0) + 1;
+  }
+  return {
+    by_scope: byScope,
+    destructive_count: actions.filter((action) => action.destructive).length,
+    skipped_locked_worktrees: actions.filter((action) => action.scope === 'worktree_skipped_locked').length,
+  };
 }
 
 function buildActions(plan: Plan, args: Set<string>): Action[] {
@@ -292,10 +333,12 @@ function main() {
     }, null, 2));
     process.exit(1);
   }
+  validateApplyRuntime(apply);
 
   const plan = runPlan(planFile || undefined);
   validateSavedPlan(plan, planFile, args);
   const actions = buildActions(plan, args);
+  const actionSummary = summarizeActions(actions);
   const results = actions.map((action) => executeAction(action, apply));
   const failed = results.filter((result) => result.status === 'failed');
   const skipped = results.filter((result) => result.status === 'skipped');
@@ -305,6 +348,7 @@ function main() {
     destructive: apply,
     plan_source: planFile ? path.resolve(REPO_ROOT, planFile) : 'generated',
     selected_scopes: selectedScopes,
+    action_summary: actionSummary,
     actions_count: actions.length,
     applied_count: results.filter((result) => result.status === 'applied').length,
     dry_run_count: results.filter((result) => result.status === 'dry_run').length,
