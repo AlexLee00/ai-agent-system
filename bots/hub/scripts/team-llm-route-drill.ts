@@ -1,7 +1,10 @@
 #!/usr/bin/env tsx
 // @ts-nocheck
 
+const { PROFILES } = require('../lib/runtime-profiles.ts');
+
 const PLACEHOLDER_RE = /(__SET_|CHANGE_ME|REPLACE_ME|TODO|PLACEHOLDER|changeme)/i;
+const UNSUITABLE_AGENT_RE = /(image|gemma|stt|whisper|local)/i;
 
 function flag(name) {
   return ['1', 'true', 'yes', 'y', 'on'].includes(String(process.env[name] || '').trim().toLowerCase());
@@ -34,22 +37,60 @@ function scenarios() {
       };
     }).filter((item) => item.callerTeam);
   }
+  return defaultProfileScenarios();
+}
+
+function routeToProvider(route) {
+  const normalized = String(route || '').trim();
+  if (normalized.startsWith('claude-code/')) return 'claude-code-oauth';
+  if (normalized.startsWith('openai-oauth/')) return 'openai-oauth';
+  if (normalized.startsWith('groq/')) return 'groq';
+  if (normalized.startsWith('openai/')) return 'openai';
+  if (normalized.startsWith('google-gemini-cli/') || normalized.startsWith('gemini/')) return 'gemini';
+  if (normalized.startsWith('local/')) return 'local';
+  return '';
+}
+
+function firstSupportedRoute(profile) {
   return [
-    {
-      name: 'luna_openai_oauth_primary',
-      callerTeam: 'luna',
-      agent: 'analyst',
-      expectedProvider: 'openai-oauth',
-      maxBudgetUsd: 0.02,
-    },
-    {
-      name: 'blog_claude_code_primary',
-      callerTeam: 'blog',
-      agent: 'writer',
-      expectedProvider: 'claude-code-oauth',
-      maxBudgetUsd: 0.10,
-    },
-  ];
+    ...(profile?.primary_routes || []),
+    ...(profile?.fallback_routes || []),
+  ].find((route) => routeToProvider(route));
+}
+
+function isOauthProvider(provider) {
+  return provider === 'openai-oauth' || provider === 'claude-code-oauth';
+}
+
+function defaultBudgetForProvider(provider) {
+  if (provider === 'claude-code-oauth') return 0.10;
+  if (provider === 'openai-oauth') return 0.02;
+  return 0.05;
+}
+
+function defaultProfileScenarios() {
+  return Object.entries(PROFILES || {})
+    .map(([callerTeam, profiles]) => {
+      const entries = Object.entries(profiles || {})
+        .filter(([agent, profile]) => !UNSUITABLE_AGENT_RE.test(agent) && firstSupportedRoute(profile));
+      const oauthFirst = entries.find(([, profile]) => isOauthProvider(routeToProvider(firstSupportedRoute(profile))));
+      const defaultEntry = entries.find(([agent]) => agent === 'default');
+      const selected = oauthFirst || defaultEntry || entries[0];
+      if (!selected) return null;
+      const [agent, profile] = selected;
+      const route = firstSupportedRoute(profile);
+      const expectedProvider = routeToProvider(route) || 'any';
+      return {
+        name: `${callerTeam}_${agent}_${expectedProvider.replace(/[^a-z0-9]+/gi, '_')}`,
+        callerTeam,
+        agent,
+        expectedProvider,
+        selectedRoute: route,
+        maxBudgetUsd: defaultBudgetForProvider(expectedProvider),
+      };
+    })
+    .filter(Boolean)
+    .sort((a, b) => a.callerTeam.localeCompare(b.callerTeam));
 }
 
 function setupMockFetch(expected) {
@@ -112,6 +153,7 @@ async function callScenario(scenario, token) {
       status: response.status,
       details: {
         expected_provider: scenario.expectedProvider,
+        selected_route: scenario.selectedRoute || null,
         max_budget_usd: scenario.maxBudgetUsd,
         fallback_count: payload?.fallbackCount ?? null,
         attempted_providers: payload?.attempted_providers || null,
@@ -128,6 +170,7 @@ async function callScenario(scenario, token) {
       status: null,
       details: {
         expected_provider: scenario.expectedProvider,
+        selected_route: scenario.selectedRoute || null,
         max_budget_usd: scenario.maxBudgetUsd,
         error: error?.name === 'TimeoutError' ? 'timeout' : String(error?.message || error),
       },
@@ -156,6 +199,8 @@ async function main() {
       base_url: live ? baseUrl() : 'mock',
       checked: checks.length,
       failed: failed.length,
+      oauth_primary_checks: checks.filter((check) => ['openai-oauth', 'claude-code-oauth'].includes(check.details?.expected_provider)).length,
+      non_oauth_primary_checks: checks.filter((check) => !['openai-oauth', 'claude-code-oauth'].includes(check.details?.expected_provider)).length,
       checks,
     }, null, 2));
     process.exit(failed.length === 0 ? 0 : 1);

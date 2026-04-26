@@ -619,6 +619,20 @@ export const PROFILES: Record<string, TeamProfiles> = {
         "openai-oauth/gpt-5.4",
         OPENAI_FAST_ROUTE
       ]
+    },
+    "review": {
+      "runtime_agent": "video-edi",
+      "claude_code_name": "video-edi",
+      "claude_code_settings": CLAUDE_CODE_SETTINGS["video-edi"],
+      "local_llm_base_url": "http://127.0.0.1:11434",
+      "primary_routes": [
+        "claude-code/sonnet",
+        "openai-oauth/gpt-5.4"
+      ],
+      "fallback_routes": [
+        GROQ_SCOUT_ROUTE,
+        OPENAI_FAST_ROUTE
+      ]
     }
   },
   "video": {
