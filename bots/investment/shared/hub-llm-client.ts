@@ -25,6 +25,21 @@ export function isHubShadow(): boolean {
   return process.env.INVESTMENT_LLM_HUB_SHADOW === 'true';
 }
 
+type HubUrgency = 'low' | 'normal' | 'high' | 'critical';
+
+export function normalizeHubUrgency(value: unknown): HubUrgency {
+  const text = String(value || '').trim().toLowerCase();
+  if (text === 'critical') return 'critical';
+  if (text === 'high') return 'high';
+  if (text === 'low') return 'low';
+  // Hub schema uses "normal"; legacy Luna callers used "medium".
+  return 'normal';
+}
+
+export function getHubCallerTeam(): string {
+  return String(process.env.INVESTMENT_LLM_HUB_TEAM || 'luna').trim() || 'luna';
+}
+
 // agentName → abstract model 매핑 (Hub LLM Routing 기준)
 const AGENT_ABSTRACT_MODEL: Record<string, string> = {
   luna:        'anthropic_sonnet',  // 최종 판단 — sonnet급 품질
@@ -48,6 +63,35 @@ export interface HubLLMResult {
   error?: string;
 }
 
+export function buildHubLlmCallPayload(
+  agentName: string,
+  systemPrompt: string,
+  userPrompt: string,
+  options: {
+    maxTokens?: number;
+    symbol?: string;
+    market?: string;
+    urgency?: 'critical' | 'high' | 'normal' | 'medium' | 'low';
+    callerTeam?: string;
+  } = {}
+) {
+  const abstractModel = AGENT_ABSTRACT_MODEL[agentName] ?? 'anthropic_haiku';
+  const urgency = normalizeHubUrgency(options.urgency ?? (agentName === 'luna' ? 'high' : 'normal'));
+  return {
+    prompt:        userPrompt,
+    systemPrompt,
+    abstractModel,
+    timeoutMs:     HUB_TIMEOUT_MS - 5_000,
+    agent:         agentName,
+    callerTeam:    options.callerTeam || getHubCallerTeam(),
+    urgency,
+    taskType:      'trade_signal',
+    market:        options.market || null,
+    symbol:        options.symbol || null,
+    maxTokens:     options.maxTokens,
+  };
+}
+
 /**
  * Hub /hub/llm/call 호출.
  * Shadow Mode일 경우 결과를 로깅만 하고 ok:false 반환 (호출자가 직접 폴백 사용).
@@ -60,13 +104,11 @@ export async function callViaHub(
     maxTokens?: number;
     symbol?: string;
     market?: string;
-    urgency?: 'high' | 'medium' | 'low';
+    urgency?: 'critical' | 'high' | 'normal' | 'medium' | 'low';
     shadowCompare?: string;  // Shadow Mode일 때 직접 호출 결과 (비교용)
   } = {}
 ): Promise<HubLLMResult> {
   const t0 = Date.now();
-  const abstractModel = AGENT_ABSTRACT_MODEL[agentName] ?? 'anthropic_haiku';
-  const urgency = options.urgency ?? (agentName === 'luna' ? 'high' : 'medium');
 
   let hubToken: string;
   try {
@@ -80,19 +122,12 @@ export async function callViaHub(
     return { ok: false, text: '', provider: 'hub', costUsd: 0, latencyMs: 0, error: 'HUB_AUTH_TOKEN 없음' };
   }
 
-  const body = JSON.stringify({
-    prompt:        userPrompt,
-    systemPrompt,
-    abstractModel,
-    timeoutMs:     HUB_TIMEOUT_MS - 5_000,
-    agent:         agentName,
-    callerTeam:    'investment',
-    urgency,
-    taskType:      'trade_signal',
-    market:        options.market || process.env.INVESTMENT_MARKET || null,
-    symbol:        options.symbol || null,
-    maxTokens:     options.maxTokens,
-  });
+  const body = JSON.stringify(buildHubLlmCallPayload(agentName, systemPrompt, userPrompt, {
+    maxTokens: options.maxTokens,
+    symbol: options.symbol,
+    market: options.market || process.env.INVESTMENT_MARKET || undefined,
+    urgency: options.urgency,
+  }));
 
   try {
     const res = await fetch(`${HUB_BASE}/hub/llm/call`, {

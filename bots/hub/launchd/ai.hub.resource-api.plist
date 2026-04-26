@@ -29,6 +29,8 @@
     <string>jay</string>
     <key>HUB_CONTROL_CALLBACK_SECRET</key>
     <string>__SET_IN_LOCAL_LAUNCHAGENT__</string>
+    <key>HUB_LLM_RATE_LIMIT_PER_MIN</key>
+    <string>120</string>
   </dict>
 
   <key>RunAtLoad</key>

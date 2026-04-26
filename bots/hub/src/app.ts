@@ -6,6 +6,12 @@ const { llmAdmissionMiddleware } = require('../lib/llm/admission-control');
 const { hubRequestContextMiddleware } = require('./middleware/request-context');
 const { registerHubRoutes } = require('./route-registry');
 
+function parsePositiveIntEnv(name, fallback) {
+  const parsed = Number(process.env[name]);
+  if (!Number.isFinite(parsed) || parsed <= 0) return fallback;
+  return Math.floor(parsed);
+}
+
 export function createHubApp(options) {
   const app = express();
   const isShuttingDown = options?.isShuttingDown || (() => false);
@@ -65,12 +71,13 @@ export function createHubApp(options) {
     message: { error: 'secrets rate limit exceeded (60/min)' },
   });
 
+  const llmRateLimitPerMinute = parsePositiveIntEnv('HUB_LLM_RATE_LIMIT_PER_MIN', 120);
   const llmLimiter = rateLimit({
     windowMs: 60 * 1000,
-    max: 30,
+    max: llmRateLimitPerMinute,
     standardHeaders: true,
     legacyHeaders: false,
-    message: { error: 'LLM rate limit exceeded (30/min)' },
+    message: { error: `LLM rate limit exceeded (${llmRateLimitPerMinute}/min)` },
     skip: (req) => String(req.headers['x-hub-load-test'] || '').trim() === '1',
   });
 
