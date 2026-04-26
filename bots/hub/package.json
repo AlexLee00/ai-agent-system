@@ -7,6 +7,7 @@
   "scripts": {
     "start": "tsx src/hub.ts",
     "alarm:digest-worker": "tsx scripts/alarm-digest-worker.ts",
+    "readiness": "tsx scripts/hub-readiness-report.ts",
     "local-llm-policy": "tsx scripts/local-llm-policy-report.ts",
     "inventory:hub-alarm": "tsx scripts/generate-hub-alarm-inventory.ts",
     "inventory:openclaw": "tsx scripts/generate-openclaw-inventory.ts",
