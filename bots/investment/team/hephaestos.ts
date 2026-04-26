@@ -4654,12 +4654,13 @@ export async function executeSignal(signal) {
   const tag = effectivePaperMode ? '[PAPER]' : '[LIVE]';
   console.log(`\n⚡ [헤파이스토스] ${symbol} ${action} $${amountUsdt} ${tag}`);
 
+  /** @type {any} */
+  let trade;
+  let executionMeta = null;
+  let executionClientOrderId = null;
+  let executionSubmittedAtMs = null;
+
   try {
-    /** @type {any} */
-    let trade;
-    let executionMeta = null;
-    let executionClientOrderId = null;
-    let executionSubmittedAtMs = null;
 
     if (action === ACTIONS.BUY) {
       let promoted = [];

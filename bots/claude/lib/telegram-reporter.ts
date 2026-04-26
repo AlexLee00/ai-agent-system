@@ -25,6 +25,22 @@ function nowKstString() {
   return kst.toKST(new Date());
 }
 
+let recoveryLogTableAvailable = null;
+
+async function hasRecoveryLogTable() {
+  if (recoveryLogTableAvailable !== null) return recoveryLogTableAvailable;
+  try {
+    const rows = await pgPool.query('reservation', `
+      SELECT to_regclass('reservation.claude_doctor_recovery_log') IS NOT NULL AS exists
+    `);
+    recoveryLogTableAvailable = Boolean(rows?.[0]?.exists);
+    return recoveryLogTableAvailable;
+  } catch {
+    recoveryLogTableAvailable = false;
+    return false;
+  }
+}
+
 // ─── Kill Switch ──────────────────────────────────────────────────────
 
 function isEnhancedEnabled() {
@@ -347,9 +363,10 @@ async function onHandlerRegistered(handlerName, description) {
  */
 async function fetchTodayRecoveries() {
   try {
+    if (!(await hasRecoveryLogTable())) return [];
     const rows = await pgPool.query('reservation', `
       SELECT action, success, attempts
-      FROM claude_doctor_recovery_log
+      FROM reservation.claude_doctor_recovery_log
       WHERE inserted_at >= NOW() - INTERVAL '24 hours'
       ORDER BY inserted_at DESC
       LIMIT 20
@@ -383,12 +400,16 @@ async function runDailyReport() {
  */
 async function runWeeklyReport() {
   try {
+    if (!(await hasRecoveryLogTable())) {
+      await onWeeklyReview({});
+      return;
+    }
     const rows = await pgPool.query('reservation', `
       SELECT
         COUNT(*) AS total,
         SUM(CASE WHEN success THEN 1 ELSE 0 END) AS success_count,
         AVG(attempts) AS avg_attempts
-      FROM claude_doctor_recovery_log
+      FROM reservation.claude_doctor_recovery_log
       WHERE inserted_at >= NOW() - INTERVAL '7 days'
     `);
 

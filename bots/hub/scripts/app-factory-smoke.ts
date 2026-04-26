@@ -37,6 +37,18 @@ async function main() {
     if (JSON.stringify(invalidJsonBody).includes('SyntaxError')) {
       throw new Error('invalid JSON response leaked stack detail');
     }
+
+    const longPathResponse = await fetch(`${baseUrl}/${'a'.repeat(510)}`);
+    const longPathBody = await longPathResponse.json();
+    if (longPathResponse.status !== 414 || longPathBody.error !== 'URI too long') {
+      throw new Error('long path guard contract mismatch');
+    }
+
+    const repeatedPathResponse = await fetch(`${baseUrl}/${'b'.repeat(60)}`);
+    const repeatedPathBody = await repeatedPathResponse.json();
+    if (repeatedPathResponse.status !== 400 || repeatedPathBody.error !== 'invalid path pattern') {
+      throw new Error('repeated path guard contract mismatch');
+    }
   });
 
   const shutdownApp = createHubApp({

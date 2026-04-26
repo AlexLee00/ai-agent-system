@@ -21,7 +21,7 @@
 	<array>
 		<string>/opt/homebrew/bin/node</string>
 		<string>-e</string>
-		<string>require('./bots/claude/lib/telegram-reporter').runDailyReport().catch(e => { console.error(e); process.exit(1); })</string>
+		<string>require('/Users/alexlee/projects/ai-agent-system/bots/claude/lib/telegram-reporter').runDailyReport().catch(e => { console.error(e); process.exit(1); })</string>
 	</array>
 	<key>RunAtLoad</key>
 	<false/>

@@ -9,6 +9,7 @@
 const https = require('https');
 const http  = require('http');
 const cfg   = require('../config');
+const env   = require('../../../../packages/core/lib/env');
 
 function ping(endpoint, timeoutMs = 5000) {
   return new Promise((resolve) => {
@@ -32,24 +33,26 @@ function ping(endpoint, timeoutMs = 5000) {
 
 // Hub resource API health 확인
 async function checkHubHealth(items) {
-  const ep = { host: '127.0.0.1', port: 18790, path: '/hub/health', https: false };
+  const port = Number(process.env.HUB_PORT || env.HUB_PORT || 7788);
+  const label = `Hub resource API (포트 ${port})`;
+  const ep = { host: '127.0.0.1', port, path: '/hub/health', https: false };
   const r  = await ping(ep, 3000);
   if (!r.ok) {
     // 포트 바인딩 자체를 lsof로 확인
     const { execSync } = require('child_process');
     try {
-      const lsofOut = execSync('lsof -i :18790 -sTCP:LISTEN 2>/dev/null | wc -l', { encoding: 'utf8', timeout: 3000 }).trim();
+      const lsofOut = execSync(`lsof -i :${port} -sTCP:LISTEN 2>/dev/null | wc -l`, { encoding: 'utf8', timeout: 3000 }).trim();
       const listening = parseInt(lsofOut, 10) > 1;
       items.push({
-        label:  'Hub resource API (포트 18790)',
+        label,
         status: listening ? 'ok' : 'warn',
         detail: listening ? '포트 바인딩 확인 (HTTP 응답 없음)' : '포트 미바인딩 — launchd 확인',
       });
     } catch {
-      items.push({ label: 'Hub resource API (포트 18790)', status: 'warn', detail: '포트 확인 실패' });
+      items.push({ label, status: 'warn', detail: '포트 확인 실패' });
     }
   } else {
-    items.push({ label: 'Hub resource API (포트 18790)', status: 'ok', detail: `응답 ${r.ms}ms (HTTP ${r.code})` });
+    items.push({ label, status: 'ok', detail: `응답 ${r.ms}ms (HTTP ${r.code})` });
   }
 }
 
