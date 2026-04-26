@@ -8,19 +8,19 @@
     "appliedAt": "2026-04-23T03:39:20.568Z"
   },
   "sophia": {
-    "evidenceKey": "0.2000:5",
-    "accuracy": 0.2,
-    "sampleCount": 5,
-    "appliedFrom": 0.25,
-    "appliedTo": 0.2,
-    "appliedAt": "2026-04-24T23:00:46.944Z"
+    "evidenceKey": "0.2857:7",
+    "accuracy": 0.2857142857142857,
+    "sampleCount": 7,
+    "appliedFrom": 0.2,
+    "appliedTo": 0.15,
+    "appliedAt": "2026-04-25T23:00:46.481Z"
   },
   "hermes": {
-    "evidenceKey": "0.2000:5",
-    "accuracy": 0.2,
-    "sampleCount": 5,
-    "appliedFrom": 0.15,
-    "appliedTo": 0.1,
-    "appliedAt": "2026-04-24T23:00:46.944Z"
+    "evidenceKey": "0.2857:7",
+    "accuracy": 0.2857142857142857,
+    "sampleCount": 7,
+    "appliedFrom": 0.1,
+    "appliedTo": 0.05,
+    "appliedAt": "2026-04-25T23:00:46.481Z"
   }
 }
