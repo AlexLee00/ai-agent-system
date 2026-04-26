@@ -10,6 +10,8 @@
     "readiness": "tsx scripts/hub-readiness-report.ts",
     "live:drill": "tsx scripts/hub-live-drill.ts",
     "live:drill:mock": "HUB_LIVE_DRILL_MOCK=1 HUB_AUTH_TOKEN=hub-live-drill-mock-token tsx scripts/hub-live-drill.ts",
+    "team:llm-drill": "tsx scripts/team-llm-route-drill.ts",
+    "team:llm-drill:live": "HUB_TEAM_LLM_DRILL_LIVE=1 tsx scripts/team-llm-route-drill.ts",
     "local-llm-policy": "tsx scripts/local-llm-policy-report.ts",
     "inventory:hub-alarm": "tsx scripts/generate-hub-alarm-inventory.ts",
     "inventory:openclaw": "tsx scripts/generate-openclaw-inventory.ts",

@@ -54,6 +54,8 @@ function main() {
     if (runtimeWorkspaceStatus !== 0) process.exit(runtimeWorkspaceStatus);
     const llmControlIndependenceStatus = run(tsxBin, [path.join(scriptDir, 'llm-control-independence-smoke.ts')]);
     if (llmControlIndependenceStatus !== 0) process.exit(llmControlIndependenceStatus);
+    const teamLlmRouteDrillStatus = run(tsxBin, [path.join(scriptDir, 'team-llm-route-drill.ts')]);
+    if (teamLlmRouteDrillStatus !== 0) process.exit(teamLlmRouteDrillStatus);
     const tgPendingMigrationStatus = run(tsxBin, [path.join(scriptDir, 'telegram-pending-queue-migration-smoke.ts')]);
     if (tgPendingMigrationStatus !== 0) process.exit(tgPendingMigrationStatus);
     const tgHubSecretsStatus = run(tsxBin, [path.join(scriptDir, 'telegram-hub-secrets-smoke.ts')]);
