@@ -77,6 +77,11 @@ const CATEGORY_TOPIC_POOL = {
     { topic: 'AI 코딩 도구의 팀 적용 조건', question: '개인 생산성이 팀 생산성으로 이어지려면 무엇이 필요할까', diff: '개인 사용기보다 팀 운영 관점' },
     { topic: '요즘 기술 선택에서 안정성이 다시 중요한 이유', question: '성능보다 먼저 따져야 할 기준은 무엇일까', diff: '트렌드 소개가 아닌 선택 원칙 정리' },
   ],
+  'IT정보와분석': [
+    { topic: '정보 과잉 속에서 중요한 신호만 고르는 기준', question: '뉴스가 많을수록 무엇을 먼저 봐야 할까', diff: '뉴스 나열보다 신호 선별 기준' },
+    { topic: '실무자가 기술 뉴스를 행동으로 바꾸는 법', question: '읽은 정보를 실제 선택으로 연결하려면 무엇이 필요할까', diff: '정보 소비보다 실행 판단 관점' },
+    { topic: '큰 뉴스보다 오래 남는 변화 읽기', question: '화제성은 작아도 실제 영향이 큰 변화는 어떻게 구분할까', diff: '조회수보다 지속 영향 중심' },
+  ],
   '개발기획과컨설팅': [
     { topic: '요구사항 정의 전에 먼저 정리할 전제', question: '일정이 밀리기 전에 무엇을 먼저 문서화해야 할까', diff: '기능 목록보다 전제와 범위 점검' },
     { topic: '개발 일정 산정을 망치는 커뮤니케이션', question: '왜 같은 요구사항을 두고 서로 다른 일정을 말하게 될까', diff: '기술 난이도보다 의사소통 관점' },
@@ -91,6 +96,11 @@ const CATEGORY_TOPIC_POOL = {
     { topic: '하루 30분 루틴을 무너지지 않게 만드는 기준', question: '의욕보다 먼저 설계해야 할 습관 장치는 무엇일까', diff: '동기부여보다 유지 가능한 구조' },
     { topic: '번아웃 직전 우선순위를 다시 세우는 법', question: '열심히 하는데도 자꾸 지칠 때 무엇을 줄여야 할까', diff: '열정이 아닌 에너지 관리 관점' },
     { topic: '꾸준함을 만드는 기록 습관', question: '왜 기록은 자주 시작만 하고 끝날까', diff: '의지보다 기록 구조와 피드백 루프' },
+  ],
+  '성장과성공': [
+    { topic: '바쁨을 성과로 착각하지 않게 만드는 기준', question: '열심히 하는데도 앞으로 나아가지 못할 때 무엇을 봐야 할까', diff: '노력량보다 방향성과 선택 기준' },
+    { topic: '기회를 넓히는 사람들의 선택 습관', question: '오늘의 선택이 다음 기회를 만들려면 무엇이 달라야 할까', diff: '성공담보다 반복 가능한 판단 습관' },
+    { topic: '할 일을 늘리기 전에 버릴 일을 정하는 법', question: '더 하는 것보다 먼저 줄여야 할 일은 무엇일까', diff: '실행력보다 우선순위 정리 관점' },
   ],
   '도서리뷰': [],
 };
@@ -159,7 +169,7 @@ const CATEGORY_SELECTION_GUIDES = {
 };
 
 const TITLE_FRAMES = [
-  { pattern: 'checklist', template: '{topicObject} 시작하기 전 먼저 볼 3가지' },
+  { pattern: 'checklist', template: '{topic}, 먼저 확인할 3가지' },
   { pattern: 'warning', template: '{topic}, 지금 바꾸지 않으면 늦는 이유' },
   { pattern: 'experience', template: '직접 해보고 깨달은 {topic}의 진짜 핵심' },
   { pattern: 'experience', template: '3개월간 {topicObject} 운영하며 배운 것들' },
@@ -290,25 +300,11 @@ function isBannedTitle(title = '') {
   return BANNED_PATTERNS.some((pattern) => pattern.test(text));
 }
 
-const GENERIC_STRATEGY_SEED_TERMS = new Set([
-  '예약',
-  '문의',
-  '저장',
-  '공유',
-  '도서리뷰',
-  '책리뷰',
-  '일반포스팅',
-  '일반 포스팅',
-  '블로그',
-  '인스타',
-  '인스타그램',
-  '페이스북',
-  '숏폼',
-  '릴스',
-]);
-
 function _knownCategoryLabels() {
-  return Object.keys(CATEGORY_TOPIC_POOL);
+  return Array.from(new Set([
+    ...Object.keys(CATEGORY_TOPIC_POOL),
+    ...Object.keys(CATEGORY_SELECTION_GUIDES),
+  ]));
 }
 
 function _stripCategoryPrefix(title = '') {
@@ -323,15 +319,6 @@ function _categoryTokenCount(text = '', category = '') {
   if (!category) return 0;
   const pattern = new RegExp(_escapeRegExp(category), 'g');
   return (String(text || '').match(pattern) || []).length;
-}
-
-function _sanitizeStrategySeedText(raw = '', category = '') {
-  const text = String(raw || '').replace(/^#/, '').trim();
-  if (!text || text.length < 4) return null;
-  if (GENERIC_STRATEGY_SEED_TERMS.has(text)) return null;
-  if (_knownCategoryLabels().includes(text)) return null;
-  if (text === category || text.includes(`${category} `) || text.includes(`${category}를`) || text.includes(`${category}을`)) return null;
-  return text;
 }
 
 function isReaderFriendlyTitle(title = '', category = '') {
@@ -544,20 +531,11 @@ function enrichTopicSelection(candidate, category, recentTitles = []) {
 function buildStrategyTopicPool(category, strategyPlan = null, marketingHints = null) {
   if (!strategyPlan) return [];
   const directives = normalizeExecutionDirectives(strategyPlan);
-  const keywordBias = Array.isArray(directives.titlePolicy.keywordBias) ? directives.titlePolicy.keywordBias : [];
-  const focusTags = Array.isArray(directives.hashtagPolicy.focusTags) ? directives.hashtagPolicy.focusTags : [];
   const channelPriority = directives.channelPriority || {};
   const strategySeeds = [];
 
-  for (const keyword of keywordBias.slice(0, 4)) {
-    const text = _sanitizeStrategySeedText(keyword, category);
-    if (!text) continue;
-    strategySeeds.push({
-      topic: `${text}을 독자가 바로 이해하게 만드는 설명 방식`,
-      question: `${text} 흐름을 정보성 글에서 어떻게 쉽게 풀어야 할까`,
-      diff: '전략 키워드를 제목 주제가 아니라 독자 이해 장치로 반영',
-    });
-  }
+  // keywordBias/focusTags는 제목 주제가 아니라 작성 보조 힌트로만 사용한다.
+  // 전략 태그를 주제로 승격하면 "도서리뷰를 성장과성공 실행 기준..." 같은 제목이 생성된다.
 
   if (directives.creativePolicy.ctaStyle === 'conversion') {
     strategySeeds.push({
@@ -580,16 +558,6 @@ function buildStrategyTopicPool(category, strategyPlan = null, marketingHints = 
       topic: `${category}에서 공유와 저장을 부르는 한 줄 기준`,
       question: `${category} 글이 공유되려면 독자가 어떤 한 줄을 바로 기억해야 할까`,
       diff: '검색보다 공유와 전파 관점',
-    });
-  }
-
-  for (const tag of focusTags.slice(0, 3)) {
-    const text = _sanitizeStrategySeedText(tag, category);
-    if (!text) continue;
-    strategySeeds.push({
-      topic: `${text} 흐름을 독자에게 부담 없이 연결하는 방법`,
-      question: `${text} 신호를 글 안에서 과하지 않게 설명하려면 무엇을 먼저 줄여야 할까`,
-      diff: '플랫폼 신호는 보조 맥락으로만 사용',
     });
   }
 
@@ -690,10 +658,10 @@ function selectAndValidateTopic(category, recentPosts = [], strategyPlan = null,
     }, category, recentTitles);
   }
 
-  const fallback = topicPool.find((item) => isReaderFriendlyTitle(`${item.topic}을 시작하기 전 먼저 볼 3가지`, category))
+  const fallback = topicPool.find((item) => isReaderFriendlyTitle(`${item.topic}, 먼저 확인할 3가지`, category))
     || { topic: `${category} 실전 가이드`, question: `${category}에서 무엇을 먼저 살펴봐야 할까`, diff: '강제 기본 주제' };
   return enrichTopicSelection({
-    title: `${fallback.topic}을 시작하기 전 먼저 볼 3가지`,
+    title: `${fallback.topic}, 먼저 확인할 3가지`,
     topic: fallback.topic,
     question: fallback.question,
     diff: fallback.diff,
