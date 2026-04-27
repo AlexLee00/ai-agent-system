@@ -5,6 +5,7 @@ import { checkTokenHealth, checkOpenAIOAuthHealth, checkGroqAccounts } from '../
 
 const { PROFILES } = require('../lib/runtime-profiles.ts');
 const { getGeminiOauthStatus } = require('../lib/oauth/providers/gemini-oauth.ts');
+const { getProviderRecord } = require('../lib/oauth/token-store.ts');
 
 const UNSUITABLE_AGENT_RE = /(image|gemma|stt|whisper|local)/i;
 
@@ -18,6 +19,18 @@ function routeToProvider(route: string) {
   if (normalized.startsWith('google-gemini-cli/') || normalized.startsWith('gemini/')) return 'gemini';
   if (normalized.startsWith('local/')) return 'local';
   return '';
+}
+
+function tokenExpiresInHours(token: any): number | null {
+  const expiresAt = token?.expires_at || token?.expiresAt || null;
+  const expiresMs = expiresAt ? new Date(expiresAt).getTime() : NaN;
+  if (!Number.isFinite(expiresMs)) return null;
+  return (expiresMs - Date.now()) / (60 * 60 * 1000);
+}
+
+function refreshWarnHours(): number {
+  const value = Number(process.env.HUB_OAUTH_REFRESH_WARN_HOURS || 24);
+  return Number.isFinite(value) && value > 0 ? value : 24;
 }
 
 function allRoutes(profile: any) {
@@ -78,6 +91,9 @@ async function main() {
     getGeminiOauthStatus(),
     checkGroqAccounts(),
   ]);
+  const warnHours = refreshWarnHours();
+  const openaiExpiresInHours = tokenExpiresInHours(getProviderRecord('openai-codex-oauth')?.token || null);
+  const geminiExpiresInHours = tokenExpiresInHours(getProviderRecord('gemini-oauth')?.token || null);
   const teamCoverage = summarizeTeamCoverage();
   const teamsWithoutOauthRoute = teamCoverage.filter((item) => !item.oauth_route_available);
   const geminiRequired = teamCoverage.some((item) => item.selected_provider === 'gemini-oauth' || item.oauth_route_family?.startsWith('gemini-oauth/'));
@@ -103,6 +119,12 @@ async function main() {
         token_present: Boolean(openai.token_present),
         source: openai.source || null,
         model: openai.model || null,
+        expires_in_hours: Number.isFinite(Number(openaiExpiresInHours))
+          ? Math.round(Number(openaiExpiresInHours) * 10) / 10
+          : null,
+        needs_refresh: Number.isFinite(Number(openaiExpiresInHours))
+          ? Number(openaiExpiresInHours) <= warnHours
+          : false,
         error: openai.error || null,
       },
       gemini_oauth: {
@@ -112,6 +134,12 @@ async function main() {
         token_present: Boolean(gemini?.has_token),
         expired: Boolean(gemini?.expired),
         quota_project_configured: Boolean(gemini?.quota_project_configured),
+        expires_in_hours: Number.isFinite(Number(geminiExpiresInHours))
+          ? Math.round(Number(geminiExpiresInHours) * 100) / 100
+          : null,
+        needs_refresh: Number.isFinite(Number(geminiExpiresInHours))
+          ? Number(geminiExpiresInHours) <= warnHours
+          : Boolean(gemini?.expired),
       },
       groq_pool: {
         available_accounts: Number(groq.available_accounts || 0),

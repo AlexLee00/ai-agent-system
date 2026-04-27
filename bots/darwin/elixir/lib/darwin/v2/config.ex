@@ -118,7 +118,15 @@ defmodule Darwin.V2.Config do
   Anthropic API 키.
   """
   def anthropic_api_key do
-    System.get_env("ANTHROPIC_API_KEY") || System.get_env("DARWIN_ANTHROPIC_API_KEY")
+    if anthropic_public_api_enabled?() do
+      System.get_env("ANTHROPIC_API_KEY") || System.get_env("DARWIN_ANTHROPIC_API_KEY")
+    end
+  end
+
+  defp anthropic_public_api_enabled? do
+    Enum.any?(["HUB_ENABLE_CLAUDE_PUBLIC_API", "HUB_ENABLE_ANTHROPIC_PUBLIC_API"], fn key ->
+      String.downcase(System.get_env(key, "")) in ["1", "true", "yes", "y", "on"]
+    end)
   end
 
   @doc """

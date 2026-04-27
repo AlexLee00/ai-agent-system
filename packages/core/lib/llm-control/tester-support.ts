@@ -62,6 +62,14 @@ const SPEED_TEST_MODEL_CATALOG = {
   ]),
 };
 
+function envFlag(name) {
+  return ['1', 'true', 'yes', 'y', 'on'].includes(String(process.env[name] || '').trim().toLowerCase());
+}
+
+function publicOpenAiEnabled() {
+  return envFlag('HUB_ENABLE_OPENAI_PUBLIC_API');
+}
+
 function buildDefaultModelsConfig() {
   const models = {};
   for (const ids of Object.values(SPEED_TEST_MODEL_CATALOG)) {
@@ -138,6 +146,7 @@ function loadSpeedTestKeys(fs) {
 }
 
 function loadOpenAIKey(fs) {
+  if (!publicOpenAiEnabled()) return null;
   const profiles = readJsonOrDefault(fs, AUTH_PROFILES_FILE, { profiles: {} });
   const profile = Object.values(profiles.profiles ?? {}).find((item) => item.provider === 'openai');
   return profile?.key ?? process.env.OPENAI_API_KEY ?? null;

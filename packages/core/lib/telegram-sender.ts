@@ -156,8 +156,16 @@ function _secrets(): SecretPayload {
 const _token  = () => process.env.TELEGRAM_BOT_TOKEN || _secrets().telegram_bot_token || '';
 // Forum Topic 발송용 chat_id: TELEGRAM_CHAT_ID는 개인 fallback으로 쓰이는 경우가 많다.
 // topic-enabled send는 반드시 그룹 ID를 먼저 잡아야 message_thread_id가 적용된다.
-const _chatId = () => process.env.TELEGRAM_GROUP_ID || _secrets().telegram_group_id || process.env.TELEGRAM_CHAT_ID || _secrets().telegram_chat_id || '';
+const _chatId = () => (
+  process.env.TELEGRAM_GROUP_ID
+  || _secrets().telegram_group_id
+  || (_allowPersonalFallback() ? (process.env.TELEGRAM_CHAT_ID || _secrets().telegram_chat_id || '') : '')
+);
 const _topics = () => _secrets().telegram_topic_ids || {};
+
+function _allowPersonalFallback(): boolean {
+  return ['1', 'true', 'yes', 'y', 'on'].includes(String(process.env.TELEGRAM_ALLOW_PERSONAL_FALLBACK || '').trim().toLowerCase());
+}
 
 function _allowRootFallback(): boolean {
   return ['1', 'true', 'yes', 'y', 'on'].includes(String(process.env.TELEGRAM_ALLOW_ROOT_FALLBACK || '').trim().toLowerCase());

@@ -64,7 +64,17 @@ defmodule Luna.V2.LLM.Policy do
   def log_prefix, do: "[루나V2 LLM]"
 
   @impl true
-  def api_key, do: System.get_env("ANTHROPIC_API_KEY")
+  def api_key do
+    if anthropic_public_api_enabled?() do
+      System.get_env("ANTHROPIC_API_KEY")
+    end
+  end
+
+  defp anthropic_public_api_enabled? do
+    Enum.any?(["HUB_ENABLE_CLAUDE_PUBLIC_API", "HUB_ENABLE_ANTHROPIC_PUBLIC_API"], fn key ->
+      String.downcase(System.get_env(key, "")) in ["1", "true", "yes", "y", "on"]
+    end)
+  end
 
   @impl true
   def hub_routing_enabled?, do: System.get_env("LUNA_LLM_HUB_ROUTING_ENABLED") == "true"

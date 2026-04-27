@@ -67,9 +67,17 @@ defmodule Sigma.V2.LLM.Policy do
 
   @impl true
   def api_key do
-    System.get_env("ANTHROPIC_API_KEY") ||
-      System.get_env("SIGMA_ANTHROPIC_API_KEY") ||
-      load_from_secrets()
+    if anthropic_public_api_enabled?() do
+      System.get_env("ANTHROPIC_API_KEY") ||
+        System.get_env("SIGMA_ANTHROPIC_API_KEY") ||
+        load_from_secrets()
+    end
+  end
+
+  defp anthropic_public_api_enabled? do
+    Enum.any?(["HUB_ENABLE_CLAUDE_PUBLIC_API", "HUB_ENABLE_ANTHROPIC_PUBLIC_API"], fn key ->
+      String.downcase(System.get_env(key, "")) in ["1", "true", "yes", "y", "on"]
+    end)
   end
 
   @impl true

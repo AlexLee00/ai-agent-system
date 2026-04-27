@@ -42,6 +42,14 @@ const ALERT_THRESHOLD_SPAWNS = 3;    // 1분 내 Claude Code 3회 이상 → 알
 const ALERT_THRESHOLD_COST   = 0.01; // 1분 내 Anthropic 과금 $0.01 이상 → 알림
 const WINDOW_MS = 1 * 60 * 1000;    // 1분
 
+function envFlag(name) {
+  return ['1', 'true', 'yes', 'y', 'on'].includes(String(process.env[name] || '').trim().toLowerCase());
+}
+
+function anthropicPublicApiEnabled() {
+  return envFlag('HUB_ENABLE_CLAUDE_PUBLIC_API') || envFlag('HUB_ENABLE_ANTHROPIC_PUBLIC_API');
+}
+
 function buildMonitorFallbackInsight({ spawns, dbCost, hasAlert }) {
   if (hasAlert) {
     return `Claude 사용량이 임계 구간으로 올라와, 최근 spawn 급증과 Anthropic 과금 원인을 우선 점검해야 합니다.`;
@@ -51,6 +59,7 @@ function buildMonitorFallbackInsight({ spawns, dbCost, hasAlert }) {
 
 // ── config.yaml에서 ANTHROPIC_API_KEY 로드 ────────────────────────────
 function loadApiKey() {
+  if (!anthropicPublicApiEnabled()) return '';
   try {
     const yaml = fs.readFileSync(CONFIG_YAML, 'utf8');
     const m = yaml.match(/^anthropic:\s*\n(?:.*\n)*?.*api_key:\s*"([^"]+)"/m);

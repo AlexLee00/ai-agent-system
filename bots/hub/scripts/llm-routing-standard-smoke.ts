@@ -69,6 +69,7 @@ const REQUIRED_SKA_AGENTS = [
 ];
 
 const REQUIRED_INVESTMENT_AGENTS = [
+  'default',
   'luna',
   'nemesis',
   'oracle',
@@ -137,6 +138,13 @@ function main() {
     assert.ok(chain.length > 0, `investment/${agentName} selector chain must be non-empty`);
     assert.ok(chain.some((entry) => entry.provider === 'claude-code'), `investment/${agentName} must include Claude Code OAuth fallback`);
   }
+
+  const lunaDefault = selector.describeAgentModel('luna', 'default');
+  assert.equal(
+    lunaDefault?.chain?.[0]?.provider,
+    'openai-oauth',
+    'luna/default must start with OpenAI OAuth via investment.agent_policy openai_perf route',
+  );
 
   const hubClient = require('../../../packages/core/lib/hub-client');
   assert.strictEqual(typeof hubClient.callHubLlm, 'function', 'hub-client must export callHubLlm');

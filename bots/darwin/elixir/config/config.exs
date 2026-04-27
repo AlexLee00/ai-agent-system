@@ -1,7 +1,12 @@
 import Config
 
+anthropic_public_api_enabled? =
+  Enum.any?(["HUB_ENABLE_CLAUDE_PUBLIC_API", "HUB_ENABLE_ANTHROPIC_PUBLIC_API"], fn key ->
+    String.downcase(System.get_env(key, "")) in ["1", "true", "yes", "y", "on"]
+  end)
+
 config :darwin,
-  anthropic_api_key: System.get_env("ANTHROPIC_API_KEY"),
+  anthropic_api_key: if(anthropic_public_api_enabled?, do: System.get_env("ANTHROPIC_API_KEY"), else: nil),
   llm_daily_budget_usd:
     System.get_env("DARWIN_LLM_DAILY_BUDGET_USD", "10.0") |> String.to_float(),
   v2_enabled: System.get_env("DARWIN_V2_ENABLED", "false") == "true",

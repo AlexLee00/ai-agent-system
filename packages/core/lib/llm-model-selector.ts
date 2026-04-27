@@ -615,6 +615,7 @@ function buildSelectorRegistry(): Record<string, any> {
     'investment.agent_policy': ({ agentName, agentModel = null, openaiPerfModel = 'gpt-5.4', policyOverride }: SelectorOptions = {}) => {
       const normalizedAgentName = String(agentName || '');
       const defaultRoutes: Record<string, string> = {
+        default: 'openai_perf',
         luna: 'openai_perf',
         nemesis: 'dual_groq',
         oracle: 'groq_scout',

@@ -10,9 +10,11 @@ yaml_val() {
   grep -A1 "^$1:" "$CONFIG_YAML" | grep "api_key" | head -1 | sed 's/.*api_key: *"\(.*\)"/\1/'
 }
 
-# Anthropic API 키
+# Anthropic public API 키는 명시적으로 켠 경우에만 주입한다.
+if [ "${HUB_ENABLE_CLAUDE_PUBLIC_API:-}" = "1" ] || [ "${HUB_ENABLE_ANTHROPIC_PUBLIC_API:-}" = "1" ]; then
 if [ -z "$ANTHROPIC_API_KEY" ]; then
   export ANTHROPIC_API_KEY="$(yaml_val anthropic)"
+fi
 fi
 
 # Groq API 키 (첫 번째 키 사용)

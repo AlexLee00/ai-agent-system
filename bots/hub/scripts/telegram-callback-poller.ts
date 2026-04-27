@@ -1,10 +1,12 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import os from 'node:os';
 import env from '../../../packages/core/lib/env.legacy.js';
 import { resolveHubCallbackTarget } from '../lib/telegram/callback-router';
 
 const STORE_PATH = path.join(env.PROJECT_ROOT, 'bots', 'hub', 'secrets-store.json');
-const OFFSET_FILE = '/tmp/telegram-callback-offset.json';
+const OFFSET_FILE = process.env.HUB_TELEGRAM_CALLBACK_OFFSET_FILE
+  || path.join(process.env.HUB_RUNTIME_DIR || path.join(os.homedir(), '.ai-agent-system', 'hub'), 'telegram', 'callback-offset.json');
 const HUB_BASE = `http://127.0.0.1:${env.HUB_PORT || 7788}`;
 const POLL_TIMEOUT_SEC = 30;
 const REQUEST_TIMEOUT_MS = 40_000;
@@ -65,18 +67,23 @@ function readOffset(): number {
 }
 
 function saveOffset(offset: number): void {
-  fs.writeFileSync(
-    OFFSET_FILE,
-    JSON.stringify(
-      {
-        offset: Number(offset || 0),
-        updated_at: new Date().toISOString(),
-      },
-      null,
-      2,
-    ),
-    'utf8',
+  fs.mkdirSync(path.dirname(OFFSET_FILE), { recursive: true });
+  const payload = JSON.stringify(
+    {
+      offset: Number(offset || 0),
+      updated_at: new Date().toISOString(),
+    },
+    null,
+    2,
   );
+  const tmpFile = `${OFFSET_FILE}.${process.pid}.${Date.now()}.tmp`;
+  fs.writeFileSync(tmpFile, payload, { encoding: 'utf8', mode: 0o600 });
+  fs.renameSync(tmpFile, OFFSET_FILE);
+  try {
+    fs.chmodSync(OFFSET_FILE, 0o600);
+  } catch {
+    // Some filesystems do not support chmod; atomic rename is the important part.
+  }
 }
 
 async function getWebhookInfo(botToken: string): Promise<{ url?: string }> {

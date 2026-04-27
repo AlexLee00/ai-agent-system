@@ -31,6 +31,10 @@ VALID_COLLECTIONS = [
 
 def _get_api_key():
     """llm-keys.js와 동일한 파일에서 OpenAI 키 로드"""
+    public_openai_enabled = os.environ.get('HUB_ENABLE_OPENAI_PUBLIC_API', '').lower() in ('1', 'true', 'yes', 'y', 'on')
+    if not public_openai_enabled:
+        return ''
+
     key = os.environ.get('OPENAI_API_KEY', '')
     if key:
         return key

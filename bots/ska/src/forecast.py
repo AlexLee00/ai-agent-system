@@ -2188,6 +2188,10 @@ def _call_llm_diagnosis(cv_metrics, accuracy_list, weekday_bias):
     except ImportError:
         return '(openai 패키지 미설치)'
 
+    public_openai_enabled = os.environ.get('HUB_ENABLE_OPENAI_PUBLIC_API', '').lower() in ('1', 'true', 'yes', 'y', 'on')
+    if not public_openai_enabled:
+        return '(OpenAI public API 비활성화 — Hub OAuth 진단 경로 사용 필요)'
+
     api_key = os.environ.get('OPENAI_API_KEY', '')
     if not api_key:
         return '(OPENAI_API_KEY 미설정)'
