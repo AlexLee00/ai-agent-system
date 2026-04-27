@@ -32,7 +32,14 @@ function readStore() {
 function writeStore(next) {
   cache = ensureStoreShape(next);
   fs.mkdirSync(path.dirname(STORE_FILE), { recursive: true });
-  fs.writeFileSync(STORE_FILE, `${JSON.stringify(cache, null, 2)}\n`, 'utf8');
+  const tmpFile = `${STORE_FILE}.${process.pid}.${Date.now()}.tmp`;
+  fs.writeFileSync(tmpFile, `${JSON.stringify(cache, null, 2)}\n`, { encoding: 'utf8', mode: 0o600 });
+  fs.renameSync(tmpFile, STORE_FILE);
+  try {
+    fs.chmodSync(STORE_FILE, 0o600);
+  } catch {
+    // Best-effort on filesystems that do not support chmod.
+  }
 }
 
 function updateProvider(provider, updater) {

@@ -91,6 +91,9 @@ function main() {
   }
   assert(!autoCommit.includes(`.${RETIRED_GATEWAY_ID}`), 'auto-commit script must write logs under Hub-native AI_AGENT_LOGS');
   assert(!autoCommitPlist.includes(`.${RETIRED_GATEWAY_ID}`), 'auto-commit launchd plist must write logs under Hub-native path');
+  assert(!secretsRoute.includes('legacy_gateway'), 'Hub secrets route must not expose retired gateway category');
+  assert(!secretsRoute.includes('retiredGatewaySecrets'), 'Hub secrets route must not keep retired gateway handler');
+  assert(!secretsRoute.includes("open${'claw'}"), `Hub secrets route must not expose retired ${RETIRED_GATEWAY_WORD} category alias`);
   assert(!secretsRoute.includes(`store?.${RETIRED_GATEWAY_ID}`), `Hub secrets route must not load retired ${RETIRED_GATEWAY_WORD} token store`);
   assert(!secretsRoute.includes('d.gateway_token'), `Hub secrets route must not expose retired ${RETIRED_GATEWAY_WORD} gateway token`);
   for (const relPath of HUB_NATIVE_RUNTIME_SURFACES) {

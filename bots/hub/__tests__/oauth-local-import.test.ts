@@ -103,6 +103,9 @@ describe('Hub local OAuth import', () => {
         accessToken: 'claude-access-token',
         refreshToken: 'claude-refresh-token',
         expiresAt: 1893456000000,
+        scopes: ['user:profile', 'user:inference'],
+        subscriptionType: 'max',
+        rateLimitTier: 'default_claude_max_20x',
       },
     }), 'utf8');
 
@@ -114,6 +117,59 @@ describe('Hub local OAuth import', () => {
     expect(result.token.access_token).toBe('claude-access-token');
     expect(result.token.refresh_token).toBe('claude-refresh-token');
     expect(result.token.expires_at).toBe('2030-01-01T00:00:00.000Z');
+    expect(result.token.scopes).toContain('user:inference');
+    expect(result.token.subscription_type).toBe('max');
+    expect(result.token.rate_limit_tier).toBe('default_claude_max_20x');
+  });
+
+  test('writes refreshed Claude Code OAuth back to Keychain shape', () => {
+    const execSync = jest.fn(() => JSON.stringify({
+      claudeAiOauth: {
+        accessToken: 'old-claude-access-token',
+        refreshToken: 'old-claude-refresh-token',
+        expiresAt: 1770000000000,
+        scopes: ['user:profile'],
+        subscriptionType: 'max',
+        rateLimitTier: 'default_claude_max_20x',
+      },
+    }));
+    const execFileSync = jest.fn(() => '');
+
+    const { writeClaudeCodeKeychainCredentials } = require('../lib/oauth/local-credentials.ts');
+    const result = writeClaudeCodeKeychainCredentials({
+      access_token: 'new-claude-access-token',
+      refresh_token: 'new-claude-refresh-token',
+      expires_at: '2030-01-01T00:00:00.000Z',
+      scopes: ['user:profile', 'user:inference'],
+      subscription_type: 'max',
+      rate_limit_tier: 'default_claude_max_20x',
+    }, {
+      allowKeychainPrompt: true,
+      platform: 'darwin',
+      account: 'test-user',
+      execSync,
+      execFileSync,
+    });
+
+    expect(result.ok).toBe(true);
+    expect(execFileSync).toHaveBeenCalledTimes(1);
+    const [bin, args] = execFileSync.mock.calls[0];
+    expect(bin).toBe('security');
+    expect(args.slice(0, 6)).toEqual([
+      'add-generic-password',
+      '-s',
+      'Claude Code-credentials',
+      '-a',
+      'test-user',
+      '-w',
+    ]);
+    expect(args.at(-1)).toBe('-U');
+    const payload = JSON.parse(args[6]);
+    expect(payload.claudeAiOauth.accessToken).toBe('new-claude-access-token');
+    expect(payload.claudeAiOauth.refreshToken).toBe('new-claude-refresh-token');
+    expect(payload.claudeAiOauth.expiresAt).toBe(1893456000000);
+    expect(payload.claudeAiOauth.subscriptionType).toBe('max');
+    expect(payload.claudeAiOauth.rateLimitTier).toBe('default_claude_max_20x');
   });
 
   test('import-local route stores tokens but redacts response payload', async () => {

@@ -2,7 +2,7 @@ const crypto = require('crypto');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const { execSync } = require('child_process');
+const { execFileSync, execSync } = require('child_process');
 
 const CODEX_CLI_AUTH_FILENAME = 'auth.json';
 const CLAUDE_CLI_CREDENTIALS_RELATIVE_PATH = path.join('.claude', '.credentials.json');
@@ -125,6 +125,42 @@ function parseClaudeOauth(rawOauth) {
     expires_at: toIsoTime(expiresAt),
     token_type: 'Bearer',
     credential_type: typeof refreshToken === 'string' && refreshToken ? 'oauth' : 'token',
+    ...(Array.isArray(rawOauth.scopes) && rawOauth.scopes.length ? { scopes: rawOauth.scopes.filter(Boolean).map(String) } : {}),
+    ...(typeof rawOauth.subscriptionType === 'string' && rawOauth.subscriptionType ? { subscription_type: rawOauth.subscriptionType } : {}),
+    ...(typeof rawOauth.rateLimitTier === 'string' && rawOauth.rateLimitTier ? { rate_limit_tier: rawOauth.rateLimitTier } : {}),
+  };
+}
+
+function buildClaudeKeychainOauth(token, previousOauth = {}) {
+  const accessToken = token?.access_token || token?.accessToken;
+  const expiresAtRaw = token?.expires_at || token?.expiresAt;
+  const expiresAtMs = typeof expiresAtRaw === 'number'
+    ? expiresAtRaw
+    : new Date(expiresAtRaw || 0).getTime();
+  if (typeof accessToken !== 'string' || !accessToken) {
+    return { ok: false, error: 'missing_access_token' };
+  }
+  if (!Number.isFinite(expiresAtMs) || expiresAtMs <= 0) {
+    return { ok: false, error: 'missing_expires_at' };
+  }
+
+  const refreshToken = token?.refresh_token || token?.refreshToken || previousOauth?.refreshToken || '';
+  const scopes = Array.isArray(token?.scopes)
+    ? token.scopes
+    : (Array.isArray(previousOauth?.scopes) ? previousOauth.scopes : undefined);
+  const subscriptionType = token?.subscription_type || token?.subscriptionType || previousOauth?.subscriptionType;
+  const rateLimitTier = token?.rate_limit_tier || token?.rateLimitTier || previousOauth?.rateLimitTier;
+
+  return {
+    ok: true,
+    oauth: {
+      accessToken,
+      ...(typeof refreshToken === 'string' && refreshToken ? { refreshToken } : {}),
+      expiresAt: expiresAtMs,
+      ...(scopes?.length ? { scopes: scopes.filter(Boolean).map(String) } : {}),
+      ...(subscriptionType ? { subscriptionType } : {}),
+      ...(rateLimitTier ? { rateLimitTier } : {}),
+    },
   };
 }
 
@@ -247,6 +283,57 @@ function readClaudeCodeLocalCredentials(options = {}) {
   };
 }
 
+function writeClaudeCodeKeychainCredentials(token, options = {}) {
+  const platform = options.platform || process.platform;
+  if (platform !== 'darwin') {
+    return { ok: false, error: 'keychain_not_supported' };
+  }
+  if (options.allowKeychainPrompt !== true) {
+    return { ok: false, error: 'keychain_write_not_allowed' };
+  }
+
+  const previousRaw = readKeychainJson(CLAUDE_CLI_KEYCHAIN_SERVICE, undefined, options) || {};
+  const normalized = buildClaudeKeychainOauth(token, previousRaw?.claudeAiOauth || {});
+  if (!normalized.ok) return normalized;
+
+  const account = options.account || os.userInfo().username || 'claude-code';
+  const payload = {
+    ...previousRaw,
+    claudeAiOauth: normalized.oauth,
+  };
+
+  try {
+    const impl = options.execFileSync || execFileSync;
+    impl('security', [
+      'add-generic-password',
+      '-s',
+      CLAUDE_CLI_KEYCHAIN_SERVICE,
+      '-a',
+      account,
+      '-w',
+      JSON.stringify(payload),
+      '-U',
+    ], {
+      encoding: 'utf8',
+      timeout: 5000,
+      stdio: ['pipe', 'pipe', 'pipe'],
+    });
+    return {
+      ok: true,
+      source: 'claude_keychain',
+      keychain_service: CLAUDE_CLI_KEYCHAIN_SERVICE,
+      keychain_account: account,
+      expires_at: toIsoTime(normalized.oauth.expiresAt),
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      source: 'claude_keychain',
+      error: String(error?.message || error).slice(0, 240),
+    };
+  }
+}
+
 function readLocalCredentialsForProvider(provider, options = {}) {
   if (provider === 'openai-codex-oauth') return readOpenAiCodexLocalCredentials(options);
   if (provider === 'claude-code-cli') return readClaudeCodeLocalCredentials(options);
@@ -264,5 +351,6 @@ module.exports = {
   inspectClaudeCodeLocalSources,
   readOpenAiCodexLocalCredentials,
   readClaudeCodeLocalCredentials,
+  writeClaudeCodeKeychainCredentials,
   readLocalCredentialsForProvider,
 };

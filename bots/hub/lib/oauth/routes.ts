@@ -1,4 +1,3 @@
-const crypto = require('crypto');
 const { sanitizeOAuthStatusPayload } = require('./token-redaction');
 const {
   getProviderRecord,
@@ -7,11 +6,21 @@ const {
   setProviderToken,
 } = require('./token-store');
 const { readLocalCredentialsForProvider } = require('./local-credentials');
+const {
+  buildAuthorizationUrl,
+  buildOAuthProviderConfig,
+  exchangeOAuthCode,
+  normalizeOAuthToken,
+  randomToken,
+  refreshOAuthToken,
+  sha256Base64Url,
+} = require('./oauth-flow');
 const { getOpenAiApiKeyStatus, runOpenAiApiKeyCanary } = require('./providers/openai-api-key');
 const { getOpenAiCodexOauthStatus, runOpenAiCodexOauthCanary } = require('./providers/openai-codex-oauth');
 const { getClaudeCodeCliStatus, runClaudeCodeCliCanary } = require('./providers/claude-code-cli');
 
-const pendingStateByProvider = new Map();
+const pendingOAuthStates = new Map();
+const OAUTH_STATE_TTL_MS = Number(process.env.HUB_OAUTH_STATE_TTL_MS || 10 * 60 * 1000);
 
 const PROVIDER_ALIASES = {
   openai: 'openai-api-key',
@@ -20,6 +29,7 @@ const PROVIDER_ALIASES = {
   'openai-codex-oauth': 'openai-codex-oauth',
   claude: 'claude-code-cli',
   'claude-code': 'claude-code-cli',
+  'claude-code-oauth': 'claude-code-cli',
   'claude-code-cli': 'claude-code-cli',
 };
 
@@ -81,6 +91,75 @@ async function runProviderCanary(provider) {
 
 function isCodexOAuthEnabled() {
   return String(process.env.HUB_ENABLE_OPENAI_CODEX_OAUTH || '').toLowerCase() === 'true';
+}
+
+function isOauthFlowProvider(provider) {
+  return provider === 'openai-codex-oauth' || provider === 'claude-code-cli';
+}
+
+function prunePendingOAuthStates(now = Date.now()) {
+  for (const [state, entry] of pendingOAuthStates.entries()) {
+    if (!entry?.expiresAtMs || entry.expiresAtMs <= now) pendingOAuthStates.delete(state);
+  }
+}
+
+function createPendingOAuthState(provider, config) {
+  prunePendingOAuthStates();
+  const state = randomToken(24);
+  const codeVerifier = randomToken(48);
+  const codeChallenge = sha256Base64Url(codeVerifier);
+  const createdAtMs = Date.now();
+  const expiresAtMs = createdAtMs + OAUTH_STATE_TTL_MS;
+  pendingOAuthStates.set(state, {
+    provider,
+    state,
+    codeVerifier,
+    redirectUri: config.redirectUri,
+    createdAtMs,
+    expiresAtMs,
+    config: {
+      provider,
+      publicProviderName: config.publicProviderName,
+      authUrl: config.authUrl,
+      tokenUrl: config.tokenUrl,
+      clientId: config.clientId,
+      clientSecret: config.clientSecret,
+      redirectUri: config.redirectUri,
+      scope: config.scope,
+      audience: config.audience,
+      resource: config.resource,
+      tokenBodyFormat: config.tokenBodyFormat,
+    },
+  });
+  return {
+    state,
+    codeVerifier,
+    codeChallenge,
+    createdAtMs,
+    expiresAtMs,
+  };
+}
+
+function takePendingOAuthState(provider, state) {
+  prunePendingOAuthStates();
+  const entry = pendingOAuthStates.get(state);
+  if (!entry || entry.provider !== provider) return null;
+  pendingOAuthStates.delete(state);
+  return entry;
+}
+
+function oauthFlowConfigErrorResponse(res, configResult) {
+  const statusCode = configResult?.error === 'oauth_flow_disabled' ? 403 : 503;
+  return res.status(statusCode).json({
+    ok: false,
+    provider: configResult?.provider || null,
+    error: {
+      code: configResult?.error || 'oauth_config_missing',
+      message: 'Hub OAuth flow is not fully configured for this provider',
+      missing: configResult?.missing || [],
+    },
+    details: configResult?.details || {},
+  });
 }
 
 function parseBooleanFlag(value, fallback = false) {
@@ -188,7 +267,7 @@ async function oauthStartRoute(req, res) {
     return res.status(404).json({ ok: false, error: { code: 'unknown_provider', message: 'unsupported provider' } });
   }
 
-  if (provider !== 'openai-codex-oauth') {
+  if (!isOauthFlowProvider(provider)) {
     return res.status(400).json({
       ok: false,
       error: {
@@ -198,25 +277,22 @@ async function oauthStartRoute(req, res) {
     });
   }
 
-  if (!isCodexOAuthEnabled()) {
-    return res.status(403).json({
-      ok: false,
-      error: {
-        code: 'experimental_disabled',
-        message: 'openai-codex-oauth is disabled (set HUB_ENABLE_OPENAI_CODEX_OAUTH=true)',
-      },
-    });
-  }
+  const configResult = buildOAuthProviderConfig(provider, req);
+  if (!configResult.ok) return oauthFlowConfigErrorResponse(res, configResult);
 
-  const state = crypto.randomBytes(16).toString('hex');
-  pendingStateByProvider.set(provider, state);
-  return res.json({
+  const pending = createPendingOAuthState(provider, configResult);
+  const authUrl = buildAuthorizationUrl(configResult, pending.state, pending.codeChallenge);
+  return res.json(sanitizeOAuthStatusPayload({
     ok: true,
     provider,
-    mode: 'skeleton',
-    auth_url: 'https://auth.openai.com/oauth/authorize?response_type=code',
-    state,
-  });
+    mode: 'hub_native_pkce',
+    auth_url: authUrl,
+    state: pending.state,
+    expires_at: new Date(pending.expiresAtMs).toISOString(),
+    redirect_uri: configResult.redirectUri,
+    scope: configResult.scope,
+    code_challenge_method: 'S256',
+  }));
 }
 
 async function oauthCallbackRoute(req, res) {
@@ -226,19 +302,79 @@ async function oauthCallbackRoute(req, res) {
   }
 
   const receivedState = String(req.query?.state || '');
-  const expectedState = pendingStateByProvider.get(provider) || '';
-  if (!receivedState || !expectedState || receivedState !== expectedState) {
+  const code = String(req.query?.code || '');
+  if (!code) {
+    return res.status(400).json({ ok: false, error: { code: 'missing_code', message: 'OAuth callback code is required' } });
+  }
+
+  const pending = takePendingOAuthState(provider, receivedState);
+  if (!receivedState || !pending) {
     return res.status(400).json({ ok: false, error: { code: 'invalid_state', message: 'state mismatch' } });
   }
-  pendingStateByProvider.delete(provider);
 
-  return res.status(501).json({
-    ok: false,
-    error: {
-      code: 'oauth_exchange_not_implemented',
-      message: 'OAuth code exchange skeleton only (Phase 4 pending)',
-    },
-  });
+  try {
+    const { response, payload } = await exchangeOAuthCode(pending.config, code, pending.codeVerifier);
+    if (!response.ok) {
+      return res.status(502).json(sanitizeOAuthStatusPayload({
+        ok: false,
+        provider,
+        error: {
+          code: 'oauth_exchange_failed',
+          message: String(payload?.error_description || payload?.error?.message || payload?.error || 'token endpoint rejected authorization code').slice(0, 400),
+        },
+        details: { status: response.status },
+      }));
+    }
+
+    const normalized = normalizeOAuthToken(provider, payload);
+    if (!normalized.ok) {
+      return res.status(502).json({
+        ok: false,
+        provider,
+        error: {
+          code: normalized.error,
+          message: 'token endpoint response did not include a usable access token',
+        },
+      });
+    }
+
+    const metadata = {
+      provider,
+      provider_name: pending.config.publicProviderName,
+      source: 'hub_oauth_authorization_code',
+      runtime_enabled: true,
+      oauth_flow: 'authorization_code_pkce',
+      token_url: pending.config.tokenUrl,
+      redirect_uri: pending.config.redirectUri,
+      scope: pending.config.scope,
+      exchanged_at: new Date().toISOString(),
+    };
+    setProviderToken(provider, normalized.token, metadata);
+    setProviderCanary(provider, {
+      ok: true,
+      details: {
+        source: metadata.source,
+        expires_at: normalized.token?.expires_at || null,
+      },
+    });
+
+    return res.json(sanitizeOAuthStatusPayload({
+      ok: true,
+      provider,
+      stored: true,
+      token: normalized.token,
+      metadata,
+    }));
+  } catch (error) {
+    return res.status(502).json({
+      ok: false,
+      provider,
+      error: {
+        code: 'oauth_exchange_error',
+        message: String(error?.message || error).slice(0, 400),
+      },
+    });
+  }
 }
 
 async function oauthRefreshRoute(req, res) {
@@ -247,7 +383,7 @@ async function oauthRefreshRoute(req, res) {
     return res.status(404).json({ ok: false, error: { code: 'unknown_provider', message: 'unsupported provider' } });
   }
 
-  if (provider !== 'openai-codex-oauth') {
+  if (!isOauthFlowProvider(provider)) {
     return res.status(400).json({
       ok: false,
       error: {
@@ -257,13 +393,82 @@ async function oauthRefreshRoute(req, res) {
     });
   }
 
-  return res.status(501).json({
-    ok: false,
-    error: {
-      code: 'refresh_not_implemented',
-      message: 'refresh flow skeleton only (Phase 4 pending)',
-    },
-  });
+  const configResult = buildOAuthProviderConfig(provider, req);
+  if (!configResult.ok) return oauthFlowConfigErrorResponse(res, configResult);
+
+  const record = getProviderRecord(provider);
+  const refreshToken = String(req.body?.refresh_token || record?.token?.refresh_token || '').trim();
+  if (!refreshToken) {
+    return res.status(400).json({
+      ok: false,
+      provider,
+      error: {
+        code: 'missing_refresh_token',
+        message: 'No refresh token is available in request body or Hub token store',
+      },
+    });
+  }
+
+  try {
+    const { response, payload } = await refreshOAuthToken(configResult, refreshToken);
+    if (!response.ok) {
+      return res.status(502).json(sanitizeOAuthStatusPayload({
+        ok: false,
+        provider,
+        error: {
+          code: 'oauth_refresh_failed',
+          message: String(payload?.error_description || payload?.error?.message || payload?.error || 'token endpoint rejected refresh token').slice(0, 400),
+        },
+        details: { status: response.status },
+      }));
+    }
+    const normalized = normalizeOAuthToken(provider, payload, record?.token || null);
+    if (!normalized.ok) {
+      return res.status(502).json({
+        ok: false,
+        provider,
+        error: {
+          code: normalized.error,
+          message: 'token endpoint response did not include a usable access token',
+        },
+      });
+    }
+    const metadata = {
+      ...(record?.metadata || {}),
+      provider,
+      provider_name: configResult.publicProviderName,
+      source: 'hub_oauth_refresh',
+      runtime_enabled: true,
+      oauth_flow: 'refresh_token',
+      token_url: configResult.tokenUrl,
+      refreshed_at: new Date().toISOString(),
+    };
+    setProviderToken(provider, normalized.token, metadata);
+    setProviderCanary(provider, {
+      ok: true,
+      details: {
+        source: metadata.source,
+        expires_at: normalized.token?.expires_at || null,
+      },
+    });
+
+    return res.json(sanitizeOAuthStatusPayload({
+      ok: true,
+      provider,
+      refreshed: true,
+      token: normalized.token,
+      metadata,
+    }));
+  } catch (error) {
+    return res.status(502).json({
+      ok: false,
+      provider,
+      error: {
+        code: 'oauth_refresh_error',
+        message: String(error?.message || error).slice(0, 400),
+      },
+    });
+  }
 }
 
 async function oauthRevokeLocalRoute(req, res) {
@@ -287,4 +492,8 @@ module.exports = {
   oauthCallbackRoute,
   oauthRefreshRoute,
   oauthRevokeLocalRoute,
+  _test: {
+    pendingOAuthStates,
+    prunePendingOAuthStates,
+  },
 };

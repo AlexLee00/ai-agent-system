@@ -9,14 +9,19 @@ Claude Code OAuth 토큰은 주기적으로 만료됩니다. 토큰 만료 시 L
 
 ## 알림 시나리오
 
-### 24시간 전 경고
-`ai.hub.llm-oauth-monitor` (매 6시간 실행)가 만료 24시간 전 감지 시:
+### 만료 전 경고
+`ai.hub.llm-oauth-monitor` (2시간마다 실행, `RunAtLoad=true`)가 만료 4시간 전 감지 시:
 
 ```
-[oauth] 토큰 갱신 필요: 23.5h 후 만료
+[oauth] 토큰 갱신 필요: 3.5h 후 만료
 ```
 
-이때 `/tmp/hub-llm-oauth-monitor.log`에서 확인 가능하며, Hub가 경고 알림을 발송합니다.
+이때 모니터는 먼저 Hub token-store의 Claude Code `refresh_token`으로 access token 갱신을 시도합니다.
+refresh가 성공하면 새 access/refresh token을 Hub token-store와 Claude Code Keychain에 함께 반영합니다.
+이 동기화가 필요합니다. Claude Code CLI adapter는 런타임 호출 시 Keychain을 읽기 때문에 Hub만 refresh하고 Keychain을 갱신하지 않으면 CLI가 낡은 토큰으로 401을 낼 수 있습니다.
+refresh 실패 또는 갱신 후에도 만료 임박 상태이면 Claude Code Keychain/CLI credential 재import를 한 번 더 시도합니다.
+자동 refresh, Keychain sync, 재import 후에도 만료 임박 상태이면 `/tmp/hub-llm-oauth-monitor.log`에 기록하고 Hub 알림을 발송합니다.
+1시간 이내로 줄어들면 critical 알림으로 승격합니다.
 
 ### 만료 후 긴급 알림
 토큰이 만료되어 LLM 호출이 실패하기 시작하면:
@@ -36,7 +41,7 @@ OPS(맥 스튜디오)에 직접 접근하거나 SSH로 연결합니다.
 
 ### 2단계: 재인증 명령 실행
 ```bash
-claude auth login
+claude auth login --claudeai --email leejearyong@gmail.com
 ```
 
 브라우저가 열리며 Anthropic 계정으로 로그인하면 됩니다.
@@ -54,14 +59,15 @@ Token expires: 2026-05-19T03:00:00Z
 
 ---
 
-## 자동화가 불가능한 이유
+## 자동 갱신과 수동 재인증의 경계
 
-Claude Code OAuth는 브라우저 기반 OAuth 2.0 흐름을 사용합니다.
-- 사람의 브라우저 인터랙션이 필수 (자동 클릭 불가)
-- Anthropic의 보안 정책상 headless 인증 미지원
-- 토큰 갱신(refresh token)이 제공되지 않는 구조
+Claude Code OAuth는 access token + refresh token 구조입니다.
+- access token은 짧은 TTL을 가지며, Hub 모니터가 refresh token으로 자동 갱신합니다.
+- refresh 성공 시 Hub token-store와 Claude Code Keychain을 함께 동기화합니다.
+- refresh token이 거부되거나 계정 세션/권한이 바뀐 경우에만 브라우저 기반 수동 재인증이 필요합니다.
 
-따라서 주기적 수동 재인증이 필요하며, 모니터 알림을 통해 사전에 대비해야 합니다.
+브라우저 로그인 자체는 사람의 인터랙션이 필요하지만, 정상 상태에서는 반복 로그인 없이 refresh로 유지되는 것이 기대 동작입니다.
+모니터 알림은 자동 갱신/동기화가 실패하거나 만료 임박 상태가 해소되지 않을 때만 대응 신호로 사용합니다.
 
 ---
 
@@ -96,6 +102,15 @@ curl -H "Authorization: Bearer $HUB_AUTH_TOKEN" http://127.0.0.1:7788/hub/llm/he
 ```bash
 # OAuth 토큰 상태
 claude auth status
+
+# Hub token-store 재import + 만료 모니터 수동 실행
+npm --prefix bots/hub run -s oauth:monitor
+
+# refresh + Keychain sync를 강제로 검증
+HUB_OAUTH_MONITOR_SEND_ALARM=0 HUB_OAUTH_MONITOR_ALLOW_KEYCHAIN=1 HUB_CLAUDE_OAUTH_WARN_HOURS=9 npm --prefix bots/hub run -s oauth:monitor
+
+# Claude Code CLI 런타임 호출 확인
+claude -p 'Reply with exactly: OK' --output-format json --no-session-persistence --model sonnet --max-budget-usd 0.06
 
 # Hub LLM 헬스 전체
 curl -s -H "Authorization: Bearer $HUB_AUTH_TOKEN" http://127.0.0.1:7788/hub/llm/health | jq .

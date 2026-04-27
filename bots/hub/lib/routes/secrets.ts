@@ -92,15 +92,6 @@ function mergeRuntimeAndSecrets(runtime: unknown, secrets: unknown): Dict {
 
 type CategoryHandler = () => Dict;
 
-function retiredGatewaySecrets(): Dict {
-  return {
-    retired: true,
-    replacement: 'hub',
-    gateway_token: '',
-    hooks_token: '',
-  };
-}
-
 const CATEGORY_HANDLERS: Record<string, CategoryHandler> = {
   llm: () => {
     const store = loadSecretsStore();
@@ -181,9 +172,6 @@ const CATEGORY_HANDLERS: Record<string, CategoryHandler> = {
       paper_mode: c.paper_mode,
     };
   },
-
-  legacy_gateway: retiredGatewaySecrets,
-  [`open${'claw'}`]: retiredGatewaySecrets,
 
   openai_oauth: () => {
     const imported = getProviderRecord('openai-codex-oauth');

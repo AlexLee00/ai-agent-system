@@ -4,6 +4,7 @@ import fs from 'fs';
 import path from 'path';
 import * as env from '../../../../packages/core/lib/env';
 const { fetchHubSecrets } = require('../../../../packages/core/lib/hub-client');
+const { getProviderRecord } = require('../oauth/token-store');
 
 export interface OAuthHealth {
   healthy: boolean;
@@ -17,14 +18,44 @@ export interface OAuthHealth {
 export interface OpenAIOAuthHealth {
   healthy: boolean;
   token_present: boolean;
-  source?: 'local_store' | 'hub_secret';
+  source?: 'hub_oauth_token_store' | 'local_store' | 'hub_secret';
   model?: string;
   error?: string;
+  expires_at?: string | null;
+  needs_refresh?: boolean;
 }
 
 const STORE_PATH = path.join(env.PROJECT_ROOT, 'bots', 'hub', 'secrets-store.json');
 
+function tokenExpiry(token: any): { expired: boolean; needsRefresh: boolean; expiresAt: string | null } {
+  const expiresAt = token?.expires_at || token?.expiresAt || null;
+  const expiresMs = expiresAt ? new Date(expiresAt).getTime() : NaN;
+  if (!Number.isFinite(expiresMs)) return { expired: false, needsRefresh: false, expiresAt: expiresAt || null };
+  const remainingMs = expiresMs - Date.now();
+  return {
+    expired: remainingMs <= 0,
+    needsRefresh: remainingMs > 0 && remainingMs < 24 * 60 * 60 * 1000,
+    expiresAt: new Date(expiresMs).toISOString(),
+  };
+}
+
 export async function checkTokenHealth(): Promise<OAuthHealth> {
+  const record = getProviderRecord('claude-code-cli');
+  const storedToken = record?.token || null;
+  if (storedToken?.access_token) {
+    const expiry = tokenExpiry(storedToken);
+    return {
+      healthy: !expiry.expired,
+      expires_in_hours: expiry.expiresAt
+        ? (new Date(expiry.expiresAt).getTime() - Date.now()) / (60 * 60 * 1000)
+        : 720,
+      needs_refresh: expiry.needsRefresh,
+      auth_method: record?.metadata?.source || 'hub_oauth_token_store',
+      account: record?.metadata?.account || record?.metadata?.email,
+      ...(expiry.expired ? { error: 'token_expired' } : {}),
+    };
+  }
+
   try {
     // Claude Code OAuth 토큰 상태 확인 — claude CLI 활용
     const result = execSync('claude auth status --json 2>/dev/null || echo "{}"', {
@@ -64,6 +95,21 @@ export async function checkTokenHealth(): Promise<OAuthHealth> {
 }
 
 export async function checkOpenAIOAuthHealth(): Promise<OpenAIOAuthHealth> {
+  const record = getProviderRecord('openai-codex-oauth');
+  const storedToken = record?.token || null;
+  if (storedToken?.access_token) {
+    const expiry = tokenExpiry(storedToken);
+    return {
+      healthy: !expiry.expired,
+      token_present: true,
+      source: 'hub_oauth_token_store',
+      model: record?.metadata?.model || record?.metadata?.default_model || 'gpt-5.4',
+      expires_at: expiry.expiresAt,
+      needs_refresh: expiry.needsRefresh,
+      ...(expiry.expired ? { error: 'token_expired' } : {}),
+    };
+  }
+
   try {
     const localStore = JSON.parse(fs.readFileSync(STORE_PATH, 'utf8'));
     const token = String(localStore?.openai_oauth?.access_token || '').trim();
