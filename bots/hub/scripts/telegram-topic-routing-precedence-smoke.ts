@@ -11,6 +11,11 @@ const originalEnv: Record<string, string | undefined> = {
   TELEGRAM_BOT_TOKEN: process.env.TELEGRAM_BOT_TOKEN,
   TELEGRAM_CHAT_ID: process.env.TELEGRAM_CHAT_ID,
   TELEGRAM_GROUP_ID: process.env.TELEGRAM_GROUP_ID,
+  TELEGRAM_TOPIC_OPS_WORK: process.env.TELEGRAM_TOPIC_OPS_WORK,
+  TELEGRAM_TOPIC_OPS_REPORTS: process.env.TELEGRAM_TOPIC_OPS_REPORTS,
+  TELEGRAM_TOPIC_OPS_ERROR_RESOLUTION: process.env.TELEGRAM_TOPIC_OPS_ERROR_RESOLUTION,
+  TELEGRAM_TOPIC_OPS_EMERGENCY: process.env.TELEGRAM_TOPIC_OPS_EMERGENCY,
+  HUB_ALARM_USE_CLASS_TOPICS: process.env.HUB_ALARM_USE_CLASS_TOPICS,
   TELEGRAM_ALERTS_DISABLED: process.env.TELEGRAM_ALERTS_DISABLED,
 };
 const originalFetch = globalThis.fetch;
@@ -35,6 +40,11 @@ async function runCase({
   process.env.TELEGRAM_CHAT_ID = '123456789';
   if (envGroupId) process.env.TELEGRAM_GROUP_ID = envGroupId;
   else delete process.env.TELEGRAM_GROUP_ID;
+  delete process.env.TELEGRAM_TOPIC_OPS_WORK;
+  delete process.env.TELEGRAM_TOPIC_OPS_REPORTS;
+  delete process.env.TELEGRAM_TOPIC_OPS_ERROR_RESOLUTION;
+  delete process.env.TELEGRAM_TOPIC_OPS_EMERGENCY;
+  delete process.env.HUB_ALARM_USE_CLASS_TOPICS;
   process.env.TELEGRAM_ALERTS_DISABLED = 'false';
 
   globalThis.fetch = (async (_input: RequestInfo | URL, init?: RequestInit) => {
@@ -82,9 +92,38 @@ async function main() {
       expectedChatId: '-1009999999999',
     });
 
+    process.env.PROJECT_ROOT = tempRoot;
+    process.env.TELEGRAM_CHAT_ID = '123456789';
+    process.env.TELEGRAM_GROUP_ID = '-1009999999999';
+    process.env.HUB_ALARM_USE_CLASS_TOPICS = '1';
+    process.env.TELEGRAM_TOPIC_OPS_WORK = '77';
+    process.env.TELEGRAM_TOPIC_OPS_REPORTS = '78';
+    process.env.TELEGRAM_TOPIC_OPS_ERROR_RESOLUTION = '79';
+    process.env.TELEGRAM_TOPIC_OPS_EMERGENCY = '80';
+    process.env.TELEGRAM_ALERTS_DISABLED = 'false';
+    const calls: Array<{ body: any }> = [];
+    globalThis.fetch = (async (_input: RequestInfo | URL, init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body || '{}'));
+      calls.push({ body });
+      return new Response(JSON.stringify({ ok: true, result: { message_id: calls.length } }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }) as typeof fetch;
+    resetModules();
+    const sender = require('../../../packages/core/lib/telegram-sender.ts');
+    const delivered = await sender.sendFromHubAlarm('luna', 'ops topic env routing smoke');
+    assert.equal(delivered, true);
+    assert.equal(calls[0].body.message_thread_id, '77');
+    assert.equal(sender._testOnly_resolveDeliveryTeam('luna', 'task completed'), 'ops-work');
+    assert.equal(sender._testOnly_resolveDeliveryTeam('luna', 'daily report summary'), 'ops-reports');
+    assert.equal(sender._testOnly_resolveDeliveryTeam('luna', 'provider_cooldown error'), 'ops-error-resolution');
+    assert.equal(sender._testOnly_resolveDeliveryTeam('luna', 'CRITICAL emergency'), 'ops-emergency');
+
     console.log(JSON.stringify({
       ok: true,
       topic_routing_chat_precedence: ['TELEGRAM_GROUP_ID', 'hub.telegram.group_id', 'TELEGRAM_CHAT_ID'],
+      class_topic_override: ['ops-work', 'ops-reports', 'ops-error-resolution', 'ops-emergency'],
     }));
   } finally {
     resetModules();

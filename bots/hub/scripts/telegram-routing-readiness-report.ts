@@ -25,7 +25,7 @@ type SecretStore = {
 type TopicRecord = {
   key: string;
   threadId: string | number;
-  source: 'reservation' | 'telegram';
+  source: 'reservation' | 'telegram' | 'env';
 };
 
 type TopicResult = {
@@ -38,6 +38,43 @@ type TopicResult = {
 const repoRoot = path.resolve(__dirname, '..', '..', '..');
 const hubRoot = path.join(repoRoot, 'bots', 'hub');
 const PLACEHOLDER_PATTERN = /^(__SET_|changeme|todo|placeholder|example|replace_me)/i;
+const REQUIRED_CLASS_TOPICS = ['ops_work', 'ops_reports', 'ops_error_resolution', 'ops_emergency'];
+const LEGACY_TOPIC_KEYS = [
+  'general',
+  'reservation',
+  'ska',
+  'investment',
+  'luna',
+  'claude',
+  'claude_lead',
+  'blog',
+  'worker',
+  'video',
+  'darwin',
+  'justin',
+  'sigma',
+  'meeting',
+  'emergency',
+  'legal',
+];
+const ENV_TOPIC_KEYS: Record<string, string> = {
+  TELEGRAM_TOPIC_GENERAL: 'general',
+  TELEGRAM_TOPIC_SKA: 'ska',
+  TELEGRAM_TOPIC_LUNA: 'luna',
+  TELEGRAM_TOPIC_CLAUDE_LEAD: 'claude_lead',
+  TELEGRAM_TOPIC_BLOG: 'blog',
+  TELEGRAM_TOPIC_LEGAL: 'legal',
+  TELEGRAM_TOPIC_WORKER: 'worker',
+  TELEGRAM_TOPIC_VIDEO: 'video',
+  TELEGRAM_TOPIC_DARWIN: 'darwin',
+  TELEGRAM_TOPIC_SIGMA: 'sigma',
+  TELEGRAM_TOPIC_MEETING: 'meeting',
+  TELEGRAM_TOPIC_EMERGENCY: 'emergency',
+  TELEGRAM_TOPIC_OPS_WORK: 'ops_work',
+  TELEGRAM_TOPIC_OPS_REPORTS: 'ops_reports',
+  TELEGRAM_TOPIC_OPS_ERROR_RESOLUTION: 'ops_error_resolution',
+  TELEGRAM_TOPIC_OPS_EMERGENCY: 'ops_emergency',
+};
 
 function loadJson(filePath: string): SecretStore {
   try {
@@ -67,6 +104,25 @@ function mergeTopicRecords(reservationTopics: TopicRecord[], telegramTopics: Top
   for (const topic of reservationTopics) topics.set(topic.key, topic);
   for (const topic of telegramTopics) topics.set(topic.key, topic);
   return [...topics.values()].sort((a, b) => a.key.localeCompare(b.key));
+}
+
+function classTopicModeEnabled(store: SecretStore): boolean {
+  const raw = String(process.env.HUB_ALARM_USE_CLASS_TOPICS || '').trim().toLowerCase();
+  if (['1', 'true', 'yes', 'y', 'on'].includes(raw)) return true;
+  if (['0', 'false', 'no', 'n', 'off'].includes(raw)) return false;
+  return (store.telegram as Record<string, unknown> | undefined)?.topic_alias_mode === 'class_topics';
+}
+
+function filterActiveTopicsForMode(records: TopicRecord[], classTopicsEnabled: boolean): TopicRecord[] {
+  if (!classTopicsEnabled) return records;
+  return records.filter((record) => REQUIRED_CLASS_TOPICS.includes(record.key));
+}
+
+function envTopicRecords(classTopicsEnabled: boolean): TopicRecord[] {
+  return Object.entries(ENV_TOPIC_KEYS)
+    .filter(([envKey]) => isUsableSecret(process.env[envKey]))
+    .filter(([, key]) => !classTopicsEnabled || REQUIRED_CLASS_TOPICS.includes(key))
+    .map(([envKey, key]) => ({ key, threadId: String(process.env[envKey]), source: 'env' as const }));
 }
 
 async function telegramApi(token: string, method: string, payload: Record<string, unknown>) {
@@ -206,9 +262,23 @@ async function main() {
     || '',
   );
 
-  const reservationTopics = normalizeTopicRecords(reservation.telegram_topic_ids, 'reservation');
-  const telegramTopics = normalizeTopicRecords(telegram.topic_ids || telegram.telegram_topic_ids, 'telegram');
-  const mergedTopics = mergeTopicRecords(reservationTopics, telegramTopics);
+  const classTopicsEnabled = classTopicModeEnabled(store);
+  const rawReservationTopics = normalizeTopicRecords(reservation.telegram_topic_ids, 'reservation');
+  const rawTelegramTopics = normalizeTopicRecords(telegram.topic_ids || telegram.telegram_topic_ids, 'telegram');
+  const rawEnvTopics = Object.entries(ENV_TOPIC_KEYS)
+    .filter(([envKey]) => isUsableSecret(process.env[envKey]))
+    .map(([envKey, key]) => ({ key, threadId: String(process.env[envKey]), source: 'env' as const }));
+  const legacyTopicKeysPresent = [...rawReservationTopics, ...rawTelegramTopics, ...rawEnvTopics]
+    .map((topic) => topic.key)
+    .filter((key) => LEGACY_TOPIC_KEYS.includes(key))
+    .sort();
+  const reservationTopics = filterActiveTopicsForMode(rawReservationTopics, classTopicsEnabled);
+  const telegramTopics = filterActiveTopicsForMode(rawTelegramTopics, classTopicsEnabled);
+  const envTopics = envTopicRecords(classTopicsEnabled);
+  const mergedTopics = mergeTopicRecords(
+    mergeTopicRecords(reservationTopics, telegramTopics),
+    envTopics,
+  );
   const duplicateKeys = reservationTopics
     .filter((topic) => telegramTopics.some((telegramTopic) => telegramTopic.key === topic.key))
     .map((topic) => topic.key)
@@ -237,10 +307,14 @@ async function main() {
   }
 
   const failed = results.filter((result) => !result.ok);
+  const effectiveKeys = new Set(mergedTopics.map((topic) => topic.key));
+  const missingClassTopics = REQUIRED_CLASS_TOPICS.filter((key) => !effectiveKeys.has(key));
   const queueHasBacklog = pendingQueue.active_pending_lines > 0 || pendingQueue.legacy_pending_lines > 0;
-  const status = failed.length > 0 ? 'fail' : queueHasBacklog ? 'warn' : 'pass';
+  const classTopicFailure = classTopicsEnabled && missingClassTopics.length > 0;
+  const legacyActiveFailure = classTopicsEnabled && legacyTopicKeysPresent.length > 0;
+  const status = failed.length > 0 || classTopicFailure || legacyActiveFailure ? 'fail' : queueHasBacklog ? 'warn' : 'pass';
   const payload = {
-    ok: failed.length === 0,
+    ok: failed.length === 0 && !classTopicFailure && !legacyActiveFailure,
     status,
     generated_at: new Date().toISOString(),
     telegram: {
@@ -252,9 +326,19 @@ async function main() {
     topic_sources: {
       reservation_count: reservationTopics.length,
       telegram_count: telegramTopics.length,
+      raw_reservation_count: rawReservationTopics.length,
+      raw_telegram_count: rawTelegramTopics.length,
+      env_count: envTopics.length,
       effective_count: mergedTopics.length,
       duplicate_keys_overridden_by_telegram: duplicateKeys,
       effective_topic_keys: mergedTopics.map((topic) => topic.key),
+      legacy_topic_keys_present: [...new Set(legacyTopicKeysPresent)],
+    },
+    class_topics: {
+      enabled: classTopicsEnabled,
+      required_keys: REQUIRED_CLASS_TOPICS,
+      missing_keys: missingClassTopics,
+      ready: !classTopicFailure,
     },
     validation: {
       checked: results.length,
@@ -269,7 +353,7 @@ async function main() {
   };
 
   console.log(JSON.stringify(payload, null, 2));
-  process.exitCode = failed.length > 0 ? 1 : 0;
+  process.exitCode = failed.length > 0 || classTopicFailure || legacyActiveFailure ? 1 : 0;
 }
 
 main().catch((error) => {

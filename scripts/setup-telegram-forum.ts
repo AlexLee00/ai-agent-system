@@ -23,14 +23,30 @@ const path = require('path');
 const SECRETS_PATH = path.join(__dirname, '../bots/reservation/secrets.json');
 
 // ── Forum Topic 정의 ──────────────────────────────────────────────────
-const TOPICS = [
-  { key: 'general',    name: '📌 일반',      icon_color: 0x6FB9F0 },  // 파란색
-  { key: 'ska',        name: '🏢 스카',      icon_color: 0xFFD67E },  // 노란색
-  { key: 'luna',       name: '💰 루나',      icon_color: 0xCB86DB },  // 보라색
-  { key: 'claude_lead',name: '🔧 클로드',    icon_color: 0x8EEE98 },  // 초록색
-  { key: 'meeting',    name: '📊 팀장 회의록', icon_color: 0xFF93B2 }, // 분홍색
-  { key: 'emergency',  name: '🚨 긴급',      icon_color: 0xFB6F5F },  // 빨간색
+const CLASS_TOPIC_MODE = String(process.env.HUB_ALARM_USE_CLASS_TOPICS || 'true').trim().toLowerCase() !== 'false';
+const ALLOW_LEGACY_TEAM_TOPICS = ['1', 'true', 'yes', 'y', 'on'].includes(String(process.env.ALLOW_LEGACY_TEAM_TOPICS || '').trim().toLowerCase());
+
+const CLASS_TOPICS = [
+  { key: 'ops_work',             name: '실무 알림',   icon_color: 0x6FB9F0 },
+  { key: 'ops_reports',          name: '레포트 알림', icon_color: 0xFFD67E },
+  { key: 'ops_error_resolution', name: '오류 해결',   icon_color: 0xCB86DB },
+  { key: 'ops_emergency',        name: '긴급 알림',   icon_color: 0xFB6F5F },
 ];
+
+const LEGACY_TEAM_TOPICS = [
+  { key: 'general',    name: '📌 일반',      icon_color: 0x6FB9F0 },
+  { key: 'ska',        name: '🏢 스카',      icon_color: 0xFFD67E },
+  { key: 'luna',       name: '💰 루나',      icon_color: 0xCB86DB },
+  { key: 'claude_lead',name: '🔧 클로드',    icon_color: 0x8EEE98 },
+  { key: 'meeting',    name: '📊 팀장 회의록', icon_color: 0xFF93B2 },
+  { key: 'emergency',  name: '🚨 긴급',      icon_color: 0xFB6F5F },
+];
+
+const TOPICS = CLASS_TOPIC_MODE
+  ? CLASS_TOPICS
+  : ALLOW_LEGACY_TEAM_TOPICS
+    ? LEGACY_TEAM_TOPICS
+    : [];
 
 // ── 헬퍼 ─────────────────────────────────────────────────────────────
 
@@ -70,6 +86,11 @@ async function createTopic(token, chatId, name, iconColor) {
 // ── 메인 ─────────────────────────────────────────────────────────────
 
 async function main() {
+  if (!CLASS_TOPIC_MODE && !ALLOW_LEGACY_TEAM_TOPICS) {
+    console.error('❌ legacy 팀별 토픽 생성은 차단되었습니다. 필요 시 ALLOW_LEGACY_TEAM_TOPICS=1을 명시하세요.');
+    process.exit(1);
+  }
+
   const secrets = loadSecrets();
   const token   = secrets.telegram_bot_token;
   const chatId  = secrets.telegram_group_id || secrets.telegram_chat_id;  // 그룹 우선

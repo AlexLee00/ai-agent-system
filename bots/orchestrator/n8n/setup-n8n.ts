@@ -29,11 +29,28 @@ const client = createN8nSetupClient({
 });
 
 const SECRETS_PATH = path.join(__dirname, '../../../bots/reservation/secrets.json');
+const HUB_SECRETS_PATH = path.join(__dirname, '../../../bots/hub/secrets-store.json');
 const secrets = JSON.parse(fs.readFileSync(SECRETS_PATH, 'utf8'));
+const hubSecrets = fs.existsSync(HUB_SECRETS_PATH)
+  ? JSON.parse(fs.readFileSync(HUB_SECRETS_PATH, 'utf8'))
+  : {};
 
-const BOT_TOKEN = secrets.telegram_bot_token;
-const CHAT_ID   = String(secrets.telegram_group_id);
-const TOPICS    = secrets.telegram_topic_ids || {};
+const BOT_TOKEN = hubSecrets.telegram?.bot_token || secrets.telegram_bot_token;
+const CHAT_ID   = String(hubSecrets.telegram?.group_id || secrets.telegram_group_id);
+const CLASS_TOPIC_MODE = String(process.env.HUB_ALARM_USE_CLASS_TOPICS || '').trim().toLowerCase() !== 'false'
+  && (String(process.env.HUB_ALARM_USE_CLASS_TOPICS || '').trim() !== '' || hubSecrets.telegram?.topic_alias_mode === 'class_topics');
+const TOPICS_RAW = { ...(secrets.telegram_topic_ids || {}), ...(hubSecrets.telegram?.topic_ids || {}) };
+const TOPICS = CLASS_TOPIC_MODE
+  ? {
+    ops_work: TOPICS_RAW.ops_work,
+    ops_reports: TOPICS_RAW.ops_reports,
+    ops_error_resolution: TOPICS_RAW.ops_error_resolution,
+    ops_emergency: TOPICS_RAW.ops_emergency,
+  }
+  : TOPICS_RAW;
+const OPS_WORK_TOPIC = String(TOPICS.ops_work || (!CLASS_TOPIC_MODE ? (TOPICS.general || TOPICS.claude_lead || '') : ''));
+const OPS_REPORT_TOPIC = String(TOPICS.ops_reports || TOPICS.ops_work || (!CLASS_TOPIC_MODE ? (TOPICS.general || TOPICS.claude_lead || '') : ''));
+const OPS_ERROR_TOPIC = String(TOPICS.ops_error_resolution || TOPICS.ops_emergency || (!CLASS_TOPIC_MODE ? TOPICS.emergency : '') || OPS_WORK_TOPIC);
 
 // ─── HTTP 유틸 ──────────────────────────────────────────────────────────────
 
@@ -229,7 +246,7 @@ return [{
           text:   '={{ $json.text }}',
           additionalFields: {
             parse_mode:       'HTML',
-            message_thread_id: String(TOPICS.general || TOPICS.claude_lead || ''),
+            message_thread_id: OPS_REPORT_TOPIC,
           },
         },
         credentials: { telegramApi: { id: tgCredId, name: 'Team Jay Telegram' } },
@@ -304,7 +321,7 @@ return [{
           text:   '={{ (() => { const body = $json.body || {}; const serviceMap = { "health-check": "헬스체크", "claude-health-check": "클로드 헬스체크", "claude-health-report": "클로드 헬스 리포트", "worker-health-report": "워커 헬스 리포트", "blog-health-report": "블로 헬스 리포트", "ska-health-report": "스카 헬스 리포트" }; const statusMap = { critical: "긴급 장애", error: "오류 발생", failed: "실패", warn: "경고", warning: "경고", ok: "정상", recovered: "복구됨", degraded: "성능 저하", timeout: "응답 지연", stale: "지연 감지" }; const messageMap = { probe: "상태 점검", heartbeat: "상태 확인", incident: "장애 감지" }; const rawService = body.service || body.label || "미상"; const rawStatus = body.status || ""; const rawMessage = body.message || body.label || ""; const service = serviceMap[rawService] || rawService; const status = statusMap[String(rawStatus).toLowerCase()] || rawStatus; const message = messageMap[String(rawMessage).toLowerCase()] || rawMessage || status || "이슈 발생"; const detail = body.detail || ""; return ["🚨 <b>CRITICAL 알림</b>", message, detail ? ("세부: " + detail) : "", service ? ("서비스: " + service) : "", status ? ("상태: " + status) : "", "감지: " + (new Date().toLocaleTimeString("ko-KR", { timeZone: "Asia/Seoul" }))].filter(Boolean).join("\\n\\n"); })() }}',
           additionalFields: {
             parse_mode:       'HTML',
-            message_thread_id: String(TOPICS.emergency || TOPICS.claude_lead || ''),
+            message_thread_id: OPS_ERROR_TOPIC,
           },
         },
         credentials: { telegramApi: { id: tgCredId, name: 'Team Jay Telegram' } },
@@ -492,7 +509,7 @@ return [{
           text:   '={{ $json.text }}',
           additionalFields: {
             parse_mode:       'HTML',
-            message_thread_id: String(TOPICS.luna || ''),
+            message_thread_id: OPS_WORK_TOPIC,
           },
         },
         credentials: { telegramApi: { id: tgCredId, name: 'Team Jay Telegram' } },

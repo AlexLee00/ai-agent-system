@@ -13,6 +13,11 @@ const originalEnv: Record<string, string | undefined> = {
   TELEGRAM_CHAT_ID: process.env.TELEGRAM_CHAT_ID,
   TELEGRAM_ALERTS_DISABLED: process.env.TELEGRAM_ALERTS_DISABLED,
   TELEGRAM_ALLOW_ROOT_FALLBACK: process.env.TELEGRAM_ALLOW_ROOT_FALLBACK,
+  HUB_ALARM_USE_CLASS_TOPICS: process.env.HUB_ALARM_USE_CLASS_TOPICS,
+  TELEGRAM_TOPIC_OPS_WORK: process.env.TELEGRAM_TOPIC_OPS_WORK,
+  TELEGRAM_TOPIC_OPS_REPORTS: process.env.TELEGRAM_TOPIC_OPS_REPORTS,
+  TELEGRAM_TOPIC_OPS_ERROR_RESOLUTION: process.env.TELEGRAM_TOPIC_OPS_ERROR_RESOLUTION,
+  TELEGRAM_TOPIC_OPS_EMERGENCY: process.env.TELEGRAM_TOPIC_OPS_EMERGENCY,
   HUB_RUNTIME_DIR: process.env.HUB_RUNTIME_DIR,
 };
 const originalFetch = globalThis.fetch;
@@ -44,6 +49,11 @@ async function main() {
   delete process.env.TELEGRAM_GROUP_ID;
   delete process.env.TELEGRAM_CHAT_ID;
   delete process.env.TELEGRAM_ALLOW_ROOT_FALLBACK;
+  delete process.env.HUB_ALARM_USE_CLASS_TOPICS;
+  delete process.env.TELEGRAM_TOPIC_OPS_WORK;
+  delete process.env.TELEGRAM_TOPIC_OPS_REPORTS;
+  delete process.env.TELEGRAM_TOPIC_OPS_ERROR_RESOLUTION;
+  delete process.env.TELEGRAM_TOPIC_OPS_EMERGENCY;
   process.env.TELEGRAM_ALERTS_DISABLED = 'false';
 
   const calls: Array<{ url: string; body: any }> = [];

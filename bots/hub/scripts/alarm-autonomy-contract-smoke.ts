@@ -3,8 +3,20 @@
 
 const { buildAlarmClusterKey } = require('../lib/alarm/cluster.ts');
 const { resolveAlarmDeliveryTeam, formatAutoRepairResultMessage } = require('../lib/alarm/templates.ts');
+const { buildAlarmReadinessSnapshot } = require('../lib/alarm/readiness.ts');
 const { buildAlarmNoiseReport } = require('./alarm-noise-report.ts');
 const { scanStaleAutoRepair } = require('./alarm-auto-repair-stale-scan.ts');
+const {
+  applyAlarmSuppressionProposals,
+  buildAlarmSuppressionProposals,
+} = require('./alarm-suppression-proposals.ts');
+const {
+  findMatchingAlarmSuppressionRule,
+  loadAlarmSuppressionRules,
+} = require('../lib/alarm/suppression-rules.ts');
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
 
 function assert(condition: unknown, message: string): void {
   if (!condition) throw new Error(message);
@@ -12,6 +24,14 @@ function assert(condition: unknown, message: string): void {
 
 async function main() {
   const originalClassTopics = process.env.HUB_ALARM_USE_CLASS_TOPICS;
+  const originalTopicEnv = {
+    TELEGRAM_TOPIC_OPS_WORK: process.env.TELEGRAM_TOPIC_OPS_WORK,
+    TELEGRAM_TOPIC_OPS_REPORTS: process.env.TELEGRAM_TOPIC_OPS_REPORTS,
+    TELEGRAM_TOPIC_OPS_ERROR_RESOLUTION: process.env.TELEGRAM_TOPIC_OPS_ERROR_RESOLUTION,
+    TELEGRAM_TOPIC_OPS_EMERGENCY: process.env.TELEGRAM_TOPIC_OPS_EMERGENCY,
+  };
+  const originalRulesPath = process.env.HUB_ALARM_SUPPRESSION_RULES_PATH;
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'hub-alarm-autonomy-'));
   const queryLog: string[] = [];
   const db = {
     query: async (_schema: string, sql: string) => {
@@ -92,10 +112,41 @@ async function main() {
     assert(stale.message.includes('auto-repair 미해결 감시'), 'expected stale scan message');
     assert(queryLog.some((sql) => String(sql).includes('NOT EXISTS')), 'expected stale scan to exclude completed repairs');
 
+    const proposals = await buildAlarmSuppressionProposals({ minutes: 60, limit: 5, minTotal: 5, db });
+    assert(proposals.proposals.length === 1, 'expected one suppression proposal');
+    assert(proposals.proposals[0].action === 'route_to_digest', 'expected digest proposal for non-escalated noise');
+    process.env.HUB_ALARM_SUPPRESSION_RULES_PATH = path.join(tempRoot, 'rules.json');
+    const applied = await applyAlarmSuppressionProposals({ minutes: 60, limit: 5, minTotal: 5, db });
+    assert(applied.apply_result.applied_count === 1, 'expected one applied suppression rule');
+    assert(loadAlarmSuppressionRules().length === 1, 'expected persisted suppression rule');
+    const matched = findMatchingAlarmSuppressionRule({
+      team: 'luna',
+      fromBot: 'luna',
+      alarmType: 'error',
+      clusterKey: 'luna|llm_provider_cooldown|abc',
+      incidentKey: 'luna|llm_provider_cooldown|abc',
+    });
+    assert(matched?.action === 'route_to_digest', 'expected suppression rule match');
+
+    process.env.TELEGRAM_TOPIC_OPS_WORK = '11';
+    process.env.TELEGRAM_TOPIC_OPS_REPORTS = '12';
+    process.env.TELEGRAM_TOPIC_OPS_ERROR_RESOLUTION = '13';
+    process.env.TELEGRAM_TOPIC_OPS_EMERGENCY = '14';
+    const readiness = buildAlarmReadinessSnapshot();
+    assert(readiness.class_topics.ready === true, 'expected class topic readiness with env topic ids');
+    assert(readiness.monitors.scripts.suppression_proposals === true, 'expected suppression proposal script readiness');
+
     console.log('alarm_autonomy_contract_smoke_ok');
   } finally {
     if (originalClassTopics == null) delete process.env.HUB_ALARM_USE_CLASS_TOPICS;
     else process.env.HUB_ALARM_USE_CLASS_TOPICS = originalClassTopics;
+    for (const [key, value] of Object.entries(originalTopicEnv)) {
+      if (value == null) delete process.env[key];
+      else process.env[key] = value;
+    }
+    if (originalRulesPath == null) delete process.env.HUB_ALARM_SUPPRESSION_RULES_PATH;
+    else process.env.HUB_ALARM_SUPPRESSION_RULES_PATH = originalRulesPath;
+    fs.rmSync(tempRoot, { recursive: true, force: true });
   }
 }
 

@@ -24,15 +24,29 @@ const parsedBaseUrl = new URL(N8N_BASE);
 
 // ── secrets / config 로드 ──────────────────────────────────────────────────
 const SECRETS_PATH = path.join(__dirname, '../../../bots/reservation/secrets.json');
+const HUB_SECRETS_PATH = path.join(__dirname, '../../../bots/hub/secrets-store.json');
 const INVEST_CFG   = path.join(__dirname, '../../../bots/investment/config.yaml');
 
 const secrets    = JSON.parse(fs.readFileSync(SECRETS_PATH, 'utf8'));
+const hubSecrets = fs.existsSync(HUB_SECRETS_PATH)
+  ? JSON.parse(fs.readFileSync(HUB_SECRETS_PATH, 'utf8'))
+  : {};
 const investCfg  = yaml.load(fs.readFileSync(INVEST_CFG, 'utf8'));
 
-const CHAT_ID    = String(secrets.telegram_group_id);
-const TOPICS     = secrets.telegram_topic_ids || {};
-const SKA_TOPIC  = String(TOPICS.ska  || '');
-const GEN_TOPIC  = String(TOPICS.general || TOPICS.claude_lead || '');
+const CHAT_ID    = String(hubSecrets.telegram?.group_id || secrets.telegram_group_id);
+const CLASS_TOPIC_MODE = String(process.env.HUB_ALARM_USE_CLASS_TOPICS || '').trim().toLowerCase() !== 'false'
+  && (String(process.env.HUB_ALARM_USE_CLASS_TOPICS || '').trim() !== '' || hubSecrets.telegram?.topic_alias_mode === 'class_topics');
+const TOPICS_RAW = { ...(secrets.telegram_topic_ids || {}), ...(hubSecrets.telegram?.topic_ids || {}) };
+const TOPICS = CLASS_TOPIC_MODE
+  ? {
+    ops_work: TOPICS_RAW.ops_work,
+    ops_reports: TOPICS_RAW.ops_reports,
+    ops_error_resolution: TOPICS_RAW.ops_error_resolution,
+    ops_emergency: TOPICS_RAW.ops_emergency,
+  }
+  : TOPICS_RAW;
+const SKA_TOPIC  = String(TOPICS.ops_work || (!CLASS_TOPIC_MODE ? (TOPICS.general || TOPICS.ska || '') : ''));
+const GEN_TOPIC  = String(TOPICS.ops_reports || TOPICS.ops_work || (!CLASS_TOPIC_MODE ? (TOPICS.general || TOPICS.claude_lead || '') : ''));
 
 const GEMINI_KEY = investCfg.gemini?.api_key || '';
 const client = createN8nSetupClient({

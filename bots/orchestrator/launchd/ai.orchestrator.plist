@@ -8,6 +8,8 @@
 		<string>/Users/alexlee</string>
 		<key>MODE</key>
 		<string>ops</string>
+		<key>HUB_ALARM_USE_CLASS_TOPICS</key>
+		<string>true</string>
 		<key>NODE_ENV</key>
 		<string>production</string>
 		<key>PATH</key>
@@ -21,8 +23,8 @@
 	<string>ai.orchestrator</string>
 	<key>ProgramArguments</key>
 	<array>
-		<string>/opt/homebrew/bin/node</string>
-		<string>/Users/alexlee/projects/ai-agent-system/dist/ts-runtime/bots/orchestrator/src/orchestrator.js</string>
+		<string>/opt/homebrew/bin/tsx</string>
+		<string>/Users/alexlee/projects/ai-agent-system/bots/orchestrator/src/orchestrator.ts</string>
 	</array>
 	<key>RunAtLoad</key>
 	<true/>

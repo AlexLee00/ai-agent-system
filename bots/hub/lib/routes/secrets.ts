@@ -8,6 +8,7 @@ const CONFIG_YAML = path.join(env.PROJECT_ROOT, 'bots/investment/config.yaml');
 const SECRETS_STORE = path.join(env.PROJECT_ROOT, 'bots/hub/secrets-store.json');
 
 type Dict = Record<string, any>;
+const OPS_TOPIC_KEYS = ['ops_work', 'ops_reports', 'ops_error_resolution', 'ops_emergency'];
 
 type SecretsRequest = {
   params?: {
@@ -90,6 +91,23 @@ function mergeRuntimeAndSecrets(runtime: unknown, secrets: unknown): Dict {
   return merged;
 }
 
+function isClassTopicMode(store: Dict | null): boolean {
+  const raw = String(process.env.HUB_ALARM_USE_CLASS_TOPICS || '').trim().toLowerCase();
+  if (['1', 'true', 'yes', 'y', 'on'].includes(raw)) return true;
+  if (['0', 'false', 'no', 'n', 'off'].includes(raw)) return false;
+  return store?.telegram?.topic_alias_mode === 'class_topics';
+}
+
+function activeTelegramTopicIds(raw: Dict | undefined, store: Dict | null): Dict {
+  const topics = raw || {};
+  if (!isClassTopicMode(store)) return topics;
+  return Object.fromEntries(
+    OPS_TOPIC_KEYS
+      .filter((key) => topics[key] != null && topics[key] !== '')
+      .map((key) => [key, topics[key]]),
+  );
+}
+
 type CategoryHandler = () => Dict;
 
 const CATEGORY_HANDLERS: Record<string, CategoryHandler> = {
@@ -128,7 +146,7 @@ const CATEGORY_HANDLERS: Record<string, CategoryHandler> = {
         bot_token: store.telegram.bot_token,
         chat_id: String(store.telegram.chat_id || process.env.TELEGRAM_CHAT_ID || ''),
         group_id: String(store.telegram.group_id || ''),
-        topic_ids: store.telegram.topic_ids || {},
+        topic_ids: activeTelegramTopicIds(store.telegram.topic_ids || {}, store),
       };
     }
 
@@ -202,7 +220,7 @@ const CATEGORY_HANDLERS: Record<string, CategoryHandler> = {
       telegram_bot_token: d.telegram_bot_token || '',
       telegram_chat_id: d.telegram_chat_id || '',
       telegram_group_id: d.telegram_group_id || '',
-      telegram_topic_ids: d.telegram_topic_ids || {},
+      telegram_topic_ids: activeTelegramTopicIds(d.telegram_topic_ids || {}, store),
     };
   },
 
@@ -213,7 +231,7 @@ const CATEGORY_HANDLERS: Record<string, CategoryHandler> = {
       telegram_bot_token: d.telegram_bot_token || '',
       telegram_chat_id: d.telegram_chat_id || '',
       telegram_group_id: d.telegram_group_id || '',
-      telegram_topic_ids: d.telegram_topic_ids || {},
+      telegram_topic_ids: activeTelegramTopicIds(d.telegram_topic_ids || {}, store),
       naver_id: d.naver_id || '',
       naver_pw: d.naver_pw || '',
       pickko_id: d.pickko_id || '',

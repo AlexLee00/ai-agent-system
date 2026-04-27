@@ -8,6 +8,12 @@ const {
   formatAutoRepairResultMessage,
   resolveAlarmDeliveryTeam,
 } = require('../alarm/templates');
+const { buildAlarmReadinessSnapshot } = require('../alarm/readiness');
+const {
+  applyAlarmSuppressionProposals,
+  buildAlarmSuppressionProposals,
+} = require('../../scripts/alarm-suppression-proposals.ts');
+const { findMatchingAlarmSuppressionRule } = require('../alarm/suppression-rules.ts');
 
 const defaultAlarmDb = {
   query: (...args: any[]) => pgPool.query(...args),
@@ -530,16 +536,16 @@ export async function alarmRoute(req: any, res: any) {
       1,
       Number(req.body?.dedupeMinutes ?? req.body?.cooldownMinutes ?? 5) || 5,
     );
-    const visibility = normalizeVisibility(req.body?.visibility)
+    let visibility = normalizeVisibility(req.body?.visibility)
       || defaultVisibility({
         severity,
         actionability: normalizeActionability(req.body?.actionability),
         alarmType,
         explicitHumanEscalation,
       });
-    const actionability = normalizeActionability(req.body?.actionability)
+    let actionability = normalizeActionability(req.body?.actionability)
       || defaultActionability({ severity, visibility, alarmType, explicitHumanEscalation });
-    const status = normalizeStatus(req.body?.status)
+    let status = normalizeStatus(req.body?.status)
       || defaultStatus({ actionability, visibility });
     const incidentKey = normalizeText(req.body?.incidentKey)
       || normalizeText(req.body?.incident_key)
@@ -553,6 +559,23 @@ export async function alarmRoute(req: any, res: any) {
     const clusterKey = alarmType === 'error'
       ? buildAlarmClusterKey({ team, fromBot, eventType, title, message, payload })
       : '';
+    const suppressionRule = !explicitHumanEscalation
+      ? findMatchingAlarmSuppressionRule({
+          team,
+          fromBot,
+          alarmType,
+          clusterKey,
+          incidentKey,
+        })
+      : null;
+    if (
+      suppressionRule
+      && suppressionRule.action === 'route_to_digest'
+      && !['human_action', 'emergency'].includes(visibility)
+    ) {
+      visibility = 'digest';
+      status = defaultStatus({ actionability, visibility });
+    }
     const immediateHumanDelivery = shouldSendTelegramImmediately(visibility);
 
     const duplicate = await eventLake.findRecentDuplicateAlarm({
@@ -615,6 +638,7 @@ export async function alarmRoute(req: any, res: any) {
         visibility,
         actionability,
         status,
+        suppression_rule_id: suppressionRule?.id || null,
         explicit_human_escalation: explicitHumanEscalation,
         immediate_human_delivery: immediateHumanDelivery,
         governed: true,
@@ -703,6 +727,7 @@ export async function alarmRoute(req: any, res: any) {
       visibility,
       actionability,
       status,
+      suppression_rule_id: suppressionRule?.id || null,
       governed: true,
       immediate_delivery: immediateHumanDelivery,
       delivery_team: immediateHumanDelivery ? deliveryTeam : null,
@@ -908,5 +933,42 @@ export async function alarmDigestFlushRoute(req: any, res: any) {
     return res.json(result);
   } catch (error: any) {
     return res.status(500).json({ ok: false, error: error?.message || 'alarm_digest_flush_failed' });
+  }
+}
+
+export async function alarmReadinessRoute(_req: any, res: any) {
+  try {
+    return res.json(buildAlarmReadinessSnapshot());
+  } catch (error: any) {
+    return res.status(500).json({ ok: false, error: error?.message || 'alarm_readiness_failed' });
+  }
+}
+
+export async function alarmSuppressionProposalsRoute(req: any, res: any) {
+  try {
+    const result = await buildAlarmSuppressionProposals({
+      minutes: Math.max(1, Number(req.query?.minutes ?? 24 * 60) || 24 * 60),
+      limit: Math.min(100, Math.max(1, Number(req.query?.limit ?? 20) || 20)),
+      minTotal: Math.max(2, Number(req.query?.min_total ?? req.query?.minTotal ?? 5) || 5),
+      db: alarmDb,
+    });
+    return res.json(result);
+  } catch (error: any) {
+    return res.status(500).json({ ok: false, error: error?.message || 'alarm_suppression_proposals_failed' });
+  }
+}
+
+export async function alarmSuppressionApplyRoute(req: any, res: any) {
+  try {
+    const payload = req.body || {};
+    const result = await applyAlarmSuppressionProposals({
+      minutes: Math.max(1, Number(payload.minutes ?? req.query?.minutes ?? 24 * 60) || 24 * 60),
+      limit: Math.min(100, Math.max(1, Number(payload.limit ?? req.query?.limit ?? 20) || 20)),
+      minTotal: Math.max(2, Number(payload.min_total ?? payload.minTotal ?? req.query?.min_total ?? req.query?.minTotal ?? 5) || 5),
+      db: alarmDb,
+    });
+    return res.json(result);
+  } catch (error: any) {
+    return res.status(500).json({ ok: false, error: error?.message || 'alarm_suppression_apply_failed' });
   }
 }

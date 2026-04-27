@@ -7,6 +7,7 @@
 
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
 const env = require('./env.legacy.js');
 const { fetchHubSecrets } = require('./hub-client.legacy.js');
 
@@ -39,6 +40,27 @@ const TEAM_TOPIC = {
   'ops-error-resolution': 'ops_error_resolution',
   'ops-emergency': 'ops_emergency',
 };
+
+const ENV_TOPIC_KEYS = {
+  TELEGRAM_TOPIC_GENERAL: 'general',
+  TELEGRAM_TOPIC_SKA: 'ska',
+  TELEGRAM_TOPIC_LUNA: 'luna',
+  TELEGRAM_TOPIC_CLAUDE_LEAD: 'claude_lead',
+  TELEGRAM_TOPIC_BLOG: 'blog',
+  TELEGRAM_TOPIC_LEGAL: 'legal',
+  TELEGRAM_TOPIC_WORKER: 'worker',
+  TELEGRAM_TOPIC_VIDEO: 'video',
+  TELEGRAM_TOPIC_DARWIN: 'darwin',
+  TELEGRAM_TOPIC_SIGMA: 'sigma',
+  TELEGRAM_TOPIC_MEETING: 'meeting',
+  TELEGRAM_TOPIC_EMERGENCY: 'emergency',
+  TELEGRAM_TOPIC_OPS_WORK: 'ops_work',
+  TELEGRAM_TOPIC_OPS_REPORTS: 'ops_reports',
+  TELEGRAM_TOPIC_OPS_ERROR_RESOLUTION: 'ops_error_resolution',
+  TELEGRAM_TOPIC_OPS_EMERGENCY: 'ops_emergency',
+};
+
+const OPS_TOPIC_KEYS = ['ops_work', 'ops_reports', 'ops_error_resolution', 'ops_emergency'];
 
 type TopicIdMap = Record<string, string>;
 
@@ -141,16 +163,54 @@ function _readBooleanEnv(...names: string[]): boolean {
   return false;
 }
 
+function _readFalseBooleanEnv(...names: string[]): boolean {
+  for (const name of names) {
+    const raw = String(process.env[name] || '').trim().toLowerCase();
+    if (!raw) continue;
+    return raw === 'false' || raw === '0' || raw === 'no' || raw === 'off';
+  }
+  return false;
+}
+
 function _readStoreTopicInfo() {
   try {
     const store = JSON.parse(fs.readFileSync(STORE_PATH, 'utf8')) as HubAlarmStore;
+    const topicIds = store?.telegram?.topic_ids || {};
+    const classMode = _readBooleanEnv('HUB_ALARM_USE_CLASS_TOPICS')
+      || ((store?.telegram as Record<string, unknown> | undefined)?.topic_alias_mode === 'class_topics'
+        && !_readFalseBooleanEnv('HUB_ALARM_USE_CLASS_TOPICS'));
     return {
       groupId: store?.telegram?.group_id || '',
-      topicIds: store?.telegram?.topic_ids || {},
+      topicIds: classMode
+        ? Object.fromEntries(
+          OPS_TOPIC_KEYS
+            .filter((key) => topicIds[key] != null && topicIds[key] !== '')
+            .map((key) => [key, topicIds[key]]),
+        )
+        : topicIds,
     };
   } catch {
     return { groupId: '', topicIds: {} };
   }
+}
+
+function _filterClassTopicIds(topicIds: TopicIdMap): TopicIdMap {
+  return Object.fromEntries(
+    OPS_TOPIC_KEYS
+      .filter((key) => topicIds[key] != null && topicIds[key] !== '')
+      .map((key) => [key, topicIds[key]]),
+  );
+}
+
+function _readEnvTopicInfo(classTopicMode: boolean): TopicIdMap {
+  const topics: TopicIdMap = {};
+  for (const [envKey, topicKey] of Object.entries(ENV_TOPIC_KEYS)) {
+    const value = process.env[envKey];
+    if (value == null || value === '') continue;
+    if (classTopicMode && !OPS_TOPIC_KEYS.includes(topicKey)) continue;
+    topics[topicKey] = value;
+  }
+  return topics;
 }
 
 async function _getTopicInfo(): Promise<{ groupId: string; topicIds: TopicIdMap }> {
@@ -165,11 +225,66 @@ async function _getTopicInfo(): Promise<{ groupId: string; topicIds: TopicIdMap 
     || process.env.TELEGRAM_GROUP_ID
     || storeData.groupId
     || '';
-  _topicIds = hubData?.topic_ids
-    || storeData.topicIds
-    || {};
+  const baseTopicIds = {
+    ...(storeData.topicIds || {}),
+    ...(hubData?.topic_ids || {}),
+  };
+  const classTopicMode = _classTopicModeEnabled(baseTopicIds);
+  _topicIds = {
+    ...baseTopicIds,
+    ..._readEnvTopicInfo(classTopicMode),
+  };
+  if (classTopicMode) _topicIds = _filterClassTopicIds(_topicIds);
 
   return { groupId: _groupId, topicIds: _topicIds };
+}
+
+function _classTopicModeEnabled(topicIds: TopicIdMap): boolean {
+  if (_readBooleanEnv('HUB_ALARM_USE_CLASS_TOPICS')) return true;
+  if (_readFalseBooleanEnv('HUB_ALARM_USE_CLASS_TOPICS')) return false;
+  return OPS_TOPIC_KEYS.every((key) => topicIds?.[key]);
+}
+
+function _resolveAlarmTopicKey({
+  requestedTeam,
+  alarmType,
+  visibility,
+  alertLevel,
+  message,
+  topicIds,
+}: {
+  requestedTeam: string;
+  alarmType?: string;
+  visibility?: string;
+  alertLevel: number;
+  message: string;
+  topicIds: TopicIdMap;
+}): string {
+  if (!_classTopicModeEnabled(topicIds)) {
+    return TEAM_TOPIC[requestedTeam as keyof typeof TEAM_TOPIC] || 'general';
+  }
+  const explicitTeamTopic = TEAM_TOPIC[requestedTeam as keyof typeof TEAM_TOPIC] || 'general';
+  if (['ops_work', 'ops_reports', 'ops_error_resolution', 'ops_emergency'].includes(explicitTeamTopic)) {
+    return explicitTeamTopic;
+  }
+  const normalizedVisibility = String(visibility || '').trim().toLowerCase();
+  const normalizedAlarmType = String(alarmType || '').trim().toLowerCase();
+  const corpus = String(message || '').toLowerCase();
+  if (
+    alertLevel >= 4
+    || normalizedVisibility === 'emergency'
+    || /critical|긴급|🚨/.test(corpus)
+  ) return 'ops_emergency';
+  if (
+    normalizedAlarmType === 'report'
+    || /report|summary|digest|readiness|dashboard|리포트|보고|브리핑|정기|요약|주간|일간|월간/i.test(corpus)
+  ) return 'ops_reports';
+  if (
+    normalizedAlarmType === 'error'
+    || alertLevel >= 3
+    || /error|fail|failed|exception|timeout|provider_cooldown|오류|실패|장애|예외|경고/i.test(corpus)
+  ) return 'ops_error_resolution';
+  return 'ops_work';
 }
 
 async function _getTelegramBotToken(): Promise<string> {
@@ -215,6 +330,62 @@ function _extractEventType(message: string, payload: unknown): string | null {
 
   const match = String(message || '').match(/(?:^|\n)\s*event_type\s*:\s*([^\n]+)/i);
   return match?.[1]?.trim() || null;
+}
+
+function _slugToken(value: unknown, fallback = 'alarm'): string {
+  const text = _normalizeAlertText(value)
+    .toLowerCase()
+    .replace(/[^a-z0-9가-힣._-]+/g, '_')
+    .replace(/^_+|_+$/g, '')
+    .slice(0, 80);
+  return text || fallback;
+}
+
+function _stableHash(value: unknown): string {
+  return crypto.createHash('sha1').update(String(value || '')).digest('hex').slice(0, 12);
+}
+
+function _deriveEventType({
+  eventType,
+  message,
+  payload,
+  fromBot,
+  alarmType,
+}: {
+  eventType?: string;
+  message: string;
+  payload: unknown;
+  fromBot: string;
+  alarmType: string;
+}): string {
+  return _normalizeAlertText(eventType)
+    || _extractEventType(message, payload)
+    || `${_slugToken(fromBot, 'unknown')}_${_slugToken(alarmType, 'alarm')}`;
+}
+
+function _deriveIncidentKey({
+  incidentKey,
+  sessionKey,
+  team,
+  fromBot,
+  eventType,
+  message,
+}: {
+  incidentKey?: string;
+  sessionKey?: string;
+  team: string;
+  fromBot: string;
+  eventType: string;
+  message: string;
+}): string {
+  const explicit = _normalizeAlertText(incidentKey || sessionKey);
+  if (explicit) return explicit;
+  return [
+    _slugToken(team, 'general'),
+    _slugToken(fromBot, 'unknown'),
+    _slugToken(eventType, 'alarm'),
+    _stableHash(message),
+  ].join(':');
 }
 
 function _mapAlertLevelToSeverity(level: number): 'info' | 'warn' | 'error' | 'critical' {
@@ -301,6 +472,21 @@ async function _postAlarmViaHub({
     return { ok: false, skipped: true, error: 'hub_alarm_auth_missing' };
   }
   const url = `${hubBaseUrl}/hub/alarm`;
+  const normalizedAlarmType = _inferAlarmType({ alarmType, alertLevel, message, payload });
+  const normalizedEventType = _deriveEventType({
+    eventType,
+    message,
+    payload,
+    fromBot,
+    alarmType: normalizedAlarmType,
+  });
+  const normalizedIncidentKey = _deriveIncidentKey({
+    incidentKey,
+    team,
+    fromBot,
+    eventType: normalizedEventType,
+    message,
+  });
   try {
     const response = await fetch(url, {
       method: 'POST',
@@ -314,13 +500,14 @@ async function _postAlarmViaHub({
         fromBot,
         severity: _mapAlertLevelToSeverity(alertLevel),
         title: title || `${team} alarm`,
-        alarmType: _inferAlarmType({ alarmType, alertLevel, message, payload }),
+        alarmType: normalizedAlarmType,
         visibility: visibility || undefined,
         actionability: actionability || undefined,
-        incidentKey: incidentKey || undefined,
+        incidentKey: normalizedIncidentKey,
+        eventType: normalizedEventType,
         payload: {
           ...(payload && typeof payload === 'object' && !Array.isArray(payload) ? (payload as Record<string, unknown>) : {}),
-          event_type: eventType || _extractEventType(message, payload) || undefined,
+          event_type: normalizedEventType,
         },
       }),
       signal: AbortSignal.timeout(HUB_ALARM_TIMEOUT_MS),
@@ -458,9 +645,17 @@ export async function postAlarm({
   const safeFromBot = _normalizeAlertText(fromBot) || 'unknown';
   const requestedTeam = _normalizeAlertText(team) || 'general';
   const safeMessage = _normalizeAlertText(message) || '유효한 본문 없음 (payload 확인 필요)';
-  const normalizedTeam = TEAM_TOPIC[requestedTeam as keyof typeof TEAM_TOPIC] || 'general';
   const prefix = alertLevel >= 3 ? `🚨 [긴급 alert_level=${alertLevel}] ` : '';
   const { groupId, topicIds } = await _getTopicInfo();
+  const inferredAlarmType = _inferAlarmType({ alarmType, alertLevel, message: safeMessage, payload });
+  const normalizedTeam = _resolveAlarmTopicKey({
+    requestedTeam,
+    alarmType: inferredAlarmType,
+    visibility,
+    alertLevel,
+    message: safeMessage,
+    topicIds,
+  });
   const topicId = topicIds?.[normalizedTeam] || topicIds?.general || null;
   if (Array.isArray(inlineKeyboard) && inlineKeyboard.length > 0) {
     const inlineResult = await _sendInlineTelegram({

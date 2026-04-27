@@ -29,6 +29,8 @@
     <string>jay</string>
     <key>HUB_CONTROL_CALLBACK_SECRET</key>
     <string>__SET_IN_LOCAL_LAUNCHAGENT__</string>
+    <key>HUB_ALARM_USE_CLASS_TOPICS</key>
+    <string>true</string>
     <key>HUB_LLM_RATE_LIMIT_PER_MIN</key>
     <string>120</string>
     <key>HUB_SECRETS_RATE_LIMIT_PER_MIN</key>

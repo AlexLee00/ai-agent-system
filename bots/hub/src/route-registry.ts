@@ -10,6 +10,9 @@ const {
   alarmSuppressDryRunRoute,
   alarmDigestFlushRoute,
   alarmAutoRepairCallbackRoute,
+  alarmReadinessRoute,
+  alarmSuppressionProposalsRoute,
+  alarmSuppressionApplyRoute,
 } = require('../lib/routes/alarm');
 const { pgQueryRoute } = require('../lib/routes/pg');
 const {
@@ -139,6 +142,9 @@ export function registerHubRoutes(app, opts) {
   app.post('/hub/alarm/suppress/dry-run', generalLimiter, alarmSuppressDryRunRoute);
   app.post('/hub/alarm/digest/flush', generalLimiter, alarmDigestFlushRoute);
   app.post('/hub/alarm/auto-repair/callback', generalLimiter, alarmAutoRepairCallbackRoute);
+  app.get('/hub/alarm/readiness', generalLimiter, alarmReadinessRoute);
+  app.get('/hub/alarm/suppression/proposals', generalLimiter, alarmSuppressionProposalsRoute);
+  app.post('/hub/alarm/suppression/apply', generalLimiter, alarmSuppressionApplyRoute);
   app.post('/hub/n8n/webhook/:path', generalLimiter, n8nWebhookRoute);
   app.get('/hub/n8n/health', generalLimiter, n8nHealthRoute);
   app.get('/hub/n8n/workflows', generalLimiter, n8nWorkflowsRoute);

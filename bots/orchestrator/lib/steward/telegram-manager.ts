@@ -7,7 +7,11 @@ const path = require('path');
 const env = require('../../../../packages/core/lib/env');
 
 const STORE_PATH = path.join(env.PROJECT_ROOT, 'bots', 'hub', 'secrets-store.json');
-const EXPECTED_TOPICS = ['general', 'ska', 'luna', 'claude_lead', 'blog', 'worker', 'video', 'darwin', 'justin', 'sigma', 'meeting', 'emergency'];
+const CLASS_TOPIC_KEYS = ['ops_work', 'ops_reports', 'ops_error_resolution', 'ops_emergency'];
+const LEGACY_TEAM_TOPICS = ['general', 'ska', 'luna', 'claude_lead', 'blog', 'worker', 'video', 'darwin', 'justin', 'sigma', 'meeting', 'emergency'];
+const EXPECTED_TOPICS = process.env.HUB_ALARM_USE_CLASS_TOPICS === 'false'
+  ? LEGACY_TEAM_TOPICS
+  : CLASS_TOPIC_KEYS;
 
 function getConfig() {
   if (!fs.existsSync(STORE_PATH)) return { token: '', groupId: '', topicIds: {} };
@@ -35,6 +39,12 @@ function findMissingTopics() {
 }
 
 async function createTopic(name, iconColor = 7322096) {
+  if (process.env.ALLOW_LEGACY_TEAM_TOPICS !== '1') {
+    const legacyNames = ['일반', '스카', '루나', '클로드', '팀장', '회의록', 'blog', 'worker', 'video', 'darwin', 'justin', 'sigma'];
+    if (legacyNames.some((token) => String(name || '').toLowerCase().includes(token.toLowerCase()))) {
+      throw new Error('legacy_team_topic_creation_blocked');
+    }
+  }
   const config = getConfig();
   return new Promise((resolve, reject) => {
     const body = JSON.stringify({ chat_id: config.groupId, name, icon_color: iconColor });

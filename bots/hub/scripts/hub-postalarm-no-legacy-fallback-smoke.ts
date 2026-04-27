@@ -143,6 +143,46 @@ async function runTelegramSenderCanUseHubDirectCase(tempWorkspace) {
   assert(calls[0].url.endsWith('/hub/alarm'), 'expected telegram-sender path to call hub alarm');
 }
 
+async function runStandardContractFallbackCase(tempWorkspace) {
+  resetEnv(tempWorkspace);
+  resetClientModule();
+  const calls = [];
+  global.fetch = async (url, init = {}) => {
+    const normalizedUrl = String(url);
+    calls.push({
+      url: normalizedUrl,
+      method: String(init.method || 'GET'),
+      body: init.body ? JSON.parse(String(init.body)) : null,
+    });
+    if (normalizedUrl.endsWith('/hub/alarm')) {
+      return new Response(
+        JSON.stringify({
+          ok: true,
+          delivered: true,
+          event_id: 124,
+        }),
+        { status: 200, headers: { 'content-type': 'application/json' } },
+      );
+    }
+    throw new Error(`unexpected fetch url for standard contract case: ${normalizedUrl}`);
+  };
+
+  const { postAlarm } = require('../../../packages/core/lib/hub-alarm-client.ts');
+  const result = await postAlarm({
+    message: 'implicit alarm contract smoke',
+    team: 'hub',
+    alertLevel: 1,
+    fromBot: 'contract-smoke',
+  });
+
+  assert(result && result.ok === true, 'expected standard contract fallback case to deliver');
+  assert(calls.length === 1, `expected 1 hub call, got ${calls.length}`);
+  assert(calls[0].body.alarmType === 'work', `expected inferred work alarm type, got ${calls[0].body.alarmType}`);
+  assert(calls[0].body.eventType === 'contract-smoke_work', `expected derived eventType, got ${calls[0].body.eventType}`);
+  assert(/^hub:contract-smoke:contract-smoke_work:[a-f0-9]{12}$/.test(calls[0].body.incidentKey), `unexpected incidentKey: ${calls[0].body.incidentKey}`);
+  assert(calls[0].body.payload.event_type === calls[0].body.eventType, 'expected payload event_type to match derived eventType');
+}
+
 async function main() {
   const tempWorkspace = fs.mkdtempSync(path.join(os.tmpdir(), 'legacy-webhook-smoke-'));
   const originalFetch = global.fetch;
@@ -155,6 +195,7 @@ async function main() {
     await runSuppressedHubOnlyCase(tempWorkspace);
     await runRetiredLegacyFallbackIgnoredCase(tempWorkspace);
     await runTelegramSenderCanUseHubDirectCase(tempWorkspace);
+    await runStandardContractFallbackCase(tempWorkspace);
     console.log('hub_postalarm_no_legacy_fallback_smoke_ok');
   } finally {
     global.fetch = originalFetch;

@@ -99,6 +99,26 @@ const SECRETS_PATH = path.join(__dirname, '../../../bots/reservation/secrets.jso
 const HUB_SECRETS_PATH = path.join(env.PROJECT_ROOT, 'bots', 'hub', 'secrets-store.json');
 let _cachedSecrets: SecretPayload | null = null;
 
+const ENV_TOPIC_KEYS: Record<string, string> = {
+  TELEGRAM_TOPIC_GENERAL: 'general',
+  TELEGRAM_TOPIC_SKA: 'ska',
+  TELEGRAM_TOPIC_LUNA: 'luna',
+  TELEGRAM_TOPIC_CLAUDE_LEAD: 'claude_lead',
+  TELEGRAM_TOPIC_BLOG: 'blog',
+  TELEGRAM_TOPIC_LEGAL: 'legal',
+  TELEGRAM_TOPIC_WORKER: 'worker',
+  TELEGRAM_TOPIC_VIDEO: 'video',
+  TELEGRAM_TOPIC_DARWIN: 'darwin',
+  TELEGRAM_TOPIC_SIGMA: 'sigma',
+  TELEGRAM_TOPIC_MEETING: 'meeting',
+  TELEGRAM_TOPIC_EMERGENCY: 'emergency',
+  TELEGRAM_TOPIC_OPS_WORK: 'ops_work',
+  TELEGRAM_TOPIC_OPS_REPORTS: 'ops_reports',
+  TELEGRAM_TOPIC_OPS_ERROR_RESOLUTION: 'ops_error_resolution',
+  TELEGRAM_TOPIC_OPS_EMERGENCY: 'ops_emergency',
+};
+const OPS_TOPIC_KEYS = ['ops_work', 'ops_reports', 'ops_error_resolution', 'ops_emergency'];
+
 function _normalizeTopicIds(raw: Record<string, string | number | null | undefined> | undefined): Record<string, TelegramTopicId> {
   const normalized: Record<string, TelegramTopicId> = {};
   for (const [key, value] of Object.entries(raw || {})) {
@@ -106,6 +126,43 @@ function _normalizeTopicIds(raw: Record<string, string | number | null | undefin
     normalized[key] = typeof value === 'number' ? value : String(value);
   }
   return normalized;
+}
+
+function _classTopicStoreMode(store: HubSecretStore): boolean {
+  const raw = String(process.env.HUB_ALARM_USE_CLASS_TOPICS || '').trim().toLowerCase();
+  if (['1', 'true', 'yes', 'y', 'on'].includes(raw)) return true;
+  if (['0', 'false', 'no', 'n', 'off'].includes(raw)) return false;
+  return (store?.telegram as Record<string, unknown> | undefined)?.topic_alias_mode === 'class_topics';
+}
+
+function _activeTopicIdsForStore(
+  raw: Record<string, string | number | null | undefined> | undefined,
+  store: HubSecretStore,
+): Record<string, TelegramTopicId> {
+  const topics = _normalizeTopicIds(raw);
+  if (!_classTopicStoreMode(store)) return topics;
+  return _filterClassTopicIds(topics);
+}
+
+function _filterClassTopicIds(
+  topics: Record<string, TelegramTopicId>,
+): Record<string, TelegramTopicId> {
+  return Object.fromEntries(
+    OPS_TOPIC_KEYS
+      .filter((key) => topics[key] != null && topics[key] !== '')
+      .map((key) => [key, topics[key]]),
+  );
+}
+
+function _envTopicIds(classTopicMode: boolean): Record<string, TelegramTopicId> {
+  const topics: Record<string, TelegramTopicId> = {};
+  for (const [envKey, topicKey] of Object.entries(ENV_TOPIC_KEYS)) {
+    const value = process.env[envKey];
+    if (value == null || value === '') continue;
+    if (classTopicMode && !OPS_TOPIC_KEYS.includes(topicKey)) continue;
+    topics[topicKey] = value;
+  }
+  return topics;
 }
 
 function _normalizeHubTelegramSecrets(store: HubSecretStore): SecretPayload {
@@ -131,8 +188,8 @@ function _normalizeHubTelegramSecrets(store: HubSecretStore): SecretPayload {
       || '',
     ),
     telegram_topic_ids: {
-      ..._normalizeTopicIds(reservation.telegram_topic_ids),
-      ..._normalizeTopicIds(telegram.topic_ids || telegram.telegram_topic_ids),
+      ..._activeTopicIdsForStore(reservation.telegram_topic_ids, store),
+      ..._activeTopicIdsForStore(telegram.topic_ids || telegram.telegram_topic_ids, store),
     },
   };
 }
@@ -141,20 +198,27 @@ function _secrets(): SecretPayload {
   if (!_cachedSecrets) {
     let legacySecrets: SecretPayload = {};
     let hubSecrets: SecretPayload = {};
+    let hubStore: HubSecretStore = {};
     try { _cachedSecrets = JSON.parse(fs.readFileSync(SECRETS_PATH, 'utf-8')) as SecretPayload; }
     catch { legacySecrets = {}; }
     if (_cachedSecrets) legacySecrets = _cachedSecrets;
 
     try {
-      hubSecrets = _normalizeHubTelegramSecrets(JSON.parse(fs.readFileSync(HUB_SECRETS_PATH, 'utf-8')) as HubSecretStore);
+      hubStore = JSON.parse(fs.readFileSync(HUB_SECRETS_PATH, 'utf-8')) as HubSecretStore;
+      hubSecrets = _normalizeHubTelegramSecrets(hubStore);
     } catch { hubSecrets = {}; }
 
+    const classTopicMode = _classTopicStoreMode(hubStore);
+    const legacyTopicIds = classTopicMode
+      ? _filterClassTopicIds(_normalizeTopicIds(legacySecrets.telegram_topic_ids || {}))
+      : (legacySecrets.telegram_topic_ids || {});
     _cachedSecrets = {
       ...legacySecrets,
       ...hubSecrets,
       telegram_topic_ids: {
-        ...(legacySecrets.telegram_topic_ids || {}),
+        ...legacyTopicIds,
         ...(hubSecrets.telegram_topic_ids || {}),
+        ..._envTopicIds(classTopicMode),
       },
     };
   }
@@ -214,14 +278,58 @@ const TOPIC_KEYS = {
   'sigma':       'sigma',
 };
 
-function _getThreadId(team: string): TelegramTopicId | null {
-  const key = TOPIC_KEYS[team as TeamKey] ?? 'general';
+function _truthyEnv(value: unknown): boolean {
+  return ['1', 'true', 'yes', 'y', 'on'].includes(String(value || '').trim().toLowerCase());
+}
+
+function _falseyEnv(value: unknown): boolean {
+  return ['0', 'false', 'no', 'n', 'off'].includes(String(value || '').trim().toLowerCase());
+}
+
+function _classTopicModeEnabled(): boolean {
+  const raw = process.env.HUB_ALARM_USE_CLASS_TOPICS;
+  if (_truthyEnv(raw)) return true;
+  if (_falseyEnv(raw)) return false;
+  const ids = _topics();
+  return OPS_TOPIC_KEYS.every((key) => ids[key] != null && ids[key] !== '');
+}
+
+function _normalizeTeam(team: string): string {
+  const normalized = String(team || 'general').trim().toLowerCase().replace(/_/g, '-');
+  return normalized || 'general';
+}
+
+function _isOpsTeam(team: string): boolean {
+  return ['ops-work', 'ops-reports', 'ops-error-resolution', 'ops-emergency'].includes(_normalizeTeam(team));
+}
+
+function _looksLikeReport(message: string): boolean {
+  return /report|summary|digest|readiness|dashboard|briefing|daily|weekly|monthly|리포트|보고|브리핑|정기|요약|대시보드|주간|일간|월간/i.test(String(message || ''));
+}
+
+function _looksLikeError(message: string): boolean {
+  return /error|fail|failed|failure|exception|timeout|provider_cooldown|cooldown|warn|warning|오류|실패|장애|예외|경고|미해결/i.test(String(message || ''));
+}
+
+function _resolveDeliveryTeam(team: string, message = '', forceCritical = false): string {
+  const normalized = _normalizeTeam(team);
+  if (!_classTopicModeEnabled()) return normalized;
+  if (_isOpsTeam(normalized)) return normalized;
+  if (forceCritical || normalized === 'emergency' || _isUrgent(message)) return 'ops-emergency';
+  if (normalized === 'meeting' || _looksLikeReport(message)) return 'ops-reports';
+  if (normalized === 'claude' || normalized === 'claude-lead' || _looksLikeError(message)) return 'ops-error-resolution';
+  return 'ops-work';
+}
+
+function _getThreadId(team: string, message = '', forceCritical = false): TelegramTopicId | null {
+  const deliveryTeam = _resolveDeliveryTeam(team, message, forceCritical);
+  const key = TOPIC_KEYS[deliveryTeam as TeamKey] ?? 'general';
   const ids = _topics();
   return ids[key] ?? ids['general'] ?? null;
 }
 
 function _resolvePendingThreadId(entry: Record<string, any>, team: string): TelegramTopicId | null {
-  const current = _getThreadId(team);
+  const current = _getThreadId(team, String(entry.message || ''), _isUrgent(String(entry.message || '')));
   if (current != null) return current;
   return entry.threadId ?? null;
 }
@@ -269,6 +377,7 @@ const PENDING_MAX_QUEUE = 50;               // 큐 최대 50건
 
 function _savePending(team: string, message: string): void {
   try {
+    const deliveryTeam = _resolveDeliveryTeam(team, message, _isUrgent(message));
     fs.mkdirSync(WORKSPACE, { recursive: true });
     // 큐 크기 제한
     if (fs.existsSync(PENDING_FILE)) {
@@ -278,7 +387,7 @@ function _savePending(team: string, message: string): void {
         return;
       }
     }
-    const entry = JSON.stringify({ team, message, savedAt: new Date().toISOString(), retries: 0 });
+    const entry = JSON.stringify({ team: deliveryTeam, originalTeam: team, message, savedAt: new Date().toISOString(), retries: 0 });
     fs.appendFileSync(PENDING_FILE, entry + '\n', 'utf-8');
   } catch { /* 유실보다 무시가 낫다 */ }
 }
@@ -460,6 +569,7 @@ async function _flushBatch(topic: string): Promise<void> {
 export async function send(team: string, message: string): Promise<boolean> {
   if (_alertsDisabled()) return true;
   const normalized = _normalizeForMobile(message);
+  const deliveryTeam = _resolveDeliveryTeam(team, normalized, _isUrgent(normalized));
 
   if (_isFilenameLeak(normalized)) {
     console.warn(`🚫 [telegram-sender] 파일명 누출 차단 (team=${team}): ${normalized.slice(0, 60)}`);
@@ -470,7 +580,7 @@ export async function send(team: string, message: string): Promise<boolean> {
     const result = await publishToWebhook({
       event: {
         from_bot: 'telegram-sender',
-        team,
+        team: deliveryTeam,
         event_type: 'telegram_send',
         alert_level: _isUrgent(normalized) ? 4 : 2,
         message: normalized,
@@ -479,29 +589,29 @@ export async function send(team: string, message: string): Promise<boolean> {
     return Boolean(result?.ok);
   }
 
-  const threadId = _getThreadId(team);
+  const threadId = _getThreadId(deliveryTeam, normalized);
 
   // 긴급 메시지: 배치 우회, 즉시 발송
   if (_isUrgent(normalized)) {
     const text = normalized.slice(0, TG_MAX);
     if (await _doSend(text, threadId)) return true;
     console.warn(`⚠️ [telegram-sender] 긴급 메시지 발송 최종 실패 — 대기큐 저장 (team=${team})`);
-    _savePending(team, normalized);
+    _savePending(deliveryTeam, normalized);
     return false;
   }
 
   // 일반 메시지: 배치 버퍼에 추가
-  let buf = _batchBuffer.get(team);
+  let buf = _batchBuffer.get(deliveryTeam);
   if (!buf) {
     buf = { lines: [], timer: null, threadId };
-    _batchBuffer.set(team, buf);
+    _batchBuffer.set(deliveryTeam, buf);
   }
 
   buf.lines.push(normalized.slice(0, TG_MAX));
 
   // 타이머 리셋 (2초 배치 윈도우)
   if (buf.timer) clearTimeout(buf.timer);
-  buf.timer = setTimeout(() => _flushBatch(team), BATCH_WINDOW_MS);
+  buf.timer = setTimeout(() => _flushBatch(deliveryTeam), BATCH_WINDOW_MS);
 
   return true;  // 배치 버퍼 추가 성공
 }
@@ -516,24 +626,26 @@ export async function send(team: string, message: string): Promise<boolean> {
 export async function sendFromHubAlarm(team: string, message: string, options: SendOptions = {}): Promise<boolean> {
   if (_alertsDisabled()) return false;
   const normalized = _normalizeForMobile(message);
+  const deliveryTeam = _resolveDeliveryTeam(team, normalized, _isUrgent(normalized));
 
   if (_isFilenameLeak(normalized)) {
     console.warn(`🚫 [telegram-sender] Hub alarm 파일명 누출 차단 (team=${team}): ${normalized.slice(0, 60)}`);
     return false;
   }
 
-  const threadId = options.threadId ?? _getThreadId(team);
+  const threadId = options.threadId ?? _getThreadId(deliveryTeam, normalized);
   const text = normalized.slice(0, TG_MAX);
   const ok = await _doSend(text, threadId, options);
   if (ok) return true;
   console.warn(`⚠️ [telegram-sender] Hub alarm 직접 발송 실패 — 대기큐 저장 (team=${team})`);
-  _savePending(team, normalized);
+  _savePending(deliveryTeam, normalized);
   return false;
 }
 
 async function sendBuffered(team: string, message: string): Promise<boolean> {
   if (_alertsDisabled()) return true;
   const normalized = _normalizeForMobile(message);
+  const deliveryTeam = _resolveDeliveryTeam(team, normalized, _isUrgent(normalized));
 
   if (_isFilenameLeak(normalized)) {
     console.warn(`🚫 [telegram-sender] 파일명 누출 차단 (team=${team}): ${normalized.slice(0, 60)}`);
@@ -544,7 +656,7 @@ async function sendBuffered(team: string, message: string): Promise<boolean> {
     const result = await publishToWebhook({
       event: {
         from_bot: 'telegram-sender',
-        team,
+        team: deliveryTeam,
         event_type: 'telegram_buffered_send',
         alert_level: _isUrgent(normalized) ? 4 : 2,
         message: normalized,
@@ -553,18 +665,19 @@ async function sendBuffered(team: string, message: string): Promise<boolean> {
     return Boolean(result?.ok);
   }
 
-  const threadId = _getThreadId(team);
+  const threadId = _getThreadId(deliveryTeam, normalized);
   const text = normalized.slice(0, TG_MAX);
   const ok = await _doSend(text, threadId);
   if (ok) return true;
   console.warn(`⚠️ [telegram-sender] 배치 발송 최종 실패 — 대기큐 저장 (topic=${team})`);
-  _savePending(team, normalized);
+  _savePending(deliveryTeam, normalized);
   return false;
 }
 
 async function sendWithOptions(team: string, message: string, options: SendOptions = {}): Promise<boolean> {
   if (_alertsDisabled()) return true;
   const normalized = _normalizeForMobile(message);
+  const deliveryTeam = _resolveDeliveryTeam(team, normalized, _isUrgent(normalized));
 
   if (_isFilenameLeak(normalized)) {
     console.warn(`🚫 [telegram-sender] 파일명 누출 차단 (team=${team}): ${normalized.slice(0, 60)}`);
@@ -575,7 +688,7 @@ async function sendWithOptions(team: string, message: string, options: SendOptio
     const result = await publishToWebhook({
       event: {
         from_bot: 'telegram-sender',
-        team,
+        team: deliveryTeam,
         event_type: 'telegram_option_send',
         alert_level: _isUrgent(normalized) ? 4 : 2,
         message: normalized,
@@ -584,12 +697,12 @@ async function sendWithOptions(team: string, message: string, options: SendOptio
     return Boolean(result?.ok);
   }
 
-  const threadId = _getThreadId(team);
+  const threadId = options.threadId ?? _getThreadId(deliveryTeam, normalized);
   const text = normalized.slice(0, TG_MAX);
   const ok = await _doSend(text, threadId, options);
   if (ok) return true;
   console.warn(`⚠️ [telegram-sender] 옵션 메시지 발송 최종 실패 — 대기큐 저장 (team=${team})`);
-  _savePending(team, normalized);
+  _savePending(deliveryTeam, normalized);
   return false;
 }
 
@@ -622,8 +735,24 @@ async function sendDirect(chatId: string, message: string, options: SendOptions 
  * @param {string} message CRITICAL 메시지
  */
 export async function sendCritical(team: string, message: string): Promise<boolean> {
+  const full = `🚨 [${team}] CRITICAL\n${message}`;
+  if (_classTopicModeEnabled()) {
+    if (env.IS_OPS) {
+      const result = await publishToWebhook({
+        event: {
+          from_bot: 'telegram-sender',
+          team: 'ops-emergency',
+          event_type: 'telegram_critical',
+          alert_level: 4,
+          message: full,
+        },
+      });
+      return Boolean(result?.ok);
+    }
+    return send('ops-emergency', full);
+  }
+
   if (env.IS_OPS) {
-    const full = `🚨 CRITICAL\n${message}`;
     const tasks = [publishToWebhook({
       event: {
         from_bot: 'telegram-sender',
@@ -648,7 +777,6 @@ export async function sendCritical(team: string, message: string): Promise<boole
     return results.every((result) => Boolean(result?.ok));
   }
 
-  const full = `🚨 [${team}] CRITICAL\n${message}`;
   const tasks = [send('emergency', full)];
   if (team !== 'emergency') tasks.push(send(team, `🚨 CRITICAL\n${message}`));
   const results = await Promise.all(tasks);
@@ -657,6 +785,9 @@ export async function sendCritical(team: string, message: string): Promise<boole
 
 export async function sendCriticalFromHubAlarm(team: string, message: string): Promise<boolean> {
   const full = `🚨 [${team}] CRITICAL\n${message}`;
+  if (_classTopicModeEnabled()) {
+    return sendFromHubAlarm('ops-emergency', full);
+  }
   const tasks = [sendFromHubAlarm('emergency', full)];
   if (team !== 'emergency') tasks.push(sendFromHubAlarm(team, `🚨 CRITICAL\n${message}`));
   const results = await Promise.all(tasks);
@@ -725,4 +856,12 @@ export function _testOnly_getPendingQueuePaths(): {
     legacyWorkspace: LEGACY_WORKSPACE,
     legacyPendingFile: LEGACY_PENDING_FILE,
   };
+}
+
+export function _testOnly_resolveDeliveryTeam(team: string, message = '', forceCritical = false): string {
+  return _resolveDeliveryTeam(team, message, forceCritical);
+}
+
+export function _testOnly_isClassTopicModeEnabled(): boolean {
+  return _classTopicModeEnabled();
 }

@@ -13,6 +13,17 @@ import urllib.parse
 SECRETS_PATH = os.path.abspath(
     os.path.join(os.path.dirname(__file__), '..', '..', 'reservation', 'secrets.json')
 )
+HUB_SECRETS_PATH = os.path.abspath(
+    os.path.join(os.path.dirname(__file__), '..', '..', 'hub', 'secrets-store.json')
+)
+
+
+def load_json(path):
+    try:
+        with open(path, encoding='utf-8') as f:
+            return json.load(f)
+    except Exception:
+        return {}
 
 
 def main():
@@ -21,18 +32,26 @@ def main():
         print('[TELEGRAM] ⚠️ 메시지 없음 — 전송 스킵')
         return
 
-    try:
-        secrets = json.load(open(SECRETS_PATH))
-    except Exception as e:
-        print(f'[TELEGRAM] ⚠️ secrets 로드 실패: {e}')
+    secrets = load_json(SECRETS_PATH)
+    hub_secrets = load_json(HUB_SECRETS_PATH)
+    if not secrets and not hub_secrets:
+        print('[TELEGRAM] ⚠️ secrets 로드 실패')
         sys.exit(1)
 
-    token = secrets.get('telegram_bot_token', '')
+    hub_telegram = hub_secrets.get('telegram', {})
+    token = hub_telegram.get('bot_token') or secrets.get('telegram_bot_token', '')
     # 그룹 ID 우선, 폴백: 개인 채팅 ID
-    chat_id = secrets.get('telegram_group_id') or secrets.get('telegram_chat_id', '')
-    # 스카팀 Forum Topic thread_id (설정 없으면 일반 발송)
-    topic_ids = secrets.get('telegram_topic_ids', {})
-    thread_id = topic_ids.get('ska')
+    chat_id = hub_telegram.get('group_id') or secrets.get('telegram_group_id') or secrets.get('telegram_chat_id', '')
+    # Class-topic 우선. legacy 스카 토픽은 class topic 설정이 없을 때만 fallback.
+    hub_topics = hub_telegram.get('topic_ids', {}) or {}
+    topic_ids = secrets.get('telegram_topic_ids', {}) or {}
+    thread_id = (
+        hub_topics.get('ops_work')
+        or hub_topics.get('general')
+        or topic_ids.get('ops_work')
+        or topic_ids.get('general')
+        or topic_ids.get('ska')
+    )
 
     if not token or not chat_id:
         print('[TELEGRAM] ⚠️ 토큰/채팅ID 없음')

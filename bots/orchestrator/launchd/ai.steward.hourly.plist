@@ -4,10 +4,21 @@
 <dict>
 	<key>Label</key>
 	<string>ai.steward.hourly</string>
+	<key>EnvironmentVariables</key>
+	<dict>
+		<key>HOME</key>
+		<string>/Users/alexlee</string>
+		<key>HUB_ALARM_USE_CLASS_TOPICS</key>
+		<string>true</string>
+		<key>NODE_ENV</key>
+		<string>production</string>
+		<key>PATH</key>
+		<string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+	</dict>
 	<key>ProgramArguments</key>
 	<array>
-		<string>/opt/homebrew/bin/node</string>
-		<string>/Users/alexlee/projects/ai-agent-system/bots/orchestrator/src/steward.js</string>
+		<string>/opt/homebrew/bin/tsx</string>
+		<string>/Users/alexlee/projects/ai-agent-system/bots/orchestrator/src/steward.ts</string>
 		<string>--mode=hourly</string>
 	</array>
 	<key>StartInterval</key>

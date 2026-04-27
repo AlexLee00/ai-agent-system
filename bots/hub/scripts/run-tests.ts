@@ -71,6 +71,7 @@ function unitSmokeScripts(): string[] {
     'alarm-governor-smoke.ts',
     'alarm-autonomy-contract-smoke.ts',
     'auto-dev-alarm-result-smoke.ts',
+    'alarm-contract-audit-smoke.ts',
     'hub-alarm-no-legacy-shim-smoke.ts',
     'hub-alarm-env-smoke.ts',
     'hub-alarm-import-transition-smoke.ts',
@@ -79,6 +80,7 @@ function unitSmokeScripts(): string[] {
     'runtime-workspace-independence-smoke.ts',
     'runtime-env-policy-smoke.ts',
     'sse-event-guard-smoke.ts',
+    'session-checkpoint-smoke.ts',
     'hub-js-ts-island-smoke.ts',
     legacyIsolationScript('active'),
     'legacy-gateway-admin-guard-smoke.ts',
@@ -142,6 +144,9 @@ function runRuntime(scriptDir: string, hubRoot: string, tsxBin: string): void {
     ...(isEnabledFlag('HUB_RUNTIME_CHECK_LIVE_LLM') ? ['team-llm-route-drill.ts'] : []),
     'telegram-topic-routing-live-smoke.ts',
     'telegram-routing-readiness-report.ts',
+    'telegram-team-topic-monitor.ts',
+    'launchd-alarm-class-topic-smoke.ts',
+    'openclaw-runtime-retirement-smoke.ts',
   ];
   runSteps(runtimeScripts.map((script) => tsxStep(tsxBin, scriptDir, hubRoot, script)));
 }

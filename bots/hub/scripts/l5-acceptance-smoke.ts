@@ -35,6 +35,7 @@ async function main() {
     HUB_AUTH_TOKEN: process.env.HUB_AUTH_TOKEN,
     HUB_CONTROL_PLANNER_FORCE_HEURISTIC: process.env.HUB_CONTROL_PLANNER_FORCE_HEURISTIC,
     TELEGRAM_BOT_TOKEN: process.env.TELEGRAM_BOT_TOKEN,
+    TELEGRAM_GROUP_ID: process.env.TELEGRAM_GROUP_ID,
     TELEGRAM_CHAT_ID: process.env.TELEGRAM_CHAT_ID,
     TELEGRAM_ALERTS_DISABLED: process.env.TELEGRAM_ALERTS_DISABLED,
   };
@@ -48,7 +49,8 @@ async function main() {
   process.env.HUB_AUTH_TOKEN = 'l5-acceptance-token';
   process.env.HUB_CONTROL_PLANNER_FORCE_HEURISTIC = '1';
   process.env['TELEGRAM_' + 'BOT_TOKEN'] = 'l5-acceptance-smoke-fixture';
-  process.env.TELEGRAM_CHAT_ID = '123456';
+  process.env.TELEGRAM_GROUP_ID = '-100123456';
+  delete process.env.TELEGRAM_CHAT_ID;
   process.env.TELEGRAM_ALERTS_DISABLED = 'false';
 
   let eventId = 500;
@@ -70,6 +72,12 @@ async function main() {
   };
 
   try {
+    const alarmRoute = require('../lib/routes/alarm.ts');
+    if (typeof alarmRoute._testOnly_setAlarmRouteDbMocks === 'function') {
+      alarmRoute._testOnly_setAlarmRouteDbMocks({
+        get: async () => null,
+      });
+    }
     const { createHubApp } = require('../src/app.ts');
     const app = createHubApp({
       isShuttingDown: () => false,
@@ -106,6 +114,7 @@ async function main() {
         team: 'luna',
         fromBot: 'l5-warning-smoke',
         severity: 'critical',
+        eventType: `synthetic_emergency_${Math.random().toString(36).slice(2, 8)}`,
         visibility: 'emergency',
         incidentKey: `smoke:emergency:${stamp}`,
       });
@@ -125,6 +134,14 @@ async function main() {
 
     console.log('l5_acceptance_smoke_ok');
   } finally {
+    try {
+      const alarmRoute = require('../lib/routes/alarm.ts');
+      if (typeof alarmRoute._testOnly_resetAlarmRouteDbMocks === 'function') {
+        alarmRoute._testOnly_resetAlarmRouteDbMocks();
+      }
+    } catch {
+      // Best-effort cleanup for smoke-only hooks.
+    }
     eventLake.findRecentDuplicateAlarm = originalFns.findRecentDuplicateAlarm;
     eventLake.record = originalFns.record;
     global.fetch = originalFns.fetch;

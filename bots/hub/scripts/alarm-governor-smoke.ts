@@ -4,9 +4,10 @@ const {
   alarmSuppressDryRunRoute,
   alarmDigestFlushRoute,
   alarmAutoRepairCallbackRoute,
+  _testOnly_setAlarmRouteDbMocks,
+  _testOnly_resetAlarmRouteDbMocks,
 } = require('../lib/routes/alarm.ts');
 const eventLake = require('../../../packages/core/lib/event-lake');
-const pgPool = require('../../../packages/core/lib/pg-pool');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
@@ -35,9 +36,6 @@ async function main() {
   const originals = {
     findRecentDuplicateAlarm: eventLake.findRecentDuplicateAlarm,
     record: eventLake.record,
-    pgQuery: pgPool.query,
-    pgGet: pgPool.get,
-    pgRun: pgPool.run,
     fetch: global.fetch,
     tgToken: process.env.TELEGRAM_BOT_TOKEN,
     tgChatId: process.env.TELEGRAM_CHAT_ID,
@@ -49,6 +47,7 @@ async function main() {
   let sendCount = 0;
   let eventId = 100;
   let pgRunCount = 0;
+  let useClusterDuplicate = false;
   const autoDevDir = fs.mkdtempSync(path.join(os.tmpdir(), 'hub-alarm-auto-dev-'));
 
   eventLake.findRecentDuplicateAlarm = async () => null;
@@ -74,45 +73,50 @@ async function main() {
       headers: { 'content-type': 'application/json' },
     });
   };
-  pgPool.query = async (_schema, sql) => {
-    if (String(sql).includes(`metadata->>'visibility' = 'digest'`)) {
+  _testOnly_setAlarmRouteDbMocks({
+    query: async (_schema, sql) => {
+      if (String(sql).includes(`metadata->>'visibility' = 'digest'`)) {
+        return [
+          {
+            id: 101,
+            team: 'luna',
+            bot_name: 'luna',
+            severity: 'warn',
+            message: 'digest candidate',
+            metadata: { incident_key: 'luna|digest|1' },
+            created_at: new Date().toISOString(),
+          },
+        ];
+      }
+      if (String(sql).includes('GROUP BY producer, team')) {
+        return [
+          { producer: 'luna', team: 'luna', total: 42, escalated: 1, latest_at: new Date().toISOString() },
+        ];
+      }
       return [
         {
-          id: 101,
+          id: 1,
           team: 'luna',
           bot_name: 'luna',
           severity: 'warn',
-          message: 'digest candidate',
-          metadata: { incident_key: 'luna|digest|1' },
+          message: 'sample',
+          metadata: { incident_key: 'luna|sample' },
           created_at: new Date().toISOString(),
         },
       ];
-    }
-    if (String(sql).includes('GROUP BY producer, team')) {
-      return [
-        { producer: 'luna', team: 'luna', total: 42, escalated: 1, latest_at: new Date().toISOString() },
-      ];
-    }
-    return [
-      {
-        id: 1,
-        team: 'luna',
-        bot_name: 'luna',
-        severity: 'warn',
-        message: 'sample',
-        metadata: { incident_key: 'luna|sample' },
-        created_at: new Date().toISOString(),
-      },
-    ];
-  };
-  pgPool.get = async (_schema, sql) => {
-    if (String(sql).includes('COUNT(*)::int AS total')) return { total: 3 };
-    return null;
-  };
-  pgPool.run = async () => {
-    pgRunCount += 1;
-    return { rowCount: 1, rows: [] };
-  };
+    },
+    get: async (_schema, sql) => {
+      if (useClusterDuplicate && String(sql).includes(`metadata->>'cluster_key'`)) {
+        return { id: 999, metadata: { cluster_key: 'luna|llm_provider_cooldown|smoke' } };
+      }
+      if (String(sql).includes('COUNT(*)::int AS total')) return { total: 3 };
+      return null;
+    },
+    run: async () => {
+      pgRunCount += 1;
+      return { rowCount: 1, rows: [] };
+    },
+  });
 
   try {
     const stamp = Date.now();
@@ -202,14 +206,10 @@ async function main() {
         },
       },
     };
-    const originalPgGet = pgPool.get;
-    pgPool.get = async (_schema, sql) => {
-      if (String(sql).includes(`metadata->>'cluster_key'`)) return { id: 999, metadata: { cluster_key: errorRes.body.cluster_key } };
-      return originalPgGet(_schema, sql);
-    };
+    useClusterDuplicate = true;
     const similarErrorRes = makeRes();
     await alarmRoute(similarErrorReq, similarErrorRes);
-    pgPool.get = originalPgGet;
+    useClusterDuplicate = false;
     assert(similarErrorRes.body.deduped === true, 'expected similar error to be deduped by cluster');
     assert(similarErrorRes.body.event_id === 999, 'expected cluster duplicate event id');
 
@@ -327,9 +327,7 @@ async function main() {
   } finally {
     eventLake.findRecentDuplicateAlarm = originals.findRecentDuplicateAlarm;
     eventLake.record = originals.record;
-    pgPool.query = originals.pgQuery;
-    pgPool.get = originals.pgGet;
-    pgPool.run = originals.pgRun;
+    _testOnly_resetAlarmRouteDbMocks();
     global.fetch = originals.fetch;
     if (originals.tgToken == null) delete process.env.TELEGRAM_BOT_TOKEN;
     else process.env.TELEGRAM_BOT_TOKEN = originals.tgToken;

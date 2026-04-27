@@ -96,6 +96,7 @@ async function main() {
       alarmType: 'report',
       visibility: 'notify',
       incidentKey: `hub:alarm_noise_report:${new Date().toISOString().slice(0, 10)}`,
+      eventType: 'alarm_noise_report',
       payload: {
         event_type: 'alarm_noise_report',
         row_count: result.rows.length,

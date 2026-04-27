@@ -2,11 +2,11 @@
 
 This inventory tracks the Hub alarm migration surface. `hub_alarm_native` entries are the desired path; `legacy_gateway_compat` entries are compatibility shims or remaining migration targets.
 
-- generated_at: 2026-04-27T01:54:24.024Z
-- total_matches: 145
-- unique_files: 94
-- hub_alarm_native: 145
-- legacy_gateway_compat: 0
+- generated_at: 2026-04-27T07:44:52.654Z
+- total_matches: 194
+- unique_files: 117
+- hub_alarm_native: 185
+- legacy_gateway_compat: 9
 
 ## Files
 
@@ -55,7 +55,7 @@ This inventory tracks the Hub alarm migration surface. `hub_alarm_native` entrie
 - L11 [hub_alarm_native]: `const { postAlarm } = require('../../../packages/core/lib/hub-alarm-client');`
 
 ### `bots/blog/lib/blo.ts`
-- L95 [hub_alarm_native]: `const { postAlarm }                                 = require('../../../packages/core/lib/hub-alarm-client');`
+- L98 [hub_alarm_native]: `const { postAlarm }                                 = require('../../../packages/core/lib/hub-alarm-client');`
 
 ### `bots/blog/lib/commenter.ts`
 - L13 [hub_alarm_native]: `const { postAlarm } = require('../../../packages/core/lib/hub-alarm-client');`
@@ -196,13 +196,66 @@ This inventory tracks the Hub alarm migration surface. `hub_alarm_native` entrie
 ### `bots/darwin/scripts/research-task-runner.ts`
 - L4 [hub_alarm_native]: `const { postAlarm } = require('../../../packages/core/lib/hub-alarm-client');`
 
+### `bots/hub/launchd/ai.hub.alarm-noise-report.plist`
+- L27 [hub_alarm_native]: `<key>HUB_ALARM_USE_CLASS_TOPICS</key>`
+
+### `bots/hub/launchd/ai.hub.alarm-stale-auto-repair.plist`
+- L27 [hub_alarm_native]: `<key>HUB_ALARM_USE_CLASS_TOPICS</key>`
+
+### `bots/hub/launchd/ai.hub.resource-api.plist`
+- L32 [hub_alarm_native]: `<key>HUB_ALARM_USE_CLASS_TOPICS</key>`
+
+### `bots/hub/lib/alarm/auto-dev-incident.ts`
+- L163 [hub_alarm_native]: `const dir = process.env.HUB_ALARM_AUTO_DEV_DIR || DEFAULT_AUTO_DEV_DIR;`
+
+### `bots/hub/lib/alarm/readiness.ts`
+- L70 [hub_alarm_native]: `const classTopicsEnabled = isEnabled(process.env.HUB_ALARM_USE_CLASS_TOPICS);`
+
+### `bots/hub/lib/alarm/suppression-rules.ts`
+- L34 [hub_alarm_native]: `return String(process.env.HUB_ALARM_SUPPRESSION_RULES_PATH || '').trim()`
+
+### `bots/hub/lib/alarm/templates.ts`
+- L26 [hub_alarm_native]: `String(process.env.HUB_ALARM_USE_CLASS_TOPICS || '').trim().toLowerCase(),`
+
 ### `bots/hub/lib/routes/alarm.ts`
-- L229 [hub_alarm_native]: `const claimLeaseMinutes = Math.max(1, Number(process.env.HUB_ALARM_DIGEST_CLAIM_LEASE_MINUTES || 15) || 15);`
+- L277 [hub_alarm_native]: `const claimLeaseMinutes = Math.max(1, Number(process.env.HUB_ALARM_DIGEST_CLAIM_LEASE_MINUTES || 15) || 15);`
+
+### `bots/hub/scripts/alarm-auto-repair-stale-scan.ts`
+- L5 [hub_alarm_native]: `const { postAlarm } = require('../../../packages/core/lib/hub-alarm-client');`
+
+### `bots/hub/scripts/alarm-autonomy-contract-smoke.ts`
+- L26 [hub_alarm_native]: `const originalClassTopics = process.env.HUB_ALARM_USE_CLASS_TOPICS;`
+- L33 [hub_alarm_native]: `const originalRulesPath = process.env.HUB_ALARM_SUPPRESSION_RULES_PATH;`
+- L90 [hub_alarm_native]: `process.env.HUB_ALARM_USE_CLASS_TOPICS = '1';`
+- L118 [hub_alarm_native]: `process.env.HUB_ALARM_SUPPRESSION_RULES_PATH = path.join(tempRoot, 'rules.json');`
+- L141 [hub_alarm_native]: `if (originalClassTopics == null) delete process.env.HUB_ALARM_USE_CLASS_TOPICS;`
+- L142 [hub_alarm_native]: `else process.env.HUB_ALARM_USE_CLASS_TOPICS = originalClassTopics;`
+- L147 [hub_alarm_native]: `if (originalRulesPath == null) delete process.env.HUB_ALARM_SUPPRESSION_RULES_PATH;`
+- L148 [hub_alarm_native]: `else process.env.HUB_ALARM_SUPPRESSION_RULES_PATH = originalRulesPath;`
+
+### `bots/hub/scripts/alarm-contract-audit.ts`
+- L11 [hub_alarm_native]: `'packages/core/lib/hub-alarm-client.ts',`
 
 ### `bots/hub/scripts/alarm-digest-worker.ts`
 - L8 [hub_alarm_native]: `const value = Math.max(1, Number(process.env.HUB_ALARM_DIGEST_INTERVAL_MINUTES || 10) || 10);`
 - L13 [hub_alarm_native]: `return Math.max(5, Number(process.env.HUB_ALARM_DIGEST_WINDOW_MINUTES || 240) || 240);`
 - L17 [hub_alarm_native]: `return Math.min(1000, Math.max(10, Number(process.env.HUB_ALARM_DIGEST_LIMIT || 300) || 300));`
+
+### `bots/hub/scripts/alarm-governor-smoke.ts`
+- L43 [hub_alarm_native]: `autoDevDir: process.env.HUB_ALARM_AUTO_DEV_DIR,`
+- L44 [hub_alarm_native]: `classTopics: process.env.HUB_ALARM_USE_CLASS_TOPICS,`
+- L61 [hub_alarm_native]: `process.env.HUB_ALARM_AUTO_DEV_DIR = autoDevDir;`
+- L62 [hub_alarm_native]: `process.env.HUB_ALARM_USE_CLASS_TOPICS = '1';`
+- L338 [hub_alarm_native]: `if (originals.autoDevDir == null) delete process.env.HUB_ALARM_AUTO_DEV_DIR;`
+- L339 [hub_alarm_native]: `else process.env.HUB_ALARM_AUTO_DEV_DIR = originals.autoDevDir;`
+- L340 [hub_alarm_native]: `if (originals.classTopics == null) delete process.env.HUB_ALARM_USE_CLASS_TOPICS;`
+- L341 [hub_alarm_native]: `else process.env.HUB_ALARM_USE_CLASS_TOPICS = originals.classTopics;`
+
+### `bots/hub/scripts/alarm-noise-report.ts`
+- L5 [hub_alarm_native]: `const { postAlarm } = require('../../../packages/core/lib/hub-alarm-client');`
+
+### `bots/hub/scripts/alarm-suppression-proposals.ts`
+- L5 [hub_alarm_native]: `const { postAlarm } = require('../../../packages/core/lib/hub-alarm-client');`
 
 ### `bots/hub/scripts/generate-hub-alarm-inventory.ts`
 - L8 [hub_alarm_native]: `const outputMarkdownPath = path.join(projectRoot, 'docs', 'hub', 'HUB_ALARM_DEPENDENCY_INVENTORY.md');`
@@ -235,21 +288,54 @@ This inventory tracks the Hub alarm migration surface. `hub_alarm_native` entrie
 - L66 [hub_alarm_native]: `process.env.HUB_ALARM_LEGACY_HOOKS_TOKEN = 'smoke-hooks-token';`
 - L93 [hub_alarm_native]: `const { postAlarm } = require('../../../packages/core/lib/hub-alarm-client.ts');`
 - L132 [hub_alarm_native]: `const { postAlarm } = require('../../../packages/core/lib/hub-alarm-client.ts');`
-- L149 [hub_alarm_native]: `const originalHubRecentAlertsPath = process.env.HUB_ALARM_RECENT_ALERTS_PATH;`
-- L150 [hub_alarm_native]: `const originalHubLegacyHooksToken = process.env.HUB_ALARM_LEGACY_HOOKS_TOKEN;`
-- L151 [hub_alarm_native]: `const originalHubSkipDirect = process.env.HUB_ALARM_SKIP_DIRECT;`
-- L152 [hub_alarm_native]: `const originalHubLegacyFallback = process.env.HUB_ALARM_LEGACY_WEBHOOK_FALLBACK;`
-- L161 [hub_alarm_native]: `if (originalHubRecentAlertsPath == null) delete process.env.HUB_ALARM_RECENT_ALERTS_PATH;`
-- L162 [hub_alarm_native]: `else process.env.HUB_ALARM_RECENT_ALERTS_PATH = originalHubRecentAlertsPath;`
-- L163 [hub_alarm_native]: `if (originalHubLegacyHooksToken == null) delete process.env.HUB_ALARM_LEGACY_HOOKS_TOKEN;`
-- L164 [hub_alarm_native]: `else process.env.HUB_ALARM_LEGACY_HOOKS_TOKEN = originalHubLegacyHooksToken;`
-- L165 [hub_alarm_native]: `if (originalHubSkipDirect == null) delete process.env.HUB_ALARM_SKIP_DIRECT;`
-- L166 [hub_alarm_native]: `else process.env.HUB_ALARM_SKIP_DIRECT = originalHubSkipDirect;`
-- L167 [hub_alarm_native]: `if (originalHubLegacyFallback == null) delete process.env.HUB_ALARM_LEGACY_WEBHOOK_FALLBACK;`
-- L168 [hub_alarm_native]: `else process.env.HUB_ALARM_LEGACY_WEBHOOK_FALLBACK = originalHubLegacyFallback;`
+- L170 [hub_alarm_native]: `const { postAlarm } = require('../../../packages/core/lib/hub-alarm-client.ts');`
+- L189 [hub_alarm_native]: `const originalHubRecentAlertsPath = process.env.HUB_ALARM_RECENT_ALERTS_PATH;`
+- L190 [hub_alarm_native]: `const originalHubLegacyHooksToken = process.env.HUB_ALARM_LEGACY_HOOKS_TOKEN;`
+- L191 [hub_alarm_native]: `const originalHubSkipDirect = process.env.HUB_ALARM_SKIP_DIRECT;`
+- L192 [hub_alarm_native]: `const originalHubLegacyFallback = process.env.HUB_ALARM_LEGACY_WEBHOOK_FALLBACK;`
+- L202 [hub_alarm_native]: `if (originalHubRecentAlertsPath == null) delete process.env.HUB_ALARM_RECENT_ALERTS_PATH;`
+- L203 [hub_alarm_native]: `else process.env.HUB_ALARM_RECENT_ALERTS_PATH = originalHubRecentAlertsPath;`
+- L204 [hub_alarm_native]: `if (originalHubLegacyHooksToken == null) delete process.env.HUB_ALARM_LEGACY_HOOKS_TOKEN;`
+- L205 [hub_alarm_native]: `else process.env.HUB_ALARM_LEGACY_HOOKS_TOKEN = originalHubLegacyHooksToken;`
+- L206 [hub_alarm_native]: `if (originalHubSkipDirect == null) delete process.env.HUB_ALARM_SKIP_DIRECT;`
+- L207 [hub_alarm_native]: `else process.env.HUB_ALARM_SKIP_DIRECT = originalHubSkipDirect;`
+- L208 [hub_alarm_native]: `if (originalHubLegacyFallback == null) delete process.env.HUB_ALARM_LEGACY_WEBHOOK_FALLBACK;`
+- L209 [hub_alarm_native]: `else process.env.HUB_ALARM_LEGACY_WEBHOOK_FALLBACK = originalHubLegacyFallback;`
+
+### `bots/hub/scripts/hub-transition-completion-gate.ts`
+- L48 [legacy_gateway_compat]: `'OPENCLAW_BIN',`
+- L52 [legacy_gateway_compat]: `const RETIRED_GATEWAY_SOURCE_PATTERN = 'openclaw|legacy_gateway|18789|openclaw-gateway|OPENCLAW_BIN|execFile\\([^\\n]*openclaw|spawn\\([^\\n]*openclaw';`
+
+### `bots/hub/scripts/launchd-alarm-class-topic-smoke.ts`
+- L34 [hub_alarm_native]: `const value = envValueFromPlist(text, 'HUB_ALARM_USE_CLASS_TOPICS');`
+- L41 [hub_alarm_native]: `reason: ok ? null : 'HUB_ALARM_USE_CLASS_TOPICS_not_enabled',`
+
+### `bots/hub/scripts/retired-gateway-marker-precommit-smoke.ts`
+- L19 [legacy_gateway_compat]: `for (const marker of ['openclaw-gateway', 'OPENCLAW_BIN', '18789', 'execFile[^\\n]*openclaw', 'spawn[^\\n]*openclaw']) {`
+- L28 [legacy_gateway_compat]: `assert(legacySmoke.includes('RETIRED_GATEWAY_BIN_ENV'), 'legacy smoke must guard OPENCLAW_BIN');`
 
 ### `bots/hub/scripts/run-oauth-monitor.ts`
 - L18 [hub_alarm_native]: `const { postAlarm } = require('../../../packages/core/lib/hub-alarm-client.ts');`
+
+### `bots/hub/scripts/runtime-env-policy-smoke.ts`
+- L22 [legacy_gateway_compat]: `OPENCLAW_BIN: '/tmp/openclaw',`
+- L31 [legacy_gateway_compat]: `assert.equal(filtered.env.OPENCLAW_BIN, undefined);`
+- L43 [legacy_gateway_compat]: `assert.notEqual(childEnv.OPENCLAW_BIN, '/tmp/openclaw');`
+
+### `bots/hub/scripts/telegram-hub-secrets-smoke.ts`
+- L16 [hub_alarm_native]: `HUB_ALARM_USE_CLASS_TOPICS: process.env.HUB_ALARM_USE_CLASS_TOPICS,`
+- L52 [hub_alarm_native]: `delete process.env.HUB_ALARM_USE_CLASS_TOPICS;`
+
+### `bots/hub/scripts/telegram-pending-queue-migration-smoke.ts`
+- L69 [hub_alarm_native]: `HUB_ALARM_USE_CLASS_TOPICS: null,`
+
+### `bots/hub/scripts/telegram-routing-readiness-report.ts`
+- L270 [hub_alarm_native]: `String(process.env.HUB_ALARM_USE_CLASS_TOPICS || '').trim().toLowerCase(),`
+
+### `bots/hub/scripts/telegram-topic-routing-precedence-smoke.ts`
+- L18 [hub_alarm_native]: `HUB_ALARM_USE_CLASS_TOPICS: process.env.HUB_ALARM_USE_CLASS_TOPICS,`
+- L47 [hub_alarm_native]: `delete process.env.HUB_ALARM_USE_CLASS_TOPICS;`
+- L98 [hub_alarm_native]: `process.env.HUB_ALARM_USE_CLASS_TOPICS = '1';`
 
 ### `bots/orchestrator/lib/steward/daily-summary.ts`
 - L4 [hub_alarm_native]: `const { postAlarm } = require('../../../../packages/core/lib/hub-alarm-client');`
@@ -291,21 +377,27 @@ This inventory tracks the Hub alarm migration surface. `hub_alarm_native` entrie
 
 ### `packages/core/lib/hub-alarm-client.ts`
 - L2 [hub_alarm_native]: `* packages/core/lib/hub-alarm-client.js — Hub alarm 클라이언트`
-- L14 [hub_alarm_native]: `const HUB_ALARM_TIMEOUT_MS = Math.max(1000, Number(process.env.HUB_ALARM_TIMEOUT_MS || 5000) || 5000);`
-- L17 [hub_alarm_native]: `const RECENT_ALERT_SNAPSHOT_PATH = String(process.env.HUB_ALARM_RECENT_ALERTS_PATH || '').trim()`
-- L267 [hub_alarm_native]: `signal: AbortSignal.timeout(HUB_ALARM_TIMEOUT_MS),`
-- L306 [hub_alarm_native]: `console.warn(`[hub-alarm-client] recent alert snapshot 저장 실패: ${(error as Error).message}`);`
-- L339 [hub_alarm_native]: `console.warn('[hub-alarm-client] inline telegram 발송 실패: bot token/group id 미설정');`
-- L368 [hub_alarm_native]: `console.warn(`[hub-alarm-client] inline telegram 429 — ${delayMs}ms 후 재시도`);`
-- L379 [hub_alarm_native]: `console.warn(`[hub-alarm-client] inline telegram 실패: ${error.message}`);`
-- L415 [hub_alarm_native]: `const hubDirectBlocked = _readBooleanEnv('HUB_ALARM_SKIP_DIRECT');`
-- L437 [hub_alarm_native]: `console.warn(`[hub-alarm-client] hub alarm failed: ${hubResult.error}`);`
+- L15 [hub_alarm_native]: `const HUB_ALARM_TIMEOUT_MS = Math.max(1000, Number(process.env.HUB_ALARM_TIMEOUT_MS || 5000) || 5000);`
+- L18 [hub_alarm_native]: `const RECENT_ALERT_SNAPSHOT_PATH = String(process.env.HUB_ALARM_RECENT_ALERTS_PATH || '').trim()`
+- L219 [hub_alarm_native]: `if (_readBooleanEnv('HUB_ALARM_USE_CLASS_TOPICS')) return true;`
+- L220 [hub_alarm_native]: `if (_readFalseBooleanEnv('HUB_ALARM_USE_CLASS_TOPICS')) return false;`
+- L489 [hub_alarm_native]: `signal: AbortSignal.timeout(HUB_ALARM_TIMEOUT_MS),`
+- L528 [hub_alarm_native]: `console.warn(`[hub-alarm-client] recent alert snapshot 저장 실패: ${(error as Error).message}`);`
+- L561 [hub_alarm_native]: `console.warn('[hub-alarm-client] inline telegram 발송 실패: bot token/group id 미설정');`
+- L590 [hub_alarm_native]: `console.warn(`[hub-alarm-client] inline telegram 429 — ${delayMs}ms 후 재시도`);`
+- L601 [hub_alarm_native]: `console.warn(`[hub-alarm-client] inline telegram 실패: ${error.message}`);`
+- L651 [hub_alarm_native]: `const hubDirectBlocked = _readBooleanEnv('HUB_ALARM_SKIP_DIRECT');`
+- L679 [hub_alarm_native]: `console.warn(`[hub-alarm-client] hub alarm failed: ${hubResult.error}`);`
 
 ### `packages/core/lib/reporting-hub.ts`
 - L3 [hub_alarm_native]: `const hubAlarmClient = require('./hub-alarm-client');`
 
+### `packages/core/lib/runtime-env-policy.ts`
+- L9 [legacy_gateway_compat]: `'OPENCLAW_',`
+
 ### `packages/core/lib/telegram-sender.ts`
 - L31 [hub_alarm_native]: `const hubAlarmClient = require('./hub-alarm-client');`
+- L258 [hub_alarm_native]: `const raw = process.env.HUB_ALARM_USE_CLASS_TOPICS;`
 
 ### `packages/core/scripts/publish-python-report.ts`
 - L12 [hub_alarm_native]: `const { postAlarm } = require('../lib/hub-alarm-client');`
@@ -324,6 +416,9 @@ This inventory tracks the Hub alarm migration surface. `hub_alarm_native` entrie
 
 ### `scripts/luna-transition-analysis.ts`
 - L18 [hub_alarm_native]: `const hubAlarmClient = require(path.join(ROOT, 'packages/core/lib/hub-alarm-client'));`
+
+### `scripts/pre-commit`
+- L140 [legacy_gateway_compat]: `'OPENCLAW_BIN'`
 
 ### `scripts/run-graduation-analysis.ts`
 - L18 [hub_alarm_native]: `const hubAlarmClient = require(path.join(ROOT, 'packages/core/lib/hub-alarm-client'));`

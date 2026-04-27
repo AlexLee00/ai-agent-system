@@ -66,8 +66,13 @@ async function main() {
       HUB_TELEGRAM_LEGACY_PENDING_WORKSPACE: legacyWorkspace,
       PROJECT_ROOT: tempDir,
       MODE: 'dev',
+      HUB_ALARM_USE_CLASS_TOPICS: null,
       TELEGRAM_BOT_TOKEN: null,
       TELEGRAM_CHAT_ID: null,
+      TELEGRAM_TOPIC_OPS_WORK: null,
+      TELEGRAM_TOPIC_OPS_REPORTS: null,
+      TELEGRAM_TOPIC_OPS_ERROR_RESOLUTION: null,
+      TELEGRAM_TOPIC_OPS_EMERGENCY: null,
     }, async () => {
       globalThis.fetch = (async (_input: RequestInfo | URL, init?: RequestInit) => {
         const body = JSON.parse(String(init?.body || '{}'));

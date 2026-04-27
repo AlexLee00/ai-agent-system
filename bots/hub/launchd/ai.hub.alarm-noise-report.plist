@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>ai.hub.alarm-noise-report</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/opt/homebrew/bin/tsx</string>
+    <string>/Users/alexlee/projects/ai-agent-system/bots/hub/scripts/alarm-noise-report.ts</string>
+    <string>--send</string>
+  </array>
+  <key>WorkingDirectory</key>
+  <string>/Users/alexlee/projects/ai-agent-system</string>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key>
+    <string>/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/usr/bin:/bin</string>
+    <key>HOME</key>
+    <string>/Users/alexlee</string>
+    <key>MODE</key>
+    <string>ops</string>
+    <key>HUB_BASE_URL</key>
+    <string>http://127.0.0.1:7788</string>
+    <key>HUB_AUTH_TOKEN</key>
+    <string>__SET_IN_LOCAL_LAUNCHAGENT__</string>
+    <key>HUB_ALARM_USE_CLASS_TOPICS</key>
+    <string>true</string>
+  </dict>
+  <key>StandardOutPath</key>
+  <string>/tmp/hub-alarm-noise-report.log</string>
+  <key>StandardErrorPath</key>
+  <string>/tmp/hub-alarm-noise-report.err.log</string>
+  <key>StartCalendarInterval</key>
+  <dict>
+    <key>Hour</key>
+    <integer>9</integer>
+    <key>Minute</key>
+    <integer>10</integer>
+  </dict>
+</dict>
+</plist>

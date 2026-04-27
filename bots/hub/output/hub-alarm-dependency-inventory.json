@@ -1,16 +1,16 @@
 {
-  "generated_at": "2026-04-27T01:54:24.024Z",
+  "generated_at": "2026-04-27T07:44:52.654Z",
   "scan_patterns": [
     "hub-alarm-client",
     "openclaw-client",
     "HUB_ALARM_",
     "OPENCLAW_"
   ],
-  "total_matches": 145,
-  "unique_files": 94,
+  "total_matches": 194,
+  "unique_files": 117,
   "categories": {
-    "hub_alarm_native": 145,
-    "legacy_gateway_compat": 0
+    "hub_alarm_native": 185,
+    "legacy_gateway_compat": 9
   },
   "files": {
     "bots/blog/__tests__/dpo-learning.test.ts": [
@@ -132,7 +132,7 @@
     "bots/blog/lib/blo.ts": [
       {
         "file": "bots/blog/lib/blo.ts",
-        "line": 95,
+        "line": 98,
         "category": "hub_alarm_native",
         "match": "const { postAlarm }                                 = require('../../../packages/core/lib/hub-alarm-client');"
       }
@@ -531,12 +531,134 @@
         "match": "const { postAlarm } = require('../../../packages/core/lib/hub-alarm-client');"
       }
     ],
+    "bots/hub/launchd/ai.hub.alarm-noise-report.plist": [
+      {
+        "file": "bots/hub/launchd/ai.hub.alarm-noise-report.plist",
+        "line": 27,
+        "category": "hub_alarm_native",
+        "match": "<key>HUB_ALARM_USE_CLASS_TOPICS</key>"
+      }
+    ],
+    "bots/hub/launchd/ai.hub.alarm-stale-auto-repair.plist": [
+      {
+        "file": "bots/hub/launchd/ai.hub.alarm-stale-auto-repair.plist",
+        "line": 27,
+        "category": "hub_alarm_native",
+        "match": "<key>HUB_ALARM_USE_CLASS_TOPICS</key>"
+      }
+    ],
+    "bots/hub/launchd/ai.hub.resource-api.plist": [
+      {
+        "file": "bots/hub/launchd/ai.hub.resource-api.plist",
+        "line": 32,
+        "category": "hub_alarm_native",
+        "match": "<key>HUB_ALARM_USE_CLASS_TOPICS</key>"
+      }
+    ],
+    "bots/hub/lib/alarm/auto-dev-incident.ts": [
+      {
+        "file": "bots/hub/lib/alarm/auto-dev-incident.ts",
+        "line": 163,
+        "category": "hub_alarm_native",
+        "match": "const dir = process.env.HUB_ALARM_AUTO_DEV_DIR || DEFAULT_AUTO_DEV_DIR;"
+      }
+    ],
+    "bots/hub/lib/alarm/readiness.ts": [
+      {
+        "file": "bots/hub/lib/alarm/readiness.ts",
+        "line": 70,
+        "category": "hub_alarm_native",
+        "match": "const classTopicsEnabled = isEnabled(process.env.HUB_ALARM_USE_CLASS_TOPICS);"
+      }
+    ],
+    "bots/hub/lib/alarm/suppression-rules.ts": [
+      {
+        "file": "bots/hub/lib/alarm/suppression-rules.ts",
+        "line": 34,
+        "category": "hub_alarm_native",
+        "match": "return String(process.env.HUB_ALARM_SUPPRESSION_RULES_PATH || '').trim()"
+      }
+    ],
+    "bots/hub/lib/alarm/templates.ts": [
+      {
+        "file": "bots/hub/lib/alarm/templates.ts",
+        "line": 26,
+        "category": "hub_alarm_native",
+        "match": "String(process.env.HUB_ALARM_USE_CLASS_TOPICS || '').trim().toLowerCase(),"
+      }
+    ],
     "bots/hub/lib/routes/alarm.ts": [
       {
         "file": "bots/hub/lib/routes/alarm.ts",
-        "line": 229,
+        "line": 277,
         "category": "hub_alarm_native",
         "match": "const claimLeaseMinutes = Math.max(1, Number(process.env.HUB_ALARM_DIGEST_CLAIM_LEASE_MINUTES || 15) || 15);"
+      }
+    ],
+    "bots/hub/scripts/alarm-auto-repair-stale-scan.ts": [
+      {
+        "file": "bots/hub/scripts/alarm-auto-repair-stale-scan.ts",
+        "line": 5,
+        "category": "hub_alarm_native",
+        "match": "const { postAlarm } = require('../../../packages/core/lib/hub-alarm-client');"
+      }
+    ],
+    "bots/hub/scripts/alarm-autonomy-contract-smoke.ts": [
+      {
+        "file": "bots/hub/scripts/alarm-autonomy-contract-smoke.ts",
+        "line": 26,
+        "category": "hub_alarm_native",
+        "match": "const originalClassTopics = process.env.HUB_ALARM_USE_CLASS_TOPICS;"
+      },
+      {
+        "file": "bots/hub/scripts/alarm-autonomy-contract-smoke.ts",
+        "line": 33,
+        "category": "hub_alarm_native",
+        "match": "const originalRulesPath = process.env.HUB_ALARM_SUPPRESSION_RULES_PATH;"
+      },
+      {
+        "file": "bots/hub/scripts/alarm-autonomy-contract-smoke.ts",
+        "line": 90,
+        "category": "hub_alarm_native",
+        "match": "process.env.HUB_ALARM_USE_CLASS_TOPICS = '1';"
+      },
+      {
+        "file": "bots/hub/scripts/alarm-autonomy-contract-smoke.ts",
+        "line": 118,
+        "category": "hub_alarm_native",
+        "match": "process.env.HUB_ALARM_SUPPRESSION_RULES_PATH = path.join(tempRoot, 'rules.json');"
+      },
+      {
+        "file": "bots/hub/scripts/alarm-autonomy-contract-smoke.ts",
+        "line": 141,
+        "category": "hub_alarm_native",
+        "match": "if (originalClassTopics == null) delete process.env.HUB_ALARM_USE_CLASS_TOPICS;"
+      },
+      {
+        "file": "bots/hub/scripts/alarm-autonomy-contract-smoke.ts",
+        "line": 142,
+        "category": "hub_alarm_native",
+        "match": "else process.env.HUB_ALARM_USE_CLASS_TOPICS = originalClassTopics;"
+      },
+      {
+        "file": "bots/hub/scripts/alarm-autonomy-contract-smoke.ts",
+        "line": 147,
+        "category": "hub_alarm_native",
+        "match": "if (originalRulesPath == null) delete process.env.HUB_ALARM_SUPPRESSION_RULES_PATH;"
+      },
+      {
+        "file": "bots/hub/scripts/alarm-autonomy-contract-smoke.ts",
+        "line": 148,
+        "category": "hub_alarm_native",
+        "match": "else process.env.HUB_ALARM_SUPPRESSION_RULES_PATH = originalRulesPath;"
+      }
+    ],
+    "bots/hub/scripts/alarm-contract-audit.ts": [
+      {
+        "file": "bots/hub/scripts/alarm-contract-audit.ts",
+        "line": 11,
+        "category": "hub_alarm_native",
+        "match": "'packages/core/lib/hub-alarm-client.ts',"
       }
     ],
     "bots/hub/scripts/alarm-digest-worker.ts": [
@@ -557,6 +679,72 @@
         "line": 17,
         "category": "hub_alarm_native",
         "match": "return Math.min(1000, Math.max(10, Number(process.env.HUB_ALARM_DIGEST_LIMIT || 300) || 300));"
+      }
+    ],
+    "bots/hub/scripts/alarm-governor-smoke.ts": [
+      {
+        "file": "bots/hub/scripts/alarm-governor-smoke.ts",
+        "line": 43,
+        "category": "hub_alarm_native",
+        "match": "autoDevDir: process.env.HUB_ALARM_AUTO_DEV_DIR,"
+      },
+      {
+        "file": "bots/hub/scripts/alarm-governor-smoke.ts",
+        "line": 44,
+        "category": "hub_alarm_native",
+        "match": "classTopics: process.env.HUB_ALARM_USE_CLASS_TOPICS,"
+      },
+      {
+        "file": "bots/hub/scripts/alarm-governor-smoke.ts",
+        "line": 61,
+        "category": "hub_alarm_native",
+        "match": "process.env.HUB_ALARM_AUTO_DEV_DIR = autoDevDir;"
+      },
+      {
+        "file": "bots/hub/scripts/alarm-governor-smoke.ts",
+        "line": 62,
+        "category": "hub_alarm_native",
+        "match": "process.env.HUB_ALARM_USE_CLASS_TOPICS = '1';"
+      },
+      {
+        "file": "bots/hub/scripts/alarm-governor-smoke.ts",
+        "line": 338,
+        "category": "hub_alarm_native",
+        "match": "if (originals.autoDevDir == null) delete process.env.HUB_ALARM_AUTO_DEV_DIR;"
+      },
+      {
+        "file": "bots/hub/scripts/alarm-governor-smoke.ts",
+        "line": 339,
+        "category": "hub_alarm_native",
+        "match": "else process.env.HUB_ALARM_AUTO_DEV_DIR = originals.autoDevDir;"
+      },
+      {
+        "file": "bots/hub/scripts/alarm-governor-smoke.ts",
+        "line": 340,
+        "category": "hub_alarm_native",
+        "match": "if (originals.classTopics == null) delete process.env.HUB_ALARM_USE_CLASS_TOPICS;"
+      },
+      {
+        "file": "bots/hub/scripts/alarm-governor-smoke.ts",
+        "line": 341,
+        "category": "hub_alarm_native",
+        "match": "else process.env.HUB_ALARM_USE_CLASS_TOPICS = originals.classTopics;"
+      }
+    ],
+    "bots/hub/scripts/alarm-noise-report.ts": [
+      {
+        "file": "bots/hub/scripts/alarm-noise-report.ts",
+        "line": 5,
+        "category": "hub_alarm_native",
+        "match": "const { postAlarm } = require('../../../packages/core/lib/hub-alarm-client');"
+      }
+    ],
+    "bots/hub/scripts/alarm-suppression-proposals.ts": [
+      {
+        "file": "bots/hub/scripts/alarm-suppression-proposals.ts",
+        "line": 5,
+        "category": "hub_alarm_native",
+        "match": "const { postAlarm } = require('../../../packages/core/lib/hub-alarm-client');"
       }
     ],
     "bots/hub/scripts/generate-hub-alarm-inventory.ts": [
@@ -702,75 +890,123 @@
       },
       {
         "file": "bots/hub/scripts/hub-postalarm-no-legacy-fallback-smoke.ts",
-        "line": 149,
+        "line": 170,
+        "category": "hub_alarm_native",
+        "match": "const { postAlarm } = require('../../../packages/core/lib/hub-alarm-client.ts');"
+      },
+      {
+        "file": "bots/hub/scripts/hub-postalarm-no-legacy-fallback-smoke.ts",
+        "line": 189,
         "category": "hub_alarm_native",
         "match": "const originalHubRecentAlertsPath = process.env.HUB_ALARM_RECENT_ALERTS_PATH;"
       },
       {
         "file": "bots/hub/scripts/hub-postalarm-no-legacy-fallback-smoke.ts",
-        "line": 150,
+        "line": 190,
         "category": "hub_alarm_native",
         "match": "const originalHubLegacyHooksToken = process.env.HUB_ALARM_LEGACY_HOOKS_TOKEN;"
       },
       {
         "file": "bots/hub/scripts/hub-postalarm-no-legacy-fallback-smoke.ts",
-        "line": 151,
+        "line": 191,
         "category": "hub_alarm_native",
         "match": "const originalHubSkipDirect = process.env.HUB_ALARM_SKIP_DIRECT;"
       },
       {
         "file": "bots/hub/scripts/hub-postalarm-no-legacy-fallback-smoke.ts",
-        "line": 152,
+        "line": 192,
         "category": "hub_alarm_native",
         "match": "const originalHubLegacyFallback = process.env.HUB_ALARM_LEGACY_WEBHOOK_FALLBACK;"
       },
       {
         "file": "bots/hub/scripts/hub-postalarm-no-legacy-fallback-smoke.ts",
-        "line": 161,
+        "line": 202,
         "category": "hub_alarm_native",
         "match": "if (originalHubRecentAlertsPath == null) delete process.env.HUB_ALARM_RECENT_ALERTS_PATH;"
       },
       {
         "file": "bots/hub/scripts/hub-postalarm-no-legacy-fallback-smoke.ts",
-        "line": 162,
+        "line": 203,
         "category": "hub_alarm_native",
         "match": "else process.env.HUB_ALARM_RECENT_ALERTS_PATH = originalHubRecentAlertsPath;"
       },
       {
         "file": "bots/hub/scripts/hub-postalarm-no-legacy-fallback-smoke.ts",
-        "line": 163,
+        "line": 204,
         "category": "hub_alarm_native",
         "match": "if (originalHubLegacyHooksToken == null) delete process.env.HUB_ALARM_LEGACY_HOOKS_TOKEN;"
       },
       {
         "file": "bots/hub/scripts/hub-postalarm-no-legacy-fallback-smoke.ts",
-        "line": 164,
+        "line": 205,
         "category": "hub_alarm_native",
         "match": "else process.env.HUB_ALARM_LEGACY_HOOKS_TOKEN = originalHubLegacyHooksToken;"
       },
       {
         "file": "bots/hub/scripts/hub-postalarm-no-legacy-fallback-smoke.ts",
-        "line": 165,
+        "line": 206,
         "category": "hub_alarm_native",
         "match": "if (originalHubSkipDirect == null) delete process.env.HUB_ALARM_SKIP_DIRECT;"
       },
       {
         "file": "bots/hub/scripts/hub-postalarm-no-legacy-fallback-smoke.ts",
-        "line": 166,
+        "line": 207,
         "category": "hub_alarm_native",
         "match": "else process.env.HUB_ALARM_SKIP_DIRECT = originalHubSkipDirect;"
       },
       {
         "file": "bots/hub/scripts/hub-postalarm-no-legacy-fallback-smoke.ts",
-        "line": 167,
+        "line": 208,
         "category": "hub_alarm_native",
         "match": "if (originalHubLegacyFallback == null) delete process.env.HUB_ALARM_LEGACY_WEBHOOK_FALLBACK;"
       },
       {
         "file": "bots/hub/scripts/hub-postalarm-no-legacy-fallback-smoke.ts",
-        "line": 168,
+        "line": 209,
         "category": "hub_alarm_native",
         "match": "else process.env.HUB_ALARM_LEGACY_WEBHOOK_FALLBACK = originalHubLegacyFallback;"
+      }
+    ],
+    "bots/hub/scripts/hub-transition-completion-gate.ts": [
+      {
+        "file": "bots/hub/scripts/hub-transition-completion-gate.ts",
+        "line": 48,
+        "category": "legacy_gateway_compat",
+        "match": "'OPENCLAW_BIN',"
+      },
+      {
+        "file": "bots/hub/scripts/hub-transition-completion-gate.ts",
+        "line": 52,
+        "category": "legacy_gateway_compat",
+        "match": "const RETIRED_GATEWAY_SOURCE_PATTERN = 'openclaw|legacy_gateway|18789|openclaw-gateway|OPENCLAW_BIN|execFile\\\\([^\\\\n]*openclaw|spawn\\\\([^\\\\n]*openclaw';"
+      }
+    ],
+    "bots/hub/scripts/launchd-alarm-class-topic-smoke.ts": [
+      {
+        "file": "bots/hub/scripts/launchd-alarm-class-topic-smoke.ts",
+        "line": 34,
+        "category": "hub_alarm_native",
+        "match": "const value = envValueFromPlist(text, 'HUB_ALARM_USE_CLASS_TOPICS');"
+      },
+      {
+        "file": "bots/hub/scripts/launchd-alarm-class-topic-smoke.ts",
+        "line": 41,
+        "category": "hub_alarm_native",
+        "match": "reason: ok ? null : 'HUB_ALARM_USE_CLASS_TOPICS_not_enabled',"
+      }
+    ],
+    "bots/hub/scripts/retired-gateway-marker-precommit-smoke.ts": [
+      {
+        "file": "bots/hub/scripts/retired-gateway-marker-precommit-smoke.ts",
+        "line": 19,
+        "category": "legacy_gateway_compat",
+        "match": "for (const marker of ['openclaw-gateway', 'OPENCLAW_BIN', '18789', 'execFile[^\\\\n]*openclaw', 'spawn[^\\\\n]*openclaw']) {"
+      },
+      {
+        "file": "bots/hub/scripts/retired-gateway-marker-precommit-smoke.ts",
+        "line": 28,
+        "category": "legacy_gateway_compat",
+        "match": "assert(legacySmoke.includes('RETIRED_GATEWAY_BIN_ENV'), 'legacy smoke must guard OPENCLAW_BIN');"
       }
     ],
     "bots/hub/scripts/run-oauth-monitor.ts": [
@@ -779,6 +1015,76 @@
         "line": 18,
         "category": "hub_alarm_native",
         "match": "const { postAlarm } = require('../../../packages/core/lib/hub-alarm-client.ts');"
+      }
+    ],
+    "bots/hub/scripts/runtime-env-policy-smoke.ts": [
+      {
+        "file": "bots/hub/scripts/runtime-env-policy-smoke.ts",
+        "line": 22,
+        "category": "legacy_gateway_compat",
+        "match": "OPENCLAW_BIN: '/tmp/openclaw',"
+      },
+      {
+        "file": "bots/hub/scripts/runtime-env-policy-smoke.ts",
+        "line": 31,
+        "category": "legacy_gateway_compat",
+        "match": "assert.equal(filtered.env.OPENCLAW_BIN, undefined);"
+      },
+      {
+        "file": "bots/hub/scripts/runtime-env-policy-smoke.ts",
+        "line": 43,
+        "category": "legacy_gateway_compat",
+        "match": "assert.notEqual(childEnv.OPENCLAW_BIN, '/tmp/openclaw');"
+      }
+    ],
+    "bots/hub/scripts/telegram-hub-secrets-smoke.ts": [
+      {
+        "file": "bots/hub/scripts/telegram-hub-secrets-smoke.ts",
+        "line": 16,
+        "category": "hub_alarm_native",
+        "match": "HUB_ALARM_USE_CLASS_TOPICS: process.env.HUB_ALARM_USE_CLASS_TOPICS,"
+      },
+      {
+        "file": "bots/hub/scripts/telegram-hub-secrets-smoke.ts",
+        "line": 52,
+        "category": "hub_alarm_native",
+        "match": "delete process.env.HUB_ALARM_USE_CLASS_TOPICS;"
+      }
+    ],
+    "bots/hub/scripts/telegram-pending-queue-migration-smoke.ts": [
+      {
+        "file": "bots/hub/scripts/telegram-pending-queue-migration-smoke.ts",
+        "line": 69,
+        "category": "hub_alarm_native",
+        "match": "HUB_ALARM_USE_CLASS_TOPICS: null,"
+      }
+    ],
+    "bots/hub/scripts/telegram-routing-readiness-report.ts": [
+      {
+        "file": "bots/hub/scripts/telegram-routing-readiness-report.ts",
+        "line": 270,
+        "category": "hub_alarm_native",
+        "match": "String(process.env.HUB_ALARM_USE_CLASS_TOPICS || '').trim().toLowerCase(),"
+      }
+    ],
+    "bots/hub/scripts/telegram-topic-routing-precedence-smoke.ts": [
+      {
+        "file": "bots/hub/scripts/telegram-topic-routing-precedence-smoke.ts",
+        "line": 18,
+        "category": "hub_alarm_native",
+        "match": "HUB_ALARM_USE_CLASS_TOPICS: process.env.HUB_ALARM_USE_CLASS_TOPICS,"
+      },
+      {
+        "file": "bots/hub/scripts/telegram-topic-routing-precedence-smoke.ts",
+        "line": 47,
+        "category": "hub_alarm_native",
+        "match": "delete process.env.HUB_ALARM_USE_CLASS_TOPICS;"
+      },
+      {
+        "file": "bots/hub/scripts/telegram-topic-routing-precedence-smoke.ts",
+        "line": 98,
+        "category": "hub_alarm_native",
+        "match": "process.env.HUB_ALARM_USE_CLASS_TOPICS = '1';"
       }
     ],
     "bots/orchestrator/lib/steward/daily-summary.ts": [
@@ -882,55 +1188,67 @@
       },
       {
         "file": "packages/core/lib/hub-alarm-client.ts",
-        "line": 14,
+        "line": 15,
         "category": "hub_alarm_native",
         "match": "const HUB_ALARM_TIMEOUT_MS = Math.max(1000, Number(process.env.HUB_ALARM_TIMEOUT_MS || 5000) || 5000);"
       },
       {
         "file": "packages/core/lib/hub-alarm-client.ts",
-        "line": 17,
+        "line": 18,
         "category": "hub_alarm_native",
         "match": "const RECENT_ALERT_SNAPSHOT_PATH = String(process.env.HUB_ALARM_RECENT_ALERTS_PATH || '').trim()"
       },
       {
         "file": "packages/core/lib/hub-alarm-client.ts",
-        "line": 267,
+        "line": 219,
+        "category": "hub_alarm_native",
+        "match": "if (_readBooleanEnv('HUB_ALARM_USE_CLASS_TOPICS')) return true;"
+      },
+      {
+        "file": "packages/core/lib/hub-alarm-client.ts",
+        "line": 220,
+        "category": "hub_alarm_native",
+        "match": "if (_readFalseBooleanEnv('HUB_ALARM_USE_CLASS_TOPICS')) return false;"
+      },
+      {
+        "file": "packages/core/lib/hub-alarm-client.ts",
+        "line": 489,
         "category": "hub_alarm_native",
         "match": "signal: AbortSignal.timeout(HUB_ALARM_TIMEOUT_MS),"
       },
       {
         "file": "packages/core/lib/hub-alarm-client.ts",
-        "line": 306,
+        "line": 528,
         "category": "hub_alarm_native",
         "match": "console.warn(`[hub-alarm-client] recent alert snapshot 저장 실패: ${(error as Error).message}`);"
       },
       {
         "file": "packages/core/lib/hub-alarm-client.ts",
-        "line": 339,
+        "line": 561,
         "category": "hub_alarm_native",
         "match": "console.warn('[hub-alarm-client] inline telegram 발송 실패: bot token/group id 미설정');"
       },
       {
         "file": "packages/core/lib/hub-alarm-client.ts",
-        "line": 368,
+        "line": 590,
         "category": "hub_alarm_native",
         "match": "console.warn(`[hub-alarm-client] inline telegram 429 — ${delayMs}ms 후 재시도`);"
       },
       {
         "file": "packages/core/lib/hub-alarm-client.ts",
-        "line": 379,
+        "line": 601,
         "category": "hub_alarm_native",
         "match": "console.warn(`[hub-alarm-client] inline telegram 실패: ${error.message}`);"
       },
       {
         "file": "packages/core/lib/hub-alarm-client.ts",
-        "line": 415,
+        "line": 651,
         "category": "hub_alarm_native",
         "match": "const hubDirectBlocked = _readBooleanEnv('HUB_ALARM_SKIP_DIRECT');"
       },
       {
         "file": "packages/core/lib/hub-alarm-client.ts",
-        "line": 437,
+        "line": 679,
         "category": "hub_alarm_native",
         "match": "console.warn(`[hub-alarm-client] hub alarm failed: ${hubResult.error}`);"
       }
@@ -943,12 +1261,26 @@
         "match": "const hubAlarmClient = require('./hub-alarm-client');"
       }
     ],
+    "packages/core/lib/runtime-env-policy.ts": [
+      {
+        "file": "packages/core/lib/runtime-env-policy.ts",
+        "line": 9,
+        "category": "legacy_gateway_compat",
+        "match": "'OPENCLAW_',"
+      }
+    ],
     "packages/core/lib/telegram-sender.ts": [
       {
         "file": "packages/core/lib/telegram-sender.ts",
         "line": 31,
         "category": "hub_alarm_native",
         "match": "const hubAlarmClient = require('./hub-alarm-client');"
+      },
+      {
+        "file": "packages/core/lib/telegram-sender.ts",
+        "line": 258,
+        "category": "hub_alarm_native",
+        "match": "const raw = process.env.HUB_ALARM_USE_CLASS_TOPICS;"
       }
     ],
     "packages/core/REPORTING_HUB_PLAN.md": [
@@ -1021,6 +1353,14 @@
         "line": 18,
         "category": "hub_alarm_native",
         "match": "const hubAlarmClient = require(path.join(ROOT, 'packages/core/lib/hub-alarm-client'));"
+      }
+    ],
+    "scripts/pre-commit": [
+      {
+        "file": "scripts/pre-commit",
+        "line": 140,
+        "category": "legacy_gateway_compat",
+        "match": "'OPENCLAW_BIN'"
       }
     ],
     "scripts/run-graduation-analysis.ts": [

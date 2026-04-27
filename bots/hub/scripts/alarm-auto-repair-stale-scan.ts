@@ -96,6 +96,7 @@ async function main() {
       visibility: 'human_action',
       actionability: 'needs_human',
       incidentKey: `hub:stale_auto_repair:${new Date().toISOString().slice(0, 10)}`,
+      eventType: 'stale_auto_repair_scan',
       payload: {
         event_type: 'stale_auto_repair_scan',
         stale_count: result.rows.length,
