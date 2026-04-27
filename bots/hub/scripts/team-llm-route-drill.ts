@@ -54,6 +54,7 @@ function routeToProvider(route) {
   const normalized = String(route || '').trim();
   if (normalized.startsWith('claude-code/')) return 'claude-code-oauth';
   if (normalized.startsWith('openai-oauth/')) return 'openai-oauth';
+  if (normalized.startsWith('gemini-oauth/')) return 'gemini-oauth';
   if (normalized.startsWith('groq/')) return 'groq';
   if (normalized.startsWith('openai/')) return 'openai';
   if (normalized.startsWith('google-gemini-cli/') || normalized.startsWith('gemini/')) return 'gemini';
@@ -69,7 +70,7 @@ function firstSupportedRoute(profile) {
 }
 
 function isOauthProvider(provider) {
-  return provider === 'openai-oauth' || provider === 'claude-code-oauth';
+  return provider === 'openai-oauth' || provider === 'claude-code-oauth' || provider === 'gemini-oauth';
 }
 
 function defaultBudgetForProvider(provider) {
@@ -211,8 +212,8 @@ async function main() {
       generated_at: new Date().toISOString(),
       checked: checks.length,
       failed: failed.length,
-      oauth_primary_checks: checks.filter((check) => ['openai-oauth', 'claude-code-oauth'].includes(check.details?.expected_provider)).length,
-      non_oauth_primary_checks: checks.filter((check) => !['openai-oauth', 'claude-code-oauth'].includes(check.details?.expected_provider)).length,
+      oauth_primary_checks: checks.filter((check) => ['openai-oauth', 'claude-code-oauth', 'gemini-oauth'].includes(check.details?.expected_provider)).length,
+      non_oauth_primary_checks: checks.filter((check) => !['openai-oauth', 'claude-code-oauth', 'gemini-oauth'].includes(check.details?.expected_provider)).length,
       checks,
       output_json: outputJson,
     };

@@ -26,6 +26,7 @@ const PROVIDER_ENDPOINTS = {
   deepinfra: 'https://api.deepinfra.com/v1/openai',
 };
 const PROVIDER_ICONS = {
+  'gemini-oauth': '✨',
   'google-gemini-cli': '✨',
   openai: '🤖',
   groq: '⚡',
@@ -129,7 +130,7 @@ function resolveGeminiOAuthClient(profile = {}) {
 async function refreshGeminiToken() {
   const profiles = JSON.parse(fs.readFileSync(AUTH_PROFILES_FILE, 'utf-8'));
   const profile = Object.values(profiles.profiles ?? {})
-    .find((item) => item.provider === 'google-gemini-cli' && item.type === 'oauth');
+    .find((item) => (item.provider === 'gemini-oauth' || item.provider === 'google-gemini-cli') && item.type === 'oauth');
   if (!profile) throw new Error('Google OAuth 프로파일 없음');
 
   if (profile.access && profile.expires && Date.now() < profile.expires - 5 * 60 * 1000) {
@@ -151,7 +152,7 @@ async function refreshGeminiToken() {
   if (data.error) throw new Error(`토큰 갱신 실패: ${data.error_description ?? data.error}`);
 
   const profileKey = Object.keys(profiles.profiles)
-    .find((key) => profiles.profiles[key].provider === 'google-gemini-cli');
+    .find((key) => profiles.profiles[key].provider === 'gemini-oauth' || profiles.profiles[key].provider === 'google-gemini-cli');
   profiles.profiles[profileKey].access = data.access_token;
   profiles.profiles[profileKey].expires = Date.now() + (data.expires_in ?? 3600) * 1000;
   if (data.refresh_token) profiles.profiles[profileKey].refresh = data.refresh_token;
@@ -163,7 +164,7 @@ async function refreshGeminiToken() {
 async function testGemini(modelId, accessToken, prompt) {
   const model = modelId.split('/')[1];
   const profiles = JSON.parse(fs.readFileSync(AUTH_PROFILES_FILE, 'utf-8'));
-  const profile = Object.values(profiles.profiles ?? {}).find((item) => item.provider === 'google-gemini-cli');
+  const profile = Object.values(profiles.profiles ?? {}).find((item) => item.provider === 'gemini-oauth' || item.provider === 'google-gemini-cli');
   const projectId = profile?.projectId ?? 'inspiring-shell-k4g6t';
   const url = `${CODE_ASSIST_ENDPOINT}/${CODE_ASSIST_VERSION}:streamGenerateContent?alt=sse`;
   const thinkingConfig = buildGeminiThinkingConfig(model);
@@ -294,7 +295,7 @@ async function benchmarkModel(modelId, ctx, options = {}) {
   for (let index = 0; index < runs; index += 1) {
     try {
       let result;
-      if (provider === 'google-gemini-cli') result = await testGemini(modelId, ctx.geminiToken, prompt);
+      if (provider === 'gemini-oauth' || provider === 'google-gemini-cli') result = await testGemini(modelId, ctx.geminiToken, prompt);
       else if (provider === 'ollama') result = await testOllama(modelId, prompt);
       else if (OPENAI_COMPAT_PROVIDERS.has(provider)) result = await testOpenAICompat(provider, modelId, ctx.keys[provider], prompt);
       else throw new Error('미지원 프로바이더');

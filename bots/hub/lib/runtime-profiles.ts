@@ -58,7 +58,7 @@ export const PROFILES: Record<string, TeamProfiles> = {
       ],
       "fallback_routes": [
         GROQ_SCOUT_ROUTE,
-        "google-gemini-cli/gemini-2.5-flash"
+        "gemini-oauth/gemini-2.5-flash"
       ]
     },
     "writer": {
@@ -72,7 +72,7 @@ export const PROFILES: Record<string, TeamProfiles> = {
       ],
       "fallback_routes": [
         GROQ_SCOUT_ROUTE,
-        "google-gemini-cli/gemini-2.5-flash"
+        "gemini-oauth/gemini-2.5-flash"
       ]
     },
     "social": {
@@ -467,7 +467,7 @@ export const PROFILES: Record<string, TeamProfiles> = {
       ],
       "fallback_routes": [
         GROQ_SCOUT_ROUTE,
-        "google-gemini-cli/gemini-2.5-flash"
+        "gemini-oauth/gemini-2.5-flash"
       ]
     },
     "intent": {
@@ -493,7 +493,7 @@ export const PROFILES: Record<string, TeamProfiles> = {
         GROQ_SCOUT_ROUTE
       ],
       "fallback_routes": [
-        "google-gemini-cli/gemini-2.5-flash"
+        "gemini-oauth/gemini-2.5-flash"
       ]
     },
     "gemma-insight": {
@@ -520,7 +520,7 @@ export const PROFILES: Record<string, TeamProfiles> = {
       "fallback_routes": [
         GROQ_SCOUT_ROUTE,
         OPENAI_FAST_ROUTE,
-        "google-gemini-cli/gemini-2.5-flash"
+        "gemini-oauth/gemini-2.5-flash"
       ]
     },
     "gemma-insight": {
@@ -574,7 +574,7 @@ export const PROFILES: Record<string, TeamProfiles> = {
       ],
       "fallback_routes": [
         "openai/gpt-4o-mini",
-        "google-gemini-cli/gemini-2.5-flash"
+        "gemini-oauth/gemini-2.5-flash"
       ]
     },
     "assistant": {
@@ -588,7 +588,7 @@ export const PROFILES: Record<string, TeamProfiles> = {
       ],
       "fallback_routes": [
         "openai/gpt-4o-mini",
-        "google-gemini-cli/gemini-2.5-flash"
+        "gemini-oauth/gemini-2.5-flash"
       ]
     },
     "intake": {
@@ -648,7 +648,7 @@ export const PROFILES: Record<string, TeamProfiles> = {
       "fallback_routes": [
         GROQ_SCOUT_ROUTE,
         OPENAI_FAST_ROUTE,
-        "google-gemini-cli/gemini-2.5-flash"
+        "gemini-oauth/gemini-2.5-flash"
       ]
     },
     "editing": {
@@ -702,7 +702,7 @@ export const PROFILES: Record<string, TeamProfiles> = {
         "openai-oauth/gpt-5.4"
       ],
       "fallback_routes": [
-        "google-gemini-cli/gemini-2.5-flash"
+        "gemini-oauth/gemini-2.5-flash"
       ]
     }
   }

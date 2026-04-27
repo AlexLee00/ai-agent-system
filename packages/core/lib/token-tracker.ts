@@ -44,6 +44,7 @@ const PRICING: Record<string, PricingEntry> = {
   'claude-code/sonnet': { input: 3.0, output: 15.0, free: false },
   'claude-code/opus': { input: 15.0, output: 75.0, free: false },
   'meta-llama/llama-4-scout-17b-16e-instruct': { input: 0, output: 0, free: true },
+  'gemini-oauth/gemini-2.5-flash': { input: 0, output: 0, free: true },
   'google-gemini-cli/gemini-2.5-flash': { input: 0, output: 0, free: true },
   'gemini-2.5-flash': { input: 0, output: 0, free: true },
   'groq/llama-3.1-8b-instant': { input: 0, output: 0, free: true },
@@ -77,7 +78,7 @@ export async function trackTokens({
   if (DEV_HUB_READONLY) return;
   try {
     const pricing = PRICING[model] || { input: 0, output: 0, free: false };
-    const isFree = pricing.free || provider === 'groq' || provider === 'google';
+    const isFree = pricing.free || provider === 'groq' || provider === 'google' || provider === 'gemini-oauth';
     const cost = costUsd !== undefined
       ? costUsd
       : ((tokensIn * pricing.input) + (tokensOut * pricing.output)) / 1_000_000;

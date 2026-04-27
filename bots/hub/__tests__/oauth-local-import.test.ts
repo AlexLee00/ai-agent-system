@@ -94,6 +94,44 @@ describe('Hub local OAuth import', () => {
     );
   });
 
+  test('writes refreshed OpenAI Codex OAuth back to auth.json shape', () => {
+    const codexHome = path.join(tempRoot, '.codex');
+    fs.mkdirSync(codexHome, { recursive: true });
+    const authPath = path.join(codexHome, 'auth.json');
+    fs.writeFileSync(authPath, JSON.stringify({
+      auth_mode: 'chatgpt',
+      OPENAI_API_KEY: null,
+      tokens: {
+        access_token: 'old-codex-access-token',
+        refresh_token: 'old-codex-refresh-token',
+        account_id: 'acct_existing',
+        id_token: 'old-id-token',
+      },
+      last_refresh: '2026-04-25T00:00:00.000Z',
+    }), 'utf8');
+
+    const { writeOpenAiCodexLocalCredentials } = require('../lib/oauth/local-credentials.ts');
+    const result = writeOpenAiCodexLocalCredentials({
+      access_token: 'new-codex-access-token',
+      refresh_token: 'new-codex-refresh-token',
+      account_id: 'acct_new',
+      id_token: 'new-id-token',
+    }, {
+      codexHome,
+      allowFileWrite: true,
+    });
+
+    expect(result.ok).toBe(true);
+    const persisted = JSON.parse(fs.readFileSync(authPath, 'utf8'));
+    expect(persisted.auth_mode).toBe('chatgpt');
+    expect(persisted.OPENAI_API_KEY).toBe(null);
+    expect(persisted.tokens.access_token).toBe('new-codex-access-token');
+    expect(persisted.tokens.refresh_token).toBe('new-codex-refresh-token');
+    expect(persisted.tokens.account_id).toBe('acct_new');
+    expect(persisted.tokens.id_token).toBe('new-id-token');
+    expect(new Date(persisted.last_refresh).getTime()).toBeGreaterThan(0);
+  });
+
   test('reads Claude Code OAuth from ~/.claude/.credentials.json-compatible file', () => {
     const homeDir = path.join(tempRoot, 'home');
     const claudeDir = path.join(homeDir, '.claude');

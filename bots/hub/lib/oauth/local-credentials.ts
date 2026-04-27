@@ -107,7 +107,37 @@ function parseCodexAuthRecord(raw, fallbackExpiryMs) {
     refresh_token: refreshToken,
     expires_at: toIsoTime(expiresMs),
     account_id: typeof tokens?.account_id === 'string' ? tokens.account_id : undefined,
+    id_token: typeof tokens?.id_token === 'string' ? tokens.id_token : undefined,
     token_type: 'Bearer',
+  };
+}
+
+function buildCodexAuthRecord(token, previousRaw = {}) {
+  const accessToken = token?.access_token || token?.accessToken;
+  const refreshToken = token?.refresh_token || token?.refreshToken || previousRaw?.tokens?.refresh_token;
+  const accountId = token?.account_id || token?.accountId || previousRaw?.tokens?.account_id;
+  const idToken = token?.id_token || token?.idToken || previousRaw?.tokens?.id_token;
+  if (typeof accessToken !== 'string' || !accessToken) {
+    return { ok: false, error: 'missing_access_token' };
+  }
+  if (typeof refreshToken !== 'string' || !refreshToken) {
+    return { ok: false, error: 'missing_refresh_token' };
+  }
+
+  return {
+    ok: true,
+    auth: {
+      ...previousRaw,
+      auth_mode: previousRaw?.auth_mode || 'chatgpt',
+      tokens: {
+        ...(previousRaw?.tokens || {}),
+        access_token: accessToken,
+        refresh_token: refreshToken,
+        ...(typeof accountId === 'string' && accountId ? { account_id: accountId } : {}),
+        ...(typeof idToken === 'string' && idToken ? { id_token: idToken } : {}),
+      },
+      last_refresh: new Date().toISOString(),
+    },
   };
 }
 
@@ -283,6 +313,46 @@ function readClaudeCodeLocalCredentials(options = {}) {
   };
 }
 
+function writeJsonFileAtomic(filePath, payload, mode = 0o600) {
+  fs.mkdirSync(path.dirname(filePath), { recursive: true });
+  const tmpFile = `${filePath}.${process.pid}.${Date.now()}.tmp`;
+  fs.writeFileSync(tmpFile, `${JSON.stringify(payload, null, 2)}\n`, { encoding: 'utf8', mode });
+  fs.renameSync(tmpFile, filePath);
+  try {
+    fs.chmodSync(filePath, mode);
+  } catch {
+    // Best effort for filesystems that do not support chmod.
+  }
+}
+
+function writeOpenAiCodexLocalCredentials(token, options = {}) {
+  if (options.allowFileWrite !== true) {
+    return { ok: false, error: 'local_file_write_not_allowed' };
+  }
+
+  const codexHome = resolveCodexHomePath(options.codexHome);
+  const authPath = path.join(codexHome, CODEX_CLI_AUTH_FILENAME);
+  const previousRaw = readJsonFile(authPath) || {};
+  const normalized = buildCodexAuthRecord(token, previousRaw);
+  if (!normalized.ok) return normalized;
+
+  try {
+    writeJsonFileAtomic(authPath, normalized.auth, 0o600);
+    return {
+      ok: true,
+      source: 'codex_auth_file',
+      auth_path: authPath,
+      codex_home: codexHome,
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      source: 'codex_auth_file',
+      error: String(error?.message || error).slice(0, 240),
+    };
+  }
+}
+
 function writeClaudeCodeKeychainCredentials(token, options = {}) {
   const platform = options.platform || process.platform;
   if (platform !== 'darwin') {
@@ -351,6 +421,7 @@ module.exports = {
   inspectClaudeCodeLocalSources,
   readOpenAiCodexLocalCredentials,
   readClaudeCodeLocalCredentials,
+  writeOpenAiCodexLocalCredentials,
   writeClaudeCodeKeychainCredentials,
   readLocalCredentialsForProvider,
 };

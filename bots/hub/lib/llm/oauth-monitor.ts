@@ -25,6 +25,17 @@ export interface OpenAIOAuthHealth {
   needs_refresh?: boolean;
 }
 
+export interface GeminiOAuthHealth {
+  healthy: boolean;
+  token_present: boolean;
+  source?: string;
+  error?: string;
+  expires_at?: string | null;
+  expires_in_hours?: number | null;
+  needs_refresh?: boolean;
+  quota_project_configured?: boolean;
+}
+
 const STORE_PATH = path.join(env.PROJECT_ROOT, 'bots', 'hub', 'secrets-store.json');
 
 function tokenExpiry(token: any): { expired: boolean; needsRefresh: boolean; expiresAt: string | null } {
@@ -148,6 +159,50 @@ export async function checkOpenAIOAuthHealth(): Promise<OpenAIOAuthHealth> {
       error: e.message,
     };
   }
+}
+
+export async function checkGeminiOAuthHealth(): Promise<GeminiOAuthHealth> {
+  const record = getProviderRecord('gemini-oauth');
+  const storedToken = record?.token || null;
+  if (!storedToken?.access_token) {
+    return {
+      healthy: false,
+      token_present: false,
+      needs_refresh: false,
+      quota_project_configured: false,
+      error: 'token_missing',
+    };
+  }
+
+  const expiry = tokenExpiry(storedToken);
+  const expiresInHours = expiry.expiresAt
+    ? (new Date(expiry.expiresAt).getTime() - Date.now()) / (60 * 60 * 1000)
+    : null;
+  const refreshWindowHours = Number(process.env.HUB_GEMINI_OAUTH_WARN_HOURS || 0.25);
+  const needsRefresh = Number.isFinite(Number(expiresInHours))
+    && Number(expiresInHours) > 0
+    && Number(expiresInHours) <= (Number.isFinite(refreshWindowHours) && refreshWindowHours > 0 ? refreshWindowHours : 0.25);
+  const quotaProjectConfigured = Boolean(
+    process.env.GEMINI_OAUTH_PROJECT_ID
+      || process.env.GOOGLE_CLOUD_QUOTA_PROJECT
+      || process.env.GOOGLE_CLOUD_PROJECT
+      || record?.metadata?.quota_project_id
+      || record?.metadata?.project_id
+      || storedToken?.quota_project_id
+      || storedToken?.project_id,
+  );
+
+  return {
+    healthy: !expiry.expired && quotaProjectConfigured,
+    token_present: true,
+    source: record?.metadata?.source || 'hub_oauth_token_store',
+    expires_at: expiry.expiresAt,
+    expires_in_hours: expiresInHours,
+    needs_refresh: needsRefresh,
+    quota_project_configured: quotaProjectConfigured,
+    ...(expiry.expired ? { error: 'token_expired' } : {}),
+    ...(!quotaProjectConfigured ? { error: 'missing_quota_project' } : {}),
+  };
 }
 
 export async function checkGroqAccounts(): Promise<{ available_accounts: number; total_accounts: number }> {

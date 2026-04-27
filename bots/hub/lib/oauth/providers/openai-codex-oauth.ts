@@ -55,12 +55,49 @@ function getOpenAiOAuthBaseUrl() {
   return String(process.env.OPENAI_OAUTH_BASE_URL || process.env.OPENAI_BASE_URL || 'https://api.openai.com/v1').replace(/\/+$/, '');
 }
 
+function getOpenAiPublicApiToken() {
+  const candidates = [
+    ['OPENAI_OAUTH_PUBLIC_API_TOKEN', process.env.OPENAI_OAUTH_PUBLIC_API_TOKEN],
+    ['OPENAI_PUBLIC_API_TOKEN', process.env.OPENAI_PUBLIC_API_TOKEN],
+  ];
+  for (const [source, value] of candidates) {
+    const token = String(value || '').trim();
+    if (token) return { token, source };
+  }
+  return null;
+}
+
 function getOpenAiCodexBackendBaseUrl() {
   return String(process.env.OPENAI_CODEX_BACKEND_BASE_URL || process.env.OPENAI_CODEX_OAUTH_BACKEND_BASE_URL || 'https://chatgpt.com/backend-api').replace(/\/+$/, '');
 }
 
 function isPublicOpenAiApiCanaryMode(mode) {
   return ['api', 'public_api', 'responses', 'chat', 'chat_completions', 'chat-completions'].includes(mode);
+}
+
+function requirePublicOpenAiApiCanary() {
+  return ['1', 'true', 'yes', 'y', 'on'].includes(
+    String(process.env.OPENAI_CODEX_OAUTH_REQUIRE_PUBLIC_API || '').trim().toLowerCase(),
+  );
+}
+
+function classifyPublicApiPermissionIssue(message) {
+  const text = String(message || '').trim();
+  if (!text) return null;
+  if (/api\.responses\.write/i.test(text)) {
+    return {
+      kind: 'missing_scope',
+      required_scope: 'api.responses.write',
+      message: text,
+    };
+  }
+  if (/insufficient permissions|missing scopes?|scope/i.test(text)) {
+    return {
+      kind: 'permission_or_scope_missing',
+      message: text,
+    };
+  }
+  return null;
 }
 
 function summarizeWhamUsagePayload(payload) {
@@ -124,7 +161,8 @@ async function runOpenAiCodexBackendCanary(tokenRecord, source) {
   }
 }
 
-async function runOpenAiApiCanary(token, source) {
+async function runOpenAiApiCanary() {
+  const publicToken = getOpenAiPublicApiToken();
   const mode = getOpenAiOAuthCanaryMode();
   const model = getOpenAiOAuthCanaryModel();
   const baseUrl = getOpenAiOAuthBaseUrl();
@@ -132,6 +170,23 @@ async function runOpenAiApiCanary(token, source) {
     ? 'chat/completions'
     : 'responses';
   const url = `${baseUrl}/${endpoint}`;
+
+  if (!publicToken) {
+    return {
+      ok: false,
+      skipped: true,
+      error: 'public_api_token_missing',
+      details: {
+        enabled: false,
+        source: 'missing',
+        canary_mode: 'public_api',
+        endpoint,
+        model,
+        reason: 'OPENAI_OAUTH_PUBLIC_API_TOKEN_not_configured',
+      },
+    };
+  }
+
   const body = endpoint === 'chat/completions'
     ? {
       model,
@@ -148,7 +203,7 @@ async function runOpenAiApiCanary(token, source) {
     const response = await fetch(url, {
       method: 'POST',
       headers: {
-        Authorization: `Bearer ${token}`,
+        Authorization: `Bearer ${publicToken.token}`,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify(body),
@@ -156,15 +211,18 @@ async function runOpenAiApiCanary(token, source) {
     });
     const payload = await response.json().catch(() => ({}));
     const message = String(payload?.error?.message || payload?.message || '').slice(0, 400);
+    const permissionIssue = classifyPublicApiPermissionIssue(message);
     return {
       ok: response.ok,
       ...(response.ok ? {} : { error: 'api_canary_failed' }),
       details: {
         enabled: true,
-        source,
+        source: publicToken.source,
+        canary_mode: 'public_api',
         endpoint,
         model,
         status: response.status,
+        ...(permissionIssue ? { permission_issue: permissionIssue } : {}),
         ...(message ? { message } : {}),
       },
     };
@@ -174,7 +232,8 @@ async function runOpenAiApiCanary(token, source) {
       error: 'api_canary_error',
       details: {
         enabled: true,
-        source,
+        source: publicToken.source,
+        canary_mode: 'public_api',
         endpoint,
         model,
         message: String(error?.message || error).slice(0, 400),
@@ -194,7 +253,25 @@ async function runOpenAiCodexOauthCanary() {
   }
   if (status.has_token) {
     if (isPublicOpenAiApiCanaryMode(canaryMode)) {
-      return runOpenAiApiCanary(status.token?.access_token, status.metadata?.source || 'hub_token_store');
+      const publicApi = await runOpenAiApiCanary();
+      if (publicApi.ok || requirePublicOpenAiApiCanary()) return publicApi;
+
+      const backend = await runOpenAiCodexBackendCanary(status.token, status.metadata?.source || 'hub_token_store');
+      return {
+        ...backend,
+        degraded: backend.ok && !publicApi.skipped,
+        ...(backend.ok ? {} : { error: backend.error || 'api_canary_failed_backend_fallback_failed' }),
+        details: {
+          ...(backend.details || {}),
+          canary_mode: 'chatgpt_backend_fallback',
+          public_api: {
+            ok: false,
+            skipped: Boolean(publicApi.skipped),
+            error: publicApi.error || 'api_canary_failed',
+            details: publicApi.details || {},
+          },
+        },
+      };
     }
     return runOpenAiCodexBackendCanary(status.token, status.metadata?.source || 'hub_token_store');
   }
@@ -202,7 +279,25 @@ async function runOpenAiCodexOauthCanary() {
   const local = readOpenAiCodexLocalCredentials({ allowKeychainPrompt: false });
   if (local.ok) {
     if (isPublicOpenAiApiCanaryMode(canaryMode)) {
-      return runOpenAiApiCanary(local.token?.access_token, local.source);
+      const publicApi = await runOpenAiApiCanary();
+      if (publicApi.ok || requirePublicOpenAiApiCanary()) return publicApi;
+
+      const backend = await runOpenAiCodexBackendCanary(local.token, local.source);
+      return {
+        ...backend,
+        degraded: backend.ok && !publicApi.skipped,
+        ...(backend.ok ? {} : { error: backend.error || 'api_canary_failed_backend_fallback_failed' }),
+        details: {
+          ...(backend.details || {}),
+          canary_mode: 'chatgpt_backend_fallback',
+          public_api: {
+            ok: false,
+            skipped: Boolean(publicApi.skipped),
+            error: publicApi.error || 'api_canary_failed',
+            details: publicApi.details || {},
+          },
+        },
+      };
     }
     return runOpenAiCodexBackendCanary(local.token, local.source);
   }

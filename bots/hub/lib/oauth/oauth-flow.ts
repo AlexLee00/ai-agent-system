@@ -7,6 +7,9 @@ const DEFAULT_CLAUDE_CODE_AUTH_URL = 'https://claude.com/cai/oauth/authorize';
 const DEFAULT_CLAUDE_CODE_TOKEN_URL = 'https://platform.claude.com/v1/oauth/token';
 const DEFAULT_CLAUDE_CODE_CLIENT_ID = '9d1c250a-e61b-44d9-88ed-5944d1962f5e';
 const DEFAULT_CLAUDE_CODE_SCOPE = 'user:profile user:inference user:sessions:claude_code user:mcp_servers user:file_upload';
+const DEFAULT_GEMINI_AUTH_URL = 'https://accounts.google.com/o/oauth2/v2/auth';
+const DEFAULT_GEMINI_TOKEN_URL = 'https://oauth2.googleapis.com/token';
+const DEFAULT_GEMINI_SCOPE = 'https://www.googleapis.com/auth/cloud-platform https://www.googleapis.com/auth/generative-language.retriever';
 
 const PROVIDER_FLOW_CONFIG = {
   'openai-codex-oauth': {
@@ -39,6 +42,21 @@ const PROVIDER_FLOW_CONFIG = {
     tokenBodyFormat: 'json',
     enabledDefault: true,
     publicProviderName: 'claude-code',
+  },
+  'gemini-oauth': {
+    enabledEnv: ['HUB_ENABLE_GEMINI_OAUTH'],
+    authUrlEnv: ['HUB_GEMINI_OAUTH_AUTH_URL', 'GEMINI_OAUTH_AUTH_URL'],
+    tokenUrlEnv: ['HUB_GEMINI_OAUTH_TOKEN_URL', 'GEMINI_OAUTH_TOKEN_URL'],
+    clientIdEnv: ['HUB_GEMINI_OAUTH_CLIENT_ID', 'GEMINI_OAUTH_CLIENT_ID'],
+    clientSecretEnv: ['HUB_GEMINI_OAUTH_CLIENT_SECRET', 'GEMINI_OAUTH_CLIENT_SECRET'],
+    redirectUriEnv: ['HUB_GEMINI_OAUTH_REDIRECT_URI', 'GEMINI_OAUTH_REDIRECT_URI'],
+    scopeEnv: ['HUB_GEMINI_OAUTH_SCOPES', 'GEMINI_OAUTH_SCOPES'],
+    defaultAuthUrl: DEFAULT_GEMINI_AUTH_URL,
+    defaultTokenUrl: DEFAULT_GEMINI_TOKEN_URL,
+    defaultClientId: '',
+    defaultScope: DEFAULT_GEMINI_SCOPE,
+    tokenBodyFormat: 'form',
+    publicProviderName: 'gemini',
   },
 };
 
@@ -80,6 +98,7 @@ function requestBaseUrl(req) {
 function providerPathSegment(provider) {
   if (provider === 'openai-codex-oauth') return 'openai-codex';
   if (provider === 'claude-code-cli') return 'claude-code';
+  if (provider === 'gemini-oauth') return 'gemini';
   return provider;
 }
 

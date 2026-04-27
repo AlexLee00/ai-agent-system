@@ -9,6 +9,7 @@ const ENV_TS = require.resolve('../../../packages/core/lib/env.ts');
 const originalEnv: Record<string, string | undefined> = {
   PROJECT_ROOT: process.env.PROJECT_ROOT,
   TELEGRAM_BOT_TOKEN: process.env.TELEGRAM_BOT_TOKEN,
+  TELEGRAM_GROUP_ID: process.env.TELEGRAM_GROUP_ID,
   TELEGRAM_CHAT_ID: process.env.TELEGRAM_CHAT_ID,
   TELEGRAM_ALERTS_DISABLED: process.env.TELEGRAM_ALERTS_DISABLED,
   TELEGRAM_ALLOW_ROOT_FALLBACK: process.env.TELEGRAM_ALLOW_ROOT_FALLBACK,
@@ -40,6 +41,7 @@ async function main() {
   process.env.PROJECT_ROOT = tempRoot;
   process.env.HUB_RUNTIME_DIR = runtimeDir;
   delete process.env.TELEGRAM_BOT_TOKEN;
+  delete process.env.TELEGRAM_GROUP_ID;
   delete process.env.TELEGRAM_CHAT_ID;
   delete process.env.TELEGRAM_ALLOW_ROOT_FALLBACK;
   process.env.TELEGRAM_ALERTS_DISABLED = 'false';

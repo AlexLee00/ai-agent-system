@@ -321,6 +321,27 @@ function _readOpenAIOAuthTokenStore(): { token: string; expiresAt: number | null
   return null;
 }
 
+function _readGeminiOAuthTokenStore(): { token: string; expiresAt: number | null; projectId?: string } | null {
+  try {
+    const store = JSON.parse(fs.readFileSync(OAUTH_PROVIDER_STORE_PATH, 'utf8')) as OAuthProviderStore;
+    const entry = store?.providers?.['gemini-oauth'] || {};
+    const usable = _extractUsableOpenAIOAuthToken(entry?.token || null);
+    if (usable) {
+      const projectId = String(
+        entry?.metadata?.quota_project_id
+          || entry?.metadata?.project_id
+          || entry?.token?.quota_project_id
+          || entry?.token?.project_id
+          || '',
+      ).trim();
+      return { token: usable.token, expiresAt: usable.expiresAt, ...(projectId ? { projectId } : {}) };
+    }
+  } catch {
+    // token-store 미생성/미동기화 상태면 Gemini OAuth는 사용하지 않는다.
+  }
+  return null;
+}
+
 /** @param {{ model: string, maxTokens: number, temperature?: number, systemPrompt: string, userPrompt: string, baseURL?: string|null }} input */
 async function _callOpenAI({
   model,
@@ -404,6 +425,23 @@ async function _getOAuthCredential(): Promise<{ token: string; accountId: string
 
 function _getOpenAIOAuthBaseUrl(): string {
   return String(process.env.OPENAI_OAUTH_BASE_URL || process.env.OPENAI_BASE_URL || 'https://api.openai.com/v1').replace(/\/+$/, '');
+}
+
+function _getOpenAIPublicApiToken(): string | null {
+  return String(process.env.OPENAI_OAUTH_PUBLIC_API_TOKEN || process.env.OPENAI_PUBLIC_API_TOKEN || '').trim() || null;
+}
+
+function _getGeminiOAuthProjectId(): string {
+  return String(
+    process.env.GEMINI_OAUTH_PROJECT_ID
+      || process.env.GOOGLE_CLOUD_QUOTA_PROJECT
+      || process.env.GOOGLE_CLOUD_PROJECT
+      || '',
+  ).trim();
+}
+
+function _getGeminiOAuthBaseUrl(): string {
+  return String(process.env.GEMINI_OAUTH_BASE_URL || 'https://generativelanguage.googleapis.com').replace(/\/+$/, '');
 }
 
 function _getOpenAICodexBackendBaseUrl(): string {
@@ -792,27 +830,30 @@ async function _callOpenAIOAuthChat({
 
 async function _callOpenAIOAuth({ model, maxTokens, temperature = 0.1, systemPrompt, userPrompt, timeoutMs = 30000 }: ProviderCallOptions) {
   const resolvedTimeoutMs = timeoutMs ?? 30000;
+  const mode = String(process.env.OPENAI_OAUTH_ENDPOINT_MODE || process.env.OPENAI_OAUTH_API_MODE || 'codex_backend').trim().toLowerCase();
+  const usesCodexBackend = ['codex_backend', 'chatgpt_backend', 'openai-codex', 'openai_codex'].includes(mode);
+
+  if (!usesCodexBackend) {
+    const publicApiToken = _getOpenAIPublicApiToken();
+    if (publicApiToken && (mode === 'chat' || mode === 'chat.completions')) {
+      return _callOpenAIOAuthChat({ token: publicApiToken, model, maxTokens, temperature, systemPrompt, userPrompt, timeoutMs: resolvedTimeoutMs });
+    }
+    if (publicApiToken) {
+      try {
+        return await _callOpenAIOAuthResponses({ token: publicApiToken, model, maxTokens, temperature, systemPrompt, userPrompt, timeoutMs: resolvedTimeoutMs });
+      } catch (error) {
+        const err = error as Error & { status?: number; responseBody?: any };
+        if (_shouldFallbackResponsesToChat(Number(err.status || 0), err.responseBody)) {
+          return _callOpenAIOAuthChat({ token: publicApiToken, model, maxTokens, temperature, systemPrompt, userPrompt, timeoutMs: resolvedTimeoutMs });
+        }
+        throw error;
+      }
+    }
+  }
+
   const credential = await _getOAuthCredential();
   if (!credential?.token) throw new Error('OpenAI OAuth 토큰 없음');
-  const token = credential.token;
-
-  const mode = String(process.env.OPENAI_OAUTH_ENDPOINT_MODE || process.env.OPENAI_OAUTH_API_MODE || 'codex_backend').trim().toLowerCase();
-  if (['codex_backend', 'chatgpt_backend', 'openai-codex', 'openai_codex'].includes(mode)) {
-    return _callOpenAICodexBackendResponses({ token, accountId: credential.accountId, model, temperature, systemPrompt, userPrompt, timeoutMs: resolvedTimeoutMs });
-  }
-  if (mode === 'chat' || mode === 'chat.completions') {
-    return _callOpenAIOAuthChat({ token, model, maxTokens, temperature, systemPrompt, userPrompt, timeoutMs: resolvedTimeoutMs });
-  }
-
-  try {
-    return await _callOpenAIOAuthResponses({ token, model, maxTokens, temperature, systemPrompt, userPrompt, timeoutMs: resolvedTimeoutMs });
-  } catch (error) {
-    const err = error as Error & { status?: number; responseBody?: any };
-    if (_shouldFallbackResponsesToChat(Number(err.status || 0), err.responseBody)) {
-      return _callOpenAIOAuthChat({ token, model, maxTokens, temperature, systemPrompt, userPrompt, timeoutMs: resolvedTimeoutMs });
-    }
-    throw error;
-  }
+  return _callOpenAICodexBackendResponses({ token: credential.token, accountId: credential.accountId, model, temperature, systemPrompt, userPrompt, timeoutMs: resolvedTimeoutMs });
 }
 
 async function _callClaudeCode({ model, maxTokens, systemPrompt, userPrompt, timeoutMs = 45000, runtimeProfile = null }: ProviderCallOptions) {
@@ -1130,6 +1171,69 @@ async function _callGemini({ model, maxTokens, temperature = 0.1, systemPrompt, 
   return gemini.generateContent(userPrompt);
 }
 
+function _extractGeminiOAuthText(payload: any): string {
+  const pieces: string[] = [];
+  for (const candidate of Array.isArray(payload?.candidates) ? payload.candidates : []) {
+    for (const part of Array.isArray(candidate?.content?.parts) ? candidate.content.parts : []) {
+      if (typeof part?.text === 'string' && part.text.trim()) pieces.push(part.text.trim());
+    }
+  }
+  return pieces.join('\n').trim();
+}
+
+async function _callGeminiOAuth({ model, maxTokens, temperature = 0.1, systemPrompt, userPrompt, timeoutMs = 30000 }: ProviderCallOptions) {
+  const credential = _readGeminiOAuthTokenStore();
+  if (!credential?.token) throw new Error('Gemini OAuth 토큰 없음');
+
+  const projectId = _getGeminiOAuthProjectId() || credential.projectId || '';
+  if (!projectId) throw new Error('Gemini OAuth quota project 없음');
+
+  const resolvedModel = String(model || 'gemini-2.5-flash')
+    .replace(/^gemini-oauth\//, '')
+    .replace(/^google-gemini-cli\//, '');
+  const baseUrl = _getGeminiOAuthBaseUrl();
+  const url = `${baseUrl}/v1beta/models/${encodeURIComponent(resolvedModel)}:generateContent`;
+  const { signal, cleanup } = _createTimeoutSignal(timeoutMs ?? 30000);
+
+  try {
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${credential.token}`,
+        'Content-Type': 'application/json',
+        Accept: 'application/json',
+        'x-goog-user-project': projectId,
+      },
+      body: JSON.stringify({
+        ...(systemPrompt ? { systemInstruction: { parts: [{ text: systemPrompt }] } } : {}),
+        contents: [{ role: 'user', parts: [{ text: userPrompt || '' }] }],
+        generationConfig: {
+          maxOutputTokens: maxTokens,
+          temperature,
+        },
+      }),
+      signal,
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      const message = String(payload?.error?.message || payload?.message || `HTTP ${response.status}`).slice(0, 400);
+      throw new Error(`Gemini OAuth 호출 실패: ${message}`);
+    }
+    const text = _extractGeminiOAuthText(payload);
+    if (!text) throw new Error('Gemini OAuth 빈 응답');
+    return {
+      choices: [{ message: { content: text } }],
+      usage: null,
+      _geminiOAuth: {
+        provider: 'gemini-oauth',
+        model: resolvedModel,
+      },
+    };
+  } finally {
+    cleanup();
+  }
+}
+
 // ── provider 디스패처 ─────────────────────────────────────────────────
 
 async function _callProvider(
@@ -1191,6 +1295,16 @@ async function _callProvider(
     case 'gemini': {
       const resp = await _callGemini(normalizedOpts);
       return { raw: resp, text: _extractText(resp, 'gemini'), usage: null, provider, model };
+    }
+    case 'gemini-oauth': {
+      const resp = await _callGeminiOAuth(normalizedOpts);
+      return {
+        raw: resp,
+        text: _extractText(resp, 'openai'),
+        usage: resp.usage,
+        provider: resp?._geminiOAuth?.provider || provider,
+        model: resp?._geminiOAuth?.model || model,
+      };
     }
     case 'local': {
       const localClient = require('./local-llm-client');

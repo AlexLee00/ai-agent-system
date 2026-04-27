@@ -23,10 +23,22 @@
     <string>true</string>
     <key>HUB_OAUTH_MONITOR_SEND_ALARM</key>
     <string>true</string>
+    <key>HUB_OAUTH_MONITOR_SYNC_LOCAL_CODEX</key>
+    <string>true</string>
     <key>HUB_CLAUDE_OAUTH_WARN_HOURS</key>
     <string>4</string>
     <key>HUB_CLAUDE_OAUTH_CRITICAL_HOURS</key>
     <string>1</string>
+    <key>HUB_OPENAI_OAUTH_WARN_HOURS</key>
+    <string>24</string>
+    <key>HUB_OPENAI_OAUTH_CRITICAL_HOURS</key>
+    <string>4</string>
+    <key>HUB_OAUTH_MONITOR_REQUIRE_GEMINI</key>
+    <string>true</string>
+    <key>HUB_GEMINI_OAUTH_WARN_HOURS</key>
+    <string>0.25</string>
+    <key>HUB_GEMINI_OAUTH_CRITICAL_HOURS</key>
+    <string>0.05</string>
   </dict>
   <key>StandardOutPath</key>
   <string>/tmp/hub-llm-oauth-monitor.log</string>

@@ -1,15 +1,15 @@
 {
-  "generated_at": "2026-04-26T14:16:51.552Z",
+  "generated_at": "2026-04-27T01:54:24.024Z",
   "scan_patterns": [
     "hub-alarm-client",
     "openclaw-client",
     "HUB_ALARM_",
     "OPENCLAW_"
   ],
-  "total_matches": 144,
-  "unique_files": 93,
+  "total_matches": 145,
+  "unique_files": 94,
   "categories": {
-    "hub_alarm_native": 144,
+    "hub_alarm_native": 145,
     "legacy_gateway_compat": 0
   },
   "files": {
@@ -771,6 +771,14 @@
         "line": 168,
         "category": "hub_alarm_native",
         "match": "else process.env.HUB_ALARM_LEGACY_WEBHOOK_FALLBACK = originalHubLegacyFallback;"
+      }
+    ],
+    "bots/hub/scripts/run-oauth-monitor.ts": [
+      {
+        "file": "bots/hub/scripts/run-oauth-monitor.ts",
+        "line": 18,
+        "category": "hub_alarm_native",
+        "match": "const { postAlarm } = require('../../../packages/core/lib/hub-alarm-client.ts');"
       }
     ],
     "bots/orchestrator/lib/steward/daily-summary.ts": [

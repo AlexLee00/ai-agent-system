@@ -87,7 +87,7 @@ export async function generateGemmaPilotText({
       } finally {
         clearTimeout(timer);
       }
-    } else if (runtime.provider === 'groq' || runtime.provider === 'openai-oauth' || runtime.provider === 'openai' || runtime.provider === 'claude-code' || runtime.provider === 'gemini') {
+    } else if (runtime.provider === 'groq' || runtime.provider === 'openai-oauth' || runtime.provider === 'openai' || runtime.provider === 'claude-code' || runtime.provider === 'gemini-oauth' || runtime.provider === 'gemini') {
       const result = await callWithFallback({
         chain: [{
           provider: runtime.provider,

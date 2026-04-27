@@ -204,6 +204,7 @@ async function _callRoute(route, req, timeoutMs, chainEntry = {}) {
   if (
     normalizedRoute.startsWith('openai-oauth/')
     || normalizedRoute.startsWith('openai/')
+    || normalizedRoute.startsWith('gemini-oauth/')
     || normalizedRoute.startsWith('google-gemini-cli/')
     || normalizedRoute.startsWith('gemini/')
   ) {
@@ -224,6 +225,7 @@ function _chainEntryToRoute(entry) {
   if (provider === 'groq') return model.startsWith('groq/') ? model : `groq/${model}`;
   if (provider === 'openai-oauth') return model.startsWith('openai-oauth/') ? model : `openai-oauth/${model}`;
   if (provider === 'openai') return model.startsWith('openai/') ? model : `openai/${model}`;
+  if (provider === 'gemini-oauth') return model.startsWith('gemini-oauth/') ? model : `gemini-oauth/${model}`;
   if (provider === 'gemini') return model.startsWith('google-gemini-cli/') || model.startsWith('gemini/') ? model : `gemini/${model}`;
   return model.includes('/') ? model : `${provider}/${model}`;
 }
@@ -234,6 +236,7 @@ function _isProviderSupported(route) {
     || route.startsWith('local/')
     || route.startsWith('openai-oauth/')
     || route.startsWith('openai/')
+    || route.startsWith('gemini-oauth/')
     || route.startsWith('google-gemini-cli/')
     || route.startsWith('gemini/');
 }
@@ -244,6 +247,7 @@ function _routeToProvider(route) {
   if (normalizedRoute.startsWith('groq/')) return 'groq';
   if (normalizedRoute.startsWith('openai-oauth/')) return 'openai-oauth';
   if (normalizedRoute.startsWith('openai/')) return 'openai';
+  if (normalizedRoute.startsWith('gemini-oauth/')) return 'gemini-oauth';
   if (normalizedRoute.startsWith('google-gemini-cli/') || normalizedRoute.startsWith('gemini/')) return 'gemini';
   return route;
 }
@@ -266,7 +270,11 @@ function _normalizeRoute(route, abstractModel = 'anthropic_sonnet') {
 
 async function _callViaCoreFallback(route, req, timeoutMs, chainEntry = {}) {
   const provider = _routeToProvider(route);
-  const model = route.startsWith('gemini/') ? route.slice('gemini/'.length) : route;
+  const model = route.startsWith('gemini-oauth/')
+    ? route.slice('gemini-oauth/'.length)
+    : route.startsWith('gemini/')
+      ? route.slice('gemini/'.length)
+      : route;
   const started = Date.now();
 
   try {

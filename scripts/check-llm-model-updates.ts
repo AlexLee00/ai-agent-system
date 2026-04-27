@@ -10,6 +10,7 @@ const path = require('path');
 const fs = require('fs');
 const PROJECT_ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname), '..');
 const hub = require(path.join(PROJECT_ROOT, 'packages/core/lib/hub-client'));
+const { getAnthropicKey, publicProviderEnabled } = require(path.join(PROJECT_ROOT, 'packages/core/lib/llm-keys'));
 
 const MODELS_PATH = path.join(PROJECT_ROOT, 'packages/core/lib/llm-models.json');
 
@@ -19,9 +20,14 @@ async function main() {
   const config = JSON.parse(fs.readFileSync(MODELS_PATH, 'utf-8'));
   const currentModels = config.models;
 
-  const apiKey = process.env.ANTHROPIC_API_KEY;
+  if (!publicProviderEnabled('anthropic')) {
+    console.log('[llm-model-check] Anthropic public API 비활성 — 스킵');
+    process.exit(0);
+  }
+
+  const apiKey = getAnthropicKey();
   if (!apiKey) {
-    console.log('[llm-model-check] ANTHROPIC_API_KEY 없음 — 스킵');
+    console.log('[llm-model-check] Anthropic public API 키 없음 — 스킵');
     process.exit(0);
   }
 

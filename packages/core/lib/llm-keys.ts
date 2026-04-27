@@ -91,27 +91,47 @@ function readNumber(value: string | number | undefined, fallback: string): numbe
   return parseFloat(String(value ?? fallback));
 }
 
+function envFlag(name: string): boolean {
+  return ['1', 'true', 'yes', 'y', 'on'].includes(String(process.env[name] || '').trim().toLowerCase());
+}
+
+export function publicProviderEnabled(provider: 'anthropic' | 'openai' | 'gemini'): boolean {
+  if (provider === 'anthropic') {
+    return envFlag('HUB_ENABLE_CLAUDE_PUBLIC_API') || envFlag('HUB_ENABLE_ANTHROPIC_PUBLIC_API');
+  }
+  if (provider === 'gemini') {
+    return envFlag('HUB_ENABLE_GEMINI_PUBLIC_API') || envFlag('HUB_ENABLE_GOOGLE_PUBLIC_API');
+  }
+  return envFlag('HUB_ENABLE_OPENAI_PUBLIC_API');
+}
+
 export function getAnthropicKey(): string | null {
+  if (!publicProviderEnabled('anthropic')) return null;
   return loadConfig().anthropic?.api_key || process.env.ANTHROPIC_API_KEY || null;
 }
 
 export function getAnthropicAdminKey(): string | null {
+  if (!publicProviderEnabled('anthropic')) return null;
   return loadConfig().anthropic?.admin_api_key || process.env.ANTHROPIC_ADMIN_API_KEY || null;
 }
 
 export function getOpenAIKey(): string | null {
+  if (!publicProviderEnabled('openai')) return null;
   return loadConfig().openai?.api_key || process.env.OPENAI_API_KEY || null;
 }
 
 export function getOpenAIAdminKey(): string | null {
+  if (!publicProviderEnabled('openai')) return null;
   return loadConfig().openai?.admin_api_key || process.env.OPENAI_ADMIN_API_KEY || null;
 }
 
 export function getGeminiKey(): string | null {
+  if (!publicProviderEnabled('gemini')) return null;
   return loadConfig().gemini?.api_key || process.env.GEMINI_API_KEY || null;
 }
 
 export function getGeminiImageKey(): string | null {
+  if (!publicProviderEnabled('gemini')) return null;
   return loadConfig().gemini?.image_api_key || process.env.GEMINI_IMAGE_KEY || getGeminiKey();
 }
 

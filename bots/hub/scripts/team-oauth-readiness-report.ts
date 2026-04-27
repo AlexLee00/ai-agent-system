@@ -4,6 +4,7 @@
 import { checkTokenHealth, checkOpenAIOAuthHealth, checkGroqAccounts } from '../lib/llm/oauth-monitor';
 
 const { PROFILES } = require('../lib/runtime-profiles.ts');
+const { getGeminiOauthStatus } = require('../lib/oauth/providers/gemini-oauth.ts');
 
 const UNSUITABLE_AGENT_RE = /(image|gemma|stt|whisper|local)/i;
 
@@ -11,6 +12,7 @@ function routeToProvider(route: string) {
   const normalized = String(route || '').trim();
   if (normalized.startsWith('claude-code/')) return 'claude-code-oauth';
   if (normalized.startsWith('openai-oauth/')) return 'openai-oauth';
+  if (normalized.startsWith('gemini-oauth/')) return 'gemini-oauth';
   if (normalized.startsWith('groq/')) return 'groq';
   if (normalized.startsWith('openai/')) return 'openai';
   if (normalized.startsWith('google-gemini-cli/') || normalized.startsWith('gemini/')) return 'gemini';
@@ -32,7 +34,7 @@ function firstSupportedRoute(profile: any) {
 function firstOauthRoute(profile: any) {
   return allRoutes(profile).find((route) => {
     const provider = routeToProvider(route);
-    return provider === 'openai-oauth' || provider === 'claude-code-oauth';
+    return provider === 'openai-oauth' || provider === 'claude-code-oauth' || provider === 'gemini-oauth';
   });
 }
 
@@ -43,7 +45,7 @@ function summarizeTeamCoverage() {
         .filter(([agent, profile]) => !UNSUITABLE_AGENT_RE.test(agent) && firstSupportedRoute(profile));
       const oauthFirst = entries.find(([, profile]) => {
         const provider = routeToProvider(firstSupportedRoute(profile));
-        return provider === 'openai-oauth' || provider === 'claude-code-oauth';
+        return provider === 'openai-oauth' || provider === 'claude-code-oauth' || provider === 'gemini-oauth';
       });
       const defaultEntry = entries.find(([agent]) => agent === 'default');
       const selected = oauthFirst || defaultEntry || entries[0];
@@ -70,14 +72,17 @@ function routeFamily(route: string) {
 }
 
 async function main() {
-  const [claude, openai, groq] = await Promise.all([
+  const [claude, openai, gemini, groq] = await Promise.all([
     checkTokenHealth(),
     checkOpenAIOAuthHealth(),
+    getGeminiOauthStatus(),
     checkGroqAccounts(),
   ]);
   const teamCoverage = summarizeTeamCoverage();
   const teamsWithoutOauthRoute = teamCoverage.filter((item) => !item.oauth_route_available);
-  const ok = Boolean(claude.healthy && openai.healthy && teamsWithoutOauthRoute.length === 0);
+  const geminiRequired = teamCoverage.some((item) => item.selected_provider === 'gemini-oauth' || item.oauth_route_family?.startsWith('gemini-oauth/'));
+  const geminiReady = Boolean(gemini?.has_token && !gemini?.expired && gemini?.quota_project_configured);
+  const ok = Boolean(claude.healthy && openai.healthy && (!geminiRequired || geminiReady) && teamsWithoutOauthRoute.length === 0);
 
   console.log(JSON.stringify({
     ok,
@@ -99,6 +104,14 @@ async function main() {
         source: openai.source || null,
         model: openai.model || null,
         error: openai.error || null,
+      },
+      gemini_oauth: {
+        enabled: Boolean(gemini?.enabled),
+        required_by_team: geminiRequired,
+        healthy: geminiRequired ? geminiReady : Boolean(gemini?.has_token && !gemini?.expired && gemini?.quota_project_configured),
+        token_present: Boolean(gemini?.has_token),
+        expired: Boolean(gemini?.expired),
+        quota_project_configured: Boolean(gemini?.quota_project_configured),
       },
       groq_pool: {
         available_accounts: Number(groq.available_accounts || 0),

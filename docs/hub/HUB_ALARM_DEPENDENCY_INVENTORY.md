@@ -2,10 +2,10 @@
 
 This inventory tracks the Hub alarm migration surface. `hub_alarm_native` entries are the desired path; `legacy_gateway_compat` entries are compatibility shims or remaining migration targets.
 
-- generated_at: 2026-04-26T14:16:51.552Z
-- total_matches: 144
-- unique_files: 93
-- hub_alarm_native: 144
+- generated_at: 2026-04-27T01:54:24.024Z
+- total_matches: 145
+- unique_files: 94
+- hub_alarm_native: 145
 - legacy_gateway_compat: 0
 
 ## Files
@@ -247,6 +247,9 @@ This inventory tracks the Hub alarm migration surface. `hub_alarm_native` entrie
 - L166 [hub_alarm_native]: `else process.env.HUB_ALARM_SKIP_DIRECT = originalHubSkipDirect;`
 - L167 [hub_alarm_native]: `if (originalHubLegacyFallback == null) delete process.env.HUB_ALARM_LEGACY_WEBHOOK_FALLBACK;`
 - L168 [hub_alarm_native]: `else process.env.HUB_ALARM_LEGACY_WEBHOOK_FALLBACK = originalHubLegacyFallback;`
+
+### `bots/hub/scripts/run-oauth-monitor.ts`
+- L18 [hub_alarm_native]: `const { postAlarm } = require('../../../packages/core/lib/hub-alarm-client.ts');`
 
 ### `bots/orchestrator/lib/steward/daily-summary.ts`
 - L4 [hub_alarm_native]: `const { postAlarm } = require('../../../../packages/core/lib/hub-alarm-client');`

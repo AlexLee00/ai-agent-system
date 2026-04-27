@@ -66,6 +66,7 @@ const PRICING: Record<string, { input: number; output: number }> = {
   'claude-opus-4-6': { input: 15.0, output: 75.0 },
   'claude-code/sonnet': { input: 3.0, output: 15.0 },
   'claude-code/opus': { input: 15.0, output: 75.0 },
+  'gemini-oauth/gemini-2.5-flash': { input: 0, output: 0 },
   'google-gemini-cli/gemini-2.5-flash': { input: 0, output: 0 },
   'gemini-2.5-flash': { input: 0, output: 0 },
   'gpt-4o': { input: 2.5, output: 10.0 },

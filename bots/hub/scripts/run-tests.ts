@@ -97,6 +97,8 @@ function unitSmokeScripts(): string[] {
     'openai-codex-backend-direct-smoke.ts',
     'openai-codex-chatgpt-backend-canary-smoke.ts',
     'openai-oauth-canary-permission-smoke.ts',
+    'gemini-oauth-smoke.ts',
+    'gemini-oauth-direct-smoke.ts',
     'claude-code-oauth-direct-smoke.ts',
     'runtime-profile-settings-smoke.ts',
     'server-hardening-smoke.ts',

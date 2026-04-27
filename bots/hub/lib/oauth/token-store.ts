@@ -6,6 +6,7 @@ const STORE_FILE = process.env.HUB_OAUTH_STORE_FILE
   || path.join(env.PROJECT_ROOT, 'bots', 'hub', 'output', 'oauth', 'token-store.json');
 
 let cache = null;
+let cacheMtimeMs = null;
 
 function ensureStoreShape(raw) {
   if (!raw || typeof raw !== 'object') return { providers: {} };
@@ -14,17 +15,21 @@ function ensureStoreShape(raw) {
 }
 
 function readStore() {
-  if (cache) return cache;
   try {
     if (!fs.existsSync(STORE_FILE)) {
       cache = { providers: {} };
+      cacheMtimeMs = null;
       return cache;
     }
+    const stat = fs.statSync(STORE_FILE);
+    if (cache && cacheMtimeMs === stat.mtimeMs) return cache;
     const parsed = JSON.parse(fs.readFileSync(STORE_FILE, 'utf8'));
     cache = ensureStoreShape(parsed);
+    cacheMtimeMs = stat.mtimeMs;
     return cache;
   } catch {
     cache = { providers: {} };
+    cacheMtimeMs = null;
     return cache;
   }
 }
@@ -35,6 +40,11 @@ function writeStore(next) {
   const tmpFile = `${STORE_FILE}.${process.pid}.${Date.now()}.tmp`;
   fs.writeFileSync(tmpFile, `${JSON.stringify(cache, null, 2)}\n`, { encoding: 'utf8', mode: 0o600 });
   fs.renameSync(tmpFile, STORE_FILE);
+  try {
+    cacheMtimeMs = fs.statSync(STORE_FILE).mtimeMs;
+  } catch {
+    cacheMtimeMs = null;
+  }
   try {
     fs.chmodSync(STORE_FILE, 0o600);
   } catch {

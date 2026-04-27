@@ -33,6 +33,11 @@ const PROVIDER_ENV_KEYS = {
 const SUPPORTED_MODEL_ALIASES = {};
 
 const SPEED_TEST_MODEL_CATALOG = {
+  'gemini-oauth': new Set([
+    'gemini-oauth/gemini-2.5-flash-lite',
+    'gemini-oauth/gemini-2.5-flash',
+    'gemini-oauth/gemini-2.5-pro',
+  ]),
   'google-gemini-cli': new Set([
     'google-gemini-cli/gemini-2.5-flash-lite',
     'google-gemini-cli/gemini-2.5-flash',
@@ -86,6 +91,7 @@ function loadModels(fs, { modelArg } = {}) {
     .map((id) => SUPPORTED_MODEL_ALIASES[id] || id)
     .filter((id) =>
       id.startsWith('google-gemini-cli/') ||
+      id.startsWith('gemini-oauth/') ||
       id.startsWith('ollama/') ||
       id.startsWith('openai/') ||
       id.startsWith('groq/') ||
@@ -119,7 +125,7 @@ function classifySpeedTestError(provider, modelId, errorMessage = '') {
   if (lower.includes('enotfound') || lower.includes('eai_again')) return 'network_unavailable';
   if (lower.includes('eperm: operation not permitted')) return 'snapshot_write_failed';
   if (lower.includes('http 429') || lower.includes('rate limit') || lower.includes('exhausted your capacity')) return 'rate_limited';
-  if (provider === 'google-gemini-cli' && lower.includes('does not support setting thinking_budget to 0')) return 'gemini_thinking_budget_unsupported';
+  if ((provider === 'google-gemini-cli' || provider === 'gemini-oauth') && lower.includes('does not support setting thinking_budget to 0')) return 'gemini_thinking_budget_unsupported';
   if (lower.includes('does not exist or you do not have access to it')) return 'unsupported_or_no_access';
   if (lower.includes('unsupported model') || lower.includes('model not found')) return 'unsupported_model';
   if (lower.includes('api key') || lower.includes('unauthorized') || lower.includes('forbidden')) return 'auth_or_access_failed';
@@ -171,13 +177,13 @@ function applyFastest(fs, results) {
   cfg.agents = cfg.agents || {};
   cfg.agents.defaults = cfg.agents.defaults || {};
   cfg.agents.defaults.model = cfg.agents.defaults.model || {};
-  const geminiValid = results.filter((item) => item.ok && item.provider === 'google-gemini-cli');
+  const geminiValid = results.filter((item) => item.ok && (item.provider === 'gemini-oauth' || item.provider === 'google-gemini-cli'));
   if (geminiValid.length === 0) return null;
 
   cfg.agents.defaults.model.primary = geminiValid[0].modelId;
   const geminiRest = geminiValid.slice(1).map((item) => item.modelId);
   const ollamaList = results.filter((item) => item.ok && item.provider === 'ollama').map((item) => item.modelId);
-  const otherList = results.filter((item) => item.ok && !['google-gemini-cli', 'ollama'].includes(item.provider)).map((item) => item.modelId);
+  const otherList = results.filter((item) => item.ok && !['gemini-oauth', 'google-gemini-cli', 'ollama'].includes(item.provider)).map((item) => item.modelId);
   cfg.agents.defaults.model.fallbacks = [...geminiRest, ...ollamaList, ...otherList];
 
   writeJsonFile(fs, LLM_CONTROL_CONFIG, cfg);
