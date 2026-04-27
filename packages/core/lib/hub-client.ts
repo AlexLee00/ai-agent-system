@@ -467,7 +467,10 @@ export async function callHubLlm(request: HubLlmCallRequest): Promise<HubLlmCall
   if (!env.HUB_BASE_URL) throw new Error('HUB_BASE_URL required for Hub LLM call');
   if (!env.HUB_AUTH_TOKEN) throw new Error('HUB_AUTH_TOKEN required for Hub LLM call');
 
-  const timeoutMs = Math.max(1000, Number(request.timeoutMs || 30000) || 30000);
+  const requestedTimeoutMs = Math.max(1000, Number(request.timeoutMs || 30000) || 30000);
+  // Hub route validation currently caps timeoutMs at 180s, so clamp here
+  // to avoid rejecting otherwise valid writer calls that request a longer wait.
+  const timeoutMs = Math.min(requestedTimeoutMs, 180_000);
   const payload = {
     ...request,
     callerTeam,
@@ -475,6 +478,7 @@ export async function callHubLlm(request: HubLlmCallRequest): Promise<HubLlmCall
     prompt,
     abstractModel: request.abstractModel || 'anthropic_sonnet',
     taskType: request.taskType || 'default',
+    timeoutMs,
   };
   const url = `${env.HUB_BASE_URL}/hub/llm/call`;
   const controller = new AbortController();
