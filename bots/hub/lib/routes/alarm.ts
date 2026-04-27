@@ -9,6 +9,21 @@ const {
   resolveAlarmDeliveryTeam,
 } = require('../alarm/templates');
 
+const defaultAlarmDb = {
+  query: (...args: any[]) => pgPool.query(...args),
+  get: (...args: any[]) => pgPool.get(...args),
+  run: (...args: any[]) => pgPool.run(...args),
+};
+let alarmDb = defaultAlarmDb;
+
+export function _testOnly_setAlarmRouteDbMocks(overrides: Partial<typeof defaultAlarmDb> = {}) {
+  alarmDb = { ...defaultAlarmDb, ...overrides };
+}
+
+export function _testOnly_resetAlarmRouteDbMocks() {
+  alarmDb = defaultAlarmDb;
+}
+
 function alarmsDisabled(): boolean {
   const raw = String(process.env.HUB_ALARMS_DISABLED || process.env.ALERTS_DISABLED || '').trim().toLowerCase();
   return ['1', 'true', 'yes', 'y', 'on'].includes(raw);
@@ -277,7 +292,7 @@ export async function flushAlarmDigest({
 
   let rows: DigestRow[] = [];
   if (dryRun) {
-    rows = await pgPool.query('agent', `
+    rows = await alarmDb.query('agent', `
       SELECT
         id,
         team,
@@ -294,7 +309,7 @@ export async function flushAlarmDigest({
   } else {
     params.push(claimId);
     params.push(nowIso);
-    rows = await pgPool.query('agent', `
+    rows = await alarmDb.query('agent', `
       WITH candidates AS (
         SELECT id
         FROM agent.event_lake
@@ -365,7 +380,7 @@ export async function flushAlarmDigest({
     if (sent) {
       const ids = teamRows.map((row) => Number(row.id)).filter((id) => Number.isFinite(id));
       if (ids.length > 0) {
-        await pgPool.run('agent', `
+        await alarmDb.run('agent', `
           UPDATE agent.event_lake
           SET
             metadata = (metadata - 'digest_claim_id' - 'digest_claimed_at') || jsonb_build_object(
@@ -381,7 +396,7 @@ export async function flushAlarmDigest({
     } else {
       const ids = teamRows.map((row) => Number(row.id)).filter((id) => Number.isFinite(id));
       if (ids.length > 0) {
-        await pgPool.run('agent', `
+        await alarmDb.run('agent', `
           UPDATE agent.event_lake
           SET
             metadata = (metadata - 'digest_claim_id' - 'digest_claimed_at') || jsonb_build_object(
@@ -422,7 +437,7 @@ async function findRecentIncidentDuplicate({
   minutes: number;
 }) {
   try {
-    return await pgPool.get('agent', `
+    return await alarmDb.get('agent', `
       SELECT id, created_at, metadata
       FROM agent.event_lake
       WHERE event_type = 'hub_alarm'
@@ -445,7 +460,7 @@ async function findRecentClusterDuplicate({
 }) {
   try {
     if (!clusterKey) return null;
-    return await pgPool.get('agent', `
+    return await alarmDb.get('agent', `
       SELECT id, created_at, metadata
       FROM agent.event_lake
       WHERE event_type = 'hub_alarm'
@@ -461,7 +476,7 @@ async function findRecentClusterDuplicate({
 
 async function _insertLunaBlogRequest(regime: string, mood: string, keywordHints: string, eventId: number | null): Promise<void> {
   const urgency = regime === 'crisis' ? 9 : regime === 'volatile' ? 7 : 5;
-  await pgPool.run('blog', `
+  await alarmDb.run('blog', `
     INSERT INTO blog.content_requests
       (source_team, regime, mood, keyword_hints, urgency, status, expires_at, metadata)
     VALUES
@@ -779,7 +794,7 @@ export async function alarmNoisyProducersRoute(req: any, res: any) {
   try {
     const minutes = Math.max(1, Number(req.query?.minutes ?? 60) || 60);
     const limit = Math.min(50, Math.max(1, Number(req.query?.limit ?? 10) || 10));
-    const rows = await pgPool.query('agent', `
+    const rows = await alarmDb.query('agent', `
       SELECT
         COALESCE(metadata->>'fromBot', bot_name, 'unknown') AS producer,
         team,
@@ -839,7 +854,7 @@ export async function alarmSuppressDryRunRoute(req: any, res: any) {
       conditions.push(`COALESCE(metadata->>'incident_key', '') ILIKE $${index++}`);
     }
 
-    const rows = await pgPool.query('agent', `
+    const rows = await alarmDb.query('agent', `
       SELECT
         id,
         team,
@@ -854,7 +869,7 @@ export async function alarmSuppressDryRunRoute(req: any, res: any) {
       LIMIT 20
     `, params);
 
-    const countRow = await pgPool.get('agent', `
+    const countRow = await alarmDb.get('agent', `
       SELECT COUNT(*)::int AS total
       FROM agent.event_lake
       WHERE ${conditions.join(' AND ')}

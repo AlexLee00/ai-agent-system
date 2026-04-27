@@ -45,13 +45,15 @@ function formatNoiseReport(rows: Array<Record<string, any>>, minutes: number): s
 export async function buildAlarmNoiseReport({
   minutes = 24 * 60,
   limit = 20,
+  db = pgPool,
 }: {
   minutes?: number;
   limit?: number;
+  db?: { query: (...args: any[]) => Promise<Array<Record<string, any>>> };
 } = {}) {
   const windowMinutes = normalizeNumber(minutes, 24 * 60, 1, 7 * 24 * 60);
   const rowLimit = normalizeNumber(limit, 20, 1, 100);
-  const rows = await pgPool.query('agent', `
+  const rows = await db.query('agent', `
     SELECT
       COALESCE(metadata->>'fromBot', bot_name, 'unknown') AS producer,
       team,
@@ -115,4 +117,3 @@ if (require.main === module) {
 module.exports = {
   buildAlarmNoiseReport,
 };
-

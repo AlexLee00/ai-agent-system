@@ -36,13 +36,15 @@ function formatStaleReport(rows: Array<Record<string, any>>, staleMinutes: numbe
 export async function scanStaleAutoRepair({
   staleMinutes = 120,
   limit = 20,
+  db = pgPool,
 }: {
   staleMinutes?: number;
   limit?: number;
+  db?: { query: (...args: any[]) => Promise<Array<Record<string, any>>> };
 } = {}) {
   const threshold = normalizeNumber(staleMinutes, 120, 5, 7 * 24 * 60);
   const rowLimit = normalizeNumber(limit, 20, 1, 100);
-  const rows = await pgPool.query('agent', `
+  const rows = await db.query('agent', `
     SELECT
       alarm.id,
       alarm.team,
@@ -115,4 +117,3 @@ if (require.main === module) {
 module.exports = {
   scanStaleAutoRepair,
 };
-
