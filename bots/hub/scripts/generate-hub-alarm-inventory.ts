@@ -10,6 +10,9 @@ const LEGACY_ALARM_CLIENT_PATTERN = 'open' + 'claw-client';
 const RETIRED_ENV_PREFIX_PATTERN = 'OPEN' + 'CLAW_';
 const RETIRED_GATEWAY_GUARD_FILES = [
   'bots/hub/scripts/hub-transition-completion-gate.ts',
+  'bots/hub/scripts/generate-hub-alarm-inventory.ts',
+  'bots/hub/scripts/retired-gateway-residue-audit.ts',
+  'bots/hub/scripts/retired-gateway-cutover-readiness.ts',
   'bots/hub/scripts/retired-gateway-marker-precommit-smoke.ts',
   'bots/hub/scripts/runtime-env-policy-smoke.ts',
   'packages/core/lib/runtime-env-policy.ts',
@@ -29,6 +32,9 @@ function isRetiredGatewayGuard(file) {
 
 function classifyMatch(file, match) {
   if (match.includes('hub-alarm-client') || match.includes('HUB_ALARM_')) return 'hub_alarm_native';
+  if (isRetiredGatewayGuard(file) && (match.includes(LEGACY_ALARM_CLIENT_PATTERN) || match.includes(RETIRED_ENV_PREFIX_PATTERN))) {
+    return 'retired_gateway_guard';
+  }
   if (match.includes(LEGACY_ALARM_CLIENT_PATTERN)) return 'legacy_gateway_compat';
   if (match.includes(RETIRED_ENV_PREFIX_PATTERN)) {
     return isRetiredGatewayGuard(file) ? 'retired_gateway_guard' : 'legacy_gateway_compat';
@@ -52,6 +58,8 @@ function runInventoryScan() {
     '!bots/hub/output/**',
     '-g',
     '!docs/hub/HUB_ALARM_DEPENDENCY_INVENTORY.md',
+    '-g',
+    '!docs/hub/OPENCLAW_RESIDUE_AUDIT.md',
     '-g',
     `!docs/hub/${'OPEN' + 'CLAW_CLIENT_INVENTORY.md'}`,
     '-g',

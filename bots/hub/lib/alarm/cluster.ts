@@ -44,6 +44,7 @@ function classifyClusterFamily(corpus: string): string {
   if (/binance|orderid|clientorderid|reconcile|filled|manual_reconcile/.test(corpus)) return 'broker_order_reconcile';
   if (/queue|claim|lease|stale|preparing/.test(corpus)) return 'queue_lifecycle';
   if (/openclaw|legacy[_\s-]?gateway|18789/.test(corpus)) return 'retired_gateway_regression';
+  if (/발행 대기|미발행|naver[_\s-]?publish|네이버 발행|blog[_\s-]?publish|ready 상태/.test(corpus)) return 'blog_publish';
   return 'generic';
 }
 

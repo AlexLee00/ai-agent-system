@@ -380,11 +380,14 @@ function _deriveIncidentKey({
 }): string {
   const explicit = _normalizeAlertText(incidentKey || sessionKey);
   if (explicit) return explicit;
+  // Use only the first line (structural headline) for stable hashing across
+  // repeated alarms that share the same issue but have varying detail lines.
+  const headline = _normalizeAlertText(message).split('\n')[0].slice(0, 120);
   return [
     _slugToken(team, 'general'),
     _slugToken(fromBot, 'unknown'),
     _slugToken(eventType, 'alarm'),
-    _stableHash(message),
+    _stableHash(headline),
   ].join(':');
 }
 

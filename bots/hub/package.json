@@ -29,6 +29,8 @@
     "launchd:alarm-class-topic": "tsx scripts/launchd-alarm-class-topic-smoke.ts",
     "local-llm-policy": "tsx scripts/local-llm-policy-report.ts",
     "inventory:hub-alarm": "tsx scripts/generate-hub-alarm-inventory.ts",
+    "retired-gateway:residue-audit": "tsx scripts/retired-gateway-residue-audit.ts",
+    "retired-gateway:cutover-readiness": "tsx scripts/retired-gateway-cutover-readiness.ts",
     "test": "tsx scripts/run-tests.ts all",
     "test:unit": "tsx scripts/run-tests.ts unit",
     "test:secrets-meta": "node --test __tests__/secrets-meta.node.test.js",

@@ -664,6 +664,7 @@ export async function publishToWebhook({
       team: normalized.team,
       alertLevel: normalized.alert_level,
       fromBot: normalized.from_bot,
+      eventType: normalized.event_type,
     });
     return {
       ok: result.ok,

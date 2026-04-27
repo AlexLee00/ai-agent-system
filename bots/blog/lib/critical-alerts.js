@@ -20,6 +20,7 @@ function classifyReason(message) {
   if (/비정상 종료/i.test(compact)) return 'abnormal_exit';
   if (/미로드/i.test(compact)) return 'launchd_unloaded';
   if (/pid 없음|다운/i.test(compact)) return 'service_down';
+  if (/발행 대기|미발행|ready 상태|naver.*publish/i.test(compact)) return 'naver_publish_pending';
   const reasonMatch = compact.match(/(?:사유|reason):\s*(.+)$/i);
   const reason = reasonMatch ? reasonMatch[1].trim() : compact;
   return reason

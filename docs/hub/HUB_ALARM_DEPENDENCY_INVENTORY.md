@@ -2,11 +2,11 @@
 
 This inventory tracks the Hub alarm migration surface. `hub_alarm_native` entries are the desired path; `retired_gateway_guard` entries are regression guards; `legacy_gateway_compat` entries are remaining migration targets and must stay at 0.
 
-- generated_at: 2026-04-27T09:22:51.896Z
-- total_matches: 208
-- unique_files: 126
-- hub_alarm_native: 199
-- retired_gateway_guard: 9
+- generated_at: 2026-04-27T09:33:44.974Z
+- total_matches: 215
+- unique_files: 128
+- hub_alarm_native: 202
+- retired_gateway_guard: 13
 - legacy_gateway_compat: 0
 
 ## Files
@@ -261,12 +261,16 @@ This inventory tracks the Hub alarm migration surface. `hub_alarm_native` entrie
 ### `bots/hub/scripts/alarm-suppression-proposals.ts`
 - L5 [hub_alarm_native]: `const { postAlarm } = require('../../../packages/core/lib/hub-alarm-client');`
 
+### `bots/hub/scripts/blog-alarm-dedup-smoke.ts`
+- L15 [hub_alarm_native]: `// ── hub-alarm-client 유닛 테스트 (private 함수를 인라인 검증) ──────────────`
+
 ### `bots/hub/scripts/generate-hub-alarm-inventory.ts`
 - L8 [hub_alarm_native]: `const outputMarkdownPath = path.join(projectRoot, 'docs', 'hub', 'HUB_ALARM_DEPENDENCY_INVENTORY.md');`
-- L20 [hub_alarm_native]: `'hub-alarm-client',`
-- L22 [hub_alarm_native]: `'HUB_ALARM_',`
-- L31 [hub_alarm_native]: `if (match.includes('hub-alarm-client') || match.includes('HUB_ALARM_')) return 'hub_alarm_native';`
-- L54 [hub_alarm_native]: `'!docs/hub/HUB_ALARM_DEPENDENCY_INVENTORY.md',`
+- L23 [hub_alarm_native]: `'hub-alarm-client',`
+- L25 [hub_alarm_native]: `'HUB_ALARM_',`
+- L34 [hub_alarm_native]: `if (match.includes('hub-alarm-client') || match.includes('HUB_ALARM_')) return 'hub_alarm_native';`
+- L60 [hub_alarm_native]: `'!docs/hub/HUB_ALARM_DEPENDENCY_INVENTORY.md',`
+- L62 [retired_gateway_guard]: `'!docs/hub/OPENCLAW_RESIDUE_AUDIT.md',`
 
 ### `bots/hub/scripts/hub-alarm-delivery-acceptance-smoke.ts`
 - L1 [hub_alarm_native]: `const { _testOnly_isHubAlarmDeliveryAccepted } = require('../../../packages/core/lib/hub-alarm-client.ts');`
@@ -317,6 +321,13 @@ This inventory tracks the Hub alarm migration surface. `hub_alarm_native` entrie
 ### `bots/hub/scripts/retired-gateway-marker-precommit-smoke.ts`
 - L19 [retired_gateway_guard]: `for (const marker of ['openclaw-gateway', 'OPENCLAW_BIN', '18789', 'execFile[^\\n]*openclaw', 'spawn[^\\n]*openclaw']) {`
 - L28 [retired_gateway_guard]: `assert(legacySmoke.includes('RETIRED_GATEWAY_BIN_ENV'), 'legacy smoke must guard OPENCLAW_BIN');`
+
+### `bots/hub/scripts/retired-gateway-residue-audit.ts`
+- L28 [retired_gateway_guard]: `const outputMarkdownPath = path.join(repoRoot, 'docs', 'hub', 'OPENCLAW_RESIDUE_AUDIT.md');`
+- L39 [retired_gateway_guard]: `'openclaw-client',`
+- L81 [hub_alarm_native]: `if (file.startsWith('bots/hub/output/') || file === 'docs/hub/OPENCLAW_RESIDUE_AUDIT.md' || file === 'docs/hub/HUB_ALARM_DEPENDENCY_INVENTORY.md') {`
+- L117 [retired_gateway_guard]: `'!docs/hub/OPENCLAW_RESIDUE_AUDIT.md',`
+- L119 [hub_alarm_native]: `'!docs/hub/HUB_ALARM_DEPENDENCY_INVENTORY.md',`
 
 ### `bots/hub/scripts/run-oauth-monitor.ts`
 - L18 [hub_alarm_native]: `const { postAlarm } = require('../../../packages/core/lib/hub-alarm-client.ts');`
@@ -410,13 +421,13 @@ This inventory tracks the Hub alarm migration surface. `hub_alarm_native` entrie
 - L181 [hub_alarm_native]: `&& !_readFalseBooleanEnv('HUB_ALARM_USE_CLASS_TOPICS'));`
 - L243 [hub_alarm_native]: `if (_readBooleanEnv('HUB_ALARM_USE_CLASS_TOPICS')) return true;`
 - L244 [hub_alarm_native]: `if (_readFalseBooleanEnv('HUB_ALARM_USE_CLASS_TOPICS')) return false;`
-- L513 [hub_alarm_native]: `signal: AbortSignal.timeout(HUB_ALARM_TIMEOUT_MS),`
-- L552 [hub_alarm_native]: `console.warn(`[hub-alarm-client] recent alert snapshot 저장 실패: ${(error as Error).message}`);`
-- L585 [hub_alarm_native]: `console.warn('[hub-alarm-client] inline telegram 발송 실패: bot token/group id 미설정');`
-- L614 [hub_alarm_native]: `console.warn(`[hub-alarm-client] inline telegram 429 — ${delayMs}ms 후 재시도`);`
-- L625 [hub_alarm_native]: `console.warn(`[hub-alarm-client] inline telegram 실패: ${error.message}`);`
-- L675 [hub_alarm_native]: `const hubDirectBlocked = _readBooleanEnv('HUB_ALARM_SKIP_DIRECT');`
-- L703 [hub_alarm_native]: `console.warn(`[hub-alarm-client] hub alarm failed: ${hubResult.error}`);`
+- L516 [hub_alarm_native]: `signal: AbortSignal.timeout(HUB_ALARM_TIMEOUT_MS),`
+- L555 [hub_alarm_native]: `console.warn(`[hub-alarm-client] recent alert snapshot 저장 실패: ${(error as Error).message}`);`
+- L588 [hub_alarm_native]: `console.warn('[hub-alarm-client] inline telegram 발송 실패: bot token/group id 미설정');`
+- L617 [hub_alarm_native]: `console.warn(`[hub-alarm-client] inline telegram 429 — ${delayMs}ms 후 재시도`);`
+- L628 [hub_alarm_native]: `console.warn(`[hub-alarm-client] inline telegram 실패: ${error.message}`);`
+- L678 [hub_alarm_native]: `const hubDirectBlocked = _readBooleanEnv('HUB_ALARM_SKIP_DIRECT');`
+- L706 [hub_alarm_native]: `console.warn(`[hub-alarm-client] hub alarm failed: ${hubResult.error}`);`
 
 ### `packages/core/lib/reporting-hub.ts`
 - L3 [hub_alarm_native]: `const hubAlarmClient = require('./hub-alarm-client');`

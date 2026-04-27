@@ -77,6 +77,7 @@ function unitSmokeScripts(): string[] {
     'hub-alarm-import-transition-smoke.ts',
     'hub-postalarm-no-legacy-fallback-smoke.ts',
     'legacy-gateway-independence-smoke.ts',
+    'retired-gateway-residue-audit.ts',
     'runtime-workspace-independence-smoke.ts',
     'runtime-env-policy-smoke.ts',
     'file-guard-retired-workspace-smoke.ts',
@@ -120,6 +121,7 @@ function unitSmokeScripts(): string[] {
     'runtime-profile-settings-smoke.ts',
     'server-hardening-smoke.ts',
     'retired-gateway-marker-precommit-smoke.ts',
+    'blog-alarm-dedup-smoke.ts',
   ];
 }
 

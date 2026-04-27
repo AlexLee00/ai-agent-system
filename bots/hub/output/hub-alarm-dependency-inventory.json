@@ -1,16 +1,16 @@
 {
-  "generated_at": "2026-04-27T09:22:51.896Z",
+  "generated_at": "2026-04-27T09:33:44.974Z",
   "scan_patterns": [
     "hub-alarm-client",
     "openclaw-client",
     "HUB_ALARM_",
     "OPENCLAW_"
   ],
-  "total_matches": 208,
-  "unique_files": 126,
+  "total_matches": 215,
+  "unique_files": 128,
   "categories": {
-    "hub_alarm_native": 199,
-    "retired_gateway_guard": 9,
+    "hub_alarm_native": 202,
+    "retired_gateway_guard": 13,
     "legacy_gateway_compat": 0
   },
   "files": {
@@ -756,6 +756,14 @@
         "match": "const { postAlarm } = require('../../../packages/core/lib/hub-alarm-client');"
       }
     ],
+    "bots/hub/scripts/blog-alarm-dedup-smoke.ts": [
+      {
+        "file": "bots/hub/scripts/blog-alarm-dedup-smoke.ts",
+        "line": 15,
+        "category": "hub_alarm_native",
+        "match": "// ── hub-alarm-client 유닛 테스트 (private 함수를 인라인 검증) ──────────────"
+      }
+    ],
     "bots/hub/scripts/generate-hub-alarm-inventory.ts": [
       {
         "file": "bots/hub/scripts/generate-hub-alarm-inventory.ts",
@@ -765,27 +773,33 @@
       },
       {
         "file": "bots/hub/scripts/generate-hub-alarm-inventory.ts",
-        "line": 20,
+        "line": 23,
         "category": "hub_alarm_native",
         "match": "'hub-alarm-client',"
       },
       {
         "file": "bots/hub/scripts/generate-hub-alarm-inventory.ts",
-        "line": 22,
+        "line": 25,
         "category": "hub_alarm_native",
         "match": "'HUB_ALARM_',"
       },
       {
         "file": "bots/hub/scripts/generate-hub-alarm-inventory.ts",
-        "line": 31,
+        "line": 34,
         "category": "hub_alarm_native",
         "match": "if (match.includes('hub-alarm-client') || match.includes('HUB_ALARM_')) return 'hub_alarm_native';"
       },
       {
         "file": "bots/hub/scripts/generate-hub-alarm-inventory.ts",
-        "line": 54,
+        "line": 60,
         "category": "hub_alarm_native",
         "match": "'!docs/hub/HUB_ALARM_DEPENDENCY_INVENTORY.md',"
+      },
+      {
+        "file": "bots/hub/scripts/generate-hub-alarm-inventory.ts",
+        "line": 62,
+        "category": "retired_gateway_guard",
+        "match": "'!docs/hub/OPENCLAW_RESIDUE_AUDIT.md',"
       }
     ],
     "bots/hub/scripts/hub-alarm-delivery-acceptance-smoke.ts": [
@@ -1016,6 +1030,38 @@
         "line": 28,
         "category": "retired_gateway_guard",
         "match": "assert(legacySmoke.includes('RETIRED_GATEWAY_BIN_ENV'), 'legacy smoke must guard OPENCLAW_BIN');"
+      }
+    ],
+    "bots/hub/scripts/retired-gateway-residue-audit.ts": [
+      {
+        "file": "bots/hub/scripts/retired-gateway-residue-audit.ts",
+        "line": 28,
+        "category": "retired_gateway_guard",
+        "match": "const outputMarkdownPath = path.join(repoRoot, 'docs', 'hub', 'OPENCLAW_RESIDUE_AUDIT.md');"
+      },
+      {
+        "file": "bots/hub/scripts/retired-gateway-residue-audit.ts",
+        "line": 39,
+        "category": "retired_gateway_guard",
+        "match": "'openclaw-client',"
+      },
+      {
+        "file": "bots/hub/scripts/retired-gateway-residue-audit.ts",
+        "line": 81,
+        "category": "hub_alarm_native",
+        "match": "if (file.startsWith('bots/hub/output/') || file === 'docs/hub/OPENCLAW_RESIDUE_AUDIT.md' || file === 'docs/hub/HUB_ALARM_DEPENDENCY_INVENTORY.md') {"
+      },
+      {
+        "file": "bots/hub/scripts/retired-gateway-residue-audit.ts",
+        "line": 117,
+        "category": "retired_gateway_guard",
+        "match": "'!docs/hub/OPENCLAW_RESIDUE_AUDIT.md',"
+      },
+      {
+        "file": "bots/hub/scripts/retired-gateway-residue-audit.ts",
+        "line": 119,
+        "category": "hub_alarm_native",
+        "match": "'!docs/hub/HUB_ALARM_DEPENDENCY_INVENTORY.md',"
       }
     ],
     "bots/hub/scripts/run-oauth-monitor.ts": [
@@ -1301,43 +1347,43 @@
       },
       {
         "file": "packages/core/lib/hub-alarm-client.ts",
-        "line": 513,
+        "line": 516,
         "category": "hub_alarm_native",
         "match": "signal: AbortSignal.timeout(HUB_ALARM_TIMEOUT_MS),"
       },
       {
         "file": "packages/core/lib/hub-alarm-client.ts",
-        "line": 552,
+        "line": 555,
         "category": "hub_alarm_native",
         "match": "console.warn(`[hub-alarm-client] recent alert snapshot 저장 실패: ${(error as Error).message}`);"
       },
       {
         "file": "packages/core/lib/hub-alarm-client.ts",
-        "line": 585,
+        "line": 588,
         "category": "hub_alarm_native",
         "match": "console.warn('[hub-alarm-client] inline telegram 발송 실패: bot token/group id 미설정');"
       },
       {
         "file": "packages/core/lib/hub-alarm-client.ts",
-        "line": 614,
+        "line": 617,
         "category": "hub_alarm_native",
         "match": "console.warn(`[hub-alarm-client] inline telegram 429 — ${delayMs}ms 후 재시도`);"
       },
       {
         "file": "packages/core/lib/hub-alarm-client.ts",
-        "line": 625,
+        "line": 628,
         "category": "hub_alarm_native",
         "match": "console.warn(`[hub-alarm-client] inline telegram 실패: ${error.message}`);"
       },
       {
         "file": "packages/core/lib/hub-alarm-client.ts",
-        "line": 675,
+        "line": 678,
         "category": "hub_alarm_native",
         "match": "const hubDirectBlocked = _readBooleanEnv('HUB_ALARM_SKIP_DIRECT');"
       },
       {
         "file": "packages/core/lib/hub-alarm-client.ts",
-        "line": 703,
+        "line": 706,
         "category": "hub_alarm_native",
         "match": "console.warn(`[hub-alarm-client] hub alarm failed: ${hubResult.error}`);"
       }
