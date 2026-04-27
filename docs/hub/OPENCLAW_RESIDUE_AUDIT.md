@@ -2,7 +2,7 @@
 
 This generated report classifies retired OpenClaw references. `runtime_blocker` must remain 0. Guard, documentation, ignored log, and archive-pending entries are tracked separately so they do not masquerade as live runtime dependencies.
 
-- generated_at: 2026-04-27T09:33:45.272Z
+- generated_at: 2026-04-27T09:44:55.749Z
 - ok: true
 - runtime_blocker: 0
 - retired_gateway_guard: 67
@@ -80,10 +80,10 @@ This generated report classifies retired OpenClaw references. `runtime_blocker` 
 - bots/hub/scripts/legacy-gateway-independence-smoke.ts:97 (intentional smoke/report guard) — `assert(!secretsRoute.includes('legacy_gateway'), 'Hub secrets route must not expose retired gateway category');`
 - bots/hub/scripts/llm-control-independence-smoke.ts:76 (intentional smoke/report guard) — `llm_control_legacy_gateway_free_defaults: true,`
 - bots/hub/scripts/openai-codex-backend-direct-smoke.ts:92 (intentional smoke/report guard) — `legacy_gateway_used: false,`
-- bots/hub/scripts/retired-gateway-cutover-readiness.ts:39 (intentional smoke/report guard) — `runStep('openclaw-runtime-retirement', ['scripts/openclaw-runtime-retirement-smoke.ts']),`
-- bots/hub/scripts/retired-gateway-cutover-readiness.ts:43 (intentional smoke/report guard) — `const residueAudit = readJson('bots/hub/output/openclaw-residue-audit.json');`
-- bots/hub/scripts/retired-gateway-cutover-readiness.ts:46 (intentional smoke/report guard) — `legacy_gateway_compat: Number(alarmInventory.categories?.legacy_gateway_compat || 0),`
-- bots/hub/scripts/retired-gateway-cutover-readiness.ts:55 (intentional smoke/report guard) — `&& blocking.legacy_gateway_compat === 0`
+- bots/hub/scripts/retired-gateway-cutover-readiness.ts:40 (intentional smoke/report guard) — `runStep('openclaw-runtime-retirement', ['scripts/openclaw-runtime-retirement-smoke.ts']),`
+- bots/hub/scripts/retired-gateway-cutover-readiness.ts:44 (intentional smoke/report guard) — `const residueAudit = readJson('bots/hub/output/openclaw-residue-audit.json');`
+- bots/hub/scripts/retired-gateway-cutover-readiness.ts:47 (intentional smoke/report guard) — `legacy_gateway_compat: Number(alarmInventory.categories?.legacy_gateway_compat || 0),`
+- bots/hub/scripts/retired-gateway-cutover-readiness.ts:56 (intentional smoke/report guard) — `&& blocking.legacy_gateway_compat === 0`
 - bots/hub/scripts/retired-gateway-marker-precommit-smoke.ts:19 (intentional smoke/report guard) — `for (const marker of ['openclaw-gateway', 'OPENCLAW_BIN', '18789', 'execFile[^\\n]*openclaw', 'spawn[^\\n]*openclaw']) {`
 - bots/hub/scripts/retired-gateway-marker-precommit-smoke.ts:26 (intentional smoke/report guard) — `assert(!checklist.includes('nc -z 127.0.0.1 18789'), 'migration checklist must not accept retired gateway port as Hub health');`
 - bots/hub/scripts/retired-gateway-marker-precommit-smoke.ts:28 (intentional smoke/report guard) — `assert(legacySmoke.includes('RETIRED_GATEWAY_BIN_ENV'), 'legacy smoke must guard OPENCLAW_BIN');`
@@ -99,7 +99,7 @@ This generated report classifies retired OpenClaw references. `runtime_blocker` 
 - bots/hub/scripts/retired-gateway-residue-audit.ts:40 (intentional smoke/report guard) — `'openclaw-gateway',`
 - bots/hub/scripts/retired-gateway-residue-audit.ts:50 (intentional smoke/report guard) — `'bots/hub/scripts/openclaw-runtime-retirement-smoke.ts',`
 - bots/hub/scripts/retired-gateway-residue-audit.ts:81 (intentional smoke/report guard) — `if (file.startsWith('bots/hub/output/') || file === 'docs/hub/OPENCLAW_RESIDUE_AUDIT.md' || file === 'docs/hub/HUB_ALARM_DEPENDENCY_INVENTORY.md') {`
-- bots/hub/scripts/run-tests.ts:152 (intentional regression guard) — `'openclaw-runtime-retirement-smoke.ts',`
+- bots/hub/scripts/run-tests.ts:153 (intentional regression guard) — `'openclaw-runtime-retirement-smoke.ts',`
 - bots/hub/scripts/runtime-env-policy-smoke.ts:22 (intentional smoke/report guard) — `OPENCLAW_BIN: '/tmp/openclaw',`
 - bots/hub/scripts/runtime-env-policy-smoke.ts:31 (intentional smoke/report guard) — `assert.equal(filtered.env.OPENCLAW_BIN, undefined);`
 - bots/hub/scripts/runtime-env-policy-smoke.ts:43 (intentional smoke/report guard) — `assert.notEqual(childEnv.OPENCLAW_BIN, '/tmp/openclaw');`

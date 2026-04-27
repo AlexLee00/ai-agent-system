@@ -35,6 +35,7 @@ function main(): void {
   const steps = [
     runStep('transition-completion-gate', ['scripts/hub-transition-completion-gate.ts']),
     runStep('hub-alarm-inventory', ['scripts/generate-hub-alarm-inventory.ts']),
+    runStep('retired-gateway-worktree-cleanup', ['scripts/retired-gateway-worktree-cleanup.ts', '--apply']),
     runStep('retired-gateway-residue-audit', ['scripts/retired-gateway-residue-audit.ts']),
     runStep('openclaw-runtime-retirement', ['scripts/openclaw-runtime-retirement-smoke.ts']),
   ];

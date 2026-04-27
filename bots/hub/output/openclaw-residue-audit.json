@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-04-27T09:33:45.272Z",
+  "generated_at": "2026-04-27T09:44:55.749Z",
   "ok": true,
   "categories": {
     "runtime_blocker": 0,
@@ -409,28 +409,28 @@
     {
       "category": "retired_gateway_guard",
       "file": "bots/hub/scripts/retired-gateway-cutover-readiness.ts",
-      "line": 39,
+      "line": 40,
       "snippet": "runStep('openclaw-runtime-retirement', ['scripts/openclaw-runtime-retirement-smoke.ts']),",
       "reason": "intentional smoke/report guard"
     },
     {
       "category": "retired_gateway_guard",
       "file": "bots/hub/scripts/retired-gateway-cutover-readiness.ts",
-      "line": 43,
+      "line": 44,
       "snippet": "const residueAudit = readJson('bots/hub/output/openclaw-residue-audit.json');",
       "reason": "intentional smoke/report guard"
     },
     {
       "category": "retired_gateway_guard",
       "file": "bots/hub/scripts/retired-gateway-cutover-readiness.ts",
-      "line": 46,
+      "line": 47,
       "snippet": "legacy_gateway_compat: Number(alarmInventory.categories?.legacy_gateway_compat || 0),",
       "reason": "intentional smoke/report guard"
     },
     {
       "category": "retired_gateway_guard",
       "file": "bots/hub/scripts/retired-gateway-cutover-readiness.ts",
-      "line": 55,
+      "line": 56,
       "snippet": "&& blocking.legacy_gateway_compat === 0",
       "reason": "intentional smoke/report guard"
     },
@@ -542,7 +542,7 @@
     {
       "category": "retired_gateway_guard",
       "file": "bots/hub/scripts/run-tests.ts",
-      "line": 152,
+      "line": 153,
       "snippet": "'openclaw-runtime-retirement-smoke.ts',",
       "reason": "intentional regression guard"
     },

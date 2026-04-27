@@ -31,6 +31,8 @@
     "inventory:hub-alarm": "tsx scripts/generate-hub-alarm-inventory.ts",
     "retired-gateway:residue-audit": "tsx scripts/retired-gateway-residue-audit.ts",
     "retired-gateway:cutover-readiness": "tsx scripts/retired-gateway-cutover-readiness.ts",
+    "retired-gateway:archive-home": "tsx scripts/retired-gateway-home-archive.ts",
+    "retired-gateway:cleanup-worktrees": "tsx scripts/retired-gateway-worktree-cleanup.ts",
     "test": "tsx scripts/run-tests.ts all",
     "test:unit": "tsx scripts/run-tests.ts unit",
     "test:secrets-meta": "node --test __tests__/secrets-meta.node.test.js",

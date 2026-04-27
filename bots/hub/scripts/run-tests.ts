@@ -84,6 +84,7 @@ function unitSmokeScripts(): string[] {
     'sse-event-guard-smoke.ts',
     'session-checkpoint-smoke.ts',
     'hub-js-ts-island-smoke.ts',
+    'hub-resilience-contract-smoke.ts',
     legacyIsolationScript('active'),
     'legacy-gateway-admin-guard-smoke.ts',
     'public-api-optional-smoke.ts',
