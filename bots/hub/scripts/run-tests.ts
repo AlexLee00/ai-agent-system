@@ -122,6 +122,7 @@ function unitSmokeScripts(): string[] {
     'hub-unified-oauth-direct-smoke.ts',
     'claude-code-oauth-direct-smoke.ts',
     'oauth-refresh-monitor-contract-smoke.ts',
+    'oauth-provider-boundary-smoke.ts',
     'oauth-monitor-launchd-smoke.ts',
     'runtime-profile-settings-smoke.ts',
     'server-hardening-smoke.ts',

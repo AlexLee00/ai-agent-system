@@ -24,15 +24,15 @@ async function main() {
   assert(runtimeSummary, 'orchestrator.summary runtime profile is required');
   assert.equal(
     runtimeSummary.primary_routes?.[0],
-    'gemini-oauth/gemini-2.5-flash',
-    'orchestrator.summary runtime primary must be Gemini OAuth',
+    'gemini-cli-oauth/gemini-2.5-flash',
+    'orchestrator.summary runtime primary must be Gemini CLI OAuth',
   );
 
   const selected = selector.describeAgentModel('orchestrator', 'summary');
   assert.equal(
     firstProviderFromSelector(selected),
-    'gemini-oauth',
-    'orchestrator/summary selector primary must be Gemini OAuth',
+    'gemini-cli-oauth',
+    'orchestrator/summary selector primary must be Gemini CLI OAuth',
   );
   assert(
     Array.isArray(selected.chain) && selected.chain.some((entry) => entry.provider === 'openai-oauth'),
@@ -51,7 +51,7 @@ async function main() {
   console.log(JSON.stringify({
     ok: true,
     runtime_profile: 'orchestrator.summary',
-    primary_provider: 'gemini-oauth',
+    primary_provider: 'gemini-cli-oauth',
     fallbacks: ['openai-oauth', 'claude-code'],
   }));
 }

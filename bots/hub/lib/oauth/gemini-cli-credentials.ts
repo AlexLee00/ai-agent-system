@@ -25,6 +25,26 @@ function readJsonFile(filePath) {
   }
 }
 
+function ensureOwnerOnlyFileMode(filePath) {
+  try {
+    const currentMode = fs.statSync(filePath).mode & 0o777;
+    if ((currentMode & 0o077) !== 0) {
+      fs.chmodSync(filePath, 0o600);
+    }
+    const nextMode = fs.statSync(filePath).mode & 0o777;
+    return {
+      ok: (nextMode & 0o077) === 0,
+      mode: nextMode.toString(8).padStart(3, '0'),
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      mode: null,
+      error: String(error?.message || error).slice(0, 160),
+    };
+  }
+}
+
 function decodeJwtPayload(token) {
   const parts = String(token || '').split('.');
   if (parts.length < 2) return null;
@@ -80,6 +100,7 @@ function readGeminiCliCredentials(options = {}) {
     return { ok: false, error: 'gemini_cli_credentials_missing', filePath };
   }
 
+  const fileMode = ensureOwnerOnlyFileMode(filePath);
   const payload = readJsonFile(filePath);
   if (!payload || typeof payload !== 'object') {
     return { ok: false, error: 'gemini_cli_credentials_invalid_json', filePath };
@@ -126,6 +147,8 @@ function readGeminiCliCredentials(options = {}) {
     quota_project_configured: Boolean(quotaProjectId),
     ...(quotaProjectId ? { quota_project_id: quotaProjectId } : {}),
     identity_present: Boolean(identitySeed),
+    credential_file_owner_only: Boolean(fileMode.ok),
+    ...(fileMode.mode ? { credential_file_mode: fileMode.mode } : {}),
     ...(identitySeed ? { account_identity_hash: sha256(identitySeed) } : {}),
     ...(email ? { account_email_hash: sha256(email), account_email_domain: emailDomain(email) } : {}),
   };

@@ -649,6 +649,92 @@ function geminiMonitorRequired(): boolean {
   return flag('HUB_OAUTH_MONITOR_REQUIRE_GEMINI', Boolean(record?.token?.access_token || record?.token?.refresh_token));
 }
 
+function geminiCliMonitorRequired(): boolean {
+  const record = getProviderRecord('gemini-cli-oauth');
+  return flag('HUB_OAUTH_MONITOR_REQUIRE_GEMINI_CLI', Boolean(record?.token?.access_token || record?.token?.refresh_token));
+}
+
+async function checkGeminiCliOAuth() {
+  const record = getProviderRecord('gemini-cli-oauth');
+  const required = geminiCliMonitorRequired();
+  const cliImport = readGeminiCliCredentialForMonitor(record);
+
+  if (cliImport.ok) {
+    const metadata = {
+      ...(cliImport.metadata || {}),
+      imported_by: 'hub_oauth_monitor',
+      imported_at: new Date().toISOString(),
+      import_reason: 'monitor_sync',
+    };
+    setProviderToken('gemini-cli-oauth', cliImport.token, metadata);
+    setProviderCanary('gemini-cli-oauth', {
+      ok: true,
+      details: {
+        source: metadata.source,
+        expires_at: cliImport.token?.expires_at || null,
+        imported_by: 'hub_oauth_monitor',
+        quota_project_configured: Boolean(cliImport.quota_project_configured),
+        identity_present: Boolean(metadata.identity_present),
+      },
+    });
+    const expiresInHours = tokenExpiresInHours(cliImport.token);
+    console.log(`[oauth-monitor] Gemini CLI OAuth 정상: source=${cliImport.source || 'gemini_cli'} expires_in=${Number.isFinite(Number(expiresInHours)) ? Number(expiresInHours).toFixed(2) : 'unknown'}h`);
+    return {
+      healthy: true,
+      skipped: false,
+      source: cliImport.source || 'gemini_cli_oauth_creds',
+      expires_in_hours: expiresInHours,
+      quota_project_configured: Boolean(cliImport.quota_project_configured),
+      error: null,
+    };
+  }
+
+  if (record?.token?.refresh_token) {
+    const expiresInHours = tokenExpiresInHours(record.token);
+    console.warn(`[oauth-monitor] Gemini CLI OAuth 로컬 creds 재동기화 실패: ${cliImport.error || 'unknown'} (token-store 유지)`);
+    return {
+      healthy: true,
+      degraded: true,
+      skipped: false,
+      source: record?.metadata?.source || 'token_store',
+      expires_in_hours: expiresInHours,
+      quota_project_configured: Boolean(record?.metadata?.quota_project_configured),
+      error: cliImport.error || null,
+    };
+  }
+
+  if (!required) {
+    console.log('[oauth-monitor] Gemini CLI OAuth 스킵: CLI creds/token-store가 없고 필수 모드가 아닙니다.');
+    return {
+      healthy: true,
+      skipped: true,
+      source: null,
+      expires_in_hours: null,
+      quota_project_configured: false,
+      error: cliImport.error || null,
+    };
+  }
+
+  await sendOAuthAlarm({
+    level: 3,
+    title: '[Hub OAuth] Gemini CLI OAuth 누락',
+    message: `Gemini CLI OAuth credential을 찾지 못했습니다. gemini auth login 또는 ~/.gemini/oauth_creds.json 상태를 확인해 주세요. error=${cliImport.error || 'unknown'}`,
+    payload: {
+      provider: 'gemini-cli-oauth',
+      healthy: false,
+      error: cliImport.error || null,
+    },
+  });
+  return {
+    healthy: false,
+    skipped: false,
+    source: null,
+    expires_in_hours: null,
+    quota_project_configured: false,
+    error: cliImport.error || 'gemini_cli_credentials_missing',
+  };
+}
+
 async function checkGeminiOAuth() {
   if (!geminiMonitorRequired()) {
     console.log('[oauth-monitor] Gemini OAuth 스킵: token-store에 등록된 토큰이 없고 필수 모드가 아닙니다.');
@@ -718,13 +804,19 @@ async function checkGeminiOAuth() {
 async function main() {
   const claudeOauth = await checkClaudeCodeOAuth();
   const openaiOauth = await checkOpenAiCodexOAuth();
+  const geminiCliOauth = await checkGeminiCliOAuth();
   const geminiOauth = await checkGeminiOAuth();
 
   const groq = await checkGroqAccounts();
   console.log(`[oauth-monitor] Groq 계정: ${groq.available_accounts}/${groq.total_accounts} 정상`);
 
   console.log(JSON.stringify({
-    ok: Boolean(claudeOauth.healthy && openaiOauth.healthy && (geminiOauth.skipped || geminiOauth.healthy)),
+    ok: Boolean(
+      claudeOauth.healthy
+        && openaiOauth.healthy
+        && (geminiCliOauth.skipped || geminiCliOauth.healthy)
+        && (geminiOauth.skipped || geminiOauth.healthy),
+    ),
     generated_at: new Date().toISOString(),
     claude_code_oauth: {
       healthy: Boolean(claudeOauth.healthy),
@@ -766,6 +858,17 @@ async function main() {
       refresh_source: geminiOauth.refresh?.source || null,
       refresh_config_source: geminiOauth.refresh?.refresh_config_source || null,
       error: geminiOauth.error || null,
+    },
+    gemini_cli_oauth: {
+      healthy: Boolean(geminiCliOauth.healthy),
+      skipped: Boolean(geminiCliOauth.skipped),
+      degraded: Boolean(geminiCliOauth.degraded),
+      source: geminiCliOauth.source || null,
+      expires_in_hours: Number.isFinite(Number(geminiCliOauth.expires_in_hours))
+        ? Math.round(Number(geminiCliOauth.expires_in_hours) * 100) / 100
+        : null,
+      quota_project_configured: Boolean(geminiCliOauth.quota_project_configured),
+      error: geminiCliOauth.error || null,
     },
     groq_pool: groq,
   }));

@@ -10,6 +10,22 @@ export interface ClaudeCodeRequest {
   maxBudgetUsd?: number;
 }
 
+const CLAUDE_CODE_AUTH_ENV_KEYS = [
+  'ANTHROPIC_API_KEY',
+  'ANTHROPIC_AUTH_TOKEN',
+  'CLAUDE_CODE_OAUTH_ACCESS_TOKEN',
+  'CLAUDE_CODE_OAUTH_REFRESH_TOKEN',
+  'CLAUDE_CODE_OAUTH_TOKEN',
+];
+
+function buildClaudeCodeChildEnv() {
+  const childEnv = { ...process.env };
+  for (const key of CLAUDE_CODE_AUTH_ENV_KEYS) {
+    delete childEnv[key];
+  }
+  return childEnv;
+}
+
 export function callClaudeCodeOAuth(req: ClaudeCodeRequest): Promise<LLMCallResponse> {
   const started = Date.now();
   const timeoutMs = req.timeoutMs ?? 60_000;
@@ -29,7 +45,7 @@ export function callClaudeCodeOAuth(req: ClaudeCodeRequest): Promise<LLMCallResp
 
     const proc = spawn(claudeCodeBin, args, {
       stdio: ['ignore', 'pipe', 'pipe'],
-      env: { ...process.env, ANTHROPIC_API_KEY: '' },
+      env: buildClaudeCodeChildEnv(),
     });
 
     let stdout = '';

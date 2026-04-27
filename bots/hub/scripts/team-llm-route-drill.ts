@@ -54,6 +54,7 @@ function routeToProvider(route) {
   const normalized = String(route || '').trim();
   if (normalized.startsWith('claude-code/')) return 'claude-code-oauth';
   if (normalized.startsWith('openai-oauth/')) return 'openai-oauth';
+  if (normalized.startsWith('gemini-cli-oauth/')) return 'gemini-cli-oauth';
   if (normalized.startsWith('gemini-oauth/')) return 'gemini-oauth';
   if (normalized.startsWith('groq/')) return 'groq';
   if (normalized.startsWith('openai/')) return 'openai';
@@ -70,12 +71,16 @@ function firstSupportedRoute(profile) {
 }
 
 function isOauthProvider(provider) {
-  return provider === 'openai-oauth' || provider === 'claude-code-oauth' || provider === 'gemini-oauth';
+  return provider === 'openai-oauth'
+    || provider === 'claude-code-oauth'
+    || provider === 'gemini-cli-oauth'
+    || provider === 'gemini-oauth';
 }
 
 function defaultBudgetForProvider(provider) {
   if (provider === 'claude-code-oauth') return 0.10;
   if (provider === 'openai-oauth') return 0.02;
+  if (provider === 'gemini-cli-oauth') return 0.04;
   return 0.05;
 }
 
@@ -85,7 +90,10 @@ function defaultProfileScenarios() {
       const entries = Object.entries(profiles || {})
         .filter(([agent, profile]) => !UNSUITABLE_AGENT_RE.test(agent) && firstSupportedRoute(profile));
       const oauthFirst = entries.find(([, profile]) => isOauthProvider(routeToProvider(firstSupportedRoute(profile))));
-      const geminiPrimary = entries.find(([, profile]) => routeToProvider(firstSupportedRoute(profile)) === 'gemini-oauth');
+      const geminiPrimary = entries.find(([, profile]) => {
+        const provider = routeToProvider(firstSupportedRoute(profile));
+        return provider === 'gemini-cli-oauth' || provider === 'gemini-oauth';
+      });
       const defaultEntry = entries.find(([agent]) => agent === 'default');
       const selected = oauthFirst || defaultEntry || entries[0];
       if (!selected) return [];
@@ -215,8 +223,8 @@ async function main() {
       generated_at: new Date().toISOString(),
       checked: checks.length,
       failed: failed.length,
-      oauth_primary_checks: checks.filter((check) => ['openai-oauth', 'claude-code-oauth', 'gemini-oauth'].includes(check.details?.expected_provider)).length,
-      non_oauth_primary_checks: checks.filter((check) => !['openai-oauth', 'claude-code-oauth', 'gemini-oauth'].includes(check.details?.expected_provider)).length,
+      oauth_primary_checks: checks.filter((check) => ['openai-oauth', 'claude-code-oauth', 'gemini-cli-oauth', 'gemini-oauth'].includes(check.details?.expected_provider)).length,
+      non_oauth_primary_checks: checks.filter((check) => !['openai-oauth', 'claude-code-oauth', 'gemini-cli-oauth', 'gemini-oauth'].includes(check.details?.expected_provider)).length,
       checks,
       output_json: outputJson,
     };

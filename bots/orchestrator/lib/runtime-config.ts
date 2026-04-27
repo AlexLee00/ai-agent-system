@@ -26,9 +26,9 @@ const DEFAULT_RUNTIME_CONFIG = {
     payloadWarningLimit: 50,
   },
   jayModels: {
-    gatewayPrimary: 'gemini-oauth/gemini-2.5-flash',
+    gatewayPrimary: 'gemini-cli-oauth/gemini-2.5-flash',
     intentPrimary: 'gpt-5.4',
-    intentFallback: 'gemini-oauth/gemini-2.5-flash',
+    intentFallback: 'gemini-cli-oauth/gemini-2.5-flash',
     chatFallbackChain: [
       { provider: 'groq', model: 'openai/gpt-oss-20b', maxTokens: 300, temperature: 0.5 },
       { provider: 'gemini-cli-oauth', model: 'gemini-cli-oauth/gemini-2.5-flash', maxTokens: 300, temperature: 0.7 },
@@ -37,7 +37,7 @@ const DEFAULT_RUNTIME_CONFIG = {
   llmSelectorOverrides: {
     'orchestrator.jay.intent': {
       primary: { provider: 'openai-oauth', model: 'gpt-5.4' },
-      fallback: { provider: 'gemini-oauth', model: 'gemini-oauth/gemini-2.5-flash' },
+      fallback: { provider: 'gemini-cli-oauth', model: 'gemini-cli-oauth/gemini-2.5-flash' },
     },
     'orchestrator.jay.chat_fallback': {
       chain: [

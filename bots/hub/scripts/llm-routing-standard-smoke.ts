@@ -161,8 +161,8 @@ function main() {
   const orchestratorSummary = selector.describeAgentModel('orchestrator', 'summary');
   assert.equal(
     orchestratorSummary?.chain?.[0]?.provider,
-    'gemini-oauth',
-    'orchestrator/summary must use Gemini OAuth as the low-cost summary route',
+    'gemini-cli-oauth',
+    'orchestrator/summary must use Gemini CLI OAuth as the low-cost summary route',
   );
 
   const hubClient = require('../../../packages/core/lib/hub-client');

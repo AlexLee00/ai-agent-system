@@ -535,12 +535,12 @@ function buildSelectorRegistry(): Record<string, any> {
       }
       return [
         { provider: 'groq', model: 'openai/gpt-oss-20b', maxTokens: 300, temperature: 0.5 },
-        { provider: 'gemini-oauth', model: GEMINI_OAUTH_FLASH_MODEL, maxTokens: 300, temperature: 0.7 },
+        { provider: 'gemini-cli-oauth', model: GEMINI_CLI_FLASH_MODEL, maxTokens: 300, temperature: 0.7 },
       ];
     },
 
     'orchestrator.jay.summary': ({ maxTokens = 700 }: SelectorOptions = {}) => [
-      { provider: 'gemini-oauth', model: GEMINI_OAUTH_FLASH_MODEL, maxTokens, temperature: 0.2, timeoutMs: 15_000 },
+      { provider: 'gemini-cli-oauth', model: GEMINI_CLI_FLASH_MODEL, maxTokens, temperature: 0.2, timeoutMs: 30_000 },
       { provider: 'openai-oauth', model: 'gpt-5.4-mini', maxTokens, temperature: 0.2, timeoutMs: 12_000 },
       { provider: 'claude-code', model: 'claude-code/sonnet', maxTokens, temperature: 0.2, timeoutMs: 15_000 },
     ],

@@ -11,6 +11,7 @@
  *   claude-code — Claude Code CLI 비대화식 실행
  *   groq      — llama-4-scout 등 (Groq SDK / OpenAI-compat)
  *   gemini    — gemini-2.5-flash (Google Generative AI SDK)
+ *   gemini-cli-oauth — Gemini CLI OAuth boundary (no public API token injection)
  *   gemini-codeassist-oauth — Gemini CLI/Code Assist OAuth canary path
  *
  * 사용법:
@@ -147,6 +148,33 @@ type ExecFileErrorLike = {
   stderr?: string;
   message?: string;
 };
+
+const CLAUDE_CODE_AUTH_ENV_KEYS = [
+  'ANTHROPIC_API_KEY',
+  'ANTHROPIC_AUTH_TOKEN',
+  'CLAUDE_CODE_OAUTH_ACCESS_TOKEN',
+  'CLAUDE_CODE_OAUTH_REFRESH_TOKEN',
+  'CLAUDE_CODE_OAUTH_TOKEN',
+];
+
+const GEMINI_CLI_PUBLIC_API_ENV_KEYS = [
+  'GEMINI_API_KEY',
+  'GOOGLE_API_KEY',
+  'GEMINI_OAUTH_ACCESS_TOKEN',
+  'GEMINI_OAUTH_REFRESH_TOKEN',
+];
+
+function _scrubEnv(
+  baseEnv: NodeJS.ProcessEnv,
+  blockedKeys: string[],
+  overrides: Record<string, string | undefined> = {},
+) {
+  const childEnv = { ...baseEnv, ...overrides };
+  for (const key of blockedKeys) {
+    delete childEnv[key];
+  }
+  return childEnv;
+}
 
 type ClaudeCodeResponse = {
   result?: string;
@@ -999,11 +1027,10 @@ async function _callClaudeCode({ model, maxTokens, systemPrompt, userPrompt, tim
     const args = buildArgs();
     return new Promise<{ stdout: string; stderr: string }>((resolve, reject) => {
       const child = spawn('/opt/homebrew/bin/claude', args, {
-        env: {
-          ...process.env,
+        env: _scrubEnv(process.env, CLAUDE_CODE_AUTH_ENV_KEYS, {
           CLAUDE_CODE_NAME: claudeSessionName || process.env.CLAUDE_CODE_NAME,
           CLAUDE_CODE_SETTINGS: claudeSettingsFile || process.env.CLAUDE_CODE_SETTINGS,
-        },
+        }),
         stdio: ['ignore', 'pipe', 'pipe'],
       });
 
@@ -1286,6 +1313,119 @@ async function _callGemini({ model, maxTokens, temperature = 0.1, systemPrompt, 
   return gemini.generateContent(userPrompt);
 }
 
+function _normalizeGeminiCliModel(model = ''): string {
+  return String(model || 'gemini-2.5-flash')
+    .replace(/^gemini-cli-oauth\//, '')
+    .replace(/^google-gemini-cli\//, '')
+    .replace(/^gemini-oauth\//, '')
+    .replace(/^gemini\//, '')
+    || 'gemini-2.5-flash';
+}
+
+function _buildGeminiCliPrompt(systemPrompt = '', userPrompt = ''): string {
+  const parts = [];
+  if (String(systemPrompt || '').trim()) parts.push(`System:\n${String(systemPrompt).trim()}`);
+  parts.push(String(userPrompt || '').trim());
+  return parts.filter(Boolean).join('\n\n');
+}
+
+function _parseGeminiCliJson(stdout: string): any {
+  const text = String(stdout || '').trim();
+  if (!text) throw new Error('Gemini CLI 빈 응답');
+  try {
+    return JSON.parse(text);
+  } catch {
+    const firstJson = text.match(/\{[\s\S]*\}/);
+    if (firstJson) return JSON.parse(firstJson[0]);
+    throw new Error(`Gemini CLI JSON 파싱 실패: ${text.slice(0, 160)}`);
+  }
+}
+
+function _extractGeminiCliText(payload: any): string {
+  if (typeof payload?.response === 'string' && payload.response.trim()) return payload.response.trim();
+  if (typeof payload?.result === 'string' && payload.result.trim()) return payload.result.trim();
+  if (typeof payload?.text === 'string' && payload.text.trim()) return payload.text.trim();
+  const pieces: string[] = [];
+  for (const candidate of Array.isArray(payload?.candidates) ? payload.candidates : []) {
+    for (const part of Array.isArray(candidate?.content?.parts) ? candidate.content.parts : []) {
+      if (typeof part?.text === 'string' && part.text.trim()) pieces.push(part.text.trim());
+    }
+  }
+  return pieces.join('\n').trim();
+}
+
+async function _callGeminiCliOAuth({ model, systemPrompt, userPrompt, timeoutMs = 60000 }: ProviderCallOptions) {
+  const command = String(process.env.GEMINI_CLI_BIN || 'gemini').trim() || 'gemini';
+  const resolvedModel = _normalizeGeminiCliModel(model);
+  const args = [
+    '--skip-trust',
+    '--output-format', 'json',
+    '--model', resolvedModel,
+    '--prompt', _buildGeminiCliPrompt(systemPrompt, userPrompt),
+  ];
+  const effectiveTimeoutMs = Number(timeoutMs || process.env.GEMINI_CLI_TIMEOUT_MS || 60000);
+
+  const result = await new Promise<{ stdout: string; stderr: string }>((resolve, reject) => {
+    const child = spawn(command, args, {
+      env: _scrubEnv(process.env, GEMINI_CLI_PUBLIC_API_ENV_KEYS),
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    let stdoutBuffer = '';
+    let stderrBuffer = '';
+    let settled = false;
+    const timeoutHandle = setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      child.kill('SIGTERM');
+      const error = new Error(`Gemini CLI timeout after ${effectiveTimeoutMs}ms`) as ExecFileErrorLike;
+      error.code = 'ETIMEDOUT';
+      error.stdout = stdoutBuffer;
+      error.stderr = stderrBuffer;
+      reject(error);
+    }, effectiveTimeoutMs);
+
+    child.stdout.on('data', (chunk: Buffer | string) => { stdoutBuffer += String(chunk || ''); });
+    child.stderr.on('data', (chunk: Buffer | string) => { stderrBuffer += String(chunk || ''); });
+    child.on('error', (error: Error) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeoutHandle);
+      const execError = error as ExecFileErrorLike;
+      execError.stdout = stdoutBuffer;
+      execError.stderr = stderrBuffer || execError.stderr || '';
+      reject(execError);
+    });
+    child.on('close', (code: number | null, signal: string | null) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeoutHandle);
+      if (code === 0) {
+        resolve({ stdout: stdoutBuffer, stderr: stderrBuffer });
+        return;
+      }
+      const error = new Error(`Gemini CLI 실행 실패: exit=${code}${signal ? ` signal=${signal}` : ''}`) as ExecFileErrorLike;
+      error.code = code ?? undefined;
+      error.signal = signal ?? undefined;
+      error.stdout = stdoutBuffer;
+      error.stderr = stderrBuffer;
+      reject(error);
+    });
+  });
+
+  const payload = _parseGeminiCliJson(result.stdout);
+  const text = _extractGeminiCliText(payload);
+  if (!text) throw new Error('Gemini CLI OAuth 빈 응답');
+  return {
+    choices: [{ message: { content: text } }],
+    usage: payload?.usageMetadata || payload?.usage || null,
+    _geminiOAuth: {
+      provider: 'gemini-cli-oauth',
+      model: resolvedModel,
+      sessionId: payload?.session_id || payload?.sessionId || null,
+    },
+  };
+}
+
 function _extractGeminiOAuthText(payload: any): string {
   const pieces: string[] = [];
   for (const candidate of Array.isArray(payload?.candidates) ? payload.candidates : []) {
@@ -1481,6 +1621,16 @@ async function _callProvider(
     case 'gemini': {
       const resp = await _callGemini(normalizedOpts);
       return { raw: resp, text: _extractText(resp, 'gemini'), usage: null, provider, model };
+    }
+    case 'gemini-cli-oauth': {
+      const resp = await _callGeminiCliOAuth(normalizedOpts);
+      return {
+        raw: resp,
+        text: _extractText(resp, 'openai'),
+        usage: resp.usage,
+        provider: resp?._geminiOAuth?.provider || provider,
+        model: resp?._geminiOAuth?.model || model,
+      };
     }
     case 'gemini-oauth': {
       const resp = await _callGeminiOAuth(normalizedOpts);

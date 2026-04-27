@@ -18,7 +18,11 @@ const capturePath = process.env.CLAUDE_CODE_SMOKE_CAPTURE;
 if (capturePath) {
   fs.writeFileSync(capturePath, JSON.stringify({
     argv: process.argv.slice(2),
-    anthropicApiKey: process.env.ANTHROPIC_API_KEY
+    envKeys: Object.keys(process.env).filter((key) => (
+      key === 'ANTHROPIC_API_KEY'
+      || key === 'ANTHROPIC_AUTH_TOKEN'
+      || key.startsWith('CLAUDE_CODE_OAUTH_')
+    )).sort()
   }, null, 2));
 }
 process.stdout.write(JSON.stringify({
@@ -69,7 +73,7 @@ process.exit(1);
   assert.equal(result.ok, true);
   assert.equal(result.provider, 'claude-code-oauth');
   assert.equal(result.result, 'claude oauth ok');
-  assert.equal(capture.anthropicApiKey, '');
+  assert.deepEqual(capture.envKeys, []);
   assert.deepEqual(capture.argv.slice(0, 2), ['-p', 'Return a tiny success string.']);
   assert(capture.argv.includes('--output-format'));
   assert(capture.argv.includes('json'));

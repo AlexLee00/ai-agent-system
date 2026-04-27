@@ -511,7 +511,7 @@ export const PROFILES: Record<string, TeamProfiles> = {
       "claude_code_settings": CLAUDE_CODE_SETTINGS["claude-ops"],
       "local_llm_base_url": "http://127.0.0.1:11434",
       "primary_routes": [
-        GEMINI_OAUTH_FLASH_ROUTE
+        GEMINI_CLI_FLASH_ROUTE
       ],
       "fallback_routes": [
         OPENAI_FAST_ROUTE,

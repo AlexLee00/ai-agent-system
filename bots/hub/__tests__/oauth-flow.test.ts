@@ -162,6 +162,40 @@ describe('Hub native OAuth flow', () => {
     expect(JSON.stringify(res.payload)).not.toContain('new-access-token');
   });
 
+  test('OpenAI Codex refresh atomically rotates refresh token when provider returns a new one', async () => {
+    const storeFile = path.join(tempRoot, 'token-store.json');
+    configureOpenAi(storeFile);
+    const { setProviderToken } = require('../lib/oauth/token-store.ts');
+    const { oauthRefreshRoute } = require('../lib/oauth/routes.ts');
+    setProviderToken('openai-codex-oauth', {
+      access_token: 'old-access-token',
+      refresh_token: 'old-refresh-token',
+      expires_at: '2026-04-27T00:00:00.000Z',
+      token_type: 'Bearer',
+    }, { source: 'fixture' });
+
+    globalThis.fetch = jest.fn(async (_input, init) => {
+      const body = new URLSearchParams(String(init.body));
+      expect(body.get('refresh_token')).toBe('old-refresh-token');
+      return new Response(JSON.stringify({
+        access_token: 'rotated-access-token',
+        refresh_token: 'rotated-refresh-token',
+        expires_in: 7200,
+        token_type: 'Bearer',
+      }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+    });
+
+    const res = makeRes();
+    await oauthRefreshRoute({ params: { provider: 'openai-codex' }, query: {}, body: {} }, res);
+
+    expect(res.statusCode).toBe(200);
+    const store = JSON.parse(fs.readFileSync(storeFile, 'utf8'));
+    expect(store.providers['openai-codex-oauth'].token.access_token).toBe('rotated-access-token');
+    expect(store.providers['openai-codex-oauth'].token.refresh_token).toBe('rotated-refresh-token');
+    expect(JSON.stringify(res.payload)).not.toContain('rotated-access-token');
+    expect(JSON.stringify(res.payload)).not.toContain('rotated-refresh-token');
+  });
+
   test('Claude Code OAuth alias uses Hub-native start/callback when explicitly configured', async () => {
     const storeFile = path.join(tempRoot, 'token-store.json');
     configureClaude(storeFile);
