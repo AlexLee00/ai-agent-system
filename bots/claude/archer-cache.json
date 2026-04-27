@@ -1,7 +1,7 @@
 {
-  "lastRun": "2026-04-24",
+  "lastRun": "2026-04-27",
   "versions": {
-    "@anthropic-ai/sdk": "0.91.0",
+    "@anthropic-ai/sdk": "0.91.1",
     "@modelcontextprotocol/sdk": "1.29.0",
     "groq-sdk": "1.1.2",
     "duckdb": "1.4.4",
@@ -10,9 +10,9 @@
     "playwright": "1.59.1"
   },
   "lastAnalysis": {
-    "summary": "이번 주 패치 검토 1순위는 @anthropic-ai/sdk입니다. 연구 관찰 1순위는 'Evidence of Layered Positional and Directional Constraints in the Voynich Manuscript'입니다. 웹 하이라이트는 'GPT-5.5 System Card'입니다. 이번 주는 AI 생태계에서 여러 중요한 업데이트가 있었습니다. 특히, OpenAI의 GPT-5.5 발표는 주목할 만합니다. 관련 패키지 업데이트 및 보안 점검도 필수적입니다.",
+    "summary": "이번 주 패치 검토 1순위는 @anthropic-ai/sdk입니다. 연구 관찰 1순위는 'DeepSeek-V4: a million-token context that agents can actually use'입니다. 웹 하이라이트는 'Our principles'입니다. 이번 주의 주요 내용은 OpenAI의 GPT-5.5 시스템 카드와 Introducing GPT-5.5, DeepSeek-V4, ReasoningBank, Our principles, How to Use Transformers.js in a Chrome Extension 등입니다.",
     "patchCount": 5,
-    "securityCount": 0,
-    "llmApiCount": 1
+    "securityCount": 1,
+    "llmApiCount": 2
   }
 }

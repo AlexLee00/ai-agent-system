@@ -8,12 +8,12 @@
     "appliedAt": "2026-04-23T03:39:20.568Z"
   },
   "sophia": {
-    "evidenceKey": "0.2857:7",
-    "accuracy": 0.2857142857142857,
-    "sampleCount": 7,
-    "appliedFrom": 0.2,
-    "appliedTo": 0.15,
-    "appliedAt": "2026-04-25T23:00:46.481Z"
+    "evidenceKey": "0.3333:6",
+    "accuracy": 0.3333333333333333,
+    "sampleCount": 6,
+    "appliedFrom": 0.15,
+    "appliedTo": 0.1,
+    "appliedAt": "2026-04-26T23:01:02.184Z"
   },
   "hermes": {
     "evidenceKey": "0.2857:7",
