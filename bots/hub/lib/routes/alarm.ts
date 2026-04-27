@@ -2,6 +2,12 @@ const eventLake = require('../../../../packages/core/lib/event-lake');
 const telegramSender = require('../../../../packages/core/lib/telegram-sender');
 const { classifyAlarmType, isExplicitHumanEscalation } = require('../alarm/policy');
 const { ensureAlarmAutoDevDocument } = require('../alarm/auto-dev-incident');
+const { buildAlarmClusterKey } = require('../alarm/cluster');
+const {
+  formatAlarmNotification,
+  formatAutoRepairResultMessage,
+  resolveAlarmDeliveryTeam,
+} = require('../alarm/templates');
 
 function alarmsDisabled(): boolean {
   const raw = String(process.env.HUB_ALARMS_DISABLED || process.env.ALERTS_DISABLED || '').trim().toLowerCase();
@@ -76,6 +82,10 @@ function normalizeTeam(value: unknown): string {
     sigma: 'sigma',
     meeting: 'meeting',
     emergency: 'emergency',
+    'ops-work': 'ops-work',
+    'ops-reports': 'ops-reports',
+    'ops-error-resolution': 'ops-error-resolution',
+    'ops-emergency': 'ops-emergency',
     blog: 'blog',
     general: 'general',
   };
@@ -426,6 +436,29 @@ async function findRecentIncidentDuplicate({
   }
 }
 
+async function findRecentClusterDuplicate({
+  clusterKey,
+  minutes,
+}: {
+  clusterKey: string;
+  minutes: number;
+}) {
+  try {
+    if (!clusterKey) return null;
+    return await pgPool.get('agent', `
+      SELECT id, created_at, metadata
+      FROM agent.event_lake
+      WHERE event_type = 'hub_alarm'
+        AND created_at >= NOW() - ($1::int * INTERVAL '1 minute')
+        AND metadata->>'cluster_key' = $2
+      ORDER BY created_at DESC
+      LIMIT 1
+    `, [Math.max(1, Number(minutes || 0) || 1), clusterKey]);
+  } catch {
+    return null;
+  }
+}
+
 async function _insertLunaBlogRequest(regime: string, mood: string, keywordHints: string, eventId: number | null): Promise<void> {
   const urgency = regime === 'crisis' ? 9 : regime === 'volatile' ? 7 : 5;
   await pgPool.run('blog', `
@@ -502,6 +535,9 @@ export async function alarmRoute(req: any, res: any) {
         title,
         message,
       });
+    const clusterKey = alarmType === 'error'
+      ? buildAlarmClusterKey({ team, fromBot, eventType, title, message, payload })
+      : '';
     const immediateHumanDelivery = shouldSendTelegramImmediately(visibility);
 
     const duplicate = await eventLake.findRecentDuplicateAlarm({
@@ -515,13 +551,20 @@ export async function alarmRoute(req: any, res: any) {
       incidentKey,
       minutes: cooldownMinutes,
     });
+    const duplicateByCluster = alarmType === 'error'
+      ? await findRecentClusterDuplicate({
+          clusterKey,
+          minutes: cooldownMinutes,
+        })
+      : null;
 
-    if (duplicate || duplicateByIncident) {
+    if (duplicate || duplicateByIncident || duplicateByCluster) {
       return res.json({
         ok: true,
         deduped: true,
-        event_id: duplicate?.id || duplicateByIncident?.id || null,
+        event_id: duplicate?.id || duplicateByIncident?.id || duplicateByCluster?.id || null,
         incident_key: incidentKey,
+        cluster_key: clusterKey || null,
         alarm_type: alarmType,
         visibility,
         actionability,
@@ -552,6 +595,7 @@ export async function alarmRoute(req: any, res: any) {
         fromBot,
         event_type: eventType,
         incident_key: incidentKey,
+        cluster_key: clusterKey || null,
         alarm_type: alarmType,
         visibility,
         actionability,
@@ -565,6 +609,7 @@ export async function alarmRoute(req: any, res: any) {
     let delivered = false;
     let deliveryError = '';
     let autoRepair: Record<string, unknown> | null = null;
+    let deliveryTeam = resolveAlarmDeliveryTeam({ alarmType, visibility, team });
 
     if (alarmType === 'error' && actionability === 'auto_repair') {
       try {
@@ -590,6 +635,7 @@ export async function alarmRoute(req: any, res: any) {
           metadata: {
             source: 'hub_alarm_route',
             incident_key: incidentKey,
+            cluster_key: clusterKey || null,
             alarm_event_id: eventId,
             auto_dev_path: autoRepair.path || null,
             created: autoRepair.created === true,
@@ -605,9 +651,18 @@ export async function alarmRoute(req: any, res: any) {
 
     if (immediateHumanDelivery) {
       try {
+        const deliveryMessage = formatAlarmNotification({
+          alarmType,
+          team,
+          severity,
+          title,
+          message,
+          eventType,
+          incidentKey,
+        });
         delivered = severity === 'critical' || visibility === 'emergency'
-          ? await telegramSender.sendCriticalFromHubAlarm(team, message)
-          : await telegramSender.sendFromHubAlarm(team, message);
+          ? await telegramSender.sendCriticalFromHubAlarm(deliveryTeam, deliveryMessage)
+          : await telegramSender.sendFromHubAlarm(deliveryTeam, deliveryMessage);
         if (!delivered) deliveryError = telegramSender.getLastTelegramSendError?.() || 'telegram_send_failed';
       } catch (error: any) {
         deliveryError = error?.message || 'telegram_send_failed';
@@ -627,6 +682,7 @@ export async function alarmRoute(req: any, res: any) {
       ok: true,
       event_id: eventId,
       incident_key: incidentKey,
+      cluster_key: clusterKey || null,
       event_type: eventType,
       alarm_type: alarmType,
       visibility,
@@ -634,12 +690,88 @@ export async function alarmRoute(req: any, res: any) {
       status,
       governed: true,
       immediate_delivery: immediateHumanDelivery,
+      delivery_team: immediateHumanDelivery ? deliveryTeam : null,
       delivered,
       delivery_error: deliveryError || null,
       auto_repair: autoRepair,
     });
   } catch (error: any) {
     return res.status(500).json({ ok: false, error: error.message });
+  }
+}
+
+function normalizeAutoRepairStatus(value: unknown): 'resolved' | 'partially_resolved' | 'unresolved_needs_human' {
+  const normalized = normalizeText(value, 'resolved').toLowerCase();
+  if (['resolved', 'fixed', 'done', 'completed'].includes(normalized)) return 'resolved';
+  if (['partial', 'partially_resolved', 'partially-resolved'].includes(normalized)) return 'partially_resolved';
+  return 'unresolved_needs_human';
+}
+
+export async function alarmAutoRepairCallbackRoute(req: any, res: any) {
+  try {
+    const incidentKey = normalizeText(req.body?.incidentKey || req.body?.incident_key);
+    if (!incidentKey) return res.status(400).json({ ok: false, error: 'incident_key_required' });
+    const team = normalizeTeam(req.body?.team);
+    const status = normalizeAutoRepairStatus(req.body?.status);
+    const summary = normalizeText(req.body?.summary, '오류 처리 결과가 등록되었습니다.');
+    const docPath = normalizeText(req.body?.docPath || req.body?.doc_path);
+    const changedFiles = Array.isArray(req.body?.changedFiles || req.body?.changed_files)
+      ? (req.body?.changedFiles || req.body?.changed_files).map((item: unknown) => normalizeText(item)).filter(Boolean).slice(0, 12)
+      : [];
+    const severity = status === 'unresolved_needs_human' ? 'warn' : 'info';
+    const visibility = status === 'unresolved_needs_human' ? 'human_action' : 'notify';
+    const deliveryTeam = resolveAlarmDeliveryTeam({
+      alarmType: 'error',
+      visibility: status === 'unresolved_needs_human' ? 'human_action' : 'notify',
+      team,
+    });
+    const message = formatAutoRepairResultMessage({
+      team,
+      status,
+      incidentKey,
+      summary,
+      docPath,
+      changedFiles,
+    });
+    const eventId = await eventLake.record({
+      eventType: 'hub_alarm_auto_repair_result',
+      team,
+      botName: normalizeText(req.body?.fromBot, 'auto-dev'),
+      severity,
+      title: 'Alarm auto repair result',
+      message,
+      tags: ['hub', 'alarm', 'auto_repair_result', `team:${team}`, `status:${status}`],
+      metadata: {
+        source: 'hub_alarm_auto_repair_callback',
+        incident_key: incidentKey,
+        status,
+        doc_path: docPath || null,
+        changed_files: changedFiles,
+        visibility,
+      },
+    });
+
+    let delivered = false;
+    let deliveryError = '';
+    try {
+      delivered = await telegramSender.sendFromHubAlarm(deliveryTeam, message);
+      if (!delivered) deliveryError = telegramSender.getLastTelegramSendError?.() || 'telegram_send_failed';
+    } catch (error: any) {
+      deliveryError = error?.message || 'telegram_send_failed';
+    }
+
+    return res.json({
+      ok: true,
+      event_id: eventId,
+      incident_key: incidentKey,
+      status,
+      visibility,
+      delivery_team: deliveryTeam,
+      delivered,
+      delivery_error: deliveryError || null,
+    });
+  } catch (error: any) {
+    return res.status(500).json({ ok: false, error: error?.message || 'auto_repair_callback_failed' });
   }
 }
 

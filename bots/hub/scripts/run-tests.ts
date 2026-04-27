@@ -69,6 +69,8 @@ function unitSmokeScripts(): string[] {
     'app-factory-smoke.ts',
     'hub-alarm-delivery-acceptance-smoke.ts',
     'alarm-governor-smoke.ts',
+    'alarm-autonomy-contract-smoke.ts',
+    'auto-dev-alarm-result-smoke.ts',
     'hub-alarm-no-legacy-shim-smoke.ts',
     'hub-alarm-env-smoke.ts',
     'hub-alarm-import-transition-smoke.ts',

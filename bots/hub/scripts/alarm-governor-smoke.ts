@@ -3,6 +3,7 @@ const {
   alarmNoisyProducersRoute,
   alarmSuppressDryRunRoute,
   alarmDigestFlushRoute,
+  alarmAutoRepairCallbackRoute,
 } = require('../lib/routes/alarm.ts');
 const eventLake = require('../../../packages/core/lib/event-lake');
 const pgPool = require('../../../packages/core/lib/pg-pool');
@@ -42,6 +43,7 @@ async function main() {
     tgChatId: process.env.TELEGRAM_CHAT_ID,
     tgAlertsDisabled: process.env.TELEGRAM_ALERTS_DISABLED,
     autoDevDir: process.env.HUB_ALARM_AUTO_DEV_DIR,
+    classTopics: process.env.HUB_ALARM_USE_CLASS_TOPICS,
   };
 
   let sendCount = 0;
@@ -58,6 +60,7 @@ async function main() {
   process.env.TELEGRAM_CHAT_ID = '123456';
   process.env.TELEGRAM_ALERTS_DISABLED = 'false';
   process.env.HUB_ALARM_AUTO_DEV_DIR = autoDevDir;
+  process.env.HUB_ALARM_USE_CLASS_TOPICS = '1';
   global.fetch = async (url) => {
     if (String(url).includes('api.telegram.org')) {
       sendCount += 1;
@@ -128,6 +131,7 @@ async function main() {
     assert(workRes.statusCode === 200, `expected work alarm 200, got ${workRes.statusCode}`);
     assert(workRes.body.alarm_type === 'work', `expected work alarm type, got ${workRes.body.alarm_type}`);
     assert(workRes.body.visibility === 'notify', `expected notify visibility, got ${workRes.body.visibility}`);
+    assert(workRes.body.delivery_team === 'ops-work', `expected ops-work delivery team, got ${workRes.body.delivery_team}`);
     assert(workRes.body.delivered === true, 'expected work alarm immediate delivery');
     assert(sendCount === 1, `expected one work telegram send, got ${sendCount}`);
 
@@ -146,6 +150,7 @@ async function main() {
     assert(reportRes.statusCode === 200, `expected report alarm 200, got ${reportRes.statusCode}`);
     assert(reportRes.body.alarm_type === 'report', `expected report alarm type, got ${reportRes.body.alarm_type}`);
     assert(reportRes.body.visibility === 'notify', `expected report notify visibility, got ${reportRes.body.visibility}`);
+    assert(reportRes.body.delivery_team === 'ops-reports', `expected ops-reports delivery team, got ${reportRes.body.delivery_team}`);
     assert(reportRes.body.delivered === true, 'expected report alarm immediate delivery');
     assert(sendCount === 2, `expected two telegram sends after report, got ${sendCount}`);
 
@@ -171,14 +176,60 @@ async function main() {
     assert(errorRes.body.actionability === 'auto_repair', `expected auto_repair, got ${errorRes.body.actionability}`);
     assert(errorRes.body.delivered === false, 'expected error auto-repair not to notify user directly');
     assert(errorRes.body.auto_repair?.ok === true, 'expected auto_dev repair document to be queued');
+    assert(typeof errorRes.body.cluster_key === 'string' && errorRes.body.cluster_key.includes('llm_provider_cooldown'), 'expected provider cooldown cluster key');
     assert(sendCount === 2, `expected no direct telegram send for auto-repair error, got ${sendCount}`);
     const autoDevFiles = fs.readdirSync(autoDevDir).filter((file) => file.endsWith('.md'));
     assert(autoDevFiles.length === 1, `expected one auto_dev incident doc, got ${autoDevFiles.length}`);
     const autoDevDoc = fs.readFileSync(path.join(autoDevDir, autoDevFiles[0]), 'utf8');
     assert(autoDevDoc.includes('target_team: claude'), 'expected auto_dev doc to target claude');
+    assert(autoDevDoc.includes('source_team: luna'), 'expected auto_dev doc to preserve source team');
+    assert(autoDevDoc.includes(`incident_key: ${errorRes.body.incident_key}`), 'expected auto_dev doc to preserve incident key');
     assert(autoDevDoc.includes('## Council'), 'expected auto_dev doc to include agent council section');
     assert(!autoDevDoc.includes(`super-secret-token-${stamp}`), 'expected message token to be redacted');
     assert(!autoDevDoc.includes(`access-token-${stamp}`), 'expected payload token to be redacted');
+
+    const similarErrorReq = {
+      body: {
+        message: `provider_cooldown error token=another-secret-${stamp}`,
+        team: 'luna',
+        fromBot: 'luna-smoke',
+        severity: 'error',
+        alarmType: 'error',
+        incidentKey: `smoke:error-similar:${Date.now()}`,
+        payload: {
+          provider: 'openai-oauth',
+          write_scope: ['bots/investment'],
+        },
+      },
+    };
+    const originalPgGet = pgPool.get;
+    pgPool.get = async (_schema, sql) => {
+      if (String(sql).includes(`metadata->>'cluster_key'`)) return { id: 999, metadata: { cluster_key: errorRes.body.cluster_key } };
+      return originalPgGet(_schema, sql);
+    };
+    const similarErrorRes = makeRes();
+    await alarmRoute(similarErrorReq, similarErrorRes);
+    pgPool.get = originalPgGet;
+    assert(similarErrorRes.body.deduped === true, 'expected similar error to be deduped by cluster');
+    assert(similarErrorRes.body.event_id === 999, 'expected cluster duplicate event id');
+
+    const callbackReq = {
+      body: {
+        incidentKey: errorRes.body.incident_key,
+        team: 'luna',
+        status: 'resolved',
+        summary: 'provider cooldown reset and verified',
+        docPath: errorRes.body.auto_repair.path,
+        changedFiles: ['bots/hub/lib/routes/alarm.ts'],
+      },
+    };
+    const callbackRes = makeRes();
+    await alarmAutoRepairCallbackRoute(callbackReq, callbackRes);
+    assert(callbackRes.statusCode === 200, `expected callback 200, got ${callbackRes.statusCode}`);
+    assert(callbackRes.body.status === 'resolved', `expected resolved callback, got ${callbackRes.body.status}`);
+    assert(callbackRes.body.delivery_team === 'ops-error-resolution', `expected ops-error-resolution, got ${callbackRes.body.delivery_team}`);
+    assert(callbackRes.body.delivered === true, 'expected callback result delivery');
+    assert(sendCount === 3, `expected callback to send one result notification, got ${sendCount}`);
 
     const digestReq = {
       body: {
@@ -196,7 +247,7 @@ async function main() {
     assert(digestRes.body.ok === true, 'expected ok=true');
     assert(digestRes.body.visibility === 'digest', `expected digest visibility, got ${digestRes.body.visibility}`);
     assert(digestRes.body.delivered === false, 'expected digest alarm not delivered immediately');
-    assert(sendCount === 2, `expected no additional telegram send for digest, got ${sendCount}`);
+    assert(sendCount === 3, `expected no additional telegram send for digest, got ${sendCount}`);
 
     const humanReq = {
       body: {
@@ -212,7 +263,7 @@ async function main() {
     await alarmRoute(humanReq, humanRes);
     assert(humanRes.statusCode === 200, `expected 200, got ${humanRes.statusCode}`);
     assert(humanRes.body.delivered === true, 'expected human_action immediate delivery');
-    assert(sendCount === 3, `expected exactly three immediate telegram sends, got ${sendCount}`);
+    assert(sendCount === 4, `expected exactly four immediate telegram sends, got ${sendCount}`);
 
     const noisyReq = { query: { minutes: '60', limit: '5' } };
     const noisyRes = makeRes();
@@ -270,7 +321,7 @@ async function main() {
     assert(digestFlushRes.body.ok === true, 'expected digest flush ok');
     assert(Array.isArray(digestFlushRes.body.teams), 'expected digest flush team list');
     assert(digestFlushRes.body.teams[0]?.sent === true, 'expected digest flush delivered');
-    assert(sendCount >= 4, `expected digest flush to send telegram summary, got ${sendCount}`);
+    assert(sendCount >= 5, `expected digest flush to send telegram summary, got ${sendCount}`);
 
     console.log('alarm_governor_smoke_ok');
   } finally {
@@ -288,6 +339,8 @@ async function main() {
     else process.env.TELEGRAM_ALERTS_DISABLED = originals.tgAlertsDisabled;
     if (originals.autoDevDir == null) delete process.env.HUB_ALARM_AUTO_DEV_DIR;
     else process.env.HUB_ALARM_AUTO_DEV_DIR = originals.autoDevDir;
+    if (originals.classTopics == null) delete process.env.HUB_ALARM_USE_CLASS_TOPICS;
+    else process.env.HUB_ALARM_USE_CLASS_TOPICS = originals.classTopics;
     fs.rmSync(autoDevDir, { recursive: true, force: true });
   }
 }

@@ -34,6 +34,10 @@ const TEAM_TOPIC = {
   sigma: 'sigma',
   meeting: 'meeting',
   emergency: 'emergency',
+  'ops-work': 'ops_work',
+  'ops-reports': 'ops_reports',
+  'ops-error-resolution': 'ops_error_resolution',
+  'ops-emergency': 'ops_emergency',
 };
 
 type TopicIdMap = Record<string, string>;
@@ -69,6 +73,12 @@ type PostAlarmInput = {
   fromBot?: string;
   sessionKey?: string;
   payload?: unknown;
+  alarmType?: 'work' | 'report' | 'error' | string;
+  visibility?: 'internal' | 'audit_only' | 'digest' | 'notify' | 'human_action' | 'emergency' | string;
+  actionability?: 'none' | 'auto_repair' | 'needs_approval' | 'needs_human' | string;
+  incidentKey?: string;
+  title?: string;
+  eventType?: string;
   criticalTelegramMode?: string;
   inlineKeyboard?: InlineKeyboard | null;
 };
@@ -214,6 +224,36 @@ function _mapAlertLevelToSeverity(level: number): 'info' | 'warn' | 'error' | 'c
   return 'info';
 }
 
+function _inferAlarmType({
+  alarmType,
+  alertLevel,
+  message,
+  payload,
+}: {
+  alarmType?: string;
+  alertLevel: number;
+  message: string;
+  payload: unknown;
+}): string {
+  const explicit = _normalizeAlertText(alarmType).toLowerCase();
+  if (['work', 'report', 'error'].includes(explicit)) return explicit;
+  const payloadType = (
+    payload &&
+    typeof payload === 'object' &&
+    !Array.isArray(payload)
+  )
+    ? _normalizeAlertText((payload as Record<string, unknown>).alarmType || (payload as Record<string, unknown>).alarm_type).toLowerCase()
+    : '';
+  if (['work', 'report', 'error'].includes(payloadType)) return payloadType;
+  const corpus = [
+    message,
+    _extractEventType(message, payload) || '',
+  ].join('\n').toLowerCase();
+  if (/report|summary|digest|readiness|dashboard|리포트|보고|브리핑|정기/.test(corpus)) return 'report';
+  if (alertLevel >= 3 || /error|fail|exception|timeout|provider_cooldown|오류|실패|장애|예외/.test(corpus)) return 'error';
+  return 'work';
+}
+
 function _isHubAlarmDeliveryAccepted(response: Response, body: any): boolean {
   if (!response.ok || body?.ok !== true) return false;
   if (body?.suppressed === true || body?.reason === 'alerts_disabled') return false;
@@ -236,12 +276,24 @@ async function _postAlarmViaHub({
   alertLevel,
   fromBot,
   payload,
+  alarmType,
+  visibility,
+  actionability,
+  incidentKey,
+  title,
+  eventType,
 }: {
   message: string;
   team: string;
   alertLevel: number;
   fromBot: string;
   payload: unknown;
+  alarmType?: string;
+  visibility?: string;
+  actionability?: string;
+  incidentKey?: string;
+  title?: string;
+  eventType?: string;
 }) {
   const hubBaseUrl = String(env.HUB_BASE_URL || '').trim().replace(/\/+$/, '');
   const hubToken = String(env.HUB_AUTH_TOKEN || '').trim();
@@ -261,8 +313,15 @@ async function _postAlarmViaHub({
         team,
         fromBot,
         severity: _mapAlertLevelToSeverity(alertLevel),
-        title: `${team} alarm`,
-        payload,
+        title: title || `${team} alarm`,
+        alarmType: _inferAlarmType({ alarmType, alertLevel, message, payload }),
+        visibility: visibility || undefined,
+        actionability: actionability || undefined,
+        incidentKey: incidentKey || undefined,
+        payload: {
+          ...(payload && typeof payload === 'object' && !Array.isArray(payload) ? (payload as Record<string, unknown>) : {}),
+          event_type: eventType || _extractEventType(message, payload) || undefined,
+        },
       }),
       signal: AbortSignal.timeout(HUB_ALARM_TIMEOUT_MS),
     });
@@ -388,6 +447,12 @@ export async function postAlarm({
   fromBot = 'unknown',
   sessionKey,
   payload = null,
+  alarmType,
+  visibility,
+  actionability,
+  incidentKey,
+  title,
+  eventType,
   inlineKeyboard = null,
 }: PostAlarmInput) {
   const safeFromBot = _normalizeAlertText(fromBot) || 'unknown';
@@ -428,6 +493,12 @@ export async function postAlarm({
     alertLevel,
     fromBot: safeFromBot,
     payload,
+    alarmType,
+    visibility,
+    actionability,
+    incidentKey: incidentKey || sessionKey,
+    title,
+    eventType,
   });
   if (hubResult?.ok) {
     _recordRecentAlertSnapshot({ message: safeMessage, team: requestedTeam, alertLevel, fromBot: safeFromBot, payload });

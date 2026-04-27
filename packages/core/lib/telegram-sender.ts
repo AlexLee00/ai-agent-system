@@ -41,9 +41,17 @@ type TeamKey =
   | 'claude-lead'
   | 'meeting'
   | 'emergency'
+  | 'ops-work'
+  | 'ops-reports'
+  | 'ops-error-resolution'
+  | 'ops-emergency'
   | 'blog'
   | 'legal'
-  | 'justin';
+  | 'justin'
+  | 'worker'
+  | 'video'
+  | 'darwin'
+  | 'sigma';
 
 type TelegramTopicId = string | number;
 
@@ -193,9 +201,17 @@ const TOPIC_KEYS = {
   'claude-lead': 'claude_lead',
   'meeting':     'meeting',
   'emergency':   'emergency',
+  'ops-work':     'ops_work',
+  'ops-reports':  'ops_reports',
+  'ops-error-resolution': 'ops_error_resolution',
+  'ops-emergency': 'ops_emergency',
   'blog':        'blog',
   'legal':       'legal',
   'justin':      'legal',
+  'worker':      'worker',
+  'video':       'video',
+  'darwin':      'darwin',
+  'sigma':       'sigma',
 };
 
 function _getThreadId(team: string): TelegramTopicId | null {

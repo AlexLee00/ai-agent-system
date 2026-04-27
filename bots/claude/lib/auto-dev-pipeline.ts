@@ -1080,6 +1080,116 @@ function formatStageMessage(job, stageId, details = '') {
   return lines.join('\n');
 }
 
+function extractMarkdownListValue(text, key) {
+  const escaped = String(key || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const match = String(text || '').match(new RegExp(`^\\s*-\\s*${escaped}\\s*:\\s*(.+?)\\s*$`, 'mi'));
+  return match ? toSafeString(match[1]) : '';
+}
+
+function extractAlarmIncidentContext(job, content = '') {
+  const relPath = toSafeString(job?.analysis?.relPath || job?.relPath);
+  if (!relPath.includes('docs/auto_dev/ALARM_INCIDENT_')) return null;
+
+  const text = String(content || '');
+  const envelope = splitDocumentFrontmatter(text);
+  const rawMetadata = parseFrontmatterMetadata(envelope.frontmatter);
+  const body = envelope.body || text;
+  const incidentKey = toSafeString(
+    rawMetadata.incident_key ||
+    rawMetadata.incidentKey ||
+    extractMarkdownListValue(body, 'incident_key')
+  );
+  if (!incidentKey) return null;
+
+  const team = toSafeString(
+    rawMetadata.source_team ||
+    rawMetadata.alarm_team ||
+    extractMarkdownListValue(body, 'team') ||
+    job?.analysis?.metadata?.source_team ||
+    'hub'
+  ).toLowerCase();
+  const eventType = toSafeString(
+    rawMetadata.alarm_event_type ||
+    rawMetadata.event_type ||
+    extractMarkdownListValue(body, 'event_type') ||
+    'auto_dev_alarm_incident'
+  );
+
+  return {
+    incidentKey,
+    team: team || 'hub',
+    eventType,
+    docPath: relPath,
+  };
+}
+
+function formatAlarmRepairResultMessage(context, status, summary, changedFiles = []) {
+  const statusLabel = status === 'resolved'
+    ? 'resolved'
+    : status === 'partially_resolved'
+      ? 'partially_resolved'
+      : 'unresolved_needs_human';
+  const lines = [
+    `🛠️ [${context.team}] 오류 처리 결과`,
+    '',
+    `상태: ${statusLabel}`,
+    `incident: ${context.incidentKey}`,
+    `문서: ${context.docPath}`,
+  ];
+  if (summary) {
+    lines.push('', String(summary).slice(0, 1200));
+  }
+  if (Array.isArray(changedFiles) && changedFiles.length > 0) {
+    lines.push('', '변경 파일:');
+    changedFiles.slice(0, 10).forEach((file) => lines.push(`- ${file}`));
+  }
+  return lines.join('\n');
+}
+
+async function sendAlarmRepairResult(job, status, summary, options = {}, payload = null, content = '') {
+  const context = extractAlarmIncidentContext(job, content);
+  if (!context) return { ok: true, skipped: true, reason: 'not_alarm_incident' };
+
+  const runtimeConfig = getRuntimeConfig(options);
+  const shadow = options.shadow ?? runtimeConfig.shadow;
+  const changedFiles = Array.isArray(payload?.changedFiles)
+    ? payload.changedFiles
+    : Array.isArray(payload?.changed_files)
+      ? payload.changed_files
+      : [];
+  const message = formatAlarmRepairResultMessage(context, status, summary, changedFiles);
+  if (shadow || options.test) {
+    console.log(`[auto-dev] [SHADOW] alarm-repair-result ${status}: ${context.incidentKey}`);
+    return { ok: true, shadow: true, message, context };
+  }
+
+  try {
+    return await postAlarm({
+      message,
+      team: context.team,
+      alertLevel: status === 'unresolved_needs_human' ? 3 : status === 'partially_resolved' ? 2 : 1,
+      fromBot: 'auto-dev',
+      alarmType: 'error',
+      visibility: status === 'unresolved_needs_human' ? 'human_action' : 'notify',
+      actionability: status === 'unresolved_needs_human' ? 'needs_human' : 'none',
+      incidentKey: context.incidentKey,
+      title: `auto_dev ${status}`,
+      eventType: `auto_dev_alarm_repair_${status}`,
+      payload: {
+        ...(payload && typeof payload === 'object' ? payload : {}),
+        event_type: `auto_dev_alarm_repair_${status}`,
+        status,
+        incident_key: context.incidentKey,
+        source_team: context.team,
+        doc_path: context.docPath,
+      },
+    });
+  } catch (error) {
+    console.warn(`[auto-dev] alarm repair result notification failed: ${error?.message || error}`);
+    return { ok: false, error: error?.message || String(error), context };
+  }
+}
+
 async function sendStageAlarm(job, stageId, details = '', options = {}, payload = null) {
   const runtimeConfig = getRuntimeConfig(options);
   const shadow = options.shadow ?? runtimeConfig.shadow;
@@ -2422,6 +2532,20 @@ async function processAutoDevDocument(filePath, options = {}) {
         archiveManifestPath: archiveManifestPath || null,
       },
     );
+    await sendAlarmRepairResult(
+      { ...job, analysis: finalJob.analysis || job.analysis },
+      'resolved',
+      `auto_dev 구현이 리뷰/테스트를 통과했습니다.\n\n${testResult.message}`,
+      options,
+      {
+        event_type: 'auto_dev_alarm_repair_resolved',
+        changedFiles: newlyChangedFiles,
+        archivedPath: archivedPath || null,
+        archiveManifestPath: archiveManifestPath || null,
+        completionDocumentPath: completionDocumentPath || null,
+      },
+      content,
+    );
     await markAgentDone();
     return {
       ok: true,
@@ -2478,6 +2602,18 @@ async function processAutoDevDocument(filePath, options = {}) {
         implementationModelMeta,
         error: error.message,
       },
+    );
+    await sendAlarmRepairResult(
+      { ...job, analysis: job.analysis || { title: job.title, relPath } },
+      'unresolved_needs_human',
+      `auto_dev 구현이 실패했습니다. 사람이 확인해야 합니다.\n\n${error.message}`,
+      { ...options, shadow: options.shadow },
+      {
+        event_type: 'auto_dev_alarm_repair_unresolved_needs_human',
+        error: error.message,
+        changedFiles: newlyChangedFiles,
+      },
+      content,
     );
     await markAgentError(error.message);
     return { ok: false, error: error.message, job: failedJob };
@@ -2652,4 +2788,6 @@ module.exports = {
   getAutoDevStatusSnapshot,
   loadState,
   _testOnly_buildAutoDevChildEnv: buildAutoDevChildEnv,
+  _testOnly_extractAlarmIncidentContext: extractAlarmIncidentContext,
+  _testOnly_formatAlarmRepairResultMessage: formatAlarmRepairResultMessage,
 };
