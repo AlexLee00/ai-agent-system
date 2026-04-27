@@ -201,7 +201,7 @@ async function updateScheduleCategory(id, category) {
   }
 }
 
-async function _repairExistingSchedule(date, rows = []) {
+async function _repairExistingSchedule(date, rows = [], options = {}) {
   if (!rows.length || DEV_HUB_READONLY) return rows;
 
   const lectureRow = rows.find((row) => row.post_type === 'lecture');
@@ -231,6 +231,7 @@ async function _repairExistingSchedule(date, rows = []) {
     generalRow &&
     generalRow.status === 'scheduled' &&
     !generalRow.post_id &&
+    !options.preserveScheduledGeneralCategory &&
     String(generalRow.category || '').trim() !== String(generalPlan.category || '').trim()
   ) {
     await updateScheduleCategory(generalRow.id, generalPlan.category);
@@ -239,12 +240,12 @@ async function _repairExistingSchedule(date, rows = []) {
   return getScheduleByDate(date);
 }
 
-async function ensureSchedule(date = _today()) {
+async function ensureSchedule(date = _today(), options = {}) {
   try {
     await ensureBlogCoreSchema();
     const existing = await getScheduleByDate(date);
     if (existing.length > 0) {
-      return _repairExistingSchedule(date, existing);
+      return _repairExistingSchedule(date, existing, options);
     }
 
     const lecturePlan = await _resolveLecturePlan(date);
@@ -284,8 +285,8 @@ async function resolveTestLecture() {
   return { number: testNum, seriesName, lectureTitle: title || `제${testNum}강` };
 }
 
-async function getTodayContext() {
-  const schedule = await ensureSchedule();
+async function getTodayContext(options = {}) {
+  const schedule = await ensureSchedule(_today(), options);
 
   const lectureRow = schedule.find((r) => r.post_type === 'lecture') || null;
   const generalRow = schedule.find((r) => r.post_type === 'general') || null;

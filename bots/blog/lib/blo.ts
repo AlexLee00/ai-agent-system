@@ -1581,7 +1581,9 @@ async function _prepareDailyRun(traceCtx, options = {}) {
 
   console.log(`[블로] 오늘 생성 목표: 강의 ${config.lecture_count}편 + 일반 ${config.general_count}편`);
 
-  const scheduleContext = await getTodayContext();
+  const scheduleContext = await getTodayContext({
+    preserveScheduledGeneralCategory: options.generalOnly === true,
+  });
   const { lectureCtx, generalCtx, lectureSchedule, generalSchedule } = scheduleContext;
   console.log(`[블로] 스케줄 — 강의: ${lectureCtx ? `${lectureCtx.number}강` : '없음(이미발행)'} / 일반: ${generalCtx?.category || '없음(이미발행)'}`);
 
