@@ -816,8 +816,82 @@ function _logQualityResult(quality, charCount) {
   quality.issues.forEach(i => console.log(`  [${i.severity}] ${i.msg}`));
 }
 
+function _hasLectureSection(content, sectionTitle) {
+  const text = String(content || '');
+  if (!text) return false;
+  if (text.includes(`[${sectionTitle}]`)) return true;
+  const headingPattern = new RegExp(`<h2[^>]*class="section-title"[^>]*>\\s*${String(sectionTitle).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*<\\/h2>`, 'i');
+  return headingPattern.test(text);
+}
+
+function _buildLectureHashtagLine(lectureTitle = '') {
+  const tokens = String(lectureTitle || '')
+    .replace(/[^\p{L}\p{N}\s]/gu, ' ')
+    .split(/\s+/)
+    .map((token) => token.trim())
+    .filter((token) => token.length >= 2)
+    .slice(0, 8);
+  const tagSet = new Set([
+    '#Nodejs',
+    '#Node강의',
+    '#백엔드개발',
+    '#실무강의',
+    '#웹개발',
+    '#스터디카페',
+    '#커피랑도서관',
+    '#분당서현점',
+    '#개발공부',
+    '#프로그래밍',
+    '#개발자학습',
+    '#승호아빠',
+  ]);
+  for (const token of tokens) {
+    tagSet.add(`#${token.replace(/\s+/g, '')}`);
+  }
+  return Array.from(tagSet).slice(0, 22).join(' ');
+}
+
+function _ensureLectureClosingFloor(post, context) {
+  const content = String(post?.content || '').trim();
+  if (!content) return post;
+
+  let next = content;
+  const lectureTitle = context?.lectureTitle || '이번 강의';
+  const lectureNumber = Number(context?.number || 0);
+  const nextLecture = lectureNumber > 0 ? `${lectureNumber + 1}강` : '다음 강의';
+  const relatedPosts = Array.isArray(context?.researchData?.relatedPosts)
+    ? context.researchData.relatedPosts
+    : [];
+
+  if (!_hasLectureSection(next, '마무리 인사')) {
+    next = `${next}\n\n[마무리 인사]\n오늘 ${lectureNumber || ''}강에서는 ${lectureTitle}를 실무 흐름으로 다시 정리해봤습니다. 여기서 구조와 기준을 먼저 잡아두면 실제 구현 단계에서 흔들리는 시간을 꽤 줄일 수 있습니다. 다음 ${nextLecture}에서는 이번 흐름을 이어서 더 안전하게 운영하는 방법까지 연결해보겠습니다. 승호아빠도 같은 포인트를 현업에서 자주 다시 확인하게 됩니다.`.trim();
+  }
+
+  if (!_hasLectureSection(next, '함께 읽으면 좋은 글')) {
+    const relatedLines = relatedPosts.length > 0
+      ? relatedPosts.slice(0, 3).map((item) => `- ${item.title}`).join('\n')
+      : [
+        `- [Node.js ${Math.max(1, lectureNumber - 1)}강] 이전 흐름 복습 포인트`,
+        `- ${lectureTitle}와 연결되는 실무 아키텍처 점검 글`,
+        '- 운영 장애를 줄이는 백엔드 설계 체크리스트',
+      ].join('\n');
+    next = `${next}\n\n[함께 읽으면 좋은 글]\n${relatedLines}`.trim();
+  }
+
+  if (!_hasLectureSection(next, '해시태그')) {
+    next = `${next}\n\n[해시태그]\n${_buildLectureHashtagLine(lectureTitle)}`.trim();
+  }
+
+  if (next === content) return post;
+  return {
+    ...post,
+    content: next,
+    charCount: next.length,
+  };
+}
+
 async function _runQualityRepair(kind, context, draft, variation, repairFn) {
-  let post = draft;
+  let post = kind === 'lecture' ? _ensureLectureClosingFloor(draft, context) : draft;
   let quality = await checkQualityEnhanced(post.content, kind, {
     lectureNumber: kind === 'lecture' ? context.number : null,
     expectedLectureTitle: kind === 'lecture' ? context.lectureTitle : null,
@@ -833,7 +907,8 @@ async function _runQualityRepair(kind, context, draft, variation, repairFn) {
   for (let attempt = 0; attempt < 2 && (!quality.passed || quality.autoRewriteRecommended); attempt += 1) {
     console.log(`[품질] 초안 보정 시도... (${attempt + 1}/2)`);
     const retry = await repairFn(context, post, quality, variation);
-    const retryQuality = await checkQualityEnhanced(retry.content, kind, {
+    const repaired = kind === 'lecture' ? _ensureLectureClosingFloor(retry, context) : retry;
+    const retryQuality = await checkQualityEnhanced(repaired.content, kind, {
       lectureNumber: kind === 'lecture' ? context.number : null,
       expectedLectureTitle: kind === 'lecture' ? context.lectureTitle : null,
       category: kind === 'general' ? context.category : null,
@@ -843,7 +918,7 @@ async function _runQualityRepair(kind, context, draft, variation, repairFn) {
         ? context.researchData?.strategy_preferred_pattern || null
         : null,
     });
-    post = retry;
+    post = repaired;
     quality = retryQuality;
     if (retryQuality.passed) {
       console.log('[품질] ✅ 초안 보정 통과');
