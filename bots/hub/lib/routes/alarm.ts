@@ -1,5 +1,7 @@
 const eventLake = require('../../../../packages/core/lib/event-lake');
 const telegramSender = require('../../../../packages/core/lib/telegram-sender');
+const { classifyAlarmType, isExplicitHumanEscalation } = require('../alarm/policy');
+const { ensureAlarmAutoDevDocument } = require('../alarm/auto-dev-incident');
 
 function alarmsDisabled(): boolean {
   const raw = String(process.env.HUB_ALARMS_DISABLED || process.env.ALERTS_DISABLED || '').trim().toLowerCase();
@@ -7,13 +9,15 @@ function alarmsDisabled(): boolean {
 }
 const pgPool = require('../../../../packages/core/lib/pg-pool');
 
-const VISIBILITY_VALUES = ['internal', 'audit_only', 'digest', 'human_action', 'emergency'] as const;
+const VISIBILITY_VALUES = ['internal', 'audit_only', 'digest', 'notify', 'human_action', 'emergency'] as const;
 const ACTIONABILITY_VALUES = ['none', 'auto_repair', 'needs_approval', 'needs_human'] as const;
 const STATUS_VALUES = ['new', 'correlating', 'repairing', 'verified', 'exhausted'] as const;
+const ALARM_TYPE_VALUES = ['work', 'report', 'error'] as const;
 
 type AlarmVisibility = (typeof VISIBILITY_VALUES)[number];
 type AlarmActionability = (typeof ACTIONABILITY_VALUES)[number];
 type AlarmStatus = (typeof STATUS_VALUES)[number];
+type AlarmType = (typeof ALARM_TYPE_VALUES)[number];
 type DigestRow = {
   id: number;
   team: string;
@@ -121,13 +125,19 @@ function buildIncidentKey({
 function defaultActionability({
   severity,
   visibility,
+  alarmType,
+  explicitHumanEscalation = false,
 }: {
   severity: 'info' | 'warn' | 'error' | 'critical';
   visibility: AlarmVisibility;
+  alarmType: AlarmType;
+  explicitHumanEscalation?: boolean;
 }): AlarmActionability {
   if (visibility === 'human_action') return 'needs_approval';
   if (visibility === 'emergency') return 'needs_human';
-  if (severity === 'critical') return 'needs_human';
+  if (explicitHumanEscalation && severity === 'critical') return 'needs_human';
+  if (alarmType === 'error') return 'auto_repair';
+  if (alarmType === 'work' || alarmType === 'report') return 'none';
   if (severity === 'error' || severity === 'warn') return 'auto_repair';
   return 'none';
 }
@@ -135,15 +145,22 @@ function defaultActionability({
 function defaultVisibility({
   severity,
   actionability,
+  alarmType,
+  explicitHumanEscalation = false,
 }: {
   severity: 'info' | 'warn' | 'error' | 'critical';
   actionability: AlarmActionability | null;
+  alarmType: AlarmType;
+  explicitHumanEscalation?: boolean;
 }): AlarmVisibility {
-  if (severity === 'critical') return 'emergency';
+  if (explicitHumanEscalation) {
+    if (severity === 'critical' || actionability === 'needs_human') return 'emergency';
+    return 'human_action';
+  }
   if (actionability === 'needs_approval' || actionability === 'needs_human') return 'human_action';
-  if (severity === 'error') return 'digest';
-  if (severity === 'warn') return 'digest';
-  return 'internal';
+  if (alarmType === 'work' || alarmType === 'report') return 'notify';
+  if (alarmType === 'error') return 'internal';
+  return severity === 'critical' ? 'digest' : 'internal';
 }
 
 function defaultStatus({
@@ -160,7 +177,7 @@ function defaultStatus({
 }
 
 function shouldSendTelegramImmediately(visibility: AlarmVisibility): boolean {
-  return visibility === 'human_action' || visibility === 'emergency';
+  return visibility === 'notify' || visibility === 'human_action' || visibility === 'emergency';
 }
 
 function summarizeDigestMessage(team: string, rows: DigestRow[], nowIso: string): string {
@@ -448,6 +465,19 @@ export async function alarmRoute(req: any, res: any) {
     const title = normalizeText(req.body?.title, `${team} alarm`);
     const payload = req.body?.payload ?? {};
     const eventType = normalizeEventType(payload);
+    const alarmType = classifyAlarmType({
+      requestedType: req.body?.alarmType ?? req.body?.alarm_type ?? req.body?.type,
+      severity,
+      eventType,
+      title,
+      message,
+      payload,
+    });
+    const explicitHumanEscalation = isExplicitHumanEscalation({
+      requestedVisibility: req.body?.visibility,
+      requestedActionability: req.body?.actionability,
+      payload,
+    });
     const cooldownMinutes = Math.max(
       1,
       Number(req.body?.dedupeMinutes ?? req.body?.cooldownMinutes ?? 5) || 5,
@@ -456,9 +486,11 @@ export async function alarmRoute(req: any, res: any) {
       || defaultVisibility({
         severity,
         actionability: normalizeActionability(req.body?.actionability),
+        alarmType,
+        explicitHumanEscalation,
       });
     const actionability = normalizeActionability(req.body?.actionability)
-      || defaultActionability({ severity, visibility });
+      || defaultActionability({ severity, visibility, alarmType, explicitHumanEscalation });
     const status = normalizeStatus(req.body?.status)
       || defaultStatus({ actionability, visibility });
     const incidentKey = normalizeText(req.body?.incidentKey)
@@ -490,6 +522,7 @@ export async function alarmRoute(req: any, res: any) {
         deduped: true,
         event_id: duplicate?.id || duplicateByIncident?.id || null,
         incident_key: incidentKey,
+        alarm_type: alarmType,
         visibility,
         actionability,
         status,
@@ -506,15 +539,24 @@ export async function alarmRoute(req: any, res: any) {
       severity,
       title,
       message,
-      tags: ['hub', 'alarm', `team:${team}`, `visibility:${visibility}`, `actionability:${actionability}`],
+      tags: [
+        'hub',
+        'alarm',
+        `team:${team}`,
+        `alarm_type:${alarmType}`,
+        `visibility:${visibility}`,
+        `actionability:${actionability}`,
+      ],
       metadata: {
         source: 'hub_alarm_route',
         fromBot,
         event_type: eventType,
         incident_key: incidentKey,
+        alarm_type: alarmType,
         visibility,
         actionability,
         status,
+        explicit_human_escalation: explicitHumanEscalation,
         immediate_human_delivery: immediateHumanDelivery,
         governed: true,
       },
@@ -522,6 +564,44 @@ export async function alarmRoute(req: any, res: any) {
 
     let delivered = false;
     let deliveryError = '';
+    let autoRepair: Record<string, unknown> | null = null;
+
+    if (alarmType === 'error' && actionability === 'auto_repair') {
+      try {
+        autoRepair = await ensureAlarmAutoDevDocument({
+          team,
+          fromBot,
+          severity,
+          title,
+          message,
+          eventType,
+          incidentKey,
+          eventId,
+          payload,
+        });
+        await eventLake.record({
+          eventType: 'hub_alarm_auto_repair_enqueued',
+          team,
+          botName: 'hub-alarm-governor',
+          severity: severity === 'critical' ? 'warn' : 'info',
+          title: 'Alarm auto repair document queued',
+          message: `auto_dev repair document queued for ${incidentKey}`,
+          tags: ['hub', 'alarm', 'auto_repair', `team:${team}`],
+          metadata: {
+            source: 'hub_alarm_route',
+            incident_key: incidentKey,
+            alarm_event_id: eventId,
+            auto_dev_path: autoRepair.path || null,
+            created: autoRepair.created === true,
+          },
+        });
+      } catch (error: any) {
+        autoRepair = {
+          ok: false,
+          error: error?.message || 'auto_repair_document_failed',
+        };
+      }
+    }
 
     if (immediateHumanDelivery) {
       try {
@@ -548,6 +628,7 @@ export async function alarmRoute(req: any, res: any) {
       event_id: eventId,
       incident_key: incidentKey,
       event_type: eventType,
+      alarm_type: alarmType,
       visibility,
       actionability,
       status,
@@ -555,6 +636,7 @@ export async function alarmRoute(req: any, res: any) {
       immediate_delivery: immediateHumanDelivery,
       delivered,
       delivery_error: deliveryError || null,
+      auto_repair: autoRepair,
     });
   } catch (error: any) {
     return res.status(500).json({ ok: false, error: error.message });

@@ -6,6 +6,9 @@ const {
 } = require('../lib/routes/alarm.ts');
 const eventLake = require('../../../packages/core/lib/event-lake');
 const pgPool = require('../../../packages/core/lib/pg-pool');
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
 
 function assert(condition, message) {
   if (!condition) throw new Error(message);
@@ -38,11 +41,13 @@ async function main() {
     tgToken: process.env.TELEGRAM_BOT_TOKEN,
     tgChatId: process.env.TELEGRAM_CHAT_ID,
     tgAlertsDisabled: process.env.TELEGRAM_ALERTS_DISABLED,
+    autoDevDir: process.env.HUB_ALARM_AUTO_DEV_DIR,
   };
 
   let sendCount = 0;
   let eventId = 100;
   let pgRunCount = 0;
+  const autoDevDir = fs.mkdtempSync(path.join(os.tmpdir(), 'hub-alarm-auto-dev-'));
 
   eventLake.findRecentDuplicateAlarm = async () => null;
   eventLake.record = async () => {
@@ -52,6 +57,7 @@ async function main() {
   process.env['TELEGRAM_' + 'BOT_TOKEN'] = 'alarm-governor-smoke-fixture';
   process.env.TELEGRAM_CHAT_ID = '123456';
   process.env.TELEGRAM_ALERTS_DISABLED = 'false';
+  process.env.HUB_ALARM_AUTO_DEV_DIR = autoDevDir;
   global.fetch = async (url) => {
     if (String(url).includes('api.telegram.org')) {
       sendCount += 1;
@@ -107,12 +113,80 @@ async function main() {
 
   try {
     const stamp = Date.now();
+    const workReq = {
+      body: {
+        message: `ska reservation completed ${stamp}`,
+        team: 'ska',
+        fromBot: 'ska-smoke',
+        severity: 'info',
+        alarmType: 'work',
+        incidentKey: `smoke:work:${Date.now()}`,
+      },
+    };
+    const workRes = makeRes();
+    await alarmRoute(workReq, workRes);
+    assert(workRes.statusCode === 200, `expected work alarm 200, got ${workRes.statusCode}`);
+    assert(workRes.body.alarm_type === 'work', `expected work alarm type, got ${workRes.body.alarm_type}`);
+    assert(workRes.body.visibility === 'notify', `expected notify visibility, got ${workRes.body.visibility}`);
+    assert(workRes.body.delivered === true, 'expected work alarm immediate delivery');
+    assert(sendCount === 1, `expected one work telegram send, got ${sendCount}`);
+
+    const reportReq = {
+      body: {
+        message: `daily readiness report ${stamp}`,
+        team: 'blog',
+        fromBot: 'blog-smoke',
+        severity: 'info',
+        alarmType: 'report',
+        incidentKey: `smoke:report:${Date.now()}`,
+      },
+    };
+    const reportRes = makeRes();
+    await alarmRoute(reportReq, reportRes);
+    assert(reportRes.statusCode === 200, `expected report alarm 200, got ${reportRes.statusCode}`);
+    assert(reportRes.body.alarm_type === 'report', `expected report alarm type, got ${reportRes.body.alarm_type}`);
+    assert(reportRes.body.visibility === 'notify', `expected report notify visibility, got ${reportRes.body.visibility}`);
+    assert(reportRes.body.delivered === true, 'expected report alarm immediate delivery');
+    assert(sendCount === 2, `expected two telegram sends after report, got ${sendCount}`);
+
+    const errorReq = {
+      body: {
+        message: `provider_cooldown error token=super-secret-token-${stamp}`,
+        team: 'luna',
+        fromBot: 'luna-smoke',
+        severity: 'error',
+        alarmType: 'error',
+        incidentKey: `smoke:error:${Date.now()}`,
+        payload: {
+          access_token: `access-token-${stamp}`,
+          write_scope: ['bots/investment', 'packages/core'],
+        },
+      },
+    };
+    const errorRes = makeRes();
+    await alarmRoute(errorReq, errorRes);
+    assert(errorRes.statusCode === 200, `expected error alarm 200, got ${errorRes.statusCode}`);
+    assert(errorRes.body.alarm_type === 'error', `expected error alarm type, got ${errorRes.body.alarm_type}`);
+    assert(errorRes.body.visibility === 'internal', `expected internal visibility for auto repair, got ${errorRes.body.visibility}`);
+    assert(errorRes.body.actionability === 'auto_repair', `expected auto_repair, got ${errorRes.body.actionability}`);
+    assert(errorRes.body.delivered === false, 'expected error auto-repair not to notify user directly');
+    assert(errorRes.body.auto_repair?.ok === true, 'expected auto_dev repair document to be queued');
+    assert(sendCount === 2, `expected no direct telegram send for auto-repair error, got ${sendCount}`);
+    const autoDevFiles = fs.readdirSync(autoDevDir).filter((file) => file.endsWith('.md'));
+    assert(autoDevFiles.length === 1, `expected one auto_dev incident doc, got ${autoDevFiles.length}`);
+    const autoDevDoc = fs.readFileSync(path.join(autoDevDir, autoDevFiles[0]), 'utf8');
+    assert(autoDevDoc.includes('target_team: claude'), 'expected auto_dev doc to target claude');
+    assert(autoDevDoc.includes('## Council'), 'expected auto_dev doc to include agent council section');
+    assert(!autoDevDoc.includes(`super-secret-token-${stamp}`), 'expected message token to be redacted');
+    assert(!autoDevDoc.includes(`access-token-${stamp}`), 'expected payload token to be redacted');
+
     const digestReq = {
       body: {
         message: `warning alarm smoke ${stamp}`,
         team: 'luna',
         fromBot: 'luna-smoke',
         severity: 'warn',
+        visibility: 'digest',
         incidentKey: `smoke:digest:${Date.now()}`,
       },
     };
@@ -122,7 +196,7 @@ async function main() {
     assert(digestRes.body.ok === true, 'expected ok=true');
     assert(digestRes.body.visibility === 'digest', `expected digest visibility, got ${digestRes.body.visibility}`);
     assert(digestRes.body.delivered === false, 'expected digest alarm not delivered immediately');
-    assert(sendCount === 0, `expected no telegram send for digest, got ${sendCount}`);
+    assert(sendCount === 2, `expected no additional telegram send for digest, got ${sendCount}`);
 
     const humanReq = {
       body: {
@@ -138,7 +212,7 @@ async function main() {
     await alarmRoute(humanReq, humanRes);
     assert(humanRes.statusCode === 200, `expected 200, got ${humanRes.statusCode}`);
     assert(humanRes.body.delivered === true, 'expected human_action immediate delivery');
-    assert(sendCount === 1, `expected exactly one immediate telegram send, got ${sendCount}`);
+    assert(sendCount === 3, `expected exactly three immediate telegram sends, got ${sendCount}`);
 
     const noisyReq = { query: { minutes: '60', limit: '5' } };
     const noisyRes = makeRes();
@@ -196,7 +270,7 @@ async function main() {
     assert(digestFlushRes.body.ok === true, 'expected digest flush ok');
     assert(Array.isArray(digestFlushRes.body.teams), 'expected digest flush team list');
     assert(digestFlushRes.body.teams[0]?.sent === true, 'expected digest flush delivered');
-    assert(sendCount >= 2, `expected digest flush to send telegram summary, got ${sendCount}`);
+    assert(sendCount >= 4, `expected digest flush to send telegram summary, got ${sendCount}`);
 
     console.log('alarm_governor_smoke_ok');
   } finally {
@@ -212,6 +286,9 @@ async function main() {
     else process.env.TELEGRAM_CHAT_ID = originals.tgChatId;
     if (originals.tgAlertsDisabled == null) delete process.env.TELEGRAM_ALERTS_DISABLED;
     else process.env.TELEGRAM_ALERTS_DISABLED = originals.tgAlertsDisabled;
+    if (originals.autoDevDir == null) delete process.env.HUB_ALARM_AUTO_DEV_DIR;
+    else process.env.HUB_ALARM_AUTO_DEV_DIR = originals.autoDevDir;
+    fs.rmSync(autoDevDir, { recursive: true, force: true });
   }
 }
 
