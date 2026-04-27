@@ -274,7 +274,15 @@ function ensurePublishBriefingFloor(content, postType, title) {
 }
 
 function _contentToHtml(content, title, images = null) {
-  let text = content.replace(/_THE_END_\s*$/, '').trim();
+  let text = String(content || '').replace(/_THE_END_/g, '').trim();
+  text = text.replace(/^\s*#{1,6}\s*(\[[^\]\n]+\])\s*$/gm, '$1');
+
+  function looksLikeSentenceHeading(value) {
+    const normalized = String(value || '').trim();
+    if (!normalized) return false;
+    const wordCount = normalized.split(/\s+/).filter(Boolean).length;
+    return normalized.length >= 55 && wordCount >= 8;
+  }
 
   text = text.replace(/```(\w+)?\n([\s\S]*?)```/g, (_, lang, code) => {
     const escaped = code.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
@@ -300,6 +308,26 @@ function _contentToHtml(content, title, images = null) {
     const secMatch = line.match(/^\[(.+)\]\s*$/);
     if (secMatch) {
       htmlLines.push(`<h2 class="section-title">${secMatch[1]}</h2>`);
+      continue;
+    }
+
+    const h3Match = line.match(/^###\s+(.+?)\s*$/);
+    if (h3Match) {
+      if (looksLikeSentenceHeading(h3Match[1])) {
+        htmlLines.push(`<p>${h3Match[1]}</p>`);
+      } else {
+        htmlLines.push(`<h3>${h3Match[1]}</h3>`);
+      }
+      continue;
+    }
+
+    const h2Match = line.match(/^##\s+(.+?)\s*$/);
+    if (h2Match) {
+      if (looksLikeSentenceHeading(h2Match[1])) {
+        htmlLines.push(`<p>${h2Match[1]}</p>`);
+      } else {
+        htmlLines.push(`<h2 class="section-title">${h2Match[1]}</h2>`);
+      }
       continue;
     }
 

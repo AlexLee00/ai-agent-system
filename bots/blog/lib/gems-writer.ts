@@ -795,7 +795,7 @@ function _expandGeneralFallback(content, { category, weatherContext, relatedPost
 }
 
 function _ensureGeneralQualityFloor(content, { category, weatherContext, relatedPosts, minChars }) {
-  let next = String(content || '').trim();
+  let next = _normalizeGeneralStructure(content);
   if (!next) return next;
 
   const lines = next.split('\n');
@@ -860,7 +860,7 @@ function _ensureGeneralQualityFloor(content, { category, weatherContext, related
     next = `${next}\n\n${_defaultExecutionNotesSection(category)}`.trim();
   }
 
-  return next.trim();
+  return _normalizeGeneralStructure(next);
 }
 
 const GENERAL_SECTION_MARKERS = [
@@ -872,6 +872,7 @@ const GENERAL_SECTION_MARKERS = [
   '본론 섹션 3',
   '이번 주 IT 뉴스 분석',
   '스터디카페 홍보 섹션',
+  '질문형 Q&A',
   '마무리 제언',
   '함께 읽으면 좋은 글',
   '해시태그',
@@ -886,10 +887,83 @@ const GENERAL_SECTION_TARGETS = {
   '본론 섹션 3': 1400,
   '이번 주 IT 뉴스 분석': 450,
   '스터디카페 홍보 섹션': 520,
+  '질문형 Q&A': 450,
   '마무리 제언': 320,
   '함께 읽으면 좋은 글': 120,
   '해시태그': 80,
 };
+
+function _detectGeneralSectionMarker(line) {
+  const normalized = String(line || '')
+    .trim()
+    .replace(/^#{1,6}\s*/, '')
+    .replace(/^\[|\]$/g, '')
+    .trim();
+  if (!normalized) return null;
+  return GENERAL_SECTION_MARKERS.find((marker) => marker === normalized) || null;
+}
+
+function _normalizeGeneralStructure(content) {
+  const text = String(content || '').replace(/_THE_END_/g, '').trim();
+  if (!text) return text;
+
+  const lines = text.split('\n');
+  const prefixLines = [];
+  const sectionOrder = [];
+  const sectionBodies = new Map();
+  const seen = new Set();
+  let currentMarker = null;
+  let currentLines = [];
+  let mode = 'prefix';
+
+  const flush = () => {
+    if (!currentMarker || mode !== 'section') return;
+    sectionBodies.set(currentMarker, currentLines.join('\n').trim());
+    sectionOrder.push(currentMarker);
+    currentMarker = null;
+    currentLines = [];
+  };
+
+  for (const line of lines) {
+    const marker = _detectGeneralSectionMarker(line);
+    if (marker) {
+      flush();
+      if (seen.has(marker)) {
+        currentMarker = marker;
+        currentLines = [];
+        mode = 'skip';
+        continue;
+      }
+      seen.add(marker);
+      currentMarker = marker;
+      currentLines = [`[${marker}]`];
+      mode = 'section';
+      continue;
+    }
+
+    if (mode === 'section') {
+      currentLines.push(line);
+    } else if (mode === 'prefix') {
+      prefixLines.push(line);
+    }
+  }
+
+  flush();
+
+  const prefix = prefixLines.join('\n').trim();
+  if (!sectionOrder.length) return prefix;
+
+  const orderedMarkers = GENERAL_SECTION_MARKERS.filter((marker) => sectionBodies.has(marker));
+  const trailingMarkers = sectionOrder.filter((marker) => !orderedMarkers.includes(marker));
+
+  const rebuiltSections = [...orderedMarkers, ...trailingMarkers]
+    .map((marker) => sectionBodies.get(marker))
+    .filter(Boolean)
+    .join('\n\n')
+    .trim();
+
+  return [prefix, rebuiltSections].filter(Boolean).join('\n\n').trim();
+}
 
 function _findMarkerIndex(text, marker) {
   if (!text) return -1;
@@ -1604,7 +1678,7 @@ ${content}
     }).catch(() => {});
   }
 
-  repaired = repaired.replace(/_THE_END_/g, '').trim();
+  repaired = _normalizeGeneralStructure(repaired);
   repaired = _enforceGeneralTitleAlignment(repaired, category, researchData);
   const firstLine = repaired.split('\n').find(line => line.trim().length > 0) || '';
   const title = firstLine.slice(0, 80).trim();
@@ -1793,7 +1867,8 @@ ${linkingBlock}
       console.log(`[젬스청크] ${id} (${index + 1}/${chunks.length}): ${charCount}자`),
   });
 
-  let content   = _enforceGeneralTitleAlignment(result.content, category, researchData);
+  let content   = _normalizeGeneralStructure(result.content);
+  content = _enforceGeneralTitleAlignment(content, category, researchData);
   content = _ensureBookReviewIdentity(content, category, researchData);
   const firstLine = content.split('\n').find(l => l.trim().length > 0) || '';
   const title     = firstLine.slice(0, 80).trim();
