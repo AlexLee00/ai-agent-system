@@ -1,12 +1,13 @@
 # Hub Alarm Dependency Inventory
 
-This inventory tracks the Hub alarm migration surface. `hub_alarm_native` entries are the desired path; `legacy_gateway_compat` entries are compatibility shims or remaining migration targets.
+This inventory tracks the Hub alarm migration surface. `hub_alarm_native` entries are the desired path; `retired_gateway_guard` entries are regression guards; `legacy_gateway_compat` entries are remaining migration targets and must stay at 0.
 
-- generated_at: 2026-04-27T09:17:17.475Z
+- generated_at: 2026-04-27T09:22:51.896Z
 - total_matches: 208
 - unique_files: 126
 - hub_alarm_native: 199
-- legacy_gateway_compat: 9
+- retired_gateway_guard: 9
+- legacy_gateway_compat: 0
 
 ## Files
 
@@ -262,10 +263,10 @@ This inventory tracks the Hub alarm migration surface. `hub_alarm_native` entrie
 
 ### `bots/hub/scripts/generate-hub-alarm-inventory.ts`
 - L8 [hub_alarm_native]: `const outputMarkdownPath = path.join(projectRoot, 'docs', 'hub', 'HUB_ALARM_DEPENDENCY_INVENTORY.md');`
-- L13 [hub_alarm_native]: `'hub-alarm-client',`
-- L15 [hub_alarm_native]: `'HUB_ALARM_',`
-- L20 [hub_alarm_native]: `if (match.includes('hub-alarm-client') || match.includes('HUB_ALARM_')) return 'hub_alarm_native';`
-- L40 [hub_alarm_native]: `'!docs/hub/HUB_ALARM_DEPENDENCY_INVENTORY.md',`
+- L20 [hub_alarm_native]: `'hub-alarm-client',`
+- L22 [hub_alarm_native]: `'HUB_ALARM_',`
+- L31 [hub_alarm_native]: `if (match.includes('hub-alarm-client') || match.includes('HUB_ALARM_')) return 'hub_alarm_native';`
+- L54 [hub_alarm_native]: `'!docs/hub/HUB_ALARM_DEPENDENCY_INVENTORY.md',`
 
 ### `bots/hub/scripts/hub-alarm-delivery-acceptance-smoke.ts`
 - L1 [hub_alarm_native]: `const { _testOnly_isHubAlarmDeliveryAccepted } = require('../../../packages/core/lib/hub-alarm-client.ts');`
@@ -306,24 +307,24 @@ This inventory tracks the Hub alarm migration surface. `hub_alarm_native` entrie
 - L209 [hub_alarm_native]: `else process.env.HUB_ALARM_LEGACY_WEBHOOK_FALLBACK = originalHubLegacyFallback;`
 
 ### `bots/hub/scripts/hub-transition-completion-gate.ts`
-- L48 [legacy_gateway_compat]: `'OPENCLAW_BIN',`
-- L52 [legacy_gateway_compat]: `const RETIRED_GATEWAY_SOURCE_PATTERN = 'openclaw|legacy_gateway|18789|openclaw-gateway|OPENCLAW_BIN|execFile\\([^\\n]*openclaw|spawn\\([^\\n]*openclaw';`
+- L48 [retired_gateway_guard]: `'OPENCLAW_BIN',`
+- L52 [retired_gateway_guard]: `const RETIRED_GATEWAY_SOURCE_PATTERN = 'openclaw|legacy_gateway|18789|openclaw-gateway|OPENCLAW_BIN|execFile\\([^\\n]*openclaw|spawn\\([^\\n]*openclaw';`
 
 ### `bots/hub/scripts/launchd-alarm-class-topic-smoke.ts`
 - L59 [hub_alarm_native]: `const value = envValueFromPlist(text, 'HUB_ALARM_USE_CLASS_TOPICS');`
 - L67 [hub_alarm_native]: `reason: !ok ? 'HUB_ALARM_USE_CLASS_TOPICS_not_enabled'`
 
 ### `bots/hub/scripts/retired-gateway-marker-precommit-smoke.ts`
-- L19 [legacy_gateway_compat]: `for (const marker of ['openclaw-gateway', 'OPENCLAW_BIN', '18789', 'execFile[^\\n]*openclaw', 'spawn[^\\n]*openclaw']) {`
-- L28 [legacy_gateway_compat]: `assert(legacySmoke.includes('RETIRED_GATEWAY_BIN_ENV'), 'legacy smoke must guard OPENCLAW_BIN');`
+- L19 [retired_gateway_guard]: `for (const marker of ['openclaw-gateway', 'OPENCLAW_BIN', '18789', 'execFile[^\\n]*openclaw', 'spawn[^\\n]*openclaw']) {`
+- L28 [retired_gateway_guard]: `assert(legacySmoke.includes('RETIRED_GATEWAY_BIN_ENV'), 'legacy smoke must guard OPENCLAW_BIN');`
 
 ### `bots/hub/scripts/run-oauth-monitor.ts`
 - L18 [hub_alarm_native]: `const { postAlarm } = require('../../../packages/core/lib/hub-alarm-client.ts');`
 
 ### `bots/hub/scripts/runtime-env-policy-smoke.ts`
-- L22 [legacy_gateway_compat]: `OPENCLAW_BIN: '/tmp/openclaw',`
-- L31 [legacy_gateway_compat]: `assert.equal(filtered.env.OPENCLAW_BIN, undefined);`
-- L43 [legacy_gateway_compat]: `assert.notEqual(childEnv.OPENCLAW_BIN, '/tmp/openclaw');`
+- L22 [retired_gateway_guard]: `OPENCLAW_BIN: '/tmp/openclaw',`
+- L31 [retired_gateway_guard]: `assert.equal(filtered.env.OPENCLAW_BIN, undefined);`
+- L43 [retired_gateway_guard]: `assert.notEqual(childEnv.OPENCLAW_BIN, '/tmp/openclaw');`
 
 ### `bots/hub/scripts/telegram-hub-secrets-smoke.ts`
 - L16 [hub_alarm_native]: `HUB_ALARM_USE_CLASS_TOPICS: process.env.HUB_ALARM_USE_CLASS_TOPICS,`
@@ -421,7 +422,7 @@ This inventory tracks the Hub alarm migration surface. `hub_alarm_native` entrie
 - L3 [hub_alarm_native]: `const hubAlarmClient = require('./hub-alarm-client');`
 
 ### `packages/core/lib/runtime-env-policy.ts`
-- L9 [legacy_gateway_compat]: `'OPENCLAW_',`
+- L9 [retired_gateway_guard]: `'OPENCLAW_',`
 
 ### `packages/core/lib/telegram-sender.ts`
 - L31 [hub_alarm_native]: `const hubAlarmClient = require('./hub-alarm-client');`
@@ -447,7 +448,7 @@ This inventory tracks the Hub alarm migration surface. `hub_alarm_native` entrie
 - L18 [hub_alarm_native]: `const hubAlarmClient = require(path.join(ROOT, 'packages/core/lib/hub-alarm-client'));`
 
 ### `scripts/pre-commit`
-- L140 [legacy_gateway_compat]: `'OPENCLAW_BIN'`
+- L140 [retired_gateway_guard]: `'OPENCLAW_BIN'`
 
 ### `scripts/run-graduation-analysis.ts`
 - L18 [hub_alarm_native]: `const hubAlarmClient = require(path.join(ROOT, 'packages/core/lib/hub-alarm-client'));`

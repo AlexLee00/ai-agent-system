@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-04-27T09:17:17.475Z",
+  "generated_at": "2026-04-27T09:22:51.896Z",
   "scan_patterns": [
     "hub-alarm-client",
     "openclaw-client",
@@ -10,7 +10,8 @@
   "unique_files": 126,
   "categories": {
     "hub_alarm_native": 199,
-    "legacy_gateway_compat": 9
+    "retired_gateway_guard": 9,
+    "legacy_gateway_compat": 0
   },
   "files": {
     "bots/blog/__tests__/dpo-learning.test.ts": [
@@ -764,25 +765,25 @@
       },
       {
         "file": "bots/hub/scripts/generate-hub-alarm-inventory.ts",
-        "line": 13,
+        "line": 20,
         "category": "hub_alarm_native",
         "match": "'hub-alarm-client',"
       },
       {
         "file": "bots/hub/scripts/generate-hub-alarm-inventory.ts",
-        "line": 15,
+        "line": 22,
         "category": "hub_alarm_native",
         "match": "'HUB_ALARM_',"
       },
       {
         "file": "bots/hub/scripts/generate-hub-alarm-inventory.ts",
-        "line": 20,
+        "line": 31,
         "category": "hub_alarm_native",
         "match": "if (match.includes('hub-alarm-client') || match.includes('HUB_ALARM_')) return 'hub_alarm_native';"
       },
       {
         "file": "bots/hub/scripts/generate-hub-alarm-inventory.ts",
-        "line": 40,
+        "line": 54,
         "category": "hub_alarm_native",
         "match": "'!docs/hub/HUB_ALARM_DEPENDENCY_INVENTORY.md',"
       }
@@ -979,13 +980,13 @@
       {
         "file": "bots/hub/scripts/hub-transition-completion-gate.ts",
         "line": 48,
-        "category": "legacy_gateway_compat",
+        "category": "retired_gateway_guard",
         "match": "'OPENCLAW_BIN',"
       },
       {
         "file": "bots/hub/scripts/hub-transition-completion-gate.ts",
         "line": 52,
-        "category": "legacy_gateway_compat",
+        "category": "retired_gateway_guard",
         "match": "const RETIRED_GATEWAY_SOURCE_PATTERN = 'openclaw|legacy_gateway|18789|openclaw-gateway|OPENCLAW_BIN|execFile\\\\([^\\\\n]*openclaw|spawn\\\\([^\\\\n]*openclaw';"
       }
     ],
@@ -1007,13 +1008,13 @@
       {
         "file": "bots/hub/scripts/retired-gateway-marker-precommit-smoke.ts",
         "line": 19,
-        "category": "legacy_gateway_compat",
+        "category": "retired_gateway_guard",
         "match": "for (const marker of ['openclaw-gateway', 'OPENCLAW_BIN', '18789', 'execFile[^\\\\n]*openclaw', 'spawn[^\\\\n]*openclaw']) {"
       },
       {
         "file": "bots/hub/scripts/retired-gateway-marker-precommit-smoke.ts",
         "line": 28,
-        "category": "legacy_gateway_compat",
+        "category": "retired_gateway_guard",
         "match": "assert(legacySmoke.includes('RETIRED_GATEWAY_BIN_ENV'), 'legacy smoke must guard OPENCLAW_BIN');"
       }
     ],
@@ -1029,19 +1030,19 @@
       {
         "file": "bots/hub/scripts/runtime-env-policy-smoke.ts",
         "line": 22,
-        "category": "legacy_gateway_compat",
+        "category": "retired_gateway_guard",
         "match": "OPENCLAW_BIN: '/tmp/openclaw',"
       },
       {
         "file": "bots/hub/scripts/runtime-env-policy-smoke.ts",
         "line": 31,
-        "category": "legacy_gateway_compat",
+        "category": "retired_gateway_guard",
         "match": "assert.equal(filtered.env.OPENCLAW_BIN, undefined);"
       },
       {
         "file": "bots/hub/scripts/runtime-env-policy-smoke.ts",
         "line": 43,
-        "category": "legacy_gateway_compat",
+        "category": "retired_gateway_guard",
         "match": "assert.notEqual(childEnv.OPENCLAW_BIN, '/tmp/openclaw');"
       }
     ],
@@ -1353,7 +1354,7 @@
       {
         "file": "packages/core/lib/runtime-env-policy.ts",
         "line": 9,
-        "category": "legacy_gateway_compat",
+        "category": "retired_gateway_guard",
         "match": "'OPENCLAW_',"
       }
     ],
@@ -1453,7 +1454,7 @@
       {
         "file": "scripts/pre-commit",
         "line": 140,
-        "category": "legacy_gateway_compat",
+        "category": "retired_gateway_guard",
         "match": "'OPENCLAW_BIN'"
       }
     ],

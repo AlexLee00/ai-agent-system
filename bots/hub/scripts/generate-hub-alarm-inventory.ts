@@ -8,6 +8,13 @@ const outputJsonPath = path.join(outputDir, 'hub-alarm-dependency-inventory.json
 const outputMarkdownPath = path.join(projectRoot, 'docs', 'hub', 'HUB_ALARM_DEPENDENCY_INVENTORY.md');
 const LEGACY_ALARM_CLIENT_PATTERN = 'open' + 'claw-client';
 const RETIRED_ENV_PREFIX_PATTERN = 'OPEN' + 'CLAW_';
+const RETIRED_GATEWAY_GUARD_FILES = [
+  'bots/hub/scripts/hub-transition-completion-gate.ts',
+  'bots/hub/scripts/retired-gateway-marker-precommit-smoke.ts',
+  'bots/hub/scripts/runtime-env-policy-smoke.ts',
+  'packages/core/lib/runtime-env-policy.ts',
+  'scripts/pre-commit',
+];
 
 const scanPatterns = [
   'hub-alarm-client',
@@ -16,9 +23,16 @@ const scanPatterns = [
   RETIRED_ENV_PREFIX_PATTERN,
 ];
 
-function classifyMatch(match) {
+function isRetiredGatewayGuard(file) {
+  return RETIRED_GATEWAY_GUARD_FILES.includes(String(file || ''));
+}
+
+function classifyMatch(file, match) {
   if (match.includes('hub-alarm-client') || match.includes('HUB_ALARM_')) return 'hub_alarm_native';
-  if (match.includes(LEGACY_ALARM_CLIENT_PATTERN) || match.includes(RETIRED_ENV_PREFIX_PATTERN)) return 'legacy_gateway_compat';
+  if (match.includes(LEGACY_ALARM_CLIENT_PATTERN)) return 'legacy_gateway_compat';
+  if (match.includes(RETIRED_ENV_PREFIX_PATTERN)) {
+    return isRetiredGatewayGuard(file) ? 'retired_gateway_guard' : 'legacy_gateway_compat';
+  }
   return 'other';
 }
 
@@ -66,7 +80,7 @@ function parseRows(lines) {
     rows.push({
       file,
       line: Number.isFinite(lineNo) ? lineNo : null,
-      category: classifyMatch(match),
+      category: classifyMatch(file, match),
       match,
     });
   }
@@ -86,6 +100,7 @@ function countByCategory(rows) {
   }, {});
   const result = {
     hub_alarm_native: counts.hub_alarm_native || 0,
+    retired_gateway_guard: counts.retired_gateway_guard || 0,
     legacy_gateway_compat: counts.legacy_gateway_compat || 0,
   };
   if (counts.other) result.other = counts.other;
@@ -131,6 +146,14 @@ function writeOutputs(rows) {
     categories: countByCategory(rows),
     files: grouped,
   };
+  if ((payload.categories.legacy_gateway_compat || 0) > 0) {
+    const offenders = rows
+      .filter((row) => row.category === 'legacy_gateway_compat')
+      .map((row) => `${row.file}:${row.line || '?'} ${row.match}`)
+      .slice(0, 10)
+      .join('\n');
+    throw new Error(`legacy gateway compat references remain:\n${offenders}`);
+  }
   payload.generated_at = readPreviousGeneratedAt(payload) || new Date().toISOString();
   fs.writeFileSync(outputJsonPath, `${JSON.stringify(payload, null, 2)}\n`, 'utf8');
 
@@ -145,12 +168,13 @@ function writeOutputs(rows) {
   const markdown = [
     '# Hub Alarm Dependency Inventory',
     '',
-    'This inventory tracks the Hub alarm migration surface. `hub_alarm_native` entries are the desired path; `legacy_gateway_compat` entries are compatibility shims or remaining migration targets.',
+    'This inventory tracks the Hub alarm migration surface. `hub_alarm_native` entries are the desired path; `retired_gateway_guard` entries are regression guards; `legacy_gateway_compat` entries are remaining migration targets and must stay at 0.',
     '',
     `- generated_at: ${payload.generated_at}`,
     `- total_matches: ${payload.total_matches}`,
     `- unique_files: ${payload.unique_files}`,
     `- hub_alarm_native: ${payload.categories.hub_alarm_native || 0}`,
+    `- retired_gateway_guard: ${payload.categories.retired_gateway_guard || 0}`,
     `- legacy_gateway_compat: ${payload.categories.legacy_gateway_compat || 0}`,
     '',
     '## Files',
