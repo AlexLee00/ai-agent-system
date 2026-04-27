@@ -38,6 +38,16 @@ import {
   normalizePendingReconcileOrderUnits as normalizePendingReconcileOrderUnitsBase,
 } from '../shared/binance-pending-reconcile-units.ts';
 import {
+  computeBinancePendingRecordedProgress,
+  buildBinancePendingReconcilePayload as buildBinancePendingReconcilePayloadBase,
+  BINANCE_PENDING_RECONCILE_EPSILON,
+  resolveBinancePendingQueueState,
+} from '../shared/binance-pending-reconcile-queue.ts';
+export {
+  computeBinancePendingRecordedProgress,
+  resolveBinancePendingQueueState,
+} from '../shared/binance-pending-reconcile-queue.ts';
+import {
   extractClientOrderId,
   extractExchangeOrderId,
   normalizeBinanceMarketOrderExecution,
@@ -46,14 +56,6 @@ import {
 // ─── 심볼 유효성 ────────────────────────────────────────────────────
 
 const BINANCE_SYMBOL_RE = /^[A-Z0-9]+\/USDT$/;
-const BINANCE_PENDING_RECONCILE_EPSILON = 0.00000001;
-const BINANCE_PENDING_RECONCILE_OPEN_STATUSES = new Set([
-  'new',
-  'open',
-  'partially_filled',
-  'partiallyfilled',
-  'pending',
-]);
 const BINANCE_PENDING_RECONCILE_JOURNAL_RETRY_DELAY_MS = 30_000;
 
 function isBinanceSymbol(symbol) {
@@ -298,108 +300,10 @@ async function getMinSellAmount(symbol) {
   return Math.max(exchangeMin, precisionStep);
 }
 
-export function resolveBinancePendingQueueState({
-  status = 'unknown',
-  filledQty = 0,
-  expectedQty = 0,
-  orderStillOpen = null,
-} = {}) {
-  const normalizedStatus = String(status || '').trim().toLowerCase() || 'unknown';
-  const filled = Math.max(0, Number(filledQty || 0));
-  const expected = Math.max(0, Number(expectedQty || 0));
-  const closed = normalizedStatus === 'closed' || normalizedStatus === 'filled';
-  const openLike = BINANCE_PENDING_RECONCILE_OPEN_STATUSES.has(normalizedStatus);
-
-  // open/new/partial 상태는 절대 completed로 닫지 않는다.
-  if (openLike) {
-    if (filled > BINANCE_PENDING_RECONCILE_EPSILON) {
-      return {
-        code: 'partial_fill_pending',
-        queueStatus: 'partial_pending',
-        followUpRequired: true,
-      };
-    }
-    return {
-      code: 'order_pending_reconcile',
-      queueStatus: 'queued',
-      followUpRequired: true,
-    };
-  }
-
-  if (closed && filled > BINANCE_PENDING_RECONCILE_EPSILON) {
-    return {
-      code: 'order_reconciled',
-      queueStatus: 'completed',
-      followUpRequired: false,
-    };
-  }
-  if (
-    orderStillOpen === false
-    && expected > BINANCE_PENDING_RECONCILE_EPSILON
-    && filled + BINANCE_PENDING_RECONCILE_EPSILON >= expected
-  ) {
-    return {
-      code: 'order_reconciled',
-      queueStatus: 'completed',
-      followUpRequired: false,
-    };
-  }
-  if (filled > BINANCE_PENDING_RECONCILE_EPSILON) {
-    return {
-      code: 'partial_fill_pending',
-      queueStatus: 'partial_pending',
-      followUpRequired: true,
-    };
-  }
-  return {
-    code: 'order_pending_reconcile',
-    queueStatus: 'queued',
-    followUpRequired: true,
-  };
-}
-
 export function buildBinancePendingReconcilePayload(signal = {}) {
-  if (!signal || typeof signal !== 'object') return null;
-  const blockMeta = parseSignalBlockMeta(signal.block_meta);
-  const pendingMeta = blockMeta.pendingReconcile && typeof blockMeta.pendingReconcile === 'object'
-    ? blockMeta.pendingReconcile
-    : null;
-  if (!pendingMeta) return null;
-
-  const symbol = String(pendingMeta.symbol || signal.symbol || '').trim().toUpperCase();
-  const action = String(pendingMeta.action || signal.action || '').trim().toUpperCase();
-  const orderId = pendingMeta.orderId ? String(pendingMeta.orderId) : null;
-  const clientOrderId = pendingMeta.clientOrderId ? String(pendingMeta.clientOrderId) : null;
-  if (!symbol || !action || (!orderId && !clientOrderId)) return null;
-  const orderSymbol = String(pendingMeta.orderSymbol || symbol).trim().toUpperCase() || symbol;
-  const submittedAtMs = toEpochMs(
-    pendingMeta.submittedAt
-      || pendingMeta.submittedAtMs
-      || signal.created_at
-      || signal.approved_at
-      || signal.updated_at
-      || null,
-  );
-
-  return {
-    signal,
-    blockMeta,
-    pendingMeta,
-    signalId: signal.id,
-    symbol,
-    action,
-    tradeMode: signal.trade_mode || pendingMeta.tradeMode || getInvestmentTradeMode(),
-    paperMode: pendingMeta.paperMode === true,
-    orderId,
-    clientOrderId,
-    orderSymbol,
-    submittedAtMs,
-    expectedQty: Number(pendingMeta.expectedQty || 0),
-    recordedFilledQty: Number(pendingMeta.recordedFilledQty ?? pendingMeta.filledQty ?? 0),
-    recordedCost: Number(pendingMeta.recordedCost || 0),
-    amountUsdt: Number(signal.amount_usdt || pendingMeta.amountUsdt || 0),
-    followUpRequired: pendingMeta.followUpRequired !== false,
-  };
+  return buildBinancePendingReconcilePayloadBase(signal, {
+    defaultTradeMode: getInvestmentTradeMode(),
+  });
 }
 
 async function isBinanceOrderStillOpen(symbol, orderId, clientOrderId = null) {
@@ -418,70 +322,6 @@ async function isBinanceOrderStillOpen(symbol, orderId, clientOrderId = null) {
   } catch {
     return null;
   }
-}
-
-export function computeBinancePendingRecordedProgress({
-  exchangeFilledQty = 0,
-  exchangeCost = 0,
-  exchangePrice = 0,
-  recordedFilledQty = 0,
-  recordedCost = 0,
-  applySucceeded = true,
-} = {}) {
-  const filled = Math.max(0, Number(exchangeFilledQty || 0));
-  const cost = Math.max(0, Number(exchangeCost || 0));
-  const recordedFilled = Math.max(0, Number(recordedFilledQty || 0));
-  const recordedCostSafe = Math.max(0, Number(recordedCost || 0));
-
-  const rawDeltaFilled = filled - recordedFilled;
-  const deltaFilledQty = rawDeltaFilled > BINANCE_PENDING_RECONCILE_EPSILON
-    ? rawDeltaFilled
-    : 0;
-
-  let deltaCost = 0;
-  const referencePrice = Math.max(
-    0,
-    Number(exchangePrice || (filled > BINANCE_PENDING_RECONCILE_EPSILON && cost > 0 ? (cost / filled) : 0)),
-  );
-  if (deltaFilledQty > BINANCE_PENDING_RECONCILE_EPSILON) {
-    const rawDeltaCost = cost - recordedCostSafe;
-    if (rawDeltaCost > BINANCE_PENDING_RECONCILE_EPSILON) {
-      deltaCost = rawDeltaCost;
-    } else if (referencePrice > 0) {
-      deltaCost = deltaFilledQty * referencePrice;
-    }
-  }
-
-  if (!applySucceeded) {
-    return {
-      deltaFilledQty,
-      deltaCost,
-      appliedFilledQty: 0,
-      appliedCost: 0,
-      nextRecordedFilledQty: recordedFilled,
-      nextRecordedCost: recordedCostSafe,
-    };
-  }
-
-  const appliedFilledQty = deltaFilledQty;
-  const appliedCost = Math.max(0, deltaCost);
-  const nextRecordedFilledQty = Math.min(
-    filled,
-    Math.max(recordedFilled, recordedFilled + appliedFilledQty),
-  );
-  let nextRecordedCost = Math.max(recordedCostSafe, recordedCostSafe + appliedCost);
-  if (cost > BINANCE_PENDING_RECONCILE_EPSILON) {
-    nextRecordedCost = Math.min(cost, nextRecordedCost);
-  }
-
-  return {
-    deltaFilledQty,
-    deltaCost,
-    appliedFilledQty,
-    appliedCost,
-    nextRecordedFilledQty,
-    nextRecordedCost,
-  };
 }
 
 function buildPendingReconcileQualityContext(signal = null) {

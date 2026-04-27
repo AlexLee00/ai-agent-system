@@ -9,6 +9,7 @@ import {
   buildBlockedCandidates,
   classifyChildExecutionOutput,
   buildGuardReasonSummary,
+  detectTerminalChildFailure,
   renderText,
 } from './runtime-position-runtime-dispatch.ts';
 import { runPositionRuntimeAutopilot } from './runtime-position-runtime-autopilot.ts';
@@ -131,6 +132,11 @@ async function main() {
   assert(
     'dispatch child execute 결과는 실행 성공으로 집계',
     executedClassified.ok === true && executedClassified.status === 'child_executed_verified',
+  );
+
+  assert(
+    'stale candidate는 terminal failure 대신 no-op 분류 대상',
+    detectTerminalChildFailure('partial-adjust 후보를 찾지 못했습니다: symbol=LDO/USDT') === 'candidate_not_found',
   );
 
   const phase6RunnerInvocation = buildExecutionInvocation({

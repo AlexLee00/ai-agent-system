@@ -206,6 +206,7 @@ function buildHistorySnapshot({
   const dispatchQueued = (dispatchResult?.results || []).filter((item) => item?.autonomousActionStatus === 'autonomous_action_queued').length;
   const dispatchRetrying = (dispatchResult?.results || []).filter((item) => item?.autonomousActionStatus === 'autonomous_action_retrying').length;
   const dispatchExecuted = (dispatchResult?.results || []).filter((item) => item?.autonomousActionStatus === 'autonomous_action_executed').length;
+  const dispatchSkipped = (dispatchResult?.results || []).filter((item) => String(item?.autonomousActionStatus || '').startsWith('autonomous_action_skipped')).length;
   const cadenceRecommendationByExchange = buildCadenceRecommendationByExchange(tuning);
   const cadenceAppliedByExchange = buildCadenceAppliedByExchange(autotuneResult);
   return {
@@ -242,9 +243,19 @@ function buildHistorySnapshot({
     })),
     dispatchCandidateCount: Array.isArray(dispatchPreview?.candidates) ? dispatchPreview.candidates.length : 0,
     dispatchExecutedCount: dispatchExecuted,
+    dispatchSkippedCount: dispatchSkipped,
     dispatchQueuedCount: dispatchQueued,
     dispatchRetryingCount: dispatchRetrying,
     dispatchFailureCount: dispatchFailures.length,
+    dispatchSkipped: (dispatchResult?.results || [])
+      .filter((item) => String(item?.autonomousActionStatus || '').startsWith('autonomous_action_skipped'))
+      .slice(0, 5)
+      .map((item) => ({
+        exchange: item?.candidate?.exchange || null,
+        symbol: item?.candidate?.symbol || null,
+        tradeMode: item?.candidate?.tradeMode || null,
+        status: item?.status || 'skipped',
+      })),
     dispatchFailures: dispatchFailures.slice(0, 5).map((item) => ({
       exchange: item?.candidate?.exchange || null,
       symbol: item?.candidate?.symbol || null,

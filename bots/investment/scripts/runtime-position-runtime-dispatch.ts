@@ -18,6 +18,7 @@ const INVESTMENT_BOT_PREFIX = '/Users/alexlee/projects/ai-agent-system/bots/inve
 const FAILURE_STATUSES = new Set(['failed', 'fail', 'error', 'blocked', 'rejected', 'canceled', 'cancelled', 'child_process_error']);
 const PENDING_STATUSES = new Set(['pending', 'queued', 'waiting', 'scheduled']);
 const RETRYABLE_STATUSES = new Set(['child_process_error', 'child_output_not_json', 'child_execute_not_verified', 'child_execution_pending']);
+const STALE_CANDIDATE_STATUSES = new Set(['candidate_not_found']);
 
 function parseArgs(argv = []) {
   const args = {
@@ -347,7 +348,7 @@ function addMinutesIso(minutes = 5) {
   return new Date(Date.now() + (Math.max(1, Number(minutes || 5)) * 60 * 1000)).toISOString();
 }
 
-function detectTerminalChildFailure(message = '', stdout = '', stderr = '') {
+export function detectTerminalChildFailure(message = '', stdout = '', stderr = '') {
   const text = [message, stdout, stderr]
     .map((value) => String(value || ''))
     .join('\n')
@@ -421,6 +422,7 @@ function toAutonomousActionStatus(result = null) {
     return 'autonomous_action_blocked_by_safety';
   }
   if (status === 'child_execution_pending') return 'autonomous_action_retrying';
+  if (STALE_CANDIDATE_STATUSES.has(status)) return 'autonomous_action_skipped_stale_candidate';
   return 'autonomous_action_failed';
 }
 
@@ -455,6 +457,19 @@ async function executeCandidate(candidate, { phase6 = false } = {}) {
       stdoutText,
       stderrText,
     );
+    if (STALE_CANDIDATE_STATUSES.has(String(terminalStatus || ''))) {
+      return {
+        ok: true,
+        status: terminalStatus,
+        autonomousActionStatus: 'autonomous_action_skipped_stale_candidate',
+        candidate,
+        command: invocation.command,
+        staleCandidate: true,
+        error: String(error?.message || error),
+        output: stdoutText,
+        stderr: stderrText,
+      };
+    }
     return {
       ok: false,
       status: terminalStatus || 'child_process_error',
