@@ -1448,7 +1448,7 @@ async function _prepareDailyRun(traceCtx, options = {}) {
     return { inactive: true, results: [] };
   }
 
-  console.log(`[블로] 오늘 발행: 강의 ${config.lecture_count}편 + 일반 ${config.general_count}편`);
+  console.log(`[블로] 오늘 생성 목표: 강의 ${config.lecture_count}편 + 일반 ${config.general_count}편`);
 
   const scheduleContext = await getTodayContext();
   const { lectureCtx, generalCtx, lectureSchedule, generalSchedule } = scheduleContext;
@@ -2141,7 +2141,7 @@ async function run(options = {}) {
     return [];
   }
   if (daily.complete) {
-    console.log('[블로] ✅ 오늘 발행 항목이 모두 완료됨 — 중복 실행 건너뜀');
+    console.log('[블로] ✅ 오늘 생성 항목이 모두 완료됨 — 중복 실행 건너뜀');
     return [];
   }
   if (daily.verifyOnly) {

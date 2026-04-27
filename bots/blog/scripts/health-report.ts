@@ -648,6 +648,59 @@ function buildDailyRunHealth(dailyServiceStatus = null) {
   };
 }
 
+async function buildPendingPublishHealth() {
+  try {
+    const rows = await pgPool.query('blog', `
+      SELECT id, title, post_type, status, publish_date, created_at
+      FROM blog.posts
+      WHERE status = 'ready'
+        AND (naver_url IS NULL OR naver_url = '')
+        AND publish_date >= CURRENT_DATE - INTERVAL '2 days'
+        AND created_at <= NOW() - INTERVAL '4 hours'
+      ORDER BY publish_date DESC, created_at DESC
+      LIMIT 10
+    `);
+
+    const list = Array.isArray(rows) ? rows : [];
+    if (!list.length) {
+      return {
+        okCount: 1,
+        warnCount: 0,
+        ok: ['  naver publish backlog: 없음'],
+        warn: [],
+        pendingCount: 0,
+        samples: [],
+      };
+    }
+
+    const samples = list.slice(0, 3).map((row) => {
+      const date = String(row.publish_date || '').slice(0, 10) || 'unknown-date';
+      return `${date} ${String(row.post_type || 'unknown')} #${Number(row.id || 0)} ${String(row.title || '').slice(0, 60)}`;
+    });
+
+    return {
+      okCount: 0,
+      warnCount: 1 + samples.length,
+      ok: [],
+      warn: [
+        `  naver publish backlog: ready ${list.length}건`,
+        ...samples.map((sample) => `  sample: ${sample}`),
+      ],
+      pendingCount: list.length,
+      samples,
+    };
+  } catch (error) {
+    return {
+      okCount: 0,
+      warnCount: 1,
+      ok: [],
+      warn: [`  naver publish backlog: 확인 실패 (${error.message.slice(0, 120)})`],
+      pendingCount: 0,
+      samples: [],
+    };
+  }
+}
+
 async function buildN8nPipelineHealth() {
   return buildResolvedWebhookHealth({
     workflowName: '블로그팀 동적 포스팅',
@@ -2227,7 +2280,7 @@ async function buildMarketingExpansionHealth() {
   }
 }
 
-function buildDecision(serviceRows, nodeHealth, dailyRunHealth, n8nPipelineHealth, instagramHealth, socialAutomationHealth, phase2BriefingHealth, phase3FeedbackHealth, phase4CompetitionHealth, autonomyHealth, marketingExpansionHealth, engagementHealth, socialDoctorPriority = null, engagementDoctorPriority = null, opsDoctorPriority = null) {
+function buildDecision(serviceRows, nodeHealth, dailyRunHealth, pendingPublishHealth, n8nPipelineHealth, instagramHealth, socialAutomationHealth, phase2BriefingHealth, phase3FeedbackHealth, phase4CompetitionHealth, autonomyHealth, marketingExpansionHealth, engagementHealth, socialDoctorPriority = null, engagementDoctorPriority = null, opsDoctorPriority = null) {
   const previewBundleHint = [
     socialAutomationHealth.latestReelUrl ? `reel=${socialAutomationHealth.latestReelUrl}` : '',
     socialAutomationHealth.latestCoverUrl ? `cover=${socialAutomationHealth.latestCoverUrl}` : '',
@@ -2403,6 +2456,11 @@ function buildDecision(serviceRows, nodeHealth, dailyRunHealth, n8nPipelineHealt
         active: dailyRunHealth.warn.length > 0,
         level: 'medium',
         reason: 'daily run 로그 활동성이 오래돼 최근 자동 실행 상태 확인이 필요합니다.',
+      },
+      {
+        active: Number(pendingPublishHealth?.pendingCount || 0) > 0,
+        level: 'high',
+        reason: `생성은 됐지만 네이버 발행 완료 처리되지 않은 ready 포스트 ${Number(pendingPublishHealth?.pendingCount || 0)}건이 남아 있습니다.`,
       },
       {
         active: !n8nPipelineHealth.n8nHealthy,
@@ -2701,6 +2759,7 @@ function formatText(report) {
       buildHealthCountSection('■ Doctor 우선순위', report.doctorPriority, { okLimit: 6, warnLimit: 2 }),
       buildHealthCountSection('■ Ops 우선순위', report.opsPriority, { okLimit: 4, warnLimit: 2 }),
       buildHealthCountSection('■ daily run 상태', report.dailyRunHealth, { warnLimit: 4, okLimit: 2 }),
+      buildHealthCountSection('■ 네이버 발행 대기 상태', report.pendingPublishHealth, { warnLimit: 4, okLimit: 2 }),
       {
         title: null,
         lines: buildHealthDecisionSection({
@@ -2726,6 +2785,7 @@ async function buildReport() {
   });
   const nodeHealth = await buildNodeHealth();
   const dailyRunHealth = buildDailyRunHealth(status['ai.blog.daily']);
+  const pendingPublishHealth = await buildPendingPublishHealth();
   const n8nPipelineHealth = await buildN8nPipelineHealth();
   const instagramHealth = await buildInstagramHealth();
   const socialAutomationHealth = await buildSocialAutomationHealth();
@@ -2742,7 +2802,7 @@ async function buildReport() {
   const engagementDoctorPriority = buildDoctorPriority(ENGAGEMENT_DOCTOR_COMMAND, 'engagement doctor');
   const marketingDoctorPriority = buildDoctorPriority(MARKETING_DOCTOR_COMMAND, 'marketing doctor');
   const opsDoctorPriority = buildDoctorPriority(BLOG_OPS_DOCTOR_COMMAND, 'ops doctor');
-  const decision = buildDecision(serviceRows, nodeHealth, dailyRunHealth, n8nPipelineHealth, instagramHealth, socialAutomationHealth, phase2BriefingHealth, phase3FeedbackHealth, phase4CompetitionHealth, autonomyHealth, marketingExpansionHealth, engagementHealth, socialDoctorPriority, engagementDoctorPriority, opsDoctorPriority);
+  const decision = buildDecision(serviceRows, nodeHealth, dailyRunHealth, pendingPublishHealth, n8nPipelineHealth, instagramHealth, socialAutomationHealth, phase2BriefingHealth, phase3FeedbackHealth, phase4CompetitionHealth, autonomyHealth, marketingExpansionHealth, engagementHealth, socialDoctorPriority, engagementDoctorPriority, opsDoctorPriority);
   const remodelProgress = buildRemodelProgress(instagramHealth, phase1Health, phase2BriefingHealth, phase3FeedbackHealth, phase4CompetitionHealth, autonomyHealth);
   const doctorPriority = {
     okCount: socialDoctorPriority.okCount + engagementDoctorPriority.okCount + marketingDoctorPriority.okCount,
@@ -2783,6 +2843,7 @@ async function buildReport() {
       warn: dailyRunHealth.warn,
       minutesAgo: dailyRunHealth.minutesAgo,
     },
+    pendingPublishHealth,
     n8nPipelineHealth: {
       okCount: n8nPipelineHealth.ok.length,
       warnCount: n8nPipelineHealth.warn.length,

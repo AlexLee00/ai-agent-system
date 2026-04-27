@@ -937,6 +937,45 @@ async function checkMarketingExpansionHealth() {
   }
 }
 
+async function checkPendingPublishHealth() {
+  try {
+    const rows = await pgPool.query('blog', `
+      SELECT id, title, post_type, publish_date, created_at
+      FROM blog.posts
+      WHERE status = 'ready'
+        AND (naver_url IS NULL OR naver_url = '')
+        AND publish_date >= CURRENT_DATE - INTERVAL '2 days'
+        AND created_at <= NOW() - INTERVAL '4 hours'
+      ORDER BY publish_date DESC, created_at DESC
+      LIMIT 10
+    `);
+
+    const list = Array.isArray(rows) ? rows : [];
+    if (!list.length) {
+      return { ok: true, detail: 'naver publish backlog 없음', pendingCount: 0, samples: [] };
+    }
+
+    const samples = list.slice(0, 3).map((row) => {
+      const date = String(row.publish_date || '').slice(0, 10) || 'unknown-date';
+      return `${date} ${String(row.post_type || 'unknown')} #${Number(row.id || 0)} ${String(row.title || '').slice(0, 60)}`;
+    });
+
+    return {
+      ok: false,
+      detail: `ready 상태 미발행 포스트 ${list.length}건\n${samples.map((sample) => `sample: ${sample}`).join('\n')}`,
+      pendingCount: list.length,
+      samples,
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      detail: `naver publish backlog 확인 실패: ${error.message.slice(0, 120)}`,
+      pendingCount: 0,
+      samples: [],
+    };
+  }
+}
+
 async function main() {
   console.log(`[블로그 헬스체크] 시작 — ${new Date().toISOString()}`);
 
@@ -1136,6 +1175,23 @@ async function main() {
     await notify(recoveryMsg, 1);
     await rememberHealthEvent(marketingExpansionKey, 'recovery', recoveryMsg, 1);
     hsm.clearAlert(state, marketingExpansionKey);
+  }
+
+  const pendingPublish = await checkPendingPublishHealth();
+  const pendingPublishKey = 'naver-publish:ready-backlog';
+  if (!pendingPublish.ok) {
+    if (hsm.canAlert(state, pendingPublishKey)) {
+      issues.push({
+        key: pendingPublishKey,
+        level: 3,
+        msg: `⚠️ [블로그 헬스] 네이버 발행 대기 이슈\n${pendingPublish.detail}`,
+      });
+    }
+  } else if (state[pendingPublishKey]) {
+    const recoveryMsg = `✅ [블로그 헬스] 네이버 발행 대기 해소\n${pendingPublish.detail}`;
+    await notify(recoveryMsg, 1);
+    await rememberHealthEvent(pendingPublishKey, 'recovery', recoveryMsg, 1);
+    hsm.clearAlert(state, pendingPublishKey);
   }
 
   for (const { key, level, msg } of issues) {
