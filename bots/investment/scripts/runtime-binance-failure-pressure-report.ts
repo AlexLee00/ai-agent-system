@@ -16,6 +16,11 @@ function parseArgs(argv = process.argv.slice(2)) {
 function classify(row) {
   const code = String(row.code || '');
   const reason = String(row.reason || '');
+  if (code === 'capital_backpressure') {
+    if (reason.includes('buying_power_unavailable') || reason.includes('잔고 조회 실패')) return 'buying_power_unavailable';
+    if (reason.includes('position_slots_exhausted') || reason.includes('최대 포지션')) return 'max_positions';
+    return 'capital_backpressure';
+  }
   if (code === 'capital_circuit_breaker') return 'circuit_breaker';
   if (code === 'capital_guard_rejected') {
     if (reason.includes('일간 매매 한도')) return 'daily_trade_limit';
@@ -42,6 +47,9 @@ function labelForGroup(group) {
     case 'reentry': return 'reentry';
     case 'precision': return 'precision';
     case 'insufficient_balance': return 'insufficient balance';
+    case 'capital_backpressure': return 'capital backpressure';
+    case 'buying_power_unavailable': return 'buying power unavailable';
+    case 'max_positions': return 'max positions';
     default: return group;
   }
 }
@@ -96,6 +104,7 @@ function buildDecision(rows = []) {
       total,
       circuitBreaker: Number(grouped.circuit_breaker || 0),
       capitalGuard: Number(grouped.daily_trade_limit || 0) + Number(grouped.correlation_guard || 0) + Number(grouped.capital_guard_other || 0),
+      capitalBackpressure: Number(grouped.capital_backpressure || 0) + Number(grouped.buying_power_unavailable || 0),
       reentry: Number(grouped.reentry || 0),
       precision: Number(grouped.precision || 0),
       insufficientBalance: Number(grouped.insufficient_balance || 0),

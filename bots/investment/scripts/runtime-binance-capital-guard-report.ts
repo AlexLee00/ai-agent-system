@@ -13,8 +13,15 @@ function parseArgs(argv = process.argv.slice(2)) {
   };
 }
 
-function classifyReason(reason = '') {
-  const text = String(reason || '');
+function classifyReason(row = {}) {
+  const code = String(row.code || '');
+  const text = String(row.reason || '');
+  if (code === 'capital_backpressure') {
+    if (text.includes('buying_power_unavailable') || text.includes('잔고 조회 실패')) return 'buying_power_unavailable';
+    if (text.includes('position_slots_exhausted') || text.includes('최대 포지션')) return 'max_positions';
+    if (text.includes('reducing_only_mode')) return 'reducing_only';
+    return 'cash_constrained';
+  }
   if (text.includes('상관관계 가드')) return 'correlation_guard';
   if (text.includes('일간 매매 한도')) return 'daily_trade_limit';
   if (text.includes('최대 포지션 도달') || text.includes('최대 동시 포지션')) return 'max_positions';
@@ -26,6 +33,9 @@ function labelForGroup(group) {
     case 'correlation_guard': return 'correlation guard';
     case 'daily_trade_limit': return 'daily trade limit';
     case 'max_positions': return 'max positions';
+    case 'buying_power_unavailable': return 'buying power unavailable';
+    case 'cash_constrained': return 'cash constrained';
+    case 'reducing_only': return 'reducing only mode';
     default: return 'capital guard';
   }
 }
@@ -33,7 +43,7 @@ function labelForGroup(group) {
 function buildDecision(rows = []) {
   const total = rows.reduce((sum, row) => sum + Number(row.count || 0), 0);
   const byGroup = rows.reduce((acc, row) => {
-    const group = classifyReason(row.reason);
+    const group = classifyReason(row);
     acc[group] = (acc[group] || 0) + Number(row.count || 0);
     return acc;
   }, {});
@@ -81,6 +91,9 @@ function buildDecision(rows = []) {
       correlationGuard: Number(byGroup.correlation_guard || 0),
       dailyTradeLimit: Number(byGroup.daily_trade_limit || 0),
       maxPositions: Number(byGroup.max_positions || 0),
+      cashConstrained: Number(byGroup.cash_constrained || 0),
+      buyingPowerUnavailable: Number(byGroup.buying_power_unavailable || 0),
+      reducingOnly: Number(byGroup.reducing_only || 0),
     },
   };
 }
@@ -98,7 +111,7 @@ function renderText(payload) {
     '',
     '상위 차단:',
     ...(payload.rows.length > 0
-      ? payload.rows.slice(0, 8).map((row) => `- ${row.reason} (${row.count}건)`)
+      ? payload.rows.slice(0, 8).map((row) => `- [${row.code}] ${row.reason} (${row.count}건)`)
       : ['- 없음']),
     '',
     '권장 조치:',
@@ -120,14 +133,15 @@ async function loadRows(days = 14) {
   const safeDays = Math.max(1, Number(days || 14));
   return db.query(`
     SELECT
+      COALESCE(block_code, '') AS code,
       LEFT(COALESCE(block_reason, ''), 180) AS reason,
       COUNT(*)::INTEGER AS count
     FROM investment.signals
     WHERE exchange = 'binance'
-      AND status = 'failed'
-      AND COALESCE(block_code, '') = 'capital_guard_rejected'
+      AND status IN ('failed', 'rejected', 'expired')
+      AND COALESCE(block_code, '') IN ('capital_guard_rejected', 'capital_backpressure')
       AND created_at > now() - INTERVAL '${safeDays} days'
-    GROUP BY LEFT(COALESCE(block_reason, ''), 180)
+    GROUP BY COALESCE(block_code, ''), LEFT(COALESCE(block_reason, ''), 180)
     ORDER BY count DESC
     LIMIT 20
   `);

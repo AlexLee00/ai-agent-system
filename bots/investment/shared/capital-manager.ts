@@ -977,6 +977,9 @@ export async function getLunaBuyingPowerSnapshot(
   const openPositionCount = openPositions.length;
   const maxPositionCount = Number(policy.max_concurrent_positions || 3);
   const remainingSlots = Math.max(0, maxPositionCount - openPositionCount);
+  const circuit = balanceStatus === 'ok'
+    ? await checkCircuitBreaker(exchange, effectiveTradeMode).catch(() => ({ triggered: false }))
+    : { triggered: false };
 
   let totalCapital = freeCash;
   if (balanceStatus === 'ok') {
@@ -994,13 +997,16 @@ export async function getLunaBuyingPowerSnapshot(
 
   if (balanceStatus === 'unavailable') {
     mode = 'BALANCE_UNAVAILABLE';
-    reasonCode = 'balance_read_failed';
+    reasonCode = 'buying_power_unavailable';
+  } else if (circuit?.triggered) {
+    mode = 'REDUCING_ONLY';
+    reasonCode = 'reducing_only_mode';
   } else if (openPositionCount >= maxPositionCount) {
     mode = 'POSITION_MONITOR_ONLY';
     reasonCode = 'position_slots_exhausted';
   } else if (buyableAmount < minOrderAmount) {
     mode = remainingSlots > 0 ? 'CASH_CONSTRAINED' : 'POSITION_MONITOR_ONLY';
-    reasonCode = 'buying_power_below_min_order';
+    reasonCode = 'cash_constrained_monitor_only';
   }
 
   return {

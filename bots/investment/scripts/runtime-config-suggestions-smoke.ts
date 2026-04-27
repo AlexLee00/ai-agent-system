@@ -4,6 +4,7 @@
 import assert from 'assert/strict';
 import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
 import {
+  buildDiscoveryThrottleSuggestions,
   buildExchangeCutoverFilter,
   buildOverseasSuggestions,
   summarizeExchange,
@@ -56,11 +57,35 @@ export function runRuntimeConfigSuggestionsSmoke() {
   assert.equal(thresholdConfidence?.action, 'adjust');
   assert.equal(thresholdConfidence?.suggested, 0.2);
 
+  const throttle = buildDiscoveryThrottleSuggestions({
+    luna: {
+      discoveryThrottle: {
+        maxSymbols: 16,
+        maxDebateSymbols: 4,
+        maxBuyCandidates: 3,
+        modeOverride: '',
+      },
+    },
+  }, {
+    total: 12,
+    validationRatio: 88,
+    topReason: { reason: 'buying_power_unavailable' },
+  }, {
+    failed: 28,
+    executed: 2,
+  });
+  const throttleMaxSymbols = throttle.find((item) => item.key === 'runtime_config.luna.discoveryThrottle.maxSymbols');
+  const throttleModeOverride = throttle.find((item) => item.key === 'runtime_config.luna.discoveryThrottle.modeOverride');
+  assert.equal(throttleMaxSymbols?.action, 'promote_candidate');
+  assert.equal(throttleMaxSymbols?.suggested, 14);
+  assert.equal(throttleModeOverride?.suggested, 'monitor_only');
+
   return {
     ok: true,
     failureRate: summary.failureRate,
     operationalAction: confidence?.action,
     thresholdAction: thresholdConfidence?.action,
+    throttleAction: throttleMaxSymbols?.action,
   };
 }
 

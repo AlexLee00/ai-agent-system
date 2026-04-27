@@ -165,6 +165,12 @@ function collectConfiguredLanes(policy) {
 function classifyGuardReason(row = {}) {
   const code = String(row.block_code || '').trim() || 'legacy_unclassified';
   const reason = String(row.block_reason || '').toLowerCase();
+  if (code === 'capital_backpressure') {
+    if (reason.includes('buying_power_unavailable') || reason.includes('잔고 조회 실패')) return 'buying_power_unavailable';
+    if (reason.includes('position_slots_exhausted') || reason.includes('최대 포지션')) return 'max_concurrent_positions';
+    if (reason.includes('reducing_only_mode')) return 'reducing_only_mode';
+    return 'cash_reserve';
+  }
   if (code === 'mock_operation_unsupported') return 'mock_policy_limit';
   if (code !== 'capital_guard_rejected') return code;
   if (reason.includes('상관관계 가드')) return 'correlation_guard';
@@ -192,6 +198,10 @@ function formatGuardReasonGroup(group) {
       return 'min order size';
     case 'loss_cooldown':
       return 'loss cooldown';
+    case 'buying_power_unavailable':
+      return 'buying power unavailable';
+    case 'reducing_only_mode':
+      return 'reducing only mode';
     case 'capital_guard_other':
       return 'capital guard other';
     default:
@@ -416,7 +426,7 @@ export async function loadCapitalGuardBreakdown(pgPool, periodDays = 14) {
       WHERE exchange = 'binance'
         AND created_at >= NOW() - INTERVAL '1 day' * $1
         AND status IN ('failed', 'blocked', 'rejected')
-        AND COALESCE(block_code, '') = 'capital_guard_rejected'
+        AND COALESCE(block_code, '') IN ('capital_guard_rejected', 'capital_backpressure')
       GROUP BY 1, 2, 3
       ORDER BY cnt DESC, trade_mode ASC, block_reason ASC
     `,
@@ -435,7 +445,7 @@ export async function loadCapitalGuardBreakdown(pgPool, periodDays = 14) {
       WHERE exchange = 'binance'
         AND created_at >= NOW() - INTERVAL '1 day' * $1
         AND status IN ('failed', 'blocked', 'rejected')
-        AND COALESCE(block_code, '') = 'capital_guard_rejected'
+        AND COALESCE(block_code, '') IN ('capital_guard_rejected', 'capital_backpressure')
       GROUP BY 1, 2, 3
       ORDER BY cnt DESC, symbol ASC, side ASC, trade_mode ASC
       LIMIT 8
@@ -516,7 +526,7 @@ export async function loadCapitalGuardBreakdown(pgPool, periodDays = 14) {
       `
         SELECT
           COALESCE(NULLIF(symbol, ''), 'unknown') AS symbol,
-          COUNT(*) FILTER (WHERE COALESCE(block_code, '') = 'capital_guard_rejected')::int AS capital_guard_cnt,
+          COUNT(*) FILTER (WHERE COALESCE(block_code, '') IN ('capital_guard_rejected', 'capital_backpressure'))::int AS capital_guard_cnt,
           COUNT(*) FILTER (
             WHERE COALESCE(block_reason, '') ILIKE '%동일 LIVE 포지션%'
                OR COALESCE(block_code, '') = 'live_position_reentry_blocked'
@@ -669,7 +679,7 @@ export async function loadRecentLaneBlockPressure(pgPool, windowMinutes = 60) {
       FROM investment.signals
       WHERE created_at > now() - INTERVAL '1 minute' * $1
         AND status IN ('failed', 'blocked', 'rejected')
-        AND COALESCE(block_code, '') = 'capital_guard_rejected'
+        AND COALESCE(block_code, '') IN ('capital_guard_rejected', 'capital_backpressure')
         AND COALESCE(block_reason, '') ILIKE '%일간 매매 한도%'
       GROUP BY 1, 2
       ORDER BY cnt DESC, exchange ASC, trade_mode ASC

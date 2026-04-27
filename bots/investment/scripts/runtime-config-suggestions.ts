@@ -194,15 +194,16 @@ async function loadCapitalGuardTradeModeRows(fromDate, toDate) {
   return db.query(`
     SELECT
       COALESCE(trade_mode, 'normal') AS trade_mode,
+      COALESCE(NULLIF(block_code, ''), 'legacy_unclassified') AS block_code,
       COALESCE(NULLIF(block_reason, ''), 'unknown') AS block_reason,
       COUNT(*) AS cnt
     FROM signals
     WHERE exchange = 'binance'
       AND CAST(created_at AT TIME ZONE 'Asia/Seoul' AS DATE) BETWEEN '${fromDate}' AND '${toDate}'
       AND status IN ('failed', 'rejected', 'expired')
-      AND COALESCE(block_code, '') = 'capital_guard_rejected'
-    GROUP BY 1, 2
-    ORDER BY cnt DESC, trade_mode ASC, block_reason ASC
+      AND COALESCE(block_code, '') IN ('capital_guard_rejected', 'capital_backpressure')
+    GROUP BY 1, 2, 3
+    ORDER BY cnt DESC, trade_mode ASC, block_code ASC, block_reason ASC
   `);
 }
 
@@ -496,6 +497,81 @@ function buildValidationBudgetPolicyTrend(currentPolicy = null, previousSnapshot
       `validation capital guard 비중 변화: ${previousRatio}% → ${currentRatio}% (${delta >= 0 ? '+' : ''}${delta}%p)`,
     ],
   };
+}
+
+export function buildDiscoveryThrottleSuggestions(config, capitalGuardBias = null, cryptoSummary = null) {
+  const suggestions = [];
+  const total = Number(capitalGuardBias?.total || 0);
+  const validationRatio = Number(capitalGuardBias?.validationRatio || 0);
+  const topReason = String(capitalGuardBias?.topReason?.reason || '');
+  const failed = Number(cryptoSummary?.failed || 0);
+  const executed = Number(cryptoSummary?.executed || 0);
+
+  const throttle = config?.luna?.discoveryThrottle || {};
+  const currentMaxSymbols = Number(throttle.maxSymbols || 0);
+  const currentMaxDebateSymbols = Number(throttle.maxDebateSymbols || 0);
+  const currentMaxBuyCandidates = Number(throttle.maxBuyCandidates || 0);
+  const currentModeOverride = String(throttle.modeOverride || '');
+
+  if (total < 8 && failed < 20) {
+    suggestions.push({
+      key: 'runtime_config.luna.discoveryThrottle.modeOverride',
+      current: currentModeOverride || 'none',
+      suggested: currentModeOverride || 'none',
+      action: 'hold',
+      confidence: 'low',
+      reason: `capital guard/backpressure 표본 ${total}건, crypto failed ${failed}건으로 discovery throttle 강화를 적용할 단계는 아닙니다.`,
+    });
+    return suggestions;
+  }
+
+  const suggestedMaxSymbols = currentMaxSymbols > 0
+    ? Math.max(6, currentMaxSymbols - 2)
+    : 12;
+  const suggestedMaxDebateSymbols = currentMaxDebateSymbols > 0
+    ? Math.max(1, currentMaxDebateSymbols - 1)
+    : 2;
+  const suggestedMaxBuyCandidates = currentMaxBuyCandidates > 0
+    ? Math.max(1, currentMaxBuyCandidates - 1)
+    : 2;
+
+  suggestions.push({
+    key: 'runtime_config.luna.discoveryThrottle.maxSymbols',
+    current: currentMaxSymbols || 'unlimited',
+    suggested: suggestedMaxSymbols,
+    action: 'promote_candidate',
+    confidence: total >= 15 ? 'medium' : 'low',
+    reason: `capital guard/backpressure ${total}건이 반복되어 discovery 심볼 수를 줄여 신호 품질 대비 실행 전환률(${executed}/${Math.max(1, executed + failed)})을 점검할 필요가 있습니다.`,
+  });
+  suggestions.push({
+    key: 'runtime_config.luna.discoveryThrottle.maxDebateSymbols',
+    current: currentMaxDebateSymbols || 'dynamic_default',
+    suggested: suggestedMaxDebateSymbols,
+    action: 'promote_candidate',
+    confidence: 'low',
+    reason: `반복 압력 구간에서 debate 비용을 줄이기 위해 maxDebateSymbols를 ${suggestedMaxDebateSymbols}로 제한해 운영 지연을 낮추는 후보입니다.`,
+  });
+  suggestions.push({
+    key: 'runtime_config.luna.discoveryThrottle.maxBuyCandidates',
+    current: currentMaxBuyCandidates || 'unlimited',
+    suggested: suggestedMaxBuyCandidates,
+    action: 'promote_candidate',
+    confidence: 'medium',
+    reason: `BUY 후보 상한을 ${suggestedMaxBuyCandidates}개로 제한해 과도한 후보 생성에 따른 capital backpressure를 줄이는 후보입니다.`,
+  });
+
+  if (validationRatio >= 85 && topReason.includes('buying_power_unavailable')) {
+    suggestions.push({
+      key: 'runtime_config.luna.discoveryThrottle.modeOverride',
+      current: currentModeOverride || 'none',
+      suggested: 'monitor_only',
+      action: 'observe',
+      confidence: 'low',
+      reason: `validation 자본 차단 비중이 ${validationRatio}%이고 dominant reason이 ${topReason}라 short-lived monitor_only 전환 관찰 후보를 함께 기록합니다.`,
+    });
+  }
+
+  return suggestions;
 }
 
 function buildCryptoSuggestions(config, crypto) {
@@ -1304,8 +1380,8 @@ function buildSuggestions(
   executionRiskGuard = null,
   executionRiskGuardTrend = null,
 ) {
-  void capitalGuardBias;
   return [
+    ...buildDiscoveryThrottleSuggestions(config, capitalGuardBias, summaries.binance),
     ...buildCryptoSuggestions(config, summaries.binance),
     ...buildDomesticSuggestions(config, summaries.kis),
     ...buildOverseasSuggestions(config, summaries.kis_overseas),

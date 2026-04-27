@@ -151,6 +151,14 @@ const DEFAULT_RUNTIME_CONFIG = {
     },
     maxPosCount: getDefaultLunaMaxPosCount(),
     maxDebateSymbols: 2,
+    discoveryThrottle: {
+      enabled: true,
+      maxSymbols: 0,
+      maxDebateSymbols: 0,
+      maxBuyCandidates: 0,
+      modeOverride: '',
+      byExchange: {},
+    },
     dynamicDebateLimits: {
       cryptoLive: [
         { minSymbols: 20, limit: 4 },
@@ -496,6 +504,24 @@ export function isDynamicTpSlEnabled() {
 
 export function getLunaRuntimeConfig() {
   return getInvestmentRuntimeConfig().luna;
+}
+
+export function getLunaDiscoveryThrottleConfig(exchange = 'binance') {
+  const luna = getLunaRuntimeConfig() || {};
+  const root = luna.discoveryThrottle || {};
+  const exchangeOverride = root.byExchange?.[exchange] || {};
+  const enabled = exchangeOverride.enabled ?? root.enabled ?? true;
+  const maxSymbols = Number(exchangeOverride.maxSymbols ?? root.maxSymbols ?? 0);
+  const maxDebateSymbols = Number(exchangeOverride.maxDebateSymbols ?? root.maxDebateSymbols ?? 0);
+  const maxBuyCandidates = Number(exchangeOverride.maxBuyCandidates ?? root.maxBuyCandidates ?? 0);
+  const modeOverride = String(exchangeOverride.modeOverride ?? root.modeOverride ?? '').trim();
+  return {
+    enabled: enabled !== false,
+    maxSymbols: Number.isFinite(maxSymbols) && maxSymbols > 0 ? Math.round(maxSymbols) : 0,
+    maxDebateSymbols: Number.isFinite(maxDebateSymbols) && maxDebateSymbols > 0 ? Math.round(maxDebateSymbols) : 0,
+    maxBuyCandidates: Number.isFinite(maxBuyCandidates) && maxBuyCandidates > 0 ? Math.round(maxBuyCandidates) : 0,
+    modeOverride,
+  };
 }
 
 export function getSignalDedupeWindowMinutes() {

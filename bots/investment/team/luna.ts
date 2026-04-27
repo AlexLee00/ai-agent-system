@@ -31,7 +31,7 @@ import { isPaperMode, isValidationTradeMode } from '../shared/secrets.ts';
 import { getAvailableBalance, getAvailableUSDT, getOpenPositions, getCapitalConfigWithOverrides, getLunaBuyingPowerSnapshot, adjustLunaBuyCandidate } from '../shared/capital-manager.ts';
 import type { LunaBuyingPowerSnapshot } from '../shared/capital-manager.ts';
 import { getDomesticBalance } from '../shared/kis-client.ts';
-import { getInvestmentRagRuntimeConfig, getLunaRuntimeConfig, getLunaStockStrategyProfile, getPositionReevaluationRuntimeConfig } from '../shared/runtime-config.ts';
+import { getInvestmentRagRuntimeConfig, getLunaDiscoveryThrottleConfig, getLunaRuntimeConfig, getLunaStockStrategyProfile, getPositionReevaluationRuntimeConfig } from '../shared/runtime-config.ts';
 import * as journalDb from '../shared/trade-journal-db.ts';
 import { buildAccuracyReport, getEffectiveAnalystWeightProfiles, normalizeWeights } from '../shared/analyst-accuracy.ts';
 import { getMarketRegime, formatMarketRegime } from '../shared/market-regime.ts';
@@ -631,6 +631,24 @@ export function fuseSignals(analyses, weights = ANALYST_WEIGHTS) {
   return { fusedScore, averageConfidence, hasConflict, recommendation };
 }
 
+function mapCapitalCheckResultToReasonCode(result = '') {
+  const value = String(result || '').toLowerCase();
+  if (value === 'blocked_balance_unavailable') return 'buying_power_unavailable';
+  if (value === 'blocked_cash') return 'cash_constrained_monitor_only';
+  if (value === 'blocked_slots') return 'position_slots_exhausted';
+  if (value === 'reduce_only') return 'reducing_only_mode';
+  return 'capital_backpressure';
+}
+
+function enrichCapitalCheck(check, capitalSnapshot) {
+  if (!check || typeof check !== 'object') return check;
+  return {
+    ...check,
+    reasonCode: mapCapitalCheckResultToReasonCode(check.result),
+    remainingSlots: Number(capitalSnapshot?.remainingSlots || 0),
+  };
+}
+
 function buildCryptoPortfolioFallback(symbolDecisions, portfolio) {
   const capitalSnapshot: LunaBuyingPowerSnapshot | null = portfolio?.capitalSnapshot ?? null;
 
@@ -676,6 +694,7 @@ function buildCryptoPortfolioFallback(symbolDecisions, portfolio) {
     const desired = baseAmount + (idx === 0 ? 20 : 0);
     if (capitalSnapshot) {
       const check = adjustLunaBuyCandidate(desired, capitalSnapshot);
+      const enrichedCheck = enrichCapitalCheck(check, capitalSnapshot);
       if (check.result === 'blocked_cash' || check.result === 'blocked_balance_unavailable' || check.result === 'blocked_slots' || check.result === 'reduce_only') {
         console.log(`  🔒 [루나 fallback] ${dec.symbol} BUY 차단 (${check.result}): ${check.reason}`);
         continue;
@@ -686,7 +705,7 @@ function buildCryptoPortfolioFallback(symbolDecisions, portfolio) {
         amount_usdt: Math.min(220, check.adjustedAmount),
         confidence: Math.max(0.40, Math.min(0.72, dec.confidence || 0.4)),
         reasoning: `crypto fallback 분산진입 | ${dec.reasoning || '우세 신호 보존'}`.slice(0, 120),
-        block_meta: check.result !== 'accepted' ? { capitalCheck: check } : undefined,
+        block_meta: check.result !== 'accepted' ? { capitalCheck: enrichedCheck } : undefined,
       });
     } else {
       decisions.push({
@@ -1453,7 +1472,6 @@ export async function getPortfolioDecision(symbolDecisions, portfolio, exchange 
  * SELL/HOLD는 영향 없음. 자본 상태가 없거나 binance가 아니면 그대로 반환.
  */
 function applyBudgetCheckerToDecisions(portfolioDecision, portfolio, exchange) {
-  if (exchange !== 'binance') return portfolioDecision;
   const capitalSnapshot: LunaBuyingPowerSnapshot | null = portfolio?.capitalSnapshot ?? null;
   if (!capitalSnapshot) return portfolioDecision;
 
@@ -1468,6 +1486,7 @@ function applyBudgetCheckerToDecisions(portfolioDecision, portfolio, exchange) {
     }
     const desired = Number(d.amount_usdt || 0);
     const check = adjustLunaBuyCandidate(desired, capitalSnapshot);
+    const enrichedCheck = enrichCapitalCheck(check, capitalSnapshot);
 
     if (check.result === 'accepted') {
       adjusted.push(d);
@@ -1481,7 +1500,7 @@ function applyBudgetCheckerToDecisions(portfolioDecision, portfolio, exchange) {
       adjusted.push({
         ...d,
         amount_usdt: check.adjustedAmount,
-        block_meta: { capitalCheck: check },
+        block_meta: { capitalCheck: enrichedCheck },
       });
       continue;
     }
@@ -1493,7 +1512,7 @@ function applyBudgetCheckerToDecisions(portfolioDecision, portfolio, exchange) {
       action: ACTIONS.HOLD,
       amount_usdt: 0,
       reasoning: `capital_backpressure: ${check.reason} | ${d.reasoning || ''}`.slice(0, 200),
-      block_meta: { capitalCheck: check },
+      block_meta: { capitalCheck: enrichedCheck },
     });
   }
 
@@ -1560,11 +1579,29 @@ async function buildPortfolioContext(exchange = 'binance') {
     try { await db.insertAssetSnapshot(totalAsset, usdtFree); } catch {}
   }
 
-  return { usdtFree, totalAsset, positionCount: positions.length, todayPnl, positions, capitalSnapshot };
+  return {
+    usdtFree,
+    totalAsset,
+    positionCount: positions.length,
+    todayPnl,
+    positions,
+    capitalSnapshot,
+    capitalMode: capitalSnapshot?.mode || null,
+    reasonCode: capitalSnapshot?.reasonCode || null,
+    buyableAmount: Number(capitalSnapshot?.buyableAmount || 0),
+    balanceStatus: capitalSnapshot?.balanceStatus || 'unavailable',
+  };
 }
 
 export async function inspectPortfolioContext(exchange = 'binance') {
-  return buildPortfolioContext(exchange);
+  const context = await buildPortfolioContext(exchange);
+  return {
+    ...context,
+    capitalMode: context?.capitalMode ?? context?.capitalSnapshot?.mode ?? null,
+    reasonCode: context?.reasonCode ?? context?.capitalSnapshot?.reasonCode ?? null,
+    buyableAmount: context?.buyableAmount ?? Number(context?.capitalSnapshot?.buyableAmount || 0),
+    balanceStatus: context?.balanceStatus ?? context?.capitalSnapshot?.balanceStatus ?? 'unavailable',
+  };
 }
 
 // ─── 2라운드 토론 ───────────────────────────────────────────────────
@@ -1616,9 +1653,16 @@ async function runDebateRound(symbol, summary, exchange, prevDebate = null) {
  * @param {any} [params]
  * @returns {Promise<TradeSignal[]>}
  */
-function shouldRunDiscovery(capitalSnapshot: LunaBuyingPowerSnapshot | null): boolean {
+export function shouldRunDiscovery(capitalSnapshot: LunaBuyingPowerSnapshot | null, modeOverride = ''): boolean {
+  if (String(modeOverride || '').trim().toLowerCase() === 'monitor_only') return false;
   if (!capitalSnapshot) return true; // 스냅샷 없으면 허용 (안전 폴백)
   return capitalSnapshot.mode === 'ACTIVE_DISCOVERY';
+}
+
+export function resolveCapitalGateAction(capitalSnapshot: LunaBuyingPowerSnapshot | null, openPositionCount = 0, modeOverride = '') {
+  if (shouldRunDiscovery(capitalSnapshot, modeOverride)) return 'active_discovery';
+  if (Number(openPositionCount || 0) > 0) return 'exit_only';
+  return 'idle_digest';
 }
 
 function formatCapitalModeLog(snapshot: LunaBuyingPowerSnapshot | null): string {
@@ -1627,37 +1671,107 @@ function formatCapitalModeLog(snapshot: LunaBuyingPowerSnapshot | null): string 
   return `[자본상태] mode=${mode} | reason=${reasonCode || 'none'} | 매수가능=${buyableAmount.toFixed(2)} 최소=${minOrderAmount} | 잔고=${balanceStatus} | 포지션=${openPositionCount}/${maxPositionCount}`;
 }
 
+function applyDiscoveryThrottleToSymbols(symbols = [], throttle = null) {
+  if (!Array.isArray(symbols)) return [];
+  if (!throttle?.enabled) return symbols;
+  const maxSymbols = Number(throttle?.maxSymbols || 0);
+  if (!(maxSymbols > 0) || symbols.length <= maxSymbols) return symbols;
+  return symbols.slice(0, maxSymbols);
+}
+
+function applyDiscoveryThrottleToDecision(decision = null, throttle = null) {
+  if (!decision || !Array.isArray(decision.decisions)) {
+    return { decision, reducedCount: 0 };
+  }
+  if (!throttle?.enabled) return { decision, reducedCount: 0 };
+  const maxBuyCandidates = Number(throttle?.maxBuyCandidates || 0);
+  if (!(maxBuyCandidates > 0)) return { decision, reducedCount: 0 };
+
+  const buys = decision.decisions
+    .map((item, idx) => ({ item, idx }))
+    .filter(({ item }) => item?.action === ACTIONS.BUY)
+    .sort((a, b) => Number(b.item?.confidence || 0) - Number(a.item?.confidence || 0));
+  if (buys.length <= maxBuyCandidates) return { decision, reducedCount: 0 };
+
+  const keep = new Set(buys.slice(0, maxBuyCandidates).map((entry) => entry.idx));
+  let reducedCount = 0;
+  const nextDecisions = decision.decisions.map((item, idx) => {
+    if (item?.action !== ACTIONS.BUY || keep.has(idx)) return item;
+    reducedCount += 1;
+    return {
+      ...item,
+      action: ACTIONS.HOLD,
+      amount_usdt: 0,
+      reasoning: `discovery_throttle: maxBuyCandidates=${maxBuyCandidates} 상한으로 후보 보류 | ${item.reasoning || ''}`.slice(0, 220),
+      block_meta: {
+        ...(item.block_meta || {}),
+        discoveryThrottle: {
+          modeOverride: throttle.modeOverride || null,
+          maxBuyCandidates,
+          reducedByThrottle: true,
+        },
+      },
+    };
+  });
+
+  return {
+    decision: { ...decision, decisions: nextDecisions },
+    reducedCount,
+  };
+}
+
 export async function orchestrate(symbols, exchange = 'binance', params = null) {
   const label           = exchange === 'kis_overseas' ? '미국주식' : exchange === 'kis' ? '국내주식' : '암호화폐';
   const results         = [];
   let debateCount          = 0;
   const portfolio          = await buildPortfolioContext(exchange);
   const capitalSnapshot    = portfolio.capitalSnapshot ?? null;
+  const discoveryThrottle  = getLunaDiscoveryThrottleConfig(exchange);
   const { weights: analystWeights, report: accuracyReport } = await loadAdaptiveAnalystWeights(exchange);
   const symbolDecisions    = [];
   const symbolAnalysesMap  = new Map(); // symbol → analyses (상관관계 기록용)
+  const discoverySymbols   = applyDiscoveryThrottleToSymbols(symbols, discoveryThrottle);
 
   console.log(`\n🌙 [루나] ${label} 오케스트레이션 시작 — ${symbols.join(', ')}`);
+  if (discoveryThrottle?.enabled && discoveryThrottle?.maxSymbols > 0 && discoverySymbols.length < symbols.length) {
+    console.log(`  🎚️ [루나] discoveryThrottle maxSymbols=${discoveryThrottle.maxSymbols} 적용: ${symbols.length} → ${discoverySymbols.length}`);
+  }
 
-  // 자본 상태 게이트: BALANCE_UNAVAILABLE / CASH_CONSTRAINED / POSITION_MONITOR_ONLY이면 신규 발굴 생략
-  if (exchange === 'binance' && capitalSnapshot && !shouldRunDiscovery(capitalSnapshot)) {
+  // 자본 상태 게이트: ACTIVE_DISCOVERY가 아니면 신규 발굴 생략 (전시장 공통)
+  const capitalGateAction = resolveCapitalGateAction(
+    capitalSnapshot,
+    Number(portfolio?.positions?.length || 0),
+    discoveryThrottle?.modeOverride,
+  );
+  if (capitalGateAction !== 'active_discovery') {
     console.log(`  🔒 [루나] ${formatCapitalModeLog(capitalSnapshot)}`);
+    if (String(discoveryThrottle?.modeOverride || '').trim().toLowerCase() === 'monitor_only') {
+      console.log(`  🔒 [루나] discoveryThrottle modeOverride=monitor_only 적용`);
+    }
     console.log(`  🔒 [루나] 신규 발굴 생략 → 보유 포지션 EXIT 판단만 수행`);
 
     const openPositions = portfolio.positions || [];
-    if (openPositions.length > 0) {
+    if (capitalGateAction === 'exit_only' && openPositions.length > 0) {
       const exitSignals = await getExitDecisions(openPositions, exchange).catch(() => []);
       if (exitSignals.length > 0) {
         console.log(`  🚪 [루나] EXIT 신호 ${exitSignals.length}개 반환`);
       }
       return exitSignals;
     }
-    console.log(`  ℹ️ [루나] 보유 포지션 없음 + 매수 불가 → 빈 배열 반환 (${capitalSnapshot.mode})`);
+    const modeLabel = capitalSnapshot?.mode || 'MONITOR_ONLY';
+    const reasonLabel = capitalSnapshot?.reasonCode || 'discovery_throttle';
+    publishAlert({
+      from_bot: 'luna',
+      event_type: 'capital_state_report',
+      alert_level: 1,
+      message: `ℹ️ [루나 자본상태] ${exchange} ${modeLabel} (${reasonLabel})\n매수가능 ${Number(capitalSnapshot?.buyableAmount || 0).toFixed(2)} / 최소 ${Number(capitalSnapshot?.minOrderAmount || 0).toFixed(2)}\n보유포지션 ${Number(capitalSnapshot?.openPositionCount || 0)}/${Number(capitalSnapshot?.maxPositionCount || 0)}\n신규 발굴/매수는 보류하고 다음 사이클에서 회복 여부를 재평가합니다.`,
+    });
+    console.log(`  ℹ️ [루나] 보유 포지션 없음 + 매수 불가 → 빈 배열 반환 (${capitalSnapshot?.mode || 'monitor_only'})`);
     return [];
   }
   console.log(`  ⚖️ [루나] 분석가 가중치: TA ${analystWeights[ANALYST_TYPES.TA_MTF].toFixed(2)} | 온체인 ${analystWeights[ANALYST_TYPES.ONCHAIN].toFixed(2)} | sentinel ${analystWeights[ANALYST_TYPES.SENTINEL].toFixed(2)} | 감성 ${analystWeights[ANALYST_TYPES.SENTIMENT].toFixed(2)} | 뉴스 ${analystWeights[ANALYST_TYPES.NEWS].toFixed(2)}`);
 
-  for (const symbol of symbols) {
+  for (const symbol of discoverySymbols) {
     try {
       const analyses = await db.getRecentAnalysis(symbol, 70, exchange);
       if (analyses.length === 0) {
@@ -1669,7 +1783,10 @@ export async function orchestrate(symbols, exchange = 'binance', params = null) 
       console.log(`  📋 [루나] ${symbol}: ${analyses.length}개 분석 결과`);
 
       let debate = null;
-      const debateLimit = getDebateLimit(exchange, symbols.length);
+      const baseDebateLimit = getDebateLimit(exchange, discoverySymbols.length);
+      const debateLimit = discoveryThrottle?.enabled && Number(discoveryThrottle?.maxDebateSymbols || 0) > 0
+        ? Math.min(baseDebateLimit, Number(discoveryThrottle.maxDebateSymbols))
+        : baseDebateLimit;
       if (debateCount < debateLimit && shouldDebateForSymbol(analyses, exchange, analystWeights)) {
         try {
           const summary = buildAnalysisSummary(analyses);
@@ -1729,6 +1846,11 @@ export async function orchestrate(symbols, exchange = 'binance', params = null) 
       console.log(`    - 제외: ${info.dropped.join(', ')}`);
     }
   }
+  const discoveryThrottleApplied = applyDiscoveryThrottleToDecision(portfolio_decision, discoveryThrottle);
+  portfolio_decision = discoveryThrottleApplied.decision;
+  if (discoveryThrottleApplied.reducedCount > 0) {
+    console.log(`  🎚️ [루나] discoveryThrottle maxBuyCandidates=${discoveryThrottle.maxBuyCandidates} 적용: BUY 후보 ${discoveryThrottleApplied.reducedCount}개 보류`);
+  }
 
   console.log(`  📌 시황: ${portfolio_decision.portfolio_view}`);
   console.log(`  📌 리스크: ${portfolio_decision.risk_level}`);
@@ -1752,12 +1874,16 @@ export async function orchestrate(symbols, exchange = 'binance', params = null) 
   publishAlert({ from_bot: 'luna', event_type: 'report', alert_level: 1, message: summaryMsg });
 
   for (const dec of (portfolio_decision.decisions || [])) {
-    if (dec.action === ACTIONS.HOLD) continue;
+    const capitalCheck = dec?.block_meta?.capitalCheck || null;
+    const isCapitalBlockedBuy = dec.action === ACTIONS.HOLD
+      && capitalCheck
+      && ['blocked_cash', 'blocked_slots', 'blocked_balance_unavailable', 'reduce_only'].includes(String(capitalCheck.result || ''));
+    if (dec.action === ACTIONS.HOLD && !isCapitalBlockedBuy) continue;
     const runtimeMinConf = getMinConfidence(exchange);
     const minConf = exchange === 'binance'
       ? Math.min(params?.minSignalScore ?? runtimeMinConf, runtimeMinConf)
       : (params?.minSignalScore ?? runtimeMinConf);
-    if ((dec.confidence || 0) < minConf) {
+    if (!isCapitalBlockedBuy && (dec.confidence || 0) < minConf) {
       console.log(`  ⏸️ [루나] ${dec.symbol}: 확신도 미달 (${((dec.confidence || 0) * 100).toFixed(0)}% < ${(minConf * 100).toFixed(0)}%) → HOLD`);
       continue;
     }
@@ -1781,12 +1907,21 @@ export async function orchestrate(symbols, exchange = 'binance', params = null) 
       else if (fPct < -0.01) console.log(`  ⚠️ [루나] 펀딩레이트 음수 (${fPct.toFixed(4)}%) — 숏 스퀴즈 주의`);
     }
 
+    const desiredBlockedBuyAmount = Number(
+      capitalCheck?.desiredAmount
+      ?? capitalCheck?.adjustedAmount
+      ?? dec?.desired_amount_usdt
+      ?? dec?.amount_usdt
+      ?? 0,
+    );
     let signalData = {
       symbol:          dec.symbol,
-      action:          dec.action,
-      amountUsdt:      dec.amount_usdt || (exchange === 'kis' || exchange === 'kis_overseas'
+      action:          isCapitalBlockedBuy ? ACTIONS.BUY : dec.action,
+      amountUsdt:      isCapitalBlockedBuy
+        ? desiredBlockedBuyAmount
+        : (dec.amount_usdt || (exchange === 'kis' || exchange === 'kis_overseas'
         ? getStockOrderSpec(exchange)?.buyDefault
-        : 100),
+        : 100)),
       confidence:      dec.confidence,
       reasoning:       `[루나] ${dec.reasoning}`,
       exchange:        dec.exchange || exchange,
@@ -1797,11 +1932,11 @@ export async function orchestrate(symbols, exchange = 'binance', params = null) 
       strategyRoute:   dec.strategy_route || dec.strategyRoute || null,
     };
     if (exchange === 'kis' || exchange === 'kis_overseas') {
-      signalData.amountUsdt = normalizeDecisionAmount(exchange, dec.action, signalData.amountUsdt);
+      signalData.amountUsdt = normalizeDecisionAmount(exchange, signalData.action, signalData.amountUsdt);
     }
 
     let existingStrategyProfile = null;
-    if (signalData.action === ACTIONS.BUY) {
+    if (signalData.action === ACTIONS.BUY && !isCapitalBlockedBuy) {
       existingStrategyProfile = await db.getPositionStrategyProfile(dec.symbol, {
         exchange: signalData.exchange,
         status: 'active',
@@ -1812,13 +1947,69 @@ export async function orchestrate(symbols, exchange = 'binance', params = null) 
         console.log(`  🧩 [루나] ${dec.symbol}: 기존 전략 객체 반영 → ${strategyBias.note}`);
       }
       if (exchange === 'kis' || exchange === 'kis_overseas') {
-        signalData.amountUsdt = normalizeDecisionAmount(exchange, dec.action, signalData.amountUsdt);
+        signalData.amountUsdt = normalizeDecisionAmount(exchange, signalData.action, signalData.amountUsdt);
       }
     }
 
     const { valid, errors } = validateSignal(signalData);
     if (!valid) {
       console.warn(`  ⚠️ [루나] ${dec.symbol} 신호 검증 실패: ${errors.join(', ')}`);
+      continue;
+    }
+
+    if (isCapitalBlockedBuy) {
+      const reasonCode = mapCapitalCheckResultToReasonCode(capitalCheck?.result);
+      const blockMeta = {
+        exchange,
+        symbol: dec.symbol,
+        action: ACTIONS.BUY,
+        reasonCode,
+        desiredAmount: Number(capitalCheck?.desiredAmount || signalData.amountUsdt || 0),
+        adjustedAmount: Number(capitalCheck?.adjustedAmount || 0),
+        minOrderAmount: Number(capitalCheck?.minOrderAmount || capitalSnapshot?.minOrderAmount || 0),
+        remainingSlots: Number(capitalCheck?.remainingSlots ?? capitalSnapshot?.remainingSlots ?? 0),
+        capitalCheck,
+      };
+      const signalInsert = await db.insertSignalIfFresh({
+        ...signalData,
+        status: SIGNAL_STATUS.FAILED,
+      });
+      const signalId = signalInsert.id;
+      if (signalInsert.duplicate) {
+        console.log(`  ⏭️ [루나] 최근 중복 신호 스킵: ${dec.symbol} BUY (capital_backpressure, signal=${signalId})`);
+        continue;
+      }
+      await db.updateSignalBlock(signalId, {
+        status: SIGNAL_STATUS.FAILED,
+        reason: `${reasonCode}: ${String(capitalCheck?.reason || 'capital_backpressure')}`.slice(0, 200),
+        code: 'capital_backpressure',
+        meta: blockMeta,
+      }).catch((error) => {
+        console.warn(`  ⚠️ [루나] ${dec.symbol}: capital backpressure block 저장 실패 (${error.message})`);
+      });
+      console.log(`  💰 [루나] 신호 저장: ${signalId} (${dec.symbol} BUY, status=failed, capital_backpressure)`);
+      await notifySignal({ ...signalData, paper: paperMode, exchange, tradeMode: signalData.tradeMode || null, status: SIGNAL_STATUS.FAILED });
+      try {
+        const content = [
+          `${dec.symbol} BUY 신호`,
+          `상태: failed/capital_backpressure`,
+          `reasonCode: ${reasonCode}`,
+          `desired: ${Number(blockMeta.desiredAmount || 0).toFixed(2)} adjusted: ${Number(blockMeta.adjustedAmount || 0).toFixed(2)}`,
+        ].join(' | ');
+        await storeRag('trades', content, {
+          symbol: dec.symbol,
+          action: ACTIONS.BUY,
+          confidence: dec.confidence,
+          exchange,
+          paper_mode: paperMode,
+          status: SIGNAL_STATUS.FAILED,
+          block_code: 'capital_backpressure',
+          reason_code: reasonCode,
+        }, 'luna');
+      } catch (e) {
+        console.warn('[luna] RAG 저장 실패 (무시):', e.message);
+      }
+      failedCount++;
       continue;
     }
 
