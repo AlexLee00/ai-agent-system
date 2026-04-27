@@ -8,8 +8,8 @@ defmodule Jay.Core.LLM.SelectorTest do
     @impl true
     def agent_policies do
       %{
-        "fast_agent" => %{route: :anthropic_haiku,  fallback: []},
-        "smart_agent" => %{route: :anthropic_sonnet, fallback: [:anthropic_haiku]},
+        "fast_agent" => %{route: :anthropic_haiku, fallback: []},
+        "smart_agent" => %{route: :anthropic_sonnet, fallback: [:anthropic_haiku]}
       }
     end
 
@@ -84,9 +84,9 @@ defmodule Jay.Core.LLM.SelectorTest do
   end
 
   describe "call_with_fallback/3 — API 키 없는 환경" do
-    test "api_key nil → {:error, _} 반환" do
+    test "Hub 비활성 + direct fallback 미허용 → fail closed" do
       result = TestSelector.call_with_fallback("fast_agent", "test prompt", [])
-      assert match?({:error, _}, result)
+      assert result == {:error, :hub_routing_disabled}
     end
 
     test "빈 프롬프트도 에러 처리" do

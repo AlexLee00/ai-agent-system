@@ -267,8 +267,12 @@ export async function callLLMWithHub(
 ): Promise<string> {
   const shadow = isHubShadow();
   const enabled = isHubEnabled();
+  const directFallbackEnabled = isDirectFallbackEnabled();
 
   if (!enabled && !shadow) {
+    if (!directFallbackEnabled) {
+      throw new Error('Investment LLM Hub routing is disabled; 직접 LLM 경로는 INVESTMENT_LLM_DIRECT_FALLBACK=true일 때만 허용');
+    }
     return directFn(agentName, systemPrompt, userMsg, maxTokens ?? 512, opts);
   }
 
@@ -292,6 +296,10 @@ export async function callLLMWithHub(
   });
   if (hubResult.ok) return hubResult.text;
 
-  console.warn(`[hub-llm] ${agentName} Hub 실패(${hubResult.error}), 직접 호출 폴백`);
+  if (!directFallbackEnabled) {
+    throw new Error(`Hub LLM 호출 실패: ${hubResult.error || 'unknown'} — 직접 LLM 폴백은 INVESTMENT_LLM_DIRECT_FALLBACK=true일 때만 허용`);
+  }
+
+  console.warn(`[hub-llm] ${agentName} Hub 실패(${hubResult.error}), 명시적 직접 호출 폴백`);
   return directFn(agentName, systemPrompt, userMsg, maxTokens ?? 512, opts);
 }

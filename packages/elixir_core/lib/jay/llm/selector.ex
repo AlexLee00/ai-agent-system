@@ -53,9 +53,9 @@ defmodule Jay.Core.LLM.Selector do
     @anthropic_version "2023-06-01"
 
     @default_timeouts %{
-      anthropic_haiku:  15_000,
+      anthropic_haiku: 15_000,
       anthropic_sonnet: 30_000,
-      anthropic_opus:   60_000
+      anthropic_opus: 60_000
     }
 
     def complete(policy_module, agent_name, messages, opts) do
@@ -69,9 +69,10 @@ defmodule Jay.Core.LLM.Selector do
                 log_prefix = policy_module.log_prefix()
                 Logger.info("#{log_prefix} #{agent_name} → #{p} (#{reason})")
                 {p, f}
+
               _ ->
                 policies = policy_module.agent_policies()
-                policy   = Map.get(policies, to_string(agent_name), policy_module.default_policy())
+                policy = Map.get(policies, to_string(agent_name), policy_module.default_policy())
                 {policy.route, policy.fallback}
             end
 
@@ -81,13 +82,78 @@ defmodule Jay.Core.LLM.Selector do
 
           cond do
             policy_module.hub_shadow?() ->
-              call_shadow(policy_module, agent_name, messages, primary, fallback_chain, all_routes, opts, context)
+              if direct_fallback_enabled?(policy_module) do
+                call_shadow(
+                  policy_module,
+                  agent_name,
+                  messages,
+                  primary,
+                  fallback_chain,
+                  all_routes,
+                  opts,
+                  context
+                )
+              else
+                Logger.error(
+                  "#{policy_module.log_prefix()} Hub shadow mode requires explicit direct fallback — agent=#{agent_name}"
+                )
+
+                log_routing(
+                  policy_module,
+                  agent_name,
+                  primary,
+                  nil,
+                  nil,
+                  false,
+                  context,
+                  "direct_fallback_disabled",
+                  "direct_disabled"
+                )
+
+                {:error, :direct_fallback_disabled}
+              end
 
             policy_module.hub_routing_enabled?() ->
-              call_via_hub(policy_module, agent_name, messages, primary, all_routes, opts, context)
+              call_via_hub(
+                policy_module,
+                agent_name,
+                messages,
+                primary,
+                all_routes,
+                opts,
+                context
+              )
 
             true ->
-              call_direct(policy_module, agent_name, all_routes, messages, opts, context, primary)
+              if direct_fallback_enabled?(policy_module) do
+                call_direct(
+                  policy_module,
+                  agent_name,
+                  all_routes,
+                  messages,
+                  opts,
+                  context,
+                  primary
+                )
+              else
+                Logger.error(
+                  "#{policy_module.log_prefix()} Hub routing disabled and direct fallback not allowed — agent=#{agent_name}"
+                )
+
+                log_routing(
+                  policy_module,
+                  agent_name,
+                  primary,
+                  nil,
+                  nil,
+                  false,
+                  context,
+                  "hub_routing_disabled",
+                  "direct_disabled"
+                )
+
+                {:error, :hub_routing_disabled}
+              end
           end
 
         {:error, :budget_exceeded} ->
@@ -111,47 +177,82 @@ defmodule Jay.Core.LLM.Selector do
     # -------------------------------------------------------------------
 
     defp call_via_hub(policy_module, agent_name, messages, primary, all_routes, opts, context) do
-      hub_module  = hub_client_module(policy_module)
-      log_prefix  = policy_module.log_prefix()
+      hub_module = hub_client_module(policy_module)
+      log_prefix = policy_module.log_prefix()
 
-      prompt     = messages_to_prompt(messages)
+      prompt = messages_to_prompt(messages)
       system_msg = Keyword.get(opts, :system)
 
       request = %{
-        prompt:         prompt,
+        prompt: prompt,
         abstract_model: primary,
-        system_prompt:  system_msg,
-        timeout_ms:     opts[:timeout_ms] || 60_000,
-        agent:          agent_name,
-        urgency:        context[:urgency],
-        task_type:      context[:task_type],
+        system_prompt: system_msg,
+        timeout_ms: opts[:timeout_ms] || 60_000,
+        agent: agent_name,
+        urgency: context[:urgency],
+        task_type: context[:task_type]
       }
 
       case hub_module.call(request) do
         {:ok, hub_resp} ->
           abstract_model_str = to_string(primary)
+
           safe_track_tokens(policy_module, %{
-            agent:         to_string(agent_name),
-            model:         abstract_model_str,
-            provider:      hub_resp.provider,
-            tokens_in:     0,
-            tokens_out:    0,
-            cost_usd:      hub_resp.cost_usd,
+            agent: to_string(agent_name),
+            model: abstract_model_str,
+            provider: hub_resp.provider,
+            tokens_in: 0,
+            tokens_out: 0,
+            cost_usd: hub_resp.cost_usd
           })
 
           resp = %{
-            content:    hub_resp.result,
-            model:      abstract_model_str,
-            tokens:     %{in: 0, out: 0},
+            content: hub_resp.result,
+            model: abstract_model_str,
+            tokens: %{in: 0, out: 0},
             latency_ms: hub_resp.latency_ms
           }
 
-          log_routing(policy_module, agent_name, primary, :hub, resp, true, context, nil, hub_resp.provider)
+          log_routing(
+            policy_module,
+            agent_name,
+            primary,
+            :hub,
+            resp,
+            true,
+            context,
+            nil,
+            hub_resp.provider
+          )
+
           {:ok, hub_resp.result}
 
         {:error, reason} ->
-          Logger.warning("#{log_prefix} Hub 호출 실패 (#{inspect(reason)}) — agent=#{agent_name}, 직접 호출 fallback")
-          call_direct(policy_module, agent_name, all_routes, messages, opts, context, primary)
+          if direct_fallback_enabled?(policy_module) do
+            Logger.warning(
+              "#{log_prefix} Hub 호출 실패 (#{inspect(reason)}) — agent=#{agent_name}, 명시적 직접 호출 fallback"
+            )
+
+            call_direct(policy_module, agent_name, all_routes, messages, opts, context, primary)
+          else
+            Logger.error(
+              "#{log_prefix} Hub 호출 실패 (#{inspect(reason)}) — agent=#{agent_name}, 직접 fallback 비활성"
+            )
+
+            log_routing(
+              policy_module,
+              agent_name,
+              primary,
+              nil,
+              nil,
+              false,
+              context,
+              "hub_call_failed",
+              "direct_disabled"
+            )
+
+            {:error, {:hub_call_failed, reason}}
+          end
       end
     end
 
@@ -159,23 +260,35 @@ defmodule Jay.Core.LLM.Selector do
     # Private — Shadow Mode
     # -------------------------------------------------------------------
 
-    defp call_shadow(policy_module, agent_name, messages, primary, _fallback_chain, all_routes, opts, context) do
+    defp call_shadow(
+           policy_module,
+           agent_name,
+           messages,
+           primary,
+           _fallback_chain,
+           all_routes,
+           opts,
+           context
+         ) do
       log_prefix = policy_module.log_prefix()
 
-      hub_task    = Task.async(fn ->
-        call_via_hub(policy_module, agent_name, messages, primary, all_routes, opts, context)
-      end)
-      direct_task = Task.async(fn ->
-        call_direct(policy_module, agent_name, all_routes, messages, opts, context, primary)
-      end)
+      hub_task =
+        Task.async(fn ->
+          call_via_hub(policy_module, agent_name, messages, primary, all_routes, opts, context)
+        end)
 
-      hub_result    = Task.yield(hub_task,    65_000) || Task.shutdown(hub_task)
+      direct_task =
+        Task.async(fn ->
+          call_direct(policy_module, agent_name, all_routes, messages, opts, context, primary)
+        end)
+
+      hub_result = Task.yield(hub_task, 65_000) || Task.shutdown(hub_task)
       direct_result = Task.yield(direct_task, 65_000) || Task.shutdown(direct_task)
 
-      hub_r    = unwrap_task(hub_result)
+      hub_r = unwrap_task(hub_result)
       direct_r = unwrap_task(direct_result)
 
-      hub_ok    = match?({:ok, _}, hub_r)
+      hub_ok = match?({:ok, _}, hub_r)
       direct_ok = match?({:ok, _}, direct_r)
       Logger.info("#{log_prefix}/shadow #{agent_name} — hub=#{hub_ok}, direct=#{direct_ok}")
 
@@ -183,8 +296,8 @@ defmodule Jay.Core.LLM.Selector do
     end
 
     defp unwrap_task({:ok, result}), do: result
-    defp unwrap_task(nil),           do: {:error, :task_timeout}
-    defp unwrap_task(_),             do: {:error, :task_error}
+    defp unwrap_task(nil), do: {:error, :task_timeout}
+    defp unwrap_task(_), do: {:error, :task_error}
 
     # -------------------------------------------------------------------
     # Private — 직접 Anthropic API 호출
@@ -193,17 +306,29 @@ defmodule Jay.Core.LLM.Selector do
     defp call_direct(policy_module, agent_name, [], _messages, _opts, ctx, primary) do
       log_prefix = policy_module.log_prefix()
       Logger.error("#{log_prefix} 모든 route 실패 — agent=#{agent_name}")
-      log_routing(policy_module, agent_name, primary, nil, nil, false, ctx, "all_routes_failed", "direct_anthropic")
+
+      log_routing(
+        policy_module,
+        agent_name,
+        primary,
+        nil,
+        nil,
+        false,
+        ctx,
+        "all_routes_failed",
+        "direct_anthropic"
+      )
+
       {:error, :all_routes_failed}
     end
 
     defp call_direct(policy_module, agent_name, [route | remaining], messages, opts, ctx, primary) do
       log_prefix = policy_module.log_prefix()
-      timeout    = Map.get(@default_timeouts, route, 30_000)
-      model      = route_to_model(route)
+      timeout = Map.get(@default_timeouts, route, 30_000)
+      model = route_to_model(route)
       max_tokens = Keyword.get(opts, :max_tokens, 1024)
-      system     = Keyword.get(opts, :system)
-      api_key    = policy_module.api_key()
+      system = Keyword.get(opts, :system)
+      api_key = policy_module.api_key()
 
       start_ms = System.monotonic_time(:millisecond)
 
@@ -212,25 +337,39 @@ defmodule Jay.Core.LLM.Selector do
           latency_ms = System.monotonic_time(:millisecond) - start_ms
 
           safe_track_tokens(policy_module, %{
-            agent:         to_string(agent_name),
-            model:         model,
-            provider:      "direct_anthropic",
-            tokens_in:     usage.input_tokens,
-            tokens_out:    usage.output_tokens,
+            agent: to_string(agent_name),
+            model: model,
+            provider: "direct_anthropic",
+            tokens_in: usage.input_tokens,
+            tokens_out: usage.output_tokens
           })
 
           resp = %{
-            content:    content,
-            model:      model,
-            tokens:     %{in: usage.input_tokens, out: usage.output_tokens},
+            content: content,
+            model: model,
+            tokens: %{in: usage.input_tokens, out: usage.output_tokens},
             latency_ms: latency_ms
           }
 
-          log_routing(policy_module, agent_name, primary, route, resp, true, ctx, nil, "direct_anthropic")
+          log_routing(
+            policy_module,
+            agent_name,
+            primary,
+            route,
+            resp,
+            true,
+            ctx,
+            nil,
+            "direct_anthropic"
+          )
+
           {:ok, content}
 
         {:error, reason} ->
-          Logger.warning("#{log_prefix} #{model} 실패 (#{inspect(reason)}) — agent=#{agent_name}, 다음 폴백 시도")
+          Logger.warning(
+            "#{log_prefix} #{model} 실패 (#{inspect(reason)}) — agent=#{agent_name}, 다음 폴백 시도"
+          )
+
           call_direct(policy_module, agent_name, remaining, messages, opts, ctx, primary)
       end
     end
@@ -241,20 +380,20 @@ defmodule Jay.Core.LLM.Selector do
 
     defp build_context(policy_module, agent_name, messages, opts, budget_ratio) do
       %{
-        prompt_tokens:       estimate_tokens(messages),
-        budget_ratio:        budget_ratio,
-        urgency:             Keyword.get(opts, :urgency, :medium),
-        task_type:           Keyword.get(opts, :task_type, :unknown),
-        recent_failure_rate: safe_failure_rate(policy_module, agent_name),
+        prompt_tokens: estimate_tokens(messages),
+        budget_ratio: budget_ratio,
+        urgency: Keyword.get(opts, :urgency, :medium),
+        task_type: Keyword.get(opts, :task_type, :unknown),
+        recent_failure_rate: safe_failure_rate(policy_module, agent_name)
       }
     end
 
     defp estimate_tokens(messages) when is_list(messages) do
       messages
       |> Enum.map(fn
-        %{content: c} when is_binary(c)     -> String.length(c)
+        %{content: c} when is_binary(c) -> String.length(c)
         %{"content" => c} when is_binary(c) -> String.length(c)
-        _                                    -> 0
+        _ -> 0
       end)
       |> Enum.sum()
       |> div(3)
@@ -264,27 +403,61 @@ defmodule Jay.Core.LLM.Selector do
     defp estimate_tokens(text) when is_binary(text), do: String.length(text) |> div(3) |> max(1)
     defp estimate_tokens(_), do: 500
 
+    defp direct_fallback_enabled?(policy_module) do
+      team =
+        if function_exported?(policy_module, :team_name, 0) do
+          policy_module.team_name()
+          |> to_string()
+          |> String.upcase()
+          |> String.replace(~r/[^A-Z0-9]+/, "_")
+        else
+          nil
+        end
+
+      [
+        "JAY_LLM_DIRECT_FALLBACK",
+        "HUB_LLM_DIRECT_FALLBACK",
+        team && "#{team}_LLM_DIRECT_FALLBACK"
+      ]
+      |> Enum.reject(&is_nil/1)
+      |> Enum.any?(fn key ->
+        System.get_env(key, "")
+        |> String.downcase()
+        |> then(&(&1 in ["1", "true", "yes", "y", "on"]))
+      end)
+    end
+
     # -------------------------------------------------------------------
     # Private — 라우팅 로그
     # -------------------------------------------------------------------
 
-    defp log_routing(policy_module, agent_name, primary, used_route, resp, ok, ctx, err_reason, provider) do
+    defp log_routing(
+           policy_module,
+           agent_name,
+           primary,
+           used_route,
+           resp,
+           ok,
+           ctx,
+           err_reason,
+           provider
+         ) do
       routing_log_module(policy_module).record(%{
-        agent_name:         to_string(agent_name),
-        model_primary:      to_string(primary),
-        model_used:         if(used_route, do: to_string(used_route), else: nil),
-        fallback_used:      used_route != nil and used_route != primary,
-        prompt_tokens:      ctx[:prompt_tokens],
-        response_tokens:    resp && get_in(resp, [:tokens, :out]),
-        latency_ms:         resp && resp[:latency_ms],
-        cost_usd:           nil,
-        response_ok:        ok,
-        error_reason:       err_reason,
-        urgency:            ctx[:urgency],
-        task_type:          ctx[:task_type],
-        budget_ratio:       ctx[:budget_ratio],
+        agent_name: to_string(agent_name),
+        model_primary: to_string(primary),
+        model_used: if(used_route, do: to_string(used_route), else: nil),
+        fallback_used: used_route != nil and used_route != primary,
+        prompt_tokens: ctx[:prompt_tokens],
+        response_tokens: resp && get_in(resp, [:tokens, :out]),
+        latency_ms: resp && resp[:latency_ms],
+        cost_usd: nil,
+        response_ok: ok,
+        error_reason: err_reason,
+        urgency: ctx[:urgency],
+        task_type: ctx[:task_type],
+        budget_ratio: ctx[:budget_ratio],
         recommended_reason: nil,
-        provider:           provider,
+        provider: provider
       })
     end
 
@@ -298,9 +471,9 @@ defmodule Jay.Core.LLM.Selector do
       else
         normalized =
           case messages do
-            msgs when is_list(msgs)   -> msgs
+            msgs when is_list(msgs) -> msgs
             text when is_binary(text) -> [%{role: "user", content: text}]
-            _                         -> [%{role: "user", content: inspect(messages)}]
+            _ -> [%{role: "user", content: inspect(messages)}]
           end
 
         body = %{model: model, max_tokens: max_tokens, messages: normalized}
@@ -317,7 +490,7 @@ defmodule Jay.Core.LLM.Selector do
           {:ok, %{status: 200, body: %{"content" => [%{"text" => text} | _], "usage" => usage}}} ->
             {:ok, text,
              %{
-               input_tokens:  Map.get(usage, "input_tokens", 0),
+               input_tokens: Map.get(usage, "input_tokens", 0),
                output_tokens: Map.get(usage, "output_tokens", 0)
              }}
 
@@ -330,18 +503,18 @@ defmodule Jay.Core.LLM.Selector do
       end
     end
 
-    defp route_to_model(:anthropic_haiku),  do: "claude-haiku-4-5-20251001"
+    defp route_to_model(:anthropic_haiku), do: "claude-haiku-4-5-20251001"
     defp route_to_model(:anthropic_sonnet), do: "claude-sonnet-4-6"
-    defp route_to_model(:anthropic_opus),   do: "claude-opus-4-7"
-    defp route_to_model(_),                 do: "claude-haiku-4-5-20251001"
+    defp route_to_model(:anthropic_opus), do: "claude-opus-4-7"
+    defp route_to_model(_), do: "claude-haiku-4-5-20251001"
 
     defp messages_to_prompt(messages) when is_list(messages) do
       messages
       |> Enum.reject(fn m -> to_string(Map.get(m, :role, Map.get(m, "role", ""))) == "system" end)
       |> Enum.map(fn
-        %{role: r, content: c}         -> if to_string(r) == "user", do: c, else: "[#{r}]: #{c}"
+        %{role: r, content: c} -> if to_string(r) == "user", do: c, else: "[#{r}]: #{c}"
         %{"role" => r, "content" => c} -> if r == "user", do: c, else: "[#{r}]: #{c}"
-        _                              -> ""
+        _ -> ""
       end)
       |> Enum.reject(&(&1 == ""))
       |> Enum.join("\n\n")

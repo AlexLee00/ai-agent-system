@@ -26,10 +26,14 @@
     <key>LUNA_MAPEK_ENABLED</key>
     <string>false</string>
 
-    <!-- LLM Hub 라우팅 (Shadow 먼저, 검증 후 ENABLED=true) -->
+    <!-- LLM Hub 라우팅 (Elixir V2는 *_ROUTING_* 키를 읽는다) -->
     <key>LUNA_LLM_HUB_ENABLED</key>
     <string>true</string>
+    <key>LUNA_LLM_HUB_ROUTING_ENABLED</key>
+    <string>true</string>
     <key>LUNA_LLM_HUB_SHADOW</key>
+    <string>false</string>
+    <key>LUNA_LLM_HUB_ROUTING_SHADOW</key>
     <string>false</string>
     <key>INVESTMENT_LLM_HUB_ENABLED</key>
     <string>true</string>

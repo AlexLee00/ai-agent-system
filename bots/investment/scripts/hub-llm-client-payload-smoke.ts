@@ -4,6 +4,7 @@ import {
   getHubCallerTeam,
   isDirectFallbackEnabled,
   isHubEnabled,
+  callLLMWithHub,
   normalizeHubUrgency,
 } from '../shared/hub-llm-client.ts';
 
@@ -14,7 +15,17 @@ function assert(condition: unknown, message: string): void {
   if (!condition) throw new Error(message);
 }
 
-function main(): void {
+async function assertRejects(fn: () => Promise<unknown>, pattern: RegExp, message: string): Promise<void> {
+  try {
+    await fn();
+  } catch (err) {
+    assert(pattern.test(String((err as Error)?.message || err)), message);
+    return;
+  }
+  throw new Error(message);
+}
+
+async function main(): Promise<void> {
   const originalHubEnabled = process.env.INVESTMENT_LLM_HUB_ENABLED;
   const originalDirectFallback = process.env.INVESTMENT_LLM_DIRECT_FALLBACK;
 
@@ -53,10 +64,25 @@ function main(): void {
   assert(hermesParsed.ok, `Hermes payload should pass Hub schema: ${JSON.stringify(hermesParsed.error)}`);
   assert(lunaParsed.ok, `Luna payload should pass Hub schema: ${JSON.stringify(lunaParsed.error)}`);
 
+  process.env.INVESTMENT_LLM_HUB_ENABLED = 'false';
+  delete process.env.INVESTMENT_LLM_DIRECT_FALLBACK;
+  await assertRejects(
+    () => callLLMWithHub('luna', 'system', 'user', async () => 'direct-result', 32),
+    /INVESTMENT_LLM_DIRECT_FALLBACK=true/,
+    'Hub disabled mode must fail closed unless direct fallback is explicitly enabled',
+  );
+  process.env.INVESTMENT_LLM_DIRECT_FALLBACK = 'true';
+  const directBypass = await callLLMWithHub('luna', 'system', 'user', async () => 'direct-result', 32);
+  assert(directBypass === 'direct-result', 'explicit direct fallback should allow emergency direct bypass');
+  if (originalHubEnabled == null) delete process.env.INVESTMENT_LLM_HUB_ENABLED;
+  else process.env.INVESTMENT_LLM_HUB_ENABLED = originalHubEnabled;
+  if (originalDirectFallback == null) delete process.env.INVESTMENT_LLM_DIRECT_FALLBACK;
+  else process.env.INVESTMENT_LLM_DIRECT_FALLBACK = originalDirectFallback;
+
   console.log(JSON.stringify({
     ok: true,
-    checked: ['urgency_mapping', 'hub_defaults', 'selector_policy', 'hub_schema_compatibility'],
+    checked: ['urgency_mapping', 'hub_defaults', 'selector_policy', 'hub_schema_compatibility', 'direct_fallback_fail_closed'],
   }));
 }
 
-main();
+await main();

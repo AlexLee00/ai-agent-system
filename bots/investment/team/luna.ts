@@ -1,6 +1,6 @@
 // @ts-nocheck
 /**
- * team/luna.js — 루나 (오케스트레이터·최종 판단)
+ * team/luna.ts — 루나 (오케스트레이터·최종 판단)
  *
  * 역할: 모든 분석가 결과 수집 → 강세/약세 토론 → 최종 투자 판단
  * LLM: Claude Haiku (LIVE) / Groq Scout (PAPER) — PAPER_MODE 분기
@@ -12,7 +12,7 @@
  *   4. 네메시스 리스크 평가
  *   5. 신호 DB 저장 + 텔레그램
  *
- * 실행: node team/luna.js --symbols=BTC/USDT,ETH/USDT
+ * 실행: node team/luna.ts --symbols=BTC/USDT,ETH/USDT
  */
 
 import { createRequire }  from 'module';

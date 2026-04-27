@@ -8,8 +8,8 @@ defmodule Luna.V2.LLM.SelectorTest do
     @impl true
     def agent_policies do
       %{
-        "luna.commander"          => %{route: :anthropic_sonnet, fallback: [:anthropic_haiku]},
-        "luna.rag.query_planner"  => %{route: :anthropic_haiku,  fallback: []},
+        "luna.commander" => %{route: :anthropic_sonnet, fallback: [:anthropic_haiku]},
+        "luna.rag.query_planner" => %{route: :anthropic_haiku, fallback: []}
       }
     end
 
@@ -19,8 +19,8 @@ defmodule Luna.V2.LLM.SelectorTest do
     @impl true
     def agent_affinity do
       %{
-        "luna.commander"         => %{anthropic_sonnet: 1.0, anthropic_haiku: 0.6},
-        "luna.rag.query_planner" => %{anthropic_haiku: 1.0},
+        "luna.commander" => %{anthropic_sonnet: 1.0, anthropic_haiku: 0.6},
+        "luna.rag.query_planner" => %{anthropic_haiku: 1.0}
       }
     end
 
@@ -91,13 +91,15 @@ defmodule Luna.V2.LLM.SelectorTest do
   end
 
   describe "call_with_fallback/3 — API 키 없는 환경" do
-    test "api_key nil → {:error, _} 반환" do
+    test "Hub 비활성 + direct fallback 미허용 → fail closed" do
       result = TestSelector.call_with_fallback("luna.commander", "투자 판단 요청", [])
-      assert match?({:error, _}, result)
+      assert result == {:error, :hub_routing_disabled}
     end
 
-    test "complete/3 → {:error, _} 반환 (api_key 없음)" do
-      result = TestSelector.complete("luna.rag.query_planner", [%{role: "user", content: "test"}], [])
+    test "complete/3 → {:error, _} 반환" do
+      result =
+        TestSelector.complete("luna.rag.query_planner", [%{role: "user", content: "test"}], [])
+
       assert match?({:error, _}, result)
     end
   end

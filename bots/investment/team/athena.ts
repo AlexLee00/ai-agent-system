@@ -5,7 +5,7 @@
  * 역할: 매도 관점 근거 + 손절가 제시
  * LLM: Groq Scout (paper) / Groq Scout (live) — 비용 무료
  *
- * 실행: node team/athena.js (단독 실행 불가 — luna.js에서 호출)
+ * 실행: node team/athena.ts (단독 실행 불가 — luna.ts에서 호출)
  */
 
 import { callLLM, parseJSON } from '../shared/llm-client.ts';

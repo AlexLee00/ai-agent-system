@@ -5,13 +5,16 @@ defmodule Luna.V2.LLM.HubClientTest do
 
   setup do
     old_routing = System.get_env("LUNA_LLM_HUB_ROUTING_ENABLED")
-    old_shadow  = System.get_env("LUNA_LLM_HUB_ROUTING_SHADOW")
+    old_shadow = System.get_env("LUNA_LLM_HUB_ROUTING_SHADOW")
 
     on_exit(fn ->
-      if old_routing, do: System.put_env("LUNA_LLM_HUB_ROUTING_ENABLED", old_routing),
-                      else: System.delete_env("LUNA_LLM_HUB_ROUTING_ENABLED")
-      if old_shadow,  do: System.put_env("LUNA_LLM_HUB_ROUTING_SHADOW", old_shadow),
-                      else: System.delete_env("LUNA_LLM_HUB_ROUTING_SHADOW")
+      if old_routing,
+        do: System.put_env("LUNA_LLM_HUB_ROUTING_ENABLED", old_routing),
+        else: System.delete_env("LUNA_LLM_HUB_ROUTING_ENABLED")
+
+      if old_shadow,
+        do: System.put_env("LUNA_LLM_HUB_ROUTING_SHADOW", old_shadow),
+        else: System.delete_env("LUNA_LLM_HUB_ROUTING_SHADOW")
     end)
 
     :ok
@@ -51,11 +54,12 @@ defmodule Luna.V2.LLM.HubClientTest do
       System.put_env("LUNA_LLM_HUB_ROUTING_ENABLED", "true")
       System.put_env("HUB_BASE_URL", "http://localhost:19998")
 
-      result = HubClient.call(%{
-        prompt: "루나 테스트 프롬프트",
-        abstract_model: :anthropic_haiku,
-        agent: "luna.test"
-      })
+      result =
+        HubClient.call(%{
+          prompt: "루나 테스트 프롬프트",
+          abstract_model: :anthropic_haiku,
+          agent: "luna.test"
+        })
 
       assert match?({:error, _}, result)
     after
@@ -65,11 +69,12 @@ defmodule Luna.V2.LLM.HubClientTest do
     test "Hub 연결 결과 구조 — ok 또는 error" do
       System.put_env("LUNA_LLM_HUB_ROUTING_ENABLED", "true")
 
-      result = HubClient.call(%{
-        prompt: "ping",
-        abstract_model: :anthropic_haiku,
-        agent: "luna.test"
-      })
+      result =
+        HubClient.call(%{
+          prompt: "ping",
+          abstract_model: :anthropic_haiku,
+          agent: "luna.test"
+        })
 
       assert match?({:ok, _}, result) or match?({:error, _}, result)
     end
@@ -77,14 +82,17 @@ defmodule Luna.V2.LLM.HubClientTest do
 
   describe "공개 API 확인" do
     test "enabled?/0 함수 존재" do
+      assert Code.ensure_loaded?(HubClient)
       assert function_exported?(HubClient, :enabled?, 0)
     end
 
     test "shadow?/0 함수 존재" do
+      assert Code.ensure_loaded?(HubClient)
       assert function_exported?(HubClient, :shadow?, 0)
     end
 
     test "call/1 함수 존재" do
+      assert Code.ensure_loaded?(HubClient)
       assert function_exported?(HubClient, :call, 1)
     end
   end

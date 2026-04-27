@@ -274,7 +274,7 @@
         },
         "luna": {
           "name": "루나",
-          "file": "bots/investment/team/luna.js",
+          "file": "bots/investment/team/luna.ts",
           "role": "오케스트레이터 — 강세/약세 토론 + 최종 신호 판단 + 네메시스 리스크 검토",
           "status": "ops"
         },

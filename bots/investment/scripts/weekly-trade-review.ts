@@ -6,7 +6,7 @@
  * 기능:
  *   - 최근 7일 trade_journal 조회 (종료 거래)
  *   - LLM(Groq Scout) 자동 분석 → 잘한 점 / 개선점 / 다음 주 전략
- *   - RAG 저장 (rag_trades 컬렉션 — 향후 luna.js가 과거 피드백 참조)
+ *   - RAG 저장 (rag_trades 컬렉션 — 향후 luna.ts가 과거 피드백 참조)
  *   - 텔레그램 리포트 전송 (publishAlert)
  *
  * 실행:

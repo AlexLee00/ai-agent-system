@@ -2,7 +2,7 @@
 /**
  * scripts/investment-profile.js — 투자 성향 조회
  *
- * config.yaml + 환경변수 + luna.js 상수에서 현재 투자 성향을 종합 반환
+ * config.yaml + 환경변수 + luna.ts 상수에서 현재 투자 성향을 종합 반환
  */
 
 import { readFileSync } from 'fs';

@@ -115,9 +115,14 @@ describe('brand-mention-collector', () => {
     expect(brandCollector.BRAND_KEYWORDS.length).toBeGreaterThan(0);
     expect(brandCollector.BRAND_KEYWORDS).toEqual(expect.arrayContaining([
       '커피랑도서관',
+      '커피랑 도서관',
       '커피랑도서관 분당서현점',
       '분당서현',
+      '분당서현 스터디카페',
+      '분당 서현 스터디카페',
+      '서현 스터디카페',
       '서현역 스터디카페',
+      '서현역 독서실',
       '승호아빠',
     ]));
   });

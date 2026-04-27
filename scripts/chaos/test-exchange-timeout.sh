@@ -56,7 +56,7 @@ echo ""
 echo "[$(date '+%H:%M:%S')] 3) 잔고 조회 실패 시 포트폴리오 fallback 확인..."
 node --input-type=module << 'EOF'
 import { readFileSync } from 'fs';
-const src = readFileSync('./bots/investment/team/luna.js', 'utf8');
+const src = readFileSync('./bots/investment/team/luna.ts', 'utf8');
 // buildPortfolioContext: usdtFree = 10000 hardcoded fallback
 const hasFallbackUsdt = src.includes('usdtFree   = 10000') || src.includes('usdtFree = 10000');
 const hasInsertSnap   = src.includes('insertAssetSnapshot');
@@ -70,7 +70,7 @@ echo ""
 echo "[$(date '+%H:%M:%S')] 4) 거래소 오류 → notifyError 알림 체계 확인..."
 node --input-type=module << 'EOF'
 import { readFileSync } from 'fs';
-const src = readFileSync('./bots/investment/team/luna.js', 'utf8');
+const src = readFileSync('./bots/investment/team/luna.ts', 'utf8');
 const hasNotifyError = src.includes('notifyError');
 console.log(hasNotifyError ? '✅ notifyError 알림 있음 (심볼 오류 시 마스터 알림)' : '❌ notifyError 없음');
 process.exit(0);

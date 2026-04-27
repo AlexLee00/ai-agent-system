@@ -2,7 +2,7 @@
 /**
  * shared/onchain-data.js — 바이낸스 온체인 데이터 수집 (공유 모듈)
  *
- * oracle.js, luna.js 등에서 공용으로 사용하는 바이낸스 Futures 퍼블릭 API.
+ * oracle.ts, luna.ts 등에서 공용으로 사용하는 바이낸스 Futures 퍼블릭 API.
  * API 키 불필요 — 모두 공개 엔드포인트.
  *
  * 사용:

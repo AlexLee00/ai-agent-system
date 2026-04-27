@@ -82,7 +82,7 @@ echo ""
 echo "[$(date '+%H:%M:%S')] 5) Shadow Mode symbol_decision 구조 확인..."
 node --input-type=module << 'EOF'
 import { readFileSync } from 'fs';
-const src = readFileSync('./bots/investment/team/luna.js', 'utf8');
+const src = readFileSync('./bots/investment/team/luna.ts', 'utf8');
 const hasShadowEval    = src.includes("shadow.evaluate");
 const hasSymDecCtx     = src.includes("'symbol_decision'");
 const hasShadowFixed   = src.includes("mode:      'shadow'");

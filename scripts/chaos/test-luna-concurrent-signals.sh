@@ -20,7 +20,7 @@ echo ""
 echo "[$(date '+%H:%M:%S')] 1) MAX_DEBATE_SYMBOLS 한도 확인..."
 node --input-type=module << 'EOF'
 import { readFileSync } from 'fs';
-const src = readFileSync('./bots/investment/team/luna.js', 'utf8');
+const src = readFileSync('./bots/investment/team/luna.ts', 'utf8');
 const hasDebateLimit  = src.includes('MAX_DEBATE_SYMBOLS');
 const hasDebateSkip   = src.includes('debate 한도 도달');
 const hasShadowWrap   = src.includes('shadow.evaluate');
@@ -67,7 +67,7 @@ echo ""
 echo "[$(date '+%H:%M:%S')] 3) 포트폴리오 LLM 환각 방지 로직 확인..."
 node --input-type=module << 'EOF'
 import { readFileSync } from 'fs';
-const src = readFileSync('./bots/investment/team/luna.js', 'utf8');
+const src = readFileSync('./bots/investment/team/luna.ts', 'utf8');
 const hasAllowedFilter = src.includes('allowed.has(d.symbol)');
 const hasSymbolSet     = src.includes('new Set(symbols)');
 console.log(hasAllowedFilter ? '✅ LLM 환각 방지 필터 (allowed.has) 있음' : '❌ 필터 없음');

@@ -5,7 +5,7 @@
  * 역할: 신호 평가 — 하드 규칙(v1) + LLM 리스크 평가(v2)
  * LLM: Groq Scout (paper) / Claude Haiku (live)
  *
- * 실행: node team/nemesis.js (단독 실행 불가 — luna.js에서 호출)
+ * 실행: node team/nemesis.ts (단독 실행 불가 — luna.ts에서 호출)
  */
 
 import { createRequire } from 'module';

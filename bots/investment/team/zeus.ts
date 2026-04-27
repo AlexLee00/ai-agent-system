@@ -5,7 +5,7 @@
  * 역할: 매수 관점 근거 + 목표가 제시
  * LLM: Groq Scout (paper) / Groq Scout (live) — 비용 무료
  *
- * 실행: node team/zeus.js (단독 실행 불가 — luna.js에서 호출)
+ * 실행: node team/zeus.ts (단독 실행 불가 — luna.ts에서 호출)
  */
 
 import { callLLM, parseJSON } from '../shared/llm-client.ts';
