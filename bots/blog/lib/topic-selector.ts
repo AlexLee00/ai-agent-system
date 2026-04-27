@@ -159,12 +159,12 @@ const CATEGORY_SELECTION_GUIDES = {
 };
 
 const TITLE_FRAMES = [
-  { pattern: 'checklist', template: '{topic}을 시작하기 전 먼저 볼 3가지' },
+  { pattern: 'checklist', template: '{topicObject} 시작하기 전 먼저 볼 3가지' },
   { pattern: 'warning', template: '{topic}, 지금 바꾸지 않으면 늦는 이유' },
   { pattern: 'experience', template: '직접 해보고 깨달은 {topic}의 진짜 핵심' },
   { pattern: 'experience', template: '3개월간 {topicObject} 운영하며 배운 것들' },
   { pattern: 'checklist', template: '{topic}에서 헷갈리기 쉬운 지점 3가지' },
-  { pattern: 'checklist', template: '{topic}을 바로 적용할 때 확인할 {count}가지' },
+  { pattern: 'checklist', template: '{topicObject} 바로 적용할 때 확인할 {count}가지' },
   { pattern: 'warning', template: '{topic}에서 초보자가 가장 먼저 실수하는 것' },
   { pattern: 'trend', template: '2026년 {topic} 트렌드: 달라진 것과 변하지 않는 것' },
 ];

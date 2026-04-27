@@ -25,6 +25,7 @@ const { getBlogGenerationRuntimeConfig } = require(path.join(env.PROJECT_ROOT, '
 const { calculateSectionChars, buildCharCountInstruction } = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/section-ratio.ts'));
 const { isExcludedReferenceTitle, isExcludedReferenceFilename } = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/reference-exclusions.ts'));
 const { detectTitlePattern } = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/performance-diagnostician.ts'));
+const { isReaderFriendlyTitle } = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/topic-selector.ts'));
 const { AgentMemory } = require('../../../packages/core/lib/agent-memory');
 
 const generationRuntimeConfig = getBlogGenerationRuntimeConfig();
@@ -494,7 +495,10 @@ function _enforceGeneralTitleAlignment(content, category, researchData = {}) {
   const bookReviewCandidate = category === '도서리뷰'
     ? _buildBookReviewTitleCandidate(researchData.book_info || {})
     : '';
-  const candidateTitle = String(researchData.topic_title_candidate || bookReviewCandidate).trim();
+  const rawCandidateTitle = String(researchData.topic_title_candidate || bookReviewCandidate).trim();
+  const candidateTitle = rawCandidateTitle && isReaderFriendlyTitle(rawCandidateTitle, category)
+    ? rawCandidateTitle
+    : '';
   const expectedPattern = String(researchData.strategy_preferred_pattern || '').trim();
   if (!candidateTitle) {
     if (!currentTitle.startsWith(`[${category}]`)) {
