@@ -36,16 +36,16 @@
     <key>HUB_OAUTH_MONITOR_REQUIRE_GEMINI</key>
     <string>true</string>
     <key>HUB_GEMINI_OAUTH_WARN_HOURS</key>
-    <string>0.25</string>
+    <string>0.75</string>
     <key>HUB_GEMINI_OAUTH_CRITICAL_HOURS</key>
-    <string>0.05</string>
+    <string>0.15</string>
   </dict>
   <key>StandardOutPath</key>
   <string>/tmp/hub-llm-oauth-monitor.log</string>
   <key>StandardErrorPath</key>
   <string>/tmp/hub-llm-oauth-monitor.err.log</string>
   <key>StartInterval</key>
-  <integer>7200</integer>
+  <integer>900</integer>
   <key>RunAtLoad</key>
   <true/>
 </dict>

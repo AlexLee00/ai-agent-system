@@ -12,6 +12,7 @@ const { selectRuntimeProfile } = require('../runtime-profiles');
 const { getGroqFallback } = require('../../../../packages/core/lib/llm-models');
 const { callWithFallback: callCoreWithFallback } = require('../../../../packages/core/lib/llm-fallback');
 const { describeAgentModel, selectLLMChain } = require('../../../../packages/core/lib/llm-model-selector');
+const providerRegistry = require('./provider-registry');
 const sender = require('../../../../packages/core/lib/telegram-sender');
 
 const CLAUDE_CODE_MODEL = {
@@ -182,6 +183,31 @@ async function _callLegacy(req, _team) {
 
 async function _callRoute(route, req, timeoutMs, chainEntry = {}) {
   const normalizedRoute = _normalizeRoute(route, req.abstractModel);
+  const provider = _routeToProvider(normalizedRoute);
+  const started = Date.now();
+
+  if (_providerCircuitEnabled(provider) && !providerRegistry.canCall(provider)) {
+    return {
+      ok: false,
+      provider: 'failed',
+      durationMs: 0,
+      error: `provider_circuit_open:${provider}`,
+    };
+  }
+
+  const result = await _callRouteUnchecked(normalizedRoute, req, timeoutMs, chainEntry);
+  const latencyMs = Number(result.durationMs || 0) || (Date.now() - started);
+  if (_providerCircuitEnabled(provider)) {
+    if (result.ok) {
+      providerRegistry.recordSuccess(provider, latencyMs);
+    } else {
+      providerRegistry.recordFailure(provider, result.error || 'provider_failed', latencyMs);
+    }
+  }
+  return result;
+}
+
+async function _callRouteUnchecked(normalizedRoute, req, timeoutMs, chainEntry = {}) {
 
   if (normalizedRoute.startsWith('claude-code/')) {
     const model = normalizedRoute.split('/')[1];
@@ -210,7 +236,12 @@ async function _callRoute(route, req, timeoutMs, chainEntry = {}) {
   ) {
     return _callViaCoreFallback(normalizedRoute, req, timeoutMs, chainEntry);
   }
-  return { ok: false, provider: 'failed', error: `unsupported_provider:${route}`, durationMs: 0 };
+  return { ok: false, provider: 'failed', error: `unsupported_provider:${normalizedRoute}`, durationMs: 0 };
+}
+
+function _providerCircuitEnabled(provider) {
+  if (process.env.HUB_LLM_PROVIDER_CIRCUIT_ENABLED === 'false') return false;
+  return Boolean(provider && provider !== 'failed');
 }
 
 function _chainEntryToRoute(entry) {

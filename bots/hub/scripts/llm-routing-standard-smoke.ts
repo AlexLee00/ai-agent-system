@@ -77,6 +77,13 @@ const REQUIRED_INVESTMENT_AGENTS = [
   'chronos',
 ];
 
+const REQUIRED_ORCHESTRATOR_AGENTS = [
+  'default',
+  'intent',
+  'fallback',
+  'summary',
+];
+
 function rg(args) {
   return spawnSync('rg', args, {
     cwd: PROJECT_ROOT,
@@ -146,6 +153,18 @@ function main() {
     'luna/default must start with OpenAI OAuth via investment.agent_policy openai_perf route',
   );
 
+  for (const agent of REQUIRED_ORCHESTRATOR_AGENTS) {
+    const description = selector.describeAgentModel('orchestrator', agent);
+    assert.ok(description?.selected, `orchestrator/${agent} must resolve to a selector chain`);
+    assert.ok(Array.isArray(description.chain) && description.chain.length > 0, `orchestrator/${agent} selector chain must be non-empty`);
+  }
+  const orchestratorSummary = selector.describeAgentModel('orchestrator', 'summary');
+  assert.equal(
+    orchestratorSummary?.chain?.[0]?.provider,
+    'gemini-oauth',
+    'orchestrator/summary must use Gemini OAuth as the low-cost summary route',
+  );
+
   const hubClient = require('../../../packages/core/lib/hub-client');
   assert.strictEqual(typeof hubClient.callHubLlm, 'function', 'hub-client must export callHubLlm');
 
@@ -156,6 +175,7 @@ function main() {
     darwin_profiles: REQUIRED_DARWIN_PROFILES.length,
     blog_agents: REQUIRED_BLOG_AGENTS.length,
     ska_agents: REQUIRED_SKA_AGENTS.length,
+    orchestrator_agents: REQUIRED_ORCHESTRATOR_AGENTS.length,
     investment_agents: REQUIRED_INVESTMENT_AGENTS.length,
   }, null, 2));
 }

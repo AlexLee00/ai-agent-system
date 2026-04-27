@@ -3,7 +3,12 @@
 // Provider-level Circuit Breaker Registry
 // Wraps packages/core/lib/local-circuit-breaker; adds Telegram + DB event logging
 
-const { isCircuitOpen, recordSuccess: cbSuccess, recordFailure: cbFailure } = require('../../../../packages/core/lib/local-circuit-breaker');
+const {
+  isCircuitOpen,
+  recordSuccess: cbSuccess,
+  recordFailure: cbFailure,
+  resetCircuit,
+} = require('../../../../packages/core/lib/local-circuit-breaker');
 const pgPool = require('../../../../packages/core/lib/pg-pool');
 const sender = require('../../../../packages/core/lib/telegram-sender');
 
@@ -22,6 +27,14 @@ function _p99(latencies) {
   return sorted[Math.min(Math.floor(sorted.length * 0.99), sorted.length - 1)];
 }
 
+function _flag(name) {
+  return ['1', 'true', 'yes', 'y', 'on'].includes(String(process.env[name] || '').trim().toLowerCase());
+}
+
+function _alertsEnabled() {
+  return _flag('HUB_LLM_PROVIDER_CIRCUIT_ALERTS_ENABLED');
+}
+
 function canCall(provider) {
   return !isCircuitOpen(provider);
 }
@@ -37,7 +50,7 @@ function recordSuccess(provider, latencyMs) {
 
   if (wasOpen) {
     _logEvent(provider, 'closed', null, latencyMs).catch(() => {});
-    sender.send('general', `[circuit] ${provider}: OPEN → CLOSED (복구 완료)`).catch(() => {});
+    if (_alertsEnabled()) sender.send('general', `[circuit] ${provider}: OPEN -> CLOSED (recovered)`).catch(() => {});
   }
 }
 
@@ -53,7 +66,7 @@ function recordFailure(provider, reason, latencyMs) {
 
   if (!wasOpen && nowOpen) {
     _logEvent(provider, 'opened', reason || null, latencyMs || 0).catch(() => {});
-    sender.sendCritical('general', `🚨 [circuit] ${provider} OPEN (연속 실패: ${reason})`).catch(() => {});
+    if (_alertsEnabled()) sender.sendCritical('general', `[circuit] ${provider} OPEN (consecutive failure: ${reason})`).catch(() => {});
   }
 }
 
@@ -72,6 +85,11 @@ function getProviderStats() {
   return result;
 }
 
+function resetProviderCircuit(provider) {
+  resetCircuit(provider);
+  stats.delete(provider);
+}
+
 async function _logEvent(provider, eventType, reason, latencyMs) {
   try {
     await pgPool.run(
@@ -84,4 +102,4 @@ async function _logEvent(provider, eventType, reason, latencyMs) {
   }
 }
 
-module.exports = { canCall, recordSuccess, recordFailure, getProviderStats };
+module.exports = { canCall, recordSuccess, recordFailure, getProviderStats, resetProviderCircuit };

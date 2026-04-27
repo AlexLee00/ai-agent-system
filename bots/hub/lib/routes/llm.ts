@@ -6,6 +6,7 @@ const { loadGroqAccounts } = require('../llm/secrets-loader');
 const { getLlmAdmissionState } = require('../llm/admission-control');
 const { parseLlmCallPayload } = require('../llm/request-schema');
 const { getAllCircuitStatuses, resetCircuit } = require('../../../../packages/core/lib/local-circuit-breaker');
+const { getProviderStats, resetProviderCircuit } = require('../llm/provider-registry');
 
 // POST /hub/llm/call — Primary(Claude Code OAuth) + Fallback(Groq) 체인
 export async function llmCallRoute(req, res) {
@@ -54,6 +55,13 @@ export async function llmCallRoute(req, res) {
 
 // POST /hub/llm/oauth — Claude Code OAuth 단독 호출
 export async function llmOAuthRoute(req, res) {
+  if (!directProviderRoutesEnabled()) {
+    return res.status(403).json({
+      ok: false,
+      error: 'direct_llm_provider_route_disabled',
+      message: 'Use /hub/llm/call with callerTeam + agent or selectorKey.',
+    });
+  }
   const body = req.body ?? {};
   if (!body.prompt || typeof body.prompt !== 'string') {
     return res.status(400).json({ error: 'prompt (string) required' });
@@ -76,6 +84,13 @@ export async function llmOAuthRoute(req, res) {
 
 // POST /hub/llm/groq — Groq 단독 호출
 export async function llmGroqRoute(req, res) {
+  if (!directProviderRoutesEnabled()) {
+    return res.status(403).json({
+      ok: false,
+      error: 'direct_llm_provider_route_disabled',
+      message: 'Use /hub/llm/call with callerTeam + agent or selectorKey.',
+    });
+  }
   const body = req.body ?? {};
   if (!body.prompt || typeof body.prompt !== 'string') {
     return res.status(400).json({ error: 'prompt (string) required' });
@@ -261,16 +276,27 @@ export async function llmLoadTestsRoute(req, res) {
 export async function llmCircuitRoute(req, res) {
   if (req.method === 'DELETE') {
     const target = req.query?.target;
+    const provider = req.query?.provider;
+    if (provider) {
+      resetProviderCircuit(decodeURIComponent(provider));
+      return res.json({ ok: true, reset_provider: provider });
+    }
     if (target) {
       resetCircuit(decodeURIComponent(target));
       return res.json({ ok: true, reset: target });
     }
-    return res.status(400).json({ error: 'target query param required for reset' });
+    return res.status(400).json({ error: 'target or provider query param required for reset' });
   }
 
   const statuses = getAllCircuitStatuses();
-  const hasOpen = Object.values(statuses).some((s) => s.state === 'OPEN' || s.state === 'HALF_OPEN');
-  return res.json({ ok: true, local_llm_circuits: statuses, any_open: hasOpen });
+  const providerStats = getProviderStats();
+  const hasOpen = Object.values(statuses).some((s) => s.state === 'OPEN' || s.state === 'HALF_OPEN')
+    || Object.values(providerStats).some((s) => s.state === 'OPEN');
+  return res.json({ ok: true, local_llm_circuits: statuses, provider_circuits: providerStats, any_open: hasOpen });
+}
+
+function directProviderRoutesEnabled() {
+  return ['1', 'true', 'yes', 'y', 'on'].includes(String(process.env.HUB_ALLOW_DIRECT_LLM_PROVIDER_ROUTES || '').trim().toLowerCase());
 }
 
 function computeProviderShare(rows) {

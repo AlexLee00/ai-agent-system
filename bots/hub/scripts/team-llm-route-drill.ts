@@ -81,14 +81,17 @@ function defaultBudgetForProvider(provider) {
 
 function defaultProfileScenarios() {
   return Object.entries(PROFILES || {})
-    .map(([callerTeam, profiles]) => {
+    .flatMap(([callerTeam, profiles]) => {
       const entries = Object.entries(profiles || {})
         .filter(([agent, profile]) => !UNSUITABLE_AGENT_RE.test(agent) && firstSupportedRoute(profile));
       const oauthFirst = entries.find(([, profile]) => isOauthProvider(routeToProvider(firstSupportedRoute(profile))));
+      const geminiPrimary = entries.find(([, profile]) => routeToProvider(firstSupportedRoute(profile)) === 'gemini-oauth');
       const defaultEntry = entries.find(([agent]) => agent === 'default');
       const selected = oauthFirst || defaultEntry || entries[0];
-      if (!selected) return null;
-      const [agent, profile] = selected;
+      if (!selected) return [];
+      const selectedEntries = [selected];
+      if (geminiPrimary && geminiPrimary[0] !== selected[0]) selectedEntries.push(geminiPrimary);
+      return selectedEntries.map(([agent, profile]) => {
       const route = firstSupportedRoute(profile);
       const expectedProvider = routeToProvider(route) || 'any';
       return {
@@ -99,8 +102,8 @@ function defaultProfileScenarios() {
         selectedRoute: route,
         maxBudgetUsd: defaultBudgetForProvider(expectedProvider),
       };
+      });
     })
-    .filter(Boolean)
     .sort((a, b) => a.callerTeam.localeCompare(b.callerTeam));
 }
 

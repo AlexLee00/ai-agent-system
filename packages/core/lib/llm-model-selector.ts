@@ -427,6 +427,12 @@ const AGENT_MODEL_REGISTRY: Record<string, Record<string, string | null>> = {
     refiner: 'video.refiner',
     'intro-outro-handler': 'video.intro-outro',
   },
+  orchestrator: {
+    default: 'orchestrator.jay.intent',
+    intent: 'orchestrator.jay.intent',
+    fallback: 'orchestrator.jay.chat_fallback',
+    summary: 'orchestrator.jay.summary',
+  },
   luna: {
     default: 'investment.agent_policy',
     luna: 'investment.agent_policy',
@@ -519,6 +525,12 @@ function buildSelectorRegistry(): Record<string, any> {
         { provider: 'gemini-oauth', model: GEMINI_OAUTH_FLASH_MODEL, maxTokens: 300, temperature: 0.7 },
       ];
     },
+
+    'orchestrator.jay.summary': ({ maxTokens = 700 }: SelectorOptions = {}) => [
+      { provider: 'gemini-oauth', model: GEMINI_OAUTH_FLASH_MODEL, maxTokens, temperature: 0.2, timeoutMs: 15_000 },
+      { provider: 'openai-oauth', model: 'gpt-5.4-mini', maxTokens, temperature: 0.2, timeoutMs: 12_000 },
+      { provider: 'claude-code', model: 'claude-code/sonnet', maxTokens, temperature: 0.2, timeoutMs: 15_000 },
+    ],
 
     'worker.ai.fallback': ({
       groqModel = 'llama-3.1-8b-instant',

@@ -34,6 +34,7 @@ const LOCAL_LLM_BASE_URL = 'http://127.0.0.1:11434';
 const GROQ_SCOUT_ROUTE = 'groq/llama-3.1-8b-instant';
 const GROQ_VERSATILE_ROUTE = 'groq/llama-3.3-70b-versatile';
 const OPENAI_FAST_ROUTE = 'openai-oauth/gpt-5.4-mini';
+const GEMINI_OAUTH_FLASH_ROUTE = 'gemini-oauth/gemini-2.5-flash';
 const HUB_CLAUDE_CODE_SETTINGS_DIR = `${process.env.PROJECT_ROOT || '/Users/alexlee/projects/ai-agent-system'}/bots/hub/config/claude-code`;
 const CLAUDE_CODE_SETTINGS: Record<string, string> = {
   'blog-writer': `${HUB_CLAUDE_CODE_SETTINGS_DIR}/blog-writer.settings.json`,
@@ -237,7 +238,8 @@ export const PROFILES: Record<string, TeamProfiles> = {
       ],
       "fallback_routes": [
         GROQ_SCOUT_ROUTE,
-        OPENAI_FAST_ROUTE
+        OPENAI_FAST_ROUTE,
+        GEMINI_OAUTH_FLASH_ROUTE
       ]
     },
     "research": {
@@ -251,7 +253,8 @@ export const PROFILES: Record<string, TeamProfiles> = {
       ],
       "fallback_routes": [
         GROQ_SCOUT_ROUTE,
-        OPENAI_FAST_ROUTE
+        OPENAI_FAST_ROUTE,
+        GEMINI_OAUTH_FLASH_ROUTE
       ]
     },
     "synthesis": {
@@ -265,7 +268,8 @@ export const PROFILES: Record<string, TeamProfiles> = {
       ],
       "fallback_routes": [
         GROQ_SCOUT_ROUTE,
-        OPENAI_FAST_ROUTE
+        OPENAI_FAST_ROUTE,
+        GEMINI_OAUTH_FLASH_ROUTE
       ]
     },
     "review": {
@@ -493,7 +497,20 @@ export const PROFILES: Record<string, TeamProfiles> = {
         GROQ_SCOUT_ROUTE
       ],
       "fallback_routes": [
-        "gemini-oauth/gemini-2.5-flash"
+        GEMINI_OAUTH_FLASH_ROUTE
+      ]
+    },
+    "summary": {
+      "runtime_agent": "claude-ops",
+      "claude_code_name": "claude-ops",
+      "claude_code_settings": CLAUDE_CODE_SETTINGS["claude-ops"],
+      "local_llm_base_url": "http://127.0.0.1:11434",
+      "primary_routes": [
+        GEMINI_OAUTH_FLASH_ROUTE
+      ],
+      "fallback_routes": [
+        OPENAI_FAST_ROUTE,
+        "claude-code/sonnet"
       ]
     },
     "gemma-insight": {
