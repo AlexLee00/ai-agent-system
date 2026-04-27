@@ -89,7 +89,7 @@ export function classifyAlarmType({
     '타임아웃',
     '미해결',
   ];
-  if (severityText === 'error' || severityText === 'critical' || includesAny(corpus, errorSignals)) {
+  if (severityText === 'warn' || severityText === 'error' || severityText === 'critical' || includesAny(corpus, errorSignals)) {
     return 'error';
   }
 

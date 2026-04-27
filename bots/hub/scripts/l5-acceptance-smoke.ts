@@ -88,6 +88,9 @@ async function main() {
           fromBot: 'l5-warning-smoke',
           severity: 'warn',
           eventType: 'synthetic_warning',
+          alarmType: 'error',
+          visibility: 'digest',
+          actionability: 'none',
         });
         assert(alarmResp.status === 200, `expected alarm status 200, got ${alarmResp.status} at ${index}`);
         assert(alarmResp.body.ok === true, 'expected alarm ok=true');
@@ -103,6 +106,7 @@ async function main() {
         team: 'luna',
         fromBot: 'l5-warning-smoke',
         severity: 'critical',
+        visibility: 'emergency',
         incidentKey: `smoke:emergency:${stamp}`,
       });
       assert(emergencyResp.status === 200, `expected emergency alarm 200, got ${emergencyResp.status}`);
