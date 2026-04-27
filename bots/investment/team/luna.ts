@@ -28,7 +28,8 @@ import { ACTIONS, ANALYST_TYPES, SIGNAL_STATUS, validateSignal } from '../shared
 import { notifySignal, notifyError } from '../shared/report.ts';
 import { publishAlert } from '../shared/alert-publisher.ts';
 import { isPaperMode, isValidationTradeMode } from '../shared/secrets.ts';
-import { getAvailableBalance, getAvailableUSDT, getOpenPositions, getCapitalConfigWithOverrides } from '../shared/capital-manager.ts';
+import { getAvailableBalance, getAvailableUSDT, getOpenPositions, getCapitalConfigWithOverrides, getLunaBuyingPowerSnapshot, adjustLunaBuyCandidate } from '../shared/capital-manager.ts';
+import type { LunaBuyingPowerSnapshot } from '../shared/capital-manager.ts';
 import { getDomesticBalance } from '../shared/kis-client.ts';
 import { getInvestmentRagRuntimeConfig, getLunaRuntimeConfig, getLunaStockStrategyProfile, getPositionReevaluationRuntimeConfig } from '../shared/runtime-config.ts';
 import * as journalDb from '../shared/trade-journal-db.ts';
@@ -631,6 +632,13 @@ export function fuseSignals(analyses, weights = ANALYST_WEIGHTS) {
 }
 
 function buildCryptoPortfolioFallback(symbolDecisions, portfolio) {
+  const capitalSnapshot: LunaBuyingPowerSnapshot | null = portfolio?.capitalSnapshot ?? null;
+
+  // 자본 상태가 ACTIVE_DISCOVERY가 아니면 fallback BUY 생성 금지
+  if (capitalSnapshot && capitalSnapshot.mode !== 'ACTIVE_DISCOVERY') {
+    return null;
+  }
+
   const candidates = symbolDecisions
     .filter(dec => dec.action !== ACTIONS.HOLD && (dec.confidence || 0) >= 0.38)
     .sort((a, b) => (b.confidence || 0) - (a.confidence || 0));
@@ -638,16 +646,62 @@ function buildCryptoPortfolioFallback(symbolDecisions, portfolio) {
   if (candidates.length === 0) return null;
 
   const slotsAvailable = Math.max(1, Math.min(3, MAX_POS_COUNT - (portfolio?.positionCount || 0)));
-  const portfolioCap = Math.max(80, Math.floor((portfolio?.totalAsset || 0) * 0.12));
-  const budgetCap = Math.max(80, Math.floor(((portfolio?.usdtFree || 0) / Math.max(1, slotsAvailable)) * 0.8));
-  const baseAmount = Math.max(80, Math.min(180, Math.min(portfolioCap, budgetCap)));
-  const decisions = candidates.slice(0, slotsAvailable).map((dec, idx) => ({
-    symbol: dec.symbol,
-    action: dec.action,
-    amount_usdt: Math.max(80, Math.min(220, baseAmount + (idx === 0 ? 20 : 0))),
-    confidence: Math.max(0.40, Math.min(0.72, dec.confidence || 0.4)),
-    reasoning: `crypto fallback 분산진입 | ${dec.reasoning || '우세 신호 보존'}`.slice(0, 120),
-  }));
+  const usdtFree = portfolio?.usdtFree || 0;
+  const minOrder = capitalSnapshot?.minOrderAmount ?? 11;
+
+  // 가용 자금이 최소 주문금액 미만이면 BUY fallback 생성하지 않는다 (빈틈 B 수정)
+  if (usdtFree < minOrder) {
+    console.log(`  🔒 [루나 fallback] usdtFree=${usdtFree.toFixed(2)} < minOrder=${minOrder} → BUY fallback 생략`);
+    return null;
+  }
+
+  const portfolioCap = Math.max(minOrder, Math.floor((portfolio?.totalAsset || 0) * 0.12));
+  const budgetCap = Math.max(minOrder, Math.floor((usdtFree / Math.max(1, slotsAvailable)) * 0.8));
+  const baseAmount = Math.max(minOrder, Math.min(180, Math.min(portfolioCap, budgetCap)));
+
+  // 각 후보에 budget checker 적용
+  const decisions: any[] = [];
+  for (let idx = 0; idx < Math.min(candidates.length, slotsAvailable); idx++) {
+    const dec = candidates[idx];
+    if (dec.action !== ACTIONS.BUY) {
+      decisions.push({
+        symbol: dec.symbol,
+        action: dec.action,
+        amount_usdt: dec.amount_usdt || 100,
+        confidence: Math.max(0.40, Math.min(0.72, dec.confidence || 0.4)),
+        reasoning: `crypto fallback | ${dec.reasoning || '우세 신호 보존'}`.slice(0, 120),
+      });
+      continue;
+    }
+    const desired = baseAmount + (idx === 0 ? 20 : 0);
+    if (capitalSnapshot) {
+      const check = adjustLunaBuyCandidate(desired, capitalSnapshot);
+      if (check.result === 'blocked_cash' || check.result === 'blocked_balance_unavailable' || check.result === 'blocked_slots' || check.result === 'reduce_only') {
+        console.log(`  🔒 [루나 fallback] ${dec.symbol} BUY 차단 (${check.result}): ${check.reason}`);
+        continue;
+      }
+      decisions.push({
+        symbol: dec.symbol,
+        action: ACTIONS.BUY,
+        amount_usdt: Math.min(220, check.adjustedAmount),
+        confidence: Math.max(0.40, Math.min(0.72, dec.confidence || 0.4)),
+        reasoning: `crypto fallback 분산진입 | ${dec.reasoning || '우세 신호 보존'}`.slice(0, 120),
+        block_meta: check.result !== 'accepted' ? { capitalCheck: check } : undefined,
+      });
+    } else {
+      decisions.push({
+        symbol: dec.symbol,
+        action: ACTIONS.BUY,
+        amount_usdt: Math.max(minOrder, Math.min(220, desired)),
+        confidence: Math.max(0.40, Math.min(0.72, dec.confidence || 0.4)),
+        reasoning: `crypto fallback 분산진입 | ${dec.reasoning || '우세 신호 보존'}`.slice(0, 120),
+      });
+    }
+  }
+
+  if (decisions.filter(d => d.action === ACTIONS.BUY).length === 0 && decisions.filter(d => d.action !== ACTIONS.HOLD).length === 0) {
+    return null;
+  }
 
   return {
     decisions,
@@ -1390,7 +1444,61 @@ export async function getPortfolioDecision(symbolDecisions, portfolio, exchange 
     throw err;
   }
 
-  return normalizePortfolioDecisionResult(parseJSON(raw), symbols, exchange, symbolDecisions, portfolio);
+  const normalized = normalizePortfolioDecisionResult(parseJSON(raw), symbols, exchange, symbolDecisions, portfolio);
+  return applyBudgetCheckerToDecisions(normalized, portfolio, exchange);
+}
+
+/**
+ * 포트폴리오 결정의 BUY 후보 전체에 budget checker를 적용한다 (Phase 3).
+ * SELL/HOLD는 영향 없음. 자본 상태가 없거나 binance가 아니면 그대로 반환.
+ */
+function applyBudgetCheckerToDecisions(portfolioDecision, portfolio, exchange) {
+  if (exchange !== 'binance') return portfolioDecision;
+  const capitalSnapshot: LunaBuyingPowerSnapshot | null = portfolio?.capitalSnapshot ?? null;
+  if (!capitalSnapshot) return portfolioDecision;
+
+  const decisions = Array.isArray(portfolioDecision?.decisions) ? portfolioDecision.decisions : [];
+  const adjusted: any[] = [];
+  let anyAdjusted = false;
+
+  for (const d of decisions) {
+    if (d.action !== ACTIONS.BUY) {
+      adjusted.push(d);
+      continue;
+    }
+    const desired = Number(d.amount_usdt || 0);
+    const check = adjustLunaBuyCandidate(desired, capitalSnapshot);
+
+    if (check.result === 'accepted') {
+      adjusted.push(d);
+      continue;
+    }
+
+    anyAdjusted = true;
+
+    if (check.result === 'reduced') {
+      console.log(`  💱 [루나 budget] ${d.symbol} BUY ${desired} → ${check.adjustedAmount} (${check.reason})`);
+      adjusted.push({
+        ...d,
+        amount_usdt: check.adjustedAmount,
+        block_meta: { capitalCheck: check },
+      });
+      continue;
+    }
+
+    // blocked_cash / blocked_slots / blocked_balance_unavailable / reduce_only → HOLD로 전환
+    console.log(`  🔒 [루나 budget] ${d.symbol} BUY → HOLD (${check.result}): ${check.reason}`);
+    adjusted.push({
+      ...d,
+      action: ACTIONS.HOLD,
+      amount_usdt: 0,
+      reasoning: `capital_backpressure: ${check.reason} | ${d.reasoning || ''}`.slice(0, 200),
+      block_meta: { capitalCheck: check },
+    });
+  }
+
+  if (!anyAdjusted) return portfolioDecision;
+  return { ...portfolioDecision, decisions: adjusted };
 }
 
 export async function getExitDecisions(openPositions, exchange = 'binance') {
@@ -1425,22 +1533,34 @@ async function buildPortfolioContext(exchange = 'binance') {
   const positions  = await db.getAllPositions(exchange, false);
   const todayPnl   = await db.getTodayPnl(exchange);
   const posValue   = positions.reduce((s, p) => s + (p.amount * p.avg_price), 0);
-  const usdtFree   = exchange === 'binance'
-    ? await getAvailableUSDT().catch(() => 0)
-    : exchange === 'kis'
-      ? await getDomesticBalance().then(b => Number(b?.dnca_tot_amt || 0)).catch(() => 0)
-      : 0;
+
+  // 자본 상태 스냅샷 (balanceStatus로 잔고 조회 실패와 0 잔고를 구분)
+  const capitalSnapshot: LunaBuyingPowerSnapshot = await getLunaBuyingPowerSnapshot(
+    exchange as 'binance' | 'kis' | 'kis_overseas',
+  ).catch(() => null);
+
+  const usdtFree = capitalSnapshot?.balanceStatus === 'ok'
+    ? capitalSnapshot.freeCash
+    : capitalSnapshot?.balanceStatus === 'unavailable'
+      ? 0
+      : (exchange === 'binance'
+          ? await getAvailableUSDT().catch(() => 0)
+          : exchange === 'kis'
+            ? await getDomesticBalance().then(b => Number(b?.dnca_tot_amt || 0)).catch(() => 0)
+            : 0);
+
   const availableBalance = exchange === 'binance'
     ? await getAvailableBalance().catch(() => usdtFree)
     : usdtFree;
   const totalAsset = exchange === 'binance'
     ? availableBalance + posValue
     : usdtFree + posValue;
-  // 사이클별 자산 스냅샷 기록 (드로우다운 추적용)
+
   if (exchange === 'binance') {
     try { await db.insertAssetSnapshot(totalAsset, usdtFree); } catch {}
   }
-  return { usdtFree, totalAsset, positionCount: positions.length, todayPnl, positions };
+
+  return { usdtFree, totalAsset, positionCount: positions.length, todayPnl, positions, capitalSnapshot };
 }
 
 export async function inspectPortfolioContext(exchange = 'binance') {
@@ -1496,16 +1616,45 @@ async function runDebateRound(symbol, summary, exchange, prevDebate = null) {
  * @param {any} [params]
  * @returns {Promise<TradeSignal[]>}
  */
+function shouldRunDiscovery(capitalSnapshot: LunaBuyingPowerSnapshot | null): boolean {
+  if (!capitalSnapshot) return true; // 스냅샷 없으면 허용 (안전 폴백)
+  return capitalSnapshot.mode === 'ACTIVE_DISCOVERY';
+}
+
+function formatCapitalModeLog(snapshot: LunaBuyingPowerSnapshot | null): string {
+  if (!snapshot) return '';
+  const { mode, reasonCode, buyableAmount, minOrderAmount, balanceStatus, openPositionCount, maxPositionCount } = snapshot;
+  return `[자본상태] mode=${mode} | reason=${reasonCode || 'none'} | 매수가능=${buyableAmount.toFixed(2)} 최소=${minOrderAmount} | 잔고=${balanceStatus} | 포지션=${openPositionCount}/${maxPositionCount}`;
+}
+
 export async function orchestrate(symbols, exchange = 'binance', params = null) {
   const label           = exchange === 'kis_overseas' ? '미국주식' : exchange === 'kis' ? '국내주식' : '암호화폐';
   const results         = [];
   let debateCount          = 0;
   const portfolio          = await buildPortfolioContext(exchange);
+  const capitalSnapshot    = portfolio.capitalSnapshot ?? null;
   const { weights: analystWeights, report: accuracyReport } = await loadAdaptiveAnalystWeights(exchange);
   const symbolDecisions    = [];
   const symbolAnalysesMap  = new Map(); // symbol → analyses (상관관계 기록용)
 
   console.log(`\n🌙 [루나] ${label} 오케스트레이션 시작 — ${symbols.join(', ')}`);
+
+  // 자본 상태 게이트: BALANCE_UNAVAILABLE / CASH_CONSTRAINED / POSITION_MONITOR_ONLY이면 신규 발굴 생략
+  if (exchange === 'binance' && capitalSnapshot && !shouldRunDiscovery(capitalSnapshot)) {
+    console.log(`  🔒 [루나] ${formatCapitalModeLog(capitalSnapshot)}`);
+    console.log(`  🔒 [루나] 신규 발굴 생략 → 보유 포지션 EXIT 판단만 수행`);
+
+    const openPositions = portfolio.positions || [];
+    if (openPositions.length > 0) {
+      const exitSignals = await getExitDecisions(openPositions, exchange).catch(() => []);
+      if (exitSignals.length > 0) {
+        console.log(`  🚪 [루나] EXIT 신호 ${exitSignals.length}개 반환`);
+      }
+      return exitSignals;
+    }
+    console.log(`  ℹ️ [루나] 보유 포지션 없음 + 매수 불가 → 빈 배열 반환 (${capitalSnapshot.mode})`);
+    return [];
+  }
   console.log(`  ⚖️ [루나] 분석가 가중치: TA ${analystWeights[ANALYST_TYPES.TA_MTF].toFixed(2)} | 온체인 ${analystWeights[ANALYST_TYPES.ONCHAIN].toFixed(2)} | sentinel ${analystWeights[ANALYST_TYPES.SENTINEL].toFixed(2)} | 감성 ${analystWeights[ANALYST_TYPES.SENTIMENT].toFixed(2)} | 뉴스 ${analystWeights[ANALYST_TYPES.NEWS].toFixed(2)}`);
 
   for (const symbol of symbols) {

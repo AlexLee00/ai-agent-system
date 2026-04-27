@@ -865,6 +865,250 @@ export async function calculatePositionSize(symbol, entryPrice, stopLossPrice, e
   };
 }
 
+// ─── 루나 자본 상태 머신 ─────────────────────────────────────────────
+
+export type LunaCapitalMode =
+  | 'ACTIVE_DISCOVERY'
+  | 'CASH_CONSTRAINED'
+  | 'POSITION_MONITOR_ONLY'
+  | 'BALANCE_UNAVAILABLE'
+  | 'REDUCING_ONLY';
+
+export interface LunaBuyingPowerSnapshot {
+  exchange: 'binance' | 'kis' | 'kis_overseas';
+  tradeMode: string;
+  mode: LunaCapitalMode;
+  reasonCode: string | null;
+  freeCash: number;
+  availableBalance: number;
+  reservedCash: number;
+  buyableAmount: number;
+  minOrderAmount: number;
+  feeBufferAmount: number;
+  openPositionCount: number;
+  maxPositionCount: number;
+  remainingSlots: number;
+  totalCapital: number;
+  balanceStatus: 'ok' | 'unavailable' | 'stale';
+  source: 'broker' | 'db_fallback' | 'paper' | 'unavailable';
+  observedAt: string;
+}
+
+export type LunaOrderCandidateResult =
+  | 'accepted'
+  | 'reduced'
+  | 'blocked_cash'
+  | 'blocked_slots'
+  | 'blocked_balance_unavailable'
+  | 'reduce_only';
+
+export interface LunaBudgetCheckResult {
+  result: LunaOrderCandidateResult;
+  desiredAmount: number;
+  adjustedAmount: number;
+  minOrderAmount: number;
+  reason: string;
+}
+
+/**
+ * USDT 잔고를 가져오되, 실패 시 null을 반환해 0과 구분한다.
+ */
+async function getAvailableUSDTOrNull(): Promise<number | null> {
+  try {
+    const bal = await getEx().fetchBalance();
+    const usdt = bal.free?.USDT;
+    if (usdt === undefined || usdt === null) return null;
+    return Number(usdt);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * 거래소별 루나 매수 가능 파워 스냅샷을 반환한다.
+ * - balanceStatus=unavailable이면 신규 BUY는 금지 (fail-closed)
+ */
+export async function getLunaBuyingPowerSnapshot(
+  exchange: 'binance' | 'kis' | 'kis_overseas' = 'binance',
+  tradeMode: string | null = null,
+): Promise<LunaBuyingPowerSnapshot> {
+  const effectiveTradeMode = tradeMode || getInvestmentTradeMode() || 'normal';
+  const observedAt = new Date().toISOString();
+
+  const policy = await getCapitalConfigWithOverrides(exchange, effectiveTradeMode);
+  const minOrderAmount = await getDynamicMinOrderAmount(exchange, effectiveTradeMode);
+
+  let freeCash = 0;
+  let balanceStatus: 'ok' | 'unavailable' | 'stale' = 'ok';
+  let source: 'broker' | 'db_fallback' | 'paper' | 'unavailable' = 'broker';
+
+  if (exchange === 'binance') {
+    const rawUsdt = await getAvailableUSDTOrNull();
+    if (rawUsdt === null) {
+      balanceStatus = 'unavailable';
+      source = 'unavailable';
+      freeCash = 0;
+    } else {
+      freeCash = rawUsdt;
+    }
+  } else if (exchange === 'kis') {
+    try {
+      const kis = await import('./kis-client.ts');
+      const balance = await kis.getDomesticBalance(isKisPaper()).catch(() => null);
+      freeCash = Math.max(0, Number(balance?.dnca_tot_amt || 0) - DOMESTIC_CASH_BUFFER_KRW);
+      if (!balance) { balanceStatus = 'unavailable'; source = 'unavailable'; }
+    } catch {
+      balanceStatus = 'unavailable';
+      source = 'unavailable';
+    }
+  } else if (exchange === 'kis_overseas') {
+    try {
+      const kis = await import('./kis-client.ts');
+      const balance = await kis.getOverseasBalance(isKisPaper()).catch(() => null);
+      freeCash = Math.max(0, Number(balance?.available_cash_usd || balance?.orderable_cash_usd || 0));
+      if (!balance) { balanceStatus = 'unavailable'; source = 'unavailable'; }
+    } catch {
+      balanceStatus = 'unavailable';
+      source = 'unavailable';
+    }
+  }
+
+  const openPositions = await getOpenPositions(exchange, false, effectiveTradeMode).catch(() => []);
+  const openPositionCount = openPositions.length;
+  const maxPositionCount = Number(policy.max_concurrent_positions || 3);
+  const remainingSlots = Math.max(0, maxPositionCount - openPositionCount);
+
+  let totalCapital = freeCash;
+  if (balanceStatus === 'ok') {
+    const posValue = openPositions.reduce((s, p) => s + (p.amount || 0) * (p.avg_price || 0), 0);
+    totalCapital = freeCash + posValue;
+  }
+
+  const reservedCash = totalCapital > 0 ? totalCapital * Number(policy.reserve_ratio || 0) : 0;
+  const feeBufferAmount = freeCash > 0 ? freeCash * 0.002 : 0;
+  const buyableAmount = Math.max(0, freeCash - reservedCash - feeBufferAmount);
+
+  // 운용 모드 결정
+  let mode: LunaCapitalMode = 'ACTIVE_DISCOVERY';
+  let reasonCode: string | null = null;
+
+  if (balanceStatus === 'unavailable') {
+    mode = 'BALANCE_UNAVAILABLE';
+    reasonCode = 'balance_read_failed';
+  } else if (openPositionCount >= maxPositionCount) {
+    mode = 'POSITION_MONITOR_ONLY';
+    reasonCode = 'position_slots_exhausted';
+  } else if (buyableAmount < minOrderAmount) {
+    mode = remainingSlots > 0 ? 'CASH_CONSTRAINED' : 'POSITION_MONITOR_ONLY';
+    reasonCode = 'buying_power_below_min_order';
+  }
+
+  return {
+    exchange,
+    tradeMode: effectiveTradeMode,
+    mode,
+    reasonCode,
+    freeCash,
+    availableBalance: freeCash,
+    reservedCash,
+    buyableAmount,
+    minOrderAmount,
+    feeBufferAmount,
+    openPositionCount,
+    maxPositionCount,
+    remainingSlots,
+    totalCapital,
+    balanceStatus,
+    source,
+    observedAt,
+  };
+}
+
+/**
+ * BUY 후보 금액을 가용 자본/잔여 슬롯 기준으로 조정한다.
+ * - accepted: 원 금액 그대로 가능
+ * - reduced: 감산 후 min order 이상이면 허용
+ * - blocked_*: BUY 불가, HOLD로 전환
+ */
+export function adjustLunaBuyCandidate(
+  desiredAmount: number,
+  snapshot: LunaBuyingPowerSnapshot,
+): LunaBudgetCheckResult {
+  const { minOrderAmount, buyableAmount, balanceStatus, remainingSlots, mode } = snapshot;
+
+  if (balanceStatus === 'unavailable') {
+    return {
+      result: 'blocked_balance_unavailable',
+      desiredAmount,
+      adjustedAmount: 0,
+      minOrderAmount,
+      reason: 'buying_power_unavailable: 잔고 조회 실패',
+    };
+  }
+
+  if (mode === 'REDUCING_ONLY') {
+    return {
+      result: 'reduce_only',
+      desiredAmount,
+      adjustedAmount: 0,
+      minOrderAmount,
+      reason: 'reduce_only_mode: 신규 BUY 금지',
+    };
+  }
+
+  if (remainingSlots <= 0) {
+    return {
+      result: 'blocked_slots',
+      desiredAmount,
+      adjustedAmount: 0,
+      minOrderAmount,
+      reason: 'position_slots_exhausted: 포지션 슬롯 없음',
+    };
+  }
+
+  if (buyableAmount < minOrderAmount) {
+    return {
+      result: 'blocked_cash',
+      desiredAmount,
+      adjustedAmount: 0,
+      minOrderAmount,
+      reason: `cash_constrained_monitor_only: 매수가능금액 ${buyableAmount.toFixed(2)} < 최소 ${minOrderAmount}`,
+    };
+  }
+
+  // 슬롯 수 기반 균등 배분 (Freqtrade amend_last 패턴)
+  const perSlotAmount = Math.floor(buyableAmount / Math.max(1, remainingSlots));
+  const adjustedAmount = Math.min(desiredAmount, perSlotAmount);
+
+  if (adjustedAmount < minOrderAmount) {
+    return {
+      result: 'blocked_cash',
+      desiredAmount,
+      adjustedAmount: 0,
+      minOrderAmount,
+      reason: `cash_constrained_monitor_only: 슬롯 배분 후 ${adjustedAmount.toFixed(2)} < 최소 ${minOrderAmount}`,
+    };
+  }
+
+  if (adjustedAmount < desiredAmount) {
+    return {
+      result: 'reduced',
+      desiredAmount,
+      adjustedAmount,
+      minOrderAmount,
+      reason: `buy_amount_adjusted: ${desiredAmount} → ${adjustedAmount} (가용 ${buyableAmount.toFixed(2)}, ${remainingSlots}슬롯)`,
+    };
+  }
+
+  return {
+    result: 'accepted',
+    desiredAmount,
+    adjustedAmount: desiredAmount,
+    minOrderAmount,
+    reason: 'accepted',
+  };
+}
+
 // ─── 자본 현황 요약 ──────────────────────────────────────────────────
 
 export async function getCapitalStatus() {

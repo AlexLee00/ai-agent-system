@@ -2769,6 +2769,7 @@ async function rejectExecution({
       maxPositions: meta.maxPositions,
     }).catch(() => {});
   }
+  // notify === 'digest': capital_backpressure 계열은 즉시 알림 없이 DB 기록만
   return { success: false, reason };
 }
 
@@ -3608,20 +3609,36 @@ async function resolveBuyExecutionMode({
     };
   }
 
+  // L5 fail-closed: 실잔고 부족은 PAPER fallback이 아니라 capital_backpressure로 처리한다.
+  // 명시 설정(LUNA_CAPITAL_ALLOW_PAPER_FALLBACK=true)이 있을 때만 PAPER 폴백 허용.
+  const allowPaperFallback = process.env.LUNA_CAPITAL_ALLOW_PAPER_FALLBACK === 'true';
   if (!globalPaperMode && !check.circuit && isCapitalShortageReason(check.reason || '')) {
-    console.log(`  📄 [자본관리] 실잔고 부족 → PAPER 폴백: ${check.reason}`);
-    await db.updateSignalBlock(signalId, {
-      reason: `paper_fallback:${check.reason}`,
-      code: 'paper_fallback',
-      meta: {
-        exchange: 'binance',
-        symbol,
-        action,
-        amount: amountUsdt,
-      },
+    if (allowPaperFallback) {
+      console.log(`  📄 [자본관리] 실잔고 부족 → PAPER 폴백 (명시 허용): ${check.reason}`);
+      await db.updateSignalBlock(signalId, {
+        reason: `paper_fallback:${check.reason}`,
+        code: 'paper_fallback',
+        meta: { exchange: 'binance', symbol, action, amount: amountUsdt },
+      });
+      notifyTradeSkip({ symbol, action, reason: `실잔고 부족으로 PAPER 전환: ${check.reason}`, priority: 'low' }).catch(() => {});
+      return { effectivePaperMode: true };
+    }
+    // 기본값: capital_backpressure fail-closed
+    console.log(`  💰 [자본관리] 매수가능금액 부족 → capital_backpressure 처리: ${check.reason}`);
+    return rejectExecution({
+      persistFailure,
+      symbol,
+      action,
+      reason: check.reason,
+      code: 'capital_backpressure',
+      meta: buildGuardTelemetryMeta(symbol, action, signalTradeMode, {
+        capitalShortage: true,
+      }, {
+        guardKind: 'cash_constrained',
+        pressureSource: 'capital_shortage',
+      }),
+      notify: 'digest',
     });
-    notifyTradeSkip({ symbol, action, reason: `실잔고 부족으로 PAPER 전환: ${check.reason}` }).catch(() => {});
-    return { effectivePaperMode: true };
   }
 
   if (!globalPaperMode && signalTradeMode === 'normal') {
