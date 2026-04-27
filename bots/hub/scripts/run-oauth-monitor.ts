@@ -654,9 +654,51 @@ function geminiCliMonitorRequired(): boolean {
   return flag('HUB_OAUTH_MONITOR_REQUIRE_GEMINI_CLI', Boolean(record?.token?.access_token || record?.token?.refresh_token));
 }
 
+async function runGeminiCliLiveRefreshProbe() {
+  if (!flag('HUB_GEMINI_CLI_OAUTH_LIVE_PROBE_ON_EXPIRY', true)) {
+    return { ok: false, skipped: true, error: 'live_probe_disabled' };
+  }
+  try {
+    const { callWithFallback } = await import('../lib/llm/unified-caller.ts');
+    const started = Date.now();
+    const result = await callWithFallback({
+      callerTeam: 'hub',
+      agent: 'oauth-monitor',
+      selectorKey: 'hub.oauth.gemini_cli.expiry_probe',
+      chain: [{
+        provider: 'gemini-cli-oauth',
+        model: process.env.GEMINI_CLI_MONITOR_PROBE_MODEL || 'gemini-cli-oauth/gemini-2.5-flash-lite',
+        maxTokens: 24,
+        temperature: 0,
+        timeoutMs: Number(process.env.GEMINI_CLI_MONITOR_PROBE_TIMEOUT_MS || 30_000),
+      }],
+      systemPrompt: 'You are an OAuth readiness probe. Do not reveal secrets.',
+      prompt: 'Reply exactly: gemini oauth ok',
+      timeoutMs: Number(process.env.GEMINI_CLI_MONITOR_PROBE_TIMEOUT_MS || 30_000),
+      cacheEnabled: false,
+    });
+    return {
+      ok: Boolean(result.ok),
+      skipped: false,
+      duration_ms: Number(result.durationMs || Date.now() - started),
+      provider: result.provider || null,
+      selected_route: result.selected_route || null,
+      error: result.error || null,
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      skipped: false,
+      error: String(error?.message || error).slice(0, 240),
+    };
+  }
+}
+
 async function checkGeminiCliOAuth() {
   const record = getProviderRecord('gemini-cli-oauth');
   const required = geminiCliMonitorRequired();
+  const warnHours = thresholdHours('HUB_GEMINI_CLI_OAUTH_WARN_HOURS', 1);
+  const criticalHours = thresholdHours('HUB_GEMINI_CLI_OAUTH_CRITICAL_HOURS', 0.15);
   const cliImport = readGeminiCliCredentialForMonitor(record);
 
   if (cliImport.ok) {
@@ -678,12 +720,43 @@ async function checkGeminiCliOAuth() {
       },
     });
     const expiresInHours = tokenExpiresInHours(cliImport.token);
+    const localCredentialNeedsRefresh = Number.isFinite(Number(expiresInHours))
+      ? Number(expiresInHours) <= warnHours
+      : false;
+    const liveRefreshProbe = localCredentialNeedsRefresh
+      ? await runGeminiCliLiveRefreshProbe()
+      : null;
+    const needsRefresh = localCredentialNeedsRefresh && !liveRefreshProbe?.ok;
+    if (localCredentialNeedsRefresh && liveRefreshProbe?.ok) {
+      console.log(`[oauth-monitor] Gemini CLI OAuth local token is near/after expiry, but live CLI refresh probe succeeded in ${liveRefreshProbe.duration_ms || 0}ms`);
+    }
+    if (needsRefresh) {
+      const level = Number(expiresInHours) <= criticalHours ? 3 : 2;
+      await sendOAuthAlarm({
+        level,
+        title: '[Hub OAuth] Gemini CLI OAuth 재인증/자동갱신 확인 필요',
+        message: `Gemini CLI OAuth credential이 ${Number(expiresInHours).toFixed(2)}시간 후 만료되며 live refresh probe가 통과하지 못했습니다. gemini auth login 재인증이 필요할 수 있습니다.`,
+        payload: {
+          provider: 'gemini-cli-oauth',
+          healthy: true,
+          needs_refresh: true,
+          local_credential_needs_refresh: true,
+          live_refresh_ok: Boolean(liveRefreshProbe?.ok),
+          live_refresh_error: liveRefreshProbe?.error || null,
+          expires_in_hours: Math.round(Number(expiresInHours) * 100) / 100,
+          quota_project_configured: Boolean(cliImport.quota_project_configured),
+        },
+      });
+    }
     console.log(`[oauth-monitor] Gemini CLI OAuth 정상: source=${cliImport.source || 'gemini_cli'} expires_in=${Number.isFinite(Number(expiresInHours)) ? Number(expiresInHours).toFixed(2) : 'unknown'}h`);
     return {
       healthy: true,
       skipped: false,
       source: cliImport.source || 'gemini_cli_oauth_creds',
       expires_in_hours: expiresInHours,
+      needs_refresh: needsRefresh,
+      local_credential_needs_refresh: localCredentialNeedsRefresh,
+      live_refresh_ok: liveRefreshProbe?.ok ?? null,
       quota_project_configured: Boolean(cliImport.quota_project_configured),
       error: null,
     };
@@ -691,6 +764,35 @@ async function checkGeminiCliOAuth() {
 
   if (record?.token?.refresh_token) {
     const expiresInHours = tokenExpiresInHours(record.token);
+    const localCredentialNeedsRefresh = Number.isFinite(Number(expiresInHours))
+      ? Number(expiresInHours) <= warnHours
+      : false;
+    const liveRefreshProbe = localCredentialNeedsRefresh
+      ? await runGeminiCliLiveRefreshProbe()
+      : null;
+    const needsRefresh = localCredentialNeedsRefresh && !liveRefreshProbe?.ok;
+    if (localCredentialNeedsRefresh && liveRefreshProbe?.ok) {
+      console.log(`[oauth-monitor] Gemini CLI OAuth token-store is near/after expiry, but live CLI refresh probe succeeded in ${liveRefreshProbe.duration_ms || 0}ms`);
+    }
+    if (needsRefresh && required) {
+      const level = Number(expiresInHours) <= criticalHours ? 3 : 2;
+      await sendOAuthAlarm({
+        level,
+        title: '[Hub OAuth] Gemini CLI OAuth 로컬 credential 재동기화 필요',
+        message: `Gemini CLI OAuth token-store는 남아 있지만 로컬 credential 재동기화가 실패했고 ${Number(expiresInHours).toFixed(2)}시간 후 만료됩니다. live refresh probe도 통과하지 못했습니다.`,
+        payload: {
+          provider: 'gemini-cli-oauth',
+          healthy: true,
+          degraded: true,
+          needs_refresh: true,
+          local_credential_needs_refresh: true,
+          live_refresh_ok: Boolean(liveRefreshProbe?.ok),
+          live_refresh_error: liveRefreshProbe?.error || null,
+          expires_in_hours: Math.round(Number(expiresInHours) * 100) / 100,
+          error: cliImport.error || null,
+        },
+      });
+    }
     console.warn(`[oauth-monitor] Gemini CLI OAuth 로컬 creds 재동기화 실패: ${cliImport.error || 'unknown'} (token-store 유지)`);
     return {
       healthy: true,
@@ -698,6 +800,9 @@ async function checkGeminiCliOAuth() {
       skipped: false,
       source: record?.metadata?.source || 'token_store',
       expires_in_hours: expiresInHours,
+      needs_refresh: needsRefresh,
+      local_credential_needs_refresh: localCredentialNeedsRefresh,
+      live_refresh_ok: liveRefreshProbe?.ok ?? null,
       quota_project_configured: Boolean(record?.metadata?.quota_project_configured),
       error: cliImport.error || null,
     };
@@ -710,6 +815,7 @@ async function checkGeminiCliOAuth() {
       skipped: true,
       source: null,
       expires_in_hours: null,
+      needs_refresh: false,
       quota_project_configured: false,
       error: cliImport.error || null,
     };
@@ -730,6 +836,7 @@ async function checkGeminiCliOAuth() {
     skipped: false,
     source: null,
     expires_in_hours: null,
+    needs_refresh: false,
     quota_project_configured: false,
     error: cliImport.error || 'gemini_cli_credentials_missing',
   };
@@ -867,6 +974,9 @@ async function main() {
       expires_in_hours: Number.isFinite(Number(geminiCliOauth.expires_in_hours))
         ? Math.round(Number(geminiCliOauth.expires_in_hours) * 100) / 100
         : null,
+      needs_refresh: Boolean(geminiCliOauth.needs_refresh),
+      local_credential_needs_refresh: Boolean(geminiCliOauth.local_credential_needs_refresh),
+      live_refresh_ok: geminiCliOauth.live_refresh_ok ?? null,
       quota_project_configured: Boolean(geminiCliOauth.quota_project_configured),
       error: geminiCliOauth.error || null,
     },

@@ -10,6 +10,7 @@ const { buildAlarmClusterKey } = require('../lib/alarm/cluster.ts');
 const {
   classifyReason: classifyBlogCriticalReason,
   REASON_DEDUP_WINDOWS,
+  ALERT_DEDUPE_PATH,
 } = require('../../blog/lib/critical-alerts.js');
 
 function assert(condition: boolean, message: string): void {
@@ -150,6 +151,24 @@ async function main() {
   assert(
     !EXTENDED_DEDUP_REASONS.has(classifyReason('서비스 pid 없음')),
     'service_down must NOT be in extended dedup reasons',
+  );
+
+  // ── 8. dedup 캐시 경로가 영속 디렉터리여야 한다 (재부팅 후 초기화 방지) ──
+  // /tmp는 재부팅 시 초기화되므로 AI_AGENT_WORKSPACE 등 영속 경로를 사용해야 한다.
+  // 회귀: blog:blog-health:blog-health_error:955511e4d1e1 — 재부팅 후 dedup 소실로 반복 알람 발생
+  assert(
+    typeof ALERT_DEDUPE_PATH === 'string' && ALERT_DEDUPE_PATH.length > 0,
+    'ALERT_DEDUPE_PATH must be a non-empty string',
+  );
+  const os = require('os');
+  const tmpDir = os.tmpdir();
+  assert(
+    !ALERT_DEDUPE_PATH.startsWith(tmpDir),
+    `ALERT_DEDUPE_PATH must not be in tmpdir (not persistent across reboots). got: ${ALERT_DEDUPE_PATH}`,
+  );
+  assert(
+    ALERT_DEDUPE_PATH.endsWith('blog-alert-dedupe.json'),
+    `ALERT_DEDUPE_PATH must end with blog-alert-dedupe.json. got: ${ALERT_DEDUPE_PATH}`,
   );
 
   console.log('blog_alarm_dedup_smoke_ok');

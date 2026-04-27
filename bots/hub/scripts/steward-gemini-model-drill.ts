@@ -3,6 +3,8 @@
 
 'use strict';
 
+const fs = require('node:fs');
+const path = require('node:path');
 const env = require('../../../packages/core/lib/env');
 
 const SCENARIOS = [
@@ -53,6 +55,17 @@ function flag(name) {
   return ['1', 'true', 'yes', 'y', 'on'].includes(String(process.env[name] || '').trim().toLowerCase());
 }
 
+function parseArgs(argv) {
+  const out = {};
+  for (let index = 2; index < argv.length; index += 1) {
+    const arg = argv[index];
+    if (arg === '--json') out.json = true;
+    else if (arg === '--mock') out.mock = true;
+    else if (arg === '--output') out.output = argv[++index];
+  }
+  return out;
+}
+
 function hubBaseUrl() {
   return String(process.env.HUB_BASE_URL || env.HUB_BASE_URL || 'http://127.0.0.1:7788').replace(/\/+$/, '');
 }
@@ -95,6 +108,45 @@ function scenarioChain(scenario) {
     temperature: scenario.temperature,
     timeoutMs: index === 0 ? scenario.timeoutMs : Math.min(scenario.timeoutMs, 20_000),
   }));
+}
+
+function reportOutputPath(args) {
+  const raw = String(args.output || process.env.STEWARD_GEMINI_DRILL_OUTPUT || '').trim();
+  if (/^(none|false|0|-)$/.test(raw)) return null;
+  if (raw) return path.resolve(raw);
+  if (flag('STEWARD_GEMINI_DRILL_WRITE_REPORT')) {
+    return path.resolve(__dirname, '..', 'output', 'steward-gemini-model-drill.json');
+  }
+  return null;
+}
+
+function setupMockFetch() {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = (async (input, init) => {
+    const url = new URL(String(input));
+    if (url.pathname === '/hub/llm/circuit') {
+      return Response.json({ ok: true, reset_cooldowns: [] });
+    }
+    if (url.pathname !== '/hub/llm/call') {
+      return Response.json({ ok: false, error: 'unexpected_steward_gemini_drill_url' }, { status: 404 });
+    }
+    const body = JSON.parse(String(init?.body || '{}'));
+    const chain = Array.isArray(body.chain) ? body.chain : [];
+    const primary = chain[0] || {};
+    return Response.json({
+      ok: true,
+      provider: primary.provider || modelProvider(primary.model),
+      selected_route: primary.model,
+      model: primary.model,
+      result: `${String(body.selectorKey || 'steward').split('.').pop()} ok`,
+      durationMs: 11,
+      fallbackCount: 0,
+      traceId: 'mock-steward-gemini-model-drill',
+    });
+  });
+  return () => {
+    globalThis.fetch = originalFetch;
+  };
 }
 
 async function callScenario(scenario, baseUrl, token) {
@@ -164,7 +216,7 @@ async function callScenario(scenario, baseUrl, token) {
 }
 
 function render(report) {
-  console.log(`steward gemini model drill: ${report.ok ? 'ok' : 'failed'} (${report.baseUrl})`);
+  console.log(`steward gemini model drill: ${report.ok ? 'ok' : 'failed'} (${report.mode}, ${report.baseUrl})`);
   for (const item of report.results) {
     const mark = item.ok ? 'OK' : 'FAIL';
     console.log(`${mark} ${item.name} ${item.model} wall=${item.wallMs}ms hub=${item.hubDurationMs}ms route=${item.selectedRoute || '-'}${item.error ? ` error=${item.error}` : ''}`);
@@ -172,29 +224,48 @@ function render(report) {
 }
 
 async function main() {
+  const args = parseArgs(process.argv);
+  const mock = Boolean(args.mock || flag('STEWARD_GEMINI_DRILL_MOCK'));
   const baseUrl = hubBaseUrl();
-  const token = hubAuthToken();
+  const token = hubAuthToken() || (mock ? 'steward-gemini-drill-mock-token' : '');
   if (!token || token.length < 12) {
     throw new Error('HUB_AUTH_TOKEN is required for steward Gemini model drill');
   }
-  await resetGeminiCircuit(baseUrl, token);
-  const results = [];
-  for (const scenario of SCENARIOS) {
-    results.push(await callScenario(scenario, baseUrl, token));
+  const restoreFetch = mock ? setupMockFetch() : null;
+  try {
+    await resetGeminiCircuit(baseUrl, token);
+    const results = [];
+    for (const scenario of SCENARIOS) {
+      results.push(await callScenario(scenario, baseUrl, token));
+    }
+    const requiredResults = results.filter((item) => SCENARIOS.find((scenario) => scenario.name === item.name)?.required !== false);
+    const report = {
+      ok: requiredResults.every((item) => item.ok),
+      mode: mock ? 'mock' : 'live',
+      generatedAt: new Date().toISOString(),
+      baseUrl: mock ? 'mock' : baseUrl,
+      requiredCount: requiredResults.length,
+      optionalCount: results.length - requiredResults.length,
+      latency: {
+        maxWallMs: results.reduce((max, item) => Math.max(max, Number(item.wallMs || 0)), 0),
+        maxHubDurationMs: results.reduce((max, item) => Math.max(max, Number(item.hubDurationMs || 0)), 0),
+      },
+      results,
+    };
+    const outputPath = reportOutputPath(args);
+    if (outputPath) {
+      fs.mkdirSync(path.dirname(outputPath), { recursive: true });
+      fs.writeFileSync(outputPath, `${JSON.stringify(report, null, 2)}\n`, 'utf8');
+    }
+    if (flag('STEWARD_GEMINI_DRILL_JSON') || args.json) {
+      console.log(JSON.stringify(report, null, 2));
+    } else {
+      render(report);
+    }
+    process.exit(report.ok ? 0 : 1);
+  } finally {
+    restoreFetch?.();
   }
-  const requiredResults = results.filter((item) => SCENARIOS.find((scenario) => scenario.name === item.name)?.required !== false);
-  const report = {
-    ok: requiredResults.every((item) => item.ok),
-    generatedAt: new Date().toISOString(),
-    baseUrl,
-    results,
-  };
-  if (flag('STEWARD_GEMINI_DRILL_JSON') || process.argv.includes('--json')) {
-    console.log(JSON.stringify(report, null, 2));
-  } else {
-    render(report);
-  }
-  process.exit(report.ok ? 0 : 1);
 }
 
 main().catch((error) => {

@@ -4,7 +4,15 @@ const os = require('os');
 const path = require('path');
 const { updateCriticalIncidentCache } = require('../../../packages/core/lib/critical-incident.js');
 
-const ALERT_DEDUPE_PATH = path.join(os.tmpdir(), 'blog-alert-dedupe.json');
+// /tmp는 재부팅 시 초기화되므로 AI_AGENT_WORKSPACE(영속 디렉터리)를 사용한다.
+// health-state-manager.ts와 동일한 경로 전략을 따른다.
+const _AI_AGENT_HOME = process.env.AI_AGENT_HOME
+  || process.env.JAY_HOME
+  || path.join(os.homedir(), '.ai-agent-system');
+const _AI_AGENT_WORKSPACE = process.env.AI_AGENT_WORKSPACE
+  || process.env.JAY_WORKSPACE
+  || path.join(_AI_AGENT_HOME, 'workspace');
+const ALERT_DEDUPE_PATH = path.join(_AI_AGENT_WORKSPACE, 'blog-alert-dedupe.json');
 const ALERT_DEDUPE_WINDOW_MS = 15 * 60 * 1000;
 // 지속성 상태(데이터 이슈, 코드 자동 수정 불가)는 더 긴 창으로 알람 폭주 방지.
 const REASON_DEDUP_WINDOWS = {
@@ -75,4 +83,5 @@ module.exports = {
   appendIncidentLine,
   classifyReason,
   REASON_DEDUP_WINDOWS,
+  ALERT_DEDUPE_PATH,
 };

@@ -67,6 +67,11 @@ function tokenExpiresInHours(token: any): number | null {
   return (expiresMs - Date.now()) / (60 * 60 * 1000);
 }
 
+function refreshWarnHours(): number {
+  const value = Number(process.env.HUB_GEMINI_CLI_OAUTH_WARN_HOURS || 1);
+  return Number.isFinite(value) && value > 0 ? value : 1;
+}
+
 async function runLiveProbe() {
   const { callWithFallback } = await import('../lib/llm/unified-caller.ts');
   return callWithFallback({
@@ -95,6 +100,10 @@ async function main() {
     projectId: args.projectId,
   });
   const expiresInHours = credentials.ok ? tokenExpiresInHours(credentials.token) : null;
+  const expired = Number.isFinite(Number(expiresInHours)) ? Number(expiresInHours) <= 0 : false;
+  const needsRefresh = Number.isFinite(Number(expiresInHours))
+    ? Number(expiresInHours) <= refreshWarnHours()
+    : false;
   const credentialFile = String(credentials.filePath || '').trim();
   const credentialSummary = {
     ok: Boolean(credentials.ok),
@@ -104,6 +113,8 @@ async function main() {
     credentials_file_basename: credentialFile ? path.basename(credentialFile) : null,
     expires_at: credentials.token?.expires_at || null,
     expires_in_hours: Number.isFinite(Number(expiresInHours)) ? Math.round(Number(expiresInHours) * 100) / 100 : null,
+    expired,
+    needs_refresh: needsRefresh,
     quota_project_configured: Boolean(credentials.quota_project_configured),
     identity_present: Boolean(credentials.metadata?.identity_present),
     account_email_domain: credentials.metadata?.account_email_domain || null,
@@ -143,6 +154,12 @@ async function main() {
     warnings: [
       ...(credentials.ok && !credentialSummary.quota_project_configured ? [
         'quota project is missing; Gemini CLI OAuth can still run, but direct Gemini OAuth API canaries/imports may fail until GEMINI_OAUTH_PROJECT_ID or GOOGLE_CLOUD_PROJECT is set',
+      ] : []),
+      ...(credentials.ok && needsRefresh && live?.ok ? [
+        'local Gemini CLI OAuth access token is expired/near expiry, but live CLI probe succeeded via refresh-token path',
+      ] : []),
+      ...(credentials.ok && needsRefresh && !liveRequested ? [
+        'local Gemini CLI OAuth access token is expired/near expiry; run with --live to verify CLI refresh before reauth',
       ] : []),
     ],
     next_actions: ok ? [] : [

@@ -1,6 +1,7 @@
 #!/usr/bin/env tsx
 
 import assert from 'node:assert/strict';
+import crypto from 'node:crypto';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -14,10 +15,22 @@ function fakeJwt(payload: unknown): string {
   return `${b64url({ alg: 'none', typ: 'JWT' })}.${b64url(payload)}.`;
 }
 
+function encryptGeminiCredentialData(data: unknown): string {
+  const salt = `${os.hostname()}-${os.userInfo().username}-gemini-cli`;
+  const key = crypto.scryptSync('gemini-cli-oauth', salt, 32);
+  const iv = crypto.randomBytes(16);
+  const cipher = crypto.createCipheriv('aes-256-gcm', key, iv);
+  let encrypted = cipher.update(JSON.stringify(data, null, 2), 'utf8', 'hex');
+  encrypted += cipher.final('hex');
+  return `${iv.toString('hex')}:${cipher.getAuthTag().toString('hex')}:${encrypted}`;
+}
+
 async function main() {
   const repoRoot = path.resolve(__dirname, '..', '..', '..');
   const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'hub-gemini-cli-oauth-import-'));
   const credentialsFile = path.join(tempRoot, '.gemini', 'oauth_creds.json');
+  const encryptedCredentialsFile = path.join(tempRoot, '.gemini', 'gemini-credentials.json');
+  const fakeKeytarModule = path.join(tempRoot, 'fake-keytar.mjs');
   const tokenStoreFile = path.join(tempRoot, 'token-store.json');
   const tsxBin = path.join(repoRoot, 'node_modules', '.bin', 'tsx');
 
@@ -44,6 +57,63 @@ async function main() {
     assert.equal(parsed.metadata.account_email_domain, 'example.com');
     assert.equal(JSON.stringify(parsed.metadata).includes('operator@example.com'), false);
     assert.equal(parsed.metadata.identity_present, true);
+
+    const mcpCredential = {
+      serverName: 'main-account',
+      token: {
+        accessToken: 'gemini-cli-encrypted-access-token-secret',
+        refreshToken: 'gemini-cli-encrypted-refresh-token-secret',
+        tokenType: 'Bearer',
+        scope: 'https://www.googleapis.com/auth/cloud-platform',
+        expiresAt: Date.now() + 2 * 60 * 60 * 1000,
+      },
+      updatedAt: Date.now(),
+    };
+    fs.writeFileSync(encryptedCredentialsFile, encryptGeminiCredentialData({
+      'gemini-cli-oauth': {
+        'main-account': JSON.stringify(mcpCredential),
+      },
+    }), 'utf8');
+    const encryptedParsed = readGeminiCliCredentials({
+      credentialsFile: path.join(tempRoot, '.missing', 'oauth_creds.json'),
+      encryptedCredentialsFile,
+      projectId: 'gemini-cli-smoke-project',
+    });
+    assert.equal(encryptedParsed.ok, true);
+    assert.equal(encryptedParsed.source, 'gemini_cli_encrypted_credentials');
+    assert.equal(encryptedParsed.token.access_token, 'gemini-cli-encrypted-access-token-secret');
+    assert.equal(encryptedParsed.metadata.storage_type, 'encrypted_file');
+    assert.equal(JSON.stringify(encryptedParsed.metadata).includes('gemini-cli-encrypted-access-token-secret'), false);
+
+    fs.writeFileSync(fakeKeytarModule, `
+      export default {
+        async getPassword(service, account) {
+          if (service !== 'gemini-cli-oauth' || account !== 'main-account') return null;
+          return ${JSON.stringify(JSON.stringify({
+            serverName: 'main-account',
+            token: {
+              accessToken: 'gemini-cli-keychain-access-token-secret',
+              refreshToken: 'gemini-cli-keychain-refresh-token-secret',
+              tokenType: 'Bearer',
+              scope: 'https://www.googleapis.com/auth/cloud-platform',
+              expiresAt: Date.now() + 3 * 60 * 60 * 1000,
+            },
+            updatedAt: Date.now(),
+          }))};
+        }
+      };
+    `, 'utf8');
+    const keychainParsed = readGeminiCliCredentials({
+      credentialsFile: path.join(tempRoot, '.missing', 'oauth_creds.json'),
+      encryptedCredentialsFile: path.join(tempRoot, '.missing', 'gemini-credentials.json'),
+      keytarModule: fakeKeytarModule,
+      projectId: 'gemini-cli-smoke-project',
+    });
+    assert.equal(keychainParsed.ok, true);
+    assert.equal(keychainParsed.source, 'gemini_cli_keychain');
+    assert.equal(keychainParsed.token.access_token, 'gemini-cli-keychain-access-token-secret');
+    assert.equal(keychainParsed.metadata.storage_type, 'keychain');
+    assert.equal(JSON.stringify(keychainParsed.metadata).includes('gemini-cli-keychain-access-token-secret'), false);
 
     const result = spawnSync(
       tsxBin,
@@ -81,6 +151,8 @@ async function main() {
       ok: true,
       provider: 'gemini-cli-oauth',
       source: 'gemini_cli_oauth_creds',
+      encrypted_source_checked: true,
+      keychain_source_checked: true,
       token_redaction_checked: true,
       identity_binding_checked: true,
     }));

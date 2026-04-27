@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-04-27T09:50:38.878Z",
+  "generated_at": "2026-04-27T13:11:35.720Z",
   "scan_patterns": [
     "hub-alarm-client",
     "openclaw-client",
@@ -759,7 +759,7 @@
     "bots/hub/scripts/blog-alarm-dedup-smoke.ts": [
       {
         "file": "bots/hub/scripts/blog-alarm-dedup-smoke.ts",
-        "line": 19,
+        "line": 20,
         "category": "hub_alarm_native",
         "match": "// ── hub-alarm-client 유닛 테스트 (private 함수를 인라인 검증) ──────────────"
       }
@@ -1067,7 +1067,7 @@
     "bots/hub/scripts/run-oauth-monitor.ts": [
       {
         "file": "bots/hub/scripts/run-oauth-monitor.ts",
-        "line": 18,
+        "line": 19,
         "category": "hub_alarm_native",
         "match": "const { postAlarm } = require('../../../packages/core/lib/hub-alarm-client.ts');"
       }
