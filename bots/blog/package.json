@@ -11,6 +11,7 @@
     "test:unit": "../../node_modules/.bin/jest __tests__/evolution-cycle.test.ts __tests__/platform-orchestration.test.ts __tests__/omnichannel-campaign-planner.test.ts __tests__/signal-collectors.test.ts __tests__/publish-queue-fail-closed.test.ts __tests__/creative-quality-gate.test.ts __tests__/omnichannel-native-writers.test.ts __tests__/meta-graph-config.test.ts __tests__/instagram-error-classifier.test.ts __tests__/asset-memory.test.ts __tests__/meta-insights.test.ts __tests__/strategy-evolver-low-exposure.test.ts __tests__/marketing-mmm-report.test.ts __tests__/topic-selector-hybrid.test.ts --runInBand",
     "test:daily-dry": "../../node_modules/.bin/tsx scripts/run-daily.ts --dry-run --phase1-fast-dry-run",
     "daily": "../../node_modules/.bin/tsx scripts/run-daily.ts",
+    "topic:planner": "../../node_modules/.bin/tsx scripts/topic-planner.ts",
     "retry:lecture": "../../node_modules/.bin/tsx scripts/retry-lecture-post.ts",
     "replay:reply-ui": "../../node_modules/.bin/tsx scripts/replay-reply-ui.ts",
     "replay:neighbor-ui": "node scripts/replay-neighbor-comment-ui.ts",

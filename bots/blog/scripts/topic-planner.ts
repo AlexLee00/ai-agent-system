@@ -160,9 +160,9 @@ const CATEGORY_FALLBACK_CANDIDATES = {
 
 // ─── 인수 파싱 ─────────────────────────────────────────────────────────────
 
-function parseArgs() {
+function parseArgs(argv = process.argv.slice(2)) {
   const args = { date: null, json: false };
-  for (const arg of process.argv.slice(2)) {
+  for (const arg of argv) {
     if (arg.startsWith('--date=')) args.date = arg.split('=')[1];
     else if (arg === '--json') args.json = true;
   }
@@ -463,19 +463,21 @@ async function scoreCandidateWithCritic(candidate, category, recentTitles) {
 
 // ─── DB 저장 ───────────────────────────────────────────────────────────────
 
-async function replacePendingTopicPlan(_category, tomorrowDate) {
+async function replacePendingTopicPlan(category, tomorrowDate) {
   await pgPool.query('blog',
     `DELETE FROM blog.topic_candidates
      WHERE target_date = $1
+       AND category = $2
        AND status = 'pending'`,
-    [tomorrowDate]
+    [tomorrowDate, category]
   );
 
   await pgPool.query('blog',
     `DELETE FROM blog.topic_queue
      WHERE scheduled_date = $1
+       AND category = $2
        AND status = 'pending'`,
-    [tomorrowDate]
+    [tomorrowDate, category]
   );
 }
 
@@ -552,14 +554,15 @@ async function saveToTopicQueue(category, best, tomorrowDate, trendSource) {
 
 // ─── 메인 ─────────────────────────────────────────────────────────────────
 
-async function main() {
-  const args = parseArgs();
-  const tomorrowDate = args.date;
+async function runTopicPlanner(options = {}) {
+  const tomorrowDate = options.targetDate || options.date || parseArgs([]).date;
   await ensureBlogCoreSchema();
 
   // 1. 카테고리 결정
-  const category = await pickTomorrowCategory(tomorrowDate);
-  console.log(`[topic-planner] 내일 카테고리: ${category} (${tomorrowDate})`);
+  const category = options.category || await pickTomorrowCategory(tomorrowDate);
+  if (!options.silent) {
+    console.log(`[topic-planner] 주제 후보 생성 대상: ${category} (${tomorrowDate})`);
+  }
 
   // 2. 이슈 수집 (병렬)
   const [githubResult, hnResult] = await Promise.allSettled([
@@ -627,9 +630,9 @@ async function main() {
     sources: { github: githubItems.length, hn: hnItems.length },
   };
 
-  if (args.json) {
+  if (options.json) {
     console.log(JSON.stringify(output));
-  } else {
+  } else if (!options.silent) {
     console.log(`[topic-planner] ✅ 내일 주제 확정: [${category}] ${best.title}`);
     console.log(`  품질 점수: ${best.quality_score} / 중복 통과: ${best.duplicate_check}`);
     console.log(`  후보 ${rawCandidates.length}건 → 통과 ${scored.length}건 → 저장 ${savedCandidates.length}건`);
@@ -638,7 +641,21 @@ async function main() {
   return output;
 }
 
-main().catch(e => {
-  console.error('[topic-planner] 오류:', e.message);
-  process.exit(1);
-});
+async function main(argv = process.argv.slice(2)) {
+  const args = parseArgs(argv);
+  return runTopicPlanner({
+    targetDate: args.date,
+    json: args.json,
+  });
+}
+
+if (require.main === module) {
+  main().catch(e => {
+    console.error('[topic-planner] 오류:', e.message);
+    process.exit(1);
+  });
+}
+
+module.exports = {
+  runTopicPlanner,
+};

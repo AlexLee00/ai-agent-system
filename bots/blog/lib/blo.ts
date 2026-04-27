@@ -16,6 +16,7 @@
  */
 const path                                          = require('path');
 const env                                           = require('../../../packages/core/lib/env');
+const kst                                           = require('../../../packages/core/lib/kst');
 const maestro                                       = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/maestro.ts'));
 const { generatePostImages }                        = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/img-gen.ts'));
 const { createInstaContent }                        = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/star.ts'));
@@ -47,9 +48,11 @@ const { collectAllResearch }                        = require(path.join(env.PROJ
 const {
   getRecentPosts,
   selectAndValidateTopic,
+  selectTopicWithCandidateFallback,
   synthesizeHybridTopic,
   getPendingLunaRequest,
 }                                                   = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/topic-selector.ts'));
+const { runTopicPlanner }                           = require(path.join(env.PROJECT_ROOT, 'bots/blog/scripts/topic-planner.ts'));
 const { checkInvestmentContent }                    = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/investment-guard.ts'));
 const { isExcludedReferencePost }                   = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/reference-exclusions.ts'));
 const { agenticSearch }                             = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/agentic-rag.ts'));
@@ -381,11 +384,11 @@ function _buildGeneralTitleAlignmentMetadata(post, context = {}) {
   };
 }
 
-function _applyGeneralTopicStrategy(preparedResearch, category, strategyPlan, dailyState = {}) {
+function _applyGeneralTopicStrategy(preparedResearch, category, strategyPlan, dailyState = {}, selectedTopicOverride = null) {
   if (preparedResearch.topic_hint) return preparedResearch;
 
   const recentPosts = getRecentPosts(category, 10);
-  const selectedTopic = selectAndValidateTopic(
+  const selectedTopic = selectedTopicOverride || selectAndValidateTopic(
     category,
     recentPosts,
     strategyPlan,
@@ -427,6 +430,9 @@ function _applyGeneralTopicStrategy(preparedResearch, category, strategyPlan, da
     topic_marketing_signal_summary: selectedTopic.marketingSignalSummary || marketingContext.marketing_signal_summary,
     topic_marketing_recommendations: Array.isArray(selectedTopic.marketingRecommendations) ? selectedTopic.marketingRecommendations : marketingContext.marketing_recommendations,
     topic_marketing_cta_hint: selectedTopic.marketingCtaHint || marketingContext.marketing_cta_hint,
+    topic_selection_source: selectedTopic.source || (selectedTopic.forced ? 'runtime_pool' : 'runtime_selector'),
+    topic_selection_id: selectedTopic.id || null,
+    topic_selection_target_date: selectedTopic.targetDate || selectedTopic.target_date || null,
     strategy_focus: Array.isArray(strategyPlan?.focus) ? strategyPlan.focus : [],
     strategy_recommendations: [
       ...(Array.isArray(strategyPlan?.recommendations) ? strategyPlan.recommendations : []),
@@ -438,6 +444,106 @@ function _applyGeneralTopicStrategy(preparedResearch, category, strategyPlan, da
     strategy_experiment_weak_lane: experimentWeakLaneSummary,
     _selectedTopic: selectedTopic,
   };
+}
+
+function _getBlogRunDate() {
+  return process.env.BLOG_RUN_DATE || kst.today();
+}
+
+function _normalizeBlogRunDate(value = null) {
+  if (!value) return _getBlogRunDate();
+  if (value instanceof Date) return value.toLocaleDateString('sv-SE', { timeZone: kst.TZ || 'Asia/Seoul' });
+  const text = String(value).trim();
+  return /^\d{4}-\d{2}-\d{2}$/.test(text) ? text : text.slice(0, 10);
+}
+
+function _isDbBackedTopicSelection(selectedTopic = null) {
+  return ['topic_queue', 'db_curated'].includes(String(selectedTopic?.source || ''));
+}
+
+async function _selectGeneralTopicForRun(category, strategyPlan, dailyState = {}, options = {}) {
+  const targetDate = _normalizeBlogRunDate(options.targetDate);
+  const recentPosts = getRecentPosts(category, 10);
+  const select = () => selectTopicWithCandidateFallback(
+    category,
+    targetDate,
+    recentPosts,
+    strategyPlan,
+    dailyState?.senseState || null,
+    dailyState?.revenueCorrelation || null
+  );
+
+  let selectedTopic = await select();
+  if (_isDbBackedTopicSelection(selectedTopic)) {
+    return { ...selectedTopic, targetDate };
+  }
+
+  if (options.dryRun || DEV_HUB_READONLY) {
+    console.log(`[젬스] ${targetDate} 사전 후보 없음 — dry-run/read-only라 런타임 풀 선택 사용: ${selectedTopic.title}`);
+    return { ...selectedTopic, targetDate };
+  }
+
+  try {
+    console.log(`[젬스] ${targetDate} 사전 후보 없음 — 당일 후보 생성 후 재선택`);
+    await runTopicPlanner({
+      targetDate,
+      category,
+      silent: true,
+    });
+    selectedTopic = await select();
+    if (_isDbBackedTopicSelection(selectedTopic)) {
+      console.log(`[젬스] 당일 생성 후보 선택: ${selectedTopic.title} (${selectedTopic.source})`);
+      return { ...selectedTopic, targetDate };
+    }
+    console.warn(`[젬스] 당일 후보 생성 후에도 DB 후보 선택 실패 — 런타임 풀 선택 사용: ${selectedTopic.title}`);
+  } catch (error) {
+    console.warn('[젬스] 당일 후보 생성 실패 — 런타임 풀 선택 사용:', error.message);
+  }
+
+  return { ...selectedTopic, targetDate };
+}
+
+async function _markGeneralTopicSelectionConsumed(context = {}, finalized = null, options = {}) {
+  if (options.dryRun || DEV_HUB_READONLY || !finalized?.postId) return;
+  const source = String(context?.researchData?.topic_selection_source || '').trim();
+  const id = Number(context?.researchData?.topic_selection_id || 0);
+  if (!id || !['topic_queue', 'db_curated'].includes(source)) return;
+
+  try {
+    if (source === 'topic_queue') {
+      await pgPool.run('blog', `
+        UPDATE blog.topic_queue
+        SET status = 'consumed',
+            consumed_at = NOW()
+        WHERE id = $1
+          AND status = 'pending'
+      `, [id]);
+      await pgPool.run('blog', `
+        UPDATE blog.topic_candidates
+        SET status = 'selected',
+            selected_at = NOW()
+        WHERE target_date = $1
+          AND category = $2
+          AND title = $3
+          AND status = 'pending'
+      `, [
+        _normalizeBlogRunDate(context?.researchData?.topic_selection_target_date),
+        context?.category || '',
+        context?.researchData?.topic_title_candidate || '',
+      ]);
+      return;
+    }
+
+    await pgPool.run('blog', `
+      UPDATE blog.topic_candidates
+      SET status = 'selected',
+          selected_at = NOW()
+      WHERE id = $1
+        AND status = 'pending'
+    `, [id]);
+  } catch (error) {
+    console.warn('[젬스] 선택 주제 consume 처리 실패 (무시):', error.message);
+  }
 }
 
 function _resolveGeneralPipelineTopic(context = {}) {
@@ -1093,7 +1199,7 @@ async function _prepareLectureContext(researchData, traceCtx, preloaded = {}) {
   });
 }
 
-async function _prepareGeneralContext(researchData, traceCtx, preloaded = {}, scheduleId = null, dailyState = {}, lunaRequest = null) {
+async function _prepareGeneralContext(researchData, traceCtx, preloaded = {}, scheduleId = null, dailyState = {}, lunaRequest = null, options = {}) {
   const { category } = preloaded.category ? preloaded : { category: '자기계발' };
   const sectionVariation = preloaded.sectionVariation || {};
   const needsBook = category === '도서리뷰';
@@ -1150,9 +1256,13 @@ async function _prepareGeneralContext(researchData, traceCtx, preloaded = {}, sc
     // 루나 앵글 없거나 품질 게이트 실패 시: 기존 로테이션
     if (!preparedResearch.topic_hint) {
       try {
-        preparedResearch = _applyGeneralTopicStrategy(preparedResearch, category, strategyPlan, dailyState);
+        const plannedTopic = await _selectGeneralTopicForRun(category, strategyPlan, dailyState, {
+          dryRun: options.dryRun === true,
+          targetDate: _getBlogRunDate(),
+        });
+        preparedResearch = _applyGeneralTopicStrategy(preparedResearch, category, strategyPlan, dailyState, plannedTopic);
         const selectedTopic = preparedResearch._selectedTopic;
-        console.log(`[젬스] 주제 다양화 선택: ${selectedTopic.title}${selectedTopic.forced ? ' (forced)' : ''}`);
+        console.log(`[젬스] 주제 선택: ${selectedTopic.title}${selectedTopic.source ? ` (${selectedTopic.source})` : ''}${selectedTopic.forced ? ' (forced)' : ''}`);
         delete preparedResearch._selectedTopic;
       } catch (error) {
         console.warn('[젬스] 주제 다양화 선택 실패 — 기본 자율 주제 유지:', error.message);
@@ -1182,6 +1292,11 @@ async function _prepareGeneralContext(researchData, traceCtx, preloaded = {}, sc
     topicHint: preparedResearch.topic_hint || null,
     topicQuestion: preparedResearch.topic_question || null,
     topicDiff: preparedResearch.topic_diff || null,
+    topicSelection: {
+      source: preparedResearch.topic_selection_source || null,
+      id: preparedResearch.topic_selection_id || null,
+      targetDate: preparedResearch.topic_selection_target_date || null,
+    },
     strategyPlan,
     usedLunaRequestId,
   });
@@ -1921,7 +2036,7 @@ async function _runGeneralStage(daily, traceCtx, options = {}) {
   if (!generalCtx || config.general_count <= 0) return null;
 
   if (options.dryRun && options.phase1FastDryRun) {
-    const prepared = await _prepareGeneralContext(researchData, traceCtx, generalCtx, generalCtx.scheduleId, daily);
+    const prepared = await _prepareGeneralContext(researchData, traceCtx, generalCtx, generalCtx.scheduleId, daily, null, options);
     if (prepared?.skipped) {
       return prepared.result || { type: 'general', skipped: true, reason: 'skipped' };
     }
@@ -2048,7 +2163,7 @@ async function _skipLunaRequest(requestId, reason) {
 }
 
 async function runGeneralPost(researchData, traceCtx, preloaded = {}, scheduleId = null, options = {}, dailyState = {}, lunaRequest = null) {
-  const prepared = await _prepareGeneralContext(researchData, traceCtx, preloaded, scheduleId, dailyState, lunaRequest);
+  const prepared = await _prepareGeneralContext(researchData, traceCtx, preloaded, scheduleId, dailyState, lunaRequest, options);
   if (prepared?.skipped) {
     const skippedResult = prepared.result || { type: 'general', skipped: true, reason: 'skipped' };
     const canFallbackCategory = skippedResult.category === '도서리뷰' && !preloaded._bookFallbackTried;
@@ -2120,6 +2235,7 @@ async function runGeneralPost(researchData, traceCtx, preloaded = {}, scheduleId
       );
 
       const finalized = await _finalizeGeneralPost(post, quality, context, scheduleId, traceCtx, writerName, options);
+      await _markGeneralTopicSelectionConsumed(context, finalized, options);
       if (context.usedLunaRequestId && finalized.postId && !options.dryRun) {
         await _fulfillLunaRequest(
           context.usedLunaRequestId,
