@@ -19,7 +19,13 @@ type SelectorOptions = {
   [key: string]: any;
 };
 
+const GEMINI_OAUTH_FLASH_LITE_MODEL = 'gemini-oauth/gemini-2.5-flash-lite';
 const GEMINI_OAUTH_FLASH_MODEL = 'gemini-oauth/gemini-2.5-flash';
+const GEMINI_OAUTH_PRO_MODEL = 'gemini-oauth/gemini-2.5-pro';
+const GEMINI_CODEASSIST_PRO_MODEL = 'gemini-codeassist-oauth/gemini-2.5-pro';
+const GEMINI_CLI_FLASH_LITE_MODEL = 'gemini-cli-oauth/gemini-2.5-flash-lite';
+const GEMINI_CLI_FLASH_MODEL = 'gemini-cli-oauth/gemini-2.5-flash';
+const GEMINI_CLI_PRO_MODEL = 'gemini-cli-oauth/gemini-2.5-pro';
 
 function clone<T>(value: T): T {
   return JSON.parse(JSON.stringify(value));
@@ -52,6 +58,8 @@ export function inferProviderFromModel(model = ''): string {
   ) return 'groq';
   if (model.startsWith('claude-')) return 'anthropic';
   if (model.startsWith('gpt-') || model.startsWith('o')) return 'openai';
+  if (model.startsWith('gemini-codeassist-oauth/') || model.startsWith('gemini-code-assist-oauth/')) return 'gemini-codeassist-oauth';
+  if (model.startsWith('gemini-cli-oauth/')) return 'gemini-cli-oauth';
   if (model.startsWith('gemini-oauth/')) return 'gemini-oauth';
   if (model.startsWith('gemini-') || model.startsWith('google-gemini-cli/')) return 'gemini';
   return 'anthropic';
@@ -432,6 +440,11 @@ const AGENT_MODEL_REGISTRY: Record<string, Record<string, string | null>> = {
     intent: 'orchestrator.jay.intent',
     fallback: 'orchestrator.jay.chat_fallback',
     summary: 'orchestrator.jay.summary',
+    steward: 'orchestrator.steward.work',
+    'steward-digest': 'orchestrator.steward.digest',
+    'steward-work': 'orchestrator.steward.work',
+    'steward-incident': 'orchestrator.steward.incident_plan',
+    'steward-pro-canary': 'orchestrator.steward.pro_canary',
   },
   luna: {
     default: 'investment.agent_policy',
@@ -530,6 +543,25 @@ function buildSelectorRegistry(): Record<string, any> {
       { provider: 'gemini-oauth', model: GEMINI_OAUTH_FLASH_MODEL, maxTokens, temperature: 0.2, timeoutMs: 15_000 },
       { provider: 'openai-oauth', model: 'gpt-5.4-mini', maxTokens, temperature: 0.2, timeoutMs: 12_000 },
       { provider: 'claude-code', model: 'claude-code/sonnet', maxTokens, temperature: 0.2, timeoutMs: 15_000 },
+    ],
+
+    'orchestrator.steward.digest': ({ maxTokens = 220 }: SelectorOptions = {}) => [
+      { provider: 'gemini-cli-oauth', model: GEMINI_CLI_FLASH_LITE_MODEL, maxTokens, temperature: 0.1, timeoutMs: 20_000 },
+    ],
+
+    'orchestrator.steward.work': ({ maxTokens = 320 }: SelectorOptions = {}) => [
+      { provider: 'gemini-cli-oauth', model: GEMINI_CLI_FLASH_MODEL, maxTokens, temperature: 0.2, timeoutMs: 30_000 },
+      { provider: 'gemini-cli-oauth', model: GEMINI_CLI_FLASH_LITE_MODEL, maxTokens, temperature: 0.2, timeoutMs: 25_000 },
+    ],
+
+    'orchestrator.steward.incident_plan': ({ maxTokens = 700 }: SelectorOptions = {}) => [
+      { provider: 'gemini-cli-oauth', model: GEMINI_CLI_FLASH_MODEL, maxTokens, temperature: 0.2, timeoutMs: 45_000 },
+      { provider: 'gemini-cli-oauth', model: GEMINI_CLI_FLASH_LITE_MODEL, maxTokens, temperature: 0.2, timeoutMs: 30_000 },
+    ],
+
+    'orchestrator.steward.pro_canary': ({ maxTokens = 128 }: SelectorOptions = {}) => [
+      { provider: 'gemini-cli-oauth', model: GEMINI_CLI_PRO_MODEL, maxTokens, temperature: 0.2, timeoutMs: 60_000 },
+      { provider: 'gemini-codeassist-oauth', model: GEMINI_CODEASSIST_PRO_MODEL, maxTokens, temperature: 0.2, timeoutMs: 60_000 },
     ],
 
     'worker.ai.fallback': ({

@@ -26,23 +26,45 @@ const DEFAULT_RUNTIME_CONFIG = {
     payloadWarningLimit: 50,
   },
   jayModels: {
-    gatewayPrimary: 'google-gemini-cli/gemini-2.5-flash',
+    gatewayPrimary: 'gemini-oauth/gemini-2.5-flash',
     intentPrimary: 'gpt-5.4',
-    intentFallback: 'gemini-2.5-flash',
+    intentFallback: 'gemini-oauth/gemini-2.5-flash',
     chatFallbackChain: [
       { provider: 'groq', model: 'openai/gpt-oss-20b', maxTokens: 300, temperature: 0.5 },
-      { provider: 'gemini', model: 'google-gemini-cli/gemini-2.5-flash', maxTokens: 300, temperature: 0.7 },
+      { provider: 'gemini-cli-oauth', model: 'gemini-cli-oauth/gemini-2.5-flash', maxTokens: 300, temperature: 0.7 },
     ],
   },
   llmSelectorOverrides: {
     'orchestrator.jay.intent': {
       primary: { provider: 'openai-oauth', model: 'gpt-5.4' },
-      fallback: { provider: 'gemini', model: 'gemini-2.5-flash' },
+      fallback: { provider: 'gemini-oauth', model: 'gemini-oauth/gemini-2.5-flash' },
     },
     'orchestrator.jay.chat_fallback': {
       chain: [
         { provider: 'groq', model: 'openai/gpt-oss-20b', maxTokens: 300, temperature: 0.5 },
-        { provider: 'gemini', model: 'google-gemini-cli/gemini-2.5-flash', maxTokens: 300, temperature: 0.7 },
+        { provider: 'gemini-cli-oauth', model: 'gemini-cli-oauth/gemini-2.5-flash', maxTokens: 300, temperature: 0.7 },
+      ],
+    },
+    'orchestrator.steward.digest': {
+      chain: [
+        { provider: 'gemini-cli-oauth', model: 'gemini-cli-oauth/gemini-2.5-flash-lite', maxTokens: 220, temperature: 0.1, timeoutMs: 20_000 },
+      ],
+    },
+    'orchestrator.steward.work': {
+      chain: [
+        { provider: 'gemini-cli-oauth', model: 'gemini-cli-oauth/gemini-2.5-flash', maxTokens: 320, temperature: 0.2, timeoutMs: 30_000 },
+        { provider: 'gemini-cli-oauth', model: 'gemini-cli-oauth/gemini-2.5-flash-lite', maxTokens: 320, temperature: 0.2, timeoutMs: 25_000 },
+      ],
+    },
+    'orchestrator.steward.incident_plan': {
+      chain: [
+        { provider: 'gemini-cli-oauth', model: 'gemini-cli-oauth/gemini-2.5-flash', maxTokens: 700, temperature: 0.2, timeoutMs: 45_000 },
+        { provider: 'gemini-cli-oauth', model: 'gemini-cli-oauth/gemini-2.5-flash-lite', maxTokens: 700, temperature: 0.2, timeoutMs: 30_000 },
+      ],
+    },
+    'orchestrator.steward.pro_canary': {
+      chain: [
+        { provider: 'gemini-cli-oauth', model: 'gemini-cli-oauth/gemini-2.5-pro', maxTokens: 128, temperature: 0.2, timeoutMs: 60_000 },
       ],
     },
   },

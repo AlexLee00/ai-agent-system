@@ -7,7 +7,12 @@
 const { callClaudeCodeOAuth } = require('./claude-code-oauth');
 const { callGroqFallback } = require('./groq-fallback');
 const { callLocalOllama } = require('./local-ollama');
-const { callOpenAiCodexOAuth, callGeminiOAuth } = require('./oauth-direct');
+const {
+  callOpenAiCodexOAuth,
+  callGeminiOAuth,
+  callGeminiCliOAuth,
+  callGeminiCodeAssistOAuth,
+} = require('./oauth-direct');
 const { checkCache, saveCache } = require('./cache');
 const { selectRuntimeProfile } = require('../runtime-profiles');
 const { getGroqFallback } = require('../../../../packages/core/lib/llm-models');
@@ -250,6 +255,26 @@ async function _callRouteUnchecked(normalizedRoute, req, timeoutMs, chainEntry =
       timeoutMs,
     });
   }
+  if (normalizedRoute.startsWith('gemini-cli-oauth/')) {
+    return callGeminiCliOAuth({
+      prompt: req.prompt,
+      model: normalizedRoute.slice('gemini-cli-oauth/'.length),
+      systemPrompt: req.systemPrompt,
+      maxTokens: chainEntry.maxTokens,
+      temperature: chainEntry.temperature,
+      timeoutMs,
+    });
+  }
+  if (normalizedRoute.startsWith('gemini-codeassist-oauth/')) {
+    return callGeminiCodeAssistOAuth({
+      prompt: req.prompt,
+      model: normalizedRoute.slice('gemini-codeassist-oauth/'.length),
+      systemPrompt: req.systemPrompt,
+      maxTokens: chainEntry.maxTokens,
+      temperature: chainEntry.temperature,
+      timeoutMs,
+    });
+  }
   return { ok: false, provider: 'failed', error: `unsupported_provider:${normalizedRoute}`, durationMs: 0 };
 }
 
@@ -274,6 +299,16 @@ function _chainEntryToRoute(entry) {
     return `openai-oauth/${normalizedModel}`;
   }
   if (provider === 'gemini-oauth') return model.startsWith('gemini-oauth/') ? model : `gemini-oauth/${model}`;
+  if (provider === 'gemini-cli-oauth') {
+    return model.startsWith('gemini-cli-oauth/')
+      ? model
+      : `gemini-cli-oauth/${model.replace(/^google-gemini-cli\//, '').replace(/^gemini-oauth\//, '').replace(/^gemini\//, '')}`;
+  }
+  if (provider === 'gemini-codeassist-oauth' || provider === 'gemini-code-assist-oauth') {
+    return model.startsWith('gemini-codeassist-oauth/')
+      ? model
+      : `gemini-codeassist-oauth/${model.replace(/^gemini-code-assist-oauth\//, '').replace(/^gemini-oauth\//, '')}`;
+  }
   if (provider === 'gemini') {
     const normalizedModel = model
       .replace(/^google-gemini-cli\//, '')
@@ -290,6 +325,9 @@ function _isProviderSupported(route) {
     || route.startsWith('local/')
     || route.startsWith('openai-oauth/')
     || route.startsWith('openai/')
+    || route.startsWith('gemini-codeassist-oauth/')
+    || route.startsWith('gemini-code-assist-oauth/')
+    || route.startsWith('gemini-cli-oauth/')
     || route.startsWith('gemini-oauth/')
     || route.startsWith('google-gemini-cli/')
     || route.startsWith('gemini/');
@@ -301,6 +339,8 @@ function _routeToProvider(route) {
   if (normalizedRoute.startsWith('groq/')) return 'groq';
   if (normalizedRoute.startsWith('openai-oauth/')) return 'openai-oauth';
   if (normalizedRoute.startsWith('openai/')) return 'openai-oauth';
+  if (normalizedRoute.startsWith('gemini-codeassist-oauth/')) return 'gemini-codeassist-oauth';
+  if (normalizedRoute.startsWith('gemini-cli-oauth/')) return 'gemini-cli-oauth';
   if (normalizedRoute.startsWith('gemini-oauth/')) return 'gemini-oauth';
   if (normalizedRoute.startsWith('google-gemini-cli/') || normalizedRoute.startsWith('gemini/')) return 'gemini-oauth';
   return route;
@@ -324,6 +364,12 @@ function _normalizeRoute(route, abstractModel = 'anthropic_sonnet') {
   }
   if (route.startsWith('google-gemini-cli/')) {
     return `gemini-oauth/${route.slice('google-gemini-cli/'.length)}`;
+  }
+  if (route.startsWith('gemini-cli/')) {
+    return `gemini-cli-oauth/${route.slice('gemini-cli/'.length)}`;
+  }
+  if (route.startsWith('gemini-code-assist-oauth/')) {
+    return `gemini-codeassist-oauth/${route.slice('gemini-code-assist-oauth/'.length)}`;
   }
   if (route.startsWith('gemini/')) {
     return `gemini-oauth/${route.slice('gemini/'.length)}`;

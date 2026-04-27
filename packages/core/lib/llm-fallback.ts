@@ -11,6 +11,7 @@
  *   claude-code — Claude Code CLI 비대화식 실행
  *   groq      — llama-4-scout 등 (Groq SDK / OpenAI-compat)
  *   gemini    — gemini-2.5-flash (Google Generative AI SDK)
+ *   gemini-codeassist-oauth — Gemini CLI/Code Assist OAuth canary path
  *
  * 사용법:
  *   const { callWithFallback } = require('../../../packages/core/lib/llm-fallback');
@@ -404,6 +405,34 @@ function _readGeminiOAuthTokenStore(): { token: string; expiresAt: number | null
   return null;
 }
 
+function _readGeminiCodeAssistOAuthTokenStore(): { token: string; expiresAt: number | null; projectId?: string } | null {
+  try {
+    const store = JSON.parse(fs.readFileSync(OAUTH_PROVIDER_STORE_PATH, 'utf8')) as OAuthProviderStore;
+    const providers = store?.providers || {};
+    const entries = [
+      providers['gemini-codeassist-oauth'],
+      providers['gemini-code-assist-oauth'],
+      providers['google-gemini-cli'],
+      providers['gemini-oauth'],
+    ];
+    for (const entry of entries) {
+      const usable = _extractUsableOpenAIOAuthToken(entry?.token || null);
+      if (!usable) continue;
+      const projectId = String(
+        entry?.metadata?.quota_project_id
+          || entry?.metadata?.project_id
+          || entry?.token?.quota_project_id
+          || entry?.token?.project_id
+          || '',
+      ).trim();
+      return { token: usable.token, expiresAt: usable.expiresAt, ...(projectId ? { projectId } : {}) };
+    }
+  } catch {
+    // token-store 미생성/미동기화 상태면 Code Assist OAuth는 사용하지 않는다.
+  }
+  return null;
+}
+
 /** @param {{ model: string, maxTokens: number, temperature?: number, systemPrompt: string, userPrompt: string, baseURL?: string|null }} input */
 async function _callOpenAI({
   model,
@@ -493,17 +522,67 @@ function _getOpenAIPublicApiToken(): string | null {
   return String(process.env.OPENAI_OAUTH_PUBLIC_API_TOKEN || process.env.OPENAI_PUBLIC_API_TOKEN || '').trim() || null;
 }
 
-function _getGeminiOAuthProjectId(): string {
+function _isGeminiProModel(model = ''): boolean {
+  return /(^|\/)gemini-2\.5-pro$/i.test(String(model || '').trim());
+}
+
+function _getGeminiOAuthProjectId(model = ''): string {
+  const proProjectId = _isGeminiProModel(model)
+    ? String(process.env.GEMINI_OAUTH_PRO_PROJECT_ID || process.env.GEMINI_PRO_OAUTH_PROJECT_ID || '').trim()
+    : '';
   return String(
-    process.env.GEMINI_OAUTH_PROJECT_ID
+    proProjectId
+      || process.env.GEMINI_OAUTH_PROJECT_ID
       || process.env.GOOGLE_CLOUD_QUOTA_PROJECT
       || process.env.GOOGLE_CLOUD_PROJECT
       || '',
   ).trim();
 }
 
-function _getGeminiOAuthBaseUrl(): string {
-  return String(process.env.GEMINI_OAUTH_BASE_URL || 'https://generativelanguage.googleapis.com').replace(/\/+$/, '');
+function _getGeminiOAuthBaseUrl(model = ''): string {
+  const proBaseUrl = _isGeminiProModel(model)
+    ? String(process.env.GEMINI_OAUTH_PRO_BASE_URL || process.env.GEMINI_PRO_OAUTH_BASE_URL || '').trim()
+    : '';
+  return String(proBaseUrl || process.env.GEMINI_OAUTH_BASE_URL || 'https://generativelanguage.googleapis.com').replace(/\/+$/, '');
+}
+
+function _getGeminiCodeAssistProjectId(model = ''): string {
+  const proProjectId = _isGeminiProModel(model)
+    ? String(
+        process.env.GEMINI_CODE_ASSIST_PRO_PROJECT_ID
+          || process.env.GEMINI_CODEASSIST_PRO_PROJECT_ID
+          || process.env.GEMINI_OAUTH_PRO_PROJECT_ID
+          || process.env.GEMINI_PRO_OAUTH_PROJECT_ID
+          || '',
+      ).trim()
+    : '';
+  return String(
+    proProjectId
+      || process.env.GEMINI_CODE_ASSIST_PROJECT_ID
+      || process.env.GEMINI_CODEASSIST_PROJECT_ID
+      || process.env.GEMINI_OAUTH_PROJECT_ID
+      || process.env.GOOGLE_CLOUD_QUOTA_PROJECT
+      || process.env.GOOGLE_CLOUD_PROJECT
+      || '',
+  ).trim();
+}
+
+function _getGeminiCodeAssistBaseUrl(): string {
+  return String(
+    process.env.GEMINI_CODE_ASSIST_BASE_URL
+      || process.env.GEMINI_CODEASSIST_BASE_URL
+      || process.env.CODE_ASSIST_ENDPOINT
+      || 'https://cloudcode-pa.googleapis.com',
+  ).replace(/\/+$/, '');
+}
+
+function _getGeminiCodeAssistApiVersion(): string {
+  return String(
+    process.env.GEMINI_CODE_ASSIST_API_VERSION
+      || process.env.GEMINI_CODEASSIST_API_VERSION
+      || process.env.CODE_ASSIST_API_VERSION
+      || 'v1internal',
+  ).replace(/^\/+|\/+$/g, '');
 }
 
 function _getOpenAICodexBackendBaseUrl(): string {
@@ -1221,13 +1300,13 @@ async function _callGeminiOAuth({ model, maxTokens, temperature = 0.1, systemPro
   const credential = _readGeminiOAuthTokenStore();
   if (!credential?.token) throw new Error('Gemini OAuth 토큰 없음');
 
-  const projectId = _getGeminiOAuthProjectId() || credential.projectId || '';
-  if (!projectId) throw new Error('Gemini OAuth quota project 없음');
-
   const resolvedModel = String(model || 'gemini-2.5-flash')
     .replace(/^gemini-oauth\//, '')
     .replace(/^google-gemini-cli\//, '');
-  const baseUrl = _getGeminiOAuthBaseUrl();
+  const projectId = _getGeminiOAuthProjectId(resolvedModel) || credential.projectId || '';
+  if (!projectId) throw new Error(_isGeminiProModel(resolvedModel) ? 'Gemini OAuth Pro quota project 없음' : 'Gemini OAuth quota project 없음');
+
+  const baseUrl = _getGeminiOAuthBaseUrl(resolvedModel);
   const url = `${baseUrl}/v1beta/models/${encodeURIComponent(resolvedModel)}:generateContent`;
   const { signal, cleanup } = _createTimeoutSignal(timeoutMs ?? 30000);
 
@@ -1262,6 +1341,77 @@ async function _callGeminiOAuth({ model, maxTokens, temperature = 0.1, systemPro
       usage: null,
       _geminiOAuth: {
         provider: 'gemini-oauth',
+        model: resolvedModel,
+      },
+    };
+  } finally {
+    cleanup();
+  }
+}
+
+function _normalizeGeminiCodeAssistModel(model = ''): string {
+  const requested = String(model || '').trim();
+  const override = _isGeminiProModel(requested)
+    ? String(process.env.GEMINI_CODE_ASSIST_PRO_MODEL || process.env.GEMINI_CODEASSIST_PRO_MODEL || '').trim()
+    : '';
+  return String(override || requested || 'gemini-2.5-pro')
+    .replace(/^gemini-codeassist-oauth\//, '')
+    .replace(/^gemini-code-assist-oauth\//, '')
+    .replace(/^gemini-oauth\//, '')
+    .replace(/^google-gemini-cli\//, '')
+    .replace(/^gemini\//, '');
+}
+
+function _extractGeminiCodeAssistText(payload: any): string {
+  return _extractGeminiOAuthText(payload?.response || payload || {});
+}
+
+async function _callGeminiCodeAssistOAuth({ model, maxTokens, temperature = 0.1, systemPrompt, userPrompt, timeoutMs = 60000 }: ProviderCallOptions) {
+  const credential = _readGeminiCodeAssistOAuthTokenStore();
+  if (!credential?.token) throw new Error('Gemini Code Assist OAuth 토큰 없음');
+
+  const resolvedModel = _normalizeGeminiCodeAssistModel(model);
+  const projectId = _getGeminiCodeAssistProjectId(resolvedModel) || credential.projectId || '';
+  const baseUrl = _getGeminiCodeAssistBaseUrl();
+  const version = _getGeminiCodeAssistApiVersion();
+  const url = `${baseUrl}/${version}:generateContent`;
+  const { signal, cleanup } = _createTimeoutSignal(timeoutMs ?? 60000);
+
+  try {
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${credential.token}`,
+        'Content-Type': 'application/json',
+        Accept: 'application/json',
+      },
+      body: JSON.stringify({
+        model: resolvedModel,
+        ...(projectId ? { project: projectId } : {}),
+        user_prompt_id: `core_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`,
+        request: {
+          ...(systemPrompt ? { systemInstruction: { role: 'user', parts: [{ text: systemPrompt }] } } : {}),
+          contents: [{ role: 'user', parts: [{ text: userPrompt || '' }] }],
+          generationConfig: {
+            maxOutputTokens: maxTokens,
+            temperature,
+          },
+        },
+      }),
+      signal,
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      const message = String(payload?.error?.message || payload?.message || `HTTP ${response.status}`).slice(0, 400);
+      throw new Error(`Gemini Code Assist OAuth 호출 실패: ${message}`);
+    }
+    const text = _extractGeminiCodeAssistText(payload);
+    if (!text) throw new Error('Gemini Code Assist OAuth 빈 응답');
+    return {
+      choices: [{ message: { content: text } }],
+      usage: null,
+      _geminiOAuth: {
+        provider: 'gemini-codeassist-oauth',
         model: resolvedModel,
       },
     };
@@ -1334,6 +1484,16 @@ async function _callProvider(
     }
     case 'gemini-oauth': {
       const resp = await _callGeminiOAuth(normalizedOpts);
+      return {
+        raw: resp,
+        text: _extractText(resp, 'openai'),
+        usage: resp.usage,
+        provider: resp?._geminiOAuth?.provider || provider,
+        model: resp?._geminiOAuth?.model || model,
+      };
+    }
+    case 'gemini-codeassist-oauth': {
+      const resp = await _callGeminiCodeAssistOAuth(normalizedOpts);
       return {
         raw: resp,
         text: _extractText(resp, 'openai'),

@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-04-27T09:51:33.975Z",
+  "generated_at": "2026-04-27T12:11:37.717Z",
   "ok": true,
   "categories": {
     "runtime_blocker": 0,
@@ -542,7 +542,7 @@
     {
       "category": "retired_gateway_guard",
       "file": "bots/hub/scripts/run-tests.ts",
-      "line": 153,
+      "line": 157,
       "snippet": "'openclaw-runtime-retirement-smoke.ts',",
       "reason": "intentional regression guard"
     },

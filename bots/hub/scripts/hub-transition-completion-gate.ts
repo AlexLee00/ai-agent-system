@@ -92,6 +92,8 @@ function routeToProvider(route: string): string {
   const normalized = String(route || '').trim();
   if (normalized.startsWith('claude-code/')) return 'claude-code-oauth';
   if (normalized.startsWith('openai-oauth/')) return 'openai-oauth';
+  if (normalized.startsWith('gemini-codeassist-oauth/')) return 'gemini-codeassist-oauth';
+  if (normalized.startsWith('gemini-cli-oauth/')) return 'gemini-cli-oauth';
   if (normalized.startsWith('gemini-oauth/')) return 'gemini-oauth';
   if (normalized.startsWith('groq/')) return 'groq';
   if (normalized.startsWith('openai/')) return 'openai';

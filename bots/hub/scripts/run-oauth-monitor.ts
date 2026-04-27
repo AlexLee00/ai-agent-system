@@ -15,6 +15,7 @@ const {
   normalizeOAuthToken,
   refreshOAuthToken,
 } = require('../lib/oauth/oauth-flow.ts');
+const { readGeminiCliCredentials } = require('../lib/oauth/gemini-cli-credentials.ts');
 const { postAlarm } = require('../../../packages/core/lib/hub-alarm-client.ts');
 
 function flag(name: string, fallback = false): boolean {
@@ -80,6 +81,23 @@ function readGeminiAdcCredentials(record: any) {
       searched: candidates.map((candidate) => path.basename(candidate)),
     },
   };
+}
+
+function readGeminiCliCredentialForMonitor(record: any) {
+  const imported = readGeminiCliCredentials({
+    credentialsFile: record?.metadata?.credential_path || process.env.GEMINI_CLI_OAUTH_CREDS_FILE,
+    projectId: geminiQuotaProject(record, null),
+  });
+  if (!imported.ok) {
+    return {
+      ok: false,
+      error: imported.error || 'gemini_cli_credentials_missing',
+      details: {
+        path_configured: Boolean(record?.metadata?.credential_path || process.env.GEMINI_CLI_OAUTH_CREDS_FILE),
+      },
+    };
+  }
+  return imported;
 }
 
 function geminiScopes(record: any, adc: any): string {
@@ -387,6 +405,31 @@ function buildGeminiRefreshConfig(record: any) {
 
 async function refreshGeminiOAuthHubToken(reason: string) {
   const record = getProviderRecord('gemini-oauth');
+  const cliImport = readGeminiCliCredentialForMonitor(record);
+  if (cliImport.ok) {
+    const cliHours = tokenExpiresInHours(cliImport.token);
+    const cliFresh = Number.isFinite(Number(cliHours)) && Number(cliHours) > 0;
+    if (cliFresh) {
+      const metadata = {
+        ...(cliImport.metadata || {}),
+        imported_by: 'hub_oauth_monitor',
+        imported_at: new Date().toISOString(),
+        import_reason: reason,
+      };
+      setProviderToken('gemini-cli-oauth', cliImport.token, metadata);
+      setProviderCanary('gemini-cli-oauth', {
+        ok: true,
+        details: {
+          source: metadata.source,
+          expires_at: cliImport.token?.expires_at || null,
+          imported_by: 'hub_oauth_monitor',
+          quota_project_configured: Boolean(cliImport.quota_project_configured),
+          identity_present: Boolean(metadata.identity_present),
+        },
+      });
+    }
+  }
+
   const built = buildGeminiRefreshConfig(record);
   const refreshToken = String(
     record?.token?.refresh_token

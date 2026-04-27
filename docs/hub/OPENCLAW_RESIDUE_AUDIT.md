@@ -2,7 +2,7 @@
 
 This generated report classifies retired OpenClaw references. `runtime_blocker` must remain 0. Guard, documentation, ignored log, and archive-pending entries are tracked separately so they do not masquerade as live runtime dependencies.
 
-- generated_at: 2026-04-27T09:51:33.975Z
+- generated_at: 2026-04-27T12:11:37.717Z
 - ok: true
 - runtime_blocker: 0
 - retired_gateway_guard: 67
@@ -99,7 +99,7 @@ This generated report classifies retired OpenClaw references. `runtime_blocker` 
 - bots/hub/scripts/retired-gateway-residue-audit.ts:40 (intentional smoke/report guard) — `'openclaw-gateway',`
 - bots/hub/scripts/retired-gateway-residue-audit.ts:50 (intentional smoke/report guard) — `'bots/hub/scripts/openclaw-runtime-retirement-smoke.ts',`
 - bots/hub/scripts/retired-gateway-residue-audit.ts:81 (intentional smoke/report guard) — `if (file.startsWith('bots/hub/output/') || file === 'docs/hub/OPENCLAW_RESIDUE_AUDIT.md' || file === 'docs/hub/HUB_ALARM_DEPENDENCY_INVENTORY.md') {`
-- bots/hub/scripts/run-tests.ts:153 (intentional regression guard) — `'openclaw-runtime-retirement-smoke.ts',`
+- bots/hub/scripts/run-tests.ts:157 (intentional regression guard) — `'openclaw-runtime-retirement-smoke.ts',`
 - bots/hub/scripts/runtime-env-policy-smoke.ts:22 (intentional smoke/report guard) — `OPENCLAW_BIN: '/tmp/openclaw',`
 - bots/hub/scripts/runtime-env-policy-smoke.ts:31 (intentional smoke/report guard) — `assert.equal(filtered.env.OPENCLAW_BIN, undefined);`
 - bots/hub/scripts/runtime-env-policy-smoke.ts:43 (intentional smoke/report guard) — `assert.notEqual(childEnv.OPENCLAW_BIN, '/tmp/openclaw');`
