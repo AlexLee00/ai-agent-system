@@ -187,7 +187,15 @@ async function monitorCompetitors() {
     const msg = viralComps
       .map((s) => `${s.competitor_name}: ${s.top_post_titles.slice(0, 2).join(', ')}`)
       .join('\n');
-    await runIfOps(() => postAlarm(`🔍 경쟁사 바이럴 감지 (${viralComps.length}개)\n${msg}`));
+    await runIfOps(() => postAlarm({
+      message: `🔍 경쟁사 바이럴 감지 (${viralComps.length}개)\n${msg}`,
+      team: 'blog',
+      fromBot: 'competitor-monitor',
+      alertLevel: 2,
+      alarmType: 'work',
+      eventType: 'competitor_viral_detected',
+      incidentKey: `blog:competitor_viral:${new Date().toISOString().slice(0, 10)}`,
+    }));
   }
 
   console.log(`[경쟁사] ${snapshots.length}개 경쟁사 모니터링 완료`);

@@ -375,7 +375,15 @@ async function runDpoLearningCycle(periodDays = 30) {
 
   // 5. Telegram 보고
   const summary = `📊 DPO 학습 완료\n선호 쌍: ${pairs.length}개\n저장: ${saved}개\n분석: ${toAnalyze.length}쌍 LLM 분석`;
-  await postAlarm(summary, 'general');
+  await postAlarm({
+    message: summary,
+    team: 'blog',
+    fromBot: 'marketing-dpo',
+    alertLevel: 1,
+    alarmType: 'report',
+    eventType: 'marketing_dpo_training_complete',
+    incidentKey: `blog:marketing_dpo:${new Date().toISOString().slice(0, 10)}`,
+  });
 
   console.log('[marketing-dpo] DPO 학습 사이클 완료');
   return { pairs_built: pairs.length, pairs_saved: saved, analyzed: toAnalyze.length };

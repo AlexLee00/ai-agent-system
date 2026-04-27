@@ -175,7 +175,15 @@ async function publishDailyStory(blogUrl) {
   };
 
   if (result.success) {
-    await runIfOps(() => postAlarm(`📱 인스타 스토리 발행 성공\n타입: ${storyType}\n헤드라인: ${content.headline}`));
+    await runIfOps(() => postAlarm({
+      message: `📱 인스타 스토리 발행 성공\n타입: ${storyType}\n헤드라인: ${content.headline}`,
+      team: 'blog',
+      fromBot: 'instagram-story',
+      alertLevel: 1,
+      alarmType: 'work',
+      eventType: 'instagram_story_published',
+      incidentKey: `blog:instagram_story:${storyId}`,
+    }));
   }
 
   try {
