@@ -65,26 +65,17 @@ async function main() {
   }) as typeof fetch;
 
   try {
-    const { callWithFallback } = await import('../../../packages/core/lib/llm-fallback.ts');
-    const result = await callWithFallback({
-      chain: [
-        {
-          provider: 'gemini-oauth',
-          model: 'gemini-2.5-flash',
-          maxTokens: 32,
-          temperature: 0,
-        },
-      ],
+    const { callGeminiOAuth } = await import('../lib/llm/oauth-direct.ts');
+    const result = await callGeminiOAuth({
+      model: 'gemini-2.5-flash',
+      maxTokens: 32,
+      temperature: 0,
       systemPrompt: 'You are a smoke test.',
-      userPrompt: 'Reply with the fixture text.',
+      prompt: 'Reply with the fixture text.',
       timeoutMs: 5000,
-      logMeta: {
-        bot: 'gemini-oauth-direct-smoke',
-        requestType: 'smoke',
-      },
     });
 
-    assert.equal(result.text, 'gemini oauth ok');
+    assert.equal(result.result, 'gemini oauth ok');
     assert.equal(result.provider, 'gemini-oauth');
     assert.equal(calls.length, 1);
 

@@ -116,12 +116,12 @@ function extractJsonObject(text) {
 }
 
 function getCallWithFallback() {
-  // Lazy-load LLM runtime to keep heuristic tests isolated from deep runtime deps.
-  const llmFallback = require('../../../../packages/core/lib/llm-fallback');
-  if (typeof llmFallback?.callWithFallback !== 'function') {
-    throw new Error('llm_fallback_unavailable');
+  // Lazy-load the Hub-local LLM runtime to keep heuristic tests isolated.
+  const hubLlm = require('../llm/unified-caller');
+  if (typeof hubLlm?.callWithFallback !== 'function') {
+    throw new Error('hub_llm_unavailable');
   }
-  return llmFallback.callWithFallback;
+  return hubLlm.callWithFallback;
 }
 
 async function tryLlmPlan(input) {
@@ -142,21 +142,16 @@ async function tryLlmPlan(input) {
       { provider: 'openai-oauth', model: 'gpt-4.1-mini', maxTokens: 1200, temperature: 0.1, timeoutMs: 8000 },
       { provider: 'claude-code', model: 'sonnet', maxTokens: 1200, temperature: 0.1, timeoutMs: 10000 },
     ],
+    selectorKey: 'hub.control.planner',
+    callerTeam: 'hub',
+    agent: 'control-planner',
+    taskType: 'control_plan_draft',
     systemPrompt: 'You are strict JSON planner. No prose.',
-    userPrompt: plannerPrompt,
+    prompt: plannerPrompt,
     timeoutMs: 12_000,
-    team: 'hub',
-    purpose: 'control_plan_draft',
-    logMeta: {
-      team: 'hub',
-      bot: 'control-planner',
-      requestType: 'control_plan_draft',
-      selectorKey: 'control-planner',
-      purpose: 'control_plan_draft',
-    },
   });
 
-  const json = extractJsonObject(llmResult?.text || '');
+  const json = extractJsonObject(llmResult?.result || llmResult?.text || '');
   if (!json) {
     throw new Error('llm_plan_json_parse_failed');
   }

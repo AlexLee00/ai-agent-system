@@ -70,26 +70,17 @@ async function main() {
   }) as typeof fetch;
 
   try {
-    const { callWithFallback } = await import('../../../packages/core/lib/llm-fallback.ts');
-    const result = await callWithFallback({
-      chain: [
-        {
-          provider: 'openai-oauth',
-          model: 'gpt-5.4-mini',
-          maxTokens: 32,
-          temperature: 0,
-        },
-      ],
+    const { callOpenAiCodexOAuth } = await import('../lib/llm/oauth-direct.ts');
+    const result = await callOpenAiCodexOAuth({
+      model: 'gpt-5.4-mini',
+      maxTokens: 32,
+      temperature: 0,
       systemPrompt: 'You are a smoke test.',
-      userPrompt: 'Reply with the fixture text.',
+      prompt: 'Reply with the fixture text.',
       timeoutMs: 5000,
-      logMeta: {
-        bot: 'openai-oauth-token-store-smoke',
-        requestType: 'smoke',
-      },
     });
 
-    assert.equal(result.text, 'token store backend ok');
+    assert.equal(result.result, 'token store backend ok');
     assert.equal(result.provider, 'openai-oauth');
     assert.equal(calls.length, 1);
 

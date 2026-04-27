@@ -58,6 +58,10 @@ const BANNED_PATTERNS = [
   /보다.*더.*(중요|먼저)/i,
   /[일할될겠]까\s*$/i,
   /^성공적인 .*전략$/i,
+  /^#/,
+  /실행 기준으로 다시 정리/,
+  /맥락에서.*다시 읽는 법/,
+  /에서 막힐 때 가장 먼저 확인할 포인트/,
 ];
 
 const CATEGORY_TOPIC_POOL = {
@@ -155,12 +159,12 @@ const CATEGORY_SELECTION_GUIDES = {
 };
 
 const TITLE_FRAMES = [
-  { pattern: 'checklist', template: '{topic} 체크리스트 3가지' },
+  { pattern: 'checklist', template: '{topic}을 시작하기 전 먼저 볼 3가지' },
   { pattern: 'warning', template: '{topic}, 지금 바꾸지 않으면 늦는 이유' },
   { pattern: 'experience', template: '직접 해보고 깨달은 {topic}의 진짜 핵심' },
   { pattern: 'experience', template: '3개월간 {topicObject} 운영하며 배운 것들' },
-  { pattern: 'checklist', template: '{topic}에서 막힐 때 가장 먼저 확인할 포인트' },
-  { pattern: 'checklist', template: '{count}가지 {topic} 실전 노하우' },
+  { pattern: 'checklist', template: '{topic}에서 헷갈리기 쉬운 지점 3가지' },
+  { pattern: 'checklist', template: '{topic}을 바로 적용할 때 확인할 {count}가지' },
   { pattern: 'warning', template: '{topic}에서 초보자가 가장 먼저 실수하는 것' },
   { pattern: 'trend', template: '2026년 {topic} 트렌드: 달라진 것과 변하지 않는 것' },
 ];
@@ -284,6 +288,72 @@ function isBannedTitle(title = '') {
   const text = String(title || '').trim();
   if (!text || text.length > 50) return true;
   return BANNED_PATTERNS.some((pattern) => pattern.test(text));
+}
+
+const GENERIC_STRATEGY_SEED_TERMS = new Set([
+  '예약',
+  '문의',
+  '저장',
+  '공유',
+  '도서리뷰',
+  '책리뷰',
+  '일반포스팅',
+  '일반 포스팅',
+  '블로그',
+  '인스타',
+  '인스타그램',
+  '페이스북',
+  '숏폼',
+  '릴스',
+]);
+
+function _knownCategoryLabels() {
+  return Object.keys(CATEGORY_TOPIC_POOL);
+}
+
+function _stripCategoryPrefix(title = '') {
+  return String(title || '').replace(/^\[[^\]]+\]\s*/, '').trim();
+}
+
+function _escapeRegExp(value = '') {
+  return String(value || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function _categoryTokenCount(text = '', category = '') {
+  if (!category) return 0;
+  const pattern = new RegExp(_escapeRegExp(category), 'g');
+  return (String(text || '').match(pattern) || []).length;
+}
+
+function _sanitizeStrategySeedText(raw = '', category = '') {
+  const text = String(raw || '').replace(/^#/, '').trim();
+  if (!text || text.length < 4) return null;
+  if (GENERIC_STRATEGY_SEED_TERMS.has(text)) return null;
+  if (_knownCategoryLabels().includes(text)) return null;
+  if (text === category || text.includes(`${category} `) || text.includes(`${category}를`) || text.includes(`${category}을`)) return null;
+  return text;
+}
+
+function isReaderFriendlyTitle(title = '', category = '') {
+  const text = String(title || '').trim();
+  if (isBannedTitle(text)) return false;
+  const cleanTitle = _stripCategoryPrefix(text);
+  if (!cleanTitle || cleanTitle.length > 60) return false;
+  if (/^#/.test(cleanTitle)) return false;
+  if (/\[[^\]]+\]/.test(cleanTitle)) return false;
+  if (/실행 기준으로 다시 정리|맥락에서.*다시 읽는 법|에서 막힐 때 가장 먼저 확인할 포인트/.test(cleanTitle)) {
+    return false;
+  }
+
+  for (const label of _knownCategoryLabels()) {
+    if (!label) continue;
+    if (label === category) {
+      if (_categoryTokenCount(cleanTitle, label) > 0) return false;
+      continue;
+    }
+    if (cleanTitle.includes(label)) return false;
+  }
+  return true;
 }
 
 function hasFinalConsonant(value = '') {
@@ -480,12 +550,12 @@ function buildStrategyTopicPool(category, strategyPlan = null, marketingHints = 
   const strategySeeds = [];
 
   for (const keyword of keywordBias.slice(0, 4)) {
-    const text = String(keyword || '').replace(/^#/, '').trim();
+    const text = _sanitizeStrategySeedText(keyword, category);
     if (!text) continue;
     strategySeeds.push({
-      topic: `${withObjectParticle(text)} ${category} 실행 기준으로 다시 정리`,
-      question: `${text} 흐름을 ${category} 독자는 무엇부터 실행해야 할까`,
-      diff: '전략 신호에서 바로 실행 항목으로 연결',
+      topic: `${text}을 독자가 바로 이해하게 만드는 설명 방식`,
+      question: `${text} 흐름을 정보성 글에서 어떻게 쉽게 풀어야 할까`,
+      diff: '전략 키워드를 제목 주제가 아니라 독자 이해 장치로 반영',
     });
   }
 
@@ -514,12 +584,12 @@ function buildStrategyTopicPool(category, strategyPlan = null, marketingHints = 
   }
 
   for (const tag of focusTags.slice(0, 3)) {
-    const text = String(tag || '').replace(/^#/, '').trim();
+    const text = _sanitizeStrategySeedText(tag, category);
     if (!text) continue;
     strategySeeds.push({
-      topic: `${text} 맥락에서 ${category}를 다시 읽는 법`,
-      question: `${text} 흐름이 강할 때 ${category} 독자는 무엇을 먼저 봐야 할까`,
-      diff: '플랫폼 신호와 카테고리 문제의식 결합',
+      topic: `${text} 흐름을 독자에게 부담 없이 연결하는 방법`,
+      question: `${text} 신호를 글 안에서 과하지 않게 설명하려면 무엇을 먼저 줄여야 할까`,
+      diff: '플랫폼 신호는 보조 맥락으로만 사용',
     });
   }
 
@@ -549,8 +619,8 @@ function pickTopicPool(category, strategyPlan = null, marketingHints = null) {
     { topic: `${category} 우선순위 재정렬`, question: `${category}에서 지금 가장 늦기 전에 바꿔야 할 것은 무엇일까`, diff: '정보 나열보다 판단 기준 정리' },
   ];
   return [
-    ...buildStrategyTopicPool(category, strategyPlan, marketingHints),
     ...basePool,
+    ...buildStrategyTopicPool(category, strategyPlan, marketingHints),
   ];
 }
 
@@ -601,7 +671,7 @@ function selectAndValidateTopic(category, recentPosts = [], strategyPlan = null,
   const selected = candidates
     .sort((a, b) => b.score - a.score)
     .find((candidate) => {
-      if (isBannedTitle(candidate.title)) return false;
+      if (!isReaderFriendlyTitle(candidate.title, category)) return false;
       if (
         strategyPlan?.hardSuppressTitlePattern &&
         strategyPlan?.suppressedTitlePattern &&
@@ -620,9 +690,10 @@ function selectAndValidateTopic(category, recentPosts = [], strategyPlan = null,
     }, category, recentTitles);
   }
 
-  const fallback = topicPool[0] || { topic: `${category} 실전 가이드`, question: `${category}에서 무엇을 먼저 살펴봐야 할까`, diff: '강제 기본 주제' };
+  const fallback = topicPool.find((item) => isReaderFriendlyTitle(`${item.topic}을 시작하기 전 먼저 볼 3가지`, category))
+    || { topic: `${category} 실전 가이드`, question: `${category}에서 무엇을 먼저 살펴봐야 할까`, diff: '강제 기본 주제' };
   return enrichTopicSelection({
-    title: `${fallback.topic} 실전 가이드`,
+    title: `${fallback.topic}을 시작하기 전 먼저 볼 3가지`,
     topic: fallback.topic,
     question: fallback.question,
     diff: fallback.diff,
@@ -756,7 +827,7 @@ async function selectTopicWithCandidateFallback(category, targetDate, recentPost
 
   // 1순위: topic_queue (topic-planner.ts가 21:00 KST에 사전 선정한 최우선 주제)
   const prePlanned = await selectPrePlannedTopic(targetDate, category);
-  if (prePlanned && !isBannedTitle(prePlanned.title)) {
+  if (prePlanned && isReaderFriendlyTitle(prePlanned.title, category)) {
     if (!isTooCloseToRecentTitle(prePlanned, recentTitles)) {
       return enrichTopicSelection({
         ...prePlanned,
@@ -784,7 +855,7 @@ async function selectTopicWithCandidateFallback(category, targetDate, recentPost
   if (dbCandidates && dbCandidates.length > 0) {
     // 중복 제목 필터링 후 최고 점수 선택
     const selected = dbCandidates.find(c => {
-      if (isBannedTitle(c.title)) return false;
+      if (!isReaderFriendlyTitle(c.title, category)) return false;
       if (isTooCloseToRecentTitle(c, recentTitles)) return false;
       return true;
     });
@@ -995,6 +1066,7 @@ module.exports = {
   getCategorySelectionGuide,
   adjustCategoryWeightsBySense,
   buildMarketingHints,
+  isReaderFriendlyTitle,
   selectAndValidateTopic,
   selectTopicWithCandidateFallback,
   selectPrePlannedTopic,

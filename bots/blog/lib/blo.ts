@@ -149,7 +149,7 @@ function _isRetryableBlogStageError(error) {
     message.includes('hub_llm_call_failed:타임아웃')
     || message.includes('hub_llm_call_failed:fetch failed')
     || message.includes('hub_llm_call_failed:provider_cooldown')
-    || message.includes('OpenClaw agent 실행 실패')
+    || message.includes('agent 실행 실패')
     || message.includes('Claude Code timeout')
     || message.includes('GoogleGenerativeAI Error')
     || message.includes('Error fetching from https://')
@@ -438,6 +438,17 @@ function _applyGeneralTopicStrategy(preparedResearch, category, strategyPlan, da
     strategy_experiment_weak_lane: experimentWeakLaneSummary,
     _selectedTopic: selectedTopic,
   };
+}
+
+function _resolveGeneralPipelineTopic(context = {}) {
+  const researchData = context?.researchData || {};
+  return String(
+    context.topicHint
+    || researchData.topic_hint
+    || researchData.topic_title_candidate
+    || context.category
+    || ''
+  ).trim();
 }
 
 async function _updateScheduledBookInfo(scheduleId, book) {
@@ -2102,7 +2113,7 @@ async function runGeneralPost(researchData, traceCtx, preloaded = {}, scheduleId
         context.sectionVariation,
         {
           category: context.category,
-          topic: context.category,
+          topic: _resolveGeneralPipelineTopic(context),
           dryRun: !!options.dryRun,
         },
         runLocalDraft

@@ -7,10 +7,10 @@
 const { callClaudeCodeOAuth } = require('./claude-code-oauth');
 const { callGroqFallback } = require('./groq-fallback');
 const { callLocalOllama } = require('./local-ollama');
+const { callOpenAiCodexOAuth, callGeminiOAuth } = require('./oauth-direct');
 const { checkCache, saveCache } = require('./cache');
 const { selectRuntimeProfile } = require('../runtime-profiles');
 const { getGroqFallback } = require('../../../../packages/core/lib/llm-models');
-const { callWithFallback: callCoreWithFallback } = require('../../../../packages/core/lib/llm-fallback');
 const { describeAgentModel, selectLLMChain } = require('../../../../packages/core/lib/llm-model-selector');
 const providerRegistry = require('./provider-registry');
 const sender = require('../../../../packages/core/lib/telegram-sender');
@@ -81,6 +81,9 @@ async function callWithFallback(req) {
 
 function _resolveSelectorChain(req, team) {
   try {
+    if (Array.isArray(req.chain) && req.chain.length > 0) {
+      return { selectorKey: req.selectorKey || 'hub.adhoc.chain', chain: req.chain };
+    }
     if (req.selectorKey) {
       const chain = selectLLMChain(String(req.selectorKey), {
         maxTokens: req.maxTokens,
@@ -227,14 +230,25 @@ async function _callRouteUnchecked(normalizedRoute, req, timeoutMs, chainEntry =
     const model = normalizedRoute.slice('local/'.length);
     return callLocalOllama({ prompt: req.prompt, model, systemPrompt: req.systemPrompt, timeoutMs });
   }
-  if (
-    normalizedRoute.startsWith('openai-oauth/')
-    || normalizedRoute.startsWith('openai/')
-    || normalizedRoute.startsWith('gemini-oauth/')
-    || normalizedRoute.startsWith('google-gemini-cli/')
-    || normalizedRoute.startsWith('gemini/')
-  ) {
-    return _callViaCoreFallback(normalizedRoute, req, timeoutMs, chainEntry);
+  if (normalizedRoute.startsWith('openai-oauth/')) {
+    return callOpenAiCodexOAuth({
+      prompt: req.prompt,
+      model: normalizedRoute.slice('openai-oauth/'.length),
+      systemPrompt: req.systemPrompt,
+      maxTokens: chainEntry.maxTokens,
+      temperature: chainEntry.temperature,
+      timeoutMs,
+    });
+  }
+  if (normalizedRoute.startsWith('gemini-oauth/')) {
+    return callGeminiOAuth({
+      prompt: req.prompt,
+      model: normalizedRoute.slice('gemini-oauth/'.length),
+      systemPrompt: req.systemPrompt,
+      maxTokens: chainEntry.maxTokens,
+      temperature: chainEntry.temperature,
+      timeoutMs,
+    });
   }
   return { ok: false, provider: 'failed', error: `unsupported_provider:${normalizedRoute}`, durationMs: 0 };
 }
@@ -255,9 +269,18 @@ function _chainEntryToRoute(entry) {
   if (provider === 'claude-code') return model.startsWith('claude-code/') ? model : `claude-code/${model}`;
   if (provider === 'groq') return model.startsWith('groq/') ? model : `groq/${model}`;
   if (provider === 'openai-oauth') return model.startsWith('openai-oauth/') ? model : `openai-oauth/${model}`;
-  if (provider === 'openai') return model.startsWith('openai/') ? model : `openai/${model}`;
+  if (provider === 'openai') {
+    const normalizedModel = model.replace(/^openai\//, '').replace(/^openai-oauth\//, '');
+    return `openai-oauth/${normalizedModel}`;
+  }
   if (provider === 'gemini-oauth') return model.startsWith('gemini-oauth/') ? model : `gemini-oauth/${model}`;
-  if (provider === 'gemini') return model.startsWith('google-gemini-cli/') || model.startsWith('gemini/') ? model : `gemini/${model}`;
+  if (provider === 'gemini') {
+    const normalizedModel = model
+      .replace(/^google-gemini-cli\//, '')
+      .replace(/^gemini\//, '')
+      .replace(/^gemini-oauth\//, '');
+    return `gemini-oauth/${normalizedModel}`;
+  }
   return model.includes('/') ? model : `${provider}/${model}`;
 }
 
@@ -277,9 +300,9 @@ function _routeToProvider(route) {
   if (normalizedRoute.startsWith('claude-code/')) return 'claude-code-oauth';
   if (normalizedRoute.startsWith('groq/')) return 'groq';
   if (normalizedRoute.startsWith('openai-oauth/')) return 'openai-oauth';
-  if (normalizedRoute.startsWith('openai/')) return 'openai';
+  if (normalizedRoute.startsWith('openai/')) return 'openai-oauth';
   if (normalizedRoute.startsWith('gemini-oauth/')) return 'gemini-oauth';
-  if (normalizedRoute.startsWith('google-gemini-cli/') || normalizedRoute.startsWith('gemini/')) return 'gemini';
+  if (normalizedRoute.startsWith('google-gemini-cli/') || normalizedRoute.startsWith('gemini/')) return 'gemini-oauth';
   return route;
 }
 
@@ -296,57 +319,17 @@ function _normalizeRoute(route, abstractModel = 'anthropic_sonnet') {
     return replacement;
   }
 
-  return route;
-}
-
-async function _callViaCoreFallback(route, req, timeoutMs, chainEntry = {}) {
-  const provider = _routeToProvider(route);
-  const model = route.startsWith('gemini-oauth/')
-    ? route.slice('gemini-oauth/'.length)
-    : route.startsWith('gemini/')
-      ? route.slice('gemini/'.length)
-      : route;
-  const started = Date.now();
-
-  try {
-    const result = await callCoreWithFallback({
-      chain: [{
-        provider,
-        model,
-        maxTokens: chainEntry.maxTokens || 1024,
-        temperature: chainEntry.temperature ?? 0.3,
-        timeoutMs,
-      }],
-      systemPrompt: req.systemPrompt || '',
-      userPrompt: req.prompt,
-      timeoutMs,
-      team: req.callerTeam || 'worker',
-      purpose: req.taskType || 'default',
-      logMeta: {
-        team: req.callerTeam || 'worker',
-        bot: req.agent || 'hub-unified',
-        requestType: req.taskType || 'hub_call',
-        selectorKey: req.agent || 'hub-unified',
-        purpose: req.taskType || 'default',
-      },
-    });
-
-    return {
-      ok: true,
-      provider,
-      result: result.text,
-      durationMs: Date.now() - started,
-      apiDurationMs: Date.now() - started,
-      cacheHit: false,
-    };
-  } catch (e) {
-    return {
-      ok: false,
-      provider: 'failed',
-      durationMs: Date.now() - started,
-      error: e && e.message ? e.message : `provider_failed:${route}`,
-    };
+  if (route.startsWith('openai/')) {
+    return `openai-oauth/${route.slice('openai/'.length)}`;
   }
+  if (route.startsWith('google-gemini-cli/')) {
+    return `gemini-oauth/${route.slice('google-gemini-cli/'.length)}`;
+  }
+  if (route.startsWith('gemini/')) {
+    return `gemini-oauth/${route.slice('gemini/'.length)}`;
+  }
+
+  return route;
 }
 
 async function _saveCache(req, resp) {

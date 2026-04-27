@@ -105,6 +105,7 @@ function unitSmokeScripts(): string[] {
     'openai-oauth-canary-permission-smoke.ts',
     'gemini-oauth-smoke.ts',
     'gemini-oauth-direct-smoke.ts',
+    'hub-unified-oauth-direct-smoke.ts',
     'claude-code-oauth-direct-smoke.ts',
     'oauth-refresh-monitor-contract-smoke.ts',
     'oauth-monitor-launchd-smoke.ts',
