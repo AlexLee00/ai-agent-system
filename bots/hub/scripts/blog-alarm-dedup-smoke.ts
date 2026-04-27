@@ -7,6 +7,10 @@
  */
 
 const { buildAlarmClusterKey } = require('../lib/alarm/cluster.ts');
+const {
+  classifyReason: classifyBlogCriticalReason,
+  REASON_DEDUP_WINDOWS,
+} = require('../../blog/lib/critical-alerts.js');
 
 function assert(condition: boolean, message: string): void {
   if (!condition) throw new Error(message);
@@ -113,11 +117,40 @@ async function main() {
   // ── 5. classifyReason: 발행 대기 → naver_publish_pending ──
   const reason = classifyReason(msg1);
   assert(reason === 'naver_publish_pending', `expected naver_publish_pending reason, got: ${reason}`);
+  assert(
+    classifyBlogCriticalReason(msg1) === 'naver_publish_pending',
+    `blog critical-alerts classifyReason mismatch: ${classifyBlogCriticalReason(msg1)}`,
+  );
 
   // ── 6. classifyReason: 기존 패턴 무결성 ──
   assert(classifyReason('write EPIPE connection') === 'broken_pipe', 'broken_pipe pattern broken');
   assert(classifyReason('서비스 pid 없음') === 'service_down', 'service_down pattern broken');
   assert(classifyReason('ready 상태 포스트 발행 대기') === 'naver_publish_pending', 'ready 상태 pattern broken');
+
+  // ── 7. naver_publish_pending: extended dedup 이유 집합 검증 ──
+  // critical-alerts.js REASON_DEDUP_WINDOWS에 naver_publish_pending이 포함돼야 4시간 창이 적용된다.
+  // 이 어서션은 classifyReason 분류 일관성을 통해 extended dedup 경로를 보장한다.
+  const EXTENDED_DEDUP_REASONS = new Set(['naver_publish_pending']);
+  assert(
+    REASON_DEDUP_WINDOWS?.naver_publish_pending === 4 * 60 * 60 * 1000,
+    `critical-alerts naver_publish_pending dedup window must be 4h, got: ${REASON_DEDUP_WINDOWS?.naver_publish_pending}`,
+  );
+  assert(
+    EXTENDED_DEDUP_REASONS.has(reason),
+    `naver_publish_pending must be in EXTENDED_DEDUP_REASONS. got: ${reason}`,
+  );
+  assert(
+    EXTENDED_DEDUP_REASONS.has(classifyReason('ready 상태 포스트 발행 대기')),
+    'ready 상태 variant must resolve to extended dedup reason',
+  );
+  assert(
+    !EXTENDED_DEDUP_REASONS.has(classifyReason('write EPIPE connection')),
+    'broken_pipe must NOT be in extended dedup reasons',
+  );
+  assert(
+    !EXTENDED_DEDUP_REASONS.has(classifyReason('서비스 pid 없음')),
+    'service_down must NOT be in extended dedup reasons',
+  );
 
   console.log('blog_alarm_dedup_smoke_ok');
 }

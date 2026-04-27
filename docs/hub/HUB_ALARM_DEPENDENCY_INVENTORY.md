@@ -2,7 +2,7 @@
 
 This inventory tracks the Hub alarm migration surface. `hub_alarm_native` entries are the desired path; `retired_gateway_guard` entries are regression guards; `legacy_gateway_compat` entries are remaining migration targets and must stay at 0.
 
-- generated_at: 2026-04-27T09:33:44.974Z
+- generated_at: 2026-04-27T09:50:38.878Z
 - total_matches: 215
 - unique_files: 128
 - hub_alarm_native: 202
@@ -262,7 +262,7 @@ This inventory tracks the Hub alarm migration surface. `hub_alarm_native` entrie
 - L5 [hub_alarm_native]: `const { postAlarm } = require('../../../packages/core/lib/hub-alarm-client');`
 
 ### `bots/hub/scripts/blog-alarm-dedup-smoke.ts`
-- L15 [hub_alarm_native]: `// ── hub-alarm-client 유닛 테스트 (private 함수를 인라인 검증) ──────────────`
+- L19 [hub_alarm_native]: `// ── hub-alarm-client 유닛 테스트 (private 함수를 인라인 검증) ──────────────`
 
 ### `bots/hub/scripts/generate-hub-alarm-inventory.ts`
 - L8 [hub_alarm_native]: `const outputMarkdownPath = path.join(projectRoot, 'docs', 'hub', 'HUB_ALARM_DEPENDENCY_INVENTORY.md');`

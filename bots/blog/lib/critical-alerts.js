@@ -6,6 +6,10 @@ const { updateCriticalIncidentCache } = require('../../../packages/core/lib/crit
 
 const ALERT_DEDUPE_PATH = path.join(os.tmpdir(), 'blog-alert-dedupe.json');
 const ALERT_DEDUPE_WINDOW_MS = 15 * 60 * 1000;
+// 지속성 상태(데이터 이슈, 코드 자동 수정 불가)는 더 긴 창으로 알람 폭주 방지.
+const REASON_DEDUP_WINDOWS = {
+  naver_publish_pending: 4 * 60 * 60 * 1000,
+};
 const CANONICAL_EVENT_TYPES = new Set([
   'blog_health_check',
   'alert',
@@ -38,12 +42,14 @@ function normalizeAlertSignature({ event_type, alert_level, message }) {
 
 function canonicalizeBlogCriticalAlert({ event_type, alert_level, message }) {
   const signature = normalizeAlertSignature({ event_type, alert_level, message });
+  const reason = classifyReason(message);
+  const windowMs = REASON_DEDUP_WINDOWS[reason] || ALERT_DEDUPE_WINDOW_MS;
   const state = updateCriticalIncidentCache({
     cachePath: ALERT_DEDUPE_PATH,
     signature,
     message,
-    latestReason: classifyReason(message),
-    windowMs: ALERT_DEDUPE_WINDOW_MS,
+    latestReason: reason,
+    windowMs,
     logPrefix: 'blog-alerts',
   });
   if (state.suppress) {
@@ -67,4 +73,6 @@ function appendIncidentLine(message, signature, incident) {
 module.exports = {
   canonicalizeBlogCriticalAlert,
   appendIncidentLine,
+  classifyReason,
+  REASON_DEDUP_WINDOWS,
 };

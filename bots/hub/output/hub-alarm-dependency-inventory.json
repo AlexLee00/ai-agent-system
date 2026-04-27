@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-04-27T09:33:44.974Z",
+  "generated_at": "2026-04-27T09:50:38.878Z",
   "scan_patterns": [
     "hub-alarm-client",
     "openclaw-client",
@@ -759,7 +759,7 @@
     "bots/hub/scripts/blog-alarm-dedup-smoke.ts": [
       {
         "file": "bots/hub/scripts/blog-alarm-dedup-smoke.ts",
-        "line": 15,
+        "line": 19,
         "category": "hub_alarm_native",
         "match": "// ── hub-alarm-client 유닛 테스트 (private 함수를 인라인 검증) ──────────────"
       }
