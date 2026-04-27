@@ -33,8 +33,9 @@ import type { LunaBuyingPowerSnapshot } from '../shared/capital-manager.ts';
 import { getDomesticBalance } from '../shared/kis-client.ts';
 import { getInvestmentRagRuntimeConfig, getLunaDiscoveryThrottleConfig, getLunaRuntimeConfig, getLunaStockStrategyProfile, getPositionReevaluationRuntimeConfig } from '../shared/runtime-config.ts';
 import * as journalDb from '../shared/trade-journal-db.ts';
-import { buildAccuracyReport, getEffectiveAnalystWeightProfiles, normalizeWeights } from '../shared/analyst-accuracy.ts';
+import { buildAccuracyReport, normalizeWeights } from '../shared/analyst-accuracy.ts';
 import { getMarketRegime, formatMarketRegime } from '../shared/market-regime.ts';
+import { BASE_LUNA_ANALYST_WEIGHTS, buildLunaAnalystWeights } from '../shared/luna-analyst-weight-policy.ts';
 import { runBullResearcher } from './zeus.ts';
 import { runBearResearcher } from './athena.ts';
 import { evaluateSignal } from './nemesis.ts';
@@ -50,7 +51,6 @@ const PAPER_MIN_CONFIDENCE = LUNA_RUNTIME.minConfidence.paper;
 const MAX_POS_COUNT = LUNA_RUNTIME.maxPosCount;
 const MAX_DEBATE_SYMBOLS = LUNA_RUNTIME.maxDebateSymbols;
 const STOCK_ORDER_DEFAULTS = LUNA_RUNTIME.stockOrderDefaults;
-const ANALYST_WEIGHT_CONFIG = LUNA_RUNTIME.analystWeights || {};
 
 function normalizeResponsibilityPlan(strategyProfile = null) {
   return strategyProfile?.strategy_context?.responsibilityPlan
@@ -244,26 +244,8 @@ function formatLunaDecisionAmount(exchange, amount) {
   return `${numeric.toFixed(2)} USDT`;
 }
 
-function buildAnalystWeights(exchange = 'binance') {
-  const runtimeAnalystWeightConfig = getEffectiveAnalystWeightProfiles();
-  const isStock = exchange === 'kis' || exchange === 'kis_overseas';
-  const profile = isStock
-    ? (isPaperMode() ? runtimeAnalystWeightConfig.stocksPaper : runtimeAnalystWeightConfig.stocksLive)
-    : runtimeAnalystWeightConfig.crypto;
-  const fallback = runtimeAnalystWeightConfig.default || {};
-  const sentinelBase = profile?.sentinel
-    ?? ((profile?.sentiment ?? fallback.sentiment ?? ANALYST_WEIGHTS[ANALYST_TYPES.SENTIMENT])
-      + (profile?.news ?? fallback.news ?? ANALYST_WEIGHTS[ANALYST_TYPES.NEWS])) / 2;
-
-  return normalizeWeights({
-    [ANALYST_TYPES.TA_MTF]: profile?.taMtf ?? fallback.taMtf ?? ANALYST_WEIGHTS[ANALYST_TYPES.TA_MTF],
-    [ANALYST_TYPES.ONCHAIN]: profile?.onchain ?? fallback.onchain ?? ANALYST_WEIGHTS[ANALYST_TYPES.ONCHAIN],
-    [ANALYST_TYPES.MARKET_FLOW]:
-      (isStock ? (profile?.marketFlow ?? fallback.marketFlow ?? ANALYST_WEIGHTS[ANALYST_TYPES.MARKET_FLOW]) : 0),
-    [ANALYST_TYPES.SENTINEL]: sentinelBase,
-    [ANALYST_TYPES.SENTIMENT]: profile?.sentiment ?? fallback.sentiment ?? ANALYST_WEIGHTS[ANALYST_TYPES.SENTIMENT],
-    [ANALYST_TYPES.NEWS]: profile?.news ?? fallback.news ?? ANALYST_WEIGHTS[ANALYST_TYPES.NEWS],
-  });
+export function buildAnalystWeights(exchange = 'binance', options = {}) {
+  return buildLunaAnalystWeights(exchange, options);
 }
 
 export function getMinConfidence(exchange) {
@@ -517,14 +499,7 @@ function buildPortfolioPrompt(symbols, exchange = 'binance', exitSummary = null)
 
 // ─── 시그널 융합 ─────────────────────────────────────────────────────
 
-const ANALYST_WEIGHTS = {
-  [ANALYST_TYPES.TA_MTF]:    0.35,
-  [ANALYST_TYPES.ONCHAIN]:   0.25,
-  [ANALYST_TYPES.MARKET_FLOW]: 0.18,
-  [ANALYST_TYPES.SENTINEL]:  0.35,
-  [ANALYST_TYPES.SENTIMENT]: 0.20,
-  [ANALYST_TYPES.NEWS]:      0.15,
-};
+const ANALYST_WEIGHTS = BASE_LUNA_ANALYST_WEIGHTS;
 const DIRECTION_MAP = { BUY: 1, SELL: -1, HOLD: 0 };
 
 function getSentinelFusionProfile(analysis = {}) {
@@ -796,8 +771,8 @@ function mapSuggestedWeightsToAnalystTypes(suggestedWeights = {}, fallbackWeight
   });
 }
 
-async function loadAdaptiveAnalystWeights(exchange = 'binance') {
-  const baseWeights = buildAnalystWeights(exchange);
+async function loadAdaptiveAnalystWeights(exchange = 'binance', marketRegime = null) {
+  const baseWeights = buildAnalystWeights(exchange, { marketRegime });
   try {
     const report = await buildAccuracyReport({
       aria: baseWeights[ANALYST_TYPES.TA_MTF],
@@ -1727,7 +1702,8 @@ export async function orchestrate(symbols, exchange = 'binance', params = null) 
   const portfolio          = await buildPortfolioContext(exchange);
   const capitalSnapshot    = portfolio.capitalSnapshot ?? null;
   const discoveryThrottle  = getLunaDiscoveryThrottleConfig(exchange);
-  const { weights: analystWeights, report: accuracyReport } = await loadAdaptiveAnalystWeights(exchange);
+  const marketRegime       = await getMarketRegime(exchange).catch(() => null);
+  const { weights: analystWeights, report: accuracyReport } = await loadAdaptiveAnalystWeights(exchange, marketRegime);
   const symbolDecisions    = [];
   const symbolAnalysesMap  = new Map(); // symbol → analyses (상관관계 기록용)
   const discoverySymbols   = applyDiscoveryThrottleToSymbols(symbols, discoveryThrottle);

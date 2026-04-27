@@ -33,6 +33,15 @@ import {
   fetchBinanceOrder,
   getBinanceOpenOrders,
 } from '../shared/binance-client.ts';
+import {
+  isPendingReconcileQuoteConversionError,
+  normalizePendingReconcileOrderUnits as normalizePendingReconcileOrderUnitsBase,
+} from '../shared/binance-pending-reconcile-units.ts';
+import {
+  extractClientOrderId,
+  extractExchangeOrderId,
+  normalizeBinanceMarketOrderExecution,
+} from '../shared/binance-order-execution-normalizer.ts';
 
 // ─── 심볼 유효성 ────────────────────────────────────────────────────
 
@@ -97,22 +106,6 @@ async function loadSignalPendingReconcileMeta(signalId = null) {
   return pendingMeta && typeof pendingMeta === 'object' ? pendingMeta : {};
 }
 
-function inferOrderFillPrice(order = {}) {
-  const directPrice = toPositiveNumber(order.price, 0) || toPositiveNumber(order.average, 0);
-  if (directPrice > 0) return directPrice;
-  const filled = toPositiveNumber(order.filled, 0);
-  const cost = toPositiveNumber(order.cost, 0);
-  if (filled > 0 && cost > 0) return cost / filled;
-  return 0;
-}
-
-function getQuoteAsset(symbol = '') {
-  const normalized = String(symbol || '').trim().toUpperCase();
-  if (!normalized.includes('/')) return '';
-  const [, quote] = normalized.split('/');
-  return String(quote || '').trim().toUpperCase();
-}
-
 async function normalizePendingReconcileOrderUnits({
   signalSymbol = '',
   orderSymbol = '',
@@ -122,82 +115,16 @@ async function normalizePendingReconcileOrderUnits({
   pendingMeta = {},
   signalId = null,
 } = {}) {
-  const normalizedSignalSymbol = String(signalSymbol || '').trim().toUpperCase();
-  const normalizedOrderSymbol = String(orderSymbol || normalizedSignalSymbol).trim().toUpperCase() || normalizedSignalSymbol;
-  const signalQuote = getQuoteAsset(normalizedSignalSymbol);
-  const orderQuote = getQuoteAsset(normalizedOrderSymbol);
-  const normalizedFilled = Math.max(0, Number(filledQty || 0));
-  const rawPrice = Math.max(0, Number(price || 0));
-  const rawCost = Math.max(0, Number(cost || (normalizedFilled * rawPrice)));
-
-  if (!signalQuote || !orderQuote || signalQuote === orderQuote) {
-    return {
-      convertedPrice: rawPrice,
-      convertedCost: rawCost,
-      conversionApplied: false,
-      conversionRate: null,
-      conversionPair: null,
-      rawPrice,
-      rawCost,
-      signalQuote,
-      orderQuote,
-    };
-  }
-
-  if (signalQuote === 'USDT' && orderQuote === 'BTC') {
-    const pendingBtcRef = Math.max(0, Number(pendingMeta?.btcReferencePrice || 0));
-    const fallbackBtcRef = Math.max(0, Number(pendingMeta?.lastBtcUsdtPrice || 0));
-    let btcUsdtPrice = pendingBtcRef || fallbackBtcRef;
-    if (btcUsdtPrice <= 0) {
-      btcUsdtPrice = await fetchTicker('BTC/USDT').catch(() => 0);
-    }
-    if (!Number.isFinite(btcUsdtPrice) || btcUsdtPrice <= 0) {
-      const conversionError = /** @type {any} */ (new Error(
-        `pending_reconcile_quote_conversion_unavailable:${normalizedSignalSymbol}:${normalizedOrderSymbol}`,
-      ));
-      conversionError.code = 'pending_reconcile_quote_conversion_unavailable';
-      conversionError.meta = {
-        signalId: signalId || null,
-        signalSymbol: normalizedSignalSymbol,
-        orderSymbol: normalizedOrderSymbol,
-        signalQuote,
-        orderQuote,
-      };
-      throw conversionError;
-    }
-    return {
-      convertedPrice: rawPrice > 0 ? (rawPrice * btcUsdtPrice) : 0,
-      convertedCost: rawCost > 0 ? (rawCost * btcUsdtPrice) : (normalizedFilled * rawPrice * btcUsdtPrice),
-      conversionApplied: true,
-      conversionRate: btcUsdtPrice,
-      conversionPair: 'BTC/USDT',
-      rawPrice,
-      rawCost,
-      signalQuote,
-      orderQuote,
-    };
-  }
-
-  const unsupportedError = /** @type {any} */ (new Error(
-    `pending_reconcile_quote_conversion_unsupported:${normalizedSignalSymbol}:${normalizedOrderSymbol}:${orderQuote}->${signalQuote}`,
-  ));
-  unsupportedError.code = 'pending_reconcile_quote_conversion_unsupported';
-  unsupportedError.meta = {
-    signalId: signalId || null,
-    signalSymbol: normalizedSignalSymbol,
-    orderSymbol: normalizedOrderSymbol,
-    signalQuote,
-    orderQuote,
-  };
-  throw unsupportedError;
-}
-
-function isPendingReconcileQuoteConversionError(error = null) {
-  const code = String(error?.code || '').trim().toLowerCase();
-  return (
-    code === 'pending_reconcile_quote_conversion_unavailable'
-    || code === 'pending_reconcile_quote_conversion_unsupported'
-  );
+  return normalizePendingReconcileOrderUnitsBase({
+    signalSymbol,
+    orderSymbol,
+    filledQty,
+    price,
+    cost,
+    pendingMeta,
+    signalId,
+    quotePriceResolver: fetchTicker,
+  });
 }
 
 function isDefinitiveBinanceOrderLookupError(errorCode = null) {
@@ -269,123 +196,6 @@ function buildBtcPairPendingReconcileError(cause, {
     pendingError.cause = cause;
   }
   return pendingError;
-}
-
-async function normalizeBinanceMarketOrderExecution(symbol, side, rawOrder = null, {
-  maxAttempts = 4,
-  pollDelayMs = 900,
-  expectedClientOrderId = null,
-  submittedAtMs = null,
-} = {}) {
-  let latest = rawOrder || {};
-  const orderId = extractExchangeOrderId(latest);
-  const clientOrderId = extractClientOrderId(latest) || (expectedClientOrderId ? String(expectedClientOrderId) : null);
-  let attempt = 0;
-
-  while (attempt <= maxAttempts) {
-    const status = String(latest?.status || '').trim().toLowerCase();
-    const filled = toPositiveNumber(latest?.filled, 0);
-    const fillPrice = inferOrderFillPrice(latest);
-    const isClosed = status === 'closed' || status === 'filled';
-
-    if (filled > 0 && fillPrice > 0 && (isClosed || !status)) {
-      const normalizedCost = toPositiveNumber(latest?.cost, filled * fillPrice);
-      return {
-        ...latest,
-        id: orderId || latest?.id || clientOrderId || null,
-        orderId: orderId || latest?.orderId || latest?.info?.orderId || null,
-        clientOrderId,
-        side: side || latest?.side || null,
-        status: status || 'closed',
-        filled,
-        price: fillPrice,
-        average: fillPrice,
-        cost: normalizedCost,
-        normalized: true,
-      };
-    }
-
-    if ((!orderId && !clientOrderId) || attempt === maxAttempts) break;
-    attempt += 1;
-    await delay(pollDelayMs * attempt);
-    try {
-      const fetched = await fetchBinanceOrder({
-        symbol,
-        orderId,
-        clientOrderId,
-        submittedAtMs,
-        side,
-        allowAllOrdersFallback: true,
-      });
-      if (fetched && typeof fetched === 'object') latest = fetched;
-    } catch {
-      // fetchOrder 미지원/일시 실패는 마지막 원본 응답으로 판정
-    }
-  }
-
-  const lastStatus = String(latest?.status || '').trim().toLowerCase() || 'unknown';
-  const lastFilled = toPositiveNumber(latest?.filled, 0);
-  const lastPrice = inferOrderFillPrice(latest);
-  const lastCost = toPositiveNumber(latest?.cost, lastFilled * lastPrice);
-  const lastAmount = toPositiveNumber(latest?.amount, toPositiveNumber(latest?.origQty, 0));
-  const isOpenPendingStatus = BINANCE_PENDING_RECONCILE_OPEN_STATUSES.has(lastStatus);
-  if (lastFilled > 0 && lastPrice > 0) {
-    const pendingError = /** @type {any} */ (new Error(
-      `order_pending_fill_verification:${symbol}:${lastStatus}:${lastFilled}:${lastPrice}:${lastCost}`,
-    ));
-    pendingError.code = 'order_pending_fill_verification';
-    pendingError.meta = {
-      symbol,
-      side,
-      orderId: orderId || null,
-      clientOrderId,
-      status: lastStatus,
-      amount: lastAmount,
-      filled: lastFilled,
-      price: lastPrice,
-      cost: lastCost,
-      submittedAtMs: submittedAtMs || null,
-      attempts: maxAttempts + 1,
-    };
-    throw pendingError;
-  }
-  if ((orderId || clientOrderId) && isOpenPendingStatus) {
-    const pendingError = /** @type {any} */ (new Error(
-      `order_pending_fill_verification:${symbol}:${lastStatus}:0:0:0`,
-    ));
-    pendingError.code = 'order_pending_fill_verification';
-    pendingError.meta = {
-      symbol,
-      side,
-      orderId: orderId || null,
-      clientOrderId,
-      status: lastStatus,
-      amount: lastAmount,
-      filled: 0,
-      price: 0,
-      cost: 0,
-      submittedAtMs: submittedAtMs || null,
-      attempts: maxAttempts + 1,
-    };
-    throw pendingError;
-  }
-
-  const verifyError = /** @type {any} */ (new Error(
-    `order_fill_unverified:${symbol}:${lastStatus}:${lastFilled}:${lastPrice}`,
-  ));
-  verifyError.code = 'order_fill_unverified';
-  verifyError.meta = {
-    symbol,
-    side,
-    orderId: orderId || null,
-    clientOrderId,
-    status: lastStatus,
-    filled: lastFilled,
-    price: lastPrice,
-    submittedAtMs: submittedAtMs || null,
-    attempts: maxAttempts + 1,
-  };
-  throw verifyError;
 }
 
 function getExchange() {
@@ -1937,23 +1747,6 @@ function roundSellAmount(symbol, amount) {
   } catch {
     return 0;
   }
-}
-
-function extractExchangeOrderId(orderLike) {
-  if (!orderLike) return null;
-  return orderLike.orderId?.toString?.()
-    ?? orderLike.info?.orderId?.toString?.()
-    ?? orderLike.id?.toString?.()
-    ?? null;
-}
-
-function extractClientOrderId(orderLike) {
-  if (!orderLike) return null;
-  return orderLike.clientOrderId?.toString?.()
-    ?? orderLike.origClientOrderId?.toString?.()
-    ?? orderLike.info?.clientOrderId?.toString?.()
-    ?? orderLike.info?.origClientOrderId?.toString?.()
-    ?? null;
 }
 
 function extractOrderId(orderLike) {

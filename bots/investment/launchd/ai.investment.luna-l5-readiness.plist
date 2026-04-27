@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>ai.investment.luna-l5-readiness</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>/opt/homebrew/bin/node</string>
+    <string>/Users/alexlee/projects/ai-agent-system/bots/investment/scripts/luna-l5-readiness-report.ts</string>
+    <string>--telegram</string>
+  </array>
+
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>USE_HUB_SECRETS</key>
+    <string>true</string>
+    <key>PAPER_MODE</key>
+    <string>false</string>
+  </dict>
+
+  <key>StartInterval</key>
+  <integer>21600</integer>
+
+  <key>RunAtLoad</key>
+  <false/>
+
+  <key>StandardOutPath</key>
+  <string>/tmp/ai.investment.luna-l5-readiness.out.log</string>
+  <key>StandardErrorPath</key>
+  <string>/tmp/ai.investment.luna-l5-readiness.err.log</string>
+
+  <key>WorkingDirectory</key>
+  <string>/Users/alexlee/projects/ai-agent-system/bots/investment</string>
+</dict>
+</plist>

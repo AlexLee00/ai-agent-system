@@ -1,4 +1,6 @@
 // @ts-nocheck
+import { applyRegimeExpansionAdjustment, resolveRegimeExpansionPolicy } from './regime-expansion-policy.ts';
+
 /**
  * regime-strategy-policy.ts
  *
@@ -260,7 +262,9 @@ export function computeRegimePolicy(input: RegimePolicyInput = {}): RegimePolicy
     input.market || (input.exchange === 'binance' ? 'crypto' : input.exchange ? 'stock' : 'crypto'),
     'crypto',
   );
-  const regime = normalizeString(input.regime, market === 'crypto' ? 'volatile' : 'ranging');
+  const rawRegime = normalizeString(input.regime, market === 'crypto' ? 'volatile' : 'ranging');
+  const regimeExpansion = resolveRegimeExpansionPolicy(rawRegime);
+  const regime = regimeExpansion.baseRegime;
   const setupType = normalizeString(input.setupType, 'unknown');
 
   let policy = getBasePolicy(market);
@@ -269,6 +273,7 @@ export function computeRegimePolicy(input: RegimePolicyInput = {}): RegimePolicy
   policy.sourceQualityReason = null;
 
   policy = applyRegimeAdjustment(policy, regime, market);
+  policy = applyRegimeExpansionAdjustment(policy, regimeExpansion, market);
   policy = applySetupTypeAdjustment(policy, setupType, market);
   policy = applyFeedbackAdjustment(policy, {
     familyBias: input.familyBias || null,
@@ -286,7 +291,7 @@ export function computeRegimePolicy(input: RegimePolicyInput = {}): RegimePolicy
 
   return {
     market,
-    regime,
+    regime: regimeExpansion.enabled && regimeExpansion.extension ? rawRegime : regime,
     setupType,
     policyMode: policy.policyMode || 'balanced',
     riskGate: policy.riskGate || 'execution_safeguard',
