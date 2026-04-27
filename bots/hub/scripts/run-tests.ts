@@ -79,6 +79,7 @@ function unitSmokeScripts(): string[] {
     'legacy-gateway-independence-smoke.ts',
     'runtime-workspace-independence-smoke.ts',
     'runtime-env-policy-smoke.ts',
+    'file-guard-retired-workspace-smoke.ts',
     'sse-event-guard-smoke.ts',
     'session-checkpoint-smoke.ts',
     'hub-js-ts-island-smoke.ts',

@@ -500,7 +500,7 @@ function buildSelectorRegistry(): Record<string, any> {
     'claude.dexter.ai_analyst': () => resolveFromTeamDefault('claude.dexter.ai_analyst'),
 
     'orchestrator.jay.intent': ({ intentPrimary, intentFallback }: SelectorOptions = {}) => ({
-      primary: { provider: 'openai-oauth', model: intentPrimary || 'gpt-5-mini' },
+      primary: { provider: 'openai-oauth', model: intentPrimary || 'gpt-5.4-mini' },
       fallback: {
         provider: 'gemini-oauth',
         model: intentFallback

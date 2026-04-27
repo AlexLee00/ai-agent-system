@@ -1,15 +1,15 @@
 {
-  "generated_at": "2026-04-27T07:44:52.654Z",
+  "generated_at": "2026-04-27T09:17:17.475Z",
   "scan_patterns": [
     "hub-alarm-client",
     "openclaw-client",
     "HUB_ALARM_",
     "OPENCLAW_"
   ],
-  "total_matches": 194,
-  "unique_files": 117,
+  "total_matches": 208,
+  "unique_files": 126,
   "categories": {
-    "hub_alarm_native": 185,
+    "hub_alarm_native": 199,
     "legacy_gateway_compat": 9
   },
   "files": {
@@ -566,9 +566,9 @@
     "bots/hub/lib/alarm/readiness.ts": [
       {
         "file": "bots/hub/lib/alarm/readiness.ts",
-        "line": 70,
+        "line": 103,
         "category": "hub_alarm_native",
-        "match": "const classTopicsEnabled = isEnabled(process.env.HUB_ALARM_USE_CLASS_TOPICS);"
+        "match": "const classTopicsEnabled = isEnabled(process.env.HUB_ALARM_USE_CLASS_TOPICS)"
       }
     ],
     "bots/hub/lib/alarm/suppression-rules.ts": [
@@ -593,6 +593,14 @@
         "line": 277,
         "category": "hub_alarm_native",
         "match": "const claimLeaseMinutes = Math.max(1, Number(process.env.HUB_ALARM_DIGEST_CLAIM_LEASE_MINUTES || 15) || 15);"
+      }
+    ],
+    "bots/hub/lib/routes/secrets.ts": [
+      {
+        "file": "bots/hub/lib/routes/secrets.ts",
+        "line": 95,
+        "category": "hub_alarm_native",
+        "match": "const raw = String(process.env.HUB_ALARM_USE_CLASS_TOPICS || '').trim().toLowerCase();"
       }
     ],
     "bots/hub/scripts/alarm-auto-repair-stale-scan.ts": [
@@ -984,15 +992,15 @@
     "bots/hub/scripts/launchd-alarm-class-topic-smoke.ts": [
       {
         "file": "bots/hub/scripts/launchd-alarm-class-topic-smoke.ts",
-        "line": 34,
+        "line": 59,
         "category": "hub_alarm_native",
         "match": "const value = envValueFromPlist(text, 'HUB_ALARM_USE_CLASS_TOPICS');"
       },
       {
         "file": "bots/hub/scripts/launchd-alarm-class-topic-smoke.ts",
-        "line": 41,
+        "line": 67,
         "category": "hub_alarm_native",
-        "match": "reason: ok ? null : 'HUB_ALARM_USE_CLASS_TOPICS_not_enabled',"
+        "match": "reason: !ok ? 'HUB_ALARM_USE_CLASS_TOPICS_not_enabled'"
       }
     ],
     "bots/hub/scripts/retired-gateway-marker-precommit-smoke.ts": [
@@ -1062,9 +1070,9 @@
     "bots/hub/scripts/telegram-routing-readiness-report.ts": [
       {
         "file": "bots/hub/scripts/telegram-routing-readiness-report.ts",
-        "line": 270,
+        "line": 110,
         "category": "hub_alarm_native",
-        "match": "String(process.env.HUB_ALARM_USE_CLASS_TOPICS || '').trim().toLowerCase(),"
+        "match": "const raw = String(process.env.HUB_ALARM_USE_CLASS_TOPICS || '').trim().toLowerCase();"
       }
     ],
     "bots/hub/scripts/telegram-topic-routing-precedence-smoke.ts": [
@@ -1087,12 +1095,80 @@
         "match": "process.env.HUB_ALARM_USE_CLASS_TOPICS = '1';"
       }
     ],
+    "bots/orchestrator/launchd/ai.orchestrator.plist": [
+      {
+        "file": "bots/orchestrator/launchd/ai.orchestrator.plist",
+        "line": 11,
+        "category": "hub_alarm_native",
+        "match": "<key>HUB_ALARM_USE_CLASS_TOPICS</key>"
+      }
+    ],
+    "bots/orchestrator/launchd/ai.steward.daily.plist": [
+      {
+        "file": "bots/orchestrator/launchd/ai.steward.daily.plist",
+        "line": 11,
+        "category": "hub_alarm_native",
+        "match": "<key>HUB_ALARM_USE_CLASS_TOPICS</key>"
+      }
+    ],
+    "bots/orchestrator/launchd/ai.steward.hourly.plist": [
+      {
+        "file": "bots/orchestrator/launchd/ai.steward.hourly.plist",
+        "line": 11,
+        "category": "hub_alarm_native",
+        "match": "<key>HUB_ALARM_USE_CLASS_TOPICS</key>"
+      }
+    ],
+    "bots/orchestrator/launchd/ai.steward.weekly.plist": [
+      {
+        "file": "bots/orchestrator/launchd/ai.steward.weekly.plist",
+        "line": 11,
+        "category": "hub_alarm_native",
+        "match": "<key>HUB_ALARM_USE_CLASS_TOPICS</key>"
+      }
+    ],
     "bots/orchestrator/lib/steward/daily-summary.ts": [
       {
         "file": "bots/orchestrator/lib/steward/daily-summary.ts",
         "line": 4,
         "category": "hub_alarm_native",
         "match": "const { postAlarm } = require('../../../../packages/core/lib/hub-alarm-client');"
+      }
+    ],
+    "bots/orchestrator/lib/steward/telegram-manager.ts": [
+      {
+        "file": "bots/orchestrator/lib/steward/telegram-manager.ts",
+        "line": 12,
+        "category": "hub_alarm_native",
+        "match": "const EXPECTED_TOPICS = process.env.HUB_ALARM_USE_CLASS_TOPICS === 'false'"
+      }
+    ],
+    "bots/orchestrator/n8n/setup-n8n.ts": [
+      {
+        "file": "bots/orchestrator/n8n/setup-n8n.ts",
+        "line": 40,
+        "category": "hub_alarm_native",
+        "match": "const CLASS_TOPIC_MODE = String(process.env.HUB_ALARM_USE_CLASS_TOPICS || '').trim().toLowerCase() !== 'false'"
+      },
+      {
+        "file": "bots/orchestrator/n8n/setup-n8n.ts",
+        "line": 41,
+        "category": "hub_alarm_native",
+        "match": "&& (String(process.env.HUB_ALARM_USE_CLASS_TOPICS || '').trim() !== '' || hubSecrets.telegram?.topic_alias_mode === 'class_topics');"
+      }
+    ],
+    "bots/orchestrator/n8n/setup-ska-workflows.ts": [
+      {
+        "file": "bots/orchestrator/n8n/setup-ska-workflows.ts",
+        "line": 37,
+        "category": "hub_alarm_native",
+        "match": "const CLASS_TOPIC_MODE = String(process.env.HUB_ALARM_USE_CLASS_TOPICS || '').trim().toLowerCase() !== 'false'"
+      },
+      {
+        "file": "bots/orchestrator/n8n/setup-ska-workflows.ts",
+        "line": 38,
+        "category": "hub_alarm_native",
+        "match": "&& (String(process.env.HUB_ALARM_USE_CLASS_TOPICS || '').trim() !== '' || hubSecrets.telegram?.topic_alias_mode === 'class_topics');"
       }
     ],
     "bots/orchestrator/src/dashboard.ts": [
@@ -1200,55 +1276,67 @@
       },
       {
         "file": "packages/core/lib/hub-alarm-client.ts",
-        "line": 219,
+        "line": 179,
+        "category": "hub_alarm_native",
+        "match": "const classMode = _readBooleanEnv('HUB_ALARM_USE_CLASS_TOPICS')"
+      },
+      {
+        "file": "packages/core/lib/hub-alarm-client.ts",
+        "line": 181,
+        "category": "hub_alarm_native",
+        "match": "&& !_readFalseBooleanEnv('HUB_ALARM_USE_CLASS_TOPICS'));"
+      },
+      {
+        "file": "packages/core/lib/hub-alarm-client.ts",
+        "line": 243,
         "category": "hub_alarm_native",
         "match": "if (_readBooleanEnv('HUB_ALARM_USE_CLASS_TOPICS')) return true;"
       },
       {
         "file": "packages/core/lib/hub-alarm-client.ts",
-        "line": 220,
+        "line": 244,
         "category": "hub_alarm_native",
         "match": "if (_readFalseBooleanEnv('HUB_ALARM_USE_CLASS_TOPICS')) return false;"
       },
       {
         "file": "packages/core/lib/hub-alarm-client.ts",
-        "line": 489,
+        "line": 513,
         "category": "hub_alarm_native",
         "match": "signal: AbortSignal.timeout(HUB_ALARM_TIMEOUT_MS),"
       },
       {
         "file": "packages/core/lib/hub-alarm-client.ts",
-        "line": 528,
+        "line": 552,
         "category": "hub_alarm_native",
         "match": "console.warn(`[hub-alarm-client] recent alert snapshot 저장 실패: ${(error as Error).message}`);"
       },
       {
         "file": "packages/core/lib/hub-alarm-client.ts",
-        "line": 561,
+        "line": 585,
         "category": "hub_alarm_native",
         "match": "console.warn('[hub-alarm-client] inline telegram 발송 실패: bot token/group id 미설정');"
       },
       {
         "file": "packages/core/lib/hub-alarm-client.ts",
-        "line": 590,
+        "line": 614,
         "category": "hub_alarm_native",
         "match": "console.warn(`[hub-alarm-client] inline telegram 429 — ${delayMs}ms 후 재시도`);"
       },
       {
         "file": "packages/core/lib/hub-alarm-client.ts",
-        "line": 601,
+        "line": 625,
         "category": "hub_alarm_native",
         "match": "console.warn(`[hub-alarm-client] inline telegram 실패: ${error.message}`);"
       },
       {
         "file": "packages/core/lib/hub-alarm-client.ts",
-        "line": 651,
+        "line": 675,
         "category": "hub_alarm_native",
         "match": "const hubDirectBlocked = _readBooleanEnv('HUB_ALARM_SKIP_DIRECT');"
       },
       {
         "file": "packages/core/lib/hub-alarm-client.ts",
-        "line": 679,
+        "line": 703,
         "category": "hub_alarm_native",
         "match": "console.warn(`[hub-alarm-client] hub alarm failed: ${hubResult.error}`);"
       }
@@ -1278,7 +1366,13 @@
       },
       {
         "file": "packages/core/lib/telegram-sender.ts",
-        "line": 258,
+        "line": 132,
+        "category": "hub_alarm_native",
+        "match": "const raw = String(process.env.HUB_ALARM_USE_CLASS_TOPICS || '').trim().toLowerCase();"
+      },
+      {
+        "file": "packages/core/lib/telegram-sender.ts",
+        "line": 290,
         "category": "hub_alarm_native",
         "match": "const raw = process.env.HUB_ALARM_USE_CLASS_TOPICS;"
       }
@@ -1369,6 +1463,14 @@
         "line": 18,
         "category": "hub_alarm_native",
         "match": "const hubAlarmClient = require(path.join(ROOT, 'packages/core/lib/hub-alarm-client'));"
+      }
+    ],
+    "scripts/setup-telegram-forum.ts": [
+      {
+        "file": "scripts/setup-telegram-forum.ts",
+        "line": 26,
+        "category": "hub_alarm_native",
+        "match": "const CLASS_TOPIC_MODE = String(process.env.HUB_ALARM_USE_CLASS_TOPICS || 'true').trim().toLowerCase() !== 'false';"
       }
     ],
     "scripts/speed-test.ts": [

@@ -27,6 +27,9 @@ const DEXTER_ALLOWED_PATTERNS = [
 ];
 
 const RETIRED_WORKSPACE_DIR_PATTERN = new RegExp(`[/\\\\]\\.open${'claw'}[/\\\\]`);
+const BLOCKED_WRITE_PATTERNS = [
+  RETIRED_WORKSPACE_DIR_PATTERN,
+];
 
 const ALLOWED_WRITE_PATTERNS = [
   /\.log$/i,
@@ -35,7 +38,6 @@ const ALLOWED_WRITE_PATTERNS = [
   /\.csv$/i,
   /\.png$/i, /\.jpg$/i, /\.jpeg$/i, /\.webp$/i, /\.gif$/i,
   /\.pdf$/i,
-  RETIRED_WORKSPACE_DIR_PATTERN,
   /[/\\]workspace[/\\]/,
   /[/\\]tmp[/\\]/,
   /[/\\]output[/\\]/,
@@ -54,6 +56,13 @@ function canWrite(filePath: string, callerBot = 'unknown'): boolean {
   const normalized = filePath.replace(/\\/g, '/');
   const ext = path.extname(filePath).toLowerCase();
   const basename = path.basename(filePath);
+
+  for (const pattern of BLOCKED_WRITE_PATTERNS) {
+    if (pattern.test(normalized)) {
+      warn(callerBot, filePath, '퇴역 런타임 workspace 경로');
+      return false;
+    }
+  }
 
   if (callerBot === 'dexter') {
     for (const pattern of DEXTER_ALLOWED_PATTERNS) {
@@ -145,6 +154,7 @@ export = {
   safeWriteFileAsync,
   PROTECTED_EXTENSIONS,
   BLOCKED_FILENAMES,
+  BLOCKED_WRITE_PATTERNS,
   ALLOWED_WRITE_PATTERNS,
   DEXTER_ALLOWED_PATTERNS,
 };
