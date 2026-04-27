@@ -16,6 +16,7 @@ import { getInvestmentTradeMode, loadSecrets, isKisPaper } from './secrets.ts';
 import { getMinOrderAmount, getMinOrderRatio } from './order-rules.ts';
 import { fetchFearGreedIndex } from '../team/argos.ts';
 import { getInvestmentExecutionRuntimeConfig, getInvestmentSyncRuntimeConfig } from './runtime-config.ts';
+import { getBinanceBalanceSnapshot, getBinanceTickerSnapshot } from './binance-client.ts';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const _require  = createRequire(import.meta.url);
@@ -204,10 +205,9 @@ function getEx() {
  */
 async function getUntrackedBtcUsd() {
   try {
-    const ex = getEx();
     const [walletBal, btcTicker, trackedPos] = await Promise.all([
-      ex.fetchBalance(),
-      ex.fetchTicker('BTC/USDT').catch(() => ({ last: 0 })),
+      getBinanceBalanceSnapshot({ omitZeroBalances: false }),
+      getBinanceTickerSnapshot('BTC/USDT').catch(() => ({ last: 0 })),
       pgPool.get(SCHEMA, 'SELECT amount FROM investment.positions WHERE symbol = $1 AND paper = false', ['BTC/USDT']).catch(() => null),
     ]);
     const walletBtc  = walletBal.free?.BTC  || 0;
@@ -227,7 +227,7 @@ async function getUntrackedBtcUsd() {
  */
 export async function getAvailableUSDT() {
   try {
-    const bal = await getEx().fetchBalance();
+    const bal = await getBinanceBalanceSnapshot({ omitZeroBalances: false });
     return bal.free?.USDT || 0;
   } catch (e) {
     console.warn('[capital] USDT 잔고 조회 실패:', e.message);
@@ -915,7 +915,7 @@ export interface LunaBudgetCheckResult {
  */
 async function getAvailableUSDTOrNull(): Promise<number | null> {
   try {
-    const bal = await getEx().fetchBalance();
+    const bal = await getBinanceBalanceSnapshot({ omitZeroBalances: false });
     const usdt = bal.free?.USDT;
     if (usdt === undefined || usdt === null) return null;
     return Number(usdt);
