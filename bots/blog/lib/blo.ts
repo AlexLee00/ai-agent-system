@@ -146,7 +146,12 @@ function _isRetryableBlogStageError(error) {
   const message = String(error?.message || error || '').trim();
   if (!message) return false;
   return (
-    message.includes('GoogleGenerativeAI Error')
+    message.includes('hub_llm_call_failed:타임아웃')
+    || message.includes('hub_llm_call_failed:fetch failed')
+    || message.includes('hub_llm_call_failed:provider_cooldown')
+    || message.includes('OpenClaw agent 실행 실패')
+    || message.includes('Claude Code timeout')
+    || message.includes('GoogleGenerativeAI Error')
     || message.includes('Error fetching from https://')
     || message.includes('503 Service Unavailable')
     || message.includes('429 Too Many Requests')

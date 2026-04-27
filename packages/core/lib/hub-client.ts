@@ -181,6 +181,31 @@ async function readResponseReason(res: Response): Promise<string> {
   }
 }
 
+function stringifyHubErrorReason(value: unknown): string {
+  if (value == null) return '';
+  if (typeof value === 'string') return value.trim();
+  if (value instanceof Error) return String(value.message || '').trim();
+  if (typeof value === 'object') {
+    try {
+      const plain = value as Record<string, unknown>;
+      const direct = [
+        plain.message,
+        plain.error,
+        plain.reason,
+        plain.detail,
+        plain.code,
+      ]
+        .map((item) => (typeof item === 'string' ? item.trim() : ''))
+        .find(Boolean);
+      if (direct) return direct;
+      return JSON.stringify(value);
+    } catch {
+      return String(value);
+    }
+  }
+  return String(value).trim();
+}
+
 export async function fetchHubSecrets(category: string, timeoutMs = 3000): Promise<any | null> {
   if (!env.USE_HUB_SECRETS || !env.HUB_BASE_URL) return null;
   if (!env.HUB_AUTH_TOKEN) {
@@ -468,7 +493,7 @@ export async function callHubLlm(request: HubLlmCallRequest): Promise<HubLlmCall
 
     const body = await res.json().catch(() => ({}));
     if (!res.ok || body?.ok === false) {
-      const reason = String(body?.error || body?.reason || `HTTP ${res.status}`).trim();
+      const reason = stringifyHubErrorReason(body?.error || body?.reason || `HTTP ${res.status}`) || `HTTP ${res.status}`;
       throw new Error(`hub_llm_call_failed:${reason}`);
     }
 
@@ -512,7 +537,9 @@ export async function callHubLlm(request: HubLlmCallRequest): Promise<HubLlmCall
       }
     }
     const err = error as Error & { name?: string };
-    const message = err.name === 'AbortError' ? '타임아웃' : err.message;
+    const message = err.name === 'AbortError'
+      ? '타임아웃'
+      : (stringifyHubErrorReason(err.message || err) || 'hub_call_error');
     throw new Error(`hub_llm_call_failed:${message}`);
   } finally {
     clearTimeout(timer);
