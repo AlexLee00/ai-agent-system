@@ -75,6 +75,8 @@ function unitSmokeScripts(): string[] {
     'hub-postalarm-no-legacy-fallback-smoke.ts',
     'legacy-gateway-independence-smoke.ts',
     'runtime-workspace-independence-smoke.ts',
+    'runtime-env-policy-smoke.ts',
+    'sse-event-guard-smoke.ts',
     'hub-js-ts-island-smoke.ts',
     legacyIsolationScript('active'),
     'legacy-gateway-admin-guard-smoke.ts',
@@ -84,6 +86,7 @@ function unitSmokeScripts(): string[] {
     legacyIsolationScript('reservation'),
     'llm-control-independence-smoke.ts',
     'provider-circuit-standard-smoke.ts',
+    'llm-cooldown-reset-smoke.ts',
     'llm-direct-provider-route-guard-smoke.ts',
     'team-llm-route-drill.ts',
     'team-llm-route-drill-report-smoke.ts',
@@ -111,6 +114,7 @@ function unitSmokeScripts(): string[] {
     'oauth-monitor-launchd-smoke.ts',
     'runtime-profile-settings-smoke.ts',
     'server-hardening-smoke.ts',
+    'retired-gateway-marker-precommit-smoke.ts',
   ];
 }
 

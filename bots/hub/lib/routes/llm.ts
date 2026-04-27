@@ -5,8 +5,12 @@ const { callWithFallback } = require('../llm/unified-caller');
 const { loadGroqAccounts } = require('../llm/secrets-loader');
 const { getLlmAdmissionState } = require('../llm/admission-control');
 const { parseLlmCallPayload } = require('../llm/request-schema');
-const { getAllCircuitStatuses, resetCircuit } = require('../../../../packages/core/lib/local-circuit-breaker');
-const { getProviderStats, resetProviderCircuit } = require('../llm/provider-registry');
+const { getAllCircuitStatuses, resetCircuit, resetAllCircuits } = require('../../../../packages/core/lib/local-circuit-breaker');
+const {
+  getProviderCooldownSnapshot,
+  resetProviderCooldown,
+} = require('../../../../packages/core/lib/llm-fallback');
+const { getProviderStats, resetProviderCircuit, resetAllProviderCircuits } = require('../llm/provider-registry');
 
 // POST /hub/llm/call — Primary(Claude Code OAuth) + Fallback(Groq) 체인
 export async function llmCallRoute(req, res) {
@@ -278,21 +282,41 @@ export async function llmCircuitRoute(req, res) {
     const target = req.query?.target;
     const provider = req.query?.provider;
     if (provider) {
-      resetProviderCircuit(decodeURIComponent(provider));
-      return res.json({ ok: true, reset_provider: provider });
+      const decoded = decodeURIComponent(provider);
+      resetProviderCircuit(decoded);
+      const cooldownReset = resetProviderCooldown(decoded);
+      return res.json({ ok: true, reset_provider: decoded, reset_cooldowns: cooldownReset.reset });
     }
     if (target) {
-      resetCircuit(decodeURIComponent(target));
-      return res.json({ ok: true, reset: target });
+      const decoded = decodeURIComponent(target);
+      resetCircuit(decoded);
+      return res.json({ ok: true, reset: decoded, reset_cooldowns: [] });
     }
-    return res.status(400).json({ error: 'target or provider query param required for reset' });
+    const resetLocal = resetAllCircuits();
+    const resetProviders = resetAllProviderCircuits();
+    const cooldownReset = resetProviderCooldown();
+    return res.json({
+      ok: true,
+      reset: 'all',
+      reset_local_circuits: resetLocal,
+      reset_provider_circuits: resetProviders,
+      reset_cooldowns: cooldownReset.reset,
+    });
   }
 
   const statuses = getAllCircuitStatuses();
   const providerStats = getProviderStats();
+  const providerCooldowns = getProviderCooldownSnapshot();
   const hasOpen = Object.values(statuses).some((s) => s.state === 'OPEN' || s.state === 'HALF_OPEN')
-    || Object.values(providerStats).some((s) => s.state === 'OPEN');
-  return res.json({ ok: true, local_llm_circuits: statuses, provider_circuits: providerStats, any_open: hasOpen });
+    || Object.values(providerStats).some((s) => s.state === 'OPEN')
+    || Object.values(providerCooldowns).some((s) => s.cooling_down);
+  return res.json({
+    ok: true,
+    local_llm_circuits: statuses,
+    provider_circuits: providerStats,
+    provider_cooldowns: providerCooldowns,
+    any_open: hasOpen,
+  });
 }
 
 function directProviderRoutesEnabled() {

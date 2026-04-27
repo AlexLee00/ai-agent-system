@@ -102,3 +102,10 @@ export function resetCircuit(baseUrl: string): void {
   circuits.delete(key);
   console.log(`[local-circuit] ${key}: 수동 리셋`);
 }
+
+export function resetAllCircuits(): string[] {
+  const reset = Array.from(circuits.keys());
+  circuits.clear();
+  console.log(`[local-circuit] all circuits reset (${reset.length})`);
+  return reset;
+}

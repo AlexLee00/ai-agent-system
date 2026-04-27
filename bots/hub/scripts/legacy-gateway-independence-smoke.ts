@@ -8,6 +8,9 @@ const RETIRED_GATEWAY_ID = 'open' + 'claw';
 const RETIRED_GATEWAY_WORD = 'Open' + 'Claw';
 const RETIRED_GATEWAY_LABEL = ['ai', RETIRED_GATEWAY_ID, 'gateway'].join('.');
 const RETIRED_MODEL_SYNC_LABEL = ['ai', RETIRED_GATEWAY_ID, 'model-sync'].join('.');
+const RETIRED_GATEWAY_PORT = '18789';
+const RETIRED_GATEWAY_BIN_ENV = 'OPEN' + 'CLAW_BIN';
+const RETIRED_GATEWAY_PROCESS = `${RETIRED_GATEWAY_ID}-gateway`;
 const HUB_RESOURCE_API_LABEL = 'ai.hub.resource-api';
 const REPO_ROOT = path.resolve(__dirname, '..', '..', '..');
 const HUB_NATIVE_RUNTIME_SURFACES = [
@@ -98,7 +101,10 @@ function main() {
   assert(!secretsRoute.includes('d.gateway_token'), `Hub secrets route must not expose retired ${RETIRED_GATEWAY_WORD} gateway token`);
   for (const relPath of HUB_NATIVE_RUNTIME_SURFACES) {
     const content = readRepoFile(relPath);
-    const retiredGatewayRuntimePattern = new RegExp(`\\.${RETIRED_GATEWAY_LABEL}|${'OPEN' + 'CLAW_'}|${RETIRED_GATEWAY_LABEL}`, 'i');
+    const retiredGatewayRuntimePattern = new RegExp(
+      `\\.${RETIRED_GATEWAY_LABEL}|${'OPEN' + 'CLAW_'}|${RETIRED_GATEWAY_LABEL}|${RETIRED_GATEWAY_PORT}|${RETIRED_GATEWAY_PROCESS}|${RETIRED_GATEWAY_BIN_ENV}|execFile\\([^\\n]*${RETIRED_GATEWAY_ID}|spawn\\([^\\n]*${RETIRED_GATEWAY_ID}`,
+      'i',
+    );
     assert(!retiredGatewayRuntimePattern.test(content), `${relPath} must not depend on retired gateway runtime names`);
     assert(!new RegExp('오픈' + '클로').test(content), `${relPath} must not expose ${RETIRED_GATEWAY_WORD} Korean command aliases`);
   }

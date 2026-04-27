@@ -18,6 +18,7 @@ const { execFileSync, execSync, spawn } = require('child_process');
 
 const env = require('../../../packages/core/lib/env');
 const { postAlarm } = require('../../../packages/core/lib/hub-alarm-client');
+const { mergeTrustedEnvWithUntrustedPatch } = require('../../../packages/core/lib/runtime-env-policy');
 const teamBus = require('./team-bus');
 const runtimePaths = require('./runtime-paths.js');
 
@@ -373,6 +374,20 @@ function resolveAutoDevRuntimeConfig(options = {}, envVars = process.env) {
 
 function getRuntimeConfig(options = {}) {
   return options.runtimeConfig || resolveAutoDevRuntimeConfig(options);
+}
+
+function buildAutoDevChildEnv(options = {}, extraEnv = {}) {
+  const untrustedPatch = options.envPatch || options.workspaceEnv || options.env || {};
+  const merged = mergeTrustedEnvWithUntrustedPatch(process.env, untrustedPatch, {
+    source: 'claude-auto-dev',
+  });
+  if (merged.blocked.length > 0) {
+    console.warn(`[auto-dev] untrusted env patch blocked: ${merged.blocked.map(item => item.key).join(', ')}`);
+  }
+  return {
+    ...merged.env,
+    ...extraEnv,
+  };
 }
 
 function toList(value) {
@@ -1218,6 +1233,7 @@ async function runClaudeImplementation(job, mode, options = {}, failureContext =
       toolPolicy.serialized,
     ], {
       cwd,
+      env: buildAutoDevChildEnv(options),
       encoding: 'utf8',
       timeout,
       stdio: ['ignore', 'pipe', 'pipe'],
@@ -1321,6 +1337,7 @@ function runCommand(command, timeout = 600000, cwd = ROOT) {
   try {
     const output = execSync(command, {
       cwd,
+      env: buildAutoDevChildEnv(),
       encoding: 'utf8',
       timeout,
       stdio: ['ignore', 'pipe', 'pipe'],
@@ -2634,4 +2651,5 @@ module.exports = {
   runAutoDevPipeline,
   getAutoDevStatusSnapshot,
   loadState,
+  _testOnly_buildAutoDevChildEnv: buildAutoDevChildEnv,
 };

@@ -44,8 +44,12 @@ const RETIRED_GATEWAY_MARKERS = [
   'retiredGatewaySecrets',
   "open${'claw'}",
   'openclaw',
+  'openclaw-gateway',
+  'OPENCLAW_BIN',
   '18789',
 ];
+
+const RETIRED_GATEWAY_SOURCE_PATTERN = 'openclaw|legacy_gateway|18789|openclaw-gateway|OPENCLAW_BIN|execFile\\([^\\n]*openclaw|spawn\\([^\\n]*openclaw';
 
 const RUNTIME_SOURCE_SCOPES = [
   'packages/core/lib',
@@ -142,7 +146,7 @@ function validateRuntimeProfiles(): { profiles: number; teams: number } {
       profileCount += 1;
       const label = `${team}.${purpose}`;
       const serialized = JSON.stringify(profile);
-      if (/openclaw|legacy_gateway|18789/i.test(serialized)) {
+      if (new RegExp(RETIRED_GATEWAY_SOURCE_PATTERN, 'i').test(serialized)) {
         findings.push({ label, code: 'retired_gateway_marker' });
       }
 
@@ -177,7 +181,7 @@ function validateRuntimeSourceScan(): { scannedScopes: number } {
   const result = spawnSync('rg', [
     '-n',
     '-S',
-    'openclaw|legacy_gateway|18789',
+    RETIRED_GATEWAY_SOURCE_PATTERN,
     ...scopes,
     '--glob',
     '!**/*.log',

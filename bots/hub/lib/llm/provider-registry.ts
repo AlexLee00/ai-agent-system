@@ -90,6 +90,13 @@ function resetProviderCircuit(provider) {
   stats.delete(provider);
 }
 
+function resetAllProviderCircuits() {
+  const reset = Array.from(stats.keys());
+  for (const provider of reset) resetCircuit(provider);
+  stats.clear();
+  return reset;
+}
+
 async function _logEvent(provider, eventType, reason, latencyMs) {
   try {
     await pgPool.run(
@@ -102,4 +109,4 @@ async function _logEvent(provider, eventType, reason, latencyMs) {
   }
 }
 
-module.exports = { canCall, recordSuccess, recordFailure, getProviderStats, resetProviderCircuit };
+module.exports = { canCall, recordSuccess, recordFailure, getProviderStats, resetProviderCircuit, resetAllProviderCircuits };

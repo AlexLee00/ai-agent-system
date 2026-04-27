@@ -97,7 +97,7 @@ if [ "$VERIFY" = "--verify" ]; then
   check "investment 스키마"   "psql jay -c 'SELECT 1 FROM investment.trades LIMIT 1' -q"
   check "secrets.json 존재"   "[ -f bots/reservation/secrets.json ]"
   check "secrets.json 권한"   "[ \"\$(stat -f '%A' bots/reservation/secrets.json 2>/dev/null || stat -c '%a' bots/reservation/secrets.json)\" = '600' ]"
-  check "Hub health"          "curl -s http://127.0.0.1:18789/hub/health &>/dev/null || nc -z 127.0.0.1 18789"
+  check "Hub health"          "curl -fsS http://127.0.0.1:${HUB_PORT:-7788}/hub/health >/dev/null"
   check "npm install 완료"    "[ -d node_modules ]"
   check "ska venv 존재"       "[ -d bots/ska/venv ]"
 

@@ -1,6 +1,7 @@
 'use strict';
 
 const { getProviderRecord } = require('../oauth/token-store');
+const { parseSseJsonEvents, summarizeSseGuard } = require('../../../../packages/core/lib/sse-event-guard');
 
 function parseExpiryMs(value) {
   if (value == null || value === '') return NaN;
@@ -156,41 +157,15 @@ function buildOpenAiCodexBody({ model, systemPrompt, prompt, temperature }) {
 }
 
 async function readSseEvents(response) {
-  if (!response.body) return [];
-  const reader = response.body.getReader();
-  const decoder = new TextDecoder();
-  let buffer = '';
-  const events = [];
-  try {
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      buffer += decoder.decode(value, { stream: true });
-      let idx = buffer.indexOf('\n\n');
-      while (idx !== -1) {
-        const chunk = buffer.slice(0, idx);
-        buffer = buffer.slice(idx + 2);
-        const data = chunk
-          .split('\n')
-          .filter((line) => line.startsWith('data:'))
-          .map((line) => line.slice(5).trim())
-          .join('\n')
-          .trim();
-        if (data && data !== '[DONE]') {
-          try {
-            events.push(JSON.parse(data));
-          } catch {
-            // Keep consuming the stream if one event fragment is malformed.
-          }
-        }
-        idx = buffer.indexOf('\n\n');
-      }
-    }
-  } finally {
-    try { await reader.cancel(); } catch {}
-    try { reader.releaseLock(); } catch {}
+  const parsed = await parseSseJsonEvents(response, { source: 'hub-oauth-direct-openai-codex' });
+  if (
+    parsed.summary.malformed_fragments > 0
+    || parsed.summary.oversized_fragments > 0
+    || parsed.summary.untrusted_events.length > 0
+  ) {
+    console.warn(`[hub/oauth-direct] guarded SSE fragments: ${summarizeSseGuard(parsed.summary)}`);
   }
-  return events;
+  return parsed.events;
 }
 
 function extractResponseText(response) {

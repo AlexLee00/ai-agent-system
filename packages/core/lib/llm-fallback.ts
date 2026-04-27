@@ -40,6 +40,7 @@ const billingGuard = require('./billing-guard');
 const { trackTokens } = require('./token-tracker');
 const { fetchHubSecrets } = require('./hub-client');
 const { selectRuntime } = require('./runtime-selector');
+const { parseSseJsonEvents, summarizeSseGuard } = require('./sse-event-guard');
 const env = require('./env');
 const fs = require('fs');
 const path = require('path');
@@ -199,9 +200,13 @@ function _isProviderCoolingDown(provider: string): boolean {
 function _recordProviderFailure(provider: string): void {
   const key = String(provider || '').trim();
   if (!key) return;
+  const now = Date.now();
   const entry = _providerFailures.get(key) || { count: 0, lastFailAt: 0 };
+  if (entry.lastFailAt && now - Number(entry.lastFailAt || 0) > FAILURE_COOLDOWN_MS) {
+    entry.count = 0;
+  }
   entry.count += 1;
-  entry.lastFailAt = Date.now();
+  entry.lastFailAt = now;
   _providerFailures.set(key, entry);
 }
 
@@ -209,6 +214,63 @@ function _recordProviderSuccess(provider: string): void {
   const key = String(provider || '').trim();
   if (!key) return;
   _providerFailures.delete(key);
+}
+
+export function pruneProviderCooldowns(now = Date.now()): { pruned: string[] } {
+  const pruned: string[] = [];
+  for (const [provider, entry] of _providerFailures.entries()) {
+    const lastFailAt = Number(entry.lastFailAt || 0);
+    if (!lastFailAt || now - lastFailAt > FAILURE_COOLDOWN_MS) {
+      _providerFailures.delete(provider);
+      pruned.push(provider);
+    }
+  }
+  return { pruned };
+}
+
+export function getProviderCooldownSnapshot(): Record<string, {
+  count: number;
+  cooling_down: boolean;
+  last_fail_at: number;
+  remaining_ms: number;
+}> {
+  pruneProviderCooldowns();
+  const now = Date.now();
+  const snapshot: Record<string, { count: number; cooling_down: boolean; last_fail_at: number; remaining_ms: number }> = {};
+  for (const [provider, entry] of _providerFailures.entries()) {
+    const remainingMs = Math.max(0, FAILURE_COOLDOWN_MS - (now - Number(entry.lastFailAt || 0)));
+    snapshot[provider] = {
+      count: Number(entry.count || 0),
+      cooling_down: Number(entry.count || 0) >= MAX_CONSECUTIVE_FAILURES && remainingMs > 0,
+      last_fail_at: Number(entry.lastFailAt || 0),
+      remaining_ms: remainingMs,
+    };
+  }
+  return snapshot;
+}
+
+export function resetProviderCooldown(provider?: string | null): { reset: string[] } {
+  pruneProviderCooldowns();
+  if (provider) {
+    const key = String(provider || '').trim();
+    const existed = _providerFailures.delete(key);
+    return { reset: existed ? [key] : [] };
+  }
+  const reset = Array.from(_providerFailures.keys());
+  _providerFailures.clear();
+  return { reset };
+}
+
+export function _testOnlySetProviderCooldown(provider: string, count = MAX_CONSECUTIVE_FAILURES): void {
+  const key = String(provider || '').trim();
+  if (!key) return;
+  _providerFailures.set(key, { count, lastFailAt: Date.now() });
+}
+
+export function _testOnlySetProviderCooldownAt(provider: string, count = MAX_CONSECUTIVE_FAILURES, lastFailAt = Date.now()): void {
+  const key = String(provider || '').trim();
+  if (!key) return;
+  _providerFailures.set(key, { count, lastFailAt });
 }
 
 // ── 응답 텍스트 정규화 ────────────────────────────────────────────────
@@ -579,41 +641,15 @@ function _buildOpenAICodexRequestBody({
 }
 
 async function _readSseEvents(res: Response): Promise<any[]> {
-  if (!res.body) return [];
-  const reader = res.body.getReader();
-  const decoder = new TextDecoder();
-  let buffer = '';
-  const events: any[] = [];
-  try {
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      buffer += decoder.decode(value, { stream: true });
-      let idx = buffer.indexOf('\n\n');
-      while (idx !== -1) {
-        const chunk = buffer.slice(0, idx);
-        buffer = buffer.slice(idx + 2);
-        const data = chunk
-          .split('\n')
-          .filter((line) => line.startsWith('data:'))
-          .map((line) => line.slice(5).trim())
-          .join('\n')
-          .trim();
-        if (data && data !== '[DONE]') {
-          try {
-            events.push(JSON.parse(data));
-          } catch {
-            // Ignore malformed SSE fragments and keep consuming the stream.
-          }
-        }
-        idx = buffer.indexOf('\n\n');
-      }
-    }
-  } finally {
-    try { await reader.cancel(); } catch {}
-    try { reader.releaseLock(); } catch {}
+  const parsed = await parseSseJsonEvents(res, { source: 'core-llm-fallback-openai-codex' });
+  if (
+    parsed.summary.malformed_fragments > 0
+    || parsed.summary.oversized_fragments > 0
+    || parsed.summary.untrusted_events.length > 0
+  ) {
+    console.warn(`[llm-fallback] guarded SSE fragments: ${summarizeSseGuard(parsed.summary)}`);
   }
-  return events;
+  return parsed.events;
 }
 
 function _extractOpenAICodexStreamResult(events: any[]): { text: string; response: any | null } {
