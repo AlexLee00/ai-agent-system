@@ -2319,4 +2319,30 @@ async function retryLectureOnly(options = {}) {
   return lectureResult;
 }
 
-module.exports = { run, retryLectureOnly };
+async function retryGeneralOnly(options = {}) {
+  console.log('\n📝 [블로] 일반 포스팅 재발행 시작\n');
+  if (options.dryRun) {
+    console.log('[블로][dry-run] 일반 포스팅 재발행 검증 실행');
+  }
+
+  const traceCtx = startTrace({ bot: 'blog-blo', action: 'general_retry' });
+  console.log(`[블로] trace_id: ${traceCtx.trace_id}`);
+
+  const daily = await _prepareDailyRun(traceCtx, { ...options, generalOnly: true });
+  if (daily.inactive) {
+    console.log('[블로] 일시 정지 상태. 종료.');
+    return { type: 'general', skipped: true, reason: 'inactive' };
+  }
+  if (!daily.generalCtx) {
+    console.log('[블로] 재발행할 일반 스케줄이 없습니다.');
+    return { type: 'general', skipped: true, reason: 'general_not_scheduled' };
+  }
+
+  const generalResult = await _runGeneralStage(daily, traceCtx, options);
+  await _runPostPublishChecks(options);
+
+  console.log('\n📝 [블로] 일반 포스팅 재발행 완료\n');
+  return generalResult;
+}
+
+module.exports = { run, retryLectureOnly, retryGeneralOnly };
