@@ -5,6 +5,7 @@ import assert from 'node:assert/strict';
 import {
   buildLunaL5PhaseActivationPlan,
   patchLifecyclePhases,
+  runPhaseSmokeCommands,
 } from './luna-l5-phase-activation-operator.ts';
 
 const baseConfig = {
@@ -31,4 +32,8 @@ assert.equal(baseConfig.position_lifecycle.signal_refresh.enabled, false);
 const allPlan = buildLunaL5PhaseActivationPlan({ config: patched, requestedPhase: 'all' });
 assert.equal(allPlan.steps.length, 5);
 
-console.log(JSON.stringify({ ok: true, next: nextPlan.steps[0].phase, all: allPlan.steps.length }, null, 2));
+const smoke = runPhaseSmokeCommands(['node -e "process.exit(0)"']);
+assert.equal(smoke.length, 1);
+assert.equal(smoke[0].ok, true);
+
+console.log(JSON.stringify({ ok: true, next: nextPlan.steps[0].phase, all: allPlan.steps.length, smoke: smoke[0].ok }, null, 2));

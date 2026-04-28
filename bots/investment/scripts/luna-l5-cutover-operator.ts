@@ -8,6 +8,7 @@ import yaml from 'js-yaml';
 import * as db from '../shared/db.ts';
 import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
 import { normalizeLifecycleMode } from '../shared/luna-l5-operational-gate.ts';
+import { appendLunaL5TransitionHistory } from '../shared/luna-l5-transition-history.ts';
 import { buildLunaL5FinalGateReport } from './luna-l5-final-gate.ts';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -56,7 +57,7 @@ export async function runLunaL5CutoverOperator(args = {}) {
   });
 
   if (!args.apply) {
-    return {
+    const result = {
       ok: finalGate.ok,
       status: finalGate.ok ? 'luna_l5_cutover_preview_clear' : 'luna_l5_cutover_preview_blocked',
       applied: false,
@@ -66,10 +67,19 @@ export async function runLunaL5CutoverOperator(args = {}) {
         ? `npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run -s runtime:luna-l5-cutover -- --target=${targetMode} --apply --confirm=luna-l5-cutover --json`
         : null,
     };
+    appendLunaL5TransitionHistory({
+      eventType: 'luna_l5_cutover_preview',
+      status: result.status,
+      ok: result.ok,
+      targetMode,
+      blockers: finalGate.blockers || [],
+      warnings: finalGate.warnings || [],
+    });
+    return result;
   }
 
   if (args.confirm !== 'luna-l5-cutover') {
-    return {
+    const result = {
       ok: false,
       status: 'luna_l5_cutover_confirmation_required',
       applied: false,
@@ -77,9 +87,17 @@ export async function runLunaL5CutoverOperator(args = {}) {
       finalGate,
       reason: 'use --confirm=luna-l5-cutover',
     };
+    appendLunaL5TransitionHistory({
+      eventType: 'luna_l5_cutover_apply',
+      status: result.status,
+      ok: false,
+      targetMode,
+      reason: result.reason,
+    });
+    return result;
   }
   if (finalGate.ok !== true) {
-    return {
+    const result = {
       ok: false,
       status: 'luna_l5_cutover_blocked',
       applied: false,
@@ -87,12 +105,22 @@ export async function runLunaL5CutoverOperator(args = {}) {
       finalGate,
       reason: finalGate.blockers.join(', ') || 'final gate blocked',
     };
+    appendLunaL5TransitionHistory({
+      eventType: 'luna_l5_cutover_apply',
+      status: result.status,
+      ok: false,
+      targetMode,
+      blockers: finalGate.blockers || [],
+      warnings: finalGate.warnings || [],
+      reason: result.reason,
+    });
+    return result;
   }
 
   const current = loadConfigForPatch();
   const patched = patchPositionLifecycleMode(current, targetMode);
   writeFileSync(CONFIG_PATH, yaml.dump(patched, { lineWidth: 120, noRefs: true }), 'utf8');
-  return {
+  const result = {
     ok: true,
     status: 'luna_l5_cutover_applied',
     applied: true,
@@ -100,6 +128,15 @@ export async function runLunaL5CutoverOperator(args = {}) {
     configPath: CONFIG_PATH,
     finalGate,
   };
+  appendLunaL5TransitionHistory({
+    eventType: 'luna_l5_cutover_apply',
+    status: result.status,
+    ok: true,
+    targetMode,
+    blockers: [],
+    warnings: finalGate.warnings || [],
+  });
+  return result;
 }
 
 function renderText(result = {}) {

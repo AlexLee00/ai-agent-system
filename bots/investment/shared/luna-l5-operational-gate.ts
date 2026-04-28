@@ -80,6 +80,7 @@ export function buildPositionSyncFinalGate({
   syncSummary = null,
   requiredMarkets = LUNA_L5_MARKETS,
   requireAllMarkets = true,
+  checkedAt = null,
 } = {}) {
   const markets = normalizeMarketList(requiredMarkets);
   const checked = new Set((syncSummary?.checkedMarkets || []).map((item) => String(item)));
@@ -108,6 +109,7 @@ export function buildPositionSyncFinalGate({
   return {
     ok: blockers.length === 0,
     status: blockers.length === 0 ? 'position_sync_final_gate_clear' : 'position_sync_final_gate_blocked',
+    checkedAt: checkedAt || syncSummary?.checkedAt || null,
     requiredMarkets: markets,
     checkedMarkets: syncSummary?.checkedMarkets || [],
     blockers: uniq(blockers),
@@ -116,6 +118,13 @@ export function buildPositionSyncFinalGate({
     failedMarkets: syncSummary?.failedMarkets || [],
     skipped: Number(syncSummary?.skipped || 0),
   };
+}
+
+function ageMinutes(iso = null, nowMs = Date.now()) {
+  if (!iso) return null;
+  const ts = new Date(iso).getTime();
+  if (!Number.isFinite(ts)) return null;
+  return Math.max(0, Math.round((nowMs - ts) / 60000));
 }
 
 export function buildRunnerContractSummary({ candidates = [] } = {}) {
@@ -265,6 +274,7 @@ export function buildLifecycleCutoverGate({
   executePreflight = null,
   configDoctor = null,
   supervisedWarmupGate = null,
+  autonomousOperationalGate = null,
 } = {}) {
   const target = normalizeLifecycleMode(targetMode);
   const current = normalizeLifecycleMode(currentFlags?.mode || 'shadow');
@@ -298,6 +308,8 @@ export function buildLifecycleCutoverGate({
     if (!supervisedWarmupGate) blockers.push('supervised_warmup_gate_missing');
     else if (supervisedWarmupGate.ok !== true) blockers.push(...(supervisedWarmupGate.blockers || ['supervised_warmup_blocked']));
     if (!positionSyncGate) blockers.push('autonomous_requires_position_sync_gate');
+    if (!autonomousOperationalGate) blockers.push('autonomous_operational_gate_missing');
+    else if (autonomousOperationalGate.ok !== true) blockers.push(...(autonomousOperationalGate.blockers || ['autonomous_operational_gate_blocked']));
   }
 
   return {
@@ -314,11 +326,77 @@ export function buildLifecycleCutoverGate({
       ...(executePreflight?.warnings || []),
       ...(configDoctor?.warnings || []),
       ...(supervisedWarmupGate?.warnings || []),
+      ...(autonomousOperationalGate?.warnings || []),
     ]),
     supervisedWarmupGate,
+    autonomousOperationalGate,
     nextAction: blockers.length === 0
       ? `apply_position_lifecycle_mode:${target}`
       : 'resolve_cutover_blockers',
+  };
+}
+
+export function buildAutonomousOperationalGate({
+  targetMode = 'supervised_l4',
+  positionSyncGate = null,
+  manualReconcilePlaybook = null,
+  positionStrategyAudit = null,
+  bottleneck = null,
+  maxPositionSyncAgeMinutes = 30,
+  nowMs = Date.now(),
+} = {}) {
+  const target = normalizeLifecycleMode(targetMode);
+  if (target !== 'autonomous_l5') {
+    return {
+      ok: true,
+      status: 'autonomous_operational_gate_not_required',
+      required: false,
+      blockers: [],
+      warnings: [],
+    };
+  }
+
+  const blockers = [];
+  const warnings = [];
+  const syncAge = ageMinutes(positionSyncGate?.checkedAt, nowMs);
+  const maxSyncAge = Math.max(1, Number(maxPositionSyncAgeMinutes || 30));
+  const recentHardFailures = Number(bottleneck?.dispatch?.recentHardFailureCount ?? bottleneck?.dispatch?.hardFailureCount ?? 0);
+  const manualTasks = Number(manualReconcilePlaybook?.summary?.tasks ?? 0);
+  const dustProfiles = Number(positionStrategyAudit?.dustProfiles ?? 0);
+  const duplicateManagedProfiles = Number(positionStrategyAudit?.duplicateManagedProfileScopes ?? 0);
+  const unmatchedManagedPositions = Number(positionStrategyAudit?.unmatchedManagedPositions ?? 0);
+
+  if (!positionSyncGate) blockers.push('autonomous_position_sync_required');
+  else if (positionSyncGate.ok !== true) blockers.push(...(positionSyncGate.blockers || ['position_sync_gate_blocked']));
+  if (syncAge == null) blockers.push('autonomous_position_sync_freshness_unknown');
+  else if (syncAge > maxSyncAge) blockers.push(`autonomous_position_sync_stale:${syncAge}m>${maxSyncAge}m`);
+
+  if (!manualReconcilePlaybook) blockers.push('manual_reconcile_playbook_required');
+  else if (manualReconcilePlaybook.ok !== true || manualTasks > 0) blockers.push(`manual_reconcile_tasks:${manualTasks}`);
+
+  if (!positionStrategyAudit) blockers.push('position_strategy_audit_required');
+  else {
+    if (dustProfiles > 0) blockers.push(`dust_profiles_present:${dustProfiles}`);
+    if (duplicateManagedProfiles > 0) blockers.push(`duplicate_managed_profiles:${duplicateManagedProfiles}`);
+    if (unmatchedManagedPositions > 0) warnings.push(`unmatched_managed_positions:${unmatchedManagedPositions}`);
+  }
+
+  if (recentHardFailures > 0) blockers.push(`recent_autopilot_hard_failures:${recentHardFailures}`);
+
+  return {
+    ok: blockers.length === 0,
+    status: blockers.length === 0 ? 'autonomous_operational_gate_clear' : 'autonomous_operational_gate_blocked',
+    required: true,
+    checkedAt: new Date(nowMs).toISOString(),
+    maxPositionSyncAgeMinutes: maxSyncAge,
+    positionSyncAgeMinutes: syncAge,
+    manualReconcileTasks: manualTasks,
+    dustProfiles,
+    duplicateManagedProfileScopes: duplicateManagedProfiles,
+    unmatchedManagedPositions,
+    recentHardFailureCount: recentHardFailures,
+    blockers: uniq(blockers),
+    warnings: uniq(warnings),
   };
 }
 
@@ -329,12 +407,14 @@ export function buildLunaL5FinalGate({
   configDoctor = null,
   hephaestosRefactor = null,
   supervisedWarmupGate = null,
+  autonomousOperationalGate = null,
 } = {}) {
   const blockers = uniq([
     ...(cutoverGate?.blockers || []),
     ...(positionSyncGate?.blockers || []),
     ...(executePreflight?.blockers || []),
     ...(configDoctor?.blockers || []),
+    ...(autonomousOperationalGate?.blockers || []),
   ]);
   const warnings = uniq([
     ...(cutoverGate?.warnings || []),
@@ -342,6 +422,7 @@ export function buildLunaL5FinalGate({
     ...(executePreflight?.warnings || []),
     ...(configDoctor?.warnings || []),
     ...(hephaestosRefactor?.warnings || []),
+    ...(autonomousOperationalGate?.warnings || []),
   ]);
   return {
     ok: blockers.length === 0,
@@ -355,6 +436,7 @@ export function buildLunaL5FinalGate({
     configDoctor,
     hephaestosRefactor,
     supervisedWarmupGate,
+    autonomousOperationalGate,
     nextAction: blockers.length === 0 ? 'ready_for_supervised_or_autonomous_cutover' : 'resolve_luna_l5_final_gate_blockers',
   };
 }
@@ -382,6 +464,7 @@ export function buildLunaL5AlarmPayload(report = {}) {
       syncStatus: report.positionSyncGate?.status || null,
       preflightStatus: report.executePreflight?.status || null,
       configStatus: report.configDoctor?.status || null,
+      autonomousOperationalStatus: report.autonomousOperationalGate?.status || null,
     },
   };
 }
@@ -391,6 +474,7 @@ export default {
   buildRunnerContractSummary,
   buildExecutePreflightDrill,
   buildLifecycleCutoverGate,
+  buildAutonomousOperationalGate,
   buildSupervisedWarmupGate,
   buildLunaL5FinalGate,
   buildLunaL5AlarmPayload,

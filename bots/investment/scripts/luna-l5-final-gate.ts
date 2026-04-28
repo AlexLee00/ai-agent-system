@@ -6,6 +6,7 @@ import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
 import { publishAlert } from '../shared/alert-publisher.ts';
 import { resolvePositionLifecycleFlags } from '../shared/position-lifecycle-flags.ts';
 import {
+  buildAutonomousOperationalGate,
   buildLifecycleCutoverGate,
   buildLunaL5AlarmPayload,
   buildLunaL5FinalGate,
@@ -14,12 +15,15 @@ import {
   normalizeLifecycleMode,
   normalizeMarketList,
 } from '../shared/luna-l5-operational-gate.ts';
+import { appendLunaL5TransitionHistory } from '../shared/luna-l5-transition-history.ts';
 import { runPositionLifecycleOperationalReadiness } from './runtime-position-lifecycle-operational-readiness.ts';
 import { runPositionExecutePreflightDrill } from './runtime-position-execute-preflight-drill.ts';
 import { runPositionSyncFinalGate } from './runtime-position-sync-final-gate.ts';
 import { buildLunaL5ConfigDoctor } from './luna-l5-config-doctor.ts';
 import { buildHephaestosRefactorReport } from './hephaestos-refactor-candidate-report.ts';
 import { buildAutopilotBottleneckReport } from './runtime-position-runtime-autopilot-bottleneck-report.ts';
+import { buildLunaManualReconcilePlaybook } from './luna-manual-reconcile-playbook.ts';
+import { buildRuntimePositionStrategyAudit } from './runtime-position-strategy-audit.ts';
 
 function parseArgs(argv = []) {
   const args = {
@@ -32,6 +36,7 @@ function parseArgs(argv = []) {
     limit: 5,
     warmupHours: 24,
     warmupSamples: 3,
+    maxPositionSyncAgeMinutes: 30,
   };
   for (const raw of argv) {
     if (raw === '--json') args.json = true;
@@ -43,6 +48,7 @@ function parseArgs(argv = []) {
     else if (raw.startsWith('--limit=')) args.limit = Math.max(1, Number(raw.split('=').slice(1).join('=') || 5));
     else if (raw.startsWith('--warmup-hours=')) args.warmupHours = Math.max(1, Number(raw.split('=').slice(1).join('=') || 24));
     else if (raw.startsWith('--warmup-samples=')) args.warmupSamples = Math.max(1, Number(raw.split('=').slice(1).join('=') || 3));
+    else if (raw.startsWith('--max-position-sync-age-minutes=')) args.maxPositionSyncAgeMinutes = Math.max(1, Number(raw.split('=').slice(1).join('=') || 30));
   }
   return args;
 }
@@ -81,12 +87,38 @@ export async function buildLunaL5FinalGateReport(args = {}) {
   });
   const executePreflight = preflightReport.drill;
   const bottleneck = buildAutopilotBottleneckReport({ hours: args.warmupHours || 24 });
+  const [manualReconcilePlaybook, positionStrategyAudit] = targetMode === 'autonomous_l5'
+    ? await Promise.all([
+      buildLunaManualReconcilePlaybook({ exchange: 'binance', hours: 24, limit: 100 }).catch((error) => ({
+        ok: false,
+        status: 'manual_reconcile_playbook_failed',
+        summary: { tasks: 1 },
+        blockers: [`manual_reconcile_playbook_failed:${error?.message || String(error)}`],
+      })),
+      buildRuntimePositionStrategyAudit({ json: true }).catch((error) => ({
+        ok: false,
+        status: 'position_strategy_audit_failed',
+        dustProfiles: 1,
+        duplicateManagedProfileScopes: 0,
+        unmatchedManagedPositions: 0,
+        error: error?.message || String(error),
+      })),
+    ])
+    : [null, null];
   const supervisedWarmupGate = buildSupervisedWarmupGate({
     targetMode,
     currentFlags: flags,
     bottleneck,
     minSamples: args.warmupSamples || 3,
     minCleanSamples: args.warmupSamples || 3,
+  });
+  const autonomousOperationalGate = buildAutonomousOperationalGate({
+    targetMode,
+    positionSyncGate: syncRequired ? positionSyncGate : null,
+    manualReconcilePlaybook,
+    positionStrategyAudit,
+    bottleneck,
+    maxPositionSyncAgeMinutes: args.maxPositionSyncAgeMinutes || 30,
   });
   const cutoverGate = buildLifecycleCutoverGate({
     targetMode,
@@ -96,6 +128,7 @@ export async function buildLunaL5FinalGateReport(args = {}) {
     executePreflight,
     configDoctor,
     supervisedWarmupGate,
+    autonomousOperationalGate,
   });
   const hephaestosRefactor = await buildHephaestosRefactorReport({ maxCandidates: 8 }).catch((error) => ({
     ok: false,
@@ -110,6 +143,7 @@ export async function buildLunaL5FinalGateReport(args = {}) {
     configDoctor,
     hephaestosRefactor,
     supervisedWarmupGate,
+    autonomousOperationalGate,
   });
 }
 
@@ -123,6 +157,7 @@ export function renderLunaL5FinalGate(report = {}) {
     `sync: ${report.positionSyncGate?.status || 'not-required'}`,
     `preflight: ${report.executePreflight?.status || 'n/a'}`,
     `warmup: ${report.supervisedWarmupGate?.status || report.cutoverGate?.supervisedWarmupGate?.status || 'not-required'}`,
+    `autonomous-ops: ${report.autonomousOperationalGate?.status || 'not-required'}`,
     `config: ${report.configDoctor?.status || 'n/a'}`,
     `next: ${report.nextAction || 'unknown'}`,
   ].join('\n');
@@ -131,6 +166,15 @@ export function renderLunaL5FinalGate(report = {}) {
 async function main() {
   const args = parseArgs(process.argv.slice(2));
   const report = await buildLunaL5FinalGateReport(args);
+  appendLunaL5TransitionHistory({
+    eventType: 'luna_l5_final_gate',
+    status: report.status,
+    ok: report.ok,
+    targetMode: normalizeLifecycleMode(args.targetMode || 'supervised_l4'),
+    blockers: report.blockers || [],
+    warnings: report.warnings || [],
+    nextAction: report.nextAction,
+  });
   if (args.telegram) await publishAlert(buildLunaL5AlarmPayload(report));
   if (args.json) console.log(JSON.stringify(report, null, 2));
   else console.log(renderLunaL5FinalGate(report));

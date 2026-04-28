@@ -2,10 +2,12 @@
 // @ts-nocheck
 
 import { existsSync, readFileSync, writeFileSync } from 'fs';
+import { spawnSync } from 'child_process';
 import { dirname, join } from 'path';
 import { fileURLToPath } from 'url';
 import yaml from 'js-yaml';
 import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
+import { appendLunaL5TransitionHistory } from '../shared/luna-l5-transition-history.ts';
 import {
   LUNA_L5_PHASE_CONFIG_KEYS,
   LUNA_L5_PHASE_SEQUENCE,
@@ -74,11 +76,35 @@ export function patchLifecyclePhases(config = {}, phases = []) {
   return next;
 }
 
+export function runPhaseSmokeCommands(commands = []) {
+  return commands.map((command) => {
+    const startedAt = new Date().toISOString();
+    const result = spawnSync(command, {
+      shell: true,
+      encoding: 'utf8',
+      timeout: 120_000,
+      env: { ...process.env },
+    });
+    return {
+      command,
+      startedAt,
+      ok: result.status === 0,
+      status: result.status,
+      signal: result.signal || null,
+      stdoutTail: String(result.stdout || '').slice(-1200),
+      stderrTail: String(result.stderr || '').slice(-1200),
+      error: result.error?.message || null,
+    };
+  });
+}
+
 function parseArgs(argv = []) {
-  const args = { json: false, apply: false, confirm: null, phase: 'next' };
+  const args = { json: false, apply: false, confirm: null, phase: 'next', runSmoke: false, rollbackOnFail: false };
   for (const raw of argv) {
     if (raw === '--json') args.json = true;
     else if (raw === '--apply') args.apply = true;
+    else if (raw === '--run-smoke') args.runSmoke = true;
+    else if (raw === '--rollback-on-fail') args.rollbackOnFail = true;
     else if (raw.startsWith('--confirm=')) args.confirm = raw.split('=').slice(1).join('=') || null;
     else if (raw.startsWith('--phase=')) args.phase = raw.split('=').slice(1).join('=') || 'next';
   }
@@ -89,44 +115,99 @@ export async function runLunaL5PhaseActivationOperator(args = {}) {
   const config = loadConfig();
   const plan = buildLunaL5PhaseActivationPlan({ config, requestedPhase: args.phase || 'next' });
   if (!args.apply) {
-    return {
+    const result = {
       ok: plan.ok,
       status: plan.ok ? 'luna_l5_phase_activation_preview_ready' : 'luna_l5_phase_activation_preview_blocked',
       applied: false,
       plan,
       nextCommand: plan.ok
-        ? `npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run -s runtime:luna-l5-phase-activate -- --phase=${args.phase || 'next'} --apply --confirm=luna-l5-phase-activate --json`
+        ? `npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run -s runtime:luna-l5-phase-activate -- --phase=${args.phase || 'next'} --apply --confirm=luna-l5-phase-activate --run-smoke --json`
         : null,
     };
+    appendLunaL5TransitionHistory({
+      eventType: 'luna_l5_phase_activation_preview',
+      status: result.status,
+      ok: result.ok,
+      requestedPhase: args.phase || 'next',
+      blockers: plan.blockers || [],
+      phases: (plan.steps || []).map((step) => step.phase),
+    });
+    return result;
   }
   if (args.confirm !== 'luna-l5-phase-activate') {
-    return {
+    const result = {
       ok: false,
       status: 'luna_l5_phase_activation_confirmation_required',
       applied: false,
       plan,
       reason: 'use --confirm=luna-l5-phase-activate',
     };
+    appendLunaL5TransitionHistory({
+      eventType: 'luna_l5_phase_activation_apply',
+      status: result.status,
+      ok: false,
+      requestedPhase: args.phase || 'next',
+      reason: result.reason,
+    });
+    return result;
   }
   if (plan.ok !== true) {
-    return {
+    const result = {
       ok: false,
       status: 'luna_l5_phase_activation_blocked',
       applied: false,
       plan,
       reason: plan.blockers.join(', ') || 'phase activation blocked',
     };
+    appendLunaL5TransitionHistory({
+      eventType: 'luna_l5_phase_activation_apply',
+      status: result.status,
+      ok: false,
+      requestedPhase: args.phase || 'next',
+      blockers: plan.blockers || [],
+      reason: result.reason,
+    });
+    return result;
   }
   const patched = patchLifecyclePhases(config, plan.steps.map((step) => step.phase));
   writeFileSync(CONFIG_PATH, yaml.dump(patched, { lineWidth: 120, noRefs: true }), 'utf8');
-  return {
-    ok: true,
-    status: 'luna_l5_phase_activation_applied',
+  const smokeResults = args.runSmoke ? runPhaseSmokeCommands(plan.nextSmokeCommands || []) : [];
+  const smokeOk = smokeResults.every((item) => item.ok === true);
+  let rollbackApplied = false;
+  if (args.runSmoke && smokeOk !== true && args.rollbackOnFail === true) {
+    writeFileSync(CONFIG_PATH, yaml.dump(config, { lineWidth: 120, noRefs: true }), 'utf8');
+    rollbackApplied = true;
+  }
+  const result = {
+    ok: args.runSmoke ? smokeOk : true,
+    status: args.runSmoke && smokeOk !== true
+      ? 'luna_l5_phase_activation_applied_smoke_failed'
+      : 'luna_l5_phase_activation_applied',
     applied: true,
+    smokeOk: args.runSmoke ? smokeOk : null,
+    rollbackApplied,
     configPath: CONFIG_PATH,
     enabledPhases: plan.steps.map((step) => step.phase),
     plan,
+    smokeResults,
+    rollbackCandidate: args.runSmoke && smokeOk !== true && rollbackApplied !== true
+      ? {
+        configPath: CONFIG_PATH,
+        reason: 'phase smoke failed after config patch; either restore the previous config.yaml from git/local backup or rerun future applies with --rollback-on-fail',
+      }
+      : null,
   };
+  appendLunaL5TransitionHistory({
+    eventType: 'luna_l5_phase_activation_apply',
+    status: result.status,
+    ok: smokeOk !== false,
+    requestedPhase: args.phase || 'next',
+    phases: result.enabledPhases,
+    smokeOk: result.smokeOk,
+    rollbackApplied,
+    smokeResults: smokeResults.map((item) => ({ command: item.command, ok: item.ok, status: item.status, signal: item.signal, error: item.error })),
+  });
+  return result;
 }
 
 function renderText(result = {}) {
@@ -134,6 +215,8 @@ function renderText(result = {}) {
     '🧩 Luna L5 phase activation operator',
     `status: ${result.status || 'unknown'}`,
     `applied: ${result.applied === true}`,
+    `smoke: ${result.smokeOk == null ? 'not-run' : result.smokeOk}`,
+    `rollback: ${result.rollbackApplied === true ? 'applied' : 'not-applied'}`,
     `phases: ${(result.plan?.steps || []).map((step) => step.phase).join(',') || 'none'}`,
     `blockers: ${(result.plan?.blockers || []).join(' / ') || 'none'}`,
     result.nextCommand ? `next: ${result.nextCommand}` : null,

@@ -3,6 +3,7 @@
 
 import assert from 'node:assert/strict';
 import {
+  buildAutonomousOperationalGate,
   buildLifecycleCutoverGate,
   buildPositionSyncFinalGate,
   buildSupervisedWarmupGate,
@@ -24,8 +25,18 @@ const syncGate = buildPositionSyncFinalGate({
     mismatchCount: 0,
     skipped: 0,
     results: [],
+    checkedAt: new Date().toISOString(),
   },
+  checkedAt: new Date().toISOString(),
 });
+const autonomousOps = buildAutonomousOperationalGate({
+  targetMode: 'autonomous_l5',
+  positionSyncGate: syncGate,
+  manualReconcilePlaybook: { ok: true, summary: { tasks: 0 } },
+  positionStrategyAudit: { ok: true, dustProfiles: 0, duplicateManagedProfileScopes: 0, unmatchedManagedPositions: 0 },
+  bottleneck: { dispatch: { recentHardFailureCount: 0 } },
+});
+assert.equal(autonomousOps.ok, true);
 const warmupClear = buildSupervisedWarmupGate({
   targetMode: 'autonomous_l5',
   currentFlags: flags,
@@ -67,6 +78,7 @@ const cutover = buildLifecycleCutoverGate({
   executePreflight: { ok: true, blockers: [], warnings: [] },
   configDoctor: { ok: true, blockers: [], warnings: [] },
   supervisedWarmupGate: warmupClear,
+  autonomousOperationalGate: autonomousOps,
 });
 assert.equal(cutover.ok, true);
 
@@ -77,6 +89,7 @@ const missingSync = buildLifecycleCutoverGate({
   executePreflight: { ok: true, blockers: [], warnings: [] },
   configDoctor: { ok: true, blockers: [], warnings: [] },
   supervisedWarmupGate: warmupClear,
+  autonomousOperationalGate: autonomousOps,
 });
 assert.equal(missingSync.ok, false);
 assert.ok(missingSync.blockers.includes('autonomous_requires_position_sync_gate'));

@@ -25,6 +25,7 @@ function parseArgs(argv = []) {
 }
 
 export async function runPositionSyncFinalGate(args = {}) {
+  const checkedAt = new Date().toISOString();
   const markets = normalizeMarketList(args.markets || ['domestic', 'overseas', 'crypto']);
   const results = await Promise.all(markets.map(async (market) => (
     syncPositionsAtMarketOpen(market).catch((error) => ({
@@ -36,14 +37,17 @@ export async function runPositionSyncFinalGate(args = {}) {
     }))
   )));
   const syncSummary = summarizeLifecyclePositionSync(results);
+  syncSummary.checkedAt = checkedAt;
   const gate = buildPositionSyncFinalGate({
     syncSummary,
     requiredMarkets: markets,
     requireAllMarkets: args.requireAllMarkets !== false,
+    checkedAt,
   });
   return {
     ok: gate.ok,
     status: gate.status,
+    checkedAt,
     gate,
     syncSummary,
   };

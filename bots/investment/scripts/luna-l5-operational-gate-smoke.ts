@@ -3,6 +3,7 @@
 
 import assert from 'node:assert/strict';
 import {
+  buildAutonomousOperationalGate,
   buildExecutePreflightDrill,
   buildLifecycleCutoverGate,
   buildLunaL5AlarmPayload,
@@ -19,7 +20,9 @@ const cleanSync = buildPositionSyncFinalGate({
     mismatchCount: 0,
     skipped: 0,
     results: [],
+    checkedAt: new Date().toISOString(),
   },
+  checkedAt: new Date().toISOString(),
 });
 assert.equal(cleanSync.ok, true);
 
@@ -75,6 +78,15 @@ const supervisedWarmup = buildSupervisedWarmupGate({
 });
 assert.equal(supervisedWarmup.ok, true);
 
+const autonomousOperationalGate = buildAutonomousOperationalGate({
+  targetMode: 'autonomous_l5',
+  positionSyncGate: cleanSync,
+  manualReconcilePlaybook: { ok: true, summary: { tasks: 0 } },
+  positionStrategyAudit: { ok: true, dustProfiles: 0, duplicateManagedProfileScopes: 0, unmatchedManagedPositions: 0 },
+  bottleneck: { dispatch: { recentHardFailureCount: 0 } },
+});
+assert.equal(autonomousOperationalGate.ok, true);
+
 const cutover = buildLifecycleCutoverGate({
   targetMode: 'autonomous_l5',
   currentFlags: {
@@ -90,6 +102,7 @@ const cutover = buildLifecycleCutoverGate({
   executePreflight: preflight,
   configDoctor: { ok: true, blockers: [], warnings: [] },
   supervisedWarmupGate: supervisedWarmup,
+  autonomousOperationalGate,
 });
 assert.equal(cutover.ok, true);
 
@@ -99,6 +112,7 @@ const finalGate = buildLunaL5FinalGate({
   executePreflight: preflight,
   configDoctor: { ok: true, status: 'ok', blockers: [], warnings: [] },
   supervisedWarmupGate: supervisedWarmup,
+  autonomousOperationalGate,
 });
 assert.equal(finalGate.ok, true);
 assert.equal(buildLunaL5AlarmPayload(finalGate).event_type, 'report');
