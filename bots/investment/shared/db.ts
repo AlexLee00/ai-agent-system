@@ -468,6 +468,26 @@ export async function initSchema() {
   try { await run(`CREATE UNIQUE INDEX IF NOT EXISTS idx_pcr_idempotency ON position_closeout_reviews(idempotency_key) WHERE idempotency_key IS NOT NULL`); } catch { /* 무시 */ }
   try { await run(`ALTER TABLE position_closeout_reviews ADD COLUMN IF NOT EXISTS autonomy_phase TEXT`); } catch { /* 무시 */ }
 
+  // ── candidate_universe (Phase A Discovery: 동적 universe 후보) ──
+  await run(`
+    CREATE TABLE IF NOT EXISTS candidate_universe (
+      id            BIGSERIAL     PRIMARY KEY,
+      symbol        TEXT          NOT NULL,
+      market        TEXT          NOT NULL CHECK (market IN ('domestic', 'overseas', 'crypto')),
+      source        TEXT          NOT NULL,
+      source_tier   INTEGER       NOT NULL DEFAULT 2 CHECK (source_tier IN (1, 2)),
+      score         NUMERIC(5,4)  NOT NULL DEFAULT 0.5000,
+      reason        TEXT,
+      raw_data      JSONB         DEFAULT '{}'::jsonb,
+      discovered_at TIMESTAMPTZ   NOT NULL DEFAULT NOW(),
+      expires_at    TIMESTAMPTZ   NOT NULL DEFAULT NOW() + INTERVAL '24 hours',
+      UNIQUE (symbol, market, source)
+    )
+  `);
+  try { await run(`CREATE INDEX IF NOT EXISTS idx_candidate_universe_market_score ON candidate_universe (market, score DESC) WHERE expires_at > NOW()`); } catch { /* 무시 */ }
+  try { await run(`CREATE INDEX IF NOT EXISTS idx_candidate_universe_expires ON candidate_universe (expires_at)`); } catch { /* 무시 */ }
+  try { await run(`CREATE INDEX IF NOT EXISTS idx_candidate_universe_source ON candidate_universe (source, market, discovered_at DESC)`); } catch { /* 무시 */ }
+
   // ── external_evidence_events (외부 에비던스 레저) ──
   await run(`
     CREATE TABLE IF NOT EXISTS external_evidence_events (
@@ -504,6 +524,7 @@ export async function initSchema() {
       [9, 'position_lifecycle_events'],
       [10, 'position_closeout_reviews'],
       [11, 'external_evidence_events'],
+      [12, 'candidate_universe_phase_a_discovery'],
     ]) {
       await run(
         `INSERT INTO schema_migrations (version, name) VALUES ($1, $2) ON CONFLICT DO NOTHING`,

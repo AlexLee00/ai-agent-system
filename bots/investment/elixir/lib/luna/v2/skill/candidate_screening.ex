@@ -3,6 +3,7 @@ defmodule Luna.V2.Skill.CandidateScreening do
   제약형 후보 선정 — 분석가 결과를 토대로 순위화.
 
   자유 생성형 결정 금지: 허용된 심볼 집합 안에서 점수 기반 선정.
+  LUNA_DISCOVERY_ORCHESTRATOR_ENABLED=true 시 candidate_universe DB에서 동적 조회.
   """
   use Jido.Action,
     name:        "candidate_screening",
@@ -15,12 +16,14 @@ defmodule Luna.V2.Skill.CandidateScreening do
   require Logger
 
   @max_candidates 3
+  @universe_db_limit 150
 
   @impl true
   def run(%{research: research, market: market}, _context) do
     Logger.info("[CandidateScreening] 후보 선정 — market=#{market}")
 
     universe = get_approved_universe(market)
+    Logger.info("[CandidateScreening] universe #{length(universe)}개 (market=#{market})")
 
     candidates =
       universe
@@ -33,10 +36,46 @@ defmodule Luna.V2.Skill.CandidateScreening do
     {:ok, %{candidates: candidates, market: market}}
   end
 
-  defp get_approved_universe(:crypto),   do: ~w[BTCUSDT ETHUSDT SOLUSDT BNBUSDT XRPUSDT]
-  defp get_approved_universe(:domestic), do: ~w[005930 000660 035420 035720 051910]
-  defp get_approved_universe(:overseas), do: ~w[AAPL MSFT NVDA TSLA AMZN]
-  defp get_approved_universe(_),         do: []
+  # Kill switch: LUNA_DISCOVERY_ORCHESTRATOR_ENABLED=true 시 DB 동적 조회
+  defp get_approved_universe(market) do
+    if System.get_env("LUNA_DISCOVERY_ORCHESTRATOR_ENABLED", "false") == "true" do
+      case fetch_universe_from_db(market) do
+        {:ok, symbols} when symbols != [] ->
+          Logger.info("[CandidateScreening] DB universe #{length(symbols)}개 (market=#{market})")
+          symbols
+        _ ->
+          Logger.warning("[CandidateScreening] DB universe 조회 실패 → 하드코딩 fallback (market=#{market})")
+          get_hardcoded_universe(market)
+      end
+    else
+      get_hardcoded_universe(market)
+    end
+  end
+
+  defp fetch_universe_from_db(market) do
+    market_str = Atom.to_string(market)
+    sql = """
+    SELECT symbol
+    FROM investment.candidate_universe
+    WHERE market = $1
+      AND expires_at > NOW()
+    ORDER BY score DESC
+    LIMIT $2
+    """
+    case Jay.Core.Repo.query(sql, [market_str, @universe_db_limit]) do
+      {:ok, %{rows: rows}} ->
+        symbols = Enum.map(rows, fn [sym] -> sym end)
+        {:ok, symbols}
+      {:error, err} ->
+        Logger.warning("[CandidateScreening] DB 조회 오류: #{inspect(err)}")
+        {:error, :db_error}
+    end
+  end
+
+  defp get_hardcoded_universe(:crypto),   do: ~w[BTCUSDT ETHUSDT SOLUSDT BNBUSDT XRPUSDT]
+  defp get_hardcoded_universe(:domestic), do: ~w[005930 000660 035420 035720 051910]
+  defp get_hardcoded_universe(:overseas), do: ~w[AAPL MSFT NVDA TSLA AMZN]
+  defp get_hardcoded_universe(_),         do: []
 
   defp score_symbol(symbol, research, market) do
     # 각 분석가 신호를 가중치로 집계
