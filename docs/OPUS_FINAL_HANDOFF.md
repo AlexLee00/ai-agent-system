@@ -1,4 +1,70 @@
-# 세션 인수인계 — 2026-04-28 (CODEX_LUNA_AGENT_MEMORY_AND_LLM_ROUTING_PLAN Phase D/E — 78차 세션)
+# 세션 인수인계 — 2026-04-28 (CODEX_ALARM_DISPATCH_HUB_INTELLIGENT_DESIGN Phase A-E — 79차 세션)
+
+## 완료 요약 ✅ (79차 세션) — 7-Layer Intelligent Alarm Dispatch Hub Phase A~E
+
+### 신규 구현
+
+**Phase A — LLM Classification 보강 (policy.ts + classify-alarm-llm.ts)**
+- `ALARM_TYPES`에 'critical' 4번째 유형 추가
+- `classifyAlarmTypeWithConfidence()` 신설 — 신뢰도 기반 분류 (confidence 반환)
+- `classify-alarm-llm.ts` 신설 — 신뢰도<0.7 시 LLM 보강 분류
+  - Kill Switch: `HUB_ALARM_LLM_CLASSIFIER_ENABLED=false`, 일일 100회 cap
+- `normalizeAlarmType`: 'urgent'/'emergency' → 'critical' 추가
+- `templates.ts`: critical 유형 '🔴 긴급' 지원 + ops-emergency 라우팅
+
+**Phase B — Interpretation Engine (4 유형 전담 에이전트)**
+- `alarm-interpreter-router.ts` 신설 — Hermes/Reporter/Sentinel/Argus 4 인터프리터
+  - work→Hermes(groq), report→Reporter(groq), error→Sentinel(haiku), critical→Argus(haiku)
+  - Kill Switch: `HUB_ALARM_INTERPRETER_ENABLED=false`, 일일 200회 cap, fail-open 기본
+- `alarm-enrichment.ts` 신설 — cluster 반복 횟수 + 팀 동향 enrichment
+  - Kill Switch: `HUB_ALARM_ENRICHMENT_ENABLED=false`
+- `llm-model-selector.ts`: hub.alarm.{classifier, interpreter.*} 6종 셀렉터 추가
+- `alarm.ts`: AI 요약 Telegram 발송 (해석 실패 시 원본 사용, fail-open)
+
+**Phase C — Roundtable Engine (Jay+Claude+팀장 3자 회의)**
+- `alarm-roundtable-engine.ts` 신설
+  - `agent.alarm_roundtables` 테이블 자동 생성
+  - 트리거: critical 즉시, error+fingerprint≥3, error+human_action
+  - AutoGen 패턴 4자 순차: Jay → Claude → 팀장 → Judge(합의)
+  - agreement_score < 0.6 시 'open' 상태 유지
+  - meeting 토픽 자동 발송 + DB 기록
+  - Kill Switch: `HUB_ALARM_ROUNDTABLE_ENABLED=false`, 일일 10회 cap
+- `llm-model-selector.ts`: hub.roundtable.{jay,claude_lead,team_commander,judge} 추가
+- `alarm.ts`: roundtable fire-and-forget 통합 (응답 블로킹 없음)
+
+**Phase D — Auto-Dev 문서 강화**
+- `auto-dev-incident.ts`: `buildAlarmAutoDevDocumentWithConsensus()` 신설
+  - Roundtable consensus를 CODEX 문서에 자동 통합
+
+**Phase E — Auto-Dev Watch**
+- `bots/claude/scripts/auto-dev-watch.ts` 신설
+  - docs/auto_dev/ALARM_INCIDENT_*.md 5분마다 스캔
+  - 신규 발견 → hub 알람으로 enqueue 신호 + processed/ 이동
+- `bots/claude/launchd/ai.claude.auto-dev-watch.plist` 신설
+  - StartInterval: 300, CLAUDE_AUTO_DEV_WATCH_ENABLED=false (기본 비활성)
+
+### Kill Switch 전체 현황 (모두 false = 기본 비활성)
+```
+HUB_ALARM_LLM_CLASSIFIER_ENABLED=false     ← Phase A
+HUB_ALARM_INTERPRETER_ENABLED=false        ← Phase B
+HUB_ALARM_ENRICHMENT_ENABLED=false         ← Phase B
+HUB_ALARM_ROUNDTABLE_ENABLED=false         ← Phase C
+CLAUDE_AUTO_DEV_WATCH_ENABLED=false        ← Phase E
+```
+
+### 다음 세션 필수 작업
+1. **Phase F — 84 리포트 통합 (P1)**: 5 카테고리로 통합 (hourly-status-digest 등)
+2. **Phase G — Noisy Producer 자동 학습 (P1)**: 주간 리뷰 자동화
+3. **Phase H — Roundtable Reflection (P2)**: 월별 분석
+4. **Kill Switch 순차 활성화 (Shadow Mode)**:
+   - `HUB_ALARM_ENRICHMENT_ENABLED=true` (가장 안전, DB 읽기만)
+   - `HUB_ALARM_INTERPRETER_ENABLED=true` (fail-open, 확인 후 활성화)
+   - `HUB_ALARM_LLM_CLASSIFIER_ENABLED=true` (일일 cap 있음, 모니터링 후)
+   - `HUB_ALARM_ROUNDTABLE_ENABLED=true` (일일 10회 cap, 충분한 모니터링 후)
+
+---
+
+# 이전 세션 인수인계 — 2026-04-28 (CODEX_LUNA_AGENT_MEMORY_AND_LLM_ROUTING_PLAN Phase D/E — 78차 세션)
 
 ## 완료 요약 ✅ (78차 세션) — Phase D + Phase E
 

@@ -4,6 +4,16 @@
 > 상세 내용: `reservation-dev-summary.md` / `reservation-handoff.md`
 > 최초 작성: 2026-02-27
 
+## 2026-04-28: CODEX_ALARM_DISPATCH_HUB_INTELLIGENT_DESIGN Phase A-E — 7-Layer Intelligent Alarm Hub (79차 세션)
+
+- **Phase A LLM 분류기**: policy.ts 'critical' 4번째 유형 추가, classifyAlarmTypeWithConfidence() 신설 (신뢰도<0.7 → LLM 보강), classify-alarm-llm.ts 신규 (groq→haiku 폴백, 일일 100회 cap)
+- **Phase B 해석 엔진**: alarm-interpreter-router.ts 신규 — Hermes/Reporter/Sentinel/Argus 4 인터프리터, alarm-enrichment.ts 신규 (cluster 반복 횟수 enrichment), AI 요약 Telegram 발송 (fail-open)
+- **Phase C Roundtable Engine**: alarm-roundtable-engine.ts 신규 — agent.alarm_roundtables 테이블, Jay+Claude+팀장+Judge 4자 순차 합의, meeting 토픽 자동 발송 (일일 10회 cap)
+- **Phase D Auto-Dev 문서 강화**: buildAlarmAutoDevDocumentWithConsensus() — roundtable 합의 자동 통합
+- **Phase E Auto-Dev Watch**: auto-dev-watch.ts + launchd plist — ALARM_INCIDENT 파일 5분 스캔, processed/ 이동
+- **llm-model-selector.ts**: hub.alarm.{classifier,interpreter×4} + hub.roundtable.{jay,claude_lead,team_commander,judge} 10종 셀렉터 추가
+- **Kill Switch 기본 비활성**: 모든 신규 기능 5개 env var로 독립 제어
+
 ## 2026-04-28: CODEX_LUNA_AGENT_MEMORY Phase D/E — Curriculum + Cross-Agent Bus (78차 세션)
 
 - **Phase D Curriculum Learning**: `agent-curriculum-tracker.ts` 신규 — novice/intermediate/expert 3-tier, invocation UPSERT, 레벨별 프롬프트 조정, `hub-llm-client.ts` 모든 LLM 경로에 자동 기록 통합
