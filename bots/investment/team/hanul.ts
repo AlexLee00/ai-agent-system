@@ -64,6 +64,7 @@ const KIS_ORDER_CASH_BUFFER_KRW = 10_000;
 const KIS_DOMESTIC_BUY_SLIPPAGE_BUFFER_DEFAULT = 1.01;
 const HANUL_RECONCILE_EPSILON = 1e-6;
 const HANUL_PENDING_RECONCILE_LIMIT = 40;
+const HANUL_RESIDUAL_FULL_EXIT_MAX_QTY = Math.max(1, Number(process.env.HANUL_RESIDUAL_FULL_EXIT_MAX_QTY || 2));
 
 const KIS_OVERSEAS_RULES = {
   MIN_ORDER_USD: getMarketOrderRule('kis_overseas')?.minOrderAmount ?? 200,
@@ -179,6 +180,126 @@ function inferHanulBlockCode(reason = '', market = 'domestic') {
   if (reason.includes('포지션 없음')) return 'missing_position';
   if (reason.includes('심볼 아님')) return 'invalid_symbol';
   return market === 'overseas' ? 'overseas_order_rejected' : 'domestic_order_rejected';
+}
+
+export function resolveHanulSellQuantity({
+  baseQty = 0,
+  partialExitRatio = null,
+  residualFullExitMaxQty = HANUL_RESIDUAL_FULL_EXIT_MAX_QTY,
+} = {}) {
+  const normalizedBaseQty = Math.floor(Number(baseQty || 0));
+  if (!(normalizedBaseQty >= 1)) {
+    return {
+      success: false,
+      qty: 0,
+      baseQty: normalizedBaseQty,
+      code: 'missing_position',
+      reason: '매도 가능 포지션 없음',
+    };
+  }
+
+  const normalizedPartialExitRatio = normalizePartialExitRatio(partialExitRatio);
+  if (normalizedPartialExitRatio >= 1) {
+    return {
+      success: true,
+      qty: normalizedBaseQty,
+      baseQty: normalizedBaseQty,
+      partialExitRatio: 1,
+      requestedPartialExitRatio: normalizedPartialExitRatio,
+      residualFullExit: false,
+    };
+  }
+
+  const partialQty = Math.floor(normalizedBaseQty * normalizedPartialExitRatio);
+  if (partialQty >= 1) {
+    return {
+      success: true,
+      qty: partialQty,
+      baseQty: normalizedBaseQty,
+      partialExitRatio: normalizedPartialExitRatio,
+      requestedPartialExitRatio: normalizedPartialExitRatio,
+      residualFullExit: false,
+    };
+  }
+
+  const residualThreshold = Math.max(1, Math.floor(Number(residualFullExitMaxQty || 1)));
+  if (normalizedBaseQty <= residualThreshold) {
+    return {
+      success: true,
+      qty: normalizedBaseQty,
+      baseQty: normalizedBaseQty,
+      partialExitRatio: 1,
+      requestedPartialExitRatio: normalizedPartialExitRatio,
+      residualFullExit: true,
+      reason: `잔여 ${normalizedBaseQty}주 부분청산 수량이 1주 미만이라 전량 청산으로 보정`,
+    };
+  }
+
+  return {
+    success: false,
+    qty: 0,
+    baseQty: normalizedBaseQty,
+    partialExitRatio: normalizedPartialExitRatio,
+    requestedPartialExitRatio: normalizedPartialExitRatio,
+    residualFullExit: false,
+    code: 'partial_sell_below_minimum',
+    reason: `부분청산 수량 미달 (${normalizedBaseQty}주 x ${normalizedPartialExitRatio} < 1주)`,
+  };
+}
+
+export function alignHanulSellQuantityWithBroker({
+  intendedQty = 0,
+  brokerQty = null,
+  market = 'overseas',
+  symbol = null,
+} = {}) {
+  const intended = Math.floor(Number(intendedQty || 0));
+  const observed = Number(brokerQty);
+  if (!(intended >= 1)) {
+    return {
+      success: false,
+      qty: 0,
+      code: 'invalid_sell_quantity',
+      reason: `매도 의도 수량이 유효하지 않음 (${intendedQty})`,
+    };
+  }
+  if (!(Number.isFinite(observed) && observed >= 0)) {
+    return {
+      success: false,
+      qty: 0,
+      code: 'broker_position_snapshot_unavailable',
+      reason: `${market} ${symbol || ''} 브로커 보유수량 조회 실패`.trim(),
+    };
+  }
+
+  const available = Math.floor(observed);
+  if (available < 1) {
+    return {
+      success: false,
+      qty: 0,
+      brokerQty: observed,
+      code: 'broker_position_missing',
+      reason: `${market} ${symbol || ''} 브로커 보유수량 0주 — 매도 불가`.trim(),
+    };
+  }
+
+  if (available < intended) {
+    return {
+      success: true,
+      qty: available,
+      brokerQty: observed,
+      adjusted: true,
+      code: 'broker_qty_clamped',
+      reason: `${market} ${symbol || ''} 매도 수량 보정: 의도 ${intended}주 > 브로커 ${available}주`.trim(),
+    };
+  }
+
+  return {
+    success: true,
+    qty: intended,
+    brokerQty: observed,
+    adjusted: false,
+  };
 }
 
 async function markSignalFailedDetailed(signalId, {
@@ -1450,20 +1571,25 @@ async function prepareHanulSellExecution({
     });
   }
 
-  const normalizedPartialExitRatio = normalizePartialExitRatio(partialExitRatio);
-  let qty = baseQty;
-  if (normalizedPartialExitRatio < 1) {
-    qty = Math.floor(baseQty * normalizedPartialExitRatio);
-    if (qty < 1) {
-      return failHanulSignal(signalId, {
-        reason: `부분청산 수량 미달 (${baseQty}주 x ${normalizedPartialExitRatio} < 1주)`,
-        code: 'partial_sell_below_minimum',
-        market,
-        symbol,
-        action,
-        amount,
-      });
-    }
+  const sellQuantity = resolveHanulSellQuantity({ baseQty, partialExitRatio });
+  if (!sellQuantity.success) {
+    return failHanulSignal(signalId, {
+      reason: sellQuantity.reason,
+      code: sellQuantity.code,
+      market,
+      symbol,
+      action,
+      amount,
+      meta: {
+        baseQty,
+        partialExitRatio: sellQuantity.partialExitRatio,
+        requestedPartialExitRatio: sellQuantity.requestedPartialExitRatio,
+      },
+    });
+  }
+
+  if (sellQuantity.residualFullExit) {
+    console.warn(`  ⚠️ ${symbol} 잔여 포지션 부분청산 → 전량청산 보정: ${sellQuantity.reason}`);
   }
 
   return {
@@ -1472,9 +1598,11 @@ async function prepareHanulSellExecution({
     paperPosition,
     position,
     sellPaperMode,
-    qty,
+    qty: sellQuantity.qty,
     baseQty,
-    partialExitRatio: normalizedPartialExitRatio,
+    partialExitRatio: sellQuantity.partialExitRatio,
+    requestedPartialExitRatio: sellQuantity.requestedPartialExitRatio,
+    residualFullExit: sellQuantity.residualFullExit,
     effectiveTradeMode: getPositionTradeMode(position, signalTradeMode),
   };
 }
@@ -3034,7 +3162,48 @@ export async function executeOverseasSignal(signal) {
         });
       }
 
-      const order = await kis.marketSellOverseas(symbol, Math.floor(sellState.qty), sellState.sellPaperMode);
+      const sellQtyAlignment = sellState.sellPaperMode
+        ? { success: true, qty: Math.floor(sellState.qty), adjusted: false }
+        : alignHanulSellQuantityWithBroker({
+          intendedQty: sellState.qty,
+          brokerQty: overseasSellBeforeQty,
+          market: 'overseas',
+          symbol,
+        });
+      if (!sellQtyAlignment.success) {
+        if (sellQtyAlignment.code === 'broker_position_missing' && !sellState.sellPaperMode) {
+          await db.deletePosition(symbol, {
+            exchange: 'kis_overseas',
+            paper: false,
+            tradeMode: sellState.effectiveTradeMode,
+          });
+          await closeStaleOpenJournalForSymbol(
+            symbol,
+            'overseas',
+            false,
+            'broker_position_missing_reconcile',
+            sellState.effectiveTradeMode,
+          ).catch(() => {});
+        }
+        return failHanulSignal(signalId, {
+          reason: sellQtyAlignment.reason,
+          code: sellQtyAlignment.code,
+          market: 'overseas',
+          symbol,
+          action,
+          amount: amountUsd,
+          meta: {
+            intendedQty: Math.floor(sellState.qty),
+            brokerQty: overseasSellBeforeQty,
+            dbBaseQty: sellState.baseQty,
+          },
+        });
+      }
+      if (sellQtyAlignment.adjusted) {
+        console.warn(`  ⚖️ ${symbol} 매도 수량 브로커 기준 보정: ${sellQtyAlignment.reason}`);
+      }
+
+      const order = await kis.marketSellOverseas(symbol, Math.floor(sellQtyAlignment.qty), sellState.sellPaperMode);
       const overseasSellVerification = await verifyHanulOrderFill({
         kis,
         symbol,
@@ -3144,9 +3313,9 @@ export async function executeOverseasSignal(signal) {
         partialExit: overseasIsPartialExit,
         remainingAmount: overseasIsPartialExit
           ? (
-            !sellState.sellPaperMode && Number.isFinite(Number(overseasSellVerification.observedQty))
-              ? Math.max(0, Number(overseasSellVerification.observedQty))
-              : overseasRemainingQty
+              !sellState.sellPaperMode && Number.isFinite(Number(overseasSellVerification.observedQty))
+                ? Math.max(0, Number(overseasSellVerification.observedQty))
+                : overseasRemainingQty
           )
           : 0,
         memo: overseasPartialFillPending
@@ -3161,15 +3330,23 @@ export async function executeOverseasSignal(signal) {
         const remainingAmount = !sellState.sellPaperMode && Number.isFinite(Number(overseasSellVerification.observedQty))
           ? Math.max(0, Number(overseasSellVerification.observedQty))
           : Math.max(0, sellState.baseQty - overseasSoldQty);
-        await db.upsertPosition({
-          symbol,
-          amount: remainingAmount,
-          avgPrice: Number(sellState.position?.avg_price || sellState.position?.avgPrice || 0),
-          unrealizedPnl: Number(sellState.position?.unrealized_pnl || sellState.position?.unrealizedPnl || 0),
-          exchange: 'kis_overseas',
-          paper: sellState.sellPaperMode,
-          tradeMode: sellState.effectiveTradeMode,
-        });
+        if (remainingAmount <= HANUL_RECONCILE_EPSILON) {
+          await db.deletePosition(symbol, {
+            exchange: 'kis_overseas',
+            paper: sellState.sellPaperMode,
+            tradeMode: sellState.effectiveTradeMode,
+          });
+        } else {
+          await db.upsertPosition({
+            symbol,
+            amount: remainingAmount,
+            avgPrice: Number(sellState.position?.avg_price || sellState.position?.avgPrice || 0),
+            unrealizedPnl: Number(sellState.position?.unrealized_pnl || sellState.position?.unrealizedPnl || 0),
+            exchange: 'kis_overseas',
+            paper: sellState.sellPaperMode,
+            tradeMode: sellState.effectiveTradeMode,
+          });
+        }
         await syncHanulStrategyExecutionState({
           symbol,
           exchange: 'kis_overseas',

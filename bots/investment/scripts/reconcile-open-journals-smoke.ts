@@ -6,6 +6,8 @@ import {
   buildScopeMap,
   buildWriteImpactGuard,
   entryAgeHours,
+  parseReconcileOpenJournalsArgs,
+  pickMatchingSellTradeForOpenScope,
   reconcileOpenJournals,
   scopeKey,
   summarizeReconcileResults,
@@ -33,18 +35,29 @@ assert.equal(grouped.get(scopeKey(entry))[0].trade_id, 'new');
 
 const summary = summarizeReconcileResults([
   { action: 'close_all_no_position', closedTradeIds: ['a', 'b'] },
+  { action: 'close_all_no_position_from_sell_trade', closedTradeIds: ['e'] },
   { action: 'close_stale_duplicates', staleTradeIds: ['c'] },
   { action: 'observe_latest_mismatch', openTradeIds: ['d'] },
 ]);
-assert.equal(summary.affectedTradeCount, 3);
-assert.equal(summary.noPositionScopes, 1);
+assert.equal(summary.affectedTradeCount, 4);
+assert.equal(summary.noPositionScopes, 2);
 assert.equal(summary.duplicateScopes, 1);
 assert.equal(summary.observeScopes, 1);
+
+const sellTrade = pickMatchingSellTradeForOpenScope([
+  { id: 'too-large', amount: 14 },
+  { id: 'exact', amount: 2 },
+], 2);
+assert.equal(sellTrade.id, 'exact');
 
 const impactGuard = buildWriteImpactGuard({ affectedTradeCount: 11 }, 10);
 assert.equal(impactGuard.blocked, true);
 assert.equal(impactGuard.reason, 'max_affected_trades_exceeded');
 assert.equal(buildWriteImpactGuard({ affectedTradeCount: 10 }, 10), null);
+
+const parsedOverseas = parseReconcileOpenJournalsArgs(['--market=overseas', '--symbols=POET,AAPL']);
+assert.equal(parsedOverseas.market, 'overseas');
+assert.deepEqual(parsedOverseas.symbols, ['POET', 'AAPL']);
 
 const blocked = await reconcileOpenJournals({ dryRun: false, confirmLive: false });
 assert.equal(blocked.ok, false);

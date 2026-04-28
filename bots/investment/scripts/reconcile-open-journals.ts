@@ -101,11 +101,97 @@ export function summarizeReconcileResults(results = []) {
   return {
     byAction,
     affectedTradeCount: affectedTradeIds.size,
-    noPositionScopes: byAction.close_all_no_position || 0,
+    noPositionScopes: Object.entries(byAction)
+      .filter(([action]) => action.startsWith('close_all_no_position'))
+      .reduce((sum, [, count]) => sum + Number(count || 0), 0),
     duplicateScopes: byAction.close_stale_duplicates || 0,
     observeScopes: Object.entries(byAction)
       .filter(([action]) => action.startsWith('observe_'))
       .reduce((sum, [, count]) => sum + Number(count || 0), 0),
+  };
+}
+
+function safeNumber(value, fallback = 0) {
+  const numeric = Number(value);
+  return Number.isFinite(numeric) ? numeric : fallback;
+}
+
+export function pickMatchingSellTradeForOpenScope(sellTrades = [], totalQty = 0) {
+  const expectedQty = safeNumber(totalQty, 0);
+  if (!(expectedQty > 0)) return null;
+  return (sellTrades || []).find((trade) => {
+    const amount = safeNumber(trade?.amount, 0);
+    return Math.abs(amount - expectedQty) <= tolerance(expectedQty);
+  }) || null;
+}
+
+async function findMatchingSellTradeForOpenScope(latestEntry, totalQty) {
+  const entryTimeMs = Number(latestEntry?.entry_time || 0);
+  const after = entryTimeMs > 0
+    ? new Date(entryTimeMs).toISOString()
+    : new Date(Date.now() - 30 * 24 * 3600000).toISOString();
+  const rows = await db.query(
+    `SELECT id, signal_id, symbol, side, amount, price, total_usdt, paper, exchange, trade_mode, executed_at
+      FROM trades
+      WHERE symbol = $1
+        AND lower(side) = 'sell'
+        AND exchange = $2
+        AND paper = $3
+        AND executed_at >= $4::timestamptz
+      ORDER BY CASE WHEN COALESCE(trade_mode, 'normal') = $5 THEN 0 ELSE 1 END,
+               executed_at ASC
+      LIMIT 50`,
+    [
+      latestEntry.symbol,
+      latestEntry.exchange || 'binance',
+      Boolean(latestEntry.is_paper),
+      after,
+      latestEntry.trade_mode || 'normal',
+    ],
+  ).catch(() => []);
+  return pickMatchingSellTradeForOpenScope(rows, totalQty);
+}
+
+async function closeEntriesFromSellTrade(rows, sellTrade, dryRun) {
+  const totalQty = rows.reduce((sum, row) => sum + safeNumber(row.entry_size, 0), 0);
+  const sellTotal = safeNumber(sellTrade?.total_usdt, 0);
+  const exitPrice = safeNumber(sellTrade?.price, 0);
+  const exitTime = sellTrade?.executed_at ? new Date(sellTrade.executed_at).getTime() : Date.now();
+  const closedTradeIds = [];
+
+  for (const row of rows) {
+    const entryQty = safeNumber(row.entry_size, 0);
+    const ratio = totalQty > 0 ? entryQty / totalQty : 0;
+    const exitValue = sellTotal * ratio;
+    const entryValue = safeNumber(row.entry_value, 0);
+    const pnlAmount = exitValue - entryValue;
+    const pnlPercent = entryValue > 0 ? journalDb.ratioToPercent(pnlAmount / entryValue) : null;
+    closedTradeIds.push(row.trade_id);
+    if (!dryRun) {
+      await journalDb.closeJournalEntry(row.trade_id, {
+        exitTime,
+        exitPrice,
+        exitValue,
+        exitReason: 'journal_reconciled_sell_trade',
+        pnlAmount,
+        pnlPercent,
+        pnlNet: pnlAmount,
+        execution_origin: 'cleanup',
+        quality_flag: 'trusted',
+        exclude_from_learning: false,
+        incident_link: sellTrade?.signal_id ? `journal_reconcile:sell_signal=${sellTrade.signal_id}` : 'journal_reconcile:sell_trade',
+      });
+      await journalDb.ensureAutoReview(row.trade_id).catch(() => {});
+    }
+  }
+
+  return {
+    closedTradeIds,
+    sellTradeId: sellTrade?.id || null,
+    sellSignalId: sellTrade?.signal_id || null,
+    exitPrice,
+    exitValue: sellTotal,
+    exitTime,
   };
 }
 
@@ -121,6 +207,29 @@ export function buildWriteImpactGuard(summary = {}, maxAffectedTrades = 10) {
     message: `open journal write 영향 trade 수 ${affectedTradeCount}건이 안전 한도 ${max}건을 초과했습니다. --symbols=...로 범위를 좁히거나 --max-affected-trades 값을 명시적으로 조정하세요.`,
     affectedTradeCount,
     maxAffectedTrades: max,
+  };
+}
+
+export function parseReconcileOpenJournalsArgs(args = []) {
+  const dryRun = !args.includes('--write');
+  const confirmLive = args.includes('--confirm-live');
+  const marketArg = args.find((arg) => arg.startsWith('--market='))?.split('=')[1];
+  const minAgeArg = args.find((arg) => arg.startsWith('--no-position-min-age-hours='))?.split('=')[1];
+  const maxAffectedArg = args.find((arg) => arg.startsWith('--max-affected-trades='))?.split('=')[1];
+  const symbolsArg = args.find((arg) => arg.startsWith('--symbols='))?.split('=')[1];
+  const symbols = symbolsArg
+    ? symbolsArg.split(',').map((value) => value.trim()).filter(Boolean)
+    : [];
+  const market = ['crypto', 'domestic', 'overseas'].includes(String(marketArg || '').trim())
+    ? String(marketArg).trim()
+    : 'crypto';
+  return {
+    dryRun,
+    market,
+    confirmLive,
+    symbols,
+    noPositionMinAgeHours: Number.isFinite(Number(minAgeArg)) ? Number(minAgeArg) : 6,
+    maxAffectedTrades: Number.isFinite(Number(maxAffectedArg)) ? Number(maxAffectedArg) : 10,
   };
 }
 
@@ -205,6 +314,20 @@ export async function reconcileOpenJournals({
         continue;
       }
       const closedTradeIds = rows.map((row) => row.trade_id);
+      const matchingSellTrade = await findMatchingSellTradeForOpenScope(latest, totalQty);
+      if (matchingSellTrade) {
+        const closePlan = await closeEntriesFromSellTrade(rows, matchingSellTrade, dryRun);
+        results.push({
+          scope: key,
+          symbol: latest.symbol,
+          action: 'close_all_no_position_from_sell_trade',
+          targetQty,
+          totalQty,
+          latestQty: Number(latest.entry_size || 0),
+          ...closePlan,
+        });
+        continue;
+      }
       for (const row of rows) {
         await closeEntryAtBreakeven(row, 'journal_reconciled_no_position', dryRun);
       }
@@ -267,18 +390,8 @@ export async function reconcileOpenJournals({
 }
 
 async function main() {
-  const args = process.argv.slice(2);
-  const dryRun = !args.includes('--write');
-  const confirmLive = args.includes('--confirm-live');
-  const minAgeArg = args.find((arg) => arg.startsWith('--no-position-min-age-hours='))?.split('=')[1];
-  const maxAffectedArg = args.find((arg) => arg.startsWith('--max-affected-trades='))?.split('=')[1];
-  const symbolsArg = args.find((arg) => arg.startsWith('--symbols='))?.split('=')[1];
-  const symbols = symbolsArg
-    ? symbolsArg.split(',').map((value) => value.trim()).filter(Boolean)
-    : [];
-  const noPositionMinAgeHours = Number.isFinite(Number(minAgeArg)) ? Number(minAgeArg) : 6;
-  const maxAffectedTrades = Number.isFinite(Number(maxAffectedArg)) ? Number(maxAffectedArg) : 10;
-  const result = await reconcileOpenJournals({ dryRun, market: 'crypto', noPositionMinAgeHours, symbols, confirmLive, maxAffectedTrades });
+  const options = parseReconcileOpenJournalsArgs(process.argv.slice(2));
+  const result = await reconcileOpenJournals(options);
   console.log(JSON.stringify(result, null, 2));
   if (result?.blocked) process.exitCode = 2;
 }

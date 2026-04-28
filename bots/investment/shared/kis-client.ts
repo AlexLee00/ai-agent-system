@@ -236,10 +236,16 @@ async function runKisMcpBridge(action, payload = {}) {
     }
     return parsed;
   } catch (error) {
-    const actionRejected = String(error?.code || '').trim().toLowerCase() === 'kis_mcp_action_rejected';
+    const parsedError = parseJsonFromMixedStdout(error?.stdout || '');
+    const parsedMessage = parsedError?.status === 'error'
+      ? truncateKisMessage(parsedError.message || '')
+      : '';
+    const actionRejected = String(error?.code || '').trim().toLowerCase() === 'kis_mcp_action_rejected'
+      || parsedError?.status === 'error';
+    const rawMessage = parsedMessage || error?.message || error;
     const message = actionRejected
-      ? `KIS 주문 거절 (${action}): ${error?.message || error}`
-      : `KIS MCP bridge failed (${action}): ${error?.message || error}`;
+      ? `KIS 주문 거절 (${action}): ${rawMessage}`
+      : `KIS MCP bridge failed (${action}): ${rawMessage}`;
     if (isMutatingAction) {
       const failClosed = /** @type {any} */ (new Error(message));
       failClosed.code = actionRejected ? 'kis_order_rejected' : 'kis_mcp_mutating_bridge_failed';
@@ -247,6 +253,7 @@ async function runKisMcpBridge(action, payload = {}) {
         action: normalizedAction || null,
         failClosed: !actionRejected,
         actionRejected,
+        parsedStatus: parsedError?.status || null,
         ...(error?.meta && typeof error.meta === 'object' ? error.meta : {}),
       };
       throw failClosed;
