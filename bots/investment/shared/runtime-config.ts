@@ -651,3 +651,12 @@ export function getInvestmentExecutionRuntimeConfig() {
   }
   return mergeRuntimeOverrideObjects(runtimeExecution, overlayExecution, rawExecution);
 }
+
+export function getPosttradeFeedbackConfig() {
+  try {
+    const raw = yaml.load(readFileSync(join(__dirname, '..', 'config.yaml'), 'utf8')) || {};
+    return raw?.posttrade_feedback || {};
+  } catch {
+    return {};
+  }
+}

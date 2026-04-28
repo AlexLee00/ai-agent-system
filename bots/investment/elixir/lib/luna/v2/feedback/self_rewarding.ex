@@ -23,16 +23,21 @@ defmodule Luna.V2.Feedback.SelfRewarding do
          {:ok, outcome}  <- calc_outcome(trade),
          {:ok, judgment} <- llm_judge(trade, rationale, outcome) do
 
+      category = classify(judgment[:score])
+
       store_dpo_pair(%{
         trade_id: trade_id,
         rationale: rationale,
         outcome_summary: outcome,
         score: judgment[:score],
         critique: judgment[:critique],
-        category: classify(judgment[:score])
+        category: category
       })
 
       AgenticRag.index_trade_review(trade, judgment)
+
+      # Phase A/B/C 품질 평가 요청 (TypeScript orchestrator가 처리)
+      trigger_quality_evaluation(trade_id, category)
 
       {:ok, judgment}
     end
@@ -169,6 +174,22 @@ defmodule Luna.V2.Feedback.SelfRewarding do
     ])
   rescue
     e -> Logger.error("[SelfRewarding] DPO 저장 실패: #{inspect(e)}")
+  end
+
+  # TypeScript posttrade feedback orchestrator (runtime-posttrade-feedback.ts)가
+  # mapek_knowledge 'quality_evaluation_pending' 이벤트를 polling하여 A/B/C 실행.
+  defp trigger_quality_evaluation(trade_id, dpo_category) do
+    Task.start(fn ->
+      query = """
+      INSERT INTO investment.mapek_knowledge (event_type, payload)
+      VALUES ('quality_evaluation_pending', $1)
+      """
+      payload = Jason.encode!(%{trade_id: trade_id, dpo_category: dpo_category})
+      case Jay.Core.Repo.query(query, [payload]) do
+        {:ok, _} -> :ok
+        {:error, e} -> Logger.error("[SelfRewarding] quality_pending 저장 실패: #{inspect(e)}")
+      end
+    end)
   end
 
   defp to_f(nil), do: 0.0
