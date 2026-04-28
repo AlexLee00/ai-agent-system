@@ -24,8 +24,11 @@ const BROWSER_CONNECT_TIMEOUT_MS = 5000;
 const BROWSER_PROTOCOL_TIMEOUT_MS = 180000;
 const NAVER_NAVIGATION_TIMEOUT_MS = 45000;
 const BLOG_BROWSER_RUNTIME_DIR = env.AI_AGENT_WORKSPACE || path.join(os.homedir(), '.ai-agent-system', 'workspace');
-const NAVER_MONITOR_WS_FILE = process.env.BLOG_NAVER_MONITOR_WS_FILE
-  || path.join(BLOG_BROWSER_RUNTIME_DIR, 'naver-monitor-ws.txt');
+const NAVER_MONITOR_WS_FILES = [
+  process.env.BLOG_NAVER_MONITOR_WS_FILE || '',
+  path.join(BLOG_BROWSER_RUNTIME_DIR, 'naver-monitor-ws.txt'),
+  path.join(BLOG_BROWSER_RUNTIME_DIR, 'reservation', 'naver-monitor-ws.txt'),
+].filter(Boolean);
 const DEFAULT_NAVER_PROFILE_DIR = process.env.BLOG_NAVER_PROFILE_DIR
   || path.join(BLOG_BROWSER_RUNTIME_DIR, 'naver-profile');
 const BLOG_COMMENTER_DEBUG_DIR = path.join(env.PROJECT_ROOT, 'tmp', 'blog-commenter-debug');
@@ -54,11 +57,15 @@ function expandHome(value) {
 }
 
 function readNaverMonitorWsEndpoint() {
-  try {
-    return String(fs.readFileSync(NAVER_MONITOR_WS_FILE, 'utf8') || '').trim();
-  } catch {
-    return '';
+  for (const filePath of NAVER_MONITOR_WS_FILES) {
+    try {
+      const value = String(fs.readFileSync(filePath, 'utf8') || '').trim();
+      if (value) return value;
+    } catch {
+      // try next runtime file
+    }
   }
+  return '';
 }
 
 function ensureDirSync(dirPath = '') {
