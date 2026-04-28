@@ -91,6 +91,7 @@ function buildHeuristicPlan(input) {
     metadata: {
       planner: 'heuristic',
       sourceMessage: input.message,
+      context: input.context || {},
     },
   };
 }
@@ -134,6 +135,7 @@ async function tryLlmPlan(input) {
     `Goal: ${input.goal}`,
     `Team: ${input.team}`,
     `User message: ${input.message}`,
+    `Context JSON: ${JSON.stringify(input.context || {})}`,
     `Dry-run required: ${input.dryRun !== false}`,
   ].join('\n');
 
@@ -166,6 +168,7 @@ async function tryLlmPlan(input) {
       planner: 'llm',
       provider: llmResult?.provider || 'unknown',
       model: llmResult?.model || 'unknown',
+      context: input.context || {},
     },
   };
 }
@@ -188,6 +191,7 @@ async function generateControlPlanDraft(input) {
   const goal = normalizeText(input.goal, message);
   const team = inferTeam(input.team, message);
   const dryRun = input.dryRun !== false;
+  const context = input?.context && typeof input.context === 'object' ? input.context : {};
 
   const llmEnabled = String(process.env.HUB_CONTROL_PLANNER_DISABLE_LLM || '').trim() !== '1'
     && String(process.env.HUB_CONTROL_PLANNER_FORCE_HEURISTIC || '').trim() !== '1';
@@ -198,7 +202,7 @@ async function generateControlPlanDraft(input) {
 
   if (llmEnabled) {
     try {
-      candidate = await tryLlmPlan({ goal, message, team, dryRun });
+      candidate = await tryLlmPlan({ goal, message, team, dryRun, context });
       plannerSource = 'llm';
     } catch (error) {
       plannerWarnings.push(`llm_fallback:${error?.message || error}`);
@@ -206,14 +210,14 @@ async function generateControlPlanDraft(input) {
   }
 
   if (!candidate) {
-    candidate = buildHeuristicPlan({ goal, message, team, dryRun });
+    candidate = buildHeuristicPlan({ goal, message, team, dryRun, context });
   }
 
   const parsed = parseControlPlan(candidate);
   if (!parsed.ok) {
     if (plannerSource === 'llm') {
       plannerWarnings.push('llm_plan_schema_invalid_fallback_heuristic');
-      const fallback = buildHeuristicPlan({ goal, message, team, dryRun });
+      const fallback = buildHeuristicPlan({ goal, message, team, dryRun, context });
       const fallbackParsed = parseControlPlan(fallback);
       if (!fallbackParsed.ok) {
         return { ok: false, error: fallbackParsed.error };

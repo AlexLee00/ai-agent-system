@@ -523,6 +523,7 @@ export async function controlPlanRoute(req: any, res: any) {
       goal: parsed.data.goal,
       team: parsed.data.team || req.hubRequestContext?.callerTeam || undefined,
       dryRun: parsed.data.dryRun ?? true,
+      context: parsed.data.context || {},
     });
     if (!draft.ok) {
       return res.status(400).json({ ok: false, error: draft.error });

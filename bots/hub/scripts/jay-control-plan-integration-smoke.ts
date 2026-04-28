@@ -73,8 +73,13 @@ async function main() {
       message: '루나팀 점검',
       goal: '루나팀 점검',
       team: 'luna',
+      incidentKey: 'jay-plan-smoke-incident',
     });
     assert.equal(plan?.ok, true, 'plan draft should succeed');
+    const planRequest = calls.find((call) => call.url.endsWith('/hub/control/plan'));
+    assert.equal(planRequest?.headers?.['x-trace-id'], 'jay-plan-smoke-incident', 'trace header should follow incident key');
+    assert.equal(planRequest?.headers?.['x-caller-team'], 'luna', 'caller team header should be attached');
+    assert.equal(planRequest?.body?.context?.incidentKey, 'jay-plan-smoke-incident', 'incident key should be attached to plan context');
 
     const execute = await client.executeControlPlan({
       runId: 'run_smoke_1',

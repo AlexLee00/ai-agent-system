@@ -111,11 +111,18 @@ async function requestWithRetry(input) {
 }
 
 async function createControlPlanDraft(input) {
+  const incidentKey = normalizeText(input?.incidentKey, '');
+  const traceId = normalizeText(input?.traceId, incidentKey || '');
   const request = {
     message: normalizeText(input?.message, ''),
     goal: normalizeText(input?.goal, ''),
     team: normalizeText(input?.team, 'general'),
     dryRun: input?.dryRun !== false,
+    context: {
+      ...(input?.context && typeof input.context === 'object' ? input.context : {}),
+      incidentKey: incidentKey || undefined,
+      traceId: traceId || undefined,
+    },
   };
   if (!request.message && !request.goal) {
     return { ok: false, error: 'message_or_goal_required' };
@@ -128,6 +135,11 @@ async function createControlPlanDraft(input) {
     retryDelayMs: Number(input?.retryDelayMs ?? 800),
     baseUrl: input?.baseUrl,
     token: input?.token,
+    extraHeaders: {
+      ...(traceId ? { 'x-trace-id': traceId } : {}),
+      'x-caller-team': request.team,
+      'x-agent': 'jay-orchestrator',
+    },
   });
 }
 

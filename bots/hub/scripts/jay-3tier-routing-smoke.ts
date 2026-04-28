@@ -54,6 +54,8 @@ async function main() {
     const meetingMessages = sent.filter((row) => row.team === 'meeting');
     const lunaMessages = sent.filter((row) => row.team === 'luna');
     assert.equal(meetingMessages.length, 3, 'meeting should receive frame/review/final');
+    assert.match(meetingMessages[0].message, /Jay 회의/, 'meeting card should use compact Korean card format');
+    assert.match(meetingMessages[1].message, /팀검토/, 'review phase should have readable phase label');
     assert.equal(lunaMessages.length, 1, 'team topic should receive progress detail');
     console.log('jay_3tier_routing_smoke_ok');
   } finally {

@@ -35,18 +35,37 @@ function allowMeetingPhase(phase) {
   return MEETING_PHASES.has(normalized);
 }
 
+function phaseLabel(phase) {
+  const labels = {
+    frame: '문제정의',
+    plan: '계획',
+    review: '팀검토',
+    test: '검증',
+    ship: '적용',
+    reflect: '회고',
+    final: '완료',
+  };
+  return labels[phase] || phase;
+}
+
+function compactSummary(summary, maxLength = 650) {
+  const text = normalizeText(summary, '');
+  if (text.length <= maxLength) return text;
+  return `${text.slice(0, Math.max(0, maxLength - 20)).trim()} ... (truncated)`;
+}
+
 function buildMeetingMessage(input) {
   const incidentKey = normalizeText(input?.incidentKey, 'unknown_incident');
   const phase = normalizeText(input?.phase, 'plan').toLowerCase();
   const team = normalizeText(input?.team, 'general');
   const title = normalizeText(input?.title, `${team} orchestration update`);
-  const summary = normalizeText(input?.summary, '');
+  const summary = compactSummary(input?.summary);
   const lines = [
-    `🧭 [Jay Meeting] ${phase.toUpperCase()} · ${team}`,
+    `🧭 [Jay 회의] ${phase.toUpperCase()} · ${phaseLabel(phase)} · ${team}`,
+    `제목: ${title}`,
     `incident: ${incidentKey}`,
-    `title: ${title}`,
   ];
-  if (summary) lines.push(`summary: ${summary}`);
+  if (summary) lines.push(`요약: ${summary}`);
   return lines.join('\n');
 }
 
@@ -118,6 +137,7 @@ module.exports = {
   _testOnly: {
     allowMeetingPhase,
     buildMeetingMessage,
+    compactSummary,
     MEETING_PHASES,
   },
 };

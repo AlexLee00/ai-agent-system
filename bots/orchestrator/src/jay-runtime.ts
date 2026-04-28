@@ -24,6 +24,9 @@ const {
   publishTeamProgress,
 } = require('../lib/jay-meeting-reporter');
 const {
+  observeIncidentOutcome,
+} = require('../lib/jay-observer');
+const {
   createControlPlanDraft,
   executeControlPlan,
 } = require('../lib/jay-control-plan-client');
@@ -284,6 +287,26 @@ function buildReadOnlyPlan(plan) {
   };
 }
 
+function maxObservationReplans() {
+  const parsed = Number(process.env.JAY_OBSERVE_MAX_REPLANS || 2);
+  if (!Number.isFinite(parsed)) return 2;
+  return Math.max(0, Math.floor(parsed));
+}
+
+function isRetryableObservation(observation) {
+  const warnings = Array.isArray(observation?.warnings) ? observation.warnings : [];
+  if (!warnings.length) return false;
+  const joined = warnings.join('\n').toLowerCase();
+  return [
+    'bot_command_timeout',
+    'dispatcher_timeout',
+    'commander_dispatch_failed',
+    'tool_execution_failed',
+    'control_execute_failed',
+    'plan_has_no_steps',
+  ].some((marker) => joined.includes(marker));
+}
+
 async function dispatchMutatingPlanSteps(input) {
   const incident = input?.incident || {};
   const plan = input?.plan || {};
@@ -375,6 +398,7 @@ async function processIncident(incident, flags) {
   }
 
   let skillContext = '';
+  let skillCount = 0;
   if (flags.skillExtraction) {
     const skillContextResult = await buildSkillContextForPlan({
       team: incident.team,
@@ -384,11 +408,12 @@ async function processIncident(incident, flags) {
     }).catch(() => null);
     if (skillContextResult?.ok && skillContextResult.context) {
       skillContext = skillContextResult.context;
+      skillCount = Array.isArray(skillContextResult.skills) ? skillContextResult.skills.length : 0;
       await appendIncidentEvent({
         incidentKey,
         eventType: 'jay_skill_context_attached',
         payload: {
-          skillCount: Array.isArray(skillContextResult.skills) ? skillContextResult.skills.length : 0,
+          skillCount,
         },
       }).catch(() => {});
     }
@@ -398,6 +423,16 @@ async function processIncident(incident, flags) {
     message: skillContext ? `${goal}\n\n${skillContext}` : goal,
     goal,
     team: incident.team,
+    incidentKey,
+    traceId: incidentKey,
+    context: {
+      incidentIntent: incident.intent,
+      incidentSource: incident.source,
+      incidentPriority: incident.priority,
+      skillContextAttached: Boolean(skillContext),
+      skillCount,
+      reusableSkillContext: skillContext ? skillContext.slice(0, 4000) : undefined,
+    },
     dryRun: true,
     timeoutMs: 20_000,
     retries: 1,
@@ -463,6 +498,15 @@ async function processIncident(incident, flags) {
     });
     return { ok: false, error: commanderResult?.error || 'commander_dispatch_failed' };
   }
+  if (flags.threeTierTelegram) {
+    await publishMeetingSummary({
+      incidentKey,
+      phase: 'review',
+      team: incident.team,
+      title: incident.intent,
+      summary: `commander=${commanderResult?.dispatched ? 'dispatched' : 'not_required'} count=${commanderResult?.count || 0}`,
+    }).catch(() => {});
+  }
 
   const readOnlyPlan = mutating ? buildReadOnlyPlan(plan) : plan;
   const readOnlySteps = extractPlanSteps(readOnlyPlan);
@@ -485,22 +529,112 @@ async function processIncident(incident, flags) {
     });
     return { ok: false, error: executeResponse?.error || 'control_execute_failed' };
   }
+  if (flags.threeTierTelegram) {
+    await publishMeetingSummary({
+      incidentKey,
+      phase: 'test',
+      team: incident.team,
+      title: incident.intent,
+      summary: executeResponse?.skipped
+        ? `control execute skipped (${executeResponse.reason || 'no_read_only_steps'})`
+        : 'control execute completed',
+    }).catch(() => {});
+  }
+
+  const observation = observeIncidentOutcome({
+    planSteps: extractPlanSteps(plan),
+    commanderDispatch: commanderResult?.dispatch,
+    executeResponse,
+  });
+  await appendIncidentEvent({
+    incidentKey,
+    eventType: 'jay_observe_outcome',
+    payload: observation,
+  }).catch(() => {});
+  if (observation.status !== 'completed') {
+    const retryable = isRetryableObservation(observation);
+    const maxReplans = maxObservationReplans();
+    if (retryable && Number(incident.attempts || 0) < maxReplans) {
+      await appendIncidentEvent({
+        incidentKey,
+        eventType: 'jay_replan_queued',
+        payload: {
+          attempts: Number(incident.attempts || 0),
+          maxReplans,
+          warnings: observation.warnings,
+          nextActions: observation.nextActions,
+        },
+      }).catch(() => {});
+      await updateIncidentStatus({
+        incidentKey,
+        status: 'queued',
+        runId,
+        plan,
+        lastError: observation.warnings[0] || 'jay_observe_replan_queued',
+      });
+      if (flags.threeTierTelegram) {
+        await publishMeetingSummary({
+          incidentKey,
+          phase: 'reflect',
+          team: incident.team,
+          title: incident.intent,
+          summary: `retryable observation queued for replan (${Number(incident.attempts || 0)}/${maxReplans})`,
+        }).catch(() => {});
+      }
+      return {
+        ok: true,
+        replanned: true,
+        observation,
+      };
+    }
+    await updateIncidentStatus({
+      incidentKey,
+      status: 'failed',
+      runId,
+      plan,
+      lastError: observation.warnings[0] || 'jay_observe_needs_follow_up',
+    });
+    return {
+      ok: false,
+      error: observation.warnings[0] || 'jay_observe_needs_follow_up',
+      observation,
+    };
+  }
+  if (flags.threeTierTelegram) {
+    await publishMeetingSummary({
+      incidentKey,
+      phase: 'ship',
+      team: incident.team,
+      title: incident.intent,
+      summary: observation.summary,
+    }).catch(() => {});
+  }
 
   if (flags.skillExtraction) {
     await saveSkillMemory({
       incidentKey,
       team: incident.team,
       strategyKey: `${incident.team}:${incident.intent}`,
-      summary: `goal=${goal} / steps=${extractPlanSteps(plan).length} / execute=ok`,
+      summary: `goal=${goal} / ${observation.summary}`,
       evidence: {
         runId,
         planStepCount: extractPlanSteps(plan).length,
+        observation: observation.evidence,
       },
       outcomeStatus: 'completed',
       confidence: 0.65,
     }).catch((error) => {
       console.warn(`[jay-runtime] skill save warning: ${error?.message || error}`);
     });
+    if (flags.threeTierTelegram) {
+      await publishMeetingSummary({
+        incidentKey,
+        phase: 'reflect',
+        team: incident.team,
+        title: incident.intent,
+        summary: `skill memory updated (${incident.team}:${incident.intent})`,
+      }).catch(() => {});
+    }
   }
 
   await updateIncidentStatus({
