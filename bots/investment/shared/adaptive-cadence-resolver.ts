@@ -8,6 +8,7 @@
  *
  * 출력: { cadenceMs, reason, triggerType }
  */
+import { resolvePositionLifecycleFlags } from './position-lifecycle-flags.ts';
 
 export type CadenceEventType =
   | 'volatility_burst'
@@ -38,16 +39,15 @@ export interface AdaptiveCadenceResult {
 }
 
 function getAdaptiveCadenceEnabled(): boolean {
-  const v = process.env.LUNA_POSITION_ADAPTIVE_CADENCE_ENABLED;
-  if (v === undefined || v === null) return false;
-  return String(v).toLowerCase() === 'true' || v === '1';
+  return resolvePositionLifecycleFlags().phaseA.enabled === true;
 }
 
 function getCadenceDefaults() {
+  const flags = resolvePositionLifecycleFlags();
   return {
-    defaultMs:  Number(process.env.LUNA_POSITION_CADENCE_DEFAULT_MS  ?? 300_000), // 5분
-    eventMs:    Number(process.env.LUNA_POSITION_CADENCE_EVENT_MS    ?? 60_000),  // 1분
-    burstMs:    Number(process.env.LUNA_POSITION_CADENCE_BURST_MS    ?? 30_000),  // 30초
+    defaultMs:  Number(flags.phaseA.defaultCadenceMs ?? 300_000), // 5분
+    eventMs:    Number(flags.phaseA.eventCadenceMs ?? 60_000),  // 1분
+    burstMs:    Number(flags.phaseA.burstCadenceMs ?? 30_000),  // 30초
   };
 }
 

@@ -416,6 +416,7 @@ export async function initSchema() {
       symbol              TEXT NOT NULL,
       trade_mode          TEXT DEFAULT 'normal',
       phase               TEXT NOT NULL,
+      stage_id            TEXT,
       owner_agent         TEXT,
       event_type          TEXT NOT NULL,
       input_snapshot      JSONB DEFAULT '{}'::jsonb,
@@ -426,8 +427,23 @@ export async function initSchema() {
       created_at          TIMESTAMPTZ DEFAULT now()
     )
   `);
+  try { await run(`ALTER TABLE position_lifecycle_events ADD COLUMN IF NOT EXISTS stage_id TEXT`); } catch { /* 무시 */ }
+  try {
+    await run(`
+      ALTER TABLE position_lifecycle_events
+      ADD CONSTRAINT chk_ple_stage_id
+      CHECK (
+        stage_id IS NULL
+        OR stage_id IN (
+          'stage_1','stage_2','stage_3','stage_4',
+          'stage_5','stage_6','stage_7','stage_8'
+        )
+      )
+    `);
+  } catch { /* 무시 */ }
   try { await run(`CREATE INDEX IF NOT EXISTS idx_ple_scope_phase ON position_lifecycle_events(position_scope_key, phase, created_at DESC)`); } catch { /* 무시 */ }
   try { await run(`CREATE INDEX IF NOT EXISTS idx_ple_symbol_phase ON position_lifecycle_events(symbol, exchange, phase, created_at DESC)`); } catch { /* 무시 */ }
+  try { await run(`CREATE INDEX IF NOT EXISTS idx_ple_stage_symbol ON position_lifecycle_events(stage_id, symbol, exchange, created_at DESC)`); } catch { /* 무시 */ }
   try { await run(`CREATE UNIQUE INDEX IF NOT EXISTS idx_ple_idempotency ON position_lifecycle_events(idempotency_key) WHERE idempotency_key IS NOT NULL`); } catch { /* 무시 */ }
 
   // ── position_closeout_reviews (Phase 6 청산 회고 기록) ──
@@ -509,6 +525,27 @@ export async function initSchema() {
   `);
   try { await run(`CREATE INDEX IF NOT EXISTS idx_eee_source_type ON external_evidence_events(source_type, created_at DESC)`); } catch { /* 무시 */ }
   try { await run(`CREATE INDEX IF NOT EXISTS idx_eee_symbol ON external_evidence_events(symbol, market, created_at DESC)`); } catch { /* 무시 */ }
+
+  // ── position_signal_history (Phase D Continuous Signal Collection) ──
+  await run(`
+    CREATE TABLE IF NOT EXISTS position_signal_history (
+      id               TEXT DEFAULT gen_random_uuid()::text PRIMARY KEY,
+      position_scope_key TEXT NOT NULL,
+      exchange         TEXT NOT NULL,
+      symbol           TEXT NOT NULL,
+      trade_mode       TEXT DEFAULT 'normal',
+      source           TEXT NOT NULL,
+      event_type       TEXT NOT NULL DEFAULT 'signal_refresh',
+      confidence       DOUBLE PRECISION DEFAULT 0.0,
+      sentiment_score  DOUBLE PRECISION DEFAULT 0.0,
+      evidence_snapshot JSONB DEFAULT '{}'::jsonb,
+      quality_flags    JSONB DEFAULT '[]'::jsonb,
+      created_at       TIMESTAMPTZ DEFAULT now()
+    )
+  `);
+  try { await run(`CREATE INDEX IF NOT EXISTS idx_psh_scope_created ON position_signal_history(position_scope_key, created_at DESC)`); } catch { /* 무시 */ }
+  try { await run(`CREATE INDEX IF NOT EXISTS idx_psh_symbol_created ON position_signal_history(symbol, exchange, created_at DESC)`); } catch { /* 무시 */ }
+  try { await run(`CREATE INDEX IF NOT EXISTS idx_psh_source_created ON position_signal_history(source, created_at DESC)`); } catch { /* 무시 */ }
 
   // 스키마 버전 기록
   try {
@@ -1915,6 +1952,7 @@ export async function insertLifecycleEvent({
   symbol,
   tradeMode = 'normal',
   phase,
+  stageId = null,
   ownerAgent = null,
   eventType,
   inputSnapshot = {},
@@ -1933,13 +1971,13 @@ export async function insertLifecycleEvent({
   }
   const row = await get(
     `INSERT INTO position_lifecycle_events
-       (position_scope_key, exchange, symbol, trade_mode, phase, owner_agent, event_type,
+       (position_scope_key, exchange, symbol, trade_mode, phase, stage_id, owner_agent, event_type,
         input_snapshot, output_snapshot, policy_snapshot, evidence_snapshot, idempotency_key)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
      RETURNING id`,
     [
       positionScopeKey, exchange, symbol, tradeMode || 'normal',
-      phase, ownerAgent || null, eventType,
+      phase, stageId || null, ownerAgent || null, eventType,
       JSON.stringify(inputSnapshot ?? {}),
       JSON.stringify(outputSnapshot ?? {}),
       JSON.stringify(policySnapshot ?? {}),
@@ -2134,6 +2172,79 @@ export async function getRecentExternalEvidence({ days = 7, symbol = null, sourc
   ).catch(() => []);
 }
 
+// ─── position_signal_history ─────────────────────────────────────────
+
+export async function insertPositionSignalHistory({
+  positionScopeKey,
+  exchange,
+  symbol,
+  tradeMode = 'normal',
+  source = 'signal_refresh',
+  eventType = 'signal_refresh',
+  confidence = 0,
+  sentimentScore = 0,
+  evidenceSnapshot = {},
+  qualityFlags = [],
+} = {}) {
+  if (!positionScopeKey || !exchange || !symbol) return null;
+  const row = await get(
+    `INSERT INTO position_signal_history
+       (position_scope_key, exchange, symbol, trade_mode, source, event_type,
+        confidence, sentiment_score, evidence_snapshot, quality_flags)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+     RETURNING id, created_at`,
+    [
+      positionScopeKey,
+      exchange,
+      symbol,
+      tradeMode || 'normal',
+      source || 'signal_refresh',
+      eventType || 'signal_refresh',
+      Number(confidence || 0),
+      Number(sentimentScore || 0),
+      JSON.stringify(evidenceSnapshot || {}),
+      JSON.stringify(Array.isArray(qualityFlags) ? qualityFlags : []),
+    ],
+  ).catch(() => null);
+  return row || null;
+}
+
+export async function getRecentPositionSignalHistory({
+  symbol = null,
+  exchange = null,
+  positionScopeKey = null,
+  source = null,
+  limit = 50,
+} = {}) {
+  const conditions = ['1=1'];
+  const params = [];
+  if (symbol) {
+    params.push(symbol);
+    conditions.push(`symbol = $${params.length}`);
+  }
+  if (exchange) {
+    params.push(exchange);
+    conditions.push(`exchange = $${params.length}`);
+  }
+  if (positionScopeKey) {
+    params.push(positionScopeKey);
+    conditions.push(`position_scope_key = $${params.length}`);
+  }
+  if (source) {
+    params.push(source);
+    conditions.push(`source = $${params.length}`);
+  }
+  params.push(Math.max(1, Number(limit || 50)));
+  return query(
+    `SELECT *
+     FROM position_signal_history
+     WHERE ${conditions.join(' AND ')}
+     ORDER BY created_at DESC
+     LIMIT $${params.length}`,
+    params,
+  ).catch(() => []);
+}
+
 export function close() {
   // pgPool 관리 — 개별 close 불필요 (pgPool.closeAll()로 전체 종료)
 }
@@ -2159,5 +2270,6 @@ export default {
   insertLifecycleEvent, getLifecycleEventsForScope, getLifecyclePhaseCoverage,
   insertCloseoutReview, updateCloseoutReview, getRecentCloseoutReviews,
   insertExternalEvidence, getRecentExternalEvidence,
+  insertPositionSignalHistory, getRecentPositionSignalHistory,
   close,
 };

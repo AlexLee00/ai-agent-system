@@ -176,6 +176,7 @@ export function buildRegimeAwarePolicyMatrix({
   driftContext = null,
   externalEvidenceSummary = null,
   externalEvidenceGapState = null,
+  portfolioReflexiveBias = null,
 } = {}) {
   const market = getPositionRuntimeMarket(exchange);
   const setupType = normalizeString(strategyProfile?.setup_type || strategyProfile?.setupType, 'unknown');
@@ -238,6 +239,7 @@ export function buildRegimeAwarePolicyMatrix({
     evidenceGapState: evidenceGap,
     sourceQualityBlocked: policy.sourceQualityBlocked === true,
     sourceQualityReason: policy.sourceQualityReason || null,
+    portfolioReflexiveBias: portfolioReflexiveBias || null,
     monitorProfile: policy.monitorProfile,
     lane: policy.lane,
     cadenceMs: policy.cadenceMs,
@@ -291,6 +293,7 @@ export function buildExecutionIntent({
   monitoringPolicy = null,
   policyMatrix = null,
   validationState = null,
+  positionSizingSnapshot = null,
   trigger = null,
 } = {}) {
   const exchange = normalizeString(position?.exchange, null);
@@ -366,11 +369,15 @@ export function buildExecutionIntent({
     command = previewCommand;
     executionAllowed = true;
   } else if (recommendation === 'ADJUST' && symbol && exchange) {
+    const sizingMode = String(positionSizingSnapshot?.mode || '').toLowerCase();
+    const pyramidAdjust = positionSizingSnapshot?.enabled === true && sizingMode === 'pyramid';
     action = 'ADJUST';
-    runner = 'runtime:partial-adjust';
-    previewCommand = `npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:partial-adjust -- --symbol=${symbol} --exchange=${exchange} --trade-mode=${tradeMode} --json`;
-    manualExecuteCommand = `npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:partial-adjust -- --symbol=${symbol} --exchange=${exchange} --trade-mode=${tradeMode} --execute --confirm=partial-adjust --json`;
-    autonomousExecuteCommand = `npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run runtime:partial-adjust -- --symbol=${symbol} --exchange=${exchange} --trade-mode=${tradeMode} --execute --confirm=position-runtime-autopilot --run-context=position-runtime-autopilot --json`;
+    runner = pyramidAdjust ? 'runtime:pyramid-adjust' : 'runtime:partial-adjust';
+    const script = pyramidAdjust ? 'runtime:pyramid-adjust' : 'runtime:partial-adjust';
+    const confirmToken = pyramidAdjust ? 'pyramid-adjust' : 'partial-adjust';
+    previewCommand = `npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run ${script} -- --symbol=${symbol} --exchange=${exchange} --trade-mode=${tradeMode} --json`;
+    manualExecuteCommand = `npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run ${script} -- --symbol=${symbol} --exchange=${exchange} --trade-mode=${tradeMode} --execute --confirm=${confirmToken} --json`;
+    autonomousExecuteCommand = `npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run ${script} -- --symbol=${symbol} --exchange=${exchange} --trade-mode=${tradeMode} --execute --confirm=position-runtime-autopilot --run-context=position-runtime-autopilot --json`;
     runnerArgs = {
       symbol,
       exchange,
@@ -400,6 +407,16 @@ export function buildExecutionIntent({
     if (normalizeString(validationState?.severity, 'stable') === 'critical' && action === 'ADJUST') {
       guardReasons.push('validation_severity_critical_adjust_blocked');
       executionAllowed = false;
+    }
+    if (policyMatrix?.portfolioReflexiveBias?.protective === true && action === 'ADJUST') {
+      guardReasons.push('portfolio_reflexive_protective_bias');
+      if (policyMatrix?.portfolioReflexiveBias?.preferExit === true) {
+        executionAllowed = false;
+      }
+      if (String(positionSizingSnapshot?.mode || '').toLowerCase() === 'pyramid' && policyMatrix?.portfolioReflexiveBias?.blockPyramid === true) {
+        guardReasons.push('portfolio_reflexive_blocks_pyramid');
+        executionAllowed = false;
+      }
     }
   }
 
@@ -445,8 +462,12 @@ export function buildPositionRuntimeState({
   regimeSnapshot = null,
   externalEvidenceSummary = null,
   externalEvidenceGapState = null,
+  portfolioReflexiveBias = null,
+  trailSnapshot = null,
   trigger = null,
   previousState = null,
+  positionSizingSnapshot = null,
+  signalRefreshSnapshot = null,
 } = {}) {
   const exchange = normalizeString(position?.exchange, null);
   const marketRegime = getPositionRuntimeRegime(regimeSnapshot, exchange);
@@ -473,7 +494,19 @@ export function buildPositionRuntimeState({
     driftContext,
     externalEvidenceSummary,
     externalEvidenceGapState,
+    portfolioReflexiveBias,
   });
+  if (positionSizingSnapshot) {
+    policyMatrix.positionSizing = positionSizingSnapshot;
+  }
+  if (signalRefreshSnapshot) {
+    policyMatrix.positionSignalRefresh = {
+      signalHistoryId: signalRefreshSnapshot.signalHistoryId || null,
+      attentionType: signalRefreshSnapshot.attentionType || null,
+      qualityFlags: signalRefreshSnapshot.qualityFlags || [],
+      qualityAdjustment: signalRefreshSnapshot.qualityAdjustment || null,
+    };
+  }
   const validationState = buildOnlineValidationState({
     latestBacktest,
     driftContext,
@@ -490,6 +523,7 @@ export function buildPositionRuntimeState({
     monitoringPolicy,
     policyMatrix,
     validationState,
+    positionSizingSnapshot,
     trigger,
   });
 
@@ -530,6 +564,9 @@ export function buildPositionRuntimeState({
       },
       externalEvidenceSummary: externalEvidenceSummary || null,
       externalEvidenceGapState: externalEvidenceGapState || null,
+      trailSnapshot: trailSnapshot || null,
+      positionSizingSnapshot: positionSizingSnapshot || null,
+      signalRefreshSnapshot: signalRefreshSnapshot || null,
     },
     previousRecommendation: normalizeString(previous?.recommendation, null),
     previousReasonCode: normalizeString(previous?.reasonCode, null),

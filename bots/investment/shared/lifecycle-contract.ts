@@ -26,6 +26,39 @@ export const LIFECYCLE_PHASES = [
 ] as const;
 
 export type LifecyclePhase = typeof LIFECYCLE_PHASES[number];
+export const POSITION_STAGE_IDS = [
+  'stage_1',
+  'stage_2',
+  'stage_3',
+  'stage_4',
+  'stage_5',
+  'stage_6',
+  'stage_7',
+  'stage_8',
+] as const;
+export type PositionStageId = typeof POSITION_STAGE_IDS[number];
+
+export const POSITION_STAGE_LABELS: Record<PositionStageId, string> = {
+  stage_1: 'discovery_collect',
+  stage_2: 'strategy_analyze',
+  stage_3: 'approval_risk_gate',
+  stage_4: 'entry_or_strategy_mutation',
+  stage_5: 'continuous_monitor',
+  stage_6: 'adjust_or_exit_execution',
+  stage_7: 'posttrade_review',
+  stage_8: 'feedback_learning',
+} as const;
+
+export const POSITION_STAGE_TO_PHASE: Record<PositionStageId, LifecyclePhase> = {
+  stage_1: 'phase1_collect',
+  stage_2: 'phase2_analyze',
+  stage_3: 'phase3_approve',
+  stage_4: 'phase4_execute',
+  stage_5: 'phase5_monitor',
+  stage_6: 'phase6_closeout',
+  stage_7: 'phase6_closeout',
+  stage_8: 'phase6_closeout',
+} as const;
 
 export const LIFECYCLE_EVENT_TYPES = {
   started:          'started',
@@ -50,6 +83,7 @@ export interface LifecycleEventInput {
   symbol: string;
   tradeMode?: string;
   phase: LifecyclePhase;
+  stageId?: PositionStageId | null;
   ownerAgent?: string | null;
   eventType: LifecycleEventType | string;
   inputSnapshot?: Record<string, unknown>;
@@ -96,6 +130,7 @@ export async function recordLifecycleEvent(input: LifecycleEventInput): Promise<
     symbol: input.symbol,
     tradeMode: input.tradeMode || 'normal',
     phase: input.phase,
+    stageId: input.stageId || null,
     ownerAgent: input.ownerAgent || null,
     eventType: input.eventType,
     inputSnapshot: input.inputSnapshot || {},
@@ -106,11 +141,34 @@ export async function recordLifecycleEvent(input: LifecycleEventInput): Promise<
   });
 }
 
+export function deriveLifecycleStageId(phase: LifecyclePhase, eventType: string | null = null): PositionStageId {
+  const normalizedEventType = String(eventType || '').trim().toLowerCase();
+  if (normalizedEventType.startsWith('strategy_mutat')) return 'stage_4';
+  if (normalizedEventType === 'review_created' || normalizedEventType === 'review_completed') return 'stage_7';
+  if (normalizedEventType === 'feedback_applied') return 'stage_8';
+  switch (phase) {
+    case 'phase1_collect':
+      return 'stage_1';
+    case 'phase2_analyze':
+      return 'stage_2';
+    case 'phase3_approve':
+      return 'stage_3';
+    case 'phase4_execute':
+      return 'stage_4';
+    case 'phase5_monitor':
+      return 'stage_5';
+    case 'phase6_closeout':
+    default:
+      return 'stage_6';
+  }
+}
+
 export async function recordLifecyclePhaseSnapshot({
   symbol,
   exchange,
   tradeMode = 'normal',
   phase,
+  stageId = null,
   ownerAgent = null,
   eventType = 'completed',
   inputSnapshot = {},
@@ -123,6 +181,7 @@ export async function recordLifecyclePhaseSnapshot({
   exchange: string;
   tradeMode?: string;
   phase: LifecyclePhase;
+  stageId?: PositionStageId | null;
   ownerAgent?: string | null;
   eventType?: LifecycleEventType | string;
   inputSnapshot?: Record<string, unknown>;
@@ -137,6 +196,51 @@ export async function recordLifecyclePhaseSnapshot({
     exchange,
     tradeMode,
     phase,
+    stageId: stageId || deriveLifecycleStageId(phase, eventType),
+    ownerAgent,
+    eventType,
+    inputSnapshot,
+    outputSnapshot,
+    policySnapshot,
+    evidenceSnapshot,
+    idempotencyKey,
+  });
+}
+
+export async function recordPositionLifecycleStageEvent({
+  symbol,
+  exchange,
+  tradeMode = 'normal',
+  stageId,
+  phase,
+  ownerAgent = null,
+  eventType = 'completed',
+  inputSnapshot = {},
+  outputSnapshot = {},
+  policySnapshot = {},
+  evidenceSnapshot = {},
+  idempotencyKey = null,
+}: {
+  symbol: string;
+  exchange: string;
+  tradeMode?: string;
+  stageId: PositionStageId;
+  phase?: LifecyclePhase;
+  ownerAgent?: string | null;
+  eventType?: LifecycleEventType | string;
+  inputSnapshot?: Record<string, unknown>;
+  outputSnapshot?: Record<string, unknown>;
+  policySnapshot?: Record<string, unknown>;
+  evidenceSnapshot?: Record<string, unknown>;
+  idempotencyKey?: string | null;
+}) {
+  const resolvedPhase = phase || POSITION_STAGE_TO_PHASE[stageId] || 'phase5_monitor';
+  return recordLifecyclePhaseSnapshot({
+    symbol,
+    exchange,
+    tradeMode,
+    phase: resolvedPhase,
+    stageId,
     ownerAgent,
     eventType,
     inputSnapshot,
@@ -343,11 +447,14 @@ export async function auditPhase6Coverage({
 
 export default {
   LIFECYCLE_PHASES,
+  POSITION_STAGE_IDS,
   LIFECYCLE_EVENT_TYPES,
+  deriveLifecycleStageId,
   buildPositionScopeKey,
   buildPhase6EventIdempotencyKey,
   recordLifecycleEvent,
   recordLifecyclePhaseSnapshot,
+  recordPositionLifecycleStageEvent,
   recordPhase6Start,
   recordPhase6Result,
   recordPhase6ReviewCreated,

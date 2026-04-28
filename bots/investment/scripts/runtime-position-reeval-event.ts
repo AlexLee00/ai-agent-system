@@ -38,6 +38,7 @@ function renderText(result = {}) {
   const row = result.row || {};
   const runtimeState = row.runtimeState || {};
   const executionIntent = row.executionIntent || runtimeState.executionIntent || {};
+  const validity = row.strategyValidity || {};
   return [
     '⚡ Position Reevaluation Event',
     `symbol: ${row.symbol || result.args?.symbol || 'n/a'}`,
@@ -46,6 +47,7 @@ function renderText(result = {}) {
     `recommendation: ${row.recommendation || 'n/a'}`,
     `reason: ${row.reasonCode || 'n/a'} | ${row.reason || 'n/a'}`,
     `runtime: ${runtimeState.regime?.regime || 'n/a'} | cadence ${runtimeState.monitoringPolicy?.cadenceMs || 'n/a'}ms`,
+    `validity: posterior ${Number(validity.score || 0).toFixed(3)} | actionScore ${Number(validity.actionScore ?? validity.score ?? 0).toFixed(3)} | action ${validity.action || 'n/a'}${validity.shadowMode ? ' [shadow]' : ''}`,
     `intent: ${executionIntent.action || 'HOLD'} | ${executionIntent.runner || 'n/a'}`,
   ].join('\n');
 }
@@ -95,6 +97,8 @@ export async function runPositionReevaluationEvent(args = {}) {
         : 'position_reeval_event_hold',
     args,
     row,
+    validityCard: row.strategyValidity || null,
+    mutationCard: row.strategyMutation || null,
     reportSummary: report.summary || null,
   };
 }

@@ -133,6 +133,7 @@ defmodule Luna.V2.PositionWatch do
       psp.exit_plan,
       psp.backtest_plan,
       psp.strategy_context,
+      psp.strategy_state,
       bt.created_at AS backtest_created_at,
       bt.label AS backtest_label,
       bt.sharpe AS backtest_sharpe,
@@ -147,6 +148,7 @@ defmodule Luna.V2.PositionWatch do
     FROM investment.live_positions
     LEFT JOIN LATERAL (
       SELECT strategy_name, setup_type, monitoring_plan, exit_plan, backtest_plan
+             , strategy_context, strategy_state
       FROM investment.position_strategy_profiles psp
       WHERE psp.symbol = investment.live_positions.symbol
         AND psp.exchange = investment.live_positions.exchange
@@ -346,6 +348,12 @@ defmodule Luna.V2.PositionWatch do
         KillSwitch.position_watch_overseas_realtime_ms()
       )
 
+    runtime_adaptive_intervals =
+      positions
+      |> Enum.map(&runtime_cadence_ms/1)
+      |> Enum.filter(&is_number/1)
+      |> Enum.filter(&(&1 > 0))
+
     base_interval_ms =
       cond do
         counts.crypto > 0 and tv_status in [:http_error, :transport_error, :disconnected] ->
@@ -362,6 +370,19 @@ defmodule Luna.V2.PositionWatch do
 
         true ->
           KillSwitch.position_watch_idle_ms()
+      end
+
+    runtime_interval_floor =
+      case runtime_adaptive_intervals do
+        [] -> nil
+        values -> Enum.min(values)
+      end
+
+    base_interval_ms =
+      if is_number(runtime_interval_floor) do
+        min(base_interval_ms, runtime_interval_floor)
+      else
+        base_interval_ms
       end
 
     recommended_interval_ms =
@@ -400,9 +421,25 @@ defmodule Luna.V2.PositionWatch do
       overseas_open?: overseas_open?,
       tv_status: tv_status,
       role_state: role_state,
+      runtime_adaptive_interval_ms: runtime_interval_floor,
       recommended_mode: recommended_mode,
       recommended_interval_ms: recommended_interval_ms
     }
+  end
+
+  defp runtime_cadence_ms(position) do
+    state = normalize_json_map(position[:strategy_state])
+    runtime_state = normalize_json_map(Map.get(state, "positionRuntimeState", state[:positionRuntimeState]))
+    policy = normalize_json_map(Map.get(runtime_state, "monitoringPolicy", runtime_state[:monitoringPolicy]))
+    cadence = policy["cadenceMs"] || policy[:cadenceMs] || runtime_state["adaptiveCadenceMs"] || runtime_state[:adaptiveCadenceMs]
+
+    case cadence do
+      value when is_integer(value) and value > 0 -> value
+      value when is_float(value) and value > 0 -> trunc(value)
+      _ -> nil
+    end
+  rescue
+    _ -> nil
   end
 
   defp maybe_push_interval(list, true, interval_ms) when is_list(list), do: [interval_ms | list]

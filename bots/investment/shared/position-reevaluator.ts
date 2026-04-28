@@ -11,6 +11,12 @@ import { updateExternalEvidenceGapTaskQueue } from './evidence-gap-task-queue.ts
 import { recordLifecyclePhaseSnapshot } from './lifecycle-contract.ts';
 import { evaluateStrategyValidity } from './strategy-validity-evaluator.ts';
 import { resolveAdaptiveCadence } from './adaptive-cadence-resolver.ts';
+import { evaluateStrategyMutation } from './strategy-mutation-engine.ts';
+import { resolvePositionLifecycleFlags } from './position-lifecycle-flags.ts';
+import { refreshPositionSignals } from './position-signal-refresh.ts';
+import { computeDynamicTrail } from './dynamic-trail-engine.ts';
+import { computeDynamicPositionSizing } from './dynamic-position-sizer.ts';
+import { analyzeReflexivePortfolioState } from './portfolio-reflexive-monitor.ts';
 
 const execFileAsync = promisify(execFile);
 const TRADINGVIEW_MCP_SCRIPT = new URL('../scripts/tradingview-mcp-server.py', import.meta.url);
@@ -667,6 +673,124 @@ function decideReevaluation(position, analysisSummary, strategyProfile = null, l
   });
 }
 
+function applyValidityActionDecision(decision = null, validityResult = null) {
+  const baseDecision = decision && typeof decision === 'object'
+    ? {
+        recommendation: String(decision.recommendation || 'HOLD'),
+        reasonCode: decision.reasonCode || null,
+        reason: decision.reason || null,
+      }
+    : { recommendation: 'HOLD', reasonCode: null, reason: null };
+  if (!validityResult || validityResult.shadowMode) {
+    return {
+      decision: baseDecision,
+      mutationRequired: false,
+      validityReason: null,
+    };
+  }
+
+  if (validityResult.recommendedAction === 'EXIT' && baseDecision.recommendation !== 'EXIT') {
+    return {
+      decision: {
+        recommendation: 'EXIT',
+        reasonCode: 'validity_forced_exit',
+        reason: `strategy validity ${safeNumber(validityResult.score).toFixed(3)} / action EXIT로 강제 종료`,
+      },
+      mutationRequired: false,
+      validityReason: 'force_exit',
+    };
+  }
+
+  if (validityResult.recommendedAction === 'PIVOT') {
+    return {
+      decision: baseDecision.recommendation === 'EXIT'
+        ? baseDecision
+        : {
+            recommendation: 'ADJUST',
+            reasonCode: 'validity_pivot_adjust',
+            reason: `strategy validity ${safeNumber(validityResult.score).toFixed(3)} / action PIVOT으로 보호 조정`,
+          },
+      mutationRequired: true,
+      validityReason: 'pivot_adjust',
+    };
+  }
+
+  if (validityResult.recommendedAction === 'CAUTION' && baseDecision.recommendation === 'HOLD') {
+    return {
+      decision: {
+        recommendation: 'ADJUST',
+        reasonCode: 'validity_caution_adjust',
+        reason: `strategy validity ${safeNumber(validityResult.score).toFixed(3)} / action CAUTION으로 관찰 강화`,
+      },
+      mutationRequired: false,
+      validityReason: 'caution_adjust',
+    };
+  }
+
+  return {
+    decision: baseDecision,
+    mutationRequired: false,
+    validityReason: null,
+  };
+}
+
+function buildMutationProfilePatch(candidate = null, currentProfile = null) {
+  if (!candidate || typeof candidate !== 'object') return null;
+  const nextSetupType = String(candidate.newSetupType || '').trim().toLowerCase();
+  if (!nextSetupType) return null;
+  const monitoringPlan = {
+    ...(currentProfile?.monitoring_plan || {}),
+    reevaluation_window_minutes: Number(candidate.newReevaluationWindowMinutes || 60),
+    cadence_ms: Number(candidate.newCadenceMs || 300000),
+  };
+  const exitPlan = {
+    ...(currentProfile?.exit_plan || {}),
+    stopLossPct: Number(candidate.newSlPct || 0),
+    takeProfitPct: Number(candidate.newTpPct || 0),
+    partialExitRatios: {
+      ...(currentProfile?.exit_plan?.partialExitRatios || {}),
+      mutation_default: Array.isArray(candidate.newPartialExitRatios)
+        ? candidate.newPartialExitRatios
+        : [0.5],
+    },
+  };
+  return {
+    setupType: nextSetupType,
+    monitoringPlan,
+    exitPlan,
+  };
+}
+
+async function applyStrategyMutationProfile(profileId, patch, previousProfile = null) {
+  if (!profileId || !patch) return false;
+  const strategyContext = {
+    ...(previousProfile?.strategy_context || {}),
+    mutation: {
+      lastAppliedAt: new Date().toISOString(),
+      fromSetupType: previousProfile?.setup_type || null,
+      toSetupType: patch.setupType,
+      reason: 'strategy_mutation_engine',
+    },
+  };
+  await db.run(
+    `UPDATE investment.position_strategy_profiles
+        SET setup_type = $1,
+            monitoring_plan = $2::jsonb,
+            exit_plan = $3::jsonb,
+            strategy_context = $4::jsonb,
+            updated_at = now()
+      WHERE id = $5`,
+    [
+      patch.setupType,
+      JSON.stringify(patch.monitoringPlan || {}),
+      JSON.stringify(patch.exitPlan || {}),
+      JSON.stringify(strategyContext),
+      profileId,
+    ],
+  );
+  return true;
+}
+
 async function ensurePositionReevaluationSchema() {
   await db.run(`
     CREATE TABLE IF NOT EXISTS position_reevaluation_runs (
@@ -724,9 +848,19 @@ export async function reevaluateOpenPositions({
   attentionReason = null,
   eventPayload = null,
 } = {}) {
+  const lifecycleFlags = resolvePositionLifecycleFlags();
   const positions = (await db.getOpenPositions(exchange, paper, tradeMode))
     .filter((item) => !symbol || String(item.symbol || '').toUpperCase() === String(symbol || '').toUpperCase());
   const results = [];
+  const regimeByMarket = {
+    crypto: (await db.getLatestMarketRegimeSnapshot('binance').catch(() => null))?.regime || null,
+    domestic: (await db.getLatestMarketRegimeSnapshot('domestic').catch(() => null))?.regime || null,
+    overseas: (await db.getLatestMarketRegimeSnapshot('overseas').catch(() => null))?.regime || null,
+  };
+  const reflexivePortfolioState = analyzeReflexivePortfolioState({
+    positions,
+    latestRegimeByMarket: regimeByMarket,
+  });
 
   for (const position of positions) {
     const effectiveTradeMode = position.trade_mode || 'normal';
@@ -783,6 +917,16 @@ export async function reevaluateOpenPositions({
       }).catch(() => null),
       db.getLatestVectorbtBacktestForSymbol(position.symbol, position.exchange === 'binance' ? 45 : 180).catch(() => null),
     ]);
+    const signalRefreshResult = lifecycleFlags.shouldExecuteSignalRefresh()
+      ? await refreshPositionSignals({
+          exchange: position.exchange,
+          symbol: position.symbol,
+          tradeMode: effectiveTradeMode,
+          source: eventSource || 'position_reevaluator',
+          limit: 1,
+        }).catch(() => ({ ok: false, rows: [] }))
+      : null;
+    const signalRefreshRow = signalRefreshResult?.rows?.[0] || null;
     const regimeMarket = getPositionRuntimeMarket(position.exchange);
     const regimeKey = regimeMarket === 'crypto' ? 'binance' : regimeMarket;
     const regimeSnapshot = await db.getLatestMarketRegimeSnapshot(regimeKey).catch(() => null);
@@ -835,14 +979,125 @@ export async function reevaluateOpenPositions({
       previousScore: strategyProfile?.strategy_state?.positionRuntimeState?.strategyValidityScore ?? null,
     });
 
+    const validityDecision = applyValidityActionDecision(decision?.decision, validityResult);
+    let effectiveDecision = validityDecision.decision;
+    let mutationResult = null;
+    if (validityDecision.mutationRequired) {
+      mutationResult = await evaluateStrategyMutation({
+        position: {
+          symbol: position.symbol,
+          exchange: position.exchange,
+          trade_mode: effectiveTradeMode,
+          unrealized_pnl: safeNumber(position?.unrealized_pnl),
+          avg_price: safeNumber(position?.avg_price),
+          amount: safeNumber(position?.amount),
+          entry_time: position?.entry_time || null,
+        },
+        currentStrategyProfile: strategyProfile,
+        validityResult,
+        regimeSnapshot,
+        latestBacktest,
+        pnlPct,
+        heldHours: deriveHeldHours(position),
+        analysisSummary,
+      }).catch(() => null);
+      if (mutationResult?.mutationApplied === true && mutationResult?.candidate) {
+        const patch = buildMutationProfilePatch(mutationResult.candidate, strategyProfile);
+        if (patch && strategyProfile?.id) {
+          const mutationProfileApplied = await applyStrategyMutationProfile(strategyProfile.id, patch, strategyProfile).catch(() => false);
+          if (mutationProfileApplied) {
+            strategyProfile.setup_type = patch.setupType;
+            strategyProfile.monitoring_plan = patch.monitoringPlan;
+            strategyProfile.exit_plan = patch.exitPlan;
+          } else {
+            mutationResult = {
+              ...mutationResult,
+              mutationApplied: false,
+              rejectionReason: 'strategy_profile_update_failed',
+            };
+          }
+        }
+        if (mutationResult?.mutationApplied === true) {
+          effectiveDecision = {
+            recommendation: 'ADJUST',
+            reasonCode: 'strategy_mutation_applied',
+            reason: mutationResult?.candidate?.mutationReason || 'strategy mutation applied',
+          };
+        }
+      } else if (mutationResult?.rejectionReason && effectiveDecision.recommendation === 'HOLD') {
+        effectiveDecision = {
+          recommendation: 'ADJUST',
+          reasonCode: 'strategy_mutation_rejected_guarded_adjust',
+          reason: `mutation rejected: ${mutationResult.rejectionReason}`,
+        };
+      }
+    }
+
+    if (
+      lifecycleFlags.shouldApplyReflexiveMonitoring()
+      && reflexivePortfolioState?.protective
+      && effectiveDecision.recommendation === 'HOLD'
+    ) {
+      effectiveDecision = {
+        recommendation: reflexivePortfolioState?.bias?.preferExit ? 'EXIT' : 'ADJUST',
+        reasonCode: 'portfolio_reflexive_protective_bias',
+        reason: `portfolio reflexive guard: ${(reflexivePortfolioState.reasonCodes || []).join(', ') || 'protective bias'}`,
+      };
+    }
+
     // Phase A — Adaptive Cadence (shadow mode 기본값: kill switch false 시 5분 반환)
     const adaptiveCadence = resolveAdaptiveCadence({
       exchange: position.exchange,
-      attentionType,
+      attentionType: signalRefreshRow?.attentionType || attentionType,
       volatilityBurst: attentionType?.includes('volatil') || attentionType?.includes('atr') || false,
       newsEvent: attentionType?.includes('news') || attentionType?.includes('뉴스') || false,
       volumeBurst: attentionType?.includes('volume') || attentionType?.includes('거래량') || false,
     });
+    const dynamicSizing = computeDynamicPositionSizing({
+      pnlPct,
+      currentWeightPct: 0.12,
+      targetVolatility: 0.03,
+      realizedVolatility: Math.max(0.01, Math.abs(Number(analysisSummary?.liveIndicator?.weightedBias || 0)) * 0.04),
+      winRate: Number(getFamilyPerformanceFeedback(strategyProfile)?.winRatePct || 50) / 100,
+      rewardRisk: 1.8,
+    });
+    if (
+      dynamicSizing?.enabled === true
+      && dynamicSizing?.mode === 'pyramid'
+      && effectiveDecision.recommendation === 'HOLD'
+      && reflexivePortfolioState?.bias?.blockPyramid !== true
+    ) {
+      effectiveDecision = {
+        recommendation: 'ADJUST',
+        reasonCode: dynamicSizing.reasonCode || 'pyramid_continuation',
+        reason: `dynamic position sizing requests pyramid continuation (${Number(dynamicSizing.adjustmentRatio || 0).toFixed(4)})`,
+      };
+    }
+    const previousRuntimeState = strategyProfile?.strategy_state?.positionRuntimeState || null;
+    const previousTrail = previousRuntimeState?.dynamicTrail
+      || previousRuntimeState?.marketState?.trailSnapshot
+      || null;
+    const dynamicTrail = computeDynamicTrail({
+      method: 'atr',
+      side: 'long',
+      close: analysisSummary?.liveIndicator?.timeframes?.[0]?.close || position?.avg_price || 0,
+      atr: Math.max(0.000001, Math.abs(safeNumber(analysisSummary?.liveIndicator?.weightedBias, 0)) * safeNumber(position?.avg_price, 0) * 0.02),
+      highestHigh: analysisSummary?.liveIndicator?.timeframes?.[0]?.high || position?.avg_price || 0,
+      lowestLow: analysisSummary?.liveIndicator?.timeframes?.[0]?.low || position?.avg_price || 0,
+      vwap: analysisSummary?.liveIndicator?.timeframes?.[0]?.close || position?.avg_price || 0,
+      sar: analysisSummary?.liveIndicator?.timeframes?.[0]?.close || position?.avg_price || 0,
+      previousStopPrice: previousTrail?.stopPrice || null,
+    });
+    if (
+      dynamicTrail?.breached === true
+      && effectiveDecision.recommendation !== 'EXIT'
+    ) {
+      effectiveDecision = {
+        recommendation: 'EXIT',
+        reasonCode: dynamicTrail.breachReasonCode || 'dynamic_trail_stop_breached',
+        reason: `dynamic trail stop breached: close=${dynamicTrail.close}, previousStop=${dynamicTrail.previousStopPrice}`,
+      };
+    }
 
     const runtimeState = buildPositionRuntimeState({
       position: {
@@ -853,27 +1108,31 @@ export async function reevaluateOpenPositions({
       analysisSummary,
       latestBacktest,
       driftContext: decision.driftContext,
-      recommendation: decision.decision.recommendation,
-      reasonCode: decision.decision.reasonCode,
-      reason: decision.decision.reason,
+      recommendation: effectiveDecision.recommendation,
+      reasonCode: effectiveDecision.reasonCode,
+      reason: effectiveDecision.reason,
       regimeSnapshot,
       externalEvidenceSummary,
       externalEvidenceGapState,
+      portfolioReflexiveBias: reflexivePortfolioState?.bias || null,
+      trailSnapshot: dynamicTrail,
+      positionSizingSnapshot: dynamicSizing,
+      signalRefreshSnapshot: signalRefreshRow || null,
       trigger: {
         source: eventSource,
-        attentionType,
+        attentionType: signalRefreshRow?.attentionType || attentionType,
         attentionReason,
         payload: eventPayload,
       },
-      previousState: strategyProfile?.strategy_state?.positionRuntimeState || null,
+      previousState: previousRuntimeState,
     });
     if (strategyProfile?.id) {
-      const attentionAt = decision.decision.recommendation === 'HOLD' ? null : new Date().toISOString();
+      const attentionAt = effectiveDecision.recommendation === 'HOLD' ? null : new Date().toISOString();
       const baseStrategyState = buildStrategyStateUpdate({
         position,
-        recommendation: decision.decision.recommendation,
-        reasonCode: decision.decision.reasonCode,
-        reason: decision.decision.reason,
+        recommendation: effectiveDecision.recommendation,
+        reasonCode: effectiveDecision.reasonCode,
+        reason: effectiveDecision.reason,
         analysisSummary,
         driftContext: decision.driftContext,
         runtimeState,
@@ -881,8 +1140,15 @@ export async function reevaluateOpenPositions({
       // Phase B validity score를 positionRuntimeState 내에 저장 (다음 사이클 Bayesian prior로 활용)
       if (baseStrategyState?.positionRuntimeState) {
         baseStrategyState.positionRuntimeState.strategyValidityScore = validityResult.score;
+        baseStrategyState.positionRuntimeState.strategyValidityActionScore = validityResult.actionScore;
+        baseStrategyState.positionRuntimeState.strategyValidityWeightedScore = validityResult.weightedScore;
+        baseStrategyState.positionRuntimeState.strategyValidityBaseAction = validityResult.baseAction;
         baseStrategyState.positionRuntimeState.strategyValidityAction = validityResult.recommendedAction;
         baseStrategyState.positionRuntimeState.adaptiveCadenceMs = adaptiveCadence.cadenceMs;
+        baseStrategyState.positionRuntimeState.dynamicTrail = dynamicTrail;
+        baseStrategyState.positionRuntimeState.dynamicPositionSizing = dynamicSizing;
+        baseStrategyState.positionRuntimeState.signalRefresh = signalRefreshRow || null;
+        baseStrategyState.positionRuntimeState.strategyMutation = mutationResult || null;
       }
       await db.updatePositionStrategyProfileState(position.symbol, {
         exchange: position.exchange,
@@ -909,10 +1175,15 @@ export async function reevaluateOpenPositions({
           attentionType: attentionType || null,
         },
         outputSnapshot: {
-          recommendation: decision.decision.recommendation,
-          reasonCode: decision.decision.reasonCode,
-          reason: decision.decision.reason,
+          recommendation: effectiveDecision.recommendation,
+          reasonCode: effectiveDecision.reasonCode,
+          reason: effectiveDecision.reason,
           pnlPct,
+          strategyValidityScore: validityResult.score,
+          strategyValidityActionScore: validityResult.actionScore,
+          strategyValidityAction: validityResult.recommendedAction,
+          dynamicSizingMode: dynamicSizing?.mode || null,
+          dynamicTrailBreached: dynamicTrail?.breached === true,
         },
         policySnapshot: runtimeState?.policyMatrix || {},
         evidenceSnapshot: {
@@ -940,10 +1211,13 @@ export async function reevaluateOpenPositions({
           attentionReason: attentionReason || null,
         },
         outputSnapshot: {
-          recommendation: decision.decision.recommendation,
-          reasonCode: decision.decision.reasonCode,
+          recommendation: effectiveDecision.recommendation,
+          reasonCode: effectiveDecision.reasonCode,
           validationSeverity: runtimeState?.validationState?.severity || null,
           executionAllowed: runtimeState?.executionIntent?.executionAllowed === true,
+          stageId: 'stage_5',
+          dynamicTrailBreached: dynamicTrail?.breached === true,
+          dynamicSizingMode: dynamicSizing?.mode || null,
         },
         policySnapshot: {
           monitoringPolicy: runtimeState?.monitoringPolicy || {},
@@ -962,22 +1236,28 @@ export async function reevaluateOpenPositions({
       paper: position.paper === true,
       tradeMode: effectiveTradeMode,
       pnlPct: calcPnlPct(position),
-      recommendation: decision.decision.recommendation,
-      reasonCode: decision.decision.reasonCode,
-      reason: decision.decision.reason,
+      recommendation: effectiveDecision.recommendation,
+      reasonCode: effectiveDecision.reasonCode,
+      reason: effectiveDecision.reason,
       executionIntent: runtimeState.executionIntent,
       runtimeState,
       strategyValidity: {
         score: validityResult.score,
         action: validityResult.recommendedAction,
+        actionScore: validityResult.actionScore,
+        weightedScore: validityResult.weightedScore,
+        baseAction: validityResult.baseAction,
         driftReasons: validityResult.driftReasons,
         shadowMode: validityResult.shadowMode,
       },
+      strategyMutation: mutationResult || null,
       adaptiveCadence: {
         cadenceMs: adaptiveCadence.cadenceMs,
         triggerType: adaptiveCadence.triggerType,
         overrideApplied: adaptiveCadence.overrideApplied,
       },
+      dynamicPositionSizing: dynamicSizing,
+      dynamicTrail,
       positionSnapshot: {
         amount: safeNumber(position.amount),
         avgPrice: safeNumber(position.avg_price),

@@ -26,6 +26,9 @@ function buildDecision(rows = []) {
   const adjustReady = active.filter((row) => row.runtimeState?.executionIntent?.action === 'ADJUST').length;
   const staleValidation = active.filter((row) => row.runtimeState?.validationState?.severity === 'critical').length;
   const fastLane = active.filter((row) => Number(row.runtimeState?.monitoringPolicy?.cadenceMs || 0) <= 15_000).length;
+  const pyramidReady = active.filter((row) => row.runtimeState?.executionIntent?.runner === 'runtime:pyramid-adjust').length;
+  const dynamicTrailExitReady = active.filter((row) => row.runtimeState?.reasonCode === 'dynamic_trail_stop_breached').length;
+  const signalRefreshActive = active.filter((row) => row.runtimeState?.marketState?.signalRefreshSnapshot || row.runtimeState?.policyMatrix?.positionSignalRefresh).length;
   const status = exitReady > 0
     ? 'position_runtime_attention'
     : adjustReady > 0
@@ -33,7 +36,7 @@ function buildDecision(rows = []) {
       : 'position_runtime_ok';
   return {
     status,
-    headline: `runtime active ${active.length} / fast-lane ${fastLane} / adjust ${adjustReady} / exit ${exitReady}`,
+    headline: `runtime active ${active.length} / fast-lane ${fastLane} / adjust ${adjustReady} / exit ${exitReady} / pyramid ${pyramidReady} / trail-exit ${dynamicTrailExitReady}`,
     metrics: {
       total: rows.length,
       active: active.length,
@@ -41,6 +44,9 @@ function buildDecision(rows = []) {
       adjustReady,
       staleValidation,
       fastLane,
+      pyramidReady,
+      dynamicTrailExitReady,
+      signalRefreshActive,
     },
   };
 }
@@ -54,7 +60,7 @@ function renderText(payload = {}) {
   ];
   for (const row of payload.rows || []) {
     lines.push(
-      `- ${row.exchange} ${row.symbol} ${row.tradeMode} | ${row.runtimeState?.regime?.regime || 'n/a'} | ${row.runtimeState?.executionIntent?.action || 'HOLD'} | ${row.runtimeState?.monitoringPolicy?.cadenceMs || 'n/a'}ms`,
+      `- ${row.exchange} ${row.symbol} ${row.tradeMode} | ${row.runtimeState?.regime?.regime || 'n/a'} | ${row.runtimeState?.executionIntent?.action || 'HOLD'} | ${row.runtimeState?.monitoringPolicy?.cadenceMs || 'n/a'}ms | validity posterior ${Number(row.runtimeState?.strategyValidityScore || 0).toFixed(3)} / actionScore ${Number(row.runtimeState?.strategyValidityActionScore ?? row.runtimeState?.strategyValidityScore ?? 0).toFixed(3)} (${row.runtimeState?.strategyValidityAction || 'n/a'})`,
     );
   }
   return lines.join('\n');
@@ -73,6 +79,22 @@ export async function runPositionRuntimeReport(args = {}) {
     strategyName: row.strategy_name || null,
     setupType: row.setup_type || null,
     runtimeState: row.strategy_state?.positionRuntimeState || null,
+    strategyValidityCard: row.strategy_state?.positionRuntimeState
+      ? {
+          score: row.strategy_state?.positionRuntimeState?.strategyValidityScore ?? null,
+          actionScore: row.strategy_state?.positionRuntimeState?.strategyValidityActionScore ?? null,
+          action: row.strategy_state?.positionRuntimeState?.strategyValidityAction ?? null,
+        }
+      : null,
+    lifecycleRuntimeCard: row.strategy_state?.positionRuntimeState
+      ? {
+          runner: row.strategy_state?.positionRuntimeState?.executionIntent?.runner || null,
+          reasonCode: row.strategy_state?.positionRuntimeState?.reasonCode || null,
+          dynamicTrailBreached: row.strategy_state?.positionRuntimeState?.marketState?.trailSnapshot?.breached === true,
+          positionSizingMode: row.strategy_state?.positionRuntimeState?.marketState?.positionSizingSnapshot?.mode || null,
+          signalRefreshWeight: row.strategy_state?.positionRuntimeState?.marketState?.signalRefreshSnapshot?.qualityAdjustment?.reevaluationWeightMultiplier ?? null,
+        }
+      : null,
   }));
   const decision = buildDecision(rows);
   return {

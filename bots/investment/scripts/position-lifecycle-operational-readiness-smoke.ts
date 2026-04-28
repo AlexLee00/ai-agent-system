@@ -1,0 +1,71 @@
+#!/usr/bin/env node
+// @ts-nocheck
+
+import assert from 'node:assert/strict';
+import {
+  buildLifecycleExecutionReadiness,
+  summarizeLifecyclePositionSync,
+  summarizeLifecycleStageCoverage,
+} from '../shared/position-lifecycle-operational-readiness.ts';
+
+const activeProfiles = [
+  { symbol: 'BTC/USDT', exchange: 'binance', trade_mode: 'normal' },
+  { symbol: 'POET', exchange: 'kis_overseas', trade_mode: 'normal' },
+];
+const fullEvents = ['stage_1', 'stage_2', 'stage_3', 'stage_4', 'stage_5', 'stage_6', 'stage_7', 'stage_8']
+  .map((stageId) => ({
+    position_scope_key: 'binance:BTC/USDT:normal',
+    symbol: 'BTC/USDT',
+    exchange: 'binance',
+    trade_mode: 'normal',
+    stage_id: stageId,
+  }));
+const partialEvents = [
+  { position_scope_key: 'kis_overseas:POET:normal', symbol: 'POET', exchange: 'kis_overseas', trade_mode: 'normal', stage_id: 'stage_5' },
+];
+
+const coverage = summarizeLifecycleStageCoverage({
+  events: [...fullEvents, ...partialEvents],
+  activeProfiles,
+});
+assert.equal(coverage.activePositions, 2);
+assert.equal(coverage.rows.find((row) => row.symbol === 'BTC/USDT').missingStages.length, 0);
+assert.equal(coverage.rows.find((row) => row.symbol === 'POET').missingStages.includes('stage_1'), true);
+assert.equal(coverage.missingByStage.stage_1, 1);
+
+const syncSummary = summarizeLifecyclePositionSync([
+  { market: 'crypto', ok: true, mismatchCount: 0 },
+  { market: 'overseas', ok: true, mismatchCount: 1 },
+]);
+assert.equal(syncSummary.ok, false);
+assert.equal(syncSummary.mismatchCount, 1);
+
+const readiness = buildLifecycleExecutionReadiness({
+  flags: {
+    mode: 'autonomous_l5',
+    phaseD: { enabled: true },
+    phaseE: { enabled: true },
+    phaseF: { enabled: true },
+    phaseG: { enabled: true },
+    phaseH: { enabled: true },
+  },
+  runtimeReport: { decision: { metrics: { active: 2, adjustReady: 1, exitReady: 1 } } },
+  dispatchPreview: { candidates: [{ symbol: 'BTC/USDT' }], guardReasonSummary: { blockedActionable: 0 } },
+  signalRefresh: { ok: true, count: 2 },
+  positionSyncSummary: { ok: true, mismatchCount: 0 },
+  coverageSummary: coverage,
+  requirePositionSync: true,
+});
+assert.equal(readiness.ok, true);
+assert.equal(readiness.metrics.dispatchCandidates, 1);
+
+const blocked = buildLifecycleExecutionReadiness({
+  flags: { mode: 'autonomous_l5', phaseD: { enabled: true }, phaseE: { enabled: true }, phaseF: { enabled: true }, phaseG: { enabled: true }, phaseH: { enabled: true } },
+  signalRefresh: { ok: false },
+  requirePositionSync: true,
+});
+assert.equal(blocked.ok, false);
+assert.equal(blocked.blockers.includes('signal_refresh_failed'), true);
+assert.equal(blocked.blockers.includes('position_sync_required_but_missing'), true);
+
+console.log(JSON.stringify({ ok: true, coverage: coverage.coveragePct, readiness: readiness.status }, null, 2));

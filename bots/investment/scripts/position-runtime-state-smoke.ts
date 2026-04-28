@@ -167,6 +167,23 @@ export function runPositionRuntimeStateSmoke() {
   assert.ok(String(executionIntent.executionScope || '').includes('BTC/USDT'));
   assert.ok(String(executionIntent.brokerScope || '').includes('BTC/USDT'));
 
+  const pyramidIntent = buildExecutionIntent({
+    position: { symbol: 'ETH/USDT', exchange: 'binance', trade_mode: 'normal' },
+    strategyProfile: { setup_type: 'trend_following' },
+    recommendation: 'ADJUST',
+    reasonCode: 'pyramid_continuation',
+    policyMatrix: { sourceQualityBlocked: false },
+    validationState: { severity: 'stable' },
+    positionSizingSnapshot: {
+      enabled: true,
+      mode: 'pyramid',
+      executionAction: 'BUY',
+      runnerHint: 'runtime:pyramid-adjust',
+    },
+  });
+  assert.equal(pyramidIntent.runner, 'runtime:pyramid-adjust');
+  assert.match(pyramidIntent.manualExecuteCommand, /--confirm=pyramid-adjust/);
+
   const runtimeState = buildPositionRuntimeState({
     position: {
       symbol: 'BTC/USDT',

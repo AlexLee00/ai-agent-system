@@ -8,49 +8,54 @@ import {
   evaluateStrategyValidity,
   VALIDITY_SMOKE_SCENARIOS,
 } from '../shared/strategy-validity-evaluator.ts';
+import { assertSmokePass } from '../shared/smoke-assert.ts';
 
-export async function runStrategyValidityEvaluatorSmoke({ json = false, enabledOverride = null } = {}) {
+export async function runStrategyValidityEvaluatorSmoke({ json = false, enabledOverride = null, strict = true } = {}) {
   const results = [];
+  const modes = enabledOverride === null ? [false, true] : [enabledOverride === true];
 
-  for (const scenario of VALIDITY_SMOKE_SCENARIOS) {
-    if (enabledOverride !== null) {
-      process.env.LUNA_STRATEGY_VALIDITY_EVALUATOR_ENABLED = enabledOverride ? 'true' : 'false';
+  for (const enabled of modes) {
+    process.env.LUNA_STRATEGY_VALIDITY_EVALUATOR_ENABLED = enabled ? 'true' : 'false';
+    for (const scenario of VALIDITY_SMOKE_SCENARIOS) {
+      const isShadowScenario = scenario.name.includes('shadow mode');
+      if (enabled && isShadowScenario) continue;
+
+      const result = evaluateStrategyValidity(scenario.input);
+
+      const expectedActions = enabled ? scenario.expectedActionRange : ['HOLD'];
+
+      const actionOk = expectedActions.includes(result.recommendedAction);
+      const scoreValid = Number.isFinite(result.score) && result.score >= 0 && result.score <= 1;
+      const dimensionCountOk = result.dimensions.length === 7;
+      const pass = actionOk && scoreValid && dimensionCountOk;
+
+      results.push({
+        mode: enabled ? 'enabled' : 'shadow',
+        scenario: scenario.name,
+        pass,
+        score: result.score,
+        actionScore: result.actionScore,
+        weightedScore: result.weightedScore,
+        baseAction: result.baseAction,
+        bayesianPosterior: result.bayesianPosterior,
+        action: result.recommendedAction,
+        expectedActions,
+        driftReasons: result.driftReasons,
+        shadowMode: result.shadowMode,
+        dimensions: result.dimensions.map((d) => `${d.name}:${d.score.toFixed(2)}`),
+        errors: [
+          !actionOk && `action 불일치: ${result.recommendedAction} ∉ [${expectedActions.join('/')}]`,
+          !scoreValid && `score 비정상: ${result.score}`,
+          !dimensionCountOk && `dimension 수 오류: ${result.dimensions.length} ≠ 7`,
+        ].filter(Boolean),
+      });
     }
-
-    const result = evaluateStrategyValidity(scenario.input);
-
-    // shadow mode 시나리오는 action이 항상 HOLD
-    const isShadowScenario = scenario.name.includes('shadow mode');
-    const expectedActions = isShadowScenario
-      ? ['HOLD']
-      : scenario.expectedActionRange;
-
-    const actionOk = expectedActions.includes(result.recommendedAction);
-    const scoreValid = Number.isFinite(result.score) && result.score >= 0 && result.score <= 1;
-    const dimensionCountOk = result.dimensions.length === 7;
-    const pass = actionOk && scoreValid && dimensionCountOk;
-
-    results.push({
-      scenario: scenario.name,
-      pass,
-      score: result.score,
-      bayesianPosterior: result.bayesianPosterior,
-      action: result.recommendedAction,
-      expectedActions,
-      driftReasons: result.driftReasons,
-      shadowMode: result.shadowMode,
-      dimensions: result.dimensions.map((d) => `${d.name}:${d.score.toFixed(2)}`),
-      errors: [
-        !actionOk && `action 불일치: ${result.recommendedAction} ∉ [${expectedActions.join('/')}]`,
-        !scoreValid && `score 비정상: ${result.score}`,
-        !dimensionCountOk && `dimension 수 오류: ${result.dimensions.length} ≠ 7`,
-      ].filter(Boolean),
-    });
   }
 
   const passed = results.filter((r) => r.pass).length;
   const total = results.length;
   const summary = { passed, total, pass: passed === total, results };
+  if (strict) assertSmokePass(summary, '[strategy-validity-evaluator-smoke]');
 
   if (json) return summary;
 
@@ -60,8 +65,8 @@ export async function runStrategyValidityEvaluatorSmoke({ json = false, enabledO
     ...results.map((r) => {
       const icon = r.pass ? '✓' : '✗';
       const out = [
-        `  ${icon} ${r.scenario}`,
-        `    score: ${r.score.toFixed(3)} (Bayesian: ${r.bayesianPosterior.toFixed(3)}) → action: ${r.action}${r.shadowMode ? ' [shadow]' : ''}`,
+        `  ${icon} [${r.mode}] ${r.scenario}`,
+        `    score: ${r.score.toFixed(3)} (actionScore: ${Number(r.actionScore ?? r.score).toFixed(3)}, Bayesian: ${r.bayesianPosterior.toFixed(3)}, base: ${r.baseAction || 'n/a'}) → action: ${r.action}${r.shadowMode ? ' [shadow]' : ''}`,
         `    dimensions: ${r.dimensions.join(', ')}`,
       ];
       if (r.driftReasons.length > 0) {
@@ -80,7 +85,7 @@ if (isDirectExecution(import.meta.url)) {
       const args = process.argv.slice(2);
       const json = args.includes('--json');
       const enabledOverride = args.includes('--enabled') ? true : args.includes('--disabled') ? false : null;
-      return runStrategyValidityEvaluatorSmoke({ json, enabledOverride });
+      return runStrategyValidityEvaluatorSmoke({ json, enabledOverride, strict: true });
     },
     onSuccess: async (result) => {
       if (result?.text) { console.log(result.text); return; }

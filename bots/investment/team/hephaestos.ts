@@ -19,11 +19,23 @@ import { initHubSecrets, isPaperMode, getInvestmentTradeMode } from '../shared/s
 import { isSameDaySymbolReentryBlockEnabled, getInvestmentExecutionRuntimeConfig } from '../shared/runtime-config.ts';
 import { getInvestmentAgentRoleState } from '../shared/agent-role-state.ts';
 import { syncPositionsAtMarketOpen } from '../shared/position-sync.ts';
-import { buildExecutionRiskApprovalGuard } from '../shared/risk-approval-execution-guard.ts';
 import { attachExecutionToPositionStrategyTracked } from '../shared/execution-attach.ts';
 import { SIGNAL_STATUS, ACTIONS } from '../shared/signal.ts';
 import { notifyTrade, notifyError, notifyJournalEntry, notifyTradeSkip, notifyCircuitBreaker, notifySettlement } from '../shared/report.ts';
-import { preTradeCheck, calculatePositionSize, getAvailableBalance, getAvailableUSDT, getOpenPositions, getDailyPnL, getDailyTradeCount, checkCircuitBreaker, getCapitalConfig, formatDailyTradeLimitReason, getDynamicMinOrderAmount } from '../shared/capital-manager.ts';
+import {
+  buildExecutionRiskApprovalGuard,
+  preTradeCheck,
+  calculatePositionSize,
+  getAvailableBalance,
+  getAvailableUSDT,
+  getOpenPositions,
+  getDailyPnL,
+  getDailyTradeCount,
+  checkCircuitBreaker,
+  getCapitalConfig,
+  formatDailyTradeLimitReason,
+  getDynamicMinOrderAmount,
+} from '../shared/execution-risk-and-capital.ts';
 import {
   getBinanceExchange,
   getUsdtFreeBalance,
@@ -36,17 +48,15 @@ import {
 import {
   isPendingReconcileQuoteConversionError,
   normalizePendingReconcileOrderUnits as normalizePendingReconcileOrderUnitsBase,
-} from '../shared/binance-pending-reconcile-units.ts';
-import {
   computeBinancePendingRecordedProgress,
   buildBinancePendingReconcilePayload as buildBinancePendingReconcilePayloadBase,
   BINANCE_PENDING_RECONCILE_EPSILON,
   resolveBinancePendingQueueState,
-} from '../shared/binance-pending-reconcile-queue.ts';
+} from '../shared/binance-order-reconcile.ts';
 export {
   computeBinancePendingRecordedProgress,
   resolveBinancePendingQueueState,
-} from '../shared/binance-pending-reconcile-queue.ts';
+} from '../shared/binance-order-reconcile.ts';
 import {
   extractClientOrderId,
   extractExchangeOrderId,

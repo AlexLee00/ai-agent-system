@@ -8,6 +8,13 @@ import { runPositionRuntimeTuning } from './runtime-position-runtime-tuning.ts';
 import { runPositionRuntimeDispatch } from './runtime-position-runtime-dispatch.ts';
 import { runPositionRuntimeAutotune } from './runtime-position-runtime-autotune.ts';
 import { assessPhase6SafetyReadiness } from '../shared/position-closeout-engine.ts';
+import { refreshPositionSignals } from '../shared/position-signal-refresh.ts';
+import { syncPositionsAtMarketOpen } from '../shared/position-sync.ts';
+import { resolvePositionLifecycleFlags } from '../shared/position-lifecycle-flags.ts';
+import {
+  buildLifecycleExecutionReadiness,
+  summarizeLifecyclePositionSync,
+} from '../shared/position-lifecycle-operational-readiness.ts';
 import {
   appendPositionRuntimeAutopilotHistory,
   DEFAULT_POSITION_RUNTIME_AUTOPILOT_HISTORY_FILE,
@@ -25,6 +32,8 @@ function parseArgs(argv = []) {
     executeDispatch: false,
     historyFile: DEFAULT_POSITION_RUNTIME_AUTOPILOT_HISTORY_FILE,
     recordHistory: true,
+    requirePositionSync: false,
+    positionSyncMarkets: ['crypto'],
   };
   for (const raw of argv) {
     if (raw === '--json') args.json = true;
@@ -36,6 +45,11 @@ function parseArgs(argv = []) {
     else if (raw.startsWith('--limit=')) args.limit = Math.max(1, Number(raw.split('=').slice(1).join('=') || 5));
     else if (raw.startsWith('--history-file=')) args.historyFile = raw.split('=').slice(1).join('=') || DEFAULT_POSITION_RUNTIME_AUTOPILOT_HISTORY_FILE;
     else if (raw === '--no-history') args.recordHistory = false;
+    else if (raw === '--require-position-sync') args.requirePositionSync = true;
+    else if (raw.startsWith('--position-sync-markets=')) {
+      const rawMarkets = raw.split('=').slice(1).join('=') || 'crypto';
+      args.positionSyncMarkets = rawMarkets.split(',').map((item) => item.trim()).filter(Boolean);
+    }
   }
   return args;
 }
@@ -190,6 +204,9 @@ function buildDispatchExchangeSummary(candidates = [], results = []) {
 function buildHistorySnapshot({
   args,
   decision,
+  lifecycleReadiness,
+  signalRefresh,
+  positionSyncSummary,
   phase6SafetyReadiness,
   runtimeReport,
   tuning,
@@ -224,12 +241,22 @@ function buildHistorySnapshot({
       applyTuning: Boolean(decision?.applyTuning),
       nextActions: decision?.nextActions || [],
     },
+    lifecycleReadiness: lifecycleReadiness || null,
+    signalRefresh: signalRefresh ? {
+      ok: signalRefresh.ok !== false,
+      enabled: signalRefresh.enabled === true,
+      count: Number(signalRefresh.count || 0),
+    } : null,
+    positionSyncSummary: positionSyncSummary || null,
     metrics: {
       active: Number(metrics.active || 0),
       fastLane: Number(metrics.fastLane || 0),
       adjustReady: Number(metrics.adjustReady || 0),
       exitReady: Number(metrics.exitReady || 0),
       staleValidation: Number(metrics.staleValidation || 0),
+      pyramidReady: Number(metrics.pyramidReady || 0),
+      dynamicTrailExitReady: Number(metrics.dynamicTrailExitReady || 0),
+      signalRefreshActive: Number(metrics.signalRefreshActive || 0),
     },
     exchangeSummary,
     tuningStatus: tuning?.status || null,
@@ -283,18 +310,58 @@ function buildHistorySnapshot({
   };
 }
 
+async function runPositionSyncPreflight(markets = ['crypto']) {
+  const uniqueMarkets = [...new Set((markets || ['crypto']).map((item) => String(item || '').trim()).filter(Boolean))];
+  const results = await Promise.all(uniqueMarkets.map(async (market) => (
+    syncPositionsAtMarketOpen(market).catch((error) => ({
+      market,
+      ok: false,
+      error: error?.message || String(error),
+    }))
+  )));
+  return summarizeLifecyclePositionSync(results);
+}
+
 export async function runPositionRuntimeAutopilot(args = {}) {
+  const lifecycleFlags = resolvePositionLifecycleFlags();
   const phase6SafetyReadiness = args.phase6SafetyReadiness || assessPhase6SafetyReadiness();
+  const requirePositionSync = args.requirePositionSync === true
+    || String(process.env.LUNA_POSITION_LIFECYCLE_REQUIRE_SYNC || '').trim() === '1'
+    || (lifecycleFlags.autonomous && String(process.env.LUNA_POSITION_LIFECYCLE_SKIP_SYNC_PREFLIGHT || '').trim() !== '1');
+  const positionSyncSummary = args.execute && requirePositionSync
+    ? await runPositionSyncPreflight(args.positionSyncMarkets || ['crypto'])
+    : null;
+  const signalRefresh = await refreshPositionSignals({
+    exchange: args.exchange || null,
+    source: 'position_runtime_autopilot',
+    limit: 200,
+  }).catch((error) => ({
+    ok: false,
+    enabled: true,
+    count: 0,
+    error: error?.message || String(error),
+  }));
   const runtimeReport = await runPositionRuntimeReport({ exchange: args.exchange || null, limit: 200, json: true });
   const tuning = await runPositionRuntimeTuning({ exchange: args.exchange || null, json: true });
   const dispatchPreview = await runPositionRuntimeDispatch({ exchange: args.exchange || null, limit: args.limit || 5, phase6: true, json: true });
   const autotunePreview = await runPositionRuntimeAutotune({ exchange: args.exchange || null, json: true });
   const decision = buildDecision(runtimeReport, tuning, dispatchPreview, autotunePreview, phase6SafetyReadiness);
+  const lifecycleReadiness = buildLifecycleExecutionReadiness({
+    flags: lifecycleFlags,
+    runtimeReport,
+    dispatchPreview,
+    signalRefresh,
+    positionSyncSummary,
+    requirePositionSync,
+  });
 
   if (!args.execute) {
     const previewPayload = {
       ok: true,
       decision,
+      lifecycleReadiness,
+      signalRefresh,
+      positionSyncSummary,
       phase6SafetyReadiness,
       runtimeReport,
       tuning,
@@ -304,6 +371,9 @@ export async function runPositionRuntimeAutopilot(args = {}) {
     const historySnapshot = buildHistorySnapshot({
       args,
       decision,
+      lifecycleReadiness,
+      signalRefresh,
+      positionSyncSummary,
       phase6SafetyReadiness,
       runtimeReport,
       tuning,
@@ -327,6 +397,9 @@ export async function runPositionRuntimeAutopilot(args = {}) {
       ok: false,
       status: 'position_runtime_autopilot_confirmation_required',
       decision,
+      lifecycleReadiness,
+      signalRefresh,
+      positionSyncSummary,
       phase6SafetyReadiness,
       reason: 'use --confirm=position-runtime-autopilot',
     };
@@ -337,8 +410,24 @@ export async function runPositionRuntimeAutopilot(args = {}) {
       ok: false,
       status: 'position_runtime_autopilot_blocked_by_phase6_safety',
       decision,
+      lifecycleReadiness,
+      signalRefresh,
+      positionSyncSummary,
       phase6SafetyReadiness,
       reason: 'phase6 safety readiness failed; fix runtime guards before execute/apply',
+    };
+  }
+
+  if (lifecycleReadiness.ok !== true) {
+    return {
+      ok: false,
+      status: 'position_runtime_autopilot_blocked_by_lifecycle_readiness',
+      decision,
+      lifecycleReadiness,
+      signalRefresh,
+      positionSyncSummary,
+      phase6SafetyReadiness,
+      reason: lifecycleReadiness.blockers.join(', ') || 'lifecycle readiness blocked',
     };
   }
 
@@ -374,6 +463,9 @@ export async function runPositionRuntimeAutopilot(args = {}) {
   const historySnapshot = buildHistorySnapshot({
     args,
     decision,
+    lifecycleReadiness,
+    signalRefresh,
+    positionSyncSummary,
     phase6SafetyReadiness,
     runtimeReport,
     tuning,
@@ -392,6 +484,9 @@ export async function runPositionRuntimeAutopilot(args = {}) {
     ok: dispatchFailures.length === 0,
     status: executionStatus,
     decision,
+    lifecycleReadiness,
+    signalRefresh,
+    positionSyncSummary,
     phase6SafetyReadiness,
     runtimeReport,
     tuning,

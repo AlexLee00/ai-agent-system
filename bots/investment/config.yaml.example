@@ -72,3 +72,44 @@ cost:
   daily_budget_live:    0.10
   monthly_budget_paper: 1.00
   monthly_budget_live:  2.00
+
+# Position Lifecycle Kill Switches (Phase A~H)
+# 기본값은 모두 shadow/safe mode입니다. 운영 전 각 Phase별 smoke 통과 후 단계적으로 켭니다.
+position_lifecycle:
+  adaptive_cadence:
+    enabled: false
+    default_cadence_ms: 300000
+    event_cadence_ms: 60000
+    burst_cadence_ms: 30000
+  strategy_validity:
+    enabled: false
+    hold_threshold: 0.7
+    caution_threshold: 0.5
+    pivot_threshold: 0.3
+    exit_threshold: 0.3
+  strategy_mutation:
+    enabled: false
+    predictive_threshold: 0.55
+    daily_limit: 5
+  signal_refresh:
+    enabled: false
+    max_per_run: 10
+    min_attention_score: 0.55
+  dynamic_position_sizing:
+    enabled: false
+    max_trim_ratio: 0.5
+    max_pyramid_ratio: 0.25
+    kelly_half_cap: 0.3
+  dynamic_trailing:
+    enabled: false
+    atr_multiplier: 2.5
+    chandelier_multiplier: 3.0
+  reflexive_portfolio_monitoring:
+    enabled: false
+    max_correlation: 0.85
+    max_concentration_pct: 0.35
+    max_drawdown_chain_count: 3
+  event_stream:
+    enabled: false
+    persist_stage_events: true
+  mode: shadow

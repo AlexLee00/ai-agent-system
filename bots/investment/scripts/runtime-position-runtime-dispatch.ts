@@ -78,7 +78,7 @@ function mapRuntimeCandidate(row = {}) {
     ? `npm --prefix ${INVESTMENT_BOT_PREFIX} run ${runner} -- --symbol=${symbol} --exchange=${exchange} --trade-mode=${tradeMode} --json`
     : null;
   const fallbackManualExecuteCommand = runner && symbol && exchange
-    ? `${fallbackPreviewCommand} --execute --confirm=${runner === 'runtime:strategy-exit' ? 'strategy-exit' : 'partial-adjust'}`
+    ? `${fallbackPreviewCommand} --execute --confirm=${runner === 'runtime:strategy-exit' ? 'strategy-exit' : runner === 'runtime:pyramid-adjust' ? 'pyramid-adjust' : 'partial-adjust'}`
     : null;
   const fallbackAutonomousExecuteCommand = runner && symbol && exchange
     ? `${fallbackPreviewCommand} --execute --confirm=position-runtime-autopilot --run-context=position-runtime-autopilot`
@@ -120,6 +120,7 @@ function mapRuntimeCandidate(row = {}) {
     guardReasons: executionIntent?.guardReasons || [],
     sourceQualityBlocked: row.runtimeState?.policyMatrix?.sourceQualityBlocked === true
       || row.runtimeState?.monitoringPolicy?.sourceQualityBlocked === true,
+    portfolioReflexiveBias: row.runtimeState?.policyMatrix?.portfolioReflexiveBias || null,
     validationSeverity: row.runtimeState?.validationState?.severity || 'stable',
     cadenceMs: row.runtimeState?.monitoringPolicy?.cadenceMs || null,
     regime: row.runtimeState?.regime?.regime || null,
@@ -135,6 +136,16 @@ export function buildCandidates(rows = []) {
   return rows
     .map(mapRuntimeCandidate)
     .filter((row) => isActionableAction(row.action) && row.executionAllowed)
+    .map((row) => {
+      if (row?.portfolioReflexiveBias?.protective === true) {
+        return {
+          ...row,
+          urgency: row.urgency === 'high' ? 'high' : 'normal',
+          guardReasons: [...(row.guardReasons || []), 'portfolio_reflexive_protective_bias'],
+        };
+      }
+      return row;
+    })
     .sort((a, b) => urgencyScore(b.urgency) - urgencyScore(a.urgency));
 }
 
@@ -358,6 +369,7 @@ export function detectTerminalChildFailure(message = '', stdout = '', stderr = '
     text.includes('후보를 찾지 못했습니다')
     || text.includes('candidate_not_found')
     || text.includes('partial-adjust 후보를 찾지 못했습니다')
+    || text.includes('pyramid-adjust 후보를 찾지 못했습니다')
     || text.includes('strategy-exit 후보를 찾지 못했습니다')
   ) {
     return 'candidate_not_found';

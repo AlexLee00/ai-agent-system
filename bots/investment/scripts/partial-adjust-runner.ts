@@ -11,6 +11,8 @@ import {
   getKisMarketStatus,
   getKisOverseasMarketStatus,
 } from '../shared/secrets.ts';
+import { computeDynamicPositionSizing } from '../shared/dynamic-position-sizer.ts';
+import { resolvePositionLifecycleFlags } from '../shared/position-lifecycle-flags.ts';
 import { publishToMainBot } from '../shared/mainbot-client.ts';
 import { beginCloseout, finalizeCloseout } from '../shared/position-closeout-engine.ts';
 import { recordLifecyclePhaseSnapshot } from '../shared/lifecycle-contract.ts';
@@ -198,20 +200,38 @@ function mapCandidate(row, strategyProfile = null, overrideRatio = null) {
     responsibilityPlan: strategyProfile.strategy_context?.responsibilityPlan || {},
     positionRuntimeState: strategyProfile.strategy_state?.positionRuntimeState || null,
   } : null;
-  const signalIncidentLink = `partial_adjust:${row.reasonCode || 'unknown'}${buildFamilyFeedbackIncidentSuffix(strategyProfileSnapshot)}`;
+  const lifecycleFlags = resolvePositionLifecycleFlags();
+  const dynamicSizing = lifecycleFlags.shouldApplyDynamicSizing()
+    ? computeDynamicPositionSizing({
+        pnlPct: Number(row?.pnlPct || 0),
+        currentWeightPct: 0.12,
+        targetVolatility: 0.03,
+        realizedVolatility: Math.max(0.01, Math.abs(Number(row?.analysisSnapshot?.liveIndicator?.weightedBias || 0)) * 0.04),
+        winRate: Number(strategyProfileSnapshot?.familyPerformanceFeedback?.winRatePct || 50) / 100,
+        rewardRisk: 1.8,
+      })
+    : null;
+  const adjustedReasonCode = dynamicSizing?.mode === 'trim'
+    ? dynamicSizing.reasonCode
+    : row.reasonCode || null;
+  const adjustedRatio = dynamicSizing?.mode === 'trim'
+    ? normalizeRatio(dynamicSizing.adjustmentRatio) || ratio
+    : ratio;
+  const signalIncidentLink = `partial_adjust:${adjustedReasonCode || 'unknown'}${buildFamilyFeedbackIncidentSuffix(strategyProfileSnapshot)}`;
   return {
     exchange: row.exchange,
     symbol: row.symbol,
     tradeMode: row.tradeMode || 'normal',
     pnlPct: Number(row.pnlPct || 0),
-    reasonCode: row.reasonCode || null,
+    reasonCode: adjustedReasonCode,
     reason: row.reason || null,
-    partialExitRatio: ratio,
+    partialExitRatio: adjustedRatio,
     positionAmount,
     avgPrice,
     estimatedNotional,
     estimatedExitAmount,
     signalIncidentLink,
+    sizingDecision: dynamicSizing || null,
     executionIntent: row.executionIntent
       || strategyProfileSnapshot?.positionRuntimeState?.executionIntent
       || null,

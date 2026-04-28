@@ -85,7 +85,7 @@ async function fetchReviewData(tradeId: number) {
 async function fetchLifecycleData(symbol: string, exchange: string) {
   if (!symbol) return [];
   return db.query(`
-    SELECT phase, event_type, output_snapshot, created_at
+    SELECT phase, stage_id, event_type, output_snapshot, created_at
     FROM position_lifecycle_events
     WHERE symbol = $1
     ORDER BY created_at ASC
@@ -173,7 +173,11 @@ function buildAttributions(
   const reevalCount = Number(review?.reevaluation_count ?? 0);
   const monitoringScore = Math.min(1.0, reevalCount / 5); // 5회 재평가 = 만점
   for (let i = 1; i <= 8; i++) {
-    const stageEvents = lifecycle.filter((e: any) => e.phase?.includes(`stage_${i}`) || e.event_type?.includes(`stage_${i}`));
+    const stageEvents = lifecycle.filter((e: any) =>
+      String(e.stage_id || '').toLowerCase() === `stage_${i}`
+      || String(e.phase || '').toLowerCase().includes(`stage_${i}`)
+      || String(e.event_type || '').toLowerCase().includes(`stage_${i}`)
+    );
     attrs.push({
       trade_id: tradeId,
       stage_id: `stage_${i}`,

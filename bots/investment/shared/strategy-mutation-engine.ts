@@ -13,8 +13,9 @@
  */
 
 import * as db from './db.ts';
-import { buildPositionScopeKey } from './lifecycle-contract.ts';
+import { buildPositionScopeKey, recordPositionLifecycleStageEvent } from './lifecycle-contract.ts';
 import type { StrategyValidityResult } from './strategy-validity-evaluator.ts';
+import { resolvePositionLifecycleFlags } from './position-lifecycle-flags.ts';
 
 // ─── 타입 ───────────────────────────────────────────────────────────────────
 
@@ -98,15 +99,14 @@ export interface MutationEngineInput {
 // ─── Kill switch & 설정 ──────────────────────────────────────────────────────
 
 function getMutationEnabled(): boolean {
-  const v = process.env.LUNA_STRATEGY_MUTATION_ENABLED;
-  if (!v) return false;
-  return v === 'true' || v === '1';
+  return resolvePositionLifecycleFlags().phaseC.enabled === true;
 }
 
 function getMutationConfig() {
+  const flags = resolvePositionLifecycleFlags();
   return {
-    predictiveThreshold: Number(process.env.LUNA_STRATEGY_MUTATION_PREDICTIVE_THRESHOLD ?? 0.55),
-    dailyLimit: Number(process.env.LUNA_STRATEGY_MUTATION_DAILY_LIMIT ?? 5),
+    predictiveThreshold: Number(flags.phaseC.predictiveThreshold ?? 0.55),
+    dailyLimit: Number(flags.phaseC.dailyLimit ?? 5),
   };
 }
 
@@ -204,6 +204,7 @@ function estimatePredictiveScore(
   analysisBuyVotes: number,
   analysisSellVotes: number,
   qualityScore: number | null,
+  validityAction: string | null,
 ): number {
   // 규칙 기반 점수 (mutation rule score)
   let base = ruleScore * 0.6;
@@ -217,83 +218,116 @@ function estimatePredictiveScore(
     if (analysisBuyVotes > analysisSellVotes) base += 0.15;
   }
 
-  // 이전 전략 quality_score 연속성
+  // 이전 전략 quality_score 연속성/패널티
   if (qualityScore != null && qualityScore >= 0.7) base += 0.10;
+  else if (qualityScore != null && qualityScore >= 0.55) base += 0.06;
+  else if (qualityScore != null && qualityScore < 0.5) base -= 0.12;
+
+  // validity action 보정: EXIT/PIVOT 구간은 mutation 필요성이 높음
+  if (validityAction === 'EXIT') base += 0.08;
+  else if (validityAction === 'PIVOT') base += 0.04;
+
+  // regime 정보 부재 시 보수적 패널티
+  if (!regime) base -= 0.05;
 
   return Math.min(1.0, Math.max(0.0, Math.round(base * 100) / 100));
 }
 
 // ─── 라이프사이클 이벤트 기록 ────────────────────────────────────────────────
 
-async function recordMutationLifecycleEvent(event: StrategyMutationLifecycleEvent): Promise<void> {
+async function insertStrategyMutationAuditRow(event: StrategyMutationLifecycleEvent): Promise<void> {
+  await db.run(`
+    INSERT INTO investment.strategy_mutation_events (
+      event_type, lifecycle_phase, position_scope_key,
+      exchange, symbol, trade_mode,
+      old_setup_type, new_setup_type,
+      validity_score, predictive_score,
+      reason, created_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `, [
+    event.eventType,
+    event.lifecyclePhase,
+    event.positionScopeKey,
+    event.exchange,
+    event.symbol,
+    event.tradeMode,
+    event.oldSetupType,
+    event.newSetupType,
+    event.validityScore,
+    event.predictiveScore,
+    event.reason,
+    event.createdAt,
+  ]);
+}
+
+async function ensureStrategyMutationAuditSchema() {
+  await db.run(`
+    CREATE TABLE IF NOT EXISTS investment.strategy_mutation_events (
+      id SERIAL PRIMARY KEY,
+      event_type TEXT NOT NULL,
+      lifecycle_phase TEXT NOT NULL DEFAULT 'phase5_monitor',
+      position_scope_key TEXT NOT NULL,
+      exchange TEXT NOT NULL,
+      symbol TEXT NOT NULL,
+      trade_mode TEXT NOT NULL DEFAULT 'normal',
+      old_setup_type TEXT,
+      new_setup_type TEXT,
+      validity_score DOUBLE PRECISION,
+      predictive_score DOUBLE PRECISION,
+      reason TEXT,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    )
+  `);
+}
+
+async function recordMutationLifecycleEvent(event: StrategyMutationLifecycleEvent, { strict = false } = {}): Promise<void> {
+  const errors = [];
   try {
-    await db.run(`
-      INSERT INTO investment.strategy_mutation_events (
-        event_type, lifecycle_phase, position_scope_key,
-        exchange, symbol, trade_mode,
-        old_setup_type, new_setup_type,
-        validity_score, predictive_score,
-        reason, created_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `, [
-      event.eventType,
-      event.lifecyclePhase,
-      event.positionScopeKey,
-      event.exchange,
-      event.symbol,
-      event.tradeMode,
-      event.oldSetupType,
-      event.newSetupType,
-      event.validityScore,
-      event.predictiveScore,
-      event.reason,
-      event.createdAt,
-    ]);
-  } catch {
-    // 테이블이 없으면 생성 후 재시도
+    await insertStrategyMutationAuditRow(event);
+  } catch (error) {
     try {
-      await db.run(`
-        CREATE TABLE IF NOT EXISTS investment.strategy_mutation_events (
-          id SERIAL PRIMARY KEY,
-          event_type TEXT NOT NULL,
-          lifecycle_phase TEXT NOT NULL DEFAULT 'phase5_monitor',
-          position_scope_key TEXT NOT NULL,
-          exchange TEXT NOT NULL,
-          symbol TEXT NOT NULL,
-          trade_mode TEXT NOT NULL DEFAULT 'normal',
-          old_setup_type TEXT,
-          new_setup_type TEXT,
-          validity_score DOUBLE PRECISION,
-          predictive_score DOUBLE PRECISION,
-          reason TEXT,
-          created_at TIMESTAMPTZ DEFAULT NOW()
-        )
-      `);
-      await db.run(`
-        INSERT INTO investment.strategy_mutation_events (
-          event_type, lifecycle_phase, position_scope_key,
-          exchange, symbol, trade_mode,
-          old_setup_type, new_setup_type,
-          validity_score, predictive_score,
-          reason, created_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `, [
-        event.eventType,
-        event.lifecyclePhase,
-        event.positionScopeKey,
-        event.exchange,
-        event.symbol,
-        event.tradeMode,
-        event.oldSetupType,
-        event.newSetupType,
-        event.validityScore,
-        event.predictiveScore,
-        event.reason,
-        event.createdAt,
-      ]);
-    } catch {
-      // DB 오류는 조용히 무시 (mutation 자체가 실패하지 않도록)
+      await ensureStrategyMutationAuditSchema();
+      await insertStrategyMutationAuditRow(event);
+    } catch (retryError) {
+      errors.push(retryError || error);
     }
+  }
+
+  try {
+    await recordPositionLifecycleStageEvent({
+      symbol: event.symbol,
+      exchange: event.exchange,
+      tradeMode: event.tradeMode,
+      stageId: 'stage_4',
+      phase: 'phase5_monitor',
+      ownerAgent: 'strategy_mutation_engine',
+      eventType: event.eventType,
+      inputSnapshot: {
+        oldSetupType: event.oldSetupType,
+        validityScore: event.validityScore,
+      },
+      outputSnapshot: {
+        newSetupType: event.newSetupType,
+        predictiveScore: event.predictiveScore,
+        reason: event.reason,
+      },
+      policySnapshot: {
+        lifecyclePhase: event.lifecyclePhase,
+      },
+      idempotencyKey: [
+        'stage4',
+        event.eventType,
+        event.positionScopeKey,
+        event.newSetupType || 'none',
+        event.createdAt.replace(/[^0-9a-z]/gi, '').slice(0, 20),
+      ].join(':'),
+    });
+  } catch (error) {
+    errors.push(error);
+  }
+
+  if (strict && errors.length > 0) {
+    throw new Error(`strategy_mutation_audit_persist_failed:${errors.map((error) => error?.message || String(error)).join('|')}`);
   }
 }
 
@@ -386,6 +420,7 @@ export async function evaluateStrategyMutation(input: MutationEngineInput): Prom
     analysisBuy,
     analysisSell,
     Number(input.currentStrategyProfile?.quality_score ?? null),
+    String(action || '').toUpperCase() || null,
   );
 
   // shadow mode: 계산만, DB 저장/실제 적용 없음
@@ -427,7 +462,7 @@ export async function evaluateStrategyMutation(input: MutationEngineInput): Prom
       reason: `predictiveScore ${predictiveScore.toFixed(3)} < threshold ${config.predictiveThreshold} — mutation 거부`,
       createdAt,
     };
-    await recordMutationLifecycleEvent(event);
+    await recordMutationLifecycleEvent(event, { strict: false });
     return { mutationApplied: false, shadowMode, mutationEnabled, candidate: null, rejectionReason: `predictive score 불충분 (${predictiveScore.toFixed(3)})`, lifecycleEvent: event };
   }
 
@@ -454,7 +489,25 @@ export async function evaluateStrategyMutation(input: MutationEngineInput): Prom
     createdAt,
   };
 
-  await recordMutationLifecycleEvent(event);
+  try {
+    await recordMutationLifecycleEvent(event, { strict: true });
+  } catch (error) {
+    const failedEvent: StrategyMutationLifecycleEvent = {
+      ...event,
+      eventType: 'strategy_mutation_rejected',
+      newSetupType: null,
+      predictiveScore,
+      reason: `audit persist failed: ${error?.message || String(error)}`,
+    };
+    return {
+      mutationApplied: false,
+      shadowMode,
+      mutationEnabled,
+      candidate: null,
+      rejectionReason: 'strategy mutation audit persist failed',
+      lifecycleEvent: failedEvent,
+    };
+  }
 
   return { mutationApplied: true, shadowMode, mutationEnabled, candidate, rejectionReason: null, lifecycleEvent: event };
 }

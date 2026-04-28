@@ -11,6 +11,7 @@
  * 입력: position, runtimeState, recentAnalyses, backtest, regime, evidence
  * 출력: StrategyValidityResult { score, driftReasons, recommendedAction, dimensions }
  */
+import { resolvePositionLifecycleFlags } from './position-lifecycle-flags.ts';
 
 // ─── 타입 ───────────────────────────────────────────────────────────────────
 
@@ -24,7 +25,10 @@ export interface ValidityDimension {
 }
 
 export interface StrategyValidityResult {
-  score: number;                    // 0~1 weighted 합산
+  score: number;                    // 0~1 Bayesian posterior (운영 표시용)
+  actionScore: number;              // 0~1 이번 사이클 weighted score (action 기준)
+  weightedScore: number;            // actionScore alias — 리포트 명확성
+  baseAction: ValidityAction;        // escalation 전 action
   recommendedAction: ValidityAction;
   driftReasons: string[];
   dimensions: ValidityDimension[];
@@ -107,17 +111,16 @@ export interface ValidityEvaluatorInput {
 // ─── Kill switch & 임계값 ────────────────────────────────────────────────────
 
 function getEvaluatorEnabled(): boolean {
-  const v = process.env.LUNA_STRATEGY_VALIDITY_EVALUATOR_ENABLED;
-  if (!v) return false;
-  return v === 'true' || v === '1';
+  return resolvePositionLifecycleFlags().phaseB.enabled === true;
 }
 
 function getThresholds() {
+  const flags = resolvePositionLifecycleFlags();
   return {
-    hold:   Number(process.env.LUNA_VALIDITY_HOLD_THRESHOLD    ?? 0.7),
-    caution: Number(process.env.LUNA_VALIDITY_CAUTION_THRESHOLD ?? 0.5),
-    pivot:  Number(process.env.LUNA_VALIDITY_PIVOT_THRESHOLD   ?? 0.3),
-    exit:   Number(process.env.LUNA_VALIDITY_EXIT_THRESHOLD    ?? 0.3),
+    hold: Number(flags.phaseB.holdThreshold ?? 0.7),
+    caution: Number(flags.phaseB.cautionThreshold ?? 0.5),
+    pivot: Number(flags.phaseB.pivotThreshold ?? 0.3),
+    exit: Number(flags.phaseB.exitThreshold ?? 0.3),
   };
 }
 
@@ -326,6 +329,41 @@ function resolveAction(score: number, thresholds: ReturnType<typeof getThreshold
   return 'EXIT';
 }
 
+function findDimensionScore(dimensions: ValidityDimension[], name: string): number {
+  const hit = dimensions.find((d) => d.name === name);
+  return Number(hit?.score ?? 1);
+}
+
+function escalateAction(baseAction: ValidityAction, dimensions: ValidityDimension[]): ValidityAction {
+  const sev = {
+    pnl: findDimensionScore(dimensions, 'pnl_drift'),
+    time: findDimensionScore(dimensions, 'time_drift'),
+    volatility: findDimensionScore(dimensions, 'volatility_drift'),
+    regime: findDimensionScore(dimensions, 'regime_alignment'),
+    backtest: findDimensionScore(dimensions, 'backtest_divergence'),
+    source: findDimensionScore(dimensions, 'source_quality'),
+  };
+
+  if (sev.pnl <= 0.2 && sev.backtest <= 0.25) return 'EXIT';
+
+  const criticalCount = Object.values(sev).filter((v) => Number(v) <= 0.45).length;
+  if (criticalCount >= 2 && (sev.time <= 0.35 || sev.backtest <= 0.45)) {
+    return baseAction === 'EXIT' ? 'EXIT' : 'PIVOT';
+  }
+
+  if (sev.volatility <= 0.3 && sev.regime <= 0.55) {
+    if (baseAction === 'EXIT') return 'EXIT';
+    if (baseAction === 'PIVOT') return 'PIVOT';
+    return 'CAUTION';
+  }
+
+  if (sev.regime <= 0.5 || sev.source <= 0.5) {
+    if (baseAction === 'HOLD') return 'CAUTION';
+  }
+
+  return baseAction;
+}
+
 // ─── 핵심 공개 함수 ──────────────────────────────────────────────────────────
 
 export function evaluateStrategyValidity(input: ValidityEvaluatorInput): StrategyValidityResult {
@@ -360,7 +398,7 @@ export function evaluateStrategyValidity(input: ValidityEvaluatorInput): Strateg
   // Bayesian posterior
   const bayesianPosterior = bayesianUpdate(weightedScore, previousScore);
 
-  // 최종 점수 = Bayesian posterior (더 보수적)
+  const actionScore = Math.round(weightedScore * 1000) / 1000;
   const score = Math.round(bayesianPosterior * 1000) / 1000;
 
   // drift 이유 수집
@@ -369,10 +407,14 @@ export function evaluateStrategyValidity(input: ValidityEvaluatorInput): Strateg
     .map((d) => `[${d.name}] ${d.reason}`);
 
   // shadow mode에서는 action을 계산하되 실행에 영향 안 줌
-  const recommendedAction = shadowMode ? 'HOLD' : resolveAction(score, thresholds);
+  const baseAction = resolveAction(actionScore, thresholds);
+  const recommendedAction = shadowMode ? 'HOLD' : escalateAction(baseAction, dimensions);
 
   return {
     score,
+    actionScore,
+    weightedScore: actionScore,
+    baseAction,
     recommendedAction,
     driftReasons,
     dimensions,
