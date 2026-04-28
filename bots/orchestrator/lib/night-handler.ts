@@ -28,6 +28,27 @@ const pgPool = require('../../../packages/core/lib/pg-pool');
 
 const SCHEMA = 'claude';
 
+let morningQueueEnsured = false;
+async function ensureMorningQueueTable() {
+  if (morningQueueEnsured) return;
+  await pgPool.run(SCHEMA, `
+    CREATE TABLE IF NOT EXISTS morning_queue (
+      id          BIGSERIAL    PRIMARY KEY,
+      queue_id    TEXT,
+      summary     TEXT         NOT NULL DEFAULT '',
+      bot_list    JSONB        NOT NULL DEFAULT '[]'::jsonb,
+      event_count INTEGER      NOT NULL DEFAULT 1,
+      deferred_at TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+      sent_at     TIMESTAMPTZ
+    )
+  `);
+  await pgPool.run(SCHEMA, `
+    CREATE INDEX IF NOT EXISTS idx_morning_queue_unsent_deferred
+      ON morning_queue (deferred_at ASC) WHERE sent_at IS NULL
+  `);
+  morningQueueEnsured = true;
+}
+
 function getAiAgentHome() {
   return process.env.AI_AGENT_HOME || process.env.JAY_HOME || path.join(os.homedir(), '.ai-agent-system');
 }
@@ -99,6 +120,7 @@ function shouldDefer(alertLevel) {
  * morning_queue에 보류 등록
  */
 async function deferToMorning(queueId, summary, bots = []) {
+  await ensureMorningQueueTable();
   await pgPool.run(SCHEMA, `
     INSERT INTO morning_queue (queue_id, summary, bot_list)
     VALUES ($1, $2, $3)
@@ -109,6 +131,7 @@ async function deferToMorning(queueId, summary, bots = []) {
  * morning_queue에서 미발송 항목 조회 및 마킹
  */
 async function flushMorningQueue() {
+  await ensureMorningQueueTable();
   const rows = await pgPool.query(SCHEMA, `
     SELECT * FROM morning_queue WHERE sent_at IS NULL ORDER BY deferred_at ASC
   `);

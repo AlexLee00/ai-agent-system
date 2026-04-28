@@ -150,21 +150,17 @@ async function resolve(key: string, action: string): Promise<boolean> {
 }
 
 async function cleanExpired(): Promise<number> {
+  await ensurePendingConfirmsTable();
   const now = new Date().toISOString();
-  try {
-    const result = await pgPool.run(
-      SCHEMA,
-      `
-      UPDATE pending_confirms SET status = 'expired', updated_at = $1
-      WHERE status = 'pending' AND expires_at <= $1
-    `,
-      [now]
-    );
-    return result.rowCount || 0;
-  } catch (error) {
-    if (isMissingPendingConfirmsError(error)) return 0;
-    throw error;
-  }
+  const result = await pgPool.run(
+    SCHEMA,
+    `
+    UPDATE pending_confirms SET status = 'expired', updated_at = $1
+    WHERE status = 'pending' AND expires_at <= $1
+  `,
+    [now]
+  );
+  return result.rowCount || 0;
 }
 
 module.exports = { cleanExpired, createConfirm, getByKey, resolve, ensurePendingConfirmsTable };
