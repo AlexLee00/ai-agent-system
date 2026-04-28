@@ -27,7 +27,7 @@ const FALLBACK_TEAM_PROBES = {
 };
 
 const FALLBACK_LAUNCHD_LABELS = {
-  orchestrator: ['ai.orchestrator'],
+  orchestrator: ['ai.jay.runtime'],
   worker: ['ai.worker.web', 'ai.worker.nextjs', 'ai.worker.lead', 'ai.worker.task-runner'],
   claude: ['ai.claude.commander', 'ai.claude.health-dashboard', 'ai.claude.dexter'],
   blog: ['ai.blog.node-server'],

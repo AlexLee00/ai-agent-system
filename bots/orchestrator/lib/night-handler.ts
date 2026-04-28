@@ -28,25 +28,64 @@ const pgPool = require('../../../packages/core/lib/pg-pool');
 
 const SCHEMA = 'claude';
 
-let morningQueueEnsured = false;
+let morningQueueEnsurePromise = null;
+
+function isMissingMorningQueueError(error) {
+  return error?.code === '42P01' || /morning_queue/i.test(String(error?.message || ''));
+}
+
 async function ensureMorningQueueTable() {
-  if (morningQueueEnsured) return;
-  await pgPool.run(SCHEMA, `
-    CREATE TABLE IF NOT EXISTS morning_queue (
-      id          BIGSERIAL    PRIMARY KEY,
-      queue_id    TEXT,
-      summary     TEXT         NOT NULL DEFAULT '',
-      bot_list    JSONB        NOT NULL DEFAULT '[]'::jsonb,
-      event_count INTEGER      NOT NULL DEFAULT 1,
-      deferred_at TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
-      sent_at     TIMESTAMPTZ
-    )
-  `);
-  await pgPool.run(SCHEMA, `
-    CREATE INDEX IF NOT EXISTS idx_morning_queue_unsent_deferred
-      ON morning_queue (deferred_at ASC) WHERE sent_at IS NULL
-  `);
-  morningQueueEnsured = true;
+  if (morningQueueEnsurePromise) return morningQueueEnsurePromise;
+  morningQueueEnsurePromise = (async () => {
+    await pgPool.run(SCHEMA, `
+      CREATE TABLE IF NOT EXISTS morning_queue (
+        id          BIGSERIAL   PRIMARY KEY,
+        queue_id    TEXT        NOT NULL,
+        summary     TEXT        NOT NULL DEFAULT '',
+        bot_list    JSONB       NOT NULL DEFAULT '[]'::jsonb,
+        event_count INTEGER     NOT NULL DEFAULT 1,
+        deferred_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        sent_at     TIMESTAMPTZ
+      )
+    `);
+    await pgPool.run(SCHEMA, `
+      ALTER TABLE morning_queue
+      ADD COLUMN IF NOT EXISTS queue_id TEXT NOT NULL DEFAULT 'legacy'
+    `);
+    await pgPool.run(SCHEMA, `
+      ALTER TABLE morning_queue
+      ADD COLUMN IF NOT EXISTS summary TEXT NOT NULL DEFAULT ''
+    `);
+    await pgPool.run(SCHEMA, `
+      ALTER TABLE morning_queue
+      ADD COLUMN IF NOT EXISTS bot_list JSONB NOT NULL DEFAULT '[]'::jsonb
+    `);
+    await pgPool.run(SCHEMA, `
+      ALTER TABLE morning_queue
+      ADD COLUMN IF NOT EXISTS event_count INTEGER NOT NULL DEFAULT 1
+    `);
+    await pgPool.run(SCHEMA, `
+      ALTER TABLE morning_queue
+      ADD COLUMN IF NOT EXISTS deferred_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    `);
+    await pgPool.run(SCHEMA, `
+      ALTER TABLE morning_queue
+      ADD COLUMN IF NOT EXISTS sent_at TIMESTAMPTZ
+    `);
+    await pgPool.run(SCHEMA, `
+      CREATE INDEX IF NOT EXISTS idx_morning_queue_unsent_deferred
+      ON morning_queue (deferred_at ASC)
+      WHERE sent_at IS NULL
+    `);
+    await pgPool.run(SCHEMA, `
+      CREATE INDEX IF NOT EXISTS idx_morning_queue_queue_id
+      ON morning_queue (queue_id)
+    `);
+  })().catch((error) => {
+    morningQueueEnsurePromise = null;
+    throw error;
+  });
+  return morningQueueEnsurePromise;
 }
 
 function getAiAgentHome() {
@@ -121,10 +160,20 @@ function shouldDefer(alertLevel) {
  */
 async function deferToMorning(queueId, summary, bots = []) {
   await ensureMorningQueueTable();
-  await pgPool.run(SCHEMA, `
-    INSERT INTO morning_queue (queue_id, summary, bot_list)
-    VALUES ($1, $2, $3)
-  `, [queueId, summary, JSON.stringify(bots)]);
+  try {
+    await pgPool.run(SCHEMA, `
+      INSERT INTO morning_queue (queue_id, summary, bot_list, event_count, deferred_at)
+      VALUES ($1, $2, $3::jsonb, $4, NOW())
+    `, [queueId, summary, JSON.stringify(bots), Array.isArray(bots) ? Math.max(1, bots.length) : 1]);
+  } catch (error) {
+    if (!isMissingMorningQueueError(error)) throw error;
+    morningQueueEnsurePromise = null;
+    await ensureMorningQueueTable();
+    await pgPool.run(SCHEMA, `
+      INSERT INTO morning_queue (queue_id, summary, bot_list, event_count, deferred_at)
+      VALUES ($1, $2, $3::jsonb, $4, NOW())
+    `, [queueId, summary, JSON.stringify(bots), Array.isArray(bots) ? Math.max(1, bots.length) : 1]);
+  }
 }
 
 /**
@@ -132,16 +181,26 @@ async function deferToMorning(queueId, summary, bots = []) {
  */
 async function flushMorningQueue() {
   await ensureMorningQueueTable();
-  const rows = await pgPool.query(SCHEMA, `
-    SELECT * FROM morning_queue WHERE sent_at IS NULL ORDER BY deferred_at ASC
-  `);
+  let rows;
+  try {
+    rows = await pgPool.query(SCHEMA, `
+      SELECT * FROM morning_queue WHERE sent_at IS NULL ORDER BY deferred_at ASC
+    `);
+  } catch (error) {
+    if (!isMissingMorningQueueError(error)) throw error;
+    morningQueueEnsurePromise = null;
+    await ensureMorningQueueTable();
+    rows = await pgPool.query(SCHEMA, `
+      SELECT * FROM morning_queue WHERE sent_at IS NULL ORDER BY deferred_at ASC
+    `);
+  }
 
   if (rows.length === 0) return [];
 
   const now = new Date().toISOString();
   const ids = rows.map(r => r.id);
   await pgPool.run(SCHEMA, `
-    UPDATE morning_queue SET sent_at = $1 WHERE id = ANY($2::int[])
+    UPDATE morning_queue SET sent_at = $1 WHERE id = ANY($2::bigint[])
   `, [now, ids]);
 
   return rows;
@@ -156,7 +215,10 @@ function buildMorningBriefing(items) {
   const byBot = {};
   for (const item of items) {
     let bots;
-    try { bots = JSON.parse(item.bot_list); } catch { bots = ['알 수 없음']; }
+    if (Array.isArray(item.bot_list)) bots = item.bot_list;
+    else {
+      try { bots = JSON.parse(item.bot_list); } catch { bots = ['알 수 없음']; }
+    }
     for (const bot of bots) {
       if (!byBot[bot]) byBot[bot] = [];
       byBot[bot].push(item.summary);
@@ -505,6 +567,7 @@ module.exports = {
   shouldDefer,
   deferToMorning,
   flushMorningQueue,
+  ensureMorningQueueTable,
   buildMorningBriefing,
   buildMorningBriefingWithOps,
   buildOpsHealthAlertSnippet,

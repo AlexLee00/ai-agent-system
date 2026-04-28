@@ -13,6 +13,15 @@ CREATE TABLE IF NOT EXISTS claude.morning_queue (
 );
 
 ALTER TABLE claude.morning_queue
+  ADD COLUMN IF NOT EXISTS queue_id TEXT NOT NULL DEFAULT 'legacy';
+
+ALTER TABLE claude.morning_queue
+  ADD COLUMN IF NOT EXISTS summary TEXT NOT NULL DEFAULT '';
+
+ALTER TABLE claude.morning_queue
+  ADD COLUMN IF NOT EXISTS bot_list JSONB NOT NULL DEFAULT '[]'::jsonb;
+
+ALTER TABLE claude.morning_queue
   ADD COLUMN IF NOT EXISTS event_count INTEGER NOT NULL DEFAULT 1;
 
 ALTER TABLE claude.morning_queue

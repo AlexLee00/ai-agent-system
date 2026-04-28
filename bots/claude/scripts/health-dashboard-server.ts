@@ -298,7 +298,7 @@ function getBotStatuses() {
     { label: '앤디 (네이버모니터)', service: 'ai.ska.naver-monitor' },
     { label: '루나 커맨더',          service: 'ai.investment.commander' },
     { label: '루나 크립토',          service: 'ai.investment.crypto' },
-    { label: '제이 (오케스트레이터)', service: 'ai.orchestrator' },
+    { label: '제이 런타임', service: 'ai.jay.runtime' },
   ];
 
   return BOTS.map(b => {

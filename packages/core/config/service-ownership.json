@@ -52,6 +52,7 @@
   { "label": "ai.worker.lead", "owner": "launchd" },
   { "label": "ai.worker.task-runner", "owner": "launchd" },
   { "label": "ai.hub.resource-api", "owner": "launchd", "core": true, "healthUrl": "http://127.0.0.1:7788/hub/health" },
+  { "label": "ai.jay.runtime", "owner": "launchd", "core": true },
 
   { "label": "ai.orchestrator", "owner": "retired", "retired": true }
 ]

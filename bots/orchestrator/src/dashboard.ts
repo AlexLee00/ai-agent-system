@@ -51,7 +51,7 @@ type ActiveMuteRow = {
 };
 
 const CORE_LAUNCHD_SERVICES: LaunchdService[] = [
-  { id: 'ai.orchestrator', name: '오케스트레이터' },
+  { id: 'ai.jay.runtime', name: '제이 런타임' },
   { id: 'ai.reservation.monitor', name: '앤디(네이버모니터)' },
   { id: 'ai.kiosk.monitor', name: '지미(키오스크)' },
   { id: 'ai.investment.crypto', name: '루나팀 크립토' },

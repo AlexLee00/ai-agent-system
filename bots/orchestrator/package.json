@@ -10,10 +10,11 @@
     "check:n8n-critical": "tsx scripts/check-n8n-critical-path.ts",
     "smoke:jay-incident-store": "tsx scripts/jay-incident-store-smoke.ts",
     "smoke:pending-confirms": "tsx scripts/pending-confirms-smoke.ts",
+    "smoke:morning-queue": "tsx scripts/morning-queue-smoke.ts",
     "smoke:jay-runtime-policy": "tsx scripts/jay-runtime-policy-smoke.ts",
     "smoke:pg-role-mapping": "tsx scripts/pg-role-mapping-smoke.ts",
     "smoke:n8n-credential-tracking": "tsx scripts/n8n-credential-tracking-smoke.ts",
-    "check": "tsx scripts/jay-runtime-policy-smoke.ts && tsx scripts/pg-role-mapping-smoke.ts && tsx scripts/n8n-credential-tracking-smoke.ts && tsx scripts/pending-confirms-smoke.ts && tsx scripts/jay-incident-store-smoke.ts",
+    "check": "tsx scripts/jay-runtime-policy-smoke.ts && tsx scripts/pg-role-mapping-smoke.ts && tsx scripts/n8n-credential-tracking-smoke.ts && tsx scripts/pending-confirms-smoke.ts && tsx scripts/morning-queue-smoke.ts && tsx scripts/jay-incident-store-smoke.ts",
     "smoke:jay-orchestration": "tsx scripts/jay-orchestration-smoke.ts"
   },
   "dependencies": {

@@ -62,7 +62,7 @@ if echo "$CHANGED" | grep -q "^packages/core"; then
   restart_service "ai.worker.nextjs"
   restart_service "ai.worker.lead"
   restart_service "ai.worker.task-runner"
-  restart_service "ai.orchestrator"
+  restart_service "ai.jay.runtime"
   restart_service "ai.claude.dexter"
   echo "✅ 전체 재시작 완료"
   exit 0
@@ -109,7 +109,7 @@ if echo "$CHANGED" | grep -q "^bots/worker"; then
 fi
 
 if echo "$CHANGED" | grep -q "^bots/orchestrator"; then
-  restart_service "ai.orchestrator"
+  restart_service "ai.jay.runtime"
   RESTARTED=$((RESTARTED+1))
 fi
 
