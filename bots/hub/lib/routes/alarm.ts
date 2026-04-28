@@ -1,6 +1,9 @@
 const eventLake = require('../../../../packages/core/lib/event-lake');
 const telegramSender = require('../../../../packages/core/lib/telegram-sender');
-const { classifyAlarmType, isExplicitHumanEscalation } = require('../alarm/policy');
+const { classifyAlarmTypeWithConfidence, isExplicitHumanEscalation } = require('../alarm/policy');
+const { classifyAlarmWithLLM } = require('../alarm/classify-alarm-llm');
+const { interpretAlarm } = require('../alarm/alarm-interpreter-router');
+const { enrichAlarm } = require('../alarm/alarm-enrichment');
 const { ensureAlarmAutoDevDocument } = require('../alarm/auto-dev-incident');
 const { buildAlarmClusterKey } = require('../alarm/cluster');
 const {
@@ -39,7 +42,7 @@ const pgPool = require('../../../../packages/core/lib/pg-pool');
 const VISIBILITY_VALUES = ['internal', 'audit_only', 'digest', 'notify', 'human_action', 'emergency'] as const;
 const ACTIONABILITY_VALUES = ['none', 'auto_repair', 'needs_approval', 'needs_human'] as const;
 const STATUS_VALUES = ['new', 'correlating', 'repairing', 'verified', 'exhausted'] as const;
-const ALARM_TYPE_VALUES = ['work', 'report', 'error'] as const;
+const ALARM_TYPE_VALUES = ['work', 'report', 'error', 'critical'] as const;
 
 type AlarmVisibility = (typeof VISIBILITY_VALUES)[number];
 type AlarmActionability = (typeof ACTIONABILITY_VALUES)[number];
@@ -167,6 +170,7 @@ function defaultActionability({
   if (visibility === 'human_action') return 'needs_approval';
   if (visibility === 'emergency') return 'needs_human';
   if (explicitHumanEscalation && severity === 'critical') return 'needs_human';
+  if (alarmType === 'critical') return 'needs_human';
   if (alarmType === 'error') return 'auto_repair';
   if (alarmType === 'work' || alarmType === 'report') return 'none';
   if (severity === 'error' || severity === 'warn') return 'auto_repair';
@@ -189,6 +193,7 @@ function defaultVisibility({
     return 'human_action';
   }
   if (actionability === 'needs_approval' || actionability === 'needs_human') return 'human_action';
+  if (alarmType === 'critical') return 'emergency';
   if (alarmType === 'work' || alarmType === 'report') return 'notify';
   if (alarmType === 'error') return 'internal';
   return severity === 'critical' ? 'digest' : 'internal';
@@ -519,7 +524,8 @@ export async function alarmRoute(req: any, res: any) {
     const title = normalizeText(req.body?.title, `${team} alarm`);
     const payload = req.body?.payload ?? {};
     const eventType = normalizeEventType(payload);
-    const alarmType = classifyAlarmType({
+
+    const { type: baseAlarmType, confidence: classificationConfidence } = classifyAlarmTypeWithConfidence({
       requestedType: req.body?.alarmType ?? req.body?.alarm_type ?? req.body?.type,
       severity,
       eventType,
@@ -527,11 +533,27 @@ export async function alarmRoute(req: any, res: any) {
       message,
       payload,
     });
+
+    let alarmType: AlarmType = baseAlarmType;
+    let classificationSource = 'rule';
+
+    if (classificationConfidence < 0.7) {
+      const llmResult = await classifyAlarmWithLLM({ team, severity, title, message, eventType }).catch(() => null);
+      if (llmResult && llmResult.confidence > classificationConfidence) {
+        alarmType = llmResult.type as AlarmType;
+        classificationSource = 'llm';
+      }
+    }
+
     const explicitHumanEscalation = isExplicitHumanEscalation({
       requestedVisibility: req.body?.visibility,
       requestedActionability: req.body?.actionability,
       payload,
     });
+
+    if (explicitHumanEscalation && alarmType !== 'critical') {
+      alarmType = 'critical';
+    }
     const cooldownMinutes = Math.max(
       1,
       Number(req.body?.dedupeMinutes ?? req.body?.cooldownMinutes ?? 5) || 5,
@@ -642,6 +664,8 @@ export async function alarmRoute(req: any, res: any) {
         explicit_human_escalation: explicitHumanEscalation,
         immediate_human_delivery: immediateHumanDelivery,
         governed: true,
+        classification_source: classificationSource,
+        classification_confidence: classificationConfidence,
       },
     });
 
@@ -690,15 +714,42 @@ export async function alarmRoute(req: any, res: any) {
 
     if (immediateHumanDelivery) {
       try {
-        const deliveryMessage = formatAlarmNotification({
-          alarmType,
-          team,
-          severity,
-          title,
-          message,
-          eventType,
-          incidentKey,
-        });
+        const [interpretation, enrichment] = await Promise.allSettled([
+          interpretAlarm({ alarmType, team, severity, title, message }),
+          enrichAlarm({ team, clusterKey: clusterKey || undefined }),
+        ]);
+
+        const interpreted = interpretation.status === 'fulfilled' ? interpretation.value : null;
+        const enriched = enrichment.status === 'fulfilled' ? enrichment.value : null;
+
+        let deliveryMessage: string;
+        if (interpreted?.summary) {
+          const parts = [interpreted.summary];
+          if (interpreted.actionRecommendation) parts.push(`💡 ${interpreted.actionRecommendation}`);
+          if (interpreted.impactScope) parts.push(`📍 영향: ${interpreted.impactScope}`);
+          if (interpreted.rootCauseCandidates?.length) {
+            parts.push(`🔍 원인 후보: ${interpreted.rootCauseCandidates.slice(0, 3).join(' / ')}`);
+          }
+          if (enriched?.clusterCount && enriched.clusterCount > 1) {
+            parts.push(`🔁 반복: ${enriched.clusterCount}회`);
+          }
+          parts.push(`📎 ${incidentKey}`);
+          deliveryMessage = parts.join('\n');
+        } else {
+          deliveryMessage = formatAlarmNotification({
+            alarmType,
+            team,
+            severity,
+            title,
+            message,
+            eventType,
+            incidentKey,
+          });
+          if (enriched?.clusterCount && enriched.clusterCount > 1) {
+            deliveryMessage += `\n🔁 반복: ${enriched.clusterCount}회`;
+          }
+        }
+
         delivered = severity === 'critical' || visibility === 'emergency'
           ? await telegramSender.sendCriticalFromHubAlarm(deliveryTeam, deliveryMessage)
           : await telegramSender.sendFromHubAlarm(deliveryTeam, deliveryMessage);
@@ -724,6 +775,8 @@ export async function alarmRoute(req: any, res: any) {
       cluster_key: clusterKey || null,
       event_type: eventType,
       alarm_type: alarmType,
+      classification_source: classificationSource,
+      classification_confidence: classificationConfidence,
       visibility,
       actionability,
       status,

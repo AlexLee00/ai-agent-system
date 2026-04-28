@@ -147,6 +147,38 @@ function dedupeByProvider(chain: LLMChainEntry[]): LLMChainEntry[] {
 }
 
 const TEAM_SELECTOR_DEFAULTS: Record<string, any> = {
+  hub: {
+    'alarm.classifier': {
+      primary: { provider: 'groq', model: 'llama-3.1-8b-instant', maxTokens: 200, temperature: 0 },
+      fallbacks: [
+        { provider: 'anthropic', model: 'claude-haiku-4-5-20251001', maxTokens: 200, temperature: 0 },
+      ],
+    },
+    'alarm.interpreter.work': {
+      primary: { provider: 'groq', model: 'llama-3.1-8b-instant', maxTokens: 200, temperature: 0.1 },
+      fallbacks: [],
+    },
+    'alarm.interpreter.report': {
+      primary: { provider: 'groq', model: 'llama-3.1-8b-instant', maxTokens: 300, temperature: 0.1 },
+      fallbacks: [],
+    },
+    'alarm.interpreter.error': {
+      primary: { provider: 'anthropic', model: 'claude-haiku-4-5-20251001', maxTokens: 400, temperature: 0.1 },
+      fallbacks: [
+        { provider: 'groq', model: 'llama-3.1-8b-instant', maxTokens: 400, temperature: 0.1 },
+      ],
+    },
+    'alarm.interpreter.critical': {
+      primary: { provider: 'anthropic', model: 'claude-haiku-4-5-20251001', maxTokens: 400, temperature: 0.1 },
+      fallbacks: [
+        { provider: 'groq', model: 'qwen/qwen3-32b', maxTokens: 400, temperature: 0.1 },
+      ],
+    },
+    _fallback: {
+      primary: { provider: 'groq', model: 'llama-3.1-8b-instant', maxTokens: 300, temperature: 0.1 },
+      fallbacks: [],
+    },
+  },
   claude: {
     dexter: {
       primary: { provider: 'openai-oauth', model: 'gpt-5.4', maxTokens: 300, temperature: 0.1 },
@@ -507,6 +539,13 @@ function resolveFromTeamDefault(selectorKey: string): any {
 
 function buildSelectorRegistry(): Record<string, any> {
   return {
+    'hub._default': () => resolveFromTeamDefault('hub._default'),
+    'hub.alarm.classifier': () => resolveFromTeamDefault('hub.alarm.classifier'),
+    'hub.alarm.interpreter.work': () => resolveFromTeamDefault('hub.alarm.interpreter.work'),
+    'hub.alarm.interpreter.report': () => resolveFromTeamDefault('hub.alarm.interpreter.report'),
+    'hub.alarm.interpreter.error': () => resolveFromTeamDefault('hub.alarm.interpreter.error'),
+    'hub.alarm.interpreter.critical': () => resolveFromTeamDefault('hub.alarm.interpreter.critical'),
+
     'claude._default': () => resolveFromTeamDefault('claude._default'),
     'claude.archer.tech_analysis': () => resolveFromTeamDefault('claude.archer.tech_analysis'),
     'claude.lead.system_issue_triage': () => resolveFromTeamDefault('claude.lead.system_issue_triage'),

@@ -1,6 +1,6 @@
 'use strict';
 
-const ALARM_TYPES = ['work', 'report', 'error'] as const;
+const ALARM_TYPES = ['work', 'report', 'error', 'critical'] as const;
 
 type AlarmType = (typeof ALARM_TYPES)[number];
 
@@ -9,17 +9,70 @@ function normalizeText(value: unknown, fallback = ''): string {
   return text || fallback;
 }
 
-function includesAny(haystack: string, needles: string[]): boolean {
-  return needles.some((needle) => haystack.includes(needle));
-}
 
 export function normalizeAlarmType(value: unknown): AlarmType | null {
   const normalized = normalizeText(value).toLowerCase().replace(/[-\s]+/g, '_');
   if (!normalized) return null;
   if (normalized === 'operational' || normalized === 'operation' || normalized === 'process' || normalized === 'completion') return 'work';
   if (normalized === 'reporting' || normalized === 'digest' || normalized === 'summary') return 'report';
-  if (normalized === 'failure' || normalized === 'incident' || normalized === 'critical') return 'error';
+  if (normalized === 'failure' || normalized === 'incident') return 'error';
+  if (normalized === 'critical' || normalized === 'urgent' || normalized === 'emergency') return 'critical';
   return ALARM_TYPES.includes(normalized as AlarmType) ? (normalized as AlarmType) : null;
+}
+
+const REPORT_SIGNALS = [
+  'report', 'digest', 'summary', 'daily', 'weekly', 'monthly', 'readiness', 'dashboard',
+  '리포트', '보고', '정기 보고', '주간', '일간', '월간', '회고', '브리핑',
+];
+
+const ERROR_SIGNALS = [
+  'error', 'failed', 'failure', 'exception', 'timeout', 'unhandled', 'panic', 'fatal',
+  'provider_cooldown', '오류', '실패', '장애', '예외', '타임아웃', '미해결',
+];
+
+export function classifyAlarmTypeWithConfidence({
+  requestedType,
+  severity,
+  eventType,
+  title,
+  message,
+  payload,
+}: {
+  requestedType?: unknown;
+  severity?: unknown;
+  eventType?: unknown;
+  title?: unknown;
+  message?: unknown;
+  payload?: unknown;
+}): { type: AlarmType; confidence: number } {
+  const explicit = normalizeAlarmType(requestedType);
+  if (explicit) return { type: explicit, confidence: 1.0 };
+
+  const payloadType = payload && typeof payload === 'object' && !Array.isArray(payload)
+    ? normalizeAlarmType((payload as Record<string, unknown>).alarm_type || (payload as Record<string, unknown>).alarmType)
+    : null;
+  if (payloadType) return { type: payloadType, confidence: 1.0 };
+
+  const severityText = normalizeText(severity).toLowerCase();
+  if (severityText === 'critical') return { type: 'critical', confidence: 0.9 };
+
+  const corpus = [
+    normalizeText(eventType),
+    normalizeText(title),
+    normalizeText(message),
+  ].join('\n').toLowerCase();
+
+  const reportMatches = REPORT_SIGNALS.filter((s) => corpus.includes(s)).length;
+  if (reportMatches >= 2) return { type: 'report', confidence: 0.9 };
+  if (reportMatches >= 1) return { type: 'report', confidence: 0.8 };
+
+  const errorMatches = ERROR_SIGNALS.filter((s) => corpus.includes(s)).length;
+  if (errorMatches >= 2) return { type: 'error', confidence: 0.9 };
+  if (errorMatches >= 1) return { type: 'error', confidence: 0.8 };
+
+  if (severityText === 'warn' || severityText === 'error') return { type: 'error', confidence: 0.75 };
+
+  return { type: 'work', confidence: 0.5 };
 }
 
 export function classifyAlarmType({
@@ -37,63 +90,7 @@ export function classifyAlarmType({
   message?: unknown;
   payload?: unknown;
 }): AlarmType {
-  const explicit = normalizeAlarmType(requestedType);
-  if (explicit) return explicit;
-
-  const payloadType = payload && typeof payload === 'object' && !Array.isArray(payload)
-    ? normalizeAlarmType((payload as Record<string, unknown>).alarm_type || (payload as Record<string, unknown>).alarmType)
-    : null;
-  if (payloadType) return payloadType;
-
-  const severityText = normalizeText(severity).toLowerCase();
-  const corpus = [
-    normalizeText(eventType),
-    normalizeText(title),
-    normalizeText(message),
-  ].join('\n').toLowerCase();
-
-  const reportSignals = [
-    'report',
-    'digest',
-    'summary',
-    'daily',
-    'weekly',
-    'monthly',
-    'readiness',
-    'dashboard',
-    '리포트',
-    '보고',
-    '정기 보고',
-    '주간',
-    '일간',
-    '월간',
-    '회고',
-    '브리핑',
-  ];
-  if (includesAny(corpus, reportSignals)) return 'report';
-
-  const errorSignals = [
-    'error',
-    'failed',
-    'failure',
-    'exception',
-    'timeout',
-    'unhandled',
-    'panic',
-    'fatal',
-    'provider_cooldown',
-    '오류',
-    '실패',
-    '장애',
-    '예외',
-    '타임아웃',
-    '미해결',
-  ];
-  if (severityText === 'warn' || severityText === 'error' || severityText === 'critical' || includesAny(corpus, errorSignals)) {
-    return 'error';
-  }
-
-  return 'work';
+  return classifyAlarmTypeWithConfidence({ requestedType, severity, eventType, title, message, payload }).type;
 }
 
 export function isExplicitHumanEscalation({
@@ -120,6 +117,7 @@ export function isExplicitHumanEscalation({
 module.exports = {
   ALARM_TYPES,
   classifyAlarmType,
+  classifyAlarmTypeWithConfidence,
   isExplicitHumanEscalation,
   normalizeAlarmType,
 };

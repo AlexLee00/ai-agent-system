@@ -27,6 +27,7 @@ export function resolveAlarmDeliveryTeam({
   );
 
   if (normalizedVisibility === 'emergency') return useClassTopics ? 'ops-emergency' : 'emergency';
+  if (normalizedType === 'critical') return useClassTopics ? 'ops-emergency' : 'emergency';
   if (!useClassTopics) return normalizedTeam;
   if (normalizedType === 'work') return 'ops-work';
   if (normalizedType === 'report') return 'ops-reports';
@@ -52,8 +53,8 @@ export function formatAlarmNotification({
   incidentKey: string;
 }): string {
   const type = normalizeText(alarmType, 'work');
-  const label = type === 'report' ? '레포트' : type === 'error' ? '오류' : '실무';
-  const icon = type === 'report' ? '📊' : type === 'error' ? '🛠️' : '✅';
+  const label = type === 'report' ? '레포트' : type === 'error' ? '오류' : type === 'critical' ? '긴급' : '실무';
+  const icon = type === 'report' ? '📊' : type === 'error' ? '🛠️' : type === 'critical' ? '🔴' : '✅';
   return [
     `${icon} [${team}] ${label} 알림`,
     `제목: ${normalizeText(title, `${team} alarm`)}`,
