@@ -9,6 +9,8 @@ import { buildPositionRuntimeState, getPositionRuntimeMarket } from './position-
 import { buildEvidenceSummaryForAgent } from './external-evidence-ledger.ts';
 import { updateExternalEvidenceGapTaskQueue } from './evidence-gap-task-queue.ts';
 import { recordLifecyclePhaseSnapshot } from './lifecycle-contract.ts';
+import { evaluateStrategyValidity } from './strategy-validity-evaluator.ts';
+import { resolveAdaptiveCadence } from './adaptive-cadence-resolver.ts';
 
 const execFileAsync = promisify(execFile);
 const TRADINGVIEW_MCP_SCRIPT = new URL('../scripts/tradingview-mcp-server.py', import.meta.url);
@@ -818,6 +820,30 @@ export async function reevaluateOpenPositions({
     const analysisSummary = summarizeAnalyses(mergedAnalyses);
     const decision = decideReevaluation(position, analysisSummary, strategyProfile, latestBacktest);
     const pnlPct = calcPnlPct(position);
+
+    // Phase B — Strategy Validity Score (shadow mode 기본값: kill switch false 시 HOLD만 반환)
+    const validityResult = evaluateStrategyValidity({
+      position,
+      strategyProfile,
+      analysisSummary,
+      latestBacktest,
+      regimeSnapshot,
+      externalEvidenceSummary,
+      driftContext: decision.driftContext,
+      pnlPct,
+      heldHours: deriveHeldHours(position),
+      previousScore: strategyProfile?.strategy_state?.positionRuntimeState?.strategyValidityScore ?? null,
+    });
+
+    // Phase A — Adaptive Cadence (shadow mode 기본값: kill switch false 시 5분 반환)
+    const adaptiveCadence = resolveAdaptiveCadence({
+      exchange: position.exchange,
+      attentionType,
+      volatilityBurst: attentionType?.includes('volatil') || attentionType?.includes('atr') || false,
+      newsEvent: attentionType?.includes('news') || attentionType?.includes('뉴스') || false,
+      volumeBurst: attentionType?.includes('volume') || attentionType?.includes('거래량') || false,
+    });
+
     const runtimeState = buildPositionRuntimeState({
       position: {
         ...position,
@@ -843,18 +869,25 @@ export async function reevaluateOpenPositions({
     });
     if (strategyProfile?.id) {
       const attentionAt = decision.decision.recommendation === 'HOLD' ? null : new Date().toISOString();
+      const baseStrategyState = buildStrategyStateUpdate({
+        position,
+        recommendation: decision.decision.recommendation,
+        reasonCode: decision.decision.reasonCode,
+        reason: decision.decision.reason,
+        analysisSummary,
+        driftContext: decision.driftContext,
+        runtimeState,
+      });
+      // Phase B validity score를 positionRuntimeState 내에 저장 (다음 사이클 Bayesian prior로 활용)
+      if (baseStrategyState?.positionRuntimeState) {
+        baseStrategyState.positionRuntimeState.strategyValidityScore = validityResult.score;
+        baseStrategyState.positionRuntimeState.strategyValidityAction = validityResult.recommendedAction;
+        baseStrategyState.positionRuntimeState.adaptiveCadenceMs = adaptiveCadence.cadenceMs;
+      }
       await db.updatePositionStrategyProfileState(position.symbol, {
         exchange: position.exchange,
         tradeMode: effectiveTradeMode,
-        strategyState: buildStrategyStateUpdate({
-          position,
-          recommendation: decision.decision.recommendation,
-          reasonCode: decision.decision.reasonCode,
-          reason: decision.decision.reason,
-          analysisSummary,
-          driftContext: decision.driftContext,
-          runtimeState,
-        }),
+        strategyState: baseStrategyState,
         lastEvaluationAt: new Date().toISOString(),
         lastAttentionAt: attentionAt,
       }).catch(() => null);
@@ -934,6 +967,17 @@ export async function reevaluateOpenPositions({
       reason: decision.decision.reason,
       executionIntent: runtimeState.executionIntent,
       runtimeState,
+      strategyValidity: {
+        score: validityResult.score,
+        action: validityResult.recommendedAction,
+        driftReasons: validityResult.driftReasons,
+        shadowMode: validityResult.shadowMode,
+      },
+      adaptiveCadence: {
+        cadenceMs: adaptiveCadence.cadenceMs,
+        triggerType: adaptiveCadence.triggerType,
+        overrideApplied: adaptiveCadence.overrideApplied,
+      },
       positionSnapshot: {
         amount: safeNumber(position.amount),
         avgPrice: safeNumber(position.avg_price),
