@@ -9,6 +9,11 @@ export interface DiscoverySignal {
   symbol: string;
   score: number;      // 0~1
   reason: string;
+  confidence?: number; // 0~1
+  reasonCode?: string | null;
+  evidenceRef?: Record<string, unknown> | null;
+  qualityFlags?: string[];
+  ttlHours?: number;
   raw?: Record<string, unknown>;
 }
 

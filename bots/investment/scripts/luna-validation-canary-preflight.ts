@@ -21,9 +21,11 @@ export async function buildLunaValidationCanaryPreflight({ hours = 24 } = {}) {
   const canaryPlan = await buildLunaKillSwitchCanaryPlan();
   const mapek = await buildLunaMapekCanaryObservation({ hours });
   const nextKey = canaryPlan?.nextPhase?.key || null;
+  const validationPhase = (canaryPlan?.phases || []).find((phase) => phase.key === 'LUNA_VALIDATION_ENABLED') || null;
+  const alreadyEnabled = validationPhase?.enabled === true;
   const hardFailures = Number(mapek?.bottleneck?.dispatch?.hardFailureCount || 0);
   const blockers = [];
-  if (nextKey !== 'LUNA_VALIDATION_ENABLED') {
+  if (!alreadyEnabled && nextKey !== 'LUNA_VALIDATION_ENABLED') {
     blockers.push(`next canary is ${nextKey || 'none'}, not LUNA_VALIDATION_ENABLED`);
   }
   if (mapek.ok !== true) {
@@ -35,9 +37,12 @@ export async function buildLunaValidationCanaryPreflight({ hours = 24 } = {}) {
   return {
     ok: blockers.length === 0,
     checkedAt: new Date().toISOString(),
-    status: blockers.length === 0 ? 'validation_canary_ready' : 'validation_canary_blocked',
+    status: blockers.length === 0
+      ? (alreadyEnabled ? 'validation_canary_already_enabled' : 'validation_canary_ready')
+      : 'validation_canary_blocked',
     blockers,
-    commands: blockers.length === 0 ? canaryPlan.commands : [],
+    commands: blockers.length === 0 && !alreadyEnabled ? canaryPlan.commands : [],
+    alreadyEnabled,
     canaryPlan,
     mapek,
   };

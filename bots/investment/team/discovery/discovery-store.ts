@@ -20,13 +20,23 @@ export async function ensureCandidateUniverseTable(): Promise<void> {
       source        TEXT          NOT NULL,
       source_tier   INTEGER       NOT NULL DEFAULT 2 CHECK (source_tier IN (1, 2)),
       score         NUMERIC(5,4)  NOT NULL DEFAULT 0.5000,
+      confidence    DOUBLE PRECISION DEFAULT 0.5,
       reason        TEXT,
+      reason_code   TEXT,
+      evidence_ref  JSONB         DEFAULT '{}'::jsonb,
+      quality_flags JSONB         DEFAULT '[]'::jsonb,
+      ttl_hours     INTEGER       DEFAULT 24,
       raw_data      JSONB         DEFAULT '{}'::jsonb,
       discovered_at TIMESTAMPTZ   NOT NULL DEFAULT NOW(),
       expires_at    TIMESTAMPTZ   NOT NULL DEFAULT NOW() + INTERVAL '24 hours',
       UNIQUE (symbol, market, source)
     )
   `);
+  try { await db.run(`ALTER TABLE candidate_universe ADD COLUMN IF NOT EXISTS confidence DOUBLE PRECISION DEFAULT 0.5`); } catch {}
+  try { await db.run(`ALTER TABLE candidate_universe ADD COLUMN IF NOT EXISTS reason_code TEXT`); } catch {}
+  try { await db.run(`ALTER TABLE candidate_universe ADD COLUMN IF NOT EXISTS evidence_ref JSONB DEFAULT '{}'::jsonb`); } catch {}
+  try { await db.run(`ALTER TABLE candidate_universe ADD COLUMN IF NOT EXISTS quality_flags JSONB DEFAULT '[]'::jsonb`); } catch {}
+  try { await db.run(`ALTER TABLE candidate_universe ADD COLUMN IF NOT EXISTS ttl_hours INTEGER DEFAULT 24`); } catch {}
   try {
     await db.run(`CREATE INDEX IF NOT EXISTS idx_candidate_universe_market_score ON candidate_universe (market, score DESC) WHERE expires_at > NOW()`);
     await db.run(`CREATE INDEX IF NOT EXISTS idx_candidate_universe_expires ON candidate_universe (expires_at)`);
@@ -49,28 +59,39 @@ export async function upsertCandidateSignals(
 
   for (const sig of signals) {
     if (!sig.symbol || typeof sig.score !== 'number') continue;
-    const result = await db.run(`
+    const result = await db.get(`
       INSERT INTO candidate_universe
-        (symbol, market, source, source_tier, score, reason, raw_data, expires_at)
+        (symbol, market, source, source_tier, score, confidence, reason, reason_code, evidence_ref, quality_flags, ttl_hours, raw_data, expires_at)
       VALUES
-        ($1, $2, $3, $4, $5, $6, $7, NOW() + ($8 || ' hours')::interval)
+        ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, NOW() + ($13 || ' hours')::interval)
       ON CONFLICT (symbol, market, source) DO UPDATE SET
         score         = EXCLUDED.score,
+        confidence    = EXCLUDED.confidence,
         reason        = EXCLUDED.reason,
+        reason_code   = EXCLUDED.reason_code,
+        evidence_ref  = EXCLUDED.evidence_ref,
+        quality_flags = EXCLUDED.quality_flags,
+        ttl_hours     = EXCLUDED.ttl_hours,
         raw_data      = EXCLUDED.raw_data,
         discovered_at = NOW(),
-        expires_at    = NOW() + ($8 || ' hours')::interval
+        expires_at    = NOW() + ($13 || ' hours')::interval
+      RETURNING (xmax = 0) AS inserted
     `, [
       sig.symbol,
       market,
       source,
       sourceTier,
       Math.min(1, Math.max(0, sig.score)),
+      Math.min(1, Math.max(0, Number(sig.confidence ?? sig.score ?? 0.5))),
       sig.reason || null,
+      sig.reasonCode || null,
+      sig.evidenceRef ? JSON.stringify(sig.evidenceRef) : '{}',
+      JSON.stringify(Array.isArray(sig.qualityFlags) ? sig.qualityFlags : []),
+      Math.max(1, Number(sig.ttlHours || ttlHours || 24)),
       sig.raw ? JSON.stringify(sig.raw) : '{}',
       String(ttlHours),
     ]);
-    if (result.rowCount === 1) inserted++;
+    if (result?.inserted === true) inserted++;
     else updated++;
   }
 
@@ -83,7 +104,18 @@ export async function getActiveCandidates(
   limit = 150,
 ): Promise<Array<{ symbol: string; market: string; source: string; score: number; reason: string }>> {
   return db.query(`
-    SELECT symbol, market, source, source_tier, score::float AS score, reason, discovered_at, expires_at
+    SELECT symbol,
+           market,
+           source,
+           source_tier,
+           score::float AS score,
+           confidence,
+           reason,
+           reason_code,
+           evidence_ref,
+           quality_flags,
+           discovered_at,
+           expires_at
     FROM candidate_universe
     WHERE market = $1
       AND expires_at > NOW()

@@ -94,12 +94,22 @@ function getEnvSnapshot() {
 
   const switches = {};
   for (const key of KILL_SWITCHES) {
+    const processValue = process.env[key] ?? null;
+    const launchctlValue = launchctlGetenv(key);
+    const repoValue = repoEnv[key] ?? null;
+    const installedValue = installedEnv[key] ?? null;
+    const durableValues = [launchctlValue, installedValue, repoValue].filter((value) => value != null);
+    const durableConflict = new Set(durableValues).size > 1;
+    const processConflict = launchctlValue != null && processValue != null && launchctlValue !== processValue;
     switches[key] = {
-      process: process.env[key] ?? null,
-      launchctl: launchctlGetenv(key),
-      repoPlist: repoEnv[key] ?? null,
-      installedPlist: installedEnv[key] ?? null,
-      effectiveHint: process.env[key] ?? launchctlGetenv(key) ?? installedEnv[key] ?? repoEnv[key] ?? null,
+      process: processValue,
+      launchctl: launchctlValue,
+      repoPlist: repoValue,
+      installedPlist: installedValue,
+      effectiveHint: launchctlValue ?? processValue ?? installedValue ?? repoValue ?? null,
+      sourceConflict: durableConflict,
+      durableConflict,
+      processConflict,
     };
   }
   return switches;

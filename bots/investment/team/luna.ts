@@ -32,6 +32,19 @@ import { getAvailableBalance, getAvailableUSDT, getOpenPositions, getCapitalConf
 import type { LunaBuyingPowerSnapshot } from '../shared/capital-manager.ts';
 import { getDomesticBalance } from '../shared/kis-client.ts';
 import { getInvestmentRagRuntimeConfig, getLunaDiscoveryThrottleConfig, getLunaRuntimeConfig, getLunaStockStrategyProfile, getPositionReevaluationRuntimeConfig } from '../shared/runtime-config.ts';
+import { getOHLCV } from '../shared/ohlcv-fetcher.ts';
+import { getLunaIntelligentDiscoveryFlags } from '../shared/luna-intelligent-discovery-config.ts';
+import { ensureLunaDiscoveryEntryTables } from '../shared/luna-discovery-entry-store.ts';
+import { scoreCommunitySentiment } from '../shared/community-sentiment.ts';
+import { detectWyckoffPhase } from '../shared/wyckoff-phase-detector.ts';
+import { classifyVsaBar } from '../shared/vsa-bar-classifier.ts';
+import { analyzeMultiTimeframe } from '../shared/multi-timeframe-analyzer.ts';
+import { fuseDiscoveryScore } from '../shared/discovery-score-fusion.ts';
+import { evaluateEntryTriggers } from '../shared/entry-trigger-engine.ts';
+import { applyPredictiveValidationGate } from '../shared/predictive-validation-gate.ts';
+import { recordDiscoveryAttribution, buildDiscoveryReflectionSummary, shouldPublishDiscoveryReflectionReport } from '../shared/discovery-reflection.ts';
+import { buildDiscoveryUniverse, toDiscoveryMarket } from './discovery/discovery-universe.ts';
+import { runNewsToSymbolMapping } from './discovery/news-to-symbol-mapper.ts';
 import * as journalDb from '../shared/trade-journal-db.ts';
 import { buildAccuracyReport, normalizeWeights } from '../shared/analyst-accuracy.ts';
 import { getMarketRegime, formatMarketRegime } from '../shared/market-regime.ts';
@@ -1654,6 +1667,12 @@ function applyDiscoveryThrottleToSymbols(symbols = [], throttle = null) {
   return symbols.slice(0, maxSymbols);
 }
 
+function applyDiscoveryHardCap(symbols = [], maxSymbols = 60) {
+  if (!Array.isArray(symbols)) return [];
+  const cap = Math.max(1, Number(maxSymbols || 60));
+  return symbols.length > cap ? symbols.slice(0, cap) : symbols;
+}
+
 function applyDiscoveryThrottleToDecision(decision = null, throttle = null) {
   if (!decision || !Array.isArray(decision.decisions)) {
     return { decision, reducedCount: 0 };
@@ -1695,6 +1714,29 @@ function applyDiscoveryThrottleToDecision(decision = null, throttle = null) {
   };
 }
 
+function mergeUniqueSymbols(primary = [], fallback = []) {
+  const out = [];
+  const seen = new Set();
+  for (const item of [...primary, ...fallback]) {
+    const value = String(item || '').trim();
+    if (!value || seen.has(value)) continue;
+    seen.add(value);
+    out.push(value);
+  }
+  return out;
+}
+
+function normalizeRegimeLabel(marketRegime = null) {
+  const raw = String(marketRegime?.regime || marketRegime?.label || marketRegime || '').trim();
+  return raw || 'ranging';
+}
+
+function clamp01(value, fallback = 0) {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return fallback;
+  return Math.max(0, Math.min(1, n));
+}
+
 export async function orchestrate(symbols, exchange = 'binance', params = null) {
   const label           = exchange === 'kis_overseas' ? '미국주식' : exchange === 'kis' ? '국내주식' : '암호화폐';
   const results         = [];
@@ -1702,15 +1744,77 @@ export async function orchestrate(symbols, exchange = 'binance', params = null) 
   const portfolio          = await buildPortfolioContext(exchange);
   const capitalSnapshot    = portfolio.capitalSnapshot ?? null;
   const discoveryThrottle  = getLunaDiscoveryThrottleConfig(exchange);
+  const intelligentFlags   = getLunaIntelligentDiscoveryFlags();
+  const discoveryMarket    = toDiscoveryMarket(exchange);
   const marketRegime       = await getMarketRegime(exchange).catch(() => null);
   const { weights: analystWeights, report: accuracyReport } = await loadAdaptiveAnalystWeights(exchange, marketRegime);
   const symbolDecisions    = [];
   const symbolAnalysesMap  = new Map(); // symbol → analyses (상관관계 기록용)
-  const discoverySymbols   = applyDiscoveryThrottleToSymbols(symbols, discoveryThrottle);
+  const intelligentBySymbol = new Map();
 
-  console.log(`\n🌙 [루나] ${label} 오케스트레이션 시작 — ${symbols.join(', ')}`);
-  if (discoveryThrottle?.enabled && discoveryThrottle?.maxSymbols > 0 && discoverySymbols.length < symbols.length) {
-    console.log(`  🎚️ [루나] discoveryThrottle maxSymbols=${discoveryThrottle.maxSymbols} 적용: ${symbols.length} → ${discoverySymbols.length}`);
+  let baseSymbols = Array.isArray(symbols) ? symbols.filter(Boolean) : [];
+  let universeCandidates = [];
+
+  if (Object.values(intelligentFlags.phases || {}).some(Boolean)) {
+    await ensureLunaDiscoveryEntryTables().catch(() => {});
+  }
+
+  if (intelligentFlags.phases.discoveryOrchestratorEnabled) {
+    const universe = await buildDiscoveryUniverse(discoveryMarket, new Date(), {
+      refresh: true,
+      fallbackSymbols: baseSymbols,
+      limit: Math.max(60, baseSymbols.length * 4),
+      ttlHours: 24,
+    }).catch(() => null);
+    if (universe?.symbols?.length) {
+      baseSymbols = mergeUniqueSymbols(universe.symbols, baseSymbols);
+    }
+    if (Array.isArray(universe?.candidates)) {
+      universeCandidates = universe.candidates;
+    }
+  }
+
+  if (intelligentFlags.phases.newsSymbolMappingEnabled) {
+    await runNewsToSymbolMapping({
+      exchange,
+      market: discoveryMarket,
+      ttlHours: 24,
+    }).catch((error) => {
+      console.warn(`  ⚠️ [루나] news→symbol 매핑 실패: ${error?.message || error}`);
+    });
+    const refreshed = await buildDiscoveryUniverse(discoveryMarket, new Date(), {
+      refresh: false,
+      fallbackSymbols: baseSymbols,
+      limit: Math.max(60, baseSymbols.length * 4),
+    }).catch(() => null);
+    if (refreshed?.symbols?.length) {
+      baseSymbols = mergeUniqueSymbols(refreshed.symbols, baseSymbols);
+    }
+    if (Array.isArray(refreshed?.candidates) && refreshed.candidates.length > 0) {
+      universeCandidates = refreshed.candidates;
+    }
+  }
+
+  const discoveryCandidateBySymbol = new Map(
+    (universeCandidates || []).map((row) => [String(row.symbol || ''), row]),
+  );
+
+  baseSymbols = applyDiscoveryHardCap(baseSymbols, intelligentFlags.discovery?.maxSymbols || 60);
+  const discoverySymbols = applyDiscoveryThrottleToSymbols(baseSymbols, discoveryThrottle);
+  console.log(`\n🌙 [루나] ${label} 오케스트레이션 시작 — ${discoverySymbols.join(', ')}`);
+  if (baseSymbols.length !== symbols.length) {
+    console.log(`  🌐 [루나] discovery universe 확장: ${symbols.length} → ${baseSymbols.length}`);
+  }
+  if (discoveryThrottle?.enabled && discoveryThrottle?.maxSymbols > 0 && discoverySymbols.length < baseSymbols.length) {
+    console.log(`  🎚️ [루나] discoveryThrottle maxSymbols=${discoveryThrottle.maxSymbols} 적용: ${baseSymbols.length} → ${discoverySymbols.length}`);
+  }
+
+  const communitySentimentBySymbol = new Map();
+  if (intelligentFlags.phases.communitySentimentEnabled && discoverySymbols.length > 0) {
+    const sentimentRows = await scoreCommunitySentiment(discoverySymbols, { exchange, minutes: 720 }).catch(() => []);
+    for (const row of sentimentRows || []) {
+      communitySentimentBySymbol.set(String(row.symbol || ''), row);
+    }
   }
 
   // 자본 상태 게이트: ACTIVE_DISCOVERY가 아니면 신규 발굴 생략 (전시장 공통)
@@ -1786,11 +1890,93 @@ export async function orchestrate(symbols, exchange = 'binance', params = null) 
         console.log(`  ⏭️ [루나] ${symbol}: debate 생략 (명확 신호 또는 한도 도달)`);
       }
 
+      const mtf = intelligentFlags.phases.mtfAnalyzerEnabled
+        ? analyzeMultiTimeframe(symbol, analyses, exchange, intelligentFlags.mtf)
+        : null;
+      const sentiment = communitySentimentBySymbol.get(symbol) || null;
+
+      let wyckoff = null;
+      let vsa = null;
+      if ((intelligentFlags.phases.wyckoffDetectionEnabled || intelligentFlags.phases.vsaClassificationEnabled) && exchange === 'binance') {
+        const fromDate = new Date(Date.now() - 5 * 24 * 3600 * 1000).toISOString().slice(0, 10);
+        const candles = await getOHLCV(symbol, '1h', fromDate, null, 'binance').catch(() => []);
+        if (intelligentFlags.phases.wyckoffDetectionEnabled) {
+          wyckoff = detectWyckoffPhase(candles);
+        }
+        if (intelligentFlags.phases.vsaClassificationEnabled && candles.length > 10) {
+          vsa = classifyVsaBar(candles[candles.length - 1], candles.slice(-30, -1));
+        }
+      }
+
+      const taAnalysis = analyses.find((a) => a.analyst === ANALYST_TYPES.TA_MTF || a.analyst === ANALYST_TYPES.TA);
+      const discoverySeed = discoveryCandidateBySymbol.get(symbol) || null;
+      const fused = intelligentFlags.phases.scoreFusionEnabled
+        ? fuseDiscoveryScore({
+            regime: normalizeRegimeLabel(marketRegime),
+            discoverySignals: discoverySeed ? [discoverySeed] : [],
+            sentiment,
+            technical: { confidence: Number(taAnalysis?.confidence || 0.5) },
+            mtf,
+            wyckoff,
+            vsa,
+          })
+        : null;
+
       console.log(`\n  🤖 [루나] ${symbol} 신호 판단 중...`);
       const decision = await getSymbolDecision(symbol, analyses, exchange, debate, analystWeights);
-      console.log(`  → ${decision.action} (${((decision.confidence || 0) * 100).toFixed(0)}%) | ${decision.reasoning}`);
+      const discoveryScore = clamp01(fused?.discoveryScore ?? decision?.confidence ?? 0.5, 0.5);
+      const shouldMutateDecision = intelligentFlags.shouldApplyDecisionMutation();
+      const shouldApplyScoreFusion = intelligentFlags.shouldApplyScoreFusion();
+      const blendedConfidence = shouldApplyScoreFusion
+        ? clamp01((Number(decision?.confidence || 0) * 0.7) + (discoveryScore * 0.3), Number(decision?.confidence || 0))
+        : Number(decision?.confidence || 0);
+      const predictiveScore = clamp01(
+        (discoveryScore * 0.55) + (clamp01(((Number(mtf?.alignmentScore || 0) + 1) / 2), 0.5) * 0.45),
+        discoveryScore,
+      );
 
-      symbolDecisions.push({ symbol, exchange, ...decision });
+      const enrichedDecision = {
+        ...decision,
+        confidence: Number(blendedConfidence.toFixed(4)),
+        setup_type: shouldMutateDecision ? (decision?.setup_type || fused?.setupType || null) : (decision?.setup_type || null),
+        entry_strategy: shouldMutateDecision ? (decision?.entry_strategy || fused?.entryStrategy || null) : (decision?.entry_strategy || null),
+        predictiveScore: Number(predictiveScore.toFixed(4)),
+        triggerHints: {
+          mtfAgreement: Number(mtf?.mtfAgreement || 0),
+          discoveryScore: Number(discoveryScore || 0),
+          volumeBurst: Number(vsa?.metrics?.volRatio || 0),
+          breakoutRetest: String(wyckoff?.phase || '') === 'accumulation' && String(mtf?.dominantSignal || '') === ACTIONS.BUY,
+          newsMomentum: Math.max(0, Number(sentiment?.sentimentScore || 0)),
+        },
+        block_meta: {
+          ...(decision?.block_meta || {}),
+          discoveryContext: {
+            source: discoverySeed?.source || null,
+            market: discoveryMarket,
+            score: discoverySeed?.score ?? null,
+            confidence: discoverySeed?.confidence ?? null,
+            reasonCode: discoverySeed?.reasonCode ?? null,
+            evidenceRef: discoverySeed?.evidenceRef ?? null,
+          },
+          mtf,
+          sentiment,
+          wyckoff,
+          vsa,
+          scoreFusion: fused,
+        },
+      };
+      intelligentBySymbol.set(symbol, {
+        discoverySeed,
+        sentiment,
+        mtf,
+        wyckoff,
+        vsa,
+        fused,
+        predictiveScore,
+      });
+      console.log(`  → ${enrichedDecision.action} (${((enrichedDecision.confidence || 0) * 100).toFixed(0)}%) | ${enrichedDecision.reasoning}`);
+
+      symbolDecisions.push({ symbol, exchange, ...enrichedDecision });
     } catch (e) {
       console.error(`  ❌ [루나] ${symbol} 오류: ${e.message}`);
       await notifyError(`루나 오케스트레이터 - ${symbol}`, e);
@@ -1826,6 +2012,44 @@ export async function orchestrate(symbols, exchange = 'binance', params = null) 
   portfolio_decision = discoveryThrottleApplied.decision;
   if (discoveryThrottleApplied.reducedCount > 0) {
     console.log(`  🎚️ [루나] discoveryThrottle maxBuyCandidates=${discoveryThrottle.maxBuyCandidates} 적용: BUY 후보 ${discoveryThrottleApplied.reducedCount}개 보류`);
+  }
+
+  if (intelligentFlags.phases.entryTriggerEnabled) {
+    const triggerResult = await evaluateEntryTriggers(portfolio_decision.decisions || [], {
+      exchange,
+      regime: normalizeRegimeLabel(marketRegime),
+    }).catch((error) => {
+      console.warn(`  ⚠️ [루나] entry trigger 평가 실패: ${error?.message || error}`);
+      return null;
+    });
+    if (triggerResult?.decisions) {
+      portfolio_decision = {
+        ...portfolio_decision,
+        decisions: triggerResult.decisions,
+        entryTriggerStats: triggerResult.stats || null,
+      };
+      console.log(`  🎯 [루나] entry trigger: armed=${Number(triggerResult?.stats?.armed || 0)} fired=${Number(triggerResult?.stats?.fired || 0)} blocked=${Number(triggerResult?.stats?.blocked || 0)} mode=${triggerResult?.stats?.mode || intelligentFlags.mode}`);
+    }
+  }
+
+  if (intelligentFlags.phases.predictiveValidationEnabled) {
+    const predictiveGate = applyPredictiveValidationGate(
+      portfolio_decision.decisions || [],
+      intelligentFlags.predictive,
+    );
+    portfolio_decision = {
+      ...portfolio_decision,
+      decisions: predictiveGate.decisions,
+      predictiveValidation: {
+        mode: intelligentFlags.predictive.mode,
+        threshold: intelligentFlags.predictive.threshold,
+        blocked: predictiveGate.blocked,
+        advisory: predictiveGate.advisory,
+      },
+    };
+    if (predictiveGate.blocked > 0 || predictiveGate.advisory > 0) {
+      console.log(`  🧠 [루나] predictive validation: mode=${intelligentFlags.predictive.mode} blocked=${predictiveGate.blocked} advisory=${predictiveGate.advisory}`);
+    }
   }
 
   console.log(`  📌 시황: ${portfolio_decision.portfolio_view}`);
@@ -1963,6 +2187,18 @@ export async function orchestrate(symbols, exchange = 'binance', params = null) 
       }).catch((error) => {
         console.warn(`  ⚠️ [루나] ${dec.symbol}: capital backpressure block 저장 실패 (${error.message})`);
       });
+      if (intelligentFlags.phases.reflectionEnabled) {
+        const intel = intelligentBySymbol.get(dec.symbol) || {};
+        await recordDiscoveryAttribution({
+          signalId,
+          source: intel?.discoverySeed?.source || 'capital_backpressure',
+          setupType: dec?.setup_type || dec?.strategy_route?.setupType || null,
+          triggerType: dec?.block_meta?.entryTrigger?.triggerType || null,
+          discoveryScore: Number(intel?.fused?.discoveryScore ?? dec?.predictiveScore ?? dec?.confidence ?? 0),
+          predictiveScore: Number(dec?.predictiveScore ?? intel?.predictiveScore ?? 0),
+          note: 'capital_backpressure',
+        }).catch(() => null);
+      }
       console.log(`  💰 [루나] 신호 저장: ${signalId} (${dec.symbol} BUY, status=failed, capital_backpressure)`);
       await notifySignal({ ...signalData, paper: paperMode, exchange, tradeMode: signalData.tradeMode || null, status: SIGNAL_STATUS.FAILED });
       try {
@@ -2027,6 +2263,18 @@ export async function orchestrate(symbols, exchange = 'binance', params = null) 
         console.warn(`  ⚠️ [루나] ${dec.symbol}: block meta 저장 실패 (${error.message})`);
       });
     }
+    if (intelligentFlags.phases.reflectionEnabled) {
+      const intel = intelligentBySymbol.get(dec.symbol) || {};
+      await recordDiscoveryAttribution({
+        signalId,
+        source: intel?.discoverySeed?.source || dec?.block_meta?.discoveryContext?.source || null,
+        setupType: dec?.setup_type || dec?.strategy_route?.setupType || dec?.strategyRoute?.setupType || null,
+        triggerType: dec?.block_meta?.entryTrigger?.triggerType || null,
+        discoveryScore: Number(intel?.fused?.discoveryScore ?? dec?.predictiveScore ?? dec?.confidence ?? 0),
+        predictiveScore: Number(dec?.predictiveScore ?? intel?.predictiveScore ?? 0),
+        note: persistencePlan.status,
+      }).catch(() => null);
+    }
 
     console.log(`  ✅ [루나] 신호 저장: ${signalId} (${dec.symbol} ${dec.action}, status=${persistencePlan.status})`);
     await notifySignal({ ...persistedSignal, paper: paperMode, exchange, tradeMode: persistedSignal.tradeMode || null, status: persistencePlan.status });
@@ -2071,6 +2319,25 @@ export async function orchestrate(symbols, exchange = 'binance', params = null) 
     } else {
       console.log(`  🚫 [네메시스] 거부: ${riskResult?.reason || 'risk_rejected'}`);
       rejectedCount++;
+    }
+  }
+
+  if (intelligentFlags.phases.reflectionEnabled) {
+    const reflection = await buildDiscoveryReflectionSummary({ days: 14, exchange }).catch(() => null);
+    const top = reflection?.bySource?.[0] || null;
+    if (top) {
+      const reportGate = await shouldPublishDiscoveryReflectionReport({
+        exchange,
+        reportMeta: top,
+      }).catch(() => ({ publish: false, reason: 'reflection_state_unavailable' }));
+      if (reportGate?.publish) {
+        publishAlert({
+          from_bot: 'luna',
+          event_type: 'report',
+          alert_level: 1,
+          message: `🪞 [루나 Reflection] ${exchange} 최근14일 source=${top.source} closed=${top.closed} winRate=${(Number(top.avgWinRate || 0) * 100).toFixed(1)}% avgPnL=${Number(top.avgPnlPct || 0).toFixed(2)}%`,
+        });
+      }
     }
   }
 

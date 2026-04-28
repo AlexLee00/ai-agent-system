@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>EnvironmentVariables</key>
+	<dict>
+		<key>HOME</key>
+		<string>/Users/alexlee</string>
+		<key>NODE_ENV</key>
+		<string>production</string>
+		<key>PATH</key>
+		<string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+		<key>PAPER_MODE</key>
+		<string>false</string>
+		<key>LUNA_ENTRY_TRIGGER_ENGINE_ENABLED</key>
+		<string>true</string>
+		<key>LUNA_ENTRY_TRIGGER_DERIVE_MARKET_EVENTS</key>
+		<string>true</string>
+	</dict>
+	<key>KeepAlive</key>
+	<false/>
+	<key>Label</key>
+	<string>ai.investment.luna-entry-trigger-worker</string>
+	<key>ProgramArguments</key>
+	<array>
+		<string>/opt/homebrew/bin/node</string>
+		<string>/Users/alexlee/projects/ai-agent-system/bots/investment/scripts/luna-entry-trigger-worker.ts</string>
+		<string>--exchange=binance</string>
+		<string>--derive-market-events</string>
+		<string>--json</string>
+	</array>
+	<key>RunAtLoad</key>
+	<true/>
+	<key>StandardErrorPath</key>
+	<string>/tmp/investment-luna-entry-trigger-worker.err.log</string>
+	<key>StandardOutPath</key>
+	<string>/tmp/investment-luna-entry-trigger-worker.log</string>
+	<key>StartInterval</key>
+	<integer>60</integer>
+	<key>WorkingDirectory</key>
+	<string>/Users/alexlee/projects/ai-agent-system/bots/investment</string>
+</dict>
+</plist>

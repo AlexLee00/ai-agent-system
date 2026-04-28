@@ -10,10 +10,10 @@
  */
 
 import { createRequire } from 'module';
-import { getAbstractModelForHub } from './agent-llm-routing.js';
-import { injectMemoryIntoSystemPrompt } from './agent-memory-orchestrator.js';
-import { recordLLMFailure, getAvoidProviders } from './reflexion-guard.js';
-import { recordInvocation } from './agent-curriculum-tracker.js';
+import { getAbstractModelForHub } from './agent-llm-routing.ts';
+import { injectMemoryIntoSystemPrompt } from './agent-memory-orchestrator.ts';
+import { recordLLMFailure, getAvoidProviders } from './reflexion-guard.ts';
+import { recordInvocation } from './agent-curriculum-tracker.ts';
 
 const _require = createRequire(import.meta.url);
 const _hubClient = _require('../../../packages/core/lib/hub-client');
@@ -71,7 +71,9 @@ export function buildHubLlmCallPayload(
   } = {}
 ) {
   // Phase C: 에이전트×시장×태스크 동적 라우팅 (하위 호환 유지)
-  const abstractModel = getAbstractModelForHub(agentName, options.market, options.taskType);
+  const abstractModel = normalizeHubAbstractModel(
+    getAbstractModelForHub(agentName, options.market, options.taskType),
+  );
   const urgency = normalizeHubUrgency(options.urgency ?? (agentName === 'luna' ? 'high' : 'normal'));
   return {
     prompt:        userPrompt,
@@ -87,6 +89,16 @@ export function buildHubLlmCallPayload(
     symbol:        options.symbol || null,
     maxTokens:     options.maxTokens,
   };
+}
+
+function normalizeHubAbstractModel(value: string): 'anthropic_haiku' | 'anthropic_sonnet' | 'anthropic_opus' {
+  const raw = String(value || '').trim().toLowerCase();
+  if (raw === 'anthropic_haiku' || raw === 'anthropic_sonnet' || raw === 'anthropic_opus') {
+    return raw;
+  }
+  if (raw.includes('opus')) return 'anthropic_opus';
+  if (raw.includes('sonnet')) return 'anthropic_sonnet';
+  return 'anthropic_haiku';
 }
 
 /**

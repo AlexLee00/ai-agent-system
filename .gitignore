@@ -76,6 +76,9 @@ bots/claude/dexter-fixes.json
 bots/investment/output/ops/position-runtime-evidence-gap-queue.json
 bots/investment/output/ops/position-runtime-market-open-queue.json
 bots/investment/output/ops/position-runtime-overrides.json
+bots/investment/output/ops/luna-entry-trigger-worker-heartbeat.json
+bots/investment/output/ops/luna-entry-trigger-operating-report.json
+bots/investment/output/ops/luna-reflection-config-patch.json
 
 # 비디오팀 — 대용량 미디어 파일
 *.mp4

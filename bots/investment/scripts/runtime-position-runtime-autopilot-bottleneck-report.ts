@@ -29,6 +29,37 @@ function increment(map, key, amount = 1) {
   map[normalized] = (map[normalized] || 0) + amount;
 }
 
+function isStaleCandidateStatus(status = null) {
+  return String(status || '').trim() === 'candidate_not_found';
+}
+
+function rowHardFailureCount(row = {}) {
+  if (Array.isArray(row?.dispatchFailures)) {
+    return row.dispatchFailures
+      .filter((failure) => !isStaleCandidateStatus(failure?.status))
+      .length;
+  }
+  return Math.max(0, Number(row?.dispatchFailureCount || 0));
+}
+
+function buildRecentCleanWindow(rows = [], minCleanSamples = 3) {
+  const required = Math.max(1, Number(minCleanSamples || 3));
+  let cleanStreak = 0;
+  for (let i = rows.length - 1; i >= 0; i--) {
+    if (rowHardFailureCount(rows[i]) > 0) break;
+    cleanStreak++;
+  }
+  const recentRows = rows.slice(-required);
+  const recentHardFailures = recentRows.reduce((sum, row) => sum + rowHardFailureCount(row), 0);
+  return {
+    requiredCleanSamples: required,
+    cleanStreakSamples: cleanStreak,
+    recentSampleCount: recentRows.length,
+    recentHardFailureCount: recentHardFailures,
+    recovered: rows.length > 0 && cleanStreak >= Math.min(required, rows.length) && recentHardFailures === 0,
+  };
+}
+
 function recentHistory(file, hours) {
   const cutoff = Date.now() - (Math.max(1, Number(hours || 24)) * 3600 * 1000);
   return readPositionRuntimeAutopilotHistoryLines(file)
@@ -41,6 +72,7 @@ function recentHistory(file, hours) {
 export function buildAutopilotBottleneckReport({
   file = DEFAULT_POSITION_RUNTIME_AUTOPILOT_HISTORY_FILE,
   hours = 24,
+  minCleanSamples = Number(process.env.LUNA_MAPEK_CLEAN_STREAK_SAMPLES || 3),
 } = {}) {
   const rows = recentHistory(file, hours);
   const statusCounts = {};
@@ -89,12 +121,18 @@ export function buildAutopilotBottleneckReport({
     }
   }
 
+  const cleanWindow = buildRecentCleanWindow(rows, minCleanSamples);
+  const historicalHardFailureCount = hardFailureCount;
+  hardFailureCount = cleanWindow.recentHardFailureCount;
+
   const recommendations = [];
   if (staleCandidateCount > 0) {
-    recommendations.push('candidate_not_found는 stale candidate no-op으로 분류해 오류 알람에서 제외한다.');
+    recommendations.push('candidate_not_found는 stale candidate no-op으로 관찰하되, canary 차단 조건에서는 제외한다.');
   }
   if (hardFailureCount > 0) {
     recommendations.push('hard dispatch failure가 남아 있으므로 child runner stdout/stderr를 우선 점검한다.');
+  } else if (historicalHardFailureCount > 0 && cleanWindow.recovered) {
+    recommendations.push(`최근 ${cleanWindow.cleanStreakSamples}개 autopilot 샘플은 hard failure 없이 회복됐습니다.`);
   }
   if ((queueWaitingCounts.waiting_market_open || 0) > 0) {
     recommendations.push('KIS 장외 대기 queue는 오류가 아니라 market-open queue로 관찰한다.');
@@ -104,7 +142,7 @@ export function buildAutopilotBottleneckReport({
   }
 
   return {
-    ok: hardFailureCount === 0,
+    ok: hardFailureCount === 0 && (rows.length === 0 || cleanWindow.recovered || historicalHardFailureCount === 0),
     checkedAt: new Date().toISOString(),
     file,
     hours,
@@ -121,6 +159,10 @@ export function buildAutopilotBottleneckReport({
       failureCount: dispatchFailureCount,
       staleCandidateCount,
       hardFailureCount,
+      historicalHardFailureCount,
+      cleanStreakSamples: cleanWindow.cleanStreakSamples,
+      requiredCleanSamples: cleanWindow.requiredCleanSamples,
+      recentHardFailureCount: cleanWindow.recentHardFailureCount,
       failureStatusCounts,
       staleCandidateSymbols,
       hardFailureSymbols,
@@ -137,7 +179,7 @@ export function renderAutopilotBottleneckReport(report = {}) {
     `checkedAt: ${report.checkedAt || 'n/a'}`,
     `window: ${report.hours || 24}h / samples=${report.sampleCount || 0}`,
     `latest: ${report.latestRecordedAt || 'n/a'} / ${report.latestStatus || 'n/a'}`,
-    `dispatch: candidates=${dispatch.candidateCount || 0} executed=${dispatch.executedCount || 0} queued=${dispatch.queuedCount || 0} retrying=${dispatch.retryingCount || 0} skipped=${dispatch.skippedCount || 0} hardFailures=${dispatch.hardFailureCount || 0}`,
+    `dispatch: candidates=${dispatch.candidateCount || 0} executed=${dispatch.executedCount || 0} queued=${dispatch.queuedCount || 0} retrying=${dispatch.retryingCount || 0} skipped=${dispatch.skippedCount || 0} hardFailures=${dispatch.hardFailureCount || 0} historicalHardFailures=${dispatch.historicalHardFailureCount || 0} cleanStreak=${dispatch.cleanStreakSamples || 0}/${dispatch.requiredCleanSamples || 0}`,
     `staleCandidate: ${dispatch.staleCandidateCount || 0}`,
     `recommendations: ${(report.recommendations || []).length ? report.recommendations.join(' / ') : 'none'}`,
   ].join('\n');

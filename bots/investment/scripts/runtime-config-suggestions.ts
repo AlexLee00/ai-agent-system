@@ -25,6 +25,7 @@ import { buildRuntimeExecutionRiskGuardHistory } from './runtime-execution-risk-
 import { OVERSEAS_APPROVAL_PERSIST_CUTOVER } from './runtime-kis-overseas-autotune-report.ts';
 import { buildInvestmentCliInsight } from '../shared/cli-insight.ts';
 import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
+import { buildDiscoveryReflectionSummary } from '../shared/discovery-reflection.ts';
 
 function parseArgs(argv = process.argv.slice(2)) {
   const daysArg = argv.find(arg => arg.startsWith('--days='));
@@ -1055,6 +1056,51 @@ function buildStrategyFeedbackOutcomeSuggestions(strategyFeedbackOutcomes = null
   return suggestions;
 }
 
+function buildDiscoveryReflectionSuggestions(discoveryReflection = null) {
+  const suggestions = [];
+  const weak = (discoveryReflection?.bySource || [])
+    .filter((row) => Number(row.closed || 0) >= 3)
+    .sort((a, b) => Number(a.avgPnlPct || 0) - Number(b.avgPnlPct || 0))[0] || null;
+  const strong = (discoveryReflection?.bySource || [])
+    .filter((row) => Number(row.closed || 0) >= 3)
+    .sort((a, b) => Number(b.avgPnlPct || 0) - Number(a.avgPnlPct || 0))[0] || null;
+
+  if (weak && Number(weak.avgPnlPct || 0) < -1) {
+    suggestions.push({
+      key: `runtime_config.luna.discoverySourceFeedback.${weak.source}`,
+      current: 'auto_observed',
+      suggested: 'downweight_candidate',
+      action: 'observe',
+      confidence: Number(weak.closed || 0) >= 10 ? 'medium' : 'low',
+      reason: `discovery reflection 기준 ${weak.source} 소스는 종료 ${weak.closed}건, 승률 ${(Number(weak.avgWinRate || 0) * 100).toFixed(1)}%, 평균 손익 ${Number(weak.avgPnlPct || 0).toFixed(2)}%입니다. 즉시 차단보다 source score cap/가중치 감점 후보로 관찰합니다.`,
+    });
+  }
+
+  if (strong && Number(strong.avgPnlPct || 0) > 1) {
+    suggestions.push({
+      key: `runtime_config.luna.discoverySourceFeedback.${strong.source}`,
+      current: 'auto_observed',
+      suggested: 'upweight_candidate',
+      action: 'promote_candidate',
+      confidence: Number(strong.closed || 0) >= 10 ? 'medium' : 'low',
+      reason: `discovery reflection 기준 ${strong.source} 소스는 종료 ${strong.closed}건, 승률 ${(Number(strong.avgWinRate || 0) * 100).toFixed(1)}%, 평균 손익 ${Number(strong.avgPnlPct || 0).toFixed(2)}%입니다. 동일 regime에서 source 가중치 상향 후보로 비교할 수 있습니다.`,
+    });
+  }
+
+  if (!weak && !strong && Number(discoveryReflection?.totalRows || 0) > 0) {
+    suggestions.push({
+      key: 'runtime_config.luna.discoverySourceFeedback.outcomeMonitor',
+      current: 'auto_observed',
+      suggested: 'continue_sampling',
+      action: 'observe',
+      confidence: 'low',
+      reason: `discovery reflection 표본 ${discoveryReflection.totalRows}건이 있으나 source별 조정 기준에는 아직 부족합니다. attribution 표본을 계속 누적합니다.`,
+    });
+  }
+
+  return suggestions;
+}
+
 export function buildRiskApprovalSuggestions(riskApproval = null, riskApprovalTrend = null, config = null) {
   const suggestions = [];
   const decision = riskApproval?.decision || {};
@@ -1379,6 +1425,7 @@ function buildSuggestions(
   riskApprovalModeAuditTrend = null,
   executionRiskGuard = null,
   executionRiskGuardTrend = null,
+  discoveryReflection = null,
 ) {
   return [
     ...buildDiscoveryThrottleSuggestions(config, capitalGuardBias, summaries.binance),
@@ -1395,10 +1442,11 @@ function buildSuggestions(
     ...buildRiskApprovalReadinessSuggestions(riskApprovalReadiness, riskApprovalReadinessTrend),
     ...buildRiskApprovalModeAuditSuggestions(riskApprovalModeAudit, riskApprovalModeAuditTrend),
     ...buildExecutionRiskGuardSuggestions(executionRiskGuard, executionRiskGuardTrend),
+    ...buildDiscoveryReflectionSuggestions(discoveryReflection),
   ];
 }
 
-function buildReport(days, summaries, validationSummaries, validationBudgetSnapshots, capitalGuardBias, validationBudgetPolicy, validationBudgetPolicyTrend, cryptoSoftGuardSummary, regimeLaneSummary, strategyFamilySummary, strategyFeedbackOutcomes, riskApproval, riskApprovalTrend, riskApprovalReadiness, riskApprovalReadinessTrend, riskApprovalModeAudit, riskApprovalModeAuditTrend, executionRiskGuard, executionRiskGuardTrend, suggestions) {
+function buildReport(days, summaries, validationSummaries, validationBudgetSnapshots, capitalGuardBias, validationBudgetPolicy, validationBudgetPolicyTrend, cryptoSoftGuardSummary, regimeLaneSummary, strategyFamilySummary, strategyFeedbackOutcomes, riskApproval, riskApprovalTrend, riskApprovalReadiness, riskApprovalReadinessTrend, riskApprovalModeAudit, riskApprovalModeAuditTrend, executionRiskGuard, executionRiskGuardTrend, discoveryReflection, suggestions) {
   const governance = buildParameterGovernanceReport();
   return {
     periodDays: days,
@@ -1420,6 +1468,7 @@ function buildReport(days, summaries, validationSummaries, validationBudgetSnaps
     riskApprovalModeAuditTrend,
     executionRiskGuard,
     executionRiskGuardTrend,
+    discoveryReflection,
     suggestions,
     parameterGovernance: governance.summary,
     actionableSuggestions: suggestions.filter(item => item.action === 'adjust').length,
@@ -1529,6 +1578,13 @@ function printHuman(report) {
     if (decision.metrics?.weak) {
       const weak = decision.metrics.weak;
       lines.push(`  weakest: ${weak.familyBias || 'n/a'}/${weak.family || 'n/a'}/${weak.executionKind || 'n/a'} / avg ${weak.avgPnlPercent ?? 'n/a'}%`);
+    }
+  }
+  if (report.discoveryReflection?.bySource?.length) {
+    lines.push('');
+    lines.push('discovery reflection 요약:');
+    for (const source of report.discoveryReflection.bySource.slice(0, 3)) {
+      lines.push(`- ${source.source}: closed ${source.closed} / win ${(Number(source.avgWinRate || 0) * 100).toFixed(1)}% / avg pnl ${Number(source.avgPnlPct || 0).toFixed(2)}%`);
     }
   }
   if (report.riskApproval?.decision) {
@@ -1676,6 +1732,7 @@ export async function buildRuntimeConfigSuggestionsReport({ days = 14, write = f
   const riskApprovalModeAuditTrend = await buildRuntimeRiskApprovalModeAuditHistory({ days: Math.max(days, 30), json: true, write: false }).catch(() => null);
   const executionRiskGuard = await buildRuntimeExecutionRiskGuardReport({ days, json: true }).catch(() => null);
   const executionRiskGuardTrend = await buildRuntimeExecutionRiskGuardHistory({ days, json: true, write: false }).catch(() => null);
+  const discoveryReflection = await buildDiscoveryReflectionSummary({ days: Math.max(days * 3, 30) }).catch(() => null);
   const regimeLaneSummary = summarizeRegimeLaneRows(regimeLaneRows);
   const strategyFamilySummary = summarizeStrategyFamilyRows(strategyFamilyRows);
   const validationBudgetPolicyTrend = buildValidationBudgetPolicyTrend(
@@ -1684,7 +1741,7 @@ export async function buildRuntimeConfigSuggestionsReport({ days = 14, write = f
   );
   const suggestions = normalizeAnnotatedSuggestions(
     annotateRuntimeSuggestions(
-      buildSuggestions(config, executionConfig, summaries, validationSummaries, validationBudgetSnapshots, capitalGuardBias, validationBudgetPolicy, cryptoSoftGuardSummary, regimeLaneSummary, strategyFamilySummary, strategyFeedbackOutcomes, riskApproval, riskApprovalTrend, riskApprovalReadiness, riskApprovalReadinessTrend, riskApprovalModeAudit, riskApprovalModeAuditTrend, executionRiskGuard, executionRiskGuardTrend),
+      buildSuggestions(config, executionConfig, summaries, validationSummaries, validationBudgetSnapshots, capitalGuardBias, validationBudgetPolicy, cryptoSoftGuardSummary, regimeLaneSummary, strategyFamilySummary, strategyFeedbackOutcomes, riskApproval, riskApprovalTrend, riskApprovalReadiness, riskApprovalReadinessTrend, riskApprovalModeAudit, riskApprovalModeAuditTrend, executionRiskGuard, executionRiskGuardTrend, discoveryReflection),
     ),
   );
   const report = buildReport(
@@ -1707,6 +1764,7 @@ export async function buildRuntimeConfigSuggestionsReport({ days = 14, write = f
     riskApprovalModeAuditTrend,
     executionRiskGuard,
     executionRiskGuardTrend,
+    discoveryReflection,
     suggestions,
   );
   report.aiSummary = await buildInvestmentCliInsight({
@@ -1749,6 +1807,10 @@ export async function buildRuntimeConfigSuggestionsReport({ days = 14, write = f
         historyCount: report.executionRiskGuardTrend.historyCount,
         delta: report.executionRiskGuardTrend.delta,
       } : null,
+      discoveryReflection: report.discoveryReflection ? {
+        totalRows: report.discoveryReflection.totalRows,
+        bySource: (report.discoveryReflection.bySource || []).slice(0, 5),
+      } : null,
     },
     fallback:
       report.actionableSuggestions > 0
@@ -1789,6 +1851,10 @@ export async function buildRuntimeConfigSuggestionsReport({ days = 14, write = f
         executionRiskGuardTrend: report.executionRiskGuardTrend ? {
           historyCount: report.executionRiskGuardTrend.historyCount,
           delta: report.executionRiskGuardTrend.delta,
+        } : null,
+        discoveryReflection: report.discoveryReflection ? {
+          totalRows: report.discoveryReflection.totalRows,
+          bySource: (report.discoveryReflection.bySource || []).slice(0, 5),
         } : null,
       },
     });

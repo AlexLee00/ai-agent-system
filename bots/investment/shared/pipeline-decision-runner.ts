@@ -13,6 +13,19 @@ import { loadAnalysesForSession, loadLatestNodePayload } from '../nodes/helpers.
 import { getInvestmentTradeMode } from './secrets.ts';
 import { getOpenPositions, getCapitalConfigWithOverrides } from './capital-manager.ts';
 import { buildPreScreenPlannerCompact } from './pre-screen-planner-report.ts';
+import { getLunaIntelligentDiscoveryFlags } from './luna-intelligent-discovery-config.ts';
+import { ensureLunaDiscoveryEntryTables } from './luna-discovery-entry-store.ts';
+import { buildDiscoveryUniverse, toDiscoveryMarket } from '../team/discovery/discovery-universe.ts';
+import { runNewsToSymbolMapping } from '../team/discovery/news-to-symbol-mapper.ts';
+import { scoreCommunitySentiment } from './community-sentiment.ts';
+import { analyzeMultiTimeframe } from './multi-timeframe-analyzer.ts';
+import { detectWyckoffPhase } from './wyckoff-phase-detector.ts';
+import { classifyVsaBar } from './vsa-bar-classifier.ts';
+import { fuseDiscoveryScore } from './discovery-score-fusion.ts';
+import { evaluateEntryTriggers } from './entry-trigger-engine.ts';
+import { applyPredictiveValidationGate } from './predictive-validation-gate.ts';
+import { recordDiscoveryAttribution, buildDiscoveryReflectionSummary } from './discovery-reflection.ts';
+import { getOHLCV } from './ohlcv-fetcher.ts';
 import { createRequire } from 'module';
 
 const _require = createRequire(import.meta.url);
@@ -337,6 +350,35 @@ function buildMidGapPromotedAmount(amountUsdt, exchange) {
   return numeric;
 }
 
+function mergeUniqueSymbols(primary = [], fallback = []) {
+  const out = [];
+  const seen = new Set();
+  for (const item of [...primary, ...fallback]) {
+    const value = String(item || '').trim();
+    if (!value || seen.has(value)) continue;
+    seen.add(value);
+    out.push(value);
+  }
+  return out;
+}
+
+function applyDiscoveryHardCap(symbols = [], maxSymbols = 60) {
+  if (!Array.isArray(symbols)) return [];
+  const cap = Math.max(1, Number(maxSymbols || 60));
+  return symbols.length > cap ? symbols.slice(0, cap) : symbols;
+}
+
+function clamp01(value, fallback = 0) {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return fallback;
+  return Math.max(0, Math.min(1, n));
+}
+
+function normalizeRegimeLabel(regime = null) {
+  const raw = String(regime?.regime || regime?.label || regime || '').trim();
+  return raw || 'ranging';
+}
+
 async function executeApprovedDecision({
   decision,
   sessionId,
@@ -594,6 +636,10 @@ export async function runDecisionExecutionPipeline({
   params = null,
 } = {}) {
   const startedAt = Date.now();
+  const intelligentFlags = getLunaIntelligentDiscoveryFlags();
+  const discoveryMarket = toDiscoveryMarket(exchange);
+  let runtimeSymbols = Array.isArray(symbols) ? symbols.filter(Boolean) : [];
+  let discoveryCandidates = [];
   const investmentTradeMode = getInvestmentTradeMode();
   const currentPortfolio = portfolio || await inspectPortfolioContext(exchange);
   const l10Node = getDecisionNode('L10');
@@ -608,10 +654,57 @@ export async function runDecisionExecutionPipeline({
   const l33Node = getDecisionNode('L33');
   const l34Node = getDecisionNode('L34');
 
+  if (Object.values(intelligentFlags.phases || {}).some(Boolean)) {
+    await ensureLunaDiscoveryEntryTables().catch(() => {});
+  }
+
+  if (intelligentFlags.phases.discoveryOrchestratorEnabled) {
+    const universe = await buildDiscoveryUniverse(discoveryMarket, new Date(), {
+      refresh: true,
+      fallbackSymbols: runtimeSymbols,
+      limit: Math.max(60, runtimeSymbols.length * 4),
+    }).catch(() => null);
+    if (universe?.symbols?.length) {
+      runtimeSymbols = mergeUniqueSymbols(universe.symbols, runtimeSymbols);
+    }
+    if (Array.isArray(universe?.candidates)) {
+      discoveryCandidates = universe.candidates;
+    }
+  }
+
+  if (intelligentFlags.phases.newsSymbolMappingEnabled) {
+    await runNewsToSymbolMapping({
+      exchange,
+      market: discoveryMarket,
+      ttlHours: 24,
+    }).catch(() => {});
+    const refreshed = await buildDiscoveryUniverse(discoveryMarket, new Date(), {
+      refresh: false,
+      fallbackSymbols: runtimeSymbols,
+      limit: Math.max(60, runtimeSymbols.length * 4),
+    }).catch(() => null);
+    if (refreshed?.symbols?.length) {
+      runtimeSymbols = mergeUniqueSymbols(refreshed.symbols, runtimeSymbols);
+    }
+    if (Array.isArray(refreshed?.candidates) && refreshed.candidates.length > 0) {
+      discoveryCandidates = refreshed.candidates;
+    }
+  }
+  runtimeSymbols = applyDiscoveryHardCap(runtimeSymbols, intelligentFlags.discovery?.maxSymbols || 60);
+  const discoveryCandidateBySymbol = new Map((discoveryCandidates || []).map((row) => [String(row.symbol || ''), row]));
+  const communitySentimentBySymbol = new Map();
+  if (intelligentFlags.phases.communitySentimentEnabled && runtimeSymbols.length > 0) {
+    const sentimentRows = await scoreCommunitySentiment(runtimeSymbols, { exchange, minutes: 720 }).catch(() => []);
+    for (const row of sentimentRows || []) {
+      communitySentimentBySymbol.set(String(row.symbol || ''), row);
+    }
+  }
+
   const symbolDecisions = [];
   const symbolAnalysesMap = new Map();
+  const intelligentBySymbol = new Map();
   let debateCount = 0;
-  const debateLimit = getDebateLimit(exchange, symbols.length);
+  const debateLimit = getDebateLimit(exchange, runtimeSymbols.length);
   let riskRejected = 0;
   const riskRejectReasons = {};
   let weakSignalSkipped = 0;
@@ -635,6 +728,8 @@ export async function runDecisionExecutionPipeline({
   );
   let collectQualityReducedBuyCount = 0;
   let collectQualityBlockedBuyCount = 0;
+  let entryTriggerStats = null;
+  let predictiveValidationStats = null;
   const strategyRouteCounts = {};
   const strategyRouteQualityCounts = {};
   let strategyRouteReadinessSum = 0;
@@ -652,7 +747,7 @@ export async function runDecisionExecutionPipeline({
 
   const buildMetrics = (extra = {}) => ({
     durationMs: Date.now() - startedAt,
-    inputSymbols: symbols.length,
+    inputSymbols: runtimeSymbols.length,
     decidedSymbols: symbolDecisions.length,
     approvedSignals: extra.approvedSignals ?? 0,
     executedSymbols: extra.executedSymbols ?? 0,
@@ -677,7 +772,7 @@ export async function runDecisionExecutionPipeline({
       savedExecutionWork: riskRejected * 5,
       warnings: [
         ...buildDecisionWarnings({
-          symbols,
+          symbols: runtimeSymbols,
           debateCount,
           debateLimit,
           riskRejected,
@@ -695,6 +790,8 @@ export async function runDecisionExecutionPipeline({
       collectQualityReadiness: collectQuality.readinessScore,
       collectQualityBlockedBuyCount,
       collectQualityReducedBuyCount,
+      entryTriggerStats,
+      predictiveValidationStats,
       ...extra,
   });
 
@@ -794,7 +891,7 @@ export async function runDecisionExecutionPipeline({
     }
   }
 
-  for (const symbol of symbols) {
+  for (const symbol of runtimeSymbols) {
     try {
       const analysisLoad = await loadAnalysesForSession(sessionId, symbol, exchange);
       const analyses = analysisLoad.analyses || [];
@@ -860,7 +957,85 @@ export async function runDecisionExecutionPipeline({
       });
       const decision = decisionResult.result?.decision;
       if (!decision?.action) continue;
-      const strategyRoute = decision?.strategy_route || decision?.strategyRoute || null;
+      const mtf = intelligentFlags.phases.mtfAnalyzerEnabled
+        ? analyzeMultiTimeframe(symbol, analyses, exchange, intelligentFlags.mtf)
+        : null;
+      const sentiment = communitySentimentBySymbol.get(symbol) || null;
+      let wyckoff = null;
+      let vsa = null;
+      if ((intelligentFlags.phases.wyckoffDetectionEnabled || intelligentFlags.phases.vsaClassificationEnabled) && exchange === 'binance') {
+        const fromDate = new Date(Date.now() - 5 * 24 * 3600 * 1000).toISOString().slice(0, 10);
+        const candles = await getOHLCV(symbol, '1h', fromDate, null, 'binance').catch(() => []);
+        if (intelligentFlags.phases.wyckoffDetectionEnabled) {
+          wyckoff = detectWyckoffPhase(candles);
+        }
+        if (intelligentFlags.phases.vsaClassificationEnabled && candles.length > 10) {
+          vsa = classifyVsaBar(candles[candles.length - 1], candles.slice(-30, -1));
+        }
+      }
+      const taAnalysis = analyses.find((a) => a.analyst === ANALYST_TYPES.TA_MTF || a.analyst === ANALYST_TYPES.TA);
+      const discoverySeed = discoveryCandidateBySymbol.get(symbol) || null;
+      const fused = intelligentFlags.phases.scoreFusionEnabled
+        ? fuseDiscoveryScore({
+            regime: normalizeRegimeLabel(currentPortfolio?.marketRegime || null),
+            discoverySignals: discoverySeed ? [discoverySeed] : [],
+            sentiment,
+            technical: { confidence: Number(taAnalysis?.confidence || 0.5) },
+            mtf,
+            wyckoff,
+            vsa,
+          })
+        : null;
+      const discoveryScore = clamp01(fused?.discoveryScore ?? decision?.confidence ?? 0.5, 0.5);
+      const shouldMutateDecision = intelligentFlags.shouldApplyDecisionMutation();
+      const shouldApplyScoreFusion = intelligentFlags.shouldApplyScoreFusion();
+      const blendedConfidence = shouldApplyScoreFusion
+        ? clamp01((Number(decision?.confidence || 0) * 0.7) + (discoveryScore * 0.3), Number(decision?.confidence || 0))
+        : Number(decision?.confidence || 0);
+      const predictiveScore = clamp01(
+        (discoveryScore * 0.55) + (clamp01(((Number(mtf?.alignmentScore || 0) + 1) / 2), 0.5) * 0.45),
+        discoveryScore,
+      );
+      const enrichedDecision = {
+        ...decision,
+        confidence: Number(blendedConfidence.toFixed(4)),
+        setup_type: shouldMutateDecision ? (decision?.setup_type || fused?.setupType || null) : (decision?.setup_type || null),
+        entry_strategy: shouldMutateDecision ? (decision?.entry_strategy || fused?.entryStrategy || null) : (decision?.entry_strategy || null),
+        predictiveScore: Number(predictiveScore.toFixed(4)),
+        triggerHints: {
+          mtfAgreement: Number(mtf?.mtfAgreement || 0),
+          discoveryScore: Number(discoveryScore || 0),
+          volumeBurst: Number(vsa?.metrics?.volRatio || 0),
+          breakoutRetest: String(wyckoff?.phase || '') === 'accumulation' && String(mtf?.dominantSignal || '') === ACTIONS.BUY,
+          newsMomentum: Math.max(0, Number(sentiment?.sentimentScore || 0)),
+        },
+        block_meta: {
+          ...(decision?.block_meta || {}),
+          discoveryContext: {
+            source: discoverySeed?.source || null,
+            market: discoveryMarket,
+            score: discoverySeed?.score ?? null,
+            confidence: discoverySeed?.confidence ?? null,
+            reasonCode: discoverySeed?.reasonCode ?? null,
+            evidenceRef: discoverySeed?.evidenceRef ?? null,
+          },
+          mtf,
+          sentiment,
+          wyckoff,
+          vsa,
+          scoreFusion: fused,
+        },
+      };
+      intelligentBySymbol.set(symbol, {
+        discoverySeed,
+        sentiment,
+        mtf,
+        wyckoff,
+        vsa,
+        fused,
+        predictiveScore,
+      });
+      const strategyRoute = enrichedDecision?.strategy_route || enrichedDecision?.strategyRoute || null;
       if (strategyRoute?.selectedFamily) {
         strategyRouteCounts[strategyRoute.selectedFamily] = (strategyRouteCounts[strategyRoute.selectedFamily] || 0) + 1;
       }
@@ -871,7 +1046,7 @@ export async function runDecisionExecutionPipeline({
         strategyRouteReadinessSum += Number(strategyRoute.readinessScore);
         strategyRouteReadinessCount++;
       }
-      symbolDecisions.push({ symbol, exchange, ...decision });
+      symbolDecisions.push({ symbol, exchange, ...enrichedDecision });
     } catch (err) {
       console.error(`  ❌ [노드 브리지] ${symbol} 판단 실패: ${err.message}`);
       await notifyError(`루나 노드 브리지 - ${symbol}`, err);
@@ -954,6 +1129,39 @@ export async function runDecisionExecutionPipeline({
     portfolioDecision = collectQualityGuard.portfolioDecision;
     collectQualityReducedBuyCount = collectQualityGuard.reducedBuyCount;
     collectQualityBlockedBuyCount = collectQualityGuard.blockedBuyCount;
+
+    if (intelligentFlags.phases.entryTriggerEnabled) {
+      const triggerResult = await evaluateEntryTriggers(portfolioDecision.decisions || [], {
+        exchange,
+        regime: normalizeRegimeLabel(currentPortfolio?.marketRegime || null),
+      }).catch(() => null);
+      if (triggerResult?.decisions) {
+        entryTriggerStats = triggerResult.stats || null;
+        portfolioDecision = {
+          ...portfolioDecision,
+          decisions: triggerResult.decisions,
+          entryTriggerStats,
+        };
+      }
+    }
+
+    if (intelligentFlags.phases.predictiveValidationEnabled) {
+      const predictiveGate = applyPredictiveValidationGate(
+        portfolioDecision.decisions || [],
+        intelligentFlags.predictive,
+      );
+      portfolioDecision = {
+        ...portfolioDecision,
+        decisions: predictiveGate.decisions,
+        predictiveValidation: {
+          mode: intelligentFlags.predictive.mode,
+          threshold: intelligentFlags.predictive.threshold,
+          blocked: predictiveGate.blocked,
+          advisory: predictiveGate.advisory,
+        },
+      };
+      predictiveValidationStats = portfolioDecision.predictiveValidation;
+    }
   }
   if (!portfolioDecision) {
     const metrics = buildMetrics({
@@ -1130,6 +1338,18 @@ export async function runDecisionExecutionPipeline({
         planner: plannerCompact,
       }),
     });
+    if (intelligentFlags.phases.reflectionEnabled && saved?.result?.signalId) {
+      const intel = intelligentBySymbol.get(dec.symbol) || {};
+      await recordDiscoveryAttribution({
+        signalId: saved.result.signalId,
+        source: intel?.discoverySeed?.source || dec?.block_meta?.discoveryContext?.source || null,
+        setupType: dec?.setup_type || dec?.strategy_route?.setupType || dec?.strategyRoute?.setupType || null,
+        triggerType: dec?.block_meta?.entryTrigger?.triggerType || null,
+        discoveryScore: Number(intel?.fused?.discoveryScore ?? dec?.predictiveScore ?? dec?.confidence ?? 0),
+        predictiveScore: Number(dec?.predictiveScore ?? intel?.predictiveScore ?? 0),
+        note: 'approved',
+      }).catch(() => null);
+    }
     await persistRiskApprovalRationale({
       signalId: saved.result?.signalId ?? null,
       signal: {
@@ -1264,9 +1484,18 @@ export async function runDecisionExecutionPipeline({
       saved_execution_work: completedMetrics.savedExecutionWork,
       warnings: completedMetrics.warnings,
       investment_trade_mode: investmentTradeMode,
+      entry_trigger_stats: completedMetrics.entryTriggerStats || null,
+      predictive_validation: completedMetrics.predictiveValidationStats || null,
       ...buildPlannerRunMeta(plannerCompact),
     },
   });
+
+  if (intelligentFlags.phases.reflectionEnabled) {
+    const reflection = await buildDiscoveryReflectionSummary({ days: 14, exchange }).catch(() => null);
+    if (reflection?.bySource?.[0]) {
+      completedMetrics.discoveryReflectionTop = reflection.bySource[0];
+    }
+  }
 
   return {
     results,

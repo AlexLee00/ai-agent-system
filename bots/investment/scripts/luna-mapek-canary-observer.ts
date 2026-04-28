@@ -37,8 +37,12 @@ export async function buildLunaMapekCanaryObservation({ hours = 24 } = {}) {
   const warnings = [];
   if (!mapekEnabled) warnings.push('LUNA_MAPEK_ENABLED is not enabled');
   if (hardFailures > 0) warnings.push(`hard dispatch failures observed: ${hardFailures}`);
+  const observations = [];
   if (Number(bottleneck?.dispatch?.staleCandidateCount || 0) > 0) {
-    warnings.push(`stale candidates observed: ${bottleneck.dispatch.staleCandidateCount}`);
+    observations.push(`stale candidates observed as no-op: ${bottleneck.dispatch.staleCandidateCount}`);
+  }
+  if (Number(bottleneck?.dispatch?.historicalHardFailureCount || 0) > hardFailures) {
+    observations.push(`historical hard failures recovered by clean streak: ${bottleneck.dispatch.historicalHardFailureCount}`);
   }
   return {
     ok: mapekEnabled && hardFailures === 0,
@@ -46,6 +50,7 @@ export async function buildLunaMapekCanaryObservation({ hours = 24 } = {}) {
     status,
     hours,
     warnings,
+    observations,
     readiness: {
       warnings: readiness.warnings || [],
       killSwitches: Object.fromEntries(Object.entries(readiness.G1_killSwitches || {}).map(([key, value]) => [
@@ -65,6 +70,7 @@ export function renderLunaMapekCanaryObservation(report = {}) {
     `status: ${report.status || 'unknown'}`,
     `ok: ${report.ok === true}`,
     `warnings: ${(report.warnings || []).length ? report.warnings.join(' / ') : 'none'}`,
+    `observations: ${(report.observations || []).length ? report.observations.join(' / ') : 'none'}`,
     '',
     renderAutopilotBottleneckReport(report.bottleneck || {}),
   ].join('\n');

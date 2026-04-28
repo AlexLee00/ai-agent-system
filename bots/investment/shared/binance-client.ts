@@ -84,6 +84,13 @@ function parseJsonFromMixedStdout(stdout = '') {
   return null;
 }
 
+function isExpectedBinanceLookupMiss(action, parsed = {}) {
+  if (String(action || '').trim().toLowerCase() !== 'fetch_order') return false;
+  const message = String(parsed?.message || parsed?.error || '');
+  return message.startsWith('binance_order_lookup_not_found:')
+    || message.startsWith('binance_order_lookup_ambiguous:');
+}
+
 function shouldUseBinanceMcp() {
   return BINANCE_MCP_ENABLED_DEFAULT && !BINANCE_MCP_BRIDGE_MODE;
 }
@@ -142,6 +149,10 @@ async function runBinanceMcpBridge(action, payload = {}) {
     }
     return parsed;
   } catch (error) {
+    const parsedError = parseJsonFromMixedStdout(error?.stdout || '');
+    if (!isMutatingAction && parsedError && isExpectedBinanceLookupMiss(action, parsedError)) {
+      return parsedError;
+    }
     if (isMutatingAction) {
       const failClosed = /** @type {any} */ (new Error(`Binance MCP bridge failed (${action}): ${error?.message || error}`));
       failClosed.code = 'binance_mcp_mutating_bridge_failed';

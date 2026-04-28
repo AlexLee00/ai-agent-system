@@ -43,9 +43,17 @@ defmodule Luna.V2.Skill.CandidateScreening do
         {:ok, symbols} when symbols != [] ->
           Logger.info("[CandidateScreening] DB universe #{length(symbols)}개 (market=#{market})")
           symbols
+        {:ok, []} ->
+          Logger.warning("[CandidateScreening] DB universe 비어 있음 → 동적 발굴 후보 없음 (market=#{market})")
+          []
         _ ->
-          Logger.warning("[CandidateScreening] DB universe 조회 실패 → 하드코딩 fallback (market=#{market})")
-          get_hardcoded_universe(market)
+          if System.get_env("LUNA_DISCOVERY_DB_FAIL_OPEN", "false") == "true" do
+            Logger.error("[CandidateScreening] DB universe 조회 실패 → 명시 fail-open fallback 사용 (market=#{market})")
+            get_hardcoded_universe(market)
+          else
+            Logger.error("[CandidateScreening] DB universe 조회 실패 → fail-closed (market=#{market})")
+            []
+          end
       end
     else
       get_hardcoded_universe(market)

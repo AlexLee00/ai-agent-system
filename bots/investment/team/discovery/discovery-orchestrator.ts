@@ -17,11 +17,14 @@ import type {
 import { TossPopular100Collector } from './domestic/toss-popular-100.ts';
 import { DartDisclosureCollector } from './domestic/dart-disclosure-collector.ts';
 import { CoinGeckoTrendingCollector } from './crypto/coingecko-trending.ts';
+import { YahooTrendingCollector } from './overseas/yahoo-trending-collector.ts';
+import { SecEdgarCollector } from './overseas/sec-edgar-collector.ts';
 import {
   upsertCandidateSignals,
   ensureCandidateUniverseTable,
   purgeExpiredCandidates,
 } from './discovery-store.ts';
+import { insertDiscoverySourceMetric } from '../../shared/luna-discovery-entry-store.ts';
 
 // ─── 어댑터 레지스트리 ────────────────────────────────────────────────
 
@@ -32,7 +35,9 @@ function buildAdapters(): DiscoveryAdapter[] {
     new DartDisclosureCollector(),
     // 암호화폐 tier1
     new CoinGeckoTrendingCollector(),
-    // 추후 추가: overseas/yahoo-finance-trending, overseas/sec-edgar-collector 등
+    // 해외주식 tier1
+    new YahooTrendingCollector(),
+    new SecEdgarCollector(),
   ];
 }
 
@@ -42,6 +47,7 @@ export interface OrchestratorOptions extends DiscoveryCollectOptions {
   markets?: DiscoveryMarket[];      // 기본: 모든 시장
   ttlHours?: number;               // DB TTL (기본: 24)
   skipDbWrite?: boolean;            // 테스트용
+  failClosedOnDbError?: boolean;     // 운영 기본: DB 저장 불가 시 동적 universe 성공 처리 금지
 }
 
 export async function runDiscoveryOrchestrator(
@@ -58,6 +64,7 @@ export async function runDiscoveryOrchestrator(
     markets,
     ttlHours = 24,
     skipDbWrite = false,
+    failClosedOnDbError = true,
     dryRun = false,
     limit = 100,
     timeoutMs = 8000,
@@ -70,6 +77,7 @@ export async function runDiscoveryOrchestrator(
   if (!skipDbWrite && !dryRun) {
     await ensureCandidateUniverseTable().catch((e) => {
       console.log(`[discovery-orchestrator] DB 초기화 경고: ${e?.message}`);
+      if (failClosedOnDbError) throw e;
     });
     // 만료 후보 정리
     const purged = await purgeExpiredCandidates().catch(() => 0);
@@ -86,6 +94,11 @@ export async function runDiscoveryOrchestrator(
   );
 
   const errors: Array<{ adapter: string; error: string }> = [];
+  const marketResults: Record<DiscoveryMarket, any[]> = {
+    domestic: [],
+    overseas: [],
+    crypto: [],
+  };
   const byMarket: Record<DiscoveryMarket, DiscoverySignal[]> = {
     domestic: [], overseas: [], crypto: [],
   };
@@ -96,8 +109,19 @@ export async function runDiscoveryOrchestrator(
       continue;
     }
     const { adapter, result } = outcome.value;
+    marketResults[adapter.market].push(result);
     if (!result || result.quality.status === 'insufficient') {
       console.log(`[discovery-orchestrator] ${adapter.source} insufficient → 스킵`);
+      await insertDiscoverySourceMetric({
+        source: adapter.source,
+        market: adapter.market,
+        qualityStatus: result?.quality?.status || 'insufficient',
+        signalCount: Number(result?.signals?.length || 0),
+        reliability: Number(adapter.reliability || 0.5),
+        confidenceScore: Number(adapter.reliability || 0.5),
+        notes: 'insufficient',
+        rawMeta: { dryRun, ttlHours },
+      }).catch(() => {});
       continue;
     }
 
@@ -120,8 +144,22 @@ export async function runDiscoveryOrchestrator(
       ).catch((e) => {
         console.log(`[discovery-orchestrator] DB 저장 오류 (${adapter.source}): ${e?.message}`);
         errors.push({ adapter: adapter.source, error: e?.message });
+        if (failClosedOnDbError) throw e;
       });
     }
+    await insertDiscoverySourceMetric({
+      source: adapter.source,
+      market: adapter.market,
+      qualityStatus: result.quality?.status || 'ready',
+      signalCount: Number(result.signals?.length || 0),
+      reliability: Number(adapter.reliability || 0.5),
+      confidenceScore: Number(adapter.reliability || 0.5),
+      notes: result.quality?.status || null,
+      rawMeta: {
+        sourceTier: result.quality?.sourceTier ?? adapter.tier,
+        dryRun,
+      },
+    }).catch(() => {});
   }
 
   // 중복 제거 + 점수 정렬
@@ -138,11 +176,7 @@ export async function runDiscoveryOrchestrator(
 
   return {
     orchestratedAt,
-    markets: {
-      domestic: [],
-      overseas: [],
-      crypto: [],
-    },
+    markets: marketResults,
     merged,
     errors,
     stats: {

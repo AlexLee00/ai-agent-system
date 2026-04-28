@@ -26,9 +26,9 @@
     <key>LUNA_MAPEK_ENABLED</key>
     <string>true</string>
     <key>LUNA_VALIDATION_ENABLED</key>
-    <string>false</string>
+    <string>true</string>
     <key>LUNA_PREDICTION_ENABLED</key>
-    <string>false</string>
+    <string>true</string>
 
     <!-- LLM Hub 라우팅 (Elixir V2는 *_ROUTING_* 키를 읽는다) -->
     <key>LUNA_LLM_HUB_ENABLED</key>

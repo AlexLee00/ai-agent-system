@@ -13,6 +13,10 @@ import {
   renderText,
 } from './runtime-position-runtime-dispatch.ts';
 import { runPositionRuntimeAutopilot } from './runtime-position-runtime-autopilot.ts';
+import { buildAutopilotBottleneckReport } from './runtime-position-runtime-autopilot-bottleneck-report.ts';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 
 let passed = 0;
 let failed = 0;
@@ -198,6 +202,42 @@ async function main() {
     'phase6 safety readiness=false면 autopilot execute 차단',
     blockedAutopilot?.ok === false && blockedAutopilot?.status === 'position_runtime_autopilot_blocked_by_phase6_safety',
   );
+
+  const historyFile = path.join(os.tmpdir(), `autopilot-bottleneck-${Date.now()}.jsonl`);
+  fs.writeFileSync(historyFile, [
+    JSON.stringify({
+      recordedAt: new Date(Date.now() - 15 * 60 * 1000).toISOString(),
+      status: 'position_runtime_autopilot_executed_with_dispatch_failures',
+      dispatchFailureCount: 1,
+      dispatchFailures: [{ exchange: 'binance', symbol: 'OLD/USDT', status: 'child_process_error' }],
+    }),
+    JSON.stringify({
+      recordedAt: new Date(Date.now() - 10 * 60 * 1000).toISOString(),
+      status: 'position_runtime_autopilot_executed',
+      dispatchFailureCount: 0,
+      dispatchSkipped: [{ exchange: 'binance', symbol: 'STALE/USDT', status: 'candidate_not_found' }],
+    }),
+    JSON.stringify({
+      recordedAt: new Date(Date.now() - 5 * 60 * 1000).toISOString(),
+      status: 'position_runtime_autopilot_executed',
+      dispatchFailureCount: 0,
+      dispatchSkipped: [{ exchange: 'binance', symbol: 'STALE/USDT', status: 'candidate_not_found' }],
+    }),
+    JSON.stringify({
+      recordedAt: new Date().toISOString(),
+      status: 'position_runtime_autopilot_executed',
+      dispatchFailureCount: 0,
+    }),
+  ].join('\n') + '\n');
+  const bottleneck = buildAutopilotBottleneckReport({ file: historyFile, hours: 24, minCleanSamples: 3 });
+  assert(
+    'MAPE-K 병목은 최근 clean streak이면 과거 hard failure를 차단 조건에서 제외',
+    bottleneck.ok === true
+      && bottleneck.dispatch.hardFailureCount === 0
+      && bottleneck.dispatch.historicalHardFailureCount === 1
+      && bottleneck.dispatch.cleanStreakSamples >= 3,
+  );
+  fs.rmSync(historyFile, { force: true });
 
   console.log('');
   console.log(`결과: ${passed}/${passed + failed} passed`);
