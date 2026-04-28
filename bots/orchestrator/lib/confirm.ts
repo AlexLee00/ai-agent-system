@@ -16,6 +16,11 @@ const pgPool = require('../../../packages/core/lib/pg-pool') as {
 const SCHEMA = 'claude';
 const CONFIRM_TTL_MS = 10 * 60 * 1000;
 
+function isMissingPendingConfirmsError(error: unknown): boolean {
+  const err = error as { code?: string; message?: string };
+  return err?.code === '42P01' || /pending_confirms/i.test(String(err?.message || ''));
+}
+
 async function createConfirm(
   queueId: string | number,
   message: string
@@ -72,15 +77,20 @@ async function resolve(key: string, action: string): Promise<boolean> {
 
 async function cleanExpired(): Promise<number> {
   const now = new Date().toISOString();
-  const result = await pgPool.run(
-    SCHEMA,
-    `
-    UPDATE pending_confirms SET status = 'expired'
-    WHERE status = 'pending' AND expires_at <= $1
-  `,
-    [now]
-  );
-  return result.rowCount || 0;
+  try {
+    const result = await pgPool.run(
+      SCHEMA,
+      `
+      UPDATE pending_confirms SET status = 'expired'
+      WHERE status = 'pending' AND expires_at <= $1
+    `,
+      [now]
+    );
+    return result.rowCount || 0;
+  } catch (error) {
+    if (isMissingPendingConfirmsError(error)) return 0;
+    throw error;
+  }
 }
 
 module.exports = { cleanExpired, createConfirm, getByKey, resolve };

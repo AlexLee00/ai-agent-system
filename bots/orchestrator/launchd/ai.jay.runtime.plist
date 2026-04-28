@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>EnvironmentVariables</key>
+	<dict>
+		<key>HOME</key>
+		<string>/Users/alexlee</string>
+		<key>MODE</key>
+		<string>ops</string>
+		<key>NODE_ENV</key>
+		<string>production</string>
+		<key>PATH</key>
+		<string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+		<key>PG_DIRECT</key>
+		<string>true</string>
+		<key>JAY_INCIDENT_STORE_ENABLED</key>
+		<string>true</string>
+		<key>JAY_HUB_PLAN_INTEGRATION</key>
+		<string>true</string>
+		<key>JAY_COMMANDER_ENABLED</key>
+		<string>true</string>
+		<key>JAY_COMMANDER_DISPATCH</key>
+		<string>true</string>
+		<key>JAY_TEAM_BUS_ENABLED</key>
+		<string>true</string>
+		<key>JAY_COMMANDER_BOT_QUEUE_ENABLED</key>
+		<string>true</string>
+		<key>JAY_3TIER_TELEGRAM</key>
+		<string>true</string>
+		<key>JAY_SKILL_EXTRACTION</key>
+		<string>true</string>
+	</dict>
+	<key>KeepAlive</key>
+	<true/>
+	<key>Label</key>
+	<string>ai.jay.runtime</string>
+	<key>ProgramArguments</key>
+	<array>
+		<string>/opt/homebrew/bin/tsx</string>
+		<string>/Users/alexlee/projects/ai-agent-system/bots/orchestrator/src/jay-runtime.ts</string>
+	</array>
+	<key>RunAtLoad</key>
+	<true/>
+	<key>StandardErrorPath</key>
+	<string>/Users/alexlee/.ai-agent-system/logs/jay-runtime-error.log</string>
+	<key>StandardOutPath</key>
+	<string>/Users/alexlee/.ai-agent-system/logs/jay-runtime.log</string>
+	<key>ThrottleInterval</key>
+	<integer>10</integer>
+	<key>WorkingDirectory</key>
+	<string>/Users/alexlee/projects/ai-agent-system/bots/orchestrator</string>
+</dict>
+</plist>

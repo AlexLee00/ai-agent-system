@@ -1,4 +1,6 @@
 const crypto = require('node:crypto');
+const fs = require('node:fs');
+const path = require('node:path');
 const pgPool = require('../../../../packages/core/lib/pg-pool');
 const {
   parseControlPlanRequest,
@@ -43,6 +45,7 @@ const RUN_TABLE = 'agent.hub_control_runs';
 const DB_DISABLED = String(process.env.HUB_CONTROL_STATE_STORE || '').trim().toLowerCase() === 'memory';
 const runsFallback = new Map<string, ControlRun>();
 let ensureRunTablePromise: Promise<void> | null = null;
+let cachedHubSecrets: any = null;
 
 function normalizeText(value: unknown, fallback = ''): string {
   const text = String(value == null ? fallback : value).trim();
@@ -174,13 +177,43 @@ function parseJsonList(value: unknown): string[] {
   return [];
 }
 
+function loadHubSecrets(): any {
+  if (cachedHubSecrets) return cachedHubSecrets;
+  const storePath = path.resolve(__dirname, '..', '..', 'secrets-store.json');
+  try {
+    cachedHubSecrets = fs.existsSync(storePath) ? JSON.parse(fs.readFileSync(storePath, 'utf8')) : {};
+  } catch {
+    cachedHubSecrets = {};
+  }
+  return cachedHubSecrets;
+}
+
+function approvalTopicFallback(): string {
+  const telegram = loadHubSecrets()?.telegram || {};
+  const topicIds = telegram.topic_ids || telegram.telegram_topic_ids || {};
+  return normalizeText(topicIds.ops_error_resolution, '');
+}
+
+function approvalChatFallback(): string {
+  const telegram = loadHubSecrets()?.telegram || {};
+  return normalizeText(
+    process.env.TELEGRAM_GROUP_ID
+      || telegram.group_id
+      || telegram.telegram_group_id
+      || telegram.chat_id
+      || telegram.telegram_chat_id
+      || '',
+    '',
+  );
+}
+
 function buildApprovalPolicy(): ApprovalPolicy {
   const ttlMinutes = Math.max(5, Number(process.env.HUB_CONTROL_APPROVAL_TTL_MINUTES || 30) || 30);
   const expiresAt = new Date(Date.now() + ttlMinutes * 60 * 1000).toISOString();
   return {
     topicLevel: normalizeText(process.env.HUB_CONTROL_APPROVAL_TOPIC_LEVEL, 'L3'),
-    topicId: normalizeText(process.env.HUB_CONTROL_APPROVAL_TOPIC_ID, '') || null,
-    chatId: normalizeText(process.env.HUB_CONTROL_APPROVAL_CHAT_ID, '') || null,
+    topicId: normalizeText(process.env.HUB_CONTROL_APPROVAL_TOPIC_ID, '') || approvalTopicFallback() || null,
+    chatId: normalizeText(process.env.HUB_CONTROL_APPROVAL_CHAT_ID, '') || approvalChatFallback() || null,
     actorIds: parseCsvEnv('HUB_CONTROL_APPROVER_IDS'),
     actorUsernames: parseCsvEnvUsernames('HUB_CONTROL_APPROVER_USERNAMES'),
     nonce: randomNonce(),

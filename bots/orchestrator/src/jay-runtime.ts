@@ -4,6 +4,7 @@
 const fs       = require('fs');
 const path     = require('path');
 const os       = require('os');
+const { execFileSync } = require('child_process');
 const kst      = require('../../../packages/core/lib/kst');
 const pgPool   = require('../../../packages/core/lib/pg-pool');
 const sender   = require('../../../packages/core/lib/telegram-sender');
@@ -60,16 +61,57 @@ function ensureRuntimeDir() {
   fs.mkdirSync(RUNTIME_DIR, { recursive: true });
 }
 
+function isPidAlive(pid) {
+  if (!pid || !Number.isFinite(Number(pid))) return false;
+  try {
+    process.kill(Number(pid), 0);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function readProcessCommand(pid) {
+  if (!pid || !Number.isFinite(Number(pid))) return '';
+  try {
+    return execFileSync('ps', ['-p', String(pid), '-o', 'command='], {
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+    }).trim();
+  } catch {
+    return '';
+  }
+}
+
+function isJayRuntimeCommand(command) {
+  return /(^|\s|\/)jay-runtime\.(ts|js)(\s|$)/.test(String(command || ''));
+}
+
+function clearForeignLock(pid, command) {
+  console.warn(`[jay-runtime] removing foreign/stale lock PID=${pid || '-'} command=${command || '-'}`);
+  try { fs.unlinkSync(LOCK_PATH); } catch {}
+}
+
 function acquireLock() {
   ensureRuntimeDir();
   if (fs.existsSync(LOCK_PATH)) {
     const old = fs.readFileSync(LOCK_PATH, 'utf8').trim();
-    try {
-      process.kill(Number(old), 0);
-      console.error(`${BOT_NAME} runtime already running (PID: ${old})`);
+    const oldPid = Number(old);
+    if (!isPidAlive(oldPid)) {
+      clearForeignLock(oldPid, 'dead_or_missing');
+    } else {
+      const command = readProcessCommand(oldPid);
+      if (isJayRuntimeCommand(command)) {
+        console.error(`${BOT_NAME} runtime already running (PID: ${old})`);
+        process.exit(1);
+      }
+      clearForeignLock(oldPid, command || 'unknown_live_process');
+    }
+  }
+  if (fs.existsSync(LOCK_PATH)) {
+    try { fs.unlinkSync(LOCK_PATH); } catch (error) {
+      console.error(`[jay-runtime] cannot clear lock: ${error.message}`);
       process.exit(1);
-    } catch {
-      fs.unlinkSync(LOCK_PATH);
     }
   }
   fs.writeFileSync(LOCK_PATH, String(process.pid));
@@ -738,7 +780,33 @@ async function main() {
   }
 }
 
-main().catch(error => {
-  console.error(`[jay-runtime] fatal error:`, error);
-  process.exit(1);
-});
+if (require.main === module) {
+  main().catch(error => {
+    console.error(`[jay-runtime] fatal error:`, error);
+    process.exit(1);
+  });
+}
+
+module.exports = {
+  main,
+  mainLoop,
+  runIncidentLoop,
+  processIncident,
+  resolveOrchestrationConfig,
+  _testOnly: {
+    buildIncidentGoal,
+    extractPlanSteps,
+    isMutatingPlanStep,
+    isCommanderDelegatedStep,
+    hasMutatingStep,
+    buildReadOnlyPlan,
+    maxObservationReplans,
+    isRetryableObservation,
+    dispatchMutatingPlanSteps,
+    normalizeTopicTeam,
+    splitMessage,
+    isPidAlive,
+    readProcessCommand,
+    isJayRuntimeCommand,
+  },
+};

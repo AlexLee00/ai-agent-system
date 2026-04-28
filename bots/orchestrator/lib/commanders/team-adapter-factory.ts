@@ -23,7 +23,7 @@ function createTeamCommanderAdapter(team, options = {}) {
   const normalizedTeam = normalizeText(team, 'general').toLowerCase();
   const toBot = normalizeText(options.toBot, normalizedTeam);
   const timeoutMs = Math.max(15_000, Number(options.timeoutMs || 300_000) || 300_000);
-  const commandQueueEnabled = parseBoolean(process.env.JAY_COMMANDER_BOT_QUEUE_ENABLED, false);
+  const commandQueueEnabled = parseBoolean(process.env.JAY_COMMANDER_BOT_QUEUE_ENABLED, true);
   const defaultMode = commandQueueEnabled ? 'bot_command' : 'virtual';
   const mode = resolveAdapterMode(normalizedTeam, defaultMode);
   if (mode === 'bot_command') {

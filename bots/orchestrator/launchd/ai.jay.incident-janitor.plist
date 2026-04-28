@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>EnvironmentVariables</key>
+	<dict>
+		<key>HOME</key>
+		<string>/Users/alexlee</string>
+		<key>MODE</key>
+		<string>ops</string>
+		<key>NODE_ENV</key>
+		<string>production</string>
+		<key>PATH</key>
+		<string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+		<key>PG_DIRECT</key>
+		<string>true</string>
+		<key>JAY_INCIDENT_STALE_MINUTES</key>
+		<string>60</string>
+	</dict>
+	<key>Label</key>
+	<string>ai.jay.incident-janitor</string>
+	<key>ProgramArguments</key>
+	<array>
+		<string>/opt/homebrew/bin/tsx</string>
+		<string>/Users/alexlee/projects/ai-agent-system/bots/hub/scripts/jay-incident-janitor.ts</string>
+		<string>--apply</string>
+	</array>
+	<key>RunAtLoad</key>
+	<true/>
+	<key>StartInterval</key>
+	<integer>900</integer>
+	<key>StandardErrorPath</key>
+	<string>/Users/alexlee/.ai-agent-system/logs/jay-incident-janitor-error.log</string>
+	<key>StandardOutPath</key>
+	<string>/Users/alexlee/.ai-agent-system/logs/jay-incident-janitor.log</string>
+	<key>WorkingDirectory</key>
+	<string>/Users/alexlee/projects/ai-agent-system</string>
+</dict>
+</plist>
