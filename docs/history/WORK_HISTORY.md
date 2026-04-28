@@ -4,6 +4,13 @@
 > 상세 내용: `reservation-dev-summary.md` / `reservation-handoff.md`
 > 최초 작성: 2026-02-27
 
+## 2026-04-28: CODEX_LUNA_AGENT_MEMORY Phase D/E — Curriculum + Cross-Agent Bus (78차 세션)
+
+- **Phase D Curriculum Learning**: `agent-curriculum-tracker.ts` 신규 — novice/intermediate/expert 3-tier, invocation UPSERT, 레벨별 프롬프트 조정, `hub-llm-client.ts` 모든 LLM 경로에 자동 기록 통합
+- **Phase E Cross-Agent Message Bus**: `agent-message-bus.ts` 신규 — sendMessage/broadcast/getPendingMessages/respondToMessage/queryAgent, `agent_messages` 테이블 기반
+- **Smoke 테스트**: `agent-curriculum-smoke.ts` + `agent-message-bus-smoke.ts` 2종 추가, 모두 통과
+- **문서**: `CODEX_LUNA_AGENT_MEMORY_AND_LLM_ROUTING_PLAN.md`에 Implementation Status 섹션 추가
+
 ## 2026-04-24: CODEX_LUNA_AUTOTRADE_LIFECYCLE_PHASE6_DEEP_PLAN 검증 (74차 세션)
 
 - **검증 세션**: DEEP PLAN Phase A~F 전체 구현 상태 점검 — 이전 세션(fea54ce6)에서 모두 완료됨 확인

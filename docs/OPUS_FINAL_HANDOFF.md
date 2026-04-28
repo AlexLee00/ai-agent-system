@@ -1,3 +1,61 @@
+# 세션 인수인계 — 2026-04-28 (CODEX_LUNA_AGENT_MEMORY_AND_LLM_ROUTING_PLAN Phase D/E — 78차 세션)
+
+## 완료 요약 ✅ (78차 세션) — Phase D + Phase E
+
+### 신규 구현
+
+**Phase D: Curriculum Learning (invocation_count 추적 + 레벨별 프롬프트)**
+- `bots/investment/shared/agent-curriculum-tracker.ts` 신규
+  - `recordInvocation(agentName, market)` — LLM 호출마다 UPSERT (fire-and-forget)
+  - `recordOutcome(agentName, market, success)` — 거래 결과 기록
+  - `getCurriculumState(agentName, market)` — 현재 레벨 조회
+  - `getCurriculumPromptAdjustment(level)` — 레벨별 지시문 반환
+  - `getAllCurriculumStates(market?)` — 복수 에이전트 현황 조회 (대시보드용)
+  - Kill Switch: `LUNA_AGENT_CURRICULUM_ENABLED=false`
+- `hub-llm-client.ts` 수정: 모든 LLM 경로(Hub/Shadow/Direct)에서 `recordInvocation` 자동 호출
+
+**Phase E: Cross-Agent Message Bus**
+- `bots/investment/shared/agent-message-bus.ts` 신규
+  - `sendMessage(from, to, payload, opts)` — query/response/broadcast 타입 지원
+  - `broadcastMessage(from, payload, opts)` — to_agent='all' 브로드캐스트
+  - `getPendingMessages(agentName, opts)` — 미응답 메시지 조회
+  - `getMessagesByIncident(incidentKey, opts)` — incident 내 전체 대화 조회
+  - `respondToMessage(messageId, from, payload)` — 응답 + responded_at 기록
+  - `queryAgent(from, to, payload, opts)` — 동기식 질의 (폴링, 테스트용)
+  - Kill Switch: `LUNA_AGENT_CROSS_BUS_ENABLED=false`
+
+**Smoke 테스트**
+- `scripts/agent-curriculum-smoke.ts` → `npm run luna:curriculum-smoke`
+- `scripts/agent-message-bus-smoke.ts` → `npm run luna:message-bus-smoke`
+- 두 테스트 모두 통과 (테이블 미존재 시 DB 검증 자동 건너뜀)
+
+### Kill Switch 전체 현황 (모두 false = 기본 비활성)
+```
+LUNA_AGENT_CURRICULUM_ENABLED=false     ← Phase D 신규
+LUNA_AGENT_CROSS_BUS_ENABLED=false      ← Phase E 신규
+LUNA_AGENT_MEMORY_AUTO_PREFIX=false
+LUNA_AGENT_PERSONA_ENABLED=false
+LUNA_AGENT_CONSTITUTION_ENABLED=false
+LUNA_AGENT_MEMORY_LAYER_2=false
+LUNA_AGENT_MEMORY_LAYER_3=false
+LUNA_AGENT_MEMORY_LAYER_4=false
+LUNA_AGENT_LLM_ROUTING_ENABLED=false
+LUNA_AGENT_REFLEXION_AUTO_AVOID=false
+```
+
+### 다음 세션 필수 작업
+1. **OPS DB 마이그레이션** 실행: `20260428_agent_memory_system.sql`
+   - `agent_curriculum_state`, `agent_messages` 테이블 포함
+   - 이후 smoke 테스트 DB 검증 섹션도 자동 통과 확인
+2. **Kill Switch 순차 활성화** (Shadow Mode 선행):
+   - `LUNA_AGENT_CURRICULUM_ENABLED=true` → invocation 기록 Shadow 확인
+   - `LUNA_AGENT_CROSS_BUS_ENABLED=true` → 에이전트 간 메시지 흐름 확인
+   - 나머지 Kill Switch는 77차 세션 순서 참조
+3. **Phase F** (Voyager Skill Library): weekly-review에서 skill 자동 추출
+4. **Phase H** (Memory Dashboard): `luna-agent-memory-dashboard.ts` 신규
+
+---
+
 # 세션 인수인계 — 2026-04-28 (CODEX_LUNA_AGENT_MEMORY_AND_LLM_ROUTING_PLAN Phase A/B/C/G — 77차 세션)
 
 ## 완료 요약 ✅ (77차 세션) — CODEX_LUNA_AGENT_MEMORY_AND_LLM_ROUTING_PLAN

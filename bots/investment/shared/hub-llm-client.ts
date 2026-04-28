@@ -13,6 +13,7 @@ import { createRequire } from 'module';
 import { getAbstractModelForHub } from './agent-llm-routing.js';
 import { injectMemoryIntoSystemPrompt } from './agent-memory-orchestrator.js';
 import { recordLLMFailure, getAvoidProviders } from './reflexion-guard.js';
+import { recordInvocation } from './agent-curriculum-tracker.js';
 
 const _require = createRequire(import.meta.url);
 const _hubClient = _require('../../../packages/core/lib/hub-client');
@@ -309,7 +310,9 @@ export async function callLLMWithHub(
     if (!directFallbackEnabled) {
       throw new Error('Investment LLM Hub routing is disabled; 직접 LLM 경로는 INVESTMENT_LLM_DIRECT_FALLBACK=true일 때만 허용');
     }
-    return directFn(agentName, enrichedSystemPrompt, userMsg, maxTokens ?? 512, opts);
+    const directResult = await directFn(agentName, enrichedSystemPrompt, userMsg, maxTokens ?? 512, opts);
+    recordInvocation(agentName, opts.market ?? 'any').catch(() => {});
+    return directResult;
   }
 
   if (shadow) {
@@ -322,6 +325,8 @@ export async function callLLMWithHub(
       taskType: opts.taskType,
       shadowCompare: directResult,
     }).catch(() => {});
+    // Phase D: invocation 기록 (fire-and-forget)
+    recordInvocation(agentName, opts.market ?? 'any').catch(() => {});
     return directResult;
   }
 
@@ -332,12 +337,19 @@ export async function callLLMWithHub(
     market: opts.market,
     taskType: opts.taskType,
   });
-  if (hubResult.ok) return hubResult.text;
+  if (hubResult.ok) {
+    // Phase D: invocation 기록 (fire-and-forget)
+    recordInvocation(agentName, opts.market ?? 'any').catch(() => {});
+    return hubResult.text;
+  }
 
   if (!directFallbackEnabled) {
     throw new Error(`Hub LLM 호출 실패: ${hubResult.error || 'unknown'} — 직접 LLM 폴백은 INVESTMENT_LLM_DIRECT_FALLBACK=true일 때만 허용`);
   }
 
   console.warn(`[hub-llm] ${agentName} Hub 실패(${hubResult.error}), 명시적 직접 호출 폴백`);
-  return directFn(agentName, enrichedSystemPrompt, userMsg, maxTokens ?? 512, opts);
+  const fallbackResult = await directFn(agentName, enrichedSystemPrompt, userMsg, maxTokens ?? 512, opts);
+  // Phase D: fallback 경로도 invocation 기록
+  recordInvocation(agentName, opts.market ?? 'any').catch(() => {});
+  return fallbackResult;
 }

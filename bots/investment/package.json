@@ -274,7 +274,9 @@
     "chart-vision": "node scripts/chart-vision.ts --symbol=BTC/USDT --dry-run",
     "chart-vision:status": "node scripts/chart-vision.ts --status",
     "analyze-signals": "node scripts/analyze-signal-correlation.ts",
-    "analyze-signals:30": "node scripts/analyze-signal-correlation.ts --days=30"
+    "analyze-signals:30": "node scripts/analyze-signal-correlation.ts --days=30",
+    "luna:curriculum-smoke": "node scripts/agent-curriculum-smoke.ts",
+    "luna:message-bus-smoke": "node scripts/agent-message-bus-smoke.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.78.0",
