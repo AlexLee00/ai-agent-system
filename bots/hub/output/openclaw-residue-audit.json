@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-04-28T14:33:09.039Z",
+  "generated_at": "2026-04-28T14:41:37.816Z",
   "ok": true,
   "categories": {
     "runtime_blocker": 0,
@@ -542,7 +542,7 @@
     {
       "category": "retired_gateway_guard",
       "file": "bots/hub/scripts/run-tests.ts",
-      "line": 174,
+      "line": 176,
       "snippet": "'openclaw-runtime-retirement-smoke.ts',",
       "reason": "intentional regression guard"
     },
@@ -654,7 +654,7 @@
     {
       "category": "retired_home_archive_pending",
       "file": "/Users/alexlee/.openclaw",
-      "snippet": "1 MB",
+      "snippet": "0 MB",
       "reason": "retired home directory exists; archive/delete requires explicit data-retention decision"
     }
   ]
