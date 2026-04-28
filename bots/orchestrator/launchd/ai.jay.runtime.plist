@@ -30,6 +30,12 @@
 		<string>true</string>
 		<key>JAY_SKILL_EXTRACTION</key>
 		<string>true</string>
+		<key>JAY_GROWTH_ENABLED</key>
+		<string>false</string>
+		<key>JAY_GROWTH_DISABLED_REASON</key>
+		<string>master_decision:growth_pod_not_cutover</string>
+		<key>JAY_LLM_DAILY_BUDGET_USD</key>
+		<string>5.0</string>
 	</dict>
 	<key>KeepAlive</key>
 	<true/>

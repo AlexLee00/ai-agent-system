@@ -79,6 +79,10 @@ const DEFAULT_RUNTIME_CONFIG = {
     sessionCompaction: false,
     incidentLoopIntervalMs: 5000,
     commanderDispatchLimit: 3,
+    growthEnabled: false,
+    growthDisabledReason: 'master_decision:growth_pod_not_cutover',
+    growthDecisionOwner: 'master',
+    llmDailyBudgetUsd: 5.0,
   },
 };
 

@@ -18,8 +18,10 @@ import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
 import { initHubSecrets, isPaperMode, getInvestmentTradeMode } from '../shared/secrets.ts';
 import { isSameDaySymbolReentryBlockEnabled, getInvestmentExecutionRuntimeConfig } from '../shared/runtime-config.ts';
 import { getInvestmentAgentRoleState } from '../shared/agent-role-state.ts';
-import { syncPositionsAtMarketOpen } from '../shared/position-sync.ts';
-import { attachExecutionToPositionStrategyTracked } from '../shared/execution-attach.ts';
+import {
+  attachExecutionToPositionStrategyTracked,
+  syncPositionsAtMarketOpen,
+} from '../shared/portfolio-position-delta.ts';
 import { SIGNAL_STATUS, ACTIONS } from '../shared/signal.ts';
 import { notifyTrade, notifyError, notifyJournalEntry, notifyTradeSkip, notifyCircuitBreaker, notifySettlement } from '../shared/report.ts';
 import {

@@ -16,6 +16,10 @@ const path = require('path');
 const fs   = require('fs');
 const yaml = require('js-yaml');
 const { createN8nSetupClient } = require('../../../packages/core/lib/n8n-setup-client');
+const {
+  buildN8nCredentialTrackingEvent,
+  createN8nCredentialMissingError,
+} = require('../lib/n8n-credential-tracker');
 
 const N8N_BASE = process.env.N8N_BASE_URL || 'http://127.0.0.1:5678';
 const EMAIL    = process.env.N8N_EMAIL || 'admin@example.com';
@@ -98,8 +102,15 @@ async function login() {
 async function getCredentialId(name) {
   try {
     return await client.getCredentialId(name);
-  } catch {
-    throw new Error(`자격증명 "${name}" 없음 — setup-n8n.js 먼저 실행`);
+  } catch (error) {
+    const trackedError = createN8nCredentialMissingError(name, error);
+    console.error(JSON.stringify(buildN8nCredentialTrackingEvent({
+      credentialName: name,
+      workflowName: 'ska-workflows-setup',
+      team: 'ska',
+      error: trackedError,
+    })));
+    throw trackedError;
   }
 }
 

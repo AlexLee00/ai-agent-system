@@ -9,6 +9,7 @@ import {
   buildPositionSyncFinalGate,
   normalizeMarketList,
 } from '../shared/luna-l5-operational-gate.ts';
+import { appendPositionSyncFinalGateHistory } from '../shared/position-sync-final-gate-history.ts';
 
 function parseArgs(argv = []) {
   const args = {
@@ -44,13 +45,25 @@ export async function runPositionSyncFinalGate(args = {}) {
     requireAllMarkets: args.requireAllMarkets !== false,
     checkedAt,
   });
-  return {
+  const result = {
     ok: gate.ok,
     status: gate.status,
     checkedAt,
     gate,
     syncSummary,
   };
+  if (args.recordHistory !== false) {
+    appendPositionSyncFinalGateHistory({
+      event: 'position_sync_final_gate',
+      status: result.status,
+      ok: result.ok,
+      checkedAt,
+      markets,
+      gate,
+      syncSummary,
+    });
+  }
+  return result;
 }
 
 function renderText(result = {}) {

@@ -26,6 +26,7 @@ const {
   summarizePayloadWarnings,
 } = require('../../../packages/core/lib/reporting-hub');
 const { getOrchestratorHealthConfig } = require('../lib/runtime-config');
+const { getJayBudgetPolicy, getJayGrowthPolicy } = require('../lib/jay-runtime-policy');
 const {
   DEFAULT_NORMAL_EXIT_CODES,
   getLaunchctlStatus,
@@ -137,6 +138,7 @@ function formatText(report) {
     title: '🧭 오케스트레이터 운영 헬스 리포트',
     sections: [
       buildHealthCountSection('■ 서비스 상태', report.serviceHealth),
+      buildHealthCountSection('■ Jay 운영 정책', report.jayPolicyHealth),
       buildHealthSampleSection('■ 정상 서비스 샘플', report.serviceHealth),
       buildHealthCountSection('■ critical 알림 경로', report.criticalWebhookHealth, { okLimit: 3 }),
       buildHealthCountSection('■ reporting payload 경고', report.payloadWarningHealth, { okLimit: 2 }),
@@ -168,6 +170,8 @@ async function buildReport() {
     shortLabel: (label) => hsm.shortLabel(label),
   });
   const criticalWebhookHealth = await buildCriticalWebhookHealth();
+  const growthPolicy = getJayGrowthPolicy();
+  const budgetPolicy = getJayBudgetPolicy();
   const payloadWarnings = getRecentPayloadWarnings({
     withinHours: ORCHESTRATOR_HEALTH_CONFIG.payloadWarningWithinHours,
     limit: ORCHESTRATOR_HEALTH_CONFIG.payloadWarningLimit,
@@ -182,6 +186,15 @@ async function buildReport() {
       warnCount: serviceRows.warn.length,
       ok: serviceRows.ok,
       warn: serviceRows.warn,
+    },
+    jayPolicyHealth: {
+      okCount: 2,
+      warnCount: 0,
+      ok: [
+        `  ${growthPolicy.serviceLabel}: ${growthPolicy.enabled ? 'enabled' : `disabled (${growthPolicy.disabledReason})`}`,
+        `  Jay LLM daily budget: $${budgetPolicy.dailyBudgetUsd.toFixed(2)} (${budgetPolicy.source})`,
+      ],
+      warn: [],
     },
     criticalWebhookHealth: {
       okCount: criticalWebhookHealth.ok.length,

@@ -191,7 +191,10 @@ export function createN8nSetupClient({
   async function getCredentialId(name: string): Promise<string | undefined> {
     const found = (await listCredentials()).find((item) => item.name === name);
     if (!found) {
-      throw new Error(`자격증명 "${name}" 없음`);
+      const error = new Error(`자격증명 "${name}" 없음`);
+      (error as Error & { code?: string; credentialName?: string }).code = 'n8n_credential_missing';
+      (error as Error & { code?: string; credentialName?: string }).credentialName = name;
+      throw error;
     }
     logger.log(`  ✅ 자격증명 "${name}" (id: ${found.id})`);
     return found.id;

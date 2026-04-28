@@ -16,6 +16,8 @@
 		<string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
 		<key>PG_DIRECT</key>
 		<string>true</string>
+		<key>JAY_LLM_DAILY_BUDGET_USD</key>
+		<string>5.0</string>
 	</dict>
 	<key>KeepAlive</key>
 	<true/>
