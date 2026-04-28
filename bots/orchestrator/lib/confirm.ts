@@ -16,15 +16,47 @@ const pgPool = require('../../../packages/core/lib/pg-pool') as {
 const SCHEMA = 'claude';
 const CONFIRM_TTL_MS = 10 * 60 * 1000;
 
+let ensureTablePromise: Promise<void> | null = null;
+
 function isMissingPendingConfirmsError(error: unknown): boolean {
   const err = error as { code?: string; message?: string };
   return err?.code === '42P01' || /pending_confirms/i.test(String(err?.message || ''));
+}
+
+async function ensurePendingConfirmsTable(): Promise<void> {
+  if (ensureTablePromise) return ensureTablePromise;
+  ensureTablePromise = (async () => {
+    await pgPool.run(
+      SCHEMA,
+      `CREATE TABLE IF NOT EXISTS pending_confirms (
+        id          BIGSERIAL    PRIMARY KEY,
+        queue_id    TEXT         NOT NULL,
+        confirm_key TEXT         NOT NULL UNIQUE,
+        message     TEXT         NOT NULL DEFAULT '',
+        status      TEXT         NOT NULL DEFAULT 'pending',
+        expires_at  TIMESTAMPTZ  NOT NULL,
+        resolved_at TIMESTAMPTZ
+      )`,
+      [],
+    );
+    await pgPool.run(
+      SCHEMA,
+      `CREATE INDEX IF NOT EXISTS idx_pending_confirms_status_exp
+       ON pending_confirms (status, expires_at) WHERE status = 'pending'`,
+      [],
+    );
+  })().catch((error) => {
+    ensureTablePromise = null;
+    throw error;
+  });
+  return ensureTablePromise;
 }
 
 async function createConfirm(
   queueId: string | number,
   message: string
 ): Promise<{ confirmKey: string; rejectKey: string; expiresAt: string }> {
+  await ensurePendingConfirmsTable();
   const expiresAt = new Date(Date.now() + CONFIRM_TTL_MS).toISOString();
   const now = Date.now();
   const confirmKey = `yes_${queueId}_${now}`;
@@ -52,6 +84,7 @@ async function createConfirm(
 }
 
 async function getByKey(key: string): Promise<unknown | null> {
+  await ensurePendingConfirmsTable();
   return pgPool.get(
     SCHEMA,
     `
@@ -62,6 +95,7 @@ async function getByKey(key: string): Promise<unknown | null> {
 }
 
 async function resolve(key: string, action: string): Promise<boolean> {
+  await ensurePendingConfirmsTable();
   const now = new Date().toISOString();
   const result = await pgPool.run(
     SCHEMA,
@@ -93,4 +127,4 @@ async function cleanExpired(): Promise<number> {
   }
 }
 
-module.exports = { cleanExpired, createConfirm, getByKey, resolve };
+module.exports = { cleanExpired, createConfirm, getByKey, resolve, ensurePendingConfirmsTable };

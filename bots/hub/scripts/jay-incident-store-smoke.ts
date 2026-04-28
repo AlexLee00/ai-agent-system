@@ -34,7 +34,14 @@ async function main() {
 
   const recent = await store.listIncidentsByStatus(['queued', 'planning', 'completed'], 20);
   assert.ok(Array.isArray(recent), 'status listing should return array');
-  assert.ok(recent.some((row) => row.incidentKey === uniqueKey), 'created incident should be observable');
+  // listIncidentsByStatus uses FIFO ASC order with a small limit — accumulated history can push new
+  // incidents past the window. Verify observability directly by key instead.
+  const observable = await store.getIncidentByKey(uniqueKey);
+  assert.ok(observable?.incidentKey === uniqueKey, 'created incident should be observable');
+  assert.ok(
+    ['queued', 'planning', 'completed'].includes(observable?.status ?? ''),
+    `incident status should be in expected range, got: ${observable?.status}`,
+  );
 
   const firstAuto = await store.createIncident({
     source: 'smoke',
