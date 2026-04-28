@@ -149,6 +149,43 @@ export function buildAlarmAutoDevDocument({
   ].join('\n');
 }
 
+export function buildAlarmAutoDevDocumentWithConsensus(
+  input: {
+    team: string;
+    fromBot: string;
+    severity: string;
+    title: string;
+    message: string;
+    eventType: string;
+    incidentKey: string;
+    eventId: number | string | null;
+    payload?: unknown;
+  },
+  consensus: {
+    rootCause?: string;
+    proposedFix?: string;
+    estimatedComplexity?: string;
+    riskLevel?: string;
+    successCriteria?: string;
+    roundtableId?: number | null;
+  } | null = null,
+): string {
+  const base = buildAlarmAutoDevDocument(input);
+  if (!consensus) return base;
+  const consensusSection = [
+    '',
+    '## Roundtable Consensus',
+    `- roundtable_id: ${consensus.roundtableId || 'unknown'}`,
+    `- root_cause: ${normalizeText(consensus.rootCause, '미결정')}`,
+    `- proposed_fix: ${normalizeText(consensus.proposedFix, '검토 필요')}`,
+    `- estimated_complexity: ${normalizeText(consensus.estimatedComplexity, 'medium')}`,
+    `- risk_level: ${normalizeText(consensus.riskLevel, 'medium')}`,
+    `- success_criteria: ${normalizeText(consensus.successCriteria, '오류 재발 없음')}`,
+    '',
+  ].join('\n');
+  return base + consensusSection;
+}
+
 export async function ensureAlarmAutoDevDocument(input: {
   team: string;
   fromBot: string;
@@ -159,6 +196,14 @@ export async function ensureAlarmAutoDevDocument(input: {
   incidentKey: string;
   eventId: number | string | null;
   payload?: unknown;
+  consensus?: {
+    rootCause?: string;
+    proposedFix?: string;
+    estimatedComplexity?: string;
+    riskLevel?: string;
+    successCriteria?: string;
+    roundtableId?: number | null;
+  } | null;
 }) {
   const dir = process.env.HUB_ALARM_AUTO_DEV_DIR || DEFAULT_AUTO_DEV_DIR;
   const keyHash = crypto.createHash('sha1').update(input.incidentKey || input.message || 'incident').digest('hex').slice(0, 12);
@@ -170,11 +215,15 @@ export async function ensureAlarmAutoDevDocument(input: {
   if (fs.existsSync(filePath)) {
     return { ok: true, created: false, path: relPath };
   }
-  await fs.promises.writeFile(filePath, buildAlarmAutoDevDocument(input), 'utf8');
+  const content = input.consensus
+    ? buildAlarmAutoDevDocumentWithConsensus(input, input.consensus)
+    : buildAlarmAutoDevDocument(input);
+  await fs.promises.writeFile(filePath, content, 'utf8');
   return { ok: true, created: true, path: relPath };
 }
 
 module.exports = {
   buildAlarmAutoDevDocument,
+  buildAlarmAutoDevDocumentWithConsensus,
   ensureAlarmAutoDevDocument,
 };

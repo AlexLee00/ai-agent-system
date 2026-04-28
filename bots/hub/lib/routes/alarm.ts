@@ -4,6 +4,7 @@ const { classifyAlarmTypeWithConfidence, isExplicitHumanEscalation } = require('
 const { classifyAlarmWithLLM } = require('../alarm/classify-alarm-llm');
 const { interpretAlarm } = require('../alarm/alarm-interpreter-router');
 const { enrichAlarm } = require('../alarm/alarm-enrichment');
+const { runRoundtable, shouldTriggerRoundtable } = require('../alarm/alarm-roundtable-engine');
 const { ensureAlarmAutoDevDocument } = require('../alarm/auto-dev-incident');
 const { buildAlarmClusterKey } = require('../alarm/cluster');
 const {
@@ -710,6 +711,27 @@ export async function alarmRoute(req: any, res: any) {
           error: error?.message || 'auto_repair_document_failed',
         };
       }
+    }
+
+    // Roundtable: fire-and-forget for critical/repeat errors (does not block response)
+    const roundtableTriggered = await shouldTriggerRoundtable({
+      alarmType,
+      visibility,
+      clusterKey: clusterKey || undefined,
+    }).catch(() => false);
+    if (roundtableTriggered) {
+      runRoundtable({
+        alarmId: eventId,
+        incidentKey,
+        team,
+        fromBot,
+        severity,
+        title,
+        message,
+        alarmType,
+        clusterKey: clusterKey || undefined,
+        autoDevDocPath: autoRepair && typeof autoRepair.path === 'string' ? autoRepair.path : undefined,
+      }).catch(() => null);
     }
 
     if (immediateHumanDelivery) {

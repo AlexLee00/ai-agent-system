@@ -174,6 +174,30 @@ const TEAM_SELECTOR_DEFAULTS: Record<string, any> = {
         { provider: 'groq', model: 'qwen/qwen3-32b', maxTokens: 400, temperature: 0.1 },
       ],
     },
+    'roundtable.jay': {
+      primary: { provider: 'groq', model: 'qwen/qwen3-32b', maxTokens: 500, temperature: 0.2 },
+      fallbacks: [
+        { provider: 'anthropic', model: 'claude-haiku-4-5-20251001', maxTokens: 500, temperature: 0.2 },
+      ],
+    },
+    'roundtable.claude_lead': {
+      primary: { provider: 'anthropic', model: 'claude-haiku-4-5-20251001', maxTokens: 500, temperature: 0.1 },
+      fallbacks: [
+        { provider: 'groq', model: 'qwen/qwen3-32b', maxTokens: 500, temperature: 0.1 },
+      ],
+    },
+    'roundtable.team_commander': {
+      primary: { provider: 'groq', model: 'llama-3.1-8b-instant', maxTokens: 500, temperature: 0.2 },
+      fallbacks: [
+        { provider: 'anthropic', model: 'claude-haiku-4-5-20251001', maxTokens: 500, temperature: 0.2 },
+      ],
+    },
+    'roundtable.judge': {
+      primary: { provider: 'anthropic', model: 'claude-haiku-4-5-20251001', maxTokens: 600, temperature: 0.1 },
+      fallbacks: [
+        { provider: 'groq', model: 'qwen/qwen3-32b', maxTokens: 600, temperature: 0.1 },
+      ],
+    },
     _fallback: {
       primary: { provider: 'groq', model: 'llama-3.1-8b-instant', maxTokens: 300, temperature: 0.1 },
       fallbacks: [],
@@ -545,6 +569,10 @@ function buildSelectorRegistry(): Record<string, any> {
     'hub.alarm.interpreter.report': () => resolveFromTeamDefault('hub.alarm.interpreter.report'),
     'hub.alarm.interpreter.error': () => resolveFromTeamDefault('hub.alarm.interpreter.error'),
     'hub.alarm.interpreter.critical': () => resolveFromTeamDefault('hub.alarm.interpreter.critical'),
+    'hub.roundtable.jay': () => resolveFromTeamDefault('hub.roundtable.jay'),
+    'hub.roundtable.claude_lead': () => resolveFromTeamDefault('hub.roundtable.claude_lead'),
+    'hub.roundtable.team_commander': () => resolveFromTeamDefault('hub.roundtable.team_commander'),
+    'hub.roundtable.judge': () => resolveFromTeamDefault('hub.roundtable.judge'),
 
     'claude._default': () => resolveFromTeamDefault('claude._default'),
     'claude.archer.tech_analysis': () => resolveFromTeamDefault('claude.archer.tech_analysis'),
