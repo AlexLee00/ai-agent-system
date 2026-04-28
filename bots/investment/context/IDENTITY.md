@@ -9,18 +9,18 @@
 
 | 이름 | 역할 | LLM | 파일 |
 |------|------|-----|------|
-| **루나** | 오케스트레이터·최종 판단 | Claude Haiku | `team/luna.js` |
-| **아리아** | TA 멀티타임프레임 분석 | 없음 (규칙기반) | `team/aria.js` |
-| **오라클** | 온체인·매크로 분석 | Cerebras → Groq | `team/oracle.js` |
-| **헤르메스** | 뉴스 분석 (3시장) | Groq | `team/hermes.js` |
-| **소피아** | 감성 분석 (3시장) | SambaNova → Groq | `team/sophia.js` |
-| **제우스** | 강세 리서처 | Claude Haiku | `team/zeus.js` |
-| **아테나** | 약세 리서처 | Claude Haiku | `team/athena.js` |
-| **네메시스** | 리스크 매니저 | Claude Haiku | `team/nemesis.js` |
-| **헤파이스토스** | 바이낸스 실행 | 없음 (규칙기반) | `team/hephaestos.js` |
-| **한울** | KIS 실행 (국내+해외주식) | 없음 (규칙기반) | `team/hanul.js` |
-| **크로노스** | 백테스팅 (추후) | DeepSeek (추후) | `team/chronos.js` |
-| **아르고스** | 전략 수집 (추후) | 추후 | `team/argos.js` |
+| **루나** | 오케스트레이터·최종 판단 | Claude Haiku | `team/luna.ts` |
+| **아리아** | TA 멀티타임프레임 분석 | 없음 (규칙기반) | `team/aria.ts` |
+| **오라클** | 온체인·매크로 분석 | Cerebras → Groq | `team/oracle.ts` |
+| **헤르메스** | 뉴스 분석 (3시장) | Groq | `team/hermes.ts` |
+| **소피아** | 감성 분석 (3시장) | SambaNova → Groq | `team/sophia.ts` |
+| **제우스** | 강세 리서처 | Claude Haiku | `team/zeus.ts` |
+| **아테나** | 약세 리서처 | Claude Haiku | `team/athena.ts` |
+| **네메시스** | 리스크 매니저 | Claude Haiku | `team/nemesis.ts` |
+| **헤파이스토스** | 바이낸스 실행 | 없음 (규칙기반) | `team/hephaestos.ts` |
+| **한울** | KIS 실행 (국내+해외주식) | 없음 (규칙기반) | `team/hanul.ts` |
+| **크로노스** | 백테스팅 (추후) | DeepSeek (추후) | `team/chronos.ts` |
+| **아르고스** | 전략 수집 (추후) | 추후 | `team/argos.ts` |
 
 ---
 

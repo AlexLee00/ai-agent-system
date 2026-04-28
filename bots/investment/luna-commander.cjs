@@ -342,6 +342,7 @@ async function checkWithdrawSchedule() {
 
 const BOT_ID_DIR   = runtimeFile('bot-identities');
 const TEAM_AGENTS  = path.join(__dirname, 'team');
+const AGENT_FILE_EXTENSIONS = ['.ts', '.js', '.cjs'];
 
 const LUNA_TEAM = [
   { id: 'luna',        name: '루나',      llm: 'gpt-4o',  role: '최종 매수/매도 판단',               mission: '분석 종합 후 포지션 결정 및 헤파이스토스 지시' },
@@ -356,6 +357,19 @@ const LUNA_TEAM = [
   { id: 'hanul',       name: '한울',      llm: 'Groq',    role: '국내 주식 담당',                    mission: 'KIS API로 국내주식 신호 생성 및 주문 관리' },
 ];
 
+function resolveLunaTeamAgentFile(agentId) {
+  for (const ext of AGENT_FILE_EXTENSIONS) {
+    const filePath = path.join(TEAM_AGENTS, `${agentId}${ext}`);
+    if (fs.existsSync(filePath)) {
+      return {
+        filePath,
+        relativePath: `team/${agentId}${ext}`,
+      };
+    }
+  }
+  return null;
+}
+
 function checkLunaTeamIdentity() {
   if (!fs.existsSync(BOT_ID_DIR)) fs.mkdirSync(BOT_ID_DIR, { recursive: true });
 
@@ -365,8 +379,8 @@ function checkLunaTeamIdentity() {
     let   trained = false;
 
     // 1. 에이전트 소스 파일 존재 여부
-    const agentFile = path.join(TEAM_AGENTS, `${member.id}.js`);
-    if (!fs.existsSync(agentFile)) issues.push(`에이전트 파일 없음: team/${member.id}.js`);
+    const agentFile = resolveLunaTeamAgentFile(member.id);
+    if (!agentFile) issues.push(`에이전트 파일 없음: team/${member.id}{${AGENT_FILE_EXTENSIONS.join(',')}}`);
 
     // 2. 정체성 파일 체크
     const idFile = path.join(BOT_ID_DIR, `luna_${member.id}.json`);
