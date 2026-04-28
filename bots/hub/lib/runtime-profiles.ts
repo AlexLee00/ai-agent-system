@@ -229,6 +229,49 @@ export const PROFILES: Record<string, TeamProfiles> = {
         OPENAI_FAST_ROUTE
       ],
       "critical": false
+    },
+    // ─── Phase C: 에이전트별 특화 프로파일 ─────────────────────────────────
+    // nemesis: critical 경로 — groq 최속, haiku 폴백
+    "nemesis_risk": {
+      "runtime_agent": "luna-ops",
+      "claude_code_name": "luna-ops",
+      "claude_code_settings": CLAUDE_CODE_SETTINGS["luna-ops"],
+      "primary_routes": ["groq/qwen3-32b"],
+      "fallback_routes": ["claude-code/haiku", OPENAI_FAST_ROUTE],
+      "timeout_ms": 8_000,
+      "critical": true
+    },
+    // sophia/hermes: 다국어 감성 — gemini-flash 우선
+    "sentiment_multilingual": {
+      "runtime_agent": "luna-ops",
+      "claude_code_name": "luna-ops",
+      "claude_code_settings": CLAUDE_CODE_SETTINGS["luna-ops"],
+      "primary_routes": [GEMINI_OAUTH_FLASH_ROUTE],
+      "fallback_routes": [OPENAI_FAST_ROUTE, "claude-code/haiku"]
+    },
+    // argos: 대량 스크리닝 — gpt-5.4-mini 우선
+    "screening_bulk": {
+      "runtime_agent": "luna-ops",
+      "claude_code_name": "luna-ops",
+      "claude_code_settings": CLAUDE_CODE_SETTINGS["luna-ops"],
+      "primary_routes": [OPENAI_FAST_ROUTE],
+      "fallback_routes": [GROQ_VERSATILE_ROUTE, GEMINI_OAUTH_FLASH_ROUTE]
+    },
+    // oracle/chronos: 복잡 추론 — claude-sonnet 최우선
+    "deep_reasoning": {
+      "runtime_agent": "luna-ops",
+      "claude_code_name": "luna-ops",
+      "claude_code_settings": CLAUDE_CODE_SETTINGS["luna-ops"],
+      "primary_routes": ["claude-code/sonnet"],
+      "fallback_routes": ["openai-oauth/gpt-5.4", "groq/qwen3-32b"]
+    },
+    // zeus/athena: 토론 논거 — gpt-5.4-mini (균형)
+    "debate_agent": {
+      "runtime_agent": "luna-ops",
+      "claude_code_name": "luna-ops",
+      "claude_code_settings": CLAUDE_CODE_SETTINGS["luna-ops"],
+      "primary_routes": [OPENAI_FAST_ROUTE],
+      "fallback_routes": ["claude-code/haiku", GROQ_VERSATILE_ROUTE]
     }
   },
   "darwin": {

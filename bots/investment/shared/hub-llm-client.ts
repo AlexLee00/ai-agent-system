@@ -10,6 +10,9 @@
  */
 
 import { createRequire } from 'module';
+import { getAbstractModelForHub } from './agent-llm-routing.js';
+import { injectMemoryIntoSystemPrompt } from './agent-memory-orchestrator.js';
+import { recordLLMFailure, getAvoidProviders } from './reflexion-guard.js';
 
 const _require = createRequire(import.meta.url);
 const _hubClient = _require('../../../packages/core/lib/hub-client');
@@ -44,20 +47,6 @@ export function isDirectFallbackEnabled(): boolean {
   return process.env.INVESTMENT_LLM_DIRECT_FALLBACK === 'true';
 }
 
-// agentName → abstract model 매핑 (Hub LLM Routing 기준)
-const AGENT_ABSTRACT_MODEL: Record<string, string> = {
-  luna:        'anthropic_sonnet',  // 최종 판단 — sonnet급 품질
-  nemesis:     'anthropic_haiku',   // 리스크 평가 — 빠른 응답
-  oracle:      'anthropic_haiku',   // 온체인 분석
-  hermes:      'anthropic_haiku',   // 뉴스 분석
-  sophia:      'anthropic_haiku',   // 감성 분석
-  zeus:        'anthropic_haiku',   // 상향 논거
-  athena:      'anthropic_haiku',   // 하향 논거
-  argos:       'anthropic_haiku',   // 스크리닝
-  aria:        'anthropic_haiku',   // 기술 분석
-  chronos:     'anthropic_sonnet',  // 백테스팅 검증 — 정확도 중요
-};
-
 export interface HubLLMResult {
   ok: boolean;
   text: string;
@@ -77,9 +66,11 @@ export function buildHubLlmCallPayload(
     market?: string;
     urgency?: 'critical' | 'high' | 'normal' | 'medium' | 'low';
     callerTeam?: string;
+    taskType?: string;
   } = {}
 ) {
-  const abstractModel = AGENT_ABSTRACT_MODEL[agentName] ?? 'anthropic_haiku';
+  // Phase C: 에이전트×시장×태스크 동적 라우팅 (하위 호환 유지)
+  const abstractModel = getAbstractModelForHub(agentName, options.market, options.taskType);
   const urgency = normalizeHubUrgency(options.urgency ?? (agentName === 'luna' ? 'high' : 'normal'));
   return {
     prompt:        userPrompt,
@@ -89,7 +80,7 @@ export function buildHubLlmCallPayload(
     agent:         agentName,
     callerTeam:    options.callerTeam || getHubCallerTeam(),
     urgency,
-    taskType:      'trade_signal',
+    taskType:      options.taskType || 'trade_signal',
     selectorKey:   'investment.agent_policy',
     market:        options.market || null,
     symbol:        options.symbol || null,
@@ -110,7 +101,9 @@ export async function callViaHub(
     symbol?: string;
     market?: string;
     urgency?: 'critical' | 'high' | 'normal' | 'medium' | 'low';
+    taskType?: string;
     shadowCompare?: string;  // Shadow Mode일 때 직접 호출 결과 (비교용)
+    avoidProviders?: string[]; // Phase G: Reflexion 회피 provider 목록
   } = {}
 ): Promise<HubLLMResult> {
   const t0 = Date.now();
@@ -127,12 +120,26 @@ export async function callViaHub(
     return { ok: false, text: '', provider: 'hub', costUsd: 0, latencyMs: 0, error: 'HUB_AUTH_TOKEN 없음' };
   }
 
-  const body = JSON.stringify(buildHubLlmCallPayload(agentName, systemPrompt, userPrompt, {
+  // Phase G: Reflexion 회피 provider 목록 (비동기 조회, 실패 시 무시)
+  let avoidProviders: string[] = options.avoidProviders || [];
+  if (avoidProviders.length === 0) {
+    avoidProviders = await getAvoidProviders(agentName).catch(() => []);
+  }
+
+  const payload = buildHubLlmCallPayload(agentName, systemPrompt, userPrompt, {
     maxTokens: options.maxTokens,
     symbol: options.symbol,
     market: options.market || process.env.INVESTMENT_MARKET || undefined,
     urgency: options.urgency,
-  }));
+    taskType: options.taskType,
+  });
+
+  // avoidProviders를 payload에 추가 (Hub가 지원하는 경우)
+  if (avoidProviders.length > 0) {
+    (payload as any).avoidProviders = avoidProviders;
+  }
+
+  const body = JSON.stringify(payload);
 
   try {
     const res = await fetch(`${HUB_BASE}/hub/llm/call`, {
@@ -150,12 +157,19 @@ export async function callViaHub(
     if (!res.ok) {
       const errText = await res.text().catch(() => '');
       console.warn(`[hub-llm] ${agentName} HTTP ${res.status}: ${errText.slice(0, 120)}`);
+      // Phase G: HTTP 실패 기록
+      recordLLMFailure(agentName, 'hub', userPrompt, 'bad_response', options.market, options.taskType).catch(() => {});
       return { ok: false, text: '', provider: 'hub', costUsd: 0, latencyMs, error: `HTTP ${res.status}` };
     }
 
     const json = await res.json();
     if (!json.ok) {
       console.warn(`[hub-llm] ${agentName} 응답 ok:false — ${json.error || '알 수 없음'}`);
+      // Phase G: LLM 호출 실패 기록
+      const errorType = (json.error || '').includes('timeout') ? 'timeout'
+        : (json.error || '').includes('rate') ? 'rate_limit'
+        : 'bad_response';
+      recordLLMFailure(agentName, json.provider || 'hub', userPrompt, errorType, options.market, options.taskType).catch(() => {});
       return { ok: false, text: '', provider: json.provider || 'hub', costUsd: 0, latencyMs, error: json.error };
     }
 
@@ -263,36 +277,60 @@ export async function callLLMWithHub(
   userMsg: string,
   directFn: (agent: string, system: string, user: string, maxTokens: number, opts?: unknown) => Promise<string>,
   maxTokens?: number,
-  opts: { symbol?: string; market?: string; cacheTTL?: number } = {}
+  opts: {
+    symbol?: string;
+    market?: string;
+    cacheTTL?: number;
+    taskType?: string;
+    incidentKey?: string;
+    workingState?: string;
+  } = {}
 ): Promise<string> {
   const shadow = isHubShadow();
   const enabled = isHubEnabled();
   const directFallbackEnabled = isDirectFallbackEnabled();
 
+  // Phase B: 8종 메모리 prefix 자동 주입
+  let enrichedSystemPrompt = systemPrompt;
+  try {
+    enrichedSystemPrompt = await injectMemoryIntoSystemPrompt(systemPrompt, {
+      agentName,
+      market: opts.market,
+      symbol: opts.symbol,
+      taskType: opts.taskType,
+      incidentKey: opts.incidentKey,
+      workingState: opts.workingState,
+    });
+  } catch {
+    // 메모리 주입 실패는 원본 프롬프트로 폴백 (운영 중단 없음)
+  }
+
   if (!enabled && !shadow) {
     if (!directFallbackEnabled) {
       throw new Error('Investment LLM Hub routing is disabled; 직접 LLM 경로는 INVESTMENT_LLM_DIRECT_FALLBACK=true일 때만 허용');
     }
-    return directFn(agentName, systemPrompt, userMsg, maxTokens ?? 512, opts);
+    return directFn(agentName, enrichedSystemPrompt, userMsg, maxTokens ?? 512, opts);
   }
 
   if (shadow) {
     // Shadow: Hub 호출(비동기, 로깅용) + 직접 호출(실제 결과)
-    const directResult = await directFn(agentName, systemPrompt, userMsg, maxTokens ?? 512, opts);
-    callViaHub(agentName, systemPrompt, userMsg, {
+    const directResult = await directFn(agentName, enrichedSystemPrompt, userMsg, maxTokens ?? 512, opts);
+    callViaHub(agentName, enrichedSystemPrompt, userMsg, {
       maxTokens,
       symbol: opts.symbol,
       market: opts.market,
+      taskType: opts.taskType,
       shadowCompare: directResult,
     }).catch(() => {});
     return directResult;
   }
 
   // Hub 활성: Hub 우선, 실패 시 직접 호출 폴백
-  const hubResult = await callViaHub(agentName, systemPrompt, userMsg, {
+  const hubResult = await callViaHub(agentName, enrichedSystemPrompt, userMsg, {
     maxTokens,
     symbol: opts.symbol,
     market: opts.market,
+    taskType: opts.taskType,
   });
   if (hubResult.ok) return hubResult.text;
 
@@ -301,5 +339,5 @@ export async function callLLMWithHub(
   }
 
   console.warn(`[hub-llm] ${agentName} Hub 실패(${hubResult.error}), 명시적 직접 호출 폴백`);
-  return directFn(agentName, systemPrompt, userMsg, maxTokens ?? 512, opts);
+  return directFn(agentName, enrichedSystemPrompt, userMsg, maxTokens ?? 512, opts);
 }

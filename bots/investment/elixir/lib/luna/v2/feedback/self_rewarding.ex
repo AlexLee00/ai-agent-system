@@ -102,7 +102,39 @@ defmodule Luna.V2.Feedback.SelfRewarding do
     }}
   end
 
+  # Phase A: 에이전트 헌법 위반 항목 목록
+  @constitution_principles %{
+    "luna" => [
+      "다중 신호 합의 필수",
+      "네메시스 거부권 존중",
+      "크로노스 백테스트 검증",
+      "confidence 임계 준수",
+      "TP/SL 선행 확인"
+    ],
+    "aria"    => ["MTF 합의 필수", "데이터 부족 시 INSUFFICIENT_DATA", "단일 지표 금지"],
+    "sophia"  => ["sentiment_score 범위 준수", "mention_count 최소 10", "봇 필터 적용"],
+    "nemesis" => ["리스크 지표 정량 명시", "5초 SLA 준수", "독립적 평가"],
+    "oracle"  => ["소스 명시", "수치 근거", "비암호화폐 NOT_APPLICABLE"],
+    "chronos" => ["OOS 검증 필수", "슬리피지 포함", "Sharpe 기준 준수"]
+  }
+
   defp llm_judge(trade, rationale, outcome) do
+    agent_name = trade["agent_name"] || "luna"
+    principles = Map.get(@constitution_principles, agent_name, [])
+    constitution_section = if principles != [] do
+      principle_list = principles |> Enum.map(&"- #{&1}") |> Enum.join("\n")
+      """
+
+      에이전트 헌법 원칙 (#{agent_name}):
+      #{principle_list}
+
+      헌법 위반 감지 시 각 위반 항목당 score에서 -0.20 차감하세요.
+      위반 사항은 "constitution_violations" 필드에 배열로 기록하세요.
+      """
+    else
+      ""
+    end
+
     prompt = """
     당신은 엄격한 퀀트 트레이딩 심사관입니다.
 
@@ -112,44 +144,56 @@ defmodule Luna.V2.Feedback.SelfRewarding do
 
     당시 매매 근거:
     #{rationale}
-
+    #{constitution_section}
     평가 기준:
     1. rationale이 실제 결과와 얼마나 일치했는가? (0.0~1.0)
     2. 운이 작용했는가, 분석이 정확했는가?
     3. 개선점은 무엇인가?
+    4. 헌법 원칙 위반 여부 확인 (있으면 score 차감)
 
     반드시 JSON 형식으로만 답하세요:
-    {"score": 0.75, "critique": "...", "improvements": ["...", "..."]}
+    {"score": 0.75, "critique": "...", "improvements": ["...", "..."], "constitution_violations": []}
     """
 
     case Luna.V2.LLM.Selector.call_with_fallback("luna.self_rewarding_judge", prompt,
            urgency: :low,
            task_type: :trade_evaluation,
-           max_tokens: 512
+           max_tokens: 600
          ) do
       {:ok, text} -> parse_judgment(text)
-      _           -> {:ok, %{score: 0.5, critique: "LLM 평가 불가", improvements: []}}
+      _           -> {:ok, %{score: 0.5, critique: "LLM 평가 불가", improvements: [], constitution_violations: []}}
     end
   end
 
   defp parse_judgment(text) do
     case Jason.decode(text) do
       {:ok, %{"score" => s, "critique" => c} = raw} ->
+        violations = Map.get(raw, "constitution_violations", [])
+        # Phase A: 헌법 위반 감점 반영 (위반당 -0.20, 이미 LLM이 반영했어도 보험용 상한)
+        violation_penalty = min(length(violations) * 0.20, 0.60)
+        adjusted_score = max(0.0, min(1.0, s) - violation_penalty)
         {:ok, %{
-          score: min(1.0, max(0.0, s)),
+          score: adjusted_score,
           critique: c,
-          improvements: Map.get(raw, "improvements", [])
+          improvements: Map.get(raw, "improvements", []),
+          constitution_violations: violations
         }}
       _ ->
         # JSON 블록 추출 시도
         case Regex.run(~r/\{.*\}/s, text) do
           [json_str] ->
             case Jason.decode(json_str) do
-              {:ok, parsed} -> {:ok, %{score: parsed["score"] || 0.5, critique: parsed["critique"] || "", improvements: []}}
-              _ -> {:ok, %{score: 0.5, critique: text, improvements: []}}
+              {:ok, parsed} ->
+                {:ok, %{
+                  score: parsed["score"] || 0.5,
+                  critique: parsed["critique"] || "",
+                  improvements: [],
+                  constitution_violations: parsed["constitution_violations"] || []
+                }}
+              _ -> {:ok, %{score: 0.5, critique: text, improvements: [], constitution_violations: []}}
             end
           _ ->
-            {:ok, %{score: 0.5, critique: text, improvements: []}}
+            {:ok, %{score: 0.5, critique: text, improvements: [], constitution_violations: []}}
         end
     end
   end
