@@ -2,7 +2,7 @@
 
 This generated report classifies retired OpenClaw references. `runtime_blocker` must remain 0. Guard, documentation, ignored log, and archive-pending entries are tracked separately so they do not masquerade as live runtime dependencies.
 
-- generated_at: 2026-04-27T22:43:04.462Z
+- generated_at: 2026-04-28T14:10:27.310Z
 - ok: true
 - runtime_blocker: 0
 - retired_gateway_guard: 67
@@ -10,7 +10,7 @@ This generated report classifies retired OpenClaw references. `runtime_blocker` 
 - generated_inventory: 0
 - ignored_log: 12
 - dirty_worktree: 1
-- retired_home_archive_pending: 0
+- retired_home_archive_pending: 1
 
 ## dirty_worktree
 
@@ -27,8 +27,8 @@ This generated report classifies retired OpenClaw references. `runtime_blocker` 
 - docs/history/CHANGELOG.md:2169 (markdown documentation/report reference) — `- `[::1]:18789` 주소를 `split(':')[0]` → `[` 로 파싱하는 버그 수정`
 - docs/history/TEST_RESULTS.md:15 (markdown documentation/report reference) — `| `REPO_ROOT=... PROJECT_ROOT=... node bots/investment/scripts/parallel-ops-report.ts --publish` | ⚠️ alert 경로 호출은 성공했으나 `legacy-gateway`/Telegram fetch 및 `127.0.0.1:18789` 연결 실패 경고 발생 |`
 - docs/history/TEST_RESULTS.md:29 (markdown documentation/report reference) — `| `npm run parallel-report -- --publish` | ⚠️ alert 경로 호출은 성공했으나 `legacy-gateway`/Telegram fetch 및 `127.0.0.1:18789` 연결 실패 경고 발생 |`
-- docs/history/WORK_HISTORY.md:356 (markdown documentation/report reference) — `- `REPO_ROOT=... PROJECT_ROOT=... node bots/investment/scripts/parallel-ops-report.ts --publish` → legacy-gateway/Telegram fetch 실패 및 `127.0.0.1:18789` 연결 실패`
-- docs/history/WORK_HISTORY.md:411 (markdown documentation/report reference) — `- `npm run parallel-report -- --publish` → alert 경로는 호출됐지만 `legacy-gateway`/Telegram fetch 및 `127.0.0.1:18789` 연결 실패 경고 발생`
+- docs/history/WORK_HISTORY.md:373 (markdown documentation/report reference) — `- `REPO_ROOT=... PROJECT_ROOT=... node bots/investment/scripts/parallel-ops-report.ts --publish` → legacy-gateway/Telegram fetch 실패 및 `127.0.0.1:18789` 연결 실패`
+- docs/history/WORK_HISTORY.md:428 (markdown documentation/report reference) — `- `npm run parallel-report -- --publish` → alert 경로는 호출됐지만 `legacy-gateway`/Telegram fetch 및 `127.0.0.1:18789` 연결 실패 경고 발생`
 - docs/hub/OAUTH_REAUTH_GUIDE.md:89 (markdown documentation/report reference) — `### OpenClaw에서 권한 부족이 보이지 않았던 이유`
 - docs/hub/OAUTH_REAUTH_GUIDE.md:91 (markdown documentation/report reference) — `OpenClaw 소스 분석 기준으로, OpenClaw는 Codex OAuth를 일반 OpenAI public API 토큰처럼 쓰지 않습니다. `openai-codex` provider와 `openai-codex-responses` API를 별도 모델 경로로 취급하고, 기본 설정도 `https://chatgpt.com/backend-api` 계열 backend를 사용합니다. 사용량/쿨다운 확인`
 - docs/hub/OAUTH_REAUTH_GUIDE.md:93 (markdown documentation/report reference) — `따라서 OpenClaw 사용 중 권한 부족이 보이지 않았던 것은 이상 징후가 아니라, 정상 운영 경로가 public `/v1/responses`가 아니었기 때문입니다. Hub도 같은 계약을 따르며, public API 토큰이 비어 있으면 public `/v1/responses`는 사용하지 않습니다. 반대로 public OpenAI API를 반드시 직접 사용해야 하는 배포에서는 `OPENAI_`
@@ -99,7 +99,7 @@ This generated report classifies retired OpenClaw references. `runtime_blocker` 
 - bots/hub/scripts/retired-gateway-residue-audit.ts:40 (intentional smoke/report guard) — `'openclaw-gateway',`
 - bots/hub/scripts/retired-gateway-residue-audit.ts:50 (intentional smoke/report guard) — `'bots/hub/scripts/openclaw-runtime-retirement-smoke.ts',`
 - bots/hub/scripts/retired-gateway-residue-audit.ts:81 (intentional smoke/report guard) — `if (file.startsWith('bots/hub/output/') || file === 'docs/hub/OPENCLAW_RESIDUE_AUDIT.md' || file === 'docs/hub/HUB_ALARM_DEPENDENCY_INVENTORY.md') {`
-- bots/hub/scripts/run-tests.ts:162 (intentional regression guard) — `'openclaw-runtime-retirement-smoke.ts',`
+- bots/hub/scripts/run-tests.ts:172 (intentional regression guard) — `'openclaw-runtime-retirement-smoke.ts',`
 - bots/hub/scripts/runtime-env-policy-smoke.ts:22 (intentional smoke/report guard) — `OPENCLAW_BIN: '/tmp/openclaw',`
 - bots/hub/scripts/runtime-env-policy-smoke.ts:31 (intentional smoke/report guard) — `assert.equal(filtered.env.OPENCLAW_BIN, undefined);`
 - bots/hub/scripts/runtime-env-policy-smoke.ts:43 (intentional smoke/report guard) — `assert.notEqual(childEnv.OPENCLAW_BIN, '/tmp/openclaw');`
@@ -115,3 +115,6 @@ This generated report classifies retired OpenClaw references. `runtime_blocker` 
 - scripts/pre-commit:142 (intentional regression guard) — `'execFile[^\n]*openclaw'`
 - scripts/pre-commit:143 (intentional regression guard) — `'spawn[^\n]*openclaw'`
 - scripts/pre-commit:155 (intentional regression guard) — `echo -e "${RED}❌ retired OpenClaw gateway marker 재도입 차단: ${file}${NC}"`
+## retired_home_archive_pending
+
+- /Users/alexlee/.openclaw (retired home directory exists; archive/delete requires explicit data-retention decision) — `1 MB`

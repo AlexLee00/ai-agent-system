@@ -1,15 +1,15 @@
 {
-  "generated_at": "2026-04-27T13:11:35.720Z",
+  "generated_at": "2026-04-28T13:52:35.361Z",
   "scan_patterns": [
     "hub-alarm-client",
     "openclaw-client",
     "HUB_ALARM_",
     "OPENCLAW_"
   ],
-  "total_matches": 215,
-  "unique_files": 128,
+  "total_matches": 225,
+  "unique_files": 133,
   "categories": {
-    "hub_alarm_native": 202,
+    "hub_alarm_native": 212,
     "retired_gateway_guard": 13,
     "legacy_gateway_compat": 0
   },
@@ -404,6 +404,14 @@
         "match": "const { postAlarm } = require('../../../packages/core/lib/hub-alarm-client');"
       }
     ],
+    "bots/claude/scripts/auto-dev-watch.ts": [
+      {
+        "file": "bots/claude/scripts/auto-dev-watch.ts",
+        "line": 16,
+        "category": "hub_alarm_native",
+        "match": "const { postAlarm } = require('../../../packages/core/lib/hub-alarm-client');"
+      }
+    ],
     "bots/claude/src/builder.ts": [
       {
         "file": "bots/claude/src/builder.ts",
@@ -556,12 +564,74 @@
         "match": "<key>HUB_ALARM_USE_CLASS_TOPICS</key>"
       }
     ],
+    "bots/hub/lib/alarm/alarm-enrichment.ts": [
+      {
+        "file": "bots/hub/lib/alarm/alarm-enrichment.ts",
+        "line": 6,
+        "category": "hub_alarm_native",
+        "match": "const raw = String(process.env.HUB_ALARM_ENRICHMENT_ENABLED || '').trim().toLowerCase();"
+      }
+    ],
+    "bots/hub/lib/alarm/alarm-interpreter-router.ts": [
+      {
+        "file": "bots/hub/lib/alarm/alarm-interpreter-router.ts",
+        "line": 10,
+        "category": "hub_alarm_native",
+        "match": "const raw = String(process.env.HUB_ALARM_INTERPRETER_ENABLED || '').trim().toLowerCase();"
+      },
+      {
+        "file": "bots/hub/lib/alarm/alarm-interpreter-router.ts",
+        "line": 15,
+        "category": "hub_alarm_native",
+        "match": "const raw = String(process.env.HUB_ALARM_INTERPRETER_FAIL_OPEN ?? 'true').trim().toLowerCase();"
+      },
+      {
+        "file": "bots/hub/lib/alarm/alarm-interpreter-router.ts",
+        "line": 25,
+        "category": "hub_alarm_native",
+        "match": "const limit = Math.max(1, Number(process.env.HUB_ALARM_INTERPRETER_LLM_DAILY_LIMIT || 200) || 200);"
+      }
+    ],
+    "bots/hub/lib/alarm/alarm-roundtable-engine.ts": [
+      {
+        "file": "bots/hub/lib/alarm/alarm-roundtable-engine.ts",
+        "line": 13,
+        "category": "hub_alarm_native",
+        "match": "const raw = String(process.env.HUB_ALARM_ROUNDTABLE_ENABLED || '').trim().toLowerCase();"
+      },
+      {
+        "file": "bots/hub/lib/alarm/alarm-roundtable-engine.ts",
+        "line": 23,
+        "category": "hub_alarm_native",
+        "match": "const limit = Math.max(1, Number(process.env.HUB_ALARM_ROUNDTABLE_DAILY_LIMIT || 10) || 10);"
+      },
+      {
+        "file": "bots/hub/lib/alarm/alarm-roundtable-engine.ts",
+        "line": 81,
+        "category": "hub_alarm_native",
+        "match": "const threshold = Math.max(1, Number(process.env.HUB_ALARM_ROUNDTABLE_TRIGGER_FINGERPRINT_THRESHOLD || 3) || 3);"
+      }
+    ],
     "bots/hub/lib/alarm/auto-dev-incident.ts": [
       {
         "file": "bots/hub/lib/alarm/auto-dev-incident.ts",
-        "line": 163,
+        "line": 208,
         "category": "hub_alarm_native",
         "match": "const dir = process.env.HUB_ALARM_AUTO_DEV_DIR || DEFAULT_AUTO_DEV_DIR;"
+      }
+    ],
+    "bots/hub/lib/alarm/classify-alarm-llm.ts": [
+      {
+        "file": "bots/hub/lib/alarm/classify-alarm-llm.ts",
+        "line": 13,
+        "category": "hub_alarm_native",
+        "match": "const raw = String(process.env.HUB_ALARM_LLM_CLASSIFIER_ENABLED || '').trim().toLowerCase();"
+      },
+      {
+        "file": "bots/hub/lib/alarm/classify-alarm-llm.ts",
+        "line": 23,
+        "category": "hub_alarm_native",
+        "match": "const limit = Math.max(1, Number(process.env.HUB_ALARM_LLM_DAILY_LIMIT || 100) || 100);"
       }
     ],
     "bots/hub/lib/alarm/readiness.ts": [
@@ -591,7 +661,7 @@
     "bots/hub/lib/routes/alarm.ts": [
       {
         "file": "bots/hub/lib/routes/alarm.ts",
-        "line": 277,
+        "line": 283,
         "category": "hub_alarm_native",
         "match": "const claimLeaseMinutes = Math.max(1, Number(process.env.HUB_ALARM_DIGEST_CLAIM_LEASE_MINUTES || 15) || 15);"
       }
@@ -1229,7 +1299,7 @@
     "bots/orchestrator/src/router.ts": [
       {
         "file": "bots/orchestrator/src/router.ts",
-        "line": 105,
+        "line": 111,
         "category": "hub_alarm_native",
         "match": "} = require('../../../packages/core/lib/hub-alarm-client');"
       }

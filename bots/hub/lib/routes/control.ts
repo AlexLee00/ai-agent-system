@@ -11,6 +11,7 @@ const {
   callHubControlTool,
   isReadOnlyTool,
 } = require('../control/tool-registry');
+const { maybeCompactSession } = require('../control/session-compaction');
 
 type ApprovalPolicy = {
   topicLevel: string;
@@ -632,6 +633,20 @@ export async function controlExecuteRoute(req: any, res: any) {
         status: 'dry_run_completed',
         updatedAt: new Date().toISOString(),
         result: stepResults,
+      });
+      // Optional session compaction; defaults to OFF and only runs when explicitly enabled.
+      await maybeCompactSession({
+        sessionId: updated.id,
+        runId: updated.id,
+        triggerReason: 'control_execute_completed',
+        summary: `Control run ${updated.id} completed (${stepResults.length} steps)`,
+        state: {
+          team: updated.team,
+          status: updated.status,
+          stepCount: stepResults.length,
+        },
+      }).catch((error) => {
+        console.warn(`[hub/control] session compaction skipped: ${error?.message || error}`);
       });
       return res.json({
         ok: true,

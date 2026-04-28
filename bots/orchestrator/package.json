@@ -7,7 +7,8 @@
   "scripts": {
     "start": "node dist/ts-runtime/bots/orchestrator/src/orchestrator.js",
     "migrate": "node migrations/002_mainbot.js",
-    "check:n8n-critical": "node scripts/check-n8n-critical-path.js"
+    "check:n8n-critical": "node scripts/check-n8n-critical-path.js",
+    "smoke:jay-orchestration": "tsx scripts/jay-orchestration-smoke.ts"
   },
   "dependencies": {
     "js-yaml": "*"

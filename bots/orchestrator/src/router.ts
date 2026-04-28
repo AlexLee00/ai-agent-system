@@ -24,6 +24,12 @@ const {
   buildIntentParsePolicy,
   getGatewayPrimaryModel,
 } = require('../lib/jay-model-policy');
+const { getJayOrchestrationConfig } = require('../lib/runtime-config');
+const {
+  createIncident: createJayIncident,
+  appendIncidentEvent: appendJayIncidentEvent,
+  ensureIncidentTables: ensureJayIncidentTables,
+} = require('../lib/jay-incident-store');
 
 const path     = require('path');
 const os       = require('os');
@@ -136,6 +142,88 @@ function workspacePath(...segments) {
 
 function investmentStatePath(fileName) {
   return path.join(process.env.INVESTMENT_STATE_DIR || path.join(getAiAgentHome(), 'investment'), fileName);
+}
+
+function parseBoolean(value, fallback = false) {
+  const text = String(value == null ? (fallback ? 'true' : 'false') : value).trim().toLowerCase();
+  return ['1', 'true', 'yes', 'y', 'on'].includes(text);
+}
+
+function getJayOrchestrationFlag(flagKey, envKey, fallback = false) {
+  const envValue = process.env[envKey];
+  if (envValue != null && String(envValue).trim() !== '') {
+    return parseBoolean(envValue, fallback);
+  }
+  const runtime = getJayOrchestrationConfig();
+  const fromRuntime = runtime?.[flagKey];
+  if (typeof fromRuntime === 'boolean') return fromRuntime;
+  return fallback;
+}
+
+const ACTIONABLE_INTENT_SET = new Set([
+  'ska_action',
+  'luna_action',
+  'claude_action',
+  'session_close',
+  'upbit_transfer',
+  'upbit_withdraw',
+  'graduate_start',
+  'graduate_approve',
+  'curriculum_approve',
+]);
+
+function resolveIncidentTeamFromIntent(intent = '') {
+  const normalized = String(intent || '').trim().toLowerCase();
+  if (normalized.startsWith('luna') || normalized.includes('trade') || normalized.includes('tp_sl')) return 'luna';
+  if (normalized.startsWith('ska') || normalized.includes('reservation')) return 'ska';
+  if (normalized.startsWith('claude') || normalized.includes('doctor') || normalized.includes('dexter')) return 'claude';
+  if (normalized.startsWith('blog') || normalized.includes('curriculum')) return 'blog';
+  return 'general';
+}
+
+function isActionableIntent(intent = '') {
+  const normalized = String(intent || '').trim().toLowerCase();
+  if (!normalized || normalized === 'chat') return false;
+  if (ACTIONABLE_INTENT_SET.has(normalized)) return true;
+  return normalized.endsWith('_action');
+}
+
+async function queueActionableIncident(parsed, msg) {
+  if (!getJayOrchestrationFlag('incidentStoreEnabled', 'JAY_INCIDENT_STORE_ENABLED', false)) return null;
+  const intent = String(parsed?.intent || '').trim();
+  if (!isActionableIntent(intent)) return null;
+  const team = resolveIncidentTeamFromIntent(intent);
+  try {
+    await ensureJayIncidentTables();
+    const result = await createJayIncident({
+      source: 'telegram',
+      team,
+      intent,
+      message: msg?.text || '',
+      args: {
+        chatId: String(msg?.chat?.id || ''),
+        userId: String(msg?.from?.id || ''),
+        parsedSource: parsed?.source || 'unknown',
+        args: parsed?.args || {},
+      },
+      priority: intent.includes('withdraw') || intent.includes('transfer') ? 'high' : 'normal',
+    });
+    if (result?.ok && result?.incident) {
+      await appendJayIncidentEvent({
+        incidentKey: result.incident.incidentKey,
+        eventType: 'router_intent_received',
+        payload: {
+          intent,
+          chatId: String(msg?.chat?.id || ''),
+          source: parsed?.source || 'unknown',
+        },
+      }).catch(() => {});
+      return result.incident;
+    }
+  } catch (error) {
+    console.warn(`[router] incident queue skipped: ${error?.message || error}`);
+  }
+  return null;
 }
 
 // 블로그팀 커리큘럼 플래너 (lazy-load: blog 봇이 없는 환경에서도 오케스트레이터 기동 가능)
@@ -2832,6 +2920,10 @@ async function route(msg, sendReply) {
 
     const preparedText = buildReservationIntentText(msg.chat?.id, msg.text);
     const parsed   = await parseIntent(preparedText);
+    const incident = await queueActionableIncident(parsed, msg);
+    if (incident?.incidentKey && parsed?.args && typeof parsed.args === 'object') {
+      parsed.args.__incidentKey = incident.incidentKey;
+    }
     if (parsed?.intent === 'ska_action' && (
       parsed?.args?.command === 'register_reservation' ||
       parsed?.args?.command === 'cancel_reservation'

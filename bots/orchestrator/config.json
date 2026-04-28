@@ -123,6 +123,18 @@
           }
         ]
       }
+    },
+    "jayOrchestration": {
+      "commanderEnabled": false,
+      "hubPlanIntegration": false,
+      "incidentStoreEnabled": false,
+      "commanderDispatch": false,
+      "teamBusEnabled": false,
+      "threeTierTelegram": false,
+      "skillExtraction": false,
+      "sessionCompaction": false,
+      "incidentLoopIntervalMs": 5000,
+      "commanderDispatchLimit": 3
     }
   }
 }

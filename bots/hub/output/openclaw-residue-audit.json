@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-04-27T22:43:04.462Z",
+  "generated_at": "2026-04-28T14:10:27.310Z",
   "ok": true,
   "categories": {
     "runtime_blocker": 0,
@@ -8,7 +8,7 @@
     "generated_inventory": 0,
     "ignored_log": 12,
     "dirty_worktree": 1,
-    "retired_home_archive_pending": 0
+    "retired_home_archive_pending": 1
   },
   "findings": [
     {
@@ -90,14 +90,14 @@
     {
       "category": "documentation",
       "file": "docs/history/WORK_HISTORY.md",
-      "line": 356,
+      "line": 373,
       "snippet": "- `REPO_ROOT=... PROJECT_ROOT=... node bots/investment/scripts/parallel-ops-report.ts --publish` → legacy-gateway/Telegram fetch 실패 및 `127.0.0.1:18789` 연결 실패",
       "reason": "markdown documentation/report reference"
     },
     {
       "category": "documentation",
       "file": "docs/history/WORK_HISTORY.md",
-      "line": 411,
+      "line": 428,
       "snippet": "- `npm run parallel-report -- --publish` → alert 경로는 호출됐지만 `legacy-gateway`/Telegram fetch 및 `127.0.0.1:18789` 연결 실패 경고 발생",
       "reason": "markdown documentation/report reference"
     },
@@ -542,7 +542,7 @@
     {
       "category": "retired_gateway_guard",
       "file": "bots/hub/scripts/run-tests.ts",
-      "line": 162,
+      "line": 172,
       "snippet": "'openclaw-runtime-retirement-smoke.ts',",
       "reason": "intentional regression guard"
     },
@@ -650,6 +650,12 @@
       "line": 155,
       "snippet": "echo -e \"${RED}❌ retired OpenClaw gateway marker 재도입 차단: ${file}${NC}\"",
       "reason": "intentional regression guard"
+    },
+    {
+      "category": "retired_home_archive_pending",
+      "file": "/Users/alexlee/.openclaw",
+      "snippet": "1 MB",
+      "reason": "retired home directory exists; archive/delete requires explicit data-retention decision"
     }
   ]
 }

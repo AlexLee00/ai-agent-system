@@ -109,6 +109,13 @@ function unitSmokeScripts(): string[] {
     'telegram-topic-routing-precedence-smoke.ts',
     'telegram-personal-fallback-guard-smoke.ts',
     'control-plane-smoke.ts',
+    'jay-orchestration-readiness-smoke.ts',
+    'jay-formation-decision-llm-smoke.ts',
+    'jay-control-plan-integration-smoke.ts',
+    'commander-contract-adherence-smoke.ts',
+    'jay-3tier-routing-smoke.ts',
+    'jay-skill-extraction-smoke.ts',
+    'jay-skill-reuse-smoke.ts',
     'l5-acceptance-smoke.ts',
     'openai-oauth-direct-smoke.ts',
     'openai-oauth-token-store-smoke.ts',
@@ -152,6 +159,10 @@ function runUnit(scriptDir: string, hubRoot: string, jestBin: string, tsxBin: st
 
 function runRuntime(scriptDir: string, hubRoot: string, tsxBin: string): void {
   const runtimeScripts = [
+    'jay-incident-store-smoke.ts',
+    'team-bus-bridging-smoke.ts',
+    'jay-to-commander-dispatch-smoke.ts',
+    'session-compaction-smoke.ts',
     'launchd-callback-secret-smoke.ts',
     'team-oauth-readiness-report.ts',
     ...(isEnabledFlag('HUB_RUNTIME_CHECK_LIVE_LLM') ? ['team-llm-route-drill.ts'] : []),

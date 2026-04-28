@@ -2,10 +2,10 @@
 
 This inventory tracks the Hub alarm migration surface. `hub_alarm_native` entries are the desired path; `retired_gateway_guard` entries are regression guards; `legacy_gateway_compat` entries are remaining migration targets and must stay at 0.
 
-- generated_at: 2026-04-27T13:11:35.720Z
-- total_matches: 215
-- unique_files: 128
-- hub_alarm_native: 202
+- generated_at: 2026-04-28T13:52:35.361Z
+- total_matches: 225
+- unique_files: 133
+- hub_alarm_native: 212
 - retired_gateway_guard: 13
 - legacy_gateway_compat: 0
 
@@ -149,6 +149,9 @@ This inventory tracks the Hub alarm migration surface. `hub_alarm_native` entrie
 ### `bots/claude/lib/telegram-reporter.ts`
 - L20 [hub_alarm_native]: `const { postAlarm } = require('../../../packages/core/lib/hub-alarm-client');`
 
+### `bots/claude/scripts/auto-dev-watch.ts`
+- L16 [hub_alarm_native]: `const { postAlarm } = require('../../../packages/core/lib/hub-alarm-client');`
+
 ### `bots/claude/src/builder.ts`
 - L25 [hub_alarm_native]: `const { postAlarm } = require('../../../packages/core/lib/hub-alarm-client');`
 
@@ -206,8 +209,25 @@ This inventory tracks the Hub alarm migration surface. `hub_alarm_native` entrie
 ### `bots/hub/launchd/ai.hub.resource-api.plist`
 - L32 [hub_alarm_native]: `<key>HUB_ALARM_USE_CLASS_TOPICS</key>`
 
+### `bots/hub/lib/alarm/alarm-enrichment.ts`
+- L6 [hub_alarm_native]: `const raw = String(process.env.HUB_ALARM_ENRICHMENT_ENABLED || '').trim().toLowerCase();`
+
+### `bots/hub/lib/alarm/alarm-interpreter-router.ts`
+- L10 [hub_alarm_native]: `const raw = String(process.env.HUB_ALARM_INTERPRETER_ENABLED || '').trim().toLowerCase();`
+- L15 [hub_alarm_native]: `const raw = String(process.env.HUB_ALARM_INTERPRETER_FAIL_OPEN ?? 'true').trim().toLowerCase();`
+- L25 [hub_alarm_native]: `const limit = Math.max(1, Number(process.env.HUB_ALARM_INTERPRETER_LLM_DAILY_LIMIT || 200) || 200);`
+
+### `bots/hub/lib/alarm/alarm-roundtable-engine.ts`
+- L13 [hub_alarm_native]: `const raw = String(process.env.HUB_ALARM_ROUNDTABLE_ENABLED || '').trim().toLowerCase();`
+- L23 [hub_alarm_native]: `const limit = Math.max(1, Number(process.env.HUB_ALARM_ROUNDTABLE_DAILY_LIMIT || 10) || 10);`
+- L81 [hub_alarm_native]: `const threshold = Math.max(1, Number(process.env.HUB_ALARM_ROUNDTABLE_TRIGGER_FINGERPRINT_THRESHOLD || 3) || 3);`
+
 ### `bots/hub/lib/alarm/auto-dev-incident.ts`
-- L163 [hub_alarm_native]: `const dir = process.env.HUB_ALARM_AUTO_DEV_DIR || DEFAULT_AUTO_DEV_DIR;`
+- L208 [hub_alarm_native]: `const dir = process.env.HUB_ALARM_AUTO_DEV_DIR || DEFAULT_AUTO_DEV_DIR;`
+
+### `bots/hub/lib/alarm/classify-alarm-llm.ts`
+- L13 [hub_alarm_native]: `const raw = String(process.env.HUB_ALARM_LLM_CLASSIFIER_ENABLED || '').trim().toLowerCase();`
+- L23 [hub_alarm_native]: `const limit = Math.max(1, Number(process.env.HUB_ALARM_LLM_DAILY_LIMIT || 100) || 100);`
 
 ### `bots/hub/lib/alarm/readiness.ts`
 - L103 [hub_alarm_native]: `const classTopicsEnabled = isEnabled(process.env.HUB_ALARM_USE_CLASS_TOPICS)`
@@ -219,7 +239,7 @@ This inventory tracks the Hub alarm migration surface. `hub_alarm_native` entrie
 - L26 [hub_alarm_native]: `String(process.env.HUB_ALARM_USE_CLASS_TOPICS || '').trim().toLowerCase(),`
 
 ### `bots/hub/lib/routes/alarm.ts`
-- L277 [hub_alarm_native]: `const claimLeaseMinutes = Math.max(1, Number(process.env.HUB_ALARM_DIGEST_CLAIM_LEASE_MINUTES || 15) || 15);`
+- L283 [hub_alarm_native]: `const claimLeaseMinutes = Math.max(1, Number(process.env.HUB_ALARM_DIGEST_CLAIM_LEASE_MINUTES || 15) || 15);`
 
 ### `bots/hub/lib/routes/secrets.ts`
 - L95 [hub_alarm_native]: `const raw = String(process.env.HUB_ALARM_USE_CLASS_TOPICS || '').trim().toLowerCase();`
@@ -382,7 +402,7 @@ This inventory tracks the Hub alarm migration surface. `hub_alarm_native` entrie
 - L11 [hub_alarm_native]: `} = require('../../../packages/core/lib/hub-alarm-client') as {`
 
 ### `bots/orchestrator/src/router.ts`
-- L105 [hub_alarm_native]: `} = require('../../../packages/core/lib/hub-alarm-client');`
+- L111 [hub_alarm_native]: `} = require('../../../packages/core/lib/hub-alarm-client');`
 
 ### `bots/orchestrator/src/steward.ts`
 - L15 [hub_alarm_native]: `const { postAlarm } = require('../../../packages/core/lib/hub-alarm-client');`

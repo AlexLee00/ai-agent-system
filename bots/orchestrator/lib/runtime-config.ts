@@ -68,6 +68,18 @@ const DEFAULT_RUNTIME_CONFIG = {
       ],
     },
   },
+  jayOrchestration: {
+    commanderEnabled: false,
+    hubPlanIntegration: false,
+    incidentStoreEnabled: false,
+    commanderDispatch: false,
+    teamBusEnabled: false,
+    threeTierTelegram: false,
+    skillExtraction: false,
+    sessionCompaction: false,
+    incidentLoopIntervalMs: 5000,
+    commanderDispatchLimit: 3,
+  },
 };
 
 const { loadRuntimeConfig: loadOrchestratorRuntimeConfig } = createRuntimeConfigLoader({
@@ -88,9 +100,14 @@ function getLLMSelectorOverrides(): Record<string, unknown> {
   return loadOrchestratorRuntimeConfig().llmSelectorOverrides || {};
 }
 
+function getJayOrchestrationConfig(): Record<string, unknown> {
+  return loadOrchestratorRuntimeConfig().jayOrchestration || {};
+}
+
 module.exports = {
   loadOrchestratorRuntimeConfig,
   getOrchestratorHealthConfig,
   getJayModelConfig,
   getLLMSelectorOverrides,
+  getJayOrchestrationConfig,
 };
