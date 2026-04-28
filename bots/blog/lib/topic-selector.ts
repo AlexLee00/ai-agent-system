@@ -757,7 +757,7 @@ async function queryDailyCandidates(targetDate, category = null) {
   }
 }
 
-async function getRecentPublishedTitles(targetDate, days = 45, limit = 40) {
+async function getRecentPublishedTitles(targetDate, days = 90, limit = 80) {
   try {
     const result = await queryOpsDb(
       `SELECT title
