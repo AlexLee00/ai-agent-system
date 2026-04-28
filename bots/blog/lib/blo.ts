@@ -470,7 +470,8 @@ async function _selectGeneralTopicForRun(category, strategyPlan, dailyState = {}
     recentPosts,
     strategyPlan,
     dailyState?.senseState || null,
-    dailyState?.revenueCorrelation || null
+    dailyState?.revenueCorrelation || null,
+    Array.isArray(options.itNews) ? options.itNews : []
   );
 
   let selectedTopic = await select();
@@ -1334,6 +1335,7 @@ async function _prepareGeneralContext(researchData, traceCtx, preloaded = {}, sc
         const plannedTopic = await _selectGeneralTopicForRun(category, strategyPlan, dailyState, {
           dryRun: options.dryRun === true,
           targetDate: _getBlogRunDate(),
+          itNews: Array.isArray(preparedResearch.it_news) ? preparedResearch.it_news : [],
         });
         preparedResearch = _applyGeneralTopicStrategy(preparedResearch, category, strategyPlan, dailyState, plannedTopic);
         const selectedTopic = preparedResearch._selectedTopic;

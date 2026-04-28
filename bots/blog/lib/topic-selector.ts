@@ -274,6 +274,60 @@ function buildMarketingHints(category = '', senseState = null, revenueCorrelatio
   };
 }
 
+function _trimNewsHeadline(title = '', maxLength = 34) {
+  const cleaned = String(title || '')
+    .replace(/\s*[-–—|:]\s*[^-–—|:]+$/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+  if (!cleaned) return '';
+  return cleaned.length > maxLength ? `${cleaned.slice(0, maxLength - 1).trim()}…` : cleaned;
+}
+
+function buildNewsTopicPool(category = '', itNews = []) {
+  const items = Array.isArray(itNews) ? itNews.slice(0, 3) : [];
+  if (!items.length) return [];
+
+  const builders = {
+    '최신IT트렌드': (headline) => ({
+      topic: `${headline} 이슈의 실제 의미`,
+      question: `${headline} 같은 최근 이슈를 볼 때 지금 먼저 해석해야 할 기준은 무엇일까`,
+      diff: '기사 요약보다 최근 이슈가 실무 도입 판단에 주는 영향 중심',
+    }),
+    'IT정보와분석': (headline) => ({
+      topic: `${headline} 이슈를 숫자보다 먼저 읽는 기준`,
+      question: `${headline} 이슈가 커질수록 어떤 신호를 먼저 구분해야 할까`,
+      diff: '뉴스 나열보다 최근 이슈의 우선순위 해석 중심',
+    }),
+    '개발기획과컨설팅': (headline) => ({
+      topic: `${headline} 이후 다시 점검할 실행 기준`,
+      question: `${headline} 같은 최근 이슈가 생기면 프로젝트 전제부터 무엇을 다시 봐야 할까`,
+      diff: '기술 이슈를 기획과 운영 기준으로 번역하는 관점',
+    }),
+    '홈페이지와App': (headline) => ({
+      topic: `${headline} 이슈가 UX에 남기는 숙제`,
+      question: `${headline} 같은 최근 이슈 뒤에 사용자는 어디에서 더 쉽게 불안해질까`,
+      diff: '최근 이슈를 화면 신뢰와 설명 UX 기준으로 연결',
+    }),
+    '성장과성공': (headline) => ({
+      topic: `${headline} 이슈가 보여준 판단 습관`,
+      question: `${headline} 같은 최근 이슈 앞에서 흔들리지 않으려면 무엇을 기준으로 삼아야 할까`,
+      diff: '최근 이슈를 개인의 선택 기준과 루틴 관점으로 연결',
+    }),
+  };
+
+  const build = builders[category];
+  if (!build) return [];
+
+  return items
+    .map((item) => _trimNewsHeadline(item?.title || ''))
+    .filter(Boolean)
+    .map((headline) => ({
+      ...build(headline),
+      source: 'recent_news',
+      headline,
+    }));
+}
+
 function safeReadDir(dirPath) {
   try {
     return fs.readdirSync(dirPath);
@@ -436,6 +490,9 @@ function scoreCandidate(candidate, category = '', strategyPlan = null) {
   if (preferredPatterns.includes(candidate.pattern)) {
     score += 3;
   }
+  if (candidate.source === 'recent_news') {
+    score += ['최신IT트렌드', 'IT정보와분석', '개발기획과컨설팅'].includes(category) ? 4 : 2;
+  }
 
   const guideTexts = [
     guide.readerProblem,
@@ -580,7 +637,7 @@ function buildStrategyTopicPool(category, strategyPlan = null, marketingHints = 
   return deduped;
 }
 
-function pickTopicPool(category, strategyPlan = null, marketingHints = null) {
+function pickTopicPool(category, strategyPlan = null, marketingHints = null, itNews = []) {
   const basePool = CATEGORY_TOPIC_POOL[category] || [
     { topic: `${category}에서 먼저 점검해야 할 기준`, question: `${category} 독자가 가장 먼저 부딪히는 문제는 무엇일까`, diff: '카테고리 독자 관점의 실전 문제 정의' },
     { topic: `${category} 실무 적용 체크리스트`, question: `${category}를 바로 실행으로 옮기려면 무엇부터 확인해야 할까`, diff: '추상적 개념보다 실전 체크리스트 중심' },
@@ -588,6 +645,7 @@ function pickTopicPool(category, strategyPlan = null, marketingHints = null) {
   ];
   return [
     ...basePool,
+    ...buildNewsTopicPool(category, itNews),
     ...buildStrategyTopicPool(category, strategyPlan, marketingHints),
   ];
 }
@@ -603,12 +661,12 @@ function getRecentPosts(category, limit = RECENT_POST_LIMIT) {
     .slice(0, limit);
 }
 
-function selectAndValidateTopic(category, recentPosts = [], strategyPlan = null, senseState = null, revenueCorrelation = null, recentTitleCorpus = null) {
+function selectAndValidateTopic(category, recentPosts = [], strategyPlan = null, senseState = null, revenueCorrelation = null, recentTitleCorpus = null, itNews = []) {
   const recentTitles = Array.isArray(recentTitleCorpus) && recentTitleCorpus.length
     ? recentTitleCorpus
     : recentPosts.map((post) => post.title).filter(Boolean);
   const marketingHints = buildMarketingHints(category, senseState, revenueCorrelation);
-  const topicPool = pickTopicPool(category, strategyPlan, marketingHints);
+  const topicPool = pickTopicPool(category, strategyPlan, marketingHints, itNews);
 
   const candidates = [];
   for (let i = 0; i < topicPool.length; i += 1) {
@@ -786,7 +844,7 @@ async function getRecentPublishedTitles(targetDate, days = 90, limit = 80) {
  * @param {object} senseState
  * @param {object} revenueCorrelation
  */
-async function selectTopicWithCandidateFallback(category, targetDate, recentPosts = [], strategyPlan = null, senseState = null, revenueCorrelation = null) {
+async function selectTopicWithCandidateFallback(category, targetDate, recentPosts = [], strategyPlan = null, senseState = null, revenueCorrelation = null, itNews = []) {
   const recentTitles = mergeRecentTitles(
     recentPosts.map(post => post.title).filter(Boolean),
     await getRecentPublishedTitles(targetDate)
@@ -844,7 +902,7 @@ async function selectTopicWithCandidateFallback(category, targetDate, recentPost
   }
 
   // 폴백: 기존 풀 기반 선택
-  return selectAndValidateTopic(category, recentPosts, strategyPlan, senseState, revenueCorrelation, recentTitles);
+  return selectAndValidateTopic(category, recentPosts, strategyPlan, senseState, revenueCorrelation, recentTitles, itNews);
 }
 
 // ─── 루나 투자 앵글 합성 템플릿 ──────────────────────────────────────────
