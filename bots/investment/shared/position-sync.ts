@@ -32,6 +32,21 @@ function roundQty(value, digits = 6) {
   return Math.round(Number(value || 0) * factor) / factor;
 }
 
+export function isStockSyncMarket(market) {
+  return market === 'domestic' || market === 'overseas';
+}
+
+export function normalizeBrokerQuantityForMarket(market, qty = 0) {
+  const value = Number(qty || 0);
+  if (!Number.isFinite(value) || value <= 0) return 0;
+  if (isStockSyncMarket(market)) return Math.floor(value);
+  return value;
+}
+
+function positionQuantityEpsilonForMarket(market) {
+  return isStockSyncMarket(market) ? 0.0001 : 0.000001;
+}
+
 export function estimatePositionNotionalUsdt(row = {}) {
   const amount = Math.abs(Number(row.amount ?? row.qty ?? 0));
   const avgPrice = Math.abs(Number(row.avg_price ?? row.avgPrice ?? 0));
@@ -45,11 +60,12 @@ export function isMeaningfulTrackedPosition(row = {}, minNotionalUsdt = CRYPTO_S
   return estimatePositionNotionalUsdt(row) >= Number(minNotionalUsdt || 0);
 }
 
-function normalizeHolding(market, holding = {}) {
+export function normalizeHolding(market, holding = {}) {
+  const normalizedQty = normalizeBrokerQuantityForMarket(market, holding.qty || 0);
   if (market === 'domestic') {
     return {
       symbol: String(holding.symbol || '').trim(),
-      qty: Number(holding.qty || 0),
+      qty: normalizedQty,
       avgPrice: Number(holding.avg_price || 0),
       unrealizedPnl: Number(holding.pnl_amt || 0),
       pnlPct: Number.isFinite(Number(holding.pnl_pct)) ? Number(holding.pnl_pct) : null,
@@ -60,7 +76,7 @@ function normalizeHolding(market, holding = {}) {
 
   return {
     symbol: String(holding.symbol || '').trim(),
-    qty: Number(holding.qty || 0),
+    qty: normalizedQty,
     avgPrice: Number(holding.avg_price || 0),
     unrealizedPnl: Number(holding.pnl_usd || 0),
     pnlPct: Number.isFinite(Number(holding.pnl_pct)) ? Number(holding.pnl_pct) : null,
@@ -70,8 +86,8 @@ function normalizeHolding(market, holding = {}) {
   };
 }
 
-function allocateDomesticQuantities(totalQty, rows = []) {
-  const total = Math.max(0, Math.round(Number(totalQty || 0)));
+export function allocateStockQuantities(totalQty, rows = []) {
+  const total = Math.max(0, Math.floor(Number(totalQty || 0)));
   if (rows.length <= 1) return [total];
 
   const baseTotal = rows.reduce((sum, row) => sum + Math.max(0, Number(row.amount || 0)), 0);
@@ -141,13 +157,13 @@ function resolveSyncedAvgPrice(market, brokerHolding, existingRows = []) {
   return 0;
 }
 
-function buildRowsForBrokerHolding(market, brokerHolding, existingRows = []) {
+export function buildRowsForBrokerHolding(market, brokerHolding, existingRows = []) {
   const syncedAvgPrice = resolveSyncedAvgPrice(market, brokerHolding, existingRows);
 
   if (!existingRows.length) {
     return [{
       symbol: brokerHolding.symbol,
-      amount: brokerHolding.qty,
+      amount: normalizeBrokerQuantityForMarket(market, brokerHolding.qty),
       avgPrice: syncedAvgPrice,
       unrealizedPnl: brokerHolding.unrealizedPnl,
       tradeMode: 'normal',
@@ -157,22 +173,23 @@ function buildRowsForBrokerHolding(market, brokerHolding, existingRows = []) {
   if (existingRows.length === 1) {
     return [{
       symbol: brokerHolding.symbol,
-      amount: brokerHolding.qty,
+      amount: normalizeBrokerQuantityForMarket(market, brokerHolding.qty),
       avgPrice: syncedAvgPrice,
       unrealizedPnl: brokerHolding.unrealizedPnl,
       tradeMode: existingRows[0].trade_mode || 'normal',
     }];
   }
 
-  if (market === 'domestic') {
-    const allocations = allocateDomesticQuantities(brokerHolding.qty, existingRows);
+  if (isStockSyncMarket(market)) {
+    const brokerQty = normalizeBrokerQuantityForMarket(market, brokerHolding.qty);
+    const allocations = allocateStockQuantities(brokerQty, existingRows);
     return existingRows
       .map((row, index) => ({
         symbol: brokerHolding.symbol,
         amount: allocations[index],
         avgPrice: Number(row.avg_price || 0) > 0 ? Number(row.avg_price || 0) : syncedAvgPrice,
-        unrealizedPnl: brokerHolding.qty > 0
-          ? brokerHolding.unrealizedPnl * (allocations[index] / brokerHolding.qty)
+        unrealizedPnl: brokerQty > 0
+          ? brokerHolding.unrealizedPnl * (allocations[index] / brokerQty)
           : 0,
         tradeMode: row.trade_mode || 'normal',
       }))
@@ -183,7 +200,7 @@ function buildRowsForBrokerHolding(market, brokerHolding, existingRows = []) {
   if (totalExisting <= 0) {
     return [{
       symbol: brokerHolding.symbol,
-      amount: brokerHolding.qty,
+      amount: normalizeBrokerQuantityForMarket(market, brokerHolding.qty),
       avgPrice: brokerHolding.avgPrice,
       unrealizedPnl: brokerHolding.unrealizedPnl,
       tradeMode: existingRows[0]?.trade_mode || 'normal',
@@ -356,7 +373,7 @@ export async function syncPositionsAtMarketOpen(market) {
       mismatches.push(summarizeMismatch(symbol, 'missing_db_position', {
         brokerQty: brokerHolding.qty,
       }));
-    } else if (brokerHolding && Math.abs(dbTotalQty - brokerHolding.qty) > (market === 'domestic' ? 0.0001 : 0.000001)) {
+    } else if (brokerHolding && Math.abs(dbTotalQty - brokerHolding.qty) > positionQuantityEpsilonForMarket(market)) {
       mismatches.push(summarizeMismatch(symbol, 'quantity_mismatch', {
         dbQty: roundQty(dbTotalQty, 8),
         brokerQty: roundQty(brokerHolding.qty, 8),

@@ -184,6 +184,7 @@
     "runtime:collection-audit": "node scripts/runtime-collection-audit.ts --json",
     "runtime:agent-roles": "node scripts/runtime-agent-role-report.ts --json",
     "runtime:position-parity": "node scripts/runtime-position-parity-report.ts --sync",
+    "runtime:position-sync:all": "node scripts/runtime-position-parity-report.ts --sync --markets=all --json",
     "runtime:position-strategy-audit": "node scripts/runtime-position-strategy-audit.ts",
     "runtime:position-strategy-audit-smoke": "node scripts/runtime-position-strategy-audit-smoke.ts",
     "runtime:position-strategy-hygiene": "node scripts/runtime-position-strategy-hygiene.ts --json",

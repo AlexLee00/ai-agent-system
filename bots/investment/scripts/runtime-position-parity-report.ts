@@ -7,10 +7,21 @@ import { initHubSecrets, loadSecrets } from '../shared/secrets.ts';
 import { syncPositionsAtMarketOpen } from '../shared/position-sync.ts';
 import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
 
+const SUPPORTED_SYNC_MARKETS = ['domestic', 'overseas', 'crypto'];
+
+export function parseSyncMarkets(argv = []) {
+  const raw = (argv.find((arg) => arg.startsWith('--markets=')) || '').split('=')[1] || 'crypto';
+  const tokens = raw.split(',').map((item) => item.trim().toLowerCase()).filter(Boolean);
+  if (tokens.includes('all')) return [...SUPPORTED_SYNC_MARKETS];
+  const selected = tokens.filter((item) => SUPPORTED_SYNC_MARKETS.includes(item));
+  return selected.length > 0 ? [...new Set(selected)] : ['crypto'];
+}
+
 function parseArgs(argv = []) {
   return {
     json: argv.includes('--json'),
     sync: argv.includes('--sync'),
+    markets: parseSyncMarkets(argv),
     limit: Math.max(1, Number((argv.find((arg) => arg.startsWith('--limit=')) || '').split('=')[1] || 20)),
   };
 }
@@ -195,12 +206,13 @@ async function main() {
   await db.initSchema();
   await initHubSecrets().catch(() => false);
 
-  let syncResult = null;
+  let syncResults = [];
   if (args.sync) {
-    syncResult = await syncPositionsAtMarketOpen('crypto').catch((error) => ({
+    syncResults = await Promise.all(args.markets.map(async (market) => syncPositionsAtMarketOpen(market).catch((error) => ({
+      market,
       ok: false,
       error: error?.message || String(error),
-    }));
+    }))));
   }
 
   const exchange = getExchange();
@@ -228,7 +240,8 @@ async function main() {
 
   const payload = {
     scannedAt: new Date().toISOString(),
-    syncResult,
+    syncResult: syncResults.find((item) => item?.market === 'crypto') || null,
+    syncResults,
     summary,
     rows: topRows,
     paperPositionCount: dbRows.filter((row) => row.paper === true).length,
@@ -240,8 +253,9 @@ async function main() {
   }
 
   console.log('\n=== Binance Position Parity ===\n');
-  if (syncResult) {
-    console.log(`sync: ${syncResult.ok === false ? 'failed' : 'ok'}${syncResult?.mismatchCount !== undefined ? ` (mismatches=${syncResult.mismatchCount})` : ''}`);
+  if (syncResults.length > 0) {
+    const rendered = syncResults.map((result) => `${result.market}:${result.ok === false ? 'failed' : 'ok'}${result?.mismatchCount !== undefined ? `(${result.mismatchCount})` : ''}`);
+    console.log(`sync: ${rendered.join(', ')}`);
   }
   console.log(`symbols=${summary.totalSymbols} ok=${summary.ok} qty_mismatch=${summary.quantityMismatch} pnl_mismatch=${summary.pnlMismatch} wallet_journal_only=${summary.walletJournalOnly} wallet_journal_dust=${summary.walletJournalDust} wallet_only=${summary.walletOnly} db_only=${summary.dbOnly}`);
   console.log(`paper_positions=${payload.paperPositionCount}`);

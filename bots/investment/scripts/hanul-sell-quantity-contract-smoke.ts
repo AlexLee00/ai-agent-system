@@ -48,6 +48,17 @@ export function runHanulSellQuantityContractSmoke() {
   assert.equal(brokerClamp.adjusted, true);
   assert.equal(brokerClamp.code, 'broker_qty_clamped');
 
+  const domesticBrokerClamp = alignHanulSellQuantityWithBroker({
+    intendedQty: 8.9,
+    brokerQty: 7.7,
+    market: 'domestic',
+    symbol: '005930',
+  });
+  assert.equal(domesticBrokerClamp.success, true);
+  assert.equal(domesticBrokerClamp.qty, 7);
+  assert.equal(domesticBrokerClamp.adjusted, true);
+  assert.equal(domesticBrokerClamp.code, 'broker_qty_clamped');
+
   const brokerMissing = alignHanulSellQuantityWithBroker({
     intendedQty: 2,
     brokerQty: 0,
@@ -63,6 +74,7 @@ export function runHanulSellQuantityContractSmoke() {
     residualFullExit,
     largeUnexecutablePartial,
     brokerClamp,
+    domesticBrokerClamp,
     brokerMissing,
   };
 }
