@@ -1,3 +1,53 @@
+# 세션 인수인계 — 2026-04-28 (CODEX_LUNA_AGENT_MEMORY_AND_LLM_ROUTING_PLAN Phase A/B/C/G — 77차 세션)
+
+## 완료 요약 ✅ (77차 세션) — CODEX_LUNA_AGENT_MEMORY_AND_LLM_ROUTING_PLAN
+
+### 커밋: `6b20dafd`
+
+**Phase A: 12 에이전트 Persona + Constitution (P0)**
+- `bots/investment/team/<agent>.persona.md` × 11 (luna/nemesis/aria/sophia/hermes/oracle/chronos/zeus/athena/argos/sentinel)
+- `bots/investment/team/<agent>.constitution.md` × 11 (동일)
+- `self_rewarding.ex`: constitution 위반 항목 감지 + score 차감 (-0.20/건, max -0.60)
+
+**Phase B: 4-Layer Agent Memory System (P0)**
+- `20260428_agent_memory_system.sql`: Layer2(agent_short_term_memory 24h TTL) + Layer3(luna_rag_documents에 owner_agent 추가) + Layer4(entity_facts 시맨틱) + curriculum_state + agent_messages + llm_failure_reflexions
+- `agent-memory-orchestrator.ts`: 8종 컨텍스트 자동 prefix 조합 (persona+constitution+episodic+failures+skills+facts+short-term+working)
+
+**Phase C: 에이전트별 LLM 라우팅 정밀화 (P0)**
+- `agent-llm-routing.ts`: agent × market × task → optimal LLM 매트릭스 신규 (모든 에이전트 커버)
+- `hub-llm-client.ts`: AGENT_ABSTRACT_MODEL → 동적 라우팅 통합, taskType 파라미터 추가
+- `runtime-profiles.ts`: nemesis_risk/sentiment_multilingual/screening_bulk/deep_reasoning/debate_agent 5개 신규 프로파일
+
+**Phase G: Reflexion 자동 회피 (P0)**
+- `reflexion-guard.ts`: 유사 거래 실패 조회 → confidence 차감 (-0.10/건) → 3건+ 진입 차단
+- LLM 호출 실패 → prompt_hash 기반 avoid_provider 자동 회피 (7일 내 3회+ 실패)
+- `hub-llm-client.ts`: 실패 자동 기록 + 회피 provider 주입 통합
+
+### Kill Switch 설정 (모두 기본 비활성)
+```
+LUNA_AGENT_MEMORY_AUTO_PREFIX=false    (8종 prefix 주입)
+LUNA_AGENT_PERSONA_ENABLED=false       (페르소나 주입)
+LUNA_AGENT_CONSTITUTION_ENABLED=false  (헌법 주입)
+LUNA_AGENT_MEMORY_LAYER_2=false        (단기 메모리)
+LUNA_AGENT_MEMORY_LAYER_3=false        (episodic RAG)
+LUNA_AGENT_MEMORY_LAYER_4=false        (semantic/procedural)
+LUNA_AGENT_LLM_ROUTING_ENABLED=false   (동적 라우팅)
+LUNA_AGENT_REFLEXION_AUTO_AVOID=false  (reflexion 회피)
+```
+
+### 다음 세션 필수 작업
+1. **OPS DB 마이그레이션** 실행: `20260428_agent_memory_system.sql`
+2. **Kill Switch 순차 활성화** (Shadow Mode 먼저):
+   - `LUNA_AGENT_LLM_ROUTING_ENABLED=true` → LLM routing shadow 확인
+   - `LUNA_AGENT_PERSONA_ENABLED=true` + `LUNA_AGENT_CONSTITUTION_ENABLED=true`
+   - `LUNA_AGENT_MEMORY_AUTO_PREFIX=true` (메모리 prefix 전체 활성)
+   - `LUNA_AGENT_REFLEXION_AUTO_AVOID=true` (reflexion 자동 회피)
+3. **Phase D** (Curriculum Learning): agent_curriculum_state invocation_count 증가 로직 추가
+4. **Phase E** (Cross-Agent Bus): agent_messages 테이블 활용 + agent-message-bus.ts
+5. **Smoke 테스트**: agent-memory-orchestrator 직접 호출해 prefix 조합 확인
+
+---
+
 # 세션 인수인계 — 2026-04-25 (CODEX_CLAUDE_L5_AUTONOMOUS_PROCESS_GAP_PLAN P2 완성 — 76차 세션)
 
 ## 완료 요약 ✅ (76차 세션) — CODEX_CLAUDE_L5_AUTONOMOUS_PROCESS_GAP_PLAN P2 완성
