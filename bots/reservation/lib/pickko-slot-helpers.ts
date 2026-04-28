@@ -32,6 +32,7 @@ export function buildSlotCandidates(slots: string[]): SlotCandidate[] {
 
   const candidates: SlotCandidate[] = [];
   const seen = new Set<string>();
+  const strictRequestWindow = process.env.PICKKO_STRICT_REQUEST_WINDOW === '1';
 
   const addThirtyMinutes = (hhmm: string) => {
     const [hour, minute] = hhmm.split(':').map(Number);
@@ -58,6 +59,11 @@ export function buildSlotCandidates(slots: string[]): SlotCandidate[] {
       reason,
     });
   };
+
+  if (strictRequestWindow) {
+    pushCandidate(0, slots.length - 1, 'original-window');
+    return candidates;
+  }
 
   for (let startIdx = 0; startIdx <= slots.length - 2; startIdx++) {
     pushCandidate(startIdx, slots.length - 1, startIdx === 0 ? 'original-window' : 'shift-start-keep-end');

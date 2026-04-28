@@ -75,10 +75,26 @@ async function runHourly() {
     llmHealth = await localLLMClient.checkLocalLLMHealth({ embeddingsOnly: true });
     if (!llmHealth.available || llmHealth.error) {
       await postAlarm({
-        message: `⚠️ [스튜어드] 로컬 임베딩 이상: ${llmHealth.error || 'embedding 응답 없음'} (${llmHealth.responseMs}ms)`,
+        title: '로컬 임베딩 인프라 헬스체크 이상',
+        message: `⚠️ [로컬 임베딩 인프라] RAG/메모리 임베딩 헬스체크 이상: ${llmHealth.error || 'embedding 응답 없음'} (${llmHealth.responseMs}ms)`,
         team: 'general',
         alertLevel: 2,
         fromBot: 'steward',
+        alarmType: 'error',
+        visibility: 'internal',
+        actionability: 'auto_repair',
+        eventType: 'local_embedding_health_degraded',
+        incidentKey: 'general:local_embedding_health_degraded',
+        payload: {
+          component: 'local_embedding_infrastructure',
+          steward_llm_route: 'gemini-cli-oauth',
+          expected_embedding_model: localLLMClient.LOCAL_MODEL_EMBED,
+          mode: llmHealth.mode || 'embeddings',
+          embed_model_ok: Boolean(llmHealth.embedModelOk),
+          model_count: Array.isArray(llmHealth.models) ? llmHealth.models.length : 0,
+          response_ms: llmHealth.responseMs,
+          error: llmHealth.error || null,
+        },
       });
     }
   } catch (err) {

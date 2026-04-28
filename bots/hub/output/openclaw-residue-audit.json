@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-04-27T13:11:02.381Z",
+  "generated_at": "2026-04-27T22:43:04.462Z",
   "ok": true,
   "categories": {
     "runtime_blocker": 0,
@@ -8,7 +8,7 @@
     "generated_inventory": 0,
     "ignored_log": 12,
     "dirty_worktree": 1,
-    "retired_home_archive_pending": 1
+    "retired_home_archive_pending": 0
   },
   "findings": [
     {
@@ -542,7 +542,7 @@
     {
       "category": "retired_gateway_guard",
       "file": "bots/hub/scripts/run-tests.ts",
-      "line": 160,
+      "line": 162,
       "snippet": "'openclaw-runtime-retirement-smoke.ts',",
       "reason": "intentional regression guard"
     },
@@ -650,12 +650,6 @@
       "line": 155,
       "snippet": "echo -e \"${RED}❌ retired OpenClaw gateway marker 재도입 차단: ${file}${NC}\"",
       "reason": "intentional regression guard"
-    },
-    {
-      "category": "retired_home_archive_pending",
-      "file": "/Users/alexlee/.openclaw",
-      "snippet": "5517 MB",
-      "reason": "retired home directory exists; archive/delete requires explicit data-retention decision"
     }
   ]
 }

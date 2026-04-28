@@ -128,6 +128,8 @@ function unitSmokeScripts(): string[] {
     'oauth-monitor-launchd-smoke.ts',
     'runtime-profile-settings-smoke.ts',
     'server-hardening-smoke.ts',
+    'local-embedding-health-smoke.ts',
+    'steward-local-embedding-alarm-smoke.ts',
     'retired-gateway-marker-precommit-smoke.ts',
     'blog-alarm-dedup-smoke.ts',
   ];

@@ -370,9 +370,9 @@ type LLMHealthStatus = {
 
 async function checkLocalLLMHealth(options: HealthCheckOptions = {}): Promise<LLMHealthStatus> {
   const start = Date.now();
-  const baseUrl = getBaseUrl(options);
-  const timeoutMs = Number(options.timeoutMs || 5000);
   const embeddingsOnly = options.embeddingsOnly === true;
+  const baseUrl = embeddingsOnly ? getEmbeddingsBaseUrl(options) : getBaseUrl(options);
+  const timeoutMs = Number(options.timeoutMs || 5000);
   try {
     const models = await getAvailableModels({ baseUrl });
     if (!models.length) {
