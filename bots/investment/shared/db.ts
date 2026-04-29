@@ -8,59 +8,21 @@
  *         runtime_config_suggestion_log, schema_migrations
  */
 
-import { createRequire } from 'module';
-const require = createRequire(import.meta.url);
-const pgPool = require('../../../packages/core/lib/pg-pool');
-const { createSchemaDbHelpers } = require('../../../packages/core/lib/db/helpers');
+import {
+  INVESTMENT_SCHEMA,
+  query,
+  run,
+  get,
+  withTransaction,
+  close as closeDbCore,
+} from './db/core.ts';
 import { getInvestmentTradeMode, getExecutionMode, getBrokerAccountMode } from './secrets.ts';
 import { getSignalDedupeWindowMinutes } from './runtime-config.ts';
 import { resolveLunaAutonomyPhase } from './autonomy-phase.ts';
 
-const SCHEMA = 'investment';
+const SCHEMA = INVESTMENT_SCHEMA;
 let _schemaInitPromise = null;
-const schemaDb = createSchemaDbHelpers(pgPool, SCHEMA);
-
-// ─── 기본 쿼리 래퍼 (외부 호환 API 유지) ──────────────────────────────
-
-/** SELECT 쿼리 — rows 배열 반환 */
-export function query(sql, params = []) {
-  return schemaDb.query(sql, params);
-}
-
-/** INSERT / UPDATE / DELETE — { rowCount, rows } 반환 */
-export function run(sql, params = []) {
-  return schemaDb.run(sql, params);
-}
-
-/** 단일 행 SELECT — row 또는 null */
-export function get(sql, params = []) {
-  return schemaDb.get(sql, params);
-}
-
-/**
- * 스키마 트랜잭션 래퍼
- * - callback 내에서는 동일 DB 세션/트랜잭션을 공유한다.
- */
-export async function withTransaction(fn) {
-  if (typeof fn !== 'function') throw new Error('withTransaction requires callback function');
-  return pgPool.transaction(SCHEMA, async (client) => {
-    const tx = {
-      query: async (sql, params = []) => {
-        const result = await client.query(sql, params);
-        return result.rows || [];
-      },
-      run: async (sql, params = []) => {
-        const result = await client.query(sql, params);
-        return { rowCount: result.rowCount, rows: result.rows || [] };
-      },
-      get: async (sql, params = []) => {
-        const result = await client.query(sql, params);
-        return result.rows?.[0] || null;
-      },
-    };
-    return fn(tx, client);
-  });
-}
+export { query, run, get, withTransaction };
 
 // ─── 스키마 초기화 ──────────────────────────────────────────────────
 
@@ -2813,7 +2775,7 @@ export async function cleanupPosttradeSmokeArtifacts({ apply = false } = {}) {
 }
 
 export function close() {
-  // pgPool 관리 — 개별 close 불필요 (pgPool.closeAll()로 전체 종료)
+  return closeDbCore();
 }
 
 export default {

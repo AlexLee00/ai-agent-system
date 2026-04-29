@@ -27,6 +27,7 @@ import { applyPredictiveValidationGate } from './predictive-validation-gate.ts';
 import { recordDiscoveryAttribution, buildDiscoveryReflectionSummary } from './discovery-reflection.ts';
 import { getOHLCV } from './ohlcv-fetcher.ts';
 import { createRequire } from 'module';
+import { buildDecisionPipelineMetrics } from './pipeline-decision-metrics.ts';
 
 const _require = createRequire(import.meta.url);
 const elixirBridge = _require('../../../packages/core/lib/elixir-bridge');
@@ -745,23 +746,20 @@ export async function runDecisionExecutionPipeline({
     return counts;
   }
 
-  const buildMetrics = (extra = {}) => ({
-    durationMs: Date.now() - startedAt,
-    inputSymbols: runtimeSymbols.length,
-    decidedSymbols: symbolDecisions.length,
-    approvedSignals: extra.approvedSignals ?? 0,
-    executedSymbols: extra.executedSymbols ?? 0,
+  const buildMetrics = (extra = {}) => buildDecisionPipelineMetrics({
+    startedAt,
+    runtimeSymbols,
+    symbolDecisions,
     debateCount,
     debateLimit,
     riskRejected,
-    riskRejectReasons: { ...riskRejectReasons },
+    riskRejectReasons,
     weakSignalSkipped,
-    weakSignalReasons: { ...weakSignalReasons },
-    strategyRouteCounts: { ...strategyRouteCounts },
-    strategyRouteQualityCounts: { ...strategyRouteQualityCounts },
-    strategyRouteAvgReadiness: strategyRouteReadinessCount > 0
-      ? Number((strategyRouteReadinessSum / strategyRouteReadinessCount).toFixed(4))
-      : null,
+    weakSignalReasons,
+    strategyRouteCounts,
+    strategyRouteQualityCounts,
+    strategyRouteReadinessSum,
+    strategyRouteReadinessCount,
     midGapPromoted,
     midGapRejectedByRisk,
     invalidSignalSkipped,
@@ -769,30 +767,13 @@ export async function runDecisionExecutionPipeline({
     exitPhaseSellSignals,
     exitPhaseExecuted,
     exitBelowMinSkipped,
-      savedExecutionWork: riskRejected * 5,
-      warnings: [
-        ...buildDecisionWarnings({
-          symbols: runtimeSymbols,
-          debateCount,
-          debateLimit,
-          riskRejected,
-          weakSignalSkipped,
-          midGapPromoted,
-          representativeBuyDropped: Number(representativeReduction?.dropped?.length || 0),
-        }),
-        ...(collectQuality.status === 'degraded' ? ['collect_quality_degraded'] : []),
-        ...(collectQuality.status === 'insufficient' ? ['collect_quality_insufficient'] : []),
-      ],
-    representativeBuyRequested: Number(representativeReduction?.requestedBuyCount || 0),
-    representativeBuyKept: Number(representativeReduction?.kept?.length || 0),
-    representativeBuyDropped: Number(representativeReduction?.dropped?.length || 0),
-      collectQualityStatus: collectQuality.status,
-      collectQualityReadiness: collectQuality.readinessScore,
-      collectQualityBlockedBuyCount,
-      collectQualityReducedBuyCount,
-      entryTriggerStats,
-      predictiveValidationStats,
-      ...extra,
+    representativeReduction,
+    collectQuality,
+    collectQualityBlockedBuyCount,
+    collectQualityReducedBuyCount,
+    entryTriggerStats,
+    predictiveValidationStats,
+    extra,
   });
 
   function getTopRiskRejectReason() {
@@ -1506,13 +1487,3 @@ export async function runDecisionExecutionPipeline({
 export default {
   runDecisionExecutionPipeline,
 };
-
-function buildDecisionWarnings({ symbols, debateCount, debateLimit, riskRejected, weakSignalSkipped, midGapPromoted, representativeBuyDropped = 0 }) {
-  const warnings = [];
-  if (symbols.length >= 20 && debateCount >= Math.max(1, debateLimit - 1)) warnings.push('debate_capacity_hot');
-  if (riskRejected >= 5) warnings.push('risk_reject_saved_work');
-  if (weakSignalSkipped >= 10) warnings.push('weak_signal_pressure');
-  if (midGapPromoted >= 3) warnings.push('mid_gap_validation_promoted');
-  if (representativeBuyDropped >= 1) warnings.push('representative_buy_pass_applied');
-  return warnings;
-}

@@ -48,7 +48,7 @@ let dailyFeedbackMemory = {
   consolidate: async () => {},
 };
 try {
-  const { createAgentMemory } = require('../../../packages/core/lib/agent-memory.ts');
+  const { createAgentMemory } = require('../../../packages/core/lib/agent-memory.js');
   dailyFeedbackMemory = createAgentMemory({ agentId: 'investment.daily-feedback', team: 'investment' });
 } catch (error) {
   console.warn(`  ⚠️ [daily-feedback] agent-memory 로드 실패(무시): ${error?.message || error}`);
