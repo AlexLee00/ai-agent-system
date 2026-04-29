@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // @ts-nocheck
 
-import { buildDecisionPipelineMetrics, buildDecisionWarnings } from '../shared/pipeline-decision-metrics.ts';
+import { buildDecisionPipelineMetrics, buildDecisionWarnings, countDecisionActions } from '../shared/pipeline-decision-metrics.ts';
 
 const startedAt = Date.now() - 250;
 const metrics = buildDecisionPipelineMetrics({
@@ -42,6 +42,13 @@ const warnings = buildDecisionWarnings({
   representativeBuyDropped: 1,
 });
 
+const actionCounts = countDecisionActions([
+  { action: 'buy' },
+  { action: 'sell' },
+  { action: 'hold' },
+  { action: 'watch' },
+]);
+
 const checks = [
   ['approvedSignals', metrics.approvedSignals === 3],
   ['executedSymbols', metrics.executedSymbols === 2],
@@ -50,6 +57,7 @@ const checks = [
   ['warnings', ['debate_capacity_hot', 'risk_reject_saved_work', 'weak_signal_pressure', 'mid_gap_validation_promoted', 'representative_buy_pass_applied'].every((item) => warnings.includes(item))],
   ['collectQualityWarning', metrics.warnings.includes('collect_quality_degraded')],
   ['extraPreserved', metrics.midGapExecuted === 1],
+  ['actionCounts', actionCounts.buy === 1 && actionCounts.sell === 1 && actionCounts.hold === 2],
 ];
 
 const failed = checks.filter(([, ok]) => !ok);

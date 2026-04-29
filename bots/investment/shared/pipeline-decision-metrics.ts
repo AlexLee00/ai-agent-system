@@ -24,6 +24,17 @@ export function buildDecisionWarnings({
   return warnings;
 }
 
+export function countDecisionActions(decisions = []) {
+  const counts = { buy: 0, sell: 0, hold: 0 };
+  for (const decision of decisions || []) {
+    const action = String(decision?.action || '').toLowerCase();
+    if (action === 'buy') counts.buy += 1;
+    else if (action === 'sell') counts.sell += 1;
+    else counts.hold += 1;
+  }
+  return counts;
+}
+
 export function buildDecisionPipelineMetrics({
   startedAt = Date.now(),
   runtimeSymbols = [],
@@ -107,5 +118,6 @@ export function buildDecisionPipelineMetrics({
 
 export default {
   buildDecisionWarnings,
+  countDecisionActions,
   buildDecisionPipelineMetrics,
 };

@@ -64,6 +64,7 @@ import {
   extractExchangeOrderId,
   normalizeBinanceMarketOrderExecution,
 } from '../shared/binance-order-execution-normalizer.ts';
+import { buildHephaestosExecutionContext } from './hephaestos/execution-context.ts';
 
 // ─── 심볼 유효성 ────────────────────────────────────────────────────
 
@@ -4245,7 +4246,19 @@ export async function enqueueClientOrderPendingRetry({
 export async function executeSignal(signal) {
   await initHubSecrets().catch(() => false);
   const globalPaperMode = isPaperMode();
-  const { id: signalId, symbol, action } = signal;
+  const executionContext = buildHephaestosExecutionContext(signal, {
+    globalPaperMode,
+    defaultTradeMode: getInvestmentTradeMode(),
+  });
+  const {
+    signalId,
+    symbol,
+    action,
+    amountUsdt,
+    base,
+    tag,
+  } = executionContext;
+  let { effectivePaperMode } = executionContext;
 
   // ★ SEC-004 가드: 네메시스 승인/실행 freshness 재검증 (BUY 전용 — SELL은 포지션 청산이므로 예외)
   if (action !== ACTIONS.SELL && !globalPaperMode) {
@@ -4271,16 +4284,13 @@ export async function executeSignal(signal) {
     }
   }
 
-  const amountUsdt = signal.amountUsdt || signal.amount_usdt || 100;
-  let signalTradeMode = signal.trade_mode || getInvestmentTradeMode();
+  let signalTradeMode = executionContext.signalTradeMode;
   const capitalPolicy = getCapitalConfig('binance', signalTradeMode);
   const minOrderUsdt = await getDynamicMinOrderAmount('binance', signalTradeMode);
   const exitReasonOverride = signal.exit_reason_override || null;
   const partialExitRatio = normalizePartialExitRatio(signal.partial_exit_ratio || signal.partialExitRatio);
   const qualityContext = buildSignalQualityContext(signal);
   const hephaestosRoleState = await getInvestmentAgentRoleState('hephaestos', 'binance').catch(() => null);
-  const base = symbol.split('/')[0];
-  let effectivePaperMode = globalPaperMode;
   const persistFailure = async (reason, {
     code = 'broker_execution_error',
     meta = {},
@@ -4313,7 +4323,6 @@ export async function executeSignal(signal) {
     return { success: false, reason };
   }
 
-  const tag = effectivePaperMode ? '[PAPER]' : '[LIVE]';
   console.log(`\n⚡ [헤파이스토스] ${symbol} ${action} $${amountUsdt} ${tag}`);
 
   /** @type {any} */

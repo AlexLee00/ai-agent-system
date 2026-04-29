@@ -27,7 +27,7 @@ import { applyPredictiveValidationGate } from './predictive-validation-gate.ts';
 import { recordDiscoveryAttribution, buildDiscoveryReflectionSummary } from './discovery-reflection.ts';
 import { getOHLCV } from './ohlcv-fetcher.ts';
 import { createRequire } from 'module';
-import { buildDecisionPipelineMetrics } from './pipeline-decision-metrics.ts';
+import { buildDecisionPipelineMetrics, countDecisionActions } from './pipeline-decision-metrics.ts';
 
 const _require = createRequire(import.meta.url);
 const elixirBridge = _require('../../../packages/core/lib/elixir-bridge');
@@ -736,16 +736,6 @@ export async function runDecisionExecutionPipeline({
   let strategyRouteReadinessSum = 0;
   let strategyRouteReadinessCount = 0;
 
-  function countDecisionActions() {
-    const counts = { buy: 0, sell: 0, hold: 0 };
-    for (const decision of (portfolioDecision?.decisions || [])) {
-      if (decision.action === ACTIONS.BUY) counts.buy += 1;
-      else if (decision.action === ACTIONS.SELL) counts.sell += 1;
-      else counts.hold += 1;
-    }
-    return counts;
-  }
-
   const buildMetrics = (extra = {}) => buildDecisionPipelineMetrics({
     startedAt,
     runtimeSymbols,
@@ -1192,7 +1182,7 @@ export async function runDecisionExecutionPipeline({
     };
   }
 
-  const actionCounts = countDecisionActions();
+  const actionCounts = countDecisionActions(portfolioDecision.decisions || []);
 
   const results = [...exitResults];
   for (const dec of (portfolioDecision.decisions || [])) {
