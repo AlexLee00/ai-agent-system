@@ -13,6 +13,7 @@ const FREE_MCP_REGISTRY = {
       'release-check',
       'issue-pr-context',
       'pat-renewal-prepare',
+      'pat-readiness-monitor',
       'browser-assisted-auth',
       'pat-request-review',
     ],
