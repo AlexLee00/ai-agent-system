@@ -55,7 +55,13 @@ defmodule Darwin.V2.KillSwitch do
       # Phase O 신규
       :telegram_enhanced,
       # 자율 레벨 승격 관련
-      :auto_promotion
+      :auto_promotion,
+      # CODEX Phase A — 9 팀 통합
+      :team_integration,
+      # CODEX Phase B — Hypothesis Engine (Sakana AI Scientist)
+      :hypothesis_engine,
+      # CODEX Phase C — Measure Stage
+      :measure_stage
     ]
   end
 
@@ -73,5 +79,9 @@ defmodule Darwin.V2.KillSwitch do
   defp feature_env(:research_registry), do: "DARWIN_RESEARCH_REGISTRY_ENABLED"
   defp feature_env(:telegram_enhanced), do: "DARWIN_TELEGRAM_ENHANCED_ENABLED"
   defp feature_env(:auto_promotion), do: "DARWIN_AUTO_PROMOTION_ENABLED"
+  # CODEX Phase A/B/C
+  defp feature_env(:team_integration), do: "DARWIN_TEAM_INTEGRATION_ENABLED"
+  defp feature_env(:hypothesis_engine), do: "DARWIN_HYPOTHESIS_ENGINE_ENABLED"
+  defp feature_env(:measure_stage), do: "DARWIN_MEASURE_STAGE_ENABLED"
   defp feature_env(other), do: "DARWIN_#{String.upcase(to_string(other))}_ENABLED"
 end

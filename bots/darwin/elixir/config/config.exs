@@ -22,4 +22,15 @@ config :darwin,
   project_root: System.get_env("PROJECT_ROOT", "/Users/alexlee/projects/ai-agent-system"),
   mlx_base_url: System.get_env("MLX_BASE_URL", "http://localhost:11434"),
   embed_model: "qwen3-embed-0.6b",
-  embed_dim: 1024
+  embed_dim: 1024,
+  # CODEX Phase A — 9 팀 통합 채널 (기본 false)
+  team_integration_enabled:
+    System.get_env("DARWIN_TEAM_INTEGRATION_ENABLED", "false") == "true",
+  # CODEX Phase B — Hypothesis Engine (기본 false)
+  hypothesis_engine_enabled:
+    System.get_env("DARWIN_HYPOTHESIS_ENGINE_ENABLED", "false") == "true",
+  hypothesis_llm_daily_budget_usd:
+    System.get_env("DARWIN_HYPOTHESIS_LLM_DAILY_BUDGET_USD", "2.0") |> String.to_float(),
+  # CODEX Phase C — Measure Stage (기본 false)
+  measure_stage_enabled:
+    System.get_env("DARWIN_MEASURE_STAGE_ENABLED", "false") == "true"
