@@ -24,6 +24,7 @@ defmodule Luna.V2.Supervisor do
     if KillSwitch.v2_enabled?() do
       children =
         core_children() ++
+        memory_children() ++
         position_watch_children() ++
         mapek_children() ++
         registry_children() ++
@@ -54,6 +55,14 @@ defmodule Luna.V2.Supervisor do
       [Luna.V2.MAPEK.Monitor, Luna.V2.MAPEK.Knowledge]
     else
       [Luna.V2.MAPEK.Monitor]  # Monitor는 항상 기동 (시장 감시)
+    end
+  end
+
+  defp memory_children do
+    if KillSwitch.layer1_working_memory_enabled?() do
+      [Luna.V2.Memory.WorkingMemory]
+    else
+      []
     end
   end
 

@@ -17,6 +17,7 @@ import {
   getCurriculumPromptAdjustment,
   getAllCurriculumStates,
 } from '../shared/agent-curriculum-tracker.ts';
+import * as db from '../shared/db.ts';
 
 function assert(condition: unknown, message: string): void {
   if (!condition) throw new Error(`FAIL: ${message}`);
@@ -24,6 +25,7 @@ function assert(condition: unknown, message: string): void {
 
 async function main(): Promise<void> {
   console.log('[curriculum-smoke] 시작');
+  await db.initSchema();
 
   // ─── 1. 레벨별 지시문 검증 ─────────────────────────────────────────────────
   const novicePrompt = getCurriculumPromptAdjustment('novice');
@@ -56,29 +58,20 @@ async function main(): Promise<void> {
 
   console.log('[curriculum-smoke] kill switch 검증 ✅');
 
-  // ─── 3. DB 연결 테스트 (연결 가능할 때만) ────────────────────────────────────
+  // ─── 3. DB 연결 테스트 ───────────────────────────────────────────────────────
   const testAgent = `smoke-curriculum-${Date.now()}`;
   const testMarket = 'crypto';
 
-  // pgPool 직접 import해 테이블 존재 여부 확인
+  // pgPool 직접 import해 테이블 존재 확인 (없으면 실패)
   const { createRequire } = await import('module');
   const _require = createRequire(import.meta.url);
-  let pgPool: { query: (sql: string, params?: unknown[]) => Promise<{ rows: unknown[] }> } | null = null;
-  let tableExists = false;
-  try {
-    pgPool = _require('../../../packages/core/lib/pg-pool');
-    const check = await pgPool!.query(
-      `SELECT 1 FROM information_schema.tables WHERE table_schema='investment' AND table_name='agent_curriculum_state'`,
-    );
-    tableExists = (check.rows.length ?? 0) > 0;
-  } catch {
-    // DB 미연결
-  }
+  const pgPool = _require('../../../packages/core/lib/pg-pool');
+  const check = await pgPool.query(
+    `SELECT 1 FROM information_schema.tables WHERE table_schema='investment' AND table_name='agent_curriculum_state'`,
+  );
+  assert((check.rows.length ?? 0) > 0, 'agent_curriculum_state table must exist after initSchema');
 
-  if (!tableExists) {
-    console.log('[curriculum-smoke] agent_curriculum_state 테이블 미존재 → DB 검증 건너뜀 (migration 필요)');
-  } else {
-    try {
+  try {
     // 초기 상태는 없어야 함
     const initial = await getCurriculumState(testAgent, testMarket);
     assert(initial.invocationCount === 0, '초기 invocationCount는 0이어야 함');
@@ -114,14 +107,8 @@ async function main(): Promise<void> {
 
     console.log('[curriculum-smoke] DB 연결 검증 ✅');
     console.log(`  invocationCount=${after1.invocationCount}, successRate=${afterFailure.successRate.toFixed(2)}`);
-    } catch (err) {
-      const msg = String((err as Error)?.message || err);
-      if (msg.includes('connect') || msg.includes('ECONNREFUSED') || msg.includes('relation') || msg.includes('does not exist')) {
-        console.log(`[curriculum-smoke] DB 오류 → 건너뜀 (${msg.slice(0, 60)})`);
-      } else {
-        throw err;
-      }
-    }
+  } catch (err) {
+    throw err;
   }
 
   // ─── 4. 레벨 임계 검증 ────────────────────────────────────────────────────

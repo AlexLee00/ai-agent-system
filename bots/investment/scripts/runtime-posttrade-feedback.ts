@@ -23,6 +23,49 @@ import { evaluateTradeQuality, fetchPendingPosttradeCandidates } from '../shared
 import { analyzeStageAttribution } from '../shared/stage-attribution-analyzer.ts';
 import { runReflexion } from '../shared/reflexion-engine.ts';
 import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
+import { recordOutcome as recordCurriculumOutcome } from '../shared/agent-curriculum-tracker.ts';
+
+function normalizeCurriculumMarket(rawExchange: unknown): string {
+  const value = String(rawExchange || '').trim().toLowerCase();
+  if (value === 'binance' || value === 'crypto') return 'crypto';
+  if (value === 'kis' || value === 'domestic') return 'domestic';
+  if (value === 'kis_overseas' || value === 'overseas') return 'overseas';
+  return 'any';
+}
+
+function mapStageToAgent(stageId: string): string {
+  const stage = String(stageId || '').trim().toLowerCase();
+  if (!stage) return 'luna';
+  if (stage.includes('discovery')) return 'argos';
+  if (stage.includes('sentiment')) return 'sophia';
+  if (stage.includes('news')) return 'hermes';
+  if (stage.includes('technical') || stage.includes('mtf')) return 'aria';
+  if (stage.includes('onchain')) return 'oracle';
+  if (stage.includes('risk')) return 'nemesis';
+  if (stage.includes('entry') || stage.includes('exit') || stage.startsWith('stage_')) return 'luna';
+  return 'luna';
+}
+
+async function applyCurriculumOutcome(tradeId: number, quality: any, stageAttrs: any[], dryRun = false) {
+  if (dryRun || !quality) return;
+  const trade = await db.get(`SELECT exchange FROM investment.trade_history WHERE id = $1`, [tradeId]).catch(() => null);
+  const market = normalizeCurriculumMarket(trade?.exchange);
+  const success = String(quality?.category || '').toLowerCase() === 'preferred';
+
+  const targets = new Set<string>(['luna']);
+  for (const row of stageAttrs || []) {
+    if (!row) continue;
+    const contribution = Number(row?.contribution_to_outcome ?? row?.contribution ?? 0);
+    if (!Number.isFinite(contribution) || contribution === 0) continue;
+    targets.add(mapStageToAgent(row?.stage_id || row?.stageId || row?.stage));
+  }
+
+  await Promise.all(
+    [...targets].map((agentName) =>
+      recordCurriculumOutcome(agentName, market, success).catch(() => {}),
+    ),
+  );
+}
 
 function parseArgs(argv = process.argv.slice(2)) {
   const args = { limit: 20, dryRun: false, tradeId: null, market: 'all', json: false };
@@ -110,6 +153,8 @@ async function runPosttradeFeedback(args) {
           console.log(`[B] trade=${tradeId} stages=${stageAttrs.length}`);
         }
       }
+
+      await applyCurriculumOutcome(tradeId, quality, stageAttrs, args.dryRun);
 
       // ── Phase C: Reflexion (rejected만) ───────────────────────────────────
       if (enabledC && quality.category === 'rejected') {

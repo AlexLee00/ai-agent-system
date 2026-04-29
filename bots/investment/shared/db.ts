@@ -645,17 +645,31 @@ export async function initSchema() {
     CREATE TABLE IF NOT EXISTS agent_context_log (
       id                  BIGSERIAL PRIMARY KEY,
       agent_name          TEXT NOT NULL,
+      market              TEXT,
+      task_type           TEXT,
+      incident_key        TEXT,
       call_id             TEXT,
       persona_loaded      BOOLEAN DEFAULT false,
       constitution_loaded BOOLEAN DEFAULT false,
       rag_docs_count      INTEGER DEFAULT 0,
       failures_found      INTEGER DEFAULT 0,
       skills_found        INTEGER DEFAULT 0,
+      short_term_found    INTEGER DEFAULT 0,
+      entity_facts_found  INTEGER DEFAULT 0,
+      working_state_used  BOOLEAN DEFAULT false,
       total_prefix_chars  INTEGER DEFAULT 0,
       created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )
   `);
+  await run(`ALTER TABLE agent_context_log ADD COLUMN IF NOT EXISTS market TEXT`).catch(() => {});
+  await run(`ALTER TABLE agent_context_log ADD COLUMN IF NOT EXISTS task_type TEXT`).catch(() => {});
+  await run(`ALTER TABLE agent_context_log ADD COLUMN IF NOT EXISTS incident_key TEXT`).catch(() => {});
+  await run(`ALTER TABLE agent_context_log ADD COLUMN IF NOT EXISTS short_term_found INTEGER DEFAULT 0`).catch(() => {});
+  await run(`ALTER TABLE agent_context_log ADD COLUMN IF NOT EXISTS entity_facts_found INTEGER DEFAULT 0`).catch(() => {});
+  await run(`ALTER TABLE agent_context_log ADD COLUMN IF NOT EXISTS working_state_used BOOLEAN DEFAULT false`).catch(() => {});
   try { await run(`CREATE INDEX IF NOT EXISTS idx_agent_context_log_agent ON agent_context_log(agent_name, created_at DESC)`); } catch { /* 무시 */ }
+  try { await run(`CREATE INDEX IF NOT EXISTS idx_agent_context_log_task ON agent_context_log(market, task_type, created_at DESC)`); } catch { /* 무시 */ }
+  try { await run(`CREATE INDEX IF NOT EXISTS idx_agent_context_log_incident ON agent_context_log(incident_key, created_at DESC)`); } catch { /* 무시 */ }
 
   await run(`
     CREATE TABLE IF NOT EXISTS llm_failure_reflexions (
@@ -2573,6 +2587,7 @@ export async function getRecentFeedbackToActionMap({ days = 7, market = null, li
 
 export async function upsertPosttradeSkill({
   market = 'all',
+  agentName = 'all',
   skillType = 'success',
   patternKey,
   title,
@@ -2587,9 +2602,9 @@ export async function upsertPosttradeSkill({
   if (!patternKey || !title || !summary) return null;
   const row = await get(
     `INSERT INTO luna_posttrade_skills
-       (market, skill_type, pattern_key, title, summary, invocation_count, success_rate, win_count, loss_count, source_trade_ids, metadata, updated_at)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,NOW())
-     ON CONFLICT (market, skill_type, pattern_key)
+       (market, agent_name, skill_type, pattern_key, title, summary, invocation_count, success_rate, win_count, loss_count, source_trade_ids, metadata, updated_at)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,NOW())
+     ON CONFLICT (market, agent_name, skill_type, pattern_key)
      DO UPDATE SET
        title = EXCLUDED.title,
        summary = EXCLUDED.summary,
@@ -2600,9 +2615,10 @@ export async function upsertPosttradeSkill({
        source_trade_ids = EXCLUDED.source_trade_ids,
        metadata = EXCLUDED.metadata,
        updated_at = NOW()
-     RETURNING id, market, skill_type, pattern_key, updated_at`,
+     RETURNING id, market, agent_name, skill_type, pattern_key, updated_at`,
     [
       String(market || 'all'),
+      String(agentName || 'all'),
       String(skillType || 'success'),
       String(patternKey),
       String(title),
@@ -2618,12 +2634,16 @@ export async function upsertPosttradeSkill({
   return row || null;
 }
 
-export async function getRecentPosttradeSkills({ market = null, skillType = null, limit = 50 } = {}) {
+export async function getRecentPosttradeSkills({ market = null, agentName = null, skillType = null, limit = 50 } = {}) {
   const params = [];
   const where = [];
   if (market) {
     params.push(String(market));
     where.push(`market = $${params.length}`);
+  }
+  if (agentName) {
+    params.push(String(agentName));
+    where.push(`agent_name = $${params.length}`);
   }
   if (skillType) {
     params.push(String(skillType));

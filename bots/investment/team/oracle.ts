@@ -17,6 +17,7 @@ import { callLLM, parseJSON } from '../shared/llm-client.ts';
 import { callLLMWithHub } from '../shared/hub-llm-client.ts';
 import { ANALYST_TYPES, ACTIONS } from '../shared/signal.ts';
 import { getFundingRate, getOpenInterest, getLongShortRatio, getSpotTicker24h, getSpotDepthImbalance, getRecentAggTradePressure } from '../shared/onchain-data.ts';
+import { consumeAgentHints } from '../shared/agent-hint-bridge.ts';
 
 const _req = createRequire(import.meta.url);
 const { AgentMemory } = _req('../../../packages/core/lib/agent-memory.legacy.js');
@@ -143,6 +144,13 @@ const SYSTEM_PROMPT = `당신은 암호화폐 온체인·파생상품 시장 분
 - confidence 0.5 미만이면 반드시 HOLD`;
 
 function buildOracleUserMessage(symbol, futureSymbol, fearGreed, funding, lsRatio, openInterest, spotTicker, depth, tradePressure) {
+  return buildOracleUserMessageWithHints(symbol, futureSymbol, fearGreed, funding, lsRatio, openInterest, spotTicker, depth, tradePressure, []);
+}
+
+function buildOracleUserMessageWithHints(symbol, futureSymbol, fearGreed, funding, lsRatio, openInterest, spotTicker, depth, tradePressure, hints = []) {
+  const hintLine = Array.isArray(hints) && hints.length > 0
+    ? `교차 힌트: ${hints.slice(0, 2).map((hint) => `${hint.fromAgent}:${String(hint?.payload?.type || 'hint')}`).join(', ')}`
+    : null;
   return [
     `심볼: ${symbol}`,
     fearGreed ? `공포탐욕지수: ${fearGreed.value} (${fearGreed.classification})` : '',
@@ -152,11 +160,17 @@ function buildOracleUserMessage(symbol, futureSymbol, fearGreed, funding, lsRati
     spotTicker ? `현물 24h 변화: ${spotTicker.priceChangePercent.toFixed(2)}% / 거래대금 ${Math.round(spotTicker.quoteVolume).toLocaleString()} USDT` : '',
     depth ? `호가 불균형: ${depth.imbalance.toFixed(2)} (bid ${Math.round(depth.bidNotional).toLocaleString()} / ask ${Math.round(depth.askNotional).toLocaleString()})` : '',
     tradePressure ? `최근 체결 압력: ${tradePressure.imbalance.toFixed(2)} (taker buy ${(tradePressure.takerBuyRatio * 100).toFixed(1)}%)` : '',
+    hintLine,
   ].filter(Boolean).join('\n');
 }
 
 async function resolveOracleDecision(symbol, userMsg, fearGreed, funding, lsRatio, spotTicker, depth, tradePressure) {
-  const responseText = await callLLMWithHub('oracle', SYSTEM_PROMPT, userMsg, callLLM, 200, { symbol });
+  const responseText = await callLLMWithHub('oracle', SYSTEM_PROMPT, userMsg, callLLM, 200, {
+    symbol,
+    market: 'binance',
+    taskType: 'onchain',
+    incidentKey: `oracle:binance:${symbol}`,
+  });
   const parsed = parseJSON(responseText);
   if (parsed?.action) {
     return {
@@ -208,7 +222,19 @@ export async function analyzeOnchain(symbol = 'BTC/USDT') {
   console.log(`  호가 불균형: ${depth ? depth.imbalance.toFixed(2) : 'N/A'}`);
   console.log(`  체결 압력: ${tradePressure ? tradePressure.imbalance.toFixed(2) : 'N/A'}`);
 
-  const userMsg = buildOracleUserMessage(symbol, futureSymbol, fearGreed, funding, lsRatio, openInterest, spotTicker, depth, tradePressure);
+  const crossHints = await consumeAgentHints('oracle', { limit: 3 }).catch(() => []);
+  const userMsg = buildOracleUserMessageWithHints(
+    symbol,
+    futureSymbol,
+    fearGreed,
+    funding,
+    lsRatio,
+    openInterest,
+    spotTicker,
+    depth,
+    tradePressure,
+    crossHints,
+  );
   const { signal, confidence, reasoning } = await resolveOracleDecision(symbol, userMsg, fearGreed, funding, lsRatio, spotTicker, depth, tradePressure);
 
   console.log(`  → [오라클] ${signal} (${(confidence * 100).toFixed(0)}%) | ${reasoning}`);

@@ -194,4 +194,14 @@ defmodule Luna.V2.KillSwitch do
 
   def position_watch_reevaluation_max_per_tick,
     do: Application.get_env(:luna, :position_watch_reevaluation_max_per_tick, 3)
+
+  # Agent Memory Layer 1 (Working Memory)
+  def layer1_working_memory_enabled?,
+    do: Application.get_env(:luna, :layer1_working_memory_enabled, false)
+
+  def layer1_working_memory_ttl_ms,
+    do: Application.get_env(:luna, :layer1_working_memory_ttl_ms, 900_000)
+
+  def layer1_working_memory_prune_interval_ms,
+    do: Application.get_env(:luna, :layer1_working_memory_prune_interval_ms, 60_000)
 end

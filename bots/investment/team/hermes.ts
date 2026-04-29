@@ -399,7 +399,12 @@ export async function analyzeNews(symbol = 'BTC/USDT', exchange = 'binance') {
       : null,
     `최신 뉴스 ${relevant.length}건:\n${headlines}`,
   ].filter(Boolean).join('\n');
-  const responseText = await callLLMWithHub('hermes', systemPrompt, userMsg, callLLM, 300, { symbol });
+  const responseText = await callLLMWithHub('hermes', systemPrompt, userMsg, callLLM, 300, {
+    symbol,
+    market: exchange,
+    taskType: 'sentiment',
+    incidentKey: `hermes:${exchange}:${symbol}`,
+  });
   const parsed       = parseJSON(responseText);
 
   let signal, confidence, reasoning, sentiment = '중립';

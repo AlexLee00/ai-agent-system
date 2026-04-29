@@ -55,6 +55,8 @@ import { evaluateSignal } from './nemesis.ts';
 import { recommendStrategy } from './argos.ts';
 import { applyStrategyRouteDecisionBias, buildStrategyRoute, buildStrategyRouteSection } from '../shared/strategy-router.ts';
 import { buildSignalApprovalUpdate } from '../shared/signal-approval.ts';
+import { publishAgentHint } from '../shared/agent-hint-bridge.ts';
+import { checkReflexionBeforeEntry } from '../shared/reflexion-guard.ts';
 
 const LUNA_RUNTIME = getLunaRuntimeConfig();
 const LUNA_STOCK_PROFILE = getLunaStockStrategyProfile();
@@ -1391,7 +1393,12 @@ export async function getSymbolDecision(symbol, analyses, exchange = 'binance', 
       context:   'symbol_decision',
       input:     userMsg,
       ruleEngine: async () => {
-        const raw    = await callLLMWithHub('luna', getLunaSystem(exchange), userMsg, cachedCallLLM, 256, { symbol });
+        const raw    = await callLLMWithHub('luna', getLunaSystem(exchange), userMsg, cachedCallLLM, 256, {
+          symbol,
+          market: exchange,
+          taskType: 'final_decision',
+          incidentKey: `luna:symbol:${exchange}:${symbol}`,
+        });
         const parsed = parseJSON(raw);
         if (!parsed?.action) {
           return buildVoteFallbackDecision(analyses, exchange, '분석가 투표 기반 (LLM fallback)');
@@ -1442,7 +1449,11 @@ export async function getPortfolioDecision(symbolDecisions, portfolio, exchange 
 
   let raw;
   try {
-    raw = await callLLMWithHub('luna', systemPrompt, userMsg, callLLM, 768);
+    raw = await callLLMWithHub('luna', systemPrompt, userMsg, callLLM, 768, {
+      market: exchange,
+      taskType: 'final_decision',
+      incidentKey: `luna:portfolio:${exchange}:${Date.now().toString(36)}`,
+    });
   } catch (err) {
     if (String(err?.message || '').includes('LLM 긴급 차단 중')) {
       console.warn(`[luna] portfolio decision LLM 긴급 차단 fallback 적용 (${exchange}): ${err.message}`);
@@ -1452,7 +1463,95 @@ export async function getPortfolioDecision(symbolDecisions, portfolio, exchange 
   }
 
   const normalized = normalizePortfolioDecisionResult(parseJSON(raw), symbols, exchange, symbolDecisions, portfolio);
-  return applyBudgetCheckerToDecisions(normalized, portfolio, exchange);
+  const reflexionApplied = await applyReflexionEntryGateToDecisions(normalized, exchange);
+  return applyBudgetCheckerToDecisions(reflexionApplied, portfolio, exchange);
+}
+
+async function applyReflexionEntryGateToDecisions(portfolioDecision, exchange) {
+  const decisions = Array.isArray(portfolioDecision?.decisions) ? portfolioDecision.decisions : [];
+  if (decisions.length === 0) return portfolioDecision;
+
+  const adjusted = [];
+  for (const decision of decisions) {
+    if (decision?.action !== ACTIONS.BUY) {
+      adjusted.push(decision);
+      continue;
+    }
+
+    const reflexion = await checkReflexionBeforeEntry(
+      decision.symbol,
+      exchange,
+      'LONG',
+      { pattern: decision?.setup_type || decision?.strategy_route?.setupType || null },
+    ).catch(() => ({
+      confidenceDelta: 0,
+      blockedByReflexion: false,
+      relevantFailures: [],
+      warningMessage: null,
+    }));
+
+    if (reflexion?.blockedByReflexion) {
+      const nextDecision = {
+        ...decision,
+        action: ACTIONS.HOLD,
+        amount_usdt: 0,
+        confidence: Math.max(0, Number(decision?.confidence || 0) + Number(reflexion?.confidenceDelta || 0)),
+        reasoning: `reflexion_entry_blocked: ${(reflexion?.warningMessage || '유사 실패 패턴').slice(0, 160)}`,
+        block_meta: {
+          ...(decision?.block_meta || {}),
+          reflexion: {
+            blocked: true,
+            confidenceDelta: Number(reflexion?.confidenceDelta || 0),
+            failures: Number(reflexion?.relevantFailures?.length || 0),
+          },
+        },
+      };
+      adjusted.push(nextDecision);
+      await db.run(
+        `INSERT INTO investment.mapek_knowledge(event_type, payload) VALUES ($1, $2::jsonb)`,
+        ['reflexion_entry_blocked', JSON.stringify({
+          symbol: decision.symbol,
+          exchange,
+          confidence_delta: Number(reflexion?.confidenceDelta || 0),
+          failures: Number(reflexion?.relevantFailures?.length || 0),
+          at: new Date().toISOString(),
+        })],
+      ).catch(() => {});
+      continue;
+    }
+
+    const delta = Number(reflexion?.confidenceDelta || 0);
+    if (delta >= 0) {
+      adjusted.push(decision);
+      continue;
+    }
+    const nextConfidence = Math.max(0, Math.min(1, Number(decision?.confidence || 0) + delta));
+    adjusted.push({
+      ...decision,
+      confidence: nextConfidence,
+      reasoning: `${decision?.reasoning || ''} | reflexion_confidence_adjusted(${delta.toFixed(2)})`.slice(0, 200),
+      block_meta: {
+        ...(decision?.block_meta || {}),
+        reflexion: {
+          blocked: false,
+          confidenceDelta: delta,
+          failures: Number(reflexion?.relevantFailures?.length || 0),
+        },
+      },
+    });
+    await db.run(
+      `INSERT INTO investment.mapek_knowledge(event_type, payload) VALUES ($1, $2::jsonb)`,
+      ['reflexion_confidence_adjusted', JSON.stringify({
+        symbol: decision.symbol,
+        exchange,
+        confidence_delta: delta,
+        adjusted_confidence: nextConfidence,
+        failures: Number(reflexion?.relevantFailures?.length || 0),
+        at: new Date().toISOString(),
+      })],
+    ).catch(() => {});
+  }
+  return { ...portfolioDecision, decisions: adjusted };
 }
 
 /**
@@ -1522,6 +1621,8 @@ export async function getExitDecisions(openPositions, exchange = 'binance') {
     raw = await callLLMWithHub('luna', LUNA_EXIT_SYSTEM, userPrompt, callLLM, 512, {
       purpose: 'exit_phase',
       market: exchange,
+      taskType: 'final_decision',
+      incidentKey: `luna:exit:${exchange}:${Date.now().toString(36)}`,
     });
   } catch (err) {
     if (String(err?.message || '').includes('LLM 긴급 차단 중')) {
@@ -2228,11 +2329,30 @@ export async function orchestrate(symbols, exchange = 'binance', params = null) 
     const taAnalysis = _symAnalyses.find(a => a.metadata?.atrRatio != null);
     const atrRatio   = taAnalysis?.metadata?.atrRatio ?? null;
     const currentPrice = taAnalysis?.metadata?.currentPrice ?? null;
+    const incidentKey = signalData.traceId || signalData.incidentLink || `luna:${exchange}:${dec.symbol}:${Date.now().toString(36)}`;
+    publishAgentHint('luna', ['nemesis', 'oracle'], {
+      type: 'entry_context',
+      symbol: dec.symbol,
+      exchange,
+      action: dec.action,
+      confidence: dec.confidence,
+      strategy_family: dec?.strategy_route?.selectedFamily || null,
+      generated_at: new Date().toISOString(),
+    }, {
+      incidentKey,
+      messageType: 'query',
+    }).catch(() => {
+      console.warn(`  ⚠️ [루나] 교차 힌트 전송 실패 (nemesis/oracle): ${dec.symbol}`);
+    });
     let riskResult = null;
     let riskError = null;
     try {
       riskResult = await evaluateSignal(
-        buildLunaRiskEvaluationSignal(signalData),
+        {
+          ...buildLunaRiskEvaluationSignal(signalData),
+          traceId: incidentKey,
+          incidentLink: incidentKey,
+        },
         { totalUsdt: portfolio.totalAsset, atrRatio, currentPrice, persist: false }
       );
     } catch (e) {

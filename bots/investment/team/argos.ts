@@ -29,6 +29,7 @@ import { getKisOverseasSymbols, getKisSymbols, isPaperMode } from '../shared/sec
 import { getArgosRuntimeConfig } from '../shared/runtime-config.ts';
 import { recordEvidence } from '../shared/external-evidence-ledger.ts';
 import { loadLatestScoutIntel, boostCandidatesWithScout } from '../shared/scout-intel.ts';
+import { publishAgentHint } from '../shared/agent-hint-bridge.ts';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const _require = createRequire(import.meta.url);
@@ -657,6 +658,11 @@ function handleArgosEvaluationError(error, market) {
 }
 
 async function evaluatePost(post, market) {
+  const routingMarket = market === 'crypto'
+    ? 'binance'
+    : market === 'stocks'
+      ? 'kis_overseas'
+      : 'binance';
   const userMsg = [
     `제목: ${post.title}`,
     `내용: ${(post.selftext || '').slice(0, 800)}`,
@@ -665,7 +671,11 @@ async function evaluatePost(post, market) {
     `이 포스트에서 트레이딩 전략을 추출하고 평가하시오.`,
   ].join('\n');
 
-  const raw = await callLLMWithHub('argos', ARGOS_SYSTEM, userMsg, callLLM, 300);
+  const raw = await callLLMWithHub('argos', ARGOS_SYSTEM, userMsg, callLLM, 300, {
+    market: routingMarket,
+    taskType: 'screening',
+    incidentKey: `argos:${routingMarket}:${post?.id || post?.created_utc || 'post'}`,
+  });
   return normalizeEvaluatedStrategy(parseJSON(raw), market, post);
 }
 
@@ -735,6 +745,19 @@ export async function recommendStrategy(symbol, exchange = 'binance') {
       : 'all';
   const strategies = await db.getActiveStrategies(market, 3);
   if (strategies.length === 0) return null;
+  publishAgentHint('argos', ['sophia', 'hermes'], {
+    type: 'strategy_context',
+    symbol,
+    exchange,
+    market,
+    strategy_name: strategies[0]?.strategy_name || null,
+    generated_at: new Date().toISOString(),
+  }, {
+    incidentKey: `argos:${exchange}:${symbol}`,
+    messageType: 'query',
+  }).catch(() => {
+    console.warn(`  ⚠️ [아르고스] 교차 힌트 전송 실패 (sophia/hermes): ${symbol}`);
+  });
   console.log(`  👁️ [아르고스] ${symbol} 추천 전략: ${strategies[0].strategy_name}`);
   return strategies[0];
 }

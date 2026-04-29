@@ -53,7 +53,12 @@ export async function runBearResearcher(symbol, analysisSummary, currentPrice, e
   const prompt   = PROMPTS[exchange] || PROMPTS.binance;
   const userMsg  = `심볼: ${symbol} (${label}) | 현재가: ${priceStr}\n\n시장 분석:\n${analysisSummary}\n\n약세 관점 투자 의견을 제시하세요.`;
 
-  const raw    = await callLLMWithHub('athena', prompt, userMsg, callLLM, 300, { symbol });
+  const raw    = await callLLMWithHub('athena', prompt, userMsg, callLLM, 300, {
+    symbol,
+    market: exchange,
+    taskType: 'debate_bear',
+    incidentKey: `athena:${exchange}:${symbol}`,
+  });
   const parsed = parseJSON(raw);
   if (!parsed) return null;
 

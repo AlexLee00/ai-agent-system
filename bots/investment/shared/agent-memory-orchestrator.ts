@@ -97,6 +97,9 @@ export async function buildMemoryPrefix(
     await _logAgentContext({
       agentName: opts.agentName,
       callId,
+      market: opts.market,
+      taskType: opts.taskType,
+      incidentKey: opts.incidentKey,
       layers,
       totalChars: 0,
     });
@@ -231,6 +234,9 @@ export async function buildMemoryPrefix(
   await _logAgentContext({
     agentName: opts.agentName,
     callId,
+    market: opts.market,
+    taskType: opts.taskType,
+    incidentKey: opts.incidentKey,
     layers,
     totalChars,
   });
@@ -439,6 +445,7 @@ async function _fetchDbPosttradeSkills(agentName: string, taskType?: string, mar
        AND ($2::text = 'all' OR agent_name = $2 OR agent_name = 'all')
        AND skill_type = ANY($3::text[])
      ORDER BY
+       CASE WHEN agent_name = $2 THEN 0 ELSE 1 END,
        CASE WHEN skill_type = $4 THEN 0 ELSE 1 END,
        success_rate DESC,
        invocation_count DESC,
@@ -456,11 +463,17 @@ async function _fetchDbPosttradeSkills(agentName: string, taskType?: string, mar
 async function _logAgentContext({
   agentName,
   callId,
+  market,
+  taskType,
+  incidentKey,
   layers,
   totalChars,
 }: {
   agentName: string;
   callId: string;
+  market?: string;
+  taskType?: string;
+  incidentKey?: string;
   layers: {
     persona: boolean;
     constitution: boolean;
@@ -476,16 +489,22 @@ async function _logAgentContext({
   try {
     await pgPool.query(
       `INSERT INTO investment.agent_context_log
-         (agent_name, call_id, persona_loaded, constitution_loaded, rag_docs_count, failures_found, skills_found, total_prefix_chars)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
+         (agent_name, market, task_type, incident_key, call_id, persona_loaded, constitution_loaded, rag_docs_count, failures_found, skills_found, short_term_found, entity_facts_found, working_state_used, total_prefix_chars)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)`,
       [
         String(agentName || 'unknown'),
+        market ? String(market) : null,
+        taskType ? String(taskType) : null,
+        incidentKey ? String(incidentKey) : null,
         String(callId || ''),
         layers.persona === true,
         layers.constitution === true,
         Number(layers.episodic || 0),
         Number(layers.failures || 0),
         Number(layers.skills || 0),
+        Number(layers.shortTerm || 0),
+        Number(layers.entityFacts || 0),
+        layers.workingState === true,
         Number(totalChars || 0),
       ],
     );

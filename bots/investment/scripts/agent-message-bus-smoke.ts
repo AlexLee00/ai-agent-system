@@ -17,6 +17,7 @@ import {
   respondToMessage,
   getMessagesByIncident,
 } from '../shared/agent-message-bus.ts';
+import * as db from '../shared/db.ts';
 
 function assert(condition: unknown, message: string): void {
   if (!condition) throw new Error(`FAIL: ${message}`);
@@ -24,6 +25,7 @@ function assert(condition: unknown, message: string): void {
 
 async function main(): Promise<void> {
   console.log('[message-bus-smoke] 시작');
+  await db.initSchema();
 
   // ─── 1. kill switch ────────────────────────────────────────────────────────
   const origEnabled = process.env.LUNA_AGENT_CROSS_BUS_ENABLED;
@@ -48,20 +50,12 @@ async function main(): Promise<void> {
 
   const { createRequire } = await import('module');
   const _require = createRequire(import.meta.url);
-  let tableExists = false;
-  try {
-    const pgPool = _require('../../../packages/core/lib/pg-pool');
-    const check = await pgPool.query(
-      `SELECT 1 FROM information_schema.tables WHERE table_schema='investment' AND table_name='agent_messages'`,
-    );
-    tableExists = (check.rows.length ?? 0) > 0;
-  } catch {
-    // DB 미연결
-  }
+  const pgPool = _require('../../../packages/core/lib/pg-pool');
+  const check = await pgPool.query(
+    `SELECT 1 FROM information_schema.tables WHERE table_schema='investment' AND table_name='agent_messages'`,
+  );
+  assert((check.rows.length ?? 0) > 0, 'agent_messages table must exist after initSchema');
 
-  if (!tableExists) {
-    console.log('[message-bus-smoke] agent_messages 테이블 미존재 → DB 검증 건너뜀 (migration 필요)');
-  } else {
   try {
     // 2-1. 메시지 전송
     const msgId = await sendMessage('argos', 'sophia', { question: 'sentiment?', symbol: 'BTC/USDT' }, {
@@ -110,13 +104,7 @@ async function main(): Promise<void> {
 
     console.log('[message-bus-smoke] DB 연결 검증 ✅');
   } catch (err) {
-    const msg = String((err as Error)?.message || err);
-    if (msg.includes('connect') || msg.includes('ECONNREFUSED') || msg.includes('relation') || msg.includes('does not exist')) {
-      console.log(`[message-bus-smoke] DB 오류 → 건너뜀 (${msg.slice(0, 60)})`);
-    } else {
-      throw err;
-    }
-  }
+    throw err;
   }
 
   // ─── 3. 타입 인터페이스 검증 (컴파일 타임 보장) ─────────────────────────────

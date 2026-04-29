@@ -16,6 +16,7 @@
 import * as db from '../shared/db.ts';
 import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
 import { callLLM, parseJSON } from '../shared/llm-client.ts';
+import { callLLMWithHub } from '../shared/hub-llm-client.ts';
 import { initSchema as initRagSchema, store as storeRag } from '../shared/rag-client.ts';
 import { publishAlert } from '../shared/alert-publisher.ts';
 import { initHubSecrets, isKisPaper } from '../shared/secrets.ts';
@@ -146,15 +147,21 @@ async function analyzeScoutPayload(payload, overlaps = []) {
   ].join('\n');
 
   try {
-    const raw = await callLLM(
+    const raw = await callLLMWithHub(
       'scout',
       `당신은 루나팀 스카우트 요약가입니다.
 토스증권 스캔 결과를 짧게 요약하고, 루나가 우선 볼 심볼을 추립니다.
 JSON만 응답:
 {"summary":"한 줄 요약","focusSymbols":["심볼"],"overlapSymbols":["심볼"],"rationale":"근거"}`,
       userMsg,
+      callLLM,
       300,
-      { symbol: topSignals[0]?.symbol || 'SCOUT' },
+      {
+        symbol: topSignals[0]?.symbol || 'SCOUT',
+        market: 'kis',
+        taskType: 'screening',
+        incidentKey: `scout:kis:${payload.source}:${payload.fetchedAt}`,
+      },
     );
     const parsed = parseJSON(raw);
     if (parsed?.summary) {

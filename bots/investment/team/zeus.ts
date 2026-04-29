@@ -52,7 +52,12 @@ export async function runBullResearcher(symbol, analysisSummary, currentPrice, e
   const prompt   = PROMPTS[exchange] || PROMPTS.binance;
   const userMsg  = `심볼: ${symbol} (${label}) | 현재가: ${priceStr}\n\n시장 분석:\n${analysisSummary}\n\n강세 관점 투자 의견을 제시하세요.`;
 
-  const raw    = await callLLMWithHub('zeus', prompt, userMsg, callLLM, 300);
+  const raw    = await callLLMWithHub('zeus', prompt, userMsg, callLLM, 300, {
+    symbol,
+    market: exchange,
+    taskType: 'debate_bull',
+    incidentKey: `zeus:${exchange}:${symbol}`,
+  });
   const parsed = parseJSON(raw);
   if (!parsed) return null;
 

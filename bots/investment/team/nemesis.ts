@@ -17,6 +17,7 @@ import { loadLatestScoutIntel, getScoutSignalForSymbol } from '../shared/scout-i
 import { getInvestmentAgentRoleState } from '../shared/agent-role-state.ts';
 import { buildRiskApprovalTarget, runRiskApprovalChain } from '../shared/risk-approval-chain.ts';
 import { applyRiskApprovalChainMode, getRiskApprovalChainModeConfig } from '../shared/risk-approval-mode.ts';
+import { consumeAgentHints } from '../shared/agent-hint-bridge.ts';
 
 const _require = createRequire(import.meta.url);
 const kst = _require('../../../packages/core/lib/kst');
@@ -391,6 +392,13 @@ function applyReviewTpslAdjustment(dynamicTPSL, reviewInsight, entryEstimate = n
 
 async function evaluateWithLLM({ signal, adjustedAmount, volFactor, corrFactor, timeFactor, todayPnl, positionCount, exchange }) {
   const rules  = getRules(exchange);
+  const hints = await consumeAgentHints('nemesis', {
+    incidentKey: signal?.traceId || signal?.incidentLink || null,
+    limit: 3,
+  }).catch(() => []);
+  const hintLine = hints.length > 0
+    ? `교차 힌트: ${hints.slice(0, 2).map((hint) => `${hint.fromAgent}:${String(hint?.payload?.type || 'hint')}`).join(', ')}`
+    : null;
   const userMsg = [
     `신호: ${signal.symbol} ${signal.action} $${adjustedAmount}`,
     `확신도: ${((signal.confidence || 0) * 100).toFixed(0)}%`,
@@ -400,11 +408,17 @@ async function evaluateWithLLM({ signal, adjustedAmount, volFactor, corrFactor, 
     `  오늘 P&L: ${(todayPnl?.pnl || 0) >= 0 ? '+' : ''}$${(todayPnl?.pnl || 0).toFixed(2)}`,
     `  현재 포지션: ${positionCount}/${rules.MAX_OPEN_POSITIONS}개`,
     `  조정 계수: vol×${volFactor.toFixed(2)} | corr×${corrFactor.toFixed(2)} | time×${timeFactor.toFixed(2)}`,
+    hintLine,
     ``,
     `최종 리스크 판단:`,
   ].join('\n');
 
-  const raw    = await callLLMWithHub('nemesis', getNemesisSystem(exchange), userMsg, callLLM, 256, { symbol: signal.symbol });
+  const raw    = await callLLMWithHub('nemesis', getNemesisSystem(exchange), userMsg, callLLM, 256, {
+    symbol: signal.symbol,
+    market: exchange,
+    taskType: 'risk_eval',
+    incidentKey: signal?.traceId || signal?.incidentLink || `nemesis:${exchange}:${signal.symbol}:${signal.action || 'unknown'}`,
+  });
   const parsed = parseJSON(raw);
   if (!parsed?.decision) {
     return { decision: 'APPROVE', adjusted_amount: adjustedAmount, reasoning: 'LLM 파싱 실패 — 기본 승인' };

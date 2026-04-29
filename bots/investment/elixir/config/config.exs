@@ -94,7 +94,13 @@ config :luna,
   position_watch_reevaluation_cooldown_minutes:
     String.to_integer(System.get_env("LUNA_POSITION_WATCH_REEVALUATION_COOLDOWN_MINUTES", "10")),
   position_watch_reevaluation_max_per_tick:
-    String.to_integer(System.get_env("LUNA_POSITION_WATCH_REEVALUATION_MAX_PER_TICK", "3"))
+    String.to_integer(System.get_env("LUNA_POSITION_WATCH_REEVALUATION_MAX_PER_TICK", "3")),
+  layer1_working_memory_enabled:
+    System.get_env("LUNA_AGENT_LAYER1_WORKING_MEMORY_ENABLED", "false") == "true",
+  layer1_working_memory_ttl_ms:
+    String.to_integer(System.get_env("LUNA_AGENT_LAYER1_WORKING_MEMORY_TTL_MS", "900000")),
+  layer1_working_memory_prune_interval_ms:
+    String.to_integer(System.get_env("LUNA_AGENT_LAYER1_WORKING_MEMORY_PRUNE_INTERVAL_MS", "60000"))
 
 config :luna, Jay.Core.Repo,
   database: System.get_env("PG_DATABASE", "jay"),

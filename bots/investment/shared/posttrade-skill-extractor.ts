@@ -38,6 +38,13 @@ function buildPatternKey(row: any) {
   return `${market}:${setup}:${regime}:${direction}`;
 }
 
+function resolveSkillAgents(bucket: any) {
+  const targets = new Set<string>(['all', 'luna']);
+  if (String(bucket?.skillType || '').toLowerCase() === 'avoid') targets.add('nemesis');
+  if (String(bucket?.setupType || '').toLowerCase().includes('sentiment')) targets.add('sophia');
+  return [...targets];
+}
+
 function buildSkillDoc({
   title,
   summary,
@@ -71,6 +78,7 @@ function ensureDir(dirPath: string) {
 }
 
 function maybeMirrorSkillFile({
+  agentName,
   market,
   skillType,
   patternKey,
@@ -85,8 +93,9 @@ function maybeMirrorSkillFile({
   enabled,
 }) {
   if (!enabled) return null;
+  const safeAgent = String(agentName || 'all').trim().toLowerCase() || 'all';
   const safeMarket = normalizeMarket(market);
-  const folder = path.join(getSkillRoot(), safeMarket);
+  const folder = path.join(getSkillRoot(), safeAgent, safeMarket);
   ensureDir(folder);
   const fileName = `${skillType.toUpperCase()}_${slugify(patternKey)}.md`;
   const filePath = path.join(folder, fileName);
@@ -196,42 +205,50 @@ export async function extractPosttradeSkills({
       generated_at: new Date().toISOString(),
     };
 
+    const targetAgents = resolveSkillAgents(bucket);
     if (!dryRun) {
-      const upserted = await db.upsertPosttradeSkill({
-        market: bucket.market,
-        skillType: bucket.skillType,
-        patternKey: bucket.patternKey,
-        title,
-        summary,
-        invocationCount,
-        successRate,
-        winCount,
-        lossCount,
-        sourceTradeIds,
-        metadata,
-      });
-      upserts.push(upserted);
-      const filePath = maybeMirrorSkillFile({
-        market: bucket.market,
-        skillType: bucket.skillType,
-        patternKey: bucket.patternKey,
-        title,
-        summary,
-        invocationCount,
-        successRate,
-        winCount,
-        lossCount,
-        sourceTradeIds,
-        metadata,
-        enabled: mirrorEnabled,
-      });
-      if (filePath) mirrored.push(filePath);
+      for (const agentName of targetAgents) {
+        const upserted = await db.upsertPosttradeSkill({
+          market: bucket.market,
+          agentName,
+          skillType: bucket.skillType,
+          patternKey: bucket.patternKey,
+          title,
+          summary,
+          invocationCount,
+          successRate,
+          winCount,
+          lossCount,
+          sourceTradeIds,
+          metadata: { ...(metadata || {}), agent_name: agentName },
+        });
+        upserts.push(upserted);
+        const filePath = maybeMirrorSkillFile({
+          agentName,
+          market: bucket.market,
+          skillType: bucket.skillType,
+          patternKey: bucket.patternKey,
+          title,
+          summary,
+          invocationCount,
+          successRate,
+          winCount,
+          lossCount,
+          sourceTradeIds,
+          metadata: { ...(metadata || {}), agent_name: agentName },
+          enabled: mirrorEnabled,
+        });
+        if (filePath) mirrored.push(filePath);
+      }
     } else {
-      upserts.push({
-        market: bucket.market,
-        skill_type: bucket.skillType,
-        pattern_key: bucket.patternKey,
-      });
+      for (const agentName of targetAgents) {
+        upserts.push({
+          market: bucket.market,
+          agent_name: agentName,
+          skill_type: bucket.skillType,
+          pattern_key: bucket.patternKey,
+        });
+      }
     }
   }
 
@@ -248,12 +265,14 @@ export async function extractPosttradeSkills({
 }
 
 export async function mirrorExistingPosttradeSkills({
+  agentName = null,
   market = 'all',
   limit = 100,
   dryRun = false,
 } = {}) {
   const rows = await db.getRecentPosttradeSkills({
     market: normalizeMarket(market) === 'all' ? null : normalizeMarket(market),
+    agentName: agentName ? String(agentName) : null,
     limit,
   });
   const mirrored = [];
@@ -262,6 +281,7 @@ export async function mirrorExistingPosttradeSkills({
       ? row.source_trade_ids
       : [];
     const filePath = maybeMirrorSkillFile({
+      agentName: row.agent_name || 'all',
       market: row.market,
       skillType: row.skill_type,
       patternKey: row.pattern_key,
@@ -276,7 +296,12 @@ export async function mirrorExistingPosttradeSkills({
       enabled: !dryRun,
     });
     if (filePath || dryRun) {
-      mirrored.push(filePath || path.join(getSkillRoot(), normalizeMarket(row.market), `${String(row.skill_type || 'skill').toUpperCase()}_${slugify(row.pattern_key)}.md`));
+      mirrored.push(filePath || path.join(
+        getSkillRoot(),
+        String(row.agent_name || 'all').toLowerCase(),
+        normalizeMarket(row.market),
+        `${String(row.skill_type || 'skill').toUpperCase()}_${slugify(row.pattern_key)}.md`,
+      ));
     }
   }
   return {
