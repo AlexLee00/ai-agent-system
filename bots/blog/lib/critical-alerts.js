@@ -20,6 +20,7 @@ const REASON_DEDUP_WINDOWS = {
 };
 const CANONICAL_EVENT_TYPES = new Set([
   'blog_health_check',
+  'blog-health_error',
   'alert',
   'system_error',
   'health_check',
