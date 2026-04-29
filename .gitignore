@@ -60,6 +60,9 @@ pickko-kiosk-seen.json
 
 # DB 데이터 파일
 *.db
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
 *.duckdb
 *.duckdb.wal
 
