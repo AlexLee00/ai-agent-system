@@ -148,10 +148,16 @@ export function buildParityRows({ walletMap, dbMap, journalMap, tickerMap, dustT
       && journal
       && Number(journal.openSize || 0) > 0
       && walletValue < dustThresholdUsdt;
+    const isWalletOnlyDust = wallet
+      && !dbRow
+      && !journal
+      && walletValue < dustThresholdUsdt;
     const className = !wallet && dbRow
       ? 'db_only'
       : isWalletJournalDust
         ? 'wallet_journal_dust'
+      : isWalletOnlyDust
+        ? 'wallet_only_dust'
       : wallet && !dbRow && journal && journal.openSize > 0
         ? 'wallet_journal_only'
         : wallet && !dbRow
@@ -195,6 +201,7 @@ export function summarize(rows = []) {
     quantityMismatch: byClass.quantity_mismatch || 0,
     pnlMismatch: byClass.pnl_mismatch || 0,
     walletOnly: byClass.wallet_only || 0,
+    walletOnlyDust: byClass.wallet_only_dust || 0,
     walletJournalOnly: byClass.wallet_journal_only || 0,
     walletJournalDust: byClass.wallet_journal_dust || 0,
     dbOnly: byClass.db_only || 0,
@@ -234,7 +241,7 @@ async function main() {
   const rows = buildParityRows({ walletMap, dbMap, journalMap, tickerMap });
   const summary = summarize(rows);
   const topRows = rows
-    .filter((row) => !['ok', 'wallet_journal_dust'].includes(row.class))
+    .filter((row) => !['ok', 'wallet_journal_dust', 'wallet_only_dust'].includes(row.class))
     .sort((a, b) => Math.abs(b.walletValue || 0) - Math.abs(a.walletValue || 0))
     .slice(0, args.limit);
 
@@ -257,7 +264,7 @@ async function main() {
     const rendered = syncResults.map((result) => `${result.market}:${result.ok === false ? 'failed' : 'ok'}${result?.mismatchCount !== undefined ? `(${result.mismatchCount})` : ''}`);
     console.log(`sync: ${rendered.join(', ')}`);
   }
-  console.log(`symbols=${summary.totalSymbols} ok=${summary.ok} qty_mismatch=${summary.quantityMismatch} pnl_mismatch=${summary.pnlMismatch} wallet_journal_only=${summary.walletJournalOnly} wallet_journal_dust=${summary.walletJournalDust} wallet_only=${summary.walletOnly} db_only=${summary.dbOnly}`);
+  console.log(`symbols=${summary.totalSymbols} ok=${summary.ok} qty_mismatch=${summary.quantityMismatch} pnl_mismatch=${summary.pnlMismatch} wallet_journal_only=${summary.walletJournalOnly} wallet_journal_dust=${summary.walletJournalDust} wallet_only=${summary.walletOnly} wallet_only_dust=${summary.walletOnlyDust} db_only=${summary.dbOnly}`);
   console.log(`paper_positions=${payload.paperPositionCount}`);
   if (topRows.length === 0) {
     console.log('live wallet와 DB 포지션이 현재 기준으로 잘 맞습니다.');

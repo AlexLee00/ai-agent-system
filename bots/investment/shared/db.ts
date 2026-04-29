@@ -226,6 +226,17 @@ export async function initSchema() {
   try { await run(`CREATE INDEX IF NOT EXISTS idx_market_regime_market_captured ON market_regime_snapshots(market, captured_at DESC)`); } catch { /* 무시 */ }
 
   await run(`
+    CREATE TABLE IF NOT EXISTS mapek_knowledge (
+      id          BIGSERIAL PRIMARY KEY,
+      event_type  TEXT NOT NULL,
+      payload     JSONB NOT NULL DEFAULT '{}'::jsonb,
+      created_at  TIMESTAMPTZ DEFAULT now()
+    )
+  `);
+  try { await run(`CREATE INDEX IF NOT EXISTS idx_mapek_knowledge_event_created ON mapek_knowledge(event_type, created_at DESC)`); } catch { /* 무시 */ }
+  try { await run(`CREATE INDEX IF NOT EXISTS idx_mapek_knowledge_payload ON mapek_knowledge USING GIN (payload)`); } catch { /* 무시 */ }
+
+  await run(`
     CREATE TABLE IF NOT EXISTS runtime_config_suggestion_log (
       id                TEXT DEFAULT gen_random_uuid()::text PRIMARY KEY,
       period_days       INTEGER NOT NULL,
@@ -2341,10 +2352,14 @@ export async function fetchPendingPosttradeKnowledgeEvents({ limit = 20 } = {}) 
        mk.id AS knowledge_id,
        mk.created_at,
        mk.payload,
-       NULLIF(mk.payload->>'trade_id', '')::BIGINT AS trade_id
+       CASE WHEN mk.payload->>'trade_id' ~ '^[0-9]+$'
+            THEN (mk.payload->>'trade_id')::BIGINT
+            ELSE NULL
+       END AS trade_id
      FROM investment.mapek_knowledge mk
      WHERE mk.event_type = 'quality_evaluation_pending'
        AND COALESCE(mk.payload->>'posttrade_processed', 'false') <> 'true'
+       AND mk.payload->>'trade_id' ~ '^[0-9]+$'
      ORDER BY mk.created_at ASC
      LIMIT $1`,
     [safeLimit],
@@ -2407,7 +2422,8 @@ export async function getRecentFeedbackToActionMap({ days = 7, market = null, li
     params.push(String(market));
     clauses.push(`COALESCE(th.market, CASE WHEN th.exchange = 'binance' THEN 'crypto' WHEN th.exchange = 'kis' THEN 'domestic' ELSE 'overseas' END) = $${params.length}`);
   }
-  return query(
+  try {
+    return await query(
     `SELECT fam.*, th.symbol, th.exchange, th.market
        FROM feedback_to_action_map fam
        LEFT JOIN investment.trade_history th ON th.id = fam.source_trade_id
@@ -2415,7 +2431,22 @@ export async function getRecentFeedbackToActionMap({ days = 7, market = null, li
       ORDER BY fam.applied_at DESC
       LIMIT $2`,
     params,
-  ).catch(() => []);
+    );
+  } catch (error) {
+    const message = String(error?.message || error || '');
+    if (message.includes('trade_history') || message.includes('does not exist')) {
+      if (market) return [];
+      return query(
+        `SELECT fam.*
+           FROM feedback_to_action_map fam
+          WHERE fam.applied_at >= NOW() - ($1::int * INTERVAL '1 day')
+          ORDER BY fam.applied_at DESC
+          LIMIT $2`,
+        [params[0], params[1]],
+      ).catch(() => []);
+    }
+    return [];
+  }
 }
 
 export async function upsertPosttradeSkill({
@@ -2485,6 +2516,100 @@ export async function getRecentPosttradeSkills({ market = null, skillType = null
       LIMIT $${params.length}`,
     params,
   ).catch(() => []);
+}
+
+export async function cleanupPosttradeSmokeArtifacts({ apply = false } = {}) {
+  const summary = {
+    apply: apply === true,
+    feedbackToActionRows: 0,
+    suggestionLogs: 0,
+    posttradeSkills: 0,
+    knowledgeRows: 0,
+  };
+
+  const suggestionRows = await query(
+    `SELECT id
+       FROM runtime_config_suggestion_log
+      WHERE market_summary->>'smoke' = 'true'
+         OR COALESCE(review_note, '') ILIKE '%posttrade audit smoke%'
+         OR suggestions::text ILIKE '%runtime_config.posttrade.smoke.%'`,
+    [],
+  ).catch(() => []);
+  const suggestionIds = (suggestionRows || []).map((row) => String(row.id)).filter(Boolean);
+  summary.suggestionLogs = suggestionIds.length;
+
+  const feedbackRows = await query(
+    `SELECT id
+       FROM feedback_to_action_map
+      WHERE metadata->>'smoke' = 'true'
+         OR parameter_name LIKE 'runtime_config.posttrade.smoke.%'
+         OR COALESCE(reason, '') ILIKE '%smoke%'
+         OR (${suggestionIds.length > 0 ? 'suggestion_log_id = ANY($1::text[])' : 'false'})`,
+    suggestionIds.length > 0 ? [suggestionIds] : [],
+  ).catch(() => []);
+  summary.feedbackToActionRows = (feedbackRows || []).length;
+
+  const skillRows = await query(
+    `SELECT id
+       FROM luna_posttrade_skills
+      WHERE metadata->>'smoke' = 'true'
+         OR pattern_key LIKE '%:smoke_%'
+         OR pattern_key LIKE '%:mirror_smoke:%'
+         OR summary ILIKE '%smoke%'`,
+    [],
+  ).catch(() => []);
+  summary.posttradeSkills = (skillRows || []).length;
+
+  const knowledgeRows = await query(
+    `SELECT id
+       FROM investment.mapek_knowledge
+      WHERE event_type IN ('quality_evaluation_pending', 'posttrade_quality_evaluated')
+        AND (
+          payload->>'smoke' = 'true'
+          OR payload->>'source' = 'posttrade_smoke'
+          OR payload->>'trade_id' LIKE '90%'
+        )`,
+    [],
+  ).catch(() => []);
+  summary.knowledgeRows = (knowledgeRows || []).length;
+
+  if (apply !== true) return summary;
+
+  await run(
+    `DELETE FROM feedback_to_action_map
+      WHERE metadata->>'smoke' = 'true'
+         OR parameter_name LIKE 'runtime_config.posttrade.smoke.%'
+         OR COALESCE(reason, '') ILIKE '%smoke%'
+         OR (${suggestionIds.length > 0 ? 'suggestion_log_id = ANY($1::text[])' : 'false'})`,
+    suggestionIds.length > 0 ? [suggestionIds] : [],
+  ).catch(() => {});
+  await run(
+    `DELETE FROM runtime_config_suggestion_log
+      WHERE market_summary->>'smoke' = 'true'
+         OR COALESCE(review_note, '') ILIKE '%posttrade audit smoke%'
+         OR suggestions::text ILIKE '%runtime_config.posttrade.smoke.%'`,
+    [],
+  ).catch(() => {});
+  await run(
+    `DELETE FROM luna_posttrade_skills
+      WHERE metadata->>'smoke' = 'true'
+         OR pattern_key LIKE '%:smoke_%'
+         OR pattern_key LIKE '%:mirror_smoke:%'
+         OR summary ILIKE '%smoke%'`,
+    [],
+  ).catch(() => {});
+  await run(
+    `DELETE FROM investment.mapek_knowledge
+      WHERE event_type IN ('quality_evaluation_pending', 'posttrade_quality_evaluated')
+        AND (
+          payload->>'smoke' = 'true'
+          OR payload->>'source' = 'posttrade_smoke'
+          OR payload->>'trade_id' LIKE '90%'
+        )`,
+    [],
+  ).catch(() => {});
+
+  return summary;
 }
 
 export function close() {

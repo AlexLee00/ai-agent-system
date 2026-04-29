@@ -12,6 +12,7 @@
 import * as db from './db.ts';
 import { callLLM } from './llm-client.ts';
 import { getPosttradeFeedbackRuntimeConfig } from './runtime-config.ts';
+import { evaluateLunaConstitutionForTrade } from './luna-constitution.ts';
 
 const MARKET_ALIASES = {
   all: 'all',
@@ -67,7 +68,11 @@ export async function evaluateTradeQuality(tradeId: number, opts: { dryRun?: boo
   }
 
   const constitutionalCfg = posttradeCfg?.constitutional_feedback || {};
-  const violationCount = extractConstitutionViolationCount(reviewData, backtestData);
+  const constitutionAudit = evaluateLunaConstitutionForTrade({ trade, reviewData, backtestData });
+  const violationCount = Math.max(
+    extractConstitutionViolationCount(reviewData, backtestData),
+    Number(constitutionAudit?.violationCount || 0),
+  );
   const constitutionPenalty = constitutionalCfg?.enabled && violationCount > 0
     ? Math.min(0.6, Number(constitutionalCfg?.violation_penalty || 0.20) * violationCount)
     : 0;
@@ -90,6 +95,7 @@ export async function evaluateTradeQuality(tradeId: number, opts: { dryRun?: boo
       ...(breakdown || {}),
       constitution_violation_count: violationCount,
       constitution_penalty: constitutionPenalty,
+      constitution_violations: constitutionAudit?.violations || [],
     },
   };
 
@@ -132,20 +138,57 @@ export async function fetchPendingPosttradeCandidates({
   const rows = await db.query(
     `SELECT
        mk.id AS knowledge_id,
-       NULLIF(mk.payload->>'trade_id', '')::BIGINT AS trade_id,
+       CASE WHEN mk.payload->>'trade_id' ~ '^[0-9]+$'
+            THEN (mk.payload->>'trade_id')::BIGINT
+            ELSE NULL
+       END AS trade_id,
        COALESCE(th.market, CASE WHEN th.exchange = 'binance' THEN 'crypto' WHEN th.exchange = 'kis' THEN 'domestic' ELSE 'overseas' END) AS market,
        mk.created_at
      FROM investment.mapek_knowledge mk
-     LEFT JOIN investment.trade_history th ON th.id = NULLIF(mk.payload->>'trade_id', '')::BIGINT
-     LEFT JOIN investment.trade_quality_evaluations tqe ON tqe.trade_id = NULLIF(mk.payload->>'trade_id', '')::BIGINT
+     LEFT JOIN investment.trade_history th
+       ON th.id = CASE WHEN mk.payload->>'trade_id' ~ '^[0-9]+$'
+                       THEN (mk.payload->>'trade_id')::BIGINT
+                       ELSE NULL
+                  END
+     LEFT JOIN investment.trade_quality_evaluations tqe
+       ON tqe.trade_id = CASE WHEN mk.payload->>'trade_id' ~ '^[0-9]+$'
+                              THEN (mk.payload->>'trade_id')::BIGINT
+                              ELSE NULL
+                         END
      WHERE mk.event_type = 'quality_evaluation_pending'
-       AND NULLIF(mk.payload->>'trade_id', '') IS NOT NULL
+       AND mk.payload->>'trade_id' ~ '^[0-9]+$'
        AND COALESCE(mk.payload->>'posttrade_processed', 'false') <> 'true'
        AND tqe.trade_id IS NULL
      ORDER BY mk.created_at ASC
      LIMIT $1`,
     [safeLimit * 5],
-  ).catch(() => []);
+  ).catch(async (error) => {
+    const message = String(error?.message || error || '');
+    if (!message.includes('trade_history') && !message.includes('does not exist')) return [];
+    return db.query(
+      `SELECT
+         mk.id AS knowledge_id,
+         CASE WHEN mk.payload->>'trade_id' ~ '^[0-9]+$'
+              THEN (mk.payload->>'trade_id')::BIGINT
+              ELSE NULL
+         END AS trade_id,
+         COALESCE(NULLIF(mk.payload->>'market', ''), 'all') AS market,
+         mk.created_at
+       FROM investment.mapek_knowledge mk
+       LEFT JOIN investment.trade_quality_evaluations tqe
+         ON tqe.trade_id = CASE WHEN mk.payload->>'trade_id' ~ '^[0-9]+$'
+                                THEN (mk.payload->>'trade_id')::BIGINT
+                                ELSE NULL
+                           END
+       WHERE mk.event_type = 'quality_evaluation_pending'
+         AND mk.payload->>'trade_id' ~ '^[0-9]+$'
+         AND COALESCE(mk.payload->>'posttrade_processed', 'false') <> 'true'
+         AND tqe.trade_id IS NULL
+       ORDER BY mk.created_at ASC
+       LIMIT $1`,
+      [safeLimit * 5],
+    ).catch(() => []);
+  });
   const fromKnowledge = [];
   const seen = new Set<number>();
   for (const row of rows || []) {
@@ -224,10 +267,10 @@ async function fetchLifecycleEvents(trade: any) {
     WHERE symbol = $1
       AND created_at BETWEEN $2::timestamptz AND $3::timestamptz
       AND (
-        (output_snapshot->>'tradeId')::BIGINT = $4
-        OR (output_snapshot->>'trade_id')::BIGINT = $4
-        OR (input_snapshot->>'tradeId')::BIGINT = $4
-        OR (input_snapshot->>'trade_id')::BIGINT = $4
+        CASE WHEN output_snapshot->>'tradeId' ~ '^[0-9]+$' THEN (output_snapshot->>'tradeId')::BIGINT END = $4
+        OR CASE WHEN output_snapshot->>'trade_id' ~ '^[0-9]+$' THEN (output_snapshot->>'trade_id')::BIGINT END = $4
+        OR CASE WHEN input_snapshot->>'tradeId' ~ '^[0-9]+$' THEN (input_snapshot->>'tradeId')::BIGINT END = $4
+        OR CASE WHEN input_snapshot->>'trade_id' ~ '^[0-9]+$' THEN (input_snapshot->>'trade_id')::BIGINT END = $4
         OR $4 <= 0
       )
     ORDER BY created_at DESC

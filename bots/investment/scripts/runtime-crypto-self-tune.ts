@@ -21,6 +21,7 @@ const AUTO_KEYS = new Set([
   'runtime_config.execution.cryptoGuardSoftening.byExchange.binance.tradeModes.normal.validationFallback.reductionMultiplier',
   'runtime_config.execution.cryptoGuardSoftening.byExchange.binance.tradeModes.validation.livePositionReentry.reductionMultiplier',
 ]);
+const DEFAULT_AUTO_APPLY_COOLDOWN_HOURS = 24;
 
 function parseArgs(argv = process.argv.slice(2)) {
   const daysArg = argv.find((arg) => arg.startsWith('--days='));
@@ -91,6 +92,59 @@ function selectAutoCandidates(reports = []) {
     .map(normalizeCandidate);
 }
 
+function resolveAutoApplyCooldownHours() {
+  const raw = Number(process.env.LUNA_SELF_TUNE_AUTO_APPLY_COOLDOWN_HOURS || DEFAULT_AUTO_APPLY_COOLDOWN_HOURS);
+  if (!Number.isFinite(raw)) return DEFAULT_AUTO_APPLY_COOLDOWN_HOURS;
+  return Math.max(1, raw);
+}
+
+function parseAutoAppliedKeys(note = '') {
+  const match = String(note || '').match(/crypto_self_tune_auto_applied:([^\s]+)/);
+  if (!match) return [];
+  return match[1].split(',').map((item) => item.trim()).filter(Boolean);
+}
+
+async function loadRecentlyAppliedAutoKeys({ cooldownHours = DEFAULT_AUTO_APPLY_COOLDOWN_HOURS } = {}) {
+  const thresholdMs = Date.now() - cooldownHours * 60 * 60 * 1000;
+  const rows = await db.getRecentRuntimeConfigSuggestionLogs(100).catch(() => []);
+  const recent = new Set();
+  for (const row of rows || []) {
+    if (String(row?.review_status || '').toLowerCase() !== 'applied') continue;
+    const appliedAt = row?.applied_at || row?.reviewed_at || row?.captured_at;
+    const appliedMs = appliedAt ? Date.parse(appliedAt) : NaN;
+    if (!Number.isFinite(appliedMs) || appliedMs < thresholdMs) continue;
+    for (const key of parseAutoAppliedKeys(row?.review_note)) {
+      recent.add(key);
+    }
+  }
+  return recent;
+}
+
+export function filterCandidatesByAutoApplyCooldown(
+  candidates = [],
+  recentlyAppliedKeys = new Set(),
+  cooldownHours = DEFAULT_AUTO_APPLY_COOLDOWN_HOURS,
+) {
+  const allowed = [];
+  const skippedByCooldown = [];
+  for (const item of candidates || []) {
+    if (recentlyAppliedKeys.has(item.key)) {
+      skippedByCooldown.push({
+        key: item.key,
+        cooldownHours,
+        current: item.current,
+        suggested: item.suggested,
+      });
+      continue;
+    }
+    allowed.push(item);
+  }
+  return {
+    candidates: allowed,
+    skippedByCooldown,
+  };
+}
+
 function renderText(result) {
   const lines = [
     '🤖 Runtime Crypto Self-Tune',
@@ -120,7 +174,14 @@ export async function buildRuntimeCryptoSelfTune({ days = 14, write = false, jso
     buildRuntimeConfigSuggestionsReport({ days, write }),
     buildRuntimeCryptoGuardAutotuneReport({ days, json: true }).catch(() => null),
   ]);
-  const candidates = selectAutoCandidates([runtimeSuggestReport, guardAutotuneReport]);
+  const cooldownHours = resolveAutoApplyCooldownHours();
+  const recentlyAppliedKeys = await loadRecentlyAppliedAutoKeys({ cooldownHours });
+  const rawCandidates = selectAutoCandidates([runtimeSuggestReport, guardAutotuneReport]);
+  const { candidates, skippedByCooldown } = filterCandidatesByAutoApplyCooldown(
+    rawCandidates,
+    recentlyAppliedKeys,
+    cooldownHours,
+  );
 
   const result = {
     ok: true,
@@ -128,7 +189,9 @@ export async function buildRuntimeCryptoSelfTune({ days = 14, write = false, jso
     headline: '자동 적용 가능한 crypto soft guard 후보가 아직 없습니다.',
     days,
     savedId: runtimeSuggestReport?.saved?.id || null,
+    cooldownHours,
     candidates,
+    skippedByCooldown,
     applied: [],
     source: {
       actionableSuggestions: Number(runtimeSuggestReport?.actionableSuggestions || 0) + Number(guardAutotuneReport?.decision?.metrics?.actionableCount || 0),

@@ -10,6 +10,7 @@ import {
 import { getLunaIntelligentDiscoveryFlags } from './luna-intelligent-discovery-config.ts';
 import { checkAvoidPatterns } from './reflexion-engine.ts';
 import { getPosttradeFeedbackRuntimeConfig } from './runtime-config.ts';
+import { evaluateLunaConstitutionForEntry } from './luna-constitution.ts';
 
 const ACTIONS = {
   BUY: 'BUY',
@@ -283,7 +284,27 @@ export async function evaluateEntryTriggers(candidates = [], context = {}) {
       hints: candidate?.triggerHints || {},
     };
 
-    if (constitutionalEnabled && candidate?.block_meta?.constitution?.blocked === true) {
+    const constitutionAudit = constitutionalEnabled
+      ? evaluateLunaConstitutionForEntry(candidate, { ...context, market, exchange })
+      : { blocked: false, violations: [], violationCount: 0 };
+    const constitutionBlocked = candidate?.block_meta?.constitution?.blocked === true
+      || (constitutionAudit?.blocked === true && posttradeCfg?.constitutional_feedback?.hard_gate === true);
+    const candidateWithConstitution = constitutionalEnabled ? {
+      ...candidate,
+      block_meta: {
+        ...(candidate.block_meta || {}),
+        constitution: {
+          ...(candidate.block_meta?.constitution || {}),
+          ok: constitutionAudit.ok,
+          blocked: constitutionBlocked,
+          violations: constitutionAudit.violations || [],
+          violationCount: constitutionAudit.violationCount || 0,
+          hardGate: posttradeCfg?.constitutional_feedback?.hard_gate === true,
+        },
+      },
+    } : candidate;
+
+    if (constitutionalEnabled && constitutionBlocked) {
       blocked++;
       const constitutionMeta = {
         triggerType,
@@ -291,26 +312,28 @@ export async function evaluateEntryTriggers(candidates = [], context = {}) {
         reason: 'constitution_blocked',
         confidence,
         mode: flags.mode,
+        violations: constitutionAudit?.violations || candidate?.block_meta?.constitution?.violations || [],
       };
       output.push(shouldMutate ? {
-        ...candidate,
+        ...candidateWithConstitution,
         action: ACTIONS.HOLD,
         amount_usdt: 0,
         reasoning: `entry_trigger_blocked: constitution_blocked | ${candidate.reasoning || ''}`.slice(0, 220),
         block_meta: {
-          ...(candidate.block_meta || {}),
+          ...(candidateWithConstitution.block_meta || {}),
           event_type: 'entry_trigger_blocked',
           entryTrigger: constitutionMeta,
         },
-      } : annotateEntryTrigger(candidate, constitutionMeta));
+      } : annotateEntryTrigger(candidateWithConstitution, constitutionMeta));
       continue;
     }
+    const activeCandidate = candidateWithConstitution;
 
     if (confidence < minConfidence) {
       blocked++;
       if (!shouldMutate) {
         observed++;
-        output.push(annotateEntryTrigger(candidate, {
+        output.push(annotateEntryTrigger(activeCandidate, {
           triggerType,
           state: 'observed',
           reason: 'low_confidence',
@@ -321,12 +344,12 @@ export async function evaluateEntryTriggers(candidates = [], context = {}) {
         continue;
       }
       const blockedDecision = {
-        ...candidate,
+        ...activeCandidate,
         action: ACTIONS.HOLD,
         amount_usdt: 0,
         reasoning: `entry_trigger_blocked: confidence ${confidence.toFixed(2)} < ${minConfidence.toFixed(2)} | ${candidate.reasoning || ''}`.slice(0, 220),
         block_meta: {
-          ...(candidate.block_meta || {}),
+          ...(activeCandidate.block_meta || {}),
           event_type: 'entry_trigger_blocked',
           entryTrigger: { triggerType, state: 'blocked', reason: 'low_confidence', confidence, minConfidence },
         },
@@ -337,7 +360,7 @@ export async function evaluateEntryTriggers(candidates = [], context = {}) {
 
     if (reflexionGuard?.matched && Number(reflexionGuard?.penalty || 0) > 0 && !shouldMutate) {
       observed++;
-      output.push(annotateEntryTrigger(candidate, {
+      output.push(annotateEntryTrigger(activeCandidate, {
         triggerType,
         state: 'observed',
         reason: 'reflexion_penalty_applied',
@@ -369,7 +392,7 @@ export async function evaluateEntryTriggers(candidates = [], context = {}) {
       blocked++;
       if (!shouldMutate) {
         observed++;
-        output.push(annotateEntryTrigger(candidate, {
+      output.push(annotateEntryTrigger(activeCandidate, {
           triggerType,
           state: 'observed',
           reason: 'persist_failed',
@@ -378,12 +401,12 @@ export async function evaluateEntryTriggers(candidates = [], context = {}) {
         continue;
       }
       output.push({
-        ...candidate,
+        ...activeCandidate,
         action: ACTIONS.HOLD,
         amount_usdt: 0,
         reasoning: `entry_trigger_blocked: persist_failed | ${candidate.reasoning || ''}`.slice(0, 220),
         block_meta: {
-          ...(candidate.block_meta || {}),
+          ...(activeCandidate.block_meta || {}),
           event_type: 'entry_trigger_blocked',
           entryTrigger: { triggerType, state: 'blocked', reason: 'persist_failed' },
         },
@@ -395,7 +418,7 @@ export async function evaluateEntryTriggers(candidates = [], context = {}) {
     if (!fireNow) {
       if (!shouldMutate) {
         observed++;
-        output.push(annotateEntryTrigger(candidate, {
+        output.push(annotateEntryTrigger(activeCandidate, {
           triggerId: persisted.id,
           triggerType,
           state: 'armed',
@@ -406,12 +429,12 @@ export async function evaluateEntryTriggers(candidates = [], context = {}) {
         continue;
       }
       output.push({
-        ...candidate,
+        ...activeCandidate,
         action: ACTIONS.HOLD,
         amount_usdt: 0,
         reasoning: `entry_trigger_armed(${triggerType}) 대기 | ${candidate.reasoning || ''}`.slice(0, 220),
         block_meta: {
-          ...(candidate.block_meta || {}),
+          ...(activeCandidate.block_meta || {}),
           event_type: 'entry_trigger_blocked',
           entryTrigger: {
             triggerId: persisted.id,
@@ -458,7 +481,7 @@ export async function evaluateEntryTriggers(candidates = [], context = {}) {
       continue;
     }
 
-    const riskGate = evaluateEntryTriggerLiveRiskGate({ candidate, trigger: persisted, context, flags });
+    const riskGate = evaluateEntryTriggerLiveRiskGate({ candidate: activeCandidate, trigger: persisted, context, flags });
     if (!riskGate.ok) {
       blocked++;
       await updateEntryTriggerState(persisted.id, {
@@ -470,12 +493,12 @@ export async function evaluateEntryTriggers(candidates = [], context = {}) {
         },
       }).catch(() => {});
       output.push({
-        ...candidate,
+        ...activeCandidate,
         action: ACTIONS.HOLD,
         amount_usdt: 0,
         reasoning: `entry_trigger_blocked: ${riskGate.reason} | ${candidate.reasoning || ''}`.slice(0, 220),
         block_meta: {
-          ...(candidate.block_meta || {}),
+          ...(activeCandidate.block_meta || {}),
           event_type: 'entry_trigger_blocked',
           entryTrigger: {
             triggerId: persisted.id,
@@ -507,12 +530,12 @@ export async function evaluateEntryTriggers(candidates = [], context = {}) {
         },
       }).catch(() => {});
       output.push({
-        ...candidate,
+        ...activeCandidate,
         action: ACTIONS.HOLD,
         amount_usdt: 0,
         reasoning: `entry_trigger_blocked: duplicate_fire_cooldown(${fireCooldownMinutes}m) | ${candidate.reasoning || ''}`.slice(0, 220),
         block_meta: {
-          ...(candidate.block_meta || {}),
+          ...(activeCandidate.block_meta || {}),
           event_type: 'entry_trigger_blocked',
           entryTrigger: {
             triggerId: persisted.id,
@@ -538,9 +561,9 @@ export async function evaluateEntryTriggers(candidates = [], context = {}) {
     }).catch(() => {});
 
     output.push({
-      ...candidate,
+      ...activeCandidate,
       block_meta: {
-        ...(candidate.block_meta || {}),
+        ...(activeCandidate.block_meta || {}),
         event_type: 'autonomous_action_executed',
         entryTrigger: {
           triggerId: persisted.id,

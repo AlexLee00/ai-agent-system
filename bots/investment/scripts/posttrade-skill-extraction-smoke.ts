@@ -6,11 +6,15 @@ import { runPosttradeSkillExtraction } from './runtime-posttrade-skill-extractio
 import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
 
 async function runSmoke() {
+  const previous = process.env.LUNA_VOYAGER_SKILL_LIBRARY_ENABLED;
+  process.env.LUNA_VOYAGER_SKILL_LIBRARY_ENABLED = 'false';
   const blocked = await runPosttradeSkillExtraction({
     dryRun: true,
     days: 7,
     market: 'all',
   });
+  if (previous === undefined) delete process.env.LUNA_VOYAGER_SKILL_LIBRARY_ENABLED;
+  else process.env.LUNA_VOYAGER_SKILL_LIBRARY_ENABLED = previous;
   assert.equal(blocked?.ok, false, 'skill extraction disabled by default');
   assert.equal(blocked?.code, 'posttrade_skill_extraction_disabled');
 
@@ -47,4 +51,3 @@ if (isDirectExecution(import.meta.url)) {
     errorPrefix: '❌ posttrade-skill-extraction-smoke 실패:',
   });
 }
-

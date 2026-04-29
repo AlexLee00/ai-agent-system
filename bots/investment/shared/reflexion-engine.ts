@@ -45,8 +45,24 @@ export async function runReflexion(
   const trade    = await fetchTradeDetail(quality.trade_id);
   if (!trade) return null;
 
+  const reflexionCfg = getPosttradeFeedbackRuntimeConfig()?.reflexion || {};
+  const withinBudget = await ensureDailyReflexionBudget({
+    dryRun: opts?.dryRun === true,
+    budgetUsd: Number(reflexionCfg?.llm_daily_budget_usd || 3),
+  });
+  if (!withinBudget.ok) {
+    await recordReflexionFailure(quality.trade_id, 'reflexion_llm_daily_budget_exceeded', {
+      budgetUsd: reflexionCfg?.llm_daily_budget_usd,
+      usedEstimateUsd: withinBudget.usedEstimateUsd,
+    }).catch(() => {});
+    return null;
+  }
+
   const result   = await llmReflect(trade, quality, stageAttrs);
-  if (!result) return null;
+  if (!result) {
+    await recordReflexionFailure(quality.trade_id, 'reflexion_llm_unavailable', {}).catch(() => {});
+    return null;
+  }
 
   if (!opts.dryRun) {
     await persistReflexion(result);
@@ -247,4 +263,38 @@ function parseJson(text: string): any {
   const m = text.match(/\{[\s\S]*\}/);
   if (m) { try { return JSON.parse(m[0]); } catch { /* fallthrough */ } }
   return null;
+}
+
+async function ensureDailyReflexionBudget({
+  dryRun = false,
+  budgetUsd = 3,
+}: {
+  dryRun?: boolean;
+  budgetUsd?: number;
+} = {}) {
+  if (dryRun) return { ok: true, usedEstimateUsd: 0 };
+  const safeBudget = Math.max(0, Number(budgetUsd || 0));
+  if (safeBudget <= 0) return { ok: true, usedEstimateUsd: 0 };
+  const row = await db.get(
+    `SELECT COUNT(*)::int AS cnt
+       FROM investment.luna_failure_reflexions
+      WHERE created_at >= NOW()::date`,
+    [],
+  ).catch(() => ({ cnt: 0 }));
+  const cnt = Number(row?.cnt || 0);
+  const usedEstimateUsd = cnt * 0.04;
+  return { ok: usedEstimateUsd <= safeBudget, usedEstimateUsd };
+}
+
+async function recordReflexionFailure(tradeId: number, code: string, meta: Record<string, unknown> = {}) {
+  await db.run(
+    `INSERT INTO investment.mapek_knowledge (event_type, payload)
+     VALUES ('reflexion_failed', $1)`,
+    [JSON.stringify({
+      trade_id: tradeId,
+      code,
+      meta: meta || {},
+      created_at: new Date().toISOString(),
+    })],
+  );
 }

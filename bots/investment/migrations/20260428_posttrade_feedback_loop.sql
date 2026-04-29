@@ -1,4 +1,4 @@
--- ─── Posttrade Feedback Loop — Phase A/B/C ────────────────────────────────────
+-- ─── Posttrade Feedback Loop — Phase A~H ──────────────────────────────────────
 -- 2026-04-28 | CODEX_LUNA_INTELLIGENT_POSTTRADE_FEEDBACK_LOOP_PLAN
 
 -- Phase A: Trade Quality Score (4-차원 평가)
@@ -47,7 +47,47 @@ CREATE TABLE IF NOT EXISTS investment.luna_failure_reflexions (
 );
 CREATE INDEX IF NOT EXISTS idx_lfr_trade_id
   ON investment.luna_failure_reflexions (trade_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_lfr_trade_unique
+  ON investment.luna_failure_reflexions (trade_id);
 CREATE INDEX IF NOT EXISTS idx_lfr_avoid_pattern
   ON investment.luna_failure_reflexions USING GIN (avoid_pattern);
 CREATE INDEX IF NOT EXISTS idx_lfr_created_at
   ON investment.luna_failure_reflexions (created_at DESC);
+
+-- Phase E: Parameter Feedback Map
+CREATE TABLE IF NOT EXISTS investment.feedback_to_action_map (
+  id                 BIGSERIAL PRIMARY KEY,
+  source_trade_id    BIGINT,
+  parameter_name     TEXT NOT NULL,
+  old_value          JSONB DEFAULT 'null'::jsonb,
+  new_value          JSONB DEFAULT 'null'::jsonb,
+  reason             TEXT,
+  suggestion_log_id  TEXT,
+  metadata           JSONB DEFAULT '{}'::jsonb,
+  applied_at         TIMESTAMPTZ DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_fam_source_trade
+  ON investment.feedback_to_action_map (source_trade_id, applied_at DESC);
+CREATE INDEX IF NOT EXISTS idx_fam_parameter
+  ON investment.feedback_to_action_map (parameter_name, applied_at DESC);
+
+-- Phase D/G: Voyager-style market-differentiated skill library
+CREATE TABLE IF NOT EXISTS investment.luna_posttrade_skills (
+  id                BIGSERIAL PRIMARY KEY,
+  market            TEXT NOT NULL,
+  skill_type        TEXT NOT NULL,
+  pattern_key       TEXT NOT NULL,
+  title             TEXT NOT NULL,
+  summary           TEXT NOT NULL,
+  invocation_count  INTEGER DEFAULT 0,
+  success_rate      DOUBLE PRECISION DEFAULT 0.0,
+  win_count         INTEGER DEFAULT 0,
+  loss_count        INTEGER DEFAULT 0,
+  source_trade_ids  JSONB DEFAULT '[]'::jsonb,
+  metadata          JSONB DEFAULT '{}'::jsonb,
+  created_at        TIMESTAMPTZ DEFAULT NOW(),
+  updated_at        TIMESTAMPTZ DEFAULT NOW(),
+  UNIQUE (market, skill_type, pattern_key)
+);
+CREATE INDEX IF NOT EXISTS idx_lps_market_type
+  ON investment.luna_posttrade_skills (market, skill_type, success_rate DESC, updated_at DESC);

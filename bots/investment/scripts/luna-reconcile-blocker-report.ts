@@ -152,10 +152,18 @@ export async function buildLunaReconcileBlockerReport({
     const rows = await loadBlockerRows({ exchange, hours, limit });
     const blockers = rows.map(classifyReconcileBlocker);
     const summary = summarizeBlockers(blockers);
+    const ok = summary.hard === 0 && (summary.byResolutionClass.pending_without_lookup_key || 0) === 0;
+    const actionable = summary.total - summary.acknowledged;
     return {
-      ok: summary.hard === 0 && (summary.byResolutionClass.pending_without_lookup_key || 0) === 0,
+      ok,
       checkedAt: new Date().toISOString(),
-      status: summary.total === 0 ? 'reconcile_blockers_clear' : 'reconcile_blockers_present',
+      status: summary.total === 0
+        ? 'reconcile_blockers_clear'
+        : ok && actionable === 0
+          ? 'reconcile_blockers_clear_acknowledged_history'
+          : ok
+            ? 'reconcile_blockers_clear_with_nonblocking_history'
+            : 'reconcile_blockers_present',
       exchange,
       hours,
       limit,

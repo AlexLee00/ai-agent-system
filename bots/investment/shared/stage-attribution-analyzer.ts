@@ -96,10 +96,10 @@ async function fetchLifecycleData(trade: any) {
     WHERE symbol = $1
       AND created_at BETWEEN $2::timestamptz AND $3::timestamptz
       AND (
-        (output_snapshot->>'tradeId')::BIGINT = $4
-        OR (output_snapshot->>'trade_id')::BIGINT = $4
-        OR (input_snapshot->>'tradeId')::BIGINT = $4
-        OR (input_snapshot->>'trade_id')::BIGINT = $4
+        CASE WHEN output_snapshot->>'tradeId' ~ '^[0-9]+$' THEN (output_snapshot->>'tradeId')::BIGINT END = $4
+        OR CASE WHEN output_snapshot->>'trade_id' ~ '^[0-9]+$' THEN (output_snapshot->>'trade_id')::BIGINT END = $4
+        OR CASE WHEN input_snapshot->>'tradeId' ~ '^[0-9]+$' THEN (input_snapshot->>'tradeId')::BIGINT END = $4
+        OR CASE WHEN input_snapshot->>'trade_id' ~ '^[0-9]+$' THEN (input_snapshot->>'trade_id')::BIGINT END = $4
         OR $4 <= 0
       )
     ORDER BY created_at ASC

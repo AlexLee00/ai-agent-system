@@ -64,6 +64,36 @@ assert.equal(parityRows[0].class, 'wallet_journal_dust');
 assert.equal(summarize(parityRows).walletJournalDust, 1);
 assert.equal(summarize(parityRows).walletJournalOnly, 0);
 
+const walletOnlyDustRows = buildParityRows({
+  walletMap: new Map([
+    ['DASH/USDT', { symbol: 'DASH/USDT', total: 0.000558, free: 0.000558, used: 0 }],
+  ]),
+  dbMap: new Map(),
+  journalMap: new Map(),
+  tickerMap: {
+    'DASH/USDT': { last: 34.98 },
+  },
+  dustThresholdUsdt: 10,
+});
+assert.equal(walletOnlyDustRows[0].class, 'wallet_only_dust');
+assert.equal(summarize(walletOnlyDustRows).walletOnlyDust, 1);
+assert.equal(summarize(walletOnlyDustRows).walletOnly, 0);
+
+const meaningfulWalletOnlyRows = buildParityRows({
+  walletMap: new Map([
+    ['DASH/USDT', { symbol: 'DASH/USDT', total: 1, free: 1, used: 0 }],
+  ]),
+  dbMap: new Map(),
+  journalMap: new Map(),
+  tickerMap: {
+    'DASH/USDT': { last: 34.98 },
+  },
+  dustThresholdUsdt: 10,
+});
+assert.equal(meaningfulWalletOnlyRows[0].class, 'wallet_only');
+assert.equal(summarize(meaningfulWalletOnlyRows).walletOnly, 1);
+assert.equal(summarize(meaningfulWalletOnlyRows).walletOnlyDust, 0);
+
 assert.equal(normalizeBrokerQuantityForMarket('domestic', 9.9), 9);
 assert.equal(normalizeBrokerQuantityForMarket('overseas', 13.7), 13);
 assert.equal(normalizeBrokerQuantityForMarket('crypto', 0.12345678), 0.12345678);

@@ -26,6 +26,7 @@
 import { createRequire } from 'module';
 import * as fs from 'fs';
 import * as path from 'path';
+import * as investmentDb from './db.ts';
 
 const _require = createRequire(import.meta.url);
 const pgPool = _require('../../../packages/core/lib/pg-pool');
@@ -357,6 +358,9 @@ async function _fetchFailureMemory(
 async function _fetchSkills(agentName: string, taskType?: string, market?: string): Promise<string[]> {
   try {
     const marketKey = String(market || '').trim().toLowerCase();
+    const collected: string[] = await _fetchDbPosttradeSkills(taskType, marketKey).catch(() => []);
+    if (collected.length >= 2) return collected.slice(0, 2);
+
     const dirCandidates = [
       path.join(SKILLS_DIR, agentName),
       path.join(SKILLS_DIR, 'luna', marketKey),
@@ -368,8 +372,6 @@ async function _fetchSkills(agentName: string, taskType?: string, market?: strin
       || String(taskType || '').toLowerCase().includes('guard')
       || String(taskType || '').toLowerCase().includes('exit');
     const prefixes = preferAvoid ? ['AVOID_', 'SUCCESS_'] : ['SUCCESS_', 'AVOID_'];
-
-    const collected: string[] = [];
     for (const dirPath of dirCandidates) {
       if (!fs.existsSync(dirPath) || !fs.statSync(dirPath).isDirectory()) continue;
       const files = fs.readdirSync(dirPath)
@@ -390,6 +392,32 @@ async function _fetchSkills(agentName: string, taskType?: string, market?: strin
   } catch {
     return [];
   }
+}
+
+async function _fetchDbPosttradeSkills(taskType?: string, market?: string): Promise<string[]> {
+  const marketKey = String(market || 'all').trim().toLowerCase() || 'all';
+  const preferAvoid = String(taskType || '').toLowerCase().includes('risk')
+    || String(taskType || '').toLowerCase().includes('guard')
+    || String(taskType || '').toLowerCase().includes('exit');
+  const skillTypes = preferAvoid ? ['avoid', 'success'] : ['success', 'avoid'];
+  const rows = await investmentDb.query(`
+    SELECT market, skill_type, pattern_key, title, summary, invocation_count, success_rate
+      FROM investment.luna_posttrade_skills
+     WHERE ($1::text = 'all' OR market = $1 OR market = 'all')
+       AND skill_type = ANY($2::text[])
+     ORDER BY
+       CASE WHEN skill_type = $3 THEN 0 ELSE 1 END,
+       success_rate DESC,
+       invocation_count DESC,
+       updated_at DESC
+     LIMIT 2
+  `, [marketKey, skillTypes, skillTypes[0]]);
+
+  return (rows || []).map((row: any) => {
+    const rate = Number(row.success_rate || 0).toFixed(3);
+    const count = Number(row.invocation_count || 0);
+    return `[POSTTRADE_SKILL/${row.market}/${row.skill_type}/${row.pattern_key}] ${row.summary} (success_rate=${rate}, n=${count})`;
+  });
 }
 
 async function _fetchEntityFacts(symbol: string, market?: string): Promise<any[]> {

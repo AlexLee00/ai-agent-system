@@ -8,7 +8,10 @@ import { getPosttradeFeedbackRuntimeConfig } from './runtime-config.ts';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PROJECT_ROOT = path.resolve(__dirname, '../../..');
-const SKILL_ROOT = path.join(PROJECT_ROOT, 'packages', 'core', 'lib', 'skills', 'investment', 'luna');
+function getSkillRoot() {
+  return process.env.LUNA_POSTTRADE_SKILL_FILE_MIRROR_ROOT
+    || path.join(PROJECT_ROOT, 'packages', 'core', 'lib', 'skills', 'investment', 'luna');
+}
 
 function normalizeMarket(market: unknown) {
   const raw = String(market || 'all').trim().toLowerCase();
@@ -83,7 +86,7 @@ function maybeMirrorSkillFile({
 }) {
   if (!enabled) return null;
   const safeMarket = normalizeMarket(market);
-  const folder = path.join(SKILL_ROOT, safeMarket);
+  const folder = path.join(getSkillRoot(), safeMarket);
   ensureDir(folder);
   const fileName = `${skillType.toUpperCase()}_${slugify(patternKey)}.md`;
   const filePath = path.join(folder, fileName);
@@ -244,3 +247,43 @@ export async function extractPosttradeSkills({
   };
 }
 
+export async function mirrorExistingPosttradeSkills({
+  market = 'all',
+  limit = 100,
+  dryRun = false,
+} = {}) {
+  const rows = await db.getRecentPosttradeSkills({
+    market: normalizeMarket(market) === 'all' ? null : normalizeMarket(market),
+    limit,
+  });
+  const mirrored = [];
+  for (const row of rows || []) {
+    const sourceTradeIds = Array.isArray(row.source_trade_ids)
+      ? row.source_trade_ids
+      : [];
+    const filePath = maybeMirrorSkillFile({
+      market: row.market,
+      skillType: row.skill_type,
+      patternKey: row.pattern_key,
+      title: row.title,
+      summary: row.summary,
+      invocationCount: row.invocation_count,
+      successRate: row.success_rate,
+      winCount: row.win_count,
+      lossCount: row.loss_count,
+      sourceTradeIds,
+      metadata: row.metadata || {},
+      enabled: !dryRun,
+    });
+    if (filePath || dryRun) {
+      mirrored.push(filePath || path.join(getSkillRoot(), normalizeMarket(row.market), `${String(row.skill_type || 'skill').toUpperCase()}_${slugify(row.pattern_key)}.md`));
+    }
+  }
+  return {
+    ok: true,
+    market: normalizeMarket(market),
+    checked: rows.length,
+    mirroredFiles: mirrored,
+    dryRun,
+  };
+}

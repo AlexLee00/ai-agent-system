@@ -41,6 +41,8 @@ function runJsonCommand(command, args = []) {
 function parityClear(parityResult = null) {
   if (!parityResult) return null;
   const summary = parityResult.json?.summary || {};
+  // walletOnlyDust/walletJournalDust are non-blocking exchange dust classes.
+  // Meaningful wallet-only holdings remain blockers through summary.walletOnly.
   const problemCount = Number(summary.quantityMismatch || 0)
     + Number(summary.pnlMismatch || 0)
     + Number(summary.walletOnly || 0)

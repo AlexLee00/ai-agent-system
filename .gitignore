@@ -77,6 +77,7 @@ bots/investment/output/ops/position-runtime-evidence-gap-queue.json
 bots/investment/output/ops/position-runtime-market-open-queue.json
 bots/investment/output/ops/position-runtime-overrides.json
 bots/investment/output/ops/luna-entry-trigger-worker-heartbeat.json
+bots/investment/output/ops/posttrade-feedback-worker-heartbeat.json
 bots/investment/output/ops/luna-entry-trigger-operating-report.json
 bots/investment/output/ops/luna-reflection-config-patch.json
 
