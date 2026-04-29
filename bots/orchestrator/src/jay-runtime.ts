@@ -187,6 +187,15 @@ function parseBoolean(value, fallback = false) {
   return ['1', 'true', 'yes', 'y', 'on'].includes(text);
 }
 
+function warnNonBlocking(scope, error, meta = {}) {
+  const details = Object.entries(meta)
+    .filter(([, value]) => value != null && value !== '')
+    .map(([key, value]) => `${key}=${String(value).slice(0, 180)}`)
+    .join(' ');
+  const suffix = details ? ` (${details})` : '';
+  console.warn(`[jay-runtime] ${scope} failed${suffix}: ${error?.message || error}`);
+}
+
 function resolveOrchestrationConfig() {
   const runtime = getJayOrchestrationConfig();
   const getBool = (envKey, runtimeKey, fallback = false) => {
@@ -427,7 +436,7 @@ async function processIncident(incident, flags) {
       intent: incident.intent,
       goal,
     },
-  }).catch(() => {});
+  }).catch((error) => warnNonBlocking('append_processing_started_event', error, { incidentKey }));
 
   if (flags.threeTierTelegram) {
     await publishMeetingSummary({
@@ -436,7 +445,7 @@ async function processIncident(incident, flags) {
       team: incident.team,
       title: incident.intent,
       summary: goal,
-    }).catch(() => {});
+    }).catch((error) => warnNonBlocking('publish_frame_meeting_summary', error, { incidentKey }));
   }
 
   let skillContext = '';
@@ -457,7 +466,7 @@ async function processIncident(incident, flags) {
         payload: {
           skillCount,
         },
-      }).catch(() => {});
+      }).catch((error) => warnNonBlocking('append_skill_context_event', error, { incidentKey }));
     }
   }
 
@@ -504,7 +513,7 @@ async function processIncident(incident, flags) {
       team: incident.team,
       title: incident.intent,
       summary: `run=${runId || '-'} steps=${extractPlanSteps(plan).length}`,
-    }).catch(() => {});
+    }).catch((error) => warnNonBlocking('publish_plan_meeting_summary', error, { incidentKey, runId }));
   }
 
   const approvalRequired = Boolean(planResponse.payload?.approval?.required);
@@ -547,7 +556,7 @@ async function processIncident(incident, flags) {
       team: incident.team,
       title: incident.intent,
       summary: `commander=${commanderResult?.dispatched ? 'dispatched' : 'not_required'} count=${commanderResult?.count || 0}`,
-    }).catch(() => {});
+    }).catch((error) => warnNonBlocking('publish_review_meeting_summary', error, { incidentKey, runId }));
   }
 
   const readOnlyPlan = mutating ? buildReadOnlyPlan(plan) : plan;
@@ -580,7 +589,7 @@ async function processIncident(incident, flags) {
       summary: executeResponse?.skipped
         ? `control execute skipped (${executeResponse.reason || 'no_read_only_steps'})`
         : 'control execute completed',
-    }).catch(() => {});
+    }).catch((error) => warnNonBlocking('publish_test_meeting_summary', error, { incidentKey, runId }));
   }
 
   const observation = observeIncidentOutcome({
@@ -592,7 +601,7 @@ async function processIncident(incident, flags) {
     incidentKey,
     eventType: 'jay_observe_outcome',
     payload: observation,
-  }).catch(() => {});
+  }).catch((error) => warnNonBlocking('append_observe_outcome_event', error, { incidentKey, runId }));
   if (observation.status !== 'completed') {
     const retryable = isRetryableObservation(observation);
     const maxReplans = maxObservationReplans();
@@ -606,7 +615,7 @@ async function processIncident(incident, flags) {
           warnings: observation.warnings,
           nextActions: observation.nextActions,
         },
-      }).catch(() => {});
+      }).catch((error) => warnNonBlocking('append_replan_queued_event', error, { incidentKey, runId }));
       await updateIncidentStatus({
         incidentKey,
         status: 'queued',
@@ -621,7 +630,7 @@ async function processIncident(incident, flags) {
           team: incident.team,
           title: incident.intent,
           summary: `retryable observation queued for replan (${Number(incident.attempts || 0)}/${maxReplans})`,
-        }).catch(() => {});
+        }).catch((error) => warnNonBlocking('publish_replan_reflect_summary', error, { incidentKey, runId }));
       }
       return {
         ok: true,
@@ -649,7 +658,7 @@ async function processIncident(incident, flags) {
       team: incident.team,
       title: incident.intent,
       summary: observation.summary,
-    }).catch(() => {});
+    }).catch((error) => warnNonBlocking('publish_ship_meeting_summary', error, { incidentKey, runId }));
   }
 
   if (flags.skillExtraction) {
@@ -675,7 +684,7 @@ async function processIncident(incident, flags) {
         team: incident.team,
         title: incident.intent,
         summary: `skill memory updated (${incident.team}:${incident.intent})`,
-      }).catch(() => {});
+      }).catch((error) => warnNonBlocking('publish_skill_reflect_summary', error, { incidentKey, runId }));
     }
   }
 
@@ -693,13 +702,13 @@ async function processIncident(incident, flags) {
       team: incident.team,
       title: incident.intent,
       summary: `run=${runId || '-'} completed`,
-    }).catch(() => {});
+    }).catch((error) => warnNonBlocking('publish_final_meeting_summary', error, { incidentKey, runId }));
     await publishTeamProgress({
       incidentKey,
       team: incident.team,
       status: 'completed',
       message: `orchestration complete (${incident.intent})`,
-    }).catch(() => {});
+    }).catch((error) => warnNonBlocking('publish_team_progress', error, { incidentKey, runId }));
   }
 
   return {
@@ -730,7 +739,9 @@ async function runIncidentLoop() {
       incidentKey: incident.incidentKey,
       status: 'failed',
       lastError: errorMessage,
-    }).catch(() => {});
+    }).catch((statusError) => warnNonBlocking('mark_incident_failed_after_exception', statusError, {
+      incidentKey: incident.incidentKey,
+    }));
     return { ok: false, error: errorMessage };
   });
 

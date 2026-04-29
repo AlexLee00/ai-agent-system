@@ -250,6 +250,23 @@ async function loadStrategyFamilyRows(days = 90) {
   `, [sinceEpochMs]).catch(() => []);
 }
 
+async function loadRecentRejectedTradeIds(days = 14, limit = 20) {
+  const safeDays = Math.max(7, Number(days || 14));
+  const safeLimit = Math.max(1, Number(limit || 20));
+  const rows = await db.query(
+    `SELECT trade_id, overall_score, category
+       FROM investment.trade_quality_evaluations
+      WHERE evaluated_at >= NOW() - ($1::int * INTERVAL '1 day')
+        AND category = 'rejected'
+      ORDER BY evaluated_at DESC
+      LIMIT $2`,
+    [safeDays, safeLimit],
+  ).catch(() => []);
+  return (rows || [])
+    .map((row) => Number(row.trade_id))
+    .filter((id) => Number.isFinite(id) && id > 0);
+}
+
 function buildDateRange(days) {
   const to = new Date();
   const from = new Date(Date.now() - (days - 1) * 86400000);
@@ -1735,15 +1752,26 @@ export async function buildRuntimeConfigSuggestionsReport({ days = 14, write = f
   const discoveryReflection = await buildDiscoveryReflectionSummary({ days: Math.max(days * 3, 30) }).catch(() => null);
   const regimeLaneSummary = summarizeRegimeLaneRows(regimeLaneRows);
   const strategyFamilySummary = summarizeStrategyFamilyRows(strategyFamilyRows);
+  const sourceTradeIds = await loadRecentRejectedTradeIds(days, 20);
   const validationBudgetPolicyTrend = buildValidationBudgetPolicyTrend(
     validationBudgetPolicy,
     previousPolicySnapshot,
   );
-  const suggestions = normalizeAnnotatedSuggestions(
+  const baseSuggestions = normalizeAnnotatedSuggestions(
     annotateRuntimeSuggestions(
       buildSuggestions(config, executionConfig, summaries, validationSummaries, validationBudgetSnapshots, capitalGuardBias, validationBudgetPolicy, cryptoSoftGuardSummary, regimeLaneSummary, strategyFamilySummary, strategyFeedbackOutcomes, riskApproval, riskApprovalTrend, riskApprovalReadiness, riskApprovalReadinessTrend, riskApprovalModeAudit, riskApprovalModeAuditTrend, executionRiskGuard, executionRiskGuardTrend, discoveryReflection),
     ),
   );
+  const suggestions = baseSuggestions.map((item) => ({
+    ...item,
+    source_trade_ids: Array.isArray(item?.source_trade_ids) && item.source_trade_ids.length > 0
+      ? item.source_trade_ids
+      : sourceTradeIds,
+    source_payload: {
+      source: 'posttrade_quality_rejected',
+      sample_trade_count: sourceTradeIds.length,
+    },
+  }));
   const report = buildReport(
     days,
     summaries,

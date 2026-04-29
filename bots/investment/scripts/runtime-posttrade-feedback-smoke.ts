@@ -73,7 +73,7 @@ function buildMockStageAttrs(): any[] {
     { trade_id: 9999, stage_id: 'discovery', decision_type: 'candidate_selection', decision_score: 0.8, contribution_to_outcome: 0.10, evidence: {} },
     { trade_id: 9999, stage_id: 'entry', decision_type: 'entry_timing', decision_score: 0.7, contribution_to_outcome: 0.15, evidence: {} },
     { trade_id: 9999, stage_id: 'exit', decision_type: 'exit_timing', decision_score: 0.85, contribution_to_outcome: 0.15, evidence: {} },
-    { trade_id: 9999, stage_id: 'monitoring', decision_type: 'position_monitoring', decision_score: 0.4, contribution_to_outcome: -0.05, evidence: {} },
+    { trade_id: 9999, stage_id: 'stage_5', decision_type: 'position_monitoring', decision_score: 0.4, contribution_to_outcome: -0.05, evidence: {} },
   ];
 }
 
@@ -169,7 +169,7 @@ async function testScenario4_WeightedSum() {
     scores.backtest_utilization * WEIGHT.backtest_utilization
   );
 
-  assert(Math.abs(expected - 0.685) < 0.001, `weighted_sum = ${expected.toFixed(3)} ≈ 0.685`);
+  assert(Math.abs(expected - 0.675) < 0.001, `weighted_sum = ${expected.toFixed(3)} ≈ 0.675`);
 }
 
 async function testScenario5_StageAttributionStructure() {
@@ -184,7 +184,7 @@ async function testScenario5_StageAttributionStructure() {
 
   // 가장 낮은 contribution 스테이지 찾기
   const worst = stageAttrs.reduce((min, a) => a.contribution_to_outcome < min.contribution_to_outcome ? a : min);
-  assert(worst.stage_id === 'monitoring', `worst stage = ${worst.stage_id}`);
+  assert(worst.stage_id === 'stage_5', `worst stage = ${worst.stage_id}`);
 }
 
 // ─── Main ─────────────────────────────────────────────────────────────────────
@@ -209,7 +209,10 @@ async function main() {
 }
 
 if (isDirectExecution(import.meta.url)) {
-  runCliMain(main);
+  runCliMain({
+    run: main,
+    errorPrefix: '❌ runtime-posttrade-feedback-smoke 실패:',
+  });
 }
 
 export { main as runSmoke };

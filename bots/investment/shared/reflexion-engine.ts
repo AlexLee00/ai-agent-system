@@ -16,6 +16,7 @@ import * as db from './db.ts';
 import { callLLM } from './llm-client.ts';
 import type { TradeQualityResult } from './trade-quality-evaluator.ts';
 import type { StageAttribution } from './stage-attribution-analyzer.ts';
+import { getPosttradeFeedbackRuntimeConfig } from './runtime-config.ts';
 
 export interface ReflexionResult {
   trade_id: number;
@@ -49,6 +50,16 @@ export async function runReflexion(
 
   if (!opts.dryRun) {
     await persistReflexion(result);
+    await db.run(
+      `INSERT INTO investment.mapek_knowledge (event_type, payload)
+       VALUES ('reflexion_created', $1)`,
+      [JSON.stringify({
+        trade_id: quality.trade_id,
+        category: quality.category,
+        hindsight: result.hindsight,
+        created_at: new Date().toISOString(),
+      })],
+    ).catch(() => {});
   }
 
   return result;
@@ -64,6 +75,7 @@ export async function checkAvoidPatterns(
   direction: string,
   regime: string = ''
 ): Promise<{ matched: boolean; penalty: number; reason: string }> {
+  const penalty = Number(getPosttradeFeedbackRuntimeConfig()?.reflexion?.avoid_pattern_penalty || 0.10);
   const rows = await db.query(`
     SELECT id, avoid_pattern, trade_id
     FROM investment.luna_failure_reflexions
@@ -89,7 +101,7 @@ export async function checkAvoidPatterns(
 
   return {
     matched: true,
-    penalty: 0.10,
+    penalty,
     reason: pattern?.reason ?? '이전 유사 실패 패턴 감지',
   };
 }
@@ -211,6 +223,12 @@ async function persistReflexion(result: ReflexionResult) {
     INSERT INTO investment.luna_failure_reflexions
       (trade_id, five_why, stage_attribution, hindsight, avoid_pattern)
     VALUES ($1,$2,$3,$4,$5)
+    ON CONFLICT (trade_id) DO UPDATE SET
+      five_why = EXCLUDED.five_why,
+      stage_attribution = EXCLUDED.stage_attribution,
+      hindsight = EXCLUDED.hindsight,
+      avoid_pattern = EXCLUDED.avoid_pattern,
+      created_at = NOW()
   `, [
     result.trade_id,
     JSON.stringify(result.five_why),

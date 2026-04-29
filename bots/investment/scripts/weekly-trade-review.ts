@@ -64,6 +64,15 @@ const args   = process.argv.slice(2);
 const daysArg = args.find(a => a.startsWith('--days='));
 const DAYS   = daysArg ? parseInt(daysArg.split('=')[1], 10) : 7;
 const DRY_RUN = args.includes('--dry-run');
+const MARKET_FILTER = String(args.find(a => a.startsWith('--market='))?.split('=')[1] || 'all').trim().toLowerCase();
+
+function resolveMarketFilterClause(market = 'all', exchangeColumn = 'exchange') {
+  const normalized = String(market || 'all').trim().toLowerCase();
+  if (normalized === 'crypto') return `AND ${exchangeColumn} = 'binance'`;
+  if (normalized === 'domestic') return `AND ${exchangeColumn} = 'kis'`;
+  if (normalized === 'overseas') return `AND ${exchangeColumn} = 'kis_overseas'`;
+  return '';
+}
 
 // ─── DB 조회 ─────────────────────────────────────────────────────────
 
@@ -73,6 +82,7 @@ const DRY_RUN = args.includes('--dry-run');
  * @returns {Promise<Array>}
  */
 async function fetchRecentTrades(days) {
+  const marketClause = resolveMarketFilterClause(MARKET_FILTER, 'exchange');
   return db.query(`
     SELECT
       symbol, exchange, direction, is_paper, COALESCE(trade_mode, 'normal') AS trade_mode,
@@ -85,12 +95,14 @@ async function fetchRecentTrades(days) {
     WHERE CAST(to_timestamp(exit_time / 1000.0) AT TIME ZONE 'Asia/Seoul' AS DATE)
           >= CURRENT_DATE - ($1::int - 1)
       AND status IN ('closed', 'tp_hit', 'sl_hit', 'force_exit')
+      ${marketClause}
     ORDER BY exit_time DESC
     LIMIT 200
   `, [days]);
 }
 
 async function fetchRecentTradeReviews(days) {
+  const marketClause = resolveMarketFilterClause(MARKET_FILTER, 'j.exchange');
   return db.query(`
     SELECT
       j.trade_id,
@@ -111,6 +123,7 @@ async function fetchRecentTradeReviews(days) {
     WHERE CAST(to_timestamp(j.exit_time / 1000.0) AT TIME ZONE 'Asia/Seoul' AS DATE)
           >= CURRENT_DATE - ($1::int - 1)
       AND j.status IN ('closed', 'tp_hit', 'sl_hit', 'force_exit')
+      ${marketClause}
     ORDER BY j.exit_time DESC
     LIMIT 200
   `, [days]);
@@ -135,11 +148,13 @@ async function fetchSignalStats(days) {
 }
 
 async function fetchOpenPositions() {
+  const marketClause = resolveMarketFilterClause(MARKET_FILTER, 'exchange');
   try {
     return await db.query(`
       SELECT symbol, exchange, amount, avg_price, unrealized_pnl
       FROM positions
       WHERE amount > 0
+        ${marketClause}
       ORDER BY exchange, symbol
     `);
   } catch {

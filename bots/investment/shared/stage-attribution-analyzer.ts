@@ -33,7 +33,7 @@ export async function analyzeStageAttribution(
 ): Promise<StageAttribution[]> {
   const trade      = await fetchTradeBasic(tradeId);
   const reviewData = await fetchReviewData(tradeId);
-  const lifecycle  = await fetchLifecycleData(trade?.symbol ?? '', trade?.exchange ?? '');
+  const lifecycle  = await fetchLifecycleData(trade);
   const ragDocs    = await fetchRagDocs(tradeId);
 
   const attributions = buildAttributions(tradeId, trade, overallPnlPct, reviewData, lifecycle, ragDocs);
@@ -82,15 +82,29 @@ async function fetchReviewData(tradeId: number) {
   `, [tradeId]);
 }
 
-async function fetchLifecycleData(symbol: string, exchange: string) {
+async function fetchLifecycleData(trade: any) {
+  const symbol = String(trade?.symbol || '');
   if (!symbol) return [];
+  const tradeId = Number(trade?.id || 0);
+  const entryAt = trade?.entry_at ? new Date(trade.entry_at).getTime() : 0;
+  const exitAt = trade?.exit_at ? new Date(trade.exit_at).getTime() : Date.now();
+  const fromTs = new Date((entryAt || Date.now()) - 2 * 60 * 60 * 1000).toISOString();
+  const toTs = new Date((exitAt || Date.now()) + 2 * 60 * 60 * 1000).toISOString();
   return db.query(`
     SELECT phase, stage_id, event_type, output_snapshot, created_at
     FROM position_lifecycle_events
     WHERE symbol = $1
+      AND created_at BETWEEN $2::timestamptz AND $3::timestamptz
+      AND (
+        (output_snapshot->>'tradeId')::BIGINT = $4
+        OR (output_snapshot->>'trade_id')::BIGINT = $4
+        OR (input_snapshot->>'tradeId')::BIGINT = $4
+        OR (input_snapshot->>'trade_id')::BIGINT = $4
+        OR $4 <= 0
+      )
     ORDER BY created_at ASC
     LIMIT 30
-  `, [symbol]);
+  `, [symbol, fromTs, toTs, tradeId > 0 ? tradeId : null]);
 }
 
 async function fetchRagDocs(tradeId: number) {

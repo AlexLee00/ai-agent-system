@@ -11,16 +11,13 @@
 
 import * as db from './db.ts';
 import { callLLM } from './llm-client.ts';
+import { getPosttradeFeedbackRuntimeConfig } from './runtime-config.ts';
 
-const PREFERRED_THRESHOLD = 0.70;
-const REJECTED_THRESHOLD  = 0.40;
-
-// Sub-score 가중치 (합 = 1.0)
-const WEIGHT = {
-  market_decision:      0.35,
-  pipeline_quality:     0.30,
-  monitoring:           0.20,
-  backtest_utilization: 0.15,
+const MARKET_ALIASES = {
+  all: 'all',
+  crypto: 'crypto',
+  domestic: 'domestic',
+  overseas: 'overseas',
 };
 
 export interface TradeQualityResult {
@@ -40,20 +37,45 @@ export interface TradeQualityResult {
  * Kill switch: LUNA_TRADE_QUALITY_EVALUATOR_ENABLED (config.yaml → posttrade_feedback.trade_quality.enabled)
  */
 export async function evaluateTradeQuality(tradeId: number, opts: { dryRun?: boolean } = {}): Promise<TradeQualityResult | null> {
+  const posttradeCfg = getPosttradeFeedbackRuntimeConfig();
+  const qualityCfg = posttradeCfg?.trade_quality || {};
   const trade        = await fetchTrade(tradeId);
   if (!trade) return null;
 
   const rationale    = await fetchRationale(tradeId);
   const analystData  = await fetchAnalystContributions(tradeId);
-  const lifecycleEvt = await fetchLifecycleEvents(trade.symbol, trade.market);
-  const backtestData = await fetchBacktestUtilization(tradeId, trade.symbol);
+  const lifecycleEvt = await fetchLifecycleEvents(trade);
+  const backtestData = await fetchBacktestUtilization(tradeId, trade);
   const reviewData   = await fetchTradeReview(tradeId);
 
-  const breakdown = await llmEvaluate(trade, rationale, analystData, lifecycleEvt, backtestData, reviewData);
-  if (!breakdown) return null;
+  const withinBudget = await ensureDailyEvaluationBudget({
+    dryRun: opts?.dryRun === true,
+    budgetUsd: Number(qualityCfg?.llm_daily_budget_usd || 5),
+  });
+  if (!withinBudget.ok) {
+    await recordQualityEvaluationFailure(tradeId, 'llm_daily_budget_exceeded', {
+      budgetUsd: qualityCfg?.llm_daily_budget_usd,
+      usedEstimateUsd: withinBudget.usedEstimateUsd,
+    }).catch(() => {});
+    return null;
+  }
 
-  const overall = computeOverall(breakdown);
-  const category = classify(overall);
+  const breakdown = await llmEvaluate(trade, rationale, analystData, lifecycleEvt, backtestData, reviewData);
+  if (!breakdown) {
+    await recordQualityEvaluationFailure(tradeId, 'llm_evaluation_unavailable', {}).catch(() => {});
+    return null;
+  }
+
+  const constitutionalCfg = posttradeCfg?.constitutional_feedback || {};
+  const violationCount = extractConstitutionViolationCount(reviewData, backtestData);
+  const constitutionPenalty = constitutionalCfg?.enabled && violationCount > 0
+    ? Math.min(0.6, Number(constitutionalCfg?.violation_penalty || 0.20) * violationCount)
+    : 0;
+  const overall = computeOverall(breakdown, qualityCfg?.weights || {}) - constitutionPenalty;
+  const category = classify(overall, {
+    preferred: Number(qualityCfg?.preferred_threshold || 0.70),
+    rejected: Number(qualityCfg?.rejected_threshold || 0.40),
+  });
 
   const result: TradeQualityResult = {
     trade_id: tradeId,
@@ -64,11 +86,27 @@ export async function evaluateTradeQuality(tradeId: number, opts: { dryRun?: boo
     overall_score:  clamp(overall),
     category,
     rationale: breakdown.rationale ?? '',
-    sub_score_breakdown: breakdown,
+    sub_score_breakdown: {
+      ...(breakdown || {}),
+      constitution_violation_count: violationCount,
+      constitution_penalty: constitutionPenalty,
+    },
   };
 
   if (!opts.dryRun) {
     await persistResult(result);
+    await db.run(
+      `INSERT INTO investment.mapek_knowledge (event_type, payload)
+       VALUES ('posttrade_quality_evaluated', $1)`,
+      [JSON.stringify({
+        trade_id: tradeId,
+        category: result.category,
+        overall_score: result.overall_score,
+        market: trade.market || null,
+        exchange: trade.exchange || null,
+        evaluated_at: new Date().toISOString(),
+      })],
+    ).catch(() => {});
   }
 
   return result;
@@ -78,16 +116,68 @@ export async function evaluateTradeQuality(tradeId: number, opts: { dryRun?: boo
  * 아직 평가되지 않은 최근 종료 거래 목록을 반환한다.
  */
 export async function fetchPendingTradeIds(limit = 50): Promise<number[]> {
-  const rows = await db.query(`
-    SELECT th.id
-    FROM investment.trade_history th
-    LEFT JOIN investment.trade_quality_evaluations tqe ON tqe.trade_id = th.id
-    WHERE th.exit_at IS NOT NULL
-      AND tqe.trade_id IS NULL
-    ORDER BY th.exit_at DESC
-    LIMIT $1
-  `, [limit]);
-  return rows.map((r: any) => Number(r.id));
+  const candidates = await fetchPendingPosttradeCandidates({ limit });
+  return candidates.map((item) => Number(item.tradeId)).filter((id) => Number.isFinite(id));
+}
+
+export async function fetchPendingPosttradeCandidates({
+  limit = 50,
+  market = 'all',
+}: {
+  limit?: number;
+  market?: string;
+} = {}): Promise<Array<{ tradeId: number; source: 'knowledge' | 'fallback_scan'; knowledgeId?: number | null }>> {
+  const safeLimit = Math.max(1, Number(limit || 50));
+  const targetMarket = normalizeMarketKey(market);
+  const rows = await db.query(
+    `SELECT
+       mk.id AS knowledge_id,
+       NULLIF(mk.payload->>'trade_id', '')::BIGINT AS trade_id,
+       COALESCE(th.market, CASE WHEN th.exchange = 'binance' THEN 'crypto' WHEN th.exchange = 'kis' THEN 'domestic' ELSE 'overseas' END) AS market,
+       mk.created_at
+     FROM investment.mapek_knowledge mk
+     LEFT JOIN investment.trade_history th ON th.id = NULLIF(mk.payload->>'trade_id', '')::BIGINT
+     LEFT JOIN investment.trade_quality_evaluations tqe ON tqe.trade_id = NULLIF(mk.payload->>'trade_id', '')::BIGINT
+     WHERE mk.event_type = 'quality_evaluation_pending'
+       AND NULLIF(mk.payload->>'trade_id', '') IS NOT NULL
+       AND COALESCE(mk.payload->>'posttrade_processed', 'false') <> 'true'
+       AND tqe.trade_id IS NULL
+     ORDER BY mk.created_at ASC
+     LIMIT $1`,
+    [safeLimit * 5],
+  ).catch(() => []);
+  const fromKnowledge = [];
+  const seen = new Set<number>();
+  for (const row of rows || []) {
+    const tradeId = Number(row.trade_id);
+    if (!Number.isFinite(tradeId) || tradeId <= 0) continue;
+    const rowMarket = normalizeMarketKey(row.market);
+    if (targetMarket !== 'all' && rowMarket !== targetMarket) continue;
+    if (seen.has(tradeId)) continue;
+    seen.add(tradeId);
+    fromKnowledge.push({ tradeId, source: 'knowledge' as const, knowledgeId: Number(row.knowledge_id) || null });
+    if (fromKnowledge.length >= safeLimit) return fromKnowledge;
+  }
+
+  const fallbackRows = await db.query(
+    `SELECT th.id
+       FROM investment.trade_history th
+       LEFT JOIN investment.trade_quality_evaluations tqe ON tqe.trade_id = th.id
+      WHERE th.exit_at IS NOT NULL
+        AND tqe.trade_id IS NULL
+        ${targetMarket === 'all' ? '' : `AND COALESCE(th.market, CASE WHEN th.exchange = 'binance' THEN 'crypto' WHEN th.exchange = 'kis' THEN 'domestic' ELSE 'overseas' END) = $2`}
+      ORDER BY th.exit_at DESC
+      LIMIT $1`,
+    targetMarket === 'all' ? [safeLimit * 2] : [safeLimit * 2, targetMarket],
+  ).catch(() => []);
+  for (const row of fallbackRows || []) {
+    const tradeId = Number(row.id);
+    if (!Number.isFinite(tradeId) || tradeId <= 0 || seen.has(tradeId)) continue;
+    seen.add(tradeId);
+    fromKnowledge.push({ tradeId, source: 'fallback_scan' as const, knowledgeId: null });
+    if (fromKnowledge.length >= safeLimit) break;
+  }
+  return fromKnowledge;
 }
 
 // ─── Private helpers ──────────────────────────────────────────────────────────
@@ -121,25 +211,47 @@ async function fetchAnalystContributions(tradeId: number) {
   return row ?? {};
 }
 
-async function fetchLifecycleEvents(symbol: string, market: string) {
+async function fetchLifecycleEvents(trade: any) {
+  const symbol = String(trade?.symbol || '');
+  const tradeId = Number(trade?.id || 0);
+  const entryAt = trade?.entry_at ? new Date(trade.entry_at).getTime() : 0;
+  const exitAt = trade?.exit_at ? new Date(trade.exit_at).getTime() : Date.now();
+  const fromTs = new Date((entryAt || Date.now()) - 2 * 60 * 60 * 1000).toISOString();
+  const toTs = new Date((exitAt || Date.now()) + 2 * 60 * 60 * 1000).toISOString();
   const rows = await db.query(`
-    SELECT phase, event_type, output_snapshot, created_at
+    SELECT phase, stage_id, event_type, output_snapshot, created_at
     FROM position_lifecycle_events
     WHERE symbol = $1
+      AND created_at BETWEEN $2::timestamptz AND $3::timestamptz
+      AND (
+        (output_snapshot->>'tradeId')::BIGINT = $4
+        OR (output_snapshot->>'trade_id')::BIGINT = $4
+        OR (input_snapshot->>'tradeId')::BIGINT = $4
+        OR (input_snapshot->>'trade_id')::BIGINT = $4
+        OR $4 <= 0
+      )
     ORDER BY created_at DESC
     LIMIT 20
-  `, [symbol]);
+  `, [symbol, fromTs, toTs, tradeId > 0 ? tradeId : null]);
   return rows ?? [];
 }
 
-async function fetchBacktestUtilization(tradeId: number, symbol: string) {
-  // mapek_knowledge에서 진입 시점의 backtest 조회 여부 확인
+async function fetchBacktestUtilization(tradeId: number, trade: any) {
+  const symbol = String(trade?.symbol || '');
+  const entryAt = trade?.entry_at ? new Date(trade.entry_at).toISOString() : null;
+  // mapek_knowledge에서 trade 범위 기반 backtest 조회 여부 확인
   const row = await db.get(`
-    SELECT payload FROM investment.mapek_knowledge
-    WHERE event_type = 'signal_outcome'
-      AND payload->>'symbol' = $1
-    ORDER BY created_at DESC LIMIT 1
-  `, [symbol]);
+    SELECT payload
+      FROM investment.mapek_knowledge
+     WHERE event_type IN ('signal_outcome', 'backtest_report', 'backtest_prediction')
+       AND (
+         payload->>'trade_id' = $1::text
+         OR payload->>'symbol' = $2
+       )
+       ${entryAt ? `AND created_at >= ($3::timestamptz - INTERVAL '7 days')` : ''}
+     ORDER BY created_at DESC
+     LIMIT 1
+  `, entryAt ? [String(tradeId), symbol, entryAt] : [String(tradeId), symbol]);
   return row?.payload ?? {};
 }
 
@@ -206,7 +318,7 @@ JSON 형식으로만 답하세요:
     });
     return parseJson(text);
   } catch (err) {
-    console.error(`[TradeQualityEvaluator] LLM 평가 실패 trade_id=${tradeId}:`, err);
+    console.error(`[TradeQualityEvaluator] LLM 평가 실패 trade_id=${trade?.id || 'unknown'}:`, err);
     return null;
   }
 }
@@ -241,19 +353,90 @@ async function persistResult(result: TradeQualityResult) {
   ]);
 }
 
-function computeOverall(b: any): number {
+function computeOverall(b: any, weightInput: Record<string, unknown> = {}): number {
+  const weight = normalizeWeights(weightInput);
   return (
-    (b.market_decision_score      ?? 0.5) * WEIGHT.market_decision +
-    (b.pipeline_quality_score     ?? 0.5) * WEIGHT.pipeline_quality +
-    (b.monitoring_score           ?? 0.5) * WEIGHT.monitoring +
-    (b.backtest_utilization_score ?? 0.5) * WEIGHT.backtest_utilization
+    (b.market_decision_score      ?? 0.5) * weight.market_decision +
+    (b.pipeline_quality_score     ?? 0.5) * weight.pipeline_quality +
+    (b.monitoring_score           ?? 0.5) * weight.monitoring +
+    (b.backtest_utilization_score ?? 0.5) * weight.backtest_utilization
   );
 }
 
-function classify(score: number): 'preferred' | 'neutral' | 'rejected' {
-  if (score >= PREFERRED_THRESHOLD) return 'preferred';
-  if (score <= REJECTED_THRESHOLD)  return 'rejected';
+function classify(score: number, threshold: { preferred: number; rejected: number }): 'preferred' | 'neutral' | 'rejected' {
+  if (score >= Number(threshold?.preferred || 0.70)) return 'preferred';
+  if (score <= Number(threshold?.rejected || 0.40))  return 'rejected';
   return 'neutral';
+}
+
+function normalizeWeights(input: Record<string, unknown>) {
+  const candidate = {
+    market_decision: Number(input?.market_decision ?? 0.35),
+    pipeline_quality: Number(input?.pipeline_quality ?? 0.30),
+    monitoring: Number(input?.monitoring ?? 0.20),
+    backtest_utilization: Number(input?.backtest_utilization ?? 0.15),
+  };
+  const total = Object.values(candidate).reduce((sum, value) => sum + (Number.isFinite(value) ? value : 0), 0);
+  if (!Number.isFinite(total) || total <= 0) {
+    return { market_decision: 0.35, pipeline_quality: 0.30, monitoring: 0.20, backtest_utilization: 0.15 };
+  }
+  return {
+    market_decision: candidate.market_decision / total,
+    pipeline_quality: candidate.pipeline_quality / total,
+    monitoring: candidate.monitoring / total,
+    backtest_utilization: candidate.backtest_utilization / total,
+  };
+}
+
+function normalizeMarketKey(market: unknown) {
+  const raw = String(market || 'all').trim().toLowerCase();
+  if (raw === 'binance') return MARKET_ALIASES.crypto;
+  if (raw === 'kis') return MARKET_ALIASES.domestic;
+  if (raw === 'kis_overseas') return MARKET_ALIASES.overseas;
+  if (raw === 'domestic' || raw === 'overseas' || raw === 'crypto' || raw === 'all') return raw;
+  return 'all';
+}
+
+async function ensureDailyEvaluationBudget({
+  dryRun = false,
+  budgetUsd = 5,
+}: {
+  dryRun?: boolean;
+  budgetUsd?: number;
+} = {}) {
+  if (dryRun) return { ok: true, usedEstimateUsd: 0 };
+  const safeBudget = Math.max(0, Number(budgetUsd || 0));
+  if (safeBudget <= 0) return { ok: true, usedEstimateUsd: 0 };
+  const row = await db.get(
+    `SELECT COUNT(*)::int AS cnt
+       FROM investment.trade_quality_evaluations
+      WHERE evaluated_at >= NOW()::date`,
+    [],
+  ).catch(() => ({ cnt: 0 }));
+  const cnt = Number(row?.cnt || 0);
+  const usedEstimateUsd = cnt * 0.03;
+  return { ok: usedEstimateUsd <= safeBudget, usedEstimateUsd };
+}
+
+async function recordQualityEvaluationFailure(tradeId: number, code: string, meta: Record<string, unknown> = {}) {
+  await db.run(
+    `INSERT INTO investment.mapek_knowledge (event_type, payload)
+     VALUES ('quality_evaluation_failed', $1)`,
+    [JSON.stringify({
+      trade_id: tradeId,
+      code,
+      meta: meta || {},
+      created_at: new Date().toISOString(),
+    })],
+  );
+}
+
+function extractConstitutionViolationCount(reviewData: any, backtestData: any) {
+  const reviewCount = Number(reviewData?.constitution_violations || 0);
+  if (Number.isFinite(reviewCount) && reviewCount > 0) return Math.round(reviewCount);
+  const arr = backtestData?.constitution_violations;
+  if (Array.isArray(arr) && arr.length > 0) return arr.length;
+  return 0;
 }
 
 function clamp(v: number): number {

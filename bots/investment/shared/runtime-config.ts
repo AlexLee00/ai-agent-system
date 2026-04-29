@@ -660,3 +660,110 @@ export function getPosttradeFeedbackConfig() {
     return {};
   }
 }
+
+function _bool(value, fallback = false) {
+  if (value === undefined || value === null || value === '') return fallback;
+  if (typeof value === 'boolean') return value;
+  const normalized = String(value).trim().toLowerCase();
+  if (!normalized) return fallback;
+  return ['1', 'true', 'yes', 'on'].includes(normalized);
+}
+
+function _num(value, fallback = 0) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function _normalizePosttradeMode(value = 'shadow') {
+  const mode = String(value || 'shadow').trim().toLowerCase();
+  if (mode === 'supervised_l4' || mode === 'autonomous_l5' || mode === 'shadow') return mode;
+  if (mode === 'supervised') return 'supervised_l4';
+  if (mode === 'autonomous') return 'autonomous_l5';
+  return 'shadow';
+}
+
+export function getPosttradeFeedbackRuntimeConfig() {
+  const raw = getPosttradeFeedbackConfig() || {};
+  const mode = _normalizePosttradeMode(raw.mode || process.env.LUNA_POSTTRADE_FEEDBACK_MODE || 'shadow');
+
+  const tradeQuality = raw.trade_quality || {};
+  const stageAttribution = raw.stage_attribution || {};
+  const reflexion = raw.reflexion || {};
+  const skillExtraction = raw.skill_extraction || {};
+  const parameterFeedbackMap = raw.parameter_feedback_map || {};
+  const constitutionalFeedback = raw.constitutional_feedback || {};
+  const marketDifferentiated = raw.market_differentiated || {};
+  const dashboard = raw.dashboard || {};
+  const worker = raw.worker || {};
+
+  return {
+    mode,
+    trade_quality: {
+      enabled: _bool(process.env.LUNA_TRADE_QUALITY_EVALUATOR_ENABLED, _bool(tradeQuality.enabled, false)),
+      shadow: _bool(tradeQuality.shadow, true),
+      hard_gate: _bool(tradeQuality.hard_gate, false),
+      preferred_threshold: _num(process.env.LUNA_TRADE_QUALITY_PREFERRED_THRESHOLD, _num(tradeQuality.preferred_threshold, 0.70)),
+      rejected_threshold: _num(process.env.LUNA_TRADE_QUALITY_REJECTED_THRESHOLD, _num(tradeQuality.rejected_threshold, 0.40)),
+      llm_daily_budget_usd: _num(process.env.LUNA_TRADE_QUALITY_LLM_DAILY_BUDGET_USD, _num(tradeQuality.llm_daily_budget_usd, 5.0)),
+      batch_limit: Math.max(1, Math.round(_num(process.env.LUNA_POSTTRADE_BATCH_LIMIT, _num(tradeQuality.batch_limit, 20)))),
+      weights: {
+        market_decision: _num(tradeQuality?.weights?.market_decision, 0.35),
+        pipeline_quality: _num(tradeQuality?.weights?.pipeline_quality, 0.30),
+        monitoring: _num(tradeQuality?.weights?.monitoring, 0.20),
+        backtest_utilization: _num(tradeQuality?.weights?.backtest_utilization, 0.15),
+      },
+    },
+    stage_attribution: {
+      enabled: _bool(process.env.LUNA_STAGE_ATTRIBUTION_ENABLED, _bool(stageAttribution.enabled, false)),
+      shadow: _bool(stageAttribution.shadow, true),
+      hard_gate: _bool(stageAttribution.hard_gate, false),
+    },
+    reflexion: {
+      enabled: _bool(process.env.LUNA_REFLEXION_ENGINE_ENABLED, _bool(reflexion.enabled, false)),
+      shadow: _bool(reflexion.shadow, true),
+      hard_gate: _bool(reflexion.hard_gate, false),
+      llm_daily_budget_usd: _num(process.env.LUNA_REFLEXION_LLM_DAILY_BUDGET_USD, _num(reflexion.llm_daily_budget_usd, 3.0)),
+      avoid_pattern_penalty: _num(process.env.LUNA_REFLEXION_AVOID_PATTERN_THRESHOLD, _num(reflexion.avoid_pattern_penalty, 0.10)),
+    },
+    skill_extraction: {
+      enabled: _bool(process.env.LUNA_VOYAGER_SKILL_LIBRARY_ENABLED, _bool(skillExtraction.enabled, false)),
+      shadow: _bool(skillExtraction.shadow, true),
+      hard_gate: _bool(skillExtraction.hard_gate, false),
+      min_occurrences: Math.max(2, Math.round(_num(skillExtraction.min_occurrences, 3))),
+      file_mirror: _bool(process.env.LUNA_POSTTRADE_SKILL_FILE_MIRROR, _bool(skillExtraction.file_mirror, false)),
+    },
+    parameter_feedback_map: {
+      enabled: _bool(process.env.LUNA_PARAMETER_FEEDBACK_MAP_ENABLED, _bool(parameterFeedbackMap.enabled, false)),
+      shadow: _bool(parameterFeedbackMap.shadow, true),
+      hard_gate: _bool(parameterFeedbackMap.hard_gate, false),
+      auto_apply: _bool(process.env.LUNA_PARAMETER_AUTO_APPLY, _bool(parameterFeedbackMap.auto_apply, false)),
+    },
+    constitutional_feedback: {
+      enabled: _bool(process.env.LUNA_CONSTITUTION_ENABLED, _bool(constitutionalFeedback.enabled, false)),
+      shadow: _bool(constitutionalFeedback.shadow, true),
+      hard_gate: _bool(constitutionalFeedback.hard_gate, false),
+      violation_penalty: _num(process.env.LUNA_CONSTITUTION_VIOLATION_PENALTY, _num(constitutionalFeedback.violation_penalty, 0.20)),
+    },
+    market_differentiated: {
+      enabled: _bool(process.env.LUNA_MARKET_DIFFERENTIATED_FEEDBACK, _bool(marketDifferentiated.enabled, false)),
+      shadow: _bool(marketDifferentiated.shadow, true),
+      hard_gate: _bool(marketDifferentiated.hard_gate, false),
+      cycle_days: {
+        crypto: Math.max(1, Math.round(_num(process.env.LUNA_FEEDBACK_CYCLE_CRYPTO_DAYS, _num(marketDifferentiated?.cycle_days?.crypto, 3)))),
+        domestic: Math.max(1, Math.round(_num(process.env.LUNA_FEEDBACK_CYCLE_DOMESTIC_DAYS, _num(marketDifferentiated?.cycle_days?.domestic, 7)))),
+        overseas: Math.max(1, Math.round(_num(process.env.LUNA_FEEDBACK_CYCLE_OVERSEAS_DAYS, _num(marketDifferentiated?.cycle_days?.overseas, 7)))),
+      },
+    },
+    dashboard: {
+      enabled: _bool(process.env.LUNA_FEEDBACK_DASHBOARD_ENABLED, _bool(dashboard.enabled, false)),
+      shadow: _bool(dashboard.shadow, true),
+      hard_gate: _bool(dashboard.hard_gate, false),
+    },
+    worker: {
+      enabled: _bool(process.env.LUNA_POSTTRADE_WORKER_ENABLED, _bool(worker.enabled, false)),
+      shadow: _bool(worker.shadow, true),
+      interval_sec: Math.max(10, Math.round(_num(process.env.LUNA_POSTTRADE_WORKER_INTERVAL_SEC, _num(worker.interval_sec, 120)))),
+      loop_limit: Math.max(1, Math.round(_num(process.env.LUNA_POSTTRADE_WORKER_LOOP_LIMIT, _num(worker.loop_limit, 20)))),
+    },
+  };
+}

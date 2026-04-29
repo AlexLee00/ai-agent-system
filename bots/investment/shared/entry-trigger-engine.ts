@@ -8,6 +8,8 @@ import {
   listActiveEntryTriggers,
 } from './luna-discovery-entry-store.ts';
 import { getLunaIntelligentDiscoveryFlags } from './luna-intelligent-discovery-config.ts';
+import { checkAvoidPatterns } from './reflexion-engine.ts';
+import { getPosttradeFeedbackRuntimeConfig } from './runtime-config.ts';
 
 const ACTIONS = {
   BUY: 'BUY',
@@ -205,6 +207,8 @@ export function evaluateEntryTriggerLiveRiskGate({ candidate = {}, trigger = nul
 
 export async function evaluateEntryTriggers(candidates = [], context = {}) {
   const flags = getLunaIntelligentDiscoveryFlags();
+  const posttradeCfg = getPosttradeFeedbackRuntimeConfig();
+  const constitutionalEnabled = posttradeCfg?.constitutional_feedback?.enabled === true;
   if (!flags.phases.entryTriggerEnabled) {
     return { decisions: candidates, stats: { enabled: false, armed: 0, fired: 0, blocked: 0 } };
   }
@@ -236,7 +240,16 @@ export async function evaluateEntryTriggers(candidates = [], context = {}) {
       continue;
     }
 
-    const confidence = Number(candidate?.confidence || 0);
+    const rawConfidence = Number(candidate?.confidence || 0);
+    const market = String(candidate?.market || context?.market || (exchange === 'kis' ? 'domestic' : exchange === 'kis_overseas' ? 'overseas' : 'crypto'));
+    const regime = String(candidate?.regime || candidate?.market_regime || context?.regime || '').trim();
+    const reflexionGuard = await checkAvoidPatterns(
+      String(candidate?.symbol || ''),
+      market,
+      'long',
+      regime,
+    ).catch(() => ({ matched: false, penalty: 0, reason: '' }));
+    const confidence = Math.max(0, rawConfidence - Number(reflexionGuard?.penalty || 0));
     const triggerType = resolveTriggerType(candidate);
     if (!isAllowedTriggerType(triggerType, flags)) {
       blocked++;
@@ -270,6 +283,29 @@ export async function evaluateEntryTriggers(candidates = [], context = {}) {
       hints: candidate?.triggerHints || {},
     };
 
+    if (constitutionalEnabled && candidate?.block_meta?.constitution?.blocked === true) {
+      blocked++;
+      const constitutionMeta = {
+        triggerType,
+        state: shouldMutate ? 'blocked' : 'observed',
+        reason: 'constitution_blocked',
+        confidence,
+        mode: flags.mode,
+      };
+      output.push(shouldMutate ? {
+        ...candidate,
+        action: ACTIONS.HOLD,
+        amount_usdt: 0,
+        reasoning: `entry_trigger_blocked: constitution_blocked | ${candidate.reasoning || ''}`.slice(0, 220),
+        block_meta: {
+          ...(candidate.block_meta || {}),
+          event_type: 'entry_trigger_blocked',
+          entryTrigger: constitutionMeta,
+        },
+      } : annotateEntryTrigger(candidate, constitutionMeta));
+      continue;
+    }
+
     if (confidence < minConfidence) {
       blocked++;
       if (!shouldMutate) {
@@ -296,6 +332,19 @@ export async function evaluateEntryTriggers(candidates = [], context = {}) {
         },
       };
       output.push(blockedDecision);
+      continue;
+    }
+
+    if (reflexionGuard?.matched && Number(reflexionGuard?.penalty || 0) > 0 && !shouldMutate) {
+      observed++;
+      output.push(annotateEntryTrigger(candidate, {
+        triggerType,
+        state: 'observed',
+        reason: 'reflexion_penalty_applied',
+        confidenceBefore: rawConfidence,
+        confidenceAfter: confidence,
+        reflexionReason: reflexionGuard?.reason || '',
+      }));
       continue;
     }
 

@@ -19,6 +19,15 @@ function parseBoolean(value, fallback = false) {
   return ['1', 'true', 'yes', 'y', 'on'].includes(text);
 }
 
+function warnNonBlocking(scope, error, meta = {}) {
+  const details = Object.entries(meta)
+    .filter(([, value]) => value != null && value !== '')
+    .map(([key, value]) => `${key}=${String(value).slice(0, 180)}`)
+    .join(' ');
+  const suffix = details ? ` (${details})` : '';
+  console.warn(`[jay-meeting-reporter] ${scope} failed${suffix}: ${error?.message || error}`);
+}
+
 function nowMs() {
   return Date.now();
 }
@@ -87,7 +96,10 @@ async function publishMeetingSummary(input) {
   const eventType = `telegram_meeting_${phase}`;
   const incidentKey = normalizeText(input?.incidentKey, '');
   if (incidentKey && incidentKey !== 'unknown') {
-    const alreadySent = await hasIncidentEvent({ incidentKey, eventType }).catch(() => false);
+    const alreadySent = await hasIncidentEvent({ incidentKey, eventType }).catch((error) => {
+      warnNonBlocking('persistent_dedupe_check', error, { incidentKey, eventType });
+      return false;
+    });
     if (alreadySent) {
       sentDedupe.set(dedupeKey, nowMs());
       return { ok: true, skipped: true, reason: 'persistent_dedupe' };
@@ -109,7 +121,7 @@ async function publishMeetingSummary(input) {
         phase,
         dedupeKey,
       },
-    }).catch(() => {});
+    }).catch((error) => warnNonBlocking('append_meeting_event', error, { incidentKey, eventType }));
   }
   return { ok: true, sent: true, dedupeKey, phase };
 }

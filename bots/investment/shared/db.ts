@@ -547,6 +547,92 @@ export async function initSchema() {
   try { await run(`CREATE INDEX IF NOT EXISTS idx_psh_symbol_created ON position_signal_history(symbol, exchange, created_at DESC)`); } catch { /* 무시 */ }
   try { await run(`CREATE INDEX IF NOT EXISTS idx_psh_source_created ON position_signal_history(source, created_at DESC)`); } catch { /* 무시 */ }
 
+  // ── Posttrade feedback loop (A~H) ──
+  await run(`
+    CREATE TABLE IF NOT EXISTS trade_quality_evaluations (
+      trade_id                   BIGINT PRIMARY KEY,
+      market_decision_score      NUMERIC(4,3),
+      pipeline_quality_score     NUMERIC(4,3),
+      monitoring_score           NUMERIC(4,3),
+      backtest_utilization_score NUMERIC(4,3),
+      overall_score              NUMERIC(4,3),
+      category                   TEXT,
+      rationale                  TEXT,
+      sub_score_breakdown        JSONB DEFAULT '{}',
+      evaluated_at               TIMESTAMPTZ DEFAULT NOW()
+    )
+  `);
+  try { await run(`CREATE INDEX IF NOT EXISTS idx_tqe_category_score ON trade_quality_evaluations (category, overall_score DESC)`); } catch { /* 무시 */ }
+  try { await run(`CREATE INDEX IF NOT EXISTS idx_tqe_evaluated_at ON trade_quality_evaluations (evaluated_at DESC)`); } catch { /* 무시 */ }
+
+  await run(`
+    CREATE TABLE IF NOT EXISTS trade_decision_attribution (
+      trade_id                BIGINT NOT NULL,
+      stage_id                TEXT   NOT NULL,
+      decision_type           TEXT,
+      decision_score          NUMERIC(4,3),
+      contribution_to_outcome NUMERIC(5,4),
+      evidence                JSONB DEFAULT '{}',
+      created_at              TIMESTAMPTZ DEFAULT NOW(),
+      PRIMARY KEY (trade_id, stage_id)
+    )
+  `);
+  try { await run(`CREATE INDEX IF NOT EXISTS idx_tda_trade_id ON trade_decision_attribution (trade_id)`); } catch { /* 무시 */ }
+  try { await run(`CREATE INDEX IF NOT EXISTS idx_tda_stage_contribution ON trade_decision_attribution (stage_id, contribution_to_outcome DESC)`); } catch { /* 무시 */ }
+
+  await run(`
+    CREATE TABLE IF NOT EXISTS luna_failure_reflexions (
+      id                BIGSERIAL PRIMARY KEY,
+      trade_id          BIGINT NOT NULL,
+      five_why          JSONB DEFAULT '[]',
+      stage_attribution JSONB DEFAULT '{}',
+      hindsight         TEXT,
+      avoid_pattern     JSONB DEFAULT '{}',
+      created_at        TIMESTAMPTZ DEFAULT NOW()
+    )
+  `);
+  try { await run(`CREATE UNIQUE INDEX IF NOT EXISTS idx_lfr_trade_unique ON luna_failure_reflexions (trade_id)`); } catch { /* 무시 */ }
+  try { await run(`CREATE INDEX IF NOT EXISTS idx_lfr_trade_id ON luna_failure_reflexions (trade_id)`); } catch { /* 무시 */ }
+  try { await run(`CREATE INDEX IF NOT EXISTS idx_lfr_avoid_pattern ON luna_failure_reflexions USING GIN (avoid_pattern)`); } catch { /* 무시 */ }
+  try { await run(`CREATE INDEX IF NOT EXISTS idx_lfr_created_at ON luna_failure_reflexions (created_at DESC)`); } catch { /* 무시 */ }
+
+  await run(`
+    CREATE TABLE IF NOT EXISTS feedback_to_action_map (
+      id                 BIGSERIAL PRIMARY KEY,
+      source_trade_id    BIGINT,
+      parameter_name     TEXT NOT NULL,
+      old_value          JSONB DEFAULT 'null'::jsonb,
+      new_value          JSONB DEFAULT 'null'::jsonb,
+      reason             TEXT,
+      suggestion_log_id  TEXT,
+      metadata           JSONB DEFAULT '{}'::jsonb,
+      applied_at         TIMESTAMPTZ DEFAULT NOW()
+    )
+  `);
+  try { await run(`CREATE INDEX IF NOT EXISTS idx_fam_source_trade ON feedback_to_action_map (source_trade_id, applied_at DESC)`); } catch { /* 무시 */ }
+  try { await run(`CREATE INDEX IF NOT EXISTS idx_fam_parameter ON feedback_to_action_map (parameter_name, applied_at DESC)`); } catch { /* 무시 */ }
+
+  await run(`
+    CREATE TABLE IF NOT EXISTS luna_posttrade_skills (
+      id                BIGSERIAL PRIMARY KEY,
+      market            TEXT NOT NULL,
+      skill_type        TEXT NOT NULL,
+      pattern_key       TEXT NOT NULL,
+      title             TEXT NOT NULL,
+      summary           TEXT NOT NULL,
+      invocation_count  INTEGER DEFAULT 0,
+      success_rate      DOUBLE PRECISION DEFAULT 0.0,
+      win_count         INTEGER DEFAULT 0,
+      loss_count        INTEGER DEFAULT 0,
+      source_trade_ids  JSONB DEFAULT '[]'::jsonb,
+      metadata          JSONB DEFAULT '{}'::jsonb,
+      created_at        TIMESTAMPTZ DEFAULT NOW(),
+      updated_at        TIMESTAMPTZ DEFAULT NOW(),
+      UNIQUE (market, skill_type, pattern_key)
+    )
+  `);
+  try { await run(`CREATE INDEX IF NOT EXISTS idx_lps_market_type ON luna_posttrade_skills (market, skill_type, success_rate DESC, updated_at DESC)`); } catch { /* 무시 */ }
+
   // 스키마 버전 기록
   try {
     for (const [v, name] of [
@@ -562,6 +648,7 @@ export async function initSchema() {
       [10, 'position_closeout_reviews'],
       [11, 'external_evidence_events'],
       [12, 'candidate_universe_phase_a_discovery'],
+      [13, 'posttrade_feedback_loop_core'],
     ]) {
       await run(
         `INSERT INTO schema_migrations (version, name) VALUES ($1, $2) ON CONFLICT DO NOTHING`,
@@ -2245,6 +2332,161 @@ export async function getRecentPositionSignalHistory({
   ).catch(() => []);
 }
 
+// ─── posttrade feedback loop (A~H) ──────────────────────────────────
+
+export async function fetchPendingPosttradeKnowledgeEvents({ limit = 20 } = {}) {
+  const safeLimit = Math.max(1, Math.round(Number(limit || 20)));
+  return query(
+    `SELECT
+       mk.id AS knowledge_id,
+       mk.created_at,
+       mk.payload,
+       NULLIF(mk.payload->>'trade_id', '')::BIGINT AS trade_id
+     FROM investment.mapek_knowledge mk
+     WHERE mk.event_type = 'quality_evaluation_pending'
+       AND COALESCE(mk.payload->>'posttrade_processed', 'false') <> 'true'
+     ORDER BY mk.created_at ASC
+     LIMIT $1`,
+    [safeLimit],
+  ).catch(() => []);
+}
+
+export async function markPosttradeKnowledgeEventProcessed(knowledgeId, metadata = {}) {
+  if (!knowledgeId) return null;
+  const row = await get(
+    `UPDATE investment.mapek_knowledge
+        SET payload = COALESCE(payload, '{}'::jsonb)
+          || jsonb_build_object(
+            'posttrade_processed', true,
+            'posttrade_processed_at', NOW()::text,
+            'posttrade_process_meta', $2::jsonb
+          )
+      WHERE id = $1
+      RETURNING id`,
+    [knowledgeId, JSON.stringify(metadata || {})],
+  ).catch(() => null);
+  return row?.id || null;
+}
+
+export async function insertFeedbackToActionMap({
+  sourceTradeId = null,
+  parameterName,
+  oldValue = null,
+  newValue = null,
+  reason = null,
+  suggestionLogId = null,
+  metadata = {},
+} = {}) {
+  if (!parameterName) return null;
+  const row = await get(
+    `INSERT INTO feedback_to_action_map
+       (source_trade_id, parameter_name, old_value, new_value, reason, suggestion_log_id, metadata)
+     VALUES ($1,$2,$3,$4,$5,$6,$7)
+     RETURNING id, applied_at`,
+    [
+      sourceTradeId ? Number(sourceTradeId) : null,
+      String(parameterName),
+      JSON.stringify(oldValue),
+      JSON.stringify(newValue),
+      reason || null,
+      suggestionLogId || null,
+      JSON.stringify(metadata || {}),
+    ],
+  ).catch(() => null);
+  return row || null;
+}
+
+export async function recordFeedbackToActionMap(payload = {}) {
+  return insertFeedbackToActionMap(payload);
+}
+
+export async function getRecentFeedbackToActionMap({ days = 7, market = null, limit = 100 } = {}) {
+  const params = [Math.max(1, Math.round(Number(days || 7))), Math.max(1, Math.round(Number(limit || 100)))];
+  const clauses = [`fam.applied_at >= NOW() - ($1::int * INTERVAL '1 day')`];
+  if (market) {
+    params.push(String(market));
+    clauses.push(`COALESCE(th.market, CASE WHEN th.exchange = 'binance' THEN 'crypto' WHEN th.exchange = 'kis' THEN 'domestic' ELSE 'overseas' END) = $${params.length}`);
+  }
+  return query(
+    `SELECT fam.*, th.symbol, th.exchange, th.market
+       FROM feedback_to_action_map fam
+       LEFT JOIN investment.trade_history th ON th.id = fam.source_trade_id
+      WHERE ${clauses.join(' AND ')}
+      ORDER BY fam.applied_at DESC
+      LIMIT $2`,
+    params,
+  ).catch(() => []);
+}
+
+export async function upsertPosttradeSkill({
+  market = 'all',
+  skillType = 'success',
+  patternKey,
+  title,
+  summary,
+  invocationCount = 0,
+  successRate = 0,
+  winCount = 0,
+  lossCount = 0,
+  sourceTradeIds = [],
+  metadata = {},
+} = {}) {
+  if (!patternKey || !title || !summary) return null;
+  const row = await get(
+    `INSERT INTO luna_posttrade_skills
+       (market, skill_type, pattern_key, title, summary, invocation_count, success_rate, win_count, loss_count, source_trade_ids, metadata, updated_at)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,NOW())
+     ON CONFLICT (market, skill_type, pattern_key)
+     DO UPDATE SET
+       title = EXCLUDED.title,
+       summary = EXCLUDED.summary,
+       invocation_count = EXCLUDED.invocation_count,
+       success_rate = EXCLUDED.success_rate,
+       win_count = EXCLUDED.win_count,
+       loss_count = EXCLUDED.loss_count,
+       source_trade_ids = EXCLUDED.source_trade_ids,
+       metadata = EXCLUDED.metadata,
+       updated_at = NOW()
+     RETURNING id, market, skill_type, pattern_key, updated_at`,
+    [
+      String(market || 'all'),
+      String(skillType || 'success'),
+      String(patternKey),
+      String(title),
+      String(summary),
+      Math.max(0, Math.round(Number(invocationCount || 0))),
+      Number(successRate || 0),
+      Math.max(0, Math.round(Number(winCount || 0))),
+      Math.max(0, Math.round(Number(lossCount || 0))),
+      JSON.stringify(Array.isArray(sourceTradeIds) ? sourceTradeIds : []),
+      JSON.stringify(metadata || {}),
+    ],
+  ).catch(() => null);
+  return row || null;
+}
+
+export async function getRecentPosttradeSkills({ market = null, skillType = null, limit = 50 } = {}) {
+  const params = [];
+  const where = [];
+  if (market) {
+    params.push(String(market));
+    where.push(`market = $${params.length}`);
+  }
+  if (skillType) {
+    params.push(String(skillType));
+    where.push(`skill_type = $${params.length}`);
+  }
+  params.push(Math.max(1, Math.round(Number(limit || 50))));
+  return query(
+    `SELECT *
+       FROM luna_posttrade_skills
+      ${where.length ? `WHERE ${where.join(' AND ')}` : ''}
+      ORDER BY success_rate DESC, updated_at DESC
+      LIMIT $${params.length}`,
+    params,
+  ).catch(() => []);
+}
+
 export function close() {
   // pgPool 관리 — 개별 close 불필요 (pgPool.closeAll()로 전체 종료)
 }
@@ -2271,5 +2513,8 @@ export default {
   insertCloseoutReview, updateCloseoutReview, getRecentCloseoutReviews,
   insertExternalEvidence, getRecentExternalEvidence,
   insertPositionSignalHistory, getRecentPositionSignalHistory,
+  fetchPendingPosttradeKnowledgeEvents, markPosttradeKnowledgeEventProcessed,
+  insertFeedbackToActionMap, recordFeedbackToActionMap, getRecentFeedbackToActionMap,
+  upsertPosttradeSkill, getRecentPosttradeSkills,
   close,
 };

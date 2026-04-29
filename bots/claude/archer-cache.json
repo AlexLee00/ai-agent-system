@@ -1,18 +1,18 @@
 {
-  "lastRun": "2026-04-27",
+  "lastRun": "2026-04-29",
   "versions": {
     "@anthropic-ai/sdk": "0.91.1",
     "@modelcontextprotocol/sdk": "1.29.0",
     "groq-sdk": "1.1.2",
     "duckdb": "1.4.4",
     "better-sqlite3": "12.9.0",
-    "ccxt": "4.5.50",
+    "ccxt": "4.5.51",
     "playwright": "1.59.1"
   },
   "lastAnalysis": {
-    "summary": "이번 주 패치 검토 1순위는 @anthropic-ai/sdk입니다. 연구 관찰 1순위는 'DeepSeek-V4: a million-token context that agents can actually use'입니다. 웹 하이라이트는 'Our principles'입니다. 이번 주의 주요 내용은 OpenAI의 GPT-5.5 시스템 카드와 Introducing GPT-5.5, DeepSeek-V4, ReasoningBank, Our principles, How to Use Transformers.js in a Chrome Extension 등입니다.",
+    "summary": "이번 주 패치 검토 1순위는 @anthropic-ai/sdk입니다. 연구 관찰 1순위는 'ReasoningBank'입니다. 웹 하이라이트는 'OpenAI models, Codex, and Managed Agents come to AWS'입니다. 이번 주 패키지 측면에서는 ccxt만 소규모 패치 업데이트 대상이며 보안 취약점은 발견되지 않았습니다. LLM API 측면에서는 OpenAI의 AWS 및 규제 대응 강화가 인프라 선택과 엔터프라이즈 영업에 의미 있는 변화입니다. 기술적으로는 에이전트의 경험학습, 환각 억제, 개인정보 필터링이 실무 적용 우선순위로 보입니다.",
     "patchCount": 5,
-    "securityCount": 1,
-    "llmApiCount": 2
+    "securityCount": 0,
+    "llmApiCount": 3
   }
 }

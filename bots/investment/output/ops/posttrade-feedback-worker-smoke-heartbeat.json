@@ -1,0 +1,11 @@
+{
+  "ok": true,
+  "startedAt": "2026-04-29T00:21:15.809Z",
+  "completedAt": "2026-04-29T00:21:15.810Z",
+  "mode": "shadow",
+  "market": "all",
+  "result": {
+    "skipped": true,
+    "reason": "all_disabled"
+  }
+}

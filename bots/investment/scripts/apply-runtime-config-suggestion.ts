@@ -66,6 +66,10 @@ function buildChangeSet(row, selectedKeys = []) {
       suggested: item.suggested,
       confidence: item.confidence,
       reason: item.reason,
+      sourceTradeIds: Array.isArray(item.source_trade_ids)
+        ? item.source_trade_ids.map((value) => Number(value)).filter((value) => Number.isFinite(value) && value > 0)
+        : (item.source_trade_id != null ? [Number(item.source_trade_id)].filter((value) => Number.isFinite(value) && value > 0) : []),
+      sourcePayload: item.source_payload || null,
     }));
 }
 
@@ -150,6 +154,39 @@ async function main() {
       });
       result.reviewStatus = updated?.review_status || 'applied';
       result.appliedAt = updated?.applied_at || null;
+
+      for (const change of changes) {
+        const sourceTradeIds = Array.isArray(change.sourceTradeIds) ? change.sourceTradeIds : [];
+        if (sourceTradeIds.length === 0) {
+          await db.insertFeedbackToActionMap({
+            sourceTradeId: null,
+            parameterName: change.key,
+            oldValue: change.actualCurrent,
+            newValue: change.suggested,
+            reason: change.reason || null,
+            suggestionLogId: id,
+            metadata: {
+              confidence: change.confidence ?? null,
+              source_payload: change.sourcePayload || null,
+            },
+          }).catch(() => {});
+          continue;
+        }
+        for (const sourceTradeId of sourceTradeIds) {
+          await db.insertFeedbackToActionMap({
+            sourceTradeId,
+            parameterName: change.key,
+            oldValue: change.actualCurrent,
+            newValue: change.suggested,
+            reason: change.reason || null,
+            suggestionLogId: id,
+            metadata: {
+              confidence: change.confidence ?? null,
+              source_payload: change.sourcePayload || null,
+            },
+          }).catch(() => {});
+        }
+      }
     }
 
     if (json) {

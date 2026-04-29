@@ -127,7 +127,7 @@ export async function buildMemoryPrefix(
 
     // 5. Layer 4 Procedural (skill files)
     isEnabled('LUNA_AGENT_MEMORY_LAYER_4')
-      ? _fetchSkills(opts.agentName, opts.taskType)
+      ? _fetchSkills(opts.agentName, opts.taskType, opts.market)
       : Promise.resolve([]),
 
     // 6. Layer 4 Semantic (entity_facts)
@@ -354,22 +354,39 @@ async function _fetchFailureMemory(
   ].slice(0, 2);
 }
 
-async function _fetchSkills(agentName: string, taskType?: string): Promise<string[]> {
+async function _fetchSkills(agentName: string, taskType?: string, market?: string): Promise<string[]> {
   try {
-    const agentSkillDir = path.join(SKILLS_DIR, agentName);
-    if (!fs.existsSync(agentSkillDir)) return [];
+    const marketKey = String(market || '').trim().toLowerCase();
+    const dirCandidates = [
+      path.join(SKILLS_DIR, agentName),
+      path.join(SKILLS_DIR, 'luna', marketKey),
+      path.join(SKILLS_DIR, 'luna'),
+      SKILLS_DIR,
+    ].filter((value, index, arr) => value && arr.indexOf(value) === index);
 
-    const files = fs.readdirSync(agentSkillDir)
-      .filter(f => f.endsWith('.md') && f.startsWith('SUCCESS_'));
+    const preferAvoid = String(taskType || '').toLowerCase().includes('risk')
+      || String(taskType || '').toLowerCase().includes('guard')
+      || String(taskType || '').toLowerCase().includes('exit');
+    const prefixes = preferAvoid ? ['AVOID_', 'SUCCESS_'] : ['SUCCESS_', 'AVOID_'];
 
-    return files.slice(0, 2).map(f => {
-      try {
-        const content = fs.readFileSync(path.join(agentSkillDir, f), 'utf-8');
-        return `[${f.replace('.md', '')}] ${content.split('\n')[0]}`;
-      } catch {
-        return f;
+    const collected: string[] = [];
+    for (const dirPath of dirCandidates) {
+      if (!fs.existsSync(dirPath) || !fs.statSync(dirPath).isDirectory()) continue;
+      const files = fs.readdirSync(dirPath)
+        .filter((f) => f.endsWith('.md') && prefixes.some((prefix) => f.startsWith(prefix)))
+        .sort((a, b) => a.localeCompare(b));
+      for (const f of files) {
+        const fullPath = path.join(dirPath, f);
+        try {
+          const content = fs.readFileSync(fullPath, 'utf-8');
+          collected.push(`[${f.replace('.md', '')}] ${content.split('\n')[0]}`);
+        } catch {
+          collected.push(f);
+        }
+        if (collected.length >= 2) return collected;
       }
-    });
+    }
+    return collected;
   } catch {
     return [];
   }

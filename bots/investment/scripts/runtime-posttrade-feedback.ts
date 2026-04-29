@@ -18,30 +18,31 @@
  */
 
 import * as db from '../shared/db.ts';
-import { getPosttradeFeedbackConfig } from '../shared/runtime-config.ts';
-import { evaluateTradeQuality, fetchPendingTradeIds } from '../shared/trade-quality-evaluator.ts';
+import { getPosttradeFeedbackRuntimeConfig } from '../shared/runtime-config.ts';
+import { evaluateTradeQuality, fetchPendingPosttradeCandidates } from '../shared/trade-quality-evaluator.ts';
 import { analyzeStageAttribution } from '../shared/stage-attribution-analyzer.ts';
 import { runReflexion } from '../shared/reflexion-engine.ts';
 import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
 
 function parseArgs(argv = process.argv.slice(2)) {
-  const args = { limit: 20, dryRun: false, tradeId: null, json: false };
+  const args = { limit: 20, dryRun: false, tradeId: null, market: 'all', json: false };
   for (const raw of argv) {
     if (raw === '--dry-run')                        args.dryRun = true;
     else if (raw === '--json')                      args.json = true;
     else if (raw.startsWith('--limit='))            args.limit = Math.max(1, Number(raw.split('=')[1]) || 20);
     else if (raw.startsWith('--trade-id='))         args.tradeId = Number(raw.split('=')[1]);
+    else if (raw.startsWith('--market='))           args.market = String(raw.split('=')[1] || 'all').trim().toLowerCase();
   }
   return args;
 }
 
 async function runPosttradeFeedback(args) {
-  const cfg = getPosttradeFeedbackConfig();
+  const cfg = getPosttradeFeedbackRuntimeConfig();
   const enabledA = cfg.trade_quality?.enabled ?? false;
   const enabledB = cfg.stage_attribution?.enabled ?? false;
   const enabledC = cfg.reflexion?.enabled ?? false;
 
-  console.log(`[PosttradeFeedback] enabled: A=${enabledA} B=${enabledB} C=${enabledC} dryRun=${args.dryRun}`);
+  console.log(`[PosttradeFeedback] enabled: A=${enabledA} B=${enabledB} C=${enabledC} dryRun=${args.dryRun} market=${args.market}`);
 
   if (!enabledA && !enabledB && !enabledC) {
     console.log('[PosttradeFeedback] 모든 Phase 비활성 — Kill switch: posttrade_feedback.*.enabled=false');
@@ -49,24 +50,36 @@ async function runPosttradeFeedback(args) {
   }
 
   // 처리할 trade ID 목록 결정
-  let tradeIds: number[];
+  let candidates = [];
   if (args.tradeId) {
-    tradeIds = [args.tradeId];
+    candidates = [{ tradeId: Number(args.tradeId), source: 'manual', knowledgeId: null }];
   } else {
-    tradeIds = await fetchPendingTradeIds(args.limit);
+    candidates = await fetchPendingPosttradeCandidates({ limit: args.limit, market: args.market });
   }
 
-  if (tradeIds.length === 0) {
+  if (candidates.length === 0) {
     console.log('[PosttradeFeedback] 처리할 거래 없음 (모두 이미 평가됨)');
-    return { processed: 0 };
+    return { processed: 0, source: 'none' };
   }
 
-  console.log(`[PosttradeFeedback] 처리 대상: ${tradeIds.length}건`);
+  console.log(`[PosttradeFeedback] 처리 대상: ${candidates.length}건`);
 
-  const results = { preferred: 0, neutral: 0, rejected: 0, errors: 0, reflexions: 0 };
+  const results = {
+    preferred: 0,
+    neutral: 0,
+    rejected: 0,
+    errors: 0,
+    reflexions: 0,
+    queuedSource: candidates.filter((item) => item.source === 'knowledge').length,
+    fallbackSource: candidates.filter((item) => item.source === 'fallback_scan').length,
+  };
 
-  for (const tradeId of tradeIds) {
+  for (const candidate of candidates) {
+    const tradeId = Number(candidate.tradeId || 0);
     try {
+      if (!Number.isFinite(tradeId) || tradeId <= 0) {
+        throw new Error('invalid_trade_id');
+      }
       // ── Phase A: Trade Quality Score ──────────────────────────────────────
       let quality = null;
       if (enabledA) {
@@ -107,6 +120,14 @@ async function runPosttradeFeedback(args) {
         }
       }
 
+      if (!args.dryRun && candidate.knowledgeId) {
+        await db.markPosttradeKnowledgeEventProcessed(candidate.knowledgeId, {
+          status: 'processed',
+          trade_id: tradeId,
+          category: quality?.category || null,
+        });
+      }
+
     } catch (err) {
       results.errors++;
       console.error(`[PosttradeFeedback] trade=${tradeId} 처리 오류:`, err);
@@ -115,7 +136,7 @@ async function runPosttradeFeedback(args) {
 
   console.log(`[PosttradeFeedback] 완료 — preferred:${results.preferred} neutral:${results.neutral} rejected:${results.rejected} reflexions:${results.reflexions} errors:${results.errors}`);
 
-  return { processed: tradeIds.length, ...results };
+  return { processed: candidates.length, ...results };
 }
 
 async function main() {

@@ -267,8 +267,17 @@ const DAILY_REVIEW_SYSTEM = `
 }
 `;
 
-async function fetchDailyTrades(dateKst) {
+function resolveMarketFilterClause(market = 'all', exchangeColumn = 'exchange') {
+  const normalized = String(market || 'all').trim().toLowerCase();
+  if (normalized === 'crypto') return `AND ${exchangeColumn} = 'binance'`;
+  if (normalized === 'domestic') return `AND ${exchangeColumn} = 'kis'`;
+  if (normalized === 'overseas') return `AND ${exchangeColumn} = 'kis_overseas'`;
+  return '';
+}
+
+async function fetchDailyTrades(dateKst, market = 'all') {
   try {
+    const marketClause = resolveMarketFilterClause(market, 'exchange');
     return await db.query(`
       SELECT
         trade_id, symbol, exchange, direction, is_paper,
@@ -277,6 +286,7 @@ async function fetchDailyTrades(dateKst) {
       FROM trade_journal
       WHERE CAST(to_timestamp(exit_time / 1000.0) AT TIME ZONE 'Asia/Seoul' AS DATE) = $1::date
         AND status IN ('closed', 'tp_hit', 'sl_hit', 'force_exit')
+        ${marketClause}
       ORDER BY exit_time DESC
       LIMIT 200
     `, [dateKst]);
@@ -753,8 +763,8 @@ async function storeDailyFeedbackRag(dateKst, feedback, analystAccuracy, screeni
   }, 'luna');
 }
 
-async function runDailyTradeFeedback({ dateKst, dryRun = false }) {
-  const trades = await fetchDailyTrades(dateKst);
+async function runDailyTradeFeedback({ dateKst, dryRun = false, market = 'all' }) {
+  const trades = await fetchDailyTrades(dateKst, market);
   const analystAccuracy = await fetchDailyAnalystAccuracy(dateKst);
   const screeningSummary = await fetchScreeningSummary();
   const reevaluationSummary = await fetchPositionReevaluationSummary();
@@ -952,7 +962,8 @@ if (isDirectExecution(import.meta.url)) {
     run: async () => {
       const dateKst = parseArg('date', new Date().toLocaleDateString('sv-SE', { timeZone: 'Asia/Seoul' }));
       const dryRun = process.argv.includes('--dry-run');
-      return runDailyTradeFeedback({ dateKst, dryRun });
+      const market = parseArg('market', 'all');
+      return runDailyTradeFeedback({ dateKst, dryRun, market });
     },
     onSuccess: async (result) => {
       if (process.argv.includes('--json')) {

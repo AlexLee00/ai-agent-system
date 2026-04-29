@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>EnvironmentVariables</key>
+	<dict>
+		<key>HOME</key>
+		<string>/Users/alexlee</string>
+		<key>NODE_ENV</key>
+		<string>production</string>
+		<key>PATH</key>
+		<string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+		<key>PAPER_MODE</key>
+		<string>false</string>
+	</dict>
+	<key>KeepAlive</key>
+	<false/>
+	<key>Label</key>
+	<string>ai.investment.posttrade-feedback-worker</string>
+	<key>ProgramArguments</key>
+	<array>
+		<string>/opt/homebrew/bin/node</string>
+		<string>/Users/alexlee/projects/ai-agent-system/bots/investment/scripts/runtime-posttrade-feedback-worker.ts</string>
+		<string>--once</string>
+		<string>--market=all</string>
+		<string>--json</string>
+	</array>
+	<key>RunAtLoad</key>
+	<false/>
+	<key>StandardErrorPath</key>
+	<string>/tmp/investment-posttrade-feedback-worker.err.log</string>
+	<key>StandardOutPath</key>
+	<string>/tmp/investment-posttrade-feedback-worker.log</string>
+	<key>StartInterval</key>
+	<integer>300</integer>
+	<key>WorkingDirectory</key>
+	<string>/Users/alexlee/projects/ai-agent-system/bots/investment</string>
+</dict>
+</plist>

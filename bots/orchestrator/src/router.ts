@@ -149,6 +149,15 @@ function parseBoolean(value, fallback = false) {
   return ['1', 'true', 'yes', 'y', 'on'].includes(text);
 }
 
+function warnNonBlocking(scope, error, meta = {}) {
+  const details = Object.entries(meta)
+    .filter(([, value]) => value != null && value !== '')
+    .map(([key, value]) => `${key}=${String(value).slice(0, 180)}`)
+    .join(' ');
+  const suffix = details ? ` (${details})` : '';
+  console.warn(`[router] ${scope} failed${suffix}: ${error?.message || error}`);
+}
+
 function getJayOrchestrationFlag(flagKey, envKey, fallback = false) {
   const envValue = process.env[envKey];
   if (envValue != null && String(envValue).trim() !== '') {
@@ -217,7 +226,10 @@ async function queueActionableIncident(parsed, msg) {
           chatId: String(msg?.chat?.id || ''),
           source: parsed?.source || 'unknown',
         },
-      }).catch(() => {});
+      }).catch((error) => warnNonBlocking('append_router_intent_event', error, {
+        incidentKey: result.incident.incidentKey,
+        intent,
+      }));
       return result.incident;
     }
   } catch (error) {
