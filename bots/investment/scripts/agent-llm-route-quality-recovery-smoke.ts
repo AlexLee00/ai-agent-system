@@ -14,48 +14,53 @@ function delay(ms) {
 async function runSmoke() {
   const agentName = `route-recovery-smoke-${Date.now()}`;
   const incidentKey = `route-recovery:${Date.now()}`;
+  const market = `smoke_route_recovery_${Date.now()}`;
+  const routeChain = [{ provider: 'openai-oauth', model: 'gpt-5.4-mini' }];
   try {
     await recordInvestmentLlmRouteLog({
       agentName,
       provider: 'failed',
       ok: false,
-      market: 'binance',
+      market,
       taskType: 'final_decision',
       latencyMs: 25,
       incidentKey,
       error: 'synthetic_provider_failure',
+      routeChain,
     });
     await recordInvestmentLlmRouteLog({
       agentName,
       provider: 'failed',
       ok: false,
-      market: 'binance',
+      market,
       taskType: 'final_decision',
       latencyMs: 30,
       incidentKey,
       error: 'synthetic_provider_failure',
+      routeChain,
     });
     await delay(25);
     await recordInvestmentLlmRouteLog({
       agentName,
       provider: 'openai-oauth',
       ok: true,
-      market: 'binance',
+      market,
       taskType: 'final_decision',
       latencyMs: 2400,
       incidentKey,
-      routeChain: [{ provider: 'openai-oauth', model: 'gpt-5.4-mini' }],
+      routeChain,
     });
 
     const report = await buildAgentLlmRouteQualityReport({
       days: 1,
-      market: 'binance',
+      market,
       minCalls: 2,
     });
     const suggestion = report.suggestions.find((item) => item.agent === agentName);
     assert.ok(suggestion, 'recovery suggestion should be present');
     assert.equal(suggestion.type, 'route_failure_resolved_by_success', 'failure should be downgraded when later success exists');
     assert.equal(suggestion.severity, 'low', 'resolved failure must not block operator');
+    assert.equal(suggestion.providerLabel, 'failed(openai-oauth)', 'failed provider should retain route provider label');
     assert.equal(report.ok, true, 'resolved route failure should not make route quality fail');
 
     return {
@@ -80,4 +85,3 @@ if (isDirectExecution(import.meta.url)) {
     errorPrefix: '❌ agent-llm-route-quality-recovery-smoke 실패:',
   });
 }
-

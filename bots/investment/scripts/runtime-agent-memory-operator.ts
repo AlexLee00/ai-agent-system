@@ -45,7 +45,15 @@ function buildOperatorSuggestions({ activationPlan, routeQuality, busHygiene }) 
         calls: item.calls,
         failureRate: item.failureRate,
         fallbackRate: item.fallbackRate,
+        effectiveFailureRate: item.effectiveFailureRate,
+        routeProviderSuccessCalls: item.routeProviderSuccessCalls,
+        recoveryGraceMinutes: item.recoveryGraceMinutes,
       },
+      providerLabel: item.providerLabel,
+      failureKind: item.failureKind,
+      routeProviders: item.routeProviders,
+      latestSuccessAt: item.latestSuccessAt || item.recoveredLastSeenAt || null,
+      failedLastSeenAt: item.failedLastSeenAt || null,
     });
   }
   if (Number(busHygiene?.staleCount || 0) > 0) {
@@ -57,6 +65,19 @@ function buildOperatorSuggestions({ activationPlan, routeQuality, busHygiene }) 
     });
   }
   return suggestions;
+}
+
+function isActiveRouteQualityBlocker(item = {}) {
+  if (item.severity !== 'high') return false;
+  return ![
+    'route_failure_resolved_by_success',
+    'route_failure_transient_with_success_history',
+    'direct_fallback_smoke_artifact',
+  ].includes(item.type);
+}
+
+export function getActiveRouteQualityBlockers(routeQuality = {}) {
+  return (routeQuality.suggestions || []).filter(isActiveRouteQualityBlocker);
 }
 
 export async function runAgentMemoryOperator(input = {}) {
@@ -95,10 +116,12 @@ export async function runAgentMemoryOperator(input = {}) {
     routeQuality,
     busHygiene: busHygieneBefore,
   });
+  const routeQualityBlockers = getActiveRouteQualityBlockers(routeQuality);
+  const routeQualityObservations = (routeQuality.suggestions || []).filter((item) => !isActiveRouteQualityBlocker(item));
   const blockers = [
     ...(activationPlan.blockers || []),
     ...(doctor.blockers || []),
-    ...(routeQuality.ok ? [] : ['route_quality_high_severity']),
+    ...(routeQualityBlockers.length ? [`route_quality_high_severity:${routeQualityBlockers.length}`] : []),
   ];
   const result = {
     ok: blockers.length === 0,
@@ -116,6 +139,8 @@ export async function runAgentMemoryOperator(input = {}) {
     },
     dashboardSummary: dashboard.summary,
     routeQuality,
+    routeQualityBlockers,
+    routeQualityObservations,
     busHygiene: {
       before: busHygieneBefore,
       action: busAction,
