@@ -11,6 +11,10 @@
 
 import { createRequire } from 'module';
 import { resolveHubRoutingPlan } from './agent-llm-routing.ts';
+import {
+  buildRouteHealthAvoidance,
+  reorderChainForRouteHealth,
+} from './agent-llm-route-health.ts';
 import { injectMemoryIntoSystemPrompt } from './agent-memory-orchestrator.ts';
 import { recordLLMFailure, getAvoidProviders } from './reflexion-guard.ts';
 import { recordInvocation } from './agent-curriculum-tracker.ts';
@@ -121,6 +125,8 @@ export function buildHubLlmCallPayload(
     callerTeam?: string;
     taskType?: string;
     incidentKey?: string;
+    avoidProviders?: string[];
+    chainAvoidProviders?: string[];
   } = {}
 ) {
   // Phase C: 에이전트×시장×태스크 동적 라우팅 (chain 우선, abstractModel은 호환 유지)
@@ -131,6 +137,14 @@ export function buildHubLlmCallPayload(
     options.maxTokens,
   );
   const abstractModel = normalizeHubAbstractModel(routingPlan.abstractModel);
+  const routeHealthAvoidProviders = Array.isArray(options.chainAvoidProviders)
+    ? options.chainAvoidProviders
+    : Array.isArray(options.avoidProviders)
+      ? options.avoidProviders
+    : [];
+  const chain = routeHealthAvoidProviders.length > 0
+    ? reorderChainForRouteHealth(routingPlan.chain, routeHealthAvoidProviders)
+    : routingPlan.chain;
   const urgency = normalizeHubUrgency(options.urgency ?? (agentName === 'luna' ? 'high' : 'normal'));
   const payload: Record<string, unknown> = {
     prompt:        userPrompt,
@@ -147,8 +161,8 @@ export function buildHubLlmCallPayload(
     maxTokens:     options.maxTokens,
     incidentKey:   options.incidentKey || null,
   };
-  if (Array.isArray(routingPlan.chain) && routingPlan.chain.length > 0) {
-    payload.chain = routingPlan.chain;
+  if (Array.isArray(chain) && chain.length > 0) {
+    payload.chain = chain;
   }
   return payload;
 }
@@ -209,10 +223,18 @@ export async function callViaHub(
   }
 
   // Phase G: Reflexion 회피 provider 목록 (비동기 조회, 실패 시 무시)
-  let avoidProviders: string[] = options.avoidProviders || [];
-  if (avoidProviders.length === 0) {
-    avoidProviders = await getAvoidProviders(agentName).catch(() => []);
+  let hardAvoidProviders: string[] = options.avoidProviders || [];
+  if (hardAvoidProviders.length === 0) {
+    hardAvoidProviders = await getAvoidProviders(agentName).catch(() => []);
   }
+  const routeHealth = await buildRouteHealthAvoidance({
+    agentName,
+    market: options.market || process.env.INVESTMENT_MARKET || 'all',
+    taskType: options.taskType || 'default',
+  }).catch(() => ({ enabled: false, avoidProviders: [] }));
+  const chainAvoidProviders = routeHealth?.enabled && Array.isArray(routeHealth.avoidProviders)
+    ? Array.from(new Set([...hardAvoidProviders, ...routeHealth.avoidProviders]))
+    : hardAvoidProviders;
 
   payload = buildHubLlmCallPayload(agentName, systemPrompt, userPrompt, {
     maxTokens: options.maxTokens,
@@ -221,11 +243,13 @@ export async function callViaHub(
     urgency: options.urgency,
     taskType: options.taskType,
     incidentKey: options.incidentKey,
+    avoidProviders: hardAvoidProviders,
+    chainAvoidProviders,
   });
 
-  // avoidProviders를 payload에 추가 (Hub가 지원하는 경우)
-  if (avoidProviders.length > 0) {
-    (payload as any).avoidProviders = avoidProviders;
+  // Hard avoid는 Reflexion/명시 옵션만 Hub에 전달하고, route-health는 chain reorder로만 적용한다.
+  if (hardAvoidProviders.length > 0) {
+    (payload as any).avoidProviders = hardAvoidProviders;
   }
 
   const body = JSON.stringify(payload);

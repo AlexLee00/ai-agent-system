@@ -23,7 +23,7 @@ import {
   syncPositionsAtMarketOpen,
 } from '../shared/portfolio-position-delta.ts';
 import { SIGNAL_STATUS, ACTIONS } from '../shared/signal.ts';
-import { notifyTrade, notifyError, notifyJournalEntry, notifyTradeSkip, notifyCircuitBreaker, notifySettlement } from '../shared/report.ts';
+import { notifyTrade, notifyError, notifyJournalEntry, notifyTradeSkip, notifySettlement } from '../shared/report.ts';
 import {
   buildExecutionRiskApprovalGuard,
   preTradeCheck,
@@ -65,6 +65,23 @@ import {
   normalizeBinanceMarketOrderExecution,
 } from '../shared/binance-order-execution-normalizer.ts';
 import { buildHephaestosExecutionContext } from './hephaestos/execution-context.ts';
+import { buildHephaestosExecutionPreflight } from './hephaestos/execution-preflight.ts';
+import { createSignalFailurePersister, rejectExecution } from './hephaestos/execution-failure.ts';
+import { buildGuardTelemetryMeta, runBuySafetyGuards } from './hephaestos/execution-guards.ts';
+import {
+  buildPendingReconcileDeltaIncidentLink,
+  escapePendingReconcileLikePattern,
+  normalizePendingReconcileTradeRow,
+} from './hephaestos/pending-reconcile-core.ts';
+export { buildHephaestosExecutionContext } from './hephaestos/execution-context.ts';
+export { buildHephaestosExecutionPreflight } from './hephaestos/execution-preflight.ts';
+export { createSignalFailurePersister, rejectExecution } from './hephaestos/execution-failure.ts';
+export { buildGuardTelemetryMeta, runBuySafetyGuards } from './hephaestos/execution-guards.ts';
+export {
+  buildPendingReconcileDeltaIncidentLink,
+  escapePendingReconcileLikePattern,
+  normalizePendingReconcileTradeRow,
+} from './hephaestos/pending-reconcile-core.ts';
 
 // ─── 심볼 유효성 ────────────────────────────────────────────────────
 
@@ -348,24 +365,6 @@ function buildPendingReconcileQualityContext(signal = null) {
   };
 }
 
-function buildPendingReconcileDeltaIncidentLink({
-  signalId = null,
-  orderId = null,
-  clientOrderId = null,
-  action = null,
-  targetFilledQty = 0,
-} = {}) {
-  const normalizedTarget = Number(Math.max(0, Number(targetFilledQty || 0))).toFixed(8);
-  const orderKey = String(orderId || clientOrderId || 'none');
-  return [
-    'pending_reconcile_delta',
-    String(signalId || 'none'),
-    orderKey,
-    String(action || 'none').toLowerCase(),
-    normalizedTarget,
-  ].join(':');
-}
-
 async function findPendingReconcileDeltaTrade({
   signalId = null,
   symbol = null,
@@ -387,10 +386,6 @@ async function findPendingReconcileDeltaTrade({
   );
 }
 
-function escapeLikePattern(value = '') {
-  return String(value || '').replace(/[\\%_]/g, '\\$&');
-}
-
 async function getPendingReconcileAppliedSnapshot({
   signalId = null,
   symbol = null,
@@ -403,7 +398,7 @@ async function getPendingReconcileAppliedSnapshot({
     return { appliedFilledQty: 0, appliedCost: 0 };
   }
   const prefix = `pending_reconcile_delta:${signalId}:${orderKey}:${String(side).toLowerCase()}:`;
-  const likePattern = `${escapeLikePattern(prefix)}%`;
+  const likePattern = `${escapePendingReconcileLikePattern(prefix)}%`;
   const row = await db.get(
     `SELECT
        COALESCE(SUM(amount), 0) AS applied_filled_qty,
@@ -419,28 +414,6 @@ async function getPendingReconcileAppliedSnapshot({
   return {
     appliedFilledQty: Math.max(0, Number(row?.applied_filled_qty || 0)),
     appliedCost: Math.max(0, Number(row?.applied_cost || 0)),
-  };
-}
-
-function normalizePendingReconcileTradeRow(row = {}) {
-  return {
-    id: row?.id || null,
-    signalId: row?.signal_id || null,
-    symbol: row?.symbol || null,
-    side: row?.side || null,
-    amount: Math.max(0, Number(row?.amount || 0)),
-    price: Math.max(0, Number(row?.price || 0)),
-    totalUsdt: Math.max(0, Number(row?.total_usdt || 0)),
-    paper: Boolean(row?.paper),
-    exchange: row?.exchange || 'binance',
-    tradeMode: row?.trade_mode || 'normal',
-    incidentLink: row?.incident_link || null,
-    partialExit: Boolean(row?.partial_exit),
-    partialExitRatio: row?.partial_exit_ratio == null ? null : Number(row.partial_exit_ratio),
-    remainingAmount: row?.remaining_amount == null ? null : Number(row.remaining_amount),
-    executionOrigin: row?.execution_origin || 'strategy',
-    qualityFlag: row?.quality_flag || 'trusted',
-    excludeFromLearning: Boolean(row?.exclude_from_learning ?? false),
   };
 }
 
@@ -2394,123 +2367,6 @@ async function runPendingSignalBatch(signals, { tradeMode, delayMs = 500 } = {})
   return results;
 }
 
-async function rejectExecution({
-  persistFailure,
-  symbol,
-  action,
-  reason,
-  code = 'broker_execution_error',
-  meta = {},
-  notify = 'skip',
-}) {
-  await persistFailure(reason, { code, meta });
-  if (notify === 'circuit') {
-    notifyCircuitBreaker({ reason, type: meta.circuitType ?? null }).catch(() => {});
-  } else if (notify === 'skip') {
-    notifyTradeSkip({
-      symbol,
-      action,
-      reason,
-      openPositions: meta.openPositions,
-      maxPositions: meta.maxPositions,
-    }).catch(() => {});
-  }
-  // notify === 'digest': capital_backpressure 계열은 즉시 알림 없이 DB 기록만
-  return { success: false, reason };
-}
-
-function buildGuardTelemetryMeta(symbol, action, signalTradeMode, meta = {}, extras = {}) {
-  return {
-    symbol,
-    side: String(action || 'BUY').toLowerCase(),
-    tradeMode: signalTradeMode,
-    guardKind: extras.guardKind || meta.guardKind || null,
-    pressureSource: extras.pressureSource || meta.pressureSource || null,
-    ...meta,
-  };
-}
-
-async function runBuySafetyGuards({
-  persistFailure,
-  symbol,
-  action,
-  signalTradeMode,
-  capitalPolicy,
-  signalConfidence = null,
-}) {
-  const circuit = await checkCircuitBreaker('binance', signalTradeMode);
-  if (circuit.triggered) {
-    console.log(`  ⛔ [서킷 브레이커] ${circuit.reason}`);
-    return rejectExecution({
-      persistFailure,
-      symbol,
-      action,
-      reason: circuit.reason,
-      code: 'capital_circuit_breaker',
-      meta: { circuitType: circuit.type ?? null },
-      notify: 'circuit',
-    });
-  }
-
-  const openPositionsSafe = await getOpenPositions('binance', false, signalTradeMode).catch(() => []);
-  if (openPositionsSafe.length >= capitalPolicy.max_concurrent_positions) {
-    const overflowPolicy = getMaxPositionsOverflowPolicy(signalTradeMode);
-    const overflowSlots = Math.max(0, Math.round(Number(overflowPolicy?.allowOverflowSlots || 0)));
-    const minConfidence = Number(overflowPolicy?.minConfidence || 0);
-    const signalConfidenceNum = Number(signalConfidence || 0);
-    const overflowLimit = capitalPolicy.max_concurrent_positions + overflowSlots;
-    if (
-      overflowPolicy?.enabled === true
-      && overflowSlots > 0
-      && openPositionsSafe.length < overflowLimit
-      && signalConfidenceNum >= minConfidence
-    ) {
-      console.log(`  ⚖️ [자본관리] 강한 BUY 신호로 max positions overflow 허용: ${openPositionsSafe.length}/${capitalPolicy.max_concurrent_positions} → ${overflowLimit} (confidence=${signalConfidenceNum.toFixed(2)})`);
-      return null;
-    }
-    const reason = `최대 포지션 도달: ${openPositionsSafe.length}/${capitalPolicy.max_concurrent_positions}`;
-    console.log(`  ⛔ [자본관리] ${reason}`);
-    return rejectExecution({
-      persistFailure,
-      symbol,
-      action,
-      reason,
-      code: 'capital_guard_rejected',
-      meta: buildGuardTelemetryMeta(symbol, action, signalTradeMode, {
-        openPositions: openPositionsSafe.length,
-        maxPositions: capitalPolicy.max_concurrent_positions,
-      }, {
-        guardKind: 'max_positions',
-        pressureSource: 'capital_policy',
-      }),
-      notify: 'skip',
-    });
-  }
-
-  const dailyTradesSafe = await getDailyTradeCount({ exchange: 'binance', tradeMode: signalTradeMode, side: 'buy' }).catch(() => 0);
-  if (dailyTradesSafe >= capitalPolicy.max_daily_trades) {
-    const reason = formatDailyTradeLimitReason(dailyTradesSafe, capitalPolicy.max_daily_trades);
-    console.log(`  ⛔ [자본관리] ${reason}`);
-    return rejectExecution({
-      persistFailure,
-      symbol,
-      action,
-      reason,
-      code: 'capital_guard_rejected',
-      meta: buildGuardTelemetryMeta(symbol, action, signalTradeMode, {
-        dailyTrades: dailyTradesSafe,
-        maxDailyTrades: capitalPolicy.max_daily_trades,
-      }, {
-        guardKind: 'daily_trade_limit',
-        pressureSource: 'capital_policy',
-      }),
-      notify: 'skip',
-    });
-  }
-
-  return null;
-}
-
 async function tryAbsorbUntrackedBalance({
   signalId,
   symbol,
@@ -4245,11 +4101,13 @@ export async function enqueueClientOrderPendingRetry({
  */
 export async function executeSignal(signal) {
   await initHubSecrets().catch(() => false);
-  const globalPaperMode = isPaperMode();
-  const executionContext = buildHephaestosExecutionContext(signal, {
-    globalPaperMode,
+  const preflight = await buildHephaestosExecutionPreflight(signal, {
+    globalPaperMode: isPaperMode(),
     defaultTradeMode: getInvestmentTradeMode(),
+    getCapitalConfig,
+    getDynamicMinOrderAmount,
   });
+  const { globalPaperMode, executionContext, signalTradeMode, capitalPolicy, minOrderUsdt } = preflight;
   const {
     signalId,
     symbol,
@@ -4284,30 +4142,18 @@ export async function executeSignal(signal) {
     }
   }
 
-  let signalTradeMode = executionContext.signalTradeMode;
-  const capitalPolicy = getCapitalConfig('binance', signalTradeMode);
-  const minOrderUsdt = await getDynamicMinOrderAmount('binance', signalTradeMode);
   const exitReasonOverride = signal.exit_reason_override || null;
   const partialExitRatio = normalizePartialExitRatio(signal.partial_exit_ratio || signal.partialExitRatio);
   const qualityContext = buildSignalQualityContext(signal);
   const hephaestosRoleState = await getInvestmentAgentRoleState('hephaestos', 'binance').catch(() => null);
-  const persistFailure = async (reason, {
-    code = 'broker_execution_error',
-    meta = {},
-  } = {}) => {
-    await db.updateSignalBlock(signalId, {
-      status: SIGNAL_STATUS.FAILED,
-      reason: reason ? String(reason).slice(0, 180) : null,
-      code,
-      meta: {
-        exchange: 'binance',
-        symbol,
-        action,
-        amount: amountUsdt,
-        ...meta,
-      },
-    }).catch(() => {});
-  };
+  const persistFailure = createSignalFailurePersister({
+    db,
+    signalId,
+    symbol,
+    action,
+    amountUsdt,
+    failedStatus: SIGNAL_STATUS.FAILED,
+  });
 
   if (!isBinanceSymbol(symbol)) {
     const reason = `바이낸스 심볼이 아님: ${symbol}`;
@@ -4352,6 +4198,11 @@ export async function executeSignal(signal) {
         signalTradeMode,
         capitalPolicy,
         signalConfidence: Number(signal?.confidence || 0),
+        checkCircuitBreaker,
+        getOpenPositions,
+        getMaxPositionsOverflowPolicy,
+        getDailyTradeCount,
+        formatDailyTradeLimitReason,
       });
       if (safetyRejected) return safetyRejected;
 

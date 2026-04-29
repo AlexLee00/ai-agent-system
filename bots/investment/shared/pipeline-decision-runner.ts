@@ -28,6 +28,8 @@ import { recordDiscoveryAttribution, buildDiscoveryReflectionSummary } from './d
 import { getOHLCV } from './ohlcv-fetcher.ts';
 import { createRequire } from 'module';
 import { buildDecisionPipelineMetrics, countDecisionActions } from './pipeline-decision-metrics.ts';
+import { buildPipelineDecisionFinishMeta } from './pipeline-decision-finish-meta.ts';
+import { buildPipelineSymbolCandidate, recordStrategyRouteStats } from './pipeline-symbol-candidate.ts';
 
 const _require = createRequire(import.meta.url);
 const elixirBridge = _require('../../../packages/core/lib/elixir-bridge');
@@ -928,95 +930,32 @@ export async function runDecisionExecutionPipeline({
       });
       const decision = decisionResult.result?.decision;
       if (!decision?.action) continue;
-      const mtf = intelligentFlags.phases.mtfAnalyzerEnabled
-        ? analyzeMultiTimeframe(symbol, analyses, exchange, intelligentFlags.mtf)
-        : null;
-      const sentiment = communitySentimentBySymbol.get(symbol) || null;
-      let wyckoff = null;
-      let vsa = null;
-      if ((intelligentFlags.phases.wyckoffDetectionEnabled || intelligentFlags.phases.vsaClassificationEnabled) && exchange === 'binance') {
-        const fromDate = new Date(Date.now() - 5 * 24 * 3600 * 1000).toISOString().slice(0, 10);
-        const candles = await getOHLCV(symbol, '1h', fromDate, null, 'binance').catch(() => []);
-        if (intelligentFlags.phases.wyckoffDetectionEnabled) {
-          wyckoff = detectWyckoffPhase(candles);
-        }
-        if (intelligentFlags.phases.vsaClassificationEnabled && candles.length > 10) {
-          vsa = classifyVsaBar(candles[candles.length - 1], candles.slice(-30, -1));
-        }
-      }
-      const taAnalysis = analyses.find((a) => a.analyst === ANALYST_TYPES.TA_MTF || a.analyst === ANALYST_TYPES.TA);
-      const discoverySeed = discoveryCandidateBySymbol.get(symbol) || null;
-      const fused = intelligentFlags.phases.scoreFusionEnabled
-        ? fuseDiscoveryScore({
-            regime: normalizeRegimeLabel(currentPortfolio?.marketRegime || null),
-            discoverySignals: discoverySeed ? [discoverySeed] : [],
-            sentiment,
-            technical: { confidence: Number(taAnalysis?.confidence || 0.5) },
-            mtf,
-            wyckoff,
-            vsa,
-          })
-        : null;
-      const discoveryScore = clamp01(fused?.discoveryScore ?? decision?.confidence ?? 0.5, 0.5);
-      const shouldMutateDecision = intelligentFlags.shouldApplyDecisionMutation();
-      const shouldApplyScoreFusion = intelligentFlags.shouldApplyScoreFusion();
-      const blendedConfidence = shouldApplyScoreFusion
-        ? clamp01((Number(decision?.confidence || 0) * 0.7) + (discoveryScore * 0.3), Number(decision?.confidence || 0))
-        : Number(decision?.confidence || 0);
-      const predictiveScore = clamp01(
-        (discoveryScore * 0.55) + (clamp01(((Number(mtf?.alignmentScore || 0) + 1) / 2), 0.5) * 0.45),
-        discoveryScore,
-      );
-      const enrichedDecision = {
-        ...decision,
-        confidence: Number(blendedConfidence.toFixed(4)),
-        setup_type: shouldMutateDecision ? (decision?.setup_type || fused?.setupType || null) : (decision?.setup_type || null),
-        entry_strategy: shouldMutateDecision ? (decision?.entry_strategy || fused?.entryStrategy || null) : (decision?.entry_strategy || null),
-        predictiveScore: Number(predictiveScore.toFixed(4)),
-        triggerHints: {
-          mtfAgreement: Number(mtf?.mtfAgreement || 0),
-          discoveryScore: Number(discoveryScore || 0),
-          volumeBurst: Number(vsa?.metrics?.volRatio || 0),
-          breakoutRetest: String(wyckoff?.phase || '') === 'accumulation' && String(mtf?.dominantSignal || '') === ACTIONS.BUY,
-          newsMomentum: Math.max(0, Number(sentiment?.sentimentScore || 0)),
-        },
-        block_meta: {
-          ...(decision?.block_meta || {}),
-          discoveryContext: {
-            source: discoverySeed?.source || null,
-            market: discoveryMarket,
-            score: discoverySeed?.score ?? null,
-            confidence: discoverySeed?.confidence ?? null,
-            reasonCode: discoverySeed?.reasonCode ?? null,
-            evidenceRef: discoverySeed?.evidenceRef ?? null,
-          },
-          mtf,
-          sentiment,
-          wyckoff,
-          vsa,
-          scoreFusion: fused,
-        },
-      };
-      intelligentBySymbol.set(symbol, {
-        discoverySeed,
-        sentiment,
-        mtf,
-        wyckoff,
-        vsa,
-        fused,
-        predictiveScore,
+      const { enrichedDecision, intelligentState } = await buildPipelineSymbolCandidate({
+        symbol,
+        exchange,
+        decision,
+        analyses,
+        intelligentFlags,
+        currentPortfolio,
+        discoveryCandidateBySymbol,
+        communitySentimentBySymbol,
+        discoveryMarket,
+        getOHLCV,
+        analyzeMultiTimeframe,
+        detectWyckoffPhase,
+        classifyVsaBar,
+        fuseDiscoveryScore,
+        normalizeRegimeLabel,
       });
-      const strategyRoute = enrichedDecision?.strategy_route || enrichedDecision?.strategyRoute || null;
-      if (strategyRoute?.selectedFamily) {
-        strategyRouteCounts[strategyRoute.selectedFamily] = (strategyRouteCounts[strategyRoute.selectedFamily] || 0) + 1;
-      }
-      if (strategyRoute?.quality) {
-        strategyRouteQualityCounts[strategyRoute.quality] = (strategyRouteQualityCounts[strategyRoute.quality] || 0) + 1;
-      }
-      if (Number.isFinite(Number(strategyRoute?.readinessScore))) {
-        strategyRouteReadinessSum += Number(strategyRoute.readinessScore);
-        strategyRouteReadinessCount++;
-      }
+      intelligentBySymbol.set(symbol, intelligentState);
+      const strategyRouteStats = recordStrategyRouteStats(enrichedDecision, {
+        strategyRouteCounts,
+        strategyRouteQualityCounts,
+        strategyRouteReadinessSum,
+        strategyRouteReadinessCount,
+      });
+      strategyRouteReadinessSum = strategyRouteStats.strategyRouteReadinessSum;
+      strategyRouteReadinessCount = strategyRouteStats.strategyRouteReadinessCount;
       symbolDecisions.push({ symbol, exchange, ...enrichedDecision });
     } catch (err) {
       console.error(`  ❌ [노드 브리지] ${symbol} 판단 실패: ${err.message}`);
@@ -1032,41 +971,18 @@ export async function runDecisionExecutionPipeline({
     });
     await finishPipelineRun(sessionId, {
       status: 'completed',
-      meta: {
-        bridge_status: 'no_symbol_decisions',
-        decided_symbols: 0,
-        executed_symbols: metrics.executedSymbols,
-        decision_count: 0,
-        buy_decisions: 0,
-        sell_decisions: 0,
-        hold_decisions: 0,
-        approved_signals: metrics.approvedSignals,
-        debate_count: metrics.debateCount,
-        debate_limit: metrics.debateLimit,
-        risk_rejected: metrics.riskRejected,
-        risk_reject_reason_top: null,
-        risk_reject_reasons: {},
-        weak_signal_skipped: metrics.weakSignalSkipped,
-        weak_signal_reason_top: null,
-        weak_signal_reasons: {},
-        strategy_route_counts: metrics.strategyRouteCounts,
-        strategy_route_quality_counts: metrics.strategyRouteQualityCounts,
-        strategy_route_avg_readiness: metrics.strategyRouteAvgReadiness,
-        mid_gap_promoted: metrics.midGapPromoted,
-        mid_gap_rejected_by_risk: metrics.midGapRejectedByRisk,
-        mid_gap_executed: 0,
-        invalid_signal_skipped: metrics.invalidSignalSkipped,
-        exit_phase_evaluated: metrics.exitPhaseEvaluated,
-        exit_phase_sell_signals: metrics.exitPhaseSellSignals,
-        exit_phase_executed: metrics.exitPhaseExecuted,
-        exit_below_min_skipped: metrics.exitBelowMinSkipped,
-        exit_reclaimed_usdt: Number(exitEntrySummary?.reclaimedUsdt || 0),
-        exit_closed_count: Number(exitEntrySummary?.closedCount || 0),
-        saved_execution_work: metrics.savedExecutionWork,
-        warnings: metrics.warnings,
-        investment_trade_mode: investmentTradeMode,
-        ...buildPlannerRunMeta(plannerCompact),
-      },
+      meta: buildPipelineDecisionFinishMeta({
+        bridgeStatus: 'no_symbol_decisions',
+        symbolDecisions,
+        metrics,
+        actionCounts: { buy: 0, sell: 0, hold: 0 },
+        decisionCount: 0,
+        approvedSignals: metrics.approvedSignals,
+        executedSymbols: metrics.executedSymbols,
+        exitEntrySummary,
+        investmentTradeMode,
+        plannerMeta: buildPlannerRunMeta(plannerCompact),
+      }),
     });
     return {
       results: exitResults,
@@ -1141,40 +1057,17 @@ export async function runDecisionExecutionPipeline({
     });
     await finishPipelineRun(sessionId, {
       status: 'failed',
-      meta: {
-        bridge_status: 'portfolio_decision_failed',
-        decided_symbols: symbolDecisions.length,
-        executed_symbols: 0,
-        decision_count: 0,
-        buy_decisions: 0,
-        sell_decisions: 0,
-        hold_decisions: 0,
-        debate_count: metrics.debateCount,
-        debate_limit: metrics.debateLimit,
-        risk_rejected: metrics.riskRejected,
-        risk_reject_reason_top: null,
-        risk_reject_reasons: {},
-        weak_signal_skipped: metrics.weakSignalSkipped,
-        weak_signal_reason_top: null,
-        weak_signal_reasons: {},
-        strategy_route_counts: metrics.strategyRouteCounts,
-        strategy_route_quality_counts: metrics.strategyRouteQualityCounts,
-        strategy_route_avg_readiness: metrics.strategyRouteAvgReadiness,
-        mid_gap_promoted: metrics.midGapPromoted,
-        mid_gap_rejected_by_risk: metrics.midGapRejectedByRisk,
-        mid_gap_executed: 0,
-        invalid_signal_skipped: metrics.invalidSignalSkipped,
-        exit_phase_evaluated: metrics.exitPhaseEvaluated,
-        exit_phase_sell_signals: metrics.exitPhaseSellSignals,
-        exit_phase_executed: metrics.exitPhaseExecuted,
-        exit_below_min_skipped: metrics.exitBelowMinSkipped,
-        exit_reclaimed_usdt: Number(exitEntrySummary?.reclaimedUsdt || 0),
-        exit_closed_count: Number(exitEntrySummary?.closedCount || 0),
-        saved_execution_work: metrics.savedExecutionWork,
-        warnings: metrics.warnings,
-        investment_trade_mode: investmentTradeMode,
-        ...buildPlannerRunMeta(plannerCompact),
-      },
+      meta: buildPipelineDecisionFinishMeta({
+        bridgeStatus: 'portfolio_decision_failed',
+        symbolDecisions,
+        metrics,
+        actionCounts: { buy: 0, sell: 0, hold: 0 },
+        decisionCount: 0,
+        executedSymbols: 0,
+        exitEntrySummary,
+        investmentTradeMode,
+        plannerMeta: buildPlannerRunMeta(plannerCompact),
+      }),
     });
     return {
       results: [],
@@ -1419,46 +1312,23 @@ export async function runDecisionExecutionPipeline({
   });
   await finishPipelineRun(sessionId, {
     status: 'completed',
-    meta: {
-      bridge_status: 'completed',
-      decided_symbols: symbolDecisions.length,
-      decision_count: (portfolioDecision.decisions || []).length,
-      buy_decisions: actionCounts.buy,
-      sell_decisions: actionCounts.sell,
-      hold_decisions: actionCounts.hold,
-      approved_signals: completedMetrics.approvedSignals,
-      executed_symbols: completedMetrics.executedSymbols,
-      portfolio_view: portfolioDecision.portfolio_view,
-      risk_level: portfolioDecision.risk_level,
-      debate_count: completedMetrics.debateCount,
-      debate_limit: completedMetrics.debateLimit,
-      risk_rejected: completedMetrics.riskRejected,
-      risk_reject_reason_top: getTopRiskRejectReason(),
-      risk_reject_reasons: completedMetrics.riskRejectReasons,
-      weak_signal_skipped: completedMetrics.weakSignalSkipped,
-      weak_signal_reason_top: getTopWeakSignalReason(),
-      weak_signal_reasons: completedMetrics.weakSignalReasons,
-      strategy_route_counts: completedMetrics.strategyRouteCounts,
-      strategy_route_quality_counts: completedMetrics.strategyRouteQualityCounts,
-      strategy_route_avg_readiness: completedMetrics.strategyRouteAvgReadiness,
-      mid_gap_promoted: completedMetrics.midGapPromoted,
-      mid_gap_rejected_by_risk: completedMetrics.midGapRejectedByRisk,
-      mid_gap_executed: completedMetrics.midGapExecuted,
-      post_execution_blocked: Number(completedMetrics.postExecutionBlocked || 0),
-      invalid_signal_skipped: completedMetrics.invalidSignalSkipped,
-      exit_phase_evaluated: completedMetrics.exitPhaseEvaluated,
-      exit_phase_sell_signals: completedMetrics.exitPhaseSellSignals,
-      exit_phase_executed: completedMetrics.exitPhaseExecuted,
-      exit_below_min_skipped: completedMetrics.exitBelowMinSkipped,
-      exit_reclaimed_usdt: Number(exitEntrySummary?.reclaimedUsdt || 0),
-      exit_closed_count: Number(exitEntrySummary?.closedCount || 0),
-      saved_execution_work: completedMetrics.savedExecutionWork,
-      warnings: completedMetrics.warnings,
-      investment_trade_mode: investmentTradeMode,
-      entry_trigger_stats: completedMetrics.entryTriggerStats || null,
-      predictive_validation: completedMetrics.predictiveValidationStats || null,
-      ...buildPlannerRunMeta(plannerCompact),
-    },
+    meta: buildPipelineDecisionFinishMeta({
+      bridgeStatus: 'completed',
+      symbolDecisions,
+      metrics: completedMetrics,
+      actionCounts,
+      decisionCount: (portfolioDecision.decisions || []).length,
+      approvedSignals: completedMetrics.approvedSignals,
+      executedSymbols: completedMetrics.executedSymbols,
+      exitEntrySummary,
+      investmentTradeMode,
+      plannerMeta: buildPlannerRunMeta(plannerCompact),
+      portfolioDecision,
+      topRiskRejectReason: getTopRiskRejectReason(),
+      topWeakSignalReason: getTopWeakSignalReason(),
+      midGapExecuted: completedMetrics.midGapExecuted,
+      postExecutionBlocked: completedMetrics.postExecutionBlocked,
+    }),
   });
 
   if (intelligentFlags.phases.reflectionEnabled) {

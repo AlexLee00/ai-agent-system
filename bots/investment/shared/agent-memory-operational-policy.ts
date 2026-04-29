@@ -9,6 +9,10 @@
 
 import * as db from './db.ts';
 import { resolveAgentMemoryRuntimeFlags } from './agent-memory-runtime.ts';
+import {
+  classifyRouteFailure,
+  normalizeProviderName,
+} from './agent-llm-route-health.ts';
 
 const ACTIVATION_STEPS = [
   {
@@ -115,6 +119,7 @@ export async function buildAgentLlmRouteQualityReport({
   minCalls = 3,
   failThreshold = 0.25,
   fallbackThreshold = 0.35,
+  recoveryGraceMinutes = Number(process.env.LUNA_LLM_ROUTE_RECOVERY_GRACE_MINUTES || 120),
 } = {}) {
   await db.initSchema();
   const windowDays = Math.max(1, Number(days || 3) || 3);
@@ -138,6 +143,8 @@ export async function buildAgentLlmRouteQualityReport({
              THEN 1 ELSE 0
            END) AS synthetic_hub_disabled_calls,
        AVG(latency_ms) AS avg_latency_ms,
+       MAX(error) FILTER (WHERE response_ok IS FALSE) AS sample_error,
+       MAX(route_chain::text) FILTER (WHERE response_ok IS FALSE) AS sample_route_chain,
        MAX(created_at) AS last_seen_at
      FROM investment.llm_routing_log
      WHERE created_at >= NOW() - ($1::int * INTERVAL '1 day')
@@ -176,6 +183,83 @@ export async function buildAgentLlmRouteQualityReport({
   function toTime(value) {
     const time = new Date(value || 0).getTime();
     return Number.isFinite(time) ? time : 0;
+  }
+
+  function summarizeFailedProvider(row = {}) {
+    const provider = String(row.provider || '');
+    const failureKind = classifyRouteFailure(row.sample_error || '');
+    let routeProviders = [];
+    try {
+      const parsed = JSON.parse(row.sample_route_chain || '[]');
+      if (Array.isArray(parsed)) {
+        routeProviders = Array.from(new Set(parsed
+          .map((item) => normalizeProviderName(item?.provider || ''))
+          .filter(Boolean)));
+      }
+    } catch {
+      routeProviders = [];
+    }
+    return {
+      failureKind,
+      routeProviders,
+      providerLabel: provider === 'failed' && routeProviders.length
+        ? `failed(${routeProviders.join('→')})`
+        : provider,
+    };
+  }
+
+  function getProviderSuccessStats(row = {}, providerNames = []) {
+    const route = routeKey(row);
+    const providers = new Set((providerNames || []).map(normalizeProviderName).filter(Boolean));
+    const matched = rows.filter((candidate) => {
+      if (routeKey(candidate) !== route) return false;
+      const provider = normalizeProviderName(candidate.provider || '');
+      if (!providers.has(provider)) return false;
+      const calls = Number(candidate.calls || 0);
+      const failed = Number(candidate.failed_calls || 0);
+      return calls > failed && provider !== 'failed' && provider !== 'direct_fallback';
+    });
+    const successCalls = matched.reduce((sum, candidate) => {
+      const calls = Number(candidate.calls || 0);
+      const failed = Number(candidate.failed_calls || 0);
+      return sum + Math.max(0, calls - failed);
+    }, 0);
+    const latest = matched.reduce((best, candidate) => {
+      const seenAt = toTime(candidate.last_seen_at);
+      if (!best || seenAt > best.seenAt) {
+        return {
+          provider: candidate.provider,
+          seenAt,
+          lastSeenAt: candidate.last_seen_at,
+        };
+      }
+      return best;
+    }, null);
+    return { successCalls, latestSuccess: latest };
+  }
+
+  function buildRouteRecoveryContext(row = {}, failed = 0, failureSummary = {}) {
+    const successStats = getProviderSuccessStats(row, failureSummary.routeProviders || []);
+    const recoveredBy = latestSuccessfulRouteByKey.get(routeKey(row));
+    const failedSeenAt = toTime(row.last_seen_at);
+    const latestSuccess = successStats.latestSuccess || recoveredBy || null;
+    const successAfterFailure = latestSuccess && latestSuccess.seenAt > failedSeenAt;
+    const totalObserved = successStats.successCalls + failed;
+    const effectiveFailureRate = totalObserved > 0 ? failed / totalObserved : 1;
+    const graceMs = Math.max(0, Number(recoveryGraceMinutes || 0)) * 60 * 1000;
+    const withinGrace = latestSuccess && graceMs > 0 && (Date.now() - latestSuccess.seenAt) <= graceMs;
+    const transientWithSuccess = successStats.successCalls > 0
+      && effectiveFailureRate < failThreshold
+      && withinGrace;
+    return {
+      recoveredBy,
+      latestSuccess,
+      successAfterFailure,
+      transientWithSuccess,
+      routeProviderSuccessCalls: successStats.successCalls,
+      effectiveFailureRate,
+      recoveryGraceMinutes: Math.max(0, Number(recoveryGraceMinutes || 0)),
+    };
   }
 
   const latestSuccessfulRouteByKey = new Map();
@@ -238,8 +322,9 @@ export async function buildAgentLlmRouteQualityReport({
       continue;
     }
     if (failureRate >= failThreshold) {
-      const recoveredBy = latestSuccessfulRouteByKey.get(routeKey(row));
-      if (recoveredBy && recoveredBy.seenAt > toTime(row.last_seen_at)) {
+      const failureSummary = summarizeFailedProvider(row);
+      const recovery = buildRouteRecoveryContext(row, failed, failureSummary);
+      if (recovery.successAfterFailure) {
         suggestions.push({
           type: 'route_failure_resolved_by_success',
           severity: 'low',
@@ -247,13 +332,43 @@ export async function buildAgentLlmRouteQualityReport({
           market: row.market,
           taskType: row.task_type,
           provider: row.provider,
-          recoveredProvider: recoveredBy.provider,
+          providerLabel: failureSummary.providerLabel,
+          failureKind: failureSummary.failureKind,
+          routeProviders: failureSummary.routeProviders,
+          recoveredProvider: recovery.latestSuccess.provider,
           calls,
           failureRate,
           fallbackRate,
+          routeProviderSuccessCalls: recovery.routeProviderSuccessCalls,
+          effectiveFailureRate: recovery.effectiveFailureRate,
+          recoveryGraceMinutes: recovery.recoveryGraceMinutes,
           failedLastSeenAt: row.last_seen_at,
-          recoveredLastSeenAt: recoveredBy.lastSeenAt,
+          recoveredLastSeenAt: recovery.latestSuccess.lastSeenAt,
           recommendation: '동일 agent/market/task가 이후 다른 provider로 성공했습니다. 장애로 차단하지 않고 cooldown/route 히스토리만 추적하세요.',
+        });
+        continue;
+      }
+      if (recovery.transientWithSuccess) {
+        suggestions.push({
+          type: 'route_failure_transient_with_success_history',
+          severity: 'medium',
+          agent: row.agent_name,
+          market: row.market,
+          taskType: row.task_type,
+          provider: row.provider,
+          providerLabel: failureSummary.providerLabel,
+          failureKind: failureSummary.failureKind,
+          routeProviders: failureSummary.routeProviders,
+          calls,
+          failureRate,
+          fallbackRate,
+          routeProviderSuccessCalls: recovery.routeProviderSuccessCalls,
+          effectiveFailureRate: recovery.effectiveFailureRate,
+          recoveryGraceMinutes: recovery.recoveryGraceMinutes,
+          latestSuccessProvider: recovery.latestSuccess?.provider || null,
+          latestSuccessAt: recovery.latestSuccess?.lastSeenAt || null,
+          failedLastSeenAt: row.last_seen_at,
+          recommendation: `동일 route/provider 성공 ${recovery.routeProviderSuccessCalls}건 대비 실패 ${failed}건으로 전체 실패율 ${(recovery.effectiveFailureRate * 100).toFixed(1)}%입니다. active blocker 대신 ${recovery.recoveryGraceMinutes}분 grace 관찰로 유지하세요.`,
         });
         continue;
       }
@@ -264,10 +379,18 @@ export async function buildAgentLlmRouteQualityReport({
         market: row.market,
         taskType: row.task_type,
         provider: row.provider,
+        providerLabel: failureSummary.providerLabel,
+        failureKind: failureSummary.failureKind,
+        routeProviders: failureSummary.routeProviders,
         calls,
         failureRate,
         fallbackRate,
-        recommendation: '해당 agent/task provider를 cooldown/reset 점검하거나 fallback 우선순위를 높이세요.',
+        routeProviderSuccessCalls: recovery.routeProviderSuccessCalls,
+        effectiveFailureRate: recovery.effectiveFailureRate,
+        recoveryGraceMinutes: recovery.recoveryGraceMinutes,
+        recommendation: failureSummary.routeProviders.length > 0
+          ? `route chain(${failureSummary.routeProviders.join('→')}) 중 ${failureSummary.failureKind} 계열 실패입니다. cooldown/reset 후 healthy provider 우선순위 재정렬을 적용하세요.`
+          : `해당 agent/task provider를 ${failureSummary.failureKind} 기준으로 점검하고 fallback 우선순위를 높이세요.`,
       });
     } else if (fallbackRate >= fallbackThreshold) {
       suggestions.push({
@@ -295,6 +418,7 @@ export async function buildAgentLlmRouteQualityReport({
       minCalls: minCallCount,
       failThreshold,
       fallbackThreshold,
+      recoveryGraceMinutes: Math.max(0, Number(recoveryGraceMinutes || 0)),
     },
     rows,
     providers: providerRows,
