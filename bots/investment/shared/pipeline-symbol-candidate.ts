@@ -86,6 +86,8 @@ export async function buildPipelineSymbolCandidate({
         confidence: discoverySeed?.confidence ?? null,
         reasonCode: discoverySeed?.reasonCode ?? null,
         evidenceRef: discoverySeed?.evidenceRef ?? null,
+        componentSnapshot: fused?.snapshot || null,
+        componentQuality: fused?.quality || null,
       },
       mtf,
       sentiment,
@@ -104,6 +106,8 @@ export async function buildPipelineSymbolCandidate({
       wyckoff,
       vsa,
       fused,
+      discoveryComponentSnapshot: fused?.snapshot || null,
+      discoveryComponentQuality: fused?.quality || null,
       predictiveScore,
     },
   };

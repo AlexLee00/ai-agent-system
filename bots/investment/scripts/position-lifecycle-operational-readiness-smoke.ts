@@ -50,6 +50,31 @@ assert.equal(openPositionCoverage.applicableLateStageCoveragePct, 66.7);
 assert.deepEqual(openPositionCoverage.rows[0].applicableLateStages, ['stage_4', 'stage_5', 'stage_6']);
 assert.deepEqual(openPositionCoverage.rows[0].missingApplicableLateStages, ['stage_6']);
 
+const openMonitorOnlyCoverage = summarizeLifecycleStageCoverage({
+  events: [
+    { position_scope_key: 'binance:MONITOR/USDT:normal', symbol: 'MONITOR/USDT', exchange: 'binance', trade_mode: 'normal', stage_id: 'stage_4' },
+    { position_scope_key: 'binance:MONITOR/USDT:normal', symbol: 'MONITOR/USDT', exchange: 'binance', trade_mode: 'normal', stage_id: 'stage_5' },
+  ],
+  activeProfiles: [{ symbol: 'MONITOR/USDT', exchange: 'binance', trade_mode: 'normal', lifecycleStatus: 'holding' }],
+  actionableCandidates: [],
+});
+assert.deepEqual(openMonitorOnlyCoverage.rows[0].applicableLateStages, ['stage_4', 'stage_5']);
+assert.deepEqual(openMonitorOnlyCoverage.rows[0].nonApplicableLateStages, ['stage_6', 'stage_7', 'stage_8']);
+assert.equal(openMonitorOnlyCoverage.rows[0].missingApplicableLateStages.length, 0);
+assert.equal(openMonitorOnlyCoverage.applicableLateStageCoveragePct, 100);
+
+const closedPositionCoverage = summarizeLifecycleStageCoverage({
+  events: [
+    { position_scope_key: 'binance:CLOSED/USDT:normal', symbol: 'CLOSED/USDT', exchange: 'binance', trade_mode: 'normal', stage_id: 'stage_4' },
+    { position_scope_key: 'binance:CLOSED/USDT:normal', symbol: 'CLOSED/USDT', exchange: 'binance', trade_mode: 'normal', stage_id: 'stage_5' },
+    { position_scope_key: 'binance:CLOSED/USDT:normal', symbol: 'CLOSED/USDT', exchange: 'binance', trade_mode: 'normal', stage_id: 'stage_6' },
+  ],
+  activeProfiles: [{ symbol: 'CLOSED/USDT', exchange: 'binance', trade_mode: 'normal', lifecycleStatus: 'closed' }],
+  actionableCandidates: [],
+});
+assert.deepEqual(closedPositionCoverage.rows[0].applicableLateStages, ['stage_4', 'stage_5', 'stage_6', 'stage_7', 'stage_8']);
+assert.deepEqual(closedPositionCoverage.rows[0].missingApplicableLateStages, ['stage_7', 'stage_8']);
+
 const filteredProfiles = filterLifecycleCoverageProfiles({
   activeProfiles: [
     ...activeProfiles,

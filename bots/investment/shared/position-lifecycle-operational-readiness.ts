@@ -52,6 +52,48 @@ function buildActionableCandidateScopeSet(candidates = null) {
   return scopes;
 }
 
+function profileLifecycleStatus(profile = {}) {
+  return String(
+    profile.lifecycle_status
+      || profile.lifecycleStatus
+      || profile?.strategy_state?.lifecycleStatus
+      || profile?.strategyState?.lifecycleStatus
+      || '',
+  ).trim().toLowerCase();
+}
+
+function isClosedLifecycleStatus(status = '') {
+  return [
+    'closed',
+    'position_closed',
+    'exit_completed',
+    'exited',
+    'sold',
+    'completed',
+    'posttrade_review',
+    'posttrade_completed',
+    'feedback_learning',
+  ].includes(String(status || '').trim().toLowerCase());
+}
+
+function applicableLateStagesForProfile({
+  profile = {},
+  scope,
+  lateStages = DEFAULT_LATE_STAGES,
+  covered = new Set(),
+  actionableCandidateScopeSet = null,
+} = {}) {
+  const status = profileLifecycleStatus(profile);
+  const closed = isClosedLifecycleStatus(status);
+  return lateStages.filter((stageId) => {
+    if (ALWAYS_APPLICABLE_LATE_STAGES.includes(stageId)) return true;
+    if (covered.has(stageId)) return true;
+    if (closed) return true;
+    if (stageId === 'stage_6' && actionableCandidateScopeSet?.has(scope)) return true;
+    return false;
+  });
+}
+
 function scopeWithoutTradeMode(scope = '') {
   const parts = String(scope || '').split(':');
   return parts.length >= 2 ? `${parts[0]}:${parts[1]}` : scope;
@@ -159,25 +201,30 @@ export function summarizeLifecycleStageCoverage({
       const lateStages = DEFAULT_LATE_STAGES.filter((stageId) => requiredStages.includes(stageId));
       const applicableLateStages = actionableCandidateScopeSet == null
         ? lateStages
-        : lateStages.filter((stageId) => (
-          ALWAYS_APPLICABLE_LATE_STAGES.includes(stageId)
-          || covered.has(stageId)
-          || (stageId === 'stage_6' && actionableCandidateScopeSet.has(scope))
-        ));
+        : applicableLateStagesForProfile({
+          profile,
+          scope,
+          lateStages,
+          covered,
+          actionableCandidateScopeSet,
+        });
       const coveredLateStages = lateStages.filter((stageId) => covered.has(stageId));
       const missingLateStages = lateStages.filter((stageId) => !covered.has(stageId));
       const coveredApplicableLateStages = applicableLateStages.filter((stageId) => covered.has(stageId));
       const missingApplicableLateStages = applicableLateStages.filter((stageId) => !covered.has(stageId));
+      const nonApplicableLateStages = lateStages.filter((stageId) => !applicableLateStages.includes(stageId));
       return {
         positionScopeKey: scope,
         symbol: profile.symbol || null,
         exchange: profile.exchange || null,
         tradeMode: profile.trade_mode || profile.tradeMode || 'normal',
+        lifecycleStatus: profileLifecycleStatus(profile) || null,
         coveredStages: requiredStages.filter((stageId) => covered.has(stageId)),
         missingStages,
         coveredLateStages,
         missingLateStages,
         applicableLateStages,
+        nonApplicableLateStages,
         coveredApplicableLateStages,
         missingApplicableLateStages,
         missingLabels: missingStages.map((stageId) => POSITION_STAGE_LABELS[stageId] || stageId),

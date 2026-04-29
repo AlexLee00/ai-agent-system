@@ -30,11 +30,50 @@ export function runLunaScoreFusionSafetySmoke() {
     vsa: { pattern: 'effort_no_result', strength: 0.5 },
   });
   assert.equal(distribution.setupType, 'avoid_long_distribution');
+  assert.equal(distribution.quality.decisionState, 'deferred');
+  assert.equal(distribution.reasonCodes.includes('wyckoff_distribution_avoid_long'), true);
+
+  const technicalOnly = fuseDiscoveryScore({
+    regime: 'RANGING',
+    discoverySignals: [{ symbol: 'TEST', score: 0.8 }],
+    sentiment: null,
+    technical: { confidence: 0.88 },
+    mtf: { alignmentScore: 0.7, dominantSignal: 'BUY', mtfAgreement: 0.75 },
+    wyckoff: { phase: 'accumulation', confidence: 0.7 },
+    vsa: { pattern: 'none', strength: 0.2 },
+  });
+  assert.equal(technicalOnly.snapshot.sentiment.status, 'missing');
+  assert.equal(technicalOnly.quality.decisionState, 'watch');
+  assert.equal(technicalOnly.reasonCodes.includes('sentiment_source_missing'), true);
+  assert.equal(technicalOnly.reasonCodes.includes('technical_sentiment_divergence'), true);
+  assert.ok(technicalOnly.components.adjustedDiscoveryScore <= technicalOnly.discoveryScore);
+
+  const volatile = fuseDiscoveryScore({
+    regime: 'VOLATILE_HIGH',
+    discoverySignals: [{ symbol: 'RISK', score: 0.6 }],
+    sentiment: { sentimentScore: 0.2, confidence: 0.8, sourceCount: 3 },
+    technical: { confidence: 0.6 },
+    mtf: { alignmentScore: 0.1, dominantSignal: 'HOLD' },
+  });
+  assert.equal(volatile.snapshot.marketRecognition.risk, 'elevated');
+  assert.equal(volatile.reasonCodes.includes('market_regime_volatile_high'), true);
+
+  const repeat = fuseDiscoveryScore({
+    regime: 'VOLATILE_HIGH',
+    discoverySignals: [{ symbol: 'RISK', score: 0.6 }],
+    sentiment: { sentimentScore: 0.2, confidence: 0.8, sourceCount: 3 },
+    technical: { confidence: 0.6 },
+    mtf: { alignmentScore: 0.1, dominantSignal: 'HOLD' },
+  });
+  assert.deepEqual(repeat.reasonCodes, volatile.reasonCodes);
+  assert.equal(repeat.discoveryScore, volatile.discoveryScore);
 
   return {
     ok: true,
     bull,
     distribution,
+    technicalOnly,
+    volatile,
     weightSum: Number(weightSum.toFixed(4)),
   };
 }

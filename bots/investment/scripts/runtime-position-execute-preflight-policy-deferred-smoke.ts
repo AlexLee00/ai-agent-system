@@ -42,6 +42,17 @@ const hardBlocked = {
   candidate: {},
 };
 
+const noCandidate = {
+  runner: 'runtime:partial-adjust',
+  exchange: 'binance',
+  symbol: 'MOVR/USDT',
+  tradeMode: 'normal',
+  ok: false,
+  code: 'partial_adjust_candidate_not_found',
+  lines: ['- partial-adjust candidate not found'],
+  candidate: null,
+};
+
 const deferredResult = applyRunnerPreflightChecks(baseDrill, [policyDeferred]);
 assert.equal(isPolicyDeferredRunnerPreflight(policyDeferred), true);
 assert.equal(deferredResult.ok, true);
@@ -51,6 +62,14 @@ assert.deepEqual(deferredResult.warnings, [
   'runner_preflight_deferred:runtime:strategy-exit:binance:API3/USDT:strategy_exit_guard_blocked',
 ]);
 assert.equal(deferredResult.policyDeferredRunnerPreflightChecks.length, 1);
+
+const noCandidateResult = applyRunnerPreflightChecks(baseDrill, [noCandidate]);
+assert.equal(isPolicyDeferredRunnerPreflight(noCandidate), true);
+assert.equal(noCandidateResult.ok, true);
+assert.deepEqual(noCandidateResult.blockers, []);
+assert.deepEqual(noCandidateResult.warnings, [
+  'runner_preflight_deferred:runtime:partial-adjust:binance:MOVR/USDT:partial_adjust_candidate_not_found',
+]);
 
 const hardResult = applyRunnerPreflightChecks(baseDrill, [policyDeferred, hardBlocked]);
 assert.equal(hardResult.ok, false);

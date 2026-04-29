@@ -293,6 +293,60 @@ export async function insertDiscoverySourceMetric({
   ).catch(() => null);
 }
 
+export async function insertDiscoveryComponentSnapshotMetrics({
+  market,
+  symbol = null,
+  snapshot = null,
+  quality = null,
+  sourcePrefix = 'luna_component',
+} = {}) {
+  if (!market || !snapshot) return [];
+  const integrated = snapshot.integratedScore || {};
+  const components = [
+    {
+      source: `${sourcePrefix}:sentiment`,
+      qualityStatus: snapshot.sentiment?.status || 'unknown',
+      signalCount: Number(snapshot.sentiment?.sourceCount || 0),
+      reliability: Number(snapshot.sentiment?.confidence ?? quality?.componentQuality?.sentiment ?? 0.5),
+      confidenceScore: Number(snapshot.sentiment?.confidence ?? 0.5),
+      notes: integrated.reasonCodes?.includes?.('sentiment_source_missing') ? 'sentiment_source_missing' : null,
+      rawMeta: { symbol, component: snapshot.sentiment, integrated },
+    },
+    {
+      source: `${sourcePrefix}:technical`,
+      qualityStatus: integrated.reasonCodes?.includes?.('technical_source_missing') ? 'missing' : 'ready',
+      signalCount: Number(snapshot.technical?.sourceCount || 0),
+      reliability: Number(snapshot.technical?.confidence ?? 0.5),
+      confidenceScore: Number(snapshot.technical?.confidence ?? 0.5),
+      notes: integrated.reasonCodes?.includes?.('technical_sentiment_divergence') ? 'technical_sentiment_divergence' : null,
+      rawMeta: { symbol, component: snapshot.technical, integrated },
+    },
+    {
+      source: `${sourcePrefix}:market_recognition`,
+      qualityStatus: snapshot.marketRecognition?.risk === 'elevated' ? 'attention' : 'ready',
+      signalCount: 1,
+      reliability: snapshot.marketRecognition?.risk === 'elevated' ? 0.6 : 1,
+      confidenceScore: snapshot.marketRecognition?.risk === 'elevated' ? 0.6 : 1,
+      notes: snapshot.marketRecognition?.regime || null,
+      rawMeta: { symbol, component: snapshot.marketRecognition, integrated },
+    },
+    {
+      source: `${sourcePrefix}:integrated_score`,
+      qualityStatus: quality?.qualityStatus || integrated.decisionState || 'unknown',
+      signalCount: 1,
+      reliability: Number(integrated.adjustedScore ?? integrated.rawScore ?? 0.5),
+      confidenceScore: Number(integrated.adjustedScore ?? integrated.rawScore ?? 0.5),
+      notes: (integrated.reasonCodes || []).join(',') || null,
+      rawMeta: { symbol, integrated, quality },
+    },
+  ];
+  const rows = [];
+  for (const item of components) {
+    rows.push(await insertDiscoverySourceMetric({ market, ...item }));
+  }
+  return rows;
+}
+
 export async function insertUnmappedNewsEvent({
   market = null,
   headline,
@@ -411,6 +465,7 @@ export default {
   getRecentFiredEntryTrigger,
   expireEntryTriggers,
   insertDiscoverySourceMetric,
+  insertDiscoveryComponentSnapshotMetrics,
   insertUnmappedNewsEvent,
   getRecentUnmappedNewsEvents,
   getEntryTriggerOperationalStats,

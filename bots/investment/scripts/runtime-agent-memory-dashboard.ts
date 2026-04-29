@@ -18,6 +18,47 @@ function parseArgs(argv = process.argv.slice(2)) {
   };
 }
 
+export function buildAgentMemoryDashboardReadiness(report = {}) {
+  const summary = report?.summary || {};
+  const warnings = [];
+  const blockers = [];
+  const routeCalls = Number(summary.route_calls || 0);
+  const routeFailures = Number(summary.route_failures || 0);
+  const contextCalls = Number(summary.context_calls || 0);
+  const staleBusMessages = Number(summary.stale_bus_messages || 0);
+
+  if (contextCalls === 0) warnings.push('agent_context_log_empty');
+  if (routeCalls === 0) warnings.push('llm_route_log_empty');
+  if (Number(summary.curriculum_agents || 0) === 0) warnings.push('curriculum_state_empty');
+  if (Number(summary.skill_groups || 0) === 0) warnings.push('posttrade_skill_groups_empty');
+  if (staleBusMessages > 0) warnings.push(`stale_bus_messages_${staleBusMessages}`);
+  if (routeCalls > 0 && routeFailures / routeCalls >= 0.3) {
+    warnings.push(`llm_route_failure_rate_${Math.round((routeFailures / routeCalls) * 100)}pct`);
+  }
+
+  return {
+    ok: blockers.length === 0,
+    status: blockers.length > 0
+      ? 'agent_memory_dashboard_blocked'
+      : warnings.length > 0
+        ? 'agent_memory_dashboard_attention'
+        : 'agent_memory_dashboard_ready',
+    phase: 'memory_phase_h_dashboard',
+    blockers,
+    warnings,
+    metrics: {
+      contextCalls,
+      routeCalls,
+      routeFailures,
+      routeFallbacks: Number(summary.route_fallbacks || 0),
+      staleBusMessages,
+      curriculumAgents: Number(summary.curriculum_agents || 0),
+      skillGroups: Number(summary.skill_groups || 0),
+      failureRows: Number(summary.failure_rows || 0),
+    },
+  };
+}
+
 export async function buildAgentMemoryDashboard({ days = 7, market = 'all' } = {}) {
   await db.initSchema();
   const normalizedMarket = String(market || 'all').trim().toLowerCase() || 'all';
@@ -138,7 +179,7 @@ export async function buildAgentMemoryDashboard({ days = 7, market = 'all' } = {
   const routeFallbackCount = routeRows.reduce((sum, row) => sum + Number(row.fallback_calls || 0), 0);
   const staleMessageCount = busHygieneRows.reduce((sum, row) => sum + Number(row.stale_unanswered || 0), 0);
 
-  return {
+  const report = {
     ok: true,
     event_type: 'agent_memory_dashboard_report',
     generated_at: new Date().toISOString(),
@@ -164,6 +205,13 @@ export async function buildAgentMemoryDashboard({ days = 7, market = 'all' } = {
     llm_failures: failureRows,
     llm_routes: routeRows,
     skills: skillRows,
+  };
+  const readiness = buildAgentMemoryDashboardReadiness(report);
+  return {
+    ...report,
+    status: readiness.status,
+    readiness,
+    memory_phase_h_acceptance: readiness,
   };
 }
 
