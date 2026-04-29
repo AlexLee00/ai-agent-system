@@ -129,6 +129,14 @@ export async function buildAgentLlmRouteQualityReport({
        COUNT(*) AS calls,
        SUM(CASE WHEN response_ok IS FALSE THEN 1 ELSE 0 END) AS failed_calls,
        SUM(CASE WHEN fallback_used THEN 1 ELSE 0 END) AS fallback_calls,
+       SUM(CASE
+             WHEN provider = 'direct_fallback'
+              AND COALESCE(error, '') = 'hub_disabled'
+              AND market IS NULL
+              AND symbol IS NULL
+              AND incident_key IS NULL
+             THEN 1 ELSE 0
+           END) AS synthetic_hub_disabled_calls,
        AVG(latency_ms) AS avg_latency_ms,
        MAX(created_at) AS last_seen_at
      FROM investment.llm_routing_log
@@ -157,6 +165,39 @@ export async function buildAgentLlmRouteQualityReport({
     [windowDays, normalizedMarket],
   ).catch(() => []);
 
+  function routeKey(row = {}) {
+    return [
+      String(row.agent_name || '').trim(),
+      String(row.market || 'any').trim(),
+      String(row.task_type || 'default').trim(),
+    ].join(':');
+  }
+
+  function toTime(value) {
+    const time = new Date(value || 0).getTime();
+    return Number.isFinite(time) ? time : 0;
+  }
+
+  const latestSuccessfulRouteByKey = new Map();
+  for (const row of rows) {
+    const calls = Number(row.calls || 0);
+    const failed = Number(row.failed_calls || 0);
+    const fallback = Number(row.fallback_calls || 0);
+    const provider = String(row.provider || '');
+    const hasSuccessfulCall = calls > Math.max(failed, fallback) && provider !== 'failed' && provider !== 'direct_fallback';
+    if (!hasSuccessfulCall) continue;
+    const key = routeKey(row);
+    const seenAt = toTime(row.last_seen_at);
+    const current = latestSuccessfulRouteByKey.get(key);
+    if (!current || seenAt > current.seenAt) {
+      latestSuccessfulRouteByKey.set(key, {
+        provider,
+        seenAt,
+        lastSeenAt: row.last_seen_at,
+      });
+    }
+  }
+
   const suggestions = [];
   for (const row of rows) {
     const calls = Number(row.calls || 0);
@@ -166,6 +207,22 @@ export async function buildAgentLlmRouteQualityReport({
     const failureRate = calls > 0 ? failed / calls : 0;
     const fallbackRate = calls > 0 ? fallback / calls : 0;
     if (String(row.provider || '') === 'direct_fallback' && fallbackRate >= fallbackThreshold) {
+      const syntheticHubDisabledCalls = Number(row.synthetic_hub_disabled_calls || 0);
+      if (syntheticHubDisabledCalls >= calls) {
+        suggestions.push({
+          type: 'direct_fallback_smoke_artifact',
+          severity: 'low',
+          agent: row.agent_name,
+          market: row.market,
+          taskType: row.task_type,
+          provider: row.provider,
+          calls,
+          failureRate,
+          fallbackRate,
+          recommendation: '기록된 직접 fallback은 Hub disabled smoke/test artifact로 보입니다. 신규 smoke는 incident_key 기반 cleanup을 사용해야 합니다.',
+        });
+        continue;
+      }
       suggestions.push({
         type: 'direct_fallback_usage',
         severity: 'medium',
@@ -181,6 +238,25 @@ export async function buildAgentLlmRouteQualityReport({
       continue;
     }
     if (failureRate >= failThreshold) {
+      const recoveredBy = latestSuccessfulRouteByKey.get(routeKey(row));
+      if (recoveredBy && recoveredBy.seenAt > toTime(row.last_seen_at)) {
+        suggestions.push({
+          type: 'route_failure_resolved_by_success',
+          severity: 'low',
+          agent: row.agent_name,
+          market: row.market,
+          taskType: row.task_type,
+          provider: row.provider,
+          recoveredProvider: recoveredBy.provider,
+          calls,
+          failureRate,
+          fallbackRate,
+          failedLastSeenAt: row.last_seen_at,
+          recoveredLastSeenAt: recoveredBy.lastSeenAt,
+          recommendation: '동일 agent/market/task가 이후 다른 provider로 성공했습니다. 장애로 차단하지 않고 cooldown/route 히스토리만 추적하세요.',
+        });
+        continue;
+      }
       suggestions.push({
         type: 'route_failure_review',
         severity: failureRate >= 0.5 ? 'high' : 'medium',
