@@ -656,7 +656,7 @@ async function buildPendingPublishHealth() {
       WHERE status = 'ready'
         AND (naver_url IS NULL OR naver_url = '')
         AND publish_date >= CURRENT_DATE - INTERVAL '2 days'
-        AND created_at <= NOW() - INTERVAL '4 hours'
+        AND timezone('Asia/Seoul', NOW()) >= (publish_date::date + TIME '11:00')
       ORDER BY publish_date DESC, created_at DESC
       LIMIT 10
     `);
@@ -683,7 +683,7 @@ async function buildPendingPublishHealth() {
       warnCount: 1 + samples.length,
       ok: [],
       warn: [
-        `  naver publish backlog: ready ${list.length}건`,
+        `  naver publish backlog: ready ${list.length}건 (다음날 오전 11시 기준)`,
         ...samples.map((sample) => `  sample: ${sample}`),
       ],
       pendingCount: list.length,

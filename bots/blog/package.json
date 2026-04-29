@@ -61,6 +61,7 @@
     "auto:strategy-refresh": "node scripts/auto-strategy-refresh.ts",
     "set:instagram": "node scripts/set-instagram-secrets.ts",
     "mark-published": "node scripts/mark-published-url.ts",
+    "backfill:naver-urls": "node scripts/backfill-naver-published-urls.ts",
     "setup:n8n": "node n8n/setup-blog-workflows.ts",
     "check:n8n-pipeline": "node scripts/check-n8n-pipeline-path.ts",
     "seed-curriculum": "node scripts/seed-curriculum.ts",
