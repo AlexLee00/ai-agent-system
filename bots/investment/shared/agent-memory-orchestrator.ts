@@ -31,7 +31,6 @@ import { getCurriculumPromptAdjustment, getCurriculumState } from './agent-curri
 import { buildDefaultWorkingState, isAgentMemoryFeatureEnabled } from './agent-memory-runtime.ts';
 
 const _require = createRequire(import.meta.url);
-const pgPool = _require('../../../packages/core/lib/pg-pool');
 const env = _require('../../../packages/core/lib/env');
 
 const PROJECT_ROOT = env.PROJECT_ROOT || process.cwd();
@@ -276,7 +275,7 @@ export async function saveShortTermMemory(
   if (!isAgentMemoryFeatureEnabled('layer2ShortTermEnabled')) return;
   try {
     const ttlHours = opts.ttlHours ?? 24;
-    await pgPool.query(`
+    await investmentDb.run(`
       INSERT INTO investment.agent_short_term_memory
         (agent_name, incident_key, symbol, market, content, expires_at)
       VALUES ($1, $2, $3, $4, $5, NOW() + $6::interval)
@@ -333,7 +332,7 @@ async function _fetchEpisodicMemory(
   }
 
   const where = filters.length ? `WHERE ${filters.join(' AND ')}` : '';
-  const result = await pgPool.query(`
+  const result = await investmentDb.query(`
     SELECT category, symbol, market, content, created_at
     FROM luna_rag_documents
     ${where}
@@ -365,7 +364,7 @@ async function _fetchFailureMemory(
   }
 
   const where = filters.join(' AND ');
-  const result = await pgPool.query(`
+  const result = await investmentDb.query(`
     SELECT content, created_at
     FROM luna_rag_documents
     WHERE ${where}
@@ -374,7 +373,7 @@ async function _fetchFailureMemory(
   `, params);
 
   // luna_failure_reflexions도 조합
-  const reflexResult = await pgPool.query(`
+  const reflexResult = await investmentDb.query(`
     SELECT hindsight, avoid_pattern, created_at
     FROM investment.luna_failure_reflexions
     ORDER BY created_at DESC
@@ -487,7 +486,7 @@ async function _logAgentContext({
   totalChars: number;
 }) {
   try {
-    await pgPool.query(
+    await investmentDb.run(
       `INSERT INTO investment.agent_context_log
          (agent_name, market, task_type, incident_key, call_id, persona_loaded, constitution_loaded, rag_docs_count, failures_found, skills_found, short_term_found, entity_facts_found, working_state_used, total_prefix_chars)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)`,
@@ -515,7 +514,7 @@ async function _logAgentContext({
 
 async function _fetchEntityFacts(symbol: string, market?: string): Promise<any[]> {
   try {
-    const result = await pgPool.query(`
+    const result = await investmentDb.query(`
       SELECT entity, fact, confidence
       FROM investment.entity_facts
       WHERE
@@ -555,7 +554,7 @@ async function _fetchShortTermMemory(
 
     const extraWhere = extras.length ? `AND (${extras.join(' OR ')})` : '';
 
-    const result = await pgPool.query(`
+    const result = await investmentDb.query(`
       SELECT agent_name, symbol, market, content, created_at
       FROM investment.agent_short_term_memory
       WHERE
