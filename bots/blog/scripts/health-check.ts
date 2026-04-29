@@ -947,17 +947,25 @@ async function checkPendingPublishHealth() {
       WHERE status = 'ready'
         AND (naver_url IS NULL OR naver_url = '')
         AND publish_date >= CURRENT_DATE - INTERVAL '2 days'
-        AND timezone('Asia/Seoul', NOW()) >= (publish_date::date + TIME '11:00')
       ORDER BY publish_date DESC, created_at DESC
       LIMIT 10
     `);
 
     const list = Array.isArray(rows) ? rows : [];
     if (!list.length) {
-      return { ok: true, detail: 'naver publish backlog 없음', pendingCount: 0, samples: [] };
+      return { ok: true, detail: 'naver publish backlog 없음', pendingCount: 0, stalePendingCount: 0, manualPendingCount: 0, samples: [] };
     }
 
-    const samples = list.slice(0, 3).map((row) => {
+    const todayKst = new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'Asia/Seoul',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    }).format(new Date());
+    const stale = list.filter((row) => String(row.publish_date || '').slice(0, 10) < todayKst);
+    const manualToday = list.filter((row) => String(row.publish_date || '').slice(0, 10) === todayKst);
+
+    const samples = (stale.length ? stale : manualToday).slice(0, 3).map((row) => {
       const date = String(row.publish_date || '').slice(0, 10) || 'unknown-date';
       return `${date} ${String(row.post_type || 'unknown')} #${Number(row.id || 0)} ${String(row.title || '').slice(0, 60)}`;
     });
@@ -965,10 +973,23 @@ async function checkPendingPublishHealth() {
       ? `\nlatest backfill: ${String(latestBackfill.checkedAt).slice(0, 19)} / ${latestBackfill.ok ? 'ok' : 'failed'} / matched ${Number(latestBackfill.matched || 0)} / applied ${Number(latestBackfill.applied || 0)} / unmatched ${Number(latestBackfill.unmatched || 0)}`
       : '';
 
+    if (stale.length === 0) {
+      return {
+        ok: true,
+        detail: `오늘 수동 등록 대기 포스트 ${manualToday.length}건${backfillHint}\n${samples.map((sample) => `sample: ${sample}`).join('\n')}`,
+        pendingCount: manualToday.length,
+        stalePendingCount: 0,
+        manualPendingCount: manualToday.length,
+        samples,
+      };
+    }
+
     return {
       ok: false,
-      detail: `ready 상태 미발행 포스트 ${list.length}건 (다음날 오전 11시 기준)${backfillHint}\n${samples.map((sample) => `sample: ${sample}`).join('\n')}`,
-      pendingCount: list.length,
+      detail: `기한이 지난 미발행 포스트 ${stale.length}건${backfillHint}\n${samples.map((sample) => `sample: ${sample}`).join('\n')}`,
+      pendingCount: stale.length,
+      stalePendingCount: stale.length,
+      manualPendingCount: manualToday.length,
       samples,
     };
   } catch (error) {
@@ -976,6 +997,8 @@ async function checkPendingPublishHealth() {
       ok: false,
       detail: `naver publish backlog 확인 실패: ${error.message.slice(0, 120)}`,
       pendingCount: 0,
+      stalePendingCount: 0,
+      manualPendingCount: 0,
       samples: [],
     };
   }
