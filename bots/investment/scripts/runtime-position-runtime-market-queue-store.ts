@@ -180,11 +180,13 @@ export function summarizePositionRuntimeMarketQueue(entries = [], exchange = nul
   const now = Date.now();
   let waitingMarketOpen = 0;
   let retrying = 0;
+  let deferredGuard = 0;
   let readyRetry = 0;
   for (const entry of filtered) {
     const status = String(entry?.lastStatus || '');
     if (status === 'autonomous_action_retrying') retrying += 1;
     if (status === 'autonomous_action_queued') waitingMarketOpen += 1;
+    if (status === 'autonomous_action_deferred_guard') deferredGuard += 1;
     const nextRetryAt = entry?.nextRetryAt ? new Date(entry.nextRetryAt).getTime() : null;
     if (nextRetryAt != null && Number.isFinite(nextRetryAt) && nextRetryAt <= now) readyRetry += 1;
   }
@@ -192,6 +194,7 @@ export function summarizePositionRuntimeMarketQueue(entries = [], exchange = nul
     total: filtered.length,
     waitingMarketOpen,
     retrying,
+    deferredGuard,
     readyRetry,
   };
 }

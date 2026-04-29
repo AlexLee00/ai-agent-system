@@ -223,6 +223,7 @@ function buildHistorySnapshot({
   const dispatchFailures = (dispatchResult?.results || []).filter((item) => item?.autonomousActionStatus === 'autonomous_action_failed');
   const dispatchQueued = (dispatchResult?.results || []).filter((item) => item?.autonomousActionStatus === 'autonomous_action_queued').length;
   const dispatchRetrying = (dispatchResult?.results || []).filter((item) => item?.autonomousActionStatus === 'autonomous_action_retrying').length;
+  const dispatchDeferred = (dispatchResult?.results || []).filter((item) => item?.autonomousActionStatus === 'autonomous_action_deferred_guard').length;
   const dispatchExecuted = (dispatchResult?.results || []).filter((item) => item?.autonomousActionStatus === 'autonomous_action_executed').length;
   const dispatchSkipped = (dispatchResult?.results || []).filter((item) => String(item?.autonomousActionStatus || '').startsWith('autonomous_action_skipped')).length;
   const cadenceRecommendationByExchange = buildCadenceRecommendationByExchange(tuning);
@@ -274,6 +275,7 @@ function buildHistorySnapshot({
     dispatchSkippedCount: dispatchSkipped,
     dispatchQueuedCount: dispatchQueued,
     dispatchRetryingCount: dispatchRetrying,
+    dispatchDeferredGuardCount: dispatchDeferred,
     dispatchFailureCount: dispatchFailures.length,
     dispatchSkipped: (dispatchResult?.results || [])
       .filter((item) => String(item?.autonomousActionStatus || '').startsWith('autonomous_action_skipped'))
@@ -453,10 +455,13 @@ export async function runPositionRuntimeAutopilot(args = {}) {
   const dispatchFailures = (dispatchResult?.results || []).filter((item) => item?.autonomousActionStatus === 'autonomous_action_failed');
   const dispatchQueued = (dispatchResult?.results || []).filter((item) => item?.autonomousActionStatus === 'autonomous_action_queued').length;
   const dispatchRetrying = (dispatchResult?.results || []).filter((item) => item?.autonomousActionStatus === 'autonomous_action_retrying').length;
+  const dispatchDeferred = (dispatchResult?.results || []).filter((item) => item?.autonomousActionStatus === 'autonomous_action_deferred_guard').length;
   const executionStatus = dispatchFailures.length > 0
     ? 'position_runtime_autopilot_executed_with_dispatch_failures'
     : dispatchQueued > 0
       ? 'position_runtime_autopilot_executed_with_market_queue'
+      : dispatchDeferred > 0
+        ? 'position_runtime_autopilot_executed_with_guard_deferred'
       : dispatchRetrying > 0
         ? 'position_runtime_autopilot_executed_with_retries'
         : 'position_runtime_autopilot_executed';

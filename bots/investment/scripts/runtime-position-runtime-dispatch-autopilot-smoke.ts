@@ -4,10 +4,12 @@
 import * as db from '../shared/db.ts';
 import {
   applyExecutionScopeGate,
+  buildCandidateExecutionKey,
   buildExecutionInvocation,
   buildCandidates,
   buildBlockedCandidates,
   classifyChildExecutionOutput,
+  computeDeferredGuardRetryMinutes,
   buildGuardReasonSummary,
   detectTerminalChildFailure,
   renderText,
@@ -145,6 +147,28 @@ async function main() {
   assert(
     'closeout cooldown은 retry failure가 아닌 idempotent skip 분류 대상',
     detectTerminalChildFailure('partial-adjust closeout guard: cooldown: 최근 30분 이내 동일 closeout 존재') === 'closeout_guard_cooldown',
+  );
+  assert(
+    'strategy-exit 최소 보유시간 가드는 실패가 아닌 deferred guard 분류 대상',
+    detectTerminalChildFailure('strategy-exit preflight blocked: - strategy exit guard: 전략 최소 보유시간 3.6h 미만 (0.0h)') === 'strategy_exit_min_hold_guard',
+  );
+  assert(
+    'strategy-exit 최소 보유시간 가드는 남은 시간 기반 retry 지연 계산',
+    computeDeferredGuardRetryMinutes(
+      'strategy_exit_min_hold_guard',
+      'strategy exit guard: 전략 최소 보유시간 3.6h 미만 (0.0h)',
+      5,
+    ) === 216,
+  );
+  assert(
+    'queued retry와 fresh candidate는 동일 execution key로 중복 실행 방지 가능',
+    buildCandidateExecutionKey({
+      executionScope: 'binance:live:live:binance:PUMP/USDT:normal:binance:PUMP/USDT:normal:EXIT',
+      action: 'EXIT',
+    }) === buildCandidateExecutionKey({
+      executionScope: 'binance:live:live:binance:PUMP/USDT:normal:binance:PUMP/USDT:normal:EXIT',
+      action: 'EXIT',
+    }, 'fallback'),
   );
 
   const phase6RunnerInvocation = buildExecutionInvocation({

@@ -20,6 +20,7 @@ const PENDING_STATUSES = new Set(['pending', 'queued', 'waiting', 'scheduled']);
 const RETRYABLE_STATUSES = new Set(['child_process_error', 'child_output_not_json', 'child_execute_not_verified', 'child_execution_pending']);
 const STALE_CANDIDATE_STATUSES = new Set(['candidate_not_found']);
 const IDEMPOTENT_SKIP_STATUSES = new Set(['closeout_guard_cooldown']);
+const DEFERRED_GUARD_STATUSES = new Set(['strategy_exit_min_hold_guard']);
 
 function parseArgs(argv = []) {
   const args = {
@@ -293,6 +294,10 @@ export function buildExecutionInvocation(candidate, { phase6 = false } = {}) {
   };
 }
 
+export function buildCandidateExecutionKey(candidate = null, fallbackKey = null) {
+  return `${candidate?.executionScope || candidate?.brokerScope || fallbackKey || `${candidate?.exchange || 'unknown'}:${candidate?.symbol || 'unknown'}:${candidate?.tradeMode || 'normal'}`}:${candidate?.action || 'HOLD'}`;
+}
+
 function parseJsonTail(text = '') {
   const raw = String(text || '').trim();
   if (!raw) return null;
@@ -381,7 +386,25 @@ export function detectTerminalChildFailure(message = '', stdout = '', stderr = '
   ) {
     return 'closeout_guard_cooldown';
   }
+  if (
+    (text.includes('strategy-exit preflight blocked') || text.includes('strategy exit guard'))
+    && (text.includes('최소 보유시간') || text.includes('minimum hold'))
+  ) {
+    return 'strategy_exit_min_hold_guard';
+  }
   return null;
+}
+
+export function computeDeferredGuardRetryMinutes(status = null, text = '', fallbackMinutes = 5) {
+  const fallback = Math.max(1, Number(fallbackMinutes || 5));
+  if (String(status || '') !== 'strategy_exit_min_hold_guard') return fallback;
+  const match = String(text || '').match(/최소 보유시간\s*([0-9.]+)h\s*미만\s*\(([0-9.]+)h\)/);
+  if (!match) return fallback;
+  const requiredHours = Number(match[1]);
+  const currentHours = Number(match[2]);
+  if (!Number.isFinite(requiredHours) || !Number.isFinite(currentHours)) return fallback;
+  const remainingMinutes = Math.ceil(Math.max(0, requiredHours - currentHours) * 60);
+  return Math.max(fallback, Math.min(remainingMinutes, 240));
 }
 
 async function resolveMarketGate(candidate = null) {
@@ -502,6 +525,19 @@ async function executeCandidate(candidate, { phase6 = false } = {}) {
         stderr: stderrText,
       };
     }
+    if (DEFERRED_GUARD_STATUSES.has(String(terminalStatus || ''))) {
+      return {
+        ok: false,
+        status: terminalStatus,
+        autonomousActionStatus: 'autonomous_action_deferred_guard',
+        candidate,
+        command: invocation.command,
+        guardDeferred: true,
+        error: String(error?.message || error),
+        output: stdoutText,
+        stderr: stderrText,
+      };
+    }
     return {
       ok: false,
       status: terminalStatus || 'child_process_error',
@@ -548,7 +584,7 @@ export function renderText(result = {}) {
     lines.push(`dedupedCandidates: ${result.dedupedCandidates}`);
   }
   if (result.marketQueue) {
-    lines.push(`marketQueue: total ${result.marketQueue.total || 0} / waiting ${result.marketQueue.waitingMarketOpen || 0} / retrying ${result.marketQueue.retrying || 0}`);
+    lines.push(`marketQueue: total ${result.marketQueue.total || 0} / waiting ${result.marketQueue.waitingMarketOpen || 0} / retrying ${result.marketQueue.retrying || 0} / deferred ${result.marketQueue.deferredGuard || 0}`);
   }
   for (const candidate of result.candidates || []) {
     lines.push(`- ${candidate.exchange} ${candidate.symbol} ${candidate.tradeMode} | ${candidate.action} | ${candidate.regime || 'n/a'} | ${candidate.urgency}`);
@@ -680,11 +716,15 @@ export async function runPositionRuntimeDispatch(args = {}) {
     if (!candidate) continue;
     const entryStatus = String(entry?.lastStatus || '').trim().toLowerCase();
     if (entryStatus === 'autonomous_action_failed') continue;
-    const executionKey = `${candidate?.executionScope || candidate?.brokerScope || entry.queueKey}:${candidate?.action || 'HOLD'}`;
+    const executionKey = buildCandidateExecutionKey(candidate, entry.queueKey);
     const nextRetryAt = entry?.nextRetryAt ? new Date(entry.nextRetryAt).getTime() : null;
-    if (nextRetryAt != null && Number.isFinite(nextRetryAt) && nextRetryAt > Date.now()) continue;
+    if (nextRetryAt != null && Number.isFinite(nextRetryAt) && nextRetryAt > Date.now()) {
+      handledExecutionKeys.add(executionKey);
+      continue;
+    }
     const gate = await resolveMarketGate(candidate);
     if (gate.requiresMarketOpen && gate.isOpen !== true) {
+      handledExecutionKeys.add(executionKey);
       marketQueueEntries = upsertPositionRuntimeMarketQueueEntry(marketQueueEntries, {
         queueKey: entry.queueKey,
         candidate,
@@ -698,9 +738,12 @@ export async function runPositionRuntimeDispatch(args = {}) {
     const executed = await executeCandidate(candidate, { phase6: args.phase6 === true });
     const attempts = Number(entry?.attempts || 0) + 1;
     const lastAttemptAt = new Date().toISOString();
-    const retryCount = Number(entry?.retryCount || 0) + (executed.ok === true ? 0 : 1);
+    const deferredGuard = DEFERRED_GUARD_STATUSES.has(String(executed.status || ''));
+    const retryCount = Number(entry?.retryCount || 0) + (executed.ok === true || deferredGuard ? 0 : 1);
     const autonomousActionStatus = executed.ok === true
       ? 'autonomous_action_executed'
+      : deferredGuard
+        ? 'autonomous_action_deferred_guard'
       : RETRYABLE_STATUSES.has(String(executed.status || '')) && retryCount < maxRetryCount
         ? 'autonomous_action_retrying'
         : toAutonomousActionStatus(executed);
@@ -717,6 +760,21 @@ export async function runPositionRuntimeDispatch(args = {}) {
     if (executed.ok === true) {
       marketQueueEntries = removePositionRuntimeMarketQueueEntry(marketQueueEntries, entry.queueKey);
     } else {
+      if (deferredGuard) {
+        const deferredText = [executed.error, executed.output, executed.stderr].join('\n');
+        marketQueueEntries = upsertPositionRuntimeMarketQueueEntry(marketQueueEntries, {
+          queueKey: entry.queueKey,
+          candidate,
+          reason: String(executed.status || 'guard_deferred'),
+          waitingReason: String(executed.status || 'guard_deferred'),
+          status: 'autonomous_action_deferred_guard',
+          attempts,
+          retryCount,
+          lastAttemptAt,
+          nextRetryAt: addMinutesIso(computeDeferredGuardRetryMinutes(executed.status, deferredText, retryDelayMinutes)),
+        });
+        continue;
+      }
       const shouldRetry = RETRYABLE_STATUSES.has(String(executed.status || '')) && retryCount < maxRetryCount;
       if (shouldRetry) {
         marketQueueEntries = upsertPositionRuntimeMarketQueueEntry(marketQueueEntries, {
@@ -737,7 +795,7 @@ export async function runPositionRuntimeDispatch(args = {}) {
   }
 
   for (const candidate of candidates) {
-    const executionKey = `${candidate?.executionScope || candidate?.brokerScope || `${candidate?.exchange}:${candidate?.symbol}:${candidate?.tradeMode}`}:${candidate?.action || 'HOLD'}`;
+    const executionKey = buildCandidateExecutionKey(candidate);
     if (handledExecutionKeys.has(executionKey)) continue;
     const gate = await resolveMarketGate(candidate);
     if (gate.requiresMarketOpen && gate.isOpen !== true) {
@@ -747,17 +805,20 @@ export async function runPositionRuntimeDispatch(args = {}) {
       continue;
     }
     const executed = await executeCandidate(candidate, { phase6: args.phase6 === true });
+    const deferredGuard = DEFERRED_GUARD_STATUSES.has(String(executed?.status || ''));
     const retryableFailure = executed?.ok !== true && RETRYABLE_STATUSES.has(String(executed?.status || ''));
     const attempts = 1;
     const retryCount = retryableFailure ? 1 : 0;
     const lastAttemptAt = new Date().toISOString();
-    const retryAt = retryableFailure ? addMinutesIso(retryDelayMinutes) : null;
-    if (retryableFailure) {
+    const retryAt = retryableFailure || deferredGuard
+      ? addMinutesIso(computeDeferredGuardRetryMinutes(executed?.status, [executed?.error, executed?.output, executed?.stderr].join('\n'), retryDelayMinutes))
+      : null;
+    if (retryableFailure || deferredGuard) {
       marketQueueEntries = upsertPositionRuntimeMarketQueueEntry(marketQueueEntries, {
         candidate,
         reason: String(executed?.status || 'execution_failed'),
-        waitingReason: 'retry_scheduled',
-        status: 'autonomous_action_retrying',
+        waitingReason: deferredGuard ? String(executed?.status || 'guard_deferred') : 'retry_scheduled',
+        status: deferredGuard ? 'autonomous_action_deferred_guard' : 'autonomous_action_retrying',
         attempts,
         retryCount,
         lastAttemptAt,
@@ -771,6 +832,8 @@ export async function runPositionRuntimeDispatch(args = {}) {
       lastAttemptAt,
       autonomousActionStatus: retryableFailure
         ? 'autonomous_action_retrying'
+        : deferredGuard
+          ? 'autonomous_action_deferred_guard'
         : (executed.autonomousActionStatus || toAutonomousActionStatus(executed)),
       nextRetryAt: retryAt,
     });
@@ -780,6 +843,7 @@ export async function runPositionRuntimeDispatch(args = {}) {
   const hasFailures = results.some((item) => item?.autonomousActionStatus === 'autonomous_action_failed');
   const queuedActions = results.filter((item) => item?.autonomousActionStatus === 'autonomous_action_queued').length;
   const retryingActions = results.filter((item) => item?.autonomousActionStatus === 'autonomous_action_retrying').length;
+  const deferredGuardActions = results.filter((item) => item?.autonomousActionStatus === 'autonomous_action_deferred_guard').length;
   return {
     ok: hasFailures !== true,
     phase6Mode: args.phase6 === true,
@@ -787,6 +851,8 @@ export async function runPositionRuntimeDispatch(args = {}) {
       ? 'position_runtime_dispatch_executed_with_failures'
       : queuedActions > 0
         ? 'position_runtime_dispatch_executed_with_queue'
+        : deferredGuardActions > 0
+          ? 'position_runtime_dispatch_executed_with_guard_deferred'
         : retryingActions > 0
           ? 'position_runtime_dispatch_executed_with_retry'
           : 'position_runtime_dispatch_executed',
