@@ -119,7 +119,7 @@ function buildExitReason(candidate) {
   return `strategy_exit:${candidate.reasonCode || 'reeval_exit'}`;
 }
 
-function applyExitPlanGuard(candidate) {
+export function applyExitPlanGuard(candidate) {
   const exitPlan = normalizeExitPlan(candidate?.strategyProfile?.exitPlan);
   const responsibilityPlan = normalizeResponsibilityPlan(candidate?.strategyProfile?.responsibilityPlan);
   const executionPlan = normalizeExecutionPlan(candidate?.strategyProfile?.executionPlan);
@@ -354,17 +354,25 @@ function pickCandidate(candidates, { symbol, exchange = null, tradeMode = null }
   ) || null;
 }
 
-async function getExecutionPreflight(candidate) {
-  if (!candidate) return { ok: false, lines: ['- strategy-exit 후보가 없습니다.'] };
+export async function getExecutionPreflight(candidate) {
+  if (!candidate) {
+    return {
+      ok: false,
+      code: 'strategy_exit_candidate_not_found',
+      lines: ['- strategy-exit 후보가 없습니다.'],
+    };
+  }
   if (!candidate.executionGuard?.allowed) {
     return {
       ok: false,
+      code: 'strategy_exit_guard_blocked',
       lines: [`- strategy exit guard: ${candidate.executionGuard.reason}`],
     };
   }
   if (candidate.exchange === 'binance') {
     return {
       ok: true,
+      code: 'strategy_exit_runner_preflight_clear',
       lines: ['- 암호화폐 전략 청산은 현재 실행 가능'],
     };
   }
@@ -383,6 +391,7 @@ async function getExecutionPreflight(candidate) {
   if (!marketStatus.isOpen) {
     return {
       ok: false,
+      code: 'strategy_exit_market_closed',
       lines: [...lines, '- 현재 장외/휴장 상태라 전략 청산 실행을 보류합니다.'],
     };
   }
@@ -390,11 +399,66 @@ async function getExecutionPreflight(candidate) {
   if (candidate.exchange === 'kis_overseas' && modeInfo.brokerAccountMode === 'mock') {
     return {
       ok: false,
+      code: 'strategy_exit_overseas_mock_sell_blocked',
       lines: [...lines, '- 해외장 mock 계좌는 SELL 미지원으로 전략 청산을 차단합니다.'],
     };
   }
 
-  return { ok: true, lines };
+  return { ok: true, code: 'strategy_exit_runner_preflight_clear', lines };
+}
+
+function summarizeStrategyExitRunnerCandidate(candidate = null, fallback = {}) {
+  if (!candidate) {
+    return {
+      exchange: fallback.exchange || null,
+      symbol: fallback.symbol || null,
+      tradeMode: fallback.tradeMode || 'normal',
+      found: false,
+    };
+  }
+  return {
+    exchange: candidate.exchange || null,
+    symbol: candidate.symbol || null,
+    tradeMode: candidate.tradeMode || 'normal',
+    reasonCode: candidate.reasonCode || null,
+    heldHours: candidate.heldHours ?? null,
+    pnlPct: candidate.pnlPct ?? null,
+    positionAmount: candidate.positionAmount ?? null,
+    positionValue: candidate.positionValue ?? null,
+    executionGuard: candidate.executionGuard || null,
+    found: true,
+  };
+}
+
+export async function buildStrategyExitRunnerPreflightForDispatchCandidate(dispatchCandidate = {}, {
+  minutesBack = 180,
+} = {}) {
+  const runnerArgs = dispatchCandidate?.runnerArgs || {};
+  const symbol = String(dispatchCandidate?.symbol || runnerArgs.symbol || '').toUpperCase();
+  const exchange = dispatchCandidate?.exchange || runnerArgs.exchange || null;
+  const tradeMode = dispatchCandidate?.tradeMode || runnerArgs['trade-mode'] || runnerArgs.tradeMode || null;
+  if (!symbol) {
+    return {
+      ok: false,
+      code: 'strategy_exit_symbol_missing',
+      lines: ['- strategy-exit runner preflight: symbol이 없습니다.'],
+      candidate: summarizeStrategyExitRunnerCandidate(null, { exchange, symbol, tradeMode }),
+    };
+  }
+
+  const candidates = await loadCandidates({
+    exchange,
+    tradeMode,
+    minutesBack,
+  });
+  const candidate = pickCandidate(candidates, { symbol, exchange, tradeMode });
+  const preflight = await getExecutionPreflight(candidate);
+  return {
+    ...preflight,
+    ok: preflight.ok === true,
+    code: preflight.code || (preflight.ok ? 'strategy_exit_runner_preflight_clear' : 'strategy_exit_runner_preflight_blocked'),
+    candidate: summarizeStrategyExitRunnerCandidate(candidate, { exchange, symbol, tradeMode }),
+  };
 }
 
 async function createStrategyExitSignal(candidate) {
@@ -506,7 +570,8 @@ async function main() {
     await syncStrategyExitCandidateStates([candidate], 'preview');
     const payload = {
       mode: 'preview',
-      ok: true,
+      ok: preflight.ok === true,
+      status: preflight.ok === true ? 'strategy_exit_preview_clear' : 'strategy_exit_preview_blocked',
       candidate,
       preflight,
       executeCommand: `env PAPER_MODE=false node bots/investment/scripts/strategy-exit-runner.ts --symbol=${candidate.symbol} --exchange=${candidate.exchange} --trade-mode=${candidate.tradeMode} --execute --confirm=strategy-exit`,

@@ -4,7 +4,9 @@
 import assert from 'node:assert/strict';
 import {
   createPendingSignalProcessing,
+  getPendingSignalDelayMs,
   getPendingSignalConcurrency,
+  getPendingTradeModeQueueConcurrency,
 } from '../team/hephaestos/pending-signal-processing.ts';
 import { isHephaestosHotPathPrefetchEnabled } from '../team/hephaestos/signal-executor.ts';
 
@@ -48,6 +50,12 @@ assert.equal(getPendingSignalConcurrency({ HEPHAESTOS_PENDING_SIGNAL_CONCURRENCY
 assert.equal(getPendingSignalConcurrency({ HEPHAESTOS_PENDING_SIGNAL_CONCURRENCY: '99' }), 4);
 assert.equal(getPendingSignalConcurrency({ HEPHAESTOS_PENDING_SIGNAL_CONCURRENCY: 'bad' }), 1);
 assert.equal(getPendingSignalConcurrency({ LUNA_PENDING_SIGNAL_CONCURRENCY: '3' }), 3);
+assert.equal(getPendingSignalDelayMs({}), 500);
+assert.equal(getPendingSignalDelayMs({ HEPHAESTOS_PENDING_SIGNAL_DELAY_MS: '120' }), 120);
+assert.equal(getPendingSignalDelayMs({ HEPHAESTOS_PENDING_SIGNAL_DELAY_MS: '1' }), 50);
+assert.equal(getPendingTradeModeQueueConcurrency({}), 1);
+assert.equal(getPendingTradeModeQueueConcurrency({ HEPHAESTOS_PENDING_TRADE_MODE_QUEUE_CONCURRENCY: '2' }), 2);
+assert.equal(getPendingTradeModeQueueConcurrency({ HEPHAESTOS_PENDING_TRADE_MODE_QUEUE_CONCURRENCY: '99' }), 2);
 
 assert.equal(isHephaestosHotPathPrefetchEnabled({}), false);
 assert.equal(isHephaestosHotPathPrefetchEnabled({ HEPHAESTOS_HOT_PATH_PREFETCH_ENABLED: '1' }), true);
@@ -61,11 +69,46 @@ const parallel = await observeMaxConcurrency(2);
 assert.equal(parallel.maxRunning, 2);
 assert.deepEqual(parallel.resultIds, ['a', 'b', 'c', 'd']);
 
+let tradeModeRunning = 0;
+let maxTradeModeRunning = 0;
+const tradeModeProcessor = createPendingSignalProcessing({
+  db: {
+    getApprovedSignals: async (_exchange, tradeMode) => [{ id: tradeMode }],
+  },
+  initHubSecrets: async () => true,
+  getInvestmentTradeMode: () => 'normal',
+  processBinancePendingReconcileQueue: async () => ({ processed: 0 }),
+  processBinancePendingJournalRepairQueue: async () => ({ processed: 0 }),
+  syncPositionsAtMarketOpen: async () => ({ ok: true, mismatchCount: 0 }),
+  cleanupStalePendingSignals: async () => [],
+  reconcileLivePositionsWithBrokerBalance: async () => [],
+  executeSignal: async (signal) => {
+    tradeModeRunning += 1;
+    maxTradeModeRunning = Math.max(maxTradeModeRunning, tradeModeRunning);
+    await sleep(10);
+    tradeModeRunning -= 1;
+    return { id: signal.id };
+  },
+  delay: async () => {},
+});
+
+process.env.HEPHAESTOS_PENDING_TRADE_MODE_QUEUE_CONCURRENCY = '2';
+process.env.HEPHAESTOS_PENDING_SIGNAL_DELAY_MS = '50';
+const tradeModeResults = await tradeModeProcessor.processAllPendingSignals();
+delete process.env.HEPHAESTOS_PENDING_TRADE_MODE_QUEUE_CONCURRENCY;
+delete process.env.HEPHAESTOS_PENDING_SIGNAL_DELAY_MS;
+assert.equal(maxTradeModeRunning, 2);
+assert.deepEqual(tradeModeResults.map((result) => result.id).sort(), ['normal', 'validation']);
+
 const payload = {
   ok: true,
   smoke: 'hephaestos-hot-path-options',
   sequential,
   parallel,
+  tradeModeQueue: {
+    maxRunning: maxTradeModeRunning,
+    resultIds: tradeModeResults.map((result) => result.id).sort(),
+  },
   maxConfiguredConcurrency: getPendingSignalConcurrency({ HEPHAESTOS_PENDING_SIGNAL_CONCURRENCY: '99' }),
 };
 

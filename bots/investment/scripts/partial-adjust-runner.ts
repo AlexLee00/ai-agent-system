@@ -16,6 +16,10 @@ import { resolvePositionLifecycleFlags } from '../shared/position-lifecycle-flag
 import { publishToMainBot } from '../shared/mainbot-client.ts';
 import { beginCloseout, finalizeCloseout } from '../shared/position-closeout-engine.ts';
 import { recordLifecyclePhaseSnapshot } from '../shared/lifecycle-contract.ts';
+import {
+  getBinanceBalanceSnapshot,
+  getBinanceOpenOrders,
+} from '../shared/binance-client.ts';
 
 function parseArgs(argv = process.argv.slice(2)) {
   const values = {};
@@ -173,6 +177,11 @@ function normalizeRatio(value) {
   return Number(parsed.toFixed(4));
 }
 
+function safeNumber(value, fallback = 0) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+
 function buildFamilyFeedbackIncidentSuffix(strategyProfile = null) {
   const feedback = strategyProfile?.familyPerformanceFeedback || {};
   const bias = String(feedback?.bias || '').trim();
@@ -268,10 +277,11 @@ async function syncPartialAdjustCandidateStates(candidates = [], phase = 'previe
   }
 }
 
-function pickCandidate(candidates, symbol, tradeMode = null) {
+function pickCandidate(candidates, symbol, exchange = null, tradeMode = null) {
   if (!symbol) return null;
   return candidates.find((candidate) => (
     candidate.symbol === symbol
+      && (!exchange || candidate.exchange === exchange)
       && (!tradeMode || candidate.tradeMode === tradeMode)
   )) || null;
 }
@@ -294,7 +304,7 @@ function renderPreview(candidates) {
   return lines.join('\n');
 }
 
-async function loadCandidates({ tradeMode = null, minutesBack = 180, ratio = null } = {}) {
+export async function loadPartialAdjustCandidates({ tradeMode = null, minutesBack = 180, ratio = null } = {}) {
   const report = await reevaluateOpenPositions({
     exchange: null,
     paper: false,
@@ -315,6 +325,37 @@ async function loadCandidates({ tradeMode = null, minutesBack = 180, ratio = nul
   }));
 
   return mapped.filter((row) => row.partialExitRatio > 0 && row.positionAmount > 0);
+}
+
+export async function buildPartialAdjustRunnerPreflightForDispatchCandidate(dispatchCandidate = {}, {
+  minutesBack = 180,
+} = {}) {
+  const symbol = String(dispatchCandidate?.symbol || '').trim().toUpperCase();
+  const exchange = String(dispatchCandidate?.exchange || '').trim() || null;
+  const tradeMode = String(dispatchCandidate?.tradeMode || 'normal').trim() || 'normal';
+  const candidates = await loadPartialAdjustCandidates({ tradeMode, minutesBack });
+  const candidate = pickCandidate(candidates, symbol, exchange, tradeMode);
+  if (!candidate) {
+    return {
+      ok: false,
+      code: 'partial_adjust_candidate_not_found',
+      lines: [`- partial-adjust 후보를 찾지 못했습니다: symbol=${symbol} exchange=${exchange || 'any'} tradeMode=${tradeMode}`],
+      candidate: null,
+    };
+  }
+  const preflight = await getExecutionPreflight(candidate);
+  return {
+    ...preflight,
+    candidate: {
+      exchange: candidate.exchange,
+      symbol: candidate.symbol,
+      tradeMode: candidate.tradeMode,
+      reasonCode: candidate.reasonCode,
+      partialExitRatio: candidate.partialExitRatio,
+      estimatedExitAmount: candidate.estimatedExitAmount,
+      positionAmount: candidate.positionAmount,
+    },
+  };
 }
 
 async function createPartialAdjustSignal(candidate) {
@@ -395,13 +436,89 @@ async function executePartialAdjustSignal(signal) {
   throw new Error(`지원하지 않는 exchange: ${signal.exchange}`);
 }
 
+function getBaseAsset(symbol = '') {
+  return String(symbol || '').split('/')[0].trim().toUpperCase();
+}
+
+function sumOpenSellRemaining(openOrders = []) {
+  return (openOrders || [])
+    .filter((order) => String(order?.side || '').toLowerCase() === 'sell')
+    .filter((order) => !['closed', 'canceled', 'cancelled', 'expired', 'rejected'].includes(String(order?.status || '').toLowerCase()))
+    .reduce((sum, order) => sum + safeNumber(order?.remaining, safeNumber(order?.amount, 0)), 0);
+}
+
+export async function buildCryptoPartialAdjustPreflight(candidate, {
+  getBalanceSnapshot = getBinanceBalanceSnapshot,
+  getOpenOrders = getBinanceOpenOrders,
+} = {}) {
+  const symbol = String(candidate?.symbol || '').trim().toUpperCase();
+  const base = getBaseAsset(symbol);
+  const intendedSellAmount = safeNumber(candidate?.estimatedExitAmount, 0);
+  const balance = await getBalanceSnapshot({ omitZeroBalances: false });
+  const freeBalance = safeNumber(balance?.free?.[base], 0);
+  const totalBalance = safeNumber(balance?.total?.[base], freeBalance);
+  const openOrders = await getOpenOrders(symbol);
+  const openSellOrders = (openOrders || [])
+    .filter((order) => String(order?.side || '').toLowerCase() === 'sell')
+    .filter((order) => !['closed', 'canceled', 'cancelled', 'expired', 'rejected'].includes(String(order?.status || '').toLowerCase()));
+  const openSellRemaining = sumOpenSellRemaining(openSellOrders);
+  const epsilon = Math.max(0.000001, intendedSellAmount * 0.000001);
+  const lines = [
+    `- 암호화폐 partial-adjust preflight: ${symbol}`,
+    `- intendedSell=${intendedSellAmount.toFixed(8)} ${base} / free=${freeBalance.toFixed(8)} / total=${totalBalance.toFixed(8)} / openSellOrders=${openSellOrders.length}`,
+  ];
+
+  if (intendedSellAmount <= 0) {
+    return {
+      ok: false,
+      code: 'partial_adjust_invalid_amount',
+      lines: [...lines, '- partial-adjust 의도 매도 수량이 0 이하라 실행을 차단합니다.'],
+      freeBalance,
+      totalBalance,
+      openSellOrders: openSellOrders.length,
+      openSellRemaining,
+    };
+  }
+
+  if (freeBalance + epsilon < intendedSellAmount) {
+    const code = openSellOrders.length > 0
+      ? 'partial_adjust_balance_locked_by_open_sell_orders'
+      : 'partial_adjust_insufficient_free_balance';
+    const reason = openSellOrders.length > 0
+      ? '- 기존 SELL 보호/지정가 주문이 잔고를 잠그고 있어 partial-adjust 실행을 차단합니다.'
+      : '- 가용 잔고가 partial-adjust 의도 수량보다 작아 실행을 차단합니다.';
+    return {
+      ok: false,
+      code,
+      lines: [
+        ...lines,
+        `- openSellRemaining=${openSellRemaining.toFixed(8)} ${base}`,
+        reason,
+      ],
+      freeBalance,
+      totalBalance,
+      openSellOrders: openSellOrders.length,
+      openSellRemaining,
+      intendedSellAmount,
+    };
+  }
+
+  return {
+    ok: true,
+    code: 'partial_adjust_crypto_preflight_clear',
+    lines: [...lines, '- 암호화폐 partial-adjust는 현재 실행 가능'],
+    freeBalance,
+    totalBalance,
+    openSellOrders: openSellOrders.length,
+    openSellRemaining,
+    intendedSellAmount,
+  };
+}
+
 async function getExecutionPreflight(candidate) {
   if (!candidate) return { ok: false, lines: ['- partial-adjust 후보가 없습니다.'] };
   if (candidate.exchange === 'binance') {
-    return {
-      ok: true,
-      lines: ['- 암호화폐 partial-adjust는 현재 실행 가능'],
-    };
+    return buildCryptoPartialAdjustPreflight(candidate);
   }
 
   const modeInfo = getKisExecutionModeInfo(candidate.exchange === 'kis' ? '국내주식' : '해외주식');
@@ -434,7 +551,7 @@ async function getExecutionPreflight(candidate) {
 
 async function main() {
   const args = parseArgs();
-  const candidates = await loadCandidates({
+  const candidates = await loadPartialAdjustCandidates({
     tradeMode: args.tradeMode,
     minutesBack: args.minutesBack,
     ratio: args.ratio,
@@ -460,11 +577,7 @@ async function main() {
     return;
   }
 
-  const candidate = candidates.find((item) => (
-    item.symbol === args.symbol
-      && (!args.exchange || item.exchange === args.exchange)
-      && (!args.tradeMode || item.tradeMode === args.tradeMode)
-  )) || null;
+  const candidate = pickCandidate(candidates, args.symbol, args.exchange, args.tradeMode);
   if (!candidate) {
     throw new Error(`partial-adjust 후보를 찾지 못했습니다: symbol=${args.symbol}${args.exchange ? ` exchange=${args.exchange}` : ''}${args.tradeMode ? ` tradeMode=${args.tradeMode}` : ''}`);
   }
@@ -474,7 +587,7 @@ async function main() {
     const preflight = await getExecutionPreflight(candidate);
     const payload = {
       mode: 'preview',
-      ok: true,
+      ok: preflight.ok === true,
       candidate,
       preflight,
       executeCommand: `env PAPER_MODE=false node bots/investment/scripts/partial-adjust-runner.ts --symbol=${candidate.symbol} --exchange=${candidate.exchange} --trade-mode=${candidate.tradeMode} --execute --confirm=partial-adjust`,

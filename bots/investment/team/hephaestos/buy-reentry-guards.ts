@@ -15,13 +15,15 @@ export function createBuyReentryGuardPolicy({
     signalTradeMode,
     effectivePaperMode,
   }) {
-    const livePosition = await db.getLivePosition(symbol, 'binance', signalTradeMode);
+    const [livePosition, paperPosition, sameDayBuyTrade] = await Promise.all([
+      db.getLivePosition(symbol, 'binance', signalTradeMode),
+      db.getPaperPosition(symbol, 'binance', signalTradeMode),
+      isSameDaySymbolReentryBlockEnabled()
+        ? db.getSameDayTrade({ symbol, side: 'buy', exchange: 'binance', tradeMode: signalTradeMode })
+        : Promise.resolve(null),
+    ]);
     const fallbackLivePosition = !livePosition
       ? await findAnyLivePosition(symbol, 'binance').catch(() => null)
-      : null;
-    const paperPosition = await db.getPaperPosition(symbol, 'binance', signalTradeMode);
-    const sameDayBuyTrade = isSameDaySymbolReentryBlockEnabled()
-      ? await db.getSameDayTrade({ symbol, side: 'buy', exchange: 'binance', tradeMode: signalTradeMode })
       : null;
 
     if (effectivePaperMode && livePosition) {

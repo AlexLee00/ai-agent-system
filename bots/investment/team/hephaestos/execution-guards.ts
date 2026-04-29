@@ -41,7 +41,10 @@ export async function runBuySafetyGuards({
     });
   }
 
-  const openPositionsSafe = await getOpenPositions('binance', false, signalTradeMode).catch(() => []);
+  const [openPositionsSafe, dailyTradesSafe] = await Promise.all([
+    getOpenPositions('binance', false, signalTradeMode).catch(() => []),
+    getDailyTradeCount({ exchange: 'binance', tradeMode: signalTradeMode, side: 'buy' }).catch(() => 0),
+  ]);
   if (openPositionsSafe.length >= capitalPolicy.max_concurrent_positions) {
     const overflowPolicy = getMaxPositionsOverflowPolicy(signalTradeMode);
     const overflowSlots = Math.max(0, Math.round(Number(overflowPolicy?.allowOverflowSlots || 0)));
@@ -76,7 +79,6 @@ export async function runBuySafetyGuards({
     });
   }
 
-  const dailyTradesSafe = await getDailyTradeCount({ exchange: 'binance', tradeMode: signalTradeMode, side: 'buy' }).catch(() => 0);
   if (dailyTradesSafe >= capitalPolicy.max_daily_trades) {
     const reason = formatDailyTradeLimitReason(dailyTradesSafe, capitalPolicy.max_daily_trades);
     console.log(`  ⛔ [자본관리] ${reason}`);

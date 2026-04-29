@@ -2,6 +2,9 @@
 
 const DEFAULT_PENDING_SIGNAL_CONCURRENCY = 1;
 const MAX_PENDING_SIGNAL_CONCURRENCY = 4;
+const DEFAULT_PENDING_SIGNAL_DELAY_MS = 500;
+const MIN_PENDING_SIGNAL_DELAY_MS = 50;
+const MAX_PENDING_TRADE_MODE_CONCURRENCY = 2;
 
 export function getPendingSignalConcurrency(env = process.env) {
   const raw = Number(
@@ -11,6 +14,26 @@ export function getPendingSignalConcurrency(env = process.env) {
   );
   if (!Number.isFinite(raw) || raw < 2) return DEFAULT_PENDING_SIGNAL_CONCURRENCY;
   return Math.min(MAX_PENDING_SIGNAL_CONCURRENCY, Math.floor(raw));
+}
+
+export function getPendingSignalDelayMs(env = process.env) {
+  const raw = Number(
+    env?.HEPHAESTOS_PENDING_SIGNAL_DELAY_MS
+    || env?.LUNA_PENDING_SIGNAL_DELAY_MS
+    || DEFAULT_PENDING_SIGNAL_DELAY_MS,
+  );
+  if (!Number.isFinite(raw)) return DEFAULT_PENDING_SIGNAL_DELAY_MS;
+  return Math.max(MIN_PENDING_SIGNAL_DELAY_MS, Math.floor(raw));
+}
+
+export function getPendingTradeModeQueueConcurrency(env = process.env) {
+  const raw = Number(
+    env?.HEPHAESTOS_PENDING_TRADE_MODE_QUEUE_CONCURRENCY
+    || env?.LUNA_PENDING_TRADE_MODE_QUEUE_CONCURRENCY
+    || 1,
+  );
+  if (!Number.isFinite(raw) || raw < 2) return 1;
+  return Math.min(MAX_PENDING_TRADE_MODE_CONCURRENCY, Math.floor(raw));
 }
 
 export function createPendingSignalProcessing({
@@ -51,8 +74,7 @@ export function createPendingSignalProcessing({
       mismatchCount: 0,
       mismatches: [],
     }));
-    const stalePending = [];
-    for (const mode of tradeModes) {
+    const stalePendingResults = await Promise.all(tradeModes.map(async (mode) => {
       const rows = await cleanupStalePendingSignals({
         exchange: 'binance',
         tradeMode: mode,
@@ -60,8 +82,9 @@ export function createPendingSignalProcessing({
         console.warn(`[헤파이스토스] stale pending 정리 실패 (${mode}): ${error.message}`);
         return [];
       });
-      stalePending.push(...rows);
-    }
+      return rows;
+    }));
+    const stalePending = stalePendingResults.flat();
     const reconciled = await reconcileLivePositionsWithBrokerBalance().catch((error) => {
       console.warn(`[헤파이스토스] 실지갑 포지션 동기화 실패: ${error.message}`);
       return [];
@@ -129,7 +152,7 @@ export function createPendingSignalProcessing({
     return results;
   }
 
-  async function runPendingSignalBatch(signals, { tradeMode, delayMs = 500, concurrency = getPendingSignalConcurrency() } = {}) {
+  async function runPendingSignalBatch(signals, { tradeMode, delayMs = getPendingSignalDelayMs(), concurrency = getPendingSignalConcurrency() } = {}) {
     if (signals.length === 0) {
       console.log(`[헤파이스토스] 대기 신호 없음 (trade_mode=${tradeMode})`);
       return [];
@@ -150,11 +173,22 @@ export function createPendingSignalProcessing({
   async function processAllPendingSignals() {
     const { tradeModes } = await preparePendingSignalProcessing();
     const allResults = [];
-    for (const tradeMode of tradeModes) {
-      const signals = await db.getApprovedSignals('binance', tradeMode);
-      const results = await runPendingSignalBatch(signals, { tradeMode, delayMs: 500 });
-      allResults.push(...results);
+    const tradeModeConcurrency = Math.max(1, Math.min(getPendingTradeModeQueueConcurrency(), tradeModes.length));
+    let nextModeIndex = 0;
+
+    async function worker() {
+      while (nextModeIndex < tradeModes.length) {
+        const tradeMode = tradeModes[nextModeIndex];
+        nextModeIndex += 1;
+        const signals = await db.getApprovedSignals('binance', tradeMode);
+        const results = await runPendingSignalBatch(signals, {
+          tradeMode,
+          delayMs: getPendingSignalDelayMs(),
+        });
+        allResults.push(...results);
+      }
     }
+    await Promise.all(Array.from({ length: tradeModeConcurrency }, () => worker()));
     return allResults;
   }
 

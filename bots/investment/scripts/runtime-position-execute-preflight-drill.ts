@@ -11,6 +11,8 @@ import {
   buildPositionSyncFinalGate,
   normalizeMarketList,
 } from '../shared/luna-l5-operational-gate.ts';
+import { buildPartialAdjustRunnerPreflightForDispatchCandidate } from './partial-adjust-runner.ts';
+import { buildStrategyExitRunnerPreflightForDispatchCandidate } from './strategy-exit-runner.ts';
 
 function parseArgs(argv = []) {
   const args = {
@@ -52,6 +54,86 @@ function buildOrphanCandidateFilter(positionStrategyAudit = null) {
         excluded,
       };
     },
+  };
+}
+
+function uniq(items = []) {
+  return [...new Set((items || []).filter(Boolean))];
+}
+
+export function isPolicyDeferredRunnerPreflight(item = {}) {
+  if (item?.ok === true) return false;
+  if (item?.code !== 'strategy_exit_guard_blocked') return false;
+  return item?.candidate?.executionGuard?.level === 'guarded';
+}
+
+async function buildRunnerPreflightChecks(candidates = []) {
+  const checks = [];
+  for (const candidate of candidates || []) {
+    if (candidate?.runner === 'runtime:partial-adjust' && candidate?.exchange === 'binance') {
+      const preflight = await buildPartialAdjustRunnerPreflightForDispatchCandidate(candidate).catch((error) => ({
+        ok: false,
+        code: 'partial_adjust_runner_preflight_failed',
+        lines: [`- partial-adjust runner preflight failed: ${error?.message || String(error)}`],
+      }));
+      checks.push({
+        runner: candidate.runner,
+        exchange: candidate.exchange,
+        symbol: candidate.symbol,
+        tradeMode: candidate.tradeMode || 'normal',
+        ok: preflight.ok === true,
+        code: preflight.code || (preflight.ok ? 'runner_preflight_clear' : 'runner_preflight_blocked'),
+        lines: preflight.lines || [],
+        candidate: preflight.candidate || null,
+      });
+    }
+    if (candidate?.runner === 'runtime:strategy-exit') {
+      const preflight = await buildStrategyExitRunnerPreflightForDispatchCandidate(candidate).catch((error) => ({
+        ok: false,
+        code: 'strategy_exit_runner_preflight_failed',
+        lines: [`- strategy-exit runner preflight failed: ${error?.message || String(error)}`],
+      }));
+      checks.push({
+        runner: candidate.runner,
+        exchange: candidate.exchange,
+        symbol: candidate.symbol,
+        tradeMode: candidate.tradeMode || 'normal',
+        ok: preflight.ok === true,
+        code: preflight.code || (preflight.ok ? 'runner_preflight_clear' : 'runner_preflight_blocked'),
+        lines: preflight.lines || [],
+        candidate: preflight.candidate || null,
+      });
+    }
+  }
+  return checks;
+}
+
+export function applyRunnerPreflightChecks(drill = {}, runnerPreflightChecks = []) {
+  const blocked = (runnerPreflightChecks || []).filter((item) => item.ok !== true);
+  const deferred = blocked.filter(isPolicyDeferredRunnerPreflight);
+  const hardBlocked = blocked.filter((item) => !isPolicyDeferredRunnerPreflight(item));
+  const deferredWarnings = deferred.map((item) => `runner_preflight_deferred:${item.runner}:${item.exchange}:${item.symbol}:${item.code}`);
+
+  if (hardBlocked.length === 0) {
+    return {
+      ...drill,
+      warnings: uniq([...(drill.warnings || []), ...deferredWarnings]),
+      policyDeferredRunnerPreflightChecks: deferred,
+      runnerPreflightChecks,
+    };
+  }
+  const blockers = [
+    ...(drill.blockers || []),
+    ...hardBlocked.map((item) => `runner_preflight_blocked:${item.runner}:${item.exchange}:${item.symbol}:${item.code}`),
+  ];
+  return {
+    ...drill,
+    ok: false,
+    status: 'execute_preflight_drill_blocked',
+    blockers: uniq(blockers),
+    warnings: uniq([...(drill.warnings || []), ...deferredWarnings]),
+    policyDeferredRunnerPreflightChecks: deferred,
+    runnerPreflightChecks,
   };
 }
 
@@ -97,14 +179,15 @@ export async function runPositionExecutePreflightDrill(args = {}) {
       requiredMarkets: markets,
     })
     : null;
-  const drill = buildExecutePreflightDrill({
+  const runnerPreflightChecks = await buildRunnerPreflightChecks(dispatchPreview?.candidates || []);
+  const drill = applyRunnerPreflightChecks(buildExecutePreflightDrill({
     autopilotPreview,
     dispatchPreview,
     lifecycleReadiness: autopilotPreview.lifecycleReadiness || null,
     positionSyncGate,
     positionStrategyAudit,
     excludedOrphanCandidates,
-  });
+  }), runnerPreflightChecks);
   return {
     ok: drill.ok,
     status: drill.status,

@@ -10,6 +10,8 @@
 		<string>validation</string>
 		<key>NODE_ENV</key>
 		<string>production</string>
+		<key>HEPHAESTOS_HOT_PATH_PREFETCH_ENABLED</key>
+		<string>1</string>
 		<key>PAPER_MODE</key>
 		<string>false</string>
 		<key>PATH</key>

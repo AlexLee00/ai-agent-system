@@ -8,6 +8,8 @@
 		<string>/Users/alexlee</string>
 		<key>NODE_ENV</key>
 		<string>production</string>
+		<key>HEPHAESTOS_HOT_PATH_PREFETCH_ENABLED</key>
+		<string>1</string>
 		<key>PATH</key>
 		<string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
 		<key>PAPER_MODE</key>

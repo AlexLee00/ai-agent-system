@@ -14,6 +14,8 @@
 		<string>false</string>
 		<key>INVESTMENT_LLM_HUB_ENABLED</key>
 		<string>true</string>
+		<key>HEPHAESTOS_HOT_PATH_PREFETCH_ENABLED</key>
+		<string>1</string>
 		<key>PAPER_MODE</key>
 		<string>false</string>
 		<key>PATH</key>

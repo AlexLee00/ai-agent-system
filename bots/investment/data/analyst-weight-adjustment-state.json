@@ -1,11 +1,11 @@
 {
   "oracle": {
-    "evidenceKey": "0.8571:7",
-    "accuracy": 0.8571428571428571,
+    "evidenceKey": "0.4286:7",
+    "accuracy": 0.42857142857142855,
     "sampleCount": 7,
-    "appliedFrom": 0.35,
-    "appliedTo": 0.4,
-    "appliedAt": "2026-04-23T03:39:20.568Z"
+    "appliedFrom": 0.4,
+    "appliedTo": 0.35,
+    "appliedAt": "2026-04-29T23:00:14.733Z"
   },
   "sophia": {
     "evidenceKey": "0.2727:11",
