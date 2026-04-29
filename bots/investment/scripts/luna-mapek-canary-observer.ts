@@ -38,8 +38,12 @@ export async function buildLunaMapekCanaryObservation({ hours = 24 } = {}) {
   if (!mapekEnabled) warnings.push('LUNA_MAPEK_ENABLED is not enabled');
   if (hardFailures > 0) warnings.push(`hard dispatch failures observed: ${hardFailures}`);
   const observations = [];
-  if (Number(bottleneck?.dispatch?.staleCandidateCount || 0) > 0) {
-    observations.push(`stale candidates observed as no-op: ${bottleneck.dispatch.staleCandidateCount}`);
+  const recentStaleCandidates = Number(bottleneck?.dispatch?.recentStaleCandidateCount ?? 0);
+  const totalStaleCandidates = Number(bottleneck?.dispatch?.staleCandidateCount || 0);
+  if (recentStaleCandidates > 0) {
+    observations.push(`recent stale candidates observed as no-op: ${recentStaleCandidates}`);
+  } else if (totalStaleCandidates > 0) {
+    observations.push(`historical stale candidates recovered: ${totalStaleCandidates}`);
   }
   if (Number(bottleneck?.dispatch?.historicalHardFailureCount || 0) > hardFailures) {
     observations.push(`historical hard failures recovered by clean streak: ${bottleneck.dispatch.historicalHardFailureCount}`);

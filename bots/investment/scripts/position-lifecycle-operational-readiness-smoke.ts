@@ -37,6 +37,19 @@ assert.equal(coverage.rows.find((row) => row.symbol === 'POET').missingLateStage
 assert.equal(coverage.missingByStage.stage_1, 1);
 assert.equal(coverage.missingLateByStage.stage_4, 1);
 
+const openPositionCoverage = summarizeLifecycleStageCoverage({
+  events: [
+    { position_scope_key: 'binance:PUMP/USDT:normal', symbol: 'PUMP/USDT', exchange: 'binance', trade_mode: 'normal', stage_id: 'stage_4' },
+    { position_scope_key: 'binance:PUMP/USDT:normal', symbol: 'PUMP/USDT', exchange: 'binance', trade_mode: 'normal', stage_id: 'stage_5' },
+  ],
+  activeProfiles: [{ symbol: 'PUMP/USDT', exchange: 'binance', trade_mode: 'normal' }],
+  actionableCandidates: [{ positionId: 'binance:PUMP/USDT:normal', action: 'ADJUST' }],
+});
+assert.equal(openPositionCoverage.lateStageCoveragePct, 40);
+assert.equal(openPositionCoverage.applicableLateStageCoveragePct, 66.7);
+assert.deepEqual(openPositionCoverage.rows[0].applicableLateStages, ['stage_4', 'stage_5', 'stage_6']);
+assert.deepEqual(openPositionCoverage.rows[0].missingApplicableLateStages, ['stage_6']);
+
 const filteredProfiles = filterLifecycleCoverageProfiles({
   activeProfiles: [
     ...activeProfiles,
@@ -79,6 +92,7 @@ const readiness = buildLifecycleExecutionReadiness({
 assert.equal(readiness.ok, true);
 assert.equal(readiness.metrics.dispatchCandidates, 1);
 assert.equal(readiness.metrics.lifecycleLateStageCoveragePct, coverage.lateStageCoveragePct);
+assert.equal(readiness.metrics.lifecycleApplicableLateStageCoveragePct, coverage.applicableLateStageCoveragePct);
 
 const blocked = buildLifecycleExecutionReadiness({
   flags: { mode: 'autonomous_l5', phaseD: { enabled: true }, phaseE: { enabled: true }, phaseF: { enabled: true }, phaseG: { enabled: true }, phaseH: { enabled: true } },

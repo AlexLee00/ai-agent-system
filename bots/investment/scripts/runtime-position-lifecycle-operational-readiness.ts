@@ -98,6 +98,7 @@ export async function runPositionLifecycleOperationalReadiness(args = {}) {
   const coverageSummary = summarizeLifecycleStageCoverage({
     events: lifecycleEvents,
     activeProfiles: coverageProfiles.included,
+    actionableCandidates: dispatchPreview.candidates || [],
   });
   const readiness = buildLifecycleExecutionReadiness({
     flags,
@@ -135,6 +136,8 @@ export async function runPositionLifecycleOperationalReadiness(args = {}) {
       ok: coverageSummary.ok,
       activePositions: coverageSummary.activePositions,
       coveragePct: coverageSummary.coveragePct,
+      lateStageCoveragePct: coverageSummary.lateStageCoveragePct,
+      applicableLateStageCoveragePct: coverageSummary.applicableLateStageCoveragePct,
       missingByStage: coverageSummary.missingByStage,
       universe: coverageProfiles.meta,
       rows: coverageSummary.rows.slice(0, 20),

@@ -27,6 +27,8 @@ import { createRequire } from 'module';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as investmentDb from './db.ts';
+import { getCurriculumPromptAdjustment, getCurriculumState } from './agent-curriculum-tracker.ts';
+import { buildDefaultWorkingState, isAgentMemoryFeatureEnabled } from './agent-memory-runtime.ts';
 
 const _require = createRequire(import.meta.url);
 const pgPool = _require('../../../packages/core/lib/pg-pool');
@@ -35,9 +37,6 @@ const env = _require('../../../packages/core/lib/env');
 const PROJECT_ROOT = env.PROJECT_ROOT || process.cwd();
 const TEAM_DIR = path.join(PROJECT_ROOT, 'bots/investment/team');
 const SKILLS_DIR = path.join(PROJECT_ROOT, 'packages/core/lib/skills/investment');
-
-// Kill switch 헬퍼
-const isEnabled = (envVar: string) => process.env[envVar] !== 'false';
 
 // ─── 타입 ─────────────────────────────────────────────────────────────────────
 
@@ -68,6 +67,7 @@ export interface OrchestratorResult {
     workingState: boolean;
   };
   totalChars: number;
+  callId?: string;
 }
 
 // ─── 메인 조합 함수 ───────────────────────────────────────────────────────────
@@ -79,6 +79,7 @@ export interface OrchestratorResult {
 export async function buildMemoryPrefix(
   opts: MemoryOrchestratorOptions,
 ): Promise<OrchestratorResult> {
+  const callId = `mem-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
   const maxChars = opts.maxPrefixChars ?? 8_000;
   const sections: string[] = [];
   const layers = {
@@ -92,12 +93,18 @@ export async function buildMemoryPrefix(
     workingState: false,
   };
 
-  if (!isEnabled('LUNA_AGENT_MEMORY_AUTO_PREFIX')) {
-    return { prefix: '', layers, totalChars: 0 };
+  if (!isAgentMemoryFeatureEnabled('memoryAutoPrefix')) {
+    await _logAgentContext({
+      agentName: opts.agentName,
+      callId,
+      layers,
+      totalChars: 0,
+    });
+    return { prefix: '', layers, totalChars: 0, callId };
   }
 
   // 1. Persona
-  if (isEnabled('LUNA_AGENT_PERSONA_ENABLED')) {
+  if (isAgentMemoryFeatureEnabled('personaEnabled')) {
     const persona = _loadMarkdownFile(TEAM_DIR, `${opts.agentName}.persona.md`);
     if (persona) {
       sections.push(`## 에이전트 정체성\n${persona}`);
@@ -106,7 +113,7 @@ export async function buildMemoryPrefix(
   }
 
   // 2. Constitution
-  if (isEnabled('LUNA_AGENT_CONSTITUTION_ENABLED')) {
+  if (isAgentMemoryFeatureEnabled('constitutionEnabled')) {
     const constitution = _loadMarkdownFile(TEAM_DIR, `${opts.agentName}.constitution.md`);
     if (constitution) {
       sections.push(`## 행동 원칙 (Constitution)\n${constitution}`);
@@ -114,30 +121,38 @@ export async function buildMemoryPrefix(
     }
   }
 
+  // Curriculum (Phase D) — 메모리 prefix에 레벨 지시문 주입
+  if (isAgentMemoryFeatureEnabled('curriculumEnabled')) {
+    const curriculumState = await getCurriculumState(opts.agentName, String(opts.market || 'any')).catch(() => null);
+    if (curriculumState?.level) {
+      sections.push(getCurriculumPromptAdjustment(curriculumState.level));
+    }
+  }
+
   // 3~6: DB 기반 레이어 병렬 조회
   const [episodicResult, failureResult, skillResult, entityResult, shortTermResult] = await Promise.allSettled([
     // 3. Layer 3 Episodic (RAG similar thesis)
-    isEnabled('LUNA_AGENT_MEMORY_LAYER_3')
+    isAgentMemoryFeatureEnabled('layer3EpisodicEnabled')
       ? _fetchEpisodicMemory(opts.agentName, opts.symbol, opts.market)
       : Promise.resolve([]),
 
     // 4. Layer 3 Failures (RAG similar failures)
-    isEnabled('LUNA_AGENT_MEMORY_LAYER_3')
+    isAgentMemoryFeatureEnabled('layer3EpisodicEnabled')
       ? _fetchFailureMemory(opts.agentName, opts.symbol, opts.market)
       : Promise.resolve([]),
 
     // 5. Layer 4 Procedural (skill files)
-    isEnabled('LUNA_AGENT_MEMORY_LAYER_4')
+    isAgentMemoryFeatureEnabled('layer4SemanticProceduralEnabled')
       ? _fetchSkills(opts.agentName, opts.taskType, opts.market)
       : Promise.resolve([]),
 
     // 6. Layer 4 Semantic (entity_facts)
-    isEnabled('LUNA_AGENT_MEMORY_LAYER_4') && opts.symbol
+    isAgentMemoryFeatureEnabled('layer4SemanticProceduralEnabled') && opts.symbol
       ? _fetchEntityFacts(opts.symbol, opts.market)
       : Promise.resolve([]),
 
     // 7. Layer 2 Short-term
-    isEnabled('LUNA_AGENT_MEMORY_LAYER_2')
+    isAgentMemoryFeatureEnabled('layer2ShortTermEnabled')
       ? _fetchShortTermMemory(opts.agentName, opts.symbol, opts.market, opts.incidentKey)
       : Promise.resolve([]),
   ]);
@@ -194,8 +209,15 @@ export async function buildMemoryPrefix(
   }
 
   // 8. Working State (Layer 1)
-  if (opts.workingState) {
-    sections.push(`## 현재 작업 상태 (Working Memory)\n${opts.workingState}`);
+  const workingState = opts.workingState || buildDefaultWorkingState({
+    agentName: opts.agentName,
+    market: opts.market,
+    symbol: opts.symbol,
+    taskType: opts.taskType,
+    incidentKey: opts.incidentKey,
+  });
+  if (workingState) {
+    sections.push(`## 현재 작업 상태 (Working Memory)\n${workingState}`);
     layers.workingState = true;
   }
 
@@ -205,7 +227,15 @@ export async function buildMemoryPrefix(
     prefix = prefix.slice(0, maxChars) + '\n\n[메모리 컨텍스트 길이 제한으로 일부 생략]';
   }
 
-  return { prefix, layers, totalChars: prefix.length };
+  const totalChars = prefix.length;
+  await _logAgentContext({
+    agentName: opts.agentName,
+    callId,
+    layers,
+    totalChars,
+  });
+
+  return { prefix, layers, totalChars, callId };
 }
 
 /**
@@ -237,7 +267,7 @@ export async function saveShortTermMemory(
   content: Record<string, unknown>,
   opts: { symbol?: string; market?: string; incidentKey?: string; ttlHours?: number } = {},
 ): Promise<void> {
-  if (!isEnabled('LUNA_AGENT_MEMORY_LAYER_2')) return;
+  if (!isAgentMemoryFeatureEnabled('layer2ShortTermEnabled')) return;
   try {
     const ttlHours = opts.ttlHours ?? 24;
     await pgPool.query(`
@@ -358,11 +388,13 @@ async function _fetchFailureMemory(
 async function _fetchSkills(agentName: string, taskType?: string, market?: string): Promise<string[]> {
   try {
     const marketKey = String(market || '').trim().toLowerCase();
-    const collected: string[] = await _fetchDbPosttradeSkills(taskType, marketKey).catch(() => []);
+    const collected: string[] = await _fetchDbPosttradeSkills(agentName, taskType, marketKey).catch(() => []);
     if (collected.length >= 2) return collected.slice(0, 2);
 
     const dirCandidates = [
       path.join(SKILLS_DIR, agentName),
+      path.join(SKILLS_DIR, 'luna', agentName, marketKey),
+      path.join(SKILLS_DIR, 'luna', agentName),
       path.join(SKILLS_DIR, 'luna', marketKey),
       path.join(SKILLS_DIR, 'luna'),
       SKILLS_DIR,
@@ -394,30 +426,72 @@ async function _fetchSkills(agentName: string, taskType?: string, market?: strin
   }
 }
 
-async function _fetchDbPosttradeSkills(taskType?: string, market?: string): Promise<string[]> {
+async function _fetchDbPosttradeSkills(agentName: string, taskType?: string, market?: string): Promise<string[]> {
   const marketKey = String(market || 'all').trim().toLowerCase() || 'all';
   const preferAvoid = String(taskType || '').toLowerCase().includes('risk')
     || String(taskType || '').toLowerCase().includes('guard')
     || String(taskType || '').toLowerCase().includes('exit');
   const skillTypes = preferAvoid ? ['avoid', 'success'] : ['success', 'avoid'];
   const rows = await investmentDb.query(`
-    SELECT market, skill_type, pattern_key, title, summary, invocation_count, success_rate
+    SELECT market, agent_name, skill_type, pattern_key, title, summary, invocation_count, success_rate
       FROM investment.luna_posttrade_skills
      WHERE ($1::text = 'all' OR market = $1 OR market = 'all')
-       AND skill_type = ANY($2::text[])
+       AND ($2::text = 'all' OR agent_name = $2 OR agent_name = 'all')
+       AND skill_type = ANY($3::text[])
      ORDER BY
-       CASE WHEN skill_type = $3 THEN 0 ELSE 1 END,
+       CASE WHEN skill_type = $4 THEN 0 ELSE 1 END,
        success_rate DESC,
        invocation_count DESC,
        updated_at DESC
      LIMIT 2
-  `, [marketKey, skillTypes, skillTypes[0]]);
+  `, [marketKey, String(agentName || 'all'), skillTypes, skillTypes[0]]);
 
   return (rows || []).map((row: any) => {
     const rate = Number(row.success_rate || 0).toFixed(3);
     const count = Number(row.invocation_count || 0);
-    return `[POSTTRADE_SKILL/${row.market}/${row.skill_type}/${row.pattern_key}] ${row.summary} (success_rate=${rate}, n=${count})`;
+    return `[POSTTRADE_SKILL/${row.market}/${row.agent_name || 'all'}/${row.skill_type}/${row.pattern_key}] ${row.summary} (success_rate=${rate}, n=${count})`;
   });
+}
+
+async function _logAgentContext({
+  agentName,
+  callId,
+  layers,
+  totalChars,
+}: {
+  agentName: string;
+  callId: string;
+  layers: {
+    persona: boolean;
+    constitution: boolean;
+    episodic: number;
+    failures: number;
+    skills: number;
+    entityFacts: number;
+    shortTerm: number;
+    workingState: boolean;
+  };
+  totalChars: number;
+}) {
+  try {
+    await pgPool.query(
+      `INSERT INTO investment.agent_context_log
+         (agent_name, call_id, persona_loaded, constitution_loaded, rag_docs_count, failures_found, skills_found, total_prefix_chars)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
+      [
+        String(agentName || 'unknown'),
+        String(callId || ''),
+        layers.persona === true,
+        layers.constitution === true,
+        Number(layers.episodic || 0),
+        Number(layers.failures || 0),
+        Number(layers.skills || 0),
+        Number(totalChars || 0),
+      ],
+    );
+  } catch {
+    // context log 실패는 운영 중단시키지 않는다.
+  }
 }
 
 async function _fetchEntityFacts(symbol: string, market?: string): Promise<any[]> {

@@ -245,8 +245,9 @@ export function buildSupervisedWarmupGate({
   if (recentHardFailures > 0) {
     blockers.push(`recent_autopilot_hard_failures:${recentHardFailures}`);
   }
-  if (Number(dispatch.staleCandidateCount || 0) > 0) {
-    warnings.push(`stale_candidates_observed:${Number(dispatch.staleCandidateCount || 0)}`);
+  const recentStaleCandidateCount = Number(dispatch.recentStaleCandidateCount ?? 0);
+  if (recentStaleCandidateCount > 0) {
+    warnings.push(`recent_stale_candidates_observed:${recentStaleCandidateCount}`);
   }
 
   return {
@@ -421,8 +422,10 @@ export function buildLunaL5FinalGate({
     ...(positionSyncGate?.warnings || []),
     ...(executePreflight?.warnings || []),
     ...(configDoctor?.warnings || []),
-    ...(hephaestosRefactor?.warnings || []),
     ...(autonomousOperationalGate?.warnings || []),
+  ]);
+  const technicalDebtWarnings = uniq([
+    ...(hephaestosRefactor?.warnings || []),
   ]);
   return {
     ok: blockers.length === 0,
@@ -430,6 +433,7 @@ export function buildLunaL5FinalGate({
     checkedAt: new Date().toISOString(),
     blockers,
     warnings,
+    technicalDebtWarnings,
     cutoverGate,
     positionSyncGate,
     executePreflight,

@@ -48,6 +48,7 @@ const warmupClear = buildSupervisedWarmupGate({
       cleanStreakSamples: 5,
       recentHardFailureCount: 0,
       staleCandidateCount: 2,
+      recentStaleCandidateCount: 0,
     },
   },
   minSamples: 3,

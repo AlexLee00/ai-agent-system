@@ -33,6 +33,26 @@ function isStaleCandidateStatus(status = null) {
   return String(status || '').trim() === 'candidate_not_found';
 }
 
+function collectStaleCandidateStats(rows = []) {
+  const symbols = {};
+  let count = 0;
+  for (const row of rows || []) {
+    for (const skipped of row?.dispatchSkipped || []) {
+      if (skipped?.status === 'candidate_not_found') {
+        count += 1;
+        increment(symbols, `${skipped.exchange || 'unknown'}:${skipped.symbol || 'unknown'}`);
+      }
+    }
+    for (const failure of row?.dispatchFailures || []) {
+      if (String(failure?.status || '') === 'candidate_not_found') {
+        count += 1;
+        increment(symbols, `${failure.exchange || 'unknown'}:${failure.symbol || 'unknown'}`);
+      }
+    }
+  }
+  return { count, symbols };
+}
+
 function rowHardFailureCount(row = {}) {
   if (Array.isArray(row?.dispatchFailures)) {
     return row.dispatchFailures
@@ -73,6 +93,7 @@ export function buildAutopilotBottleneckReport({
   file = DEFAULT_POSITION_RUNTIME_AUTOPILOT_HISTORY_FILE,
   hours = 24,
   minCleanSamples = Number(process.env.LUNA_MAPEK_CLEAN_STREAK_SAMPLES || 3),
+  recentStaleSamples = Number(process.env.LUNA_STALE_CANDIDATE_RECENT_SAMPLES || minCleanSamples || 3),
 } = {}) {
   const rows = recentHistory(file, hours);
   const statusCounts = {};
@@ -122,12 +143,17 @@ export function buildAutopilotBottleneckReport({
   }
 
   const cleanWindow = buildRecentCleanWindow(rows, minCleanSamples);
+  const staleWindowSize = Math.max(1, Number(recentStaleSamples || cleanWindow.requiredCleanSamples || 3));
+  const recentStaleRows = rows.slice(-staleWindowSize);
+  const recentStale = collectStaleCandidateStats(recentStaleRows);
   const historicalHardFailureCount = hardFailureCount;
   hardFailureCount = cleanWindow.recentHardFailureCount;
 
   const recommendations = [];
-  if (staleCandidateCount > 0) {
-    recommendations.push('candidate_not_found는 stale candidate no-op으로 관찰하되, canary 차단 조건에서는 제외한다.');
+  if (recentStale.count > 0) {
+    recommendations.push(`최근 ${staleWindowSize}개 샘플에서 stale candidate no-op ${recentStale.count}건이 관찰됐습니다.`);
+  } else if (staleCandidateCount > 0) {
+    recommendations.push(`stale candidate ${staleCandidateCount}건은 최근 ${staleWindowSize}개 샘플에서 재발하지 않아 historical noise로 분리합니다.`);
   }
   if (hardFailureCount > 0) {
     recommendations.push('hard dispatch failure가 남아 있으므로 child runner stdout/stderr를 우선 점검한다.');
@@ -158,6 +184,9 @@ export function buildAutopilotBottleneckReport({
       skippedCount: dispatchSkippedCount,
       failureCount: dispatchFailureCount,
       staleCandidateCount,
+      recentStaleCandidateCount: recentStale.count,
+      recentStaleSampleCount: recentStaleRows.length,
+      recentStaleCandidateSymbols: recentStale.symbols,
       hardFailureCount,
       historicalHardFailureCount,
       cleanStreakSamples: cleanWindow.cleanStreakSamples,

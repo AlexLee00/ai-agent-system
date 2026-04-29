@@ -8,6 +8,7 @@ import {
 
 const DEFAULT_REQUIRED_STAGES = [...POSITION_STAGE_IDS];
 const DEFAULT_LATE_STAGES = ['stage_4', 'stage_5', 'stage_6', 'stage_7', 'stage_8'];
+const ALWAYS_APPLICABLE_LATE_STAGES = ['stage_4', 'stage_5'];
 
 function normalizeStageId(value) {
   const normalized = String(value || '').trim();
@@ -28,6 +29,27 @@ function positionScope(position = {}) {
   const tradeMode = position.trade_mode || position.tradeMode || position?.strategy_state?.tradeMode || 'normal';
   if (!symbol || !exchange) return null;
   return buildPositionScopeKey(symbol, exchange, tradeMode);
+}
+
+function candidateScope(candidate = {}) {
+  if (candidate?.positionId) return String(candidate.positionId);
+  const symbol = candidate.symbol || candidate?.strategy_state?.symbol;
+  const exchange = candidate.exchange || candidate?.strategy_state?.exchange;
+  const tradeMode = candidate.trade_mode || candidate.tradeMode || candidate?.strategy_state?.tradeMode || 'normal';
+  if (!symbol || !exchange) return null;
+  return buildPositionScopeKey(symbol, exchange, tradeMode);
+}
+
+function buildActionableCandidateScopeSet(candidates = null) {
+  if (!Array.isArray(candidates)) return null;
+  const scopes = new Set();
+  for (const candidate of candidates) {
+    const action = String(candidate?.action || '').trim().toUpperCase();
+    if (!action || action === 'HOLD' || action === 'SKIP') continue;
+    const scope = candidateScope(candidate);
+    if (scope) scopes.add(scope);
+  }
+  return scopes;
 }
 
 function scopeWithoutTradeMode(scope = '') {
@@ -112,8 +134,10 @@ export function summarizeLifecycleStageCoverage({
   events = [],
   activeProfiles = [],
   requiredStages = DEFAULT_REQUIRED_STAGES,
+  actionableCandidates = null,
 } = {}) {
   const stageSetByScope = new Map();
+  const actionableCandidateScopeSet = buildActionableCandidateScopeSet(actionableCandidates);
   for (const event of events || []) {
     const scope = event?.position_scope_key || event?.positionScopeKey || (
       event?.symbol && event?.exchange
@@ -133,8 +157,17 @@ export function summarizeLifecycleStageCoverage({
       const covered = stageSetByScope.get(scope) || new Set();
       const missingStages = requiredStages.filter((stageId) => !covered.has(stageId));
       const lateStages = DEFAULT_LATE_STAGES.filter((stageId) => requiredStages.includes(stageId));
+      const applicableLateStages = actionableCandidateScopeSet == null
+        ? lateStages
+        : lateStages.filter((stageId) => (
+          ALWAYS_APPLICABLE_LATE_STAGES.includes(stageId)
+          || covered.has(stageId)
+          || (stageId === 'stage_6' && actionableCandidateScopeSet.has(scope))
+        ));
       const coveredLateStages = lateStages.filter((stageId) => covered.has(stageId));
       const missingLateStages = lateStages.filter((stageId) => !covered.has(stageId));
+      const coveredApplicableLateStages = applicableLateStages.filter((stageId) => covered.has(stageId));
+      const missingApplicableLateStages = applicableLateStages.filter((stageId) => !covered.has(stageId));
       return {
         positionScopeKey: scope,
         symbol: profile.symbol || null,
@@ -144,12 +177,18 @@ export function summarizeLifecycleStageCoverage({
         missingStages,
         coveredLateStages,
         missingLateStages,
+        applicableLateStages,
+        coveredApplicableLateStages,
+        missingApplicableLateStages,
         missingLabels: missingStages.map((stageId) => POSITION_STAGE_LABELS[stageId] || stageId),
         coveragePct: requiredStages.length > 0
           ? Math.round(((requiredStages.length - missingStages.length) / requiredStages.length) * 1000) / 10
           : 100,
         lateStageCoveragePct: lateStages.length > 0
           ? Math.round((coveredLateStages.length / lateStages.length) * 1000) / 10
+          : 100,
+        applicableLateStageCoveragePct: applicableLateStages.length > 0
+          ? Math.round((coveredApplicableLateStages.length / applicableLateStages.length) * 1000) / 10
           : 100,
       };
     })
@@ -163,6 +202,8 @@ export function summarizeLifecycleStageCoverage({
   }, {});
   const lateTotalExpected = rows.length * DEFAULT_LATE_STAGES.filter((stageId) => requiredStages.includes(stageId)).length;
   const lateTotalCovered = rows.reduce((sum, row) => sum + row.coveredLateStages.length, 0);
+  const applicableLateTotalExpected = rows.reduce((sum, row) => sum + row.applicableLateStages.length, 0);
+  const applicableLateTotalCovered = rows.reduce((sum, row) => sum + row.coveredApplicableLateStages.length, 0);
   const missingLateByStage = DEFAULT_LATE_STAGES.reduce((acc, stageId) => {
     if (requiredStages.includes(stageId)) acc[stageId] = rows.filter((row) => row.missingLateStages.includes(stageId)).length;
     return acc;
@@ -174,6 +215,7 @@ export function summarizeLifecycleStageCoverage({
     requiredStages,
     coveragePct: totalExpected > 0 ? Math.round((totalCovered / totalExpected) * 1000) / 10 : 100,
     lateStageCoveragePct: lateTotalExpected > 0 ? Math.round((lateTotalCovered / lateTotalExpected) * 1000) / 10 : 100,
+    applicableLateStageCoveragePct: applicableLateTotalExpected > 0 ? Math.round((applicableLateTotalCovered / applicableLateTotalExpected) * 1000) / 10 : 100,
     missingByStage,
     missingLateByStage,
     rows,
@@ -238,7 +280,7 @@ export function buildLifecycleExecutionReadiness({
   if (coverageSummary && coveragePct < 50) {
     warnings.push(`low_lifecycle_stage_coverage_${coveragePct}`);
   }
-  const lateStageCoveragePct = Number(coverageSummary?.lateStageCoveragePct ?? 100);
+  const lateStageCoveragePct = Number(coverageSummary?.applicableLateStageCoveragePct ?? coverageSummary?.lateStageCoveragePct ?? 100);
   if (coverageSummary && lateStageCoveragePct < 60) {
     warnings.push(`low_lifecycle_late_stage_coverage_${lateStageCoveragePct}`);
   }
@@ -263,6 +305,7 @@ export function buildLifecycleExecutionReadiness({
       signalRefreshCount: Number(signalRefresh?.count || 0),
       lifecycleCoveragePct: coverageSummary?.coveragePct ?? null,
       lifecycleLateStageCoveragePct: coverageSummary?.lateStageCoveragePct ?? null,
+      lifecycleApplicableLateStageCoveragePct: coverageSummary?.applicableLateStageCoveragePct ?? null,
       positionSyncMismatchCount: positionSyncSummary?.mismatchCount ?? null,
     },
   };

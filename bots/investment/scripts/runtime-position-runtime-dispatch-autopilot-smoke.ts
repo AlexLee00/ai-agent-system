@@ -265,6 +265,23 @@ async function main() {
       && bottleneck.dispatch.historicalHardFailureCount === 1
       && bottleneck.dispatch.cleanStreakSamples >= 3,
   );
+  assert(
+    'stale candidate는 전체 누적과 최근 윈도우를 분리해 경고 노이즈를 줄임',
+    bottleneck.dispatch.staleCandidateCount === 2
+      && bottleneck.dispatch.recentStaleCandidateCount === 2
+      && bottleneck.dispatch.recentStaleSampleCount === 3,
+  );
+  const staleRecovered = buildAutopilotBottleneckReport({
+    file: historyFile,
+    hours: 24,
+    minCleanSamples: 3,
+    recentStaleSamples: 1,
+  });
+  assert(
+    '최근 윈도우에 재발하지 않은 stale candidate는 historical noise로 분리',
+    staleRecovered.dispatch.staleCandidateCount === 2
+      && staleRecovered.dispatch.recentStaleCandidateCount === 0,
+  );
   fs.rmSync(historyFile, { force: true });
 
   console.log('');
