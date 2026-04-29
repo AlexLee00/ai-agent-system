@@ -75,6 +75,31 @@ function ensureDirSync(dirPath = '') {
   } catch {}
 }
 
+function sanitizeJsonLikeValue(value) {
+  if (value == null) return value;
+  if (typeof value === 'string') {
+    return value.replace(/\u0000/g, '').trim();
+  }
+  if (Array.isArray(value)) {
+    return value.map((item) => sanitizeJsonLikeValue(item));
+  }
+  if (typeof value === 'object') {
+    return Object.fromEntries(
+      Object.entries(value).map(([key, entryValue]) => [key, sanitizeJsonLikeValue(entryValue)]),
+    );
+  }
+  return value;
+}
+
+function stringifyJsonbPayload(value, fallback = {}) {
+  return JSON.stringify(sanitizeJsonLikeValue(value == null ? fallback : value));
+}
+
+function sanitizeTextField(value) {
+  if (value == null) return null;
+  return String(value).replace(/\u0000/g, '').trim();
+}
+
 function writeNeighborCollectDiagnostics(payload = {}) {
   try {
     ensureDirSync(BLOG_OPS_DIR);
@@ -432,7 +457,7 @@ async function recordCommentAction(actionType, payload = {}) {
     targetPostUrl || null,
     payload.commentText || null,
     payload.success !== false,
-    JSON.stringify(payload.meta || {}),
+    stringifyJsonbPayload(payload.meta || {}),
   ]);
   if (payload.success === false) {
     const errorCode = String(payload?.meta?.error || 'comment_action_failed').trim() || 'comment_action_failed';
@@ -702,7 +727,7 @@ async function saveNeighborCandidate(candidate) {
         candidate.sourceType || null,
         candidate.sourceRef || null,
         candidate.postTitle || null,
-        JSON.stringify({
+        stringifyJsonbPayload({
           requeuedFromCollection: true,
           requeuedAt: new Date().toISOString(),
           ...(candidate.meta || {}),
@@ -740,7 +765,7 @@ async function saveNeighborCandidate(candidate) {
     canonicalPostUrl,
     candidate.postTitle || null,
     dedupeKey,
-    JSON.stringify(candidate.meta || {}),
+    stringifyJsonbPayload(candidate.meta || {}),
   ]);
 
   return {
@@ -775,7 +800,7 @@ async function updateNeighborCommentStatus(id, status, options = {}) {
     status,
     options.commentText || null,
     options.errorMessage || null,
-    JSON.stringify(options.meta || {}),
+    stringifyJsonbPayload(options.meta || {}),
   ]);
 }
 
@@ -842,7 +867,7 @@ async function saveDetectedComment(comment) {
       && inboundAssessment.ok
     );
 
-    await pgPool.run('blog', `
+    const updateSql = `
       UPDATE ${TABLE}
       SET status = CASE
             WHEN $2 THEN 'pending'
@@ -854,38 +879,75 @@ async function saveDetectedComment(comment) {
           END,
           meta = COALESCE(meta, '{}'::jsonb) || $3::jsonb
       WHERE id = $1
-    `, [
+    `;
+    const updateParams = [
       existing.id,
       shouldRequeue,
-      JSON.stringify({
+      stringifyJsonbPayload({
         ...(comment.meta || {}),
         ...(shouldRequeue ? {
           phase: 'recoverable_requeue',
           previous_error: existing.error_message || null,
         } : {}),
       }),
-    ]);
+    ];
+    try {
+      await pgPool.run('blog', updateSql, updateParams);
+    } catch (error) {
+      const message = String(error?.message || error || '');
+      if (!/invalid input syntax for type json/i.test(message)) throw error;
+      traceCommenter('saveDetectedComment update json fallback', {
+        id: existing.id,
+        postUrl: existing.post_url || comment.postUrl,
+        commenterName: existing.commenter_name || comment.commenterName || null,
+        commentRef: existing.comment_ref || comment.commentRef || null,
+      });
+      await pgPool.run('blog', updateSql, [
+        existing.id,
+        shouldRequeue,
+        '{}',
+      ]);
+    }
 
     return { inserted: false, id: existing.id, dedupeKey, requeued: shouldRequeue };
   }
 
-  const result = await pgPool.run('blog', `
+  const insertSql = `
     INSERT INTO ${TABLE} (
       post_url, post_title, commenter_id, commenter_name,
       comment_text, comment_ref, dedupe_key, meta
     )
     VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb)
     RETURNING id
-  `, [
-    comment.postUrl,
-    comment.postTitle || null,
-    comment.commenterId || null,
-    comment.commenterName || null,
-    comment.commentText,
-    comment.commentRef || null,
-    dedupeKey,
-    JSON.stringify(comment.meta || {}),
-  ]);
+  `;
+  const baseParams = [
+    sanitizeTextField(comment.postUrl),
+    sanitizeTextField(comment.postTitle || null),
+    sanitizeTextField(comment.commenterId || null),
+    sanitizeTextField(comment.commenterName || null),
+    sanitizeTextField(comment.commentText),
+    sanitizeTextField(comment.commentRef || null),
+    sanitizeTextField(dedupeKey),
+  ];
+  let result;
+  try {
+    result = await pgPool.run('blog', insertSql, [
+      ...baseParams,
+      stringifyJsonbPayload(comment.meta || {}),
+    ]);
+  } catch (error) {
+    const message = String(error?.message || error || '');
+    if (!/invalid input syntax for type json/i.test(message)) throw error;
+    traceCommenter('saveDetectedComment json fallback', {
+      postUrl: baseParams[0],
+      commenterName: baseParams[3],
+      commentRef: baseParams[5],
+    });
+    result = await pgPool.run('blog', insertSql, [
+      ...baseParams,
+      '{}',
+    ]);
+  }
 
   if (result.rowCount > 0) {
     return { inserted: true, id: result.rows[0].id, dedupeKey, requeued: false };
