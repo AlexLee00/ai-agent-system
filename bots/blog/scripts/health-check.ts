@@ -34,6 +34,7 @@ const { checkFacebookPublishReadiness } = require('../lib/facebook-publisher.ts'
 const { readDevelopmentBaseline, buildSinceClause } = require('../lib/dev-baseline.ts');
 const { readMarketingDigestTelemetry, describeMarketingDigestAge } = require('../lib/marketing-digest-telemetry.ts');
 const { readLatestBlogEvalCase } = require('../lib/eval-case-telemetry.ts');
+const { readNaverUrlBackfillTelemetry } = require('../lib/naver-url-backfill-telemetry.ts');
 
 const runtimeConfig = getBlogHealthRuntimeConfig();
 const { buildIssueHints, rememberHealthEvent } = createHealthMemoryHelper({
@@ -939,6 +940,7 @@ async function checkMarketingExpansionHealth() {
 
 async function checkPendingPublishHealth() {
   try {
+    const latestBackfill = readNaverUrlBackfillTelemetry();
     const rows = await pgPool.query('blog', `
       SELECT id, title, post_type, publish_date, created_at
       FROM blog.posts
@@ -959,10 +961,13 @@ async function checkPendingPublishHealth() {
       const date = String(row.publish_date || '').slice(0, 10) || 'unknown-date';
       return `${date} ${String(row.post_type || 'unknown')} #${Number(row.id || 0)} ${String(row.title || '').slice(0, 60)}`;
     });
+    const backfillHint = latestBackfill?.checkedAt
+      ? `\nlatest backfill: ${String(latestBackfill.checkedAt).slice(0, 19)} / ${latestBackfill.ok ? 'ok' : 'failed'} / matched ${Number(latestBackfill.matched || 0)} / applied ${Number(latestBackfill.applied || 0)} / unmatched ${Number(latestBackfill.unmatched || 0)}`
+      : '';
 
     return {
       ok: false,
-      detail: `ready 상태 미발행 포스트 ${list.length}건 (다음날 오전 11시 기준)\n${samples.map((sample) => `sample: ${sample}`).join('\n')}`,
+      detail: `ready 상태 미발행 포스트 ${list.length}건 (다음날 오전 11시 기준)${backfillHint}\n${samples.map((sample) => `sample: ${sample}`).join('\n')}`,
       pendingCount: list.length,
       samples,
     };

@@ -36,6 +36,7 @@ const { readDevelopmentBaseline, buildSinceClause } = require(path.join(env.PROJ
 const { readCommenterRunResult } = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/commenter-run-telemetry.ts'));
 const { readMarketingDigestTelemetry, describeMarketingDigestAge } = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/marketing-digest-telemetry.ts'));
 const { readLatestBlogEvalCase } = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/eval-case-telemetry.ts'));
+const { readNaverUrlBackfillTelemetry } = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/naver-url-backfill-telemetry.ts'));
 
 const CONTINUOUS = ['ai.blog.node-server'];
 const ALL_SERVICES = ['ai.blog.daily', 'ai.blog.node-server'];
@@ -650,6 +651,7 @@ function buildDailyRunHealth(dailyServiceStatus = null) {
 
 async function buildPendingPublishHealth() {
   try {
+    const latestBackfill = readNaverUrlBackfillTelemetry();
     const rows = await pgPool.query('blog', `
       SELECT id, title, post_type, status, publish_date, created_at
       FROM blog.posts
@@ -677,13 +679,17 @@ async function buildPendingPublishHealth() {
       const date = String(row.publish_date || '').slice(0, 10) || 'unknown-date';
       return `${date} ${String(row.post_type || 'unknown')} #${Number(row.id || 0)} ${String(row.title || '').slice(0, 60)}`;
     });
+    const backfillLine = latestBackfill?.checkedAt
+      ? `  latest backfill: ${String(latestBackfill.checkedAt).slice(0, 19)} / ${latestBackfill.ok ? 'ok' : 'failed'} / matched ${Number(latestBackfill.matched || 0)} / applied ${Number(latestBackfill.applied || 0)} / unmatched ${Number(latestBackfill.unmatched || 0)}`
+      : '';
 
     return {
       okCount: 0,
-      warnCount: 1 + samples.length,
+      warnCount: 1 + samples.length + (backfillLine ? 1 : 0),
       ok: [],
       warn: [
         `  naver publish backlog: ready ${list.length}건 (다음날 오전 11시 기준)`,
+        ...(backfillLine ? [backfillLine] : []),
         ...samples.map((sample) => `  sample: ${sample}`),
       ],
       pendingCount: list.length,
@@ -699,6 +705,45 @@ async function buildPendingPublishHealth() {
       samples: [],
     };
   }
+}
+
+function buildNaverUrlBackfillHealth() {
+  const latest = readNaverUrlBackfillTelemetry();
+  if (!latest?.checkedAt) {
+    return {
+      okCount: 0,
+      warnCount: 1,
+      ok: [],
+      warn: ['  latest backfill: 실행 기록 없음'],
+      latest: null,
+    };
+  }
+
+  const lines = [
+    `  latest backfill: ${String(latest.checkedAt).slice(0, 19)} / ${latest.ok ? 'ok' : 'failed'}`,
+    `  matched/applied/unmatched: ${Number(latest.matched || 0)} / ${Number(latest.applied || 0)} / ${Number(latest.unmatched || 0)}`,
+  ];
+
+  if (latest.ok) {
+    return {
+      okCount: lines.length,
+      warnCount: 0,
+      ok: lines,
+      warn: [],
+      latest,
+    };
+  }
+
+  return {
+    okCount: 0,
+    warnCount: lines.length + 1,
+    ok: [],
+    warn: [
+      ...lines,
+      `  backfill error: ${String(latest.error || 'unknown_error').slice(0, 120)}`,
+    ],
+    latest,
+  };
 }
 
 async function buildN8nPipelineHealth() {
@@ -2759,6 +2804,7 @@ function formatText(report) {
       buildHealthCountSection('■ Doctor 우선순위', report.doctorPriority, { okLimit: 6, warnLimit: 2 }),
       buildHealthCountSection('■ Ops 우선순위', report.opsPriority, { okLimit: 4, warnLimit: 2 }),
       buildHealthCountSection('■ daily run 상태', report.dailyRunHealth, { warnLimit: 4, okLimit: 2 }),
+      buildHealthCountSection('■ 네이버 URL 백필 상태', report.naverUrlBackfillHealth, { warnLimit: 3, okLimit: 2 }),
       buildHealthCountSection('■ 네이버 발행 대기 상태', report.pendingPublishHealth, { warnLimit: 4, okLimit: 2 }),
       {
         title: null,
@@ -2785,6 +2831,7 @@ async function buildReport() {
   });
   const nodeHealth = await buildNodeHealth();
   const dailyRunHealth = buildDailyRunHealth(status['ai.blog.daily']);
+  const naverUrlBackfillHealth = buildNaverUrlBackfillHealth();
   const pendingPublishHealth = await buildPendingPublishHealth();
   const n8nPipelineHealth = await buildN8nPipelineHealth();
   const instagramHealth = await buildInstagramHealth();
@@ -2843,6 +2890,7 @@ async function buildReport() {
       warn: dailyRunHealth.warn,
       minutesAgo: dailyRunHealth.minutesAgo,
     },
+    naverUrlBackfillHealth,
     pendingPublishHealth,
     n8nPipelineHealth: {
       okCount: n8nPipelineHealth.ok.length,
