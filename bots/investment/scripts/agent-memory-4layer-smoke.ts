@@ -52,9 +52,9 @@ async function runSmoke() {
   await saveShortTermMemory('luna', { note: 'short term smoke' }, { symbol, market: 'crypto', incidentKey: 'mem-smoke' });
   await seedEpisodic(symbol);
   await db.run(
-    `INSERT INTO investment.entity_facts(entity, fact, confidence, source)
-     VALUES ($1,$2,$3,$4)`,
-    [symbol, 'smoke fact: high liquidity', 0.91, 'smoke'],
+    `INSERT INTO investment.entity_facts(entity, entity_type, fact, confidence, source)
+     VALUES ($1,$2,$3,$4,$5)`,
+    [symbol, 'symbol', 'smoke fact: high liquidity', 0.91, 'smoke'],
   ).catch(() => {});
   await db.upsertPosttradeSkill({
     market: 'crypto',
@@ -130,4 +130,3 @@ if (isDirectExecution(import.meta.url)) {
     errorPrefix: '❌ agent-memory-4layer-smoke 실패:',
   });
 }
-

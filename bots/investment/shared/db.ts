@@ -575,6 +575,28 @@ export async function initSchema() {
   try { await run(`CREATE INDEX IF NOT EXISTS idx_agent_stm_incident ON agent_short_term_memory(incident_key, agent_name, created_at DESC)`); } catch { /* 무시 */ }
 
   await run(`
+    CREATE TABLE IF NOT EXISTS luna_rag_documents (
+      id          BIGSERIAL PRIMARY KEY,
+      owner_agent TEXT,
+      category    TEXT NOT NULL,
+      market      TEXT,
+      symbol      TEXT,
+      content     TEXT NOT NULL,
+      metadata    JSONB NOT NULL DEFAULT '{}'::jsonb,
+      created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `);
+  try { await run(`CREATE INDEX IF NOT EXISTS idx_luna_rag_docs_lookup ON luna_rag_documents(owner_agent, category, market, symbol, created_at DESC)`); } catch { /* 무시 */ }
+
+  await run(`ALTER TABLE luna_rag_documents ADD COLUMN IF NOT EXISTS owner_agent TEXT`).catch(() => {});
+  await run(`ALTER TABLE luna_rag_documents ADD COLUMN IF NOT EXISTS category TEXT`).catch(() => {});
+  await run(`ALTER TABLE luna_rag_documents ADD COLUMN IF NOT EXISTS market TEXT`).catch(() => {});
+  await run(`ALTER TABLE luna_rag_documents ADD COLUMN IF NOT EXISTS symbol TEXT`).catch(() => {});
+  await run(`ALTER TABLE luna_rag_documents ADD COLUMN IF NOT EXISTS content TEXT`).catch(() => {});
+  await run(`ALTER TABLE luna_rag_documents ADD COLUMN IF NOT EXISTS metadata JSONB NOT NULL DEFAULT '{}'::jsonb`).catch(() => {});
+  await run(`ALTER TABLE luna_rag_documents ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()`).catch(() => {});
+
+  await run(`
     DO $$
     BEGIN
       IF NOT EXISTS (
@@ -689,6 +711,42 @@ export async function initSchema() {
   `);
   try { await run(`CREATE UNIQUE INDEX IF NOT EXISTS idx_llm_failure_agent_hash ON llm_failure_reflexions(agent_name, prompt_hash, provider)`); } catch { /* 무시 */ }
   try { await run(`CREATE INDEX IF NOT EXISTS idx_llm_failure_recent ON llm_failure_reflexions(agent_name, last_failed_at DESC)`); } catch { /* 무시 */ }
+
+  await run(`
+    CREATE TABLE IF NOT EXISTS llm_routing_log (
+      id             BIGSERIAL PRIMARY KEY,
+      agent_name     TEXT NOT NULL,
+      provider       TEXT,
+      hub_text       TEXT,
+      direct_text    TEXT,
+      matched        BOOLEAN,
+      response_ok    BOOLEAN,
+      cost_usd       NUMERIC(12,8) DEFAULT 0,
+      latency_ms     INTEGER DEFAULT 0,
+      market         TEXT,
+      symbol         TEXT,
+      task_type      TEXT,
+      incident_key   TEXT,
+      shadow_mode    BOOLEAN DEFAULT false,
+      fallback_used  BOOLEAN DEFAULT false,
+      fallback_count INTEGER DEFAULT 0,
+      error          TEXT,
+      route_chain    JSONB NOT NULL DEFAULT '[]'::jsonb,
+      created_at     TIMESTAMPTZ DEFAULT NOW()
+    )
+  `);
+  await run(`ALTER TABLE llm_routing_log ADD COLUMN IF NOT EXISTS provider TEXT`).catch(() => {});
+  await run(`ALTER TABLE llm_routing_log ADD COLUMN IF NOT EXISTS response_ok BOOLEAN`).catch(() => {});
+  await run(`ALTER TABLE llm_routing_log ADD COLUMN IF NOT EXISTS task_type TEXT`).catch(() => {});
+  await run(`ALTER TABLE llm_routing_log ADD COLUMN IF NOT EXISTS incident_key TEXT`).catch(() => {});
+  await run(`ALTER TABLE llm_routing_log ADD COLUMN IF NOT EXISTS fallback_used BOOLEAN DEFAULT false`).catch(() => {});
+  await run(`ALTER TABLE llm_routing_log ADD COLUMN IF NOT EXISTS fallback_count INTEGER DEFAULT 0`).catch(() => {});
+  await run(`ALTER TABLE llm_routing_log ADD COLUMN IF NOT EXISTS error TEXT`).catch(() => {});
+  await run(`ALTER TABLE llm_routing_log ADD COLUMN IF NOT EXISTS route_chain JSONB NOT NULL DEFAULT '[]'::jsonb`).catch(() => {});
+  try { await run(`CREATE INDEX IF NOT EXISTS idx_llm_routing_log_agent_created ON llm_routing_log(agent_name, created_at DESC)`); } catch { /* 무시 */ }
+  try { await run(`CREATE INDEX IF NOT EXISTS idx_llm_routing_log_provider_created ON llm_routing_log(provider, created_at DESC)`); } catch { /* 무시 */ }
+  try { await run(`CREATE INDEX IF NOT EXISTS idx_llm_routing_log_response_ok ON llm_routing_log(response_ok, created_at DESC)`); } catch { /* 무시 */ }
+  try { await run(`CREATE INDEX IF NOT EXISTS idx_llm_routing_log_task ON llm_routing_log(market, task_type, created_at DESC)`); } catch { /* 무시 */ }
 
   // ── Posttrade feedback loop (A~H) ──
   await run(`

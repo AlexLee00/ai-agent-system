@@ -14,6 +14,7 @@ import { resolveHubRoutingPlan } from './agent-llm-routing.ts';
 import { injectMemoryIntoSystemPrompt } from './agent-memory-orchestrator.ts';
 import { recordLLMFailure, getAvoidProviders } from './reflexion-guard.ts';
 import { recordInvocation } from './agent-curriculum-tracker.ts';
+import * as db from './db.ts';
 
 const _require = createRequire(import.meta.url);
 const _hubClient = _require('../../../packages/core/lib/hub-client');
@@ -55,6 +56,57 @@ export interface HubLLMResult {
   costUsd: number;
   latencyMs: number;
   error?: string;
+}
+
+export async function recordInvestmentLlmRouteLog(entry: {
+  agentName: string;
+  provider?: string;
+  ok?: boolean;
+  costUsd?: number;
+  latencyMs?: number;
+  market?: string | null;
+  symbol?: string | null;
+  taskType?: string | null;
+  incidentKey?: string | null;
+  shadowMode?: boolean;
+  fallbackUsed?: boolean;
+  fallbackCount?: number;
+  error?: string | null;
+  routeChain?: unknown[];
+  hubText?: string | null;
+  directText?: string | null;
+  matched?: boolean | null;
+}): Promise<void> {
+  try {
+    await db.run(
+      `INSERT INTO investment.llm_routing_log
+         (agent_name, provider, response_ok, cost_usd, latency_ms, market, symbol, task_type,
+          incident_key, shadow_mode, fallback_used, fallback_count, error, route_chain,
+          hub_text, direct_text, matched, created_at)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14::jsonb,$15,$16,$17,NOW())`,
+      [
+        entry.agentName,
+        entry.provider || null,
+        entry.ok == null ? null : entry.ok === true,
+        Number(entry.costUsd || 0),
+        Math.max(0, Math.round(Number(entry.latencyMs || 0))),
+        entry.market || null,
+        entry.symbol || null,
+        entry.taskType || null,
+        entry.incidentKey || null,
+        entry.shadowMode === true,
+        entry.fallbackUsed === true,
+        Math.max(0, Math.round(Number(entry.fallbackCount || 0))),
+        entry.error ? String(entry.error).slice(0, 500) : null,
+        JSON.stringify(Array.isArray(entry.routeChain) ? entry.routeChain.slice(0, 8) : []),
+        entry.hubText ? String(entry.hubText).slice(0, 2000) : null,
+        entry.directText ? String(entry.directText).slice(0, 2000) : null,
+        entry.matched == null ? null : entry.matched === true,
+      ],
+    );
+  } catch {
+    // 라우팅 로그는 관측 채널이므로 실패해도 LLM 호출 흐름은 막지 않는다.
+  }
 }
 
 export function buildHubLlmCallPayload(
@@ -131,6 +183,7 @@ export async function callViaHub(
   } = {}
 ): Promise<HubLLMResult> {
   const t0 = Date.now();
+  let payload: Record<string, unknown> | null = null;
 
   let hubToken: string;
   try {
@@ -141,6 +194,17 @@ export async function callViaHub(
   }
 
   if (!hubToken) {
+    recordInvestmentLlmRouteLog({
+      agentName,
+      provider: 'hub',
+      ok: false,
+      latencyMs: 0,
+      market: options.market || process.env.INVESTMENT_MARKET || null,
+      symbol: options.symbol || null,
+      taskType: options.taskType || null,
+      incidentKey: options.incidentKey || null,
+      error: 'missing_hub_auth_token',
+    }).catch(() => {});
     return { ok: false, text: '', provider: 'hub', costUsd: 0, latencyMs: 0, error: 'HUB_AUTH_TOKEN 없음' };
   }
 
@@ -150,7 +214,7 @@ export async function callViaHub(
     avoidProviders = await getAvoidProviders(agentName).catch(() => []);
   }
 
-  const payload = buildHubLlmCallPayload(agentName, systemPrompt, userPrompt, {
+  payload = buildHubLlmCallPayload(agentName, systemPrompt, userPrompt, {
     maxTokens: options.maxTokens,
     symbol: options.symbol,
     market: options.market || process.env.INVESTMENT_MARKET || undefined,
@@ -184,6 +248,18 @@ export async function callViaHub(
       console.warn(`[hub-llm] ${agentName} HTTP ${res.status}: ${errText.slice(0, 120)}`);
       // Phase G: HTTP 실패 기록
       recordLLMFailure(agentName, 'hub', userPrompt, 'bad_response', options.market, options.taskType).catch(() => {});
+      recordInvestmentLlmRouteLog({
+        agentName,
+        provider: 'hub',
+        ok: false,
+        latencyMs,
+        market: options.market || null,
+        symbol: options.symbol || null,
+        taskType: options.taskType || null,
+        incidentKey: options.incidentKey || null,
+        error: `HTTP ${res.status}`,
+        routeChain: (payload?.chain as unknown[]) || [],
+      }).catch(() => {});
       return { ok: false, text: '', provider: 'hub', costUsd: 0, latencyMs, error: `HTTP ${res.status}` };
     }
 
@@ -195,6 +271,19 @@ export async function callViaHub(
         : (json.error || '').includes('rate') ? 'rate_limit'
         : 'bad_response';
       recordLLMFailure(agentName, json.provider || 'hub', userPrompt, errorType, options.market, options.taskType).catch(() => {});
+      recordInvestmentLlmRouteLog({
+        agentName,
+        provider: json.provider || 'hub',
+        ok: false,
+        latencyMs,
+        market: options.market || null,
+        symbol: options.symbol || null,
+        taskType: options.taskType || null,
+        incidentKey: options.incidentKey || null,
+        fallbackCount: json.fallbackCount || 0,
+        error: json.error || 'hub_response_not_ok',
+        routeChain: (payload?.chain as unknown[]) || [],
+      }).catch(() => {});
       return { ok: false, text: '', provider: json.provider || 'hub', costUsd: 0, latencyMs, error: json.error };
     }
 
@@ -209,17 +298,45 @@ export async function callViaHub(
         latencyMs,
         market: options.market,
         symbol: options.symbol,
+        taskType: options.taskType,
+        incidentKey: options.incidentKey,
+        routeChain: (payload?.chain as unknown[]) || [],
       });
       return { ok: false, text, provider: json.provider || 'hub', costUsd, latencyMs };
     }
 
     console.log(`[hub-llm] ${agentName} ✓ provider=${json.provider} latency=${latencyMs}ms cost=$${costUsd.toFixed(5)}`);
+    recordInvestmentLlmRouteLog({
+      agentName,
+      provider: json.provider || 'hub',
+      ok: true,
+      costUsd,
+      latencyMs,
+      market: options.market || null,
+      symbol: options.symbol || null,
+      taskType: options.taskType || null,
+      incidentKey: options.incidentKey || null,
+      fallbackCount: json.fallbackCount || 0,
+      routeChain: (payload?.chain as unknown[]) || [],
+    }).catch(() => {});
     return { ok: true, text, provider: json.provider || 'hub', costUsd, latencyMs };
 
   } catch (err: unknown) {
     const latencyMs = Date.now() - t0;
     const msg = err instanceof Error ? err.message : String(err);
     console.warn(`[hub-llm] ${agentName} 오류: ${msg}`);
+    recordInvestmentLlmRouteLog({
+      agentName,
+      provider: 'hub',
+      ok: false,
+      latencyMs,
+      market: options.market || null,
+      symbol: options.symbol || null,
+      taskType: options.taskType || null,
+      incidentKey: options.incidentKey || null,
+      error: msg,
+      routeChain: (payload?.chain as unknown[]) || [],
+    }).catch(() => {});
     return { ok: false, text: '', provider: 'hub', costUsd: 0, latencyMs, error: msg };
   }
 }
@@ -230,7 +347,16 @@ function _logShadowComparison(
   agentName: string,
   hubText: string,
   directText: string,
-  meta: { provider: string; costUsd: number; latencyMs: number; market?: string; symbol?: string }
+  meta: {
+    provider: string;
+    costUsd: number;
+    latencyMs: number;
+    market?: string;
+    symbol?: string;
+    taskType?: string;
+    incidentKey?: string;
+    routeChain?: unknown[];
+  }
 ) {
   try {
     const hubSignal  = _extractSignal(hubText);
@@ -267,29 +393,33 @@ async function _saveShadowLog(
   hubText: string,
   directText: string,
   matched: boolean,
-  meta: { provider: string; costUsd: number; latencyMs: number; market?: string; symbol?: string }
-) {
-  try {
-    const pgPool = _require('../../../packages/core/lib/pg-pool');
-    await pgPool.query(
-      `INSERT INTO investment.llm_routing_log
-         (agent_name, hub_text, direct_text, matched, provider, cost_usd, latency_ms, market, symbol, shadow_mode, created_at)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,true,NOW())`,
-      [
-        agentName,
-        hubText.slice(0, 2000),
-        directText.slice(0, 2000),
-        matched,
-        meta.provider,
-        meta.costUsd,
-        meta.latencyMs,
-        meta.market || null,
-        meta.symbol || null,
-      ]
-    );
-  } catch {
-    // DB 저장 실패는 무시 (운영 중단 방지)
+  meta: {
+    provider: string;
+    costUsd: number;
+    latencyMs: number;
+    market?: string;
+    symbol?: string;
+    taskType?: string;
+    incidentKey?: string;
+    routeChain?: unknown[];
   }
+) {
+  await recordInvestmentLlmRouteLog({
+    agentName,
+    provider: meta.provider,
+    ok: true,
+    costUsd: meta.costUsd,
+    latencyMs: meta.latencyMs,
+    market: meta.market || null,
+    symbol: meta.symbol || null,
+    taskType: meta.taskType || null,
+    incidentKey: meta.incidentKey || null,
+    shadowMode: true,
+    routeChain: meta.routeChain || [],
+    hubText,
+    directText,
+    matched,
+  });
 }
 
 // ─── 편의 래퍼: 에이전트 파일에서 callLLM 대체용 ──────────────────────────
@@ -336,6 +466,17 @@ export async function callLLMWithHub(
       throw new Error('Investment LLM Hub routing is disabled; 직접 LLM 경로는 INVESTMENT_LLM_DIRECT_FALLBACK=true일 때만 허용');
     }
     const directResult = await directFn(agentName, enrichedSystemPrompt, userMsg, maxTokens ?? 512, opts);
+    recordInvestmentLlmRouteLog({
+      agentName,
+      provider: 'direct_fallback',
+      ok: true,
+      market: opts.market || null,
+      symbol: opts.symbol || null,
+      taskType: opts.taskType || opts.purpose || 'default',
+      incidentKey: opts.incidentKey || null,
+      fallbackUsed: true,
+      error: 'hub_disabled',
+    }).catch(() => {});
     recordInvocation(agentName, opts.market ?? 'any').catch(() => {});
     return directResult;
   }
@@ -376,6 +517,18 @@ export async function callLLMWithHub(
 
   console.warn(`[hub-llm] ${agentName} Hub 실패(${hubResult.error}), 명시적 직접 호출 폴백`);
   const fallbackResult = await directFn(agentName, enrichedSystemPrompt, userMsg, maxTokens ?? 512, opts);
+  recordInvestmentLlmRouteLog({
+    agentName,
+    provider: 'direct_fallback',
+    ok: true,
+    market: opts.market || null,
+    symbol: opts.symbol || null,
+    taskType: opts.taskType || opts.purpose || 'default',
+    incidentKey: opts.incidentKey || null,
+    fallbackUsed: true,
+    fallbackCount: 1,
+    error: hubResult.error || 'hub_failed',
+  }).catch(() => {});
   // Phase D: fallback 경로도 invocation 기록
   recordInvocation(agentName, opts.market ?? 'any').catch(() => {});
   return fallbackResult;

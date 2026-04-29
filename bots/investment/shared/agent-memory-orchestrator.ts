@@ -223,11 +223,8 @@ export async function buildMemoryPrefix(
     layers.workingState = true;
   }
 
-  // 조합 + 길이 제한
-  let prefix = sections.join('\n\n---\n\n');
-  if (prefix.length > maxChars) {
-    prefix = prefix.slice(0, maxChars) + '\n\n[메모리 컨텍스트 길이 제한으로 일부 생략]';
-  }
+  // 조합 + 길이 제한. 단순 앞부분 절단 대신 운영상 중요한 레이어를 먼저 보존한다.
+  const prefix = _buildBudgetedMemoryPrefix(sections, maxChars);
 
   const totalChars = prefix.length;
   await _logAgentContext({
@@ -241,6 +238,46 @@ export async function buildMemoryPrefix(
   });
 
   return { prefix, layers, totalChars, callId };
+}
+
+function _memorySectionPriority(section: string): number {
+  if (section.startsWith('## 현재 작업 상태')) return 1;
+  if (section.startsWith('## 에이전트 정체성')) return 2;
+  if (section.startsWith('## 행동 원칙')) return 3;
+  if (section.startsWith('## 유사 실패 회고')) return 4;
+  if (section.startsWith('## 검증된 스킬')) return 5;
+  if (section.startsWith('## 알려진 사실')) return 6;
+  if (section.startsWith('## 유사 과거 매매')) return 7;
+  if (section.startsWith('## 24h 단기 컨텍스트')) return 8;
+  return 9;
+}
+
+function _buildBudgetedMemoryPrefix(sections: string[], maxChars: number): string {
+  const separator = '\n\n---\n\n';
+  const raw = sections.join(separator);
+  if (raw.length <= maxChars) return raw;
+
+  const marker = '\n\n[메모리 컨텍스트 길이 제한으로 우선순위 기반 압축 적용]';
+  const budget = Math.max(200, maxChars - marker.length);
+  const ordered = [...sections].sort((a, b) => _memorySectionPriority(a) - _memorySectionPriority(b));
+  const selected: string[] = [];
+  let used = 0;
+
+  for (const section of ordered) {
+    const sepCost = selected.length > 0 ? separator.length : 0;
+    if (used + sepCost + section.length <= budget) {
+      selected.push(section);
+      used += sepCost + section.length;
+      continue;
+    }
+    const remaining = budget - used - sepCost;
+    if (remaining > 160) {
+      selected.push(section.slice(0, remaining).trimEnd());
+    }
+    break;
+  }
+
+  return `${selected.join(separator)}${marker}`;
 }
 
 /**
@@ -332,7 +369,7 @@ async function _fetchEpisodicMemory(
   }
 
   const where = filters.length ? `WHERE ${filters.join(' AND ')}` : '';
-  const result = await investmentDb.query(`
+  const rows = await investmentDb.query(`
     SELECT category, symbol, market, content, created_at
     FROM luna_rag_documents
     ${where}
@@ -340,7 +377,7 @@ async function _fetchEpisodicMemory(
     LIMIT 3
   `, params);
 
-  return result.rows || [];
+  return rows || [];
 }
 
 async function _fetchFailureMemory(
@@ -364,7 +401,7 @@ async function _fetchFailureMemory(
   }
 
   const where = filters.join(' AND ');
-  const result = await investmentDb.query(`
+  const failureRows = await investmentDb.query(`
     SELECT content, created_at
     FROM luna_rag_documents
     WHERE ${where}
@@ -373,7 +410,7 @@ async function _fetchFailureMemory(
   `, params);
 
   // luna_failure_reflexions도 조합
-  const reflexResult = await investmentDb.query(`
+  const reflexRows = await investmentDb.query(`
     SELECT hindsight, avoid_pattern, created_at
     FROM investment.luna_failure_reflexions
     ORDER BY created_at DESC
@@ -381,8 +418,8 @@ async function _fetchFailureMemory(
   `);
 
   return [
-    ...(result.rows || []).map((r: any) => ({ content: r.content, created_at: r.created_at })),
-    ...(reflexResult.rows || []).map((r: any) => ({
+    ...(failureRows || []).map((r: any) => ({ content: r.content, created_at: r.created_at })),
+    ...(reflexRows || []).map((r: any) => ({
       hindsight: r.hindsight,
       content: r.hindsight || '',
       created_at: r.created_at,
@@ -514,7 +551,7 @@ async function _logAgentContext({
 
 async function _fetchEntityFacts(symbol: string, market?: string): Promise<any[]> {
   try {
-    const result = await investmentDb.query(`
+    const rows = await investmentDb.query(`
       SELECT entity, fact, confidence
       FROM investment.entity_facts
       WHERE
@@ -524,7 +561,7 @@ async function _fetchEntityFacts(symbol: string, market?: string): Promise<any[]
       ORDER BY confidence DESC, created_at DESC
       LIMIT 5
     `, [symbol]);
-    return result.rows || [];
+    return rows || [];
   } catch {
     return [];
   }
@@ -554,7 +591,7 @@ async function _fetchShortTermMemory(
 
     const extraWhere = extras.length ? `AND (${extras.join(' OR ')})` : '';
 
-    const result = await investmentDb.query(`
+    const rows = await investmentDb.query(`
       SELECT agent_name, symbol, market, content, created_at
       FROM investment.agent_short_term_memory
       WHERE
@@ -565,7 +602,7 @@ async function _fetchShortTermMemory(
       LIMIT 3
     `, params);
 
-    return result.rows || [];
+    return rows || [];
   } catch {
     return [];
   }

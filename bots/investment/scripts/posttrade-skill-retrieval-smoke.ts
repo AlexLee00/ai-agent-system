@@ -11,14 +11,15 @@ async function runSmoke() {
   const patternKey = `crypto:smoke_breakout:bull:long:${Date.now()}`;
   const upserted = await db.upsertPosttradeSkill({
     market: 'crypto',
+    agentName: 'luna',
     skillType: 'success',
     patternKey,
     title: `SUCCESS ${patternKey}`,
     summary: 'smoke posttrade skill retrieval',
-    invocationCount: 99,
-    successRate: 0.999,
-    winCount: 99,
-    lossCount: 1,
+    invocationCount: 999999,
+    successRate: 1,
+    winCount: 999999,
+    lossCount: 0,
     sourceTradeIds: [101, 102, 103],
     metadata: { smoke: true },
   });

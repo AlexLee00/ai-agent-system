@@ -14,11 +14,8 @@
  *   LUNA_AGENT_CROSS_BUS_ENABLED=false → 전체 비활성 (메시지 전송/조회 모두 no-op)
  */
 
-import { createRequire } from 'module';
 import { isAgentMemoryFeatureEnabled } from './agent-memory-runtime.ts';
-
-const _require = createRequire(import.meta.url);
-const pgPool = _require('../../../packages/core/lib/pg-pool');
+import * as db from './db.ts';
 
 const BUS_ENABLED = () => isAgentMemoryFeatureEnabled('crossBusEnabled');
 
@@ -53,7 +50,7 @@ export async function sendMessage(
   if (!BUS_ENABLED()) return -1;
 
   try {
-    const result = await pgPool.query(
+    const result = await db.run(
       `INSERT INTO investment.agent_messages
          (from_agent, to_agent, incident_key, message_type, payload)
        VALUES ($1, $2, $3, $4, $5)
@@ -66,7 +63,7 @@ export async function sendMessage(
         JSON.stringify(payload),
       ],
     );
-    const messageId = result.rows[0]?.id ?? -1;
+    const messageId = result.rows?.[0]?.id ?? -1;
     if (messageId > 0) {
       recordHintEvent('cross_agent_hint_published', {
         messageId,
@@ -118,7 +115,7 @@ export async function getPendingMessages(
     const limit = opts.limit ?? 20;
     params.push(limit);
 
-    const result = await pgPool.query(
+    const rows = await db.query(
       `SELECT id, incident_key, from_agent, to_agent, message_type, payload, responded_at, created_at
          FROM investment.agent_messages
         WHERE ${whereParts.join(' AND ')}
@@ -127,7 +124,7 @@ export async function getPendingMessages(
       params,
     );
 
-    return result.rows.map(rowToMessage);
+    return rows.map(rowToMessage);
   } catch {
     return [];
   }
@@ -143,7 +140,7 @@ export async function getMessagesByIncident(
   if (!BUS_ENABLED()) return [];
 
   try {
-    const result = await pgPool.query(
+    const rows = await db.query(
       `SELECT id, incident_key, from_agent, to_agent, message_type, payload, responded_at, created_at
          FROM investment.agent_messages
         WHERE incident_key = $1
@@ -152,7 +149,7 @@ export async function getMessagesByIncident(
       [incidentKey, opts.limit ?? 100],
     );
 
-    return result.rows.map(rowToMessage);
+    return rows.map(rowToMessage);
   } catch {
     return [];
   }
@@ -171,17 +168,17 @@ export async function respondToMessage(
 
   try {
     // 원본 메시지 조회
-    const orig = await pgPool.query(
+    const orig = await db.query(
       `SELECT from_agent, to_agent, incident_key FROM investment.agent_messages WHERE id = $1`,
       [messageId],
     );
 
-    if (!orig.rows.length) return -1;
+    if (!orig.length) return -1;
 
-    const { from_agent: originalSender, incident_key: incidentKey } = orig.rows[0];
+    const { from_agent: originalSender, incident_key: incidentKey } = orig[0];
 
     // 원본 메시지에 responded_at 기록
-    await pgPool.query(
+    await db.run(
       `UPDATE investment.agent_messages SET responded_at = NOW() WHERE id = $1`,
       [messageId],
     );
@@ -239,7 +236,7 @@ export async function queryAgent(
     await new Promise((r) => setTimeout(r, pollMs));
 
     try {
-      const result = await pgPool.query(
+      const rows = await db.query(
         `SELECT id, incident_key, from_agent, to_agent, message_type, payload, responded_at, created_at
            FROM investment.agent_messages
           WHERE message_type = 'response'
@@ -251,8 +248,8 @@ export async function queryAgent(
         [fromAgent, toAgent],
       );
 
-      if (result.rows.length) {
-        return rowToMessage(result.rows[0]);
+      if (rows.length) {
+        return rowToMessage(rows[0]);
       }
     } catch {
       break;
@@ -260,6 +257,109 @@ export async function queryAgent(
   }
 
   return null;
+}
+
+export async function getMessageBusHygiene(opts: { staleHours?: number; limit?: number } = {}) {
+  const staleHours = Math.max(1, Number(opts.staleHours || 6) || 6);
+  const limit = Math.max(1, Math.min(200, Number(opts.limit || 50) || 50));
+  try {
+    const rows = await db.query(
+      `SELECT
+         to_agent,
+         message_type,
+         COUNT(*) AS stale_count,
+         MIN(created_at) AS oldest_created_at
+       FROM investment.agent_messages
+       WHERE responded_at IS NULL
+         AND message_type IN ('query', 'broadcast')
+         AND created_at < NOW() - ($1::int * INTERVAL '1 hour')
+       GROUP BY to_agent, message_type
+       ORDER BY stale_count DESC, oldest_created_at ASC
+       LIMIT $2`,
+      [staleHours, limit],
+    );
+    return {
+      ok: true,
+      staleHours,
+      staleCount: rows.reduce((sum, row) => sum + Number(row.stale_count || 0), 0),
+      rows,
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      staleHours,
+      staleCount: 0,
+      rows: [],
+      error: error instanceof Error ? error.message : String(error),
+    };
+  }
+}
+
+export async function expireStaleAgentMessages(opts: {
+  staleHours?: number;
+  limit?: number;
+  incidentKeyPrefix?: string;
+  dryRun?: boolean;
+} = {}) {
+  const staleHours = Math.max(1, Number(opts.staleHours || 24) || 24);
+  const limit = Math.max(1, Math.min(500, Number(opts.limit || 100) || 100));
+  const incidentPrefix = String(opts.incidentKeyPrefix || '').trim();
+  const dryRun = opts.dryRun === true;
+  try {
+    const params: unknown[] = [staleHours, limit];
+    let incidentFilter = '';
+    if (incidentPrefix) {
+      params.push(`${incidentPrefix}%`);
+      incidentFilter = `AND incident_key LIKE $${params.length}`;
+    }
+    const candidates = await db.query(
+      `SELECT id, incident_key, from_agent, to_agent, message_type, payload, responded_at, created_at
+       FROM investment.agent_messages
+       WHERE responded_at IS NULL
+         AND message_type IN ('query', 'broadcast')
+         AND created_at < NOW() - ($1::int * INTERVAL '1 hour')
+         ${incidentFilter}
+       ORDER BY created_at ASC
+       LIMIT $2`,
+      params,
+    );
+    if (dryRun || candidates.length === 0) {
+      return { ok: true, dryRun, staleHours, candidates: candidates.length, expired: 0 };
+    }
+    const ids = candidates.map((row) => Number(row.id)).filter((id) => Number.isFinite(id) && id > 0);
+    if (ids.length === 0) return { ok: true, dryRun, staleHours, candidates: candidates.length, expired: 0 };
+    const result = await db.run(
+      `UPDATE investment.agent_messages
+       SET responded_at = NOW(),
+           payload = COALESCE(payload, '{}'::jsonb) || $2::jsonb
+       WHERE id = ANY($1::bigint[])
+         AND responded_at IS NULL`,
+      [
+        ids,
+        JSON.stringify({
+          staleExpired: true,
+          expiredAt: new Date().toISOString(),
+          staleHours,
+        }),
+      ],
+    );
+    return {
+      ok: true,
+      dryRun,
+      staleHours,
+      candidates: candidates.length,
+      expired: Number(result.rowCount || 0),
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      dryRun,
+      staleHours,
+      candidates: 0,
+      expired: 0,
+      error: error instanceof Error ? error.message : String(error),
+    };
+  }
 }
 
 // ─── 내부 헬퍼 ────────────────────────────────────────────────────────────────
@@ -279,7 +379,7 @@ function rowToMessage(row: Record<string, unknown>): AgentMessage {
 
 async function recordHintEvent(eventType: string, payload: Record<string, unknown>) {
   try {
-    await pgPool.query(
+    await db.run(
       `INSERT INTO investment.mapek_knowledge (event_type, payload)
        VALUES ($1, $2::jsonb)`,
       [eventType, JSON.stringify(payload || {})],

@@ -10,6 +10,10 @@ async function runSmoke() {
   assert.equal(report?.ok, true, 'dashboard build ok');
   assert.equal(report?.event_type, 'agent_memory_dashboard_report', 'event_type fixed');
   assert.ok(report?.summary?.context_calls >= 0, 'summary context count exists');
+  assert.ok(report?.summary?.route_calls >= 0, 'summary route count exists');
+  assert.ok(Array.isArray(report?.layer_coverage), 'layer coverage exists');
+  assert.ok(Array.isArray(report?.llm_routes), 'llm route rows exists');
+  assert.ok(Array.isArray(report?.message_bus_hygiene), 'message bus hygiene exists');
 
   const dry = await recordAgentMemoryDashboard(report, { dryRun: true });
   assert.equal(dry?.ok, true, 'dry record ok');
@@ -34,4 +38,3 @@ if (isDirectExecution(import.meta.url)) {
     errorPrefix: '❌ agent-memory-dashboard-smoke 실패:',
   });
 }
-

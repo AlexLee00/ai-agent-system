@@ -2,6 +2,13 @@
 
 export type AgentMemoryRuntimeMode = 'off' | 'shadow' | 'supervised_l4' | 'autonomous_l5';
 
+const RUNTIME_MODE_ORDER: Record<AgentMemoryRuntimeMode, number> = {
+  off: 0,
+  shadow: 1,
+  supervised_l4: 2,
+  autonomous_l5: 3,
+};
+
 function normalizeBool(value: unknown, fallback = false): boolean {
   if (value == null || value === '') return fallback;
   const raw = String(value).trim().toLowerCase();
@@ -16,6 +23,13 @@ function normalizeMode(value: unknown): AgentMemoryRuntimeMode {
   if (raw === 'supervised_l4') return 'supervised_l4';
   if (raw === 'shadow') return 'shadow';
   return 'off';
+}
+
+function readEnvValue(...names: string[]): unknown {
+  for (const name of names) {
+    if (process.env[name] != null && process.env[name] !== '') return process.env[name];
+  }
+  return undefined;
 }
 
 export interface AgentMemoryRuntimeFlags {
@@ -34,7 +48,7 @@ export interface AgentMemoryRuntimeFlags {
 }
 
 export function resolveAgentMemoryRuntimeFlags(): AgentMemoryRuntimeFlags {
-  const mode = normalizeMode(process.env.LUNA_AGENT_MEMORY_MODE || 'off');
+  const mode = normalizeMode(readEnvValue('LUNA_AGENT_MEMORY_MODE', 'LUNA_AGENT_LEARNING_MODE') || 'off');
   return {
     mode,
     memoryAutoPrefix: normalizeBool(process.env.LUNA_AGENT_MEMORY_AUTO_PREFIX, false),
@@ -47,13 +61,21 @@ export function resolveAgentMemoryRuntimeFlags(): AgentMemoryRuntimeFlags {
     reflexionAutoAvoidEnabled: normalizeBool(process.env.LUNA_AGENT_REFLEXION_AUTO_AVOID, false),
     curriculumEnabled: normalizeBool(process.env.LUNA_AGENT_CURRICULUM_ENABLED, false),
     crossBusEnabled: normalizeBool(process.env.LUNA_AGENT_CROSS_BUS_ENABLED, false),
-    layer1WorkingMemoryEnabled: normalizeBool(process.env.LUNA_AGENT_LAYER1_WORKING_MEMORY_ENABLED, false),
+    layer1WorkingMemoryEnabled: normalizeBool(
+      readEnvValue('LUNA_AGENT_LAYER1_WORKING_MEMORY_ENABLED', 'LUNA_AGENT_MEMORY_LAYER_1'),
+      false,
+    ),
   };
 }
 
 export function isAgentMemoryFeatureEnabled(feature: keyof AgentMemoryRuntimeFlags): boolean {
   const flags = resolveAgentMemoryRuntimeFlags();
   return flags[feature] === true;
+}
+
+export function isAgentMemoryModeAtLeast(target: AgentMemoryRuntimeMode): boolean {
+  const flags = resolveAgentMemoryRuntimeFlags();
+  return RUNTIME_MODE_ORDER[flags.mode] >= RUNTIME_MODE_ORDER[target];
 }
 
 export function buildDefaultWorkingState(opts: {
@@ -74,4 +96,3 @@ export function buildDefaultWorkingState(opts: {
   ];
   return bits.join('\n');
 }
-

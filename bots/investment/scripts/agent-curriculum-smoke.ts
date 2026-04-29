@@ -57,19 +57,16 @@ async function main(): Promise<void> {
   else process.env.LUNA_AGENT_CURRICULUM_ENABLED = origEnabled;
 
   console.log('[curriculum-smoke] kill switch 검증 ✅');
+  process.env.LUNA_AGENT_CURRICULUM_ENABLED = 'true';
 
   // ─── 3. DB 연결 테스트 ───────────────────────────────────────────────────────
   const testAgent = `smoke-curriculum-${Date.now()}`;
   const testMarket = 'crypto';
 
-  // pgPool 직접 import해 테이블 존재 확인 (없으면 실패)
-  const { createRequire } = await import('module');
-  const _require = createRequire(import.meta.url);
-  const pgPool = _require('../../../packages/core/lib/pg-pool');
-  const check = await pgPool.query(
+  const check = await db.query(
     `SELECT 1 FROM information_schema.tables WHERE table_schema='investment' AND table_name='agent_curriculum_state'`,
   );
-  assert((check.rows.length ?? 0) > 0, 'agent_curriculum_state table must exist after initSchema');
+  assert((check.length ?? 0) > 0, 'agent_curriculum_state table must exist after initSchema');
 
   try {
     // 초기 상태는 없어야 함
@@ -117,6 +114,9 @@ async function main(): Promise<void> {
   assert(noviceThreshold < expertThreshold, 'novice 임계가 expert 임계보다 작아야 함');
   assert(noviceThreshold > 0, 'novice 임계는 양수여야 함');
   console.log('[curriculum-smoke] 임계 설정 검증 ✅');
+
+  if (origEnabled == null) delete process.env.LUNA_AGENT_CURRICULUM_ENABLED;
+  else process.env.LUNA_AGENT_CURRICULUM_ENABLED = origEnabled;
 
   console.log('[curriculum-smoke] 전체 통과 ✅');
 }

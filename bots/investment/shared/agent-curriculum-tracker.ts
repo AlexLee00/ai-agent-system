@@ -16,11 +16,8 @@
  *   recordInvocation(agentName, market).catch(() => {}); // 비동기, fire-and-forget
  */
 
-import { createRequire } from 'module';
 import { isAgentMemoryFeatureEnabled } from './agent-memory-runtime.ts';
-
-const _require = createRequire(import.meta.url);
-const pgPool = _require('../../../packages/core/lib/pg-pool');
+import * as db from './db.ts';
 
 const CURRICULUM_ENABLED = () => isAgentMemoryFeatureEnabled('curriculumEnabled');
 
@@ -57,7 +54,7 @@ export async function recordInvocation(
   }
 
   try {
-    const result = await pgPool.query(
+    const result = await db.run(
       `INSERT INTO investment.agent_curriculum_state
          (agent_name, market, invocation_count, success_count, failure_count, current_level, updated_at)
        VALUES ($1, $2, 1, 0, 0, 'novice', NOW())
@@ -74,7 +71,7 @@ export async function recordInvocation(
       [agentName, market, NOVICE_THRESHOLD(), EXPERT_THRESHOLD()],
     );
 
-    const row = result.rows[0];
+    const row = result.rows?.[0];
     const invocationCount = row?.invocation_count ?? 1;
     const successCount = row?.success_count ?? 0;
     const failureCount = row?.failure_count ?? 0;
@@ -101,7 +98,7 @@ export async function recordOutcome(
 
   try {
     const column = success ? 'success_count' : 'failure_count';
-    await pgPool.query(
+    await db.run(
       `INSERT INTO investment.agent_curriculum_state
          (agent_name, market, invocation_count, success_count, failure_count, current_level, updated_at)
        VALUES ($1, $2, 0, $3, $4, 'novice', NOW())
@@ -128,7 +125,7 @@ export async function getCurriculumState(
   }
 
   try {
-    const result = await pgPool.query(
+    const rows = await db.query(
       `SELECT invocation_count, success_count, failure_count, current_level
          FROM investment.agent_curriculum_state
         WHERE agent_name = $1 AND market = $2
@@ -136,11 +133,11 @@ export async function getCurriculumState(
       [agentName, market],
     );
 
-    if (!result.rows.length) {
+    if (!rows.length) {
       return { level: 'novice', invocationCount: 0, successCount: 0, failureCount: 0, successRate: 0 };
     }
 
-    const row = result.rows[0];
+    const row = rows[0];
     const total = row.success_count + row.failure_count;
     return {
       level: row.current_level as CurriculumLevel,
@@ -196,7 +193,7 @@ export async function getAllCurriculumStates(
   try {
     const whereClause = market ? 'WHERE market = $1' : '';
     const params = market ? [market] : [];
-    const result = await pgPool.query(
+    const rows = await db.query(
       `SELECT agent_name, market, invocation_count, success_count, failure_count, current_level
          FROM investment.agent_curriculum_state
          ${whereClause}
@@ -204,7 +201,7 @@ export async function getAllCurriculumStates(
       params,
     );
 
-    return result.rows.map((row: Record<string, unknown>) => {
+    return rows.map((row: Record<string, unknown>) => {
       const total = (row.success_count as number) + (row.failure_count as number);
       return {
         agentName: row.agent_name as string,

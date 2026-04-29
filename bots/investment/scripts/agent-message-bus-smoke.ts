@@ -44,17 +44,15 @@ async function main(): Promise<void> {
   else process.env.LUNA_AGENT_CROSS_BUS_ENABLED = origEnabled;
 
   console.log('[message-bus-smoke] kill switch 검증 ✅');
+  process.env.LUNA_AGENT_CROSS_BUS_ENABLED = 'true';
 
   // ─── 2. DB 연결 테스트 ─────────────────────────────────────────────────────
   const testIncidentKey = `smoke-bus-${Date.now()}`;
 
-  const { createRequire } = await import('module');
-  const _require = createRequire(import.meta.url);
-  const pgPool = _require('../../../packages/core/lib/pg-pool');
-  const check = await pgPool.query(
+  const check = await db.query(
     `SELECT 1 FROM information_schema.tables WHERE table_schema='investment' AND table_name='agent_messages'`,
   );
-  assert((check.rows.length ?? 0) > 0, 'agent_messages table must exist after initSchema');
+  assert((check.length ?? 0) > 0, 'agent_messages table must exist after initSchema');
 
   try {
     // 2-1. 메시지 전송
@@ -114,6 +112,9 @@ async function main(): Promise<void> {
     assert(validTypes.includes(t), `유효하지 않은 message_type: ${t}`);
   }
   console.log('[message-bus-smoke] 타입 인터페이스 검증 ✅');
+
+  if (origEnabled == null) delete process.env.LUNA_AGENT_CROSS_BUS_ENABLED;
+  else process.env.LUNA_AGENT_CROSS_BUS_ENABLED = origEnabled;
 
   console.log('[message-bus-smoke] 전체 통과 ✅');
 }

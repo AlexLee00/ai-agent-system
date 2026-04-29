@@ -11,12 +11,9 @@
  *   LUNA_AGENT_REFLEXION_AUTO_AVOID=false → 전체 비활성
  */
 
-import { createRequire } from 'module';
 import * as crypto from 'crypto';
 import { isAgentMemoryFeatureEnabled } from './agent-memory-runtime.ts';
-
-const _require = createRequire(import.meta.url);
-const pgPool = _require('../../../packages/core/lib/pg-pool');
+import * as db from './db.ts';
 
 const REFLEXION_ENABLED = () => isAgentMemoryFeatureEnabled('reflexionAutoAvoidEnabled');
 
@@ -57,7 +54,7 @@ export async function checkReflexionBeforeEntry(
 
   try {
     // 1. luna_failure_reflexions에서 유사 실패 조회
-    const result = await pgPool.query(`
+    const rows = await db.query(`
       SELECT
         fr.trade_id,
         fr.hindsight,
@@ -76,7 +73,7 @@ export async function checkReflexionBeforeEntry(
       LIMIT 5
     `, [symbol, proposedAction]);
 
-    const failures: FailureReflexion[] = (result.rows || []).map((row: any) => ({
+    const failures: FailureReflexion[] = (rows || []).map((row: any) => ({
       tradeId: row.trade_id,
       hindsight: row.hindsight,
       avoidPattern: row.avoid_pattern || {},
@@ -128,7 +125,7 @@ export async function recordLLMFailure(
   try {
     const promptHash = crypto.createHash('sha256').update(prompt.slice(0, 500)).digest('hex').slice(0, 16);
 
-    await pgPool.query(`
+    await db.run(`
       INSERT INTO investment.llm_failure_reflexions
         (agent_name, market, task_type, provider, error_type, prompt_hash, failure_count, last_failed_at)
       VALUES ($1, $2, $3, $4, $5, $6, 1, NOW())
@@ -152,7 +149,7 @@ export async function getAvoidProviders(agentName: string): Promise<string[]> {
   if (!REFLEXION_ENABLED()) return [];
 
   try {
-    const result = await pgPool.query(`
+    const rows = await db.query(`
       SELECT provider
       FROM investment.llm_failure_reflexions
       WHERE
@@ -163,7 +160,7 @@ export async function getAvoidProviders(agentName: string): Promise<string[]> {
       LIMIT 3
     `, [agentName]);
 
-    return (result.rows || []).map((r: any) => r.provider);
+    return (rows || []).map((r: any) => r.provider);
   } catch {
     return [];
   }
