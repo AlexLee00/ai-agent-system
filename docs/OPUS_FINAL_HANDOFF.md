@@ -1,4 +1,46 @@
-# 세션 인수인계 — 2026-04-29 (CODEX_SKA_INTELLIGENT_AUTONOMY_PLAN Phase A~C — 80차 세션)
+# 세션 인수인계 — 2026-04-29 (CODEX_SIGMA_INTELLIGENT_LIBRARY_PLAN Phase A — 81차 세션)
+
+## 완료 요약 ✅ (81차 세션) — 시그마 대도서관 Phase A: 9팀 4-Layer Memory 통합 어댑터
+
+### 신규 구현
+
+**Phase A-1: team-memory-adapter.ts 신설**
+- `bots/sigma/ts/lib/team-memory-adapter.ts` (380줄)
+  - `createTeamMemory(team, agentName) → TeamMemoryAdapter`
+  - 9팀 단일 인터페이스, Luna 기존 테이블 라우팅 유지
+  - Layer 2: `sigma.agent_short_term_memory` (Others) / `investment.agent_short_term_memory` (Luna)
+  - Layer 3: `luna_rag_documents` + `luna_failure_reflexions` (Luna) / `rag.agent_memory` (Others)
+  - Layer 4-Semantic: `investment.entity_facts` (Luna) / `sigma.entity_facts` (Others)
+  - Layer 4-Procedural: `packages/core/lib/skills/{team}/{agent}/` + `rag.agent_memory`
+  - `getFullPrefix()` — 4-Layer 자동 조합, 8000자 max, Promise.allSettled 병렬
+  - `injectTeamMemory()` — systemPrompt prefix 주입 헬퍼
+
+**Phase A-2: SQL 마이그레이션 신설**
+- `packages/core/migrations/012-sigma-team-memory.sql`
+  - `sigma.agent_short_term_memory` (9팀 공용 L2 단기 메모리)
+  - `sigma.entity_facts` (9팀 공용 L4 의미 사실, UNIQUE 제약)
+
+### Kill Switch 현황 (신규 — 모두 기본 비활성)
+```
+SIGMA_TEAM_MEMORY_UNIFIED=false    ← 전체 master switch (true로 활성화 필요)
+SIGMA_TEAM_MEMORY_L2=true          ← Layer 2 단기 메모리 (기본 활성, false로 비활성)
+SIGMA_TEAM_MEMORY_L3=true          ← Layer 3 episodic (기본 활성)
+SIGMA_TEAM_MEMORY_L4=true          ← Layer 4 semantic/procedural (기본 활성)
+```
+
+### 다음 세션 필수 작업 (Phase B~D)
+1. **Phase B — Knowledge Graph**: `sigma.entity_relationships` 테이블 + `knowledge-graph.ts`
+   - Backlinks, getNeighbors(depth=2), entity 자동 추출
+2. **Phase C — Dataset Builder**: `sigma/scripts/dataset-builder.ts` + launchd plist
+   - 매주 일요일 9팀 HuggingFace Parquet 스냅샷
+3. **Phase D — Self-Improvement Pipeline**: `sigma/scripts/monthly-self-improvement.ts`
+   - DPO pairs 분석 → 새 prompt 후보 → Pod Bandit A/B
+4. **SIGMA_TEAM_MEMORY_UNIFIED=true 활성화** (OPS 배포 후, Shadow Mode 24h 확인)
+5. **SQL 마이그레이션 적용**: OPS에서 `psql jay < packages/core/migrations/012-sigma-team-memory.sql`
+
+---
+
+# 이전 세션 인수인계 — 2026-04-29 (CODEX_SKA_INTELLIGENT_AUTONOMY_PLAN Phase A~C — 80차 세션)
 
 ## 완료 요약 ✅ (80차 세션) — 스카팀 7-Layer Self-Healing Autonomy Phase A~C 구현
 

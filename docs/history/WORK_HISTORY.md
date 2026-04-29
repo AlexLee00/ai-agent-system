@@ -4,6 +4,25 @@
 > 상세 내용: `reservation-dev-summary.md` / `reservation-handoff.md`
 > 최초 작성: 2026-02-27
 
+## 2026-04-29: CODEX_SIGMA_INTELLIGENT_LIBRARY_PLAN Phase A — 9팀 4-Layer Memory 통합 어댑터 (81차 세션)
+
+- **Phase A-1 team-memory-adapter.ts 신설** (`bots/sigma/ts/lib/team-memory-adapter.ts`, 380줄)
+  - `createTeamMemory(team, agentName)` → `TeamMemoryAdapter` 팩토리 (9팀 단일 인터페이스)
+  - Layer 2 Short-term: Luna → `investment.agent_short_term_memory`, Others → `sigma.agent_short_term_memory`
+  - Layer 3 Episodic: Luna → `luna_rag_documents` + `luna_failure_reflexions`, Others → `rag.agent_memory`
+  - Layer 4-Semantic: Luna → `investment.entity_facts`, Others → `sigma.entity_facts`
+  - Layer 4-Procedural: `packages/core/lib/skills/{team}/{agent}/` 파일 + `rag.agent_memory`
+  - `getFullPrefix()` — 4-Layer 자동 조합, 8000자 max, 병렬 조회 (Promise.allSettled)
+  - `injectTeamMemory()` — systemPrompt prefix 주입 헬퍼
+  - Kill Switch: `SIGMA_TEAM_MEMORY_UNIFIED=true` (기본 비활성), L2/L3/L4 개별 제어
+- **Phase A-2 PostgreSQL 마이그레이션**: `packages/core/migrations/012-sigma-team-memory.sql`
+  - `sigma.agent_short_term_memory` — (team, agent_name, content, context, expires_at)
+  - `sigma.entity_facts` — (team, agent_name, entity, entity_type, fact, confidence) + UNIQUE 제약
+
+## 2026-04-29: CODEX_SKA_INTELLIGENT_AUTONOMY_PLAN Phase A~C — 스카팀 7-Layer Self-Healing Autonomy (80차 세션)
+
+- CODEX_SKA_INTELLIGENT_AUTONOMY_PLAN Phase A~C 구현 (이전 커밋 참조)
+
 ## 2026-04-28: CODEX_ALARM_DISPATCH_HUB_INTELLIGENT_DESIGN Phase A-E — 7-Layer Intelligent Alarm Hub (79차 세션)
 
 - **Phase A LLM 분류기**: policy.ts 'critical' 4번째 유형 추가, classifyAlarmTypeWithConfidence() 신설 (신뢰도<0.7 → LLM 보강), classify-alarm-llm.ts 신규 (groq→haiku 폴백, 일일 100회 cap)
