@@ -1,4 +1,78 @@
-# 세션 인수인계 — 2026-04-29 (CODEX_SIGMA_INTELLIGENT_LIBRARY_PLAN Phase A — 81차 세션)
+# 세션 인수인계 — 2026-04-29 (CODEX_LUNA_BOTTLENECK_DEEP_ANALYSIS Phase A — 82차 세션)
+
+## 완료 요약 ✅ (82차 세션) — 루나팀 병목 Phase A: db.ts 도메인 분리
+
+### Phase A 구현 결과
+
+**db.ts 분리 (2,807줄 → 966줄, 66% 축소)**
+
+| 도메인 파일 | 함수 | 줄수 |
+|------------|------|------|
+| `shared/db/analysis.ts` | insertAnalysis, getRecentAnalysis | 29 |
+| `shared/db/signals.ts` | 12개 신호 함수 | 295 |
+| `shared/db/trades.ts` | 4개 거래 함수 | 49 |
+| `shared/db/positions.ts` | 10개 포지션 함수 + helpers | 249 |
+| `shared/db/position-profile.ts` | 5개 포지션 프로파일 함수 | 232 |
+| `shared/db/screening.ts` | 4개 스크리닝 함수 | 90 |
+| `shared/db/strategy.ts` | 5개 전략/백테스트 함수 | 74 |
+| `shared/db/roles.ts` | 4개 에이전트 역할 함수 | 153 |
+| `shared/db/risk.ts` | 5개 리스크/자산 함수 | 69 |
+| `shared/db/runtime-config.ts` | 4개 런타임 설정 함수 | 82 |
+| `shared/db/lifecycle.ts` | 10개 라이프사이클/closeout 함수 | 296 |
+| `shared/db/posttrade.ts` | 8개 포스트트레이드 함수 | 275 |
+| `shared/db/index.ts` | 배럴 re-export | 15 |
+| `shared/db.ts` | legacy re-export facade (initSchema 유지) | 966 |
+
+- 호환성 100% (40+ 기존 임포터 무변경, named export + default export 유지)
+- smoke test `db-domain-modules-smoke.ts` 전체 16개 함수 통과
+- `check:bottleneck-p06` 통과
+
+**Phase B hephaestos 1차 진입**
+- `team/hephaestos/execution-context.ts` 신설 (signal 컨텍스트 정규화)
+- `executeSignal` 에서 `buildHephaestosExecutionContext` 사용
+
+**Phase F daily-feedback 상태**
+- 어제(4/28 21:00) 실패 원인: `hub-llm-client.ts`에서 `agent-llm-routing.js` (.js) import 오류
+- 현재 코드: `.ts` import로 수정됨 → 오늘 21:00 자동 회복 예정
+- 진단 도구: `daily-feedback-kickstart-preflight.ts`, `luna-launchd-doctor.ts` 신설
+
+**커밋**: `f4ae9635 feat(luna): Phase A db.ts 도메인 분리 + Phase B hephaestos 1차 진입`
+
+### 다음 세션 필수 작업 (Phase B)
+
+```
+🔴 P0 (다음 세션 착수):
+  Phase B — hephaestos.ts 실제 분리 (5,020줄 → 8 모듈)
+    executor.ts (executeSignal 등 핵심, ~800줄)
+    queue-processor.ts (processAll/processBinanceQueue, ~1,200줄)
+    journal-repair.ts (실제 코드 이동, ~600줄)
+    pending-retry.ts (~400줄)
+    inspection.ts (~300줄)
+    simulation.ts (~400줄)
+    util.ts (~500줄)
+    index.ts (re-export)
+    → check:bottleneck-p06에 hephaestos 도메인 smoke 추가
+
+  Phase C — luna.ts 분리 (2,364줄 → 6 모듈)
+  Phase D — pipeline-decision-runner.ts 분리 (1,489줄 → 5 모듈)
+
+🟡 P1 (Phase B 완료 후):
+  Phase E — Hot Path 병렬화 (executeSignal sequential await → Promise.all)
+```
+
+### 현재 병목 상태 (Phase A 이후)
+
+| BOTTLENECK | 분석 시점 | 현재 | 상태 |
+|-----------|---------|------|:---:|
+| 1. hephaestos.ts | 5,020줄 | 5,020줄 | 🚨 분리 필요 |
+| 2. db.ts | 2,845줄 | **966줄** | ✅ **완료** |
+| 3. luna.ts | 2,492줄 | 2,364줄 | 🟡 진행 필요 |
+| 4. pipeline-decision-runner | 1,518줄 | 1,489줄 | 🟡 진행 필요 |
+| 5. daily-feedback | LastExitStatus=1 | 자동 회복 예정 | 🟢 |
+
+---
+
+# 이전 세션 인수인계 — 2026-04-29 (CODEX_SIGMA_INTELLIGENT_LIBRARY_PLAN Phase A — 81차 세션)
 
 ## 완료 요약 ✅ (81차 세션) — 시그마 대도서관 Phase A: 9팀 4-Layer Memory 통합 어댑터
 
