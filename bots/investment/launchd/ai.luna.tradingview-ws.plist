@@ -19,6 +19,8 @@
     <string>8083</string>
     <key>TV_STALE_THRESHOLD_MS</key>
     <string>30000</string>
+    <key>TV_DEFAULT_SUBSCRIPTIONS</key>
+    <string>BINANCE:BTCUSDT|60</string>
     <!-- HUB_BASE_URL / HUB_AUTH_TOKEN은 launchctl setenv로 주입 -->
   </dict>
 

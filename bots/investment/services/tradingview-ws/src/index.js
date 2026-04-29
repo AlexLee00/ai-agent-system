@@ -47,6 +47,15 @@ const RUNTIME_REEVAL_TIMEFRAMES_BY_EXCHANGE = String(process.env.TV_RUNTIME_REEV
     acc[exchange.trim()] = rawList.split(',').map((value) => value.trim()).filter(Boolean);
     return acc;
   }, {});
+const DEFAULT_SUBSCRIPTIONS = String(process.env.TV_DEFAULT_SUBSCRIPTIONS || '')
+  .split(',')
+  .map((item) => item.trim())
+  .filter(Boolean)
+  .map((item) => {
+    const [symbol, timeframe] = item.split('|').map((value) => value?.trim());
+    return symbol && timeframe ? { symbol, timeframe } : null;
+  })
+  .filter(Boolean);
 const execFileAsync = promisify(execFile);
 
 // Prometheus 메트릭스
@@ -198,6 +207,16 @@ function getSeriesId(symbol, timeframe) {
 
 function getSymbolAlias(symbol, timeframe) {
   return `sym_${sanitizeTvId(subscriptionKey(symbol, timeframe))}`;
+}
+
+function addSubscription(symbol, timeframe, source = 'api') {
+  const key = subscriptionKey(symbol, timeframe);
+  if (!subscriptions.has(key)) {
+    subscriptions.set(key, { symbol, timeframe, subscribedAt: Date.now(), lastBarAt: null });
+    sendTvSubscribe(symbol, timeframe);
+    console.log(`[TV-WS] ${source} 구독 추가: ${key}`);
+  }
+  return key;
 }
 
 function handleTvMessage(raw) {
@@ -433,12 +452,7 @@ wss.on('connection', (ws, req) => {
     try {
       const msg = JSON.parse(raw.toString());
       if (msg.action === 'subscribe' && msg.symbol && msg.timeframe) {
-        const key = `${msg.symbol}:${msg.timeframe}`;
-        if (!subscriptions.has(key)) {
-          subscriptions.set(key, { symbol: msg.symbol, timeframe: msg.timeframe, subscribedAt: Date.now(), lastBarAt: null });
-          sendTvSubscribe(msg.symbol, msg.timeframe);
-          console.log(`[TV-WS] 구독 추가: ${key}`);
-        }
+        const key = addSubscription(msg.symbol, msg.timeframe, 'client');
         ws.send(JSON.stringify({ ok: true, action: 'subscribed', key }));
       } else if (msg.action === 'unsubscribe' && msg.symbol && msg.timeframe) {
         const key = `${msg.symbol}:${msg.timeframe}`;
@@ -486,12 +500,7 @@ const metricsServer = http.createServer(async (req, res) => {
       res.end(JSON.stringify({ ok: false, error: 'symbol,timeframe required' }));
       return;
     }
-    const key = `${symbol}:${timeframe}`;
-    if (!subscriptions.has(key)) {
-      subscriptions.set(key, { symbol, timeframe, subscribedAt: Date.now(), lastBarAt: null });
-      sendTvSubscribe(symbol, timeframe);
-      console.log(`[TV-WS] HTTP 구독 추가: ${key}`);
-    }
+    const key = addSubscription(symbol, timeframe, 'HTTP');
     res.setHeader('Content-Type', 'application/json');
     res.end(JSON.stringify({ ok: true, key, subscriptions: subscriptions.size }));
   } else if (url.pathname === '/unsubscribe') {
@@ -549,6 +558,9 @@ metricsServer.listen(METRICS_PORT, () => {
 
 // 시작
 console.log(`[TV-WS] 클라이언트 WS 서버: ws://localhost:${TV_WS_PORT}`);
+for (const { symbol, timeframe } of DEFAULT_SUBSCRIPTIONS) {
+  addSubscription(symbol, timeframe, 'default');
+}
 connectTradingView();
 startStaleChecker();
 

@@ -29,7 +29,7 @@ function parseArgs(argv = []) {
   const args = {
     json: false,
     telegram: false,
-    targetMode: 'supervised_l4',
+    targetMode: null,
     sync: false,
     requirePositionSync: false,
     markets: ['domestic', 'overseas', 'crypto'],
@@ -43,7 +43,7 @@ function parseArgs(argv = []) {
     else if (raw === '--telegram') args.telegram = true;
     else if (raw === '--sync') args.sync = true;
     else if (raw === '--require-position-sync') args.requirePositionSync = true;
-    else if (raw.startsWith('--target=')) args.targetMode = raw.split('=').slice(1).join('=') || 'supervised_l4';
+    else if (raw.startsWith('--target=')) args.targetMode = raw.split('=').slice(1).join('=') || null;
     else if (raw.startsWith('--markets=')) args.markets = normalizeMarketList(raw.split('=').slice(1).join('=') || 'all');
     else if (raw.startsWith('--limit=')) args.limit = Math.max(1, Number(raw.split('=').slice(1).join('=') || 5));
     else if (raw.startsWith('--warmup-hours=')) args.warmupHours = Math.max(1, Number(raw.split('=').slice(1).join('=') || 24));
@@ -55,9 +55,9 @@ function parseArgs(argv = []) {
 
 export async function buildLunaL5FinalGateReport(args = {}) {
   const markets = normalizeMarketList(args.markets || ['domestic', 'overseas', 'crypto']);
-  const targetMode = normalizeLifecycleMode(args.targetMode || 'supervised_l4');
-  const syncRequired = args.sync === true || args.requirePositionSync === true || targetMode === 'autonomous_l5';
   const flags = resolvePositionLifecycleFlags();
+  const targetMode = normalizeLifecycleMode(args.targetMode || flags.mode || 'supervised_l4');
+  const syncRequired = args.sync === true || args.requirePositionSync === true || targetMode === 'autonomous_l5' || flags.mode === 'autonomous_l5';
   const [readinessReport, preflightReport, syncReport] = await Promise.all([
     runPositionLifecycleOperationalReadiness({
       json: true,
@@ -170,7 +170,7 @@ async function main() {
     eventType: 'luna_l5_final_gate',
     status: report.status,
     ok: report.ok,
-    targetMode: normalizeLifecycleMode(args.targetMode || 'supervised_l4'),
+    targetMode: normalizeLifecycleMode(args.targetMode || resolvePositionLifecycleFlags().mode || 'supervised_l4'),
     blockers: report.blockers || [],
     warnings: report.warnings || [],
     nextAction: report.nextAction,
