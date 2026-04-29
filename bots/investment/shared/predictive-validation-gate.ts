@@ -1,5 +1,7 @@
 // @ts-nocheck
 
+import { buildPredictiveValidationEvidence } from './predictive-validation.ts';
+
 const ACTION_BUY = 'BUY';
 const ACTION_HOLD = 'HOLD';
 
@@ -18,19 +20,21 @@ export function applyPredictiveValidationGate(decisions = [], predictiveConfig =
       next.push(decision);
       continue;
     }
-    const predictiveScore = clamp01(
-      decision?.predictiveScore
-      ?? decision?.strategy_route?.predictiveScore
-      ?? decision?.strategyRoute?.predictiveScore
-      ?? decision?.confidence
-      ?? 0,
-      0,
-    );
-    const threshold = clamp01(predictiveConfig?.threshold ?? 0.55, 0.55);
+    const evidence = buildPredictiveValidationEvidence(decision, {}, predictiveConfig || {});
+    const predictiveScore = clamp01(evidence?.score, 0);
+    const threshold = clamp01(evidence?.threshold ?? predictiveConfig?.threshold ?? 0.55, 0.55);
     if (predictiveScore >= threshold) {
       next.push({
         ...decision,
         predictiveScore,
+        block_meta: {
+          ...(decision?.block_meta || {}),
+          predictiveValidation: {
+            ...(decision?.block_meta?.predictiveValidation || {}),
+            ...evidence,
+            blocked: false,
+          },
+        },
       });
       continue;
     }
@@ -46,9 +50,8 @@ export function applyPredictiveValidationGate(decisions = [], predictiveConfig =
           ...(decision?.block_meta || {}),
           event_type: 'predictive_gate_blocked',
           predictiveValidation: {
+            ...evidence,
             mode: 'hard_gate',
-            threshold,
-            score: predictiveScore,
             blocked: true,
           },
         },
@@ -63,9 +66,8 @@ export function applyPredictiveValidationGate(decisions = [], predictiveConfig =
       block_meta: {
         ...(decision?.block_meta || {}),
         predictiveValidation: {
+          ...evidence,
           mode: 'advisory',
-          threshold,
-          score: predictiveScore,
           blocked: false,
         },
       },

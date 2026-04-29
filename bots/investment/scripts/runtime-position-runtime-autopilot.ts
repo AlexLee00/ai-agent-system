@@ -328,7 +328,7 @@ export async function runPositionRuntimeAutopilot(args = {}) {
   const requirePositionSync = args.requirePositionSync === true
     || String(process.env.LUNA_POSITION_LIFECYCLE_REQUIRE_SYNC || '').trim() === '1'
     || (lifecycleFlags.autonomous && String(process.env.LUNA_POSITION_LIFECYCLE_SKIP_SYNC_PREFLIGHT || '').trim() !== '1');
-  const positionSyncSummary = args.execute && requirePositionSync
+  const positionSyncSummary = requirePositionSync && (args.execute || args.runSyncPreflight === true)
     ? await runPositionSyncPreflight(args.positionSyncMarkets || ['crypto'])
     : null;
   const signalRefresh = await refreshPositionSignals({

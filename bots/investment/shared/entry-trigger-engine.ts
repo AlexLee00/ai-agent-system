@@ -11,6 +11,7 @@ import { getLunaIntelligentDiscoveryFlags } from './luna-intelligent-discovery-c
 import { checkAvoidPatterns } from './reflexion-engine.ts';
 import { getPosttradeFeedbackRuntimeConfig } from './runtime-config.ts';
 import { evaluateLunaConstitutionForEntry } from './luna-constitution.ts';
+import { buildPredictiveValidationEvidence } from './predictive-validation.ts';
 
 const ACTIONS = {
   BUY: 'BUY',
@@ -133,6 +134,24 @@ export function evaluateEntryTriggerLiveRiskGate({ candidate = {}, trigger = nul
       reason: 'predictive_score_below_min',
       details: { predictiveScore, minPredictiveScore },
     };
+  }
+
+  if (runtimeFlags.phases.predictiveValidationEnabled && runtimeFlags.predictive?.mode === 'hard_gate') {
+    const evidence = buildPredictiveValidationEvidence(candidate, context, runtimeFlags.predictive);
+    if (runtimeFlags.predictive?.requireComponents && Object.keys(evidence.components || {}).length === 0) {
+      return {
+        ok: false,
+        reason: 'predictive_components_missing',
+        details: evidence,
+      };
+    }
+    if (evidence.blocked) {
+      return {
+        ok: false,
+        reason: `predictive_validation_${evidence.decision}`,
+        details: evidence,
+      };
+    }
   }
 
   if (minLiveAmountUsdt > 0 && amountUsdt > 0 && amountUsdt < minLiveAmountUsdt) {

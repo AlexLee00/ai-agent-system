@@ -40,12 +40,12 @@ export class DartDisclosureCollector implements DiscoveryAdapter {
     const { limit = 50, timeoutMs = TIMEOUT_MS, dryRun = false } = options;
     const fetchedAt = new Date().toISOString();
 
-    if (!process.env.LUNA_DISCOVERY_DART || process.env.LUNA_DISCOVERY_DART === 'false') {
-      return mkResult(fetchedAt, [], 'insufficient', 'kill_switch_off');
-    }
-
     if (dryRun) {
       return mkResult(fetchedAt, buildMockSignals(), 'ready', 'dry_run');
+    }
+
+    if (!process.env.LUNA_DISCOVERY_DART || process.env.LUNA_DISCOVERY_DART === 'false') {
+      return mkResult(fetchedAt, [], 'insufficient', 'kill_switch_off');
     }
 
     if (!this.apiKey) {

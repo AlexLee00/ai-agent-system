@@ -15,7 +15,13 @@ export async function runPositionLifecycleEventStreamSmoke({ json = false, stric
   await db.initSchema();
   const symbol = `SMOKE_STAGE_${Date.now()}`;
   const stage2Key = `smoke:stage2:${symbol}`;
-  const stage8Key = `smoke:stage8:${symbol}`;
+  const lateStageKeys = {
+    stage_4: `smoke:stage4:${symbol}`,
+    stage_5: `smoke:stage5:${symbol}`,
+    stage_6: `smoke:stage6:${symbol}`,
+    stage_7: `smoke:stage7:${symbol}`,
+    stage_8: `smoke:stage8:${symbol}`,
+  };
 
   await recordLifecyclePhaseSnapshot({
     symbol,
@@ -27,28 +33,38 @@ export async function runPositionLifecycleEventStreamSmoke({ json = false, stric
     outputSnapshot: { ok: true },
     idempotencyKey: stage2Key,
   });
-  await recordPositionLifecycleStageEvent({
-    symbol,
-    exchange: 'binance',
-    tradeMode: 'normal',
-    stageId: 'stage_8',
-    ownerAgent: 'smoke',
-    eventType: 'feedback_applied',
-    outputSnapshot: { ok: true },
-    idempotencyKey: stage8Key,
-  });
+  for (const [stageId, idempotencyKey] of Object.entries(lateStageKeys)) {
+    await recordPositionLifecycleStageEvent({
+      symbol,
+      exchange: 'binance',
+      tradeMode: 'normal',
+      stageId,
+      ownerAgent: 'smoke',
+      eventType: stageId === 'stage_7'
+        ? 'review_completed'
+        : stageId === 'stage_8'
+          ? 'feedback_applied'
+          : 'completed',
+      outputSnapshot: { ok: true, stageId },
+      idempotencyKey,
+    });
+  }
 
   const inserted = await db.query(
     `SELECT idempotency_key, stage_id
        FROM position_lifecycle_events
-      WHERE idempotency_key IN ($1, $2)
+      WHERE idempotency_key = ANY($1)
       ORDER BY created_at ASC`,
-    [stage2Key, stage8Key],
+    [[stage2Key, ...Object.values(lateStageKeys)]],
   );
   const stageByKey = Object.fromEntries((inserted || []).map((row) => [row.idempotency_key, row.stage_id]));
   const cases = [
     { name: 'phase2_maps_stage2', pass: stageByKey[stage2Key] === 'stage_2' },
-    { name: 'explicit_stage8_kept', pass: stageByKey[stage8Key] === 'stage_8' },
+    { name: 'explicit_stage4_kept', pass: stageByKey[lateStageKeys.stage_4] === 'stage_4' },
+    { name: 'explicit_stage5_kept', pass: stageByKey[lateStageKeys.stage_5] === 'stage_5' },
+    { name: 'explicit_stage6_kept', pass: stageByKey[lateStageKeys.stage_6] === 'stage_6' },
+    { name: 'explicit_stage7_kept', pass: stageByKey[lateStageKeys.stage_7] === 'stage_7' },
+    { name: 'explicit_stage8_kept', pass: stageByKey[lateStageKeys.stage_8] === 'stage_8' },
     { name: 'derive_review_stage7', pass: deriveLifecycleStageId('phase6_closeout', 'review_completed') === 'stage_7' },
     { name: 'derive_strategy_mutation_stage4', pass: deriveLifecycleStageId('phase5_monitor', 'strategy_mutated') === 'stage_4' },
     { name: 'stage_labels_cover_stage8', pass: POSITION_STAGE_LABELS.stage_8 === 'feedback_learning' },

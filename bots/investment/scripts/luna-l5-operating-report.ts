@@ -11,6 +11,7 @@ import { buildLunaEntryTriggerWorkerReadiness } from './luna-entry-trigger-worke
 import { evaluateLunaLiveFireReadinessGate } from './luna-live-fire-readiness-core.ts';
 import { buildLunaTradeReconciliationGate } from './luna-trade-reconciliation-gate.ts';
 import { publishAlert } from '../shared/alert-publisher.ts';
+import { resolvePositionLifecycleFlags } from '../shared/position-lifecycle-flags.ts';
 import { buildLunaL5FinalGateReport } from './luna-l5-final-gate.ts';
 import { buildLunaL5PhaseActivationPlan } from './luna-l5-phase-activation-operator.ts';
 import { buildPosttradeFeedbackOperatingReport } from './runtime-posttrade-feedback-operating-report.ts';
@@ -30,6 +31,8 @@ function nextAction({ validation, prediction, entryTrigger, tradeReconciliation,
 }
 
 export async function buildLunaL5OperatingReport({ hours = 24 } = {}) {
+  const lifecycleFlags = resolvePositionLifecycleFlags();
+  const targetMode = lifecycleFlags.mode || 'supervised_l4';
   const [readiness, mapek, validation, prediction, entryTrigger, tradeReconciliation, finalGate, posttradeFeedback] = await Promise.all([
     buildLunaL5ReadinessReport(),
     buildLunaMapekCanaryObservation({ hours }),
@@ -37,7 +40,7 @@ export async function buildLunaL5OperatingReport({ hours = 24 } = {}) {
     buildLunaPredictionCanaryPreflight({ hours }),
     buildLunaEntryTriggerWorkerReadiness({ hours }),
     buildLunaTradeReconciliationGate({ hours: Math.min(6, Number(hours || 24)) || 6 }),
-    buildLunaL5FinalGateReport({ targetMode: 'supervised_l4', limit: 3, warmupHours: hours }).catch((error) => ({
+    buildLunaL5FinalGateReport({ targetMode, limit: 3, warmupHours: hours }).catch((error) => ({
       ok: false,
       status: 'luna_l5_final_gate_failed',
       blockers: [`final_gate_failed:${error?.message || String(error)}`],

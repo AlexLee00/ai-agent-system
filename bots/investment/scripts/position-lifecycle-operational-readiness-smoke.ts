@@ -4,6 +4,7 @@
 import assert from 'node:assert/strict';
 import {
   buildLifecycleExecutionReadiness,
+  filterLifecycleCoverageProfiles,
   summarizeLifecyclePositionSync,
   summarizeLifecycleStageCoverage,
 } from '../shared/position-lifecycle-operational-readiness.ts';
@@ -31,7 +32,26 @@ const coverage = summarizeLifecycleStageCoverage({
 assert.equal(coverage.activePositions, 2);
 assert.equal(coverage.rows.find((row) => row.symbol === 'BTC/USDT').missingStages.length, 0);
 assert.equal(coverage.rows.find((row) => row.symbol === 'POET').missingStages.includes('stage_1'), true);
+assert.equal(coverage.rows.find((row) => row.symbol === 'BTC/USDT').lateStageCoveragePct, 100);
+assert.equal(coverage.rows.find((row) => row.symbol === 'POET').missingLateStages.includes('stage_4'), true);
 assert.equal(coverage.missingByStage.stage_1, 1);
+assert.equal(coverage.missingLateByStage.stage_4, 1);
+
+const filteredProfiles = filterLifecycleCoverageProfiles({
+  activeProfiles: [
+    ...activeProfiles,
+    { symbol: 'OLD/USDT', exchange: 'binance', trade_mode: 'normal' },
+    { symbol: 'DUST/USDT', exchange: 'binance', trade_mode: 'normal' },
+  ],
+  livePositions: [
+    { symbol: 'BTC/USDT', exchange: 'binance', trade_mode: 'normal', amount: 1, avg_price: 50000 },
+    { symbol: 'DUST/USDT', exchange: 'binance', trade_mode: 'normal', amount: 1, avg_price: 0.5 },
+  ],
+  dustThresholdUsdt: 10,
+});
+assert.deepEqual(filteredProfiles.included.map((row) => row.symbol), ['BTC/USDT']);
+assert.equal(filteredProfiles.meta.excludedOrphanProfileCount, 2);
+assert.equal(filteredProfiles.meta.excludedDustProfileCount, 1);
 
 const syncSummary = summarizeLifecyclePositionSync([
   { market: 'crypto', ok: true, mismatchCount: 0 },
@@ -58,6 +78,7 @@ const readiness = buildLifecycleExecutionReadiness({
 });
 assert.equal(readiness.ok, true);
 assert.equal(readiness.metrics.dispatchCandidates, 1);
+assert.equal(readiness.metrics.lifecycleLateStageCoveragePct, coverage.lateStageCoveragePct);
 
 const blocked = buildLifecycleExecutionReadiness({
   flags: { mode: 'autonomous_l5', phaseD: { enabled: true }, phaseE: { enabled: true }, phaseF: { enabled: true }, phaseG: { enabled: true }, phaseH: { enabled: true } },

@@ -37,7 +37,8 @@ export async function runPositionExecutePreflightDrill(args = {}) {
       limit: args.limit || 5,
       json: true,
       recordHistory: false,
-      requirePositionSync: false,
+      requirePositionSync: args.requirePositionSync === true,
+      runSyncPreflight: args.requirePositionSync === true,
       positionSyncMarkets: markets,
     }),
     runPositionRuntimeDispatch({

@@ -1130,21 +1130,6 @@ export async function runDecisionExecutionPipeline({
     collectQualityReducedBuyCount = collectQualityGuard.reducedBuyCount;
     collectQualityBlockedBuyCount = collectQualityGuard.blockedBuyCount;
 
-    if (intelligentFlags.phases.entryTriggerEnabled) {
-      const triggerResult = await evaluateEntryTriggers(portfolioDecision.decisions || [], {
-        exchange,
-        regime: normalizeRegimeLabel(currentPortfolio?.marketRegime || null),
-      }).catch(() => null);
-      if (triggerResult?.decisions) {
-        entryTriggerStats = triggerResult.stats || null;
-        portfolioDecision = {
-          ...portfolioDecision,
-          decisions: triggerResult.decisions,
-          entryTriggerStats,
-        };
-      }
-    }
-
     if (intelligentFlags.phases.predictiveValidationEnabled) {
       const predictiveGate = applyPredictiveValidationGate(
         portfolioDecision.decisions || [],
@@ -1161,6 +1146,21 @@ export async function runDecisionExecutionPipeline({
         },
       };
       predictiveValidationStats = portfolioDecision.predictiveValidation;
+    }
+
+    if (intelligentFlags.phases.entryTriggerEnabled) {
+      const triggerResult = await evaluateEntryTriggers(portfolioDecision.decisions || [], {
+        exchange,
+        regime: normalizeRegimeLabel(currentPortfolio?.marketRegime || null),
+      }).catch(() => null);
+      if (triggerResult?.decisions) {
+        entryTriggerStats = triggerResult.stats || null;
+        portfolioDecision = {
+          ...portfolioDecision,
+          decisions: triggerResult.decisions,
+          entryTriggerStats,
+        };
+      }
     }
   }
   if (!portfolioDecision) {

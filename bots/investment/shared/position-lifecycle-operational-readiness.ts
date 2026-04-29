@@ -7,6 +7,7 @@ import {
 } from './lifecycle-contract.ts';
 
 const DEFAULT_REQUIRED_STAGES = [...POSITION_STAGE_IDS];
+const DEFAULT_LATE_STAGES = ['stage_4', 'stage_5', 'stage_6', 'stage_7', 'stage_8'];
 
 function normalizeStageId(value) {
   const normalized = String(value || '').trim();
@@ -19,6 +20,92 @@ function profileScope(profile = {}) {
   const tradeMode = profile.trade_mode || profile.tradeMode || profile?.strategy_state?.tradeMode || 'normal';
   if (!symbol || !exchange) return null;
   return buildPositionScopeKey(symbol, exchange, tradeMode);
+}
+
+function positionScope(position = {}) {
+  const symbol = position.symbol || position?.strategy_state?.symbol;
+  const exchange = position.exchange || position?.strategy_state?.exchange;
+  const tradeMode = position.trade_mode || position.tradeMode || position?.strategy_state?.tradeMode || 'normal';
+  if (!symbol || !exchange) return null;
+  return buildPositionScopeKey(symbol, exchange, tradeMode);
+}
+
+function scopeWithoutTradeMode(scope = '') {
+  const parts = String(scope || '').split(':');
+  return parts.length >= 2 ? `${parts[0]}:${parts[1]}` : scope;
+}
+
+function positionNotionalUsdt(position = {}) {
+  const amount = Number(position?.amount ?? position?.qty ?? position?.quantity ?? 0);
+  const price = Number(position?.avg_price ?? position?.avgPrice ?? position?.price ?? 0);
+  if (!Number.isFinite(amount) || !Number.isFinite(price)) return 0;
+  return Math.abs(amount * price);
+}
+
+export function filterLifecycleCoverageProfiles({
+  activeProfiles = [],
+  livePositions = [],
+  dustThresholdUsdt = 10,
+  includeDust = false,
+} = {}) {
+  const liveScopeSet = new Set();
+  const liveBaseScopeSet = new Set();
+  const dustScopeSet = new Set();
+  const dustBaseScopeSet = new Set();
+
+  for (const position of livePositions || []) {
+    const scope = positionScope(position);
+    if (!scope) continue;
+    const baseScope = scopeWithoutTradeMode(scope);
+    const exchange = String(position?.exchange || '').trim().toLowerCase();
+    const notional = positionNotionalUsdt(position);
+    const isDust = exchange === 'binance' && notional > 0 && notional < Number(dustThresholdUsdt || 10);
+    liveScopeSet.add(scope);
+    liveBaseScopeSet.add(baseScope);
+    if (isDust) {
+      dustScopeSet.add(scope);
+      dustBaseScopeSet.add(baseScope);
+    }
+  }
+
+  const included = [];
+  const excludedOrphan = [];
+  const excludedDust = [];
+  const excludedInvalid = [];
+
+  for (const profile of activeProfiles || []) {
+    const scope = profileScope(profile);
+    if (!scope) {
+      excludedInvalid.push(profile);
+      continue;
+    }
+    const baseScope = scopeWithoutTradeMode(scope);
+    const hasLivePosition = liveScopeSet.has(scope) || liveBaseScopeSet.has(baseScope);
+    if (!hasLivePosition) {
+      excludedOrphan.push(profile);
+      continue;
+    }
+    const isDust = dustScopeSet.has(scope) || dustBaseScopeSet.has(baseScope);
+    if (isDust && !includeDust) {
+      excludedDust.push(profile);
+      continue;
+    }
+    included.push(profile);
+  }
+
+  return {
+    included,
+    meta: {
+      livePositionCount: liveScopeSet.size,
+      activeProfileCount: (activeProfiles || []).length,
+      includedProfileCount: included.length,
+      excludedOrphanProfileCount: excludedOrphan.length,
+      excludedDustProfileCount: excludedDust.length,
+      excludedInvalidProfileCount: excludedInvalid.length,
+      dustThresholdUsdt: Number(dustThresholdUsdt || 10),
+      includeDust: Boolean(includeDust),
+    },
+  };
 }
 
 export function summarizeLifecycleStageCoverage({
@@ -45,6 +132,9 @@ export function summarizeLifecycleStageCoverage({
       if (!scope) return null;
       const covered = stageSetByScope.get(scope) || new Set();
       const missingStages = requiredStages.filter((stageId) => !covered.has(stageId));
+      const lateStages = DEFAULT_LATE_STAGES.filter((stageId) => requiredStages.includes(stageId));
+      const coveredLateStages = lateStages.filter((stageId) => covered.has(stageId));
+      const missingLateStages = lateStages.filter((stageId) => !covered.has(stageId));
       return {
         positionScopeKey: scope,
         symbol: profile.symbol || null,
@@ -52,9 +142,14 @@ export function summarizeLifecycleStageCoverage({
         tradeMode: profile.trade_mode || profile.tradeMode || 'normal',
         coveredStages: requiredStages.filter((stageId) => covered.has(stageId)),
         missingStages,
+        coveredLateStages,
+        missingLateStages,
         missingLabels: missingStages.map((stageId) => POSITION_STAGE_LABELS[stageId] || stageId),
         coveragePct: requiredStages.length > 0
           ? Math.round(((requiredStages.length - missingStages.length) / requiredStages.length) * 1000) / 10
+          : 100,
+        lateStageCoveragePct: lateStages.length > 0
+          ? Math.round((coveredLateStages.length / lateStages.length) * 1000) / 10
           : 100,
       };
     })
@@ -66,13 +161,21 @@ export function summarizeLifecycleStageCoverage({
     acc[stageId] = rows.filter((row) => row.missingStages.includes(stageId)).length;
     return acc;
   }, {});
+  const lateTotalExpected = rows.length * DEFAULT_LATE_STAGES.filter((stageId) => requiredStages.includes(stageId)).length;
+  const lateTotalCovered = rows.reduce((sum, row) => sum + row.coveredLateStages.length, 0);
+  const missingLateByStage = DEFAULT_LATE_STAGES.reduce((acc, stageId) => {
+    if (requiredStages.includes(stageId)) acc[stageId] = rows.filter((row) => row.missingLateStages.includes(stageId)).length;
+    return acc;
+  }, {});
 
   return {
     ok: rows.every((row) => row.missingStages.length === 0),
     activePositions: rows.length,
     requiredStages,
     coveragePct: totalExpected > 0 ? Math.round((totalCovered / totalExpected) * 1000) / 10 : 100,
+    lateStageCoveragePct: lateTotalExpected > 0 ? Math.round((lateTotalCovered / lateTotalExpected) * 1000) / 10 : 100,
     missingByStage,
+    missingLateByStage,
     rows,
   };
 }
@@ -135,6 +238,10 @@ export function buildLifecycleExecutionReadiness({
   if (coverageSummary && coveragePct < 50) {
     warnings.push(`low_lifecycle_stage_coverage_${coveragePct}`);
   }
+  const lateStageCoveragePct = Number(coverageSummary?.lateStageCoveragePct ?? 100);
+  if (coverageSummary && lateStageCoveragePct < 60) {
+    warnings.push(`low_lifecycle_late_stage_coverage_${lateStageCoveragePct}`);
+  }
 
   const runtimeMetrics = runtimeReport?.decision?.metrics || {};
   return {
@@ -155,12 +262,14 @@ export function buildLifecycleExecutionReadiness({
       blockedActionable,
       signalRefreshCount: Number(signalRefresh?.count || 0),
       lifecycleCoveragePct: coverageSummary?.coveragePct ?? null,
+      lifecycleLateStageCoveragePct: coverageSummary?.lateStageCoveragePct ?? null,
       positionSyncMismatchCount: positionSyncSummary?.mismatchCount ?? null,
     },
   };
 }
 
 export default {
+  filterLifecycleCoverageProfiles,
   summarizeLifecycleStageCoverage,
   summarizeLifecyclePositionSync,
   buildLifecycleExecutionReadiness,

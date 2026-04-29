@@ -48,6 +48,7 @@ export interface OrchestratorOptions extends DiscoveryCollectOptions {
   ttlHours?: number;               // DB TTL (기본: 24)
   skipDbWrite?: boolean;            // 테스트용
   failClosedOnDbError?: boolean;     // 운영 기본: DB 저장 불가 시 동적 universe 성공 처리 금지
+  adapters?: DiscoveryAdapter[];      // smoke/테스트용 주입
 }
 
 export async function runDiscoveryOrchestrator(
@@ -84,7 +85,7 @@ export async function runDiscoveryOrchestrator(
     if (purged > 0) console.log(`[discovery-orchestrator] 만료 후보 ${purged}개 정리`);
   }
 
-  const adapters = buildAdapters().filter((a) => !markets || markets.includes(a.market));
+  const adapters = (options.adapters || buildAdapters()).filter((a) => !markets || markets.includes(a.market));
 
   // 모든 어댑터 병렬 실행 (1개 실패 시 다른 어댑터 영향 없음)
   const settled = await Promise.allSettled(
@@ -103,9 +104,9 @@ export async function runDiscoveryOrchestrator(
     domestic: [], overseas: [], crypto: [],
   };
 
-  for (const outcome of settled) {
+  for (const [index, outcome] of settled.entries()) {
     if (outcome.status === 'rejected') {
-      errors.push({ adapter: 'unknown', error: String(outcome.reason) });
+      errors.push({ adapter: adapters[index]?.source || 'unknown', error: String(outcome.reason?.message || outcome.reason) });
       continue;
     }
     const { adapter, result } = outcome.value;

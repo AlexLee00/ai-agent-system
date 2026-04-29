@@ -69,7 +69,7 @@ export async function buildLunaL5FinalGateReport(args = {}) {
     runPositionExecutePreflightDrill({
       json: true,
       limit: args.limit || 5,
-      requirePositionSync: false,
+      requirePositionSync: syncRequired,
       markets,
     }),
     syncRequired

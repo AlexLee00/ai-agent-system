@@ -8,6 +8,8 @@ import {
 } from '../shared/external-evidence-ledger.ts';
 import {
   readExternalEvidenceGapTaskQueue,
+  summarizeExternalEvidenceGapTaskQueue,
+  updateExternalEvidenceGapTaskStatus,
   updateExternalEvidenceGapTaskQueue,
 } from '../shared/evidence-gap-task-queue.ts';
 
@@ -109,6 +111,17 @@ async function main() {
   const queueAfterGap = readExternalEvidenceGapTaskQueue(queueFile);
   assert('evidence gap 2회 누적 시 task queue 생성', gap2.queuedNow === true);
   assert('queue에 queued task 존재', Number(queueAfterGap.summary?.queued || 0) >= 1);
+  const queuedTask = (queueAfterGap.tasks || []).find((task) => task.status === 'queued');
+  assert('queued task id 존재', Boolean(queuedTask?.taskId));
+  const updateResult = updateExternalEvidenceGapTaskStatus({
+    taskId: queuedTask?.taskId,
+    status: 'running',
+    resolution: 'smoke_running',
+    file: queueFile,
+  });
+  assert('task status update 가능', updateResult.ok === true);
+  const queueSummary = summarizeExternalEvidenceGapTaskQueue(queueFile);
+  assert('queue summary가 running 집계', Number(queueSummary.statusCounts?.running || 0) >= 1);
 
   const recovered = updateExternalEvidenceGapTaskQueue({
     symbol: 'BTC/USDT',

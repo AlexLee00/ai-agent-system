@@ -14,6 +14,28 @@
 		<string>false</string>
 		<key>LUNA_ENTRY_TRIGGER_ENGINE_ENABLED</key>
 		<string>true</string>
+		<key>LUNA_INTELLIGENT_DISCOVERY_MODE</key>
+		<string>autonomous_l5</string>
+		<key>LUNA_DISCOVERY_ORCHESTRATOR_ENABLED</key>
+		<string>true</string>
+		<key>LUNA_NEWS_SYMBOL_MAPPING_ENABLED</key>
+		<string>true</string>
+		<key>LUNA_COMMUNITY_SENTIMENT_ENABLED</key>
+		<string>true</string>
+		<key>LUNA_WYCKOFF_DETECTION_ENABLED</key>
+		<string>true</string>
+		<key>LUNA_VSA_BAR_CLASSIFICATION</key>
+		<string>true</string>
+		<key>LUNA_MTF_ANALYZER_ENABLED</key>
+		<string>true</string>
+		<key>LUNA_DISCOVERY_SCORE_FUSION_ENABLED</key>
+		<string>true</string>
+		<key>LUNA_PREDICTIVE_VALIDATION_ENABLED</key>
+		<string>true</string>
+		<key>LUNA_PREDICTIVE_VALIDATION_MODE</key>
+		<string>hard_gate</string>
+		<key>LUNA_PREDICTIVE_REQUIRE_COMPONENTS</key>
+		<string>true</string>
 		<key>LUNA_ENTRY_TRIGGER_DERIVE_MARKET_EVENTS</key>
 		<string>true</string>
 	</dict>

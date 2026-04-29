@@ -2014,24 +2014,6 @@ export async function orchestrate(symbols, exchange = 'binance', params = null) 
     console.log(`  🎚️ [루나] discoveryThrottle maxBuyCandidates=${discoveryThrottle.maxBuyCandidates} 적용: BUY 후보 ${discoveryThrottleApplied.reducedCount}개 보류`);
   }
 
-  if (intelligentFlags.phases.entryTriggerEnabled) {
-    const triggerResult = await evaluateEntryTriggers(portfolio_decision.decisions || [], {
-      exchange,
-      regime: normalizeRegimeLabel(marketRegime),
-    }).catch((error) => {
-      console.warn(`  ⚠️ [루나] entry trigger 평가 실패: ${error?.message || error}`);
-      return null;
-    });
-    if (triggerResult?.decisions) {
-      portfolio_decision = {
-        ...portfolio_decision,
-        decisions: triggerResult.decisions,
-        entryTriggerStats: triggerResult.stats || null,
-      };
-      console.log(`  🎯 [루나] entry trigger: armed=${Number(triggerResult?.stats?.armed || 0)} fired=${Number(triggerResult?.stats?.fired || 0)} blocked=${Number(triggerResult?.stats?.blocked || 0)} mode=${triggerResult?.stats?.mode || intelligentFlags.mode}`);
-    }
-  }
-
   if (intelligentFlags.phases.predictiveValidationEnabled) {
     const predictiveGate = applyPredictiveValidationGate(
       portfolio_decision.decisions || [],
@@ -2049,6 +2031,24 @@ export async function orchestrate(symbols, exchange = 'binance', params = null) 
     };
     if (predictiveGate.blocked > 0 || predictiveGate.advisory > 0) {
       console.log(`  🧠 [루나] predictive validation: mode=${intelligentFlags.predictive.mode} blocked=${predictiveGate.blocked} advisory=${predictiveGate.advisory}`);
+    }
+  }
+
+  if (intelligentFlags.phases.entryTriggerEnabled) {
+    const triggerResult = await evaluateEntryTriggers(portfolio_decision.decisions || [], {
+      exchange,
+      regime: normalizeRegimeLabel(marketRegime),
+    }).catch((error) => {
+      console.warn(`  ⚠️ [루나] entry trigger 평가 실패: ${error?.message || error}`);
+      return null;
+    });
+    if (triggerResult?.decisions) {
+      portfolio_decision = {
+        ...portfolio_decision,
+        decisions: triggerResult.decisions,
+        entryTriggerStats: triggerResult.stats || null,
+      };
+      console.log(`  🎯 [루나] entry trigger: armed=${Number(triggerResult?.stats?.armed || 0)} fired=${Number(triggerResult?.stats?.fired || 0)} blocked=${Number(triggerResult?.stats?.blocked || 0)} mode=${triggerResult?.stats?.mode || intelligentFlags.mode}`);
     }
   }
 

@@ -8,9 +8,11 @@ import { refreshPositionSignals } from '../shared/position-signal-refresh.ts';
 import { syncPositionsAtMarketOpen } from '../shared/position-sync.ts';
 import {
   buildLifecycleExecutionReadiness,
+  filterLifecycleCoverageProfiles,
   summarizeLifecyclePositionSync,
   summarizeLifecycleStageCoverage,
 } from '../shared/position-lifecycle-operational-readiness.ts';
+import { getInvestmentSyncRuntimeConfig } from '../shared/runtime-config.ts';
 import { runPositionRuntimeReport } from './runtime-position-runtime-report.ts';
 import { runPositionRuntimeDispatch } from './runtime-position-runtime-dispatch.ts';
 
@@ -23,11 +25,13 @@ function parseArgs(argv = []) {
     sync: false,
     markets: ['crypto'],
     requirePositionSync: false,
+    includeDustCoverage: false,
   };
   for (const raw of argv) {
     if (raw === '--json') args.json = true;
     else if (raw === '--sync') args.sync = true;
     else if (raw === '--require-position-sync') args.requirePositionSync = true;
+    else if (raw === '--include-dust-coverage') args.includeDustCoverage = true;
     else if (raw.startsWith('--exchange=')) args.exchange = raw.split('=').slice(1).join('=') || null;
     else if (raw.startsWith('--days=')) args.days = Math.max(1, Number(raw.split('=').slice(1).join('=') || 7));
     else if (raw.startsWith('--limit=')) args.limit = Math.max(1, Number(raw.split('=').slice(1).join('=') || 200));
@@ -65,10 +69,11 @@ async function runPositionSync(markets = ['crypto']) {
 
 export async function runPositionLifecycleOperationalReadiness(args = {}) {
   const flags = resolvePositionLifecycleFlags();
-  const [runtimeReport, dispatchPreview, activeProfiles, lifecycleEvents, signalRefresh, positionSyncSummary] = await Promise.all([
+  const [runtimeReport, dispatchPreview, activeProfiles, livePositions, lifecycleEvents, signalRefresh, positionSyncSummary] = await Promise.all([
     runPositionRuntimeReport({ exchange: args.exchange || null, limit: args.limit || 200, json: true }),
     runPositionRuntimeDispatch({ exchange: args.exchange || null, limit: 20, phase6: true, json: true }),
     db.getActivePositionStrategyProfiles({ exchange: args.exchange || null, limit: args.limit || 200 }).catch(() => []),
+    db.getAllPositions(args.exchange || null, false).catch(() => []),
     fetchLifecycleEvents(args.days || 7),
     refreshPositionSignals({
       exchange: args.exchange || null,
@@ -83,9 +88,16 @@ export async function runPositionLifecycleOperationalReadiness(args = {}) {
     args.sync ? runPositionSync(args.markets || ['crypto']) : Promise.resolve(null),
   ]);
 
+  const syncRuntime = getInvestmentSyncRuntimeConfig();
+  const coverageProfiles = filterLifecycleCoverageProfiles({
+    activeProfiles,
+    livePositions,
+    dustThresholdUsdt: Number(syncRuntime?.cryptoMinNotionalUsdt || 10),
+    includeDust: args.includeDustCoverage === true,
+  });
   const coverageSummary = summarizeLifecycleStageCoverage({
     events: lifecycleEvents,
-    activeProfiles,
+    activeProfiles: coverageProfiles.included,
   });
   const readiness = buildLifecycleExecutionReadiness({
     flags,
@@ -124,6 +136,7 @@ export async function runPositionLifecycleOperationalReadiness(args = {}) {
       activePositions: coverageSummary.activePositions,
       coveragePct: coverageSummary.coveragePct,
       missingByStage: coverageSummary.missingByStage,
+      universe: coverageProfiles.meta,
       rows: coverageSummary.rows.slice(0, 20),
     },
   };
@@ -139,6 +152,7 @@ function renderText(payload = {}) {
     `dispatch: ${payload.dispatchStatus || 'unknown'}`,
     `signalRefresh: ${payload.signalRefresh?.enabled ? payload.signalRefresh.count : 'disabled'}`,
     `coverage: ${payload.coverageSummary?.coveragePct ?? 'n/a'}%`,
+    `coverageUniverse: included=${payload.coverageSummary?.universe?.includedProfileCount ?? 'n/a'} / activeProfiles=${payload.coverageSummary?.universe?.activeProfileCount ?? 'n/a'} / orphanExcluded=${payload.coverageSummary?.universe?.excludedOrphanProfileCount ?? 'n/a'} / dustExcluded=${payload.coverageSummary?.universe?.excludedDustProfileCount ?? 'n/a'}`,
   ];
   for (const blocker of payload.readiness?.blockers || []) lines.push(`- blocker: ${blocker}`);
   for (const warning of payload.readiness?.warnings || []) lines.push(`- warning: ${warning}`);

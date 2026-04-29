@@ -4,6 +4,7 @@
 import assert from 'node:assert/strict';
 import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
 import { applyPredictiveValidationGate } from '../shared/predictive-validation-gate.ts';
+import { buildPredictiveValidationEvidence } from '../shared/predictive-validation.ts';
 
 const ACTIONS = { BUY: 'BUY', HOLD: 'HOLD' };
 
@@ -24,11 +25,27 @@ export function runLunaPredictiveValidationSmoke() {
   assert.equal(advisory.advisory, 1);
   assert.equal(advisory.decisions[0].action, ACTIONS.BUY);
   assert.ok(String(advisory.decisions[0].reasoning || '').includes('predictive_advisory'));
+  assert.equal(advisory.decisions[0].block_meta?.predictiveValidation?.decision, 'hold');
+
+  const evidence = buildPredictiveValidationEvidence({
+    symbol: 'EVIDENCE/USDT',
+    action: ACTIONS.BUY,
+    confidence: 0.7,
+    regime: 'trending_bull',
+    backtest: { winRate: 0.62, avgPnlPercent: 2.4, sharpe: 1.1 },
+    prediction: { breakout_probability: 0.72, trend_cont_probability: 0.68 },
+    analystAccuracy: { aria: 0.63, oracle: 0.61 },
+    setupOutcome: { winRate: 0.58, avgPnlPercent: 1.6 },
+  }, {}, { threshold: 0.55 });
+  assert.equal(evidence.decision, 'fire');
+  assert.equal(Object.keys(evidence.components).length, 4);
+  assert.ok(evidence.score >= 0.55);
 
   return {
     ok: true,
     hard,
     advisory,
+    evidence,
   };
 }
 

@@ -165,6 +165,98 @@ export function readExternalEvidenceGapTaskQueue(file = DEFAULT_EXTERNAL_EVIDENC
   };
 }
 
+export function summarizeExternalEvidenceGapTaskQueue(file = DEFAULT_EXTERNAL_EVIDENCE_GAP_QUEUE_FILE) {
+  const payload = readExternalEvidenceGapTaskQueue(file);
+  const statusCounts = {};
+  const taskTypeCounts = {};
+  const scopeCounts = {};
+  let oldestOpenTaskAt = null;
+  let newestOpenTaskAt = null;
+
+  for (const task of payload.tasks || []) {
+    const status = String(task?.status || 'unknown');
+    const taskType = String(task?.taskType || 'unknown');
+    const scopeKey = String(task?.scopeKey || 'unknown');
+    statusCounts[status] = (statusCounts[status] || 0) + 1;
+    taskTypeCounts[taskType] = (taskTypeCounts[taskType] || 0) + 1;
+    scopeCounts[scopeKey] = (scopeCounts[scopeKey] || 0) + 1;
+    if (['queued', 'retrying', 'running'].includes(status)) {
+      const createdAt = task?.createdAt || task?.updatedAt || null;
+      if (createdAt && (!oldestOpenTaskAt || new Date(createdAt).getTime() < new Date(oldestOpenTaskAt).getTime())) {
+        oldestOpenTaskAt = createdAt;
+      }
+      if (createdAt && (!newestOpenTaskAt || new Date(createdAt).getTime() > new Date(newestOpenTaskAt).getTime())) {
+        newestOpenTaskAt = createdAt;
+      }
+    }
+  }
+
+  return {
+    ok: true,
+    file: payload.file,
+    updatedAt: payload.updatedAt,
+    summary: payload.summary,
+    statusCounts,
+    taskTypeCounts,
+    topScopes: Object.entries(scopeCounts)
+      .map(([scopeKey, count]) => ({ scopeKey, count }))
+      .sort((a, b) => Number(b.count || 0) - Number(a.count || 0) || a.scopeKey.localeCompare(b.scopeKey))
+      .slice(0, 20),
+    oldestOpenTaskAt,
+    newestOpenTaskAt,
+  };
+}
+
+export function updateExternalEvidenceGapTaskStatus({
+  taskId = null,
+  status = null,
+  resolution = null,
+  error = null,
+  file = DEFAULT_EXTERNAL_EVIDENCE_GAP_QUEUE_FILE,
+} = {}) {
+  if (!taskId || !status) {
+    return {
+      ok: false,
+      status: 'invalid_task_status_update',
+      taskId,
+    };
+  }
+
+  const payload = readQueueRaw(file);
+  let found = false;
+  const nowIso = new Date().toISOString();
+  payload.tasks = (payload.tasks || []).map((task) => {
+    if (task?.taskId !== taskId) return task;
+    found = true;
+    return {
+      ...task,
+      status,
+      updatedAt: nowIso,
+      resolution: resolution ?? task?.resolution ?? null,
+      error: error ? String(error).slice(0, 500) : task?.error ?? null,
+    };
+  });
+
+  if (!found) {
+    return {
+      ok: false,
+      status: 'evidence_gap_task_not_found',
+      taskId,
+    };
+  }
+
+  const written = writeQueueRaw(payload, file);
+  return {
+    ok: true,
+    status: 'evidence_gap_task_updated',
+    taskId,
+    queueSummary: {
+      scopes: Object.keys(written.states || {}).length,
+      tasks: (written.tasks || []).length,
+    },
+  };
+}
+
 export function updateExternalEvidenceGapTaskQueue({
   symbol = null,
   exchange = null,

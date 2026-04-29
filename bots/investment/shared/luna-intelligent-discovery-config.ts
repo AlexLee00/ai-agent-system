@@ -70,6 +70,15 @@ export function getLunaIntelligentDiscoveryFlags() {
     predictive: {
       mode: shadow ? 'advisory' : hardGate ? 'hard_gate' : 'advisory',
       threshold: Math.max(0, Math.min(1, numEnv('LUNA_PREDICTIVE_VALIDATION_THRESHOLD', 0.55))),
+      holdThreshold: Math.max(0, Math.min(1, numEnv('LUNA_PREDICTIVE_SCORE_HOLD_THRESHOLD', 0.40))),
+      discardThreshold: Math.max(0, Math.min(1, numEnv('LUNA_PREDICTIVE_SCORE_DISCARD_THRESHOLD', 0.40))),
+      requireComponents: boolEnv('LUNA_PREDICTIVE_REQUIRE_COMPONENTS', false),
+      weights: {
+        backtest: Math.max(0, numEnv('LUNA_PREDICTIVE_WEIGHT_BACKTEST', 0.30)),
+        prediction: Math.max(0, numEnv('LUNA_PREDICTIVE_WEIGHT_PREDICTION', 0.30)),
+        analyst: Math.max(0, numEnv('LUNA_PREDICTIVE_WEIGHT_ANALYST_ACCURACY', 0.20)),
+        setupOutcome: Math.max(0, numEnv('LUNA_PREDICTIVE_WEIGHT_SETUP_OUTCOME', 0.20)),
+      },
     },
     entryTrigger: {
       ttlMinutes: Math.max(5, Math.round(numEnv('LUNA_ENTRY_TRIGGER_TTL_MINUTES', 180))),
