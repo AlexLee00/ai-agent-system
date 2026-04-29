@@ -73,6 +73,14 @@ import {
   escapePendingReconcileLikePattern,
   normalizePendingReconcileTradeRow,
 } from './hephaestos/pending-reconcile-core.ts';
+import {
+  buildFetchFailurePendingReconcileMeta,
+  buildMissingPendingReconcileKeysResult,
+  buildQuoteConversionManualReconcileMeta,
+  normalizePendingReconcileTradeModes,
+  summarizePendingReconcileResults,
+} from './hephaestos/binance-order-reconcile.ts';
+import { buildSellBalancePolicy } from './hephaestos/sell-balance-policy.ts';
 export { buildHephaestosExecutionContext } from './hephaestos/execution-context.ts';
 export { buildHephaestosExecutionPreflight } from './hephaestos/execution-preflight.ts';
 export { createSignalFailurePersister, rejectExecution } from './hephaestos/execution-failure.ts';
@@ -1126,12 +1134,7 @@ export async function processBinancePendingReconcileQueue({
     ? deps.markSignal
     : markBinanceOrderPendingReconcileSignal;
 
-  const normalizedModes = Array.from(new Set(
-    (Array.isArray(tradeModes) ? tradeModes : [])
-      .map((mode) => String(mode || '').trim())
-      .filter(Boolean),
-  ));
-  const modeFilter = normalizedModes.length > 0 ? normalizedModes : ['normal', 'validation'];
+  const modeFilter = normalizePendingReconcileTradeModes(tradeModes);
 
   const candidates = await db.query(
     `SELECT id, symbol, action, trade_mode, block_code, block_meta, amount_usdt
@@ -1169,14 +1172,7 @@ export async function processBinancePendingReconcileQueue({
         if (!isSyntheticOrTestSignalContext({ signalId: row.id, reasoning: row.reasoning })) {
           await notifyError(`헤파이스토스 pending reconcile 수동 정산 필요 — ${row.symbol} ${row.action}`, reason).catch(() => {});
         }
-        results.push({
-          signalId: row.id,
-          symbol: row.symbol,
-          action: row.action,
-          code: 'manual_reconcile_required',
-          status: 'missing_order_keys',
-          error: reason,
-        });
+        results.push(buildMissingPendingReconcileKeysResult(row, reason));
       }
       continue;
     }
@@ -1344,17 +1340,7 @@ export async function processBinancePendingReconcileQueue({
           status: SIGNAL_STATUS.FAILED,
           reason: reason.slice(0, 180),
           code: 'manual_reconcile_required',
-          meta: {
-            exchange: 'binance',
-            symbol: payload.symbol,
-            action: payload.action,
-            orderId: payload.orderId || null,
-            clientOrderId: payload.clientOrderId || null,
-            orderSymbol: payload.orderSymbol || payload.symbol,
-            pendingReconcile: payload.pendingMeta || null,
-            conversionError: String(error?.message || error).slice(0, 240),
-            ...(error?.meta || {}),
-          },
+          meta: buildQuoteConversionManualReconcileMeta({ payload, error }),
         }).catch(() => {});
         if (!isSyntheticOrTestSignalContext({ signalId: payload.signalId, reasoning: payload.signal?.reasoning })) {
           await notifyError(`헤파이스토스 pending reconcile 수동 정산 필요 — ${payload.symbol} ${payload.action}`, reason).catch(() => {});
@@ -1370,21 +1356,10 @@ export async function processBinancePendingReconcileQueue({
         if (delayMs > 0) await delay(delayMs);
         continue;
       }
-      await db.mergeSignalBlockMeta(payload.signalId, {
-        pendingReconcile: {
-          ...payload.pendingMeta,
-          exchange: 'binance',
-          symbol: payload.symbol,
-          orderSymbol: payload.orderSymbol || payload.symbol,
-          action: payload.action,
-          orderId: payload.orderId,
-          clientOrderId: payload.clientOrderId || null,
-          queueStatus: 'queued',
-          followUpRequired: true,
-          reconcileError: String(error?.message || error).slice(0, 240),
-          updatedAt: new Date().toISOString(),
-        },
-      }).catch(() => {});
+      await db.mergeSignalBlockMeta(
+        payload.signalId,
+        buildFetchFailurePendingReconcileMeta({ payload, error }),
+      ).catch(() => {});
       results.push({
         signalId: payload.signalId,
         symbol: payload.symbol,
@@ -1397,16 +1372,7 @@ export async function processBinancePendingReconcileQueue({
     if (delayMs > 0) await delay(delayMs);
   }
 
-  const summary = {
-    completed: results.filter((item) => item.code === 'order_reconciled').length,
-    partial: results.filter((item) => item.code === 'partial_fill_pending').length,
-    queued: results.filter((item) => item.code === 'order_pending_reconcile').length,
-    failed: results.filter(
-      (item) => item.code === 'reconcile_fetch_failed'
-        || item.code === 'reconcile_apply_failed'
-        || item.code === 'manual_reconcile_required',
-    ).length,
-  };
+  const summary = summarizePendingReconcileResults(results);
 
   return {
     candidates: candidates.length,
@@ -2916,28 +2882,57 @@ async function resolveSellAmount({
       console.warn(`  ⚠️ ${symbol} 전량 청산 모드 — 전체 잔고 기준으로 SELL 수량 조정 ${amount} → ${totalBalanceNow}`);
     }
     amount = totalBalanceNow;
-  } else if (!sellPaperMode && freeBalanceNow < amount) {
-    const drift = amount - freeBalanceNow;
-    console.warn(`  ⚠️ ${symbol} DB 포지션(${amount})과 가용잔고(free=${freeBalanceNow}, total=${totalBalanceNow || freeBalanceNow})가 어긋남 — free 기준으로 SELL 진행`);
-    await reconcileOpenJournalToTrackedAmount(
-      symbol,
+  } else if (!sellPaperMode) {
+    const balancePolicy = buildSellBalancePolicy({
+      sourceAmount: amount,
+      freeBalance: freeBalanceNow,
+      totalBalance: totalBalanceNow,
+      partialExitRatio: normalizedPartialExitRatio,
       sellPaperMode,
-      freeBalanceNow,
-      position?.trade_mode || fallbackLivePosition?.trade_mode || signalTradeMode,
-    ).catch(() => null);
-    amount = freeBalanceNow;
-    await db.updateSignalBlock(signalId, {
-      reason: `position_reconciled_to_balance:${drift.toFixed(8)}`,
-      code: 'position_balance_reconciled',
-      meta: {
-        exchange: 'binance',
+    });
+    if (balancePolicy.lockedByOpenOrders) {
+      const reason = `보호주문 잠금 잔고 감지 (free=${freeBalanceNow}, total=${totalBalanceNow}, intended=${balancePolicy.intendedSellAmount})`;
+      console.warn(`  ⚠️ ${symbol} ${reason} — journal 수량 보정 없이 SELL 차단`);
+      await persistFailure(reason, {
+        code: 'balance_locked_by_protective_orders',
+        meta: {
+          exchange: 'binance',
+          symbol,
+          dbAmount: position?.amount || 0,
+          intendedSellAmount: balancePolicy.intendedSellAmount,
+          freeBalance: freeBalanceNow,
+          totalBalance: totalBalanceNow,
+          lockedBalance: balancePolicy.lockedBalance,
+          partialExitRatio: normalizedPartialExitRatio < 1 ? normalizedPartialExitRatio : null,
+        },
+      });
+      return { success: false, reason };
+    }
+    if (balancePolicy.truePositionDrift) {
+      const trackedAmount = Number(balancePolicy.reconcileTrackedAmount || 0);
+      const drift = amount - trackedAmount;
+      console.warn(`  ⚠️ ${symbol} DB 포지션(${amount})과 실잔고(total=${totalBalanceNow})가 어긋남 — total 기준으로 SELL 진행`);
+      await reconcileOpenJournalToTrackedAmount(
         symbol,
-        dbAmount: position?.amount || 0,
-        freeBalance: freeBalanceNow,
-        totalBalance: totalBalanceNow,
-        drift,
-      },
-    }).catch(() => {});
+        sellPaperMode,
+        trackedAmount,
+        position?.trade_mode || fallbackLivePosition?.trade_mode || signalTradeMode,
+      ).catch(() => null);
+      amount = trackedAmount;
+      await db.updateSignalBlock(signalId, {
+        reason: `position_reconciled_to_balance:${drift.toFixed(8)}`,
+        code: 'position_balance_reconciled',
+        meta: {
+          exchange: 'binance',
+          symbol,
+          dbAmount: position?.amount || 0,
+          freeBalance: freeBalanceNow,
+          totalBalance: totalBalanceNow,
+          drift,
+          driftSource: 'total_balance',
+        },
+      }).catch(() => {});
+    }
   }
 
   const sourcePositionAmount = Number(amount || 0);

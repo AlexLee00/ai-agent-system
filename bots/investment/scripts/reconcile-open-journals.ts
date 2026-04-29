@@ -111,6 +111,33 @@ export function summarizeReconcileResults(results = []) {
   };
 }
 
+export function buildLatestMismatchManualPlan({ scope, latestEntry, rows = [], targetQty = 0, totalQty = 0 } = {}) {
+  const latestQty = Number(latestEntry?.entry_size || 0);
+  const deltaQty = Number(totalQty || 0) - Number(targetQty || 0);
+  return {
+    scope,
+    symbol: latestEntry?.symbol || null,
+    action: 'observe_latest_mismatch',
+    targetQty: Number(targetQty || 0),
+    totalQty: Number(totalQty || 0),
+    latestQty,
+    deltaQty,
+    manualOnly: true,
+    writeSafe: false,
+    recommendedAction: 'manual_review_trade_journal_before_write',
+    reason: 'latest_open_journal_entry_does_not_match_current_position_quantity',
+    openTradeIds: rows.map((row) => row.trade_id),
+    openRows: rows.map((row) => ({
+      tradeId: row.trade_id,
+      signalId: row.signal_id || null,
+      entryTime: row.entry_time || null,
+      entrySize: Number(row.entry_size || 0),
+      entryValue: Number(row.entry_value || 0),
+      entryPrice: Number(row.entry_price || 0),
+    })),
+  };
+}
+
 function safeNumber(value, fallback = 0) {
   const numeric = Number(value);
   return Number.isFinite(numeric) ? numeric : fallback;
@@ -347,15 +374,13 @@ export async function reconcileOpenJournals({
 
     const latestQty = Number(latest.entry_size || 0);
     if (Math.abs(latestQty - targetQty) > tolerance(latestQty)) {
-      results.push({
+      results.push(buildLatestMismatchManualPlan({
         scope: key,
-        symbol: latest.symbol,
-        action: 'observe_latest_mismatch',
+        latestEntry: latest,
+        rows,
         targetQty,
         totalQty,
-        latestQty,
-        openTradeIds: rows.map((row) => row.trade_id),
-      });
+      }));
       continue;
     }
 

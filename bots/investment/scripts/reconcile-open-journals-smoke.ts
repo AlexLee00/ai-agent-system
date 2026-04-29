@@ -3,6 +3,7 @@
 
 import assert from 'node:assert/strict';
 import {
+  buildLatestMismatchManualPlan,
   buildScopeMap,
   buildWriteImpactGuard,
   entryAgeHours,
@@ -49,6 +50,22 @@ const sellTrade = pickMatchingSellTradeForOpenScope([
   { id: 'exact', amount: 2 },
 ], 2);
 assert.equal(sellTrade.id, 'exact');
+
+const mismatchPlan = buildLatestMismatchManualPlan({
+  scope: 'binance:APE/USDT:live:normal',
+  latestEntry: { trade_id: 'latest', signal_id: 'sig-latest', symbol: 'APE/USDT', entry_size: 0.003, entry_value: 0.001, entry_price: 0.153 },
+  rows: [
+    { trade_id: 'latest', signal_id: 'sig-latest', entry_time: 2, entry_size: 0.003, entry_value: 0.001, entry_price: 0.153 },
+    { trade_id: 'stale', signal_id: 'sig-stale', entry_time: 1, entry_size: 784.6, entry_value: 126.63, entry_price: 0.1614 },
+  ],
+  targetQty: 799.653,
+  totalQty: 1539.833,
+});
+assert.equal(mismatchPlan.manualOnly, true);
+assert.equal(mismatchPlan.writeSafe, false);
+assert.equal(mismatchPlan.recommendedAction, 'manual_review_trade_journal_before_write');
+assert.equal(mismatchPlan.openRows.length, 2);
+assert.equal(mismatchPlan.openTradeIds.includes('stale'), true);
 
 const impactGuard = buildWriteImpactGuard({ affectedTradeCount: 11 }, 10);
 assert.equal(impactGuard.blocked, true);
