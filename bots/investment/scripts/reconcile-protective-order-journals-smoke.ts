@@ -4,6 +4,7 @@
 import assert from 'node:assert/strict';
 import {
   buildClosedSiblingResidualPlan,
+  buildFilledProtectionJournalDriftRepairPlan,
   buildOpenProtectionJournalRestorePlan,
   buildProtectiveOrderJournalCloseInput,
   classifyProtectiveOrderJournalRepair,
@@ -64,6 +65,31 @@ const partial = classifyProtectiveOrderJournalRepair({
 assert.equal(partial.action, 'manual_partial_protective_fill');
 assert.equal(partial.closeSafe, false);
 
+const driftRepairPlan = buildFilledProtectionJournalDriftRepairPlan({
+  entry: { ...entry, entry_size: 0.00336, entry_value: 0.000516096, entry_price: 0.1536 },
+  decision: {
+    ...partial,
+    winningRole: 'take_profit',
+    orders: [
+      {
+        role: 'take_profit',
+        id: 'tp-drift',
+        status: 'closed',
+        side: 'sell',
+        filled: 799.65,
+        amount: 799.65,
+        average: 0.15,
+        cost: 119.9475,
+        timestamp: 1777448999355,
+      },
+    ],
+  },
+});
+assert.equal(driftRepairPlan.action, 'restore_and_close_from_filled_protection_after_journal_drift');
+assert.equal(driftRepairPlan.closeSafe, true);
+assert.equal(driftRepairPlan.restoreBeforeClose, true);
+assert.ok(driftRepairPlan.afterEntrySize > 799);
+
 const summary = summarizeProtectiveOrderJournalRepair([
   { tradeId: 'a', ...filledStop },
   { tradeId: 'b', ...stillOpen },
@@ -102,6 +128,7 @@ const payload = {
   stillOpen,
   ambiguous,
   partial,
+  driftRepairPlan,
   restorePlan,
   residualPlan,
   summary,

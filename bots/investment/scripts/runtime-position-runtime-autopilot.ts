@@ -7,6 +7,7 @@ import { runPositionRuntimeReport } from './runtime-position-runtime-report.ts';
 import { runPositionRuntimeTuning } from './runtime-position-runtime-tuning.ts';
 import { runPositionRuntimeDispatch } from './runtime-position-runtime-dispatch.ts';
 import { runPositionRuntimeAutotune } from './runtime-position-runtime-autotune.ts';
+import { retireOrphanStrategyProfiles } from './retire-orphan-strategy-profiles.ts';
 import { assessPhase6SafetyReadiness } from '../shared/position-closeout-engine.ts';
 import { refreshPositionSignals } from '../shared/position-signal-refresh.ts';
 import { syncPositionsAtMarketOpen } from '../shared/position-sync.ts';
@@ -34,6 +35,9 @@ function parseArgs(argv = []) {
     recordHistory: true,
     requirePositionSync: false,
     positionSyncMarkets: ['crypto'],
+    skipOrphanProfileSweep: false,
+    applyOrphanProfileSweep: false,
+    orphanProfileSweepExchange: null,
   };
   for (const raw of argv) {
     if (raw === '--json') args.json = true;
@@ -47,6 +51,9 @@ function parseArgs(argv = []) {
     else if (raw === '--no-history') args.recordHistory = false;
     else if (raw === '--require-position-sync') args.requirePositionSync = true;
     else if (raw === '--run-sync-preflight') args.runSyncPreflight = true;
+    else if (raw === '--skip-orphan-profile-sweep') args.skipOrphanProfileSweep = true;
+    else if (raw === '--apply-orphan-profile-sweep') args.applyOrphanProfileSweep = true;
+    else if (raw.startsWith('--orphan-profile-sweep-exchange=')) args.orphanProfileSweepExchange = raw.split('=').slice(1).join('=') || null;
     else if (raw.startsWith('--position-sync-markets=')) {
       const rawMarkets = raw.split('=').slice(1).join('=') || 'crypto';
       args.positionSyncMarkets = rawMarkets.split(',').map((item) => item.trim()).filter(Boolean);
@@ -153,6 +160,9 @@ function renderText(result = {}) {
     const failedChecks = (result.phase6SafetyReadiness?.checks || []).filter((item) => item?.ok !== true);
     lines.push(`phase6 safety blocked: ${failedChecks.map((item) => item.key).join(', ') || 'unknown'}`);
   }
+  if (result.orphanProfileSweep?.enabled) {
+    lines.push(`orphan profile sweep: ${result.orphanProfileSweep.status || 'unknown'} / candidates ${result.orphanProfileSweep.candidates ?? 0} / retired ${result.orphanProfileSweep.retired ?? 0}`);
+  }
   for (const item of result.decision?.nextActions || []) lines.push(`- ${item}`);
   return lines.join('\n');
 }
@@ -215,6 +225,7 @@ function buildHistorySnapshot({
   autotunePreview,
   autotuneResult,
   dispatchResult,
+  orphanProfileSweep,
   status,
 }) {
   const metrics = runtimeReport?.decision?.metrics || {};
@@ -250,6 +261,17 @@ function buildHistorySnapshot({
       count: Number(signalRefresh.count || 0),
     } : null,
     positionSyncSummary: positionSyncSummary || null,
+    orphanProfileSweep: orphanProfileSweep ? {
+      enabled: orphanProfileSweep.enabled === true,
+      ok: orphanProfileSweep.ok !== false,
+      apply: orphanProfileSweep.apply === true,
+      exchange: orphanProfileSweep.exchange || null,
+      status: orphanProfileSweep.status || null,
+      candidates: Number(orphanProfileSweep.candidates || 0),
+      retired: Number(orphanProfileSweep.retired || 0),
+      reason: orphanProfileSweep.reason || null,
+      error: orphanProfileSweep.error || null,
+    } : null,
     metrics: {
       active: Number(metrics.active || 0),
       fastLane: Number(metrics.fastLane || 0),
@@ -325,6 +347,76 @@ async function runPositionSyncPreflight(markets = ['crypto']) {
   return summarizeLifecyclePositionSync(results);
 }
 
+function isOrphanProfileSweepSkipped(args = {}) {
+  return args.skipOrphanProfileSweep === true
+    || String(process.env.LUNA_AUTOPILOT_SKIP_ORPHAN_PROFILE_SWEEP || '').trim() === '1';
+}
+
+function resolveOrphanProfileSweepExchange(args = {}) {
+  const explicit = String(args.orphanProfileSweepExchange || '').trim();
+  if (explicit) return explicit;
+  const exchange = String(args.exchange || '').trim();
+  if (!exchange || exchange === 'all') return 'binance';
+  return exchange;
+}
+
+function shouldApplyOrphanProfileSweep(args = {}, lifecycleFlags = {}, phase6SafetyReadiness = null) {
+  const confirmedExecute = args.execute === true
+    && args.confirm === 'position-runtime-autopilot'
+    && phase6SafetyReadiness?.ok === true;
+  return confirmedExecute
+    && (args.applyOrphanProfileSweep === true || lifecycleFlags.autonomous === true);
+}
+
+function summarizeOrphanProfileSweepResult(result = {}, fallback = {}) {
+  const summary = result?.summary || {};
+  return {
+    ok: result?.ok !== false,
+    enabled: true,
+    apply: result?.apply === true || fallback.apply === true,
+    exchange: result?.exchange || fallback.exchange || null,
+    status: result?.decision?.status || result?.status || 'orphan_profile_sweep_completed',
+    candidates: Number(result?.candidates ?? summary.orphanProfiles ?? 0),
+    retired: Number(result?.retired ?? summary.retirements ?? 0),
+    summary,
+    decision: result?.decision || null,
+    rows: Array.isArray(result?.rows) ? result.rows.slice(0, 10) : [],
+  };
+}
+
+async function runAutopilotOrphanProfileSweep(args = {}, lifecycleFlags = {}, phase6SafetyReadiness = null) {
+  if (isOrphanProfileSweepSkipped(args)) {
+    return {
+      ok: true,
+      enabled: false,
+      apply: false,
+      exchange: null,
+      status: 'orphan_profile_sweep_skipped',
+      candidates: 0,
+      retired: 0,
+      reason: 'disabled_by_flag',
+    };
+  }
+  const exchange = resolveOrphanProfileSweepExchange(args);
+  const apply = shouldApplyOrphanProfileSweep(args, lifecycleFlags, phase6SafetyReadiness);
+  const sweeper = args.orphanProfileSweeper || retireOrphanStrategyProfiles;
+  try {
+    const result = await sweeper({ apply, exchange });
+    return summarizeOrphanProfileSweepResult(result, { apply, exchange });
+  } catch (error) {
+    return {
+      ok: false,
+      enabled: true,
+      apply,
+      exchange,
+      status: 'orphan_profile_sweep_failed',
+      candidates: 0,
+      retired: 0,
+      error: error?.message || String(error),
+    };
+  }
+}
+
 export async function runPositionRuntimeAutopilot(args = {}) {
   const lifecycleFlags = resolvePositionLifecycleFlags();
   const phase6SafetyReadiness = args.phase6SafetyReadiness || assessPhase6SafetyReadiness();
@@ -334,6 +426,17 @@ export async function runPositionRuntimeAutopilot(args = {}) {
   const positionSyncSummary = requirePositionSync && (args.execute || args.runSyncPreflight === true)
     ? await runPositionSyncPreflight(args.positionSyncMarkets || ['crypto'])
     : null;
+  const orphanProfileSweep = await runAutopilotOrphanProfileSweep(args, lifecycleFlags, phase6SafetyReadiness);
+  if (orphanProfileSweep.ok === false && orphanProfileSweep.apply === true) {
+    return {
+      ok: false,
+      status: 'position_runtime_autopilot_blocked_by_orphan_profile_sweep',
+      orphanProfileSweep,
+      positionSyncSummary,
+      phase6SafetyReadiness,
+      reason: orphanProfileSweep.error || 'orphan profile sweep failed',
+    };
+  }
   const signalRefresh = await refreshPositionSignals({
     exchange: args.exchange || null,
     source: 'position_runtime_autopilot',
@@ -365,6 +468,7 @@ export async function runPositionRuntimeAutopilot(args = {}) {
       lifecycleReadiness,
       signalRefresh,
       positionSyncSummary,
+      orphanProfileSweep,
       phase6SafetyReadiness,
       runtimeReport,
       tuning,
@@ -377,6 +481,7 @@ export async function runPositionRuntimeAutopilot(args = {}) {
       lifecycleReadiness,
       signalRefresh,
       positionSyncSummary,
+      orphanProfileSweep,
       phase6SafetyReadiness,
       runtimeReport,
       tuning,
@@ -403,6 +508,7 @@ export async function runPositionRuntimeAutopilot(args = {}) {
       lifecycleReadiness,
       signalRefresh,
       positionSyncSummary,
+      orphanProfileSweep,
       phase6SafetyReadiness,
       reason: 'use --confirm=position-runtime-autopilot',
     };
@@ -416,6 +522,7 @@ export async function runPositionRuntimeAutopilot(args = {}) {
       lifecycleReadiness,
       signalRefresh,
       positionSyncSummary,
+      orphanProfileSweep,
       phase6SafetyReadiness,
       reason: 'phase6 safety readiness failed; fix runtime guards before execute/apply',
     };
@@ -429,6 +536,7 @@ export async function runPositionRuntimeAutopilot(args = {}) {
       lifecycleReadiness,
       signalRefresh,
       positionSyncSummary,
+      orphanProfileSweep,
       phase6SafetyReadiness,
       reason: lifecycleReadiness.blockers.join(', ') || 'lifecycle readiness blocked',
     };
@@ -472,6 +580,7 @@ export async function runPositionRuntimeAutopilot(args = {}) {
     lifecycleReadiness,
     signalRefresh,
     positionSyncSummary,
+    orphanProfileSweep,
     phase6SafetyReadiness,
     runtimeReport,
     tuning,
@@ -493,6 +602,7 @@ export async function runPositionRuntimeAutopilot(args = {}) {
     lifecycleReadiness,
     signalRefresh,
     positionSyncSummary,
+    orphanProfileSweep,
     phase6SafetyReadiness,
     runtimeReport,
     tuning,

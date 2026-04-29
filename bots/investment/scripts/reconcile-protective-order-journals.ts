@@ -233,6 +233,40 @@ export function buildOpenProtectionJournalRestorePlan({ entry = {}, decision = {
   };
 }
 
+export function buildFilledProtectionJournalDriftRepairPlan({ entry = {}, decision = {} } = {}) {
+  if (decision?.action !== 'manual_partial_protective_fill') return null;
+  const entryQty = safeNumber(entry.entry_size, 0);
+  const entryPrice = safeNumber(entry.entry_price, 0)
+    || (entryQty > 0 ? safeNumber(entry.entry_value, 0) / entryQty : 0);
+  const winningOrder = (decision.orders || []).find((order) => order.role === decision.winningRole)
+    || (decision.orders || []).find((order) => isFilledClosedOrder(order));
+  const filledQty = safeNumber(winningOrder?.filled, 0);
+  const side = String(winningOrder?.side || '').toLowerCase();
+  if (!(entryQty > 0) || !(entryPrice > 0) || !(filledQty > 0) || (side && side !== 'sell')) return null;
+
+  const dustRatio = entryQty / filledQty;
+  if (dustRatio > 0.01) return null;
+
+  const restoredQty = filledQty + entryQty;
+  const restoredValue = restoredQty * entryPrice;
+  return {
+    action: 'restore_and_close_from_filled_protection_after_journal_drift',
+    closeSafe: true,
+    repairSafe: true,
+    restoreBeforeClose: true,
+    manualOnly: false,
+    reason: 'filled_protective_order_matches_journal_dust_drift',
+    winningRole: decision.winningRole || winningOrder?.role || 'unknown',
+    winningOrder,
+    beforeEntrySize: entryQty,
+    afterEntrySize: restoredQty,
+    beforeEntryValue: safeNumber(entry.entry_value, 0),
+    afterEntryValue: restoredValue,
+    filledQty,
+    dustRatio,
+  };
+}
+
 export function buildClosedSiblingResidualPlan({ entry = {}, decision = {}, closedSibling = null } = {}) {
   if (decision?.action !== 'observe_unfilled_terminal_protection') return null;
   if (!closedSibling?.trade_id) return null;
@@ -336,12 +370,23 @@ async function closeJournalFromDecision(entry, decision, dryRun) {
     return closeInput;
   }
 
-  const closeInput = buildProtectiveOrderJournalCloseInput(entry, decision);
+  let effectiveEntry = entry;
+  let restoreInput = null;
+  if (decision.restoreBeforeClose) {
+    restoreInput = await restoreOpenJournalFromDecision(entry, decision, dryRun);
+    effectiveEntry = {
+      ...entry,
+      entry_size: restoreInput.entrySize,
+      entry_value: restoreInput.entryValue,
+    };
+  }
+
+  const closeInput = buildProtectiveOrderJournalCloseInput(effectiveEntry, decision);
   if (!dryRun) {
-    await journalDb.closeJournalEntry(entry.trade_id, closeInput);
+    await journalDb.closeJournalEntry(effectiveEntry.trade_id, closeInput);
     await journalDb.ensureAutoReview(entry.trade_id).catch(() => {});
   }
-  return closeInput;
+  return restoreInput ? { ...closeInput, restoreInput } : closeInput;
 }
 
 async function restoreOpenJournalFromDecision(entry, decision, dryRun) {
@@ -433,9 +478,12 @@ export async function reconcileProtectiveOrderJournals({
       findClosedSibling(entry),
     ]);
     const restorePlan = buildOpenProtectionJournalRestorePlan({ entry, decision, position });
+    const filledDriftPlan = buildFilledProtectionJournalDriftRepairPlan({ entry, decision });
     const residualPlan = buildClosedSiblingResidualPlan({ entry, decision, closedSibling });
     const finalDecision = restorePlan
       ? { ...decision, ...restorePlan }
+      : filledDriftPlan
+        ? { ...decision, ...filledDriftPlan }
       : residualPlan
         ? { ...decision, ...residualPlan }
         : decision;

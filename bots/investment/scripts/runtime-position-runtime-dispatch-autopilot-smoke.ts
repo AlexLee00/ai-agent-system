@@ -221,6 +221,7 @@ async function main() {
     confirm: 'position-runtime-autopilot',
     applyTuning: false,
     executeDispatch: false,
+    skipOrphanProfileSweep: true,
     phase6SafetyReadiness: {
       ok: false,
       checks: [{ key: 'mock_phase6_guard', ok: false }],
@@ -229,6 +230,43 @@ async function main() {
   assert(
     'phase6 safety readiness=false면 autopilot execute 차단',
     blockedAutopilot?.ok === false && blockedAutopilot?.status === 'position_runtime_autopilot_blocked_by_phase6_safety',
+  );
+
+  const sweepCalls = [];
+  const sweptAutopilot = await runPositionRuntimeAutopilot({
+    execute: true,
+    confirm: 'position-runtime-autopilot',
+    applyTuning: false,
+    executeDispatch: false,
+    applyOrphanProfileSweep: true,
+    recordHistory: false,
+    phase6SafetyReadiness: { ok: true, checks: [] },
+    orphanProfileSweeper: async (options) => {
+      sweepCalls.push(options);
+      return {
+        ok: true,
+        apply: options.apply,
+        exchange: options.exchange,
+        candidates: 2,
+        retired: options.apply ? 2 : 0,
+        summary: {
+          orphanProfiles: 2,
+          retirements: options.apply ? 2 : 0,
+        },
+        decision: {
+          status: options.apply ? 'orphan_strategy_profiles_retired' : 'orphan_strategy_profiles_candidates',
+        },
+        rows: [],
+      };
+    },
+  });
+  assert(
+    'autopilot execute는 confirm+safety 통과 시 orphan strategy profile sweep을 apply로 선행',
+    sweepCalls.length === 1
+      && sweepCalls[0].apply === true
+      && sweepCalls[0].exchange === 'binance'
+      && sweptAutopilot?.orphanProfileSweep?.status === 'orphan_strategy_profiles_retired'
+      && sweptAutopilot?.orphanProfileSweep?.retired === 2,
   );
 
   const historyFile = path.join(os.tmpdir(), `autopilot-bottleneck-${Date.now()}.jsonl`);

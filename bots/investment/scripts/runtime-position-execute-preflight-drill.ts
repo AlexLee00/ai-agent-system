@@ -5,6 +5,7 @@ import * as db from '../shared/db.ts';
 import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
 import { runPositionRuntimeAutopilot } from './runtime-position-runtime-autopilot.ts';
 import { runPositionRuntimeDispatch } from './runtime-position-runtime-dispatch.ts';
+import { buildRuntimePositionStrategyAudit } from './runtime-position-strategy-audit.ts';
 import {
   buildExecutePreflightDrill,
   buildPositionSyncFinalGate,
@@ -29,9 +30,34 @@ function parseArgs(argv = []) {
   return args;
 }
 
+function buildOrphanCandidateFilter(positionStrategyAudit = null) {
+  const orphanKeys = new Set((positionStrategyAudit?.orphanSymbols || [])
+    .map((item) => `${item.exchange || ''}:${item.symbol || ''}:${item.tradeMode || 'normal'}`));
+  if (orphanKeys.size === 0) return { filtered: null, excluded: [] };
+  return {
+    filter(dispatchPreview = {}) {
+      const candidates = Array.isArray(dispatchPreview?.candidates) ? dispatchPreview.candidates : [];
+      const excluded = [];
+      const kept = candidates.filter((candidate) => {
+        const key = `${candidate?.exchange || ''}:${candidate?.symbol || ''}:${candidate?.tradeMode || 'normal'}`;
+        if (!orphanKeys.has(key)) return true;
+        excluded.push(candidate);
+        return false;
+      });
+      return {
+        filtered: {
+          ...dispatchPreview,
+          candidates: kept,
+        },
+        excluded,
+      };
+    },
+  };
+}
+
 export async function runPositionExecutePreflightDrill(args = {}) {
   const markets = normalizeMarketList(args.markets || ['domestic', 'overseas', 'crypto']);
-  const [autopilotPreview, dispatchPreview] = await Promise.all([
+  const [autopilotPreview, dispatchPreviewRaw, positionStrategyAudit] = await Promise.all([
     runPositionRuntimeAutopilot({
       exchange: args.exchange || null,
       limit: args.limit || 5,
@@ -47,7 +73,23 @@ export async function runPositionExecutePreflightDrill(args = {}) {
       phase6: true,
       json: true,
     }),
+    buildRuntimePositionStrategyAudit({
+      exchange: args.exchange || null,
+      json: true,
+    }).catch((error) => ({
+      ok: false,
+      status: 'position_strategy_audit_failed',
+      orphanProfiles: 1,
+      orphanSymbols: [],
+      error: error?.message || String(error),
+    })),
   ]);
+  const orphanFilter = buildOrphanCandidateFilter(positionStrategyAudit);
+  const filteredDispatch = orphanFilter.filter
+    ? orphanFilter.filter(dispatchPreviewRaw)
+    : { filtered: dispatchPreviewRaw, excluded: [] };
+  const dispatchPreview = filteredDispatch.filtered;
+  const excludedOrphanCandidates = filteredDispatch.excluded || [];
 
   const positionSyncGate = args.requirePositionSync
     ? buildPositionSyncFinalGate({
@@ -60,6 +102,8 @@ export async function runPositionExecutePreflightDrill(args = {}) {
     dispatchPreview,
     lifecycleReadiness: autopilotPreview.lifecycleReadiness || null,
     positionSyncGate,
+    positionStrategyAudit,
+    excludedOrphanCandidates,
   });
   return {
     ok: drill.ok,
@@ -72,6 +116,15 @@ export async function runPositionExecutePreflightDrill(args = {}) {
       count: Number(autopilotPreview.signalRefresh.count || 0),
     } : null,
     positionSyncGate,
+    positionStrategyAudit: {
+      ok: positionStrategyAudit?.ok !== false,
+      orphanProfiles: Number(positionStrategyAudit?.orphanProfiles || 0),
+      dustProfiles: Number(positionStrategyAudit?.dustProfiles || 0),
+      duplicateManagedProfileScopes: Number(positionStrategyAudit?.duplicateManagedProfileScopes || 0),
+      unmatchedManagedPositions: Number(positionStrategyAudit?.unmatchedManagedPositions || 0),
+      orphanSymbols: positionStrategyAudit?.orphanSymbols || [],
+    },
+    excludedOrphanCandidates,
     dispatchStatus: dispatchPreview.status,
   };
 }

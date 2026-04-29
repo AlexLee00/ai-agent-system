@@ -167,11 +167,14 @@ export function buildExecutePreflightDrill({
   dispatchPreview = null,
   lifecycleReadiness = null,
   positionSyncGate = null,
+  excludedOrphanCandidates = [],
+  positionStrategyAudit = null,
 } = {}) {
   const blockers = [];
   const warnings = [];
   const candidates = Array.isArray(dispatchPreview?.candidates) ? dispatchPreview.candidates : [];
   const runnerContract = buildRunnerContractSummary({ candidates });
+  const orphanProfiles = Number(positionStrategyAudit?.orphanProfiles ?? 0);
 
   if (autopilotPreview?.ok === false) blockers.push('autopilot_preview_failed');
   if (dispatchPreview?.ok === false) blockers.push('dispatch_preview_failed');
@@ -182,7 +185,9 @@ export function buildExecutePreflightDrill({
     blockers.push(...(positionSyncGate.blockers || ['position_sync_gate_blocked']));
   }
   if (runnerContract.ok !== true) blockers.push(...runnerContract.blockers);
+  if (orphanProfiles > 0) blockers.push(`orphan_profiles_present:${orphanProfiles}`);
   if (candidates.length === 0) warnings.push('no_execute_candidates_preview');
+  if ((excludedOrphanCandidates || []).length > 0) warnings.push(`orphan_execute_candidates_excluded:${excludedOrphanCandidates.length}`);
   if (Number(dispatchPreview?.guardReasonSummary?.blockedActionable || 0) > 0) {
     warnings.push(`blocked_actionable:${Number(dispatchPreview.guardReasonSummary.blockedActionable || 0)}`);
   }
@@ -191,6 +196,7 @@ export function buildExecutePreflightDrill({
     ok: blockers.length === 0,
     status: blockers.length === 0 ? 'execute_preflight_drill_clear' : 'execute_preflight_drill_blocked',
     candidateCount: candidates.length,
+    excludedOrphanCandidateCount: (excludedOrphanCandidates || []).length,
     blockers: uniq(blockers),
     warnings: uniq([...warnings, ...(runnerContract.warnings || [])]),
     runnerContract,
@@ -201,6 +207,13 @@ export function buildExecutePreflightDrill({
       action: candidate.action,
       runner: candidate.runner || null,
       command: candidate.autonomousExecuteCommand || candidate.manualExecuteCommand || candidate.previewCommand || null,
+    })),
+    excludedOrphanCandidates: (excludedOrphanCandidates || []).slice(0, 10).map((candidate) => ({
+      exchange: candidate.exchange,
+      symbol: candidate.symbol,
+      tradeMode: candidate.tradeMode || 'normal',
+      action: candidate.action,
+      runner: candidate.runner || null,
     })),
   };
 }
@@ -364,6 +377,7 @@ export function buildAutonomousOperationalGate({
   const recentHardFailures = Number(bottleneck?.dispatch?.recentHardFailureCount ?? bottleneck?.dispatch?.hardFailureCount ?? 0);
   const manualTasks = Number(manualReconcilePlaybook?.summary?.tasks ?? 0);
   const dustProfiles = Number(positionStrategyAudit?.dustProfiles ?? 0);
+  const orphanProfiles = Number(positionStrategyAudit?.orphanProfiles ?? 0);
   const duplicateManagedProfiles = Number(positionStrategyAudit?.duplicateManagedProfileScopes ?? 0);
   const unmatchedManagedPositions = Number(positionStrategyAudit?.unmatchedManagedPositions ?? 0);
 
@@ -378,6 +392,7 @@ export function buildAutonomousOperationalGate({
   if (!positionStrategyAudit) blockers.push('position_strategy_audit_required');
   else {
     if (dustProfiles > 0) blockers.push(`dust_profiles_present:${dustProfiles}`);
+    if (orphanProfiles > 0) blockers.push(`orphan_profiles_present:${orphanProfiles}`);
     if (duplicateManagedProfiles > 0) blockers.push(`duplicate_managed_profiles:${duplicateManagedProfiles}`);
     if (unmatchedManagedPositions > 0) warnings.push(`unmatched_managed_positions:${unmatchedManagedPositions}`);
   }
@@ -393,6 +408,7 @@ export function buildAutonomousOperationalGate({
     positionSyncAgeMinutes: syncAge,
     manualReconcileTasks: manualTasks,
     dustProfiles,
+    orphanProfiles,
     duplicateManagedProfileScopes: duplicateManagedProfiles,
     unmatchedManagedPositions,
     recentHardFailureCount: recentHardFailures,
