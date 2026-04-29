@@ -1,5 +1,18 @@
 // @ts-nocheck
 
+const DEFAULT_PENDING_SIGNAL_CONCURRENCY = 1;
+const MAX_PENDING_SIGNAL_CONCURRENCY = 4;
+
+export function getPendingSignalConcurrency(env = process.env) {
+  const raw = Number(
+    env?.HEPHAESTOS_PENDING_SIGNAL_CONCURRENCY
+    || env?.LUNA_PENDING_SIGNAL_CONCURRENCY
+    || DEFAULT_PENDING_SIGNAL_CONCURRENCY,
+  );
+  if (!Number.isFinite(raw) || raw < 2) return DEFAULT_PENDING_SIGNAL_CONCURRENCY;
+  return Math.min(MAX_PENDING_SIGNAL_CONCURRENCY, Math.floor(raw));
+}
+
 export function createPendingSignalProcessing({
   db,
   initHubSecrets,
@@ -89,19 +102,49 @@ export function createPendingSignalProcessing({
     };
   }
 
-  async function runPendingSignalBatch(signals, { tradeMode, delayMs = 500 } = {}) {
-    if (signals.length === 0) {
-      console.log(`[헤파이스토스] 대기 신호 없음 (trade_mode=${tradeMode})`);
-      return [];
-    }
-
-    console.log(`[헤파이스토스] ${signals.length}개 신호 처리 시작 (trade_mode=${tradeMode})`);
+  async function runSequentialPendingSignalBatch(signals, delayMs) {
     const results = [];
     for (const signal of signals) {
       results.push(await executeSignal(signal));
       await delay(delayMs);
     }
     return results;
+  }
+
+  async function runConcurrentPendingSignalBatch(signals, { delayMs, concurrency }) {
+    const results = new Array(signals.length);
+    let nextIndex = 0;
+
+    async function worker() {
+      while (nextIndex < signals.length) {
+        const currentIndex = nextIndex;
+        nextIndex += 1;
+        results[currentIndex] = await executeSignal(signals[currentIndex]);
+        await delay(delayMs);
+      }
+    }
+
+    const workers = Array.from({ length: Math.min(concurrency, signals.length) }, () => worker());
+    await Promise.all(workers);
+    return results;
+  }
+
+  async function runPendingSignalBatch(signals, { tradeMode, delayMs = 500, concurrency = getPendingSignalConcurrency() } = {}) {
+    if (signals.length === 0) {
+      console.log(`[헤파이스토스] 대기 신호 없음 (trade_mode=${tradeMode})`);
+      return [];
+    }
+
+    const effectiveConcurrency = Math.max(1, Math.min(Number(concurrency || 1), signals.length));
+    const concurrencySuffix = effectiveConcurrency > 1 ? `, concurrency=${effectiveConcurrency}` : '';
+    console.log(`[헤파이스토스] ${signals.length}개 신호 처리 시작 (trade_mode=${tradeMode}${concurrencySuffix})`);
+    if (effectiveConcurrency <= 1) {
+      return runSequentialPendingSignalBatch(signals, delayMs);
+    }
+    return runConcurrentPendingSignalBatch(signals, {
+      delayMs,
+      concurrency: effectiveConcurrency,
+    });
   }
 
   async function processAllPendingSignals() {

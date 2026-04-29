@@ -1,5 +1,9 @@
 // @ts-nocheck
 
+export function isHephaestosHotPathPrefetchEnabled(env = process.env) {
+  return String(env?.HEPHAESTOS_HOT_PATH_PREFETCH_ENABLED || '').trim() === '1';
+}
+
 export function createHephaestosSignalExecutor(deps = {}) {
   const {
     ACTIONS,
@@ -67,6 +71,9 @@ async function executeSignal(signal) {
     tag,
   } = executionContext;
   let { effectivePaperMode } = executionContext;
+  const hephaestosRoleStatePromise = isHephaestosHotPathPrefetchEnabled()
+    ? getInvestmentAgentRoleState('hephaestos', 'binance').catch(() => null)
+    : null;
 
   // ★ SEC-004 가드: 네메시스 승인/실행 freshness 재검증 (BUY 전용 — SELL은 포지션 청산이므로 예외)
   if (action !== ACTIONS.SELL && !globalPaperMode) {
@@ -95,7 +102,9 @@ async function executeSignal(signal) {
   const exitReasonOverride = signal.exit_reason_override || null;
   const partialExitRatio = normalizePartialExitRatio(signal.partial_exit_ratio || signal.partialExitRatio);
   const qualityContext = buildSignalQualityContext(signal);
-  const hephaestosRoleState = await getInvestmentAgentRoleState('hephaestos', 'binance').catch(() => null);
+  const hephaestosRoleState = hephaestosRoleStatePromise
+    ? await hephaestosRoleStatePromise
+    : await getInvestmentAgentRoleState('hephaestos', 'binance').catch(() => null);
   const persistFailure = createSignalFailurePersister({
     db,
     signalId,
