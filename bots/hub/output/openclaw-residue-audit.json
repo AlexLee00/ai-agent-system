@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-04-28T15:34:08.883Z",
+  "generated_at": "2026-04-29T08:15:50.753Z",
   "ok": true,
   "categories": {
     "runtime_blocker": 0,
@@ -90,14 +90,14 @@
     {
       "category": "documentation",
       "file": "docs/history/WORK_HISTORY.md",
-      "line": 373,
+      "line": 392,
       "snippet": "- `REPO_ROOT=... PROJECT_ROOT=... node bots/investment/scripts/parallel-ops-report.ts --publish` → legacy-gateway/Telegram fetch 실패 및 `127.0.0.1:18789` 연결 실패",
       "reason": "markdown documentation/report reference"
     },
     {
       "category": "documentation",
       "file": "docs/history/WORK_HISTORY.md",
-      "line": 428,
+      "line": 447,
       "snippet": "- `npm run parallel-report -- --publish` → alert 경로는 호출됐지만 `legacy-gateway`/Telegram fetch 및 `127.0.0.1:18789` 연결 실패 경고 발생",
       "reason": "markdown documentation/report reference"
     },
