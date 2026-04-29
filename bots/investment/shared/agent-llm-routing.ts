@@ -6,6 +6,7 @@
  *   LUNA_AGENT_LLM_ROUTING_ENABLED=false → 기존 AGENT_ABSTRACT_MODEL 사용 (하위 호환)
  *   LUNA_AGENT_LLM_ROUTING_FORCE_AGENT_LEVEL=false → agent-level 라우팅 비활성
  */
+import { isAgentMemoryFeatureEnabled } from './agent-memory-runtime.ts';
 
 export type AgentName =
   | 'luna' | 'nemesis' | 'aria' | 'sophia' | 'argos' | 'hermes'
@@ -38,6 +39,37 @@ export interface LLMRoute {
   noLLM?: boolean;
 }
 
+export interface HubChainEntry {
+  provider: string;
+  model: string;
+  maxTokens?: number;
+}
+
+export interface HubRoutingPlan {
+  enabled: boolean;
+  route: LLMRoute;
+  abstractModel: 'anthropic_haiku' | 'anthropic_sonnet' | 'anthropic_opus';
+  chain: HubChainEntry[];
+}
+
+function isRoutingEnabled(): boolean {
+  return isAgentMemoryFeatureEnabled('llmRoutingEnabled');
+}
+
+function normalizeRoutingMarket(market: MarketType | string = 'any'): MarketType {
+  const raw = String(market || '').trim().toLowerCase();
+  if (raw === 'binance' || raw === 'crypto') return 'crypto';
+  if (raw === 'kis' || raw === 'domestic' || raw === 'kr') return 'domestic';
+  if (raw === 'kis_overseas' || raw === 'overseas' || raw === 'us') return 'overseas';
+  return 'any';
+}
+
+function normalizeRoutingTask(task: TaskType | string = 'default'): TaskType | string {
+  const raw = String(task || '').trim().toLowerCase();
+  if (!raw) return 'default';
+  return raw;
+}
+
 // ─── 라우팅 결정 함수 ────────────────────────────────────────────────────────
 
 /**
@@ -49,20 +81,22 @@ export function resolveAgentLLMRoute(
   market: MarketType | string = 'any',
   task: TaskType | string = 'default',
 ): LLMRoute {
-  if (process.env.LUNA_AGENT_LLM_ROUTING_ENABLED === 'false') {
+  const normalizedMarket = normalizeRoutingMarket(market);
+  const normalizedTask = normalizeRoutingTask(task);
+  if (!isRoutingEnabled()) {
     return LEGACY_FALLBACK[agent] ?? DEFAULT_ROUTE;
   }
 
   // 1. exact match: agent + market + task
-  const exact = ROUTING_MATRIX[`${agent}:${market}:${task}`];
+  const exact = ROUTING_MATRIX[`${agent}:${normalizedMarket}:${normalizedTask}`];
   if (exact) return exact;
 
   // 2. agent + any + task
-  const agentTask = ROUTING_MATRIX[`${agent}:any:${task}`];
+  const agentTask = ROUTING_MATRIX[`${agent}:any:${normalizedTask}`];
   if (agentTask) return agentTask;
 
   // 3. agent + market + default
-  const agentMarket = ROUTING_MATRIX[`${agent}:${market}:default`];
+  const agentMarket = ROUTING_MATRIX[`${agent}:${normalizedMarket}:default`];
   if (agentMarket) return agentMarket;
 
   // 4. agent-level default
@@ -309,7 +343,7 @@ export function isNoLLMAgent(agent: string, market?: string, task?: string): boo
  * 직접 provider/model 형식이면 그대로, legacy key면 그대로 반환.
  */
 export function getAbstractModelForHub(agent: string, market?: string, task?: string): string {
-  if (process.env.LUNA_AGENT_LLM_ROUTING_ENABLED === 'false') {
+  if (!isRoutingEnabled()) {
     // 기존 하위 호환 매핑
     const legacy: Record<string, string> = {
       luna:    'anthropic_sonnet',
@@ -318,5 +352,70 @@ export function getAbstractModelForHub(agent: string, market?: string, task?: st
     return legacy[agent] ?? 'anthropic_haiku';
   }
   const route = resolveAgentLLMRoute(agent, market || 'any', task || 'default');
-  return route.primary;
+  const key = String(route?.primary || '').toLowerCase();
+  if (key.includes('opus')) return 'anthropic_opus';
+  if (key.includes('sonnet')) return 'anthropic_sonnet';
+  return 'anthropic_haiku';
+}
+
+function routeToChainEntry(routeKey: string, maxTokens?: number): HubChainEntry | null {
+  const normalized = String(routeKey || '').trim();
+  if (!normalized || normalized === 'rule-based') return null;
+  const [providerRaw, ...rest] = normalized.split('/');
+  const modelRaw = rest.join('/').trim();
+  if (!providerRaw || !modelRaw) return null;
+
+  let provider = providerRaw.trim().toLowerCase();
+  let model = modelRaw;
+  if (provider === 'claude-code') {
+    provider = 'claude-code';
+    model = modelRaw.replace(/^claude-code\//, '');
+  } else if (provider === 'openai' || provider === 'openai-oauth') {
+    provider = 'openai-oauth';
+    model = modelRaw.replace(/^openai-oauth\//, '').replace(/^openai\//, '');
+  } else if (provider === 'groq') {
+    provider = 'groq';
+    model = modelRaw.replace(/^groq\//, '');
+  } else if (provider === 'gemini' || provider === 'gemini-oauth') {
+    provider = 'gemini-oauth';
+    model = modelRaw.replace(/^gemini-oauth\//, '').replace(/^gemini\//, '');
+  } else if (provider === 'gemini-cli-oauth' || provider === 'gemini-codeassist-oauth') {
+    provider = providerRaw;
+  }
+
+  const entry: HubChainEntry = { provider, model };
+  if (Number.isFinite(Number(maxTokens)) && Number(maxTokens) > 0) {
+    entry.maxTokens = Math.round(Number(maxTokens));
+  }
+  return entry;
+}
+
+export function compileHubRoutingChain(route: LLMRoute, maxTokens?: number): HubChainEntry[] {
+  const ordered = [route?.primary, ...(Array.isArray(route?.fallbacks) ? route.fallbacks : [])]
+    .map((item) => routeToChainEntry(String(item || ''), maxTokens))
+    .filter(Boolean) as HubChainEntry[];
+  const deduped: HubChainEntry[] = [];
+  const seen = new Set<string>();
+  for (const entry of ordered) {
+    const key = `${entry.provider}/${entry.model}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    deduped.push(entry);
+  }
+  return deduped;
+}
+
+export function resolveHubRoutingPlan(
+  agent: AgentName | string,
+  market: MarketType | string = 'any',
+  task: TaskType | string = 'default',
+  maxTokens?: number,
+): HubRoutingPlan {
+  const route = resolveAgentLLMRoute(agent, market, task);
+  return {
+    enabled: isRoutingEnabled(),
+    route,
+    abstractModel: getAbstractModelForHub(agent, market, task) as HubRoutingPlan['abstractModel'],
+    chain: compileHubRoutingChain(route, maxTokens),
+  };
 }

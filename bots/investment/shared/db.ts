@@ -558,6 +558,124 @@ export async function initSchema() {
   try { await run(`CREATE INDEX IF NOT EXISTS idx_psh_symbol_created ON position_signal_history(symbol, exchange, created_at DESC)`); } catch { /* 무시 */ }
   try { await run(`CREATE INDEX IF NOT EXISTS idx_psh_source_created ON position_signal_history(source, created_at DESC)`); } catch { /* 무시 */ }
 
+  // ── Agent Memory + LLM Routing core tables (A~H) ──
+  await run(`
+    CREATE TABLE IF NOT EXISTS agent_short_term_memory (
+      id           BIGSERIAL PRIMARY KEY,
+      agent_name   TEXT NOT NULL,
+      incident_key TEXT,
+      symbol       TEXT,
+      market       TEXT,
+      content      JSONB NOT NULL DEFAULT '{}'::jsonb,
+      expires_at   TIMESTAMPTZ NOT NULL DEFAULT (NOW() + INTERVAL '24 hours'),
+      created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `);
+  try { await run(`CREATE INDEX IF NOT EXISTS idx_agent_stm_active ON agent_short_term_memory(agent_name, symbol, expires_at DESC)`); } catch { /* 무시 */ }
+  try { await run(`CREATE INDEX IF NOT EXISTS idx_agent_stm_incident ON agent_short_term_memory(incident_key, agent_name, created_at DESC)`); } catch { /* 무시 */ }
+
+  await run(`
+    DO $$
+    BEGIN
+      IF NOT EXISTS (
+        SELECT 1
+        FROM information_schema.columns
+        WHERE table_schema = 'investment'
+          AND table_name = 'luna_rag_documents'
+          AND column_name = 'owner_agent'
+      ) THEN
+        ALTER TABLE luna_rag_documents ADD COLUMN owner_agent TEXT;
+      END IF;
+    END $$;
+  `).catch(() => {});
+  try { await run(`CREATE INDEX IF NOT EXISTS idx_luna_rag_owner_agent ON luna_rag_documents(owner_agent, category, created_at DESC)`); } catch { /* 무시 */ }
+
+  await run(`
+    CREATE TABLE IF NOT EXISTS entity_facts (
+      id                     BIGSERIAL PRIMARY KEY,
+      entity                 TEXT NOT NULL,
+      entity_type            TEXT NOT NULL,
+      fact                   TEXT NOT NULL,
+      confidence             NUMERIC(3,2) NOT NULL DEFAULT 0.70,
+      source                 TEXT,
+      derived_from_trade_ids BIGINT[] DEFAULT '{}',
+      valid_from             TIMESTAMPTZ DEFAULT NOW(),
+      valid_until            TIMESTAMPTZ,
+      created_at             TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at             TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `);
+  try { await run(`CREATE INDEX IF NOT EXISTS idx_entity_facts_lookup ON entity_facts(entity, entity_type, created_at DESC)`); } catch { /* 무시 */ }
+  try { await run(`CREATE INDEX IF NOT EXISTS idx_entity_facts_confidence ON entity_facts(confidence DESC, created_at DESC)`); } catch { /* 무시 */ }
+
+  await run(`
+    CREATE TABLE IF NOT EXISTS agent_curriculum_state (
+      id               BIGSERIAL PRIMARY KEY,
+      agent_name       TEXT NOT NULL,
+      market           TEXT NOT NULL DEFAULT 'any',
+      invocation_count INTEGER NOT NULL DEFAULT 0,
+      success_count    INTEGER NOT NULL DEFAULT 0,
+      failure_count    INTEGER NOT NULL DEFAULT 0,
+      current_level    TEXT NOT NULL DEFAULT 'novice',
+      config           JSONB NOT NULL DEFAULT '{}'::jsonb,
+      last_promoted_at TIMESTAMPTZ,
+      created_at       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      UNIQUE (agent_name, market)
+    )
+  `);
+  try { await run(`CREATE INDEX IF NOT EXISTS idx_curriculum_agent_market ON agent_curriculum_state(agent_name, market)`); } catch { /* 무시 */ }
+
+  await run(`
+    CREATE TABLE IF NOT EXISTS agent_messages (
+      id           BIGSERIAL PRIMARY KEY,
+      incident_key TEXT,
+      from_agent   TEXT NOT NULL,
+      to_agent     TEXT NOT NULL,
+      message_type TEXT NOT NULL DEFAULT 'query',
+      payload      JSONB NOT NULL DEFAULT '{}'::jsonb,
+      responded_at TIMESTAMPTZ,
+      created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `);
+  try { await run(`CREATE INDEX IF NOT EXISTS idx_agent_messages_incident ON agent_messages(incident_key, created_at DESC)`); } catch { /* 무시 */ }
+  try { await run(`CREATE INDEX IF NOT EXISTS idx_agent_messages_to_agent ON agent_messages(to_agent, responded_at, created_at DESC)`); } catch { /* 무시 */ }
+
+  await run(`
+    CREATE TABLE IF NOT EXISTS agent_context_log (
+      id                  BIGSERIAL PRIMARY KEY,
+      agent_name          TEXT NOT NULL,
+      call_id             TEXT,
+      persona_loaded      BOOLEAN DEFAULT false,
+      constitution_loaded BOOLEAN DEFAULT false,
+      rag_docs_count      INTEGER DEFAULT 0,
+      failures_found      INTEGER DEFAULT 0,
+      skills_found        INTEGER DEFAULT 0,
+      total_prefix_chars  INTEGER DEFAULT 0,
+      created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `);
+  try { await run(`CREATE INDEX IF NOT EXISTS idx_agent_context_log_agent ON agent_context_log(agent_name, created_at DESC)`); } catch { /* 무시 */ }
+
+  await run(`
+    CREATE TABLE IF NOT EXISTS llm_failure_reflexions (
+      id             BIGSERIAL PRIMARY KEY,
+      agent_name     TEXT NOT NULL,
+      market         TEXT,
+      task_type      TEXT,
+      provider       TEXT,
+      error_type     TEXT,
+      prompt_hash    TEXT,
+      failure_count  INTEGER NOT NULL DEFAULT 1,
+      last_failed_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      avoid_provider TEXT,
+      reformulation  TEXT,
+      created_at     TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `);
+  try { await run(`CREATE UNIQUE INDEX IF NOT EXISTS idx_llm_failure_agent_hash ON llm_failure_reflexions(agent_name, prompt_hash, provider)`); } catch { /* 무시 */ }
+  try { await run(`CREATE INDEX IF NOT EXISTS idx_llm_failure_recent ON llm_failure_reflexions(agent_name, last_failed_at DESC)`); } catch { /* 무시 */ }
+
   // ── Posttrade feedback loop (A~H) ──
   await run(`
     CREATE TABLE IF NOT EXISTS trade_quality_evaluations (
@@ -627,6 +745,7 @@ export async function initSchema() {
     CREATE TABLE IF NOT EXISTS luna_posttrade_skills (
       id                BIGSERIAL PRIMARY KEY,
       market            TEXT NOT NULL,
+      agent_name        TEXT NOT NULL DEFAULT 'all',
       skill_type        TEXT NOT NULL,
       pattern_key       TEXT NOT NULL,
       title             TEXT NOT NULL,
@@ -639,10 +758,13 @@ export async function initSchema() {
       metadata          JSONB DEFAULT '{}'::jsonb,
       created_at        TIMESTAMPTZ DEFAULT NOW(),
       updated_at        TIMESTAMPTZ DEFAULT NOW(),
-      UNIQUE (market, skill_type, pattern_key)
+      UNIQUE (market, agent_name, skill_type, pattern_key)
     )
   `);
-  try { await run(`CREATE INDEX IF NOT EXISTS idx_lps_market_type ON luna_posttrade_skills (market, skill_type, success_rate DESC, updated_at DESC)`); } catch { /* 무시 */ }
+  await run(`ALTER TABLE luna_posttrade_skills DROP CONSTRAINT IF EXISTS luna_posttrade_skills_market_skill_type_pattern_key_key`).catch(() => {});
+  await run(`ALTER TABLE luna_posttrade_skills ADD COLUMN IF NOT EXISTS agent_name TEXT NOT NULL DEFAULT 'all'`).catch(() => {});
+  try { await run(`CREATE UNIQUE INDEX IF NOT EXISTS idx_lps_unique_market_agent_pattern ON luna_posttrade_skills (market, agent_name, skill_type, pattern_key)`); } catch { /* 무시 */ }
+  try { await run(`CREATE INDEX IF NOT EXISTS idx_lps_market_agent_type ON luna_posttrade_skills (market, agent_name, skill_type, success_rate DESC, updated_at DESC)`); } catch { /* 무시 */ }
 
   // 스키마 버전 기록
   try {

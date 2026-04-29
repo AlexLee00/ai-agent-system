@@ -13,11 +13,12 @@
 
 import { createRequire } from 'module';
 import * as crypto from 'crypto';
+import { isAgentMemoryFeatureEnabled } from './agent-memory-runtime.ts';
 
 const _require = createRequire(import.meta.url);
 const pgPool = _require('../../../packages/core/lib/pg-pool');
 
-const REFLEXION_ENABLED = () => process.env.LUNA_AGENT_REFLEXION_AUTO_AVOID !== 'false';
+const REFLEXION_ENABLED = () => isAgentMemoryFeatureEnabled('reflexionAutoAvoidEnabled');
 
 /** 실패 회고 검색 결과 */
 export interface FailureReflexion {

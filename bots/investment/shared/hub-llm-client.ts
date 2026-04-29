@@ -10,7 +10,7 @@
  */
 
 import { createRequire } from 'module';
-import { getAbstractModelForHub } from './agent-llm-routing.ts';
+import { resolveHubRoutingPlan } from './agent-llm-routing.ts';
 import { injectMemoryIntoSystemPrompt } from './agent-memory-orchestrator.ts';
 import { recordLLMFailure, getAvoidProviders } from './reflexion-guard.ts';
 import { recordInvocation } from './agent-curriculum-tracker.ts';
@@ -68,14 +68,19 @@ export function buildHubLlmCallPayload(
     urgency?: 'critical' | 'high' | 'normal' | 'medium' | 'low';
     callerTeam?: string;
     taskType?: string;
+    incidentKey?: string;
   } = {}
 ) {
-  // Phase C: 에이전트×시장×태스크 동적 라우팅 (하위 호환 유지)
-  const abstractModel = normalizeHubAbstractModel(
-    getAbstractModelForHub(agentName, options.market, options.taskType),
+  // Phase C: 에이전트×시장×태스크 동적 라우팅 (chain 우선, abstractModel은 호환 유지)
+  const routingPlan = resolveHubRoutingPlan(
+    agentName,
+    options.market || 'any',
+    options.taskType || 'default',
+    options.maxTokens,
   );
+  const abstractModel = normalizeHubAbstractModel(routingPlan.abstractModel);
   const urgency = normalizeHubUrgency(options.urgency ?? (agentName === 'luna' ? 'high' : 'normal'));
-  return {
+  const payload: Record<string, unknown> = {
     prompt:        userPrompt,
     systemPrompt,
     abstractModel,
@@ -88,7 +93,12 @@ export function buildHubLlmCallPayload(
     market:        options.market || null,
     symbol:        options.symbol || null,
     maxTokens:     options.maxTokens,
+    incidentKey:   options.incidentKey || null,
   };
+  if (Array.isArray(routingPlan.chain) && routingPlan.chain.length > 0) {
+    payload.chain = routingPlan.chain;
+  }
+  return payload;
 }
 
 function normalizeHubAbstractModel(value: string): 'anthropic_haiku' | 'anthropic_sonnet' | 'anthropic_opus' {
@@ -115,6 +125,7 @@ export async function callViaHub(
     market?: string;
     urgency?: 'critical' | 'high' | 'normal' | 'medium' | 'low';
     taskType?: string;
+    incidentKey?: string;
     shadowCompare?: string;  // Shadow Mode일 때 직접 호출 결과 (비교용)
     avoidProviders?: string[]; // Phase G: Reflexion 회피 provider 목록
   } = {}
@@ -145,6 +156,7 @@ export async function callViaHub(
     market: options.market || process.env.INVESTMENT_MARKET || undefined,
     urgency: options.urgency,
     taskType: options.taskType,
+    incidentKey: options.incidentKey,
   });
 
   // avoidProviders를 payload에 추가 (Hub가 지원하는 경우)
@@ -295,6 +307,7 @@ export async function callLLMWithHub(
     market?: string;
     cacheTTL?: number;
     taskType?: string;
+    purpose?: string;
     incidentKey?: string;
     workingState?: string;
   } = {}
@@ -334,7 +347,8 @@ export async function callLLMWithHub(
       maxTokens,
       symbol: opts.symbol,
       market: opts.market,
-      taskType: opts.taskType,
+      taskType: opts.taskType || opts.purpose || 'default',
+      incidentKey: opts.incidentKey,
       shadowCompare: directResult,
     }).catch(() => {});
     // Phase D: invocation 기록 (fire-and-forget)
@@ -347,7 +361,8 @@ export async function callLLMWithHub(
     maxTokens,
     symbol: opts.symbol,
     market: opts.market,
-    taskType: opts.taskType,
+    taskType: opts.taskType || opts.purpose || 'default',
+    incidentKey: opts.incidentKey,
   });
   if (hubResult.ok) {
     // Phase D: invocation 기록 (fire-and-forget)

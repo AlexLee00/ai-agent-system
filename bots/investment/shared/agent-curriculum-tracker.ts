@@ -17,11 +17,12 @@
  */
 
 import { createRequire } from 'module';
+import { isAgentMemoryFeatureEnabled } from './agent-memory-runtime.ts';
 
 const _require = createRequire(import.meta.url);
 const pgPool = _require('../../../packages/core/lib/pg-pool');
 
-const CURRICULUM_ENABLED = () => process.env.LUNA_AGENT_CURRICULUM_ENABLED !== 'false';
+const CURRICULUM_ENABLED = () => isAgentMemoryFeatureEnabled('curriculumEnabled');
 
 const NOVICE_THRESHOLD = () => parseInt(process.env.LUNA_AGENT_NOVICE_THRESHOLD || '100', 10);
 const EXPERT_THRESHOLD = () => parseInt(process.env.LUNA_AGENT_EXPERT_THRESHOLD || '1000', 10);

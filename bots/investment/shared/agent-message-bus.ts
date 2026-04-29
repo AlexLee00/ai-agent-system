@@ -15,11 +15,12 @@
  */
 
 import { createRequire } from 'module';
+import { isAgentMemoryFeatureEnabled } from './agent-memory-runtime.ts';
 
 const _require = createRequire(import.meta.url);
 const pgPool = _require('../../../packages/core/lib/pg-pool');
 
-const BUS_ENABLED = () => process.env.LUNA_AGENT_CROSS_BUS_ENABLED !== 'false';
+const BUS_ENABLED = () => isAgentMemoryFeatureEnabled('crossBusEnabled');
 
 export type MessageType = 'query' | 'response' | 'broadcast';
 
@@ -65,7 +66,17 @@ export async function sendMessage(
         JSON.stringify(payload),
       ],
     );
-    return result.rows[0]?.id ?? -1;
+    const messageId = result.rows[0]?.id ?? -1;
+    if (messageId > 0) {
+      recordHintEvent('cross_agent_hint_published', {
+        messageId,
+        incidentKey: opts.incidentKey ?? null,
+        fromAgent,
+        toAgent,
+        messageType: opts.messageType ?? 'query',
+      }).catch(() => {});
+    }
+    return messageId;
   } catch {
     return -1;
   }
@@ -176,10 +187,20 @@ export async function respondToMessage(
     );
 
     // 응답 메시지 삽입 (원래 발신자에게 전송)
-    return sendMessage(fromAgent, originalSender, responsePayload, {
+    const responseId = await sendMessage(fromAgent, originalSender, responsePayload, {
       incidentKey: incidentKey ?? undefined,
       messageType: 'response',
     });
+    if (responseId > 0) {
+      recordHintEvent('cross_agent_hint_consumed', {
+        messageId,
+        responseId,
+        incidentKey: incidentKey ?? null,
+        fromAgent,
+        toAgent: originalSender,
+      }).catch(() => {});
+    }
+    return responseId;
   } catch {
     return -1;
   }
@@ -254,4 +275,16 @@ function rowToMessage(row: Record<string, unknown>): AgentMessage {
     respondedAt: row.responded_at ? new Date(row.responded_at as string) : null,
     createdAt: new Date(row.created_at as string),
   };
+}
+
+async function recordHintEvent(eventType: string, payload: Record<string, unknown>) {
+  try {
+    await pgPool.query(
+      `INSERT INTO investment.mapek_knowledge (event_type, payload)
+       VALUES ($1, $2::jsonb)`,
+      [eventType, JSON.stringify(payload || {})],
+    );
+  } catch {
+    // event 기록 실패는 버스 동작을 중단시키지 않는다.
+  }
 }
