@@ -142,6 +142,10 @@ async function main() {
     'stale candidate는 terminal failure 대신 no-op 분류 대상',
     detectTerminalChildFailure('partial-adjust 후보를 찾지 못했습니다: symbol=LDO/USDT') === 'candidate_not_found',
   );
+  assert(
+    'closeout cooldown은 retry failure가 아닌 idempotent skip 분류 대상',
+    detectTerminalChildFailure('partial-adjust closeout guard: cooldown: 최근 30분 이내 동일 closeout 존재') === 'closeout_guard_cooldown',
+  );
 
   const phase6RunnerInvocation = buildExecutionInvocation({
     runner: 'runtime:partial-adjust',

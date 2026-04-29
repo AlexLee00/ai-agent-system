@@ -3,6 +3,7 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
+import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
 import { evaluateActiveEntryTriggersAgainstMarketEvents } from '../shared/entry-trigger-engine.ts';
@@ -12,6 +13,30 @@ import { getOHLCV } from '../shared/ohlcv-fetcher.ts';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const INVESTMENT_DIR = path.resolve(__dirname, '..');
 const DEFAULT_HEARTBEAT_PATH = path.join(INVESTMENT_DIR, 'output', 'ops', 'luna-entry-trigger-worker-heartbeat.json');
+const LAUNCHCTL_ENV_KEYS = [
+  'LUNA_ENTRY_TRIGGER_ENGINE_ENABLED',
+  'LUNA_INTELLIGENT_DISCOVERY_MODE',
+  'LUNA_PREDICTIVE_VALIDATION_ENABLED',
+  'LUNA_PREDICTIVE_VALIDATION_MODE',
+  'LUNA_PREDICTIVE_REQUIRE_COMPONENTS',
+  'LUNA_ENTRY_TRIGGER_FIRE_IN_AUTONOMOUS',
+  'LUNA_ENTRY_TRIGGER_MIN_CONFIDENCE',
+];
+
+function hydrateEntryTriggerEnvFromLaunchctl() {
+  for (const key of LAUNCHCTL_ENV_KEYS) {
+    if (String(process.env[key] || '').trim()) continue;
+    try {
+      const value = execFileSync('launchctl', ['getenv', key], {
+        encoding: 'utf8',
+        stdio: ['ignore', 'pipe', 'ignore'],
+      }).trim();
+      if (value) process.env[key] = value;
+    } catch {
+      // Manual runs outside launchd should still work with explicit env or safe defaults.
+    }
+  }
+}
 
 function argValue(name, fallback = null) {
   const prefix = `${name}=`;
@@ -102,6 +127,7 @@ async function deriveMarketEvents({ exchange = 'binance', limit = 100 } = {}) {
 }
 
 export async function runLunaEntryTriggerWorker() {
+  hydrateEntryTriggerEnvFromLaunchctl();
   const exchange = argValue('--exchange', process.env.LUNA_ENTRY_TRIGGER_EXCHANGE || 'binance');
   let events = parseEvents();
   if (events.length === 0 && hasFlag('--derive-market-events')) {

@@ -19,6 +19,7 @@ const FAILURE_STATUSES = new Set(['failed', 'fail', 'error', 'blocked', 'rejecte
 const PENDING_STATUSES = new Set(['pending', 'queued', 'waiting', 'scheduled']);
 const RETRYABLE_STATUSES = new Set(['child_process_error', 'child_output_not_json', 'child_execute_not_verified', 'child_execution_pending']);
 const STALE_CANDIDATE_STATUSES = new Set(['candidate_not_found']);
+const IDEMPOTENT_SKIP_STATUSES = new Set(['closeout_guard_cooldown']);
 
 function parseArgs(argv = []) {
   const args = {
@@ -374,6 +375,12 @@ export function detectTerminalChildFailure(message = '', stdout = '', stderr = '
   ) {
     return 'candidate_not_found';
   }
+  if (
+    text.includes('closeout guard: cooldown')
+    || text.includes('최근 30분 이내 동일 closeout 존재')
+  ) {
+    return 'closeout_guard_cooldown';
+  }
   return null;
 }
 
@@ -477,6 +484,19 @@ async function executeCandidate(candidate, { phase6 = false } = {}) {
         candidate,
         command: invocation.command,
         staleCandidate: true,
+        error: String(error?.message || error),
+        output: stdoutText,
+        stderr: stderrText,
+      };
+    }
+    if (IDEMPOTENT_SKIP_STATUSES.has(String(terminalStatus || ''))) {
+      return {
+        ok: true,
+        status: terminalStatus,
+        autonomousActionStatus: 'autonomous_action_skipped_cooldown',
+        candidate,
+        command: invocation.command,
+        idempotentSkip: true,
         error: String(error?.message || error),
         output: stdoutText,
         stderr: stderrText,

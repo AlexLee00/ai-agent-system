@@ -46,6 +46,7 @@ function parseArgs(argv = []) {
     else if (raw.startsWith('--history-file=')) args.historyFile = raw.split('=').slice(1).join('=') || DEFAULT_POSITION_RUNTIME_AUTOPILOT_HISTORY_FILE;
     else if (raw === '--no-history') args.recordHistory = false;
     else if (raw === '--require-position-sync') args.requirePositionSync = true;
+    else if (raw === '--run-sync-preflight') args.runSyncPreflight = true;
     else if (raw.startsWith('--position-sync-markets=')) {
       const rawMarkets = raw.split('=').slice(1).join('=') || 'crypto';
       args.positionSyncMarkets = rawMarkets.split(',').map((item) => item.trim()).filter(Boolean);
