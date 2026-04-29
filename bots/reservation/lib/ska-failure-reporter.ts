@@ -4,10 +4,13 @@
  * Node.js 에이전트(앤디/지미)의 에러를 ska.failure_cases DB에 기록.
  * Elixir FailureTracker가 이 테이블을 폴링해서 자동 복구를 트리거함.
  *
+ * Layer 2: 동일 패턴 3건+ 시 failure-reflexion-engine에 백그라운드 reflexion 위임.
+ *
  * 비동기 fire-and-forget — 리포트 실패가 모니터 동작에 영향 없음.
  */
 
 const pgPool = require('../../../packages/core/lib/pg-pool');
+const { maybeRunReflexion } = require('../../../bots/ska/lib/failure-reflexion-engine');
 
 export type SkaErrorType =
   | 'network_error'
@@ -51,7 +54,7 @@ export function reportFailure(failure: SkaFailure): void {
   // 비동기로 실행 — 실패해도 무시
   setImmediate(async () => {
     try {
-      await pgPool.run('ska', `
+      const row = await pgPool.get('ska', `
         INSERT INTO ska.failure_cases
           (error_type, error_message, agent, count, first_seen, last_seen)
         VALUES ($1, $2, $3, 1, NOW(), NOW())
@@ -59,7 +62,21 @@ export function reportFailure(failure: SkaFailure): void {
         DO UPDATE SET
           count     = ska.failure_cases.count + 1,
           last_seen = NOW()
+        RETURNING id, count
       `, [errorType, message, agent]);
+
+      // Layer 2: 동일 패턴 3건+ 시 백그라운드 reflexion 트리거
+      if (row?.id && row?.count) {
+        setImmediate(() => {
+          maybeRunReflexion({
+            failureCaseId: Number(row.id),
+            agent,
+            errorType,
+            count: Number(row.count),
+            errorMessage: message,
+          }).catch(() => {/* reflexion 실패는 조용히 무시 */});
+        });
+      }
     } catch (_err) {
       // 리포트 실패는 조용히 무시 (모니터 동작 중단 방지)
     }

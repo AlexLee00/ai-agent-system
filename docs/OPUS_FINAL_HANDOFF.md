@@ -1,4 +1,70 @@
-# 세션 인수인계 — 2026-04-28 (CODEX_ALARM_DISPATCH_HUB_INTELLIGENT_DESIGN Phase A-E — 79차 세션)
+# 세션 인수인계 — 2026-04-29 (CODEX_SKA_INTELLIGENT_AUTONOMY_PLAN Phase A~C — 80차 세션)
+
+## 완료 요약 ✅ (80차 세션) — 스카팀 7-Layer Self-Healing Autonomy Phase A~C 구현
+
+### 신규 구현
+
+**Migration 013 — ska.failure_reflexions 테이블**
+- `bots/reservation/migrations/013_failure_reflexions.ts` 신설
+  - `failure_case_id` FK → ska.failure_cases
+  - `five_why`, `stage_attribution`, `hindsight`, `avoid_pattern` JSONB
+  - GIN 인덱스 (avoid_pattern), UNIQUE 인덱스 (failure_case_id)
+
+**Phase A — Reflexion Engine**
+- `bots/ska/lib/failure-reflexion-engine.ts` 신설 (Luna reflexion-engine 패턴)
+  - `maybeRunReflexion()` — 동일 패턴 3건+ 시 LLM 5-Why + Hindsight + avoid_pattern 생성
+  - Kill Switch: `SKA_REFLEXION_ENABLED=false`
+  - Budget Cap: `SKA_REFLEXION_LLM_DAILY_BUDGET_USD=1.0` (~$0.002/회, Haiku)
+  - `getAvoidPatterns(agent, errorType)` — 다음 사이클 사전 회피용 조회
+- `bots/reservation/lib/ska-failure-reporter.ts` 수정
+  - INSERT ... RETURNING id, count 추가
+  - count 3건+ 시 `maybeRunReflexion` 백그라운드 트리거
+
+**Phase B — Roundtable Trigger**
+- `bots/ska/lib/ska-roundtable-trigger.ts` 신설
+  - `checkTriggerConditions()` — 3가지 조건 감시:
+    1. repeat_failure: 24h 내 count ≥ 5
+    2. selector_churn: 7일간 deprecated > 3
+    3. auth_storm: 24h 내 auth_expired > 2
+  - `checkAndTriggerRoundtable()` — Jay+Claude+Commander 3자 순차 LLM 회의
+  - Kill Switch: `SKA_ROUNDTABLE_ENABLED=false`
+  - Daily Limit: `SKA_ROUNDTABLE_DAILY_LIMIT=5`
+
+**Phase C — Auto-Dev Document Builder**
+- `bots/ska/lib/ska-auto-dev-builder.ts` 신설 (hub auto-dev-incident.ts 패턴)
+  - `buildSkaIncidentDocument()` → `docs/auto_dev/CODEX_SKA_EXCEPTION_*.md` 생성
+  - YAML frontmatter + Council + Incident + Roundtable Consensus + Reflexion 섹션
+  - 자동 Redaction (Bearer/JWT/API키/전화번호 마스킹)
+  - `SKA_NEVER_BLOCK_OPERATIONS=true` Safety Constraint 명시
+
+**Phase D — Auto-Dev Watch**
+- 기존 `ai.claude.auto-dev-watch`가 docs/auto_dev/*.md 스캔 중
+- `CODEX_SKA_EXCEPTION_*.md` 명명 규칙으로 자동 pickup (추가 수정 불필요)
+- Kill Switch: `CLAUDE_AUTO_DEV_WATCH_ENABLED=false` (Phase E에서 설정된 기존 값)
+
+### Kill Switch 현황 (스카팀 신규 추가 — 모두 false = 기본 비활성)
+```
+SKA_REFLEXION_ENABLED=false               ← Phase A (안전: 기본 비활성)
+SKA_REFLEXION_LLM_DAILY_BUDGET_USD=1.0   ← Phase A 비용 cap
+SKA_REFLEXION_TRIGGER_THRESHOLD=3        ← Phase A 트리거 임계값
+SKA_ROUNDTABLE_ENABLED=false              ← Phase B (안전: 기본 비활성)
+SKA_ROUNDTABLE_DAILY_LIMIT=5             ← Phase B 일일 한도
+SKA_ROUNDTABLE_LLM_DAILY_BUDGET_USD=3.0 ← Phase B 비용 cap
+SKA_AUTO_DEV_DOC_ENABLED=true            ← Phase C (기본 활성 — 생성만, 적용 X)
+```
+
+### 다음 세션 필수 작업
+1. **Migration 013 적용**: `npm --prefix bots/reservation run migrate` (OPS 배포 후)
+2. **Kill Switch 순차 활성화 (Shadow Mode)**:
+   - `SKA_REFLEXION_ENABLED=true` 먼저 (DB 쓰기만, 운영 영향 없음)
+   - `SKA_ROUNDTABLE_ENABLED=true` 이후 (일일 5회 cap 확인 후)
+3. **Phase E — Skill Extraction + Verification**: `skills/ska/<agent>/` 자동 추출
+4. **Phase F — 4-Layer Memory**: Luna Agent Memory 패턴 차용
+5. **Roundtable 정기 트리거**: commander 스케줄에 `checkAndTriggerRoundtable()` 추가
+
+---
+
+# 이전 세션 인수인계 — 2026-04-28 (CODEX_ALARM_DISPATCH_HUB_INTELLIGENT_DESIGN Phase A-E — 79차 세션)
 
 ## 완료 요약 ✅ (79차 세션) — 7-Layer Intelligent Alarm Dispatch Hub Phase A~E
 
