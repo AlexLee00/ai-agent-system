@@ -97,6 +97,7 @@ import { createHephaestosExchangeHelpers } from './hephaestos/exchange-helpers.t
 import { createLivePositionReconcile } from './hephaestos/live-position-reconcile.ts';
 import { createMarketOrderExecution } from './hephaestos/market-order-execution.ts';
 import { createPendingSignalProcessing } from './hephaestos/pending-signal-processing.ts';
+import { createHephaestosRuntimeBootstrap } from './hephaestos/runtime-bootstrap.ts';
 import {
   createPendingReconcileContext,
   delay,
@@ -120,6 +121,8 @@ export {
 
 const BINANCE_PENDING_RECONCILE_JOURNAL_RETRY_DELAY_MS = 30_000;
 export { shouldBlockUsdtFallbackAfterBtcPairError } from './hephaestos/pending-reconcile-context.ts';
+
+const runtimeBootstrap = createHephaestosRuntimeBootstrap({ initHubSecrets });
 
 function getExchange() {
   return getBinanceExchange();
@@ -762,7 +765,7 @@ const signalExecutor = createHephaestosSignalExecutor({
   ACTIONS,
   SIGNAL_STATUS,
   db,
-  initHubSecrets,
+  initHubSecrets: runtimeBootstrap.ensureHubSecrets,
   isPaperMode,
   getInvestmentTradeMode,
   getCapitalConfig,
@@ -808,7 +811,7 @@ export const { executeSignal } = signalExecutor;
 
 const pendingSignalProcessing = createPendingSignalProcessing({
   db,
-  initHubSecrets,
+  initHubSecrets: runtimeBootstrap.ensureHubSecrets,
   getInvestmentTradeMode,
   processBinancePendingReconcileQueue,
   processBinancePendingJournalRepairQueue,
@@ -831,7 +834,7 @@ if (isDirectExecution(import.meta.url)) {
   await runCliMain({
     before: async () => {
       await db.initSchema();
-      await initHubSecrets().catch(() => false);
+      await runtimeBootstrap.ensureHubSecrets().catch(() => false);
     },
     run: async () => {
       const args              = process.argv.slice(2);

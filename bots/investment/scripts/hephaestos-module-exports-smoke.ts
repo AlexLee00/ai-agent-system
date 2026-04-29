@@ -33,6 +33,7 @@ import { createLivePositionReconcile } from '../team/hephaestos/live-position-re
 import { createMarketOrderExecution } from '../team/hephaestos/market-order-execution.ts';
 import { createPendingSignalProcessing } from '../team/hephaestos/pending-signal-processing.ts';
 import { createPendingReconcileContext } from '../team/hephaestos/pending-reconcile-context.ts';
+import { createHephaestosRuntimeBootstrap } from '../team/hephaestos/runtime-bootstrap.ts';
 import { createHephaestosSignalExecutor } from '../team/hephaestos/signal-executor.ts';
 
 const context = buildHephaestosExecutionContext({
@@ -74,6 +75,7 @@ const checks = [
   ['marketOrderExecutionFactory', typeof createMarketOrderExecution === 'function'],
   ['pendingSignalProcessingFactory', typeof createPendingSignalProcessing === 'function'],
   ['pendingReconcileContextFactory', typeof createPendingReconcileContext === 'function'],
+  ['runtimeBootstrapFactory', typeof createHephaestosRuntimeBootstrap === 'function'],
   ['signalExecutorFactory', typeof createHephaestosSignalExecutor === 'function'],
   ['executionContext.amount', context.amountUsdt === 42],
   ['executionContext.base', context.base === 'BTC'],

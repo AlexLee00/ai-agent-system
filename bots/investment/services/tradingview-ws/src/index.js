@@ -76,11 +76,13 @@ const barPublishedCounter = new Counter({
 const subscriptions = new Map(); // key: `${symbol}:${timeframe}` → { symbol, timeframe, lastBarAt }
 const clientSockets = new Set(); // 연결된 클라이언트 WebSocket
 const latestBars = new Map(); // key: `${symbol}:${timeframe}` → { symbol, timeframe, lastBarAt, bar }
+const seriesIds = new Map(); // key → TradingView series id
 
 // TradingView 연결 (실제 환경에서는 TV WebSocket API)
 // NOTE: TradingView WebSocket은 공식 API가 없어 dovudo 패턴의 비공개 프로토콜 사용
 // 실제 배포 시 TV WS 인증 토큰/세션 필요
 let tvWs = null;
+const chartSessionId = `cs_luna_${Math.random().toString(36).slice(2, 10)}`;
 let reconnectAttempts = 0;
 let reconnectTimer = null;
 let staleCheckTimer = null;
@@ -120,6 +122,8 @@ function connectTradingView() {
   tvWs.on('open', () => {
     console.log('[TV-WS] TradingView 연결됨');
     reconnectAttempts = 0;
+    sendTvMessage({ m: 'set_auth_token', p: ['unauthorized_user_token'] });
+    sendTvMessage({ m: 'chart_create_session', p: [chartSessionId, ''] });
     // 기존 구독 복원
     for (const { symbol, timeframe } of subscriptions.values()) {
       sendTvSubscribe(symbol, timeframe);
@@ -140,17 +144,72 @@ function connectTradingView() {
   });
 }
 
+function encodeTvFrame(payload) {
+  const text = typeof payload === 'string' ? payload : JSON.stringify(payload);
+  return `~m~${text.length}~m~${text}`;
+}
+
+function sendTvMessage(payload) {
+  if (!tvWs || tvWs.readyState !== WebSocket.OPEN) return false;
+  tvWs.send(encodeTvFrame(payload));
+  return true;
+}
+
+function decodeTvFrames(raw = '') {
+  const frames = [];
+  let offset = 0;
+  const text = String(raw || '');
+  while (offset < text.length) {
+    const marker = text.indexOf('~m~', offset);
+    if (marker < 0) break;
+    const lengthStart = marker + 3;
+    const lengthEnd = text.indexOf('~m~', lengthStart);
+    if (lengthEnd < 0) break;
+    const length = Number(text.slice(lengthStart, lengthEnd));
+    if (!Number.isFinite(length) || length < 0) {
+      offset = lengthEnd + 3;
+      continue;
+    }
+    const payloadStart = lengthEnd + 3;
+    const payload = text.slice(payloadStart, payloadStart + length);
+    if (payload.length < length) break;
+    frames.push(payload);
+    offset = payloadStart + length;
+  }
+  return frames;
+}
+
+function sanitizeTvId(value = '') {
+  const id = String(value || '').toLowerCase().replace(/[^a-z0-9_]/g, '_');
+  return id.replace(/_+/g, '_').replace(/^_+|_+$/g, '') || 'series';
+}
+
+function subscriptionKey(symbol, timeframe) {
+  return `${symbol}:${timeframe}`;
+}
+
+function getSeriesId(symbol, timeframe) {
+  const key = subscriptionKey(symbol, timeframe);
+  if (!seriesIds.has(key)) {
+    seriesIds.set(key, `sds_${sanitizeTvId(key)}`);
+  }
+  return seriesIds.get(key);
+}
+
+function getSymbolAlias(symbol, timeframe) {
+  return `sym_${sanitizeTvId(subscriptionKey(symbol, timeframe))}`;
+}
+
 function handleTvMessage(raw) {
   // TradingView 메시지는 ~m~N~m~{json} 형식
-  const matches = raw.match(/~m~\d+~m~(.+)/g);
-  if (!matches) return;
+  const frames = decodeTvFrames(raw);
+  if (!frames.length) return;
 
-  for (const match of matches) {
-    const jsonStr = match.replace(/~m~\d+~m~/, '');
+  for (const jsonStr of frames) {
     if (jsonStr.startsWith('~h~')) {
       // heartbeat → pong
       const hbNum = jsonStr.slice(3);
-      tvWs.send(`~m~${hbNum.length + 6}~m~~h~${hbNum}`);
+      sendTvMessage(`~h~${hbNum}`);
       continue;
     }
     try {
@@ -169,7 +228,7 @@ function processOhlcvUpdate(msg) {
   const seriesData = msg.p[1];
 
   for (const [key, sub] of subscriptions.entries()) {
-    const bars = seriesData[`sds_${key}`]?.s;
+    const bars = seriesData[getSeriesId(sub.symbol, sub.timeframe)]?.s;
     if (!bars || !Array.isArray(bars)) continue;
 
     for (const bar of bars) {
@@ -290,13 +349,15 @@ async function hasActiveRuntimeScope(scope) {
 
 function sendTvSubscribe(symbol, timeframe) {
   if (!tvWs || tvWs.readyState !== WebSocket.OPEN) return;
-  // TradingView 구독 메시지 (create_series 형식)
-  const seriesMsg = JSON.stringify({
-    m: 'create_series',
-    p: ['cs_1', `sds_${symbol}:${timeframe}`, 's1', symbol, timeframe, 300, ''],
-  });
-  const len = seriesMsg.length;
-  tvWs.send(`~m~${len}~m~${seriesMsg}`);
+  const symbolAlias = getSymbolAlias(symbol, timeframe);
+  const seriesId = getSeriesId(symbol, timeframe);
+  const symbolPayload = `=${JSON.stringify({
+    symbol,
+    adjustment: 'splits',
+    session: 'regular',
+  })}`;
+  sendTvMessage({ m: 'resolve_symbol', p: [chartSessionId, symbolAlias, symbolPayload] });
+  sendTvMessage({ m: 'create_series', p: [chartSessionId, seriesId, 's1', symbolAlias, timeframe, 300, ''] });
 }
 
 function scheduleReconnect() {
@@ -319,7 +380,8 @@ function startStaleChecker() {
   staleCheckTimer = setInterval(() => {
     const now = Date.now();
     for (const [key, sub] of subscriptions.entries()) {
-      if (sub.lastBarAt && now - sub.lastBarAt > STALE_THRESHOLD_MS) {
+      const lastSeenAt = sub.lastBarAt || sub.subscribedAt || 0;
+      if (lastSeenAt && now - lastSeenAt > STALE_THRESHOLD_MS) {
         console.warn(`[TV-WS] Stale 구독 감지: ${key}`);
         staleSubscriptionsGauge.set({ symbol: sub.symbol, timeframe: sub.timeframe }, 1);
         // 개별 재구독 시도
@@ -373,7 +435,7 @@ wss.on('connection', (ws, req) => {
       if (msg.action === 'subscribe' && msg.symbol && msg.timeframe) {
         const key = `${msg.symbol}:${msg.timeframe}`;
         if (!subscriptions.has(key)) {
-          subscriptions.set(key, { symbol: msg.symbol, timeframe: msg.timeframe, lastBarAt: null });
+          subscriptions.set(key, { symbol: msg.symbol, timeframe: msg.timeframe, subscribedAt: Date.now(), lastBarAt: null });
           sendTvSubscribe(msg.symbol, msg.timeframe);
           console.log(`[TV-WS] 구독 추가: ${key}`);
         }
@@ -382,6 +444,7 @@ wss.on('connection', (ws, req) => {
         const key = `${msg.symbol}:${msg.timeframe}`;
         subscriptions.delete(key);
         latestBars.delete(key);
+        seriesIds.delete(key);
         staleSubscriptionsGauge.remove({ symbol: msg.symbol, timeframe: msg.timeframe });
         ws.send(JSON.stringify({ ok: true, action: 'unsubscribed', key }));
       } else if (msg.action === 'list') {
@@ -412,6 +475,7 @@ const metricsServer = http.createServer(async (req, res) => {
       status: 'ok',
       tv_ws: tvStatus,
       subscriptions: subscriptions.size,
+      bars: latestBars.size,
       clients: clientSockets.size,
     }));
   } else if (url.pathname === '/subscribe') {
@@ -424,7 +488,7 @@ const metricsServer = http.createServer(async (req, res) => {
     }
     const key = `${symbol}:${timeframe}`;
     if (!subscriptions.has(key)) {
-      subscriptions.set(key, { symbol, timeframe, lastBarAt: null });
+      subscriptions.set(key, { symbol, timeframe, subscribedAt: Date.now(), lastBarAt: null });
       sendTvSubscribe(symbol, timeframe);
       console.log(`[TV-WS] HTTP 구독 추가: ${key}`);
     }
@@ -441,6 +505,7 @@ const metricsServer = http.createServer(async (req, res) => {
     const key = `${symbol}:${timeframe}`;
     subscriptions.delete(key);
     latestBars.delete(key);
+    seriesIds.delete(key);
     staleSubscriptionsGauge.remove({ symbol, timeframe });
     res.setHeader('Content-Type', 'application/json');
     res.end(JSON.stringify({ ok: true, key, subscriptions: subscriptions.size }));
