@@ -37,6 +37,7 @@ const { readCommenterRunResult } = require(path.join(env.PROJECT_ROOT, 'bots/blo
 const { readMarketingDigestTelemetry, describeMarketingDigestAge } = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/marketing-digest-telemetry.ts'));
 const { readLatestBlogEvalCase } = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/eval-case-telemetry.ts'));
 const { readNaverUrlBackfillTelemetry } = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/naver-url-backfill-telemetry.ts'));
+const { getEngagementOwners } = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/engagement-ownership.ts'));
 
 const CONTINUOUS = ['ai.blog.node-server'];
 const ALL_SERVICES = ['ai.blog.daily', 'ai.blog.node-server'];
@@ -1347,6 +1348,7 @@ async function buildSocialAutomationHealth() {
 
 async function buildEngagementHealth() {
   try {
+    const owners = getEngagementOwners();
     const latestEvalCase = readLatestBlogEvalCase('engagement');
     const developmentBaseline = readDevelopmentBaseline();
     const lastGapRun = readLastEngagementGapRun(developmentBaseline);
@@ -1723,6 +1725,10 @@ async function buildEngagementHealth() {
       ok.push(`  engagement doctor command: ${ENGAGEMENT_DOCTOR_COMMAND}`);
       ok.push(`  ops doctor command: ${BLOG_OPS_DOCTOR_COMMAND}`);
     }
+    ok.push(`  owner replies: ${owners.replies.agent} / ${owners.replies.service}`);
+    ok.push(`  owner neighbor: ${owners.neighborComments.agent} / ${owners.neighborComments.service}`);
+    ok.push(`  owner sympathy: ${owners.sympathies.agent} / ${owners.sympathies.service}`);
+    ok.push(`  owner views: ${owners.views.agent} / ${owners.views.service}`);
     if (skippedReasonSummary) {
       ok.push(`  skipped reasons today: ${skippedReasonSummary}`);
     }
@@ -1813,12 +1819,14 @@ async function buildEngagementHealth() {
           }
         : null,
       courtesyReflectionRecheck,
+      owners,
       lastGapRun,
       neighborUiReplay,
       neighborSympathyReplay,
       latestEvalCase,
     };
   } catch (error) {
+    const owners = getEngagementOwners();
     return {
       okCount: 0,
       warnCount: 1,
@@ -1838,6 +1846,7 @@ async function buildEngagementHealth() {
       skippedReason14dSummary: '',
       latestInbound: null,
       courtesyReflectionRecheck: { reviewedCount: 0, reevaluableCount: 0, reevaluableSamples: [] },
+      owners,
       lastGapRun: null,
       neighborUiReplay: null,
       neighborSympathyReplay: null,

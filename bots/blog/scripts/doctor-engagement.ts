@@ -12,6 +12,7 @@ const { readDevelopmentBaseline, buildSinceClause } = require('../lib/dev-baseli
 const { readCommenterRunResult } = require('../lib/commenter-run-telemetry.ts');
 const { loadStrategyBundle, resolveExecutionTarget } = require('../lib/strategy-loader.ts');
 const { readLatestBlogEvalCase } = require('../lib/eval-case-telemetry.ts');
+const { getEngagementOwners, getEngagementOwnerByArea } = require('../lib/engagement-ownership.ts');
 
   const runtimeConfig = getBlogHealthRuntimeConfig();
   const neighborRuntimeConfig = getBlogNeighborCommenterConfig();
@@ -673,6 +674,11 @@ async function getExposureSignal(baseline = null) {
 
 function buildActions({ latestReplyReplayCandidate, failureByKind, failureByAction, targetGaps, primaryGap, replyWorkload, neighborWorkload, courtesyReflectionRecheck, adaptiveNeighborCadence, neighborCollectDiagnostics, lastGapRun, neighborUiReplay = null, neighborSympathyReplay = null, staleSympathyFailureCount = 0, exposureSignal = null, primary }) {
   const actions = [];
+  const owners = getEngagementOwners();
+  actions.push(`owner replies: ${owners.replies.agent} / ${owners.replies.service}`);
+  actions.push(`owner neighbor: ${owners.neighborComments.agent} / ${owners.neighborComments.service}`);
+  actions.push(`owner sympathy: ${owners.sympathies.agent} / ${owners.sympathies.service}`);
+  actions.push(`owner views: ${owners.views.agent} / ${owners.views.service}`);
   const latestEvalCase = primary?.latestEvalCase || null;
   if (String(primary?.area || '') === 'engagement.target_gap.replies.neighbor_daily_limit') {
     actions.push('today quota reached: neighbor pending queue는 다음 KST 일자 첫 실행에서 우선 처리');
@@ -1152,6 +1158,7 @@ async function main() {
   const exposureSignal = await getExposureSignal(developmentBaseline);
   const rawLatestEvalCase = readLatestBlogEvalCase('engagement');
   const latestEvalCase = rawLatestEvalCase && typeof rawLatestEvalCase === 'object' ? rawLatestEvalCase : null;
+  const owners = getEngagementOwners();
 
   const payload = {
     developmentBaseline: developmentBaseline
@@ -1184,6 +1191,7 @@ async function main() {
     targetGaps,
     targetGapDetails,
     primaryGap,
+    owners,
     runPlan,
     adaptiveNeighborCadence,
     replyWorkload,
@@ -1229,6 +1237,7 @@ async function main() {
   payload.needsAttention = payload.totalFailures > 0 || targetGaps.length > 0 || Boolean(exposureSignal?.needsStrategy);
   payload.primary = buildPrimary({ failureByKind, failureByAction, latestReplyReplayCandidate, targetGaps, primaryGap, targets, replyWorkload, neighborWorkload, courtesyReflectionRecheck, adaptiveNeighborCadence, neighborCollectDiagnostics, lastGapRun, exposureSignal });
   payload.primary.latestEvalCase = latestEvalCase;
+  payload.primary.owner = getEngagementOwnerByArea(payload.primary.area);
   payload.actions = buildActions({ latestReplyReplayCandidate, failureByKind, failureByAction, targetGaps, primaryGap, replyWorkload, neighborWorkload, courtesyReflectionRecheck, adaptiveNeighborCadence, neighborCollectDiagnostics, lastGapRun, neighborUiReplay, neighborSympathyReplay, staleSympathyFailureCount, exposureSignal, primary: payload.primary });
 
   const aiSummary = await buildBlogCliInsight({
@@ -1252,6 +1261,9 @@ async function main() {
   console.log(`🔍 AI: ${payload.aiSummary}`);
   console.log(`[engagement doctor] primary=${payload.primary.area} ${payload.primary.reason}`);
   console.log(`[engagement doctor] next=${payload.primary.nextCommand}`);
+  if (payload.primary?.owner?.agent) {
+    console.log(`[engagement doctor] owner=${payload.primary.owner.agent} / ${payload.primary.owner.service}`);
+  }
   if (payload.primaryGap?.label) {
     console.log(`[engagement doctor] deepest_gap=${payload.primaryGap.label} ${payload.primaryGap.success}/${payload.primaryGap.expectedNow}`);
   }
