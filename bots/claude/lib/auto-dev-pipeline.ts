@@ -579,6 +579,26 @@ function isNonActionableInvestmentPositionWatchAlert(analysis = {}) {
   );
 }
 
+function isNonActionableClaudeHealthSnapshot(analysis = {}) {
+  const metadata = analysis?.metadata || {};
+  if (toSafeString(metadata.target_team || '').toLowerCase() !== DEFAULT_TARGET_TEAM) return false;
+  const relPath = toSafeString(analysis?.relPath || '');
+  if (!relPath.includes('docs/auto_dev/ALARM_INCIDENT_claude_')) return false;
+  const sourceBot = toSafeString(metadata.source_bot || metadata.sourceBot || '');
+  let content = '';
+  try {
+    content = fs.readFileSync(analysis.filePath, 'utf8');
+  } catch {
+    content = '';
+  }
+  const combined = `${sourceBot}\n${content}`;
+  return (
+    /source_bot:\s*claude|from_bot:\s*claude|claude:claude:health_check/.test(combined)
+    && combined.includes('[클로드 헬스]')
+    && combined.includes('auto-dev.autonomous 다운')
+  );
+}
+
 function missingMetadataFields(metadata = {}) {
   const missing = [];
   for (const field of REQUIRED_METADATA_FIELDS) {
@@ -652,6 +672,18 @@ function evaluateDocumentPolicy(analysis = {}) {
       status: 'completed',
       policyDecision: 'non_actionable_alarm_snapshot',
       reason: 'investment position watch snapshot',
+      targetTeam: metadata.target_team || null,
+      writeScope: metadata.write_scope || [],
+      riskTier: metadata.risk_tier || null,
+    };
+  }
+
+  if (isNonActionableClaudeHealthSnapshot(analysis)) {
+    return {
+      decision: 'implementation_completed',
+      status: 'completed',
+      policyDecision: 'non_actionable_alarm_snapshot',
+      reason: 'claude launchd health snapshot',
       targetTeam: metadata.target_team || null,
       writeScope: metadata.write_scope || [],
       riskTier: metadata.risk_tier || null,

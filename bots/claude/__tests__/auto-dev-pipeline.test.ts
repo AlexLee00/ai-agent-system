@@ -377,6 +377,49 @@ async function test_investment_position_watch_alert_is_skipped() {
   console.log('✅ auto-dev: investment position watch alerts are skipped');
 }
 
+async function test_claude_health_snapshot_is_skipped() {
+  const tmpRoot = makeTempRoot();
+  const doc = makeDoc(
+    tmpRoot,
+    'ALARM_INCIDENT_claude_sample.md',
+    withRequiredMetadata(
+      [
+        '# Alarm Incident Auto-Repair: claude alarm',
+        '',
+        '## Incident',
+        '- from_bot: claude',
+        '- incident_key: claude:claude:health_check:sample1234',
+        '',
+        '## Error Message',
+        '```text',
+        '🔴 [점검] [클로드 헬스] auto-dev.autonomous 다운',
+        'PID 없음 — launchd 재시작 실패 가능성',
+        'event_type: health_check',
+        '```',
+      ].join('\n'),
+      {
+        target_team: 'claude',
+        source_team: 'claude',
+        source_bot: 'claude',
+        risk_tier: 'medium',
+        task_type: 'development_task',
+      },
+    ),
+  );
+
+  const { mocks } = makeMocks(tmpRoot);
+  await withMocks(mocks, async pipeline => {
+    const result = await pipeline.processAutoDevDocument(doc, { shadow: true });
+    assert.strictEqual(result.ok, true);
+    assert.strictEqual(result.skipped, true);
+    assert.strictEqual(result.reason, 'implementation_completed');
+    assert.strictEqual(result.job?.policyDecision, 'non_actionable_alarm_snapshot');
+  }, testEnv(tmpRoot));
+
+  fs.rmSync(tmpRoot, { recursive: true, force: true });
+  console.log('✅ auto-dev: claude health snapshots are skipped');
+}
+
 async function test_analyzeAutoDevDocument_extracts_code_refs() {
   const tmpRoot = makeTempRoot();
   const autoDir = path.join(tmpRoot, 'docs', 'auto_dev');
@@ -1601,6 +1644,7 @@ async function main() {
     test_reservation_booking_alert_is_skipped,
     test_ops_emergency_telegram_snapshot_is_skipped,
     test_investment_position_watch_alert_is_skipped,
+    test_claude_health_snapshot_is_skipped,
     test_analyzeAutoDevDocument_extracts_code_refs,
     test_processAutoDevDocument_runs_full_dry_pipeline,
     test_completed_document_is_updated_after_actual_implementation,
