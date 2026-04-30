@@ -89,6 +89,7 @@
     "runtime:first-close-cycle-drill": "node scripts/runtime-first-close-cycle-drill.ts --json",
     "runtime:first-close-cycle-drill:cleanup": "node scripts/runtime-first-close-cycle-drill.ts --json --cleanup",
     "runtime:first-close-cycle-drill:cleanup-only": "node scripts/runtime-first-close-cycle-drill.ts --json --cleanup-only",
+    "runtime:z7-reflexion-avoidance": "node scripts/runtime-z7-reflexion-avoidance-verify.ts --json",
     "runtime:posttrade-feedback-heartbeat-bootstrap": "node scripts/runtime-posttrade-feedback-heartbeat-bootstrap.ts --json",
     "runtime:posttrade-feedback-worker-smoke": "node scripts/runtime-posttrade-feedback-worker-smoke.ts --json",
     "runtime:trade-quality-evaluator-smoke": "node scripts/trade-quality-evaluator-smoke.ts --json",

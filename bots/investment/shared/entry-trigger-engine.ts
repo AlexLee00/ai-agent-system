@@ -269,6 +269,13 @@ export async function evaluateEntryTriggers(candidates = [], context = {}) {
       'long',
       regime,
     ).catch(() => ({ matched: false, penalty: 0, reason: '' }));
+    const reflexionMatched = reflexionGuard?.matched === true && Number(reflexionGuard?.penalty || 0) > 0;
+    const reflexionMatchMeta = reflexionMatched ? {
+      matched: true,
+      penalty: Number(reflexionGuard?.penalty || 0),
+      reason: reflexionGuard?.reason || 'reflexion_match',
+      source: 'reflexion-engine',
+    } : null;
     const confidence = Math.max(0, rawConfidence - Number(reflexionGuard?.penalty || 0));
     const triggerType = resolveTriggerType(candidate);
     if (!isAllowedTriggerType(triggerType, flags)) {
@@ -369,15 +376,23 @@ export async function evaluateEntryTriggers(candidates = [], context = {}) {
         reasoning: `entry_trigger_blocked: confidence ${confidence.toFixed(2)} < ${minConfidence.toFixed(2)} | ${candidate.reasoning || ''}`.slice(0, 220),
         block_meta: {
           ...(activeCandidate.block_meta || {}),
+          ...(reflexionMatchMeta ? { reflexion_match: reflexionMatchMeta } : {}),
           event_type: 'entry_trigger_blocked',
-          entryTrigger: { triggerType, state: 'blocked', reason: 'low_confidence', confidence, minConfidence },
+          entryTrigger: {
+            triggerType,
+            state: 'blocked',
+            reason: 'low_confidence',
+            confidence,
+            minConfidence,
+            ...(reflexionMatchMeta ? { reflexion_match: reflexionMatchMeta } : {}),
+          },
         },
       };
       output.push(blockedDecision);
       continue;
     }
 
-    if (reflexionGuard?.matched && Number(reflexionGuard?.penalty || 0) > 0 && !shouldMutate) {
+    if (reflexionMatched && !shouldMutate) {
       observed++;
       output.push(annotateEntryTrigger(activeCandidate, {
         triggerType,
@@ -386,6 +401,7 @@ export async function evaluateEntryTriggers(candidates = [], context = {}) {
         confidenceBefore: rawConfidence,
         confidenceAfter: confidence,
         reflexionReason: reflexionGuard?.reason || '',
+        reflexion_match: reflexionMatchMeta,
       }));
       continue;
     }

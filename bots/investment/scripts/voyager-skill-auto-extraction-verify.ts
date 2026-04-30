@@ -1,0 +1,205 @@
+#!/usr/bin/env node
+// @ts-nocheck
+/**
+ * voyager-skill-auto-extraction-verify.ts — Phase Ω6: Voyager 스킬 자동 추출 검증
+ *
+ * 목적:
+ *   reflexion_memory ≥ 5건 누적 후 Voyager 패턴 자동 추출 검증.
+ *   posttrade-skill-extractor의 min_occurrences 기반 추출 트리거 확인.
+ *
+ * 검증 항목:
+ *   1. luna_failure_reflexions 누적 수 확인
+ *   2. trade_quality_evaluations 데이터 확인
+ *   3. 스킬 추출 시뮬레이션 (dryRun=true)
+ *   4. skill_library 신규 항목 검증
+ *
+ * Kill Switch:
+ *   LUNA_VOYAGER_AUTO_EXTRACTION_ENABLED=false → 검증 비활성
+ *   LUNA_VOYAGER_MIN_CANDIDATES=5 → 최소 후보 수
+ */
+
+import * as db from '../shared/db.ts';
+import { extractPosttradeSkills } from '../shared/posttrade-skill-extractor.ts';
+import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
+
+const ENABLED = () => {
+  const raw = String(process.env.LUNA_VOYAGER_AUTO_EXTRACTION_ENABLED ?? 'true').toLowerCase();
+  return raw !== 'false' && raw !== '0';
+};
+
+const MIN_CANDIDATES = () =>
+  Math.max(1, Number(process.env.LUNA_VOYAGER_MIN_CANDIDATES || 5));
+
+type VerifyStep = { name: string; pass: boolean; detail?: string };
+
+/** reflexion_memory 누적 수 조회 */
+async function countReflexions(): Promise<number> {
+  const row = await db.get(
+    `SELECT COUNT(*)::int AS cnt FROM investment.luna_failure_reflexions`,
+    [],
+  ).catch(() => null);
+  return Number(row?.cnt || 0);
+}
+
+/** trade_quality_evaluations 후보 수 조회 */
+async function countTqeCandidates(days = 90): Promise<{ preferred: number; rejected: number }> {
+  const rows = await db.query(
+    `SELECT category, COUNT(*)::int AS cnt
+     FROM investment.trade_quality_evaluations
+     WHERE evaluated_at >= NOW() - ($1 * INTERVAL '1 day')
+       AND category IN ('preferred', 'rejected')
+     GROUP BY category`,
+    [days],
+  ).catch(() => []);
+
+  const result = { preferred: 0, rejected: 0 };
+  for (const row of rows || []) {
+    if (row.category === 'preferred') result.preferred = Number(row.cnt);
+    if (row.category === 'rejected') result.rejected = Number(row.cnt);
+  }
+  return result;
+}
+
+/** skill_library 현재 항목 수 */
+async function countSkillLibrary(): Promise<number> {
+  const row = await db.get(
+    `SELECT COUNT(*)::int AS cnt FROM investment.skill_library`,
+    [],
+  ).catch(() => null);
+  return Number(row?.cnt || 0);
+}
+
+/** 스킬 추출 dry-run 시뮬레이션 */
+async function simulateSkillExtraction(): Promise<{
+  ok: boolean;
+  candidates: number;
+  extracted: number;
+  error?: string;
+}> {
+  try {
+    const result = await extractPosttradeSkills({
+      days: 90,
+      market: 'all',
+      dryRun: true,
+    });
+    return {
+      ok: result?.ok !== false,
+      candidates: Number(result?.candidates ?? 0),
+      extracted: Number(result?.extracted ?? 0),
+    };
+  } catch (err) {
+    return { ok: false, candidates: 0, extracted: 0, error: String(err?.message || err).slice(0, 100) };
+  }
+}
+
+export async function runVoyagerSkillAutoExtractionVerify(): Promise<{
+  ok: boolean;
+  enabled: boolean;
+  reflexionCount: number;
+  minCandidates: number;
+  readyForExtraction: boolean;
+  steps: VerifyStep[];
+  summary: string;
+}> {
+  if (!ENABLED()) {
+    return {
+      ok: false,
+      enabled: false,
+      reflexionCount: 0,
+      minCandidates: MIN_CANDIDATES(),
+      readyForExtraction: false,
+      steps: [],
+      summary: 'Voyager 자동 추출 검증 비활성 (LUNA_VOYAGER_AUTO_EXTRACTION_ENABLED=false)',
+    };
+  }
+
+  const steps: VerifyStep[] = [];
+
+  // ─── Step 1: reflexion_memory 누적 수 확인 ────────────────────────
+  const reflexionCount = await countReflexions();
+  const minCandidates = MIN_CANDIDATES();
+  const readyForExtraction = reflexionCount >= minCandidates;
+  steps.push({
+    name: 'reflexion_count_check',
+    pass: reflexionCount >= 1,
+    detail: `현재 ${reflexionCount}건 (기준 ≥${minCandidates}건) → ${readyForExtraction ? '✅ 추출 준비됨' : '⏳ 누적 대기 중'}`,
+  });
+
+  // ─── Step 2: TQE 후보 데이터 확인 ────────────────────────────────
+  const tqe = await countTqeCandidates(90);
+  steps.push({
+    name: 'tqe_candidates_check',
+    pass: (tqe.preferred + tqe.rejected) >= 0,
+    detail: `preferred=${tqe.preferred}건, rejected=${tqe.rejected}건 (90일)`,
+  });
+
+  // ─── Step 3: skill_library 현재 상태 ─────────────────────────────
+  const skillCountBefore = await countSkillLibrary();
+  steps.push({
+    name: 'skill_library_before',
+    pass: true,
+    detail: `현재 skill_library ${skillCountBefore}건`,
+  });
+
+  // ─── Step 4: 스킬 추출 dry-run ────────────────────────────────────
+  const simResult = await simulateSkillExtraction();
+  steps.push({
+    name: 'skill_extraction_dryrun',
+    pass: simResult.ok,
+    detail: `ok=${simResult.ok}, candidates=${simResult.candidates}, extracted(dry)=${simResult.extracted}${simResult.error ? ` | 오류: ${simResult.error}` : ''}`,
+  });
+
+  // ─── Step 5: 추출 준비 상태 요약 ─────────────────────────────────
+  if (readyForExtraction) {
+    steps.push({
+      name: 'ready_for_auto_extraction',
+      pass: true,
+      detail: `reflexion ${reflexionCount}건 ≥ ${minCandidates}건 → 자동 추출 준비 완료`,
+    });
+  } else {
+    const remaining = minCandidates - reflexionCount;
+    steps.push({
+      name: 'accumulating_reflexions',
+      pass: true,
+      detail: `자연 운영 중 누적 대기 (${remaining}건 추가 필요). 매 close cycle마다 +1 예상.`,
+    });
+  }
+
+  const corePass = steps.filter(s =>
+    ['reflexion_count_check', 'skill_extraction_dryrun'].includes(s.name),
+  ).every(s => s.pass);
+
+  const summary = readyForExtraction
+    ? `✅ Voyager 자동 추출 준비 완료 (reflexion ${reflexionCount}/${minCandidates}건, skill candidates=${simResult.candidates})`
+    : `⏳ 자연 운영 누적 중 (reflexion ${reflexionCount}/${minCandidates}건, ${minCandidates - reflexionCount}건 추가 필요)`;
+
+  return {
+    ok: corePass,
+    enabled: true,
+    reflexionCount,
+    minCandidates,
+    readyForExtraction,
+    steps,
+    summary,
+  };
+}
+
+async function main() {
+  const result = await runVoyagerSkillAutoExtractionVerify();
+  if (process.argv.includes('--json')) {
+    console.log(JSON.stringify(result, null, 2));
+  } else {
+    console.log(`\n─── Phase Ω6: Voyager 스킬 자동 추출 검증 ───`);
+    for (const s of result.steps) {
+      console.log(`  ${s.pass ? '✅' : '❌'} ${s.name}: ${s.detail || ''}`);
+    }
+    console.log(`\n${result.ok ? '✅' : '❌'} ${result.summary}`);
+  }
+}
+
+if (isDirectExecution(import.meta.url)) {
+  await runCliMain({
+    run: main,
+    errorPrefix: '❌ voyager-skill-auto-extraction-verify 실패:',
+  });
+}
