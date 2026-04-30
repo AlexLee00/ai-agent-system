@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>ai.hub.incident-summary</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/opt/homebrew/bin/tsx</string>
+    <string>/Users/alexlee/projects/ai-agent-system/bots/hub/scripts/incident-summary.ts</string>
+  </array>
+  <key>WorkingDirectory</key>
+  <string>/Users/alexlee/projects/ai-agent-system</string>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key>
+    <string>/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/usr/bin:/bin</string>
+    <key>HOME</key>
+    <string>/Users/alexlee</string>
+    <key>MODE</key>
+    <string>ops</string>
+  </dict>
+  <key>StandardOutPath</key>
+  <string>/tmp/hub-incident-summary.log</string>
+  <key>StandardErrorPath</key>
+  <string>/tmp/hub-incident-summary.err.log</string>
+  <key>StartCalendarInterval</key>
+  <dict>
+    <key>Hour</key>
+    <integer>0</integer>
+    <key>Minute</key>
+    <integer>10</integer>
+  </dict>
+  <key>RunAtLoad</key>
+  <false/>
+</dict>
+</plist>
