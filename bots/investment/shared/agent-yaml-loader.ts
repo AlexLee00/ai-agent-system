@@ -13,6 +13,10 @@ const REQUIRED_FIELDS = [
   'outputs',
   'collaboration',
   'killSwitches',
+  'memory_layers',
+  'llm_routing',
+  'persona',
+  'constitution',
 ];
 
 function parseScalar(raw) {
@@ -39,19 +43,33 @@ export function parseAgentYaml(text = '') {
   const data = {};
   const lines = String(text).split(/\r?\n/);
   let currentKey = null;
-  for (const line of lines) {
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
     const trimmed = line.trim();
     if (!trimmed || trimmed.startsWith('#')) continue;
+    const match = line.match(/^([A-Za-z0-9_-]+):\s*(.*)$/);
+    if (match) {
+      currentKey = match[1];
+      const rawValue = String(match[2] || '').trim();
+      if (rawValue === '|') {
+        const block = [];
+        while (i + 1 < lines.length) {
+          const next = lines[i + 1];
+          if (/^[A-Za-z0-9_-]+:\s*/.test(next)) break;
+          i++;
+          block.push(next.replace(/^  ?/, ''));
+        }
+        data[currentKey] = block.join('\n').trim();
+        continue;
+      }
+      data[currentKey] = rawValue ? parseScalar(rawValue) : [];
+      continue;
+    }
     const listMatch = line.match(/^\s*-\s+(.+)$/);
     if (listMatch && currentKey) {
       if (!Array.isArray(data[currentKey])) data[currentKey] = [];
       data[currentKey].push(parseScalar(listMatch[1]));
-      continue;
     }
-    const match = line.match(/^([A-Za-z0-9_-]+):\s*(.*)$/);
-    if (!match) continue;
-    currentKey = match[1];
-    data[currentKey] = match[2] ? parseScalar(match[2]) : [];
   }
   if (!data.collaboration || Array.isArray(data.collaboration)) {
     data.collaboration = {
@@ -69,6 +87,18 @@ export function validateAgentDefinition(agent = {}) {
   if (missing.length) errors.push(`missing:${missing.join(',')}`);
   for (const field of ['capabilities', 'inputs', 'outputs', 'killSwitches']) {
     if (!Array.isArray(agent[field])) errors.push(`${field}:must_be_array`);
+  }
+  if (!Array.isArray(agent.memory_layers) || agent.memory_layers.length === 0) {
+    errors.push('memory_layers:must_be_non_empty_array');
+  }
+  if (!agent.llm_routing || typeof agent.llm_routing !== 'object' || Array.isArray(agent.llm_routing)) {
+    errors.push('llm_routing:must_be_object');
+  } else {
+    if (!agent.llm_routing.primary) errors.push('llm_routing.primary:required');
+    if (!Array.isArray(agent.llm_routing.fallbacks)) errors.push('llm_routing.fallbacks:must_be_array');
+  }
+  for (const field of ['persona', 'constitution']) {
+    if (String(agent[field] || '').trim().length < 20) errors.push(`${field}:too_short`);
   }
   for (const field of ['upstream', 'downstream', 'parallel']) {
     if (!Array.isArray(agent.collaboration?.[field])) errors.push(`collaboration.${field}:must_be_array`);

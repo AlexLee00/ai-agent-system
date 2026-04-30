@@ -55,7 +55,121 @@ export function summarizeCollaborationMatrix(matrix = buildCollaborationMatrix()
   };
 }
 
+const FLOW_DEFINITIONS = {
+  discovery_entry: [
+    { stage: 'candidate_collection', from: 'luna', to: ['scout'], messageType: 'query' },
+    { stage: 'parallel_analysis', from: 'scout', to: ['aria', 'sophia', 'hermes', 'oracle', 'argos', 'stock-flow', 'chronos', 'kairos'], messageType: 'query' },
+    { stage: 'debate', from: 'luna', to: ['zeus', 'athena'], messageType: 'query' },
+    { stage: 'risk_validation', from: 'luna', to: ['nemesis', 'budget', 'adaptive-risk'], messageType: 'query' },
+    { stage: 'decision', from: 'luna', to: ['hephaestos', 'hanul'], messageType: 'broadcast' },
+  ],
+  risk_execution: [
+    { stage: 'risk_pack', from: 'luna', to: ['nemesis', 'budget', 'adaptive-risk', 'sentinel'], messageType: 'query' },
+    { stage: 'execution_plan', from: 'nemesis', to: ['hephaestos', 'hanul'], messageType: 'query' },
+    { stage: 'ledger_parity', from: 'hephaestos', to: ['sweeper'], messageType: 'query' },
+    { stage: 'execution_summary', from: 'sweeper', to: ['luna'], messageType: 'response' },
+  ],
+  posttrade_learning: [
+    { stage: 'trade_outcome', from: 'hephaestos', to: ['chronos'], messageType: 'query' },
+    { stage: 'forecast_review', from: 'chronos', to: ['kairos'], messageType: 'query' },
+    { stage: 'skill_reflexion', from: 'kairos', to: ['luna', 'sophia', 'hermes'], messageType: 'broadcast' },
+  ],
+  maintenance_sync: [
+    { stage: 'wallet_ledger_parity', from: 'sweeper', to: ['hephaestos', 'hanul'], messageType: 'query' },
+    { stage: 'anomaly_review', from: 'sweeper', to: ['sentinel', 'nemesis'], messageType: 'query' },
+    { stage: 'maintenance_summary', from: 'sentinel', to: ['luna'], messageType: 'response' },
+  ],
+};
+
+function isPublishEnabled(env = process.env) {
+  return String(env.LUNA_COLLABORATION_MATRIX_PUBLISH_ENABLED || '').toLowerCase() === 'true';
+}
+
+export function getCollaborationFlow(decisionType = 'discovery_entry', { agents = listAgentDefinitions() } = {}) {
+  const type = FLOW_DEFINITIONS[decisionType] ? decisionType : 'discovery_entry';
+  const knownAgents = new Set(agents.map((agent) => agent.name));
+  const steps = FLOW_DEFINITIONS[type].map((step, index) => {
+    const targets = uniq(step.to);
+    return {
+      order: index + 1,
+      stage: step.stage,
+      from: step.from,
+      to: targets,
+      messageType: step.messageType,
+      missingAgents: [step.from, ...targets].filter((agent) => !knownAgents.has(agent)),
+    };
+  });
+  const missingAgents = uniq(steps.flatMap((step) => step.missingAgents));
+  return {
+    ok: missingAgents.length === 0,
+    decisionType: type,
+    dryRunDefault: true,
+    publishDefault: false,
+    steps,
+    missingAgents,
+  };
+}
+
+export async function executeCollaboration(flow, context = {}, opts = {}) {
+  const dryRun = opts.dryRun !== false;
+  const env = opts.env || process.env;
+  const publishEnabled = isPublishEnabled(env);
+  const incidentKey = context.incidentKey || `collaboration:${flow?.decisionType || 'unknown'}:${Date.now()}`;
+  const publishPlan = [];
+
+  for (const step of flow?.steps || []) {
+    for (const target of step.to || []) {
+      publishPlan.push({
+        fromAgent: step.from,
+        toAgent: target,
+        incidentKey,
+        messageType: step.messageType || 'query',
+        payload: {
+          decisionType: flow.decisionType,
+          stage: step.stage,
+          context: context.summary || context,
+        },
+      });
+    }
+  }
+
+  if (dryRun || !publishEnabled) {
+    return {
+      ok: true,
+      status: dryRun ? 'collaboration_dry_run' : 'collaboration_publish_disabled',
+      dryRun,
+      publishEnabled,
+      incidentKey,
+      steps: flow?.steps || [],
+      publishPlan,
+      published: [],
+    };
+  }
+
+  const send = opts.sendMessageFn || (await import('./agent-message-bus.ts')).sendMessage;
+  const published = [];
+  for (const item of publishPlan) {
+    const id = await send(item.fromAgent, item.toAgent, item.payload, {
+      incidentKey: item.incidentKey,
+      messageType: item.messageType,
+    });
+    published.push({ ...item, id });
+  }
+  return {
+    ok: published.every((item) => Number(item.id) > 0),
+    status: 'collaboration_published',
+    dryRun,
+    publishEnabled,
+    incidentKey,
+    steps: flow?.steps || [],
+    publishPlan,
+    published,
+  };
+}
+
 export default {
   buildCollaborationMatrix,
   summarizeCollaborationMatrix,
+  getCollaborationFlow,
+  executeCollaboration,
 };
