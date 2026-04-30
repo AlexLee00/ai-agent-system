@@ -14,10 +14,14 @@
  */
 
 import ccxt from 'ccxt';
+import fs from 'node:fs';
+import path from 'node:path';
 import * as db from '../shared/db.ts';
+import * as journalDb from '../shared/trade-journal-db.ts';
 import { publishAlert } from '../shared/alert-publisher.ts';
 import { initHubSecrets, loadSecrets } from '../shared/secrets.ts';
 import { getInvestmentRagRuntimeConfig } from '../shared/runtime-config.ts';
+import { investmentOpsRuntimeFile } from '../shared/runtime-ops-path.ts';
 import { createRequire } from 'module';
 
 const _require = createRequire(import.meta.url);
@@ -25,6 +29,9 @@ const { createAgentMemory } = _require('../../../packages/core/lib/agent-memory'
 
 const DUST_USDT = 3;
 const WATCH_USDT = 10;
+const MANUAL_DUST_SYNC_CONFIRM = 'sync-manual-dust';
+const DUST_HISTORY_MAX_AGE_MS = 7 * 24 * 3600 * 1000;
+export const SWEEPER_DUST_HISTORY_FILE = investmentOpsRuntimeFile('sweeper-dust-history.jsonl');
 const RAG_RUNTIME = getInvestmentRagRuntimeConfig();
 const sweeperMemory = createAgentMemory({ agentId: 'investment.sweeper', team: 'investment' });
 
@@ -42,6 +49,15 @@ function classifyWalletOnly(usdtValue) {
   if (usdtValue >= WATCH_USDT) return 'significant';
   if (usdtValue >= DUST_USDT) return 'watch';
   return 'dust';
+}
+
+function symbolForCoin(coin) {
+  const base = String(coin || '').trim().toUpperCase();
+  return base ? `${base}/USDT` : '';
+}
+
+function normalizeSymbol(symbol) {
+  return String(symbol || '').trim().toUpperCase();
 }
 
 async function fetchWallet(ex) {
@@ -67,6 +83,206 @@ async function fetchPriceMap(ex, coins = []) {
     }
   }
   return prices;
+}
+
+async function fetchOpenLiveJournalRows() {
+  return db.query(
+    `SELECT trade_id,
+            symbol,
+            exchange,
+            COALESCE(trade_mode, 'normal') AS trade_mode,
+            entry_time,
+            entry_size,
+            entry_price,
+            entry_value
+       FROM trade_journal
+      WHERE exchange = 'binance'
+        AND status = 'open'
+        AND is_paper = false
+      ORDER BY symbol, COALESCE(trade_mode, 'normal'), entry_time DESC`,
+  ).catch(() => []);
+}
+
+function safeReadJsonl(file) {
+  try {
+    if (!fs.existsSync(file)) return [];
+    return fs.readFileSync(file, 'utf8')
+      .split('\n')
+      .map((line) => line.trim())
+      .filter(Boolean)
+      .map((line) => {
+        try { return JSON.parse(line); } catch { return null; }
+      })
+      .filter(Boolean);
+  } catch {
+    return [];
+  }
+}
+
+function appendJsonl(file, payload) {
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.appendFileSync(file, `${JSON.stringify(payload)}\n`, 'utf8');
+}
+
+export function buildSweeperDustObservation(walletOnlyRows = []) {
+  const dustRows = (walletOnlyRows || [])
+    .filter((row) => row?.class === 'dust')
+    .map((row) => ({
+      coin: String(row.coin || '').trim().toUpperCase(),
+      symbol: normalizeSymbol(row.symbol || symbolForCoin(row.coin)),
+      amount: Number(row.total || 0),
+      free: Number(row.free || 0),
+      usdtValue: Number(row.usdt_value || row.usdtValue || 0),
+    }))
+    .filter((row) => row.symbol && row.usdtValue >= 0);
+  return {
+    recordedAt: new Date().toISOString(),
+    source: 'investment.sweeper',
+    dustCount: dustRows.length,
+    symbols: dustRows.map((row) => row.symbol),
+    rows: dustRows,
+  };
+}
+
+export function readRecentSweeperDustSymbols({
+  file = SWEEPER_DUST_HISTORY_FILE,
+  nowMs = Date.now(),
+  maxAgeMs = DUST_HISTORY_MAX_AGE_MS,
+} = {}) {
+  const symbols = new Set();
+  for (const row of safeReadJsonl(file).slice(-200)) {
+    const recordedAtMs = Date.parse(row?.recordedAt || '');
+    if (Number.isFinite(recordedAtMs) && nowMs - recordedAtMs > maxAgeMs) continue;
+    for (const symbol of row?.symbols || []) {
+      const normalized = normalizeSymbol(symbol);
+      if (normalized) symbols.add(normalized);
+    }
+    for (const item of row?.rows || []) {
+      const normalized = normalizeSymbol(item?.symbol || symbolForCoin(item?.coin));
+      if (normalized) symbols.add(normalized);
+    }
+  }
+  return [...symbols].sort();
+}
+
+export function buildManualDustJournalSyncPlan({
+  walletOnlyRows = [],
+  positions = [],
+  openJournals = [],
+  recentDustSymbols = [],
+  dustThresholdUsdt = DUST_USDT,
+  apply = false,
+  confirm = '',
+} = {}) {
+  const positionSymbols = new Set(
+    (positions || [])
+      .filter((row) => Number(row.amount || 0) > 0)
+      .map((row) => normalizeSymbol(row.symbol))
+      .filter(Boolean),
+  );
+  const walletBySymbol = new Map();
+  for (const row of walletOnlyRows || []) {
+    const symbol = normalizeSymbol(row.symbol || symbolForCoin(row.coin));
+    if (!symbol) continue;
+    walletBySymbol.set(symbol, {
+      ...row,
+      symbol,
+      usdtValue: Number(row.usdt_value || row.usdtValue || 0),
+    });
+  }
+  const recentDustSet = new Set((recentDustSymbols || []).map(normalizeSymbol).filter(Boolean));
+  const groups = new Map();
+  for (const row of openJournals || []) {
+    const symbol = normalizeSymbol(row.symbol);
+    if (!symbol) continue;
+    if (positionSymbols.has(symbol)) continue;
+    const tradeMode = row.trade_mode || row.tradeMode || 'normal';
+    const key = `${symbol}|${tradeMode}`;
+    if (!groups.has(key)) {
+      groups.set(key, {
+        symbol,
+        exchange: row.exchange || 'binance',
+        tradeMode,
+        openTradeIds: [],
+        openRows: [],
+        openSize: 0,
+        openValue: 0,
+      });
+    }
+    const group = groups.get(key);
+    group.openTradeIds.push(row.trade_id);
+    group.openRows.push({
+      tradeId: row.trade_id,
+      entrySize: Number(row.entry_size || 0),
+      entryPrice: Number(row.entry_price || 0),
+      entryValue: Number(row.entry_value || 0),
+    });
+    group.openSize += Number(row.entry_size || 0);
+    group.openValue += Number(row.entry_value || 0);
+  }
+
+  const candidates = [];
+  for (const group of groups.values()) {
+    const wallet = walletBySymbol.get(group.symbol) || null;
+    const walletValue = Number(wallet?.usdtValue || 0);
+    const hasCurrentDust = wallet && walletValue >= 0 && walletValue < Number(dustThresholdUsdt || DUST_USDT);
+    const wasRecentlyDust = recentDustSet.has(group.symbol);
+    const walletGoneAfterDust = !wallet && wasRecentlyDust;
+    if (!hasCurrentDust && !walletGoneAfterDust) continue;
+    candidates.push({
+      ...group,
+      walletValueUsdt: walletValue,
+      currentWalletDust: Boolean(hasCurrentDust),
+      recentlyObservedDust: Boolean(wasRecentlyDust),
+      syncEligible: Boolean(walletGoneAfterDust),
+      action: walletGoneAfterDust ? 'sync_manual_dust_cleaned' : 'await_manual_dust_cleanup',
+      reason: walletGoneAfterDust
+        ? 'previously_observed_dust_now_missing_from_wallet'
+        : 'wallet_still_has_unconvertible_dust_wait_for_manual_cleanup',
+    });
+  }
+
+  const confirmationOk = !apply || confirm === MANUAL_DUST_SYNC_CONFIRM;
+  const blockers = [];
+  if (apply && !confirmationOk) blockers.push('confirmation_required');
+  const syncable = candidates.filter((row) => row.syncEligible);
+  return {
+    ok: blockers.length === 0,
+    apply: apply === true,
+    confirmRequired: apply && !confirmationOk,
+    confirmValue: MANUAL_DUST_SYNC_CONFIRM,
+    dustThresholdUsdt: Number(dustThresholdUsdt || DUST_USDT),
+    candidates: candidates.length,
+    syncableCount: syncable.length,
+    awaitManualCleanupCount: candidates.length - syncable.length,
+    blockers,
+    rows: candidates,
+  };
+}
+
+async function applyManualDustJournalSync(plan) {
+  const closedTradeIds = [];
+  for (const row of plan?.rows || []) {
+    if (!row.syncEligible) continue;
+    for (const openRow of row.openRows || []) {
+      await journalDb.closeJournalEntry(openRow.tradeId, {
+        exitTime: Date.now(),
+        exitPrice: Number(openRow.entryPrice || 0) || null,
+        exitValue: Number(openRow.entryValue || 0) || null,
+        exitReason: 'sweeper_manual_dust_wallet_sync',
+        pnlAmount: 0,
+        pnlPercent: 0,
+        pnlNet: 0,
+        execution_origin: 'cleanup',
+        quality_flag: 'exclude_from_learning',
+        exclude_from_learning: true,
+        incident_link: 'sweeper_manual_dust_sync',
+      });
+      await journalDb.ensureAutoReview(openRow.tradeId).catch(() => {});
+      closedTradeIds.push(openRow.tradeId);
+    }
+  }
+  return closedTradeIds;
 }
 
 async function fetchRecentBrokerExit(ex, symbol, amountHint = 0) {
@@ -96,7 +312,12 @@ function buildSweeperMemoryQuery(summary = {}) {
   ].filter(Boolean).join(' ');
 }
 
-export async function runSweeper({ telegram = false } = {}) {
+export async function runSweeper({
+  telegram = false,
+  syncManualDust = false,
+  confirm = '',
+  dustHistoryFile = SWEEPER_DUST_HISTORY_FILE,
+} = {}) {
   await db.initSchema();
   await initHubSecrets().catch(() => false);
 
@@ -116,11 +337,14 @@ export async function runSweeper({ telegram = false } = {}) {
       const usdtValue = row.total * Number(walletOnlyPrices[row.coin] || 0);
       return {
         ...row,
+        symbol: symbolForCoin(row.coin),
         usdt_value: usdtValue,
         class: classifyWalletOnly(usdtValue),
       };
     })
     .sort((a, b) => b.usdt_value - a.usdt_value);
+  const dustObservation = buildSweeperDustObservation(walletOnlyRows);
+  appendJsonl(dustHistoryFile, dustObservation);
 
   const mismatches = [];
   for (const position of positions) {
@@ -149,17 +373,44 @@ export async function runSweeper({ telegram = false } = {}) {
   }
 
   const significantWalletOnly = walletOnlyRows.filter((row) => row.class === 'significant');
+  const openLiveJournals = await fetchOpenLiveJournalRows();
+  const manualDustSync = buildManualDustJournalSyncPlan({
+    walletOnlyRows,
+    positions,
+    openJournals: openLiveJournals,
+    recentDustSymbols: readRecentSweeperDustSymbols({ file: dustHistoryFile }),
+    dustThresholdUsdt: DUST_USDT,
+    apply: syncManualDust,
+    confirm,
+  });
+  let manualDustSyncApplied = null;
+  if (syncManualDust && manualDustSync.ok && manualDustSync.syncableCount > 0) {
+    const closedTradeIds = await applyManualDustJournalSync(manualDustSync);
+    manualDustSyncApplied = {
+      closedTradeCount: closedTradeIds.length,
+      closedTradeIds,
+    };
+  }
   const summary = {
     scanned_at: new Date().toISOString(),
     wallet_only_count: walletOnlyRows.length,
     wallet_only_total_usdt: walletOnlyRows.reduce((sum, row) => sum + row.usdt_value, 0),
     significant_wallet_only_count: significantWalletOnly.length,
     mismatch_count: mismatches.length,
+    dust_history_file: dustHistoryFile,
+    dust_observation: dustObservation,
+    manual_dust_sync: {
+      ...manualDustSync,
+      applied: manualDustSyncApplied,
+      next_command: manualDustSync.syncableCount > 0 && !syncManualDust
+        ? `npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run -s sweeper:dust-sync -- --confirm=${MANUAL_DUST_SYNC_CONFIRM}`
+        : null,
+    },
     wallet_only: walletOnlyRows,
     mismatches,
   };
 
-  if (telegram && (significantWalletOnly.length > 0 || mismatches.length > 0)) {
+  if (telegram && (significantWalletOnly.length > 0 || mismatches.length > 0 || manualDustSync.syncableCount > 0)) {
     const memoryQuery = buildSweeperMemoryQuery(summary);
     const episodicHint = await sweeperMemory.recallCountHint(memoryQuery, {
       type: 'episodic',
@@ -184,6 +435,7 @@ export async function runSweeper({ telegram = false } = {}) {
       '🧹 [sweeper] 루나 지갑 정합성 점검',
       `wallet-only: ${walletOnlyRows.length}종 (중요 ${significantWalletOnly.length}종)`,
       `포지션 불일치: ${mismatches.length}건`,
+      `수동 dust 동기화 후보: ${manualDustSync.syncableCount}건`,
     ];
     if (significantWalletOnly[0]) {
       lines.push(`주요 미추적 자산: ${significantWalletOnly[0].coin} ≈ $${significantWalletOnly[0].usdt_value.toFixed(2)}`);
@@ -224,10 +476,13 @@ export async function runSweeper({ telegram = false } = {}) {
 
 if (process.argv[1] === new URL(import.meta.url).pathname) {
   const telegram = process.argv.includes('--telegram');
+  const syncManualDust = process.argv.includes('--sync-manual-dust');
+  const confirmArg = process.argv.find((arg) => arg.startsWith('--confirm='));
+  const confirm = confirmArg ? confirmArg.split('=').slice(1).join('=') : '';
   try {
-    const result = await runSweeper({ telegram });
+    const result = await runSweeper({ telegram, syncManualDust, confirm });
     console.log(JSON.stringify(result, null, 2));
-    process.exit(0);
+    process.exit(result.manual_dust_sync?.ok === false ? 1 : 0);
   } catch (error) {
     console.error(`❌ sweeper 오류: ${error.message}`);
     process.exit(1);
