@@ -1,0 +1,10 @@
+name: hanul
+tier: 4
+runtime: typescript
+owner: hanul
+llmPolicyRef: hanul.execution
+capabilities: ["kis_execution","domestic_overseas_reconcile","integer_position_policy"]
+inputs: ["approved_signal","risk_verdict"]
+outputs: ["execution_result","reconcile_event"]
+collaboration: {"upstream":["luna","nemesis","budget","adaptive-risk"],"downstream":["chronos"],"parallel":["hephaestos"]}
+killSwitches: ["LUNA_HANUL_ENABLED"]

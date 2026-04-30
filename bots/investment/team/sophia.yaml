@@ -1,0 +1,10 @@
+name: sophia
+tier: 1
+runtime: typescript
+owner: sophia
+llmPolicyRef: sophia.research
+capabilities: ["fundamental_research","narrative_analysis"]
+inputs: ["news","filings","research_notes"]
+outputs: ["fundamental_signal"]
+collaboration: {"upstream":["scout"],"downstream":["luna","zeus","athena"],"parallel":["hermes"]}
+killSwitches: ["LUNA_SOPHIA_ENABLED"]

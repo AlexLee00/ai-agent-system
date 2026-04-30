@@ -1,0 +1,10 @@
+name: sweeper
+tier: 7
+runtime: elixir_shadow
+owner: sweeper
+llmPolicyRef: sweeper.operations
+capabilities: ["dust_sync","ledger_wallet_parity","maintenance"]
+inputs: ["wallet_balance","position_ledger","execution_events"]
+outputs: ["parity_report","maintenance_action"]
+collaboration: {"upstream":["hephaestos","hanul"],"downstream":["sentinel","luna"],"parallel":[]}
+killSwitches: ["LUNA_ELIXIR_SWEEPER_ENABLED"]

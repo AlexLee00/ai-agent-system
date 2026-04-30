@@ -5,6 +5,8 @@
  */
 
 import assert from 'node:assert/strict';
+import os from 'node:os';
+import path from 'node:path';
 import { collectDashboardData, runMemoryDashboard } from './runtime-agent-memory-dashboard-html.ts';
 import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
 
@@ -58,7 +60,10 @@ async function runSmoke() {
 
   // ─── 4. runMemoryDashboard — HTML 구조 체크 ─────────────────────────
   {
-    const r = await runMemoryDashboard({ format: 'html' }).catch(() => null);
+    const r = await runMemoryDashboard({
+      format: 'html',
+      outputPath: path.join(os.tmpdir(), 'luna-memory-dashboard-smoke'),
+    }).catch(() => null);
     const ok = r !== null && r.ok === true &&
       typeof r.output === 'string' &&
       r.output.includes('<!DOCTYPE html>') &&

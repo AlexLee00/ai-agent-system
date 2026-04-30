@@ -1,0 +1,10 @@
+name: oracle
+tier: 1
+runtime: typescript
+owner: oracle
+llmPolicyRef: oracle.market
+capabilities: ["macro_context","market_regime","probabilistic_view"]
+inputs: ["market_data","regime_snapshot"]
+outputs: ["macro_signal"]
+collaboration: {"upstream":["scout"],"downstream":["luna","zeus","athena"],"parallel":["argos","stock-flow"]}
+killSwitches: ["LUNA_ORACLE_ENABLED"]

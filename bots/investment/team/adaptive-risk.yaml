@@ -1,0 +1,10 @@
+name: adaptive-risk
+tier: 5
+runtime: typescript
+owner: adaptive-risk
+llmPolicyRef: adaptive-risk.policy
+capabilities: ["risk_budget","volatility_adjustment","position_sizing"]
+inputs: ["portfolio_context","market_regime"]
+outputs: ["risk_limits"]
+collaboration: {"upstream":["luna","oracle"],"downstream":["nemesis","hephaestos","hanul"],"parallel":["budget","sentinel"]}
+killSwitches: ["LUNA_ADAPTIVE_RISK_ENABLED"]

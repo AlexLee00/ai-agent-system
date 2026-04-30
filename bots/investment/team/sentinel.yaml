@@ -1,0 +1,10 @@
+name: sentinel
+tier: 5
+runtime: elixir_shadow
+owner: sentinel
+llmPolicyRef: sentinel.anomaly
+capabilities: ["anomaly_detection","guardrail_alert","market_safety"]
+inputs: ["runtime_metrics","market_data","execution_events"]
+outputs: ["anomaly_verdict"]
+collaboration: {"upstream":["luna","sweeper"],"downstream":["nemesis","luna"],"parallel":["adaptive-risk","budget"]}
+killSwitches: ["LUNA_ELIXIR_SENTINEL_ENABLED"]

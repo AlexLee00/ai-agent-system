@@ -1,0 +1,10 @@
+name: chronos
+tier: 1
+runtime: typescript
+owner: chronos
+llmPolicyRef: chronos.backtest
+capabilities: ["backtesting","performance_analysis","strategy_validation"]
+inputs: ["trade_history","ohlcv","strategy_params"]
+outputs: ["backtest_report","quality_metrics"]
+collaboration: {"upstream":["luna"],"downstream":["kairos","luna"],"parallel":["aria"]}
+killSwitches: ["LUNA_CHRONOS_ENABLED"]

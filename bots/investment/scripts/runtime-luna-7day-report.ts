@@ -334,7 +334,8 @@ async function main() {
   const days = Number(process.argv.find(a => a.startsWith('--days='))?.split('=')[1] || 7);
   const outDir = path.join(INVESTMENT_DIR, 'output', 'reports');
   const date = new Date().toISOString().slice(0, 10);
-  const outputFile = path.join(outDir, `luna-7day-report-${date}.md`);
+  const noWrite = process.argv.includes('--no-write');
+  const outputFile = noWrite ? undefined : path.join(outDir, `luna-7day-report-${date}.md`);
 
   const result = await runLuna7DayReport({ days, outputFile });
 
@@ -343,7 +344,9 @@ async function main() {
     console.log(JSON.stringify(rest, null, 2));
   } else {
     console.log(result.reportText);
-    console.log(`\n📄 보고서 저장: ${outputFile}`);
+    if (outputFile) {
+      console.log(`\n📄 보고서 저장: ${outputFile}`);
+    }
   }
 }
 

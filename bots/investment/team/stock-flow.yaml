@@ -1,0 +1,10 @@
+name: stock-flow
+tier: 1
+runtime: elixir_shadow
+owner: stock-flow
+llmPolicyRef: stock-flow.flow
+capabilities: ["flow_detection","volume_structure","institutional_flow"]
+inputs: ["ohlcv","order_flow"]
+outputs: ["flow_signal"]
+collaboration: {"upstream":["scout"],"downstream":["luna","zeus","athena"],"parallel":["argos","oracle"]}
+killSwitches: ["LUNA_ELIXIR_STOCK_FLOW_ENABLED"]

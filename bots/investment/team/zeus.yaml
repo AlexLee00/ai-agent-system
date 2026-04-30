@@ -1,0 +1,10 @@
+name: zeus
+tier: 2
+runtime: typescript
+owner: zeus
+llmPolicyRef: zeus.bull_debate
+capabilities: ["bull_case","upside_challenge"]
+inputs: ["analyst_signals"]
+outputs: ["bull_argument"]
+collaboration: {"upstream":["aria","sophia","hermes","oracle","argos","stock-flow","chronos","kairos"],"downstream":["luna","nemesis"],"parallel":["athena"]}
+killSwitches: ["LUNA_ZEUS_ENABLED"]

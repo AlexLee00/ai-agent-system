@@ -1,0 +1,10 @@
+name: argos
+tier: 1
+runtime: elixir_shadow
+owner: argos
+llmPolicyRef: argos.screening
+capabilities: ["parallel_screening","candidate_scoring"]
+inputs: ["universe","market_data"]
+outputs: ["screened_candidates"]
+collaboration: {"upstream":["scout"],"downstream":["luna","zeus","athena"],"parallel":["stock-flow"]}
+killSwitches: ["LUNA_ELIXIR_ARGOS_ENABLED"]

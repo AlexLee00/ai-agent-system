@@ -1,0 +1,10 @@
+name: aria
+tier: 1
+runtime: elixir_shadow
+owner: aria
+llmPolicyRef: aria.analysis
+capabilities: ["technical_analysis","ta_score","chart_structure"]
+inputs: ["ohlcv","ta_indicators"]
+outputs: ["technical_signal"]
+collaboration: {"upstream":["scout"],"downstream":["luna","zeus","athena"],"parallel":["kairos","chronos"]}
+killSwitches: ["LUNA_ELIXIR_ARIA_ENABLED"]

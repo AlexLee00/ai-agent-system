@@ -1,0 +1,10 @@
+name: scout
+tier: 6
+runtime: typescript
+owner: scout
+llmPolicyRef: scout.discovery
+capabilities: ["universe_discovery","candidate_collection","news_mapping"]
+inputs: ["market_sources","watchlists"]
+outputs: ["candidate_universe"]
+collaboration: {"upstream":["luna"],"downstream":["aria","sophia","hermes","oracle","argos","stock-flow"],"parallel":[]}
+killSwitches: ["LUNA_SCOUT_ENABLED"]

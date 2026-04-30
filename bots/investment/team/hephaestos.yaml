@@ -1,0 +1,10 @@
+name: hephaestos
+tier: 4
+runtime: typescript
+owner: hephaestos
+llmPolicyRef: hephaestos.execution
+capabilities: ["crypto_execution","binance_reconcile","position_journal"]
+inputs: ["approved_signal","risk_verdict"]
+outputs: ["execution_result","reconcile_event"]
+collaboration: {"upstream":["luna","nemesis","budget","adaptive-risk"],"downstream":["sweeper","chronos"],"parallel":["hanul"]}
+killSwitches: ["LUNA_HEPHAESTOS_ENABLED"]

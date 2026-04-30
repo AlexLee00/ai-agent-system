@@ -1,0 +1,10 @@
+name: nemesis
+tier: 3
+runtime: typescript
+owner: nemesis
+llmPolicyRef: nemesis.validation
+capabilities: ["adversarial_validation","hard_rule_skill","pre_trade_blocker"]
+inputs: ["debate","portfolio_decision"]
+outputs: ["validation_verdict"]
+collaboration: {"upstream":["zeus","athena","luna"],"downstream":["luna","hephaestos","hanul"],"parallel":["adaptive-risk","budget","sentinel"]}
+killSwitches: ["LUNA_NEMESIS_ENABLED"]

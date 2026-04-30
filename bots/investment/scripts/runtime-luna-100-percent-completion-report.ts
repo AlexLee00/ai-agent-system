@@ -314,7 +314,7 @@ function renderCompletionReport(data: CompletionReportData): string {
 }
 
 export async function runLuna100PercentCompletionReport(
-  opts: { outputFile?: string } = {},
+  opts: { outputFile?: string | null } = {},
 ): Promise<CompletionReportData & { reportText: string }> {
   const metrics = await collectOperationalMetrics();
   const docProgress = buildDocProgress(metrics);
@@ -352,14 +352,16 @@ export async function runLuna100PercentCompletionReport(
 
   const reportText = renderCompletionReport(data);
 
-  const outputFile = opts.outputFile ?? (() => {
+  const outputFile = opts.outputFile === undefined ? (() => {
     const outDir = path.join(INVESTMENT_DIR, 'output', 'reports');
     const date = new Date().toISOString().slice(0, 10);
     return path.join(outDir, `luna-100-percent-completion-${date}.md`);
-  })();
+  })() : opts.outputFile;
 
-  fs.mkdirSync(path.dirname(outputFile), { recursive: true });
-  fs.writeFileSync(outputFile, reportText, 'utf8');
+  if (outputFile) {
+    fs.mkdirSync(path.dirname(outputFile), { recursive: true });
+    fs.writeFileSync(outputFile, reportText, 'utf8');
+  }
 
   return { ...data, reportText };
 }
@@ -369,7 +371,9 @@ async function main() {
     console.log('[100%-report] 비활성. LUNA_100_PERCENT_REPORT_ENABLED=true로 활성화.');
     return;
   }
-  const result = await runLuna100PercentCompletionReport();
+  const result = await runLuna100PercentCompletionReport({
+    outputFile: process.argv.includes('--no-write') ? null : undefined,
+  });
 
   if (process.argv.includes('--json')) {
     const { reportText: _, ...rest } = result;

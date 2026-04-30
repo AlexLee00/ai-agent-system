@@ -1,0 +1,10 @@
+name: kairos
+tier: 1
+runtime: typescript_shadow
+owner: kairos
+llmPolicyRef: kairos.prediction
+capabilities: ["time_series_prediction","walk_forward_validation","monte_carlo"]
+inputs: ["ohlcv","backtest_report"]
+outputs: ["prediction_evidence"]
+collaboration: {"upstream":["chronos"],"downstream":["luna"],"parallel":["aria","oracle"]}
+killSwitches: ["LUNA_KAIROS_ACTIVE_ENABLED"]

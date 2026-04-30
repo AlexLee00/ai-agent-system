@@ -1,0 +1,10 @@
+name: athena
+tier: 2
+runtime: typescript
+owner: athena
+llmPolicyRef: athena.bear_debate
+capabilities: ["bear_case","risk_challenge"]
+inputs: ["analyst_signals"]
+outputs: ["bear_argument"]
+collaboration: {"upstream":["aria","sophia","hermes","oracle","argos","stock-flow","chronos","kairos"],"downstream":["luna","nemesis"],"parallel":["zeus"]}
+killSwitches: ["LUNA_ATHENA_ENABLED"]

@@ -1,0 +1,10 @@
+name: budget
+tier: 5
+runtime: typescript
+owner: budget
+llmPolicyRef: budget.policy
+capabilities: ["capital_gate","buying_power","reserve_policy"]
+inputs: ["balance","portfolio_context"]
+outputs: ["capital_verdict"]
+collaboration: {"upstream":["luna"],"downstream":["nemesis","hephaestos","hanul"],"parallel":["adaptive-risk","sentinel"]}
+killSwitches: ["LUNA_BUDGET_ENABLED"]
