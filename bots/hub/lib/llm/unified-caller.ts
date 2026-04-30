@@ -350,7 +350,6 @@ function _normalizeRoute(route, abstractModel = 'anthropic_sonnet') {
   const staleGroqRoutes = new Set([
     'groq/llama-4-scout-17b-16e-instruct',
     'groq/meta-llama/llama-4-scout-17b-16e-instruct',
-    'groq/qwen/qwen3-32b',
   ]);
 
   if (staleGroqRoutes.has(route)) {

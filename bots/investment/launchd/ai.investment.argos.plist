@@ -10,6 +10,8 @@
 		<string>false</string>
 		<key>INVESTMENT_LLM_HUB_ENABLED</key>
 		<string>true</string>
+		<key>LUNA_AGENT_LLM_ROUTING_ENABLED</key>
+		<string>true</string>
 		<key>NODE_ENV</key>
 		<string>production</string>
 		<key>PATH</key>

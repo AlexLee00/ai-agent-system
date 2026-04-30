@@ -3,7 +3,7 @@
  * shared/agent-llm-routing.ts — 에이전트 × 시장 × 태스크 → 최적 LLM 매트릭스
  *
  * Kill Switch:
- *   LUNA_AGENT_LLM_ROUTING_ENABLED=false → 기존 AGENT_ABSTRACT_MODEL 사용 (하위 호환)
+ *   LUNA_AGENT_LLM_ROUTING_ENABLED=false → legacy agent mapping 사용 (Luna/Chronos는 안전 fallback chain 유지)
  *   LUNA_AGENT_LLM_ROUTING_FORCE_AGENT_LEVEL=false → agent-level 라우팅 비활성
  */
 import { isAgentMemoryFeatureEnabled } from './agent-memory-runtime.ts';
@@ -11,7 +11,7 @@ import { isAgentMemoryFeatureEnabled } from './agent-memory-runtime.ts';
 export type AgentName =
   | 'luna' | 'nemesis' | 'aria' | 'sophia' | 'argos' | 'hermes'
   | 'oracle' | 'chronos' | 'zeus' | 'athena' | 'sentinel' | 'adaptive-risk'
-  | 'hephaestos' | 'hanul' | 'budget' | 'scout';
+  | 'hephaestos' | 'hanul' | 'budget' | 'scout' | 'kairos' | 'stock-flow' | 'sweeper';
 
 export type MarketType = 'crypto' | 'domestic' | 'overseas' | 'any';
 
@@ -28,6 +28,9 @@ export type TaskType =
   | 'anomaly_detect'   // sentinel 이상 탐지
   | 'execution'        // hephaestos/hanul 실행
   | 'capital'          // budget 자본 관리
+  | 'prediction'       // kairos 예측 검증
+  | 'flow'             // stock-flow 수급/거래량 구조
+  | 'operations'       // sweeper 운영 정합성
   | 'default';         // 기타
 
 export interface LLMRoute {
@@ -120,22 +123,22 @@ const DEFAULT_ROUTE: LLMRoute = {
 
 // 기존 AGENT_ABSTRACT_MODEL 하위 호환 매핑
 const LEGACY_FALLBACK: Record<string, LLMRoute> = {
-  luna:    { primary: 'anthropic_sonnet', fallbacks: ['openai-oauth/gpt-5.4', 'groq_versatile'] },
-  chronos: { primary: 'anthropic_sonnet', fallbacks: ['openai-oauth/gpt-5.4', 'groq_versatile'] },
+  luna:    { primary: 'openai-oauth/gpt-5.4', fallbacks: ['groq/llama-3.3-70b-versatile', 'claude-code/haiku'] },
+  chronos: { primary: 'openai-oauth/gpt-5.4', fallbacks: ['groq/qwen/qwen3-32b', 'claude-code/haiku'] },
 };
 
 // ─── 에이전트별 기본 라우트 ──────────────────────────────────────────────────
 
 const AGENT_DEFAULTS: Record<string, LLMRoute> = {
-  // 🌙 luna — 사령탑: 긴 컨텍스트 + 한국어 추론 강점
+  // 🌙 luna — 사령탑: 현재 healthy OAuth chain 우선
   luna: {
-    primary: 'claude-code/sonnet',
-    fallbacks: ['openai-oauth/gpt-5.4', 'groq/llama-3.3-70b-versatile', 'claude-code/haiku'],
+    primary: 'openai-oauth/gpt-5.4',
+    fallbacks: ['groq/llama-3.3-70b-versatile', 'claude-code/haiku'],
   },
 
   // 🛡️ nemesis — 리스크: critical 경로, 속도 우선
   nemesis: {
-    primary: 'groq/qwen3-32b',
+    primary: 'groq/qwen/qwen3-32b',
     fallbacks: ['claude-code/haiku', 'openai-oauth/gpt-5.4-mini'],
   },
 
@@ -148,32 +151,32 @@ const AGENT_DEFAULTS: Record<string, LLMRoute> = {
 
   // 🧠 sophia — 감성: 다국어 강점 (한/영/중)
   sophia: {
-    primary: 'gemini-oauth/gemini-2.5-flash',
+    primary: 'gemini-cli-oauth/gemini-2.5-flash',
     fallbacks: ['openai-oauth/gpt-5.4-mini', 'claude-code/haiku'],
   },
 
   // 👁️ argos — 스크리닝: 대량 처리 + 빠른 분류
   argos: {
     primary: 'openai-oauth/gpt-5.4-mini',
-    fallbacks: ['groq/llama-3.3-70b-versatile', 'gemini-oauth/gemini-2.5-flash'],
+    fallbacks: ['groq/llama-3.3-70b-versatile', 'gemini-cli-oauth/gemini-2.5-flash'],
   },
 
   // 📜 hermes — 뉴스: 다국어 매핑
   hermes: {
-    primary: 'gemini-oauth/gemini-2.5-flash',
+    primary: 'gemini-cli-oauth/gemini-2.5-flash',
     fallbacks: ['claude-code/haiku', 'openai-oauth/gpt-5.4-mini'],
   },
 
   // 🔮 oracle — 온체인: 복잡한 추론 + 통합
   oracle: {
-    primary: 'claude-code/sonnet',
-    fallbacks: ['openai-oauth/gpt-5.4', 'groq/qwen3-32b'],
+    primary: 'openai-oauth/gpt-5.4',
+    fallbacks: ['groq/qwen/qwen3-32b', 'claude-code/haiku'],
   },
 
   // ⏰ chronos — 백테스팅: 정확도 critical
   chronos: {
-    primary: 'claude-code/sonnet',
-    fallbacks: ['openai-oauth/gpt-5.4', 'groq/qwen3-32b'],
+    primary: 'openai-oauth/gpt-5.4',
+    fallbacks: ['groq/qwen/qwen3-32b', 'claude-code/haiku'],
   },
 
   // 🦅 zeus — 매수 논거: 중간 품질 + 빠름
@@ -196,21 +199,21 @@ const AGENT_DEFAULTS: Record<string, LLMRoute> = {
 
   // ⚡ adaptive-risk — 빠른 리스크 분기
   'adaptive-risk': {
-    primary: 'groq/qwen3-32b',
+    primary: 'groq/qwen/qwen3-32b',
     fallbacks: ['claude-code/haiku'],
   },
 
   // 🔥 hephaestos — 바이낸스 실행: rule-based
   hephaestos: {
     primary: 'rule-based',
-    fallbacks: ['groq/qwen3-32b'],
+    fallbacks: ['groq/qwen/qwen3-32b'],
     noLLM: true,
   },
 
   // 🇰🇷 hanul — KIS 실행: rule-based
   hanul: {
     primary: 'rule-based',
-    fallbacks: ['groq/qwen3-32b'],
+    fallbacks: ['groq/qwen/qwen3-32b'],
     noLLM: true,
   },
 
@@ -226,6 +229,24 @@ const AGENT_DEFAULTS: Record<string, LLMRoute> = {
     primary: 'openai-oauth/gpt-5.4-mini',
     fallbacks: ['groq/llama-3.3-70b-versatile'],
   },
+
+  // 🔭 kairos — 예측 검증: 성능 모델 우선, reasoning Groq 폴백
+  kairos: {
+    primary: 'openai-oauth/gpt-5.4',
+    fallbacks: ['groq/qwen/qwen3-32b', 'gemini-cli-oauth/gemini-2.5-flash'],
+  },
+
+  // 🌊 stock-flow — 수급 구조: 빠른 reasoning Groq 우선
+  'stock-flow': {
+    primary: 'groq/qwen/qwen3-32b',
+    fallbacks: ['openai-oauth/gpt-5.4-mini', 'gemini-cli-oauth/gemini-2.5-flash'],
+  },
+
+  // 🧹 sweeper — 장부/지갑 정합성: 빠른 운영 판단
+  sweeper: {
+    primary: 'groq/llama-3.1-8b-instant',
+    fallbacks: ['openai-oauth/gpt-5.4-mini'],
+  },
 };
 
 // ─── 상세 라우팅 매트릭스 (agent:market:task → LLMRoute) ─────────────────────
@@ -235,26 +256,26 @@ const AGENT_DEFAULTS: Record<string, LLMRoute> = {
 
 const ROUTING_MATRIX: Record<string, LLMRoute> = {
   // ── luna ──────────────────────────────────────────────────────────────────
-  // 암호화폐 최종 판단: claude-sonnet (한국어 추론 + 긴 컨텍스트)
+  // 암호화폐 최종 판단: 현재 healthy OAuth chain 우선
   'luna:crypto:final_decision': {
-    primary: 'claude-code/sonnet',
-    fallbacks: ['openai-oauth/gpt-5.4', 'groq/llama-3.3-70b-versatile', 'claude-code/haiku'],
+    primary: 'openai-oauth/gpt-5.4',
+    fallbacks: ['groq/llama-3.3-70b-versatile', 'claude-code/haiku'],
   },
-  // 국내장 최종 판단: claude-sonnet (한국어 강점)
+  // 국내장 최종 판단
   'luna:domestic:final_decision': {
-    primary: 'claude-code/sonnet',
-    fallbacks: ['openai-oauth/gpt-5.4', 'groq/llama-3.3-70b-versatile'],
+    primary: 'openai-oauth/gpt-5.4',
+    fallbacks: ['groq/llama-3.3-70b-versatile', 'claude-code/haiku'],
   },
   // 국외장 최종 판단
   'luna:overseas:final_decision': {
-    primary: 'claude-code/sonnet',
-    fallbacks: ['openai-oauth/gpt-5.4', 'groq/llama-3.3-70b-versatile'],
+    primary: 'openai-oauth/gpt-5.4',
+    fallbacks: ['groq/llama-3.3-70b-versatile', 'claude-code/haiku'],
   },
 
   // ── nemesis ────────────────────────────────────────────────────────────────
   // 리스크 평가: groq 최속 (critical 경로)
   'nemesis:any:risk_eval': {
-    primary: 'groq/qwen3-32b',
+    primary: 'groq/qwen/qwen3-32b',
     fallbacks: ['claude-code/haiku', 'openai-oauth/gpt-5.4-mini'],
   },
 
@@ -269,16 +290,16 @@ const ROUTING_MATRIX: Record<string, LLMRoute> = {
   // ── sophia ─────────────────────────────────────────────────────────────────
   // 감성 분석: gemini-flash (multilingual 최강)
   'sophia:crypto:sentiment': {
-    primary: 'gemini-oauth/gemini-2.5-flash',
+    primary: 'gemini-cli-oauth/gemini-2.5-flash',
     fallbacks: ['openai-oauth/gpt-5.4-mini', 'claude-code/haiku'],
   },
   'sophia:domestic:sentiment': {
     // 한국어 감성: gemini-flash (한국어 지원 우수)
-    primary: 'gemini-oauth/gemini-2.5-flash',
+    primary: 'gemini-cli-oauth/gemini-2.5-flash',
     fallbacks: ['claude-code/haiku', 'openai-oauth/gpt-5.4-mini'],
   },
   'sophia:overseas:sentiment': {
-    primary: 'gemini-oauth/gemini-2.5-flash',
+    primary: 'gemini-cli-oauth/gemini-2.5-flash',
     fallbacks: ['openai-oauth/gpt-5.4-mini', 'claude-code/haiku'],
   },
 
@@ -286,28 +307,28 @@ const ROUTING_MATRIX: Record<string, LLMRoute> = {
   // 스크리닝: gpt-5.4-mini (대량 처리 + 고속)
   'argos:any:screening': {
     primary: 'openai-oauth/gpt-5.4-mini',
-    fallbacks: ['groq/llama-3.3-70b-versatile', 'gemini-oauth/gemini-2.5-flash'],
+    fallbacks: ['groq/llama-3.3-70b-versatile', 'gemini-cli-oauth/gemini-2.5-flash'],
   },
 
   // ── hermes ─────────────────────────────────────────────────────────────────
   // 뉴스 다국어: gemini-flash (Google News 통합 + 한/영/중)
   'hermes:any:sentiment': {
-    primary: 'gemini-oauth/gemini-2.5-flash',
+    primary: 'gemini-cli-oauth/gemini-2.5-flash',
     fallbacks: ['claude-code/haiku', 'openai-oauth/gpt-5.4-mini'],
   },
 
   // ── oracle ─────────────────────────────────────────────────────────────────
-  // 온체인 + 파생상품: claude-sonnet (복잡 추론)
+  // 온체인 + 파생상품: gpt-5.4 우선, Groq reasoning 폴백
   'oracle:crypto:onchain': {
-    primary: 'claude-code/sonnet',
-    fallbacks: ['openai-oauth/gpt-5.4', 'groq/qwen3-32b'],
+    primary: 'openai-oauth/gpt-5.4',
+    fallbacks: ['groq/qwen/qwen3-32b', 'claude-code/haiku'],
   },
 
   // ── chronos ────────────────────────────────────────────────────────────────
-  // 백테스팅: claude-sonnet (정확도 critical)
+  // 백테스팅: gpt-5.4 우선, Groq reasoning 폴백
   'chronos:any:backtest': {
-    primary: 'claude-code/sonnet',
-    fallbacks: ['openai-oauth/gpt-5.4', 'groq/qwen3-32b'],
+    primary: 'openai-oauth/gpt-5.4',
+    fallbacks: ['groq/qwen/qwen3-32b', 'claude-code/haiku'],
   },
 
   // ── zeus / athena ──────────────────────────────────────────────────────────
@@ -325,6 +346,20 @@ const ROUTING_MATRIX: Record<string, LLMRoute> = {
   'sentinel:any:anomaly_detect': {
     primary: 'openai-oauth/gpt-5.4-mini',
     fallbacks: ['claude-code/haiku'],
+  },
+
+  // ── kairos / stock-flow / sweeper ────────────────────────────────────────
+  'kairos:any:prediction': {
+    primary: 'openai-oauth/gpt-5.4',
+    fallbacks: ['groq/qwen/qwen3-32b', 'gemini-cli-oauth/gemini-2.5-flash'],
+  },
+  'stock-flow:any:flow': {
+    primary: 'groq/qwen/qwen3-32b',
+    fallbacks: ['openai-oauth/gpt-5.4-mini', 'gemini-cli-oauth/gemini-2.5-flash'],
+  },
+  'sweeper:any:operations': {
+    primary: 'groq/llama-3.1-8b-instant',
+    fallbacks: ['openai-oauth/gpt-5.4-mini'],
   },
 };
 

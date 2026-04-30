@@ -221,11 +221,11 @@ export const PROFILES: Record<string, TeamProfiles> = {
       "claude_code_name": "luna-ops",
       "claude_code_settings": CLAUDE_CODE_SETTINGS["luna-ops"],
       "primary_routes": [
-        "claude-code/sonnet"
+        "openai-oauth/gpt-5.4"
       ],
       "fallback_routes": [
         GROQ_VERSATILE_ROUTE,
-        OPENAI_FAST_ROUTE
+        "claude-code/haiku"
       ],
       "critical": false
     },
@@ -235,7 +235,7 @@ export const PROFILES: Record<string, TeamProfiles> = {
       "runtime_agent": "luna-ops",
       "claude_code_name": "luna-ops",
       "claude_code_settings": CLAUDE_CODE_SETTINGS["luna-ops"],
-      "primary_routes": ["groq/qwen3-32b"],
+      "primary_routes": ["groq/qwen/qwen3-32b"],
       "fallback_routes": ["claude-code/haiku", OPENAI_FAST_ROUTE],
       "timeout_ms": 8_000,
       "critical": true
@@ -245,7 +245,7 @@ export const PROFILES: Record<string, TeamProfiles> = {
       "runtime_agent": "luna-ops",
       "claude_code_name": "luna-ops",
       "claude_code_settings": CLAUDE_CODE_SETTINGS["luna-ops"],
-      "primary_routes": [GEMINI_OAUTH_FLASH_ROUTE],
+      "primary_routes": [GEMINI_CLI_FLASH_ROUTE],
       "fallback_routes": [OPENAI_FAST_ROUTE, "claude-code/haiku"]
     },
     // argos: 대량 스크리닝 — gpt-5.4-mini 우선
@@ -254,15 +254,15 @@ export const PROFILES: Record<string, TeamProfiles> = {
       "claude_code_name": "luna-ops",
       "claude_code_settings": CLAUDE_CODE_SETTINGS["luna-ops"],
       "primary_routes": [OPENAI_FAST_ROUTE],
-      "fallback_routes": [GROQ_VERSATILE_ROUTE, GEMINI_OAUTH_FLASH_ROUTE]
+      "fallback_routes": [GROQ_VERSATILE_ROUTE, GEMINI_CLI_FLASH_ROUTE]
     },
-    // oracle/chronos: 복잡 추론 — claude-sonnet 최우선
+    // oracle/chronos: 복잡 추론 — 현재 healthy OAuth chain 우선
     "deep_reasoning": {
       "runtime_agent": "luna-ops",
       "claude_code_name": "luna-ops",
       "claude_code_settings": CLAUDE_CODE_SETTINGS["luna-ops"],
-      "primary_routes": ["claude-code/sonnet"],
-      "fallback_routes": ["openai-oauth/gpt-5.4", "groq/qwen3-32b"]
+      "primary_routes": ["openai-oauth/gpt-5.4"],
+      "fallback_routes": ["groq/qwen/qwen3-32b", "claude-code/haiku"]
     },
     // zeus/athena: 토론 논거 — gpt-5.4-mini (균형)
     "debate_agent": {
