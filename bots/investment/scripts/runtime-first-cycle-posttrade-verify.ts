@@ -79,22 +79,37 @@ async function getPosttradeEvaluations(symbol: string | null, tradeId: number | 
 
 async function getTradeQualityEvaluations(symbol: string | null, tradeId: number | null, hours: number) {
   try {
-    let whereClause = `WHERE evaluated_at >= NOW() - INTERVAL '${Math.max(1, hours)} hours'`;
-    const params: any[] = [];
     if (tradeId) {
-      params.push(tradeId);
-      whereClause += ` AND trade_id = $${params.length}`;
-    } else if (symbol) {
+      const rows = await db.query(
+        `SELECT NULL::text AS id, trade_id, NULL::text AS symbol,
+                market_decision_score, pipeline_quality_score,
+                monitoring_score, backtest_utilization_score, overall_score,
+                category, rationale, evaluated_at
+           FROM investment.trade_quality_evaluations
+          WHERE evaluated_at >= NOW() - INTERVAL '${Math.max(1, hours)} hours'
+            AND trade_id = $1
+          ORDER BY evaluated_at DESC
+          LIMIT 10`,
+        [tradeId],
+      );
+      return rows || [];
+    }
+
+    let whereClause = `WHERE tqe.evaluated_at >= NOW() - INTERVAL '${Math.max(1, hours)} hours'`;
+    const params: any[] = [];
+    if (symbol) {
       params.push(symbol);
-      whereClause += ` AND symbol = $${params.length}`;
+      whereClause += ` AND t.symbol = $${params.length}`;
     }
     const rows = await db.query(
-      `SELECT id, trade_id, symbol, market_decision_score, pipeline_quality_score,
-              monitoring_score, backtest_utilization_score, overall_score,
-              category, rationale, evaluated_at
-         FROM investment.trade_quality_evaluations
+      `SELECT NULL::text AS id, tqe.trade_id, t.symbol,
+              tqe.market_decision_score, tqe.pipeline_quality_score,
+              tqe.monitoring_score, tqe.backtest_utilization_score, tqe.overall_score,
+              tqe.category, tqe.rationale, tqe.evaluated_at
+         FROM investment.trade_quality_evaluations tqe
+         LEFT JOIN trades t ON t.id = tqe.trade_id::text
          ${whereClause}
-        ORDER BY evaluated_at DESC
+        ORDER BY tqe.evaluated_at DESC
         LIMIT 10`,
       params,
     );
@@ -106,6 +121,25 @@ async function getTradeQualityEvaluations(symbol: string | null, tradeId: number
 
 async function getStageAttributions(symbol: string | null, tradeId: number | null, hours: number) {
   try {
+    if (tradeId) {
+      const tableRows = await db.query(
+        `SELECT trade_id, stage_id, decision_type, decision_score,
+                contribution_to_outcome, evidence, created_at
+           FROM investment.trade_decision_attribution
+          WHERE trade_id = $1
+          ORDER BY created_at DESC
+          LIMIT 20`,
+        [tradeId],
+      ).catch(() => []);
+      if ((tableRows || []).length > 0) {
+        return (tableRows || []).map((row: any) => ({
+          id: `${row.trade_id}:${row.stage_id}`,
+          event_type: 'trade_decision_attribution',
+          payload: row,
+          created_at: row.created_at,
+        }));
+      }
+    }
     const cond = tradeId
       ? `AND payload->>'trade_id' = '${tradeId}'`
       : symbol
@@ -283,7 +317,7 @@ export async function runFirstCyclePosttradeVerify({
       evaluationTableCount: (tradeQualityEvals || []).length,
       latestEvaluation: latestQuality ? {
         tradeId: latestQuality.trade_id,
-        symbol: latestQuality.symbol,
+        symbol,
         marketDecisionScore: latestQuality.market_decision_score,
         pipelineQualityScore: latestQuality.pipeline_quality_score,
         monitoringScore: latestQuality.monitoring_score,

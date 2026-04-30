@@ -80,8 +80,20 @@ async function getRagExperiences(symbol: string | null, hours: number) {
         ORDER BY created_at DESC
         LIMIT 10`,
       [],
-    );
-    return rows || [];
+    ).catch(() => []);
+    if ((rows || []).length > 0) return rows || [];
+    const lunaRows = await db.query(
+      `SELECT id, category AS collection, content, metadata, created_at
+         FROM luna_rag_documents
+        WHERE category IN ('rag_experience', 'luna_experience', 'investment_experience', 'trade_reflexion')
+          AND (owner_agent = 'luna' OR metadata->>'team' = 'investment' OR metadata::text ILIKE '%luna%')
+          AND created_at >= NOW() - INTERVAL '${Math.max(1, hours)} hours'
+          ${cond}
+        ORDER BY created_at DESC
+        LIMIT 10`,
+      [],
+    ).catch(() => []);
+    return lunaRows || [];
   } catch {
     return [];
   }

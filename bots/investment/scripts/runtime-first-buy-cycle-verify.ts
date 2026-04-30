@@ -34,7 +34,7 @@ async function getLastBuyTrade(exchange: string, hours: number, tradeId: number 
                 paper, exchange, trade_mode, executed_at, tp_price, sl_price,
                 tp_sl_set, execution_origin, quality_flag
            FROM trades
-          WHERE id = $1`,
+          WHERE id = $1::text`,
         [tradeId],
       );
     }
@@ -71,26 +71,47 @@ async function getSignalForTrade(signalId: number | null) {
   }
 }
 
-async function getPositionForSymbol(symbol: string, exchange: string) {
+async function getPositionForSymbol(symbol: string, exchange: string, trade: any = null) {
   try {
+    const conditions = [`symbol = $1`, `exchange = $2`];
+    const params: any[] = [symbol, exchange];
+    if (trade && typeof trade.paper === 'boolean') {
+      params.push(trade.paper);
+      conditions.push(`paper = $${params.length}`);
+    }
+    if (trade?.trade_mode) {
+      params.push(trade.trade_mode);
+      conditions.push(`COALESCE(trade_mode, 'normal') = $${params.length}`);
+    }
     return await db.get(
-      `SELECT id, symbol, amount, avg_price, unrealized_pnl,
-              exchange, paper, trade_mode, created_at, updated_at
+      `SELECT symbol, amount, avg_price, unrealized_pnl,
+              exchange, paper, trade_mode, updated_at
          FROM positions
-        WHERE symbol = $1
-          AND exchange = $2
+        WHERE ${conditions.join(' AND ')}
         ORDER BY updated_at DESC
         LIMIT 1`,
-      [symbol, exchange],
+      params,
     );
   } catch {
     return null;
   }
 }
 
-async function getLifecycleEvents(symbol: string, exchange: string) {
+async function getLifecycleEvents(symbol: string, exchange: string, tradeId: number | null = null) {
   try {
-    const scopeKey = `${exchange}:${symbol}`;
+    if (tradeId) {
+      const rows = await db.query(
+        `SELECT id, position_scope_key, phase, stage_id, owner_agent,
+                event_type, created_at, input_snapshot, output_snapshot
+           FROM investment.position_lifecycle_events
+          WHERE output_snapshot::text ILIKE $1
+             OR input_snapshot::text ILIKE $1
+          ORDER BY created_at ASC
+          LIMIT 100`,
+        [`%${tradeId}%`],
+      );
+      return rows || [];
+    }
     const rows = await db.query(
       `SELECT id, position_scope_key, phase, stage_id, owner_agent,
               event_type, created_at, input_snapshot, output_snapshot
@@ -164,7 +185,8 @@ function checkDof(trade: any, position: any, lifecycleEvents: any[], signal: any
   if (signal) dof.push(`✅ signal 매칭 (id=${signal.id}, confidence=${signal.confidence})`);
   else if (trade?.signal_id) dof.push('⚠️  signal 조회 실패');
   else dof.push('⚠️  signal_id 없음');
-  if (position) dof.push(`✅ positions 1건 active (amount=${position.amount})`);
+  if (position && Number(position.amount || 0) > 0) dof.push(`✅ positions 1건 active (amount=${position.amount})`);
+  else if (position) dof.push(`ℹ️  positions 기록 있음 (amount=${position.amount}, 이미 closed 가능)`);
   else dof.push('⚠️  positions active 기록 없음 (이미 closed 이거나 미생성)');
   const stageNums = lifecycleEvents
     .map((e) => Number((e.stage_id || '').split('_')[1]))
@@ -186,8 +208,8 @@ export async function runFirstBuyCycleVerify({
 
   const trade = await getLastBuyTrade(exchange, hours, tradeId);
   const signal = trade?.signal_id ? await getSignalForTrade(trade.signal_id) : null;
-  const position = trade?.symbol ? await getPositionForSymbol(trade.symbol, exchange) : null;
-  const lifecycleEvents = trade?.symbol ? await getLifecycleEvents(trade.symbol, exchange) : [];
+  const position = trade?.symbol ? await getPositionForSymbol(trade.symbol, exchange, trade) : null;
+  const lifecycleEvents = trade?.symbol ? await getLifecycleEvents(trade.symbol, exchange, tradeId) : [];
   const lifecycleSummary = summarizeLifecycle(lifecycleEvents);
   const traceEvents = trade?.signal_id ? await getSignalExecutionTrace(trade.signal_id) : [];
   const dof = checkDof(trade, position, lifecycleEvents, signal);

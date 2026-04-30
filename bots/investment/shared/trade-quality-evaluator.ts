@@ -226,12 +226,51 @@ export async function fetchPendingPosttradeCandidates({
 // ─── Private helpers ──────────────────────────────────────────────────────────
 
 async function fetchTrade(tradeId: number) {
-  return db.get(`
+  const historyTrade = await db.get(`
     SELECT id, symbol, market, direction, entry_price, exit_price, amount_krw,
            entry_at, exit_at, exit_reason, setup_type, exchange
     FROM investment.trade_history
     WHERE id = $1
-  `, [tradeId]);
+  `, [tradeId]).catch(() => null);
+  if (historyTrade) return historyTrade;
+
+  const closeTrade = await db.get(
+    `SELECT id, signal_id, symbol, side, amount, price, total_usdt,
+            paper, exchange, trade_mode, executed_at, execution_origin
+       FROM trades
+      WHERE id = $1
+      LIMIT 1`,
+    [String(tradeId)],
+  ).catch(() => null);
+  if (!closeTrade) return null;
+
+  const entryTrade = await db.get(
+    `SELECT id, signal_id, symbol, side, amount, price, total_usdt,
+            paper, exchange, trade_mode, executed_at, execution_origin
+       FROM trades
+      WHERE symbol = $1
+        AND exchange = $2
+        AND side = 'buy'
+        AND executed_at <= $3
+      ORDER BY executed_at DESC
+      LIMIT 1`,
+    [closeTrade.symbol, closeTrade.exchange, closeTrade.executed_at],
+  ).catch(() => null);
+
+  return {
+    id: Number(tradeId),
+    symbol: closeTrade.symbol,
+    market: closeTrade.exchange === 'binance' ? 'crypto' : closeTrade.exchange,
+    direction: closeTrade.side === 'sell' ? 'long' : 'long',
+    entry_price: Number(entryTrade?.price || closeTrade.price || 0),
+    exit_price: Number(closeTrade.price || entryTrade?.price || 0),
+    amount_krw: Number(closeTrade.total_usdt || entryTrade?.total_usdt || 0),
+    entry_at: entryTrade?.executed_at || closeTrade.executed_at,
+    exit_at: closeTrade.executed_at,
+    exit_reason: closeTrade.execution_origin || 'first_close_cycle_paper_close',
+    setup_type: 'first_close_cycle',
+    exchange: closeTrade.exchange,
+  };
 }
 
 async function fetchRationale(tradeId: number): Promise<string> {
@@ -240,7 +279,7 @@ async function fetchRationale(tradeId: number): Promise<string> {
     WHERE category = 'thesis'
       AND metadata->>'trade_id' = $1::text
     ORDER BY created_at DESC LIMIT 1
-  `, [String(tradeId)]);
+  `, [String(tradeId)]).catch(() => null);
   return row?.content ?? 'rationale 없음';
 }
 
@@ -250,7 +289,7 @@ async function fetchAnalystContributions(tradeId: number) {
     FROM investment.trade_review
     WHERE trade_id = $1
     LIMIT 1
-  `, [tradeId]);
+  `, [tradeId]).catch(() => null);
   return row ?? {};
 }
 
@@ -305,10 +344,13 @@ async function fetchTradeReview(tradeId: number) {
     FROM investment.trade_review
     WHERE trade_id = $1
     LIMIT 1
-  `, [tradeId]);
+  `, [tradeId]).catch(() => null);
 }
 
 async function llmEvaluate(trade: any, rationale: string, analystData: any, lifecycleEvt: any[], backtestData: any, reviewData: any): Promise<any> {
+  if (String(process.env.LUNA_FIRST_CYCLE_FORCE_RULE_BASED_POSTTRADE || '').toLowerCase() === 'true') {
+    return buildRuleBasedEvaluation(trade, lifecycleEvt, reviewData, 'first_cycle_rule_based_forced');
+  }
   const pnlPct = computePnlPct(trade);
   const holdHours = computeHoldHours(trade);
   const reevalCount = reviewData?.reevaluation_count ?? 0;
@@ -362,8 +404,31 @@ JSON 형식으로만 답하세요:
     return parseJson(text);
   } catch (err) {
     console.error(`[TradeQualityEvaluator] LLM 평가 실패 trade_id=${trade?.id || 'unknown'}:`, err);
+    if (String(process.env.LUNA_FIRST_CYCLE_RULE_BASED_POSTTRADE || '').toLowerCase() === 'true') {
+      return buildRuleBasedEvaluation(trade, lifecycleEvt, reviewData, 'first_cycle_rule_based_fallback');
+    }
     return null;
   }
+}
+
+function buildRuleBasedEvaluation(trade: any, lifecycleEvt: any[] = [], reviewData: any = {}, source = 'rule_based') {
+  const pnlPct = computePnlPct(trade);
+  const holdHours = computeHoldHours(trade);
+  const hasLateLifecycle = lifecycleEvt.some((evt: any) => ['stage_6', 'stage_7', 'stage_8'].includes(String(evt?.stage_id || '')));
+  const marketScore = pnlPct < 0 ? 0.24 : pnlPct > 1 ? 0.78 : 0.55;
+  const pipelineScore = reviewData?.strategy_family ? 0.62 : 0.45;
+  const monitoringScore = hasLateLifecycle ? 0.58 : 0.42;
+  const backtestScore = reviewData?.backtest_used === true ? 0.7 : 0.32;
+  return {
+    market_decision_score: marketScore,
+    pipeline_quality_score: pipelineScore,
+    monitoring_score: monitoringScore,
+    backtest_utilization_score: backtestScore,
+    pnl_pct: pnlPct,
+    hold_hours: holdHours,
+    source,
+    rationale: `규칙 기반 first close cycle 평가입니다. PnL ${pnlPct.toFixed(2)}%, 보유 ${holdHours.toFixed(2)}h, lifecycle late-stage=${hasLateLifecycle}.`,
+  };
 }
 
 async function persistResult(result: TradeQualityResult) {

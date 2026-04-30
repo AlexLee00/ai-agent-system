@@ -269,11 +269,14 @@ export async function runLunaEntryTriggerDiagnose({
   const heartbeat = readHeartbeat(HEARTBEAT_PATH);
   const hbAge = heartbeatAgeMinutes(heartbeat);
   const hbResult = heartbeat?.result || {};
+  const hbLastFire = heartbeat?.lastFire || null;
 
   const envKeys = [
     'LUNA_INTELLIGENT_DISCOVERY_MODE',
     'LUNA_ENTRY_TRIGGER_ENGINE_ENABLED',
+    'LUNA_ENTRY_TRIGGER_THRESHOLD',
     'LUNA_PREDICTIVE_VALIDATION_MODE',
+    'LUNA_PREDICTIVE_VALIDATION_THRESHOLD',
     'LUNA_PREDICTIVE_REQUIRE_COMPONENTS',
     'LUNA_ENTRY_TRIGGER_MIN_CONFIDENCE',
     'LUNA_ENTRY_TRIGGER_FIRE_IN_AUTONOMOUS',
@@ -294,9 +297,20 @@ export async function runLunaEntryTriggerDiagnose({
   ]).then((results) => results.map((r) => (r.status === 'fulfilled' ? r.value : null)));
 
   const { blocks, issues } = diagnoseBlockReasons(flags, activeTriggers || [], env);
+  const hasActiveTriggers = (activeTriggers || []).length > 0;
+  const hasHeartbeatFire = Number(hbResult.fired || 0) > 0 || Number(hbLastFire?.fired || 0) > 0;
+  const hasRecentFire = (recentFired || []).length > 0;
+  const readinessStatus = issues.length > 0
+    ? 'blocked'
+    : hasActiveTriggers
+      ? 'armed'
+      : hasHeartbeatFire || hasRecentFire
+        ? 'recently_fired'
+        : 'waiting_for_candidate';
 
   const diagnosis = {
-    ok: issues.length === 0 && (activeTriggers || []).length > 0,
+    ok: issues.length === 0,
+    readinessStatus,
     checkedAt: new Date().toISOString(),
     exchange,
     mode: flags.mode,
@@ -307,6 +321,7 @@ export async function runLunaEntryTriggerDiagnose({
       checked: Number(hbResult.checked || 0),
       readyBlocked: Number(hbResult.readyBlocked || 0),
       eventSource: heartbeat?.eventSource || 'none',
+      lastFire: hbLastFire,
     },
     activeTriggers: {
       count: (activeTriggers || []).length,
@@ -412,7 +427,7 @@ async function main() {
   console.log('💰 오늘 LLM 예산');
   console.log(`  호출 추정: ${diagnosis.budget.todayLlmCallsEstimate}건 (~$${diagnosis.budget.estimatedCostUsd.toFixed(3)})`);
   console.log('');
-  console.log(`결론: ${diagnosis.ok ? '✅ 정상 (이벤트 발생 대기)' : '⚠️  조치 필요'}`);
+  console.log(`결론: ${diagnosis.ok ? `✅ 정상 (${diagnosis.readinessStatus})` : `⚠️  조치 필요 (${diagnosis.readinessStatus})`}`);
 }
 
 if (isDirectExecution(import.meta.url)) {

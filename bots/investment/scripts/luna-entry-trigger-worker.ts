@@ -79,13 +79,32 @@ function shouldWriteHeartbeat() {
 
 export function writeEntryTriggerWorkerHeartbeat(payload = {}, file = heartbeatPath()) {
   if (!shouldWriteHeartbeat() || !file) return null;
+  let previous = null;
+  try {
+    if (fs.existsSync(file)) previous = JSON.parse(fs.readFileSync(file, 'utf8'));
+  } catch {
+    previous = null;
+  }
+  const fired = Number(payload?.result?.fired || 0);
+  const checkedAt = new Date().toISOString();
+  const clearLastFire = payload.clearLastFire === true;
   const body = {
     ok: payload.ok === true,
-    checkedAt: new Date().toISOString(),
+    checkedAt,
     exchange: payload.exchange || null,
     eventSource: payload.eventSource || null,
     eventCount: Number(payload.eventCount || 0),
     result: payload.result || null,
+    lastFire: clearLastFire
+      ? null
+      : fired > 0
+      ? {
+          checkedAt,
+          exchange: payload.exchange || null,
+          eventSource: payload.eventSource || null,
+          fired,
+        }
+      : previous?.lastFire || null,
   };
   fs.mkdirSync(path.dirname(file), { recursive: true });
   fs.writeFileSync(file, `${JSON.stringify(body, null, 2)}\n`);

@@ -62,13 +62,49 @@ export async function getStageAttributions(tradeId: number): Promise<StageAttrib
 // ─── Private ─────────────────────────────────────────────────────────────────
 
 async function fetchTradeBasic(tradeId: number) {
-  return db.get(`
+  const historyTrade = await db.get(`
     SELECT id, symbol, market, exchange, direction,
            entry_price, exit_price, entry_at, exit_at,
            exit_reason, setup_type
     FROM investment.trade_history
     WHERE id = $1
-  `, [tradeId]);
+  `, [tradeId]).catch(() => null);
+  if (historyTrade) return historyTrade;
+
+  const closeTrade = await db.get(
+    `SELECT id, signal_id, symbol, side, amount, price, total_usdt,
+            paper, exchange, trade_mode, executed_at, execution_origin
+       FROM trades
+      WHERE id = $1
+      LIMIT 1`,
+    [String(tradeId)],
+  ).catch(() => null);
+  if (!closeTrade) return null;
+  const entryTrade = await db.get(
+    `SELECT id, signal_id, symbol, side, amount, price, total_usdt,
+            paper, exchange, trade_mode, executed_at, execution_origin
+       FROM trades
+      WHERE symbol = $1
+        AND exchange = $2
+        AND side = 'buy'
+        AND executed_at <= $3
+      ORDER BY executed_at DESC
+      LIMIT 1`,
+    [closeTrade.symbol, closeTrade.exchange, closeTrade.executed_at],
+  ).catch(() => null);
+  return {
+    id: Number(tradeId),
+    symbol: closeTrade.symbol,
+    market: closeTrade.exchange === 'binance' ? 'crypto' : closeTrade.exchange,
+    exchange: closeTrade.exchange,
+    direction: 'long',
+    entry_price: Number(entryTrade?.price || closeTrade.price || 0),
+    exit_price: Number(closeTrade.price || entryTrade?.price || 0),
+    entry_at: entryTrade?.executed_at || closeTrade.executed_at,
+    exit_at: closeTrade.executed_at,
+    exit_reason: closeTrade.execution_origin || 'first_close_cycle_paper_close',
+    setup_type: 'first_close_cycle',
+  };
 }
 
 async function fetchReviewData(tradeId: number) {
@@ -79,7 +115,7 @@ async function fetchReviewData(tradeId: number) {
     FROM investment.trade_review
     WHERE trade_id = $1
     LIMIT 1
-  `, [tradeId]);
+  `, [tradeId]).catch(() => null);
 }
 
 async function fetchLifecycleData(trade: any) {
@@ -114,7 +150,7 @@ async function fetchRagDocs(tradeId: number) {
     WHERE metadata->>'trade_id' = $1::text
     ORDER BY created_at DESC
     LIMIT 10
-  `, [String(tradeId)]);
+  `, [String(tradeId)]).catch(() => []);
 }
 
 function buildAttributions(

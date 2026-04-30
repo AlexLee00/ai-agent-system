@@ -85,14 +85,24 @@ async function getMatchingBuyTrade(symbol: string, sellTrade: any) {
   }
 }
 
-async function getPositionClosed(symbol: string, exchange: string) {
+async function getPositionClosed(symbol: string, exchange: string, trade: any = null) {
   try {
+    const conditions = [`symbol = $1`, `exchange = $2`];
+    const params: any[] = [symbol, exchange];
+    if (trade && typeof trade.paper === 'boolean') {
+      params.push(trade.paper);
+      conditions.push(`paper = $${params.length}`);
+    }
+    if (trade?.trade_mode) {
+      params.push(trade.trade_mode);
+      conditions.push(`COALESCE(trade_mode, 'normal') = $${params.length}`);
+    }
     const current = await db.get(
-      `SELECT id, symbol, amount, avg_price, exchange, paper, trade_mode, updated_at
+      `SELECT symbol, amount, avg_price, exchange, paper, trade_mode, updated_at
          FROM positions
-        WHERE symbol = $1 AND exchange = $2
+        WHERE ${conditions.join(' AND ')}
         ORDER BY updated_at DESC LIMIT 1`,
-      [symbol, exchange],
+      params,
     );
     return {
       current,
@@ -148,7 +158,7 @@ async function getCloseoutReview(symbol: string, hours: number) {
       `SELECT id, symbol, closeout_type, closeout_reason,
               planned_ratio, executed_ratio, pnl_realized,
               review_status, review_result, created_at
-         FROM investment.closeout_reviews
+         FROM investment.position_closeout_reviews
         WHERE symbol = $1
           AND created_at >= NOW() - INTERVAL '${Math.max(1, hours)} hours'
         ORDER BY created_at DESC
@@ -258,7 +268,7 @@ export async function runFirstCycleCloseVerify({
   const sym = resolvedSymbol || sellTrade?.symbol!;
   const [buyTrade, positionStatus, closureEvents, closeEvents, pendingPosttrade] = await Promise.allSettled([
     getMatchingBuyTrade(sym, sellTrade),
-    getPositionClosed(sym, exchange),
+    getPositionClosed(sym, exchange, sellTrade),
     getLifecycleClosure(sym, hours),
     getCloseEvents(sym, hours),
     getPendingPosttradeEvents(sym),

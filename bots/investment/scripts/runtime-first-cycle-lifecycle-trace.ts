@@ -118,7 +118,7 @@ async function getCloseoutReviews(symbol: string) {
       `SELECT id, symbol, exchange, closeout_type, closeout_reason,
               planned_ratio, executed_ratio, pnl_realized,
               review_status, review_result, created_at
-         FROM investment.closeout_reviews
+         FROM investment.position_closeout_reviews
         WHERE symbol = $1
         ORDER BY created_at DESC
         LIMIT 10`,
