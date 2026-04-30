@@ -163,8 +163,18 @@ function runSecretsMeta(hubRoot: string): void {
   });
 }
 
+function runNodeImportTest(hubRoot: string, relativeFile: string): void {
+  runStep({
+    label: relativeFile,
+    command: process.execPath,
+    args: ['--import', 'tsx', '--test', relativeFile],
+    cwd: hubRoot,
+  });
+}
+
 function runUnit(scriptDir: string, hubRoot: string, jestBin: string, tsxBin: string): void {
   runStep(tsxStep(tsxBin, scriptDir, hubRoot, 'secret-leak-smoke.ts'));
+  runNodeImportTest(hubRoot, '__tests__/alarm-policy.node.test.js');
   runStep(unitJestStep(jestBin, hubRoot));
   runSteps(unitSmokeScripts().map((script) => tsxStep(tsxBin, scriptDir, hubRoot, script)));
 }
