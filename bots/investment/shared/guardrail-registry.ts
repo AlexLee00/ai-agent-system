@@ -109,6 +109,34 @@ const DEFAULT_GUARDRAILS = [
     owner: 'luna',
     command: ['node', 'scripts/runtime-luna-7day-report.ts', '--json', '--no-write'],
   },
+  {
+    name: 'luna_memory_llm_routing_final',
+    category: 'runtime',
+    severity: 'medium',
+    owner: 'luna',
+    command: ['npm', '--prefix', new URL('..', import.meta.url).pathname, 'run', '-s', 'check:luna-memory-llm-routing-final'],
+  },
+  {
+    name: 'failed_signal_reflexion_backfill_dryrun',
+    category: 'data',
+    severity: 'medium',
+    owner: 'luna',
+    command: ['node', 'scripts/runtime-failed-reflexion-backfill.ts', '--json'],
+  },
+  {
+    name: 'luna_agent_bus_stats',
+    category: 'runtime',
+    severity: 'low',
+    owner: 'luna',
+    command: ['node', 'scripts/runtime-agent-bus-stats.ts', '--json'],
+  },
+  {
+    name: 'luna_7day_checkpoint',
+    category: 'data',
+    severity: 'medium',
+    owner: 'luna',
+    command: ['node', 'scripts/runtime-luna-7day-checkpoint.ts', '--json'],
+  },
 ];
 
 function normalizeEntry(entry = {}) {

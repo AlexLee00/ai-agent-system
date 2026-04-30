@@ -8,6 +8,7 @@ import assert from 'node:assert/strict';
 import os from 'node:os';
 import path from 'node:path';
 import { collectDashboardData, runMemoryDashboard } from './runtime-agent-memory-dashboard-html.ts';
+import { listAgentDefinitions } from '../shared/agent-yaml-loader.ts';
 import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
 
 async function runSmoke() {
@@ -36,17 +37,18 @@ async function runSmoke() {
     });
   }
 
-  // ─── 2. agentRetrievals — 12 에이전트 포함 ──────────────────────────
+  // ─── 2. agentRetrievals — canonical YAML 에이전트 포함 ───────────────
   {
     const data = await collectDashboardData().catch(() => null);
     if (data) {
       const agents = data.agentRetrievals.map(a => a.agent);
+      const canonicalAgents = listAgentDefinitions().map((agent) => agent.name);
       const hasLuna = agents.includes('luna');
       assert.ok(hasLuna, 'luna agent present in retrievals');
-      assert.equal(data.agentRetrievals.length, 12, '12개 에이전트');
-      results.push({ name: 'agent_retrievals_12', pass: true, detail: `agents: ${agents.join(', ')}` });
+      assert.ok(data.agentRetrievals.length >= canonicalAgents.length, 'canonical agents covered');
+      results.push({ name: 'agent_retrievals_canonical', pass: true, detail: `agents: ${agents.join(', ')}` });
     } else {
-      results.push({ name: 'agent_retrievals_12', pass: true, detail: 'DB 연결 불가 (soft pass)' });
+      results.push({ name: 'agent_retrievals_canonical', pass: true, detail: 'DB 연결 불가 (soft pass)' });
     }
   }
 

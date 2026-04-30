@@ -22,6 +22,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import * as db from '../shared/db.ts';
+import { collectAgentBusStats } from '../shared/agent-bus-stats.ts';
+import { listAgentDefinitions } from '../shared/agent-yaml-loader.ts';
 import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -36,10 +38,16 @@ const OUTPUT_PATH = () =>
   process.env.LUNA_MEMORY_DASHBOARD_OUTPUT_PATH
   || path.join(INVESTMENT_DIR, 'output', 'dashboard');
 
-const LUNA_AGENTS = [
-  'luna', 'argos', 'aria', 'sophia', 'hermes', 'oracle',
-  'nemesis', 'hephaestos', 'hanul', 'chronos', 'zeus', 'athena',
-];
+const LUNA_AGENTS = (() => {
+  try {
+    return listAgentDefinitions().map((agent) => agent.name).sort();
+  } catch {
+    return [
+      'luna', 'argos', 'aria', 'sophia', 'hermes', 'oracle',
+      'nemesis', 'hephaestos', 'hanul', 'chronos', 'zeus', 'athena',
+    ];
+  }
+})();
 
 export interface DashboardData {
   generatedAt: string;
@@ -62,6 +70,7 @@ export interface DashboardData {
     totalMessages: number;
     pendingMessages: number;
     agentActivity: Array<{ agent: string; pending: number }>;
+    stats?: any;
   };
 }
 
@@ -221,7 +230,7 @@ async function collectCrossBus(): Promise<DashboardData['crossBus']> {
 }
 
 export async function collectDashboardData(): Promise<DashboardData> {
-  const [l1, l2, l3, l4, retrievals, reflexions, llmRouting, crossBus] = await Promise.allSettled([
+  const [l1, l2, l3, l4, retrievals, reflexions, llmRouting, crossBus, busStats] = await Promise.allSettled([
     collectLayer1Stats(),
     collectLayer2Stats(),
     collectLayer3Stats(),
@@ -230,6 +239,7 @@ export async function collectDashboardData(): Promise<DashboardData> {
     collectReflexions(),
     collectLlmRouting(),
     collectCrossBus(),
+    collectAgentBusStats({ days: 7 }),
   ]);
 
   const safe = <T>(r: PromiseSettledResult<T>, fallback: T): T =>
@@ -244,7 +254,10 @@ export async function collectDashboardData(): Promise<DashboardData> {
     agentRetrievals: safe(retrievals, LUNA_AGENTS.map(a => ({ agent: a, count: 0, lastActivity: null }))),
     reflexions: safe(reflexions, { failureCount: 0, llmFailureCount: 0, recent5: [] }),
     llmRouting: safe(llmRouting, { totalCalls: 0, successRate: 0, providerBreakdown: [] }),
-    crossBus: safe(crossBus, { totalMessages: 0, pendingMessages: 0, agentActivity: [] }),
+    crossBus: {
+      ...safe(crossBus, { totalMessages: 0, pendingMessages: 0, agentActivity: [] }),
+      stats: safe(busStats, null),
+    },
   };
 }
 
@@ -292,6 +305,10 @@ function renderCliDashboard(data: DashboardData): string {
   line('  [ Cross-Agent Bus (24h) ]');
   line(`    총 메시지   : ${data.crossBus.totalMessages}건`);
   line(`    미처리 대기 : ${data.crossBus.pendingMessages}건`);
+  if (data.crossBus.stats) {
+    line(`    7일 메시지  : ${data.crossBus.stats.window7dMessages}건`);
+    line(`    Top Pair    : ${data.crossBus.stats.topPairs?.[0]?.pair || 'n/a'}`);
+  }
   if (data.crossBus.agentActivity.length > 0) {
     line('    에이전트별 대기:');
     for (const a of data.crossBus.agentActivity) {
@@ -367,6 +384,11 @@ function renderHtmlDashboard(data: DashboardData): string {
 <tbody>${providerRows || '<tr><td colspan="3">데이터 없음</td></tr>'}</tbody></table>
 
 <h2>Cross-Agent Bus (24h) — 총 ${data.crossBus.totalMessages}건, 대기 ${data.crossBus.pendingMessages}건</h2>
+<div>
+  <div class="stat"><div class="stat-label">Bus 7d</div><div class="stat-value">${data.crossBus.stats?.window7dMessages ?? 0}</div></div>
+  <div class="stat"><div class="stat-label">Bus 24h</div><div class="stat-value">${data.crossBus.stats?.window24hMessages ?? data.crossBus.totalMessages}</div></div>
+  <div class="stat"><div class="stat-label">Pending</div><div class="stat-value">${data.crossBus.stats?.pendingMessages ?? data.crossBus.pendingMessages}</div></div>
+</div>
 </body></html>`;
 }
 

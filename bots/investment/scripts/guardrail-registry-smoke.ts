@@ -14,6 +14,10 @@ export async function runSmoke() {
     'luna_live_fire_final_gate',
     'agent_message_bus_hygiene',
     'luna_7day_observation',
+    'luna_memory_llm_routing_final',
+    'failed_signal_reflexion_backfill_dryrun',
+    'luna_agent_bus_stats',
+    'luna_7day_checkpoint',
   ]) {
     assert.ok(registry.get(name), `default guardrail registered: ${name}`);
   }

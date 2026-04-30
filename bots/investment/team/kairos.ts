@@ -17,7 +17,15 @@ function boolEnv(name, fallback = false) {
 }
 
 export function isKairosActive() {
-  return boolEnv('LUNA_KAIROS_ACTIVE_ENABLED', false);
+  return boolEnv('LUNA_KAIROS_ACTIVE_ENABLED', boolEnv('LUNA_KAIROS_ENABLED', false));
+}
+
+export function isKairosShadowMode() {
+  return boolEnv('LUNA_KAIROS_SHADOW_MODE', true) || !isKairosActive();
+}
+
+export function getKairosConfidenceMin() {
+  return Math.max(0, Math.min(1, Number(process.env.LUNA_KAIROS_CONFIDENCE_MIN || 0.7) || 0.7));
 }
 
 export async function forecastSymbol(symbol = 'BTC/USDT', opts = {}) {
@@ -33,10 +41,13 @@ export async function forecastSymbol(symbol = 'BTC/USDT', opts = {}) {
     agent: 'kairos',
     symbol,
     active: isKairosActive(),
-    shadowMode: !isKairosActive() || prediction.shadowMode !== false,
+    shadowMode: isKairosShadowMode() || prediction.shadowMode !== false,
     horizon,
     prediction,
-    recommendation: prediction.usable && isKairosActive() ? prediction.direction : 'shadow_only',
+    confidenceMin: getKairosConfidenceMin(),
+    recommendation: prediction.usable && isKairosActive() && !isKairosShadowMode() && Number(prediction.confidence || 0) >= getKairosConfidenceMin()
+      ? prediction.direction
+      : 'shadow_only',
   };
 }
 
@@ -46,7 +57,7 @@ export async function forecastBatch(symbolClosesMap = {}, opts = {}) {
     ok: true,
     agent: 'kairos',
     active: isKairosActive(),
-    shadowMode: !isKairosActive(),
+    shadowMode: isKairosShadowMode(),
     predictions,
   };
 }
@@ -63,4 +74,4 @@ if (isDirectExecution(import.meta.url)) {
   await runCliMain({ run: main, errorPrefix: '❌ kairos 실패:' });
 }
 
-export default { forecastSymbol, forecastBatch, isKairosActive };
+export default { forecastSymbol, forecastBatch, isKairosActive, isKairosShadowMode, getKairosConfidenceMin };
