@@ -1,0 +1,11 @@
+{
+  "name": "@ai-agent/luna-marketdata-mcp",
+  "version": "1.0.0",
+  "type": "module",
+  "private": true,
+  "description": "Luna market-data MCP bridge for Binance/KIS/TradingView shadow parallel runtime",
+  "scripts": {
+    "start": "node src/server.ts",
+    "smoke": "node ../../scripts/luna-marketdata-mcp-smoke.ts --json"
+  }
+}

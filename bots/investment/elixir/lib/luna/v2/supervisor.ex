@@ -25,6 +25,7 @@ defmodule Luna.V2.Supervisor do
       children =
         core_children() ++
         memory_children() ++
+        agent_children() ++
         position_watch_children() ++
         mapek_children() ++
         registry_children() ++
@@ -61,6 +62,20 @@ defmodule Luna.V2.Supervisor do
   defp memory_children do
     if KillSwitch.layer1_working_memory_enabled?() do
       [Luna.V2.Memory.WorkingMemory]
+    else
+      []
+    end
+  end
+
+  def agent_children do
+    if KillSwitch.elixir_agents_enabled?() do
+      [
+        Luna.V2.Agents.StockFlow,
+        Luna.V2.Agents.Sweeper,
+        Luna.V2.Agents.Aria,
+        Luna.V2.Agents.Sentinel,
+        Luna.V2.Agents.Argos
+      ]
     else
       []
     end

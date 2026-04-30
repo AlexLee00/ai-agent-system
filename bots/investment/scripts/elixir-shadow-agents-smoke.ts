@@ -12,6 +12,9 @@ export async function runSmoke() {
     assert.equal(existsSync(file), true, `${file.pathname} exists`);
     const text = readFileSync(file, 'utf8');
     assert.match(text, /shadow: true/);
+    assert.match(text, /use GenServer/);
+    assert.match(text, /WorkingMemory\.put/);
+    assert.match(text, /mutate: false/);
   }
   return { ok: true, total: files.length, agents: AGENTS };
 }

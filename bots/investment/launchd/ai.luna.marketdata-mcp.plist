@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>ai.luna.marketdata-mcp</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>/opt/homebrew/bin/node</string>
+    <string>/Users/alexlee/projects/ai-agent-system/bots/investment/mcp/luna-marketdata-mcp/src/server.ts</string>
+  </array>
+
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>LUNA_MCP_SERVER_ENABLED</key>
+    <string>true</string>
+    <key>LUNA_MCP_PARALLEL_LAUNCHD</key>
+    <string>true</string>
+    <key>LUNA_MARKETDATA_MCP_PORT</key>
+    <string>4088</string>
+  </dict>
+
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <true/>
+  <key>ThrottleInterval</key>
+  <integer>10</integer>
+
+  <key>StandardOutPath</key>
+  <string>/tmp/ai.luna.marketdata-mcp.log</string>
+  <key>StandardErrorPath</key>
+  <string>/tmp/ai.luna.marketdata-mcp.err.log</string>
+  <key>WorkingDirectory</key>
+  <string>/Users/alexlee/projects/ai-agent-system/bots/investment</string>
+</dict>
+</plist>

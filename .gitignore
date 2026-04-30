@@ -83,6 +83,7 @@ bots/investment/output/ops/luna-entry-trigger-worker-heartbeat.json
 bots/investment/output/ops/posttrade-feedback-worker-heartbeat.json
 bots/investment/output/ops/luna-entry-trigger-operating-report.json
 bots/investment/output/ops/luna-reflection-config-patch.json
+bots/investment/output/reports/luna-final-closure-wave1-report.json
 
 # 비디오팀 — 대용량 미디어 파일
 *.mp4

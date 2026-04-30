@@ -100,7 +100,12 @@ config :luna,
   layer1_working_memory_ttl_ms:
     String.to_integer(System.get_env("LUNA_AGENT_LAYER1_WORKING_MEMORY_TTL_MS", "900000")),
   layer1_working_memory_prune_interval_ms:
-    String.to_integer(System.get_env("LUNA_AGENT_LAYER1_WORKING_MEMORY_PRUNE_INTERVAL_MS", "60000"))
+    String.to_integer(System.get_env("LUNA_AGENT_LAYER1_WORKING_MEMORY_PRUNE_INTERVAL_MS", "60000")),
+
+  # Wave 1 final closure: Elixir shadow/parallel agents are enabled by default
+  # only after the V2 supervisor itself is enabled.
+  elixir_agents_enabled: System.get_env("LUNA_ELIXIR_AGENTS_ENABLED", "true") != "false",
+  elixir_agents_parallel_ts: System.get_env("LUNA_ELIXIR_AGENTS_PARALLEL_TS", "true") != "false"
 
 config :luna, Jay.Core.Repo,
   database: System.get_env("PG_DATABASE", "jay"),

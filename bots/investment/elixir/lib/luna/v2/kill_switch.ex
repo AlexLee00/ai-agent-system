@@ -204,4 +204,12 @@ defmodule Luna.V2.KillSwitch do
 
   def layer1_working_memory_prune_interval_ms,
     do: Application.get_env(:luna, :layer1_working_memory_prune_interval_ms, 60_000)
+
+  # Wave 1 final closure: Elixir agents run in shadow/parallel by default once
+  # V2 is enabled. They must not mutate trading state.
+  def elixir_agents_enabled?,
+    do: Application.get_env(:luna, :elixir_agents_enabled, true)
+
+  def elixir_agents_parallel_ts?,
+    do: Application.get_env(:luna, :elixir_agents_parallel_ts, true)
 end
