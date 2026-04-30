@@ -213,6 +213,7 @@ export function summarizeLifecycleStageCoverage({
       const coveredApplicableLateStages = applicableLateStages.filter((stageId) => covered.has(stageId));
       const missingApplicableLateStages = applicableLateStages.filter((stageId) => !covered.has(stageId));
       const nonApplicableLateStages = lateStages.filter((stageId) => !applicableLateStages.includes(stageId));
+      const missingActionableStages = missingStages.filter((stageId) => !nonApplicableLateStages.includes(stageId));
       return {
         positionScopeKey: scope,
         symbol: profile.symbol || null,
@@ -227,7 +228,10 @@ export function summarizeLifecycleStageCoverage({
         nonApplicableLateStages,
         coveredApplicableLateStages,
         missingApplicableLateStages,
-        missingLabels: missingStages.map((stageId) => POSITION_STAGE_LABELS[stageId] || stageId),
+        missingLabels: missingActionableStages.map((stageId) => POSITION_STAGE_LABELS[stageId] || stageId),
+        allMissingLabels: missingStages.map((stageId) => POSITION_STAGE_LABELS[stageId] || stageId),
+        missingApplicableLateLabels: missingApplicableLateStages.map((stageId) => POSITION_STAGE_LABELS[stageId] || stageId),
+        nonApplicableLateLabels: nonApplicableLateStages.map((stageId) => POSITION_STAGE_LABELS[stageId] || stageId),
         coveragePct: requiredStages.length > 0
           ? Math.round(((requiredStages.length - missingStages.length) / requiredStages.length) * 1000) / 10
           : 100,
