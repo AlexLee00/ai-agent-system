@@ -242,7 +242,9 @@ export async function buildAgentLlmRouteQualityReport({
     const successStats = getProviderSuccessStats(row, failureSummary.routeProviders || []);
     const recoveredBy = latestSuccessfulRouteByKey.get(routeKey(row));
     const failedSeenAt = toTime(row.last_seen_at);
-    const latestSuccess = successStats.latestSuccess || recoveredBy || null;
+    const latestSuccess = [successStats.latestSuccess, recoveredBy]
+      .filter(Boolean)
+      .sort((a, b) => Number(b.seenAt || 0) - Number(a.seenAt || 0))[0] || null;
     const successAfterFailure = latestSuccess && latestSuccess.seenAt > failedSeenAt;
     const totalObserved = successStats.successCalls + failed;
     const effectiveFailureRate = totalObserved > 0 ? failed / totalObserved : 1;

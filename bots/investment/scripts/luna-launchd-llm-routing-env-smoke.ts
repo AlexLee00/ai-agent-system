@@ -135,8 +135,8 @@ export function runLunaLaunchdLlmRoutingEnvSmoke() {
     .map((entry) => entry.provider);
   assert.equal(
     sentimentProviders[0],
-    'gemini-cli-oauth',
-    'sentiment routing should use Gemini CLI OAuth, not disabled direct Gemini OAuth',
+    'groq',
+    'sentiment routing should use fast Groq primary; OAuth providers remain fallback only',
   );
   assert.equal(
     sentimentProviders.includes('gemini-oauth'),

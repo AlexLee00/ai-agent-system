@@ -64,6 +64,7 @@ function uniq(items = []) {
 export function isPolicyDeferredRunnerPreflight(item = {}) {
   if (item?.ok === true) return false;
   if (['partial_adjust_candidate_not_found', 'strategy_exit_candidate_not_found'].includes(item?.code)) return true;
+  if (item?.code === 'partial_adjust_balance_locked_by_open_sell_orders') return true;
   if (item?.code !== 'strategy_exit_guard_blocked') return false;
   return item?.candidate?.executionGuard?.level === 'guarded';
 }

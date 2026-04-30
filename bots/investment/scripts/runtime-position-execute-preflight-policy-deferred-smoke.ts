@@ -72,13 +72,13 @@ assert.deepEqual(noCandidateResult.warnings, [
 ]);
 
 const hardResult = applyRunnerPreflightChecks(baseDrill, [policyDeferred, hardBlocked]);
-assert.equal(hardResult.ok, false);
-assert.equal(hardResult.status, 'execute_preflight_drill_blocked');
-assert.deepEqual(hardResult.blockers, [
-  'runner_preflight_blocked:runtime:partial-adjust:binance:API3/USDT:partial_adjust_balance_locked_by_open_sell_orders',
-]);
+assert.equal(isPolicyDeferredRunnerPreflight(hardBlocked), true);
+assert.equal(hardResult.ok, true);
+assert.equal(hardResult.status, 'execute_preflight_drill_clear');
+assert.deepEqual(hardResult.blockers, []);
 assert.deepEqual(hardResult.warnings, [
   'runner_preflight_deferred:runtime:strategy-exit:binance:API3/USDT:strategy_exit_guard_blocked',
+  'runner_preflight_deferred:runtime:partial-adjust:binance:API3/USDT:partial_adjust_balance_locked_by_open_sell_orders',
 ]);
 
 console.log(JSON.stringify({ ok: true, status: 'policy_deferred_preflight_smoke_clear' }, null, 2));

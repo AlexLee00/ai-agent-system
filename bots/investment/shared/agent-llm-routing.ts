@@ -149,10 +149,10 @@ const AGENT_DEFAULTS: Record<string, LLMRoute> = {
     noLLM: true,
   },
 
-  // 🧠 sophia — 감성: 다국어 강점 (한/영/중)
+  // 🧠 sophia — 감성: 운영 hot path. 실측상 Groq가 가장 안정적이고 빠르다.
   sophia: {
-    primary: 'gemini-cli-oauth/gemini-2.5-flash',
-    fallbacks: ['openai-oauth/gpt-5.4-mini', 'claude-code/haiku'],
+    primary: 'groq/llama-3.3-70b-versatile',
+    fallbacks: ['openai-oauth/gpt-5.4-mini', 'gemini-cli-oauth/gemini-2.5-flash', 'claude-code/haiku'],
   },
 
   // 👁️ argos — 스크리닝: 대량 처리 + 빠른 분류
@@ -161,10 +161,10 @@ const AGENT_DEFAULTS: Record<string, LLMRoute> = {
     fallbacks: ['groq/llama-3.3-70b-versatile', 'gemini-cli-oauth/gemini-2.5-flash'],
   },
 
-  // 📜 hermes — 뉴스: 다국어 매핑
+  // 📜 hermes — 뉴스: 운영 hot path. Gemini/Claude OAuth는 fallback으로만 둔다.
   hermes: {
-    primary: 'gemini-cli-oauth/gemini-2.5-flash',
-    fallbacks: ['claude-code/haiku', 'openai-oauth/gpt-5.4-mini'],
+    primary: 'groq/llama-3.3-70b-versatile',
+    fallbacks: ['openai-oauth/gpt-5.4-mini', 'gemini-cli-oauth/gemini-2.5-flash', 'claude-code/haiku'],
   },
 
   // 🔮 oracle — 온체인: 복잡한 추론 + 통합
@@ -288,19 +288,18 @@ const ROUTING_MATRIX: Record<string, LLMRoute> = {
   },
 
   // ── sophia ─────────────────────────────────────────────────────────────────
-  // 감성 분석: gemini-flash (multilingual 최강)
+  // 감성 분석: 운영 hot path는 Groq 우선. OAuth 계열은 timeout/quota 시 fallback.
   'sophia:crypto:sentiment': {
-    primary: 'gemini-cli-oauth/gemini-2.5-flash',
-    fallbacks: ['openai-oauth/gpt-5.4-mini', 'claude-code/haiku'],
+    primary: 'groq/llama-3.3-70b-versatile',
+    fallbacks: ['openai-oauth/gpt-5.4-mini', 'gemini-cli-oauth/gemini-2.5-flash', 'claude-code/haiku'],
   },
   'sophia:domestic:sentiment': {
-    // 한국어 감성: gemini-flash (한국어 지원 우수)
-    primary: 'gemini-cli-oauth/gemini-2.5-flash',
-    fallbacks: ['claude-code/haiku', 'openai-oauth/gpt-5.4-mini'],
+    primary: 'groq/llama-3.3-70b-versatile',
+    fallbacks: ['openai-oauth/gpt-5.4-mini', 'gemini-cli-oauth/gemini-2.5-flash', 'claude-code/haiku'],
   },
   'sophia:overseas:sentiment': {
-    primary: 'gemini-cli-oauth/gemini-2.5-flash',
-    fallbacks: ['openai-oauth/gpt-5.4-mini', 'claude-code/haiku'],
+    primary: 'groq/llama-3.3-70b-versatile',
+    fallbacks: ['openai-oauth/gpt-5.4-mini', 'gemini-cli-oauth/gemini-2.5-flash', 'claude-code/haiku'],
   },
 
   // ── argos ──────────────────────────────────────────────────────────────────
@@ -311,10 +310,10 @@ const ROUTING_MATRIX: Record<string, LLMRoute> = {
   },
 
   // ── hermes ─────────────────────────────────────────────────────────────────
-  // 뉴스 다국어: gemini-flash (Google News 통합 + 한/영/중)
+  // 뉴스 다국어: 운영 실측상 Groq primary가 timeout 병목을 줄인다.
   'hermes:any:sentiment': {
-    primary: 'gemini-cli-oauth/gemini-2.5-flash',
-    fallbacks: ['claude-code/haiku', 'openai-oauth/gpt-5.4-mini'],
+    primary: 'groq/llama-3.3-70b-versatile',
+    fallbacks: ['openai-oauth/gpt-5.4-mini', 'gemini-cli-oauth/gemini-2.5-flash', 'claude-code/haiku'],
   },
 
   // ── oracle ─────────────────────────────────────────────────────────────────
