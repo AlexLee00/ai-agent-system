@@ -66,6 +66,7 @@ export function classifyReconcileBlocker(row = {}) {
   const hasLookupKey = Boolean(id.orderId || id.clientOrderId);
   const notFound = String(id.recoveryErrorCode || id.recoveryError || '').includes('not_found');
   const ambiguous = String(id.recoveryErrorCode || id.recoveryError || '').includes('ambiguous');
+  const resolutionHint = String(meta?.resolutionHint || '').trim();
 
   let severity = 'attention';
   let resolutionClass = 'manual_review';
@@ -75,6 +76,10 @@ export function classifyReconcileBlocker(row = {}) {
     severity = 'acknowledged';
     resolutionClass = 'acknowledged';
     recommendedAction = 'audit_only_already_acknowledged';
+  } else if (resolutionHint === 'manual_ack_required') {
+    severity = 'hard_block';
+    resolutionClass = 'manual_ack_required';
+    recommendedAction = 'verify_order_absent_by_client_order_id_then_mark_safe_or_manual_reconcile';
   } else if (HARD_BLOCK_CODES.has(blockCode)) {
     severity = 'hard_block';
     if (hasLookupKey && !notFound && !ambiguous) {

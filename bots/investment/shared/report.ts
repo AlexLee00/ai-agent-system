@@ -306,6 +306,16 @@ export function notifyError(context, error) {
   });
 }
 
+/** @param {string} context @param {any} detail */
+export function notifyOperationalReview(context, detail) {
+  const msg = `⚠️ [확인 필요] ${context}\n${detail?.message || detail}`;
+  return publishLunaMessage({
+    message: msg,
+    eventType: 'alert',
+    alertLevel: 2,
+  });
+}
+
 // ─── 매매일지 알림 ───────────────────────────────────────────────────
 
 /**

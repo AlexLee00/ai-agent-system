@@ -23,7 +23,7 @@ import {
   syncPositionsAtMarketOpen,
 } from '../shared/portfolio-position-delta.ts';
 import { SIGNAL_STATUS, ACTIONS } from '../shared/signal.ts';
-import { notifyTrade, notifyError, notifyJournalEntry, notifyTradeSkip, notifySettlement } from '../shared/report.ts';
+import { notifyTrade, notifyError, notifyJournalEntry, notifyTradeSkip, notifySettlement, notifyOperationalReview } from '../shared/report.ts';
 import {
   buildExecutionRiskApprovalGuard,
   preTradeCheck,
@@ -284,6 +284,7 @@ const binanceExecutionReconcileHandler = createBinanceExecutionReconcileHandler(
   normalizePendingReconcileOrderUnits,
   isSyntheticOrTestSignalContext,
   notifyError,
+  notifyOperationalReview,
   toEpochMs,
   isBinanceOrderStillOpen,
   resolveBinancePendingQueueState,

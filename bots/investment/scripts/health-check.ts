@@ -25,6 +25,7 @@ import { backfillTradeIncidentLinks } from './backfill-trade-incident-links.ts';
 import { buildPositionStrategyHygieneRemediationPlan, runPositionStrategyHygiene } from './runtime-position-strategy-hygiene.ts';
 import { runPositionStrategyRemediation } from './runtime-position-strategy-remediation.ts';
 import { loadExecutionRiskApprovalGuardHealth } from './health-report-support.ts';
+import { launchdDomain, runLaunchctl } from '../shared/launchd-service.ts';
 import {
   enrichAutonomousActionAlertPayload,
   resolveAutonomousActionAlertEventType,
@@ -540,7 +541,57 @@ function getLaunchctlStatus() {
       exitCode: parseInt(exitCode) || 0,
     };
   }
+
+  for (const label of ALL_SERVICES) {
+    services[label] = {
+      ...(services[label] || { running: false, pid: null, exitCode: null }),
+      ...getLaunchctlServiceDebug(label),
+    };
+  }
   return services;
+}
+
+function extractLaunchctlPath(printText = '', field = 'stdout') {
+  const match = String(printText || '').match(new RegExp(`\\b${field} path\\s*=\\s*(.+)$`, 'm'));
+  return match ? String(match[1]).trim() : null;
+}
+
+function readLogTail(filePath = null, maxLines = 8, maxChars = 360) {
+  try {
+    if (!filePath || !fs.existsSync(filePath)) return null;
+    const text = String(fs.readFileSync(filePath, 'utf8') || '').trim();
+    if (!text) return null;
+    return truncateText(text.split(/\r?\n/).slice(-maxLines).join('\n'), maxChars);
+  } catch {
+    return null;
+  }
+}
+
+function getLaunchctlServiceDebug(label) {
+  try {
+    const printResult = runLaunchctl(['print', `${launchdDomain()}/${label}`], { timeout: 5_000 });
+    const printText = [printResult.stdout, printResult.stderr].filter(Boolean).join('\n');
+    const stdoutPath = extractLaunchctlPath(printText, 'stdout');
+    const stderrPath = extractLaunchctlPath(printText, 'stderr');
+    const lastExitMatch = printText.match(/\blast exit code\s*=\s*(-?\d+)/i);
+    return {
+      lastExitCode: lastExitMatch ? Number(lastExitMatch[1]) : null,
+      stdoutPath,
+      stderrPath,
+      stdoutTail: readLogTail(stdoutPath),
+      stderrTail: readLogTail(stderrPath),
+      launchctlDetail: truncateText(printText, 360),
+    };
+  } catch {
+    return {
+      lastExitCode: null,
+      stdoutPath: null,
+      stderrPath: null,
+      stdoutTail: null,
+      stderrTail: null,
+      launchctlDetail: null,
+    };
+  }
 }
 
 // ─── 메인 ───────────────────────────────────────────────────────
@@ -603,7 +654,25 @@ async function main() {
     if (!NORMAL_EXIT_CODES.has(svc.exitCode) && !(CONTINUOUS.includes(label) && svc.running)) {
       const key = `exitcode:${label}:${svc.exitCode}`;
       if (hsm.canAlert(state, key)) {
-        issues.push({ key, level: hsm.getAlertLevel(label), msg: `⚠️ [투자팀 루나 헬스] ${shortName} 비정상 종료\nexit code: ${svc.exitCode}` });
+        const detailLines = [
+          svc.stderrTail ? `stderr: ${svc.stderrTail}` : '',
+          !svc.stderrTail && svc.stdoutTail ? `stdout: ${svc.stdoutTail}` : '',
+          svc.launchctlDetail ? `launchctl: ${svc.launchctlDetail}` : '',
+        ].filter(Boolean);
+        issues.push({
+          key,
+          level: hsm.getAlertLevel(label),
+          meta: {
+            exitCode: svc.exitCode,
+            lastExitCode: svc.lastExitCode ?? null,
+            stdoutPath: svc.stdoutPath || null,
+            stderrPath: svc.stderrPath || null,
+            stdoutTail: svc.stdoutTail || null,
+            stderrTail: svc.stderrTail || null,
+            launchctlDetail: svc.launchctlDetail || null,
+          },
+          msg: `⚠️ [투자팀 루나 헬스] ${shortName} 비정상 종료\nexit code: ${svc.exitCode}${detailLines.length ? `\n${detailLines.join('\n')}` : ''}`,
+        });
       }
     } else {
       const prevKeys = Object.keys(state).filter(k => k.startsWith(`exitcode:${label}:`));

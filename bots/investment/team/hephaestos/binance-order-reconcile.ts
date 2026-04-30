@@ -15,6 +15,10 @@ const PENDING_RECONCILE_FAILURE_CODES = new Set([
   'manual_reconcile_required',
 ]);
 
+function isLookupNotFoundCode(code = null) {
+  return String(code || '').trim().toLowerCase().includes('not_found');
+}
+
 export function normalizePendingReconcileTradeModes(tradeModes = []) {
   const normalizedModes = Array.from(new Set(
     (Array.isArray(tradeModes) ? tradeModes : [])
@@ -124,6 +128,9 @@ export function createBinanceExecutionReconcileHandler(context = {}) {
     const notifyErrorFn = typeof deps?.notifyError === 'function'
       ? deps.notifyError
       : notifyError;
+    const notifyOperationalReviewFn = typeof deps?.notifyOperationalReview === 'function'
+      ? deps.notifyOperationalReview
+      : null;
 
     try {
       await markSignalFn(signalId, {
@@ -314,8 +321,11 @@ export function createBinanceExecutionReconcileHandler(context = {}) {
     if (!pendingOrder.orderId) {
       const hasClientOrderKey = Boolean(pendingOrder.clientOrderId);
       const definitiveLookupFailure = isDefinitiveBinanceOrderLookupError(pendingOrder.recoveryErrorCode);
+      const lookupNotFound = hasClientOrderKey && isLookupNotFoundCode(pendingOrder.recoveryErrorCode);
       if (!hasClientOrderKey || definitiveLookupFailure) {
-        const reason = definitiveLookupFailure
+        const reason = lookupNotFound
+          ? `${symbol} clientOrderId 조회 결과가 비어 있음(${pendingOrder.recoveryErrorCode}) — 수동 확인 후 안전 ack 또는 정산 여부 결정 필요`
+          : definitiveLookupFailure
           ? `${symbol} clientOrderId 조회 결과가 확정 실패(${pendingOrder.recoveryErrorCode}) — 수동 정산 필요`
           : `${symbol} 주문 식별키(orderId/clientOrderId) 누락 — 자동 pending reconcile 불가 (수동 정산 필요)`;
         await persistFailure(reason, {
@@ -335,12 +345,18 @@ export function createBinanceExecutionReconcileHandler(context = {}) {
             submittedAtMs: pendingOrder.submittedAtMs || null,
             recoveryError: pendingOrder.recoveryError || null,
             recoveryErrorCode: pendingOrder.recoveryErrorCode || null,
+            resolutionHint: lookupNotFound ? 'manual_ack_required' : 'manual_reconcile_required',
+            operatorAction: lookupNotFound ? 'verify_absence_then_ack_or_manual_reconcile' : 'manual_reconcile_required',
             source: pendingMeta?.source || null,
             orderAttempted: true,
           },
         });
         if (!isSyntheticOrTestSignalContext({ signalId, reasoning: signal?.reasoning })) {
-          await notifyError(`헤파이스토스 pending reconcile 수동 정산 필요 — ${symbol} ${action}`, reason).catch(() => {});
+          if (lookupNotFound && notifyOperationalReviewFn) {
+            await notifyOperationalReviewFn(`헤파이스토스 pending reconcile 수동 확인 필요 — ${symbol} ${action}`, { message: reason }).catch(() => {});
+          } else {
+            await notifyErrorFn(`헤파이스토스 pending reconcile 수동 정산 필요 — ${symbol} ${action}`, reason).catch(() => {});
+          }
         }
         return {
           handled: true,
@@ -348,6 +364,7 @@ export function createBinanceExecutionReconcileHandler(context = {}) {
             success: false,
             manualReconcileRequired: true,
             code: 'manual_reconcile_required',
+            resolutionHint: lookupNotFound ? 'manual_ack_required' : 'manual_reconcile_required',
             verificationStatus: pendingOrder.status,
             clientOrderId: pendingOrder.clientOrderId || null,
             orderSymbol: pendingOrder.orderSymbol || symbol,

@@ -253,6 +253,26 @@ export function createNaverMonitorCycleService(deps: CreateNaverMonitorCycleServ
     }
 
     const nextPreviousConfirmedList = currentConfirmedList;
+
+    if (checkCount % 3 === 1) {
+      try {
+        cycleNewCancelDetections = await futureCancelService.processFutureCancelSnapshot({
+          checkCount,
+          cancelledHref,
+          page,
+          todaySeoul,
+          naverUrl,
+          pendingCancelMap,
+          cycleNewCancelDetections,
+        });
+      } catch (err: any) {
+        if (err.message !== 'cancelledHref 없음') {
+          try { await safeGotoNaverHome(page, naverUrl, 'future-cancel-recovery'); } catch (_) {}
+        }
+        log(`⚠️ [취소감지4] 오류 — 스킵: ${err.message}`);
+      }
+    }
+
     if (
       previousCancelledCount !== null &&
       cancelledCount > previousCancelledCount &&
@@ -286,25 +306,6 @@ export function createNaverMonitorCycleService(deps: CreateNaverMonitorCycleServ
     }
 
     const nextPreviousCancelledCount = cancelledCount;
-
-    if (checkCount % 3 === 1) {
-      try {
-        cycleNewCancelDetections = await futureCancelService.processFutureCancelSnapshot({
-          checkCount,
-          cancelledHref,
-          page,
-          todaySeoul,
-          naverUrl,
-          pendingCancelMap,
-          cycleNewCancelDetections,
-        });
-      } catch (err: any) {
-        if (err.message !== 'cancelledHref 없음') {
-          try { await safeGotoNaverHome(page, naverUrl, 'future-cancel-recovery'); } catch (_) {}
-        }
-        log(`⚠️ [취소감지4] 오류 — 스킵: ${err.message}`);
-      }
-    }
 
     const periodic = await cycleReportService.handlePeriodicReports({
       startTime,
