@@ -29,6 +29,7 @@ const {
   LOCAL_MODEL_FAST,
 } = createRequire(import.meta.url)('../../../packages/core/lib/local-llm-client');
 import { callViaHub, isHubEnabled } from '../shared/hub-llm-client.ts';
+import { runVectorBtGrid } from '../shared/vectorbt-runner.ts';
 
 // ─── 크로노스 가드 ───────────────────────────────────────────────────
 
@@ -600,6 +601,124 @@ async function runLayer3(layer2Result, options = {}) {
     totalPnlPct: finalTradeStats.totalPnlPct,
     maxDrawdown: finalTradeStats.maxDrawdown,
     sharpeRatio: finalTradeStats.sharpeRatio,
+  };
+}
+
+export function buildStrategyGrid({
+  tpValues = [0.01, 0.015, 0.02, 0.03, 0.04, 0.06],
+  slValues = [0.005, 0.0075, 0.01, 0.015, 0.02],
+  timeframes = ['15m'],
+} = {}) {
+  const grid = [];
+  for (const timeframe of timeframes) {
+    for (const tpPct of tpValues) {
+      for (const slPct of slValues) {
+        grid.push({
+          strategyName: `ta_grid_tp${Math.round(tpPct * 10000)}_sl${Math.round(slPct * 10000)}_${timeframe}`,
+          tpPct,
+          slPct,
+          timeframe,
+        });
+      }
+    }
+  }
+  return grid;
+}
+
+export function classifyBacktestGuardrail(metrics = {}) {
+  const hitRate = Number(metrics.hit_rate ?? metrics.hitRate ?? metrics.win_rate ?? metrics.winRate ?? 0);
+  const maxDd = Math.abs(Number(metrics.max_dd ?? metrics.maxDrawdown ?? metrics.max_drawdown ?? 0));
+  const blockers = [];
+  if (hitRate < 0.4) blockers.push('hit_rate_below_40');
+  if (maxDd > 0.2 || maxDd > 20) blockers.push('max_dd_above_20');
+  return {
+    ok: blockers.length === 0,
+    status: blockers.length === 0 ? 'backtest_guardrail_pass' : 'backtest_guardrail_blocked',
+    blockers,
+    metrics: { hitRate, maxDd },
+  };
+}
+
+export async function persistChronosBacktestRun(row = {}, { dbClient = db, dryRun = true } = {}) {
+  const payload = {
+    strategyName: row.strategyName || row.strategy_name || 'unknown',
+    symbol: row.symbol || 'BTC/USDT',
+    market: row.market || 'binance',
+    startDate: row.startDate || row.start_date || '2026-01-01',
+    endDate: row.endDate || row.end_date || kst.today(),
+    layer: Number(row.layer || 2),
+    sharpe: row.sharpe ?? row.sharpe_ratio ?? null,
+    sortino: row.sortino ?? null,
+    hitRate: row.hitRate ?? row.hit_rate ?? row.win_rate ?? null,
+    maxDd: row.maxDd ?? row.max_dd ?? row.max_drawdown ?? null,
+    totalReturn: row.totalReturn ?? row.total_return ?? null,
+    tradesCount: row.tradesCount ?? row.total_trades ?? null,
+    params: row.params || {},
+    result: row.result || row,
+  };
+  if (dryRun) return { ok: true, dryRun: true, persisted: false, payload };
+  await dbClient.run(`
+    INSERT INTO investment.backtest_runs (
+      strategy_name, symbol, market, start_date, end_date, layer,
+      sharpe, sortino, hit_rate, max_dd, total_return, trades_count, params, result
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?::jsonb, ?::jsonb)
+  `, [
+    payload.strategyName,
+    payload.symbol,
+    payload.market,
+    payload.startDate,
+    payload.endDate,
+    payload.layer,
+    payload.sharpe,
+    payload.sortino,
+    payload.hitRate,
+    payload.maxDd,
+    payload.totalReturn,
+    payload.tradesCount,
+    JSON.stringify(payload.params),
+    JSON.stringify(payload.result),
+  ]);
+  return { ok: true, dryRun: false, persisted: true, payload };
+}
+
+export async function runChronosLayer2Backtest({
+  symbol = 'BTC/USDT',
+  market = 'binance',
+  days = 90,
+  runner = runVectorBtGrid,
+  dryRun = true,
+} = {}) {
+  const strategyGrid = buildStrategyGrid();
+  const rows = await Promise.resolve(runner(symbol, days));
+  const normalizedRows = Array.isArray(rows) ? rows : [];
+  const usableRows = normalizedRows.filter((row) => !row?.status || row.status === 'ok');
+  const best = [...usableRows].sort((a, b) => Number(b.sharpe_ratio || b.sharpe || 0) - Number(a.sharpe_ratio || a.sharpe || 0))[0] || null;
+  const guardrail = classifyBacktestGuardrail(best || {});
+  const persisted = best
+    ? await persistChronosBacktestRun({
+      ...best,
+      strategyName: best.label || 'vectorbt_grid_best',
+      symbol,
+      market,
+      layer: 2,
+      startDate: new Date(Date.now() - Number(days) * 86400000).toISOString().slice(0, 10),
+      endDate: new Date().toISOString().slice(0, 10),
+      params: { days, strategyGridSize: strategyGrid.length },
+    }, { dryRun })
+    : { ok: true, dryRun, persisted: false, payload: null };
+
+  return {
+    ok: true,
+    layer: 2,
+    symbol,
+    market,
+    days,
+    strategyGridSize: strategyGrid.length,
+    rows: normalizedRows.length,
+    usableRows: usableRows.length,
+    best,
+    guardrail,
+    persisted,
   };
 }
 

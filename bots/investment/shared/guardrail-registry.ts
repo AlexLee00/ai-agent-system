@@ -137,6 +137,20 @@ const DEFAULT_GUARDRAILS = [
     owner: 'luna',
     command: ['node', 'scripts/runtime-luna-7day-checkpoint.ts', '--json'],
   },
+  {
+    name: 'luna_final_closure_wave2',
+    category: 'runtime',
+    severity: 'high',
+    owner: 'luna',
+    command: ['npm', '--prefix', new URL('..', import.meta.url).pathname, 'run', '-s', 'check:luna-final-closure-wave2'],
+  },
+  {
+    name: 'luna_daily_backtest_dry_run',
+    category: 'data',
+    severity: 'medium',
+    owner: 'chronos',
+    command: ['node', 'scripts/runtime-luna-daily-backtest.ts', '--json', '--dry-run', '--smoke'],
+  },
 ];
 
 function normalizeEntry(entry = {}) {

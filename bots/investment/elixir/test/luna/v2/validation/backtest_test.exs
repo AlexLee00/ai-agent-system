@@ -23,6 +23,37 @@ defmodule Luna.V2.Validation.BacktestTest do
     end
   end
 
+  describe "Wave 2 layer1 metrics" do
+    test "return list 기반 sharpe/sortino/max drawdown 계산" do
+      assert Backtest.calc_sharpe([1.0, 2.0, -0.5]) > 0
+      assert Backtest.calc_sortino([1.0, 2.0, -0.5]) > 0
+      assert Backtest.calc_max_drawdown([1.0, 1.1, 1.0, 1.2]) > 0
+    end
+
+    test "compute_metrics는 6차원 통계와 breakdown을 반환" do
+      rows = [
+        ["BTC/USDT", "binance", 1.5],
+        ["BTC/USDT", "binance", -0.5],
+        ["ETH/USDT", "binance", 2.0]
+      ]
+
+      result = Backtest.compute_metrics(rows, %{name: "smoke_strategy"})
+      assert result.type == :backtest
+      assert result.trades == 3
+      assert result.hit_rate > 0
+      assert is_number(result.sortino)
+      assert is_number(result.volatility)
+      assert result.market_breakdown["binance"] == 3
+      assert result.strategy_breakdown["smoke_strategy"] == 3
+    end
+
+    test "run_layer1_backtest는 빈 symbol이면 empty result" do
+      {:ok, result} = Backtest.run_layer1_backtest(%{}, "", "6m")
+      assert result.trades == 0
+      assert Map.has_key?(result, :sortino)
+    end
+  end
+
   describe "run/1 — DB 접근 없는 경계값" do
     test "symbols 빈 리스트 → empty result" do
       strategy = %{parameter_snapshot: %{"symbols" => []}}

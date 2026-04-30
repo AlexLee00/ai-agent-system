@@ -97,12 +97,14 @@ export async function buildDiscoveryUniverse(market, now = new Date(), options =
     seen.add(normalized);
     mergedSymbols.push(normalized);
   }
+  const limitedSymbols = mergedSymbols.slice(0, limit);
 
   return {
     market,
     at: now instanceof Date ? now.toISOString() : new Date().toISOString(),
     candidates,
-    symbols: mergedSymbols,
+    symbols: limitedSymbols,
+    limit,
     source: candidates.length > 0 ? 'candidate_universe' : 'fallback',
   };
 }
