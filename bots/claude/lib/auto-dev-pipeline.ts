@@ -516,7 +516,7 @@ function isNonActionableBlogEngagementAlarm(analysis = {}) {
   }
   const combined = `${sourceBot}\n${content}`;
   if (!combined.includes('실패 0건')) return false;
-  return /blog-neighbor-commenter|blog-neighbor-sympathy/.test(combined);
+  return /blog-commenter|blog-neighbor-commenter|blog-neighbor-sympathy/.test(combined);
 }
 
 function isNonActionableReservationBookingAlert(analysis = {}) {
@@ -596,6 +596,60 @@ function isNonActionableClaudeHealthSnapshot(analysis = {}) {
     /source_bot:\s*claude|from_bot:\s*claude|claude:claude:health_check/.test(combined)
     && combined.includes('[클로드 헬스]')
     && combined.includes('auto-dev.autonomous 다운')
+  );
+}
+
+function isNonActionableBlogInstagramSnapshot(analysis = {}) {
+  const metadata = analysis?.metadata || {};
+  if (toSafeString(metadata.target_team || '').toLowerCase() !== DEFAULT_TARGET_TEAM) return false;
+  const relPath = toSafeString(analysis?.relPath || '');
+  if (!relPath.includes('docs/auto_dev/ALARM_INCIDENT_blog_')) return false;
+  let content = '';
+  try {
+    content = fs.readFileSync(analysis.filePath, 'utf8');
+  } catch {
+    content = '';
+  }
+  return content.includes('[블로팀] 인스타 일일 현황');
+}
+
+function isNonActionableBlogHealthRecoverySnapshot(analysis = {}) {
+  const metadata = analysis?.metadata || {};
+  if (toSafeString(metadata.target_team || '').toLowerCase() !== DEFAULT_TARGET_TEAM) return false;
+  const relPath = toSafeString(analysis?.relPath || '');
+  if (!relPath.includes('docs/auto_dev/ALARM_INCIDENT_blog_')) return false;
+  const sourceBot = toSafeString(metadata.source_bot || metadata.sourceBot || '');
+  let content = '';
+  try {
+    content = fs.readFileSync(analysis.filePath, 'utf8');
+  } catch {
+    content = '';
+  }
+  const combined = `${sourceBot}\n${content}`;
+  return (
+    /source_bot:\s*blog-health|from_bot:\s*blog-health|blog:blog-health:blog_health_check/.test(combined)
+    && combined.includes('engagement 자동화 회복')
+  );
+}
+
+function isNonActionableAutoDevSelfAlarm(analysis = {}) {
+  const metadata = analysis?.metadata || {};
+  if (toSafeString(metadata.target_team || '').toLowerCase() !== DEFAULT_TARGET_TEAM) return false;
+  const sourceBot = toSafeString(metadata.source_bot || metadata.sourceBot || '');
+  let content = '';
+  try {
+    content = fs.readFileSync(analysis.filePath, 'utf8');
+  } catch {
+    content = '';
+  }
+  const combined = `${sourceBot}\n${content}`;
+  if (!/source_bot:\s*auto-dev|from_bot:\s*auto-dev|claude:auto-dev:auto_dev_stage_/.test(combined)) {
+    return false;
+  }
+  return (
+    combined.includes('auto_dev_stage_plan')
+    || combined.includes('auto_dev_stage_failed')
+    || combined.includes('🤖 클로드팀 auto_dev')
   );
 }
 
@@ -684,6 +738,42 @@ function evaluateDocumentPolicy(analysis = {}) {
       status: 'completed',
       policyDecision: 'non_actionable_alarm_snapshot',
       reason: 'claude launchd health snapshot',
+      targetTeam: metadata.target_team || null,
+      writeScope: metadata.write_scope || [],
+      riskTier: metadata.risk_tier || null,
+    };
+  }
+
+  if (isNonActionableBlogInstagramSnapshot(analysis)) {
+    return {
+      decision: 'implementation_completed',
+      status: 'completed',
+      policyDecision: 'non_actionable_alarm_snapshot',
+      reason: 'blog instagram daily snapshot',
+      targetTeam: metadata.target_team || null,
+      writeScope: metadata.write_scope || [],
+      riskTier: metadata.risk_tier || null,
+    };
+  }
+
+  if (isNonActionableBlogHealthRecoverySnapshot(analysis)) {
+    return {
+      decision: 'implementation_completed',
+      status: 'completed',
+      policyDecision: 'non_actionable_alarm_snapshot',
+      reason: 'blog engagement recovery snapshot',
+      targetTeam: metadata.target_team || null,
+      writeScope: metadata.write_scope || [],
+      riskTier: metadata.risk_tier || null,
+    };
+  }
+
+  if (isNonActionableAutoDevSelfAlarm(analysis)) {
+    return {
+      decision: 'implementation_completed',
+      status: 'completed',
+      policyDecision: 'non_actionable_alarm_snapshot',
+      reason: 'auto_dev self-generated alarm snapshot',
       targetTeam: metadata.target_team || null,
       writeScope: metadata.write_scope || [],
       riskTier: metadata.risk_tier || null,

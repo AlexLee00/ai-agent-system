@@ -420,6 +420,133 @@ async function test_claude_health_snapshot_is_skipped() {
   console.log('✅ auto-dev: claude health snapshots are skipped');
 }
 
+async function test_blog_instagram_snapshot_is_skipped() {
+  const tmpRoot = makeTempRoot();
+  const doc = makeDoc(
+    tmpRoot,
+    'ALARM_INCIDENT_blog_instagram_sample.md',
+    withRequiredMetadata(
+      [
+        '# Alarm Incident Auto-Repair: blog alarm',
+        '',
+        '## Incident',
+        '- from_bot: unknown',
+        '- incident_key: blog:unknown:unknown_error:sample1234',
+        '',
+        '## Error Message',
+        '```text',
+        '[블로팀] 인스타 일일 현황',
+        '성공: 0건 | 실패: 5건 | 생략: 0건',
+        '성공률: 0%',
+        '```',
+      ].join('\n'),
+      {
+        target_team: 'claude',
+        source_team: 'blog',
+        source_bot: 'unknown',
+        risk_tier: 'medium',
+        task_type: 'development_task',
+      },
+    ),
+  );
+
+  const { mocks } = makeMocks(tmpRoot);
+  await withMocks(mocks, async pipeline => {
+    const result = await pipeline.processAutoDevDocument(doc, { shadow: true });
+    assert.strictEqual(result.ok, true);
+    assert.strictEqual(result.skipped, true);
+    assert.strictEqual(result.reason, 'implementation_completed');
+    assert.strictEqual(result.job?.policyDecision, 'non_actionable_alarm_snapshot');
+  }, testEnv(tmpRoot));
+
+  fs.rmSync(tmpRoot, { recursive: true, force: true });
+  console.log('✅ auto-dev: blog instagram snapshots are skipped');
+}
+
+async function test_auto_dev_self_alarm_is_skipped() {
+  const tmpRoot = makeTempRoot();
+  const doc = makeDoc(
+    tmpRoot,
+    'ALARM_INCIDENT_auto_dev_self_sample.md',
+    withRequiredMetadata(
+      [
+        '# Alarm Incident Auto-Repair: claude alarm',
+        '',
+        '## Incident',
+        '- from_bot: auto-dev',
+        '- incident_key: claude:auto-dev:auto_dev_stage_plan:sample1234',
+        '',
+        '## Error Message',
+        '```text',
+        '🤖 클로드팀 auto_dev — 구현계획 수립',
+        'event_type: auto_dev_stage_plan',
+        '```',
+      ].join('\n'),
+      {
+        target_team: 'claude',
+        source_team: 'claude',
+        source_bot: 'auto-dev',
+        risk_tier: 'medium',
+        task_type: 'development_task',
+      },
+    ),
+  );
+
+  const { mocks } = makeMocks(tmpRoot);
+  await withMocks(mocks, async pipeline => {
+    const result = await pipeline.processAutoDevDocument(doc, { shadow: true });
+    assert.strictEqual(result.ok, true);
+    assert.strictEqual(result.skipped, true);
+    assert.strictEqual(result.reason, 'implementation_completed');
+    assert.strictEqual(result.job?.policyDecision, 'non_actionable_alarm_snapshot');
+  }, testEnv(tmpRoot));
+
+  fs.rmSync(tmpRoot, { recursive: true, force: true });
+  console.log('✅ auto-dev: auto-dev self alarms are skipped');
+}
+
+async function test_blog_health_recovery_snapshot_is_skipped() {
+  const tmpRoot = makeTempRoot();
+  const doc = makeDoc(
+    tmpRoot,
+    'ALARM_INCIDENT_blog_health_recovery_sample.md',
+    withRequiredMetadata(
+      [
+        '# Alarm Incident Auto-Repair: blog alarm',
+        '',
+        '## Incident',
+        '- from_bot: blog-health',
+        '- incident_key: blog:blog-health:blog_health_check:sample5678',
+        '',
+        '## Error Message',
+        '```text',
+        '✅ [블로그 헬스] engagement 자동화 회복',
+        'engagement failures present but non-UI (2건)',
+        '```',
+      ].join('\n'),
+      {
+        target_team: 'claude',
+        source_team: 'blog',
+        source_bot: 'blog-health',
+        risk_tier: 'medium',
+        task_type: 'development_task',
+      },
+    ),
+  );
+
+  const { mocks } = makeMocks(tmpRoot);
+  await withMocks(mocks, async pipeline => {
+    const result = await pipeline.processAutoDevDocument(doc, { shadow: true });
+    assert.strictEqual(result.ok, true);
+    assert.strictEqual(result.skipped, true);
+    assert.strictEqual(result.reason, 'implementation_completed');
+    assert.strictEqual(result.job?.policyDecision, 'non_actionable_alarm_snapshot');
+  }, testEnv(tmpRoot));
+
+  fs.rmSync(tmpRoot, { recursive: true, force: true });
+  console.log('✅ auto-dev: blog health recovery snapshots are skipped');
+}
+
 async function test_analyzeAutoDevDocument_extracts_code_refs() {
   const tmpRoot = makeTempRoot();
   const autoDir = path.join(tmpRoot, 'docs', 'auto_dev');
@@ -1645,6 +1772,9 @@ async function main() {
     test_ops_emergency_telegram_snapshot_is_skipped,
     test_investment_position_watch_alert_is_skipped,
     test_claude_health_snapshot_is_skipped,
+    test_blog_instagram_snapshot_is_skipped,
+    test_auto_dev_self_alarm_is_skipped,
+    test_blog_health_recovery_snapshot_is_skipped,
     test_analyzeAutoDevDocument_extracts_code_refs,
     test_processAutoDevDocument_runs_full_dry_pipeline,
     test_completed_document_is_updated_after_actual_implementation,
