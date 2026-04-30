@@ -151,6 +151,55 @@ const DEFAULT_GUARDRAILS = [
     owner: 'chronos',
     command: ['node', 'scripts/runtime-luna-daily-backtest.ts', '--json', '--dry-run', '--smoke'],
   },
+  {
+    name: 'luna_final_closure_wave3',
+    category: 'runtime',
+    severity: 'high',
+    owner: 'luna',
+    command: ['npm', '--prefix', new URL('..', import.meta.url).pathname, 'run', '-s', 'check:luna-final-closure-wave3'],
+  },
+  {
+    name: 'luna_skill_registry',
+    category: 'runtime',
+    severity: 'medium',
+    owner: 'luna',
+    command: ['node', 'scripts/luna-skill-registry-smoke.ts', '--json'],
+  },
+  {
+    name: 'luna_launchd_migrate_dryrun',
+    category: 'safety',
+    severity: 'high',
+    owner: 'luna',
+    command: ['node', 'scripts/runtime-luna-launchd-migrate.ts', '--json'],
+  },
+  {
+    name: 'luna_guardrails_hourly_dryrun',
+    category: 'safety',
+    severity: 'high',
+    owner: 'sentinel',
+    command: ['node', 'scripts/runtime-luna-guardrails-hourly.ts', '--json', '--no-write'],
+  },
+  {
+    name: 'luna_trade_journal_dashboard',
+    category: 'data',
+    severity: 'medium',
+    owner: 'luna',
+    command: ['node', 'scripts/runtime-trade-journal-dashboard-html.ts', '--json', '--no-write'],
+  },
+  {
+    name: 'luna_100percent_report',
+    category: 'runtime',
+    severity: 'medium',
+    owner: 'luna',
+    command: ['node', 'scripts/runtime-luna-100percent-report.ts', '--json', '--no-write'],
+  },
+  {
+    name: 'luna_full_regression_summary',
+    category: 'runtime',
+    severity: 'medium',
+    owner: 'luna',
+    command: ['node', 'scripts/runtime-luna-full-regression.ts', '--json'],
+  },
 ];
 
 function normalizeEntry(entry = {}) {
