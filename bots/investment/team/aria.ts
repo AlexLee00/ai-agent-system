@@ -21,6 +21,12 @@ import { store as storeRag } from '../shared/rag-client.ts';
 import { ANALYST_TYPES, ACTIONS } from '../shared/signal.ts';
 import { isKisMarketOpen, isKisOverseasMarketOpen, isKisHoliday, isNyseHoliday } from '../shared/secrets.ts';
 import { getAriaRuntimeConfig } from '../shared/runtime-config.ts';
+import { analyzeDivergences } from '../shared/ta-divergence-detector.ts';
+import { analyzeChartPatterns } from '../shared/ta-chart-patterns.ts';
+import { analyzeSupportResistance } from '../shared/ta-support-resistance.ts';
+import { getActiveCrossSignals, summarizeCrossSignals } from '../shared/ta-ma-cross-detector.ts';
+import { aggregateVotes, buildVotesFromIndicators } from '../shared/ta-weighted-voting.ts';
+import { evaluateBullishEntry } from '../shared/ta-bullish-entry-conditions.ts';
 
 // ─── 장 시간 체크 ────────────────────────────────────────────────────
 
@@ -388,8 +394,9 @@ export async function analyzeTF(symbol, timeframe, exchange = 'binance') {
   const vol   = analyzeVolume(volumes);
 
   const result = judgeSignal({ rsi, macd, bb, currentPrice, mas, stoch, atr, vol }, exchange);
-  console.log(`  [아리아 ${timeframe}] ${symbol}: ${result.signal} (${(result.confidence * 100).toFixed(0)}%) | 점수: ${result.score.toFixed(2)}`);
-  return { ...result, currentPrice, timeframe };
+  const enriched = enrichTFResult(result, ohlcv, exchange);
+  console.log(`  [아리아 ${timeframe}] ${symbol}: ${enriched.signal} (${(enriched.confidence * 100).toFixed(0)}%) | 점수: ${enriched.score.toFixed(2)}${enriched.crossSummary ? ` | ${enriched.crossSummary.overallBias}` : ''}`);
+  return { ...enriched, currentPrice, timeframe };
 }
 
 // ─── MTF 종합 분석 ──────────────────────────────────────────────────
@@ -637,6 +644,85 @@ export async function analyzeKisOverseasMTF(symbol, force = false) {
  * @param {object|null} visionResult  analyzeChartVision 반환값 (null 허용)
  * @returns {object}  visionPattern 필드가 채워진 ariaResult
  */
+// ─── TA 부스트 통합 (Phase τ2~τ6) ──────────────────────────────────
+// analyzeTF 결과에 다이버전스 + 차트패턴 + 지지저항 + MA교차 + 진입조건 추가
+
+export function enrichTFResult(tfResult, ohlcv, exchange = 'binance') {
+  if (!tfResult || !ohlcv?.length) return tfResult;
+  try {
+    const highs   = ohlcv.map(c => c[2]);
+    const lows    = ohlcv.map(c => c[3]);
+    const closes  = ohlcv.map(c => c[4]);
+    const volumes = ohlcv.map(c => c[5]);
+    const opens   = ohlcv.map(c => c[1]);
+
+    const divergence       = analyzeDivergences(closes, highs, lows, volumes);
+    const patterns         = analyzeChartPatterns(opens, highs, lows, closes);
+    const supportResist    = analyzeSupportResistance(highs, lows, closes);
+    const crossSignals     = getActiveCrossSignals(closes);
+    const crossSummary     = summarizeCrossSignals(crossSignals);
+
+    // regime 추정 (MA 배열 기반 단순 판단)
+    const mas = tfResult.indicators?.mas;
+    let regime = 'RANGING';
+    if (mas?.ma5 && mas?.ma20) {
+      if (mas.ma5 > mas.ma20) regime = 'TRENDING_BULL';
+      else if (mas.ma5 < mas.ma20) regime = 'TRENDING_BEAR';
+    }
+
+    // 가중치 투표
+    const votes = buildVotesFromIndicators({
+      rsi:             tfResult.indicators?.rsi,
+      macd:            tfResult.indicators?.macd,
+      bb:              tfResult.indicators?.bb,
+      mas,
+      stoch:           tfResult.indicators?.stoch,
+      vol:             tfResult.indicators?.vol,
+      currentPrice:    tfResult.currentPrice,
+      divergence,
+      crossSignals,
+      patterns,
+      supportResistance: supportResist,
+    });
+    const votingResult = aggregateVotes(votes, regime);
+
+    // 진입 조건 평가
+    const bullishEntry = evaluateBullishEntry({
+      closes, highs, lows, volumes,
+      indicators:       tfResult.indicators,
+      divergence,
+      crossSignals,
+      patterns,
+      supportResistance: supportResist,
+    });
+
+    // 점수 보정 (다이버전스 + MA교차)
+    let scoreAdjust = 0;
+    if (divergence.overall === 'bullish') scoreAdjust += divergence.bullishScore * 0.4;
+    if (divergence.overall === 'bearish') scoreAdjust -= divergence.bearishScore * 0.4;
+    if (crossSummary.freshGolden)         scoreAdjust += 0.25;
+    if (crossSummary.freshDeath)          scoreAdjust -= 0.25;
+    else if (crossSummary.overallBias === 'bullish') scoreAdjust += 0.10;
+    else if (crossSummary.overallBias === 'bearish') scoreAdjust -= 0.10;
+
+    return {
+      ...tfResult,
+      score:        tfResult.score + scoreAdjust,
+      divergence,
+      patterns,
+      supportResist,
+      crossSignals,
+      crossSummary,
+      votingResult,
+      bullishEntry,
+      taBoostApplied: true,
+    };
+  } catch (e) {
+    console.warn(`  ⚠️ [아리아 TABoost] 처리 실패: ${e?.message}`);
+    return tfResult;
+  }
+}
+
 export function attachVisionPattern(ariaResult, visionResult) {
   if (!ariaResult || !visionResult || visionResult.skipped) return ariaResult;
   return {

@@ -36,10 +36,17 @@ function dedupeCandidateRows(rows = []) {
   return Array.from(bySymbol.values()).sort((a, b) => Number(b.score || 0) - Number(a.score || 0));
 }
 
+function resolveTopN(flags, market, explicitLimit) {
+  if (explicitLimit != null) return Math.max(1, Number(explicitLimit));
+  if (market === 'domestic') return flags.discovery.topDomestic ?? 100;
+  if (market === 'overseas') return flags.discovery.topOverseas ?? 100;
+  return flags.discovery.topCrypto ?? 50;
+}
+
 export async function buildDiscoveryUniverse(market, now = new Date(), options = {}) {
   const flags = getLunaIntelligentDiscoveryFlags();
   const refresh = options.refresh === true;
-  const limit = Math.max(1, Number(options.limit || 150));
+  const limit = resolveTopN(flags, market, options.limit ?? null);
   const fallbackSymbols = Array.isArray(options.fallbackSymbols) ? options.fallbackSymbols : [];
 
   if (flags.phases.discoveryOrchestratorEnabled && refresh) {

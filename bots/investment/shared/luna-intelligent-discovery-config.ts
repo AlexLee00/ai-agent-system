@@ -43,6 +43,9 @@ export function getLunaIntelligentDiscoveryFlags() {
   const autonomous = mode === 'autonomous_l5' || mode === 'autonomous';
   const shadow = mode === 'shadow';
   const maxSymbols = Math.max(1, Math.round(numEnv('LUNA_INTELLIGENT_DISCOVERY_MAX_SYMBOLS', 60)));
+  const discoveryTopDomestic = Math.max(1, Math.round(numEnv('LUNA_DISCOVERY_TOP_DOMESTIC', 100)));
+  const discoveryTopOverseas = Math.max(1, Math.round(numEnv('LUNA_DISCOVERY_TOP_OVERSEAS', 100)));
+  const discoveryTopCrypto   = Math.max(1, Math.round(numEnv('LUNA_DISCOVERY_TOP_CRYPTO', 50)));
 
   return {
     mode,
@@ -108,6 +111,9 @@ export function getLunaIntelligentDiscoveryFlags() {
     },
     discovery: {
       maxSymbols,
+      topDomestic: discoveryTopDomestic,
+      topOverseas: discoveryTopOverseas,
+      topCrypto:   discoveryTopCrypto,
     },
     shouldAllowLiveEntryFire() {
       if (!phases.entryTriggerEnabled) return false;
