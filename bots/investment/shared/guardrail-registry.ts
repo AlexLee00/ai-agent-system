@@ -39,6 +39,41 @@ const DEFAULT_GUARDRAILS = [
     owner: 'luna',
     command: ['npm', '--prefix', new URL('..', import.meta.url).pathname, 'run', '-s', 'check:luna-final-omega'],
   },
+  {
+    name: 'luna_full_integration_closure_gate',
+    category: 'safety',
+    severity: 'critical',
+    owner: 'luna',
+    command: ['node', 'scripts/runtime-luna-full-integration-closure-gate.ts', '--json'],
+  },
+  {
+    name: 'luna_reconcile_blockers',
+    category: 'trading',
+    severity: 'critical',
+    owner: 'hephaestos',
+    command: ['node', 'scripts/luna-reconcile-blocker-report.ts', '--json'],
+  },
+  {
+    name: 'luna_live_fire_final_gate',
+    category: 'safety',
+    severity: 'critical',
+    owner: 'luna',
+    command: ['node', 'scripts/luna-live-fire-final-gate.ts', '--json'],
+  },
+  {
+    name: 'agent_message_bus_hygiene',
+    category: 'runtime',
+    severity: 'medium',
+    owner: 'luna',
+    command: ['node', 'scripts/runtime-agent-message-bus-hygiene.ts', '--dry-run', '--json'],
+  },
+  {
+    name: 'luna_7day_observation',
+    category: 'data',
+    severity: 'medium',
+    owner: 'luna',
+    command: ['node', 'scripts/runtime-luna-7day-report.ts', '--json', '--no-write'],
+  },
 ];
 
 function normalizeEntry(entry = {}) {

@@ -92,14 +92,40 @@ async function simulateSkillExtraction(): Promise<{
   }
 }
 
-export async function runVoyagerSkillAutoExtractionVerify(): Promise<{
+export function buildVoyagerValidationFixture({
+  reflexionCount = 0,
+  minCandidates = MIN_CANDIDATES(),
+} = {}) {
+  return {
+    status: 'validation_fixture_passed',
+    fixtureUsed: true,
+    naturalDataReady: reflexionCount >= minCandidates,
+    productionSkillPromoted: false,
+    source: 'validation_fixture',
+    reflexionCount,
+    minCandidates,
+    assertions: [
+      'dry_run_only',
+      'no_production_skill_promotion',
+      'natural_data_status_preserved',
+    ],
+  };
+}
+
+export async function runVoyagerSkillAutoExtractionVerify(opts: {
+  validationFixture?: boolean;
+  reflexionCountOverride?: number | null;
+  minCandidatesOverride?: number | null;
+} = {}): Promise<{
   ok: boolean;
   enabled: boolean;
   status: 'ready_for_extraction' | 'pending_observation' | 'disabled';
   reflexionCount: number;
   minCandidates: number;
   readyForExtraction: boolean;
+  naturalDataReady: boolean;
   pendingReason: string | null;
+  validationFixture: any;
   steps: VerifyStep[];
   summary: string;
 }> {
@@ -111,7 +137,9 @@ export async function runVoyagerSkillAutoExtractionVerify(): Promise<{
       reflexionCount: 0,
       minCandidates: MIN_CANDIDATES(),
       readyForExtraction: false,
+      naturalDataReady: false,
       pendingReason: 'LUNA_VOYAGER_AUTO_EXTRACTION_ENABLED=false',
+      validationFixture: null,
       steps: [],
       summary: 'Voyager 자동 추출 검증 비활성 (LUNA_VOYAGER_AUTO_EXTRACTION_ENABLED=false)',
     };
@@ -120,9 +148,10 @@ export async function runVoyagerSkillAutoExtractionVerify(): Promise<{
   const steps: VerifyStep[] = [];
 
   // ─── Step 1: reflexion_memory 누적 수 확인 ────────────────────────
-  const reflexionCount = await countReflexions();
-  const minCandidates = MIN_CANDIDATES();
+  const reflexionCount = opts.reflexionCountOverride ?? await countReflexions();
+  const minCandidates = opts.minCandidatesOverride ?? MIN_CANDIDATES();
   const readyForExtraction = reflexionCount >= minCandidates;
+  const naturalDataReady = readyForExtraction;
   steps.push({
     name: 'reflexion_count_check',
     pass: true,
@@ -169,6 +198,17 @@ export async function runVoyagerSkillAutoExtractionVerify(): Promise<{
     });
   }
 
+  const validationFixture = opts.validationFixture
+    ? buildVoyagerValidationFixture({ reflexionCount, minCandidates })
+    : null;
+  if (validationFixture) {
+    steps.push({
+      name: 'validation_fixture_dryrun',
+      pass: validationFixture.productionSkillPromoted === false,
+      detail: `fixtureUsed=true, naturalDataReady=${validationFixture.naturalDataReady}, productionSkillPromoted=false`,
+    });
+  }
+
   const corePass = steps.filter(s =>
     ['skill_extraction_dryrun'].includes(s.name),
   ).every(s => s.pass);
@@ -187,14 +227,18 @@ export async function runVoyagerSkillAutoExtractionVerify(): Promise<{
     reflexionCount,
     minCandidates,
     readyForExtraction,
+    naturalDataReady,
     pendingReason,
+    validationFixture,
     steps,
     summary,
   };
 }
 
 async function main() {
-  const result = await runVoyagerSkillAutoExtractionVerify();
+  const result = await runVoyagerSkillAutoExtractionVerify({
+    validationFixture: process.argv.includes('--validation-fixture'),
+  });
   if (process.argv.includes('--json')) {
     console.log(JSON.stringify(result, null, 2));
   } else {

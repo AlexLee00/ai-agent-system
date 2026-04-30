@@ -3,6 +3,7 @@
 
 import { expireStaleAgentMessages, getMessageBusHygiene } from '../shared/agent-message-bus.ts';
 import { publishAlert } from '../shared/alert-publisher.ts';
+import * as db from '../shared/db.ts';
 import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
 
 function parseArgs(argv = process.argv.slice(2)) {
@@ -13,6 +14,7 @@ function parseArgs(argv = process.argv.slice(2)) {
     apply: argv.includes('--apply'),
     dryRun: argv.includes('--dry-run') || !argv.includes('--apply'),
     json: argv.includes('--json'),
+    confirm: argv.find((arg) => arg.startsWith('--confirm='))?.split('=')[1] || null,
   };
 }
 
@@ -20,6 +22,23 @@ export async function runAgentMessageBusHygiene(args = {}) {
   const staleHours = Math.max(1, Number(args.staleHours || 24) || 24);
   const limit = Math.max(1, Math.min(500, Number(args.limit || 100) || 100));
   const before = await getMessageBusHygiene({ staleHours, limit });
+  if (args.apply === true && args.confirm !== 'luna-agent-bus-hygiene') {
+    return {
+      ok: false,
+      status: 'agent_message_bus_hygiene_confirm_required',
+      staleHours,
+      before,
+      action: {
+        ok: false,
+        dryRun: true,
+        staleHours,
+        candidates: 0,
+        expired: 0,
+        error: 'confirm_required:luna-agent-bus-hygiene',
+      },
+      after: before,
+    };
+  }
   const action = await expireStaleAgentMessages({
     staleHours,
     limit,
@@ -36,7 +55,25 @@ export async function runAgentMessageBusHygiene(args = {}) {
     after,
   };
 
-  if (args.apply === true || Number(before.staleCount || 0) > 0) {
+  if (args.apply === true) {
+    await db.run(
+      `INSERT INTO investment.mapek_knowledge (event_type, payload)
+       VALUES ($1, $2::jsonb)`,
+      [
+        'agent_message_bus_hygiene_audit',
+        JSON.stringify({
+          staleHours,
+          limit,
+          staleBefore: before.staleCount || 0,
+          expired: action.expired || 0,
+          confirmed: true,
+          appliedAt: new Date().toISOString(),
+        }),
+      ],
+    ).catch(() => {});
+  }
+
+  if (!args.suppressAlert && (args.apply === true || Number(before.staleCount || 0) > 0)) {
     await publishAlert({
       from_bot: 'luna',
       event_type: 'agent_message_bus_hygiene',

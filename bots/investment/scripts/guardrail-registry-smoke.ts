@@ -7,7 +7,16 @@ import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
 export async function runSmoke() {
   const registry = createGuardrailRegistry();
   const entries = registry.list();
-  assert.ok(entries.length >= 4, 'default guardrails registered');
+  assert.ok(entries.length >= 10, 'default guardrails registered');
+  for (const name of [
+    'luna_full_integration_closure_gate',
+    'luna_reconcile_blockers',
+    'luna_live_fire_final_gate',
+    'agent_message_bus_hygiene',
+    'luna_7day_observation',
+  ]) {
+    assert.ok(registry.get(name), `default guardrail registered: ${name}`);
+  }
   for (const category of GUARDRAIL_CATEGORIES) {
     assert.ok(entries.some((entry) => entry.category === category), `category exists: ${category}`);
   }
