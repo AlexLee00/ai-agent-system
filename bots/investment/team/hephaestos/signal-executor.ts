@@ -1,7 +1,9 @@
 // @ts-nocheck
 
 export function isHephaestosHotPathPrefetchEnabled(env = process.env) {
-  return String(env?.HEPHAESTOS_HOT_PATH_PREFETCH_ENABLED || '').trim() === '1';
+  const raw = String(env?.HEPHAESTOS_HOT_PATH_PREFETCH_ENABLED || '').trim().toLowerCase();
+  if (['0', 'false', 'off', 'disabled'].includes(raw)) return false;
+  return true;
 }
 
 export function createHephaestosSignalExecutor(deps = {}) {
@@ -53,6 +55,10 @@ export function createHephaestosSignalExecutor(deps = {}) {
   } = deps;
 
 async function executeSignal(signal) {
+  const hephaestosRoleStatePromise = isHephaestosHotPathPrefetchEnabled()
+    ? getInvestmentAgentRoleState('hephaestos', 'binance').catch(() => null)
+    : null;
+
   await initHubSecrets().catch(() => false);
   const preflight = await buildHephaestosExecutionPreflight(signal, {
     globalPaperMode: isPaperMode(),
@@ -71,9 +77,6 @@ async function executeSignal(signal) {
     tag,
   } = executionContext;
   let { effectivePaperMode } = executionContext;
-  const hephaestosRoleStatePromise = isHephaestosHotPathPrefetchEnabled()
-    ? getInvestmentAgentRoleState('hephaestos', 'binance').catch(() => null)
-    : null;
 
   // ★ SEC-004 가드: 네메시스 승인/실행 freshness 재검증 (BUY 전용 — SELL은 포지션 청산이므로 예외)
   if (action !== ACTIONS.SELL && !globalPaperMode) {

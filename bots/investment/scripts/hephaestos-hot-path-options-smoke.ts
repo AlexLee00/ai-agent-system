@@ -8,7 +8,10 @@ import {
   getPendingSignalConcurrency,
   getPendingTradeModeQueueConcurrency,
 } from '../team/hephaestos/pending-signal-processing.ts';
-import { isHephaestosHotPathPrefetchEnabled } from '../team/hephaestos/signal-executor.ts';
+import {
+  createHephaestosSignalExecutor,
+  isHephaestosHotPathPrefetchEnabled,
+} from '../team/hephaestos/signal-executor.ts';
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -57,9 +60,11 @@ assert.equal(getPendingTradeModeQueueConcurrency({}), 1);
 assert.equal(getPendingTradeModeQueueConcurrency({ HEPHAESTOS_PENDING_TRADE_MODE_QUEUE_CONCURRENCY: '2' }), 2);
 assert.equal(getPendingTradeModeQueueConcurrency({ HEPHAESTOS_PENDING_TRADE_MODE_QUEUE_CONCURRENCY: '99' }), 2);
 
-assert.equal(isHephaestosHotPathPrefetchEnabled({}), false);
+assert.equal(isHephaestosHotPathPrefetchEnabled({}), true);
 assert.equal(isHephaestosHotPathPrefetchEnabled({ HEPHAESTOS_HOT_PATH_PREFETCH_ENABLED: '1' }), true);
-assert.equal(isHephaestosHotPathPrefetchEnabled({ HEPHAESTOS_HOT_PATH_PREFETCH_ENABLED: 'true' }), false);
+assert.equal(isHephaestosHotPathPrefetchEnabled({ HEPHAESTOS_HOT_PATH_PREFETCH_ENABLED: 'true' }), true);
+assert.equal(isHephaestosHotPathPrefetchEnabled({ HEPHAESTOS_HOT_PATH_PREFETCH_ENABLED: '0' }), false);
+assert.equal(isHephaestosHotPathPrefetchEnabled({ HEPHAESTOS_HOT_PATH_PREFETCH_ENABLED: 'false' }), false);
 
 const sequential = await observeMaxConcurrency(1);
 assert.equal(sequential.maxRunning, 1);
@@ -100,11 +105,75 @@ delete process.env.HEPHAESTOS_PENDING_SIGNAL_DELAY_MS;
 assert.equal(maxTradeModeRunning, 2);
 assert.deepEqual(tradeModeResults.map((result) => result.id).sort(), ['normal', 'validation']);
 
+const prefetchEvents = [];
+const hotPathExecutor = createHephaestosSignalExecutor({
+  ACTIONS: { BUY: 'BUY', SELL: 'SELL' },
+  SIGNAL_STATUS: { FAILED: 'failed', EXECUTED: 'executed' },
+  db: {
+    updateSignalStatus: async () => true,
+  },
+  initHubSecrets: async () => {
+    prefetchEvents.push('secrets:start');
+    await sleep(20);
+    prefetchEvents.push('secrets:end');
+    return true;
+  },
+  isPaperMode: () => true,
+  getInvestmentTradeMode: () => 'normal',
+  getCapitalConfig: () => ({}),
+  getDynamicMinOrderAmount: () => 10,
+  buildHephaestosExecutionPreflight: async (signal) => ({
+    globalPaperMode: true,
+    signalTradeMode: 'normal',
+    capitalPolicy: {},
+    minOrderUsdt: 10,
+    executionContext: {
+      signalId: signal.id,
+      symbol: signal.symbol,
+      action: signal.action,
+      amountUsdt: signal.amount_usdt,
+      base: 'BTC',
+      tag: '[PAPER]',
+      effectivePaperMode: true,
+    },
+  }),
+  buildExecutionRiskApprovalGuard: () => ({ approved: true }),
+  notifyTradeSkip: async () => true,
+  normalizePartialExitRatio: () => null,
+  buildSignalQualityContext: () => ({}),
+  getInvestmentAgentRoleState: async () => {
+    prefetchEvents.push('role:start');
+    await sleep(5);
+    prefetchEvents.push('role:end');
+    return { role: 'executor' };
+  },
+  createSignalFailurePersister: () => async () => true,
+  isBinanceSymbol: () => true,
+  binanceExecutionReconcileHandler: {
+    handleExecutionPendingReconcileError: async () => ({ handled: false }),
+  },
+  notifyError: async () => true,
+});
+
+await hotPathExecutor.executeSignal({
+  id: 1,
+  symbol: 'BTC/USDT',
+  action: 'HOLD',
+  amount_usdt: 0,
+});
+assert.ok(prefetchEvents.includes('role:start'));
+assert.ok(prefetchEvents.includes('secrets:start'));
+assert.ok(
+  prefetchEvents.indexOf('role:start') < prefetchEvents.indexOf('secrets:end'),
+  `role prefetch should start before secrets finish: ${prefetchEvents.join(' -> ')}`,
+);
+
 const payload = {
   ok: true,
   smoke: 'hephaestos-hot-path-options',
   sequential,
   parallel,
+  prefetchEvents,
   tradeModeQueue: {
     maxRunning: maxTradeModeRunning,
     resultIds: tradeModeResults.map((result) => result.id).sort(),
