@@ -1512,6 +1512,52 @@ async function generateReply(postTitle, postSummary, commentText) {
   };
 }
 
+function isReplyGenerationTransientError(error) {
+  const message = String(error?.message || error || '').trim();
+  if (!message) return false;
+  return (
+    message.includes('reply_process_timeout')
+    || message.includes('hub_llm_call_failed:')
+    || message.includes('fetch failed')
+    || message.includes('Claude Code timeout')
+    || message.includes('provider_cooldown')
+    || message.includes('429')
+  );
+}
+
+function extractCommentFocus(text = '') {
+  const normalized = normalizeText(text)
+    .replace(/[.!?！？]/g, '.')
+    .split('.')
+    .map((item) => item.trim())
+    .filter(Boolean)[0] || normalizeText(text);
+  return squeezeText(normalized, 28).replace(/[,"'`]/g, '').trim();
+}
+
+function buildDeterministicReplyFallback(postTitle, commentText, assessmentReason = '') {
+  const simpleReply = buildSimpleAcknowledgementReply(commentText, assessmentReason);
+  if (simpleReply) {
+    return { reply: simpleReply, tone: 'acknowledgement_fallback' };
+  }
+  if (/[?？]|궁금|문의|질문|알려/i.test(normalizeText(commentText))) {
+    return null;
+  }
+
+  const focus = extractCommentFocus(commentText);
+  const topic = squeezeText(normalizeText(postTitle || ''), 24) || '이번 내용';
+  const firstSentence = focus
+    ? `${focus}라고 짚어주신 부분이 특히 실무적으로 중요하다고 느꼈습니다.`
+    : `${topic}를 볼 때 결국 실무 기준으로 다시 연결해 보는 과정이 중요하다고 느꼈습니다.`;
+  const secondSentence = topic
+    ? `저도 ${topic}를 정리하면서 같은 고민을 자주 했는데, 말씀해주신 관점을 다음 글에서도 더 구체적인 사례로 이어보겠습니다.`
+    : '저도 같은 고민을 자주 하고 있어서, 말씀해주신 관점을 다음 글에서도 더 구체적인 사례로 이어보겠습니다.';
+  const reply = normalizeText(`${firstSentence} ${secondSentence}`);
+  return {
+    reply,
+    tone: 'deterministic_fallback',
+  };
+}
+
 function buildSimpleAcknowledgementReply(commentText, assessmentReason = '') {
   const text = normalizeText(commentText);
   const reason = String(assessmentReason || '').trim();
@@ -5105,13 +5151,40 @@ async function processComment(comment, options = {}) {
 
   const simpleReply = buildSimpleAcknowledgementReply(comment.comment_text, inboundAssessment.reason);
   const postInfo = simpleReply ? { title: '', summary: '' } : await getPostSummary(comment.post_url, options);
-  let generated = simpleReply
-    ? { reply: simpleReply, tone: 'acknowledgement' }
-    : await generateReply(postInfo.title || comment.post_title, postInfo.summary, comment.comment_text);
+  let generated;
+  try {
+    generated = simpleReply
+      ? { reply: simpleReply, tone: 'acknowledgement' }
+      : await generateReply(postInfo.title || comment.post_title, postInfo.summary, comment.comment_text);
+  } catch (error) {
+    if (!simpleReply && isReplyGenerationTransientError(error)) {
+      const fallback = buildDeterministicReplyFallback(postInfo.title || comment.post_title, comment.comment_text, inboundAssessment.reason);
+      if (fallback?.reply) {
+        generated = fallback;
+      } else {
+        throw error;
+      }
+    } else {
+      throw error;
+    }
+  }
   let validation = validateReply(generated.reply, comment.comment_text, undefined, { assessmentReason: inboundAssessment.reason });
 
   if (!validation.ok && !simpleReply) {
-    generated = await generateReply(postInfo.title || comment.post_title, postInfo.summary, comment.comment_text);
+    try {
+      generated = await generateReply(postInfo.title || comment.post_title, postInfo.summary, comment.comment_text);
+    } catch (error) {
+      if (isReplyGenerationTransientError(error)) {
+        const fallback = buildDeterministicReplyFallback(postInfo.title || comment.post_title, comment.comment_text, inboundAssessment.reason);
+        if (fallback?.reply) {
+          generated = fallback;
+        } else {
+          throw error;
+        }
+      } else {
+        throw error;
+      }
+    }
     validation = validateReply(generated.reply, comment.comment_text, undefined, { assessmentReason: inboundAssessment.reason });
   }
 
@@ -5670,6 +5743,7 @@ module.exports = {
   collectNeighborCandidates,
   generateReply,
   buildSimpleAcknowledgementReply,
+  buildDeterministicReplyFallback,
   generateNeighborComment,
   validateReply,
   assessInboundComment,

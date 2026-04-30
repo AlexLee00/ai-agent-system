@@ -479,6 +479,8 @@ function normalizeDocumentMetadata(raw = {}) {
   const metadata = {
     target_team: toSafeString(raw.target_team || raw.targetTeam).toLowerCase(),
     owner_agent: toSafeString(raw.owner_agent || raw.ownerAgent),
+    source_team: toSafeString(raw.source_team || raw.sourceTeam).toLowerCase(),
+    source_bot: toSafeString(raw.source_bot || raw.sourceBot),
     risk_tier: toSafeString(raw.risk_tier || raw.riskTier).toLowerCase(),
     task_type: taskType,
     write_scope: toList(raw.write_scope || raw.writeScope).map(normalizeRelPath).filter(Boolean),
@@ -498,6 +500,23 @@ function isDevelopmentTaskMetadata(metadata = {}) {
 
 function isImplementationCompletedMetadata(metadata = {}) {
   return COMPLETED_IMPLEMENTATION_STATUSES.has(normalizeMetadataToken(metadata.implementation_status));
+}
+
+function isNonActionableBlogEngagementAlarm(analysis = {}) {
+  const metadata = analysis?.metadata || {};
+  if (toSafeString(metadata.target_team || '').toLowerCase() !== DEFAULT_TARGET_TEAM) return false;
+  const relPath = toSafeString(analysis?.relPath || '');
+  if (!relPath.includes('docs/auto_dev/ALARM_INCIDENT_blog_')) return false;
+  const sourceBot = toSafeString(metadata.source_bot || metadata.sourceBot || '');
+  let content = '';
+  try {
+    content = fs.readFileSync(analysis.filePath, 'utf8');
+  } catch {
+    content = '';
+  }
+  const combined = `${sourceBot}\n${content}`;
+  if (!combined.includes('실패 0건')) return false;
+  return /blog-neighbor-commenter|blog-neighbor-sympathy/.test(combined);
 }
 
 function missingMetadataFields(metadata = {}) {
@@ -525,6 +544,18 @@ function evaluateDocumentPolicy(analysis = {}) {
       status: 'completed',
       policyDecision: 'implementation_completed',
       reason: 'auto_dev implementation already completed',
+      targetTeam: metadata.target_team || null,
+      writeScope: metadata.write_scope || [],
+      riskTier: metadata.risk_tier || null,
+    };
+  }
+
+  if (isNonActionableBlogEngagementAlarm(analysis)) {
+    return {
+      decision: 'implementation_completed',
+      status: 'completed',
+      policyDecision: 'non_actionable_alarm_snapshot',
+      reason: 'success-only blog engagement alarm snapshot',
       targetTeam: metadata.target_team || null,
       writeScope: metadata.write_scope || [],
       riskTier: metadata.risk_tier || null,

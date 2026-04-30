@@ -49,6 +49,10 @@ function getEngagementOwnerByArea(area = '') {
   if (normalized.includes('replies')) return { ...BLOG_ENGAGEMENT_OWNERS.replies };
   if (normalized.includes('neighbor')) return { ...BLOG_ENGAGEMENT_OWNERS.neighborComments };
   if (normalized.includes('sympathy')) return { ...BLOG_ENGAGEMENT_OWNERS.sympathies };
+  if (normalized === 'engagement.llm') return { ...BLOG_ENGAGEMENT_OWNERS.replies };
+  if (normalized === 'engagement.browser') return { ...BLOG_ENGAGEMENT_OWNERS.replies };
+  if (normalized === 'engagement.ui') return { ...BLOG_ENGAGEMENT_OWNERS.replies };
+  if (normalized === 'engagement.verification') return { ...BLOG_ENGAGEMENT_OWNERS.replies };
   if (normalized.includes('visibility')) return { ...BLOG_ENGAGEMENT_OWNERS.neighborComments };
   return null;
 }

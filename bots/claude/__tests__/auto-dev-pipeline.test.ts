@@ -200,6 +200,46 @@ async function test_listAutoDevDocuments_uses_auto_dev_only() {
   console.log('✅ auto-dev: scans actionable docs/auto_dev development tasks only');
 }
 
+async function test_success_only_blog_engagement_alarm_is_skipped() {
+  const tmpRoot = makeTempRoot();
+  const doc = makeDoc(
+    tmpRoot,
+    'ALARM_INCIDENT_blog_sample.md',
+    withRequiredMetadata(
+      [
+        '# Alarm Incident Auto-Repair: blog alarm',
+        '',
+        '## Incident',
+        '- from_bot: blog-neighbor-commenter',
+        '',
+        '## Error Message',
+        '```text',
+        '이웃 댓글 2건 완료, 댓글 공감 2건 완료, 실패 0건, 스킵 0건 (오늘 댓글 총 4/20, 댓글공감 총 4)',
+        '```',
+      ].join('\n'),
+      {
+        target_team: 'claude',
+        source_team: 'blog',
+        source_bot: 'blog-neighbor-commenter',
+        risk_tier: 'medium',
+        task_type: 'development_task',
+      },
+    ),
+  );
+
+  const { mocks } = makeMocks(tmpRoot);
+  await withMocks(mocks, async pipeline => {
+    const result = await pipeline.processAutoDevDocument(doc, { shadow: true });
+    assert.strictEqual(result.ok, true);
+    assert.strictEqual(result.skipped, true);
+    assert.strictEqual(result.reason, 'implementation_completed');
+    assert.strictEqual(result.job?.policyDecision, 'non_actionable_alarm_snapshot');
+  }, testEnv(tmpRoot));
+
+  fs.rmSync(tmpRoot, { recursive: true, force: true });
+  console.log('✅ auto-dev: success-only blog engagement alarms are skipped');
+}
+
 async function test_analyzeAutoDevDocument_extracts_code_refs() {
   const tmpRoot = makeTempRoot();
   const autoDir = path.join(tmpRoot, 'docs', 'auto_dev');
@@ -1420,6 +1460,7 @@ async function main() {
   const tests = [
     test_stages_define_required_lifecycle,
     test_listAutoDevDocuments_uses_auto_dev_only,
+    test_success_only_blog_engagement_alarm_is_skipped,
     test_analyzeAutoDevDocument_extracts_code_refs,
     test_processAutoDevDocument_runs_full_dry_pipeline,
     test_completed_document_is_updated_after_actual_implementation,
