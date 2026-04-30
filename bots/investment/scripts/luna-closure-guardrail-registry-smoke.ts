@@ -11,6 +11,8 @@ export async function runLunaClosureGuardrailRegistrySmoke() {
     'luna_full_integration_closure_gate',
     'luna_operational_blocker_pack',
     'luna_reconcile_blockers',
+    'luna_reconcile_evidence_pack',
+    'luna_reconcile_ack_preflight',
     'luna_live_fire_final_gate',
     'agent_message_bus_hygiene',
     'luna_curriculum_bootstrap_plan',

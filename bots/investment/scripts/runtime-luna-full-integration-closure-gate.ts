@@ -12,6 +12,9 @@ import { buildAgentMemoryDashboard } from './runtime-agent-memory-dashboard.ts';
 import { runAgentMessageBusHygiene } from './runtime-agent-message-bus-hygiene.ts';
 import { runVoyagerSkillAutoExtractionVerify } from './voyager-skill-auto-extraction-verify.ts';
 import { buildLunaOperationalClosurePackFromReports } from '../shared/luna-operational-closure-pack.ts';
+import { buildLunaReconcileEvidencePack } from './runtime-luna-reconcile-evidence-pack.ts';
+import { buildLunaReconcileAckPreflight } from './luna-reconcile-ack-preflight.ts';
+import { runLunaCurriculumBootstrap } from './runtime-luna-curriculum-bootstrap.ts';
 
 function hasFlag(name) {
   return process.argv.includes(name);
@@ -62,6 +65,9 @@ function buildNextActions({ hardBlockers = [], warnings = [], pendingObservation
   if (warnings.some((item) => item.includes('stale_bus_messages'))) {
     actions.push('run runtime:agent-message-bus-hygiene -- --dry-run, then apply only with --apply --confirm=luna-agent-bus-hygiene');
   }
+  if (warnings.some((item) => item.includes('curriculum_bootstrap_required'))) {
+    actions.push('run runtime:luna-curriculum-bootstrap dry-run, then apply only with --confirm=luna-curriculum-bootstrap');
+  }
   if (pendingObservation.some((item) => item.includes('skills'))) {
     actions.push('wait for natural close-cycle reflexions or run Voyager validation fixture without promoting production skill');
   }
@@ -81,6 +87,9 @@ export function buildLunaFullIntegrationClosureGateFromReports({
   memory = {},
   busHygiene = {},
   voyager = {},
+  reconcileEvidence = {},
+  ackPreflight = {},
+  curriculum = {},
 } = {}) {
   const hardBlockers = [
     ...blockerFromReconcile(reconcile),
@@ -94,6 +103,7 @@ export function buildLunaFullIntegrationClosureGateFromReports({
     ...(reconcile.summary?.acknowledged > 0 ? [`reconcile_acknowledged_history:${reconcile.summary.acknowledged}`] : []),
     ...(busHygiene.before?.staleCount > 0 ? [`agent_message_bus_hygiene:stale:${busHygiene.before.staleCount}`] : []),
     ...(voyager.validationFixture?.fixtureUsed ? ['voyager_validation_fixture_used:not_production_skill'] : []),
+    ...(curriculum.toCreate > 0 ? [`curriculum_bootstrap_required:${curriculum.toCreate}`] : []),
   ];
   const pendingObservation = [
     ...pendingFrom7Day(sevenDay),
@@ -140,11 +150,26 @@ export function buildLunaFullIntegrationClosureGateFromReports({
       status: busHygiene.status || null,
       staleCount: busHygiene.before?.staleCount ?? busHygiene.staleCount ?? 0,
       dryRun: busHygiene.action?.dryRun ?? true,
+      classification: busHygiene.plan?.[0]?.classification || null,
     },
     voyager: {
       status: voyager.status || null,
       naturalDataReady: voyager.naturalDataReady ?? voyager.readyForExtraction ?? false,
       fixtureUsed: voyager.validationFixture?.fixtureUsed === true,
+    },
+    reconcileEvidence: {
+      status: reconcileEvidence.status || null,
+      summary: reconcileEvidence.summary || {},
+    },
+    ackPreflight: {
+      status: ackPreflight.status || null,
+      liveLookup: ackPreflight.liveLookup === true,
+      summary: ackPreflight.summary || {},
+    },
+    curriculum: {
+      status: curriculum.status || null,
+      toCreate: Number(curriculum.toCreate || 0),
+      dryRun: curriculum.dryRun !== false,
     },
   };
   const result = {
@@ -165,6 +190,7 @@ export function buildLunaFullIntegrationClosureGateFromReports({
     fullIntegration,
     busHygiene,
     voyager,
+    curriculum,
   });
   return result;
 }
@@ -175,7 +201,7 @@ export async function buildLunaFullIntegrationClosureGate({
   days = 7,
   includeValidationFixture = false,
 } = {}) {
-  const [fullIntegration, reconcile, liveFire, sevenDay, posttrade, memory, busHygiene, voyager] = await Promise.all([
+  const [fullIntegration, reconcile, liveFire, sevenDay, posttrade, memory, busHygiene, voyager, reconcileEvidence, ackPreflight, curriculum] = await Promise.all([
     runLuna100PercentCompletionReport({ outputFile: null }),
     buildLunaReconcileBlockerReport({ exchange, hours }),
     buildLunaLiveFireFinalGate({ exchange, hours: Math.min(hours, 24), liveLookup: false, withPositionParity: true }),
@@ -192,6 +218,9 @@ export async function buildLunaFullIntegrationClosureGate({
     })),
     runAgentMessageBusHygiene({ staleHours: 6, limit: 100, apply: false, dryRun: true }),
     runVoyagerSkillAutoExtractionVerify({ validationFixture: includeValidationFixture }),
+    buildLunaReconcileEvidencePack({ exchange, hours, limit: 100 }),
+    buildLunaReconcileAckPreflight({ exchange, hours, limit: 100, liveLookup: false }),
+    runLunaCurriculumBootstrap({ market: 'any', apply: false }),
   ]);
   return buildLunaFullIntegrationClosureGateFromReports({
     fullIntegration,
@@ -202,6 +231,9 @@ export async function buildLunaFullIntegrationClosureGate({
     memory,
     busHygiene,
     voyager,
+    reconcileEvidence,
+    ackPreflight,
+    curriculum,
   });
 }
 
@@ -215,6 +247,9 @@ export async function runLunaFullIntegrationClosureGateSmoke() {
     memory: { status: 'agent_memory_dashboard_ready', readiness: { blockers: [], warnings: [] } },
     busHygiene: { ok: true, status: 'agent_message_bus_hygiene_clear', before: { staleCount: 0 }, action: { dryRun: true } },
     voyager: { status: 'ready_for_extraction', naturalDataReady: true, readyForExtraction: true },
+    reconcileEvidence: { status: 'reconcile_evidence_clear', summary: { manualReconcileRequired: 0, manualAckRequired: 0 } },
+    ackPreflight: { status: 'ack_preflight_no_candidates', liveLookup: false, summary: { candidates: 0 } },
+    curriculum: { status: 'curriculum_bootstrap_already_seeded', toCreate: 0, dryRun: true },
   });
   assert.equal(clear.ok, true);
   assert.equal(clear.operationalStatus, 'operational_complete');
@@ -241,12 +276,16 @@ export async function runLunaFullIntegrationClosureGateSmoke() {
     memory: { status: 'agent_memory_dashboard_attention', readiness: { blockers: [], warnings: ['stale_bus_messages_3'] } },
     busHygiene: { ok: true, status: 'agent_message_bus_hygiene_clear', before: { staleCount: 3 }, action: { dryRun: true } },
     voyager: { status: 'pending_observation', naturalDataReady: false, pendingReason: 'insufficient_natural_data: reflexion 4/5', validationFixture: { fixtureUsed: true } },
+    reconcileEvidence: { status: 'reconcile_evidence_required', summary: { manualReconcileRequired: 1, manualAckRequired: 0 } },
+    ackPreflight: { status: 'ack_preflight_requires_exchange_lookup', liveLookup: false, summary: { candidates: 0 } },
+    curriculum: { status: 'curriculum_bootstrap_plan_ready', toCreate: 2, dryRun: true },
   });
   assert.equal(blocked.ok, false);
   assert.equal(blocked.operationalStatus, 'code_complete_operational_blocked');
   assert.ok(blocked.hardBlockers.some((item) => item.includes('reconcile:ORCA/USDT')));
   assert.ok(blocked.hardBlockers.some((item) => item.includes('live_fire:manual_reconcile_tasks:1')));
   assert.ok(blocked.warnings.some((item) => item.includes('stale_bus_messages')));
+  assert.ok(blocked.warnings.some((item) => item.includes('curriculum_bootstrap_required')));
   assert.ok(blocked.pendingObservation.some((item) => item.includes('7day')));
   return { ok: true, clear, blocked };
 }

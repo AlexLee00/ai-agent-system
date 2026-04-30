@@ -61,6 +61,20 @@ const DEFAULT_GUARDRAILS = [
     command: ['node', 'scripts/luna-reconcile-blocker-report.ts', '--json'],
   },
   {
+    name: 'luna_reconcile_evidence_pack',
+    category: 'trading',
+    severity: 'critical',
+    owner: 'hephaestos',
+    command: ['node', 'scripts/runtime-luna-reconcile-evidence-pack.ts', '--json'],
+  },
+  {
+    name: 'luna_reconcile_ack_preflight',
+    category: 'trading',
+    severity: 'critical',
+    owner: 'hephaestos',
+    command: ['node', 'scripts/luna-reconcile-ack-preflight.ts', '--json'],
+  },
+  {
     name: 'luna_live_fire_final_gate',
     category: 'safety',
     severity: 'critical',

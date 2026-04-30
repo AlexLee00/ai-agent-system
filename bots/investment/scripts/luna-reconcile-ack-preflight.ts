@@ -11,6 +11,9 @@ import {
 import {
   evaluateReconcileAckEligibility,
 } from './luna-reconcile-ack.ts';
+import {
+  buildAckPreflightEvidence,
+} from '../shared/luna-reconcile-evidence-pack.ts';
 
 function hasFlag(name) {
   return process.argv.includes(name);
@@ -53,6 +56,7 @@ export async function verifyAckCandidateAgainstExchange(candidate = {}, {
   liveLookup = true,
 } = {}) {
   const eligibility = resolveEligibility(candidate);
+  const checkedAt = new Date().toISOString();
   const clientOrderId = eligibility.classified?.identifiers?.clientOrderId || null;
   const orderId = eligibility.classified?.identifiers?.orderId || null;
   const symbol = candidate.symbol || eligibility.classified?.symbol || null;
@@ -66,6 +70,7 @@ export async function verifyAckCandidateAgainstExchange(candidate = {}, {
     orderId,
     eligibility,
     liveLookup,
+    checkedAt,
   };
 
   if (!eligibility.ok) {
@@ -75,6 +80,12 @@ export async function verifyAckCandidateAgainstExchange(candidate = {}, {
       status: 'ack_preflight_not_eligible',
       readyToAck: false,
       blockers: eligibility.blockers || ['ack_not_eligible'],
+      evidence: buildAckPreflightEvidence({
+        candidate,
+        eligibility,
+        lookup: { status: 'ack_preflight_not_eligible' },
+        checkedAt,
+      }),
     };
   }
 
@@ -85,6 +96,12 @@ export async function verifyAckCandidateAgainstExchange(candidate = {}, {
       status: 'ack_preflight_lookup_skipped',
       readyToAck: false,
       blockers: ['exchange_lookup_not_run'],
+      evidence: buildAckPreflightEvidence({
+        candidate,
+        eligibility,
+        lookup: { status: 'ack_preflight_lookup_skipped' },
+        checkedAt,
+      }),
     };
   }
 
@@ -102,6 +119,12 @@ export async function verifyAckCandidateAgainstExchange(candidate = {}, {
       status: 'order_found_block_ack',
       readyToAck: false,
       blockers: ['exchange_order_exists'],
+      evidence: buildAckPreflightEvidence({
+        candidate,
+        eligibility,
+        lookup: { status: 'order_found_block_ack', orderFound: true },
+        checkedAt,
+      }),
       order: {
         id: order?.id || null,
         status: order?.status || null,
@@ -112,12 +135,25 @@ export async function verifyAckCandidateAgainstExchange(candidate = {}, {
   } catch (error) {
     const status = classifyLookupError(error);
     const readyToAck = status === 'order_absent_confirmed';
+    const evidence = buildAckPreflightEvidence({
+      candidate,
+      eligibility,
+      lookup: {
+        status,
+        lookupErrorCode: error?.code || null,
+        orderFound: false,
+      },
+      checkedAt,
+    });
     return {
       ...base,
       ok: readyToAck,
       status,
       readyToAck,
       blockers: readyToAck ? [] : [status],
+      evidence,
+      evidenceHash: evidence.evidenceHash,
+      evidenceExpiresAt: evidence.expiresAt,
       lookupError: error?.message || String(error),
       lookupErrorCode: error?.code || null,
     };
@@ -157,11 +193,14 @@ export async function buildLunaReconcileAckPreflight({
       unsafe: unsafeCount,
       lookupFailed: lookupFailedCount,
     },
+    evidence: checks
+      .filter((item) => item.readyToAck)
+      .map((item) => item.evidence),
     checks,
     nextCommands: checks
       .filter((item) => item.readyToAck)
       .map((item) => (
-        `npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run -s runtime:luna-reconcile-ack -- --signal-id=${item.signalId} --apply --confirm=ack-luna-reconcile --reason=operator_verified_absent_order --evidence=binance_client_order_lookup_not_found`
+        `npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run -s runtime:luna-reconcile-ack -- --signal-id=${item.signalId} --apply --confirm=ack-luna-reconcile --reason=operator_verified_absent_order --evidence=binance_client_order_lookup_not_found --preflight-evidence-hash=${item.evidenceHash} --preflight-expires-at=${item.evidenceExpiresAt}`
       )),
   };
 }
@@ -209,6 +248,8 @@ export async function runLunaReconcileAckPreflightSmoke() {
     },
   });
   assert.equal(absent.readyToAck, true);
+  assert.match(absent.evidenceHash, /^[a-f0-9]{64}$/);
+  assert.ok(new Date(absent.evidenceExpiresAt).getTime() > new Date(absent.checkedAt).getTime());
 
   const found = await verifyAckCandidateAgainstExchange({
     id: 'sig-2',

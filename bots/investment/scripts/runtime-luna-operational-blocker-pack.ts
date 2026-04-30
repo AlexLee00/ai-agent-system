@@ -11,6 +11,9 @@ import { runLuna100PercentCompletionReport } from './runtime-luna-100-percent-co
 import { runAgentMessageBusHygiene } from './runtime-agent-message-bus-hygiene.ts';
 import { runVoyagerSkillAutoExtractionVerify } from './voyager-skill-auto-extraction-verify.ts';
 import { buildLunaFullIntegrationClosureGateFromReports } from './runtime-luna-full-integration-closure-gate.ts';
+import { buildLunaReconcileEvidencePack } from './runtime-luna-reconcile-evidence-pack.ts';
+import { buildLunaReconcileAckPreflight } from './luna-reconcile-ack-preflight.ts';
+import { runLunaCurriculumBootstrap } from './runtime-luna-curriculum-bootstrap.ts';
 
 function hasFlag(name) {
   return process.argv.includes(name);
@@ -28,13 +31,16 @@ export async function buildLunaOperationalBlockerPack({
   days = 7,
   validationFixture = false,
 } = {}) {
-  const [fullIntegration, reconcile, liveFire, sevenDay, busHygiene, voyager] = await Promise.all([
+  const [fullIntegration, reconcile, liveFire, sevenDay, busHygiene, voyager, reconcileEvidence, ackPreflight, curriculum] = await Promise.all([
     runLuna100PercentCompletionReport({ outputFile: null }),
     buildLunaReconcileBlockerReport({ exchange, hours }),
     buildLunaLiveFireFinalGate({ exchange, hours: Math.min(hours, 24), liveLookup: false, withPositionParity: true }),
     runLuna7DayReport({ days }),
     runAgentMessageBusHygiene({ staleHours: 6, limit: 100, apply: false, dryRun: true, suppressAlert: true }),
     runVoyagerSkillAutoExtractionVerify({ validationFixture }),
+    buildLunaReconcileEvidencePack({ exchange, hours, limit: 100 }),
+    buildLunaReconcileAckPreflight({ exchange, hours, limit: 100, liveLookup: false }),
+    runLunaCurriculumBootstrap({ market: 'any', apply: false }),
   ]);
   const closure = buildLunaFullIntegrationClosureGateFromReports({
     fullIntegration,
@@ -45,6 +51,9 @@ export async function buildLunaOperationalBlockerPack({
     memory: { status: 'not_rechecked_by_blocker_pack', readiness: { blockers: [], warnings: [] } },
     busHygiene,
     voyager,
+    reconcileEvidence,
+    ackPreflight,
+    curriculum,
   });
   return buildLunaOperationalClosurePackFromReports({
     closure,
@@ -54,6 +63,7 @@ export async function buildLunaOperationalBlockerPack({
     fullIntegration,
     busHygiene,
     voyager,
+    curriculum,
   });
 }
 
@@ -103,6 +113,7 @@ export async function runLunaOperationalBlockerPackSmoke() {
     fullIntegration: { outstandingTasks: ['skill_library 0건'] },
     busHygiene: { ok: true, status: 'agent_message_bus_hygiene_clear', before: { staleCount: 2, staleHours: 6, rows: [] }, action: { dryRun: true } },
     voyager: { status: 'pending_observation', pendingReason: 'insufficient_natural_data: reflexion 4/5', validationFixture: { fixtureUsed: true, productionSkillPromoted: false } },
+    curriculum: { status: 'curriculum_bootstrap_plan_ready', toCreate: 1, dryRun: true },
   });
   assert.equal(pack.ok, false);
   assert.equal(pack.status, 'operational_blocked');
@@ -111,6 +122,7 @@ export async function runLunaOperationalBlockerPackSmoke() {
   assert.equal(pack.safeAckCandidates[0].safeAck, false);
   assert.equal(pack.acknowledgedHistory.length, 1);
   assert.equal(pack.hygieneTasks.length, 1);
+  assert.equal(pack.curriculumTasks.length, 1);
   assert.ok(pack.pendingObservation.some((item) => item.includes('7day')));
   return { ok: true, pack };
 }

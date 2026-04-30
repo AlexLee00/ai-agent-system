@@ -11,6 +11,7 @@ import {
   isReconcileAcked,
 } from './luna-reconcile-blocker-report.ts';
 import { buildLunaReconcileBlockerReport } from './luna-reconcile-blocker-report.ts';
+import { isRecentEvidence } from '../shared/luna-reconcile-evidence-pack.ts';
 
 const CONFIRM = 'ack-luna-reconcile';
 
@@ -92,6 +93,9 @@ function buildAckMeta({ row, eligibility, ackedBy, reason, evidence } = {}) {
       ackedBy: ackedBy || process.env.USER || 'unknown',
       reason,
       evidence,
+      operatorEvidenceRef: evidence?.operatorEvidenceRef || null,
+      preflightEvidenceHash: evidence?.preflightEvidenceHash || null,
+      preflightExpiresAt: evidence?.preflightExpiresAt || null,
       previousBlockCode: row.block_code || null,
       previousStatus: row.status || null,
       resolutionClass: eligibility.classified?.resolutionClass || null,
@@ -110,6 +114,9 @@ export async function runLunaReconcileAck({
   ackedBy = null,
   reason = null,
   evidence = null,
+  preflightEvidenceHash = null,
+  preflightExpiresAt = null,
+  operatorEvidenceRef = null,
 } = {}) {
   const row = await loadSignalTarget({ signalId, clientOrderId, exchange });
   const eligibility = evaluateReconcileAckEligibility(row);
@@ -143,7 +150,29 @@ export async function runLunaReconcileAck({
   if (!reason || !evidence) {
     return { ...result, ok: false, applyBlockedReason: 'reason_and_evidence_required' };
   }
-  const ackMeta = buildAckMeta({ row, eligibility, ackedBy, reason, evidence });
+  const evidenceCheck = operatorEvidenceRef
+    ? { ok: true, reason: 'operator_evidence_ref_present' }
+    : isRecentEvidence({ evidenceHash: preflightEvidenceHash, expiresAt: preflightExpiresAt });
+  if (!evidenceCheck.ok) {
+    return {
+      ...result,
+      ok: false,
+      applyBlockedReason: evidenceCheck.reason || 'preflight_evidence_or_operator_ref_required',
+    };
+  }
+  const ackMeta = buildAckMeta({
+    row,
+    eligibility,
+    ackedBy,
+    reason,
+    evidence: {
+      note: evidence,
+      operatorEvidenceRef,
+      preflightEvidenceHash,
+      preflightExpiresAt,
+      evidenceCheck: evidenceCheck.reason,
+    },
+  });
   await db.mergeSignalBlockMeta(row.id, ackMeta);
   const after = await buildLunaReconcileBlockerReport({ exchange, hours: 24, limit: 100 });
   return {
@@ -208,7 +237,22 @@ export async function runLunaReconcileAckSmoke() {
   });
   assert.equal(blocked.ok, false);
   assert.ok(blocked.blockers.includes('resolution_class_not_ackable:manual_reconcile_required'));
-  return { ok: true, eligible, blocked };
+  const evidenceBlocked = await runLunaReconcileAck({
+    apply: true,
+    confirm: CONFIRM,
+    reason: 'operator_verified_absent_order',
+    evidence: 'binance_client_order_lookup_not_found',
+    signalId: 'missing-smoke',
+  });
+  assert.equal(evidenceBlocked.ok, false);
+  assert.equal(evidenceBlocked.applyBlockedReason, 'ack_not_eligible');
+  const expired = isRecentEvidence({
+    evidenceHash: 'a'.repeat(64),
+    expiresAt: '2026-01-01T00:00:00.000Z',
+    now: new Date('2026-01-01T00:01:00.000Z'),
+  });
+  assert.equal(expired.ok, false);
+  return { ok: true, eligible, blocked, evidenceBlocked };
 }
 
 async function main() {
@@ -223,9 +267,24 @@ async function main() {
   const ackedBy = argValue('--acked-by', process.env.USER || 'unknown');
   const reason = argValue('--reason', null);
   const evidence = argValue('--evidence', null);
+  const preflightEvidenceHash = argValue('--preflight-evidence-hash', null);
+  const preflightExpiresAt = argValue('--preflight-expires-at', null);
+  const operatorEvidenceRef = argValue('--operator-evidence-ref', null);
   const result = smoke
     ? await runLunaReconcileAckSmoke()
-    : await runLunaReconcileAck({ signalId, clientOrderId, exchange, apply, confirm, ackedBy, reason, evidence });
+    : await runLunaReconcileAck({
+      signalId,
+      clientOrderId,
+      exchange,
+      apply,
+      confirm,
+      ackedBy,
+      reason,
+      evidence,
+      preflightEvidenceHash,
+      preflightExpiresAt,
+      operatorEvidenceRef,
+    });
   if (telegram && !smoke) await publishLunaReconcileAck(result);
   if (json) console.log(JSON.stringify(result, null, 2));
   else console.log(smoke ? 'luna reconcile ack smoke ok' : renderLunaReconcileAck(result));
