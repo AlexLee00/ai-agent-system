@@ -519,6 +519,66 @@ function isNonActionableBlogEngagementAlarm(analysis = {}) {
   return /blog-neighbor-commenter|blog-neighbor-sympathy/.test(combined);
 }
 
+function isNonActionableReservationBookingAlert(analysis = {}) {
+  const metadata = analysis?.metadata || {};
+  if (toSafeString(metadata.target_team || '').toLowerCase() !== DEFAULT_TARGET_TEAM) return false;
+  const relPath = toSafeString(analysis?.relPath || '');
+  if (!relPath.includes('docs/auto_dev/ALARM_INCIDENT_reservation_')) return false;
+  const sourceBot = toSafeString(metadata.source_bot || metadata.sourceBot || '');
+  let content = '';
+  try {
+    content = fs.readFileSync(analysis.filePath, 'utf8');
+  } catch {
+    content = '';
+  }
+  const combined = `${sourceBot}\n${content}`;
+  return (
+    /source_bot:\s*andy|from_bot:\s*andy|reservation:andy:alert/.test(combined)
+    && combined.includes('🆕 신규 예약 감지')
+    && combined.includes('자동 등록 준비 중')
+  );
+}
+
+function isNonActionableOpsEmergencyTelegramAlert(analysis = {}) {
+  const metadata = analysis?.metadata || {};
+  if (toSafeString(metadata.target_team || '').toLowerCase() !== DEFAULT_TARGET_TEAM) return false;
+  const relPath = toSafeString(analysis?.relPath || '');
+  if (!relPath.includes('docs/auto_dev/ALARM_INCIDENT_ops-emergency_')) return false;
+  const sourceBot = toSafeString(metadata.source_bot || metadata.sourceBot || '');
+  let content = '';
+  try {
+    content = fs.readFileSync(analysis.filePath, 'utf8');
+  } catch {
+    content = '';
+  }
+  const combined = `${sourceBot}\n${content}`;
+  return (
+    /source_bot:\s*telegram-sender|from_bot:\s*telegram-sender|ops-emergency:telegram-sender:telegram_critical/.test(combined)
+    && combined.includes('🚨 Fallback Exhaustion')
+    && combined.includes('provider_circuit_open:openai-oauth')
+  );
+}
+
+function isNonActionableInvestmentPositionWatchAlert(analysis = {}) {
+  const metadata = analysis?.metadata || {};
+  if (toSafeString(metadata.target_team || '').toLowerCase() !== DEFAULT_TARGET_TEAM) return false;
+  const relPath = toSafeString(analysis?.relPath || '');
+  if (!relPath.includes('docs/auto_dev/ALARM_INCIDENT_investment_')) return false;
+  const sourceBot = toSafeString(metadata.source_bot || metadata.sourceBot || '');
+  let content = '';
+  try {
+    content = fs.readFileSync(analysis.filePath, 'utf8');
+  } catch {
+    content = '';
+  }
+  const combined = `${sourceBot}\n${content}`;
+  return (
+    /source_bot:\s*luna-position-watch|from_bot:\s*luna-position-watch|investment:luna-position-watch:alert/.test(combined)
+    && combined.includes('👀 포지션 watch')
+    && combined.includes('autopilot: position_runtime_autopilot_ready')
+  );
+}
+
 function missingMetadataFields(metadata = {}) {
   const missing = [];
   for (const field of REQUIRED_METADATA_FIELDS) {
@@ -556,6 +616,42 @@ function evaluateDocumentPolicy(analysis = {}) {
       status: 'completed',
       policyDecision: 'non_actionable_alarm_snapshot',
       reason: 'success-only blog engagement alarm snapshot',
+      targetTeam: metadata.target_team || null,
+      writeScope: metadata.write_scope || [],
+      riskTier: metadata.risk_tier || null,
+    };
+  }
+
+  if (isNonActionableReservationBookingAlert(analysis)) {
+    return {
+      decision: 'implementation_completed',
+      status: 'completed',
+      policyDecision: 'non_actionable_alarm_snapshot',
+      reason: 'reservation booking detection snapshot',
+      targetTeam: metadata.target_team || null,
+      writeScope: metadata.write_scope || [],
+      riskTier: metadata.risk_tier || null,
+    };
+  }
+
+  if (isNonActionableOpsEmergencyTelegramAlert(analysis)) {
+    return {
+      decision: 'implementation_completed',
+      status: 'completed',
+      policyDecision: 'non_actionable_alarm_snapshot',
+      reason: 'ops-emergency telegram fallback snapshot',
+      targetTeam: metadata.target_team || null,
+      writeScope: metadata.write_scope || [],
+      riskTier: metadata.risk_tier || null,
+    };
+  }
+
+  if (isNonActionableInvestmentPositionWatchAlert(analysis)) {
+    return {
+      decision: 'implementation_completed',
+      status: 'completed',
+      policyDecision: 'non_actionable_alarm_snapshot',
+      reason: 'investment position watch snapshot',
       targetTeam: metadata.target_team || null,
       writeScope: metadata.write_scope || [],
       riskTier: metadata.risk_tier || null,

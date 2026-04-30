@@ -240,6 +240,143 @@ async function test_success_only_blog_engagement_alarm_is_skipped() {
   console.log('✅ auto-dev: success-only blog engagement alarms are skipped');
 }
 
+async function test_reservation_booking_alert_is_skipped() {
+  const tmpRoot = makeTempRoot();
+  const doc = makeDoc(
+    tmpRoot,
+    'ALARM_INCIDENT_reservation_sample.md',
+    withRequiredMetadata(
+      [
+        '# Alarm Incident Auto-Repair: reservation alarm',
+        '',
+        '## Incident',
+        '- from_bot: andy',
+        '- incident_key: reservation:andy:alert:sample1234',
+        '',
+        '## Error Message',
+        '```text',
+        '🆕 신규 예약 감지!',
+        '──────────',
+        '👤 고객: 홍길동',
+        '📅 날짜: 2026-05-03',
+        '⏰ 시간: 16:00~18:00',
+        '📊 상태: pending',
+        '──────────',
+        '✅ 조치: Pickko 자동 등록 준비 중...',
+        '```',
+      ].join('\n'),
+      {
+        target_team: 'claude',
+        source_team: 'reservation',
+        source_bot: 'andy',
+        risk_tier: 'medium',
+        task_type: 'development_task',
+      },
+    ),
+  );
+
+  const { mocks } = makeMocks(tmpRoot);
+  await withMocks(mocks, async pipeline => {
+    const result = await pipeline.processAutoDevDocument(doc, { shadow: true });
+    assert.strictEqual(result.ok, true);
+    assert.strictEqual(result.skipped, true);
+    assert.strictEqual(result.reason, 'implementation_completed');
+    assert.strictEqual(result.job?.policyDecision, 'non_actionable_alarm_snapshot');
+  }, testEnv(tmpRoot));
+
+  fs.rmSync(tmpRoot, { recursive: true, force: true });
+  console.log('✅ auto-dev: reservation booking alerts are skipped');
+}
+
+async function test_ops_emergency_telegram_snapshot_is_skipped() {
+  const tmpRoot = makeTempRoot();
+  const doc = makeDoc(
+    tmpRoot,
+    'ALARM_INCIDENT_ops-emergency_sample.md',
+    withRequiredMetadata(
+      [
+        '# Alarm Incident Auto-Repair: ops-emergency alarm',
+        '',
+        '## Incident',
+        '- from_bot: telegram-sender',
+        '- incident_key: ops-emergency:telegram-sender:telegram_critical:sample1234',
+        '',
+        '## Error Message',
+        '```text',
+        '🚨 [general] CRITICAL',
+        '🚨 Fallback Exhaustion',
+        '팀: luna / 에이전트: luna',
+        '시도: openai-oauth/gpt-5.4',
+        '최종 에러: provider_circuit_open:openai-oauth',
+        '```',
+      ].join('\n'),
+      {
+        target_team: 'claude',
+        source_team: 'ops-emergency',
+        source_bot: 'telegram-sender',
+        risk_tier: 'high',
+        task_type: 'development_task',
+      },
+    ),
+  );
+
+  const { mocks } = makeMocks(tmpRoot);
+  await withMocks(mocks, async pipeline => {
+    const result = await pipeline.processAutoDevDocument(doc, { shadow: true });
+    assert.strictEqual(result.ok, true);
+    assert.strictEqual(result.skipped, true);
+    assert.strictEqual(result.reason, 'implementation_completed');
+    assert.strictEqual(result.job?.policyDecision, 'non_actionable_alarm_snapshot');
+  }, testEnv(tmpRoot));
+
+  fs.rmSync(tmpRoot, { recursive: true, force: true });
+  console.log('✅ auto-dev: ops-emergency telegram fallback snapshots are skipped');
+}
+
+async function test_investment_position_watch_alert_is_skipped() {
+  const tmpRoot = makeTempRoot();
+  const doc = makeDoc(
+    tmpRoot,
+    'ALARM_INCIDENT_investment_sample.md',
+    withRequiredMetadata(
+      [
+        '# Alarm Incident Auto-Repair: investment alarm',
+        '',
+        '## Incident',
+        '- from_bot: luna-position-watch',
+        '- incident_key: investment:luna-position-watch:alert:sample1234',
+        '',
+        '## Error Message',
+        '```text',
+        '👀 포지션 watch',
+        'status: position_runtime_attention',
+        'positions: 2 | fast-lane 2 | HOLD 0 / ADJUST 1 / EXIT 1',
+        'autopilot: position_runtime_autopilot_ready',
+        '```',
+      ].join('\n'),
+      {
+        target_team: 'claude',
+        source_team: 'investment',
+        source_bot: 'luna-position-watch',
+        risk_tier: 'medium',
+        task_type: 'development_task',
+      },
+    ),
+  );
+
+  const { mocks } = makeMocks(tmpRoot);
+  await withMocks(mocks, async pipeline => {
+    const result = await pipeline.processAutoDevDocument(doc, { shadow: true });
+    assert.strictEqual(result.ok, true);
+    assert.strictEqual(result.skipped, true);
+    assert.strictEqual(result.reason, 'implementation_completed');
+    assert.strictEqual(result.job?.policyDecision, 'non_actionable_alarm_snapshot');
+  }, testEnv(tmpRoot));
+
+  fs.rmSync(tmpRoot, { recursive: true, force: true });
+  console.log('✅ auto-dev: investment position watch alerts are skipped');
+}
+
 async function test_analyzeAutoDevDocument_extracts_code_refs() {
   const tmpRoot = makeTempRoot();
   const autoDir = path.join(tmpRoot, 'docs', 'auto_dev');
@@ -1461,6 +1598,9 @@ async function main() {
     test_stages_define_required_lifecycle,
     test_listAutoDevDocuments_uses_auto_dev_only,
     test_success_only_blog_engagement_alarm_is_skipped,
+    test_reservation_booking_alert_is_skipped,
+    test_ops_emergency_telegram_snapshot_is_skipped,
+    test_investment_position_watch_alert_is_skipped,
     test_analyzeAutoDevDocument_extracts_code_refs,
     test_processAutoDevDocument_runs_full_dry_pipeline,
     test_completed_document_is_updated_after_actual_implementation,
