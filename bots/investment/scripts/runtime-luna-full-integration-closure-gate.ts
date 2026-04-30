@@ -11,6 +11,7 @@ import { buildPosttradeFeedbackL5Gate } from './runtime-posttrade-feedback-l5-ga
 import { buildAgentMemoryDashboard } from './runtime-agent-memory-dashboard.ts';
 import { runAgentMessageBusHygiene } from './runtime-agent-message-bus-hygiene.ts';
 import { runVoyagerSkillAutoExtractionVerify } from './voyager-skill-auto-extraction-verify.ts';
+import { buildLunaOperationalClosurePackFromReports } from '../shared/luna-operational-closure-pack.ts';
 
 function hasFlag(name) {
   return process.argv.includes(name);
@@ -146,7 +147,7 @@ export function buildLunaFullIntegrationClosureGateFromReports({
       fixtureUsed: voyager.validationFixture?.fixtureUsed === true,
     },
   };
-  return {
+  const result = {
     ok,
     codeComplete,
     operationalStatus,
@@ -156,6 +157,16 @@ export function buildLunaFullIntegrationClosureGateFromReports({
     nextActions: buildNextActions({ hardBlockers, warnings, pendingObservation, evidence }),
     evidence,
   };
+  result.evidence.operationalPack = buildLunaOperationalClosurePackFromReports({
+    closure: result,
+    reconcile,
+    liveFire,
+    sevenDay,
+    fullIntegration,
+    busHygiene,
+    voyager,
+  });
+  return result;
 }
 
 export async function buildLunaFullIntegrationClosureGate({
