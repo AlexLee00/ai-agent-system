@@ -640,13 +640,12 @@ export const PROFILES: Record<string, TeamProfiles> = {
       "claude_code_settings": CLAUDE_CODE_SETTINGS["claude-ops"],
       "local_llm_base_url": "http://127.0.0.1:11434",
       "primary_routes": [
-        "openai-oauth/gpt-5.4",
-        "claude-code/sonnet"
+        "openai-oauth/gpt-5.4"
       ],
       "fallback_routes": [
         GROQ_SCOUT_ROUTE,
         OPENAI_FAST_ROUTE,
-        "gemini-oauth/gemini-2.5-flash"
+        "claude-code/haiku"
       ]
     },
     "gemma-insight": {
@@ -665,12 +664,12 @@ export const PROFILES: Record<string, TeamProfiles> = {
       "claude_code_settings": CLAUDE_CODE_SETTINGS["claude-ops"],
       "local_llm_base_url": "http://127.0.0.1:11434",
       "primary_routes": [
-        "openai-oauth/gpt-5.4",
-        "claude-code/sonnet"
+        "openai-oauth/gpt-5.4"
       ],
       "fallback_routes": [
         GROQ_SCOUT_ROUTE,
-        OPENAI_FAST_ROUTE
+        OPENAI_FAST_ROUTE,
+        "claude-code/haiku"
       ]
     },
     "reporting": {
@@ -679,12 +678,12 @@ export const PROFILES: Record<string, TeamProfiles> = {
       "claude_code_settings": CLAUDE_CODE_SETTINGS["claude-ops"],
       "local_llm_base_url": "http://127.0.0.1:11434",
       "primary_routes": [
-        "claude-code/sonnet",
         "openai-oauth/gpt-5.4"
       ],
       "fallback_routes": [
         GROQ_SCOUT_ROUTE,
-        OPENAI_FAST_ROUTE
+        OPENAI_FAST_ROUTE,
+        "claude-code/haiku"
       ]
     }
   },

@@ -348,28 +348,28 @@ const TEAM_SELECTOR_DEFAULTS: Record<string, any> = {
       primary: { provider: 'claude-code', model: 'claude-code/opus', maxTokens: 2000, temperature: 0.1, timeoutMs: 15000 },
       fallbacks: [
         { provider: 'openai-oauth', model: 'gpt-5.4', maxTokens: 2000, temperature: 0.1, timeoutMs: 15000 },
-        { provider: 'groq', model: 'meta-llama/llama-4-scout-17b-16e-instruct', maxTokens: 2000, temperature: 0.1, timeoutMs: 10000 },
+        { provider: 'groq', model: 'llama-3.1-8b-instant', maxTokens: 2000, temperature: 0.1, timeoutMs: 10000 },
       ],
     },
     'selector.generate': {
       primary: { provider: 'claude-code', model: 'claude-code/opus', maxTokens: 1000, temperature: 0.1, timeoutMs: 10000 },
       fallbacks: [
         { provider: 'openai-oauth', model: 'gpt-5.4', maxTokens: 1000, temperature: 0.1, timeoutMs: 10000 },
-        { provider: 'groq', model: 'meta-llama/llama-4-scout-17b-16e-instruct', maxTokens: 1000, temperature: 0.1, timeoutMs: 8000 },
+        { provider: 'groq', model: 'llama-3.1-8b-instant', maxTokens: 1000, temperature: 0.1, timeoutMs: 8000 },
       ],
     },
     classify: {
-      primary: { provider: 'claude-code', model: 'claude-code/sonnet', maxTokens: 500, temperature: 0, timeoutMs: 8000 },
+      primary: { provider: 'openai-oauth', model: 'gpt-5.4-mini', maxTokens: 500, temperature: 0, timeoutMs: 8000 },
       fallbacks: [
-        { provider: 'groq', model: 'meta-llama/llama-4-scout-17b-16e-instruct', maxTokens: 500, temperature: 0, timeoutMs: 6000 },
-        { provider: 'openai-oauth', model: 'gpt-5.4-mini', maxTokens: 500, temperature: 0, timeoutMs: 8000 },
+        { provider: 'groq', model: 'llama-3.1-8b-instant', maxTokens: 500, temperature: 0, timeoutMs: 6000 },
+        { provider: 'claude-code', model: 'claude-code/haiku', maxTokens: 500, temperature: 0, timeoutMs: 8000 },
       ],
     },
     _fallback: {
       primary: { provider: 'openai-oauth', model: 'gpt-5.4-mini', maxTokens: 1000, temperature: 0.1 },
       fallbacks: [
-        { provider: 'claude-code', model: 'claude-code/sonnet', maxTokens: 1000, temperature: 0.1 },
         { provider: 'groq', model: 'llama-3.1-8b-instant', maxTokens: 1000, temperature: 0.1 },
+        { provider: 'claude-code', model: 'claude-code/haiku', maxTokens: 1000, temperature: 0.1 },
       ],
     },
   },
@@ -449,6 +449,14 @@ const AGENT_MODEL_REGISTRY: Record<string, Record<string, string | null>> = {
     'parsing-guard': 'ska.parsing.level3',
     'selector-generator': 'ska.selector.generate',
     'error-classifier': 'ska.classify',
+    andy: 'ska.classify',
+    jimmy: 'ska.classify',
+    rebecca: 'ska._default',
+    eve: 'ska._default',
+    'ska-reflexion-engine': 'ska._default',
+    'ska-roundtable-jay': 'ska._default',
+    'ska-roundtable-claude': 'ska._default',
+    'ska-roundtable-commander': 'ska._default',
   },
 };
 

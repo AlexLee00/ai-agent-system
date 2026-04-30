@@ -9,7 +9,9 @@
     "monitor": "tsx auto/monitors/naver-monitor.ts",
     "dashboard": "tsx scripts/dashboard-server.ts",
     "setup:n8n-command": "tsx n8n/setup-ska-command-workflow.ts",
-    "check:n8n-command": "tsx scripts/check-n8n-command-path.ts"
+    "check:n8n-command": "tsx scripts/check-n8n-command-path.ts",
+    "check:llm-routing": "tsx -e \"Promise.all([import('./lib/ska-llm-chains.ts'), import('./scripts/ska-agent-llm-primary-fallback-call-drill.ts')]).then(([chains, drill]) => { const chainExports = chains.SKA_CHAIN_REGISTRY ? chains : chains.default; const drillExports = drill.buildScenarios ? drill : drill.default; if (!chainExports?.SKA_CHAIN_REGISTRY) throw new Error('missing_ska_chain_registry'); if (!drillExports?.buildScenarios) throw new Error('missing_ska_llm_drill_exports'); })\"",
+    "runtime:ska-agent-llm-drill": "tsx scripts/ska-agent-llm-primary-fallback-call-drill.ts"
   },
   "dependencies": {
     "@ai-agent/core": "*",

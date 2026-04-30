@@ -6,9 +6,9 @@
  *   - 1% 예외: LLM 스킬 on-demand 호출
  *
  * 폴백 체인:
- *   Primary:    Claude Opus (claude-opus-4-6!) — DOM 이해 최고!
- *   Fallback 1: OpenAI (gpt-4o) — Claude 실패/타임아웃 시
- *   Fallback 2: Groq (llama-4-scout) — 위 두 모델 모두 실패 시
+ *   Primary:    Claude Code Opus — DOM 이해 최고!
+ *   Fallback 1: OpenAI Codex OAuth (gpt-5.4) — Claude 실패/타임아웃 시
+ *   Fallback 2: Groq (llama-3.1-8b-instant) — 위 두 모델 모두 실패 시
  *
  * 예상 비용: 월 $1~3 (파싱 실패 50~100회, 토큰 500~1000/회)
  * 월 $10 초과 시 token-tracker 알림!
@@ -25,22 +25,22 @@ type FallbackChainEntry = {
 /** Level 3 파싱 체인 — CSS/XPath 모두 실패 시 */
 export const SKA_PARSING_CHAIN: FallbackChainEntry[] = [
   {
-    provider: 'anthropic',
-    model: 'claude-opus-4-6',
+    provider: 'claude-code',
+    model: 'claude-code/opus',
     maxTokens: 2000,
     temperature: 0.1,
     timeoutMs: 15_000,
   },
   {
-    provider: 'openai',
-    model: 'gpt-4o',
+    provider: 'openai-oauth',
+    model: 'gpt-5.4',
     maxTokens: 2000,
     temperature: 0.1,
     timeoutMs: 15_000,
   },
   {
     provider: 'groq',
-    model: 'meta-llama/llama-4-scout-17b-16e-instruct',
+    model: 'llama-3.1-8b-instant',
     maxTokens: 2000,
     temperature: 0.1,
     timeoutMs: 10_000,
@@ -50,22 +50,22 @@ export const SKA_PARSING_CHAIN: FallbackChainEntry[] = [
 /** 셀렉터 자동 생성 체인 — LLM 파싱 성공 후 CSS 셀렉터 생성 */
 export const SKA_SELECTOR_GEN_CHAIN: FallbackChainEntry[] = [
   {
-    provider: 'anthropic',
-    model: 'claude-opus-4-6',
+    provider: 'claude-code',
+    model: 'claude-code/opus',
     maxTokens: 1000,
     temperature: 0.1,
     timeoutMs: 10_000,
   },
   {
-    provider: 'openai',
-    model: 'gpt-4o',
+    provider: 'openai-oauth',
+    model: 'gpt-5.4',
     maxTokens: 1000,
     temperature: 0.1,
     timeoutMs: 10_000,
   },
   {
     provider: 'groq',
-    model: 'meta-llama/llama-4-scout-17b-16e-instruct',
+    model: 'llama-3.1-8b-instant',
     maxTokens: 1000,
     temperature: 0.1,
     timeoutMs: 8_000,
@@ -75,18 +75,25 @@ export const SKA_SELECTOR_GEN_CHAIN: FallbackChainEntry[] = [
 /** 복잡 에러 분류 체인 — FailureTracker 규칙으로 분류 불가 시 */
 export const SKA_CLASSIFY_CHAIN: FallbackChainEntry[] = [
   {
-    provider: 'anthropic',
-    model: 'claude-sonnet-4-6',  // 분류는 Sonnet으로 충분!
+    provider: 'openai-oauth',
+    model: 'gpt-5.4-mini',
     maxTokens: 500,
     temperature: 0,
     timeoutMs: 8_000,
   },
   {
     provider: 'groq',
-    model: 'meta-llama/llama-4-scout-17b-16e-instruct',
+    model: 'llama-3.1-8b-instant',
     maxTokens: 500,
     temperature: 0,
     timeoutMs: 6_000,
+  },
+  {
+    provider: 'claude-code',
+    model: 'claude-code/haiku',
+    maxTokens: 500,
+    temperature: 0,
+    timeoutMs: 8_000,
   },
 ];
 
