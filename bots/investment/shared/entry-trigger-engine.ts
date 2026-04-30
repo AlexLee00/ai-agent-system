@@ -12,6 +12,7 @@ import { checkAvoidPatterns } from './reflexion-engine.ts';
 import { getPosttradeFeedbackRuntimeConfig } from './runtime-config.ts';
 import { evaluateLunaConstitutionForEntry } from './luna-constitution.ts';
 import { buildPredictiveValidationEvidence } from './predictive-validation.ts';
+import { isMaturePosition } from './luna-discovery-mature-policy.ts';
 
 const ACTIONS = {
   BUY: 'BUY',
@@ -354,6 +355,33 @@ export async function evaluateEntryTriggers(candidates = [], context = {}) {
       continue;
     }
     const activeCandidate = candidateWithConstitution;
+    const matureHold = await isMaturePosition(String(activeCandidate?.symbol || ''), exchange).catch(() => false);
+    if (matureHold) {
+      blocked++;
+      const matureMeta = {
+        triggerType,
+        state: shouldMutate ? 'blocked' : 'observed',
+        reason: 'mature_position_hold',
+        mode: flags.mode,
+      };
+      if (!shouldMutate) {
+        observed++;
+        output.push(annotateEntryTrigger(activeCandidate, matureMeta));
+        continue;
+      }
+      output.push({
+        ...activeCandidate,
+        action: ACTIONS.HOLD,
+        amount_usdt: 0,
+        reasoning: `entry_trigger_blocked: mature_position_hold | ${candidate.reasoning || ''}`.slice(0, 220),
+        block_meta: {
+          ...(activeCandidate.block_meta || {}),
+          event_type: 'entry_trigger_blocked',
+          entryTrigger: matureMeta,
+        },
+      });
+      continue;
+    }
 
     if (confidence < minConfidence) {
       blocked++;

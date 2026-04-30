@@ -31,6 +31,8 @@ const ENABLED = () => {
 export interface Luna7DayReportData {
   generatedAt: string;
   periodDays: number;
+  status: 'complete' | 'pending_observation';
+  pendingReasons: string[];
   signals: {
     fired: number;
     blocked: number;
@@ -253,6 +255,11 @@ function renderReport(data: Luna7DayReportData): string {
   line(`    ${ck(data.criteria.smokeReg0)}   smoke 회귀 0건    (정적 검증)`);
   line('');
   line(`  종합: ${data.passed ? '✅ Phase Ω7 수용 기준 통과' : '⏳ 운영 데이터 누적 중 (7일 자연 운영 대기)'}`);
+  if (data.pendingReasons.length > 0) {
+    line('');
+    line('  [ Pending Observation ]');
+    for (const reason of data.pendingReasons) line(`    - ${reason}`);
+  }
   hr('═');
   return lines.join('\n');
 }
@@ -279,6 +286,8 @@ export async function runLuna7DayReport(
   const data: Luna7DayReportData = {
     generatedAt: new Date().toISOString(),
     periodDays: days,
+    status: 'pending_observation',
+    pendingReasons: [],
     signals: safe(signals, { fired: 0, blocked: 0, approved: 0, rejected: 0 }),
     trades: safe(trades, { total: 0, live: 0, mock: 0, avgPnlPct: 0, totalPnlUsdt: 0 }),
     markets: safe(markets, { binance: 0, kis: 0, kis_overseas: 0 }),
@@ -299,6 +308,13 @@ export async function runLuna7DayReport(
   data.criteria.reflexions5 = data.reflexions.count >= 5;
   data.criteria.skills1 = data.skills.extracted >= 1;
   data.passed = Object.values(data.criteria).every(Boolean);
+  data.pendingReasons = [
+    data.criteria.fired5 ? null : `fired ${data.signals.fired}/5 — 7일 자연 운영 누적 대기`,
+    data.criteria.reflexions5 ? null : `reflexions ${data.reflexions.count}/5 — close cycle 누적 대기`,
+    data.criteria.skills1 ? null : `skills ${data.skills.extracted}/1 — Voyager 추출 자연 데이터 대기`,
+    data.criteria.smokeReg0 ? null : 'smoke regression detected',
+  ].filter(Boolean) as string[];
+  data.status = data.pendingReasons.length === 0 ? 'complete' : 'pending_observation';
 
   const reportText = renderReport(data);
 

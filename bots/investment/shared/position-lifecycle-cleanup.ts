@@ -51,23 +51,30 @@ async function fetchExpiredClosedPositions(
 ): Promise<LifecycleArchiveEntry[]> {
   const rows = await db.query(
     `SELECT
-       p.position_scope_key,
-       p.symbol,
-       p.exchange,
-       p.closed_at,
-       EXTRACT(EPOCH FROM (NOW() - COALESCE(p.closed_at, p.updated_at))) / 86400 AS days_old,
+       psp.id AS position_scope_key,
+       psp.symbol,
+       psp.exchange,
+       psp.closed_at,
+       EXTRACT(EPOCH FROM (NOW() - COALESCE(psp.closed_at, psp.updated_at))) / 86400 AS days_old,
        COUNT(ple.id)::int AS event_count,
        BOOL_OR(ple.stage_id = 'stage_8') AS stage8_completed
-     FROM investment.positions p
+     FROM investment.position_strategy_profiles psp
      LEFT JOIN investment.position_lifecycle_events ple
-       ON ple.position_scope_key = p.position_scope_key
-     WHERE p.is_open = false
-       AND COALESCE(p.closed_at, p.updated_at) < NOW() - ($1 * INTERVAL '1 day')
+       ON (
+         ple.position_scope_key = psp.id
+         OR (
+           ple.symbol = psp.symbol
+           AND ple.exchange = psp.exchange
+           AND COALESCE(ple.trade_mode, 'normal') = COALESCE(psp.trade_mode, 'normal')
+         )
+       )
+     WHERE psp.status IN ('closed', 'retired', 'archived')
+       AND COALESCE(psp.closed_at, psp.updated_at) < NOW() - ($1 * INTERVAL '1 day')
        AND NOT EXISTS (
          SELECT 1 FROM investment.position_lifecycle_archive a
-         WHERE a.position_scope_key = p.position_scope_key
+         WHERE a.position_scope_key = psp.id
        )
-     GROUP BY p.position_scope_key, p.symbol, p.exchange, p.closed_at, p.updated_at
+     GROUP BY psp.id, psp.symbol, psp.exchange, psp.closed_at, psp.updated_at
      HAVING COUNT(ple.id) > 0
      ORDER BY days_old DESC
      LIMIT 500`,
@@ -239,8 +246,9 @@ export async function archiveClosedPositions(
           `SELECT stage_id, event_type, created_at
            FROM investment.position_lifecycle_events
            WHERE position_scope_key = $1
+              OR (symbol = $2 AND exchange = $3)
            ORDER BY created_at ASC`,
-          [entry.positionScopeKey],
+          [entry.positionScopeKey, entry.symbol, entry.exchange],
         ).catch(() => []);
 
         const migrated = await migrateEntryToLongTermMemory(entry, events);

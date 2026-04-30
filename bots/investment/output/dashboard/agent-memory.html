@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<title>Luna Memory Dashboard</title>
+<style>
+  body { font-family: monospace; background: #0d1117; color: #c9d1d9; padding: 20px; }
+  h1 { color: #58a6ff; }
+  h2 { color: #79c0ff; border-bottom: 1px solid #30363d; padding-bottom: 4px; }
+  table { border-collapse: collapse; width: 100%; margin-bottom: 16px; }
+  th { background: #161b22; color: #58a6ff; padding: 6px 12px; text-align: left; }
+  td { padding: 4px 12px; border-bottom: 1px solid #21262d; }
+  .stat { display: inline-block; background: #161b22; border-radius: 6px; padding: 8px 16px; margin: 4px; }
+  .stat-label { color: #8b949e; font-size: 0.85em; }
+  .stat-value { color: #3fb950; font-size: 1.4em; font-weight: bold; }
+  .ts { color: #8b949e; font-size: 0.8em; }
+</style>
+</head>
+<body>
+<h1>🧠 Luna Memory Dashboard</h1>
+<p class="ts">Generated: 2026-04-30T08:17:54.798Z</p>
+
+<h2>4-Layer Memory 통계</h2>
+<div>
+  <div class="stat"><div class="stat-label">L1 Working</div><div class="stat-value">0</div></div>
+  <div class="stat"><div class="stat-label">L2 Short-Term</div><div class="stat-value">40</div></div>
+  <div class="stat"><div class="stat-label">L3 RAG Docs</div><div class="stat-value">80</div></div>
+  <div class="stat"><div class="stat-label">L3 Reflexion</div><div class="stat-value">4</div></div>
+  <div class="stat"><div class="stat-label">L4 Entity Facts</div><div class="stat-value">76</div></div>
+  <div class="stat"><div class="stat-label">L4 Skills</div><div class="stat-value">0</div></div>
+</div>
+
+<h2>에이전트별 Retrieval (7일)</h2>
+<table><thead><tr><th>Agent</th><th>Retrievals</th><th>Last Activity</th></tr></thead>
+<tbody><tr><td>luna</td><td>0</td><td>n/a</td></tr><tr><td>argos</td><td>0</td><td>n/a</td></tr><tr><td>aria</td><td>0</td><td>n/a</td></tr><tr><td>sophia</td><td>0</td><td>n/a</td></tr><tr><td>hermes</td><td>0</td><td>n/a</td></tr><tr><td>oracle</td><td>0</td><td>n/a</td></tr><tr><td>nemesis</td><td>0</td><td>n/a</td></tr><tr><td>hephaestos</td><td>0</td><td>n/a</td></tr><tr><td>hanul</td><td>0</td><td>n/a</td></tr><tr><td>chronos</td><td>0</td><td>n/a</td></tr><tr><td>zeus</td><td>0</td><td>n/a</td></tr><tr><td>athena</td><td>0</td><td>n/a</td></tr></tbody></table>
+
+<h2>Reflexion 현황</h2>
+<table><thead><tr><th>Symbol</th><th>Hindsight</th><th>Created At</th></tr></thead>
+<tbody><tr><td colspan="3">데이터 없음</td></tr></tbody></table>
+
+<h2>LLM Routing (24h) — 총 0회, 성공률 0%</h2>
+<table><thead><tr><th>Provider</th><th>Calls</th><th>Avg Latency</th></tr></thead>
+<tbody><tr><td>groq</td><td>4148</td><td>721ms</td></tr><tr><td>openai-oauth</td><td>831</td><td>3421ms</td></tr><tr><td>claude-code-oauth</td><td>58</td><td>28117ms</td></tr><tr><td>failed</td><td>9</td><td>23ms</td></tr></tbody></table>
+
+<h2>Cross-Agent Bus (24h) — 총 110건, 대기 228건</h2>
+</body></html>

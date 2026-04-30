@@ -47,6 +47,13 @@ export interface MaturePolicyResult {
   positions: MaturePosition[];
 }
 
+function normalizeScopeKey(row: any): string {
+  return String(
+    row?.position_scope_key
+    || `${row?.exchange || 'unknown'}:${row?.symbol || 'unknown'}:${row?.trade_mode || 'normal'}`,
+  );
+}
+
 /**
  * 단일 position의 Mature 분류.
  * validity_score와 days_held, pnl_drift를 기반으로 판단.
@@ -106,24 +113,20 @@ export async function classifyAllActiveMatureSignals(
 
   const rows = await db.query(
     `SELECT
-       p.position_scope_key,
+       COALESCE(psp.id, CONCAT(p.exchange, ':', p.symbol, ':', COALESCE(p.trade_mode, 'normal'))) AS position_scope_key,
        p.symbol,
        p.exchange,
-       EXTRACT(EPOCH FROM (NOW() - p.opened_at)) / 86400 AS days_held,
-       COALESCE(sve.overall_score, 1.0)                  AS validity_score,
-       COALESCE(
-         (p.current_price - p.average_price) / NULLIF(p.average_price, 0),
-         0
-       )                                                  AS pnl_drift_24h
+       p.trade_mode,
+       EXTRACT(EPOCH FROM (NOW() - COALESCE(psp.created_at, p.updated_at, NOW()))) / 86400 AS days_held,
+       COALESCE(psp.strategy_quality_score, 1.0) AS validity_score,
+       COALESCE(ABS(p.unrealized_pnl / NULLIF(ABS(p.amount * p.avg_price), 0)), 0) AS pnl_drift_24h
      FROM investment.positions p
-     LEFT JOIN LATERAL (
-       SELECT sve.overall_score
-       FROM investment.strategy_validity_evaluations sve
-       WHERE sve.position_scope_key = p.position_scope_key
-       ORDER BY sve.evaluated_at DESC
-       LIMIT 1
-     ) sve ON true
-     WHERE p.is_open = true
+     LEFT JOIN investment.position_strategy_profiles psp
+       ON psp.symbol = p.symbol
+      AND psp.exchange = p.exchange
+      AND COALESCE(psp.trade_mode, 'normal') = COALESCE(p.trade_mode, 'normal')
+      AND psp.status = 'active'
+     WHERE COALESCE(p.amount, 0) > 0
        ${exchangeClause}
      ORDER BY days_held DESC
      LIMIT $${params.length}`,
@@ -137,7 +140,7 @@ export async function classifyAllActiveMatureSignals(
       pnlDrift24h: Number(row.pnl_drift_24h || 0),
     });
     return {
-      positionScopeKey: row.position_scope_key,
+      positionScopeKey: normalizeScopeKey(row),
       symbol: row.symbol,
       exchange: row.exchange,
       daysHeld: Math.round(Number(row.days_held || 0) * 10) / 10,
@@ -217,21 +220,16 @@ export async function isMaturePosition(
 
   const rows = await db.query(
     `SELECT
-       EXTRACT(EPOCH FROM (NOW() - p.opened_at)) / 86400 AS days_held,
-       COALESCE(sve.overall_score, 1.0) AS validity_score,
-       COALESCE(
-         ABS((p.current_price - p.average_price) / NULLIF(p.average_price, 0)),
-         0
-       ) AS pnl_drift
+       EXTRACT(EPOCH FROM (NOW() - COALESCE(psp.created_at, p.updated_at, NOW()))) / 86400 AS days_held,
+       COALESCE(psp.strategy_quality_score, 1.0) AS validity_score,
+       COALESCE(ABS(p.unrealized_pnl / NULLIF(ABS(p.amount * p.avg_price), 0)), 0) AS pnl_drift
      FROM investment.positions p
-     LEFT JOIN LATERAL (
-       SELECT sve.overall_score
-       FROM investment.strategy_validity_evaluations sve
-       WHERE sve.position_scope_key = p.position_scope_key
-       ORDER BY sve.evaluated_at DESC
-       LIMIT 1
-     ) sve ON true
-     WHERE p.is_open = true
+     LEFT JOIN investment.position_strategy_profiles psp
+       ON psp.symbol = p.symbol
+      AND psp.exchange = p.exchange
+      AND COALESCE(psp.trade_mode, 'normal') = COALESCE(p.trade_mode, 'normal')
+      AND psp.status = 'active'
+     WHERE COALESCE(p.amount, 0) > 0
        AND p.symbol = $1
        ${exchange ? 'AND p.exchange = $2' : ''}
      LIMIT 1`,

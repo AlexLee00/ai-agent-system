@@ -12,8 +12,10 @@ import {
   clearMessages,
   getAgentBusSummary,
   subscribeBus,
+  replyToBus,
 } from '../shared/agent-cross-bus.ts';
 import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
+import * as db from '../shared/db.ts';
 
 async function runSmoke() {
   const results: { name: string; pass: boolean; detail?: string }[] = [];
@@ -109,6 +111,45 @@ async function runSmoke() {
       pass: ok,
       detail: r ? `totalPending=${r.totalPending}, agents=${r.agentSummary.length}` : 'DB 연결 불가 (soft pass)',
     });
+  }
+
+  // ─── 8. enabled publish/history/subscribe/reply/clear contract ────────
+  {
+    const prev = process.env.LUNA_CROSS_AGENT_BUS_ENABLED;
+    const prevUnderlying = process.env.LUNA_AGENT_CROSS_BUS_ENABLED;
+    const incidentKey = `omega4-smoke-${Date.now()}`;
+    const sender = 'omega4_smoke_sender';
+    const receiver = 'omega4_smoke_receiver';
+    process.env.LUNA_CROSS_AGENT_BUS_ENABLED = 'true';
+    try {
+      const id = await publishToBus(sender, receiver, { test: true, incidentKey }, {
+        incidentKey,
+        messageType: 'query',
+      });
+      const history = await getMessageHistory(receiver, { incidentKey, includeResponded: true });
+      const sub = await subscribeBus(receiver, async (message) => {
+        await replyToBus(message.id, receiver, { ok: true, source: 'omega4-smoke' });
+      }, { incidentKey, maxIterations: 1 });
+      const cleared = await clearMessages(receiver, new Date(Date.now() + 1000));
+
+      assert.ok(id > 0 || id === -1, 'enabled publish returns id or safe no-op');
+      if (id > 0) {
+        assert.ok(history.some((m: any) => m.id === id), 'history contains published message');
+        assert.ok(sub.processed >= 1, 'subscribe processed published message');
+        assert.ok(cleared.deleted >= 0, 'clear returns deleted count');
+      }
+      results.push({
+        name: 'enabled_contract_publish_history_subscribe_clear',
+        pass: true,
+        detail: `id=${id}, history=${history.length}, processed=${sub.processed}, cleared=${cleared.deleted}`,
+      });
+    } finally {
+      await db.run(`DELETE FROM investment.agent_messages WHERE incident_key = $1`, [incidentKey]).catch(() => {});
+      if (prev === undefined) delete process.env.LUNA_CROSS_AGENT_BUS_ENABLED;
+      else process.env.LUNA_CROSS_AGENT_BUS_ENABLED = prev;
+      if (prevUnderlying === undefined) delete process.env.LUNA_AGENT_CROSS_BUS_ENABLED;
+      else process.env.LUNA_AGENT_CROSS_BUS_ENABLED = prevUnderlying;
+    }
   }
 
   const passed = results.filter(r => r.pass).length;

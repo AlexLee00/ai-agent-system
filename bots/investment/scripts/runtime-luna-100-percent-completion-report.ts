@@ -67,6 +67,9 @@ interface CompletionReportData {
     smokeRegressionCount: number;
   };
   outstandingTasks: string[];
+  codeComplete: boolean;
+  operationalStatus: 'complete' | 'code_complete_operational_pending';
+  pendingObservation: string[];
   passed: boolean;
 }
 
@@ -78,7 +81,7 @@ async function collectOperationalMetrics(): Promise<CompletionReportData['operat
     db.get(`SELECT COUNT(*)::int AS cnt FROM investment.entity_facts`, []),
     db.get(`SELECT COUNT(*)::int AS cnt FROM investment.agent_messages WHERE created_at > NOW() - INTERVAL '7 days'`, []),
     db.get(`SELECT COUNT(*)::int AS cnt FROM investment.llm_routing_log WHERE created_at > NOW() - INTERVAL '24 hours'`, []),
-    db.get(`SELECT COUNT(*)::int AS cnt FROM investment.positions WHERE is_open = true`, []),
+    db.get(`SELECT COUNT(*)::int AS cnt FROM investment.positions WHERE COALESCE(amount, 0) > 0`, []),
   ];
 
   const results = await Promise.allSettled(queries);
@@ -299,6 +302,9 @@ function renderCompletionReport(data: CompletionReportData): string {
   if (data.passed) {
     line('  🎉 Luna 시스템 100% 완성 공식 선언!');
     line('     6 문서 평균 ' + data.avgAfter.toFixed(1) + '% | 마스터 비전 ' + data.masterVisionPassCount + '/' + data.masterVisionTotal + ' ✅');
+  } else if (data.codeComplete) {
+    line('  ✅ 코드 완성 100% — 운영 누적 검증 pending');
+    line('     7일 자연 운영 데이터가 쌓이면 strict 완료 판정으로 전환됩니다.');
   } else {
     line('  ⏳ 운영 데이터 누적 진행 중 — 7일 자연 운영 후 재실행 권장');
     line('     현재 평균 ' + data.avgAfter.toFixed(1) + '% | 마스터 비전 ' + data.masterVisionPassCount + '/' + data.masterVisionTotal);
@@ -325,6 +331,8 @@ export async function runLuna100PercentCompletionReport(
   if (metrics.skillLibraryCount < 1) {
     outstandingTasks.push(`skill_library 0건 (Phase Ω6 Voyager — reflexion ≥5건 후 자동 추출)`);
   }
+  const pendingObservation = [...outstandingTasks];
+  const codeComplete = avgAfter >= 98 && masterVisionPassCount >= 12;
 
   const data: CompletionReportData = {
     generatedAt: new Date().toISOString(),
@@ -336,7 +344,10 @@ export async function runLuna100PercentCompletionReport(
     masterVisionTotal: masterVision.length,
     operationalMetrics: metrics,
     outstandingTasks,
-    passed: avgAfter >= 98 && masterVisionPassCount >= 12 && outstandingTasks.length === 0,
+    codeComplete,
+    operationalStatus: pendingObservation.length === 0 ? 'complete' : 'code_complete_operational_pending',
+    pendingObservation,
+    passed: codeComplete && pendingObservation.length === 0,
   };
 
   const reportText = renderCompletionReport(data);

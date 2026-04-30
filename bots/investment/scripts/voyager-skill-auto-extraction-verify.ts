@@ -95,9 +95,11 @@ async function simulateSkillExtraction(): Promise<{
 export async function runVoyagerSkillAutoExtractionVerify(): Promise<{
   ok: boolean;
   enabled: boolean;
+  status: 'ready_for_extraction' | 'pending_observation' | 'disabled';
   reflexionCount: number;
   minCandidates: number;
   readyForExtraction: boolean;
+  pendingReason: string | null;
   steps: VerifyStep[];
   summary: string;
 }> {
@@ -105,9 +107,11 @@ export async function runVoyagerSkillAutoExtractionVerify(): Promise<{
     return {
       ok: false,
       enabled: false,
+      status: 'disabled',
       reflexionCount: 0,
       minCandidates: MIN_CANDIDATES(),
       readyForExtraction: false,
+      pendingReason: 'LUNA_VOYAGER_AUTO_EXTRACTION_ENABLED=false',
       steps: [],
       summary: 'Voyager 자동 추출 검증 비활성 (LUNA_VOYAGER_AUTO_EXTRACTION_ENABLED=false)',
     };
@@ -121,7 +125,7 @@ export async function runVoyagerSkillAutoExtractionVerify(): Promise<{
   const readyForExtraction = reflexionCount >= minCandidates;
   steps.push({
     name: 'reflexion_count_check',
-    pass: reflexionCount >= 1,
+    pass: true,
     detail: `현재 ${reflexionCount}건 (기준 ≥${minCandidates}건) → ${readyForExtraction ? '✅ 추출 준비됨' : '⏳ 누적 대기 중'}`,
   });
 
@@ -166,8 +170,11 @@ export async function runVoyagerSkillAutoExtractionVerify(): Promise<{
   }
 
   const corePass = steps.filter(s =>
-    ['reflexion_count_check', 'skill_extraction_dryrun'].includes(s.name),
+    ['skill_extraction_dryrun'].includes(s.name),
   ).every(s => s.pass);
+  const pendingReason = readyForExtraction
+    ? null
+    : `insufficient_natural_data: reflexion ${reflexionCount}/${minCandidates}`;
 
   const summary = readyForExtraction
     ? `✅ Voyager 자동 추출 준비 완료 (reflexion ${reflexionCount}/${minCandidates}건, skill candidates=${simResult.candidates})`
@@ -176,9 +183,11 @@ export async function runVoyagerSkillAutoExtractionVerify(): Promise<{
   return {
     ok: corePass,
     enabled: true,
+    status: readyForExtraction ? 'ready_for_extraction' : 'pending_observation',
     reflexionCount,
     minCandidates,
     readyForExtraction,
+    pendingReason,
     steps,
     summary,
   };

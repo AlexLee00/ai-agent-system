@@ -26,12 +26,28 @@ import {
 } from './agent-message-bus.ts';
 import * as db from './db.ts';
 
-export { AgentMessage, MessageType };
+export type { AgentMessage, MessageType };
 
 const ENABLED = () => {
   const raw = String(process.env.LUNA_CROSS_AGENT_BUS_ENABLED ?? 'false').toLowerCase();
   return raw === 'true' || raw === '1';
 };
+
+async function withUnderlyingBusEnabled<T>(work: () => Promise<T>): Promise<T> {
+  const previous = process.env.LUNA_AGENT_CROSS_BUS_ENABLED;
+  if (ENABLED() && !previous) {
+    process.env.LUNA_AGENT_CROSS_BUS_ENABLED = 'true';
+  }
+  try {
+    return await work();
+  } finally {
+    if (previous === undefined) {
+      delete process.env.LUNA_AGENT_CROSS_BUS_ENABLED;
+    } else {
+      process.env.LUNA_AGENT_CROSS_BUS_ENABLED = previous;
+    }
+  }
+}
 
 export interface BusPublishOpts {
   incidentKey?: string;
@@ -63,10 +79,10 @@ export async function publishToBus(
   meta: BusPublishOpts = {},
 ): Promise<number> {
   if (!ENABLED()) return -1;
-  return sendMessage(fromAgent, toAgent, message, {
+  return withUnderlyingBusEnabled(() => sendMessage(fromAgent, toAgent, message, {
     incidentKey: meta.incidentKey,
     messageType: meta.messageType ?? 'query',
-  });
+  }));
 }
 
 /**
@@ -78,7 +94,7 @@ export async function publishBroadcast(
   meta: { incidentKey?: string } = {},
 ): Promise<number> {
   if (!ENABLED()) return -1;
-  return broadcastMessage(fromAgent, message, meta);
+  return withUnderlyingBusEnabled(() => broadcastMessage(fromAgent, message, meta));
 }
 
 /**
@@ -102,10 +118,10 @@ export async function subscribeBus(
 
   while (iterations < maxIter) {
     iterations++;
-    const messages = await getPendingMessages(agentName, {
+    const messages = await withUnderlyingBusEnabled(() => getPendingMessages(agentName, {
       incidentKey: opts.incidentKey,
       limit: 20,
-    });
+    }));
 
     for (const msg of messages) {
       try {
@@ -135,7 +151,7 @@ export async function getMessageHistory(
   if (!ENABLED()) return [];
 
   if (opts.incidentKey) {
-    return getMessagesByIncident(opts.incidentKey, { limit: opts.limit ?? 50 });
+    return withUnderlyingBusEnabled(() => getMessagesByIncident(opts.incidentKey, { limit: opts.limit ?? 50 }));
   }
 
   const limit = opts.limit ?? 50;
@@ -195,7 +211,7 @@ export async function replyToBus(
   responsePayload: Record<string, unknown>,
 ): Promise<number> {
   if (!ENABLED()) return -1;
-  return respondToMessage(messageId, fromAgent, responsePayload);
+  return withUnderlyingBusEnabled(() => respondToMessage(messageId, fromAgent, responsePayload));
 }
 
 /**
