@@ -594,6 +594,31 @@ function getLaunchctlServiceDebug(label) {
   }
 }
 
+function classifyServiceExitIssue(svc = {}) {
+  const text = [
+    svc.stderrTail || '',
+    svc.stdoutTail || '',
+    svc.launchctlDetail || '',
+  ].join('\n').toLowerCase();
+  if (
+    text.includes('empty_screening_result') ||
+    text.includes('유동성 필터 통과 후보 없음') ||
+    text.includes('스크리닝 실패') ||
+    (text.includes('bridge 실패') && text.includes('direct fallback'))
+  ) {
+    return {
+      level: 1,
+      title: '실행 경고',
+      reason: 'screening_or_bridge_fallback',
+    };
+  }
+  return {
+    level: null,
+    title: '비정상 종료',
+    reason: 'runtime_error',
+  };
+}
+
 // ─── 메인 ───────────────────────────────────────────────────────
 
 async function main() {
@@ -654,6 +679,7 @@ async function main() {
     if (!NORMAL_EXIT_CODES.has(svc.exitCode) && !(CONTINUOUS.includes(label) && svc.running)) {
       const key = `exitcode:${label}:${svc.exitCode}`;
       if (hsm.canAlert(state, key)) {
+        const exitIssue = classifyServiceExitIssue(svc);
         const detailLines = [
           svc.stderrTail ? `stderr: ${svc.stderrTail}` : '',
           !svc.stderrTail && svc.stdoutTail ? `stdout: ${svc.stdoutTail}` : '',
@@ -661,9 +687,10 @@ async function main() {
         ].filter(Boolean);
         issues.push({
           key,
-          level: hsm.getAlertLevel(label),
+          level: exitIssue.level ?? hsm.getAlertLevel(label),
           meta: {
             exitCode: svc.exitCode,
+            exitClassification: exitIssue.reason,
             lastExitCode: svc.lastExitCode ?? null,
             stdoutPath: svc.stdoutPath || null,
             stderrPath: svc.stderrPath || null,
@@ -671,7 +698,7 @@ async function main() {
             stderrTail: svc.stderrTail || null,
             launchctlDetail: svc.launchctlDetail || null,
           },
-          msg: `⚠️ [투자팀 루나 헬스] ${shortName} 비정상 종료\nexit code: ${svc.exitCode}${detailLines.length ? `\n${detailLines.join('\n')}` : ''}`,
+          msg: `⚠️ [투자팀 루나 헬스] ${shortName} ${exitIssue.title}\nexit code: ${svc.exitCode}${detailLines.length ? `\n${detailLines.join('\n')}` : ''}`,
         });
       }
     } else {

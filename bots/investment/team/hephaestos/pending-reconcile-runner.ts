@@ -31,6 +31,7 @@ export function createPendingReconcileQueueProcessor(context = {}) {
     db,
     delay,
     notifyError,
+    notifyOperationalReview,
     parseSignalBlockMeta,
     isSyntheticOrTestSignalContext,
     buildBinancePendingReconcilePayload,
@@ -61,6 +62,9 @@ export function createPendingReconcileQueueProcessor(context = {}) {
     const markSignalFn = typeof deps?.markSignal === 'function'
       ? deps.markSignal
       : markBinanceOrderPendingReconcileSignal;
+    const notifyOperationalReviewFn = typeof deps?.notifyOperationalReview === 'function'
+      ? deps.notifyOperationalReview
+      : notifyOperationalReview;
 
     const modeFilter = normalizePendingReconcileTradeModes(tradeModes);
 
@@ -288,6 +292,21 @@ export function createPendingReconcileQueueProcessor(context = {}) {
           payload.signalId,
           buildFetchFailurePendingReconcileMeta({ payload, error }),
         ).catch(() => {});
+        const errorCode = String(error?.code || '').trim().toLowerCase();
+        const lookupNotFound = errorCode.includes('not_found');
+        if (lookupNotFound) {
+          await db.mergeSignalBlockMeta(payload.signalId, {
+            resolutionHint: 'manual_ack_required',
+            operatorAction: 'verify_absence_then_ack_or_manual_reconcile',
+            recoveryErrorCode: errorCode,
+          }).catch(() => {});
+          if (!isSyntheticOrTestSignalContext({ signalId: payload.signalId, reasoning: payload.signal?.reasoning })) {
+            await notifyOperationalReviewFn?.(
+              `헤파이스토스 pending reconcile 수동 확인 필요 — ${payload.symbol} ${payload.action}`,
+              { message: `${payload.symbol} clientOrderId/orderId 조회 결과가 비어 있음(${errorCode}) — 부재 확인 후 안전 ack 또는 정산 여부 결정 필요` },
+            ).catch(() => {});
+          }
+        }
         results.push({
           signalId: payload.signalId,
           symbol: payload.symbol,

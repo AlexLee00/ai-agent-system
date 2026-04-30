@@ -232,6 +232,7 @@ const processBinancePendingReconcileQueueImpl = createPendingReconcileQueueProce
   db,
   delay,
   notifyError,
+  notifyOperationalReview,
   parseSignalBlockMeta,
   isSyntheticOrTestSignalContext,
   buildBinancePendingReconcilePayload,

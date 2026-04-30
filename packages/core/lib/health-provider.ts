@@ -19,6 +19,11 @@ type LaunchctlServiceStatus = {
   exitCode: number;
   loaded?: boolean;
   state?: string;
+  stdoutPath?: string | null;
+  stderrPath?: string | null;
+  stdoutTail?: string | null;
+  stderrTail?: string | null;
+  launchctlDetail?: string | null;
 };
 
 type LaunchctlStatusMap = Record<string, LaunchctlServiceStatus>;
@@ -82,6 +87,48 @@ type WebhookRegistrationResult = {
 
 const DEFAULT_NORMAL_EXIT_CODES = new Set([0, -9, -15]);
 
+function truncateText(text: string, max = 360): string {
+  const normalized = String(text || '').replace(/\s+/g, ' ').trim();
+  if (!normalized) return '';
+  return normalized.length > max ? `${normalized.slice(0, max - 1)}…` : normalized;
+}
+
+function extractLaunchctlPath(printText: string, field: 'stdout' | 'stderr'): string | null {
+  const match = String(printText || '').match(new RegExp(`\\b${field} path\\s*=\\s*(.+)$`, 'm'));
+  return match ? String(match[1]).trim() : null;
+}
+
+function readLogTail(filePath: string | null, maxLines = 8, maxChars = 360): string | null {
+  try {
+    if (!filePath || !fs.existsSync(filePath)) return null;
+    const text = String(fs.readFileSync(filePath, 'utf8') || '').trim();
+    if (!text) return null;
+    return truncateText(text.split(/\r?\n/).slice(-maxLines).join('\n'), maxChars);
+  } catch {
+    return null;
+  }
+}
+
+function classifyExitContext(svc: LaunchctlServiceStatus | undefined): {
+  classification: 'operational_warning' | 'runtime_error';
+  reason: string | null;
+} {
+  const text = [
+    svc?.stderrTail || '',
+    svc?.stdoutTail || '',
+    svc?.launchctlDetail || '',
+  ].join('\n').toLowerCase();
+  if (
+    text.includes('empty_screening_result') ||
+    text.includes('유동성 필터 통과 후보 없음') ||
+    text.includes('스크리닝 실패') ||
+    text.includes('bridge 실패') && text.includes('direct fallback')
+  ) {
+    return { classification: 'operational_warning', reason: 'screening_or_bridge_fallback' };
+  }
+  return { classification: 'runtime_error', reason: null };
+}
+
 function getLaunchctlPrintStatus(label: string): LaunchctlServiceStatus | null {
   try {
     const raw = execSync(`launchctl print gui/$(id -u)/${label} 2>/dev/null`, { encoding: 'utf-8' });
@@ -89,12 +136,19 @@ function getLaunchctlPrintStatus(label: string): LaunchctlServiceStatus | null {
     const stateMatch = raw.match(/^\s*state = (.+)$/m);
     const pidMatch = raw.match(/^\s*pid = (\d+)$/m);
     const exitMatch = raw.match(/^\s*last exit code = (?:\((?:never exited)\)|(-?\d+))/m);
+    const stdoutPath = extractLaunchctlPath(raw, 'stdout');
+    const stderrPath = extractLaunchctlPath(raw, 'stderr');
     return {
       running,
       pid: pidMatch ? Number.parseInt(pidMatch[1], 10) : null,
       exitCode: exitMatch && exitMatch[1] ? Number.parseInt(exitMatch[1], 10) : 0,
       loaded: true,
       state: stateMatch ? stateMatch[1].trim() : undefined,
+      stdoutPath,
+      stderrPath,
+      stdoutTail: readLogTail(stdoutPath),
+      stderrTail: readLogTail(stderrPath),
+      launchctlDetail: truncateText(raw, 360),
     };
   } catch {
     return null;
@@ -174,7 +228,12 @@ function buildServiceRows(
       !isExpectedExit(label, svc.exitCode, svc) &&
       !(continuous.includes(label) && svc.running)
     ) {
-      warn.push(`  ${name}: exit ${svc.exitCode}`);
+      const exitContext = classifyExitContext(svc);
+      if (exitContext.classification === 'operational_warning') {
+        ok.push(`  ${name}: 경고성 종료 (exit ${svc.exitCode} / screening_or_bridge_fallback)`);
+      } else {
+        warn.push(`  ${name}: exit ${svc.exitCode}`);
+      }
       continue;
     }
     if (svc.running && svc.pid) {
