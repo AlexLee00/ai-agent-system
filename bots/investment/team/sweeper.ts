@@ -14,14 +14,11 @@
  */
 
 import ccxt from 'ccxt';
-import fs from 'node:fs';
-import path from 'node:path';
 import * as db from '../shared/db.ts';
 import * as journalDb from '../shared/trade-journal-db.ts';
 import { publishAlert } from '../shared/alert-publisher.ts';
 import { initHubSecrets, loadSecrets } from '../shared/secrets.ts';
 import { getInvestmentRagRuntimeConfig } from '../shared/runtime-config.ts';
-import { investmentOpsRuntimeFile } from '../shared/runtime-ops-path.ts';
 import { createRequire } from 'module';
 
 const _require = createRequire(import.meta.url);
@@ -30,8 +27,6 @@ const { createAgentMemory } = _require('../../../packages/core/lib/agent-memory'
 const DUST_USDT = 3;
 const WATCH_USDT = 10;
 const MANUAL_DUST_SYNC_CONFIRM = 'sync-manual-dust';
-const DUST_HISTORY_MAX_AGE_MS = 7 * 24 * 3600 * 1000;
-export const SWEEPER_DUST_HISTORY_FILE = investmentOpsRuntimeFile('sweeper-dust-history.jsonl');
 const RAG_RUNTIME = getInvestmentRagRuntimeConfig();
 const sweeperMemory = createAgentMemory({ agentId: 'investment.sweeper', team: 'investment' });
 
@@ -103,76 +98,14 @@ async function fetchOpenLiveJournalRows() {
   ).catch(() => []);
 }
 
-function safeReadJsonl(file) {
-  try {
-    if (!fs.existsSync(file)) return [];
-    return fs.readFileSync(file, 'utf8')
-      .split('\n')
-      .map((line) => line.trim())
-      .filter(Boolean)
-      .map((line) => {
-        try { return JSON.parse(line); } catch { return null; }
-      })
-      .filter(Boolean);
-  } catch {
-    return [];
-  }
-}
-
-function appendJsonl(file, payload) {
-  fs.mkdirSync(path.dirname(file), { recursive: true });
-  fs.appendFileSync(file, `${JSON.stringify(payload)}\n`, 'utf8');
-}
-
-export function buildSweeperDustObservation(walletOnlyRows = []) {
-  const dustRows = (walletOnlyRows || [])
-    .filter((row) => row?.class === 'dust')
-    .map((row) => ({
-      coin: String(row.coin || '').trim().toUpperCase(),
-      symbol: normalizeSymbol(row.symbol || symbolForCoin(row.coin)),
-      amount: Number(row.total || 0),
-      free: Number(row.free || 0),
-      usdtValue: Number(row.usdt_value || row.usdtValue || 0),
-    }))
-    .filter((row) => row.symbol && row.usdtValue >= 0);
-  return {
-    recordedAt: new Date().toISOString(),
-    source: 'investment.sweeper',
-    dustCount: dustRows.length,
-    symbols: dustRows.map((row) => row.symbol),
-    rows: dustRows,
-  };
-}
-
-export function readRecentSweeperDustSymbols({
-  file = SWEEPER_DUST_HISTORY_FILE,
-  nowMs = Date.now(),
-  maxAgeMs = DUST_HISTORY_MAX_AGE_MS,
-} = {}) {
-  const symbols = new Set();
-  for (const row of safeReadJsonl(file).slice(-200)) {
-    const recordedAtMs = Date.parse(row?.recordedAt || '');
-    if (Number.isFinite(recordedAtMs) && nowMs - recordedAtMs > maxAgeMs) continue;
-    for (const symbol of row?.symbols || []) {
-      const normalized = normalizeSymbol(symbol);
-      if (normalized) symbols.add(normalized);
-    }
-    for (const item of row?.rows || []) {
-      const normalized = normalizeSymbol(item?.symbol || symbolForCoin(item?.coin));
-      if (normalized) symbols.add(normalized);
-    }
-  }
-  return [...symbols].sort();
-}
-
 export function buildManualDustJournalSyncPlan({
   walletOnlyRows = [],
   positions = [],
   openJournals = [],
-  recentDustSymbols = [],
   dustThresholdUsdt = DUST_USDT,
   apply = false,
   confirm = '',
+  maxAffectedTrades = 10,
 } = {}) {
   const positionSymbols = new Set(
     (positions || [])
@@ -190,7 +123,6 @@ export function buildManualDustJournalSyncPlan({
       usdtValue: Number(row.usdt_value || row.usdtValue || 0),
     });
   }
-  const recentDustSet = new Set((recentDustSymbols || []).map(normalizeSymbol).filter(Boolean));
   const groups = new Map();
   for (const row of openJournals || []) {
     const symbol = normalizeSymbol(row.symbol);
@@ -222,22 +154,29 @@ export function buildManualDustJournalSyncPlan({
   }
 
   const candidates = [];
+  let nonDustOpenJournalCount = 0;
   for (const group of groups.values()) {
     const wallet = walletBySymbol.get(group.symbol) || null;
     const walletValue = Number(wallet?.usdtValue || 0);
     const hasCurrentDust = wallet && walletValue >= 0 && walletValue < Number(dustThresholdUsdt || DUST_USDT);
-    const wasRecentlyDust = recentDustSet.has(group.symbol);
-    const walletGoneAfterDust = !wallet && wasRecentlyDust;
-    if (!hasCurrentDust && !walletGoneAfterDust) continue;
+    const hasDustSizedJournal = Number(group.openValue || 0) >= 0 && Number(group.openValue || 0) < Number(dustThresholdUsdt || DUST_USDT);
+    const walletGone = !wallet;
+    if (walletGone && !hasDustSizedJournal) {
+      nonDustOpenJournalCount += 1;
+      continue;
+    }
+    if (!hasCurrentDust && !walletGone) continue;
     candidates.push({
       ...group,
       walletValueUsdt: walletValue,
+      journalValueUsdt: Number(group.openValue || 0),
+      journalDustSized: Boolean(hasDustSizedJournal),
       currentWalletDust: Boolean(hasCurrentDust),
-      recentlyObservedDust: Boolean(wasRecentlyDust),
-      syncEligible: Boolean(walletGoneAfterDust),
-      action: walletGoneAfterDust ? 'sync_manual_dust_cleaned' : 'await_manual_dust_cleanup',
-      reason: walletGoneAfterDust
-        ? 'previously_observed_dust_now_missing_from_wallet'
+      walletPresent: Boolean(wallet),
+      syncEligible: Boolean(walletGone && hasDustSizedJournal),
+      action: walletGone ? 'sync_manual_dust_cleaned' : 'await_manual_dust_cleanup',
+      reason: walletGone
+        ? 'wallet_zero_no_position_dust_sized_open_journal'
         : 'wallet_still_has_unconvertible_dust_wait_for_manual_cleanup',
     });
   }
@@ -246,15 +185,22 @@ export function buildManualDustJournalSyncPlan({
   const blockers = [];
   if (apply && !confirmationOk) blockers.push('confirmation_required');
   const syncable = candidates.filter((row) => row.syncEligible);
+  const affectedTradeCount = syncable.reduce((sum, row) => sum + (row.openTradeIds || []).length, 0);
+  if (apply && affectedTradeCount > Number(maxAffectedTrades || 10)) {
+    blockers.push(`max_affected_trades_exceeded:${affectedTradeCount}>${Number(maxAffectedTrades || 10)}`);
+  }
   return {
     ok: blockers.length === 0,
     apply: apply === true,
     confirmRequired: apply && !confirmationOk,
     confirmValue: MANUAL_DUST_SYNC_CONFIRM,
     dustThresholdUsdt: Number(dustThresholdUsdt || DUST_USDT),
+    maxAffectedTrades: Number(maxAffectedTrades || 10),
     candidates: candidates.length,
     syncableCount: syncable.length,
+    affectedTradeCount,
     awaitManualCleanupCount: candidates.length - syncable.length,
+    nonDustOpenJournalCount,
     blockers,
     rows: candidates,
   };
@@ -316,7 +262,7 @@ export async function runSweeper({
   telegram = false,
   syncManualDust = false,
   confirm = '',
-  dustHistoryFile = SWEEPER_DUST_HISTORY_FILE,
+  maxAffectedTrades = 10,
 } = {}) {
   await db.initSchema();
   await initHubSecrets().catch(() => false);
@@ -343,8 +289,6 @@ export async function runSweeper({
       };
     })
     .sort((a, b) => b.usdt_value - a.usdt_value);
-  const dustObservation = buildSweeperDustObservation(walletOnlyRows);
-  appendJsonl(dustHistoryFile, dustObservation);
 
   const mismatches = [];
   for (const position of positions) {
@@ -378,10 +322,10 @@ export async function runSweeper({
     walletOnlyRows,
     positions,
     openJournals: openLiveJournals,
-    recentDustSymbols: readRecentSweeperDustSymbols({ file: dustHistoryFile }),
     dustThresholdUsdt: DUST_USDT,
     apply: syncManualDust,
     confirm,
+    maxAffectedTrades,
   });
   let manualDustSyncApplied = null;
   if (syncManualDust && manualDustSync.ok && manualDustSync.syncableCount > 0) {
@@ -397,13 +341,11 @@ export async function runSweeper({
     wallet_only_total_usdt: walletOnlyRows.reduce((sum, row) => sum + row.usdt_value, 0),
     significant_wallet_only_count: significantWalletOnly.length,
     mismatch_count: mismatches.length,
-    dust_history_file: dustHistoryFile,
-    dust_observation: dustObservation,
     manual_dust_sync: {
       ...manualDustSync,
       applied: manualDustSyncApplied,
       next_command: manualDustSync.syncableCount > 0 && !syncManualDust
-        ? `npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run -s sweeper:dust-sync -- --confirm=${MANUAL_DUST_SYNC_CONFIRM}`
+        ? `npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run -s sweeper:dust-sync -- --confirm=${MANUAL_DUST_SYNC_CONFIRM} --max-affected-trades=${manualDustSync.affectedTradeCount}`
         : null,
     },
     wallet_only: walletOnlyRows,
@@ -478,9 +420,11 @@ if (process.argv[1] === new URL(import.meta.url).pathname) {
   const telegram = process.argv.includes('--telegram');
   const syncManualDust = process.argv.includes('--sync-manual-dust');
   const confirmArg = process.argv.find((arg) => arg.startsWith('--confirm='));
+  const maxAffectedArg = process.argv.find((arg) => arg.startsWith('--max-affected-trades='));
   const confirm = confirmArg ? confirmArg.split('=').slice(1).join('=') : '';
+  const maxAffectedTrades = Number(maxAffectedArg?.split('=').slice(1).join('=') || 10);
   try {
-    const result = await runSweeper({ telegram, syncManualDust, confirm });
+    const result = await runSweeper({ telegram, syncManualDust, confirm, maxAffectedTrades });
     console.log(JSON.stringify(result, null, 2));
     process.exit(result.manual_dust_sync?.ok === false ? 1 : 0);
   } catch (error) {
