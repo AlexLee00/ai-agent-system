@@ -7,12 +7,8 @@ const PROJECT_ROOT = path.resolve(__dirname, '..', '..', '..');
 const STANDARDIZED_SCOPES = [
   'bots/darwin/lib',
   'bots/darwin/scripts',
-  'bots/video/lib',
-  'bots/video/config',
   'bots/orchestrator/src/router.ts',
   'bots/orchestrator/lib/intent-parser.ts',
-  'bots/worker/lib/ai-client.ts',
-  'bots/worker/lib/chat-agent.ts',
   'bots/sigma/shared/llm-client.ts',
   'bots/legal/lib/llm-helper.js',
   'bots/claude/lib/ai-analyst.ts',
@@ -32,16 +28,6 @@ const STANDARDIZED_SCOPES = [
   'bots/investment/team/chronos.ts',
   'bots/investment/scripts/backtest-llm-quality-sample.ts',
   'packages/core/lib/chunked-llm.ts',
-];
-
-const REQUIRED_VIDEO_AGENTS = [
-  'edi',
-  'critic',
-  'subtitle-corrector',
-  'scene-indexer',
-  'narration-analyzer',
-  'refiner',
-  'intro-outro-handler',
 ];
 
 const REQUIRED_DARWIN_PROFILES = [
@@ -112,11 +98,6 @@ function main() {
   assertHasMatches('callHubLlm', STANDARDIZED_SCOPES, 'standardized team LLM scopes');
 
   const selector = require('../../../packages/core/lib/llm-model-selector.ts');
-  for (const agent of REQUIRED_VIDEO_AGENTS) {
-    const description = selector.describeAgentModel('video', agent);
-    assert.ok(description?.selected, `video/${agent} must resolve to a selector chain`);
-    assert.ok(Array.isArray(description.chain) && description.chain.length > 0, `video/${agent} selector chain must be non-empty`);
-  }
 
   const { PROFILES } = require('../lib/runtime-profiles.ts');
   for (const profile of REQUIRED_DARWIN_PROFILES) {
@@ -171,7 +152,6 @@ function main() {
   console.log(JSON.stringify({
     ok: true,
     standardized_scopes: STANDARDIZED_SCOPES,
-    video_agents: REQUIRED_VIDEO_AGENTS.length,
     darwin_profiles: REQUIRED_DARWIN_PROFILES.length,
     blog_agents: REQUIRED_BLOG_AGENTS.length,
     ska_agents: REQUIRED_SKA_AGENTS.length,

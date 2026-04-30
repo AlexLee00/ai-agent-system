@@ -7,7 +7,11 @@ async function main() {
 
   const teams = commanderRegistry.listCommanderTeams();
   assert.equal(Array.isArray(teams), true, 'teams should be array');
-  assert.equal(teams.length >= 8, true, 'expected 8 team adapters');
+  assert.deepEqual(
+    teams.sort(),
+    ['blog', 'claude', 'darwin', 'legal', 'luna', 'ska'].sort(),
+    'active commander adapters should match non-retired teams',
+  );
 
   const sampleTask = {
     incidentKey: `contract-smoke:${Date.now()}`,

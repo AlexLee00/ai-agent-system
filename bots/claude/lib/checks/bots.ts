@@ -78,8 +78,6 @@ function isAllowedNodeCommand(command = '') {
     ' n8n start',
     'node_modules/.bin/next start',
     'scripts/telegram-callback-poller.js',
-    'bots/worker/web/server.js',
-    'bots/worker/scripts/',
     'bots/hub/src/hub.ts',
     'bots/claude/src/dexter.js',
     'bots/claude/src/dexter-quickcheck.js',
@@ -96,12 +94,6 @@ function isAllowedNodeCommand(command = '') {
 
 function classifySuspiciousNode(proc) {
   const cmd = String(proc?.command || '');
-  if (cmd.includes('bots/worker/src/task-runner.legacy.js') || cmd.includes('bots/worker/src/worker-lead.legacy.js')) {
-    return 'worker-legacy';
-  }
-  if (cmd.includes('bots/worker/src/task-runner.ts') || cmd.includes('bots/worker/src/worker-lead.ts')) {
-    return 'worker-duplicate';
-  }
   return 'other';
 }
 
@@ -165,9 +157,6 @@ function checkLaunchd(items) {
     { id: 'ai.investment.commander',    label: '루나팀 커맨더 (launchd)' },
     { id: 'ai.investment.argos',        label: '루나팀 아르고스 모니터 (launchd)', optional: true },
     { id: 'ai.investment.reporter',     label: '루나팀 리포터 (launchd)', optional: true },
-    // 워커팀
-    { id: 'ai.worker.web',             label: '워커팀 웹서버 (Elixir ownership)' },
-    { id: 'ai.worker.nextjs',          label: '워커팀 Next.js (Elixir ownership)' },
   ];
 
   for (const svc of SERVICES) {
@@ -281,20 +270,12 @@ function checkOrphanProcesses(items) {
       return acc;
     }, {});
     const otherCount = groups.other || 0;
-    const workerLegacyCount = groups['worker-legacy'] || 0;
-    const workerDuplicateCount = groups['worker-duplicate'] || 0;
 
     if (otherCount > 2) {
       items.push({
         label:  '고아 Node 프로세스 (ppid=1)',
         status: 'warn',
-        detail: `${suspicious.length}개 — 미분류 비정상 프로세스 의심 (worker duplicate ${workerDuplicateCount}, legacy ${workerLegacyCount}, other ${otherCount})`,
-      });
-    } else if (workerLegacyCount + workerDuplicateCount > 0) {
-      items.push({
-        label: '워커 중복/legacy Node 프로세스',
-        status: workerLegacyCount >= 4 ? 'warn' : 'ok',
-        detail: `duplicate ${workerDuplicateCount}개, legacy ${workerLegacyCount}개 — launchd 외 잔존 워커 점검 권장`,
+        detail: `${suspicious.length}개 — 미분류 비정상 프로세스 의심 (other ${otherCount})`,
       });
     } else {
       items.push({

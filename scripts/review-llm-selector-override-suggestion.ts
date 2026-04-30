@@ -7,7 +7,7 @@ const {
   getRecentSelectorOverrideSuggestionLogs,
   getSelectorOverrideSuggestionLogById,
   updateSelectorOverrideSuggestionLogReview,
-} = require(path.join(__dirname, '../bots/worker/lib/llm-api-monitoring'));
+} = require(path.join(__dirname, '../packages/core/lib/llm-selector-suggestion-store'));
 
 const VALID_STATUSES = new Set(['pending', 'hold', 'approved', 'rejected', 'applied']);
 

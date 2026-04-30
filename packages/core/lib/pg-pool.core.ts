@@ -5,7 +5,6 @@ export const PgSchemaNameSchema = z.enum([
   'reservation',
   'investment',
   'ska',
-  'worker',
   'blog',
   'agent',
   'sigma',

@@ -10,7 +10,6 @@ const ROOT = process.env.PROJECT_ROOT || path.join(os.homedir(), 'projects', 'ai
 
 const TEAM_HEALTH_COMMANDS = [
   { team: 'orchestrator', script: path.join(ROOT, 'bots/orchestrator/scripts/health-report.js') },
-  { team: 'worker', script: path.join(ROOT, 'bots/worker/scripts/health-report.js') },
   { team: 'claude', script: path.join(ROOT, 'bots/claude/scripts/health-report.js') },
   { team: 'blog', script: path.join(ROOT, 'bots/blog/scripts/health-report.js') },
   { team: 'investment', script: path.join(ROOT, 'bots/investment/scripts/health-report.js') },
@@ -19,7 +18,6 @@ const TEAM_HEALTH_COMMANDS = [
 
 const FALLBACK_TEAM_PROBES = {
   orchestrator: ['http://127.0.0.1:5678/healthz'],
-  worker: ['http://127.0.0.1:4000/api/health', 'http://127.0.0.1:4001'],
   claude: ['http://127.0.0.1:3032/api/health', 'http://127.0.0.1:5678/healthz'],
   blog: ['http://127.0.0.1:3100/health', 'http://127.0.0.1:5678/healthz'],
   investment: [],
@@ -28,7 +26,6 @@ const FALLBACK_TEAM_PROBES = {
 
 const FALLBACK_LAUNCHD_LABELS = {
   orchestrator: ['ai.jay.runtime'],
-  worker: ['ai.worker.web', 'ai.worker.nextjs', 'ai.worker.lead', 'ai.worker.task-runner'],
   claude: ['ai.claude.commander', 'ai.claude.health-dashboard', 'ai.claude.dexter'],
   blog: ['ai.blog.node-server'],
   investment: ['ai.investment.commander', 'ai.investment.crypto', 'ai.investment.domestic', 'ai.investment.overseas', 'ai.investment.argos', 'ai.investment.reporter'],

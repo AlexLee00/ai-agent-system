@@ -17,7 +17,7 @@ const {
 
 function parseArgs(argv) {
   const result = {
-    schema: 'worker',
+    schema: 'agent',
     sinceDays: 30,
     limit: 20,
     json: false,

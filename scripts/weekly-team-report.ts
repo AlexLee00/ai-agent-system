@@ -2,10 +2,10 @@
 'use strict';
 
 /**
- * scripts/weekly-team-report.js — 4개 팀 KPI 주간 종합 리포트
+ * scripts/weekly-team-report.js — 현역 팀 KPI 주간 종합 리포트
  *
  * 매주 일요일 09:00 실행 (launchd 또는 n8n)
- * 스카팀 / 루나팀 / 클로드팀 / 워커팀 핵심 지표 수집 → 텔레그램 발송 + RAG 저장
+ * 스카팀 / 루나팀 / 클로드팀 / 블로팀 핵심 지표 수집 → 텔레그램 발송 + RAG 저장
  *
  * 실행: node scripts/weekly-team-report.js [--days=7]
  */
@@ -117,31 +117,35 @@ async function collectClaudeKPI() {
   }
 }
 
-async function collectWorkerKPI() {
+async function collectBlogKPI() {
   try {
-    const [userRow, logRow] = await Promise.all([
-      pgPool.get('worker', `
+    const [postRow, instaRow] = await Promise.all([
+      pgPool.get('blog', `
         SELECT
-          COUNT(DISTINCT company_id) AS active_companies,
-          COUNT(*)                   AS total_users
-        FROM users
-        WHERE is_active = true
+          COUNT(*) FILTER (WHERE status IN ('ready', 'published')) AS ready_or_published,
+          COUNT(*) FILTER (WHERE status = 'draft') AS drafts,
+          COUNT(*) FILTER (WHERE created_at > NOW() - INTERVAL '${DAYS} days') AS created_recent
+        FROM posts
       `),
-      pgPool.get('worker', `
-        SELECT COUNT(*) AS cnt
-        FROM audit_log
+      pgPool.get('blog', `
+        SELECT
+          COUNT(*) FILTER (WHERE status = 'ok') AS insta_ok,
+          COUNT(*) FILTER (WHERE status = 'failed') AS insta_failed
+        FROM instagram_crosspost
         WHERE created_at > NOW() - INTERVAL '${DAYS} days'
       `),
     ]);
 
     return {
-      team:             '워커팀',
-      active_companies: parseInt(userRow?.active_companies || 0),
-      total_users:      parseInt(userRow?.total_users      || 0),
-      audit_events:     parseInt(logRow?.cnt               || 0),
+      team:               '블로팀',
+      ready_or_published: parseInt(postRow?.ready_or_published || 0),
+      drafts:             parseInt(postRow?.drafts || 0),
+      created_recent:     parseInt(postRow?.created_recent || 0),
+      insta_ok:           parseInt(instaRow?.insta_ok || 0),
+      insta_failed:       parseInt(instaRow?.insta_failed || 0),
     };
   } catch (e) {
-    return { team: '워커팀', error: e.message.slice(0, 80) };
+    return { team: '블로팀', error: e.message.slice(0, 80) };
   }
 }
 
@@ -171,7 +175,7 @@ async function collectLLMCost() {
 
 // ─── 리포트 조립 ────────────────────────────────────────────────────
 
-function buildReport(ska, luna, claude, worker, llm) {
+function buildReport(ska, luna, claude, blog, llm) {
   const lines = [
     `📋 주간 종합 리포트 (최근 ${DAYS}일)`,
     `📅 ${new Date().toLocaleDateString('ko-KR')} 기준`,
@@ -191,10 +195,10 @@ function buildReport(ska, luna, claude, worker, llm) {
       ? `  ⚠️ ${claude.error}`
       : `  덱스터 이벤트 ${claude.dexter_events}건 (🔴${claude.critical} ⚠️${claude.errors})\n  독터 복구 ${claude.doctor_fixes}건 (성공 ${claude.doctor_success})`,
     '',
-    `🏢 워커팀 HR`,
-    worker.error
-      ? `  ⚠️ ${worker.error}`
-      : `  업체 ${worker.active_companies}개 | 사용자 ${worker.total_users}명 | 감사로그 ${worker.audit_events}건`,
+    `✍️ 블로팀 콘텐츠`,
+    blog.error
+      ? `  ⚠️ ${blog.error}`
+      : `  작성 ${blog.created_recent}건 | 발행대기/완료 ${blog.ready_or_published}건 | 초안 ${blog.drafts}건\n  인스타 OK ${blog.insta_ok}건 | 실패 ${blog.insta_failed}건`,
     '',
     `💳 LLM 비용: $${llm.total_cost} (예산 ${llm.budget_pct}%)`,
     ...(llm.by_model || []).map(m => `  ${m}`),
@@ -207,11 +211,11 @@ function buildReport(ska, luna, claude, worker, llm) {
 async function main() {
   console.log(`=== 주간 종합 리포트 (최근 ${DAYS}일) ===\n`);
 
-  const [ska, luna, claude, worker, llm] = await Promise.all([
+  const [ska, luna, claude, blog, llm] = await Promise.all([
     collectSkaKPI(),
     collectLunaKPI(),
     collectClaudeKPI(),
-    collectWorkerKPI(),
+    collectBlogKPI(),
     collectLLMCost(),
   ]);
 
@@ -219,10 +223,10 @@ async function main() {
   console.log('📊 스카팀:',   JSON.stringify(ska));
   console.log('💰 루나팀:',   JSON.stringify(luna));
   console.log('🔧 클로드팀:', JSON.stringify(claude));
-  console.log('🏢 워커팀:',   JSON.stringify(worker));
+  console.log('✍️ 블로팀:',   JSON.stringify(blog));
   console.log('💳 LLM 비용:', JSON.stringify(llm));
 
-  const report = buildReport(ska, luna, claude, worker, llm);
+  const report = buildReport(ska, luna, claude, blog, llm);
   console.log('\n--- 텔레그램 리포트 ---');
   console.log(report);
 
@@ -248,7 +252,7 @@ async function main() {
       ska:        ska.error ? null : ska,
       luna:       luna.error ? null : luna,
       claude:     claude.error ? null : claude,
-      worker:     worker.error ? null : worker,
+      blog:       blog.error ? null : blog,
       llm_cost:   llm.total_cost,
       days:       DAYS,
     }, 'orchestrator');

@@ -45,7 +45,6 @@ function listPlistFiles() {
     'bots/investment/launchd',
     'bots/orchestrator/launchd',
     'bots/reservation/launchd',
-    'bots/worker/launchd',
   ].map((dir) => path.join(env.PROJECT_ROOT, dir));
 
   const found = [];

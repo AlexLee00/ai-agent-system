@@ -266,42 +266,6 @@
 - `investment.trade_journal`
   - 일일/주간 분석 리포트 기반 테이블
 
-### Worker
-
-주요 저장소:
-- PostgreSQL `worker` 스키마
-
-주요 테이블:
-- `ai_feedback_sessions`
-- `ai_feedback_events`
-- `document_reuse_events`
-- worker 업무/승인 관련 테이블
-
-대표 owner code:
-- [bots/worker/web/server.js](/Users/alexlee/projects/ai-agent-system/bots/worker/web/server.js)
-- [bots/worker/src/worker-lead.js](/Users/alexlee/projects/ai-agent-system/bots/worker/src/worker-lead.js)
-- [bots/worker/lib/approval.js](/Users/alexlee/projects/ai-agent-system/bots/worker/lib/approval.js)
-- [bots/worker/lib/ai-feedback-service.js](/Users/alexlee/projects/ai-agent-system/bots/worker/lib/ai-feedback-service.js)
-- [bots/worker/lib/llm-api-monitoring.js](/Users/alexlee/projects/ai-agent-system/bots/worker/lib/llm-api-monitoring.js)
-
-소스 오브 트루스:
-- [bots/worker/migrations/](/Users/alexlee/projects/ai-agent-system/bots/worker/migrations)
-- [bots/worker/web/server.js](/Users/alexlee/projects/ai-agent-system/bots/worker/web/server.js)
-
-운영적으로 자주 보는 테이블:
-- `worker.documents`
-  - 업로드 문서, 요약, 추출 텍스트
-- `worker.document_reuse_events`
-  - 문서 재사용 이력, 연결 결과
-- `worker.system_preferences`
-  - 워커 모니터링 기본 설정, 기본 LLM API 선택값
-- `worker.approval_requests`
-  - 승인 대기 흐름
-- `worker.schedules`, `worker.work_journals`, `worker.sales`, `worker.projects`
-  - AI가 생성/수정하는 실제 업무 객체
-- `worker.audit_log`
-  - 권한/운영 행위 추적
-
 ### Blog
 
 주요 저장소:
@@ -343,8 +307,6 @@
 | 예약 상태/경고 | `reservation.reservations`, `reservation.alerts` | [bots/reservation/lib/db.ts](/Users/alexlee/projects/ai-agent-system/bots/reservation/lib/db.ts) |
 | 예측/실적 비교 | `ska.forecast_results`, `ska.training_feature_daily` | [bots/ska/src/forecast.py](/Users/alexlee/projects/ai-agent-system/bots/ska/src/forecast.py) |
 | 거래 판단/성과 | `investment.signals`, `investment.trades`, `investment.trade_journal` | [bots/investment/shared/db.js](/Users/alexlee/projects/ai-agent-system/bots/investment/shared/db.js) |
-| 워커 업무 객체 | `worker.documents`, `worker.schedules`, `worker.projects`, `worker.sales` | [bots/worker/web/server.js](/Users/alexlee/projects/ai-agent-system/bots/worker/web/server.js) |
-| 워커 운영 설정 | `worker.system_preferences` | [bots/worker/lib/llm-api-monitoring.js](/Users/alexlee/projects/ai-agent-system/bots/worker/lib/llm-api-monitoring.js) |
 | AI 피드백 | `*.ai_feedback_sessions`, `*.ai_feedback_events` | [packages/core/lib/ai-feedback-store.js](/Users/alexlee/projects/ai-agent-system/packages/core/lib/ai-feedback-store.js) |
 | LLM 사용량 | `*.llm_usage_log`, `claude.token_usage` | [packages/core/lib/llm-logger.js](/Users/alexlee/projects/ai-agent-system/packages/core/lib/llm-logger.js) |
 | RAG 저장소 | `rag_*` 계열 | [packages/core/lib/rag.js](/Users/alexlee/projects/ai-agent-system/packages/core/lib/rag.js) |

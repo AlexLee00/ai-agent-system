@@ -20,7 +20,6 @@ const MIGRATED_SCOPES = [
   'bots/claude/src/guardian.ts',
   'bots/claude/src/reviewer.ts',
   'bots/claude/src/quality-report.ts',
-  'bots/worker/lib/approval.ts',
   'bots/blog/lib/ab-testing.ts',
   'bots/blog/lib/blo.ts',
   'bots/blog/lib/commenter.ts',

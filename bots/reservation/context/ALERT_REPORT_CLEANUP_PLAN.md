@@ -147,7 +147,7 @@
   - 이는 특정 대상 채팅/스레드/inline keyboard 같은 특수 전달을 위해 필요하다.
   - 예: worker approval 요청처럼 일반 team topic broadcast와 다른 경우
 
-- `bots/worker/lib/approval.js`
+- retired Worker approval flow archive
   - 승인 요청은 inline button 상호작용이 핵심이라 일반 report/alert와 완전히 같은 축이 아니다.
   - 이 경로는 `reporting-hub`의 `telegram_api` target 유지가 맞다.
 

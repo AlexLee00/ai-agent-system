@@ -2,19 +2,16 @@
 
 This generated report classifies retired OpenClaw references. `runtime_blocker` must remain 0. Guard, documentation, ignored log, and archive-pending entries are tracked separately so they do not masquerade as live runtime dependencies.
 
-- generated_at: 2026-04-29T08:15:50.753Z
+- generated_at: 2026-04-30T05:42:23.346Z
 - ok: true
 - runtime_blocker: 0
-- retired_gateway_guard: 67
+- retired_gateway_guard: 66
 - documentation: 15
 - generated_inventory: 0
-- ignored_log: 12
-- dirty_worktree: 1
+- ignored_log: 11
+- dirty_worktree: 0
 - retired_home_archive_pending: 1
 
-## dirty_worktree
-
-- .claude/worktrees/fervent-black (dirty agent worktree retained for manual review) — `60 changed entries`
 ## documentation
 
 - bots/claude/reports/archer-2026-04-24.md:101 (markdown documentation/report reference) — `- [ARES: Adaptive Red-Teaming and End-to-End Repair of Policy-Reward System](https://arxiv.org/abs/2604.18789) — Thu, 23 Ap`
@@ -43,13 +40,12 @@ This generated report classifies retired OpenClaw references. `runtime_blocker` 
 - bots/claude/dexter-daily.log (ignored historical log contains retired gateway marker)
 - bots/claude/dexter-quick.err.log (ignored historical log contains retired gateway marker)
 - bots/claude/dexter.err.log (ignored historical log contains retired gateway marker)
-- bots/claude/dexter.log (ignored historical log contains retired gateway marker)
 - bots/hub/hub.err.log (ignored historical log contains retired gateway marker)
 - bots/hub/hub.log (ignored historical log contains retired gateway marker)
 ## retired_gateway_guard
 
 - bots/hub/lib/alarm/cluster.ts:46 (intentional regression guard) — `if (/openclaw|legacy[_\s-]?gateway|18789/.test(corpus)) return 'retired_gateway_regression';`
-- bots/hub/scripts/active-runtime-legacy-gateway-isolation-smoke.ts:81 (intentional smoke/report guard) — `active_runtime_legacy_gateway_isolated: true,`
+- bots/hub/scripts/active-runtime-legacy-gateway-isolation-smoke.ts:74 (intentional smoke/report guard) — `active_runtime_legacy_gateway_isolated: true,`
 - bots/hub/scripts/claude-code-oauth-direct-smoke.ts:105 (intentional smoke/report guard) — `legacy_gateway_used: false,`
 - bots/hub/scripts/claude-runtime-legacy-gateway-isolation-smoke.ts:81 (intentional smoke/report guard) — `claude_runtime_legacy_gateway_isolated: true,`
 - bots/hub/scripts/generate-hub-alarm-inventory.ts:112 (intentional smoke/report guard) — `legacy_gateway_compat: counts.legacy_gateway_compat || 0,`
@@ -60,7 +56,7 @@ This generated report classifies retired OpenClaw references. `runtime_blocker` 
 - bots/hub/scripts/generate-hub-alarm-inventory.ts:38 (intentional smoke/report guard) — `if (match.includes(LEGACY_ALARM_CLIENT_PATTERN)) return 'legacy_gateway_compat';`
 - bots/hub/scripts/generate-hub-alarm-inventory.ts:40 (intentional smoke/report guard) — `return isRetiredGatewayGuard(file) ? 'retired_gateway_guard' : 'legacy_gateway_compat';`
 - bots/hub/scripts/generate-hub-alarm-inventory.ts:62 (intentional smoke/report guard) — `'!docs/hub/OPENCLAW_RESIDUE_AUDIT.md',`
-- bots/hub/scripts/hub-alarm-import-transition-smoke.ts:120 (intentional smoke/report guard) — `legacy_gateway_runtime_defaults: 0,`
+- bots/hub/scripts/hub-alarm-import-transition-smoke.ts:119 (intentional smoke/report guard) — `legacy_gateway_runtime_defaults: 0,`
 - bots/hub/scripts/hub-transition-completion-gate.ts:43 (intentional smoke/report guard) — `'legacy_gateway',`
 - bots/hub/scripts/hub-transition-completion-gate.ts:46 (intentional smoke/report guard) — `'openclaw',`
 - bots/hub/scripts/hub-transition-completion-gate.ts:47 (intentional smoke/report guard) — `'openclaw-gateway',`
@@ -99,7 +95,7 @@ This generated report classifies retired OpenClaw references. `runtime_blocker` 
 - bots/hub/scripts/retired-gateway-residue-audit.ts:40 (intentional smoke/report guard) — `'openclaw-gateway',`
 - bots/hub/scripts/retired-gateway-residue-audit.ts:50 (intentional smoke/report guard) — `'bots/hub/scripts/openclaw-runtime-retirement-smoke.ts',`
 - bots/hub/scripts/retired-gateway-residue-audit.ts:81 (intentional smoke/report guard) — `if (file.startsWith('bots/hub/output/') || file === 'docs/hub/OPENCLAW_RESIDUE_AUDIT.md' || file === 'docs/hub/HUB_ALARM_DEPENDENCY_INVENTORY.md') {`
-- bots/hub/scripts/run-tests.ts:185 (intentional regression guard) — `'openclaw-runtime-retirement-smoke.ts',`
+- bots/hub/scripts/run-tests.ts:184 (intentional regression guard) — `'openclaw-runtime-retirement-smoke.ts',`
 - bots/hub/scripts/runtime-env-policy-smoke.ts:22 (intentional smoke/report guard) — `OPENCLAW_BIN: '/tmp/openclaw',`
 - bots/hub/scripts/runtime-env-policy-smoke.ts:31 (intentional smoke/report guard) — `assert.equal(filtered.env.OPENCLAW_BIN, undefined);`
 - bots/hub/scripts/runtime-env-policy-smoke.ts:43 (intentional smoke/report guard) — `assert.notEqual(childEnv.OPENCLAW_BIN, '/tmp/openclaw');`
@@ -107,7 +103,6 @@ This generated report classifies retired OpenClaw references. `runtime_blocker` 
 - bots/hub/scripts/runtime-profile-settings-smoke.ts:43 (intentional smoke/report guard) — `legacy_gateway_settings_dependency: false,`
 - bots/hub/scripts/runtime-workspace-independence-smoke.ts:128 (intentional smoke/report guard) — `default_workspace_legacy_gateway_free: true,`
 - bots/hub/scripts/runtime-workspace-independence-smoke.ts:130 (intentional smoke/report guard) — `legacy_gateway_runtime_aliases_exported: false,`
-- bots/hub/scripts/video-hub-transition-smoke.ts:42 (intentional smoke/report guard) — `config_legacy_gateway_free: true,`
 - packages/core/lib/runtime-env-policy.ts:9 (intentional regression guard) — `'OPENCLAW_',`
 - scripts/pre-commit:139 (intentional regression guard) — `'openclaw-gateway'`
 - scripts/pre-commit:140 (intentional regression guard) — `'OPENCLAW_BIN'`

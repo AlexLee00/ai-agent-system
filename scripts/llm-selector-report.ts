@@ -11,18 +11,8 @@ const {
 } = require(path.join(__dirname, '../packages/core/lib/llm-control/service'));
 
 const orchestratorRuntime = require(path.join(__dirname, '../bots/orchestrator/lib/runtime-config'));
-const workerRuntime = require(path.join(__dirname, '../bots/worker/lib/runtime-config'));
 const blogRuntime = require(path.join(__dirname, '../bots/blog/lib/runtime-config'));
 const claudeConfig = require(path.join(__dirname, '../bots/claude/lib/config'));
-
-async function getWorkerPreferredApiSafe() {
-  try {
-    const { getWorkerMonitoringPreference } = require(path.join(__dirname, '../bots/worker/lib/llm-api-monitoring'));
-    return await getWorkerMonitoringPreference();
-  } catch {
-    return 'groq';
-  }
-}
 
 async function getInvestmentPolicyOverrideSafe() {
   try {
@@ -78,10 +68,8 @@ function formatSelectorBlock(title, description, speedLookup) {
 
 async function buildReport() {
   const jayOverrides = orchestratorRuntime.getLLMSelectorOverrides();
-  const workerOverrides = workerRuntime.getWorkerLLMSelectorOverrides();
   const blogOverrides = blogRuntime.getBlogLLMSelectorOverrides();
   const claudeOverrides = claudeConfig.RUNTIME?.llmSelectorOverrides || {};
-  const workerPreferredApi = await getWorkerPreferredApiSafe();
   const investmentPolicyOverride = await getInvestmentPolicyOverrideSafe();
   const speedSnapshot = loadLatestSpeedSnapshot();
   const speedLookup = buildSpeedLookup(speedSnapshot);
@@ -98,14 +86,6 @@ async function buildReport() {
     }), speedLookup),
     formatSelectorBlock('Jay Chat Fallback', describeLLMSelector('orchestrator.jay.chat_fallback', {
       policyOverride: jayOverrides['orchestrator.jay.chat_fallback'],
-    }), speedLookup),
-    formatSelectorBlock(`Worker AI Fallback (preferredApi=${workerPreferredApi})`, describeLLMSelector('worker.ai.fallback', {
-      preferredApi: workerPreferredApi,
-      configuredProviders: ['groq', 'anthropic', 'gemini', 'openai'],
-      policyOverride: workerOverrides['worker.ai.fallback'],
-    }), speedLookup),
-    formatSelectorBlock('Worker Chat Task Intake', describeLLMSelector('worker.chat.task_intake', {
-      policyOverride: workerOverrides['worker.chat.task_intake'],
     }), speedLookup),
     formatSelectorBlock('Claude Archer', describeLLMSelector('claude.archer.tech_analysis', {
       policyOverride: claudeOverrides['claude.archer.tech_analysis'],
@@ -165,7 +145,6 @@ async function main() {
     return;
   }
 
-  const workerPreferredApi = await getWorkerPreferredApiSafe();
   const investmentPolicyOverride = await getInvestmentPolicyOverrideSafe();
   const speedSnapshot = loadLatestSpeedSnapshot();
   const speedLookup = buildSpeedLookup(speedSnapshot);
@@ -177,17 +156,6 @@ async function main() {
       }),
       chatFallback: describeLLMSelector('orchestrator.jay.chat_fallback', {
         policyOverride: orchestratorRuntime.getLLMSelectorOverrides()['orchestrator.jay.chat_fallback'],
-      }),
-    },
-    worker: {
-      preferredApi: workerPreferredApi,
-      aiFallback: describeLLMSelector('worker.ai.fallback', {
-        preferredApi: workerPreferredApi,
-        configuredProviders: ['groq', 'anthropic', 'gemini', 'openai'],
-        policyOverride: workerRuntime.getWorkerLLMSelectorOverrides()['worker.ai.fallback'],
-      }),
-      taskIntake: describeLLMSelector('worker.chat.task_intake', {
-        policyOverride: workerRuntime.getWorkerLLMSelectorOverrides()['worker.chat.task_intake'],
       }),
     },
     claude: {
@@ -225,10 +193,6 @@ async function main() {
     jay: {
       intent: buildSelectorAdvice(payload.jay.intent, speedLookup),
       chatFallback: buildSelectorAdvice(payload.jay.chatFallback, speedLookup),
-    },
-    worker: {
-      aiFallback: buildSelectorAdvice(payload.worker.aiFallback, speedLookup),
-      taskIntake: buildSelectorAdvice(payload.worker.taskIntake, speedLookup),
     },
     claude: {
       archer: buildSelectorAdvice(payload.claude.archer, speedLookup),

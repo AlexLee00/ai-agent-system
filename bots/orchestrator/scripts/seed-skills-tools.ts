@@ -43,7 +43,6 @@ const TOOLS = [
   { name: 'naver-blog-api', display_name: '네이버블로그', type: 'api', team: 'blog', endpoint: 'internal', capabilities: ['publish', 'search', 'analytics'] },
   { name: 'github-mcp', display_name: 'GitHub', type: 'mcp', team: 'darwin', score: 6.5, endpoint: 'official', capabilities: ['repo_search', 'issue', 'pr', 'code_search'] },
   { name: 'context7-mcp', display_name: 'Context7', type: 'mcp', team: 'darwin', endpoint: 'official', capabilities: ['doc_search', 'api_reference', 'library_docs'] },
-  { name: 'capcut-mcp', display_name: 'CapCut', type: 'mcp', team: 'video', endpoint: 'local:9001', capabilities: ['create_draft', 'add_video', 'add_audio', 'add_text', 'add_image', 'save_draft'] },
   { name: 'mlx-local-llm', display_name: 'MLX로컬LLM', type: 'internal', team: null, endpoint: 'localhost:8000', capabilities: ['text_generation', 'embedding', 'classification'] },
   { name: 'pgvector-rag', display_name: 'pgvector RAG', type: 'internal', team: null, endpoint: 'internal', capabilities: ['vector_search', 'semantic_search', 'rag'] },
   { name: 'desktop-commander', display_name: 'Desktop Commander', type: 'mcp', team: 'claude', endpoint: 'local', capabilities: ['file_read', 'file_write', 'process', 'search'] },

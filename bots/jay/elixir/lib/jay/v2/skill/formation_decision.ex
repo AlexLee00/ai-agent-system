@@ -1,19 +1,19 @@
 defmodule Jay.V2.Skill.FormationDecision do
   @moduledoc """
-  FormationDecision — 9팀 일일 목표 편성 결정.
+  FormationDecision — 현역 팀 일일 목표 편성 결정.
   Jido 내장 LLM(model: :smart)을 사용해 팀 상태 기반 오늘 편성을 결정한다.
   DecisionEngine 규칙을 참고해 우선순위를 보정한다.
   """
 
   use Jido.Action,
     name: "jay_v2_formation_decision",
-    description: "Decide daily formation goals for 9 teams using LLM judgment",
+    description: "Decide daily formation goals for active teams using LLM judgment",
     schema: Zoi.object(%{
       date: Zoi.default(Zoi.string(), ""),
       team_states: Zoi.default(Zoi.list(Zoi.any()), [])
     })
 
-  @teams ~w(sigma darwin luna blog ska claude worker editor judgment)
+  @teams ~w(sigma darwin luna blog ska claude justin judgment)
 
   @impl Jido.Action
   def run(params, _ctx) do
@@ -45,8 +45,7 @@ defmodule Jay.V2.Skill.FormationDecision do
   defp default_goal("blog", _), do: "콘텐츠 자동 생산 파이프라인"
   defp default_goal("ska", _), do: "예약 현황 모니터링 + 키오스크 상태"
   defp default_goal("claude", _), do: "Claude 성능 모니터링 + 자기 진화"
-  defp default_goal("worker", _), do: "플랫폼 공통 작업 처리"
-  defp default_goal("editor", _), do: "영상 편집 자동화 파이프라인"
+  defp default_goal("justin", _), do: "법률/계약 검토 자동화"
   defp default_goal("judgment", _), do: "법원 SW 감정 작업 처리"
   defp default_goal(_, _), do: "기본 운영"
 

@@ -270,7 +270,7 @@ defmodule Jay.V2.CrossTeamRouter do
         Map.put(state, :last_system_risk, signature)
 
       true ->
-        teams = ["blog", "luna", "ska", "worker"]
+        teams = ["blog", "luna", "ska", "claude"]
         service_list = Enum.join(normalized_services, ", ")
 
         message = """

@@ -20,7 +20,6 @@ const TEAM_PREFIXES: Record<string, string> = {
   claude: 'ai.claude.',
   luna: 'ai.investment.',
   blog: 'ai.blog.',
-  worker: 'ai.worker.',
 };
 
 const DEV_SERVICES = new Set([
@@ -37,7 +36,6 @@ const DEV_SERVICES = new Set([
   'ai.ska.health-check',
   'ai.investment.health-check',
   'ai.blog.health-check',
-  'ai.worker.health-check',
 ]);
 
 function loadState(): HealthState {

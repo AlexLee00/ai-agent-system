@@ -37,10 +37,10 @@ type MemorySnippet = {
   importance?: number;
 };
 
-export const ROTATION = ['ska', 'worker', 'claude', 'justin', 'video'];
+export const ROTATION = ['ska', 'claude', 'justin', 'darwin', 'blog', 'luna'];
 export const CORE_ANALYSTS = ['pipe', 'canvas', 'curator'];
 const SIGMA_RANDOM_EPSILON = 0.2;
-const KNOWN_MEMORY_TEAMS = new Set(['blog', 'luna', 'darwin', 'claude', 'worker', 'video', 'ska', 'justin']);
+const KNOWN_MEMORY_TEAMS = new Set(['blog', 'luna', 'darwin', 'claude', 'ska', 'justin', 'platform']);
 
 function safeExec(command: string): string {
   try {
@@ -119,6 +119,7 @@ export async function collectYesterdayEvents(): Promise<SchedulerEvents> {
 
   const lowScoreTeams = lowScoreRows
     .filter((row) => Number(row.low_count || 0) > 0)
+    .filter((row) => KNOWN_MEMORY_TEAMS.has(String(row.team || '').trim().toLowerCase()))
     .map((row) => ({ team: row.team, lowCount: Number(row.low_count || 0) }));
 
   return {
@@ -162,9 +163,9 @@ function deriveMemoryPerspectiveHint(memories: MemorySnippet[] = []): string | n
     const teams = Array.isArray(metadata?.targetTeams) ? metadata.targetTeams.map((team) => String(team).toLowerCase()) : [];
 
     for (const team of teams) {
-      if (team === 'claude' || team === 'worker' || team === 'ska') scores.risk += weight;
+      if (team === 'claude' || team === 'ska') scores.risk += weight;
       if (team === 'blog' || team === 'luna') scores.growth += weight;
-      if (team === 'darwin' || team === 'video' || team === 'justin') scores.trend += weight;
+      if (team === 'darwin' || team === 'justin' || team === 'platform') scores.trend += weight;
     }
   }
 
@@ -223,8 +224,6 @@ export async function decideTodayFormation(
   for (const item of events.lowScoreTeams || []) targetTeams.add(item.team);
   for (const item of events.unhealthyServices || []) {
     if (item.service.includes('.claude.')) targetTeams.add('claude');
-    if (item.service.includes('.worker.')) targetTeams.add('worker');
-    if (item.service.includes('.video')) targetTeams.add('video');
     if (item.service.includes('.ska.')) targetTeams.add('ska');
     if (item.service.includes('.blog.')) targetTeams.add('blog');
   }

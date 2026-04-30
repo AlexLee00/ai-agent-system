@@ -16,8 +16,6 @@ const TEAM_TOPIC_KEYS = [
   'claude',
   'claude_lead',
   'blog',
-  'worker',
-  'video',
   'darwin',
   'justin',
   'sigma',

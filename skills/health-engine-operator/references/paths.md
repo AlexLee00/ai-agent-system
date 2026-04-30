@@ -17,7 +17,6 @@ consumer:
 team adapters:
 
 - `bots/investment/scripts/health-report.js`
-- `bots/worker/scripts/health-report.js`
 - `bots/claude/scripts/health-report.js`
 - `dist/ts-runtime/bots/reservation/scripts/health-report.js`
 - `bots/blog/scripts/health-report.js`

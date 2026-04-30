@@ -7,7 +7,7 @@ defmodule Sigma.V2.Config do
 
   require Logger
 
-  @allowed_teams ~w(blog luna investment worker ska claude darwin)
+  @allowed_teams ~w(blog luna investment ska claude darwin justin sigma)
 
   @doc "현재 config를 DB에 스냅샷."
   def snapshot(team) when team in @allowed_teams do
@@ -79,7 +79,6 @@ defmodule Sigma.V2.Config do
   defp config_path("luna"),       do: Path.join(["bots", "investment", "config.yaml"])
   defp config_path("investment"), do: Path.join(["bots", "investment", "config.yaml"])
   defp config_path("blog"),       do: Path.join(["bots", "blog", "config.yaml"])
-  defp config_path("worker"),     do: Path.join(["bots", "worker", "config.yaml"])
   defp config_path("ska"),        do: Path.join(["bots", "ska", "config.yaml"])
   defp config_path("claude"),     do: Path.join(["bots", "claude", "config.json"])
   defp config_path("darwin"),     do: Path.join(["bots", "darwin", "config.yaml"])

@@ -35,8 +35,6 @@
 - [bots/investment/scripts/analyze-signal-correlation.ts](/Users/alexlee/projects/ai-agent-system/bots/investment/scripts/analyze-signal-correlation.ts)
 - [bots/orchestrator/src/sigma-daily.ts](/Users/alexlee/projects/ai-agent-system/bots/orchestrator/src/sigma-daily.ts)
 - [bots/orchestrator/lib/sigma/sigma-feedback.ts](/Users/alexlee/projects/ai-agent-system/bots/orchestrator/lib/sigma/sigma-feedback.ts)
-- [bots/video/lib/video-rag.ts](/Users/alexlee/projects/ai-agent-system/bots/video/lib/video-rag.ts)
-- [bots/worker/web/server.js](/Users/alexlee/projects/ai-agent-system/bots/worker/web/server.js)
 - [bots/claude/lib/doctor.ts](/Users/alexlee/projects/ai-agent-system/bots/claude/lib/doctor.ts)
 - [bots/ska/lib/rag_client.py](/Users/alexlee/projects/ai-agent-system/bots/ska/lib/rag_client.py)
 - [bots/investment/team/reporter.ts](/Users/alexlee/projects/ai-agent-system/bots/investment/team/reporter.ts)
@@ -58,8 +56,6 @@
 - investment current RAG 저장
 - investment review/analysis RAG 저장
 - sigma daily/meta-review RAG 저장
-- video edit result/feedback RAG 저장
-- worker document/journal/schedule RAG 저장
 - claude doctor recovery/failure RAG 저장
 - ska python rebecca/forecast RAG 저장
 - blog publish / performance RAG 저장
@@ -88,8 +84,6 @@
 최근 reinforcement 배치에서는 delivery fanout 자체와 별개로, human-facing output에도 additive한 요약 레일을 깔고 있다.
 - reservation: `bots/reservation/lib/cli-insight.ts`
 - investment: `bots/investment/shared/cli-insight.ts`
-- worker: `bots/worker/lib/cli-insight.legacy.js`
-- video: `bots/video/lib/cli-insight.js`
 - blog: `bots/blog/lib/cli-insight.ts`
 
 이 helper들은 reporting-hub를 직접 대체하지는 않지만, 같은 `team / gemma-insight` 런타임을 통해
@@ -111,7 +105,6 @@
 - reservation
 - investment
 - blog
-- worker
 - claude
 
 즉 같은 계열의 고심각 `system_error`/health alert는

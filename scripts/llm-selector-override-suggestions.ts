@@ -5,7 +5,7 @@ const path = require('path');
 const { spawnSync } = require('child_process');
 const {
   insertSelectorOverrideSuggestionLog,
-} = require(path.join(__dirname, '../bots/worker/lib/llm-api-monitoring'));
+} = require(path.join(__dirname, '../packages/core/lib/llm-selector-suggestion-store'));
 const {
   normalizeChain,
 } = require(path.join(__dirname, '../packages/core/lib/llm-selector-advisor'));
@@ -18,14 +18,6 @@ const SELECTOR_PATHS = {
   'orchestrator.jay.chat_fallback': {
     config: 'bots/orchestrator/config.json',
     path: 'runtime_config.llmSelectorOverrides.orchestrator.jay.chat_fallback.chain',
-  },
-  'worker.ai.fallback': {
-    config: 'bots/worker/config.json',
-    path: 'runtime_config.llmSelectorOverrides.worker.ai.fallback.providerModels',
-  },
-  'worker.chat.task_intake': {
-    config: 'bots/worker/config.json',
-    path: 'runtime_config.llmSelectorOverrides.worker.chat.task_intake.chain',
   },
   'claude.archer.tech_analysis': {
     config: 'bots/claude/config.json',
@@ -139,8 +131,6 @@ function collectSuggestions(report) {
 
   push('orchestrator.jay.intent', 'Jay Intent', report.jay?.intent, report.advice?.jay?.intent);
   push('orchestrator.jay.chat_fallback', 'Jay Chat Fallback', report.jay?.chatFallback, report.advice?.jay?.chatFallback);
-  push('worker.ai.fallback', 'Worker AI Fallback', report.worker?.aiFallback, report.advice?.worker?.aiFallback);
-  push('worker.chat.task_intake', 'Worker Task Intake', report.worker?.taskIntake, report.advice?.worker?.taskIntake);
   push('claude.archer.tech_analysis', 'Claude Archer', report.claude?.archer, report.advice?.claude?.archer);
   push('claude.lead.system_issue_triage', 'Claude Lead', report.claude?.lead, report.advice?.claude?.lead);
   push('claude.dexter.ai_analyst.warn', 'Dexter Warn', report.claude?.dexterWarn, report.advice?.claude?.dexterWarn);

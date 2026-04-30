@@ -49,16 +49,6 @@
 
 ## 4. 팀별 health 점검 명령
 
-### Worker
-
-```bash
-node /Users/alexlee/projects/ai-agent-system/bots/worker/scripts/health-report.js --json
-node /Users/alexlee/projects/ai-agent-system/bots/worker/scripts/check-n8n-intake-path.js
-```
-
-참조:
-- [TEAM_WORKER_REFERENCE.md](/Users/alexlee/projects/ai-agent-system/docs/team-indexes/TEAM_WORKER_REFERENCE.md)
-
 ### Investment
 
 ```bash
@@ -233,30 +223,6 @@ node /Users/alexlee/projects/ai-agent-system/bots/blog/scripts/check-n8n-pipelin
 ---
 
 ## 5. 대표 launchd / 로그 / 엔드포인트
-
-### Worker
-
-- 대표 launchd
-  - `ai.worker.web`
-  - `ai.worker.nextjs`
-  - `ai.worker.lead`
-  - `ai.worker.task-runner`
-- 대표 로그
-  - `~/Library/Logs/ai-agent-system/worker-web.log`
-  - `~/Library/Logs/ai-agent-system/worker-web-error.log`
-  - `~/Library/Logs/ai-agent-system/worker-nextjs.log`
-  - `~/Library/Logs/ai-agent-system/worker-lead.log`
-
-- API health
-  - `http://127.0.0.1:4000/api/health`
-- Next.js web
-  - `http://127.0.0.1:4001`
-- OCR 테스트
-  - `http://127.0.0.1:4001/admin/ocr-test`
-- 워커 모니터링
-  - `http://127.0.0.1:4001/admin/monitoring`
-- 운영 설정 마이그레이션
-  - `node /Users/alexlee/projects/ai-agent-system/bots/worker/migrations/017-system-preferences.js`
 
 ### Orchestrator / Hub / N8N
 
@@ -486,9 +452,6 @@ launchctl bootout gui/$(id -u) /Users/alexlee/projects/ai-agent-system/bots/inve
 
 - Reservation/Ska monitor
   - `bash /Users/alexlee/projects/ai-agent-system/bots/reservation/scripts/reload-monitor.sh`
-- Worker web
-  - `launchctl kickstart -k gui/$(id -u)/ai.worker.web`
-  - `launchctl kickstart -k gui/$(id -u)/ai.worker.nextjs`
 - Claude/Dexter
   - quickcheck/dexter 결과를 본 뒤 필요한 경우만 재시작
   - `launchctl kickstart -k gui/$(id -u)/ai.claude.dexter`
@@ -516,12 +479,6 @@ launchctl bootout gui/$(id -u) /Users/alexlee/projects/ai-agent-system/bots/inve
 5. 여전히 실패하면 config/network 문제로 분기
 
 권장 순서 예:
-  - worker 화면 불가
-  - `node bots/worker/scripts/health-report.js --json`
-  - `curl -s http://127.0.0.1:4000/api/health`
-  - `curl -s -I http://127.0.0.1:4001`
-  - `curl -s http://127.0.0.1:4001/admin/monitoring`
-  - `tail -n 100 ~/Library/Logs/ai-agent-system/worker-web-error.log`
 - blog API 불가
   - `node bots/blog/scripts/health-report.js --json`
   - `curl -s http://127.0.0.1:3100/health`
@@ -559,7 +516,6 @@ launchctl bootout gui/$(id -u) /Users/alexlee/projects/ai-agent-system/bots/inve
 
 | 증상 | 먼저 볼 것 | 다음 조치 |
 |---|---|---|
-| 워커 웹 접속 불가 | `worker health-report`, `4000/4001 curl`, `/admin/monitoring`, `worker-web-error.log` | `ai.worker.web`, `ai.worker.nextjs` kickstart |
 | 제이/오케스트레이터 응답 이상 | `orchestrator health-report`, Hub API log, critical path check | `ai.orchestrator.mainbot`, `ai.hub.resource-api` kickstart |
 | 예약 경고 반복 | `reservation health-report`, `pickko-verify`, alerts state | monitor reload, alert resolve, DB 상태 동기화 |
 | 스카 예측 리포트 이상 | daily/weekly review, `ska.forecast_results` 최근값 | config 보정, shadow 비교 확인 |

@@ -7,10 +7,11 @@ const TEAMS = [
   { id: 'ska', name: '스카팀', lead: '스카', status: 'active', priority: 3 },
   { id: 'claude', name: '클로드팀', lead: '클로드', status: 'active', priority: 4 },
   { id: 'blog', name: '블로팀', lead: '블로', status: 'active', priority: 5 },
-  { id: 'worker', name: '워커팀', lead: '워커', status: 'active', priority: 6 },
-  { id: 'video', name: '비디오팀', lead: '에디', status: 'active', priority: 7 },
-  { id: 'research', name: '연구팀', lead: '(예정)', status: 'planned', priority: 8 },
-  { id: 'forensic', name: '감정팀', lead: '(예정)', status: 'planned', priority: 9 },
+  { id: 'darwin', name: '다윈팀', lead: '다윈', status: 'active', priority: 6 },
+  { id: 'sigma', name: '시그마팀', lead: '시그마', status: 'active', priority: 7 },
+  { id: 'justin', name: '저스틴팀', lead: '저스틴', status: 'active', priority: 8 },
+  { id: 'research', name: '연구팀', lead: '(예정)', status: 'planned', priority: 9 },
+  { id: 'forensic', name: '감정팀', lead: '(예정)', status: 'planned', priority: 10 },
 ];
 
 // 팀 키워드 매핑 (태스크 자동 배분용)
@@ -19,8 +20,9 @@ const TEAM_KEYWORDS = {
   ska: ['예약', '스터디카페', '매출', '좌석'],
   claude: ['모니터링', '헬스체크', '덱스터', '복구', '시스템', '보안'],
   blog: ['블로그', '포스팅', '네이버', '글쓰기', '발행'],
-  worker: ['워커', 'SaaS', '근태', '급여', '회사'],
-  video: ['영상', '편집', '자막', '비디오', 'ffmpeg'],
+  darwin: ['연구', '논문', 'R&D', '실험', '기술'],
+  sigma: ['시그마', '편성', '메타', '품질', '실험설계'],
+  justin: ['법률', '계약', '감정', '판례', '저스틴'],
   research: ['연구', 'R&D', '실험', '기술'],
   forensic: ['감정', '법원', '소프트웨어'],
 };

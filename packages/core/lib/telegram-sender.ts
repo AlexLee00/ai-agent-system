@@ -48,8 +48,6 @@ type TeamKey =
   | 'blog'
   | 'legal'
   | 'justin'
-  | 'worker'
-  | 'video'
   | 'darwin'
   | 'sigma';
 
@@ -106,8 +104,6 @@ const ENV_TOPIC_KEYS: Record<string, string> = {
   TELEGRAM_TOPIC_CLAUDE_LEAD: 'claude_lead',
   TELEGRAM_TOPIC_BLOG: 'blog',
   TELEGRAM_TOPIC_LEGAL: 'legal',
-  TELEGRAM_TOPIC_WORKER: 'worker',
-  TELEGRAM_TOPIC_VIDEO: 'video',
   TELEGRAM_TOPIC_DARWIN: 'darwin',
   TELEGRAM_TOPIC_SIGMA: 'sigma',
   TELEGRAM_TOPIC_MEETING: 'meeting',
@@ -272,8 +268,6 @@ const TOPIC_KEYS = {
   'blog':        'blog',
   'legal':       'legal',
   'justin':      'legal',
-  'worker':      'worker',
-  'video':       'video',
   'darwin':      'darwin',
   'sigma':       'sigma',
 };

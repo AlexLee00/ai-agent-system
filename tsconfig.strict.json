@@ -13,11 +13,9 @@
     "bots/claude/**/*.ts",
     "bots/hub/**/*.ts",
     "bots/investment/**/*.ts",
-    "bots/orchestrator/**/*.ts",
-    "bots/worker/**/*.ts"
+    "bots/orchestrator/**/*.ts"
   ],
   "exclude": [
-    "**/node_modules/**",
-    "bots/worker/web/.next/**"
+    "**/node_modules/**"
   ]
 }

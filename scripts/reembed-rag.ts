@@ -12,7 +12,7 @@ const pgPool = require('../packages/core/lib/pg-pool');
 const { createEmbedding } = require('../packages/core/lib/rag');
 
 const SCHEMA = 'reservation';
-const TABLES = ['rag_operations', 'rag_trades', 'rag_tech', 'rag_video'];
+const TABLES = ['rag_operations', 'rag_trades', 'rag_tech'];
 const BATCH = 10;
 
 async function reembedTable(table) {

@@ -1,4 +1,4 @@
-// k6 Multi-Team Concurrent — 9팀 독립 동시 호출 (실전 시나리오)
+// k6 Multi-Team Concurrent — 현역 팀 독립 동시 호출 (실전 시나리오)
 // k6 run --out json=results/multi-team.json tests/load/multi-team.js
 import http from 'k6/http';
 import { check, sleep } from 'k6';
@@ -63,21 +63,13 @@ export const options = {
       preAllocatedVUs: 1,
       exec: 'callSka',
     },
-    worker_general: {
+    justin_legal: {
       executor: 'constant-arrival-rate',
       rate: SHORT_MODE ? 1 : 2,
       timeUnit: '1m',
       duration: SHORT_MODE ? '90s' : '10m',
       preAllocatedVUs: 1,
-      exec: 'callWorker',
-    },
-    editor_general: {
-      executor: 'constant-arrival-rate',
-      rate: 1,
-      timeUnit: '1m',
-      duration: SHORT_MODE ? '90s' : '10m',
-      preAllocatedVUs: 1,
-      exec: 'callEditor',
+      exec: 'callJustin',
     },
   },
   thresholds: {
@@ -148,16 +140,9 @@ export function callSka() {
   sleep(2);
 }
 
-export function callWorker() {
-  const res = callHub('worker', 'default', '비즈니스 태스크 처리 요청.');
-  const ok = check(res, { 'worker ok': (r) => r.status === 200 });
-  overallFailRate.add(!ok);
-  sleep(1);
-}
-
-export function callEditor() {
-  const res = callHub('editor', 'default', '영상 편집 스크립트 생성.');
-  const ok = check(res, { 'editor ok': (r) => r.status === 200 });
+export function callJustin() {
+  const res = callHub('justin', 'default', '계약 검토 체크리스트를 3줄로 요약해줘.');
+  const ok = check(res, { 'justin ok': (r) => r.status === 200 });
   overallFailRate.add(!ok);
   sleep(2);
 }

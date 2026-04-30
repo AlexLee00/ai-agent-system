@@ -16,7 +16,6 @@ description: Use when creating, updating, reinstalling, or debugging n8n workflo
 팀별 setup/diagnostic:
 
 - Orchestrator: `bots/orchestrator/n8n/setup-n8n.js`, `bots/orchestrator/n8n/setup-ska-workflows.js`, `bots/orchestrator/scripts/check-n8n-critical-path.js`
-- Worker: `bots/worker/n8n/setup-worker-workflows.js`, `bots/worker/scripts/check-n8n-intake-path.js`
 - Blog: `bots/blog/n8n/setup-blog-workflows.js`, `bots/blog/scripts/check-n8n-pipeline-path.js`
 - Ska command: `bots/reservation/n8n/setup-ska-command-workflow.ts`, `bots/reservation/scripts/check-n8n-command-path.ts`
 
@@ -64,8 +63,6 @@ description: Use when creating, updating, reinstalling, or debugging n8n workflo
 - `node --check <setup-or-check-script>`
 - orchestrator critical:
   - `node bots/orchestrator/scripts/check-n8n-critical-path.js`
-- worker intake:
-  - `node bots/worker/scripts/check-n8n-intake-path.js`
 - blog pipeline:
   - `node bots/blog/scripts/check-n8n-pipeline-path.js`
 - ska command:

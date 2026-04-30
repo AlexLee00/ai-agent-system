@@ -34,7 +34,6 @@ function main() {
   const investmentPath = path.join(root, 'bots/investment/config.yaml');
   const reservationPath = path.join(root, 'bots/reservation/config.yaml');
   const skaPath = path.join(root, 'bots/ska/config.json');
-  const workerPath = path.join(root, 'bots/worker/config.json');
   const orchestratorPath = path.join(root, 'bots/orchestrator/config.json');
   const claudePath = path.join(root, 'bots/claude/config.json');
   const blogPath = path.join(root, 'bots/blog/config.json');
@@ -42,7 +41,6 @@ function main() {
   const investmentRaw = readText(investmentPath);
   const reservationRaw = readText(reservationPath);
   const skaJson = readJson(skaPath);
-  const workerJson = readJson(workerPath);
   const orchestratorJson = readJson(orchestratorPath);
   const claudeJson = readJson(claudePath);
   const blogJson = readJson(blogPath);
@@ -58,9 +56,6 @@ function main() {
   lines.push('');
   lines.push(`[ska] ${skaPath}`);
   lines.push(JSON.stringify((skaJson && skaJson.runtime_config) || skaJson, null, 2));
-  lines.push('');
-  lines.push(`[worker] ${workerPath}`);
-  lines.push(JSON.stringify((workerJson && workerJson.runtime_config) || workerJson, null, 2));
   lines.push('');
   lines.push(`[orchestrator] ${orchestratorPath}`);
   lines.push(JSON.stringify((orchestratorJson && orchestratorJson.runtime_config) || orchestratorJson, null, 2));

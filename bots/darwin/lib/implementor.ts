@@ -21,7 +21,6 @@ const TEAM_BASE_DIRS = {
   investment: 'bots/investment/experimental',
   blog: 'bots/blog/experimental',
   claude: 'bots/claude/experimental',
-  worker: 'bots/worker/experimental',
   darwin: 'bots/darwin/experimental',
   orchestrator: 'bots/darwin/experimental',
   reservation: 'bots/reservation/experimental',
@@ -161,7 +160,6 @@ function _extractTargetTeam(proposal: ProposalRecord = {}): string {
   if (/루나/.test(rawTeam)) return 'luna';
   if (/블로|블로그/.test(rawTeam)) return 'blog';
   if (/클로드|claude/i.test(rawTeam)) return 'claude';
-  if (/워커|worker/i.test(rawTeam)) return 'worker';
   if (/다윈|darwin/i.test(rawTeam)) return 'darwin';
   if (/예약|ska/i.test(rawTeam)) return 'reservation';
   return rawTeam.toLowerCase();

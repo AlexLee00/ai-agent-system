@@ -4,10 +4,8 @@ const { createLunaCommanderAdapter } = require('./luna-adapter');
 const { createBlogCommanderAdapter } = require('./blog-adapter');
 const { createClaudeCommanderAdapter } = require('./claude-adapter');
 const { createSkaCommanderAdapter } = require('./ska-adapter');
-const { createVideoCommanderAdapter } = require('./video-adapter');
 const { createDarwinCommanderAdapter } = require('./darwin-adapter');
 const { createLegalCommanderAdapter } = require('./legal-adapter');
-const { createWorkerCommanderAdapter } = require('./worker-adapter');
 const { createVirtualCommanderAdapter } = require('../../../../packages/core/lib/commander-contract.ts');
 
 const ADAPTER_FACTORIES = {
@@ -15,10 +13,8 @@ const ADAPTER_FACTORIES = {
   blog: createBlogCommanderAdapter,
   claude: createClaudeCommanderAdapter,
   ska: createSkaCommanderAdapter,
-  video: createVideoCommanderAdapter,
   darwin: createDarwinCommanderAdapter,
   legal: createLegalCommanderAdapter,
-  worker: createWorkerCommanderAdapter,
 };
 
 function normalizeText(value, fallback = '') {

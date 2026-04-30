@@ -48,8 +48,6 @@ const RUNTIME_PREFIXES = [
   'bots/orchestrator/',
   'bots/reservation/shared/',
   'bots/reservation/src/',
-  'bots/worker/src/',
-  'bots/worker/scripts/',
 ];
 
 const SUPPORT_PREFIXES = [
@@ -57,7 +55,6 @@ const SUPPORT_PREFIXES = [
   'bots/claude/src/',
   'bots/investment/scripts/',
   'bots/reservation/scripts/',
-  'bots/worker/scripts/',
 ];
 
 // ─── 공통 HTTP 유틸 ─────────────────────────────────────────────────

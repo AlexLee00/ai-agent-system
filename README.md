@@ -51,19 +51,19 @@ Node.js Monorepo • PostgreSQL + pgvector • MLX Local LLMs • $0 Cost
      │ Secrets/PG/API  │  │  Alerts/Reports  │
      └────────┬────────┘  └─────────┬────────┘
               │                     │
-  ┌───────────┼───────────────────┼─────────────────────┼──────────┐
-  │           │                   │                     │          │
-  ▼           ▼                   ▼                     ▼          ▼
-┌─────┐  ┌────────┐  ┌────────┐  ┌───────┐  ┌───────┐  ┌────────┐
-│Luna │  │  Blog  │  │Darwin  │  │Claude │  │ Ska   │  │Worker  │
-│Trade│  │Publish │  │Research│  │Monitor│  │Reserve│  │  SaaS  │
-│ 13  │  │  12    │  │  15    │  │  10+  │  │  10+  │  │  10+   │
-└─────┘  └────────┘  └────────┘  └───────┘  └───────┘  └────────┘
-                        ┌────────┐  ┌────────┐  ┌────────┐
-                        │Justin  │  │  Edi   │  │ Sigma  │
-                        │Forensic│  │ Video  │  │  Data  │
-                        │  10    │  │  10+   │  │  12    │
-                        └────────┘  └────────┘  └────────┘
+  ┌───────────┼───────────────────┼─────────────────────┐
+  │           │                   │                     │
+  ▼           ▼                   ▼                     ▼
+┌─────┐  ┌────────┐  ┌────────┐  ┌───────┐  ┌───────┐
+│Luna │  │  Blog  │  │Darwin  │  │Claude │  │ Ska   │
+│Trade│  │Publish │  │Research│  │Monitor│  │Reserve│
+│ 13  │  │  12    │  │  15    │  │  10+  │  │  10+  │
+└─────┘  └────────┘  └────────┘  └───────┘  └───────┘
+                        ┌────────┐  ┌────────┐
+                        │Justin  │  │ Sigma  │
+                        │Forensic│  │  Data  │
+                        │  10    │  │  12    │
+                        └────────┘  └────────┘
 ```
 
 
@@ -76,11 +76,11 @@ Node.js Monorepo • PostgreSQL + pgvector • MLX Local LLMs • $0 Cost
 | **Darwin** | Autonomous R&D | 15 | arXiv/HF daily scans, 9-domain searchers, auto-propose → prototype → apply pipeline |
 | **Claude** | System monitoring | 10+ | Dexter (health checks), Doctor (auto-recovery), Steward (daily ops summary) |
 | **Ska** | Study café management | 10+ | Naver reservation sync, kiosk monitoring, revenue forecasting, event collection |
-| **Worker** | Business SaaS portal | 10+ | Next.js dashboard, task runner, chat agent, SQL analytics |
 | **Justin** | Legal SW forensics | 10 | Case analysis, precedent search (KR/US/EU), expert report writing, quality review |
-| **Edi** | Video auto-editing | 10+ | Timeline editing, scene analysis, narration, subtitle correction |
 | **Sigma** | Platform intelligence | 12 | Triple feedback loop, hawk/dove/owl analysts, dynamic formation, data asset pipeline |
 | **Jay** | Orchestration | — | Steward, mainbot (retired), event reminders, deploy automation |
+
+Retired teams: Worker and Edi were retired on 2026-04-30. Their design records are archived under `docs/archive/retired-teams/`.
 
 
 ## 🔄 Triple Feedback Loop
@@ -128,8 +128,6 @@ ai-agent-system/
 │   ├── orchestrator/        # Darwin, Sigma, Steward, schedulers
 │   ├── claude/              # Claude team (monitoring, doctor)
 │   ├── reservation/         # Ska team (study café)
-│   ├── worker/              # Worker team (SaaS portal)
-│   └── video/               # Edi team (video editing)
 ├── bots/hub/                # Hub API server (:7788)
 ├── docs/
 │   ├── strategy/            # Strategic documents

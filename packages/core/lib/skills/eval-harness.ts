@@ -23,10 +23,13 @@ const TEAM_METRICS = {
     { name: '복구성공률', team: '클로드', type: 'rate', target: 0.9, direction: 'higher' },
     { name: '코드품질', team: '클로드', type: 'number', target: 85, direction: 'higher' },
   ],
-  worker: [
-    { name: '가동률', team: '워커', type: 'rate', target: 0.99, direction: 'higher' },
-    { name: '응답시간', team: '워커', type: 'duration', target: 500, direction: 'lower' },
-    { name: '에러율', team: '워커', type: 'rate', target: 0.01, direction: 'lower' },
+  darwin: [
+    { name: '논문평가완료율', team: '다윈', type: 'rate', target: 0.9, direction: 'higher' },
+    { name: '실험재현성', team: '다윈', type: 'rate', target: 0.8, direction: 'higher' },
+  ],
+  sigma: [
+    { name: '편성품질', team: '시그마', type: 'number', target: 80, direction: 'higher' },
+    { name: '실험가드통과율', team: '시그마', type: 'rate', target: 0.9, direction: 'higher' },
   ],
 };
 

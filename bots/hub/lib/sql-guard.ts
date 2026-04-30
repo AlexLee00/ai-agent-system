@@ -36,7 +36,7 @@ const BLOCKED_KEYWORDS = [
   /\bpg_execute_server_program\b/i,
 ];
 
-export const ALLOWED_SCHEMAS = new Set(['agent', 'claude', 'reservation', 'investment', 'ska', 'worker', 'blog', 'public']);
+export const ALLOWED_SCHEMAS = new Set(['agent', 'claude', 'reservation', 'investment', 'ska', 'blog', 'public']);
 
 function stripSqlComments(sql: string): string {
   let stripped = sql.replace(/--[^\n\r]*(?:\r?\n|$)/g, ' ');

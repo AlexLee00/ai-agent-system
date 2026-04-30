@@ -164,12 +164,6 @@ echo "  npm install (루트)..."
 npm install || warn "루트 npm install 실패"
 ok "루트 의존성 설치 확인"
 
-if [ -d "$PROJECT_DIR/bots/worker/web" ]; then
-  echo "  npm install (worker/web)..."
-  (cd "$PROJECT_DIR/bots/worker/web" && npm install) || warn "worker/web npm install 실패"
-  ok "워커 웹 의존성 설치 확인"
-fi
-
 if [ -d "$PROJECT_DIR/bots/blog" ]; then
   echo "  npm install (blog)..."
   (cd "$PROJECT_DIR/bots/blog" && npm install) || warn "blog npm install 실패"

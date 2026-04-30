@@ -18,12 +18,7 @@
 
 추가 원칙:
 - 작업 착수 전 현재 세션과 직접 관련된 팀 handoff 문서가 있으면 함께 읽는다.
-- 비디오팀 작업은 아래 순서를 추가로 따른다.
-  1. [bots/video/docs/CLAUDE.md](/Users/alexlee/projects/ai-agent-system/bots/video/docs/CLAUDE.md)
-  2. [bots/video/docs/VIDEO_HANDOFF.md](/Users/alexlee/projects/ai-agent-system/bots/video/docs/VIDEO_HANDOFF.md)
-  3. [bots/video/docs/video-team-design.md](/Users/alexlee/projects/ai-agent-system/bots/video/docs/video-team-design.md)
-  4. [bots/video/samples/ANALYSIS.md](/Users/alexlee/projects/ai-agent-system/bots/video/samples/ANALYSIS.md)
-  5. [bots/video/docs/video-team-tasks.md](/Users/alexlee/projects/ai-agent-system/bots/video/docs/video-team-tasks.md)
+- 워커팀과 에디팀은 2026-04-30부로 은퇴 처리됐다. 설계 기록은 [worker archive](/Users/alexlee/projects/ai-agent-system/docs/archive/retired-teams/worker/README.md), [edi archive](/Users/alexlee/projects/ai-agent-system/docs/archive/retired-teams/edi/README.md)에서만 확인한다.
 
 ## 세션 마감 규칙
 
@@ -50,13 +45,6 @@
 - 코덱(Codex) / Claude Code:
   - 실제 파일 생성/수정, 테스트, 문서 업데이트, 커밋/푸시를 수행한다.
   - 구현이 끝난 뒤 문서 반영과 git 마감까지 함께 처리한다.
-
-## 비디오팀 현재 원칙
-
-- 비디오팀 과제명은 `유튜브 영상편집 자동화`다.
-- 현재 `bots/video`는 문서 기준점이 정리된 상태이며, 구현 스캐폴딩은 아직 시작 전이다.
-- 렌더링/오디오 확정값은 [bots/video/docs/CLAUDE.md](/Users/alexlee/projects/ai-agent-system/bots/video/docs/CLAUDE.md)를 source of truth로 본다.
-- 과제 프롬프트의 하드코딩보다 `config/video-config.yaml` 참조를 우선한다.
 
 ## 공통 원칙
 

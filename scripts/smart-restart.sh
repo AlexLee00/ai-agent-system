@@ -58,10 +58,6 @@ if echo "$CHANGED" | grep -q "^packages/core"; then
   restart_service "ai.ska.naver-monitor"
   restart_service "ai.blog.daily"
   restart_service "ai.blog.node-server"
-  restart_service "ai.worker.web"
-  restart_service "ai.worker.nextjs"
-  restart_service "ai.worker.lead"
-  restart_service "ai.worker.task-runner"
   restart_service "ai.jay.runtime"
   restart_service "ai.claude.dexter"
   echo "✅ 전체 재시작 완료"
@@ -97,14 +93,6 @@ fi
 if echo "$CHANGED" | grep -q "^bots/blog"; then
   restart_service "ai.blog.daily"
   restart_service "ai.blog.node-server"
-  RESTARTED=$((RESTARTED+1))
-fi
-
-if echo "$CHANGED" | grep -q "^bots/worker"; then
-  restart_service "ai.worker.web"
-  restart_service "ai.worker.nextjs"
-  restart_service "ai.worker.lead"
-  restart_service "ai.worker.task-runner"
   RESTARTED=$((RESTARTED+1))
 fi
 

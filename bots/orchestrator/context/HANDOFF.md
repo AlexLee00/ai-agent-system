@@ -59,7 +59,7 @@
 - 문서관리 삭제버튼 btn-danger 통일
 - 사이드바/헤더 높이 h-16 정렬
 - DataTable 빈행 채우기 제거
-- 관련 파일: `bots/worker/web/components/DataTable.js`, `bots/worker/web/app/sales/page.js`, `bots/worker/web/app/documents/page.js`, `bots/worker/web/server.js`, `bots/worker/web/components/Sidebar.js`, `bots/worker/web/components/Header.js`, `bots/worker/web/app/_shell.js`
+- 관련 파일: retired Worker web archive 참고
 <!-- session-close:2026-03-12:워커웹-ui개선-및-매출데이터-정합성-수정:end -->
 
 ## 다음 작업 후보

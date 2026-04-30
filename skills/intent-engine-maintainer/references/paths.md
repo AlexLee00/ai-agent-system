@@ -14,8 +14,6 @@
 
 적용 대상:
 
-- `bots/worker/lib/chat-agent.js`
-- `bots/worker/web/server.js`
 - `bots/claude/src/claude-commander.js`
 - `bots/investment/luna-commander.cjs`
 - `bots/reservation/src/ska.ts`

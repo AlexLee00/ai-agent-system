@@ -14,7 +14,7 @@ test('isSecretKey: exact and suffix secret keys', () => {
   const positives = [
     'token', 'secret', 'password', 'pw', 'key',
     'api_key', 'access_token', 'refresh_token', 'oc',
-    'bot_token', 'worker_jwt_secret', 'db_encryption_key',
+    'bot_token', 'service_jwt_secret', 'db_encryption_key',
     'naver_pw', 'gateway_token', 'hooks_token',
   ];
   for (const key of positives) assert.equal(isSecretKey(key), true, key);

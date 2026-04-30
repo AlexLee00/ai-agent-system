@@ -137,20 +137,6 @@ bots/reservation/IDENTITY.md
 bots/reservation/SOUL.md
 bots/reservation/TOOLS.md
 bots/reservation/USER.md
-bots/video/AGENTS.md
-bots/video/BOOTSTRAP.md
-bots/video/HEARTBEAT.md
-bots/video/IDENTITY.md
-bots/video/SOUL.md
-bots/video/TOOLS.md
-bots/video/USER.md
-bots/worker/AGENTS.md
-bots/worker/BOOTSTRAP.md
-bots/worker/HEARTBEAT.md
-bots/worker/IDENTITY.md
-bots/worker/SOUL.md
-bots/worker/TOOLS.md
-bots/worker/USER.md
 
 # macOS launchd 비활성화 백업
 LaunchAgents.disabled/
@@ -190,7 +176,6 @@ bots/claude/dexter-fixes.json
 bots/blog/*.log
 
 # ─── 사용자 업로드 파일 (깃 제외) ───
-bots/worker/uploads/
 bots/blog/output/
 
 # ─── 저스틴팀 — 소송 소스코드 보안 (절대 공개 금지) ───

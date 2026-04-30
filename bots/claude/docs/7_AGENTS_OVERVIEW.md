@@ -153,7 +153,6 @@ claude-commander (팀장)
 
 | 플랜 ID | 대상 | 빌드 방법 |
 |---------|------|-----------|
-| worker-web | bots/worker/web/ | Next.js (npm run build) |
 | packages-core | packages/core/ | TypeScript (tsc) |
 | elixir-team-jay | elixir/team_jay/ | mix compile |
 | elixir-investment | bots/investment/elixir/ | mix compile |

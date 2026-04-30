@@ -416,9 +416,6 @@ This inventory tracks the Hub alarm migration surface. `hub_alarm_native` entrie
 ### `bots/sigma/ts/src/sigma-weekly-review.ts`
 - L22 [hub_alarm_native]: `const hubAlarm = require(path.join(PROJECT_ROOT, 'packages/core/lib/hub-alarm-client.js'));`
 
-### `bots/worker/lib/approval.ts`
-- L17 [hub_alarm_native]: `const { postAlarm } = require(path.join(__dirname, '../../../packages/core/lib/hub-alarm-client'));`
-
 ### `docs/design/DESIGN_TEAM_JAY_AUTONOMOUS_ORCHESTRATION.md`
 - L106 [hub_alarm_native]: `- `hub-alarm-client`가 retired webhook보다 우선되는 구조로 이동했다.`
 - L541 [hub_alarm_native]: `- legacy alarm shim import를 `hub-alarm-client`로 팀별 이관한다.`

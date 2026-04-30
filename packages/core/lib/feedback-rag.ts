@@ -108,7 +108,7 @@ async function searchFeedbackCases(
     limit = 3,
     threshold = 0.45,
     acceptedWithoutEditOnly = false,
-    sourceBot = 'worker-feedback',
+    sourceBot = 'agent-feedback',
   }: {
     schema: string;
     flowCode?: string | null;

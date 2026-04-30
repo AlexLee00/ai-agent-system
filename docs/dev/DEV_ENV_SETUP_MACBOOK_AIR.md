@@ -109,13 +109,11 @@ DB: jay / User: alexlee / Extensions: plpgsql, pgcrypto, uuid-ossp, vector(0.8.2
 DEV에서 맥 스튜디오에서 복사해야 하는 파일:
 ```
 bots/reservation/secrets.json   ← 예약 API 키
-bots/worker/secrets.json        ← 워커 API 키
 bots/investment/config.yaml     ← 투자 설정 (trading_mode 등)
 bots/reservation/config.yaml    ← 예약 설정
 bots/blog/config.json           ← 블로그 설정
 bots/claude/config.json         ← 클로드팀 설정
 bots/ska/config.json            ← 스카팀 설정
-bots/worker/config.json         ← 워커 설정
 bots/orchestrator/config.json   ← 오케스트레이터 설정
 ```
 
@@ -133,7 +131,6 @@ ai.hub.resource-api / model-sync
 ai.ops.platform.backend / frontend
 ai.orchestrator
 ai.ska.commander / dashboard / db-backup / etl / eve / eve-crawl / forecast-* (3개) / health-check / kiosk-monitor / log-report / log-rotate / naver-monitor / pickko-* (3개) / rebecca / rebecca-weekly / today-audit
-ai.worker.claude-monitor / health-check / lead / nextjs / task-runner / web
 ```
 
 ### 0-10. cron & 자동 배포
@@ -238,9 +235,6 @@ cd ai-agent-system
 
 # 루트 의존성 (workspaces 포함)
 npm install
-
-# 워커 웹 (Next.js + Twick)
-cd bots/worker/web && npm install && cd ../../..
 
 # 블로그 봇
 cd bots/blog && npm install && cd ../..
@@ -377,14 +371,11 @@ ssh-copy-id mac-studio
 # 맥 스튜디오에서 Git 제외 파일 복사 (SSH)
 for f in \
   bots/reservation/secrets.json \
-  bots/worker/secrets.json \
   bots/investment/config.yaml \
   bots/reservation/config.yaml \
   bots/blog/config.json \
   bots/claude/config.json \
   bots/ska/config.json \
-
-  bots/worker/config.json \
   bots/orchestrator/config.json; do
   scp mac-studio:~/projects/ai-agent-system/$f \
       ~/projects/ai-agent-system/$f

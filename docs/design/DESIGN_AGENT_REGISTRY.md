@@ -128,9 +128,9 @@ CREATE INDEX idx_contract_status ON agent.contracts(status);
   oracle, chronos, nemesis(→hard-rule+budget+adaptive-risk), zeus, athena
 클로드팀 (claude): claude(팀장), dexter, doctor, archer, builder, guardian, reviewer
 스카팀 (ska): ska(팀장), andy, jimmy, rebecca, eve
-워커팀 (worker): worker(팀장)
-에디팀 (video): video(팀장)
 오케스트레이터 (jay): jay(팀장), mainbot, filter, write
+
+은퇴팀 (2026-04-30): worker, video. 설계 기록은 `docs/archive/retired-teams/`에서만 보존한다.
 
 신규 3팀 (Phase 0.5 설계):
 연구팀 (research): 다윈(팀장), 뉴런, 골드, 잉크, 가벨, 매트릭스, 프레임, 기어,

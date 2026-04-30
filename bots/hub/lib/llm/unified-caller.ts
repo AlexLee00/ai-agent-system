@@ -39,7 +39,7 @@ function _groqModel() {
 }
 
 async function callWithFallback(req) {
-  const team = req.callerTeam || 'worker';
+  const team = req.callerTeam || 'hub';
 
   // 0. Budget check
   if (process.env.HUB_BUDGET_GUARDIAN_ENABLED !== 'false') {

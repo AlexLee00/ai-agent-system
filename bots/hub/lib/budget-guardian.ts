@@ -9,8 +9,9 @@ const TEAM_QUOTAS: Record<string, number> = {
   sigma: 10,
   claude: 10,
   blog: 5,
-  worker: 5,
-  editor: 3,
+  ska: 5,
+  justin: 3,
+  hub: 5,
   data: 2,
 };
 

@@ -146,10 +146,8 @@ defmodule Jay.V2.DailyBriefing do
   defp regime_emoji("crisis"), do: "🚨"
   defp regime_emoji(_), do: "➡️"
 
-  defp team_emoji(:worker), do: "⚙️"
   defp team_emoji(:platform), do: "🏗️"
   defp team_emoji(:darwin), do: "🔬"
   defp team_emoji(:justin), do: "⚖️"
-  defp team_emoji(:video), do: "🎬"
   defp team_emoji(_), do: "🤖"
 end

@@ -44,7 +44,7 @@ absolute_prohibitions:
   - id: P-003
     text: "인증/권한 관련 설정 변경 (JWT 시크릿, 역할 매핑, 회사 격리)"
     tier_override: 3
-    applies_to_teams: [worker, hub]
+    applies_to_teams: [hub, orchestrator]
     detection_keywords:
       - "jwt_secret"
       - "company_id"

@@ -13,7 +13,6 @@ const BOT_CONFIGS = [
   { id: 'legal',        path: 'bots/legal/config.json' },
   { id: 'reservation',  path: 'bots/reservation/config.yaml' },
   { id: 'blog',         path: 'bots/blog/config.json' },
-  { id: 'worker',       path: 'bots/worker/config.json' },
   { id: 'orchestrator', path: 'bots/orchestrator/config.json' },
 ];
 

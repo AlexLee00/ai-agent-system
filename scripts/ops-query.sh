@@ -6,7 +6,7 @@ SQL="${2}"
 
 if [ -z "$SQL" ]; then
   echo "사용법: ops-query.sh <schema> <sql>"
-  echo "스키마: investment | claude | reservation | ska | worker | blog | public"
+  echo "스키마: investment | claude | reservation | ska | blog | agent | sigma | public"
   exit 1
 fi
 

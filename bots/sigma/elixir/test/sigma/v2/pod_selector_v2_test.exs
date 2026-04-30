@@ -48,7 +48,7 @@ defmodule Sigma.V2.PodSelectorV2Test do
 
     test "기본값 (전략 미지정) 시 {:ok, pod} 반환" do
       System.put_env("SIGMA_POD_DYNAMIC_V2_ENABLED", "true")
-      result = Sigma.V2.PodSelectorV2.select_best_pod("worker", %{})
+      result = Sigma.V2.PodSelectorV2.select_best_pod("justin", %{})
       assert match?({:ok, pod} when pod in ~w(trend growth risk), result)
     after
       System.delete_env("SIGMA_POD_DYNAMIC_V2_ENABLED")

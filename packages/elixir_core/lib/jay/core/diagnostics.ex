@@ -8,7 +8,6 @@ defmodule Jay.Core.Diagnostics do
   @compile {:no_warn_undefined, [
     TeamJay.Teams.InvestmentSupervisor,
     TeamJay.Teams.BlogSupervisor,
-    TeamJay.Teams.WorkerSupervisor,
     TeamJay.Teams.PlatformSupervisor
   ]}
 
@@ -28,10 +27,6 @@ defmodule Jay.Core.Diagnostics do
     {:blog_collect_views, :blog},
     {:blog_marketing_snapshot, :blog},
     {:blog_marketing_report, :blog},
-    {:worker_health_check, :worker},
-    {:worker_task_runner, :worker},
-    {:worker_claude_monitor, :worker},
-    {:worker_lead, :worker},
     {:dexter, :claude}
   ]
   @week2_shadow_agents []
@@ -288,10 +283,8 @@ defmodule Jay.Core.Diagnostics do
       TeamJay.Teams.StewardSupervisor,
       TeamJay.Teams.InvestmentSupervisor,
       TeamJay.Teams.BlogSupervisor,
-      TeamJay.Teams.WorkerSupervisor,
       TeamJay.Teams.PlatformSupervisor,
       TeamJay.Teams.BlogShadowSupervisor,
-      TeamJay.Teams.WorkerShadowSupervisor,
       TeamJay.Teams.PlatformShadowSupervisor
     ]
 
@@ -384,7 +377,6 @@ defmodule Jay.Core.Diagnostics do
       [
         runtime_agent_labels(TeamJay.Teams.InvestmentSupervisor),
         runtime_agent_labels(TeamJay.Teams.BlogSupervisor),
-        runtime_agent_labels(TeamJay.Teams.WorkerSupervisor),
         runtime_agent_labels(TeamJay.Teams.PlatformSupervisor)
       ]
       |> List.flatten()
@@ -861,7 +853,6 @@ defmodule Jay.Core.Diagnostics do
     team_bonus =
       case agent.team do
         :blog -> 30
-        :worker -> 20
         :platform -> 10
         _ -> 0
       end
@@ -870,9 +861,6 @@ defmodule Jay.Core.Diagnostics do
       case agent.name do
         :blog_commenter -> 15
         :blog_daily -> 10
-        :worker_task_runner -> 10
-        :worker_health_check -> 8
-        :worker_claude_monitor -> 6
         _ -> 0
       end
 

@@ -234,14 +234,6 @@ check_periodic "ai.blog.daily"               "블로그 daily"
 check_periodic "ai.blog.health-check"        "블로그 health-check"
 check_periodic "ai.blog.collect-performance" "블로그 성과 수집"
 
-log "🧩 워커팀"
-check_svc      "ai.worker.web"            "워커 웹"
-check_svc      "ai.worker.nextjs"         "워커 Next.js"
-check_svc      "ai.worker.lead"           "워커 lead"
-check_svc      "ai.worker.task-runner"    "워커 task-runner"
-check_periodic "ai.worker.health-check"   "워커 health-check"
-check_periodic "ai.worker.claude-monitor" "워커 claude-monitor"
-
 log "🛎️  클로드팀"
 check_svc      "ai.claude.commander"        "클로드 커맨더"
 check_svc      "ai.claude.health-dashboard" "클로드 health-dashboard"
@@ -313,7 +305,7 @@ ${REPORT_TEXT}
 마지막 커밋: ${LAST_COMMIT}
 
 [수동 후속 권장]
-• worker / orchestrator / investment / blog health-report --json 재확인
+• orchestrator / investment / blog health-report --json 재확인
 • reservation health-report --json 재확인
 • 필요 시 bash $PROJECT_DIR/scripts/post-reboot.sh --dry-run
 • 상태 변화가 있으면 CLAUDE / WORK_HISTORY / CHANGELOG / TEST_RESULTS / RESEARCH_JOURNAL 갱신

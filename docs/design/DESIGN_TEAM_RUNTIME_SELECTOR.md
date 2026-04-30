@@ -2,7 +2,8 @@
 
 > 작성: Codex
 > 작성일: 2026-04-03
-> 대상: blog, luna, darwin, justin, sigma, claude, orchestrator, ska, video, worker
+> 대상: blog, luna, darwin, justin, sigma, claude, orchestrator, ska
+> 은퇴팀: worker, video (2026-04-30, 설계 기록만 archive 보존)
 
 > 운영 메모 (2026-04-17):
 > - 현재 배포 local fast route는 `local/qwen2.5-7b`
@@ -304,8 +305,6 @@ sigma
 claude
 orchestrator
 ska
-video
-worker
 ```
 
 ### Phase C. launchd 단순화

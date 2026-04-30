@@ -69,7 +69,6 @@ Shared concerns:
 ## Team Scripts Using The Shared Layer
 
 - [bots/investment/scripts/health-report.js](/Users/alexlee/projects/ai-agent-system/bots/investment/scripts/health-report.js)
-- [bots/worker/scripts/health-report.js](/Users/alexlee/projects/ai-agent-system/bots/worker/scripts/health-report.js)
 - [bots/claude/scripts/health-report.js](/Users/alexlee/projects/ai-agent-system/bots/claude/scripts/health-report.js)
 - [dist/ts-runtime/bots/reservation/scripts/health-report.js](/Users/alexlee/projects/ai-agent-system/dist/ts-runtime/bots/reservation/scripts/health-report.js)
 - [bots/blog/scripts/health-report.js](/Users/alexlee/projects/ai-agent-system/bots/blog/scripts/health-report.js)
@@ -80,7 +79,6 @@ Health memory-enabled consumers:
 - [bots/blog/scripts/health-check.ts](/Users/alexlee/projects/ai-agent-system/bots/blog/scripts/health-check.ts)
 - [bots/reservation/scripts/health-check.ts](/Users/alexlee/projects/ai-agent-system/bots/reservation/scripts/health-check.ts)
 - [bots/investment/scripts/health-check.ts](/Users/alexlee/projects/ai-agent-system/bots/investment/scripts/health-check.ts)
-- [bots/worker/scripts/health-check.legacy.js](/Users/alexlee/projects/ai-agent-system/bots/worker/scripts/health-check.legacy.js)
 - [bots/claude/scripts/health-check.ts](/Users/alexlee/projects/ai-agent-system/bots/claude/scripts/health-check.ts)
 - [bots/hub/lib/routes/health.ts](/Users/alexlee/projects/ai-agent-system/bots/hub/lib/routes/health.ts)
 
@@ -145,7 +143,6 @@ This keeps the script as a thin adapter instead of a second health framework.
 Jay now consumes team health through direct routes:
 
 - `/luna-health`
-- `/worker-health`
 - `/claude-health`
 - `/ska-health`
 - `/blog-health`

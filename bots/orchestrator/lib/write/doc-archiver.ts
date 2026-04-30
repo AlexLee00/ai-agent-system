@@ -20,9 +20,7 @@ const TRACKER_SECTION_BY_PREFIX = [
   { prefix: 'bots/blog/', heading: '### 블로팀' },
   { prefix: 'bots/claude/', heading: '### 클로드팀' },
   { prefix: 'bots/reservation/', heading: '### 스카/워커/오케스트레이터' },
-  { prefix: 'bots/worker/', heading: '### 스카/워커/오케스트레이터' },
   { prefix: 'bots/orchestrator/', heading: '### 스카/워커/오케스트레이터' },
-  { prefix: 'bots/video/', heading: '### 스카/워커/오케스트레이터' },
 ];
 
 function safeExec(command) {

@@ -6,7 +6,7 @@ defmodule Jay.V2.Sigma.Scheduler do
 
   require Logger
 
-  @rotation ~w(ska worker claude justin video)a
+  @rotation ~w(ska claude justin blog luna)a
   @core_analysts ~w(pipe canvas curator)a
 
   @type formation :: %{

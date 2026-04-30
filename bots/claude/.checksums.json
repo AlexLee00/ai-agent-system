@@ -31,7 +31,5 @@
   "bots/legal/lib/llm-helper.js": "fa7721300dd7e839769c3528a656e87c8ad1840bc26f422183e821ba95f5ab27",
   "bots/legal/lib/pdf-generator.js": "17f3354fa1945451f2c641029e3de07633f028c9b27f451ed81d94e9e5d464a5",
   "bots/legal/lib/quill.js": "dc2112a58687ae5c5a212899bf68deb7a6397f2da02962b7bf9141fa6c609a7c",
-  "bots/legal/lib/similarity-engine.js": "ce0552aaf8dc534a193d846ba926198aefcbda759c93a118a23ea516e4566cc4",
-  "bots/worker/lib/cli-insight.legacy.js": "8dbd9547b802a6c3b1c5467d88688ef38febc64d5f82fc72985b38ccc866e1e2",
-  "bots/worker/lib/critical-alerts.legacy.js": "2f384d7d6605eb9297ad8f04876ca9cbbc3b8cc7df31ef78c40efa3a2a48ec3c"
+  "bots/legal/lib/similarity-engine.js": "ce0552aaf8dc534a193d846ba926198aefcbda759c93a118a23ea516e4566cc4"
 }

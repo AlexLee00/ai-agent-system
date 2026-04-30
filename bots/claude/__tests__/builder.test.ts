@@ -62,14 +62,11 @@ async function withMocks(mocks, fn) {
 
 async function test_needsBuild_matches_patterns() {
   await withMocks(makeBuilderMocks(), async (builder) => {
-    // ROOT='/' 이므로 /bots/worker/web/... 형태로 전달
     const plans = builder.needsBuild([
-      '/bots/worker/web/pages/index.tsx',
       '/packages/core/lib/pg-pool.js',
     ]);
     assert.ok(Array.isArray(plans), 'needsBuild는 배열 반환');
     const ids = plans.map(p => p.id);
-    assert.ok(ids.includes('worker-web'),    'worker-web 패턴 매칭');
     assert.ok(ids.includes('packages-core'), 'packages-core 패턴 매칭');
   });
   console.log('✅ builder: needsBuild matches correct patterns');
@@ -92,7 +89,6 @@ async function test_build_plans_defined() {
     assert.ok(Array.isArray(builder.BUILD_PLANS), 'BUILD_PLANS는 배열');
     assert.ok(builder.BUILD_PLANS.length > 0, '최소 1개 이상');
     const ids = builder.BUILD_PLANS.map(p => p.id);
-    assert.ok(ids.includes('worker-web'),    'worker-web 플랜 존재');
     assert.ok(ids.includes('packages-core'), 'packages-core 플랜 존재');
     assert.ok(ids.includes('elixir-team-jay'), 'elixir-team-jay 플랜 존재');
   });
@@ -161,7 +157,7 @@ async function test_reportBuildStatus_calls_postAlarm() {
 async function test_formatBuildReport_returns_string() {
   await withMocks(makeBuilderMocks(), async (builder) => {
     const report = builder.formatBuildReport([
-      { pass: true, skipped: false, plan: { id: 'worker-web', name: 'Worker Web' } },
+      { pass: true, skipped: false, plan: { id: 'packages-core', name: 'Core' } },
       { pass: false, skipped: false, error: '빌드 실패', plan: { id: 'packages-core', name: 'Core' } },
     ]);
     assert.ok(typeof report === 'string', '문자열 반환');

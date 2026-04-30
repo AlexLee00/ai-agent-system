@@ -5,7 +5,6 @@
  * src/builder.ts — 클로드팀 빌더 봇 (완전 구현)
  *
  * 빌드 대상:
- *   - bots/worker/web/ (Next.js)
  *   - packages/core/ (TypeScript)
  *   - bots/investment/elixir/, bots/darwin/elixir/, bots/sigma/elixir/ (mix compile)
  *   - elixir/team_jay/ (mix compile)
@@ -31,20 +30,6 @@ const ROOT = env.PROJECT_ROOT;
 // ─── 빌드 패턴 정의 ───────────────────────────────────────────────────
 
 const BUILD_PLANS = [
-  {
-    id: 'worker-web',
-    name: 'Worker Web (Next.js)',
-    patterns: [
-      'bots/worker/web/',
-      'bots/worker/package.json',
-      'bots/worker/web/package.json',
-      'bots/worker/web/next.config.js',
-      'bots/worker/web/next.config.mjs',
-    ],
-    type: 'nextjs',
-    cwd: 'bots/worker/web',
-    timeout: 180000,
-  },
   {
     id: 'packages-core',
     name: 'packages/core (TypeScript)',

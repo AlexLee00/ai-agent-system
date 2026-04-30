@@ -7,7 +7,7 @@ const {
   ensureSystemPreferencesTable,
   getSelectorOverrideSuggestionLogById,
   updateSelectorOverrideSuggestionLogReview,
-} = require(path.join(__dirname, '../bots/worker/lib/llm-api-monitoring'));
+} = require(path.join(__dirname, '../packages/core/lib/llm-selector-suggestion-store'));
 
 function parseArgs(argv = process.argv.slice(2)) {
   return {

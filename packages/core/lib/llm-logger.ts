@@ -402,7 +402,7 @@ export async function buildDailyCostReport(): Promise<string> {
   const totalCached = rows.reduce((sum, row) => sum + (parseInt(String(row.cache_hits || 0), 10) || 0), 0);
   const savedPct = totalCalls > 0 ? Math.round(totalCached / totalCalls * 100) : 0;
 
-  const TEAM_LABEL: Record<string, string> = { ska: '스카팀', claude: '클로드팀', luna: '루나팀', blog: '블로팀', worker: '워커팀' };
+  const TEAM_LABEL: Record<string, string> = { ska: '스카팀', claude: '클로드팀', luna: '루나팀', blog: '블로팀', darwin: '다윈팀', sigma: '시그마팀', justin: '저스틴팀' };
   const teamLines = rows.map((row) => {
     const label = TEAM_LABEL[row.team] || row.team;
     const tag = parseFloat(String(row.total || 0)) < 0.0001 ? '무료' : `$${parseFloat(String(row.total || 0)).toFixed(4)}`;

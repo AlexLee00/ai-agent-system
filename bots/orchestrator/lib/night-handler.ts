@@ -282,13 +282,12 @@ async function buildOpsHealthAlertSnippet() {
   const scripts = [
     { title: '오케스트레이터', path: path.join(root, 'bots', 'orchestrator', 'scripts', 'health-report.js') },
     { title: '루나', path: path.join(root, 'bots', 'investment', 'scripts', 'health-report.js') },
-    { title: '워커', path: path.join(root, 'bots', 'worker', 'scripts', 'health-report.js') },
     { title: '클로드', path: path.join(root, 'bots', 'claude', 'scripts', 'health-report.js') },
     { title: '스카', path: path.join(root, 'bots', 'reservation', 'scripts', 'health-report.js') },
     { title: 'AI 피드백', path: path.join(root, 'bots', 'orchestrator', 'scripts', 'feedback-health.js') },
   ];
 
-  const [orchestrator, luna, worker, claude, ska, feedback] = await Promise.all(scripts.map((entry) => runNodeScriptJson(entry.path)));
+  const [orchestrator, luna, claude, ska, feedback] = await Promise.all(scripts.map((entry) => runNodeScriptJson(entry.path)));
   const rows = [
     {
       title: '오케스트레이터',
@@ -301,13 +300,6 @@ async function buildOpsHealthAlertSnippet() {
       title: '루나',
       hasWarn: !luna || luna.serviceHealth.warnCount > 0,
       summary: luna ? `서비스 경고 ${luna.serviceHealth.warnCount}건` : '조회 실패',
-    },
-    {
-      title: '워커',
-      hasWarn: !worker || worker.serviceHealth.warnCount > 0 || worker.endpointHealth.warnCount > 0,
-      summary: worker
-        ? `서비스 경고 ${worker.serviceHealth.warnCount}건 / 엔드포인트 경고 ${worker.endpointHealth.warnCount}건`
-        : '조회 실패',
     },
     {
       title: '클로드',

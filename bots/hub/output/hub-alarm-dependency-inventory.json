@@ -1336,14 +1336,6 @@
         "match": "const hubAlarm = require(path.join(PROJECT_ROOT, 'packages/core/lib/hub-alarm-client.js'));"
       }
     ],
-    "bots/worker/lib/approval.ts": [
-      {
-        "file": "bots/worker/lib/approval.ts",
-        "line": 17,
-        "category": "hub_alarm_native",
-        "match": "const { postAlarm } = require(path.join(__dirname, '../../../packages/core/lib/hub-alarm-client'));"
-      }
-    ],
     "docs/design/DESIGN_TEAM_JAY_AUTONOMOUS_ORCHESTRATION.md": [
       {
         "file": "docs/design/DESIGN_TEAM_JAY_AUTONOMOUS_ORCHESTRATION.md",

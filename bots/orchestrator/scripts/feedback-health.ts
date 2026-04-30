@@ -17,7 +17,6 @@ const {
 const SUMMARY_MODE = process.argv.includes('--summary');
 
 const FEEDBACK_TARGETS = [
-  { schema: 'worker', title: '워커' },
   { schema: 'blog', title: '블로' },
   { schema: 'claude', title: '클로드' },
 ];
@@ -98,7 +97,7 @@ function buildSummaryText(report) {
   }
 
   lines.push('');
-  lines.push('상세: /feedback-health | 팀별: /feedback-health worker | /feedback-health blog | /feedback-health claude');
+  lines.push('상세: /feedback-health | 팀별: /feedback-health blog | /feedback-health claude');
   return lines.join('\n');
 }
 
@@ -137,7 +136,7 @@ function buildFullText(report) {
     subtitle: `기간: 최근 ${report.sinceDays}일`,
     sections,
     footer: [
-      '상세: /feedback-health worker | /feedback-health blog | /feedback-health claude',
+      '상세: /feedback-health blog | /feedback-health claude',
     ],
   });
 }

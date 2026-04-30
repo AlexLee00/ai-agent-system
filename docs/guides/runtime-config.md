@@ -59,29 +59,6 @@
   - `reviews.daily.*`
   - `reviews.weekly.*`
 
-### Worker
-
-- 설정 파일: [/Users/alexlee/projects/ai-agent-system/bots/worker/config.json](/Users/alexlee/projects/ai-agent-system/bots/worker/config.json)
-- 적용 로더: [/Users/alexlee/projects/ai-agent-system/bots/worker/lib/runtime-config.js](/Users/alexlee/projects/ai-agent-system/bots/worker/lib/runtime-config.js)
-- 적용 영역:
-  - [/Users/alexlee/projects/ai-agent-system/bots/worker/src/worker-lead.js](/Users/alexlee/projects/ai-agent-system/bots/worker/src/worker-lead.js)
-  - [/Users/alexlee/projects/ai-agent-system/bots/worker/scripts/check-n8n-intake-path.js](/Users/alexlee/projects/ai-agent-system/bots/worker/scripts/check-n8n-intake-path.js)
-  - [/Users/alexlee/projects/ai-agent-system/bots/worker/scripts/health-check.js](/Users/alexlee/projects/ai-agent-system/bots/worker/scripts/health-check.js)
-  - [/Users/alexlee/projects/ai-agent-system/bots/worker/scripts/health-report.js](/Users/alexlee/projects/ai-agent-system/bots/worker/scripts/health-report.js)
-- 운영에서 바꿀 수 있는 값 예:
-  - `lead.defaultPollMs`
-  - `lead.noTokenPollMs`
-  - `lead.telegramLongPollSeconds`
-  - `lead.telegramRequestTimeoutMs`
-  - `health.httpTimeoutMs`
-  - `n8n.healthUrl`
-  - `n8n.workerWebhookUrl`
-  - `n8n.healthTimeoutMs`
-  - `n8n.webhookTimeoutMs`
-  - `web.authRequestTimeoutMs`
-  - `web.authReleaseBufferMs`
-  - `web.wsReconnectDelayMs`
-
 ### Orchestrator
 
 - 설정 파일: [/Users/alexlee/projects/ai-agent-system/bots/orchestrator/config.json](/Users/alexlee/projects/ai-agent-system/bots/orchestrator/config.json)

@@ -56,8 +56,6 @@ try {
   const gatedSources = [
     'bots/ska/src/forecast.py',
     'bots/ska/lib/rag_client.py',
-    'bots/worker/scripts/claude-api-monitor.ts',
-    'bots/worker/scripts/start-worker-web.sh',
     'bots/darwin/elixir/lib/darwin/v2/config.ex',
     'bots/darwin/elixir/lib/darwin/v2/skill/vlm_feedback.ex',
     'bots/sigma/elixir/lib/sigma/v2/llm/policy.ex',

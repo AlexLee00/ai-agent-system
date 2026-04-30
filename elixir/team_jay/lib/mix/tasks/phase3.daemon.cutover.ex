@@ -377,12 +377,6 @@ defmodule Mix.Tasks.Phase3.Daemon.Cutover do
   defp plist_path_for!("ai.blog.node-server"),
     do: Jay.Core.Config.repo_root() <> "/bots/blog/launchd/ai.blog.node-server.plist"
 
-  defp plist_path_for!("ai.worker.web"),
-    do: Jay.Core.Config.repo_root() <> "/bots/worker/launchd/ai.worker.web.plist"
-
-  defp plist_path_for!("ai.worker.nextjs"),
-    do: Jay.Core.Config.repo_root() <> "/bots/worker/launchd/ai.worker.nextjs.plist"
-
   defp plist_path_for!(label), do: Mix.raise("plist 경로 매핑이 없습니다: #{label}")
 
   defp render_text(result) do

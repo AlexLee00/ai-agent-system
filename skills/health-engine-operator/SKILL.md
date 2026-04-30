@@ -24,7 +24,6 @@ description: Use when creating, extending, reviewing, or debugging team health r
 팀별 adapter 예시:
 
 - `bots/investment/scripts/health-report.js`
-- `bots/worker/scripts/health-report.js`
 - `bots/claude/scripts/health-report.js`
 - `dist/ts-runtime/bots/reservation/scripts/health-report.js`
 - `bots/blog/scripts/health-report.js`

@@ -321,22 +321,6 @@ const TEAM_SELECTOR_DEFAULTS: Record<string, any> = {
       ],
     },
   },
-  worker: {
-    'chat.task_intake': {
-      primary: { provider: 'groq', model: 'llama-3.1-8b-instant', maxTokens: 250, temperature: 0.1 },
-      fallbacks: [
-        { provider: 'anthropic', model: 'claude-haiku-4-5-20251001', maxTokens: 250, temperature: 0.1 },
-        { provider: 'openai-oauth', model: 'gpt-5.4-mini', maxTokens: 250, temperature: 0.1 },
-      ],
-    },
-    _fallback: {
-      primary: { provider: 'groq', model: 'llama-3.1-8b-instant', maxTokens: 1024, temperature: 0.1 },
-      fallbacks: [
-        { provider: 'anthropic', model: 'claude-haiku-4-5-20251001', maxTokens: 1024, temperature: 0.1 },
-        { provider: 'openai-oauth', model: 'gpt-5.4-mini', maxTokens: 1024, temperature: 0.1 },
-      ],
-    },
-  },
   core: {
     'chunked.gpt4o': {
       primary: { provider: 'openai-oauth', model: 'gpt-5.4', maxTokens: 4096, temperature: 0.75 },
@@ -357,58 +341,6 @@ const TEAM_SELECTOR_DEFAULTS: Record<string, any> = {
       fallbacks: [
         { provider: 'openai-oauth', model: 'gpt-5.4-mini', maxTokens: 4096, temperature: 0.75 },
       ],
-    },
-  },
-  video: {
-    'step-proposal': {
-      primary: { provider: 'groq', model: 'llama-3.1-8b-instant', maxTokens: 180, temperature: 0.1 },
-      fallbacks: [{ provider: 'openai-oauth', model: 'gpt-5.4-mini', maxTokens: 180, temperature: 0.1 }],
-    },
-    critic: {
-      primary: { provider: 'claude-code', model: 'claude-code/sonnet', maxTokens: 512, temperature: 0.1 },
-      fallbacks: [
-        { provider: 'openai-oauth', model: 'gpt-5.4', maxTokens: 512, temperature: 0.1 },
-        { provider: 'gemini-oauth', model: GEMINI_OAUTH_FLASH_MODEL, maxTokens: 512, temperature: 0.1 },
-      ],
-    },
-    'subtitle-correction': {
-      primary: { provider: 'openai-oauth', model: 'gpt-5.4', maxTokens: 4096, temperature: 0.1 },
-      fallbacks: [
-        { provider: 'claude-code', model: 'claude-code/sonnet', maxTokens: 4096, temperature: 0.1 },
-        { provider: 'gemini-oauth', model: GEMINI_OAUTH_FLASH_MODEL, maxTokens: 4096, temperature: 0.1 },
-      ],
-    },
-    'scene-indexer': {
-      primary: { provider: 'openai-oauth', model: 'gpt-5.4', maxTokens: 2048, temperature: 0.1 },
-      fallbacks: [
-        { provider: 'claude-code', model: 'claude-code/sonnet', maxTokens: 2048, temperature: 0.1 },
-        { provider: 'gemini-oauth', model: GEMINI_OAUTH_FLASH_MODEL, maxTokens: 2048, temperature: 0.1 },
-      ],
-    },
-    'narration-analyzer': {
-      primary: { provider: 'openai-oauth', model: 'gpt-5.4', maxTokens: 4096, temperature: 0.1 },
-      fallbacks: [
-        { provider: 'claude-code', model: 'claude-code/sonnet', maxTokens: 4096, temperature: 0.1 },
-        { provider: 'gemini-oauth', model: GEMINI_OAUTH_FLASH_MODEL, maxTokens: 4096, temperature: 0.1 },
-      ],
-    },
-    refiner: {
-      primary: { provider: 'openai-oauth', model: 'gpt-5.4', maxTokens: 1024, temperature: 0.1 },
-      fallbacks: [
-        { provider: 'claude-code', model: 'claude-code/sonnet', maxTokens: 1024, temperature: 0.1 },
-        { provider: 'gemini-oauth', model: GEMINI_OAUTH_FLASH_MODEL, maxTokens: 1024, temperature: 0.1 },
-      ],
-    },
-    'intro-outro': {
-      primary: { provider: 'openai-oauth', model: 'gpt-5.4', maxTokens: 1024, temperature: 0.2 },
-      fallbacks: [
-        { provider: 'claude-code', model: 'claude-code/sonnet', maxTokens: 1024, temperature: 0.2 },
-        { provider: 'gemini-oauth', model: GEMINI_OAUTH_FLASH_MODEL, maxTokens: 1024, temperature: 0.2 },
-      ],
-    },
-    _fallback: {
-      primary: { provider: 'groq', model: 'llama-3.1-8b-instant', maxTokens: 1024, temperature: 0.1 },
-      fallbacks: [],
     },
   },
   ska: {
@@ -470,26 +402,9 @@ const AGENT_MODEL_REGISTRY: Record<string, Record<string, string | null>> = {
     'neighbor-commenter': 'blog.commenter.neighbor',
     'book-review-draft': 'blog.book_review.preview',
   },
-  worker: {
-    foreman: null,
-    web: null,
-    nextjs: null,
-    'task-runner': null,
-    'task-intake': 'worker.chat.task_intake',
-    'ai-fallback': 'worker.ai.fallback',
-  },
   core: {
     'chunked-gpt4o': 'core.chunked.gpt4o',
     'chunked-default': 'core.chunked.default',
-  },
-  video: {
-    edi: 'video.step-proposal',
-    critic: 'video.critic',
-    'subtitle-corrector': 'video.subtitle-correction',
-    'scene-indexer': 'video.scene-indexer',
-    'narration-analyzer': 'video.narration-analyzer',
-    refiner: 'video.refiner',
-    'intro-outro-handler': 'video.intro-outro',
   },
   orchestrator: {
     default: 'orchestrator.jay.intent',
@@ -631,40 +546,6 @@ function buildSelectorRegistry(): Record<string, any> {
       { provider: 'gemini-codeassist-oauth', model: GEMINI_CODEASSIST_PRO_MODEL, maxTokens, temperature: 0.2, timeoutMs: 60_000 },
     ],
 
-    'worker.ai.fallback': ({
-      groqModel = 'llama-3.1-8b-instant',
-      preferredApi = 'groq',
-      configuredProviders = ['groq', 'claude-code', 'anthropic', 'gemini-oauth', 'openai'],
-      maxTokens = 1024,
-      policyOverride = null,
-    }: SelectorOptions = {}) => {
-      const configured = new Set(sanitizeConfiguredProviders(preferredApi, configuredProviders));
-      const providerModels = {
-        groq: stripGroqPrefix(policyOverride?.providerModels?.groq || groqModel),
-        'claude-code': policyOverride?.providerModels?.['claude-code'] || 'claude-code/sonnet',
-        anthropic: policyOverride?.providerModels?.anthropic || 'claude-haiku-4-5-20251001',
-        'gemini-oauth': policyOverride?.providerModels?.['gemini-oauth'] || policyOverride?.providerModels?.gemini || GEMINI_OAUTH_FLASH_MODEL,
-        openai: policyOverride?.providerModels?.openai || 'gpt-4o-mini',
-      };
-      const primary = resolvePreferredProvider(preferredApi, providerModels.groq, maxTokens);
-      if (preferredApi === 'claude-code') primary.model = providerModels['claude-code'];
-      if (preferredApi === 'anthropic') primary.model = providerModels.anthropic;
-      if (preferredApi === 'openai') primary.model = providerModels.openai;
-      if (preferredApi === 'gemini' || preferredApi === 'gemini-oauth') primary.model = providerModels['gemini-oauth'];
-      const fallback = [
-        { provider: 'groq', model: `groq/${providerModels.groq}`, maxTokens, temperature: 0.1 },
-        { provider: 'claude-code', model: providerModels['claude-code'], maxTokens, temperature: 0.1 },
-        { provider: 'anthropic', model: providerModels.anthropic, maxTokens, temperature: 0.1 },
-        { provider: 'gemini-oauth', model: providerModels['gemini-oauth'], maxTokens, temperature: 0.1 },
-        { provider: 'openai', model: providerModels.openai, maxTokens, temperature: 0.1 },
-      ].filter((entry) => configured.has(entry.provider));
-      const chain = configured.has(primary.provider) ? [primary, ...fallback] : fallback;
-      return dedupeByProvider(chain);
-    },
-
-    'worker._default': () => resolveFromTeamDefault('worker._default'),
-    'worker.chat.task_intake': () => resolveFromTeamDefault('worker.chat.task_intake'),
-
     'blog._default': () => resolveFromTeamDefault('blog._default'),
     'blog.pos.writer': () => resolveFromTeamDefault('blog.pos.writer'),
     'blog.gems.writer': () => resolveFromTeamDefault('blog.gems.writer'),
@@ -683,15 +564,6 @@ function buildSelectorRegistry(): Record<string, any> {
     'core._default': () => resolveFromTeamDefault('core._default'),
     'core.chunked.gpt4o': () => resolveFromTeamDefault('core.chunked.gpt4o'),
     'core.chunked.default': () => resolveFromTeamDefault('core.chunked.default'),
-
-    'video._default': () => resolveFromTeamDefault('video._default'),
-    'video.step-proposal': () => resolveFromTeamDefault('video.step-proposal'),
-    'video.critic': () => resolveFromTeamDefault('video.critic'),
-    'video.subtitle-correction': () => resolveFromTeamDefault('video.subtitle-correction'),
-    'video.scene-indexer': () => resolveFromTeamDefault('video.scene-indexer'),
-    'video.narration-analyzer': () => resolveFromTeamDefault('video.narration-analyzer'),
-    'video.refiner': () => resolveFromTeamDefault('video.refiner'),
-    'video.intro-outro': () => resolveFromTeamDefault('video.intro-outro'),
 
     'ska._default': () => resolveFromTeamDefault('ska._default'),
     'ska.parsing.level3': () => resolveFromTeamDefault('ska.parsing.level3'),

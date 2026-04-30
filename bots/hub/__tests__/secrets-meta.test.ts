@@ -25,7 +25,7 @@ describe('isSecretKey', () => {
     ['refresh_token', true],
     ['oc', true],
     ['bot_token', true],
-    ['worker_jwt_secret', true],
+    ['service_jwt_secret', true],
     ['db_encryption_key', true],
     ['naver_pw', true],
     ['gateway_token', true],

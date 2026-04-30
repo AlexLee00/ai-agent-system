@@ -25,7 +25,6 @@ const SCOPE_ALIASES: Record<string, string> = {
   global: 'global',
   luna: 'investment',
   investment: 'investment',
-  worker: 'worker',
   blog: 'blog',
   claude: 'claude',
   orchestrator: 'orchestrator',

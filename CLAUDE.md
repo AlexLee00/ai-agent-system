@@ -16,10 +16,10 @@
 | 시스템팀장 | 클로드 | 모니터링, 유지보수 (덱스터/아처/닥터) |
 | SKA팀장 | 스카 | 스터디카페 예약/매출 관리 |
 | 블로팀장 | 블로 | 네이버 블로그 자동화 |
-| 워커팀장 | 워커 | 비즈니스 관리 SaaS |
-| 비디오팀장 | 에디 | 영상 자동편집/자동생성 시스템 |
 | 연구팀장 | (예정) | 새 기술 R&D, 시스템 매시간 업그레이드 |
 | 감정팀장 | (예정) | 법원 소프트웨어 감정 자동화 |
+
+> 워커팀/에디팀은 2026-04-30부로 은퇴 처리됐다. 설계 기록만 `docs/archive/retired-teams/`에 보존한다.
 
 ### 3계층 에이전트 모델
 ```
@@ -49,7 +49,7 @@ DB: PostgreSQL 단일 (jay DB) + pgvector — 별도 DB 추가 금지
 시크릿 아키텍처:
   bots/hub/secrets-store.json = Single Source of Truth (모든 API 키, gitignore)
   bots/investment/config.yaml = 런타임 설정만 (git 추적, API 키 없음!)
-  reservation/worker secrets.json = 삭제됨 (Hub 경유)
+  reservation/worker legacy secrets.json = 삭제됨 (Hub 경유)
 
 LLM 아키텍처:
   로컬 MLX (:11434) — qwen2.5-7b(현재 배포 fast) + deepseek-r1-32b(현재 배포 deep) + qwen3-embed-0.6b(임베딩) + gemma4:latest(gemma-4-e2b-it-4bit 로컬 alias, Gemma 파일럿)
@@ -132,7 +132,7 @@ LLM 아키텍처:
 
 ### 포스트 리붓 운영 메모
 - 재부팅 직후에는 `scripts/post-reboot.sh`를 먼저 실행하고, follow-up 파일(`/tmp/post-reboot-services.txt`, `/tmp/post-reboot-followup.txt`)을 기준으로 복구 상태를 점검한다.
-- 운영 확인 우선순위는 `hub / n8n / mlx / rag` → `luna / blog / ska / worker / claude` 순서로 유지한다.
+- 운영 확인 우선순위는 `hub / n8n / mlx / rag` → `luna / blog / ska / claude` 순서로 유지한다.
 - 예약팀 `today-audit`는 launchd 스케줄을 놓친 재부팅 케이스가 생길 수 있으므로, 필요 시 wrapper 경로 `bots/reservation/auto/monitors/run-today-audit.sh`로 수동 실행해 `/tmp/today-audit.log` 성공 이력을 복구한다.
 
 ### 커밋 규칙

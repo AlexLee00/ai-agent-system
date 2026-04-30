@@ -247,15 +247,6 @@ const CATEGORY_HANDLERS: Record<string, CategoryHandler> = {
     };
   },
 
-  worker: () => {
-    const store = loadSecretsStore();
-    const d = store?.worker || {};
-    return {
-      worker_jwt_secret: d.worker_jwt_secret || '',
-      worker_webhook_secret: d.worker_webhook_secret || '',
-    };
-  },
-
   justin: () => {
     const store = loadSecretsStore();
     const d = store?.justin || {};

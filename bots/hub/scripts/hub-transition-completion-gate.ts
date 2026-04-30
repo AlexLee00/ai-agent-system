@@ -51,6 +51,17 @@ const RETIRED_GATEWAY_MARKERS = [
 
 const RETIRED_GATEWAY_SOURCE_PATTERN = 'openclaw|legacy_gateway|18789|openclaw-gateway|OPENCLAW_BIN|execFile\\([^\\n]*openclaw|spawn\\([^\\n]*openclaw';
 
+const RETIRED_TEAM_PATHS = [
+  'bots/worker',
+  'bots/video',
+  'bots/hub/config/claude-code/worker-ops.settings.json',
+  'bots/hub/config/claude-code/video-edi.settings.json',
+  'bots/orchestrator/lib/commanders/worker-adapter.ts',
+  'bots/orchestrator/lib/commanders/video-adapter.ts',
+];
+
+const RETIRED_TEAM_MARKER_PATTERN = 'bots/worker/|bots/video/|ai\\.worker\\.|/worker-health|worker-ops\\.settings|video-edi\\.settings|VIDEO_N8N_TOKEN|/api/video';
+
 const RUNTIME_SOURCE_SCOPES = [
   'packages/core/lib',
   'bots/orchestrator/src',
@@ -65,7 +76,6 @@ const RUNTIME_SOURCE_SCOPES = [
   'bots/reservation/lib',
   'bots/ska',
   'bots/sigma/shared',
-  'bots/worker/lib',
   'bots/legal/lib',
   'bots/darwin/lib',
 ];
@@ -205,6 +215,37 @@ function validateRuntimeSourceScan(): { scannedScopes: number } {
   return { scannedScopes: scopes.length };
 }
 
+function validateRetiredWorkerEdiSurface(): { retiredPaths: number; scannedFiles: number } {
+  const existingPaths = RETIRED_TEAM_PATHS.filter((relativePath) => fs.existsSync(repoPath(relativePath)));
+  assert.deepEqual(existingPaths, [], `retired Worker/Edi runtime paths must not exist:\n${existingPaths.join('\n')}`);
+
+  const result = spawnSync('git', [
+    'grep',
+    '-n',
+    '-E',
+    RETIRED_TEAM_MARKER_PATTERN,
+    '--',
+    '.',
+    ':!docs/archive/retired-teams/**',
+    ':!docs/history/**',
+    ':!docs/archive/**',
+    ':!bots/hub/scripts/hub-transition-completion-gate.ts',
+    ':!scripts/pre-commit',
+  ], {
+    cwd: REPO_ROOT,
+    encoding: 'utf8',
+  });
+
+  if (![0, 1].includes(Number(result.status))) {
+    throw new Error(`retired Worker/Edi marker scan failed: ${result.stderr || result.stdout || `status ${result.status}`}`);
+  }
+  assert.equal((result.stdout || '').trim(), '', `active tree contains retired Worker/Edi runtime references:\n${result.stdout}`);
+  return {
+    retiredPaths: RETIRED_TEAM_PATHS.length,
+    scannedFiles: Number(result.status) === 1 ? 0 : (result.stdout || '').trim().split('\n').filter(Boolean).length,
+  };
+}
+
 function main(): void {
   assert.equal(fs.existsSync(HUB_ROOT), true, 'Hub root must exist');
   validateRouteRegistry();
@@ -212,6 +253,7 @@ function main(): void {
   validateSecretsRoute();
   const runtimeProfileSummary = validateRuntimeProfiles();
   const sourceScanSummary = validateRuntimeSourceScan();
+  const retiredTeamSummary = validateRetiredWorkerEdiSurface();
 
   console.log(JSON.stringify({
     ok: true,
@@ -221,6 +263,8 @@ function main(): void {
     runtime_teams: runtimeProfileSummary.teams,
     scanned_runtime_scopes: sourceScanSummary.scannedScopes,
     retired_gateway_runtime_surface: false,
+    retired_worker_edi_paths_checked: retiredTeamSummary.retiredPaths,
+    retired_worker_edi_runtime_surface: false,
   }, null, 2));
 }
 

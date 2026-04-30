@@ -82,9 +82,6 @@
 - luna optimize-ta alerts → investment alert-publisher → reporting-hub webhook fanout
 - luna sweeper alerts → investment alert-publisher → reporting-hub webhook fanout
 - luna reporter daily/accuracy alerts → investment alert-publisher → reporting-hub webhook fanout
-- worker health-check alerts → reporting-hub notice + severity fanout
-- worker claude-api-monitor alerts → reporting-hub notice + severity fanout
-- worker approval request telegram alerts → reporting-hub telegram_api target
 - dexter autofix blocked-action alerts → reporting-hub notice + severity fanout
 - shared telegram reporter wrapper → reporting-hub webhook fanout
 - shared telegram sender current fanout → reporting-hub webhook fanout
@@ -94,8 +91,6 @@
 - investment shared rag-client store → reporting-hub rag target
 - investment review/analysis script RAG writes → shared rag-client → reporting-hub rag target
 - sigma daily/meta-review RAG writes → reporting-hub rag target
-- video edit result/feedback RAG writes → reporting-hub rag target
-- worker document/journal/schedule RAG writes → reporting-hub rag target
 - claude doctor recovery/failure RAG writes → reporting-hub rag target
 - ska python rebecca/forecast RAG writes → reporting-hub rag target (fallback direct insert retained)
 - blog publ RAG writes → reporting-hub rag target
@@ -133,9 +128,7 @@ reporting-hub 정리와 병행해서, human-facing CLI/report outputs에는 addi
   - pickko reservation/report/admin/diagnostic/payment outputs
 - [bots/investment/shared/cli-insight.ts](/Users/alexlee/projects/ai-agent-system/bots/investment/shared/cli-insight.ts)
   - balance/price/transfer outputs
-- [bots/worker/lib/cli-insight.legacy.js](/Users/alexlee/projects/ai-agent-system/bots/worker/lib/cli-insight.legacy.js)
   - expense import / n8n intake outputs
-- [bots/video/lib/cli-insight.js](/Users/alexlee/projects/ai-agent-system/bots/video/lib/cli-insight.js)
   - n8n path / final structure gap outputs
 - [bots/blog/lib/cli-insight.ts](/Users/alexlee/projects/ai-agent-system/bots/blog/lib/cli-insight.ts)
   - n8n pipeline / weekly evolution / performance outputs
@@ -157,7 +150,6 @@ reporting-hub 정리와 병행해서, human-facing CLI/report outputs에는 addi
 - reservation
 - investment
 - blog
-- worker
 - claude
 
 의미:

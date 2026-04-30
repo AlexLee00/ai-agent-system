@@ -99,7 +99,6 @@ function unitSmokeScripts(): string[] {
     'team-llm-route-drill-report-smoke.ts',
     'agent-hub-transition-audit.ts',
     'hub-transition-completion-gate.ts',
-    'video-hub-transition-smoke.ts',
     'llm-routing-standard-smoke.ts',
     'gemini-route-assignment-smoke.ts',
     'steward-gemini-model-drill-smoke.ts',

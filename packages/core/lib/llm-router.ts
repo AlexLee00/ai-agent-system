@@ -49,19 +49,16 @@ const TEAM_REQUEST_MAP: TeamRequestMap = {
     risk_assessment: 'complex',
     strategy_review: 'deep',
   },
-  worker: {
-    document_classify: 'simple',
-    ai_question: 'medium',
-    report_generate: 'medium',
-    revenue_forecast: 'complex',
-  },
 };
 
 const TEAM_DEFAULTS: Record<string, Complexity> = {
   ska: 'simple',
   claude: 'medium',
   luna: 'medium',
-  worker: 'medium',
+  blog: 'medium',
+  darwin: 'complex',
+  sigma: 'medium',
+  justin: 'complex',
 };
 
 function classifyComplexity({ team, requestType, inputLength = 0, urgency = 'normal' }: SelectOptions): Complexity {

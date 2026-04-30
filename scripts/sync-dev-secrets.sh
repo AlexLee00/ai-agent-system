@@ -31,13 +31,11 @@ ok "${OPS_HOST} 접속 확인"
 echo "[ 1 ] OPS에서 시크릿/설정 파일 복사"
 FILES=(
   "bots/reservation/secrets.json"
-  "bots/worker/secrets.json"
   "bots/investment/config.yaml"
   "bots/reservation/config.yaml"
   "bots/blog/config.json"
   "bots/claude/config.json"
   "bots/ska/config.json"
-  "bots/worker/config.json"
   "bots/orchestrator/config.json"
 )
 
@@ -110,24 +108,6 @@ NODE
 else
   warn "reservation/secrets.json 없음"
 fi
-
-WKR_SECRETS="$PROJECT_DIR/bots/worker/secrets.json"
-if [ -f "$WKR_SECRETS" ]; then
-  node - "$WKR_SECRETS" <<'NODE'
-const fs = require('fs');
-const crypto = require('crypto');
-const file = process.argv[2];
-const data = JSON.parse(fs.readFileSync(file, 'utf8'));
-data.worker_jwt_secret = crypto.randomBytes(32).toString('hex');
-data.worker_webhook_secret = crypto.randomBytes(32).toString('hex');
-fs.writeFileSync(file, JSON.stringify(data, null, 2));
-console.log('  DEV 전용 JWT/webhook 키 생성 완료');
-NODE
-  ok "worker/secrets.json DEV 키 생성"
-else
-  warn "worker/secrets.json 없음"
-fi
-
 echo ""
 echo "[ 4 ] 파일 권한 설정"
 find "$PROJECT_DIR/bots" -name "secrets.json" -not -path "*/node_modules/*" -exec chmod 600 {} \; 2>/dev/null || true

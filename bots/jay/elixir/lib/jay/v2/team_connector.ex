@@ -1,12 +1,12 @@
 defmodule Jay.V2.TeamConnector do
   @moduledoc """
-  Hub API를 통해 9팀 데이터를 수집하는 커넥터.
+  Hub API를 통해 현역 팀 데이터를 수집하는 커넥터.
   growth_cycle.ex가 SENSE 단계에서 호출.
   """
 
   require Logger
 
-  @teams [:luna, :ska, :blog, :claude, :worker, :platform, :darwin, :justin, :video]
+  @teams [:luna, :ska, :blog, :claude, :platform, :darwin, :justin]
 
   def all_teams, do: @teams
 
@@ -29,7 +29,7 @@ defmodule Jay.V2.TeamConnector do
     nil
   end
 
-  @doc "9팀 병렬 수집. 실패 팀은 nil로 포함."
+  @doc "현역 팀 병렬 수집. 실패 팀은 nil로 포함."
   def collect_all do
     @teams
     |> Task.async_stream(&{&1, collect(&1)}, timeout: 30_000, on_timeout: :kill_task)
@@ -188,19 +188,6 @@ defmodule Jay.V2.TeamConnector do
     }
   end
 
-  defp do_collect(:worker) do
-    deploys = query_one("""
-      SELECT COUNT(*)::int AS deploys_7d
-      FROM worker.deployments
-      WHERE deployed_at >= NOW() - interval '7 days' AND status = 'success'
-    """, "worker")
-
-    %{
-      metric_type: :platform_ops,
-      deploys_7d: get_in(deploys, ["deploys_7d"]) || 0
-    }
-  end
-
   defp do_collect(:darwin) do
     try do
       Darwin.V2.TeamConnector.collect_kpi()
@@ -225,7 +212,7 @@ defmodule Jay.V2.TeamConnector do
     end
   end
 
-  defp do_collect(team) when team in [:platform, :justin, :video] do
+  defp do_collect(team) when team in [:platform, :justin] do
     agents = query_one("""
       SELECT
         COUNT(*)::int AS active_agents,

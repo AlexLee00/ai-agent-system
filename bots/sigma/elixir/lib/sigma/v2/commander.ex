@@ -25,10 +25,10 @@ defmodule Sigma.V2.Commander do
     Directive 실행 전 반드시 self-critique 수행.
     """
 
-  @rotation ["ska", "worker", "claude", "justin", "video"]
+  @rotation ["ska", "claude", "justin", "blog", "luna"]
   @core_analysts ["pipe", "canvas", "curator"]
   @epsilon 0.2
-  @known_teams MapSet.new(["blog", "luna", "darwin", "claude", "worker", "video", "ska", "justin"])
+  @known_teams MapSet.new(["blog", "luna", "darwin", "claude", "ska", "justin", "sigma"])
 
   @type memory_snippet :: %{optional(:metadata) => map(), optional(:importance) => float()}
 
@@ -232,10 +232,9 @@ defmodule Sigma.V2.Commander do
       svc = item[:service] || Map.get(item, :service, "")
       acc
       |> maybe_add_team(String.contains?(svc, ".claude."), "claude")
-      |> maybe_add_team(String.contains?(svc, ".worker."), "worker")
-      |> maybe_add_team(String.contains?(svc, ".video"), "video")
       |> maybe_add_team(String.contains?(svc, ".ska."), "ska")
       |> maybe_add_team(String.contains?(svc, ".blog."), "blog")
+      |> maybe_add_team(String.contains?(svc, ".investment."), "luna")
     end)
   end
 
@@ -275,9 +274,9 @@ defmodule Sigma.V2.Commander do
 
         Enum.reduce(teams, acc, fn team, inner ->
           case String.downcase(to_string(team)) do
-            t when t in ["claude", "worker", "ska"] -> Map.update!(inner, :risk, &(&1 + weight))
+            t when t in ["claude", "ska", "sigma"] -> Map.update!(inner, :risk, &(&1 + weight))
             t when t in ["blog", "luna"] -> Map.update!(inner, :growth, &(&1 + weight))
-            t when t in ["darwin", "video", "justin"] -> Map.update!(inner, :trend, &(&1 + weight))
+            t when t in ["darwin", "justin"] -> Map.update!(inner, :trend, &(&1 + weight))
             _ -> inner
           end
         end)

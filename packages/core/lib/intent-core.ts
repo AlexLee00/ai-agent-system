@@ -109,7 +109,6 @@ const AUTO_PROMOTE_THRESHOLDS: Record<string, Threshold> = {
   ska_query: { minCount: 4, minConfidence: 0.75 },
   claude_query: { minCount: 4, minConfidence: 0.75 },
   blog_query: { minCount: 4, minConfidence: 0.75 },
-  worker_query: { minCount: 4, minConfidence: 0.75 },
   status: { minCount: 3, minConfidence: 0.7 },
   queue: { minCount: 3, minConfidence: 0.7 },
   brief: { minCount: 3, minConfidence: 0.7 },
@@ -121,9 +120,6 @@ const AUTO_PROMOTE_THRESHOLDS: Record<string, Threshold> = {
 const AUTO_PROMOTE_TEAM_PROFILES: Record<string, Record<string, Threshold>> = {
   default: {},
   jay: {},
-  worker: {
-    list_schedule: { minCount: 4, minConfidence: 0.8 },
-  },
   commander: {
     default: { minCount: 6, minConfidence: 0.85 },
     luna_query: { minCount: 5, minConfidence: 0.8 },
@@ -165,7 +161,6 @@ const SAFE_AUTO_PROMOTE_PREFIXES = [
   'ska_query',
   'claude_query',
   'blog_query',
-  'worker_query',
 ];
 
 const TEAM_INTENT_META: Record<string, TeamMeta> = {
@@ -178,7 +173,6 @@ const SUPPORTED_TEAM_INTENTS = Object.keys(TEAM_INTENT_META);
 
 const INTENT_HEALTH_TARGETS: IntentHealthTarget[] = [
   { key: 'jay', schema: 'claude', title: '제이', learningProfile: 'jay' },
-  { key: 'worker', schema: 'worker', title: '워커', learningProfile: 'worker' },
   { key: 'luna', schema: 'investment', title: '루나', learningProfile: 'jay' },
   { key: 'ska', schema: 'ska', title: '스카', learningProfile: 'jay' },
   { key: 'claude', schema: 'claude', title: '클로드', learningProfile: 'jay' },

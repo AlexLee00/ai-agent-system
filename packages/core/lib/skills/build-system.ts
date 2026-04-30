@@ -3,9 +3,7 @@
 
 const { execSync } = require('child_process');
 
-const BUILD_TARGETS = [
-  { name: 'worker-web', path: 'bots/worker/web', cmd: 'npm run build', trigger: 'bots/worker/web/' },
-];
+const BUILD_TARGETS = [];
 
 // 변경 파일에서 빌드 필요한 프로젝트 감지
 function detectBuildTargets(changedFiles) {

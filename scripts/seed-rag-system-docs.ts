@@ -22,7 +22,6 @@ const DOCS = [
   { file: 'bots/claude/CLAUDE.md',  category: 'claude_team', desc: '클로드팀 운영 규칙' },
   { file: 'bots/ska/CLAUDE.md',     category: 'ska_team',    desc: '스카팀 운영 규칙' },
   { file: 'bots/investment/CLAUDE.md', category: 'luna_team', desc: '루나팀 운영 규칙' },
-  { file: 'bots/worker/CLAUDE.md',  category: 'worker_team', desc: '워커팀 운영 규칙' },
 ];
 
 async function seed() {

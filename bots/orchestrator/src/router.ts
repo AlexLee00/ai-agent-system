@@ -287,7 +287,7 @@ const HELP_TEXT = `🤖 제이(Jay) 명령 안내 v2.0
   /reporting-health producers 또는 "리포팅 프로듀서 랭킹"
   /feedback-health 또는 "AI 피드백 헬스"
   /feedback-health summary 또는 "피드백 헬스 요약"
-  /luna-health | /worker-health | /claude-health | /ska-health | /blog-health
+  /luna-health | /claude-health | /ska-health | /blog-health
 
 🔇 무음 제어
   /mute <대상> <시간>   예) /mute luna 1h
@@ -1204,10 +1204,8 @@ async function runFeedbackHealthDirect(query = '') {
   if (tokens.includes('summary') || tokens.includes('요약')) {
     args.push('--summary');
   }
-  const schemaToken = tokens.find((token) => ['worker', 'blog', 'claude', '워커', '블로', '블로그', '클로드'].includes(token));
+  const schemaToken = tokens.find((token) => ['blog', 'claude', '블로', '블로그', '클로드'].includes(token));
   const schemaMap = {
-    worker: 'worker',
-    '워커': 'worker',
     blog: 'blog',
     '블로': 'blog',
     '블로그': 'blog',
@@ -1223,17 +1221,6 @@ async function runFeedbackHealthDirect(query = '') {
     errorPrefix: '⚠️ AI 피드백 헬스 실행 실패',
     failPrefix: '⚠️ AI 피드백 헬스 실패',
     emptyText: 'ℹ️ AI 피드백 헬스 결과가 비어 있습니다.',
-  });
-}
-
-async function runWorkerHealthDirect() {
-  const root = path.join(__dirname, '..', '..', '..');
-  const script = path.join(root, 'bots', 'worker', 'scripts', 'health-report.js');
-  return await runNodeScriptText(script, {
-    timeoutText: '⏱ 워커 운영 헬스 조회가 60초 내 끝나지 않았습니다. 잠시 후 다시 시도해 주세요.',
-    errorPrefix: '⚠️ 워커 운영 헬스 실행 실패',
-    failPrefix: '⚠️ 워커 운영 헬스 실패',
-    emptyText: 'ℹ️ 워커 운영 헬스 결과가 비어 있습니다.',
   });
 }
 
@@ -1270,15 +1257,6 @@ async function runBlogHealthDirect() {
   });
 }
 
-async function getWorkerIntentHealth() {
-  return await getPromotionPendingHealth(pgPool, {
-    schema: 'worker',
-    pendingWarnThreshold: 5,
-    initialDetail: '  인텐트 후보 테이블 없음 (초기 상태)',
-    missingReason: '워커 인텐트 후보 상태 조회에 실패했습니다.',
-  });
-}
-
 async function getClaudeCommandHealth() {
   return await getPendingCommandHealth(pgPool, {
     dbName: 'claude',
@@ -1300,7 +1278,6 @@ async function buildUnifiedOpsHealthReport(options = {}) {
   const root = path.join(__dirname, '..', '..', '..');
   const scripts = {
     luna: path.join(root, 'bots', 'investment', 'scripts', 'health-report.js'),
-    worker: path.join(root, 'bots', 'worker', 'scripts', 'health-report.js'),
     claude: path.join(root, 'bots', 'claude', 'scripts', 'health-report.js'),
     ska: path.join(root, 'dist', 'ts-runtime', 'bots', 'reservation', 'scripts', 'health-report.js'),
     blog: path.join(root, 'bots', 'blog', 'scripts', 'health-report.js'),
@@ -1308,9 +1285,8 @@ async function buildUnifiedOpsHealthReport(options = {}) {
     feedback: path.join(root, 'bots', 'orchestrator', 'scripts', 'feedback-health.js'),
   };
 
-  const [luna, worker, claude, ska, blog, criticalPath, feedback] = await Promise.all([
+  const [luna, claude, ska, blog, criticalPath, feedback] = await Promise.all([
     runNodeScriptJson(scripts.luna, ['--json']),
-    runNodeScriptJson(scripts.worker, ['--json']),
     runNodeScriptJson(scripts.claude, ['--json']),
     runNodeScriptJson(scripts.ska, ['--json']),
     runNodeScriptJson(scripts.blog, ['--json']),
@@ -1318,10 +1294,7 @@ async function buildUnifiedOpsHealthReport(options = {}) {
     runNodeScriptJson(scripts.feedback, ['--json']),
   ]);
   const lunaRisk = getLunaRiskSnapshot();
-  const [workerIntent, claudeCommands] = await Promise.all([
-    getWorkerIntentHealth(),
-    getClaudeCommandHealth(),
-  ]);
+  const claudeCommands = await getClaudeCommandHealth();
   const reportingWarningSummary = summarizePayloadWarnings(
     getRecentPayloadWarnings({ withinHours: 24, limit: 50 })
   );
@@ -1371,24 +1344,6 @@ async function buildUnifiedOpsHealthReport(options = {}) {
       priority: !luna ? 5 : Math.max(
         luna?.serviceHealth?.warnCount > 0 ? 3 : 0,
         lunaRisk.hasWarn ? Math.min(4, 1 + lunaRisk.reasons.length) : 0,
-      ),
-    },
-    {
-      title: '워커',
-      summary: worker
-        ? `서비스 경고 ${worker.serviceHealth.warnCount}건 / 엔드포인트 경고 ${worker.endpointHealth.warnCount}건${workerIntent.hasWarn ? ` / 인텐트 후보 ${workerIntent.pendingCount}건` : ''}`
-        : '조회 실패',
-      detail: worker
-        ? [
-          `  서비스 ${worker.serviceHealth.okCount}/${worker.serviceHealth.warnCount}, 엔드포인트 ${worker.endpointHealth.okCount}/${worker.endpointHealth.warnCount}`,
-          workerIntent.detail,
-        ].join('\n')
-        : '  health-report 실행 실패',
-      hasWarn: !worker || worker.serviceHealth.warnCount > 0 || worker.endpointHealth.warnCount > 0 || workerIntent.hasWarn,
-      priority: !worker ? 5 : Math.max(
-        worker?.serviceHealth?.warnCount > 0 ? 3 + worker.serviceHealth.warnCount : 0,
-        worker?.endpointHealth?.warnCount > 0 ? 2 + worker.endpointHealth.warnCount : 0,
-        workerIntent.hasWarn ? 2 + Math.ceil(workerIntent.pendingCount / 5) : 0,
       ),
     },
     {
@@ -1473,7 +1428,7 @@ async function buildUnifiedOpsHealthReport(options = {}) {
   const warnCount = rows.filter((row) => row.hasWarn).length;
   const reasons = warnCount > 0
     ? [`팀별 헬스에서 주의 대상 ${warnCount}팀이 감지됐습니다.`]
-    : ['오케스트레이터, 루나, 워커, 클로드, 스카 운영 헬스가 현재는 안정 구간입니다.'];
+    : ['오케스트레이터, 루나, 클로드, 스카 운영 헬스가 현재는 안정 구간입니다.'];
   if (!criticalPath || !criticalPath.n8nHealthy || !criticalPath.webhookRegistered) {
     reasons.push(`오케스트레이터 critical webhook: ${criticalPath ? `${criticalPath.webhookReason || 'unknown'} (status ${criticalPath.webhookStatus || 0})` : '조회 실패'}`);
   }
@@ -1487,9 +1442,6 @@ async function buildUnifiedOpsHealthReport(options = {}) {
   }
   if (lunaRisk.hasWarn) {
     reasons.push(`루나 투자 리스크: ${lunaRisk.reasons.slice(0, 2).join(', ')}`);
-  }
-  if (workerIntent.hasWarn) {
-    reasons.push(...workerIntent.reasons);
   }
   if (claudeCommands.hasWarn) {
     reasons.push(...claudeCommands.reasons);
@@ -1516,7 +1468,6 @@ async function buildUnifiedOpsHealthReport(options = {}) {
       '오케스트레이터': '/orchestrator-health',
       '리포팅': '/reporting-health',
       '루나': '/luna-health',
-      '워커': '/worker-health',
       '클로드': '/claude-health',
       '스카': '/ska-health | /ska-forecast',
       '블로': '/blog-health',
@@ -1608,7 +1559,7 @@ async function buildUnifiedOpsHealthReport(options = {}) {
       '오케스트레이터: /orchestrator-health',
       '리포팅: /reporting-health',
       '피드백: /feedback-health',
-      '세부 조회: /luna-health | /worker-health | /claude-health | /ska-health',
+      '세부 조회: /luna-health | /claude-health | /ska-health',
       '블로 조회: /blog-health',
     ],
   });
@@ -2149,11 +2100,6 @@ async function handleIntent(parsed, msg, notify = async () => {}) {
     case 'luna_health': {
       await notify('⏳ 루나 운영 헬스 확인 중...');
       return await runLunaHealthDirect();
-    }
-
-    case 'worker_health': {
-      await notify('⏳ 워커 운영 헬스 확인 중...');
-      return await runWorkerHealthDirect();
     }
 
     case 'claude_health': {

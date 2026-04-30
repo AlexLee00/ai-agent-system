@@ -17,7 +17,6 @@ description: Use when extending, reviewing, or debugging the shared intent engin
 
 적용 대상:
 
-- Worker: `bots/worker/lib/chat-agent.js`, `bots/worker/web/server.js`
 - Claude: `bots/claude/src/claude-commander.js`
 - Luna: `bots/investment/luna-commander.cjs`
 - Ska: `bots/reservation/src/ska.ts`

@@ -161,6 +161,37 @@ while IFS= read -r file; do
   done
 done <<< "$STAGED"
 
+# ─── 3.2. retired Worker/Edi 런타임 재도입 차단 ────────────────────────────
+RETIRED_TEAM_SKIP_REGEX='^(docs/archive/retired-teams/|bots/hub/scripts/.*(hub-transition|retired|worker-edi).*$|scripts/pre-commit$)'
+RETIRED_TEAM_PATTERNS=(
+  'bots/worker/'
+  'bots/video/'
+  'ai\.worker\.'
+  '/worker-health'
+  'worker-ops\.settings'
+  'video-edi\.settings'
+  'VIDEO_N8N_TOKEN'
+  '/api/video'
+)
+
+while IFS= read -r file; do
+  [ -z "$file" ] && continue
+  if echo "$STAGED_DELETIONS" | grep -qxF "$file"; then continue; fi
+  if echo "$file" | grep -Eq "$RETIRED_TEAM_SKIP_REGEX"; then continue; fi
+  CONTENT=$(git show ":$file" 2>/dev/null || true)
+  [ -z "$CONTENT" ] && continue
+  for pattern in "${RETIRED_TEAM_PATTERNS[@]}"; do
+    MATCHES=$(echo "$CONTENT" | grep -inE "$pattern" || true)
+    if [ -n "$MATCHES" ]; then
+      echo -e "${RED}❌ retired Worker/Edi runtime marker 재도입 차단: ${file}${NC}"
+      echo "$MATCHES" | head -3 | while read -r line; do
+        echo -e "   ${YELLOW}→ $line${NC}"
+      done
+      BLOCKED=1
+    fi
+  done
+done <<< "$STAGED"
+
 # ─── 3.25. 고신뢰 토큰 시그니처 전체 스캔 ────────────────────────────────
 # staged 파일 검사만으로는 provider 고유 토큰 모양을 놓칠 수 있으므로,
 # tracked 파일 전체를 값 비노출(redacted) 방식으로 한 번 더 검사한다.
