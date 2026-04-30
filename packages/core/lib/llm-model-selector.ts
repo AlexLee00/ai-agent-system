@@ -19,13 +19,8 @@ type SelectorOptions = {
   [key: string]: any;
 };
 
-const GEMINI_OAUTH_FLASH_LITE_MODEL = 'gemini-oauth/gemini-2.5-flash-lite';
-const GEMINI_OAUTH_FLASH_MODEL = 'gemini-oauth/gemini-2.5-flash';
-const GEMINI_OAUTH_PRO_MODEL = 'gemini-oauth/gemini-2.5-pro';
-const GEMINI_CODEASSIST_PRO_MODEL = 'gemini-codeassist-oauth/gemini-2.5-pro';
 const GEMINI_CLI_FLASH_LITE_MODEL = 'gemini-cli-oauth/gemini-2.5-flash-lite';
 const GEMINI_CLI_FLASH_MODEL = 'gemini-cli-oauth/gemini-2.5-flash';
-const GEMINI_CLI_PRO_MODEL = 'gemini-cli-oauth/gemini-2.5-pro';
 
 function clone<T>(value: T): T {
   return JSON.parse(JSON.stringify(value));
@@ -91,10 +86,12 @@ function applyPolicyOverride(resolved: any, policyOverride: any, options: Select
 }
 
 function resolvePreferredProvider(preferredApi: string, groqModel: string, maxTokens: number): LLMChainEntry {
-  if (preferredApi === 'claude-code') return { provider: 'claude-code', model: 'claude-code/sonnet', maxTokens, temperature: 0.1 };
+  if (preferredApi === 'claude-code') return { provider: 'claude-code', model: 'claude-code/haiku', maxTokens, temperature: 0.1 };
   if (preferredApi === 'anthropic') return { provider: 'anthropic', model: 'claude-haiku-4-5-20251001', maxTokens, temperature: 0.1 };
   if (preferredApi === 'openai') return { provider: 'openai', model: 'gpt-4o-mini', maxTokens, temperature: 0.1 };
-  if (preferredApi === 'gemini' || preferredApi === 'gemini-oauth') return { provider: 'gemini-oauth', model: GEMINI_OAUTH_FLASH_MODEL, maxTokens, temperature: 0.1 };
+  if (preferredApi === 'gemini' || preferredApi === 'gemini-oauth' || preferredApi === 'gemini-cli-oauth') {
+    return { provider: 'gemini-cli-oauth', model: GEMINI_CLI_FLASH_MODEL, maxTokens, temperature: 0.1 };
+  }
   return { provider: 'groq', model: `groq/${groqModel}`, maxTokens, temperature: 0.1 };
 }
 
@@ -215,7 +212,7 @@ const TEAM_SELECTOR_DEFAULTS: Record<string, any> = {
       primary: { provider: 'openai-oauth', model: 'gpt-5.4', maxTokens: 4096, temperature: 0.2 },
       fallbacks: [
         { provider: 'groq', model: 'llama-3.1-8b-instant', maxTokens: 4096, temperature: 0.3 },
-        { provider: 'claude-code', model: 'claude-code/sonnet', maxTokens: 4096, temperature: 0.2 },
+        { provider: 'claude-code', model: 'claude-code/haiku', maxTokens: 4096, temperature: 0.2 },
       ],
     },
     lead: {
@@ -235,25 +232,26 @@ const TEAM_SELECTOR_DEFAULTS: Record<string, any> = {
   },
   blog: {
     'pos.writer': {
-      primary: { provider: 'claude-code', model: 'claude-code/sonnet', maxTokens: 16000, temperature: 0.82 },
+      primary: { provider: 'openai-oauth', model: 'gpt-5.4', maxTokens: 16000, temperature: 0.82 },
       fallbacks: [
-        { provider: 'openai-oauth', model: 'gpt-5.4', maxTokens: 16000, temperature: 0.82 },
-        { provider: 'gemini-oauth', model: GEMINI_OAUTH_FLASH_MODEL, maxTokens: 12000, temperature: 0.75 },
+        { provider: 'groq', model: 'qwen/qwen3-32b', maxTokens: 12000, temperature: 0.75 },
+        { provider: 'gemini-cli-oauth', model: GEMINI_CLI_FLASH_MODEL, maxTokens: 12000, temperature: 0.75 },
+        { provider: 'claude-code', model: 'claude-code/haiku', maxTokens: 8000, temperature: 0.72 },
       ],
     },
     'gems.writer': {
       primary: { provider: 'openai-oauth', model: 'gpt-5.4', maxTokens: 16000, temperature: 0.85 },
       fallbacks: [
-        { provider: 'claude-code', model: 'claude-code/sonnet', maxTokens: 16000, temperature: 0.85 },
+        { provider: 'claude-code', model: 'claude-code/haiku', maxTokens: 8000, temperature: 0.75 },
         { provider: 'groq', model: 'qwen/qwen3-32b', maxTokens: 12000, temperature: 0.75 },
-        { provider: 'gemini-oauth', model: GEMINI_OAUTH_FLASH_MODEL, maxTokens: 12000, temperature: 0.75 },
+        { provider: 'gemini-cli-oauth', model: GEMINI_CLI_FLASH_MODEL, maxTokens: 12000, temperature: 0.75 },
       ],
     },
     'social.summarize': {
       primary: { provider: 'openai-oauth', model: 'gpt-5.4-mini', maxTokens: 1024, temperature: 0.1 },
       fallbacks: [
         { provider: 'groq', model: 'llama-3.1-8b-instant', maxTokens: 1024, temperature: 0.1 },
-        { provider: 'claude-code', model: 'claude-code/sonnet', maxTokens: 1024, temperature: 0.1 },
+        { provider: 'claude-code', model: 'claude-code/haiku', maxTokens: 1024, temperature: 0.1 },
       ],
     },
     'social.caption': {
@@ -281,15 +279,16 @@ const TEAM_SELECTOR_DEFAULTS: Record<string, any> = {
       ],
     },
     'curriculum.generate': {
-      primary: { provider: 'claude-code', model: 'claude-code/sonnet', maxTokens: 8000, temperature: 0.5 },
+      primary: { provider: 'openai-oauth', model: 'gpt-5.4', maxTokens: 8000, temperature: 0.5 },
       fallbacks: [
-        { provider: 'openai-oauth', model: 'gpt-5.4', maxTokens: 8000, temperature: 0.5 },
+        { provider: 'groq', model: 'qwen/qwen3-32b', maxTokens: 8000, temperature: 0.5 },
+        { provider: 'claude-code', model: 'claude-code/haiku', maxTokens: 4000, temperature: 0.5 },
       ],
     },
     'feedback.analyze': {
       primary: { provider: 'openai-oauth', model: 'gpt-5.4-mini', maxTokens: 700, temperature: 0.1 },
       fallbacks: [
-        { provider: 'claude-code', model: 'claude-code/sonnet', maxTokens: 700, temperature: 0.1 },
+        { provider: 'claude-code', model: 'claude-code/haiku', maxTokens: 700, temperature: 0.1 },
         { provider: 'groq', model: 'llama-3.1-8b-instant', maxTokens: 700, temperature: 0.1 },
       ],
     },
@@ -297,21 +296,21 @@ const TEAM_SELECTOR_DEFAULTS: Record<string, any> = {
       primary: { provider: 'groq', model: 'llama-3.1-8b-instant', maxTokens: 600, temperature: 0.65, timeoutMs: 15000 },
       fallbacks: [
         { provider: 'openai-oauth', model: 'gpt-5.4-mini', maxTokens: 600, temperature: 0.5, timeoutMs: 12000 },
-        { provider: 'claude-code', model: 'claude-code/sonnet', maxTokens: 600, temperature: 0.75, timeoutMs: 12000 },
+        { provider: 'claude-code', model: 'claude-code/haiku', maxTokens: 600, temperature: 0.75, timeoutMs: 12000 },
       ],
     },
     'commenter.neighbor': {
       primary: { provider: 'groq', model: 'llama-3.1-8b-instant', maxTokens: 700, temperature: 0.7, timeoutMs: 15000 },
       fallbacks: [
         { provider: 'openai-oauth', model: 'gpt-5.4-mini', maxTokens: 700, temperature: 0.55, timeoutMs: 12000 },
-        { provider: 'claude-code', model: 'claude-code/sonnet', maxTokens: 700, temperature: 0.8, timeoutMs: 15000 },
+        { provider: 'claude-code', model: 'claude-code/haiku', maxTokens: 700, temperature: 0.8, timeoutMs: 15000 },
       ],
     },
     'book_review.preview': {
       primary: { provider: 'openai-oauth', model: 'gpt-5.4', maxTokens: 2600, temperature: 0.7, timeoutMs: 25000 },
       fallbacks: [
-        { provider: 'claude-code', model: 'claude-code/sonnet', maxTokens: 2600, temperature: 0.7, timeoutMs: 25000 },
-        { provider: 'gemini-oauth', model: GEMINI_OAUTH_FLASH_MODEL, maxTokens: 2600, temperature: 0.7, timeoutMs: 25000 },
+        { provider: 'claude-code', model: 'claude-code/haiku', maxTokens: 2600, temperature: 0.7, timeoutMs: 25000 },
+        { provider: 'gemini-cli-oauth', model: GEMINI_CLI_FLASH_MODEL, maxTokens: 2600, temperature: 0.7, timeoutMs: 25000 },
       ],
     },
     _fallback: {
@@ -325,19 +324,19 @@ const TEAM_SELECTOR_DEFAULTS: Record<string, any> = {
     'chunked.gpt4o': {
       primary: { provider: 'openai-oauth', model: 'gpt-5.4', maxTokens: 4096, temperature: 0.75 },
       fallbacks: [
-        { provider: 'gemini-oauth', model: GEMINI_OAUTH_FLASH_MODEL, maxTokens: 4096, temperature: 0.75 },
-        { provider: 'claude-code', model: 'claude-code/sonnet', maxTokens: 4096, temperature: 0.75 },
+        { provider: 'gemini-cli-oauth', model: GEMINI_CLI_FLASH_MODEL, maxTokens: 4096, temperature: 0.75 },
+        { provider: 'claude-code', model: 'claude-code/haiku', maxTokens: 4096, temperature: 0.75 },
       ],
     },
     'chunked.default': {
-      primary: { provider: 'gemini-oauth', model: GEMINI_OAUTH_FLASH_MODEL, maxTokens: 4096, temperature: 0.75 },
+      primary: { provider: 'gemini-cli-oauth', model: GEMINI_CLI_FLASH_MODEL, maxTokens: 4096, temperature: 0.75 },
       fallbacks: [
         { provider: 'openai-oauth', model: 'gpt-5.4', maxTokens: 4096, temperature: 0.75 },
-        { provider: 'claude-code', model: 'claude-code/sonnet', maxTokens: 4096, temperature: 0.75 },
+        { provider: 'claude-code', model: 'claude-code/haiku', maxTokens: 4096, temperature: 0.75 },
       ],
     },
     _fallback: {
-      primary: { provider: 'gemini-oauth', model: GEMINI_OAUTH_FLASH_MODEL, maxTokens: 4096, temperature: 0.75 },
+      primary: { provider: 'gemini-cli-oauth', model: GEMINI_CLI_FLASH_MODEL, maxTokens: 4096, temperature: 0.75 },
       fallbacks: [
         { provider: 'openai-oauth', model: 'gpt-5.4-mini', maxTokens: 4096, temperature: 0.75 },
       ],
@@ -416,6 +415,54 @@ const AGENT_MODEL_REGISTRY: Record<string, Record<string, string | null>> = {
     'steward-work': 'orchestrator.steward.work',
     'steward-incident': 'orchestrator.steward.incident_plan',
     'steward-pro-canary': 'orchestrator.steward.pro_canary',
+  },
+  sigma: {
+    commander: 'sigma.agent_policy',
+    'pod.risk': 'sigma.agent_policy',
+    'pod.growth': 'sigma.agent_policy',
+    'pod.trend': 'sigma.agent_policy',
+    'skill.data_quality': 'sigma.agent_policy',
+    'skill.causal': 'sigma.agent_policy',
+    'skill.experiment_design': 'sigma.agent_policy',
+    'skill.feature_planner': 'sigma.agent_policy',
+    'skill.observability': 'sigma.agent_policy',
+    'principle.self_critique': 'sigma.agent_policy',
+    reflexion: 'sigma.agent_policy',
+    espl: 'sigma.agent_policy',
+    self_rewarding_judge: 'sigma.agent_policy',
+    'mapek.monitor': 'sigma.agent_policy',
+    'rag.query_planner': 'sigma.agent_policy',
+    'rag.retriever': 'sigma.agent_policy',
+    'rag.quality_evaluator': 'sigma.agent_policy',
+    'rag.synthesizer': 'sigma.agent_policy',
+  },
+  darwin: {
+    'darwin.scanner': 'darwin.agent_policy',
+    'darwin.evaluator': 'darwin.agent_policy',
+    'darwin.planner': 'darwin.agent_policy',
+    'darwin.edison': 'darwin.agent_policy',
+    'darwin.verifier': 'darwin.agent_policy',
+    'darwin.commander': 'darwin.agent_policy',
+    'darwin.reflexion': 'darwin.agent_policy',
+    'darwin.espl': 'darwin.agent_policy',
+    'darwin.self_rag': 'darwin.agent_policy',
+    'darwin.self_rewarding_judge': 'darwin.agent_policy',
+    'darwin.rag.query_planner': 'darwin.agent_policy',
+    'darwin.rag.synthesizer': 'darwin.agent_policy',
+    commander: 'darwin.agent_policy',
+    evaluator: 'darwin.agent_policy',
+    planner: 'darwin.agent_policy',
+    implementor: 'darwin.agent_policy',
+    verifier: 'darwin.agent_policy',
+    applier: 'darwin.agent_policy',
+    learner: 'darwin.agent_policy',
+    scanner: 'darwin.agent_policy',
+    reflexion: 'darwin.agent_policy',
+    'self_rag.retrieve': 'darwin.agent_policy',
+    'self_rag.relevance': 'darwin.agent_policy',
+    'espl.crossover': 'darwin.agent_policy',
+    'espl.mutation': 'darwin.agent_policy',
+    'principle.critique': 'darwin.agent_policy',
   },
   luna: {
     default: 'investment.agent_policy',
@@ -502,6 +549,27 @@ function resolveFromTeamDefault(selectorKey: string): any {
   return normalizeTeamDefaultEntry(teamDefaults[restKey] || teamDefaults[shortKey] || teamDefaults._fallback || null);
 }
 
+function routeEntryFromAbstractRoute(route: string): LLMChainEntry {
+  const normalized = String(route || 'anthropic_haiku');
+  if (normalized.includes('opus')) {
+    return { provider: 'claude-code', model: 'claude-code/opus', maxTokens: 2048, temperature: 0.1 };
+  }
+  if (normalized.includes('sonnet')) {
+    return { provider: 'openai-oauth', model: 'gpt-5.4', maxTokens: 2048, temperature: 0.1 };
+  }
+  return { provider: 'claude-code', model: 'claude-code/haiku', maxTokens: 1024, temperature: 0.1 };
+}
+
+function buildAbstractRoutePolicy(route: string, fallbacks: string[] = []): any {
+  const chain = [route, ...fallbacks].map(routeEntryFromAbstractRoute);
+  return {
+    route,
+    primary: chain[0] || null,
+    fallbacks: chain.slice(1),
+    fallbackChain: chain,
+  };
+}
+
 function buildSelectorRegistry(): Record<string, any> {
   return {
     'hub._default': () => resolveFromTeamDefault('hub._default'),
@@ -523,12 +591,12 @@ function buildSelectorRegistry(): Record<string, any> {
     'orchestrator.jay.intent': ({ intentPrimary, intentFallback }: SelectorOptions = {}) => ({
       primary: { provider: 'openai-oauth', model: intentPrimary || 'gpt-5.4-mini' },
       fallback: {
-        provider: 'gemini-oauth',
+        provider: 'gemini-cli-oauth',
         model: intentFallback
-          ? (intentFallback.startsWith('gemini-oauth/')
+          ? (intentFallback.startsWith('gemini-cli-oauth/')
               ? intentFallback
-              : `gemini-oauth/${intentFallback.replace(/^google-gemini-cli\//, '').replace(/^gemini\//, '')}`)
-          : GEMINI_OAUTH_FLASH_MODEL,
+              : `gemini-cli-oauth/${intentFallback.replace(/^google-gemini-cli\//, '').replace(/^gemini-oauth\//, '').replace(/^gemini\//, '')}`)
+          : GEMINI_CLI_FLASH_MODEL,
       },
     }),
 
@@ -548,9 +616,9 @@ function buildSelectorRegistry(): Record<string, any> {
     },
 
     'orchestrator.jay.summary': ({ maxTokens = 700 }: SelectorOptions = {}) => [
-      { provider: 'gemini-cli-oauth', model: GEMINI_CLI_FLASH_MODEL, maxTokens, temperature: 0.2, timeoutMs: 30_000 },
       { provider: 'openai-oauth', model: 'gpt-5.4-mini', maxTokens, temperature: 0.2, timeoutMs: 12_000 },
-      { provider: 'claude-code', model: 'claude-code/sonnet', maxTokens, temperature: 0.2, timeoutMs: 15_000 },
+      { provider: 'gemini-cli-oauth', model: GEMINI_CLI_FLASH_MODEL, maxTokens, temperature: 0.2, timeoutMs: 30_000 },
+      { provider: 'claude-code', model: 'claude-code/haiku', maxTokens, temperature: 0.2, timeoutMs: 15_000 },
     ],
 
     'orchestrator.steward.digest': ({ maxTokens = 220 }: SelectorOptions = {}) => [
@@ -568,8 +636,8 @@ function buildSelectorRegistry(): Record<string, any> {
     ],
 
     'orchestrator.steward.pro_canary': ({ maxTokens = 128 }: SelectorOptions = {}) => [
-      { provider: 'gemini-cli-oauth', model: GEMINI_CLI_PRO_MODEL, maxTokens, temperature: 0.2, timeoutMs: 60_000 },
-      { provider: 'gemini-codeassist-oauth', model: GEMINI_CODEASSIST_PRO_MODEL, maxTokens, temperature: 0.2, timeoutMs: 60_000 },
+      { provider: 'gemini-cli-oauth', model: GEMINI_CLI_FLASH_MODEL, maxTokens, temperature: 0.2, timeoutMs: 45_000 },
+      { provider: 'openai-oauth', model: 'gpt-5.4-mini', maxTokens, temperature: 0.2, timeoutMs: 15_000 },
     ],
 
     'blog._default': () => resolveFromTeamDefault('blog._default'),
@@ -597,28 +665,63 @@ function buildSelectorRegistry(): Record<string, any> {
     'ska.classify': () => resolveFromTeamDefault('ska.classify'),
 
     'sigma.agent_policy': ({ agentName }: SelectorOptions = {}) => {
-      const SIGMA_ROUTES: Record<string, { route: string; chain: LLMChainEntry[] }> = {
-        commander:                  { route: 'anthropic_sonnet', chain: [{ provider: 'anthropic', model: 'claude-sonnet-4-6' }, { provider: 'anthropic', model: 'claude-haiku-4-5-20251001' }] },
-        'pod.risk':                 { route: 'anthropic_sonnet', chain: [{ provider: 'anthropic', model: 'claude-sonnet-4-6' }, { provider: 'anthropic', model: 'claude-haiku-4-5-20251001' }] },
-        'pod.growth':               { route: 'anthropic_haiku',  chain: [{ provider: 'anthropic', model: 'claude-haiku-4-5-20251001' }] },
-        'pod.trend':                { route: 'anthropic_haiku',  chain: [{ provider: 'anthropic', model: 'claude-haiku-4-5-20251001' }] },
-        'skill.data_quality':       { route: 'anthropic_haiku',  chain: [{ provider: 'anthropic', model: 'claude-haiku-4-5-20251001' }] },
-        'skill.causal':             { route: 'anthropic_sonnet', chain: [{ provider: 'anthropic', model: 'claude-sonnet-4-6' }, { provider: 'anthropic', model: 'claude-haiku-4-5-20251001' }] },
-        'skill.experiment_design':  { route: 'anthropic_sonnet', chain: [{ provider: 'anthropic', model: 'claude-sonnet-4-6' }, { provider: 'anthropic', model: 'claude-haiku-4-5-20251001' }] },
-        'skill.feature_planner':    { route: 'anthropic_haiku',  chain: [{ provider: 'anthropic', model: 'claude-haiku-4-5-20251001' }] },
-        'skill.observability':      { route: 'anthropic_haiku',  chain: [{ provider: 'anthropic', model: 'claude-haiku-4-5-20251001' }] },
-        'principle.self_critique':  { route: 'anthropic_opus',   chain: [{ provider: 'anthropic', model: 'claude-opus-4-7' }, { provider: 'anthropic', model: 'claude-sonnet-4-6' }] },
-        reflexion:                  { route: 'anthropic_sonnet', chain: [{ provider: 'anthropic', model: 'claude-sonnet-4-6' }, { provider: 'anthropic', model: 'claude-haiku-4-5-20251001' }] },
-        espl:                       { route: 'anthropic_sonnet', chain: [{ provider: 'anthropic', model: 'claude-sonnet-4-6' }, { provider: 'anthropic', model: 'claude-haiku-4-5-20251001' }] },
+      const SIGMA_ROUTES: Record<string, { route: string; fallback: string[] }> = {
+        commander:                  { route: 'anthropic_sonnet', fallback: ['anthropic_haiku'] },
+        'pod.risk':                 { route: 'anthropic_sonnet', fallback: ['anthropic_haiku'] },
+        'pod.growth':               { route: 'anthropic_haiku', fallback: [] },
+        'pod.trend':                { route: 'anthropic_haiku', fallback: [] },
+        'skill.data_quality':       { route: 'anthropic_haiku', fallback: [] },
+        'skill.causal':             { route: 'anthropic_sonnet', fallback: ['anthropic_haiku'] },
+        'skill.experiment_design':  { route: 'anthropic_sonnet', fallback: ['anthropic_haiku'] },
+        'skill.feature_planner':    { route: 'anthropic_haiku', fallback: [] },
+        'skill.observability':      { route: 'anthropic_haiku', fallback: [] },
+        'principle.self_critique':  { route: 'anthropic_opus', fallback: ['anthropic_sonnet'] },
+        reflexion:                  { route: 'anthropic_sonnet', fallback: ['anthropic_haiku'] },
+        espl:                       { route: 'anthropic_sonnet', fallback: ['anthropic_haiku'] },
+        self_rewarding_judge:       { route: 'anthropic_sonnet', fallback: ['anthropic_haiku'] },
+        'mapek.monitor':            { route: 'anthropic_haiku', fallback: [] },
+        'rag.query_planner':        { route: 'anthropic_haiku', fallback: [] },
+        'rag.retriever':            { route: 'anthropic_haiku', fallback: [] },
+        'rag.quality_evaluator':    { route: 'anthropic_haiku', fallback: [] },
+        'rag.synthesizer':          { route: 'anthropic_haiku', fallback: [] },
       };
       const key = String(agentName || 'commander');
-      const entry = SIGMA_ROUTES[key] || { route: 'anthropic_haiku', chain: [{ provider: 'anthropic', model: 'claude-haiku-4-5-20251001' }] };
-      return {
-        route: entry.route,
-        primary: entry.chain[0] || null,
-        fallbacks: entry.chain.slice(1),
-        fallbackChain: entry.chain,
+      const entry = SIGMA_ROUTES[key] || { route: 'anthropic_haiku', fallback: [] };
+      return buildAbstractRoutePolicy(entry.route, entry.fallback);
+    },
+
+    'darwin.agent_policy': ({ agentName }: SelectorOptions = {}) => {
+      const DARWIN_ROUTES: Record<string, { route: string; fallback: string[] }> = {
+        'darwin.scanner':              { route: 'anthropic_haiku', fallback: ['anthropic_sonnet'] },
+        'darwin.evaluator':            { route: 'anthropic_sonnet', fallback: ['anthropic_haiku'] },
+        'darwin.planner':              { route: 'anthropic_sonnet', fallback: ['anthropic_haiku'] },
+        'darwin.edison':               { route: 'anthropic_sonnet', fallback: ['anthropic_haiku'] },
+        'darwin.verifier':             { route: 'anthropic_sonnet', fallback: ['anthropic_haiku'] },
+        'darwin.commander':            { route: 'anthropic_opus', fallback: ['anthropic_sonnet'] },
+        'darwin.reflexion':            { route: 'anthropic_sonnet', fallback: ['anthropic_haiku'] },
+        'darwin.espl':                 { route: 'anthropic_haiku', fallback: ['anthropic_sonnet'] },
+        'darwin.self_rag':             { route: 'anthropic_haiku', fallback: [] },
+        'darwin.self_rewarding_judge': { route: 'anthropic_haiku', fallback: ['anthropic_sonnet'] },
+        'darwin.rag.query_planner':    { route: 'anthropic_haiku', fallback: [] },
+        'darwin.rag.synthesizer':      { route: 'anthropic_haiku', fallback: ['anthropic_sonnet'] },
+        commander:                     { route: 'anthropic_sonnet', fallback: ['anthropic_haiku'] },
+        evaluator:                     { route: 'anthropic_sonnet', fallback: ['anthropic_haiku'] },
+        planner:                       { route: 'anthropic_sonnet', fallback: ['anthropic_haiku'] },
+        implementor:                   { route: 'anthropic_sonnet', fallback: ['anthropic_haiku'] },
+        verifier:                      { route: 'anthropic_sonnet', fallback: ['anthropic_haiku'] },
+        applier:                       { route: 'anthropic_haiku', fallback: [] },
+        learner:                       { route: 'anthropic_haiku', fallback: [] },
+        scanner:                       { route: 'anthropic_haiku', fallback: [] },
+        reflexion:                     { route: 'anthropic_sonnet', fallback: ['anthropic_haiku'] },
+        'self_rag.retrieve':           { route: 'anthropic_haiku', fallback: [] },
+        'self_rag.relevance':          { route: 'anthropic_haiku', fallback: [] },
+        'espl.crossover':              { route: 'anthropic_sonnet', fallback: ['anthropic_haiku'] },
+        'espl.mutation':               { route: 'anthropic_haiku', fallback: [] },
+        'principle.critique':          { route: 'anthropic_opus', fallback: ['anthropic_sonnet'] },
       };
+      const key = String(agentName || 'commander');
+      const entry = DARWIN_ROUTES[key] || { route: 'anthropic_haiku', fallback: [] };
+      return buildAbstractRoutePolicy(entry.route, entry.fallback);
     },
 
     'investment.agent_policy': ({ agentName, agentModel = null, openaiPerfModel = 'gpt-5.4', policyOverride }: SelectorOptions = {}) => {

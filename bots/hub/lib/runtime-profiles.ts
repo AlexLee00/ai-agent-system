@@ -34,8 +34,6 @@ const LOCAL_LLM_BASE_URL = 'http://127.0.0.1:11434';
 const GROQ_SCOUT_ROUTE = 'groq/llama-3.1-8b-instant';
 const GROQ_VERSATILE_ROUTE = 'groq/llama-3.3-70b-versatile';
 const OPENAI_FAST_ROUTE = 'openai-oauth/gpt-5.4-mini';
-const GEMINI_OAUTH_FLASH_LITE_ROUTE = 'gemini-oauth/gemini-2.5-flash-lite';
-const GEMINI_OAUTH_FLASH_ROUTE = 'gemini-oauth/gemini-2.5-flash';
 const GEMINI_CODEASSIST_PRO_ROUTE = 'gemini-codeassist-oauth/gemini-2.5-pro';
 const GEMINI_CLI_FLASH_LITE_ROUTE = 'gemini-cli-oauth/gemini-2.5-flash-lite';
 const GEMINI_CLI_FLASH_ROUTE = 'gemini-cli-oauth/gemini-2.5-flash';
@@ -63,7 +61,7 @@ export const PROFILES: Record<string, TeamProfiles> = {
       ],
       "fallback_routes": [
         GROQ_SCOUT_ROUTE,
-        "gemini-oauth/gemini-2.5-flash"
+        GEMINI_CLI_FLASH_ROUTE
       ]
     },
     "writer": {
@@ -77,7 +75,7 @@ export const PROFILES: Record<string, TeamProfiles> = {
       ],
       "fallback_routes": [
         GROQ_SCOUT_ROUTE,
-        "gemini-oauth/gemini-2.5-flash"
+        GEMINI_CLI_FLASH_ROUTE
       ]
     },
     "social": {
@@ -286,7 +284,7 @@ export const PROFILES: Record<string, TeamProfiles> = {
       "fallback_routes": [
         GROQ_SCOUT_ROUTE,
         OPENAI_FAST_ROUTE,
-        GEMINI_OAUTH_FLASH_ROUTE
+        GEMINI_CLI_FLASH_ROUTE
       ]
     },
     "research": {
@@ -301,7 +299,7 @@ export const PROFILES: Record<string, TeamProfiles> = {
       "fallback_routes": [
         GROQ_SCOUT_ROUTE,
         OPENAI_FAST_ROUTE,
-        GEMINI_OAUTH_FLASH_ROUTE
+        GEMINI_CLI_FLASH_ROUTE
       ]
     },
     "synthesis": {
@@ -310,13 +308,12 @@ export const PROFILES: Record<string, TeamProfiles> = {
       "claude_code_settings": CLAUDE_CODE_SETTINGS["darwin-research"],
       "local_llm_base_url": "http://127.0.0.1:11434",
       "primary_routes": [
-        "openai-oauth/gpt-5.4",
-        "claude-code/sonnet"
+        "openai-oauth/gpt-5.4"
       ],
       "fallback_routes": [
         GROQ_SCOUT_ROUTE,
         OPENAI_FAST_ROUTE,
-        GEMINI_OAUTH_FLASH_ROUTE
+        "claude-code/haiku"
       ]
     },
     "review": {
@@ -425,12 +422,12 @@ export const PROFILES: Record<string, TeamProfiles> = {
       "claude_code_settings": CLAUDE_CODE_SETTINGS["sigma-data"],
       "local_llm_base_url": "http://127.0.0.1:11434",
       "primary_routes": [
-        "openai-oauth/gpt-5.4",
-        "claude-code/sonnet"
+        "openai-oauth/gpt-5.4"
       ],
       "fallback_routes": [
         GROQ_SCOUT_ROUTE,
-        OPENAI_FAST_ROUTE
+        OPENAI_FAST_ROUTE,
+        "claude-code/haiku"
       ]
     },
     "analysis": {
@@ -469,12 +466,12 @@ export const PROFILES: Record<string, TeamProfiles> = {
       "claude_code_settings": CLAUDE_CODE_SETTINGS["claude-ops"],
       "local_llm_base_url": "http://127.0.0.1:11434",
       "primary_routes": [
-        "claude-code/sonnet",
         "openai-oauth/gpt-5.4"
       ],
       "fallback_routes": [
         GROQ_SCOUT_ROUTE,
-        OPENAI_FAST_ROUTE
+        OPENAI_FAST_ROUTE,
+        "claude-code/haiku"
       ]
     },
     "triage": {
@@ -518,7 +515,7 @@ export const PROFILES: Record<string, TeamProfiles> = {
       ],
       "fallback_routes": [
         GROQ_SCOUT_ROUTE,
-        "gemini-oauth/gemini-2.5-flash"
+        GEMINI_CLI_FLASH_ROUTE
       ]
     },
     "intent": {
@@ -544,7 +541,7 @@ export const PROFILES: Record<string, TeamProfiles> = {
         GROQ_SCOUT_ROUTE
       ],
       "fallback_routes": [
-        GEMINI_OAUTH_FLASH_ROUTE
+        GEMINI_CLI_FLASH_ROUTE
       ]
     },
     "summary": {
@@ -553,11 +550,11 @@ export const PROFILES: Record<string, TeamProfiles> = {
       "claude_code_settings": CLAUDE_CODE_SETTINGS["claude-ops"],
       "local_llm_base_url": "http://127.0.0.1:11434",
       "primary_routes": [
-        GEMINI_CLI_FLASH_ROUTE
+        OPENAI_FAST_ROUTE
       ],
       "fallback_routes": [
-        OPENAI_FAST_ROUTE,
-        "claude-code/sonnet"
+        GEMINI_CLI_FLASH_ROUTE,
+        "claude-code/haiku"
       ]
     },
     "steward": {

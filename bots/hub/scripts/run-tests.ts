@@ -96,6 +96,7 @@ function unitSmokeScripts(): string[] {
     'llm-cooldown-reset-smoke.ts',
     'llm-direct-provider-route-guard-smoke.ts',
     'team-llm-route-drill.ts',
+    'multi-team-agent-llm-primary-fallback-drill.ts',
     'team-llm-route-drill-report-smoke.ts',
     'agent-hub-transition-audit.ts',
     'hub-transition-completion-gate.ts',

@@ -15,6 +15,10 @@ function firstProviderFromSelector(description) {
   return String(description?.chain?.[0]?.provider || '').trim();
 }
 
+function hasProvider(description, provider) {
+  return Array.isArray(description?.chain) && description.chain.some((entry) => entry.provider === provider);
+}
+
 async function main() {
   const { PROFILES } = await import('../lib/runtime-profiles.ts');
   const selector = await import('../../../packages/core/lib/llm-model-selector.ts');
@@ -24,22 +28,26 @@ async function main() {
   assert(runtimeSummary, 'orchestrator.summary runtime profile is required');
   assert.equal(
     runtimeSummary.primary_routes?.[0],
-    'gemini-cli-oauth/gemini-2.5-flash',
-    'orchestrator.summary runtime primary must be Gemini CLI OAuth',
+    'openai-oauth/gpt-5.4-mini',
+    'orchestrator.summary runtime primary must use the stable OpenAI OAuth summary route',
+  );
+  assert(
+    runtimeSummary.fallback_routes?.includes('gemini-cli-oauth/gemini-2.5-flash'),
+    'orchestrator.summary runtime must keep Gemini CLI OAuth as a low-cost fallback',
   );
 
   const selected = selector.describeAgentModel('orchestrator', 'summary');
   assert.equal(
     firstProviderFromSelector(selected),
-    'gemini-cli-oauth',
-    'orchestrator/summary selector primary must be Gemini CLI OAuth',
+    'openai-oauth',
+    'orchestrator/summary selector primary must use the stable OpenAI OAuth summary route',
   );
   assert(
-    Array.isArray(selected.chain) && selected.chain.some((entry) => entry.provider === 'openai-oauth'),
-    'orchestrator/summary selector must keep OpenAI OAuth fallback',
+    hasProvider(selected, 'gemini-cli-oauth'),
+    'orchestrator/summary selector must keep Gemini CLI OAuth fallback',
   );
   assert(
-    Array.isArray(selected.chain) && selected.chain.some((entry) => entry.provider === 'claude-code'),
+    hasProvider(selected, 'claude-code'),
     'orchestrator/summary selector must keep Claude Code fallback',
   );
 
@@ -51,8 +59,8 @@ async function main() {
   console.log(JSON.stringify({
     ok: true,
     runtime_profile: 'orchestrator.summary',
-    primary_provider: 'gemini-cli-oauth',
-    fallbacks: ['openai-oauth', 'claude-code'],
+    primary_provider: 'openai-oauth',
+    fallbacks: ['gemini-cli-oauth', 'claude-code'],
   }));
 }
 

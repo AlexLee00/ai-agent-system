@@ -18,6 +18,8 @@
     "live:drill:mock": "HUB_LIVE_DRILL_MOCK=1 HUB_AUTH_TOKEN=hub-live-drill-mock-token tsx scripts/hub-live-drill.ts",
     "team:llm-drill": "tsx scripts/team-llm-route-drill.ts",
     "team:llm-drill:live": "HUB_TEAM_LLM_DRILL_LIVE=1 tsx scripts/team-llm-route-drill.ts",
+    "team:agent-llm-drill": "tsx scripts/multi-team-agent-llm-primary-fallback-drill.ts",
+    "team:agent-llm-drill:live": "HUB_MULTI_AGENT_LLM_DRILL_LIVE=1 tsx scripts/multi-team-agent-llm-primary-fallback-drill.ts",
     "steward:gemini-drill": "tsx scripts/steward-gemini-model-drill.ts",
     "steward:gemini-drill:report": "STEWARD_GEMINI_DRILL_WRITE_REPORT=1 tsx scripts/steward-gemini-model-drill.ts --json",
     "agent:hub-transition-audit": "tsx scripts/agent-hub-transition-audit.ts",

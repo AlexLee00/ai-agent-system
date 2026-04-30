@@ -142,8 +142,12 @@ function main() {
   const orchestratorSummary = selector.describeAgentModel('orchestrator', 'summary');
   assert.equal(
     orchestratorSummary?.chain?.[0]?.provider,
-    'gemini-cli-oauth',
-    'orchestrator/summary must use Gemini CLI OAuth as the low-cost summary route',
+    'openai-oauth',
+    'orchestrator/summary must start with the stable OpenAI OAuth summary route',
+  );
+  assert.ok(
+    orchestratorSummary?.chain?.some((entry) => entry.provider === 'gemini-cli-oauth'),
+    'orchestrator/summary must keep Gemini CLI OAuth as a low-cost fallback route',
   );
 
   const hubClient = require('../../../packages/core/lib/hub-client');
