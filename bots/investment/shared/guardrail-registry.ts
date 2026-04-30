@@ -47,6 +47,13 @@ const DEFAULT_GUARDRAILS = [
     command: ['node', 'scripts/runtime-luna-full-integration-closure-gate.ts', '--json'],
   },
   {
+    name: 'luna_operational_blocker_pack',
+    category: 'safety',
+    severity: 'critical',
+    owner: 'luna',
+    command: ['node', 'scripts/runtime-luna-operational-blocker-pack.ts', '--json'],
+  },
+  {
     name: 'luna_reconcile_blockers',
     category: 'trading',
     severity: 'critical',
@@ -66,6 +73,20 @@ const DEFAULT_GUARDRAILS = [
     severity: 'medium',
     owner: 'luna',
     command: ['node', 'scripts/runtime-agent-message-bus-hygiene.ts', '--dry-run', '--json'],
+  },
+  {
+    name: 'luna_curriculum_bootstrap_plan',
+    category: 'runtime',
+    severity: 'medium',
+    owner: 'luna',
+    command: ['node', 'scripts/runtime-luna-curriculum-bootstrap.ts', '--json'],
+  },
+  {
+    name: 'luna_launchd_cutover_preflight_pack',
+    category: 'runtime',
+    severity: 'high',
+    owner: 'luna',
+    command: ['node', 'scripts/runtime-luna-launchd-cutover-preflight-pack.ts', '--json'],
   },
   {
     name: 'luna_7day_observation',

@@ -9,9 +9,12 @@ export async function runLunaClosureGuardrailRegistrySmoke() {
   const registry = createGuardrailRegistry();
   const expected = [
     'luna_full_integration_closure_gate',
+    'luna_operational_blocker_pack',
     'luna_reconcile_blockers',
     'luna_live_fire_final_gate',
     'agent_message_bus_hygiene',
+    'luna_curriculum_bootstrap_plan',
+    'luna_launchd_cutover_preflight_pack',
     'luna_7day_observation',
   ];
   for (const name of expected) {

@@ -5,6 +5,7 @@ import { expireStaleAgentMessages, getMessageBusHygiene } from '../shared/agent-
 import { publishAlert } from '../shared/alert-publisher.ts';
 import * as db from '../shared/db.ts';
 import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
+import { buildAgentMessageBusHygienePlan } from '../shared/luna-operational-closure-pack.ts';
 
 function parseArgs(argv = process.argv.slice(2)) {
   return {
@@ -23,7 +24,7 @@ export async function runAgentMessageBusHygiene(args = {}) {
   const limit = Math.max(1, Math.min(500, Number(args.limit || 100) || 100));
   const before = await getMessageBusHygiene({ staleHours, limit });
   if (args.apply === true && args.confirm !== 'luna-agent-bus-hygiene') {
-    return {
+    const result = {
       ok: false,
       status: 'agent_message_bus_hygiene_confirm_required',
       staleHours,
@@ -38,6 +39,8 @@ export async function runAgentMessageBusHygiene(args = {}) {
       },
       after: before,
     };
+    result.plan = buildAgentMessageBusHygienePlan(result);
+    return result;
   }
   const action = await expireStaleAgentMessages({
     staleHours,
@@ -54,6 +57,7 @@ export async function runAgentMessageBusHygiene(args = {}) {
     action,
     after,
   };
+  result.plan = buildAgentMessageBusHygienePlan(result);
 
   if (args.apply === true) {
     await db.run(
