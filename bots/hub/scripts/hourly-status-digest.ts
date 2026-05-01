@@ -12,6 +12,7 @@ import { createRequire } from 'module';
 const require = createRequire(import.meta.url);
 const { postAlarm } = require('../../../packages/core/lib/hub-alarm-client');
 const kst = require('../../../packages/core/lib/kst');
+const { getLaunchctlStatus } = require('../../../packages/core/lib/health-provider');
 
 const HUB_BASE = process.env.HUB_BASE_URL || 'http://localhost:7788';
 const HUB_TOKEN = process.env.HUB_AUTH_TOKEN || '';
@@ -23,13 +24,49 @@ interface BotHealth {
   label: string;
 }
 
+interface BotLaunchdHealth {
+  name: string;
+  label: string;
+  labels: string[];
+}
+
 const BOT_HEALTH_ENDPOINTS: BotHealth[] = [
   { name: 'hub',         url: `${HUB_BASE}/hub/health`,                label: 'Hub' },
   { name: 'alarm',       url: `${HUB_BASE}/hub/alarm/readiness`,        label: 'Alarm' },
-  { name: 'luna',        url: `http://localhost:7780/health`,           label: 'Luna' },
-  { name: 'blog',        url: `http://localhost:7781/health`,           label: 'Blog' },
-  { name: 'claude',      url: `http://localhost:7782/health`,           label: 'Claude' },
-  { name: 'ska',         url: `http://localhost:7783/health`,           label: 'SKA' },
+];
+
+const BOT_LAUNCHD_HEALTHS: BotLaunchdHealth[] = [
+  {
+    name: 'luna',
+    label: 'Luna',
+    labels: [
+      'ai.luna.marketdata-mcp',
+      'ai.luna.tradingview-ws',
+    ],
+  },
+  {
+    name: 'blog',
+    label: 'Blog',
+    labels: [
+      'ai.blog.node-server',
+    ],
+  },
+  {
+    name: 'claude',
+    label: 'Claude',
+    labels: [
+      'ai.claude.commander',
+      'ai.claude.auto-dev.autonomous',
+    ],
+  },
+  {
+    name: 'ska',
+    label: 'SKA',
+    labels: [
+      'ai.ska.commander',
+      'ai.ska.naver-monitor',
+    ],
+  },
 ];
 
 async function checkEndpoint(bot: BotHealth): Promise<{ name: string; label: string; ok: boolean; detail?: string }> {
@@ -49,6 +86,29 @@ async function checkEndpoint(bot: BotHealth): Promise<{ name: string; label: str
     clearTimeout(timer);
     const msg = err instanceof Error ? (err.name === 'AbortError' ? 'timeout' : err.message) : String(err);
     return { name: bot.name, label: bot.label, ok: false, detail: msg };
+  }
+}
+
+function checkLaunchdGroup(bot: BotLaunchdHealth): { name: string; label: string; ok: boolean; detail?: string } {
+  try {
+    const status = getLaunchctlStatus(bot.labels);
+    const failing = bot.labels.filter((label) => {
+      const svc = status?.[label];
+      return !svc || svc.loaded === false || svc.running !== true;
+    });
+    if (failing.length === 0) {
+      return { name: bot.name, label: bot.label, ok: true, detail: 'launchd ok' };
+    }
+    const short = failing.map((label) => label.replace(/^ai\./, ''));
+    return {
+      name: bot.name,
+      label: bot.label,
+      ok: false,
+      detail: `launchd missing: ${short.join(', ')}`,
+    };
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    return { name: bot.name, label: bot.label, ok: false, detail: `launchctl error: ${msg}` };
   }
 }
 
@@ -105,12 +165,14 @@ function formatStatusCard(
 }
 
 async function main() {
-  const [healthResults, alarmReadiness] = await Promise.allSettled([
+  const [endpointResults, alarmReadiness] = await Promise.allSettled([
     Promise.all(BOT_HEALTH_ENDPOINTS.map(checkEndpoint)),
     fetchAlarmReadiness(),
   ]);
 
-  const results = healthResults.status === 'fulfilled' ? healthResults.value : [];
+  const httpResults = endpointResults.status === 'fulfilled' ? endpointResults.value : [];
+  const launchdResults = BOT_LAUNCHD_HEALTHS.map(checkLaunchdGroup);
+  const results = [...httpResults, ...launchdResults];
   const readiness = alarmReadiness.status === 'fulfilled' ? alarmReadiness.value : null;
 
   const failed = results.filter((r) => !r.ok);
