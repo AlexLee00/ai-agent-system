@@ -2,15 +2,17 @@
 'use strict';
 
 /**
- * alarm-closure-cycle-smoke.ts — 알람 폐쇄 사이클 6단계 통합 검증
+ * alarm-closure-cycle-smoke.ts — 알람 폐쇄 사이클 8단계 통합 검증
  *
  * 검증 체인:
  *   1. alarm-roundtable-engine → consensus 저장 (DB)
  *   2. ensureAlarmAutoDevDocument → docs/auto_dev/ ALARM_INCIDENT_*.md 저장
  *   3. auto-dev-watch → docs/auto_dev/ 스캔 감지
- *   4. claude/auto-dev-pipeline → enqueue (alarm postAlarm)
- *   5. alarm_roundtables.status 전환 검증
- *   6. meeting 토픽 보고 검증
+ *   4. alarm_roundtables.auto_dev_doc_path 업데이트
+ *   5. claude/auto-dev-pipeline → enqueue (alarm postAlarm)
+ *   6. alarm_roundtables.implementation_log + status 전환 검증
+ *   7. meeting 토픽 보고 검증
+ *   8. 최종 폐쇄 계약 검증
  *
  * 실 DB 접근 없이 stub/mock으로 hermetic 실행.
  * 환경변수 ALARM_CYCLE_SMOKE_REAL_DB=true 시 실제 PG 사용.
@@ -58,6 +60,7 @@ interface RoundtableRow {
   consensus: Record<string, unknown> | null;
   auto_dev_doc_path: string | null;
   implementation_log: unknown[];
+  meeting_note: string | null;
 }
 
 function createInMemoryDb() {
@@ -76,6 +79,7 @@ function createInMemoryDb() {
           consensus: null,
           auto_dev_doc_path: params[3] ? String(params[3]) : null,
           implementation_log: [],
+          meeting_note: null,
         };
         roundtables.set(incidentKey, row);
         return { id: row.id } as RoundtableRow;
@@ -110,6 +114,21 @@ function createInMemoryDb() {
     },
     snapshot(): RoundtableRow[] {
       return Array.from(roundtables.values());
+    },
+    setAutoDevPath(id: number, autoDevDocPath: string): void {
+      for (const row of roundtables.values()) {
+        if (row.id === id) row.auto_dev_doc_path = autoDevDocPath;
+      }
+    },
+    appendImplementationLog(id: number, entry: Record<string, unknown>): void {
+      for (const row of roundtables.values()) {
+        if (row.id === id) row.implementation_log.push(entry);
+      }
+    },
+    setMeetingNote(id: number, meetingNote: string): void {
+      for (const row of roundtables.values()) {
+        if (row.id === id) row.meeting_note = meetingNote;
+      }
     },
   };
 }
@@ -269,9 +288,24 @@ async function step3_autoDevWatchScan(docFilePath: string): Promise<void> {
     `파일명 패턴 OK, docs/auto_dev/에 존재, ENABLED=${watchEnabled}, 감지 가능`);
 }
 
-// ────── Step 4: auto-dev-pipeline enqueue 시뮬레이션 ──────
+// ────── Step 4: alarm_roundtables.auto_dev_doc_path 업데이트 검증 ──────
 
-async function step4_pipelineEnqueue(docFilePath: string): Promise<void> {
+async function step4_autoDevDocPath(roundtableId: number, incidentKey: string, docFilePath: string): Promise<void> {
+  const relPath = path.relative(ROOT, docFilePath);
+  mockDb.setAutoDevPath(roundtableId, relPath);
+
+  const row = mockDb.snapshot().find((r) => r.incident_key === incidentKey);
+  if (!row || row.auto_dev_doc_path !== relPath) {
+    record(4, 'alarm_roundtables.auto_dev_doc_path 업데이트', false, `path=${row?.auto_dev_doc_path || 'missing'}`);
+    throw new Error('step4_auto_dev_path_failed');
+  }
+
+  record(4, 'alarm_roundtables.auto_dev_doc_path 업데이트', true, relPath);
+}
+
+// ────── Step 5: auto-dev-pipeline enqueue 시뮬레이션 ──────
+
+async function step5_pipelineEnqueue(docFilePath: string): Promise<void> {
   // auto-dev-watch.ts가 postAlarm을 통해 hub에 알림을 보내는 로직 시뮬레이션
   // 실 postAlarm 호출 X — 대신 알림 페이로드 구조 검증
 
@@ -287,8 +321,8 @@ async function step4_pipelineEnqueue(docFilePath: string): Promise<void> {
     && expectedPayload.file_path.startsWith('docs/auto_dev/ALARM_INCIDENT_');
 
   if (!payloadValid) {
-    record(4, 'auto-dev-pipeline enqueue 페이로드', false, `페이로드 구조 오류: ${JSON.stringify(expectedPayload)}`);
-    throw new Error('step4_payload_invalid');
+    record(5, 'auto-dev-pipeline enqueue 페이로드', false, `페이로드 구조 오류: ${JSON.stringify(expectedPayload)}`);
+    throw new Error('step5_payload_invalid');
   }
 
   // processed/ 디렉토리 이동 시뮬레이션 (실 이동 X)
@@ -296,15 +330,21 @@ async function step4_pipelineEnqueue(docFilePath: string): Promise<void> {
   const processedDirExists = fs.existsSync(processedDir)
     || (await fs.promises.mkdir(processedDir, { recursive: true }).then(() => true).catch(() => false));
 
-  record(4, 'auto-dev-pipeline enqueue 시뮬레이션', true,
+  record(5, 'auto-dev-pipeline enqueue 시뮬레이션', true,
     `페이로드 구조 OK, processed/ 준비=${processedDirExists}, event_type=auto_dev_watch_enqueued`);
 }
 
-// ────── Step 5: alarm_roundtables.status 전환 검증 ──────
+// ────── Step 6: alarm_roundtables.implementation_log + status 전환 검증 ──────
 
-async function step5_statusTransition(roundtableId: number, incidentKey: string): Promise<void> {
+async function step6_statusTransition(roundtableId: number, incidentKey: string): Promise<void> {
   // 구현 완료 후 status 전환 시뮬레이션
   // auto-dev-watch 처리 완료 → implementation_log 업데이트 → status=resolved
+  mockDb.appendImplementationLog(roundtableId, {
+    status: 'in_progress',
+    at: new Date().toISOString(),
+    source: 'alarm-closure-cycle-smoke',
+    note: 'auto-dev-pipeline queued',
+  });
   await mockDb.run('agent', 'UPDATE agent.alarm_roundtables SET status', [
     roundtableId,
     'resolved',
@@ -316,17 +356,29 @@ async function step5_statusTransition(roundtableId: number, incidentKey: string)
   const row = snapshot.find((r) => r.incident_key === incidentKey);
 
   if (!row || row.status !== 'resolved') {
-    record(5, 'alarm_roundtables.status=resolved 전환', false, `status=${row?.status}`);
-    throw new Error('step5_status_failed');
+    record(6, 'alarm_roundtables.status=resolved 전환', false, `status=${row?.status}`);
+    throw new Error('step6_status_failed');
   }
 
-  record(5, 'alarm_roundtables.status=resolved 전환', true,
-    `id=${roundtableId} status=resolved incidentKey=${incidentKey.slice(0, 30)}...`);
+  mockDb.appendImplementationLog(roundtableId, {
+    status: 'resolved',
+    at: new Date().toISOString(),
+    source: 'alarm-closure-cycle-smoke',
+    note: 'closure cycle resolved',
+  });
+
+  if (row.implementation_log.length < 2) {
+    record(6, 'alarm_roundtables.implementation_log 업데이트', false, `entries=${row.implementation_log.length}`);
+    throw new Error('step6_log_failed');
+  }
+
+  record(6, 'alarm_roundtables.status=resolved + implementation_log', true,
+    `id=${roundtableId} status=resolved implementation_log=${row.implementation_log.length}`);
 }
 
-// ────── Step 6: meeting 토픽 보고 검증 ──────
+// ────── Step 7: meeting 토픽 보고 검증 ──────
 
-async function step6_meetingTopicReport(incidentKey: string, consensus: Record<string, unknown>): Promise<void> {
+async function step7_meetingTopicReport(roundtableId: number, incidentKey: string, consensus: Record<string, unknown>): Promise<void> {
   // meeting 토픽 메시지 구조 검증 (실 Telegram 발송 X)
   const meetingNote = [
     `🗣️ [Roundtable] ${incidentKey}`,
@@ -345,13 +397,40 @@ async function step6_meetingTopicReport(incidentKey: string, consensus: Record<s
   const hasProposedFix = meetingNote.includes(String(consensus.proposedFix || ''));
 
   if (!hasRoundtableHeader || !hasConsensusScore || !hasProposedFix) {
-    record(6, 'meeting 토픽 메시지 구조', false,
+    record(7, 'meeting 토픽 메시지 구조', false,
       `header=${hasRoundtableHeader} score=${hasConsensusScore} fix=${hasProposedFix}`);
-    throw new Error('step6_message_invalid');
+    throw new Error('step7_message_invalid');
   }
 
-  record(6, 'meeting 토픽 보고 구조 검증', true,
+  mockDb.setMeetingNote(roundtableId, meetingNote);
+
+  record(7, 'meeting 토픽 보고 구조 검증', true,
     `[Roundtable] 헤더 OK, 합의 점수 85% OK, proposedFix 포함`);
+}
+
+// ────── Step 8: 최종 폐쇄 계약 검증 ──────
+
+async function step8_finalClosureContract(roundtableId: number, incidentKey: string): Promise<void> {
+  const row = mockDb.snapshot().find((r) => r.id === roundtableId && r.incident_key === incidentKey);
+  const ok = row?.status === 'resolved'
+    && !!row.auto_dev_doc_path
+    && row.implementation_log.length >= 2
+    && !!row.consensus
+    && !!row.meeting_note;
+
+  if (!ok) {
+    record(8, '최종 폐쇄 계약', false, JSON.stringify({
+      status: row?.status || null,
+      auto_dev_doc_path: row?.auto_dev_doc_path || null,
+      implementation_log: row?.implementation_log?.length || 0,
+      consensus: !!row?.consensus,
+      meeting_note: !!row?.meeting_note,
+    }));
+    throw new Error('step8_contract_failed');
+  }
+
+  record(8, '최종 폐쇄 계약', true,
+    `status=${row.status} auto_dev=${row.auto_dev_doc_path} implementation_log=${row.implementation_log.length}`);
 }
 
 // ────── 정리: smoke 파일 삭제 ──────
@@ -370,7 +449,7 @@ async function cleanup(docFilePath: string): Promise<void> {
 // ────── 메인 ──────
 
 async function main() {
-  console.log('[alarm-closure-cycle-smoke] 폐쇄 사이클 6단계 검증 시작');
+  console.log('[alarm-closure-cycle-smoke] 폐쇄 사이클 8단계 검증 시작');
   console.log('[alarm-closure-cycle-smoke] (hermetic — 실 LLM/Telegram/DB 없음)\n');
 
   let docFilePath = '';
@@ -385,14 +464,20 @@ async function main() {
     // Step 3: auto-dev-watch 스캔 감지
     await step3_autoDevWatchScan(docFilePath);
 
-    // Step 4: pipeline enqueue 시뮬레이션
-    await step4_pipelineEnqueue(docFilePath);
+    // Step 4: auto_dev_doc_path 업데이트
+    await step4_autoDevDocPath(roundtableId, incidentKey, docFilePath);
 
-    // Step 5: status=resolved 전환
-    await step5_statusTransition(roundtableId, incidentKey);
+    // Step 5: pipeline enqueue 시뮬레이션
+    await step5_pipelineEnqueue(docFilePath);
 
-    // Step 6: meeting 토픽 보고
-    await step6_meetingTopicReport(incidentKey, consensus);
+    // Step 6: status=resolved + implementation_log 전환
+    await step6_statusTransition(roundtableId, incidentKey);
+
+    // Step 7: meeting 토픽 보고
+    await step7_meetingTopicReport(roundtableId, incidentKey, consensus);
+
+    // Step 8: 최종 폐쇄 계약
+    await step8_finalClosureContract(roundtableId, incidentKey);
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
     if (!msg.includes('_failed') && !msg.includes('_not_found') && !msg.includes('_invalid')) {
@@ -416,8 +501,8 @@ async function main() {
   }
 
   console.log('\n[alarm-closure-cycle-smoke] OK — alarm_closure_cycle_smoke_ok');
-  console.log('[alarm-closure-cycle-smoke] 6단계 폐쇄 사이클 검증 완료');
-  console.log('  alarm → roundtable → auto_dev → claude → resolved → meeting보고');
+  console.log('[alarm-closure-cycle-smoke] 8단계 폐쇄 사이클 검증 완료');
+  console.log('  alarm → roundtable → auto_dev → watch → queue → resolved → meeting보고 → contract');
 }
 
 main().catch((err: Error) => {

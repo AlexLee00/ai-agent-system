@@ -22,6 +22,18 @@ const kst = require('../../../packages/core/lib/kst');
 
 const REFLECTION_WINDOW_DAYS = Number(process.env.HUB_ROUNDTABLE_REFLECTION_WINDOW_DAYS || 30) || 30;
 
+function hasFlag(name: string): boolean {
+  return process.argv.includes(`--${name}`);
+}
+
+const DRY_RUN = hasFlag('dry-run') || ['1', 'true', 'yes', 'y', 'on'].includes(
+  String(process.env.HUB_ROUNDTABLE_REFLECTION_DRY_RUN || '').trim().toLowerCase(),
+);
+const JSON_OUTPUT = hasFlag('json');
+const FIXTURE_MODE = hasFlag('fixture') || ['1', 'true', 'yes', 'y', 'on'].includes(
+  String(process.env.HUB_ROUNDTABLE_REFLECTION_FIXTURE || '').trim().toLowerCase(),
+);
+
 function isEnabled(): boolean {
   const raw = String(process.env.HUB_ROUNDTABLE_REFLECTION_ENABLED || '').trim().toLowerCase();
   return ['1', 'true', 'yes', 'y', 'on'].includes(raw);
@@ -204,10 +216,36 @@ async function main() {
 
   const today = kst.today ? kst.today() : new Date().toISOString().slice(0, 10);
 
-  const stats = await fetchRoundtableStats();
+  const stats = FIXTURE_MODE ? {
+    total: 8,
+    by_status: { resolved: 5, consensus: 2, open: 1 },
+    consensus_count: 7,
+    avg_agreement_score: 0.82,
+    top_teams: [{ team: 'luna', count: 5 }, { team: 'hub', count: 3 }],
+    resolved_count: 5,
+    open_count: 1,
+  } : await fetchRoundtableStats();
   const message = buildReflectionMessage(stats, today);
 
   console.log('[roundtable-reflection]', message);
+
+  const payload = {
+    ok: true,
+    dry_run: DRY_RUN,
+    fixture: FIXTURE_MODE,
+    window_days: REFLECTION_WINDOW_DAYS,
+    stats: stats || {},
+    message,
+  };
+
+  if (JSON_OUTPUT) {
+    console.log(JSON.stringify(payload, null, 2));
+  }
+
+  if (DRY_RUN) {
+    console.log('[roundtable-reflection] dry-run — Telegram 발송 스킵');
+    return;
+  }
 
   const sent = await postAlarm({
     team: 'hub',

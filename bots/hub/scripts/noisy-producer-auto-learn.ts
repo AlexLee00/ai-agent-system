@@ -31,6 +31,18 @@ const AUTO_SUPPRESS = ['1', 'true', 'yes', 'y', 'on'].includes(
   String(process.env.HUB_NOISY_AUTO_SUPPRESS || '').trim().toLowerCase(),
 );
 
+function hasFlag(name: string): boolean {
+  return process.argv.includes(`--${name}`);
+}
+
+const DRY_RUN = hasFlag('dry-run') || ['1', 'true', 'yes', 'y', 'on'].includes(
+  String(process.env.HUB_NOISY_AUTO_LEARN_DRY_RUN || '').trim().toLowerCase(),
+);
+const JSON_OUTPUT = hasFlag('json');
+const FIXTURE_MODE = hasFlag('fixture') || ['1', 'true', 'yes', 'y', 'on'].includes(
+  String(process.env.HUB_NOISY_AUTO_LEARN_FIXTURE || '').trim().toLowerCase(),
+);
+
 function isEnabled(): boolean {
   const raw = String(process.env.HUB_NOISY_AUTO_LEARN_ENABLED || '').trim().toLowerCase();
   return ['1', 'true', 'yes', 'y', 'on'].includes(raw);
@@ -49,6 +61,29 @@ interface NoisyProducerRow {
 }
 
 async function fetchNoisyProducers(): Promise<NoisyProducerRow[]> {
+  if (FIXTURE_MODE) {
+    return [
+      {
+        team: 'luna',
+        producer: 'runtime-autopilot',
+        alarm_type: 'report',
+        cluster_key: 'luna|report|runtime-autopilot',
+        total: 910,
+        escalated: 0,
+        per_day_avg: 130,
+      },
+      {
+        team: 'hub',
+        producer: 'oauth-monitor',
+        alarm_type: 'error',
+        cluster_key: 'hub|error|oauth-monitor',
+        total: 735,
+        escalated: 2,
+        per_day_avg: 105,
+      },
+    ];
+  }
+
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
   try {
@@ -255,7 +290,9 @@ async function main() {
 
   // 3. 자동 적용 (HUB_NOISY_AUTO_SUPPRESS=true 시)
   let autoApplyResult: { applied: number; skipped: number } | null = null;
-  if (AUTO_SUPPRESS && proposals.length > 0) {
+  if (DRY_RUN) {
+    console.log('[noisy-auto-learn] dry-run — suppression 적용과 Telegram 발송 스킵');
+  } else if (AUTO_SUPPRESS && proposals.length > 0) {
     console.log('[noisy-auto-learn] 자동 suppress 적용 중...');
     autoApplyResult = await applyAutoSuppress(proposals);
   } else if (AUTO_SUPPRESS) {
@@ -267,6 +304,34 @@ async function main() {
   // 4. meeting 토픽 발송
   const message = buildMeetingMessage(proposals, autoApplyResult);
   const today = kst.today ? kst.today() : new Date().toISOString().slice(0, 10);
+
+  const resultPayload = {
+    ok: true,
+    dry_run: DRY_RUN,
+    fixture: FIXTURE_MODE,
+    window_days: LEARNING_WINDOW_DAYS,
+    threshold_per_day: NOISY_THRESHOLD_PER_DAY,
+    total_noisy: rows.length,
+    proposal_count: proposals.length,
+    auto_suppress_enabled: AUTO_SUPPRESS,
+    auto_applied: autoApplyResult?.applied || 0,
+    by_action: {
+      auto_suppress: proposals.filter((p) => p.action === 'auto_suppress').length,
+      needs_approval: proposals.filter((p) => p.action === 'needs_approval').length,
+      needs_human: proposals.filter((p) => p.action === 'needs_human').length,
+    },
+    proposals,
+    message,
+  };
+
+  if (JSON_OUTPUT) {
+    console.log(JSON.stringify(resultPayload, null, 2));
+  }
+
+  if (DRY_RUN) {
+    console.log(`[noisy-auto-learn] dry-run 완료: 제안 ${proposals.length}건`);
+    return;
+  }
 
   const sent = await postAlarm({
     team: 'hub',
@@ -282,15 +347,11 @@ async function main() {
       event_type: 'noisy_producer_weekly_review',
       window_days: LEARNING_WINDOW_DAYS,
       threshold_per_day: NOISY_THRESHOLD_PER_DAY,
-      total_noisy: rows.length,
-      proposal_count: proposals.length,
-      auto_suppress_enabled: AUTO_SUPPRESS,
-      auto_applied: autoApplyResult?.applied || 0,
-      by_action: {
-        auto_suppress: proposals.filter((p) => p.action === 'auto_suppress').length,
-        needs_approval: proposals.filter((p) => p.action === 'needs_approval').length,
-        needs_human: proposals.filter((p) => p.action === 'needs_human').length,
-      },
+      total_noisy: resultPayload.total_noisy,
+      proposal_count: resultPayload.proposal_count,
+      auto_suppress_enabled: resultPayload.auto_suppress_enabled,
+      auto_applied: resultPayload.auto_applied,
+      by_action: resultPayload.by_action,
     },
   });
 

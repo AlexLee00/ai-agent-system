@@ -13,6 +13,7 @@
 
 const pgPool = require('../../../../packages/core/lib/pg-pool');
 const kst = require('../../../../packages/core/lib/kst');
+const eventLake = require('../../../../packages/core/lib/event-lake');
 
 interface DecayRule {
   fromSeverity: string;
@@ -40,6 +41,7 @@ export interface DecayResult {
   ok: boolean;
   demoted: number;
   skipped: number;
+  dry_run?: boolean;
   rules_applied: Array<{
     from: string;
     to: string;
@@ -49,14 +51,22 @@ export interface DecayResult {
   error?: string;
 }
 
+interface SeverityDecayOptions {
+  dryRun?: boolean;
+  db?: typeof pgPool;
+  audit?: typeof eventLake;
+  fixtureRows?: Array<Record<string, unknown>>;
+  now?: Date;
+}
+
 function isEnabled(): boolean {
   const raw = String(process.env.HUB_SEVERITY_DECAY_ENABLED || '').trim().toLowerCase();
   return ['1', 'true', 'yes', 'y', 'on'].includes(raw);
 }
 
-async function ensureHubAlarmsTable(): Promise<void> {
+async function ensureHubAlarmsTable(db = pgPool): Promise<void> {
   try {
-    await pgPool.run('agent', `
+    await db.run('agent', `
       CREATE TABLE IF NOT EXISTS agent.hub_alarms (
         id BIGSERIAL PRIMARY KEY,
         team TEXT,
@@ -75,10 +85,10 @@ async function ensureHubAlarmsTable(): Promise<void> {
         resolved_at TIMESTAMPTZ
       )
     `);
-    await pgPool.run('agent', `
+    await db.run('agent', `
       CREATE INDEX IF NOT EXISTS hub_alarms_fingerprint_idx ON agent.hub_alarms(fingerprint)
     `);
-    await pgPool.run('agent', `
+    await db.run('agent', `
       CREATE INDEX IF NOT EXISTS hub_alarms_received_at_idx ON agent.hub_alarms(received_at DESC)
     `);
   } catch {
@@ -86,34 +96,59 @@ async function ensureHubAlarmsTable(): Promise<void> {
   }
 }
 
-async function applyDecayRule(rule: DecayRule): Promise<{ count: number; alarm_ids: number[] }> {
+function fixtureRowsForRule(
+  rule: DecayRule,
+  rows: Array<Record<string, unknown>>,
+  now: Date,
+): Array<Record<string, unknown>> {
+  const cutoffMs = now.getTime() - rule.minAgeHours * 60 * 60 * 1000;
+  return rows.filter((row) => {
+    const severity = String(row.severity || '').toLowerCase();
+    const status = String(row.status || 'new').toLowerCase();
+    const receivedAt = new Date(String(row.received_at || row.receivedAt || now.toISOString())).getTime();
+    const count = Number(row.fingerprint_count || row.fingerprintCount || 0);
+    return severity === rule.fromSeverity
+      && !['resolved', 'suppressed'].includes(status)
+      && receivedAt <= cutoffMs
+      && count < rule.maxFingerprintCount;
+  });
+}
+
+async function applyDecayRule(
+  rule: DecayRule,
+  options: Required<Pick<SeverityDecayOptions, 'dryRun' | 'db' | 'now'>> & Pick<SeverityDecayOptions, 'fixtureRows'>,
+): Promise<{ count: number; alarm_ids: number[] }> {
   try {
-    const rows = await pgPool.query('agent', `
-      SELECT id, severity, fingerprint_count, received_at
-      FROM agent.hub_alarms
-      WHERE severity = $1
-        AND status NOT IN ('resolved', 'suppressed')
-        AND received_at <= NOW() - ($2 * INTERVAL '1 hour')
-        AND (fingerprint_count IS NULL OR fingerprint_count < $3)
-      ORDER BY received_at ASC
-      LIMIT 200
-    `, [rule.fromSeverity, rule.minAgeHours, rule.maxFingerprintCount]);
+    const rows = options.fixtureRows
+      ? fixtureRowsForRule(rule, options.fixtureRows, options.now)
+      : await options.db.query('agent', `
+        SELECT id, severity, fingerprint_count, received_at
+        FROM agent.hub_alarms
+        WHERE severity = $1
+          AND status NOT IN ('resolved', 'suppressed')
+          AND received_at <= NOW() - ($2 * INTERVAL '1 hour')
+          AND (fingerprint_count IS NULL OR fingerprint_count < $3)
+        ORDER BY received_at ASC
+        LIMIT 200
+      `, [rule.fromSeverity, rule.minAgeHours, rule.maxFingerprintCount]);
 
     if (!rows || rows.length === 0) return { count: 0, alarm_ids: [] };
 
     const ids: number[] = rows.map((r: Record<string, unknown>) => Number(r.id));
     const today = kst.today ? kst.today() : new Date().toISOString().slice(0, 10);
 
-    await pgPool.run('agent', `
-      UPDATE agent.hub_alarms
-      SET severity = $1,
-          metadata = COALESCE(metadata, '{}') || jsonb_build_object(
-            'severity_decayed_from', $2,
-            'severity_decayed_at', NOW()::text,
-            'severity_decay_date', $3
-          )
-      WHERE id = ANY($4::bigint[])
-    `, [rule.toSeverity, rule.fromSeverity, today, ids]);
+    if (!options.dryRun && !options.fixtureRows) {
+      await options.db.run('agent', `
+        UPDATE agent.hub_alarms
+        SET severity = $1,
+            metadata = COALESCE(metadata, '{}') || jsonb_build_object(
+              'severity_decayed_from', $2,
+              'severity_decayed_at', NOW()::text,
+              'severity_decay_date', $3
+            )
+        WHERE id = ANY($4::bigint[])
+      `, [rule.toSeverity, rule.fromSeverity, today, ids]);
+    }
 
     return { count: ids.length, alarm_ids: ids };
   } catch (err: unknown) {
@@ -123,26 +158,38 @@ async function applyDecayRule(rule: DecayRule): Promise<{ count: number; alarm_i
   }
 }
 
-export async function runSeverityDecay(): Promise<DecayResult> {
+export async function runSeverityDecay(options: SeverityDecayOptions = {}): Promise<DecayResult> {
   if (!isEnabled()) {
-    return { ok: true, demoted: 0, skipped: 0, rules_applied: [] };
+    return { ok: true, demoted: 0, skipped: 0, dry_run: !!options.dryRun, rules_applied: [] };
   }
 
-  try {
-    await ensureHubAlarmsTable();
-  } catch {
-    // 테이블 확인 실패 — 계속
+  const db = options.db || pgPool;
+  const dryRun = !!options.dryRun;
+  const now = options.now || new Date();
+
+  if (!options.fixtureRows) {
+    try {
+      await ensureHubAlarmsTable(db);
+    } catch {
+      // 테이블 확인 실패 — 계속
+    }
   }
 
   const result: DecayResult = {
     ok: true,
     demoted: 0,
     skipped: 0,
+    dry_run: dryRun,
     rules_applied: [],
   };
 
   for (const rule of DECAY_RULES) {
-    const { count, alarm_ids } = await applyDecayRule(rule);
+    const { count, alarm_ids } = await applyDecayRule(rule, {
+      dryRun,
+      db,
+      now,
+      fixtureRows: options.fixtureRows,
+    });
     result.demoted += count;
     result.rules_applied.push({
       from: rule.fromSeverity,
@@ -153,6 +200,22 @@ export async function runSeverityDecay(): Promise<DecayResult> {
     if (count > 0) {
       console.log(`[severity-decay] ${rule.fromSeverity}→${rule.toSeverity}: ${count}건 강등`);
     }
+  }
+
+  if (result.demoted > 0 && !dryRun && !options.fixtureRows) {
+    await (options.audit || eventLake).record({
+      eventType: 'hub_alarm_severity_decay',
+      team: 'hub',
+      botName: 'severity-decay',
+      severity: 'info',
+      title: 'Severity decay applied',
+      message: `${result.demoted} alarms decayed`,
+      tags: ['hub', 'alarm', 'severity_decay'],
+      metadata: {
+        demoted: result.demoted,
+        rules_applied: result.rules_applied,
+      },
+    }).catch(() => null);
   }
 
   return result;

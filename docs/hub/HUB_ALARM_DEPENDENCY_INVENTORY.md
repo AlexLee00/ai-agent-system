@@ -2,7 +2,7 @@
 
 This inventory tracks the Hub alarm migration surface. `hub_alarm_native` entries are the desired path; `retired_gateway_guard` entries are regression guards; `legacy_gateway_compat` entries are remaining migration targets and must stay at 0.
 
-- generated_at: 2026-05-01T13:41:48.907Z
+- generated_at: 2026-05-01T21:12:46.857Z
 - total_matches: 259
 - unique_files: 132
 - hub_alarm_native: 247
@@ -290,8 +290,8 @@ This inventory tracks the Hub alarm migration surface. `hub_alarm_native` entrie
 - L148 [hub_alarm_native]: `else process.env.HUB_ALARM_SUPPRESSION_RULES_PATH = originalRulesPath;`
 
 ### `bots/hub/scripts/alarm-closure-cycle-smoke.ts`
-- L125 [hub_alarm_native]: `process.env.HUB_ALARM_ROUNDTABLE_ENABLED = 'true';`
-- L136 [hub_alarm_native]: `record(1, 'Roundtable shouldTrigger (critical)', true, 'HUB_ALARM_ROUNDTABLE_ENABLED=true, alarmType=critical → true');`
+- L144 [hub_alarm_native]: `process.env.HUB_ALARM_ROUNDTABLE_ENABLED = 'true';`
+- L155 [hub_alarm_native]: `record(1, 'Roundtable shouldTrigger (critical)', true, 'HUB_ALARM_ROUNDTABLE_ENABLED=true, alarmType=critical → true');`
 
 ### `bots/hub/scripts/alarm-contract-audit.ts`
 - L11 [hub_alarm_native]: `'packages/core/lib/hub-alarm-client.ts',`

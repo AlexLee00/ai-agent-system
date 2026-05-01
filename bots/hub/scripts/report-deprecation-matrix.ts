@@ -2,30 +2,24 @@
 'use strict';
 
 /**
- * report-deprecation-matrix.ts — 84 리포트 → 5 digest 카테고리 매핑 매트릭스
+ * report-deprecation-matrix.ts — distributed report launchd → 5 digest matrix.
  *
- * 목적:
- *   기존 분산된 리포트 launchd를 5 digest 카테고리로 통합하고
- *   단계별 deprecation 계획을 생성한다.
- *
- * 실행:
- *   npx tsx bots/hub/scripts/report-deprecation-matrix.ts
- *   npx tsx bots/hub/scripts/report-deprecation-matrix.ts --output=docs/hub/REPORT_DEPRECATION_MATRIX.md
- *   npx tsx bots/hub/scripts/report-deprecation-matrix.ts --week=1   # Week 1 deprecation 대상만
+ * This script is intentionally read-only: it generates a master-review matrix
+ * and never unloads launchd jobs.
  */
 
 import { createRequire } from 'module';
 const require = createRequire(import.meta.url);
 const fs = require('fs');
 const path = require('path');
+const os = require('os');
 const env = require('../../../packages/core/lib/env');
 const kst = require('../../../packages/core/lib/kst');
 
 const ROOT = env.PROJECT_ROOT;
 
-// ────── 5 digest 카테고리 정의 ──────
-
 type DigestCategory = 'hourly-status' | 'daily-metrics' | 'weekly-audit' | 'weekly-advisory' | 'incident-summary';
+type DeprecationClass = 'immediate' | 'week1_grace' | 'week3_grace' | 'keep';
 
 interface DigestDef {
   category: DigestCategory;
@@ -35,151 +29,97 @@ interface DigestDef {
   description: string;
 }
 
-const DIGEST_CATEGORIES: DigestDef[] = [
+interface LaunchdJob {
+  label: string;
+  plistPath: string;
+  source: 'repo' | 'local';
+  script: string;
+  args: string[];
+}
+
+interface MatrixRow extends LaunchdJob {
+  replacedBy: DigestCategory | 'none';
+  deprecationClass: DeprecationClass;
+  rationale: string;
+  unloadCommand: string;
+}
+
+const DIGESTS: DigestDef[] = [
   {
     category: 'hourly-status',
     plist: 'ai.hub.hourly-status-digest',
     script: 'bots/hub/scripts/hourly-status-digest.ts',
-    schedule: '매시간 :00',
-    description: '시스템 전체 상태 통합 (Hub/Luna/Blog/Claude/SKA 헬스)',
+    schedule: 'hourly',
+    description: 'Hub/team health, routing readiness, high-level runtime status',
   },
   {
     category: 'daily-metrics',
     plist: 'ai.hub.daily-metrics-digest',
     script: 'bots/hub/scripts/daily-metrics-digest.ts',
-    schedule: '매일 09:00',
-    description: '일간 핵심 지표 (알람 건수, 분류 정확도, LLM 호출)',
+    schedule: 'daily 09:00',
+    description: 'Daily alarm/LLM/team metrics and operational counters',
   },
   {
     category: 'weekly-audit',
     plist: 'ai.hub.weekly-audit-digest',
     script: 'bots/hub/scripts/weekly-audit-digest.ts',
-    schedule: '매주 월 10:00',
-    description: '주간 감사 (suppression rule 변경, 회귀 분석)',
+    schedule: 'weekly Monday 10:00',
+    description: 'Safety, regression, policy, and audit coverage',
   },
   {
     category: 'weekly-advisory',
     plist: 'ai.hub.weekly-advisory-digest',
     script: 'bots/hub/scripts/weekly-advisory-digest.ts',
-    schedule: '매주 월 11:00',
-    description: '주간 권고 (마스터 보고, noisy producer, 개선 제안)',
+    schedule: 'weekly Monday 11:00',
+    description: 'Master-review recommendations, noisy producers, tuning proposals',
   },
   {
     category: 'incident-summary',
     plist: 'ai.hub.incident-summary',
     script: 'bots/hub/scripts/incident-summary.ts',
-    schedule: '매일 18:00',
-    description: '일간 incident 요약 (roundtable 결과, 해소/미해소)',
+    schedule: 'daily 18:00',
+    description: 'Roundtable/auto_dev incident summary and unresolved items',
   },
 ];
 
-// ────── 레거시 리포트 카탈로그 ──────
-
-interface LegacyReport {
-  plist: string;
-  team: string;
-  type: string;
-  replacedBy: DigestCategory;
-  deprecationWeek: 1 | 2 | 3;
-  reason: string;
-}
-
-const LEGACY_REPORTS: LegacyReport[] = [
-  // Hub 운영 리포트 → hourly-status (Week 1 우선)
-  { plist: 'ai.claude.health-check', team: 'claude', type: 'health', replacedBy: 'hourly-status', deprecationWeek: 1, reason: '매시간 상태 digest로 통합' },
-  { plist: 'ai.claude.health-dashboard', team: 'claude', type: 'health', replacedBy: 'hourly-status', deprecationWeek: 1, reason: '매시간 상태 digest로 통합' },
-  { plist: 'ai.hub.llm-model-check', team: 'hub', type: 'model', replacedBy: 'weekly-advisory', deprecationWeek: 2, reason: '주간 권고 digest에 포함' },
-  { plist: 'ai.hub.llm-groq-fallback-test', team: 'hub', type: 'llm-test', replacedBy: 'daily-metrics', deprecationWeek: 2, reason: '일간 지표 digest에 포함' },
-  { plist: 'ai.hub.llm-cache-cleanup', team: 'hub', type: 'maintenance', replacedBy: 'weekly-audit', deprecationWeek: 3, reason: '주간 감사 digest에 포함 (캐시 감사)' },
-  { plist: 'ai.hub.llm-oauth-monitor', team: 'hub', type: 'auth', replacedBy: 'hourly-status', deprecationWeek: 1, reason: '매시간 상태 digest로 통합 (auth 체크 포함)' },
-
-  // Claude 팀 리포트 → 카테고리별
-  { plist: 'ai.claude.daily-report', team: 'claude', type: 'daily', replacedBy: 'daily-metrics', deprecationWeek: 1, reason: '일간 지표 digest로 통합' },
-  { plist: 'ai.claude.weekly-report', team: 'claude', type: 'weekly', replacedBy: 'weekly-audit', deprecationWeek: 1, reason: '주간 감사 digest로 통합' },
-  { plist: 'ai.claude.dexter.daily', team: 'claude', type: 'dexter', replacedBy: 'daily-metrics', deprecationWeek: 2, reason: '덱스터 체크 결과 → 일간 지표 digest' },
-  { plist: 'ai.claude.speed-test', team: 'claude', type: 'performance', replacedBy: 'weekly-advisory', deprecationWeek: 3, reason: '속도 테스트 → 주간 권고 digest' },
-
-  // Worker/Worker 모니터 → incident-summary
-  { plist: 'ai.worker.claude-monitor', team: 'worker', type: 'monitor', replacedBy: 'incident-summary', deprecationWeek: 2, reason: '워커 모니터 → incident-summary 통합' },
-
-  // Codex 노티파이어 → weekly-advisory
-  { plist: 'ai.claude.codex-notifier', team: 'claude', type: 'codex', replacedBy: 'weekly-advisory', deprecationWeek: 2, reason: '코덱스 완료 알림 → 주간 권고 digest' },
+const DIGEST_LABELS = new Set(DIGESTS.map((digest) => digest.plist));
+const PROTECTED_LABEL_PATTERNS = [
+  /resource-api/,
+  /telegram-callback-poller/,
+  /jay\.runtime/,
+  /tradingview-ws/,
+  /commander/,
+  /marketdata-mcp/,
+  /auto-dev\.autonomous/,
+  /digest$/,
+];
+const RETIRED_LABEL_PATTERNS = [
+  /^ai\.worker\./,
+  /^ai\.video\./,
+  /worker-ops/,
+  /video-edi/,
 ];
 
-// ────── 매트릭스 생성 ──────
-
-function buildMatrix(): string {
-  const today = kst.today ? kst.today() : new Date().toISOString().slice(0, 10);
-  const lines: string[] = [];
-
-  lines.push('# 84 리포트 → 5 Digest 매핑 매트릭스');
-  lines.push('');
-  lines.push(`> 생성: ${today} KST`);
-  lines.push(`> 목적: 분산된 레거시 리포트를 5 digest 카테고리로 통합하고 3주 grace period deprecation 진행`);
-  lines.push('');
-
-  // 5 Digest 카테고리 요약
-  lines.push('## 5 Digest 카테고리');
-  lines.push('');
-  lines.push('| 카테고리 | launchd | 스케줄 | 설명 |');
-  lines.push('|----------|---------|--------|------|');
-  for (const d of DIGEST_CATEGORIES) {
-    lines.push(`| ${d.category} | ${d.plist} | ${d.schedule} | ${d.description} |`);
-  }
-  lines.push('');
-
-  // Week별 deprecation 계획
-  for (const week of [1, 2, 3] as const) {
-    const targets = LEGACY_REPORTS.filter((r) => r.deprecationWeek === week);
-    lines.push(`## Week ${week} Deprecation 대상 (${targets.length}건)`);
-    lines.push('');
-    if (targets.length === 0) {
-      lines.push('_(없음)_');
-      lines.push('');
-      continue;
-    }
-    lines.push('| launchd | 팀 | 유형 | 대체 digest | 사유 |');
-    lines.push('|---------|-----|------|-------------|------|');
-    for (const r of targets) {
-      lines.push(`| ${r.plist} | ${r.team} | ${r.type} | ${r.replacedBy} | ${r.reason} |`);
-    }
-    lines.push('');
-  }
-
-  // 통계 요약
-  const byCategory = DIGEST_CATEGORIES.map((d) => ({
-    category: d.category,
-    count: LEGACY_REPORTS.filter((r) => r.replacedBy === d.category).length,
-  }));
-
-  lines.push('## 통합 요약');
-  lines.push('');
-  lines.push(`- 레거시 리포트 카탈로그: ${LEGACY_REPORTS.length}건`);
-  lines.push(`- Week 1 (즉시): ${LEGACY_REPORTS.filter((r) => r.deprecationWeek === 1).length}건`);
-  lines.push(`- Week 2 (+7일): ${LEGACY_REPORTS.filter((r) => r.deprecationWeek === 2).length}건`);
-  lines.push(`- Week 3 (+14일): ${LEGACY_REPORTS.filter((r) => r.deprecationWeek === 3).length}건`);
-  lines.push('');
-  lines.push('| Digest | 흡수 리포트 수 |');
-  lines.push('|--------|--------------|');
-  for (const b of byCategory) {
-    lines.push(`| ${b.category} | ${b.count} |`);
-  }
-  lines.push('');
-
-  // 운영 주의사항
-  lines.push('## 운영 주의사항');
-  lines.push('');
-  lines.push('1. **audit log 보존**: 비활성화 시 StandardOutPath 로그 최소 30일 유지');
-  lines.push('2. **마스터 주간 검토**: 매주 월요일 weekly-advisory-digest 보고 확인');
-  lines.push('3. **회귀 감지**: 비활성화 후 7일간 누락 알람 없는지 모니터링');
-  lines.push('4. **예외 유지**: 마스터 결정 시 일부 리포트 유지 가능 (주석 처리 권장)');
-  lines.push('5. **launchctl unload**: `launchctl unload ~/Library/LaunchAgents/<plist>.plist`');
-  lines.push('');
-
-  return lines.join('\n');
-}
-
-// ────── 메인 ──────
+const REPORT_HINTS = [
+  'report',
+  'readiness',
+  'health',
+  'audit',
+  'metrics',
+  'summary',
+  'noise',
+  'monitor',
+  'status',
+  'weekly',
+  'daily',
+  'advisory',
+  'notifier',
+  'check',
+  'dashboard',
+  'validate',
+  'stale',
+  'proposal',
+];
 
 function argValue(name: string, fallback = ''): string {
   const prefix = `--${name}=`;
@@ -191,56 +131,230 @@ function hasFlag(name: string): boolean {
   return process.argv.includes(`--${name}`);
 }
 
-function weekFilter(): number | null {
-  const w = argValue('week', '');
-  const n = Number(w);
-  return [1, 2, 3].includes(n) ? n : null;
+function walk(dir: string, predicate: (file: string) => boolean, output: string[] = []): string[] {
+  if (!fs.existsSync(dir)) return output;
+  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+    const fullPath = path.join(dir, entry.name);
+    if (entry.isDirectory()) walk(fullPath, predicate, output);
+    else if (predicate(fullPath)) output.push(fullPath);
+  }
+  return output;
 }
 
-async function main() {
-  const matrix = buildMatrix();
-  const weekNum = weekFilter();
+function parseStringAfterKey(text: string, key: string): string {
+  const keyIndex = text.indexOf(`<key>${key}</key>`);
+  if (keyIndex < 0) return '';
+  const match = text.slice(keyIndex).match(/<string>([^<]+)<\/string>/);
+  return match ? match[1] : '';
+}
 
-  if (weekNum) {
-    const targets = LEGACY_REPORTS.filter((r) => r.deprecationWeek === weekNum);
-    console.log(`[deprecation-matrix] Week ${weekNum} 대상 ${targets.length}건:`);
-    for (const r of targets) {
-      console.log(`  launchctl unload ~/Library/LaunchAgents/${r.plist}.plist`);
+function parseProgramArguments(text: string): string[] {
+  const keyIndex = text.indexOf('<key>ProgramArguments</key>');
+  if (keyIndex < 0) return [];
+  const arrayText = text.slice(keyIndex, text.indexOf('</array>', keyIndex) + '</array>'.length);
+  return Array.from(arrayText.matchAll(/<string>([^<]+)<\/string>/g)).map((match) => match[1]);
+}
+
+function normalizeRelScript(arg: string): string {
+  if (!arg) return '';
+  if (arg.startsWith(ROOT)) return path.relative(ROOT, arg);
+  return arg;
+}
+
+function parseLaunchdJob(plistPath: string, source: 'repo' | 'local'): LaunchdJob | null {
+  const text = fs.readFileSync(plistPath, 'utf8');
+  const label = parseStringAfterKey(text, 'Label') || path.basename(plistPath, '.plist');
+  const args = parseProgramArguments(text);
+  const scriptArg = args.find((arg) => /\.(ts|js|mjs|cjs|exs)$/.test(arg)) || '';
+  return {
+    label,
+    plistPath,
+    source,
+    script: normalizeRelScript(scriptArg),
+    args,
+  };
+}
+
+function discoverLaunchdJobs(): LaunchdJob[] {
+  const repoPlists = walk(ROOT, (file) => file.endsWith('.plist') && file.includes('/launchd/'));
+  const localDir = path.join(os.homedir(), 'Library', 'LaunchAgents');
+  const localPlists = fs.existsSync(localDir)
+    ? fs.readdirSync(localDir)
+      .filter((file: string) => file.endsWith('.plist'))
+      .map((file: string) => path.join(localDir, file))
+    : [];
+
+  const byLabel = new Map<string, LaunchdJob>();
+  for (const [source, files] of [['repo', repoPlists], ['local', localPlists]] as const) {
+    for (const file of files) {
+      try {
+        const job = parseLaunchdJob(file, source);
+        if (!job) continue;
+        if (RETIRED_LABEL_PATTERNS.some((pattern) => pattern.test(job.label) || pattern.test(job.script))) continue;
+        const existing = byLabel.get(job.label);
+        if (!existing || job.source === 'local') byLabel.set(job.label, job);
+      } catch {
+        // Invalid user-local plist should not fail matrix generation.
+      }
     }
+  }
+  return Array.from(byLabel.values()).sort((a, b) => a.label.localeCompare(b.label) || a.source.localeCompare(b.source));
+}
+
+function isReportLike(job: LaunchdJob): boolean {
+  const haystack = `${job.label} ${job.script} ${job.args.join(' ')}`.toLowerCase();
+  if (DIGEST_LABELS.has(job.label)) return false;
+  if (PROTECTED_LABEL_PATTERNS.some((pattern) => pattern.test(job.label))) return false;
+  return REPORT_HINTS.some((hint) => haystack.includes(hint));
+}
+
+function mapDigest(job: LaunchdJob): DigestCategory {
+  const haystack = `${job.label} ${job.script}`.toLowerCase();
+  if (/(incident|bug|error|auto-dev|stale)/.test(haystack)) return 'incident-summary';
+  if (/(audit|validate|guard|contract|regression|review)/.test(haystack)) return 'weekly-audit';
+  if (/(advisory|proposal|suppression|noisy|notifier|recommend|autotune)/.test(haystack)) return 'weekly-advisory';
+  if (/(daily|metrics|usage|cost|kpi|llm-daily)/.test(haystack)) return 'daily-metrics';
+  return 'hourly-status';
+}
+
+function classifyDeprecation(job: LaunchdJob, replacedBy: DigestCategory): { deprecationClass: DeprecationClass; rationale: string } {
+  const haystack = `${job.label} ${job.script}`.toLowerCase();
+  if (/(live|trade|order|execute|cleanup|apply|runner|worker|daemon)/.test(haystack)) {
+    return { deprecationClass: 'keep', rationale: 'contains live/action/daemon semantics; keep until separate owner review' };
+  }
+  if (/(health|readiness|status|dashboard)/.test(haystack) && replacedBy === 'hourly-status') {
+    return { deprecationClass: 'immediate', rationale: 'covered by hourly status digest; safe to retire after parallel comparison' };
+  }
+  if (/(daily|metrics|report|summary)/.test(haystack)) {
+    return { deprecationClass: 'week1_grace', rationale: `covered by ${replacedBy}; compare for one week before unload` };
+  }
+  if (/(audit|guard|validate|oauth|llm|suppression|noisy|proposal|weekly)/.test(haystack)) {
+    return { deprecationClass: 'week3_grace', rationale: `risk-sensitive signal; keep three-week grace before unload` };
+  }
+  return { deprecationClass: 'keep', rationale: 'insufficient replacement confidence; keep pending manual review' };
+}
+
+export function buildDeprecationMatrix(jobs = discoverLaunchdJobs()): MatrixRow[] {
+  return jobs
+    .filter(isReportLike)
+    .map((job) => {
+      const replacedBy = mapDigest(job);
+      const classification = classifyDeprecation(job, replacedBy);
+      return {
+        ...job,
+        replacedBy,
+        deprecationClass: classification.deprecationClass,
+        rationale: classification.rationale,
+        unloadCommand: `launchctl bootout gui/$(id -u) ${job.plistPath}`,
+      };
+    });
+}
+
+function classLabel(value: DeprecationClass): string {
+  if (value === 'immediate') return '즉시 비활성화 후보';
+  if (value === 'week1_grace') return '1주 grace 후보';
+  if (value === 'week3_grace') return '3주 grace 후보';
+  return '유지 권장';
+}
+
+function buildMarkdown(rows: MatrixRow[]): string {
+  const today = kst.today ? kst.today() : new Date().toISOString().slice(0, 10);
+  const lines: string[] = [
+    '# Report Deprecation Matrix',
+    '',
+    `> Generated: ${today} KST`,
+    '> Scope: read-only matrix. This document does not unload or disable any launchd job.',
+    '',
+    '## Digest Targets',
+    '',
+    '| Digest | Launchd | Schedule | Coverage |',
+    '| --- | --- | --- | --- |',
+  ];
+  for (const digest of DIGESTS) {
+    lines.push(`| ${digest.category} | \`${digest.plist}\` | ${digest.schedule} | ${digest.description} |`);
+  }
+
+  const classes: DeprecationClass[] = ['immediate', 'week1_grace', 'week3_grace', 'keep'];
+  lines.push('', '## Summary', '');
+  lines.push('| Class | Count |');
+  lines.push('| --- | ---: |');
+  for (const cls of classes) {
+    lines.push(`| ${classLabel(cls)} | ${rows.filter((row) => row.deprecationClass === cls).length} |`);
+  }
+  lines.push(`| Total candidates | ${rows.length} |`);
+
+  lines.push('', '## Candidate Matrix', '');
+  lines.push('| Class | Source | Launchd | Script | Replacement | Rationale |');
+  lines.push('| --- | --- | --- | --- | --- | --- |');
+  for (const row of rows) {
+    lines.push(`| ${classLabel(row.deprecationClass)} | ${row.source} | \`${row.label}\` | \`${row.script || '-'}\` | ${row.replacedBy} | ${row.rationale} |`);
+  }
+
+  lines.push('', '## Master Approval Workflow', '');
+  lines.push('1. Week 1: keep all candidate jobs running in parallel with the 5 digest jobs.');
+  lines.push('2. Week 2: unload only `immediate` candidates after comparing digest content.');
+  lines.push('3. Week 3: unload `week1_grace` candidates if no information loss is observed.');
+  lines.push('4. Week 4+: review `week3_grace` candidates one by one; keep action/daemon jobs.');
+  lines.push('5. Every unload requires a rollback note and a retained log path for at least 30 days.');
+
+  lines.push('', '## Unload Command Reference', '');
+  lines.push('```bash');
+  for (const row of rows.filter((item) => item.deprecationClass !== 'keep')) {
+    lines.push(`# ${row.label} -> ${row.replacedBy}`);
+    lines.push(row.unloadCommand);
+  }
+  lines.push('```');
+  lines.push('');
+  return lines.join('\n');
+}
+
+function printWeek(rows: MatrixRow[], week: number): void {
+  const targetClass = week === 1 ? 'immediate' : week === 2 ? 'week1_grace' : 'week3_grace';
+  const targets = rows.filter((row) => row.deprecationClass === targetClass);
+  console.log(`[deprecation-matrix] Week ${week} candidates: ${targets.length}`);
+  for (const row of targets) {
+    console.log(`${row.label}\t${row.replacedBy}\t${row.unloadCommand}`);
+  }
+}
+
+async function main(): Promise<void> {
+  const rows = buildDeprecationMatrix();
+  const week = Number(argValue('week', ''));
+  if ([1, 2, 3].includes(week)) {
+    printWeek(rows, week);
     return;
   }
 
-  const outputPath = argValue('output', '');
-  if (outputPath) {
-    const absPath = path.isAbsolute(outputPath) ? outputPath : path.join(ROOT, outputPath);
-    await fs.promises.mkdir(path.dirname(absPath), { recursive: true });
-    await fs.promises.writeFile(absPath, matrix, 'utf8');
-    console.log(`[deprecation-matrix] 매트릭스 저장: ${outputPath}`);
-  } else {
-    console.log(matrix);
+  const output = argValue('output', '');
+  if (output) {
+    const outputPath = path.isAbsolute(output) ? output : path.join(ROOT, output);
+    await fs.promises.mkdir(path.dirname(outputPath), { recursive: true });
+    await fs.promises.writeFile(outputPath, buildMarkdown(rows), 'utf8');
+    console.log(`[deprecation-matrix] wrote ${path.relative(ROOT, outputPath)} (${rows.length} candidates)`);
+  } else if (!hasFlag('json')) {
+    console.log(buildMarkdown(rows));
   }
 
   if (hasFlag('json')) {
-    const json = {
+    console.log(JSON.stringify({
+      ok: true,
       generated_at: new Date().toISOString(),
-      digest_categories: DIGEST_CATEGORIES.map((d) => ({
-        ...d,
-        legacy_count: LEGACY_REPORTS.filter((r) => r.replacedBy === d.category).length,
-      })),
-      legacy_reports: LEGACY_REPORTS,
-      summary: {
-        total_legacy: LEGACY_REPORTS.length,
-        week1: LEGACY_REPORTS.filter((r) => r.deprecationWeek === 1).length,
-        week2: LEGACY_REPORTS.filter((r) => r.deprecationWeek === 2).length,
-        week3: LEGACY_REPORTS.filter((r) => r.deprecationWeek === 3).length,
+      digest_count: DIGESTS.length,
+      candidate_count: rows.length,
+      by_class: {
+        immediate: rows.filter((row) => row.deprecationClass === 'immediate').length,
+        week1_grace: rows.filter((row) => row.deprecationClass === 'week1_grace').length,
+        week3_grace: rows.filter((row) => row.deprecationClass === 'week3_grace').length,
+        keep: rows.filter((row) => row.deprecationClass === 'keep').length,
       },
-    };
-    console.log('\n--- JSON ---');
-    console.log(JSON.stringify(json, null, 2));
+      rows,
+    }, null, 2));
   }
 }
 
-main().catch((err: Error) => {
-  console.error('[report-deprecation-matrix] 오류:', err.message);
-  process.exit(1);
-});
+if (require.main === module) {
+  main().catch((error: Error) => {
+    console.error('[report-deprecation-matrix] failed:', error.message);
+    process.exit(1);
+  });
+}

@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-05-01T13:41:48.907Z",
+  "generated_at": "2026-05-01T21:12:46.857Z",
   "scan_patterns": [
     "hub-alarm-client",
     "openclaw-client",
@@ -945,13 +945,13 @@
     "bots/hub/scripts/alarm-closure-cycle-smoke.ts": [
       {
         "file": "bots/hub/scripts/alarm-closure-cycle-smoke.ts",
-        "line": 125,
+        "line": 144,
         "category": "hub_alarm_native",
         "match": "process.env.HUB_ALARM_ROUNDTABLE_ENABLED = 'true';"
       },
       {
         "file": "bots/hub/scripts/alarm-closure-cycle-smoke.ts",
-        "line": 136,
+        "line": 155,
         "category": "hub_alarm_native",
         "match": "record(1, 'Roundtable shouldTrigger (critical)', true, 'HUB_ALARM_ROUNDTABLE_ENABLED=true, alarmType=critical → true');"
       }

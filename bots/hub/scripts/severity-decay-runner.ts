@@ -13,13 +13,59 @@ const { runSeverityDecay } = require('../lib/alarm/severity-decay');
 const { postAlarm } = require('../../../packages/core/lib/hub-alarm-client');
 const kst = require('../../../packages/core/lib/kst');
 
+function hasFlag(name: string): boolean {
+  return process.argv.includes(`--${name}`);
+}
+
+const DRY_RUN = hasFlag('dry-run') || ['1', 'true', 'yes', 'y', 'on'].includes(
+  String(process.env.HUB_SEVERITY_DECAY_DRY_RUN || '').trim().toLowerCase(),
+);
+const JSON_OUTPUT = hasFlag('json');
+const FIXTURE_MODE = hasFlag('fixture') || ['1', 'true', 'yes', 'y', 'on'].includes(
+  String(process.env.HUB_SEVERITY_DECAY_FIXTURE || '').trim().toLowerCase(),
+);
+
+function fixtureRows(): Array<Record<string, unknown>> {
+  const now = Date.now();
+  return [
+    {
+      id: 1001,
+      severity: 'critical',
+      status: 'new',
+      fingerprint_count: 2,
+      received_at: new Date(now - 26 * 60 * 60 * 1000).toISOString(),
+    },
+    {
+      id: 1002,
+      severity: 'critical',
+      status: 'new',
+      fingerprint_count: 8,
+      received_at: new Date(now - 30 * 60 * 60 * 1000).toISOString(),
+    },
+    {
+      id: 1003,
+      severity: 'error',
+      status: 'new',
+      fingerprint_count: 1,
+      received_at: new Date(now - 8 * 24 * 60 * 60 * 1000).toISOString(),
+    },
+  ];
+}
+
 async function main() {
   console.log('[severity-decay-runner] 시작');
-  const result = await runSeverityDecay();
+  const result = await runSeverityDecay({
+    dryRun: DRY_RUN,
+    fixtureRows: FIXTURE_MODE ? fixtureRows() : undefined,
+  });
 
   if (!result.ok) {
     console.error('[severity-decay-runner] 실패:', result.error);
     process.exit(1);
+  }
+
+  if (JSON_OUTPUT) {
+    console.log(JSON.stringify({ ok: true, fixture: FIXTURE_MODE, ...result }, null, 2));
   }
 
   if (result.demoted === 0) {
@@ -41,6 +87,11 @@ async function main() {
 
   const message = lines.join('\n');
   console.log('[severity-decay-runner]', message);
+
+  if (DRY_RUN || FIXTURE_MODE) {
+    console.log('[severity-decay-runner] dry-run/fixture — Telegram 발송 스킵');
+    return;
+  }
 
   await postAlarm({
     team: 'hub',
