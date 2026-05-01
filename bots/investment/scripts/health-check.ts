@@ -640,6 +640,14 @@ async function main() {
     const svc       = status[label];
     const shortName = hsm.shortLabel(label);
     const ownership = getServiceOwnership(label);
+    if (isRetiredService(label)) {
+      hsm.clearAlert(state, `unloaded:${label}`);
+      hsm.clearAlert(state, `down:${label}`);
+      Object.keys(state)
+        .filter((key) => key.startsWith(`exitcode:${label}:`))
+        .forEach((key) => hsm.clearAlert(state, key));
+      continue;
+    }
 
     // 1. 미로드 감지
     if (!svc) {

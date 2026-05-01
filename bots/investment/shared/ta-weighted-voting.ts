@@ -15,7 +15,7 @@ function numEnv(name, fallback = 0) {
 
 // ─── regime별 기본 가중치 ────────────────────────────────────────────
 
-const REGIME_WEIGHTS = {
+export const REGIME_WEIGHTS = {
   TRENDING_BULL: {
     macd:              0.25,
     golden_cross:      0.20,

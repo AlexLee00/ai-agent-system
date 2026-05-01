@@ -18,16 +18,17 @@ export function buildLuna100PercentReport() {
     { name: 'Phase D', status: 'complete', evidence: 'posttrade and trade-data guardrails' },
     { name: 'Phase B', status: 'complete', evidence: 'Layer1/Layer2 + daily dry-run backtest' },
     { name: 'Phase Tau', status: 'complete', evidence: 'Top N + TA skill surface' },
+    { name: 'Final Polish 5', status: 'complete', evidence: 'reflexion backfill dry-run, Voyager acceleration, 7day natural checkpoint wired' },
   ];
   const report = {
-    ok: phases.every((phase) => phase.status === 'complete') && skills.length >= 30 && guardrails.length >= 25,
+    ok: phases.every((phase) => phase.status === 'complete') && skills.length >= 30 && guardrails.length >= 50,
     generatedAt: new Date().toISOString(),
     codeComplete: true,
     operationalStatus: 'code_complete_operational_blocked_until_manual_reconcile_and_7day_observation_clear',
     phases,
     skillCount: skills.length,
     guardrailCount: guardrails.length,
-    masterVision: '14/14 code path coverage; natural operations evidence still tracked separately',
+    masterVision: '14/14 code path coverage; natural operations evidence tracked by daily checkpoint',
   };
   return report;
 }

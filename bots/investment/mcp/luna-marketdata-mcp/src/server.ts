@@ -2,7 +2,32 @@
 // @ts-nocheck
 import http from 'node:http';
 import { fileURLToPath } from 'node:url';
-import { getMarketRegime, getMarketSnapshot, getOrderBook } from './tools/market-snapshot.ts';
+import {
+  binanceSnapshot,
+  closeBinanceSubscriptions,
+  subscribeBinanceMarketData,
+  unsubscribeBinanceMarketData,
+} from './tools/binance-ws.ts';
+import {
+  closeKisDomesticSubscriptions,
+  kisDomesticSnapshot,
+  subscribeKisDomesticMarketData,
+  unsubscribeKisDomesticMarketData,
+} from './tools/kis-ws-domestic.ts';
+import {
+  closeKisOverseasSubscriptions,
+  kisOverseasSnapshot,
+  subscribeKisOverseasMarketData,
+  unsubscribeKisOverseasMarketData,
+} from './tools/kis-ws-overseas.ts';
+import { getMarketRegime, getMarketSnapshot, normalizeMarket } from './tools/market-snapshot.ts';
+import { getOrderBook } from './tools/order-book.ts';
+import {
+  closeTradingViewSubscriptions,
+  subscribeTradingViewMarketData,
+  tradingViewSnapshot,
+  unsubscribeTradingViewMarketData,
+} from './tools/tradingview-ws.ts';
 
 const subscriptions = new Map();
 
@@ -38,20 +63,65 @@ function subscriptionKey(args = {}) {
   return `${args.market || 'binance'}:${String(args.symbol || 'BTC/USDT').toUpperCase()}:${args.timeframe || '1h'}`;
 }
 
-export function callMarketdataTool(name, args = {}) {
+function buildRegimeFromSnapshot(snapshot = {}) {
+  if (!snapshot?.ok) return getMarketRegime(snapshot);
+  const change = Number(snapshot.changePct24h || snapshot.change_pct || 0);
+  const trend = change > 0.025 ? 'bull' : change < -0.025 ? 'bear' : 'range';
+  const volatility = Math.abs(change) > 0.05 ? 'high' : 'normal';
+  return {
+    ok: true,
+    source: snapshot.source || 'luna-marketdata-mcp',
+    providerMode: snapshot.providerMode || 'derived',
+    market: snapshot.market,
+    symbol: snapshot.symbol,
+    regime: `${volatility}_${trend}`,
+    trend,
+    volatility,
+    confidence: volatility === 'high' ? 0.62 : 0.55,
+    computedAt: new Date().toISOString(),
+  };
+}
+
+export async function callMarketdataTool(name, args = {}) {
   if (name === 'subscribe_market_data') {
     const key = subscriptionKey(args);
-    const value = { key, args, subscribedAt: new Date().toISOString(), mode: 'parallel_shadow' };
+    const market = normalizeMarket(args.market || 'binance');
+    const provider = market === 'binance'
+      ? await subscribeBinanceMarketData(args)
+      : market === 'kis_domestic'
+        ? await subscribeKisDomesticMarketData(args)
+        : market === 'kis_overseas'
+          ? await subscribeKisOverseasMarketData(args)
+          : await subscribeTradingViewMarketData(args);
+    const value = { key, args, subscribedAt: new Date().toISOString(), mode: 'parallel_shadow', provider };
     subscriptions.set(key, value);
     return { ok: true, subscribed: true, subscription: value, count: subscriptions.size };
   }
   if (name === 'unsubscribe_market_data') {
     const key = subscriptionKey(args);
+    const market = normalizeMarket(args.market || 'binance');
+    const provider = market === 'binance'
+      ? unsubscribeBinanceMarketData(args)
+      : market === 'kis_domestic'
+        ? unsubscribeKisDomesticMarketData(args)
+        : market === 'kis_overseas'
+          ? unsubscribeKisOverseasMarketData(args)
+          : unsubscribeTradingViewMarketData(args);
     const removed = subscriptions.delete(key);
-    return { ok: true, unsubscribed: removed, key, count: subscriptions.size };
+    return { ok: true, unsubscribed: removed, key, provider, count: subscriptions.size };
   }
-  if (name === 'get_market_snapshot') return getMarketSnapshot(args);
-  if (name === 'get_market_regime') return getMarketRegime(args);
+  if (name === 'get_market_snapshot') {
+    const market = normalizeMarket(args.market || 'binance');
+    if (market === 'binance') return binanceSnapshot(args);
+    if (market === 'kis_domestic') return kisDomesticSnapshot(args);
+    if (market === 'kis_overseas') return kisOverseasSnapshot(args);
+    if (market === 'tradingview') return tradingViewSnapshot(args);
+    return getMarketSnapshot(args);
+  }
+  if (name === 'get_market_regime') {
+    const snapshot = await callMarketdataTool('get_market_snapshot', args);
+    return buildRegimeFromSnapshot(snapshot);
+  }
   if (name === 'get_order_book') return getOrderBook(args);
   throw new Error(`unknown_tool:${name}`);
 }
@@ -74,10 +144,10 @@ async function handleRpc(body) {
   if (method === 'tools/call') {
     const name = params.name;
     const args = params.arguments || params.args || {};
-    return { jsonrpc: '2.0', id, result: { content: [{ type: 'json', json: callMarketdataTool(name, args) }] } };
+    return { jsonrpc: '2.0', id, result: { content: [{ type: 'json', json: await callMarketdataTool(name, args) }] } };
   }
   if (MARKETDATA_MCP_TOOLS.some((tool) => tool.name === method)) {
-    return { jsonrpc: '2.0', id, result: callMarketdataTool(method, params) };
+    return { jsonrpc: '2.0', id, result: await callMarketdataTool(method, params) };
   }
   return { jsonrpc: '2.0', id, error: { code: -32601, message: `method_not_found:${method}` } };
 }
@@ -102,6 +172,14 @@ export function createMarketdataMcpServer() {
       return json(res, 500, { ok: false, error: error?.message || String(error) });
     }
   });
+}
+
+export function closeMarketdataMcpSubscriptions() {
+  closeBinanceSubscriptions();
+  closeKisDomesticSubscriptions();
+  closeKisOverseasSubscriptions();
+  closeTradingViewSubscriptions();
+  subscriptions.clear();
 }
 
 function argValue(name, fallback = null) {

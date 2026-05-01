@@ -7,7 +7,7 @@ import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
 export async function runSmoke() {
   const registry = createGuardrailRegistry();
   const entries = registry.list();
-  assert.ok(entries.length >= 10, 'default guardrails registered');
+  assert.ok(entries.length >= 50, `default guardrails registered: ${entries.length}`);
   for (const name of [
     'luna_full_integration_closure_gate',
     'luna_reconcile_blockers',
@@ -18,6 +18,16 @@ export async function runSmoke() {
     'failed_signal_reflexion_backfill_dryrun',
     'luna_agent_bus_stats',
     'luna_7day_checkpoint',
+    'posttrade_evaluation_completion',
+    'reflexion_extraction_rate',
+    'voyager_skill_extraction',
+    'realized_pnl_calculation',
+    'trade_quality_distribution',
+    'wallet_db_consistency',
+    'lifecycle_stage_completion',
+    'agent_yaml_19_loaded',
+    'elixir_supervisor_health',
+    'mcp_server_health',
   ]) {
     assert.ok(registry.get(name), `default guardrail registered: ${name}`);
   }

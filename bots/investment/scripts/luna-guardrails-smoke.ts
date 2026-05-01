@@ -8,10 +8,12 @@ import { runGuardrailsHourly } from './runtime-luna-guardrails-hourly.ts';
 export async function runLunaGuardrailsSmoke() {
   const registry = createGuardrailRegistry();
   const entries = registry.list();
-  assert.ok(entries.length >= 25, `expected >=25 guardrails, got ${entries.length}`);
+  assert.ok(entries.length >= 50, `expected >=50 guardrails, got ${entries.length}`);
   for (const category of GUARDRAIL_CATEGORIES) {
     assert.ok(registry.list(category).length >= 1, `category registered: ${category}`);
   }
+  assert.ok(registry.list('post_trade').length >= 10, 'post_trade guardrails >=10');
+  assert.ok(registry.list('integrity').length >= 10, 'integrity guardrails >=10');
   const report = await runGuardrailsHourly({ dryRun: true, write: false });
   assert.equal(report.ok, true);
   assert.equal(report.dryRun, true);

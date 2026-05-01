@@ -3,6 +3,10 @@
 
 import { inspectLaunchdList, inspectLaunchdPrint } from '../shared/launchd-service.ts';
 import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
+import { createRequire } from 'node:module';
+
+const require = createRequire(import.meta.url);
+const { getServiceOwnership, isRetiredService } = require('../../../packages/core/lib/service-ownership');
 
 const DEFAULT_LABELS = [
   { label: 'ai.investment.daily-feedback', expected: 'loaded', critical: true, note: 'daily feedback loop' },
@@ -26,6 +30,26 @@ function parseArgs(argv = process.argv.slice(2)) {
 }
 
 function classifyService(spec, listStatus, printStatus) {
+  const ownership = getServiceOwnership(spec.label);
+  if (isRetiredService(spec.label) && listStatus.loaded !== true && printStatus.loaded !== true) {
+    return {
+      label: spec.label,
+      expected: spec.expected,
+      critical: false,
+      note: spec.note || null,
+      ok: true,
+      loaded: false,
+      running: false,
+      pid: null,
+      lastExitStatus: null,
+      warnings: [],
+      blockers: [],
+      retired: true,
+      replacement: ownership?.replacement || null,
+      list: listStatus,
+      print: printStatus,
+    };
+  }
   const warnings = [];
   const blockers = [];
   const loaded = listStatus.loaded === true || printStatus.loaded === true;

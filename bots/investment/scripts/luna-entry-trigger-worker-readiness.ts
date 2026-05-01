@@ -5,11 +5,14 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
+import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
 import { getEntryTriggerOperationalStats } from '../shared/luna-discovery-entry-store.ts';
 import { publishAlert } from '../shared/alert-publisher.ts';
 
+const require = createRequire(import.meta.url);
+const { getServiceOwnership, isRetiredService } = require('../../../packages/core/lib/service-ownership');
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const INVESTMENT_DIR = path.resolve(__dirname, '..');
 const REPO_ROOT = path.resolve(INVESTMENT_DIR, '..', '..');
@@ -62,9 +65,48 @@ export async function buildLunaEntryTriggerWorkerReadiness({
   const heartbeat = readJson(process.env.LUNA_ENTRY_TRIGGER_HEARTBEAT_PATH || HEARTBEAT_PATH);
   const heartbeatAge = heartbeat?.checkedAt ? ageMinutes(heartbeat.checkedAt) : null;
   const service = launchctlPrint(LABEL);
+  const ownership = getServiceOwnership(LABEL);
   const stats = await getEntryTriggerOperationalStats({ exchange, hours }).catch((error) => ({
     error: error?.message || String(error),
   }));
+  if (isRetiredService(LABEL) && !service.ok) {
+    return {
+      ok: true,
+      checkedAt: new Date().toISOString(),
+      status: 'entry_trigger_worker_migrated_to_luna_skill',
+      label: LABEL,
+      replacement: ownership?.replacement || 'luna.skills.entry_trigger',
+      repoRoot: REPO_ROOT,
+      repoPlist: {
+        path: REPO_PLIST,
+        exists: !!repoPlist,
+        startIntervalSeconds: Number(repoPlist?.StartInterval || 0) || null,
+        programArguments: repoPlist?.ProgramArguments || [],
+        env: repoPlist?.EnvironmentVariables || {},
+      },
+      installedPlist: {
+        path: INSTALLED_PLIST,
+        exists: !!installedPlist,
+        startIntervalSeconds: Number(installedPlist?.StartInterval || 0) || null,
+      },
+      launchctl: service,
+      heartbeat: {
+        path: process.env.LUNA_ENTRY_TRIGGER_HEARTBEAT_PATH || HEARTBEAT_PATH,
+        exists: !!heartbeat,
+        ageMinutes: heartbeatAge,
+        payload: heartbeat,
+      },
+      service,
+      stats,
+      warnings: [],
+      installCommand: `cp ${REPO_PLIST} ${INSTALLED_PLIST} && launchctl bootstrap gui/$(id -u) ${INSTALLED_PLIST}`,
+      unloadCommand: `launchctl bootout gui/$(id -u) ${INSTALLED_PLIST}`,
+      migration: {
+        retired: true,
+        replacement: ownership?.replacement || null,
+      },
+    };
+  }
   const warnings = [];
   if (!repoPlist) warnings.push('repo launchd plist missing');
   if (!installedPlist) warnings.push('installed launchd plist missing');

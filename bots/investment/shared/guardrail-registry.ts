@@ -1,9 +1,9 @@
 // @ts-nocheck
 import { spawn } from 'node:child_process';
 
-export const GUARDRAIL_CATEGORIES = ['safety', 'runtime', 'data', 'trading'];
+export const GUARDRAIL_CATEGORIES = ['safety', 'runtime', 'data', 'trading', 'post_trade', 'integrity'];
 
-const DEFAULT_GUARDRAILS = [
+const CORE_GUARDRAILS = [
   {
     name: 'luna_l5_readiness',
     category: 'safety',
@@ -200,6 +200,186 @@ const DEFAULT_GUARDRAILS = [
     owner: 'luna',
     command: ['node', 'scripts/runtime-luna-full-regression.ts', '--json'],
   },
+];
+
+const POST_TRADE_GUARDRAILS = [
+  {
+    name: 'posttrade_evaluation_completion',
+    category: 'post_trade',
+    severity: 'high',
+    owner: 'chronos',
+    command: ['node', 'scripts/posttrade-completion-check.ts', '--json'],
+  },
+  {
+    name: 'reflexion_extraction_rate',
+    category: 'post_trade',
+    severity: 'medium',
+    owner: 'luna',
+    command: ['node', 'scripts/reflexion-rate-check.ts', '--json'],
+  },
+  {
+    name: 'voyager_skill_extraction',
+    category: 'post_trade',
+    severity: 'medium',
+    owner: 'luna',
+    command: ['node', 'scripts/voyager-extraction-check.ts', '--json'],
+  },
+  {
+    name: 'realized_pnl_calculation',
+    category: 'post_trade',
+    severity: 'high',
+    owner: 'sweeper',
+    command: ['node', 'scripts/realized-pnl-check.ts', '--json'],
+  },
+  {
+    name: 'trade_quality_distribution',
+    category: 'post_trade',
+    severity: 'medium',
+    owner: 'chronos',
+    command: ['node', 'scripts/trade-quality-distribution-check.ts', '--json'],
+  },
+  {
+    name: 'posttrade_constitution_coverage',
+    category: 'post_trade',
+    severity: 'medium',
+    owner: 'luna',
+    command: ['node', 'scripts/posttrade-constitution-smoke.ts', '--json'],
+  },
+  {
+    name: 'posttrade_skill_retrieval',
+    category: 'post_trade',
+    severity: 'medium',
+    owner: 'chronos',
+    command: ['node', 'scripts/posttrade-skill-retrieval-smoke.ts', '--json'],
+  },
+  {
+    name: 'posttrade_action_staging',
+    category: 'post_trade',
+    severity: 'medium',
+    owner: 'luna',
+    command: ['node', 'scripts/posttrade-feedback-action-staging-smoke.ts', '--json'],
+  },
+  {
+    name: 'posttrade_market_differentiation',
+    category: 'post_trade',
+    severity: 'medium',
+    owner: 'chronos',
+    command: ['node', 'scripts/posttrade-market-differentiated-smoke.ts', '--json'],
+  },
+  {
+    name: 'trade_quality_evaluator_contract',
+    category: 'post_trade',
+    severity: 'medium',
+    owner: 'chronos',
+    command: ['node', 'scripts/trade-quality-evaluator-smoke.ts', '--json'],
+  },
+  {
+    name: 'posttrade_dashboard_generation',
+    category: 'post_trade',
+    severity: 'low',
+    owner: 'luna',
+    command: ['node', 'scripts/posttrade-dashboard-smoke.ts', '--json'],
+  },
+  {
+    name: 'posttrade_close_event_flow',
+    category: 'post_trade',
+    severity: 'medium',
+    owner: 'hephaestos',
+    command: ['node', 'scripts/posttrade-close-event-flow-smoke.ts', '--json'],
+  },
+];
+
+const INTEGRITY_GUARDRAILS = [
+  {
+    name: 'wallet_db_consistency',
+    category: 'integrity',
+    severity: 'critical',
+    owner: 'sweeper',
+    command: ['node', 'scripts/sweeper-consistency-check.ts', '--json'],
+  },
+  {
+    name: 'lifecycle_stage_completion',
+    category: 'integrity',
+    severity: 'high',
+    owner: 'luna',
+    command: ['node', 'scripts/lifecycle-completion-check.ts', '--json'],
+  },
+  {
+    name: 'agent_yaml_19_loaded',
+    category: 'integrity',
+    severity: 'high',
+    owner: 'luna',
+    command: ['node', 'scripts/agent-yaml-19-check.ts', '--json'],
+  },
+  {
+    name: 'elixir_supervisor_health',
+    category: 'integrity',
+    severity: 'critical',
+    owner: 'system',
+    command: ['node', 'scripts/elixir-supervisor-health.ts', '--json'],
+  },
+  {
+    name: 'mcp_server_health',
+    category: 'integrity',
+    severity: 'medium',
+    owner: 'system',
+    command: ['node', 'scripts/mcp-server-health.ts', '--json'],
+  },
+  {
+    name: 'db_schema_facade_compatibility',
+    category: 'integrity',
+    severity: 'high',
+    owner: 'system',
+    command: ['node', 'scripts/db-schema-facade-smoke.ts', '--json'],
+  },
+  {
+    name: 'db_core_schema_compatibility',
+    category: 'integrity',
+    severity: 'high',
+    owner: 'system',
+    command: ['node', 'scripts/db-core-schema-smoke.ts', '--json'],
+  },
+  {
+    name: 'position_sync_dust_policy',
+    category: 'integrity',
+    severity: 'medium',
+    owner: 'sweeper',
+    command: ['node', 'scripts/position-sync-dust-smoke.ts', '--json'],
+  },
+  {
+    name: 'reconcile_open_journals',
+    category: 'integrity',
+    severity: 'high',
+    owner: 'hephaestos',
+    command: ['node', 'scripts/reconcile-open-journals-smoke.ts', '--json'],
+  },
+  {
+    name: 'execution_fill_envelope',
+    category: 'integrity',
+    severity: 'high',
+    owner: 'hephaestos',
+    command: ['node', 'scripts/execution-fill-envelope-smoke.ts', '--json'],
+  },
+  {
+    name: 'position_runtime_state_contract',
+    category: 'integrity',
+    severity: 'medium',
+    owner: 'luna',
+    command: ['node', 'scripts/position-runtime-state-smoke.ts', '--json'],
+  },
+  {
+    name: 'luna_launchd_doctor',
+    category: 'integrity',
+    severity: 'medium',
+    owner: 'system',
+    command: ['node', 'scripts/luna-launchd-doctor.ts', '--json'],
+  },
+];
+
+const DEFAULT_GUARDRAILS = [
+  ...CORE_GUARDRAILS,
+  ...POST_TRADE_GUARDRAILS,
+  ...INTEGRITY_GUARDRAILS,
 ];
 
 function normalizeEntry(entry = {}) {

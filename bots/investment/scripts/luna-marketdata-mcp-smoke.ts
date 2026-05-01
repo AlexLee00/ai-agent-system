@@ -42,7 +42,7 @@ export async function runSmoke() {
         jsonrpc: '2.0',
         id: 2,
         method: 'tools/call',
-        params: { name: 'get_market_snapshot', arguments: { market: 'binance', symbol: 'BTC/USDT' } },
+        params: { name: 'get_market_snapshot', arguments: { market: 'binance', symbol: 'BTC/USDT', disableReal: true } },
       }),
     });
     const snapshotJson = snapshot.body.result.content[0].json;
@@ -51,7 +51,7 @@ export async function runSmoke() {
 
     const regime = await requestJson(`${baseUrl}/rpc`, {
       method: 'POST',
-      body: JSON.stringify({ jsonrpc: '2.0', id: 3, method: 'get_market_regime', params: { symbol: 'ETH/USDT' } }),
+      body: JSON.stringify({ jsonrpc: '2.0', id: 3, method: 'get_market_regime', params: { symbol: 'ETH/USDT', disableReal: true } }),
     });
     assert.equal(regime.body.result.ok, true);
     assert.ok(String(regime.body.result.regime).includes('_'));
@@ -62,14 +62,14 @@ export async function runSmoke() {
         jsonrpc: '2.0',
         id: 4,
         method: 'subscribe_market_data',
-        params: { market: 'tradingview', symbol: 'BTCUSDT', timeframe: '1h' },
+        params: { market: 'tradingview', symbol: 'BTCUSDT', timeframe: '1h', disableReal: true },
       }),
     });
     assert.equal(subscribe.body.result.subscribed, true);
 
     const book = await requestJson(`${baseUrl}/rpc`, {
       method: 'POST',
-      body: JSON.stringify({ jsonrpc: '2.0', id: 5, method: 'get_order_book', params: { depth: 3 } }),
+      body: JSON.stringify({ jsonrpc: '2.0', id: 5, method: 'get_order_book', params: { depth: 3, disableReal: true } }),
     });
     assert.equal(book.body.result.bids.length, 3);
     assert.equal(book.body.result.asks.length, 3);

@@ -2,6 +2,7 @@
 // @ts-nocheck
 
 import { spawnSync } from 'node:child_process';
+import { createRequire } from 'node:module';
 import { buildPosttradeFeedbackDoctor } from './runtime-posttrade-feedback-doctor.ts';
 import { runPosttradeFeedbackReadiness } from './runtime-posttrade-feedback-readiness.ts';
 import { buildPosttradeFeedbackL5Gate } from './runtime-posttrade-feedback-l5-gate.ts';
@@ -12,6 +13,8 @@ import { getPosttradeFeedbackRuntimeConfig } from '../shared/runtime-config.ts';
 import { publishAlert } from '../shared/alert-publisher.ts';
 import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
 
+const require = createRequire(import.meta.url);
+const { getServiceOwnership, isRetiredService } = require('../../../packages/core/lib/service-ownership');
 const LAUNCHD_LABEL = 'ai.investment.posttrade-feedback-worker';
 
 function parseArgs(argv = process.argv.slice(2)) {
@@ -35,6 +38,22 @@ function inspectLaunchdService() {
   });
   const text = `${proc.stdout || ''}\n${proc.stderr || ''}`;
   const loaded = proc.status === 0;
+  const ownership = getServiceOwnership(LAUNCHD_LABEL);
+  if (!loaded && isRetiredService(LAUNCHD_LABEL)) {
+    return {
+      ok: true,
+      loaded: false,
+      retired: true,
+      replacement: ownership?.replacement || 'luna.skills.posttrade_feedback',
+      label: LAUNCHD_LABEL,
+      domain,
+      pid: null,
+      lastExitCode: null,
+      runIntervalSec: null,
+      status: 'launchd_retired_to_luna_skill',
+      detail: null,
+    };
+  }
   const pidMatch = text.match(/\bpid\s*=\s*(\d+)/);
   const lastExitMatch = text.match(/\blast exit code\s*=\s*(-?\d+)/i);
   const runIntervalMatch = text.match(/\brun interval\s*=\s*(\d+)\s*seconds/i);
@@ -57,7 +76,7 @@ function chooseNextAction({ cfg, doctor, readiness, gate, phasePlan, launchd } =
   if (phasePlan?.ok === true && phasePlan.steps?.some((step) => step.currentlyEnabled !== true)) {
     return 'enable_remaining_posttrade_phases';
   }
-  if (cfg?.worker?.enabled === true && launchd?.loaded !== true) return 'load_posttrade_feedback_worker_launchd';
+  if (cfg?.worker?.enabled === true && launchd?.loaded !== true && launchd?.retired !== true) return 'load_posttrade_feedback_worker_launchd';
   if (gate?.ok !== true) return 'resolve_posttrade_l5_gate_blockers';
   return 'continue_posttrade_operational_observation';
 }
