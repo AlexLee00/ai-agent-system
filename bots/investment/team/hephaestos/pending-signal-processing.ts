@@ -48,6 +48,27 @@ export function createPendingSignalProcessing({
   executeSignal,
   delay,
 } = {}) {
+  async function listHephaestosExecutableSignals(tradeMode) {
+    const [pendingSignals, approvedSignals] = await Promise.all([
+      db.getPendingSignals('binance', tradeMode),
+      db.getApprovedSignals('binance', tradeMode),
+    ]);
+    const signalsById = new Map();
+    for (const signal of [...pendingSignals, ...approvedSignals]) {
+      signalsById.set(signal.id, signal);
+    }
+    const signals = [...signalsById.values()].sort((a, b) => {
+      const aTime = new Date(a.created_at || 0).getTime();
+      const bTime = new Date(b.created_at || 0).getTime();
+      return aTime - bTime;
+    });
+    return {
+      signals,
+      pendingCount: pendingSignals.length,
+      approvedCount: approvedSignals.length,
+    };
+  }
+
   async function preparePendingSignalProcessing() {
     await initHubSecrets().catch(() => false);
     const tradeMode = getInvestmentTradeMode();
@@ -180,7 +201,17 @@ export function createPendingSignalProcessing({
       while (nextModeIndex < tradeModes.length) {
         const tradeMode = tradeModes[nextModeIndex];
         nextModeIndex += 1;
-        const signals = await db.getApprovedSignals('binance', tradeMode);
+        const {
+          signals,
+          pendingCount,
+          approvedCount,
+        } = await listHephaestosExecutableSignals(tradeMode);
+        if (signals.length > 0) {
+          console.log(
+            `[헤파이스토스] 실행대상 복구 ${signals.length}건 `
+            + `(pending=${pendingCount}, approved=${approvedCount}, trade_mode=${tradeMode})`,
+          );
+        }
         const results = await runPendingSignalBatch(signals, {
           tradeMode,
           delayMs: getPendingSignalDelayMs(),
@@ -194,6 +225,7 @@ export function createPendingSignalProcessing({
 
   return {
     preparePendingSignalProcessing,
+    listHephaestosExecutableSignals,
     runPendingSignalBatch,
     processAllPendingSignals,
   };
