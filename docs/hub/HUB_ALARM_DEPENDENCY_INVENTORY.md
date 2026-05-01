@@ -2,10 +2,10 @@
 
 This inventory tracks the Hub alarm migration surface. `hub_alarm_native` entries are the desired path; `retired_gateway_guard` entries are regression guards; `legacy_gateway_compat` entries are remaining migration targets and must stay at 0.
 
-- generated_at: 2026-05-01T10:00:22.963Z
-- total_matches: 281
+- generated_at: 2026-05-01T13:30:09.301Z
+- total_matches: 254
 - unique_files: 128
-- hub_alarm_native: 269
+- hub_alarm_native: 242
 - retired_gateway_guard: 12
 - legacy_gateway_compat: 0
 
@@ -228,80 +228,53 @@ This inventory tracks the Hub alarm migration surface. `hub_alarm_native` entrie
 - L26 [hub_alarm_native]: `String(process.env.HUB_ALARM_USE_CLASS_TOPICS || '').trim().toLowerCase(),`
 
 ### `bots/hub/lib/routes/alarm.ts`
-- L63 [hub_alarm_native]: `const raw = String(process.env.HUB_ALARM_DISPATCH_MODE || '').trim().toLowerCase();`
-- L405 [hub_alarm_native]: `const claimLeaseMinutes = Math.max(1, Number(process.env.HUB_ALARM_DIGEST_CLAIM_LEASE_MINUTES || 15) || 15);`
+- L77 [hub_alarm_native]: `const raw = String(process.env.HUB_ALARM_DISPATCH_MODE || '').trim().toLowerCase();`
+- L419 [hub_alarm_native]: `const claimLeaseMinutes = Math.max(1, Number(process.env.HUB_ALARM_DIGEST_CLAIM_LEASE_MINUTES || 15) || 15);`
 
 ### `bots/hub/lib/routes/secrets.ts`
 - L95 [hub_alarm_native]: `const raw = String(process.env.HUB_ALARM_USE_CLASS_TOPICS || '').trim().toLowerCase();`
 
 ### `bots/hub/scripts/alarm-activation-stage1-smoke.ts`
-- L7 [hub_alarm_native]: `*   1. HUB_ALARM_DISPATCH_MODE=shadow → getDispatchMode() 반환값`
-- L8 [hub_alarm_native]: `*   2. HUB_ALARM_DISPATCH_MODE 미설정 → 기본값 'supervised'`
-- L9 [hub_alarm_native]: `*   3. HUB_ALARM_CRITICAL_TYPE_ENABLED 게이트 동작`
-- L41 [hub_alarm_native]: `withEnv({ HUB_ALARM_DISPATCH_MODE: 'shadow' }, () => {`
-- L45 [hub_alarm_native]: `withEnv({ HUB_ALARM_DISPATCH_MODE: 'supervised' }, () => {`
-- L49 [hub_alarm_native]: `withEnv({ HUB_ALARM_DISPATCH_MODE: 'autonomous' }, () => {`
-- L53 [hub_alarm_native]: `withEnv({ HUB_ALARM_DISPATCH_MODE: undefined }, () => {`
-- L57 [hub_alarm_native]: `withEnv({ HUB_ALARM_DISPATCH_MODE: 'invalid_value' }, () => {`
-- L65 [hub_alarm_native]: `withEnv({ HUB_ALARM_CRITICAL_TYPE_ENABLED: undefined }, () => {`
-- L69 [hub_alarm_native]: `withEnv({ HUB_ALARM_CRITICAL_TYPE_ENABLED: 'false' }, () => {`
-- L73 [hub_alarm_native]: `withEnv({ HUB_ALARM_CRITICAL_TYPE_ENABLED: 'true' }, () => {`
-- L77 [hub_alarm_native]: `withEnv({ HUB_ALARM_CRITICAL_TYPE_ENABLED: '1' }, () => {`
-- L84 [hub_alarm_native]: `'HUB_ALARM_LLM_CLASSIFIER_ENABLED',`
-- L85 [hub_alarm_native]: `'HUB_ALARM_INTERPRETER_ENABLED',`
-- L86 [hub_alarm_native]: `'HUB_ALARM_ENRICHMENT_ENABLED',`
-- L87 [hub_alarm_native]: `'HUB_ALARM_CRITICAL_TYPE_ENABLED',`
-- L115 [hub_alarm_native]: `'HUB_ALARM_DISPATCH_MODE',`
-- L116 [hub_alarm_native]: `'HUB_ALARM_LLM_CLASSIFIER_ENABLED',`
-- L117 [hub_alarm_native]: `'HUB_ALARM_CRITICAL_TYPE_ENABLED',`
-- L118 [hub_alarm_native]: `'HUB_ALARM_INTERPRETER_ENABLED',`
-- L119 [hub_alarm_native]: `'HUB_ALARM_ENRICHMENT_ENABLED',`
-- L127 [hub_alarm_native]: `const shadowIdx = content.indexOf('HUB_ALARM_DISPATCH_MODE');`
-- L129 [hub_alarm_native]: `assert(shadowValueIdx > 0, 'plist HUB_ALARM_DISPATCH_MODE=shadow 확인');`
+- L71 [hub_alarm_native]: `['HUB_ALARM_LLM_CLASSIFIER_ENABLED', 'true'],`
+- L72 [hub_alarm_native]: `['HUB_ALARM_INTERPRETER_ENABLED', 'true'],`
+- L73 [hub_alarm_native]: `['HUB_ALARM_ENRICHMENT_ENABLED', 'true'],`
+- L74 [hub_alarm_native]: `['HUB_ALARM_CRITICAL_TYPE_ENABLED', 'true'],`
+- L75 [hub_alarm_native]: `['HUB_ALARM_INTERPRETER_FAIL_OPEN', 'true'],`
+- L82 [hub_alarm_native]: `const dispatchKeyIndex = text.indexOf('<key>HUB_ALARM_DISPATCH_MODE</key>');`
+- L83 [hub_alarm_native]: `assert(dispatchKeyIndex >= 0, 'repo plist missing HUB_ALARM_DISPATCH_MODE');`
+- L88 [hub_alarm_native]: `const roundtableKeyIndex = text.indexOf('<key>HUB_ALARM_ROUNDTABLE_ENABLED</key>');`
+- L89 [hub_alarm_native]: `assert(roundtableKeyIndex >= 0, 'repo plist missing HUB_ALARM_ROUNDTABLE_ENABLED');`
+- L154 [hub_alarm_native]: `HUB_ALARM_DISPATCH_MODE: 'shadow',`
+- L155 [hub_alarm_native]: `HUB_ALARM_LLM_CLASSIFIER_ENABLED: 'true',`
+- L156 [hub_alarm_native]: `HUB_ALARM_INTERPRETER_ENABLED: 'true',`
+- L157 [hub_alarm_native]: `HUB_ALARM_ENRICHMENT_ENABLED: 'true',`
+- L158 [hub_alarm_native]: `HUB_ALARM_CRITICAL_TYPE_ENABLED: 'true',`
+- L159 [hub_alarm_native]: `HUB_ALARM_INTERPRETER_FAIL_OPEN: 'true',`
+- L160 [hub_alarm_native]: `HUB_ALARM_ROUNDTABLE_ENABLED: 'false',`
 
 ### `bots/hub/scripts/alarm-activation-stage2-smoke.ts`
-- L40 [hub_alarm_native]: `withEnv({ HUB_ALARM_DISPATCH_MODE: 'supervised' }, () => {`
-- L49 [hub_alarm_native]: `HUB_ALARM_LLM_DAILY_LIMIT: undefined,`
-- L50 [hub_alarm_native]: `HUB_ALARM_INTERPRETER_LLM_DAILY_LIMIT: undefined,`
-- L51 [hub_alarm_native]: `HUB_ALARM_ROUNDTABLE_DAILY_LIMIT: undefined,`
-- L53 [hub_alarm_native]: `const classifierCap = Math.max(1, Number(process.env.HUB_ALARM_LLM_DAILY_LIMIT || 100) || 100);`
-- L54 [hub_alarm_native]: `const interpreterCap = Math.max(1, Number(process.env.HUB_ALARM_INTERPRETER_LLM_DAILY_LIMIT || 200) || 200);`
-- L55 [hub_alarm_native]: `const roundtableCap = Math.max(1, Number(process.env.HUB_ALARM_ROUNDTABLE_DAILY_LIMIT || 10) || 10);`
-- L64 [hub_alarm_native]: `withEnv({ HUB_ALARM_INTERPRETER_FAIL_OPEN: undefined }, () => {`
-- L65 [hub_alarm_native]: `const raw = String(process.env.HUB_ALARM_INTERPRETER_FAIL_OPEN ?? 'true').trim().toLowerCase();`
-- L70 [hub_alarm_native]: `withEnv({ HUB_ALARM_INTERPRETER_FAIL_OPEN: 'false' }, () => {`
-- L71 [hub_alarm_native]: `const raw = String(process.env.HUB_ALARM_INTERPRETER_FAIL_OPEN ?? 'true').trim().toLowerCase();`
-- L80 [hub_alarm_native]: `'HUB_ALARM_LLM_CLASSIFIER_ENABLED',`
-- L81 [hub_alarm_native]: `'HUB_ALARM_INTERPRETER_ENABLED',`
-- L82 [hub_alarm_native]: `'HUB_ALARM_ENRICHMENT_ENABLED',`
-- L83 [hub_alarm_native]: `'HUB_ALARM_CRITICAL_TYPE_ENABLED',`
-- L84 [hub_alarm_native]: `'HUB_ALARM_DISPATCH_MODE',`
-- L92 [hub_alarm_native]: `withEnv({ HUB_ALARM_DISPATCH_MODE: 'supervised' }, () => {`
+- L121 [hub_alarm_native]: `HUB_ALARM_DISPATCH_MODE: 'supervised',`
+- L122 [hub_alarm_native]: `HUB_ALARM_LLM_CLASSIFIER_ENABLED: 'true',`
+- L123 [hub_alarm_native]: `HUB_ALARM_INTERPRETER_ENABLED: 'true',`
+- L124 [hub_alarm_native]: `HUB_ALARM_ENRICHMENT_ENABLED: 'true',`
+- L125 [hub_alarm_native]: `HUB_ALARM_CRITICAL_TYPE_ENABLED: 'true',`
+- L126 [hub_alarm_native]: `HUB_ALARM_INTERPRETER_FAIL_OPEN: 'true',`
+- L127 [hub_alarm_native]: `HUB_ALARM_ROUNDTABLE_ENABLED: 'false',`
+- L128 [hub_alarm_native]: `HUB_ALARM_USE_CLASS_TOPICS: 'true',`
 
 ### `bots/hub/scripts/alarm-activation-stage3-smoke.ts`
-- L8 [hub_alarm_native]: `*   2. HUB_ALARM_ROUNDTABLE_ENABLED gate 동작`
-- L42 [hub_alarm_native]: `withEnv({ HUB_ALARM_DISPATCH_MODE: 'autonomous' }, () => {`
-- L52 [hub_alarm_native]: `withEnv({ HUB_ALARM_ROUNDTABLE_ENABLED: undefined }, () => {`
-- L53 [hub_alarm_native]: `const raw = String(process.env.HUB_ALARM_ROUNDTABLE_ENABLED || '').trim().toLowerCase();`
-- L58 [hub_alarm_native]: `withEnv({ HUB_ALARM_ROUNDTABLE_ENABLED: 'true' }, () => {`
-- L59 [hub_alarm_native]: `const raw = String(process.env.HUB_ALARM_ROUNDTABLE_ENABLED || '').trim().toLowerCase();`
-- L69 [hub_alarm_native]: `withEnv({ HUB_ALARM_ROUNDTABLE_DAILY_LIMIT: undefined }, () => {`
-- L70 [hub_alarm_native]: `const cap = Math.max(1, Number(process.env.HUB_ALARM_ROUNDTABLE_DAILY_LIMIT || 10) || 10);`
-- L74 [hub_alarm_native]: `withEnv({ HUB_ALARM_ROUNDTABLE_DAILY_LIMIT: '5' }, () => {`
-- L75 [hub_alarm_native]: `const cap = Math.max(1, Number(process.env.HUB_ALARM_ROUNDTABLE_DAILY_LIMIT || 10) || 10);`
-- L81 [hub_alarm_native]: `withEnv({ HUB_ALARM_ROUNDTABLE_TRIGGER_FINGERPRINT_THRESHOLD: undefined }, () => {`
-- L82 [hub_alarm_native]: `const threshold = Math.max(1, Number(process.env.HUB_ALARM_ROUNDTABLE_TRIGGER_FINGERPRINT_THRESHOLD || 3) || 3);`
-- L86 [hub_alarm_native]: `withEnv({ HUB_ALARM_ROUNDTABLE_TRIGGER_FINGERPRINT_THRESHOLD: '5' }, () => {`
-- L87 [hub_alarm_native]: `const threshold = Math.max(1, Number(process.env.HUB_ALARM_ROUNDTABLE_TRIGGER_FINGERPRINT_THRESHOLD || 3) || 3);`
-- L97 [hub_alarm_native]: `await withEnvAsync({ HUB_ALARM_ROUNDTABLE_ENABLED: 'false' }, async () => {`
-- L103 [hub_alarm_native]: `await withEnvAsync({ HUB_ALARM_ROUNDTABLE_ENABLED: 'true' }, async () => {`
-- L109 [hub_alarm_native]: `await withEnvAsync({ HUB_ALARM_ROUNDTABLE_ENABLED: 'true' }, async () => {`
-- L137 [hub_alarm_native]: `HUB_ALARM_DISPATCH_MODE: 'autonomous',`
-- L138 [hub_alarm_native]: `HUB_ALARM_ROUNDTABLE_ENABLED: 'true',`
-- L139 [hub_alarm_native]: `HUB_ALARM_ROUNDTABLE_DAILY_LIMIT: '10',`
-- L140 [hub_alarm_native]: `HUB_ALARM_ROUNDTABLE_TRIGGER_FINGERPRINT_THRESHOLD: '3',`
-- L145 [hub_alarm_native]: `String(process.env.HUB_ALARM_ROUNDTABLE_ENABLED || '').trim().toLowerCase(),`
-- L149 [hub_alarm_native]: `const cap = Math.max(1, Number(process.env.HUB_ALARM_ROUNDTABLE_DAILY_LIMIT || 10) || 10);`
+- L62 [hub_alarm_native]: `await withEnv({ HUB_ALARM_ROUNDTABLE_ENABLED: 'false' }, async () => {`
+- L66 [hub_alarm_native]: `await withEnv({ HUB_ALARM_ROUNDTABLE_ENABLED: 'true' }, async () => {`
+- L148 [hub_alarm_native]: `HUB_ALARM_DISPATCH_MODE: 'autonomous',`
+- L149 [hub_alarm_native]: `HUB_ALARM_LLM_CLASSIFIER_ENABLED: 'true',`
+- L150 [hub_alarm_native]: `HUB_ALARM_INTERPRETER_ENABLED: 'true',`
+- L151 [hub_alarm_native]: `HUB_ALARM_ENRICHMENT_ENABLED: 'true',`
+- L152 [hub_alarm_native]: `HUB_ALARM_CRITICAL_TYPE_ENABLED: 'true',`
+- L153 [hub_alarm_native]: `HUB_ALARM_INTERPRETER_FAIL_OPEN: 'true',`
+- L154 [hub_alarm_native]: `HUB_ALARM_ROUNDTABLE_ENABLED: 'true',`
+- L155 [hub_alarm_native]: `HUB_ALARM_ROUNDTABLE_DAILY_LIMIT: '10',`
+- L156 [hub_alarm_native]: `HUB_ALARM_ROUNDTABLE_TRIGGER_FINGERPRINT_THRESHOLD: '3',`
+- L157 [hub_alarm_native]: `HUB_ALARM_USE_CLASS_TOPICS: 'true',`
 
 ### `bots/hub/scripts/alarm-auto-repair-stale-scan.ts`
 - L5 [hub_alarm_native]: `const { postAlarm } = require('../../../packages/core/lib/hub-alarm-client');`

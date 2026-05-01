@@ -1,15 +1,15 @@
 {
-  "generated_at": "2026-05-01T10:00:22.963Z",
+  "generated_at": "2026-05-01T13:30:09.301Z",
   "scan_patterns": [
     "hub-alarm-client",
     "openclaw-client",
     "HUB_ALARM_",
     "OPENCLAW_"
   ],
-  "total_matches": 281,
+  "total_matches": 254,
   "unique_files": 128,
   "categories": {
-    "hub_alarm_native": 269,
+    "hub_alarm_native": 242,
     "retired_gateway_guard": 12,
     "legacy_gateway_compat": 0
   },
@@ -643,13 +643,13 @@
     "bots/hub/lib/routes/alarm.ts": [
       {
         "file": "bots/hub/lib/routes/alarm.ts",
-        "line": 63,
+        "line": 77,
         "category": "hub_alarm_native",
         "match": "const raw = String(process.env.HUB_ALARM_DISPATCH_MODE || '').trim().toLowerCase();"
       },
       {
         "file": "bots/hub/lib/routes/alarm.ts",
-        "line": 405,
+        "line": 419,
         "category": "hub_alarm_native",
         "match": "const claimLeaseMinutes = Math.max(1, Number(process.env.HUB_ALARM_DIGEST_CLAIM_LEASE_MINUTES || 15) || 15);"
       }
@@ -665,385 +665,223 @@
     "bots/hub/scripts/alarm-activation-stage1-smoke.ts": [
       {
         "file": "bots/hub/scripts/alarm-activation-stage1-smoke.ts",
-        "line": 7,
+        "line": 71,
         "category": "hub_alarm_native",
-        "match": "*   1. HUB_ALARM_DISPATCH_MODE=shadow → getDispatchMode() 반환값"
+        "match": "['HUB_ALARM_LLM_CLASSIFIER_ENABLED', 'true'],"
       },
       {
         "file": "bots/hub/scripts/alarm-activation-stage1-smoke.ts",
-        "line": 8,
+        "line": 72,
         "category": "hub_alarm_native",
-        "match": "*   2. HUB_ALARM_DISPATCH_MODE 미설정 → 기본값 'supervised'"
-      },
-      {
-        "file": "bots/hub/scripts/alarm-activation-stage1-smoke.ts",
-        "line": 9,
-        "category": "hub_alarm_native",
-        "match": "*   3. HUB_ALARM_CRITICAL_TYPE_ENABLED 게이트 동작"
-      },
-      {
-        "file": "bots/hub/scripts/alarm-activation-stage1-smoke.ts",
-        "line": 41,
-        "category": "hub_alarm_native",
-        "match": "withEnv({ HUB_ALARM_DISPATCH_MODE: 'shadow' }, () => {"
-      },
-      {
-        "file": "bots/hub/scripts/alarm-activation-stage1-smoke.ts",
-        "line": 45,
-        "category": "hub_alarm_native",
-        "match": "withEnv({ HUB_ALARM_DISPATCH_MODE: 'supervised' }, () => {"
-      },
-      {
-        "file": "bots/hub/scripts/alarm-activation-stage1-smoke.ts",
-        "line": 49,
-        "category": "hub_alarm_native",
-        "match": "withEnv({ HUB_ALARM_DISPATCH_MODE: 'autonomous' }, () => {"
-      },
-      {
-        "file": "bots/hub/scripts/alarm-activation-stage1-smoke.ts",
-        "line": 53,
-        "category": "hub_alarm_native",
-        "match": "withEnv({ HUB_ALARM_DISPATCH_MODE: undefined }, () => {"
-      },
-      {
-        "file": "bots/hub/scripts/alarm-activation-stage1-smoke.ts",
-        "line": 57,
-        "category": "hub_alarm_native",
-        "match": "withEnv({ HUB_ALARM_DISPATCH_MODE: 'invalid_value' }, () => {"
-      },
-      {
-        "file": "bots/hub/scripts/alarm-activation-stage1-smoke.ts",
-        "line": 65,
-        "category": "hub_alarm_native",
-        "match": "withEnv({ HUB_ALARM_CRITICAL_TYPE_ENABLED: undefined }, () => {"
-      },
-      {
-        "file": "bots/hub/scripts/alarm-activation-stage1-smoke.ts",
-        "line": 69,
-        "category": "hub_alarm_native",
-        "match": "withEnv({ HUB_ALARM_CRITICAL_TYPE_ENABLED: 'false' }, () => {"
+        "match": "['HUB_ALARM_INTERPRETER_ENABLED', 'true'],"
       },
       {
         "file": "bots/hub/scripts/alarm-activation-stage1-smoke.ts",
         "line": 73,
         "category": "hub_alarm_native",
-        "match": "withEnv({ HUB_ALARM_CRITICAL_TYPE_ENABLED: 'true' }, () => {"
+        "match": "['HUB_ALARM_ENRICHMENT_ENABLED', 'true'],"
       },
       {
         "file": "bots/hub/scripts/alarm-activation-stage1-smoke.ts",
-        "line": 77,
+        "line": 74,
         "category": "hub_alarm_native",
-        "match": "withEnv({ HUB_ALARM_CRITICAL_TYPE_ENABLED: '1' }, () => {"
+        "match": "['HUB_ALARM_CRITICAL_TYPE_ENABLED', 'true'],"
       },
       {
         "file": "bots/hub/scripts/alarm-activation-stage1-smoke.ts",
-        "line": 84,
+        "line": 75,
         "category": "hub_alarm_native",
-        "match": "'HUB_ALARM_LLM_CLASSIFIER_ENABLED',"
+        "match": "['HUB_ALARM_INTERPRETER_FAIL_OPEN', 'true'],"
       },
       {
         "file": "bots/hub/scripts/alarm-activation-stage1-smoke.ts",
-        "line": 85,
+        "line": 82,
         "category": "hub_alarm_native",
-        "match": "'HUB_ALARM_INTERPRETER_ENABLED',"
+        "match": "const dispatchKeyIndex = text.indexOf('<key>HUB_ALARM_DISPATCH_MODE</key>');"
       },
       {
         "file": "bots/hub/scripts/alarm-activation-stage1-smoke.ts",
-        "line": 86,
+        "line": 83,
         "category": "hub_alarm_native",
-        "match": "'HUB_ALARM_ENRICHMENT_ENABLED',"
+        "match": "assert(dispatchKeyIndex >= 0, 'repo plist missing HUB_ALARM_DISPATCH_MODE');"
       },
       {
         "file": "bots/hub/scripts/alarm-activation-stage1-smoke.ts",
-        "line": 87,
+        "line": 88,
         "category": "hub_alarm_native",
-        "match": "'HUB_ALARM_CRITICAL_TYPE_ENABLED',"
+        "match": "const roundtableKeyIndex = text.indexOf('<key>HUB_ALARM_ROUNDTABLE_ENABLED</key>');"
       },
       {
         "file": "bots/hub/scripts/alarm-activation-stage1-smoke.ts",
-        "line": 115,
+        "line": 89,
         "category": "hub_alarm_native",
-        "match": "'HUB_ALARM_DISPATCH_MODE',"
+        "match": "assert(roundtableKeyIndex >= 0, 'repo plist missing HUB_ALARM_ROUNDTABLE_ENABLED');"
       },
       {
         "file": "bots/hub/scripts/alarm-activation-stage1-smoke.ts",
-        "line": 116,
+        "line": 154,
         "category": "hub_alarm_native",
-        "match": "'HUB_ALARM_LLM_CLASSIFIER_ENABLED',"
+        "match": "HUB_ALARM_DISPATCH_MODE: 'shadow',"
       },
       {
         "file": "bots/hub/scripts/alarm-activation-stage1-smoke.ts",
-        "line": 117,
+        "line": 155,
         "category": "hub_alarm_native",
-        "match": "'HUB_ALARM_CRITICAL_TYPE_ENABLED',"
+        "match": "HUB_ALARM_LLM_CLASSIFIER_ENABLED: 'true',"
       },
       {
         "file": "bots/hub/scripts/alarm-activation-stage1-smoke.ts",
-        "line": 118,
+        "line": 156,
         "category": "hub_alarm_native",
-        "match": "'HUB_ALARM_INTERPRETER_ENABLED',"
+        "match": "HUB_ALARM_INTERPRETER_ENABLED: 'true',"
       },
       {
         "file": "bots/hub/scripts/alarm-activation-stage1-smoke.ts",
-        "line": 119,
+        "line": 157,
         "category": "hub_alarm_native",
-        "match": "'HUB_ALARM_ENRICHMENT_ENABLED',"
+        "match": "HUB_ALARM_ENRICHMENT_ENABLED: 'true',"
       },
       {
         "file": "bots/hub/scripts/alarm-activation-stage1-smoke.ts",
-        "line": 127,
+        "line": 158,
         "category": "hub_alarm_native",
-        "match": "const shadowIdx = content.indexOf('HUB_ALARM_DISPATCH_MODE');"
+        "match": "HUB_ALARM_CRITICAL_TYPE_ENABLED: 'true',"
       },
       {
         "file": "bots/hub/scripts/alarm-activation-stage1-smoke.ts",
-        "line": 129,
+        "line": 159,
         "category": "hub_alarm_native",
-        "match": "assert(shadowValueIdx > 0, 'plist HUB_ALARM_DISPATCH_MODE=shadow 확인');"
+        "match": "HUB_ALARM_INTERPRETER_FAIL_OPEN: 'true',"
+      },
+      {
+        "file": "bots/hub/scripts/alarm-activation-stage1-smoke.ts",
+        "line": 160,
+        "category": "hub_alarm_native",
+        "match": "HUB_ALARM_ROUNDTABLE_ENABLED: 'false',"
       }
     ],
     "bots/hub/scripts/alarm-activation-stage2-smoke.ts": [
       {
         "file": "bots/hub/scripts/alarm-activation-stage2-smoke.ts",
-        "line": 40,
+        "line": 121,
         "category": "hub_alarm_native",
-        "match": "withEnv({ HUB_ALARM_DISPATCH_MODE: 'supervised' }, () => {"
+        "match": "HUB_ALARM_DISPATCH_MODE: 'supervised',"
       },
       {
         "file": "bots/hub/scripts/alarm-activation-stage2-smoke.ts",
-        "line": 49,
+        "line": 122,
         "category": "hub_alarm_native",
-        "match": "HUB_ALARM_LLM_DAILY_LIMIT: undefined,"
+        "match": "HUB_ALARM_LLM_CLASSIFIER_ENABLED: 'true',"
       },
       {
         "file": "bots/hub/scripts/alarm-activation-stage2-smoke.ts",
-        "line": 50,
+        "line": 123,
         "category": "hub_alarm_native",
-        "match": "HUB_ALARM_INTERPRETER_LLM_DAILY_LIMIT: undefined,"
+        "match": "HUB_ALARM_INTERPRETER_ENABLED: 'true',"
       },
       {
         "file": "bots/hub/scripts/alarm-activation-stage2-smoke.ts",
-        "line": 51,
+        "line": 124,
         "category": "hub_alarm_native",
-        "match": "HUB_ALARM_ROUNDTABLE_DAILY_LIMIT: undefined,"
+        "match": "HUB_ALARM_ENRICHMENT_ENABLED: 'true',"
       },
       {
         "file": "bots/hub/scripts/alarm-activation-stage2-smoke.ts",
-        "line": 53,
+        "line": 125,
         "category": "hub_alarm_native",
-        "match": "const classifierCap = Math.max(1, Number(process.env.HUB_ALARM_LLM_DAILY_LIMIT || 100) || 100);"
+        "match": "HUB_ALARM_CRITICAL_TYPE_ENABLED: 'true',"
       },
       {
         "file": "bots/hub/scripts/alarm-activation-stage2-smoke.ts",
-        "line": 54,
+        "line": 126,
         "category": "hub_alarm_native",
-        "match": "const interpreterCap = Math.max(1, Number(process.env.HUB_ALARM_INTERPRETER_LLM_DAILY_LIMIT || 200) || 200);"
+        "match": "HUB_ALARM_INTERPRETER_FAIL_OPEN: 'true',"
       },
       {
         "file": "bots/hub/scripts/alarm-activation-stage2-smoke.ts",
-        "line": 55,
+        "line": 127,
         "category": "hub_alarm_native",
-        "match": "const roundtableCap = Math.max(1, Number(process.env.HUB_ALARM_ROUNDTABLE_DAILY_LIMIT || 10) || 10);"
+        "match": "HUB_ALARM_ROUNDTABLE_ENABLED: 'false',"
       },
       {
         "file": "bots/hub/scripts/alarm-activation-stage2-smoke.ts",
-        "line": 64,
+        "line": 128,
         "category": "hub_alarm_native",
-        "match": "withEnv({ HUB_ALARM_INTERPRETER_FAIL_OPEN: undefined }, () => {"
-      },
-      {
-        "file": "bots/hub/scripts/alarm-activation-stage2-smoke.ts",
-        "line": 65,
-        "category": "hub_alarm_native",
-        "match": "const raw = String(process.env.HUB_ALARM_INTERPRETER_FAIL_OPEN ?? 'true').trim().toLowerCase();"
-      },
-      {
-        "file": "bots/hub/scripts/alarm-activation-stage2-smoke.ts",
-        "line": 70,
-        "category": "hub_alarm_native",
-        "match": "withEnv({ HUB_ALARM_INTERPRETER_FAIL_OPEN: 'false' }, () => {"
-      },
-      {
-        "file": "bots/hub/scripts/alarm-activation-stage2-smoke.ts",
-        "line": 71,
-        "category": "hub_alarm_native",
-        "match": "const raw = String(process.env.HUB_ALARM_INTERPRETER_FAIL_OPEN ?? 'true').trim().toLowerCase();"
-      },
-      {
-        "file": "bots/hub/scripts/alarm-activation-stage2-smoke.ts",
-        "line": 80,
-        "category": "hub_alarm_native",
-        "match": "'HUB_ALARM_LLM_CLASSIFIER_ENABLED',"
-      },
-      {
-        "file": "bots/hub/scripts/alarm-activation-stage2-smoke.ts",
-        "line": 81,
-        "category": "hub_alarm_native",
-        "match": "'HUB_ALARM_INTERPRETER_ENABLED',"
-      },
-      {
-        "file": "bots/hub/scripts/alarm-activation-stage2-smoke.ts",
-        "line": 82,
-        "category": "hub_alarm_native",
-        "match": "'HUB_ALARM_ENRICHMENT_ENABLED',"
-      },
-      {
-        "file": "bots/hub/scripts/alarm-activation-stage2-smoke.ts",
-        "line": 83,
-        "category": "hub_alarm_native",
-        "match": "'HUB_ALARM_CRITICAL_TYPE_ENABLED',"
-      },
-      {
-        "file": "bots/hub/scripts/alarm-activation-stage2-smoke.ts",
-        "line": 84,
-        "category": "hub_alarm_native",
-        "match": "'HUB_ALARM_DISPATCH_MODE',"
-      },
-      {
-        "file": "bots/hub/scripts/alarm-activation-stage2-smoke.ts",
-        "line": 92,
-        "category": "hub_alarm_native",
-        "match": "withEnv({ HUB_ALARM_DISPATCH_MODE: 'supervised' }, () => {"
+        "match": "HUB_ALARM_USE_CLASS_TOPICS: 'true',"
       }
     ],
     "bots/hub/scripts/alarm-activation-stage3-smoke.ts": [
       {
         "file": "bots/hub/scripts/alarm-activation-stage3-smoke.ts",
-        "line": 8,
+        "line": 62,
         "category": "hub_alarm_native",
-        "match": "*   2. HUB_ALARM_ROUNDTABLE_ENABLED gate 동작"
+        "match": "await withEnv({ HUB_ALARM_ROUNDTABLE_ENABLED: 'false' }, async () => {"
       },
       {
         "file": "bots/hub/scripts/alarm-activation-stage3-smoke.ts",
-        "line": 42,
+        "line": 66,
         "category": "hub_alarm_native",
-        "match": "withEnv({ HUB_ALARM_DISPATCH_MODE: 'autonomous' }, () => {"
+        "match": "await withEnv({ HUB_ALARM_ROUNDTABLE_ENABLED: 'true' }, async () => {"
       },
       {
         "file": "bots/hub/scripts/alarm-activation-stage3-smoke.ts",
-        "line": 52,
-        "category": "hub_alarm_native",
-        "match": "withEnv({ HUB_ALARM_ROUNDTABLE_ENABLED: undefined }, () => {"
-      },
-      {
-        "file": "bots/hub/scripts/alarm-activation-stage3-smoke.ts",
-        "line": 53,
-        "category": "hub_alarm_native",
-        "match": "const raw = String(process.env.HUB_ALARM_ROUNDTABLE_ENABLED || '').trim().toLowerCase();"
-      },
-      {
-        "file": "bots/hub/scripts/alarm-activation-stage3-smoke.ts",
-        "line": 58,
-        "category": "hub_alarm_native",
-        "match": "withEnv({ HUB_ALARM_ROUNDTABLE_ENABLED: 'true' }, () => {"
-      },
-      {
-        "file": "bots/hub/scripts/alarm-activation-stage3-smoke.ts",
-        "line": 59,
-        "category": "hub_alarm_native",
-        "match": "const raw = String(process.env.HUB_ALARM_ROUNDTABLE_ENABLED || '').trim().toLowerCase();"
-      },
-      {
-        "file": "bots/hub/scripts/alarm-activation-stage3-smoke.ts",
-        "line": 69,
-        "category": "hub_alarm_native",
-        "match": "withEnv({ HUB_ALARM_ROUNDTABLE_DAILY_LIMIT: undefined }, () => {"
-      },
-      {
-        "file": "bots/hub/scripts/alarm-activation-stage3-smoke.ts",
-        "line": 70,
-        "category": "hub_alarm_native",
-        "match": "const cap = Math.max(1, Number(process.env.HUB_ALARM_ROUNDTABLE_DAILY_LIMIT || 10) || 10);"
-      },
-      {
-        "file": "bots/hub/scripts/alarm-activation-stage3-smoke.ts",
-        "line": 74,
-        "category": "hub_alarm_native",
-        "match": "withEnv({ HUB_ALARM_ROUNDTABLE_DAILY_LIMIT: '5' }, () => {"
-      },
-      {
-        "file": "bots/hub/scripts/alarm-activation-stage3-smoke.ts",
-        "line": 75,
-        "category": "hub_alarm_native",
-        "match": "const cap = Math.max(1, Number(process.env.HUB_ALARM_ROUNDTABLE_DAILY_LIMIT || 10) || 10);"
-      },
-      {
-        "file": "bots/hub/scripts/alarm-activation-stage3-smoke.ts",
-        "line": 81,
-        "category": "hub_alarm_native",
-        "match": "withEnv({ HUB_ALARM_ROUNDTABLE_TRIGGER_FINGERPRINT_THRESHOLD: undefined }, () => {"
-      },
-      {
-        "file": "bots/hub/scripts/alarm-activation-stage3-smoke.ts",
-        "line": 82,
-        "category": "hub_alarm_native",
-        "match": "const threshold = Math.max(1, Number(process.env.HUB_ALARM_ROUNDTABLE_TRIGGER_FINGERPRINT_THRESHOLD || 3) || 3);"
-      },
-      {
-        "file": "bots/hub/scripts/alarm-activation-stage3-smoke.ts",
-        "line": 86,
-        "category": "hub_alarm_native",
-        "match": "withEnv({ HUB_ALARM_ROUNDTABLE_TRIGGER_FINGERPRINT_THRESHOLD: '5' }, () => {"
-      },
-      {
-        "file": "bots/hub/scripts/alarm-activation-stage3-smoke.ts",
-        "line": 87,
-        "category": "hub_alarm_native",
-        "match": "const threshold = Math.max(1, Number(process.env.HUB_ALARM_ROUNDTABLE_TRIGGER_FINGERPRINT_THRESHOLD || 3) || 3);"
-      },
-      {
-        "file": "bots/hub/scripts/alarm-activation-stage3-smoke.ts",
-        "line": 97,
-        "category": "hub_alarm_native",
-        "match": "await withEnvAsync({ HUB_ALARM_ROUNDTABLE_ENABLED: 'false' }, async () => {"
-      },
-      {
-        "file": "bots/hub/scripts/alarm-activation-stage3-smoke.ts",
-        "line": 103,
-        "category": "hub_alarm_native",
-        "match": "await withEnvAsync({ HUB_ALARM_ROUNDTABLE_ENABLED: 'true' }, async () => {"
-      },
-      {
-        "file": "bots/hub/scripts/alarm-activation-stage3-smoke.ts",
-        "line": 109,
-        "category": "hub_alarm_native",
-        "match": "await withEnvAsync({ HUB_ALARM_ROUNDTABLE_ENABLED: 'true' }, async () => {"
-      },
-      {
-        "file": "bots/hub/scripts/alarm-activation-stage3-smoke.ts",
-        "line": 137,
+        "line": 148,
         "category": "hub_alarm_native",
         "match": "HUB_ALARM_DISPATCH_MODE: 'autonomous',"
       },
       {
         "file": "bots/hub/scripts/alarm-activation-stage3-smoke.ts",
-        "line": 138,
+        "line": 149,
+        "category": "hub_alarm_native",
+        "match": "HUB_ALARM_LLM_CLASSIFIER_ENABLED: 'true',"
+      },
+      {
+        "file": "bots/hub/scripts/alarm-activation-stage3-smoke.ts",
+        "line": 150,
+        "category": "hub_alarm_native",
+        "match": "HUB_ALARM_INTERPRETER_ENABLED: 'true',"
+      },
+      {
+        "file": "bots/hub/scripts/alarm-activation-stage3-smoke.ts",
+        "line": 151,
+        "category": "hub_alarm_native",
+        "match": "HUB_ALARM_ENRICHMENT_ENABLED: 'true',"
+      },
+      {
+        "file": "bots/hub/scripts/alarm-activation-stage3-smoke.ts",
+        "line": 152,
+        "category": "hub_alarm_native",
+        "match": "HUB_ALARM_CRITICAL_TYPE_ENABLED: 'true',"
+      },
+      {
+        "file": "bots/hub/scripts/alarm-activation-stage3-smoke.ts",
+        "line": 153,
+        "category": "hub_alarm_native",
+        "match": "HUB_ALARM_INTERPRETER_FAIL_OPEN: 'true',"
+      },
+      {
+        "file": "bots/hub/scripts/alarm-activation-stage3-smoke.ts",
+        "line": 154,
         "category": "hub_alarm_native",
         "match": "HUB_ALARM_ROUNDTABLE_ENABLED: 'true',"
       },
       {
         "file": "bots/hub/scripts/alarm-activation-stage3-smoke.ts",
-        "line": 139,
+        "line": 155,
         "category": "hub_alarm_native",
         "match": "HUB_ALARM_ROUNDTABLE_DAILY_LIMIT: '10',"
       },
       {
         "file": "bots/hub/scripts/alarm-activation-stage3-smoke.ts",
-        "line": 140,
+        "line": 156,
         "category": "hub_alarm_native",
         "match": "HUB_ALARM_ROUNDTABLE_TRIGGER_FINGERPRINT_THRESHOLD: '3',"
       },
       {
         "file": "bots/hub/scripts/alarm-activation-stage3-smoke.ts",
-        "line": 145,
+        "line": 157,
         "category": "hub_alarm_native",
-        "match": "String(process.env.HUB_ALARM_ROUNDTABLE_ENABLED || '').trim().toLowerCase(),"
-      },
-      {
-        "file": "bots/hub/scripts/alarm-activation-stage3-smoke.ts",
-        "line": 149,
-        "category": "hub_alarm_native",
-        "match": "const cap = Math.max(1, Number(process.env.HUB_ALARM_ROUNDTABLE_DAILY_LIMIT || 10) || 10);"
+        "match": "HUB_ALARM_USE_CLASS_TOPICS: 'true',"
       }
     ],
     "bots/hub/scripts/alarm-auto-repair-stale-scan.ts": [
