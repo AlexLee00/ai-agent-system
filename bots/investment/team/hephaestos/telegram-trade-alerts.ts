@@ -24,6 +24,14 @@ export function createTelegramTradeAlerts(context = {}) {
     syncPositionsAtMarketOpen,
   } = context;
 
+  function toEpochMs(value, fallback = null) {
+    if (value == null || value === '') return fallback;
+    const direct = Number(value);
+    if (Number.isFinite(direct) && direct > 0) return direct;
+    const parsed = Date.parse(String(value));
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+  }
+
   async function closeOpenJournalForSymbol(
     symbol,
     isPaper,
@@ -32,6 +40,7 @@ export function createTelegramTradeAlerts(context = {}) {
     exitReason,
     tradeMode = null,
     {
+      exitTime = null,
       executionOrigin = null,
       qualityFlag = null,
       excludeFromLearning = null,
@@ -51,7 +60,9 @@ export function createTelegramTradeAlerts(context = {}) {
     const pnlPercent = entry.entry_value > 0
       ? journalDb.ratioToPercent(pnlAmount / entry.entry_value)
       : null;
+    const settledAt = toEpochMs(exitTime, Date.now());
     await journalDb.closeJournalEntry(entry.trade_id, {
+      exitTime: settledAt,
       exitPrice,
       exitValue,
       exitReason,
@@ -76,7 +87,6 @@ export function createTelegramTradeAlerts(context = {}) {
         AND exit_time IS NOT NULL
         AND exit_time >= ?
     `, [Date.now() - 7 * 24 * 60 * 60 * 1000]).catch(() => null);
-    const settledAt = Date.now();
     const holdHours = entry.entry_time ? Math.max(0, ((settledAt - Number(entry.entry_time)) / 3600000)) : null;
     await notifySettlement({
       symbol,
@@ -111,6 +121,7 @@ export function createTelegramTradeAlerts(context = {}) {
     exitReason,
     tradeMode = null,
     {
+      exitTime = null,
       partialExitRatio = null,
       soldAmount = null,
       signalId = null,
@@ -141,6 +152,7 @@ export function createTelegramTradeAlerts(context = {}) {
 
     if (!isPartial) {
       await closeOpenJournalForSymbol(symbol, isPaper, exitPrice, exitValue, exitReason, effectiveTradeMode, {
+        exitTime,
         executionOrigin,
         qualityFlag,
         excludeFromLearning,
@@ -197,6 +209,7 @@ export function createTelegramTradeAlerts(context = {}) {
     });
 
     await journalDb.closeJournalEntry(partialTradeId, {
+      exitTime: toEpochMs(exitTime, Date.now()),
       exitPrice,
       exitValue,
       exitReason,
@@ -248,7 +261,7 @@ export function createTelegramTradeAlerts(context = {}) {
 
   async function recordExecutedTradeJournal({ trade, signalId, exitReason }) {
     if (trade.side === 'buy') {
-      const execTime = Date.now();
+      const execTime = toEpochMs(trade.executedAt, Date.now());
       const tradeId = await journalDb.generateTradeId();
       const signal = signalId ? await db.getSignalById(signalId).catch(() => null) : null;
       const executionOrigin = trade.executionOrigin || 'strategy';
@@ -310,6 +323,7 @@ export function createTelegramTradeAlerts(context = {}) {
         exitReason || 'signal_reverse',
         trade.tradeMode,
         {
+          exitTime: trade.executedAt || null,
           partialExitRatio: trade.partialExitRatio,
           soldAmount: trade.amount,
           signalId,

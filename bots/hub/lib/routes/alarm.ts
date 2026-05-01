@@ -19,6 +19,12 @@ const {
 } = require('../../scripts/alarm-suppression-proposals.ts');
 const { findMatchingAlarmSuppressionRule } = require('../alarm/suppression-rules.ts');
 
+const defaultAlarmEventLake = {
+  findRecentDuplicateAlarm: (...args: any[]) => eventLake.findRecentDuplicateAlarm(...args),
+  record: (...args: any[]) => eventLake.record(...args),
+};
+let alarmEventLake = defaultAlarmEventLake;
+
 const defaultAlarmRouteHooks = {
   classifyAlarmWithLLM,
   interpretAlarm,
@@ -42,6 +48,14 @@ export function _testOnly_setAlarmRouteDbMocks(overrides: Partial<typeof default
 
 export function _testOnly_resetAlarmRouteDbMocks() {
   alarmDb = defaultAlarmDb;
+}
+
+export function _testOnly_setAlarmEventLakeMocks(overrides: Partial<typeof defaultAlarmEventLake> = {}) {
+  alarmEventLake = { ...defaultAlarmEventLake, ...overrides };
+}
+
+export function _testOnly_resetAlarmEventLakeMocks() {
+  alarmEventLake = defaultAlarmEventLake;
 }
 
 export function _testOnly_setAlarmRouteHooks(overrides: Partial<typeof defaultAlarmRouteHooks> = {}) {
@@ -731,7 +745,7 @@ export async function alarmRoute(req: any, res: any) {
       && alarmType === 'error'
       && actionability === 'auto_repair';
 
-    const duplicate = await eventLake.findRecentDuplicateAlarm({
+    const duplicate = await alarmEventLake.findRecentDuplicateAlarm({
       team,
       botName: fromBot,
       message,
@@ -766,7 +780,7 @@ export async function alarmRoute(req: any, res: any) {
       });
     }
 
-    const eventId = await eventLake.record({
+    const eventId = await alarmEventLake.record({
       eventType: 'hub_alarm',
       team,
       botName: fromBot,
@@ -865,7 +879,7 @@ export async function alarmRoute(req: any, res: any) {
             eventId,
             payload,
           });
-          await eventLake.record({
+          await alarmEventLake.record({
             eventType: 'hub_alarm_auto_repair_enqueued',
             team,
             botName: 'hub-alarm-governor',
@@ -913,15 +927,24 @@ export async function alarmRoute(req: any, res: any) {
       }).catch(() => null);
     }
 
-    if (immediateHumanDelivery && dispatchMode !== 'shadow') {
+    if (immediateHumanDelivery) {
       try {
         const [interpretation, enrichment] = await Promise.allSettled([
-          interpretAlarm({ alarmType, team, severity, title, message }),
-          enrichAlarm({ team, clusterKey: clusterKey || undefined }),
+          alarmRouteHooks.interpretAlarm({ alarmType, team, severity, title, message }),
+          alarmRouteHooks.enrichAlarm({ team, clusterKey: clusterKey || undefined }),
         ]);
 
         const interpreted = interpretation.status === 'fulfilled' ? interpretation.value : null;
         const enriched = enrichment.status === 'fulfilled' ? enrichment.value : null;
+        if (dispatchMode === 'shadow') {
+          shadowObservation = {
+            interpretation_attempted: true,
+            interpreted: Boolean(interpreted?.summary),
+            enrichment_attempted: true,
+            enriched: Boolean(enriched),
+            cluster_count: enriched?.clusterCount ?? null,
+          };
+        }
 
         let deliveryMessage: string;
         if (interpreted?.summary) {
@@ -951,10 +974,12 @@ export async function alarmRoute(req: any, res: any) {
           }
         }
 
-        delivered = severity === 'critical' || visibility === 'emergency'
-          ? await telegramSender.sendCriticalFromHubAlarm(deliveryTeam, deliveryMessage)
-          : await telegramSender.sendFromHubAlarm(deliveryTeam, deliveryMessage);
-        if (!delivered) deliveryError = telegramSender.getLastTelegramSendError?.() || 'telegram_send_failed';
+        if (dispatchMode !== 'shadow') {
+          delivered = severity === 'critical' || visibility === 'emergency'
+            ? await telegramSender.sendCriticalFromHubAlarm(deliveryTeam, deliveryMessage)
+            : await telegramSender.sendFromHubAlarm(deliveryTeam, deliveryMessage);
+          if (!delivered) deliveryError = telegramSender.getLastTelegramSendError?.() || 'telegram_send_failed';
+        }
       } catch (error: any) {
         deliveryError = error?.message || 'telegram_send_failed';
       }
@@ -977,7 +1002,9 @@ export async function alarmRoute(req: any, res: any) {
       event_type: eventType,
       alarm_type: alarmType,
       classification_source: classificationSource,
-      classification_confidence: classificationConfidence,
+      classification_confidence: finalClassificationConfidence,
+      classification_rule_confidence: classificationConfidence,
+      classification_llm_confidence: llmClassificationConfidence,
       visibility,
       actionability,
       status,
@@ -989,6 +1016,12 @@ export async function alarmRoute(req: any, res: any) {
       delivered,
       delivery_error: deliveryError || null,
       auto_repair: autoRepair,
+      auto_repair_shadow_skipped: autoRepairShadowSkipped,
+      shadow_observation: shadowObservation,
+      mirror_records: {
+        classification: classificationRecord,
+        alarm: mirrorRecord,
+      },
     });
   } catch (error: any) {
     return res.status(500).json({ ok: false, error: error.message });

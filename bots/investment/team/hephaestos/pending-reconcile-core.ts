@@ -31,6 +31,7 @@ export function normalizePendingReconcileTradeRow(row = {}) {
     amount: Math.max(0, Number(row?.amount || 0)),
     price: Math.max(0, Number(row?.price || 0)),
     totalUsdt: Math.max(0, Number(row?.total_usdt || 0)),
+    executedAt: row?.executed_at ? Date.parse(String(row.executed_at)) : null,
     paper: Boolean(row?.paper),
     exchange: row?.exchange || 'binance',
     tradeMode: row?.trade_mode || 'normal',

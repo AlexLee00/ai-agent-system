@@ -1,23 +1,50 @@
+#!/usr/bin/env tsx
 'use strict';
 
 /**
- * Polish 1 Stage 2 — Supervised Mode 전환 검증 smoke
+ * Polish 1 Stage 2 — Supervised Mode activation smoke.
  *
- * 검증 항목:
- *   1. supervised 모드에서 Telegram 발송 의도(delivered 플래그 로직) 확인
- *   2. dispatch_mode 응답 필드 노출 확인 (alarm route 응답 구조)
- *   3. shadow → supervised 전환 체크리스트 검증
- *   4. 일일 cap 설정값 검증 (classifier 100, interpreter 200)
- *
- * 주의: Stage 2는 24h 검증 기간 후 마스터 승인 필요
- *       이 smoke는 전환 조건의 정적 검증만 수행 (실 발송 X)
+ * This is hermetic: it mocks Telegram HTTP, DB writes, and event-lake.
+ * The contract verified here is:
+ *   - dispatch_mode=supervised
+ *   - Telegram delivery path is opened
+ *   - interpreter/enrichment still run before delivery
+ *   - Roundtable remains disabled until Stage 3 direct approval
  */
 
-function assert(condition: boolean, message: string): void {
-  if (!condition) throw new Error(`[stage2-smoke] FAIL: ${message}`);
+const alarmRouteModule = require('../lib/routes/alarm.ts');
+
+const {
+  alarmRoute,
+  getDispatchMode,
+  _testOnly_setAlarmRouteDbMocks,
+  _testOnly_resetAlarmRouteDbMocks,
+  _testOnly_setAlarmRouteHooks,
+  _testOnly_resetAlarmRouteHooks,
+  _testOnly_setAlarmEventLakeMocks,
+  _testOnly_resetAlarmEventLakeMocks,
+} = alarmRouteModule;
+
+function assert(condition: unknown, message: string): void {
+  if (!condition) throw new Error(`[stage2-smoke] ${message}`);
 }
 
-function withEnv(patch: Record<string, string | undefined>, fn: () => void): void {
+function makeRes() {
+  return {
+    statusCode: 200,
+    body: null as any,
+    status(code: number) {
+      this.statusCode = code;
+      return this;
+    },
+    json(payload: any) {
+      this.body = payload;
+      return payload;
+    },
+  };
+}
+
+async function withEnv<T>(patch: Record<string, string | undefined>, fn: () => Promise<T> | T): Promise<T> {
   const previous: Record<string, string | undefined> = {};
   for (const key of Object.keys(patch)) {
     previous[key] = process.env[key];
@@ -25,7 +52,7 @@ function withEnv(patch: Record<string, string | undefined>, fn: () => void): voi
     else process.env[key] = patch[key]!;
   }
   try {
-    fn();
+    return await fn();
   } finally {
     for (const key of Object.keys(patch)) {
       if (previous[key] == null) delete process.env[key];
@@ -34,78 +61,124 @@ function withEnv(patch: Record<string, string | undefined>, fn: () => void): voi
   }
 }
 
-function testSupervisedModeIsNotShadow(): void {
-  const { getDispatchMode } = require('../lib/routes/alarm');
+async function main(): Promise<void> {
+  const originals = {
+    fetch: global.fetch,
+  };
+  const records: any[] = [];
+  const telegramRequests: any[] = [];
+  const dbRuns: string[] = [];
+  let roundtableCalls = 0;
+  let autoDevCalls = 0;
 
-  withEnv({ HUB_ALARM_DISPATCH_MODE: 'supervised' }, () => {
-    const mode = getDispatchMode();
-    assert(mode === 'supervised', 'supervised 모드 반환');
-    assert(mode !== 'shadow', 'supervised은 shadow가 아님 (Telegram 발송 허용)');
+  _testOnly_setAlarmEventLakeMocks({
+    findRecentDuplicateAlarm: async () => null,
+    record: async (payload: any) => {
+      records.push(payload);
+      return 9200 + records.length;
+    },
   });
-}
-
-function testDailyCapDefaults(): void {
-  withEnv({
-    HUB_ALARM_LLM_DAILY_LIMIT: undefined,
-    HUB_ALARM_INTERPRETER_LLM_DAILY_LIMIT: undefined,
-    HUB_ALARM_ROUNDTABLE_DAILY_LIMIT: undefined,
-  }, () => {
-    const classifierCap = Math.max(1, Number(process.env.HUB_ALARM_LLM_DAILY_LIMIT || 100) || 100);
-    const interpreterCap = Math.max(1, Number(process.env.HUB_ALARM_INTERPRETER_LLM_DAILY_LIMIT || 200) || 200);
-    const roundtableCap = Math.max(1, Number(process.env.HUB_ALARM_ROUNDTABLE_DAILY_LIMIT || 10) || 10);
-
-    assert(classifierCap === 100, `classifier 기본 일일 cap=100, 실제=${classifierCap}`);
-    assert(interpreterCap === 200, `interpreter 기본 일일 cap=200, 실제=${interpreterCap}`);
-    assert(roundtableCap === 10, `roundtable 기본 일일 cap=10, 실제=${roundtableCap}`);
+  _testOnly_setAlarmRouteDbMocks({
+    query: async () => [],
+    get: async () => null,
+    run: async (_schema: string, sql: string) => {
+      dbRuns.push(String(sql));
+      return { rowCount: 1, rows: [] };
+    },
   });
-}
-
-function testFailOpenDefault(): void {
-  withEnv({ HUB_ALARM_INTERPRETER_FAIL_OPEN: undefined }, () => {
-    const raw = String(process.env.HUB_ALARM_INTERPRETER_FAIL_OPEN ?? 'true').trim().toLowerCase();
-    const isFailOpen = !['0', 'false', 'no', 'n', 'off'].includes(raw);
-    assert(isFailOpen, 'INTERPRETER_FAIL_OPEN 기본값=true (안전)');
+  _testOnly_setAlarmRouteHooks({
+    classifyAlarmWithLLM: async () => ({ type: 'work', confidence: 0.91, source: 'llm' }),
+    interpretAlarm: async () => ({
+      summary: 'supervised delivery interpretation ok',
+      actionRecommendation: 'review delivery only',
+    }),
+    enrichAlarm: async () => ({ clusterCount: 1, recentTeamCount: 1, firstSeenAt: new Date().toISOString() }),
+    ensureAlarmAutoDevDocument: async () => {
+      autoDevCalls += 1;
+      throw new Error('auto_dev must not run in Stage 2 work-alarm smoke');
+    },
+    shouldTriggerRoundtable: async () => false,
+    runRoundtable: async () => {
+      roundtableCalls += 1;
+      return null;
+    },
   });
+  global.fetch = async (url: any, init: any) => {
+    if (String(url).includes('api.telegram.org')) {
+      telegramRequests.push({
+        url: String(url),
+        body: JSON.parse(String(init?.body || '{}')),
+      });
+    }
+    return new Response(JSON.stringify({ ok: true, result: { message_id: 42 } }), {
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+    });
+  };
 
-  withEnv({ HUB_ALARM_INTERPRETER_FAIL_OPEN: 'false' }, () => {
-    const raw = String(process.env.HUB_ALARM_INTERPRETER_FAIL_OPEN ?? 'true').trim().toLowerCase();
-    const isFailOpen = !['0', 'false', 'no', 'n', 'off'].includes(raw);
-    assert(!isFailOpen, 'INTERPRETER_FAIL_OPEN=false 시 비활성화');
-  });
-}
+  try {
+    await withEnv({
+      HUB_ALARM_DISPATCH_MODE: 'supervised',
+      HUB_ALARM_LLM_CLASSIFIER_ENABLED: 'true',
+      HUB_ALARM_INTERPRETER_ENABLED: 'true',
+      HUB_ALARM_ENRICHMENT_ENABLED: 'true',
+      HUB_ALARM_CRITICAL_TYPE_ENABLED: 'true',
+      HUB_ALARM_INTERPRETER_FAIL_OPEN: 'true',
+      HUB_ALARM_ROUNDTABLE_ENABLED: 'false',
+      HUB_ALARM_USE_CLASS_TOPICS: 'true',
+      TELEGRAM_BOT_TOKEN: 'stage2-smoke-token',
+      TELEGRAM_GROUP_ID: '-1001234567890',
+      TELEGRAM_TOPIC_OPS_WORK: '11',
+      TELEGRAM_TOPIC_OPS_REPORTS: '12',
+      TELEGRAM_TOPIC_OPS_ERROR_RESOLUTION: '13',
+      TELEGRAM_TOPIC_OPS_EMERGENCY: '14',
+      TELEGRAM_ALERTS_DISABLED: 'false',
+    }, async () => {
+      assert(getDispatchMode() === 'supervised', 'dispatch mode must be supervised');
 
-function testStage2TransitionChecklist(): void {
-  // Stage 2 전환 조건 체크리스트 (정적 검증)
-  const requiredEnvForStage2 = [
-    'HUB_ALARM_LLM_CLASSIFIER_ENABLED',
-    'HUB_ALARM_INTERPRETER_ENABLED',
-    'HUB_ALARM_ENRICHMENT_ENABLED',
-    'HUB_ALARM_CRITICAL_TYPE_ENABLED',
-    'HUB_ALARM_DISPATCH_MODE',
-  ];
+      const res = makeRes();
+      await alarmRoute({
+        body: {
+          team: 'hub',
+          fromBot: 'stage2-smoke',
+          severity: 'info',
+          alarmType: 'work',
+          visibility: 'notify',
+          actionability: 'none',
+          title: 'stage2 supervised delivery check',
+          message: 'synthetic Stage 2 supervised delivery verification',
+          incidentKey: `stage2:supervised:${Date.now()}`,
+        },
+      }, res);
 
-  // 모든 키가 getDispatchMode에서 사용되는지 확인 (함수 소스 로드)
-  const { getDispatchMode } = require('../lib/routes/alarm');
-  assert(typeof getDispatchMode === 'function', 'getDispatchMode 함수 존재');
-
-  // Stage 2 전환 시 설정할 값
-  withEnv({ HUB_ALARM_DISPATCH_MODE: 'supervised' }, () => {
-    assert(getDispatchMode() === 'supervised', 'Stage 2 전환 후 supervised 확인');
-  });
-
-  // 모든 필수 환경변수 키 명세 검증
-  for (const key of requiredEnvForStage2) {
-    assert(typeof key === 'string' && key.length > 0, `${key} 키 명세 유효`);
+      assert(res.statusCode === 200, 'supervised route must return 200');
+      assert(res.body.dispatch_mode === 'supervised', 'response must expose supervised dispatch mode');
+      assert(res.body.delivered === true, 'supervised mode must attempt and report Telegram delivery');
+      assert(res.body.delivery_team === 'ops-work', `expected ops-work delivery team, got ${res.body.delivery_team}`);
+      assert(res.body.auto_repair == null, 'work notification must not create auto_dev');
+      assert(res.body.auto_repair_shadow_skipped === false, 'supervised work notification must not mark shadow skip');
+      assert(res.body.mirror_records?.classification?.ok === true, 'classification mirror write must be attempted');
+      assert(res.body.mirror_records?.alarm?.ok === true, 'alarm mirror write must be attempted');
+      assert(telegramRequests.length === 1, `expected exactly one Telegram request, got ${telegramRequests.length}`);
+      assert(telegramRequests[0].body.chat_id === '-1001234567890', 'Telegram must use group chat id');
+      assert(String(telegramRequests[0].body.message_thread_id) === '11', 'Telegram must use ops-work topic');
+      assert(roundtableCalls === 0, 'Stage 2 must not run roundtable');
+      assert(autoDevCalls === 0, 'Stage 2 work notification must not run auto_dev');
+      assert(records.some((row) => row.eventType === 'hub_alarm'), 'event lake hub_alarm record missing');
+      assert(dbRuns.some((sql) => sql.includes('agent.hub_alarm_classifications')), 'classification mirror SQL missing');
+      assert(dbRuns.some((sql) => sql.includes('agent.hub_alarms')), 'alarm mirror SQL missing');
+    });
+  } finally {
+    global.fetch = originals.fetch;
+    _testOnly_resetAlarmRouteDbMocks();
+    _testOnly_resetAlarmRouteHooks();
+    _testOnly_resetAlarmEventLakeMocks();
   }
-}
-
-function main(): void {
-  testSupervisedModeIsNotShadow();
-  testDailyCapDefaults();
-  testFailOpenDefault();
-  testStage2TransitionChecklist();
 
   console.log('alarm_activation_stage2_smoke_ok');
 }
 
-main();
+main().catch((error) => {
+  console.error('[alarm-activation-stage2-smoke] failed:', error?.message || error);
+  process.exit(1);
+});

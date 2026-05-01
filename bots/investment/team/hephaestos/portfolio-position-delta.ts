@@ -1,4 +1,6 @@
 // @ts-nocheck
+
+import { extractExecutionTimestampMs } from '../../shared/binance-order-execution-normalizer.ts';
 /**
  * Portfolio/position delta helpers for Hephaestos.
  *
@@ -175,6 +177,7 @@ export function createPortfolioPositionDelta(context = {}) {
       amount: soldAmount,
       price: sellPrice,
       totalUsdt: settledUsdt,
+      executedAt: extractExecutionTimestampMs(order, sellSubmittedAtMs),
       paper: sellPaperMode,
       exchange: 'binance',
       tradeMode: effectivePositionTradeMode,

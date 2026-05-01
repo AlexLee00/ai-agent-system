@@ -32,7 +32,7 @@
     <key>HUB_ALARM_USE_CLASS_TOPICS</key>
     <string>true</string>
     <key>HUB_ALARM_DISPATCH_MODE</key>
-    <string>shadow</string>
+    <string>autonomous</string>
     <key>HUB_ALARM_LLM_CLASSIFIER_ENABLED</key>
     <string>true</string>
     <key>HUB_ALARM_LLM_DAILY_LIMIT</key>
@@ -47,6 +47,12 @@
     <string>200</string>
     <key>HUB_ALARM_ENRICHMENT_ENABLED</key>
     <string>true</string>
+    <key>HUB_ALARM_ROUNDTABLE_ENABLED</key>
+    <string>true</string>
+    <key>HUB_ALARM_ROUNDTABLE_DAILY_LIMIT</key>
+    <string>10</string>
+    <key>HUB_ALARM_ROUNDTABLE_TRIGGER_FINGERPRINT_THRESHOLD</key>
+    <string>3</string>
     <key>HUB_LLM_RATE_LIMIT_PER_MIN</key>
     <string>120</string>
     <key>HUB_SECRETS_RATE_LIMIT_PER_MIN</key>

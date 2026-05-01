@@ -28,6 +28,35 @@ function isRatioScaledPercent(storedPercent, expectedPercent) {
   return Math.abs(stored - ratioCandidate) <= 0.0005;
 }
 
+async function resolveJournalEntryTimeRepairCandidate(row = {}) {
+  const exitTime = Number(row.exit_time || 0);
+  if (!(exitTime > 0)) return null;
+
+  const buyTrade = await db.get(
+    `SELECT EXTRACT(EPOCH FROM executed_at) * 1000 AS executed_ms
+       FROM investment.trades
+      WHERE signal_id = $1
+        AND symbol = $2
+        AND side = 'buy'
+        AND exchange = $3
+        AND COALESCE(trade_mode, 'normal') = COALESCE($4, 'normal')
+      ORDER BY executed_at DESC
+      LIMIT 1`,
+    [row.signal_id || null, row.symbol, row.exchange, row.trade_mode || 'normal'],
+  ).catch(() => null);
+  const buyExecutedMs = Number(buyTrade?.executed_ms || 0);
+  if (buyExecutedMs > 0 && buyExecutedMs < exitTime) return buyExecutedMs;
+
+  const signalCreatedMs = row.signal_created_at ? Date.parse(String(row.signal_created_at)) : 0;
+  if (Number.isFinite(signalCreatedMs) && signalCreatedMs > 0 && signalCreatedMs < exitTime) {
+    return signalCreatedMs;
+  }
+
+  const currentEntryTime = Number(row.entry_time || 0);
+  if (currentEntryTime > 0 && currentEntryTime < exitTime) return currentEntryTime;
+  return exitTime - 1;
+}
+
 export function summarizeTradeReviewFindings(items = []) {
   const issueCounts = {};
   const byExchange = {};
@@ -146,19 +175,24 @@ export async function validateTradeReview({ days = 30, fix = false, scope = 'all
   const rows = await db.query(`
     SELECT
       j.trade_id,
+      j.signal_id,
       j.symbol,
       j.exchange,
+      j.trade_mode,
       j.is_paper,
+      j.entry_time,
       j.entry_value,
       j.pnl_amount,
       j.pnl_percent,
       j.status,
       j.exit_time,
+      s.created_at AS signal_created_at,
       r.trade_id AS review_trade_id,
       r.max_favorable,
       r.max_adverse,
       r.reviewed_at
     FROM investment.trade_journal j
+    LEFT JOIN investment.signals s ON s.id = j.signal_id
     LEFT JOIN investment.trade_review r ON r.trade_id = j.trade_id
     WHERE j.status = 'closed'
       AND j.exit_time IS NOT NULL
@@ -206,10 +240,33 @@ export async function validateTradeReview({ days = 30, fix = false, scope = 'all
     ) {
       issues.push('pnl_percent_mismatch');
     }
+    if (Number(row.entry_time || 0) > 0 && Number(row.exit_time || 0) > 0 && Number(row.entry_time) >= Number(row.exit_time)) {
+      issues.push('invalid_review_window');
+    }
 
     if (issues.length === 0) continue;
 
     if (fix) {
+      if (issues.includes('invalid_review_window')) {
+        const repairedEntryTime = await resolveJournalEntryTimeRepairCandidate(row);
+        if (repairedEntryTime != null && Number.isFinite(Number(repairedEntryTime)) && Number(repairedEntryTime) > 0) {
+          await db.run(
+            `UPDATE trade_journal
+             SET entry_time = $1,
+                 execution_time = CASE
+                   WHEN execution_time IS NULL OR execution_time < $1 THEN $1
+                   ELSE execution_time
+                 END,
+                 hold_duration = CASE
+                   WHEN exit_time IS NOT NULL THEN exit_time - $1
+                   ELSE hold_duration
+                 END
+             WHERE trade_id = $2`,
+            [Number(repairedEntryTime), row.trade_id],
+          );
+        }
+      }
+
       if (issues.includes('pnl_percent_ratio_scale') || issues.includes('pnl_percent_mismatch')) {
         await db.run(
           `UPDATE trade_journal
@@ -237,6 +294,8 @@ export async function validateTradeReview({ days = 30, fix = false, scope = 'all
       symbol: row.symbol,
       exchange: row.exchange,
       isPaper,
+      entryTime: Number(row.entry_time || 0) || null,
+      exitTime: Number(row.exit_time || 0) || null,
       issues,
       pnlPercentStored: row.pnl_percent == null ? null : Number(row.pnl_percent),
       pnlPercentExpected: expectedPnlPercent,

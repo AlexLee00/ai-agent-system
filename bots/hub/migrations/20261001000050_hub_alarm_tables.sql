@@ -40,3 +40,21 @@ CREATE TABLE IF NOT EXISTS agent.hub_alarms (
 CREATE INDEX IF NOT EXISTS idx_hub_alarms_fingerprint  ON agent.hub_alarms (fingerprint);
 CREATE INDEX IF NOT EXISTS idx_hub_alarms_received_at  ON agent.hub_alarms (received_at DESC);
 CREATE INDEX IF NOT EXISTS idx_hub_alarms_status       ON agent.hub_alarms (status, alarm_type);
+
+-- alarm_roundtables: Phase C 회의/합의 추적
+
+CREATE TABLE IF NOT EXISTS agent.alarm_roundtables (
+  id                 BIGSERIAL PRIMARY KEY,
+  incident_key       TEXT UNIQUE NOT NULL,
+  alarm_id           BIGINT,
+  status             TEXT NOT NULL DEFAULT 'open',
+  participants       JSONB NOT NULL DEFAULT '[]',
+  consensus          JSONB,
+  auto_dev_doc_path  TEXT,
+  implementation_log JSONB DEFAULT '[]',
+  created_at         TIMESTAMPTZ DEFAULT NOW(),
+  resolved_at        TIMESTAMPTZ
+);
+
+CREATE INDEX IF NOT EXISTS idx_alarm_roundtables_status     ON agent.alarm_roundtables (status, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_alarm_roundtables_alarm_id   ON agent.alarm_roundtables (alarm_id);

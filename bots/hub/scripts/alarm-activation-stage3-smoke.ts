@@ -1,25 +1,47 @@
+#!/usr/bin/env tsx
 'use strict';
 
 /**
- * Polish 1 Stage 3 — Autonomous Mode + Roundtable 활성화 검증 smoke
+ * Polish 1 Stage 3 — Autonomous Mode + Roundtable activation smoke.
  *
- * 검증 항목:
- *   1. autonomous 모드 설정값 확인
- *   2. HUB_ALARM_ROUNDTABLE_ENABLED gate 동작
- *   3. shouldTriggerRoundtable 트리거 조건 (critical 알람 시 즉시 트리거)
- *   4. Roundtable 일일 cap (기본 10)
- *   5. Roundtable 트리거 임계값 (fingerprint threshold 기본 3)
- *   6. Stage 3 전환 체크리스트
- *
- * 주의: Stage 3는 Stage 2 검증 후 마스터 승인 필요
- *       ⭐⭐⭐ Jay+Claude+팀장 회의 마스터 핵심 비전 가동 단계
+ * This smoke is hermetic. It verifies the route contract for Stage 3 without
+ * sending real Telegram messages, creating real auto_dev files, or invoking LLMs.
  */
 
-function assert(condition: boolean, message: string): void {
-  if (!condition) throw new Error(`[stage3-smoke] FAIL: ${message}`);
+const alarmRouteModule = require('../lib/routes/alarm.ts');
+const { shouldTriggerRoundtable, getDailyRoundtableCount } = require('../lib/alarm/alarm-roundtable-engine.ts');
+
+const {
+  alarmRoute,
+  getDispatchMode,
+  _testOnly_setAlarmRouteDbMocks,
+  _testOnly_resetAlarmRouteDbMocks,
+  _testOnly_setAlarmRouteHooks,
+  _testOnly_resetAlarmRouteHooks,
+  _testOnly_setAlarmEventLakeMocks,
+  _testOnly_resetAlarmEventLakeMocks,
+} = alarmRouteModule;
+
+function assert(condition: unknown, message: string): void {
+  if (!condition) throw new Error(`[stage3-smoke] ${message}`);
 }
 
-function withEnv(patch: Record<string, string | undefined>, fn: () => void): void {
+function makeRes() {
+  return {
+    statusCode: 200,
+    body: null as any,
+    status(code: number) {
+      this.statusCode = code;
+      return this;
+    },
+    json(payload: any) {
+      this.body = payload;
+      return payload;
+    },
+  };
+}
+
+async function withEnv<T>(patch: Record<string, string | undefined>, fn: () => Promise<T> | T): Promise<T> {
   const previous: Record<string, string | undefined> = {};
   for (const key of Object.keys(patch)) {
     previous[key] = process.env[key];
@@ -27,7 +49,7 @@ function withEnv(patch: Record<string, string | undefined>, fn: () => void): voi
     else process.env[key] = patch[key]!;
   }
   try {
-    fn();
+    return await fn();
   } finally {
     for (const key of Object.keys(patch)) {
       if (previous[key] == null) delete process.env[key];
@@ -36,133 +58,158 @@ function withEnv(patch: Record<string, string | undefined>, fn: () => void): voi
   }
 }
 
-function testAutonomousMode(): void {
-  const { getDispatchMode } = require('../lib/routes/alarm');
-
-  withEnv({ HUB_ALARM_DISPATCH_MODE: 'autonomous' }, () => {
-    const mode = getDispatchMode();
-    assert(mode === 'autonomous', 'autonomous 모드 반환');
-    assert(mode !== 'shadow', 'autonomous는 shadow가 아님');
+async function assertRoundtableGate(): Promise<void> {
+  await withEnv({ HUB_ALARM_ROUNDTABLE_ENABLED: 'false' }, async () => {
+    const disabled = await shouldTriggerRoundtable({ alarmType: 'critical', visibility: 'emergency' });
+    assert(disabled === false, 'roundtable gate must be closed when disabled');
   });
+  await withEnv({ HUB_ALARM_ROUNDTABLE_ENABLED: 'true' }, async () => {
+    const enabled = await shouldTriggerRoundtable({ alarmType: 'critical', visibility: 'emergency' });
+    assert(enabled === true, 'critical alarms must trigger roundtable when enabled');
+  });
+  assert(typeof getDailyRoundtableCount() === 'number', 'daily roundtable counter must be observable');
 }
 
-function testRoundtableEnabledGate(): void {
-  const { getDailyRoundtableCount } = require('../lib/alarm/alarm-roundtable-engine');
+async function assertAutonomousRouteContract(): Promise<void> {
+  const originals = {
+    fetch: global.fetch,
+  };
+  const records: any[] = [];
+  const dbRuns: string[] = [];
+  const telegramRequests: any[] = [];
+  const roundtableCalls: any[] = [];
+  const autoDevDocs: any[] = [];
 
-  withEnv({ HUB_ALARM_ROUNDTABLE_ENABLED: undefined }, () => {
-    const raw = String(process.env.HUB_ALARM_ROUNDTABLE_ENABLED || '').trim().toLowerCase();
-    const isEnabled = ['1', 'true', 'yes', 'y', 'on'].includes(raw);
-    assert(!isEnabled, 'ROUNDTABLE_ENABLED 미설정 → 비활성화 (기본값)');
+  _testOnly_setAlarmEventLakeMocks({
+    findRecentDuplicateAlarm: async () => null,
+    record: async (payload: any) => {
+      records.push(payload);
+      return 9300 + records.length;
+    },
   });
-
-  withEnv({ HUB_ALARM_ROUNDTABLE_ENABLED: 'true' }, () => {
-    const raw = String(process.env.HUB_ALARM_ROUNDTABLE_ENABLED || '').trim().toLowerCase();
-    const isEnabled = ['1', 'true', 'yes', 'y', 'on'].includes(raw);
-    assert(isEnabled, 'ROUNDTABLE_ENABLED=true → 활성화');
+  _testOnly_setAlarmRouteDbMocks({
+    query: async () => [],
+    get: async () => null,
+    run: async (_schema: string, sql: string) => {
+      dbRuns.push(String(sql));
+      return { rowCount: 1, rows: [] };
+    },
   });
-
-  // getDailyRoundtableCount는 현재 count를 반환 (0 이상)
-  assert(typeof getDailyRoundtableCount === 'function', 'getDailyRoundtableCount 함수 존재');
-}
-
-function testRoundtableDailyCapDefault(): void {
-  withEnv({ HUB_ALARM_ROUNDTABLE_DAILY_LIMIT: undefined }, () => {
-    const cap = Math.max(1, Number(process.env.HUB_ALARM_ROUNDTABLE_DAILY_LIMIT || 10) || 10);
-    assert(cap === 10, `roundtable 일일 cap 기본값=10, 실제=${cap}`);
+  _testOnly_setAlarmRouteHooks({
+    classifyAlarmWithLLM: async () => ({ type: 'error', confidence: 0.91, source: 'llm' }),
+    interpretAlarm: async () => ({
+      summary: 'autonomous roundtable interpretation ok',
+      actionRecommendation: 'let roundtable produce repair plan',
+    }),
+    enrichAlarm: async () => ({ clusterCount: 4, recentTeamCount: 4, firstSeenAt: new Date().toISOString() }),
+    ensureAlarmAutoDevDocument: async (payload: any) => {
+      autoDevDocs.push(payload);
+      return {
+        ok: true,
+        created: true,
+        path: 'docs/auto_dev/CODEX_ALARM_INCIDENT_stage3_smoke.md',
+      };
+    },
+    shouldTriggerRoundtable: async () => true,
+    runRoundtable: async (payload: any) => {
+      roundtableCalls.push(payload);
+      return {
+        roundtableId: 123,
+        incidentKey: payload.incidentKey,
+        consensus: {
+          rootCause: 'smoke',
+          proposedFix: 'verify route contract',
+          estimatedComplexity: 'low',
+          riskLevel: 'low',
+          assignedTo: 'claude-team',
+          successCriteria: 'contract holds',
+          agreementScore: 0.9,
+        },
+        participants: ['jay', 'claude_lead', 'team_commander'],
+        meetingNote: 'stage3 smoke roundtable',
+      };
+    },
   });
-
-  withEnv({ HUB_ALARM_ROUNDTABLE_DAILY_LIMIT: '5' }, () => {
-    const cap = Math.max(1, Number(process.env.HUB_ALARM_ROUNDTABLE_DAILY_LIMIT || 10) || 10);
-    assert(cap === 5, `roundtable 일일 cap=5 오버라이드`);
-  });
-}
-
-function testRoundtableTriggerThreshold(): void {
-  withEnv({ HUB_ALARM_ROUNDTABLE_TRIGGER_FINGERPRINT_THRESHOLD: undefined }, () => {
-    const threshold = Math.max(1, Number(process.env.HUB_ALARM_ROUNDTABLE_TRIGGER_FINGERPRINT_THRESHOLD || 3) || 3);
-    assert(threshold === 3, `fingerprint threshold 기본값=3, 실제=${threshold}`);
-  });
-
-  withEnv({ HUB_ALARM_ROUNDTABLE_TRIGGER_FINGERPRINT_THRESHOLD: '5' }, () => {
-    const threshold = Math.max(1, Number(process.env.HUB_ALARM_ROUNDTABLE_TRIGGER_FINGERPRINT_THRESHOLD || 3) || 3);
-    assert(threshold === 5, `fingerprint threshold=5 오버라이드`);
-  });
-}
-
-async function testShouldTriggerRoundtableInterface(): Promise<void> {
-  const { shouldTriggerRoundtable } = require('../lib/alarm/alarm-roundtable-engine');
-  assert(typeof shouldTriggerRoundtable === 'function', 'shouldTriggerRoundtable 함수 존재');
-
-  // ROUNDTABLE_ENABLED=false 시 즉시 false 반환 (DB 쿼리 X)
-  await withEnvAsync({ HUB_ALARM_ROUNDTABLE_ENABLED: 'false' }, async () => {
-    const result = await shouldTriggerRoundtable({ alarmType: 'critical', visibility: 'emergency' });
-    assert(result === false, 'ENABLED=false 시 critical이어도 false 반환');
-  });
-
-  // ROUNDTABLE_ENABLED=true, critical 알람 → true
-  await withEnvAsync({ HUB_ALARM_ROUNDTABLE_ENABLED: 'true' }, async () => {
-    const result = await shouldTriggerRoundtable({ alarmType: 'critical', visibility: 'emergency' });
-    assert(result === true, 'ENABLED=true, critical 알람 → 즉시 true');
-  });
-
-  // ROUNDTABLE_ENABLED=true, work 알람 → false
-  await withEnvAsync({ HUB_ALARM_ROUNDTABLE_ENABLED: 'true' }, async () => {
-    const result = await shouldTriggerRoundtable({ alarmType: 'work', visibility: 'notify' });
-    assert(result === false, 'work 알람 → false');
-  });
-}
-
-async function withEnvAsync(patch: Record<string, string | undefined>, fn: () => Promise<void>): Promise<void> {
-  const previous: Record<string, string | undefined> = {};
-  for (const key of Object.keys(patch)) {
-    previous[key] = process.env[key];
-    if (patch[key] == null) delete process.env[key];
-    else process.env[key] = patch[key]!;
-  }
-  try {
-    await fn();
-  } finally {
-    for (const key of Object.keys(patch)) {
-      if (previous[key] == null) delete process.env[key];
-      else process.env[key] = previous[key]!;
+  global.fetch = async (url: any, init: any) => {
+    if (String(url).includes('api.telegram.org')) {
+      telegramRequests.push({
+        url: String(url),
+        body: JSON.parse(String(init?.body || '{}')),
+      });
     }
+    return new Response(JSON.stringify({ ok: true, result: { message_id: 43 } }), {
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+    });
+  };
+
+  try {
+    await withEnv({
+      HUB_ALARM_DISPATCH_MODE: 'autonomous',
+      HUB_ALARM_LLM_CLASSIFIER_ENABLED: 'true',
+      HUB_ALARM_INTERPRETER_ENABLED: 'true',
+      HUB_ALARM_ENRICHMENT_ENABLED: 'true',
+      HUB_ALARM_CRITICAL_TYPE_ENABLED: 'true',
+      HUB_ALARM_INTERPRETER_FAIL_OPEN: 'true',
+      HUB_ALARM_ROUNDTABLE_ENABLED: 'true',
+      HUB_ALARM_ROUNDTABLE_DAILY_LIMIT: '10',
+      HUB_ALARM_ROUNDTABLE_TRIGGER_FINGERPRINT_THRESHOLD: '3',
+      HUB_ALARM_USE_CLASS_TOPICS: 'true',
+      TELEGRAM_BOT_TOKEN: 'stage3-smoke-token',
+      TELEGRAM_GROUP_ID: '-1001234567890',
+      TELEGRAM_TOPIC_OPS_WORK: '11',
+      TELEGRAM_TOPIC_OPS_REPORTS: '12',
+      TELEGRAM_TOPIC_OPS_ERROR_RESOLUTION: '13',
+      TELEGRAM_TOPIC_OPS_EMERGENCY: '14',
+      TELEGRAM_ALERTS_DISABLED: 'false',
+    }, async () => {
+      assert(getDispatchMode() === 'autonomous', 'dispatch mode must be autonomous');
+
+      const res = makeRes();
+      await alarmRoute({
+        body: {
+          team: 'luna',
+          fromBot: 'stage3-smoke',
+          severity: 'error',
+          alarmType: 'error',
+          visibility: 'notify',
+          actionability: 'auto_repair',
+          title: 'stage3 autonomous roundtable check',
+          message: 'synthetic Stage 3 error for roundtable and auto_dev handoff verification',
+          incidentKey: `stage3:autonomous:${Date.now()}`,
+        },
+      }, res);
+
+      assert(res.statusCode === 200, 'autonomous route must return 200');
+      assert(res.body.dispatch_mode === 'autonomous', 'response must expose autonomous dispatch mode');
+      assert(res.body.delivered === true, 'autonomous mode must keep Telegram delivery open');
+      assert(res.body.delivery_team === 'ops-error-resolution', `expected ops-error-resolution, got ${res.body.delivery_team}`);
+      assert(res.body.auto_repair?.ok === true, 'autonomous auto-repair path must create document handoff');
+      assert(res.body.auto_repair_shadow_skipped === false, 'autonomous must not use shadow auto-repair skip');
+      assert(roundtableCalls.length === 1, `expected one roundtable trigger, got ${roundtableCalls.length}`);
+      assert(roundtableCalls[0].autoDevDocPath === 'docs/auto_dev/CODEX_ALARM_INCIDENT_stage3_smoke.md', 'roundtable must receive auto_dev doc path');
+      assert(autoDevDocs.length === 1, `expected one auto_dev handoff, got ${autoDevDocs.length}`);
+      assert(telegramRequests.length === 1, `expected exactly one Telegram request, got ${telegramRequests.length}`);
+      assert(String(telegramRequests[0].body.message_thread_id) === '13', 'Telegram must use ops-error-resolution topic');
+      assert(records.some((row) => row.eventType === 'hub_alarm_auto_repair_enqueued'), 'auto repair event must be recorded');
+      assert(dbRuns.some((sql) => sql.includes('agent.hub_alarm_classifications')), 'classification mirror SQL missing');
+      assert(dbRuns.some((sql) => sql.includes('agent.hub_alarms')), 'alarm mirror SQL missing');
+    });
+  } finally {
+    global.fetch = originals.fetch;
+    _testOnly_resetAlarmRouteDbMocks();
+    _testOnly_resetAlarmRouteHooks();
+    _testOnly_resetAlarmEventLakeMocks();
   }
-}
-
-function testStage3TransitionChecklist(): void {
-  const { getDispatchMode } = require('../lib/routes/alarm');
-
-  // Stage 3 전환 시 설정값 검증
-  withEnv({
-    HUB_ALARM_DISPATCH_MODE: 'autonomous',
-    HUB_ALARM_ROUNDTABLE_ENABLED: 'true',
-    HUB_ALARM_ROUNDTABLE_DAILY_LIMIT: '10',
-    HUB_ALARM_ROUNDTABLE_TRIGGER_FINGERPRINT_THRESHOLD: '3',
-  }, () => {
-    assert(getDispatchMode() === 'autonomous', 'Stage 3: dispatch_mode=autonomous');
-
-    const roundtableEnabled = ['1', 'true', 'yes', 'y', 'on'].includes(
-      String(process.env.HUB_ALARM_ROUNDTABLE_ENABLED || '').trim().toLowerCase(),
-    );
-    assert(roundtableEnabled, 'Stage 3: ROUNDTABLE_ENABLED=true');
-
-    const cap = Math.max(1, Number(process.env.HUB_ALARM_ROUNDTABLE_DAILY_LIMIT || 10) || 10);
-    assert(cap === 10, `Stage 3: roundtable 일일 cap=10`);
-  });
 }
 
 async function main(): Promise<void> {
-  testAutonomousMode();
-  testRoundtableEnabledGate();
-  testRoundtableDailyCapDefault();
-  testRoundtableTriggerThreshold();
-  await testShouldTriggerRoundtableInterface();
-  testStage3TransitionChecklist();
-
+  await assertRoundtableGate();
+  await assertAutonomousRouteContract();
   console.log('alarm_activation_stage3_smoke_ok');
 }
 
-main().catch((err) => {
-  console.error(err);
+main().catch((error) => {
+  console.error('[alarm-activation-stage3-smoke] failed:', error?.message || error);
   process.exit(1);
 });

@@ -391,6 +391,7 @@ export function createPendingReconcileLedger(context = {}) {
       }
 
       if (payload.action === ACTIONS.BUY) {
+        const executedAtMs = Number(payload.submittedAtMs || 0) > 0 ? Number(payload.submittedAtMs) : null;
         const currentPosition = await tx.get(
           `SELECT symbol, amount, avg_price, unrealized_pnl, paper, exchange, COALESCE(trade_mode, 'normal') AS trade_mode
              FROM positions
@@ -423,10 +424,10 @@ export function createPendingReconcileLedger(context = {}) {
         const insertedTradeRow = await tx.get(
           `INSERT INTO trades
              (signal_id, symbol, side, amount, price, total_usdt, paper, exchange, trade_mode,
-              execution_origin, quality_flag, exclude_from_learning, incident_link)
+              execution_origin, quality_flag, exclude_from_learning, incident_link, executed_at)
            VALUES
-             ($1, $2, 'buy', $3, $4, $5, $6, 'binance', $7, $8, $9, $10, $11)
-           RETURNING id, signal_id, symbol, side, amount, price, total_usdt, paper, exchange, trade_mode, incident_link`,
+             ($1, $2, 'buy', $3, $4, $5, $6, 'binance', $7, $8, $9, $10, $11, COALESCE(to_timestamp($12 / 1000.0), now()))
+           RETURNING id, signal_id, symbol, side, amount, price, total_usdt, paper, exchange, trade_mode, incident_link, executed_at`,
           [
             payload.signalId,
             payload.symbol,
@@ -439,6 +440,7 @@ export function createPendingReconcileLedger(context = {}) {
             qualityContext.qualityFlag,
             Boolean(qualityContext.excludeFromLearning),
             deltaIncidentLink,
+            executedAtMs,
           ],
         );
         const trade = normalizePendingReconcileTradeRow(insertedTradeRow);
@@ -454,6 +456,7 @@ export function createPendingReconcileLedger(context = {}) {
       }
 
       if (payload.action === ACTIONS.SELL) {
+        const executedAtMs = Number(payload.submittedAtMs || 0) > 0 ? Number(payload.submittedAtMs) : null;
         const currentPosition = await tx.get(
           `SELECT symbol, amount, avg_price, unrealized_pnl, paper, exchange, COALESCE(trade_mode, 'normal') AS trade_mode
              FROM positions
@@ -520,11 +523,11 @@ export function createPendingReconcileLedger(context = {}) {
           `INSERT INTO trades
              (signal_id, symbol, side, amount, price, total_usdt, paper, exchange, trade_mode,
               partial_exit, partial_exit_ratio, remaining_amount,
-              execution_origin, quality_flag, exclude_from_learning, incident_link)
+              execution_origin, quality_flag, exclude_from_learning, incident_link, executed_at)
            VALUES
-             ($1, $2, 'sell', $3, $4, $5, $6, 'binance', $7, $8, $9, $10, $11, $12, $13, $14)
+             ($1, $2, 'sell', $3, $4, $5, $6, 'binance', $7, $8, $9, $10, $11, $12, $13, $14, COALESCE(to_timestamp($15 / 1000.0), now()))
            RETURNING id, signal_id, symbol, side, amount, price, total_usdt, paper, exchange, trade_mode, incident_link,
-                     COALESCE(partial_exit, false) AS partial_exit, partial_exit_ratio, remaining_amount`,
+                     COALESCE(partial_exit, false) AS partial_exit, partial_exit_ratio, remaining_amount, executed_at`,
           [
             payload.signalId,
             payload.symbol,
@@ -540,6 +543,7 @@ export function createPendingReconcileLedger(context = {}) {
             qualityContext.qualityFlag,
             Boolean(qualityContext.excludeFromLearning),
             deltaIncidentLink,
+            executedAtMs,
           ],
         );
         const trade = normalizePendingReconcileTradeRow(insertedTradeRow);

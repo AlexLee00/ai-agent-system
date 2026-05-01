@@ -1,5 +1,7 @@
 // @ts-nocheck
 
+import { extractExecutionTimestampMs } from '../../shared/binance-order-execution-normalizer.ts';
+
 export function isHephaestosHotPathPrefetchEnabled(env = process.env) {
   const raw = String(env?.HEPHAESTOS_HOT_PATH_PREFETCH_ENABLED || '').trim().toLowerCase();
   if (['0', 'false', 'off', 'disabled'].includes(raw)) return false;
@@ -338,6 +340,7 @@ async function executeSignal(signal) {
         amount:    order.filled,
         price:     order.price,
         totalUsdt: settledUsdt,
+        executedAt: extractExecutionTimestampMs(order, executionSubmittedAtMs),
         paper:     effectivePaperMode,
         exchange:  'binance',
         tradeMode: signalTradeMode,

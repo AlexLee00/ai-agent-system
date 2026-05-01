@@ -27,6 +27,14 @@ function toPositiveNumber(value, fallback = 0) {
   return Number.isFinite(numeric) && numeric > 0 ? numeric : fallback;
 }
 
+function toEpochMs(value) {
+  if (value == null || value === '') return null;
+  const direct = Number(value);
+  if (Number.isFinite(direct) && direct > 0) return direct;
+  const parsed = Date.parse(String(value));
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+}
+
 export function inferOrderFillPrice(order = {}) {
   const directPrice = toPositiveNumber(order.price, 0) || toPositiveNumber(order.average, 0);
   if (directPrice > 0) return directPrice;
@@ -51,6 +59,31 @@ export function extractClientOrderId(orderLike) {
     ?? orderLike.info?.clientOrderId?.toString?.()
     ?? orderLike.info?.origClientOrderId?.toString?.()
     ?? null;
+}
+
+export function extractExecutionTimestampMs(orderLike, fallback = null) {
+  const candidates = [
+    orderLike?.timestamp,
+    orderLike?.lastTradeTimestamp,
+    orderLike?.transactTime,
+    orderLike?.updateTime,
+    orderLike?.workingTime,
+    orderLike?.datetime,
+    orderLike?.info?.time,
+    orderLike?.info?.transactTime,
+    orderLike?.info?.updateTime,
+    orderLike?.info?.workingTime,
+  ];
+  const fills = Array.isArray(orderLike?.trades) ? orderLike.trades : [];
+  for (const fill of fills) {
+    candidates.push(fill?.timestamp, fill?.time, fill?.datetime);
+  }
+
+  for (const candidate of candidates) {
+    const epochMs = toEpochMs(candidate);
+    if (epochMs) return epochMs;
+  }
+  return toEpochMs(fallback);
 }
 
 export async function normalizeBinanceMarketOrderExecution(symbol, side, rawOrder = null, {
