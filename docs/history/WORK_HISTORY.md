@@ -4,6 +4,23 @@
 > 상세 내용: `reservation-dev-summary.md` / `reservation-handoff.md`
 > 최초 작성: 2026-02-27
 
+## 2026-05-01: CODEX_ALARM_DISPATCH_HUB_100_PERCENT_FINAL_CLOSURE_PLAN Polish 2-5 — 알람 디스패치 허브 100% (84차 세션)
+
+- **Polish 2 폐쇄 사이클 검증**: `bots/hub/scripts/alarm-closure-cycle-smoke.ts` (235줄)
+  - alarm→roundtable→auto_dev→claude→resolved→meeting 6단계 hermetic 검증
+  - 7/7 smoke 통과, `alarm_closure_cycle_smoke_ok`
+- **Polish 3 Phase F 5 digest launchd 등록**:
+  - `bots/hub/scripts/report-deprecation-matrix.ts` (204줄) — 84 리포트 → 5 digest 매핑 + 3주 grace period
+  - 8개 launchd 등록: hourly-status / daily-metrics / weekly-audit / weekly-advisory / incident-summary / noisy-auto-learn / severity-decay / roundtable-reflection
+- **Polish 4 Noisy Producer 자동 학습**: `bots/hub/scripts/noisy-producer-auto-learn.ts` (215줄)
+  - 매주 월 09:00, 임계치 100건/일, HUB_NOISY_AUTO_SUPPRESS=false (마스터 승인 기본)
+- **Polish 5 Severity Decay + Roundtable Reflection**:
+  - `bots/hub/lib/alarm/severity-decay.ts` (118줄) — critical 24h→error, error 7d→work 자동 강등
+  - `bots/hub/scripts/severity-decay-runner.ts` (55줄) — 매시간 실행기
+  - `bots/hub/scripts/alarm-roundtable-reflection.ts` (204줄) — 매월 1일 회고 분석 + meeting 보고
+- **결과**: check:l5 통과 (259 matches, 회귀 0건), 마스터 비전 88% → **100%** 달성
+- 커밋: `9082e258 feat(hub): Polish 2-5 — 알람 디스패치 허브 100% 폐쇄 사이클 완성`
+
 ## 2026-04-29: CODEX_SIGMA_INTELLIGENT_LIBRARY_PLAN Phase A — 9팀 4-Layer Memory 통합 어댑터 (81차 세션)
 
 - **Phase A-1 team-memory-adapter.ts 신설** (`bots/sigma/ts/lib/team-memory-adapter.ts`, 380줄)

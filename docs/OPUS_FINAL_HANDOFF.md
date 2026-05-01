@@ -1,4 +1,95 @@
-# 세션 인수인계 — 2026-04-30 (CODEX_LUNA_FINAL_100_PERCENT_COMPLETION_PLAN Phase Ω — 83차 세션)
+# 세션 인수인계 — 2026-05-01 (CODEX_ALARM_DISPATCH_HUB_100_PERCENT_FINAL_CLOSURE_PLAN Polish 2-5 — 84차 세션)
+
+## 완료 요약 ✅ (84차 세션) — 알람 디스패치 허브 100% 폐쇄 사이클 완성
+
+### Polish 1 (기완료, 21:30 메티 검증)
+Phase A/B/C 단계별 활성화 — Stage 1/2/3 smoke 630줄, alarm.ts 강화
+리소스 API plist에 모든 Stage 3 환경변수 적용 (autonomous mode + roundtable enabled)
+
+### Polish 2-5 신규 구현 (84차 세션)
+
+| 파일 | 기능 | 줄수 |
+|------|------|------|
+| `bots/hub/scripts/alarm-closure-cycle-smoke.ts` | 폐쇄 사이클 6단계 hermetic 검증 | 235 |
+| `bots/hub/scripts/report-deprecation-matrix.ts` | 84 리포트 → 5 digest 매핑 매트릭스 | 204 |
+| `bots/hub/scripts/noisy-producer-auto-learn.ts` | Noisy Producer 주간 자동 학습 | 215 |
+| `bots/hub/lib/alarm/severity-decay.ts` | Severity 자동 강등 (critical→error, error→work) | 118 |
+| `bots/hub/scripts/severity-decay-runner.ts` | Severity Decay 매시간 실행기 | 55 |
+| `bots/hub/scripts/alarm-roundtable-reflection.ts` | 매월 Roundtable 회고 리포트 | 204 |
+
+### launchd 신규 등록 (7개)
+
+| 서비스 | 스케줄 |
+|--------|--------|
+| ai.hub.hourly-status-digest | 매시간 :00 |
+| ai.hub.daily-metrics-digest | 매일 09:00 |
+| ai.hub.weekly-audit-digest | 매주 월 10:00 |
+| ai.hub.weekly-advisory-digest | 매주 월 11:00 |
+| ai.hub.incident-summary | 매일 18:00 |
+| ai.hub.noisy-producer-auto-learn | 매주 월 09:00 |
+| ai.hub.severity-decay | 매시간 (StartInterval: 3600) |
+| ai.hub.roundtable-reflection | 매월 1일 09:00 |
+
+### Kill Switch 신규
+
+```
+HUB_DIGEST_HOURLY_STATUS_ENABLED=true
+HUB_DIGEST_DAILY_METRICS_ENABLED=true
+HUB_DIGEST_WEEKLY_AUDIT_ENABLED=true
+HUB_DIGEST_WEEKLY_ADVISORY_ENABLED=true
+HUB_DIGEST_INCIDENT_SUMMARY_ENABLED=true
+HUB_REPORT_LEGACY_DEPRECATION_DAYS=21
+HUB_NOISY_AUTO_LEARN_ENABLED=true
+HUB_NOISY_THRESHOLD_PER_DAY=100
+HUB_NOISY_AUTO_SUPPRESS=false    ← 마스터 승인 기본
+HUB_ROUNDTABLE_REFLECTION_ENABLED=true
+HUB_SEVERITY_DECAY_ENABLED=true
+HUB_SEVERITY_DECAY_CRITICAL_HOURS=24
+HUB_SEVERITY_DECAY_ERROR_DAYS=7
+```
+
+### 마스터 비전 달성 현황
+
+```
+Polish 1: Phase A/B/C 활성화 → ✅ 100%
+Polish 2: 폐쇄 사이클 6단계 → ✅ 100% (7/7 smoke 통과)
+Polish 3: 5 digest launchd → ✅ 100% (8개 등록)
+Polish 4: Noisy 자동 학습 → ✅ 100% (마스터 승인 모드)
+Polish 5: Reflection + Decay → ✅ 100%
+종합: 88% → 100% (+12%p)
+```
+
+### check:l5 결과
+```
+total_matches: 259 (+5 vs Polish 1 후 254)
+hub_alarm_native: 247
+회귀: 0건
+```
+
+### 커밋
+`9082e258 feat(hub): Polish 2-5 — 알람 디스패치 허브 100% 폐쇄 사이클 완성`
+
+### 다음 세션 우선순위
+
+```
+🟡 P1 — 84 리포트 Week 1 deprecation 실행 (마스터 승인 필요):
+  report-deprecation-matrix.ts --week=1 으로 대상 5건 확인
+  launchctl unload ~/Library/LaunchAgents/<plist>.plist
+
+🟡 P1 — 첫 Roundtable 자연 발생 모니터링:
+  OPS에서 실제 critical 알람 발생 시 Stage 3 동작 확인
+  alarm_roundtables 테이블 레코드 확인
+
+🟡 P2 — Severity Decay 첫 실행 결과 확인 (매시간):
+  /tmp/hub-severity-decay.log 확인
+
+🟡 P2 — Luna Phase Ω 자연 운영 모니터링 (계속):
+  reflexion 5건 누적 목표
+```
+
+---
+
+# 이전 세션 인수인계 — 2026-04-30 (CODEX_LUNA_FINAL_100_PERCENT_COMPLETION_PLAN Phase Ω — 83차 세션)
 
 ## 완료 요약 ✅ (83차 세션) — Luna Phase Ω1~Ω8 전체 구현
 
