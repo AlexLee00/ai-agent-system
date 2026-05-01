@@ -106,26 +106,40 @@ function buildPreflight() {
     ...incidentSummaryMissing.map((label: string) => `missing_replacement_digest:${label}`),
   ];
 
+  const runtimeUnloadReadyCount = immediateCandidates.filter((candidate) => candidate.runtime_action === 'ready_for_master_approved_unload').length;
+  const repoOnlyOrNotLoadedCount = immediateCandidates.filter((candidate) => candidate.runtime_action !== 'ready_for_master_approved_unload').length;
+  const status = blockers.length > 0
+    ? 'blocked'
+    : runtimeUnloadReadyCount === 0 && immediateCandidates.length > 0
+      ? 'immediate_unload_verified'
+      : 'ready_for_parallel_observation';
+
   return {
     ok: blockers.length === 0,
     generated_at: new Date().toISOString(),
-    status: blockers.length === 0 ? 'ready_for_parallel_observation' : 'blocked',
+    status,
     digest_status: digestStatus,
     protected_labels: PROTECTED_LABELS.map((label) => ({ label, loaded: loadedLabels.has(label) })),
     immediate_count: immediateCandidates.length,
-    runtime_unload_ready_count: immediateCandidates.filter((candidate) => candidate.runtime_action === 'ready_for_master_approved_unload').length,
-    repo_only_or_not_loaded_count: immediateCandidates.filter((candidate) => candidate.runtime_action !== 'ready_for_master_approved_unload').length,
+    runtime_unload_ready_count: runtimeUnloadReadyCount,
+    repo_only_or_not_loaded_count: repoOnlyOrNotLoadedCount,
     blockers,
     immediate_candidates: immediateCandidates,
-    next_actions: blockers.length === 0
+    next_actions: blockers.length > 0
       ? [
+        'Fix blockers before considering report launchd retirement.',
+        'Do not unload any report launchd while digest coverage is incomplete.',
+      ]
+      : runtimeUnloadReadyCount === 0
+        ? [
+        'Monitor the 5 digest jobs for information loss after immediate candidate unload.',
+        'Keep Week 1 grace and Week 3 grace candidates loaded until their review windows complete.',
+        'Use the retained local plist files as rollback sources if any digest coverage gap is observed.',
+      ]
+        : [
         'Keep all immediate candidates running during the Week 1 parallel observation window.',
         'Compare digest content against each candidate before any unload.',
         'Unload only runtime_action=ready_for_master_approved_unload candidates after explicit master approval.',
-      ]
-      : [
-        'Fix blockers before considering report launchd retirement.',
-        'Do not unload any report launchd while digest coverage is incomplete.',
       ],
   };
 }
