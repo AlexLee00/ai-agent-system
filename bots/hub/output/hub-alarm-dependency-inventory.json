@@ -1,15 +1,15 @@
 {
-  "generated_at": "2026-05-01T13:30:09.301Z",
+  "generated_at": "2026-05-01T13:41:48.907Z",
   "scan_patterns": [
     "hub-alarm-client",
     "openclaw-client",
     "HUB_ALARM_",
     "OPENCLAW_"
   ],
-  "total_matches": 254,
-  "unique_files": 128,
+  "total_matches": 259,
+  "unique_files": 132,
   "categories": {
-    "hub_alarm_native": 242,
+    "hub_alarm_native": 247,
     "retired_gateway_guard": 12,
     "legacy_gateway_compat": 0
   },
@@ -942,6 +942,20 @@
         "match": "else process.env.HUB_ALARM_SUPPRESSION_RULES_PATH = originalRulesPath;"
       }
     ],
+    "bots/hub/scripts/alarm-closure-cycle-smoke.ts": [
+      {
+        "file": "bots/hub/scripts/alarm-closure-cycle-smoke.ts",
+        "line": 125,
+        "category": "hub_alarm_native",
+        "match": "process.env.HUB_ALARM_ROUNDTABLE_ENABLED = 'true';"
+      },
+      {
+        "file": "bots/hub/scripts/alarm-closure-cycle-smoke.ts",
+        "line": 136,
+        "category": "hub_alarm_native",
+        "match": "record(1, 'Roundtable shouldTrigger (critical)', true, 'HUB_ALARM_ROUNDTABLE_ENABLED=true, alarmType=critical → true');"
+      }
+    ],
     "bots/hub/scripts/alarm-contract-audit.ts": [
       {
         "file": "bots/hub/scripts/alarm-contract-audit.ts",
@@ -1024,6 +1038,14 @@
       {
         "file": "bots/hub/scripts/alarm-noise-report.ts",
         "line": 5,
+        "category": "hub_alarm_native",
+        "match": "const { postAlarm } = require('../../../packages/core/lib/hub-alarm-client');"
+      }
+    ],
+    "bots/hub/scripts/alarm-roundtable-reflection.ts": [
+      {
+        "file": "bots/hub/scripts/alarm-roundtable-reflection.ts",
+        "line": 20,
         "category": "hub_alarm_native",
         "match": "const { postAlarm } = require('../../../packages/core/lib/hub-alarm-client');"
       }
@@ -1328,6 +1350,14 @@
         "match": "reason: !ok ? 'HUB_ALARM_USE_CLASS_TOPICS_not_enabled'"
       }
     ],
+    "bots/hub/scripts/noisy-producer-auto-learn.ts": [
+      {
+        "file": "bots/hub/scripts/noisy-producer-auto-learn.ts",
+        "line": 19,
+        "category": "hub_alarm_native",
+        "match": "const { postAlarm } = require('../../../packages/core/lib/hub-alarm-client');"
+      }
+    ],
     "bots/hub/scripts/retired-gateway-marker-precommit-smoke.ts": [
       {
         "file": "bots/hub/scripts/retired-gateway-marker-precommit-smoke.ts",
@@ -1400,6 +1430,14 @@
         "line": 43,
         "category": "retired_gateway_guard",
         "match": "assert.notEqual(childEnv.OPENCLAW_BIN, '/tmp/openclaw');"
+      }
+    ],
+    "bots/hub/scripts/severity-decay-runner.ts": [
+      {
+        "file": "bots/hub/scripts/severity-decay-runner.ts",
+        "line": 13,
+        "category": "hub_alarm_native",
+        "match": "const { postAlarm } = require('../../../packages/core/lib/hub-alarm-client');"
       }
     ],
     "bots/hub/scripts/telegram-hub-secrets-smoke.ts": [

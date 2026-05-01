@@ -2,10 +2,10 @@
 
 This inventory tracks the Hub alarm migration surface. `hub_alarm_native` entries are the desired path; `retired_gateway_guard` entries are regression guards; `legacy_gateway_compat` entries are remaining migration targets and must stay at 0.
 
-- generated_at: 2026-05-01T13:30:09.301Z
-- total_matches: 254
-- unique_files: 128
-- hub_alarm_native: 242
+- generated_at: 2026-05-01T13:41:48.907Z
+- total_matches: 259
+- unique_files: 132
+- hub_alarm_native: 247
 - retired_gateway_guard: 12
 - legacy_gateway_compat: 0
 
@@ -289,6 +289,10 @@ This inventory tracks the Hub alarm migration surface. `hub_alarm_native` entrie
 - L147 [hub_alarm_native]: `if (originalRulesPath == null) delete process.env.HUB_ALARM_SUPPRESSION_RULES_PATH;`
 - L148 [hub_alarm_native]: `else process.env.HUB_ALARM_SUPPRESSION_RULES_PATH = originalRulesPath;`
 
+### `bots/hub/scripts/alarm-closure-cycle-smoke.ts`
+- L125 [hub_alarm_native]: `process.env.HUB_ALARM_ROUNDTABLE_ENABLED = 'true';`
+- L136 [hub_alarm_native]: `record(1, 'Roundtable shouldTrigger (critical)', true, 'HUB_ALARM_ROUNDTABLE_ENABLED=true, alarmType=critical → true');`
+
 ### `bots/hub/scripts/alarm-contract-audit.ts`
 - L11 [hub_alarm_native]: `'packages/core/lib/hub-alarm-client.ts',`
 
@@ -309,6 +313,9 @@ This inventory tracks the Hub alarm migration surface. `hub_alarm_native` entrie
 
 ### `bots/hub/scripts/alarm-noise-report.ts`
 - L5 [hub_alarm_native]: `const { postAlarm } = require('../../../packages/core/lib/hub-alarm-client');`
+
+### `bots/hub/scripts/alarm-roundtable-reflection.ts`
+- L20 [hub_alarm_native]: `const { postAlarm } = require('../../../packages/core/lib/hub-alarm-client');`
 
 ### `bots/hub/scripts/alarm-suppression-proposals.ts`
 - L5 [hub_alarm_native]: `const { postAlarm } = require('../../../packages/core/lib/hub-alarm-client');`
@@ -380,6 +387,9 @@ This inventory tracks the Hub alarm migration surface. `hub_alarm_native` entrie
 - L59 [hub_alarm_native]: `const value = envValueFromPlist(text, 'HUB_ALARM_USE_CLASS_TOPICS');`
 - L67 [hub_alarm_native]: `reason: !ok ? 'HUB_ALARM_USE_CLASS_TOPICS_not_enabled'`
 
+### `bots/hub/scripts/noisy-producer-auto-learn.ts`
+- L19 [hub_alarm_native]: `const { postAlarm } = require('../../../packages/core/lib/hub-alarm-client');`
+
 ### `bots/hub/scripts/retired-gateway-marker-precommit-smoke.ts`
 - L19 [retired_gateway_guard]: `for (const marker of ['openclaw-gateway', 'OPENCLAW_BIN', '18789', 'execFile[^\\n]*openclaw', 'spawn[^\\n]*openclaw']) {`
 - L28 [retired_gateway_guard]: `assert(legacySmoke.includes('RETIRED_GATEWAY_BIN_ENV'), 'legacy smoke must guard OPENCLAW_BIN');`
@@ -398,6 +408,9 @@ This inventory tracks the Hub alarm migration surface. `hub_alarm_native` entrie
 - L22 [retired_gateway_guard]: `OPENCLAW_BIN: '/tmp/openclaw',`
 - L31 [retired_gateway_guard]: `assert.equal(filtered.env.OPENCLAW_BIN, undefined);`
 - L43 [retired_gateway_guard]: `assert.notEqual(childEnv.OPENCLAW_BIN, '/tmp/openclaw');`
+
+### `bots/hub/scripts/severity-decay-runner.ts`
+- L13 [hub_alarm_native]: `const { postAlarm } = require('../../../packages/core/lib/hub-alarm-client');`
 
 ### `bots/hub/scripts/telegram-hub-secrets-smoke.ts`
 - L16 [hub_alarm_native]: `HUB_ALARM_USE_CLASS_TOPICS: process.env.HUB_ALARM_USE_CLASS_TOPICS,`
