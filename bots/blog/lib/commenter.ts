@@ -335,8 +335,14 @@ function isDirectReplyUiError(error) {
     message.startsWith('reply_button_not_found:')
     || message === 'reply_editor_not_found'
     || message.startsWith('reply_submit_not_confirmed:')
+    || message.includes('detached Frame')
     || /Waiting failed: \d+ms exceeded/.test(message)
   );
+}
+
+function isDetachedFrameError(error) {
+  const message = String(error?.message || error || '');
+  return message.includes('detached Frame');
 }
 
 async function processNeighborCommentWithTimeout(candidate, { testMode = false } = {}) {
@@ -5281,7 +5287,14 @@ async function processComment(comment, options = {}) {
     return { ok: false, skipped: true, reason: validation.reason };
   }
 
-  await postReply(comment, generated.reply, options);
+  try {
+    await postReply(comment, generated.reply, options);
+  } catch (error) {
+    if (!isDetachedFrameError(error)) {
+      throw error;
+    }
+    await postReply(comment, generated.reply, options);
+  }
   if (options?.testMode) {
     return { ok: true, dryRun: true, reply: generated.reply };
   }

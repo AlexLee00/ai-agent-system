@@ -2,10 +2,10 @@
 
 This inventory tracks the Hub alarm migration surface. `hub_alarm_native` entries are the desired path; `retired_gateway_guard` entries are regression guards; `legacy_gateway_compat` entries are remaining migration targets and must stay at 0.
 
-- generated_at: 2026-04-28T13:52:35.361Z
-- total_matches: 225
-- unique_files: 133
-- hub_alarm_native: 212
+- generated_at: 2026-05-01T08:38:31.835Z
+- total_matches: 233
+- unique_files: 140
+- hub_alarm_native: 220
 - retired_gateway_guard: 13
 - legacy_gateway_compat: 0
 
@@ -105,7 +105,7 @@ This inventory tracks the Hub alarm migration surface. `hub_alarm_native` entrie
 
 ### `bots/claude/__tests__/builder.test.ts`
 - L21 [hub_alarm_native]: `'../../../packages/core/lib/hub-alarm-client': {`
-- L145 [hub_alarm_native]: `'../../../packages/core/lib/hub-alarm-client': {`
+- L141 [hub_alarm_native]: `'../../../packages/core/lib/hub-alarm-client': {`
 
 ### `bots/claude/__tests__/codex-plan-notifier.test.ts`
 - L39 [hub_alarm_native]: `'../../../packages/core/lib/hub-alarm-client': {`
@@ -153,7 +153,7 @@ This inventory tracks the Hub alarm migration surface. `hub_alarm_native` entrie
 - L16 [hub_alarm_native]: `const { postAlarm } = require('../../../packages/core/lib/hub-alarm-client');`
 
 ### `bots/claude/src/builder.ts`
-- L25 [hub_alarm_native]: `const { postAlarm } = require('../../../packages/core/lib/hub-alarm-client');`
+- L24 [hub_alarm_native]: `const { postAlarm } = require('../../../packages/core/lib/hub-alarm-client');`
 
 ### `bots/claude/src/guardian.ts`
 - L28 [hub_alarm_native]: `const { postAlarm } = require('../../../packages/core/lib/hub-alarm-client');`
@@ -230,7 +230,7 @@ This inventory tracks the Hub alarm migration surface. `hub_alarm_native` entrie
 - L23 [hub_alarm_native]: `const limit = Math.max(1, Number(process.env.HUB_ALARM_LLM_DAILY_LIMIT || 100) || 100);`
 
 ### `bots/hub/lib/alarm/readiness.ts`
-- L103 [hub_alarm_native]: `const classTopicsEnabled = isEnabled(process.env.HUB_ALARM_USE_CLASS_TOPICS)`
+- L99 [hub_alarm_native]: `const classTopicsEnabled = isEnabled(process.env.HUB_ALARM_USE_CLASS_TOPICS)`
 
 ### `bots/hub/lib/alarm/suppression-rules.ts`
 - L34 [hub_alarm_native]: `return String(process.env.HUB_ALARM_SUPPRESSION_RULES_PATH || '').trim()`
@@ -284,6 +284,9 @@ This inventory tracks the Hub alarm migration surface. `hub_alarm_native` entrie
 ### `bots/hub/scripts/blog-alarm-dedup-smoke.ts`
 - L20 [hub_alarm_native]: `// ── hub-alarm-client 유닛 테스트 (private 함수를 인라인 검증) ──────────────`
 
+### `bots/hub/scripts/daily-metrics-digest.ts`
+- L14 [hub_alarm_native]: `const { postAlarm } = require('../../../packages/core/lib/hub-alarm-client');`
+
 ### `bots/hub/scripts/generate-hub-alarm-inventory.ts`
 - L8 [hub_alarm_native]: `const outputMarkdownPath = path.join(projectRoot, 'docs', 'hub', 'HUB_ALARM_DEPENDENCY_INVENTORY.md');`
 - L23 [hub_alarm_native]: `'hub-alarm-client',`
@@ -291,6 +294,9 @@ This inventory tracks the Hub alarm migration surface. `hub_alarm_native` entrie
 - L34 [hub_alarm_native]: `if (match.includes('hub-alarm-client') || match.includes('HUB_ALARM_')) return 'hub_alarm_native';`
 - L60 [hub_alarm_native]: `'!docs/hub/HUB_ALARM_DEPENDENCY_INVENTORY.md',`
 - L62 [retired_gateway_guard]: `'!docs/hub/OPENCLAW_RESIDUE_AUDIT.md',`
+
+### `bots/hub/scripts/hourly-status-digest.ts`
+- L13 [hub_alarm_native]: `const { postAlarm } = require('../../../packages/core/lib/hub-alarm-client');`
 
 ### `bots/hub/scripts/hub-alarm-delivery-acceptance-smoke.ts`
 - L1 [hub_alarm_native]: `const { _testOnly_isHubAlarmDeliveryAccepted } = require('../../../packages/core/lib/hub-alarm-client.ts');`
@@ -334,6 +340,10 @@ This inventory tracks the Hub alarm migration surface. `hub_alarm_native` entrie
 - L48 [retired_gateway_guard]: `'OPENCLAW_BIN',`
 - L52 [retired_gateway_guard]: `const RETIRED_GATEWAY_SOURCE_PATTERN = 'openclaw|legacy_gateway|18789|openclaw-gateway|OPENCLAW_BIN|execFile\\([^\\n]*openclaw|spawn\\([^\\n]*openclaw';`
 
+### `bots/hub/scripts/incident-summary.ts`
+- L14 [hub_alarm_native]: `const { postAlarm } = require('../../../packages/core/lib/hub-alarm-client');`
+- L20 [hub_alarm_native]: `const AUTO_DEV_DIR = process.env.HUB_ALARM_AUTO_DEV_DIR`
+
 ### `bots/hub/scripts/launchd-alarm-class-topic-smoke.ts`
 - L59 [hub_alarm_native]: `const value = envValueFromPlist(text, 'HUB_ALARM_USE_CLASS_TOPICS');`
 - L67 [hub_alarm_native]: `reason: !ok ? 'HUB_ALARM_USE_CLASS_TOPICS_not_enabled'`
@@ -365,12 +375,24 @@ This inventory tracks the Hub alarm migration surface. `hub_alarm_native` entrie
 - L69 [hub_alarm_native]: `HUB_ALARM_USE_CLASS_TOPICS: null,`
 
 ### `bots/hub/scripts/telegram-routing-readiness-report.ts`
-- L110 [hub_alarm_native]: `const raw = String(process.env.HUB_ALARM_USE_CLASS_TOPICS || '').trim().toLowerCase();`
+- L106 [hub_alarm_native]: `const raw = String(process.env.HUB_ALARM_USE_CLASS_TOPICS || '').trim().toLowerCase();`
 
 ### `bots/hub/scripts/telegram-topic-routing-precedence-smoke.ts`
 - L18 [hub_alarm_native]: `HUB_ALARM_USE_CLASS_TOPICS: process.env.HUB_ALARM_USE_CLASS_TOPICS,`
 - L47 [hub_alarm_native]: `delete process.env.HUB_ALARM_USE_CLASS_TOPICS;`
 - L98 [hub_alarm_native]: `process.env.HUB_ALARM_USE_CLASS_TOPICS = '1';`
+
+### `bots/hub/scripts/weekly-advisory-digest.ts`
+- L14 [hub_alarm_native]: `const { postAlarm } = require('../../../packages/core/lib/hub-alarm-client');`
+
+### `bots/hub/scripts/weekly-audit-digest.ts`
+- L14 [hub_alarm_native]: `const { postAlarm } = require('../../../packages/core/lib/hub-alarm-client');`
+
+### `bots/hub/scripts/weekly-metrics-digest.ts`
+- L14 [hub_alarm_native]: `const { postAlarm } = require('../../../packages/core/lib/hub-alarm-client');`
+
+### `bots/investment/scripts/runtime-luna-launchd-cutover-preflight-pack.ts`
+- L26 [hub_alarm_native]: `const hasTelegramRoute = Boolean(env.TELEGRAM_BOT_TOKEN || env.HUB_ALARM_TELEGRAM_ENABLED || env.TELEGRAM_ALARM_TOPIC_MAP);`
 
 ### `bots/orchestrator/launchd/ai.orchestrator.plist`
 - L11 [hub_alarm_native]: `<key>HUB_ALARM_USE_CLASS_TOPICS</key>`
@@ -395,8 +417,8 @@ This inventory tracks the Hub alarm migration surface. `hub_alarm_native` entrie
 - L41 [hub_alarm_native]: `&& (String(process.env.HUB_ALARM_USE_CLASS_TOPICS || '').trim() !== '' || hubSecrets.telegram?.topic_alias_mode === 'class_topics');`
 
 ### `bots/orchestrator/n8n/setup-ska-workflows.ts`
-- L37 [hub_alarm_native]: `const CLASS_TOPIC_MODE = String(process.env.HUB_ALARM_USE_CLASS_TOPICS || '').trim().toLowerCase() !== 'false'`
-- L38 [hub_alarm_native]: `&& (String(process.env.HUB_ALARM_USE_CLASS_TOPICS || '').trim() !== '' || hubSecrets.telegram?.topic_alias_mode === 'class_topics');`
+- L41 [hub_alarm_native]: `const CLASS_TOPIC_MODE = String(process.env.HUB_ALARM_USE_CLASS_TOPICS || '').trim().toLowerCase() !== 'false'`
+- L42 [hub_alarm_native]: `&& (String(process.env.HUB_ALARM_USE_CLASS_TOPICS || '').trim() !== '' || hubSecrets.telegram?.topic_alias_mode === 'class_topics');`
 
 ### `bots/orchestrator/src/dashboard.ts`
 - L11 [hub_alarm_native]: `} = require('../../../packages/core/lib/hub-alarm-client') as {`
@@ -422,10 +444,13 @@ This inventory tracks the Hub alarm migration surface. `hub_alarm_native` entrie
 - L625 [hub_alarm_native]: `- `readRecentAlertSnapshot` import를 `hub-alarm-client`로 변경.`
 
 ### `packages/core/REPORTING_HUB_PLAN.md`
-- L84 [hub_alarm_native]: `- canonical transport 자체 (`hub-alarm-client.ts`, `reporting-hub.ts`)`
+- L80 [hub_alarm_native]: `- canonical transport 자체 (`hub-alarm-client.ts`, `reporting-hub.ts`)`
 
 ### `packages/core/REPORTING_INVENTORY.md`
-- L126 [hub_alarm_native]: `5. canonical transport (`hub-alarm-client.ts`, `reporting-hub.ts`) 바깥 non-blog current delivery는 사실상 1차 정리 완료 상태로 유지`
+- L121 [hub_alarm_native]: `5. canonical transport (`hub-alarm-client.ts`, `reporting-hub.ts`) 바깥 non-blog current delivery는 사실상 1차 정리 완료 상태로 유지`
+
+### `packages/core/lib/alarm-producer-contract.ts`
+- L10 [hub_alarm_native]: `const { postAlarm } = require('./hub-alarm-client');`
 
 ### `packages/core/lib/hub-alarm-client.js`
 - L5 [hub_alarm_native]: `module.exports = loadTsSourceBridge(__dirname, 'hub-alarm-client');`
@@ -434,17 +459,17 @@ This inventory tracks the Hub alarm migration surface. `hub_alarm_native` entrie
 - L2 [hub_alarm_native]: `* packages/core/lib/hub-alarm-client.js — Hub alarm 클라이언트`
 - L15 [hub_alarm_native]: `const HUB_ALARM_TIMEOUT_MS = Math.max(1000, Number(process.env.HUB_ALARM_TIMEOUT_MS || 5000) || 5000);`
 - L18 [hub_alarm_native]: `const RECENT_ALERT_SNAPSHOT_PATH = String(process.env.HUB_ALARM_RECENT_ALERTS_PATH || '').trim()`
-- L179 [hub_alarm_native]: `const classMode = _readBooleanEnv('HUB_ALARM_USE_CLASS_TOPICS')`
-- L181 [hub_alarm_native]: `&& !_readFalseBooleanEnv('HUB_ALARM_USE_CLASS_TOPICS'));`
-- L243 [hub_alarm_native]: `if (_readBooleanEnv('HUB_ALARM_USE_CLASS_TOPICS')) return true;`
-- L244 [hub_alarm_native]: `if (_readFalseBooleanEnv('HUB_ALARM_USE_CLASS_TOPICS')) return false;`
-- L516 [hub_alarm_native]: `signal: AbortSignal.timeout(HUB_ALARM_TIMEOUT_MS),`
-- L555 [hub_alarm_native]: `console.warn(`[hub-alarm-client] recent alert snapshot 저장 실패: ${(error as Error).message}`);`
-- L588 [hub_alarm_native]: `console.warn('[hub-alarm-client] inline telegram 발송 실패: bot token/group id 미설정');`
-- L617 [hub_alarm_native]: `console.warn(`[hub-alarm-client] inline telegram 429 — ${delayMs}ms 후 재시도`);`
-- L628 [hub_alarm_native]: `console.warn(`[hub-alarm-client] inline telegram 실패: ${error.message}`);`
-- L678 [hub_alarm_native]: `const hubDirectBlocked = _readBooleanEnv('HUB_ALARM_SKIP_DIRECT');`
-- L706 [hub_alarm_native]: `console.warn(`[hub-alarm-client] hub alarm failed: ${hubResult.error}`);`
+- L175 [hub_alarm_native]: `const classMode = _readBooleanEnv('HUB_ALARM_USE_CLASS_TOPICS')`
+- L177 [hub_alarm_native]: `&& !_readFalseBooleanEnv('HUB_ALARM_USE_CLASS_TOPICS'));`
+- L239 [hub_alarm_native]: `if (_readBooleanEnv('HUB_ALARM_USE_CLASS_TOPICS')) return true;`
+- L240 [hub_alarm_native]: `if (_readFalseBooleanEnv('HUB_ALARM_USE_CLASS_TOPICS')) return false;`
+- L512 [hub_alarm_native]: `signal: AbortSignal.timeout(HUB_ALARM_TIMEOUT_MS),`
+- L551 [hub_alarm_native]: `console.warn(`[hub-alarm-client] recent alert snapshot 저장 실패: ${(error as Error).message}`);`
+- L584 [hub_alarm_native]: `console.warn('[hub-alarm-client] inline telegram 발송 실패: bot token/group id 미설정');`
+- L613 [hub_alarm_native]: `console.warn(`[hub-alarm-client] inline telegram 429 — ${delayMs}ms 후 재시도`);`
+- L624 [hub_alarm_native]: `console.warn(`[hub-alarm-client] inline telegram 실패: ${error.message}`);`
+- L674 [hub_alarm_native]: `const hubDirectBlocked = _readBooleanEnv('HUB_ALARM_SKIP_DIRECT');`
+- L702 [hub_alarm_native]: `console.warn(`[hub-alarm-client] hub alarm failed: ${hubResult.error}`);`
 
 ### `packages/core/lib/reporting-hub.ts`
 - L3 [hub_alarm_native]: `const hubAlarmClient = require('./hub-alarm-client');`
@@ -454,8 +479,8 @@ This inventory tracks the Hub alarm migration surface. `hub_alarm_native` entrie
 
 ### `packages/core/lib/telegram-sender.ts`
 - L31 [hub_alarm_native]: `const hubAlarmClient = require('./hub-alarm-client');`
-- L132 [hub_alarm_native]: `const raw = String(process.env.HUB_ALARM_USE_CLASS_TOPICS || '').trim().toLowerCase();`
-- L290 [hub_alarm_native]: `const raw = process.env.HUB_ALARM_USE_CLASS_TOPICS;`
+- L128 [hub_alarm_native]: `const raw = String(process.env.HUB_ALARM_USE_CLASS_TOPICS || '').trim().toLowerCase();`
+- L284 [hub_alarm_native]: `const raw = process.env.HUB_ALARM_USE_CLASS_TOPICS;`
 
 ### `packages/core/scripts/publish-python-report.ts`
 - L12 [hub_alarm_native]: `const { postAlarm } = require('../lib/hub-alarm-client');`
