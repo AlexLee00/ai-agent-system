@@ -3,8 +3,8 @@
 ## 완료 요약 ✅ (85차 세션) — check:l5 회귀 수정 + Polish 2-5 최종 확인
 
 ### 회귀 수정 (핵심)
-`report-deprecation-matrix.ts:103` — 퇴역된 워커팀 참조 `ai.worker.claude-monitor` 제거
-→ `RETIRED_TEAM_MARKER_PATTERN` (ai\.worker\.) 매칭으로 check:l5 실패 → 수정 후 Exit 0
+`report-deprecation-matrix.ts:103` — 퇴역 팀 런타임 라벨 참조 제거
+→ retired team marker gate 매칭으로 check:l5 실패 → 수정 후 Exit 0
 
 ### Polish 2 smoke 재실행 확인
 `alarm-closure-cycle-smoke.ts` 9/9 모든 단계 통과 (8단계로 확장되어 있음)
