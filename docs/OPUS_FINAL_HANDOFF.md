@@ -1,4 +1,40 @@
-# 세션 인수인계 — 2026-05-01 (CODEX_ALARM_DISPATCH_HUB_100_PERCENT_FINAL_CLOSURE_PLAN Polish 2-5 — 84차 세션)
+# 세션 인수인계 — 2026-05-02 (CODEX_ALARM_DISPATCH_HUB_FINAL_8_PERCENT_CLOSURE_PLAN — 85차 세션)
+
+## 완료 요약 ✅ (85차 세션) — check:l5 회귀 수정 + Polish 2-5 최종 확인
+
+### 회귀 수정 (핵심)
+`report-deprecation-matrix.ts:103` — 퇴역된 워커팀 참조 `ai.worker.claude-monitor` 제거
+→ `RETIRED_TEAM_MARKER_PATTERN` (ai\.worker\.) 매칭으로 check:l5 실패 → 수정 후 Exit 0
+
+### Polish 2 smoke 재실행 확인
+`alarm-closure-cycle-smoke.ts` 9/9 모든 단계 통과 (8단계로 확장되어 있음)
+
+### 현재 상태 (확인 완료)
+```
+Polish 1-5: 100% ✅
+launchd: 8개 가동 (5 digest + noisy-producer + roundtable-reflection + severity-decay)
+check:l5: Exit 0 (회귀 0건)
+```
+
+### 커밋
+`4d7a00ca feat(hub): 알람 디스패치 허브 최종 8% 폐쇄 — Polish 2-5 완성`
+
+### 다음 세션 우선순위
+```
+🟡 84 리포트 Week 1 deprecation 검토 (마스터 직접 결정):
+  tsx bots/hub/scripts/report-deprecation-matrix.ts --week=1
+  → 즉시 비활성화 후보 9건 확인 후 launchctl unload
+
+🟡 OPS severity-decay 첫 실행 로그 확인 (1시간 후):
+  ssh ops cat /tmp/hub-severity-decay.log
+
+🟡 Roundtable 자연 발생 모니터링:
+  critical 알람 시 alarm_roundtables 테이블 레코드 생성 확인
+```
+
+---
+
+# 이전 세션 인수인계 — 2026-05-01 (CODEX_ALARM_DISPATCH_HUB_100_PERCENT_FINAL_CLOSURE_PLAN Polish 2-5 — 84차 세션)
 
 ## 완료 요약 ✅ (84차 세션) — 알람 디스패치 허브 100% 폐쇄 사이클 완성
 
