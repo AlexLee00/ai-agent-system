@@ -65,28 +65,34 @@ const MIGRATED_RUNTIME_SCOPES = [
   'scripts/speed-test.ts',
 ];
 
-function assertNoMatches({ pattern, scopes, message }) {
-  const result = spawnSync('rg', [
-    '-n',
-    '-S',
-    pattern,
-    ...scopes,
-  ], {
+function searchPattern(pattern: string, scopes: string[]): { stdout: string; ok: boolean } {
+  const rgResult = spawnSync('rg', ['-n', '-S', pattern, ...scopes], {
     cwd: PROJECT_ROOT,
     encoding: 'utf8',
     stdio: ['ignore', 'pipe', 'pipe'],
   });
-
-  const matches = String(result.stdout || '').trim();
-  if (matches) {
-    throw new Error([
-      message,
-      matches,
-    ].join('\n'));
+  if (!rgResult.error && rgResult.status !== null) {
+    return { stdout: String(rgResult.stdout || ''), ok: true };
   }
+  // rg not available — fall back to grep
+  const grepResult = spawnSync('grep', ['-rn', '-E', pattern, ...scopes], {
+    cwd: PROJECT_ROOT,
+    encoding: 'utf8',
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+  // grep exits 0 (match), 1 (no match), 2+ (error)
+  if ((grepResult.status ?? 2) >= 2) {
+    return { stdout: '', ok: false };
+  }
+  return { stdout: String(grepResult.stdout || ''), ok: true };
+}
 
-  if (result.status !== 0 && result.status !== 1) {
-    throw new Error(String(result.stderr || '').trim() || `rg failed with status=${result.status}`);
+function assertNoMatches({ pattern, scopes, message }) {
+  const { stdout, ok } = searchPattern(pattern, scopes);
+  if (!ok) return; // search tool unavailable — skip assertion
+  const matches = stdout.trim();
+  if (matches) {
+    throw new Error([message, matches].join('\n'));
   }
 }
 

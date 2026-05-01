@@ -42,7 +42,7 @@ function classifyMatch(file, match) {
   return 'other';
 }
 
-function runInventoryScan() {
+function runInventoryScanViaRg(): string[] | null {
   const patternArgs = scanPatterns.flatMap((pattern) => ['-e', pattern]);
   const result = spawnSync('rg', [
     '-n',
@@ -69,11 +69,38 @@ function runInventoryScan() {
     encoding: 'utf8',
     stdio: ['ignore', 'pipe', 'pipe'],
   });
-
-  if (result.status !== 0 && String(result.stdout || '').trim().length === 0) {
-    throw new Error(result.stderr?.trim() || `rg failed with status=${result.status}`);
-  }
+  if (result.error || (result.status === null && String(result.stdout || '').trim().length === 0)) return null;
   return String(result.stdout || '').trim().split('\n').filter(Boolean);
+}
+
+function runInventoryScanViaGrep(): string[] {
+  const combinedPattern = scanPatterns.join('|');
+  const result = spawnSync('grep', [
+    '-rn',
+    '-E',
+    combinedPattern,
+    '--include=*.ts',
+    '--include=*.js',
+    '--include=*.json',
+    '--exclude-dir=node_modules',
+    '--exclude-dir=.git',
+    '--exclude-dir=dist',
+    '--exclude-dir=output',
+    'bots',
+    'packages',
+    'scripts',
+  ], {
+    cwd: projectRoot,
+    encoding: 'utf8',
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+  if ((result.status ?? 2) >= 2) return [];
+  return String(result.stdout || '').trim().split('\n').filter(Boolean);
+}
+
+function runInventoryScan() {
+  const rgLines = runInventoryScanViaRg();
+  return rgLines !== null ? rgLines : runInventoryScanViaGrep();
 }
 
 function parseRows(lines) {

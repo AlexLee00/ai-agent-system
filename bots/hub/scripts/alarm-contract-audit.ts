@@ -15,7 +15,7 @@ function hasFlag(name: string): boolean {
   return process.argv.includes(`--${name}`);
 }
 
-function findPostAlarmFiles(): string[] {
+function findPostAlarmFilesViaRg(): string[] | null {
   const result = spawnSync('rg', [
     '-l',
     'postAlarm\\s*\\(',
@@ -33,8 +33,34 @@ function findPostAlarmFiles(): string[] {
     encoding: 'utf8',
     stdio: ['ignore', 'pipe', 'pipe'],
   });
+  if (result.error || (result.status === null && !String(result.stdout || '').trim())) return null;
+  return String(result.stdout || '').trim().split('\n').filter(Boolean);
+}
+
+function findPostAlarmFilesViaGrep(): string[] {
+  const searchDirs = ['bots', 'packages', 'scripts'];
+  const result = spawnSync('grep', [
+    '-rl',
+    '--include=*.ts',
+    '--include=*.js',
+    '--exclude-dir=node_modules',
+    '--exclude-dir=.git',
+    '--exclude-dir=dist',
+    'postAlarm',
+    ...searchDirs,
+  ], {
+    cwd: repoRoot,
+    encoding: 'utf8',
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
   if (result.status !== 0 && !String(result.stdout || '').trim()) return [];
   return String(result.stdout || '').trim().split('\n').filter(Boolean);
+}
+
+function findPostAlarmFiles(): string[] {
+  const rgResult = findPostAlarmFilesViaRg();
+  if (rgResult !== null) return rgResult;
+  return findPostAlarmFilesViaGrep();
 }
 
 function isAuditTarget(file: string): boolean {
