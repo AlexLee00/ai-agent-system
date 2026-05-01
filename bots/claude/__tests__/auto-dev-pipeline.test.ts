@@ -1356,6 +1356,34 @@ async function test_test_scope_rejects_unsafe_shell_command() {
   console.log('✅ auto-dev: unsafe test_scope shell command is blocked');
 }
 
+async function test_test_scope_allows_hub_scoped_commands() {
+  const tmpRoot = makeTempRoot();
+  const doc = makeDoc(
+    tmpRoot,
+    'CODEX_TEST_SCOPE_HUB_ALLOWED.md',
+    withRequiredMetadata('# Hub Scope\nallow', {
+      test_scope: [
+        'npm --prefix bots/hub run test:unit',
+        'npm --prefix bots/hub run transition:completion-gate',
+      ],
+    }),
+  );
+  const { mocks } = makeMocks(tmpRoot);
+
+  await withMocks(mocks, async pipeline => {
+    const analysis = pipeline.analyzeAutoDevDocument(doc);
+    const scoped = pipeline._testOnly_resolveScopedTestCommands(analysis, tmpRoot);
+    assert.deepStrictEqual(scoped.rejected, []);
+    assert.deepStrictEqual(scoped.commands, [
+      "npm --prefix 'bots/hub' run test:unit",
+      "npm --prefix 'bots/hub' run transition:completion-gate",
+    ]);
+  }, testEnv(tmpRoot));
+
+  fs.rmSync(tmpRoot, { recursive: true, force: true });
+  console.log('✅ auto-dev: hub scoped test_scope commands are allowed');
+}
+
 async function test_archive_manifest_is_created() {
   const tmpRoot = makeTempRoot();
   const doc = makeDoc(tmpRoot, 'CODEX_ARCHIVE_MANIFEST.md', '# Archive\nmanifest');
@@ -1802,6 +1830,7 @@ async function main() {
     test_review_cycle_uses_execution_context,
     test_test_scope_is_executed_in_non_test_mode,
     test_test_scope_rejects_unsafe_shell_command,
+    test_test_scope_allows_hub_scoped_commands,
     test_archive_manifest_is_created,
     test_archive_manifest_failure_is_fail_closed,
     test_archive_manifest_failure_rolls_back_cherry_pick,

@@ -47,9 +47,11 @@ const DEFAULT_SCOPED_TEST_SCRIPT_ALLOWLIST = [
   'test:commander',
   'test:unit',
   'typecheck',
+  'transition:completion-gate',
 ];
 const DEFAULT_SCOPED_TEST_PREFIX_ALLOWLIST = [
   'bots/claude',
+  'bots/hub',
 ];
 const DEFAULT_LOCK_TTL_MS = Number(process.env.CLAUDE_AUTO_DEV_LOCK_TTL_MS || 15 * 60 * 1000);
 const DEFAULT_LOCK_HEARTBEAT_MS = Number(process.env.CLAUDE_AUTO_DEV_LOCK_HEARTBEAT_MS || 60 * 1000);
@@ -3039,4 +3041,5 @@ module.exports = {
   _testOnly_buildAutoDevChildEnv: buildAutoDevChildEnv,
   _testOnly_extractAlarmIncidentContext: extractAlarmIncidentContext,
   _testOnly_formatAlarmRepairResultMessage: formatAlarmRepairResultMessage,
+  _testOnly_resolveScopedTestCommands: resolveScopedTestCommands,
 };

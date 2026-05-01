@@ -65,7 +65,7 @@ const MIGRATED_RUNTIME_SCOPES = [
   'scripts/speed-test.ts',
 ];
 
-function searchPattern(pattern: string, scopes: string[]): { stdout: string; ok: boolean } {
+function searchPattern(pattern, scopes) {
   const rgResult = spawnSync('rg', ['-n', '-S', pattern, ...scopes], {
     cwd: PROJECT_ROOT,
     encoding: 'utf8',

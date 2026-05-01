@@ -11,11 +11,11 @@ const IGNORE_FILES = new Set([
   'packages/core/lib/hub-alarm-client.ts',
 ]);
 
-function hasFlag(name: string): boolean {
+function hasFlag(name) {
   return process.argv.includes(`--${name}`);
 }
 
-function findPostAlarmFilesViaRg(): string[] | null {
+function findPostAlarmFilesViaRg() {
   const result = spawnSync('rg', [
     '-l',
     'postAlarm\\s*\\(',
@@ -37,7 +37,7 @@ function findPostAlarmFilesViaRg(): string[] | null {
   return String(result.stdout || '').trim().split('\n').filter(Boolean);
 }
 
-function findPostAlarmFilesViaGrep(): string[] {
+function findPostAlarmFilesViaGrep() {
   const searchDirs = ['bots', 'packages', 'scripts'];
   const result = spawnSync('grep', [
     '-rl',
@@ -57,13 +57,13 @@ function findPostAlarmFilesViaGrep(): string[] {
   return String(result.stdout || '').trim().split('\n').filter(Boolean);
 }
 
-function findPostAlarmFiles(): string[] {
+function findPostAlarmFiles() {
   const rgResult = findPostAlarmFilesViaRg();
   if (rgResult !== null) return rgResult;
   return findPostAlarmFilesViaGrep();
 }
 
-function isAuditTarget(file: string): boolean {
+function isAuditTarget(file) {
   if (IGNORE_FILES.has(file)) return false;
   if (/(^|\/)(__tests__|docs|context)\//.test(file)) return false;
   if (/(\.md|\.markdown)$/.test(file)) return false;
@@ -71,7 +71,7 @@ function isAuditTarget(file: string): boolean {
   return true;
 }
 
-function extractCallSnippet(text: string, startIndex: number): string {
+function extractCallSnippet(text, startIndex) {
   let depth = 0;
   let started = false;
   for (let i = startIndex; i < text.length; i += 1) {
@@ -88,17 +88,17 @@ function extractCallSnippet(text: string, startIndex: number): string {
   return text.slice(startIndex, startIndex + 2400);
 }
 
-function isLikelyCommentedOut(text: string, startIndex: number): boolean {
+function isLikelyCommentedOut(text, startIndex) {
   const lineStart = text.lastIndexOf('\n', startIndex) + 1;
   const prefix = text.slice(lineStart, startIndex);
   return /\/\/|\/\*/.test(prefix) || /^\s*\*/.test(prefix);
 }
 
-function lineNumber(text: string, index: number): number {
+function lineNumber(text, index) {
   return text.slice(0, index).split(/\r?\n/).length;
 }
 
-function auditFile(file: string) {
+function auditFile(file) {
   const text = fs.readFileSync(path.join(repoRoot, file), 'utf8');
   const rows = [];
   const pattern = /postAlarm\s*\(/g;
@@ -132,8 +132,8 @@ function auditFile(file: string) {
 export function buildAlarmContractAudit() {
   const files = findPostAlarmFiles().filter(isAuditTarget);
   const calls = files.flatMap(auditFile);
-  const findings = calls.filter((row: any) => row.unsafe);
-  const byMissing = calls.reduce((acc: Record<string, number>, row: any) => {
+  const findings = calls.filter((row) => row.unsafe);
+  const byMissing = calls.reduce((acc, row) => {
     for (const key of row.missing) acc[key] = (acc[key] || 0) + 1;
     return acc;
   }, {});
@@ -142,13 +142,13 @@ export function buildAlarmContractAudit() {
     checked_files: files.length,
     checked_calls: calls.length,
     findings_count: findings.length,
-    runtime_covered_count: calls.filter((row: any) => row.runtime_covered).length,
-    explicit_complete_count: calls.filter((row: any) => row.explicit_complete).length,
-    legacy_backlog_count: calls.filter((row: any) => !row.explicit_complete && row.runtime_covered).length,
+    runtime_covered_count: calls.filter((row) => row.runtime_covered).length,
+    explicit_complete_count: calls.filter((row) => row.explicit_complete).length,
+    legacy_backlog_count: calls.filter((row) => !row.explicit_complete && row.runtime_covered).length,
     missing_field_counts: byMissing,
     findings: findings.slice(0, 200),
     legacy_backlog: calls
-      .filter((row: any) => !row.explicit_complete && row.runtime_covered)
+      .filter((row) => !row.explicit_complete && row.runtime_covered)
       .slice(0, 200),
   };
 }

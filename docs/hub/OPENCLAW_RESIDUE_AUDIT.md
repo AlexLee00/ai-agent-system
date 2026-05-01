@@ -2,7 +2,7 @@
 
 This generated report classifies retired OpenClaw references. `runtime_blocker` must remain 0. Guard, documentation, ignored log, and archive-pending entries are tracked separately so they do not masquerade as live runtime dependencies.
 
-- generated_at: 2026-05-01T08:51:27.236Z
+- generated_at: 2026-05-01T09:19:50.994Z
 - ok: true
 - runtime_blocker: 0
 - retired_gateway_guard: 0

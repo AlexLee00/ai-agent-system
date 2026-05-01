@@ -2,7 +2,7 @@
 
 This inventory tracks the Hub alarm migration surface. `hub_alarm_native` entries are the desired path; `retired_gateway_guard` entries are regression guards; `legacy_gateway_compat` entries are remaining migration targets and must stay at 0.
 
-- generated_at: 2026-05-01T08:48:27.815Z
+- generated_at: 2026-05-01T09:21:02.787Z
 - total_matches: 216
 - unique_files: 125
 - hub_alarm_native: 204
