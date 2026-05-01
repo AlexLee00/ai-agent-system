@@ -18,16 +18,15 @@ const REQUIRED_CONFIRM = 'luna-launchd-graceful-migration';
 const TARGET_LABELS = [
   'ai.luna.marketdata-mcp',
   'ai.luna.tradingview-ws',
-  'ai.luna.commander',
   'ai.investment.commander',
-  'ai.investment.crypto',
-  'ai.investment.domestic',
-  'ai.investment.overseas',
-  'ai.investment.runtime-autopilot',
   'ai.elixir.supervisor',
-  'ai.investment.health-check',
-  'ai.investment.reporter',
-  'ai.investment.argos',
+  'ai.investment.runtime-autopilot',
+  'ai.investment.market-regime-capture',
+  'ai.luna.daily-backtest',
+  'ai.luna.guardrails-hourly',
+  'ai.luna.7day-natural-checkpoint',
+  'ai.luna.trade-journal-dashboard',
+  'ai.luna.voyager-skill-acceleration',
 ];
 
 const PROTECTED_LABELS = new Set([
@@ -74,6 +73,38 @@ const RETIRE_GROUPS = [
     group: 'prescreen_to_argos',
     labels: ['ai.investment.prescreen-domestic', 'ai.investment.prescreen-overseas'],
     replacementLabels: ['ai.investment.argos'],
+  },
+  // Section 2-7: 추가 retire 검토 (Phase Ψ5 최종 8 달성)
+  {
+    group: 'crypto_to_mcp',
+    labels: ['ai.investment.crypto', 'ai.investment.crypto.validation'],
+    replacementLabels: ['ai.luna.marketdata-mcp'],
+    replacementChecks: ['marketdata_mcp_health'],
+  },
+  {
+    group: 'markets_to_stockflow',
+    labels: [
+      'ai.investment.domestic',
+      'ai.investment.domestic.validation',
+      'ai.investment.overseas',
+      'ai.investment.overseas.validation',
+    ],
+    replacementLabels: ['ai.elixir.supervisor'],
+  },
+  {
+    group: 'argos_to_elixir',
+    labels: ['ai.investment.argos'],
+    replacementLabels: ['ai.elixir.supervisor'],
+  },
+  {
+    group: 'daily_feedback_to_skill',
+    labels: ['ai.investment.daily-feedback'],
+    replacementLabels: ['ai.elixir.supervisor'],
+  },
+  {
+    group: 'reporter_to_telegram',
+    labels: ['ai.investment.reporter'],
+    replacementLabels: ['ai.elixir.supervisor'],
   },
 ];
 

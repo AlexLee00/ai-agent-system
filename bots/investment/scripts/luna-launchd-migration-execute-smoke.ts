@@ -28,7 +28,7 @@ export async function runLaunchdMigrationExecuteSmoke() {
   assert.equal(dryRun.ok, true);
   assert.equal(dryRun.dryRun, true);
   assert.equal(dryRun.applied, false);
-  assert.equal(dryRun.steps.length, 6);
+  assert.equal(dryRun.steps.length, 11);
   assert.ok(dryRun.steps.some((step) => step.group === 'marketdata_ws_to_mcp' && step.visibleLabels.length === 3));
   assert.equal(dryRun.steps.find((step) => step.group === 'marketdata_ws_to_mcp').validation.ok, true);
 
