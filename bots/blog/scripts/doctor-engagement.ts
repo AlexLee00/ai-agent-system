@@ -1022,6 +1022,22 @@ async function main() {
     ? new Date(neighborSympathyReplay.replayedAt)
     : null;
   const sympathyReplayTarget = extractSympathyReplayTarget(neighborSympathyReplay);
+  const replyFailureCommentIds = Array.isArray(rows)
+    ? rows
+      .filter((row) => String(row?.action_type || '') === 'reply')
+      .map((row) => Number(row?.meta?.commentId || 0))
+      .filter((id) => Number.isFinite(id) && id > 0)
+    : [];
+  const replyRecoveryRows = replyFailureCommentIds.length > 0
+    ? await pgPool.query('blog', `
+      SELECT id, status, reply_at
+      FROM blog.comments
+      WHERE id = ANY($1::int[])
+    `, [replyFailureCommentIds])
+    : [];
+  const replyRecoveryMap = new Map(
+    (replyRecoveryRows || []).map((row) => [Number(row.id || 0), row]),
+  );
 
   const replyConfig = runtimeConfig.commenter || {};
   const neighborConfig = runtimeConfig.neighborCommenter || {};
@@ -1040,8 +1056,22 @@ async function main() {
     return executedAt.getTime() > latestSympathyReplayAt.getTime();
   }).filter((row) => {
     if (String(row.action_type || '') !== 'reply') return true;
-    if (!commenterRun?.executedAt || Number(commenterRun?.failed || 0) > 0) return true;
+    const commentId = Number(row?.meta?.commentId || 0);
+    const linkedComment = replyRecoveryMap.get(commentId);
     const executedAt = row?.executed_at ? new Date(row.executed_at) : null;
+    const repliedAt = linkedComment?.reply_at ? new Date(linkedComment.reply_at) : null;
+    if (
+      linkedComment
+      && String(linkedComment.status || '') === 'replied'
+      && executedAt
+      && !Number.isNaN(executedAt.getTime())
+      && repliedAt
+      && !Number.isNaN(repliedAt.getTime())
+      && repliedAt.getTime() >= executedAt.getTime()
+    ) {
+      return false;
+    }
+    if (!commenterRun?.executedAt || Number(commenterRun?.failed || 0) > 0) return true;
     const runAt = commenterRun?.executedAt ? new Date(commenterRun.executedAt) : null;
     if (!executedAt || Number.isNaN(executedAt.getTime()) || !runAt || Number.isNaN(runAt.getTime())) return true;
     const sample = summarizeEngagementFailure(row.meta || {});

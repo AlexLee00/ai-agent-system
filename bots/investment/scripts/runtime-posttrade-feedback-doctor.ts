@@ -65,7 +65,9 @@ async function checkBudgets(cfg: any) {
   const reflexionRow = await db.get(
     `SELECT COUNT(*)::int AS cnt
        FROM investment.luna_failure_reflexions
-      WHERE created_at >= NOW()::date`,
+      WHERE created_at >= NOW()::date
+        AND trade_id > 0
+        AND COALESCE(avoid_pattern->>'source', '') <> 'failed-signal-reflexion-trigger'`,
     [],
   ).catch(() => ({ cnt: 0 }));
   const qualityUsed = Number(qualityRow?.cnt || 0) * 0.03;

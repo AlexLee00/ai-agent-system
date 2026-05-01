@@ -1534,6 +1534,63 @@ function extractCommentFocus(text = '') {
   return squeezeText(normalized, 28).replace(/[,"'`]/g, '').trim();
 }
 
+function hasSuspiciousPromoTail(text = '') {
+  const normalized = normalizeText(text);
+  if (!normalized) return false;
+  return (
+    /blog\s*최적화/i.test(normalized)
+    || /지수.*높여/i.test(normalized)
+    || /꼭\s*찾아주/i.test(normalized)
+    || /활성화\s*작업/i.test(normalized)
+    || /[A-Za-z0-9]{8,}/.test(normalized)
+  );
+}
+
+function sanitizeCommentTextForReply(text = '') {
+  const normalized = normalizeText(text);
+  if (!normalized) {
+    return {
+      text: '',
+      strippedPromoTail: false,
+    };
+  }
+
+  const segments = normalized
+    .split(/(?<=[.!?！？])\s+/)
+    .map((item) => normalizeText(item))
+    .filter(Boolean);
+
+  if (!segments.length) {
+    return {
+      text: normalized,
+      strippedPromoTail: false,
+    };
+  }
+
+  const kept = [];
+  let strippedPromoTail = false;
+  for (const segment of segments) {
+    if (hasSuspiciousPromoTail(segment)) {
+      strippedPromoTail = true;
+      break;
+    }
+    kept.push(segment);
+  }
+
+  const candidate = normalizeText(kept.join(' '));
+  if (strippedPromoTail && candidate.length >= 30) {
+    return {
+      text: candidate,
+      strippedPromoTail: true,
+    };
+  }
+
+  return {
+    text: normalized,
+    strippedPromoTail: false,
+  };
+}
+
 function buildDeterministicReplyFallback(postTitle, commentText, assessmentReason = '') {
   const simpleReply = buildSimpleAcknowledgementReply(commentText, assessmentReason);
   if (simpleReply) {
@@ -1568,6 +1625,9 @@ function buildSimpleAcknowledgementReply(commentText, assessmentReason = '') {
       ? '들러주셔서 감사합니다. 편하게 보고 가셔도 좋습니다.'
       : '방문해 주셔서 감사합니다. 편하게 둘러봐 주세요.';
   }
+  if (reason === 'courtesy_reflection_allowed_with_promo_tail') {
+    return '댓글 남겨주셔서 감사합니다. 말씀해주신 관점은 다음 글에서도 더 구체적으로 이어보겠습니다.';
+  }
   if (
     reason === 'promotional_comment_reply_allowed'
     || reason === 'promotional_comment_reply_allowed_with_url'
@@ -1583,6 +1643,7 @@ function validateReply(reply, commentText, config = getCommenterConfig(), option
   const normalizedComment = normalizeText(commentText);
   const assessmentReason = String(options.assessmentReason || '').trim();
   const simpleAcknowledgement = assessmentReason === 'generic_greeting_reply_allowed'
+    || assessmentReason === 'courtesy_reflection_allowed_with_promo_tail'
     || assessmentReason === 'promotional_comment_reply_allowed'
     || assessmentReason === 'promotional_comment_reply_allowed_with_url'
     || assessmentReason === 'external_url_comment_reply_allowed';
@@ -1607,11 +1668,25 @@ function validateReply(reply, commentText, config = getCommenterConfig(), option
     }
   }
 
+  const suspiciousPromoPatterns = [
+    /blog\s*최적화/i,
+    /지수.*높여/i,
+    /꼭\s*찾아주/i,
+    /활성화\s*작업/i,
+    /[A-Za-z0-9]{8,}/,
+  ];
+  for (const pattern of suspiciousPromoPatterns) {
+    if (pattern.test(normalizedReply)) {
+      return { ok: false, reason: `promotional_noise:${String(pattern)}` };
+    }
+  }
+
   return { ok: true };
 }
 
 function assessInboundComment(comment) {
-  const text = normalizeText(comment?.comment_text || '');
+  const sanitized = sanitizeCommentTextForReply(comment?.comment_text || '');
+  const text = sanitized.text;
   const lower = text.toLowerCase();
   if (!text) {
     return { ok: false, reason: 'empty_comment' };
@@ -1683,7 +1758,7 @@ function assessInboundComment(comment) {
     && hasReflectionSignal
     && text.length >= courtesyReflectionMinLength
   ) {
-    return { ok: true, reason: 'courtesy_reflection_allowed' };
+    return { ok: true, reason: sanitized.strippedPromoTail ? 'courtesy_reflection_allowed_with_promo_tail' : 'courtesy_reflection_allowed' };
   }
 
   if (
@@ -5149,16 +5224,18 @@ async function processComment(comment, options = {}) {
     return { ok: false, skipped: true, reason: inboundAssessment.reason };
   }
 
-  const simpleReply = buildSimpleAcknowledgementReply(comment.comment_text, inboundAssessment.reason);
+  const sanitizedComment = sanitizeCommentTextForReply(comment.comment_text);
+  const effectiveCommentText = sanitizedComment.text || normalizeText(comment.comment_text || '');
+  const simpleReply = buildSimpleAcknowledgementReply(effectiveCommentText, inboundAssessment.reason);
   const postInfo = simpleReply ? { title: '', summary: '' } : await getPostSummary(comment.post_url, options);
   let generated;
   try {
     generated = simpleReply
       ? { reply: simpleReply, tone: 'acknowledgement' }
-      : await generateReply(postInfo.title || comment.post_title, postInfo.summary, comment.comment_text);
+      : await generateReply(postInfo.title || comment.post_title, postInfo.summary, effectiveCommentText);
   } catch (error) {
     if (!simpleReply && isReplyGenerationTransientError(error)) {
-      const fallback = buildDeterministicReplyFallback(postInfo.title || comment.post_title, comment.comment_text, inboundAssessment.reason);
+      const fallback = buildDeterministicReplyFallback(postInfo.title || comment.post_title, effectiveCommentText, inboundAssessment.reason);
       if (fallback?.reply) {
         generated = fallback;
       } else {
@@ -5168,14 +5245,14 @@ async function processComment(comment, options = {}) {
       throw error;
     }
   }
-  let validation = validateReply(generated.reply, comment.comment_text, undefined, { assessmentReason: inboundAssessment.reason });
+  let validation = validateReply(generated.reply, effectiveCommentText, undefined, { assessmentReason: inboundAssessment.reason });
 
   if (!validation.ok && !simpleReply) {
     try {
-      generated = await generateReply(postInfo.title || comment.post_title, postInfo.summary, comment.comment_text);
+      generated = await generateReply(postInfo.title || comment.post_title, postInfo.summary, effectiveCommentText);
     } catch (error) {
       if (isReplyGenerationTransientError(error)) {
-        const fallback = buildDeterministicReplyFallback(postInfo.title || comment.post_title, comment.comment_text, inboundAssessment.reason);
+        const fallback = buildDeterministicReplyFallback(postInfo.title || comment.post_title, effectiveCommentText, inboundAssessment.reason);
         if (fallback?.reply) {
           generated = fallback;
         } else {
@@ -5185,7 +5262,15 @@ async function processComment(comment, options = {}) {
         throw error;
       }
     }
-    validation = validateReply(generated.reply, comment.comment_text, undefined, { assessmentReason: inboundAssessment.reason });
+    validation = validateReply(generated.reply, effectiveCommentText, undefined, { assessmentReason: inboundAssessment.reason });
+  }
+
+  if (!validation.ok && !simpleReply) {
+    const fallback = buildDeterministicReplyFallback(postInfo.title || comment.post_title, effectiveCommentText, inboundAssessment.reason);
+    if (fallback?.reply) {
+      generated = fallback;
+      validation = validateReply(generated.reply, effectiveCommentText, undefined, { assessmentReason: inboundAssessment.reason });
+    }
   }
 
   if (!validation.ok) {
