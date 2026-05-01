@@ -845,52 +845,61 @@ export async function alarmRoute(req: any, res: any) {
     let deliveryTeam = resolveAlarmDeliveryTeam({ alarmType, visibility, team });
 
     if (alarmType === 'error' && actionability === 'auto_repair') {
-      try {
-        autoRepair = await ensureAlarmAutoDevDocument({
-          team,
-          fromBot,
-          severity,
-          title,
-          message,
-          eventType,
-          incidentKey,
-          eventId,
-          payload,
-        });
-        await eventLake.record({
-          eventType: 'hub_alarm_auto_repair_enqueued',
-          team,
-          botName: 'hub-alarm-governor',
-          severity: severity === 'critical' ? 'warn' : 'info',
-          title: 'Alarm auto repair document queued',
-          message: `auto_dev repair document queued for ${incidentKey}`,
-          tags: ['hub', 'alarm', 'auto_repair', `team:${team}`],
-          metadata: {
-            source: 'hub_alarm_route',
-            incident_key: incidentKey,
-            cluster_key: clusterKey || null,
-            alarm_event_id: eventId,
-            auto_dev_path: autoRepair.path || null,
-            created: autoRepair.created === true,
-          },
-        });
-      } catch (error: any) {
+      if (autoRepairShadowSkipped) {
         autoRepair = {
-          ok: false,
-          error: error?.message || 'auto_repair_document_failed',
+          ok: true,
+          skipped: true,
+          reason: 'shadow_mode',
+          auto_repair_shadow_skipped: true,
         };
+      } else {
+        try {
+          autoRepair = await alarmRouteHooks.ensureAlarmAutoDevDocument({
+            team,
+            fromBot,
+            severity,
+            title,
+            message,
+            eventType,
+            incidentKey,
+            eventId,
+            payload,
+          });
+          await eventLake.record({
+            eventType: 'hub_alarm_auto_repair_enqueued',
+            team,
+            botName: 'hub-alarm-governor',
+            severity: severity === 'critical' ? 'warn' : 'info',
+            title: 'Alarm auto repair document queued',
+            message: `auto_dev repair document queued for ${incidentKey}`,
+            tags: ['hub', 'alarm', 'auto_repair', `team:${team}`],
+            metadata: {
+              source: 'hub_alarm_route',
+              incident_key: incidentKey,
+              cluster_key: clusterKey || null,
+              alarm_event_id: eventId,
+              auto_dev_path: autoRepair.path || null,
+              created: autoRepair.created === true,
+            },
+          });
+        } catch (error: any) {
+          autoRepair = {
+            ok: false,
+            error: error?.message || 'auto_repair_document_failed',
+          };
+        }
       }
     }
 
     // Roundtable: fire-and-forget for critical/repeat errors (does not block response)
     // Shadow mode: skip roundtable to prevent auto-dev doc generation during validation
-    const roundtableTriggered = dispatchMode !== 'shadow' && await shouldTriggerRoundtable({
+    const roundtableTriggered = dispatchMode !== 'shadow' && await alarmRouteHooks.shouldTriggerRoundtable({
       alarmType,
       visibility,
       clusterKey: clusterKey || undefined,
     }).catch(() => false);
     if (roundtableTriggered) {
-      runRoundtable({
+      alarmRouteHooks.runRoundtable({
         alarmId: eventId,
         incidentKey,
         team,
