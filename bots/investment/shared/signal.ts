@@ -60,8 +60,11 @@ export function validateSignal(signal) {
   const errors = [];
   if (!signal.symbol || typeof signal.symbol !== 'string') errors.push('symbol 필수');
   if (!Object.values(ACTIONS).includes(signal.action))     errors.push(`action은 BUY/SELL/HOLD`);
-  if (signal.action !== ACTIONS.HOLD) {
-    if (!signal.amountUsdt || signal.amountUsdt <= 0)      errors.push('BUY/SELL 신호에 amountUsdt > 0 필요');
+  if (signal.action === ACTIONS.BUY) {
+    if (!signal.amountUsdt || signal.amountUsdt <= 0)      errors.push('BUY 신호에 amountUsdt > 0 필요');
+  }
+  if (signal.action === ACTIONS.SELL) {
+    if (signal.amountUsdt == null || Number(signal.amountUsdt) < 0) errors.push('SELL 신호에 amountUsdt >= 0 필요');
   }
   if (signal.confidence !== undefined) {
     if (signal.confidence < 0 || signal.confidence > 1)   errors.push('confidence는 0~1 범위');

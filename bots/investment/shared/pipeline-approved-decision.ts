@@ -14,6 +14,22 @@ import { ACTIONS, validateSignal } from './signal.ts';
 import { evaluateSignal } from '../team/nemesis.ts';
 import { buildAnalystSignals } from './pipeline-decision-policy.ts';
 
+function buildFullExitRiskResult(decision = {}) {
+  return {
+    approved: true,
+    adjustedAmount: 0,
+    nemesis_verdict: 'approved',
+    reason: 'full_exit_sell',
+    risk_approval_preview: null,
+    risk_approval_application: null,
+    tpPrice: null,
+    slPrice: null,
+    tpslSource: null,
+    fullExitSell: true,
+    trade_mode: decision?.trade_mode || null,
+  };
+}
+
 export function buildRiskApprovalRationalePayload({ signalId = null, signal = {}, riskResult = {} } = {}) {
   if (!signalId || signal?.action !== ACTIONS.BUY || !riskResult?.risk_approval_preview) return null;
   return {
@@ -98,19 +114,21 @@ export async function executeApprovedDecision({
   }
 
   const taAnalysis = analyses.find(a => a.metadata?.atrRatio != null);
-  const riskResult = await evaluateSignal({
-    symbol: decision.symbol,
-    action: decision.action,
-    amount_usdt: signalData.amountUsdt,
-    confidence: decision.confidence,
-    reasoning: signalData.reasoning,
-    exchange,
-  }, {
-    totalUsdt: currentPortfolio.totalAsset,
-    atrRatio: taAnalysis?.metadata?.atrRatio ?? null,
-    currentPrice: taAnalysis?.metadata?.currentPrice ?? null,
-    persist: false,
-  }).catch(err => ({ approved: false, reason: err.message, error: true }));
+  const riskResult = isFullExitSell
+    ? buildFullExitRiskResult(decision)
+    : await evaluateSignal({
+      symbol: decision.symbol,
+      action: decision.action,
+      amount_usdt: signalData.amountUsdt,
+      confidence: decision.confidence,
+      reasoning: signalData.reasoning,
+      exchange,
+    }, {
+      totalUsdt: currentPortfolio.totalAsset,
+      atrRatio: taAnalysis?.metadata?.atrRatio ?? null,
+      currentPrice: taAnalysis?.metadata?.currentPrice ?? null,
+      persist: false,
+    }).catch(err => ({ approved: false, reason: err.message, error: true }));
 
   await recordNodeResult(l21Node, {
     sessionId,
@@ -162,6 +180,7 @@ export async function executeApprovedDecision({
     decision: {
       ...decision,
       trade_mode: decision?.trade_mode || null,
+      analyst_signals: analystSignals,
       amount_usdt: amountUsdt,
     },
     risk: riskResult,
@@ -297,4 +316,3 @@ export async function executeApprovedDecision({
     stage,
   };
 }
-

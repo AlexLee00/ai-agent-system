@@ -61,6 +61,7 @@ async function run({ sessionId, market, symbol, decision: decisionOverride = nul
 
   const { analyses } = await loadAnalysesForSession(sessionId, symbol, market);
   const analystSignals = decisionHit?.payload?.analystSignals
+    || decisionHit?.payload?.decision?.analyst_signals
     || decision?.analyst_signals
     || buildAnalystSignals(analyses);
   const amountUsdt = risk?.approved
