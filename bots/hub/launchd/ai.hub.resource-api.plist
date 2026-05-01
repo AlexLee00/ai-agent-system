@@ -31,6 +31,22 @@
     <string>__SET_IN_LOCAL_LAUNCHAGENT__</string>
     <key>HUB_ALARM_USE_CLASS_TOPICS</key>
     <string>true</string>
+    <key>HUB_ALARM_DISPATCH_MODE</key>
+    <string>shadow</string>
+    <key>HUB_ALARM_LLM_CLASSIFIER_ENABLED</key>
+    <string>true</string>
+    <key>HUB_ALARM_LLM_DAILY_LIMIT</key>
+    <string>100</string>
+    <key>HUB_ALARM_CRITICAL_TYPE_ENABLED</key>
+    <string>true</string>
+    <key>HUB_ALARM_INTERPRETER_ENABLED</key>
+    <string>true</string>
+    <key>HUB_ALARM_INTERPRETER_FAIL_OPEN</key>
+    <string>true</string>
+    <key>HUB_ALARM_INTERPRETER_LLM_DAILY_LIMIT</key>
+    <string>200</string>
+    <key>HUB_ALARM_ENRICHMENT_ENABLED</key>
+    <string>true</string>
     <key>HUB_LLM_RATE_LIMIT_PER_MIN</key>
     <string>120</string>
     <key>HUB_SECRETS_RATE_LIMIT_PER_MIN</key>

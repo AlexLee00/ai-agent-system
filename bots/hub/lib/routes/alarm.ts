@@ -19,6 +19,16 @@ const {
 } = require('../../scripts/alarm-suppression-proposals.ts');
 const { findMatchingAlarmSuppressionRule } = require('../alarm/suppression-rules.ts');
 
+const defaultAlarmRouteHooks = {
+  classifyAlarmWithLLM,
+  interpretAlarm,
+  enrichAlarm,
+  runRoundtable,
+  shouldTriggerRoundtable,
+  ensureAlarmAutoDevDocument,
+};
+let alarmRouteHooks = defaultAlarmRouteHooks;
+
 const defaultAlarmDb = {
   query: (...args: any[]) => pgPool.query(...args),
   get: (...args: any[]) => pgPool.get(...args),
@@ -34,9 +44,26 @@ export function _testOnly_resetAlarmRouteDbMocks() {
   alarmDb = defaultAlarmDb;
 }
 
+export function _testOnly_setAlarmRouteHooks(overrides: Partial<typeof defaultAlarmRouteHooks> = {}) {
+  alarmRouteHooks = { ...defaultAlarmRouteHooks, ...overrides };
+}
+
+export function _testOnly_resetAlarmRouteHooks() {
+  alarmRouteHooks = defaultAlarmRouteHooks;
+}
+
 function alarmsDisabled(): boolean {
   const raw = String(process.env.HUB_ALARMS_DISABLED || process.env.ALERTS_DISABLED || '').trim().toLowerCase();
   return ['1', 'true', 'yes', 'y', 'on'].includes(raw);
+}
+
+type DispatchMode = 'shadow' | 'supervised' | 'autonomous';
+
+export function getDispatchMode(): DispatchMode {
+  const raw = String(process.env.HUB_ALARM_DISPATCH_MODE || '').trim().toLowerCase();
+  if (raw === 'shadow') return 'shadow';
+  if (raw === 'autonomous') return 'autonomous';
+  return 'supervised';
 }
 const pgPool = require('../../../../packages/core/lib/pg-pool');
 
@@ -155,6 +182,101 @@ function buildIncidentKey({
     .filter(Boolean)
     .join('|');
   return material || `${team}|${eventType}|fallback`;
+}
+
+async function recordHubAlarmClassification({
+  eventId,
+  classifierSource,
+  alarmType,
+  finalConfidence,
+  ruleConfidence,
+  llmConfidence,
+  incidentKey,
+  dispatchMode,
+}: {
+  eventId: number | null;
+  classifierSource: string;
+  alarmType: AlarmType;
+  finalConfidence: number;
+  ruleConfidence: number;
+  llmConfidence: number | null;
+  incidentKey: string;
+  dispatchMode: DispatchMode;
+}) {
+  if (!eventId) return { ok: false, reason: 'missing_event_id' };
+  try {
+    await alarmDb.run('agent', `
+      INSERT INTO agent.hub_alarm_classifications
+        (alarm_id, classifier_source, alarm_type, confidence, rule_score, llm_score, metadata)
+      VALUES
+        ($1, $2, $3, $4, $5, $6, $7::jsonb)
+    `, [
+      eventId,
+      classifierSource,
+      alarmType,
+      finalConfidence,
+      ruleConfidence,
+      llmConfidence,
+      JSON.stringify({
+        incident_key: incidentKey,
+        dispatch_mode: dispatchMode,
+        source: 'hub_alarm_route',
+      }),
+    ]);
+    return { ok: true };
+  } catch (error: any) {
+    return { ok: false, error: error?.message || 'hub_alarm_classification_record_failed' };
+  }
+}
+
+async function recordHubAlarmMirror({
+  team,
+  fromBot,
+  severity,
+  alarmType,
+  title,
+  message,
+  fingerprint,
+  visibility,
+  actionability,
+  status,
+  metadata,
+}: {
+  team: string;
+  fromBot: string;
+  severity: string;
+  alarmType: AlarmType;
+  title: string;
+  message: string;
+  fingerprint: string;
+  visibility: AlarmVisibility;
+  actionability: AlarmActionability;
+  status: AlarmStatus;
+  metadata: Record<string, unknown>;
+}) {
+  try {
+    await alarmDb.run('agent', `
+      INSERT INTO agent.hub_alarms
+        (team, bot_name, severity, alarm_type, title, message, fingerprint, fingerprint_count, visibility, actionability, status, metadata)
+      VALUES
+        ($1, $2, $3, $4, $5, $6, $7, 1, $8, $9, $10, $11::jsonb)
+    `, [
+      team,
+      fromBot,
+      severity,
+      alarmType,
+      title,
+      message,
+      fingerprint,
+      visibility,
+      actionability,
+      status,
+      JSON.stringify(metadata || {}),
+    ]);
+    return { ok: true };
+  } catch (error: any) {
+    return { ok: false, error: error?.message || 'hub_alarm_mirror_record_failed' };
+  }
 }
 
 function defaultActionability({
@@ -537,12 +659,16 @@ export async function alarmRoute(req: any, res: any) {
 
     let alarmType: AlarmType = baseAlarmType;
     let classificationSource = 'rule';
+    let finalClassificationConfidence = classificationConfidence;
+    let llmClassificationConfidence: number | null = null;
 
     if (classificationConfidence < 0.7) {
-      const llmResult = await classifyAlarmWithLLM({ team, severity, title, message, eventType }).catch(() => null);
+      const llmResult = await alarmRouteHooks.classifyAlarmWithLLM({ team, severity, title, message, eventType }).catch(() => null);
       if (llmResult && llmResult.confidence > classificationConfidence) {
         alarmType = llmResult.type as AlarmType;
         classificationSource = 'llm';
+        finalClassificationConfidence = llmResult.confidence;
+        llmClassificationConfidence = llmResult.confidence;
       }
     }
 
@@ -570,6 +696,7 @@ export async function alarmRoute(req: any, res: any) {
       || defaultActionability({ severity, visibility, alarmType, explicitHumanEscalation });
     let status = normalizeStatus(req.body?.status)
       || defaultStatus({ actionability, visibility });
+    const dispatchMode = getDispatchMode();
     const incidentKey = normalizeText(req.body?.incidentKey)
       || normalizeText(req.body?.incident_key)
       || buildIncidentKey({
@@ -600,6 +727,9 @@ export async function alarmRoute(req: any, res: any) {
       status = defaultStatus({ actionability, visibility });
     }
     const immediateHumanDelivery = shouldSendTelegramImmediately(visibility);
+    const autoRepairShadowSkipped = dispatchMode === 'shadow'
+      && alarmType === 'error'
+      && actionability === 'auto_repair';
 
     const duplicate = await eventLake.findRecentDuplicateAlarm({
       team,
@@ -666,13 +796,52 @@ export async function alarmRoute(req: any, res: any) {
         immediate_human_delivery: immediateHumanDelivery,
         governed: true,
         classification_source: classificationSource,
-        classification_confidence: classificationConfidence,
+        classification_confidence: finalClassificationConfidence,
+        classification_rule_confidence: classificationConfidence,
+        classification_llm_confidence: llmClassificationConfidence,
+        dispatch_mode: dispatchMode,
+        auto_repair_shadow_skipped: autoRepairShadowSkipped,
+      },
+    });
+
+    const classificationRecord = await recordHubAlarmClassification({
+      eventId,
+      classifierSource: classificationSource,
+      alarmType,
+      finalConfidence: finalClassificationConfidence,
+      ruleConfidence: classificationConfidence,
+      llmConfidence: llmClassificationConfidence,
+      incidentKey,
+      dispatchMode,
+    });
+    const mirrorRecord = await recordHubAlarmMirror({
+      team,
+      fromBot,
+      severity,
+      alarmType,
+      title,
+      message,
+      fingerprint: clusterKey || incidentKey,
+      visibility,
+      actionability,
+      status,
+      metadata: {
+        source: 'hub_alarm_route',
+        event_id: eventId,
+        event_type: eventType,
+        incident_key: incidentKey,
+        cluster_key: clusterKey || null,
+        dispatch_mode: dispatchMode,
+        classification_source: classificationSource,
+        classification_confidence: finalClassificationConfidence,
+        auto_repair_shadow_skipped: autoRepairShadowSkipped,
       },
     });
 
     let delivered = false;
     let deliveryError = '';
     let autoRepair: Record<string, unknown> | null = null;
+    let shadowObservation: Record<string, unknown> | null = null;
     let deliveryTeam = resolveAlarmDeliveryTeam({ alarmType, visibility, team });
 
     if (alarmType === 'error' && actionability === 'auto_repair') {
@@ -714,7 +883,8 @@ export async function alarmRoute(req: any, res: any) {
     }
 
     // Roundtable: fire-and-forget for critical/repeat errors (does not block response)
-    const roundtableTriggered = await shouldTriggerRoundtable({
+    // Shadow mode: skip roundtable to prevent auto-dev doc generation during validation
+    const roundtableTriggered = dispatchMode !== 'shadow' && await shouldTriggerRoundtable({
       alarmType,
       visibility,
       clusterKey: clusterKey || undefined,
@@ -734,7 +904,7 @@ export async function alarmRoute(req: any, res: any) {
       }).catch(() => null);
     }
 
-    if (immediateHumanDelivery) {
+    if (immediateHumanDelivery && dispatchMode !== 'shadow') {
       try {
         const [interpretation, enrichment] = await Promise.allSettled([
           interpretAlarm({ alarmType, team, severity, title, message }),
@@ -804,8 +974,9 @@ export async function alarmRoute(req: any, res: any) {
       status,
       suppression_rule_id: suppressionRule?.id || null,
       governed: true,
+      dispatch_mode: dispatchMode,
       immediate_delivery: immediateHumanDelivery,
-      delivery_team: immediateHumanDelivery ? deliveryTeam : null,
+      delivery_team: immediateHumanDelivery && dispatchMode !== 'shadow' ? deliveryTeam : null,
       delivered,
       delivery_error: deliveryError || null,
       auto_repair: autoRepair,

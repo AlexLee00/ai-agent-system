@@ -151,6 +151,9 @@ function unitSmokeScripts(): string[] {
     'steward-local-embedding-alarm-smoke.ts',
     'retired-gateway-marker-precommit-smoke.ts',
     'blog-alarm-dedup-smoke.ts',
+    'alarm-activation-stage1-smoke.ts',
+    'alarm-activation-stage2-smoke.ts',
+    'alarm-activation-stage3-smoke.ts',
   ];
 }
 

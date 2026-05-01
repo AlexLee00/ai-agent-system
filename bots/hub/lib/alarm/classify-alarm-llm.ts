@@ -14,6 +14,11 @@ function isEnabled(): boolean {
   return ['1', 'true', 'yes', 'y', 'on'].includes(raw);
 }
 
+function isCriticalTypeEnabled(): boolean {
+  const raw = String(process.env.HUB_ALARM_CRITICAL_TYPE_ENABLED || '').trim().toLowerCase();
+  return ['1', 'true', 'yes', 'y', 'on'].includes(raw);
+}
+
 function checkAndIncrementDailyCount(): boolean {
   const today = new Date().toISOString().slice(0, 10);
   if (dailyResetDate !== today) {
@@ -78,8 +83,9 @@ export async function classifyAlarmWithLLM({
     if (!result?.text) return null;
     const text = result.text.trim().replace(/^```json\s*/i, '').replace(/\s*```$/i, '');
     const parsed = JSON.parse(text);
-    const type = ALARM_TYPES.includes(parsed?.type) ? (parsed.type as AlarmType) : null;
+    let type = ALARM_TYPES.includes(parsed?.type) ? (parsed.type as AlarmType) : null;
     if (!type) return null;
+    if (type === 'critical' && !isCriticalTypeEnabled()) type = 'error';
     const confidence = Math.max(0, Math.min(1, Number(parsed?.confidence) || 0.5));
     return { type, confidence, source: 'llm' };
   } catch {
@@ -91,4 +97,4 @@ export function getDailyClassifierCount(): number {
   return dailyCount;
 }
 
-module.exports = { classifyAlarmWithLLM, getDailyClassifierCount };
+module.exports = { classifyAlarmWithLLM, getDailyClassifierCount, isCriticalTypeEnabled };
