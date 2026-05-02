@@ -38,6 +38,15 @@ function tsxStep(tsxBin: string, scriptDir: string, hubRoot: string, script: str
   };
 }
 
+function tsxStepWithArgs(tsxBin: string, scriptDir: string, hubRoot: string, script: string, args: string[] = []): Step {
+  return {
+    label: `${script} ${args.join(' ')}`.trim(),
+    command: tsxBin,
+    args: [path.join(scriptDir, script), ...args],
+    cwd: hubRoot,
+  };
+}
+
 function runSteps(steps: Step[]): void {
   for (const step of steps) runStep(step);
 }
@@ -142,11 +151,13 @@ function unitSmokeScripts(): string[] {
     'gemini-cli-oauth-import-smoke.ts',
     'gemini-cli-oauth-adapter-smoke.ts',
     'gemini-oauth-project-readiness-smoke.ts',
+    'gemini-quota-project-policy-smoke.ts',
     'gemini-codeassist-oauth-direct-smoke.ts',
     'hub-unified-oauth-direct-smoke.ts',
     'claude-code-oauth-direct-smoke.ts',
     'oauth-refresh-monitor-contract-smoke.ts',
     'oauth-refresh-lock-smoke.ts',
+    'oauth-refresh-lock-janitor-smoke.ts',
     'oauth-provider-boundary-smoke.ts',
     'oauth-monitor-launchd-smoke.ts',
     'runtime-profile-settings-smoke.ts',
@@ -183,7 +194,12 @@ function runUnit(scriptDir: string, hubRoot: string, jestBin: string, tsxBin: st
   runStep(tsxStep(tsxBin, scriptDir, hubRoot, 'secret-leak-smoke.ts'));
   runNodeImportTest(hubRoot, '__tests__/alarm-policy.node.test.js');
   runStep(unitJestStep(jestBin, hubRoot));
-  runSteps(unitSmokeScripts().map((script) => tsxStep(tsxBin, scriptDir, hubRoot, script)));
+  runSteps(unitSmokeScripts().map((script) => {
+    if (script === 'retired-gateway-residue-audit.ts') {
+      return tsxStepWithArgs(tsxBin, scriptDir, hubRoot, script, ['--check-only']);
+    }
+    return tsxStep(tsxBin, scriptDir, hubRoot, script);
+  }));
 }
 
 function runRuntime(scriptDir: string, hubRoot: string, tsxBin: string): void {
@@ -193,6 +209,7 @@ function runRuntime(scriptDir: string, hubRoot: string, tsxBin: string): void {
     'jay-to-commander-dispatch-smoke.ts',
     'session-compaction-smoke.ts',
     'launchd-callback-secret-smoke.ts',
+    'oauth-runtime-refresh-gate.ts',
     'team-oauth-readiness-report.ts',
     ...(isEnabledFlag('HUB_RUNTIME_CHECK_LIVE_LLM') ? ['team-llm-route-drill.ts'] : []),
     'telegram-topic-routing-live-smoke.ts',

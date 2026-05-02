@@ -10,7 +10,7 @@ const {
   writeClaudeCodeKeychainCredentials,
 } = require('../lib/oauth/local-credentials.ts');
 const { getProviderRecord, setProviderCanary, setProviderToken } = require('../lib/oauth/token-store.ts');
-const { withOAuthRefreshLock } = require('../lib/oauth/refresh-lock.ts');
+const { cleanupOAuthRefreshLocks, withOAuthRefreshLock } = require('../lib/oauth/refresh-lock.ts');
 const {
   buildOAuthProviderConfig,
   normalizeOAuthToken,
@@ -41,6 +41,33 @@ async function withMonitorOAuthLock(provider: string, reason: string, work: () =
   try {
     return await withOAuthRefreshLock(provider, reason, work);
   } catch (error) {
+    if (error?.code === 'oauth_refresh_lock_timeout') {
+      const janitor = cleanupOAuthRefreshLocks({ apply: false });
+      await sendOAuthAlarm({
+        level: 2,
+        title: '[Hub OAuth] OAuth refresh lock timeout',
+        message: `OAuth refresh lock timeout이 발생했습니다. provider=${provider} reason=${reason}`,
+        payload: {
+          provider,
+          reason,
+          error: 'oauth_refresh_lock_timeout',
+          lock_error_code: error.code,
+          stale_lock_count: Number(janitor?.stale_count || 0),
+          stale_locks: Array.isArray(janitor?.stale_locks)
+            ? janitor.stale_locks.map((lock: any) => ({
+              lock_name: lock.lock_name,
+              age_ms: lock.age_ms,
+              provider: lock.provider,
+              profile_id: lock.profile_id,
+              reason: lock.reason,
+              pid: lock.pid,
+              created_at: lock.created_at,
+            }))
+            : [],
+          manual_repair_command: 'npm --prefix bots/hub run -s oauth:lock-janitor -- --apply --confirm=hub-oauth-lock-janitor',
+        },
+      });
+    }
     return {
       ok: false,
       source: 'oauth_refresh_lock',

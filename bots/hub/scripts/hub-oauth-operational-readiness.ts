@@ -74,6 +74,9 @@ function providerSummary(teamReadiness: any) {
       required_by_team: Boolean(providers.gemini_cli_oauth?.required_by_team),
       healthy: Boolean(providers.gemini_cli_oauth?.healthy),
       quota_project_configured: Boolean(providers.gemini_cli_oauth?.quota_project_configured),
+      quota_project_required: Boolean(providers.gemini_cli_oauth?.quota_project_required),
+      quota_project_status: providers.gemini_cli_oauth?.quota_project_status || null,
+      quota_project_reason: providers.gemini_cli_oauth?.quota_project_reason || null,
       needs_cli_refresh: Boolean(providers.gemini_cli_oauth?.needs_cli_refresh),
       expires_in_hours: providers.gemini_cli_oauth?.expires_in_hours ?? null,
     },
@@ -82,6 +85,9 @@ function providerSummary(teamReadiness: any) {
       required_by_team: Boolean(providers.gemini_oauth?.required_by_team),
       healthy: Boolean(providers.gemini_oauth?.healthy),
       quota_project_configured: Boolean(providers.gemini_oauth?.quota_project_configured),
+      quota_project_required: Boolean(providers.gemini_oauth?.quota_project_required),
+      quota_project_status: providers.gemini_oauth?.quota_project_status || null,
+      quota_project_reason: providers.gemini_oauth?.quota_project_reason || null,
     },
   };
 }
@@ -113,6 +119,7 @@ function main(): void {
   const failedRequired = steps.filter((step) => step.required && !step.ok);
   const provider = providerSummary(teamReadiness);
   const geminiQuotaMissing = provider.gemini_cli_oauth.required_by_team
+    && provider.gemini_cli_oauth.quota_project_required
     && !provider.gemini_cli_oauth.quota_project_configured;
   const ok = failedRequired.length === 0
     && provider.claude_code_oauth.healthy
@@ -135,6 +142,8 @@ function main(): void {
       command_ok: Boolean(geminiCliReadiness?.command?.ok),
       credentials_ok: Boolean(geminiCliReadiness?.credentials?.ok),
       quota_project_configured: Boolean(geminiCliReadiness?.credentials?.quota_project_configured),
+      quota_project_status: geminiCliReadiness?.quota_project_policy?.status || null,
+      quota_project_required: Boolean(geminiCliReadiness?.quota_project_policy?.required),
       live_requested: Boolean(geminiCliReadiness?.live_requested),
       live_ok: geminiCliReadiness?.live?.ok ?? null,
       warnings: geminiCliReadiness?.warnings || [],
@@ -163,7 +172,8 @@ function main(): void {
       error: step.error,
     })),
     next_actions: [
-      ...(geminiQuotaMissing ? ['Set GEMINI_OAUTH_PROJECT_ID or GOOGLE_CLOUD_PROJECT if direct Gemini API/pro quota attribution is required.'] : []),
+      ...(geminiQuotaMissing ? ['Set GEMINI_OAUTH_PROJECT_ID or GOOGLE_CLOUD_PROJECT because strict Gemini CLI quota-project readiness is enabled.'] : []),
+      ...(!geminiQuotaMissing && provider.gemini_cli_oauth.quota_project_status === 'optional_missing' ? ['Optional: set GEMINI_OAUTH_PROJECT_ID or GOOGLE_CLOUD_PROJECT for direct Gemini API/pro quota attribution.'] : []),
       ...(provider.claude_code_oauth.needs_refresh ? ['Run Claude Code browser re-auth before token expiry if refresh/import does not recover automatically.'] : []),
       ...(provider.openai_oauth.needs_refresh ? ['Run Codex/OpenAI OAuth re-auth before token expiry if refresh/import does not recover automatically.'] : []),
       ...(provider.gemini_cli_oauth.needs_cli_refresh ? ['Run npm --prefix bots/hub run -s oauth:gemini-cli-readiness -- --live to verify Gemini CLI refresh path; re-run gemini auth login only if live probe fails.'] : []),

@@ -5,6 +5,10 @@ import fs from 'fs';
 import path from 'path';
 import { spawnSync } from 'child_process';
 const { readGeminiCliCredentials } = require('../lib/oauth/gemini-cli-credentials.ts');
+const {
+  geminiCliQuotaProjectRequired,
+  geminiQuotaProjectStatus,
+} = require('../lib/oauth/gemini-quota-project.ts');
 
 function flag(name: string): boolean {
   return ['1', 'true', 'yes', 'y', 'on'].includes(String(process.env[name] || '').trim().toLowerCase());
@@ -123,7 +127,13 @@ async function main() {
 
   let live = null;
   const liveRequested = Boolean(args.live || flag('HUB_GEMINI_CLI_READINESS_LIVE'));
-  const requireProject = Boolean(args.requireProject || flag('HUB_GEMINI_CLI_REQUIRE_PROJECT'));
+  const requireProject = Boolean(args.requireProject || geminiCliQuotaProjectRequired());
+  const quotaPolicy = geminiQuotaProjectStatus({
+    provider: 'gemini-cli-oauth',
+    configured: credentialSummary.quota_project_configured,
+    requiredByTeam: true,
+    requireProject,
+  });
   if (liveRequested) {
     const result = await runLiveProbe();
     live = {
@@ -139,7 +149,7 @@ async function main() {
   const ok = Boolean(
     command.ok
       && credentials.ok
-      && (!requireProject || credentialSummary.quota_project_configured)
+      && (!quotaPolicy.required || quotaPolicy.configured)
       && (!liveRequested || live?.ok),
   );
   const report = {
@@ -149,11 +159,15 @@ async function main() {
     command,
     credentials: credentialSummary,
     require_project: requireProject,
+    quota_project_policy: quotaPolicy,
     live_requested: liveRequested,
     live,
     warnings: [
-      ...(credentials.ok && !credentialSummary.quota_project_configured ? [
-        'quota project is missing; Gemini CLI OAuth can still run, but direct Gemini OAuth API canaries/imports may fail until GEMINI_OAUTH_PROJECT_ID or GOOGLE_CLOUD_PROJECT is set',
+      ...(credentials.ok && quotaPolicy.status === 'optional_missing' ? [
+        'quota project is optional for Gemini CLI OAuth default mode; set GEMINI_OAUTH_PROJECT_ID or GOOGLE_CLOUD_PROJECT for direct Gemini API/pro quota attribution',
+      ] : []),
+      ...(credentials.ok && quotaPolicy.status === 'required_missing' ? [
+        'quota project is required because strict Gemini CLI readiness is enabled; set GEMINI_OAUTH_PROJECT_ID or GOOGLE_CLOUD_PROJECT',
       ] : []),
       ...(credentials.ok && needsRefresh && live?.ok ? [
         'local Gemini CLI OAuth access token is expired/near expiry, but live CLI probe succeeded via refresh-token path',
@@ -165,7 +179,7 @@ async function main() {
     next_actions: ok ? [] : [
       ...(!command.ok ? ['Install Gemini CLI: npm install -g @google/gemini-cli or brew install gemini-cli'] : []),
       ...(!credentials.ok ? ['Run Gemini CLI login so ~/.gemini/oauth_creds.json exists'] : []),
-      ...(requireProject && credentials.ok && !credentialSummary.quota_project_configured ? ['Set GEMINI_OAUTH_PROJECT_ID or GOOGLE_CLOUD_PROJECT'] : []),
+      ...(quotaPolicy.status === 'required_missing' ? ['Set GEMINI_OAUTH_PROJECT_ID or GOOGLE_CLOUD_PROJECT'] : []),
       ...(liveRequested && live && !live.ok ? ['Check Gemini CLI auth/session by running a tiny gemini CLI prompt manually'] : []),
     ],
   };
@@ -176,7 +190,7 @@ async function main() {
     console.log(`gemini-cli-oauth readiness: ${ok ? 'ok' : 'not-ready'}`);
     console.log(`command: ${command.ok ? 'ok' : command.error}`);
     console.log(`credentials: ${credentialSummary.ok ? 'ok' : credentialSummary.error}`);
-    console.log(`quota project: ${credentialSummary.quota_project_configured ? 'configured' : requireProject ? 'missing (required)' : 'missing (direct API only)'}`);
+    console.log(`quota project: ${quotaPolicy.status}`);
     if (liveRequested) console.log(`live: ${live?.ok ? 'ok' : live?.error || 'failed'}`);
   }
   process.exitCode = ok ? 0 : 1;

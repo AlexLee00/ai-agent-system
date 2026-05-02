@@ -53,6 +53,80 @@ function writeLockMetadata(lockPath, metadata) {
   }
 }
 
+function readLockMetadata(lockPath) {
+  try {
+    return JSON.parse(fs.readFileSync(path.join(lockPath, 'owner.json'), 'utf8'));
+  } catch {
+    return {};
+  }
+}
+
+function listOAuthRefreshLocks(options = {}) {
+  const lockDir = options.lockDir || resolveOAuthRefreshLockDir();
+  const staleMs = Number(process.env.HUB_OAUTH_REFRESH_LOCK_STALE_MS || options.staleMs || DEFAULT_LOCK_STALE_MS);
+  if (!fs.existsSync(lockDir)) return [];
+
+  return fs.readdirSync(lockDir, { withFileTypes: true })
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => {
+      const lockPath = path.join(lockDir, entry.name);
+      let mtimeMs = 0;
+      try {
+        mtimeMs = fs.statSync(lockPath).mtimeMs;
+      } catch {
+        mtimeMs = 0;
+      }
+      const ageMs = mtimeMs > 0 ? Date.now() - mtimeMs : null;
+      const metadata = readLockMetadata(lockPath);
+      return {
+        lock_name: entry.name,
+        lock_path: lockPath,
+        age_ms: ageMs,
+        stale: Number.isFinite(Number(ageMs)) ? Number(ageMs) > staleMs : false,
+        provider: metadata.provider || null,
+        profile_id: metadata.profile_id || null,
+        reason: metadata.reason || null,
+        pid: metadata.pid || null,
+        created_at: metadata.created_at || null,
+      };
+    });
+}
+
+function cleanupOAuthRefreshLocks(options = {}) {
+  const staleLocks = listOAuthRefreshLocks(options).filter((lock) => lock.stale);
+  const apply = options.apply === true;
+  const confirm = String(options.confirm || '').trim();
+  const removed = [];
+  if (apply) {
+    if (confirm !== 'hub-oauth-lock-janitor') {
+      return {
+        ok: false,
+        dry_run: false,
+        error: 'confirm_required',
+        stale_count: staleLocks.length,
+        removed,
+        stale_locks: staleLocks,
+      };
+    }
+    for (const lock of staleLocks) {
+      try {
+        fs.rmSync(lock.lock_path, { recursive: true, force: true });
+        removed.push(lock.lock_name);
+      } catch {
+        // Keep best-effort semantics; remaining stale locks stay visible.
+      }
+    }
+  }
+
+  return {
+    ok: true,
+    dry_run: !apply,
+    stale_count: staleLocks.length,
+    removed,
+    stale_locks: staleLocks,
+  };
+}
+
 async function acquireOAuthRefreshLock(provider, options = {}) {
   const profileId = options.profileId || provider;
   const lockPath = resolveOAuthRefreshLockPath(provider, profileId);
@@ -113,6 +187,9 @@ async function withOAuthRefreshLock(provider, reason, work, options = {}) {
 
 module.exports = {
   acquireOAuthRefreshLock,
+  cleanupOAuthRefreshLocks,
+  listOAuthRefreshLocks,
+  resolveOAuthRefreshLockDir,
   resolveOAuthRefreshLockPath,
   withOAuthRefreshLock,
 };

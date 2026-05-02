@@ -299,6 +299,10 @@ function writeOutputs(findings: Finding[]): void {
   fs.writeFileSync(outputMarkdownPath, markdown, 'utf8');
 }
 
+function hasFlag(name: string): boolean {
+  return process.argv.slice(2).includes(name);
+}
+
 function main(): void {
   const findings = [
     ...scanRepoMarkers(),
@@ -307,10 +311,14 @@ function main(): void {
     ...scanRetiredHome(),
   ].sort((a, b) => `${a.category}:${a.file}:${a.line || 0}`.localeCompare(`${b.category}:${b.file}:${b.line || 0}`));
   const categories = countByCategory(findings);
-  writeOutputs(findings);
+  const checkOnly = hasFlag('--check-only');
+  if (!checkOnly) {
+    writeOutputs(findings);
+  }
 
   const summary = {
     ok: categories.runtime_blocker === 0,
+    check_only: checkOnly,
     categories,
     output_json: outputJsonPath,
     output_markdown: outputMarkdownPath,

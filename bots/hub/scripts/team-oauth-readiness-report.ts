@@ -7,6 +7,10 @@ const { PROFILES } = require('../lib/runtime-profiles.ts');
 const { getGeminiOauthStatus } = require('../lib/oauth/providers/gemini-oauth.ts');
 const { getProviderRecord } = require('../lib/oauth/token-store.ts');
 const { readGeminiCliCredentials } = require('../lib/oauth/gemini-cli-credentials.ts');
+const {
+  geminiCliQuotaProjectRequired,
+  geminiQuotaProjectStatus,
+} = require('../lib/oauth/gemini-quota-project.ts');
 
 const UNSUITABLE_AGENT_RE = /(image|gemma|stt|whisper|local)/i;
 
@@ -124,15 +128,32 @@ async function main() {
   const geminiCliRequired = teamCoverage.some((item) => item.selected_provider === 'gemini-cli-oauth' || item.oauth_route_family?.startsWith('gemini-cli-oauth/'))
     || anyProfileRouteUses('gemini-cli-oauth');
   const geminiReady = Boolean(gemini?.has_token && !gemini?.expired && gemini?.quota_project_configured);
+  const geminiQuotaConfigured = Boolean(gemini?.quota_project_configured);
+  const geminiQuotaPolicy = geminiQuotaProjectStatus({
+    provider: 'gemini-oauth',
+    configured: geminiQuotaConfigured,
+    requiredByTeam: geminiRequired,
+  });
   const geminiCliReady = Boolean(
     geminiCliRecord?.token?.refresh_token
       || geminiCliLocal?.token?.refresh_token,
   );
+  const geminiCliQuotaConfigured = Boolean(
+    geminiCliRecord?.metadata?.quota_project_configured
+      || geminiCliLocal?.quota_project_configured,
+  );
+  const geminiCliQuotaPolicy = geminiQuotaProjectStatus({
+    provider: 'gemini-cli-oauth',
+    configured: geminiCliQuotaConfigured,
+    requiredByTeam: geminiCliRequired,
+    requireProject: geminiCliQuotaProjectRequired(),
+  });
   const ok = Boolean(
     claude.healthy
       && openai.healthy
       && (!geminiRequired || geminiReady)
       && (!geminiCliRequired || geminiCliReady)
+      && (!geminiCliQuotaPolicy.required || geminiCliQuotaPolicy.configured)
       && teamsWithoutOauthRoute.length === 0,
   );
 
@@ -169,7 +190,10 @@ async function main() {
         healthy: geminiRequired ? geminiReady : Boolean(gemini?.has_token && !gemini?.expired && gemini?.quota_project_configured),
         token_present: Boolean(gemini?.has_token),
         expired: Boolean(gemini?.expired),
-        quota_project_configured: Boolean(gemini?.quota_project_configured),
+        quota_project_configured: geminiQuotaConfigured,
+        quota_project_required: geminiQuotaPolicy.required,
+        quota_project_status: geminiQuotaPolicy.status,
+        quota_project_reason: geminiQuotaPolicy.reason,
         expires_in_hours: Number.isFinite(Number(geminiExpiresInHours))
           ? Math.round(Number(geminiExpiresInHours) * 100) / 100
           : null,
@@ -182,10 +206,10 @@ async function main() {
         healthy: geminiCliRequired ? geminiCliReady : geminiCliReady,
         token_store_present: Boolean(geminiCliRecord?.token?.refresh_token),
         local_cli_credentials_present: Boolean(geminiCliLocal?.token?.refresh_token),
-        quota_project_configured: Boolean(
-          geminiCliRecord?.metadata?.quota_project_configured
-            || geminiCliLocal?.quota_project_configured,
-        ),
+        quota_project_configured: geminiCliQuotaConfigured,
+        quota_project_required: geminiCliQuotaPolicy.required,
+        quota_project_status: geminiCliQuotaPolicy.status,
+        quota_project_reason: geminiCliQuotaPolicy.reason,
         expires_in_hours: Number.isFinite(Number(geminiCliExpiresInHours))
           ? Math.round(Number(geminiCliExpiresInHours) * 100) / 100
           : null,
