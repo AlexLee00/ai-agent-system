@@ -2,7 +2,7 @@
 
 This inventory tracks the Hub alarm migration surface. `hub_alarm_native` entries are the desired path; `retired_gateway_guard` entries are regression guards; `legacy_gateway_compat` entries are remaining migration targets and must stay at 0.
 
-- generated_at: 2026-05-02T14:01:07.690Z
+- generated_at: 2026-05-02T14:38:49.846Z
 - total_matches: 290
 - unique_files: 150
 - hub_alarm_native: 277
@@ -210,18 +210,18 @@ This inventory tracks the Hub alarm migration surface. `hub_alarm_native` entrie
 - L26 [hub_alarm_native]: `<key>HUB_ALARM_USE_CLASS_TOPICS</key>`
 
 ### `bots/hub/launchd/ai.hub.resource-api.plist`
-- L32 [hub_alarm_native]: `<key>HUB_ALARM_USE_CLASS_TOPICS</key>`
-- L34 [hub_alarm_native]: `<key>HUB_ALARM_DISPATCH_MODE</key>`
-- L36 [hub_alarm_native]: `<key>HUB_ALARM_LLM_CLASSIFIER_ENABLED</key>`
-- L38 [hub_alarm_native]: `<key>HUB_ALARM_LLM_DAILY_LIMIT</key>`
-- L40 [hub_alarm_native]: `<key>HUB_ALARM_CRITICAL_TYPE_ENABLED</key>`
-- L42 [hub_alarm_native]: `<key>HUB_ALARM_INTERPRETER_ENABLED</key>`
-- L44 [hub_alarm_native]: `<key>HUB_ALARM_INTERPRETER_FAIL_OPEN</key>`
-- L46 [hub_alarm_native]: `<key>HUB_ALARM_INTERPRETER_LLM_DAILY_LIMIT</key>`
-- L48 [hub_alarm_native]: `<key>HUB_ALARM_ENRICHMENT_ENABLED</key>`
-- L50 [hub_alarm_native]: `<key>HUB_ALARM_ROUNDTABLE_ENABLED</key>`
-- L52 [hub_alarm_native]: `<key>HUB_ALARM_ROUNDTABLE_DAILY_LIMIT</key>`
-- L54 [hub_alarm_native]: `<key>HUB_ALARM_ROUNDTABLE_TRIGGER_FINGERPRINT_THRESHOLD</key>`
+- L38 [hub_alarm_native]: `<key>HUB_ALARM_USE_CLASS_TOPICS</key>`
+- L40 [hub_alarm_native]: `<key>HUB_ALARM_DISPATCH_MODE</key>`
+- L42 [hub_alarm_native]: `<key>HUB_ALARM_LLM_CLASSIFIER_ENABLED</key>`
+- L44 [hub_alarm_native]: `<key>HUB_ALARM_LLM_DAILY_LIMIT</key>`
+- L46 [hub_alarm_native]: `<key>HUB_ALARM_CRITICAL_TYPE_ENABLED</key>`
+- L48 [hub_alarm_native]: `<key>HUB_ALARM_INTERPRETER_ENABLED</key>`
+- L50 [hub_alarm_native]: `<key>HUB_ALARM_INTERPRETER_FAIL_OPEN</key>`
+- L52 [hub_alarm_native]: `<key>HUB_ALARM_INTERPRETER_LLM_DAILY_LIMIT</key>`
+- L54 [hub_alarm_native]: `<key>HUB_ALARM_ENRICHMENT_ENABLED</key>`
+- L56 [hub_alarm_native]: `<key>HUB_ALARM_ROUNDTABLE_ENABLED</key>`
+- L58 [hub_alarm_native]: `<key>HUB_ALARM_ROUNDTABLE_DAILY_LIMIT</key>`
+- L60 [hub_alarm_native]: `<key>HUB_ALARM_ROUNDTABLE_TRIGGER_FINGERPRINT_THRESHOLD</key>`
 
 ### `bots/hub/launchd/ai.hub.roundtable-reflection.plist`
 - L22 [hub_alarm_native]: `<key>HUB_ALARM_USE_CLASS_TOPICS</key>`

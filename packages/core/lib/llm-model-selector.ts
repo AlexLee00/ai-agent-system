@@ -57,15 +57,42 @@ function normalizeSelectorVersion(value: any): TeamSelectorVersion {
   return TEAM_SELECTOR_VERSION_LEGACY;
 }
 
+function parseEnabledFlag(value: any): boolean | null {
+  const normalized = String(value || '').trim().toLowerCase();
+  if (!normalized) return null;
+  if (['1', 'true', 'yes', 'y', 'on'].includes(normalized)) return true;
+  if (['0', 'false', 'no', 'n', 'off'].includes(normalized)) return false;
+  return null;
+}
+
+function parseRolloutStagePercent(value: any): number | null {
+  const normalized = String(value || '').trim().toLowerCase();
+  if (!normalized) return null;
+  if (normalized === '1' || normalized === 'canary') return 1;
+  if (normalized === '50' || normalized === 'half') return 50;
+  if (normalized === '100' || normalized === 'full') return 100;
+  return null;
+}
+
 function parseRolloutPercent(options: SelectorOptions = {}): number {
   const optionPercent = Number(options.rolloutPercent);
   if (Number.isFinite(optionPercent)) {
     return Math.max(0, Math.min(100, Math.floor(optionPercent)));
   }
+  const optionStage = parseRolloutStagePercent((options as any).rolloutStage);
+  if (optionStage != null) return optionStage;
+
   const envPercent = Number(process.env.LLM_TEAM_SELECTOR_AB_PERCENT || '');
   if (Number.isFinite(envPercent)) {
     return Math.max(0, Math.min(100, Math.floor(envPercent)));
   }
+  const envStage = parseRolloutStagePercent(process.env.LLM_TEAM_SELECTOR_AB_STAGE);
+  if (envStage != null) return envStage;
+
+  const optionAbTest = parseEnabledFlag((options as any).abTest);
+  const envAbTest = parseEnabledFlag(process.env.LLM_TEAM_SELECTOR_AB_TEST);
+  const abTestEnabled = optionAbTest ?? envAbTest;
+  if (abTestEnabled === false) return 100;
   return 100;
 }
 
@@ -79,7 +106,9 @@ function stableHashPercent(seed: string): number {
 }
 
 function resolveSelectorVersionForKey(selectorKey: string, options: SelectorOptions = {}): TeamSelectorVersion {
-  const envVersion = normalizeSelectorVersion(process.env.LLM_TEAM_SELECTOR_VERSION);
+  const envVersionRaw = String(process.env.LLM_TEAM_SELECTOR_VERSION || '').trim();
+  const oauthPrimaryEnabled = parseEnabledFlag(process.env.LLM_USE_OAUTH_PRIMARY) === true;
+  const envVersion = normalizeSelectorVersion(envVersionRaw || (oauthPrimaryEnabled ? TEAM_SELECTOR_VERSION_OAUTH4 : TEAM_SELECTOR_VERSION_LEGACY));
   const optionVersion = options.selectorVersion ? normalizeSelectorVersion(options.selectorVersion) : envVersion;
   if (optionVersion !== TEAM_SELECTOR_VERSION_OAUTH4) return TEAM_SELECTOR_VERSION_LEGACY;
 

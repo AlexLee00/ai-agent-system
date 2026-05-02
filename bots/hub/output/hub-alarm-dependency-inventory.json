@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-05-02T14:01:07.690Z",
+  "generated_at": "2026-05-02T14:38:49.846Z",
   "scan_patterns": [
     "hub-alarm-client",
     "openclaw-client",
@@ -567,73 +567,73 @@
     "bots/hub/launchd/ai.hub.resource-api.plist": [
       {
         "file": "bots/hub/launchd/ai.hub.resource-api.plist",
-        "line": 32,
+        "line": 38,
         "category": "hub_alarm_native",
         "match": "<key>HUB_ALARM_USE_CLASS_TOPICS</key>"
       },
       {
         "file": "bots/hub/launchd/ai.hub.resource-api.plist",
-        "line": 34,
+        "line": 40,
         "category": "hub_alarm_native",
         "match": "<key>HUB_ALARM_DISPATCH_MODE</key>"
       },
       {
         "file": "bots/hub/launchd/ai.hub.resource-api.plist",
-        "line": 36,
+        "line": 42,
         "category": "hub_alarm_native",
         "match": "<key>HUB_ALARM_LLM_CLASSIFIER_ENABLED</key>"
       },
       {
         "file": "bots/hub/launchd/ai.hub.resource-api.plist",
-        "line": 38,
+        "line": 44,
         "category": "hub_alarm_native",
         "match": "<key>HUB_ALARM_LLM_DAILY_LIMIT</key>"
       },
       {
         "file": "bots/hub/launchd/ai.hub.resource-api.plist",
-        "line": 40,
+        "line": 46,
         "category": "hub_alarm_native",
         "match": "<key>HUB_ALARM_CRITICAL_TYPE_ENABLED</key>"
       },
       {
         "file": "bots/hub/launchd/ai.hub.resource-api.plist",
-        "line": 42,
+        "line": 48,
         "category": "hub_alarm_native",
         "match": "<key>HUB_ALARM_INTERPRETER_ENABLED</key>"
       },
       {
         "file": "bots/hub/launchd/ai.hub.resource-api.plist",
-        "line": 44,
+        "line": 50,
         "category": "hub_alarm_native",
         "match": "<key>HUB_ALARM_INTERPRETER_FAIL_OPEN</key>"
       },
       {
         "file": "bots/hub/launchd/ai.hub.resource-api.plist",
-        "line": 46,
+        "line": 52,
         "category": "hub_alarm_native",
         "match": "<key>HUB_ALARM_INTERPRETER_LLM_DAILY_LIMIT</key>"
       },
       {
         "file": "bots/hub/launchd/ai.hub.resource-api.plist",
-        "line": 48,
+        "line": 54,
         "category": "hub_alarm_native",
         "match": "<key>HUB_ALARM_ENRICHMENT_ENABLED</key>"
       },
       {
         "file": "bots/hub/launchd/ai.hub.resource-api.plist",
-        "line": 50,
+        "line": 56,
         "category": "hub_alarm_native",
         "match": "<key>HUB_ALARM_ROUNDTABLE_ENABLED</key>"
       },
       {
         "file": "bots/hub/launchd/ai.hub.resource-api.plist",
-        "line": 52,
+        "line": 58,
         "category": "hub_alarm_native",
         "match": "<key>HUB_ALARM_ROUNDTABLE_DAILY_LIMIT</key>"
       },
       {
         "file": "bots/hub/launchd/ai.hub.resource-api.plist",
-        "line": 54,
+        "line": 60,
         "category": "hub_alarm_native",
         "match": "<key>HUB_ALARM_ROUNDTABLE_TRIGGER_FINGERPRINT_THRESHOLD</key>"
       }

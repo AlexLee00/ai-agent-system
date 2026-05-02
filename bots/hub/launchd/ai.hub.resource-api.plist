@@ -19,6 +19,12 @@
   <dict>
     <key>MODE</key>
     <string>ops</string>
+    <key>LLM_USE_OAUTH_PRIMARY</key>
+    <string>true</string>
+    <key>LLM_TEAM_SELECTOR_VERSION</key>
+    <string>v3.0_oauth_4</string>
+    <key>LLM_TEAM_SELECTOR_AB_PERCENT</key>
+    <string>100</string>
     <key>PATH</key>
     <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
     <key>HUB_PG_USER</key>

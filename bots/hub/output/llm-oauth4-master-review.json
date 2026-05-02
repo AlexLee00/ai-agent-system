@@ -1,10 +1,10 @@
 {
   "ok": false,
-  "generated_at": "2026-05-02T14:26:00.296Z",
+  "generated_at": "2026-05-02T14:40:56.212Z",
   "hours": 168,
   "totals": {
-    "total_calls": 32992,
-    "oauth_calls": 13555,
+    "total_calls": 32995,
+    "oauth_calls": 13558,
     "oauth_share_pct": 41.09,
     "failed_calls": 55,
     "failed_rate_pct": 0.17,
@@ -64,7 +64,7 @@
       "avg_duration_ms": 693,
       "max_duration_ms": 4488,
       "total_cost_usd": 1.283935,
-      "share_pct": 57.84,
+      "share_pct": 57.83,
       "success_rate_pct": 100
     },
     "failed": {

@@ -4,6 +4,12 @@
 <dict>
 	<key>EnvironmentVariables</key>
 	<dict>
+		<key>LLM_USE_OAUTH_PRIMARY</key>
+		<string>true</string>
+		<key>LLM_TEAM_SELECTOR_VERSION</key>
+		<string>v3.0_oauth_4</string>
+		<key>LLM_TEAM_SELECTOR_AB_PERCENT</key>
+		<string>100</string>
 	</dict>
 	<key>KeepAlive</key>
 	<true/>

@@ -126,11 +126,19 @@ type OAuthProviderToken = {
   expires?: number | string;
   expires_at?: string;
   account_id?: string;
+  quota_project_id?: string;
+  project_id?: string;
+};
+
+type OAuthProviderMetadata = {
+  quota_project_id?: string;
+  project_id?: string;
 };
 
 type OAuthProviderStore = {
   providers?: Record<string, {
     token?: OAuthProviderToken | null;
+    metadata?: OAuthProviderMetadata | null;
   } | null>;
 };
 
