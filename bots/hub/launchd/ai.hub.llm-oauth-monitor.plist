@@ -37,6 +37,10 @@
     <string>4</string>
     <key>HUB_OAUTH_MONITOR_REQUIRE_GEMINI</key>
     <string>true</string>
+    <key>HUB_OAUTH_MONITOR_REQUIRE_GEMINI_CLI</key>
+    <string>true</string>
+    <key>HUB_OAUTH_MONITOR_REQUIRE_GEMINI_CODEASSIST_SERVICE</key>
+    <string>true</string>
     <key>HUB_GEMINI_OAUTH_WARN_HOURS</key>
     <string>0.75</string>
     <key>HUB_GEMINI_OAUTH_CRITICAL_HOURS</key>

@@ -22,6 +22,19 @@ function summarizeManualTask(task = {}) {
   };
 }
 
+function summarizeLookupRetryTask(task = {}) {
+  return {
+    id: task.id || null,
+    symbol: task.symbol || null,
+    action: task.action || null,
+    resolutionClass: task.resolutionClass || 'exchange_lookup_retry',
+    safeToAutomate: false,
+    evidenceHash: task.evidenceHash || null,
+    nextCommand: task.nextCommand || null,
+    manualFallbackCommand: task.manualFallbackCommand || null,
+  };
+}
+
 function manualTasksFromHardBlockers(pack = {}) {
   const existingSymbols = new Set((pack.manualTasks || []).map((task) => String(task.symbol || '')));
   return (pack.hardBlockers || [])
@@ -52,9 +65,11 @@ function manualTasksFromHardBlockers(pack = {}) {
 
 export function buildLunaOperationalActionBoardFromPack(pack = {}) {
   const bus = pack.evidence?.busHygiene?.classification || {};
+  const lookupRetryTasks = (pack.evidence?.reconcileEvidence?.lookupRetryTasks || []).map(summarizeLookupRetryTask);
   const manualTasks = [
     ...(pack.manualTasks || []).map(summarizeManualTask),
-    ...manualTasksFromHardBlockers(pack),
+    ...manualTasksFromHardBlockers(pack).filter((task) =>
+      !lookupRetryTasks.some((lookup) => lookup.symbol === task.symbol && lookup.resolutionClass === task.resolutionClass)),
   ];
   const busPolicy = {
     status: Number(bus.safeExpire || 0) > 0
@@ -80,6 +95,11 @@ export function buildLunaOperationalActionBoardFromPack(pack = {}) {
       safeToAutomate: false,
       tasks: manualTasks,
     },
+    exchangeLookupRetry: {
+      count: lookupRetryTasks.length,
+      safeToAutomate: false,
+      tasks: lookupRetryTasks,
+    },
     ackQueue: {
       count: (pack.safeAckCandidates || []).length,
       tasks: pack.safeAckCandidates || [],
@@ -91,6 +111,12 @@ export function buildLunaOperationalActionBoardFromPack(pack = {}) {
       toCreate: Number(pack.evidence?.curriculum?.toCreate || 0),
     },
     pendingObservation: pack.pendingObservation || [],
+    sevenDayObservation: {
+      status: pack.evidence?.sevenDay?.status || null,
+      criteria: pack.evidence?.sevenDay?.criteria || {},
+      pendingReasons: pack.evidence?.sevenDay?.pendingReasons || [],
+      nextCommand: 'npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run -s runtime:luna-7day-report -- --json --no-write',
+    },
     nextActions: pack.nextActions || [],
     commands: {
       blockerPack: 'npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run -s runtime:luna-operational-blocker-pack -- --json',
@@ -138,15 +164,32 @@ export async function runLunaOperationalActionBoardSmoke() {
             blocked: 0,
           },
         },
+        reconcileEvidence: {
+          lookupRetryTasks: [{
+            id: 'sig-mega',
+            symbol: 'MEGA/USDT',
+            action: 'SELL',
+            resolutionClass: 'exchange_lookup_retry',
+            evidenceHash: 'a'.repeat(64),
+            nextCommand: 'ack-preflight',
+          }],
+        },
+        sevenDay: {
+          status: 'pending_observation',
+          criteria: { fired5: false },
+          pendingReasons: ['fired 0/5'],
+        },
         curriculum: { status: 'curriculum_bootstrap_already_seeded', toCreate: 0 },
       },
     },
   });
   assert.equal(board.ok, false);
   assert.equal(board.manualReconcile.count, 1);
+  assert.equal(board.exchangeLookupRetry.count, 1);
   assert.equal(board.manualReconcile.safeToAutomate, false);
   assert.equal(board.agentBusHygiene.status, 'operator_review_required');
   assert.equal(board.agentBusHygiene.applyAllowedNow, false);
+  assert.equal(board.sevenDayObservation.status, 'pending_observation');
   assert.equal(board.commands.busHygieneApply, null);
   return { ok: true, board };
 }

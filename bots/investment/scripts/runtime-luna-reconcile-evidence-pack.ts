@@ -50,6 +50,15 @@ export async function runLunaReconcileEvidencePackSmoke() {
       },
       {
         id: 'sig-3',
+        symbol: 'MEGA/USDT',
+        action: 'SELL',
+        blockCode: 'broker_execution_error',
+        resolutionClass: 'exchange_lookup_retry',
+        severity: 'hard_block',
+        identifiers: { clientOrderId: 'cid-mega' },
+      },
+      {
+        id: 'sig-4',
         symbol: 'BTC/USDT',
         resolutionClass: 'acknowledged',
         severity: 'acknowledged',
@@ -61,9 +70,12 @@ export async function runLunaReconcileEvidencePackSmoke() {
   assert.equal(pack.ok, false);
   assert.equal(pack.summary.manualReconcileRequired, 1);
   assert.equal(pack.summary.manualAckRequired, 1);
+  assert.equal(pack.summary.exchangeLookupRetry, 1);
   assert.equal(pack.summary.acknowledgedHistory, 1);
   assert.equal(pack.manualTasks[0].safeToAutomate, false);
   assert.ok(pack.ackTasks[0].requiredEvidence.includes('preflight_evidence_hash_or_operator_evidence_ref'));
+  assert.ok(pack.lookupRetryTasks[0].requiredEvidence.includes('fresh_exchange_lookup_result_by_client_order_id'));
+  assert.match(pack.lookupRetryTasks[0].evidenceHash, /^[a-f0-9]{64}$/);
   return { ok: true, pack };
 }
 

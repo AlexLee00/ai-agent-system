@@ -192,6 +192,8 @@ export function buildLunaFullIntegrationClosureGateFromReports({
     busHygiene,
     voyager,
     curriculum,
+    reconcileEvidence,
+    ackPreflight,
   });
   return result;
 }

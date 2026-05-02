@@ -64,6 +64,8 @@ export async function buildLunaOperationalBlockerPack({
     busHygiene,
     voyager,
     curriculum,
+    reconcileEvidence,
+    ackPreflight,
   });
 }
 

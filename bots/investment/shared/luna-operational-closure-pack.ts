@@ -195,6 +195,7 @@ function buildPendingObservation({ sevenDay = {}, fullIntegration = {}, voyager 
 function buildNextActions({
   manualTasks = [],
   safeAckCandidates = [],
+  lookupRetryTasks = [],
   hygieneTasks = [],
   curriculumTasks = [],
   pendingObservation = [],
@@ -202,6 +203,7 @@ function buildNextActions({
 } = {}) {
   const actions = [];
   if (manualTasks.length > 0) actions.push('complete manual wallet/journal/position reconcile evidence, then rerun operational blocker pack');
+  if (lookupRetryTasks.length > 0) actions.push('run exchange lookup retry evidence preflight; fallback to manual reconcile only if lookup remains ambiguous or order is found');
   if (safeAckCandidates.length > 0) actions.push('run live lookup/ack preflight and apply ACK only with explicit evidence and confirm');
   if (hygieneTasks.length > 0) actions.push('run agent message bus hygiene dry-run; apply only with --confirm=luna-agent-bus-hygiene');
   if (curriculumTasks.length > 0) actions.push('run curriculum bootstrap dry-run; apply only with --confirm=luna-curriculum-bootstrap');
@@ -222,6 +224,8 @@ export function buildLunaOperationalClosurePackFromReports({
   voyager = {},
   cutover = {},
   curriculum = {},
+  reconcileEvidence = {},
+  ackPreflight = {},
 } = {}) {
   const blockers = asArray(reconcile.blockers);
   const manualTasks = blockers
@@ -233,6 +237,7 @@ export function buildLunaOperationalClosurePackFromReports({
   const acknowledgedHistory = blockers
     .filter((item) => item.acked || item.resolutionClass === 'acknowledged' || item.severity === 'acknowledged')
     .map(buildAcknowledgedHistory);
+  const lookupRetryTasks = asArray(reconcileEvidence.lookupRetryTasks);
   const hygieneTasks = buildAgentMessageBusHygienePlan(busHygiene);
   const curriculumTasks = buildCurriculumClosureTasks(curriculum);
   const pendingObservation = buildPendingObservation({ sevenDay, fullIntegration, voyager });
@@ -257,7 +262,7 @@ export function buildLunaOperationalClosurePackFromReports({
     curriculumTasks,
     acknowledgedHistory,
     pendingObservation,
-    nextActions: buildNextActions({ manualTasks, safeAckCandidates, hygieneTasks, curriculumTasks, pendingObservation, cutover }),
+    nextActions: buildNextActions({ manualTasks, safeAckCandidates, lookupRetryTasks, hygieneTasks, curriculumTasks, pendingObservation, cutover }),
     evidence: {
       closure: {
         ok: closure.ok === true,
@@ -271,6 +276,29 @@ export function buildLunaOperationalClosurePackFromReports({
       liveFire: {
         status: liveFire.status || null,
         blockers: asArray(liveFire.blockers),
+      },
+      sevenDay: {
+        status: sevenDay.status || null,
+        criteria: sevenDay.criteria || {},
+        pendingReasons: asArray(sevenDay.pendingReasons),
+      },
+      reconcileEvidence: {
+        status: reconcileEvidence.status || null,
+        summary: reconcileEvidence.summary || {},
+        lookupRetryTasks: asArray(reconcileEvidence.lookupRetryTasks).map((task) => ({
+          id: task.id || null,
+          symbol: task.symbol || null,
+          action: task.action || null,
+          resolutionClass: task.resolutionClass || null,
+          evidenceHash: task.evidenceHash || null,
+          nextCommand: task.nextCommand || null,
+          manualFallbackCommand: task.manualFallbackCommand || null,
+        })),
+      },
+      ackPreflight: {
+        status: ackPreflight.status || null,
+        liveLookup: ackPreflight.liveLookup === true,
+        summary: ackPreflight.summary || {},
       },
       busHygiene: {
         status: busHygiene.status || null,

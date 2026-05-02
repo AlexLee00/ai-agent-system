@@ -17,6 +17,10 @@ const {
   refreshOAuthToken,
 } = require('../lib/oauth/oauth-flow.ts');
 const { readGeminiCliCredentials } = require('../lib/oauth/gemini-cli-credentials.ts');
+const {
+  checkGeminiCodeAssistServiceStatus,
+  CLOUD_AI_COMPANION_SERVICE,
+} = require('../lib/oauth/gemini-codeassist-service-status.ts');
 const { postAlarm } = require('../../../packages/core/lib/hub-alarm-client.ts');
 
 function flag(name: string, fallback = false): boolean {
@@ -735,6 +739,10 @@ function geminiCliMonitorRequired(): boolean {
   return flag('HUB_OAUTH_MONITOR_REQUIRE_GEMINI_CLI', Boolean(record?.token?.access_token || record?.token?.refresh_token));
 }
 
+function geminiCodeAssistServiceRequired(): boolean {
+  return flag('HUB_OAUTH_MONITOR_REQUIRE_GEMINI_CODEASSIST_SERVICE', geminiCliMonitorRequired());
+}
+
 async function runGeminiCliLiveRefreshProbe() {
   if (!flag('HUB_GEMINI_CLI_OAUTH_LIVE_PROBE_ON_EXPIRY', true)) {
     return { ok: false, skipped: true, error: 'live_probe_disabled' };
@@ -1010,11 +1018,71 @@ async function checkGeminiOAuth() {
   return { ...geminiOauth, expires_in_hours: finalHours, refresh };
 }
 
+async function checkGeminiCodeAssistService() {
+  const required = geminiCodeAssistServiceRequired();
+  const record = getProviderRecord('gemini-cli-oauth');
+  const accessToken = String(record?.token?.access_token || '').trim();
+  const projectId = geminiQuotaProject(record, null);
+  if (!accessToken || !projectId) {
+    const result = {
+      healthy: !required,
+      skipped: !required,
+      required,
+      service: CLOUD_AI_COMPANION_SERVICE,
+      project_id_configured: Boolean(projectId),
+      state: null,
+      error: !accessToken ? 'gemini_cli_access_token_missing' : 'gemini_codeassist_project_missing',
+    };
+    if (required) {
+      await sendOAuthAlarm({
+        level: 3,
+        title: '[Hub OAuth] Gemini Code Assist service readiness 실패',
+        message: `Gemini Code Assist service readiness를 확인할 수 없습니다. error=${result.error}`,
+        payload: {
+          provider: 'gemini-cli-oauth',
+          service: CLOUD_AI_COMPANION_SERVICE,
+          project_id_configured: result.project_id_configured,
+          error: result.error,
+        },
+      });
+    }
+    return result;
+  }
+  const status = await checkGeminiCodeAssistServiceStatus({ projectId, accessToken });
+  const healthy = status.ok === true && status.state === 'ENABLED';
+  if (!healthy && required) {
+    await sendOAuthAlarm({
+      level: 3,
+      title: '[Hub OAuth] Gemini Code Assist API 비활성/오류',
+      message: `Gemini Code Assist service 상태가 ${status.state || 'unknown'}입니다. ${status.operator_action || 'Google Cloud API 상태를 확인하세요.'}`,
+      payload: {
+        provider: 'gemini-cli-oauth',
+        service: status.service,
+        state: status.state || null,
+        error: status.error || null,
+        activation_url: status.activation_url || null,
+      },
+    });
+  }
+  console.log(`[oauth-monitor] Gemini Code Assist service: ${status.state || status.error || 'unknown'} (${status.service})`);
+  return {
+    healthy: healthy || !required,
+    skipped: false,
+    required,
+    service: status.service,
+    project_id_configured: Boolean(status.project_id_configured),
+    state: status.state || null,
+    error: status.error || null,
+    activation_url: status.activation_url || null,
+  };
+}
+
 async function main() {
   const claudeOauth = await checkClaudeCodeOAuth();
   const openaiOauth = await checkOpenAiCodexOAuth();
   const geminiCliOauth = await checkGeminiCliOAuth();
   const geminiOauth = await checkGeminiOAuth();
+  const geminiCodeAssistService = await checkGeminiCodeAssistService();
 
   const groq = await checkGroqAccounts();
   console.log(`[oauth-monitor] Groq 계정: ${groq.available_accounts}/${groq.total_accounts} 정상`);
@@ -1024,7 +1092,8 @@ async function main() {
       claudeOauth.healthy
         && openaiOauth.healthy
         && (geminiCliOauth.skipped || geminiCliOauth.healthy)
-        && (geminiOauth.skipped || geminiOauth.healthy),
+        && (geminiOauth.skipped || geminiOauth.healthy)
+        && (geminiCodeAssistService.skipped || geminiCodeAssistService.healthy),
     ),
     generated_at: new Date().toISOString(),
     claude_code_oauth: {
@@ -1085,6 +1154,16 @@ async function main() {
         : null,
       quota_project_configured: Boolean(geminiCliOauth.quota_project_configured),
       error: geminiCliOauth.error || null,
+    },
+    gemini_codeassist_service: {
+      healthy: Boolean(geminiCodeAssistService.healthy),
+      skipped: Boolean(geminiCodeAssistService.skipped),
+      required: Boolean(geminiCodeAssistService.required),
+      service: geminiCodeAssistService.service || CLOUD_AI_COMPANION_SERVICE,
+      project_id_configured: Boolean(geminiCodeAssistService.project_id_configured),
+      state: geminiCodeAssistService.state || null,
+      error: geminiCodeAssistService.error || null,
+      activation_url: geminiCodeAssistService.activation_url || null,
     },
     groq_pool: groq,
   }));

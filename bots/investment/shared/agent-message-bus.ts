@@ -300,6 +300,7 @@ export async function expireStaleAgentMessages(opts: {
   limit?: number;
   incidentKeyPrefix?: string;
   dryRun?: boolean;
+  safeOnly?: boolean;
 } = {}) {
   const staleHours = Math.max(1, Number(opts.staleHours || 24) || 24);
   const limit = Math.max(1, Math.min(500, Number(opts.limit || 100) || 100));
@@ -312,6 +313,9 @@ export async function expireStaleAgentMessages(opts: {
       params.push(`${incidentPrefix}%`);
       incidentFilter = `AND incident_key LIKE $${params.length}`;
     }
+    const safeOnlyFilter = opts.safeOnly === true
+      ? "AND LOWER(to_agent) NOT IN ('all', 'hermes')"
+      : '';
     const candidates = await db.query(
       `SELECT id, incident_key, from_agent, to_agent, message_type, payload, responded_at, created_at
        FROM investment.agent_messages
@@ -319,15 +323,16 @@ export async function expireStaleAgentMessages(opts: {
          AND message_type IN ('query', 'broadcast')
          AND created_at < NOW() - ($1::int * INTERVAL '1 hour')
          ${incidentFilter}
+         ${safeOnlyFilter}
        ORDER BY created_at ASC
        LIMIT $2`,
       params,
     );
     if (dryRun || candidates.length === 0) {
-      return { ok: true, dryRun, staleHours, candidates: candidates.length, expired: 0 };
+      return { ok: true, dryRun, staleHours, candidates: candidates.length, expired: 0, safeOnly: opts.safeOnly === true };
     }
     const ids = candidates.map((row) => Number(row.id)).filter((id) => Number.isFinite(id) && id > 0);
-    if (ids.length === 0) return { ok: true, dryRun, staleHours, candidates: candidates.length, expired: 0 };
+    if (ids.length === 0) return { ok: true, dryRun, staleHours, candidates: candidates.length, expired: 0, safeOnly: opts.safeOnly === true };
     const result = await db.run(
       `UPDATE investment.agent_messages
        SET responded_at = NOW(),
@@ -349,6 +354,7 @@ export async function expireStaleAgentMessages(opts: {
       staleHours,
       candidates: candidates.length,
       expired: Number(result.rowCount || 0),
+      safeOnly: opts.safeOnly === true,
     };
   } catch (error) {
     return {
@@ -357,6 +363,7 @@ export async function expireStaleAgentMessages(opts: {
       staleHours,
       candidates: 0,
       expired: 0,
+      safeOnly: opts.safeOnly === true,
       error: error instanceof Error ? error.message : String(error),
     };
   }

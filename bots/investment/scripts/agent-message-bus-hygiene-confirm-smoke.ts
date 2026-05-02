@@ -16,6 +16,12 @@ export async function runAgentMessageBusHygieneConfirmSmoke() {
      VALUES ($1,$2,$3,$4,$5::jsonb,NOW() - INTERVAL '30 hours')`,
     ['argos', 'sophia', incidentKey, 'query', JSON.stringify({ smoke: true })],
   );
+  await db.run(
+    `INSERT INTO investment.agent_messages
+       (from_agent, to_agent, incident_key, message_type, payload, created_at)
+     VALUES ($1,$2,$3,$4,$5::jsonb,NOW() - INTERVAL '30 hours')`,
+    ['argos', 'all', `${incidentPrefix}:broadcast`, 'broadcast', JSON.stringify({ smoke: true })],
+  );
 
   const blocked = await runAgentMessageBusHygiene({
     staleHours: 1,
@@ -44,6 +50,19 @@ export async function runAgentMessageBusHygieneConfirmSmoke() {
   });
   assert.equal(applied.ok, true);
   assert.ok(applied.action.expired >= 1);
+  assert.equal(applied.action.safeOnly, true);
+  const broadcastStillOpen = await db.get(
+    `SELECT responded_at FROM investment.agent_messages WHERE incident_key = $1 LIMIT 1`,
+    [`${incidentPrefix}:broadcast`],
+  );
+  assert.equal(broadcastStillOpen?.responded_at, null);
+  await db.run(
+    `UPDATE investment.agent_messages
+        SET responded_at = NOW(),
+            payload = COALESCE(payload, '{}'::jsonb) || $2::jsonb
+      WHERE incident_key = $1`,
+    [`${incidentPrefix}:broadcast`, JSON.stringify({ smokeCleanup: true })],
+  );
   return { ok: true, blocked: blocked.status, expired: applied.action.expired };
 }
 

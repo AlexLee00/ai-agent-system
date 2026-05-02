@@ -36,16 +36,19 @@ function resolveEligibility(candidate = {}) {
   if (candidate?.resolutionClass) {
     const blockers = [];
     const recoveryText = String(candidate.identifiers?.recoveryErrorCode || candidate.identifiers?.recoveryError || '');
-    if (candidate.resolutionClass !== 'manual_ack_required') {
+    const lookupOnly = candidate.resolutionClass === 'exchange_lookup_retry';
+    if (candidate.resolutionClass !== 'manual_ack_required' && !lookupOnly) {
       blockers.push(`resolution_class_not_ackable:${candidate.resolutionClass || 'unknown'}`);
     }
-    if (!recoveryText.includes('not_found')) blockers.push('recovery_not_not_found');
+    if (!lookupOnly && !recoveryText.includes('not_found')) blockers.push('recovery_not_not_found');
     if (!candidate.identifiers?.clientOrderId) blockers.push('client_order_id_missing');
     return {
       ok: blockers.length === 0,
       status: blockers.length === 0 ? 'reconcile_ack_eligible' : 'reconcile_ack_blocked',
       blockers,
       classified: candidate,
+      lookupOnly,
+      ackable: !lookupOnly,
     };
   }
   return evaluateReconcileAckEligibility(candidate);
@@ -134,12 +137,15 @@ export async function verifyAckCandidateAgainstExchange(candidate = {}, {
     };
   } catch (error) {
     const status = classifyLookupError(error);
-    const readyToAck = status === 'order_absent_confirmed';
+    const readyToAck = status === 'order_absent_confirmed' && eligibility.lookupOnly !== true;
+    const finalStatus = status === 'order_absent_confirmed' && eligibility.lookupOnly === true
+      ? 'exchange_lookup_absent_manual_decision_required'
+      : status;
     const evidence = buildAckPreflightEvidence({
       candidate,
       eligibility,
       lookup: {
-        status,
+        status: finalStatus,
         lookupErrorCode: error?.code || null,
         orderFound: false,
       },
@@ -147,10 +153,10 @@ export async function verifyAckCandidateAgainstExchange(candidate = {}, {
     });
     return {
       ...base,
-      ok: readyToAck,
-      status,
+      ok: readyToAck || finalStatus === 'exchange_lookup_absent_manual_decision_required',
+      status: finalStatus,
       readyToAck,
-      blockers: readyToAck ? [] : [status],
+      blockers: readyToAck ? [] : finalStatus === 'exchange_lookup_absent_manual_decision_required' ? ['operator_decision_required'] : [finalStatus],
       evidence,
       evidenceHash: evidence.evidenceHash,
       evidenceExpiresAt: evidence.expiresAt,
@@ -166,9 +172,14 @@ export async function buildLunaReconcileAckPreflight({
   limit = 100,
   liveLookup = false,
   fetchOrder = fetchBinanceOrder,
+  signalId = null,
 } = {}) {
   const report = await buildLunaReconcileBlockerReport({ exchange, hours, limit });
-  const candidates = (report.blockers || []).filter((row) => row.resolutionClass === 'manual_ack_required');
+  const candidates = (report.blockers || []).filter((row) => {
+    if (signalId && String(row.id) !== String(signalId)) return false;
+    if (row.resolutionClass === 'manual_ack_required') return true;
+    return Boolean(signalId) && row.resolutionClass === 'exchange_lookup_retry';
+  });
   const checks = [];
   for (const candidate of candidates) {
     checks.push(await verifyAckCandidateAgainstExchange(candidate, { fetchOrder, liveLookup }));
@@ -176,6 +187,7 @@ export async function buildLunaReconcileAckPreflight({
   const unsafeCount = checks.filter((item) => item.status === 'order_found_block_ack' || item.status === 'lookup_ambiguous_block_ack').length;
   const lookupFailedCount = checks.filter((item) => item.status === 'lookup_failed_block_ack').length;
   const readyToAckCount = checks.filter((item) => item.readyToAck === true).length;
+  const lookupOnlyCount = checks.filter((item) => item.eligibility?.lookupOnly === true).length;
   return {
     ok: unsafeCount === 0 && lookupFailedCount === 0,
     checkedAt: new Date().toISOString(),
@@ -192,6 +204,7 @@ export async function buildLunaReconcileAckPreflight({
       readyToAck: readyToAckCount,
       unsafe: unsafeCount,
       lookupFailed: lookupFailedCount,
+      lookupOnly: lookupOnlyCount,
     },
     evidence: checks
       .filter((item) => item.readyToAck)
@@ -278,7 +291,23 @@ export async function runLunaReconcileAckPreflightSmoke() {
     },
   }, { liveLookup: false });
   assert.equal(skipped.status, 'ack_preflight_lookup_skipped');
-  return { ok: true, absent, found, skipped };
+  const lookupOnlyAbsent = await verifyAckCandidateAgainstExchange({
+    id: 'sig-4',
+    symbol: 'MEGA/USDT',
+    action: 'SELL',
+    resolutionClass: 'exchange_lookup_retry',
+    identifiers: { clientOrderId: 'cid-mega' },
+  }, {
+    fetchOrder: async () => {
+      const error = new Error('binance_order_lookup_not_found:MEGA/USDT:cid-mega');
+      error.code = 'binance_order_lookup_not_found';
+      throw error;
+    },
+  });
+  assert.equal(lookupOnlyAbsent.status, 'exchange_lookup_absent_manual_decision_required');
+  assert.equal(lookupOnlyAbsent.readyToAck, false);
+  assert.equal(lookupOnlyAbsent.eligibility.lookupOnly, true);
+  return { ok: true, absent, found, skipped, lookupOnlyAbsent };
 }
 
 async function main() {
@@ -289,9 +318,10 @@ async function main() {
   const exchange = argValue('--exchange', 'binance');
   const hours = Number(argValue('--hours', 24));
   const limit = Number(argValue('--limit', 100));
+  const signalId = argValue('--signal-id', null);
   const report = smoke
     ? await runLunaReconcileAckPreflightSmoke()
-    : await buildLunaReconcileAckPreflight({ exchange, hours, limit, liveLookup });
+    : await buildLunaReconcileAckPreflight({ exchange, hours, limit, liveLookup, signalId });
   if (telegram && !smoke) await publishLunaReconcileAckPreflight(report);
   if (json) console.log(JSON.stringify(report, null, 2));
   else console.log(smoke ? 'luna reconcile ack preflight smoke ok' : renderLunaReconcileAckPreflight(report));

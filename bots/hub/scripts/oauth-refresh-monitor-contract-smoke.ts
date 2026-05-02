@@ -43,6 +43,9 @@ assert.ok(monitorSource.includes('HUB_GEMINI_CLI_OAUTH_LIVE_PROBE_ON_EXPIRY'), '
 assert.ok(monitorSource.includes('runGeminiCliLiveRefreshProbeWithReimport'), 'Gemini CLI live refresh probe must reimport refreshed CLI credentials into token-store');
 assert.ok(monitorSource.includes('post_probe_reimport_ok'), 'Gemini CLI monitor result must expose post-probe reimport status');
 assert.ok(monitorSource.includes('local_credential_needs_refresh'), 'Gemini CLI OAuth monitor must distinguish stale local access token from live route failure');
+assert.ok(monitorSource.includes('checkGeminiCodeAssistServiceStatus'), 'OAuth monitor must verify Gemini Code Assist service status');
+assert.ok(monitorSource.includes('HUB_OAUTH_MONITOR_REQUIRE_GEMINI_CODEASSIST_SERVICE'), 'Gemini Code Assist service readiness must be runtime-gated');
+assert.ok(monitorSource.includes('gemini_codeassist_service'), 'OAuth monitor report must expose Gemini Code Assist service readiness');
 assert.ok(monitorSource.includes('postAlarm'), 'OAuth monitor must alarm on refresh/unhealthy failures');
 assert.ok(readinessSource.includes('expires_in_hours'), 'team readiness report must include token expiry windows');
 assert.ok(readinessSource.includes('needs_refresh'), 'team readiness report must include refresh-needed flags');

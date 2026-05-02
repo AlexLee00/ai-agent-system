@@ -5,7 +5,7 @@ import { expireStaleAgentMessages, getMessageBusHygiene } from '../shared/agent-
 import { publishAlert } from '../shared/alert-publisher.ts';
 import * as db from '../shared/db.ts';
 import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
-import { buildAgentMessageBusHygienePlan } from '../shared/luna-operational-closure-pack.ts';
+import { buildAgentMessageBusHygienePlan, classifyAgentMessageBusHygiene } from '../shared/luna-operational-closure-pack.ts';
 
 function parseArgs(argv = process.argv.slice(2)) {
   return {
@@ -47,11 +47,22 @@ export async function runAgentMessageBusHygiene(args = {}) {
     limit,
     incidentKeyPrefix: args.incidentKeyPrefix || '',
     dryRun: args.apply !== true,
+    safeOnly: true,
   });
   const after = args.apply === true ? await getMessageBusHygiene({ staleHours, limit }) : before;
+  const classification = classifyAgentMessageBusHygiene({ ok: before.ok, before, action });
+  const status = action.expired > 0
+    ? 'agent_message_bus_stale_expired'
+    : Number(classification.reviewRequired || 0) > 0
+      ? 'agent_message_bus_review_required'
+      : Number(classification.blocked || 0) > 0
+        ? 'agent_message_bus_hygiene_blocked'
+        : Number(before.staleCount || 0) > 0
+          ? 'agent_message_bus_safe_expire_available'
+          : 'agent_message_bus_hygiene_clear';
   const result = {
     ok: before.ok !== false && action.ok !== false,
-    status: action.expired > 0 ? 'agent_message_bus_stale_expired' : 'agent_message_bus_hygiene_clear',
+    status,
     staleHours,
     before,
     action,
