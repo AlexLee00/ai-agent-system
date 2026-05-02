@@ -26,7 +26,7 @@ const pgPool = require('../../../packages/core/lib/pg-pool');
 const { postAlarm } = require('../../../packages/core/lib/hub-alarm-client');
 const kst = require('../../../packages/core/lib/kst');
 
-const MAX_EVALUATIONS_PER_RUN = 40;
+const MAX_EVALUATIONS_PER_RUN = _readPositiveIntEnv('DARWIN_MAX_EVALUATIONS_PER_RUN', 40, { min: 1, max: 100 });
 const EVALUATION_CONCURRENCY = _readPositiveIntEnv('DARWIN_EVALUATION_CONCURRENCY', 4, { min: 1, max: 8 });
 const DURATION_WARNING_THRESHOLD_SEC = 300;
 const ARXIV_DOMAIN_CONCURRENCY = _readPositiveIntEnv('DARWIN_ARXIV_DOMAIN_CONCURRENCY', 1, { min: 1, max: 3 });
@@ -100,6 +100,7 @@ interface WeeklyResearchRow {
 }
 
 interface ScanResult {
+  dryRun?: boolean;
   totalRaw: number;
   total: number;
   evaluated: number;
@@ -120,6 +121,12 @@ interface ScanResult {
     score: number;
     hired: boolean;
   }>;
+}
+
+interface RunOptions {
+  dryRun?: boolean;
+  maxDomains?: number;
+  maxEvaluations?: number;
 }
 
 function toErrorMessage(err: unknown): string {
@@ -634,18 +641,49 @@ async function _generateWeeklyReport(): Promise<{ report: string; keywordEvoluti
   return { report, keywordEvolutionCount, tasksRegistered };
 }
 
-async function run(): Promise<ScanResult> {
+function _parseCliArgs(argv: string[]): RunOptions {
+  const options: RunOptions = {};
+  for (let index = 2; index < argv.length; index += 1) {
+    const arg = argv[index];
+    if (arg === '--dry-run') options.dryRun = true;
+    else if (arg === '--max-domains') {
+      const value = Number.parseInt(String(argv[index + 1] || ''), 10);
+      if (Number.isFinite(value) && value > 0) options.maxDomains = value;
+      index += 1;
+    } else if (arg.startsWith('--max-domains=')) {
+      const value = Number.parseInt(arg.split('=').slice(1).join('='), 10);
+      if (Number.isFinite(value) && value > 0) options.maxDomains = value;
+    } else if (arg === '--max-evaluations') {
+      const value = Number.parseInt(String(argv[index + 1] || ''), 10);
+      if (Number.isFinite(value) && value > 0) options.maxEvaluations = value;
+      index += 1;
+    } else if (arg.startsWith('--max-evaluations=')) {
+      const value = Number.parseInt(arg.split('=').slice(1).join('='), 10);
+      if (Number.isFinite(value) && value > 0) options.maxEvaluations = value;
+    }
+  }
+  return options;
+}
+
+async function run(options: RunOptions = {}): Promise<ScanResult> {
   const startTime = Date.now();
+  const dryRun = Boolean(options.dryRun || process.env.DARWIN_RESEARCH_DRY_RUN === '1');
+  const maxEvaluations = Math.max(1, Math.min(Number(options.maxEvaluations || MAX_EVALUATIONS_PER_RUN), MAX_EVALUATIONS_PER_RUN));
   console.log(`[research-scanner] 시작: ${kst.datetimeStr()}`);
-  await rag.initSchema();
+  if (!dryRun) {
+    await rag.initSchema();
+  }
 
   const searchers = await _selectSearchers();
-  const allPapers = await _collectPapers(searchers);
+  const activeSearchers = Number.isFinite(Number(options.maxDomains))
+    ? searchers.slice(0, Math.max(1, Number(options.maxDomains)))
+    : searchers;
+  const allPapers = await _collectPapers(activeSearchers);
   const unique = _dedupePapers(allPapers);
   console.log(`[research-scanner] 중복 제거 후: ${unique.length}건 (전체 ${allPapers.length}건)`);
 
   const evaluated = await _mapWithConcurrency(
-    unique.slice(0, MAX_EVALUATIONS_PER_RUN),
+    unique.slice(0, maxEvaluations),
     EVALUATION_CONCURRENCY,
     async (paper) => {
       const evaluation = await evaluator.evaluatePaper(paper);
@@ -654,29 +692,40 @@ async function run(): Promise<ScanResult> {
   );
   const evaluationFailures = evaluated.filter((paper) => paper.reason === '평가 실패').length;
 
-  const enrichment = await _enrichWithGitHub(evaluated);
-  const { storedCount, experienceCount } = await _storeEvaluatedPapers(evaluated);
-  const { highRelevanceCount, alarmSent } = await _alertHighRelevance(unique.length, evaluated, storedCount, startTime);
+  const enrichment = dryRun ? { githubEnriched: 0, tasksRegistered: 0 } : await _enrichWithGitHub(evaluated);
+  const { storedCount, experienceCount } = dryRun
+    ? { storedCount: 0, experienceCount: 0 }
+    : await _storeEvaluatedPapers(evaluated);
+  const { highRelevanceCount, alarmSent } = dryRun
+    ? {
+        highRelevanceCount: evaluated.filter((paper) => Number(paper.relevance_score || 0) >= 7).length,
+        alarmSent: false,
+      }
+    : await _alertHighRelevance(unique.length, evaluated, storedCount, startTime);
   const highRelevance = evaluated.filter((paper) => Number(paper.relevance_score || 0) >= 7);
   const proposalCandidates = [...highRelevance]
     .sort((a, b) => Number(b.relevance_score || 0) - Number(a.relevance_score || 0))
     .slice(0, MAX_DAILY_PROPOSALS);
   const proposalResults = [];
-  for (const paper of proposalCandidates) {
-    try {
-      const applied = await applicator.apply(paper);
-      proposalResults.push({ arxiv_id: paper.arxiv_id, ...applied });
-      await _sleep(3_000);
-    } catch (err) {
-      console.warn(`[research-scanner] 적용 파이프라인 실패 (${paper.arxiv_id}): ${toErrorMessage(err)}`);
+  if (!dryRun) {
+    for (const paper of proposalCandidates) {
+      try {
+        const applied = await applicator.apply(paper);
+        proposalResults.push({ arxiv_id: paper.arxiv_id, ...applied });
+        await _sleep(3_000);
+      } catch (err) {
+        console.warn(`[research-scanner] 적용 파이프라인 실패 (${paper.arxiv_id}): ${toErrorMessage(err)}`);
+      }
     }
+  } else if (proposalCandidates.length > 0) {
+    console.log(`[research-scanner] dry-run: 제안 적용 ${proposalCandidates.length}건 스킵`);
   }
   const proposalCount = proposalResults.filter((item: any) => item.proposal).length;
   const verifiedCount = proposalResults.filter((item: any) => item.verification?.passed).length;
   let keywordEvolutionCount = 0;
   let weeklyTasksRegistered = 0;
 
-  if (new Date().getDay() === 0) {
+  if (!dryRun && new Date().getDay() === 0) {
     const weekly = await _generateWeeklyReport();
     keywordEvolutionCount = Number(weekly?.keywordEvolutionCount || 0);
     weeklyTasksRegistered = Number(weekly?.tasksRegistered || 0);
@@ -687,6 +736,7 @@ async function run(): Promise<ScanResult> {
     console.warn(`[research-scanner] 실행 시간 경고: ${durationSec}초 (기준 ${DURATION_WARNING_THRESHOLD_SEC}초 초과)`);
   }
   const result = {
+    dryRun,
     totalRaw: allPapers.length,
     total: unique.length,
     evaluated: evaluated.length,
@@ -701,12 +751,14 @@ async function run(): Promise<ScanResult> {
     keywordEvolutionCount,
     proposals: proposalCount,
     verified: verifiedCount,
-    searchers: searchers.map(({ name, domain, score, hired }) => ({ name, domain, score, hired })),
+    searchers: activeSearchers.map(({ name, domain, score, hired }) => ({ name, domain, score, hired })),
   };
 
   const metrics = monitor.collectMetrics(result, Date.now() - startTime);
-  await monitor.storeMetrics(metrics);
-  await monitor.checkAnomalies(metrics);
+  if (!dryRun) {
+    await monitor.storeMetrics(metrics);
+    await monitor.checkAnomalies(metrics);
+  }
   console.log(`[research-scanner] 메트릭: ${JSON.stringify(metrics)}`);
   console.log(`[research-scanner] 완료: ${storedCount}건 저장, ${experienceCount}건 경험 저장, GitHub 분석 ${result.githubAnalyzed}건, 과제 등록 ${result.tasksRegistered}건, ${highRelevanceCount}건 후보 알림, 제안 ${proposalCount}건/검증통과 ${verifiedCount}건, 전달=${alarmSent ? '성공' : '실패/없음'}, ${durationSec}초`);
 
@@ -719,7 +771,7 @@ module.exports = {
 };
 
 if (require.main === module) {
-  run()
+  run(_parseCliArgs(process.argv))
     .then((result) => {
       console.log('결과:', JSON.stringify(result));
       if (result.total === 0) {
