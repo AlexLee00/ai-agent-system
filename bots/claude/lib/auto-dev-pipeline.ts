@@ -18,6 +18,11 @@ const { execFileSync, execSync, spawn } = require('child_process');
 
 const env = require('../../../packages/core/lib/env');
 const { postAlarm } = require('../../../packages/core/lib/hub-alarm-client');
+const {
+  listAutoDevManifestEntries,
+  markAutoDevManifestState,
+  syncAutoDevManifest,
+} = require('../../../packages/core/lib/auto-dev-manifest.ts');
 const { mergeTrustedEnvWithUntrustedPatch } = require('../../../packages/core/lib/runtime-env-policy');
 const teamBus = require('./team-bus');
 const runtimePaths = require('./runtime-paths.js');
@@ -1157,11 +1162,9 @@ function saveState(state) {
 
 function listAutoDevDocuments() {
   ensureDir(AUTO_DEV_DIR);
-  return fs.readdirSync(AUTO_DEV_DIR)
-    .filter(name => name.endsWith('.md'))
-    .filter(name => !name.startsWith('.'))
-    .filter(name => !name.endsWith('.done.md'))
-    .map(name => path.join(AUTO_DEV_DIR, name))
+  syncAutoDevManifest(AUTO_DEV_DIR);
+  return listAutoDevManifestEntries(AUTO_DEV_DIR, ['inbox', 'claimed', 'active', 'failed'])
+    .map(relPath => path.join(ROOT, relPath))
     .map(filePath => {
       try {
         const stat = fs.statSync(filePath);
@@ -2453,6 +2456,10 @@ async function markAgentError(error) {
 async function processAutoDevDocument(filePath, options = {}) {
   const relPath = relativeToRoot(filePath);
   if (!fs.existsSync(filePath)) {
+    markAutoDevManifestState(AUTO_DEV_DIR, relPath, 'archived_missing', {
+      archivedAt: nowIso(),
+      archivedBy: 'auto-dev-pipeline',
+    });
     return {
       ok: true,
       skipped: true,
@@ -2467,11 +2474,20 @@ async function processAutoDevDocument(filePath, options = {}) {
     };
   }
   const content = fs.readFileSync(filePath, 'utf8');
+  markAutoDevManifestState(AUTO_DEV_DIR, relPath, 'claimed', {
+    claimedAt: nowIso(),
+    claimedBy: 'auto-dev-pipeline',
+  });
   const contentHash = hashContent(content);
   const id = makeJobId(relPath, contentHash);
   const state = loadState();
 
   if (!options.force && state.jobs[id]?.status === 'completed') {
+    markAutoDevManifestState(AUTO_DEV_DIR, relPath, 'archived', {
+      archivedAt: nowIso(),
+      archivedBy: 'auto-dev-pipeline',
+      reason: 'already_completed',
+    });
     return { ok: true, skipped: true, reason: 'already_completed', job: state.jobs[id] };
   }
 
@@ -2547,6 +2563,11 @@ async function processAutoDevDocument(filePath, options = {}) {
     await setAgentStatus('analysis', job);
 
     if (policy.decision !== 'allow') {
+      markAutoDevManifestState(AUTO_DEV_DIR, relPath, 'archived', {
+        archivedAt: nowIso(),
+        archivedBy: 'auto-dev-pipeline',
+        reason: policy.decision,
+      });
       const blockedJob = updateJobState(job, policy.decision, {
         contentHash,
         reason: policy.reason,
@@ -2821,6 +2842,12 @@ async function processAutoDevDocument(filePath, options = {}) {
       },
       content,
     );
+    markAutoDevManifestState(AUTO_DEV_DIR, relPath, 'archived', {
+      archivedAt: nowIso(),
+      archivedBy: 'auto-dev-pipeline',
+      reason: 'completed',
+      archivedPath: archivedPath || null,
+    });
     await markAgentDone();
     return {
       ok: true,
@@ -2890,6 +2917,12 @@ async function processAutoDevDocument(filePath, options = {}) {
       },
       content,
     );
+    markAutoDevManifestState(AUTO_DEV_DIR, relPath, 'active', {
+      updatedAt: nowIso(),
+      failedAt: nowIso(),
+      failureReason: error.message,
+      archivedPath: archivedPath || null,
+    });
     await markAgentError(error.message);
     return { ok: false, error: error.message, job: failedJob };
   } finally {

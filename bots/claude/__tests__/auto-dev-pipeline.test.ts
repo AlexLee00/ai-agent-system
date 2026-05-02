@@ -14,6 +14,7 @@ const fs = require('fs');
 const crypto = require('crypto');
 
 const PIPELINE_PATH = path.resolve(__dirname, '../lib/auto-dev-pipeline.ts');
+const AUTO_DEV_MANIFEST_PATH = path.resolve(__dirname, '../../../packages/core/lib/auto-dev-manifest.ts');
 const AUTO_DEV_PLIST_PATH = path.resolve(__dirname, '../launchd/ai.claude.auto-dev.plist');
 const AUTO_DEV_SHADOW_PLIST_PATH = path.resolve(__dirname, '../launchd/ai.claude.auto-dev.shadow.plist');
 const AUTO_DEV_AUTONOMOUS_PLIST_PATH = path.resolve(__dirname, '../launchd/ai.claude.auto-dev.autonomous.plist');
@@ -120,6 +121,7 @@ async function withMocks(mocks, fn, env = {}) {
 
   try {
     delete require.cache[PIPELINE_PATH];
+    delete require.cache[AUTO_DEV_MANIFEST_PATH];
     return await fn(require(PIPELINE_PATH));
   } finally {
     Module._load = original;
@@ -128,11 +130,13 @@ async function withMocks(mocks, fn, env = {}) {
       else process.env[key] = originalEnv[key];
     }
     delete require.cache[PIPELINE_PATH];
+    delete require.cache[AUTO_DEV_MANIFEST_PATH];
   }
 }
 
 function testEnv(tmpRoot, extra = {}) {
   return {
+    PROJECT_ROOT: tmpRoot,
     CLAUDE_AUTO_DEV_STATE_FILE: path.join(tmpRoot, 'auto-dev-state.json'),
     CLAUDE_AUTO_DEV_RUN_HARD_TESTS: 'false',
     CLAUDE_AUTO_DEV_COMPAT_MODE: 'true',
@@ -198,6 +202,39 @@ async function test_listAutoDevDocuments_uses_auto_dev_only() {
 
   fs.rmSync(tmpRoot, { recursive: true, force: true });
   console.log('✅ auto-dev: scans actionable docs/auto_dev development tasks only');
+}
+
+async function test_listAutoDevDocuments_respects_manifest_states() {
+  const tmpRoot = makeTempRoot();
+  const autoDir = path.join(tmpRoot, 'docs', 'auto_dev');
+  fs.mkdirSync(autoDir, { recursive: true });
+  fs.writeFileSync(path.join(autoDir, 'ALARM_INCIDENT_active.md'), withRequiredMetadata('# Active'), 'utf8');
+  fs.writeFileSync(path.join(autoDir, 'ALARM_INCIDENT_archived.md'), withRequiredMetadata('# Archived'), 'utf8');
+  fs.writeFileSync(path.join(autoDir, '.auto-dev-manifest.json'), JSON.stringify({
+    version: 1,
+    updatedAt: new Date().toISOString(),
+    entries: {
+      'docs/auto_dev/ALARM_INCIDENT_active.md': {
+        relPath: 'docs/auto_dev/ALARM_INCIDENT_active.md',
+        state: 'claimed',
+        createdAt: new Date().toISOString(),
+      },
+      'docs/auto_dev/ALARM_INCIDENT_archived.md': {
+        relPath: 'docs/auto_dev/ALARM_INCIDENT_archived.md',
+        state: 'archived',
+        createdAt: new Date().toISOString(),
+      },
+    },
+  }, null, 2), 'utf8');
+
+  const { mocks } = makeMocks(tmpRoot);
+  await withMocks(mocks, async pipeline => {
+    const docs = pipeline.listAutoDevDocuments().map(file => path.relative(tmpRoot, file).replace(/\\/g, '/'));
+    assert.deepStrictEqual(docs, ['docs/auto_dev/ALARM_INCIDENT_active.md']);
+  }, testEnv(tmpRoot));
+
+  fs.rmSync(tmpRoot, { recursive: true, force: true });
+  console.log('✅ auto-dev: manifest states gate document pickup');
 }
 
 async function test_missing_auto_dev_document_is_skipped() {
@@ -1812,6 +1849,7 @@ async function main() {
   const tests = [
     test_stages_define_required_lifecycle,
     test_listAutoDevDocuments_uses_auto_dev_only,
+    test_listAutoDevDocuments_respects_manifest_states,
     test_missing_auto_dev_document_is_skipped,
     test_success_only_blog_engagement_alarm_is_skipped,
     test_reservation_booking_alert_is_skipped,

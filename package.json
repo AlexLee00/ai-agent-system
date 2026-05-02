@@ -21,6 +21,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "typecheck:strict": "tsc -p tsconfig.strict.json --noEmit",
     "typecheck:darwin": "bash bots/darwin/scripts/typecheck-darwin-ts.sh",
+    "darwin:research-canary": "tsx bots/darwin/scripts/research-scanner-canary.ts --json",
     "security:scan": "tsx bots/hub/scripts/secret-leak-smoke.ts",
     "security:scan-history": "tsx scripts/security/secret-history-scan.ts",
     "security:post-rewrite-doctor": "tsx scripts/security/post-rewrite-doctor.ts",

@@ -5,6 +5,7 @@ import fs from 'fs';
 import path from 'path';
 import { spawnSync } from 'child_process';
 const { readGeminiCliCredentials } = require('../lib/oauth/gemini-cli-credentials.ts');
+const { classifyGeminiCliLiveError } = require('../lib/oauth/gemini-cli-live-error.ts');
 const {
   geminiCliQuotaProjectRequired,
   geminiQuotaProjectStatus,
@@ -96,6 +97,36 @@ async function runLiveProbe() {
   });
 }
 
+function runLiveFailureDiagnostic(command: string) {
+  const model = String(process.env.GEMINI_CLI_READINESS_MODEL || 'gemini-cli-oauth/gemini-2.5-flash')
+    .replace(/^gemini-cli-oauth\//, '')
+    .replace(/^google-gemini-cli\//, '')
+    .replace(/^gemini\//, '');
+  const result = spawnSync(command, [
+    '--skip-trust',
+    '--output-format',
+    'json',
+    '--model',
+    model || 'gemini-2.5-flash',
+    '--prompt',
+    'Reply exactly: gemini cli ok',
+  ], {
+    encoding: 'utf8',
+    timeout: Number(process.env.GEMINI_CLI_READINESS_TIMEOUT_MS || 30_000),
+    maxBuffer: 4 * 1024 * 1024,
+  });
+  const combined = [
+    result.error?.message,
+    result.stderr,
+    result.stdout,
+  ].filter(Boolean).join('\n');
+  return {
+    status: result.status,
+    signal: result.signal || null,
+    classification: classifyGeminiCliLiveError(combined),
+  };
+}
+
 async function main() {
   const args = parseArgs(process.argv);
   const command = checkCommand(geminiCommand());
@@ -136,12 +167,28 @@ async function main() {
   });
   if (liveRequested) {
     const result = await runLiveProbe();
+    const liveError = result.error || null;
+    let liveErrorClassification = liveError ? classifyGeminiCliLiveError(liveError) : null;
+    let diagnostic = null;
+    if (liveErrorClassification?.kind === 'unknown') {
+      diagnostic = runLiveFailureDiagnostic(geminiCommand());
+      if (diagnostic.classification?.kind && diagnostic.classification.kind !== 'unknown') {
+        liveErrorClassification = diagnostic.classification;
+      }
+    }
     live = {
       ok: Boolean(result.ok),
       provider: result.provider || null,
       selected_route: result.selected_route || null,
       duration_ms: Number(result.durationMs || 0),
-      error: result.error || null,
+      error: liveError,
+      error_kind: liveErrorClassification?.kind || null,
+      service: liveErrorClassification?.service || null,
+      activation_url: liveErrorClassification?.activationUrl || null,
+      operator_action: liveErrorClassification?.operatorAction || null,
+      diagnostic_checked: Boolean(diagnostic),
+      diagnostic_status: diagnostic?.status ?? null,
+      diagnostic_signal: diagnostic?.signal || null,
       response_preview: String(result.result || result.text || '').slice(0, 80),
     };
   }
@@ -180,6 +227,8 @@ async function main() {
       ...(!command.ok ? ['Install Gemini CLI: npm install -g @google/gemini-cli or brew install gemini-cli'] : []),
       ...(!credentials.ok ? ['Run Gemini CLI login so ~/.gemini/oauth_creds.json exists'] : []),
       ...(quotaPolicy.status === 'required_missing' ? ['Set GEMINI_OAUTH_PROJECT_ID or GOOGLE_CLOUD_PROJECT'] : []),
+      ...(live?.activation_url ? [`Enable required Google API: ${live.activation_url}`] : []),
+      ...(live?.operator_action ? [live.operator_action] : []),
       ...(liveRequested && live && !live.ok ? ['Check Gemini CLI auth/session by running a tiny gemini CLI prompt manually'] : []),
     ],
   };

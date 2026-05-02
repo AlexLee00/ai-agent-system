@@ -4,6 +4,7 @@ const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
 const env = require('../../../../packages/core/lib/env');
+const { upsertAutoDevManifestEntry } = require('../../../../packages/core/lib/auto-dev-manifest.ts');
 
 const DEFAULT_AUTO_DEV_DIR = path.join(env.PROJECT_ROOT, 'docs', 'auto_dev');
 
@@ -213,12 +214,14 @@ export async function ensureAlarmAutoDevDocument(input: {
 
   await fs.promises.mkdir(dir, { recursive: true });
   if (fs.existsSync(filePath)) {
+    upsertAutoDevManifestEntry(dir, relPath, { state: 'inbox', source: 'hub_alarm_incident_existing' });
     return { ok: true, created: false, path: relPath };
   }
   const content = input.consensus
     ? buildAlarmAutoDevDocumentWithConsensus(input, input.consensus)
     : buildAlarmAutoDevDocument(input);
   await fs.promises.writeFile(filePath, content, 'utf8');
+  upsertAutoDevManifestEntry(dir, relPath, { state: 'inbox', source: 'hub_alarm_incident_create' });
   return { ok: true, created: true, path: relPath };
 }
 
