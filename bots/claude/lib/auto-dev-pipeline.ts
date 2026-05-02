@@ -1162,9 +1162,19 @@ function listAutoDevDocuments() {
     .filter(name => !name.startsWith('.'))
     .filter(name => !name.endsWith('.done.md'))
     .map(name => path.join(AUTO_DEV_DIR, name))
-    .filter(filePath => fs.statSync(filePath).isFile())
-    .filter(isActionableAutoDevDocument)
-    .sort((a, b) => fs.statSync(a).mtimeMs - fs.statSync(b).mtimeMs);
+    .map(filePath => {
+      try {
+        const stat = fs.statSync(filePath);
+        return stat.isFile() ? { filePath, mtimeMs: stat.mtimeMs } : null;
+      } catch {
+        return null;
+      }
+    })
+    .filter(Boolean)
+    .map(entry => entry)
+    .filter(entry => isActionableAutoDevDocument(entry.filePath))
+    .sort((a, b) => a.mtimeMs - b.mtimeMs)
+    .map(entry => entry.filePath);
 }
 
 function readAutoDevDocumentMetadata(filePath) {

@@ -92,19 +92,30 @@ async function checkEndpoint(bot: BotHealth): Promise<{ name: string; label: str
 function checkLaunchdGroup(bot: BotLaunchdHealth): { name: string; label: string; ok: boolean; detail?: string } {
   try {
     const status = getLaunchctlStatus(bot.labels);
-    const failing = bot.labels.filter((label) => {
-      const svc = status?.[label];
-      return !svc || svc.loaded === false || svc.running !== true;
-    });
-    if (failing.length === 0) {
+    const failingDetails = bot.labels
+      .map((label) => {
+        const svc = status?.[label];
+        if (!svc) return `${label.replace(/^ai\./, '')}: launchctl unknown`;
+        if (svc.loaded === false) return `${label.replace(/^ai\./, '')}: launchd unloaded`;
+        if (svc.running === true) return null;
+        const state = String(svc.state || '').trim();
+        if (state && state !== 'not running') {
+          return `${label.replace(/^ai\./, '')}: ${state}`;
+        }
+        if (Number.isFinite(svc.exitCode) && Number(svc.exitCode) !== 0) {
+          return `${label.replace(/^ai\./, '')}: exited(${svc.exitCode})`;
+        }
+        return `${label.replace(/^ai\./, '')}: not running`;
+      })
+      .filter(Boolean);
+    if (failingDetails.length === 0) {
       return { name: bot.name, label: bot.label, ok: true, detail: 'launchd ok' };
     }
-    const short = failing.map((label) => label.replace(/^ai\./, ''));
     return {
       name: bot.name,
       label: bot.label,
       ok: false,
-      detail: `launchd missing: ${short.join(', ')}`,
+      detail: failingDetails.join(', '),
     };
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);

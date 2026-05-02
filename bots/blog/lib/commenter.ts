@@ -541,6 +541,12 @@ function isRecoverableReplyFailure(row) {
     || errorMessage === 'reply_submit_not_confirmed'
     || errorMessage.startsWith('reply_submit_not_confirmed:')
     || errorMessage === 'reply_ui_unavailable'
+    || errorMessage.startsWith('reply_process_timeout:')
+    || errorMessage.includes('hub_llm_call_failed:')
+    || errorMessage.includes('fetch failed')
+    || errorMessage.includes('Claude Code timeout')
+    || errorMessage.includes('provider_cooldown')
+    || errorMessage.includes('429')
     || errorMessage === 'comment_panel_not_mounted'
     || errorMessage.startsWith('comment_panel_not_mounted:')
   );

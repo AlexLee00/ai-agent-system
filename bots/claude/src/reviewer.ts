@@ -20,6 +20,7 @@
 
 const path    = require('path');
 const { execSync } = require('child_process');
+const fs      = require('fs');
 
 const skills       = require('../../../packages/core/lib/skills');
 const { postAlarm } = require('../../../packages/core/lib/hub-alarm-client');
@@ -219,30 +220,57 @@ function formatReport(result, options = {}) {
   return lines.join('\n');
 }
 
+function findNearestTsconfig(filePath, rootDir) {
+  let current = path.dirname(filePath);
+  const normalizedRoot = path.resolve(rootDir);
+  while (current.startsWith(normalizedRoot)) {
+    const candidate = path.join(current, 'tsconfig.json');
+    if (fs.existsSync(candidate)) return candidate;
+    const parent = path.dirname(current);
+    if (parent === current) break;
+    current = parent;
+  }
+  return null;
+}
+
 /**
  * TypeScript 타입 체크
  */
-function runTypeScriptCheck(options = {}) {
+function runTypeScriptCheck(files = [], options = {}) {
   const rootDir = resolveRootDir(options);
   const issues = [];
-  try {
-    safeExec('npx tsc --noEmit --strict 2>&1', { timeout: 60000, rootDir });
-  } catch (e) {
-    const output = String(e.stdout || e.stderr || e.message || '');
-    const errorLines = output.split('\n')
-      .filter(l => l.includes('error TS'))
-      .slice(0, 20);
-    errorLines.forEach(line => {
-      const m = line.match(/^(.+)\((\d+),\d+\):.+error (TS\d+): (.+)$/);
-      if (m) {
-        issues.push({
-          file: path.join(rootDir, m[1]),
-          line: Number(m[2]),
-          severity: 'HIGH',
-          desc: `${m[3]}: ${m[4].slice(0, 100)}`,
-        });
-      }
-    });
+  const tsconfigPaths = [...new Set(
+    files
+      .filter(file => /\.(ts|tsx)$/i.test(file))
+      .map(file => findNearestTsconfig(file, rootDir))
+      .filter(Boolean)
+  )];
+  for (const tsconfigPath of tsconfigPaths) {
+    const cwd = path.dirname(tsconfigPath);
+    try {
+      execSync('npx tsc -p tsconfig.json --noEmit 2>&1', {
+        cwd,
+        stdio: 'pipe',
+        encoding: 'utf8',
+        timeout: 60000,
+      });
+    } catch (e) {
+      const output = String(e.stdout || e.stderr || e.message || '');
+      const errorLines = output.split('\n')
+        .filter(l => l.includes('error TS'))
+        .slice(0, 20);
+      errorLines.forEach(line => {
+        const m = line.match(/^(.+)\((\d+),\d+\):.+error (TS\d+): (.+)$/);
+        if (m) {
+          issues.push({
+            file: path.resolve(cwd, m[1]),
+            line: Number(m[2]),
+            severity: 'HIGH',
+            desc: `${m[3]}: ${m[4].slice(0, 100)}`,
+          });
+        }
+      });
+    }
   }
   return issues;
 }
@@ -265,7 +293,7 @@ async function runReview(options = {}) {
   const files    = await getChangedFiles({ ...options, rootDir });
   const jsFiles  = files.filter(file => /\.(m?js|cjs|ts|tsx)$/i.test(file));
   const tsIssues = jsFiles.length > 0
-    ? runTypeScriptCheck({ rootDir })
+    ? runTypeScriptCheck(jsFiles, { rootDir })
     : [];
 
   if (jsFiles.length === 0 && tsIssues.length === 0) {
