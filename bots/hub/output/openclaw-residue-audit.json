@@ -1,12 +1,12 @@
 {
-  "generated_at": "2026-05-01T21:59:10.421Z",
+  "generated_at": "2026-05-02T13:59:56.960Z",
   "ok": true,
   "categories": {
     "runtime_blocker": 0,
     "retired_gateway_guard": 66,
     "documentation": 15,
     "generated_inventory": 0,
-    "ignored_log": 11,
+    "ignored_log": 12,
     "dirty_worktree": 0,
     "retired_home_archive_pending": 1
   },
@@ -159,6 +159,11 @@
     {
       "category": "ignored_log",
       "file": "bots/claude/dexter.err.log",
+      "reason": "ignored historical log contains retired gateway marker"
+    },
+    {
+      "category": "ignored_log",
+      "file": "bots/claude/dexter.log",
       "reason": "ignored historical log contains retired gateway marker"
     },
     {
@@ -531,7 +536,7 @@
     {
       "category": "retired_gateway_guard",
       "file": "bots/hub/scripts/run-tests.ts",
-      "line": 198,
+      "line": 200,
       "snippet": "'openclaw-runtime-retirement-smoke.ts',",
       "reason": "intentional regression guard"
     },

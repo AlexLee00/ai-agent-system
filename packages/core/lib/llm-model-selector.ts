@@ -16,11 +16,18 @@ type SelectorOptions = {
   agentName?: string;
   agentModel?: string | null;
   openaiPerfModel?: string;
+  rolloutKey?: string;
+  selectorVersion?: string;
+  rolloutPercent?: number;
   [key: string]: any;
 };
 
 const GEMINI_CLI_FLASH_LITE_MODEL = 'gemini-cli-oauth/gemini-2.5-flash-lite';
 const GEMINI_CLI_FLASH_MODEL = 'gemini-cli-oauth/gemini-2.5-flash';
+const TEAM_SELECTOR_VERSION_LEGACY = 'v2_legacy';
+const TEAM_SELECTOR_VERSION_OAUTH4 = 'v3_oauth_4';
+
+type TeamSelectorVersion = typeof TEAM_SELECTOR_VERSION_LEGACY | typeof TEAM_SELECTOR_VERSION_OAUTH4;
 
 function clone<T>(value: T): T {
   return JSON.parse(JSON.stringify(value));
@@ -37,6 +44,59 @@ function deepMerge(base: any, override: any): any {
     merged[key] = isObject(value) && isObject(base[key]) ? deepMerge(base[key], value) : clone(value);
   }
   return merged;
+}
+
+function normalizeSelectorVersion(value: any): TeamSelectorVersion {
+  const normalized = String(value || '').trim().toLowerCase().replace(/[^a-z0-9_./-]+/g, '');
+  if (
+    normalized === 'v3_oauth_4'
+    || normalized === 'v3.0_oauth_4'
+    || normalized === 'oauth4'
+    || normalized === 'oauth_4'
+  ) return TEAM_SELECTOR_VERSION_OAUTH4;
+  return TEAM_SELECTOR_VERSION_LEGACY;
+}
+
+function parseRolloutPercent(options: SelectorOptions = {}): number {
+  const optionPercent = Number(options.rolloutPercent);
+  if (Number.isFinite(optionPercent)) {
+    return Math.max(0, Math.min(100, Math.floor(optionPercent)));
+  }
+  const envPercent = Number(process.env.LLM_TEAM_SELECTOR_AB_PERCENT || '');
+  if (Number.isFinite(envPercent)) {
+    return Math.max(0, Math.min(100, Math.floor(envPercent)));
+  }
+  return 100;
+}
+
+function stableHashPercent(seed: string): number {
+  let hash = 0;
+  const text = String(seed || '');
+  for (let i = 0; i < text.length; i += 1) {
+    hash = ((hash << 5) - hash + text.charCodeAt(i)) | 0;
+  }
+  return Math.abs(hash) % 100;
+}
+
+function resolveSelectorVersionForKey(selectorKey: string, options: SelectorOptions = {}): TeamSelectorVersion {
+  const envVersion = normalizeSelectorVersion(process.env.LLM_TEAM_SELECTOR_VERSION);
+  const optionVersion = options.selectorVersion ? normalizeSelectorVersion(options.selectorVersion) : envVersion;
+  if (optionVersion !== TEAM_SELECTOR_VERSION_OAUTH4) return TEAM_SELECTOR_VERSION_LEGACY;
+
+  const percent = parseRolloutPercent(options);
+  if (percent >= 100) return TEAM_SELECTOR_VERSION_OAUTH4;
+  if (percent <= 0) return TEAM_SELECTOR_VERSION_LEGACY;
+
+  const seedParts = [
+    selectorKey,
+    options.rolloutKey,
+    options.incidentKey,
+    options.traceId,
+    options.agentName,
+    options.team,
+  ].filter(Boolean);
+  const seed = seedParts.length > 0 ? seedParts.join('|') : selectorKey;
+  return stableHashPercent(seed) < percent ? TEAM_SELECTOR_VERSION_OAUTH4 : TEAM_SELECTOR_VERSION_LEGACY;
 }
 
 export function inferProviderFromModel(model = ''): string {
@@ -143,7 +203,7 @@ function dedupeByProvider(chain: LLMChainEntry[]): LLMChainEntry[] {
   return chain.filter((entry, index, array) => array.findIndex((candidate) => candidate.provider === entry.provider) === index);
 }
 
-const TEAM_SELECTOR_DEFAULTS: Record<string, any> = {
+const TEAM_SELECTOR_DEFAULTS_LEGACY: Record<string, any> = {
   hub: {
     'alarm.classifier': {
       primary: { provider: 'groq', model: 'llama-3.1-8b-instant', maxTokens: 200, temperature: 0 },
@@ -374,6 +434,124 @@ const TEAM_SELECTOR_DEFAULTS: Record<string, any> = {
   },
 };
 
+const TEAM_SELECTOR_DEFAULTS_OAUTH4: Record<string, any> = deepMerge(clone(TEAM_SELECTOR_DEFAULTS_LEGACY), {
+  hub: {
+    'alarm.classifier': {
+      primary: { provider: 'gemini-cli-oauth', model: GEMINI_CLI_FLASH_LITE_MODEL, maxTokens: 200, temperature: 0 },
+      fallbacks: [
+        { provider: 'groq', model: 'llama-3.1-8b-instant', maxTokens: 200, temperature: 0 },
+        { provider: 'claude-code', model: 'claude-code/haiku', maxTokens: 200, temperature: 0 },
+      ],
+    },
+    'alarm.interpreter.work': {
+      primary: { provider: 'gemini-cli-oauth', model: GEMINI_CLI_FLASH_LITE_MODEL, maxTokens: 200, temperature: 0.1 },
+      fallbacks: [
+        { provider: 'groq', model: 'llama-3.1-8b-instant', maxTokens: 200, temperature: 0.1 },
+      ],
+    },
+    'alarm.interpreter.report': {
+      primary: { provider: 'gemini-cli-oauth', model: GEMINI_CLI_FLASH_MODEL, maxTokens: 300, temperature: 0.1 },
+      fallbacks: [
+        { provider: 'groq', model: 'llama-3.1-8b-instant', maxTokens: 300, temperature: 0.1 },
+      ],
+    },
+    'alarm.interpreter.error': {
+      primary: { provider: 'claude-code', model: 'claude-code/haiku', maxTokens: 400, temperature: 0.1 },
+      fallbacks: [
+        { provider: 'openai-oauth', model: 'gpt-5.4-mini', maxTokens: 400, temperature: 0.1 },
+        { provider: 'groq', model: 'llama-3.1-8b-instant', maxTokens: 400, temperature: 0.1 },
+      ],
+    },
+    'alarm.interpreter.critical': {
+      primary: { provider: 'claude-code', model: 'claude-code/sonnet', maxTokens: 400, temperature: 0.1 },
+      fallbacks: [
+        { provider: 'openai-oauth', model: 'gpt-5.4', maxTokens: 400, temperature: 0.1 },
+        { provider: 'groq', model: 'qwen/qwen3-32b', maxTokens: 400, temperature: 0.1 },
+      ],
+    },
+    'roundtable.jay': {
+      primary: { provider: 'claude-code', model: 'claude-code/sonnet', maxTokens: 500, temperature: 0.2 },
+      fallbacks: [
+        { provider: 'openai-oauth', model: 'gpt-5.4', maxTokens: 500, temperature: 0.2 },
+        { provider: 'groq', model: 'qwen/qwen3-32b', maxTokens: 500, temperature: 0.2 },
+      ],
+    },
+    'roundtable.claude_lead': {
+      primary: { provider: 'claude-code', model: 'claude-code/sonnet', maxTokens: 500, temperature: 0.1 },
+      fallbacks: [
+        { provider: 'openai-oauth', model: 'gpt-5.4', maxTokens: 500, temperature: 0.1 },
+        { provider: 'groq', model: 'qwen/qwen3-32b', maxTokens: 500, temperature: 0.1 },
+      ],
+    },
+    'roundtable.team_commander': {
+      primary: { provider: 'openai-oauth', model: 'gpt-5.4-mini', maxTokens: 500, temperature: 0.2 },
+      fallbacks: [
+        { provider: 'gemini-cli-oauth', model: GEMINI_CLI_FLASH_MODEL, maxTokens: 500, temperature: 0.2 },
+        { provider: 'groq', model: 'llama-3.1-8b-instant', maxTokens: 500, temperature: 0.2 },
+      ],
+    },
+    'roundtable.judge': {
+      primary: { provider: 'claude-code', model: 'claude-code/opus', maxTokens: 600, temperature: 0.1 },
+      fallbacks: [
+        { provider: 'openai-oauth', model: 'gpt-5.4', maxTokens: 600, temperature: 0.1 },
+        { provider: 'groq', model: 'qwen/qwen3-32b', maxTokens: 600, temperature: 0.1 },
+      ],
+    },
+    _fallback: {
+      primary: { provider: 'claude-code', model: 'claude-code/haiku', maxTokens: 300, temperature: 0.1 },
+      fallbacks: [
+        { provider: 'gemini-cli-oauth', model: GEMINI_CLI_FLASH_LITE_MODEL, maxTokens: 300, temperature: 0.1 },
+        { provider: 'groq', model: 'llama-3.1-8b-instant', maxTokens: 300, temperature: 0.1 },
+      ],
+    },
+  },
+  claude: {
+    dexter: {
+      primary: { provider: 'claude-code', model: 'claude-code/sonnet', maxTokens: 1500, temperature: 0.2 },
+      fallbacks: [
+        { provider: 'openai-oauth', model: 'gpt-5.4', maxTokens: 1500, temperature: 0.2 },
+        { provider: 'gemini-cli-oauth', model: GEMINI_CLI_FLASH_MODEL, maxTokens: 1500, temperature: 0.2 },
+      ],
+    },
+    archer: {
+      primary: { provider: 'claude-code', model: 'claude-code/haiku', maxTokens: 800, temperature: 0.1 },
+      fallbacks: [
+        { provider: 'openai-oauth', model: 'gpt-5.4-mini', maxTokens: 800, temperature: 0.1 },
+        { provider: 'groq', model: 'qwen/qwen3-32b', maxTokens: 800, temperature: 0.1 },
+      ],
+    },
+    lead: {
+      primary: { provider: 'claude-code', model: 'claude-code/sonnet', maxTokens: 1500, temperature: 0.1 },
+      fallbacks: [
+        { provider: 'openai-oauth', model: 'gpt-5.4', maxTokens: 1500, temperature: 0.1 },
+        { provider: 'groq', model: 'qwen/qwen3-32b', maxTokens: 1500, temperature: 0.1 },
+      ],
+    },
+    _fallback: {
+      primary: { provider: 'claude-code', model: 'claude-code/sonnet', maxTokens: 2000, temperature: 0.2 },
+      fallbacks: [
+        { provider: 'openai-oauth', model: 'gpt-5.4', maxTokens: 2000, temperature: 0.2 },
+        { provider: 'gemini-cli-oauth', model: GEMINI_CLI_FLASH_MODEL, maxTokens: 2000, temperature: 0.2 },
+      ],
+    },
+  },
+  blog: {
+    'book_review.preview': {
+      primary: { provider: 'claude-code', model: 'claude-code/opus', maxTokens: 2600, temperature: 0.7, timeoutMs: 45_000 },
+      fallbacks: [
+        { provider: 'openai-oauth', model: 'gpt-5.4', maxTokens: 2600, temperature: 0.7, timeoutMs: 25_000 },
+        { provider: 'gemini-cli-oauth', model: GEMINI_CLI_FLASH_MODEL, maxTokens: 2600, temperature: 0.7, timeoutMs: 25_000 },
+      ],
+    },
+  },
+});
+
+function resolveTeamSelectorDefaults(version: TeamSelectorVersion): Record<string, any> {
+  return version === TEAM_SELECTOR_VERSION_OAUTH4
+    ? TEAM_SELECTOR_DEFAULTS_OAUTH4
+    : TEAM_SELECTOR_DEFAULTS_LEGACY;
+}
+
 const AGENT_MODEL_REGISTRY: Record<string, Record<string, string | null>> = {
   claude: {
     reviewer: null,
@@ -538,30 +716,34 @@ function normalizeTeamDefaultEntry(entry: any): any {
   };
 }
 
-function resolveFromTeamDefault(selectorKey: string): any {
+function resolveFromTeamDefault(selectorKey: string, options: SelectorOptions = {}): any {
   const parts = String(selectorKey || '').split('.');
   const team = parts[0];
   const restKey = parts.slice(1).join('.');
   const shortKey = parts[1] || '';
-  const teamDefaults = TEAM_SELECTOR_DEFAULTS[team];
+  const selectorVersion = resolveSelectorVersionForKey(selectorKey, options);
+  const teamDefaults = resolveTeamSelectorDefaults(selectorVersion)[team];
   if (!teamDefaults) return null;
   if (restKey === '_default') return normalizeTeamDefaultEntry(teamDefaults._fallback || null);
   return normalizeTeamDefaultEntry(teamDefaults[restKey] || teamDefaults[shortKey] || teamDefaults._fallback || null);
 }
 
-function routeEntryFromAbstractRoute(route: string): LLMChainEntry {
+function routeEntryFromAbstractRoute(route: string, selectorVersion: TeamSelectorVersion = TEAM_SELECTOR_VERSION_LEGACY): LLMChainEntry {
   const normalized = String(route || 'anthropic_haiku');
   if (normalized.includes('opus')) {
     return { provider: 'claude-code', model: 'claude-code/opus', maxTokens: 2048, temperature: 0.1 };
   }
   if (normalized.includes('sonnet')) {
+    if (selectorVersion === TEAM_SELECTOR_VERSION_OAUTH4) {
+      return { provider: 'claude-code', model: 'claude-code/sonnet', maxTokens: 2048, temperature: 0.1 };
+    }
     return { provider: 'openai-oauth', model: 'gpt-5.4', maxTokens: 2048, temperature: 0.1 };
   }
   return { provider: 'claude-code', model: 'claude-code/haiku', maxTokens: 1024, temperature: 0.1 };
 }
 
-function buildAbstractRoutePolicy(route: string, fallbacks: string[] = []): any {
-  const chain = [route, ...fallbacks].map(routeEntryFromAbstractRoute);
+function buildAbstractRoutePolicy(route: string, fallbacks: string[] = [], selectorVersion: TeamSelectorVersion = TEAM_SELECTOR_VERSION_LEGACY): any {
+  const chain = [route, ...fallbacks].map((item) => routeEntryFromAbstractRoute(item, selectorVersion));
   return {
     route,
     primary: chain[0] || null,
@@ -572,21 +754,21 @@ function buildAbstractRoutePolicy(route: string, fallbacks: string[] = []): any 
 
 function buildSelectorRegistry(): Record<string, any> {
   return {
-    'hub._default': () => resolveFromTeamDefault('hub._default'),
-    'hub.alarm.classifier': () => resolveFromTeamDefault('hub.alarm.classifier'),
-    'hub.alarm.interpreter.work': () => resolveFromTeamDefault('hub.alarm.interpreter.work'),
-    'hub.alarm.interpreter.report': () => resolveFromTeamDefault('hub.alarm.interpreter.report'),
-    'hub.alarm.interpreter.error': () => resolveFromTeamDefault('hub.alarm.interpreter.error'),
-    'hub.alarm.interpreter.critical': () => resolveFromTeamDefault('hub.alarm.interpreter.critical'),
-    'hub.roundtable.jay': () => resolveFromTeamDefault('hub.roundtable.jay'),
-    'hub.roundtable.claude_lead': () => resolveFromTeamDefault('hub.roundtable.claude_lead'),
-    'hub.roundtable.team_commander': () => resolveFromTeamDefault('hub.roundtable.team_commander'),
-    'hub.roundtable.judge': () => resolveFromTeamDefault('hub.roundtable.judge'),
+    'hub._default': (options: SelectorOptions = {}) => resolveFromTeamDefault('hub._default', options),
+    'hub.alarm.classifier': (options: SelectorOptions = {}) => resolveFromTeamDefault('hub.alarm.classifier', options),
+    'hub.alarm.interpreter.work': (options: SelectorOptions = {}) => resolveFromTeamDefault('hub.alarm.interpreter.work', options),
+    'hub.alarm.interpreter.report': (options: SelectorOptions = {}) => resolveFromTeamDefault('hub.alarm.interpreter.report', options),
+    'hub.alarm.interpreter.error': (options: SelectorOptions = {}) => resolveFromTeamDefault('hub.alarm.interpreter.error', options),
+    'hub.alarm.interpreter.critical': (options: SelectorOptions = {}) => resolveFromTeamDefault('hub.alarm.interpreter.critical', options),
+    'hub.roundtable.jay': (options: SelectorOptions = {}) => resolveFromTeamDefault('hub.roundtable.jay', options),
+    'hub.roundtable.claude_lead': (options: SelectorOptions = {}) => resolveFromTeamDefault('hub.roundtable.claude_lead', options),
+    'hub.roundtable.team_commander': (options: SelectorOptions = {}) => resolveFromTeamDefault('hub.roundtable.team_commander', options),
+    'hub.roundtable.judge': (options: SelectorOptions = {}) => resolveFromTeamDefault('hub.roundtable.judge', options),
 
-    'claude._default': () => resolveFromTeamDefault('claude._default'),
-    'claude.archer.tech_analysis': () => resolveFromTeamDefault('claude.archer.tech_analysis'),
-    'claude.lead.system_issue_triage': () => resolveFromTeamDefault('claude.lead.system_issue_triage'),
-    'claude.dexter.ai_analyst': () => resolveFromTeamDefault('claude.dexter.ai_analyst'),
+    'claude._default': (options: SelectorOptions = {}) => resolveFromTeamDefault('claude._default', options),
+    'claude.archer.tech_analysis': (options: SelectorOptions = {}) => resolveFromTeamDefault('claude.archer.tech_analysis', options),
+    'claude.lead.system_issue_triage': (options: SelectorOptions = {}) => resolveFromTeamDefault('claude.lead.system_issue_triage', options),
+    'claude.dexter.ai_analyst': (options: SelectorOptions = {}) => resolveFromTeamDefault('claude.dexter.ai_analyst', options),
 
     'orchestrator.jay.intent': ({ intentPrimary, intentFallback }: SelectorOptions = {}) => ({
       primary: { provider: 'openai-oauth', model: intentPrimary || 'gpt-5.4-mini' },
@@ -640,31 +822,32 @@ function buildSelectorRegistry(): Record<string, any> {
       { provider: 'openai-oauth', model: 'gpt-5.4-mini', maxTokens, temperature: 0.2, timeoutMs: 15_000 },
     ],
 
-    'blog._default': () => resolveFromTeamDefault('blog._default'),
-    'blog.pos.writer': () => resolveFromTeamDefault('blog.pos.writer'),
-    'blog.gems.writer': () => resolveFromTeamDefault('blog.gems.writer'),
-    'blog.social.summarize': () => resolveFromTeamDefault('blog.social.summarize'),
-    'blog.social.caption': () => resolveFromTeamDefault('blog.social.caption'),
-    'blog.star.summarize': () => resolveFromTeamDefault('blog.star.summarize'),
-    'blog.star.caption': () => resolveFromTeamDefault('blog.star.caption'),
-    'blog.curriculum.recommend': () => resolveFromTeamDefault('blog.curriculum.recommend'),
-    'blog.curriculum.generate': () => resolveFromTeamDefault('blog.curriculum.generate'),
-    'blog.feedback.analyze': () => resolveFromTeamDefault('blog.feedback.analyze'),
-    'blog.commenter.reply': () => resolveFromTeamDefault('blog.commenter.reply'),
-    'blog.commenter.neighbor': () => resolveFromTeamDefault('blog.commenter.neighbor'),
-    'blog.book_review.preview': () => resolveFromTeamDefault('blog.book_review.preview'),
+    'blog._default': (options: SelectorOptions = {}) => resolveFromTeamDefault('blog._default', options),
+    'blog.pos.writer': (options: SelectorOptions = {}) => resolveFromTeamDefault('blog.pos.writer', options),
+    'blog.gems.writer': (options: SelectorOptions = {}) => resolveFromTeamDefault('blog.gems.writer', options),
+    'blog.social.summarize': (options: SelectorOptions = {}) => resolveFromTeamDefault('blog.social.summarize', options),
+    'blog.social.caption': (options: SelectorOptions = {}) => resolveFromTeamDefault('blog.social.caption', options),
+    'blog.star.summarize': (options: SelectorOptions = {}) => resolveFromTeamDefault('blog.star.summarize', options),
+    'blog.star.caption': (options: SelectorOptions = {}) => resolveFromTeamDefault('blog.star.caption', options),
+    'blog.curriculum.recommend': (options: SelectorOptions = {}) => resolveFromTeamDefault('blog.curriculum.recommend', options),
+    'blog.curriculum.generate': (options: SelectorOptions = {}) => resolveFromTeamDefault('blog.curriculum.generate', options),
+    'blog.feedback.analyze': (options: SelectorOptions = {}) => resolveFromTeamDefault('blog.feedback.analyze', options),
+    'blog.commenter.reply': (options: SelectorOptions = {}) => resolveFromTeamDefault('blog.commenter.reply', options),
+    'blog.commenter.neighbor': (options: SelectorOptions = {}) => resolveFromTeamDefault('blog.commenter.neighbor', options),
+    'blog.book_review.preview': (options: SelectorOptions = {}) => resolveFromTeamDefault('blog.book_review.preview', options),
 
 
-    'core._default': () => resolveFromTeamDefault('core._default'),
-    'core.chunked.gpt4o': () => resolveFromTeamDefault('core.chunked.gpt4o'),
-    'core.chunked.default': () => resolveFromTeamDefault('core.chunked.default'),
+    'core._default': (options: SelectorOptions = {}) => resolveFromTeamDefault('core._default', options),
+    'core.chunked.gpt4o': (options: SelectorOptions = {}) => resolveFromTeamDefault('core.chunked.gpt4o', options),
+    'core.chunked.default': (options: SelectorOptions = {}) => resolveFromTeamDefault('core.chunked.default', options),
 
-    'ska._default': () => resolveFromTeamDefault('ska._default'),
-    'ska.parsing.level3': () => resolveFromTeamDefault('ska.parsing.level3'),
-    'ska.selector.generate': () => resolveFromTeamDefault('ska.selector.generate'),
-    'ska.classify': () => resolveFromTeamDefault('ska.classify'),
+    'ska._default': (options: SelectorOptions = {}) => resolveFromTeamDefault('ska._default', options),
+    'ska.parsing.level3': (options: SelectorOptions = {}) => resolveFromTeamDefault('ska.parsing.level3', options),
+    'ska.selector.generate': (options: SelectorOptions = {}) => resolveFromTeamDefault('ska.selector.generate', options),
+    'ska.classify': (options: SelectorOptions = {}) => resolveFromTeamDefault('ska.classify', options),
 
-    'sigma.agent_policy': ({ agentName }: SelectorOptions = {}) => {
+    'sigma.agent_policy': (options: SelectorOptions = {}) => {
+      const { agentName } = options;
       const SIGMA_ROUTES: Record<string, { route: string; fallback: string[] }> = {
         commander:                  { route: 'anthropic_sonnet', fallback: ['anthropic_haiku'] },
         'pod.risk':                 { route: 'anthropic_sonnet', fallback: ['anthropic_haiku'] },
@@ -687,10 +870,12 @@ function buildSelectorRegistry(): Record<string, any> {
       };
       const key = String(agentName || 'commander');
       const entry = SIGMA_ROUTES[key] || { route: 'anthropic_haiku', fallback: [] };
-      return buildAbstractRoutePolicy(entry.route, entry.fallback);
+      const selectorVersion = resolveSelectorVersionForKey('sigma.agent_policy', options);
+      return buildAbstractRoutePolicy(entry.route, entry.fallback, selectorVersion);
     },
 
-    'darwin.agent_policy': ({ agentName }: SelectorOptions = {}) => {
+    'darwin.agent_policy': (options: SelectorOptions = {}) => {
+      const { agentName } = options;
       const DARWIN_ROUTES: Record<string, { route: string; fallback: string[] }> = {
         'darwin.scanner':              { route: 'anthropic_haiku', fallback: ['anthropic_sonnet'] },
         'darwin.evaluator':            { route: 'anthropic_sonnet', fallback: ['anthropic_haiku'] },
@@ -721,12 +906,14 @@ function buildSelectorRegistry(): Record<string, any> {
       };
       const key = String(agentName || 'commander');
       const entry = DARWIN_ROUTES[key] || { route: 'anthropic_haiku', fallback: [] };
-      return buildAbstractRoutePolicy(entry.route, entry.fallback);
+      const selectorVersion = resolveSelectorVersionForKey('darwin.agent_policy', options);
+      return buildAbstractRoutePolicy(entry.route, entry.fallback, selectorVersion);
     },
 
-    'investment.agent_policy': ({ agentName, agentModel = null, openaiPerfModel = 'gpt-5.4', policyOverride }: SelectorOptions = {}) => {
+    'investment.agent_policy': (options: SelectorOptions = {}) => {
+      const { agentName, agentModel = null, openaiPerfModel = 'gpt-5.4', policyOverride } = options;
       const normalizedAgentName = String(agentName || '');
-      const defaultRoutes: Record<string, string> = {
+      const defaultRoutesLegacy: Record<string, string> = {
         default: 'openai_perf',
         luna: 'openai_perf',
         nemesis: 'dual_groq',
@@ -748,6 +935,31 @@ function buildSelectorRegistry(): Record<string, any> {
         'stock-flow': 'groq_with_local',
         sweeper: 'local_fast',
       };
+      const defaultRoutesOauth4: Record<string, string> = {
+        default: 'claude_sonnet',
+        luna: 'claude_sonnet',
+        nemesis: 'claude_haiku',
+        oracle: 'groq_scout',
+        hermes: 'gemini_flash_lite',
+        sophia: 'openai_mini',
+        zeus: 'claude_opus',
+        athena: 'claude_sonnet',
+        argos: 'openai_mini',
+        scout: 'gemini_flash',
+        chronos: 'openai_perf',
+        aria: 'gemini_flash',
+        'adaptive-risk': 'claude_sonnet',
+        sentinel: 'openai_mini',
+        hephaestos: 'claude_sonnet',
+        hanul: 'claude_opus',
+        budget: 'openai_mini',
+        kairos: 'claude_sonnet',
+        'stock-flow': 'groq_with_local',
+        sweeper: 'gemini_flash_lite',
+      };
+
+      const selectorVersion = resolveSelectorVersionForKey('investment.agent_policy', options);
+      const defaultRoutes = selectorVersion === TEAM_SELECTOR_VERSION_OAUTH4 ? defaultRoutesOauth4 : defaultRoutesLegacy;
       const configuredRoutes = isObject(policyOverride?.agentRoutes) ? { ...defaultRoutes, ...policyOverride.agentRoutes } : defaultRoutes;
       const openaiMiniModel = policyOverride?.openaiMiniModel || 'gpt-4o-mini';
       const groqScoutModel = policyOverride?.groqScoutModel || 'llama-3.1-8b-instant';
@@ -762,9 +974,11 @@ function buildSelectorRegistry(): Record<string, any> {
         groqCompetitionModels,
       });
       const configuredRoute = configuredRoutes[normalizedAgentName] || null;
-      const route = normalizedAgentName === 'argos'
+      const route = selectorVersion === TEAM_SELECTOR_VERSION_OAUTH4
         ? (configuredRoute || modelDerivedRoute || 'groq_scout')
-        : (modelDerivedRoute || configuredRoute || 'groq_scout');
+        : (normalizedAgentName === 'argos'
+          ? (configuredRoute || modelDerivedRoute || 'groq_scout')
+          : (modelDerivedRoute || configuredRoute || 'groq_scout'));
       const routeChains: Record<string, LLMChainEntry[]> = {
         openai_perf: [
           { provider: 'openai-oauth', model: openaiPerfModel },
@@ -812,7 +1026,37 @@ function buildSelectorRegistry(): Record<string, any> {
           { provider: 'openai-oauth', model: openaiMiniModel, maxTokens: 2048, temperature: 0.1 },
           { provider: 'claude-code', model: 'claude-code/haiku', maxTokens: 2048, temperature: 0.1 },
         ],
+        claude_sonnet: [
+          { provider: 'claude-code', model: 'claude-code/sonnet', maxTokens: 1500, temperature: 0.2 },
+          { provider: 'openai-oauth', model: openaiPerfModel, maxTokens: 1500, temperature: 0.2 },
+          { provider: 'groq', model: 'qwen/qwen3-32b', maxTokens: 1500, temperature: 0.2 },
+          { provider: 'gemini-cli-oauth', model: GEMINI_CLI_FLASH_MODEL, maxTokens: 1500, temperature: 0.2 },
+        ],
+        claude_haiku: [
+          { provider: 'claude-code', model: 'claude-code/haiku', maxTokens: 800, temperature: 0.1 },
+          { provider: 'openai-oauth', model: openaiMiniModel, maxTokens: 800, temperature: 0.1 },
+          { provider: 'groq', model: groqScoutModel, maxTokens: 800, temperature: 0.1 },
+          { provider: 'gemini-cli-oauth', model: GEMINI_CLI_FLASH_LITE_MODEL, maxTokens: 800, temperature: 0.1 },
+        ],
+        claude_opus: [
+          { provider: 'claude-code', model: 'claude-code/opus', maxTokens: 1500, temperature: 0.1 },
+          { provider: 'claude-code', model: 'claude-code/sonnet', maxTokens: 1500, temperature: 0.1 },
+          { provider: 'openai-oauth', model: openaiPerfModel, maxTokens: 1500, temperature: 0.1 },
+          { provider: 'groq', model: 'qwen/qwen3-32b', maxTokens: 1500, temperature: 0.1 },
+        ],
+        gemini_flash: [
+          { provider: 'gemini-cli-oauth', model: GEMINI_CLI_FLASH_MODEL, maxTokens: 1000, temperature: 0.1 },
+          { provider: 'claude-code', model: 'claude-code/haiku', maxTokens: 1000, temperature: 0.1 },
+          { provider: 'groq', model: 'llama-3.3-70b-versatile', maxTokens: 1000, temperature: 0.1 },
+          { provider: 'openai-oauth', model: openaiMiniModel, maxTokens: 1000, temperature: 0.1 },
+        ],
+        gemini_flash_lite: [
+          { provider: 'gemini-cli-oauth', model: GEMINI_CLI_FLASH_LITE_MODEL, maxTokens: 400, temperature: 0.1 },
+          { provider: 'groq', model: groqScoutModel, maxTokens: 400, temperature: 0.1 },
+          { provider: 'openai-oauth', model: openaiMiniModel, maxTokens: 400, temperature: 0.1 },
+        ],
       };
+      const selectedChain = routeChains[route] || routeChains.groq_scout;
       return {
         route,
         openaiPerfModel,
@@ -820,9 +1064,10 @@ function buildSelectorRegistry(): Record<string, any> {
         groqScoutModel,
         groqCompetitionModels,
         anthropicModel,
-        primary: routeChains[route][0] || null,
-        fallbacks: routeChains[route].slice(1),
-        fallbackChain: routeChains[route],
+        selectorVersion,
+        primary: selectedChain[0] || null,
+        fallbacks: selectedChain.slice(1),
+        fallbackChain: selectedChain,
       };
     },
   };

@@ -2,13 +2,13 @@
 
 This generated report classifies retired OpenClaw references. `runtime_blocker` must remain 0. Guard, documentation, ignored log, and archive-pending entries are tracked separately so they do not masquerade as live runtime dependencies.
 
-- generated_at: 2026-05-01T21:59:10.421Z
+- generated_at: 2026-05-02T13:59:56.960Z
 - ok: true
 - runtime_blocker: 0
 - retired_gateway_guard: 66
 - documentation: 15
 - generated_inventory: 0
-- ignored_log: 11
+- ignored_log: 12
 - dirty_worktree: 0
 - retired_home_archive_pending: 1
 
@@ -40,6 +40,7 @@ This generated report classifies retired OpenClaw references. `runtime_blocker` 
 - bots/claude/dexter-daily.log (ignored historical log contains retired gateway marker)
 - bots/claude/dexter-quick.err.log (ignored historical log contains retired gateway marker)
 - bots/claude/dexter.err.log (ignored historical log contains retired gateway marker)
+- bots/claude/dexter.log (ignored historical log contains retired gateway marker)
 - bots/hub/hub.err.log (ignored historical log contains retired gateway marker)
 - bots/hub/hub.log (ignored historical log contains retired gateway marker)
 ## retired_gateway_guard
@@ -95,7 +96,7 @@ This generated report classifies retired OpenClaw references. `runtime_blocker` 
 - bots/hub/scripts/retired-gateway-residue-audit.ts:40 (intentional smoke/report guard) — `'openclaw-gateway',`
 - bots/hub/scripts/retired-gateway-residue-audit.ts:50 (intentional smoke/report guard) — `'bots/hub/scripts/openclaw-runtime-retirement-smoke.ts',`
 - bots/hub/scripts/retired-gateway-residue-audit.ts:81 (intentional smoke/report guard) — `if (file.startsWith('bots/hub/output/') || file === 'docs/hub/OPENCLAW_RESIDUE_AUDIT.md' || file === 'docs/hub/HUB_ALARM_DEPENDENCY_INVENTORY.md') {`
-- bots/hub/scripts/run-tests.ts:198 (intentional regression guard) — `'openclaw-runtime-retirement-smoke.ts',`
+- bots/hub/scripts/run-tests.ts:200 (intentional regression guard) — `'openclaw-runtime-retirement-smoke.ts',`
 - bots/hub/scripts/runtime-env-policy-smoke.ts:22 (intentional smoke/report guard) — `OPENCLAW_BIN: '/tmp/openclaw',`
 - bots/hub/scripts/runtime-env-policy-smoke.ts:31 (intentional smoke/report guard) — `assert.equal(filtered.env.OPENCLAW_BIN, undefined);`
 - bots/hub/scripts/runtime-env-policy-smoke.ts:43 (intentional smoke/report guard) — `assert.notEqual(childEnv.OPENCLAW_BIN, '/tmp/openclaw');`

@@ -101,6 +101,7 @@ function unitSmokeScripts(): string[] {
     'agent-hub-transition-audit.ts',
     'hub-transition-completion-gate.ts',
     'llm-routing-standard-smoke.ts',
+    'llm-oauth-4-balance-smoke.ts',
     'gemini-route-assignment-smoke.ts',
     'steward-gemini-model-drill-smoke.ts',
     'oauth-ops-readiness-smoke.ts',

@@ -2,7 +2,7 @@
 
 This inventory tracks the Hub alarm migration surface. `hub_alarm_native` entries are the desired path; `retired_gateway_guard` entries are regression guards; `legacy_gateway_compat` entries are remaining migration targets and must stay at 0.
 
-- generated_at: 2026-05-01T22:00:20.072Z
+- generated_at: 2026-05-02T14:01:07.690Z
 - total_matches: 290
 - unique_files: 150
 - hub_alarm_native: 277
@@ -162,7 +162,7 @@ This inventory tracks the Hub alarm migration surface. `hub_alarm_native` entrie
 - L6 [hub_alarm_native]: `const { postAlarm } = require('../../../packages/core/lib/hub-alarm-client');`
 
 ### `bots/claude/src/reviewer.ts`
-- L25 [hub_alarm_native]: `const { postAlarm } = require('../../../packages/core/lib/hub-alarm-client');`
+- L26 [hub_alarm_native]: `const { postAlarm } = require('../../../packages/core/lib/hub-alarm-client');`
 
 ### `bots/claude/tsconfig.json`
 - L35 [hub_alarm_native]: `"../../packages/core/lib/hub-alarm-client.js",`
@@ -434,7 +434,7 @@ This inventory tracks the Hub alarm migration surface. `hub_alarm_native` entrie
 - L119 [hub_alarm_native]: `'!docs/hub/HUB_ALARM_DEPENDENCY_INVENTORY.md',`
 
 ### `bots/hub/scripts/run-oauth-monitor.ts`
-- L19 [hub_alarm_native]: `const { postAlarm } = require('../../../packages/core/lib/hub-alarm-client.ts');`
+- L20 [hub_alarm_native]: `const { postAlarm } = require('../../../packages/core/lib/hub-alarm-client.ts');`
 
 ### `bots/hub/scripts/runtime-env-policy-smoke.ts`
 - L22 [retired_gateway_guard]: `OPENCLAW_BIN: '/tmp/openclaw',`
