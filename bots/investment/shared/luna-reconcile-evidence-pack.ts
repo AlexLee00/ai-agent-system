@@ -142,6 +142,7 @@ export function buildReconcileEvidenceTask(blocker = {}) {
         'exchange_order_lookup',
       ],
       nextCommand: `npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run -s runtime:luna-reconcile-ack-preflight -- --signal-id=${base.id || 'SIGNAL_ID'} --live-lookup --json`,
+      repairCommand: `npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run -s runtime:luna-reconcile-found-order-repair -- --signal-id=${base.id || 'SIGNAL_ID'} --live-lookup --json`,
       manualFallbackCommand: `npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run -s runtime:luna-manual-reconcile-playbook -- --symbol=${symbol} --json`,
     });
   }

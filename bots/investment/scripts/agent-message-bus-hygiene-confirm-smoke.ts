@@ -56,14 +56,36 @@ export async function runAgentMessageBusHygieneConfirmSmoke() {
     [`${incidentPrefix}:broadcast`],
   );
   assert.equal(broadcastStillOpen?.responded_at, null);
-  await db.run(
-    `UPDATE investment.agent_messages
-        SET responded_at = NOW(),
-            payload = COALESCE(payload, '{}'::jsonb) || $2::jsonb
-      WHERE incident_key = $1`,
-    [`${incidentPrefix}:broadcast`, JSON.stringify({ smokeCleanup: true })],
+  const reviewBlocked = await runAgentMessageBusHygiene({
+    staleHours: 1,
+    limit: 20,
+    incidentKeyPrefix: incidentPrefix,
+    apply: true,
+    includeReviewRequired: true,
+    confirm: 'luna-agent-bus-hygiene',
+    suppressAlert: true,
+  });
+  assert.equal(reviewBlocked.ok, false);
+  assert.match(reviewBlocked.action.error, /luna-agent-bus-review-archive/);
+
+  const reviewArchived = await runAgentMessageBusHygiene({
+    staleHours: 1,
+    limit: 20,
+    incidentKeyPrefix: incidentPrefix,
+    apply: true,
+    includeReviewRequired: true,
+    confirm: 'luna-agent-bus-review-archive',
+    suppressAlert: true,
+  });
+  assert.equal(reviewArchived.ok, true);
+  assert.equal(reviewArchived.action.safeOnly, false);
+  assert.ok(reviewArchived.action.expired >= 1);
+  const broadcastArchived = await db.get(
+    `SELECT responded_at FROM investment.agent_messages WHERE incident_key = $1 LIMIT 1`,
+    [`${incidentPrefix}:broadcast`],
   );
-  return { ok: true, blocked: blocked.status, expired: applied.action.expired };
+  assert.ok(broadcastArchived?.responded_at);
+  return { ok: true, blocked: blocked.status, expired: applied.action.expired, reviewArchived: reviewArchived.action.expired };
 }
 
 async function main() {

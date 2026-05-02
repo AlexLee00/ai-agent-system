@@ -31,6 +31,7 @@ function summarizeLookupRetryTask(task = {}) {
     safeToAutomate: false,
     evidenceHash: task.evidenceHash || null,
     nextCommand: task.nextCommand || null,
+    repairCommand: task.repairCommand || null,
     manualFallbackCommand: task.manualFallbackCommand || null,
   };
 }
@@ -90,6 +91,21 @@ export function buildLunaOperationalActionBoardFromPack(pack = {}) {
     generatedAt: new Date().toISOString(),
     sourceStatus: pack.status || null,
     hardBlockers: pack.hardBlockers || [],
+    liveFire: {
+      status: pack.evidence?.liveFire?.status || null,
+      blockers: pack.evidence?.liveFire?.blockers || [],
+      settledFrom: pack.evidence?.liveFire?.settledFrom || null,
+      postVerify: pack.evidence?.liveFire?.postVerify || {},
+      readiness: pack.evidence?.liveFire?.readiness || {},
+      tradeGate: pack.evidence?.liveFire?.tradeGate || {},
+      tasks: pack.liveFireTasks || [],
+      nextCommand: 'npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run -s runtime:luna-live-fire-final-gate -- --json',
+    },
+    acknowledgedHistory: {
+      count: (pack.acknowledgedHistory || []).length,
+      auditOnly: true,
+      items: pack.acknowledgedHistory || [],
+    },
     manualReconcile: {
       count: manualTasks.length,
       safeToAutomate: false,
@@ -190,6 +206,7 @@ export async function runLunaOperationalActionBoardSmoke() {
   assert.equal(board.agentBusHygiene.status, 'operator_review_required');
   assert.equal(board.agentBusHygiene.applyAllowedNow, false);
   assert.equal(board.sevenDayObservation.status, 'pending_observation');
+  assert.equal(board.acknowledgedHistory.auditOnly, true);
   assert.equal(board.commands.busHygieneApply, null);
   return { ok: true, board };
 }

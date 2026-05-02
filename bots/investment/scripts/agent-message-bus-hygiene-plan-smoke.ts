@@ -27,11 +27,25 @@ export async function runAgentMessageBusHygienePlanSmoke() {
   assert.equal(stale[0].safeToApply, false);
   assert.equal(stale[0].dryRunOnly, true);
   assert.ok(stale[0].applyCommand.includes('--confirm=luna-agent-bus-hygiene'));
+  assert.equal(stale[0].reviewArchiveCommand, null);
+
+  const review = buildAgentMessageBusHygienePlan({
+    ok: true,
+    before: {
+      staleCount: 5,
+      staleHours: 6,
+      rows: [{ to_agent: 'all', message_type: 'broadcast', stale_count: '5' }],
+    },
+    action: { dryRun: true },
+  });
+  assert.equal(review[0].reviewRequired, 5);
+  assert.ok(review[0].reviewEvidenceHash);
+  assert.ok(review[0].reviewArchiveCommand.includes('--confirm=luna-agent-bus-review-archive'));
 
   const failed = buildAgentMessageBusHygienePlan({ ok: false, error: 'db_down' });
   assert.equal(failed.length, 1);
   assert.equal(failed[0].category, 'query_failed');
-  return { ok: true, clear, stale, failed };
+  return { ok: true, clear, stale, review, failed };
 }
 
 async function main() {

@@ -1,5 +1,7 @@
 // @ts-nocheck
 
+import { buildEvidenceHash } from './luna-reconcile-evidence-pack.ts';
+
 const RECONCILE_MANUAL_CLASSES = new Set([
   'manual_reconcile_required',
   'pending_without_lookup_key',
@@ -90,6 +92,18 @@ export function buildAgentMessageBusHygienePlan(busHygiene = {}) {
   const before = busHygiene.before || busHygiene || {};
   const staleCount = Number(before.staleCount || busHygiene.staleCount || 0);
   const classification = classifyAgentMessageBusHygiene(busHygiene);
+  const reviewRows = classification.rows.filter((row) => row.hygieneClass === 'review_required');
+  const reviewEvidence = reviewRows.length > 0 ? {
+    type: 'agent_message_bus_review_required',
+    staleHours: Number(before.staleHours || busHygiene.staleHours || 6),
+    reviewRequired: Number(classification.reviewRequired || 0),
+    rows: reviewRows.map((row) => ({
+      toAgent: row.to_agent || row.toAgent || null,
+      messageType: row.message_type || row.messageType || null,
+      staleCount: Number(row.staleCount || row.stale_count || 0),
+      reason: row.reason || null,
+    })),
+  } : null;
   if (busHygiene.ok === false) {
     return [{
       type: 'hygiene_warning',
@@ -112,9 +126,17 @@ export function buildAgentMessageBusHygienePlan(busHygiene = {}) {
     dryRunOnly: true,
     staleHours: Number(before.staleHours || busHygiene.staleHours || 6),
     rows: asArray(before.rows).slice(0, 10),
+    reviewRequired: Number(classification.reviewRequired || 0),
+    safeExpire: Number(classification.safeExpire || 0),
+    blocked: Number(classification.blocked || 0),
+    reviewEvidenceHash: reviewEvidence ? buildEvidenceHash(reviewEvidence) : null,
+    reviewEvidence,
     reason: 'stale messages should be reviewed in dry-run before explicit confirmed expiry',
     nextCommand: 'npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run -s runtime:agent-message-bus-hygiene -- --dry-run --json',
     applyCommand: 'npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run -s runtime:agent-message-bus-hygiene -- --apply --confirm=luna-agent-bus-hygiene --json',
+    reviewArchiveCommand: reviewRows.length > 0
+      ? 'npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run -s runtime:agent-message-bus-hygiene -- --apply --include-review-required --confirm=luna-agent-bus-review-archive --json'
+      : null,
   }];
 }
 
@@ -199,11 +221,13 @@ function buildNextActions({
   hygieneTasks = [],
   curriculumTasks = [],
   pendingObservation = [],
+  liveFireTasks = [],
   cutover = {},
 } = {}) {
   const actions = [];
+  if (liveFireTasks.length > 0) actions.push('rerun live-fire final gate after settle; inspect post-live-fire/readiness detail before cutover');
   if (manualTasks.length > 0) actions.push('complete manual wallet/journal/position reconcile evidence, then rerun operational blocker pack');
-  if (lookupRetryTasks.length > 0) actions.push('run exchange lookup retry evidence preflight; fallback to manual reconcile only if lookup remains ambiguous or order is found');
+  if (lookupRetryTasks.length > 0) actions.push('run exchange lookup retry evidence preflight; if order is found run found-order repair, otherwise fallback to manual reconcile only if lookup remains ambiguous');
   if (safeAckCandidates.length > 0) actions.push('run live lookup/ack preflight and apply ACK only with explicit evidence and confirm');
   if (hygieneTasks.length > 0) actions.push('run agent message bus hygiene dry-run; apply only with --confirm=luna-agent-bus-hygiene');
   if (curriculumTasks.length > 0) actions.push('run curriculum bootstrap dry-run; apply only with --confirm=luna-curriculum-bootstrap');
@@ -240,6 +264,7 @@ export function buildLunaOperationalClosurePackFromReports({
   const lookupRetryTasks = asArray(reconcileEvidence.lookupRetryTasks);
   const hygieneTasks = buildAgentMessageBusHygienePlan(busHygiene);
   const curriculumTasks = buildCurriculumClosureTasks(curriculum);
+  const liveFireTasks = buildLiveFireClosureTasks(liveFire);
   const pendingObservation = buildPendingObservation({ sevenDay, fullIntegration, voyager });
   const hardBlockers = uniq([
     ...asArray(closure.hardBlockers),
@@ -258,11 +283,12 @@ export function buildLunaOperationalClosurePackFromReports({
     hardBlockers,
     safeAckCandidates,
     manualTasks,
+    liveFireTasks,
     hygieneTasks,
     curriculumTasks,
     acknowledgedHistory,
     pendingObservation,
-    nextActions: buildNextActions({ manualTasks, safeAckCandidates, lookupRetryTasks, hygieneTasks, curriculumTasks, pendingObservation, cutover }),
+    nextActions: buildNextActions({ manualTasks, safeAckCandidates, lookupRetryTasks, hygieneTasks, curriculumTasks, pendingObservation, liveFireTasks, cutover }),
     evidence: {
       closure: {
         ok: closure.ok === true,
@@ -276,6 +302,20 @@ export function buildLunaOperationalClosurePackFromReports({
       liveFire: {
         status: liveFire.status || null,
         blockers: asArray(liveFire.blockers),
+        settledFrom: liveFire.settledFrom || null,
+        postVerify: {
+          status: liveFire.preflight?.postVerify?.status || liveFire.postVerify?.status || null,
+          blockers: asArray(liveFire.preflight?.postVerify?.blockers || liveFire.postVerify?.blockers),
+        },
+        readiness: {
+          status: liveFire.preflight?.readiness?.status || liveFire.readiness?.status || null,
+          blockers: asArray(liveFire.preflight?.readiness?.blockers || liveFire.readiness?.blockers),
+          observations: asArray(liveFire.preflight?.readiness?.observations || liveFire.readiness?.observations),
+        },
+        tradeGate: {
+          status: liveFire.preflight?.postVerify?.tradeGate?.status || liveFire.tradeGate?.status || null,
+          blockers: asArray(liveFire.preflight?.postVerify?.tradeGate?.blockers || liveFire.tradeGate?.blockers),
+        },
       },
       sevenDay: {
         status: sevenDay.status || null,
@@ -292,6 +332,7 @@ export function buildLunaOperationalClosurePackFromReports({
           resolutionClass: task.resolutionClass || null,
           evidenceHash: task.evidenceHash || null,
           nextCommand: task.nextCommand || null,
+          repairCommand: task.repairCommand || null,
           manualFallbackCommand: task.manualFallbackCommand || null,
         })),
       },
@@ -330,8 +371,39 @@ export default {
   buildAcknowledgedHistory,
   buildAgentMessageBusHygienePlan,
   buildCurriculumClosureTasks,
+  buildLiveFireClosureTasks,
   classifyAgentMessageBusHygiene,
   buildLunaOperationalClosurePackFromReports,
   buildManualTaskFromReconcile,
   buildSafeAckCandidate,
 };
+
+export function buildLiveFireClosureTasks(liveFire = {}) {
+  const blockers = asArray(liveFire.blockers);
+  if (blockers.length === 0) return [];
+  const postVerify = liveFire.preflight?.postVerify || liveFire.postVerify || {};
+  const readiness = liveFire.preflight?.readiness || liveFire.readiness || {};
+  const tradeGate = postVerify.tradeGate || liveFire.tradeGate || {};
+  return [{
+    type: 'live_fire_gate_blocked',
+    safeToApply: false,
+    dryRunOnly: true,
+    status: liveFire.status || null,
+    blockers,
+    settledFrom: liveFire.settledFrom || null,
+    postVerify: {
+      status: postVerify.status || null,
+      blockers: asArray(postVerify.blockers),
+    },
+    readiness: {
+      status: readiness.status || null,
+      blockers: asArray(readiness.blockers),
+      observations: asArray(readiness.observations),
+    },
+    tradeGate: {
+      status: tradeGate.status || null,
+      blockers: asArray(tradeGate.blockers),
+    },
+    nextCommand: 'npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run -s runtime:luna-live-fire-final-gate -- --json',
+  }];
+}

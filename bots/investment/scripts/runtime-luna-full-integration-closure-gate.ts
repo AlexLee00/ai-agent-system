@@ -30,6 +30,18 @@ function uniq(items = []) {
   return [...new Set(items.filter(Boolean).map((item) => String(item)))];
 }
 
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function isSettleableLiveFireBlocker(liveFire = {}) {
+  if (liveFire?.ok !== false) return false;
+  const blockers = (liveFire.blockers || []).map((item) => String(item || ''));
+  return blockers.some((item) =>
+    item.startsWith('post_live_fire_attention:') ||
+    item.startsWith('live_fire_readiness_blocked:'));
+}
+
 function blockerFromReconcile(report = {}) {
   const blockers = [];
   for (const item of report.blockers || []) {
@@ -100,7 +112,6 @@ export function buildLunaFullIntegrationClosureGateFromReports({
   ];
   const warnings = [
     ...warningFromMemory(memory.readiness || {}),
-    ...(reconcile.summary?.acknowledged > 0 ? [`reconcile_acknowledged_history:${reconcile.summary.acknowledged}`] : []),
     ...(busHygiene.before?.staleCount > 0 ? [`agent_message_bus_hygiene:stale:${busHygiene.before.staleCount}`] : []),
     ...(voyager.validationFixture?.fixtureUsed ? ['voyager_validation_fixture_used:not_production_skill'] : []),
     ...(curriculum.toCreate > 0 ? [`curriculum_bootstrap_required:${curriculum.toCreate}`] : []),
@@ -127,11 +138,13 @@ export function buildLunaFullIntegrationClosureGateFromReports({
     reconcile: {
       status: reconcile.status || null,
       summary: reconcile.summary || {},
+      acknowledgedAuditOnly: Number(reconcile.summary?.acknowledged || 0),
     },
     liveFire: {
       status: liveFire.status || null,
       blockers: liveFire.blockers || [],
       nextAction: liveFire.operatingSummary?.nextAction || null,
+      settledFrom: liveFire.settledFrom || null,
     },
     sevenDay: {
       status: sevenDay.status || null,
@@ -203,8 +216,10 @@ export async function buildLunaFullIntegrationClosureGate({
   hours = 24,
   days = 7,
   includeValidationFixture = false,
+  settleLiveFire = true,
+  settleDelayMs = 1500,
 } = {}) {
-  const [fullIntegration, reconcile, liveFire, sevenDay, posttrade, memory, busHygiene, voyager, reconcileEvidence, ackPreflight, curriculum] = await Promise.all([
+  const [fullIntegration, reconcile, initialLiveFire, sevenDay, posttrade, memory, busHygiene, voyager, reconcileEvidence, ackPreflight, curriculum] = await Promise.all([
     runLuna100PercentCompletionReport({ outputFile: null }),
     buildLunaReconcileBlockerReport({ exchange, hours }),
     buildLunaLiveFireFinalGate({ exchange, hours: Math.min(hours, 24), liveLookup: false, withPositionParity: true }),
@@ -225,6 +240,33 @@ export async function buildLunaFullIntegrationClosureGate({
     buildLunaReconcileAckPreflight({ exchange, hours, limit: 100, liveLookup: false }),
     runLunaCurriculumBootstrap({ market: 'any', apply: false }),
   ]);
+  let liveFire = initialLiveFire;
+  if (settleLiveFire && isSettleableLiveFireBlocker(initialLiveFire)) {
+    if (settleDelayMs > 0) await sleep(settleDelayMs);
+    const retried = await buildLunaLiveFireFinalGate({
+      exchange,
+      hours: Math.min(hours, 24),
+      liveLookup: false,
+      withPositionParity: true,
+    });
+    liveFire = retried.ok === true
+      ? {
+        ...retried,
+        settledFrom: {
+          status: initialLiveFire.status || null,
+          blockers: initialLiveFire.blockers || [],
+          checkedAt: initialLiveFire.checkedAt || null,
+        },
+      }
+      : {
+        ...retried,
+        settledFrom: {
+          status: initialLiveFire.status || null,
+          blockers: initialLiveFire.blockers || [],
+          checkedAt: initialLiveFire.checkedAt || null,
+        },
+      };
+  }
   return buildLunaFullIntegrationClosureGateFromReports({
     fullIntegration,
     reconcile,
@@ -303,6 +345,8 @@ async function main() {
       hours: Number(argValue('--hours', 24)),
       days: Number(argValue('--days', 7)),
       includeValidationFixture: hasFlag('--validation-fixture'),
+      settleLiveFire: !hasFlag('--no-live-fire-settle'),
+      settleDelayMs: Number(argValue('--live-fire-settle-delay-ms', 1500)),
     });
   if (json) console.log(JSON.stringify(result, null, 2));
   else if (smoke) console.log('luna full integration closure gate smoke ok');

@@ -6,6 +6,10 @@ import { publishAlert } from '../shared/alert-publisher.ts';
 import * as db from '../shared/db.ts';
 import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
 import { buildAgentMessageBusHygienePlan, classifyAgentMessageBusHygiene } from '../shared/luna-operational-closure-pack.ts';
+import { buildEvidenceHash } from '../shared/luna-reconcile-evidence-pack.ts';
+
+const SAFE_CONFIRM = 'luna-agent-bus-hygiene';
+const REVIEW_CONFIRM = 'luna-agent-bus-review-archive';
 
 function parseArgs(argv = process.argv.slice(2)) {
   return {
@@ -14,6 +18,7 @@ function parseArgs(argv = process.argv.slice(2)) {
     incidentKeyPrefix: argv.find((arg) => arg.startsWith('--incident-prefix='))?.split('=')[1] || '',
     apply: argv.includes('--apply'),
     dryRun: argv.includes('--dry-run') || !argv.includes('--apply'),
+    includeReviewRequired: argv.includes('--include-review-required'),
     json: argv.includes('--json'),
     confirm: argv.find((arg) => arg.startsWith('--confirm='))?.split('=')[1] || null,
   };
@@ -23,11 +28,14 @@ export async function runAgentMessageBusHygiene(args = {}) {
   const staleHours = Math.max(1, Number(args.staleHours || 24) || 24);
   const limit = Math.max(1, Math.min(500, Number(args.limit || 100) || 100));
   const before = await getMessageBusHygiene({ staleHours, limit });
-  if (args.apply === true && args.confirm !== 'luna-agent-bus-hygiene') {
+  const includeReviewRequired = args.includeReviewRequired === true;
+  const requiredConfirm = includeReviewRequired ? REVIEW_CONFIRM : SAFE_CONFIRM;
+  if (args.apply === true && args.confirm !== requiredConfirm) {
     const result = {
       ok: false,
       status: 'agent_message_bus_hygiene_confirm_required',
       staleHours,
+      includeReviewRequired,
       before,
       action: {
         ok: false,
@@ -35,7 +43,8 @@ export async function runAgentMessageBusHygiene(args = {}) {
         staleHours,
         candidates: 0,
         expired: 0,
-        error: 'confirm_required:luna-agent-bus-hygiene',
+        safeOnly: !includeReviewRequired,
+        error: `confirm_required:${requiredConfirm}`,
       },
       after: before,
     };
@@ -47,10 +56,32 @@ export async function runAgentMessageBusHygiene(args = {}) {
     limit,
     incidentKeyPrefix: args.incidentKeyPrefix || '',
     dryRun: args.apply !== true,
-    safeOnly: true,
+    safeOnly: !includeReviewRequired,
   });
   const after = args.apply === true ? await getMessageBusHygiene({ staleHours, limit }) : before;
   const classification = classifyAgentMessageBusHygiene({ ok: before.ok, before, action });
+  const reviewRows = (classification.rows || []).filter((row) => row.hygieneClass === 'review_required');
+  const reviewReport = {
+    status: reviewRows.length > 0 ? 'operator_review_required' : 'clear',
+    safeOnly: !includeReviewRequired,
+    includeReviewRequired,
+    reviewRequired: Number(classification.reviewRequired || 0),
+    safeExpire: Number(classification.safeExpire || 0),
+    blocked: Number(classification.blocked || 0),
+    rows: reviewRows.map((row) => ({
+      toAgent: row.to_agent || row.toAgent || null,
+      messageType: row.message_type || row.messageType || null,
+      staleCount: Number(row.staleCount || row.stale_count || 0),
+      oldestCreatedAt: row.oldest_created_at || row.oldestCreatedAt || null,
+      reason: row.reason || null,
+    })),
+  };
+  reviewReport.evidenceHash = buildEvidenceHash({
+    type: 'agent_message_bus_review_report',
+    staleHours,
+    reviewRequired: reviewReport.reviewRequired,
+    rows: reviewReport.rows,
+  });
   const status = action.expired > 0
     ? 'agent_message_bus_stale_expired'
     : Number(classification.reviewRequired || 0) > 0
@@ -64,9 +95,11 @@ export async function runAgentMessageBusHygiene(args = {}) {
     ok: before.ok !== false && action.ok !== false,
     status,
     staleHours,
+    includeReviewRequired,
     before,
     action,
     after,
+    reviewReport,
   };
   result.plan = buildAgentMessageBusHygienePlan(result);
 
@@ -82,6 +115,7 @@ export async function runAgentMessageBusHygiene(args = {}) {
           staleBefore: before.staleCount || 0,
           expired: action.expired || 0,
           confirmed: true,
+          includeReviewRequired,
           appliedAt: new Date().toISOString(),
         }),
       ],

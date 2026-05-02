@@ -37,7 +37,9 @@ export interface Luna7DayReportData {
     fired: number;
     blocked: number;
     approved: number;
+    executed: number;
     rejected: number;
+    statusCounts?: Record<string, number>;
   };
   trades: {
     total: number;
@@ -74,22 +76,37 @@ export interface Luna7DayReportData {
 }
 
 async function collectSignalStats(days: number): Promise<Luna7DayReportData['signals']> {
-  const row = await db.get(
+  const [row, statusRows] = await Promise.all([
+    db.get(
     `SELECT
        COUNT(*)::int                                          AS total,
-       SUM(CASE WHEN status IN ('approved','fired') THEN 1 ELSE 0 END)::int  AS fired,
+       SUM(CASE WHEN status IN ('approved','fired','executed') THEN 1 ELSE 0 END)::int  AS fired,
        SUM(CASE WHEN status = 'blocked' THEN 1 ELSE 0 END)::int   AS blocked,
        SUM(CASE WHEN status = 'approved' THEN 1 ELSE 0 END)::int  AS approved,
+       SUM(CASE WHEN status = 'executed' THEN 1 ELSE 0 END)::int  AS executed,
        SUM(CASE WHEN status = 'rejected' THEN 1 ELSE 0 END)::int  AS rejected
      FROM investment.signals
      WHERE created_at >= NOW() - ($1 * INTERVAL '1 day')`,
     [days],
-  ).catch(() => null);
+    ).catch(() => null),
+    db.query(
+      `SELECT COALESCE(status, 'unknown') AS status, COUNT(*)::int AS cnt
+       FROM investment.signals
+       WHERE created_at >= NOW() - ($1 * INTERVAL '1 day')
+       GROUP BY COALESCE(status, 'unknown')
+       ORDER BY cnt DESC`,
+      [days],
+    ).catch(() => []),
+  ]);
+  const statusCounts: Record<string, number> = {};
+  for (const item of statusRows || []) statusCounts[String(item.status || 'unknown')] = Number(item.cnt || 0);
   return {
     fired: Number(row?.fired || 0),
     blocked: Number(row?.blocked || 0),
     approved: Number(row?.approved || 0),
+    executed: Number(row?.executed || 0),
     rejected: Number(row?.rejected || 0),
+    statusCounts,
   };
 }
 
@@ -222,6 +239,7 @@ function renderReport(data: Luna7DayReportData): string {
   line(`    발화(fired)   : ${data.signals.fired}건`);
   line(`    차단(blocked) : ${data.signals.blocked}건`);
   line(`    승인(approved): ${data.signals.approved}건`);
+  line(`    실행(executed): ${data.signals.executed}건`);
   line(`    거부(rejected): ${data.signals.rejected}건`);
   line('');
   line('  [ 거래 현황 ]');
@@ -296,7 +314,7 @@ export async function runLuna7DayReport(
     periodDays: days,
     status: 'pending_observation',
     pendingReasons: [],
-    signals: safe(signals, { fired: 0, blocked: 0, approved: 0, rejected: 0 }),
+    signals: safe(signals, { fired: 0, blocked: 0, approved: 0, executed: 0, rejected: 0, statusCounts: {} }),
     trades: safe(trades, { total: 0, live: 0, mock: 0, avgPnlPct: 0, totalPnlUsdt: 0 }),
     markets: safe(markets, { binance: 0, kis: 0, kis_overseas: 0 }),
     reflexions: safe(reflexions, { count: 0, llmFailures: 0 }),
