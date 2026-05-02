@@ -298,6 +298,26 @@ export function buildCandidateExecutionKey(candidate = null, fallbackKey = null)
   return `${candidate?.executionScope || candidate?.brokerScope || fallbackKey || `${candidate?.exchange || 'unknown'}:${candidate?.symbol || 'unknown'}:${candidate?.tradeMode || 'normal'}`}:${candidate?.action || 'HOLD'}`;
 }
 
+export function pruneStaleMarketQueueEntries(entries = [], candidates = [], blockedCandidates = []) {
+  const liveKeys = new Set(
+    [...(candidates || []), ...(blockedCandidates || [])]
+      .map((candidate) => buildCandidateExecutionKey(candidate))
+      .filter(Boolean),
+  );
+  const staleEntries = [];
+  const keptEntries = [];
+  for (const entry of entries || []) {
+    const candidate = entry?.candidate || null;
+    const entryKey = buildCandidateExecutionKey(candidate, entry?.queueKey || null);
+    if (entryKey && liveKeys.has(entryKey)) {
+      keptEntries.push(entry);
+      continue;
+    }
+    staleEntries.push(entry);
+  }
+  return { keptEntries, staleEntries };
+}
+
 function parseJsonTail(text = '') {
   const raw = String(text || '').trim();
   if (!raw) return null;
@@ -634,7 +654,11 @@ export async function runPositionRuntimeDispatch(args = {}) {
   ).slice(0, Math.max(args.limit || 10, 10));
   const suppressedCandidates = scopeGate.suppressed.slice(0, Math.max(args.limit || 10, 10));
   const queueSnapshot = readPositionRuntimeMarketQueue(args.queueFile || DEFAULT_POSITION_RUNTIME_MARKET_QUEUE_FILE);
-  let marketQueueEntries = queueSnapshot.entries || [];
+  const prunedQueue = pruneStaleMarketQueueEntries(queueSnapshot.entries || [], phaseCandidates, allBlockedCandidates);
+  let marketQueueEntries = prunedQueue.keptEntries || [];
+  if ((prunedQueue.staleEntries || []).length > 0) {
+    writePositionRuntimeMarketQueue(marketQueueEntries, args.queueFile || DEFAULT_POSITION_RUNTIME_MARKET_QUEUE_FILE);
+  }
   let marketQueueSummary = summarizePositionRuntimeMarketQueue(marketQueueEntries, args.exchange || null);
 
   if (!args.execute) {
@@ -655,6 +679,7 @@ export async function runPositionRuntimeDispatch(args = {}) {
       marketQueue: {
         ...marketQueueSummary,
         file: args.queueFile || DEFAULT_POSITION_RUNTIME_MARKET_QUEUE_FILE,
+        staleCleared: prunedQueue.staleEntries?.length || 0,
       },
       runtimeDecision: runtimeReport.decision,
     };
@@ -673,6 +698,7 @@ export async function runPositionRuntimeDispatch(args = {}) {
       marketQueue: {
         ...marketQueueSummary,
         file: args.queueFile || DEFAULT_POSITION_RUNTIME_MARKET_QUEUE_FILE,
+        staleCleared: prunedQueue.staleEntries?.length || 0,
       },
       reason: args.phase6 === true
         ? 'use --confirm=phase6-autopilot'
@@ -864,6 +890,7 @@ export async function runPositionRuntimeDispatch(args = {}) {
     marketQueue: {
       ...marketQueueSummary,
       file: args.queueFile || DEFAULT_POSITION_RUNTIME_MARKET_QUEUE_FILE,
+      staleCleared: prunedQueue.staleEntries?.length || 0,
     },
     results,
     runtimeDecision: runtimeReport.decision,
