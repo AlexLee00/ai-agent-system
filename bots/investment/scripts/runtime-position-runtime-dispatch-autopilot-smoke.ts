@@ -12,6 +12,7 @@ import {
   computeDeferredGuardRetryMinutes,
   buildGuardReasonSummary,
   detectTerminalChildFailure,
+  pruneStaleMarketQueueEntries,
   renderText,
 } from './runtime-position-runtime-dispatch.ts';
 import { runPositionRuntimeAutopilot } from './runtime-position-runtime-autopilot.ts';
@@ -169,6 +170,34 @@ async function main() {
       executionScope: 'binance:live:live:binance:PUMP/USDT:normal:binance:PUMP/USDT:normal:EXIT',
       action: 'EXIT',
     }, 'fallback'),
+  );
+  const stalePruned = pruneStaleMarketQueueEntries(
+    [
+      {
+        queueKey: 'binance:live:MEGA',
+        candidate: {
+          executionScope: 'binance:live:live:binance:MEGA/USDT:normal:binance:MEGA/USDT:normal:ADJUST',
+          action: 'ADJUST',
+          exchange: 'binance',
+          symbol: 'MEGA/USDT',
+          tradeMode: 'normal',
+        },
+      },
+    ],
+    [
+      {
+        executionScope: 'binance:live:live:binance:KNC/USDT:normal:binance:KNC/USDT:normal:ADJUST',
+        action: 'ADJUST',
+        exchange: 'binance',
+        symbol: 'KNC/USDT',
+        tradeMode: 'normal',
+      },
+    ],
+    [],
+  );
+  assert(
+    '현재 candidate 집합에 없는 queue entry는 stale로 제거',
+    stalePruned.keptEntries.length === 0 && stalePruned.staleEntries.length === 1,
   );
 
   const phase6RunnerInvocation = buildExecutionInvocation({
