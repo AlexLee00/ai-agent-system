@@ -25,6 +25,8 @@
     <string>v3.0_oauth_4</string>
     <key>LLM_TEAM_SELECTOR_AB_PERCENT</key>
     <string>100</string>
+    <key>GEMINI_OAUTH_PROJECT_ID</key>
+    <string>gen-lang-client-0627707293</string>
     <key>PATH</key>
     <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
     <key>HUB_PG_USER</key>

@@ -5,6 +5,7 @@ import fs from 'fs';
 import path from 'path';
 import { spawnSync } from 'child_process';
 const { readGeminiCliCredentials } = require('../lib/oauth/gemini-cli-credentials.ts');
+const { getProviderRecord } = require('../lib/oauth/token-store.ts');
 const { classifyGeminiCliLiveError } = require('../lib/oauth/gemini-cli-live-error.ts');
 const {
   geminiCliQuotaProjectRequired,
@@ -77,6 +78,16 @@ function refreshWarnHours(): number {
   return Number.isFinite(value) && value > 0 ? value : 1;
 }
 
+function projectFromRecord(record: any): string {
+  return String(
+    record?.metadata?.quota_project_id
+      || record?.metadata?.project_id
+      || record?.token?.quota_project_id
+      || record?.token?.project_id
+      || '',
+  ).trim();
+}
+
 async function runLiveProbe() {
   const { callWithFallback } = await import('../lib/llm/unified-caller.ts');
   return callWithFallback({
@@ -129,10 +140,19 @@ function runLiveFailureDiagnostic(command: string) {
 
 async function main() {
   const args = parseArgs(process.argv);
+  const record = getProviderRecord('gemini-cli-oauth');
+  const projectId = String(
+    args.projectId
+      || process.env.GEMINI_OAUTH_PROJECT_ID
+      || process.env.GOOGLE_CLOUD_QUOTA_PROJECT
+      || process.env.GOOGLE_CLOUD_PROJECT
+      || projectFromRecord(record)
+      || '',
+  ).trim();
   const command = checkCommand(geminiCommand());
   const credentials = readGeminiCliCredentials({
     credentialsFile: args.credentialsFile,
-    projectId: args.projectId,
+    projectId,
   });
   const expiresInHours = credentials.ok ? tokenExpiresInHours(credentials.token) : null;
   const expired = Number.isFinite(Number(expiresInHours)) ? Number(expiresInHours) <= 0 : false;

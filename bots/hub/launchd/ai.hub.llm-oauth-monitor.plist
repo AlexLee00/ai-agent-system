@@ -19,6 +19,8 @@
     <string>/Users/alexlee</string>
     <key>MODE</key>
     <string>ops</string>
+    <key>GEMINI_OAUTH_PROJECT_ID</key>
+    <string>gen-lang-client-0627707293</string>
     <key>HUB_OAUTH_MONITOR_ALLOW_KEYCHAIN</key>
     <string>true</string>
     <key>HUB_OAUTH_MONITOR_SEND_ALARM</key>

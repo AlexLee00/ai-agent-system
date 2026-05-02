@@ -151,6 +151,7 @@ function unitSmokeScripts(): string[] {
     'gemini-cli-oauth-import-smoke.ts',
     'gemini-cli-oauth-adapter-smoke.ts',
     'gemini-cli-live-error-smoke.ts',
+    'gemini-codeassist-service-status-smoke.ts',
     'gemini-oauth-project-readiness-smoke.ts',
     'gemini-quota-project-policy-smoke.ts',
     'gemini-codeassist-oauth-direct-smoke.ts',

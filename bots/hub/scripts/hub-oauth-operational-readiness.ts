@@ -101,6 +101,9 @@ function main(): void {
     runScript('gemini_cli_readiness', 'gemini-cli-oauth-readiness.ts', ['--json', ...(requireGeminiQuotaProject ? ['--require-project'] : [])], {
       required: requireGeminiQuotaProject,
     }),
+    runScript('gemini_codeassist_service', 'gemini-codeassist-service-status.ts', ['--json', ...(requireGeminiQuotaProject ? ['--require-live'] : [])], {
+      required: requireGeminiQuotaProject,
+    }),
     runScript('team_llm_route_drill_mock', 'team-llm-route-drill.ts'),
     runScript(
       liveSteward ? 'steward_gemini_drill_live' : 'steward_gemini_drill_mock',
@@ -115,6 +118,7 @@ function main(): void {
 
   const teamReadiness = steps.find((step) => step.id === 'team_oauth_readiness')?.parsed;
   const geminiCliReadiness = steps.find((step) => step.id === 'gemini_cli_readiness')?.parsed;
+  const geminiCodeAssistService = steps.find((step) => step.id === 'gemini_codeassist_service')?.parsed;
   const stewardDrill = steps.find((step) => step.id.startsWith('steward_gemini_drill'))?.parsed;
   const failedRequired = steps.filter((step) => step.required && !step.ok);
   const provider = providerSummary(teamReadiness);
@@ -148,6 +152,14 @@ function main(): void {
       live_ok: geminiCliReadiness?.live?.ok ?? null,
       warnings: geminiCliReadiness?.warnings || [],
     },
+    gemini_codeassist_service: {
+      ok: Boolean(geminiCodeAssistService?.ok),
+      service: geminiCodeAssistService?.service || 'cloudaicompanion.googleapis.com',
+      project_id_configured: Boolean(geminiCodeAssistService?.project_id_configured),
+      state: geminiCodeAssistService?.service_status?.state || null,
+      error: geminiCodeAssistService?.service_status?.error || null,
+      activation_url: geminiCodeAssistService?.service_status?.activation_url || null,
+    },
     steward_gemini: {
       ok: Boolean(stewardDrill?.ok),
       mode: stewardDrill?.mode || null,
@@ -173,6 +185,7 @@ function main(): void {
     })),
     next_actions: [
       ...(geminiQuotaMissing ? ['Set GEMINI_OAUTH_PROJECT_ID or GOOGLE_CLOUD_PROJECT because strict Gemini CLI quota-project readiness is enabled.'] : []),
+      ...(geminiCodeAssistService?.ok === false && geminiCodeAssistService?.service_status?.activation_url ? [`Enable Gemini for Google Cloud API: ${geminiCodeAssistService.service_status.activation_url}`] : []),
       ...(!geminiQuotaMissing && provider.gemini_cli_oauth.quota_project_status === 'optional_missing' ? ['Optional: set GEMINI_OAUTH_PROJECT_ID or GOOGLE_CLOUD_PROJECT for direct Gemini API/pro quota attribution.'] : []),
       ...(provider.claude_code_oauth.needs_refresh ? ['Run Claude Code browser re-auth before token expiry if refresh/import does not recover automatically.'] : []),
       ...(provider.openai_oauth.needs_refresh ? ['Run Codex/OpenAI OAuth re-auth before token expiry if refresh/import does not recover automatically.'] : []),

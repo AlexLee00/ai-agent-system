@@ -47,6 +47,7 @@
     "github:token-smoke": "tsx scripts/github-token-smoke.ts",
     "oauth:gemini-cli-import": "tsx scripts/gemini-cli-oauth-import.ts",
     "oauth:gemini-cli-readiness": "tsx scripts/gemini-cli-oauth-readiness.ts",
+    "oauth:gemini-codeassist-service": "tsx scripts/gemini-codeassist-service-status.ts",
     "oauth:gemini-cli-live-error-smoke": "tsx scripts/gemini-cli-live-error-smoke.ts",
     "oauth:gemini-quota-policy-smoke": "tsx scripts/gemini-quota-project-policy-smoke.ts",
     "telegram:routing-readiness": "tsx scripts/telegram-routing-readiness-report.ts",

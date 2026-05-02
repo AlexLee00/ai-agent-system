@@ -32,6 +32,7 @@ function main() {
   assert.equal(plist.RunAtLoad, true, 'oauth monitor must run at load');
   assert(asNumber(plist.StartInterval, 'StartInterval') <= 900, 'oauth monitor interval must be 15 minutes or less');
   assert.equal(String(env.HUB_OAUTH_MONITOR_REQUIRE_GEMINI || '').trim(), 'true', 'Gemini OAuth readiness must be required');
+  assert.equal(String(env.GEMINI_OAUTH_PROJECT_ID || '').trim(), 'gen-lang-client-0627707293', 'Gemini quota project must be wired into oauth monitor launchd');
   assert(asNumber(env.HUB_GEMINI_OAUTH_WARN_HOURS, 'HUB_GEMINI_OAUTH_WARN_HOURS') >= 0.5, 'Gemini warn window must allow proactive refresh');
   assert(asNumber(env.HUB_GEMINI_OAUTH_CRITICAL_HOURS, 'HUB_GEMINI_OAUTH_CRITICAL_HOURS') >= 0.1, 'Gemini critical window must be non-zero');
 
