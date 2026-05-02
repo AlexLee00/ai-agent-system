@@ -2,10 +2,10 @@
 
 This inventory tracks the Hub alarm migration surface. `hub_alarm_native` entries are the desired path; `retired_gateway_guard` entries are regression guards; `legacy_gateway_compat` entries are remaining migration targets and must stay at 0.
 
-- generated_at: 2026-05-02T14:38:49.846Z
-- total_matches: 290
-- unique_files: 150
-- hub_alarm_native: 277
+- generated_at: 2026-05-02T21:59:42.601Z
+- total_matches: 291
+- unique_files: 151
+- hub_alarm_native: 278
 - retired_gateway_guard: 13
 - legacy_gateway_compat: 0
 
@@ -170,6 +170,9 @@ This inventory tracks the Hub alarm migration surface. `hub_alarm_native` entrie
 ### `bots/darwin/__tests__/research-monitor-smoke.test.ts`
 - L31 [hub_alarm_native]: `if (request === '../../../packages/core/lib/hub-alarm-client') {`
 
+### `bots/darwin/__tests__/research-scanner-dry-run-smoke.test.ts`
+- L82 [hub_alarm_native]: `if (request === '../../../packages/core/lib/hub-alarm-client') {`
+
 ### `bots/darwin/__tests__/research-task-runner-smoke.test.ts`
 - L27 [hub_alarm_native]: `if (request === '../../../packages/core/lib/hub-alarm-client') {`
 
@@ -183,7 +186,7 @@ This inventory tracks the Hub alarm migration surface. `hub_alarm_native` entrie
 - L12 [hub_alarm_native]: `const { postAlarm } = require('../../../packages/core/lib/hub-alarm-client');`
 
 ### `bots/darwin/lib/research-monitor.ts`
-- L65 [hub_alarm_native]: `const { postAlarm }: { postAlarm: (payload: AlarmPayload) => Promise<unknown> } = require('../../../packages/core/lib/hub-alarm-client');`
+- L66 [hub_alarm_native]: `const { postAlarm }: { postAlarm: (payload: AlarmPayload) => Promise<unknown> } = require('../../../packages/core/lib/hub-alarm-client');`
 
 ### `bots/darwin/lib/research-scanner.ts`
 - L26 [hub_alarm_native]: `const { postAlarm } = require('../../../packages/core/lib/hub-alarm-client');`

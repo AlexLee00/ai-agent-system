@@ -1,15 +1,15 @@
 {
-  "generated_at": "2026-05-02T14:38:49.846Z",
+  "generated_at": "2026-05-02T21:59:42.601Z",
   "scan_patterns": [
     "hub-alarm-client",
     "openclaw-client",
     "HUB_ALARM_",
     "OPENCLAW_"
   ],
-  "total_matches": 290,
-  "unique_files": 150,
+  "total_matches": 291,
+  "unique_files": 151,
   "categories": {
-    "hub_alarm_native": 277,
+    "hub_alarm_native": 278,
     "retired_gateway_guard": 13,
     "legacy_gateway_compat": 0
   },
@@ -460,6 +460,14 @@
         "match": "if (request === '../../../packages/core/lib/hub-alarm-client') {"
       }
     ],
+    "bots/darwin/__tests__/research-scanner-dry-run-smoke.test.ts": [
+      {
+        "file": "bots/darwin/__tests__/research-scanner-dry-run-smoke.test.ts",
+        "line": 82,
+        "category": "hub_alarm_native",
+        "match": "if (request === '../../../packages/core/lib/hub-alarm-client') {"
+      }
+    ],
     "bots/darwin/__tests__/research-task-runner-smoke.test.ts": [
       {
         "file": "bots/darwin/__tests__/research-task-runner-smoke.test.ts",
@@ -495,7 +503,7 @@
     "bots/darwin/lib/research-monitor.ts": [
       {
         "file": "bots/darwin/lib/research-monitor.ts",
-        "line": 65,
+        "line": 66,
         "category": "hub_alarm_native",
         "match": "const { postAlarm }: { postAlarm: (payload: AlarmPayload) => Promise<unknown> } = require('../../../packages/core/lib/hub-alarm-client');"
       }
