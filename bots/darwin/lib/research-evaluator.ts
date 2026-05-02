@@ -44,9 +44,35 @@ const SYSTEM_PROMPT = `당신은 팀 제이의 연구 분석가입니다.
 적합성: (숫자)
 이유: (한국어 1줄)`;
 
+function parseEvaluationText(text: string): EvaluationResult | null {
+  const normalized = String(text || '').trim();
+  if (!normalized) return null;
+
+  const summaryMatch =
+    normalized.match(/요약\s*[:：]\s*([^\n]+)/)
+    || normalized.match(/summary\s*[:：]\s*([^\n]+)/i);
+  const scoreMatch =
+    normalized.match(/적합성\s*[:：]\s*(\d+(?:\.\d+)?)/)
+    || normalized.match(/relevance\s*[:：]\s*(\d+(?:\.\d+)?)/i)
+    || normalized.match(/\b(\d+(?:\.\d+)?)\s*\/\s*10\b/);
+  const reasonMatch =
+    normalized.match(/이유\s*[:：]\s*([^\n]+)/)
+    || normalized.match(/reason\s*[:：]\s*([^\n]+)/i);
+
+  const summary = String(summaryMatch?.[1] || '').trim();
+  const rawScore = Number.parseFloat(String(scoreMatch?.[1] || ''));
+  if (!summary || !Number.isFinite(rawScore)) return null;
+
+  return {
+    korean_summary: summary,
+    relevance_score: Math.max(0, Math.min(10, Math.round(rawScore))),
+    reason: String(reasonMatch?.[1] || '').trim(),
+  };
+}
+
 async function evaluatePaper(paper: PaperCandidate): Promise<EvaluationResult> {
   try {
-    const result = await callHubLlm({
+    const request = {
       callerTeam: 'darwin',
       agent: 'research',
       taskType: 'paper_evaluation',
@@ -54,19 +80,25 @@ async function evaluatePaper(paper: PaperCandidate): Promise<EvaluationResult> {
       systemPrompt: SYSTEM_PROMPT,
       prompt: `제목: ${paper.title}\n초록: ${paper.summary}`,
       timeoutMs: 15_000,
-    });
-
-    const text = String(result?.text || '');
-    const summaryMatch = text.match(/요약:\s*(.+)/);
-    const scoreMatch = text.match(/적합성:\s*(\d+)/);
-    const reasonMatch = text.match(/이유:\s*(.+)/);
-    const score = Number.parseInt(scoreMatch?.[1] || '0', 10);
-
-    return {
-      korean_summary: summaryMatch?.[1]?.trim() || paper.title,
-      relevance_score: Number.isFinite(score) ? Math.max(0, Math.min(10, score)) : 0,
-      reason: reasonMatch?.[1]?.trim() || '',
     };
+
+    let result = await callHubLlm(request);
+    let parsed = parseEvaluationText(String(result?.text || ''));
+
+    if (!parsed) {
+      result = await callHubLlm({
+        ...request,
+        taskType: 'paper_evaluation_retry',
+        prompt: `${request.prompt}\n\n형식 재강조:\n요약: 한 줄\n적합성: 숫자 하나\n이유: 한 줄`,
+      });
+      parsed = parseEvaluationText(String(result?.text || ''));
+    }
+
+    if (!parsed) {
+      throw new Error('paper_evaluation_parse_failed');
+    }
+
+    return parsed;
   } catch (err) {
     const errorMessage =
       typeof err === 'object' && err !== null && 'message' in err

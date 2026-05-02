@@ -60,6 +60,19 @@ async function main() {
     assert.strictEqual(metrics.total_collected, 10);
     assert.strictEqual(metrics.duplicate_rate, 17);
     assert.strictEqual(metrics.store_success_rate, 100);
+    assert.strictEqual(metrics.effective_evaluated, 8);
+
+    const failedEvalMetrics = monitor.collectMetrics({
+      totalRaw: 12,
+      total: 10,
+      evaluated: 8,
+      evaluationFailures: 3,
+      stored: 8,
+      highRelevance: 2,
+      alarmSent: true,
+    }, 90_000);
+    assert.strictEqual(failedEvalMetrics.effective_evaluated, 5);
+    assert.strictEqual(failedEvalMetrics.relevance_rate, 40);
 
     const healthyAlerts = await monitor.checkAnomalies({
       total_collected: 10,

@@ -27,10 +27,10 @@ const { postAlarm } = require('../../../packages/core/lib/hub-alarm-client');
 const kst = require('../../../packages/core/lib/kst');
 
 const MAX_EVALUATIONS_PER_RUN = 40;
-const EVALUATION_DELAY_MS = 1_000;
+const EVALUATION_CONCURRENCY = _readPositiveIntEnv('DARWIN_EVALUATION_CONCURRENCY', 4, { min: 1, max: 8 });
 const DURATION_WARNING_THRESHOLD_SEC = 300;
-const DOMAIN_DELAY_MS = 3_000;
-const ARXIV_RESULTS_PER_DOMAIN = 10;
+const ARXIV_DOMAIN_CONCURRENCY = _readPositiveIntEnv('DARWIN_ARXIV_DOMAIN_CONCURRENCY', 1, { min: 1, max: 3 });
+const ARXIV_RESULTS_PER_DOMAIN = _readPositiveIntEnv('DARWIN_ARXIV_RESULTS_PER_DOMAIN', 10, { min: 1, max: 50 });
 const SCHEMA = 'reservation';
 const TABLE = 'rag_research';
 const MAX_DAILY_PROPOSALS = 2;
@@ -38,6 +38,18 @@ const AUTO_TASK_MIN_STARS = 100;
 const AUTO_TASK_MIN_FILES = 20;
 const MAX_WEEKLY_TASKS = 3;
 const logger = createLogger('scanner', { team: 'darwin' });
+
+function _readPositiveIntEnv(name: string, fallback: number, options: { min?: number; max?: number } = {}): number {
+  const raw = String(process.env[name] || '').trim();
+  if (!raw) return fallback;
+
+  const value = Number.parseInt(raw, 10);
+  if (!Number.isFinite(value)) return fallback;
+
+  const min = Number.isFinite(options.min) ? Number(options.min) : 1;
+  const max = Number.isFinite(options.max) ? Number(options.max) : Number.MAX_SAFE_INTEGER;
+  return Math.min(max, Math.max(min, value));
+}
 
 type DomainStats = { total: number; high: number };
 
@@ -118,6 +130,29 @@ function toErrorMessage(err: unknown): string {
 
 function _sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function _mapWithConcurrency<T, R>(
+  items: T[],
+  concurrency: number,
+  worker: (item: T, index: number) => Promise<R>
+): Promise<R[]> {
+  if (!Array.isArray(items) || items.length === 0) return [];
+
+  const limit = Math.max(1, Math.min(concurrency, items.length));
+  const results: R[] = new Array(items.length);
+  let cursor = 0;
+
+  async function runWorker(): Promise<void> {
+    while (cursor < items.length) {
+      const index = cursor;
+      cursor += 1;
+      results[index] = await worker(items[index], index);
+    }
+  }
+
+  await Promise.all(Array.from({ length: limit }, () => runWorker()));
+  return results;
 }
 
 function _extractGitHubRepo(paper: Partial<ResearchPaper>): GitHubRepoRef | null {
@@ -244,13 +279,16 @@ async function _selectSearchers() {
 }
 
 async function _collectPapers(searchers: SearcherSelection[]): Promise<ResearchPaper[]> {
-  const arxivResults: ResearchPaper[] = [];
-  for (const { name, domain } of searchers) {
-    const papers = await arxivClient.searchByDomain(domain, ARXIV_RESULTS_PER_DOMAIN);
-    arxivResults.push(...papers);
-    logger.info(`${name}→arXiv ${domain}: ${papers.length}건`);
-    await _sleep(DOMAIN_DELAY_MS);
-  }
+  const arxivBatches = await _mapWithConcurrency(
+    searchers,
+    ARXIV_DOMAIN_CONCURRENCY,
+    async ({ name, domain }) => {
+      const papers = await arxivClient.searchByDomain(domain, ARXIV_RESULTS_PER_DOMAIN);
+      logger.info(`${name}→arXiv ${domain}: ${papers.length}건`);
+      return papers;
+    }
+  );
+  const arxivResults = arxivBatches.flat();
 
   const trending = await hfClient.fetchTrending();
   logger.info(`HF 트렌딩: ${trending.length}건`);
@@ -606,16 +644,15 @@ async function run(): Promise<ScanResult> {
   const unique = _dedupePapers(allPapers);
   console.log(`[research-scanner] 중복 제거 후: ${unique.length}건 (전체 ${allPapers.length}건)`);
 
-  const evaluated: ResearchPaper[] = [];
-  let evaluationFailures = 0;
-  for (const paper of unique.slice(0, MAX_EVALUATIONS_PER_RUN)) {
-    const evaluation = await evaluator.evaluatePaper(paper);
-    evaluated.push({ ...paper, ...evaluation });
-    if (evaluation.reason === '평가 실패') {
-      evaluationFailures += 1;
+  const evaluated = await _mapWithConcurrency(
+    unique.slice(0, MAX_EVALUATIONS_PER_RUN),
+    EVALUATION_CONCURRENCY,
+    async (paper) => {
+      const evaluation = await evaluator.evaluatePaper(paper);
+      return { ...paper, ...evaluation };
     }
-    await _sleep(EVALUATION_DELAY_MS);
-  }
+  );
+  const evaluationFailures = evaluated.filter((paper) => paper.reason === '평가 실패').length;
 
   const enrichment = await _enrichWithGitHub(evaluated);
   const { storedCount, experienceCount } = await _storeEvaluatedPapers(evaluated);

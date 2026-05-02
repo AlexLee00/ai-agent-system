@@ -6,11 +6,11 @@
  */
 
 const ARXIV_API_URL = 'http://export.arxiv.org/api/query';
-const REQUEST_TIMEOUT_MS = 30_000;
-const KEYWORD_DELAY_MS = 5_000;
-const DOMAIN_DELAY_MS = 5_000;
+const REQUEST_TIMEOUT_MS = _readPositiveIntEnv('DARWIN_ARXIV_REQUEST_TIMEOUT_MS', 20_000, { min: 5_000, max: 120_000 });
+const KEYWORD_DELAY_MS = _readPositiveIntEnv('DARWIN_ARXIV_KEYWORD_DELAY_MS', 3_000, { min: 500, max: 60_000 });
+const DOMAIN_DELAY_MS = _readPositiveIntEnv('DARWIN_ARXIV_DOMAIN_DELAY_MS', 3_000, { min: 500, max: 60_000 });
 const MAX_RETRIES = 2;
-const RETRY_BASE_DELAY_MS = 5_000;
+const RETRY_BASE_DELAY_MS = _readPositiveIntEnv('DARWIN_ARXIV_RETRY_BASE_DELAY_MS', 3_000, { min: 500, max: 60_000 });
 
 type DarwinDomain =
   | 'neuron'
@@ -45,6 +45,18 @@ const DOMAIN_KEYWORDS: Record<DarwinDomain, string[]> = {
   pulse: ['marketing automation AI', 'monetization agent', 'growth optimization'],
   frontier: ['arXiv trending AI 2026', 'latest agent framework', 'MCP protocol agent'],
 };
+
+function _readPositiveIntEnv(name: string, fallback: number, options: { min?: number; max?: number } = {}): number {
+  const raw = String(process.env[name] || '').trim();
+  if (!raw) return fallback;
+
+  const value = Number.parseInt(raw, 10);
+  if (!Number.isFinite(value)) return fallback;
+
+  const min = Number.isFinite(options.min) ? Number(options.min) : 1;
+  const max = Number.isFinite(options.max) ? Number(options.max) : Number.MAX_SAFE_INTEGER;
+  return Math.min(max, Math.max(min, value));
+}
 
 function _sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));

@@ -47,6 +47,7 @@ interface ResearchMetrics {
   total_collected: number;
   duplicate_rate: number;
   evaluated: number;
+  effective_evaluated: number;
   stored: number;
   high_relevance: number;
   alarm_sent: boolean;
@@ -72,10 +73,12 @@ function collectMetrics(scanResult: ScanResult, durationMs: number): ResearchMet
   const totalCollected = Number(scanResult.total || 0);
   const totalRaw = Number(scanResult.totalRaw || totalCollected);
   const evaluated = Number(scanResult.evaluated || 0);
+  const evaluationFailures = Number(scanResult.evaluationFailures || 0);
+  const effectiveEvaluated = Math.max(0, evaluated - evaluationFailures);
   const stored = Number(scanResult.stored || 0);
   const highRelevance = Number(scanResult.highRelevance || 0);
   const duplicateRate = totalRaw > 0 ? Math.round(((totalRaw - totalCollected) / totalRaw) * 100) : 0;
-  const relevanceRate = evaluated > 0 ? Math.round((highRelevance / evaluated) * 100) : 0;
+  const relevanceRate = effectiveEvaluated > 0 ? Math.round((highRelevance / effectiveEvaluated) * 100) : 0;
   const storeSuccessRate = evaluated > 0 ? Math.round((stored / evaluated) * 100) : 0;
 
   return {
@@ -84,11 +87,12 @@ function collectMetrics(scanResult: ScanResult, durationMs: number): ResearchMet
     total_collected: totalCollected,
     duplicate_rate: duplicateRate,
     evaluated,
+    effective_evaluated: effectiveEvaluated,
     stored,
     high_relevance: highRelevance,
     alarm_sent: scanResult.alarmSent || false,
     duration_sec: Math.round(durationMs / 1000),
-    evaluation_failures: Number(scanResult.evaluationFailures || 0),
+    evaluation_failures: evaluationFailures,
     relevance_rate: relevanceRate,
     store_success_rate: storeSuccessRate,
     keyword_evolution_count: Number(scanResult.keywordEvolutionCount || 0),
@@ -122,7 +126,7 @@ async function checkAnomalies(metrics: ResearchMetrics): Promise<string[]> {
   if (metrics.store_success_rate < 90) alerts.push(`⚠️ 저장 성공률 ${metrics.store_success_rate}% (목표 95%+)`);
   if (metrics.duration_sec > 300) alerts.push(`⚠️ 소요 시간 ${metrics.duration_sec}초 (목표 300초 이내)`);
   if (metrics.relevance_rate > 80) alerts.push(`⚠️ 적합성 비율 ${metrics.relevance_rate}% — 키워드가 너무 좁을 수 있음`);
-  if (metrics.relevance_rate < 5 && metrics.evaluated > 0) alerts.push(`⚠️ 적합성 비율 ${metrics.relevance_rate}% — 키워드 튜닝 필요`);
+  if (metrics.relevance_rate < 5 && metrics.effective_evaluated > 0) alerts.push(`⚠️ 적합성 비율 ${metrics.relevance_rate}% — 키워드 튜닝 필요`);
   if (!metrics.alarm_sent && metrics.high_relevance > 0) alerts.push('🚨 알림 전달 실패! postAlarm 점검 필요');
   if (metrics.proposals_generated > 0 && metrics.proposal_pass_rate < 30) {
     alerts.push(`⚠️ 프로토타입 검증 통과율 ${metrics.proposal_pass_rate}% — edison 프롬프트 튜닝 필요`);
