@@ -181,7 +181,8 @@ async function test_listAutoDevDocuments_uses_auto_dev_only() {
   const tmpRoot = makeTempRoot();
   fs.mkdirSync(path.join(tmpRoot, 'docs', 'auto_dev'), { recursive: true });
   fs.mkdirSync(path.join(tmpRoot, 'docs', 'codex'), { recursive: true });
-  fs.writeFileSync(path.join(tmpRoot, 'docs', 'auto_dev', 'CODEX_SAMPLE.md'), withRequiredMetadata('# A'), 'utf8');
+  fs.writeFileSync(path.join(tmpRoot, 'docs', 'auto_dev', 'ALARM_INCIDENT_SAMPLE.md'), withRequiredMetadata('# A'), 'utf8');
+  fs.writeFileSync(path.join(tmpRoot, 'docs', 'auto_dev', 'CODEX_SAMPLE.md'), withRequiredMetadata('# Ignored'), 'utf8');
   fs.writeFileSync(
     path.join(tmpRoot, 'docs', 'auto_dev', 'CODEX_NOTE.md'),
     withRequiredMetadata('# Note', { task_type: 'planning_note' }),
@@ -197,7 +198,7 @@ async function test_listAutoDevDocuments_uses_auto_dev_only() {
   const { mocks } = makeMocks(tmpRoot);
   await withMocks(mocks, async pipeline => {
     const docs = pipeline.listAutoDevDocuments().map(file => path.relative(tmpRoot, file).replace(/\\/g, '/'));
-    assert.deepStrictEqual(docs, ['docs/auto_dev/CODEX_SAMPLE.md']);
+    assert.deepStrictEqual(docs, ['docs/auto_dev/ALARM_INCIDENT_SAMPLE.md']);
   }, testEnv(tmpRoot));
 
   fs.rmSync(tmpRoot, { recursive: true, force: true });
@@ -1782,7 +1783,7 @@ async function test_cherry_pick_failure_aborts_and_fails_closed() {
 
 async function test_status_snapshot_includes_profile_worktree_patch_counts() {
   const tmpRoot = makeTempRoot();
-  makeDoc(tmpRoot, 'CODEX_STATUS.md', '# Status\nsnapshot');
+  makeDoc(tmpRoot, 'ALARM_INCIDENT_STATUS.md', '# Status\nsnapshot');
   const statePath = path.join(tmpRoot, 'auto-dev-state.json');
   const worktreeDir = path.join(tmpRoot, 'claude-auto-dev-worktrees');
   const artifactDir = path.join(tmpRoot, 'claude-auto-dev-artifacts');
@@ -1793,7 +1794,7 @@ async function test_status_snapshot_includes_profile_worktree_patch_counts() {
     jobs: {
       one: {
         id: 'one',
-        relPath: 'docs/auto_dev/CODEX_STATUS.md',
+        relPath: 'docs/auto_dev/ALARM_INCIDENT_STATUS.md',
         status: 'completed',
         stage: 'completed',
         title: 'Status',

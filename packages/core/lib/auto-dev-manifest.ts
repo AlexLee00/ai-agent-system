@@ -6,6 +6,7 @@ const path = require('path');
 const env = require('./env');
 
 const MANIFEST_FILE_NAME = '.auto-dev-manifest.json';
+const INCIDENT_FILE_PREFIX = 'ALARM_INCIDENT_';
 
 function getProjectRoot() {
   const override = String(process.env.PROJECT_ROOT || process.env.CODEX_PROJECT_ROOT || '').trim();
@@ -80,6 +81,7 @@ function syncAutoDevManifest(autoDevDir) {
   const manifest = loadAutoDevManifest(autoDevDir);
   const names = fs.readdirSync(autoDevDir)
     .filter((name) => name.endsWith('.md'))
+    .filter((name) => name.startsWith(INCIDENT_FILE_PREFIX))
     .filter((name) => !name.startsWith('.'));
 
   for (const name of names) {
@@ -129,7 +131,8 @@ function listAutoDevManifestEntries(autoDevDir, allowedStates = ['inbox']) {
   const manifest = syncAutoDevManifest(autoDevDir);
   const allowed = new Set((allowedStates || []).map((item) => String(item)));
   return Object.values(manifest.entries || {})
-    .filter((entry) => entry?.relPath && allowed.has(String(entry.state || '')))
+    .filter((entry) => entry?.relPath && path.basename(String(entry.relPath || '')).startsWith(INCIDENT_FILE_PREFIX))
+    .filter((entry) => allowed.has(String(entry.state || '')))
     .sort((a, b) => String(a.createdAt || '').localeCompare(String(b.createdAt || '')))
     .map((entry) => entry.relPath);
 }
