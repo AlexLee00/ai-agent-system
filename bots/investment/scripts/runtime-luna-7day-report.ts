@@ -151,17 +151,25 @@ async function collectReflexionStats(days: number): Promise<Luna7DayReportData['
 }
 
 async function collectSkillStats(days: number): Promise<Luna7DayReportData['skills']> {
-  const [r1, r2] = await Promise.allSettled([
+  const [libraryRecent, libraryTotal, posttradeRecent, posttradeTotal] = await Promise.allSettled([
     db.get(
       `SELECT COUNT(*)::int AS cnt FROM investment.skill_library
        WHERE updated_at >= NOW() - ($1 * INTERVAL '1 day')`,
       [days],
     ),
     db.get(`SELECT COUNT(*)::int AS cnt FROM investment.skill_library`, []),
+    db.get(
+      `SELECT COUNT(*)::int AS cnt FROM investment.luna_posttrade_skills
+       WHERE updated_at >= NOW() - ($1 * INTERVAL '1 day')`,
+      [days],
+    ),
+    db.get(`SELECT COUNT(*)::int AS cnt FROM investment.luna_posttrade_skills`, []),
   ]);
+  const safeCount = (result: PromiseSettledResult<any>) =>
+    Number((result.status === 'fulfilled' ? result.value?.cnt : null) || 0);
   return {
-    extracted: Number((r1.status === 'fulfilled' ? r1.value?.cnt : null) || 0),
-    libraryTotal: Number((r2.status === 'fulfilled' ? r2.value?.cnt : null) || 0),
+    extracted: safeCount(libraryRecent) + safeCount(posttradeRecent),
+    libraryTotal: safeCount(libraryTotal) + safeCount(posttradeTotal),
   };
 }
 

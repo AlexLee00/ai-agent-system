@@ -5399,6 +5399,18 @@ async function runCommentReply({ testMode = false } = {}) {
       if (result.ok) replied += 1;
       else if (result.skipped) skipped += 1;
     } catch (error) {
+      const alreadyReplied = await hasSuccessfulReplyForComment(comment).catch(() => false);
+      if (alreadyReplied) {
+        await updateCommentStatus(comment.id, 'replied', {
+          meta: {
+            phase: 'dedupe',
+            reason: 'existing_successful_reply_after_timeout',
+            previous_error: String(error?.message || error || ''),
+          },
+        });
+        replied += 1;
+        continue;
+      }
       const uiError = isDirectReplyUiError(error);
       const rawErrorMessage = String(error?.message || 'reply_ui_unavailable');
       const summarizedUiError = uiError

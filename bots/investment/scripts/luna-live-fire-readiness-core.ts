@@ -13,6 +13,7 @@ export function evaluateLunaLiveFireReadinessGate({
   const observations = [];
   const killSwitches = operating.killSwitches || {};
   const result = heartbeatResult(worker);
+  const workerMigrated = worker?.status === 'entry_trigger_worker_migrated_to_luna_skill';
   const mode = String(result?.mode || '').toLowerCase();
   const allowLiveFire = result?.allowLiveFire === true;
   const readyBlocked = Number(result?.readyBlocked || 0);
@@ -25,13 +26,15 @@ export function evaluateLunaLiveFireReadinessGate({
   if (killSwitches.LUNA_PREDICTION_ENABLED !== 'true') blockers.push('prediction_canary_not_enabled');
   if (!worker.ok) blockers.push(`entry_trigger_worker_not_ready:${worker.status || 'unknown'}`);
   if (duplicateFiredScopeCount > 0) blockers.push(`duplicate_fired_scopes:${duplicateFiredScopeCount}`);
-  if (heartbeatAgeMinutes == null) blockers.push('worker_heartbeat_missing');
-  if (heartbeatAgeMinutes != null && heartbeatAgeMinutes > 10) blockers.push(`worker_heartbeat_stale:${heartbeatAgeMinutes}m`);
+  if (!workerMigrated && heartbeatAgeMinutes == null) blockers.push('worker_heartbeat_missing');
+  if (!workerMigrated && heartbeatAgeMinutes != null && heartbeatAgeMinutes > 10) blockers.push(`worker_heartbeat_stale:${heartbeatAgeMinutes}m`);
   if (minShadowReadyBlocked > 0 && readyBlocked < minShadowReadyBlocked) {
     blockers.push(`insufficient_shadow_ready_observations:${readyBlocked}/${minShadowReadyBlocked}`);
   }
 
-  if (allowLiveFire || mode === 'autonomous_l5' || mode === 'autonomous') {
+  if (workerMigrated) {
+    observations.push('entry trigger worker migrated to luna skill; legacy heartbeat not required');
+  } else if (allowLiveFire || mode === 'autonomous_l5' || mode === 'autonomous') {
     observations.push('entry trigger worker is already in live-fire capable mode');
   } else if (mode === 'shadow') {
     observations.push(`shadow ready-blocked observations: ${readyBlocked}`);

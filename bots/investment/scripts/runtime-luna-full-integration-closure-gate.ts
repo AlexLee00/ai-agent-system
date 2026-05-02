@@ -156,6 +156,7 @@ export function buildLunaFullIntegrationClosureGateFromReports({
       status: voyager.status || null,
       naturalDataReady: voyager.naturalDataReady ?? voyager.readyForExtraction ?? false,
       fixtureUsed: voyager.validationFixture?.fixtureUsed === true,
+      productionSkillPromoted: voyager.productionSkillPromoted === true,
     },
     reconcileEvidence: {
       status: reconcileEvidence.status || null,

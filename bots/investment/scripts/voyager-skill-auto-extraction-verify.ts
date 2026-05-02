@@ -60,13 +60,15 @@ async function countTqeCandidates(days = 90): Promise<{ preferred: number; rejec
   return result;
 }
 
-/** skill_library 현재 항목 수 */
+/** production skill evidence 현재 항목 수 */
 async function countSkillLibrary(): Promise<number> {
-  const row = await db.get(
-    `SELECT COUNT(*)::int AS cnt FROM investment.skill_library`,
-    [],
-  ).catch(() => null);
-  return Number(row?.cnt || 0);
+  const [library, posttrade] = await Promise.allSettled([
+    db.get(`SELECT COUNT(*)::int AS cnt FROM investment.skill_library`, []),
+    db.get(`SELECT COUNT(*)::int AS cnt FROM investment.luna_posttrade_skills`, []),
+  ]);
+  const safeCount = (result: PromiseSettledResult<any>) =>
+    Number((result.status === 'fulfilled' ? result.value?.cnt : null) || 0);
+  return safeCount(library) + safeCount(posttrade);
 }
 
 /** 스킬 추출 dry-run 시뮬레이션 */
@@ -168,10 +170,11 @@ export async function runVoyagerSkillAutoExtractionVerify(opts: {
 
   // ─── Step 3: skill_library 현재 상태 ─────────────────────────────
   const skillCountBefore = await countSkillLibrary();
+  const productionSkillPromoted = skillCountBefore > 0;
   steps.push({
     name: 'skill_library_before',
     pass: true,
-    detail: `현재 skill_library ${skillCountBefore}건`,
+    detail: `현재 production skill evidence ${skillCountBefore}건`,
   });
 
   // ─── Step 4: 스킬 추출 dry-run ────────────────────────────────────
@@ -228,6 +231,7 @@ export async function runVoyagerSkillAutoExtractionVerify(opts: {
     minCandidates,
     readyForExtraction,
     naturalDataReady,
+    productionSkillPromoted,
     pendingReason,
     validationFixture,
     steps,

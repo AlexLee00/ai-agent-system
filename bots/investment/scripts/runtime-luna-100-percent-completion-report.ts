@@ -74,9 +74,19 @@ interface CompletionReportData {
 }
 
 async function collectOperationalMetrics(): Promise<CompletionReportData['operationalMetrics']> {
+  const collectSkillLibraryCount = async () => {
+    const [library, posttrade] = await Promise.allSettled([
+      db.get(`SELECT COUNT(*)::int AS cnt FROM investment.skill_library`, []),
+      db.get(`SELECT COUNT(*)::int AS cnt FROM investment.luna_posttrade_skills`, []),
+    ]);
+    const safeNum = (r: PromiseSettledResult<any>) =>
+      Number(r.status === 'fulfilled' ? r.value?.cnt : 0) || 0;
+    return safeNum(library) + safeNum(posttrade);
+  };
+
   const queries = [
     db.get(`SELECT COUNT(*)::int AS cnt FROM investment.luna_failure_reflexions`, []),
-    db.get(`SELECT COUNT(*)::int AS cnt FROM investment.skill_library`, []),
+    collectSkillLibraryCount(),
     db.get(`SELECT COUNT(*)::int AS cnt FROM investment.luna_rag_documents`, []),
     db.get(`SELECT COUNT(*)::int AS cnt FROM investment.entity_facts`, []),
     db.get(`SELECT COUNT(*)::int AS cnt FROM investment.agent_messages WHERE created_at > NOW() - INTERVAL '7 days'`, []),
@@ -86,7 +96,7 @@ async function collectOperationalMetrics(): Promise<CompletionReportData['operat
 
   const results = await Promise.allSettled(queries);
   const safeNum = (r: PromiseSettledResult<any>) =>
-    Number(r.status === 'fulfilled' ? r.value?.cnt : 0) || 0;
+    Number(r.status === 'fulfilled' ? (typeof r.value === 'number' ? r.value : r.value?.cnt) : 0) || 0;
 
   return {
     reflexionCount: safeNum(results[0]),

@@ -187,8 +187,9 @@ export function getCurriculumPromptAdjustment(level: CurriculumLevel): string {
  */
 export async function getAllCurriculumStates(
   market?: string,
+  options: { includeDisabledState?: boolean } = {},
 ): Promise<Array<CurriculumState & { agentName: string; market: string }>> {
-  if (!CURRICULUM_ENABLED()) return [];
+  if (!options.includeDisabledState && !CURRICULUM_ENABLED()) return [];
 
   try {
     const whereClause = market ? 'WHERE market = $1' : '';

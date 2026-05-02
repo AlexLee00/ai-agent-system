@@ -171,7 +171,10 @@ export async function buildAgentMemoryDashboard({ days = 7, market = 'all' } = {
      LIMIT 50`,
   ).catch(() => []);
 
-  const curriculumRows = await getAllCurriculumStates(normalizedMarket === 'all' ? undefined : normalizedMarket)
+  const curriculumRows = await getAllCurriculumStates(
+    normalizedMarket === 'all' ? undefined : normalizedMarket,
+    { includeDisabledState: true },
+  )
     .catch(() => []);
 
   const routeCallCount = routeRows.reduce((sum, row) => sum + Number(row.calls || 0), 0);

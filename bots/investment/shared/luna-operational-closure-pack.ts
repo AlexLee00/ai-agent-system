@@ -287,7 +287,7 @@ export function buildLunaOperationalClosurePackFromReports({
         status: voyager.status || null,
         naturalDataReady: voyager.naturalDataReady ?? voyager.readyForExtraction ?? false,
         fixtureUsed: voyager.validationFixture?.fixtureUsed === true,
-        productionSkillPromoted: voyager.validationFixture?.productionSkillPromoted === true,
+        productionSkillPromoted: voyager.productionSkillPromoted === true,
       },
       cutover: {
         status: cutover.status || null,

@@ -70,6 +70,25 @@ export async function runLunaLiveFireReadinessGateSmoke() {
   });
   assert.equal(blocked.ok, false);
   assert.ok(blocked.blockers.some((item) => item.includes('duplicate_fired_scopes')));
+
+  const migrated = evaluateLunaLiveFireReadinessGate({
+    operating: {
+      status: 'luna_l5_operating',
+      readinessWarnings: [],
+      killSwitches: {
+        LUNA_VALIDATION_ENABLED: 'true',
+        LUNA_PREDICTION_ENABLED: 'true',
+      },
+    },
+    worker: {
+      ok: true,
+      status: 'entry_trigger_worker_migrated_to_luna_skill',
+      heartbeat: { ageMinutes: 99, payload: { result: { mode: 'autonomous_l5', allowLiveFire: false } } },
+      stats: { duplicateFiredScopeCount: 0 },
+    },
+  });
+  assert.equal(migrated.ok, true);
+  assert.equal(migrated.blockers.some((item) => item.includes('worker_heartbeat_stale')), false);
   return { ok: true, ready, blocked };
 }
 

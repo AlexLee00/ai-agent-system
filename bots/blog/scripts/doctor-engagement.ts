@@ -364,6 +364,7 @@ async function getReplyWorkloadStatus(baseline = null) {
         SELECT status, COUNT(*)::int AS cnt
         FROM blog.comments
         WHERE timezone('Asia/Seoul', detected_at)::date = timezone('Asia/Seoul', now())::date
+          AND NOT (status = 'failed' AND reply_at IS NOT NULL)
           ${commentSinceClause}
         GROUP BY 1
       `),
@@ -377,6 +378,7 @@ async function getReplyWorkloadStatus(baseline = null) {
           detected_at
         FROM blog.comments
         WHERE timezone('Asia/Seoul', detected_at)::date = timezone('Asia/Seoul', now())::date
+          AND NOT (status = 'failed' AND reply_at IS NOT NULL)
           ${commentSinceClause}
         ORDER BY detected_at DESC
         LIMIT 1
@@ -1060,6 +1062,15 @@ async function main() {
     const linkedComment = replyRecoveryMap.get(commentId);
     const executedAt = row?.executed_at ? new Date(row.executed_at) : null;
     const repliedAt = linkedComment?.reply_at ? new Date(linkedComment.reply_at) : null;
+    if (
+      linkedComment
+      && (
+        String(linkedComment.status || '') === 'replied'
+        || Boolean(linkedComment.reply_at)
+      )
+    ) {
+      return false;
+    }
     if (
       linkedComment
       && String(linkedComment.status || '') === 'replied'

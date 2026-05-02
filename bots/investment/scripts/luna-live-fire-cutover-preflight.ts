@@ -3,11 +3,16 @@
 
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
 import { buildLunaReconcileResolutionPlan } from './luna-reconcile-resolution-plan.ts';
 import { buildLunaPostLiveFireVerification } from './luna-post-live-fire-verify.ts';
 import { buildLunaLiveFireReadinessGate } from './luna-live-fire-readiness-gate.ts';
 import { publishAlert } from '../shared/alert-publisher.ts';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const INVESTMENT_DIR = path.resolve(__dirname, '..');
 
 function hasFlag(name) {
   return process.argv.includes(name);
@@ -20,7 +25,7 @@ function argValue(name, fallback = null) {
 }
 
 function runJsonCommand(command, args = []) {
-  const proc = spawnSync(command, args, { encoding: 'utf8' });
+  const proc = spawnSync(command, args, { cwd: INVESTMENT_DIR, encoding: 'utf8' });
   let json = null;
   try {
     const firstJson = String(proc.stdout || '').slice(String(proc.stdout || '').indexOf('{'));
