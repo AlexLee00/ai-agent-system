@@ -48,10 +48,20 @@ export function createPendingSignalProcessing({
   executeSignal,
   delay,
 } = {}) {
+  function resolveSignalFetcher(methodName) {
+    if (db && typeof db[methodName] === 'function') return db[methodName].bind(db);
+    return null;
+  }
+
   async function listHephaestosExecutableSignals(tradeMode) {
+    const pendingFetcher = resolveSignalFetcher('getPendingSignals');
+    const approvedFetcher = resolveSignalFetcher('getApprovedSignals');
+    if (!pendingFetcher && !approvedFetcher) {
+      throw new TypeError('hephaestos pending signal processing requires getPendingSignals or getApprovedSignals');
+    }
     const [pendingSignals, approvedSignals] = await Promise.all([
-      db.getPendingSignals('binance', tradeMode),
-      db.getApprovedSignals('binance', tradeMode),
+      pendingFetcher ? pendingFetcher('binance', tradeMode) : [],
+      approvedFetcher ? approvedFetcher('binance', tradeMode) : [],
     ]);
     const signalsById = new Map();
     for (const signal of [...pendingSignals, ...approvedSignals]) {
