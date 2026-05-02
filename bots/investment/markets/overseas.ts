@@ -38,6 +38,7 @@ import { logMarketPipelineMetrics, runMarketCollectPipeline, summarizeNodeStatus
 import { runDecisionExecutionPipeline } from '../shared/pipeline-decision-runner.ts';
 import { finishPipelineRun } from '../shared/pipeline-db.ts';
 import { updatePipelineRunMeta } from '../shared/pipeline-db.ts';
+import { inspectLunaPortfolioContext } from '../shared/luna-portfolio-context.ts';
 
 import { processAllPendingKisOverseasSignals } from '../team/hanul.ts';
 
@@ -64,6 +65,42 @@ function shouldRunCycle(force = false) {
     intervalMs: CYCLE_INTERVAL,
     toKst: (date) => kst.toKST(date),
   });
+}
+
+async function getOverseasCapitalDiscoveryHold() {
+  const portfolioContext = await inspectLunaPortfolioContext('kis_overseas').catch((error) => {
+    console.warn(`⚠️ [루나 자본상태] 해외주식 잔고 프리플라이트 실패: ${error?.message || error}`);
+    return null;
+  });
+  if (
+    !portfolioContext
+    || portfolioContext.capitalMode === 'ACTIVE_DISCOVERY'
+    || portfolioContext.balanceStatus !== 'ok'
+    || Number(portfolioContext.positionCount || 0) > 0
+  ) {
+    return null;
+  }
+
+  const capitalSnapshot = portfolioContext.capitalSnapshot || {};
+  const message = [
+    `ℹ️ [루나 자본상태] 해외주식 신규 발굴 보류`,
+    `mode=${portfolioContext.capitalMode || 'unknown'} reason=${portfolioContext.reasonCode || 'none'}`,
+    `buyable=${Number(portfolioContext.buyableAmount || 0).toFixed(2)} / min=${Number(capitalSnapshot.minOrderAmount || 0).toFixed(2)}`,
+    `positions=0 — 보유 모니터링 대상 없음`,
+  ].join('\n');
+
+  return { portfolioContext, message };
+}
+
+async function notifyOverseasCapitalDiscoveryHold(hold) {
+  if (!hold?.message) return;
+  console.log(hold.message);
+  await publishAlert({
+    from_bot: 'luna',
+    event_type: 'capital_state_report',
+    alert_level: 1,
+    message: hold.message,
+  }).catch(() => {});
 }
 
 // ─── 예산 초과 리스너 ────────────────────────────────────────────────
@@ -104,6 +141,13 @@ export async function runOverseasCycle(symbols, universeMeta = {}) {
   });
 
   try {
+    const capitalHold = await getOverseasCapitalDiscoveryHold();
+    if (capitalHold) {
+      await notifyOverseasCapitalDiscoveryHold(capitalHold);
+      saveState({ lastCycleAt: Date.now() });
+      return [];
+    }
+
     // ── 단계 1: 노드 기반 수집 실행 ──
     console.log('\n📊 [분석 단계] 노드 기반 수집 실행...');
     const collect = await runMarketCollectPipeline({
@@ -283,6 +327,16 @@ if (isDirectExecution(import.meta.url)) {
         maintenanceDustSkippedCount: 0,
         maintenanceLifecycleCounts: {},
       };
+
+      if ((!Array.isArray(cliSymbols) || cliSymbols.length === 0) && !noDynamic) {
+        const capitalHold = await getOverseasCapitalDiscoveryHold();
+        if (capitalHold) {
+          await notifyOverseasCapitalDiscoveryHold(capitalHold);
+          saveState({ lastCycleAt: Date.now() });
+          return [];
+        }
+      }
+
       if (Array.isArray(cliSymbols) && cliSymbols.length > 0) {
         symbols = cliSymbols;
         universeMeta.screeningSymbolCount = symbols.length;

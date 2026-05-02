@@ -40,6 +40,8 @@ const TR_ID = {
   DOMESTIC_BALANCE_LIVE:   'TTTC8434R',
   OVERSEAS_BALANCE_PAPER:  'VTTS3012R',
   OVERSEAS_BALANCE_LIVE:   'TTTS3012R',
+  OVERSEAS_PSAMOUNT_DAY:   'TTTS3007R',
+  OVERSEAS_PSAMOUNT_NIGHT: 'JTTT3007R',
   DOMESTIC_DAILY_CCLD_PAPER: 'VTTC0081R',
   DOMESTIC_DAILY_CCLD_LIVE: 'TTTC0081R',
   OVERSEAS_CCLD_PAPER: 'VTTS3035R',
@@ -289,6 +291,36 @@ function pickFirstString(row, keys = []) {
     if (text) return text;
   }
   return '';
+}
+
+function normalizeOverseasPsamount(output = {}) {
+  const row = output && typeof output === 'object' ? output : {};
+  const orderableCashUsd = pickFirstNumber(row, [
+    'ovrs_ord_psbl_amt',
+    'frcr_ord_psbl_amt1',
+    'ord_psbl_frcr_amt',
+    'echm_af_ord_psbl_amt',
+    'sll_ruse_psbl_amt',
+  ]);
+  const foreignCashUsd = pickFirstNumber(row, [
+    'ord_psbl_frcr_amt',
+    'frcr_ord_psbl_amt1',
+    'ovrs_ord_psbl_amt',
+  ]);
+  return {
+    orderable_cash_usd: orderableCashUsd,
+    available_cash_usd: Math.max(orderableCashUsd, foreignCashUsd),
+    cash_usd: foreignCashUsd,
+    max_orderable_qty: pickFirstNumber(row, [
+      'max_ord_psbl_qty',
+      'ovrs_max_ord_psbl_qty',
+      'ord_psbl_qty',
+      'echm_af_ord_psbl_qty',
+    ]),
+    exchange_rate: pickFirstNumber(row, ['exrt']),
+    currency: pickFirstString(row, ['tr_crcy_cd']) || 'USD',
+    raw: row,
+  };
 }
 
 function normalizeOrderNo(value) {
@@ -1315,13 +1347,89 @@ export async function getOverseasBalance(paper) {
   })).filter(h => h.qty > 0);
 
   const sum = data.output2 || {};
+  const psamount = await getOverseasOrderableAmount({
+    symbol: 'AAPL',
+    price: 1,
+    paper: usePaper,
+  }).catch((error) => {
+    console.warn(`  ⚠️ [KIS] 해외 매수가능금액 조회 실패 — 잔고 summary 사용: ${error?.message || error}`);
+    return null;
+  });
+  const summaryAvailableCash = parseFloat(sum.ovrs_ord_psbl_amt || sum.frcr_dncl_amt_1 || sum.frcr_dncl_amt_2 || sum.frcr_buy_mgn_amt || '0');
+  const summaryOrderableCash = parseFloat(sum.ovrs_ord_psbl_amt || sum.frcr_buy_mgn_amt || '0');
+  const summaryCash = parseFloat(sum.frcr_dncl_amt_2 || sum.frcr_dncl_amt_1 || '0');
+  const orderableCash = Math.max(summaryOrderableCash, Number(psamount?.orderable_cash_usd || 0));
+  const availableCash = Math.max(summaryAvailableCash, Number(psamount?.available_cash_usd || 0), orderableCash);
+  const cashUsd = Math.max(summaryCash, Number(psamount?.cash_usd || 0), orderableCash);
   return {
     holdings,
-    available_cash_usd: parseFloat(sum.ovrs_ord_psbl_amt || sum.frcr_dncl_amt_1 || sum.frcr_dncl_amt_2 || sum.frcr_buy_mgn_amt || '0'),
-    orderable_cash_usd: parseFloat(sum.ovrs_ord_psbl_amt || sum.frcr_buy_mgn_amt || '0'),
-    cash_usd: parseFloat(sum.frcr_dncl_amt_2 || sum.frcr_dncl_amt_1 || '0'),
+    available_cash_usd: availableCash,
+    orderable_cash_usd: orderableCash,
+    cash_usd: cashUsd,
     total_eval_usd: parseFloat(sum.tot_evlu_pfls_amt2 || '0'),
     total_pnl_usd:  parseFloat(sum.ovrs_tot_pfls       || '0'),
+    orderable_source: psamount ? 'inquire_psamount' : 'inquire_balance',
+    psamount: psamount
+      ? {
+          orderable_cash_usd: psamount.orderable_cash_usd,
+          available_cash_usd: psamount.available_cash_usd,
+          cash_usd: psamount.cash_usd,
+          max_orderable_qty: psamount.max_orderable_qty,
+          exchange_rate: psamount.exchange_rate,
+          currency: psamount.currency,
+          tr_id: psamount.tr_id,
+        }
+      : null,
     paper: usePaper,
   };
+}
+
+export async function getOverseasOrderableAmount({
+  symbol = 'AAPL',
+  price = 1,
+  paper = false,
+  exchange = 'NASD',
+} = {}) {
+  const usePaper = resolveUsePaper(paper);
+  if (usePaper) {
+    throw new Error('kis_overseas_psamount_unavailable_in_paper');
+  }
+
+  const { cano, prodCd } = parseAccount(usePaper);
+  const normalizedSymbol = String(symbol || 'AAPL').trim().toUpperCase() || 'AAPL';
+  const normalizedPrice = Number(price || 0) > 0 ? Number(price) : 1;
+  const params = {
+    CANO: cano,
+    ACNT_PRDT_CD: prodCd,
+    OVRS_EXCG_CD: String(exchange || 'NASD').trim().toUpperCase() || 'NASD',
+    OVRS_ORD_UNPR: normalizedPrice.toFixed(2),
+    ITEM_CD: normalizedSymbol,
+  };
+
+  const trIds = [TR_ID.OVERSEAS_PSAMOUNT_NIGHT, TR_ID.OVERSEAS_PSAMOUNT_DAY];
+  let lastError = null;
+  for (const trId of trIds) {
+    try {
+      const data = await kisRequest('GET', '/uapi/overseas-stock/v1/trading/inquire-psamount', {
+        trId,
+        params,
+        paper: usePaper,
+      });
+      return {
+        ...normalizeOverseasPsamount(data.output || {}),
+        symbol: normalizedSymbol,
+        exchange: params.OVRS_EXCG_CD,
+        price: normalizedPrice,
+        tr_id: trId,
+        paper: usePaper,
+      };
+    } catch (error) {
+      lastError = error;
+      const message = String(error?.message || error || '');
+      if (!message.includes('모의투자') && !message.includes('주야간') && !message.includes('원장')) {
+        // day/night TR mismatch 외 오류도 day TR로 한 번 더 확인한다.
+      }
+    }
+  }
+  throw lastError || new Error('kis_overseas_psamount_failed');
 }

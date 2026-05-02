@@ -908,6 +908,8 @@ export interface LunaBudgetCheckResult {
   adjustedAmount: number;
   minOrderAmount: number;
   reason: string;
+  effectiveSlots?: number;
+  originalRemainingSlots?: number;
 }
 
 /**
@@ -1082,8 +1084,10 @@ export function adjustLunaBuyCandidate(
     };
   }
 
-  // 슬롯 수 기반 균등 배분 (Freqtrade amend_last 패턴)
-  const perSlotAmount = Math.floor(buyableAmount / Math.max(1, remainingSlots));
+  // 가용 현금이 전체 슬롯을 모두 채우지 못하면, 가능한 슬롯 수로 축소해 BUY를 보류 대신 감산한다.
+  const feasibleSlotsByCash = Math.max(1, Math.floor(buyableAmount / Math.max(1, minOrderAmount)));
+  const effectiveSlots = Math.max(1, Math.min(remainingSlots, feasibleSlotsByCash));
+  const perSlotAmount = Math.floor(buyableAmount / effectiveSlots);
   const adjustedAmount = Math.min(desiredAmount, perSlotAmount);
 
   if (adjustedAmount < minOrderAmount) {
@@ -1092,7 +1096,9 @@ export function adjustLunaBuyCandidate(
       desiredAmount,
       adjustedAmount: 0,
       minOrderAmount,
-      reason: `cash_constrained_monitor_only: 슬롯 배분 후 ${adjustedAmount.toFixed(2)} < 최소 ${minOrderAmount}`,
+      reason: `cash_constrained_monitor_only: 슬롯 배분 후 ${adjustedAmount.toFixed(2)} < 최소 ${minOrderAmount} (가용 슬롯 ${remainingSlots}→${effectiveSlots})`,
+      effectiveSlots,
+      originalRemainingSlots: remainingSlots,
     };
   }
 
@@ -1102,7 +1108,9 @@ export function adjustLunaBuyCandidate(
       desiredAmount,
       adjustedAmount,
       minOrderAmount,
-      reason: `buy_amount_adjusted: ${desiredAmount} → ${adjustedAmount} (가용 ${buyableAmount.toFixed(2)}, ${remainingSlots}슬롯)`,
+      reason: `buy_amount_adjusted: ${desiredAmount} → ${adjustedAmount} (가용 ${buyableAmount.toFixed(2)}, 슬롯 ${remainingSlots}→${effectiveSlots})`,
+      effectiveSlots,
+      originalRemainingSlots: remainingSlots,
     };
   }
 
@@ -1112,6 +1120,8 @@ export function adjustLunaBuyCandidate(
     adjustedAmount: desiredAmount,
     minOrderAmount,
     reason: 'accepted',
+    effectiveSlots,
+    originalRemainingSlots: remainingSlots,
   };
 }
 

@@ -1219,6 +1219,13 @@ export async function screenOverseasSymbols(maxDynamic, fng = 50) {
     )
   );
 
+  if (!dynamicSymbols.length && quoteUniverse.length > 0) {
+    throw new Error(
+      `overseas_quote_or_liquidity_filtered_all: candidates=${candidates.length}, `
+      + `quoteUniverse=${quoteUniverse.length}, quoteMap=${quoteMap.size}`,
+    );
+  }
+
   if (!dynamicSymbols.length && yahooTickers.length === 0) {
     const fallbackSymbols = getKisOverseasSymbols();
     return {
