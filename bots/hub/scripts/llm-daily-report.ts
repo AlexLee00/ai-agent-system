@@ -24,11 +24,12 @@ async function fetchStats(hours: number, team?: string): Promise<any> {
 async function generateReport() {
   const data = await fetchStats(24);
   const { totals = {}, summary = [], by_agent = [], groq_pool_size = 0 } = data;
+  const totalCalls = Number(totals.total_calls || 0);
 
   const lines: string[] = [];
   lines.push('📊 *LLM Routing 일일 리포트 (24h)*');
   lines.push('');
-  lines.push(`총 호출: ${totals.total_calls ?? 0}회`);
+  lines.push(`총 호출: ${totalCalls}회`);
   lines.push(`총 비용: $${Number(totals.total_cost_usd ?? 0).toFixed(4)}`);
   lines.push(`성공률: ${((totals.success_rate ?? 0) * 100).toFixed(1)}%`);
   lines.push(`Groq 풀: ${groq_pool_size}계정`);
@@ -37,11 +38,23 @@ async function generateReport() {
   if (summary.length > 0) {
     lines.push('*Provider별 분포:*');
     for (const row of summary) {
-      const label = row.provider === 'claude-code-oauth' ? '🧠 OAuth'
-        : row.provider === 'groq' ? '⚡ Groq'
-        : '❌ Failed';
+      const provider = String(row.provider || '');
+      const label = provider === 'claude-code-oauth' ? '🧠 Claude Code OAuth'
+        : provider === 'openai-oauth' ? '🟩 OpenAI OAuth'
+          : provider === 'gemini-cli-oauth' ? '🟦 Gemini CLI OAuth'
+            : provider === 'gemini-oauth' ? '🟪 Gemini OAuth'
+              : provider === 'groq' ? '⚡ Groq'
+                : provider === 'failed' ? '❌ Failed'
+                  : `🔹 ${provider || 'unknown'}`;
       const team = row.caller_team ? `[${row.caller_team}]` : '';
-      lines.push(`  ${label}${team}: ${row.total_calls}회 avg ${row.avg_duration_ms}ms $${Number(row.total_cost_usd || 0).toFixed(4)}`);
+      const calls = Number(row.total_calls || 0);
+      const sharePct = totalCalls > 0 ? (calls / totalCalls) * 100 : 0;
+      const providerSuccessRate = calls > 0 ? (Number(row.success_count || 0) / calls) * 100 : 0;
+      lines.push(
+        `  ${label}${team}: ${calls}회 (${sharePct.toFixed(1)}%) `
+        + `성공률 ${providerSuccessRate.toFixed(1)}% avg ${row.avg_duration_ms}ms `
+        + `$${Number(row.total_cost_usd || 0).toFixed(4)}`,
+      );
     }
     lines.push('');
   }

@@ -1,0 +1,92 @@
+{
+  "ok": false,
+  "generated_at": "2026-05-02T14:26:00.296Z",
+  "hours": 168,
+  "totals": {
+    "total_calls": 32992,
+    "oauth_calls": 13555,
+    "oauth_share_pct": 41.09,
+    "failed_calls": 55,
+    "failed_rate_pct": 0.17,
+    "total_cost_usd": 53.859482,
+    "anthropic_provider_calls": 0
+  },
+  "providers": {
+    "claude-code-oauth": {
+      "provider": "claude-code-oauth",
+      "calls": 355,
+      "success_count": 355,
+      "failed_count": 0,
+      "avg_duration_ms": 27204,
+      "max_duration_ms": 50374,
+      "total_cost_usd": 23.326505,
+      "share_pct": 1.08,
+      "success_rate_pct": 100
+    },
+    "openai-oauth": {
+      "provider": "openai-oauth",
+      "calls": 9938,
+      "success_count": 9938,
+      "failed_count": 0,
+      "avg_duration_ms": 3583,
+      "max_duration_ms": 41007,
+      "total_cost_usd": 0,
+      "share_pct": 30.12,
+      "success_rate_pct": 100
+    },
+    "gemini-cli-oauth": {
+      "provider": "gemini-cli-oauth",
+      "calls": 54,
+      "success_count": 54,
+      "failed_count": 0,
+      "avg_duration_ms": 7656,
+      "max_duration_ms": 34989,
+      "total_cost_usd": 0,
+      "share_pct": 0.16,
+      "success_rate_pct": 100
+    },
+    "gemini-oauth": {
+      "provider": "gemini-oauth",
+      "calls": 34,
+      "success_count": 34,
+      "failed_count": 0,
+      "avg_duration_ms": 1258,
+      "max_duration_ms": 4269,
+      "total_cost_usd": 0,
+      "share_pct": 0.1,
+      "success_rate_pct": 100
+    },
+    "groq": {
+      "provider": "groq",
+      "calls": 19081,
+      "success_count": 19081,
+      "failed_count": 0,
+      "avg_duration_ms": 693,
+      "max_duration_ms": 4488,
+      "total_cost_usd": 1.283935,
+      "share_pct": 57.84,
+      "success_rate_pct": 100
+    },
+    "failed": {
+      "provider": "failed",
+      "calls": 55,
+      "success_count": 0,
+      "failed_count": 55,
+      "avg_duration_ms": 3322,
+      "max_duration_ms": 33423,
+      "total_cost_usd": 0,
+      "share_pct": 0.17,
+      "success_rate_pct": 0
+    }
+  },
+  "targets": {
+    "claude_code_primary_share_target_pct": 50,
+    "anthropic_provider_calls_target": 0,
+    "free_cost_target_usd": 0
+  },
+  "verdict": {
+    "claude_code_share_ok": false,
+    "anthropic_zero_ok": true,
+    "free_cost_ok": false
+  }
+}

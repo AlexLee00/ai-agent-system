@@ -68,6 +68,8 @@
     "launchd:alarm-class-topic": "tsx scripts/launchd-alarm-class-topic-smoke.ts",
     "local-llm-policy": "tsx scripts/local-llm-policy-report.ts",
     "llm:oauth4-balance-smoke": "tsx scripts/llm-oauth-4-balance-smoke.ts",
+    "llm:oauth4-master-review": "tsx scripts/llm-oauth4-master-review.ts",
+    "llm:anthropic-primary-audit": "tsx scripts/llm-anthropic-primary-audit.ts",
     "inventory:hub-alarm": "tsx scripts/generate-hub-alarm-inventory.ts",
     "retired-gateway:residue-audit": "tsx scripts/retired-gateway-residue-audit.ts",
     "retired-gateway:cutover-readiness": "tsx scripts/retired-gateway-cutover-readiness.ts",

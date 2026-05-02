@@ -11,12 +11,16 @@ type HubFetchResponse = {
   profile?: any;
 };
 
+type LegacyHubAbstractModel = 'anthropic_haiku' | 'anthropic_sonnet' | 'anthropic_opus';
+type OAuth4HubAbstractModel = 'claude_code_haiku' | 'claude_code_sonnet' | 'claude_code_opus';
+type HubAbstractModel = LegacyHubAbstractModel | OAuth4HubAbstractModel | 'claude-code/haiku' | 'claude-code/sonnet' | 'claude-code/opus';
+
 type HubLlmCallRequest = {
   callerTeam: string;
   agent: string;
   selectorKey?: string;
   taskType?: string;
-  abstractModel?: 'anthropic_haiku' | 'anthropic_sonnet' | 'anthropic_opus';
+  abstractModel?: HubAbstractModel;
   prompt: string;
   systemPrompt?: string;
   jsonSchema?: any;
@@ -107,6 +111,14 @@ function warnOnce(key: string, message: string, ttlMs = 30000): void {
   if ((Date.now() - last) < ttlMs) return;
   warnCache.set(key, Date.now());
   console.warn(message);
+}
+
+function normalizeHubAbstractModel(model?: HubAbstractModel | string | null): LegacyHubAbstractModel {
+  const raw = String(model || '').trim().toLowerCase();
+  if (raw === 'anthropic_haiku' || raw === 'claude_code_haiku' || raw === 'claude-code/haiku') return 'anthropic_haiku';
+  if (raw === 'anthropic_opus' || raw === 'claude_code_opus' || raw === 'claude-code/opus') return 'anthropic_opus';
+  if (raw === 'anthropic_sonnet' || raw === 'claude_code_sonnet' || raw === 'claude-code/sonnet') return 'anthropic_sonnet';
+  return 'anthropic_sonnet';
 }
 
 function shouldUseCurlFallback(error: unknown, url: string): boolean {
@@ -471,12 +483,13 @@ export async function callHubLlm(request: HubLlmCallRequest): Promise<HubLlmCall
   // Hub route validation currently caps timeoutMs at 180s, so clamp here
   // to avoid rejecting otherwise valid writer calls that request a longer wait.
   const timeoutMs = Math.min(requestedTimeoutMs, 180_000);
+  const abstractModel = normalizeHubAbstractModel(request.abstractModel || 'claude_code_sonnet');
   const payload = {
     ...request,
     callerTeam,
     agent,
     prompt,
-    abstractModel: request.abstractModel || 'anthropic_sonnet',
+    abstractModel,
     taskType: request.taskType || 'default',
     timeoutMs,
   };

@@ -282,7 +282,10 @@ function splitProviderModel(spec = '') {
     return { provider: 'gemini', model: text };
   }
   if (text.startsWith('anthropic/')) {
-    return { provider: 'anthropic', model: text.replace(/^anthropic\//, '') };
+    const legacyModel = text.replace(/^anthropic\//, '');
+    if (legacyModel.includes('opus')) return { provider: 'claude-code', model: 'claude-code/opus' };
+    if (legacyModel.includes('haiku')) return { provider: 'claude-code', model: 'claude-code/haiku' };
+    return { provider: 'claude-code', model: 'claude-code/sonnet' };
   }
   if (text.startsWith('groq/')) {
     return { provider: 'groq', model: text.slice('groq/'.length) };

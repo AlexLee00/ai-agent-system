@@ -11,9 +11,9 @@ type TeamRequestMap = Record<string, Record<string, Complexity>>;
 
 const MODEL_MAP: Record<Complexity, string> = {
   simple: 'groq/llama-4-scout-17b-16e-instruct',
-  medium: 'claude-haiku-4-5-20251001',
-  complex: 'claude-sonnet-4-6',
-  deep: 'claude-opus-4-6',
+  medium: 'claude-code/haiku',
+  complex: 'claude-code/sonnet',
+  deep: 'claude-code/opus',
 };
 
 const COST_ESTIMATE: Record<Complexity, number> = {

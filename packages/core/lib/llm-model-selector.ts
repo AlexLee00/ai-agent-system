@@ -100,7 +100,7 @@ function resolveSelectorVersionForKey(selectorKey: string, options: SelectorOpti
 }
 
 export function inferProviderFromModel(model = ''): string {
-  if (!model) return 'anthropic';
+  if (!model) return 'claude-code';
   if (model.startsWith('claude-code/')) return 'claude-code';
   if (model.startsWith('gemma4') || model.startsWith('gemma-4')) return 'local';
   if (model.startsWith('local/') || model === 'qwen2.5-7b' || model === 'deepseek-r1-32b') return 'local';
@@ -111,13 +111,13 @@ export function inferProviderFromModel(model = ''): string {
     model.startsWith('llama-') ||
     model.startsWith('qwen/')
   ) return 'groq';
-  if (model.startsWith('claude-')) return 'anthropic';
+  if (model.startsWith('claude-')) return 'claude-code';
   if (model.startsWith('gpt-') || model.startsWith('o')) return 'openai';
   if (model.startsWith('gemini-codeassist-oauth/') || model.startsWith('gemini-code-assist-oauth/')) return 'gemini-codeassist-oauth';
   if (model.startsWith('gemini-cli-oauth/')) return 'gemini-cli-oauth';
   if (model.startsWith('gemini-oauth/')) return 'gemini-oauth';
   if (model.startsWith('gemini-') || model.startsWith('google-gemini-cli/')) return 'gemini';
-  return 'anthropic';
+  return 'claude-code';
 }
 
 export function buildSingleChain(model: string, maxTokens = 1024, temperature = 0.1): LLMChainEntry[] {
@@ -147,7 +147,7 @@ function applyPolicyOverride(resolved: any, policyOverride: any, options: Select
 
 function resolvePreferredProvider(preferredApi: string, groqModel: string, maxTokens: number): LLMChainEntry {
   if (preferredApi === 'claude-code') return { provider: 'claude-code', model: 'claude-code/haiku', maxTokens, temperature: 0.1 };
-  if (preferredApi === 'anthropic') return { provider: 'anthropic', model: 'claude-haiku-4-5-20251001', maxTokens, temperature: 0.1 };
+  if (preferredApi === 'anthropic') return { provider: 'claude-code', model: 'claude-code/haiku', maxTokens, temperature: 0.1 };
   if (preferredApi === 'openai') return { provider: 'openai', model: 'gpt-4o-mini', maxTokens, temperature: 0.1 };
   if (preferredApi === 'gemini' || preferredApi === 'gemini-oauth' || preferredApi === 'gemini-cli-oauth') {
     return { provider: 'gemini-cli-oauth', model: GEMINI_CLI_FLASH_MODEL, maxTokens, temperature: 0.1 };
@@ -191,7 +191,7 @@ function buildRouteFromAgentModel(agentModel: string | null | undefined, {
 
 function sanitizeConfiguredProviders(preferredApi: string, configuredProviders: string[] = []): string[] {
   const list = Array.isArray(configuredProviders) ? configuredProviders.slice() : [];
-  if (preferredApi === 'claude-code') return list.filter((provider) => provider !== 'anthropic');
+  if (preferredApi === 'claude-code' || preferredApi === 'anthropic') return list.filter((provider) => provider !== 'anthropic');
   return list;
 }
 
@@ -208,7 +208,7 @@ const TEAM_SELECTOR_DEFAULTS_LEGACY: Record<string, any> = {
     'alarm.classifier': {
       primary: { provider: 'groq', model: 'llama-3.1-8b-instant', maxTokens: 200, temperature: 0 },
       fallbacks: [
-        { provider: 'anthropic', model: 'claude-haiku-4-5-20251001', maxTokens: 200, temperature: 0 },
+        { provider: 'claude-code', model: 'claude-code/haiku', maxTokens: 200, temperature: 0 },
       ],
     },
     'alarm.interpreter.work': {
@@ -220,13 +220,13 @@ const TEAM_SELECTOR_DEFAULTS_LEGACY: Record<string, any> = {
       fallbacks: [],
     },
     'alarm.interpreter.error': {
-      primary: { provider: 'anthropic', model: 'claude-haiku-4-5-20251001', maxTokens: 400, temperature: 0.1 },
+      primary: { provider: 'claude-code', model: 'claude-code/haiku', maxTokens: 400, temperature: 0.1 },
       fallbacks: [
         { provider: 'groq', model: 'llama-3.1-8b-instant', maxTokens: 400, temperature: 0.1 },
       ],
     },
     'alarm.interpreter.critical': {
-      primary: { provider: 'anthropic', model: 'claude-haiku-4-5-20251001', maxTokens: 400, temperature: 0.1 },
+      primary: { provider: 'claude-code', model: 'claude-code/haiku', maxTokens: 400, temperature: 0.1 },
       fallbacks: [
         { provider: 'groq', model: 'qwen/qwen3-32b', maxTokens: 400, temperature: 0.1 },
       ],
@@ -234,11 +234,11 @@ const TEAM_SELECTOR_DEFAULTS_LEGACY: Record<string, any> = {
     'roundtable.jay': {
       primary: { provider: 'groq', model: 'qwen/qwen3-32b', maxTokens: 500, temperature: 0.2 },
       fallbacks: [
-        { provider: 'anthropic', model: 'claude-haiku-4-5-20251001', maxTokens: 500, temperature: 0.2 },
+        { provider: 'claude-code', model: 'claude-code/haiku', maxTokens: 500, temperature: 0.2 },
       ],
     },
     'roundtable.claude_lead': {
-      primary: { provider: 'anthropic', model: 'claude-haiku-4-5-20251001', maxTokens: 500, temperature: 0.1 },
+      primary: { provider: 'claude-code', model: 'claude-code/haiku', maxTokens: 500, temperature: 0.1 },
       fallbacks: [
         { provider: 'groq', model: 'qwen/qwen3-32b', maxTokens: 500, temperature: 0.1 },
       ],
@@ -246,11 +246,11 @@ const TEAM_SELECTOR_DEFAULTS_LEGACY: Record<string, any> = {
     'roundtable.team_commander': {
       primary: { provider: 'groq', model: 'llama-3.1-8b-instant', maxTokens: 500, temperature: 0.2 },
       fallbacks: [
-        { provider: 'anthropic', model: 'claude-haiku-4-5-20251001', maxTokens: 500, temperature: 0.2 },
+        { provider: 'claude-code', model: 'claude-code/haiku', maxTokens: 500, temperature: 0.2 },
       ],
     },
     'roundtable.judge': {
-      primary: { provider: 'anthropic', model: 'claude-haiku-4-5-20251001', maxTokens: 600, temperature: 0.1 },
+      primary: { provider: 'claude-code', model: 'claude-code/haiku', maxTokens: 600, temperature: 0.1 },
       fallbacks: [
         { provider: 'groq', model: 'qwen/qwen3-32b', maxTokens: 600, temperature: 0.1 },
       ],
