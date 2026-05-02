@@ -170,7 +170,7 @@ defmodule Jay.V2.AutonomyController do
       SELECT COUNT(*)::int AS cnt
       FROM agent.event_lake
       WHERE event_type = 'decision.escalate'
-        AND source = 'jay.decision_engine'
+        AND metadata->>'source' = 'jay.decision_engine'
         AND created_at >= '#{today}'::date
     """, "agent") do
       {:ok, %{"rows" => [%{"cnt" => n}]}} -> n > 0

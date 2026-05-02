@@ -200,6 +200,23 @@ async function test_listAutoDevDocuments_uses_auto_dev_only() {
   console.log('✅ auto-dev: scans actionable docs/auto_dev development tasks only');
 }
 
+async function test_missing_auto_dev_document_is_skipped() {
+  const tmpRoot = makeTempRoot();
+  const missingDoc = path.join(tmpRoot, 'docs', 'auto_dev', 'ALARM_INCIDENT_missing.md');
+
+  const { mocks } = makeMocks(tmpRoot);
+  await withMocks(mocks, async pipeline => {
+    const result = await pipeline.processAutoDevDocument(missingDoc, { shadow: true });
+    assert.strictEqual(result.ok, true);
+    assert.strictEqual(result.skipped, true);
+    assert.strictEqual(result.reason, 'missing_document');
+    assert.strictEqual(result.job?.stage, 'missing_document');
+  }, testEnv(tmpRoot));
+
+  fs.rmSync(tmpRoot, { recursive: true, force: true });
+  console.log('✅ auto-dev: missing docs are skipped without fatal error');
+}
+
 async function test_success_only_blog_engagement_alarm_is_skipped() {
   const tmpRoot = makeTempRoot();
   const doc = makeDoc(
@@ -1795,6 +1812,7 @@ async function main() {
   const tests = [
     test_stages_define_required_lifecycle,
     test_listAutoDevDocuments_uses_auto_dev_only,
+    test_missing_auto_dev_document_is_skipped,
     test_success_only_blog_engagement_alarm_is_skipped,
     test_reservation_booking_alert_is_skipped,
     test_ops_emergency_telegram_snapshot_is_skipped,

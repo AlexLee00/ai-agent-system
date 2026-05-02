@@ -22,5 +22,13 @@
     "appliedFrom": 0.1,
     "appliedTo": 0.05,
     "appliedAt": "2026-04-25T23:00:46.481Z"
+  },
+  "aria": {
+    "evidenceKey": "0.4667:15",
+    "accuracy": 0.4666666666666667,
+    "sampleCount": 15,
+    "appliedFrom": 0.3,
+    "appliedTo": 0.25,
+    "appliedAt": "2026-05-01T23:00:31.166Z"
   }
 }

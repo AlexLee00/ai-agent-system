@@ -112,7 +112,7 @@ defmodule Luna.V2.Memory.WorkingMemory do
   end
 
   defp normalize_ttl_ms(nil, fallback), do: fallback
-  defp normalize_ttl_ms(value, fallback) when is_integer(value), do: max(1_000, value)
+  defp normalize_ttl_ms(value, _fallback) when is_integer(value), do: max(1_000, value)
 
   defp normalize_ttl_ms(value, fallback) do
     case Integer.parse(to_string(value)) do
@@ -123,4 +123,3 @@ defmodule Luna.V2.Memory.WorkingMemory do
 
   defp now_ms, do: System.system_time(:millisecond)
 end
-

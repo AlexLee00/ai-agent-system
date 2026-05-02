@@ -2442,6 +2442,20 @@ async function markAgentError(error) {
 
 async function processAutoDevDocument(filePath, options = {}) {
   const relPath = relativeToRoot(filePath);
+  if (!fs.existsSync(filePath)) {
+    return {
+      ok: true,
+      skipped: true,
+      reason: 'missing_document',
+      job: {
+        id: null,
+        filePath,
+        relPath,
+        stage: 'missing_document',
+        status: 'skipped',
+      },
+    };
+  }
   const content = fs.readFileSync(filePath, 'utf8');
   const contentHash = hashContent(content);
   const id = makeJobId(relPath, contentHash);
