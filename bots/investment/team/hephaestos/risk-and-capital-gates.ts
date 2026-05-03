@@ -47,7 +47,22 @@ export function createRiskAndCapitalGatePolicy(context = {}) {
     const text = String(reason || '');
     if (text.includes('최대 포지션 도달')) return 'max_positions';
     if (text.includes('일간 매매 한도')) return 'daily_trade_limit';
+    if (text.includes('live_fire_daily_notional_limit')) return 'daily_trade_limit';
     return null;
+  }
+
+  function getLiveFireMaxTradeUsdt() {
+    const value = Number(process.env.LUNA_MAX_TRADE_USDT || 0);
+    return Number.isFinite(value) && value > 0 ? value : 0;
+  }
+
+  function capLiveFireTradeAmount(amount, effectivePaperMode = false) {
+    const numeric = Number(amount || 0);
+    const cap = getLiveFireMaxTradeUsdt();
+    if (effectivePaperMode || !(cap > 0) || !(numeric > cap)) {
+      return { amount: numeric, capApplied: false, cap };
+    }
+    return { amount: cap, capApplied: true, cap };
   }
 
   async function maybeFallbackToValidationLane({
@@ -94,7 +109,8 @@ export function createRiskAndCapitalGatePolicy(context = {}) {
     globalPaperMode,
     capitalPolicy,
   }) {
-    const check = await preTradeCheck(symbol, 'BUY', amountUsdt, 'binance', signalTradeMode);
+    const preTradeAmount = capLiveFireTradeAmount(amountUsdt, globalPaperMode).amount;
+    const check = await preTradeCheck(symbol, 'BUY', preTradeAmount, 'binance', signalTradeMode);
     if (check.allowed) {
       if (check.softGuardApplied) {
         const guardSummary = (check.softGuards || []).map((guard) => guard.kind).join(', ');
@@ -224,9 +240,11 @@ export function createRiskAndCapitalGatePolicy(context = {}) {
 
     const softMultiplier = Number(reducedAmountMultiplier || 1);
     const baseAmount = effectivePaperMode ? amountUsdt : sizing.size;
-    const actualAmount = softMultiplier > 0 && softMultiplier < 1
+    const uncappedAmount = softMultiplier > 0 && softMultiplier < 1
       ? baseAmount * softMultiplier
       : baseAmount;
+    const capped = capLiveFireTradeAmount(uncappedAmount, effectivePaperMode);
+    const actualAmount = capped.amount;
     if (!effectivePaperMode && actualAmount < minOrderUsdt) {
       return rejectExecution({
         persistFailure,
@@ -240,6 +258,8 @@ export function createRiskAndCapitalGatePolicy(context = {}) {
           minOrderUsdt,
           reducedAmountMultiplier: softMultiplier,
           softGuards,
+          liveFireMaxTradeUsdt: capped.cap || null,
+          liveFireCapApplied: capped.capApplied,
         },
         notify: 'skip',
       });
@@ -251,9 +271,12 @@ export function createRiskAndCapitalGatePolicy(context = {}) {
       if (softMultiplier > 0 && softMultiplier < 1) {
         console.log(`  🧪 [개발단계 완화] ${symbol} guard 감산 적용 x${softMultiplier.toFixed(2)} (${softGuards.map((guard) => guard.kind).join(', ')})`);
       }
+      if (capped.capApplied) {
+        console.log(`  🛡️ [live-fire cap] ${symbol} 주문금액 ${uncappedAmount.toFixed(2)} → ${actualAmount.toFixed(2)} USDT`);
+      }
     }
 
-    return { actualAmount };
+    return { actualAmount, liveFireMaxTradeUsdt: capped.cap || null, liveFireCapApplied: capped.capApplied };
   }
 
   return {

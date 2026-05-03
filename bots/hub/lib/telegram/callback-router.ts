@@ -11,6 +11,9 @@ function resolveHubCallbackTarget(callbackData) {
   if (normalized.startsWith('darwin_')) {
     return { route: '/hub/darwin/callback', mode: 'darwin_compat' };
   }
+  if (normalized.startsWith('luna_live_fire:')) {
+    return { route: '/hub/luna/live-fire/callback', mode: 'luna_live_fire' };
+  }
   return null;
 }
 

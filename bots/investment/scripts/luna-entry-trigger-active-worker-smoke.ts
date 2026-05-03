@@ -27,6 +27,7 @@ export async function runLunaEntryTriggerActiveWorkerSmoke() {
   return withEnv({
     LUNA_ENTRY_TRIGGER_ENGINE_ENABLED: 'true',
     LUNA_INTELLIGENT_DISCOVERY_MODE: 'autonomous_l5',
+    LUNA_LIVE_FIRE_ENABLED: 'true',
     LUNA_ENTRY_TRIGGER_FIRE_IN_AUTONOMOUS: 'true',
   }, async () => {
     const symbol = `ACTIVE${Date.now().toString(36).toUpperCase()}/USDT`;

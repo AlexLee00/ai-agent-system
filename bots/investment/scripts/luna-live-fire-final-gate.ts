@@ -10,6 +10,11 @@ import { buildLunaManualReconcilePlaybook } from './luna-manual-reconcile-playbo
 import { buildLunaKillSwitchConsistency } from './luna-kill-switch-consistency.ts';
 import { buildLunaEntryTriggerWorkerReadiness } from './luna-entry-trigger-worker-readiness.ts';
 
+async function loadPostAlarm() {
+  const module = await import('../../../packages/core/lib/hub-alarm-client.ts');
+  return module.postAlarm || module.default?.postAlarm;
+}
+
 function hasFlag(name) {
   return process.argv.includes(name);
 }
@@ -141,7 +146,7 @@ export function renderLunaLiveFireFinalGate(report = {}) {
 }
 
 export async function publishLunaLiveFireFinalGate(report = {}) {
-  return publishAlert({
+  const published = await publishAlert({
     from_bot: 'luna',
     event_type: 'report',
     alert_level: report.ok ? 1 : 2,
@@ -157,6 +162,33 @@ export async function publishLunaLiveFireFinalGate(report = {}) {
       workerWarnings: report.worker?.warnings || [],
     },
   });
+  if (!report.ok) return published;
+  const postAlarm = await loadPostAlarm();
+  if (typeof postAlarm !== 'function') return published;
+  await postAlarm({
+    fromBot: 'luna',
+    team: 'emergency',
+    alertLevel: 4,
+    alarmType: 'work',
+    visibility: 'emergency',
+    actionability: 'needs_human',
+    eventType: 'luna_live_fire_control',
+    title: 'Luna live-fire emergency stop',
+    message: [
+      'Luna live-fire cutover control',
+      `status=${report.status || 'unknown'}`,
+      '1-tap emergency stop: launchctl live-fire flag OFF + autonomous discovery mode unset',
+    ].join('\n'),
+    payload: {
+      checkedAt: report.checkedAt,
+      status: report.status,
+      emergencyStopCallback: 'luna_live_fire:emergency_stop',
+    },
+    inlineKeyboard: [[
+      { text: '⛔ Luna live-fire 즉시 중단', callback_data: 'luna_live_fire:emergency_stop' },
+    ]],
+  });
+  return published;
 }
 
 export async function runLunaLiveFireFinalGateSmoke() {

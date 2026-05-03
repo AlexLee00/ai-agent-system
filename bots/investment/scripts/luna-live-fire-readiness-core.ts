@@ -58,10 +58,11 @@ export function evaluateLunaLiveFireReadinessGate({
     duplicateFiredScopeCount,
     commands: ready && !allowLiveFire ? [
       'launchctl setenv LUNA_INTELLIGENT_DISCOVERY_MODE autonomous_l5',
+      'launchctl setenv LUNA_LIVE_FIRE_ENABLED true',
       'npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run -s check:luna-l5',
       'npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run -s runtime:luna-entry-trigger-worker-readiness',
     ] : [],
-    rollbackCommand: 'launchctl unsetenv LUNA_INTELLIGENT_DISCOVERY_MODE',
+    rollbackCommand: 'launchctl unsetenv LUNA_INTELLIGENT_DISCOVERY_MODE && launchctl setenv LUNA_LIVE_FIRE_ENABLED false',
   };
 }
 

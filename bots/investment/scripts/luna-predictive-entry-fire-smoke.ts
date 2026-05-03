@@ -43,6 +43,7 @@ export async function runLunaPredictiveEntryFireSmoke() {
   return withEnv({
     LUNA_ENTRY_TRIGGER_ENGINE_ENABLED: 'true',
     LUNA_INTELLIGENT_DISCOVERY_MODE: 'autonomous_l5',
+    LUNA_LIVE_FIRE_ENABLED: 'true',
     LUNA_ENTRY_TRIGGER_FIRE_IN_AUTONOMOUS: 'true',
     LUNA_ENTRY_TRIGGER_REQUIRE_LIVE_RISK_CONTEXT: 'true',
     LUNA_ENTRY_TRIGGER_MIN_CONFIDENCE: '0.4',

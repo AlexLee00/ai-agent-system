@@ -299,24 +299,28 @@ export async function buildLunaLiveFirePreapprovalPackage({
   hours = 24,
   days = 7,
 } = {}) {
-  const [closure, finalGate, protectedServices] = await Promise.all([
-    buildLunaFullIntegrationClosureGate({ exchange, hours, days, settleLiveFire: true }).catch((error) => ({
-      ok: false,
-      operationalStatus: 'code_complete_operational_blocked',
-      hardBlockers: [`closure_gate_failed:${errorMessage(error)}`],
-      warnings: [],
-      pendingObservation: [],
-    })),
-    buildLunaLiveFireFinalGate({ exchange, hours: Math.min(hours, 24), liveLookup: false, withPositionParity: true }).catch((error) => ({
-      ok: false,
-      status: 'luna_live_fire_final_gate_failed',
-      blockers: [`live_fire_final_gate_failed:${errorMessage(error)}`],
-      operatingSummary: { nextAction: 'repair_live_fire_final_gate_runtime' },
-      preflight: { ok: false, status: 'live_fire_cutover_preflight_failed', blockers: ['live_fire_final_gate_failed'], parity: { clear: null } },
-      killSwitch: { ok: false, status: 'kill_switch_consistency_unknown', blockers: ['live_fire_final_gate_failed'] },
-    })),
-    Promise.resolve(inspectProtectedLiveFireServices()),
-  ]);
+  const protectedServices = inspectProtectedLiveFireServices();
+  const finalGate = await buildLunaLiveFireFinalGate({ exchange, hours: Math.min(hours, 24), liveLookup: false, withPositionParity: true }).catch((error) => ({
+    ok: false,
+    status: 'luna_live_fire_final_gate_failed',
+    blockers: [`live_fire_final_gate_failed:${errorMessage(error)}`],
+    operatingSummary: { nextAction: 'repair_live_fire_final_gate_runtime' },
+    preflight: { ok: false, status: 'live_fire_cutover_preflight_failed', blockers: ['live_fire_final_gate_failed'], parity: { clear: null } },
+    killSwitch: { ok: false, status: 'kill_switch_consistency_unknown', blockers: ['live_fire_final_gate_failed'] },
+  }));
+  const closure = await buildLunaFullIntegrationClosureGate({
+    exchange,
+    hours,
+    days,
+    settleLiveFire: true,
+    liveFireOverride: finalGate,
+  }).catch((error) => ({
+    ok: false,
+    operationalStatus: 'code_complete_operational_blocked',
+    hardBlockers: [`closure_gate_failed:${errorMessage(error)}`],
+    warnings: [],
+    pendingObservation: [],
+  }));
   return buildLunaLiveFirePreapprovalPackageFromReports({
     closure,
     finalGate,

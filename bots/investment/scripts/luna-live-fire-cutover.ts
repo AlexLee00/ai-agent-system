@@ -16,8 +16,8 @@ import {
 } from './luna-live-fire-final-gate.ts';
 
 const CONFIRM = 'enable-luna-live-fire';
-const CUTOVER_COMMAND = 'launchctl setenv LUNA_INTELLIGENT_DISCOVERY_MODE autonomous_l5';
-const ROLLBACK_COMMAND = 'launchctl unsetenv LUNA_INTELLIGENT_DISCOVERY_MODE';
+const CUTOVER_COMMAND = 'launchctl setenv LUNA_INTELLIGENT_DISCOVERY_MODE autonomous_l5 && launchctl setenv LUNA_LIVE_FIRE_ENABLED true';
+const ROLLBACK_COMMAND = 'launchctl unsetenv LUNA_INTELLIGENT_DISCOVERY_MODE && launchctl setenv LUNA_LIVE_FIRE_ENABLED false';
 
 function hasFlag(name) {
   return process.argv.includes(name);
@@ -37,6 +37,15 @@ function runCommand(command, args = []) {
     stdout: String(proc.stdout || '').trim(),
     stderr: String(proc.stderr || '').trim(),
     command: [command, ...args].join(' '),
+  };
+}
+
+function applyCutoverEnv() {
+  const setMode = runCommand('launchctl', ['setenv', 'LUNA_INTELLIGENT_DISCOVERY_MODE', 'autonomous_l5']);
+  const enableLiveFire = runCommand('launchctl', ['setenv', 'LUNA_LIVE_FIRE_ENABLED', 'true']);
+  return {
+    ok: setMode.ok && enableLiveFire.ok,
+    steps: { setMode, enableLiveFire },
   };
 }
 
@@ -77,7 +86,7 @@ export async function runLunaLiveFireCutover({
     return { ...result, ok: false, applyBlockedReason: 'confirm_required' };
   }
 
-  const applyResult = runCommand('launchctl', ['setenv', 'LUNA_INTELLIGENT_DISCOVERY_MODE', 'autonomous_l5']);
+  const applyResult = applyCutoverEnv();
   return {
     ...result,
     ok: applyResult.ok,
@@ -90,7 +99,8 @@ export async function runLunaLiveFireCutover({
 export async function runLunaLiveFireCutoverSmoke() {
   assert.equal(CONFIRM, 'enable-luna-live-fire');
   assert.ok(CUTOVER_COMMAND.includes('autonomous_l5'));
-  assert.ok(ROLLBACK_COMMAND.includes('unsetenv'));
+  assert.ok(CUTOVER_COMMAND.includes('LUNA_LIVE_FIRE_ENABLED true'));
+  assert.ok(ROLLBACK_COMMAND.includes('LUNA_LIVE_FIRE_ENABLED false'));
   return { ok: true, confirmRequired: CONFIRM };
 }
 

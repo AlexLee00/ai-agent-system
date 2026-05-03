@@ -218,11 +218,12 @@ export async function buildLunaFullIntegrationClosureGate({
   includeValidationFixture = false,
   settleLiveFire = true,
   settleDelayMs = 1500,
+  liveFireOverride = null,
 } = {}) {
   const [fullIntegration, reconcile, initialLiveFire, sevenDay, posttrade, memory, busHygiene, voyager, reconcileEvidence, ackPreflight, curriculum] = await Promise.all([
     runLuna100PercentCompletionReport({ outputFile: null }),
     buildLunaReconcileBlockerReport({ exchange, hours }),
-    buildLunaLiveFireFinalGate({ exchange, hours: Math.min(hours, 24), liveLookup: false, withPositionParity: true }),
+    liveFireOverride || buildLunaLiveFireFinalGate({ exchange, hours: Math.min(hours, 24), liveLookup: false, withPositionParity: true }),
     runLuna7DayReport({ days }),
     buildPosttradeFeedbackL5Gate({ strict: false }).catch((error) => ({
       ok: false,

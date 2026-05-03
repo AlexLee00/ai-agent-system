@@ -30,11 +30,20 @@ function runCommand(command, args = []) {
   };
 }
 
+function applyLiveFireEnv() {
+  const setMode = runCommand('launchctl', ['setenv', 'LUNA_INTELLIGENT_DISCOVERY_MODE', 'autonomous_l5']);
+  const enableLiveFire = runCommand('launchctl', ['setenv', 'LUNA_LIVE_FIRE_ENABLED', 'true']);
+  return {
+    ok: setMode.ok && enableLiveFire.ok,
+    steps: { setMode, enableLiveFire },
+  };
+}
+
 export async function runLunaLiveFireOperator({ apply = false, confirm = '' } = {}) {
   const readiness = await buildLunaLiveFireReadinessGate();
   const allowed = readiness.ok && readiness.status === 'live_fire_ready';
-  const command = 'launchctl setenv LUNA_INTELLIGENT_DISCOVERY_MODE autonomous_l5';
-  const rollbackCommand = 'launchctl unsetenv LUNA_INTELLIGENT_DISCOVERY_MODE';
+  const command = 'launchctl setenv LUNA_INTELLIGENT_DISCOVERY_MODE autonomous_l5 && launchctl setenv LUNA_LIVE_FIRE_ENABLED true';
+  const rollbackCommand = 'launchctl unsetenv LUNA_INTELLIGENT_DISCOVERY_MODE && launchctl setenv LUNA_LIVE_FIRE_ENABLED false';
 
   const result = {
     ok: allowed,
@@ -56,7 +65,7 @@ export async function runLunaLiveFireOperator({ apply = false, confirm = '' } = 
     return { ...result, ok: false, applied: false, applyBlockedReason: 'confirm_required' };
   }
 
-  const applyResult = runCommand('launchctl', ['setenv', 'LUNA_INTELLIGENT_DISCOVERY_MODE', 'autonomous_l5']);
+  const applyResult = applyLiveFireEnv();
   return {
     ...result,
     ok: applyResult.ok,

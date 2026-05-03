@@ -42,6 +42,7 @@ export function getLunaIntelligentDiscoveryFlags() {
   const supervised = mode === 'supervised_l4' || mode === 'supervised';
   const autonomous = mode === 'autonomous_l5' || mode === 'autonomous';
   const shadow = mode === 'shadow';
+  const liveFireEnabled = boolEnv('LUNA_LIVE_FIRE_ENABLED', false);
   const maxSymbols = Math.max(1, Math.round(numEnv('LUNA_INTELLIGENT_DISCOVERY_MAX_SYMBOLS', 60)));
   const discoveryTopDomestic = Math.max(1, Math.round(numEnv('LUNA_DISCOVERY_TOP_DOMESTIC', 100)));
   const discoveryTopOverseas = Math.max(1, Math.round(numEnv('LUNA_DISCOVERY_TOP_OVERSEAS', 100)));
@@ -52,6 +53,7 @@ export function getLunaIntelligentDiscoveryFlags() {
     shadow,
     supervised,
     autonomous,
+    liveFireEnabled,
     phases,
     sourceSwitches: {
       discovery: {
@@ -117,6 +119,7 @@ export function getLunaIntelligentDiscoveryFlags() {
     },
     shouldAllowLiveEntryFire() {
       if (!phases.entryTriggerEnabled) return false;
+      if (!liveFireEnabled) return false;
       if (autonomous) return this.entryTrigger.fireInAutonomous;
       if (supervised) return this.entryTrigger.fireInSupervised;
       return this.entryTrigger.fireInShadow;

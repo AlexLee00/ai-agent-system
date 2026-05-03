@@ -105,12 +105,30 @@ const orderAmount = await sizingPolicy.resolveBuyOrderAmount({
 });
 assert.equal(orderAmount.actualAmount, 40);
 
+process.env.LUNA_MAX_TRADE_USDT = '50';
+const cappedPolicy = buildPolicy({
+  firstCheck: { allowed: true },
+  sizing: { skip: false, size: 120, capitalPct: 12, riskPercent: 2 },
+});
+const cappedOrderAmount = await cappedPolicy.resolveBuyOrderAmount({
+  persistFailure: async () => {},
+  symbol: 'SOL/USDT',
+  action: 'BUY',
+  amountUsdt: 120,
+  signal: { trade_mode: 'normal', slPrice: 90 },
+  effectivePaperMode: false,
+});
+assert.equal(cappedOrderAmount.actualAmount, 50);
+assert.equal(cappedOrderAmount.liveFireCapApplied, true);
+delete process.env.LUNA_MAX_TRADE_USDT;
+
 const payload = {
   ok: true,
   smoke: 'hephaestos-risk-and-capital-gates',
   shortageCode: persistCalls[0]?.meta?.code,
   fallbackTradeMode: fallback.effectiveTradeMode,
   orderAmount: orderAmount.actualAmount,
+  cappedOrderAmount: cappedOrderAmount.actualAmount,
 };
 
 if (process.argv.includes('--json')) {

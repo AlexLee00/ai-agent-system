@@ -26,6 +26,35 @@ const SCHEMA = 'investment';
 const DOMESTIC_CASH_BUFFER_KRW = 10_000;
 const dynamicMinOrderLogCache = new Set();
 
+function numEnv(name, fallback = 0) {
+  const value = Number(process.env[name]);
+  return Number.isFinite(value) && value > 0 ? value : fallback;
+}
+
+export function getLunaLiveFireCaps(env = process.env) {
+  const read = (name) => {
+    const value = Number(env?.[name]);
+    return Number.isFinite(value) && value > 0 ? value : 0;
+  };
+  return {
+    maxTradeUsdt: read('LUNA_MAX_TRADE_USDT'),
+    maxDailyUsdt: read('LUNA_LIVE_FIRE_MAX_DAILY'),
+    maxOpenPositions: read('LUNA_LIVE_FIRE_MAX_OPEN'),
+  };
+}
+
+function applyLunaLiveFireCaps(policy = {}) {
+  const caps = getLunaLiveFireCaps();
+  const patched = { ...policy };
+  if (caps.maxOpenPositions > 0) {
+    patched.max_concurrent_positions = Math.max(1, Math.min(
+      Number(patched.max_concurrent_positions || caps.maxOpenPositions),
+      caps.maxOpenPositions,
+    ));
+  }
+  return patched;
+}
+
 // ─── 설정 로드 ───────────────────────────────────────────────────────
 
 function loadCapitalConfig() {
@@ -150,16 +179,16 @@ export async function getCapitalConfigWithOverrides(exchange = null, tradeMode =
 }
 
 export function getCapitalConfig(exchange = null, tradeMode = null) {
-  if (!exchange) return config;
+  if (!exchange) return applyLunaLiveFireCaps(config);
   const override = config.by_exchange?.[exchange] || {};
   const effectiveTradeMode = tradeMode || getInvestmentTradeMode();
   const modeOverride = effectiveTradeMode ? (override.trade_modes?.[effectiveTradeMode] || {}) : {};
-  return {
+  return applyLunaLiveFireCaps({
     ...config,
     ...override,
     ...modeOverride,
     by_exchange: config.by_exchange || {},
-  };
+  });
 }
 
 export function formatDailyTradeLimitReason(dailyTrades, maxDailyTrades) {
@@ -532,6 +561,44 @@ export async function getDailyTradeCount({ exchange = null, tradeMode = null, pa
   }
 }
 
+export async function getDailyTradeNotional({ exchange = null, tradeMode = null, paper = null, side = null } = {}) {
+  try {
+    const conditions = [`executed_at::date = CURRENT_DATE`];
+    const params = [];
+
+    if (exchange) {
+      params.push(exchange);
+      conditions.push(`exchange = $${params.length}`);
+    }
+    if (tradeMode) {
+      params.push(tradeMode);
+      conditions.push(`COALESCE(trade_mode, 'normal') = $${params.length}`);
+    }
+    if (paper !== null) {
+      params.push(paper === true);
+      conditions.push(`paper = $${params.length}`);
+    }
+    if (side) {
+      params.push(String(side).toLowerCase());
+      conditions.push(`LOWER(COALESCE(side, '')) = $${params.length}`);
+    }
+
+    const rows = await pgPool.query(
+      SCHEMA,
+      `
+      SELECT COALESCE(SUM(ABS(COALESCE(total_usdt, amount * price, 0))), 0) AS notional
+      FROM trades
+      WHERE ${conditions.join(' AND ')}
+    `,
+      params,
+    );
+    return Number(rows[0]?.notional || 0);
+  } catch (e) {
+    console.warn('[capital] 일간 거래 금액 조회 실패:', e.message);
+    return 0;
+  }
+}
+
 async function getRecentClosedTrades(n, exchange = null, tradeMode = null) {
   try {
     const conditions = [`status = 'closed'`];
@@ -777,6 +844,19 @@ export async function preTradeCheck(symbol, direction, estimatedAmount = 0, exch
     const dailyTrades = await getDailyTradeCount({ exchange, tradeMode: effectiveTradeMode, side: 'buy' });
     if (dailyTrades >= policy.max_daily_trades) {
       return { allowed: false, reason: formatDailyTradeLimitReason(dailyTrades, policy.max_daily_trades) };
+    }
+    const liveFireDailyLimit = numEnv('LUNA_LIVE_FIRE_MAX_DAILY', 0);
+    if (liveFireDailyLimit > 0) {
+      const dailyNotional = await getDailyTradeNotional({ exchange, tradeMode: effectiveTradeMode, paper: false, side: 'buy' });
+      const projectedNotional = dailyNotional + Number(estimatedAmount || 0);
+      if (projectedNotional > liveFireDailyLimit) {
+        return {
+          allowed: false,
+          reason: `live_fire_daily_notional_limit: ${(projectedNotional).toFixed(2)} > ${liveFireDailyLimit}`,
+          dailyNotional,
+          maxDailyNotional: liveFireDailyLimit,
+        };
+      }
     }
     return buildAllowedTradeDecision({ allowed: true, dailyTrades, softGuards });
   }

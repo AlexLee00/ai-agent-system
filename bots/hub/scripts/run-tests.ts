@@ -173,6 +173,7 @@ function unitSmokeScripts(): string[] {
     'alarm-activation-stage1-smoke.ts',
     'alarm-activation-stage2-smoke.ts',
     'alarm-activation-stage3-smoke.ts',
+    'luna-live-fire-callback-smoke.ts',
   ];
 }
 
