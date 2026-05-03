@@ -82,6 +82,8 @@ interface ResearchPaper {
   authors?: string;
   published?: string;
   relevance_score?: number;
+  evaluation_failed?: boolean;
+  failure_code?: string;
   github?: GitHubEnrichment;
 }
 
@@ -429,6 +431,8 @@ async function _storeEvaluatedPapers(evaluated: ResearchPaper[]): Promise<{ stor
           source: paper.source,
           relevance_score: paper.relevance_score,
           reason: paper.reason,
+          evaluation_failed: paper.evaluation_failed === true,
+          failure_code: paper.failure_code || '',
           upvotes: paper.upvotes || 0,
           authors: paper.authors || '',
           published: paper.published,
@@ -690,7 +694,7 @@ async function run(options: RunOptions = {}): Promise<ScanResult> {
       return { ...paper, ...evaluation };
     }
   );
-  const evaluationFailures = evaluated.filter((paper) => paper.reason === '평가 실패').length;
+  const evaluationFailures = evaluated.filter((paper) => paper.evaluation_failed === true).length;
 
   const enrichment = dryRun ? { githubEnriched: 0, tasksRegistered: 0 } : await _enrichWithGitHub(evaluated);
   const { storedCount, experienceCount } = dryRun

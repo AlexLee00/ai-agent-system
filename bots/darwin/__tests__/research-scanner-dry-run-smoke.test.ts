@@ -32,12 +32,25 @@ async function main() {
       };
     }
     if (request === './research-evaluator') {
+      let evalCall = 0;
       return {
-        evaluatePaper: async () => ({
-          korean_summary: 'dry run summary',
-          relevance_score: 8,
-          reason: 'dry run',
-        }),
+        evaluatePaper: async () => {
+          evalCall += 1;
+          if (evalCall === 1) {
+            return {
+              korean_summary: 'dry run summary',
+              relevance_score: 8,
+              reason: 'dry run',
+            };
+          }
+          return {
+            korean_summary: 'failed paper',
+            relevance_score: 0,
+            reason: '평가 실패',
+            evaluation_failed: true,
+            failure_code: 'paper_evaluation_parse_failed',
+          };
+        },
       };
     }
     if (request === './applicator') {
@@ -99,6 +112,7 @@ async function main() {
     assert.strictEqual(result.dryRun, true);
     assert.strictEqual(result.total, 2);
     assert.strictEqual(result.evaluated, 2);
+    assert.strictEqual(result.evaluationFailures, 1);
     assert.strictEqual(result.stored, 0);
     assert.strictEqual(result.experiencesStored, 0);
     assert.strictEqual(result.alarmSent, false);

@@ -22,6 +22,12 @@ interface AlarmPayload {
   team: string;
   alertLevel: number;
   fromBot: string;
+  alarmType?: string;
+  visibility?: string;
+  actionability?: string;
+  incidentKey?: string;
+  title?: string;
+  eventType?: string;
 }
 
 interface KstClient {
@@ -59,6 +65,16 @@ interface ResearchMetrics {
   proposals_generated: number;
   proposals_verified: number;
   proposal_pass_rate: number;
+}
+
+interface AnomalyRoute {
+  alertLevel: number;
+  alarmType: 'report' | 'error';
+  visibility: 'digest' | 'notify';
+  actionability: 'none' | 'needs_human';
+  incidentKey: string;
+  eventType: string;
+  title: string;
 }
 
 const rag: RagStore = require('../../../packages/core/lib/rag');
@@ -121,23 +137,138 @@ async function storeMetrics(metrics: ResearchMetrics): Promise<void> {
 
 async function checkAnomalies(metrics: ResearchMetrics): Promise<string[]> {
   const alerts: string[] = [];
+  const evaluated = Math.max(0, Number(metrics.evaluated || 0));
+  const evaluationFailures = Math.max(0, Number(metrics.evaluation_failures || 0));
+  const evaluationFailureRate = evaluated > 0 ? Math.round((evaluationFailures / evaluated) * 100) : 0;
+  let route: AnomalyRoute | null = null;
 
-  if (metrics.total_collected === 0) alerts.push('🚨 수집 0건! 네트워크 장애 또는 API 차단 가능');
-  if (metrics.store_success_rate < 90) alerts.push(`⚠️ 저장 성공률 ${metrics.store_success_rate}% (목표 95%+)`);
-  if (metrics.duration_sec > 300) alerts.push(`⚠️ 소요 시간 ${metrics.duration_sec}초 (목표 300초 이내)`);
-  if (metrics.relevance_rate > 80) alerts.push(`⚠️ 적합성 비율 ${metrics.relevance_rate}% — 키워드가 너무 좁을 수 있음`);
-  if (metrics.relevance_rate < 5 && metrics.effective_evaluated > 0) alerts.push(`⚠️ 적합성 비율 ${metrics.relevance_rate}% — 키워드 튜닝 필요`);
-  if (!metrics.alarm_sent && metrics.high_relevance > 0) alerts.push('🚨 알림 전달 실패! postAlarm 점검 필요');
+  function upgradeRoute(candidate: AnomalyRoute) {
+    if (!route || candidate.alertLevel > route.alertLevel) {
+      route = candidate;
+      return;
+    }
+    if (candidate.alertLevel === route.alertLevel && route.visibility === 'digest' && candidate.visibility === 'notify') {
+      route = candidate;
+    }
+  }
+
+  if (metrics.total_collected === 0) {
+    alerts.push('🚨 수집 0건! 네트워크 장애 또는 API 차단 가능');
+    upgradeRoute({
+      alertLevel: 3,
+      alarmType: 'error',
+      visibility: 'notify',
+      actionability: 'needs_human',
+      incidentKey: 'claude:research-monitor:collection-empty',
+      eventType: 'research_monitor_collection_empty',
+      title: '[다윈 리서치] 수집 0건',
+    });
+  }
+  if (metrics.store_success_rate < 90) {
+    alerts.push(`⚠️ 저장 성공률 ${metrics.store_success_rate}% (목표 95%+)`);
+    upgradeRoute({
+      alertLevel: 2,
+      alarmType: 'report',
+      visibility: 'digest',
+      actionability: 'none',
+      incidentKey: 'claude:research-monitor:store-success-low',
+      eventType: 'research_monitor_store_success_low',
+      title: '[다윈 리서치] 저장 성공률 저하',
+    });
+  }
+  if (metrics.duration_sec > 300) {
+    alerts.push(`⚠️ 소요 시간 ${metrics.duration_sec}초 (목표 300초 이내)`);
+    upgradeRoute({
+      alertLevel: 2,
+      alarmType: 'report',
+      visibility: 'digest',
+      actionability: 'none',
+      incidentKey: 'claude:research-monitor:duration-slow',
+      eventType: 'research_monitor_duration_slow',
+      title: '[다윈 리서치] 스캔 지연',
+    });
+  }
+  if (metrics.relevance_rate > 80) {
+    alerts.push(`⚠️ 적합성 비율 ${metrics.relevance_rate}% — 키워드가 너무 좁을 수 있음`);
+    upgradeRoute({
+      alertLevel: 2,
+      alarmType: 'report',
+      visibility: 'digest',
+      actionability: 'none',
+      incidentKey: 'claude:research-monitor:keywords-too-narrow',
+      eventType: 'research_monitor_keywords_too_narrow',
+      title: '[다윈 리서치] 키워드 폭 점검 필요',
+    });
+  }
+  if (evaluationFailures > 0 && evaluationFailureRate >= 20) {
+    alerts.push(`⚠️ 평가 실패율 ${evaluationFailureRate}% — evaluator/parser 안정성 점검 필요`);
+    upgradeRoute({
+      alertLevel: 2,
+      alarmType: 'report',
+      visibility: 'digest',
+      actionability: 'none',
+      incidentKey: 'claude:research-monitor:evaluator-instability',
+      eventType: 'research_monitor_evaluator_instability',
+      title: '[다윈 리서치] 평가 안정성 저하',
+    });
+  } else if (metrics.relevance_rate < 5 && metrics.effective_evaluated > 0) {
+    alerts.push(`⚠️ 적합성 비율 ${metrics.relevance_rate}% — 키워드 튜닝 필요`);
+    upgradeRoute({
+      alertLevel: 2,
+      alarmType: 'report',
+      visibility: 'digest',
+      actionability: 'none',
+      incidentKey: 'claude:research-monitor:keyword-tuning-needed',
+      eventType: 'research_monitor_keyword_tuning_needed',
+      title: '[다윈 리서치] 키워드 튜닝 필요',
+    });
+  }
+  if (!metrics.alarm_sent && metrics.high_relevance > 0) {
+    alerts.push('🚨 알림 전달 실패! postAlarm 점검 필요');
+    upgradeRoute({
+      alertLevel: 3,
+      alarmType: 'error',
+      visibility: 'notify',
+      actionability: 'needs_human',
+      incidentKey: 'claude:research-monitor:delivery-failed',
+      eventType: 'research_monitor_delivery_failed',
+      title: '[다윈 리서치] 후보 알림 전달 실패',
+    });
+  }
   if (metrics.proposals_generated > 0 && metrics.proposal_pass_rate < 30) {
     alerts.push(`⚠️ 프로토타입 검증 통과율 ${metrics.proposal_pass_rate}% — edison 프롬프트 튜닝 필요`);
+    upgradeRoute({
+      alertLevel: 2,
+      alarmType: 'report',
+      visibility: 'digest',
+      actionability: 'none',
+      incidentKey: 'claude:research-monitor:proposal-pass-low',
+      eventType: 'research_monitor_proposal_pass_low',
+      title: '[다윈 리서치] 제안 검증 통과율 저하',
+    });
   }
 
   if (alerts.length > 0) {
+    const finalRoute = route || {
+      alertLevel: 2,
+      alarmType: 'report',
+      visibility: 'digest',
+      actionability: 'none',
+      incidentKey: 'claude:research-monitor:metrics-anomaly',
+      eventType: 'research_monitor_metrics_anomaly',
+      title: '[다윈 리서치] 메트릭 이상 감지',
+    };
     await postAlarm({
       message: `🔍 다윈 연구 모니터링 이상 감지\n${alerts.join('\n')}\n\n메트릭: ${JSON.stringify(metrics)}`,
       team: 'claude',
-      alertLevel: alerts.some((alert) => alert.startsWith('🚨')) ? 3 : 2,
+      alertLevel: finalRoute.alertLevel,
       fromBot: 'research-monitor',
+      alarmType: finalRoute.alarmType,
+      visibility: finalRoute.visibility,
+      actionability: finalRoute.actionability,
+      incidentKey: finalRoute.incidentKey,
+      title: finalRoute.title,
+      eventType: finalRoute.eventType,
     });
   }
 

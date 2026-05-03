@@ -20,6 +20,8 @@ interface EvaluationResult {
   korean_summary: string;
   relevance_score: number;
   reason: string;
+  evaluation_failed?: boolean;
+  failure_code?: string;
 }
 
 const { callHubLlm }: {
@@ -109,6 +111,8 @@ async function evaluatePaper(paper: PaperCandidate): Promise<EvaluationResult> {
       korean_summary: paper.title,
       relevance_score: 0,
       reason: '평가 실패',
+      evaluation_failed: true,
+      failure_code: errorMessage || 'paper_evaluation_failed',
     };
   }
 }

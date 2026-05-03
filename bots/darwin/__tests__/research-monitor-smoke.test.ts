@@ -88,6 +88,26 @@ async function main() {
     assert.deepStrictEqual(healthyAlerts, []);
     assert.strictEqual(alarmCalls.length, 0);
 
+    const evaluatorInstabilityAlerts = await monitor.checkAnomalies({
+      total_collected: 10,
+      store_success_rate: 100,
+      duration_sec: 260,
+      relevance_rate: 0,
+      alarm_sent: true,
+      high_relevance: 0,
+      proposals_generated: 0,
+      proposal_pass_rate: 0,
+      evaluated: 40,
+      effective_evaluated: 29,
+      evaluation_failures: 11,
+    });
+    assert.ok(evaluatorInstabilityAlerts.some((alert: string) => String(alert).includes('평가 실패율')));
+    assert.strictEqual(alarmCalls.length, 1);
+    assert.strictEqual(alarmCalls[0].alarmType, 'report');
+    assert.strictEqual(alarmCalls[0].visibility, 'digest');
+    assert.strictEqual(alarmCalls[0].actionability, 'none');
+    assert.strictEqual(alarmCalls[0].incidentKey, 'claude:research-monitor:evaluator-instability');
+
     const unhealthyAlerts = await monitor.checkAnomalies({
       total_collected: 0,
       store_success_rate: 50,
@@ -100,7 +120,10 @@ async function main() {
       evaluated: 6,
     });
     assert.ok(unhealthyAlerts.length >= 5);
-    assert.strictEqual(alarmCalls.length, 1);
+    assert.strictEqual(alarmCalls.length, 2);
+    assert.strictEqual(alarmCalls[1].alarmType, 'error');
+    assert.strictEqual(alarmCalls[1].visibility, 'notify');
+    assert.strictEqual(alarmCalls[1].actionability, 'needs_human');
 
     const trend = await monitor.weeklyTrend();
     assert.ok(String(trend).includes('주간 트렌드'));
