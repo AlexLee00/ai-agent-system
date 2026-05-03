@@ -113,9 +113,17 @@ function isKisRateLimitMessage(message = '') {
 
 /** 메모리 캐시: { paper: { token, expires } } */
 const _tokenCache = {};
+const _tokenInflight = {};
+const KIS_TOKEN_LOCK_STALE_MS = 30_000;
+const KIS_TOKEN_LOCK_WAIT_MS = 35_000;
+const KIS_TOKEN_LOCK_POLL_MS = 120;
 
 function tokenCachePath(paper) {
   return path.join(os.tmpdir(), paper ? 'kis-token-paper.json' : 'kis-token-live.json');
+}
+
+function tokenLockPath(paper) {
+  return path.join(os.tmpdir(), paper ? 'kis-token-paper.lock' : 'kis-token-live.lock');
 }
 
 function writeSecureJson(filePath, payload) {
@@ -345,63 +353,136 @@ function resolveKisSideCode(side = '') {
   return { domestic: '00', overseas: '00' };
 }
 
-async function getToken(paper) {
+function readCachedToken(paper) {
   const cacheKey = paper ? 'paper' : 'live';
 
-  // 메모리 캐시
   if (_tokenCache[cacheKey] && Date.now() < _tokenCache[cacheKey].expires - 60_000) {
     return _tokenCache[cacheKey].token;
   }
 
-  // 파일 캐시
   try {
-    const raw    = fs.readFileSync(tokenCachePath(paper), 'utf8');
+    const raw = fs.readFileSync(tokenCachePath(paper), 'utf8');
     const cached = JSON.parse(raw);
     if (new Date(cached.expires_at) > new Date(Date.now() + 60_000)) {
       _tokenCache[cacheKey] = {
-        token:   cached.access_token,
+        token: cached.access_token,
         expires: new Date(cached.expires_at).getTime(),
       };
       return cached.access_token;
     }
-  } catch { /* 캐시 없음 또는 만료 */ }
-
-  // 신규 발급
-  const s   = loadSecrets();
-  const key = paper ? s.kis_paper_app_key    : s.kis_app_key;
-  const sec = paper ? s.kis_paper_app_secret : s.kis_app_secret;
-
-  if (!key || key.length < 5) throw new Error(`KIS ${paper ? '모의' : '실전'} appkey 미설정 (Hub secrets)`);
-
-  const url = (paper ? BASE_URL_PAPER : BASE_URL_LIVE) + '/oauth2/tokenP';
-  const res = await fetch(url, {
-    method:  'POST',
-    headers: { 'Content-Type': 'application/json; charset=utf-8' },
-    body:    JSON.stringify({ grant_type: 'client_credentials', appkey: key, appsecret: sec }),
-  });
-
-  if (!res.ok) {
-    const text = await res.text();
-    const reason = parseKisErrorBody(text);
-    logKisDebug(`token_http_${res.status}`, text);
-    throw new Error(`KIS 토큰 발급 실패: HTTP ${res.status}${reason ? ` ${reason}` : ''}`);
+  } catch {
+    // 캐시 없음 또는 만료
   }
 
-  const data      = await res.json();
-  const expiresAt = new Date(Date.now() + data.expires_in * 1000).toISOString();
+  return null;
+}
 
-  writeSecureJson(tokenCachePath(paper), {
-    access_token: data.access_token,
-    expires_at:   expiresAt,
-  });
+function tryAcquireTokenLock(paper) {
+  const lockPath = tokenLockPath(paper);
+  try {
+    fs.mkdirSync(lockPath, { mode: 0o700 });
+    return true;
+  } catch (error) {
+    if (error?.code !== 'EEXIST') throw error;
+  }
 
-  _tokenCache[cacheKey] = {
-    token:   data.access_token,
-    expires: Date.now() + data.expires_in * 1000,
+  try {
+    const stat = fs.statSync(lockPath);
+    if (Date.now() - stat.mtimeMs > KIS_TOKEN_LOCK_STALE_MS) {
+      fs.rmSync(lockPath, { recursive: true, force: true });
+      fs.mkdirSync(lockPath, { mode: 0o700 });
+      return true;
+    }
+  } catch (error) {
+    if (error?.code === 'ENOENT') return tryAcquireTokenLock(paper);
+    throw error;
+  }
+
+  return false;
+}
+
+function releaseTokenLock(paper) {
+  fs.rmSync(tokenLockPath(paper), { recursive: true, force: true });
+}
+
+async function issueTokenWithProcessLock(paper, issueFn) {
+  const startedAt = Date.now();
+  while (Date.now() - startedAt < KIS_TOKEN_LOCK_WAIT_MS) {
+    const cached = readCachedToken(paper);
+    if (cached) return cached;
+
+    if (tryAcquireTokenLock(paper)) {
+      try {
+        const afterLockCached = readCachedToken(paper);
+        if (afterLockCached) return afterLockCached;
+        return await issueFn();
+      } finally {
+        releaseTokenLock(paper);
+      }
+    }
+
+    await sleep(KIS_TOKEN_LOCK_POLL_MS);
+  }
+
+  throw new Error(`KIS ${paper ? '모의' : '실전'} 토큰 발급 lock 대기 초과`);
+}
+
+async function getToken(paper) {
+  const cacheKey = paper ? 'paper' : 'live';
+
+  const cachedToken = readCachedToken(paper);
+  if (cachedToken) return cachedToken;
+
+  if (_tokenInflight[cacheKey]) return _tokenInflight[cacheKey];
+
+  const issue = async () => {
+    // 신규 발급
+    const s   = loadSecrets();
+    const key = paper
+      ? (process.env.KIS_PAPER_APP_KEY || s.kis_paper_app_key)
+      : (process.env.KIS_APP_KEY || s.kis_app_key);
+    const sec = paper
+      ? (process.env.KIS_PAPER_APP_SECRET || s.kis_paper_app_secret)
+      : (process.env.KIS_APP_SECRET || s.kis_app_secret);
+
+    if (!key || key.length < 5) throw new Error(`KIS ${paper ? '모의' : '실전'} appkey 미설정 (Hub secrets)`);
+
+    const url = (paper ? BASE_URL_PAPER : BASE_URL_LIVE) + '/oauth2/tokenP';
+    const res = await fetch(url, {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json; charset=utf-8' },
+      body:    JSON.stringify({ grant_type: 'client_credentials', appkey: key, appsecret: sec }),
+    });
+
+    if (!res.ok) {
+      const text = await res.text();
+      const reason = parseKisErrorBody(text);
+      logKisDebug(`token_http_${res.status}`, text);
+      throw new Error(`KIS 토큰 발급 실패: HTTP ${res.status}${reason ? ` ${reason}` : ''}`);
+    }
+
+    const data      = await res.json();
+    const expiresAt = new Date(Date.now() + data.expires_in * 1000).toISOString();
+
+    writeSecureJson(tokenCachePath(paper), {
+      access_token: data.access_token,
+      expires_at:   expiresAt,
+    });
+
+    _tokenCache[cacheKey] = {
+      token:   data.access_token,
+      expires: Date.now() + data.expires_in * 1000,
+    };
+
+    console.log(`  🔑 [KIS] 토큰 발급 (${paper ? '모의' : '실전'}, 만료: ${expiresAt})`);
+    return data.access_token;
   };
 
-  console.log(`  🔑 [KIS] 토큰 발급 (${paper ? '모의' : '실전'}, 만료: ${expiresAt})`);
-  return data.access_token;
+  const inflight = issueTokenWithProcessLock(paper, issue).finally(() => {
+    if (_tokenInflight[cacheKey] === inflight) delete _tokenInflight[cacheKey];
+  });
+  _tokenInflight[cacheKey] = inflight;
+  return inflight;
 }
 
 // ─── 공통 API 요청 ──────────────────────────────────────────────────

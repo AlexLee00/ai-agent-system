@@ -206,6 +206,7 @@
     "runtime:kis-order-pending-reconcile": "node scripts/runtime-kis-order-pending-reconcile.ts --json",
     "runtime:kis-order-pending-reconcile:write": "node scripts/runtime-kis-order-pending-reconcile.ts --write --confirm-live --json",
     "runtime:kis-order-pending-reconcile-smoke": "node scripts/runtime-kis-order-pending-reconcile-smoke.ts",
+    "runtime:kis-token-singleflight-smoke": "node scripts/kis-token-singleflight-smoke.ts",
     "runtime:binance-order-pending-reconcile-smoke": "node scripts/runtime-binance-order-pending-reconcile-smoke.ts --json",
     "runtime:binance-mcp-client-orderid-smoke": "node scripts/runtime-binance-mcp-client-orderid-smoke.ts",
     "runtime:luna-capital-mode-smoke": "node scripts/luna-capital-mode-smoke.ts --json",
