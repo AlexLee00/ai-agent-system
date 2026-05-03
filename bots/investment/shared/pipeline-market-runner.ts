@@ -568,6 +568,87 @@ export function buildCollectAlertMessage(label, warnings = [], metrics = {}) {
   ].join('\n');
 }
 
+function normalizeCollectAlertLabel(label = '') {
+  return String(label || '')
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, '_')
+    .replace(/[^a-z0-9가-힣_:-]/g, '')
+    .slice(0, 80) || 'unknown';
+}
+
+export function classifyCollectAlertRoute(label, warnings = [], metrics = {}) {
+  const warningSet = new Set(Array.isArray(warnings) ? warnings : []);
+  const qualityStatus = String(metrics.collectQuality?.status || '').trim().toLowerCase();
+  const coreFailed = Number(metrics.failedCoreTasks || 0);
+  const hardCoreFailed = Number(metrics.failedHardCoreTasks || 0);
+  const enrichmentFailed = Number(metrics.failedEnrichmentTasks || 0);
+  const llmGuardFailed = Number(metrics.llmGuardFailedTasks || 0);
+  const operationalOnlyWarnings = new Set([
+    'collect_overload_detected',
+    'debate_capacity_hot',
+    'weak_signal_pressure',
+    'concurrency_guard_active',
+    'wide_universe',
+    'data_sparsity_watch',
+  ]);
+  const allOperationalOnly = Array.from(warningSet).every((warning) => operationalOnlyWarnings.has(warning));
+  const labelKey = normalizeCollectAlertLabel(label);
+
+  if (
+    hardCoreFailed > 0
+    || warningSet.has('core_collect_failure_rate_high')
+    || (warningSet.has('collect_failure_rate_high') && coreFailed > 0)
+    || qualityStatus === 'insufficient'
+  ) {
+    return {
+      visibility: 'notify',
+      alarm_type: 'error',
+      actionability: 'none',
+      incident_key: `investment:argos:collect:${labelKey}:core_failure`,
+      title: 'investment argos collect error',
+    };
+  }
+
+  if (
+    warningSet.has('collect_blocked_by_llm_guard')
+    || warningSet.has('enrichment_collect_failure_rate_high')
+    || (qualityStatus === 'degraded' && (enrichmentFailed > 0 || llmGuardFailed > 0))
+  ) {
+    return {
+      visibility: 'digest',
+      alarm_type: 'report',
+      actionability: 'none',
+      incident_key: `investment:argos:collect:${labelKey}:degraded_enrichment`,
+      title: 'investment argos collect digest',
+    };
+  }
+
+  if (
+    allOperationalOnly
+    || qualityStatus === 'degraded'
+    || warningSet.has('collect_overload_detected')
+    || warningSet.has('debate_capacity_hot')
+    || warningSet.has('weak_signal_pressure')
+  ) {
+    return {
+      visibility: 'digest',
+      alarm_type: 'report',
+      actionability: 'none',
+      incident_key: `investment:argos:collect:${labelKey}:capacity_watch`,
+      title: 'investment argos capacity digest',
+    };
+  }
+
+  return {
+    visibility: 'notify',
+    alarm_type: 'work',
+    actionability: 'none',
+    incident_key: `investment:argos:collect:${labelKey}:generic_watch`,
+    title: 'investment argos collect watch',
+  };
+}
+
 export async function logMarketPipelineMetrics(label, metrics = {}) {
   if (!metrics || typeof metrics !== 'object') return;
   const parts = [
@@ -610,12 +691,19 @@ export async function logMarketPipelineMetrics(label, metrics = {}) {
   );
   if (!escalated.length) return;
 
+  const route = classifyCollectAlertRoute(label, metrics.warnings, metrics);
+
   await publishAlert({
     from_bot: 'argos',
     event_type: 'alert',
     alert_level: 2,
     message: buildCollectAlertMessage(label, escalated, metrics),
     payload: metrics,
+    visibility: route.visibility,
+    alarm_type: route.alarm_type,
+    actionability: route.actionability,
+    incident_key: route.incident_key,
+    title: route.title,
   });
 }
 
@@ -624,6 +712,7 @@ export default {
   summarizeNodeStatuses,
   summarizeCollectWarnings,
   buildCollectAlertMessage,
+  classifyCollectAlertRoute,
   logMarketPipelineMetrics,
 };
 

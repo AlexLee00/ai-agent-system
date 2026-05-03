@@ -4,7 +4,7 @@
   "bots/reservation/auto/monitors/start-ops.sh": "b88a4420f3de6636f69f9f066c6d6914047e0b49a2b3f312d3a7d1833399ac29",
   "bots/investment/markets/crypto.ts": "88587562cb05ccf4a281c02739c26e275e0b1b7668c32ac4dfd2c30a69a3a19a",
   "bots/investment/markets/domestic.ts": "a815d3f72ec700016ca29ab96c98dbf6917cb17c96d86abbac5bd5e05e3097a9",
-  "bots/investment/markets/overseas.ts": "1e29b7b79c549d671e98ce6a4650394346e75c3f647994e2c4574b143e8274e2",
+  "bots/investment/markets/overseas.ts": "e6e63d692e71ee459d6688185d9f197d621d5965b06561c4e2677563b70dd8b6",
   "bots/investment/shared/secrets.ts": "9732afb3ec0ab6d77088ead4c0a54c4a9d853ad65c23849775b9d590daaa60cd",
   "bots/investment/shared/llm-client.ts": "4bcac332cc55ea8099bbfaee8f3ee7912bbc763b3d8d4c2f42e677a6d7d3ea0f",
   "bots/claude/src/dexter.js": "b8d0a0b5dad48f2befa61ca75275a38d1a6120b828d8924dbb4d961410da4db3",

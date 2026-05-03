@@ -1,15 +1,15 @@
 {
-  "generated_at": "2026-05-03T01:32:22.112Z",
+  "generated_at": "2026-05-03T10:18:51.208Z",
   "scan_patterns": [
     "hub-alarm-client",
     "openclaw-client",
     "HUB_ALARM_",
     "OPENCLAW_"
   ],
-  "total_matches": 260,
-  "unique_files": 133,
+  "total_matches": 261,
+  "unique_files": 134,
   "categories": {
-    "hub_alarm_native": 248,
+    "hub_alarm_native": 249,
     "retired_gateway_guard": 12,
     "legacy_gateway_compat": 0
   },
@@ -1520,6 +1520,14 @@
         "line": 14,
         "category": "hub_alarm_native",
         "match": "const { postAlarm } = require('../../../packages/core/lib/hub-alarm-client');"
+      }
+    ],
+    "bots/investment/scripts/luna-live-fire-final-gate.ts": [
+      {
+        "file": "bots/investment/scripts/luna-live-fire-final-gate.ts",
+        "line": 17,
+        "category": "hub_alarm_native",
+        "match": "const module = require('../../../packages/core/lib/hub-alarm-client.js');"
       }
     ],
     "bots/investment/scripts/runtime-luna-launchd-cutover-preflight-pack.ts": [
