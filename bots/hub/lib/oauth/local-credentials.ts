@@ -353,6 +353,36 @@ function writeOpenAiCodexLocalCredentials(token, options = {}) {
   }
 }
 
+function writeClaudeCodeLocalCredentials(token, options = {}) {
+  if (options.allowFileWrite !== true) {
+    return { ok: false, error: 'local_file_write_not_allowed' };
+  }
+
+  const credentialPath = resolveClaudeCredentialPath(options.homeDir);
+  const previousRaw = readJsonFile(credentialPath) || {};
+  const normalized = buildClaudeKeychainOauth(token, previousRaw?.claudeAiOauth || {});
+  if (!normalized.ok) return normalized;
+
+  try {
+    writeJsonFileAtomic(credentialPath, {
+      ...previousRaw,
+      claudeAiOauth: normalized.oauth,
+    }, 0o600);
+    return {
+      ok: true,
+      source: 'claude_credentials_file',
+      credential_path: credentialPath,
+      expires_at: toIsoTime(normalized.oauth.expiresAt),
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      source: 'claude_credentials_file',
+      error: String(error?.message || error).slice(0, 240),
+    };
+  }
+}
+
 function writeClaudeCodeKeychainCredentials(token, options = {}) {
   const platform = options.platform || process.platform;
   if (platform !== 'darwin') {
@@ -422,6 +452,7 @@ module.exports = {
   readOpenAiCodexLocalCredentials,
   readClaudeCodeLocalCredentials,
   writeOpenAiCodexLocalCredentials,
+  writeClaudeCodeLocalCredentials,
   writeClaudeCodeKeychainCredentials,
   readLocalCredentialsForProvider,
 };

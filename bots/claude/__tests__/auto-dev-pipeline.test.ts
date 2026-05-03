@@ -255,6 +255,33 @@ async function test_missing_auto_dev_document_is_skipped() {
   console.log('✅ auto-dev: missing docs are skipped without fatal error');
 }
 
+async function test_missing_auto_dev_document_after_listing_is_skipped() {
+  const tmpRoot = makeTempRoot();
+  const missingDoc = path.join(tmpRoot, 'docs', 'auto_dev', 'ALARM_INCIDENT_raced.md');
+  const enoent = new Error(`ENOENT: no such file or directory, open '${missingDoc}'`);
+  enoent.code = 'ENOENT';
+  const fsMock = {
+    ...fs,
+    existsSync: filePath => (filePath === missingDoc ? true : fs.existsSync(filePath)),
+    readFileSync: (filePath, ...args) => {
+      if (filePath === missingDoc) throw enoent;
+      return fs.readFileSync(filePath, ...args);
+    },
+  };
+
+  const { mocks } = makeMocks(tmpRoot, { fs: fsMock });
+  await withMocks(mocks, async pipeline => {
+    const result = await pipeline.processAutoDevDocument(missingDoc, { shadow: true });
+    assert.strictEqual(result.ok, true);
+    assert.strictEqual(result.skipped, true);
+    assert.strictEqual(result.reason, 'missing_document');
+    assert.strictEqual(result.job?.stage, 'missing_document');
+  }, testEnv(tmpRoot));
+
+  fs.rmSync(tmpRoot, { recursive: true, force: true });
+  console.log('✅ auto-dev: docs removed after listing are skipped without fatal error');
+}
+
 async function test_success_only_blog_engagement_alarm_is_skipped() {
   const tmpRoot = makeTempRoot();
   const doc = makeDoc(
@@ -1852,6 +1879,7 @@ async function main() {
     test_listAutoDevDocuments_uses_auto_dev_only,
     test_listAutoDevDocuments_respects_manifest_states,
     test_missing_auto_dev_document_is_skipped,
+    test_missing_auto_dev_document_after_listing_is_skipped,
     test_success_only_blog_engagement_alarm_is_skipped,
     test_reservation_booking_alert_is_skipped,
     test_ops_emergency_telegram_snapshot_is_skipped,

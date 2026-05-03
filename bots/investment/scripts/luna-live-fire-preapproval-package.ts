@@ -52,7 +52,8 @@ function classifyProtectedService(label, listStatus = {}, printStatus = {}) {
 
   if (!loaded) blockers.push('protected_service_not_loaded');
   if (!running) blockers.push('protected_pid_missing');
-  if (lastExit != null && Number(lastExit) !== 0) warnings.push(`previous_exit_status_${lastExit}`);
+  const intentionalRestartTrace = running && [-15, -9].includes(Number(lastExit));
+  if (lastExit != null && Number(lastExit) !== 0 && !intentionalRestartTrace) warnings.push(`previous_exit_status_${lastExit}`);
 
   return {
     label,

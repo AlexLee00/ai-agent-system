@@ -210,6 +210,45 @@ describe('Hub local OAuth import', () => {
     expect(payload.claudeAiOauth.rateLimitTier).toBe('default_claude_max_20x');
   });
 
+  test('writes refreshed Claude Code OAuth back to ~/.claude credentials file', () => {
+    const homeDir = path.join(tempRoot, 'claude-home');
+    const credentialPath = path.join(homeDir, '.claude', '.credentials.json');
+    fs.mkdirSync(path.dirname(credentialPath), { recursive: true });
+    fs.writeFileSync(credentialPath, JSON.stringify({
+      claudeAiOauth: {
+        accessToken: 'old-file-access-token',
+        refreshToken: 'old-file-refresh-token',
+        expiresAt: 1770000000000,
+        scopes: ['user:profile'],
+        subscriptionType: 'max',
+        rateLimitTier: 'default_claude_max_20x',
+      },
+      preservedField: true,
+    }), 'utf8');
+
+    const { writeClaudeCodeLocalCredentials } = require('../lib/oauth/local-credentials.ts');
+    const result = writeClaudeCodeLocalCredentials({
+      access_token: 'new-file-access-token',
+      refresh_token: 'new-file-refresh-token',
+      expires_at: '2030-01-01T00:00:00.000Z',
+      scopes: ['user:profile', 'user:inference'],
+      subscription_type: 'max',
+      rate_limit_tier: 'default_claude_max_20x',
+    }, {
+      homeDir,
+      allowFileWrite: true,
+    });
+
+    expect(result.ok).toBe(true);
+    const persisted = JSON.parse(fs.readFileSync(credentialPath, 'utf8'));
+    expect(persisted.preservedField).toBe(true);
+    expect(persisted.claudeAiOauth.accessToken).toBe('new-file-access-token');
+    expect(persisted.claudeAiOauth.refreshToken).toBe('new-file-refresh-token');
+    expect(persisted.claudeAiOauth.expiresAt).toBe(1893456000000);
+    expect(persisted.claudeAiOauth.scopes).toContain('user:inference');
+    expect((fs.statSync(credentialPath).mode & 0o777).toString(8)).toBe('600');
+  });
+
   test('import-local route stores tokens but redacts response payload', async () => {
     const codexHome = path.join(tempRoot, '.codex');
     const storeFile = path.join(tempRoot, 'token-store.json');

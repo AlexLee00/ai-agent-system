@@ -34,6 +34,8 @@ function main() {
   assert.equal(String(env.HUB_OAUTH_MONITOR_REQUIRE_GEMINI || '').trim(), 'true', 'Gemini OAuth readiness must be required');
   assert.equal(String(env.HUB_OAUTH_MONITOR_REQUIRE_GEMINI_CLI || '').trim(), 'true', 'Gemini CLI OAuth monitor must be explicitly required');
   assert.equal(String(env.HUB_OAUTH_MONITOR_REQUIRE_GEMINI_CODEASSIST_SERVICE || '').trim(), 'true', 'Gemini Code Assist service monitor must be explicitly required');
+  assert.equal(String(env.HUB_OAUTH_MONITOR_ALLOW_KEYCHAIN || '').trim(), 'true', 'Claude Code OAuth monitor must sync refreshed credentials into Keychain');
+  assert.notEqual(String(env.HUB_CLAUDE_CODE_LIVE_PROBE_ON_MONITOR || '').trim().toLowerCase(), 'false', 'Claude Code OAuth monitor must keep the live CLI probe enabled');
   assert.equal(String(env.GEMINI_OAUTH_PROJECT_ID || '').trim(), 'gen-lang-client-0627707293', 'Gemini quota project must be wired into oauth monitor launchd');
   assert(asNumber(env.HUB_GEMINI_OAUTH_WARN_HOURS, 'HUB_GEMINI_OAUTH_WARN_HOURS') >= 0.5, 'Gemini warn window must allow proactive refresh');
   assert(asNumber(env.HUB_GEMINI_OAUTH_CRITICAL_HOURS, 'HUB_GEMINI_OAUTH_CRITICAL_HOURS') >= 0.1, 'Gemini critical window must be non-zero');

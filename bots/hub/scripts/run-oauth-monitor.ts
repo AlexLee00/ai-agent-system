@@ -2,11 +2,13 @@
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
+import { spawnSync } from 'child_process';
 import { checkTokenHealth, checkOpenAIOAuthHealth, checkGeminiOAuthHealth, checkGroqAccounts } from '../lib/llm/oauth-monitor.js';
 const {
   readOpenAiCodexLocalCredentials,
   readClaudeCodeLocalCredentials,
   writeOpenAiCodexLocalCredentials,
+  writeClaudeCodeLocalCredentials,
   writeClaudeCodeKeychainCredentials,
 } = require('../lib/oauth/local-credentials.ts');
 const { getProviderRecord, setProviderCanary, setProviderToken } = require('../lib/oauth/token-store.ts');
@@ -39,6 +41,101 @@ function tokenExpiresInHours(token: any): number | null {
   const expiresMs = expiresAt ? new Date(expiresAt).getTime() : NaN;
   if (!Number.isFinite(expiresMs)) return null;
   return (expiresMs - Date.now()) / (60 * 60 * 1000);
+}
+
+function scrubClaudeProbeEnv() {
+  const childEnv = { ...process.env };
+  for (const key of [
+    'ANTHROPIC_API_KEY',
+    'ANTHROPIC_AUTH_TOKEN',
+    'CLAUDE_CODE_OAUTH_ACCESS_TOKEN',
+    'CLAUDE_CODE_OAUTH_REFRESH_TOKEN',
+    'CLAUDE_CODE_OAUTH_TOKEN',
+  ]) {
+    delete childEnv[key];
+  }
+  return childEnv;
+}
+
+function summarizeClaudeProbeOutput(stdout: string, stderr: string, status: number | null) {
+  const raw = String(stdout || '').trim();
+  try {
+    const parsed = raw ? JSON.parse(raw) : null;
+    const statusText = parsed?.api_error_status ? `api_${parsed.api_error_status}` : null;
+    const resultText = String(parsed?.result || parsed?.error || '').trim();
+    return String(statusText || resultText || stderr || `exit_${status}`).slice(0, 240);
+  } catch {
+    return String(stderr || raw || `exit_${status}`).slice(0, 240);
+  }
+}
+
+async function runClaudeCodeLiveProbe() {
+  if (!flag('HUB_CLAUDE_CODE_LIVE_PROBE_ON_MONITOR', true)) {
+    return { ok: false, skipped: true, error: 'live_probe_disabled' };
+  }
+
+  const bin = String(process.env.CLAUDE_CODE_BIN || '/opt/homebrew/bin/claude').trim() || 'claude';
+  const timeoutMs = Number(process.env.HUB_CLAUDE_CODE_LIVE_PROBE_TIMEOUT_MS || 20_000);
+  const started = Date.now();
+  const result = spawnSync(bin, [
+    '-p',
+    'Return exactly: ok',
+    '--output-format',
+    'json',
+    '--max-turns',
+    '1',
+    '--model',
+    String(process.env.HUB_CLAUDE_CODE_MONITOR_PROBE_MODEL || 'sonnet'),
+    '--tools',
+    '',
+    '--permission-mode',
+    'default',
+    '--no-session-persistence',
+  ], {
+    encoding: 'utf8',
+    timeout: Number.isFinite(timeoutMs) && timeoutMs > 0 ? timeoutMs : 20_000,
+    env: scrubClaudeProbeEnv(),
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+
+  const stdout = String(result.stdout || '').trim();
+  const stderr = String(result.stderr || '').trim();
+  const latencyMs = Date.now() - started;
+  try {
+    const parsed = stdout ? JSON.parse(stdout) : null;
+    if (result.status === 0 && parsed && parsed.is_error !== true && String(parsed.result || '').trim()) {
+      return {
+        ok: true,
+        latency_ms: latencyMs,
+        session_id_present: Boolean(parsed.session_id),
+      };
+    }
+    return {
+      ok: false,
+      latency_ms: latencyMs,
+      status: result.status,
+      signal: result.signal || null,
+      api_error_status: parsed?.api_error_status || null,
+      error: summarizeClaudeProbeOutput(stdout, stderr, result.status),
+    };
+  } catch {
+    return {
+      ok: false,
+      latency_ms: latencyMs,
+      status: result.status,
+      signal: result.signal || null,
+      error: summarizeClaudeProbeOutput(stdout, stderr, result.status),
+    };
+  }
+}
+
+function isClaudeProbeAuthFailure(probe: any): boolean {
+  const corpus = [
+    probe?.api_error_status,
+    probe?.error,
+    probe?.status,
+  ].map((part) => String(part || '').toLowerCase()).join(' ');
+  return /\b401\b|api_401|auth|authentication|not logged in|invalid credentials/.test(corpus);
 }
 
 async function withMonitorOAuthLock(provider: string, reason: string, work: () => Promise<any>) {
@@ -335,6 +432,9 @@ async function refreshClaudeCodeHubToken(reason: string) {
         refreshed_by: 'hub_oauth_monitor',
       },
     });
+    const localSync = writeClaudeCodeLocalCredentials(normalized.token, {
+      allowFileWrite: flag('HUB_OAUTH_MONITOR_SYNC_LOCAL_CLAUDE', true),
+    });
     const keychainSync = writeClaudeCodeKeychainCredentials(normalized.token, {
       allowKeychainPrompt: flag('HUB_OAUTH_MONITOR_ALLOW_KEYCHAIN', false),
     });
@@ -342,6 +442,11 @@ async function refreshClaudeCodeHubToken(reason: string) {
       ok: true,
       source: 'hub_oauth_refresh',
       expires_in_hours: tokenExpiresInHours(normalized.token),
+      local_sync: {
+        ok: Boolean(localSync?.ok),
+        source: localSync?.source || null,
+        error: localSync?.error || null,
+      },
       keychain_sync: {
         ok: Boolean(keychainSync?.ok),
         source: keychainSync?.source || null,
@@ -610,6 +715,7 @@ async function checkClaudeCodeOAuth() {
   let claudeOauth = await checkTokenHealth();
   let refresh = null;
   let reimport = null;
+  let liveProbe = null;
   const initialExpires = Number(claudeOauth.expires_in_hours || 0);
 
   if (!claudeOauth.healthy || initialExpires <= warnHours) {
@@ -620,6 +726,29 @@ async function checkClaudeCodeOAuth() {
       reimport = await withMonitorOAuthLock('claude-code-cli', claudeOauth.healthy ? 'refresh_window_after_refresh' : 'unhealthy_after_refresh', () =>
         maybeReimportClaudeCodeCredential(claudeOauth.healthy ? 'refresh_window_after_refresh' : 'unhealthy_after_refresh'));
       claudeOauth = await checkTokenHealth();
+    }
+  }
+
+  if (claudeOauth.healthy && flag('HUB_CLAUDE_CODE_LIVE_PROBE_ON_MONITOR', true)) {
+    liveProbe = await runClaudeCodeLiveProbe();
+    if (!liveProbe?.ok && isClaudeProbeAuthFailure(liveProbe)) {
+      refresh = await withMonitorOAuthLock('claude-code-cli', 'live_probe_auth_failed', () =>
+        refreshClaudeCodeHubToken('live_probe_auth_failed'));
+      claudeOauth = await checkTokenHealth();
+      liveProbe = await runClaudeCodeLiveProbe();
+      if (!liveProbe?.ok) {
+        claudeOauth = {
+          ...claudeOauth,
+          healthy: false,
+          error: `live_probe_failed:${liveProbe?.error || 'unknown'}`,
+        };
+      }
+    } else if (!liveProbe?.ok && liveProbe?.skipped !== true) {
+      claudeOauth = {
+        ...claudeOauth,
+        healthy: false,
+        error: `live_probe_failed:${liveProbe?.error || 'unknown'}`,
+      };
     }
   }
 
@@ -636,9 +765,10 @@ async function checkClaudeCodeOAuth() {
         error: claudeOauth.error || null,
         refresh,
         reimport,
+        live_probe: liveProbe,
       },
     });
-    return { ...claudeOauth, refresh, reimport };
+    return { ...claudeOauth, refresh, reimport, live_probe: liveProbe };
   }
 
   if (expires <= warnHours) {
@@ -655,14 +785,16 @@ async function checkClaudeCodeOAuth() {
         expires_in_hours: Math.round(expires * 10) / 10,
         refresh,
         reimport,
+        live_probe: liveProbe,
       },
     });
   } else {
     const refreshNote = claudeOauth.needs_refresh ? ' refresh_window=true' : '';
-    console.log(`[oauth-monitor] Claude OAuth 정상: ${expires.toFixed(1)}h 남음 (${claudeOauth.account || 'unknown'})${refreshNote}`);
+    const liveNote = liveProbe?.ok ? ` live_probe=${liveProbe.latency_ms}ms` : '';
+    console.log(`[oauth-monitor] Claude OAuth 정상: ${expires.toFixed(1)}h 남음 (${claudeOauth.account || 'unknown'})${refreshNote}${liveNote}`);
   }
 
-  return { ...claudeOauth, refresh, reimport };
+  return { ...claudeOauth, refresh, reimport, live_probe: liveProbe };
 }
 
 async function checkOpenAiCodexOAuth() {
@@ -1104,7 +1236,10 @@ async function main() {
         : null,
       refresh_ok: claudeOauth.refresh?.ok ?? null,
       refresh_source: claudeOauth.refresh?.source || null,
+      local_sync_ok: claudeOauth.refresh?.local_sync?.ok ?? null,
       keychain_sync_ok: claudeOauth.refresh?.keychain_sync?.ok ?? null,
+      live_probe_ok: claudeOauth.live_probe?.ok ?? null,
+      live_probe_error: claudeOauth.live_probe?.ok === false ? (claudeOauth.live_probe?.error || null) : null,
       reimport_ok: claudeOauth.reimport?.ok ?? null,
       reimport_source: claudeOauth.reimport?.source || null,
       error: claudeOauth.error || null,

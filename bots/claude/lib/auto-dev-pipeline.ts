@@ -2453,27 +2453,40 @@ async function markAgentError(error) {
   try { await teamBus.markError('auto-dev', error); } catch {}
 }
 
+function buildMissingAutoDevDocumentResult(filePath, relPath, reason = 'missing_document') {
+  markAutoDevManifestState(AUTO_DEV_DIR, relPath, 'archived_missing', {
+    archivedAt: nowIso(),
+    archivedBy: 'auto-dev-pipeline',
+    reason,
+  });
+  return {
+    ok: true,
+    skipped: true,
+    reason: 'missing_document',
+    job: {
+      id: null,
+      filePath,
+      relPath,
+      stage: 'missing_document',
+      status: 'skipped',
+    },
+  };
+}
+
 async function processAutoDevDocument(filePath, options = {}) {
   const relPath = relativeToRoot(filePath);
   if (!fs.existsSync(filePath)) {
-    markAutoDevManifestState(AUTO_DEV_DIR, relPath, 'archived_missing', {
-      archivedAt: nowIso(),
-      archivedBy: 'auto-dev-pipeline',
-    });
-    return {
-      ok: true,
-      skipped: true,
-      reason: 'missing_document',
-      job: {
-        id: null,
-        filePath,
-        relPath,
-        stage: 'missing_document',
-        status: 'skipped',
-      },
-    };
+    return buildMissingAutoDevDocumentResult(filePath, relPath);
   }
-  const content = fs.readFileSync(filePath, 'utf8');
+  let content;
+  try {
+    content = fs.readFileSync(filePath, 'utf8');
+  } catch (error) {
+    if (error?.code === 'ENOENT' || error?.code === 'ENOTDIR') {
+      return buildMissingAutoDevDocumentResult(filePath, relPath, 'missing_document_after_listing');
+    }
+    throw error;
+  }
   markAutoDevManifestState(AUTO_DEV_DIR, relPath, 'claimed', {
     claimedAt: nowIso(),
     claimedBy: 'auto-dev-pipeline',

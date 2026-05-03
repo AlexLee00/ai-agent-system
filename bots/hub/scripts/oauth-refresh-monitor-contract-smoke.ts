@@ -33,7 +33,10 @@ for (const fn of [
   assert.ok(monitorSource.includes(`async function ${fn}`), `oauth monitor missing ${fn}`);
 }
 
-assert.ok(monitorSource.includes('writeClaudeCodeKeychainCredentials'), 'Claude refresh must sync back to local Claude Code credentials');
+assert.ok(monitorSource.includes('writeClaudeCodeLocalCredentials'), 'Claude refresh must sync back to ~/.claude runtime credentials');
+assert.ok(monitorSource.includes('writeClaudeCodeKeychainCredentials'), 'Claude refresh should also support Keychain sync when explicitly allowed');
+assert.ok(monitorSource.includes('runClaudeCodeLiveProbe'), 'Claude monitor must verify the real Claude Code CLI call path');
+assert.ok(monitorSource.includes('HUB_CLAUDE_CODE_LIVE_PROBE_ON_MONITOR'), 'Claude live probe must be runtime-gated');
 assert.ok(monitorSource.includes('writeOpenAiCodexLocalCredentials'), 'OpenAI refresh must sync back to local Codex credentials');
 assert.ok(monitorSource.includes('withOAuthRefreshLock'), 'OAuth monitor must serialize refresh/reimport with a provider lock');
 assert.ok(monitorSource.includes('withMonitorOAuthLock'), 'OAuth monitor must fail closed on refresh lock timeout/contention');
