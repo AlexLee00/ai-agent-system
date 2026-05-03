@@ -133,7 +133,7 @@ function unitSmokeScripts(): string[] {
     'jay-staged-enable-plan.ts',
     'jay-status-report.ts',
     'jay-incident-janitor.ts',
-    'jay-commander-queue-hygiene.ts --smoke',
+    'jay-commander-queue-hygiene.ts',
     'jay-runtime-launchd-smoke.ts',
     'jay-runtime-lock-smoke.ts',
     'jay-runtime-process-check.ts',
@@ -201,6 +201,9 @@ function runUnit(scriptDir: string, hubRoot: string, jestBin: string, tsxBin: st
   runSteps(unitSmokeScripts().map((script) => {
     if (script === 'retired-gateway-residue-audit.ts') {
       return tsxStepWithArgs(tsxBin, scriptDir, hubRoot, script, ['--check-only']);
+    }
+    if (script === 'jay-commander-queue-hygiene.ts') {
+      return tsxStepWithArgs(tsxBin, scriptDir, hubRoot, script, ['--smoke']);
     }
     return tsxStep(tsxBin, scriptDir, hubRoot, script);
   }));
