@@ -2,6 +2,7 @@
 // @ts-nocheck
 
 import assert from 'node:assert/strict';
+import { createRequire } from 'node:module';
 import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
 import { publishAlert } from '../shared/alert-publisher.ts';
 import { buildLunaLiveFireCutoverPreflight } from './luna-live-fire-cutover-preflight.ts';
@@ -10,8 +11,10 @@ import { buildLunaManualReconcilePlaybook } from './luna-manual-reconcile-playbo
 import { buildLunaKillSwitchConsistency } from './luna-kill-switch-consistency.ts';
 import { buildLunaEntryTriggerWorkerReadiness } from './luna-entry-trigger-worker-readiness.ts';
 
+const require = createRequire(import.meta.url);
+
 async function loadPostAlarm() {
-  const module = await import('../../../packages/core/lib/hub-alarm-client.ts');
+  const module = require('../../../packages/core/lib/hub-alarm-client.js');
   return module.postAlarm || module.default?.postAlarm;
 }
 
