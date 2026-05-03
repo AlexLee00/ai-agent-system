@@ -1757,12 +1757,31 @@ function isAllowedScopedPrefix(relPath, prefixAllowlist = []) {
   return prefixAllowlist.some(prefix => relPath === prefix || relPath.startsWith(`${prefix}/`));
 }
 
+function normalizeScopedNpmTestEntry(entry) {
+  const text = toSafeString(entry).replace(/\s+/g, ' ').trim();
+  if (!text) return '';
+  const tokens = text.split(' ').filter(Boolean);
+  if (tokens.length < 4 || tokens[0] !== 'npm') return text;
+
+  const normalized = [];
+  let skippedSilent = false;
+  for (const token of tokens) {
+    if (token === '-s' || token === '--silent') {
+      skippedSilent = true;
+      continue;
+    }
+    normalized.push(token);
+  }
+  if (!skippedSilent) return text;
+  return normalized.join(' ').trim();
+}
+
 function resolveScopedNpmCommand(entry, {
   scriptAllowlist = new Set(),
   prefixAllowlist = [],
   repoRoot = ROOT,
 } = {}) {
-  const text = toSafeString(entry).replace(/\s+/g, ' ').trim();
+  const text = normalizeScopedNpmTestEntry(entry);
   if (!text) return { matched: false, ok: false, reason: 'empty' };
 
   const m1 = text.match(/^npm\s+--prefix\s+([^\s]+)\s+run\s+([A-Za-z0-9:_-]+)$/);
