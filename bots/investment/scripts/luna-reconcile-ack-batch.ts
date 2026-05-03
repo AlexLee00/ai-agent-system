@@ -50,7 +50,13 @@ export async function buildLunaReconcileAckBatch({
   reason = 'operator_verified_absent_order',
   evidence = 'binance_client_order_lookup_not_found',
 } = {}) {
-  const preflight = await buildLunaReconcileAckPreflight({ exchange, hours, limit, liveLookup: true });
+  const preflight = signalIds.length
+    ? {
+      checks: (await Promise.all(signalIds.map((signalId) => (
+        buildLunaReconcileAckPreflight({ exchange, hours, limit, liveLookup: true, signalId })
+      )))).flatMap((item) => item.checks || []),
+    }
+    : await buildLunaReconcileAckPreflight({ exchange, hours, limit, liveLookup: true });
   const checks = filterChecks(preflight.checks || [], signalIds);
   const summary = summarizeChecks(checks);
   const blockers = [];
@@ -73,7 +79,7 @@ export async function buildLunaReconcileAckBatch({
     summary,
     checks,
     commands: checks.filter((item) => item.readyToAck).map((item) => (
-      `npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run -s runtime:luna-reconcile-ack -- --signal-id=${item.signalId} --apply --confirm=ack-luna-reconcile --reason=${reason} --evidence=${evidence}`
+      `npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run -s runtime:luna-reconcile-ack -- --signal-id=${item.signalId} --apply --confirm=ack-luna-reconcile --reason=${reason} --evidence=${evidence} --preflight-evidence-hash=${item.evidenceHash} --preflight-expires-at=${item.evidenceExpiresAt}`
     )),
   };
   if (!apply) return base;
@@ -89,6 +95,8 @@ export async function buildLunaReconcileAckBatch({
       ackedBy,
       reason,
       evidence,
+      preflightEvidenceHash: check.evidenceHash,
+      preflightExpiresAt: check.evidenceExpiresAt,
     }));
   }
   const failed = applied.filter((item) => item.ok !== true || item.applied !== true);

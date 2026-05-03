@@ -9,6 +9,7 @@ const SIMULATED_VISIBLE_LABELS = [
   'ai.luna.tradingview-ws',
   'ai.investment.commander',
   'ai.elixir.supervisor',
+  'ai.luna.ops-scheduler',
   'ai.investment.reporter',
   'ai.investment.argos',
   'ai.luna.binance-ws',
@@ -18,6 +19,7 @@ const SIMULATED_VISIBLE_LABELS = [
   'ai.investment.unrealized-pnl',
   'ai.investment.market-alert-domestic-open',
   'ai.investment.prescreen-domestic',
+  'ai.luna.guardrails-hourly',
 ];
 
 export async function runLaunchdMigrationExecuteSmoke() {
@@ -28,8 +30,9 @@ export async function runLaunchdMigrationExecuteSmoke() {
   assert.equal(dryRun.ok, true);
   assert.equal(dryRun.dryRun, true);
   assert.equal(dryRun.applied, false);
-  assert.equal(dryRun.steps.length, 11);
+  assert.equal(dryRun.steps.length, 12);
   assert.ok(dryRun.steps.some((step) => step.group === 'marketdata_ws_to_mcp' && step.visibleLabels.length === 3));
+  assert.ok(dryRun.steps.some((step) => step.group === 'scheduled_ops_to_ops_scheduler' && step.visibleLabels.length === 1));
   assert.equal(dryRun.steps.find((step) => step.group === 'marketdata_ws_to_mcp').validation.ok, true);
 
   const oneGroup = await executeLaunchdMigration({

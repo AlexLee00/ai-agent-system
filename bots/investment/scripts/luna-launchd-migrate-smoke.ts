@@ -11,6 +11,7 @@ export async function runLaunchdMigrateSmoke() {
       'ai.luna.tradingview-ws',
       'ai.investment.commander',
       'ai.elixir.supervisor',
+      'ai.luna.ops-scheduler',
       'ai.investment.reporter',
       'ai.investment.argos',
       'ai.luna.binance-ws',
@@ -20,6 +21,7 @@ export async function runLaunchdMigrateSmoke() {
   assert.ok(plan.retireCandidates.length >= 15);
   assert.ok(plan.protectedLabels.includes('ai.luna.tradingview-ws'));
   assert.ok(plan.targetLabels.includes('ai.investment.commander'));
+  assert.ok(plan.targetLabels.includes('ai.luna.ops-scheduler'));
   assert.equal(plan.steps.length >= 5, true);
   const confirmBlocked = await executeLaunchdMigration({
     apply: true,
@@ -33,11 +35,13 @@ export async function runLaunchdMigrateSmoke() {
       'ai.luna.tradingview-ws',
       'ai.investment.commander',
       'ai.elixir.supervisor',
+      'ai.luna.ops-scheduler',
       'ai.investment.reporter',
       'ai.investment.argos',
       'ai.luna.binance-ws',
       'ai.investment.position-watch',
       'ai.investment.market-alert-domestic-open',
+      'ai.luna.guardrails-hourly',
     ],
     validationWaitMs: 0,
   });

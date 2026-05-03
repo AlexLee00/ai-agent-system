@@ -37,7 +37,11 @@ function resolveEligibility(candidate = {}) {
     const blockers = [];
     const recoveryText = String(candidate.identifiers?.recoveryErrorCode || candidate.identifiers?.recoveryError || '');
     const lookupOnly = candidate.resolutionClass === 'exchange_lookup_retry';
-    if (candidate.resolutionClass !== 'manual_ack_required' && !lookupOnly) {
+    const unsubmittedLookup = lookupOnly
+      && candidate.identifiers?.clientOrderId
+      && candidate.identifiers?.orderAttempted === false
+      && !candidate.identifiers?.submittedAtMs;
+    if (candidate.resolutionClass !== 'manual_ack_required' && !unsubmittedLookup && !lookupOnly) {
       blockers.push(`resolution_class_not_ackable:${candidate.resolutionClass || 'unknown'}`);
     }
     if (!lookupOnly && !recoveryText.includes('not_found')) blockers.push('recovery_not_not_found');
@@ -48,7 +52,8 @@ function resolveEligibility(candidate = {}) {
       blockers,
       classified: candidate,
       lookupOnly,
-      ackable: !lookupOnly,
+      ackable: !lookupOnly || unsubmittedLookup,
+      unsubmittedLookup,
     };
   }
   return evaluateReconcileAckEligibility(candidate);
@@ -137,8 +142,8 @@ export async function verifyAckCandidateAgainstExchange(candidate = {}, {
     };
   } catch (error) {
     const status = classifyLookupError(error);
-    const readyToAck = status === 'order_absent_confirmed' && eligibility.lookupOnly !== true;
-    const finalStatus = status === 'order_absent_confirmed' && eligibility.lookupOnly === true
+    const readyToAck = status === 'order_absent_confirmed' && (eligibility.lookupOnly !== true || eligibility.unsubmittedLookup === true);
+    const finalStatus = status === 'order_absent_confirmed' && eligibility.lookupOnly === true && eligibility.unsubmittedLookup !== true
       ? 'exchange_lookup_absent_manual_decision_required'
       : status;
     const evidence = buildAckPreflightEvidence({
@@ -263,6 +268,38 @@ export async function runLunaReconcileAckPreflightSmoke() {
   assert.equal(absent.readyToAck, true);
   assert.match(absent.evidenceHash, /^[a-f0-9]{64}$/);
   assert.ok(new Date(absent.evidenceExpiresAt).getTime() > new Date(absent.checkedAt).getTime());
+
+  const unsubmittedLookup = await verifyAckCandidateAgainstExchange({
+    id: 'sig-lookup',
+    symbol: 'UTK/USDT',
+    action: 'BUY',
+    resolutionClass: 'exchange_lookup_retry',
+    identifiers: { clientOrderId: 'cid-lookup', orderAttempted: false, submittedAtMs: null },
+  }, {
+    fetchOrder: async () => {
+      const error = new Error('binance_order_lookup_not_found:UTK/USDT:cid-lookup');
+      error.code = 'binance_order_lookup_not_found';
+      throw error;
+    },
+  });
+  assert.equal(unsubmittedLookup.status, 'order_absent_confirmed');
+  assert.equal(unsubmittedLookup.readyToAck, true);
+
+  const submittedLookup = await verifyAckCandidateAgainstExchange({
+    id: 'sig-submitted',
+    symbol: 'UTK/USDT',
+    action: 'BUY',
+    resolutionClass: 'exchange_lookup_retry',
+    identifiers: { clientOrderId: 'cid-submitted', orderAttempted: true, submittedAtMs: 1777817066755 },
+  }, {
+    fetchOrder: async () => {
+      const error = new Error('binance_order_lookup_not_found:UTK/USDT:cid-submitted');
+      error.code = 'binance_order_lookup_not_found';
+      throw error;
+    },
+  });
+  assert.equal(submittedLookup.status, 'exchange_lookup_absent_manual_decision_required');
+  assert.equal(submittedLookup.readyToAck, false);
 
   const found = await verifyAckCandidateAgainstExchange({
     id: 'sig-2',

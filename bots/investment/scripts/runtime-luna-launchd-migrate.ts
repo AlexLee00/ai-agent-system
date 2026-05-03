@@ -23,12 +23,7 @@ const TARGET_LABELS = [
   'ai.claude.auto-dev.autonomous',
   'ai.hub.resource-api',
   'ai.investment.runtime-autopilot',
-  'ai.investment.market-regime-capture',
-  'ai.luna.daily-backtest',
-  'ai.luna.guardrails-hourly',
-  'ai.luna.7day-natural-checkpoint',
-  'ai.luna.trade-journal-dashboard',
-  'ai.luna.voyager-skill-acceleration',
+  'ai.luna.ops-scheduler',
 ];
 
 const PROTECTED_LABELS = new Set([
@@ -110,6 +105,18 @@ const RETIRE_GROUPS = [
     labels: ['ai.investment.reporter'],
     replacementLabels: ['ai.elixir.supervisor'],
   },
+  {
+    group: 'scheduled_ops_to_ops_scheduler',
+    labels: [
+      'ai.investment.market-regime-capture',
+      'ai.luna.daily-backtest',
+      'ai.luna.guardrails-hourly',
+      'ai.luna.7day-natural-checkpoint',
+      'ai.luna.trade-journal-dashboard',
+      'ai.luna.voyager-skill-acceleration',
+    ],
+    replacementLabels: ['ai.luna.ops-scheduler'],
+  },
 ];
 
 function parseArgs(argv = process.argv.slice(2)) {
@@ -161,19 +168,31 @@ function plistPathForLabel(label) {
 }
 
 function buildBootoutCommand(label) {
+  const userLaunchAgentPlist = resolve(process.env.HOME || '', 'Library', 'LaunchAgents', `${label}.plist`);
+  const repoPlist = plistPathForLabel(label);
+  const plistPath = existsSync(userLaunchAgentPlist) ? userLaunchAgentPlist : repoPlist;
+  const plistExists = existsSync(plistPath);
   return {
     label,
-    args: ['bootout', `${launchdDomain()}/${label}`],
-    command: `launchctl bootout ${launchdDomain()}/${label}`,
+    disableArgs: ['disable', `${launchdDomain()}/${label}`],
+    disableCommand: `launchctl disable ${launchdDomain()}/${label}`,
+    args: plistExists ? ['bootout', launchdDomain(), plistPath] : ['bootout', `${launchdDomain()}/${label}`],
+    command: plistExists ? `launchctl bootout ${launchdDomain()} ${plistPath}` : `launchctl bootout ${launchdDomain()}/${label}`,
+    plistPath,
+    plistExists,
   };
 }
 
 function buildBootstrapCommand(label) {
-  const plistPath = plistPathForLabel(label);
+  const userLaunchAgentPlist = resolve(process.env.HOME || '', 'Library', 'LaunchAgents', `${label}.plist`);
+  const repoPlist = plistPathForLabel(label);
+  const plistPath = existsSync(userLaunchAgentPlist) ? userLaunchAgentPlist : repoPlist;
   return {
     label,
     plistPath,
     exists: existsSync(plistPath),
+    enableArgs: ['enable', `${launchdDomain()}/${label}`],
+    enableCommand: `launchctl enable ${launchdDomain()}/${label}`,
     args: ['bootstrap', launchdDomain(), plistPath],
     command: `launchctl bootstrap ${launchdDomain()} ${plistPath}`,
   };
@@ -289,8 +308,9 @@ async function rollbackBootedOutLabels(labels) {
       results.push({ label, ok: false, skipped: true, error: 'rollback_plist_missing', ...rollback });
       continue;
     }
+    const enableResult = runLaunchctl(rollback.enableArgs, { timeout: 10_000 });
     const result = runLaunchctl(rollback.args, { timeout: 10_000 });
-    results.push({ label, ok: result.ok, ...rollback, result });
+    results.push({ label, ok: result.ok, ...rollback, enableResult, result });
   }
   return results;
 }
@@ -373,8 +393,15 @@ export async function executeLaunchdMigration({
         };
       }
       const command = buildBootoutCommand(label);
+      const disableResult = runLaunchctl(command.disableArgs, { timeout: 10_000 });
       const result = runLaunchctl(command.args, { timeout: 10_000 });
-      stepResult.bootout.push({ label, ok: result.ok, ...command, result });
+      stepResult.bootout.push({
+        label,
+        ok: result.ok,
+        ...command,
+        disableResult,
+        result,
+      });
       if (result.ok) bootedOut.push(label);
     }
     const bootoutFailures = stepResult.bootout.filter((item) => item.ok !== true);

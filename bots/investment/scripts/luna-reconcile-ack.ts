@@ -67,11 +67,15 @@ export function evaluateReconcileAckEligibility(row = {}) {
     };
   }
   const recoveryText = String(classified.identifiers?.recoveryErrorCode || classified.identifiers?.recoveryError || '');
+  const lookupRetryWithoutSubmittedOrder = classified.resolutionClass === 'exchange_lookup_retry'
+    && classified.identifiers?.clientOrderId
+    && classified.identifiers?.orderAttempted === false
+    && !classified.identifiers?.submittedAtMs;
   const blockers = [];
-  if (classified.resolutionClass !== 'manual_ack_required') {
+  if (classified.resolutionClass !== 'manual_ack_required' && !lookupRetryWithoutSubmittedOrder) {
     blockers.push(`resolution_class_not_ackable:${classified.resolutionClass || 'unknown'}`);
   }
-  if (!recoveryText.includes('not_found')) {
+  if (classified.resolutionClass === 'manual_ack_required' && !recoveryText.includes('not_found')) {
     blockers.push('recovery_not_not_found');
   }
   if (!classified.identifiers?.clientOrderId) {
@@ -79,7 +83,11 @@ export function evaluateReconcileAckEligibility(row = {}) {
   }
   return {
     ok: blockers.length === 0,
-    status: blockers.length === 0 ? 'reconcile_ack_eligible' : 'reconcile_ack_blocked',
+    status: blockers.length === 0
+      ? lookupRetryWithoutSubmittedOrder
+        ? 'reconcile_unsubmitted_lookup_ack_eligible'
+        : 'reconcile_ack_eligible'
+      : 'reconcile_ack_blocked',
     blockers,
     classified,
   };
@@ -227,6 +235,33 @@ export async function runLunaReconcileAckSmoke() {
     },
   });
   assert.equal(eligible.ok, true);
+  const unsubmittedLookup = evaluateReconcileAckEligibility({
+    id: 'sig-lookup',
+    symbol: 'UTK/USDT',
+    action: 'BUY',
+    status: 'failed',
+    block_code: 'broker_execution_error',
+    block_meta: {
+      clientOrderId: 'client-lookup',
+      orderAttempted: false,
+    },
+  });
+  assert.equal(unsubmittedLookup.ok, true);
+  assert.equal(unsubmittedLookup.status, 'reconcile_unsubmitted_lookup_ack_eligible');
+  const submittedLookup = evaluateReconcileAckEligibility({
+    id: 'sig-submitted',
+    symbol: 'UTK/USDT',
+    action: 'BUY',
+    status: 'failed',
+    block_code: 'broker_execution_error',
+    block_meta: {
+      clientOrderId: 'client-submitted',
+      orderAttempted: true,
+      submittedAtMs: 1777817066755,
+    },
+  });
+  assert.equal(submittedLookup.ok, false);
+  assert.ok(submittedLookup.blockers.includes('resolution_class_not_ackable:exchange_lookup_retry'));
   const blocked = evaluateReconcileAckEligibility({
     id: 'sig-2',
     symbol: 'LUNC/USDT',
