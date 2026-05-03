@@ -1,14 +1,14 @@
 # Report Deprecation Preflight
 
-> Generated: 2026-05-02 KST
+> Generated: 2026-05-03 KST
 > Scope: read-only safety gate. This document does not unload or disable launchd jobs.
 
 ## Summary
 
-- status: `immediate_unload_verified`
+- status: `ready_for_parallel_observation`
 - immediate candidates: 9
-- runtime unload ready after approval: 0
-- repo-only or not loaded: 9
+- runtime unload ready after approval: 1
+- repo-only or not loaded: 8
 - blockers: 0
 
 ## Digest Runtime Status
@@ -41,7 +41,7 @@
 | `ai.blog.health-check` | local | hourly-status | no | no_runtime_action | local candidate is not currently loaded or plist is missing |
 | `ai.blog.instagram-token-health` | local | hourly-status | no | no_runtime_action | local candidate is not currently loaded or plist is missing |
 | `ai.claude.health-check` | local | hourly-status | no | no_runtime_action | local candidate is not currently loaded or plist is missing |
-| `ai.claude.health-dashboard` | local | hourly-status | no | no_runtime_action | local candidate is not currently loaded or plist is missing |
+| `ai.claude.health-dashboard` | local | hourly-status | yes | ready_for_master_approved_unload | local launchd is loaded and covered by digest replacement |
 | `ai.investment.health-check` | local | hourly-status | no | no_runtime_action | local candidate is not currently loaded or plist is missing |
 | `ai.investment.luna-l5-readiness` | repo | hourly-status | no | no_runtime_action | repo template candidate only; no loaded local runtime action detected |
 | `ai.legal.health-check` | local | hourly-status | no | no_runtime_action | local candidate is not currently loaded or plist is missing |
@@ -50,6 +50,6 @@
 
 ## Next Actions
 
-- Monitor the 5 digest jobs for information loss after immediate candidate unload.
-- Keep Week 1 grace and Week 3 grace candidates loaded until their review windows complete.
-- Use the retained local plist files as rollback sources if any digest coverage gap is observed.
+- Keep all immediate candidates running during the Week 1 parallel observation window.
+- Compare digest content against each candidate before any unload.
+- Unload only runtime_action=ready_for_master_approved_unload candidates after explicit master approval.

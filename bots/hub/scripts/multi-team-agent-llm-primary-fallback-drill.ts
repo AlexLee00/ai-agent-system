@@ -316,6 +316,7 @@ async function mapConcurrent(items, limit, worker) {
 async function main() {
   const live = flag('HUB_MULTI_AGENT_LLM_DRILL_LIVE') || argFlag('--live');
   const allowFailures = flag('HUB_MULTI_AGENT_LLM_DRILL_ALLOW_FAILURES') || argFlag('--allow-failures');
+  const allowSkipped = flag('HUB_MULTI_AGENT_LLM_DRILL_ALLOW_SKIPPED') || argFlag('--allow-skipped');
   const plans = buildPlans();
   const checks = buildChecks(plans);
   const token = hubToken(live);
@@ -345,7 +346,7 @@ async function main() {
     }
 
     const report = {
-      ok: failed.length === 0,
+      ok: failed.length === 0 && (allowSkipped || skippedAgents.length === 0),
       mode: live ? 'live' : 'mock',
       baseUrl: live ? baseUrl() : 'mock',
       generatedAt: new Date().toISOString(),
@@ -371,7 +372,7 @@ async function main() {
     }
 
     console.log(JSON.stringify(report, null, 2));
-    process.exit(failed.length === 0 || allowFailures ? 0 : 1);
+    process.exit((failed.length === 0 || allowFailures) && (allowSkipped || skippedAgents.length === 0) ? 0 : 1);
   } finally {
     restoreFetch?.();
   }

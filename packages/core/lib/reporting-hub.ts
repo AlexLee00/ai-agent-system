@@ -54,6 +54,11 @@ type NormalizedEvent = {
   alert_level: number;
   message: string;
   payload: NormalizedPayload;
+  visibility?: string;
+  alarm_type?: string;
+  actionability?: string;
+  incident_key?: string;
+  title?: string;
 };
 
 type EventInput = {
@@ -63,6 +68,11 @@ type EventInput = {
   alert_level?: number;
   message?: string;
   payload?: unknown;
+  visibility?: string;
+  alarm_type?: string;
+  actionability?: string;
+  incident_key?: string;
+  title?: string;
 };
 
 type SnippetEvent = NormalizedEvent & {
@@ -548,6 +558,11 @@ export function normalizeEvent({
   alert_level = 2,
   message = '',
   payload = null,
+  visibility,
+  alarm_type,
+  actionability,
+  incident_key,
+  title,
 }: {
   from_bot?: string;
   team?: string;
@@ -555,6 +570,11 @@ export function normalizeEvent({
   alert_level?: number;
   message?: string;
   payload?: unknown;
+  visibility?: string;
+  alarm_type?: string;
+  actionability?: string;
+  incident_key?: string;
+  title?: string;
 } = {}): NormalizedEvent {
   const validated = validatePayloadSchema(payload);
   const rawFromBot = normalizeDisplayText(from_bot);
@@ -584,6 +604,11 @@ export function normalizeEvent({
     alert_level: Number.isFinite(Number(alert_level)) ? Number(alert_level) : 2,
     message: finalMessage,
     payload: validated.payload,
+    visibility: normalizeDisplayText(visibility) || undefined,
+    alarm_type: normalizeDisplayText(alarm_type) || undefined,
+    actionability: normalizeDisplayText(actionability) || undefined,
+    incident_key: normalizeDisplayText(incident_key) || undefined,
+    title: normalizeDisplayText(title) || undefined,
   };
   recordPayloadWarnings(normalized, warnings);
   return normalized;
@@ -665,6 +690,11 @@ export async function publishToWebhook({
       alertLevel: normalized.alert_level,
       fromBot: normalized.from_bot,
       eventType: normalized.event_type,
+      visibility: normalized.visibility,
+      alarmType: normalized.alarm_type,
+      actionability: normalized.actionability,
+      incidentKey: normalized.incident_key,
+      title: normalized.title,
     });
     return {
       ok: result.ok,

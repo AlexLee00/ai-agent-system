@@ -1,6 +1,6 @@
 # Report Deprecation Matrix
 
-> Generated: 2026-05-02 KST
+> Generated: 2026-05-03 KST
 > Scope: read-only matrix. This document does not unload or disable any launchd job.
 
 ## Digest Targets

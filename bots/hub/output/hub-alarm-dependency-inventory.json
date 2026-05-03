@@ -1,16 +1,16 @@
 {
-  "generated_at": "2026-05-02T21:59:42.601Z",
+  "generated_at": "2026-05-03T01:32:22.112Z",
   "scan_patterns": [
     "hub-alarm-client",
     "openclaw-client",
     "HUB_ALARM_",
     "OPENCLAW_"
   ],
-  "total_matches": 291,
-  "unique_files": 151,
+  "total_matches": 260,
+  "unique_files": 133,
   "categories": {
-    "hub_alarm_native": 278,
-    "retired_gateway_guard": 13,
+    "hub_alarm_native": 248,
+    "retired_gateway_guard": 12,
     "legacy_gateway_compat": 0
   },
   "files": {
@@ -253,7 +253,7 @@
     "bots/claude/__tests__/auto-dev-pipeline.test.ts": [
       {
         "file": "bots/claude/__tests__/auto-dev-pipeline.test.ts",
-        "line": 77,
+        "line": 78,
         "category": "hub_alarm_native",
         "match": "'../../../packages/core/lib/hub-alarm-client': {"
       }
@@ -548,120 +548,6 @@
         "match": "const { postAlarm } = require('../../../packages/core/lib/hub-alarm-client');"
       }
     ],
-    "bots/hub/launchd/ai.hub.alarm-noise-report.plist": [
-      {
-        "file": "bots/hub/launchd/ai.hub.alarm-noise-report.plist",
-        "line": 27,
-        "category": "hub_alarm_native",
-        "match": "<key>HUB_ALARM_USE_CLASS_TOPICS</key>"
-      }
-    ],
-    "bots/hub/launchd/ai.hub.alarm-stale-auto-repair.plist": [
-      {
-        "file": "bots/hub/launchd/ai.hub.alarm-stale-auto-repair.plist",
-        "line": 27,
-        "category": "hub_alarm_native",
-        "match": "<key>HUB_ALARM_USE_CLASS_TOPICS</key>"
-      }
-    ],
-    "bots/hub/launchd/ai.hub.noisy-producer-auto-learn.plist": [
-      {
-        "file": "bots/hub/launchd/ai.hub.noisy-producer-auto-learn.plist",
-        "line": 26,
-        "category": "hub_alarm_native",
-        "match": "<key>HUB_ALARM_USE_CLASS_TOPICS</key>"
-      }
-    ],
-    "bots/hub/launchd/ai.hub.resource-api.plist": [
-      {
-        "file": "bots/hub/launchd/ai.hub.resource-api.plist",
-        "line": 38,
-        "category": "hub_alarm_native",
-        "match": "<key>HUB_ALARM_USE_CLASS_TOPICS</key>"
-      },
-      {
-        "file": "bots/hub/launchd/ai.hub.resource-api.plist",
-        "line": 40,
-        "category": "hub_alarm_native",
-        "match": "<key>HUB_ALARM_DISPATCH_MODE</key>"
-      },
-      {
-        "file": "bots/hub/launchd/ai.hub.resource-api.plist",
-        "line": 42,
-        "category": "hub_alarm_native",
-        "match": "<key>HUB_ALARM_LLM_CLASSIFIER_ENABLED</key>"
-      },
-      {
-        "file": "bots/hub/launchd/ai.hub.resource-api.plist",
-        "line": 44,
-        "category": "hub_alarm_native",
-        "match": "<key>HUB_ALARM_LLM_DAILY_LIMIT</key>"
-      },
-      {
-        "file": "bots/hub/launchd/ai.hub.resource-api.plist",
-        "line": 46,
-        "category": "hub_alarm_native",
-        "match": "<key>HUB_ALARM_CRITICAL_TYPE_ENABLED</key>"
-      },
-      {
-        "file": "bots/hub/launchd/ai.hub.resource-api.plist",
-        "line": 48,
-        "category": "hub_alarm_native",
-        "match": "<key>HUB_ALARM_INTERPRETER_ENABLED</key>"
-      },
-      {
-        "file": "bots/hub/launchd/ai.hub.resource-api.plist",
-        "line": 50,
-        "category": "hub_alarm_native",
-        "match": "<key>HUB_ALARM_INTERPRETER_FAIL_OPEN</key>"
-      },
-      {
-        "file": "bots/hub/launchd/ai.hub.resource-api.plist",
-        "line": 52,
-        "category": "hub_alarm_native",
-        "match": "<key>HUB_ALARM_INTERPRETER_LLM_DAILY_LIMIT</key>"
-      },
-      {
-        "file": "bots/hub/launchd/ai.hub.resource-api.plist",
-        "line": 54,
-        "category": "hub_alarm_native",
-        "match": "<key>HUB_ALARM_ENRICHMENT_ENABLED</key>"
-      },
-      {
-        "file": "bots/hub/launchd/ai.hub.resource-api.plist",
-        "line": 56,
-        "category": "hub_alarm_native",
-        "match": "<key>HUB_ALARM_ROUNDTABLE_ENABLED</key>"
-      },
-      {
-        "file": "bots/hub/launchd/ai.hub.resource-api.plist",
-        "line": 58,
-        "category": "hub_alarm_native",
-        "match": "<key>HUB_ALARM_ROUNDTABLE_DAILY_LIMIT</key>"
-      },
-      {
-        "file": "bots/hub/launchd/ai.hub.resource-api.plist",
-        "line": 60,
-        "category": "hub_alarm_native",
-        "match": "<key>HUB_ALARM_ROUNDTABLE_TRIGGER_FINGERPRINT_THRESHOLD</key>"
-      }
-    ],
-    "bots/hub/launchd/ai.hub.roundtable-reflection.plist": [
-      {
-        "file": "bots/hub/launchd/ai.hub.roundtable-reflection.plist",
-        "line": 22,
-        "category": "hub_alarm_native",
-        "match": "<key>HUB_ALARM_USE_CLASS_TOPICS</key>"
-      }
-    ],
-    "bots/hub/launchd/ai.hub.severity-decay.plist": [
-      {
-        "file": "bots/hub/launchd/ai.hub.severity-decay.plist",
-        "line": 22,
-        "category": "hub_alarm_native",
-        "match": "<key>HUB_ALARM_USE_CLASS_TOPICS</key>"
-      }
-    ],
     "bots/hub/lib/alarm/alarm-enrichment.ts": [
       {
         "file": "bots/hub/lib/alarm/alarm-enrichment.ts",
@@ -713,7 +599,7 @@
     "bots/hub/lib/alarm/auto-dev-incident.ts": [
       {
         "file": "bots/hub/lib/alarm/auto-dev-incident.ts",
-        "line": 208,
+        "line": 209,
         "category": "hub_alarm_native",
         "match": "const dir = process.env.HUB_ALARM_AUTO_DEV_DIR || DEFAULT_AUTO_DEV_DIR;"
       }
@@ -779,7 +665,7 @@
     "bots/hub/lib/routes/secrets.ts": [
       {
         "file": "bots/hub/lib/routes/secrets.ts",
-        "line": 95,
+        "line": 97,
         "category": "hub_alarm_native",
         "match": "const raw = String(process.env.HUB_ALARM_USE_CLASS_TOPICS || '').trim().toLowerCase();"
       }
@@ -1529,7 +1415,7 @@
     "bots/hub/scripts/run-oauth-monitor.ts": [
       {
         "file": "bots/hub/scripts/run-oauth-monitor.ts",
-        "line": 20,
+        "line": 26,
         "category": "hub_alarm_native",
         "match": "const { postAlarm } = require('../../../packages/core/lib/hub-alarm-client.ts');"
       }
@@ -1644,38 +1530,6 @@
         "match": "const hasTelegramRoute = Boolean(env.TELEGRAM_BOT_TOKEN || env.HUB_ALARM_TELEGRAM_ENABLED || env.TELEGRAM_ALARM_TOPIC_MAP);"
       }
     ],
-    "bots/orchestrator/launchd/ai.orchestrator.plist": [
-      {
-        "file": "bots/orchestrator/launchd/ai.orchestrator.plist",
-        "line": 11,
-        "category": "hub_alarm_native",
-        "match": "<key>HUB_ALARM_USE_CLASS_TOPICS</key>"
-      }
-    ],
-    "bots/orchestrator/launchd/ai.steward.daily.plist": [
-      {
-        "file": "bots/orchestrator/launchd/ai.steward.daily.plist",
-        "line": 11,
-        "category": "hub_alarm_native",
-        "match": "<key>HUB_ALARM_USE_CLASS_TOPICS</key>"
-      }
-    ],
-    "bots/orchestrator/launchd/ai.steward.hourly.plist": [
-      {
-        "file": "bots/orchestrator/launchd/ai.steward.hourly.plist",
-        "line": 11,
-        "category": "hub_alarm_native",
-        "match": "<key>HUB_ALARM_USE_CLASS_TOPICS</key>"
-      }
-    ],
-    "bots/orchestrator/launchd/ai.steward.weekly.plist": [
-      {
-        "file": "bots/orchestrator/launchd/ai.steward.weekly.plist",
-        "line": 11,
-        "category": "hub_alarm_native",
-        "match": "<key>HUB_ALARM_USE_CLASS_TOPICS</key>"
-      }
-    ],
     "bots/orchestrator/lib/steward/daily-summary.ts": [
       {
         "file": "bots/orchestrator/lib/steward/daily-summary.ts",
@@ -1766,26 +1620,6 @@
         "line": 22,
         "category": "hub_alarm_native",
         "match": "const hubAlarm = require(path.join(PROJECT_ROOT, 'packages/core/lib/hub-alarm-client.js'));"
-      }
-    ],
-    "docs/design/DESIGN_TEAM_JAY_AUTONOMOUS_ORCHESTRATION.md": [
-      {
-        "file": "docs/design/DESIGN_TEAM_JAY_AUTONOMOUS_ORCHESTRATION.md",
-        "line": 106,
-        "category": "hub_alarm_native",
-        "match": "- `hub-alarm-client`가 retired webhook보다 우선되는 구조로 이동했다."
-      },
-      {
-        "file": "docs/design/DESIGN_TEAM_JAY_AUTONOMOUS_ORCHESTRATION.md",
-        "line": 541,
-        "category": "hub_alarm_native",
-        "match": "- legacy alarm shim import를 `hub-alarm-client`로 팀별 이관한다."
-      },
-      {
-        "file": "docs/design/DESIGN_TEAM_JAY_AUTONOMOUS_ORCHESTRATION.md",
-        "line": 625,
-        "category": "hub_alarm_native",
-        "match": "- `readRecentAlertSnapshot` import를 `hub-alarm-client`로 변경."
       }
     ],
     "packages/core/lib/alarm-producer-contract.ts": [
@@ -1926,22 +1760,6 @@
         "match": "const raw = process.env.HUB_ALARM_USE_CLASS_TOPICS;"
       }
     ],
-    "packages/core/REPORTING_HUB_PLAN.md": [
-      {
-        "file": "packages/core/REPORTING_HUB_PLAN.md",
-        "line": 80,
-        "category": "hub_alarm_native",
-        "match": "- canonical transport 자체 (`hub-alarm-client.ts`, `reporting-hub.ts`)"
-      }
-    ],
-    "packages/core/REPORTING_INVENTORY.md": [
-      {
-        "file": "packages/core/REPORTING_INVENTORY.md",
-        "line": 121,
-        "category": "hub_alarm_native",
-        "match": "5. canonical transport (`hub-alarm-client.ts`, `reporting-hub.ts`) 바깥 non-blog current delivery는 사실상 1차 정리 완료 상태로 유지"
-      }
-    ],
     "packages/core/scripts/publish-python-report.ts": [
       {
         "file": "packages/core/scripts/publish-python-report.ts",
@@ -1950,36 +1768,12 @@
         "match": "const { postAlarm } = require('../lib/hub-alarm-client');"
       }
     ],
-    "README.md": [
-      {
-        "file": "README.md",
-        "line": 121,
-        "category": "hub_alarm_native",
-        "match": "│       ├── hub-alarm-client.js   # Hub-routed Telegram alerts & Standing Orders"
-      }
-    ],
     "scripts/api-usage-report.ts": [
       {
         "file": "scripts/api-usage-report.ts",
         "line": 30,
         "category": "hub_alarm_native",
         "match": "const hubAlarmClient = require('../packages/core/lib/hub-alarm-client');"
-      }
-    ],
-    "scripts/build-reservation-runtime.mjs": [
-      {
-        "file": "scripts/build-reservation-runtime.mjs",
-        "line": 16,
-        "category": "hub_alarm_native",
-        "match": "'packages/core/lib/hub-alarm-client.js',"
-      }
-    ],
-    "scripts/build-ts-phase1.mjs": [
-      {
-        "file": "scripts/build-ts-phase1.mjs",
-        "line": 57,
-        "category": "hub_alarm_native",
-        "match": "path.join(root, 'packages/core/lib/hub-alarm-client.ts'),"
       }
     ],
     "scripts/collect-kpi.ts": [
@@ -1996,14 +1790,6 @@
         "line": 18,
         "category": "hub_alarm_native",
         "match": "const hubAlarmClient = require(path.join(ROOT, 'packages/core/lib/hub-alarm-client'));"
-      }
-    ],
-    "scripts/pre-commit": [
-      {
-        "file": "scripts/pre-commit",
-        "line": 140,
-        "category": "retired_gateway_guard",
-        "match": "'OPENCLAW_BIN'"
       }
     ],
     "scripts/run-graduation-analysis.ts": [
@@ -2052,14 +1838,6 @@
         "line": 15,
         "category": "hub_alarm_native",
         "match": "const hubAlarmClient = require('../packages/core/lib/hub-alarm-client');"
-      }
-    ],
-    "tsconfig.json": [
-      {
-        "file": "tsconfig.json",
-        "line": 20,
-        "category": "hub_alarm_native",
-        "match": "\"packages/core/lib/hub-alarm-client.js\","
       }
     ]
   }

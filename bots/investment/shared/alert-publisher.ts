@@ -23,6 +23,11 @@ type PublishAlertOptions = {
   alert_level?: number;
   message: string;
   payload?: Record<string, unknown>;
+  visibility?: 'internal' | 'audit_only' | 'digest' | 'notify' | 'human_action' | 'emergency';
+  alarm_type?: 'work' | 'report' | 'error' | 'critical';
+  actionability?: 'none' | 'auto_repair' | 'needs_approval' | 'needs_human';
+  incident_key?: string;
+  title?: string;
 };
 
 function classifyReason(message: string): string {
@@ -76,7 +81,19 @@ function updateIncidentCache(signature: string | null, message: string): {
  * @param {string} opts.message      사람이 읽는 메시지
  * @param {object} [opts.payload]    JSON 구조화 데이터
  */
-export async function publishAlert({ from_bot, team = 'investment', event_type, alert_level = 2, message, payload }: PublishAlertOptions) {
+export async function publishAlert({
+  from_bot,
+  team = 'investment',
+  event_type,
+  alert_level = 2,
+  message,
+  payload,
+  visibility,
+  alarm_type,
+  actionability,
+  incident_key,
+  title,
+}: PublishAlertOptions) {
   const signature = normalizeAlertSignature({ team, event_type, alert_level, message });
   const incidentState = updateIncidentCache(signature, message);
   if (incidentState.suppress) {
@@ -97,7 +114,19 @@ export async function publishAlert({ from_bot, team = 'investment', event_type, 
     lines.push(`event_type: ${event_type}`);
   }
 
-  const event = { from_bot, team, event_type, alert_level, message: lines.filter(Boolean).join('\n'), payload };
+  const event = {
+    from_bot,
+    team,
+    event_type,
+    alert_level,
+    message: lines.filter(Boolean).join('\n'),
+    payload,
+    visibility,
+    alarm_type,
+    actionability,
+    incident_key,
+    title,
+  };
 
   const webhookResult = await publishToWebhook({
     event,

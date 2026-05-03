@@ -20,6 +20,8 @@ const TARGET_LABELS = [
   'ai.luna.tradingview-ws',
   'ai.investment.commander',
   'ai.elixir.supervisor',
+  'ai.claude.auto-dev.autonomous',
+  'ai.hub.resource-api',
   'ai.investment.runtime-autopilot',
   'ai.investment.market-regime-capture',
   'ai.luna.daily-backtest',
@@ -34,6 +36,8 @@ const PROTECTED_LABELS = new Set([
   'ai.luna.tradingview-ws',
   'ai.investment.commander',
   'ai.elixir.supervisor',
+  'ai.claude.auto-dev.autonomous',
+  'ai.hub.resource-api',
 ]);
 
 const RETIRE_GROUPS = [
@@ -51,7 +55,7 @@ const RETIRE_GROUPS = [
   {
     group: 'reports_to_skills',
     labels: ['ai.luna.daily-report', 'ai.luna.weekly-review', 'ai.luna.shadow-auto-promote'],
-    replacementLabels: ['ai.investment.reporter'],
+    replacementLabels: ['ai.elixir.supervisor'],
   },
   {
     group: 'cycle_workers_to_luna_skills',
@@ -67,12 +71,12 @@ const RETIRE_GROUPS = [
       'ai.investment.market-alert-overseas-open',
       'ai.investment.market-alert-overseas-close',
     ],
-    replacementLabels: ['ai.investment.reporter'],
+    replacementLabels: ['ai.elixir.supervisor'],
   },
   {
     group: 'prescreen_to_argos',
     labels: ['ai.investment.prescreen-domestic', 'ai.investment.prescreen-overseas'],
-    replacementLabels: ['ai.investment.argos'],
+    replacementLabels: ['ai.elixir.supervisor'],
   },
   // Section 2-7: 추가 retire 검토 (Phase Ψ5 최종 8 달성)
   {
