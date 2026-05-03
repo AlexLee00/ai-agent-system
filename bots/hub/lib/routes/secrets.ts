@@ -2,7 +2,9 @@ import fs from 'node:fs';
 import path from 'node:path';
 import yaml from 'js-yaml';
 import * as env from '../../../../packages/core/lib/env.js';
-import { getProviderRecord } from '../oauth/token-store';
+const { getProviderRecord } = require('../oauth/token-store') as {
+  getProviderRecord: (provider: string) => Record<string, any>;
+};
 
 const CONFIG_YAML = path.join(env.PROJECT_ROOT, 'bots/investment/config.yaml');
 const SECRETS_STORE = path.join(env.PROJECT_ROOT, 'bots/hub/secrets-store.json');

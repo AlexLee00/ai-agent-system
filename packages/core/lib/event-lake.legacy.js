@@ -33,9 +33,11 @@ const { outputText } = ts.transpileModule(source, {
   fileName: sourcePath,
 });
 
-const m = new Module(sourcePath, module);
-m.filename = sourcePath;
-m.paths = Module._nodeModulePaths(path.dirname(sourcePath));
-m._compile(outputText, sourcePath);
+const NodeModule = /** @type {any} */ (Module);
+const parentModule = /** @type {any} */ (module);
+const runtimeModule = new NodeModule(sourcePath, parentModule);
+runtimeModule.filename = sourcePath;
+runtimeModule.paths = NodeModule._nodeModulePaths(path.dirname(sourcePath));
+runtimeModule._compile(outputText, sourcePath);
 
-module.exports = m.exports;
+module.exports = runtimeModule.exports;

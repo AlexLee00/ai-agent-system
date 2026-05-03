@@ -16,6 +16,19 @@ const { publishToWebhook } = require('../../../../packages/core/lib/reporting-hu
 };
 const { createAgentMemory } = require('../../../../packages/core/lib/agent-memory') as {
   createAgentMemory: (opts: { agentId: string; team: string }) => {
+    recall: (
+      query: string,
+      opts?: {
+        type?: 'episodic' | 'semantic' | 'procedural';
+        limit?: number;
+        threshold?: number | null;
+      },
+    ) => Promise<Array<Record<string, any>>>;
+    recallHint: (
+      query: string,
+      opts?: Record<string, any>,
+    ) => Promise<string>;
+    consolidate: (opts?: Record<string, any>) => Promise<Record<string, any>>;
     remember: (content: string, type: 'episodic' | 'semantic' | 'procedural', opts?: Record<string, any>) => Promise<number | null>;
   };
 };
@@ -257,6 +270,14 @@ export async function measurePastFeedbackEffectiveness(): Promise<any[]> {
 
 export async function weeklyMetaReview(): Promise<Record<string, any>> {
   const sigmaMemory = createAgentMemory({ agentId: 'sigma.analyst', team: 'sigma' });
+  const recentSemanticMemories = await sigmaMemory.recall(
+    'sigma weekly meta review consolidated pattern',
+    {
+      type: 'semantic',
+      limit: 5,
+      threshold: 0.28,
+    },
+  ).catch(() => []);
   const rows = await pgPool.query(SCHEMA, `
     SELECT
       analyst_used,
