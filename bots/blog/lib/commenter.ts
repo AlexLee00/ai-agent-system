@@ -520,13 +520,16 @@ async function getTodayActionCount(actionType) {
 }
 
 async function getPendingComments(limit = 20) {
-  return pgPool.query('blog', `
+  const safeLimit = Math.max(1, Number(limit || 20));
+  const fetchLimit = Math.min(Math.max(safeLimit * 10, safeLimit), 200);
+  const result = await pgPool.query('blog', `
     SELECT *
     FROM ${TABLE}
     WHERE status = 'pending'
     ORDER BY detected_at DESC
     LIMIT $1
-  `, [limit]);
+  `, [fetchLimit]);
+  return prioritizePendingComments(result?.rows || [], safeLimit);
 }
 
 function isRecoverableReplyFailure(row) {
@@ -550,6 +553,42 @@ function isRecoverableReplyFailure(row) {
     || errorMessage === 'comment_panel_not_mounted'
     || errorMessage.startsWith('comment_panel_not_mounted:')
   );
+}
+
+function isRecoverableQueuedReply(row) {
+  if (!row || String(row.status || '') !== 'pending') return false;
+  const meta = row.meta && typeof row.meta === 'object' ? row.meta : {};
+  return (
+    String(meta.phase || '') === 'recoverable_requeue'
+    || Boolean(meta.previous_error)
+    || Boolean(meta.uiError)
+  );
+}
+
+function toTimestamp(value) {
+  const time = value ? new Date(value).getTime() : 0;
+  return Number.isFinite(time) ? time : 0;
+}
+
+function prioritizePendingComments(rows = [], limit = rows.length) {
+  const sorted = [...rows].sort((left, right) => {
+    const leftRecoverable = isRecoverableQueuedReply(left);
+    const rightRecoverable = isRecoverableQueuedReply(right);
+    if (leftRecoverable !== rightRecoverable) {
+      return leftRecoverable ? -1 : 1;
+    }
+
+    const leftDetected = toTimestamp(left?.detected_at);
+    const rightDetected = toTimestamp(right?.detected_at);
+    if (leftRecoverable && rightRecoverable) {
+      if (leftDetected !== rightDetected) return leftDetected - rightDetected;
+    } else if (leftDetected !== rightDetected) {
+      return rightDetected - leftDetected;
+    }
+
+    return Number(left?.id || 0) - Number(right?.id || 0);
+  });
+  return sorted.slice(0, Math.max(1, Number(limit || sorted.length)));
 }
 
 async function requeueRecoverableReplyFailures(limit = 10) {
@@ -5873,6 +5912,7 @@ module.exports = {
   diagnoseReplyUi,
   processComment,
   processCommentWithTimeout,
+  prioritizePendingComments,
   requeueRecoverableReplyFailures,
   requeueCourtesyReflectionCandidates,
   requeuePromotionalReplyCandidates,
