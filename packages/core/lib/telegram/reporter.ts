@@ -30,6 +30,11 @@ function createEventReporter({
     alertLevel = defaultAlertLevel,
     payload = null,
     criticalTelegramMode = undefined,
+    visibility = undefined,
+    alarmType = undefined,
+    actionability = undefined,
+    incidentKey = undefined,
+    title = undefined,
   }) {
     const enrichedMessage = payload
       ? `${message}\n\nevent_type: ${eventType}`
@@ -43,6 +48,11 @@ function createEventReporter({
         message: enrichedMessage,
         payload: payload || undefined,
         criticalTelegramMode,
+        visibility,
+        alarm_type: alarmType,
+        actionability,
+        incident_key: incidentKey,
+        title,
       },
     });
     return Boolean(result.ok);

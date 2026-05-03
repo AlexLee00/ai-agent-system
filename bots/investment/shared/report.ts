@@ -284,25 +284,48 @@ export function notifyCircuitBreaker({ reason, type, dailyPnL, weeklyPnL }) {
   return publishLunaMessage({ message: lines.join('\n'), eventType: 'alert', alertLevel: 4 });
 }
 
+export function buildErrorAlertEnvelope(context, error) {
+  const rawMessage = String(error?.message || error || '');
+  const normalizedCode = String(error?.code || '').trim().toLowerCase();
+  const isBinanceMarketClosed = normalizedCode === 'binance_mcp_mutating_bridge_failed'
+    && /market is closed/i.test(rawMessage);
+  return {
+    rawMessage,
+    isBinanceMarketClosed,
+    header: isBinanceMarketClosed ? '⚠️ [운영상태]' : '❌ [오류]',
+    eventType: isBinanceMarketClosed ? 'report' : 'alert',
+    alertLevel: isBinanceMarketClosed ? 2 : 4,
+    visibility: isBinanceMarketClosed ? 'digest' : undefined,
+    alarmType: isBinanceMarketClosed ? 'report' : undefined,
+    actionability: isBinanceMarketClosed ? 'none' : undefined,
+    title: isBinanceMarketClosed ? '[루나] Binance 장마감 거절' : undefined,
+  };
+}
+
 /** @param {string} context @param {any} error */
 export function notifyError(context, error) {
   const trace = Array.isArray(error?.llmTrace) ? error.llmTrace : [];
   const localStatus = loadRecentLocalLlmStatus();
+  const envelope = buildErrorAlertEnvelope(context, error);
   const traceLine = trace.length > 0
     ? `\nLLM trace: ${trace
       .slice(0, 5)
       .map((entry) => `${entry.provider}/${entry.model}:${entry.status}${entry.reason ? `(${String(entry.reason).slice(0, 32)})` : ''}`)
       .join(' -> ')}`
     : '';
-  const localLine = /로컬 LLM 응답 없음|local llm/i.test(String(error?.message || error || '')) && localStatus
+  const localLine = /로컬 LLM 응답 없음|local llm/i.test(envelope.rawMessage) && localStatus
     ? `\nLocal probe: ${localStatus.status} / ok ${localStatus.okCount} / fail ${localStatus.failCount}${localStatus.latest?.probeError ? ` / ${localStatus.latest.probeError}` : ''}\n${formatLocalStandbyLine()}`
     : '';
-  const msg = `❌ [오류] ${context}\n${error?.message || error}${traceLine}${localLine}`;
+  const msg = `${envelope.header} ${context}\n${envelope.rawMessage}${traceLine}${localLine}`;
   return publishLunaMessage({
     message: msg,
-    eventType: 'alert',
-    alertLevel: 4,
+    eventType: envelope.eventType,
+    alertLevel: envelope.alertLevel,
     criticalTelegramMode: /** @type {any} */ ('team_only'),
+    visibility: envelope.visibility,
+    alarmType: envelope.alarmType,
+    actionability: envelope.actionability,
+    title: envelope.title,
   });
 }
 
