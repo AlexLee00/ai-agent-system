@@ -359,6 +359,7 @@ async function notify(msg, level = 3, payload = null) {
     msg,
   );
   const eventType = resolveAutonomousActionAlertEventType(normalizedPayload, 'health_check');
+  const alertContract = resolveHealthCheckAlertContract(msg, level, normalizedPayload, eventType);
   try {
     await publishAlert({
       from_bot: 'luna-health-check',
@@ -366,8 +367,106 @@ async function notify(msg, level = 3, payload = null) {
       alert_level: level,
       message: msg,
       payload: normalizedPayload || undefined,
+      visibility: alertContract.visibility,
+      alarm_type: alertContract.alarmType,
+      actionability: alertContract.actionability,
+      incident_key: alertContract.incidentKey,
+      title: alertContract.title,
     });
   } catch { /* 무시 */ }
+}
+
+function extractHealthCheckTitle(message = '') {
+  const firstLine = String(message || '')
+    .split('\n')
+    .map((line) => String(line || '').trim())
+    .find(Boolean);
+  return firstLine || 'investment health check';
+}
+
+function resolveHealthCheckAlertContract(message = '', level = 3, payload = null, eventType = 'health_check') {
+  const issueKey = String(payload?.issueKey || '').trim();
+  const autonomousActionStatus = String(
+    payload?.autonomousActionStatus
+    || payload?.positionRuntimeAutonomousActionStatus
+    || payload?.remediationAutonomousStatus
+    || '',
+  ).trim().toLowerCase();
+  const incidentKey = issueKey
+    ? `investment:luna-health-check:${eventType}:${issueKey}`
+    : `investment:luna-health-check:${eventType}`;
+  const title = extractHealthCheckTitle(message);
+
+  const base = {
+    alarmType: level >= 3 ? 'error' : 'report',
+    visibility: level >= 3 ? 'notify' : 'digest',
+    actionability: level >= 3 ? 'auto_repair' : 'none',
+    incidentKey,
+    title,
+  };
+
+  if (issueKey === 'trade-incident-link-integrity') {
+    return {
+      ...base,
+      alarmType: 'report',
+      visibility: 'internal',
+      actionability: 'none',
+    };
+  }
+
+  if (issueKey === 'trade-review-integrity') {
+    return {
+      ...base,
+      alarmType: 'report',
+      visibility: 'digest',
+      actionability: 'none',
+    };
+  }
+
+  if (issueKey === 'learning-loop-regime-monitor') {
+    return {
+      ...base,
+      alarmType: 'report',
+      visibility: 'internal',
+      actionability: 'none',
+    };
+  }
+
+  if (
+    issueKey === 'position-strategy-remediation'
+    && (
+      autonomousActionStatus === 'autonomous_action_blocked_by_safety'
+      || payload?.remediationRefreshStale === true
+    )
+  ) {
+    return {
+      ...base,
+      alarmType: 'report',
+      visibility: 'digest',
+      actionability: 'none',
+    };
+  }
+
+  if (issueKey === 'position-runtime-loop') {
+    const runtimeMetrics = payload?.positionRuntimeMetrics || payload?.positionRuntimeView?.metrics || {};
+    const failedCount = Number(payload?.positionRuntimeDispatchFailedCount || 0);
+    const criticalValidation = Number(runtimeMetrics?.staleValidation || 0);
+    const digestStatuses = new Set([
+      'autonomous_action_queued',
+      'autonomous_action_retrying',
+      'autonomous_action_blocked_by_safety',
+    ]);
+    if (digestStatuses.has(autonomousActionStatus) && failedCount === 0 && criticalValidation === 0) {
+      return {
+        ...base,
+        alarmType: 'report',
+        visibility: 'digest',
+        actionability: 'none',
+      };
+    }
+  }
+
+  return base;
 }
 
 function loadRecentLocalProbeTrend() {
@@ -536,6 +635,7 @@ function getLaunchctlStatus() {
     if (parts.length < 3) continue;
     const [pid, exitCode, label] = parts;
     services[label] = {
+      loaded: true,
       running: pid !== '-',
       pid: pid !== '-' ? parseInt(pid) : null,
       exitCode: parseInt(exitCode) || 0,
@@ -544,7 +644,7 @@ function getLaunchctlStatus() {
 
   for (const label of ALL_SERVICES) {
     services[label] = {
-      ...(services[label] || { running: false, pid: null, exitCode: null }),
+      ...(services[label] || { loaded: false, running: false, pid: null, exitCode: null }),
       ...getLaunchctlServiceDebug(label),
     };
   }
@@ -571,10 +671,12 @@ function getLaunchctlServiceDebug(label) {
   try {
     const printResult = runLaunchctl(['print', `${launchdDomain()}/${label}`], { timeout: 5_000 });
     const printText = [printResult.stdout, printResult.stderr].filter(Boolean).join('\n');
+    const missingService = /Could not find service/i.test(printText);
     const stdoutPath = extractLaunchctlPath(printText, 'stdout');
     const stderrPath = extractLaunchctlPath(printText, 'stderr');
     const lastExitMatch = printText.match(/\blast exit code\s*=\s*(-?\d+)/i);
     return {
+      loaded: !missingService,
       lastExitCode: lastExitMatch ? Number(lastExitMatch[1]) : null,
       stdoutPath,
       stderrPath,
@@ -584,6 +686,7 @@ function getLaunchctlServiceDebug(label) {
     };
   } catch {
     return {
+      loaded: null,
       lastExitCode: null,
       stdoutPath: null,
       stderrPath: null,
@@ -650,7 +753,7 @@ async function main() {
     }
 
     // 1. 미로드 감지
-    if (!svc) {
+    if (!svc || svc.loaded === false) {
       if (isElixirOwnedService(label) || isRetiredService(label)) {
         hsm.clearAlert(state, `unloaded:${label}`);
         continue;
