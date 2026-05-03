@@ -26,6 +26,7 @@ import { buildPositionStrategyHygieneRemediationPlan, runPositionStrategyHygiene
 import { runPositionStrategyRemediation } from './runtime-position-strategy-remediation.ts';
 import { loadExecutionRiskApprovalGuardHealth } from './health-report-support.ts';
 import { launchdDomain, runLaunchctl } from '../shared/launchd-service.ts';
+import { inspectLaunchAgentPlist, runLaunchdBootstrap } from '../shared/launchd-service.ts';
 import {
   enrichAutonomousActionAlertPayload,
   resolveAutonomousActionAlertEventType,
@@ -675,6 +676,7 @@ function getLaunchctlServiceDebug(label) {
     const stdoutPath = extractLaunchctlPath(printText, 'stdout');
     const stderrPath = extractLaunchctlPath(printText, 'stderr');
     const lastExitMatch = printText.match(/\blast exit code\s*=\s*(-?\d+)/i);
+    const plist = inspectLaunchAgentPlist(label);
     return {
       loaded: !missingService,
       lastExitCode: lastExitMatch ? Number(lastExitMatch[1]) : null,
@@ -683,6 +685,12 @@ function getLaunchctlServiceDebug(label) {
       stdoutTail: readLogTail(stdoutPath),
       stderrTail: readLogTail(stderrPath),
       launchctlDetail: truncateText(printText, 360),
+      plistPath: plist.path || null,
+      plistExists: plist.exists === true,
+      scheduledOnly: plist.scheduledOnly === true,
+      runAtLoad: plist.runAtLoad,
+      hasStartCalendarInterval: plist.hasStartCalendarInterval === true,
+      hasStartInterval: plist.hasStartInterval === true,
     };
   } catch {
     return {
@@ -693,8 +701,37 @@ function getLaunchctlServiceDebug(label) {
       stdoutTail: null,
       stderrTail: null,
       launchctlDetail: null,
+      plistPath: null,
+      plistExists: false,
+      scheduledOnly: false,
+      runAtLoad: null,
+      hasStartCalendarInterval: false,
+      hasStartInterval: false,
     };
   }
+}
+
+function maybeSelfHealLaunchdService(label, svc = {}) {
+  if (svc?.loaded !== false) return { attempted: false, healed: false, reason: 'already_loaded' };
+  if (svc?.plistExists !== true || !svc?.plistPath) return { attempted: false, healed: false, reason: 'plist_missing' };
+
+  const bootstrap = runLaunchdBootstrap(label, { apply: true });
+  if (!bootstrap.ok) {
+    return {
+      attempted: true,
+      healed: false,
+      reason: 'bootstrap_failed',
+      detail: bootstrap?.result?.stderr || bootstrap?.result?.error || bootstrap?.error || null,
+    };
+  }
+
+  const refreshed = getLaunchctlServiceDebug(label);
+  return {
+    attempted: true,
+    healed: refreshed?.loaded === true,
+    reason: refreshed?.loaded === true ? 'bootstrap_loaded' : 'bootstrap_not_loaded',
+    service: refreshed,
+  };
 }
 
 function classifyServiceExitIssue(svc = {}) {
@@ -754,6 +791,20 @@ async function main() {
 
     // 1. 미로드 감지
     if (!svc || svc.loaded === false) {
+      const selfHeal = maybeSelfHealLaunchdService(label, svc);
+      if (selfHeal.healed) {
+        status[label] = {
+          ...svc,
+          ...selfHeal.service,
+          loaded: true,
+        };
+        if (state[`unloaded:${label}`]) {
+          recovers.push({ key: `unloaded:${label}`, msg: `✅ [투자팀 루나 헬스] ${shortName} 회복\nlaunchd bootstrap self-heal 성공 — 자동 감지` });
+          hsm.clearAlert(state, `unloaded:${label}`);
+        }
+        continue;
+      }
+
       if (isElixirOwnedService(label) || isRetiredService(label)) {
         hsm.clearAlert(state, `unloaded:${label}`);
         continue;
@@ -762,7 +813,13 @@ async function main() {
       const key = `unloaded:${label}`;
       if (hsm.canAlert(state, key)) {
         const ownerHint = ownership?.owner === 'launchd' ? '' : `\nownership=${ownership?.owner || 'unknown'}`;
-        issues.push({ key, level: hsm.getAlertLevel(label), msg: `🔴 [투자팀 루나 헬스] ${shortName} 미로드\nlaunchd에 등록되지 않음 → 수동 확인 필요${ownerHint}` });
+        const scheduleHint = svc?.scheduledOnly === true || svc?.hasStartCalendarInterval === true || svc?.hasStartInterval === true
+          ? '\nservice mode: scheduled_loaded_expected'
+          : '';
+        const selfHealHint = selfHeal.attempted
+          ? `\nself-heal: ${selfHeal.reason}${selfHeal.detail ? ` (${truncateText(selfHeal.detail, 160)})` : ''}`
+          : '';
+        issues.push({ key, level: hsm.getAlertLevel(label), msg: `🔴 [투자팀 루나 헬스] ${shortName} 미로드\nlaunchd에 등록되지 않음 → 수동 확인 필요${scheduleHint}${selfHealHint}${ownerHint}` });
       }
       continue;
     }

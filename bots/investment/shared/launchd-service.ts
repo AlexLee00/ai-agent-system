@@ -7,6 +7,8 @@
  */
 
 import { spawnSync } from 'node:child_process';
+import fs from 'node:fs';
+import path from 'node:path';
 
 export function launchdDomain() {
   const uid = typeof process.getuid === 'function' ? process.getuid() : 501;
@@ -25,6 +27,72 @@ export function runLaunchctl(args = [], { timeout = 10_000 } = {}) {
     stdout: String(proc.stdout || '').trim(),
     stderr: String(proc.stderr || '').trim(),
     error: proc.error ? String(proc.error?.message || proc.error) : null,
+  };
+}
+
+export function launchAgentPlistPath(label) {
+  const home = String(process.env.HOME || '').trim();
+  if (!home || !label) return null;
+  return path.join(home, 'Library', 'LaunchAgents', `${label}.plist`);
+}
+
+export function inspectLaunchAgentPlist(label) {
+  const plistPath = launchAgentPlistPath(label);
+  if (!plistPath || !fs.existsSync(plistPath)) {
+    return {
+      exists: false,
+      path: plistPath,
+      scheduledOnly: false,
+      runAtLoad: null,
+      hasStartCalendarInterval: false,
+      hasStartInterval: false,
+    };
+  }
+
+  const proc = spawnSync('plutil', ['-convert', 'json', '-o', '-', plistPath], {
+    encoding: 'utf8',
+    timeout: 5_000,
+  });
+  if (proc.status !== 0) {
+    return {
+      exists: true,
+      path: plistPath,
+      parseOk: false,
+      scheduledOnly: false,
+      runAtLoad: null,
+      hasStartCalendarInterval: false,
+      hasStartInterval: false,
+      error: String(proc.stderr || proc.error?.message || '').trim() || 'plutil_failed',
+    };
+  }
+
+  let data = null;
+  try {
+    data = JSON.parse(String(proc.stdout || '{}'));
+  } catch (error) {
+    return {
+      exists: true,
+      path: plistPath,
+      parseOk: false,
+      scheduledOnly: false,
+      runAtLoad: null,
+      hasStartCalendarInterval: false,
+      hasStartInterval: false,
+      error: String(error?.message || error || 'plist_parse_failed'),
+    };
+  }
+
+  const runAtLoad = typeof data?.RunAtLoad === 'boolean' ? data.RunAtLoad : null;
+  const hasStartCalendarInterval = data?.StartCalendarInterval != null;
+  const hasStartInterval = Number.isFinite(Number(data?.StartInterval)) && Number(data.StartInterval) > 0;
+  return {
+    exists: true,
+    path: plistPath,
+    parseOk: true,
+    scheduledOnly: runAtLoad === false && (hasStartCalendarInterval || hasStartInterval),
+    runAtLoad,
+    hasStartCalendarInterval,
+    hasStartInterval,
   };
 }
 
@@ -95,6 +163,48 @@ export function inspectLaunchdPrint(label) {
   };
 }
 
+export function buildLaunchdBootstrapPlan(label) {
+  const domain = launchdDomain();
+  const plist = inspectLaunchAgentPlist(label);
+  return {
+    label,
+    domain,
+    plistPath: plist.path,
+    plistExists: plist.exists === true,
+    command: plist.path ? ['launchctl', 'bootstrap', domain, plist.path].join(' ') : null,
+    args: plist.path ? ['bootstrap', domain, plist.path] : null,
+  };
+}
+
+export function runLaunchdBootstrap(label, { apply = false } = {}) {
+  const plan = buildLaunchdBootstrapPlan(label);
+  if (!apply) {
+    return {
+      ok: plan.plistExists === true,
+      dryRun: true,
+      applied: false,
+      ...plan,
+    };
+  }
+  if (!plan.plistPath || plan.plistExists !== true || !plan.args) {
+    return {
+      ok: false,
+      dryRun: false,
+      applied: false,
+      ...plan,
+      error: 'plist_missing',
+    };
+  }
+  const result = runLaunchctl(plan.args);
+  return {
+    ok: result.ok,
+    dryRun: false,
+    applied: result.ok,
+    ...plan,
+    result,
+  };
+}
+
 export function buildLaunchdKickstartPlan(label, { forceKill = true } = {}) {
   const domain = launchdDomain();
   const args = ['kickstart'];
@@ -143,6 +253,10 @@ export default {
   parseLaunchctlListLine,
   inspectLaunchdList,
   inspectLaunchdPrint,
+  launchAgentPlistPath,
+  inspectLaunchAgentPlist,
+  buildLaunchdBootstrapPlan,
+  runLaunchdBootstrap,
   buildLaunchdKickstartPlan,
   runLaunchdKickstart,
 };

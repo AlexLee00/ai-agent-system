@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // @ts-nocheck
 
-import { inspectLaunchdList, inspectLaunchdPrint } from '../shared/launchd-service.ts';
+import { inspectLaunchAgentPlist, inspectLaunchdList, inspectLaunchdPrint, runLaunchdBootstrap } from '../shared/launchd-service.ts';
 import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
 import { createRequire } from 'node:module';
 
@@ -56,6 +56,10 @@ function classifyService(spec, listStatus, printStatus) {
   const hasPid = (value) => value != null && Number.isFinite(Number(value)) && Number(value) > 0;
   const running = hasPid(listStatus.pid) || hasPid(printStatus.pid);
   const lastExit = listStatus.lastExitStatus ?? printStatus.lastExitCode ?? null;
+  const plist = inspectLaunchAgentPlist(spec.label);
+  const serviceMode = loaded && !running && plist.scheduledOnly === true
+    ? 'scheduled_loaded'
+    : (running ? 'running' : (loaded ? 'loaded_idle' : 'unloaded'));
 
   if (!loaded) {
     (spec.critical ? blockers : warnings).push('launchd_not_loaded');
@@ -74,21 +78,43 @@ function classifyService(spec, listStatus, printStatus) {
     ok: blockers.length === 0,
     loaded,
     running,
+    serviceMode,
     pid: listStatus.pid ?? printStatus.pid ?? null,
     lastExitStatus: lastExit,
     warnings,
     blockers,
+    plist,
     list: listStatus,
     print: printStatus,
   };
 }
 
 export async function buildLunaLaunchdDoctor({ labels = DEFAULT_LABELS, strict = false } = {}) {
-  const services = labels.map((spec) => classifyService(
-    spec,
-    inspectLaunchdList(spec.label),
-    inspectLaunchdPrint(spec.label),
-  ));
+  const services = labels.map((spec) => {
+    let listStatus = inspectLaunchdList(spec.label);
+    let printStatus = inspectLaunchdPrint(spec.label);
+    let service = classifyService(spec, listStatus, printStatus);
+
+    if (service.loaded !== true && service.plist?.exists === true) {
+      const bootstrap = runLaunchdBootstrap(spec.label, { apply: true });
+      if (bootstrap.ok) {
+        listStatus = inspectLaunchdList(spec.label);
+        printStatus = inspectLaunchdPrint(spec.label);
+        service = {
+          ...classifyService(spec, listStatus, printStatus),
+          selfHealed: true,
+        };
+      } else {
+        service = {
+          ...service,
+          selfHealAttempted: true,
+          selfHealError: bootstrap?.result?.stderr || bootstrap?.result?.error || bootstrap?.error || null,
+        };
+      }
+    }
+
+    return service;
+  });
   const blockers = services.flatMap((service) => service.blockers.map((blocker) => `${service.label}:${blocker}`));
   const warnings = services.flatMap((service) => service.warnings.map((warning) => `${service.label}:${warning}`));
   const strictBlockers = strict ? warnings.filter((warning) => warning.includes('previous_exit_status_')) : [];
@@ -119,7 +145,7 @@ function render(report = {}) {
     `loaded=${report.summary?.loaded}/${report.summary?.total} running=${report.summary?.running} warnings=${report.summary?.warningCount} blockers=${report.summary?.blockerCount}`,
   ];
   for (const service of report.services || []) {
-    lines.push(`- ${service.label}: loaded=${service.loaded} running=${service.running} pid=${service.pid ?? 'n/a'} lastExit=${service.lastExitStatus ?? 'n/a'} warnings=${service.warnings.join(',') || 'none'} blockers=${service.blockers.join(',') || 'none'}`);
+    lines.push(`- ${service.label}: loaded=${service.loaded} running=${service.running} mode=${service.serviceMode || 'unknown'} pid=${service.pid ?? 'n/a'} lastExit=${service.lastExitStatus ?? 'n/a'} warnings=${service.warnings.join(',') || 'none'} blockers=${service.blockers.join(',') || 'none'}`);
   }
   lines.push(`next: ${report.nextAction}`);
   return lines.join('\n');
