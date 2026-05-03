@@ -73,6 +73,48 @@ function summarizeEngagementFailure(meta = {}) {
   return raw.replace(/\s+/g, ' ').replace(/snapshotPrefix[^,}\]]*/gi, 'snapshotPrefix').slice(0, 140);
 }
 
+function isRetiredReplyTarget(linkedComment = null) {
+  if (!linkedComment || typeof linkedComment !== 'object') return false;
+  const status = String(linkedComment.status || '').trim();
+  const errorMessage = String(linkedComment.error_message || '').trim();
+  const phase = String(linkedComment?.meta?.phase || '').trim();
+  return (
+    (status === 'skipped' && errorMessage === 'reply_target_unavailable_stale')
+    || phase === 'retired_recoverable_target'
+  );
+}
+
+function isRecoveredReplyComment(linkedComment = null) {
+  if (!linkedComment || typeof linkedComment !== 'object') return false;
+  return (
+    String(linkedComment.status || '') === 'replied'
+    || Boolean(linkedComment.reply_at)
+    || isRetiredReplyTarget(linkedComment)
+  );
+}
+
+function resolveEvalCaseStaleness(latestEvalCase = null, replyRecoveryMap = new Map()) {
+  if (!latestEvalCase || typeof latestEvalCase !== 'object') {
+    return { latestEvalCase: null, stale: false };
+  }
+  const commentId = Number(latestEvalCase?.meta?.commentId || 0);
+  if (!Number.isFinite(commentId) || commentId <= 0) {
+    return { latestEvalCase, stale: false };
+  }
+  const linkedComment = replyRecoveryMap.get(commentId);
+  if (!isRecoveredReplyComment(linkedComment)) {
+    return { latestEvalCase, stale: false };
+  }
+  return {
+    latestEvalCase: {
+      ...latestEvalCase,
+      status: 'resolved',
+      resolution: isRetiredReplyTarget(linkedComment) ? 'reply_target_unavailable_stale' : 'reply_recovered',
+    },
+    stale: true,
+  };
+}
+
 function nowKst() {
   return new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Seoul' }));
 }
@@ -1032,7 +1074,7 @@ async function main() {
     : [];
   const replyRecoveryRows = replyFailureCommentIds.length > 0
     ? await pgPool.query('blog', `
-      SELECT id, status, reply_at
+      SELECT id, status, reply_at, error_message, meta
       FROM blog.comments
       WHERE id = ANY($1::int[])
     `, [replyFailureCommentIds])
@@ -1062,18 +1104,12 @@ async function main() {
     const linkedComment = replyRecoveryMap.get(commentId);
     const executedAt = row?.executed_at ? new Date(row.executed_at) : null;
     const repliedAt = linkedComment?.reply_at ? new Date(linkedComment.reply_at) : null;
-    if (
-      linkedComment
-      && (
-        String(linkedComment.status || '') === 'replied'
-        || Boolean(linkedComment.reply_at)
-      )
-    ) {
+    if (isRecoveredReplyComment(linkedComment)) {
       return false;
     }
     if (
       linkedComment
-      && String(linkedComment.status || '') === 'replied'
+      && isRecoveredReplyComment(linkedComment)
       && executedAt
       && !Number.isNaN(executedAt.getTime())
       && repliedAt
@@ -1198,7 +1234,11 @@ async function main() {
   const neighborCollectDiagnostics = readNeighborCollectDiagnostics();
   const exposureSignal = await getExposureSignal(developmentBaseline);
   const rawLatestEvalCase = readLatestBlogEvalCase('engagement');
-  const latestEvalCase = rawLatestEvalCase && typeof rawLatestEvalCase === 'object' ? rawLatestEvalCase : null;
+  const latestEvalCaseResolved = resolveEvalCaseStaleness(
+    rawLatestEvalCase && typeof rawLatestEvalCase === 'object' ? rawLatestEvalCase : null,
+    replyRecoveryMap,
+  );
+  const latestEvalCase = latestEvalCaseResolved.latestEvalCase;
   const owners = getEngagementOwners();
 
   const payload = {
@@ -1274,6 +1314,7 @@ async function main() {
     lastGapRun,
     exposureSignal,
     latestEvalCase,
+    staleLatestEvalCase: latestEvalCaseResolved.stale,
   };
   payload.needsAttention = payload.totalFailures > 0 || targetGaps.length > 0 || Boolean(exposureSignal?.needsStrategy);
   payload.primary = buildPrimary({ failureByKind, failureByAction, latestReplyReplayCandidate, targetGaps, primaryGap, targets, replyWorkload, neighborWorkload, courtesyReflectionRecheck, adaptiveNeighborCadence, neighborCollectDiagnostics, lastGapRun, exposureSignal });

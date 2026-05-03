@@ -20,7 +20,10 @@ const PENDING_STATUSES = new Set(['pending', 'queued', 'waiting', 'scheduled']);
 const RETRYABLE_STATUSES = new Set(['child_process_error', 'child_output_not_json', 'child_execute_not_verified', 'child_execution_pending']);
 const STALE_CANDIDATE_STATUSES = new Set(['candidate_not_found']);
 const IDEMPOTENT_SKIP_STATUSES = new Set(['closeout_guard_cooldown']);
-const DEFERRED_GUARD_STATUSES = new Set(['strategy_exit_min_hold_guard']);
+const DEFERRED_GUARD_STATUSES = new Set([
+  'strategy_exit_min_hold_guard',
+  'partial_adjust_balance_locked_by_open_sell_orders',
+]);
 
 function parseArgs(argv = []) {
   const args = {
@@ -411,6 +414,18 @@ export function detectTerminalChildFailure(message = '', stdout = '', stderr = '
     && (text.includes('최소 보유시간') || text.includes('minimum hold'))
   ) {
     return 'strategy_exit_min_hold_guard';
+  }
+  if (
+    (text.includes('partial-adjust preflight blocked') || text.includes('partial_adjust_balance_locked_by_open_sell_orders'))
+    && (
+      text.includes('partial_adjust_balance_locked_by_open_sell_orders')
+      || text.includes('open sell orders')
+      || text.includes('opensellorders')
+      || text.includes('sell 보호/지정가 주문')
+      || text.includes('잔고를 잠그고')
+    )
+  ) {
+    return 'partial_adjust_balance_locked_by_open_sell_orders';
   }
   return null;
 }

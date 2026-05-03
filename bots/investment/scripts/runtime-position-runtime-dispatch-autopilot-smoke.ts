@@ -154,6 +154,12 @@ async function main() {
     detectTerminalChildFailure('strategy-exit preflight blocked: - strategy exit guard: 전략 최소 보유시간 3.6h 미만 (0.0h)') === 'strategy_exit_min_hold_guard',
   );
   assert(
+    'partial-adjust 잔고 잠금 preflight는 hard failure가 아닌 deferred guard 분류 대상',
+    detectTerminalChildFailure(
+      'partial-adjust preflight blocked: partial_adjust_balance_locked_by_open_sell_orders | 기존 SELL 보호/지정가 주문이 잔고를 잠그고 있어 partial-adjust 실행을 차단합니다. openSellOrders=2',
+    ) === 'partial_adjust_balance_locked_by_open_sell_orders',
+  );
+  assert(
     'strategy-exit 최소 보유시간 가드는 남은 시간 기반 retry 지연 계산',
     computeDeferredGuardRetryMinutes(
       'strategy_exit_min_hold_guard',

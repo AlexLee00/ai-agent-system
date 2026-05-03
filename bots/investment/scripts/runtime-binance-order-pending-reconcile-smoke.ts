@@ -13,6 +13,7 @@ import {
   resolveBinancePendingQueueState,
   shouldBlockUsdtFallbackAfterBtcPairError,
 } from '../team/hephaestos.ts';
+import { createBinanceExecutionReconcileHandler } from '../team/hephaestos/binance-order-reconcile.ts';
 
 function parseMeta(value = null) {
   if (!value) return {};
@@ -472,6 +473,47 @@ async function runPendingEnqueueFailureSmoke() {
   };
 }
 
+async function runBridgeReportedMutatingErrorSmoke() {
+  const handler = createBinanceExecutionReconcileHandler({
+    ACTIONS: { BUY: 'BUY', SELL: 'SELL' },
+    toEpochMs: (value) => Number(value || 0) || null,
+  });
+  const error = /** @type {any} */ (new Error('Binance MCP bridge failed (market_buy): exchange rejected'));
+  error.code = 'binance_mcp_mutating_bridge_failed';
+  error.meta = {
+    bridgeFailureStage: 'bridge_reported_error',
+    bridgeErrorStatus: 'error',
+    bridgeErrorMessage: 'exchange rejected before order acceptance',
+    clientOrderId: 'SMOKE-BRIDGE-REPORTED-CID',
+    symbol: 'ZEC/USDT',
+    amountUsdt: 50,
+  };
+
+  const result = await handler.handleExecutionPendingReconcileError({
+    error,
+    signalId: `bridge-reported-${Date.now()}`,
+    symbol: 'ZEC/USDT',
+    action: 'BUY',
+    amountUsdt: 50,
+    signalTradeMode: 'validation',
+    effectivePaperMode: false,
+    executionClientOrderId: 'SMOKE-BRIDGE-REPORTED-CID',
+    executionSubmittedAtMs: Date.now(),
+    persistFailure: async () => {
+      throw new Error('bridge_reported_error_should_not_enter_pending_reconcile');
+    },
+  });
+
+  assert.equal(result.handled, false);
+  assert.equal(result.error, error);
+
+  return {
+    handled: result.handled,
+    errorCode: error.code,
+    bridgeFailureStage: error.meta.bridgeFailureStage,
+  };
+}
+
 async function runBinancePendingQueueActualApplySmoke() {
   const marker = `smoke-binance-actual-${Date.now()}`;
   const signalId = `${marker}-buy`;
@@ -782,6 +824,7 @@ export async function runBinanceOrderPendingReconcileSmoke() {
   const journalRepairPath = await runBinancePendingJournalRepairSmoke();
   const btcFallbackGuardPath = runBtcPairFallbackGuardSmoke();
   const pendingEnqueueFailurePath = await runPendingEnqueueFailureSmoke();
+  const bridgeReportedMutatingErrorPath = await runBridgeReportedMutatingErrorSmoke();
 
   return {
     ok: true,
@@ -795,6 +838,7 @@ export async function runBinanceOrderPendingReconcileSmoke() {
     journalRepairPath,
     btcFallbackGuardPath,
     pendingEnqueueFailurePath,
+    bridgeReportedMutatingErrorPath,
   };
 }
 

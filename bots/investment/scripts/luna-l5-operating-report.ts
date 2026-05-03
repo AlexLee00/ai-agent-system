@@ -2,6 +2,7 @@
 // @ts-nocheck
 
 import assert from 'node:assert/strict';
+import { spawnSync } from 'node:child_process';
 import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
 import { buildLunaL5ReadinessReport } from './luna-l5-readiness-report.ts';
 import { buildLunaMapekCanaryObservation } from './luna-mapek-canary-observer.ts';
@@ -15,6 +16,19 @@ import { resolvePositionLifecycleFlags } from '../shared/position-lifecycle-flag
 import { buildLunaL5FinalGateReport } from './luna-l5-final-gate.ts';
 import { buildLunaL5PhaseActivationPlan } from './luna-l5-phase-activation-operator.ts';
 import { buildPosttradeFeedbackOperatingReport } from './runtime-posttrade-feedback-operating-report.ts';
+
+function readLaunchctlEnv(name) {
+  const proc = spawnSync('launchctl', ['getenv', name], { encoding: 'utf8' });
+  return proc.status === 0 ? String(proc.stdout || '').trim() : '';
+}
+
+function runtimeEnv(name) {
+  return String(process.env[name] || readLaunchctlEnv(name) || '').trim();
+}
+
+function runtimeEnvTrue(name) {
+  return ['true', '1', 'yes', 'on'].includes(runtimeEnv(name).toLowerCase());
+}
 
 function nextAction({ validation, prediction, entryTrigger, tradeReconciliation, finalGate, phaseActivation, posttradeFeedback } = {}) {
   if (finalGate?.ok === false && (finalGate.blockers || []).includes('supervised_cutover_requires_at_least_one_lifecycle_phase')) {
@@ -137,7 +151,12 @@ export async function buildLunaL5OperatingReport({ hours = 24 } = {}) {
     },
     readinessWarnings: readiness.warnings || [],
   };
-  const liveFireGate = evaluateLunaLiveFireReadinessGate({ operating: baseReport, worker: entryTrigger });
+  const liveFireGate = evaluateLunaLiveFireReadinessGate({
+    operating: baseReport,
+    worker: entryTrigger,
+    runtimeLiveFireEnabled: runtimeEnvTrue('LUNA_LIVE_FIRE_ENABLED'),
+    runtimeDiscoveryMode: runtimeEnv('LUNA_INTELLIGENT_DISCOVERY_MODE') || null,
+  });
   return {
     ...baseReport,
     liveFireGate,

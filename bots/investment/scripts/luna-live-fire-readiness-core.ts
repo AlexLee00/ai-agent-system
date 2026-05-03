@@ -8,14 +8,17 @@ export function evaluateLunaLiveFireReadinessGate({
   operating = {},
   worker = {},
   minShadowReadyBlocked = 0,
+  runtimeLiveFireEnabled = null,
+  runtimeDiscoveryMode = null,
 } = {}) {
   const blockers = [];
   const observations = [];
   const killSwitches = operating.killSwitches || {};
   const result = heartbeatResult(worker);
   const workerMigrated = worker?.status === 'entry_trigger_worker_migrated_to_luna_skill';
-  const mode = String(result?.mode || '').toLowerCase();
-  const allowLiveFire = result?.allowLiveFire === true;
+  const mode = String(runtimeDiscoveryMode || result?.mode || '').toLowerCase();
+  const heartbeatAllowLiveFire = result?.allowLiveFire === true;
+  const allowLiveFire = runtimeLiveFireEnabled === true;
   const readyBlocked = Number(result?.readyBlocked || 0);
   const duplicateFiredScopeCount = Number(worker?.stats?.duplicateFiredScopeCount || operating?.entryTrigger?.duplicateFiredScopeCount || 0);
   const heartbeatAgeMinutes = worker?.heartbeat?.ageMinutes ?? operating?.entryTrigger?.heartbeatAgeMinutes ?? null;
@@ -53,6 +56,7 @@ export function evaluateLunaLiveFireReadinessGate({
     observations,
     mode: mode || null,
     allowLiveFire,
+    heartbeatAllowLiveFire,
     heartbeatAgeMinutes,
     readyBlocked,
     duplicateFiredScopeCount,

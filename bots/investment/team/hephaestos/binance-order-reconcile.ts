@@ -231,6 +231,10 @@ export function createBinanceExecutionReconcileHandler(context = {}) {
     const syntheticBridgePendingEligible = (() => {
       const code = String(error?.code || '').trim().toLowerCase();
       if (code !== 'binance_mcp_mutating_bridge_failed') return false;
+      const bridgeMeta = error?.meta && typeof error.meta === 'object' ? error.meta : {};
+      const bridgeFailureStage = String(bridgeMeta.bridgeFailureStage || '').trim().toLowerCase();
+      const bridgeErrorStatus = String(bridgeMeta.bridgeErrorStatus || '').trim().toLowerCase();
+      if (bridgeFailureStage === 'bridge_reported_error' || bridgeErrorStatus === 'error') return false;
       return Boolean(executionClientOrderId) && (action === ACTIONS.BUY || action === ACTIONS.SELL);
     })();
     if (syntheticBridgePendingEligible) {

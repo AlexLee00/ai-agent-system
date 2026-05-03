@@ -154,11 +154,21 @@ async function runBinanceMcpBridge(action, payload = {}) {
       return parsedError;
     }
     if (isMutatingAction) {
-      const failClosed = /** @type {any} */ (new Error(`Binance MCP bridge failed (${action}): ${error?.message || error}`));
+      const bridgeErrorMessage = String(
+        parsedError?.message
+        || parsedError?.error
+        || error?.message
+        || error
+        || '',
+      );
+      const failClosed = /** @type {any} */ (new Error(`Binance MCP bridge failed (${action}): ${bridgeErrorMessage}`));
       failClosed.code = 'binance_mcp_mutating_bridge_failed';
       failClosed.meta = {
         action: normalizedAction || null,
         failClosed: true,
+        bridgeFailureStage: parsedError ? 'bridge_reported_error' : 'unknown_after_bridge_failure',
+        bridgeErrorStatus: parsedError?.status || null,
+        bridgeErrorMessage: bridgeErrorMessage.slice(0, 240),
         symbol: String(payload?.symbol || '').trim().toUpperCase() || null,
         clientOrderId: payload?.clientOrderId || payload?.newClientOrderId || null,
         amountUsdt: Number(payload?.amountUsdt || 0) || null,
