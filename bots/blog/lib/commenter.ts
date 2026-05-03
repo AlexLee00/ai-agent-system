@@ -34,6 +34,7 @@ const DEFAULT_NAVER_PROFILE_DIR = process.env.BLOG_NAVER_PROFILE_DIR
 const BLOG_COMMENTER_DEBUG_DIR = path.join(env.PROJECT_ROOT, 'tmp', 'blog-commenter-debug');
 const BLOG_OPS_DIR = path.join(env.PROJECT_ROOT, 'bots', 'blog', 'output', 'ops');
 const BLOG_NEIGHBOR_COLLECT_DIAG_PATH = path.join(BLOG_OPS_DIR, 'neighbor-collect-diagnostics.json');
+const STALE_REPLY_TARGET_DAYS = Number(process.env.BLOG_COMMENTER_STALE_REPLY_TARGET_DAYS || 7);
 
 function traceCommenter(...args) {
   if (process.env.BLOG_COMMENTER_TRACE !== 'true') return;
@@ -522,14 +523,14 @@ async function getTodayActionCount(actionType) {
 async function getPendingComments(limit = 20) {
   const safeLimit = Math.max(1, Number(limit || 20));
   const fetchLimit = Math.min(Math.max(safeLimit * 10, safeLimit), 200);
-  const result = await pgPool.query('blog', `
+  const rows = await pgPool.query('blog', `
     SELECT *
     FROM ${TABLE}
     WHERE status = 'pending'
     ORDER BY detected_at DESC
     LIMIT $1
   `, [fetchLimit]);
-  return prioritizePendingComments(result?.rows || [], safeLimit);
+  return prioritizePendingComments(Array.isArray(rows) ? rows : [], safeLimit);
 }
 
 function isRecoverableReplyFailure(row) {
@@ -570,6 +571,31 @@ function toTimestamp(value) {
   return Number.isFinite(time) ? time : 0;
 }
 
+function isReplyTargetUnavailableError(errorMessage = '') {
+  const text = String(errorMessage || '');
+  return (
+    text === 'reply_button_not_found'
+    || text.startsWith('reply_button_not_found:')
+    || text === 'reply_ui_unavailable'
+    || text === 'reply_editor_not_found'
+  );
+}
+
+function isStaleRecoverableReply(row, staleDays = STALE_REPLY_TARGET_DAYS) {
+  if (!row || String(row.status || '') !== 'pending') return false;
+  const meta = row.meta && typeof row.meta === 'object' ? row.meta : {};
+  const candidateErrors = [
+    meta.uiError,
+    meta.previous_error,
+    row.error_message,
+  ].map((value) => String(value || '')).filter(Boolean);
+  if (!candidateErrors.some((value) => isReplyTargetUnavailableError(value))) return false;
+  const detectedAt = toTimestamp(row.detected_at);
+  if (!detectedAt) return false;
+  const ageMs = Date.now() - detectedAt;
+  return ageMs >= Math.max(1, Number(staleDays || 7)) * 24 * 60 * 60 * 1000;
+}
+
 function prioritizePendingComments(rows = [], limit = rows.length) {
   const sorted = [...rows].sort((left, right) => {
     const leftRecoverable = isRecoverableQueuedReply(left);
@@ -589,6 +615,39 @@ function prioritizePendingComments(rows = [], limit = rows.length) {
     return Number(left?.id || 0) - Number(right?.id || 0);
   });
   return sorted.slice(0, Math.max(1, Number(limit || sorted.length)));
+}
+
+async function retireStaleRecoverableReplies(limit = 10) {
+  const rows = await pgPool.query('blog', `
+    SELECT *
+    FROM ${TABLE}
+    WHERE status = 'pending'
+    ORDER BY detected_at ASC
+    LIMIT $1
+  `, [Math.min(Math.max(limit * 50, 200), 1000)]);
+
+  let retired = 0;
+  for (const row of Array.isArray(rows) ? rows : []) {
+    if (retired >= limit) break;
+    if (!isStaleRecoverableReply(row)) continue;
+    await pgPool.run('blog', `
+      UPDATE ${TABLE}
+      SET status = 'skipped',
+          error_message = 'reply_target_unavailable_stale',
+          meta = COALESCE(meta, '{}'::jsonb) || $2::jsonb
+      WHERE id = $1
+    `, [
+      row.id,
+      JSON.stringify({
+        phase: 'retired_recoverable_target',
+        retired_reason: 'reply_target_unavailable_stale',
+        retired_at: new Date().toISOString(),
+      }),
+    ]);
+    retired += 1;
+  }
+
+  return retired;
 }
 
 async function requeueRecoverableReplyFailures(limit = 10) {
@@ -5394,6 +5453,7 @@ async function runCommentReply({ testMode = false } = {}) {
   const requeueLimit = testMode ? 1 : Math.max(5, Number(config.strategyReplyTargetPerCycle || 1) * 2);
   const courtesyLimit = testMode ? 2 : Math.max(10, Number(config.strategyReplyTargetPerCycle || 1) * 3);
   const promotionalLimit = testMode ? 2 : Math.max(10, Number(config.strategyReplyTargetPerCycle || 1) * 3);
+  const retired = await retireStaleRecoverableReplies(requeueLimit).catch(() => 0);
   const requeued = await requeueRecoverableReplyFailures(requeueLimit).catch(() => 0);
   const courtesyBackfill = await requeueCourtesyReflectionCandidates(courtesyLimit, { dryRun: false }).catch(() => ({
     dryRun: false,
@@ -5410,7 +5470,7 @@ async function runCommentReply({ testMode = false } = {}) {
 
   const todayCount = await getTodayReplyCount();
   if (todayCount >= config.maxDaily) {
-    return { skipped: true, reason: 'daily_limit', count: todayCount, requeued, courtesyBackfill, promotionalBackfill };
+    return { skipped: true, reason: 'daily_limit', count: todayCount, retired, requeued, courtesyBackfill, promotionalBackfill };
   }
 
   let newComments;
@@ -5521,6 +5581,7 @@ async function runCommentReply({ testMode = false } = {}) {
     failed,
     skipped,
     total: todayCount + replied,
+    retired,
     cycleTarget: cycleReplyTarget,
     requeued,
     courtesyBackfill,
@@ -5912,6 +5973,7 @@ module.exports = {
   diagnoseReplyUi,
   processComment,
   processCommentWithTimeout,
+  isStaleRecoverableReply,
   prioritizePendingComments,
   requeueRecoverableReplyFailures,
   requeueCourtesyReflectionCandidates,
