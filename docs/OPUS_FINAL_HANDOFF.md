@@ -1,3 +1,43 @@
+# 세션 인수인계 — 2026-05-04 (SIGMA Great Library Brain 100% 활성화 — 91차 세션)
+
+## 완료 요약 ✅ (91차 세션)
+
+### SIGMA Phase 1+3+5 환경변수 100% 활성화 완료
+
+**커밋**: `67234e3c`
+
+**DB 마이그레이션** (직접 SQL 실행):
+- `sigma.entity_relationships` 생성 (Knowledge Graph 노드 관계)
+- `sigma.data_lineage` 생성 (데이터 계보 추적)
+- `sigma.dataset_snapshots` 생성 (주간 데이터셋 스냅샷)
+
+**launchd plist 업데이트** (`bots/sigma/launchd/ai.sigma.daily.plist`):
+- Phase 1 (7개): `SIGMA_LIBRARY_AUTONOMY_MODE=supervised`, `SIGMA_TEAM_MEMORY_UNIFIED=true`, `SIGMA_KNOWLEDGE_GRAPH_ENABLED=true`, `SIGMA_DATASET_BUILDER_ENABLED=true`, `SIGMA_DATA_LINEAGE_ENABLED=true`, `SIGMA_LIBRARY_DASHBOARD_ENABLED=true`
+- Phase 3 (3개): `SIGMA_SELF_RAG_ENABLED=true`, `SIGMA_MULTI_HOP_RAG_ENABLED=true`, `SIGMA_HYDE_ENABLED=true`
+- Phase 5 (3개): `SIGMA_SELF_IMPROVEMENT_ENABLED=true`, `SIGMA_VOYAGER_SKILL_AUTO_EXTRACTION=true`, `SIGMA_FINE_TUNING_NOTIFY_ENABLED=true`
+
+**라이브러리 수정**:
+- `rag-advanced.ts`: `buildHydePlan`/`buildMultiHopPlan`에 env 게이트 반영
+- `self-improvement-pipeline.ts`: activation 상태 필드 추가
+- `sigma-library-full-smoke.ts`: env-aware 어서션 (HYDE/MultiHop/SelfRAG)
+
+**검증 결과**:
+- `sigma-intelligent-library-smoke`: PASS ✅ (teams:9, datasets:18, graphNodes:16)
+- `sigma-library-full-smoke`: PASS ✅ (status:sigma_library_full_smoke_passed)
+- `runtime-sigma-library-dashboard`: PASS ✅ (status:sigma_library_contract_ready, 13게이트 supervised)
+- `runtime-sigma-dataset-builder`: PASS ✅ (18 datasets)
+- `runtime-sigma-self-improvement`: PASS ✅ (skillCandidates:2, applyBlocked)
+- PROTECTED 6 PID 무중단 ✅
+- pre-rollback 태그: `pre-sigma-phase1-activation-20260504-2104`
+
+**잔여 작업** (자연 진행, 마스터 명시 필요):
+- Phase 2: `SIGMA_TIER2_AUTO_APPLY` → 이미 true (plist에 기존 포함)
+- Phase 4 MCP Server: `SIGMA_MCP_SERVER_ENABLED=true` (현재 false)
+- Phase 6 자율: `SIGMA_LIBRARY_AUTONOMY_MODE=autonomous` (7일 안정 후)
+- `SIGMA_CONSTITUTION_VIOLATION_AUTO_BLOCK=true` (마스터 명시 필요)
+
+---
+
 # 세션 인수인계 — 2026-05-04 (Hub L5 검증 + ALARM_INCIDENT 처리 — 90차 세션)
 
 ## 완료 요약 ✅ (90차 세션)

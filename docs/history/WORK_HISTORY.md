@@ -4,6 +4,16 @@
 > 상세 내용: `reservation-dev-summary.md` / `reservation-handoff.md`
 > 최초 작성: 2026-02-27
 
+## 2026-05-04: SIGMA Great Library Brain Phase 1+3+5 환경변수 100% 활성화 (91차 세션)
+
+- pre-rollback 태그: `pre-sigma-phase1-activation-20260504-2104`
+- DB 마이그레이션: sigma.entity_relationships/data_lineage/dataset_snapshots 신규 생성
+- launchd plist 13개 환경변수 추가 + 재로드
+- rag-advanced.ts/self-improvement-pipeline.ts env 게이트 반영
+- 전 smoke PASS: intelligent-library/full-smoke/dashboard/dataset-builder/self-improvement
+- 커밋: `67234e3c` → push 완료
+- 잔여: Phase 4(MCP) + Phase 6(autonomous) — 마스터 명시 대기
+
 ## 2026-05-04: Hub L5 검증 + ALARM_INCIDENT 처리 (90차 세션)
 
 - **CODEX_HUB_L5_STABILITY_AND_OAUTH_DECOUPLING 검증**: Phase 2/5 구현 상태 전 게이트 검증
