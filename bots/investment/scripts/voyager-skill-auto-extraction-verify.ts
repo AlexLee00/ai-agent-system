@@ -170,7 +170,6 @@ export async function runVoyagerSkillAutoExtractionVerify(opts: {
 
   // ─── Step 3: skill_library 현재 상태 ─────────────────────────────
   const skillCountBefore = await countSkillLibrary();
-  const productionSkillPromoted = skillCountBefore > 0;
   steps.push({
     name: 'skill_library_before',
     pass: true,
@@ -231,7 +230,10 @@ export async function runVoyagerSkillAutoExtractionVerify(opts: {
     minCandidates,
     readyForExtraction,
     naturalDataReady,
-    productionSkillPromoted,
+    productionSkillPromoted: false,
+    productionSkillEvidenceCount: skillCountBefore,
+    skillExtractionCandidates: simResult.candidates,
+    skillExtractionDryRunExtracted: simResult.extracted,
     pendingReason,
     validationFixture,
     steps,

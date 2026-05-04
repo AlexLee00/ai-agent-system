@@ -82,6 +82,8 @@ export function buildMemory100PercentReport({
         reflexionCount: voyager.reflexionCount,
         minCandidates: voyager.minCandidates,
         naturalDataReady: voyager.naturalDataReady,
+        productionSkillEvidenceCount: voyager.productionSkillEvidenceCount ?? null,
+        skillExtractionCandidates: voyager.skillExtractionCandidates ?? null,
       },
       failedReflexion,
     },

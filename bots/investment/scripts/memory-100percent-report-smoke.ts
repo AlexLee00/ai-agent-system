@@ -22,6 +22,23 @@ export async function runSmoke() {
   const markdown = renderMemory100PercentReport(report);
   assert.ok(markdown.includes('Phase ξ Checks'));
   assert.ok(markdown.includes('ξ3_failed_reflexion'));
+
+  const existingSkillEvidenceReport = buildMemory100PercentReport({
+    agents,
+    checkpoint: { ok: true, status: 'complete', pendingObservation: [], evidence: { fired: 200 } },
+    busStats: { ok: true, stats: { window7dMessages: 100, window24hMessages: 20 } },
+    voyager: {
+      ok: true,
+      status: 'ready_for_extraction',
+      naturalDataReady: true,
+      productionSkillPromoted: false,
+      productionSkillEvidenceCount: 53,
+      skillExtractionCandidates: 0,
+    },
+    failedReflexion: { triggerReady: true, backfillDryRun: true },
+  });
+  assert.equal(existingSkillEvidenceReport.codeComplete, true);
+  assert.equal(existingSkillEvidenceReport.blockers.includes('ξ4_voyager_natural'), false);
   return { ok: true, report, markdownLength: markdown.length };
 }
 
