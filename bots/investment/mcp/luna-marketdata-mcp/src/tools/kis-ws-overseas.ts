@@ -1,5 +1,5 @@
-// @ts-nocheck
 import { getMarketSnapshot } from './market-snapshot.ts';
+import { simulatedFallbackOrBlock } from './live-fallback-policy.ts';
 
 const KIS_WS_LIVE = 'wss://openapi.koreainvestment.com:9443';
 const KIS_WS_MOCK = 'wss://openapivts.koreainvestment.com:31000';
@@ -16,11 +16,11 @@ function normalizeSymbol(symbol = 'AAPL') {
 }
 
 function fallbackSnapshot(args = {}, reason = 'kis_overseas_realtime_unavailable') {
-  return {
+  return simulatedFallbackOrBlock(() => ({
     ...getMarketSnapshot({ ...args, market: 'kis_overseas', symbol: args.symbol || 'AAPL' }),
     providerMode: 'simulated_fallback',
     fallbackReason: String(reason || 'kis_overseas_realtime_unavailable').slice(0, 240),
-  };
+  }), { args, market: 'kis_overseas', symbol: args.symbol || 'AAPL', reason, tool: 'get_market_snapshot' });
 }
 
 function addWsListener(ws, event, handler) {
@@ -168,7 +168,7 @@ export async function kisOverseasSnapshot(args = {}) {
 
 export async function subscribeKisOverseasMarketData(args = {}) {
   const snapshot = await kisOverseasSnapshot(args);
-  return { ok: true, subscribed: true, providerMode: snapshot.providerMode, subscription: snapshot };
+  return { ok: snapshot.ok !== false, subscribed: snapshot.ok !== false, providerMode: snapshot.providerMode, subscription: snapshot };
 }
 
 export function unsubscribeKisOverseasMarketData(args = {}) {

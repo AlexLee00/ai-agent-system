@@ -1,5 +1,5 @@
-// @ts-nocheck
 import { getMarketSnapshot } from './market-snapshot.ts';
+import { simulatedFallbackOrBlock } from './live-fallback-policy.ts';
 
 const DEFAULT_TIMEOUT_MS = Number(process.env.LUNA_MARKETDATA_REAL_TIMEOUT_MS || 5000);
 const DEFAULT_TV_WS_URL = `ws://127.0.0.1:${process.env.TV_WS_PORT || 8082}`;
@@ -19,11 +19,11 @@ function normalizeSymbol(symbol = 'BINANCE:BTCUSDT') {
 }
 
 function fallbackSnapshot(args = {}, reason = 'tradingview_realtime_unavailable') {
-  return {
+  return simulatedFallbackOrBlock(() => ({
     ...getMarketSnapshot({ ...args, market: 'tradingview', symbol: args.symbol || 'BINANCE:BTCUSDT' }),
     providerMode: 'simulated_fallback',
     fallbackReason: String(reason || 'tradingview_realtime_unavailable').slice(0, 240),
-  };
+  }), { args, market: 'tradingview', symbol: args.symbol || 'BINANCE:BTCUSDT', reason, tool: 'get_market_snapshot' });
 }
 
 function addWsListener(ws, event, handler) {
@@ -138,7 +138,7 @@ export async function tradingViewSnapshot(args = {}) {
 
 export async function subscribeTradingViewMarketData(args = {}) {
   const snapshot = await tradingViewSnapshot(args);
-  return { ok: true, subscribed: true, providerMode: snapshot.providerMode, subscription: snapshot };
+  return { ok: snapshot.ok !== false, subscribed: snapshot.ok !== false, providerMode: snapshot.providerMode, subscription: snapshot };
 }
 
 export function unsubscribeTradingViewMarketData(args = {}) {

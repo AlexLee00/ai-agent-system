@@ -1,5 +1,3 @@
-// @ts-nocheck
-
 export function normalizeMarket(market = 'binance') {
   const key = String(market || 'binance').toLowerCase();
   if (key.includes('domestic')) return 'kis_domestic';
@@ -81,4 +79,3 @@ export function getOrderBook({ market = 'binance', symbol = 'BTC/USDT', depth = 
     fetchedAt: new Date().toISOString(),
   };
 }
-

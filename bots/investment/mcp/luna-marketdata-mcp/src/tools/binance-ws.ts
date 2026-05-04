@@ -1,5 +1,5 @@
-// @ts-nocheck
 import { getMarketSnapshot, getOrderBook } from './market-snapshot.ts';
+import { simulatedFallbackOrBlock } from './live-fallback-policy.ts';
 
 const DEFAULT_WS_URL = 'wss://stream.binance.com:9443/ws';
 const DEFAULT_DEPTH_URL = 'https://api.binance.com';
@@ -27,19 +27,19 @@ function isRealEnabled(args = {}) {
 }
 
 function fallbackSnapshot(args = {}, reason = 'real_ws_unavailable') {
-  return {
+  return simulatedFallbackOrBlock(() => ({
     ...getMarketSnapshot({ ...args, market: 'binance' }),
     providerMode: 'simulated_fallback',
     fallbackReason: String(reason || 'real_ws_unavailable').slice(0, 240),
-  };
+  }), { args, market: 'binance', symbol: args.symbol || 'BTC/USDT', reason, tool: 'get_market_snapshot' });
 }
 
 function fallbackOrderBook(args = {}, reason = 'real_order_book_unavailable') {
-  return {
+  return simulatedFallbackOrBlock(() => ({
     ...getOrderBook({ ...args, market: 'binance' }),
     providerMode: 'simulated_fallback',
     fallbackReason: String(reason || 'real_order_book_unavailable').slice(0, 240),
-  };
+  }), { args, market: 'binance', symbol: args.symbol || 'BTC/USDT', reason, tool: 'get_order_book' });
 }
 
 function closeEntry(entry) {
@@ -192,7 +192,7 @@ export async function binanceOrderBook(args = {}) {
 export async function subscribeBinanceMarketData(args = {}) {
   if (!isRealEnabled(args)) {
     const fallback = fallbackSnapshot(args, 'real_ws_disabled');
-    return { ok: true, subscribed: true, providerMode: 'simulated_fallback', subscription: fallback };
+    return { ok: fallback.ok !== false, subscribed: fallback.ok !== false, providerMode: fallback.providerMode, subscription: fallback };
   }
   try {
     const entry = await ensureSubscription(args.symbol || 'BTC/USDT', args);
@@ -211,7 +211,7 @@ export async function subscribeBinanceMarketData(args = {}) {
     };
   } catch (error) {
     const fallback = fallbackSnapshot(args, error?.message || error);
-    return { ok: true, subscribed: true, providerMode: 'simulated_fallback', subscription: fallback };
+    return { ok: fallback.ok !== false, subscribed: fallback.ok !== false, providerMode: fallback.providerMode, subscription: fallback };
   }
 }
 

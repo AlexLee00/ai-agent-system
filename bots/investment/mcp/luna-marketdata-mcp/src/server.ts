@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-// @ts-nocheck
 import http from 'node:http';
 import { fileURLToPath } from 'node:url';
 import {
@@ -95,7 +94,7 @@ export async function callMarketdataTool(name, args = {}) {
           : await subscribeTradingViewMarketData(args);
     const value = { key, args, subscribedAt: new Date().toISOString(), mode: 'parallel_shadow', provider };
     subscriptions.set(key, value);
-    return { ok: true, subscribed: true, subscription: value, count: subscriptions.size };
+    return { ok: provider.ok !== false, subscribed: provider.subscribed !== false, subscription: value, count: subscriptions.size };
   }
   if (name === 'unsubscribe_market_data') {
     const key = subscriptionKey(args);

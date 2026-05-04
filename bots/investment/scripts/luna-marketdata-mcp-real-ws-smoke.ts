@@ -45,6 +45,21 @@ export async function runSmoke() {
     assert.equal(subscribed.subscribed, true);
     assert.equal(subscribed.subscription.provider.providerMode, 'simulated_fallback');
 
+    const liveBlocked = await binanceSnapshot({ symbol: 'BTC/USDT', disableReal: true, liveFire: true });
+    assert.equal(liveBlocked.ok, false);
+    assert.equal(liveBlocked.error, 'marketdata_simulated_fallback_blocked');
+    assert.equal(liveBlocked.providerMode, 'real_required');
+
+    const liveSubscribeBlocked = await callMarketdataTool('subscribe_market_data', {
+      market: 'binance',
+      symbol: 'BTC/USDT',
+      disableReal: true,
+      liveFire: true,
+    });
+    assert.equal(liveSubscribeBlocked.ok, false);
+    assert.equal(liveSubscribeBlocked.subscribed, false);
+    assert.equal(liveSubscribeBlocked.subscription.provider.providerMode, 'real_required');
+
     const unsubscribed = unsubscribeBinanceMarketData({ symbol: 'BTC/USDT' });
     assert.equal(unsubscribed.ok, true);
 
@@ -57,6 +72,7 @@ export async function runSmoke() {
         kisOverseas: overseas.providerMode,
         tradingView: tv.providerMode,
       },
+      liveBlocked: liveBlocked.error,
     };
   } finally {
     closeMarketdataMcpSubscriptions();

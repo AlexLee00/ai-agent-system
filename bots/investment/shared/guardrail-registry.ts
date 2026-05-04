@@ -347,6 +347,20 @@ const INTEGRITY_GUARDRAILS = [
     command: ['node', 'scripts/runtime-luna-agent-normalization-report.ts', '--json'],
   },
   {
+    name: 'luna_normalization_refactor_guardrail_master',
+    category: 'integrity',
+    severity: 'high',
+    owner: 'luna',
+    command: ['node', 'scripts/runtime-luna-normalization-refactor-guardrail-master-report.ts', '--json'],
+  },
+  {
+    name: 'luna_source_health_audit',
+    category: 'integrity',
+    severity: 'high',
+    owner: 'luna',
+    command: ['node', 'scripts/runtime-luna-source-health-audit.ts', '--json'],
+  },
+  {
     name: 'elixir_supervisor_health',
     category: 'integrity',
     severity: 'critical',

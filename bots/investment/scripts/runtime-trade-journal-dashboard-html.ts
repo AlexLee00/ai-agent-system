@@ -284,7 +284,7 @@ export async function buildTradeJournalDashboard() {
 </body>
 </html>`;
 
-  return { ok: true, totalTrades, totalPnl, reflexionTotal, skillTotal, html };
+  return { ok: true, totalTrades, totalPnl, reflexionTotal, skillTotal, daily, failures, marketRates, tpsl: tpslRow, topPnl, html };
 }
 
 export async function writeTradeJournalDashboard({ output = DEFAULT_OUTPUT, write = true } = {}) {
