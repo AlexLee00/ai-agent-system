@@ -87,8 +87,8 @@ function installedLaunchAgentPath(label) {
 }
 
 function getEnvSnapshot() {
-  const repoPlist = readPlist(path.join(INVESTMENT_DIR, 'launchd', 'ai.luna.commander.plist'));
-  const installedPlist = readPlist(installedLaunchAgentPath('ai.luna.commander'));
+  const repoPlist = readPlist(path.join(INVESTMENT_DIR, 'launchd', 'ai.investment.commander.plist'));
+  const installedPlist = readPlist(installedLaunchAgentPath('ai.investment.commander'));
   const repoEnv = repoPlist?.EnvironmentVariables || {};
   const installedEnv = installedPlist?.EnvironmentVariables || {};
 

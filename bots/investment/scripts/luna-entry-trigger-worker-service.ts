@@ -5,10 +5,13 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
+import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
 import { buildLunaEntryTriggerWorkerReadiness } from './luna-entry-trigger-worker-readiness.ts';
 
+const require = createRequire(import.meta.url);
+const { getServiceOwnership, isRetiredService } = require('../../../packages/core/lib/service-ownership');
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const INVESTMENT_DIR = path.resolve(__dirname, '..');
 const LABEL = 'ai.investment.luna-entry-trigger-worker';
@@ -38,9 +41,13 @@ function run(command, args = []) {
 
 export async function buildLunaEntryTriggerWorkerServicePlan({ install = false, unload = false } = {}) {
   const readiness = await buildLunaEntryTriggerWorkerReadiness();
+  const retired = isRetiredService(LABEL);
+  const ownership = getServiceOwnership(LABEL);
   const action = install ? 'install' : unload ? 'unload' : 'status';
   const commands = [];
-  if (install) {
+  if (install && retired) {
+    commands.push(`retired: ${LABEL} -> ${ownership?.replacement || 'luna.skills.entry_trigger'}`);
+  } else if (install) {
     commands.push(`mkdir -p ${path.dirname(INSTALLED_PLIST)}`);
     commands.push(`cp ${REPO_PLIST} ${INSTALLED_PLIST}`);
     commands.push(`launchctl bootstrap gui/$(id -u) ${INSTALLED_PLIST}`);
@@ -55,6 +62,8 @@ export async function buildLunaEntryTriggerWorkerServicePlan({ install = false, 
     action,
     dryRun: true,
     label: LABEL,
+    retired,
+    replacement: retired ? (ownership?.replacement || 'luna.skills.entry_trigger') : null,
     repoPlist: REPO_PLIST,
     installedPlist: INSTALLED_PLIST,
     commands,
@@ -65,6 +74,14 @@ export async function buildLunaEntryTriggerWorkerServicePlan({ install = false, 
 export async function runLunaEntryTriggerWorkerService({ install = false, unload = false, apply = false } = {}) {
   const plan = await buildLunaEntryTriggerWorkerServicePlan({ install, unload });
   if (!apply) return plan;
+  if (plan.retired && install) {
+    return {
+      ...plan,
+      ok: false,
+      applied: false,
+      status: 'entry_trigger_worker_retired_install_blocked',
+    };
+  }
   const results = [];
   if (install) {
     fs.mkdirSync(path.dirname(INSTALLED_PLIST), { recursive: true });

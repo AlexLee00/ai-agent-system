@@ -17,10 +17,9 @@ const LOG_TARGETS = [
   { team: 'reservation', bot: 'ska', label: '스카 commander', path: path.join(WORKSPACE_LOGS, 'ska-commander-error.log') },
   { team: 'reservation', bot: 'naver', label: '네이버 ops', path: '/tmp/naver-ops-mode.log' },
   { team: 'reservation', bot: 'jimmy', label: '픽코 키오스크', path: '/tmp/pickko-kiosk-monitor.log' },
-  { team: 'investment', bot: 'crypto', label: '루나 크립토', path: '/tmp/investment-crypto.err.log' },
-  { team: 'investment', bot: 'domestic', label: '루나 국내', path: '/tmp/investment-domestic.err.log' },
-  { team: 'investment', bot: 'overseas', label: '루나 해외', path: '/tmp/investment-overseas.err.log' },
-  { team: 'investment', bot: 'argos', label: '루나 argos', path: '/tmp/investment-argos.err.log' },
+  { team: 'investment', bot: 'commander', label: '루나 commander', path: path.join(AI_AGENT_LOGS, 'luna-commander-error.log') },
+  { team: 'investment', bot: 'marketdata-mcp', label: '루나 marketdata MCP', path: '/tmp/ai.luna.marketdata-mcp.err.log' },
+  { team: 'investment', bot: 'elixir-supervisor', label: '루나 elixir supervisor', path: '/tmp/elixir-supervisor.err' },
   { team: 'claude', bot: 'commander', label: '클로드 commander', path: path.join(WORKSPACE_LOGS, 'claude-commander-error.log') },
   { team: 'claude', bot: 'dashboard', label: '클로드 dashboard', path: path.join(WORKSPACE_LOGS, 'claude-health-dashboard-error.log') },
 ];

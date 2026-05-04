@@ -30,6 +30,22 @@ function parseArgs(argv = process.argv.slice(2)) {
 }
 
 function inspectLaunchdService() {
+  const ownership = getServiceOwnership(LAUNCHD_LABEL);
+  if (isRetiredService(LAUNCHD_LABEL)) {
+    return {
+      ok: true,
+      loaded: false,
+      retired: true,
+      replacement: ownership?.replacement || 'luna.skills.posttrade_feedback',
+      label: LAUNCHD_LABEL,
+      domain: null,
+      pid: null,
+      lastExitCode: null,
+      runIntervalSec: null,
+      status: 'launchd_retired_to_luna_skill',
+      detail: null,
+    };
+  }
   const uid = typeof process.getuid === 'function' ? process.getuid() : null;
   const domain = uid == null ? 'gui/unknown' : `gui/${uid}`;
   const proc = spawnSync('launchctl', ['print', `${domain}/${LAUNCHD_LABEL}`], {
@@ -38,22 +54,6 @@ function inspectLaunchdService() {
   });
   const text = `${proc.stdout || ''}\n${proc.stderr || ''}`;
   const loaded = proc.status === 0;
-  const ownership = getServiceOwnership(LAUNCHD_LABEL);
-  if (!loaded && isRetiredService(LAUNCHD_LABEL)) {
-    return {
-      ok: true,
-      loaded: false,
-      retired: true,
-      replacement: ownership?.replacement || 'luna.skills.posttrade_feedback',
-      label: LAUNCHD_LABEL,
-      domain,
-      pid: null,
-      lastExitCode: null,
-      runIntervalSec: null,
-      status: 'launchd_retired_to_luna_skill',
-      detail: null,
-    };
-  }
   const pidMatch = text.match(/\bpid\s*=\s*(\d+)/);
   const lastExitMatch = text.match(/\blast exit code\s*=\s*(-?\d+)/i);
   const runIntervalMatch = text.match(/\brun interval\s*=\s*(\d+)\s*seconds/i);

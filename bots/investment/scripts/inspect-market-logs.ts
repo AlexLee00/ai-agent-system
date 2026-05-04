@@ -3,12 +3,12 @@
  * scripts/inspect-market-logs.js
  *
  * 목적:
- *   - 국내장/해외장 fresh 로그를 빠르게 요약
+ *   - Luna 통합 런타임 fresh 로그를 빠르게 요약
  *   - timeout, analyses/get 참조 오류, pg-pool 상태, 한울 단계 로그를 우선 표시
  *
  * 실행:
  *   node scripts/inspect-market-logs.js
- *   node scripts/inspect-market-logs.js --market=domestic
+ *   node scripts/inspect-market-logs.js --market=elixir
  *   node scripts/inspect-market-logs.js --tail=120
  */
 
@@ -20,15 +20,20 @@ const marketArg = args.find(a => a.startsWith('--market='))?.split('=')[1] || 'a
 const tail = Number(args.find(a => a.startsWith('--tail='))?.split('=')[1] || 80);
 
 const LOGS = {
-  domestic: {
-    out: '/tmp/investment-domestic.log',
-    err: '/tmp/investment-domestic.err.log',
-    label: '국내장',
+  commander: {
+    out: `${process.env.AI_AGENT_LOGS || `${process.env.HOME || ''}/.ai-agent-system/logs`}/luna-commander.log`,
+    err: `${process.env.AI_AGENT_LOGS || `${process.env.HOME || ''}/.ai-agent-system/logs`}/luna-commander-error.log`,
+    label: 'Luna commander',
   },
-  overseas: {
-    out: '/tmp/investment-overseas.log',
-    err: '/tmp/investment-overseas.err.log',
-    label: '해외장',
+  marketdata: {
+    out: '/tmp/ai.luna.marketdata-mcp.log',
+    err: '/tmp/ai.luna.marketdata-mcp.err.log',
+    label: 'Luna marketdata MCP',
+  },
+  elixir: {
+    out: '/tmp/elixir-supervisor.log',
+    err: '/tmp/elixir-supervisor.err',
+    label: 'Luna Elixir supervisor',
   },
 };
 

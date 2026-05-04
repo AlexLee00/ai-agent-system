@@ -1,6 +1,6 @@
 'use strict';
 
-const { getJayOrchestrationConfig } = require('./runtime-config');
+const { getJayOrchestrationConfig } = require('./runtime-config.ts');
 
 function normalizeText(value, fallback = '') {
   const text = String(value == null ? fallback : value).trim();

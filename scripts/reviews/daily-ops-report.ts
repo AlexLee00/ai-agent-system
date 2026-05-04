@@ -8,12 +8,47 @@ const os = require('os');
 
 const ROOT = process.env.PROJECT_ROOT || path.join(os.homedir(), 'projects', 'ai-agent-system');
 
+function firstExistingPath(...candidates) {
+  return candidates.find((candidate) => fs.existsSync(candidate)) || candidates[0];
+}
+
 const TEAM_HEALTH_COMMANDS = [
-  { team: 'orchestrator', script: path.join(ROOT, 'bots/orchestrator/scripts/health-report.js') },
-  { team: 'claude', script: path.join(ROOT, 'bots/claude/scripts/health-report.js') },
-  { team: 'blog', script: path.join(ROOT, 'bots/blog/scripts/health-report.js') },
-  { team: 'investment', script: path.join(ROOT, 'bots/investment/scripts/health-report.js') },
-  { team: 'reservation', script: path.join(ROOT, 'dist/ts-runtime/bots/reservation/scripts/health-report.js') },
+  {
+    team: 'orchestrator',
+    script: firstExistingPath(
+      path.join(ROOT, 'bots/orchestrator/scripts/health-report.ts'),
+      path.join(ROOT, 'bots/orchestrator/scripts/health-report.js'),
+    ),
+  },
+  {
+    team: 'claude',
+    script: firstExistingPath(
+      path.join(ROOT, 'bots/claude/scripts/health-report.ts'),
+      path.join(ROOT, 'bots/claude/scripts/health-report.js'),
+    ),
+  },
+  {
+    team: 'blog',
+    script: firstExistingPath(
+      path.join(ROOT, 'bots/blog/scripts/health-report.ts'),
+      path.join(ROOT, 'bots/blog/scripts/health-report.js'),
+    ),
+  },
+  {
+    team: 'investment',
+    script: firstExistingPath(
+      path.join(ROOT, 'bots/investment/scripts/health-report.ts'),
+      path.join(ROOT, 'bots/investment/scripts/health-report.js'),
+    ),
+  },
+  {
+    team: 'reservation',
+    script: firstExistingPath(
+      path.join(ROOT, 'bots/reservation/scripts/health-report.ts'),
+      path.join(ROOT, 'dist/ts-runtime/bots/reservation/scripts/health-report.js'),
+      path.join(ROOT, 'bots/reservation/scripts/health-report.js'),
+    ),
+  },
 ];
 
 const FALLBACK_TEAM_PROBES = {
@@ -52,10 +87,38 @@ const FALLBACK_FILE_ACTIVITY = {
 };
 
 const AUXILIARY_COMMANDS = [
-  { key: 'errorReview', script: path.join(ROOT, 'scripts/reviews/error-log-daily-review.js'), args: ['--days=1', '--json'] },
-  { key: 'jayUsage', script: path.join(ROOT, 'scripts/reviews/jay-llm-usage-report.js'), args: ['--days=1', '--json'] },
-  { key: 'gatewayExperiment', script: path.join(ROOT, 'scripts/reviews/jay-gateway-experiment-review.js'), args: ['--json'] },
-  { key: 'selectorSpeed', script: path.join(ROOT, 'scripts/reviews/llm-selector-speed-daily.js'), args: ['--skip-test', '--json'] },
+  {
+    key: 'errorReview',
+    script: firstExistingPath(
+      path.join(ROOT, 'scripts/reviews/error-log-daily-review.ts'),
+      path.join(ROOT, 'scripts/reviews/error-log-daily-review.js'),
+    ),
+    args: ['--days=1', '--json'],
+  },
+  {
+    key: 'jayUsage',
+    script: firstExistingPath(
+      path.join(ROOT, 'scripts/reviews/jay-llm-usage-report.ts'),
+      path.join(ROOT, 'scripts/reviews/jay-llm-usage-report.js'),
+    ),
+    args: ['--days=1', '--json'],
+  },
+  {
+    key: 'gatewayExperiment',
+    script: firstExistingPath(
+      path.join(ROOT, 'scripts/reviews/jay-gateway-experiment-review.ts'),
+      path.join(ROOT, 'scripts/reviews/jay-gateway-experiment-review.js'),
+    ),
+    args: ['--json'],
+  },
+  {
+    key: 'selectorSpeed',
+    script: firstExistingPath(
+      path.join(ROOT, 'scripts/reviews/llm-selector-speed-daily.ts'),
+      path.join(ROOT, 'scripts/reviews/llm-selector-speed-daily.js'),
+    ),
+    args: ['--skip-test', '--json'],
+  },
 ];
 
 function parseArgs(argv = process.argv.slice(2)) {

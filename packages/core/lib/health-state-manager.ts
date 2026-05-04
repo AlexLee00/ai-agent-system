@@ -22,6 +22,11 @@ const TEAM_PREFIXES: Record<string, string> = {
   blog: 'ai.blog.',
 };
 
+const EXTRA_TEAM_PREFIXES: Record<string, string[]> = {
+  luna: ['ai.luna.', 'ai.elixir.supervisor'],
+  platform: ['ai.hub.'],
+};
+
 const DEV_SERVICES = new Set([
   'ai.claude.dexter.quick',
   'ai.claude.dexter.full',
@@ -34,7 +39,7 @@ const DEV_SERVICES = new Set([
   'ai.claude.health-dashboard',
   'ai.claude.health-check',
   'ai.ska.health-check',
-  'ai.investment.health-check',
+  'ai.luna.ops-scheduler',
   'ai.blog.health-check',
 ]);
 
@@ -81,6 +86,9 @@ function clearAlert(state: HealthState, key: string, prefix = false): void {
 function getTeam(label: string): string | null {
   for (const [team, prefix] of Object.entries(TEAM_PREFIXES)) {
     if (label.startsWith(prefix)) return team;
+  }
+  for (const [team, prefixes] of Object.entries(EXTRA_TEAM_PREFIXES)) {
+    if (prefixes.some((prefix) => label.startsWith(prefix))) return team;
   }
   return null;
 }
@@ -133,5 +141,6 @@ export = {
   isExpectedIdleHealthService,
   isOptionalHealthService,
   TEAM_PREFIXES,
+  EXTRA_TEAM_PREFIXES,
   DEV_SERVICES,
 };

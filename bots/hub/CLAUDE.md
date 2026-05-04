@@ -65,7 +65,8 @@ GET  /hub/legal/case/:id/report    — 최신 감정서 조회
   - `classification=down`: 실제 점검이 필요한 비정상 비가동
 - 현재 `idle`로 보는 대표 서비스
   - `ai.claude.dexter`
-  - `ai.investment.crypto`
+  - `ai.investment.runtime-autopilot`
+  - `ai.luna.ops-scheduler`
 
 ## 보안
 - `/hub/health*` 외 전 라우트 `authMiddleware` 적용

@@ -24,18 +24,10 @@ const CONTINUOUS = [
 
 const ALL_SERVICES = [
   'ai.investment.commander',
-  'ai.investment.crypto',
-  'ai.investment.domestic',
-  'ai.investment.overseas',
-  'ai.investment.argos',
-  'ai.investment.market-alert-crypto-daily',
-  'ai.investment.market-alert-domestic-open',
-  'ai.investment.market-alert-domestic-close',
-  'ai.investment.market-alert-overseas-open',
-  'ai.investment.market-alert-overseas-close',
-  'ai.investment.prescreen-domestic',
-  'ai.investment.prescreen-overseas',
-  'ai.investment.reporter',
+  'ai.luna.marketdata-mcp',
+  'ai.elixir.supervisor',
+  'ai.investment.runtime-autopilot',
+  'ai.luna.ops-scheduler',
 ];
 
 function buildLightHealthReport() {

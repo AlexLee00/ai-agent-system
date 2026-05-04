@@ -7,6 +7,15 @@ set -e
 PROJECT_ROOT="${PROJECT_ROOT:-$HOME/projects/ai-agent-system}"
 MODE_VALUE="${MODE:-dev}"
 UID_VALUE="$(id -u)"
+ALLOW_PROTECTED_RESTART="${ALLOW_PROTECTED_RESTART:-0}"
+PROTECTED_SERVICES=(
+  "ai.luna.tradingview-ws"
+  "ai.investment.commander"
+  "ai.elixir.supervisor"
+  "ai.luna.marketdata-mcp"
+  "ai.claude.auto-dev.autonomous"
+  "ai.hub.resource-api"
+)
 
 if [ "$MODE_VALUE" != "ops" ]; then
   echo "ℹ️ DEV 환경 — launchd 서비스 없음, smart-restart 스킵"
@@ -17,6 +26,13 @@ CHANGED="$(git -C "$PROJECT_ROOT" diff --name-only HEAD~1 HEAD 2>/dev/null || ec
 
 restart_service() {
   local label="$1"
+  local protected
+  for protected in "${PROTECTED_SERVICES[@]}"; do
+    if [ "$label" = "$protected" ] && [ "$ALLOW_PROTECTED_RESTART" != "1" ]; then
+      echo "🛡️ 보호 서비스 재시작 스킵: $label"
+      return
+    fi
+  done
   echo "🔄 재시작: $label"
   launchctl kickstart -k "gui/${UID_VALUE}/${label}" 2>/dev/null \
     && echo "  ✅ $label" \
@@ -28,6 +44,14 @@ reload_launch_agent() {
   local label="$1"
   local source_plist="$2"
   local target_plist="$HOME/Library/LaunchAgents/${label}.plist"
+  local protected
+
+  for protected in "${PROTECTED_SERVICES[@]}"; do
+    if [ "$label" = "$protected" ] && [ "$ALLOW_PROTECTED_RESTART" != "1" ]; then
+      echo "🛡️ 보호 서비스 launchd 재로딩 스킵: $label"
+      return
+    fi
+  done
 
   if [ ! -f "$source_plist" ]; then
     echo "  ⚠️ plist 없음 — 재로딩 스킵: $source_plist"
@@ -53,7 +77,8 @@ if echo "$CHANGED" | grep -q "^packages/core"; then
   echo ""
   echo "⚠️  packages/core 변경 — 전체 팀 순차 재시작"
   restart_service "ai.hub.resource-api"
-  restart_service "ai.investment.crypto"
+  restart_service "ai.luna.marketdata-mcp"
+  restart_service "ai.elixir.supervisor"
   restart_service "ai.ska.commander"
   restart_service "ai.ska.naver-monitor"
   restart_service "ai.blog.daily"
@@ -79,7 +104,7 @@ EOF
 fi
 
 if echo "$CHANGED" | grep -q "^bots/investment"; then
-  restart_service "ai.investment.crypto"
+  restart_service "ai.luna.marketdata-mcp"
   restart_service "ai.investment.commander"
   RESTARTED=$((RESTARTED+1))
 fi

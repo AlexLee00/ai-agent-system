@@ -1,51 +1,48 @@
 defmodule TeamJay.Teams.InvestmentScheduler do
   @moduledoc """
-  투자팀 수동 트리거/호환용 헬퍼.
+  투자팀 구 PortAgent 스케줄 호환용 헬퍼.
 
-  launchd 전환 이후 투자팀의 wall-clock 스케줄은 launchd가 KST 기준으로 전담한다.
-  이 모듈은 수동 실행, 리허설, 제한적 내부 호출 호환성을 위해 남긴다.
-
-  주의:
-  - PortAgent가 등록된 경우에만 run()이 유효하다.
-  - InvestmentSupervisor 비활성 시 무시된다.
-  - 시장 휴장/주말 판단은 각 스크립트 내부 가드에서 처리한다.
+  Luna 45→8 전환 이후 wall-clock 실행은 launchd의 runtime-autopilot,
+  ops-scheduler, marketdata-mcp, commander가 전담한다. 이 모듈은 과거
+  `markets/*` 수동 트리거가 재도입되지 않도록 명시적으로 no-op을 반환한다.
   """
 
-  alias Jay.Core.Agents.PortAgent
-  alias TeamJay.Investment.Feedback.Daily, as: DailyFeedback
+  defp retired(name) do
+    {:error, {:retired_luna_port_agent_schedule, name}}
+  end
 
   # ────────────────────────────────────────────────────────────────
   # 기존 (변경 없음)
   # ────────────────────────────────────────────────────────────────
 
-  def run_prescreen_domestic, do: PortAgent.run(:prescreen_domestic)
-  def run_prescreen_overseas, do: PortAgent.run(:prescreen_overseas)
+  def run_prescreen_domestic, do: retired(:prescreen_domestic)
+  def run_prescreen_overseas, do: retired(:prescreen_overseas)
 
-  def run_market_alert_domestic_open, do: PortAgent.run(:market_alert_domestic_open)
-  def run_market_alert_domestic_close, do: PortAgent.run(:market_alert_domestic_close)
-  def run_market_alert_overseas_open, do: PortAgent.run(:market_alert_overseas_open)
-  def run_market_alert_overseas_close, do: PortAgent.run(:market_alert_overseas_close)
-  def run_market_alert_crypto_daily, do: PortAgent.run(:market_alert_crypto_daily)
+  def run_market_alert_domestic_open, do: retired(:market_alert_domestic_open)
+  def run_market_alert_domestic_close, do: retired(:market_alert_domestic_close)
+  def run_market_alert_overseas_open, do: retired(:market_alert_overseas_open)
+  def run_market_alert_overseas_close, do: retired(:market_alert_overseas_close)
+  def run_market_alert_crypto_daily, do: retired(:market_alert_crypto_daily)
 
-  def run_reporter, do: PortAgent.run(:reporter)
-  def run_daily_feedback, do: DailyFeedback.run()
+  def run_reporter, do: retired(:reporter)
+  def run_daily_feedback, do: retired(:daily_feedback)
 
   # ────────────────────────────────────────────────────────────────
   # 신규 — CODEX_LUNA_OPS_TRANSITION
   # ────────────────────────────────────────────────────────────────
 
   @doc "스카우트 (06:30 KST, 18:30 KST)"
-  def run_scout, do: PortAgent.run(:scout)
+  def run_scout, do: retired(:scout)
 
   @doc "국내장 30분 주기 (09:00~15:30 KST)"
-  def run_domestic, do: PortAgent.run(:domestic)
+  def run_domestic, do: retired(:domestic)
 
   @doc "국내장 검증 30분 주기"
-  def run_domestic_validation, do: PortAgent.run(:domestic_validation)
+  def run_domestic_validation, do: retired(:domestic_validation)
 
   @doc "해외장 30분 주기 (22:30~05:00 KST)"
-  def run_overseas, do: PortAgent.run(:overseas)
+  def run_overseas, do: retired(:overseas)
 
   @doc "해외장 검증 30분 주기"
-  def run_overseas_validation, do: PortAgent.run(:overseas_validation)
+  def run_overseas_validation, do: retired(:overseas_validation)
 end

@@ -297,7 +297,8 @@ function getBotStatuses() {
     { label: '스카 커맨더',          service: 'ai.ska.commander' },
     { label: '앤디 (네이버모니터)', service: 'ai.ska.naver-monitor' },
     { label: '루나 커맨더',          service: 'ai.investment.commander' },
-    { label: '루나 크립토',          service: 'ai.investment.crypto' },
+    { label: '루나 마켓데이터 MCP',  service: 'ai.luna.marketdata-mcp' },
+    { label: '루나 엘릭서',          service: 'ai.elixir.supervisor' },
     { label: '제이 런타임', service: 'ai.jay.runtime' },
   ];
 

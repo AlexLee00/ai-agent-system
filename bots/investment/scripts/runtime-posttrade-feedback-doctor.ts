@@ -11,7 +11,7 @@ import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const INVESTMENT_DIR = path.resolve(__dirname, '..');
-const WORKER_PLIST = path.join(INVESTMENT_DIR, 'launchd', 'ai.investment.posttrade-feedback-worker.plist');
+const WORKER_PLIST = path.join(INVESTMENT_DIR, 'launchd', 'ai.luna.ops-scheduler.plist');
 const HEARTBEAT_PATH = path.join(INVESTMENT_DIR, 'output', 'ops', 'posttrade-feedback-worker-heartbeat.json');
 
 const REQUIRED_TABLES = [
@@ -88,10 +88,8 @@ function checkWorkerPlist() {
   if (!fs.existsSync(WORKER_PLIST)) return failCheck('posttrade_worker_plist', 'plist_missing', { path: WORKER_PLIST });
   const text = fs.readFileSync(WORKER_PLIST, 'utf8');
   const required = [
-    'ai.investment.posttrade-feedback-worker',
-    'runtime-posttrade-feedback-worker.ts',
-    '--once',
-    '--market=all',
+    'ai.luna.ops-scheduler',
+    'runtime-luna-ops-scheduler.ts',
   ];
   const missing = required.filter((needle) => !text.includes(needle));
   if (missing.length > 0) return failCheck('posttrade_worker_plist', 'plist_missing_markers', { missing, path: WORKER_PLIST });

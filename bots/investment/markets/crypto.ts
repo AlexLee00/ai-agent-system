@@ -9,7 +9,7 @@
  *   4. 루나 오케스트레이터 (강세/약세 토론 + 최종 신호 판단)
  *   5. 헤파이스토스 실행 (PAPER_MODE: DB + 텔레그램만)
  *
- * launchd: ai.investment.crypto (5분 주기 — 내부 30분 스로틀)
+ * runtime: Luna ops-scheduler 통합 경로 (기존 단독 launchd retired)
  * 실행: PAPER_MODE=true node markets/crypto.js [--symbols=BTC/USDT,ETH/USDT] [--force]
  */
 

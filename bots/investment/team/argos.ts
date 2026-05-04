@@ -5,7 +5,7 @@
  * 역할: Reddit r/algotrading + r/CryptoCurrency 인기 포스트 수집
  *       → LLM 품질 평가 → strategy_pool DB 저장 → 텔레그램 리포트
  * LLM: Groq Scout (무료, 항상)
- * 주기: 6시간 (launchd: ai.investment.argos)
+ * 주기: Luna/Elixir 통합 런타임에서 호출 (기존 단독 launchd retired)
  *
  * 실행: node team/argos.js
  */

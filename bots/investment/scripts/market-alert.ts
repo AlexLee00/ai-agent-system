@@ -9,13 +9,8 @@
  *   node scripts/market-alert.js --market=overseas  --event=close
  *   node scripts/market-alert.js --market=crypto    --event=daily
  *
- * launchd:
- *   ai.investment.market-alert-domestic-open   — KST 09:00
- *   ai.investment.market-alert-domestic-close  — KST 15:30
- *   ai.investment.market-alert-overseas-open   — KST 23:30
- *   ai.investment.market-alert-overseas-close  — KST 06:00
- *   ai.investment.market-alert-crypto-daily    — KST 09:00
- *   ⚠️ launchd는 로컬 시간(KST) 기준 — UTC 변환 불필요
+ * runtime:
+ *   Luna ops-scheduler / Elixir supervisor 통합 경로에서 호출
  */
 
 import * as db from '../shared/db.ts';

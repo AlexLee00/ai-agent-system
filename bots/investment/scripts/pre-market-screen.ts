@@ -6,9 +6,8 @@
  *       장중 domestic.js / overseas.js가 이 파일을 즉시 로드하여 사용
  *
  * 사용: node scripts/pre-market-screen.js domestic|overseas
- * launchd:
- *   국내  KST 08:00 (UTC 23:00 전날) — ai.investment.prescreen-domestic
- *   해외  KST 21:00 (UTC 12:00)      — ai.investment.prescreen-overseas
+ * runtime:
+ *   Luna ops-scheduler / Elixir supervisor 통합 경로에서 호출
  */
 
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'fs';

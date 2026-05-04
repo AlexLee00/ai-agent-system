@@ -12,6 +12,7 @@
 
 import path from 'path';
 import fs from 'node:fs';
+import { execFileSync } from 'node:child_process';
 import { createRequire } from 'module';
 import { fileURLToPath, pathToFileURL } from 'url';
 import gemmaPilot from '../../../packages/core/lib/gemma-pilot.js';
@@ -111,6 +112,22 @@ function loadLatestOpsSnapshot() {
   }
 }
 
+function readLaunchctlEnv(name) {
+  try {
+    return execFileSync('/bin/launchctl', ['getenv', name], {
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+      timeout: 3000,
+    }).trim();
+  } catch {
+    return '';
+  }
+}
+
+function isRuntimeFlagEnabled(name) {
+  return String(process.env[name] || readLaunchctlEnv(name) || '').trim().toLowerCase() === 'true';
+}
+
 function getSnapshotAgeHours(capturedAt) {
   const ts = capturedAt ? new Date(capturedAt).getTime() : NaN;
   if (!Number.isFinite(ts)) return null;
@@ -164,20 +181,7 @@ const ALL_SERVICES = [
 const LOCAL_LLM_HEALTH_HISTORY_FILE = '/tmp/investment-local-llm-health-history.jsonl';
 
 const NORMAL_EXIT_CODES = DEFAULT_NORMAL_EXIT_CODES;
-const SCHEDULED_SERVICE_DEPLOYMENTS = {
-  'ai.investment.crypto': {
-    scriptPath: path.resolve(__dirname, '..', 'markets', 'crypto.ts'),
-    errorLogPath: '/tmp/investment-crypto.err.log',
-  },
-  'ai.investment.domestic': {
-    scriptPath: path.resolve(__dirname, '..', 'markets', 'domestic.ts'),
-    errorLogPath: '/tmp/investment-domestic.err.log',
-  },
-  'ai.investment.overseas': {
-    scriptPath: path.resolve(__dirname, '..', 'markets', 'overseas.ts'),
-    errorLogPath: '/tmp/investment-overseas.err.log',
-  },
-};
+const SCHEDULED_SERVICE_DEPLOYMENTS = {};
 
 function safeReadJsonLines(filePath, limit = 12) {
   try {
@@ -506,14 +510,19 @@ async function loadCryptoLiveGateHealth() {
     const periodDays = Number(mod.DEFAULT_CRYPTO_LIVE_GATE_DAYS || 7);
     const review = await mod.loadCryptoLiveGateReview(periodDays);
     const decision = String(review?.liveGate?.decision || 'unknown');
+    const liveFireRuntimeEnabled = isRuntimeFlagEnabled('LUNA_LIVE_FIRE_ENABLED');
+    const healthDecision = liveFireRuntimeEnabled && decision === 'blocked' ? 'advisory' : decision;
     const maxPositions = Number(review?.metrics?.pipeline?.riskRejectReasons?.max_positions || 0);
     const validationLiveOverlap = Number(review?.metrics?.pipeline?.riskRejectReasons?.validation_live_overlap || 0);
     const routeTop = review?.metrics?.pipeline?.strategyRouteTop || 'none';
     const routeQualityTop = review?.metrics?.pipeline?.strategyRouteQualityTop || 'none';
     const routeReadiness = review?.metrics?.pipeline?.strategyRouteAvgReadiness;
     const lines = [
-      `  게이트: ${decision}`,
+      `  게이트: ${healthDecision}${healthDecision !== decision ? ` (legacy ${decision})` : ''}`,
       `  사유: ${String(review?.liveGate?.reason || 'n/a')}`,
+      ...(liveFireRuntimeEnabled
+        ? ['  live-fire runtime: enabled — watchdog/final-gate 기준으로 운영 차단 여부를 판단']
+        : []),
       `  체결: ${Number(review?.metrics?.trades?.total || 0)}건 (LIVE ${Number(review?.metrics?.trades?.live || 0)} / PAPER ${Number(review?.metrics?.trades?.paper || 0)})`,
       `  mode 체결: NORMAL ${Number(review?.metrics?.trades?.byMode?.NORMAL?.total || 0)}건 (LIVE ${Number(review?.metrics?.trades?.byMode?.NORMAL?.live || 0)} / PAPER ${Number(review?.metrics?.trades?.byMode?.NORMAL?.paper || 0)}), VALIDATION ${Number(review?.metrics?.trades?.byMode?.VALIDATION?.total || 0)}건 (LIVE ${Number(review?.metrics?.trades?.byMode?.VALIDATION?.live || 0)} / PAPER ${Number(review?.metrics?.trades?.byMode?.VALIDATION?.paper || 0)})`,
       `  퍼널: decision ${Number(review?.metrics?.pipeline?.decision || 0)} / BUY ${Number(review?.metrics?.pipeline?.buy || 0)} / approved ${Number(review?.metrics?.pipeline?.approved || 0)} / executed ${Number(review?.metrics?.pipeline?.executed || 0)}`,
@@ -524,12 +533,17 @@ async function loadCryptoLiveGateHealth() {
       `  종료 리뷰: ${Number(review?.metrics?.closedReviews || 0)}건`,
     ];
     return {
-      okCount: decision === 'candidate' ? 1 : 0,
-      warnCount: decision === 'blocked' ? 1 : 0,
-      ok: decision === 'candidate' ? lines : [],
-      warn: decision === 'blocked' ? lines : [],
+      okCount: healthDecision === 'blocked' ? 0 : 1,
+      warnCount: healthDecision === 'blocked' ? 1 : 0,
+      ok: healthDecision === 'blocked' ? [] : lines,
+      warn: healthDecision === 'blocked' ? lines : [],
       review,
       periodDays,
+      runtimeOverride: {
+        liveFireRuntimeEnabled,
+        legacyDecision: decision,
+        healthDecision,
+      },
     };
   } catch (error) {
     return {

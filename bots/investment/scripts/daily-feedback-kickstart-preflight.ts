@@ -4,7 +4,10 @@
 import { buildDailyFeedbackHealth } from './daily-feedback-health.ts';
 import { runLaunchdKickstart } from '../shared/launchd-service.ts';
 import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
+import { createRequire } from 'node:module';
 
+const require = createRequire(import.meta.url);
+const { getServiceOwnership, isRetiredService } = require('../../../packages/core/lib/service-ownership');
 const LABEL = 'ai.investment.daily-feedback';
 const REQUIRED_CONFIRM = 'daily-feedback-kickstart';
 
@@ -23,11 +26,22 @@ export async function buildDailyFeedbackKickstartPreflight({
   confirm = null,
 } = {}) {
   const health = await buildDailyFeedbackHealth({ strict });
+  const ownership = getServiceOwnership(LABEL);
+  const retired = isRetiredService(LABEL);
   const blockers = [...(health.blockers || [])];
-  if (health.launchd?.loaded !== true) blockers.push('daily_feedback_launchd_not_loaded');
+  if (health.launchd?.loaded !== true && !retired) blockers.push('daily_feedback_launchd_not_loaded');
 
-  const canKickstart = blockers.length === 0;
-  const kickstart = canKickstart
+  const canKickstart = blockers.length === 0 && !retired;
+  const kickstart = retired
+    ? {
+        ok: true,
+        dryRun: !apply,
+        applied: false,
+        label: LABEL,
+        retired: true,
+        replacement: ownership?.replacement || 'ai.luna.ops-scheduler',
+      }
+    : canKickstart
     ? runLaunchdKickstart(LABEL, {
         apply,
         confirm,
@@ -42,13 +56,17 @@ export async function buildDailyFeedbackKickstartPreflight({
       };
 
   return {
-    ok: canKickstart && kickstart.ok === true,
-    status: canKickstart
+    ok: (canKickstart || retired) && kickstart.ok === true,
+    status: retired
+      ? 'daily_feedback_migrated_to_luna_ops_scheduler'
+      : canKickstart
       ? (apply ? (kickstart.applied ? 'daily_feedback_kickstart_applied' : 'daily_feedback_kickstart_not_applied') : 'daily_feedback_kickstart_ready')
       : 'daily_feedback_kickstart_blocked',
     generatedAt: new Date().toISOString(),
     dryRun: !apply,
     requiredConfirm: REQUIRED_CONFIRM,
+    retired,
+    replacement: retired ? (ownership?.replacement || 'ai.luna.ops-scheduler') : null,
     blockers,
     health: {
       ok: health.ok,
@@ -63,7 +81,9 @@ export async function buildDailyFeedbackKickstartPreflight({
       },
     },
     kickstart,
-    nextAction: canKickstart
+    nextAction: retired
+      ? 'monitor_via_luna_ops_scheduler'
+      : canKickstart
       ? (apply ? 'verify_launchd_status_after_kickstart' : `rerun_with_--apply_--confirm=${REQUIRED_CONFIRM}`)
       : 'fix_daily_feedback_health_blockers',
   };

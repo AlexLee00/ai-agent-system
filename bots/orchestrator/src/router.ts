@@ -59,6 +59,10 @@ const {
   removeLearnedPatterns,
   addLearnedPattern,
 } = require('../../../packages/core/lib/intent-store');
+
+function firstExistingPath(...candidates) {
+  return candidates.find((candidate) => fs.existsSync(candidate)) || candidates[0];
+}
 const {
   AUTO_PROMOTE_DEFAULTS,
   AUTO_PROMOTE_THRESHOLDS,
@@ -932,10 +936,9 @@ function buildTeamLogSummary(team = '') {
   const value = String(team || '').trim().toLowerCase();
   const targets = value === 'luna'
     ? [
-        { label: '루나 argos', out: '/tmp/investment-argos.log', err: '/tmp/investment-argos.err.log' },
-        { label: '루나 국내장', out: '/tmp/investment-domestic.log', err: '/tmp/investment-domestic.err.log' },
-        { label: '루나 해외장', out: '/tmp/investment-overseas.log', err: '/tmp/investment-overseas.err.log' },
-        { label: '루나 크립토', out: '/tmp/investment-crypto.log', err: '/tmp/investment-crypto.err.log' },
+        { label: '루나 commander', out: runtimeLogPath('luna-commander.log'), err: runtimeLogPath('luna-commander-error.log') },
+        { label: '루나 marketdata MCP', out: '/tmp/ai.luna.marketdata-mcp.log', err: '/tmp/ai.luna.marketdata-mcp.err.log' },
+        { label: '루나 elixir supervisor', out: '/tmp/elixir-supervisor.log', err: '/tmp/elixir-supervisor.err' },
       ]
     : value === 'ska'
       ? [
@@ -986,7 +989,10 @@ async function buildTeamStatusSummary(team = '') {
 async function runSpeedTestDirect() {
   const root = path.join(__dirname, '..', '..', '..');
   const node = process.execPath;
-  const script = path.join(root, 'scripts', 'speed-test.js');
+  const script = firstExistingPath(
+    path.join(root, 'scripts', 'speed-test.ts'),
+    path.join(root, 'scripts', 'speed-test.js'),
+  );
 
   return await new Promise((resolve) => {
     const child = spawn(node, [script, '--runs=1'], {
@@ -1136,7 +1142,10 @@ async function runNodeScriptText(script, {
 
 async function runLunaHealthDirect() {
   const root = path.join(__dirname, '..', '..', '..');
-  const script = path.join(root, 'bots', 'investment', 'scripts', 'health-report.js');
+  const script = firstExistingPath(
+    path.join(root, 'bots', 'investment', 'scripts', 'health-report.ts'),
+    path.join(root, 'bots', 'investment', 'scripts', 'health-report.js'),
+  );
   return await runNodeScriptText(script, {
     timeoutText: '⏱ 루나 운영 헬스 조회가 60초 내 끝나지 않았습니다. 잠시 후 다시 시도해 주세요.',
     errorPrefix: '⚠️ 루나 운영 헬스 실행 실패',
@@ -1147,7 +1156,10 @@ async function runLunaHealthDirect() {
 
 async function runOrchestratorHealthDirect() {
   const root = path.join(__dirname, '..', '..', '..');
-  const script = path.join(root, 'bots', 'orchestrator', 'scripts', 'health-report.js');
+  const script = firstExistingPath(
+    path.join(root, 'bots', 'orchestrator', 'scripts', 'health-report.ts'),
+    path.join(root, 'bots', 'orchestrator', 'scripts', 'health-report.js'),
+  );
   return await runNodeScriptText(script, {
     timeoutText: '⏱ 오케스트레이터 운영 헬스 조회가 60초 내 끝나지 않았습니다. 잠시 후 다시 시도해 주세요.',
     errorPrefix: '⚠️ 오케스트레이터 운영 헬스 실행 실패',
@@ -1158,7 +1170,10 @@ async function runOrchestratorHealthDirect() {
 
 async function runLLMSelectorReportDirect() {
   const root = path.join(__dirname, '..', '..', '..');
-  const script = path.join(root, 'scripts', 'llm-selector-report.js');
+  const script = firstExistingPath(
+    path.join(root, 'scripts', 'llm-selector-report.ts'),
+    path.join(root, 'scripts', 'llm-selector-report.js'),
+  );
   return await runNodeScriptText(script, {
     timeoutText: '⏱ LLM selector 조회가 60초 내 끝나지 않았습니다. 잠시 후 다시 시도해 주세요.',
     errorPrefix: '⚠️ LLM selector 조회 실패',
@@ -1169,7 +1184,10 @@ async function runLLMSelectorReportDirect() {
 
 async function runLLMSelectorOverrideSuggestionsDirect() {
   const root = path.join(__dirname, '..', '..', '..');
-  const script = path.join(root, 'scripts', 'llm-selector-override-suggestions.js');
+  const script = firstExistingPath(
+    path.join(root, 'scripts', 'llm-selector-override-suggestions.ts'),
+    path.join(root, 'scripts', 'llm-selector-override-suggestions.js'),
+  );
   return await runNodeScriptText(script, {
     timeoutText: '⏱ LLM override 추천 조회가 60초 내 끝나지 않았습니다. 잠시 후 다시 시도해 주세요.',
     errorPrefix: '⚠️ LLM override 추천 조회 실패',
@@ -1180,7 +1198,10 @@ async function runLLMSelectorOverrideSuggestionsDirect() {
 
 async function runReportingHealthDirect(query = '') {
   const root = path.join(__dirname, '..', '..', '..');
-  const script = path.join(root, 'bots', 'orchestrator', 'scripts', 'reporting-health.js');
+  const script = firstExistingPath(
+    path.join(root, 'bots', 'orchestrator', 'scripts', 'reporting-health.ts'),
+    path.join(root, 'bots', 'orchestrator', 'scripts', 'reporting-health.js'),
+  );
   const normalizedQuery = String(query || '').trim().toLowerCase();
   return await runNodeScriptText(script, {
     args:
@@ -1198,7 +1219,10 @@ async function runReportingHealthDirect(query = '') {
 
 async function runFeedbackHealthDirect(query = '') {
   const root = path.join(__dirname, '..', '..', '..');
-  const script = path.join(root, 'bots', 'orchestrator', 'scripts', 'feedback-health.js');
+  const script = firstExistingPath(
+    path.join(root, 'bots', 'orchestrator', 'scripts', 'feedback-health.ts'),
+    path.join(root, 'bots', 'orchestrator', 'scripts', 'feedback-health.js'),
+  );
   const tokens = String(query || '').trim().toLowerCase().split(/\s+/).filter(Boolean);
   const args = [];
   if (tokens.includes('summary') || tokens.includes('요약')) {
@@ -1226,7 +1250,10 @@ async function runFeedbackHealthDirect(query = '') {
 
 async function runClaudeHealthDirect() {
   const root = path.join(__dirname, '..', '..', '..');
-  const script = path.join(root, 'bots', 'claude', 'scripts', 'health-report.js');
+  const script = firstExistingPath(
+    path.join(root, 'bots', 'claude', 'scripts', 'health-report.ts'),
+    path.join(root, 'bots', 'claude', 'scripts', 'health-report.js'),
+  );
   return await runNodeScriptText(script, {
     timeoutText: '⏱ 클로드 운영 헬스 조회가 60초 내 끝나지 않았습니다. 잠시 후 다시 시도해 주세요.',
     errorPrefix: '⚠️ 클로드 운영 헬스 실행 실패',
@@ -1237,7 +1264,11 @@ async function runClaudeHealthDirect() {
 
 async function runSkaHealthDirect() {
   const root = path.join(__dirname, '..', '..', '..');
-  const script = path.join(root, 'dist', 'ts-runtime', 'bots', 'reservation', 'scripts', 'health-report.js');
+  const script = firstExistingPath(
+    path.join(root, 'bots', 'reservation', 'scripts', 'health-report.ts'),
+    path.join(root, 'dist', 'ts-runtime', 'bots', 'reservation', 'scripts', 'health-report.js'),
+    path.join(root, 'bots', 'reservation', 'scripts', 'health-report.js'),
+  );
   return await runNodeScriptText(script, {
     timeoutText: '⏱ 스카 운영 헬스 조회가 60초 내 끝나지 않았습니다. 잠시 후 다시 시도해 주세요.',
     errorPrefix: '⚠️ 스카 운영 헬스 실행 실패',
@@ -1248,7 +1279,10 @@ async function runSkaHealthDirect() {
 
 async function runBlogHealthDirect() {
   const root = path.join(__dirname, '..', '..', '..');
-  const script = path.join(root, 'bots', 'blog', 'scripts', 'health-report.js');
+  const script = firstExistingPath(
+    path.join(root, 'bots', 'blog', 'scripts', 'health-report.ts'),
+    path.join(root, 'bots', 'blog', 'scripts', 'health-report.js'),
+  );
   return await runNodeScriptText(script, {
     timeoutText: '⏱ 블로 운영 헬스 조회가 60초 내 끝나지 않았습니다. 잠시 후 다시 시도해 주세요.',
     errorPrefix: '⚠️ 블로 운영 헬스 실행 실패',
@@ -1277,12 +1311,31 @@ async function buildUnifiedOpsHealthReport(options = {}) {
   const mode = String(options.query || '').trim().toLowerCase();
   const root = path.join(__dirname, '..', '..', '..');
   const scripts = {
-    luna: path.join(root, 'bots', 'investment', 'scripts', 'health-report.js'),
-    claude: path.join(root, 'bots', 'claude', 'scripts', 'health-report.js'),
-    ska: path.join(root, 'dist', 'ts-runtime', 'bots', 'reservation', 'scripts', 'health-report.js'),
-    blog: path.join(root, 'bots', 'blog', 'scripts', 'health-report.js'),
-    critical: path.join(root, 'bots', 'orchestrator', 'scripts', 'check-n8n-critical-path.js'),
-    feedback: path.join(root, 'bots', 'orchestrator', 'scripts', 'feedback-health.js'),
+    luna: firstExistingPath(
+      path.join(root, 'bots', 'investment', 'scripts', 'health-report.ts'),
+      path.join(root, 'bots', 'investment', 'scripts', 'health-report.js'),
+    ),
+    claude: firstExistingPath(
+      path.join(root, 'bots', 'claude', 'scripts', 'health-report.ts'),
+      path.join(root, 'bots', 'claude', 'scripts', 'health-report.js'),
+    ),
+    ska: firstExistingPath(
+      path.join(root, 'bots', 'reservation', 'scripts', 'health-report.ts'),
+      path.join(root, 'dist', 'ts-runtime', 'bots', 'reservation', 'scripts', 'health-report.js'),
+      path.join(root, 'bots', 'reservation', 'scripts', 'health-report.js'),
+    ),
+    blog: firstExistingPath(
+      path.join(root, 'bots', 'blog', 'scripts', 'health-report.ts'),
+      path.join(root, 'bots', 'blog', 'scripts', 'health-report.js'),
+    ),
+    critical: firstExistingPath(
+      path.join(root, 'bots', 'orchestrator', 'scripts', 'check-n8n-critical-path.ts'),
+      path.join(root, 'bots', 'orchestrator', 'scripts', 'check-n8n-critical-path.js'),
+    ),
+    feedback: firstExistingPath(
+      path.join(root, 'bots', 'orchestrator', 'scripts', 'feedback-health.ts'),
+      path.join(root, 'bots', 'orchestrator', 'scripts', 'feedback-health.js'),
+    ),
   };
 
   const [luna, claude, ska, blog, criticalPath, feedback] = await Promise.all([

@@ -18,8 +18,17 @@ TELEGRAM_NODE="/opt/homebrew/bin/node"
 LAUNCHCTL_DOMAIN="gui/$(id -u)"
 DRAIN_NOW=0
 FORCE_DOCS=0
+INCLUDE_PROTECTED_DRAIN="${INCLUDE_PROTECTED_DRAIN:-0}"
 NOW_TS=$(date +%s)
 TODAY=$(date '+%Y-%m-%d')
+PROTECTED_SERVICES=(
+  "ai.luna.tradingview-ws"
+  "ai.investment.commander"
+  "ai.elixir.supervisor"
+  "ai.luna.marketdata-mcp"
+  "ai.claude.auto-dev.autonomous"
+  "ai.hub.resource-api"
+)
 
 DOC_CHECKS=(
   "CLAUDE_ROOT|$PROJECT_DIR/CLAUDE.md|86400"
@@ -66,9 +75,24 @@ service_registered() {
   launchctl print "$LAUNCHCTL_DOMAIN/$svc" >/dev/null 2>&1
 }
 
+is_protected_service() {
+  local svc="$1"
+  local protected
+  for protected in "${PROTECTED_SERVICES[@]}"; do
+    if [ "$svc" = "$protected" ]; then
+      return 0
+    fi
+  done
+  return 1
+}
+
 stop_service_if_registered() {
   local svc="$1"
   local label="$2"
+  if is_protected_service "$svc" && [ "$INCLUDE_PROTECTED_DRAIN" != "1" ]; then
+    log "   🛡️  ${label} 보호 서비스 — 기본 drain에서는 정지 생략"
+    return
+  fi
   if service_registered "$svc"; then
     if launchctl stop "$svc" 2>/dev/null; then
       log "   ✅ ${label} 정지 신호"
@@ -205,23 +229,11 @@ log "⏹️  ai-agent-system 서비스 안전 정지 시작"
 
 log "💹 투자팀"
 stop_service_if_registered "ai.investment.commander" "루나 커맨더"
-stop_service_if_registered "ai.investment.crypto" "루나 크립토"
-stop_service_if_registered "ai.investment.crypto.validation" "루나 크립토 검증거래"
-stop_service_if_registered "ai.investment.domestic" "루나 국내주식"
-stop_service_if_registered "ai.investment.domestic.validation" "루나 국내주식 검증거래"
-stop_service_if_registered "ai.investment.overseas" "루나 해외주식"
-stop_service_if_registered "ai.investment.overseas.validation" "루나 해외주식 검증거래"
-stop_service_if_registered "ai.investment.argos" "아르고스"
-stop_service_if_registered "ai.investment.reporter" "투자 리포터"
-stop_service_if_registered "ai.investment.health-check" "투자 health-check"
-stop_service_if_registered "ai.investment.unrealized-pnl" "미실현 손익"
-stop_service_if_registered "ai.investment.market-alert-domestic-open" "국내장 오픈 알림"
-stop_service_if_registered "ai.investment.market-alert-domestic-close" "국내장 마감 알림"
-stop_service_if_registered "ai.investment.market-alert-overseas-open" "해외장 오픈 알림"
-stop_service_if_registered "ai.investment.market-alert-overseas-close" "해외장 마감 알림"
-stop_service_if_registered "ai.investment.market-alert-crypto-daily" "크립토 일일 알림"
-stop_service_if_registered "ai.investment.prescreen-domestic" "국내장 prescreen"
-stop_service_if_registered "ai.investment.prescreen-overseas" "해외장 prescreen"
+stop_service_if_registered "ai.luna.marketdata-mcp" "루나 마켓데이터 MCP"
+stop_service_if_registered "ai.elixir.supervisor" "루나 엘릭서 슈퍼바이저"
+stop_service_if_registered "ai.investment.runtime-autopilot" "루나 runtime autopilot"
+stop_service_if_registered "ai.luna.ops-scheduler" "루나 ops scheduler"
+stop_service_if_registered "ai.luna.tradingview-ws" "루나 TradingView WS"
 
 log "🏪 SKA팀"
 stop_service_if_registered "ai.ska.commander" "스카 커맨더"

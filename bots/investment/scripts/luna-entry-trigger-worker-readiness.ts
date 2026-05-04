@@ -64,12 +64,18 @@ export async function buildLunaEntryTriggerWorkerReadiness({
   const installedPlist = readPlist(INSTALLED_PLIST);
   const heartbeat = readJson(process.env.LUNA_ENTRY_TRIGGER_HEARTBEAT_PATH || HEARTBEAT_PATH);
   const heartbeatAge = heartbeat?.checkedAt ? ageMinutes(heartbeat.checkedAt) : null;
-  const service = launchctlPrint(LABEL);
   const ownership = getServiceOwnership(LABEL);
   const stats = await getEntryTriggerOperationalStats({ exchange, hours }).catch((error) => ({
     error: error?.message || String(error),
   }));
-  if (isRetiredService(LABEL) && !service.ok) {
+  if (isRetiredService(LABEL)) {
+    const service = {
+      ok: true,
+      status: null,
+      retired: true,
+      replacement: ownership?.replacement || 'luna.skills.entry_trigger',
+      summary: 'retired service; entry triggers are handled by Luna skills/runtime scheduler',
+    };
     return {
       ok: true,
       checkedAt: new Date().toISOString(),
@@ -99,14 +105,15 @@ export async function buildLunaEntryTriggerWorkerReadiness({
       service,
       stats,
       warnings: [],
-      installCommand: `cp ${REPO_PLIST} ${INSTALLED_PLIST} && launchctl bootstrap gui/$(id -u) ${INSTALLED_PLIST}`,
-      unloadCommand: `launchctl bootout gui/$(id -u) ${INSTALLED_PLIST}`,
+      installCommand: null,
+      unloadCommand: null,
       migration: {
         retired: true,
         replacement: ownership?.replacement || null,
       },
     };
   }
+  const service = launchctlPrint(LABEL);
   const warnings = [];
   if (!repoPlist) warnings.push('repo launchd plist missing');
   if (!installedPlist) warnings.push('installed launchd plist missing');

@@ -9,13 +9,12 @@ const require = createRequire(import.meta.url);
 const { getServiceOwnership, isRetiredService } = require('../../../packages/core/lib/service-ownership');
 
 const DEFAULT_LABELS = [
-  { label: 'ai.investment.daily-feedback', expected: 'loaded', critical: true, note: 'daily feedback loop' },
-  { label: 'ai.investment.crypto', expected: 'loaded', critical: true, note: 'crypto market cycle' },
-  { label: 'ai.investment.crypto.validation', expected: 'loaded', critical: false, note: 'crypto validation cycle' },
   { label: 'ai.investment.runtime-autopilot', expected: 'loaded', critical: true, note: 'runtime autopilot' },
+  { label: 'ai.luna.ops-scheduler', expected: 'loaded', critical: true, note: 'unified Luna ops scheduler' },
+  { label: 'ai.luna.marketdata-mcp', expected: 'running', critical: true, note: 'market data MCP' },
+  { label: 'ai.elixir.supervisor', expected: 'running', critical: true, note: 'Elixir agent supervisor' },
   { label: 'ai.luna.tradingview-ws', expected: 'running', critical: true, note: 'TradingView websocket' },
   { label: 'ai.investment.commander', expected: 'running_or_loaded', critical: false, note: 'operator command bridge' },
-  { label: 'ai.investment.posttrade-feedback-worker', expected: 'loaded', critical: false, note: 'posttrade feedback worker' },
 ];
 
 function parseArgs(argv = process.argv.slice(2)) {

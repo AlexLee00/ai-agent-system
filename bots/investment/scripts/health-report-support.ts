@@ -741,86 +741,25 @@ export async function loadMockUntradableSymbolHealth(pgPool, windowMinutes = 144
   };
 }
 
-export async function loadDomesticCollectPressure(deployments, logLines = 200) {
-  const logPath = deployments['ai.investment.domestic']?.errorLogPath;
-  const lines = readLogTailLines(logPath, logLines);
-  const windowLines = sliceLatestDomesticPressureWindow(lines);
-  const latestMetricLine = readLastMatchingLine(
-    '/tmp/investment-domestic.log',
-    (line) => line.includes('📈 [메트릭] 국내주식 수집 |'),
-    400,
-  );
-  const latestMetrics = parseDomesticCollectMetrics(latestMetricLine);
-  const counts = {
-    wideUniverse: 0,
-    collectOverload: 0,
-    concurrencyGuard: 0,
-    debateCapacityHot: 0,
-    dataSparsity: 0,
-    externalQuoteFailures: 0,
-  };
-  const sparseSymbols = new Set();
-
-  for (const line of windowLines) {
-    if (line.includes('[경고] 국내주식 수집 |')) {
-      if (line.includes('wide_universe')) counts.wideUniverse += 1;
-      if (line.includes('collect_overload_detected')) counts.collectOverload += 1;
-      if (line.includes('concurrency_guard_active')) counts.concurrencyGuard += 1;
-    }
-    if (line.includes('[경고] 국내주식 판단 |') && line.includes('debate_capacity_hot')) {
-      counts.debateCapacityHot += 1;
-    }
-    if (line.includes('[아리아]') && line.includes('데이터 부족')) {
-      counts.dataSparsity += 1;
-      const match = line.match(/\[아리아\]\s+([A-Z0-9]+)\s/);
-      if (match?.[1]) sparseSymbols.add(match[1]);
-    }
-    if (line.includes('네이버 시세 API 실패') || line.includes('KIS 빈 응답')) {
-      counts.externalQuoteFailures += 1;
-    }
-  }
-
-  const warn = [];
-  const ok = [];
-  if (latestMetrics?.symbols != null || latestMetrics?.tasks != null) {
-    ok.push(`  최신 cycle 메트릭: symbols ${latestMetrics.symbols ?? 'n/a'} / tasks ${latestMetrics.tasks ?? 'n/a'} / concurrency ${latestMetrics.concurrency ?? 'n/a'} / failed ${latestMetrics.failed ?? 'n/a'}`);
-  }
-  if (counts.collectOverload > 0 || counts.wideUniverse > 0 || counts.concurrencyGuard > 0) {
-    warn.push(`  수집 압력: overload ${counts.collectOverload} / wide ${counts.wideUniverse} / concurrency ${counts.concurrencyGuard}`);
-  }
-  if (counts.debateCapacityHot > 0) {
-    warn.push(`  판단 압력: debate_capacity_hot ${counts.debateCapacityHot}회`);
-  }
-  if (counts.dataSparsity > 0) {
-    warn.push(`  data_sparsity: ${counts.dataSparsity}건 / 심볼 ${sparseSymbols.size}개`);
-  }
-  if (counts.externalQuoteFailures > 0) {
-    const canDowngradeExternalFailures =
-      counts.collectOverload === 0 &&
-      counts.wideUniverse === 0 &&
-      counts.concurrencyGuard === 0 &&
-      counts.debateCapacityHot === 0 &&
-      counts.dataSparsity === 0 &&
-      Number(latestMetrics?.failed || 0) === 0;
-
-    const line = `  외부 시세/순위 조회 실패: ${counts.externalQuoteFailures}건`;
-    if (canDowngradeExternalFailures) {
-      ok.push(`${line} (보조 랭킹 조회 노이즈)`);
-    } else {
-      warn.push(line);
-    }
-  }
-
+export async function loadDomesticCollectPressure(_deployments, logLines = 200) {
   return {
     logLines,
-    windowLines: windowLines.length,
-    okCount: warn.length === 0 ? 1 : 0,
-    warnCount: warn.length,
-    ok: warn.length === 0 ? (ok.length ? ok : ['  최근 국내장 수집 압력 신호 없음']) : ok,
-    warn,
-    counts,
-    sparseSymbols: [...sparseSymbols].slice(0, 20),
-    latestMetrics,
+    windowLines: 0,
+    okCount: 1,
+    warnCount: 0,
+    ok: ['  국내장 구 cycle 로그 감시는 퇴역됨 — 현재는 Luna 통합 런타임/Elixir supervisor 기준으로 감시'],
+    warn: [],
+    counts: {
+      wideUniverse: 0,
+      collectOverload: 0,
+      concurrencyGuard: 0,
+      debateCapacityHot: 0,
+      dataSparsity: 0,
+      externalQuoteFailures: 0,
+    },
+    sparseSymbols: [],
+    latestMetrics: null,
+    retired: true,
   };
 }
 

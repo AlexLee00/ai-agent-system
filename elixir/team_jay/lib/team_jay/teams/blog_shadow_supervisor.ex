@@ -2,7 +2,7 @@ defmodule TeamJay.Teams.BlogShadowSupervisor do
   use Supervisor
 
   @blog_agents [
-    %{name: :blog_health_check, label: "ai.blog.health-check"}
+    %{name: :blog_node_server, label: "ai.blog.node-server"}
   ]
 
   def start_link(opts \\ []) do

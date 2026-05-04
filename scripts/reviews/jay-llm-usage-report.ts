@@ -1,7 +1,7 @@
 // @ts-nocheck
 'use strict';
 
-const { parseArgs, collectJayUsage } = require('./lib/jay-usage');
+const { parseArgs, collectJayUsage } = require('./lib/jay-usage.ts');
 
 function fmt(n) {
   return Number(n || 0).toLocaleString();

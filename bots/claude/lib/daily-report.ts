@@ -73,7 +73,8 @@ function getTodayFixes(today) {
 
 const KEY_SERVICES = [
   { label: 'ai.claude.dexter.quick',  name: '덱스터(퀵)' },
-  { label: 'ai.investment.crypto',    name: '루나(크립토)' },
+  { label: 'ai.luna.marketdata-mcp',  name: '루나(마켓데이터)' },
+  { label: 'ai.elixir.supervisor',    name: '루나(엘릭서)' },
   { label: 'ai.ska.naver-monitor',    name: '앤디' },
   { label: 'ai.ska.commander',        name: '스카커맨더' },
   { label: 'ai.ska.rebecca',          name: '레베카' },

@@ -713,7 +713,7 @@ async function scanAndRecover() {
 
 function _serviceToLaunchd(service) {
   const map = {
-    'investment-crypto': 'ai.investment.crypto',
+    'investment-crypto': null,
     'investment-domestic': null,
     'investment-overseas': null,
     dexter: 'ai.claude.dexter',
@@ -834,7 +834,7 @@ async function verifyRecovery(taskType, params) {
           });
           const audit = JSON.parse(output);
           const criticals = Object.values(audit.vulnerabilities || {})
-            .filter(v => (v as any).severity === 'critical').length;
+            .filter(v => v && v.severity === 'critical').length;
           return { ok: criticals === 0, detail: `critical_count=${criticals}` };
         } catch {
           return { ok: true, detail: 'no_verify_required' };

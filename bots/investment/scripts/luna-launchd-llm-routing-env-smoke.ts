@@ -12,12 +12,20 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, '../../..');
 
 const LUNA_LAUNCHD_PLISTS = [
-  'bots/investment/launchd/ai.investment.crypto.plist',
-  'bots/investment/launchd/ai.investment.argos.plist',
-  'bots/investment/launchd/ai.investment.domestic.plist',
-  'bots/investment/launchd/ai.investment.overseas.plist',
-  'bots/investment/launchd/ai.luna.commander.plist',
+  'bots/investment/launchd/ai.investment.commander.plist',
+  'bots/investment/launchd/ai.investment.runtime-autopilot.plist',
+  'bots/investment/launchd/ai.luna.ops-scheduler.plist',
+  'bots/investment/launchd/ai.luna.marketdata-mcp.plist',
 ];
+
+const RETIRED_LABELS = new Set([
+  'ai.investment.crypto',
+  'ai.investment.crypto.validation',
+  'ai.investment.domestic',
+  'ai.investment.domestic.validation',
+  'ai.investment.overseas',
+  'ai.investment.overseas.validation',
+]);
 
 function readPlist(file) {
   const fullPath = path.join(repoRoot, file);
@@ -83,22 +91,21 @@ function buildAgentPayloadWithRouting(agentName, taskType, enabled) {
 
 export function runLunaLaunchdLlmRoutingEnvSmoke() {
   const plistChecks = LUNA_LAUNCHD_PLISTS.map((file) => {
-    const env = getEnv(readPlist(file));
-    const hubEnabled = String(env.INVESTMENT_LLM_HUB_ENABLED || '').toLowerCase() === 'true';
-    const routingEnabled = String(env.LUNA_AGENT_LLM_ROUTING_ENABLED || '').toLowerCase() === 'true';
+    const plist = readPlist(file);
+    const env = getEnv(plist);
+    const label = plist.Label || '';
     assert.equal(
-      routingEnabled,
-      true,
-      `${file} must set LUNA_AGENT_LLM_ROUTING_ENABLED=true`,
+      RETIRED_LABELS.has(label),
+      false,
+      `${file} must not reintroduce a retired Luna market cycle label`,
     );
-    if (hubEnabled) {
-      assert.equal(
-        routingEnabled,
-        true,
-        `${file} must not enable Hub while Luna agent routing is disabled`,
-      );
+    const oauthPrimary = String(env.LLM_USE_OAUTH_PRIMARY || '').toLowerCase() === 'true';
+    const teamSelectorPercent = Number(env.LLM_TEAM_SELECTOR_AB_PERCENT || 0);
+    if (label === 'ai.investment.commander') {
+      assert.equal(oauthPrimary, true, `${file} must keep OAuth primary enabled`);
+      assert.equal(teamSelectorPercent, 100, `${file} must keep team selector at 100%`);
     }
-    return { file, hubEnabled, routingEnabled };
+    return { file, label, oauthPrimary, teamSelectorPercent };
   });
 
   const legacyPayload = buildPayloadWithRouting(false);

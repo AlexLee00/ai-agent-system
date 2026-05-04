@@ -25,8 +25,8 @@ const {
   getRecentPayloadWarnings,
   summarizePayloadWarnings,
 } = require('../../../packages/core/lib/reporting-hub');
-const { getOrchestratorHealthConfig } = require('../lib/runtime-config');
-const { getJayBudgetPolicy, getJayGrowthPolicy } = require('../lib/jay-runtime-policy');
+const { getOrchestratorHealthConfig } = require('../lib/runtime-config.ts');
+const { getJayBudgetPolicy, getJayGrowthPolicy } = require('../lib/jay-runtime-policy.ts');
 const {
   DEFAULT_NORMAL_EXIT_CODES,
   getLaunchctlStatus,

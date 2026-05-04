@@ -3,23 +3,11 @@ defmodule TeamJay.Teams.InvestmentShadowSupervisor do
 
   @investment_agents [
     %{name: :luna_commander, label: "ai.investment.commander"},
-    %{name: :luna_domestic, label: "ai.investment.domestic"},
-    %{name: :luna_domestic_validation, label: "ai.investment.domestic.validation"},
-    %{name: :luna_overseas, label: "ai.investment.overseas"},
-    %{name: :luna_overseas_validation, label: "ai.investment.overseas.validation"},
-    %{name: :luna_crypto, label: "ai.investment.crypto"},
-    %{name: :luna_crypto_validation, label: "ai.investment.crypto.validation"},
-    %{name: :argos_shadow, label: "ai.investment.argos"},
-    %{name: :reporter_shadow, label: "ai.investment.reporter"},
-    %{name: :invest_health_check, label: "ai.investment.health-check"},
-    %{name: :unrealized_pnl_shadow, label: "ai.investment.unrealized-pnl"},
-    %{name: :prescreen_domestic, label: "ai.investment.prescreen-domestic"},
-    %{name: :prescreen_overseas, label: "ai.investment.prescreen-overseas"},
-    %{name: :market_alert_domestic_open, label: "ai.investment.market-alert-domestic-open"},
-    %{name: :market_alert_domestic_close, label: "ai.investment.market-alert-domestic-close"},
-    %{name: :market_alert_overseas_open, label: "ai.investment.market-alert-overseas-open"},
-    %{name: :market_alert_overseas_close, label: "ai.investment.market-alert-overseas-close"},
-    %{name: :market_alert_crypto_daily, label: "ai.investment.market-alert-crypto-daily"}
+    %{name: :luna_marketdata_mcp, label: "ai.luna.marketdata-mcp"},
+    %{name: :luna_elixir_supervisor, label: "ai.elixir.supervisor"},
+    %{name: :luna_runtime_autopilot, label: "ai.investment.runtime-autopilot"},
+    %{name: :luna_ops_scheduler, label: "ai.luna.ops-scheduler"},
+    %{name: :luna_tradingview_ws, label: "ai.luna.tradingview-ws"}
   ]
 
   def start_link(opts \\ []) do

@@ -3,12 +3,12 @@
  * scripts/health-check.js — 루나팀 launchd 서비스 헬스체크
  *
  * 감지 대상:
- *   - 상시 실행: commander, crypto, domestic, overseas, argos (PID 없으면 다운)
- *   - 스케줄: market-alert-*, prescreen-*, reporter
+ *   - 상시 실행: commander, Luna marketdata MCP, Elixir supervisor
+ *   - 스케줄: runtime-autopilot, luna ops-scheduler
  *
  * 공통 상태: packages/core/lib/health-state-manager.js
  * 실행: node scripts/health-check.js
- * 자동: launchd ai.investment.health-check (10분마다)
+ * 자동: Luna ops-scheduler 통합 런타임
  */
 
 import { execSync } from 'child_process';
@@ -50,10 +50,8 @@ const { buildIssueHints, rememberHealthEvent } = createHealthMemoryHelper({
 // 상시 실행 서비스 (PID 있어야 정상) — KeepAlive=true인 데몬만
 const CONTINUOUS = [
   'ai.investment.commander',
-  // crypto: StartInterval 300s, KeepAlive=false → 스케줄 봇
-  // domestic: StartCalendarInterval, KeepAlive=false → 스케줄 봇
-  // overseas: StartCalendarInterval, KeepAlive=false → 스케줄 봇
-  // argos: StartCalendarInterval, KeepAlive=false → 스케줄 봇
+  'ai.luna.marketdata-mcp',
+  'ai.elixir.supervisor',
 ];
 
 // 감지할 전체 서비스

@@ -61,6 +61,7 @@ function summarizeNextAction({
   if (!killSwitch?.ok) return 'fix_luna_kill_switch_consistency';
   if (!worker?.ok) return 'repair_entry_trigger_worker_runtime';
   if (blockers.length > 0) return 'resolve_live_fire_blockers';
+  if (preflight?.readiness?.status === 'live_fire_already_enabled') return 'continue_live_fire_watchdog_monitoring';
   return 'enable_live_fire_cutover';
 }
 
@@ -123,10 +124,14 @@ export async function buildLunaLiveFireFinalGate({
       installedPlist: worker.installedPlist,
       launchctl: worker.launchctl,
     },
-    nextCommands: blockers.length === 0 ? [
-      'npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run -s runtime:luna-live-fire-cutover -- --apply --confirm=enable-luna-live-fire',
-      'npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run -s runtime:luna-live-fire-watchdog',
-    ] : [
+    nextCommands: blockers.length === 0
+      ? (operatingSummary.nextAction === 'continue_live_fire_watchdog_monitoring'
+        ? ['npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run -s runtime:luna-live-fire-watchdog']
+        : [
+            'npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run -s runtime:luna-live-fire-cutover -- --apply --confirm=enable-luna-live-fire',
+            'npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run -s runtime:luna-live-fire-watchdog',
+          ])
+      : [
       ...(operatingSummary.safeAckReady > 1
         ? [`npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run -s runtime:luna-reconcile-ack-batch -- --apply --confirm=ack-luna-reconcile-batch --reason=operator_verified_absent_order --evidence=binance_client_order_lookup_not_found`]
         : []),
@@ -214,6 +219,15 @@ export async function runLunaLiveFireFinalGateSmoke() {
     worker: { ok: false },
   });
   assert.equal(summary.nextAction, 'apply_verified_ack_then_rerun_final_gate');
+  const alreadyEnabled = buildOperatingSummary({
+    blockers: [],
+    preflight: { withPositionParity: true, parity: { clear: true }, readiness: { status: 'live_fire_already_enabled' } },
+    ackPreflight: { summary: { readyToAck: 0, unsafe: 0, lookupFailed: 0 } },
+    manualPlaybook: { summary: { manualReconcileRequired: 0 } },
+    killSwitch: { ok: true },
+    worker: { ok: true },
+  });
+  assert.equal(alreadyEnabled.nextAction, 'continue_live_fire_watchdog_monitoring');
   return { ok: true, blockers, summary };
 }
 

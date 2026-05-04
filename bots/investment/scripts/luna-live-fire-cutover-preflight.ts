@@ -76,6 +76,7 @@ export async function buildLunaLiveFireCutoverPreflight({
     ...(readiness.ok ? [] : [`live_fire_readiness_blocked:${(readiness.blockers || []).length}`]),
     ...(withPositionParity && parityOk !== true ? ['position_parity_not_clear'] : []),
   ];
+  const alreadyEnabled = readiness?.status === 'live_fire_already_enabled';
   return {
     ok: blockers.length === 0,
     checkedAt: new Date().toISOString(),
@@ -109,10 +110,14 @@ export async function buildLunaLiveFireCutoverPreflight({
       skipped: true,
       reason: 'position parity check explicitly skipped; live-fire cutover should normally keep this enabled',
     },
-    commands: blockers.length === 0 ? [
-      'npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run -s runtime:luna-live-fire-cutover -- --apply --confirm=enable-luna-live-fire',
-      'npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run -s runtime:luna-live-fire-watchdog',
-    ] : [],
+    commands: blockers.length === 0
+      ? (alreadyEnabled
+        ? ['npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run -s runtime:luna-live-fire-watchdog']
+        : [
+            'npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run -s runtime:luna-live-fire-cutover -- --apply --confirm=enable-luna-live-fire',
+            'npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run -s runtime:luna-live-fire-watchdog',
+          ])
+      : [],
   };
 }
 

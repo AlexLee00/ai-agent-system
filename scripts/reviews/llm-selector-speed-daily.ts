@@ -3,9 +3,9 @@
 
 const path = require('path');
 const { spawnSync } = require('child_process');
-const { buildReview } = require('./llm-selector-speed-review.js');
+const { buildReview } = require('./llm-selector-speed-review.ts');
 
-const SPEED_TEST_SCRIPT = path.join(__dirname, '..', 'speed-test.js');
+const SPEED_TEST_SCRIPT = path.join(__dirname, '..', 'speed-test.ts');
 const DEFAULT_DAYS = 7;
 
 function parseArgs(argv = process.argv.slice(2)) {

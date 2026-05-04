@@ -74,7 +74,7 @@ async function loadInvestmentHealth() {
   try {
     const result = await Promise.race([
       execFileAsync('node', [
-        join(PROJECT_ROOT, 'bots/investment/scripts/health-report.js'),
+        join(PROJECT_ROOT, 'bots/investment/scripts/health-report.ts'),
         '--json',
       ], {
         cwd: PROJECT_ROOT,

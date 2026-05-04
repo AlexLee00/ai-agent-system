@@ -9,7 +9,7 @@
  *   4. 루나 오케스트레이터 (최종 신호 판단)
  *   5. 한울 실행 (KIS 해외주식, PAPER_MODE: DB + 텔레그램만)
  *
- * launchd: ai.investment.overseas (5분 주기 — 내부 30분 스로틀 + 장중 체크)
+ * runtime: Elixir supervisor / Luna ops-scheduler 통합 경로 (기존 단독 launchd retired)
  * 실행: PAPER_MODE=true node markets/overseas.js [--symbols=AAPL,TSLA,NVDA] [--force]
  */
 

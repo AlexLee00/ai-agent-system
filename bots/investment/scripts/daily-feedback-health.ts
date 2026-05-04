@@ -12,8 +12,11 @@ import { spawnSync } from 'node:child_process';
 import { existsSync, statSync, readFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { createRequire } from 'node:module';
 import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
 
+const require = createRequire(import.meta.url);
+const { getServiceOwnership, isRetiredService } = require('../../../packages/core/lib/service-ownership');
 const __filename = fileURLToPath(import.meta.url);
 const scriptsDir = dirname(__filename);
 const investmentRoot = resolve(scriptsDir, '..');
@@ -130,14 +133,24 @@ function inspectErrorLog(logPath, sinceMs) {
 
 export async function buildDailyFeedbackHealth({ strict = false, logPath = DEFAULT_ERROR_LOG } = {}) {
   const runtime = runDailyFeedbackDryRun();
-  const launchd = inspectLaunchdStatus();
+  const ownership = getServiceOwnership(LAUNCHD_LABEL);
+  const retired = isRetiredService(LAUNCHD_LABEL);
+  const launchd = retired
+    ? {
+        ok: true,
+        label: LAUNCHD_LABEL,
+        loaded: false,
+        retired: true,
+        replacement: ownership?.replacement || 'ai.luna.ops-scheduler',
+      }
+    : inspectLaunchdStatus();
   const errorLog = inspectErrorLog(logPath, runtime.startedAtMs);
   const warnings = [];
   const blockers = [];
 
   if (!runtime.ok) blockers.push('daily_feedback_runtime_dry_run_failed');
   if (errorLog.recentCrashPattern) blockers.push('daily_feedback_recent_crash_log');
-  if (!launchd.loaded) warnings.push('daily_feedback_launchd_not_loaded');
+  if (!launchd.loaded && !retired) warnings.push('daily_feedback_launchd_not_loaded');
   if (launchd.loaded && launchd.lastExitStatus != null && launchd.lastExitStatus !== 0) {
     warnings.push(`daily_feedback_previous_exit_status_${launchd.lastExitStatus}`);
     if (strict) blockers.push('daily_feedback_launchd_previous_exit_nonzero');
@@ -145,9 +158,13 @@ export async function buildDailyFeedbackHealth({ strict = false, logPath = DEFAU
 
   return {
     ok: blockers.length === 0,
-    status: blockers.length ? 'daily_feedback_health_blocked' : 'daily_feedback_health_clear',
+    status: blockers.length
+      ? 'daily_feedback_health_blocked'
+      : (retired ? 'daily_feedback_migrated_to_luna_ops_scheduler' : 'daily_feedback_health_clear'),
     generatedAt: new Date().toISOString(),
     strict,
+    retired,
+    replacement: retired ? (ownership?.replacement || 'ai.luna.ops-scheduler') : null,
     runtime,
     launchd,
     errorLog,
@@ -155,7 +172,9 @@ export async function buildDailyFeedbackHealth({ strict = false, logPath = DEFAU
     blockers,
     nextAction: blockers.length
       ? 'fix_daily_feedback_runtime_before_kickstart'
-      : (warnings.length ? 'kickstart_or_wait_for_launchd_to_clear_previous_exit' : 'daily_feedback_operational'),
+      : (retired
+        ? 'monitor_via_luna_ops_scheduler'
+        : (warnings.length ? 'kickstart_or_wait_for_launchd_to_clear_previous_exit' : 'daily_feedback_operational')),
   };
 }
 
@@ -173,4 +192,3 @@ if (isDirectExecution(import.meta.url)) {
     errorPrefix: '❌ daily-feedback-health 실패:',
   });
 }
-

@@ -4,6 +4,7 @@
 const { fetchOpsErrors } = require('../../../../packages/core/lib/hub-client');
 const { execSync } = require('child_process');
 const { LAUNCHD_AVAILABLE } = require('../../../../packages/core/lib/env');
+const { isRetiredService } = require('../../../../packages/core/lib/service-ownership.js');
 
 const SERVICE_LABEL_MAP = {
   'investment-crypto': 'ai.investment.crypto',
@@ -80,7 +81,10 @@ async function checkErrorLogs() {
         const tail = svc.recent_errors[svc.recent_errors.length - 1] || '';
         let detail = `${svc.error_count}건 — ${tail.slice(0, 200)}`;
 
-        if (healthyNow) {
+        if (isRetiredService(launchdLabel)) {
+          status = 'ok';
+          detail += ' | 퇴역 launchd 라벨 — 현재 통합 Luna 런타임에서 감시';
+        } else if (healthyNow) {
           status = 'ok';
           detail += ` | 현재 상태 정상 (${launchdStatus.state || `exit ${launchdStatus.lastExitCode}`})`;
         }

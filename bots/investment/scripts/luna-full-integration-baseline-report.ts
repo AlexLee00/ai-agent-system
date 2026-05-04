@@ -4,9 +4,9 @@ import { existsSync, readFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
 
-function safeExec(command, args = []) {
+function safeExec(command, args = [], options = {}) {
   try {
-    return execFileSync(command, args, { encoding: 'utf8', timeout: 5000 });
+    return execFileSync(command, args, { encoding: 'utf8', timeout: 5000, ...options });
   } catch (error) {
     return error?.stdout?.toString?.() || '';
   }
@@ -14,7 +14,7 @@ function safeExec(command, args = []) {
 
 export function buildLunaFullIntegrationBaseline() {
   const root = new URL('..', import.meta.url).pathname;
-  const manualReconcile = safeExec('node', ['scripts/luna-reconcile-blocker-report.ts', '--json']);
+  const manualReconcile = safeExec('node', ['scripts/luna-reconcile-blocker-report.ts', '--json'], { cwd: root });
   const launchd = safeExec('launchctl', ['list']);
   const packageJson = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'));
   return {
@@ -35,7 +35,7 @@ export function buildLunaFullIntegrationBaseline() {
     },
     processSnapshot: {
       tradingviewWsVisible: launchd.includes('ai.luna.tradingview-ws'),
-      commanderVisible: launchd.includes('ai.investment.commander') || launchd.includes('ai.luna.commander'),
+      commanderVisible: launchd.includes('ai.investment.commander'),
     },
     manualReconcileSample: manualReconcile.slice(0, 1200),
   };

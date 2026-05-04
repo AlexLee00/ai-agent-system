@@ -311,9 +311,9 @@
       },
       "markets": {
         "crypto": {
-          "file": "bots/investment/markets/crypto.js",
-          "launchd": "ai.investment.crypto",
-          "schedule": "5분 주기 (내부 30분 throttle + BTC ±3% 긴급트리거)",
+          "file": "bots/investment/mcp/luna-marketdata-mcp/src/server.ts",
+          "launchd": "ai.luna.marketdata-mcp",
+          "schedule": "Luna 통합 런타임(runtime-autopilot/ops-scheduler) + marketdata MCP",
           "symbols": [
             "BTC/USDT",
             "ETH/USDT",
@@ -322,18 +322,18 @@
           ]
         },
         "domestic": {
-          "file": "bots/investment/markets/domestic.js",
-          "launchd": "ai.investment.domestic",
-          "schedule": "5분 주기 (내부 30분 throttle + KST 09:00~15:30 장중필터)",
+          "file": "elixir/team_jay/lib/team_jay/teams/investment_supervisor.ex",
+          "launchd": "ai.elixir.supervisor",
+          "schedule": "Luna 통합 런타임(runtime-autopilot/ops-scheduler) + Elixir stock flow",
           "symbols": [
             "005930",
             "000660"
           ]
         },
         "overseas": {
-          "file": "bots/investment/markets/overseas.js",
-          "launchd": "ai.investment.overseas",
-          "schedule": "5분 주기 (내부 30분 throttle + DST 자동반영 NYSE 장중필터)",
+          "file": "elixir/team_jay/lib/team_jay/teams/investment_supervisor.ex",
+          "launchd": "ai.elixir.supervisor",
+          "schedule": "Luna 통합 런타임(runtime-autopilot/ops-scheduler) + Elixir stock flow",
           "symbols": [
             "AAPL",
             "TSLA",
@@ -353,14 +353,14 @@
       "deployTargets": [],
       "ops": {
         "logFiles": {
-          "crypto": "/tmp/investment-crypto.log",
-          "domestic": "/tmp/investment-domestic.log",
-          "overseas": "/tmp/investment-overseas.log"
+          "crypto": "/tmp/ai.luna.marketdata-mcp.log",
+          "domestic": "/tmp/elixir-supervisor.log",
+          "overseas": "~/.ai-agent-system/logs/luna-commander.log"
         },
         "stateFiles": {
-          "crypto": "~/.ai-agent-system/investment/investment-state.json",
-          "domestic": "~/.ai-agent-system/investment/investment-domestic-state.json",
-          "overseas": "~/.ai-agent-system/investment/investment-overseas-state.json"
+          "opsScheduler": "bots/investment/output/ops/luna-ops-scheduler-state.json",
+          "runtimeAutopilot": "bots/investment/output/runtime-position-runtime-autopilot-history.json",
+          "commander": "~/.ai-agent-system/logs/luna-commander.log"
         },
         "opsRequirements": [
           "PAPER_MODE=false 환경변수 설정 (현재 paper 단계)",
