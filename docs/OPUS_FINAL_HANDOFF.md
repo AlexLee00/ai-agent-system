@@ -1,3 +1,41 @@
+# 세션 인수인계 — 2026-05-04 (CODEX_LUNA_TRADE_ANALYTICS_REPORT 구현 — 87차 세션)
+
+## 완료 요약 ✅ (87차 세션)
+
+### 루나 매매 분석 P0 보강 6종 구현 (522건 데이터 기반)
+
+**커밋**: `f7f805f4`
+
+| 보강 | 파일 | 내용 |
+|------|------|------|
+| 1 | `shared/tp-sl-enforcer.ts` (신규) | ATR 기반 TP/SL 강제 가드. BUY 시 SL 없으면 차단 |
+| 1 | `shared/luna-constitution.ts` | TP/SL 전수 강제 (`positionActive` 조건 제거) |
+| 2 | `shared/luna-constitution.ts` | trending_bull confidence>=0.65 gate 추가 |
+| 3 | `shared/strategy-family-classifier.ts` (신규) | 8종 strategy_family 자동 분류 |
+| 3 | `shared/trade-journal-db.ts` | insertJournalEntry에 strategy-family-classifier 자동 연결 |
+| 4 | `shared/reflexion-guard.ts` | `checkSymbolLossStreak()` 추가 (연속 3회 손실 → 7일 쿨다운) |
+| 5 | `scripts/rebuild-pnl-percent.ts` (신규) | micro-price 이상치 재계산 스크립트 |
+| 7 | `shared/luna-constitution.ts` | domestic trending_bear BUY 진입 차단 |
+
+### 미구현 보강 (P1, 다음 세션)
+- **보강 6**: 단타 전략 (short_term_scalping / micro_swing) — strategy_family에 타입만 추가됨, 파이프라인 통합 별도 필요
+- **보강 8**: pre_autotune 학습 데이터 확대 — autotune-trainer 파일 찾아서 통합 필요
+
+### 운영 즉시 실행 권장
+```bash
+# pnl_percent 이상치 재계산 (dry-run 먼저)
+tsx bots/investment/scripts/rebuild-pnl-percent.ts --dry-run
+tsx bots/investment/scripts/rebuild-pnl-percent.ts
+```
+
+### 주의사항
+- luna-constitution의 **TP/SL 전수 강제**는 기존 LIVE 거래에 영향을 줄 수 있음
+  → `LUNA_TP_SL_ENFORCE=false` env로 kill-switch 가능
+- trending_bull confidence gate (0.65)는 기존 0.5보다 엄격 → 일부 정상 신호가 차단될 수 있음
+  → 첫 주 통계 모니터링 권장
+
+---
+
 # 세션 인수인계 — 2026-05-04 (ALARM_INCIDENT 인박스 처리 + 알람 오분류 수정 — 86차 세션)
 
 ## 완료 요약 ✅ (86차 세션)

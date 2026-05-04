@@ -4,7 +4,19 @@
 > 상세 내용: `reservation-dev-summary.md` / `reservation-handoff.md`
 > 최초 작성: 2026-02-27
 
-## 2026-05-04: CODEX_LUNA_TRADE_DATA_ANALYSIS_REPORT P0 보강 6종 구현 (87차 세션)
+## 2026-05-04: CODEX_LUNA_TRADE_ANALYTICS_REPORT P0 보강 6종 구현 (87차 세션)
+
+- **tp-sl-enforcer.ts** (신규): ATR 기반 TP/SL 강제 가드 — BUY 시 SL 없으면 차단 (`LUNA_TP_SL_ENFORCE=false` kill-switch)
+- **luna-constitution.ts 강화**:
+  - 보강 1: TP/SL 전수 강제 (기존 `positionActive===true` 조건 제거 → 모든 BUY에 적용)
+  - 보강 2: `trending_bull` confidence>=0.65 gate 추가 (FOMO 방지, 데이터: 219건 승률 20.5%)
+  - 보강 7: domestic `trending_bear` BUY 진입 차단 (데이터: 28건 손실, -₩637K)
+- **strategy-family-classifier.ts** (신규): reasoning/regime 기반 8종 strategy_family 자동 분류
+- **trade-journal-db.ts**: `insertJournalEntry`에 strategy-family-classifier 자동 연결 (NULL 제거)
+- **reflexion-guard.ts**: `checkSymbolLossStreak()` 추가 — 종목별 연속 3회 손실 → 7일 쿨다운
+- **rebuild-pnl-percent.ts** (신규): micro-price 이상치 재계산 스크립트 (LUNC 517억% 등 수정)
+
+## 2026-05-04: CODEX_LUNA_TRADE_DATA_ANALYSIS_REPORT P0 보강 6종 구현 (이전 87차 세션)
 
 - **Migration** `20260504_realized_pnl.sql`: `trades` 테이블에 `realized_pnl_usdt`, `realized_pnl_pct`, `matched_buy_id` 컬럼 + 인덱스 3종 추가
 - **realized-pnl-calculator.ts 강화**: DB 레이어 추가 (fetchTradesForSymbol, persistRealizedPnl, computeAndPersistPnlForSymbol, backfillAllRealizedPnl)
