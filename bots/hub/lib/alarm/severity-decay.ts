@@ -119,18 +119,19 @@ async function applyDecayRule(
   options: Required<Pick<SeverityDecayOptions, 'dryRun' | 'db' | 'now'>> & Pick<SeverityDecayOptions, 'fixtureRows'>,
 ): Promise<{ count: number; alarm_ids: number[] }> {
   try {
+    const minAgeHours = Math.max(1, Math.trunc(Number(rule.minAgeHours) || 0));
     const rows = options.fixtureRows
-      ? fixtureRowsForRule(rule, options.fixtureRows, options.now)
+      ? fixtureRowsForRule({ ...rule, minAgeHours }, options.fixtureRows, options.now)
       : await options.db.query('agent', `
         SELECT id, severity, fingerprint_count, received_at
         FROM agent.hub_alarms
         WHERE severity = $1
           AND status NOT IN ('resolved', 'suppressed')
-          AND received_at <= NOW() - ($2::numeric * INTERVAL '1 hour')
+          AND received_at <= NOW() - make_interval(hours => $2::integer)
           AND (fingerprint_count IS NULL OR fingerprint_count < $3)
         ORDER BY received_at ASC
         LIMIT 200
-      `, [rule.fromSeverity, rule.minAgeHours, rule.maxFingerprintCount]);
+      `, [rule.fromSeverity, minAgeHours, rule.maxFingerprintCount]);
 
     if (!rows || rows.length === 0) return { count: 0, alarm_ids: [] };
 

@@ -3,6 +3,9 @@
 
 const { listHeartbeats } = require('../../../../packages/core/lib/agent-heartbeats');
 const pgPool = require('../../../../packages/core/lib/pg-pool');
+const { execSync } = require('child_process');
+const { LAUNCHD_AVAILABLE } = require('../../../../packages/core/lib/env');
+const { getServiceOwnership } = require('../../../../packages/core/lib/service-ownership.js');
 
 const DEFAULT_WARN_MINUTES = 60;
 const DEFAULT_ERROR_MINUTES = 180;
@@ -62,6 +65,52 @@ function softenAndyHeartbeatIfActive(item, reservationState, now) {
   };
 }
 
+function getLaunchdStatus(label) {
+  if (!LAUNCHD_AVAILABLE || !label) return null;
+  try {
+    const out = execSync(`launchctl print gui/501/${label}`, { encoding: 'utf8', timeout: 5000 });
+    const state = out.match(/state = ([^\n]+)/)?.[1]?.trim() || '';
+    const pid = out.match(/\npid = ([^\n]+)/)?.[1]?.trim() || '';
+    const lastExitCode = Number(out.match(/last exit code = ([^\n]+)/)?.[1]?.trim() || NaN);
+    return { state, pid, lastExitCode };
+  } catch {
+    try {
+      const out = execSync(`launchctl list ${label}`, { encoding: 'utf8', timeout: 5000 }).trim();
+      const [pidRaw, lastExitRaw] = out.split(/\s+/);
+      const pid = pidRaw === '-' ? '' : pidRaw;
+      const lastExitCode = Number(lastExitRaw);
+      return {
+        state: pid ? 'running' : 'loaded',
+        pid,
+        lastExitCode,
+      };
+    } catch {
+      return null;
+    }
+  }
+}
+
+function isHealthyLaunchdStatus(status) {
+  if (!status) return false;
+  if (status.state === 'running' || status.state === 'xpcproxy') return true;
+  return Number.isFinite(status.lastExitCode) && status.lastExitCode === 0;
+}
+
+function softenRetiredLunaCryptoHeartbeatIfReplacementHealthy(item) {
+  const retiredService = getServiceOwnership('ai.investment.crypto');
+  const replacement = retiredService?.replacement || 'ai.luna.marketdata-mcp';
+  const replacementStatus = getLaunchdStatus(replacement);
+
+  if (!isHealthyLaunchdStatus(replacementStatus)) return item;
+
+  const stateLabel = replacementStatus.state || (replacementStatus.lastExitCode === 0 ? 'loaded' : 'unknown');
+  return {
+    ...item,
+    status: 'ok',
+    detail: `${item.detail} | retired cycle replaced by ${replacement} (${stateLabel})`,
+  };
+}
+
 async function run() {
   const items = [];
   let rows = [];
@@ -95,6 +144,10 @@ async function run() {
     if (row.agent_name === 'andy' && status !== 'ok') {
       const reservationState = await loadReservationAgentState('andy');
       item = softenAndyHeartbeatIfActive(item, reservationState, now);
+    }
+
+    if (row.agent_name === 'luna-crypto' && status !== 'ok') {
+      item = softenRetiredLunaCryptoHeartbeatIfReplacementHealthy(item);
     }
 
     items.push(item);
