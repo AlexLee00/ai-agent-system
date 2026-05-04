@@ -66,7 +66,8 @@ function classifyService(spec, listStatus, printStatus) {
   if (spec.expected === 'running' && !running) {
     (spec.critical ? blockers : warnings).push('launchd_not_running');
   }
-  if (lastExit != null && lastExit !== 0) {
+  const stalePreviousExit = running && [-15, -9].includes(Number(lastExit));
+  if (lastExit != null && lastExit !== 0 && !stalePreviousExit) {
     warnings.push(`previous_exit_status_${lastExit}`);
   }
   return {
@@ -80,6 +81,7 @@ function classifyService(spec, listStatus, printStatus) {
     serviceMode,
     pid: listStatus.pid ?? printStatus.pid ?? null,
     lastExitStatus: lastExit,
+    stalePreviousExit,
     warnings,
     blockers,
     plist,
