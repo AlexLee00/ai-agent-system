@@ -88,12 +88,172 @@
     "skillCandidates": 2,
     "fineTuneCandidate": false
   },
+  "finalActivation": {
+    "ok": true,
+    "active": 19,
+    "total": 19,
+    "missing": [],
+    "entries": [
+      {
+        "phase": "1",
+        "key": "SIGMA_V2_ENABLED",
+        "expected": "true",
+        "description": "Sigma v2 runtime enabled",
+        "actual": "true",
+        "active": true
+      },
+      {
+        "phase": "1",
+        "key": "SIGMA_LIBRARY_AUTONOMY_MODE",
+        "expected": "autonomous",
+        "description": "Library autonomy promoted to autonomous mode",
+        "actual": "autonomous",
+        "active": true
+      },
+      {
+        "phase": "1",
+        "key": "SIGMA_TEAM_MEMORY_UNIFIED",
+        "expected": "true",
+        "description": "Cross-team 4-layer memory unified",
+        "actual": "true",
+        "active": true
+      },
+      {
+        "phase": "1",
+        "key": "SIGMA_KNOWLEDGE_GRAPH_ENABLED",
+        "expected": "true",
+        "description": "Knowledge graph enabled",
+        "actual": "true",
+        "active": true
+      },
+      {
+        "phase": "1",
+        "key": "SIGMA_DATASET_BUILDER_ENABLED",
+        "expected": "true",
+        "description": "Dataset builder enabled",
+        "actual": "true",
+        "active": true
+      },
+      {
+        "phase": "1",
+        "key": "SIGMA_DATA_LINEAGE_ENABLED",
+        "expected": "true",
+        "description": "Dataset lineage required",
+        "actual": "true",
+        "active": true
+      },
+      {
+        "phase": "1",
+        "key": "SIGMA_LIBRARY_DASHBOARD_ENABLED",
+        "expected": "true",
+        "description": "Library dashboard enabled",
+        "actual": "true",
+        "active": true
+      },
+      {
+        "phase": "2",
+        "key": "SIGMA_TIER2_AUTO_APPLY",
+        "expected": "true",
+        "description": "Tier 2 automatic apply enabled",
+        "actual": "true",
+        "active": true
+      },
+      {
+        "phase": "3",
+        "key": "SIGMA_SELF_RAG_ENABLED",
+        "expected": "true",
+        "description": "Self-RAG enabled",
+        "actual": "true",
+        "active": true
+      },
+      {
+        "phase": "3",
+        "key": "SIGMA_GEPA_ENABLED",
+        "expected": "true",
+        "description": "GEPA/ESPL enabled",
+        "actual": "true",
+        "active": true
+      },
+      {
+        "phase": "3",
+        "key": "SIGMA_MULTI_HOP_RAG_ENABLED",
+        "expected": "true",
+        "description": "Multi-hop RAG enabled",
+        "actual": "true",
+        "active": true
+      },
+      {
+        "phase": "3",
+        "key": "SIGMA_HYDE_ENABLED",
+        "expected": "true",
+        "description": "HyDE enabled",
+        "actual": "true",
+        "active": true
+      },
+      {
+        "phase": "4",
+        "key": "SIGMA_MCP_SERVER_ENABLED",
+        "expected": "true",
+        "description": "Sigma MCP server enabled",
+        "actual": "true",
+        "active": true
+      },
+      {
+        "phase": "5",
+        "key": "SIGMA_SELF_IMPROVEMENT_ENABLED",
+        "expected": "true",
+        "description": "Self-improvement pipeline enabled",
+        "actual": "true",
+        "active": true
+      },
+      {
+        "phase": "5",
+        "key": "SIGMA_VOYAGER_SKILL_AUTO_EXTRACTION",
+        "expected": "true",
+        "description": "Voyager skill auto extraction enabled",
+        "actual": "true",
+        "active": true
+      },
+      {
+        "phase": "5",
+        "key": "SIGMA_FINE_TUNING_NOTIFY_ENABLED",
+        "expected": "true",
+        "description": "Fine-tuning notification enabled",
+        "actual": "true",
+        "active": true
+      },
+      {
+        "phase": "6",
+        "key": "SIGMA_DATASET_AUTO_EXPORT",
+        "expected": "true",
+        "description": "Dataset auto export flag enabled with constitution guards",
+        "actual": "true",
+        "active": true
+      },
+      {
+        "phase": "6",
+        "key": "SIGMA_CONSTITUTION_VIOLATION_AUTO_BLOCK",
+        "expected": "true",
+        "description": "Constitution violation auto block enabled",
+        "actual": "true",
+        "active": true
+      },
+      {
+        "phase": "6",
+        "key": "SIGMA_CONSTITUTION_ENABLED",
+        "expected": "true",
+        "description": "Constitution guard enabled",
+        "actual": "true",
+        "active": true
+      }
+    ]
+  },
   "gates": [
     {
       "phase": "A",
       "enabled": true,
       "defaultSafe": false,
-      "mode": "supervised",
+      "mode": "autonomous",
       "warnings": [],
       "blockers": []
     },
@@ -101,7 +261,7 @@
       "phase": "B",
       "enabled": true,
       "defaultSafe": false,
-      "mode": "supervised",
+      "mode": "autonomous",
       "warnings": [],
       "blockers": []
     },
@@ -109,7 +269,7 @@
       "phase": "C",
       "enabled": true,
       "defaultSafe": false,
-      "mode": "supervised",
+      "mode": "autonomous",
       "warnings": [],
       "blockers": []
     },
@@ -117,7 +277,7 @@
       "phase": "D",
       "enabled": true,
       "defaultSafe": false,
-      "mode": "supervised",
+      "mode": "autonomous",
       "warnings": [],
       "blockers": []
     },
@@ -125,7 +285,7 @@
       "phase": "E1",
       "enabled": true,
       "defaultSafe": false,
-      "mode": "supervised",
+      "mode": "autonomous",
       "warnings": [],
       "blockers": []
     },
@@ -133,7 +293,7 @@
       "phase": "E2",
       "enabled": true,
       "defaultSafe": false,
-      "mode": "supervised",
+      "mode": "autonomous",
       "warnings": [],
       "blockers": []
     },
@@ -141,7 +301,7 @@
       "phase": "E3",
       "enabled": true,
       "defaultSafe": false,
-      "mode": "supervised",
+      "mode": "autonomous",
       "warnings": [],
       "blockers": []
     },
@@ -149,7 +309,7 @@
       "phase": "F1",
       "enabled": true,
       "defaultSafe": false,
-      "mode": "supervised",
+      "mode": "autonomous",
       "warnings": [],
       "blockers": []
     },
@@ -157,7 +317,7 @@
       "phase": "F2",
       "enabled": true,
       "defaultSafe": true,
-      "mode": "supervised",
+      "mode": "autonomous",
       "warnings": [],
       "blockers": []
     },
@@ -165,7 +325,7 @@
       "phase": "F3",
       "enabled": true,
       "defaultSafe": true,
-      "mode": "supervised",
+      "mode": "autonomous",
       "warnings": [],
       "blockers": []
     },
@@ -173,15 +333,15 @@
       "phase": "G1",
       "enabled": true,
       "defaultSafe": true,
-      "mode": "supervised",
+      "mode": "autonomous",
       "warnings": [],
       "blockers": []
     },
     {
       "phase": "G2",
-      "enabled": false,
-      "defaultSafe": true,
-      "mode": "supervised",
+      "enabled": true,
+      "defaultSafe": false,
+      "mode": "autonomous",
       "warnings": [],
       "blockers": []
     },
@@ -189,7 +349,7 @@
       "phase": "H",
       "enabled": true,
       "defaultSafe": false,
-      "mode": "supervised",
+      "mode": "autonomous",
       "warnings": [],
       "blockers": []
     }
