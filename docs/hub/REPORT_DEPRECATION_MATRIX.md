@@ -1,6 +1,6 @@
 # Report Deprecation Matrix
 
-> Generated: 2026-05-03 KST
+> Generated: 2026-05-04 KST
 > Scope: read-only matrix. This document does not unload or disable any launchd job.
 
 ## Digest Targets
@@ -49,18 +49,18 @@
 | 3주 grace 후보 | repo | `ai.hub.llm-load-test-weekly` | `-` | hourly-status | risk-sensitive signal; keep three-week grace before unload |
 | 3주 grace 후보 | local | `ai.hub.llm-model-check` | `scripts/check-llm-model-updates.ts` | hourly-status | risk-sensitive signal; keep three-week grace before unload |
 | 3주 grace 후보 | local | `ai.hub.llm-oauth-monitor` | `bots/hub/scripts/run-oauth-monitor.ts` | hourly-status | risk-sensitive signal; keep three-week grace before unload |
-| 유지 권장 | local | `ai.investment.daily-feedback` | `bots/investment/scripts/daily-trade-feedback.ts` | daily-metrics | contains live/action/daemon semantics; keep until separate owner review |
-| 즉시 비활성화 후보 | local | `ai.investment.health-check` | `bots/investment/scripts/health-check.ts` | hourly-status | covered by hourly status digest; safe to retire after parallel comparison |
+| 유지 권장 | repo | `ai.investment.daily-feedback` | `bots/investment/scripts/daily-trade-feedback.ts` | daily-metrics | contains live/action/daemon semantics; keep until separate owner review |
+| 즉시 비활성화 후보 | repo | `ai.investment.health-check` | `bots/investment/scripts/health-check.ts` | hourly-status | covered by hourly status digest; safe to retire after parallel comparison |
 | 즉시 비활성화 후보 | repo | `ai.investment.luna-l5-readiness` | `bots/investment/scripts/luna-l5-readiness-report.ts` | hourly-status | covered by hourly status digest; safe to retire after parallel comparison |
-| 1주 grace 후보 | local | `ai.investment.market-alert-crypto-daily` | `bots/investment/scripts/market-alert.ts` | daily-metrics | covered by daily-metrics; compare for one week before unload |
-| 1주 grace 후보 | local | `ai.investment.reporter` | `bots/investment/team/reporter.ts` | hourly-status | covered by hourly-status; compare for one week before unload |
+| 1주 grace 후보 | repo | `ai.investment.market-alert-crypto-daily` | `bots/investment/scripts/market-alert.ts` | daily-metrics | covered by daily-metrics; compare for one week before unload |
+| 1주 grace 후보 | repo | `ai.investment.reporter` | `bots/investment/team/reporter.ts` | hourly-status | covered by hourly-status; compare for one week before unload |
 | 유지 권장 | local | `ai.jay.growth` | `-` | hourly-status | insufficient replacement confidence; keep pending manual review |
 | 즉시 비활성화 후보 | local | `ai.legal.health-check` | `bots/legal/scripts/health-check.js` | hourly-status | covered by hourly status digest; safe to retire after parallel comparison |
 | 1주 grace 후보 | local | `ai.llm.daily-report` | `bots/hub/scripts/llm-daily-report.ts` | daily-metrics | covered by daily-metrics; compare for one week before unload |
-| 유지 권장 | local | `ai.luna.7day-natural-checkpoint` | `bots/investment/scripts/runtime-luna-7day-natural-checkpoint.ts` | hourly-status | insufficient replacement confidence; keep pending manual review |
-| 1주 grace 후보 | local | `ai.luna.daily-backtest` | `bots/investment/scripts/runtime-luna-daily-backtest.ts` | daily-metrics | covered by daily-metrics; compare for one week before unload |
+| 유지 권장 | repo | `ai.luna.7day-natural-checkpoint` | `bots/investment/scripts/runtime-luna-7day-natural-checkpoint.ts` | hourly-status | insufficient replacement confidence; keep pending manual review |
+| 1주 grace 후보 | repo | `ai.luna.daily-backtest` | `bots/investment/scripts/runtime-luna-daily-backtest.ts` | daily-metrics | covered by daily-metrics; compare for one week before unload |
 | 1주 grace 후보 | repo | `ai.luna.daily-report` | `bots/investment/scripts/luna-daily-report.ts` | daily-metrics | covered by daily-metrics; compare for one week before unload |
-| 유지 권장 | local | `ai.luna.trade-journal-dashboard` | `bots/investment/scripts/runtime-trade-journal-dashboard-html.ts` | hourly-status | contains live/action/daemon semantics; keep until separate owner review |
+| 유지 권장 | repo | `ai.luna.trade-journal-dashboard` | `bots/investment/scripts/runtime-trade-journal-dashboard-html.ts` | hourly-status | contains live/action/daemon semantics; keep until separate owner review |
 | 3주 grace 후보 | repo | `ai.luna.weekly-review` | `bots/investment/scripts/luna-weekly-review.ts` | weekly-audit | risk-sensitive signal; keep three-week grace before unload |
 | 1주 grace 후보 | local | `ai.sigma.daily` | `-` | daily-metrics | covered by daily-metrics; compare for one week before unload |
 | 1주 grace 후보 | local | `ai.sigma.daily-report` | `bots/sigma/ts/src/sigma-daily-report.ts` | daily-metrics | covered by daily-metrics; compare for one week before unload |
@@ -127,23 +127,23 @@ launchctl bootout gui/$(id -u) /Users/alexlee/Library/LaunchAgents/ai.hub.llm-mo
 # ai.hub.llm-oauth-monitor -> hourly-status
 launchctl bootout gui/$(id -u) /Users/alexlee/Library/LaunchAgents/ai.hub.llm-oauth-monitor.plist
 # ai.investment.health-check -> hourly-status
-launchctl bootout gui/$(id -u) /Users/alexlee/Library/LaunchAgents/ai.investment.health-check.plist
+launchctl bootout gui/$(id -u) /Users/alexlee/projects/ai-agent-system/bots/investment/launchd/retired/ai.investment.health-check.retired.plist
 # ai.investment.luna-l5-readiness -> hourly-status
-launchctl bootout gui/$(id -u) /Users/alexlee/projects/ai-agent-system/bots/investment/launchd/ai.investment.luna-l5-readiness.plist
+launchctl bootout gui/$(id -u) /Users/alexlee/projects/ai-agent-system/bots/investment/launchd/retired/ai.investment.luna-l5-readiness.retired.plist
 # ai.investment.market-alert-crypto-daily -> daily-metrics
-launchctl bootout gui/$(id -u) /Users/alexlee/Library/LaunchAgents/ai.investment.market-alert-crypto-daily.plist
+launchctl bootout gui/$(id -u) /Users/alexlee/projects/ai-agent-system/bots/investment/launchd/retired/ai.investment.market-alert-crypto-daily.retired.plist
 # ai.investment.reporter -> hourly-status
-launchctl bootout gui/$(id -u) /Users/alexlee/Library/LaunchAgents/ai.investment.reporter.plist
+launchctl bootout gui/$(id -u) /Users/alexlee/projects/ai-agent-system/bots/investment/launchd/retired/ai.investment.reporter.retired.plist
 # ai.legal.health-check -> hourly-status
 launchctl bootout gui/$(id -u) /Users/alexlee/Library/LaunchAgents/ai.legal.health-check.plist
 # ai.llm.daily-report -> daily-metrics
 launchctl bootout gui/$(id -u) /Users/alexlee/Library/LaunchAgents/ai.llm.daily-report.plist
 # ai.luna.daily-backtest -> daily-metrics
-launchctl bootout gui/$(id -u) /Users/alexlee/Library/LaunchAgents/ai.luna.daily-backtest.plist
+launchctl bootout gui/$(id -u) /Users/alexlee/projects/ai-agent-system/bots/investment/launchd/retired/ai.luna.daily-backtest.retired.plist
 # ai.luna.daily-report -> daily-metrics
-launchctl bootout gui/$(id -u) /Users/alexlee/projects/ai-agent-system/bots/investment/launchd/ai.luna.daily-report.plist
+launchctl bootout gui/$(id -u) /Users/alexlee/projects/ai-agent-system/bots/investment/launchd/retired/ai.luna.daily-report.retired.plist
 # ai.luna.weekly-review -> weekly-audit
-launchctl bootout gui/$(id -u) /Users/alexlee/projects/ai-agent-system/bots/investment/launchd/ai.luna.weekly-review.plist
+launchctl bootout gui/$(id -u) /Users/alexlee/projects/ai-agent-system/bots/investment/launchd/retired/ai.luna.weekly-review.retired.plist
 # ai.sigma.daily -> daily-metrics
 launchctl bootout gui/$(id -u) /Users/alexlee/Library/LaunchAgents/ai.sigma.daily.plist
 # ai.sigma.daily-report -> daily-metrics

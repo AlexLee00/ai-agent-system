@@ -1,6 +1,6 @@
 # Report Deprecation Preflight
 
-> Generated: 2026-05-03 KST
+> Generated: 2026-05-04 KST
 > Scope: read-only safety gate. This document does not unload or disable launchd jobs.
 
 ## Summary
@@ -42,7 +42,7 @@
 | `ai.blog.instagram-token-health` | local | hourly-status | no | no_runtime_action | local candidate is not currently loaded or plist is missing |
 | `ai.claude.health-check` | local | hourly-status | no | no_runtime_action | local candidate is not currently loaded or plist is missing |
 | `ai.claude.health-dashboard` | local | hourly-status | yes | ready_for_master_approved_unload | local launchd is loaded and covered by digest replacement |
-| `ai.investment.health-check` | local | hourly-status | no | no_runtime_action | local candidate is not currently loaded or plist is missing |
+| `ai.investment.health-check` | repo | hourly-status | no | no_runtime_action | repo template candidate only; no loaded local runtime action detected |
 | `ai.investment.luna-l5-readiness` | repo | hourly-status | no | no_runtime_action | repo template candidate only; no loaded local runtime action detected |
 | `ai.legal.health-check` | local | hourly-status | no | no_runtime_action | local candidate is not currently loaded or plist is missing |
 | `ai.ska.dashboard` | local | hourly-status | no | no_runtime_action | local candidate is not currently loaded or plist is missing |

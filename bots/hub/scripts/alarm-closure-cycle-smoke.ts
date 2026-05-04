@@ -242,9 +242,12 @@ async function step2_autoDevDocument(
   const content = fs.readFileSync(filePath, 'utf8');
   const hasConsensus = content.includes('Roundtable Consensus');
   const hasIncidentKey = content.includes(incidentKey);
+  const hasSafeTestScope = content.includes('npm --prefix bots/hub run test:unit')
+    && content.includes('npm --prefix bots/hub run transition:completion-gate')
+    && !content.includes('npm --prefix bots/hub run -s ');
 
-  if (!hasConsensus || !hasIncidentKey) {
-    record(2, 'auto_dev 문서 내용 검증', false, `hasConsensus=${hasConsensus} hasIncidentKey=${hasIncidentKey}`);
+  if (!hasConsensus || !hasIncidentKey || !hasSafeTestScope) {
+    record(2, 'auto_dev 문서 내용 검증', false, `hasConsensus=${hasConsensus} hasIncidentKey=${hasIncidentKey} hasSafeTestScope=${hasSafeTestScope}`);
     throw new Error('step2_content_invalid');
   }
 
