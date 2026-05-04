@@ -33,6 +33,7 @@ const IS_MANUAL_RETRY = Boolean(ARGS['manual-retry'] || ARGS.manualRetry);
 const IS_PENDING_ONLY = Boolean(ARGS['pending-only'] || ARGS.pendingOnly);
 const SKIP_NAME_SYNC = IS_MANUAL_RETRY || Boolean(ARGS['skip-name-sync'] || ARGS.skipNameSync);
 const SKIP_NAVER_BLOCK = IS_MANUAL_RETRY || Boolean(ARGS['skip-naver-block'] || ARGS.skipNaverBlock);
+const ASYNC_NAVER_BLOCK = Boolean(ARGS['async-naver-block'] || ARGS.asyncNaverBlock);
 const PICKKO_ACCURATE_TIMEOUT_MS = 180_000;
 
 function safeWrite(stream: NodeJS.WriteStream, text: string): void {
@@ -59,6 +60,18 @@ function hasStrongCompletionEvidence(code: number | null, output: string): boole
     || text.includes('결제완료 처리:')
     || text.includes('이미 결제완료 상태')
   );
+}
+
+function runNaverBlockSlotSync(args: string[]): Promise<number | null> {
+  return new Promise((resolve, reject) => {
+    const child = spawn('/opt/homebrew/bin/tsx', args, {
+      cwd: __dirname,
+      env: process.env,
+      stdio: ['ignore', process.stderr, process.stderr],
+    });
+    child.on('close', (code) => resolve(code));
+    child.on('error', reject);
+  });
 }
 
 const required = ['date', 'start', 'end', 'room', 'phone'];
@@ -361,8 +374,9 @@ child.on('close', async (code: number | null) => {
       process.stderr.write(`[pickko-register] 예약 상태 반영 실패 (${key}): ${message}\n`);
     }
 
+    let naverBlockExitCode: number | null = null;
     if ((code === 0 || code === 3) && !SKIP_NAVER_BLOCK) {
-      upsertKioskBlock(normalized.phone, normalized.date, normalized.start, {
+      await upsertKioskBlock(normalized.phone, normalized.date, normalized.start, {
         name: customerName,
         date: normalized.date,
         start: normalized.start,
@@ -391,28 +405,50 @@ child.on('close', async (code: number | null) => {
         `--phone=${normalized.phone}`,
         `--name=${customerName}`,
       ];
-      const blockChild = spawn('/opt/homebrew/bin/tsx', blockArgs, {
-        cwd: __dirname,
-        env: process.env,
-        stdio: ['ignore', process.stderr, process.stderr],
-        detached: true,
-      });
-      blockChild.on('error', (error) => {
-        recordKioskBlockAttempt(normalized.phone, normalized.date, normalized.start, {
-          name: customerName,
-          date: normalized.date,
-          start: normalized.start,
-          end: normalized.end,
-          room: normalized.room,
-          amount: 0,
-          naverBlocked: false,
-          lastBlockAttemptAt: kst.datetimeStr(),
-          lastBlockResult: 'spawn_failed',
-          lastBlockReason: error.message,
-          incrementRetry: true,
-        }).catch((dbError) => process.stderr.write(`[pickko-register] kiosk_blocks spawn 실패 기록 실패: ${dbError.message}\n`));
-      });
-      blockChild.unref();
+      if (ASYNC_NAVER_BLOCK) {
+        const blockChild = spawn('/opt/homebrew/bin/tsx', blockArgs, {
+          cwd: __dirname,
+          env: process.env,
+          stdio: ['ignore', process.stderr, process.stderr],
+          detached: true,
+        });
+        blockChild.on('error', (error) => {
+          recordKioskBlockAttempt(normalized.phone, normalized.date, normalized.start, {
+            name: customerName,
+            date: normalized.date,
+            start: normalized.start,
+            end: normalized.end,
+            room: normalized.room,
+            amount: 0,
+            naverBlocked: false,
+            lastBlockAttemptAt: kst.datetimeStr(),
+            lastBlockResult: 'spawn_failed',
+            lastBlockReason: error.message,
+            incrementRetry: true,
+          }).catch((dbError) => process.stderr.write(`[pickko-register] kiosk_blocks spawn 실패 기록 실패: ${dbError.message}\n`));
+        });
+        blockChild.unref();
+      } else {
+        try {
+          naverBlockExitCode = await runNaverBlockSlotSync(blockArgs);
+        } catch (error: unknown) {
+          const message = error instanceof Error ? error.message : String(error);
+          naverBlockExitCode = 1;
+          await recordKioskBlockAttempt(normalized.phone, normalized.date, normalized.start, {
+            name: customerName,
+            date: normalized.date,
+            start: normalized.start,
+            end: normalized.end,
+            room: normalized.room,
+            amount: 0,
+            naverBlocked: false,
+            lastBlockAttemptAt: kst.datetimeStr(),
+            lastBlockResult: 'spawn_failed',
+            lastBlockReason: message,
+            incrementRetry: true,
+          }).catch((dbError) => process.stderr.write(`[pickko-register] kiosk_blocks spawn 실패 기록 실패: ${dbError.message}\n`));
+        }
+      }
     }
 
     const message = code === 2
@@ -420,10 +456,18 @@ child.on('close', async (code: number | null) => {
       : code === 3
         ? SKIP_NAVER_BLOCK
           ? `결제대기 예약 등록 완료: ${normalized.phone} ${normalized.date} ${normalized.start}~${normalized.end} ${normalized.room}룸 (${customerName})`
-          : `결제대기 예약 등록 완료: ${normalized.phone} ${normalized.date} ${normalized.start}~${normalized.end} ${normalized.room}룸 (${customerName}) — 네이버 예약불가 자동 처리 요청 완료 (실패 시 kiosk-monitor가 재시도)`
+          : ASYNC_NAVER_BLOCK
+            ? `결제대기 예약 등록 완료: ${normalized.phone} ${normalized.date} ${normalized.start}~${normalized.end} ${normalized.room}룸 (${customerName}) — 네이버 예약불가 차단 대기열 등록`
+            : naverBlockExitCode === 0
+              ? `결제대기 예약 등록 완료: ${normalized.phone} ${normalized.date} ${normalized.start}~${normalized.end} ${normalized.room}룸 (${customerName}) — 네이버 예약불가 처리 완료`
+              : `결제대기 예약 등록 완료: ${normalized.phone} ${normalized.date} ${normalized.start}~${normalized.end} ${normalized.room}룸 (${customerName}) — 네이버 예약불가 후속 처리 필요`
         : SKIP_NAVER_BLOCK
         ? `예약 등록 완료: ${normalized.phone} ${normalized.date} ${normalized.start}~${normalized.end} ${normalized.room}룸 (${customerName}) — 재등록 모드로 네이버 차단은 생략`
-          : `예약 등록 완료: ${normalized.phone} ${normalized.date} ${normalized.start}~${normalized.end} ${normalized.room}룸 (${customerName}) — 네이버 예약불가 자동 처리 요청 완료 (실패 시 kiosk-monitor가 재시도)`;
+          : ASYNC_NAVER_BLOCK
+            ? `예약 등록 완료: ${normalized.phone} ${normalized.date} ${normalized.start}~${normalized.end} ${normalized.room}룸 (${customerName}) — 네이버 예약불가 차단 대기열 등록`
+            : naverBlockExitCode === 0
+              ? `예약 등록 완료: ${normalized.phone} ${normalized.date} ${normalized.start}~${normalized.end} ${normalized.room}룸 (${customerName}) — 네이버 예약불가 처리 완료`
+              : `예약 등록 완료: ${normalized.phone} ${normalized.date} ${normalized.start}~${normalized.end} ${normalized.room}룸 (${customerName}) — 네이버 예약불가 후속 처리 필요`;
     const kind = code === 2 ? 'timeout' : 'success';
     const memoryQuery = buildRegisterMemoryQuery(kind);
     const episodicHint = await registerMemory.recallCountHint(memoryQuery, {
@@ -482,21 +526,31 @@ child.on('close', async (code: number | null) => {
         end: normalized.end,
         pickkoStatus,
         skipNaverBlock: SKIP_NAVER_BLOCK,
+        asyncNaverBlock: ASYNC_NAVER_BLOCK,
+        naverBlockExitCode,
       },
       fallback: code === 2
         ? '시간 경과로 자동 등록이 멈춰 후속 수동 확인이 필요합니다.'
-        : '등록이 완료되어 네이버 차단 요청 상태만 후속 확인하면 됩니다.',
+        : naverBlockExitCode === 0
+          ? '등록과 네이버 차단까지 완료되었습니다.'
+          : '등록은 완료되었지만 네이버 차단은 후속 확인이 필요합니다.',
     });
     process.stdout.write(`${JSON.stringify({
-      success: true,
+      success: naverBlockExitCode === null ? true : naverBlockExitCode === 0,
       message,
+      naverBlock: {
+        skipped: SKIP_NAVER_BLOCK,
+        async: ASYNC_NAVER_BLOCK,
+        exitCode: naverBlockExitCode,
+        ok: naverBlockExitCode === null ? !SKIP_NAVER_BLOCK ? ASYNC_NAVER_BLOCK : true : naverBlockExitCode === 0,
+      },
       aiSummary,
       memoryHints: {
         episodicHint,
         semanticHint,
       },
     })}\n`);
-    process.exit(0);
+    process.exit(naverBlockExitCode === null || naverBlockExitCode === 0 ? 0 : 1);
   }
 
   const memoryQuery = buildRegisterMemoryQuery('failure');
