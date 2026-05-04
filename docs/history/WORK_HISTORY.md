@@ -4,6 +4,17 @@
 > 상세 내용: `reservation-dev-summary.md` / `reservation-handoff.md`
 > 최초 작성: 2026-02-27
 
+## 2026-05-04: Hub L5 검증 + ALARM_INCIDENT 처리 (90차 세션)
+
+- **CODEX_HUB_L5_STABILITY_AND_OAUTH_DECOUPLING 검증**: Phase 2/5 구현 상태 전 게이트 검증
+  - `typecheck:strict`, `llm-shared-limiter-smoke`, `llm-async-jobs-smoke`, `hub-l5-stability-gate-smoke` 통과 (7 gates)
+  - Jest esbuild transform 설정 (`bots/hub/package.json`) 확인 → unit test 29/29 통과
+  - `hub-unified-oauth-direct-smoke.ts` 수정: `GOOGLE_CLOUD_PROJECT` env 격리 추가 (실환경에서 mock 오염 방지)
+- **ALARM_INCIDENT_claude_0ce58a590521 처리**: blog 파일 TS2339 오류 (이미 HEAD에 수정됨 확인)
+  - `attribution-tracker.ts`, `autonomy-gate.ts`, `eval-case-telemetry.ts` 타입 수정 검증
+  - `test:unit` + `transition:completion-gate` 통과 → 3개 인박스 아카이브
+- **investment**: KIS API 키 env var 오버라이드 + dispatch autopilot smoke 커밋 (prev session 미완료 작업)
+
 ## 2026-05-04: docs/codex 전수 점검 + 아카이브 정리 (89차 세션)
 
 - **CODEX_ARCHIVE_STATUS_2026-05-04 실행**: docs/codex 문서 26건 전수 점검

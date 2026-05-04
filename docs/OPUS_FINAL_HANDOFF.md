@@ -1,3 +1,52 @@
+# 세션 인수인계 — 2026-05-04 (Hub L5 검증 + ALARM_INCIDENT 처리 — 90차 세션)
+
+## 완료 요약 ✅ (90차 세션)
+
+### Hub L5 전 게이트 검증 완료
+
+**검증 결과** (CODEX_HUB_L5_STABILITY_AND_OAUTH_DECOUPLING 기준):
+- `npm --prefix bots/hub run -s typecheck:strict` ✅
+- `llm-shared-limiter-smoke.ts`, `llm-async-jobs-smoke.ts`, `hub-strict-ts-island-smoke.ts` ✅
+- `hub-l5-stability-gate-smoke.ts` ✅ (7 gates: async_jobs, shared_limiter, provider_retry_after, strict_ts_island, load_test_mapping, pg_limiter_backend, pg_job_store_backend)
+- `npm --prefix bots/hub run -s test:unit` ✅ (Jest 10 suites/29 tests + all smoke scripts)
+- `npm --prefix bots/hub run -s transition:completion-gate` ✅
+
+**수정 사항**:
+- `hub-unified-oauth-direct-smoke.ts`: `GOOGLE_CLOUD_PROJECT`, `GOOGLE_CLOUD_QUOTA_PROJECT` env 격리 추가 (실 환경에서 mock 오염 방지, 이미 HEAD에 반영됨 확인)
+- Jest esbuild transform: `bots/hub/package.json`에 `jest.transform` + `bots/hub/jest-esbuild-transform.cjs` (이미 HEAD에 있었음 확인)
+
+### ALARM_INCIDENT_claude_0ce58a590521 처리
+
+**원인**: blog reviewer가 3개 파일 TypeScript TS2339 오류 감지 (20건 HIGH)
+- `attribution-tracker.ts`, `autonomy-gate.ts`, `eval-case-telemetry.ts` — `Record<string, unknown>` 타입 수정
+- **결론**: 수정이 이미 HEAD(`8d4864bf`)에 포함되어 있었음. 인박스 3건 모두 아카이브.
+
+### investment 미완료 작업 커밋
+
+- `secrets.ts`: KIS API 키 env var 우선 조회 지원
+- `runtime-position-runtime-dispatch.ts`: JSON 파싱 개선
+- `runtime-position-runtime-dispatch-autopilot-smoke.ts`: 신규 smoke
+- 커밋: `12f98d6c`
+
+### 현재 상태 (90차 세션 기준)
+```
+Hub L5: Phase 2/5 구현 검증 완료 — 모든 게이트 통과
+ALARM_INCIDENT 인박스: 비어 있음 (3건 아카이브)
+docs/codex/ 활성: 13건 (변화 없음)
+Track 3 (7일 자연 운영): 계속 진행 중
+```
+
+### 다음 세션 우선순위
+```
+🔴 Track 2 Phase Ψ5 (마스터 승인 시):
+  launchd graceful retire (20 → 8) — 별도 프롬프트 필요
+
+🟡 활성 codex 13건 중 우선순위 결정 및 다음 구현 착수
+  - BLOG_L5_OMNICHANNEL, LUNA_LIVE_FIRE_CUTOVER_FINAL_GO 등
+```
+
+---
+
 # 세션 인수인계 — 2026-05-04 (docs/codex 전수 점검 + 아카이브 정리 — 89차 세션)
 
 ## 완료 요약 ✅ (89차 세션)
