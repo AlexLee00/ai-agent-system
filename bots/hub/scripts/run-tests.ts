@@ -113,6 +113,8 @@ function unitSmokeScripts(): string[] {
     'investment-selector-explicit-keys-smoke.ts',
     'llm-oauth-4-balance-smoke.ts',
     'llm-oauth4-rollout-launchd-smoke.ts',
+    'llm-oauth4-master-review-smoke.ts',
+    'llm-oauth4-master-review-launchd-smoke.ts',
     'llm-anthropic-primary-audit.ts',
     'gemini-route-assignment-smoke.ts',
     'steward-gemini-model-drill-smoke.ts',

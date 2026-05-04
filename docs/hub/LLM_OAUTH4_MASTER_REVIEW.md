@@ -1,22 +1,46 @@
 # LLM OAuth4 Master Review
 
-- generated_at: 2026-05-02T14:40:56.212Z
+- generated_at: 2026-05-04T02:53:32.833Z
 - hours: 168
-- total_calls: 32995
-- oauth_share_pct: 41.09
-- failed_rate_pct: 0.17
-- total_cost_usd: 53.859482
+- total_calls: 35823
+- oauth_share_pct: 34.98
+- failed_rate_pct: 0.15
+- reported_cost_usd: 86.104735
+- oauth_reported_cost_usd: 84.311749
+- non_oauth_reported_cost_usd: 1.792986
 - anthropic_provider_calls: 0
+- selector_claude_code_primary_share_pct: 49.48
 
 | Provider | Calls | Share % | Success % | Avg ms | Cost USD |
 |---|---:|---:|---:|---:|---:|
-| Claude Code OAuth | 355 | 1.08 | 100.00 | 27204 | 23.326505 |
-| OpenAI OAuth | 9938 | 30.12 | 100.00 | 3583 | 0.000000 |
-| Gemini CLI OAuth | 54 | 0.16 | 100.00 | 7656 | 0.000000 |
-| Gemini OAuth | 34 | 0.10 | 100.00 | 1258 | 0.000000 |
-| Groq | 19081 | 57.83 | 100.00 | 693 | 1.283935 |
-| Failed | 55 | 0.17 | 0.00 | 3322 | 0.000000 |
+| Claude Code OAuth | 863 | 2.41 | 100.00 | 21353 | 61.525052 |
+| OpenAI OAuth | 7963 | 22.23 | 100.00 | 3158 | 0.000000 |
+| Gemini CLI OAuth | 519 | 1.45 | 100.00 | 14729 | 0.000000 |
+| Gemini OAuth | 32 | 0.09 | 100.00 | 1264 | 0.000000 |
+| Anthropic SDK | 0 | 0.00 | 0.00 | 0 | 0.000000 |
+| Groq | 22868 | 63.84 | 100.00 | 723 | 1.783486 |
+| Failed | 55 | 0.15 | 0.00 | 3322 | 0.000000 |
 
-- claude_code_share_ok: false
-- anthropic_zero_ok: true
-- free_cost_ok: false
+## Selector Matrix
+
+- selector_version: v3.0_oauth_4
+- checked_selector_keys: 64
+- checked_agent_routes: 130
+- selector_primary_provider_counts: {"openai-oauth":54,"claude-code":96,"groq":17,"gemini-cli-oauth":27}
+- selector_primary_provider_shares: {"claude-code":49.48,"gemini-cli-oauth":13.92,"groq":8.76,"openai-oauth":27.84}
+
+## Verdict
+
+- selector_claude_code_share_ok: true
+- selector_anthropic_primary_zero_ok: true
+- selector_anthropic_chain_zero_ok: true
+- runtime_anthropic_zero_ok: true
+- runtime_failed_rate_ok: true
+- runtime_oauth_seen_ok: true
+- reported_cost_accounting_only: true
+
+## Warnings
+
+- runtime_reported_cost_is_accounting_or_cli_imputed_cost_not_oauth4_billing_gate
+- runtime_claude_code_share_depends_on_traffic_mix_selector_share_used_for_pass_fail
+- non_oauth_runtime_cost_observed_groq_or_other_fallback_usage

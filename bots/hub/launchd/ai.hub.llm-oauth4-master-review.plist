@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>ai.hub.llm-oauth4-master-review</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/opt/homebrew/bin/tsx</string>
+    <string>/Users/alexlee/projects/ai-agent-system/bots/hub/scripts/llm-oauth4-master-review.ts</string>
+  </array>
+  <key>WorkingDirectory</key>
+  <string>/Users/alexlee/projects/ai-agent-system</string>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key>
+    <string>/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/usr/bin:/bin</string>
+    <key>HOME</key>
+    <string>/Users/alexlee</string>
+    <key>MODE</key>
+    <string>ops</string>
+    <key>HUB_BASE_URL</key>
+    <string>http://localhost:7788</string>
+    <key>LLM_OAUTH4_REVIEW_HOURS</key>
+    <string>168</string>
+    <key>LLM_OAUTH4_REVIEW_STRICT</key>
+    <string>true</string>
+  </dict>
+  <key>StandardOutPath</key>
+  <string>/tmp/hub-llm-oauth4-master-review.log</string>
+  <key>StandardErrorPath</key>
+  <string>/tmp/hub-llm-oauth4-master-review.err.log</string>
+  <key>StartInterval</key>
+  <integer>3600</integer>
+  <key>RunAtLoad</key>
+  <true/>
+</dict>
+</plist>
