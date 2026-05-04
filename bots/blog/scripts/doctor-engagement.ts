@@ -693,6 +693,7 @@ async function getExposureSignal(baseline = null) {
       || (daysWithNoInbound >= 3 && activeDays <= 1);
 
     return {
+      code: needsStrategy ? 'low_exposure_accumulated' : 'normal',
       windowDays: normalized.length,
       rows: normalized,
       consecutiveNoInboundDays,
@@ -704,6 +705,7 @@ async function getExposureSignal(baseline = null) {
     };
   } catch {
     return {
+      code: 'normal',
       windowDays: 0,
       rows: [],
       consecutiveNoInboundDays: 0,

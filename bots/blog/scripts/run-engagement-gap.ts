@@ -11,6 +11,7 @@ const BLOG_ROOT = path.join(env.PROJECT_ROOT, 'bots/blog');
 const BLOG_OPS_ROOT = path.join(BLOG_ROOT, 'output', 'ops');
 const ENGAGEMENT_GAP_RUN_PATH = path.join(BLOG_OPS_ROOT, 'engagement-gap-run.json');
 const DOCTOR_COMMAND = `npm --prefix ${BLOG_ROOT} run doctor:engagement -- --json`;
+const RUN_REVENUE_STRATEGY_COMMAND = `npm --prefix ${BLOG_ROOT} run revenue:strategy -- --dry-run --json`;
 
 function parseArgs(argv = []) {
   const args = {
@@ -45,12 +46,50 @@ function pickRunTarget(payload, preferredLabel = '') {
   return runPlan.find((item) => String(item?.label || '') === preferredLabel) || null;
 }
 
+function buildLowExposureStrategyTarget(payload = {}) {
+  const exposureSignal = payload?.exposureSignal && typeof payload.exposureSignal === 'object'
+    ? payload.exposureSignal
+    : null;
+  const primary = payload?.primary && typeof payload.primary === 'object' ? payload.primary : null;
+  const primaryArea = String(primary?.area || '');
+  const signalCode = String(exposureSignal?.code || '').trim()
+    || (exposureSignal?.needsStrategy || primaryArea === 'engagement.strategy.visibility' ? 'low_exposure_accumulated' : '');
+  const needsStrategy = Boolean(exposureSignal?.needsStrategy)
+    || signalCode === 'low_exposure_accumulated'
+    || primaryArea === 'engagement.strategy.visibility';
+  if (!needsStrategy) return null;
+
+  return {
+    step: 999,
+    label: 'low_exposure_strategy',
+    summary: `low_exposure_accumulated strategy fallback: inbound=${Number(exposureSignal?.totalInbound || 0)} / noInboundDays=${Number(exposureSignal?.daysWithNoInbound || 0)}`,
+    deficit: Number(exposureSignal?.daysWithNoInbound || 0),
+    command: String(primary?.nextCommand || '').trim() || RUN_REVENUE_STRATEGY_COMMAND,
+    signalCode: signalCode || 'low_exposure_accumulated',
+    source: 'engagement_exposure_signal',
+  };
+}
+
 function buildTargetQueue(payload, preferredLabel = '') {
-  const runPlan = Array.isArray(payload?.runPlan) ? payload.runPlan : [];
-  if (!preferredLabel) return runPlan;
-  const preferred = runPlan.find((item) => String(item?.label || '') === preferredLabel);
-  const rest = runPlan.filter((item) => String(item?.label || '') !== preferredLabel);
-  return preferred ? [preferred, ...rest] : runPlan;
+  const runPlan = Array.isArray(payload?.runPlan) ? [...payload.runPlan] : [];
+  const lowExposureTarget = buildLowExposureStrategyTarget(payload);
+  const queue = lowExposureTarget
+    ? [
+        ...runPlan,
+        ...(
+          runPlan.some((item) => String(item?.label || '') === lowExposureTarget.label)
+            ? []
+            : [lowExposureTarget]
+        ),
+      ]
+    : runPlan;
+  if (!preferredLabel) return queue;
+  const preferred = queue.find((item) =>
+    String(item?.label || '') === preferredLabel
+    || String(item?.signalCode || '') === preferredLabel
+  );
+  const rest = queue.filter((item) => item !== preferred);
+  return preferred ? [preferred, ...rest] : queue;
 }
 
 function looksIdleOutput(output = '') {
@@ -98,6 +137,7 @@ function main() {
       ok: false,
       reason: '실행 가능한 engagement gap target이 없습니다.',
       primary: payload?.primary || null,
+      exposureSignal: payload?.exposureSignal || null,
       runPlan: payload?.runPlan || [],
     };
     if (args.json) {
@@ -114,7 +154,9 @@ function main() {
     label: target.label,
     summary: target.summary,
     command: target.command,
+    signalCode: target.signalCode || null,
     primary: payload?.primary || null,
+    exposureSignal: payload?.exposureSignal || null,
     dryRun: args.dryRun,
     attempted: [],
     executedAt: new Date().toISOString(),
@@ -148,6 +190,7 @@ function main() {
       label: candidate.label,
       summary: candidate.summary,
       command: candidate.command,
+      signalCode: candidate.signalCode || null,
       idle,
     });
     executedTarget = candidate;
@@ -164,6 +207,7 @@ function main() {
   result.label = executedTarget?.label || result.label;
   result.summary = executedTarget?.summary || result.summary;
   result.command = executedTarget?.command || result.command;
+  result.signalCode = executedTarget?.signalCode || result.signalCode || null;
   result.escalated = nextEscalated;
   result.allIdle = allIdle;
   if (allIdle) {
@@ -186,4 +230,14 @@ function main() {
   }
 }
 
-main();
+if (require.main === module) {
+  main();
+}
+
+module.exports = {
+  parseArgs,
+  buildLowExposureStrategyTarget,
+  pickRunTarget,
+  buildTargetQueue,
+  looksIdleOutput,
+};
