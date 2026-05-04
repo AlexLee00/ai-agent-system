@@ -186,7 +186,13 @@ export async function runLunaEntryTriggerWorkerReadinessSmoke() {
   assert.ok(report.checkedAt);
   assert.ok(report.repoPlist.path.endsWith(`${LABEL}.plist`));
   assert.ok(Array.isArray(report.warnings));
-  assert.ok(report.installCommand.includes(LABEL));
+  if (report.migration?.retired) {
+    assert.equal(report.installCommand, null);
+    assert.equal(report.unloadCommand, null);
+    assert.ok(report.replacement);
+  } else {
+    assert.ok(report.installCommand.includes(LABEL));
+  }
   return report;
 }
 

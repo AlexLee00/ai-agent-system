@@ -27,11 +27,12 @@
     "test:guardian":     "node __tests__/guardian.test.ts",
     "test:builder":      "node __tests__/builder.test.ts",
     "test:doctor":       "node __tests__/doctor-verify-loop.test.ts",
+    "test:retired-luna": "node __tests__/retired-luna-launchd.test.ts",
     "test:commander":    "node __tests__/commander.test.ts",
     "test:codex":        "node __tests__/codex-plan-notifier.test.ts",
     "test:auto-dev":     "node __tests__/auto-dev-pipeline.test.ts",
     "auto-dev":          "node scripts/auto-dev-runner.ts",
     "auto-dev:once":     "node scripts/auto-dev-runner.ts --once",
-    "test:unit":         "node __tests__/reviewer.test.ts && node __tests__/guardian.test.ts && node __tests__/builder.test.ts && node __tests__/doctor-verify-loop.test.ts && node __tests__/commander.test.ts && node __tests__/codex-plan-notifier.test.ts && node __tests__/auto-dev-pipeline.test.ts"
+    "test:unit":         "node __tests__/reviewer.test.ts && node __tests__/guardian.test.ts && node __tests__/builder.test.ts && node __tests__/doctor-verify-loop.test.ts && node __tests__/retired-luna-launchd.test.ts && node __tests__/commander.test.ts && node __tests__/codex-plan-notifier.test.ts && node __tests__/auto-dev-pipeline.test.ts"
   }
 }

@@ -4,7 +4,10 @@
 const { fetchOpsErrors } = require('../../../../packages/core/lib/hub-client');
 const { execSync } = require('child_process');
 const { LAUNCHD_AVAILABLE } = require('../../../../packages/core/lib/env');
-const { isRetiredService } = require('../../../../packages/core/lib/service-ownership.js');
+const {
+  getServiceOwnership,
+  isRetiredService,
+} = require('../../../../packages/core/lib/service-ownership.js');
 
 const SERVICE_LABEL_MAP = {
   'investment-crypto': 'ai.investment.crypto',
@@ -75,15 +78,18 @@ async function checkErrorLogs() {
     } else {
       for (const svc of data.services) {
         const launchdLabel = SERVICE_LABEL_MAP[svc.service] || null;
-        const launchdStatus = getLaunchdStatus(launchdLabel);
+        const retired = isRetiredService(launchdLabel);
+        const ownership = getServiceOwnership(launchdLabel);
+        const launchdStatus = retired ? null : getLaunchdStatus(launchdLabel);
         const healthyNow = isCurrentlyHealthy(launchdStatus);
         let status = svc.error_count >= 10 ? 'error' : svc.error_count >= 3 ? 'warn' : 'ok';
         const tail = svc.recent_errors[svc.recent_errors.length - 1] || '';
         let detail = `${svc.error_count}건 — ${tail.slice(0, 200)}`;
 
-        if (isRetiredService(launchdLabel)) {
+        if (retired) {
           status = 'ok';
-          detail += ' | 퇴역 launchd 라벨 — 현재 통합 Luna 런타임에서 감시';
+          const replacement = ownership?.replacement ? ` → ${ownership.replacement}` : '';
+          detail += ` | 퇴역 launchd 라벨${replacement} — launchctl 조회/재시작 제외`;
         } else if (healthyNow) {
           status = 'ok';
           detail += ` | 현재 상태 정상 (${launchdStatus.state || `exit ${launchdStatus.lastExitCode}`})`;

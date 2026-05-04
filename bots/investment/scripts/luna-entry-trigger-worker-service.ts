@@ -53,6 +53,8 @@ export async function buildLunaEntryTriggerWorkerServicePlan({ install = false, 
     commands.push(`launchctl bootstrap gui/$(id -u) ${INSTALLED_PLIST}`);
   } else if (unload) {
     commands.push(`launchctl bootout gui/$(id -u) ${INSTALLED_PLIST}`);
+  } else if (retired) {
+    commands.push(`retired: ${LABEL} -> ${ownership?.replacement || 'luna.skills.entry_trigger'}`);
   } else {
     commands.push(`launchctl print gui/$(id -u)/${LABEL}`);
   }
@@ -104,7 +106,18 @@ export async function runLunaEntryTriggerWorkerService({ install = false, unload
 export async function runLunaEntryTriggerWorkerServiceSmoke() {
   const install = await buildLunaEntryTriggerWorkerServicePlan({ install: true });
   assert.equal(install.action, 'install');
-  assert.ok(install.commands.some((command) => command.includes('launchctl bootstrap')));
+  if (install.retired) {
+    assert.ok(install.commands.some((command) => command.includes('retired:')));
+    assert.ok(!install.commands.some((command) => command.includes('launchctl bootstrap')));
+  } else {
+    assert.ok(install.commands.some((command) => command.includes('launchctl bootstrap')));
+  }
+  const status = await buildLunaEntryTriggerWorkerServicePlan();
+  assert.equal(status.action, 'status');
+  if (status.retired) {
+    assert.ok(status.commands.some((command) => command.includes('retired:')));
+    assert.ok(!status.commands.some((command) => command.includes('launchctl print')));
+  }
   const unload = await buildLunaEntryTriggerWorkerServicePlan({ unload: true });
   assert.equal(unload.action, 'unload');
   assert.ok(unload.commands.some((command) => command.includes('launchctl bootout')));

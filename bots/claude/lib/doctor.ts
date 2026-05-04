@@ -24,6 +24,10 @@ const pgPool     = require('../../../packages/core/lib/pg-pool');
 const eventLake  = require('../../../packages/core/lib/event-lake');
 const { publishToRag, publishToWebhook } = require('../../../packages/core/lib/reporting-hub');
 const { createAgentMemory } = require('../../../packages/core/lib/agent-memory');
+const {
+  getServiceOwnership,
+  isRetiredService,
+} = require('../../../packages/core/lib/service-ownership.js');
 
 const SCHEMA      = 'reservation';
 const ROOT        = path.join(__dirname, '../../../');
@@ -36,6 +40,13 @@ const RECOVERY_BLACKLIST = new Set([
 ]);
 const RESTART_TIMEOUT_COOLDOWN_MINUTES = 15;
 const RESTART_TIMEOUT_COOLDOWN_FAILS = 3;
+
+function retiredServiceMessage(label) {
+  const replacement = getServiceOwnership(label)?.replacement;
+  return replacement
+    ? `퇴역 launchd 서비스: ${label} → ${replacement}`
+    : `퇴역 launchd 서비스: ${label}`;
+}
 
 function kickstartLaunchdService(uid, label, timeout = 15000) {
   return execFileSync(
@@ -113,6 +124,7 @@ const WHITELIST = {
     action: async ({ label }) => {
       if (!label) throw new Error('label 파라미터 필수');
       if (!String(label).startsWith('ai.')) throw new Error(`ai.* 서비스만 허용: ${label}`);
+      if (isRetiredService(label)) throw new Error(retiredServiceMessage(label));
       if (RECOVERY_BLACKLIST.has(label)) throw new Error(`블랙리스트 서비스: ${label}`);
       const uid = process.getuid ? process.getuid() : execSync('id -u', { encoding: 'utf8' }).trim();
       // kickstart -k: 이미 실행 중이면 강제 종료 후 재시작
@@ -553,7 +565,7 @@ function discoverServices() {
       status: Number.parseInt(statusRaw, 10) || 0,
       keepAlive,
       plistPath: fs.existsSync(plistPath) ? plistPath : null,
-      blacklisted: RECOVERY_BLACKLIST.has(label),
+      blacklisted: RECOVERY_BLACKLIST.has(label) || isRetiredService(label),
     });
   }
 
@@ -676,6 +688,7 @@ async function scanAndRecover() {
 
       const label = _serviceToLaunchd(svc.service);
       if (!label) continue;
+      if (isRetiredService(label)) continue;
       if (!canRecover('restart_launchd_service')) continue;
       if (RECOVERY_BLACKLIST.has(label)) continue;
       if (recoveries.some((r) => r.label === label && r.success)) continue;

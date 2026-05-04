@@ -126,7 +126,7 @@ async function applyDecayRule(
         FROM agent.hub_alarms
         WHERE severity = $1
           AND status NOT IN ('resolved', 'suppressed')
-          AND received_at <= NOW() - ($2 * INTERVAL '1 hour')
+          AND received_at <= NOW() - ($2::numeric * INTERVAL '1 hour')
           AND (fingerprint_count IS NULL OR fingerprint_count < $3)
         ORDER BY received_at ASC
         LIMIT 200
