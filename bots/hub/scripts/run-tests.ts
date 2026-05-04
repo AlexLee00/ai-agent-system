@@ -100,6 +100,7 @@ function unitSmokeScripts(): string[] {
     'llm-shared-limiter-smoke.ts',
     'llm-async-jobs-smoke.ts',
     'hub-l5-stability-gate-smoke.ts',
+    'hub-l5-acceptance-report.ts',
     legacyIsolationScript('active'),
     'legacy-gateway-admin-guard-smoke.ts',
     'public-api-optional-smoke.ts',

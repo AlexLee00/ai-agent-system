@@ -1,3 +1,5 @@
+import type { Express, Request, RequestHandler, Response } from 'express';
+
 const path = require('path');
 const express = require('express');
 const {
@@ -105,7 +107,20 @@ const {
   controlCallbackRoute,
 } = require('../lib/routes/control');
 
-export function registerHubRoutes(app, opts) {
+type RuntimeFlag = () => boolean;
+
+type HubRouteOptions = {
+  isShuttingDown: RuntimeFlag;
+  isStartupComplete: RuntimeFlag;
+  authMiddleware: RequestHandler;
+  generalLimiter: RequestHandler;
+  pgLimiter: RequestHandler;
+  secretsLimiter: RequestHandler;
+  llmLimiter: RequestHandler;
+  llmAdmissionMiddleware: RequestHandler;
+};
+
+export function registerHubRoutes(app: Express, opts: HubRouteOptions): void {
   const {
     isShuttingDown,
     isStartupComplete,
@@ -118,7 +133,7 @@ export function registerHubRoutes(app, opts) {
   } = opts;
 
   app.get('/hub/health', generalLimiter, healthRoute);
-  app.get('/hub/health/live', generalLimiter, (_req, res) => {
+  app.get('/hub/health/live', generalLimiter, (_req: Request, res: Response) => {
     const shuttingDown = isShuttingDown();
     return res.status(shuttingDown ? 503 : 200).json({
       status: shuttingDown ? 'shutting_down' : 'ok',
@@ -128,7 +143,7 @@ export function registerHubRoutes(app, opts) {
     });
   });
   app.get('/hub/health/ready', generalLimiter, healthReadyRoute);
-  app.get('/hub/health/startup', generalLimiter, (_req, res) => {
+  app.get('/hub/health/startup', generalLimiter, (_req: Request, res: Response) => {
     const startupOk = isStartupComplete() && !isShuttingDown();
     return res.status(startupOk ? 200 : 503).json({
       status: startupOk ? 'ok' : (isShuttingDown() ? 'shutting_down' : 'starting'),
@@ -241,7 +256,7 @@ export function registerHubRoutes(app, opts) {
   app.get('/hub/metrics', generalLimiter, metricsRoute);
   app.get('/hub/metrics/json', generalLimiter, metricsJsonRoute);
 
-  app.use('/hub', (req, res) => {
+  app.use('/hub', (req: Request, res: Response) => {
     res.status(404).json({ error: `unknown endpoint: ${req.method} ${req.path}` });
   });
 }

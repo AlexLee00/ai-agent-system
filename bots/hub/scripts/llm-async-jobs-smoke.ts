@@ -11,8 +11,10 @@ const limiterDir = fs.mkdtempSync(path.join(os.tmpdir(), 'hub-llm-jobs-limiter-s
 
 process.env.HUB_AUTH_TOKEN = 'hub-llm-jobs-smoke-token';
 process.env.HUB_LLM_JOB_DIR = jobDir;
+process.env.HUB_LLM_JOB_STORE_BACKEND = 'file';
 process.env.HUB_LLM_JOB_SMOKE_MOCK = '1';
 process.env.HUB_LLM_SHARED_LIMITER_DIR = limiterDir;
+process.env.HUB_LLM_SHARED_LIMITER_BACKEND = 'file';
 process.env.HUB_LLM_SHARED_LIMITER_ENABLED = 'true';
 process.env.HUB_LLM_SHARED_MAX_IN_FLIGHT = '2';
 process.env.HUB_LLM_SHARED_TEAM_MAX_IN_FLIGHT = '2';
@@ -49,7 +51,7 @@ async function requestJson(baseUrl, method, route, body) {
 async function main() {
   const { resetJobStoreForTests } = require('../lib/llm/job-store.ts');
   const { resetSharedLimiterForTests } = require('../lib/llm/shared-limiter.ts');
-  resetJobStoreForTests();
+  await resetJobStoreForTests();
   resetSharedLimiterForTests();
 
   const { createHubApp } = require('../src/app.ts');

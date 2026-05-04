@@ -10,6 +10,15 @@
     "types": ["node"]
   },
   "files": [
-    "lib/llm/l5-contract-types.ts"
+    "types/hub-strict-shims.d.ts",
+    "lib/llm/l5-contract-types.ts",
+    "lib/llm/request-schema.ts",
+    "lib/llm/shared-limiter.ts",
+    "lib/llm/job-store.ts",
+    "lib/llm/types.ts",
+    "src/app.ts",
+    "src/middleware/request-context.ts",
+    "src/rate-limiters.ts",
+    "src/route-registry.ts"
   ]
 }

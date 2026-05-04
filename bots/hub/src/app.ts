@@ -1,3 +1,5 @@
+import type { Express } from 'express';
+
 const express = require('express');
 const { authMiddleware } = require('../lib/auth');
 const { llmAdmissionMiddleware } = require('../lib/llm/admission-control');
@@ -11,7 +13,14 @@ const { hubRequestContextMiddleware } = require('./middleware/request-context');
 const { createHubRateLimiters } = require('./rate-limiters');
 const { registerHubRoutes } = require('./route-registry');
 
-export function createHubApp(options) {
+type RuntimeFlag = () => boolean;
+
+type HubAppOptions = {
+  isShuttingDown?: RuntimeFlag;
+  isStartupComplete?: RuntimeFlag;
+};
+
+export function createHubApp(options: HubAppOptions = {}): Express {
   const app = express();
   const isShuttingDown = options?.isShuttingDown || (() => false);
   const isStartupComplete = options?.isStartupComplete || (() => true);

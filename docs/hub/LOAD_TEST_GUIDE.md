@@ -127,8 +127,18 @@ curl -s -H "Authorization: Bearer $HUB_AUTH_TOKEN" "$HUB_BASE_URL/hub/llm/stats?
 | provider retry-after/cooldown propagation | `npx tsx bots/hub/scripts/hub-l5-stability-gate-smoke.ts` |
 | strict TS island | `npm --prefix bots/hub run typecheck:strict` |
 | load scenario path integrity | `npx tsx bots/hub/scripts/load-test-guide-contract-smoke.ts` |
+| L5 evidence report | `npm --prefix bots/hub run l5:acceptance-report` |
 
-위 게이트는 `npm --prefix bots/hub run test:unit`에 연결되어 있으며, 실제 k6 부하 실측 전에도 계약 드리프트를 먼저 잡는다.
+위 게이트는 `npm --prefix bots/hub run test:unit`과 `check:l5`에 연결되어 있으며, 실제 k6 부하 실측 전에도 계약 드리프트를 먼저 잡는다. `check:l5`는 `bots/hub/output/l5-acceptance-report.json`을 생성해 Load/Backpressure/DistributedLimiter/AsyncQueue/Rollback/StrictTS 증빙을 남긴다.
+
+분산 운영 모드는 다음 환경변수로 전환한다.
+
+```bash
+HUB_LLM_SHARED_LIMITER_BACKEND=pg
+HUB_LLM_JOB_STORE_BACKEND=pg
+```
+
+기본값은 `file` backend다. 단일 로컬 Hub에서는 추가 의존성이 없고, 여러 프로세스/호스트에서 공정성을 공유해야 할 때 `pg` backend를 사용한다.
 
 ---
 

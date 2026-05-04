@@ -20,7 +20,19 @@ const LlmCallBodySchema = z.object({
   cacheType: z.string().trim().min(1).max(64).optional(),
 }).passthrough();
 
-function parseLlmCallPayload(body) {
+type LlmCallParseResult = {
+  ok: true;
+  data: Record<string, any>;
+} | {
+  ok: false;
+  error: {
+    code: string;
+    message: string;
+    details: unknown;
+  };
+};
+
+function parseLlmCallPayload(body: unknown): LlmCallParseResult {
   const parsed = LlmCallBodySchema.safeParse(body ?? {});
   if (parsed.success) {
     return { ok: true, data: parsed.data };

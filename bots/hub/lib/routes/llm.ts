@@ -93,7 +93,7 @@ export async function llmJobsCreateRoute(req, res) {
     urgency: body.urgency || context.priority || undefined,
     traceId: context.traceId || undefined,
   };
-  const job = createLlmJob(normalizedRequest, context, { source: 'api' });
+  const job = await createLlmJob(normalizedRequest, context, { source: 'api' });
   return res.status(202).json({
     ok: true,
     jobId: job.id,
@@ -109,14 +109,14 @@ export async function llmJobsListRoute(req, res) {
   const limit = Math.min(Math.max(Number(req.query?.limit ?? 20), 1), 100);
   return res.json({
     ok: true,
-    jobs: listLlmJobs(limit),
-    store: getJobStoreState(),
+    jobs: await listLlmJobs(limit),
+    store: await getJobStoreState(),
   });
 }
 
 // GET /hub/llm/jobs/:id — 비동기 LLM job 상태/결과 조회
 export async function llmJobStatusRoute(req, res) {
-  const job = readJob(req.params?.id);
+  const job = await readJob(req.params?.id);
   if (!job) return res.status(404).json({ ok: false, error: 'llm_job_not_found' });
   return res.json({
     ok: true,
@@ -126,7 +126,7 @@ export async function llmJobStatusRoute(req, res) {
 
 // GET /hub/llm/jobs/:id/result — 완료된 비동기 LLM job 결과만 조회
 export async function llmJobResultRoute(req, res) {
-  const job = readJob(req.params?.id);
+  const job = await readJob(req.params?.id);
   if (!job) return res.status(404).json({ ok: false, error: 'llm_job_not_found' });
   if (job.status !== 'completed') {
     return res.status(202).json({
@@ -271,7 +271,7 @@ export async function llmStatsRoute(req, res) {
         provider_share: computeProviderShare(summary),
       },
       admission: getLlmAdmissionState(),
-      jobs: getJobStoreState(),
+      jobs: await getJobStoreState(),
     });
   } catch (err) {
     return res.json({
@@ -284,7 +284,7 @@ export async function llmStatsRoute(req, res) {
       by_hour: [],
       totals: { total_calls: 0, total_cost_usd: 0, success_rate: 0, provider_share: {} },
       admission: getLlmAdmissionState(),
-      jobs: getJobStoreState(),
+      jobs: await getJobStoreState(),
       note: err.message.includes('does not exist') ? 'llm_routing_log 테이블 미생성 — 마이그레이션 필요' : undefined,
     });
   }

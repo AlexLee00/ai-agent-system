@@ -153,6 +153,7 @@ LaunchAgents.disabled/
 bots/hub/secrets-store.json
 bots/hub/output/oauth/
 bots/hub/output/llm-jobs/
+bots/hub/output/l5-acceptance-report.json
 bots/hub/output/team-llm-route-drill-live.json
 
 # ─── 자동 생성 런타임 파일 (깃 제외) ───

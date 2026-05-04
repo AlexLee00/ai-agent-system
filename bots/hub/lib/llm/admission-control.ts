@@ -155,7 +155,7 @@ async function llmAdmissionMiddleware(req, res, next) {
     if (err.code === 'queue_full' && shouldOverflowToJob(req)) {
       try {
         const { createLlmJob } = require('./job-store');
-        const job = createLlmJob(req.body || {}, req.hubRequestContext || {}, { source: 'admission_overflow' });
+        const job = await createLlmJob(req.body || {}, req.hubRequestContext || {}, { source: 'admission_overflow' });
         res.set('Retry-After', String(Math.max(1, Math.ceil(retryAfterMs / 1000))));
         return res.status(202).json({
           ok: true,

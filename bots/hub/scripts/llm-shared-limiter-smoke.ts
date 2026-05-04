@@ -8,6 +8,7 @@ const path = require('node:path');
 
 const limiterDir = fs.mkdtempSync(path.join(os.tmpdir(), 'hub-llm-limiter-smoke-'));
 process.env.HUB_LLM_SHARED_LIMITER_DIR = limiterDir;
+process.env.HUB_LLM_SHARED_LIMITER_BACKEND = 'file';
 process.env.HUB_LLM_SHARED_LIMITER_ENABLED = 'true';
 process.env.HUB_LLM_SHARED_MAX_IN_FLIGHT = '1';
 process.env.HUB_LLM_SHARED_TEAM_MAX_IN_FLIGHT = '1';
@@ -36,7 +37,10 @@ async function main() {
 
   const state = getSharedLimiterState();
   assert.equal(state.enabled, true);
+  assert.equal(state.backend, 'file');
   assert.equal(state.dir, limiterDir);
+  assert.equal(state.capabilities.multi_process, true);
+  assert.equal(state.capabilities.fairness_scope.includes('provider'), true);
 
   console.log(JSON.stringify({
     ok: true,

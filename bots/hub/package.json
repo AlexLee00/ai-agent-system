@@ -32,6 +32,7 @@
     "live:drill:mock": "HUB_LIVE_DRILL_MOCK=1 HUB_AUTH_TOKEN=hub-live-drill-mock-token tsx scripts/hub-live-drill.ts",
     "load:k6": "bash ../../tests/load/run-all.sh --skip-chaos",
     "load:k6:short": "SHORT_MODE=true bash ../../tests/load/run-all.sh --skip-chaos",
+    "l5:acceptance-report": "tsx scripts/hub-l5-acceptance-report.ts --write",
     "typecheck:strict": "tsc -p tsconfig.json",
     "team:llm-drill": "tsx scripts/team-llm-route-drill.ts",
     "team:llm-drill:live": "HUB_TEAM_LLM_DRILL_LIVE=1 tsx scripts/team-llm-route-drill.ts",
@@ -98,12 +99,19 @@
     "test:secrets-meta": "node --test __tests__/secrets-meta.node.test.js",
     "check:runtime": "tsx scripts/run-tests.ts runtime",
     "check:runtime:live-llm": "tsx scripts/run-tests.ts runtime-live",
-    "check:l5": "tsx scripts/run-tests.ts all && tsx scripts/run-tests.ts runtime && tsx scripts/generate-hub-alarm-inventory.ts",
-    "check:l5:live-llm": "tsx scripts/run-tests.ts all && tsx scripts/run-tests.ts runtime-live && tsx scripts/generate-hub-alarm-inventory.ts"
+    "check:l5": "tsx scripts/run-tests.ts all && tsx scripts/run-tests.ts runtime && tsx scripts/generate-hub-alarm-inventory.ts && tsx scripts/hub-l5-acceptance-report.ts --write",
+    "check:l5:live-llm": "tsx scripts/run-tests.ts all && tsx scripts/run-tests.ts runtime-live && tsx scripts/generate-hub-alarm-inventory.ts && tsx scripts/hub-l5-acceptance-report.ts --write"
   },
   "dependencies": {
     "express": "^4.21.2",
     "express-rate-limit": "^7.5.0",
     "tsx": "^4.21.0"
+  },
+  "jest": {
+    "transform": {
+      "^.+\\.tsx?$": "<rootDir>/jest-esbuild-transform.cjs"
+    },
+    "testEnvironment": "node",
+    "moduleFileExtensions": ["ts", "tsx", "js", "jsx", "json"]
   }
 }

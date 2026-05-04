@@ -11,7 +11,20 @@ const tsconfigPath = path.join(repoRoot, 'bots/hub/tsconfig.json');
 const tsconfig = JSON.parse(fs.readFileSync(tsconfigPath, 'utf8'));
 
 assert.equal(tsconfig.compilerOptions?.strict, true, 'bots/hub/tsconfig.json must enable strict mode');
-assert.deepEqual(tsconfig.files, ['lib/llm/l5-contract-types.ts'], 'strict island must start from explicit files');
+const strictFiles = new Set(tsconfig.files || []);
+[
+  'lib/llm/l5-contract-types.ts',
+  'lib/llm/request-schema.ts',
+  'lib/llm/shared-limiter.ts',
+  'lib/llm/job-store.ts',
+  'src/app.ts',
+  'src/middleware/request-context.ts',
+  'src/rate-limiters.ts',
+  'src/route-registry.ts',
+].forEach((file) => {
+  assert(strictFiles.has(file), `strict island missing ${file}`);
+});
+assert((tsconfig.files || []).length >= 9, 'strict island must cover Hub app/route/LLM contracts, not a single file');
 
 const tscBin = path.join(repoRoot, 'node_modules/.bin/tsc');
 const result = spawnSync(tscBin, ['-p', tsconfigPath], {

@@ -1,9 +1,18 @@
+import type { Request, RequestHandler } from 'express';
+
 const rateLimitModule = require('express-rate-limit');
 const { parsePositiveIntEnv } = require('./env-utils');
 
 const rateLimit = rateLimitModule.default || rateLimitModule;
 
-function createHubRateLimiters() {
+type HubRateLimiters = {
+  generalLimiter: RequestHandler;
+  pgLimiter: RequestHandler;
+  secretsLimiter: RequestHandler;
+  llmLimiter: RequestHandler;
+};
+
+function createHubRateLimiters(): HubRateLimiters {
   const secretsRateLimitPerMinute = parsePositiveIntEnv('HUB_SECRETS_RATE_LIMIT_PER_MIN', 240);
   const llmRateLimitPerMinute = parsePositiveIntEnv('HUB_LLM_RATE_LIMIT_PER_MIN', 120);
 
@@ -35,7 +44,7 @@ function createHubRateLimiters() {
       standardHeaders: true,
       legacyHeaders: false,
       message: { error: `LLM rate limit exceeded (${llmRateLimitPerMinute}/min)` },
-      skip: (req) => String(req.headers['x-hub-load-test'] || '').trim() === '1',
+      skip: (req: Request) => String(req.headers['x-hub-load-test'] || '').trim() === '1',
     }),
   };
 }

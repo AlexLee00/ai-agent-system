@@ -23,13 +23,19 @@ mustInclude('bots/hub/lib/routes/llm.ts', "res.set('Retry-After'", 'provider ret
 mustInclude('bots/hub/lib/llm/admission-control.ts', 'HUB_LLM_OVERFLOW_TO_JOB', 'overflow-to-job contract');
 mustInclude('bots/hub/lib/llm/admission-control.ts', 'getSharedLimiterState', 'shared limiter state');
 mustInclude('bots/hub/lib/llm/shared-limiter.ts', 'HUB_LLM_SHARED_LIMITER_DIR', 'shared limiter implementation');
+mustInclude('bots/hub/lib/llm/shared-limiter.ts', 'HUB_LLM_SHARED_LIMITER_BACKEND', 'shared limiter backend selection');
+mustInclude('bots/hub/lib/llm/shared-limiter.ts', 'hub_llm_limiter_leases', 'postgres shared limiter table');
 mustInclude('bots/hub/lib/llm/shared-limiter.ts', 'shared_limiter_full', 'shared limiter backpressure');
+mustInclude('bots/hub/lib/llm/job-store.ts', 'HUB_LLM_JOB_STORE_BACKEND', 'job store backend selection');
+mustInclude('bots/hub/lib/llm/job-store.ts', 'hub_llm_jobs', 'postgres async job table');
 mustInclude('bots/hub/package.json', '"typecheck:strict"', 'strict TS script');
 mustInclude('bots/hub/package.json', '"load:k6"', 'load test script');
 mustInclude('docs/hub/LOAD_TEST_GUIDE.md', 'tests/load/run-all.sh', 'load guide mapping');
 
 const tsconfig = JSON.parse(read('bots/hub/tsconfig.json'));
 assert.equal(tsconfig.compilerOptions?.strict, true, 'Hub strict TS island must be strict');
+assert((tsconfig.files || []).includes('src/route-registry.ts'), 'strict island must include route registry');
+assert((tsconfig.files || []).includes('lib/llm/job-store.ts'), 'strict island must include async job store');
 
 console.log(JSON.stringify({
   ok: true,
@@ -39,5 +45,7 @@ console.log(JSON.stringify({
     'provider_retry_after',
     'strict_ts_island',
     'load_test_mapping',
+    'pg_limiter_backend',
+    'pg_job_store_backend',
   ],
 }));

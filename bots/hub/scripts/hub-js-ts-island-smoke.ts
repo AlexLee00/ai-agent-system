@@ -10,6 +10,7 @@ const repoRoot = path.resolve(__dirname, '..', '..', '..');
 const allowedJsFiles = new Map([
   ['bots/hub/__tests__/secrets-meta.node.test.js', 'node-test-runner-suite'],
   ['bots/hub/__tests__/alarm-policy.node.test.js', 'node-test-runner-suite'],
+  ['bots/hub/jest.config.cjs', 'test-runner-config'],
   ['bots/hub/lib/secrets-meta.js', 'node-test-runner-fixture'],
   ['bots/hub/scripts/telegram-callback-poller.js', 'ts-source-bridge'],
 ]);

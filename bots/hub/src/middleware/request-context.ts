@@ -1,22 +1,41 @@
+import type { NextFunction, Request, Response } from 'express';
+
 const crypto = require('crypto');
 
 const PRIORITIES = new Set(['low', 'normal', 'high', 'critical']);
 
-function normalizeString(value, maxLength = 120) {
+type HubRequestContext = {
+  traceId: string;
+  callerTeam: string | null;
+  agent: string | null;
+  priority: string;
+  receivedAt: string;
+};
+
+type HubRequest = Request & {
+  hubRequestContext?: HubRequestContext;
+  body?: Record<string, unknown>;
+};
+
+function normalizeString(value: unknown, maxLength = 120): string | null {
   const text = String(value || '').trim();
   if (!text) return null;
   return text.slice(0, maxLength);
 }
 
-function resolveTraceId(req) {
-  const raw = normalizeString(req.headers?.['x-trace-id'], 128);
+function getHeader(req: Request, name: string): unknown {
+  return req.headers?.[name.toLowerCase()];
+}
+
+function resolveTraceId(req: HubRequest): string {
+  const raw = normalizeString(getHeader(req, 'x-trace-id'), 128);
   if (raw) return raw;
   if (typeof crypto.randomUUID === 'function') return crypto.randomUUID();
   return `trace_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
 }
 
-function resolvePriority(req) {
-  const fromHeader = normalizeString(req.headers?.['x-priority'], 16);
+function resolvePriority(req: HubRequest): string {
+  const fromHeader = normalizeString(getHeader(req, 'x-priority'), 16);
   const fromBody = normalizeString(req.body?.priority, 16);
   const candidate = String(fromBody || fromHeader || 'normal').toLowerCase();
   if (PRIORITIES.has(candidate)) {
@@ -25,15 +44,15 @@ function resolvePriority(req) {
   return 'normal';
 }
 
-function resolveCallerTeam(req) {
-  return normalizeString(req.body?.callerTeam, 120) || normalizeString(req.headers?.['x-caller-team'], 120);
+function resolveCallerTeam(req: HubRequest): string | null {
+  return normalizeString(req.body?.callerTeam, 120) || normalizeString(getHeader(req, 'x-caller-team'), 120);
 }
 
-function resolveAgent(req) {
-  return normalizeString(req.body?.agent, 120) || normalizeString(req.headers?.['x-agent'], 120);
+function resolveAgent(req: HubRequest): string | null {
+  return normalizeString(req.body?.agent, 120) || normalizeString(getHeader(req, 'x-agent'), 120);
 }
 
-function hubRequestContextMiddleware(req, res, next) {
+function hubRequestContextMiddleware(req: HubRequest, res: Response, next: NextFunction) {
   const context = {
     traceId: resolveTraceId(req),
     callerTeam: resolveCallerTeam(req),
