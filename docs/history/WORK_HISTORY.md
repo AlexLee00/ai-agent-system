@@ -4,6 +4,18 @@
 > 상세 내용: `reservation-dev-summary.md` / `reservation-handoff.md`
 > 최초 작성: 2026-02-27
 
+## 2026-05-04: CODEX_LUNA_TRADE_DATA_ANALYSIS_REPORT P0 보강 6종 구현 (87차 세션)
+
+- **Migration** `20260504_realized_pnl.sql`: `trades` 테이블에 `realized_pnl_usdt`, `realized_pnl_pct`, `matched_buy_id` 컬럼 + 인덱스 3종 추가
+- **realized-pnl-calculator.ts 강화**: DB 레이어 추가 (fetchTradesForSymbol, persistRealizedPnl, computeAndPersistPnlForSymbol, backfillAllRealizedPnl)
+- **runtime-pnl-backfill.ts 신규**: 기존 668 trades BUY-SELL FIFO 매칭 + realized_pnl 일괄 저장 (`APPLY=true` 시 실제 DB 업데이트)
+- **posttrade-auto-trigger.ts 강화**: stub → 실 파이프라인 실행 (onTradeClosed: PnL계산→quality_evaluation_pending 이벤트→손실 reflexion 자동 호출)
+- **kis-market-hours-guard.ts 강화**: 미국장 서머타임 지원, getNextOpenTime, deferSignal/flushDeferredSignals (인메모리 deferred queue)
+- **signal-pre-filter.ts 강화**: KIS exchange 신호에 kis-market-hours-guard 자동 통합 (BUY 신호 장외시간 차단 + deferOnMarketClosed)
+- **runtime-trade-journal-dashboard-html.ts 강화**: fixture → 실DB 쿼리 (daily PnL, 시장별 성공률, 실패사유, reflexion/skill 카운트, TP/SL 비율, Chart.js 시각화)
+- **smoke 3종 보강**: posttrade-trigger에 onTradeClosed 케이스, kis-hours에 getNextOpenTime/deferSignal/flush 케이스 추가 → 3종 모두 통과
+- 활성화 제어: `LUNA_POSTTRADE_AUTO_TRIGGER_ENABLED=true`, `LUNA_FAILED_SIGNAL_REFLEXION_AUTO=true` env var로 on/off
+
 ## 2026-05-04: ALARM_INCIDENT 인박스 처리 + 알람 오분류 수정 (86차 세션)
 
 - **ALARM_INCIDENT 인박스 20건 처리**: docs/auto_dev/ → docs/archive/alarm-incidents/2026-05-04/ (로컬)

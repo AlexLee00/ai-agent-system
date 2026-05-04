@@ -1,10 +1,16 @@
 #!/usr/bin/env node
 // @ts-nocheck
 import assert from 'node:assert/strict';
-import { evaluateKisMarketHours } from '../shared/kis-market-hours-guard.ts';
+import {
+  evaluateKisMarketHours,
+  getNextOpenTime,
+  deferSignal,
+  flushDeferredSignals,
+} from '../shared/kis-market-hours-guard.ts';
 import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
 
 export async function runSmoke() {
+  // 한국장 개장: UTC 01:00 = KST 10:00 목요일
   const domesticOpen = evaluateKisMarketHours({
     market: 'domestic',
     now: new Date('2026-04-30T01:00:00Z'),
@@ -12,6 +18,7 @@ export async function runSmoke() {
   assert.equal(domesticOpen.state, 'open');
   assert.equal(domesticOpen.nextAction, 'allow');
 
+  // 한국장 폐장: UTC 08:00 = KST 17:00
   const domesticClosed = evaluateKisMarketHours({
     market: 'domestic',
     now: new Date('2026-04-30T08:00:00Z'),
@@ -19,12 +26,38 @@ export async function runSmoke() {
   assert.equal(domesticClosed.state, 'closed');
   assert.equal(domesticClosed.nextAction, 'defer_until_open');
 
+  // 미국장 overseas 체크
   const overseas = evaluateKisMarketHours({
     market: 'overseas',
     now: new Date('2026-04-30T15:00:00Z'),
   });
   assert.ok(['open', 'closed'].includes(overseas.state));
-  return { ok: true, domesticOpen, domesticClosed, overseas };
+
+  // getNextOpenTime — 폐장 중이면 nextOpen이 null이 아님
+  const next = getNextOpenTime({ market: 'domestic', now: new Date('2026-04-30T08:00:00Z') });
+  assert.ok(next.nextOpen !== null, 'nextOpen should not be null when closed');
+  assert.ok(next.minutesUntilOpen > 0, 'minutesUntilOpen > 0');
+
+  // getNextOpenTime — 개장 중이면 alreadyOpen=true
+  const nextOpen = getNextOpenTime({ market: 'domestic', now: new Date('2026-04-30T01:00:00Z') });
+  assert.equal(nextOpen.alreadyOpen, true);
+
+  // deferSignal + flushDeferredSignals
+  const sig = { id: 'sig-test-1', symbol: 'SAMSUNG', action: 'BUY' };
+  const deferred = deferSignal(sig, 'domestic', new Date('2026-04-30T08:00:00Z'));
+  assert.ok(deferred.ok, 'deferSignal ok');
+
+  // 폐장 시간 → flush 결과: still
+  const flush1 = flushDeferredSignals('domestic', new Date('2026-04-30T08:00:00Z'));
+  assert.equal(flush1.readyCount, 0);
+  assert.equal(flush1.stillCount, 1);
+
+  // 개장 시간 → flush 결과: ready
+  const deferSignal2 = deferSignal({ id: 'sig-test-2', symbol: 'KAKAO', action: 'BUY' }, 'domestic', new Date('2026-04-30T08:00:00Z'));
+  const flush2 = flushDeferredSignals('domestic', new Date('2026-04-30T01:00:00Z'));
+  assert.ok(flush2.readyCount >= 1, `readyCount=${flush2.readyCount}`);
+
+  return { ok: true, domesticOpen, domesticClosed, overseas, next, nextOpen };
 }
 
 async function main() {
