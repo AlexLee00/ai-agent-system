@@ -85,10 +85,10 @@ async function runPosttradeFeedback(args) {
   const enabledB = cfg.stage_attribution?.enabled ?? false;
   const enabledC = cfg.reflexion?.enabled ?? false;
 
-  console.log(`[PosttradeFeedback] enabled: A=${enabledA} B=${enabledB} C=${enabledC} dryRun=${args.dryRun} market=${args.market}`);
+  console.error(`[PosttradeFeedback] enabled: A=${enabledA} B=${enabledB} C=${enabledC} dryRun=${args.dryRun} market=${args.market}`);
 
   if (!enabledA && !enabledB && !enabledC) {
-    console.log('[PosttradeFeedback] 모든 Phase 비활성 — Kill switch: posttrade_feedback.*.enabled=false');
+    console.error('[PosttradeFeedback] 모든 Phase 비활성 — Kill switch: posttrade_feedback.*.enabled=false');
     return { skipped: true, reason: 'all_disabled' };
   }
 
@@ -101,11 +101,11 @@ async function runPosttradeFeedback(args) {
   }
 
   if (candidates.length === 0) {
-    console.log('[PosttradeFeedback] 처리할 거래 없음 (모두 이미 평가됨)');
+    console.error('[PosttradeFeedback] 처리할 거래 없음 (모두 이미 평가됨)');
     return { processed: 0, source: 'none' };
   }
 
-  console.log(`[PosttradeFeedback] 처리 대상: ${candidates.length}건`);
+  console.error(`[PosttradeFeedback] 처리 대상: ${candidates.length}건`);
 
   const results = {
     preferred: 0,
@@ -179,7 +179,7 @@ async function runPosttradeFeedback(args) {
     }
   }
 
-  console.log(`[PosttradeFeedback] 완료 — preferred:${results.preferred} neutral:${results.neutral} rejected:${results.rejected} reflexions:${results.reflexions} errors:${results.errors}`);
+  console.error(`[PosttradeFeedback] 완료 — preferred:${results.preferred} neutral:${results.neutral} rejected:${results.rejected} reflexions:${results.reflexions} errors:${results.errors}`);
 
   return { processed: candidates.length, ...results };
 }

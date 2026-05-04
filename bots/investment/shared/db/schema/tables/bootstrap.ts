@@ -804,7 +804,7 @@ export async function runInvestmentSchemaBootstrap(run, { log = true } = {}) {
     }
   } catch { /* 무시 */ }
 
-  if (log) console.log(`✅ DB 스키마 초기화 완료 (investment 스키마)`);
+  if (log) console.error(`✅ DB 스키마 초기화 완료 (investment 스키마)`);
 
 }
 

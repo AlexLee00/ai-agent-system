@@ -16,7 +16,7 @@ export const PROTECTED_LIVE_FIRE_SERVICES = [
   'ai.hub.resource-api',
 ];
 
-const LIVE_CUTOVER_APPLY_COMMAND = 'npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run -s runtime:luna-live-fire-cutover -- --apply --confirm=enable-luna-live-fire --json';
+const LIVE_CUTOVER_APPLY_COMMAND = 'npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run -s runtime:luna-live-fire-cutover -- --apply --confirm=enable-luna-live-fire --max-usdt=50 --max-daily-usdt=200 --max-open=2 --json';
 const LIVE_CUTOVER_WATCHDOG_COMMAND = 'npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run -s runtime:luna-live-fire-watchdog -- --json';
 
 function hasFlag(name) {

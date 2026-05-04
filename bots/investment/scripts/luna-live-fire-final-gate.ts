@@ -128,7 +128,7 @@ export async function buildLunaLiveFireFinalGate({
       ? (operatingSummary.nextAction === 'continue_live_fire_watchdog_monitoring'
         ? ['npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run -s runtime:luna-live-fire-watchdog']
         : [
-            'npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run -s runtime:luna-live-fire-cutover -- --apply --confirm=enable-luna-live-fire',
+            'npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run -s runtime:luna-live-fire-cutover -- --apply --confirm=enable-luna-live-fire --max-usdt=50 --max-daily-usdt=200 --max-open=2',
             'npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run -s runtime:luna-live-fire-watchdog',
           ])
       : [
