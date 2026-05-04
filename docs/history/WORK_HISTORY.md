@@ -4,6 +4,17 @@
 > 상세 내용: `reservation-dev-summary.md` / `reservation-handoff.md`
 > 최초 작성: 2026-02-27
 
+## 2026-05-04: ALARM_INCIDENT 인박스 처리 + 알람 오분류 수정 (86차 세션)
+
+- **ALARM_INCIDENT 인박스 20건 처리**: docs/auto_dev/ → docs/archive/alarm-incidents/2026-05-04/ (로컬)
+  - investment 5건: health-check ALL_SERVICES 이미 정리됨 (ca04949d), 기존 해결
+  - blog 10건: 성공 완료 메시지가 _error 이벤트로 라우팅되는 false positive
+  - claude 3건: auto_dev_stage_plan 운영 상태 알림 (실제 에러 아님)
+  - reservation 1건: 신규 예약 감지가 alertLevel=3으로 error 오분류
+- **알람 오분류 수정** (`d18ddcbe`):
+  - `bots/blog/lib/commenter.ts`: `_postCommenterAlarm`에 `alarmType` 명시 (alertLevel<3→work)
+  - `bots/reservation/lib/naver-reservation-helpers.ts`: `getAlertLevelByType('new')` 3→2
+
 ## 2026-05-01: CODEX_ALARM_DISPATCH_HUB_100_PERCENT_FINAL_CLOSURE_PLAN Polish 2-5 — 알람 디스패치 허브 100% (84차 세션)
 
 - **Polish 2 폐쇄 사이클 검증**: `bots/hub/scripts/alarm-closure-cycle-smoke.ts` (235줄)

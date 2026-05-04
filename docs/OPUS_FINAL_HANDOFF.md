@@ -1,4 +1,56 @@
-# 세션 인수인계 — 2026-05-02 (CODEX_ALARM_DISPATCH_HUB_FINAL_8_PERCENT_CLOSURE_PLAN — 85차 세션)
+# 세션 인수인계 — 2026-05-04 (ALARM_INCIDENT 인박스 처리 + 알람 오분류 수정 — 86차 세션)
+
+## 완료 요약 ✅ (86차 세션)
+
+### ALARM_INCIDENT 인박스 처리 (20건 → 아카이브)
+- `docs/auto_dev/` → `docs/archive/alarm-incidents/2026-05-04/` (로컬 아카이브, gitignore)
+- 분류: investment 5 (health check 이미 수정됨), blog 10 (알람 오분류), claude 3 (운영 상태알림), reservation 1 (신규예약 오분류)
+
+### 알람 오분류 2건 수정 (커밋: `d18ddcbe`)
+1. **blog commenter** `_postCommenterAlarm`: `alarmType: alertLevel >= 3 ? 'error' : 'work'` 명시
+   → 메시지 내 "실패 0건" 단어로 인해 성공 알람이 ALARM_INCIDENT 생성하던 false positive 차단
+2. **reservation** `getAlertLevelByType('new')`: 3 → 2
+   → 신규 예약 감지 알람(alertLevel>=3 → error 분류)이 ALARM_INCIDENT 생성하던 문제 해결
+
+### 현재 상태
+```
+Track 1 (env vars): 이미 완료 — ai.hub.resource-api.plist에 모두 적용됨
+  HUB_ALARM_ROUNDTABLE_ENABLED=true ✅
+  HUB_ALARM_DISPATCH_MODE=autonomous ✅
+  HUB_NOISY_AUTO_LEARN_ENABLED=true ✅
+  HUB_ROUNDTABLE_REFLECTION_ENABLED=true ✅
+  HUB_SEVERITY_DECAY_ENABLED=true ✅
+  LLM_TEAM_SELECTOR_VERSION=v3.0_oauth_4 ✅
+  LLM_TEAM_SELECTOR_AB_PERCENT=100 ✅
+Track 2 (Phase Ψ5 launchd graceful): 미완료 — 별도 프롬프트 필요
+Track 3 (7일 자연 운영): 진행 중 (2026-05-04 기준 60h+)
+```
+
+### 알려진 이슈
+- `llm-routing-standard-smoke.ts` 실패: 기존 이슈 (luna/default가 openai-oauth 대신 claude-code)
+  → LLM 라우팅 설정 v3.0_oauth_4에서 expected 값 불일치 (stash pop으로 확인됨, 내 변경과 무관)
+- `llm-oauth4-master-review` 관련 파일들 (미스테이지드 변경): stash pop에서 복원됨, 미커밋 상태
+  → `bots/hub/output/llm-oauth4-master-review.json`, `bots/hub/scripts/llm-oauth4-master-review.ts` 등
+
+### 다음 세션 우선순위
+```
+🔴 Track 2 Phase Ψ5 (마스터 승인 시):
+  launchd graceful retire (20 → 8)
+  → CODEX_LUNA_MASTER_PLAN_FINAL_5_PERCENT_CLOSURE_PLAN 참조 (아직 미작성)
+
+🟡 llm-routing-standard-smoke 수정:
+  bots/hub/scripts/llm-routing-standard-smoke.ts:142-147
+  luna/default 체인 first entry가 openai-oauth → claude-code로 바뀜
+  → 기대값 업데이트 또는 라우팅 복원
+
+🟡 llm-oauth4-master-review 미커밋 작업 정리:
+  스태시에서 복원된 미완성 파일들 (run-tests.ts, llm-oauth4-master-review.ts 등)
+  → 마스터 검토 후 커밋 또는 폐기
+```
+
+---
+
+# 이전 세션 인수인계 — 2026-05-02 (CODEX_ALARM_DISPATCH_HUB_FINAL_8_PERCENT_CLOSURE_PLAN — 85차 세션)
 
 ## 완료 요약 ✅ (85차 세션) — check:l5 회귀 수정 + Polish 2-5 최종 확인
 
