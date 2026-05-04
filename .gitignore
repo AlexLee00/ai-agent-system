@@ -178,6 +178,7 @@ tmp/blog-commenter-debug/
 # 덱스터/아처 운영 이력
 bots/claude/*.log
 bots/claude/dexter-fixes.json
+bots/claude/archer-cache.json
 
 # 블로그 서버 로그
 bots/blog/*.log
