@@ -51,6 +51,15 @@ export function getOpsSchedulerJobs() {
       cadence: { type: 'interval', seconds: 3600 },
       ...nodeScript('runtime-voyager-natural-acceleration.ts', ['--json']),
     },
+    {
+      name: 'reconcile_auto_settle',
+      cadence: { type: 'interval', seconds: 300 },
+      ...nodeScript('runtime-luna-reconcile-auto-settle.ts', [
+        '--apply',
+        '--confirm=luna-reconcile-auto-settle',
+        '--json',
+      ]),
+    },
   ];
 }
 
