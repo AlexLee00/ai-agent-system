@@ -5437,6 +5437,7 @@ async function _postCommenterAlarm({ fromBot, alertLevel, message, shouldSend })
     fromBot,
     alertLevel,
     message,
+    alarmType: alertLevel >= 3 ? 'error' : 'work',
   }).catch(() => {});
 }
 

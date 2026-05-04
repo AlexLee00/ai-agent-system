@@ -15,7 +15,7 @@ export function isTerminalReservationLike(reservation: ReservationLike | null | 
 
 export function getAlertLevelByType(type: string): number {
   if (type === 'error') return 3;
-  if (type === 'new') return 3;
+  if (type === 'new') return 2;
   return 1;
 }
 
