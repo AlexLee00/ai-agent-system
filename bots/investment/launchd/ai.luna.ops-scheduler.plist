@@ -20,6 +20,14 @@
     <string>production</string>
     <key>LUNA_OPS_SCHEDULER_ENABLED</key>
     <string>true</string>
+    <key>LUNA_DISCOVERY_ORCHESTRATOR_ENABLED</key>
+    <string>true</string>
+    <key>LUNA_DISCOVERY_TOSS</key>
+    <string>true</string>
+    <key>LUNA_DISCOVERY_YAHOO</key>
+    <string>true</string>
+    <key>LUNA_DISCOVERY_SEC</key>
+    <string>true</string>
     <key>LUNA_VOYAGER_NATURAL_ACCELERATION_ENABLED</key>
     <string>true</string>
     <key>LUNA_DELEGATED_AUTHORITY_ENABLED</key>

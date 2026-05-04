@@ -27,6 +27,19 @@ export function getOpsSchedulerJobs() {
       ...nodeScript('capture-market-regimes.ts', ['--markets=binance,kis,kis_overseas', '--json']),
     },
     {
+      name: 'discovery_candidate_refresh',
+      cadence: { type: 'interval', seconds: 1800 },
+      ...nodeScript('runtime-discovery-orchestrator-refresh.ts', [
+        '--markets=crypto,domestic,overseas',
+        '--json',
+      ]),
+    },
+    {
+      name: 'discovery_funnel_report',
+      cadence: { type: 'interval', seconds: 1800 },
+      ...nodeScript('runtime-luna-discovery-funnel-report.ts', ['--hours=24', '--json']),
+    },
+    {
       name: 'daily_backtest',
       cadence: { type: 'daily', hour: 1, minute: 10 },
       ...nodeScript('runtime-luna-daily-backtest.ts', ['--json', '--dry-run']),

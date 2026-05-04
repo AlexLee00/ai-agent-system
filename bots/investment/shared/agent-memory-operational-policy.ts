@@ -250,6 +250,8 @@ export async function buildAgentLlmRouteQualityReport({
     const effectiveFailureRate = totalObserved > 0 ? failed / totalObserved : 1;
     const graceMs = Math.max(0, Number(recoveryGraceMinutes || 0)) * 60 * 1000;
     const withinGrace = latestSuccess && graceMs > 0 && (Date.now() - latestSuccess.seenAt) <= graceMs;
+    const failureAgeMs = failedSeenAt > 0 ? Date.now() - failedSeenAt : Number.POSITIVE_INFINITY;
+    const staleFailure = graceMs > 0 && failureAgeMs > graceMs;
     const transientWithSuccess = successStats.successCalls > 0
       && effectiveFailureRate < failThreshold
       && withinGrace;
@@ -261,6 +263,8 @@ export async function buildAgentLlmRouteQualityReport({
       routeProviderSuccessCalls: successStats.successCalls,
       effectiveFailureRate,
       recoveryGraceMinutes: Math.max(0, Number(recoveryGraceMinutes || 0)),
+      failureAgeMinutes: Number.isFinite(failureAgeMs) ? Math.max(0, Math.round(failureAgeMs / 60000)) : null,
+      staleFailure,
     };
   }
 
@@ -371,6 +375,29 @@ export async function buildAgentLlmRouteQualityReport({
           latestSuccessAt: recovery.latestSuccess?.lastSeenAt || null,
           failedLastSeenAt: row.last_seen_at,
           recommendation: `동일 route/provider 성공 ${recovery.routeProviderSuccessCalls}건 대비 실패 ${failed}건으로 전체 실패율 ${(recovery.effectiveFailureRate * 100).toFixed(1)}%입니다. active blocker 대신 ${recovery.recoveryGraceMinutes}분 grace 관찰로 유지하세요.`,
+        });
+        continue;
+      }
+      if (recovery.staleFailure) {
+        suggestions.push({
+          type: 'route_failure_stale_observation',
+          severity: 'medium',
+          agent: row.agent_name,
+          market: row.market,
+          taskType: row.task_type,
+          provider: row.provider,
+          providerLabel: failureSummary.providerLabel,
+          failureKind: failureSummary.failureKind,
+          routeProviders: failureSummary.routeProviders,
+          calls,
+          failureRate,
+          fallbackRate,
+          routeProviderSuccessCalls: recovery.routeProviderSuccessCalls,
+          effectiveFailureRate: recovery.effectiveFailureRate,
+          recoveryGraceMinutes: recovery.recoveryGraceMinutes,
+          failureAgeMinutes: recovery.failureAgeMinutes,
+          failedLastSeenAt: row.last_seen_at,
+          recommendation: `마지막 route 실패가 ${recovery.failureAgeMinutes}분 전으로 grace ${recovery.recoveryGraceMinutes}분을 초과했습니다. active blocker 대신 stale observation으로 남기고 재발 여부만 추적하세요.`,
         });
         continue;
       }

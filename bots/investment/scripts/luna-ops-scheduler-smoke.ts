@@ -14,11 +14,13 @@ import {
 
 export async function runLunaOpsSchedulerSmoke() {
   const jobs = getOpsSchedulerJobs();
-  assert.equal(jobs.length, 7);
+  assert.equal(jobs.length, 9);
+  assert.equal(jobs.some((job) => job.name === 'discovery_candidate_refresh'), true);
+  assert.equal(jobs.some((job) => job.name === 'discovery_funnel_report'), true);
 
   const now = new Date('2026-05-04T02:00:00+09:00');
   const emptyPlan = buildOpsSchedulerPlan({ now, state: { jobs: {} }, jobs });
-  assert.equal(emptyPlan.due, 7);
+  assert.equal(emptyPlan.due, 9);
 
   const recentState = {
     jobs: Object.fromEntries(jobs.map((job) => [job.name, { lastRunAt: now.toISOString() }])),
@@ -45,8 +47,8 @@ export async function runLunaOpsSchedulerSmoke() {
     },
   });
   assert.equal(executed.ok, true);
-  assert.equal(calls.length, 7);
-  assert.equal(Object.keys(JSON.parse(fs.readFileSync(statePath, 'utf8')).jobs).length, 7);
+  assert.equal(calls.length, 9);
+  assert.equal(Object.keys(JSON.parse(fs.readFileSync(statePath, 'utf8')).jobs).length, 9);
 
   const seedPath = path.join(tmp, 'seeded-state.json');
   const seeded = seedOpsSchedulerState({ now, statePath: seedPath, jobs });
