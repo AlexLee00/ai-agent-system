@@ -12,6 +12,7 @@ import {
   computeDeferredGuardRetryMinutes,
   buildGuardReasonSummary,
   detectTerminalChildFailure,
+  inspectBrokerCredentialGate,
   pruneStaleMarketQueueEntries,
   renderText,
 } from './runtime-position-runtime-dispatch.ts';
@@ -139,6 +140,46 @@ async function main() {
   assert(
     'dispatch child execute 결과는 실행 성공으로 집계',
     executedClassified.ok === true && executedClassified.status === 'child_executed_verified',
+  );
+  const noisyLargePayload = `${'> @ai-agent/investment@2.1.0 runtime:partial-adjust\n'}${JSON.stringify({
+    mode: 'execute',
+    ok: true,
+    executionStatus: 'executed',
+    result: Array.from({ length: 80 }, (_, index) => ({
+      index,
+      nested: { a: { b: { c: index } } },
+    })),
+  }, null, 2)}`;
+  const noisyLargeClassified = classifyChildExecutionOutput(noisyLargePayload, { phase6: true });
+  assert(
+    'npm banner + 큰 nested JSON payload도 tail JSON으로 파싱',
+    noisyLargeClassified.ok === true && noisyLargeClassified.status === 'child_executed_verified',
+  );
+  const kisCredentialBlocked = inspectBrokerCredentialGate(
+    { exchange: 'kis', symbol: '005090' },
+    {
+      getKisAppKey: () => 'valid-key',
+      getKisAppSecret: () => '',
+      getKisAccount: () => ({ cano: '12345678', acntPrdtCd: '01' }),
+    },
+  );
+  assert(
+    'KIS AppSecret 누락은 주문 실행 전 broker credential gate에서 차단',
+    kisCredentialBlocked.ok === false
+      && kisCredentialBlocked.missing.includes('kis_app_secret')
+      && kisCredentialBlocked.reason.includes('kis_app_secret'),
+  );
+  const kisCredentialReady = inspectBrokerCredentialGate(
+    { exchange: 'kis_overseas', symbol: 'AAPL' },
+    {
+      getKisAppKey: () => 'valid-key',
+      getKisAppSecret: () => 'valid-secret',
+      getKisAccount: () => ({ cano: '12345678', acntPrdtCd: '01' }),
+    },
+  );
+  assert(
+    'KIS broker credential gate는 key/secret/account가 있으면 통과',
+    kisCredentialReady.ok === true && kisCredentialReady.reason === 'broker_credentials_ready',
   );
 
   assert(

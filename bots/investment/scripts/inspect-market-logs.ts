@@ -18,6 +18,8 @@ import path from 'path';
 const args = process.argv.slice(2);
 const marketArg = args.find(a => a.startsWith('--market='))?.split('=')[1] || 'all';
 const tail = Number(args.find(a => a.startsWith('--tail='))?.split('=')[1] || 80);
+const freshMinutes = Number(args.find(a => a.startsWith('--fresh-minutes='))?.split('=')[1] || 360);
+const maxReadBytes = Number(args.find(a => a.startsWith('--max-read-bytes='))?.split('=')[1] || 2_000_000);
 
 const LOGS = {
   commander: {
@@ -29,6 +31,21 @@ const LOGS = {
     out: '/tmp/ai.luna.marketdata-mcp.log',
     err: '/tmp/ai.luna.marketdata-mcp.err.log',
     label: 'Luna marketdata MCP',
+  },
+  tradingview: {
+    out: '/tmp/ai.luna.tradingview-ws.log',
+    err: '/tmp/ai.luna.tradingview-ws.err.log',
+    label: 'Luna TradingView WS',
+  },
+  autopilot: {
+    out: '/tmp/investment-runtime-autopilot.log',
+    err: '/tmp/investment-runtime-autopilot.err.log',
+    label: 'Luna runtime autopilot',
+  },
+  opsScheduler: {
+    out: '/tmp/ai.luna.ops-scheduler.out.log',
+    err: '/tmp/ai.luna.ops-scheduler.err.log',
+    label: 'Luna ops scheduler',
   },
   elixir: {
     out: '/tmp/elixir-supervisor.log',
@@ -45,14 +62,44 @@ const KEY_PATTERNS = [
   { key: 'hanul_phase', label: '한울 단계 로그', test: line => /\[한울\].*(조회|처리 완료|전체 처리 완료)/i.test(line) },
   { key: 'screening_fail', label: '스크리닝 실패', test: line => /(스크리닝 전체 실패|거래량 순위 조회 실패|시세 API 실패)/i.test(line) },
   { key: 'llm_timeout', label: 'LLM timeout', test: line => /Request timed out/i.test(line) },
+  { key: 'kis_secret', label: 'KIS secret 누락', test: line => /(AppSecret은 필수|KIS .*app(secret|key).*미설정)/i.test(line) },
+  { key: 'child_json', label: 'child JSON 파싱 실패', test: line => /child_output_not_json/i.test(line) },
 ];
+
+const MARKET_ALIASES = {
+  domestic: ['autopilot', 'opsScheduler', 'commander'],
+  overseas: ['autopilot', 'opsScheduler', 'commander'],
+  crypto: ['tradingview', 'autopilot', 'opsScheduler', 'commander'],
+  runtime: ['autopilot', 'opsScheduler'],
+};
 
 function readLines(file) {
   try {
-    const text = fs.readFileSync(file, 'utf8');
+    const stat = fs.statSync(file);
+    let text = '';
+    if (stat.size > maxReadBytes) {
+      const fd = fs.openSync(file, 'r');
+      try {
+        const buffer = Buffer.alloc(maxReadBytes);
+        fs.readSync(fd, buffer, 0, maxReadBytes, stat.size - maxReadBytes);
+        text = buffer.toString('utf8');
+      } finally {
+        fs.closeSync(fd);
+      }
+    } else {
+      text = fs.readFileSync(file, 'utf8');
+    }
     return text.split('\n').filter(Boolean);
   } catch {
     return [];
+  }
+}
+
+function fileMtimeMs(file) {
+  try {
+    return fs.statSync(file).mtimeMs;
+  } catch {
+    return null;
   }
 }
 
@@ -63,7 +110,11 @@ function tailLines(lines, count) {
 function summarizeLog(name, config) {
   const outLines = readLines(config.out);
   const errLines = readLines(config.err);
-  const merged = [...tailLines(outLines, tail), ...tailLines(errLines, tail)];
+  const errMtimeMs = fileMtimeMs(config.err);
+  const errAgeMinutes = errMtimeMs == null ? null : Math.round((Date.now() - errMtimeMs) / 60000);
+  const errFresh = errAgeMinutes == null || errAgeMinutes <= Math.max(1, freshMinutes);
+  const errTail = errFresh ? tailLines(errLines, tail) : [];
+  const merged = [...tailLines(outLines, tail), ...errTail];
 
   const findings = KEY_PATTERNS.map(pattern => {
     const matches = merged.filter(line => pattern.test(line));
@@ -79,15 +130,20 @@ function summarizeLog(name, config) {
     label: config.label,
     outCount: outLines.length,
     errCount: errLines.length,
+    errFresh,
+    errAgeMinutes,
     findings,
     recentOut: tailLines(outLines, 10),
-    recentErr: tailLines(errLines, 10),
+    recentErr: errTail.slice(-10),
   };
 }
 
 function printSummary(summary) {
   console.log(`\n=== ${summary.label} ===`);
   console.log(`stdout: ${summary.outCount}줄 | stderr: ${summary.errCount}줄`);
+  if (summary.errCount > 0 && summary.errFresh === false) {
+    console.log(`stderr: stale (${summary.errAgeMinutes}분 전) — 현재 오류 판정에서 제외`);
+  }
 
   if (summary.findings.length === 0) {
     console.log('핵심 패턴 없음');
@@ -112,7 +168,7 @@ function printSummary(summary) {
 function main() {
   const markets = marketArg === 'all'
     ? Object.keys(LOGS)
-    : Object.keys(LOGS).filter(key => key === marketArg);
+    : (MARKET_ALIASES[marketArg] || Object.keys(LOGS).filter(key => key === marketArg));
 
   if (markets.length === 0) {
     console.error(`알 수 없는 market: ${marketArg}`);

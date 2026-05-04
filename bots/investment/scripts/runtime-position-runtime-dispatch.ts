@@ -4,7 +4,13 @@
 import * as db from '../shared/db.ts';
 import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
 import { runPositionRuntimeReport } from './runtime-position-runtime-report.ts';
-import { getKisMarketStatus, getKisOverseasMarketStatus } from '../shared/secrets.ts';
+import {
+  getKisAccount,
+  getKisAppKey,
+  getKisAppSecret,
+  getKisMarketStatus,
+  getKisOverseasMarketStatus,
+} from '../shared/secrets.ts';
 import {
   DEFAULT_POSITION_RUNTIME_MARKET_QUEUE_FILE,
   readPositionRuntimeMarketQueue,
@@ -326,11 +332,22 @@ function parseJsonTail(text = '') {
   if (!raw) return null;
   try { return JSON.parse(raw); } catch {}
 
+  const exactLineStarts = [];
+  if (raw[0] === '{') exactLineStarts.push(0);
+  for (let i = raw.length - 2; i >= 0; i -= 1) {
+    if (raw[i] === '\n' && raw[i + 1] === '{') exactLineStarts.push(i + 1);
+  }
+  for (const index of exactLineStarts) {
+    try {
+      return JSON.parse(raw.slice(index));
+    } catch {}
+  }
+
   const starts = [];
   for (let i = raw.length - 1; i >= 0; i--) {
     if (raw[i] !== '{') continue;
     starts.push(i);
-    if (starts.length >= 40) break;
+    if (starts.length >= 2000) break;
   }
   for (const index of starts) {
     try {
@@ -338,6 +355,30 @@ function parseJsonTail(text = '') {
     } catch {}
   }
   return null;
+}
+
+export function inspectBrokerCredentialGate(candidate = null, providers = {}) {
+  const exchange = String(candidate?.exchange || '').trim().toLowerCase();
+  if (exchange !== 'kis' && exchange !== 'kis_overseas') {
+    return { required: false, ok: true, reason: 'broker_credentials_not_required' };
+  }
+
+  const appKey = String((providers.getKisAppKey || getKisAppKey)() || '');
+  const appSecret = String((providers.getKisAppSecret || getKisAppSecret)() || '');
+  const account = (providers.getKisAccount || getKisAccount)() || {};
+  const missing = [];
+  if (appKey.length < 5) missing.push('kis_app_key');
+  if (appSecret.length < 5) missing.push('kis_app_secret');
+  if (!String(account?.cano || '').trim()) missing.push('kis_account_number');
+
+  return {
+    required: true,
+    ok: missing.length === 0,
+    reason: missing.length === 0 ? 'broker_credentials_ready' : `missing_${missing.join(',')}`,
+    missing,
+    exchange,
+    accountMode: String(account?.cano || '').trim() ? 'configured' : 'missing',
+  };
 }
 
 function normalizeStatus(payload = null) {
@@ -494,6 +535,7 @@ function toAutonomousActionStatus(result = null) {
   if (
     status === 'missing_autonomous_execution_path'
     || status.startsWith('child_non_execute_mode_')
+    || status === 'broker_credentials_missing'
     || status === 'position_runtime_dispatch_confirmation_required'
   ) {
     return 'autonomous_action_blocked_by_safety';
@@ -776,6 +818,21 @@ export async function runPositionRuntimeDispatch(args = {}) {
       continue;
     }
 
+    const credentialGate = inspectBrokerCredentialGate(candidate);
+    if (credentialGate.ok !== true) {
+      handledExecutionKeys.add(executionKey);
+      marketQueueEntries = removePositionRuntimeMarketQueueEntry(marketQueueEntries, entry.queueKey);
+      results.push({
+        ok: false,
+        status: 'broker_credentials_missing',
+        autonomousActionStatus: 'autonomous_action_blocked_by_safety',
+        candidate,
+        brokerCredentialGate: credentialGate,
+        fromQueue: true,
+      });
+      continue;
+    }
+
     const executed = await executeCandidate(candidate, { phase6: args.phase6 === true });
     const attempts = Number(entry?.attempts || 0) + 1;
     const lastAttemptAt = new Date().toISOString();
@@ -843,6 +900,17 @@ export async function runPositionRuntimeDispatch(args = {}) {
       results.push(queueCandidate(candidate, gate.reason || 'market_closed', {
         autonomousActionStatus: 'autonomous_action_queued',
       }));
+      continue;
+    }
+    const credentialGate = inspectBrokerCredentialGate(candidate);
+    if (credentialGate.ok !== true) {
+      results.push({
+        ok: false,
+        status: 'broker_credentials_missing',
+        autonomousActionStatus: 'autonomous_action_blocked_by_safety',
+        candidate,
+        brokerCredentialGate: credentialGate,
+      });
       continue;
     }
     const executed = await executeCandidate(candidate, { phase6: args.phase6 === true });

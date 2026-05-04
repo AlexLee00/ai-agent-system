@@ -5,7 +5,7 @@
   "bots/investment/scripts/runtime-luna-ops-scheduler.ts": "c25b5b122c48cc220d49f73f2e8f2d16ae06a674bca7819be7a2307b59076194",
   "bots/investment/scripts/luna-live-fire-watchdog.ts": "7c2ba98a2fa322d56234d04125d758042d122118ed59cc18df4118e7ccf82f5a",
   "bots/investment/scripts/runtime-luna-entry-trigger-diagnose.ts": "8e82c86e1f049644fc57bc7b511f93d2b69eee85b5bd9d41c7082ce05b0f294d",
-  "bots/investment/shared/secrets.ts": "9732afb3ec0ab6d77088ead4c0a54c4a9d853ad65c23849775b9d590daaa60cd",
+  "bots/investment/shared/secrets.ts": "370963407089773a4649ee24465c4a06dc7b7d333e2785a9bdc1dc44fda19397",
   "bots/investment/shared/llm-client.ts": "4bcac332cc55ea8099bbfaee8f3ee7912bbc763b3d8d4c2f42e677a6d7d3ea0f",
   "bots/claude/src/dexter.js": "b8d0a0b5dad48f2befa61ca75275a38d1a6120b828d8924dbb4d961410da4db3",
   "bots/blog/lib/critical-alerts.js": "a799b6d1190aff1f9d7536cf67ff3bee531868d030674d6a87ff436a62fe13c4",

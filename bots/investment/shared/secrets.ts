@@ -729,17 +729,26 @@ export function getKisAccount() {
 }
 
 export function hasKisApiKey() {
-  const s = loadSecrets();
-  if (isKisPaper()) return !!(s.kis_paper_app_key && s.kis_paper_app_key.length >= 16);
-  return !!(s.kis_app_key && s.kis_app_key.length >= 16);
+  return getKisAppKey().length >= 16;
 }
 
 export function getKisAppKey() {
   const s = loadSecrets();
-  return isKisPaper() ? (s.kis_paper_app_key || '') : (s.kis_app_key || '');
+  return isKisPaper()
+    ? (process.env.KIS_PAPER_APP_KEY || s.kis_paper_app_key || '')
+    : (process.env.KIS_APP_KEY || s.kis_app_key || '');
 }
 
 export function getKisAppSecret() {
   const s = loadSecrets();
-  return isKisPaper() ? (s.kis_paper_app_secret || '') : (s.kis_app_secret || '');
+  return isKisPaper()
+    ? (process.env.KIS_PAPER_APP_SECRET || s.kis_paper_app_secret || '')
+    : (process.env.KIS_APP_SECRET || s.kis_app_secret || '');
+}
+
+export function hasKisCredentials() {
+  const account = getKisAccount();
+  return getKisAppKey().length >= 5
+    && getKisAppSecret().length >= 5
+    && String(account?.cano || '').length > 0;
 }
