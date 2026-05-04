@@ -112,6 +112,16 @@ export function evaluateLunaConstitutionForEntry(candidate = {}, context = {}) {
       }).format(now).replace(':', '.'))
     : 0;
 
+  // ── 추가 컨텍스트 추출 ────────────────────────────────────
+  const regime = String(
+    candidate.market_regime
+      ?? candidate.marketRegime
+      ?? candidate.block_meta?.market_regime
+      ?? context.market_regime
+      ?? context.regime
+      ?? '',
+  ).trim().toLowerCase();
+
   const violations = [];
   if (Number.isFinite(analystAgreement) && analystAgreement < 3) {
     violations.push({ code: 'multi_signal_agreement_missing', severity: 'hard', detail: `analystAgreement=${analystAgreement}` });
@@ -125,14 +135,24 @@ export function evaluateLunaConstitutionForEntry(candidate = {}, context = {}) {
   if (dailyLossPct > 0.02) {
     violations.push({ code: 'daily_loss_limit_exceeded', severity: 'hard', detail: `dailyLossPct=${dailyLossPct}` });
   }
-  if (candidate.action === 'BUY' && candidate.positionActive === true && !tpSlSet) {
-    violations.push({ code: 'tp_sl_missing_for_active_position', severity: 'hard', detail: 'active position without tp/sl marker' });
+  // 보강 1: TP/SL 전수 강제 — BUY 신호는 모두 SL 계획 필요 (활성 포지션 한정 해제)
+  if (candidate.action === 'BUY' && !tpSlSet) {
+    violations.push({ code: 'tp_sl_required_for_all_entries', severity: 'hard', detail: 'BUY entry missing tp/sl plan (tp_sl_set=false)' });
   }
   if (confidence < 0.5) {
     violations.push({ code: 'confidence_below_constitution_minimum', severity: 'hard', detail: `confidence=${confidence}` });
   }
+  // 보강 2: trending_bull regime 진입 기준 강화 — FOMO 방지
+  // 분석: trending_bull 219건 / 승률 20.5% (과잉 진입 의심)
+  if (candidate.action === 'BUY' && regime === 'trending_bull' && confidence < 0.65) {
+    violations.push({ code: 'trending_bull_confidence_gate', severity: 'hard', detail: `trending_bull requires confidence>=0.65, got ${confidence}` });
+  }
   if (market === 'domestic' && candidate.action === 'BUY' && kstHour >= 15.20) {
     violations.push({ code: 'domestic_closing_auction_buy_block', severity: 'hard', detail: `kst=${kstHour}` });
+  }
+  // 보강 7: domestic trending_bear 진입 차단 — 손실 Top 10 모두 국내 trending_bear
+  if (market === 'domestic' && candidate.action === 'BUY' && regime === 'trending_bear') {
+    violations.push({ code: 'domestic_trending_bear_entry_block', severity: 'hard', detail: 'domestic BUY blocked in trending_bear regime (data: 28건 손실)' });
   }
 
   return {

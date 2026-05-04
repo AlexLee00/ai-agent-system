@@ -62,6 +62,7 @@ import { get, query, run } from './db.ts';
 import { computeTradeExcursions } from './trade-review-metrics.ts';
 import { getInvestmentTradeMode } from './secrets.ts';
 import { resolveLunaAutonomyPhase } from './autonomy-phase.ts';
+import { classifyStrategyFamily } from './strategy-family-classifier.ts';
 import { createRequire } from 'module';
 const kst = createRequire(import.meta.url)('../../../packages/core/lib/kst');
 const hiringContract = createRequire(import.meta.url)('../../../packages/core/lib/hiring-contract');
@@ -521,7 +522,15 @@ export async function insertJournalEntry(entry) {
         entry.tp_sl_error ?? null,
         entry.market_regime ?? null,
         entry.market_regime_confidence ?? null,
-        entry.strategy_family ?? null,
+        // strategy_family 미설정 시 자동 분류 (보강 3: 76% NULL 해소)
+        entry.strategy_family
+          ?? classifyStrategyFamily({
+              reasoning: entry.reasoning ?? entry.rationale ?? null,
+              market: entry.market ?? null,
+              exchange: entry.exchange ?? null,
+              regime: entry.market_regime ?? null,
+              strategyRoute: entry.strategy_route ?? null,
+            }).family,
         entry.strategy_quality ?? null,
         entry.strategy_readiness ?? null,
         entry.strategy_route ? JSON.stringify(entry.strategy_route) : null,

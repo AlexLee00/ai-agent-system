@@ -180,3 +180,97 @@ export function formatFailureReflexions(failures: FailureReflexion[]): string {
 
   return `## 유사 실패 사례 (Reflexion)\n${items.join('\n')}\n→ 위 패턴과 유사한 진입은 신중히 검토하세요.\n`;
 }
+
+// ────────────────────────────────────────────────────────────
+// 보강 4: Per-Symbol Loss Streak 회피 (분석: TAO 31건 승률 6.5%)
+// ────────────────────────────────────────────────────────────
+
+export interface SymbolLossStreakResult {
+  /** 연속 손실 건수 */
+  lossStreak: number;
+  /** 최근 N일 내 손실 비율 (0~1) */
+  recentLossRate: number;
+  /** 쿨다운 적용 여부 */
+  inCooldown: boolean;
+  /** 쿨다운 종료 예정 시각 (Unix ms) */
+  cooldownUntil: number | null;
+  /** 차단 사유 */
+  blockReason: string | null;
+}
+
+/**
+ * 종목별 연속 손실 패턴 확인.
+ * 연속 3회 손실 → 7일 쿨다운 (진입 차단).
+ * 진입 신호 평가 전에 호출.
+ */
+export async function checkSymbolLossStreak(
+  symbol: string,
+  market: string,
+): Promise<SymbolLossStreakResult> {
+  if (!REFLEXION_ENABLED()) {
+    return { lossStreak: 0, recentLossRate: 0, inCooldown: false, cooldownUntil: null, blockReason: null };
+  }
+
+  try {
+    // 최근 30일 내 해당 종목 closed 거래 이력 조회
+    const rows = await db.query(`
+      SELECT
+        id,
+        pnl_amount,
+        pnl_percent,
+        pnl_net,
+        exit_time,
+        created_at
+      FROM investment.trade_journal
+      WHERE
+        symbol = $1
+        AND market = $2
+        AND (status = 'closed' OR exit_time IS NOT NULL)
+        AND created_at >= NOW() - INTERVAL '30 days'
+      ORDER BY COALESCE(exit_time, created_at) DESC
+      LIMIT 20
+    `, [symbol, market]);
+
+    if (!rows || rows.length === 0) {
+      return { lossStreak: 0, recentLossRate: 0, inCooldown: false, cooldownUntil: null, blockReason: null };
+    }
+
+    // 연속 손실 계산 (최신 → 오래된 순)
+    let streak = 0;
+    for (const row of rows) {
+      const pnl = Number(row.pnl_net ?? row.pnl_amount ?? 0);
+      if (pnl < 0) {
+        streak++;
+      } else {
+        break;
+      }
+    }
+
+    // 최근 10건 손실 비율
+    const recentRows = rows.slice(0, 10);
+    const losses = recentRows.filter(r => Number(r.pnl_net ?? r.pnl_amount ?? 0) < 0).length;
+    const recentLossRate = recentRows.length > 0 ? losses / recentRows.length : 0;
+
+    // 쿨다운 판정: 연속 3회+ 손실
+    if (streak >= 3) {
+      // 가장 최근 손실 종료 시각 기준 7일 쿨다운
+      const latestExitMs = rows[0]?.exit_time != null
+        ? Number(rows[0].exit_time)
+        : new Date(rows[0].created_at).getTime();
+      const cooldownUntil = latestExitMs + 7 * 24 * 60 * 60 * 1000;
+      const inCooldown = Date.now() < cooldownUntil;
+
+      if (inCooldown) {
+        const until = new Date(cooldownUntil).toISOString().slice(0, 10);
+        const reason = `[symbol-reflexion] ${symbol} 연속 ${streak}회 손실 → ${until}까지 쿨다운`;
+        console.warn(reason);
+        return { lossStreak: streak, recentLossRate, inCooldown: true, cooldownUntil, blockReason: reason };
+      }
+    }
+
+    return { lossStreak: streak, recentLossRate, inCooldown: false, cooldownUntil: null, blockReason: null };
+  } catch (err) {
+    console.error('[reflexion-guard] symbol loss streak 조회 실패:', err);
+    return { lossStreak: 0, recentLossRate: 0, inCooldown: false, cooldownUntil: null, blockReason: null };
+  }
+}
