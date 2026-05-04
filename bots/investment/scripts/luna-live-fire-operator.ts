@@ -4,6 +4,7 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
+import { buildLunaDelegatedAuthorityDecision } from '../shared/luna-delegated-authority.ts';
 import { evaluateLunaLiveFireReadinessGate } from './luna-live-fire-readiness-core.ts';
 import { buildLunaLiveFireReadinessGate } from './luna-live-fire-readiness-gate.ts';
 
@@ -65,6 +66,11 @@ export async function runLunaLiveFireOperator({
   };
   const readiness = await buildLunaLiveFireReadinessGate();
   const allowed = readiness.ok && readiness.status === 'live_fire_ready';
+  const delegatedAuthority = buildLunaDelegatedAuthorityDecision({
+    action: 'live_fire_enable',
+    readiness,
+    caps,
+  });
   const command = `launchctl setenv LUNA_INTELLIGENT_DISCOVERY_MODE autonomous_l5 && launchctl setenv LUNA_MAX_TRADE_USDT ${caps.maxUsdt} && launchctl setenv LUNA_LIVE_FIRE_MAX_DAILY ${caps.maxDailyUsdt} && launchctl setenv LUNA_LIVE_FIRE_MAX_OPEN ${caps.maxOpen} && launchctl setenv LUNA_LIVE_FIRE_ENABLED true`;
   const rollbackCommand = 'launchctl unsetenv LUNA_INTELLIGENT_DISCOVERY_MODE && launchctl setenv LUNA_LIVE_FIRE_ENABLED false';
 
@@ -76,6 +82,7 @@ export async function runLunaLiveFireOperator({
     command,
     rollbackCommand,
     confirmRequired: CONFIRM,
+    delegatedAuthority,
     caps,
     blockers: readiness.blockers || [],
     readiness,
@@ -85,7 +92,7 @@ export async function runLunaLiveFireOperator({
   if (!allowed) {
     return { ...result, applied: false, applyBlockedReason: 'readiness_not_met' };
   }
-  if (confirm !== CONFIRM) {
+  if (confirm !== CONFIRM && !delegatedAuthority.canSelfApprove) {
     return { ...result, ok: false, applied: false, applyBlockedReason: 'confirm_required' };
   }
 
@@ -95,6 +102,7 @@ export async function runLunaLiveFireOperator({
     ok: applyResult.ok,
     status: applyResult.ok ? 'live_fire_enabled' : 'live_fire_enable_failed',
     applied: applyResult.ok,
+    approvalSource: confirm === CONFIRM ? 'operator_confirm' : delegatedAuthority.approvalSource,
     applyResult,
   };
 }
@@ -114,6 +122,13 @@ export async function runLunaLiveFireOperatorSmoke() {
   });
   assert.equal(readiness.status, 'live_fire_ready');
   assert.equal(CONFIRM, 'enable-luna-live-fire');
+  const delegated = buildLunaDelegatedAuthorityDecision({
+    action: 'live_fire_enable',
+    env: { LUNA_DELEGATED_AUTHORITY_ENABLED: 'true' },
+    readiness: { ok: true, status: 'live_fire_ready', blockers: [] },
+    caps: { maxUsdt: DEFAULT_MAX_TRADE_USDT, maxDailyUsdt: DEFAULT_MAX_DAILY_USDT, maxOpen: DEFAULT_MAX_OPEN_POSITIONS },
+  });
+  assert.equal(delegated.canSelfApprove, true);
   return {
     ok: true,
     readiness,

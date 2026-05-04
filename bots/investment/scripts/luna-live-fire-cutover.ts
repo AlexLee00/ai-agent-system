@@ -4,6 +4,7 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
+import { buildLunaDelegatedAuthorityDecision } from '../shared/luna-delegated-authority.ts';
 import {
   buildLunaLiveFireCutoverPreflight,
   renderLunaLiveFireCutoverPreflight,
@@ -80,6 +81,11 @@ export async function runLunaLiveFireCutover({
   };
   const finalGate = await buildLunaLiveFireFinalGate({ exchange, hours, withPositionParity, liveLookup });
   const preflight = finalGate.preflight || await buildLunaLiveFireCutoverPreflight({ exchange, hours, withPositionParity });
+  const delegatedAuthority = buildLunaDelegatedAuthorityDecision({
+    action: 'live_fire_cutover',
+    finalGate,
+    caps,
+  });
   const result = {
     ok: finalGate.ok,
     checkedAt: new Date().toISOString(),
@@ -89,6 +95,7 @@ export async function runLunaLiveFireCutover({
     command: CUTOVER_COMMAND,
     rollbackCommand: ROLLBACK_COMMAND,
     confirmRequired: CONFIRM,
+    delegatedAuthority,
     caps,
     blockers: finalGate.blockers || [],
     preflight,
@@ -103,7 +110,7 @@ export async function runLunaLiveFireCutover({
   if (!finalGate.ok) {
     return { ...result, ok: false, applyBlockedReason: 'final_gate_not_clear' };
   }
-  if (confirm !== CONFIRM) {
+  if (confirm !== CONFIRM && !delegatedAuthority.canSelfApprove) {
     return { ...result, ok: false, applyBlockedReason: 'confirm_required' };
   }
 
@@ -113,12 +120,20 @@ export async function runLunaLiveFireCutover({
     ok: applyResult.ok,
     status: applyResult.ok ? 'live_fire_cutover_applied' : 'live_fire_cutover_failed',
     applied: applyResult.ok,
+    approvalSource: confirm === CONFIRM ? 'operator_confirm' : delegatedAuthority.approvalSource,
     applyResult,
   };
 }
 
 export async function runLunaLiveFireCutoverSmoke() {
   assert.equal(CONFIRM, 'enable-luna-live-fire');
+  const delegated = buildLunaDelegatedAuthorityDecision({
+    action: 'live_fire_cutover',
+    env: { LUNA_DELEGATED_AUTHORITY_ENABLED: 'true' },
+    finalGate: { ok: true, blockers: [] },
+    caps: { maxUsdt: DEFAULT_MAX_TRADE_USDT, maxDailyUsdt: DEFAULT_MAX_DAILY_USDT, maxOpen: DEFAULT_MAX_OPEN_POSITIONS },
+  });
+  assert.equal(delegated.canSelfApprove, true);
   assert.ok(CUTOVER_COMMAND.includes('autonomous_l5'));
   assert.ok(CUTOVER_COMMAND.includes('LUNA_MAX_TRADE_USDT 50'));
   assert.ok(CUTOVER_COMMAND.includes('LUNA_LIVE_FIRE_MAX_DAILY 200'));
