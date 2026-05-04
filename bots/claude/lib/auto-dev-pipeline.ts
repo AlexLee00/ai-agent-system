@@ -1466,6 +1466,7 @@ async function sendStageAlarm(job, stageId, details = '', options = {}, payload 
     message,
     team: 'claude',
     alertLevel: stageId === 'failed' ? 3 : 2,
+    alarmType: stageId === 'failed' ? 'error' : 'work',
     fromBot: 'auto-dev',
     payload: payload || undefined,
   });

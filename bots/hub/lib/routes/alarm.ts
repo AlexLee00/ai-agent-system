@@ -858,7 +858,8 @@ export async function alarmRoute(req: any, res: any) {
     let shadowObservation: Record<string, unknown> | null = null;
     let deliveryTeam = resolveAlarmDeliveryTeam({ alarmType, visibility, team });
 
-    if (alarmType === 'error' && actionability === 'auto_repair') {
+    const isAutoDevMetaEvent = /^auto_dev_stage_/.test(eventType);
+    if (alarmType === 'error' && actionability === 'auto_repair' && !isAutoDevMetaEvent) {
       if (autoRepairShadowSkipped) {
         autoRepair = {
           ok: true,
