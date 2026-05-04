@@ -704,6 +704,47 @@ async function requeueRecoverableReplyFailures(limit = 10) {
   return requeued;
 }
 
+async function retireNonActionableReplyFailures(limit = 20) {
+  const rows = await pgPool.query('blog', `
+    SELECT *
+    FROM ${TABLE}
+    WHERE reply_at IS NULL
+      AND status IN ('failed', 'skipped', 'pending')
+    ORDER BY detected_at DESC
+    LIMIT $1
+  `, [Math.max(limit * 5, limit)]);
+
+  let retired = 0;
+  for (const row of rows) {
+    if (retired >= limit) break;
+    const inboundAssessment = assessInboundComment(row);
+    if (inboundAssessment.ok) continue;
+    const sameTerminalState = String(row.status || '') === 'skipped'
+      && String(row.error_message || '') === String(inboundAssessment.reason || '');
+    if (sameTerminalState) continue;
+
+    await pgPool.run('blog', `
+      UPDATE ${TABLE}
+      SET status = 'skipped',
+          error_message = $2,
+          meta = COALESCE(meta, '{}'::jsonb) || $3::jsonb
+      WHERE id = $1
+    `, [
+      row.id,
+      inboundAssessment.reason,
+      JSON.stringify({
+        phase: 'inbound_filter_retroactive',
+        previous_error: row.error_message || null,
+        reassessed_reason: inboundAssessment.reason,
+        filtered_at: new Date().toISOString(),
+      }),
+    ]);
+    retired += 1;
+  }
+
+  return retired;
+}
+
 async function requeueCourtesyReflectionCandidates(limit = 5, options = {}) {
   const numericLimit = Math.max(1, Number(limit || 5));
   const dryRun = Boolean(options?.dryRun);
@@ -1832,6 +1873,16 @@ function assessInboundComment(comment) {
   ];
   if (recruitmentPromoPatterns.some((pattern) => pattern.test(text))) {
     return { ok: false, reason: hasUrl ? 'promotional_recruitment_comment_with_url' : 'promotional_recruitment_comment' };
+  }
+  const selfPromoPatterns = [
+    /제\s*블로그/i,
+    /들러주시면/i,
+    /방문하시면/i,
+    /올려두었으니/i,
+    /감사하겠습니다/i,
+  ];
+  if (selfPromoPatterns.some((pattern) => pattern.test(text))) {
+    return { ok: false, reason: hasUrl ? 'promotional_self_promo_comment_with_url' : 'promotional_self_promo_comment' };
   }
   const promoPatterns = [
     /협찬/i,
@@ -5484,6 +5535,7 @@ async function runCommentReply({ testMode = false } = {}) {
   const requeueLimit = testMode ? 1 : Math.max(5, Number(config.strategyReplyTargetPerCycle || 1) * 2);
   const courtesyLimit = testMode ? 2 : Math.max(10, Number(config.strategyReplyTargetPerCycle || 1) * 3);
   const promotionalLimit = testMode ? 2 : Math.max(10, Number(config.strategyReplyTargetPerCycle || 1) * 3);
+  const retiredNonActionable = await retireNonActionableReplyFailures(requeueLimit).catch(() => 0);
   const retired = await retireStaleRecoverableReplies(requeueLimit).catch(() => 0);
   const requeued = await requeueRecoverableReplyFailures(requeueLimit).catch(() => 0);
   const courtesyBackfill = await requeueCourtesyReflectionCandidates(courtesyLimit, { dryRun: false }).catch(() => ({
@@ -5501,7 +5553,7 @@ async function runCommentReply({ testMode = false } = {}) {
 
   const todayCount = await getTodayReplyCount();
   if (todayCount >= config.maxDaily) {
-    return { skipped: true, reason: 'daily_limit', count: todayCount, retired, requeued, courtesyBackfill, promotionalBackfill };
+    return { skipped: true, reason: 'daily_limit', count: todayCount, retiredNonActionable, retired, requeued, courtesyBackfill, promotionalBackfill };
   }
 
   let newComments;
@@ -5612,6 +5664,7 @@ async function runCommentReply({ testMode = false } = {}) {
     failed,
     skipped,
     total: todayCount + replied,
+    retiredNonActionable,
     retired,
     cycleTarget: cycleReplyTarget,
     requeued,

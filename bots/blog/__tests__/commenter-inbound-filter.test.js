@@ -21,4 +21,15 @@ describe('commenter inbound filters', () => {
 
     expect(result.ok).toBe(true);
   });
+
+  test('skips self-promo courtesy comments', () => {
+    const result = assessInboundComment({
+      comment_text: '정리도 깔끔하고 유익한 포스팅이네요! 제 블로그에도 다양한 정보 올려두었으니 들러주시면 감사하겠습니다~',
+    });
+
+    expect(result).toEqual({
+      ok: false,
+      reason: 'promotional_self_promo_comment',
+    });
+  });
 });
