@@ -55,7 +55,7 @@ const CONDITION_WEIGHTS = {
  */
 export function evaluateBullishEntry({ closes, highs, lows, volumes, indicators, divergence, crossSignals, patterns, supportResistance } = {}) {
   const enabled = boolEnv('LUNA_TA_BULLISH_ENTRY_CONDITIONS_ENABLED', true);
-  const minScore = numEnv('LUNA_TA_BULLISH_ENTRY_SCORE_MIN', 0.40);
+  const minScore = numEnv('LUNA_TA_BULLISH_ENTRY_SCORE_MIN', 0.60);
 
   if (!enabled || !closes?.length) {
     return { entry: false, score: 0, conditions: {}, reasoning: '비활성화' };

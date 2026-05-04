@@ -21,7 +21,7 @@ export async function runSmoke() {
     supportResistance: { atSupport: true },
   });
   assert.equal(bullish.entry, true);
-  assert.ok(bullish.score >= 0.4);
+  assert.ok(bullish.score >= 0.6);
 
   const bearish = evaluateBearishExit({
     closes: [100, 105, 110],

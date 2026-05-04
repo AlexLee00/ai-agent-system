@@ -19,6 +19,13 @@ const CORE_GUARDRAILS = [
     command: ['npm', '--prefix', new URL('..', import.meta.url).pathname, 'run', '-s', 'check:intelligent-discovery'],
   },
   {
+    name: 'luna_technical_analysis_boost',
+    category: 'trading',
+    severity: 'high',
+    owner: 'aria',
+    command: ['npm', '--prefix', new URL('..', import.meta.url).pathname, 'run', '-s', 'check:luna-technical-analysis-boost'],
+  },
+  {
     name: 'posttrade_feedback',
     category: 'data',
     severity: 'high',

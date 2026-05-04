@@ -15,6 +15,7 @@ export async function runSmoke() {
     'agent_message_bus_hygiene',
     'luna_7day_observation',
     'luna_memory_llm_routing_final',
+    'luna_technical_analysis_boost',
     'failed_signal_reflexion_backfill_dryrun',
     'luna_agent_bus_stats',
     'luna_7day_checkpoint',

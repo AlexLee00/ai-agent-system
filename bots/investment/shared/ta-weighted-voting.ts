@@ -118,7 +118,7 @@ export function aggregateVotes(votes = [], regime = 'RANGING') {
   if (totalWeight === 0) return { finalVote: 0, score: 0, confidence: 0, contributingIndicators: [], detail };
 
   const score     = weightedScore / totalWeight;
-  const threshold = numEnv('LUNA_TA_WEIGHTED_VOTING_THRESHOLD', 0.20);
+  const threshold = numEnv('LUNA_TA_WEIGHTED_VOTING_THRESHOLD', 0.60);
   const finalVote = score > threshold ? 1 : score < -threshold ? -1 : 0;
   const confidence = Math.min(1, Math.abs(score) * 2);
 
