@@ -178,9 +178,50 @@ async function runStandardContractFallbackCase(tempWorkspace) {
   assert(result && result.ok === true, 'expected standard contract fallback case to deliver');
   assert(calls.length === 1, `expected 1 hub call, got ${calls.length}`);
   assert(calls[0].body.alarmType === 'work', `expected inferred work alarm type, got ${calls[0].body.alarmType}`);
+  assert(calls[0].body.visibility === 'notify', `expected inferred notify visibility, got ${calls[0].body.visibility}`);
+  assert(calls[0].body.actionability === 'none', `expected inferred none actionability, got ${calls[0].body.actionability}`);
   assert(calls[0].body.eventType === 'contract-smoke_work', `expected derived eventType, got ${calls[0].body.eventType}`);
   assert(/^hub:contract-smoke:contract-smoke_work:[a-f0-9]{12}$/.test(calls[0].body.incidentKey), `unexpected incidentKey: ${calls[0].body.incidentKey}`);
   assert(calls[0].body.payload.event_type === calls[0].body.eventType, 'expected payload event_type to match derived eventType');
+}
+
+async function runCriticalContractFallbackCase(tempWorkspace) {
+  resetEnv(tempWorkspace);
+  resetClientModule();
+  const calls = [];
+  global.fetch = async (url, init = {}) => {
+    const normalizedUrl = String(url);
+    calls.push({
+      url: normalizedUrl,
+      method: String(init.method || 'GET'),
+      body: init.body ? JSON.parse(String(init.body)) : null,
+    });
+    if (normalizedUrl.endsWith('/hub/alarm')) {
+      return new Response(
+        JSON.stringify({
+          ok: true,
+          delivered: true,
+          event_id: 125,
+        }),
+        { status: 200, headers: { 'content-type': 'application/json' } },
+      );
+    }
+    throw new Error(`unexpected fetch url for critical contract case: ${normalizedUrl}`);
+  };
+
+  const { postAlarm } = require('../../../packages/core/lib/hub-alarm-client.ts');
+  const result = await postAlarm({
+    message: 'critical alarm contract smoke',
+    team: 'hub',
+    alertLevel: 4,
+    fromBot: 'contract-smoke',
+  });
+
+  assert(result && result.ok === true, 'expected critical contract fallback case to deliver');
+  assert(calls.length === 1, `expected 1 hub call, got ${calls.length}`);
+  assert(calls[0].body.alarmType === 'critical', `expected critical alarm type, got ${calls[0].body.alarmType}`);
+  assert(calls[0].body.visibility === 'emergency', `expected emergency visibility, got ${calls[0].body.visibility}`);
+  assert(calls[0].body.actionability === 'needs_human', `expected needs_human actionability, got ${calls[0].body.actionability}`);
 }
 
 async function main() {
@@ -196,6 +237,7 @@ async function main() {
     await runRetiredLegacyFallbackIgnoredCase(tempWorkspace);
     await runTelegramSenderCanUseHubDirectCase(tempWorkspace);
     await runStandardContractFallbackCase(tempWorkspace);
+    await runCriticalContractFallbackCase(tempWorkspace);
     console.log('hub_postalarm_no_legacy_fallback_smoke_ok');
   } finally {
     global.fetch = originalFetch;

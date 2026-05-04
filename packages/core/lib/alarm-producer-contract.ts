@@ -22,9 +22,13 @@ export interface AlarmEnvelope {
   title: string;        // ≤ 80 chars
   message: string;      // ≤ 500 chars (detail은 payload에)
 
-  // 분류 힌트 (Layer 2)
-  alarm_type?: AlarmType;
-  visibility?: AlarmVisibility;
+  // 명시 계약 (Layer 2/3)
+  alarm_type: AlarmType;
+  visibility: AlarmVisibility;
+  event_type: string;
+  incident_key: string;
+
+  // 처리 힌트
   actionability?: AlarmActionability;
 
   // dedup 힌트 (Layer 3)
@@ -32,12 +36,10 @@ export interface AlarmEnvelope {
   digest_window_minutes?: number;
 
   // enrichment
-  event_type?: string;
   payload?: Record<string, unknown>;
   runbook_url?: string;
 
   // tracking
-  incident_key?: string;
   trace_id?: string;
 }
 
@@ -69,16 +71,34 @@ export function validateAlarmEnvelope(input: unknown): AlarmEnvelope {
   const message = String(env.message || '').slice(0, 500).trim();
   if (!message) throw new TypeError('AlarmEnvelope.message is required');
 
-  const result: AlarmEnvelope = { team, bot_name, severity, title, message };
+  const alarmType = String(env.alarm_type || '') as AlarmType;
+  if (!VALID_TYPES.includes(alarmType)) {
+    throw new TypeError(`AlarmEnvelope.alarm_type is required and must be one of: ${VALID_TYPES.join(', ')}`);
+  }
 
-  if (env.alarm_type !== undefined) {
-    const t = String(env.alarm_type) as AlarmType;
-    if (VALID_TYPES.includes(t)) result.alarm_type = t;
+  const visibility = String(env.visibility || '') as AlarmVisibility;
+  if (!VALID_VISIBILITIES.includes(visibility)) {
+    throw new TypeError(`AlarmEnvelope.visibility is required and must be one of: ${VALID_VISIBILITIES.join(', ')}`);
   }
-  if (env.visibility !== undefined) {
-    const v = String(env.visibility) as AlarmVisibility;
-    if (VALID_VISIBILITIES.includes(v)) result.visibility = v;
-  }
+
+  const event_type = String(env.event_type || '').trim();
+  if (!event_type) throw new TypeError('AlarmEnvelope.event_type is required');
+
+  const incident_key = String(env.incident_key || '').trim();
+  if (!incident_key) throw new TypeError('AlarmEnvelope.incident_key is required');
+
+  const result: AlarmEnvelope = {
+    team,
+    bot_name,
+    severity,
+    title,
+    message,
+    alarm_type: alarmType,
+    visibility,
+    event_type,
+    incident_key,
+  };
+
   if (env.actionability !== undefined) {
     const a = String(env.actionability) as AlarmActionability;
     if (VALID_ACTIONABILITIES.includes(a)) result.actionability = a;
@@ -89,10 +109,8 @@ export function validateAlarmEnvelope(input: unknown): AlarmEnvelope {
   if (typeof env.digest_window_minutes === 'number' && env.digest_window_minutes > 0) {
     result.digest_window_minutes = Math.min(1440, env.digest_window_minutes);
   }
-  if (env.event_type) result.event_type = String(env.event_type);
   if (env.payload && typeof env.payload === 'object') result.payload = env.payload as Record<string, unknown>;
   if (env.runbook_url) result.runbook_url = String(env.runbook_url);
-  if (env.incident_key) result.incident_key = String(env.incident_key);
   if (env.trace_id) result.trace_id = String(env.trace_id);
 
   return result;

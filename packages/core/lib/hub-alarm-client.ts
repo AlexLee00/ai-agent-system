@@ -406,7 +406,7 @@ function _inferAlarmType({
   payload: unknown;
 }): string {
   const explicit = _normalizeAlertText(alarmType).toLowerCase();
-  if (['work', 'report', 'error'].includes(explicit)) return explicit;
+  if (['work', 'report', 'error', 'critical'].includes(explicit)) return explicit;
   const payloadType = (
     payload &&
     typeof payload === 'object' &&
@@ -414,7 +414,8 @@ function _inferAlarmType({
   )
     ? _normalizeAlertText((payload as Record<string, unknown>).alarmType || (payload as Record<string, unknown>).alarm_type).toLowerCase()
     : '';
-  if (['work', 'report', 'error'].includes(payloadType)) return payloadType;
+  if (['work', 'report', 'error', 'critical'].includes(payloadType)) return payloadType;
+  if (alertLevel >= 4) return 'critical';
   const corpus = [
     message,
     _extractEventType(message, payload) || '',
@@ -422,6 +423,48 @@ function _inferAlarmType({
   if (/report|summary|digest|readiness|dashboard|리포트|보고|브리핑|정기/.test(corpus)) return 'report';
   if (alertLevel >= 3 || /error|fail|exception|timeout|provider_cooldown|오류|실패|장애|예외/.test(corpus)) return 'error';
   return 'work';
+}
+
+function _normalizeVisibility(value: unknown): string {
+  const normalized = _normalizeAlertText(value).toLowerCase();
+  return ['internal', 'audit_only', 'digest', 'notify', 'human_action', 'emergency'].includes(normalized)
+    ? normalized
+    : '';
+}
+
+function _normalizeActionability(value: unknown): string {
+  const normalized = _normalizeAlertText(value).toLowerCase();
+  return ['none', 'auto_repair', 'needs_approval', 'needs_human'].includes(normalized)
+    ? normalized
+    : '';
+}
+
+function _defaultVisibility({
+  alarmType,
+  actionability,
+}: {
+  alarmType: string;
+  actionability?: string;
+}): string {
+  if (actionability === 'needs_human' || actionability === 'needs_approval') return 'human_action';
+  if (alarmType === 'critical') return 'emergency';
+  if (alarmType === 'work' || alarmType === 'report') return 'notify';
+  if (alarmType === 'error') return 'internal';
+  return 'internal';
+}
+
+function _defaultActionability({
+  alarmType,
+  visibility,
+}: {
+  alarmType: string;
+  visibility: string;
+}): string {
+  if (visibility === 'emergency') return 'needs_human';
+  if (visibility === 'human_action') return 'needs_approval';
+  if (alarmType === 'critical') return 'needs_human';
+  if (alarmType === 'error') return 'auto_repair';
+  return 'none';
 }
 
 function _isHubAlarmDeliveryAccepted(response: Response, body: any): boolean {
@@ -472,6 +515,16 @@ async function _postAlarmViaHub({
   }
   const url = `${hubBaseUrl}/hub/alarm`;
   const normalizedAlarmType = _inferAlarmType({ alarmType, alertLevel, message, payload });
+  const normalizedVisibility = _normalizeVisibility(visibility)
+    || _defaultVisibility({
+      alarmType: normalizedAlarmType,
+      actionability: _normalizeActionability(actionability),
+    });
+  const normalizedActionability = _normalizeActionability(actionability)
+    || _defaultActionability({
+      alarmType: normalizedAlarmType,
+      visibility: normalizedVisibility,
+    });
   const normalizedEventType = _deriveEventType({
     eventType,
     message,
@@ -500,8 +553,8 @@ async function _postAlarmViaHub({
         severity: _mapAlertLevelToSeverity(alertLevel),
         title: title || `${team} alarm`,
         alarmType: normalizedAlarmType,
-        visibility: visibility || undefined,
-        actionability: actionability || undefined,
+        visibility: normalizedVisibility,
+        actionability: normalizedActionability,
         incidentKey: normalizedIncidentKey,
         eventType: normalizedEventType,
         payload: {
