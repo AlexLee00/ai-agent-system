@@ -1,15 +1,15 @@
 {
-  "generated_at": "2026-05-04T04:53:28.517Z",
+  "generated_at": "2026-05-04T06:29:11.445Z",
   "scan_patterns": [
     "hub-alarm-client",
     "openclaw-client",
     "HUB_ALARM_",
     "OPENCLAW_"
   ],
-  "total_matches": 292,
-  "unique_files": 152,
+  "total_matches": 301,
+  "unique_files": 153,
   "categories": {
-    "hub_alarm_native": 279,
+    "hub_alarm_native": 288,
     "retired_gateway_guard": 13,
     "legacy_gateway_compat": 0
   },
@@ -575,73 +575,73 @@
     "bots/hub/launchd/ai.hub.resource-api.plist": [
       {
         "file": "bots/hub/launchd/ai.hub.resource-api.plist",
-        "line": 40,
+        "line": 42,
         "category": "hub_alarm_native",
         "match": "<key>HUB_ALARM_USE_CLASS_TOPICS</key>"
       },
       {
         "file": "bots/hub/launchd/ai.hub.resource-api.plist",
-        "line": 42,
+        "line": 44,
         "category": "hub_alarm_native",
         "match": "<key>HUB_ALARM_DISPATCH_MODE</key>"
       },
       {
         "file": "bots/hub/launchd/ai.hub.resource-api.plist",
-        "line": 44,
+        "line": 46,
         "category": "hub_alarm_native",
         "match": "<key>HUB_ALARM_LLM_CLASSIFIER_ENABLED</key>"
       },
       {
         "file": "bots/hub/launchd/ai.hub.resource-api.plist",
-        "line": 46,
+        "line": 48,
         "category": "hub_alarm_native",
         "match": "<key>HUB_ALARM_LLM_DAILY_LIMIT</key>"
       },
       {
         "file": "bots/hub/launchd/ai.hub.resource-api.plist",
-        "line": 48,
+        "line": 50,
         "category": "hub_alarm_native",
         "match": "<key>HUB_ALARM_CRITICAL_TYPE_ENABLED</key>"
       },
       {
         "file": "bots/hub/launchd/ai.hub.resource-api.plist",
-        "line": 50,
+        "line": 52,
         "category": "hub_alarm_native",
         "match": "<key>HUB_ALARM_INTERPRETER_ENABLED</key>"
       },
       {
         "file": "bots/hub/launchd/ai.hub.resource-api.plist",
-        "line": 52,
+        "line": 54,
         "category": "hub_alarm_native",
         "match": "<key>HUB_ALARM_INTERPRETER_FAIL_OPEN</key>"
       },
       {
         "file": "bots/hub/launchd/ai.hub.resource-api.plist",
-        "line": 54,
+        "line": 56,
         "category": "hub_alarm_native",
         "match": "<key>HUB_ALARM_INTERPRETER_LLM_DAILY_LIMIT</key>"
       },
       {
         "file": "bots/hub/launchd/ai.hub.resource-api.plist",
-        "line": 56,
+        "line": 58,
         "category": "hub_alarm_native",
         "match": "<key>HUB_ALARM_ENRICHMENT_ENABLED</key>"
       },
       {
         "file": "bots/hub/launchd/ai.hub.resource-api.plist",
-        "line": 58,
+        "line": 60,
         "category": "hub_alarm_native",
         "match": "<key>HUB_ALARM_ROUNDTABLE_ENABLED</key>"
       },
       {
         "file": "bots/hub/launchd/ai.hub.resource-api.plist",
-        "line": 60,
+        "line": 62,
         "category": "hub_alarm_native",
         "match": "<key>HUB_ALARM_ROUNDTABLE_DAILY_LIMIT</key>"
       },
       {
         "file": "bots/hub/launchd/ai.hub.resource-api.plist",
-        "line": 62,
+        "line": 64,
         "category": "hub_alarm_native",
         "match": "<key>HUB_ALARM_ROUNDTABLE_TRIGGER_FINGERPRINT_THRESHOLD</key>"
       }
@@ -1359,73 +1359,79 @@
       },
       {
         "file": "bots/hub/scripts/hub-postalarm-no-legacy-fallback-smoke.ts",
-        "line": 189,
+        "line": 212,
+        "category": "hub_alarm_native",
+        "match": "const { postAlarm } = require('../../../packages/core/lib/hub-alarm-client.ts');"
+      },
+      {
+        "file": "bots/hub/scripts/hub-postalarm-no-legacy-fallback-smoke.ts",
+        "line": 230,
         "category": "hub_alarm_native",
         "match": "const originalHubRecentAlertsPath = process.env.HUB_ALARM_RECENT_ALERTS_PATH;"
       },
       {
         "file": "bots/hub/scripts/hub-postalarm-no-legacy-fallback-smoke.ts",
-        "line": 190,
+        "line": 231,
         "category": "hub_alarm_native",
         "match": "const originalHubLegacyHooksToken = process.env.HUB_ALARM_LEGACY_HOOKS_TOKEN;"
       },
       {
         "file": "bots/hub/scripts/hub-postalarm-no-legacy-fallback-smoke.ts",
-        "line": 191,
+        "line": 232,
         "category": "hub_alarm_native",
         "match": "const originalHubSkipDirect = process.env.HUB_ALARM_SKIP_DIRECT;"
       },
       {
         "file": "bots/hub/scripts/hub-postalarm-no-legacy-fallback-smoke.ts",
-        "line": 192,
+        "line": 233,
         "category": "hub_alarm_native",
         "match": "const originalHubLegacyFallback = process.env.HUB_ALARM_LEGACY_WEBHOOK_FALLBACK;"
       },
       {
         "file": "bots/hub/scripts/hub-postalarm-no-legacy-fallback-smoke.ts",
-        "line": 202,
+        "line": 244,
         "category": "hub_alarm_native",
         "match": "if (originalHubRecentAlertsPath == null) delete process.env.HUB_ALARM_RECENT_ALERTS_PATH;"
       },
       {
         "file": "bots/hub/scripts/hub-postalarm-no-legacy-fallback-smoke.ts",
-        "line": 203,
+        "line": 245,
         "category": "hub_alarm_native",
         "match": "else process.env.HUB_ALARM_RECENT_ALERTS_PATH = originalHubRecentAlertsPath;"
       },
       {
         "file": "bots/hub/scripts/hub-postalarm-no-legacy-fallback-smoke.ts",
-        "line": 204,
+        "line": 246,
         "category": "hub_alarm_native",
         "match": "if (originalHubLegacyHooksToken == null) delete process.env.HUB_ALARM_LEGACY_HOOKS_TOKEN;"
       },
       {
         "file": "bots/hub/scripts/hub-postalarm-no-legacy-fallback-smoke.ts",
-        "line": 205,
+        "line": 247,
         "category": "hub_alarm_native",
         "match": "else process.env.HUB_ALARM_LEGACY_HOOKS_TOKEN = originalHubLegacyHooksToken;"
       },
       {
         "file": "bots/hub/scripts/hub-postalarm-no-legacy-fallback-smoke.ts",
-        "line": 206,
+        "line": 248,
         "category": "hub_alarm_native",
         "match": "if (originalHubSkipDirect == null) delete process.env.HUB_ALARM_SKIP_DIRECT;"
       },
       {
         "file": "bots/hub/scripts/hub-postalarm-no-legacy-fallback-smoke.ts",
-        "line": 207,
+        "line": 249,
         "category": "hub_alarm_native",
         "match": "else process.env.HUB_ALARM_SKIP_DIRECT = originalHubSkipDirect;"
       },
       {
         "file": "bots/hub/scripts/hub-postalarm-no-legacy-fallback-smoke.ts",
-        "line": 208,
+        "line": 250,
         "category": "hub_alarm_native",
         "match": "if (originalHubLegacyFallback == null) delete process.env.HUB_ALARM_LEGACY_WEBHOOK_FALLBACK;"
       },
       {
         "file": "bots/hub/scripts/hub-postalarm-no-legacy-fallback-smoke.ts",
-        "line": 209,
+        "line": 251,
         "category": "hub_alarm_native",
         "match": "else process.env.HUB_ALARM_LEGACY_WEBHOOK_FALLBACK = originalHubLegacyFallback;"
       }
@@ -1560,6 +1566,56 @@
         "line": 13,
         "category": "hub_alarm_native",
         "match": "const { postAlarm } = require('../../../packages/core/lib/hub-alarm-client');"
+      }
+    ],
+    "bots/hub/scripts/team-jay-next-stage-integrated-gate.ts": [
+      {
+        "file": "bots/hub/scripts/team-jay-next-stage-integrated-gate.ts",
+        "line": 29,
+        "category": "hub_alarm_native",
+        "match": "HUB_ALARM_LLM_CLASSIFIER_ENABLED: 'true',"
+      },
+      {
+        "file": "bots/hub/scripts/team-jay-next-stage-integrated-gate.ts",
+        "line": 30,
+        "category": "hub_alarm_native",
+        "match": "HUB_ALARM_INTERPRETER_ENABLED: 'true',"
+      },
+      {
+        "file": "bots/hub/scripts/team-jay-next-stage-integrated-gate.ts",
+        "line": 31,
+        "category": "hub_alarm_native",
+        "match": "HUB_ALARM_ENRICHMENT_ENABLED: 'true',"
+      },
+      {
+        "file": "bots/hub/scripts/team-jay-next-stage-integrated-gate.ts",
+        "line": 32,
+        "category": "hub_alarm_native",
+        "match": "HUB_ALARM_CRITICAL_TYPE_ENABLED: 'true',"
+      },
+      {
+        "file": "bots/hub/scripts/team-jay-next-stage-integrated-gate.ts",
+        "line": 33,
+        "category": "hub_alarm_native",
+        "match": "HUB_ALARM_ROUNDTABLE_ENABLED: 'true',"
+      },
+      {
+        "file": "bots/hub/scripts/team-jay-next-stage-integrated-gate.ts",
+        "line": 34,
+        "category": "hub_alarm_native",
+        "match": "HUB_ALARM_DISPATCH_MODE: 'autonomous',"
+      },
+      {
+        "file": "bots/hub/scripts/team-jay-next-stage-integrated-gate.ts",
+        "line": 35,
+        "category": "hub_alarm_native",
+        "match": "HUB_ALARM_INTERPRETER_FAIL_OPEN: 'true',"
+      },
+      {
+        "file": "bots/hub/scripts/team-jay-next-stage-integrated-gate.ts",
+        "line": 36,
+        "category": "hub_alarm_native",
+        "match": "HUB_ALARM_ROUNDTABLE_DAILY_LIMIT: '10',"
       }
     ],
     "bots/hub/scripts/telegram-hub-secrets-smoke.ts": [
@@ -1857,43 +1913,43 @@
       },
       {
         "file": "packages/core/lib/hub-alarm-client.ts",
-        "line": 512,
+        "line": 565,
         "category": "hub_alarm_native",
         "match": "signal: AbortSignal.timeout(HUB_ALARM_TIMEOUT_MS),"
       },
       {
         "file": "packages/core/lib/hub-alarm-client.ts",
-        "line": 551,
+        "line": 604,
         "category": "hub_alarm_native",
         "match": "console.warn(`[hub-alarm-client] recent alert snapshot 저장 실패: ${(error as Error).message}`);"
       },
       {
         "file": "packages/core/lib/hub-alarm-client.ts",
-        "line": 584,
+        "line": 637,
         "category": "hub_alarm_native",
         "match": "console.warn('[hub-alarm-client] inline telegram 발송 실패: bot token/group id 미설정');"
       },
       {
         "file": "packages/core/lib/hub-alarm-client.ts",
-        "line": 613,
+        "line": 666,
         "category": "hub_alarm_native",
         "match": "console.warn(`[hub-alarm-client] inline telegram 429 — ${delayMs}ms 후 재시도`);"
       },
       {
         "file": "packages/core/lib/hub-alarm-client.ts",
-        "line": 624,
+        "line": 677,
         "category": "hub_alarm_native",
         "match": "console.warn(`[hub-alarm-client] inline telegram 실패: ${error.message}`);"
       },
       {
         "file": "packages/core/lib/hub-alarm-client.ts",
-        "line": 674,
+        "line": 727,
         "category": "hub_alarm_native",
         "match": "const hubDirectBlocked = _readBooleanEnv('HUB_ALARM_SKIP_DIRECT');"
       },
       {
         "file": "packages/core/lib/hub-alarm-client.ts",
-        "line": 702,
+        "line": 755,
         "category": "hub_alarm_native",
         "match": "console.warn(`[hub-alarm-client] hub alarm failed: ${hubResult.error}`);"
       }

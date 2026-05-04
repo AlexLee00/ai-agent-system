@@ -9,6 +9,7 @@ const DEFAULT_MAX_IN_FLIGHT = parseEnvNumber('HUB_LLM_MAX_IN_FLIGHT', 16, 1);
 const DEFAULT_MAX_QUEUE = parseEnvNumber('HUB_LLM_MAX_QUEUE', 128, 0);
 const DEFAULT_QUEUE_TIMEOUT_MS = parseEnvNumber('HUB_LLM_QUEUE_TIMEOUT_MS', 15000, 100);
 const DEFAULT_RETRY_AFTER_MS = parseEnvNumber('HUB_LLM_RETRY_AFTER_MS', 1000, 200);
+const { acquireSharedLimiterLease, getSharedLimiterState } = require('./shared-limiter');
 
 let inFlight = 0;
 const waiters = [];
@@ -41,7 +42,8 @@ function drainQueue() {
 async function acquireSlot(req) {
   if (inFlight < DEFAULT_MAX_IN_FLIGHT) {
     inFlight += 1;
-    return { queued: false };
+    const sharedLease = await acquireSharedLeaseOrReleaseLocal(req);
+    return { queued: false, sharedLease };
   }
 
   if (waiters.length >= DEFAULT_MAX_QUEUE) {
@@ -84,7 +86,24 @@ async function acquireSlot(req) {
     req.once('close', onClientClose);
   });
 
-  return { queued: true };
+  const sharedLease = await acquireSharedLeaseOrReleaseLocal(req);
+  return { queued: true, sharedLease };
+}
+
+async function acquireSharedLeaseOrReleaseLocal(req) {
+  const sharedLease = await acquireSharedLimiterLease({
+    team: req.body?.callerTeam || req.hubRequestContext?.callerTeam || 'unknown',
+    provider: req.body?.provider || '',
+  });
+  if (!sharedLease.ok) {
+    releaseSlot();
+    throw createAdmissionError(
+      sharedLease.reason || 'shared_limiter_full',
+      `LLM shared limiter rejected scope ${sharedLease.scope || 'unknown'}`,
+      sharedLease.retryAfterMs || DEFAULT_RETRY_AFTER_MS,
+    );
+  }
+  return sharedLease;
 }
 
 function releaseSlot() {
@@ -101,6 +120,7 @@ function getLlmAdmissionState() {
       max_queue: DEFAULT_MAX_QUEUE,
       queue_timeout_ms: DEFAULT_QUEUE_TIMEOUT_MS,
     },
+    shared_limiter: getSharedLimiterState(),
   };
 }
 
@@ -111,6 +131,7 @@ async function llmAdmissionMiddleware(req, res, next) {
     const releaseOnce = () => {
       if (released) return;
       released = true;
+      acquired.sharedLease?.release?.();
       releaseSlot();
     };
 
@@ -131,6 +152,33 @@ async function llmAdmissionMiddleware(req, res, next) {
       res.set('Retry-After', String(Math.max(1, Math.ceil(retryAfterMs / 1000))));
     }
     const status = err.code === 'queue_full' ? 429 : 503;
+    if (err.code === 'queue_full' && shouldOverflowToJob(req)) {
+      try {
+        const { createLlmJob } = require('./job-store');
+        const job = createLlmJob(req.body || {}, req.hubRequestContext || {}, { source: 'admission_overflow' });
+        res.set('Retry-After', String(Math.max(1, Math.ceil(retryAfterMs / 1000))));
+        return res.status(202).json({
+          ok: true,
+          queued: true,
+          jobId: job.id,
+          status: job.status,
+          statusUrl: `/hub/llm/jobs/${job.id}`,
+          overflow: {
+            reason: err.code,
+            retryAfterMs,
+          },
+        });
+      } catch (jobError) {
+        return res.status(503).json({
+          ok: false,
+          error: {
+            code: 'job_enqueue_failed',
+            message: jobError?.message || 'failed to enqueue LLM job',
+          },
+          retryAfterMs,
+        });
+      }
+    }
     return res.status(status).json({
       ok: false,
       error: {
@@ -142,6 +190,12 @@ async function llmAdmissionMiddleware(req, res, next) {
       queueDepth: waiters.length,
     });
   }
+}
+
+function shouldOverflowToJob(req) {
+  const enabled = ['1', 'true', 'yes', 'y', 'on'].includes(String(process.env.HUB_LLM_OVERFLOW_TO_JOB || '').trim().toLowerCase());
+  if (!enabled) return false;
+  return req.method === 'POST' && req.path === '/hub/llm/call' && req.body && typeof req.body.prompt === 'string';
 }
 
 module.exports = {

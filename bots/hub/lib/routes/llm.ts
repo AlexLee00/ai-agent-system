@@ -4,6 +4,12 @@ const { callGroqFallback } = require('../llm/groq-fallback');
 const { callWithFallback } = require('../llm/unified-caller');
 const { loadGroqAccounts } = require('../llm/secrets-loader');
 const { getLlmAdmissionState } = require('../llm/admission-control');
+const {
+  createLlmJob,
+  readJob,
+  listLlmJobs,
+  getJobStoreState,
+} = require('../llm/job-store');
 const { parseLlmCallPayload } = require('../llm/request-schema');
 const { getAllCircuitStatuses, resetCircuit, resetAllCircuits } = require('../../../../packages/core/lib/local-circuit-breaker');
 const {
@@ -39,22 +45,102 @@ export async function llmCallRoute(req, res) {
       console.error('[llm] routing log 기록 실패:', err.message)
     );
 
+    const providerBackpressure = buildProviderBackpressure(resp);
+    if (providerBackpressure?.retryAfterMs) {
+      res.set('Retry-After', String(Math.max(1, Math.ceil(providerBackpressure.retryAfterMs / 1000))));
+    }
+
     return res.json({
       ...resp,
       traceId: context.traceId || null,
       admission: {
         queued: Boolean(res.locals?.llmAdmissionQueued),
       },
+      ...(providerBackpressure ? { providerBackpressure } : {}),
     });
   } catch (err) {
+    const providerBackpressure = buildProviderBackpressure({ error: err.message });
+    if (providerBackpressure?.retryAfterMs) {
+      res.set('Retry-After', String(Math.max(1, Math.ceil(providerBackpressure.retryAfterMs / 1000))));
+    }
     return res.status(500).json({
       ok: false,
       provider: 'failed',
       durationMs: 0,
       error: err.message,
       traceId: context.traceId || null,
+      ...(providerBackpressure ? { providerBackpressure } : {}),
     });
   }
+}
+
+// POST /hub/llm/jobs — 비동기 LLM job 생성
+export async function llmJobsCreateRoute(req, res) {
+  const context = req.hubRequestContext || {};
+  const parsed = parseLlmCallPayload(req.body);
+  if (!parsed.ok) {
+    return res.status(400).json({
+      ok: false,
+      error: parsed.error,
+      traceId: context.traceId || null,
+    });
+  }
+  const body = parsed.data;
+  const normalizedRequest = {
+    ...body,
+    callerTeam: body.callerTeam || context.callerTeam || undefined,
+    agent: body.agent || context.agent || undefined,
+    urgency: body.urgency || context.priority || undefined,
+    traceId: context.traceId || undefined,
+  };
+  const job = createLlmJob(normalizedRequest, context, { source: 'api' });
+  return res.status(202).json({
+    ok: true,
+    jobId: job.id,
+    status: job.status,
+    traceId: context.traceId || null,
+    statusUrl: `/hub/llm/jobs/${job.id}`,
+    resultUrl: `/hub/llm/jobs/${job.id}/result`,
+  });
+}
+
+// GET /hub/llm/jobs — 최근 비동기 LLM job 목록
+export async function llmJobsListRoute(req, res) {
+  const limit = Math.min(Math.max(Number(req.query?.limit ?? 20), 1), 100);
+  return res.json({
+    ok: true,
+    jobs: listLlmJobs(limit),
+    store: getJobStoreState(),
+  });
+}
+
+// GET /hub/llm/jobs/:id — 비동기 LLM job 상태/결과 조회
+export async function llmJobStatusRoute(req, res) {
+  const job = readJob(req.params?.id);
+  if (!job) return res.status(404).json({ ok: false, error: 'llm_job_not_found' });
+  return res.json({
+    ok: true,
+    job: redactJobPayload(job),
+  });
+}
+
+// GET /hub/llm/jobs/:id/result — 완료된 비동기 LLM job 결과만 조회
+export async function llmJobResultRoute(req, res) {
+  const job = readJob(req.params?.id);
+  if (!job) return res.status(404).json({ ok: false, error: 'llm_job_not_found' });
+  if (job.status !== 'completed') {
+    return res.status(202).json({
+      ok: false,
+      status: job.status,
+      jobId: job.id,
+      retryAfterMs: job.retryAfterMs || 1_000,
+    });
+  }
+  return res.json({
+    ok: true,
+    jobId: job.id,
+    result: job.result,
+  });
 }
 
 // POST /hub/llm/oauth — Claude Code OAuth 단독 호출
@@ -185,6 +271,7 @@ export async function llmStatsRoute(req, res) {
         provider_share: computeProviderShare(summary),
       },
       admission: getLlmAdmissionState(),
+      jobs: getJobStoreState(),
     });
   } catch (err) {
     return res.json({
@@ -197,6 +284,7 @@ export async function llmStatsRoute(req, res) {
       by_hour: [],
       totals: { total_calls: 0, total_cost_usd: 0, success_rate: 0, provider_share: {} },
       admission: getLlmAdmissionState(),
+      jobs: getJobStoreState(),
       note: err.message.includes('does not exist') ? 'llm_routing_log 테이블 미생성 — 마이그레이션 필요' : undefined,
     });
   }
@@ -340,6 +428,51 @@ function parseLoadTestNotes(notes) {
   } catch {
     return notes;
   }
+}
+
+function buildProviderBackpressure(resp) {
+  const error = String(resp?.error || '').toLowerCase();
+  if (!error) return null;
+  const provider = String(resp?.provider || '').trim() || undefined;
+  if (error.includes('429') || error.includes('rate limit') || error.includes('quota')) {
+    return {
+      kind: 'provider_rate_limit',
+      provider,
+      retryAfterMs: Number(process.env.HUB_LLM_PROVIDER_RETRY_AFTER_MS || 60_000),
+      httpStatus: 429,
+      provider_cooldowns: getProviderCooldownSnapshot(),
+      provider_circuits: getProviderStats(),
+    };
+  }
+  if (error.includes('provider_cooldown')) {
+    return {
+      kind: 'provider_cooldown',
+      provider,
+      retryAfterMs: Number(process.env.HUB_LLM_PROVIDER_RETRY_AFTER_MS || 60_000),
+      httpStatus: 503,
+      provider_cooldowns: getProviderCooldownSnapshot(),
+      provider_circuits: getProviderStats(),
+    };
+  }
+  if (error.includes('provider_circuit_open')) {
+    return {
+      kind: 'provider_circuit_open',
+      provider,
+      retryAfterMs: Number(process.env.HUB_LLM_CIRCUIT_RETRY_AFTER_MS || 15_000),
+      httpStatus: 503,
+      provider_cooldowns: getProviderCooldownSnapshot(),
+      provider_circuits: getProviderStats(),
+    };
+  }
+  return null;
+}
+
+function redactJobPayload(job) {
+  const { payload, ...rest } = job;
+  return {
+    ...rest,
+    payloadSummary: job.payloadSummary,
+  };
 }
 
 async function logRouting(resp, body) {

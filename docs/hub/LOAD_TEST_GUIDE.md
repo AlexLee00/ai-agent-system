@@ -118,6 +118,18 @@ curl -s -H "Authorization: Bearer $HUB_AUTH_TOKEN" "$HUB_BASE_URL/hub/llm/stats?
 | provider 429 | queue/cooldown 전환, retry storm 없음 |
 | observability | `traceId`, provider attempts, circuit/admission 상태 확인 가능 |
 
+## L5 자동 게이트 매핑
+
+| Gate | 자동 검증 |
+| --- | --- |
+| async overflow path | `npx tsx bots/hub/scripts/llm-async-jobs-smoke.ts` |
+| shared limiter | `npx tsx bots/hub/scripts/llm-shared-limiter-smoke.ts` |
+| provider retry-after/cooldown propagation | `npx tsx bots/hub/scripts/hub-l5-stability-gate-smoke.ts` |
+| strict TS island | `npm --prefix bots/hub run typecheck:strict` |
+| load scenario path integrity | `npx tsx bots/hub/scripts/load-test-guide-contract-smoke.ts` |
+
+위 게이트는 `npm --prefix bots/hub run test:unit`에 연결되어 있으며, 실제 k6 부하 실측 전에도 계약 드리프트를 먼저 잡는다.
+
 ---
 
 ## 결과 저장 표준
