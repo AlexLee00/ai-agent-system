@@ -698,6 +698,7 @@ const AGENT_MODEL_REGISTRY: Record<string, Record<string, string | null>> = {
     kairos: 'investment.kairos',
     'stock-flow': 'investment.stock-flow',
     sweeper: 'investment.sweeper',
+    reporter: 'investment.reporter',
   },
   investment: {
     luna: 'investment.luna',
@@ -719,6 +720,7 @@ const AGENT_MODEL_REGISTRY: Record<string, Record<string, string | null>> = {
     kairos: 'investment.kairos',
     'stock-flow': 'investment.stock-flow',
     sweeper: 'investment.sweeper',
+    reporter: 'investment.reporter',
   },
   ska: {
     'parsing-guard': 'ska.parsing.level3',
@@ -1127,6 +1129,7 @@ const INVESTMENT_EXPLICIT_SELECTOR_AGENTS = [
   'kairos',
   'stock-flow',
   'sweeper',
+  'reporter',
 ];
 
 SELECTOR_REGISTRY['investment._default'] = (options: SelectorOptions = {}) => (

@@ -5569,7 +5569,7 @@ async function runCommentReply({ testMode = false } = {}) {
 
   await _postCommenterAlarm({
     fromBot: 'blog-commenter',
-    alertLevel: failureRate >= 0.5 ? 3 : 2,
+    alertLevel: (totalProcessed >= 2 && failureRate >= 0.5) ? 3 : 2,
     message: `답댓글 ${replied}건 완료, 실패 ${failed}건, 스킵 ${skipped}건 (오늘 총 ${todayCount + replied}/${config.maxDaily})${externalFill ? ` / 외부 댓글 보충 ${externalFill.posted || 0}건` : ''}`,
     shouldSend: replied > 0 || failed > 0,
   });
@@ -5793,7 +5793,7 @@ async function runNeighborSympathy({ testMode = false } = {}) {
 
   await _postCommenterAlarm({
     fromBot: 'blog-neighbor-sympathy',
-    alertLevel: failed > 0 ? 3 : 2,
+    alertLevel: failed >= 2 ? 3 : 2,
     message: `이웃 공감 ${liked}건 완료, 실패 ${failed}건, 스킵 ${skipped}건 (오늘 총 ${todayCount + liked}/${config.maxDaily})`,
     shouldSend: liked > 0 || failed > 0,
   });
@@ -5928,7 +5928,7 @@ async function runNeighborCommenter({ testMode = false, limitOverride = 0, trigg
 
   await _postCommenterAlarm({
     fromBot: 'blog-neighbor-commenter',
-    alertLevel: failed > 0 ? 3 : 2,
+    alertLevel: failed >= 2 ? 3 : 2,
     message: `이웃 댓글 ${posted}건 완료, 댓글 공감 ${sympathized}건 완료, 실패 ${failed}건, 스킵 ${skipped}건 (오늘 댓글 총 ${todayCount + posted}/${config.maxDaily}, 댓글공감 총 ${todaySympathyCount + sympathized})`,
     shouldSend: posted > 0 || failed > 0,
   });

@@ -23,6 +23,7 @@ const REQUIRED_INVESTMENT_AGENTS = [
   'luna',
   'nemesis',
   'oracle',
+  'reporter',
   'scout',
   'sentinel',
   'sophia',
