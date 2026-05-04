@@ -5,6 +5,7 @@ import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
 import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
 import { publishAlert } from '../shared/alert-publisher.ts';
+import { buildLunaDelegatedAuthorityDecision } from '../shared/luna-delegated-authority.ts';
 import { buildLunaLiveFireCutoverPreflight } from './luna-live-fire-cutover-preflight.ts';
 import { buildLunaReconcileAckPreflight } from './luna-reconcile-ack-preflight.ts';
 import { buildLunaManualReconcilePlaybook } from './luna-manual-reconcile-playbook.ts';
@@ -102,6 +103,11 @@ export async function buildLunaLiveFireFinalGate({
   ]);
   const blockers = summarizeBlockers({ preflight, ackPreflight, manualPlaybook, killSwitch, worker });
   const operatingSummary = buildOperatingSummary({ blockers, preflight, ackPreflight, manualPlaybook, killSwitch, worker });
+  const delegatedAuthority = buildLunaDelegatedAuthorityDecision({
+    action: 'live_fire_cutover',
+    finalGate: { ok: blockers.length === 0, blockers },
+    caps: { maxUsdt: 50, maxDailyUsdt: 200, maxOpen: 2 },
+  });
   return {
     ok: blockers.length === 0,
     checkedAt: new Date().toISOString(),
@@ -111,6 +117,7 @@ export async function buildLunaLiveFireFinalGate({
     liveLookup,
     withPositionParity,
     blockers,
+    delegatedAuthority,
     operatingSummary,
     preflight,
     ackPreflight,
@@ -128,7 +135,9 @@ export async function buildLunaLiveFireFinalGate({
       ? (operatingSummary.nextAction === 'continue_live_fire_watchdog_monitoring'
         ? ['npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run -s runtime:luna-live-fire-watchdog']
         : [
-            'npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run -s runtime:luna-live-fire-cutover -- --apply --confirm=enable-luna-live-fire --max-usdt=50 --max-daily-usdt=200 --max-open=2',
+            delegatedAuthority.canSelfApprove
+              ? 'npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run -s runtime:luna-live-fire-cutover -- --apply --max-usdt=50 --max-daily-usdt=200 --max-open=2'
+              : 'npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run -s runtime:luna-live-fire-cutover -- --apply --confirm=enable-luna-live-fire --max-usdt=50 --max-daily-usdt=200 --max-open=2',
             'npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run -s runtime:luna-live-fire-watchdog',
           ])
       : [
@@ -148,6 +157,7 @@ export function renderLunaLiveFireFinalGate(report = {}) {
     `status: ${report.status || 'unknown'} / exchange=${report.exchange || 'n/a'} / ${report.hours || 6}h`,
     `blockers: ${(report.blockers || []).length ? report.blockers.join(' / ') : 'none'}`,
     `nextAction: ${report.operatingSummary?.nextAction || 'unknown'}`,
+    `authority: ${report.delegatedAuthority?.masterRole || 'unknown'} / selfApprove=${report.delegatedAuthority?.canSelfApprove ?? false}`,
     `ackReady=${report.operatingSummary?.safeAckReady ?? 'n/a'} / manualReconcile=${report.operatingSummary?.manualReconcileRequired ?? 'n/a'} / parity=${report.operatingSummary?.parityClear ?? 'n/a'} / killSwitch=${report.killSwitch?.status || 'unknown'} / worker=${report.worker?.status || 'unknown'}`,
     `next: ${(report.nextCommands || []).length ? report.nextCommands[0] : 'none'}`,
   ].join('\n');

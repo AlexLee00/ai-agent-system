@@ -2,7 +2,7 @@
 
 This inventory tracks the Hub alarm migration surface. `hub_alarm_native` entries are the desired path; `retired_gateway_guard` entries are regression guards; `legacy_gateway_compat` entries are remaining migration targets and must stay at 0.
 
-- generated_at: 2026-05-04T12:52:10.788Z
+- generated_at: 2026-05-04T12:58:05.471Z
 - total_matches: 270
 - unique_files: 135
 - hub_alarm_native: 258
@@ -451,7 +451,7 @@ This inventory tracks the Hub alarm migration surface. `hub_alarm_native` entrie
 - L14 [hub_alarm_native]: `const { postAlarm } = require('../../../packages/core/lib/hub-alarm-client');`
 
 ### `bots/investment/scripts/luna-live-fire-final-gate.ts`
-- L17 [hub_alarm_native]: `const module = require('../../../packages/core/lib/hub-alarm-client.js');`
+- L18 [hub_alarm_native]: `const module = require('../../../packages/core/lib/hub-alarm-client.js');`
 
 ### `bots/investment/scripts/runtime-luna-launchd-cutover-preflight-pack.ts`
 - L26 [hub_alarm_native]: `const hasTelegramRoute = Boolean(env.TELEGRAM_BOT_TOKEN || env.HUB_ALARM_TELEGRAM_ENABLED || env.TELEGRAM_ALARM_TOPIC_MAP);`

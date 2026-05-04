@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-05-04T12:52:10.788Z",
+  "generated_at": "2026-05-04T12:58:05.471Z",
   "scan_patterns": [
     "hub-alarm-client",
     "openclaw-client",
@@ -1581,7 +1581,7 @@
     "bots/investment/scripts/luna-live-fire-final-gate.ts": [
       {
         "file": "bots/investment/scripts/luna-live-fire-final-gate.ts",
-        "line": 17,
+        "line": 18,
         "category": "hub_alarm_native",
         "match": "const module = require('../../../packages/core/lib/hub-alarm-client.js');"
       }

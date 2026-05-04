@@ -1,10 +1,26 @@
 // @ts-nocheck
 
+import { spawnSync } from 'node:child_process';
+
 export const LUNA_DELEGATED_AUTHORITY_TOKEN = 'luna-delegated-authority';
 
 const DEFAULT_MAX_TRADE_USDT = 50;
 const DEFAULT_MAX_DAILY_USDT = 200;
 const DEFAULT_MAX_OPEN_POSITIONS = 2;
+const POLICY_ENV_KEYS = [
+  'LUNA_DELEGATED_AUTHORITY_ENABLED',
+  'LUNA_MASTER_AUTHORITY_MODE',
+  'LUNA_AUTHORITY_MODE',
+  'LUNA_MASTER_REPORT_ONLY',
+  'LUNA_DELEGATED_AUTHORITY_REQUIRE_FINAL_GATE',
+  'LUNA_DELEGATED_RECONCILE_ACK_ENABLED',
+  'LUNA_DELEGATED_MAX_TRADE_USDT',
+  'LUNA_MAX_TRADE_USDT',
+  'LUNA_DELEGATED_MAX_DAILY_USDT',
+  'LUNA_LIVE_FIRE_MAX_DAILY',
+  'LUNA_DELEGATED_MAX_OPEN_POSITIONS',
+  'LUNA_LIVE_FIRE_MAX_OPEN',
+];
 
 function boolEnv(value, fallback = false) {
   if (value == null || value === '') return fallback;
@@ -23,20 +39,39 @@ function normalizeMode(value) {
   return 'master_approval';
 }
 
-export function getLunaDelegatedAuthorityPolicy(env = process.env) {
-  const mode = boolEnv(env.LUNA_DELEGATED_AUTHORITY_ENABLED)
+function launchctlGetenv(key) {
+  const proc = spawnSync('launchctl', ['getenv', key], { encoding: 'utf8' });
+  if (proc.status !== 0) return undefined;
+  const value = String(proc.stdout || '').trim();
+  return value || undefined;
+}
+
+function activePolicyEnv() {
+  const env = { ...process.env };
+  for (const key of POLICY_ENV_KEYS) {
+    if (env[key] == null || env[key] === '') {
+      const value = launchctlGetenv(key);
+      if (value != null && value !== '') env[key] = value;
+    }
+  }
+  return env;
+}
+
+export function getLunaDelegatedAuthorityPolicy(env = null) {
+  const effectiveEnv = env || activePolicyEnv();
+  const mode = boolEnv(effectiveEnv.LUNA_DELEGATED_AUTHORITY_ENABLED)
     ? 'delegated'
-    : normalizeMode(env.LUNA_MASTER_AUTHORITY_MODE || env.LUNA_AUTHORITY_MODE);
+    : normalizeMode(effectiveEnv.LUNA_MASTER_AUTHORITY_MODE || effectiveEnv.LUNA_AUTHORITY_MODE);
   const delegated = mode === 'delegated';
   return {
     mode,
     delegated,
-    reportOnly: delegated || mode === 'report_only' || boolEnv(env.LUNA_MASTER_REPORT_ONLY),
-    requireFinalGate: boolEnv(env.LUNA_DELEGATED_AUTHORITY_REQUIRE_FINAL_GATE, true),
-    allowReconcileAck: boolEnv(env.LUNA_DELEGATED_RECONCILE_ACK_ENABLED, false),
-    maxTradeUsdt: positiveNumber(env.LUNA_DELEGATED_MAX_TRADE_USDT || env.LUNA_MAX_TRADE_USDT, DEFAULT_MAX_TRADE_USDT),
-    maxDailyUsdt: positiveNumber(env.LUNA_DELEGATED_MAX_DAILY_USDT || env.LUNA_LIVE_FIRE_MAX_DAILY, DEFAULT_MAX_DAILY_USDT),
-    maxOpenPositions: Math.max(1, Math.round(positiveNumber(env.LUNA_DELEGATED_MAX_OPEN_POSITIONS || env.LUNA_LIVE_FIRE_MAX_OPEN, DEFAULT_MAX_OPEN_POSITIONS))),
+    reportOnly: delegated || mode === 'report_only' || boolEnv(effectiveEnv.LUNA_MASTER_REPORT_ONLY),
+    requireFinalGate: boolEnv(effectiveEnv.LUNA_DELEGATED_AUTHORITY_REQUIRE_FINAL_GATE, true),
+    allowReconcileAck: boolEnv(effectiveEnv.LUNA_DELEGATED_RECONCILE_ACK_ENABLED, false),
+    maxTradeUsdt: positiveNumber(effectiveEnv.LUNA_DELEGATED_MAX_TRADE_USDT || effectiveEnv.LUNA_MAX_TRADE_USDT, DEFAULT_MAX_TRADE_USDT),
+    maxDailyUsdt: positiveNumber(effectiveEnv.LUNA_DELEGATED_MAX_DAILY_USDT || effectiveEnv.LUNA_LIVE_FIRE_MAX_DAILY, DEFAULT_MAX_DAILY_USDT),
+    maxOpenPositions: Math.max(1, Math.round(positiveNumber(effectiveEnv.LUNA_DELEGATED_MAX_OPEN_POSITIONS || effectiveEnv.LUNA_LIVE_FIRE_MAX_OPEN, DEFAULT_MAX_OPEN_POSITIONS))),
     auditRequired: true,
     hardSafetyNonDelegable: [
       'broker_order_identity_missing',
@@ -62,7 +97,7 @@ function capBlockers(caps = {}, policy) {
 
 export function buildLunaDelegatedAuthorityDecision({
   action = 'report',
-  env = process.env,
+  env = null,
   finalGate = null,
   readiness = null,
   caps = {},
