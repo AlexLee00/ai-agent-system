@@ -27,7 +27,7 @@ function getSkaBaseUrl() {
  * @param {string} [variantLabel]
  * @param {object} [context]
  */
-function generateTrackingLink(postId, platform, postDate = '', variantLabel = '', context = {}) {
+function generateTrackingLink(postId: string, platform: string, postDate = '', variantLabel = '', context: Record<string, unknown> = {}) {
   return buildTrackingLink({
     postId: String(postId || ''),
     platform,

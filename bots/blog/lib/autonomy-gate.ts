@@ -104,7 +104,7 @@ function evaluatePostQuality(post, feedbackPatterns = []) {
   };
 }
 
-function buildRuntimeThresholdAdjustment(runtimeContext = {}) {
+function buildRuntimeThresholdAdjustment(runtimeContext: Record<string, unknown> = {}) {
   let delta = 0;
   const reasons = [];
   const signalCount = Number(runtimeContext.signalCount || 0);

@@ -13,7 +13,7 @@ function ensureOpsDir() {
   fs.mkdirSync(BLOG_OPS_DIR, { recursive: true });
 }
 
-function normalizeEvalCase(payload = {}) {
+function normalizeEvalCase(payload: Record<string, unknown> = {}) {
   return {
     capturedAt: new Date().toISOString(),
     area: String(payload.area || 'unknown'),
@@ -27,7 +27,7 @@ function normalizeEvalCase(payload = {}) {
   };
 }
 
-function writeBlogEvalCase(payload = {}) {
+function writeBlogEvalCase(payload: Record<string, unknown> = {}) {
   try {
     const normalized = normalizeEvalCase(payload);
     ensureOpsDir();
