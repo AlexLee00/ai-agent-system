@@ -10,6 +10,8 @@ const originalEnv: Record<string, string | undefined> = {
   OPENAI_CODEX_BACKEND_BASE_URL: process.env.OPENAI_CODEX_BACKEND_BASE_URL,
   GEMINI_OAUTH_BASE_URL: process.env.GEMINI_OAUTH_BASE_URL,
   GEMINI_OAUTH_PROJECT_ID: process.env.GEMINI_OAUTH_PROJECT_ID,
+  GOOGLE_CLOUD_QUOTA_PROJECT: process.env.GOOGLE_CLOUD_QUOTA_PROJECT,
+  GOOGLE_CLOUD_PROJECT: process.env.GOOGLE_CLOUD_PROJECT,
   HUB_BUDGET_GUARDIAN_ENABLED: process.env.HUB_BUDGET_GUARDIAN_ENABLED,
   HUB_LLM_PROVIDER_CIRCUIT_ENABLED: process.env.HUB_LLM_PROVIDER_CIRCUIT_ENABLED,
 };
@@ -53,6 +55,8 @@ async function main() {
   process.env.OPENAI_CODEX_BACKEND_BASE_URL = 'https://hub-unified-openai.local/backend-api';
   process.env.GEMINI_OAUTH_BASE_URL = 'https://hub-unified-gemini.local';
   delete process.env.GEMINI_OAUTH_PROJECT_ID;
+  delete process.env.GOOGLE_CLOUD_QUOTA_PROJECT;
+  delete process.env.GOOGLE_CLOUD_PROJECT;
   process.env.HUB_BUDGET_GUARDIAN_ENABLED = 'false';
   process.env.HUB_LLM_PROVIDER_CIRCUIT_ENABLED = 'false';
 
