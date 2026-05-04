@@ -9,6 +9,7 @@
     "outDir": "./dist"
   },
   "include": [
+    "scripts/**/*.ts",
     "ts/**/*.ts",
     "shared/**/*.ts",
     "legacy-skills/**/*.ts"

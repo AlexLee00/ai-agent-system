@@ -8,10 +8,30 @@ gepa_enabled: false               # SIGMA_GEPA_ENABLED (= ESPL)
 mcp_server_enabled: false         # SIGMA_MCP_SERVER_ENABLED
 self_rag_enabled: false           # SIGMA_SELF_RAG_ENABLED
 
+# Intelligent Library / Great Library Brain
+library:
+  autonomy_mode: shadow           # SIGMA_LIBRARY_AUTONOMY_MODE
+  team_memory_unified: false      # SIGMA_TEAM_MEMORY_UNIFIED
+  knowledge_graph_enabled: false  # SIGMA_KNOWLEDGE_GRAPH_ENABLED
+  dataset_builder_enabled: false  # SIGMA_DATASET_BUILDER_ENABLED
+  dataset_auto_export: false      # SIGMA_DATASET_AUTO_EXPORT
+  self_improvement_enabled: false # SIGMA_SELF_IMPROVEMENT_ENABLED
+  voyager_skill_auto_extraction: false
+  multi_hop_rag_enabled: false
+  hyde_enabled: false
+  data_lineage_enabled: false
+  pii_redaction_enabled: true
+  sensitive_export_blocked: true
+  constitution_enabled: true
+  constitution_violation_auto_block: false
+  dashboard_enabled: false
+
 # LLM 예산
 llm_budget:
   daily_usd: 10.00
   monthly_usd: 180.00
+  entity_extraction_daily_usd: 2.00
+  self_improvement_daily_usd: 5.00
 
 # 속도 제한 (sigma_principles.yaml §2와 일치)
 rate_limits:

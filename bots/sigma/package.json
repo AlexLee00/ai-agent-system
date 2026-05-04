@@ -7,6 +7,8 @@
   "scripts": {
     "baseline": "tsx ts/src/sigma-daily.ts --test",
     "health": "tsx ts/src/sigma-daily.ts --health",
+    "library:dashboard": "tsx scripts/runtime-sigma-library-dashboard.ts --json",
+    "check:library": "tsx scripts/sigma-intelligent-library-smoke.ts",
     "shadow": "cd elixir && mix shadow",
     "test": "cd elixir && mix test",
     "test:ts": "echo 'No Sigma TS tests yet; use npm run baseline or npm run health'",
