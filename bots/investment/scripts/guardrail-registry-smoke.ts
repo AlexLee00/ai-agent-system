@@ -10,6 +10,7 @@ export async function runSmoke() {
   assert.ok(entries.length >= 50, `default guardrails registered: ${entries.length}`);
   for (const name of [
     'luna_full_integration_closure_gate',
+    'luna_capital_state_report',
     'luna_reconcile_blockers',
     'luna_live_fire_final_gate',
     'agent_message_bus_hygiene',

@@ -12,6 +12,13 @@ const CORE_GUARDRAILS = [
     command: ['node', 'scripts/luna-l5-readiness-report.ts', '--json'],
   },
   {
+    name: 'luna_capital_state_report',
+    category: 'safety',
+    severity: 'high',
+    owner: 'luna',
+    command: ['node', 'scripts/runtime-luna-capital-state-report.ts', '--json'],
+  },
+  {
     name: 'intelligent_discovery',
     category: 'trading',
     severity: 'high',
