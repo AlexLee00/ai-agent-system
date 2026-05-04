@@ -84,12 +84,30 @@ function isRetiredReplyTarget(linkedComment = null) {
   );
 }
 
+function isFilteredReplyComment(linkedComment = null) {
+  if (!linkedComment || typeof linkedComment !== 'object') return false;
+  const status = String(linkedComment.status || '').trim();
+  const errorMessage = String(linkedComment.error_message || '').trim();
+  const phase = String(linkedComment?.meta?.phase || '').trim();
+  return (
+    status === 'skipped'
+    && (
+      phase === 'inbound_filter'
+      || phase === 'recoverable_requeue_filtered'
+      || errorMessage.startsWith('promotional_')
+      || errorMessage === 'external_url_comment'
+      || errorMessage === 'copied_comment'
+    )
+  );
+}
+
 function isRecoveredReplyComment(linkedComment = null) {
   if (!linkedComment || typeof linkedComment !== 'object') return false;
   return (
     String(linkedComment.status || '') === 'replied'
     || Boolean(linkedComment.reply_at)
     || isRetiredReplyTarget(linkedComment)
+    || isFilteredReplyComment(linkedComment)
   );
 }
 
@@ -109,7 +127,9 @@ function resolveEvalCaseStaleness(latestEvalCase = null, replyRecoveryMap = new 
     latestEvalCase: {
       ...latestEvalCase,
       status: 'resolved',
-      resolution: isRetiredReplyTarget(linkedComment) ? 'reply_target_unavailable_stale' : 'reply_recovered',
+      resolution: isRetiredReplyTarget(linkedComment)
+        ? 'reply_target_unavailable_stale'
+        : (isFilteredReplyComment(linkedComment) ? 'reply_filtered_non_actionable' : 'reply_recovered'),
     },
     stale: true,
   };
