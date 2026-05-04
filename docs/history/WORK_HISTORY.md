@@ -4,6 +4,15 @@
 > 상세 내용: `reservation-dev-summary.md` / `reservation-handoff.md`
 > 최초 작성: 2026-02-27
 
+## 2026-05-04: docs/codex 전수 점검 + 아카이브 정리 (89차 세션)
+
+- **CODEX_ARCHIVE_STATUS_2026-05-04 실행**: docs/codex 문서 26건 전수 점검
+- **13건 아카이브 처리** → `docs/codex/archive/` (이전 세션에서 이미 완료됨 확인)
+  - LUNA 계열 9건 (bottleneck, final-100%, first-close, full-integration x3, master-plan-5%, memory-llm-routing, live-fire-operational)
+  - 공통 4건 (NEXT_ACTION_DECISION, LLM_OAUTH_4, TEAM_JAY_NEXT_STAGE, TELEGRAM_ALARM_AUTONOMY)
+- **13건 활성 유지**: BLOG_L5, DARWIN_RND, HUB_L5, JUSTIN, LUNA x5, SIGMA, SKA (추가 구현 필요)
+- CODEX_ARCHIVE_STATUS_2026-05-04.md → docs/archive/codex-completed/ 이동
+
 ## 2026-05-04: ALARM_INCIDENT 인박스 처리 + llm-routing smoke 수정 (88차 세션)
 
 - **ALARM_INCIDENT 3건 아카이브** (blog-commenter transient, auto_dev meta-loop 2건)
