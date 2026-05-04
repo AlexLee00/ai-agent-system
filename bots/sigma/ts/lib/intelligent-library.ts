@@ -19,6 +19,7 @@ export type SigmaTeam = (typeof SIGMA_TEAMS)[number];
 export type LibraryMode = 'shadow' | 'supervised' | 'autonomous';
 
 export interface SigmaLibraryEnv {
+  SIGMA_V2_ENABLED?: string;
   SIGMA_TEAM_MEMORY_UNIFIED?: string;
   SIGMA_KNOWLEDGE_GRAPH_ENABLED?: string;
   SIGMA_DATASET_BUILDER_ENABLED?: string;
@@ -33,6 +34,12 @@ export interface SigmaLibraryEnv {
   SIGMA_CONSTITUTION_VIOLATION_AUTO_BLOCK?: string;
   SIGMA_LIBRARY_DASHBOARD_ENABLED?: string;
   SIGMA_LIBRARY_AUTONOMY_MODE?: string;
+  SIGMA_TIER2_AUTO_APPLY?: string;
+  SIGMA_GEPA_ENABLED?: string;
+  SIGMA_MCP_SERVER_ENABLED?: string;
+  SIGMA_DATASET_AUTO_EXPORT?: string;
+  SIGMA_VOYAGER_SKILL_AUTO_EXTRACTION?: string;
+  SIGMA_FINE_TUNING_NOTIFY_ENABLED?: string;
 }
 
 export interface LibraryGate {
@@ -42,6 +49,26 @@ export interface LibraryGate {
   mode: LibraryMode;
   warnings: string[];
   blockers: string[];
+}
+
+export interface FinalActivationRequirement {
+  phase: '1' | '2' | '3' | '4' | '5' | '6';
+  key: keyof SigmaLibraryEnv;
+  expected: string;
+  description: string;
+}
+
+export interface FinalActivationEntry extends FinalActivationRequirement {
+  actual: string | null;
+  active: boolean;
+}
+
+export interface FinalActivationSummary {
+  ok: boolean;
+  active: number;
+  total: number;
+  missing: string[];
+  entries: FinalActivationEntry[];
 }
 
 export interface MemoryLayerPlan {
@@ -122,12 +149,35 @@ export interface DashboardSummary {
     skillCandidates: number;
     fineTuneCandidate: boolean;
   };
+  finalActivation: FinalActivationSummary;
   gates: LibraryGate[];
   warnings: string[];
   blockers: string[];
 }
 
 const DEFAULT_MODE: LibraryMode = 'shadow';
+
+export const FINAL_ACTIVATION_REQUIREMENTS: readonly FinalActivationRequirement[] = [
+  { phase: '1', key: 'SIGMA_V2_ENABLED', expected: 'true', description: 'Sigma v2 runtime enabled' },
+  { phase: '1', key: 'SIGMA_LIBRARY_AUTONOMY_MODE', expected: 'autonomous', description: 'Library autonomy promoted to autonomous mode' },
+  { phase: '1', key: 'SIGMA_TEAM_MEMORY_UNIFIED', expected: 'true', description: 'Cross-team 4-layer memory unified' },
+  { phase: '1', key: 'SIGMA_KNOWLEDGE_GRAPH_ENABLED', expected: 'true', description: 'Knowledge graph enabled' },
+  { phase: '1', key: 'SIGMA_DATASET_BUILDER_ENABLED', expected: 'true', description: 'Dataset builder enabled' },
+  { phase: '1', key: 'SIGMA_DATA_LINEAGE_ENABLED', expected: 'true', description: 'Dataset lineage required' },
+  { phase: '1', key: 'SIGMA_LIBRARY_DASHBOARD_ENABLED', expected: 'true', description: 'Library dashboard enabled' },
+  { phase: '2', key: 'SIGMA_TIER2_AUTO_APPLY', expected: 'true', description: 'Tier 2 automatic apply enabled' },
+  { phase: '3', key: 'SIGMA_SELF_RAG_ENABLED', expected: 'true', description: 'Self-RAG enabled' },
+  { phase: '3', key: 'SIGMA_GEPA_ENABLED', expected: 'true', description: 'GEPA/ESPL enabled' },
+  { phase: '3', key: 'SIGMA_MULTI_HOP_RAG_ENABLED', expected: 'true', description: 'Multi-hop RAG enabled' },
+  { phase: '3', key: 'SIGMA_HYDE_ENABLED', expected: 'true', description: 'HyDE enabled' },
+  { phase: '4', key: 'SIGMA_MCP_SERVER_ENABLED', expected: 'true', description: 'Sigma MCP server enabled' },
+  { phase: '5', key: 'SIGMA_SELF_IMPROVEMENT_ENABLED', expected: 'true', description: 'Self-improvement pipeline enabled' },
+  { phase: '5', key: 'SIGMA_VOYAGER_SKILL_AUTO_EXTRACTION', expected: 'true', description: 'Voyager skill auto extraction enabled' },
+  { phase: '5', key: 'SIGMA_FINE_TUNING_NOTIFY_ENABLED', expected: 'true', description: 'Fine-tuning notification enabled' },
+  { phase: '6', key: 'SIGMA_DATASET_AUTO_EXPORT', expected: 'true', description: 'Dataset auto export flag enabled with constitution guards' },
+  { phase: '6', key: 'SIGMA_CONSTITUTION_VIOLATION_AUTO_BLOCK', expected: 'true', description: 'Constitution violation auto block enabled' },
+  { phase: '6', key: 'SIGMA_CONSTITUTION_ENABLED', expected: 'true', description: 'Constitution guard enabled' },
+];
 
 function boolEnv(value: string | undefined, defaultValue: boolean): boolean {
   if (value == null || value === '') return defaultValue;
@@ -172,6 +222,25 @@ export function buildLibraryGates(env: SigmaLibraryEnv = process.env as SigmaLib
       blockers,
     };
   });
+}
+
+export function buildFinalActivationSummary(env: SigmaLibraryEnv = process.env as SigmaLibraryEnv): FinalActivationSummary {
+  const entries = FINAL_ACTIVATION_REQUIREMENTS.map((requirement) => {
+    const actual = env[requirement.key] ?? null;
+    return {
+      ...requirement,
+      actual,
+      active: String(actual ?? '').toLowerCase() === requirement.expected,
+    };
+  });
+  const missing = entries.filter((entry) => !entry.active).map((entry) => `${entry.key}:${entry.actual ?? 'unset'}`);
+  return {
+    ok: missing.length === 0,
+    active: entries.length - missing.length,
+    total: entries.length,
+    missing,
+    entries,
+  };
 }
 
 export function buildMemoryLayerPlan(teams: readonly SigmaTeam[] = SIGMA_TEAMS): MemoryLayerPlan[] {
@@ -432,11 +501,17 @@ export function createDashboardSummary(input: {
   signals?: SelfImprovementSignal[];
   env?: SigmaLibraryEnv;
 } = {}): DashboardSummary {
-  const gates = buildLibraryGates(input.env);
+  const envProvided = input.env != null;
+  const env = input.env ?? process.env as SigmaLibraryEnv;
+  const gates = buildLibraryGates(env);
+  const finalActivation = buildFinalActivationSummary(env);
   const graph = buildKnowledgeGraphFromTexts(input.texts ?? []);
   const datasets = buildDatasetCards();
   const improvement = planSelfImprovement(input.signals ?? []);
-  const blockers = gates.flatMap((gate) => gate.blockers);
+  const blockers = [
+    ...gates.flatMap((gate) => gate.blockers),
+    ...(envProvided ? finalActivation.missing.map((missing) => `final_activation_missing:${missing}`) : []),
+  ];
   const warnings = gates.flatMap((gate) => gate.warnings);
   return {
     ok: blockers.length === 0,
@@ -455,6 +530,7 @@ export function createDashboardSummary(input: {
       skillCandidates: improvement.skillCandidates.length,
       fineTuneCandidate: improvement.fineTuneCandidate,
     },
+    finalActivation,
     gates,
     warnings,
     blockers,
@@ -473,6 +549,9 @@ export function renderDashboardHtml(summary: DashboardSummary): string {
   )).join('\n');
   const memoryRows = summary.memoryCoverage.map((entry) => (
     `<tr><td>${entry.team}</td><td>${entry.shortTerm}</td><td>${entry.episodic}</td><td>${entry.semantic}</td><td>${entry.procedural}</td></tr>`
+  )).join('\n');
+  const activationRows = summary.finalActivation.entries.map((entry) => (
+    `<tr><td>${entry.phase}</td><td>${entry.key}</td><td>${entry.expected}</td><td>${entry.actual ?? '-'}</td><td>${entry.active}</td></tr>`
   )).join('\n');
   return `<!doctype html>
 <html lang="ko">
@@ -499,6 +578,9 @@ export function renderDashboardHtml(summary: DashboardSummary): string {
     <div class="card"><div>Graph Nodes</div><div class="value">${summary.graph.nodes}</div></div>
     <div class="card"><div>Skill Candidates</div><div class="value">${summary.selfImprovement.skillCandidates}</div></div>
   </section>
+  <h2>Final Activation</h2>
+  <p>${summary.finalActivation.active}/${summary.finalActivation.total} active</p>
+  <table><thead><tr><th>Phase</th><th>Key</th><th>Expected</th><th>Actual</th><th>Active</th></tr></thead><tbody>${activationRows}</tbody></table>
   <h2>Phase Gates</h2>
   <table><thead><tr><th>Phase</th><th>Enabled</th><th>Default Safe</th><th>Mode</th><th>Blockers</th></tr></thead><tbody>${gateRows}</tbody></table>
   <h2>Memory Coverage</h2>
