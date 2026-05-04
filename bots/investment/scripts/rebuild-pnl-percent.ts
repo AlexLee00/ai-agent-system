@@ -16,8 +16,7 @@
  */
 
 import * as db from '../shared/db.ts';
-
-const PNL_OUTLIER_THRESHOLD = 1000; // % 이상은 이상치
+import { JOURNAL_PNL_OUTLIER_THRESHOLD, safeJournalPnlPercent } from '../shared/trade-journal-db.ts';
 
 function parseArgs(argv = process.argv.slice(2)) {
   return {
@@ -25,54 +24,6 @@ function parseArgs(argv = process.argv.slice(2)) {
     limit: Number(argv.find(a => a.startsWith('--limit='))?.split('=')[1] || '5000'),
     verbose: argv.includes('--verbose'),
   };
-}
-
-/**
- * micro-price 안전 pnl_percent 계산.
- * entry_price가 0이거나 너무 작으면 entry_value/exit_value 기반으로 폴백.
- */
-function safePnlPercent(
-  entryPrice: number | null,
-  exitPrice: number | null,
-  entryValue: number | null,
-  exitValue: number | null,
-  direction: string | null,
-): number | null {
-  const ep = Number(entryPrice);
-  const xp = Number(exitPrice);
-  const ev = Number(entryValue);
-  const xv = Number(exitValue);
-
-  // entry_price 기반 계산 우선
-  if (ep > 0 && xp >= 0) {
-    const isShort = String(direction || '').toUpperCase() === 'SELL'
-      || String(direction || '').toUpperCase() === 'SHORT';
-    const raw = isShort
-      ? (ep - xp) / ep * 100
-      : (xp - ep) / ep * 100;
-
-    // 이상치 클램핑
-    if (Math.abs(raw) > PNL_OUTLIER_THRESHOLD) {
-      // entry_value/exit_value로 폴백 시도
-      if (ev > 0 && xv >= 0) {
-        const valBased = (xv - ev) / ev * 100;
-        if (Math.abs(valBased) <= PNL_OUTLIER_THRESHOLD) return Number(valBased.toFixed(4));
-      }
-      // 그래도 이상치면 null (신뢰 불가)
-      return null;
-    }
-
-    return Number(raw.toFixed(4));
-  }
-
-  // entry_value 기반 폴백
-  if (ev > 0 && xv >= 0) {
-    const raw = (xv - ev) / ev * 100;
-    if (Math.abs(raw) <= PNL_OUTLIER_THRESHOLD) return Number(raw.toFixed(4));
-    return null;
-  }
-
-  return null;
 }
 
 async function run() {
@@ -96,7 +47,7 @@ async function run() {
       )
     ORDER BY id DESC
     LIMIT $2
-  `, [PNL_OUTLIER_THRESHOLD, args.limit]);
+  `, [JOURNAL_PNL_OUTLIER_THRESHOLD, args.limit]);
 
   if (!rows || rows.length === 0) {
     console.log('[rebuild-pnl] 재계산 대상 없음 (이상치 0건)');
@@ -110,13 +61,13 @@ async function run() {
   let errors = 0;
 
   for (const row of rows) {
-    const newPnl = safePnlPercent(
-      row.entry_price,
-      row.exit_price,
-      row.entry_value,
-      row.exit_value,
-      row.direction,
-    );
+    const newPnl = safeJournalPnlPercent({
+      entryPrice: row.entry_price,
+      exitPrice: row.exit_price,
+      entryValue: row.entry_value,
+      exitValue: row.exit_value,
+      direction: row.direction,
+    });
 
     const oldPnl = row.pnl_percent != null ? Number(row.pnl_percent).toFixed(2) : 'null';
 

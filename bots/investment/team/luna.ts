@@ -76,7 +76,7 @@ import {
   shouldRunDiscovery as shouldRunDiscoveryPolicy,
 } from '../shared/luna-orchestration-policy.ts';
 import { publishAgentHint } from '../shared/agent-hint-bridge.ts';
-import { checkReflexionBeforeEntry } from '../shared/reflexion-guard.ts';
+import { checkReflexionBeforeEntry, checkSymbolBlacklist } from '../shared/reflexion-guard.ts';
 import {
   getStockOrderSpec,
   formatStockAmountRule,
@@ -128,6 +128,7 @@ const lunaPortfolioDecisionGuards = createLunaPortfolioDecisionGuards({
   adjustLunaBuyCandidate,
   enrichCapitalCheck,
   checkReflexionBeforeEntry,
+  checkSymbolBlacklist,
 });
 const {
   applyCryptoRepresentativePass,

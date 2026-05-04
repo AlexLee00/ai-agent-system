@@ -10,6 +10,8 @@ const CRYPTO_FAMILIES = [
   'breakout',
   'mean_reversion',
   'defensive_rotation',
+  'short_term_scalping',
+  'micro_swing',
 ];
 
 const STOCK_FAMILIES = [
@@ -17,6 +19,8 @@ const STOCK_FAMILIES = [
   'breakout',
   'mean_reversion',
   'defensive_rotation',
+  'short_term_scalping',
+  'micro_swing',
 ];
 
 function clamp(value, min = 0, max = 1) {
@@ -45,6 +49,8 @@ function textOf(...parts) {
 
 function normalizeSetupType(raw = null, exchange = 'binance') {
   const value = String(raw || '').trim().toLowerCase();
+  if (value.includes('scalp') || value.includes('스캘핑')) return 'short_term_scalping';
+  if (value.includes('micro') || value.includes('단기')) return 'micro_swing';
   if (value.includes('breakout') || value.includes('돌파')) return 'breakout';
   if (value.includes('mean') || value.includes('reversion') || value.includes('반등') || value.includes('되돌림')) return 'mean_reversion';
   if (value.includes('trend') || value.includes('추세')) return exchange === 'binance' ? 'trend_following' : 'equity_swing';
@@ -57,23 +63,30 @@ function buildRegimeBias(regime = null, exchange = 'binance') {
   const value = String(regime?.regime || regime || '').toLowerCase();
   if (value.includes('bull')) {
     return exchange === 'binance'
-      ? { trend_following: 0.24, momentum_rotation: 0.18, breakout: 0.14, mean_reversion: -0.04, defensive_rotation: -0.12 }
-      : { equity_swing: 0.22, breakout: 0.12, mean_reversion: -0.02, defensive_rotation: -0.10 };
+      ? { trend_following: 0.24, momentum_rotation: 0.18, breakout: 0.14, micro_swing: 0.06, short_term_scalping: 0.03, mean_reversion: -0.04, defensive_rotation: -0.12 }
+      : { equity_swing: 0.22, breakout: 0.12, micro_swing: 0.05, short_term_scalping: 0.02, mean_reversion: -0.02, defensive_rotation: -0.10 };
   }
   if (value.includes('bear')) {
     return exchange === 'binance'
-      ? { defensive_rotation: 0.30, mean_reversion: 0.10, trend_following: -0.08, momentum_rotation: -0.12, breakout: -0.14 }
-      : { defensive_rotation: 0.30, mean_reversion: 0.08, equity_swing: -0.10, breakout: -0.12 };
+      ? { defensive_rotation: 0.30, mean_reversion: 0.10, short_term_scalping: -0.08, micro_swing: -0.06, trend_following: -0.08, momentum_rotation: -0.12, breakout: -0.14 }
+      : { defensive_rotation: 0.30, mean_reversion: 0.08, short_term_scalping: -0.08, micro_swing: -0.06, equity_swing: -0.10, breakout: -0.12 };
   }
   if (value.includes('rang')) {
     return exchange === 'binance'
-      ? { mean_reversion: 0.24, defensive_rotation: 0.08, breakout: -0.04, trend_following: -0.06 }
-      : { mean_reversion: 0.22, defensive_rotation: 0.08, equity_swing: -0.04 };
+      ? { mean_reversion: 0.24, micro_swing: 0.08, short_term_scalping: 0.04, defensive_rotation: 0.08, breakout: -0.04, trend_following: -0.06 }
+      : { mean_reversion: 0.22, micro_swing: 0.07, short_term_scalping: 0.03, defensive_rotation: 0.08, equity_swing: -0.04 };
   }
   if (value.includes('volatil')) {
-    return { defensive_rotation: 0.18, breakout: 0.06, mean_reversion: -0.04 };
+    return { defensive_rotation: 0.18, breakout: 0.06, short_term_scalping: -0.05, micro_swing: -0.03, mean_reversion: -0.04 };
   }
   return {};
+}
+
+function hasShortTermHint(text = '') {
+  const value = String(text || '').toLowerCase();
+  return value.includes('15m') || value.includes('30m') || value.includes('1h')
+    || value.includes('scalp') || value.includes('스캘핑') || value.includes('단타')
+    || value.includes('micro') || value.includes('단기');
 }
 
 function marketFromExchange(exchange = 'binance') {
@@ -134,6 +147,10 @@ function applyAnalystFeatures({ analyses = [], exchange = 'binance', scores, rea
   if (taSignal === ACTIONS.BUY) {
     add(scores, exchange === 'binance' ? 'trend_following' : 'equity_swing', 0.20 * taConf, 'TA BUY가 기본 추세/스윙 후보를 지지', reasons);
     add(scores, 'breakout', taText.includes('break') || taText.includes('돌파') || taText.includes('volume') ? 0.16 * taConf : 0.06 * taConf, 'TA BUY와 돌파/거래량 단서', reasons);
+    if (hasShortTermHint(taText)) {
+      add(scores, 'short_term_scalping', 0.24 * taConf, 'TA 단기/스캘핑 단서', reasons);
+      add(scores, 'micro_swing', 0.14 * taConf, 'TA 단기 스윙 단서', reasons);
+    }
   } else if (taSignal === ACTIONS.SELL) {
     add(scores, 'defensive_rotation', 0.22 * taConf, 'TA SELL로 방어 전략 우선', reasons);
     add(scores, 'mean_reversion', taText.includes('oversold') || taText.includes('과매도') ? 0.14 * taConf : 0.04 * taConf, 'TA 약세 중 반등 후보 확인', reasons);
@@ -365,7 +382,7 @@ export function buildRoutedStrategyFallback({ route = null, exchange = 'binance'
     entry_condition: reason,
     exit_condition: 'strategy_break_or_risk_exit',
     risk_management: route?.quality === 'ready' ? 'strategy_router_standard_guard' : 'strategy_router_watchful_guard',
-    applicable_timeframe: exchange === 'binance' ? '4h' : '1d',
+    applicable_timeframe: setupType === 'short_term_scalping' ? '15m' : setupType === 'micro_swing' ? '4h' : exchange === 'binance' ? '4h' : '1d',
     setup_type: setupType,
   };
 }

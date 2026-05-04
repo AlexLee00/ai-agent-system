@@ -4,8 +4,8 @@
  * runtime-pnl-backfill — 기존 668 trades BUY-SELL FIFO 매칭 후 realized_pnl 일괄 계산
  *
  * 사용법:
- *   node runtime-pnl-backfill.ts            (dry-run, 결과만 출력)
- *   APPLY=true node runtime-pnl-backfill.ts (실제 DB 업데이트)
+ *   node runtime-pnl-backfill.ts --json
+ *   node runtime-pnl-backfill.ts --apply --confirm=runtime-pnl-backfill --json
  *   --json  플래그: JSON 출력
  */
 import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
@@ -18,7 +18,12 @@ function boolEnv(name, fallback = false) {
 }
 
 async function main() {
-  const dryRun = !boolEnv('APPLY', false);
+  const apply = process.argv.includes('--apply') || boolEnv('APPLY', false);
+  const confirm = process.argv.find((arg) => arg.startsWith('--confirm='))?.split('=')[1] || process.env.CONFIRM || null;
+  if (apply && confirm !== 'runtime-pnl-backfill') {
+    throw new Error('apply requires --confirm=runtime-pnl-backfill');
+  }
+  const dryRun = !apply;
   const jsonOut = process.argv.includes('--json');
   const limit = Number(process.env.LIMIT || 1000);
 
@@ -55,7 +60,7 @@ async function main() {
   }
 
   if (dryRun) {
-    console.log('\n  ⚠ dry-run 모드: DB 업데이트 안 됨. 실제 적용하려면 APPLY=true');
+    console.log('\n  ⚠ dry-run 모드: DB 업데이트 안 됨. 실제 적용하려면 --apply --confirm=runtime-pnl-backfill');
   } else {
     console.log('\n  ✓ DB 업데이트 완료');
   }

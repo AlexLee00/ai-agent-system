@@ -2,8 +2,10 @@
 const RULES = [
   { kind: 'price_drift', retryable: true, delayMs: 5 * 60_000, patterns: ['price_drift', 'slippage', '가격 이탈'] },
   { kind: 'capital_exceeded', retryable: true, delayMs: 30 * 60_000, patterns: ['capital', 'buying_power', 'insufficient', '잔고', '예산'] },
+  { kind: 'limit_exceeded', retryable: true, delayMs: 30 * 60_000, patterns: ['limit_exceeded', 'position_limit', 'max position', '한도 초과', '원칙1', '원칙2'] },
   { kind: 'market_closed', retryable: true, delayMs: 60 * 60_000, patterns: ['market_closed', '장 종료', 'closed market'] },
   { kind: 'min_order', retryable: true, delayMs: 10 * 60_000, patterns: ['min_order', 'minimum', '최소 주문'] },
+  { kind: 'broker_error', retryable: true, delayMs: 5 * 60_000, patterns: ['broker_error', 'order_rejected', 'exchange_error', 'kis_error', 'binance_error', '주문 거절'] },
   { kind: 'provider_unavailable', retryable: true, delayMs: 60_000, patterns: ['provider_cooldown', 'llm', 'oauth', 'rate limit'] },
   { kind: 'manual_reconcile_required', retryable: false, delayMs: null, patterns: ['manual_reconcile', 'ambiguous_fill'] },
 ];
@@ -13,12 +15,16 @@ export function classifySignalFailure(input = {}) {
     input.reason,
     input.error,
     input.code,
+    input.block_code,
+    input.blockCode,
+    input.block_reason,
+    input.blockReason,
     input.status,
     input.message,
     JSON.stringify(input.meta || {}),
   ].filter(Boolean).join(' ').toLowerCase();
   const matched = RULES.find((rule) => rule.patterns.some((pattern) => text.includes(String(pattern).toLowerCase())));
-  const rule = matched || { kind: 'unknown', retryable: false, delayMs: null, patterns: [] };
+  const rule = matched || { kind: 'other', retryable: false, delayMs: null, patterns: [] };
   return {
     kind: rule.kind,
     retryable: rule.retryable,

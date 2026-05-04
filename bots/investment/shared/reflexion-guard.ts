@@ -17,6 +17,46 @@ import * as db from './db.ts';
 
 const REFLEXION_ENABLED = () => isAgentMemoryFeatureEnabled('reflexionAutoAvoidEnabled');
 
+function parseSymbolBlacklist(raw = ''): Set<string> {
+  return new Set(
+    String(raw || '')
+      .split(',')
+      .map((item) => item.trim().toUpperCase())
+      .filter(Boolean),
+  );
+}
+
+function normalizeMarketForBlacklist(market = '') {
+  const value = String(market || '').trim().toLowerCase();
+  if (value === 'binance') return 'crypto';
+  if (value === 'kis') return 'domestic';
+  if (value === 'kis_overseas') return 'overseas';
+  return value || 'unknown';
+}
+
+export function checkSymbolBlacklist(symbol: string, market: string, env = process.env): {
+  blocked: boolean;
+  blockReason: string | null;
+  source: string | null;
+} {
+  const normalizedSymbol = String(symbol || '').trim().toUpperCase();
+  const normalizedMarket = normalizeMarketForBlacklist(market).toUpperCase();
+  if (!normalizedSymbol) return { blocked: false, blockReason: null, source: null };
+
+  const list = parseSymbolBlacklist(env.LUNA_PRE_ENTRY_SYMBOL_BLACKLIST || env.LUNA_SYMBOL_BLACKLIST || '');
+  const keys = [
+    normalizedSymbol,
+    `${normalizedMarket}:${normalizedSymbol}`,
+  ];
+  const matched = keys.find((key) => list.has(key));
+  if (!matched) return { blocked: false, blockReason: null, source: null };
+  return {
+    blocked: true,
+    blockReason: `[symbol-blacklist] ${normalizedSymbol} blocked by pre_entry blacklist (${matched})`,
+    source: 'pre_entry/symbol_blacklist',
+  };
+}
+
 /** 실패 회고 검색 결과 */
 export interface FailureReflexion {
   tradeId: number;
@@ -207,6 +247,17 @@ export async function checkSymbolLossStreak(
   symbol: string,
   market: string,
 ): Promise<SymbolLossStreakResult> {
+  const blacklist = checkSymbolBlacklist(symbol, market);
+  if (blacklist.blocked) {
+    return {
+      lossStreak: 0,
+      recentLossRate: 1,
+      inCooldown: true,
+      cooldownUntil: null,
+      blockReason: blacklist.blockReason,
+    };
+  }
+
   if (!REFLEXION_ENABLED()) {
     return { lossStreak: 0, recentLossRate: 0, inCooldown: false, cooldownUntil: null, blockReason: null };
   }

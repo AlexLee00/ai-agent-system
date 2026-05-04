@@ -67,6 +67,51 @@ import { createRequire } from 'module';
 const kst = createRequire(import.meta.url)('../../../packages/core/lib/kst');
 const hiringContract = createRequire(import.meta.url)('../../../packages/core/lib/hiring-contract');
 
+export const JOURNAL_PNL_OUTLIER_THRESHOLD = 1000; // percent
+
+function _toFiniteNumber(value) {
+  if (value == null || value === '') return null;
+  const numberValue = Number(value);
+  return Number.isFinite(numberValue) ? numberValue : null;
+}
+
+function _roundPnlPercent(value) {
+  return Number(value.toFixed(4));
+}
+
+export function safeJournalPnlPercent({
+  entryPrice = null,
+  exitPrice = null,
+  entryValue = null,
+  exitValue = null,
+  direction = null,
+  pnlPercent = null,
+} = {}) {
+  const provided = _toFiniteNumber(pnlPercent);
+  if (provided != null && Math.abs(provided) <= JOURNAL_PNL_OUTLIER_THRESHOLD) return provided;
+
+  const ep = _toFiniteNumber(entryPrice);
+  const xp = _toFiniteNumber(exitPrice);
+  const ev = _toFiniteNumber(entryValue);
+  const xv = _toFiniteNumber(exitValue);
+  const normalizedDirection = String(direction || '').toUpperCase();
+  const isShort = normalizedDirection === 'SELL' || normalizedDirection === 'SHORT';
+
+  if (ep != null && ep > 0 && xp != null && xp >= 0) {
+    const raw = isShort
+      ? (ep - xp) / ep * 100
+      : (xp - ep) / ep * 100;
+    if (Math.abs(raw) <= JOURNAL_PNL_OUTLIER_THRESHOLD) return _roundPnlPercent(raw);
+  }
+
+  if (ev != null && ev > 0 && xv != null && xv >= 0) {
+    const valueBased = (xv - ev) / ev * 100;
+    if (Math.abs(valueBased) <= JOURNAL_PNL_OUTLIER_THRESHOLD) return _roundPnlPercent(valueBased);
+  }
+
+  return null;
+}
+
 // ─── 지연 초기화 (첫 호출 시 자동 실행) ────────────────────────────
 
 let _initPromise = null;
@@ -566,6 +611,19 @@ export async function insertJournalEntry(entry) {
 export async function closeJournalEntry(tradeId, { exitTime, exitPrice, exitValue, exitReason, pnlAmount, pnlPercent, feeTotal, pnlNet, execution_origin = null, quality_flag = null, exclude_from_learning = null, incident_link = null } = {}) {
   await ensureInit();
   const now = Date.now();
+  const existingRows = await query(
+    `SELECT entry_price, entry_value, direction FROM trade_journal WHERE trade_id = ? LIMIT 1`,
+    [tradeId],
+  ).catch(() => []);
+  const existing = existingRows?.[0] || {};
+  const normalizedPnlPercent = safeJournalPnlPercent({
+    entryPrice: existing.entry_price,
+    exitPrice,
+    entryValue: existing.entry_value,
+    exitValue,
+    direction: existing.direction,
+    pnlPercent,
+  });
   await run(
     `UPDATE trade_journal
      SET exit_time     = ?,
@@ -586,7 +644,7 @@ export async function closeJournalEntry(tradeId, { exitTime, exitPrice, exitValu
     [
       exitTime ?? now, exitPrice ?? null, exitValue ?? null,
       exitReason ?? 'manual',
-      pnlAmount ?? null, pnlPercent ?? null, feeTotal ?? null, pnlNet ?? null,
+      pnlAmount ?? null, normalizedPnlPercent, feeTotal ?? null, pnlNet ?? null,
       execution_origin ?? null, quality_flag ?? null, exclude_from_learning, incident_link ?? null,
       exitTime ?? now,
       tradeId,

@@ -37,6 +37,8 @@ export async function runLunaEntryTriggerDuplicateCooldownSmoke() {
       action: 'BUY',
       confidence: 0.8,
       amount_usdt: 100,
+      entry_price: 100,
+      atr: 2,
       setup_type: 'breakout_confirmation',
       triggerHints: { mtfAgreement: 0.9, discoveryScore: 0.8, breakoutRetest: true },
     };

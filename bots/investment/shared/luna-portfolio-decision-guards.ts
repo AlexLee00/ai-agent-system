@@ -10,6 +10,7 @@ export function createLunaPortfolioDecisionGuards({
   adjustLunaBuyCandidate,
   enrichCapitalCheck,
   checkReflexionBeforeEntry,
+  checkSymbolBlacklist,
 }) {
   async function applyCryptoRepresentativePass(portfolioDecision, exchange) {
     if (exchange !== 'binance') {
@@ -84,6 +85,39 @@ export function createLunaPortfolioDecisionGuards({
     for (const decision of decisions) {
       if (decision?.action !== ACTIONS.BUY) {
         adjusted.push(decision);
+        continue;
+      }
+
+      const market = exchange === 'binance' ? 'crypto' : exchange === 'kis' ? 'domestic' : exchange === 'kis_overseas' ? 'overseas' : exchange;
+      const blacklist = typeof checkSymbolBlacklist === 'function'
+        ? checkSymbolBlacklist(decision.symbol, market)
+        : { blocked: false };
+      if (blacklist?.blocked) {
+        const nextDecision = {
+          ...decision,
+          action: ACTIONS.HOLD,
+          amount_usdt: 0,
+          reasoning: `symbol_blacklist_entry_blocked: ${(blacklist.blockReason || 'pre_entry blacklist').slice(0, 160)}`,
+          block_meta: {
+            ...(decision?.block_meta || {}),
+            symbol_blacklist: {
+              blocked: true,
+              source: blacklist.source || 'pre_entry/symbol_blacklist',
+              reason: blacklist.blockReason || null,
+            },
+          },
+        };
+        adjusted.push(nextDecision);
+        await db.run(
+          `INSERT INTO investment.mapek_knowledge(event_type, payload) VALUES ($1, $2::jsonb)`,
+          ['symbol_blacklist_entry_blocked', JSON.stringify({
+            symbol: decision.symbol,
+            exchange,
+            source: blacklist.source || 'pre_entry/symbol_blacklist',
+            reason: blacklist.blockReason || null,
+            at: new Date().toISOString(),
+          })],
+        ).catch(() => {});
         continue;
       }
 

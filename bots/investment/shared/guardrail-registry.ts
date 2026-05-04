@@ -194,6 +194,20 @@ const CORE_GUARDRAILS = [
     command: ['node', 'scripts/runtime-trade-journal-dashboard-html.ts', '--json', '--no-write'],
   },
   {
+    name: 'luna_trade_analytics_report',
+    category: 'data',
+    severity: 'high',
+    owner: 'chronos',
+    command: ['npm', '--prefix', new URL('..', import.meta.url).pathname, 'run', '-s', 'check:luna-trade-analytics-report'],
+  },
+  {
+    name: 'luna_trade_data_analysis_report',
+    category: 'data',
+    severity: 'high',
+    owner: 'chronos',
+    command: ['npm', '--prefix', new URL('..', import.meta.url).pathname, 'run', '-s', 'check:luna-trade-data-analysis-report'],
+  },
+  {
     name: 'luna_100percent_report',
     category: 'runtime',
     severity: 'medium',

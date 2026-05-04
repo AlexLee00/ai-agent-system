@@ -24,6 +24,17 @@ export function preFilterSignal(signal = {}, opts = {}) {
   if (signal.capitalMode && signal.capitalMode !== 'ACTIVE_DISCOVERY' && action === 'BUY') {
     warnings.push('capital_backpressure');
   }
+  if (signal.reflexionCooldown === true || signal.inCooldown === true) {
+    blockers.push('symbol_cooldown');
+  }
+  const regime = String(signal.marketRegime || signal.regime || signal.market_regime || '').toLowerCase();
+  if (action === 'BUY' && (regime.includes('bear') || regime.includes('distribution'))) {
+    blockers.push('regime_buy_blocked');
+  }
+  const volatility = String(signal.volatilityBucket || signal.volatility || signal.volatility_bucket || '').toLowerCase();
+  if (action === 'BUY' && ['extreme', 'very_high', 'panic'].includes(volatility)) {
+    blockers.push('extreme_volatility');
+  }
 
   // KIS 시장 시간 체크 (BUY 신호 한정, SELL은 통과)
   const market = signal.market ?? resolveMarketFromExchange(signal.exchange);
@@ -45,6 +56,8 @@ export function preFilterSignal(signal = {}, opts = {}) {
     action,
     symbol: signal.symbol ?? null,
     market: market ?? 'crypto',
+    regime: regime || null,
+    volatility: volatility || null,
     blockers,
     warnings,
     deferred,

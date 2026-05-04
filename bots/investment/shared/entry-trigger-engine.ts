@@ -13,6 +13,7 @@ import { getPosttradeFeedbackRuntimeConfig } from './runtime-config.ts';
 import { evaluateLunaConstitutionForEntry } from './luna-constitution.ts';
 import { buildPredictiveValidationEvidence } from './predictive-validation.ts';
 import { isMaturePosition } from './luna-discovery-mature-policy.ts';
+import { enforceTpSlRequirement } from './tp-sl-enforcer.ts';
 
 const ACTIONS = {
   BUY: 'BUY',
@@ -95,6 +96,38 @@ function resolveCapitalCheck(candidate = {}, context = {}) {
     || context?.capitalCheck
     || null
   );
+}
+
+function resolveCandidateTpSlInput(candidate = {}, context = {}, market = 'crypto') {
+  return {
+    entryPrice: candidate?.entry_price ?? candidate?.entryPrice ?? candidate?.target_price ?? candidate?.targetPrice ?? context?.entryPrice ?? null,
+    side: candidate?.side || 'BUY',
+    atr: candidate?.atr ?? candidate?.atr_value ?? candidate?.indicators?.atr ?? candidate?.block_meta?.atr ?? context?.atr ?? null,
+    prePlannedSl: candidate?.sl_price ?? candidate?.stop_loss ?? candidate?.stopLoss ?? candidate?.block_meta?.sl_price ?? null,
+    prePlannedTp: candidate?.tp_price ?? candidate?.take_profit ?? candidate?.takeProfit ?? candidate?.block_meta?.tp_price ?? null,
+    tpSlSet: candidate?.tp_sl_set === true || candidate?.tpSlSet === true || candidate?.block_meta?.tp_sl_set === true || candidate?.block_meta?.tpSlSet === true,
+    market,
+    symbol: candidate?.symbol || null,
+  };
+}
+
+function applyComputedTpSl(candidate = {}, enforcement = null) {
+  if (!enforcement?.computed) return candidate;
+  return {
+    ...candidate,
+    tp_sl_set: true,
+    sl_price: candidate?.sl_price ?? candidate?.stop_loss ?? candidate?.stopLoss ?? enforcement.computed.stopLoss,
+    tp_price: candidate?.tp_price ?? candidate?.take_profit ?? candidate?.takeProfit ?? enforcement.computed.takeProfit,
+    block_meta: {
+      ...(candidate?.block_meta || {}),
+      tp_sl_enforcer: {
+        allowed: true,
+        alreadySet: false,
+        computed: enforcement.computed,
+        warningMessage: enforcement.warningMessage || null,
+      },
+    },
+  };
 }
 
 export function evaluateEntryTriggerLiveRiskGate({ candidate = {}, trigger = null, context = {}, flags = null } = {}) {
@@ -311,17 +344,47 @@ export async function evaluateEntryTriggers(candidates = [], context = {}) {
       hints: candidate?.triggerHints || {},
     };
 
+    const tpSlEnforcement = enforceTpSlRequirement(resolveCandidateTpSlInput(candidate, context, market));
+    const candidateWithTpSl = applyComputedTpSl(candidate, tpSlEnforcement);
+    if (!tpSlEnforcement.allowed) {
+      blocked++;
+      const tpSlMeta = {
+        triggerType,
+        state: shouldMutate ? 'blocked' : 'observed',
+        reason: 'tp_sl_required_not_met',
+        blockReason: tpSlEnforcement.blockReason,
+        mode: flags.mode,
+      };
+      if (!shouldMutate) {
+        observed++;
+        output.push(annotateEntryTrigger(candidateWithTpSl, tpSlMeta));
+        continue;
+      }
+      output.push({
+        ...candidateWithTpSl,
+        action: ACTIONS.HOLD,
+        amount_usdt: 0,
+        reasoning: `entry_trigger_blocked: ${tpSlEnforcement.blockReason || 'tp_sl_required_not_met'} | ${candidate.reasoning || ''}`.slice(0, 220),
+        block_meta: {
+          ...(candidateWithTpSl.block_meta || {}),
+          event_type: 'entry_trigger_blocked',
+          entryTrigger: tpSlMeta,
+        },
+      });
+      continue;
+    }
+
     const constitutionAudit = constitutionalEnabled
-      ? evaluateLunaConstitutionForEntry(candidate, { ...context, market, exchange })
+      ? evaluateLunaConstitutionForEntry(candidateWithTpSl, { ...context, market, exchange })
       : { blocked: false, violations: [], violationCount: 0 };
-    const constitutionBlocked = candidate?.block_meta?.constitution?.blocked === true
+    const constitutionBlocked = candidateWithTpSl?.block_meta?.constitution?.blocked === true
       || (constitutionAudit?.blocked === true && posttradeCfg?.constitutional_feedback?.hard_gate === true);
     const candidateWithConstitution = constitutionalEnabled ? {
-      ...candidate,
+      ...candidateWithTpSl,
       block_meta: {
-        ...(candidate.block_meta || {}),
+        ...(candidateWithTpSl.block_meta || {}),
         constitution: {
-          ...(candidate.block_meta?.constitution || {}),
+          ...(candidateWithTpSl.block_meta?.constitution || {}),
           ok: constitutionAudit.ok,
           blocked: constitutionBlocked,
           violations: constitutionAudit.violations || [],
@@ -329,7 +392,7 @@ export async function evaluateEntryTriggers(candidates = [], context = {}) {
           hardGate: posttradeCfg?.constitutional_feedback?.hard_gate === true,
         },
       },
-    } : candidate;
+    } : candidateWithTpSl;
 
     if (constitutionalEnabled && constitutionBlocked) {
       blocked++;
@@ -435,16 +498,16 @@ export async function evaluateEntryTriggers(candidates = [], context = {}) {
     }
 
     const persisted = await insertEntryTrigger({
-      symbol: candidate.symbol,
+      symbol: activeCandidate.symbol,
       exchange,
-      setupType: candidate?.setup_type || candidate?.strategy_route?.setupType || null,
+      setupType: activeCandidate?.setup_type || activeCandidate?.strategy_route?.setupType || null,
       triggerType,
       triggerState: 'armed',
       confidence,
       waitingFor: triggerType,
-      targetPrice: Number(candidate?.target_price || candidate?.entry_price || 0) || null,
-      stopLoss: Number(candidate?.sl_price || candidate?.stop_loss || 0) || null,
-      takeProfit: Number(candidate?.tp_price || candidate?.take_profit || 0) || null,
+      targetPrice: Number(activeCandidate?.target_price || activeCandidate?.entry_price || 0) || null,
+      stopLoss: Number(activeCandidate?.sl_price || activeCandidate?.stop_loss || 0) || null,
+      takeProfit: Number(activeCandidate?.tp_price || activeCandidate?.take_profit || 0) || null,
       triggerContext: baseMeta,
       triggerMeta: { phase: 'F-1', mode: flags.mode },
       predictiveScore: Number(candidate?.predictiveScore || 0) || null,
@@ -514,7 +577,7 @@ export async function evaluateEntryTriggers(candidates = [], context = {}) {
       blocked++;
       if (!shouldMutate) {
         observed++;
-        output.push(annotateEntryTrigger(candidate, {
+        output.push(annotateEntryTrigger(activeCandidate, {
           triggerId: persisted.id,
           triggerType,
           state: 'ready',
@@ -525,12 +588,12 @@ export async function evaluateEntryTriggers(candidates = [], context = {}) {
         continue;
       }
       output.push({
-        ...candidate,
+        ...activeCandidate,
         action: ACTIONS.HOLD,
         amount_usdt: 0,
-        reasoning: `entry_trigger_ready_but_mode_blocked(${flags.mode}) | ${candidate.reasoning || ''}`.slice(0, 220),
+        reasoning: `entry_trigger_ready_but_mode_blocked(${flags.mode}) | ${activeCandidate.reasoning || ''}`.slice(0, 220),
         block_meta: {
-          ...(candidate.block_meta || {}),
+          ...(activeCandidate.block_meta || {}),
           event_type: 'entry_trigger_blocked',
           entryTrigger: {
             triggerId: persisted.id,

@@ -19,6 +19,8 @@ export async function runSmoke() {
     'failed_signal_reflexion_backfill_dryrun',
     'luna_agent_bus_stats',
     'luna_7day_checkpoint',
+    'luna_trade_analytics_report',
+    'luna_trade_data_analysis_report',
     'posttrade_evaluation_completion',
     'reflexion_extraction_rate',
     'voyager_skill_extraction',

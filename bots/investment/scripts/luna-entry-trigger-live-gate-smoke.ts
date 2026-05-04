@@ -38,6 +38,8 @@ export async function runLunaEntryTriggerLiveGateSmoke() {
       action: ACTIONS.BUY,
       confidence: 0.74,
       amount_usdt: 120,
+      entry_price: 100,
+      atr: 2,
       reasoning: 'live gate smoke',
       setup_type: 'breakout_confirmation',
       triggerHints: {

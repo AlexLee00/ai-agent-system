@@ -28,6 +28,8 @@ function candidate(symbol, overrides = {}) {
     action: 'BUY',
     confidence: 0.82,
     amount_usdt: 100,
+    entry_price: 100,
+    atr: 2,
     setup_type: 'breakout_confirmation',
     triggerHints: {
       mtfAgreement: 0.9,

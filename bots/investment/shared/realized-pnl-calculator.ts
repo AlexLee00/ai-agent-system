@@ -56,7 +56,54 @@ export function matchFifoRealizedPnl(trades = []) {
   return { ok: true, realized, openLots: buys };
 }
 
+export function aggregateRealizedPnlBySell(realized = []) {
+  const bySell = new Map();
+  for (const item of realized || []) {
+    if (!item?.ok || !item.sellTradeId) continue;
+    const key = String(item.sellTradeId);
+    const prev = bySell.get(key) || {
+      ok: true,
+      sellTradeId: item.sellTradeId,
+      buyTradeIds: [],
+      primaryBuyId: item.primaryBuyId ?? item.buyTradeId ?? null,
+      quantity: 0,
+      cost: 0,
+      proceeds: 0,
+      fees: 0,
+      realizedPnl: 0,
+    };
+    if (item.buyTradeId && !prev.buyTradeIds.includes(item.buyTradeId)) prev.buyTradeIds.push(item.buyTradeId);
+    prev.quantity += num(item.quantity, 0);
+    prev.cost += num(item.cost, 0);
+    prev.proceeds += num(item.proceeds, 0);
+    prev.fees += num(item.fees, 0);
+    prev.realizedPnl += num(item.realizedPnl, 0);
+    bySell.set(key, prev);
+  }
+  return Array.from(bySell.values()).map((item) => ({
+    ...item,
+    realizedPnlPct: item.cost > 0 ? item.realizedPnl / item.cost : 0,
+  }));
+}
+
 // ── DB 레이어 ──────────────────────────────────────────────────────────────────
+
+let ensureRealizedPnlColumnsPromise = null;
+
+export async function ensureRealizedPnlColumns() {
+  if (!ensureRealizedPnlColumnsPromise) {
+    ensureRealizedPnlColumnsPromise = (async () => {
+      await run(`ALTER TABLE trades ADD COLUMN IF NOT EXISTS realized_pnl_pct NUMERIC`);
+      await run(`ALTER TABLE trades ADD COLUMN IF NOT EXISTS realized_pnl_usdt NUMERIC`);
+      await run(`ALTER TABLE trades ADD COLUMN IF NOT EXISTS matched_buy_id TEXT`);
+      return { ok: true };
+    })().catch((error) => {
+      ensureRealizedPnlColumnsPromise = null;
+      throw error;
+    });
+  }
+  return ensureRealizedPnlColumnsPromise;
+}
 
 export async function fetchTradesForSymbol(symbol, exchange = null) {
   const params = [String(symbol)];
@@ -75,6 +122,7 @@ export async function fetchTradesForSymbol(symbol, exchange = null) {
 }
 
 export async function fetchDistinctSymbolsWithUnmatchedSells() {
+  await ensureRealizedPnlColumns();
   return query(
     `SELECT DISTINCT symbol, exchange
        FROM trades
@@ -87,6 +135,7 @@ export async function fetchDistinctSymbolsWithUnmatchedSells() {
 
 export async function persistRealizedPnl(sellTradeId, { realizedPnl, realizedPnlPct, matchedBuyId = null } = {}) {
   if (!sellTradeId) return null;
+  await ensureRealizedPnlColumns();
   return run(
     `UPDATE trades
         SET realized_pnl_usdt = $2,
@@ -109,9 +158,10 @@ export async function computeAndPersistPnlForSymbol(symbol, exchange = null, { d
   if (!trades.length) return { ok: true, symbol, exchange, matched: 0, skipped: 0 };
 
   const { realized } = matchFifoRealizedPnl(trades);
+  const aggregated = aggregateRealizedPnlBySell(realized);
   let matched = 0;
   let skipped = 0;
-  for (const r of realized) {
+  for (const r of aggregated) {
     if (!r.ok || !r.sellTradeId) { skipped++; continue; }
     if (!dryRun) {
       await persistRealizedPnl(r.sellTradeId, {
@@ -122,7 +172,7 @@ export async function computeAndPersistPnlForSymbol(symbol, exchange = null, { d
     }
     matched++;
   }
-  return { ok: true, symbol, exchange, matched, skipped, dryRun, realized };
+  return { ok: true, symbol, exchange, matched, skipped, dryRun, realized: aggregated, rawMatches: realized.length };
 }
 
 // 전체 미매칭 SELL 거래 일괄 처리
@@ -152,8 +202,10 @@ export async function backfillAllRealizedPnl({ dryRun = true, limit = 500 } = {}
 export default {
   calculateRealizedPnl,
   matchFifoRealizedPnl,
+  aggregateRealizedPnlBySell,
   fetchTradesForSymbol,
   fetchDistinctSymbolsWithUnmatchedSells,
+  ensureRealizedPnlColumns,
   persistRealizedPnl,
   computeAndPersistPnlForSymbol,
   backfillAllRealizedPnl,

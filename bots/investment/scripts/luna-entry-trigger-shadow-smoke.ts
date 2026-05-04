@@ -37,6 +37,8 @@ export async function runLunaEntryTriggerShadowSmoke() {
       action: ACTIONS.BUY,
       confidence: 0.71,
       amount_usdt: 100,
+      entry_price: 100,
+      atr: 2,
       reasoning: 'shadow trigger test',
       setup_type: 'breakout_confirmation',
       triggerHints: {
