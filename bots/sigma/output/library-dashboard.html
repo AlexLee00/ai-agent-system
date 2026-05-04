@@ -24,19 +24,19 @@
     <div class="card"><div>Skill Candidates</div><div class="value">2</div></div>
   </section>
   <h2>Phase Gates</h2>
-  <table><thead><tr><th>Phase</th><th>Enabled</th><th>Default Safe</th><th>Mode</th><th>Blockers</th></tr></thead><tbody><tr><td>A</td><td>false</td><td>true</td><td>shadow</td><td>-</td></tr>
-<tr><td>B</td><td>false</td><td>true</td><td>shadow</td><td>-</td></tr>
-<tr><td>C</td><td>false</td><td>true</td><td>shadow</td><td>-</td></tr>
-<tr><td>D</td><td>false</td><td>true</td><td>shadow</td><td>-</td></tr>
-<tr><td>E1</td><td>false</td><td>true</td><td>shadow</td><td>-</td></tr>
-<tr><td>E2</td><td>false</td><td>true</td><td>shadow</td><td>-</td></tr>
-<tr><td>E3</td><td>false</td><td>true</td><td>shadow</td><td>-</td></tr>
-<tr><td>F1</td><td>false</td><td>true</td><td>shadow</td><td>-</td></tr>
-<tr><td>F2</td><td>true</td><td>true</td><td>shadow</td><td>-</td></tr>
-<tr><td>F3</td><td>true</td><td>true</td><td>shadow</td><td>-</td></tr>
-<tr><td>G1</td><td>true</td><td>true</td><td>shadow</td><td>-</td></tr>
-<tr><td>G2</td><td>false</td><td>true</td><td>shadow</td><td>-</td></tr>
-<tr><td>H</td><td>false</td><td>true</td><td>shadow</td><td>-</td></tr></tbody></table>
+  <table><thead><tr><th>Phase</th><th>Enabled</th><th>Default Safe</th><th>Mode</th><th>Blockers</th></tr></thead><tbody><tr><td>A</td><td>true</td><td>false</td><td>supervised</td><td>-</td></tr>
+<tr><td>B</td><td>true</td><td>false</td><td>supervised</td><td>-</td></tr>
+<tr><td>C</td><td>true</td><td>false</td><td>supervised</td><td>-</td></tr>
+<tr><td>D</td><td>true</td><td>false</td><td>supervised</td><td>-</td></tr>
+<tr><td>E1</td><td>true</td><td>false</td><td>supervised</td><td>-</td></tr>
+<tr><td>E2</td><td>true</td><td>false</td><td>supervised</td><td>-</td></tr>
+<tr><td>E3</td><td>true</td><td>false</td><td>supervised</td><td>-</td></tr>
+<tr><td>F1</td><td>true</td><td>false</td><td>supervised</td><td>-</td></tr>
+<tr><td>F2</td><td>true</td><td>true</td><td>supervised</td><td>-</td></tr>
+<tr><td>F3</td><td>true</td><td>true</td><td>supervised</td><td>-</td></tr>
+<tr><td>G1</td><td>true</td><td>true</td><td>supervised</td><td>-</td></tr>
+<tr><td>G2</td><td>false</td><td>true</td><td>supervised</td><td>-</td></tr>
+<tr><td>H</td><td>true</td><td>false</td><td>supervised</td><td>-</td></tr></tbody></table>
   <h2>Memory Coverage</h2>
   <table><thead><tr><th>Team</th><th>Short-term</th><th>Episodic</th><th>Semantic</th><th>Procedural</th></tr></thead><tbody><tr><td>luna</td><td>investment.agent_short_term_memory</td><td>luna_rag_documents + agent_memory</td><td>investment.entity_facts</td><td>skills/luna/<agent>/SUCCESS_*.md + AVOID_*.md</td></tr>
 <tr><td>blog</td><td>sigma.agent_short_term_memory</td><td>agent_memory episodic</td><td>sigma.entity_facts</td><td>skills/blog/<agent>/SUCCESS_*.md + AVOID_*.md</td></tr>

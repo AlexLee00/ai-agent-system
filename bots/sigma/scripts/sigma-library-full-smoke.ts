@@ -5,6 +5,10 @@ import { buildKnowledgeGraphPersistPlan, buildKnowledgeGraphSnapshot } from '../
 import { assessSelfRag, buildHydePlan, buildMultiHopPlan } from '../ts/lib/rag-advanced.js';
 import { buildMonthlySelfImprovementFixture, buildSelfImprovementPlan } from '../ts/lib/self-improvement-pipeline.js';
 
+function boolEnv(name: string): boolean {
+  return ['1', 'true', 'yes', 'on'].includes(String(process.env[name] ?? '').toLowerCase());
+}
+
 const disabledMemory = createTeamMemory('blog', 'blo');
 assert.deepEqual(await disabledMemory.getShortTerm(), []);
 assert.equal(
@@ -26,7 +30,7 @@ assert.ok(persistPlan.ddl.some((sql) => sql.includes('sigma.entity_relationships
 assert.equal(persistPlan.rows.length, graph.edges.length);
 
 const hyde = buildHydePlan('Luna reconcile lineage');
-assert.equal(hyde.enabled, false);
+assert.equal(hyde.enabled, boolEnv('SIGMA_HYDE_ENABLED'));
 assert.equal(hyde.providerCallRequired, false);
 assert.ok(hyde.hypotheticalDocument.includes('Luna reconcile lineage'));
 
@@ -36,14 +40,16 @@ const multiHop = buildMultiHopPlan({
   edges: graph.edges,
   hops: 2,
 });
-assert.equal(multiHop.enabled, false);
+assert.equal(multiHop.enabled, boolEnv('SIGMA_MULTI_HOP_RAG_ENABLED'));
 assert.ok(multiHop.collections.includes('rag_trades'));
 
 const selfRag = assessSelfRag({
   query: 'Luna reconcile lineage',
-  retrievedContexts: ['Luna reconcile incident teaches Sigma library lineage'],
+  retrievedContexts: boolEnv('SIGMA_SELF_RAG_ENABLED')
+    ? []
+    : ['Luna reconcile incident teaches Sigma library lineage'],
 });
-assert.equal(selfRag.answerPolicy, 'answer');
+assert.equal(selfRag.answerPolicy, boolEnv('SIGMA_SELF_RAG_ENABLED') ? 'retrieve_more' : 'answer');
 
 const datasetPlan = buildDatasetPlan({ weekLabel: '2026w18', dryRun: true });
 assert.equal(datasetPlan.dryRun, true);

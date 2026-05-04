@@ -34,8 +34,30 @@
     <string>false</string>
     <key>SIGMA_GEPA_ENABLED</key>
     <string>true</string>
+    <key>SIGMA_LIBRARY_AUTONOMY_MODE</key>
+    <string>supervised</string>
+    <key>SIGMA_TEAM_MEMORY_UNIFIED</key>
+    <string>true</string>
+    <key>SIGMA_KNOWLEDGE_GRAPH_ENABLED</key>
+    <string>true</string>
+    <key>SIGMA_DATASET_BUILDER_ENABLED</key>
+    <string>true</string>
+    <key>SIGMA_DATA_LINEAGE_ENABLED</key>
+    <string>true</string>
+    <key>SIGMA_LIBRARY_DASHBOARD_ENABLED</key>
+    <string>true</string>
     <key>SIGMA_SELF_RAG_ENABLED</key>
-    <string>false</string>
+    <string>true</string>
+    <key>SIGMA_MULTI_HOP_RAG_ENABLED</key>
+    <string>true</string>
+    <key>SIGMA_HYDE_ENABLED</key>
+    <string>true</string>
+    <key>SIGMA_SELF_IMPROVEMENT_ENABLED</key>
+    <string>true</string>
+    <key>SIGMA_VOYAGER_SKILL_AUTO_EXTRACTION</key>
+    <string>true</string>
+    <key>SIGMA_FINE_TUNING_NOTIFY_ENABLED</key>
+    <string>true</string>
     <key>SIGMA_MAPEK_ENABLED</key>
     <string>true</string>
     <key>SIGMA_SELF_REWARDING_ENABLED</key>

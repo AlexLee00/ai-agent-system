@@ -665,7 +665,25 @@ async function requeueRecoverableReplyFailures(limit = 10) {
     if (requeued >= limit) break;
     if (!isRecoverableReplyFailure(row)) continue;
     const inboundAssessment = assessInboundComment(row);
-    if (!inboundAssessment.ok) continue;
+    if (!inboundAssessment.ok) {
+      await pgPool.run('blog', `
+        UPDATE ${TABLE}
+        SET status = 'skipped',
+            error_message = $2,
+            meta = COALESCE(meta, '{}'::jsonb) || $3::jsonb
+        WHERE id = $1
+      `, [
+        row.id,
+        inboundAssessment.reason,
+        JSON.stringify({
+          phase: 'recoverable_requeue_filtered',
+          previous_error: row.error_message || null,
+          reassessed_reason: inboundAssessment.reason,
+          filtered_at: new Date().toISOString(),
+        }),
+      ]);
+      continue;
+    }
 
     await pgPool.run('blog', `
       UPDATE ${TABLE}
@@ -1803,6 +1821,18 @@ function assessInboundComment(comment) {
   }
 
   const hasUrl = /https?:\/\/|www\./i.test(text);
+  const recruitmentPromoPatterns = [
+    /체험자/i,
+    /리뷰비/i,
+    /반납없이\s*소유/i,
+    /정해진\s*일정/i,
+    /작성\s*가능하신\s*분/i,
+    /받아보신\s*후/i,
+    /베스트셀러\s*제품/i,
+  ];
+  if (recruitmentPromoPatterns.some((pattern) => pattern.test(text))) {
+    return { ok: false, reason: hasUrl ? 'promotional_recruitment_comment_with_url' : 'promotional_recruitment_comment' };
+  }
   const promoPatterns = [
     /협찬/i,
     /노출\s*순위/i,

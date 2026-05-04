@@ -91,65 +91,65 @@
   "gates": [
     {
       "phase": "A",
-      "enabled": false,
-      "defaultSafe": true,
-      "mode": "shadow",
+      "enabled": true,
+      "defaultSafe": false,
+      "mode": "supervised",
       "warnings": [],
       "blockers": []
     },
     {
       "phase": "B",
-      "enabled": false,
-      "defaultSafe": true,
-      "mode": "shadow",
+      "enabled": true,
+      "defaultSafe": false,
+      "mode": "supervised",
       "warnings": [],
       "blockers": []
     },
     {
       "phase": "C",
-      "enabled": false,
-      "defaultSafe": true,
-      "mode": "shadow",
+      "enabled": true,
+      "defaultSafe": false,
+      "mode": "supervised",
       "warnings": [],
       "blockers": []
     },
     {
       "phase": "D",
-      "enabled": false,
-      "defaultSafe": true,
-      "mode": "shadow",
+      "enabled": true,
+      "defaultSafe": false,
+      "mode": "supervised",
       "warnings": [],
       "blockers": []
     },
     {
       "phase": "E1",
-      "enabled": false,
-      "defaultSafe": true,
-      "mode": "shadow",
+      "enabled": true,
+      "defaultSafe": false,
+      "mode": "supervised",
       "warnings": [],
       "blockers": []
     },
     {
       "phase": "E2",
-      "enabled": false,
-      "defaultSafe": true,
-      "mode": "shadow",
+      "enabled": true,
+      "defaultSafe": false,
+      "mode": "supervised",
       "warnings": [],
       "blockers": []
     },
     {
       "phase": "E3",
-      "enabled": false,
-      "defaultSafe": true,
-      "mode": "shadow",
+      "enabled": true,
+      "defaultSafe": false,
+      "mode": "supervised",
       "warnings": [],
       "blockers": []
     },
     {
       "phase": "F1",
-      "enabled": false,
-      "defaultSafe": true,
-      "mode": "shadow",
+      "enabled": true,
+      "defaultSafe": false,
+      "mode": "supervised",
       "warnings": [],
       "blockers": []
     },
@@ -157,53 +157,43 @@
       "phase": "F2",
       "enabled": true,
       "defaultSafe": true,
-      "mode": "shadow",
-      "warnings": [
-        "shadow_only_no_mutation"
-      ],
+      "mode": "supervised",
+      "warnings": [],
       "blockers": []
     },
     {
       "phase": "F3",
       "enabled": true,
       "defaultSafe": true,
-      "mode": "shadow",
-      "warnings": [
-        "shadow_only_no_mutation"
-      ],
+      "mode": "supervised",
+      "warnings": [],
       "blockers": []
     },
     {
       "phase": "G1",
       "enabled": true,
       "defaultSafe": true,
-      "mode": "shadow",
-      "warnings": [
-        "shadow_only_no_mutation"
-      ],
+      "mode": "supervised",
+      "warnings": [],
       "blockers": []
     },
     {
       "phase": "G2",
       "enabled": false,
       "defaultSafe": true,
-      "mode": "shadow",
+      "mode": "supervised",
       "warnings": [],
       "blockers": []
     },
     {
       "phase": "H",
-      "enabled": false,
-      "defaultSafe": true,
-      "mode": "shadow",
+      "enabled": true,
+      "defaultSafe": false,
+      "mode": "supervised",
       "warnings": [],
       "blockers": []
     }
   ],
-  "warnings": [
-    "shadow_only_no_mutation",
-    "shadow_only_no_mutation",
-    "shadow_only_no_mutation"
-  ],
+  "warnings": [],
   "blockers": []
 }

@@ -39,6 +39,10 @@ const DEFAULT_COLLECTIONS = [
   'rag_legal',
 ];
 
+function boolEnv(name: string): boolean {
+  return ['1', 'true', 'yes', 'on'].includes(String(process.env[name] ?? '').toLowerCase());
+}
+
 export function buildHydePlan(query: string, opts: { enabled?: boolean } = {}): HydePlan {
   const normalized = query.trim();
   return {
@@ -48,7 +52,7 @@ export function buildHydePlan(query: string, opts: { enabled?: boolean } = {}): 
       'It summarizes relevant team events, memory, lineage, graph neighbors, and prior reflexions.',
       'It includes enough concrete entities for vector retrieval without exposing private data.',
     ].join(' '),
-    enabled: opts.enabled === true,
+    enabled: opts.enabled ?? boolEnv('SIGMA_HYDE_ENABLED'),
     providerCallRequired: false,
   };
 }
@@ -69,7 +73,7 @@ export function buildMultiHopPlan(input: {
     hops,
     traversal,
     collections: input.collections ?? DEFAULT_COLLECTIONS,
-    enabled: input.enabled === true,
+    enabled: input.enabled ?? boolEnv('SIGMA_MULTI_HOP_RAG_ENABLED'),
   };
 }
 
@@ -77,16 +81,18 @@ export function assessSelfRag(input: {
   query: string;
   retrievedContexts: string[];
   answerDraft?: string;
+  enabled?: boolean;
 }): SelfRagAssessment {
+  const enabled = input.enabled ?? boolEnv('SIGMA_SELF_RAG_ENABLED');
   const queryTerms = new Set(input.query.toLowerCase().split(/\s+/).filter(Boolean));
   const contextText = input.retrievedContexts.join(' ').toLowerCase();
   const matched = [...queryTerms].filter((term) => contextText.includes(term)).length;
   const precisionRatio = queryTerms.size === 0 ? 0 : matched / queryTerms.size;
   const contextPrecision = precisionRatio >= 0.7 ? 'high' : precisionRatio >= 0.35 ? 'medium' : 'low';
-  const retrievalNeeded = input.retrievedContexts.length === 0 || contextPrecision === 'low';
+  const retrievalNeeded = enabled && (input.retrievedContexts.length === 0 || contextPrecision === 'low');
   const answerText = String(input.answerDraft ?? '').toLowerCase();
   const unsupportedAnswer = Boolean(answerText) && input.retrievedContexts.length > 0 && !input.retrievedContexts.some((ctx) => answerText.includes(ctx.slice(0, 20).toLowerCase()));
-  const faithfulnessRisk = unsupportedAnswer ? 'high' : contextPrecision === 'low' ? 'medium' : 'low';
+  const faithfulnessRisk = enabled && unsupportedAnswer ? 'high' : enabled && contextPrecision === 'low' ? 'medium' : 'low';
   const answerPolicy = retrievalNeeded ? 'retrieve_more' : faithfulnessRisk === 'high' ? 'abstain' : 'answer';
 
   return {
@@ -95,6 +101,7 @@ export function assessSelfRag(input: {
     faithfulnessRisk,
     answerPolicy,
     reasons: [
+      enabled ? 'self_rag_enabled' : 'self_rag_disabled',
       `matched_terms:${matched}/${queryTerms.size}`,
       `contexts:${input.retrievedContexts.length}`,
       ...(unsupportedAnswer ? ['answer_draft_not_grounded'] : []),
