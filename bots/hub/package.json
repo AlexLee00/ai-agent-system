@@ -73,6 +73,7 @@
     "jay:runtime-cutover": "tsx scripts/jay-runtime-cutover.ts",
     "jay:runtime-cutover:apply": "tsx scripts/jay-runtime-cutover.ts --apply",
     "jay:launchd-smoke": "tsx scripts/jay-runtime-launchd-smoke.ts",
+    "jay:next-stage-gate": "tsx scripts/team-jay-next-stage-integrated-gate.ts --json",
     "launchd:alarm-class-topic": "tsx scripts/launchd-alarm-class-topic-smoke.ts",
     "local-llm-policy": "tsx scripts/local-llm-policy-report.ts",
     "llm:investment-selector-keys-smoke": "tsx scripts/investment-selector-explicit-keys-smoke.ts",

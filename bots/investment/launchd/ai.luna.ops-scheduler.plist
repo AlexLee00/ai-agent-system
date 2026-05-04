@@ -20,6 +20,8 @@
     <string>production</string>
     <key>LUNA_OPS_SCHEDULER_ENABLED</key>
     <string>true</string>
+    <key>LUNA_VOYAGER_NATURAL_ACCELERATION_ENABLED</key>
+    <string>true</string>
   </dict>
   <key>RunAtLoad</key>
   <true/>

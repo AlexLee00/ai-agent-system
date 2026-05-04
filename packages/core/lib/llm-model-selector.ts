@@ -82,7 +82,7 @@ function parseRolloutPercent(options: SelectorOptions = {}): number {
   const optionStage = parseRolloutStagePercent((options as any).rolloutStage);
   if (optionStage != null) return optionStage;
 
-  const envPercent = Number(process.env.LLM_TEAM_SELECTOR_AB_PERCENT || '');
+  const envPercent = Number(process.env.LLM_TEAM_SELECTOR_AB_PERCENT || process.env.LLM_TEAM_SELECTOR_VERSION_PCT || '');
   if (Number.isFinite(envPercent)) {
     return Math.max(0, Math.min(100, Math.floor(envPercent)));
   }

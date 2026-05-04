@@ -10,6 +10,8 @@
 		<string>v3.0_oauth_4</string>
 		<key>LLM_TEAM_SELECTOR_AB_PERCENT</key>
 		<string>100</string>
+		<key>LLM_TEAM_SELECTOR_VERSION_PCT</key>
+		<string>100</string>
 	</dict>
 	<key>KeepAlive</key>
 	<true/>
