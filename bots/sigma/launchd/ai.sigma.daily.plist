@@ -31,11 +31,21 @@
     <key>SIGMA_TIER3_AUTO_APPLY</key>
     <string>true</string>
     <key>SIGMA_MCP_SERVER_ENABLED</key>
-    <string>false</string>
+    <string>true</string>
     <key>SIGMA_GEPA_ENABLED</key>
     <string>true</string>
     <key>SIGMA_LIBRARY_AUTONOMY_MODE</key>
-    <string>supervised</string>
+    <string>autonomous</string>
+    <key>SIGMA_DATASET_AUTO_EXPORT</key>
+    <string>true</string>
+    <key>SIGMA_CONSTITUTION_VIOLATION_AUTO_BLOCK</key>
+    <string>true</string>
+    <key>SIGMA_PII_REDACTION_ENABLED</key>
+    <string>true</string>
+    <key>SIGMA_SENSITIVE_EXPORT_BLOCKED</key>
+    <string>true</string>
+    <key>SIGMA_CONSTITUTION_ENABLED</key>
+    <string>true</string>
     <key>SIGMA_TEAM_MEMORY_UNIFIED</key>
     <string>true</string>
     <key>SIGMA_KNOWLEDGE_GRAPH_ENABLED</key>

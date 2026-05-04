@@ -138,6 +138,38 @@ defmodule Sigma.V2.E2ETest do
     end
   end
 
+  describe "MCP HTTP runtime gate" do
+    test "MCP routes stay closed when SIGMA_MCP_SERVER_ENABLED is false" do
+      preserve_env(["SIGMA_MCP_SERVER_ENABLED", "SIGMA_MCP_TOKEN"])
+
+      System.put_env("SIGMA_MCP_SERVER_ENABLED", "false")
+      System.put_env("SIGMA_MCP_TOKEN", "test-token-e2e")
+
+      conn =
+        Plug.Test.conn(:get, "/mcp/sigma/tools")
+        |> Plug.Conn.put_req_header("authorization", "Bearer test-token-e2e")
+        |> Sigma.V2.HTTP.Router.call([])
+
+      assert conn.status == 404
+      assert Jason.decode!(conn.resp_body)["error"] == "mcp_disabled"
+    end
+
+    test "MCP routes open with bearer auth when enabled" do
+      preserve_env(["SIGMA_MCP_SERVER_ENABLED", "SIGMA_MCP_TOKEN"])
+
+      System.put_env("SIGMA_MCP_SERVER_ENABLED", "true")
+      System.put_env("SIGMA_MCP_TOKEN", "test-token-e2e")
+
+      conn =
+        Plug.Test.conn(:get, "/mcp/sigma/tools")
+        |> Plug.Conn.put_req_header("authorization", "Bearer test-token-e2e")
+        |> Sigma.V2.HTTP.Router.call([])
+
+      assert conn.status == 200
+      assert length(Jason.decode!(conn.resp_body)["tools"]) == 5
+    end
+  end
+
   describe "DataQualityGuard — 스킬 단독 직접 호출" do
     test "empty rows returns passed: false, score: 0" do
       assert {:ok, %{passed: false, quality_score: 0}} =
@@ -177,5 +209,16 @@ defmodule Sigma.V2.E2ETest do
       assert {:ok, result} = Sigma.V2.Skill.FeaturePlanner.run(params, %{})
       assert "easy_win" in Enum.map(result.quick_wins, & &1.name)
     end
+  end
+
+  defp preserve_env(keys) do
+    previous = Map.new(keys, &{&1, System.get_env(&1)})
+
+    on_exit(fn ->
+      Enum.each(previous, fn
+        {key, nil} -> System.delete_env(key)
+        {key, value} -> System.put_env(key, value)
+      end)
+    end)
   end
 end

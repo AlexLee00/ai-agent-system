@@ -6,13 +6,16 @@ defmodule Sigma.V2.HTTP.Router do
 
   use Plug.Router
 
-  plug Plug.Logger
-  plug :match
-  plug Plug.Parsers,
+  plug(Plug.Logger)
+  plug(:match)
+
+  plug(Plug.Parsers,
     parsers: [:json],
     pass: ["application/json"],
     json_decoder: Jason
-  plug :dispatch
+  )
+
+  plug(:dispatch)
 
   get "/sigma/v2/health" do
     enabled = System.get_env("SIGMA_V2_ENABLED") == "true"
@@ -56,7 +59,14 @@ defmodule Sigma.V2.HTTP.Router do
 
   # MCP tool list
   get "/mcp/sigma/tools" do
-    conn = Sigma.V2.MCP.Auth.call(conn, [])
+    conn = ensure_mcp_enabled(conn)
+
+    conn =
+      if conn.halted do
+        conn
+      else
+        Sigma.V2.MCP.Auth.call(conn, [])
+      end
 
     if conn.halted do
       conn
@@ -71,7 +81,14 @@ defmodule Sigma.V2.HTTP.Router do
 
   # MCP tool call
   post "/mcp/sigma/tools/:name/call" do
-    conn = Sigma.V2.MCP.Auth.call(conn, [])
+    conn = ensure_mcp_enabled(conn)
+
+    conn =
+      if conn.halted do
+        conn
+      else
+        Sigma.V2.MCP.Auth.call(conn, [])
+      end
 
     if conn.halted do
       conn
@@ -155,5 +172,16 @@ defmodule Sigma.V2.HTTP.Router do
 
   match _ do
     send_resp(conn, 404, Jason.encode!(%{error: "not found"}))
+  end
+
+  defp ensure_mcp_enabled(conn) do
+    if System.get_env("SIGMA_MCP_SERVER_ENABLED") == "true" do
+      conn
+    else
+      conn
+      |> put_resp_content_type("application/json")
+      |> send_resp(404, Jason.encode!(%{error: "mcp_disabled"}))
+      |> halt()
+    end
   end
 end
