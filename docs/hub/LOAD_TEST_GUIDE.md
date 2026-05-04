@@ -62,7 +62,7 @@ npx jest --testPathPatterns="bots/hub/__tests__/local-ollama" --runInBand
 
 ## 2) k6 부하 시나리오
 
-권장 시나리오(예: `scripts/k6/hub-llm-multiteam.js`):
+권장 시나리오(현재 repo 기준 `tests/load/multi-team.js`):
 
 - `baseline_sync`: 단일 팀 sync 10 VU / 2m
 - `multiteam_peak`: 9팀 혼합 traffic 80~150 VU / 5m
@@ -72,14 +72,20 @@ npx jest --testPathPatterns="bots/hub/__tests__/local-ollama" --runInBand
 예시 실행:
 
 ```bash
-export HUB_BASE_URL="http://127.0.0.1:7788"
+export HUB_URL="http://127.0.0.1:7788"
 export HUB_AUTH_TOKEN="..."
 
-k6 run \
-  -e HUB_BASE_URL="$HUB_BASE_URL" \
-  -e HUB_AUTH_TOKEN="$HUB_AUTH_TOKEN" \
-  bots/hub/scripts/k6/hub-llm-multiteam.js
+# 전체 L5 load chain. chaos는 운영 호스트에서 명시적으로만 실행한다.
+bash tests/load/run-all.sh --skip-chaos
+
+# Hub package shortcut
+npm --prefix bots/hub run load:k6
+
+# 빠른 smoke용 단축 부하
+npm --prefix bots/hub run load:k6:short
 ```
+
+`tests/load/run-all.sh`는 `baseline.js`, `peak.js`, `multi-team.js`를 순서대로 실행하고 결과를 `results/load-*`에 남긴다. 주간 launchd도 같은 runner를 사용한다.
 
 ---
 

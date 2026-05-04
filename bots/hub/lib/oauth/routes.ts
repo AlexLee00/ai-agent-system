@@ -15,7 +15,7 @@ const {
   refreshOAuthToken,
   sha256Base64Url,
 } = require('./oauth-flow');
-const { getOpenAiApiKeyStatus, runOpenAiApiKeyCanary } = require('./providers/openai-api-key');
+const { getOpenAiApiKeyStatus, runOpenAiApiKeyCanary } = require('./providers/openai-public-api');
 const { getOpenAiCodexOauthStatus, runOpenAiCodexOauthCanary } = require('./providers/openai-codex-oauth');
 const { getClaudeCodeCliStatus, runClaudeCodeCliCanary } = require('./providers/claude-code-cli');
 const { getGeminiOauthStatus, runGeminiOauthCanary } = require('./providers/gemini-oauth');

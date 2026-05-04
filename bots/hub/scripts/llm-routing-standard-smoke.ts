@@ -106,6 +106,10 @@ function assertHasMatches(pattern, scopes, label) {
 }
 
 function main() {
+  process.env.LLM_USE_OAUTH_PRIMARY = 'true';
+  process.env.LLM_TEAM_SELECTOR_VERSION = 'v3_oauth_4';
+  process.env.LLM_TEAM_SELECTOR_AB_PERCENT = '100';
+
   assertNoMatches('llm-fallback|callWithFallback|selectLLMChain|llm_provider|llm_model|red_model', STANDARDIZED_SCOPES, 'standardized team LLM scopes');
   assertHasMatches('callHubLlm', STANDARDIZED_SCOPES, 'standardized team LLM scopes');
 

@@ -56,6 +56,22 @@ function main(): void {
     validateAbStage(100, 99.9, 100),
   ];
 
+  withEnv(
+    {
+      LLM_USE_OAUTH_PRIMARY: 'true',
+      LLM_TEAM_SELECTOR_VERSION: 'v3.0_oauth_4',
+      LLM_TEAM_SELECTOR_AB_PERCENT: '',
+      LLM_TEAM_SELECTOR_VERSION_PCT: '',
+    },
+    () => {
+      assert.equal(
+        providerFromChain('investment.agent_policy', { agentName: 'default' }),
+        'claude-code',
+        'oauth4 selector without explicit percent must default to 100%, not legacy',
+      );
+    },
+  );
+
   const selectorOptions = { selectorVersion: 'v3.0_oauth_4', rolloutPercent: 100, rolloutKey: 'smoke-force-v3' };
 
   const hubKeys = [
