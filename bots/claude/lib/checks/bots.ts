@@ -147,16 +147,12 @@ function checkLaunchd(items) {
     { id: 'ai.ska.forecast-weekly',     label: '스카팀 포캐스트 주간 (launchd)', optional: true },
     { id: 'ai.ska.pickko-verify',       label: '스카팀 픽코 검증 (launchd)', optional: true },
     { id: 'ai.ska.pickko-daily-audit',  label: '스카팀 일간감사 (launchd)', optional: true },
-    // 루나팀 Phase 3
-    { id: 'ai.investment.crypto',       label: '루나팀 크립토 사이클 (launchd)' },
-    { id: 'ai.investment.crypto.validation', label: '루나팀 크립토 검증거래 (launchd)', optional: true },
-    { id: 'ai.investment.domestic',     label: '루나팀 국내주식 사이클 (launchd)' },
-    { id: 'ai.investment.domestic.validation', label: '루나팀 국내주식 검증거래 (launchd)', optional: true },
-    { id: 'ai.investment.overseas',     label: '루나팀 미국주식 사이클 (launchd)' },
-    { id: 'ai.investment.overseas.validation', label: '루나팀 미국주식 검증거래 (launchd)', optional: true },
+    // 루나팀 L5 통합 런타임
     { id: 'ai.investment.commander',    label: '루나팀 커맨더 (launchd)' },
-    { id: 'ai.investment.argos',        label: '루나팀 아르고스 모니터 (launchd)', optional: true },
-    { id: 'ai.investment.reporter',     label: '루나팀 리포터 (launchd)', optional: true },
+    { id: 'ai.luna.marketdata-mcp',      label: '루나팀 마켓데이터 MCP (launchd)' },
+    { id: 'ai.elixir.supervisor',        label: '루나팀 엘릭서 슈퍼바이저 (launchd)' },
+    { id: 'ai.investment.runtime-autopilot', label: '루나팀 런타임 오토파일럿 (launchd)' },
+    { id: 'ai.luna.ops-scheduler',       label: '루나팀 운영 스케줄러 (launchd)' },
   ];
 
   for (const svc of SERVICES) {

@@ -28,7 +28,13 @@ const FALLBACK_LAUNCHD_LABELS = {
   orchestrator: ['ai.jay.runtime'],
   claude: ['ai.claude.commander', 'ai.claude.health-dashboard', 'ai.claude.dexter'],
   blog: ['ai.blog.node-server'],
-  investment: ['ai.investment.commander', 'ai.investment.crypto', 'ai.investment.domestic', 'ai.investment.overseas', 'ai.investment.argos', 'ai.investment.reporter'],
+  investment: [
+    'ai.investment.commander',
+    'ai.luna.marketdata-mcp',
+    'ai.elixir.supervisor',
+    'ai.investment.runtime-autopilot',
+    'ai.luna.ops-scheduler',
+  ],
   reservation: ['ai.ska.commander', 'ai.ska.naver-monitor', 'ai.ska.kiosk-monitor'],
 };
 

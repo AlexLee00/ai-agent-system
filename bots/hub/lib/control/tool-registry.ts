@@ -57,7 +57,7 @@ const HUB_TOOLS = [
     handler: async (input) => {
       const labels = Array.isArray(input?.labels)
         ? input.labels.map((label) => normalizeText(label)).filter(Boolean)
-        : ['ai.hub.resource-api', 'ai.claude.auto-dev.autonomous', 'ai.investment.crypto'];
+        : ['ai.hub.resource-api', 'ai.claude.auto-dev.autonomous', 'ai.luna.marketdata-mcp'];
       return {
         labels,
         status: getLaunchctlStatus(labels),

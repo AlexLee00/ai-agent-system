@@ -5,7 +5,7 @@
  * checks/team-leads.js — 핵심 봇 프로세스 건강 점검
  *
  * 현재 점검 대상 (실제 존재하는 프로세스):
- *   1. launchd 핵심 서비스 (naver-monitor, kiosk-monitor, investment.crypto, ska.commander)
+ *   1. launchd 핵심 서비스 (naver-monitor, kiosk-monitor, luna marketdata/elixir, ska.commander)
  *
  * 점검하지 않는 것:
  *   - tmux 세션 (2026-03-08 제거: 스카 텔레그램봇은 제이가 담당, ska.commander로 대체)
@@ -46,7 +46,8 @@ function canAlert(state, key) {
 const CRITICAL_SERVICES = [
   { id: 'ai.ska.naver-monitor',     label: '앤디 (네이버모니터)',      key: 'naver_monitor' },
   { id: 'ai.ska.kiosk-monitor',     label: '지미 (키오스크모니터)',    key: 'kiosk_monitor' },
-  { id: 'ai.investment.crypto',     label: '루나 크립토 사이클',       key: 'luna_crypto' },
+  { id: 'ai.luna.marketdata-mcp',   label: '루나 마켓데이터 MCP',      key: 'luna_marketdata_mcp' },
+  { id: 'ai.elixir.supervisor',     label: '루나 엘릭서 슈퍼바이저',    key: 'luna_elixir_supervisor' },
   { id: 'ai.ska.commander',         label: '스카 커맨더 (launchd)',    key: 'skaya' },
 ];
 

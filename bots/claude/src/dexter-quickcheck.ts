@@ -46,8 +46,9 @@ const DISK_CRITICAL = Number(cfg.RUNTIME?.quickcheck?.diskCriticalPercent || 90)
 // restartable: Playwright 기반 서비스는 zombie chrome 위험으로 false
 const SERVICES = [
   { id: 'ai.ska.commander',         label: '스카 커맨더',             restartable: true  },
-  { id: 'ai.investment.crypto',     label: '루나 크립토',             restartable: true  },
   { id: 'ai.investment.commander',  label: '루나 커맨더',             restartable: true  },
+  { id: 'ai.luna.marketdata-mcp',   label: '루나 마켓데이터 MCP',     restartable: true  },
+  { id: 'ai.elixir.supervisor',     label: '루나 엘릭서 슈퍼바이저',   restartable: true  },
   { id: 'ai.claude.commander',      label: '클로드 커맨더',           restartable: true  },
   { id: 'ai.ska.naver-monitor',     label: '앤디 네이버모니터',       restartable: false }, // Playwright
   { id: 'ai.ska.kiosk-monitor',     label: '지미 키오스크모니터',     restartable: false }, // Playwright
