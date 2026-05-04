@@ -11,7 +11,7 @@ import { isAgentMemoryFeatureEnabled } from './agent-memory-runtime.ts';
 export type AgentName =
   | 'luna' | 'nemesis' | 'aria' | 'sophia' | 'argos' | 'hermes'
   | 'oracle' | 'chronos' | 'zeus' | 'athena' | 'sentinel' | 'adaptive-risk'
-  | 'hephaestos' | 'hanul' | 'budget' | 'scout' | 'kairos' | 'stock-flow' | 'sweeper';
+  | 'hephaestos' | 'hanul' | 'budget' | 'scout' | 'kairos' | 'stock-flow' | 'sweeper' | 'reporter';
 
 export type MarketType = 'crypto' | 'domestic' | 'overseas' | 'any';
 
@@ -31,6 +31,7 @@ export type TaskType =
   | 'prediction'       // kairos 예측 검증
   | 'flow'             // stock-flow 수급/거래량 구조
   | 'operations'       // sweeper 운영 정합성
+  | 'reporting'        // reporter 운영 리포트
   | 'default';         // 기타
 
 export interface LLMRoute {
@@ -247,6 +248,12 @@ const AGENT_DEFAULTS: Record<string, LLMRoute> = {
     primary: 'groq/llama-3.1-8b-instant',
     fallbacks: ['openai-oauth/gpt-5.4-mini'],
   },
+
+  // 🧾 reporter — 운영 보고: 빠른 요약 + OAuth fallback
+  reporter: {
+    primary: 'openai-oauth/gpt-5.4-mini',
+    fallbacks: ['groq/llama-3.3-70b-versatile', 'gemini-cli-oauth/gemini-2.5-flash'],
+  },
 };
 
 // ─── 상세 라우팅 매트릭스 (agent:market:task → LLMRoute) ─────────────────────
@@ -359,6 +366,10 @@ const ROUTING_MATRIX: Record<string, LLMRoute> = {
   'sweeper:any:operations': {
     primary: 'groq/llama-3.1-8b-instant',
     fallbacks: ['openai-oauth/gpt-5.4-mini'],
+  },
+  'reporter:any:reporting': {
+    primary: 'openai-oauth/gpt-5.4-mini',
+    fallbacks: ['groq/llama-3.3-70b-versatile', 'gemini-cli-oauth/gemini-2.5-flash'],
   },
 };
 

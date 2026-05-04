@@ -6,7 +6,7 @@ llmPolicyRef: luna.orchestrator
 capabilities: ["orchestration","portfolio_decision","risk_synthesis"]
 inputs: ["agent_signals","portfolio_context","guardrail_summary"]
 outputs: ["portfolio_decision","agent_tasks"]
-collaboration: {"upstream":[],"downstream":["scout","aria","sophia","hermes","oracle","argos","chronos","kairos","zeus","athena","nemesis","hephaestos","hanul","adaptive-risk","budget","sentinel","stock-flow","sweeper"],"parallel":[]}
+collaboration: {"upstream":[],"downstream":["scout","aria","sophia","hermes","oracle","argos","chronos","kairos","zeus","athena","nemesis","hephaestos","hanul","adaptive-risk","budget","sentinel","stock-flow","sweeper","reporter"],"parallel":[]}
 killSwitches: ["LUNA_FULL_INTEGRATION_ENABLED"]
 memory_layers: ["L1","L2","L3","L4"]
 llm_routing: {"primary":"openai-oauth/gpt-5.4","fallbacks":["groq/llama-3.3-70b-versatile","claude-code/haiku"]}

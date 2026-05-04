@@ -340,6 +340,13 @@ const INTEGRITY_GUARDRAILS = [
     command: ['node', 'scripts/agent-yaml-19-check.ts', '--json'],
   },
   {
+    name: 'luna_agent_normalization',
+    category: 'integrity',
+    severity: 'high',
+    owner: 'luna',
+    command: ['node', 'scripts/runtime-luna-agent-normalization-report.ts', '--json'],
+  },
+  {
     name: 'elixir_supervisor_health',
     category: 'integrity',
     severity: 'critical',
