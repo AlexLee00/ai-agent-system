@@ -9,6 +9,84 @@ let dailyCount = 0;
 let dailyResetDate = '';
 let tableEnsured = false;
 
+function isSyntheticSmokeContext({
+  incidentKey,
+  fromBot,
+  title,
+  message,
+  payload,
+}: {
+  incidentKey?: string;
+  fromBot?: string;
+  title?: string;
+  message?: string;
+  payload?: unknown;
+}): boolean {
+  const joined = [
+    String(incidentKey || ''),
+    String(fromBot || ''),
+    String(title || ''),
+    String(message || ''),
+  ].join(' ').toLowerCase();
+  const payloadSmoke = !!(payload && typeof payload === 'object' && !Array.isArray(payload) && (
+    (payload as Record<string, unknown>).smoke === true
+    || (payload as Record<string, unknown>).fixture === true
+  ));
+  return payloadSmoke
+    || joined.includes('smoke:')
+    || /\bsmoke\b/.test(joined)
+    || /-smoke\b/.test(joined);
+}
+
+function hasStructuredEvidence({
+  title,
+  message,
+  payload,
+}: {
+  title?: string;
+  message?: string;
+  payload?: unknown;
+}): boolean {
+  if (payload && typeof payload === 'object' && Object.keys(payload as Record<string, unknown>).length > 0) {
+    return true;
+  }
+  const text = [String(title || ''), String(message || '')].join('\n').trim();
+  if (text.length >= 120) return true;
+  if (/\n/.test(text)) return true;
+  if (/[{[]/.test(text)) return true;
+  if (/[:=]\s*\S+/.test(text)) return true;
+  return false;
+}
+
+function buildConservativeConsensus({
+  incidentKey,
+  team,
+  fromBot,
+  severity,
+  title,
+  message,
+  alarmType,
+}: {
+  incidentKey: string;
+  team: string;
+  fromBot: string;
+  severity: string;
+  title: string;
+  message: string;
+  alarmType: string;
+}): RoundtableConsensus {
+  const observed = String(message || '').trim() || String(title || '').trim() || incidentKey;
+  return {
+    rootCause: `입력 근거 기준 ${fromBot}가 "${observed}" 상태를 보고했다. payload/상세 상태 근거가 없어 live 원인을 추가로 단정할 수 없다.`,
+    proposedFix: 'DB/거래소/runtime queue에서 관련 상태를 직접 조회해 사실관계를 먼저 확정한다. 검증 전에는 TP/SL, 승인 누락, 보호 게이트 문제로 확대 해석하지 않는다.',
+    estimatedComplexity: alarmType === 'critical' ? 'medium' : 'low',
+    riskLevel: severity === 'critical' ? 'high' : 'medium',
+    assignedTo: `${team}-team`,
+    successCriteria: '원문 알람의 직접 근거와 live 상태가 일치함을 검증하고, 근거가 빈약한 incident는 보수적 서술만 남는다.',
+    agreementScore: 0.7,
+  };
+}
+
 function isEnabled(): boolean {
   const raw = String(process.env.HUB_ALARM_ROUNDTABLE_ENABLED || '').trim().toLowerCase();
   return ['1', 'true', 'yes', 'y', 'on'].includes(raw);
@@ -69,12 +147,23 @@ export async function shouldTriggerRoundtable({
   alarmType,
   visibility,
   clusterKey,
+  incidentKey,
+  fromBot,
+  title,
+  message,
+  payload,
 }: {
   alarmType: string;
   visibility: string;
   clusterKey?: string;
+  incidentKey?: string;
+  fromBot?: string;
+  title?: string;
+  message?: string;
+  payload?: unknown;
 }): Promise<boolean> {
   if (!isEnabled()) return false;
+  if (isSyntheticSmokeContext({ incidentKey, fromBot, title, message, payload })) return false;
   if (alarmType === 'critical') return true;
   if (alarmType === 'error' && visibility === 'human_action') return true;
   if (alarmType === 'error' && clusterKey) {
@@ -167,6 +256,7 @@ export async function runRoundtable({
   alarmType,
   clusterKey,
   autoDevDocPath,
+  payload,
 }: {
   alarmId: number | null;
   incidentKey: string;
@@ -178,6 +268,7 @@ export async function runRoundtable({
   alarmType: string;
   clusterKey?: string;
   autoDevDocPath?: string;
+  payload?: unknown;
 }): Promise<RoundtableResult | null> {
   if (!checkAndIncrementDailyCount()) return null;
 
@@ -213,11 +304,73 @@ export async function runRoundtable({
 
   const incidentCtx = buildIncidentContext({ team, fromBot, severity, title, message, alarmType, incidentKey });
   const participants: string[] = [];
+  const structuredEvidence = hasStructuredEvidence({ title, message, payload });
+
+  if (isSyntheticSmokeContext({ incidentKey, fromBot, title, message, payload })) {
+    try {
+      await pgPool.run('agent', `
+        UPDATE agent.alarm_roundtables
+        SET status = 'skipped',
+            consensus = $2,
+            participants = $3,
+            resolved_at = NOW()
+        WHERE id = $1
+      `, [roundtableId, JSON.stringify({ skipped: true, reason: 'synthetic_smoke_incident' }), JSON.stringify(['governor'])]);
+    } catch {
+      // non-fatal
+    }
+    return null;
+  }
+
+  if (!structuredEvidence) {
+    const consensus = buildConservativeConsensus({ incidentKey, team, fromBot, severity, title, message, alarmType });
+    try {
+      await pgPool.run('agent', `
+        UPDATE agent.alarm_roundtables
+        SET status = 'consensus',
+            consensus = $2,
+            participants = $3,
+            resolved_at = NOW()
+        WHERE id = $1
+      `, [roundtableId, JSON.stringify(consensus), JSON.stringify(['governor'])]);
+    } catch {
+      // non-fatal
+    }
+
+    const meetingNote = [
+      `🗣️ [Roundtable] ${incidentKey}`,
+      `팀: ${team} | 유형: ${alarmType} | severity: ${severity}`,
+      '',
+      `🔍 근본 원인: ${consensus.rootCause}`,
+      `🛠️ 해결 방법: ${consensus.proposedFix}`,
+      `📊 복잡도: ${consensus.estimatedComplexity} | 위험: ${consensus.riskLevel}`,
+      `✅ 성공 기준: ${consensus.successCriteria}`,
+      `👤 담당: ${consensus.assignedTo}`,
+      `🤝 합의 점수: ${(consensus.agreementScore * 100).toFixed(0)}%`,
+      '🧾 참고: 구조화된 근거가 부족해 보수적 합의로 기록됨',
+      autoDevDocPath ? `📄 문서: ${autoDevDocPath}` : '',
+    ].filter(Boolean).join('\n');
+
+    try {
+      await telegramSender.sendFromHubAlarm('meeting', meetingNote);
+    } catch {
+      // non-fatal
+    }
+
+    return {
+      roundtableId,
+      incidentKey,
+      consensus,
+      participants: ['governor'],
+      meetingNote,
+    };
+  }
 
   // Jay: priority and cross-team impact assessment
   const jayOutput = await callParticipant({
     selectorKey: 'hub.roundtable.jay',
     systemPrompt: `당신은 Jay(팀 오케스트레이터)입니다. 다음 알람 incident를 검토하고 우선순위와 팀 간 영향을 평가하세요.
+입력에 명시된 사실만 사용하세요. 입력에 없는 상태나 세부 원인은 추정하지 말고 unknown으로 두세요.
 응답 형식: {"priority": "low|medium|high", "cross_team_impact": "영향 설명", "urgency_reason": "이유"}`,
     userPrompt: incidentCtx,
     participantName: 'jay',
@@ -229,6 +382,7 @@ export async function runRoundtable({
   const claudeOutput = await callParticipant({
     selectorKey: 'hub.roundtable.claude_lead',
     systemPrompt: `당신은 Claude(구현팀장)입니다. 이 incident의 구현 복잡도와 예상 작업량을 평가하세요.
+입력에 없는 원인, 상태, 의존 시스템을 만들어내지 마세요. 불명확하면 unknown으로 응답하세요.
 응답 형식: {"complexity": "low|medium|high", "estimated_effort": "예상 시간", "regression_risk": "회귀 위험 설명"}`,
     userPrompt: claudeInput,
     participantName: 'claude_lead',
@@ -240,6 +394,7 @@ export async function runRoundtable({
   const teamOutput = await callParticipant({
     selectorKey: 'hub.roundtable.team_commander',
     systemPrompt: `당신은 ${team}팀 팀장입니다. 이 incident의 근본 원인과 해결 방법을 제안하세요.
+입력에 직접 드러난 사실만 사용하세요. 입력에 없는 포지션, 승인, TP/SL, 외부 시스템 상태를 추정하지 마세요. 불명확하면 "확인 필요"로 남기세요.
 응답 형식: {"root_cause": "근본 원인", "proposed_fix": "수정 방법", "immediate_action": "즉시 조치"}`,
     userPrompt: teamInput,
     participantName: 'team_commander',
@@ -257,6 +412,7 @@ export async function runRoundtable({
   const judgeOutput = await callParticipant({
     selectorKey: 'hub.roundtable.judge',
     systemPrompt: `당신은 회의 진행자입니다. 3명의 평가를 종합하여 최종 합의를 도출하세요.
+입력과 참가자 평가에 없는 사실을 추가하지 마세요. 근거가 약하면 보수적으로 서술하세요.
 JSON으로만 응답하세요:
 {
   "root_cause": "근본 원인",

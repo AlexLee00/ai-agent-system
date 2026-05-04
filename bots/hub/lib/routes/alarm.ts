@@ -912,6 +912,11 @@ export async function alarmRoute(req: any, res: any) {
       alarmType,
       visibility,
       clusterKey: clusterKey || undefined,
+      incidentKey,
+      fromBot,
+      title,
+      message,
+      payload,
     }).catch(() => false);
     if (roundtableTriggered) {
       alarmRouteHooks.runRoundtable({
@@ -925,6 +930,7 @@ export async function alarmRoute(req: any, res: any) {
         alarmType,
         clusterKey: clusterKey || undefined,
         autoDevDocPath: autoRepair && typeof autoRepair.path === 'string' ? autoRepair.path : undefined,
+        payload,
       }).catch(() => null);
     }
 

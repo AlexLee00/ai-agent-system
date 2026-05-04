@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * team-memory-adapter.ts — Phase A: 9팀 4-Layer Memory 통합 어댑터
  *
@@ -24,6 +23,9 @@
 
 import * as path from 'path';
 import * as fs from 'fs';
+import { createRequire } from 'module';
+
+const require = createRequire(import.meta.url);
 
 const pgPool = require('../../../../packages/core/lib/pg-pool') as {
   run: (schema: string, sql: string, params?: unknown[]) => Promise<{ rowCount: number; rows: unknown[] }>;

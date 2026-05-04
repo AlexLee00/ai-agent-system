@@ -66,6 +66,14 @@ async function assertRoundtableGate(): Promise<void> {
   await withEnv({ HUB_ALARM_ROUNDTABLE_ENABLED: 'true' }, async () => {
     const enabled = await shouldTriggerRoundtable({ alarmType: 'critical', visibility: 'emergency' });
     assert(enabled === true, 'critical alarms must trigger roundtable when enabled');
+    const smokeBlocked = await shouldTriggerRoundtable({
+      alarmType: 'critical',
+      visibility: 'human_action',
+      incidentKey: 'smoke:human:123',
+      fromBot: 'luna-smoke',
+      message: 'approval needed 123',
+    });
+    assert(smokeBlocked === false, 'synthetic smoke alarms must not trigger roundtable');
   });
   assert(typeof getDailyRoundtableCount() === 'number', 'daily roundtable counter must be observable');
 }

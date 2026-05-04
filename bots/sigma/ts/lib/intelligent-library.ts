@@ -466,3 +466,50 @@ export function writeDashboardJson(outPath: string, summary: DashboardSummary): 
   fs.writeFileSync(outPath, `${JSON.stringify(summary, null, 2)}\n`, 'utf8');
   return outPath;
 }
+
+export function renderDashboardHtml(summary: DashboardSummary): string {
+  const gateRows = summary.gates.map((gate) => (
+    `<tr><td>${gate.phase}</td><td>${gate.enabled}</td><td>${gate.defaultSafe}</td><td>${gate.mode}</td><td>${gate.blockers.join(', ') || '-'}</td></tr>`
+  )).join('\n');
+  const memoryRows = summary.memoryCoverage.map((entry) => (
+    `<tr><td>${entry.team}</td><td>${entry.shortTerm}</td><td>${entry.episodic}</td><td>${entry.semantic}</td><td>${entry.procedural}</td></tr>`
+  )).join('\n');
+  return `<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <title>Sigma Great Library Dashboard</title>
+  <style>
+    body { font-family: ui-sans-serif, system-ui, sans-serif; margin: 32px; color: #18202a; background: #f7f4ee; }
+    h1 { margin-bottom: 4px; }
+    .cards { display: grid; grid-template-columns: repeat(4, minmax(120px, 1fr)); gap: 12px; margin: 20px 0; }
+    .card { background: #fff; border: 1px solid #dfd6c6; border-radius: 12px; padding: 16px; }
+    .value { font-size: 28px; font-weight: 700; }
+    table { width: 100%; border-collapse: collapse; margin: 18px 0; background: #fff; }
+    th, td { border: 1px solid #dfd6c6; padding: 8px; text-align: left; vertical-align: top; }
+    th { background: #ece3d2; }
+  </style>
+</head>
+<body>
+  <h1>Sigma Great Library Dashboard</h1>
+  <p>status=${summary.status} generatedAt=${summary.generatedAt}</p>
+  <section class="cards">
+    <div class="card"><div>Teams</div><div class="value">${summary.teams}</div></div>
+    <div class="card"><div>Datasets</div><div class="value">${summary.datasets}</div></div>
+    <div class="card"><div>Graph Nodes</div><div class="value">${summary.graph.nodes}</div></div>
+    <div class="card"><div>Skill Candidates</div><div class="value">${summary.selfImprovement.skillCandidates}</div></div>
+  </section>
+  <h2>Phase Gates</h2>
+  <table><thead><tr><th>Phase</th><th>Enabled</th><th>Default Safe</th><th>Mode</th><th>Blockers</th></tr></thead><tbody>${gateRows}</tbody></table>
+  <h2>Memory Coverage</h2>
+  <table><thead><tr><th>Team</th><th>Short-term</th><th>Episodic</th><th>Semantic</th><th>Procedural</th></tr></thead><tbody>${memoryRows}</tbody></table>
+</body>
+</html>
+`;
+}
+
+export function writeDashboardHtml(outPath: string, summary: DashboardSummary): string {
+  fs.mkdirSync(path.dirname(outPath), { recursive: true });
+  fs.writeFileSync(outPath, renderDashboardHtml(summary), 'utf8');
+  return outPath;
+}

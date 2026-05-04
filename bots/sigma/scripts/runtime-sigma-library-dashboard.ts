@@ -2,6 +2,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
   createDashboardSummary,
+  writeDashboardHtml,
   writeDashboardJson,
   type SigmaLibraryEnv,
   type SelfImprovementSignal,
@@ -53,15 +54,23 @@ const outPath = argValue(
   '--out',
   path.join(repoRoot, 'bots/sigma/output/library-dashboard.json'),
 );
+const htmlOutPath = argValue(
+  '--html-out',
+  path.join(repoRoot, 'bots/sigma/output/library-dashboard.html'),
+);
 
 if (hasArg('--write')) {
   writeDashboardJson(outPath, summary);
+}
+if (hasArg('--write-html')) {
+  writeDashboardHtml(htmlOutPath, summary);
 }
 
 if (hasArg('--json') || !hasArg('--quiet')) {
   console.log(JSON.stringify({
     ...summary,
     outputPath: hasArg('--write') ? outPath : null,
+    htmlOutputPath: hasArg('--write-html') ? htmlOutPath : null,
     dryRun: !hasArg('--write'),
   }, null, 2));
 }
