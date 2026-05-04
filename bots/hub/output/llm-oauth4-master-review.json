@@ -1,16 +1,16 @@
 {
   "ok": true,
-  "generated_at": "2026-05-04T05:55:06.021Z",
+  "generated_at": "2026-05-04T10:55:05.795Z",
   "hours": 168,
   "totals": {
-    "total_calls": 35073,
-    "oauth_calls": 12354,
-    "oauth_share_pct": 35.22,
+    "total_calls": 34135,
+    "oauth_calls": 12178,
+    "oauth_share_pct": 35.68,
     "failed_calls": 55,
     "failed_rate_pct": 0.16,
-    "reported_cost_usd": 84.766369,
-    "oauth_reported_cost_usd": 82.995971,
-    "non_oauth_reported_cost_usd": 1.770398,
+    "reported_cost_usd": 84.444837,
+    "oauth_reported_cost_usd": 82.700298,
+    "non_oauth_reported_cost_usd": 1.744539,
     "anthropic_provider_calls": 0
   },
   "providers": {
@@ -22,18 +22,18 @@
       "avg_duration_ms": 21448,
       "max_duration_ms": 50374,
       "total_cost_usd": 60.849103,
-      "share_pct": 2.43,
+      "share_pct": 2.49,
       "success_rate_pct": 100
     },
     "openai-oauth": {
       "provider": "openai-oauth",
-      "calls": 7829,
-      "success_count": 7829,
+      "calls": 7676,
+      "success_count": 7676,
       "failed_count": 0,
-      "avg_duration_ms": 3154,
+      "avg_duration_ms": 3147,
       "max_duration_ms": 41439,
       "total_cost_usd": 0,
-      "share_pct": 22.32,
+      "share_pct": 22.49,
       "success_rate_pct": 100
     },
     "gemini-cli-oauth": {
@@ -44,18 +44,18 @@
       "avg_duration_ms": 14729,
       "max_duration_ms": 59069,
       "total_cost_usd": 0,
-      "share_pct": 1.48,
+      "share_pct": 1.52,
       "success_rate_pct": 100
     },
     "gemini-oauth": {
       "provider": "gemini-oauth",
-      "calls": 31,
-      "success_count": 31,
+      "calls": 27,
+      "success_count": 27,
       "failed_count": 0,
-      "avg_duration_ms": 1267,
+      "avg_duration_ms": 1273,
       "max_duration_ms": 4269,
       "total_cost_usd": 0,
-      "share_pct": 0.09,
+      "share_pct": 0.08,
       "success_rate_pct": 100
     },
     "anthropic": {
@@ -71,13 +71,13 @@
     },
     "groq": {
       "provider": "groq",
-      "calls": 22282,
-      "success_count": 22282,
+      "calls": 21519,
+      "success_count": 21519,
       "failed_count": 0,
-      "avg_duration_ms": 725,
+      "avg_duration_ms": 729,
       "max_duration_ms": 4488,
-      "total_cost_usd": 1.761016,
-      "share_pct": 63.53,
+      "total_cost_usd": 1.735123,
+      "share_pct": 63.04,
       "success_rate_pct": 100
     },
     "failed": {
