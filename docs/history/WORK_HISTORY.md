@@ -4,6 +4,13 @@
 > 상세 내용: `reservation-dev-summary.md` / `reservation-handoff.md`
 > 최초 작성: 2026-02-27
 
+## 2026-05-04: ALARM_INCIDENT 인박스 처리 + llm-routing smoke 수정 (88차 세션)
+
+- **ALARM_INCIDENT 3건 아카이브** (blog-commenter transient, auto_dev meta-loop 2건)
+  - 근본 원인: `sendStageAlarm(alertLevel:3)` + keyword inference → `579d24912` 이미 수정됨
+- **llm-routing-standard-smoke.ts 기대값** `luna/default` openai-oauth → claude-code (v3.0_oauth_4)
+- jay:next-stage-gate: hardBlockers=0, track3:agentMessages 627/5000 진행 중
+
 ## 2026-05-04: CODEX_LUNA_TRADE_ANALYTICS_REPORT P0 보강 6종 구현 (87차 세션)
 
 - **tp-sl-enforcer.ts** (신규): ATR 기반 TP/SL 강제 가드 — BUY 시 SL 없으면 차단 (`LUNA_TP_SL_ENFORCE=false` kill-switch)

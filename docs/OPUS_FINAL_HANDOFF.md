@@ -1,3 +1,51 @@
+# 세션 인수인계 — 2026-05-04 (ALARM_INCIDENT 인박스 처리 + llm-routing smoke 수정 — 88차 세션)
+
+## 완료 요약 ✅ (88차 세션)
+
+### ALARM_INCIDENT 인박스 3건 분류 및 처리
+
+| 파일 | 원인 | 조치 |
+|------|------|------|
+| `ALARM_INCIDENT_blog_00bfcfe6a217.md` | blog-commenter 답댓글 1건 실패 (transient) | 아카이브 (operational noise) |
+| `ALARM_INCIDENT_claude_a6eb9597fdf2.md` | auto_dev_stage_plan 알람이 keyword inference로 error 분류 | 아카이브 (기수정된 이슈) |
+| `ALARM_INCIDENT_claude_ac8208a5ca24.md` | auto_dev_stage_failed 순환 ALARM_INCIDENT 생성 | 아카이브 (기수정된 이슈) |
+
+> **근본 원인**: `sendStageAlarm(alertLevel:3)` + 메시지 내 "error" 키워드로 `alarmType:'error'` 추론
+> → `579d24912` 커밋에서 이미 수정됨 (alarm.ts `isAutoDevMetaEvent` 가드 + auto-dev-pipeline.ts 명시적 alarmType)
+
+### llm-routing-standard-smoke.ts 기대값 수정
+
+- `luna/default` chain[0] 기대값: `openai-oauth` → `claude-code` (v3.0_oauth_4 기준)
+- 커밋: `119b18f5`
+
+### 현재 상태 (88차 세션 기준)
+```
+Track 1 (env vars): 이미 완료 ✅
+Track 2 (Phase Ψ5 launchd graceful): 미완료 — 별도 프롬프트 필요
+Track 3 (7일 자연 운영): agentMessages 627/5000 진행 중
+jay:next-stage-gate: hardBlockers=0, pendingObservation=[track3:agentMessages:627/5000]
+```
+
+### 알려진 이슈
+- `hub-unified-oauth-direct-smoke.ts` 실패 (pre-existing):
+  - 예상값 `hub-unified-gemini-project`, 실제값 `gen-lang-client-0627707293`
+  - 테스트 mock fetch가 실제 Gemini OAuth store를 읽는 문제 (내 변경과 무관)
+  - 수정 필요: 테스트 env 격리 또는 기대값 업데이트
+
+### 다음 세션 우선순위
+```
+🔴 Track 2 Phase Ψ5 (마스터 승인 시):
+  launchd graceful retire (20 → 8) — 별도 프롬프트 필요
+
+🟡 hub-unified-oauth-direct-smoke.ts 수정:
+  Gemini OAuth project ID mock 격리 또는 기대값 업데이트
+
+🟡 보강 6: 단타 전략 파이프라인 통합 (strategy_family 타입만 추가됨)
+🟡 보강 8: pre_autotune 학습 데이터 확대 (autotune-trainer 파일 통합 필요)
+```
+
+---
+
 # 세션 인수인계 — 2026-05-04 (CODEX_LUNA_TRADE_ANALYTICS_REPORT 구현 — 87차 세션)
 
 ## 완료 요약 ✅ (87차 세션)
