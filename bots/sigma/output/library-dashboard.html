@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <title>Sigma Great Library Dashboard</title>
+  <style>
+    body { font-family: ui-sans-serif, system-ui, sans-serif; margin: 32px; color: #18202a; background: #f7f4ee; }
+    h1 { margin-bottom: 4px; }
+    .cards { display: grid; grid-template-columns: repeat(4, minmax(120px, 1fr)); gap: 12px; margin: 20px 0; }
+    .card { background: #fff; border: 1px solid #dfd6c6; border-radius: 12px; padding: 16px; }
+    .value { font-size: 28px; font-weight: 700; }
+    table { width: 100%; border-collapse: collapse; margin: 18px 0; background: #fff; }
+    th, td { border: 1px solid #dfd6c6; padding: 8px; text-align: left; vertical-align: top; }
+    th { background: #ece3d2; }
+  </style>
+</head>
+<body>
+  <h1>Sigma Great Library Dashboard</h1>
+  <p>status=sigma_library_contract_ready generatedAt=1970-01-01T00:00:00.000Z</p>
+  <section class="cards">
+    <div class="card"><div>Teams</div><div class="value">9</div></div>
+    <div class="card"><div>Datasets</div><div class="value">18</div></div>
+    <div class="card"><div>Graph Nodes</div><div class="value">35</div></div>
+    <div class="card"><div>Skill Candidates</div><div class="value">2</div></div>
+  </section>
+  <h2>Phase Gates</h2>
+  <table><thead><tr><th>Phase</th><th>Enabled</th><th>Default Safe</th><th>Mode</th><th>Blockers</th></tr></thead><tbody><tr><td>A</td><td>false</td><td>true</td><td>shadow</td><td>-</td></tr>
+<tr><td>B</td><td>false</td><td>true</td><td>shadow</td><td>-</td></tr>
+<tr><td>C</td><td>false</td><td>true</td><td>shadow</td><td>-</td></tr>
+<tr><td>D</td><td>false</td><td>true</td><td>shadow</td><td>-</td></tr>
+<tr><td>E1</td><td>false</td><td>true</td><td>shadow</td><td>-</td></tr>
+<tr><td>E2</td><td>false</td><td>true</td><td>shadow</td><td>-</td></tr>
+<tr><td>E3</td><td>false</td><td>true</td><td>shadow</td><td>-</td></tr>
+<tr><td>F1</td><td>false</td><td>true</td><td>shadow</td><td>-</td></tr>
+<tr><td>F2</td><td>true</td><td>true</td><td>shadow</td><td>-</td></tr>
+<tr><td>F3</td><td>true</td><td>true</td><td>shadow</td><td>-</td></tr>
+<tr><td>G1</td><td>true</td><td>true</td><td>shadow</td><td>-</td></tr>
+<tr><td>G2</td><td>false</td><td>true</td><td>shadow</td><td>-</td></tr>
+<tr><td>H</td><td>false</td><td>true</td><td>shadow</td><td>-</td></tr></tbody></table>
+  <h2>Memory Coverage</h2>
+  <table><thead><tr><th>Team</th><th>Short-term</th><th>Episodic</th><th>Semantic</th><th>Procedural</th></tr></thead><tbody><tr><td>luna</td><td>investment.agent_short_term_memory</td><td>luna_rag_documents + agent_memory</td><td>investment.entity_facts</td><td>skills/luna/<agent>/SUCCESS_*.md + AVOID_*.md</td></tr>
+<tr><td>blog</td><td>sigma.agent_short_term_memory</td><td>agent_memory episodic</td><td>sigma.entity_facts</td><td>skills/blog/<agent>/SUCCESS_*.md + AVOID_*.md</td></tr>
+<tr><td>ska</td><td>sigma.agent_short_term_memory</td><td>agent_memory episodic</td><td>sigma.entity_facts</td><td>skills/ska/<agent>/SUCCESS_*.md + AVOID_*.md</td></tr>
+<tr><td>claude</td><td>sigma.agent_short_term_memory</td><td>agent_memory episodic</td><td>sigma.entity_facts</td><td>skills/claude/<agent>/SUCCESS_*.md + AVOID_*.md</td></tr>
+<tr><td>darwin</td><td>sigma.agent_short_term_memory</td><td>agent_memory episodic</td><td>sigma.entity_facts</td><td>skills/darwin/<agent>/SUCCESS_*.md + AVOID_*.md</td></tr>
+<tr><td>justin</td><td>sigma.agent_short_term_memory</td><td>agent_memory episodic</td><td>sigma.entity_facts</td><td>skills/justin/<agent>/SUCCESS_*.md + AVOID_*.md</td></tr>
+<tr><td>sigma</td><td>sigma.agent_short_term_memory</td><td>agent_memory episodic</td><td>sigma.entity_facts</td><td>skills/sigma/<agent>/SUCCESS_*.md + AVOID_*.md</td></tr>
+<tr><td>jay</td><td>sigma.agent_short_term_memory</td><td>agent_memory episodic</td><td>sigma.entity_facts</td><td>skills/jay/<agent>/SUCCESS_*.md + AVOID_*.md</td></tr>
+<tr><td>hub</td><td>sigma.agent_short_term_memory</td><td>agent_memory episodic</td><td>sigma.entity_facts</td><td>skills/hub/<agent>/SUCCESS_*.md + AVOID_*.md</td></tr></tbody></table>
+</body>
+</html>

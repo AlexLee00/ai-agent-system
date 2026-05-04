@@ -1,0 +1,209 @@
+{
+  "ok": true,
+  "status": "sigma_library_contract_ready",
+  "generatedAt": "1970-01-01T00:00:00.000Z",
+  "teams": 9,
+  "datasets": 18,
+  "graph": {
+    "nodes": 35,
+    "edges": 33,
+    "backlinks": 33
+  },
+  "memoryCoverage": [
+    {
+      "team": "luna",
+      "working": "investment working snapshot",
+      "shortTerm": "investment.agent_short_term_memory",
+      "episodic": "luna_rag_documents + agent_memory",
+      "semantic": "investment.entity_facts",
+      "procedural": "skills/luna/<agent>/SUCCESS_*.md + AVOID_*.md"
+    },
+    {
+      "team": "blog",
+      "working": "sigma session adapter",
+      "shortTerm": "sigma.agent_short_term_memory",
+      "episodic": "agent_memory episodic",
+      "semantic": "sigma.entity_facts",
+      "procedural": "skills/blog/<agent>/SUCCESS_*.md + AVOID_*.md"
+    },
+    {
+      "team": "ska",
+      "working": "sigma session adapter",
+      "shortTerm": "sigma.agent_short_term_memory",
+      "episodic": "agent_memory episodic",
+      "semantic": "sigma.entity_facts",
+      "procedural": "skills/ska/<agent>/SUCCESS_*.md + AVOID_*.md"
+    },
+    {
+      "team": "claude",
+      "working": "sigma session adapter",
+      "shortTerm": "sigma.agent_short_term_memory",
+      "episodic": "agent_memory episodic",
+      "semantic": "sigma.entity_facts",
+      "procedural": "skills/claude/<agent>/SUCCESS_*.md + AVOID_*.md"
+    },
+    {
+      "team": "darwin",
+      "working": "sigma session adapter",
+      "shortTerm": "sigma.agent_short_term_memory",
+      "episodic": "agent_memory episodic",
+      "semantic": "sigma.entity_facts",
+      "procedural": "skills/darwin/<agent>/SUCCESS_*.md + AVOID_*.md"
+    },
+    {
+      "team": "justin",
+      "working": "sigma session adapter",
+      "shortTerm": "sigma.agent_short_term_memory",
+      "episodic": "agent_memory episodic",
+      "semantic": "sigma.entity_facts",
+      "procedural": "skills/justin/<agent>/SUCCESS_*.md + AVOID_*.md"
+    },
+    {
+      "team": "sigma",
+      "working": "sigma session adapter",
+      "shortTerm": "sigma.agent_short_term_memory",
+      "episodic": "agent_memory episodic",
+      "semantic": "sigma.entity_facts",
+      "procedural": "skills/sigma/<agent>/SUCCESS_*.md + AVOID_*.md"
+    },
+    {
+      "team": "jay",
+      "working": "sigma session adapter",
+      "shortTerm": "sigma.agent_short_term_memory",
+      "episodic": "agent_memory episodic",
+      "semantic": "sigma.entity_facts",
+      "procedural": "skills/jay/<agent>/SUCCESS_*.md + AVOID_*.md"
+    },
+    {
+      "team": "hub",
+      "working": "sigma session adapter",
+      "shortTerm": "sigma.agent_short_term_memory",
+      "episodic": "agent_memory episodic",
+      "semantic": "sigma.entity_facts",
+      "procedural": "skills/hub/<agent>/SUCCESS_*.md + AVOID_*.md"
+    }
+  ],
+  "selfImprovement": {
+    "promptCandidates": 1,
+    "skillCandidates": 2,
+    "fineTuneCandidate": false
+  },
+  "gates": [
+    {
+      "phase": "A",
+      "enabled": false,
+      "defaultSafe": true,
+      "mode": "shadow",
+      "warnings": [],
+      "blockers": []
+    },
+    {
+      "phase": "B",
+      "enabled": false,
+      "defaultSafe": true,
+      "mode": "shadow",
+      "warnings": [],
+      "blockers": []
+    },
+    {
+      "phase": "C",
+      "enabled": false,
+      "defaultSafe": true,
+      "mode": "shadow",
+      "warnings": [],
+      "blockers": []
+    },
+    {
+      "phase": "D",
+      "enabled": false,
+      "defaultSafe": true,
+      "mode": "shadow",
+      "warnings": [],
+      "blockers": []
+    },
+    {
+      "phase": "E1",
+      "enabled": false,
+      "defaultSafe": true,
+      "mode": "shadow",
+      "warnings": [],
+      "blockers": []
+    },
+    {
+      "phase": "E2",
+      "enabled": false,
+      "defaultSafe": true,
+      "mode": "shadow",
+      "warnings": [],
+      "blockers": []
+    },
+    {
+      "phase": "E3",
+      "enabled": false,
+      "defaultSafe": true,
+      "mode": "shadow",
+      "warnings": [],
+      "blockers": []
+    },
+    {
+      "phase": "F1",
+      "enabled": false,
+      "defaultSafe": true,
+      "mode": "shadow",
+      "warnings": [],
+      "blockers": []
+    },
+    {
+      "phase": "F2",
+      "enabled": true,
+      "defaultSafe": true,
+      "mode": "shadow",
+      "warnings": [
+        "shadow_only_no_mutation"
+      ],
+      "blockers": []
+    },
+    {
+      "phase": "F3",
+      "enabled": true,
+      "defaultSafe": true,
+      "mode": "shadow",
+      "warnings": [
+        "shadow_only_no_mutation"
+      ],
+      "blockers": []
+    },
+    {
+      "phase": "G1",
+      "enabled": true,
+      "defaultSafe": true,
+      "mode": "shadow",
+      "warnings": [
+        "shadow_only_no_mutation"
+      ],
+      "blockers": []
+    },
+    {
+      "phase": "G2",
+      "enabled": false,
+      "defaultSafe": true,
+      "mode": "shadow",
+      "warnings": [],
+      "blockers": []
+    },
+    {
+      "phase": "H",
+      "enabled": false,
+      "defaultSafe": true,
+      "mode": "shadow",
+      "warnings": [],
+      "blockers": []
+    }
+  ],
+  "warnings": [
+    "shadow_only_no_mutation",
+    "shadow_only_no_mutation",
+    "shadow_only_no_mutation"
+  ],
+  "blockers": []
+}
