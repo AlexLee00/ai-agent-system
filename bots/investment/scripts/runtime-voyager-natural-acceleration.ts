@@ -17,6 +17,7 @@ function hasArg(name) {
 }
 
 export async function runVoyagerNaturalAccelerationSmoke() {
+  const previousDelegated = process.env.LUNA_DELEGATED_AUTHORITY_ENABLED;
   const result = await runVoyagerNaturalAcceleration({
     days: 30,
     market: 'crypto',
@@ -27,18 +28,38 @@ export async function runVoyagerNaturalAccelerationSmoke() {
   if (!result.ok || result.status !== 'disabled_default_off' || result.applied) {
     throw new Error('default-off dry-run acceleration contract failed');
   }
-  const blocked = await runVoyagerNaturalAcceleration({
-    days: 30,
-    market: 'crypto',
-    dryRun: false,
-    enabled: true,
-    confirm: 'wrong',
-    extractFn: async () => ({ ok: true, candidates: 9, extracted: 4, dryRun: false }),
-  });
-  if (blocked.ok || blocked.status !== 'confirm_required') {
-    throw new Error('confirmed apply gate must block missing confirm');
+  let blocked;
+  let delegated;
+  try {
+    process.env.LUNA_DELEGATED_AUTHORITY_ENABLED = 'false';
+    blocked = await runVoyagerNaturalAcceleration({
+      days: 30,
+      market: 'crypto',
+      dryRun: false,
+      enabled: true,
+      confirm: 'wrong',
+      extractFn: async () => ({ ok: true, candidates: 9, extracted: 4, dryRun: false }),
+    });
+    if (blocked.ok || blocked.status !== 'confirm_required') {
+      throw new Error('confirmed apply gate must block missing confirm when Luna delegation is disabled');
+    }
+    process.env.LUNA_DELEGATED_AUTHORITY_ENABLED = 'true';
+    delegated = await runVoyagerNaturalAcceleration({
+      days: 30,
+      market: 'crypto',
+      dryRun: false,
+      enabled: true,
+      confirm: '',
+      extractFn: async () => ({ ok: true, candidates: 9, extracted: 4, dryRun: false }),
+    });
+    if (!delegated.ok || delegated.applied !== true || delegated.delegatedAuthority?.canSelfApprove !== true) {
+      throw new Error('Luna delegated authority must self-approve enabled Voyager natural acceleration');
+    }
+  } finally {
+    if (previousDelegated == null) delete process.env.LUNA_DELEGATED_AUTHORITY_ENABLED;
+    else process.env.LUNA_DELEGATED_AUTHORITY_ENABLED = previousDelegated;
   }
-  return { ok: true, result, blocked, confirmRequired: VOYAGER_NATURAL_ACCELERATION_CONFIRM };
+  return { ok: true, result, blocked, delegated, confirmRequired: VOYAGER_NATURAL_ACCELERATION_CONFIRM };
 }
 
 async function main() {

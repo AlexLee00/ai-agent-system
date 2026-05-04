@@ -7,6 +7,9 @@ import { runAgentMessageBusHygiene } from './runtime-agent-message-bus-hygiene.t
 import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
 
 export async function runAgentMessageBusHygieneConfirmSmoke() {
+  const previousDelegated = process.env.LUNA_DELEGATED_AUTHORITY_ENABLED;
+  process.env.LUNA_DELEGATED_AUTHORITY_ENABLED = 'false';
+  try {
   await db.initSchema();
   const incidentPrefix = `bus-hygiene-confirm-smoke-${Date.now()}`;
   const incidentKey = `${incidentPrefix}:1`;
@@ -86,6 +89,10 @@ export async function runAgentMessageBusHygieneConfirmSmoke() {
   );
   assert.ok(broadcastArchived?.responded_at);
   return { ok: true, blocked: blocked.status, expired: applied.action.expired, reviewArchived: reviewArchived.action.expired };
+  } finally {
+    if (previousDelegated == null) delete process.env.LUNA_DELEGATED_AUTHORITY_ENABLED;
+    else process.env.LUNA_DELEGATED_AUTHORITY_ENABLED = previousDelegated;
+  }
 }
 
 async function main() {

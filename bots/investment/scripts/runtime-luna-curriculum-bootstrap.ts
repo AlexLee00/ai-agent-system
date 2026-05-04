@@ -5,6 +5,7 @@ import assert from 'node:assert/strict';
 import { listAgentDefinitions } from '../shared/agent-yaml-loader.ts';
 import * as db from '../shared/db.ts';
 import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
+import { buildLunaDelegatedAuthorityDecision } from '../shared/luna-delegated-authority.ts';
 
 const CONFIRM = 'luna-curriculum-bootstrap';
 
@@ -70,13 +71,18 @@ export async function runLunaCurriculumBootstrap({
   const existing = await loadExistingCurriculum(market);
   const plan = buildCurriculumBootstrapPlanFromAgents({ agents, existing, market });
   if (!apply) return plan;
-  if (confirm !== CONFIRM) {
+  const delegatedAuthority = buildLunaDelegatedAuthorityDecision({
+    action: 'safe_maintenance_apply',
+    finalGate: { ok: true, blockers: [] },
+  });
+  if (confirm !== CONFIRM && delegatedAuthority.canSelfApprove !== true) {
     return {
       ...plan,
       ok: false,
       status: 'curriculum_bootstrap_confirm_required',
       dryRun: true,
       applied: false,
+      delegatedAuthority,
     };
   }
   const toCreate = plan.candidates.filter((item) => !item.exists);
@@ -102,6 +108,8 @@ export async function runLunaCurriculumBootstrap({
     dryRun: false,
     applied: true,
     inserted,
+    approvalSource: confirm === CONFIRM ? 'operator_confirm' : delegatedAuthority.approvalSource,
+    delegatedAuthority,
   };
 }
 

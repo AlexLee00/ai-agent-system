@@ -7,6 +7,7 @@ import * as db from '../shared/db.ts';
 import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
 import { buildAgentMessageBusHygienePlan, classifyAgentMessageBusHygiene } from '../shared/luna-operational-closure-pack.ts';
 import { buildEvidenceHash } from '../shared/luna-reconcile-evidence-pack.ts';
+import { buildLunaDelegatedAuthorityDecision } from '../shared/luna-delegated-authority.ts';
 
 const SAFE_CONFIRM = 'luna-agent-bus-hygiene';
 const REVIEW_CONFIRM = 'luna-agent-bus-review-archive';
@@ -30,12 +31,20 @@ export async function runAgentMessageBusHygiene(args = {}) {
   const before = await getMessageBusHygiene({ staleHours, limit });
   const includeReviewRequired = args.includeReviewRequired === true;
   const requiredConfirm = includeReviewRequired ? REVIEW_CONFIRM : SAFE_CONFIRM;
-  if (args.apply === true && args.confirm !== requiredConfirm) {
+  const delegatedAuthority = buildLunaDelegatedAuthorityDecision({
+    action: 'safe_maintenance_apply',
+    finalGate: {
+      ok: includeReviewRequired !== true,
+      blockers: includeReviewRequired ? ['review_required_bus_archive_not_delegable'] : [],
+    },
+  });
+  if (args.apply === true && args.confirm !== requiredConfirm && delegatedAuthority.canSelfApprove !== true) {
     const result = {
       ok: false,
       status: 'agent_message_bus_hygiene_confirm_required',
       staleHours,
       includeReviewRequired,
+      delegatedAuthority,
       before,
       action: {
         ok: false,
@@ -96,6 +105,7 @@ export async function runAgentMessageBusHygiene(args = {}) {
     status,
     staleHours,
     includeReviewRequired,
+    delegatedAuthority,
     before,
     action,
     after,
@@ -115,6 +125,7 @@ export async function runAgentMessageBusHygiene(args = {}) {
           staleBefore: before.staleCount || 0,
           expired: action.expired || 0,
           confirmed: true,
+          approvalSource: args.confirm === requiredConfirm ? 'operator_confirm' : delegatedAuthority.approvalSource,
           includeReviewRequired,
           appliedAt: new Date().toISOString(),
         }),

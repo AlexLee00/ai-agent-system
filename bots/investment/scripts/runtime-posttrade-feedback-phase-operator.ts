@@ -8,6 +8,7 @@ import { fileURLToPath } from 'node:url';
 import yaml from 'js-yaml';
 import { buildPosttradeFeedbackL5Gate } from './runtime-posttrade-feedback-l5-gate.ts';
 import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
+import { buildLunaDelegatedAuthorityDecision } from '../shared/luna-delegated-authority.ts';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const INVESTMENT_DIR = join(__dirname, '..');
@@ -180,6 +181,34 @@ export function buildPosttradeFeedbackPhasePlan({
   };
 }
 
+function withDelegatedPosttradeAuthority(plan = {}) {
+  const autonomousBlocker = 'autonomous_l5_requires_separate_human_cutover';
+  const blockers = Array.isArray(plan.blockers) ? [...plan.blockers] : [];
+  const delegatedGateBlockers = blockers.filter((item) => item !== autonomousBlocker);
+  const delegatedAuthority = buildLunaDelegatedAuthorityDecision({
+    action: 'runtime_config_apply',
+    finalGate: {
+      ok: delegatedGateBlockers.length === 0,
+      blockers: delegatedGateBlockers,
+    },
+  });
+
+  if (blockers.includes(autonomousBlocker) && delegatedAuthority.canSelfApprove) {
+    return {
+      ...plan,
+      ok: delegatedGateBlockers.length === 0,
+      status: delegatedGateBlockers.length === 0 ? 'posttrade_phase_plan_ready' : 'posttrade_phase_plan_blocked',
+      blockers: delegatedGateBlockers,
+      delegatedAuthority,
+    };
+  }
+
+  return {
+    ...plan,
+    delegatedAuthority,
+  };
+}
+
 export function runSmokeCommands(commands = []) {
   return commands.map((command) => {
     const startedAt = new Date().toISOString();
@@ -206,12 +235,12 @@ export function runSmokeCommands(commands = []) {
 export async function runPosttradeFeedbackPhaseOperator(input = {}) {
   const args = { ...parseArgs([]), ...(input || {}) };
   const config = loadConfig();
-  const plan = buildPosttradeFeedbackPhasePlan({
+  const plan = withDelegatedPosttradeAuthority(buildPosttradeFeedbackPhasePlan({
     config,
     requestedPhase: args.phase || 'all',
     mode: args.mode || 'shadow',
     autoApply: args.autoApply === true,
-  });
+  }));
 
   if (!args.apply) {
     return {
@@ -220,12 +249,12 @@ export async function runPosttradeFeedbackPhaseOperator(input = {}) {
       applied: false,
       plan,
       nextCommand: plan.ok
-        ? `npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run -s runtime:posttrade-feedback-phase-operate -- --phase=${args.phase || 'all'} --mode=${plan.mode}${args.autoApply === true ? ' --auto-apply' : ''} --apply --confirm=${CONFIRM} --run-smoke --rollback-on-fail --json`
+        ? `npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run -s runtime:posttrade-feedback-phase-operate -- --phase=${args.phase || 'all'} --mode=${plan.mode}${args.autoApply === true ? ' --auto-apply' : ''} --apply${plan.delegatedAuthority?.canSelfApprove ? '' : ` --confirm=${CONFIRM}`} --run-smoke --rollback-on-fail --json`
         : null,
     };
   }
 
-  if (args.confirm !== CONFIRM) {
+  if (args.confirm !== CONFIRM && plan.delegatedAuthority?.canSelfApprove !== true) {
     return {
       ok: false,
       status: 'posttrade_phase_activation_confirmation_required',
@@ -272,6 +301,7 @@ export async function runPosttradeFeedbackPhaseOperator(input = {}) {
         : 'posttrade_phase_activation_applied_gate_attention',
     applied: true,
     mode: plan.mode,
+    approvalSource: args.confirm === CONFIRM ? 'operator_confirm' : plan.delegatedAuthority?.approvalSource || null,
     enabledPhases: plan.steps.map((step) => step.phase),
     smokeOk: args.runSmoke ? smokeOk : null,
     rollbackApplied,

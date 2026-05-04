@@ -40,6 +40,27 @@ export function runLunaDelegatedAuthoritySmoke() {
   assert.equal(approved.approvalToken, LUNA_DELEGATED_AUTHORITY_TOKEN);
   assert.equal(approved.masterRole, 'report_only');
 
+  const runtimeConfigApproved = buildLunaDelegatedAuthorityDecision({
+    action: 'runtime_config_apply',
+    env: delegatedEnv(),
+    finalGate: { ok: true, blockers: [] },
+  });
+  assert.equal(runtimeConfigApproved.canSelfApprove, true);
+
+  const safeMaintenanceApproved = buildLunaDelegatedAuthorityDecision({
+    action: 'safe_maintenance_apply',
+    env: delegatedEnv(),
+    finalGate: { ok: true, blockers: [] },
+  });
+  assert.equal(safeMaintenanceApproved.canSelfApprove, true);
+
+  const unknownBlocked = buildLunaDelegatedAuthorityDecision({
+    action: 'unregistered_apply',
+    env: delegatedEnv(),
+  });
+  assert.equal(unknownBlocked.canSelfApprove, false);
+  assert.ok(unknownBlocked.blockers.includes('delegated_action_not_registered:unregistered_apply'));
+
   const capBlocked = buildLunaDelegatedAuthorityDecision({
     action: 'live_fire_cutover',
     env: delegatedEnv(),

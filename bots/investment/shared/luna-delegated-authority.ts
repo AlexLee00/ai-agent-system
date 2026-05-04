@@ -7,6 +7,15 @@ export const LUNA_DELEGATED_AUTHORITY_TOKEN = 'luna-delegated-authority';
 const DEFAULT_MAX_TRADE_USDT = 50;
 const DEFAULT_MAX_DAILY_USDT = 200;
 const DEFAULT_MAX_OPEN_POSITIONS = 2;
+const SUPPORTED_DELEGATED_ACTIONS = new Set([
+  'report',
+  'live_fire_enable',
+  'live_fire_cutover',
+  'runtime_config_apply',
+  'safe_maintenance_apply',
+  'skill_learning_apply',
+  'reconcile_ack',
+]);
 const POLICY_ENV_KEYS = [
   'LUNA_DELEGATED_AUTHORITY_ENABLED',
   'LUNA_MASTER_AUTHORITY_MODE',
@@ -106,6 +115,10 @@ export function buildLunaDelegatedAuthorityDecision({
   const policy = getLunaDelegatedAuthorityPolicy(env);
   const blockers = [];
   const warnings = [];
+
+  if (!SUPPORTED_DELEGATED_ACTIONS.has(action)) {
+    blockers.push(`delegated_action_not_registered:${action}`);
+  }
 
   if (!policy.delegated) blockers.push('delegated_authority_disabled');
 

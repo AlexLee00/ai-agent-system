@@ -10,6 +10,7 @@
 
 import * as db from './db.ts';
 import { extractPosttradeSkills } from './posttrade-skill-extractor.ts';
+import { buildLunaDelegatedAuthorityDecision } from './luna-delegated-authority.ts';
 
 export const VOYAGER_NATURAL_ACCELERATION_CONFIRM = 'luna-voyager-natural-acceleration';
 
@@ -217,12 +218,20 @@ export async function runVoyagerNaturalAcceleration({
   extractFn = extractPosttradeSkills,
 } = {}) {
   const wantsApply = apply || dryRun === false;
-  if (wantsApply && confirm !== VOYAGER_NATURAL_ACCELERATION_CONFIRM) {
+  const delegatedAuthority = buildLunaDelegatedAuthorityDecision({
+    action: 'skill_learning_apply',
+    finalGate: {
+      ok: enabled === true,
+      blockers: enabled === true ? [] : ['voyager_natural_acceleration_disabled'],
+    },
+  });
+  if (wantsApply && confirm !== VOYAGER_NATURAL_ACCELERATION_CONFIRM && delegatedAuthority.canSelfApprove !== true) {
     return {
       ok: false,
       status: 'confirm_required',
       dryRun: false,
       confirmRequired: VOYAGER_NATURAL_ACCELERATION_CONFIRM,
+      delegatedAuthority,
     };
   }
 
@@ -256,6 +265,10 @@ export async function runVoyagerNaturalAcceleration({
     ok: !wantsApply || enabled,
     status: wantsApply && !enabled ? 'apply_blocked_disabled' : plan.status,
     applied: wantsApply && enabled,
+    approvalSource: wantsApply
+      ? (confirm === VOYAGER_NATURAL_ACCELERATION_CONFIRM ? 'operator_confirm' : delegatedAuthority.approvalSource)
+      : null,
+    delegatedAuthority,
     extraction: publicExtraction,
   };
 }
