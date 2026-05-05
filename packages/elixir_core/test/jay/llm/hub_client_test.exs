@@ -80,6 +80,19 @@ defmodule Jay.Core.LLM.HubClientTest do
     end
   end
 
+  describe "normalize_hub_urgency/1" do
+    test "Hub schema에 맞게 urgency 값을 정규화" do
+      assert Jay.Core.LLM.HubClient.Impl.normalize_hub_urgency(:low) == "low"
+      assert Jay.Core.LLM.HubClient.Impl.normalize_hub_urgency(:medium) == "normal"
+      assert Jay.Core.LLM.HubClient.Impl.normalize_hub_urgency("normal") == "normal"
+      assert Jay.Core.LLM.HubClient.Impl.normalize_hub_urgency(:high) == "high"
+      assert Jay.Core.LLM.HubClient.Impl.normalize_hub_urgency(:urgent) == "critical"
+      assert Jay.Core.LLM.HubClient.Impl.normalize_hub_urgency(:critical) == "critical"
+      assert Jay.Core.LLM.HubClient.Impl.normalize_hub_urgency(:unexpected) == "normal"
+      assert Jay.Core.LLM.HubClient.Impl.normalize_hub_urgency(nil) == "normal"
+    end
+  end
+
   describe "use macro 주입 확인" do
     test "enabled?/0 함수 존재" do
       assert function_exported?(TestHubClient, :enabled?, 0)

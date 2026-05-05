@@ -54,7 +54,7 @@ defmodule Jay.Core.LLM.HubClient do
         "timeoutMs"     => request[:timeout_ms] || 60_000,
         "agent"         => request[:agent] && to_string(request[:agent]),
         "callerTeam"    => team,
-        "urgency"       => to_string(request[:urgency] || :medium),
+        "urgency"       => normalize_hub_urgency(request[:urgency]),
         "taskType"      => request[:task_type] && to_string(request[:task_type]),
       }
 
@@ -100,6 +100,22 @@ defmodule Jay.Core.LLM.HubClient do
     defp parse_response(other) do
       {:error, {:unexpected_response, inspect(other)}}
     end
+
+    def normalize_hub_urgency(value) do
+      case value |> normalize_atomish() |> String.downcase() do
+        "low" -> "low"
+        "medium" -> "normal"
+        "normal" -> "normal"
+        "high" -> "high"
+        "urgent" -> "critical"
+        "critical" -> "critical"
+        _ -> "normal"
+      end
+    end
+
+    defp normalize_atomish(nil), do: "normal"
+    defp normalize_atomish(value) when is_atom(value), do: Atom.to_string(value)
+    defp normalize_atomish(value), do: to_string(value)
 
     defp hub_base, do: System.get_env("HUB_BASE_URL") || @hub_base_default
     defp hub_token, do: System.get_env("HUB_AUTH_TOKEN") || ""

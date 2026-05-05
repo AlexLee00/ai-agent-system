@@ -13,7 +13,7 @@ export interface LLMCallRequest {
   maxBudgetUsd?: number;
   agent?: string;
   callerTeam?: CallerTeam;
-  urgency?: 'low' | 'medium' | 'high';
+  urgency?: 'low' | 'normal' | 'high' | 'critical';
   taskType?: string;
   cacheEnabled?: boolean;
   cacheType?: 'realtime' | 'analysis' | 'research' | 'default';
