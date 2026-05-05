@@ -1,3 +1,47 @@
+# 세션 인수인계 — 2026-05-05 (SIGMA 100% 자율 운영 — Apply 게이트 + MCP 검증 완료)
+
+## 완료 요약 ✅ (96차 세션 — CODEX_SIGMA_100_PERCENT_AUTONOMOUS_OPERATION_PLAN)
+
+### Polish 1 + Polish 2 — Apply 게이트 + MCP Server 검증
+
+**현재 상태 (2026-05-05 15:50 기준)**:
+
+**✅ Apply 게이트 — 완전 개방 (supervised 모드)**:
+- `SIGMA_SELF_IMPROVEMENT_APPLY_MODE=supervised` — plist 기존 설정 ✅ + launchctl 설정 ✅
+- `applyBlocked: null` (null = 게이트 완전 개방!)
+- `applyAllowed: True`
+- `appliedSkills: 2` — 스킬 자동 적용 작동 확인
+- `skill 총합: 52건` (upsert 방식으로 중복 없이 관리)
+- 환경변수 체인: `SIGMA_SELF_IMPROVEMENT_ENABLED=true` + `SIGMA_VOYAGER_SKILL_AUTO_EXTRACTION=true` + `SIGMA_SELF_IMPROVEMENT_APPLY_MODE=supervised`
+
+**✅ MCP Server — 포트 4010 완전 가동**:
+- `http://localhost:4010/sigma/v2/health` → `{"enabled":true,"status":"ok","http_port":"4010"}`
+- 5개 도구: `data_quality_guard, causal_check, experiment_design, feature_planner, observability_planner`
+- Bearer 인증 정상 작동 (`SIGMA_MCP_TOKEN` via beam process env)
+- launchctl `SIGMA_HTTP_PORT` 수정: "true" → "4010" (버그 수정)
+
+**✅ 회귀 0건**:
+- `check:library:full` → `sigma_consistency_clear`, blockers: [], warnings: []
+- `sigma-final-activation-smoke` → `19/19 active, missing: []`
+- PROTECTED 6 PID: 모두 존재 (tradingview-ws, commander, elixir.supervisor, marketdata-mcp, auto-dev, resource-api)
+
+**launchctl 환경변수 현황 (2026-05-05 기준)**:
+- `SIGMA_SELF_IMPROVEMENT_APPLY_MODE=supervised` ← 이번 세션 설정
+- `SIGMA_HTTP_PORT=4010` ← 이번 세션 수정 ("true" → "4010")
+- `SIGMA_LIBRARY_AUTONOMY_MODE=autonomous` ← 기존
+- `SIGMA_V2_ENABLED=true` ← 기존
+- `SIGMA_SELF_IMPROVEMENT_ENABLED=true` ← 기존
+- `SIGMA_VOYAGER_SKILL_AUTO_EXTRACTION=true` ← 기존
+
+**자연 진행 중 (7일)**:
+- Polish 3: TIER2 directive 자연 발생 (Sigma V2 메타 분석 데이터 수집 중)
+- Polish 4: 매일 마스터 review (ai.sigma.observation-review + ai.sigma.consistency-monitor 자동)
+- 목표: Voyager skill 52 → 200+ / Knowledge Graph nodes 35 → 100+
+
+**pre-rollback 태그**: `pre-sigma-apply-activation-20260505-154440`
+
+---
+
 # 세션 인수인계 — 2026-05-05 (Darwin DB 마이그레이션 완료 + 442 tests — 95차 세션)
 
 ## 완료 요약 ✅ (95차 세션)

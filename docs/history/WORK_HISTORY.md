@@ -4,6 +4,16 @@
 > 상세 내용: `reservation-dev-summary.md` / `reservation-handoff.md`
 > 최초 작성: 2026-02-27
 
+## 2026-05-05: SIGMA 100% 자율 운영 — Apply 게이트 + MCP 검증 (96차 세션)
+
+- Apply 게이트 완전 개방 검증: `applyBlocked: null`, `applyAllowed: true`, `appliedSkills: 2`
+- `SIGMA_SELF_IMPROVEMENT_APPLY_MODE=supervised` launchctl 설정 완료
+- launchctl `SIGMA_HTTP_PORT` 버그 수정: "true" → "4010"
+- MCP Server 포트 4010 가동 확인: 5개 도구, bearer 인증, `/sigma/v2/health` OK
+- `check:library:full` → `sigma_consistency_clear`, 0 blockers, 0 warnings
+- PROTECTED 6 PID 전원 확인, 19/19 환경변수 active
+- Polish 3+4 (TIER2 directive / 매일 review) 7일 자연 진행 중
+
 ## 2026-05-05: Darwin DB 마이그레이션 완료 + 442 tests (95차 세션)
 
 - `schema_migrations` 누락 버전 (20260418000009/010/011) 삽입 → 마이그레이션 충돌 해소
