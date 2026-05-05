@@ -1,6 +1,8 @@
 defmodule Darwin.V2.Lead do
   @moduledoc """
-  다윈 V2 팀장 — 7단계 자율 사이클 총 조율자 (GenServer).
+  다윈 V2 팀장 — 8단계 자율 사이클 총 조율자 (GenServer).
+
+  DISCOVER → HYPOTHESIZE → EVALUATE → PLAN → IMPLEMENT → VERIFY → APPLY → LEARN + MEASURE
 
   TeamJay.Darwin.TeamLead의 V2 진화 포트. AutonomyLevel GenServer로 상태 위임.
   JayBus 이벤트 구독 + 사이클 단계 전환 제어.
@@ -116,6 +118,7 @@ defmodule Darwin.V2.Lead do
   @impl GenServer
   def handle_info(:subscribe_events, state) do
     Registry.register(Jay.Core.JayBus, Topics.paper_discovered(), [])
+    Registry.register(Jay.Core.JayBus, Topics.paper_hypothesized(), [])
     Registry.register(Jay.Core.JayBus, Topics.paper_evaluated(), [])
     Registry.register(Jay.Core.JayBus, Topics.verification_passed(), [])
     Registry.register(Jay.Core.JayBus, Topics.verification_failed(), [])
@@ -162,7 +165,9 @@ defmodule Darwin.V2.Lead do
   def handle_cast({:paper_discovered, paper}, state) do
     Logger.info("[다윈V2 리드] 논문 발견: #{paper["title"] || paper[:title] || "unknown"}")
     papers = [paper | Enum.take(state.active_papers, 49)]
-    new_state = transition_phase(%{state | active_papers: papers}, :evaluate)
+    # HYPOTHESIZE 단계로 전환 (비활성 시 EVALUATE로 직행)
+    next = if Darwin.V2.KillSwitch.enabled?(:hypothesis_engine), do: :hypothesize, else: :evaluate
+    new_state = transition_phase(%{state | active_papers: papers}, next)
     {:noreply, new_state}
   end
 
@@ -252,6 +257,10 @@ defmodule Darwin.V2.Lead do
         paper = payload[:paper] || payload
         Logger.debug("[다윈V2 리드] JayBus paper_discovered 수신")
         %{state | active_papers: [paper | Enum.take(state.active_papers, 49)]}
+
+      topic == Topics.paper_hypothesized() ->
+        Logger.debug("[다윈V2 리드] JayBus paper_hypothesized 수신 → EVALUATE 단계")
+        transition_phase(state, :evaluate)
 
       topic == Topics.verification_passed() ->
         Logger.info("[다윈V2 리드] 검증 통과 → 적용 단계")

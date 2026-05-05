@@ -72,6 +72,8 @@ defmodule Darwin.V2.Supervisor do
       if kill_switch_on do
         [
           Darwin.V2.Scanner,
+          # Phase B: HYPOTHESIZE Stage (DARWIN_HYPOTHESIS_ENGINE_ENABLED=true 시 활성)
+          Darwin.V2.Cycle.Hypothesize,
           Darwin.V2.Evaluator,
           Darwin.V2.Planner,
           Darwin.V2.Edison,
