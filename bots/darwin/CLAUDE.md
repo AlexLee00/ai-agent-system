@@ -37,11 +37,14 @@ API 키, Tailscale IP, Hub 토큰은 절대 커밋 금지.
 | 1 | ✅ 완료 | LLM Selector + CostTracker + RoutingLog |
 | 2 | ✅ 완료 | Memory L1/L2 + AutonomyLevel |
 | 3 | ✅ 완료 | Reflexion + SelfRAG + ESPL + Principle Loader |
-| 4 | ✅ 완료 | Commander (Jido.AI.Agent) + Skill 3개 + Cycle 7개 |
+| 4 | ✅ 완료 | Commander (Jido.AI.Agent) + 9 Skills + Cycle 7개 |
 | 5 | ✅ 완료 | MCP Server + Signal |
 | 6 | ✅ 완료 | Shadow 비교 경로 보존 (ShadowRunner + ShadowCompare + TelegramBridge) |
 | 7 | ✅ 완료 | 커뮤니티 스캐너 (HN/Reddit/OpenReview/ArxivRSS 센서 4종 + CommunityScanner) |
 | 8 | ✅ 완료 | 테스트 335개 (0 failures, 11 excluded) + DB 마이그레이션 5개 |
+| CODEX-A | ✅ 완료 | 9팀 통합 채널 — TeamConnector + darwin_team_tech_requests 테이블 + Discover/Apply 통합 |
+| CODEX-B | ✅ 완료 | Hypothesis Engine — Sakana AI Scientist 패턴 + darwin_hypotheses 테이블 + Cycle.Hypothesize (8단계) |
+| CODEX-C | ✅ 완료 | MEASURE Stage — darwin_effect_measurements + 24h/7d/30d 자동 측정 + Apply 통합 |
 
 ## 4. 코드 작성 표준
 

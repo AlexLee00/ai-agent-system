@@ -15,6 +15,7 @@ defmodule Mix.Tasks.Darwin.Migrate do
   require Logger
 
   @darwin_migrations_rel "../../bots/darwin/migrations"
+  @darwin_elixir_migrations_rel "../../bots/darwin/elixir/priv/repo/migrations"
 
   @impl Mix.Task
   def run(args) do
@@ -23,11 +24,13 @@ defmodule Mix.Tasks.Darwin.Migrate do
     repo = Jay.Core.Repo
     base_dir = Path.expand("priv/repo/migrations", Mix.Project.app_path())
     darwin_dir = Path.expand(@darwin_migrations_rel, File.cwd!())
+    darwin_elixir_dir = Path.expand(@darwin_elixir_migrations_rel, File.cwd!())
 
     quiet = "--quiet" in args
 
     run_path(repo, base_dir, quiet, "team_jay 기본")
-    run_path(repo, darwin_dir, quiet, "Darwin V2")
+    run_path(repo, darwin_dir, quiet, "Darwin V2 (TS)")
+    run_path(repo, darwin_elixir_dir, quiet, "Darwin V2 (Elixir)")
   end
 
   defp run_path(repo, path, quiet, label) do
