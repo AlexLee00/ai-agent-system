@@ -1,9 +1,9 @@
 defmodule Darwin.V2.Commander do
   @moduledoc """
-  다윈 V2 Commander — Jido.AI.Agent 기반 7단계 R&D 파이프라인 오케스트레이터.
+  다윈 V2 Commander — Jido.AI.Agent 기반 8단계 R&D 파이프라인 오케스트레이터.
 
-  7단계 자율 사이클 관장:
-  DISCOVER → EVALUATE → PLAN → IMPLEMENT → VERIFY → APPLY → LEARN
+  8단계 자율 사이클 관장:
+  DISCOVER → HYPOTHESIZE → EVALUATE → PLAN → IMPLEMENT → VERIFY → APPLY → LEARN + MEASURE
 
   ## 역할
   - plan_pipeline/2:    평가된 논문 중 구현 대상 선정 + 우선순위 + 전략 수립
@@ -35,16 +35,18 @@ defmodule Darwin.V2.Commander do
     ],
     system_prompt: """
     당신은 다윈팀 Commander v2입니다. AI 연구 자동화 에이전트 시스템의 오케스트레이터로,
-    매일 새로운 AI 논문을 수집·평가·구현하는 7단계 자율 연구 사이클을 관장합니다.
+    매주 새로운 AI 논문을 수집·평가·구현하는 8단계 자율 연구 사이클을 관장합니다.
 
-    ## 7단계 사이클
-    1. DISCOVER  — arXiv/HN/Reddit에서 관련 논문 수집
-    2. EVALUATE  — 적합성 점수 산정 (0~10점, 7점 이상 구현 후보)
-    3. PLAN      — 구현 대상 선정 + 전략 수립 (memory로 재구현 방지)
-    4. IMPLEMENT — Edison이 코드 구현 + 유닛 테스트
-    5. VERIFY    — 재현 가능성 + 성능 측정 + 검증
-    6. APPLY     — 메인 시스템에 반영 (검증 통과 시만)
-    7. LEARN     — 키워드 진화 + 임계값 조정 + 교훈 기록
+    ## 8단계 사이클 (Sakana AI Scientist 패턴)
+    1. DISCOVER    — arXiv/HN/Reddit + 9팀 기술 요청 큐에서 관련 논문 수집
+    2. HYPOTHESIZE — 논문 + 코드베이스 분석 → 검증 가능한 가설 생성 (HypothesisEngine)
+    3. EVALUATE    — 적합성 점수 산정 (0~10점, 7점 이상 구현 후보, 팀요청/confirmed패턴 +부스트)
+    4. PLAN        — 구현 대상 선정 + 전략 수립 (memory로 재구현 방지)
+    5. IMPLEMENT   — Edison이 코드 구현 + 유닛 테스트
+    6. VERIFY      — 재현 가능성 + 성능 측정 + 검증
+    7. APPLY       — 메인 시스템에 반영 (검증 통과 시만) + 측정 스케줄 등록
+    8. LEARN       — 키워드 진화 + 임계값 조정 + 교훈 기록
+       MEASURE     — 24h / 7d / 30d 효과 측정 → Hypothesis confirmed/refuted
 
     ## 자율 레벨 원칙
     - L3: 구현 전 마스터 승인 필요
@@ -316,8 +318,43 @@ defmodule Darwin.V2.Commander do
   # ──────────────────────────────────────────────
 
   defp do_plan_pipeline(papers, _opts) do
-    # 점수 7 이상 후보 필터
-    candidates = Enum.filter(papers, fn p ->
+    # Phase A: 팀 기술 요청 큐에서 우선 키워드 획득
+    team_requests = Darwin.V2.TeamConnector.pending_requests()
+    request_keywords = extract_request_keywords(team_requests)
+
+    # Phase B: confirmed 가설에서 우선 검색 패턴 획득
+    confirmed_patterns = Darwin.V2.HypothesisEngine.confirmed_patterns()
+    confirmed_keywords = Enum.flat_map(confirmed_patterns, fn p ->
+      metric = p[:expected_metric] || p["expected_metric"] || ""
+      module = p[:target_module] || p["target_module"] || ""
+      String.split("#{metric} #{module}", ~r/[\s\/\.]+/, trim: true)
+      |> Enum.filter(&(String.length(&1) >= 3))
+    end)
+
+    # 팀 요청 / confirmed 패턴 매칭 시 점수 보정 (+1.5)
+    boosted_papers = Enum.map(papers, fn p ->
+      base_score = p[:score] || p["score"] || 0
+      title = String.downcase(p[:title] || p["title"] || "")
+      abstract = String.downcase(p[:abstract] || p["abstract"] || "")
+      text = "#{title} #{abstract}"
+
+      team_boost =
+        if request_keywords != [] and Enum.any?(request_keywords, &String.contains?(text, &1)),
+          do: 1.5, else: 0.0
+
+      hypothesis_boost =
+        if confirmed_keywords != [] and Enum.any?(confirmed_keywords, &String.contains?(text, String.downcase(&1))),
+          do: 0.5, else: 0.0
+
+      boosted = base_score + team_boost + hypothesis_boost
+      if boosted > base_score do
+        Logger.debug("[다윈V2 커맨더] 점수 보정 paper=#{String.slice(title, 0, 40)} #{base_score}→#{boosted}")
+      end
+      Map.put(p, :score, boosted)
+    end)
+
+    # 점수 7 이상 후보 필터 (보정 후)
+    candidates = Enum.filter(boosted_papers, fn p ->
       score = p[:score] || p["score"] || 0
       score >= 7
     end)
@@ -397,6 +434,19 @@ defmodule Darwin.V2.Commander do
           estimated_cost: length(papers) * 0.5
         }}
     end
+  end
+
+  defp extract_request_keywords(requests) do
+    requests
+    |> Enum.flat_map(fn req ->
+      desc = req[:description] || req["description"] || ""
+      desc
+      |> String.downcase()
+      |> String.split(~r/[\s,;]+/, trim: true)
+      |> Enum.filter(&(String.length(&1) >= 4))
+      |> Enum.take(8)
+    end)
+    |> Enum.uniq()
   end
 
   defp recall_failed_papers(candidates) do

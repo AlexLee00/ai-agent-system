@@ -30,6 +30,13 @@
     <key>DARWIN_ESPL_ENABLED</key><string>false</string>
     <key>DARWIN_SELF_RAG_ENABLED</key><string>false</string>
     <key>DARWIN_PRINCIPLE_SEMANTIC_CHECK_ENABLED</key><string>false</string>
+    <!-- Phase A: 9팀 기술 요청 통합 (Kill Switch 기본 false) -->
+    <key>DARWIN_TEAM_INTEGRATION_ENABLED</key><string>false</string>
+    <!-- Phase B: Hypothesis Engine (Sakana AI Scientist 패턴, Kill Switch 기본 false) -->
+    <key>DARWIN_HYPOTHESIS_ENGINE_ENABLED</key><string>false</string>
+    <key>DARWIN_HYPOTHESIS_LLM_DAILY_BUDGET_USD</key><string>2.0</string>
+    <!-- Phase C: MEASURE Stage 24h/7d/30d 효과 측정 (Kill Switch 기본 false) -->
+    <key>DARWIN_MEASURE_STAGE_ENABLED</key><string>false</string>
     <key>LLM_HUB_ROUTING_ENABLED</key><string>true</string>
     <key>LLM_HUB_ROUTING_SHADOW</key><string>false</string>
     <key>HUB_BASE_URL</key><string>http://localhost:7788</string>

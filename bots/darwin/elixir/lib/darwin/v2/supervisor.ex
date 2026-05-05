@@ -9,6 +9,7 @@ defmodule Darwin.V2.Supervisor do
   Phase 4: FeedbackLoop + KeywordEvolver + ResearchMonitor 추가
   Phase 5: ShadowRunner (Shadow Mode) + HTTP(Bandit) + MCP Server 활성화
   Phase 6: TelegramBridge + 강화된 RollbackScheduler (24h 효과 측정) 추가
+  Phase A~C: TeamConnector + HypothesisEngine + Cycle.Measure 추가
   """
 
   use Supervisor
@@ -75,7 +76,9 @@ defmodule Darwin.V2.Supervisor do
           Darwin.V2.Planner,
           Darwin.V2.Edison,
           Darwin.V2.Verifier,
-          Darwin.V2.Applier
+          Darwin.V2.Applier,
+          # Phase C: MEASURE Stage (DARWIN_MEASURE_STAGE_ENABLED=true 시 활성)
+          Darwin.V2.Cycle.Measure
         ]
       else
         []
