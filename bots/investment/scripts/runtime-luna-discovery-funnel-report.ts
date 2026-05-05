@@ -43,6 +43,21 @@ function rowsToStateMap(rows = []) {
   return Object.fromEntries((rows || []).map((row) => [String(row.state || row.trigger_state || row.status || 'unknown'), number(row.count)]));
 }
 
+function normalizeCandidateSymbolForAnalysis(symbol, market) {
+  const raw = String(symbol || '').trim().toUpperCase();
+  if (!raw) return raw;
+  if (market === 'crypto' && !raw.includes('/') && raw.endsWith('USDT')) {
+    return `${raw.slice(0, -4)}/USDT`;
+  }
+  return raw;
+}
+
+function candidateSymbolSqlFilter(market) {
+  if (market === 'domestic') return `symbol ~ '^[0-9]{6}$'`;
+  if (market === 'overseas') return `symbol !~ '/' AND symbol !~ '^[0-9]{6}$' AND symbol ~ '^[A-Za-z][A-Za-z0-9.\\-]{0,12}$'`;
+  return `(symbol ~ '^[A-Za-z0-9]+/USDT$' OR symbol ~ '^[A-Za-z0-9]+USDT$')`;
+}
+
 async function queryRows(sql, params = []) {
   return db.query(sql, params).catch(() => []);
 }
@@ -52,6 +67,7 @@ async function buildMarketFunnel(market, { hours }) {
   const marketHours = market === 'crypto'
     ? { market, isOpen: true, state: 'open', reasonCode: 'crypto_24h_market', nextAction: 'allow' }
     : evaluateKisMarketHours({ market });
+  const candidateSqlFilter = candidateSymbolSqlFilter(market);
   const [candidateRows, sourceRows, signalRows, triggerRows, latestCandidates, latestTriggers] = await Promise.all([
     queryRows(
       `SELECT
@@ -61,7 +77,8 @@ async function buildMarketFunnel(market, { hours }) {
          MAX(discovered_at) AS latest_discovered_at
        FROM candidate_universe
        WHERE market = $1
-         AND expires_at > now()`,
+         AND expires_at > now()
+         AND ${candidateSqlFilter}`,
       [market, hours],
     ),
     queryRows(
@@ -105,6 +122,7 @@ async function buildMarketFunnel(market, { hours }) {
        FROM candidate_universe
        WHERE market = $1
          AND expires_at > now()
+         AND ${candidateSqlFilter}
        ORDER BY score DESC, discovered_at DESC
        LIMIT 10`,
       [market],
@@ -118,6 +136,26 @@ async function buildMarketFunnel(market, { hours }) {
       [exchange],
     ),
   ]);
+  const analysisSymbols = Array.from(new Set((latestCandidates || [])
+    .map((row) => normalizeCandidateSymbolForAnalysis(row.symbol, market))
+    .filter(Boolean)));
+  const analysisRows = analysisSymbols.length > 0
+    ? await queryRows(
+      `SELECT symbol, COUNT(*)::int AS count, MAX(created_at) AS latest_created_at
+       FROM analysis
+       WHERE exchange = $1
+         AND symbol = ANY($2::text[])
+         AND created_at >= now() - ($3::int * INTERVAL '1 hour')
+       GROUP BY symbol
+       ORDER BY latest_created_at DESC`,
+      [exchange, analysisSymbols, hours],
+    )
+    : [];
+  const analysisBySymbol = Object.fromEntries((analysisRows || []).map((row) => [row.symbol, {
+    count: number(row.count),
+    latestCreatedAt: row.latest_created_at || null,
+  }]));
+  const analysisCoveredSymbols = analysisSymbols.filter((symbol) => number(analysisBySymbol[symbol]?.count) > 0);
 
   const candidate = candidateRows?.[0] || {};
   const signalsByStatus = {};
@@ -135,7 +173,7 @@ async function buildMarketFunnel(market, { hours }) {
   }
   const triggerByState = rowsToStateMap(triggerRows);
   const activeTriggerCount = number(triggerByState.armed) + number(triggerByState.waiting);
-  const recentSignalCount = signalRows.reduce((sum, row) => sum + number(row.count), 0);
+  const recentSignalCount = Object.values(signalsByStatus).reduce((sum, count) => sum + number(count), 0);
   const recentBuySignals = number(signalsByAction.BUY);
   const sourceSignalCount = sourceRows.reduce((sum, row) => sum + number(row.signal_count), 0);
   const bottlenecks = [];
@@ -143,7 +181,8 @@ async function buildMarketFunnel(market, { hours }) {
   if (number(candidate.active_count) === 0) bottlenecks.push('discovery_candidate_empty');
   if (sourceSignalCount === 0) bottlenecks.push('source_metric_empty');
   if (!marketOpen && number(candidate.active_count) > 0) bottlenecks.push('market_closed_waiting_open');
-  if (marketOpen && number(candidate.active_count) > 0 && recentSignalCount === 0) bottlenecks.push('candidate_not_persisted_to_signal_window');
+  if (marketOpen && number(candidate.active_count) > 0 && recentSignalCount === 0 && analysisCoveredSymbols.length === 0) bottlenecks.push('candidate_not_persisted_to_signal_window');
+  if (marketOpen && number(candidate.active_count) > 0 && recentSignalCount === 0 && analysisCoveredSymbols.length > 0) bottlenecks.push('analysis_completed_no_actionable_signal');
   if (recentBuySignals > 0 && activeTriggerCount === 0) bottlenecks.push('buy_signal_without_active_entry_trigger');
   if (activeTriggerCount === 0 && number(triggerByState.expired) > 0) bottlenecks.push('entry_triggers_expired_without_active_replacement');
   if (marketOpen && number(candidate.active_count) > 0 && activeTriggerCount === 0 && recentBuySignals === 0) bottlenecks.push('candidates_filtered_before_entry_trigger');
@@ -162,6 +201,14 @@ async function buildMarketFunnel(market, { hours }) {
     sourceMetrics: {
       rows: sourceRows || [],
       signalCount: sourceSignalCount,
+    },
+    analysisCoverage: {
+      checkedCount: analysisSymbols.length,
+      coveredCount: analysisCoveredSymbols.length,
+      missingCount: Math.max(0, analysisSymbols.length - analysisCoveredSymbols.length),
+      coveredSymbols: analysisCoveredSymbols,
+      missingSymbols: analysisSymbols.filter((symbol) => !analysisCoveredSymbols.includes(symbol)),
+      bySymbol: analysisBySymbol,
     },
     signalPersistence: {
       recentCount: recentSignalCount,
@@ -264,7 +311,7 @@ export function renderLunaDiscoveryFunnelReport(report = {}) {
   ];
   for (const item of report.markets || []) {
     lines.push(
-      `${item.market}: market=${item.marketHours?.state || 'unknown'} candidates=${item.candidateUniverse?.activeCount || 0} recentSignals=${item.signalPersistence?.recentCount || 0} buySignals=${item.signalPersistence?.buyCount || 0} activeTriggers=${item.entryTriggers?.activeCount || 0} bottlenecks=${(item.bottlenecks || []).join(',') || 'none'}`,
+      `${item.market}: market=${item.marketHours?.state || 'unknown'} candidates=${item.candidateUniverse?.activeCount || 0} analysis=${item.analysisCoverage?.coveredCount || 0}/${item.analysisCoverage?.checkedCount || 0} recentSignals=${item.signalPersistence?.recentCount || 0} buySignals=${item.signalPersistence?.buyCount || 0} activeTriggers=${item.entryTriggers?.activeCount || 0} bottlenecks=${(item.bottlenecks || []).join(',') || 'none'}`,
     );
   }
   lines.push(`dispatch: samples=${report.autopilot?.totals?.samples || 0} candidates=${report.autopilot?.totals?.candidateCount || 0} executed=${report.autopilot?.totals?.executedCount || 0} failures=${report.autopilot?.totals?.failureCount || 0}`);

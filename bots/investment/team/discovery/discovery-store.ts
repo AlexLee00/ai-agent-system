@@ -58,7 +58,8 @@ export async function upsertCandidateSignals(
   let updated = 0;
 
   for (const sig of signals) {
-    if (!sig.symbol || typeof sig.score !== 'number') continue;
+    const symbol = normalizeCandidateSymbolForMarket(sig.symbol, market);
+    if (!symbol || typeof sig.score !== 'number') continue;
     const result = await db.get(`
       INSERT INTO candidate_universe
         (symbol, market, source, source_tier, score, confidence, reason, reason_code, evidence_ref, quality_flags, ttl_hours, raw_data, expires_at)
@@ -77,7 +78,7 @@ export async function upsertCandidateSignals(
         expires_at    = NOW() + ($13 || ' hours')::interval
       RETURNING (xmax = 0) AS inserted
     `, [
-      sig.symbol,
+      symbol,
       market,
       source,
       sourceTier,
@@ -96,6 +97,21 @@ export async function upsertCandidateSignals(
   }
 
   return { inserted, updated };
+}
+
+function normalizeCandidateSymbolForMarket(symbol: string, market: DiscoveryMarket): string | null {
+  const raw = String(symbol || '').trim().toUpperCase();
+  if (!raw) return null;
+  if (market === 'crypto') {
+    if (/^[A-Z0-9]+\/USDT$/.test(raw)) return raw;
+    if (/^[A-Z0-9]+USDT$/.test(raw) && raw.length > 6) return `${raw.slice(0, -4)}/USDT`;
+    return null;
+  }
+  if (market === 'domestic') {
+    return /^\d{6}$/.test(raw) ? raw : null;
+  }
+  if (raw.includes('/') || /^\d{6}$/.test(raw)) return null;
+  return /^[A-Z][A-Z0-9.\-]{0,12}$/.test(raw) ? raw : null;
 }
 
 // 활성 universe 조회 (expires_at 기준 필터링)

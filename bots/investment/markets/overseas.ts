@@ -69,6 +69,28 @@ function shouldRunCycle(force = false) {
   });
 }
 
+export function filterOverseasTradableSymbols(symbols = []) {
+  const filtered = [];
+  const dropped = [];
+  const seen = new Set();
+  for (const symbol of symbols || []) {
+    const normalized = String(symbol || '').trim().toUpperCase();
+    if (
+      !normalized
+      || normalized.includes('/')
+      || /^\d{6}$/.test(normalized)
+      || !/^[A-Z][A-Z0-9.-]{0,9}$/.test(normalized)
+    ) {
+      if (normalized) dropped.push(normalized);
+      continue;
+    }
+    if (seen.has(normalized)) continue;
+    seen.add(normalized);
+    filtered.push(normalized);
+  }
+  return { symbols: filtered, dropped };
+}
+
 async function mergeDiscoveryUniverseForCollect(symbols = [], limit = 100) {
   const universe = await buildDiscoveryUniverse('overseas', new Date(), {
     refresh: false,
@@ -82,9 +104,13 @@ async function mergeDiscoveryUniverseForCollect(symbols = [], limit = 100) {
     return { symbols, addedCount: 0, source: 'none' };
   }
   const merged = mergeUniqueSymbols(universe.symbols, symbols);
+  const tradable = filterOverseasTradableSymbols(merged);
+  if (tradable.dropped.length > 0) {
+    console.warn(`  ⚠️ [discovery universe] 미국주식 비거래 심볼 제외: ${tradable.dropped.slice(0, 8).join(', ')}`);
+  }
   return {
-    symbols: merged,
-    addedCount: Math.max(0, merged.length - symbols.length),
+    symbols: tradable.symbols,
+    addedCount: Math.max(0, tradable.symbols.length - symbols.length),
     source: universe.source || 'candidate_universe',
   };
 }
