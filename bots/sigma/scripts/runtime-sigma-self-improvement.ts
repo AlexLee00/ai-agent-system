@@ -1,11 +1,18 @@
 import {
   buildMonthlySelfImprovementFixture,
-  buildSelfImprovementPlan,
+  runSelfImprovementPipeline,
 } from '../ts/lib/self-improvement-pipeline.js';
 
-const plan = buildSelfImprovementPlan(buildMonthlySelfImprovementFixture(), { dryRun: true });
+function hasArg(name: string): boolean {
+  return process.argv.includes(name);
+}
+
+const dryRun = hasArg('--dry-run')
+  || (!hasArg('--apply') && !['supervised', 'autonomous'].includes(String(process.env.SIGMA_SELF_IMPROVEMENT_APPLY_MODE || '').trim().toLowerCase()));
+
+const plan = await runSelfImprovementPipeline(buildMonthlySelfImprovementFixture(), { dryRun });
 
 console.log(JSON.stringify({
   ...plan,
-  applyBlocked: 'self_improvement_apply_not_enabled_in_operator',
+  applyBlocked: plan.applyGate.applyBlocked,
 }, null, 2));
