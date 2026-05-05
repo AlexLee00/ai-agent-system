@@ -3,12 +3,12 @@
 <plist version="1.0">
 <dict>
   <key>Label</key>
-  <string>ai.sigma.weekly-review</string>
+  <string>ai.sigma.consistency-monitor</string>
 
   <key>ProgramArguments</key>
   <array>
     <string>/opt/homebrew/bin/tsx</string>
-    <string>/Users/alexlee/projects/ai-agent-system/bots/sigma/scripts/runtime-sigma-weekly-observation-review.ts</string>
+    <string>/Users/alexlee/projects/ai-agent-system/bots/sigma/scripts/runtime-sigma-consistency-monitor.ts</string>
     <string>--telegram</string>
     <string>--json</string>
   </array>
@@ -24,31 +24,19 @@
     <string>/Users/alexlee</string>
     <key>MODE</key>
     <string>ops</string>
-    <key>SIGMA_TELEGRAM_ENHANCED</key>
-    <string>true</string>
-    <key>SIGMA_HTTP_PORT</key>
-    <string>4010</string>
     <key>HUB_BASE_URL</key>
     <string>http://localhost:7788</string>
-    <key>SIGMA_WEEKLY_OBSERVATION_TELEGRAM</key>
+    <key>SIGMA_CONSISTENCY_MONITOR_TELEGRAM</key>
     <string>true</string>
   </dict>
 
   <key>StandardOutPath</key>
-  <string>/tmp/sigma-weekly-review.log</string>
+  <string>/tmp/sigma-consistency-monitor.log</string>
   <key>StandardErrorPath</key>
-  <string>/tmp/sigma-weekly-review.err.log</string>
+  <string>/tmp/sigma-consistency-monitor.err.log</string>
 
-  <!-- 매주 일요일 19:00 KST (UTC 일요일 10:00) -->
-  <key>StartCalendarInterval</key>
-  <dict>
-    <key>Weekday</key>
-    <integer>0</integer>
-    <key>Hour</key>
-    <integer>10</integer>
-    <key>Minute</key>
-    <integer>0</integer>
-  </dict>
+  <key>StartInterval</key>
+  <integer>3600</integer>
 
   <key>RunAtLoad</key>
   <false/>

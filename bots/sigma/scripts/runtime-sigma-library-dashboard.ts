@@ -1,6 +1,4 @@
 import path from 'node:path';
-import os from 'node:os';
-import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import {
   createDashboardSummary,
@@ -9,6 +7,7 @@ import {
   type SigmaLibraryEnv,
   type SelfImprovementSignal,
 } from '../ts/lib/intelligent-library.js';
+import { resolveSigmaRuntimeEnv } from './sigma-runtime-env.js';
 
 function hasArg(name: string): boolean {
   return process.argv.includes(name);
@@ -23,36 +22,6 @@ function argValue(name: string, fallback: string): string {
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const repoRoot = path.resolve(__dirname, '../../..');
-const installedLaunchAgent = path.join(os.homedir(), 'Library/LaunchAgents/ai.sigma.daily.plist');
-const repoLaunchAgent = path.join(repoRoot, 'bots/sigma/launchd/ai.sigma.daily.plist');
-
-function readLaunchdEnv(plistPath: string): SigmaLibraryEnv | null {
-  try {
-    const output = execFileSync('/usr/bin/plutil', [
-      '-extract',
-      'EnvironmentVariables',
-      'json',
-      '-o',
-      '-',
-      plistPath,
-    ], { encoding: 'utf8' });
-    return JSON.parse(output) as SigmaLibraryEnv;
-  } catch {
-    return null;
-  }
-}
-
-function resolveDashboardEnv(): { env: SigmaLibraryEnv; source: string } {
-  const installedEnv = readLaunchdEnv(installedLaunchAgent);
-  if (installedEnv) {
-    return { env: { ...(process.env as SigmaLibraryEnv), ...installedEnv }, source: installedLaunchAgent };
-  }
-  const repoEnv = readLaunchdEnv(repoLaunchAgent);
-  if (repoEnv) {
-    return { env: { ...(process.env as SigmaLibraryEnv), ...repoEnv }, source: repoLaunchAgent };
-  }
-  return { env: process.env as SigmaLibraryEnv, source: 'process.env' };
-}
 
 const sampleTexts = [
   'Sigma library memory graph connects Luna trade reflexion with Blog publishing incidents',
@@ -76,7 +45,7 @@ const sampleSignals: SelfImprovementSignal[] = [
   })),
 ];
 
-const dashboardEnv = resolveDashboardEnv();
+const dashboardEnv = resolveSigmaRuntimeEnv(repoRoot);
 const summary = createDashboardSummary({
   texts: sampleTexts,
   signals: sampleSignals,
