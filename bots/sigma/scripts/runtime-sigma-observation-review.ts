@@ -41,6 +41,13 @@ type ObservationMetrics = {
   graphNodes: number;
   graphEdges: number;
   datasets: number;
+  entityRelationships: CountMetric;
+  dataLineage: CountMetric;
+  datasetSnapshots: CountMetric;
+  directives24h: CountMetric;
+  tier2Directives24h: CountMetric;
+  mcpCalls24h: CountMetric;
+  mcpToolCalls24h: CountMetric;
   reflexion24h: CountMetric;
   agentMessages7d: CountMetric;
   sigmaCost24hUsd: CountMetric;
@@ -125,6 +132,13 @@ async function collectObservationMetrics(): Promise<ObservationMetrics> {
     reflexion24h,
     agentMessages7d,
     sigmaCost24hUsd,
+    entityRelationships,
+    dataLineage,
+    datasetSnapshots,
+    directives24h,
+    tier2Directives24h,
+    mcpCalls24h,
+    mcpToolCalls24h,
   ] = await Promise.all([
     countRows('agent', 'alarm_roundtables', `WHERE created_at >= NOW() - INTERVAL '24 hours'`),
     countRows('agent', 'hub_alarms', `WHERE received_at >= NOW() - INTERVAL '24 hours'`),
@@ -143,6 +157,13 @@ async function collectObservationMetrics(): Promise<ObservationMetrics> {
         return { ok: false, value: 0, warning: `public.sigma_llm_cost_tracking:${(error as Error).message}` };
       }
     })(),
+    countRows('sigma', 'entity_relationships'),
+    countRows('sigma', 'data_lineage'),
+    countRows('sigma', 'dataset_snapshots'),
+    countRows('public', 'sigma_v2_directive_audit', `WHERE executed_at >= NOW() - INTERVAL '24 hours'`),
+    countRows('public', 'sigma_v2_directive_audit', `WHERE tier = 2 AND outcome = 'tier2_applied' AND executed_at >= NOW() - INTERVAL '24 hours'`),
+    countRows('public', 'sigma_mcp_usage_audit', `WHERE request_at >= NOW() - INTERVAL '24 hours'`),
+    countRows('public', 'sigma_mcp_usage_audit', `WHERE endpoint = 'tools/call' AND request_at >= NOW() - INTERVAL '24 hours'`),
   ]);
 
   return {
@@ -153,6 +174,13 @@ async function collectObservationMetrics(): Promise<ObservationMetrics> {
     graphNodes: dashboard.graph.nodes,
     graphEdges: dashboard.graph.edges,
     datasets: dashboard.datasets,
+    entityRelationships,
+    dataLineage,
+    datasetSnapshots,
+    directives24h,
+    tier2Directives24h,
+    mcpCalls24h,
+    mcpToolCalls24h,
     reflexion24h,
     agentMessages7d,
     sigmaCost24hUsd,
@@ -187,6 +215,9 @@ function buildMasterReviewMessage(input: {
     `- Voyager skill candidates: ${input.metrics.voyagerSkillCandidates.value}`,
     `- graph: nodes=${input.metrics.graphNodes}, edges=${input.metrics.graphEdges}`,
     `- datasets: ${input.metrics.datasets}`,
+    `- DB meta: entity_relationships=${input.metrics.entityRelationships.value}, data_lineage=${input.metrics.dataLineage.value}, dataset_snapshots=${input.metrics.datasetSnapshots.value}`,
+    `- directives 24h: total=${input.metrics.directives24h.value}, tier2_applied=${input.metrics.tier2Directives24h.value}`,
+    `- MCP calls 24h: total=${input.metrics.mcpCalls24h.value}, tool_calls=${input.metrics.mcpToolCalls24h.value}`,
     `- reflexion 24h: ${input.metrics.reflexion24h.value}`,
     `- agent_messages 7d: ${input.metrics.agentMessages7d.value}`,
     `- Sigma LLM cost 24h: $${input.budget.dailyCostUsd.toFixed(4)} / $${input.budget.dailyLimitUsd.toFixed(2)} (${input.budget.utilizationPct.toFixed(1)}%)`,
@@ -257,6 +288,13 @@ async function main(): Promise<void> {
       graphNodes: metrics.graphNodes,
       graphEdges: metrics.graphEdges,
       datasets: metrics.datasets,
+      entityRelationships: metrics.entityRelationships.value,
+      dataLineage: metrics.dataLineage.value,
+      datasetSnapshots: metrics.datasetSnapshots.value,
+      directives24h: metrics.directives24h.value,
+      tier2Directives24h: metrics.tier2Directives24h.value,
+      mcpCalls24h: metrics.mcpCalls24h.value,
+      mcpToolCalls24h: metrics.mcpToolCalls24h.value,
       reflexion24h: metrics.reflexion24h.value,
       agentMessages7d: metrics.agentMessages7d.value,
       sigmaCost24hUsd: metrics.sigmaCost24hUsd.value,

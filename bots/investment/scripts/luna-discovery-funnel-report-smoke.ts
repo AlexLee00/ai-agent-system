@@ -39,6 +39,13 @@ async function seedFixture(symbol, historyFile) {
     [symbol],
   );
   await db.run(
+    `INSERT INTO signals
+       (symbol, action, amount_usdt, confidence, reasoning, status, exchange, trade_mode, block_code, block_reason, quality_flag, exclude_from_learning)
+     VALUES
+       ($1, 'BUY', 25, 0.10, 'reflection smoke', 'failed', 'binance', 'normal', 'synthetic_reflection_signal', 'reflection smoke signal excluded from execution queue', 'exclude_from_learning', true)`,
+    [`REFLECT_${Date.now()}`],
+  );
+  await db.run(
     `INSERT INTO entry_triggers
        (id, symbol, exchange, trigger_type, trigger_state, confidence, predictive_score, expires_at, trigger_context, trigger_meta, updated_at)
      VALUES
@@ -61,6 +68,7 @@ async function seedFixture(symbol, historyFile) {
 async function cleanupFixture(symbol) {
   await db.run(`DELETE FROM entry_triggers WHERE symbol = $1`, [symbol]).catch(() => null);
   await db.run(`DELETE FROM signals WHERE symbol = $1 AND reasoning = 'smoke funnel signal'`, [symbol]).catch(() => null);
+  await db.run(`DELETE FROM signals WHERE symbol LIKE 'REFLECT_%' AND block_code = 'synthetic_reflection_signal' AND reasoning = 'reflection smoke'`).catch(() => null);
   await db.run(`DELETE FROM discovery_source_metrics WHERE id = $1`, [`smoke-funnel-metric-${symbol}`]).catch(() => null);
   await db.run(`DELETE FROM candidate_universe WHERE symbol = $1 AND source = 'smoke_funnel'`, [symbol]).catch(() => null);
 }
@@ -84,6 +92,7 @@ export async function runLunaDiscoveryFunnelReportSmoke() {
     assert.ok(crypto, 'crypto market report should exist');
     assert.ok(crypto.candidateUniverse.activeCount >= 1, 'candidate universe should include smoke candidate');
     assert.ok(crypto.signalPersistence.buyCount >= 1, 'signal persistence should include smoke BUY');
+    assert.ok(crypto.signalPersistence.ignoredCount >= 1, 'synthetic reflection signal should be tracked as ignored');
     assert.ok(crypto.entryTriggers.activeCount >= 1, 'entry trigger should include smoke armed trigger');
     assert.equal(report.autopilot.totals.candidateCount, 1, 'autopilot dispatch candidate count should come from fixture history');
     assert.equal(report.nextAction, 'continue_observation', 'complete fixture funnel should not request repair action');
@@ -114,4 +123,3 @@ if (isDirectExecution(import.meta.url)) {
     errorPrefix: '❌ luna-discovery-funnel-report-smoke 실패:',
   });
 }
-

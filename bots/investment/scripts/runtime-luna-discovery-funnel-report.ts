@@ -76,12 +76,18 @@ async function buildMarketFunnel(market, { hours }) {
     queryRows(
       `SELECT COALESCE(status, 'unknown') AS status,
               COALESCE(action, 'unknown') AS action,
+              (
+                COALESCE(exclude_from_learning, false) = true
+                OR COALESCE(quality_flag, '') = 'exclude_from_learning'
+                OR COALESCE(block_code, '') = 'synthetic_reflection_signal'
+                OR symbol LIKE 'REFLECT_%'
+              ) AS ignored,
               COUNT(*)::int AS count,
               MAX(created_at) AS latest_created_at
        FROM signals
        WHERE exchange = $1
          AND created_at >= now() - ($2::int * INTERVAL '1 hour')
-       GROUP BY status, action
+       GROUP BY status, action, ignored
        ORDER BY count DESC`,
       [exchange, hours],
     ),
@@ -116,7 +122,14 @@ async function buildMarketFunnel(market, { hours }) {
   const candidate = candidateRows?.[0] || {};
   const signalsByStatus = {};
   const signalsByAction = {};
+  const ignoredSignalsByAction = {};
+  let ignoredSignalCount = 0;
   for (const row of signalRows || []) {
+    if (row.ignored === true || row.ignored === 't') {
+      ignoredSignalCount += number(row.count);
+      ignoredSignalsByAction[row.action] = (ignoredSignalsByAction[row.action] || 0) + number(row.count);
+      continue;
+    }
     signalsByStatus[row.status] = (signalsByStatus[row.status] || 0) + number(row.count);
     signalsByAction[row.action] = (signalsByAction[row.action] || 0) + number(row.count);
   }
@@ -153,6 +166,8 @@ async function buildMarketFunnel(market, { hours }) {
     signalPersistence: {
       recentCount: recentSignalCount,
       buyCount: recentBuySignals,
+      ignoredCount: ignoredSignalCount,
+      ignoredByAction: ignoredSignalsByAction,
       byStatus: signalsByStatus,
       byAction: signalsByAction,
     },

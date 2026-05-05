@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>ai.sigma.mcp-server</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>/opt/homebrew/bin/mix</string>
+    <string>run</string>
+    <string>--no-start</string>
+    <string>--no-halt</string>
+    <string>-e</string>
+    <string>Application.ensure_all_started(:postgrex); Application.ensure_all_started(:ecto_sql); Application.ensure_all_started(:phoenix_pubsub); Application.ensure_all_started(:bandit); case Jay.Core.Repo.start_link() do {:ok, _} -> :ok; {:error, {:already_started, _}} -> :ok; other -> IO.warn("Jay.Core.Repo start result: #{inspect(other)}") end; {:ok, _pid} = Sigma.V2.Supervisor.start_link([]); Process.sleep(:infinity)</string>
+  </array>
+
+  <key>WorkingDirectory</key>
+  <string>/Users/alexlee/projects/ai-agent-system/elixir/team_jay</string>
+
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key>
+    <string>/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/usr/bin:/bin</string>
+    <key>HOME</key>
+    <string>/Users/alexlee</string>
+    <key>MIX_ENV</key>
+    <string>dev</string>
+    <key>MODE</key>
+    <string>ops</string>
+    <key>SIGMA_V2_ENABLED</key>
+    <string>true</string>
+    <key>SIGMA_MCP_SERVER_ENABLED</key>
+    <string>true</string>
+    <key>SIGMA_HTTP_PORT</key>
+    <string>4000</string>
+    <key>SIGMA_MCP_TOKEN</key>
+    <string>__SET_IN_LOCAL_LAUNCHAGENT__</string>
+    <key>SIGMA_MAPEK_ENABLED</key>
+    <string>false</string>
+  </dict>
+
+  <key>StandardOutPath</key>
+  <string>/tmp/sigma-mcp-server.log</string>
+  <key>StandardErrorPath</key>
+  <string>/tmp/sigma-mcp-server.err.log</string>
+
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <true/>
+</dict>
+</plist>

@@ -48,6 +48,13 @@ function buildTrend(rows: ReturnType<typeof readObservationHistory>) {
     maxVoyagerSkillCandidates: sorted.reduce((max, row) => Math.max(max, row.metrics.voyagerSkillCandidates), 0),
     totalHubAlarms24hWindows: sorted.reduce((sum, row) => sum + row.metrics.hubAlarms24h, 0),
     totalRoundtables24hWindows: sorted.reduce((sum, row) => sum + row.metrics.alarmRoundtables24h, 0),
+    totalDirectives24hWindows: sorted.reduce((sum, row) => sum + (row.metrics.directives24h ?? 0), 0),
+    totalTier2Directives24hWindows: sorted.reduce((sum, row) => sum + (row.metrics.tier2Directives24h ?? 0), 0),
+    totalMcpCalls24hWindows: sorted.reduce((sum, row) => sum + (row.metrics.mcpCalls24h ?? 0), 0),
+    totalMcpToolCalls24hWindows: sorted.reduce((sum, row) => sum + (row.metrics.mcpToolCalls24h ?? 0), 0),
+    latestEntityRelationships: latest?.metrics.entityRelationships ?? 0,
+    latestDataLineage: latest?.metrics.dataLineage ?? 0,
+    latestDatasetSnapshots: latest?.metrics.datasetSnapshots ?? 0,
     totalSigmaCostUsd: sorted.reduce((sum, row) => sum + row.budget.dailyCostUsd, 0),
   };
 }

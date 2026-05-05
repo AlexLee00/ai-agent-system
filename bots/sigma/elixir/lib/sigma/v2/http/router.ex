@@ -69,9 +69,11 @@ defmodule Sigma.V2.HTTP.Router do
       end
 
     if conn.halted do
+      Sigma.V2.MCP.Audit.log_request("tools/list", nil, conn.status || 401, false, %{reason: "mcp_disabled_or_auth_failed"})
       conn
     else
       tools = Sigma.V2.MCP.Server.list_tools()
+      Sigma.V2.MCP.Audit.log_request("tools/list", nil, 200, true, %{tool_count: length(tools)})
 
       conn
       |> put_resp_content_type("application/json")
@@ -91,22 +93,29 @@ defmodule Sigma.V2.HTTP.Router do
       end
 
     if conn.halted do
+      Sigma.V2.MCP.Audit.log_request("tools/call", name, conn.status || 401, false, %{reason: "mcp_disabled_or_auth_failed"})
       conn
     else
       params = conn.body_params || %{}
 
       case Sigma.V2.MCP.Server.call_tool(name, params) do
         {:ok, result} ->
+          Sigma.V2.MCP.Audit.log_request("tools/call", name, 200, true, %{})
+
           conn
           |> put_resp_content_type("application/json")
           |> send_resp(200, Jason.encode!(result))
 
         {:error, :unknown_tool} ->
+          Sigma.V2.MCP.Audit.log_request("tools/call", name, 404, false, %{reason: "unknown_tool"})
+
           conn
           |> put_resp_content_type("application/json")
           |> send_resp(404, Jason.encode!(%{error: "unknown tool: #{name}"}))
 
         {:error, reason} ->
+          Sigma.V2.MCP.Audit.log_request("tools/call", name, 500, false, %{reason: inspect(reason)})
+
           conn
           |> put_resp_content_type("application/json")
           |> send_resp(500, Jason.encode!(%{error: inspect(reason)}))

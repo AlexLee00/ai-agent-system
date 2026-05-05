@@ -43,6 +43,8 @@ import { logMarketPipelineMetrics, runMarketCollectPipeline, summarizeNodeStatus
 import { runDecisionExecutionPipeline } from '../shared/pipeline-decision-runner.ts';
 import { finishPipelineRun } from '../shared/pipeline-db.ts';
 import { updatePipelineRunMeta } from '../shared/pipeline-db.ts';
+import { mergeUniqueSymbols } from '../shared/luna-orchestration-policy.ts';
+import { buildDiscoveryUniverse } from '../team/discovery/discovery-universe.ts';
 
 import { processAllPendingSignals, fetchUsdtBalance } from '../team/hephaestos.ts';
 import { getInvestmentSyncRuntimeConfig } from '../shared/runtime-config.ts';
@@ -87,6 +89,26 @@ async function getManagedHeldSymbols() {
     cryptoDustThresholdUsdt: dustThreshold,
   }).catch(() => ({ symbols: [] }));
   return resolved.symbols || [];
+}
+
+async function mergeDiscoveryUniverseForCollect(symbols = [], limit = 50) {
+  const universe = await buildDiscoveryUniverse('crypto', new Date(), {
+    refresh: false,
+    fallbackSymbols: symbols,
+    limit: Math.max(Number(limit || 0), symbols.length, 1),
+  }).catch((error) => {
+    console.warn(`  ⚠️ [discovery universe] 수집 전 후보 병합 실패: ${error?.message || error}`);
+    return null;
+  });
+  if (!universe?.symbols?.length) {
+    return { symbols, addedCount: 0, source: 'none' };
+  }
+  const merged = mergeUniqueSymbols(universe.symbols, symbols);
+  return {
+    symbols: merged,
+    addedCount: Math.max(0, merged.length - symbols.length),
+    source: universe.source || 'candidate_universe',
+  };
 }
 
 function fetchBtcPrice() {
@@ -395,6 +417,13 @@ if (isDirectExecution(import.meta.url)) {
       universeMeta.maintenanceDustSkippedCount = Array.isArray(maintenanceUniverse.dustSymbols) ? maintenanceUniverse.dustSymbols.length : 0;
       universeMeta.maintenanceLifecycleCounts = maintenanceUniverse.lifecycleCounts || {};
       symbols = await appendHeldSymbols(symbols, 'binance', heldSymbols);
+      const discoveryMerge = await mergeDiscoveryUniverseForCollect(symbols, cryptoMaxDynamic);
+      symbols = discoveryMerge.symbols;
+      universeMeta.discoveryUniverseAddedCount = discoveryMerge.addedCount;
+      universeMeta.discoveryUniverseSource = discoveryMerge.source;
+      if (discoveryMerge.addedCount > 0) {
+        console.log(`🌐 [discovery universe] 수집 전 후보 ${discoveryMerge.addedCount}개 추가: ${symbols.join(', ')}`);
+      }
 
       console.log(getMarketExecutionModeInfo('crypto', '암호화폐').logLine);
 

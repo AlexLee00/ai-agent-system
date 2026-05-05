@@ -19,6 +19,13 @@ export type SigmaObservationHistoryEntry = {
     graphNodes: number;
     graphEdges: number;
     datasets: number;
+    entityRelationships?: number;
+    dataLineage?: number;
+    datasetSnapshots?: number;
+    directives24h?: number;
+    tier2Directives24h?: number;
+    mcpCalls24h?: number;
+    mcpToolCalls24h?: number;
     reflexion24h: number;
     agentMessages7d: number;
     sigmaCost24hUsd: number;

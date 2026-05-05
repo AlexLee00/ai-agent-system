@@ -19,6 +19,13 @@ function nodeScript(script, args = []) {
   };
 }
 
+function marketScript(script, args = []) {
+  return {
+    command: process.execPath,
+    args: [path.join(INVESTMENT_DIR, 'markets', script), ...args],
+  };
+}
+
 export function getOpsSchedulerJobs() {
   return [
     {
@@ -33,6 +40,21 @@ export function getOpsSchedulerJobs() {
         '--markets=crypto,domestic,overseas',
         '--json',
       ]),
+    },
+    {
+      name: 'market_cycle_crypto',
+      cadence: { type: 'interval', seconds: 300 },
+      ...marketScript('crypto.ts'),
+    },
+    {
+      name: 'market_cycle_domestic',
+      cadence: { type: 'interval', seconds: 1800 },
+      ...marketScript('domestic.ts'),
+    },
+    {
+      name: 'market_cycle_overseas',
+      cadence: { type: 'interval', seconds: 1800 },
+      ...marketScript('overseas.ts'),
     },
     {
       name: 'discovery_funnel_report',
@@ -84,6 +106,10 @@ function argValue(name, fallback = null, argv = process.argv.slice(2)) {
   const prefix = `--${name}=`;
   const found = argv.find((arg) => arg.startsWith(prefix));
   return found ? found.slice(prefix.length) : fallback;
+}
+
+export function resolveOnlyJobArg(argv = process.argv.slice(2)) {
+  return argValue('only-job', argValue('job', null, argv), argv);
 }
 
 function readJsonSafe(filePath, fallback = {}) {
@@ -179,7 +205,7 @@ function runCommand(job, { timeoutMs = 10 * 60 * 1000, runner = null } = {}) {
   const result = spawnSync(job.command, job.args || [], {
     cwd: INVESTMENT_DIR,
     encoding: 'utf8',
-    timeout: timeoutMs,
+    timeout: Number(job.timeoutMs || timeoutMs),
     env: process.env,
   });
   return {
@@ -290,7 +316,7 @@ async function main() {
   const result = await runOpsScheduler({
     dryRun: hasArg('dry-run', argv),
     force: hasArg('force', argv),
-    onlyJob: argValue('job', null, argv),
+    onlyJob: resolveOnlyJobArg(argv),
     statePath: argValue('state-path', DEFAULT_STATE_PATH, argv),
     lockPath: argValue('lock-path', DEFAULT_LOCK_PATH, argv),
     writeState: !hasArg('no-write-state', argv),
