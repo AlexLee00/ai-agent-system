@@ -34,14 +34,18 @@ defmodule Darwin.V2.Rag.QueryPlanner do
     설명 없이 JSON만 출력.
     """
 
-    case Darwin.V2.LLM.Selector.complete(
-           "darwin.rag.query_planner",
-           [%{role: "user", content: prompt}],
-           max_tokens: 300,
-           urgency: :low
-         ) do
-      {:ok, content} -> parse_subqueries(content)
-      {:error, _reason} -> {:error, :llm_unavailable}
+    try do
+      case Darwin.V2.LLM.Selector.complete(
+             "darwin.rag.query_planner",
+             [%{role: "user", content: prompt}],
+             max_tokens: 300,
+             urgency: :low
+           ) do
+        {:ok, content} -> parse_subqueries(content)
+        {:error, _reason} -> {:error, :llm_unavailable}
+      end
+    rescue
+      _ -> {:error, :llm_unavailable}
     end
   end
 

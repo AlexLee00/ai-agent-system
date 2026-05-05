@@ -1,8 +1,9 @@
 defmodule Darwin.V2.Topics do
   @moduledoc "다윈 V2 JayBus + PubSub 토픽 상수."
 
-  # 기존 7단계 사이클 토픽
+  # 8단계 사이클 토픽 (DISCOVER → HYPOTHESIZE → EVALUATE → PLAN → IMPLEMENT → VERIFY → APPLY → LEARN)
   def paper_discovered,       do: "darwin.paper.discovered"
+  def paper_hypothesized,     do: "darwin.paper.hypothesized"
   def paper_evaluated,        do: "darwin.paper.evaluated"
   def paper_rejected,         do: "darwin.paper.rejected"
   def plan_ready,             do: "darwin.plan.ready"
