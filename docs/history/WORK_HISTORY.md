@@ -4,6 +4,21 @@
 > 상세 내용: `reservation-dev-summary.md` / `reservation-handoff.md`
 > 최초 작성: 2026-02-27
 
+## 2026-05-05: Darwin Phase A/B/C 통합 — 8단계 자율 R&D 사이클 완성 (93차 세션)
+
+- CODEX_DARWIN_INTELLIGENT_RND_PLAN Phase A/B/C 구현 통합
+- Phase 6~8이 이미 완료 확인 (335 tests, Shadow Mode, Community Scanner)
+- **6개 핵심 변경사항**:
+  1. `supervisor.ex`: `Darwin.V2.Cycle.Measure` 추가 (Phase C GenServer)
+  2. `cycle/apply.ex`: Apply 후 Measure.schedule_measurement + TeamConnector.notify_team 호출
+  3. `commander.ex`: plan_pipeline에 TeamConnector 우선 요청 +1.5 boost + HypothesisEngine confirmed 패턴 +0.5 boost
+  4. `commander.ex`: 시스템 프롬프트 7단계 → 8단계 (HYPOTHESIZE 추가, Sakana AI Scientist)
+  5. `ai.darwin.weekly.autonomous.plist`: Phase A/B/C Kill Switch 환경변수 3개 추가 (기본 false)
+  6. 테스트 3개 신규: `cycle/measure_test.exs` + `hypothesis_engine_test.exs` + `team_connector_test.exs`
+- 컴파일 경고 0건, 428 tests 0 failures (18 excluded)
+- 이미 완성된 모듈: `hypothesis_engine.ex`, `team_connector.ex`, `cycle/measure.ex`, 마이그레이션 3개
+- 모든 신규 Kill Switch 기본 false — 운영 안전 유지
+
 ## 2026-05-04: SIGMA Great Library Brain 최종 검증 완료 (92차 세션)
 
 - CODEX_SIGMA_LIBRARY_FINAL_VALIDATION_AND_OBSERVATION 완료

@@ -80,15 +80,21 @@ principle.critique → claude-opus-4-7
 ## 7. Kill Switch 환경변수
 
 ```
-DARWIN_V2_ENABLED=true         → V2 전체 기동
-DARWIN_CYCLE_ENABLED=true      → 7단계 사이클 기동
-DARWIN_SHADOW_MODE=false       → live shadow 비활성
-DARWIN_KILL_SWITCH=false       → live kill switch 해제
-DARWIN_TIER2_AUTO_APPLY=true   → L5 자동 적용
-DARWIN_L5_ENABLED=true         → L5 완전자율 허용
-DARWIN_MCP_ENABLED=true        → MCP Server 활성화
-DARWIN_ESPL_ENABLED=true       → ESPL 주간 진화
-DARWIN_SELF_RAG_ENABLED=true   → SelfRAG 4-gate
+DARWIN_V2_ENABLED=true                        → V2 전체 기동
+DARWIN_CYCLE_ENABLED=true                     → 8단계 사이클 기동
+DARWIN_SHADOW_MODE=false                      → live shadow 비활성
+DARWIN_KILL_SWITCH=false                      → live kill switch 해제
+DARWIN_TIER2_AUTO_APPLY=true                  → L5 자동 적용
+DARWIN_L5_ENABLED=true                        → L5 완전자율 허용
+DARWIN_MCP_ENABLED=true                       → MCP Server 활성화
+DARWIN_ESPL_ENABLED=true                      → ESPL 주간 진화
+DARWIN_SELF_RAG_ENABLED=true                  → SelfRAG 4-gate
+
+# Phase A/B/C 신규 Kill Switch (기본 false, 단계적 활성화)
+DARWIN_TEAM_INTEGRATION_ENABLED=false         → 9팀 기술 요청 통합
+DARWIN_HYPOTHESIS_ENGINE_ENABLED=false        → Hypothesis Engine (Sakana AI Scientist)
+DARWIN_HYPOTHESIS_LLM_DAILY_BUDGET_USD=2.0    → 가설 생성 일일 LLM 예산
+DARWIN_MEASURE_STAGE_ENABLED=false            → MEASURE Stage 24h/7d/30d 효과 측정
 ```
 
 ## 8. 커밋 메시지 컨벤션

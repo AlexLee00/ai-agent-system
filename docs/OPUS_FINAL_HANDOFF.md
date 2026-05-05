@@ -1,3 +1,32 @@
+# 세션 인수인계 — 2026-05-05 (Darwin Phase A/B/C 통합 완료 — 93차 세션)
+
+## 완료 요약 ✅ (93차 세션)
+
+### CODEX_DARWIN_INTELLIGENT_RND_PLAN Phase A/B/C 통합
+
+**현재 상태 (2026-05-05 기준)**:
+- Darwin V2 Phase 0~8 모두 완료 (Phase 6: Shadow Mode, Phase 7: Community Scanner, Phase 8: 335 tests)
+- Phase A/B/C 신규 통합 완료 (이미 모듈/마이그레이션 존재, 누락된 연결고리 추가)
+
+**6개 핵심 변경**:
+1. `supervisor.ex`: `Darwin.V2.Cycle.Measure` GenServer 추가 (kill_switch_on 시 기동)
+2. `cycle/apply.ex`: 적용 후 `Cycle.Measure.schedule_measurement` + `TeamConnector.notify_team` 호출
+3. `commander.ex → do_plan_pipeline`: TeamConnector pending requests (+1.5 score boost) + HypothesisEngine confirmed patterns (+0.5 boost)
+4. `commander.ex`: 시스템 프롬프트 7단계 → 8단계 사이클 (HYPOTHESIZE 추가, Sakana AI Scientist 패턴)
+5. `ai.darwin.weekly.autonomous.plist`: Kill Switch 3개 추가 (모두 false — 단계적 활성화 대기)
+6. 테스트 3개 신규: `cycle/measure_test.exs` + `hypothesis_engine_test.exs` + `team_connector_test.exs`
+
+**테스트 결과**: 428 tests, 0 failures (18 excluded, 2개는 @tag :pending — DB+GenServer 필요)
+
+**다음 단계 (마스터 명시 후)**:
+- `DARWIN_TEAM_INTEGRATION_ENABLED=true` → 9팀 기술 요청 큐 활성화
+- `DARWIN_HYPOTHESIS_ENGINE_ENABLED=true` → Hypothesis Engine 활성화 ($2/일 예산)
+- `DARWIN_MEASURE_STAGE_ENABLED=true` → 효과 측정 활성화
+- Phase G (TS → V2 완전 통합): `implementor.ts → Edison.V2`, `verifier.ts → Verifier.V2`, `applicator.ts → Applier.V2`
+- DB 마이그레이션 적용: `mix ecto.migrate` (darwin_team_tech_requests, darwin_hypotheses, darwin_effect_measurements)
+
+---
+
 # 세션 인수인계 — 2026-05-04 (SIGMA Great Library Brain 최종 검증 완료 — 92차 세션)
 
 ## 완료 요약 ✅ (92차 세션)
