@@ -168,6 +168,7 @@ function unitSmokeScripts(): string[] {
     'gemini-codeassist-oauth-direct-smoke.ts',
     'hub-unified-oauth-direct-smoke.ts',
     'claude-code-oauth-direct-smoke.ts',
+    'claude-code-oauth-policy-smoke.ts',
     'oauth-refresh-monitor-contract-smoke.ts',
     'oauth-refresh-lock-smoke.ts',
     'oauth-refresh-lock-janitor-smoke.ts',
@@ -207,6 +208,7 @@ function runNodeImportTest(hubRoot: string, relativeFile: string): void {
 function runUnit(scriptDir: string, hubRoot: string, jestBin: string, tsxBin: string): void {
   runStep(tsxStep(tsxBin, scriptDir, hubRoot, 'secret-leak-smoke.ts'));
   runNodeImportTest(hubRoot, '__tests__/alarm-policy.node.test.js');
+  runNodeImportTest(hubRoot, '__tests__/severity-decay.node.test.ts');
   runStep(unitJestStep(jestBin, hubRoot));
   runSteps(unitSmokeScripts().map((script) => {
     if (script === 'retired-gateway-residue-audit.ts') {

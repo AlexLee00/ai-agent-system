@@ -13,6 +13,18 @@ const { fetchHubSecrets } = require('./hub-client.legacy.js');
 
 const TIMEOUT_MS = 30_000;
 const HUB_ALARM_TIMEOUT_MS = Math.max(1000, Number(process.env.HUB_ALARM_TIMEOUT_MS || 5000) || 5000);
+const HUB_ALARM_CLIENT_CIRCUIT_FAILURES = Math.max(
+  1,
+  Number(process.env.HUB_ALARM_CLIENT_CIRCUIT_FAILURES || 5) || 5,
+);
+const HUB_ALARM_CLIENT_CIRCUIT_COOLDOWN_MS = Math.max(
+  1000,
+  Number(process.env.HUB_ALARM_CLIENT_CIRCUIT_COOLDOWN_MS || 60_000) || 60_000,
+);
+const HUB_ALARM_WARN_THROTTLE_MS = Math.max(
+  1000,
+  Number(process.env.HUB_ALARM_WARN_THROTTLE_MS || 60_000) || 60_000,
+);
 const STORE_PATH = path.join(env.PROJECT_ROOT, 'bots', 'hub', 'secrets-store.json');
 const TELEGRAM_RETRY_ATTEMPTS = 2;
 const RECENT_ALERT_SNAPSHOT_PATH = String(process.env.HUB_ALARM_RECENT_ALERTS_PATH || '').trim()
@@ -128,6 +140,9 @@ let _groupId: string | null = null;
 let _topicIds: TopicIdMap | null = null;
 let _telegramBotToken: string | null = null;
 let _darwinTelegramBotToken: string | null = null;
+let _hubAlarmConsecutiveFailures = 0;
+let _hubAlarmCircuitOpenUntil = 0;
+const _hubAlarmWarnLastAt = new Map<string, number>();
 
 function _normalizeAlertText(value: unknown): string {
   if (value == null) return '';
@@ -140,6 +155,31 @@ function _normalizeAlertText(value: unknown): string {
 
 function _sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function _isHubAlarmClientCircuitOpen(): boolean {
+  return Date.now() < _hubAlarmCircuitOpenUntil;
+}
+
+function _recordHubAlarmClientResult(ok: boolean): void {
+  if (ok) {
+    _hubAlarmConsecutiveFailures = 0;
+    _hubAlarmCircuitOpenUntil = 0;
+    return;
+  }
+  _hubAlarmConsecutiveFailures += 1;
+  if (_hubAlarmConsecutiveFailures >= HUB_ALARM_CLIENT_CIRCUIT_FAILURES) {
+    _hubAlarmCircuitOpenUntil = Date.now() + HUB_ALARM_CLIENT_CIRCUIT_COOLDOWN_MS;
+  }
+}
+
+function _warnHubAlarmFailure(error: unknown): void {
+  const message = String(error || 'hub_alarm_not_delivered');
+  const now = Date.now();
+  const lastAt = _hubAlarmWarnLastAt.get(message) || 0;
+  if (now - lastAt < HUB_ALARM_WARN_THROTTLE_MS) return;
+  _hubAlarmWarnLastAt.set(message, now);
+  console.warn(`[hub-alarm-client] hub alarm failed: ${message}`);
 }
 
 function _resolveTelegramRetryDelayMs(res: Response | null, body: any, fallbackMs = 3000): number {
@@ -513,6 +553,15 @@ async function _postAlarmViaHub({
   if (!hubBaseUrl || !hubToken) {
     return { ok: false, skipped: true, error: 'hub_alarm_auth_missing' };
   }
+  if (_isHubAlarmClientCircuitOpen()) {
+    return {
+      ok: false,
+      skipped: true,
+      source: 'hub_alarm',
+      error: 'hub_alarm_client_circuit_open',
+      retryAfterMs: Math.max(0, _hubAlarmCircuitOpenUntil - Date.now()),
+    };
+  }
   const url = `${hubBaseUrl}/hub/alarm`;
   const normalizedAlarmType = _inferAlarmType({ alarmType, alertLevel, message, payload });
   const normalizedVisibility = _normalizeVisibility(visibility)
@@ -566,6 +615,7 @@ async function _postAlarmViaHub({
     });
     const body = await response.json().catch(() => null);
     const accepted = _isHubAlarmDeliveryAccepted(response, body);
+    _recordHubAlarmClientResult(accepted);
     const error = !accepted
       ? (body?.reason || body?.delivery_error || body?.error || 'hub_alarm_not_delivered')
       : null;
@@ -578,6 +628,7 @@ async function _postAlarmViaHub({
     };
   } catch (error) {
     const err = error as ExecError;
+    _recordHubAlarmClientResult(false);
     return { ok: false, source: 'hub_alarm', error: err.message };
   }
 }
@@ -752,7 +803,7 @@ export async function postAlarm({
     return hubResult;
   }
   if (hubResult?.error) {
-    console.warn(`[hub-alarm-client] hub alarm failed: ${hubResult.error}`);
+    _warnHubAlarmFailure(hubResult.error);
   }
   return {
     ok: false,

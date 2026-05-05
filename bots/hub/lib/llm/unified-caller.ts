@@ -26,6 +26,13 @@ const CLAUDE_CODE_MODEL = {
   anthropic_opus: 'opus',
 };
 
+const DEFAULT_CLAUDE_CODE_TIMEOUT_MS = 90_000;
+const CLAUDE_CODE_BUDGET_FLOORS_USD = {
+  haiku: 0.05,
+  sonnet: 0.2,
+  opus: 0.5,
+};
+
 let _groqModelCache;
 function _groqModel() {
   if (!_groqModelCache) {
@@ -178,7 +185,14 @@ async function _callLegacy(req, _team) {
   const ccModel = CLAUDE_CODE_MODEL[req.abstractModel] || 'sonnet';
   const groqModel = _groqModel()[req.abstractModel] || 'llama-3.3-70b-versatile';
 
-  const primary = await callClaudeCodeOAuth({ prompt: req.prompt, model: ccModel, systemPrompt: req.systemPrompt, jsonSchema: req.jsonSchema, timeoutMs: req.timeoutMs, maxBudgetUsd: req.maxBudgetUsd });
+  const primary = await callClaudeCodeOAuth({
+    prompt: req.prompt,
+    model: ccModel,
+    systemPrompt: req.systemPrompt,
+    jsonSchema: req.jsonSchema,
+    timeoutMs: resolveClaudeCodeTimeoutMs(req.timeoutMs, ccModel),
+    maxBudgetUsd: resolveClaudeCodeMaxBudgetUsd(req.maxBudgetUsd, ccModel),
+  });
   if (primary.ok) {
     if (req.cacheEnabled && primary.result) _saveCache(req, primary).catch(() => {});
     return { ...primary, provider: 'claude-code-oauth', cacheHit: false };
@@ -219,7 +233,14 @@ async function _callRouteUnchecked(normalizedRoute, req, timeoutMs, chainEntry =
 
   if (normalizedRoute.startsWith('claude-code/')) {
     const model = normalizedRoute.split('/')[1];
-    return callClaudeCodeOAuth({ prompt: req.prompt, model, systemPrompt: req.systemPrompt, jsonSchema: req.jsonSchema, timeoutMs, maxBudgetUsd: req.maxBudgetUsd });
+    return callClaudeCodeOAuth({
+      prompt: req.prompt,
+      model,
+      systemPrompt: req.systemPrompt,
+      jsonSchema: req.jsonSchema,
+      timeoutMs: resolveClaudeCodeTimeoutMs(timeoutMs, model),
+      maxBudgetUsd: resolveClaudeCodeMaxBudgetUsd(req.maxBudgetUsd, model),
+    });
   }
   if (normalizedRoute.startsWith('groq/')) {
     const model = normalizedRoute.slice('groq/'.length);
@@ -377,6 +398,60 @@ function _normalizeRoute(route, abstractModel = 'anthropic_sonnet') {
   return route;
 }
 
+function _flagDisabled(name) {
+  return ['0', 'false', 'no', 'n', 'off'].includes(String(process.env[name] || '').trim().toLowerCase());
+}
+
+function _positiveNumber(value, fallback = null) {
+  const parsed = Number(value);
+  if (Number.isFinite(parsed) && parsed > 0) return parsed;
+  return fallback;
+}
+
+function _claudeCodeFamily(model) {
+  const value = String(model || '').toLowerCase();
+  if (value.includes('opus')) return 'opus';
+  if (value.includes('haiku')) return 'haiku';
+  return 'sonnet';
+}
+
+function _claudeCodeTimeoutFloorMs(model) {
+  const family = _claudeCodeFamily(model);
+  const envSpecific = process.env[`HUB_CLAUDE_CODE_${family.toUpperCase()}_TIMEOUT_MS`];
+  return _positiveNumber(
+    envSpecific,
+    _positiveNumber(
+      process.env.HUB_CLAUDE_CODE_TIMEOUT_MS || process.env.CLAUDE_CODE_TIMEOUT_MS,
+      DEFAULT_CLAUDE_CODE_TIMEOUT_MS,
+    ),
+  );
+}
+
+function _claudeCodeBudgetFloorUsd(model) {
+  const family = _claudeCodeFamily(model);
+  const envSpecific = process.env[`HUB_CLAUDE_CODE_${family.toUpperCase()}_MIN_BUDGET_USD`];
+  return _positiveNumber(
+    envSpecific,
+    _positiveNumber(
+      process.env.HUB_CLAUDE_CODE_MIN_BUDGET_USD,
+      CLAUDE_CODE_BUDGET_FLOORS_USD[family],
+    ),
+  );
+}
+
+function resolveClaudeCodeTimeoutMs(requestedTimeoutMs, model = 'sonnet') {
+  const requested = _positiveNumber(requestedTimeoutMs, null);
+  const floor = _claudeCodeTimeoutFloorMs(model);
+  return Math.max(requested || floor, floor);
+}
+
+function resolveClaudeCodeMaxBudgetUsd(requestedBudgetUsd, model = 'sonnet') {
+  if (_flagDisabled('HUB_CLAUDE_CODE_BUDGET_FLOOR_ENABLED')) return requestedBudgetUsd;
+  const requested = _positiveNumber(requestedBudgetUsd, null);
+  if (requested === null) return requestedBudgetUsd;
+  return Math.max(requested, _claudeCodeBudgetFloorUsd(model));
+}
+
 async function _saveCache(req, resp) {
   try {
     const cacheKey = { abstractModel: req.abstractModel, prompt: req.prompt, systemPrompt: req.systemPrompt };
@@ -394,4 +469,8 @@ async function _notifyFallbackExhaustion(req, attempts, team) {
   await sender.sendCritical('general', msg).catch(() => {});
 }
 
-module.exports = { callWithFallback };
+module.exports = {
+  callWithFallback,
+  resolveClaudeCodeTimeoutMs,
+  resolveClaudeCodeMaxBudgetUsd,
+};

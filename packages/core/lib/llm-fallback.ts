@@ -112,6 +112,8 @@ type ProviderCallResult = {
   model?: string | null;
 };
 
+const DEFAULT_CLAUDE_CODE_TIMEOUT_MS = 90_000;
+
 type OAuthStore = {
   openai_oauth?: {
     access_token?: string;
@@ -1007,8 +1009,15 @@ async function _callOpenAIOAuth({ model, maxTokens, temperature = 0.1, systemPro
   return _callOpenAICodexBackendResponses({ token: credential.token, accountId: credential.accountId, model, temperature, systemPrompt, userPrompt, timeoutMs: resolvedTimeoutMs });
 }
 
+export function resolveClaudeCodeFallbackTimeoutMs(timeoutMs: number | null | undefined = null): number {
+  const requested = Number(timeoutMs || 45_000);
+  const floor = Number(process.env.CLAUDE_CODE_TIMEOUT_MS || process.env.HUB_CLAUDE_CODE_TIMEOUT_MS || DEFAULT_CLAUDE_CODE_TIMEOUT_MS);
+  const effectiveFloor = Number.isFinite(floor) && floor > 0 ? floor : DEFAULT_CLAUDE_CODE_TIMEOUT_MS;
+  return Math.max(Number.isFinite(requested) && requested > 0 ? requested : 45_000, effectiveFloor);
+}
+
 async function _callClaudeCode({ model, maxTokens, systemPrompt, userPrompt, timeoutMs = 45000, runtimeProfile = null }: ProviderCallOptions) {
-  const effectiveTimeoutMs = Number(timeoutMs || 45000);
+  const effectiveTimeoutMs = resolveClaudeCodeFallbackTimeoutMs(timeoutMs);
   const resolvedModel = String(model || 'sonnet').replace(/^claude-code\//, '') || 'sonnet';
   const claudeSessionName = String(runtimeProfile?.claude_code_name || process.env.CLAUDE_CODE_NAME || '').trim();
   const claudeSettingsFile = String(runtimeProfile?.claude_code_settings || process.env.CLAUDE_CODE_SETTINGS || '').trim();
