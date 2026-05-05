@@ -151,24 +151,34 @@ defmodule Darwin.V2.Config do
   end
 
   @doc """
+  코드베이스 분석기 활성화 여부 (Phase H).
+  환경변수: DARWIN_CODEBASE_ANALYZER_ENABLED (기본 false)
+  """
+  def codebase_analyzer_enabled? do
+    v2_enabled?() and
+      System.get_env("DARWIN_CODEBASE_ANALYZER_ENABLED", "false") == "true"
+  end
+
+  @doc """
   현재 활성화된 Kill Switch 상태 요약.
   """
   def status do
     %{
-      v2_enabled:            v2_enabled?(),
-      kill_switch:           kill_switch?(),
-      llm_selector_enabled:  llm_selector_enabled?(),
-      shadow_mode_enabled:   shadow_mode_active?(),
-      espl_enabled:          espl_enabled?(),
-      reflexion_enabled:     reflexion_enabled?(),
-      self_rag_enabled:      self_rag_enabled?(),
-      tier2_auto_apply:      tier2_auto_apply?(),
-      mcp_server_enabled:    mcp_server_enabled?(),
-      daily_budget_usd:      daily_budget_usd(),
-      http_port:             http_port(),
-      mlx_base_url:          mlx_base_url(),
-      local_model_fast:      local_model_fast(),
-      local_model_deep:      local_model_deep()
+      v2_enabled:                  v2_enabled?(),
+      kill_switch:                 kill_switch?(),
+      llm_selector_enabled:        llm_selector_enabled?(),
+      shadow_mode_enabled:         shadow_mode_active?(),
+      espl_enabled:                espl_enabled?(),
+      reflexion_enabled:           reflexion_enabled?(),
+      self_rag_enabled:            self_rag_enabled?(),
+      tier2_auto_apply:            tier2_auto_apply?(),
+      mcp_server_enabled:          mcp_server_enabled?(),
+      codebase_analyzer_enabled:   codebase_analyzer_enabled?(),
+      daily_budget_usd:            daily_budget_usd(),
+      http_port:                   http_port(),
+      mlx_base_url:                mlx_base_url(),
+      local_model_fast:            local_model_fast(),
+      local_model_deep:            local_model_deep()
     }
   end
 end

@@ -33,6 +33,7 @@ defmodule Darwin.V2.Supervisor do
           cycle_children(kill_switch_on) ++
           support_children(kill_switch_on) ++
           maybe_shadow_children() ++
+          maybe_codebase_analyzer() ++
           maybe_http_children()
 
       Logger.info("[다윈V2] 수퍼바이저 기동 — #{length(children)}개 자식 프로세스")
@@ -117,6 +118,16 @@ defmodule Darwin.V2.Supervisor do
       end
 
     telegram ++ shadow
+  end
+
+  # Phase H: CodebaseAnalyzer 선택적 기동 (DARWIN_CODEBASE_ANALYZER_ENABLED=true)
+  defp maybe_codebase_analyzer do
+    if Darwin.V2.Config.codebase_analyzer_enabled?() do
+      Logger.info("[다윈V2] CodebaseAnalyzer 활성 — 9팀 코드 자동 분석 기동")
+      [Darwin.V2.CodebaseAnalyzer]
+    else
+      []
+    end
   end
 
   # HTTP 서버 선택적 기동 — 포트 사용 가능할 때만
