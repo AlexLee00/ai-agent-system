@@ -112,6 +112,30 @@ function syncAutoDevManifest(autoDevDir) {
   }
 
   for (const [relPath, entry] of Object.entries(manifest.entries || {})) {
+    if (!entry || typeof entry !== 'object') continue;
+    const abs = path.join(getProjectRoot(), relPath);
+    const archivedPath = normalizeRelPath(entry.archivedPath || '');
+    const archivedAbs = archivedPath ? path.join(getProjectRoot(), archivedPath) : null;
+    const hasArchivedRecord = Boolean(entry.archivedAt || archivedPath || entry.reason);
+    if (!hasArchivedRecord) continue;
+
+    if (fs.existsSync(abs)) {
+      manifest.entries[relPath] = {
+        ...entry,
+        state: 'archived',
+        updatedAt: new Date().toISOString(),
+      };
+      continue;
+    }
+
+    manifest.entries[relPath] = {
+      ...entry,
+      state: archivedAbs && fs.existsSync(archivedAbs) ? 'archived' : 'archived_missing',
+      updatedAt: new Date().toISOString(),
+    };
+  }
+
+  for (const [relPath, entry] of Object.entries(manifest.entries || {})) {
     if (!entry?.state || !['inbox', 'claimed', 'active', 'failed'].includes(String(entry.state))) continue;
     const abs = path.join(getProjectRoot(), relPath);
     if (!fs.existsSync(abs)) {

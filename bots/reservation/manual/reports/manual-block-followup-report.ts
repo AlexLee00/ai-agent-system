@@ -1,15 +1,16 @@
 #!/usr/bin/env node
-'use strict';
-
 /**
  * manual-block-followup-report.js — manual 등록 후속 네이버 차단 점검 리포트
  */
 
+import { createRequire } from 'node:module';
+import { parseArgs } from '../../lib/args.ts';
+import { outputResult, fail } from '../../lib/cli.ts';
+import { getKioskBlock, getBlockedKioskBlocks } from '../../lib/db.ts';
+import { buildReservationCliInsight } from '../../lib/cli-insight.ts';
+
+const require = createRequire(import.meta.url);
 const pgPool = require('../../../../packages/core/lib/pg-pool');
-const { parseArgs } = require('../../lib/args');
-const { outputResult, fail } = require('../../lib/cli');
-const { getKioskBlock, getBlockedKioskBlocks } = require('../../lib/db');
-const { buildReservationCliInsight } = require('../../lib/cli-insight');
 
 const SCHEMA = 'reservation';
 const ARGS = parseArgs(process.argv);
