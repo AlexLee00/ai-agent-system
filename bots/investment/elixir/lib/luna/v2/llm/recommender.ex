@@ -21,18 +21,18 @@ defmodule Luna.V2.LLM.Recommender do
   """
 
   @agent_affinity %{
-    "luna.commander"             => %{anthropic_sonnet: 1.0, anthropic_haiku: 0.6, anthropic_opus: 0.3},
-    "luna.decision_rationale"    => %{anthropic_sonnet: 1.0, anthropic_haiku: 0.5},
+    "luna.commander"             => %{anthropic_haiku: 1.0, anthropic_sonnet: 0.7, anthropic_opus: 0.3},
+    "luna.decision_rationale"    => %{anthropic_haiku: 1.0, anthropic_sonnet: 0.8},
     "luna.rag.query_planner"     => %{anthropic_haiku: 1.0},
     "luna.rag.multi_source"      => %{anthropic_haiku: 1.0},
     "luna.rag.quality_evaluator" => %{anthropic_haiku: 1.0, anthropic_sonnet: 0.7},
-    "luna.rag.response_synth"    => %{anthropic_sonnet: 1.0, anthropic_haiku: 0.6},
+    "luna.rag.response_synth"    => %{anthropic_haiku: 1.0, anthropic_sonnet: 0.8},
     "luna.self_rewarding_judge"  => %{anthropic_haiku: 1.0, anthropic_sonnet: 0.7},
-    "luna.reflexion"             => %{anthropic_sonnet: 1.0, anthropic_haiku: 0.6},
+    "luna.reflexion"             => %{anthropic_haiku: 1.0, anthropic_sonnet: 0.7},
     "luna.espl"                  => %{anthropic_haiku: 1.0, anthropic_sonnet: 0.7},
     "luna.principle.critique"    => %{anthropic_opus: 1.0, anthropic_sonnet: 0.8},
-    "luna.mapek.analyzer"        => %{anthropic_sonnet: 1.0, anthropic_haiku: 0.6},
-    "luna.strategy.validator"    => %{anthropic_sonnet: 1.0, anthropic_haiku: 0.5},
+    "luna.mapek.analyzer"        => %{anthropic_haiku: 1.0, anthropic_sonnet: 0.7},
+    "luna.strategy.validator"    => %{anthropic_haiku: 1.0, anthropic_sonnet: 0.8},
     # 레거시 호환
     "luna.rag_query_planner"     => %{anthropic_haiku: 1.0},
   }

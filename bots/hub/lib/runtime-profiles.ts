@@ -56,8 +56,8 @@ export const PROFILES: Record<string, TeamProfiles> = {
       "claude_code_settings": CLAUDE_CODE_SETTINGS["blog-writer"],
       "local_llm_base_url": "http://127.0.0.1:11434",
       "primary_routes": [
-        "claude-code/sonnet",
-        "openai-oauth/gpt-5.4"
+        "openai-oauth/gpt-5.4",
+        "claude-code/sonnet"
       ],
       "fallback_routes": [
         GROQ_SCOUT_ROUTE,
@@ -70,8 +70,8 @@ export const PROFILES: Record<string, TeamProfiles> = {
       "claude_code_settings": CLAUDE_CODE_SETTINGS["blog-writer"],
       "local_llm_base_url": "http://127.0.0.1:11434",
       "primary_routes": [
-        "claude-code/sonnet",
-        "openai-oauth/gpt-5.4"
+        "openai-oauth/gpt-5.4",
+        "claude-code/sonnet"
       ],
       "fallback_routes": [
         GROQ_SCOUT_ROUTE,
@@ -97,8 +97,8 @@ export const PROFILES: Record<string, TeamProfiles> = {
       "claude_code_settings": CLAUDE_CODE_SETTINGS["blog-writer"],
       "local_llm_base_url": "http://127.0.0.1:11434",
       "primary_routes": [
-        "claude-code/sonnet",
-        "openai-oauth/gpt-5.4"
+        "openai-oauth/gpt-5.4",
+        "claude-code/sonnet"
       ],
       "fallback_routes": [
         GROQ_VERSATILE_ROUTE
@@ -164,8 +164,8 @@ export const PROFILES: Record<string, TeamProfiles> = {
       "claude_code_settings": CLAUDE_CODE_SETTINGS["luna-ops"],
       "local_llm_base_url": "http://127.0.0.1:11434",
       "primary_routes": [
-        "claude-code/sonnet",
-        "openai-oauth/gpt-5.4"
+        "openai-oauth/gpt-5.4",
+        "claude-code/sonnet"
       ],
       "fallback_routes": [
         GROQ_SCOUT_ROUTE,
@@ -278,8 +278,8 @@ export const PROFILES: Record<string, TeamProfiles> = {
       "claude_code_settings": CLAUDE_CODE_SETTINGS["darwin-research"],
       "local_llm_base_url": "http://127.0.0.1:11434",
       "primary_routes": [
-        "claude-code/sonnet",
-        "openai-oauth/gpt-5.4"
+        "openai-oauth/gpt-5.4",
+        "claude-code/sonnet"
       ],
       "fallback_routes": [
         GROQ_SCOUT_ROUTE,
@@ -293,8 +293,8 @@ export const PROFILES: Record<string, TeamProfiles> = {
       "claude_code_settings": CLAUDE_CODE_SETTINGS["darwin-research"],
       "local_llm_base_url": "http://127.0.0.1:11434",
       "primary_routes": [
-        "claude-code/sonnet",
-        "openai-oauth/gpt-5.4"
+        "openai-oauth/gpt-5.4",
+        "claude-code/sonnet"
       ],
       "fallback_routes": [
         GROQ_SCOUT_ROUTE,
@@ -322,8 +322,8 @@ export const PROFILES: Record<string, TeamProfiles> = {
       "claude_code_settings": CLAUDE_CODE_SETTINGS["darwin-research"],
       "local_llm_base_url": "http://127.0.0.1:11434",
       "primary_routes": [
-        "claude-code/sonnet",
-        "openai-oauth/gpt-5.4"
+        "openai-oauth/gpt-5.4",
+        "claude-code/sonnet"
       ],
       "fallback_routes": [
         GROQ_SCOUT_ROUTE
@@ -337,8 +337,8 @@ export const PROFILES: Record<string, TeamProfiles> = {
       "claude_code_settings": CLAUDE_CODE_SETTINGS["justin-legal"],
       "local_llm_base_url": "http://127.0.0.1:11434",
       "primary_routes": [
-        "claude-code/sonnet",
-        "openai-oauth/gpt-5.4"
+        "openai-oauth/gpt-5.4",
+        "claude-code/sonnet"
       ],
       "fallback_routes": [
         GROQ_SCOUT_ROUTE,
@@ -351,8 +351,8 @@ export const PROFILES: Record<string, TeamProfiles> = {
       "claude_code_settings": CLAUDE_CODE_SETTINGS["justin-legal"],
       "local_llm_base_url": "http://127.0.0.1:11434",
       "primary_routes": [
-        "claude-code/sonnet",
-        "openai-oauth/gpt-5.4"
+        "openai-oauth/gpt-5.4",
+        "claude-code/sonnet"
       ],
       "fallback_routes": [
         GROQ_SCOUT_ROUTE,
@@ -378,8 +378,8 @@ export const PROFILES: Record<string, TeamProfiles> = {
       "claude_code_settings": CLAUDE_CODE_SETTINGS["justin-legal"],
       "local_llm_base_url": "http://127.0.0.1:11434",
       "primary_routes": [
-        "claude-code/sonnet",
-        "openai-oauth/gpt-5.4"
+        "openai-oauth/gpt-5.4",
+        "claude-code/sonnet"
       ],
       "fallback_routes": [
         GROQ_SCOUT_ROUTE,
@@ -408,8 +408,8 @@ export const PROFILES: Record<string, TeamProfiles> = {
       "claude_code_settings": CLAUDE_CODE_SETTINGS["sigma-data"],
       "local_llm_base_url": "http://127.0.0.1:11434",
       "primary_routes": [
-        "claude-code/sonnet",
-        "openai-oauth/gpt-5.4"
+        "openai-oauth/gpt-5.4",
+        "claude-code/sonnet"
       ],
       "fallback_routes": [
         GROQ_SCOUT_ROUTE,
@@ -537,11 +537,11 @@ export const PROFILES: Record<string, TeamProfiles> = {
       "claude_code_settings": CLAUDE_CODE_SETTINGS["claude-ops"],
       "local_llm_base_url": "http://127.0.0.1:11434",
       "primary_routes": [
-        "claude-code/sonnet",
-        GROQ_SCOUT_ROUTE
+        GROQ_SCOUT_ROUTE,
+        GEMINI_CLI_FLASH_ROUTE
       ],
       "fallback_routes": [
-        GEMINI_CLI_FLASH_ROUTE
+        "claude-code/haiku"
       ]
     },
     "summary": {

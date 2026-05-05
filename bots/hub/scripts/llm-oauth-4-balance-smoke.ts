@@ -66,8 +66,8 @@ function main(): void {
     () => {
       assert.equal(
         providerFromChain('investment.agent_policy', { agentName: 'default' }),
-        'claude-code',
-        'oauth4 selector without explicit percent must default to 100%, not legacy',
+        'openai-oauth',
+        'oauth4 selector without explicit percent must default to the cost-balanced v3 route, not legacy',
       );
     },
   );
@@ -154,7 +154,7 @@ function main(): void {
   for (const key of ['sigma.agent_policy', 'darwin.agent_policy']) {
     const chain = selector.selectLLMChain(key, { ...selectorOptions, agentName: 'commander' });
     assert(chain.length > 0, `${key} chain must be non-empty`);
-    assert.equal(chain[0]?.provider, 'claude-code', `${key} primary must migrate to claude-code in oauth4`);
+    assert.equal(chain[0]?.provider, 'openai-oauth', `${key} commander primary should keep Sonnet as fallback, not default`);
   }
 
   const total = Object.values(providerCounts).reduce((acc, value) => acc + value, 0);
@@ -165,11 +165,22 @@ function main(): void {
     groqPct: Number(pct(providerCounts.groq, total).toFixed(2)),
   };
 
-  assert(shares.claudeCodePct >= 45 && shares.claudeCodePct <= 65, `claude-code share out of range: ${shares.claudeCodePct}%`);
-  assert(shares.openaiPct >= 15 && shares.openaiPct <= 35, `openai share out of range: ${shares.openaiPct}%`);
-  assert(shares.geminiPct >= 10 && shares.geminiPct <= 30, `gemini share out of range: ${shares.geminiPct}%`);
+  assert(shares.claudeCodePct >= 5 && shares.claudeCodePct <= 25, `claude-code share out of range: ${shares.claudeCodePct}%`);
+  assert(shares.openaiPct >= 45 && shares.openaiPct <= 65, `openai share out of range: ${shares.openaiPct}%`);
+  assert(shares.geminiPct >= 15 && shares.geminiPct <= 35, `gemini share out of range: ${shares.geminiPct}%`);
   assert(shares.groqPct >= 5 && shares.groqPct <= 20, `groq share out of range: ${shares.groqPct}%`);
   assert.equal(providerCounts.other, 0, 'unexpected provider should not appear in oauth4 matrix');
+
+  const { PROFILES } = require('../lib/runtime-profiles.ts');
+  const sonnetPrimaryProfiles: string[] = [];
+  for (const [team, profiles] of Object.entries(PROFILES || {})) {
+    for (const [profile, config] of Object.entries(profiles as Record<string, any>)) {
+      if ((config as any)?.primary_routes?.[0] === 'claude-code/sonnet') {
+        sonnetPrimaryProfiles.push(`${team}.${profile}`);
+      }
+    }
+  }
+  assert.equal(sonnetPrimaryProfiles.length, 0, `runtime profiles must not start with Sonnet: ${sonnetPrimaryProfiles.join(', ')}`);
 
   console.log(JSON.stringify({
     ok: true,
@@ -177,6 +188,7 @@ function main(): void {
     staged_rollout: staged,
     provider_counts: providerCounts,
     provider_shares: shares,
+    sonnet_primary_profiles: sonnetPrimaryProfiles.length,
     anthropic_primary: 0,
   }, null, 2));
 }

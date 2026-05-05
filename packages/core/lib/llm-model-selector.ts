@@ -495,16 +495,16 @@ const TEAM_SELECTOR_DEFAULTS_OAUTH4: Record<string, any> = deepMerge(clone(TEAM_
       ],
     },
     'alarm.interpreter.critical': {
-      primary: { provider: 'claude-code', model: 'claude-code/sonnet', maxTokens: 400, temperature: 0.1 },
+      primary: { provider: 'openai-oauth', model: 'gpt-5.4', maxTokens: 400, temperature: 0.1 },
       fallbacks: [
-        { provider: 'openai-oauth', model: 'gpt-5.4', maxTokens: 400, temperature: 0.1 },
+        { provider: 'claude-code', model: 'claude-code/sonnet', maxTokens: 400, temperature: 0.1 },
         { provider: 'groq', model: 'qwen/qwen3-32b', maxTokens: 400, temperature: 0.1 },
       ],
     },
     'roundtable.jay': {
-      primary: { provider: 'claude-code', model: 'claude-code/sonnet', maxTokens: 500, temperature: 0.2 },
+      primary: { provider: 'openai-oauth', model: 'gpt-5.4', maxTokens: 500, temperature: 0.2 },
       fallbacks: [
-        { provider: 'openai-oauth', model: 'gpt-5.4', maxTokens: 500, temperature: 0.2 },
+        { provider: 'claude-code', model: 'claude-code/sonnet', maxTokens: 500, temperature: 0.2 },
         { provider: 'groq', model: 'qwen/qwen3-32b', maxTokens: 500, temperature: 0.2 },
       ],
     },
@@ -523,25 +523,25 @@ const TEAM_SELECTOR_DEFAULTS_OAUTH4: Record<string, any> = deepMerge(clone(TEAM_
       ],
     },
     'roundtable.judge': {
-      primary: { provider: 'claude-code', model: 'claude-code/opus', maxTokens: 600, temperature: 0.1 },
+      primary: { provider: 'openai-oauth', model: 'gpt-5.4', maxTokens: 600, temperature: 0.1 },
       fallbacks: [
-        { provider: 'openai-oauth', model: 'gpt-5.4', maxTokens: 600, temperature: 0.1 },
+        { provider: 'claude-code', model: 'claude-code/opus', maxTokens: 600, temperature: 0.1 },
         { provider: 'groq', model: 'qwen/qwen3-32b', maxTokens: 600, temperature: 0.1 },
       ],
     },
     _fallback: {
-      primary: { provider: 'claude-code', model: 'claude-code/haiku', maxTokens: 300, temperature: 0.1 },
+      primary: { provider: 'gemini-cli-oauth', model: GEMINI_CLI_FLASH_LITE_MODEL, maxTokens: 300, temperature: 0.1 },
       fallbacks: [
-        { provider: 'gemini-cli-oauth', model: GEMINI_CLI_FLASH_LITE_MODEL, maxTokens: 300, temperature: 0.1 },
+        { provider: 'claude-code', model: 'claude-code/haiku', maxTokens: 300, temperature: 0.1 },
         { provider: 'groq', model: 'llama-3.1-8b-instant', maxTokens: 300, temperature: 0.1 },
       ],
     },
   },
   claude: {
     dexter: {
-      primary: { provider: 'claude-code', model: 'claude-code/sonnet', maxTokens: 1500, temperature: 0.2 },
+      primary: { provider: 'openai-oauth', model: 'gpt-5.4', maxTokens: 1500, temperature: 0.2 },
       fallbacks: [
-        { provider: 'openai-oauth', model: 'gpt-5.4', maxTokens: 1500, temperature: 0.2 },
+        { provider: 'claude-code', model: 'claude-code/sonnet', maxTokens: 1500, temperature: 0.2 },
         { provider: 'gemini-cli-oauth', model: GEMINI_CLI_FLASH_MODEL, maxTokens: 1500, temperature: 0.2 },
       ],
     },
@@ -553,25 +553,25 @@ const TEAM_SELECTOR_DEFAULTS_OAUTH4: Record<string, any> = deepMerge(clone(TEAM_
       ],
     },
     lead: {
-      primary: { provider: 'claude-code', model: 'claude-code/sonnet', maxTokens: 1500, temperature: 0.1 },
+      primary: { provider: 'openai-oauth', model: 'gpt-5.4', maxTokens: 1500, temperature: 0.1 },
       fallbacks: [
-        { provider: 'openai-oauth', model: 'gpt-5.4', maxTokens: 1500, temperature: 0.1 },
+        { provider: 'claude-code', model: 'claude-code/sonnet', maxTokens: 1500, temperature: 0.1 },
         { provider: 'groq', model: 'qwen/qwen3-32b', maxTokens: 1500, temperature: 0.1 },
       ],
     },
     _fallback: {
-      primary: { provider: 'claude-code', model: 'claude-code/sonnet', maxTokens: 2000, temperature: 0.2 },
+      primary: { provider: 'openai-oauth', model: 'gpt-5.4', maxTokens: 2000, temperature: 0.2 },
       fallbacks: [
-        { provider: 'openai-oauth', model: 'gpt-5.4', maxTokens: 2000, temperature: 0.2 },
+        { provider: 'claude-code', model: 'claude-code/sonnet', maxTokens: 2000, temperature: 0.2 },
         { provider: 'gemini-cli-oauth', model: GEMINI_CLI_FLASH_MODEL, maxTokens: 2000, temperature: 0.2 },
       ],
     },
   },
   blog: {
     'book_review.preview': {
-      primary: { provider: 'claude-code', model: 'claude-code/opus', maxTokens: 2600, temperature: 0.7, timeoutMs: 45_000 },
+      primary: { provider: 'openai-oauth', model: 'gpt-5.4', maxTokens: 2600, temperature: 0.7, timeoutMs: 25_000 },
       fallbacks: [
-        { provider: 'openai-oauth', model: 'gpt-5.4', maxTokens: 2600, temperature: 0.7, timeoutMs: 25_000 },
+        { provider: 'claude-code', model: 'claude-code/haiku', maxTokens: 2600, temperature: 0.7, timeoutMs: 45_000 },
         { provider: 'gemini-cli-oauth', model: GEMINI_CLI_FLASH_MODEL, maxTokens: 2600, temperature: 0.7, timeoutMs: 25_000 },
       ],
     },
@@ -764,6 +764,24 @@ function resolveFromTeamDefault(selectorKey: string, options: SelectorOptions = 
 
 function routeEntryFromAbstractRoute(route: string, selectorVersion: TeamSelectorVersion = TEAM_SELECTOR_VERSION_LEGACY): LLMChainEntry {
   const normalized = String(route || 'anthropic_haiku');
+  if (normalized === 'openai_perf') {
+    return { provider: 'openai-oauth', model: 'gpt-5.4', maxTokens: 2048, temperature: 0.1 };
+  }
+  if (normalized === 'openai_mini') {
+    return { provider: 'openai-oauth', model: 'gpt-4o-mini', maxTokens: 1024, temperature: 0.1 };
+  }
+  if (normalized === 'gemini_flash') {
+    return { provider: 'gemini-cli-oauth', model: GEMINI_CLI_FLASH_MODEL, maxTokens: 2048, temperature: 0.1 };
+  }
+  if (normalized === 'gemini_flash_lite') {
+    return { provider: 'gemini-cli-oauth', model: GEMINI_CLI_FLASH_LITE_MODEL, maxTokens: 1024, temperature: 0.1 };
+  }
+  if (normalized === 'groq_scout') {
+    return { provider: 'groq', model: 'llama-3.1-8b-instant', maxTokens: 1024, temperature: 0.1 };
+  }
+  if (normalized === 'qwen_deep') {
+    return { provider: 'groq', model: 'qwen/qwen3-32b', maxTokens: 2048, temperature: 0.1 };
+  }
   if (normalized.includes('opus')) {
     return { provider: 'claude-code', model: 'claude-code/opus', maxTokens: 2048, temperature: 0.1 };
   }
@@ -883,18 +901,18 @@ function buildSelectorRegistry(): Record<string, any> {
     'sigma.agent_policy': (options: SelectorOptions = {}) => {
       const { agentName } = options;
       const SIGMA_ROUTES: Record<string, { route: string; fallback: string[] }> = {
-        commander:                  { route: 'anthropic_sonnet', fallback: ['anthropic_haiku'] },
-        'pod.risk':                 { route: 'anthropic_sonnet', fallback: ['anthropic_haiku'] },
+        commander:                  { route: 'openai_perf', fallback: ['anthropic_sonnet', 'anthropic_haiku'] },
+        'pod.risk':                 { route: 'openai_perf', fallback: ['anthropic_sonnet', 'anthropic_haiku'] },
         'pod.growth':               { route: 'anthropic_haiku', fallback: [] },
         'pod.trend':                { route: 'anthropic_haiku', fallback: [] },
         'skill.data_quality':       { route: 'anthropic_haiku', fallback: [] },
-        'skill.causal':             { route: 'anthropic_sonnet', fallback: ['anthropic_haiku'] },
-        'skill.experiment_design':  { route: 'anthropic_sonnet', fallback: ['anthropic_haiku'] },
+        'skill.causal':             { route: 'openai_perf', fallback: ['anthropic_sonnet', 'anthropic_haiku'] },
+        'skill.experiment_design':  { route: 'gemini_flash', fallback: ['anthropic_sonnet', 'anthropic_haiku'] },
         'skill.feature_planner':    { route: 'anthropic_haiku', fallback: [] },
         'skill.observability':      { route: 'anthropic_haiku', fallback: [] },
         'principle.self_critique':  { route: 'anthropic_opus', fallback: ['anthropic_sonnet'] },
-        reflexion:                  { route: 'anthropic_sonnet', fallback: ['anthropic_haiku'] },
-        espl:                       { route: 'anthropic_sonnet', fallback: ['anthropic_haiku'] },
+        reflexion:                  { route: 'openai_perf', fallback: ['anthropic_sonnet', 'anthropic_haiku'] },
+        espl:                       { route: 'gemini_flash', fallback: ['anthropic_sonnet', 'anthropic_haiku'] },
         self_rewarding_judge:       { route: 'anthropic_sonnet', fallback: ['anthropic_haiku'] },
         'mapek.monitor':            { route: 'anthropic_haiku', fallback: [] },
         'rag.query_planner':        { route: 'anthropic_haiku', fallback: [] },
@@ -912,29 +930,29 @@ function buildSelectorRegistry(): Record<string, any> {
       const { agentName } = options;
       const DARWIN_ROUTES: Record<string, { route: string; fallback: string[] }> = {
         'darwin.scanner':              { route: 'anthropic_haiku', fallback: ['anthropic_sonnet'] },
-        'darwin.evaluator':            { route: 'anthropic_sonnet', fallback: ['anthropic_haiku'] },
-        'darwin.planner':              { route: 'anthropic_sonnet', fallback: ['anthropic_haiku'] },
+        'darwin.evaluator':            { route: 'openai_perf', fallback: ['anthropic_sonnet', 'anthropic_haiku'] },
+        'darwin.planner':              { route: 'openai_perf', fallback: ['anthropic_sonnet', 'anthropic_haiku'] },
         'darwin.edison':               { route: 'anthropic_sonnet', fallback: ['anthropic_haiku'] },
         'darwin.verifier':             { route: 'anthropic_sonnet', fallback: ['anthropic_haiku'] },
         'darwin.commander':            { route: 'anthropic_opus', fallback: ['anthropic_sonnet'] },
-        'darwin.reflexion':            { route: 'anthropic_sonnet', fallback: ['anthropic_haiku'] },
+        'darwin.reflexion':            { route: 'openai_perf', fallback: ['anthropic_sonnet', 'anthropic_haiku'] },
         'darwin.espl':                 { route: 'anthropic_haiku', fallback: ['anthropic_sonnet'] },
         'darwin.self_rag':             { route: 'anthropic_haiku', fallback: [] },
         'darwin.self_rewarding_judge': { route: 'anthropic_haiku', fallback: ['anthropic_sonnet'] },
         'darwin.rag.query_planner':    { route: 'anthropic_haiku', fallback: [] },
         'darwin.rag.synthesizer':      { route: 'anthropic_haiku', fallback: ['anthropic_sonnet'] },
-        commander:                     { route: 'anthropic_sonnet', fallback: ['anthropic_haiku'] },
-        evaluator:                     { route: 'anthropic_sonnet', fallback: ['anthropic_haiku'] },
-        planner:                       { route: 'anthropic_sonnet', fallback: ['anthropic_haiku'] },
-        implementor:                   { route: 'anthropic_sonnet', fallback: ['anthropic_haiku'] },
+        commander:                     { route: 'openai_perf', fallback: ['anthropic_sonnet', 'anthropic_haiku'] },
+        evaluator:                     { route: 'openai_perf', fallback: ['anthropic_sonnet', 'anthropic_haiku'] },
+        planner:                       { route: 'openai_perf', fallback: ['anthropic_sonnet', 'anthropic_haiku'] },
+        implementor:                   { route: 'openai_perf', fallback: ['anthropic_sonnet', 'anthropic_haiku'] },
         verifier:                      { route: 'anthropic_sonnet', fallback: ['anthropic_haiku'] },
         applier:                       { route: 'anthropic_haiku', fallback: [] },
         learner:                       { route: 'anthropic_haiku', fallback: [] },
         scanner:                       { route: 'anthropic_haiku', fallback: [] },
-        reflexion:                     { route: 'anthropic_sonnet', fallback: ['anthropic_haiku'] },
+        reflexion:                     { route: 'openai_perf', fallback: ['anthropic_sonnet', 'anthropic_haiku'] },
         'self_rag.retrieve':           { route: 'anthropic_haiku', fallback: [] },
         'self_rag.relevance':          { route: 'anthropic_haiku', fallback: [] },
-        'espl.crossover':              { route: 'anthropic_sonnet', fallback: ['anthropic_haiku'] },
+        'espl.crossover':              { route: 'gemini_flash', fallback: ['anthropic_sonnet', 'anthropic_haiku'] },
         'espl.mutation':               { route: 'anthropic_haiku', fallback: [] },
         'principle.critique':          { route: 'anthropic_opus', fallback: ['anthropic_sonnet'] },
       };
@@ -970,24 +988,24 @@ function buildSelectorRegistry(): Record<string, any> {
         sweeper: 'local_fast',
       };
       const defaultRoutesOauth4: Record<string, string> = {
-        default: 'claude_sonnet',
-        luna: 'claude_sonnet',
+        default: 'openai_perf',
+        luna: 'openai_perf',
         nemesis: 'claude_haiku',
         oracle: 'groq_scout',
         hermes: 'gemini_flash_lite',
         sophia: 'openai_mini',
-        zeus: 'claude_opus',
-        athena: 'claude_sonnet',
+        zeus: 'openai_perf',
+        athena: 'openai_mini',
         argos: 'openai_mini',
         scout: 'gemini_flash',
         chronos: 'openai_perf',
         aria: 'gemini_flash',
-        'adaptive-risk': 'claude_sonnet',
+        'adaptive-risk': 'groq_with_local',
         sentinel: 'openai_mini',
-        hephaestos: 'claude_sonnet',
-        hanul: 'claude_opus',
+        hephaestos: 'openai_mini',
+        hanul: 'openai_perf',
         budget: 'openai_mini',
-        kairos: 'claude_sonnet',
+        kairos: 'openai_perf',
         'stock-flow': 'groq_with_local',
         sweeper: 'gemini_flash_lite',
       };

@@ -18,10 +18,7 @@ defmodule Luna.V2.LLM.RecommenderTest do
         task_type: :trade_evaluation
       })
       # haiku는 urgency:high에서 +0.3, trade_evaluation에서 +0.3 보너스
-      # sonnet은 urgency:high에서 -0.2, 따라서 haiku가 선택되거나 sonnet 점수가 낮아야 함
-      # luna.commander의 base affinity: sonnet=1.0, haiku=0.6
-      # sonnet total: 1.0 - 0.2 + 0.1 = 0.9
-      # haiku total: 0.6 + 0.3 + 0.3 = 1.2 → haiku 우선
+      # sonnet은 fallback으로 유지하되 기본 affinity는 haiku 우선으로 낮춘다.
       assert result.primary == :anthropic_haiku
     end
 

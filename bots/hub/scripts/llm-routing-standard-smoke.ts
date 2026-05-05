@@ -146,8 +146,8 @@ function main() {
   const lunaDefault = selector.describeAgentModel('luna', 'default');
   assert.equal(
     lunaDefault?.chain?.[0]?.provider,
-    'claude-code',
-    'luna/default must start with Claude Code OAuth (v3.0_oauth_4 primary route)',
+    'openai-oauth',
+    'luna/default must start with the cost-balanced OpenAI OAuth route and keep Claude Code as fallback',
   );
 
   for (const agent of REQUIRED_ORCHESTRATOR_AGENTS) {

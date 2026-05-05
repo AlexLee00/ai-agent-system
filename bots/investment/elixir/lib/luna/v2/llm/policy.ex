@@ -7,31 +7,31 @@ defmodule Luna.V2.LLM.Policy do
   @behaviour Jay.Core.LLM.Policy
 
   @agent_policies %{
-    "luna.commander"             => %{route: :anthropic_sonnet, fallback: [:anthropic_haiku]},
-    "luna.decision_rationale"    => %{route: :anthropic_sonnet, fallback: [:anthropic_haiku]},
+    "luna.commander"             => %{route: :anthropic_haiku,  fallback: [:anthropic_sonnet]},
+    "luna.decision_rationale"    => %{route: :anthropic_haiku,  fallback: [:anthropic_sonnet]},
     "luna.rag.query_planner"     => %{route: :anthropic_haiku,  fallback: []},
     "luna.rag_query_planner"     => %{route: :anthropic_haiku,  fallback: []},
     "luna.rag.multi_source"      => %{route: :anthropic_haiku,  fallback: []},
     "luna.rag.quality_evaluator" => %{route: :anthropic_haiku,  fallback: [:anthropic_sonnet]},
-    "luna.rag.response_synth"    => %{route: :anthropic_sonnet, fallback: [:anthropic_haiku]},
+    "luna.rag.response_synth"    => %{route: :anthropic_haiku,  fallback: [:anthropic_sonnet]},
     "luna.self_rewarding_judge"  => %{route: :anthropic_haiku,  fallback: [:anthropic_sonnet]},
-    "luna.reflexion"             => %{route: :anthropic_sonnet, fallback: [:anthropic_haiku]},
+    "luna.reflexion"             => %{route: :anthropic_haiku,  fallback: [:anthropic_sonnet]},
     "luna.espl"                  => %{route: :anthropic_haiku,  fallback: [:anthropic_sonnet]},
     "luna.principle.critique"    => %{route: :anthropic_opus,   fallback: [:anthropic_sonnet]},
-    "luna.mapek.analyzer"        => %{route: :anthropic_sonnet, fallback: [:anthropic_haiku]},
-    "luna.strategy.validator"    => %{route: :anthropic_sonnet, fallback: [:anthropic_haiku]},
+    "luna.mapek.analyzer"        => %{route: :anthropic_haiku,  fallback: [:anthropic_sonnet]},
+    "luna.strategy.validator"    => %{route: :anthropic_haiku,  fallback: [:anthropic_sonnet]},
   }
 
   @agent_affinity %{
-    "luna.commander"              => %{anthropic_sonnet: 1.0, anthropic_haiku: 0.6, anthropic_opus: 0.3},
-    "luna.decision_rationale"     => %{anthropic_sonnet: 1.0, anthropic_haiku: 0.5},
+    "luna.commander"              => %{anthropic_haiku: 1.0, anthropic_sonnet: 0.7, anthropic_opus: 0.3},
+    "luna.decision_rationale"     => %{anthropic_haiku: 1.0, anthropic_sonnet: 0.8},
     "luna.rag.query_planner"      => %{anthropic_haiku: 1.0},
     "luna.self_rewarding_judge"   => %{anthropic_haiku: 1.0, anthropic_sonnet: 0.7},
-    "luna.reflexion"              => %{anthropic_sonnet: 1.0, anthropic_haiku: 0.6},
+    "luna.reflexion"              => %{anthropic_haiku: 1.0, anthropic_sonnet: 0.7},
     "luna.espl"                   => %{anthropic_haiku: 1.0, anthropic_sonnet: 0.7},
     "luna.principle.critique"     => %{anthropic_opus: 1.0, anthropic_sonnet: 0.8},
-    "luna.mapek.analyzer"         => %{anthropic_sonnet: 1.0, anthropic_haiku: 0.6},
-    "luna.strategy.validator"     => %{anthropic_sonnet: 1.0, anthropic_haiku: 0.5},
+    "luna.mapek.analyzer"         => %{anthropic_haiku: 1.0, anthropic_sonnet: 0.7},
+    "luna.strategy.validator"     => %{anthropic_haiku: 1.0, anthropic_sonnet: 0.8},
   }
 
   @impl true
