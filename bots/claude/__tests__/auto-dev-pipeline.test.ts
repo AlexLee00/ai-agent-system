@@ -371,47 +371,52 @@ async function test_reservation_booking_alert_is_skipped() {
 }
 
 async function test_ops_emergency_telegram_snapshot_is_skipped() {
-  const tmpRoot = makeTempRoot();
-  const doc = makeDoc(
-    tmpRoot,
-    'ALARM_INCIDENT_ops-emergency_sample.md',
-    withRequiredMetadata(
-      [
-        '# Alarm Incident Auto-Repair: ops-emergency alarm',
-        '',
-        '## Incident',
-        '- from_bot: telegram-sender',
-        '- incident_key: ops-emergency:telegram-sender:telegram_critical:sample1234',
-        '',
-        '## Error Message',
-        '```text',
-        '🚨 [general] CRITICAL',
-        '🚨 Fallback Exhaustion',
-        '팀: luna / 에이전트: luna',
-        '시도: openai-oauth/gpt-5.4',
-        '최종 에러: provider_circuit_open:openai-oauth',
-        '```',
-      ].join('\n'),
-      {
-        target_team: 'claude',
-        source_team: 'ops-emergency',
-        source_bot: 'telegram-sender',
-        risk_tier: 'high',
-        task_type: 'development_task',
-      },
-    ),
-  );
+  for (const [name, finalError] of [
+    ['provider-circuit', 'provider_circuit_open:openai-oauth'],
+    ['provider-timeout', 'timeout (10000ms)'],
+  ]) {
+    const tmpRoot = makeTempRoot();
+    const doc = makeDoc(
+      tmpRoot,
+      `ALARM_INCIDENT_ops-emergency_${name}.md`,
+      withRequiredMetadata(
+        [
+          '# Alarm Incident Auto-Repair: ops-emergency alarm',
+          '',
+          '## Incident',
+          '- from_bot: telegram-sender',
+          '- incident_key: ops-emergency:telegram-sender:telegram_critical:sample1234',
+          '',
+          '## Error Message',
+          '```text',
+          '🚨 [general] CRITICAL',
+          '🚨 Fallback Exhaustion',
+          '팀: luna / 에이전트: luna',
+          '시도: openai-oauth/gpt-5.4',
+          `최종 에러: ${finalError}`,
+          '```',
+        ].join('\n'),
+        {
+          target_team: 'claude',
+          source_team: 'ops-emergency',
+          source_bot: 'telegram-sender',
+          risk_tier: 'high',
+          task_type: 'development_task',
+        },
+      ),
+    );
 
-  const { mocks } = makeMocks(tmpRoot);
-  await withMocks(mocks, async pipeline => {
-    const result = await pipeline.processAutoDevDocument(doc, { shadow: true });
-    assert.strictEqual(result.ok, true);
-    assert.strictEqual(result.skipped, true);
-    assert.strictEqual(result.reason, 'implementation_completed');
-    assert.strictEqual(result.job?.policyDecision, 'non_actionable_alarm_snapshot');
-  }, testEnv(tmpRoot));
+    const { mocks } = makeMocks(tmpRoot);
+    await withMocks(mocks, async pipeline => {
+      const result = await pipeline.processAutoDevDocument(doc, { shadow: true });
+      assert.strictEqual(result.ok, true);
+      assert.strictEqual(result.skipped, true);
+      assert.strictEqual(result.reason, 'implementation_completed');
+      assert.strictEqual(result.job?.policyDecision, 'non_actionable_alarm_snapshot');
+    }, testEnv(tmpRoot));
 
-  fs.rmSync(tmpRoot, { recursive: true, force: true });
+    fs.rmSync(tmpRoot, { recursive: true, force: true });
+  }
   console.log('✅ auto-dev: ops-emergency telegram fallback snapshots are skipped');
 }
 

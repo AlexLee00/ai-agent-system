@@ -559,10 +559,20 @@ function isNonActionableOpsEmergencyTelegramAlert(analysis = {}) {
     content = '';
   }
   const combined = `${sourceBot}\n${content}`;
-  return (
+  const isTelegramFallbackSnapshot = (
     /source_bot:\s*telegram-sender|from_bot:\s*telegram-sender|ops-emergency:telegram-sender:telegram_critical/.test(combined)
     && combined.includes('🚨 Fallback Exhaustion')
-    && combined.includes('provider_circuit_open:openai-oauth')
+  );
+  const isProviderTransportExhaustion = (
+    /provider_circuit_open:[\w-]+/i.test(combined)
+    || /provider_cooldown/i.test(combined)
+    || /timeout\s*\(\s*\d+ms\s*\)/i.test(combined)
+  );
+  const isAuthFailure = /\b(401|403|unauthorized|invalid[_-]?token|invalid[_-]?api[_-]?key|permission_error)\b/i.test(combined);
+  return (
+    isTelegramFallbackSnapshot
+    && isProviderTransportExhaustion
+    && !isAuthFailure
   );
 }
 
