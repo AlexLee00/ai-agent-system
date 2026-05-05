@@ -4,6 +4,14 @@
 > 상세 내용: `reservation-dev-summary.md` / `reservation-handoff.md`
 > 최초 작성: 2026-02-27
 
+## 2026-05-05: Darwin DB 마이그레이션 완료 + 442 tests (95차 세션)
+
+- `schema_migrations` 누락 버전 (20260418000009/010/011) 삽입 → 마이그레이션 충돌 해소
+- `mix darwin.migrate` 성공: `darwin_team_tech_requests` + `darwin_hypotheses` + `darwin_effect_measurements` 생성
+- `elixir/team_jay/lib/mix/tasks/darwin.migrate.ex`: Darwin Elixir 마이그레이션 경로 추가
+- `rag/query_planner.ex`: LLM 호출 예외 처리 추가 (try/rescue)
+- 442 tests, 0 failures (18 excluded) 최종 확인
+
 ## 2026-05-05: Darwin Phase A/B/C 통합 — 8단계 자율 R&D 사이클 완성 (93차 세션)
 
 - CODEX_DARWIN_INTELLIGENT_RND_PLAN Phase A/B/C 구현 통합

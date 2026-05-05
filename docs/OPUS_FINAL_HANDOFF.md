@@ -1,3 +1,34 @@
+# 세션 인수인계 — 2026-05-05 (Darwin DB 마이그레이션 완료 + 442 tests — 95차 세션)
+
+## 완료 요약 ✅ (95차 세션)
+
+### CODEX_DARWIN_INTELLIGENT_RND_PLAN — DB 마이그레이션 완료
+
+**현재 상태 (2026-05-05 14:20 기준)**:
+- Darwin V2 Phase 0~8 + Phase A/B/C 코드 완전 통합 (94차 세션에서 완료)
+- DB 마이그레이션 3개 신규 적용 ✅
+
+**이번 세션 작업**:
+1. `schema_migrations`에 20260418000009/010/011 삽입 (테이블 이미 존재, 버전 미등록 충돌 해소)
+2. `mix darwin.migrate` 성공 → 3개 테이블 생성
+   - `darwin_team_tech_requests` (Phase A)
+   - `darwin_hypotheses` (Phase B)
+   - `darwin_effect_measurements` (Phase C)
+3. 442 tests, 0 failures (18 excluded) ✅
+
+**현재 Kill Switch 상태 (모두 false — 마스터 활성화 대기)**:
+- `DARWIN_TEAM_INTEGRATION_ENABLED=false` → 9팀 기술 요청 큐 (코드+DB 준비 완료)
+- `DARWIN_HYPOTHESIS_ENGINE_ENABLED=false` → Hypothesis Engine (코드+DB 준비 완료)
+- `DARWIN_MEASURE_STAGE_ENABLED=false` → 효과 측정 (코드+DB 준비 완료)
+
+**다음 단계 (마스터 명시 후)**:
+- Kill Switch 순차 활성화 (Phase A → B → C 순서 권장)
+- Phase H: `codebase_analyzer.ex` (자체 코드 분석, 새 모듈)
+- Phase I: 시그마 데이터셋 + Knowledge Graph 통합
+- Phase G: TS → V2 완전 통합 (장기 목표)
+
+---
+
 # 세션 인수인계 — 2026-05-05 (Darwin Phase A/B/C 통합 완료 — 93차 세션)
 
 ## 완료 요약 ✅ (93차 세션)
