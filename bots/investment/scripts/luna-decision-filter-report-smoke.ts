@@ -2,7 +2,12 @@
 // @ts-nocheck
 
 import assert from 'node:assert/strict';
-import { buildDecisionFilterDiagnostics } from './runtime-luna-decision-filter-report.ts';
+import * as db from '../shared/db.ts';
+import { ensureCandidateUniverseTable } from '../team/discovery/discovery-store.ts';
+import {
+  buildDecisionFilterDiagnostics,
+  buildLunaDecisionFilterReport,
+} from './runtime-luna-decision-filter-report.ts';
 import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
 
 const now = new Date().toISOString();
@@ -18,7 +23,7 @@ function row(symbol, analyst, signal, confidence) {
   };
 }
 
-export function runLunaDecisionFilterReportSmoke() {
+export async function runLunaDecisionFilterReportSmoke() {
   const rows = [
     row('NEWS/USDT', 'news', 'BUY', 0.9),
     row('NEWS/USDT', 'ta_mtf', 'HOLD', 0.62),
@@ -48,6 +53,45 @@ export function runLunaDecisionFilterReportSmoke() {
   assert.equal(bySymbol['LOW/USDT'].actionability, 'filtered_before_signal');
   assert.ok(bySymbol['LOW/USDT'].reasons.includes('average_confidence_below_min'));
 
+  const fixtureSymbol = `DFILTER${Date.now()}/USDT`;
+  await db.initSchema();
+  await ensureCandidateUniverseTable();
+  try {
+    await db.run(
+      `INSERT INTO candidate_universe
+         (symbol, market, source, source_tier, score, confidence, reason, reason_code, ttl_hours, raw_data, expires_at)
+       VALUES
+         ($1, 'crypto', 'decision_filter_smoke', 1, 0.91, 0.88, 'decision filter smoke', 'decision_filter_smoke', 2, '{}'::jsonb, now() + interval '2 hours')
+       ON CONFLICT (symbol, market, source) DO UPDATE SET
+         score = excluded.score,
+         confidence = excluded.confidence,
+         discovered_at = now(),
+         expires_at = now() + interval '2 hours'`,
+      [fixtureSymbol],
+    );
+    await db.insertAnalysis({
+      symbol: fixtureSymbol,
+      analyst: 'ta_mtf',
+      signal: 'BUY',
+      confidence: 0.81,
+      reasoning: 'decision filter smoke technical',
+      metadata: { smoke: true },
+      exchange: 'binance',
+    });
+    const activeReport = await buildLunaDecisionFilterReport({
+      exchange: 'binance',
+      market: 'crypto',
+      activeCandidates: true,
+      hours: 1,
+      limit: 20,
+    });
+    assert.equal(activeReport.symbolScope, 'active_candidates');
+    assert.ok(activeReport.activeCandidateSymbols.includes(fixtureSymbol));
+  } finally {
+    await db.run(`DELETE FROM analysis WHERE symbol = $1 AND metadata->>'smoke' = 'true'`, [fixtureSymbol]).catch(() => null);
+    await db.run(`DELETE FROM candidate_universe WHERE symbol = $1 AND source = 'decision_filter_smoke'`, [fixtureSymbol]).catch(() => null);
+  }
+
   return {
     ok: true,
     smoke: 'luna-decision-filter-report',
@@ -58,7 +102,7 @@ export function runLunaDecisionFilterReportSmoke() {
 }
 
 async function main() {
-  const result = runLunaDecisionFilterReportSmoke();
+  const result = await runLunaDecisionFilterReportSmoke();
   if (process.argv.includes('--json')) console.log(JSON.stringify(result, null, 2));
   else console.log('luna-decision-filter-report-smoke ok');
 }

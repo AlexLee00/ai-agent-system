@@ -19,6 +19,8 @@ function parseArgs(argv = process.argv.slice(2)) {
   const symbolArg = argv.find((arg) => arg.startsWith('--symbols='))?.split('=').slice(1).join('=') || '';
   return {
     json: argv.includes('--json'),
+    activeCandidates: argv.includes('--active-candidates'),
+    market: argv.find((arg) => arg.startsWith('--market='))?.split('=')[1] || 'crypto',
     exchange: argv.find((arg) => arg.startsWith('--exchange='))?.split('=')[1] || 'binance',
     hours: Math.max(1, Number(argv.find((arg) => arg.startsWith('--hours='))?.split('=')[1] || DEFAULT_HOURS) || DEFAULT_HOURS),
     limit: Math.max(1, Number(argv.find((arg) => arg.startsWith('--limit='))?.split('=')[1] || 12) || 12),
@@ -27,6 +29,19 @@ function parseArgs(argv = process.argv.slice(2)) {
       .map((symbol) => symbol.trim().toUpperCase())
       .filter(Boolean),
   };
+}
+
+function normalizeCandidateSymbol(symbol, market = 'crypto') {
+  const raw = String(symbol || '').trim().toUpperCase();
+  if (!raw) return raw;
+  if (market === 'crypto' && !raw.includes('/') && raw.endsWith('USDT')) return `${raw.slice(0, -4)}/USDT`;
+  return raw;
+}
+
+function candidateSymbolSqlFilter(market = 'crypto') {
+  if (market === 'domestic') return `symbol ~ '^[0-9]{6}$'`;
+  if (market === 'overseas') return `symbol !~ '/' AND symbol !~ '^[0-9]{6}$' AND symbol ~ '^[A-Za-z][A-Za-z0-9.\\-]{0,12}$'`;
+  return `(symbol ~ '^[A-Za-z0-9]+/USDT$' OR symbol ~ '^[A-Za-z0-9]+USDT$')`;
 }
 
 function normalizeAction(value) {
@@ -185,15 +200,36 @@ async function queryRecentAnalysis({ exchange, hours, symbols }) {
   ).catch(() => []);
 }
 
+async function queryActiveCandidateSymbols({ market, limit }) {
+  const rows = await db.query(
+    `SELECT symbol
+     FROM candidate_universe
+     WHERE market = $1
+       AND expires_at > now()
+       AND ${candidateSymbolSqlFilter(market)}
+     ORDER BY score DESC, discovered_at DESC
+     LIMIT $2`,
+    [market, Math.max(1, Number(limit || 50))],
+  ).catch(() => []);
+  return [...new Set((rows || [])
+    .map((row) => normalizeCandidateSymbol(row.symbol, market))
+    .filter(Boolean))];
+}
+
 export async function buildLunaDecisionFilterReport(options = {}) {
   const exchange = options.exchange || 'binance';
+  const market = options.market || (exchange === 'kis' ? 'domestic' : exchange === 'kis_overseas' ? 'overseas' : 'crypto');
   const hours = Math.max(1, Number(options.hours || DEFAULT_HOURS));
   const limit = Math.max(1, Number(options.limit || 12));
   await db.initSchema();
+  const candidateSymbols = options.activeCandidates
+    ? await queryActiveCandidateSymbols({ market, limit: Math.max(limit, 50) })
+    : [];
+  const requestedSymbols = Array.isArray(options.symbols) ? options.symbols : [];
   const rows = await queryRecentAnalysis({
     exchange,
     hours,
-    symbols: Array.isArray(options.symbols) ? options.symbols : [],
+    symbols: candidateSymbols.length > 0 ? candidateSymbols : requestedSymbols,
   });
   const diagnostics = buildDecisionFilterDiagnostics(rows, {
     exchange,
@@ -211,7 +247,10 @@ export async function buildLunaDecisionFilterReport(options = {}) {
     ok: true,
     status: filtered.length > 0 ? 'luna_decision_filter_attention' : 'luna_decision_filter_clear',
     exchange,
+    market,
     hours,
+    symbolScope: candidateSymbols.length > 0 ? 'active_candidates' : requestedSymbols.length > 0 ? 'explicit_symbols' : 'recent_analysis',
+    activeCandidateSymbols: candidateSymbols,
     checkedSymbols: diagnostics.length,
     likelyActionableCount: likelyActionable.length,
     filteredCount: filtered.length,
@@ -223,7 +262,7 @@ export async function buildLunaDecisionFilterReport(options = {}) {
 
 function renderText(report) {
   const lines = [
-    `Luna decision filter report (${report.exchange}, ${report.hours}h)`,
+    `Luna decision filter report (${report.exchange}, ${report.hours}h, scope=${report.symbolScope || 'recent_analysis'})`,
     `status=${report.status} checked=${report.checkedSymbols} likely_actionable=${report.likelyActionableCount} filtered=${report.filteredCount}`,
     `reasons=${Object.entries(report.reasonCounts || {}).map(([key, value]) => `${key}:${value}`).join(', ') || 'none'}`,
     '',
