@@ -42,6 +42,15 @@ export async function runLunaEntryTriggerRiskGateSmoke() {
       atr: 2,
       setup_type: 'breakout_confirmation',
       triggerHints: { mtfAgreement: 0.9, discoveryScore: 0.82, breakoutRetest: true },
+      tradingViewSnapshot: {
+        ok: true,
+        source: 'tradingview_ws_service',
+        providerMode: 'websocket',
+        market: 'tradingview',
+        price: 101,
+        open: 100,
+        stale: false,
+      },
     };
     try {
       const blocked = await evaluateEntryTriggers([candidate], { exchange: 'binance' });

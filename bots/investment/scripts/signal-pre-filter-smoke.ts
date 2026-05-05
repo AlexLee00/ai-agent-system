@@ -25,7 +25,22 @@ export async function runSmoke() {
   const batch = preFilterSignals([{ symbol: 'AAPL', action: 'SELL', confidence: 0.1 }, { action: 'NOPE' }]);
   assert.equal(batch.total ?? batch.results.length, 2);
   assert.equal(batch.blocked, 1);
-  return { ok: true, pass, blocked, watch, batch };
+
+  const weakSymbol = preFilterSignal({ symbol: 'OPN/USDT', exchange: 'binance', action: 'BUY', confidence: 0.9 });
+  assert.equal(weakSymbol.ok, false);
+  assert.ok(weakSymbol.blockers.includes('trade_data_weak_symbol'));
+
+  const defensiveDomestic = preFilterSignal({
+    symbol: '006340',
+    exchange: 'kis',
+    action: 'BUY',
+    confidence: 0.9,
+    strategy_family: 'defensive_rotation',
+  }, { now: new Date('2026-04-30T01:00:00Z') });
+  assert.equal(defensiveDomestic.ok, false);
+  assert.ok(defensiveDomestic.blockers.includes('domestic_defensive_rotation_validation_only'));
+
+  return { ok: true, pass, blocked, watch, batch, weakSymbol, defensiveDomestic };
 }
 
 async function main() {

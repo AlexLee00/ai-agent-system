@@ -1,5 +1,6 @@
 // @ts-nocheck
 import { evaluateKisMarketHours, deferSignal } from './kis-market-hours-guard.ts';
+import { evaluateTradeDataEntryGuard } from './trade-data-derived-guards.ts';
 
 function resolveMarketFromExchange(exchange) {
   const ex = String(exchange || '').toLowerCase();
@@ -27,6 +28,9 @@ export function preFilterSignal(signal = {}, opts = {}) {
   if (signal.reflexionCooldown === true || signal.inCooldown === true) {
     blockers.push('symbol_cooldown');
   }
+  const tradeDataGuard = evaluateTradeDataEntryGuard(signal, opts.env || process.env);
+  blockers.push(...tradeDataGuard.blockers);
+  warnings.push(...tradeDataGuard.warnings);
   const regime = String(signal.marketRegime || signal.regime || signal.market_regime || '').toLowerCase();
   if (action === 'BUY' && (regime.includes('bear') || regime.includes('distribution'))) {
     blockers.push('regime_buy_blocked');
@@ -62,6 +66,7 @@ export function preFilterSignal(signal = {}, opts = {}) {
     warnings,
     deferred,
     decision,
+    tradeDataGuard: tradeDataGuard.blocked || tradeDataGuard.warnings.length > 0 ? tradeDataGuard : null,
   };
 }
 

@@ -54,6 +54,15 @@ export async function runLunaEntryTriggerActiveWorkerSmoke() {
           discoveryScore: 0.79,
           breakoutRetest: true,
           volumeBurst: 2.0,
+          tradingViewSnapshot: {
+            ok: true,
+            source: 'tradingview_ws_service',
+            providerMode: 'websocket',
+            market: 'tradingview',
+            price: 101,
+            open: 100,
+            stale: false,
+          },
         },
       ], {
         exchange: 'binance',

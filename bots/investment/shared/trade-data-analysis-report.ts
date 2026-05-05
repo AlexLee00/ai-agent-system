@@ -34,6 +34,7 @@ export const TRADE_DATA_REINFORCEMENT_CONTRACT = [
   'trade_journal_dashboard',
   'realized_pnl_calculator',
   'signal_pre_filter',
+  'trade_data_derived_guards',
   'trade_pattern_clusterer',
 ];
 

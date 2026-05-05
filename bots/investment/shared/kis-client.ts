@@ -34,7 +34,9 @@ const TR_ID = {
   OVERSEAS_BUY_LIVE:       'TTTT1002U',
   OVERSEAS_SELL_LIVE:      'TTTT1006U',   // 미국 매도 실전
   DOMESTIC_PRICE:          'FHKST01010100',
+  DOMESTIC_DAILY_ITEM_CHART: 'FHKST03010100',
   OVERSEAS_PRICE:          'HHDFS76200200', // 해외주식 현재체결가
+  OVERSEAS_DAILY_PRICE:     'HHDFS76240000',
   // ── 잔고 조회 ──
   DOMESTIC_BALANCE_PAPER:  'VTTC8434R',
   DOMESTIC_BALANCE_LIVE:   'TTTC8434R',
@@ -46,6 +48,30 @@ const TR_ID = {
   DOMESTIC_DAILY_CCLD_LIVE: 'TTTC0081R',
   OVERSEAS_CCLD_PAPER: 'VTTS3035R',
   OVERSEAS_CCLD_LIVE: 'TTTS3035R',
+};
+
+const KIS_OVERSEAS_PRICE_EXCD = {
+  AAPL: 'NAS', MSFT: 'NAS', AMZN: 'NAS', GOOGL: 'NAS', META: 'NAS',
+  NVDA: 'NAS', TSLA: 'NAS', NFLX: 'NAS', INTC: 'NAS', AMD:  'NAS',
+  QCOM: 'NAS', AVGO: 'NAS', ADBE: 'NAS', CSCO: 'NAS', PYPL: 'NAS',
+  COIN: 'NAS', MSTR: 'NAS', JBLU: 'NAS', NBIS: 'NAS',
+  JPM: 'NYS', BAC: 'NYS', WMT: 'NYS', JNJ: 'NYS', BRK: 'NYS',
+  XOM: 'NYS', CVX: 'NYS', UNH: 'NYS', HD:  'NYS',
+  NIO:  'NYS', XPEV: 'NYS', LI:  'NYS', BABA: 'NYS', PDD: 'NYS',
+  JD:   'NYS', BIDU: 'NYS',
+  RIVN: 'NYS', LCID: 'NYS', PLTR: 'NYS', UBER: 'NYS', LYFT: 'NYS',
+};
+
+const KIS_OVERSEAS_ORDER_EXCD = {
+  AAPL: 'NASD', MSFT: 'NASD', AMZN: 'NASD', GOOGL: 'NASD', META: 'NASD',
+  NVDA: 'NASD', TSLA: 'NASD', NFLX: 'NASD', INTC: 'NASD', AMD:  'NASD',
+  QCOM: 'NASD', AVGO: 'NASD', ADBE: 'NASD', CSCO: 'NASD', PYPL: 'NASD',
+  COIN: 'NASD', MSTR: 'NASD', JBLU: 'NASD', NBIS: 'NASD',
+  JPM: 'NYSE', BAC: 'NYSE', WMT: 'NYSE', JNJ: 'NYSE', BRK: 'NYSE',
+  XOM: 'NYSE', CVX: 'NYSE', UNH: 'NYSE', HD:  'NYSE',
+  NIO:  'NYSE', XPEV: 'NYSE', LI:  'NYSE', BABA: 'NYSE', PDD: 'NYSE',
+  JD:   'NYSE', BIDU: 'NYSE',
+  RIVN: 'NYSE', LCID: 'NYSE', PLTR: 'NYSE', UBER: 'NYSE', LYFT: 'NYSE',
 };
 
 const KIS_MIN_INTERVAL_MS = 380;
@@ -624,35 +650,6 @@ export async function getOverseasQuoteSnapshot(symbol) {
   if (mcp?.quote && parseNumeric(mcp.quote.price) > 0) {
     return mcp.quote;
   }
-  // 가격조회용 (shorter code)
-  const PRICE_EXCD = {
-    AAPL: 'NAS', MSFT: 'NAS', AMZN: 'NAS', GOOGL: 'NAS', META: 'NAS',
-    NVDA: 'NAS', TSLA: 'NAS', NFLX: 'NAS', INTC: 'NAS', AMD:  'NAS',
-    QCOM: 'NAS', AVGO: 'NAS', ADBE: 'NAS', CSCO: 'NAS', PYPL: 'NAS',
-    COIN: 'NAS', MSTR: 'NAS', JBLU: 'NAS', NBIS: 'NAS',
-    JPM: 'NYS', BAC: 'NYS', WMT: 'NYS', JNJ: 'NYS', BRK: 'NYS',
-    XOM: 'NYS', CVX: 'NYS', UNH: 'NYS', HD:  'NYS',
-    // EV / 중국계 NYSE 상장
-    NIO:  'NYS', XPEV: 'NYS', LI:  'NYS', BABA: 'NYS', PDD: 'NYS',
-    JD:   'NYS', BIDU: 'NYS',
-    // 기타 NYSE
-    RIVN: 'NYS', LCID: 'NYS', PLTR: 'NYS', UBER: 'NYS', LYFT: 'NYS',
-  };
-  // 주문용 (full code — order API 요구)
-  const ORDER_EXCD = {
-    AAPL: 'NASD', MSFT: 'NASD', AMZN: 'NASD', GOOGL: 'NASD', META: 'NASD',
-    NVDA: 'NASD', TSLA: 'NASD', NFLX: 'NASD', INTC: 'NASD', AMD:  'NASD',
-    QCOM: 'NASD', AVGO: 'NASD', ADBE: 'NASD', CSCO: 'NASD', PYPL: 'NASD',
-    COIN: 'NASD', MSTR: 'NASD', JBLU: 'NASD', NBIS: 'NASD',
-    JPM: 'NYSE', BAC: 'NYSE', WMT: 'NYSE', JNJ: 'NYSE', BRK: 'NYSE',
-    XOM: 'NYSE', CVX: 'NYSE', UNH: 'NYSE', HD:  'NYSE',
-    // EV / 중국계 NYSE 상장
-    NIO:  'NYSE', XPEV: 'NYSE', LI:  'NYSE', BABA: 'NYSE', PDD: 'NYSE',
-    JD:   'NYSE', BIDU: 'NYSE',
-    // 기타 NYSE
-    RIVN: 'NYSE', LCID: 'NYSE', PLTR: 'NYSE', UBER: 'NYSE', LYFT: 'NYSE',
-  };
-
   // 시세 조회는 항상 실서버 (openapivts는 해외시세 미지원)
   const tryFetch = async (excd) => kisRequest('GET', '/uapi/overseas-price/v1/quotations/price', {
     trId:   TR_ID.OVERSEAS_PRICE,
@@ -660,7 +657,7 @@ export async function getOverseasQuoteSnapshot(symbol) {
     paper:  false,
   });
 
-  const priceExcd = PRICE_EXCD[symbol];
+  const priceExcd = KIS_OVERSEAS_PRICE_EXCD[symbol];
 
   // ① 맵에 있으면 해당 거래소로 1회 조회
   if (priceExcd) {
@@ -670,7 +667,7 @@ export async function getOverseasQuoteSnapshot(symbol) {
     return {
       symbol,
       price,
-      excd: ORDER_EXCD[symbol],
+      excd: KIS_OVERSEAS_ORDER_EXCD[symbol],
       priceExcd,
       open: parseFloat(data.output?.open || '0'),
       high: parseFloat(data.output?.high || '0'),
@@ -704,6 +701,109 @@ export async function getOverseasQuoteSnapshot(symbol) {
 
 export async function getOverseasQuote(symbol) {
   return getOverseasPrice(symbol);
+}
+
+function daysBefore(date = new Date(), days = 80) {
+  return new Date(date.getTime() - Math.max(1, Number(days) || 80) * 24 * 60 * 60 * 1000);
+}
+
+function normalizeDailyBar(row = {}, market = 'kis') {
+  const date = pickFirstString(row, [
+    'stck_bsop_date',
+    'xymd',
+    'date',
+    'Date',
+  ]);
+  const open = pickFirstNumber(row, ['stck_oprc', 'open', 'Open', 'ovrs_nmix_oprc']);
+  const high = pickFirstNumber(row, ['stck_hgpr', 'high', 'High', 'ovrs_nmix_hgpr']);
+  const low = pickFirstNumber(row, ['stck_lwpr', 'low', 'Low', 'ovrs_nmix_lwpr']);
+  const close = pickFirstNumber(row, ['stck_clpr', 'clos', 'close', 'Close', 'ovrs_nmix_prpr']);
+  const volume = pickFirstNumber(row, ['acml_vol', 'tvol', 'volume', 'Volume', 'tr_pbmn']);
+  const timestamp = date && /^\d{8}$/.test(date)
+    ? new Date(`${date.slice(0, 4)}-${date.slice(4, 6)}-${date.slice(6, 8)}T00:00:00Z`).getTime()
+    : 0;
+  return {
+    date,
+    timestamp,
+    open,
+    high,
+    low,
+    close,
+    volume,
+    market,
+    raw: row,
+  };
+}
+
+function normalizeDailyBars(rows = [], market = 'kis', limit = 80) {
+  return (Array.isArray(rows) ? rows : [])
+    .map((row) => normalizeDailyBar(row, market))
+    .filter((row) => row.date && row.close > 0)
+    .sort((a, b) => String(a.date).localeCompare(String(b.date)))
+    .slice(-Math.max(1, Number(limit) || 80));
+}
+
+export async function getDomesticDailyPriceBars(symbol, {
+  days = 80,
+  startDate = null,
+  endDate = null,
+  paper,
+} = {}) {
+  const usePaper = resolveUsePaper(paper);
+  const end = endDate || formatYmd(new Date());
+  const start = startDate || formatYmd(daysBefore(new Date(), Math.max(days * 2, days + 20)));
+  const data = await kisRequest('GET', '/uapi/domestic-stock/v1/quotations/inquire-daily-itemchartprice', {
+    trId: TR_ID.DOMESTIC_DAILY_ITEM_CHART,
+    params: {
+      FID_COND_MRKT_DIV_CODE: 'J',
+      FID_INPUT_ISCD: String(symbol || '').trim(),
+      FID_INPUT_DATE_1: start,
+      FID_INPUT_DATE_2: end,
+      FID_PERIOD_DIV_CODE: 'D',
+      FID_ORG_ADJ_PRC: '0',
+    },
+    paper: usePaper,
+  });
+  return normalizeDailyBars(data.output2 || [], 'kis_domestic', days);
+}
+
+export async function getOverseasDailyPriceBars(symbol, {
+  days = 80,
+  priceExcd = null,
+  endDate = '',
+} = {}) {
+  const normalizedSymbol = String(symbol || '').trim().toUpperCase();
+  const excdCandidates = [
+    priceExcd,
+    KIS_OVERSEAS_PRICE_EXCD[normalizedSymbol],
+    'NAS',
+    'NYS',
+    'AMX',
+  ].filter(Boolean);
+  let lastError = null;
+  for (const excd of [...new Set(excdCandidates)]) {
+    try {
+      const data = await kisRequest('GET', '/uapi/overseas-price/v1/quotations/dailyprice', {
+        trId: TR_ID.OVERSEAS_DAILY_PRICE,
+        params: {
+          AUTH: '',
+          EXCD: excd,
+          SYMB: normalizedSymbol,
+          GUBN: '0',
+          BYMD: endDate || '',
+          MODP: '0',
+        },
+        paper: false,
+      });
+      const bars = normalizeDailyBars(data.output2 || [], 'kis_overseas', days);
+      if (bars.length > 0) {
+        return bars.map((bar) => ({ ...bar, priceExcd: excd }));
+      }
+    } catch (error) {
+      lastError = error;
+    }
+  }
+  throw lastError || new Error(`${normalizedSymbol} 해외 일봉 조회 실패`);
 }
 
 // ─── 계좌번호 파싱 ──────────────────────────────────────────────────

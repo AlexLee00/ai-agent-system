@@ -105,6 +105,7 @@ import {
   buildLunaPortfolioContext,
   inspectLunaPortfolioContext,
 } from '../shared/luna-portfolio-context.ts';
+import { persistRiskApprovalRationale } from '../shared/pipeline-approved-decision.ts';
 import { createLunaPortfolioDecisionGuards } from '../shared/luna-portfolio-decision-guards.ts';
 import {
   buildAnalysisSummary as buildAnalysisSummaryBase,
@@ -1158,6 +1159,20 @@ export async function orchestrate(symbols, exchange = 'binance', params = null) 
     } catch (e) {
       console.warn('[luna] RAG 저장 실패 (무시):', e.message);
     }
+
+    await persistRiskApprovalRationale({
+      signalId,
+      signal: {
+        ...signalData,
+        symbol: dec.symbol,
+        action: dec.action,
+        confidence: dec.confidence,
+        amount_usdt: signalData.amountUsdt,
+      },
+      riskResult,
+    }).catch((error) => {
+      console.warn(`  ⚠️ [루나] risk approval rationale 기록 실패(${dec.symbol}): ${error.message}`);
+    });
 
     if (riskError) {
       console.warn(`  ⚠️ [네메시스] 리스크 평가 실패 → failed 저장: ${riskError.message}`);

@@ -14,6 +14,7 @@
 import * as crypto from 'crypto';
 import { isAgentMemoryFeatureEnabled } from './agent-memory-runtime.ts';
 import * as db from './db.ts';
+import { checkTradeDataWeakSymbol } from './trade-data-derived-guards.ts';
 
 const REFLEXION_ENABLED = () => isAgentMemoryFeatureEnabled('reflexionAutoAvoidEnabled');
 
@@ -49,7 +50,15 @@ export function checkSymbolBlacklist(symbol: string, market: string, env = proce
     `${normalizedMarket}:${normalizedSymbol}`,
   ];
   const matched = keys.find((key) => list.has(key));
-  if (!matched) return { blocked: false, blockReason: null, source: null };
+  if (!matched) {
+    const tradeDataWeak = checkTradeDataWeakSymbol(normalizedSymbol, normalizedMarket, env);
+    if (!tradeDataWeak.blocked) return { blocked: false, blockReason: null, source: null };
+    return {
+      blocked: true,
+      blockReason: tradeDataWeak.reason,
+      source: tradeDataWeak.source,
+    };
+  }
   return {
     blocked: true,
     blockReason: `[symbol-blacklist] ${normalizedSymbol} blocked by pre_entry blacklist (${matched})`,

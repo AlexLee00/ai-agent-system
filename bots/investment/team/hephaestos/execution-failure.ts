@@ -9,6 +9,7 @@
  */
 
 import { notifyCircuitBreaker, notifyTradeSkip } from '../../shared/report.ts';
+import { resolveExpectedSellNoopStatus } from '../../shared/trade-data-derived-guards.ts';
 
 export function createSignalFailurePersister({
   db,
@@ -22,9 +23,11 @@ export function createSignalFailurePersister({
   return async function persistFailure(reason, {
     code = 'broker_execution_error',
     meta = {},
+    status = null,
   } = {}) {
+    const noop = resolveExpectedSellNoopStatus({ action, code, status });
     await db.updateSignalBlock(signalId, {
-      status: failedStatus,
+      status: noop.status || failedStatus,
       reason: reason ? String(reason).slice(0, 180) : null,
       code,
       meta: {
@@ -32,6 +35,12 @@ export function createSignalFailurePersister({
         symbol,
         action,
         amount: amountUsdt,
+        ...(noop.classification ? {
+          executionNoop: {
+            classification: noop.classification,
+            source: 'trade_data_sell_hygiene',
+          },
+        } : {}),
         ...meta,
       },
     }).catch(() => {});

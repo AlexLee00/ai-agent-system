@@ -6,6 +6,7 @@ import { enforceTpSlRequirement } from '../shared/tp-sl-enforcer.ts';
 import { buildStrategyRoute } from '../shared/strategy-router.ts';
 import { ACTIONS, ANALYST_TYPES } from '../shared/signal.ts';
 import { checkSymbolBlacklist, checkSymbolLossStreak } from '../shared/reflexion-guard.ts';
+import { evaluateTradeDataEntryGuard, resolveExpectedSellNoopStatus } from '../shared/trade-data-derived-guards.ts';
 import { buildAutotuneLearningDataset } from '../shared/autotune-learning-dataset.ts';
 import { LUNA_AUTONOMY_PHASES } from '../shared/autonomy-phase.ts';
 
@@ -38,8 +39,22 @@ export async function runSmoke() {
     const blacklist = checkSymbolBlacklist('TAO/USDT', 'crypto');
     assert.equal(blacklist.blocked, true);
     assert.equal(blacklist.source, 'pre_entry/symbol_blacklist');
+    const derivedWeak = checkSymbolBlacklist('OPN/USDT', 'crypto');
+    assert.equal(derivedWeak.blocked, true);
+    assert.equal(derivedWeak.source, 'pre_entry/trade_data_weak_symbol');
     const lossStreak = await checkSymbolLossStreak('TAO/USDT', 'crypto');
     assert.equal(lossStreak.inCooldown, true, 'blacklist must feed pre-entry cooldown result');
+    const sellNoop = resolveExpectedSellNoopStatus({ action: 'SELL', code: 'partial_sell_below_minimum' });
+    assert.equal(sellNoop.status, 'skipped_below_min');
+    const domesticGuard = evaluateTradeDataEntryGuard({
+      symbol: '006340',
+      exchange: 'kis',
+      action: 'BUY',
+      confidence: 0.8,
+      strategy_family: 'defensive_rotation',
+    });
+    assert.equal(domesticGuard.blocked, true);
+    assert.ok(domesticGuard.blockers.includes('domestic_defensive_rotation_validation_only'));
 
     const dataset = buildAutotuneLearningDataset([
       {
@@ -72,6 +87,9 @@ export async function runSmoke() {
       tpSl: { computed: computedTpSl.computed },
       selectedFamily: route.selectedFamily,
       blacklist,
+      derivedWeak,
+      sellNoop,
+      domesticGuard,
       autotune: { learningRows: dataset.learningRows, preAutotuneIncluded: dataset.preAutotuneIncluded },
     };
   } finally {

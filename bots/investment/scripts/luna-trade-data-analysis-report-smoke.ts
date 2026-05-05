@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
 import { classifySignalFailure } from '../shared/signal-failure-classifier.ts';
 import { preFilterSignal } from '../shared/signal-pre-filter.ts';
+import { resolveExpectedSellNoopStatus } from '../shared/trade-data-derived-guards.ts';
 import { ensureRealizedPnlColumns } from '../shared/realized-pnl-calculator.ts';
 import { buildTradeDataAnalysisReport, TRADE_DATA_REINFORCEMENT_CONTRACT } from '../shared/trade-data-analysis-report.ts';
 import { close } from '../shared/db/core.ts';
@@ -34,6 +35,22 @@ export async function runSmoke() {
   });
   assert.ok(volatileFiltered.blockers.includes('extreme_volatility'));
 
+  const expectedSellNoop = resolveExpectedSellNoopStatus({ action: 'SELL', code: 'missing_position' });
+  assert.equal(expectedSellNoop.status, 'skipped_below_min');
+  assert.equal(expectedSellNoop.classification, 'no_position_noop');
+
+  const weakSymbol = preFilterSignal({ symbol: 'KITE/USDT', exchange: 'binance', action: 'BUY', confidence: 0.9 });
+  assert.ok(weakSymbol.blockers.includes('trade_data_weak_symbol'));
+
+  const defensiveDomestic = preFilterSignal({
+    symbol: '006340',
+    exchange: 'kis',
+    action: 'BUY',
+    confidence: 0.9,
+    strategy_family: 'defensive_rotation',
+  }, { now: new Date('2026-04-30T01:00:00Z') });
+  assert.ok(defensiveDomestic.blockers.includes('domestic_defensive_rotation_validation_only'));
+
   await ensureRealizedPnlColumns();
   const report = await buildTradeDataAnalysisReport({ limit: 200 });
   assert.equal(report.ok, true);
@@ -45,7 +62,8 @@ export async function runSmoke() {
   return {
     ok: true,
     classifier: { limitExceeded: limitExceeded.kind, brokerError: brokerError.kind, unknown: unknown.kind },
-    preFilter: { bear: bearFiltered.blockers, volatile: volatileFiltered.blockers },
+    preFilter: { bear: bearFiltered.blockers, volatile: volatileFiltered.blockers, weakSymbol: weakSymbol.blockers, defensiveDomestic: defensiveDomestic.blockers },
+    sellNoop: expectedSellNoop,
     report: {
       status: report.status,
       signalTotal: report.signals.total,

@@ -39,6 +39,7 @@ import { getDynamicMinOrderAmount } from '../shared/capital-manager.ts';
 import { getMarketOrderRule } from '../shared/order-rules.ts';
 import { buildExecutionRiskApprovalGuard } from '../shared/risk-approval-execution-guard.ts';
 import { attachExecutionToPositionStrategyTracked } from '../shared/execution-attach.ts';
+import { resolveExpectedSellNoopStatus } from '../shared/trade-data-derived-guards.ts';
 import pgPool from '../../../packages/core/lib/pg-pool.js';
 
 // ─── 심볼 유효성 ────────────────────────────────────────────────────
@@ -182,6 +183,29 @@ function inferHanulBlockCode(reason = '', market = 'domestic') {
   return market === 'overseas' ? 'overseas_order_rejected' : 'domestic_order_rejected';
 }
 
+function buildHanulVirtualProtection(signal = {}, fillPrice = 0) {
+  const price = Number(fillPrice || 0);
+  if (!(price > 0)) {
+    return {
+      tpPrice: null,
+      slPrice: null,
+      tpSlSet: false,
+      tpSlMode: null,
+      tpSlError: 'fill_price_unavailable',
+    };
+  }
+  const requestedTp = Number(signal?.tpPrice || signal?.tp_price || 0);
+  const requestedSl = Number(signal?.slPrice || signal?.sl_price || 0);
+  const requestedValid = requestedTp > price && requestedSl > 0 && requestedSl < price;
+  return {
+    tpPrice: requestedValid ? requestedTp : Number((price * 1.06).toFixed(4)),
+    slPrice: requestedValid ? requestedSl : Number((price * 0.97).toFixed(4)),
+    tpSlSet: true,
+    tpSlMode: requestedValid ? (signal?.tpslSource || 'nemesis_virtual') : 'virtual_fixed_monitor',
+    tpSlError: null,
+  };
+}
+
 export function resolveHanulSellQuantity({
   baseQty = 0,
   partialExitRatio = null,
@@ -313,16 +337,24 @@ async function markSignalFailedDetailed(signalId, {
   meta = null,
 } = {}) {
   const normalizedReason = reason ? String(reason).slice(0, 180) : null;
+  const resolvedCode = code || inferHanulBlockCode(normalizedReason || '', market);
+  const noop = resolveExpectedSellNoopStatus({ action, code: resolvedCode });
   await db.updateSignalBlock(signalId, {
-    status: SIGNAL_STATUS.FAILED,
+    status: noop.status || SIGNAL_STATUS.FAILED,
     reason: normalizedReason,
-    code: code || inferHanulBlockCode(normalizedReason || '', market),
+    code: resolvedCode,
     meta: {
       market,
       symbol,
       action,
       amount,
       error: error ? String(error).slice(0, 240) : null,
+      ...(noop.classification ? {
+        executionNoop: {
+          classification: noop.classification,
+          source: 'trade_data_sell_hygiene',
+        },
+      } : {}),
       ...(meta || {}),
     },
   }).catch(() => {});
@@ -1211,6 +1243,11 @@ async function recordHanulEntryJournal({
       entry_size: trade.amount || 0,
       entry_value: trade.totalUsdt || 0,
       direction: 'long',
+      tp_price: trade.tpPrice ?? null,
+      sl_price: trade.slPrice ?? null,
+      tp_sl_set: trade.tpSlSet === true,
+      tp_sl_mode: trade.tpslSource || null,
+      tp_sl_error: trade.tpSlError || null,
       strategy_family: signal?.strategy_family || null,
       strategy_quality: signal?.strategy_quality || null,
       strategy_readiness: signal?.strategy_readiness ?? null,
@@ -1707,6 +1744,9 @@ async function closeOpenJournalForSymbol(
       signal_to_exec_ms: entry.signal_to_exec_ms ?? null,
       tp_price: entry.tp_price ?? null,
       sl_price: entry.sl_price ?? null,
+      tp_sl_set: entry.tp_sl_set ?? false,
+      tp_sl_mode: entry.tp_sl_mode ?? null,
+      tp_sl_error: entry.tp_sl_error ?? null,
       strategy_family: entry.strategy_family ?? null,
       strategy_quality: entry.strategy_quality ?? null,
       strategy_readiness: entry.strategy_readiness ?? null,
@@ -2461,6 +2501,7 @@ export async function executeSignal(signal) {
           ? domesticVerifiedFillPrice
           : Number(order?.price || 0);
       const domesticPartialFillPending = !domesticBuyVerification.verified && domesticBuyPartialFill;
+      const domesticProtection = buildHanulVirtualProtection(signal, domesticFillPrice);
       trade = {
         signalId, symbol, side: 'buy',
         amount:    domesticFilledQty,
@@ -2476,6 +2517,11 @@ export async function executeSignal(signal) {
         qualityFlag: journalContext.qualityFlag,
         excludeFromLearning: journalContext.excludeFromLearning,
         incidentLink: journalContext.incidentLink,
+        tpPrice: domesticProtection.tpPrice,
+        slPrice: domesticProtection.slPrice,
+        tpSlSet: domesticProtection.tpSlSet,
+        tpslSource: domesticProtection.tpSlMode,
+        tpSlError: domesticProtection.tpSlError,
       };
 
       await db.upsertPosition({
@@ -3100,6 +3146,7 @@ export async function executeOverseasSignal(signal) {
 
       const overseasFillPrice = Number(overseasBuyVerification.avgPrice || order?.price || 0);
       const overseasPartialFillPending = !overseasBuyVerification.verified && overseasBuyPartialFill;
+      const overseasProtection = buildHanulVirtualProtection(signal, overseasFillPrice);
       trade = {
         signalId, symbol, side: 'buy',
         amount:    overseasFilledQty,
@@ -3115,6 +3162,11 @@ export async function executeOverseasSignal(signal) {
         qualityFlag: journalContext.qualityFlag,
         excludeFromLearning: journalContext.excludeFromLearning,
         incidentLink: journalContext.incidentLink,
+        tpPrice: overseasProtection.tpPrice,
+        slPrice: overseasProtection.slPrice,
+        tpSlSet: overseasProtection.tpSlSet,
+        tpslSource: overseasProtection.tpSlMode,
+        tpSlError: overseasProtection.tpSlError,
       };
 
       await db.upsertPosition({

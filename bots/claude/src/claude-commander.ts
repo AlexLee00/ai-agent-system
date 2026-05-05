@@ -1093,6 +1093,7 @@ async function main() {
 }
 
 module.exports = {
+  main,
   HANDLERS,
   processCommands,
   __test__: {

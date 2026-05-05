@@ -12,6 +12,18 @@ export function createLunaPortfolioDecisionGuards({
   checkReflexionBeforeEntry,
   checkSymbolBlacklist,
 }) {
+  let tradeDataGuardModulePromise = null;
+  async function applyTradeDataGuard(decision, exchange) {
+    if (!tradeDataGuardModulePromise) {
+      tradeDataGuardModulePromise = import('./trade-data-derived-guards.ts').catch(() => null);
+    }
+    const mod = await tradeDataGuardModulePromise;
+    if (typeof mod?.applyTradeDataEntryGuardToDecision !== 'function') {
+      return { decision, changed: false, guard: null };
+    }
+    return mod.applyTradeDataEntryGuardToDecision(decision, exchange);
+  }
+
   async function applyCryptoRepresentativePass(portfolioDecision, exchange) {
     if (exchange !== 'binance') {
       return { decision: portfolioDecision, reduction: null };
@@ -89,17 +101,37 @@ export function createLunaPortfolioDecisionGuards({
       }
 
       const market = exchange === 'binance' ? 'crypto' : exchange === 'kis' ? 'domestic' : exchange === 'kis_overseas' ? 'overseas' : exchange;
+      let currentDecision = decision;
+      const tradeDataGuard = await applyTradeDataGuard(currentDecision, exchange);
+      if (tradeDataGuard.changed) {
+        currentDecision = tradeDataGuard.decision;
+        if (tradeDataGuard.guard?.blocked) {
+          adjusted.push(currentDecision);
+          await db.run(
+            `INSERT INTO investment.mapek_knowledge(event_type, payload) VALUES ($1, $2::jsonb)`,
+            ['trade_data_entry_guard_blocked', JSON.stringify({
+              symbol: currentDecision.symbol,
+              exchange,
+              blockers: tradeDataGuard.guard.blockers || [],
+              meta: tradeDataGuard.guard.meta || {},
+              at: new Date().toISOString(),
+            })],
+          ).catch(() => {});
+          continue;
+        }
+      }
+
       const blacklist = typeof checkSymbolBlacklist === 'function'
-        ? checkSymbolBlacklist(decision.symbol, market)
+        ? checkSymbolBlacklist(currentDecision.symbol, market)
         : { blocked: false };
       if (blacklist?.blocked) {
         const nextDecision = {
-          ...decision,
+          ...currentDecision,
           action: ACTIONS.HOLD,
           amount_usdt: 0,
           reasoning: `symbol_blacklist_entry_blocked: ${(blacklist.blockReason || 'pre_entry blacklist').slice(0, 160)}`,
           block_meta: {
-            ...(decision?.block_meta || {}),
+            ...(currentDecision?.block_meta || {}),
             symbol_blacklist: {
               blocked: true,
               source: blacklist.source || 'pre_entry/symbol_blacklist',
@@ -111,7 +143,7 @@ export function createLunaPortfolioDecisionGuards({
         await db.run(
           `INSERT INTO investment.mapek_knowledge(event_type, payload) VALUES ($1, $2::jsonb)`,
           ['symbol_blacklist_entry_blocked', JSON.stringify({
-            symbol: decision.symbol,
+            symbol: currentDecision.symbol,
             exchange,
             source: blacklist.source || 'pre_entry/symbol_blacklist',
             reason: blacklist.blockReason || null,
@@ -122,10 +154,10 @@ export function createLunaPortfolioDecisionGuards({
       }
 
       const reflexion = await checkReflexionBeforeEntry(
-        decision.symbol,
+        currentDecision.symbol,
         exchange,
         'LONG',
-        { pattern: decision?.setup_type || decision?.strategy_route?.setupType || null },
+        { pattern: currentDecision?.setup_type || currentDecision?.strategy_route?.setupType || null },
       ).catch(() => ({
         confidenceDelta: 0,
         blockedByReflexion: false,
@@ -135,13 +167,13 @@ export function createLunaPortfolioDecisionGuards({
 
       if (reflexion?.blockedByReflexion) {
         const nextDecision = {
-          ...decision,
+          ...currentDecision,
           action: ACTIONS.HOLD,
           amount_usdt: 0,
-          confidence: Math.max(0, Number(decision?.confidence || 0) + Number(reflexion?.confidenceDelta || 0)),
+          confidence: Math.max(0, Number(currentDecision?.confidence || 0) + Number(reflexion?.confidenceDelta || 0)),
           reasoning: `reflexion_entry_blocked: ${(reflexion?.warningMessage || '유사 실패 패턴').slice(0, 160)}`,
           block_meta: {
-            ...(decision?.block_meta || {}),
+            ...(currentDecision?.block_meta || {}),
             reflexion: {
               blocked: true,
               confidenceDelta: Number(reflexion?.confidenceDelta || 0),
@@ -153,7 +185,7 @@ export function createLunaPortfolioDecisionGuards({
         await db.run(
           `INSERT INTO investment.mapek_knowledge(event_type, payload) VALUES ($1, $2::jsonb)`,
           ['reflexion_entry_blocked', JSON.stringify({
-            symbol: decision.symbol,
+            symbol: currentDecision.symbol,
             exchange,
             confidence_delta: Number(reflexion?.confidenceDelta || 0),
             failures: Number(reflexion?.relevantFailures?.length || 0),
@@ -165,16 +197,16 @@ export function createLunaPortfolioDecisionGuards({
 
       const delta = Number(reflexion?.confidenceDelta || 0);
       if (delta >= 0) {
-        adjusted.push(decision);
+        adjusted.push(currentDecision);
         continue;
       }
-      const nextConfidence = Math.max(0, Math.min(1, Number(decision?.confidence || 0) + delta));
+      const nextConfidence = Math.max(0, Math.min(1, Number(currentDecision?.confidence || 0) + delta));
       adjusted.push({
-        ...decision,
+        ...currentDecision,
         confidence: nextConfidence,
-        reasoning: `${decision?.reasoning || ''} | reflexion_confidence_adjusted(${delta.toFixed(2)})`.slice(0, 200),
+        reasoning: `${currentDecision?.reasoning || ''} | reflexion_confidence_adjusted(${delta.toFixed(2)})`.slice(0, 200),
         block_meta: {
-          ...(decision?.block_meta || {}),
+          ...(currentDecision?.block_meta || {}),
           reflexion: {
             blocked: false,
             confidenceDelta: delta,
@@ -185,7 +217,7 @@ export function createLunaPortfolioDecisionGuards({
       await db.run(
         `INSERT INTO investment.mapek_knowledge(event_type, payload) VALUES ($1, $2::jsonb)`,
         ['reflexion_confidence_adjusted', JSON.stringify({
-          symbol: decision.symbol,
+          symbol: currentDecision.symbol,
           exchange,
           confidence_delta: delta,
           adjusted_confidence: nextConfidence,

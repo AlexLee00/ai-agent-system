@@ -1,10 +1,17 @@
 import { getMarketSnapshot } from './market-snapshot.ts';
 import { simulatedFallbackOrBlock } from './live-fallback-policy.ts';
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import yaml from 'js-yaml';
 
 const KIS_WS_LIVE = 'wss://openapi.koreainvestment.com:9443';
 const KIS_WS_MOCK = 'wss://openapivts.koreainvestment.com:31000';
 const DEFAULT_TIMEOUT_MS = Number(process.env.LUNA_MARKETDATA_REAL_TIMEOUT_MS || 5000);
 const subscriptions = new Map();
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const INVESTMENT_CONFIG_PATH = path.resolve(__dirname, '../../../../config.yaml');
+const HUB_SECRETS_PATH = path.resolve(__dirname, '../../../../../hub/secrets-store.json');
 
 function isRealEnabled(args = {}) {
   if (args.disableReal === true) return false;
@@ -39,10 +46,37 @@ function messageText(eventOrRaw) {
   return String(raw || '');
 }
 
+function readYaml(file, fallback = {}) {
+  try {
+    return yaml.load(fs.readFileSync(file, 'utf8')) || fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+function readJson(file, fallback = {}) {
+  try {
+    return JSON.parse(fs.readFileSync(file, 'utf8'));
+  } catch {
+    return fallback;
+  }
+}
+
+function getLocalKisSecrets() {
+  const config = readYaml(INVESTMENT_CONFIG_PATH, {});
+  const store = readJson(HUB_SECRETS_PATH, {});
+  const hubKis = store.kis || store.investment_accounts?.kis || store.config?.kis || {};
+  return {
+    appKey: config.kis?.app_key || hubKis.app_key || '',
+    appSecret: config.kis?.app_secret || hubKis.app_secret || '',
+  };
+}
+
 async function getKisSecrets() {
   const secrets = await import('../../../../shared/secrets.ts').catch(() => null);
-  const appKey = process.env.KIS_APP_KEY || secrets?.getKisAppKey?.() || '';
-  const appSecret = process.env.KIS_APP_SECRET || secrets?.getKisAppSecret?.() || '';
+  const local = getLocalKisSecrets();
+  const appKey = process.env.KIS_APP_KEY || secrets?.getKisAppKey?.() || local.appKey || '';
+  const appSecret = process.env.KIS_APP_SECRET || secrets?.getKisAppSecret?.() || local.appSecret || '';
   return { appKey, appSecret };
 }
 

@@ -41,6 +41,15 @@ export async function runLunaEntryTriggerDuplicateCooldownSmoke() {
       atr: 2,
       setup_type: 'breakout_confirmation',
       triggerHints: { mtfAgreement: 0.9, discoveryScore: 0.8, breakoutRetest: true },
+      tradingViewSnapshot: {
+        ok: true,
+        source: 'tradingview_ws_service',
+        providerMode: 'websocket',
+        market: 'tradingview',
+        price: 101,
+        open: 100,
+        stale: false,
+      },
     };
     const context = {
       exchange: 'binance',

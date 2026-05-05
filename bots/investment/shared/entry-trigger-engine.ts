@@ -14,6 +14,7 @@ import { evaluateLunaConstitutionForEntry } from './luna-constitution.ts';
 import { buildPredictiveValidationEvidence } from './predictive-validation.ts';
 import { isMaturePosition } from './luna-discovery-mature-policy.ts';
 import { enforceTpSlRequirement } from './tp-sl-enforcer.ts';
+import { evaluateTradingViewEntryGuard } from './tradingview-entry-guard.ts';
 
 const ACTIONS = {
   BUY: 'BUY',
@@ -607,6 +608,44 @@ export async function evaluateEntryTriggers(candidates = [], context = {}) {
       continue;
     }
 
+    const tradingViewGuard = await evaluateTradingViewEntryGuard({ candidate: activeCandidate, exchange }).catch((error) => ({
+      ok: false,
+      blocked: true,
+      enabled: true,
+      reason: 'tradingview_guard_error',
+      error: error?.message || String(error),
+    }));
+    if (tradingViewGuard?.blocked) {
+      blocked++;
+      await updateEntryTriggerState(persisted.id, {
+        triggerState: 'waiting',
+        triggerMetaPatch: {
+          reason: 'tradingview_chart_guard_blocked',
+          tradingViewReason: tradingViewGuard.reason || null,
+          tradingViewGuard,
+        },
+      }).catch(() => {});
+      output.push({
+        ...activeCandidate,
+        action: ACTIONS.HOLD,
+        amount_usdt: 0,
+        reasoning: `entry_trigger_blocked: tradingview_chart_guard(${tradingViewGuard.reason || 'blocked'}) | ${candidate.reasoning || ''}`.slice(0, 220),
+        block_meta: {
+          ...(activeCandidate.block_meta || {}),
+          event_type: 'entry_trigger_blocked',
+          entryTrigger: {
+            triggerId: persisted.id,
+            triggerType,
+            state: 'waiting',
+            reason: 'tradingview_chart_guard_blocked',
+            tradingViewReason: tradingViewGuard.reason || null,
+          },
+          tradingViewGuard,
+        },
+      });
+      continue;
+    }
+
     const riskGate = evaluateEntryTriggerLiveRiskGate({ candidate: activeCandidate, trigger: persisted, context, flags });
     if (!riskGate.ok) {
       blocked++;
@@ -774,6 +813,34 @@ export async function evaluateActiveEntryTriggersAgainstMarketEvents(events = []
         },
       }).catch(() => null);
       results.push({ triggerId: trigger.id, symbol: trigger.symbol, state: 'waiting', fired: false, reason: 'mode_blocked', mode: flags.mode });
+      continue;
+    }
+    const tradingViewGuard = await evaluateTradingViewEntryGuard({ candidate, event, exchange }).catch((error) => ({
+      ok: false,
+      blocked: true,
+      enabled: true,
+      reason: 'tradingview_guard_error',
+      error: error?.message || String(error),
+    }));
+    if (tradingViewGuard?.blocked) {
+      readyBlocked++;
+      await updateEntryTriggerState(trigger.id, {
+        triggerState: 'waiting',
+        triggerMetaPatch: {
+          lastReadyAt: nowIso(),
+          reason: 'tradingview_chart_guard_blocked',
+          tradingViewReason: tradingViewGuard.reason || null,
+          tradingViewGuard,
+        },
+      }).catch(() => null);
+      results.push({
+        triggerId: trigger.id,
+        symbol: trigger.symbol,
+        state: 'waiting',
+        fired: false,
+        reason: 'tradingview_chart_guard_blocked',
+        tradingViewReason: tradingViewGuard.reason || null,
+      });
       continue;
     }
     const riskGate = evaluateEntryTriggerLiveRiskGate({ candidate, trigger, context, flags });

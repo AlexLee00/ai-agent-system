@@ -48,6 +48,15 @@ export async function runLunaEntryTriggerLiveGateSmoke() {
         breakoutRetest: true,
         volumeBurst: 2.1,
       },
+      tradingViewSnapshot: {
+        ok: true,
+        source: 'tradingview_ws_service',
+        providerMode: 'websocket',
+        market: 'tradingview',
+        price: 101,
+        open: 100,
+        stale: false,
+      },
     }];
     try {
       const result = await evaluateEntryTriggers(input, {

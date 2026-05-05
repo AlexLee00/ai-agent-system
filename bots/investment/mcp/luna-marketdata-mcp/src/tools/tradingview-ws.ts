@@ -18,6 +18,28 @@ function normalizeSymbol(symbol = 'BINANCE:BTCUSDT') {
   return text;
 }
 
+export function normalizeTradingViewTimeframe(timeframe = '60') {
+  const text = String(timeframe || '60').trim().toLowerCase();
+  const map = {
+    '1m': '1',
+    '3m': '3',
+    '5m': '5',
+    '15m': '15',
+    '30m': '30',
+    '60m': '60',
+    '1h': '60',
+    '2h': '120',
+    '4h': '240',
+    '1d': 'D',
+    d: 'D',
+    day: 'D',
+    '1w': 'W',
+    w: 'W',
+    week: 'W',
+  };
+  return map[text] || String(timeframe || '60').trim() || '60';
+}
+
 function fallbackSnapshot(args = {}, reason = 'tradingview_realtime_unavailable') {
   return simulatedFallbackOrBlock(() => ({
     ...getMarketSnapshot({ ...args, market: 'tradingview', symbol: args.symbol || 'BINANCE:BTCUSDT' }),
@@ -50,7 +72,7 @@ function snapshotFromBar(symbol, timeframe, bar = {}) {
     providerMode: 'websocket',
     market: 'tradingview',
     symbol: normalizeSymbol(symbol),
-    timeframe,
+    timeframe: normalizeTradingViewTimeframe(timeframe),
     price,
     open: Number(bar.open || 0),
     high: Number(bar.high || 0),
@@ -64,7 +86,7 @@ function snapshotFromBar(symbol, timeframe, bar = {}) {
 
 async function latestFromHttp(args = {}) {
   const symbol = normalizeSymbol(args.symbol || 'BINANCE:BTCUSDT');
-  const timeframe = String(args.timeframe || '1h');
+  const timeframe = normalizeTradingViewTimeframe(args.timeframe || '60');
   const base = String(args.httpBase || DEFAULT_TV_HTTP_URL).replace(/\/$/, '');
   const subscribeUrl = `${base}/subscribe?symbol=${encodeURIComponent(symbol)}&timeframe=${encodeURIComponent(timeframe)}`;
   await fetch(subscribeUrl, { signal: AbortSignal.timeout(Math.max(250, Number(args.timeoutMs || DEFAULT_TIMEOUT_MS))) }).catch(() => null);
@@ -80,7 +102,7 @@ async function latestFromHttp(args = {}) {
 async function wsSnapshot(args = {}) {
   if (typeof globalThis.WebSocket !== 'function') throw new Error('native_websocket_unavailable');
   const symbol = normalizeSymbol(args.symbol || 'BINANCE:BTCUSDT');
-  const timeframe = String(args.timeframe || '1h');
+  const timeframe = normalizeTradingViewTimeframe(args.timeframe || '60');
   const key = `${symbol}:${timeframe}`;
   const existing = subscriptions.get(key);
   if (existing?.lastSnapshot?.ok) return existing.lastSnapshot;
