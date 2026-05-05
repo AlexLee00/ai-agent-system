@@ -1,3 +1,46 @@
+# 세션 인수인계 — 2026-05-06 (Darwin Phase H — CodebaseAnalyzer 완성 — 97차 세션)
+
+## 완료 요약 ✅ (97차 세션 — CODEX_DARWIN_INTELLIGENT_RND_PLAN Phase H)
+
+### Phase H — CodebaseAnalyzer 완성
+
+**현재 상태 (2026-05-06 기준)**:
+
+**✅ CodebaseAnalyzer — 신규 완성**:
+- `Darwin.V2.CodebaseAnalyzer` (GenServer, `bots/darwin/elixir/lib/darwin/v2/codebase_analyzer.ex`)
+- 9팀 코드 LOC/함수수/복잡도 자동 분석 (`.ts .tsx .ex .exs .js .jsx .py`)
+- 500줄 초과 파일 탐지 + 분리 후보 보고서
+- 외부 논문 ↔ 코드 패턴 매칭 (`match_papers_to_candidates/0`)
+- Kill Switch: `DARWIN_CODEBASE_ANALYZER_ENABLED=false` (기본 비활성)
+
+**✅ DB Migration 추가**:
+- `20261029000004_create_darwin_codebase_tables.exs`
+- `darwin_codebase_reports`: 주간 요약 보고서
+- `darwin_module_metrics`: 파일별 LOC/함수수/복잡도 (100줄+ 저장)
+- `unique_index(report_id, file_path)` 중복 방지
+
+**✅ Config + Supervisor 통합**:
+- `Darwin.V2.Config.codebase_analyzer_enabled?/0` 추가
+- `Darwin.V2.Supervisor.maybe_codebase_analyzer/0` 추가 (DARWIN_CODEBASE_ANALYZER_ENABLED=true 시 자동 기동)
+
+**✅ 테스트: 442 → 468 (26개 신규, 0 failures)**:
+- `test/darwin/v2/codebase_analyzer_test.exs` (26 tests)
+- module_definition, public_api, kill_switch, analyze_team, refactoring_candidates, config 통합
+
+**현재 Kill Switch 상태 (모두 false — 마스터 활성화 대기)**:
+- `DARWIN_TEAM_INTEGRATION_ENABLED=false` → 9팀 기술 요청 큐 ✅ 준비
+- `DARWIN_HYPOTHESIS_ENGINE_ENABLED=false` → Hypothesis Engine ✅ 준비
+- `DARWIN_MEASURE_STAGE_ENABLED=false` → 효과 측정 ✅ 준비
+- `DARWIN_CODEBASE_ANALYZER_ENABLED=false` → 코드베이스 분석 ✅ 준비 (신규)
+
+**다음 단계 (마스터 명시 후)**:
+- OPS에서 `mix darwin.migrate` 실행 (테이블 2개 신규)
+- Kill Switch 순차 활성화: Phase A → B → C → H 권장
+- Phase I: 시그마 데이터셋 + Knowledge Graph 통합 (미착수)
+- Phase G: TS → V2 완전 통합 (장기 목표)
+
+---
+
 # 세션 인수인계 — 2026-05-05 (SIGMA 100% 자율 운영 — Apply 게이트 + MCP 검증 완료)
 
 ## 완료 요약 ✅ (96차 세션 — CODEX_SIGMA_100_PERCENT_AUTONOMOUS_OPERATION_PLAN)

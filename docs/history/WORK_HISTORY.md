@@ -4,6 +4,16 @@
 > 상세 내용: `reservation-dev-summary.md` / `reservation-handoff.md`
 > 최초 작성: 2026-02-27
 
+## 2026-05-06: Darwin Phase H — CodebaseAnalyzer 완성 (97차 세션)
+
+- `Darwin.V2.CodebaseAnalyzer` GenServer 신규 구현 (9팀 코드 자동 분석)
+- 9팀 LOC/함수수/복잡도 분석 + 500줄 초과 분리 후보 탐지
+- 논문 ↔ 코드 패턴 매칭 (`match_papers_to_candidates/0`)
+- DB 마이그레이션: `darwin_codebase_reports` + `darwin_module_metrics` (2 테이블)
+- `Config.codebase_analyzer_enabled?/0` + Supervisor `maybe_codebase_analyzer/0` 추가
+- Kill Switch: `DARWIN_CODEBASE_ANALYZER_ENABLED=false` (기본 비활성, OPS 활성화 대기)
+- 테스트: 442 → 468 (26개 신규, 0 failures, 18 excluded)
+
 ## 2026-05-05: SIGMA 100% 자율 운영 — Apply 게이트 + MCP 검증 (96차 세션)
 
 - Apply 게이트 완전 개방 검증: `applyBlocked: null`, `applyAllowed: true`, `appliedSkills: 2`

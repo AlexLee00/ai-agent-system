@@ -45,6 +45,7 @@ API 키, Tailscale IP, Hub 토큰은 절대 커밋 금지.
 | CODEX-A | ✅ 완료 | 9팀 통합 채널 — TeamConnector + darwin_team_tech_requests 테이블 + Discover/Apply 통합 |
 | CODEX-B | ✅ 완료 | Hypothesis Engine — Sakana AI Scientist 패턴 + darwin_hypotheses 테이블 + Cycle.Hypothesize (8단계) |
 | CODEX-C | ✅ 완료 | MEASURE Stage — darwin_effect_measurements + 24h/7d/30d 자동 측정 + Apply 통합 |
+| CODEX-H | ✅ 완료 | CodebaseAnalyzer — 9팀 LOC/복잡도/함수수 자동 분석 + darwin_codebase_reports + darwin_module_metrics + 논문 매칭 |
 
 ## 4. 코드 작성 표준
 
@@ -93,11 +94,12 @@ DARWIN_MCP_ENABLED=true                       → MCP Server 활성화
 DARWIN_ESPL_ENABLED=true                      → ESPL 주간 진화
 DARWIN_SELF_RAG_ENABLED=true                  → SelfRAG 4-gate
 
-# Phase A/B/C 신규 Kill Switch (기본 false, 단계적 활성화)
+# Phase A/B/C/H 신규 Kill Switch (기본 false, 단계적 활성화)
 DARWIN_TEAM_INTEGRATION_ENABLED=false         → 9팀 기술 요청 통합
 DARWIN_HYPOTHESIS_ENGINE_ENABLED=false        → Hypothesis Engine (Sakana AI Scientist)
 DARWIN_HYPOTHESIS_LLM_DAILY_BUDGET_USD=2.0    → 가설 생성 일일 LLM 예산
 DARWIN_MEASURE_STAGE_ENABLED=false            → MEASURE Stage 24h/7d/30d 효과 측정
+DARWIN_CODEBASE_ANALYZER_ENABLED=false        → 9팀 코드 자동 분석 (Phase H)
 ```
 
 ## 8. 커밋 메시지 컨벤션
