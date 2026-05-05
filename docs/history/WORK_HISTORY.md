@@ -15,8 +15,15 @@
   4. `commander.ex`: 시스템 프롬프트 7단계 → 8단계 (HYPOTHESIZE 추가, Sakana AI Scientist)
   5. `ai.darwin.weekly.autonomous.plist`: Phase A/B/C Kill Switch 환경변수 3개 추가 (기본 false)
   6. 테스트 3개 신규: `cycle/measure_test.exs` + `hypothesis_engine_test.exs` + `team_connector_test.exs`
-- 컴파일 경고 0건, 428 tests 0 failures (18 excluded)
+- 컴파일 경고 0건, 442 tests 0 failures (18 excluded)
 - 이미 완성된 모듈: `hypothesis_engine.ex`, `team_connector.ex`, `cycle/measure.ex`, 마이그레이션 3개
+- **추가 구현 (94차 세션)**:
+  - `cycle/hypothesize.ex` 신설 — DISCOVER→HYPOTHESIZE→EVALUATE 8단계 GenServer
+  - `topics.ex`: `paper_hypothesized` 토픽 추가
+  - `lead.ex`: 7단계→8단계 moduledoc, HYPOTHESIZE 단계 JayBus 구독 + 핸들러
+  - `supervisor.ex`: `Darwin.V2.Cycle.Hypothesize` 등록 (Scanner 직후)
+  - `hypothesize_test.exs` 신설 (14개 테스트)
+  - `bots/darwin/CLAUDE.md`: Phase CODEX-A/B/C 완료 상태 반영
 - 모든 신규 Kill Switch 기본 false — 운영 안전 유지
 
 ## 2026-05-04: SIGMA Great Library Brain 최종 검증 완료 (92차 세션)
