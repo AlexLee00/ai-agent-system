@@ -105,6 +105,35 @@ delete process.env.HEPHAESTOS_PENDING_SIGNAL_DELAY_MS;
 assert.equal(maxTradeModeRunning, 2);
 assert.deepEqual(tradeModeResults.map((result) => result.id).sort(), ['normal', 'validation']);
 
+const retiredSynthetic = [];
+const syntheticFilterProcessor = createPendingSignalProcessing({
+  db: {
+    getApprovedSignals: async () => [
+      { id: 'reflect-1', symbol: 'REFLECT_123', status: 'approved', created_at: '2026-05-05T00:00:00.000Z' },
+      { id: 'live-1', symbol: 'BTC/USDT', status: 'approved', created_at: '2026-05-05T00:01:00.000Z' },
+    ],
+    updateSignalBlock: async (id, payload) => {
+      retiredSynthetic.push({ id, payload });
+    },
+  },
+  initHubSecrets: async () => true,
+  getInvestmentTradeMode: () => 'normal',
+  processBinancePendingReconcileQueue: async () => ({ processed: 0 }),
+  processBinancePendingJournalRepairQueue: async () => ({ processed: 0 }),
+  syncPositionsAtMarketOpen: async () => ({ ok: true, mismatchCount: 0 }),
+  cleanupStalePendingSignals: async () => [],
+  reconcileLivePositionsWithBrokerBalance: async () => [],
+  executeSignal: async () => ({}),
+  delay: async () => {},
+});
+const syntheticFiltered = await syntheticFilterProcessor.listHephaestosExecutableSignals('normal');
+assert.equal(syntheticFiltered.signals.length, 1);
+assert.equal(syntheticFiltered.signals[0].symbol, 'BTC/USDT');
+assert.equal(syntheticFiltered.syntheticCount, 1);
+assert.equal(retiredSynthetic.length, 1);
+assert.equal(retiredSynthetic[0].id, 'reflect-1');
+assert.equal(retiredSynthetic[0].payload.code, 'synthetic_reflection_signal');
+
 const prefetchEvents = [];
 const hotPathExecutor = createHephaestosSignalExecutor({
   ACTIONS: { BUY: 'BUY', SELL: 'SELL' },

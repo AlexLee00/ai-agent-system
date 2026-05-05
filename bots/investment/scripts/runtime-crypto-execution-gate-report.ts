@@ -36,6 +36,7 @@ async function loadQueueRows(days = 14) {
     FROM investment.signals
     WHERE exchange = 'binance'
       AND status IN ('pending', 'approved')
+      AND symbol NOT LIKE 'REFLECT_%'
       AND created_at > now() - INTERVAL '${safeDays} days'
     ORDER BY created_at DESC
     LIMIT 20

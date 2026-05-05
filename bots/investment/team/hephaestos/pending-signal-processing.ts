@@ -5,6 +5,7 @@ const MAX_PENDING_SIGNAL_CONCURRENCY = 4;
 const DEFAULT_PENDING_SIGNAL_DELAY_MS = 500;
 const MIN_PENDING_SIGNAL_DELAY_MS = 50;
 const MAX_PENDING_TRADE_MODE_CONCURRENCY = 2;
+const SYNTHETIC_REFLECTION_SYMBOL_PREFIX = 'REFLECT_';
 
 export function getPendingSignalConcurrency(env = process.env) {
   const raw = Number(
@@ -36,6 +37,11 @@ export function getPendingTradeModeQueueConcurrency(env = process.env) {
   return Math.min(MAX_PENDING_TRADE_MODE_CONCURRENCY, Math.floor(raw));
 }
 
+function isSyntheticReflectionSignal(signal = null) {
+  const symbol = String(signal?.symbol || '');
+  return symbol.startsWith(SYNTHETIC_REFLECTION_SYMBOL_PREFIX);
+}
+
 export function createPendingSignalProcessing({
   db,
   initHubSecrets,
@@ -53,6 +59,31 @@ export function createPendingSignalProcessing({
     return null;
   }
 
+  async function retireSyntheticSignals(signals = [], tradeMode = 'normal') {
+    if (!Array.isArray(signals) || signals.length === 0 || typeof db?.updateSignalBlock !== 'function') {
+      return 0;
+    }
+    await Promise.all(signals.map(async (signal) => {
+      try {
+        await db.updateSignalBlock(signal.id, {
+          status: 'failed',
+          reason: 'reflection smoke signal excluded from execution queue',
+          code: 'synthetic_reflection_signal',
+          meta: {
+            exchange: signal?.exchange || 'binance',
+            symbol: signal?.symbol || null,
+            action: signal?.action || null,
+            tradeMode,
+            source: 'hephaestos_pending_signal_processing',
+          },
+        });
+      } catch (error) {
+        console.warn(`[헤파이스토스] synthetic signal 퇴역 실패 (${signal?.id || 'unknown'}): ${error.message}`);
+      }
+    }));
+    return signals.length;
+  }
+
   async function listHephaestosExecutableSignals(tradeMode) {
     const pendingFetcher = resolveSignalFetcher('getPendingSignals');
     const approvedFetcher = resolveSignalFetcher('getApprovedSignals');
@@ -67,7 +98,10 @@ export function createPendingSignalProcessing({
     for (const signal of [...pendingSignals, ...approvedSignals]) {
       signalsById.set(signal.id, signal);
     }
-    const signals = [...signalsById.values()].sort((a, b) => {
+    const dedupedSignals = [...signalsById.values()];
+    const syntheticSignals = dedupedSignals.filter((signal) => isSyntheticReflectionSignal(signal));
+    const retiredSyntheticCount = await retireSyntheticSignals(syntheticSignals, tradeMode);
+    const signals = dedupedSignals.filter((signal) => !isSyntheticReflectionSignal(signal)).sort((a, b) => {
       const aTime = new Date(a.created_at || 0).getTime();
       const bTime = new Date(b.created_at || 0).getTime();
       return aTime - bTime;
@@ -76,6 +110,7 @@ export function createPendingSignalProcessing({
       signals,
       pendingCount: pendingSignals.length,
       approvedCount: approvedSignals.length,
+      syntheticCount: retiredSyntheticCount,
     };
   }
 
@@ -215,12 +250,16 @@ export function createPendingSignalProcessing({
           signals,
           pendingCount,
           approvedCount,
+          syntheticCount,
         } = await listHephaestosExecutableSignals(tradeMode);
         if (signals.length > 0) {
           console.log(
             `[헤파이스토스] 실행대상 복구 ${signals.length}건 `
             + `(pending=${pendingCount}, approved=${approvedCount}, trade_mode=${tradeMode})`,
           );
+        }
+        if (syntheticCount > 0) {
+          console.log(`[헤파이스토스] synthetic reflection signal 퇴역 ${syntheticCount}건 (trade_mode=${tradeMode})`);
         }
         const results = await runPendingSignalBatch(signals, {
           tradeMode,
