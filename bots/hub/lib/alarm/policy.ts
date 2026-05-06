@@ -57,6 +57,7 @@ function classifyOperationalSnapshot({
   }
 
   if (lower.includes('[블로팀] 인스타 일일 현황')
+    || lower.includes('[블로팀] 인스타 발행 성공')
     || lower.includes('engagement 자동화 회복')) {
     return { type: 'report', confidence: 0.94 };
   }
@@ -179,10 +180,16 @@ export function isExplicitHumanEscalation({
   return false;
 }
 
-module.exports = {
+const exportedPolicy = {
   ALARM_TYPES,
   classifyAlarmType,
   classifyAlarmTypeWithConfidence,
   isExplicitHumanEscalation,
   normalizeAlarmType,
 };
+
+export default exportedPolicy;
+
+if (typeof module !== 'undefined') {
+  module.exports = exportedPolicy;
+}

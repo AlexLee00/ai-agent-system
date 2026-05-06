@@ -50,6 +50,18 @@ test('treats auto-dev self stage snapshot as work', async () => {
   assert.deepEqual(result, { type: 'work', confidence: 0.98 });
 });
 
+test('downgrades blog instagram publish success snapshot to report', async () => {
+  const { classifyAlarmTypeWithConfidence } = await loadModule();
+  const result = classifyAlarmTypeWithConfidence({
+    severity: 'warn',
+    eventType: 'unknown_error',
+    title: 'blog alarm',
+    message: '✅ [블로팀] 인스타 발행 성공\n글: 테스트 글\npublishId: 1234567890',
+  });
+
+  assert.deepEqual(result, { type: 'report', confidence: 0.94 });
+});
+
 test('keeps actionable runtime failure as error', async () => {
   const { classifyAlarmTypeWithConfidence } = await loadModule();
   const result = classifyAlarmTypeWithConfidence({

@@ -101,6 +101,8 @@ type PostAlarmInput = {
   team?: string;
   alertLevel?: number;
   fromBot?: string;
+  level?: number | string;
+  bot?: string;
   sessionKey?: string;
   payload?: unknown;
   alarmType?: 'work' | 'report' | 'error' | string;
@@ -109,6 +111,7 @@ type PostAlarmInput = {
   incidentKey?: string;
   title?: string;
   eventType?: string;
+  event_type?: string;
   criticalTelegramMode?: string;
   inlineKeyboard?: InlineKeyboard | null;
 };
@@ -151,6 +154,19 @@ function _normalizeAlertText(value: unknown): string {
   const lowered = text.toLowerCase();
   if (['undefined', 'null', 'nan', '[object object]'].includes(lowered)) return '';
   return text;
+}
+
+function _normalizeLegacyAlertLevel(value: unknown): number | null {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return Math.max(1, Math.min(4, Math.trunc(value)));
+  }
+  const normalized = _normalizeAlertText(value).toLowerCase();
+  if (!normalized) return null;
+  if (['critical', 'emergency', 'fatal'].includes(normalized)) return 4;
+  if (['error', 'err', 'fail', 'failed'].includes(normalized)) return 3;
+  if (['warn', 'warning', 'alert'].includes(normalized)) return 2;
+  if (['info', 'report', 'work', 'ok', 'success'].includes(normalized)) return 1;
+  return null;
 }
 
 function _sleep(ms: number): Promise<void> {
@@ -735,6 +751,8 @@ export async function postAlarm({
   team = 'general',
   alertLevel = 2,
   fromBot = 'unknown',
+  level,
+  bot,
   sessionKey,
   payload = null,
   alarmType,
@@ -743,19 +761,22 @@ export async function postAlarm({
   incidentKey,
   title,
   eventType,
+  event_type,
   inlineKeyboard = null,
 }: PostAlarmInput) {
-  const safeFromBot = _normalizeAlertText(fromBot) || 'unknown';
+  const normalizedAlertLevel = _normalizeLegacyAlertLevel(level) ?? alertLevel;
+  const safeFromBot = _normalizeAlertText(fromBot) || _normalizeAlertText(bot) || 'unknown';
   const requestedTeam = _normalizeAlertText(team) || 'general';
   const safeMessage = _normalizeAlertText(message) || '유효한 본문 없음 (payload 확인 필요)';
-  const prefix = alertLevel >= 3 ? `🚨 [긴급 alert_level=${alertLevel}] ` : '';
+  const normalizedEventTypeInput = _normalizeAlertText(eventType) || _normalizeAlertText(event_type) || undefined;
+  const prefix = normalizedAlertLevel >= 3 ? `🚨 [긴급 alert_level=${normalizedAlertLevel}] ` : '';
   const { groupId, topicIds } = await _getTopicInfo();
-  const inferredAlarmType = _inferAlarmType({ alarmType, alertLevel, message: safeMessage, payload });
+  const inferredAlarmType = _inferAlarmType({ alarmType, alertLevel: normalizedAlertLevel, message: safeMessage, payload });
   const normalizedTeam = _resolveAlarmTopicKey({
     requestedTeam,
     alarmType: inferredAlarmType,
     visibility,
-    alertLevel,
+    alertLevel: normalizedAlertLevel,
     message: safeMessage,
     topicIds,
   });
@@ -786,20 +807,20 @@ export async function postAlarm({
   }
 
   const hubResult = await _postAlarmViaHub({
-    message: safeMessage,
-    team: requestedTeam,
-    alertLevel,
-    fromBot: safeFromBot,
-    payload,
-    alarmType,
-    visibility,
-    actionability,
-    incidentKey: incidentKey || sessionKey,
-    title,
-    eventType,
-  });
+      message: safeMessage,
+      team: requestedTeam,
+      alertLevel: normalizedAlertLevel,
+      fromBot: safeFromBot,
+      payload,
+      alarmType,
+      visibility,
+      actionability,
+      incidentKey: incidentKey || sessionKey,
+      title,
+      eventType: normalizedEventTypeInput,
+    });
   if (hubResult?.ok) {
-    _recordRecentAlertSnapshot({ message: safeMessage, team: requestedTeam, alertLevel, fromBot: safeFromBot, payload });
+    _recordRecentAlertSnapshot({ message: safeMessage, team: requestedTeam, alertLevel: normalizedAlertLevel, fromBot: safeFromBot, payload });
     return hubResult;
   }
   if (hubResult?.error) {

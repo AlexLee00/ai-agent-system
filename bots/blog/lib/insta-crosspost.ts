@@ -83,8 +83,10 @@ async function notifyTokenError(errMsg, diagnosis) {
     () => postAlarm({
       message: `[블로팀] 🚨 인스타 토큰 오류\n코드: ${code}\n메모: ${note}\n원인: ${errMsg}`,
       team: 'blog',
-      bot: 'insta-crosspost',
-      level: 'critical',
+      fromBot: 'insta-crosspost',
+      alertLevel: 4,
+      eventType: 'instagram_token_error',
+      alarmType: 'critical',
     }),
     () => console.warn('[DEV] 인스타 토큰 오류 알람 생략:', code)
   );
@@ -141,8 +143,12 @@ async function crosspostToInstagram(instaContent, postTitle, postId = null, dryR
       () => postAlarm({
         message: `✅ [블로팀] 인스타 발행 성공\n글: ${postTitle}\npublishId: ${result.publishId}`,
         team: 'blog',
-        bot: 'insta-crosspost',
-        level: 'info',
+        fromBot: 'insta-crosspost',
+        alertLevel: 1,
+        eventType: 'instagram_publish_success',
+        alarmType: 'report',
+        visibility: 'digest',
+        actionability: 'none',
       }),
       () => {}
     ).catch(() => {});
