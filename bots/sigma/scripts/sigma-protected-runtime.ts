@@ -15,6 +15,18 @@ export type SigmaProtectedRuntimeReport = {
   visible: string[];
 };
 
+function isTruthy(value: string | undefined): boolean {
+  const normalized = String(value || '').trim().toLowerCase();
+  return normalized === 'true' || normalized === '1' || normalized === 'yes' || normalized === 'on';
+}
+
+export function getProtectedLabels(env: NodeJS.ProcessEnv = process.env): readonly string[] {
+  if (isTruthy(env.CLAUDE_AUTO_DEV_DISABLED)) {
+    return SIGMA_PROTECTED_LABELS.filter((label) => label !== 'ai.claude.auto-dev.autonomous');
+  }
+  return SIGMA_PROTECTED_LABELS;
+}
+
 export function readLaunchctlLabels(): Set<string> {
   try {
     const output = execFileSync('/bin/launchctl', ['list'], { encoding: 'utf8' });
@@ -29,11 +41,15 @@ export function readLaunchctlLabels(): Set<string> {
   }
 }
 
-export function buildProtectedRuntimeReport(labels = readLaunchctlLabels()): SigmaProtectedRuntimeReport {
-  const visible = SIGMA_PROTECTED_LABELS.filter((label) => labels.has(label));
-  const missing = SIGMA_PROTECTED_LABELS.filter((label) => !labels.has(label));
+export function buildProtectedRuntimeReport(
+  labels = readLaunchctlLabels(),
+  env: NodeJS.ProcessEnv = process.env,
+): SigmaProtectedRuntimeReport {
+  const protectedLabels = getProtectedLabels(env);
+  const visible = protectedLabels.filter((label) => labels.has(label));
+  const missing = protectedLabels.filter((label) => !labels.has(label));
   return {
-    total: SIGMA_PROTECTED_LABELS.length,
+    total: protectedLabels.length,
     visible,
     missing,
   };

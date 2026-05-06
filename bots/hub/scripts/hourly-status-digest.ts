@@ -13,6 +13,7 @@ const require = createRequire(import.meta.url);
 const { postAlarm } = require('../../../packages/core/lib/hub-alarm-client');
 const kst = require('../../../packages/core/lib/kst');
 const { getLaunchctlStatus } = require('../../../packages/core/lib/health-provider');
+const { isExpectedIdleService, isOptionalService } = require('../../../packages/core/lib/service-ownership');
 
 const HUB_BASE = process.env.HUB_BASE_URL || 'http://localhost:7788';
 const HUB_TOKEN = process.env.HUB_AUTH_TOKEN || '';
@@ -95,6 +96,11 @@ function checkLaunchdGroup(bot: BotLaunchdHealth): { name: string; label: string
     const failingDetails = bot.labels
       .map((label) => {
         const svc = status?.[label];
+        if (isExpectedIdleService(label) || isOptionalService(label)) {
+          if (!svc || svc.loaded === false) return null;
+          if (svc.running === true) return null;
+          if (String(svc.state || '').trim() === 'not running') return null;
+        }
         if (!svc) return `${label.replace(/^ai\./, '')}: launchctl unknown`;
         if (svc.loaded === false) return `${label.replace(/^ai\./, '')}: launchd unloaded`;
         if (svc.running === true) return null;

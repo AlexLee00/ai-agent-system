@@ -59,6 +59,13 @@ export function createNaverMonitorService(deps: CreateNaverMonitorServiceDeps) {
     buildUnresolvedAlertsSummary,
   } = deps;
 
+  function isOperationalManualPendingAlert(alert: any): boolean {
+    const title = String(alert?.title || '');
+    const message = String(alert?.message || '');
+    return title.includes('픽코 예약 등록됨, 결제 확인 필요')
+      && message.includes('status: manual_pending');
+  }
+
   async function cleanupOldAlerts(): Promise<void> {
     try {
       const removed = await pruneOldAlerts();
@@ -92,6 +99,11 @@ export function createNaverMonitorService(deps: CreateNaverMonitorServiceDeps) {
       const actionable: any[] = [];
 
       for (const alert of unresolved) {
+        if (isOperationalManualPendingAlert(alert)) {
+          await resolveSystemAlertByTitle(String(alert.title || '⚠️ 픽코 예약 등록됨, 결제 확인 필요'), 'manual_pending_operational_queue');
+          continue;
+        }
+
         if (!alert.phone || !alert.date || !alert.start_time) {
           actionable.push(alert);
           continue;
