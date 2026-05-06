@@ -4,6 +4,7 @@ const pgPool = require('../../../../packages/core/lib/pg-pool');
 const telegramSender = require('../../../../packages/core/lib/telegram-sender');
 const { callWithFallback } = require('../../../../packages/core/lib/llm-fallback');
 const { selectLLMChain } = require('../../../../packages/core/lib/llm-model-selector');
+const { isExpectedIdleService, isOptionalService } = require('../../../../packages/core/lib/service-ownership');
 
 let dailyCount = 0;
 let dailyResetDate = '';
@@ -56,6 +57,49 @@ function hasStructuredEvidence({
   if (/[{[]/.test(text)) return true;
   if (/[:=]\s*\S+/.test(text)) return true;
   return false;
+}
+
+function findMentionedExpectedIdleLabel(text: string): string | null {
+  const corpus = String(text || '').toLowerCase();
+  const labels = [
+    'ai.claude.auto-dev.autonomous',
+    'ai.claude.auto-dev.shadow',
+    'ai.claude.auto-dev',
+  ];
+  for (const label of labels) {
+    if (corpus.includes(label.toLowerCase()) && (isExpectedIdleService(label) || isOptionalService(label))) {
+      return label;
+    }
+  }
+  return null;
+}
+
+function isExpectedIdleFalsePositiveContext({
+  incidentKey,
+  title,
+  message,
+  payload,
+}: {
+  incidentKey?: string;
+  title?: string;
+  message?: string;
+  payload?: unknown;
+}): boolean {
+  const text = [
+    String(incidentKey || ''),
+    String(title || ''),
+    String(message || ''),
+    payload && typeof payload === 'object' ? JSON.stringify(payload) : '',
+  ].join('\n');
+  const lower = text.toLowerCase();
+  const mentionedLabel = findMentionedExpectedIdleLabel(text);
+  if (!mentionedLabel) return false;
+  return lower.includes('protected_missing')
+    || lower.includes('launchd unloaded')
+    || lower.includes('not running')
+    || lower.includes('다운')
+    || lower.includes('pid 없음')
+    || lower.includes('auto-dev.autonomous');
 }
 
 function buildConservativeConsensus({
@@ -164,6 +208,7 @@ export async function shouldTriggerRoundtable({
 }): Promise<boolean> {
   if (!isEnabled()) return false;
   if (isSyntheticSmokeContext({ incidentKey, fromBot, title, message, payload })) return false;
+  if (isExpectedIdleFalsePositiveContext({ incidentKey, title, message, payload })) return false;
   if (alarmType === 'critical') return true;
   if (alarmType === 'error' && visibility === 'human_action') return true;
   if (alarmType === 'error' && clusterKey) {
@@ -316,6 +361,25 @@ export async function runRoundtable({
             resolved_at = NOW()
         WHERE id = $1
       `, [roundtableId, JSON.stringify({ skipped: true, reason: 'synthetic_smoke_incident' }), JSON.stringify(['governor'])]);
+    } catch {
+      // non-fatal
+    }
+    return null;
+  }
+
+  if (isExpectedIdleFalsePositiveContext({ incidentKey, title, message, payload })) {
+    try {
+      await pgPool.run('agent', `
+        UPDATE agent.alarm_roundtables
+        SET status = 'skipped',
+            consensus = $2,
+            participants = $3,
+            resolved_at = NOW()
+        WHERE id = $1
+      `, [roundtableId, JSON.stringify({
+        skipped: true,
+        reason: 'expected_idle_service_false_positive',
+      }), JSON.stringify(['governor'])]);
     } catch {
       // non-fatal
     }

@@ -74,6 +74,16 @@ async function assertRoundtableGate(): Promise<void> {
       message: 'approval needed 123',
     });
     assert(smokeBlocked === false, 'synthetic smoke alarms must not trigger roundtable');
+    const expectedIdleBlocked = await shouldTriggerRoundtable({
+      alarmType: 'critical',
+      visibility: 'emergency',
+      incidentKey: 'sigma:sigma-consistency-monitor:sigma_alarm',
+      fromBot: 'sigma-consistency-monitor',
+      title: 'sigma alarm',
+      message: 'protected_missing: ai.claude.auto-dev.autonomous',
+      payload: {},
+    });
+    assert(expectedIdleBlocked === false, 'expected-idle protected labels must not trigger roundtable');
   });
   assert(typeof getDailyRoundtableCount() === 'number', 'daily roundtable counter must be observable');
 }
