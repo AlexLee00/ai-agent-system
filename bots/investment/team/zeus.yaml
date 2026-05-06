@@ -9,7 +9,7 @@ outputs: ["bull_argument"]
 collaboration: {"upstream":["aria","sophia","hermes","oracle","argos","stock-flow","chronos","kairos"],"downstream":["luna","nemesis"],"parallel":["athena"]}
 killSwitches: ["LUNA_ZEUS_ENABLED"]
 memory_layers: ["L1","L2","L3"]
-llm_routing: {"primary":"openai-oauth/gpt-5.4-mini","fallbacks":["claude-code/haiku","groq/llama-3.3-70b-versatile"]}
+llm_routing: {"primary":"openai-oauth/gpt-5.4-mini","fallbacks":["groq/llama-3.3-70b-versatile","gemini-cli-oauth/gemini-2.5-flash"]}
 persona: |
   # 🦅 zeus — 매수 논거 분석가 페르소나
 

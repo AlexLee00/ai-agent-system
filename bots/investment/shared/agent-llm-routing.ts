@@ -118,14 +118,20 @@ export function routeToAbstractModel(route: LLMRoute): string {
 // ─── 기본값 ─────────────────────────────────────────────────────────────────
 
 const DEFAULT_ROUTE: LLMRoute = {
-  primary: 'anthropic_haiku',
-  fallbacks: ['groq_fast', 'local_fast'],
+  primary: 'openai-oauth/gpt-5.4-mini',
+  fallbacks: ['groq/llama-3.3-70b-versatile', 'gemini-cli-oauth/gemini-2.5-flash'],
 };
 
 // 기존 AGENT_ABSTRACT_MODEL 하위 호환 매핑
 const LEGACY_FALLBACK: Record<string, LLMRoute> = {
   luna:    { primary: 'openai-oauth/gpt-5.4', fallbacks: ['groq/llama-3.3-70b-versatile', 'gemini-cli-oauth/gemini-2.5-flash'] },
   chronos: { primary: 'openai-oauth/gpt-5.4', fallbacks: ['groq/qwen/qwen3-32b', 'gemini-cli-oauth/gemini-2.5-flash'] },
+  zeus:    { primary: 'openai-oauth/gpt-5.4-mini', fallbacks: ['groq/llama-3.3-70b-versatile', 'gemini-cli-oauth/gemini-2.5-flash'] },
+  athena:  { primary: 'openai-oauth/gpt-5.4-mini', fallbacks: ['groq/llama-3.3-70b-versatile', 'gemini-cli-oauth/gemini-2.5-flash'] },
+  hermes:  { primary: 'groq/llama-3.3-70b-versatile', fallbacks: ['openai-oauth/gpt-5.4-mini', 'gemini-cli-oauth/gemini-2.5-flash'] },
+  sophia:  { primary: 'groq/llama-3.3-70b-versatile', fallbacks: ['openai-oauth/gpt-5.4-mini', 'gemini-cli-oauth/gemini-2.5-flash'] },
+  oracle:  { primary: 'openai-oauth/gpt-5.4', fallbacks: ['groq/qwen/qwen3-32b', 'gemini-cli-oauth/gemini-2.5-flash'] },
+  nemesis: { primary: 'openai-oauth/gpt-5.4-mini', fallbacks: ['groq/qwen/qwen3-32b', 'gemini-cli-oauth/gemini-2.5-flash'] },
 };
 
 // ─── 에이전트별 기본 라우트 ──────────────────────────────────────────────────

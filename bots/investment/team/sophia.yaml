@@ -9,7 +9,7 @@ outputs: ["fundamental_signal"]
 collaboration: {"upstream":["scout"],"downstream":["luna","zeus","athena"],"parallel":["hermes"]}
 killSwitches: ["LUNA_SOPHIA_ENABLED"]
 memory_layers: ["L1","L2","L3"]
-llm_routing: {"primary":"groq/llama-3.3-70b-versatile","fallbacks":["openai-oauth/gpt-5.4-mini","gemini-cli-oauth/gemini-2.5-flash","claude-code/haiku"]}
+llm_routing: {"primary":"groq/llama-3.3-70b-versatile","fallbacks":["openai-oauth/gpt-5.4-mini","gemini-cli-oauth/gemini-2.5-flash"]}
 persona: |
   # 🧠 sophia — 커뮤니티 감성 분석가 페르소나
 

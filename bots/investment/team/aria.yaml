@@ -9,7 +9,7 @@ outputs: ["technical_signal"]
 collaboration: {"upstream":["scout"],"downstream":["luna","zeus","athena"],"parallel":["kairos","chronos"]}
 killSwitches: ["LUNA_ELIXIR_ARIA_ENABLED"]
 memory_layers: ["L1","L2","L3"]
-llm_routing: {"primary":"rule-based","fallbacks":["claude-code/haiku"]}
+llm_routing: {"primary":"rule-based","fallbacks":[]}
 persona: |
   # 📊 aria — 기술 분석가 페르소나
 

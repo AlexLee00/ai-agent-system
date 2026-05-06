@@ -9,7 +9,7 @@ outputs: ["anomaly_verdict"]
 collaboration: {"upstream":["luna","sweeper"],"downstream":["nemesis","luna"],"parallel":["adaptive-risk","budget"]}
 killSwitches: ["LUNA_ELIXIR_SENTINEL_ENABLED"]
 memory_layers: ["L1","L2","L4"]
-llm_routing: {"primary":"openai-oauth/gpt-5.4-mini","fallbacks":["claude-code/haiku"]}
+llm_routing: {"primary":"openai-oauth/gpt-5.4-mini","fallbacks":["groq/llama-3.3-70b-versatile","gemini-cli-oauth/gemini-2.5-flash"]}
 persona: |
   # 🛂 sentinel — 보안 감시자 페르소나
 

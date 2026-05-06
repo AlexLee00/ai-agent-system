@@ -12,6 +12,12 @@
 		<string>100</string>
 		<key>LLM_TEAM_SELECTOR_VERSION_PCT</key>
 		<string>100</string>
+		<key>INVESTMENT_LLM_HUB_ENABLED</key>
+		<string>true</string>
+		<key>LUNA_AGENT_LLM_ROUTING_ENABLED</key>
+		<string>true</string>
+		<key>INVESTMENT_LLM_DIRECT_FALLBACK</key>
+		<string>false</string>
 	</dict>
 	<key>KeepAlive</key>
 	<true/>

@@ -104,6 +104,9 @@ export function runLunaLaunchdLlmRoutingEnvSmoke() {
     if (label === 'ai.investment.commander') {
       assert.equal(oauthPrimary, true, `${file} must keep OAuth primary enabled`);
       assert.equal(teamSelectorPercent, 100, `${file} must keep team selector at 100%`);
+      assert.equal(String(env.INVESTMENT_LLM_HUB_ENABLED || '').toLowerCase(), 'true', `${file} must keep Hub LLM enabled`);
+      assert.equal(String(env.LUNA_AGENT_LLM_ROUTING_ENABLED || '').toLowerCase(), 'true', `${file} must keep agent LLM routing enabled`);
+      assert.equal(String(env.INVESTMENT_LLM_DIRECT_FALLBACK || '').toLowerCase(), 'false', `${file} must keep direct LLM fallback disabled`);
     }
     return { file, label, oauthPrimary, teamSelectorPercent };
   });
@@ -125,17 +128,24 @@ export function runLunaLaunchdLlmRoutingEnvSmoke() {
     'disabled routing keeps Groq as the Luna legacy fallback',
   );
   assert.ok(
-    legacyProviders.includes('claude-code'),
-    'disabled routing keeps Claude Code Haiku as the Luna legacy fallback',
+    !legacyProviders.includes('claude-code'),
+    'disabled routing must not leak Luna legacy calls to Claude Code',
   );
 
   const routedPayload = buildPayloadWithRouting(true);
   const routedChain = Array.isArray(routedPayload.chain) ? routedPayload.chain : [];
   const providers = routedChain.map((entry) => entry.provider);
   assert.ok(routedChain.length >= 3, 'enabled routing should keep a provider fallback chain');
-  assert.ok(providers.includes('claude-code'), 'enabled routing should include Claude Code fallback');
+  assert.ok(!providers.includes('claude-code'), 'enabled routing should not include Claude Code fallback');
   assert.ok(providers.includes('openai-oauth'), 'enabled routing should include OpenAI OAuth fallback');
   assert.ok(providers.includes('groq'), 'enabled routing should include Groq fallback');
+
+  const zeusPayload = buildAgentPayloadWithRouting('zeus', 'debate_bull', false);
+  const zeusProviders = (Array.isArray(zeusPayload.chain) ? zeusPayload.chain : [])
+    .map((entry) => entry.provider);
+  assert.ok(zeusProviders.length >= 3, 'disabled zeus routing should still keep fallback chain');
+  assert.equal(zeusProviders[0], 'openai-oauth', 'disabled zeus routing should use OpenAI OAuth primary');
+  assert.ok(!zeusProviders.includes('claude-code'), 'disabled zeus routing must not leak to Claude Code');
 
   const sentimentPayload = buildAgentPayloadWithRouting('sophia', 'sentiment', true);
   const sentimentProviders = (Array.isArray(sentimentPayload.chain) ? sentimentPayload.chain : [])
@@ -157,6 +167,7 @@ export function runLunaLaunchdLlmRoutingEnvSmoke() {
     plists: plistChecks,
     legacyProviders,
     routedProviders: providers,
+    zeusProviders,
     sentimentProviders,
   };
 }

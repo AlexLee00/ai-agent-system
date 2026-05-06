@@ -66,18 +66,32 @@ const AUTO_DEV_ARTIFACT_DIR = process.env.CLAUDE_AUTO_DEV_ARTIFACT_DIR ||
   path.join(WORKSPACE, 'claude-auto-dev-artifacts');
 const DEFAULT_AUTO_DEV_PROFILE = 'shadow';
 const AUTO_DEV_IMPLEMENTATION_MODEL_ALLOWLIST = {
+  'openai-oauth/gpt-5.4': {
+    provider: 'openai-oauth',
+    model: 'openai-oauth/gpt-5.4',
+    cliModelArg: 'gpt-5.4',
+    runner: 'codex',
+  },
+  'openai-oauth/gpt-5.4-mini': {
+    provider: 'openai-oauth',
+    model: 'openai-oauth/gpt-5.4-mini',
+    cliModelArg: 'gpt-5.4-mini',
+    runner: 'codex',
+  },
   'claude-code/sonnet': {
     provider: 'claude-code',
     model: 'claude-code/sonnet',
     cliModelArg: 'sonnet',
+    runner: 'claude',
   },
   'claude-code/opus': {
     provider: 'claude-code',
     model: 'claude-code/opus',
     cliModelArg: 'opus',
+    runner: 'claude',
   },
 };
-const DEFAULT_AUTO_DEV_IMPLEMENTATION_MODEL = 'claude-code/sonnet';
+const DEFAULT_AUTO_DEV_IMPLEMENTATION_MODEL = 'openai-oauth/gpt-5.4';
 const AUTO_DEV_PROFILES = {
   shadow: {
     label: 'shadow',
@@ -207,7 +221,12 @@ function normalizeImplementationModel(value) {
   if (!input) return null;
   if (input === 'sonnet') return 'claude-code/sonnet';
   if (input === 'opus') return 'claude-code/opus';
+  if (input === 'gpt-5.4') return 'openai-oauth/gpt-5.4';
+  if (input === 'gpt-5.4-mini') return 'openai-oauth/gpt-5.4-mini';
   if (input.startsWith('claude-code/')) {
+    return Object.prototype.hasOwnProperty.call(AUTO_DEV_IMPLEMENTATION_MODEL_ALLOWLIST, input) ? input : null;
+  }
+  if (input.startsWith('openai-oauth/')) {
     return Object.prototype.hasOwnProperty.call(AUTO_DEV_IMPLEMENTATION_MODEL_ALLOWLIST, input) ? input : null;
   }
   return null;
@@ -265,6 +284,7 @@ function resolveImplementationModelPolicy({
     implementationProvider: allowlisted?.provider || 'claude-code',
     implementationModel: allowlisted?.model || model || DEFAULT_AUTO_DEV_IMPLEMENTATION_MODEL,
     implementationCliModelArg: allowlisted?.cliModelArg || 'sonnet',
+    implementationRunner: allowlisted?.runner || 'claude',
     implementationModelSource: source,
     modelPolicyError: error,
   };
@@ -275,6 +295,7 @@ function buildImplementationModelMeta(runtimeConfig = {}, extra = {}) {
     provider: runtimeConfig.implementationProvider || 'claude-code',
     model: runtimeConfig.implementationModel || DEFAULT_AUTO_DEV_IMPLEMENTATION_MODEL,
     cliModelArg: runtimeConfig.implementationCliModelArg || 'sonnet',
+    runner: runtimeConfig.implementationRunner || 'claude',
     source: runtimeConfig.implementationModelSource || 'profile',
     fallbackUsed: false,
     degradedFallback: false,
@@ -381,6 +402,7 @@ function resolveAutoDevRuntimeConfig(options = {}, envVars = process.env) {
   config.implementationProvider = modelPolicy.implementationProvider;
   config.implementationModel = modelPolicy.implementationModel;
   config.implementationCliModelArg = modelPolicy.implementationCliModelArg;
+  config.implementationRunner = modelPolicy.implementationRunner;
   config.implementationModelSource = modelPolicy.implementationModelSource;
   config.modelPolicyError = modelPolicy.modelPolicyError || null;
   if (hardDisabled) {
@@ -1594,6 +1616,89 @@ function resolveClaudeCliCommand() {
   };
 }
 
+function resolveCodexCliCommand() {
+  const configured = String(
+    process.env.CLAUDE_AUTO_DEV_CODEX_CLI
+    || process.env.CODEX_CLI
+    || '/Applications/Codex.app/Contents/Resources/codex'
+  ).trim();
+  if (!configured) {
+    return { ok: false, error: 'Codex CLI 경로가 비어 있습니다. CLAUDE_AUTO_DEV_CODEX_CLI 또는 CODEX_CLI를 확인하세요.' };
+  }
+
+  if (configured.includes('/') || configured.startsWith('.')) {
+    const resolved = path.isAbsolute(configured) ? configured : path.join(ROOT, configured);
+    if (fs.existsSync(resolved)) return { ok: true, command: resolved, source: 'path' };
+    return { ok: false, error: `Codex CLI 경로를 찾을 수 없습니다: ${resolved}` };
+  }
+
+  try {
+    const lookup = execFileSync('bash', ['-lc', `command -v "${configured.replace(/"/g, '\\"')}"`], {
+      cwd: ROOT,
+      encoding: 'utf8',
+      timeout: 3000,
+      stdio: ['ignore', 'pipe', 'ignore'],
+    }).trim();
+    if (lookup) return { ok: true, command: configured, resolvedPath: lookup, source: 'PATH' };
+  } catch {}
+
+  return {
+    ok: false,
+    error: `Codex CLI를 PATH에서 찾을 수 없습니다: ${configured} (CLAUDE_AUTO_DEV_CODEX_CLI 또는 CODEX_CLI 설정 필요)`,
+  };
+}
+
+function runCodexImplementation(prompt, modelMeta, options = {}, cwd = ROOT) {
+  const cli = resolveCodexCliCommand();
+  if (!cli.ok) {
+    return { pass: false, skipped: false, error: cli.error, modelMeta };
+  }
+
+  const timeout = Number(process.env.CLAUDE_AUTO_DEV_TIMEOUT_MS || 60 * 60 * 1000);
+  const sandbox = String(process.env.CLAUDE_AUTO_DEV_CODEX_SANDBOX || 'workspace-write').trim() || 'workspace-write';
+  const approvalPolicy = String(process.env.CLAUDE_AUTO_DEV_CODEX_APPROVAL_POLICY || 'never').trim() || 'never';
+  const args = [
+    'exec',
+    '--model',
+    modelMeta.cliModelArg,
+    '--sandbox',
+    sandbox,
+    '--config',
+    `approval_policy="${approvalPolicy}"`,
+    '--cd',
+    cwd,
+    '--skip-git-repo-check',
+    '-',
+  ];
+
+  try {
+    const output = execFileSync(cli.command, args, {
+      cwd,
+      env: buildAutoDevChildEnv(options),
+      input: prompt,
+      encoding: 'utf8',
+      timeout,
+      stdio: ['pipe', 'pipe', 'pipe'],
+    });
+    return {
+      pass: true,
+      skipped: false,
+      output: output.slice(-4000),
+      cli: cli.resolvedPath || cli.command,
+      modelMeta,
+    };
+  } catch (error) {
+    const stderr = String(error.stderr || error.stdout || error.message || '');
+    return {
+      pass: false,
+      skipped: false,
+      error: stderr.slice(-4000),
+      cli: cli.resolvedPath || cli.command,
+      modelMeta,
+    };
+  }
+}
+
 async function runClaudeImplementation(job, mode, options = {}, failureContext = '', executionContext = null) {
   const runtimeConfig = getRuntimeConfig(options);
   const dryRun = runtimeConfig.dryRun;
@@ -1618,6 +1723,17 @@ async function runClaudeImplementation(job, mode, options = {}, failureContext =
   }
   const timeout = Number(process.env.CLAUDE_AUTO_DEV_TIMEOUT_MS || 60 * 60 * 1000);
   const prompt = buildClaudePrompt(job, mode, failureContext, toolPolicy);
+  if (modelMeta.provider === 'openai-oauth' || modelMeta.runner === 'codex') {
+    return runCodexImplementation(prompt, modelMeta, options, cwd);
+  }
+  if (modelMeta.provider !== 'claude-code') {
+    return {
+      pass: false,
+      skipped: false,
+      error: `unsupported_implementation_provider:${modelMeta.provider}`,
+      modelMeta,
+    };
+  }
   const cli = resolveClaudeCliCommand();
 
   if (!cli.ok) {
@@ -3016,6 +3132,7 @@ async function runAutoDevPipeline(options = {}) {
         implementationProvider: runtimeConfig.implementationProvider,
         implementationModel: runtimeConfig.implementationModel,
         implementationCliModelArg: runtimeConfig.implementationCliModelArg,
+        implementationRunner: runtimeConfig.implementationRunner,
         implementationModelSource: runtimeConfig.implementationModelSource,
         modelPolicyError: runtimeConfig.modelPolicyError || null,
       },
@@ -3060,6 +3177,7 @@ async function runAutoDevPipeline(options = {}) {
         implementationProvider: runtimeConfig.implementationProvider,
         implementationModel: runtimeConfig.implementationModel,
         implementationCliModelArg: runtimeConfig.implementationCliModelArg,
+        implementationRunner: runtimeConfig.implementationRunner,
         implementationModelSource: runtimeConfig.implementationModelSource,
         modelPolicyError: runtimeConfig.modelPolicyError || null,
       },
@@ -3119,6 +3237,7 @@ async function runAutoDevPipeline(options = {}) {
       implementationProvider: runtimeConfig.implementationProvider,
       implementationModel: runtimeConfig.implementationModel,
       implementationCliModelArg: runtimeConfig.implementationCliModelArg,
+      implementationRunner: runtimeConfig.implementationRunner,
       implementationModelSource: runtimeConfig.implementationModelSource,
       modelPolicyError: runtimeConfig.modelPolicyError || null,
     },

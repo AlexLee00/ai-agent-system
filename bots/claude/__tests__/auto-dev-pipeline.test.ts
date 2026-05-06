@@ -701,9 +701,9 @@ async function test_completed_document_is_updated_after_actual_implementation() 
     assert.match(content, /implementation_completed_at:/);
     assert.match(content, /<!-- auto_dev:implementation_completed -->/);
     assert.match(content, /## Implementation Completed/);
-    assert.match(content, /implementation_model_provider:\s*`claude-code`/);
-    assert.match(content, /implementation_model:\s*`claude-code\/sonnet`/);
-    assert.match(content, /implementation_cli_model_arg:\s*`sonnet`/);
+    assert.match(content, /implementation_model_provider:\s*`openai-oauth`/);
+    assert.match(content, /implementation_model:\s*`openai-oauth\/gpt-5\.4`/);
+    assert.match(content, /implementation_cli_model_arg:\s*`gpt-5\.4`/);
     assert.match(content, /implementation_model_source:\s*`profile`/);
     assert.deepStrictEqual(pipeline.listAutoDevDocuments(), []);
   }, testEnv(tmpRoot, {
@@ -806,7 +806,7 @@ async function test_review_failure_triggers_single_revise_loop() {
   const tmpRoot = makeTempRoot();
   const doc = makeDoc(tmpRoot, 'CODEX_REVIEW_REVISE.md', '# A\nx');
   let reviewCalls = 0;
-  let claudeCalls = 0;
+  let codexCalls = 0;
 
   const { mocks } = makeMocks(tmpRoot, {
     '../src/reviewer': {
@@ -820,10 +820,11 @@ async function test_review_failure_triggers_single_revise_loop() {
     child_process: {
       execFileSync: (command) => {
         if (command === 'bash') return '/usr/local/bin/claude\n';
-        if (command === 'claude') {
-          claudeCalls += 1;
+        if (String(command).endsWith('/codex') || command === 'codex') {
+          codexCalls += 1;
           return 'ok';
         }
+        if (command === 'claude') throw new Error('claude CLI should not be used for default OpenAI OAuth auto-dev');
         if (command === 'rg') throw new Error('no match');
         return '';
       },
@@ -841,7 +842,7 @@ async function test_review_failure_triggers_single_revise_loop() {
     });
     assert.strictEqual(result.ok, true);
     assert.strictEqual(reviewCalls, 2);
-    assert.strictEqual(claudeCalls, 2, 'initial implementation + revise_after_review');
+    assert.strictEqual(codexCalls, 2, 'initial implementation + revise_after_review');
   }, testEnv(tmpRoot, { CLAUDE_AUTO_DEV_EXECUTE_IMPLEMENTATION: 'true' }));
 
   fs.rmSync(tmpRoot, { recursive: true, force: true });
@@ -852,7 +853,7 @@ async function test_test_failure_triggers_single_revise_loop() {
   const tmpRoot = makeTempRoot();
   const doc = makeDoc(tmpRoot, 'CODEX_TEST_REVISE.md', '# A\nx');
   let buildCalls = 0;
-  let claudeCalls = 0;
+  let codexCalls = 0;
 
   const { mocks } = makeMocks(tmpRoot, {
     '../src/builder': {
@@ -866,10 +867,11 @@ async function test_test_failure_triggers_single_revise_loop() {
     child_process: {
       execFileSync: (command) => {
         if (command === 'bash') return '/usr/local/bin/claude\n';
-        if (command === 'claude') {
-          claudeCalls += 1;
+        if (String(command).endsWith('/codex') || command === 'codex') {
+          codexCalls += 1;
           return 'ok';
         }
+        if (command === 'claude') throw new Error('claude CLI should not be used for default OpenAI OAuth auto-dev');
         if (command === 'rg') throw new Error('no match');
         return '';
       },
@@ -887,7 +889,7 @@ async function test_test_failure_triggers_single_revise_loop() {
     });
     assert.strictEqual(result.ok, true);
     assert.strictEqual(buildCalls, 2);
-    assert.strictEqual(claudeCalls, 2, 'initial implementation + revise_after_test');
+    assert.strictEqual(codexCalls, 2, 'initial implementation + revise_after_test');
   }, testEnv(tmpRoot, { CLAUDE_AUTO_DEV_EXECUTE_IMPLEMENTATION: 'true' }));
 
   fs.rmSync(tmpRoot, { recursive: true, force: true });
@@ -1047,10 +1049,12 @@ async function test_launchd_plist_defaults_are_safe() {
   const autonomousPlist = fs.readFileSync(AUTO_DEV_AUTONOMOUS_PLIST_PATH, 'utf8');
   assert.match(plist, /<key>CLAUDE_AUTO_DEV_PROFILE<\/key>\s*<string>shadow<\/string>/);
   assert.match(shadowPlist, /<key>CLAUDE_AUTO_DEV_PROFILE<\/key>\s*<string>shadow<\/string>/);
-  assert.match(autonomousPlist, /<key>CLAUDE_AUTO_DEV_PROFILE<\/key>\s*<string>shadow<\/string>/);
+  assert.match(autonomousPlist, /<key>CLAUDE_AUTO_DEV_PROFILE<\/key>\s*<string>autonomous_l5<\/string>/);
   assert.match(plist, /<key>CLAUDE_AUTO_DEV_DISABLED<\/key>\s*<string>true<\/string>/);
   assert.match(shadowPlist, /<key>CLAUDE_AUTO_DEV_DISABLED<\/key>\s*<string>true<\/string>/);
-  assert.match(autonomousPlist, /<key>CLAUDE_AUTO_DEV_DISABLED<\/key>\s*<string>true<\/string>/);
+  assert.match(autonomousPlist, /<key>CLAUDE_AUTO_DEV_DISABLED<\/key>\s*<string>false<\/string>/);
+  assert.match(autonomousPlist, /<key>CLAUDE_AUTO_DEV_MODEL<\/key>\s*<string>openai-oauth\/gpt-5\.4<\/string>/);
+  assert.match(autonomousPlist, /<key>CLAUDE_AUTO_DEV_CODEX_CLI<\/key>/);
   assert.doesNotMatch(shadowPlist, /CLAUDE_AUTO_DEV_EXECUTE_IMPLEMENTATION/);
   assert.doesNotMatch(autonomousPlist, /CLAUDE_AUTO_DEV_EXECUTE_IMPLEMENTATION/);
   assert.match(plist, /<key>KeepAlive<\/key>\s*<false\/>/);
@@ -1067,9 +1071,10 @@ async function test_profile_resolver_maps_runtime_profiles() {
     assert.strictEqual(shadow.shadow, true);
     assert.strictEqual(shadow.executeImplementation, false);
     assert.strictEqual(shadow.integrationMode, 'patch');
-    assert.strictEqual(shadow.implementationProvider, 'claude-code');
-    assert.strictEqual(shadow.implementationModel, 'claude-code/sonnet');
-    assert.strictEqual(shadow.implementationCliModelArg, 'sonnet');
+    assert.strictEqual(shadow.implementationProvider, 'openai-oauth');
+    assert.strictEqual(shadow.implementationModel, 'openai-oauth/gpt-5.4');
+    assert.strictEqual(shadow.implementationCliModelArg, 'gpt-5.4');
+    assert.strictEqual(shadow.implementationRunner, 'codex');
     assert.strictEqual(shadow.implementationModelSource, 'profile');
     assert.strictEqual(shadow.modelPolicyError, null);
 
@@ -1085,9 +1090,10 @@ async function test_profile_resolver_maps_runtime_profiles() {
     assert.strictEqual(autonomous.archiveOnSuccess, true);
     assert.strictEqual(autonomous.runHardTests, true);
     assert.strictEqual(autonomous.integrationMode, 'cherry_pick');
-    assert.strictEqual(autonomous.implementationProvider, 'claude-code');
-    assert.strictEqual(autonomous.implementationModel, 'claude-code/sonnet');
-    assert.strictEqual(autonomous.implementationCliModelArg, 'sonnet');
+    assert.strictEqual(autonomous.implementationProvider, 'openai-oauth');
+    assert.strictEqual(autonomous.implementationModel, 'openai-oauth/gpt-5.4');
+    assert.strictEqual(autonomous.implementationCliModelArg, 'gpt-5.4');
+    assert.strictEqual(autonomous.implementationRunner, 'codex');
     assert.strictEqual(autonomous.implementationModelSource, 'profile');
     assert.strictEqual(autonomous.modelPolicyError, null);
   }, testEnv(tmpRoot));
@@ -1119,8 +1125,9 @@ async function test_profile_authoritative_blocks_legacy_overrides() {
     assert.strictEqual(runtime.archiveOnSuccess, false);
     assert.strictEqual(runtime.runHardTests, false);
     assert.strictEqual(runtime.integrationMode, 'patch');
-    assert.strictEqual(runtime.implementationModel, 'claude-code/sonnet');
-    assert.strictEqual(runtime.implementationCliModelArg, 'sonnet');
+    assert.strictEqual(runtime.implementationModel, 'openai-oauth/gpt-5.4');
+    assert.strictEqual(runtime.implementationCliModelArg, 'gpt-5.4');
+    assert.strictEqual(runtime.implementationRunner, 'codex');
     assert.strictEqual(runtime.implementationModelSource, 'profile');
     assert.strictEqual(runtime.modelPolicyError, null);
     assert.ok(runtime.ignoredLegacyOverrides.includes('env:enabled'));
@@ -1206,7 +1213,7 @@ async function test_profile_compatibility_mode_blocks_unallowlisted_model() {
       CLAUDE_AUTO_DEV_COMPAT_MODE: 'true',
       CLAUDE_AUTO_DEV_MODEL: 'claude-code/haiku',
     });
-    assert.strictEqual(runtime.implementationModel, 'claude-code/sonnet');
+    assert.strictEqual(runtime.implementationModel, 'openai-oauth/gpt-5.4');
     assert.match(String(runtime.modelPolicyError || ''), /지원하지 않는 auto_dev implementation model/i);
   }, testEnv(tmpRoot));
 
@@ -1242,14 +1249,17 @@ async function test_implementation_model_policy_failure_is_fail_closed() {
 async function test_implementation_invocation_includes_model_arg() {
   const tmpRoot = makeTempRoot();
   const doc = makeDoc(tmpRoot, 'CODEX_MODEL_ARG.md', '# Model\narg');
-  const claudeCalls = [];
+  const codexCalls = [];
   const { mocks } = makeMocks(tmpRoot, {
     child_process: {
-      execFileSync: (command, args = []) => {
+      execFileSync: (command, args = [], options = {}) => {
         if (command === 'bash') return '/usr/local/bin/claude\n';
-        if (command === 'claude') {
-          claudeCalls.push(args);
+        if (String(command).endsWith('/codex') || command === 'codex') {
+          codexCalls.push({ args, input: options.input });
           return 'ok';
+        }
+        if (command === 'claude') {
+          throw new Error('claude CLI should not be used for OpenAI OAuth auto-dev');
         }
         if (command === 'rg') throw new Error('no match');
         return '';
@@ -1271,6 +1281,57 @@ async function test_implementation_invocation_includes_model_arg() {
     CLAUDE_AUTO_DEV_EXECUTE_IMPLEMENTATION: 'true',
   }));
 
+  assert.ok(codexCalls.length > 0, 'Codex CLI should be invoked for OpenAI OAuth auto-dev');
+  const firstCall = codexCalls[0].args.map(String);
+  assert.strictEqual(firstCall[0], 'exec');
+  const modelFlagIndex = firstCall.indexOf('--model');
+  assert.ok(modelFlagIndex >= 0, 'implementation CLI must include --model');
+  assert.strictEqual(firstCall[modelFlagIndex + 1], 'gpt-5.4');
+  assert.ok(firstCall.includes('--sandbox'), 'Codex runner must set sandbox explicitly');
+  assert.ok(firstCall.includes('workspace-write'), 'Codex runner must default to workspace-write sandbox');
+  assert.ok(String(codexCalls[0].input || '').includes('Source Document'), 'Codex runner must pass prompt through stdin');
+
+  fs.rmSync(tmpRoot, { recursive: true, force: true });
+  console.log('✅ auto-dev: OpenAI OAuth implementation invokes Codex with explicit model');
+}
+
+async function test_claude_code_compat_invocation_includes_model_arg() {
+  const tmpRoot = makeTempRoot();
+  const doc = makeDoc(tmpRoot, 'CODEX_CLAUDE_MODEL_ARG.md', '# Model\narg');
+  const claudeCalls = [];
+  const { mocks } = makeMocks(tmpRoot, {
+    child_process: {
+      execFileSync: (command, args = []) => {
+        if (command === 'bash') return '/usr/local/bin/claude\n';
+        if (command === 'claude') {
+          claudeCalls.push(args);
+          return 'ok';
+        }
+        if (String(command).endsWith('/codex') || command === 'codex') {
+          throw new Error('Codex CLI should not be used for Claude Code compatibility mode');
+        }
+        if (command === 'rg') throw new Error('no match');
+        return '';
+      },
+      execSync: () => '',
+    },
+  });
+
+  await withMocks(mocks, async pipeline => {
+    const result = await pipeline.processAutoDevDocument(doc, {
+      force: true,
+      test: false,
+      dryRun: false,
+      executeImplementation: true,
+      compatibilityMode: true,
+      implementationModel: 'claude-code/sonnet',
+      maxRevisionPasses: 0,
+    });
+    assert.strictEqual(result.ok, true);
+  }, testEnv(tmpRoot, {
+    CLAUDE_AUTO_DEV_EXECUTE_IMPLEMENTATION: 'true',
+  }));
+
   assert.ok(claudeCalls.length > 0, 'claude CLI should be invoked');
   const firstCall = claudeCalls[0].map(String);
   const modelFlagIndex = firstCall.indexOf('--model');
@@ -1278,7 +1339,7 @@ async function test_implementation_invocation_includes_model_arg() {
   assert.strictEqual(firstCall[modelFlagIndex + 1], 'sonnet');
 
   fs.rmSync(tmpRoot, { recursive: true, force: true });
-  console.log('✅ auto-dev: implementation invocation includes explicit --model sonnet');
+  console.log('✅ auto-dev: Claude Code compatibility path keeps explicit --model sonnet');
 }
 
 async function test_bash_is_fail_closed_without_allowlist() {
@@ -1551,9 +1612,10 @@ async function test_archive_manifest_is_created() {
     assert.ok(fs.existsSync(path.join(tmpRoot, result.job.archiveManifestPath)));
     const manifest = JSON.parse(fs.readFileSync(path.join(tmpRoot, result.job.archiveManifestPath), 'utf8'));
     assert.strictEqual(manifest.implementationStatus, 'auto_dev_implementation_completed');
-    assert.strictEqual(manifest.implementationModelMeta?.provider, 'claude-code');
-    assert.strictEqual(manifest.implementationModelMeta?.model, 'claude-code/sonnet');
-    assert.strictEqual(manifest.implementationModelMeta?.cliModelArg, 'sonnet');
+    assert.strictEqual(manifest.implementationModelMeta?.provider, 'openai-oauth');
+    assert.strictEqual(manifest.implementationModelMeta?.model, 'openai-oauth/gpt-5.4');
+    assert.strictEqual(manifest.implementationModelMeta?.cliModelArg, 'gpt-5.4');
+    assert.strictEqual(manifest.implementationModelMeta?.runner, 'codex');
     assert.strictEqual(manifest.implementationModelMeta?.source, 'profile');
     const archivedContent = fs.readFileSync(path.join(tmpRoot, result.job.archivedPath), 'utf8');
     assert.match(archivedContent, /implementation_status: auto_dev_implementation_completed/);
@@ -1978,6 +2040,7 @@ async function main() {
     test_profile_compatibility_mode_blocks_unallowlisted_model,
     test_implementation_model_policy_failure_is_fail_closed,
     test_implementation_invocation_includes_model_arg,
+    test_claude_code_compat_invocation_includes_model_arg,
     test_bash_is_fail_closed_without_allowlist,
     test_lock_heartbeat_sidecar_enforces_parent_liveness,
     test_review_cycle_uses_execution_context,

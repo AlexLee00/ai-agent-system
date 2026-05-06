@@ -9,7 +9,7 @@ outputs: ["macro_signal"]
 collaboration: {"upstream":["scout"],"downstream":["luna","zeus","athena"],"parallel":["argos","stock-flow"]}
 killSwitches: ["LUNA_ORACLE_ENABLED"]
 memory_layers: ["L1","L2","L3"]
-llm_routing: {"primary":"openai-oauth/gpt-5.4","fallbacks":["groq/qwen/qwen3-32b","claude-code/haiku"]}
+llm_routing: {"primary":"openai-oauth/gpt-5.4","fallbacks":["groq/qwen/qwen3-32b","gemini-cli-oauth/gemini-2.5-flash"]}
 persona: |
   # 🔮 oracle — 온체인 분석가 페르소나
 

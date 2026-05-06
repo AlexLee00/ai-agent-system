@@ -126,6 +126,7 @@ function unitSmokeScripts(): string[] {
     'llm-oauth4-master-review-smoke.ts',
     'llm-oauth4-master-review-launchd-smoke.ts',
     'llm-anthropic-primary-audit.ts',
+    'llm-sonnet-hotspot-guard-smoke.ts',
     'gemini-route-assignment-smoke.ts',
     'steward-gemini-model-drill-smoke.ts',
     'oauth-ops-readiness-smoke.ts',

@@ -9,7 +9,7 @@ outputs: ["backtest_report","quality_metrics"]
 collaboration: {"upstream":["luna"],"downstream":["kairos","luna"],"parallel":["aria"]}
 killSwitches: ["LUNA_CHRONOS_ENABLED"]
 memory_layers: ["L1","L2","L3"]
-llm_routing: {"primary":"openai-oauth/gpt-5.4","fallbacks":["groq/qwen/qwen3-32b","claude-code/haiku"]}
+llm_routing: {"primary":"openai-oauth/gpt-5.4","fallbacks":["groq/qwen/qwen3-32b","gemini-cli-oauth/gemini-2.5-flash"]}
 persona: |
   # ⏰ chronos — 백테스팅 검증관 페르소나
 

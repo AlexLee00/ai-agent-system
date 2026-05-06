@@ -140,12 +140,12 @@ export const PROFILES: Record<string, TeamProfiles> = {
       "claude_code_settings": CLAUDE_CODE_SETTINGS["luna-ops"],
       "local_llm_base_url": "http://127.0.0.1:11434",
       "primary_routes": [
-        "openai-oauth/gpt-5.4",
-        "claude-code/sonnet"
+        "openai-oauth/gpt-5.4"
       ],
       "fallback_routes": [
         GROQ_SCOUT_ROUTE,
-        OPENAI_FAST_ROUTE
+        OPENAI_FAST_ROUTE,
+        GEMINI_CLI_FLASH_ROUTE
       ]
     },
     "analyst": {
@@ -154,12 +154,12 @@ export const PROFILES: Record<string, TeamProfiles> = {
       "claude_code_settings": CLAUDE_CODE_SETTINGS["luna-ops"],
       "local_llm_base_url": "http://127.0.0.1:11434",
       "primary_routes": [
-        "openai-oauth/gpt-5.4",
-        "claude-code/sonnet"
+        "openai-oauth/gpt-5.4"
       ],
       "fallback_routes": [
         GROQ_SCOUT_ROUTE,
-        OPENAI_FAST_ROUTE
+        OPENAI_FAST_ROUTE,
+        GEMINI_CLI_FLASH_ROUTE
       ]
     },
     "validator": {
@@ -168,12 +168,12 @@ export const PROFILES: Record<string, TeamProfiles> = {
       "claude_code_settings": CLAUDE_CODE_SETTINGS["luna-ops"],
       "local_llm_base_url": "http://127.0.0.1:11434",
       "primary_routes": [
-        "openai-oauth/gpt-5.4",
-        "claude-code/sonnet"
+        "openai-oauth/gpt-5.4"
       ],
       "fallback_routes": [
         GROQ_SCOUT_ROUTE,
-        OPENAI_FAST_ROUTE
+        OPENAI_FAST_ROUTE,
+        GEMINI_CLI_FLASH_LITE_ROUTE
       ]
     },
     "commander": {
@@ -182,11 +182,11 @@ export const PROFILES: Record<string, TeamProfiles> = {
       "claude_code_settings": CLAUDE_CODE_SETTINGS["luna-ops"],
       "local_llm_base_url": "http://127.0.0.1:11434",
       "primary_routes": [
-        "openai-oauth/gpt-5.4",
-        "claude-code/sonnet"
+        "openai-oauth/gpt-5.4"
       ],
       "fallback_routes": [
-        GROQ_SCOUT_ROUTE
+        GROQ_SCOUT_ROUTE,
+        OPENAI_FAST_ROUTE
       ]
     },
     // 🔴 CRITICAL — 실시간 매매 판단 경로, local 제외, 즉시 fallback
@@ -198,8 +198,8 @@ export const PROFILES: Record<string, TeamProfiles> = {
         GROQ_VERSATILE_ROUTE
       ],
       "fallback_routes": [
-        "claude-code/sonnet",
-        "openai-oauth/gpt-5.4-mini"
+        "openai-oauth/gpt-5.4-mini",
+        GEMINI_CLI_FLASH_LITE_ROUTE
       ],
       "timeout_ms": 10_000,
       "critical": true
@@ -212,8 +212,8 @@ export const PROFILES: Record<string, TeamProfiles> = {
         GROQ_VERSATILE_ROUTE
       ],
       "fallback_routes": [
-        "claude-code/sonnet",
-        "openai-oauth/gpt-5.4-mini"
+        "openai-oauth/gpt-5.4-mini",
+        GEMINI_CLI_FLASH_LITE_ROUTE
       ],
       "timeout_ms": 10_000,
       "critical": true
@@ -227,7 +227,7 @@ export const PROFILES: Record<string, TeamProfiles> = {
       ],
       "fallback_routes": [
         GROQ_VERSATILE_ROUTE,
-        "claude-code/haiku"
+        GEMINI_CLI_FLASH_ROUTE
       ],
       "critical": false
     },
@@ -238,7 +238,7 @@ export const PROFILES: Record<string, TeamProfiles> = {
       "claude_code_name": "luna-ops",
       "claude_code_settings": CLAUDE_CODE_SETTINGS["luna-ops"],
       "primary_routes": ["groq/qwen/qwen3-32b"],
-      "fallback_routes": ["claude-code/haiku", OPENAI_FAST_ROUTE],
+      "fallback_routes": [OPENAI_FAST_ROUTE, GEMINI_CLI_FLASH_LITE_ROUTE],
       "timeout_ms": 8_000,
       "critical": true
     },
@@ -248,7 +248,7 @@ export const PROFILES: Record<string, TeamProfiles> = {
       "claude_code_name": "luna-ops",
       "claude_code_settings": CLAUDE_CODE_SETTINGS["luna-ops"],
       "primary_routes": [GEMINI_CLI_FLASH_ROUTE],
-      "fallback_routes": [OPENAI_FAST_ROUTE, "claude-code/haiku"]
+      "fallback_routes": [OPENAI_FAST_ROUTE, GROQ_SCOUT_ROUTE]
     },
     // argos: 대량 스크리닝 — gpt-5.4-mini 우선
     "screening_bulk": {
@@ -264,7 +264,7 @@ export const PROFILES: Record<string, TeamProfiles> = {
       "claude_code_name": "luna-ops",
       "claude_code_settings": CLAUDE_CODE_SETTINGS["luna-ops"],
       "primary_routes": ["openai-oauth/gpt-5.4"],
-      "fallback_routes": ["groq/qwen/qwen3-32b", "claude-code/haiku"]
+      "fallback_routes": ["groq/qwen/qwen3-32b", GEMINI_CLI_FLASH_ROUTE]
     },
     // zeus/athena: 토론 논거 — gpt-5.4-mini (균형)
     "debate_agent": {
@@ -272,7 +272,7 @@ export const PROFILES: Record<string, TeamProfiles> = {
       "claude_code_name": "luna-ops",
       "claude_code_settings": CLAUDE_CODE_SETTINGS["luna-ops"],
       "primary_routes": [OPENAI_FAST_ROUTE],
-      "fallback_routes": ["claude-code/haiku", GROQ_VERSATILE_ROUTE]
+      "fallback_routes": [GROQ_VERSATILE_ROUTE, GEMINI_CLI_FLASH_LITE_ROUTE]
     }
   },
   "darwin": {
@@ -282,8 +282,7 @@ export const PROFILES: Record<string, TeamProfiles> = {
       "claude_code_settings": CLAUDE_CODE_SETTINGS["darwin-research"],
       "local_llm_base_url": "http://127.0.0.1:11434",
       "primary_routes": [
-        "openai-oauth/gpt-5.4",
-        "claude-code/sonnet"
+        "openai-oauth/gpt-5.4"
       ],
       "fallback_routes": [
         GROQ_SCOUT_ROUTE,
@@ -297,8 +296,7 @@ export const PROFILES: Record<string, TeamProfiles> = {
       "claude_code_settings": CLAUDE_CODE_SETTINGS["darwin-research"],
       "local_llm_base_url": "http://127.0.0.1:11434",
       "primary_routes": [
-        "openai-oauth/gpt-5.4",
-        "claude-code/sonnet"
+        "openai-oauth/gpt-5.4"
       ],
       "fallback_routes": [
         GROQ_SCOUT_ROUTE,
@@ -317,7 +315,7 @@ export const PROFILES: Record<string, TeamProfiles> = {
       "fallback_routes": [
         GROQ_SCOUT_ROUTE,
         OPENAI_FAST_ROUTE,
-        "claude-code/haiku"
+        GEMINI_CLI_FLASH_LITE_ROUTE
       ]
     },
     "review": {
@@ -326,11 +324,11 @@ export const PROFILES: Record<string, TeamProfiles> = {
       "claude_code_settings": CLAUDE_CODE_SETTINGS["darwin-research"],
       "local_llm_base_url": "http://127.0.0.1:11434",
       "primary_routes": [
-        "openai-oauth/gpt-5.4",
-        "claude-code/sonnet"
+        "openai-oauth/gpt-5.4"
       ],
       "fallback_routes": [
-        GROQ_SCOUT_ROUTE
+        GROQ_SCOUT_ROUTE,
+        OPENAI_FAST_ROUTE
       ]
     }
   },
@@ -456,12 +454,12 @@ export const PROFILES: Record<string, TeamProfiles> = {
       "claude_code_settings": CLAUDE_CODE_SETTINGS["claude-ops"],
       "local_llm_base_url": "http://127.0.0.1:11434",
       "primary_routes": [
-        GROQ_SCOUT_ROUTE,
-        "claude-code/sonnet"
+        "openai-oauth/gpt-5.4"
       ],
       "fallback_routes": [
-        "openai-oauth/gpt-5.4",
-        OPENAI_FAST_ROUTE
+        GROQ_SCOUT_ROUTE,
+        OPENAI_FAST_ROUTE,
+        GEMINI_CLI_FLASH_ROUTE
       ]
     },
     "reporting": {
@@ -475,7 +473,7 @@ export const PROFILES: Record<string, TeamProfiles> = {
       "fallback_routes": [
         GROQ_SCOUT_ROUTE,
         OPENAI_FAST_ROUTE,
-        "claude-code/haiku"
+        GEMINI_CLI_FLASH_LITE_ROUTE
       ]
     },
     "triage": {
@@ -484,12 +482,12 @@ export const PROFILES: Record<string, TeamProfiles> = {
       "claude_code_settings": CLAUDE_CODE_SETTINGS["claude-ops"],
       "local_llm_base_url": "http://127.0.0.1:11434",
       "primary_routes": [
-        "openai-oauth/gpt-5.4",
-        "claude-code/sonnet"
+        "openai-oauth/gpt-5.4"
       ],
       "fallback_routes": [
         GROQ_SCOUT_ROUTE,
-        OPENAI_FAST_ROUTE
+        OPENAI_FAST_ROUTE,
+        GEMINI_CLI_FLASH_LITE_ROUTE
       ]
     },
     "lead": {
@@ -498,12 +496,12 @@ export const PROFILES: Record<string, TeamProfiles> = {
       "claude_code_settings": CLAUDE_CODE_SETTINGS["claude-ops"],
       "local_llm_base_url": "http://127.0.0.1:11434",
       "primary_routes": [
-        "openai-oauth/gpt-5.4",
-        "claude-code/sonnet"
+        "openai-oauth/gpt-5.4"
       ],
       "fallback_routes": [
         GROQ_SCOUT_ROUTE,
-        OPENAI_FAST_ROUTE
+        OPENAI_FAST_ROUTE,
+        GEMINI_CLI_FLASH_ROUTE
       ]
     }
   },

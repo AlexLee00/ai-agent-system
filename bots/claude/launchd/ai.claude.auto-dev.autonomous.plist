@@ -11,9 +11,17 @@
 		<key>PATH</key>
 		<string>/usr/local/bin:/usr/bin:/bin:/opt/homebrew/bin</string>
 		<key>CLAUDE_AUTO_DEV_DISABLED</key>
-		<string>true</string>
+		<string>false</string>
 		<key>CLAUDE_AUTO_DEV_PROFILE</key>
-		<string>shadow</string>
+		<string>autonomous_l5</string>
+		<key>CLAUDE_AUTO_DEV_MODEL</key>
+		<string>openai-oauth/gpt-5.4</string>
+		<key>CLAUDE_AUTO_DEV_CODEX_CLI</key>
+		<string>/Applications/Codex.app/Contents/Resources/codex</string>
+		<key>CLAUDE_AUTO_DEV_CODEX_SANDBOX</key>
+		<string>workspace-write</string>
+		<key>CLAUDE_AUTO_DEV_CODEX_APPROVAL_POLICY</key>
+		<string>never</string>
 	</dict>
 	<key>KeepAlive</key>
 	<false/>

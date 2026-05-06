@@ -9,7 +9,7 @@ outputs: ["risk_limits"]
 collaboration: {"upstream":["luna","oracle"],"downstream":["nemesis","hephaestos","hanul"],"parallel":["budget","sentinel"]}
 killSwitches: ["LUNA_ADAPTIVE_RISK_ENABLED"]
 memory_layers: ["L1","L2","L4"]
-llm_routing: {"primary":"groq/qwen/qwen3-32b","fallbacks":["claude-code/haiku"]}
+llm_routing: {"primary":"groq/qwen/qwen3-32b","fallbacks":["openai-oauth/gpt-5.4-mini","gemini-cli-oauth/gemini-2.5-flash"]}
 persona: |
   # Adaptive-Risk Persona
 

@@ -304,7 +304,8 @@ const TEAM_SELECTOR_DEFAULTS_LEGACY: Record<string, any> = {
       primary: { provider: 'openai-oauth', model: 'gpt-5.4', maxTokens: 4096, temperature: 0.2 },
       fallbacks: [
         { provider: 'groq', model: 'llama-3.1-8b-instant', maxTokens: 4096, temperature: 0.3 },
-        { provider: 'claude-code', model: 'claude-code/haiku', maxTokens: 4096, temperature: 0.2 },
+        { provider: 'openai-oauth', model: 'gpt-5.4-mini', maxTokens: 2048, temperature: 0.2 },
+        { provider: 'gemini-cli-oauth', model: GEMINI_CLI_FLASH_LITE_MODEL, maxTokens: 2048, temperature: 0.2 },
       ],
     },
     lead: {

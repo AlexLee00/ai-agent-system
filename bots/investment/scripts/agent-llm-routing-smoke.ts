@@ -12,6 +12,14 @@ async function runSmoke() {
   const legacy = resolveHubRoutingPlan('luna', 'binance', 'final_decision', 300);
   assert.equal(legacy.enabled, false, 'routing disabled by default');
   assert.ok(legacy.route?.primary, 'legacy route exists');
+  assert.equal(legacy.chain[0]?.provider, 'openai-oauth', 'disabled routing keeps OpenAI OAuth primary');
+
+  const legacyZeus = resolveHubRoutingPlan('zeus', 'binance', 'debate_bull', 300);
+  assert.equal(
+    legacyZeus.chain.some((entry) => entry.provider === 'claude-code'),
+    false,
+    'disabled routing must not leak zeus debate calls to Claude Code',
+  );
 
   process.env.LUNA_AGENT_LLM_ROUTING_ENABLED = 'true';
   const enabled = resolveHubRoutingPlan('luna', 'binance', 'final_decision', 300);
@@ -22,6 +30,13 @@ async function runSmoke() {
   const onchainRoute = resolveAgentLLMRoute('oracle', 'crypto', 'onchain');
   assert.ok(String(onchainRoute.primary || '').length > 0, 'oracle onchain route exists');
 
+  const zeus = resolveHubRoutingPlan('zeus', 'binance', 'debate_bull', 300);
+  assert.equal(
+    zeus.chain.some((entry) => entry.provider === 'claude-code'),
+    false,
+    'enabled routing must not include Claude Code for zeus hot path',
+  );
+
   if (prevEnabled === undefined) delete process.env.LUNA_AGENT_LLM_ROUTING_ENABLED;
   else process.env.LUNA_AGENT_LLM_ROUTING_ENABLED = prevEnabled;
 
@@ -29,6 +44,7 @@ async function runSmoke() {
     ok: true,
     legacyPrimary: legacy.route.primary,
     enabledPrimary: enabled.route.primary,
+    zeusProviders: zeus.chain.map((entry) => entry.provider),
     chainLength: enabled.chain.length,
   };
 }
@@ -45,4 +61,3 @@ if (isDirectExecution(import.meta.url)) {
     errorPrefix: '❌ agent-llm-routing-smoke 실패:',
   });
 }
-

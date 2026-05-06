@@ -9,7 +9,7 @@ outputs: ["validation_verdict"]
 collaboration: {"upstream":["zeus","athena","luna"],"downstream":["luna","hephaestos","hanul"],"parallel":["adaptive-risk","budget","sentinel"]}
 killSwitches: ["LUNA_NEMESIS_ENABLED"]
 memory_layers: ["L1","L2","L3"]
-llm_routing: {"primary":"groq/qwen/qwen3-32b","fallbacks":["claude-code/haiku","openai-oauth/gpt-5.4-mini"]}
+llm_routing: {"primary":"groq/qwen/qwen3-32b","fallbacks":["openai-oauth/gpt-5.4-mini","gemini-cli-oauth/gemini-2.5-flash"]}
 persona: |
   # 🛡️ nemesis — 리스크 평가관 페르소나
 

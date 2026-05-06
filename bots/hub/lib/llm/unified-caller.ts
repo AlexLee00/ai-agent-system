@@ -69,7 +69,7 @@ async function callWithFallback(req) {
       const cached = await checkCache(cacheKey);
       if (cached.hit) {
         console.log(`[llm/unified] 캐시 히트 (${req.abstractModel})`);
-        return { ok: true, provider: 'claude-code-oauth', result: cached.response, durationMs: 0, totalCostUsd: 0, cacheHit: true, cachedAt: cached.cachedAt };
+        return { ok: true, provider: 'cache', result: cached.response, durationMs: 0, totalCostUsd: 0, cacheHit: true, cachedAt: cached.cachedAt };
       }
     } catch (e) {
       console.warn('[llm/unified] 캐시 조회 오류 (무시):', e.message);

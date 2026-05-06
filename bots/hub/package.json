@@ -88,6 +88,7 @@
     "llm:oauth4-master-review-launchd-smoke": "tsx scripts/llm-oauth4-master-review-launchd-smoke.ts",
     "llm:anthropic-primary-audit": "tsx scripts/llm-anthropic-primary-audit.ts",
     "llm:leak-duplicate-audit": "tsx scripts/llm-leak-duplicate-audit.ts --json",
+    "llm:sonnet-hotspot-guard": "tsx scripts/llm-sonnet-hotspot-guard-smoke.ts",
     "llm:routing-log-prompt-hash-smoke": "tsx scripts/llm-routing-log-prompt-hash-smoke.ts",
     "hardcoded-path-smoke": "tsx scripts/hub-hardcoded-path-smoke.ts",
     "inventory:hub-alarm": "tsx scripts/generate-hub-alarm-inventory.ts",

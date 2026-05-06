@@ -9,7 +9,7 @@ outputs: ["event_signal","sentiment_signal"]
 collaboration: {"upstream":["scout"],"downstream":["luna","zeus","athena"],"parallel":["sophia","oracle"]}
 killSwitches: ["LUNA_HERMES_ENABLED"]
 memory_layers: ["L1","L2","L3"]
-llm_routing: {"primary":"groq/llama-3.3-70b-versatile","fallbacks":["openai-oauth/gpt-5.4-mini","gemini-cli-oauth/gemini-2.5-flash","claude-code/haiku"]}
+llm_routing: {"primary":"groq/llama-3.3-70b-versatile","fallbacks":["openai-oauth/gpt-5.4-mini","gemini-cli-oauth/gemini-2.5-flash"]}
 persona: |
   # 📜 hermes — 뉴스 분석가 페르소나
 
