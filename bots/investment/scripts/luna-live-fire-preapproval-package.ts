@@ -16,6 +16,10 @@ export const PROTECTED_LIVE_FIRE_SERVICES = [
   'ai.hub.resource-api',
 ];
 
+const OPTIONAL_EXPECTED_IDLE_PROTECTED_SERVICES = new Set([
+  'ai.claude.auto-dev.autonomous',
+]);
+
 const LIVE_CUTOVER_APPLY_COMMAND = 'npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run -s runtime:luna-live-fire-cutover -- --apply --confirm=enable-luna-live-fire --max-usdt=50 --max-daily-usdt=200 --max-open=2 --json';
 const LIVE_CUTOVER_WATCHDOG_COMMAND = 'npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run -s runtime:luna-live-fire-watchdog -- --json';
 
@@ -49,9 +53,12 @@ function classifyProtectedService(label, listStatus = {}, printStatus = {}) {
   const blockers = [];
   const warnings = [];
   const lastExit = listStatus.lastExitStatus ?? printStatus.lastExitCode ?? null;
+  const optionalExpectedIdle = OPTIONAL_EXPECTED_IDLE_PROTECTED_SERVICES.has(label);
 
-  if (!loaded) blockers.push('protected_service_not_loaded');
-  if (!running) blockers.push('protected_pid_missing');
+  if (!loaded && !optionalExpectedIdle) blockers.push('protected_service_not_loaded');
+  if (!loaded && optionalExpectedIdle) warnings.push('optional_expected_idle_not_loaded');
+  if (!running && !optionalExpectedIdle) blockers.push('protected_pid_missing');
+  if (!running && optionalExpectedIdle) warnings.push('optional_expected_idle_not_running');
   const intentionalRestartTrace = running && [-15, -9].includes(Number(lastExit));
   if (lastExit != null && Number(lastExit) !== 0 && !intentionalRestartTrace) warnings.push(`previous_exit_status_${lastExit}`);
 
@@ -61,6 +68,7 @@ function classifyProtectedService(label, listStatus = {}, printStatus = {}) {
     loaded,
     running,
     pid,
+    optionalExpectedIdle,
     lastExitStatus: lastExit,
     blockers,
     warnings,
