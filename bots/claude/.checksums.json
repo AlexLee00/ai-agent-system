@@ -2,7 +2,7 @@
   "bots/reservation/lib/secrets.ts": "d0b15cb126430ca8656960fccb37fad1a11a3410bf906e81c352cf27ef4a7da2",
   "bots/reservation/lib/db.ts": "ca5f472ad7deddab499d4e8842d22066d42412a47a72f9caefdb3c87e1cd061f",
   "bots/reservation/auto/monitors/start-ops.sh": "b88a4420f3de6636f69f9f066c6d6914047e0b49a2b3f312d3a7d1833399ac29",
-  "bots/investment/scripts/runtime-luna-ops-scheduler.ts": "1e1475e879778e4d6e8b3af61e1f5bfed2879e5dac15427d4e71b63aed55eacc",
+  "bots/investment/scripts/runtime-luna-ops-scheduler.ts": "1e663e58b3b09d94b569a40b37f4c076abb009d59ec7a621614ebb14ae150ba6",
   "bots/investment/scripts/luna-live-fire-watchdog.ts": "7c2ba98a2fa322d56234d04125d758042d122118ed59cc18df4118e7ccf82f5a",
   "bots/investment/scripts/runtime-luna-entry-trigger-diagnose.ts": "8e82c86e1f049644fc57bc7b511f93d2b69eee85b5bd9d41c7082ce05b0f294d",
   "bots/investment/shared/secrets.ts": "370963407089773a4649ee24465c4a06dc7b7d333e2785a9bdc1dc44fda19397",
