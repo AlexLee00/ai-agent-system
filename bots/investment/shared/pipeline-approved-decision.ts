@@ -113,7 +113,7 @@ export async function executeApprovedDecision({
     };
   }
 
-  const taAnalysis = analyses.find(a => a.metadata?.atrRatio != null);
+  const taAnalysis = analyses.find(a => a.metadata?.currentPrice != null || a.metadata?.atrRatio != null);
   const riskResult = isFullExitSell
     ? buildFullExitRiskResult(decision)
     : await evaluateSignal({

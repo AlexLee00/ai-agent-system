@@ -24,8 +24,9 @@ export async function runSmoke() {
     confidence: 0.8,
     marketRegime: 'trending_bear',
   }, { now: new Date('2026-04-30T01:00:00Z') });
-  assert.equal(bearFiltered.ok, false);
-  assert.ok(bearFiltered.blockers.includes('regime_buy_blocked'));
+  assert.equal(bearFiltered.ok, true);
+  assert.ok(bearFiltered.warnings.includes('regime_buy_probe_only'));
+  assert.ok(bearFiltered.adjustments.some((item) => item.code === 'regime_buy_probe_only'));
 
   const volatileFiltered = preFilterSignal({
     symbol: 'BTC/USDT',
@@ -43,13 +44,14 @@ export async function runSmoke() {
   assert.ok(weakSymbol.blockers.includes('trade_data_weak_symbol'));
 
   const defensiveDomestic = preFilterSignal({
-    symbol: '006340',
+    symbol: '005930',
     exchange: 'kis',
     action: 'BUY',
     confidence: 0.9,
     strategy_family: 'defensive_rotation',
   }, { now: new Date('2026-04-30T01:00:00Z') });
-  assert.ok(defensiveDomestic.blockers.includes('domestic_defensive_rotation_validation_only'));
+  assert.equal(defensiveDomestic.ok, true);
+  assert.ok(defensiveDomestic.warnings.includes('domestic_defensive_rotation_probe_only'));
 
   await ensureRealizedPnlColumns();
   const report = await buildTradeDataAnalysisReport({ limit: 200 });
@@ -62,7 +64,7 @@ export async function runSmoke() {
   return {
     ok: true,
     classifier: { limitExceeded: limitExceeded.kind, brokerError: brokerError.kind, unknown: unknown.kind },
-    preFilter: { bear: bearFiltered.blockers, volatile: volatileFiltered.blockers, weakSymbol: weakSymbol.blockers, defensiveDomestic: defensiveDomestic.blockers },
+    preFilter: { bear: bearFiltered.warnings, volatile: volatileFiltered.blockers, weakSymbol: weakSymbol.blockers, defensiveDomestic: defensiveDomestic.warnings },
     sellNoop: expectedSellNoop,
     report: {
       status: report.status,

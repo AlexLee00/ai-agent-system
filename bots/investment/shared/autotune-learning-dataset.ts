@@ -1,6 +1,7 @@
 // @ts-nocheck
 import { LUNA_AUTONOMY_PHASES } from './autonomy-phase.ts';
 import { safeJournalPnlPercent } from './trade-journal-db.ts';
+import { evaluateLearningTradeQuality } from './trade-data-derived-guards.ts';
 
 function normalizePhase(value = null) {
   const phase = String(value || '').trim();
@@ -22,6 +23,12 @@ export function buildAutotuneLearningDataset(rows = []) {
     phaseCounts[phase] = (phaseCounts[phase] || 0) + 1;
 
     if (!isClosed(row)) {
+      skipped += 1;
+      continue;
+    }
+
+    const quality = evaluateLearningTradeQuality(row);
+    if (quality.excludeFromLearning) {
       skipped += 1;
       continue;
     }
@@ -51,6 +58,7 @@ export function buildAutotuneLearningDataset(rows = []) {
       pnlPercent,
       win: pnlPercent > 0,
       source: phase === LUNA_AUTONOMY_PHASES.L4_PRE_AUTOTUNE ? 'pre_autotune' : 'post_autotune',
+      qualityFlag: quality.qualityFlag,
     });
   }
 
@@ -66,6 +74,8 @@ export function buildAutotuneLearningDataset(rows = []) {
       includesPreAutotune: true,
       defaultPhase: LUNA_AUTONOMY_PHASES.L4_PRE_AUTOTUNE,
       safePnlRequired: true,
+      excludesLowTrustTrades: true,
+      requiresTpSlForLearning: true,
     },
   };
 }

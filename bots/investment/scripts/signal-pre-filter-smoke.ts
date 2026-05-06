@@ -31,14 +31,16 @@ export async function runSmoke() {
   assert.ok(weakSymbol.blockers.includes('trade_data_weak_symbol'));
 
   const defensiveDomestic = preFilterSignal({
-    symbol: '006340',
+    symbol: '005930',
     exchange: 'kis',
     action: 'BUY',
     confidence: 0.9,
     strategy_family: 'defensive_rotation',
   }, { now: new Date('2026-04-30T01:00:00Z') });
-  assert.equal(defensiveDomestic.ok, false);
-  assert.ok(defensiveDomestic.blockers.includes('domestic_defensive_rotation_validation_only'));
+  assert.equal(defensiveDomestic.ok, true);
+  assert.equal(defensiveDomestic.decision, 'watch');
+  assert.ok(defensiveDomestic.warnings.includes('domestic_defensive_rotation_probe_only'));
+  assert.ok(defensiveDomestic.adjustments.some((item) => item.code === 'domestic_defensive_rotation_probe_only'));
 
   return { ok: true, pass, blocked, watch, batch, weakSymbol, defensiveDomestic };
 }

@@ -567,7 +567,7 @@ export async function runDecisionExecutionStateMachine({
       continue;
     }
 
-    const taAnalysis = analyses.find(a => a.metadata?.atrRatio != null);
+    const taAnalysis = analyses.find(a => a.metadata?.currentPrice != null || a.metadata?.atrRatio != null);
     const riskResult = await evaluateSignal({
       symbol: dec.symbol,
       action: dec.action,

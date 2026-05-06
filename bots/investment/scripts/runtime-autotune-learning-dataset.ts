@@ -24,6 +24,7 @@ function buildSmokeRows() {
       entry_price: 100,
       exit_price: 105,
       pnl_percent: 5,
+      tp_sl_set: true,
       autonomy_phase: LUNA_AUTONOMY_PHASES.L4_PRE_AUTOTUNE,
       strategy_family: 'micro_swing',
       market_regime: 'ranging',
@@ -37,6 +38,7 @@ function buildSmokeRows() {
       entry_price: 100,
       exit_price: 98,
       pnl_percent: -2,
+      tp_sl_set: true,
       autonomy_phase: LUNA_AUTONOMY_PHASES.L4_POST_AUTOTUNE,
       strategy_family: 'momentum_rotation',
       market_regime: 'trending_bull',
@@ -49,7 +51,8 @@ async function loadRows({ limit }) {
     `SELECT
        trade_id, symbol, market, exchange, status, direction,
        entry_price, exit_price, entry_value, exit_value,
-       pnl_percent, autonomy_phase, strategy_family, market_regime, exit_time
+       pnl_percent, tp_sl_set, quality_flag, exclude_from_learning,
+       autonomy_phase, strategy_family, market_regime, exit_time
      FROM investment.trade_journal
      WHERE status = 'closed' OR exit_time IS NOT NULL
      ORDER BY COALESCE(exit_time, entry_time, 0) DESC

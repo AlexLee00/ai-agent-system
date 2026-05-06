@@ -15,6 +15,7 @@ import { buildPredictiveValidationEvidence } from './predictive-validation.ts';
 import { isMaturePosition } from './luna-discovery-mature-policy.ts';
 import { enforceTpSlRequirement } from './tp-sl-enforcer.ts';
 import { evaluateTradingViewEntryGuard } from './tradingview-entry-guard.ts';
+import { query as dbQuery } from './db/core.ts';
 
 const ACTIONS = {
   BUY: 'BUY',
@@ -126,6 +127,49 @@ function applyComputedTpSl(candidate = {}, enforcement = null) {
         alreadySet: false,
         computed: enforcement.computed,
         warningMessage: enforcement.warningMessage || null,
+      },
+    },
+  };
+}
+
+function parseJsonMaybe(value, fallback = null) {
+  if (value == null) return fallback;
+  if (typeof value === 'object') return value;
+  try {
+    return JSON.parse(String(value));
+  } catch {
+    return fallback;
+  }
+}
+
+function signalRowToEntryCandidate(row = {}) {
+  const strategyRoute = parseJsonMaybe(row.strategy_route, null);
+  const blockMeta = parseJsonMaybe(row.block_meta, {});
+  return {
+    symbol: row.symbol,
+    action: ACTIONS.BUY,
+    amount_usdt: Number(row.amount_usdt || 0),
+    confidence: Number(row.confidence || 0),
+    reasoning: `entry_trigger_signal_refresh(${row.id}) | ${row.reasoning || ''}`.slice(0, 220),
+    exchange: row.exchange || 'binance',
+    strategy_family: row.strategy_family || strategyRoute?.selectedFamily || null,
+    strategy_route: strategyRoute,
+    setup_type: strategyRoute?.setupType || row.strategy_family || null,
+    entry_price: blockMeta?.entry_price ?? blockMeta?.entryPrice ?? null,
+    atr: blockMeta?.atr ?? blockMeta?.atr_value ?? null,
+    tp_sl_set: blockMeta?.tp_sl_set === true || blockMeta?.tpSlSet === true,
+    sl_price: blockMeta?.sl_price ?? blockMeta?.stop_loss ?? null,
+    tp_price: blockMeta?.tp_price ?? blockMeta?.take_profit ?? null,
+    triggerHints: {
+      ...(blockMeta?.entryTrigger?.hints || {}),
+      discoveryScore: Number(row.confidence || 0),
+    },
+    block_meta: {
+      ...blockMeta,
+      entryTriggerSignalRefresh: {
+        signalId: row.id,
+        signalCreatedAt: row.created_at || null,
+        source: 'recent_buy_signal',
       },
     },
   };
@@ -752,6 +796,65 @@ export async function evaluateEntryTriggers(candidates = [], context = {}) {
       shouldMutate,
       mode: flags.mode,
     },
+  };
+}
+
+export async function refreshEntryTriggersFromRecentBuySignals({
+  exchange = 'binance',
+  hours = 6,
+  limit = 25,
+  context = {},
+} = {}) {
+  const flags = getLunaIntelligentDiscoveryFlags();
+  if (!flags.phases.entryTriggerEnabled) {
+    return { enabled: false, refreshed: 0, armed: 0, fired: 0, blocked: 0, sourceSignals: 0 };
+  }
+  const refreshEnabled = String(process.env.LUNA_ENTRY_TRIGGER_SIGNAL_REFRESH_ENABLED ?? 'true').trim().toLowerCase() !== 'false';
+  if (!refreshEnabled) {
+    return { enabled: true, refreshEnabled: false, refreshed: 0, armed: 0, fired: 0, blocked: 0, sourceSignals: 0 };
+  }
+  await ensureLunaDiscoveryEntryTables();
+  const minConfidence = Number(flags.entryTrigger.minConfidence || 0.48);
+  const rows = await dbQuery(
+    `SELECT id, symbol, action, amount_usdt, confidence, reasoning, status, exchange,
+            strategy_family, strategy_route, block_meta, created_at
+       FROM signals
+      WHERE exchange = $1
+        AND action = 'BUY'
+        AND created_at >= now() - ($2::int * INTERVAL '1 hour')
+        AND COALESCE(exclude_from_learning, false) = false
+        AND COALESCE(quality_flag, 'trusted') <> 'exclude_from_learning'
+        AND COALESCE(status, 'pending') IN ('pending', 'approved', 'queued', 'retrying')
+        AND COALESCE(confidence, 0) >= $3
+      ORDER BY confidence DESC NULLS LAST, created_at DESC
+      LIMIT $4`,
+    [
+      exchange,
+      Math.max(1, Number(hours || 6)),
+      minConfidence,
+      Math.max(1, Number(limit || 25)),
+    ],
+  ).catch(() => []);
+
+  const candidates = rows.map(signalRowToEntryCandidate).filter((item) => item.symbol);
+  if (candidates.length === 0) {
+    return { enabled: true, refreshEnabled: true, refreshed: 0, armed: 0, fired: 0, blocked: 0, sourceSignals: 0 };
+  }
+  const result = await evaluateEntryTriggers(candidates, {
+    ...context,
+    exchange,
+    signalRefresh: true,
+  });
+  return {
+    enabled: true,
+    refreshEnabled: true,
+    refreshed: Number(result?.stats?.armed || 0),
+    armed: Number(result?.stats?.armed || 0),
+    fired: Number(result?.stats?.fired || 0),
+    blocked: Number(result?.stats?.blocked || 0),
+    observed: Number(result?.stats?.observed || 0),
+    sourceSignals: candidates.length,
+    mode: result?.stats?.mode || flags.mode,
   };
 }
 

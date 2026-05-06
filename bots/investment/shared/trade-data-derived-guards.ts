@@ -24,6 +24,7 @@ export const TRADE_DATA_WEAK_SYMBOLS = Object.freeze({
   'CRYPTO:KAT/USDT': { reason: 'closed=10, avgPnl=-8.77%' },
   'CRYPTO:SAHARA/USDT': { reason: 'closed=14, avgPnl=-3.43%' },
   'DOMESTIC:006340': { reason: 'closed=6, winRate=0%, avgPnl=-11.48%' },
+  'OVERSEAS:POET': { reason: 'closed=3, avgPnl=-15.11%; require cooldown/probe-only evidence before re-entry' },
 });
 
 export function isTradeDataGuardEnabled(env = process.env) {
@@ -80,6 +81,52 @@ export function checkTradeDataWeakSymbol(symbol, market, env = process.env) {
   };
 }
 
+function clamp01(value, fallback = 1) {
+  const numberValue = Number(value);
+  if (!Number.isFinite(numberValue)) return fallback;
+  return Math.max(0, Math.min(1, numberValue));
+}
+
+function applySizingAdjustment(meta, {
+  code,
+  multiplier,
+  reason,
+} = {}) {
+  if (!code || !(Number(multiplier) > 0)) return;
+  const next = {
+    code,
+    multiplier: clamp01(multiplier, 1),
+    reason: reason || code,
+  };
+  meta.sizingAdjustments = Array.isArray(meta.sizingAdjustments)
+    ? [...meta.sizingAdjustments, next]
+    : [next];
+  const current = Number(meta.sizingMultiplier ?? 1);
+  meta.sizingMultiplier = Number((Math.min(Number.isFinite(current) ? current : 1, next.multiplier)).toFixed(4));
+}
+
+export function evaluateLearningTradeQuality(row = {}) {
+  const reasons = [];
+  const status = String(row.status || '').toLowerCase();
+  const closed = status === 'closed' || row.exit_time != null || row.exitTime != null;
+  const rawPnl = Number(row.pnl_percent ?? row.pnlPercent);
+  const tpSlSet = row.tp_sl_set === true || row.tpSlSet === true;
+  const excluded = row.exclude_from_learning === true || row.excludeFromLearning === true;
+  const qualityFlag = String(row.quality_flag || row.qualityFlag || '').toLowerCase();
+
+  if (excluded || qualityFlag === 'exclude_from_learning') reasons.push('explicitly_excluded_from_learning');
+  if (!closed) reasons.push('trade_not_closed');
+  if (!Number.isFinite(rawPnl) || Math.abs(rawPnl) > 1000) reasons.push('pnl_percent_outlier_or_missing');
+  if (!tpSlSet) reasons.push('tp_sl_not_set');
+
+  return {
+    trusted: reasons.length === 0,
+    excludeFromLearning: reasons.length > 0,
+    reasons,
+    qualityFlag: reasons.length > 0 ? 'low_trust_trade_data' : 'trusted',
+  };
+}
+
 export function evaluateTradeDataEntryGuard(signal = {}, env = process.env) {
   if (!isTradeDataGuardEnabled(env)) {
     return { blocked: false, blockers: [], warnings: [], meta: {} };
@@ -109,19 +156,41 @@ export function evaluateTradeDataEntryGuard(signal = {}, env = process.env) {
   }
 
   if (market === 'domestic' && strategyFamily === 'defensive_rotation') {
-    blockers.push('domestic_defensive_rotation_validation_only');
+    warnings.push('domestic_defensive_rotation_probe_only');
     meta.domesticDefensiveRotation = {
       reason: 'domestic defensive_rotation closed winRate=10.7%, pnlNet=-889681 KRW',
     };
+    applySizingAdjustment(meta, {
+      code: 'domestic_defensive_rotation_probe_only',
+      multiplier: 0.25,
+      reason: 'defensive_rotation은 국내장 과거 성과가 약해 차단 대신 25% probe sizing으로 축소',
+    });
+  }
+
+  if (market === 'domestic' && strategyFamily === 'mean_reversion') {
+    warnings.push('domestic_mean_reversion_probe_only');
+    meta.domesticMeanReversion = {
+      reason: 'domestic mean_reversion closed winRate=0%, avgPnl=-6.37%',
+    };
+    applySizingAdjustment(meta, {
+      code: 'domestic_mean_reversion_probe_only',
+      multiplier: 0.35,
+      reason: 'mean_reversion은 국내장 샘플이 약해 35% probe sizing으로 축소',
+    });
   }
 
   if (tradeMode === 'validation' && (regime.includes('bear') || regime.includes('ranging'))) {
-    blockers.push('validation_regime_underperformance');
+    warnings.push('validation_regime_probe_only');
     meta.validationRegime = {
       reason: regime.includes('bear')
         ? 'trending_bear validation avgPnl=-7.68%'
         : 'ranging validation avgPnl=-2.13%',
     };
+    applySizingAdjustment(meta, {
+      code: 'validation_regime_probe_only',
+      multiplier: regime.includes('bear') ? 0.25 : 0.4,
+      reason: '약세/횡보 검증 구간은 데이터 축적을 위해 probe sizing으로 축소',
+    });
   }
 
   if (market === 'overseas') {
@@ -146,10 +215,22 @@ export function applyTradeDataEntryGuardToDecision(decision = {}, exchange = nul
     market: decision.market || exchange,
   }, env);
   if (!guard.blocked) {
-    if (guard.warnings.length === 0) return { decision, guard, changed: false };
+    const sizingMultiplier = Number(guard?.meta?.sizingMultiplier ?? 1);
+    const shouldResize = Number.isFinite(sizingMultiplier) && sizingMultiplier > 0 && sizingMultiplier < 1 && Number(decision.amount_usdt || 0) > 0;
+    if (guard.warnings.length === 0 && !shouldResize) return { decision, guard, changed: false };
+    const adjustedAmount = shouldResize
+      ? Number((Number(decision.amount_usdt || 0) * sizingMultiplier).toFixed(4))
+      : decision.amount_usdt;
     return {
       decision: {
         ...decision,
+        amount_usdt: adjustedAmount,
+        confidence: shouldResize
+          ? Math.max(0, Number(decision.confidence || 0) - 0.03)
+          : decision.confidence,
+        reasoning: shouldResize
+          ? `${decision.reasoning || ''} | trade_data_probe_sizing(${sizingMultiplier})`.slice(0, 220)
+          : decision.reasoning,
         block_meta: {
           ...(decision.block_meta || {}),
           trade_data_guard: guard,

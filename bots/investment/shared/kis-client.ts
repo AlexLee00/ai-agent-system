@@ -59,7 +59,7 @@ const KIS_OVERSEAS_PRICE_EXCD = {
   XOM: 'NYS', CVX: 'NYS', UNH: 'NYS', HD:  'NYS',
   NIO:  'NYS', XPEV: 'NYS', LI:  'NYS', BABA: 'NYS', PDD: 'NYS',
   JD:   'NYS', BIDU: 'NYS',
-  RIVN: 'NYS', LCID: 'NYS', PLTR: 'NYS', UBER: 'NYS', LYFT: 'NYS',
+  RIVN: 'NAS', LCID: 'NAS', PLTR: 'NAS', UBER: 'NYS', LYFT: 'NAS',
 };
 
 const KIS_OVERSEAS_ORDER_EXCD = {
@@ -71,7 +71,7 @@ const KIS_OVERSEAS_ORDER_EXCD = {
   XOM: 'NYSE', CVX: 'NYSE', UNH: 'NYSE', HD:  'NYSE',
   NIO:  'NYSE', XPEV: 'NYSE', LI:  'NYSE', BABA: 'NYSE', PDD: 'NYSE',
   JD:   'NYSE', BIDU: 'NYSE',
-  RIVN: 'NYSE', LCID: 'NYSE', PLTR: 'NYSE', UBER: 'NYSE', LYFT: 'NYSE',
+  RIVN: 'NASD', LCID: 'NASD', PLTR: 'NASD', UBER: 'NYSE', LYFT: 'NASD',
 };
 
 const KIS_MIN_INTERVAL_MS = 380;
@@ -646,34 +646,42 @@ export async function getOverseasPrice(symbol) {
 }
 
 export async function getOverseasQuoteSnapshot(symbol) {
-  const mcp = await runKisMcpBridge('overseas_quote', { symbol: String(symbol || '').toUpperCase(), paper: false });
+  const normalizedSymbol = String(symbol || '').toUpperCase();
+  const mcp = await runKisMcpBridge('overseas_quote', { symbol: normalizedSymbol, paper: false });
   if (mcp?.quote && parseNumeric(mcp.quote.price) > 0) {
     return mcp.quote;
   }
   // 시세 조회는 항상 실서버 (openapivts는 해외시세 미지원)
   const tryFetch = async (excd) => kisRequest('GET', '/uapi/overseas-price/v1/quotations/price', {
     trId:   TR_ID.OVERSEAS_PRICE,
-    params: { AUTH: '', EXCD: excd, SYMB: symbol },
+    params: { AUTH: '', EXCD: excd, SYMB: normalizedSymbol },
     paper:  false,
   });
 
-  const priceExcd = KIS_OVERSEAS_PRICE_EXCD[symbol];
+  const priceExcd = KIS_OVERSEAS_PRICE_EXCD[normalizedSymbol];
 
-  // ① 맵에 있으면 해당 거래소로 1회 조회
+  // ① 맵에 있으면 먼저 조회하되, 빈 응답이면 자동 탐색으로 계속 진행한다.
   if (priceExcd) {
-    const data  = await tryFetch(priceExcd);
-    const price = parseFloat(data.output?.last || '0');
-    if (!price) throw new Error(`${symbol} 해외 현재가 조회 실패 (응답: ${JSON.stringify(data.output)})`);
-    return {
-      symbol,
-      price,
-      excd: KIS_OVERSEAS_ORDER_EXCD[symbol],
-      priceExcd,
-      open: parseFloat(data.output?.open || '0'),
-      high: parseFloat(data.output?.high || '0'),
-      low: parseFloat(data.output?.low || '0'),
-      changePct: parseFloat(data.output?.rate || data.output?.prdy_vrss_rt || '0'),
-    };
+    try {
+      const data  = await tryFetch(priceExcd);
+      const price = parseFloat(data.output?.last || '0');
+      if (price > 0) {
+        return {
+          symbol: normalizedSymbol,
+          price,
+          excd: KIS_OVERSEAS_ORDER_EXCD[normalizedSymbol],
+          priceExcd,
+          open: parseFloat(data.output?.open || '0'),
+          high: parseFloat(data.output?.high || '0'),
+          low: parseFloat(data.output?.low || '0'),
+          changePct: parseFloat(data.output?.rate || data.output?.prdy_vrss_rt || '0'),
+        };
+      }
+      console.warn(`  ⚠️ [KIS] ${normalizedSymbol} 맵 거래소 ${priceExcd} 빈 응답 → NAS/NYS/AMX 자동 탐색`);
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : String(error);
+      console.warn(`  ⚠️ [KIS] ${normalizedSymbol} 맵 거래소 ${priceExcd} 조회 실패 → 자동 탐색 (${msg})`);
+    }
   }
 
   // ② 맵에 없으면 NAS → NYS → AMX 순으로 자동 탐색
@@ -682,9 +690,9 @@ export async function getOverseasQuoteSnapshot(symbol) {
       const data  = await tryFetch(priceCode);
       const price = parseFloat(data.output?.last || '0');
       if (price > 0) {
-        console.log(`  ℹ️ [KIS] ${symbol} 거래소 자동 탐지: ${priceCode} → PRICE_EXCD 맵에 추가 권장`);
+        console.log(`  ℹ️ [KIS] ${normalizedSymbol} 거래소 자동 탐지: ${priceCode} → PRICE_EXCD 맵에 추가 권장`);
         return {
-          symbol,
+          symbol: normalizedSymbol,
           price,
           excd: orderCode,
           priceExcd: priceCode,

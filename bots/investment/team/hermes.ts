@@ -34,6 +34,15 @@ let _dartCorpCodeMapPromise = null;
 const DOMESTIC_META_TTL = 6 * 3600 * 1000;
 const DOMESTIC_META_MAX = 500;
 
+function parsePositiveEnvNumber(value, fallback, min) {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed <= 0) return fallback;
+  return Math.max(min, Math.round(parsed));
+}
+
+const HERMES_MAX_HEADLINES = parsePositiveEnvNumber(process.env.LUNA_HERMES_MAX_HEADLINES, 8, 3);
+const HERMES_SENTIMENT_TIMEOUT_MS = parsePositiveEnvNumber(process.env.LUNA_HERMES_SENTIMENT_TIMEOUT_MS, 25_000, 8_000);
+
 // ─── RSS 소스 ────────────────────────────────────────────────────────
 
 const RSS_CRYPTO = [
@@ -388,7 +397,8 @@ export async function analyzeNews(symbol = 'BTC/USDT', exchange = 'binance') {
     return { symbol, signal: ACTIONS.HOLD, confidence: 0.1, reasoning: '관련 기사 없음' };
   }
 
-  const headlines = relevant.map((a, i) => `${i + 1}. ${a.title}`).join('\n');
+  const promptItems = relevant.slice(0, HERMES_MAX_HEADLINES);
+  const headlines = promptItems.map((a, i) => `${i + 1}. ${a.title}`).join('\n');
   relevant.slice(0, 3).forEach(a => console.log(`  • ${a.title.slice(0, 70)}`));
 
   const systemPrompt = PROMPTS[exchange] || PROMPTS.binance;
@@ -397,13 +407,14 @@ export async function analyzeNews(symbol = 'BTC/USDT', exchange = 'binance') {
     scoutSignal
       ? `스카우트 힌트: ${scoutSignal.source} / score=${scoutSignal.score} / ${scoutSignal.evidence || scoutSignal.label}`
       : null,
-    `최신 뉴스 ${relevant.length}건:\n${headlines}`,
+    `최신 뉴스 ${relevant.length}건 중 핵심 ${promptItems.length}건:\n${headlines}`,
   ].filter(Boolean).join('\n');
   const responseText = await callLLMWithHub('hermes', systemPrompt, userMsg, callLLM, 300, {
     symbol,
     market: exchange,
     taskType: 'sentiment',
     incidentKey: `hermes:${exchange}:${symbol}`,
+    timeoutMs: HERMES_SENTIMENT_TIMEOUT_MS,
   });
   const parsed       = parseJSON(responseText);
 

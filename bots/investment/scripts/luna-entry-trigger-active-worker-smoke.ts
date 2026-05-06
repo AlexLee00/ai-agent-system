@@ -5,7 +5,10 @@ import assert from 'node:assert/strict';
 import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
 import * as db from '../shared/db.ts';
 import { insertEntryTrigger } from '../shared/luna-discovery-entry-store.ts';
-import { evaluateActiveEntryTriggersAgainstMarketEvents } from '../shared/entry-trigger-engine.ts';
+import {
+  evaluateActiveEntryTriggersAgainstMarketEvents,
+  refreshEntryTriggersFromRecentBuySignals,
+} from '../shared/entry-trigger-engine.ts';
 
 function withEnv(patch = {}, fn) {
   const prev = {};
@@ -31,7 +34,27 @@ export async function runLunaEntryTriggerActiveWorkerSmoke() {
     LUNA_ENTRY_TRIGGER_FIRE_IN_AUTONOMOUS: 'true',
   }, async () => {
     const symbol = `ACTIVE${Date.now().toString(36).toUpperCase()}/USDT`;
+    const refreshSymbol = `REFRESH${Date.now().toString(36).toUpperCase()}/USDT`;
+    let signalId = null;
     try {
+      signalId = await db.insertSignal({
+        symbol: refreshSymbol,
+        action: 'BUY',
+        amountUsdt: 50,
+        confidence: 0.82,
+        reasoning: 'refresh signal continuity test',
+        status: 'approved',
+        exchange: 'binance',
+        strategyFamily: 'breakout',
+      });
+      await db.run(
+        `UPDATE signals SET block_meta = $1::jsonb WHERE id = $2`,
+        [JSON.stringify({ atr: 2, entry_price: 100, tp_sl_set: true }), signalId],
+      );
+      const refresh = await refreshEntryTriggersFromRecentBuySignals({ exchange: 'binance', hours: 1, limit: 5 });
+      assert.ok(refresh.sourceSignals >= 1, 'recent BUY signal should be considered for entry-trigger refresh');
+      assert.ok(refresh.armed >= 1 || refresh.observed >= 1, 'recent BUY signal should arm or observe an entry trigger');
+
       const trigger = await insertEntryTrigger({
         symbol,
         exchange: 'binance',
@@ -89,6 +112,8 @@ export async function runLunaEntryTriggerActiveWorkerSmoke() {
       };
     } finally {
       await db.run(`DELETE FROM entry_triggers WHERE symbol = $1`, [symbol]).catch(() => {});
+      await db.run(`DELETE FROM entry_triggers WHERE symbol = $1`, [refreshSymbol]).catch(() => {});
+      if (signalId) await db.run(`DELETE FROM signals WHERE id = $1`, [signalId]).catch(() => {});
     }
   });
 }

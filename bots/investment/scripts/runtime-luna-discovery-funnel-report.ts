@@ -8,6 +8,7 @@ import { publishAlert } from '../shared/alert-publisher.ts';
 import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
 import { evaluateKisMarketHours } from '../shared/kis-market-hours-guard.ts';
 import { ANALYST_TYPES } from '../shared/signal.ts';
+import { evaluateKisDailySnapshot, fetchEntryChartSnapshot } from '../shared/tradingview-entry-guard.ts';
 import {
   DEFAULT_POSITION_RUNTIME_AUTOPILOT_HISTORY_FILE,
   readPositionRuntimeAutopilotHistoryLines,
@@ -64,7 +65,7 @@ function rowsToStateMap(rows = []) {
   return Object.fromEntries((rows || []).map((row) => [String(row.state || row.trigger_state || row.status || 'unknown'), number(row.count)]));
 }
 
-export function buildRequiredAnalystCoverage({ market, analysisSymbols = [], analysisRows = [], marketOpen = true } = {}) {
+export function buildRequiredAnalystCoverage({ market, analysisSymbols = [], analysisRows = [], marketOpen = true, dailyTechnicalCoverage = null } = {}) {
   const requiredAnalysts = REQUIRED_ANALYSTS[market] || [];
   const byAnalyst = {};
   const bySymbol = Object.fromEntries((analysisSymbols || []).map((symbol) => [symbol, {}]));
@@ -100,7 +101,9 @@ export function buildRequiredAnalystCoverage({ market, analysisSymbols = [], ana
     missingByAnalyst[analyst] = missingSymbols;
     if (analysisSymbols.length > 0 && missingSymbols.length === analysisSymbols.length) {
       if (analyst === ANALYST_TYPES.TA_MTF && market !== 'crypto' && !marketOpen) {
-        bottlenecks.push('technical_analysis_deferred_until_market_open');
+        if (Number(dailyTechnicalCoverage?.availableCount || 0) <= 0) {
+          bottlenecks.push('technical_analysis_deferred_until_market_open');
+        }
       } else {
         bottlenecks.push(ANALYST_BOTTLENECK_CODES[analyst] || `${analyst}_analysis_missing_for_candidates`);
       }
@@ -114,6 +117,7 @@ export function buildRequiredAnalystCoverage({ market, analysisSymbols = [], ana
     byAnalyst,
     bySymbol,
     missingByAnalyst,
+    dailyTechnicalCoverage,
     bottlenecks: [...new Set(bottlenecks)],
   };
 }
@@ -153,6 +157,36 @@ function candidateSourcePriorityExpr() {
 
 async function queryRows(sql, params = []) {
   return db.query(sql, params).catch(() => []);
+}
+
+async function buildKisDailyTechnicalCoverage({ market, exchange, symbols = [], marketOpen = true } = {}) {
+  if (market === 'crypto' || marketOpen || symbols.length === 0) {
+    return { enabled: market !== 'crypto', checkedCount: 0, availableCount: 0, bullishCount: 0, rows: [] };
+  }
+  const limit = Math.max(1, Math.min(10, Number(process.env.LUNA_DISCOVERY_FUNNEL_KIS_DAILY_TA_LIMIT || 5)));
+  const rows = [];
+  for (const symbol of symbols.slice(0, limit)) {
+    const snapshot = await fetchEntryChartSnapshot({ symbol, exchange }).catch((error) => ({
+      ok: false,
+      error: error?.message || String(error),
+      symbol,
+    }));
+    const evaluated = evaluateKisDailySnapshot(snapshot);
+    rows.push({
+      symbol,
+      ok: evaluated.ok === true,
+      reason: evaluated.reason || null,
+      source: snapshot?.dailyTrendSource || snapshot?.source || null,
+      bars: Number(snapshot?.dailyBars?.length || 0),
+    });
+  }
+  return {
+    enabled: true,
+    checkedCount: rows.length,
+    availableCount: rows.filter((row) => row.bars > 0 || row.source).length,
+    bullishCount: rows.filter((row) => row.ok).length,
+    rows,
+  };
 }
 
 async function buildMarketFunnel(market, { hours }) {
@@ -293,11 +327,18 @@ async function buildMarketFunnel(market, { hours }) {
     latestCreatedAt: row.latest_created_at || null,
   }]));
   const analysisCoveredSymbols = analysisSymbols.filter((symbol) => number(analysisBySymbol[symbol]?.count) > 0);
+  const dailyTechnicalCoverage = await buildKisDailyTechnicalCoverage({
+    market,
+    exchange,
+    symbols: analysisSymbols,
+    marketOpen,
+  });
   const requiredAnalystCoverage = buildRequiredAnalystCoverage({
     market,
     analysisSymbols,
     analysisRows: analysisByAnalystRows,
     marketOpen,
+    dailyTechnicalCoverage,
   });
 
   const candidate = candidateRows?.[0] || {};
@@ -354,6 +395,7 @@ async function buildMarketFunnel(market, { hours }) {
       coveredSymbols: analysisCoveredSymbols,
       missingSymbols: analysisSymbols.filter((symbol) => !analysisCoveredSymbols.includes(symbol)),
       bySymbol: analysisBySymbol,
+      dailyTechnicalCoverage,
       required: requiredAnalystCoverage,
     },
     signalPersistence: {

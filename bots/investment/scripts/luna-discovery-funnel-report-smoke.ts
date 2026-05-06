@@ -124,6 +124,21 @@ export async function runLunaDiscoveryFunnelReportSmoke() {
       overseasClosedCoverage.bottlenecks.includes('technical_analysis_deferred_until_market_open'),
       'overseas missing TA should be marked as deferred when market is closed',
     );
+    const overseasClosedDailyReady = buildRequiredAnalystCoverage({
+      market: 'overseas',
+      marketOpen: false,
+      analysisSymbols: ['NVDA'],
+      analysisRows: [
+        { symbol: 'NVDA', analyst: 'sentiment', count: 1, latest_created_at: new Date().toISOString() },
+        { symbol: 'NVDA', analyst: 'market_flow', count: 1, latest_created_at: new Date().toISOString() },
+      ],
+      dailyTechnicalCoverage: { availableCount: 1, bullishCount: 1 },
+    });
+    assert.equal(
+      overseasClosedDailyReady.bottlenecks.includes('technical_analysis_deferred_until_market_open'),
+      false,
+      'KIS daily technical coverage should prevent closed-market TA deferral from being reported as a blocker',
+    );
 
     const domesticPartialCoverage = buildRequiredAnalystCoverage({
       market: 'domestic',

@@ -6,7 +6,10 @@ import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
-import { evaluateActiveEntryTriggersAgainstMarketEvents } from '../shared/entry-trigger-engine.ts';
+import {
+  evaluateActiveEntryTriggersAgainstMarketEvents,
+  refreshEntryTriggersFromRecentBuySignals,
+} from '../shared/entry-trigger-engine.ts';
 import { listActiveEntryTriggers } from '../shared/luna-discovery-entry-store.ts';
 import { getOHLCV } from '../shared/ohlcv-fetcher.ts';
 
@@ -30,6 +33,9 @@ const LAUNCHCTL_ENV_KEYS = [
   'LUNA_TRADINGVIEW_ENTRY_MAX_AGE_MS',
   'LUNA_TRADINGVIEW_ENTRY_GUARD_DIRECT_HTTP_FALLBACK',
   'LUNA_ENTRY_CHART_GUARD_MARKETS',
+  'LUNA_ENTRY_TRIGGER_SIGNAL_REFRESH_ENABLED',
+  'LUNA_ENTRY_TRIGGER_SIGNAL_REFRESH_HOURS',
+  'LUNA_ENTRY_TRIGGER_SIGNAL_REFRESH_LIMIT',
 ];
 
 function hydrateEntryTriggerEnvFromLaunchctl() {
@@ -157,6 +163,20 @@ async function deriveMarketEvents({ exchange = 'binance', limit = 100 } = {}) {
 export async function runLunaEntryTriggerWorker() {
   hydrateEntryTriggerEnvFromLaunchctl();
   const exchange = argValue('--exchange', process.env.LUNA_ENTRY_TRIGGER_EXCHANGE || 'binance');
+  const refresh = await refreshEntryTriggersFromRecentBuySignals({
+    exchange,
+    hours: Number(argValue('--refresh-hours', process.env.LUNA_ENTRY_TRIGGER_SIGNAL_REFRESH_HOURS || '6') || 6),
+    limit: Number(argValue('--refresh-limit', process.env.LUNA_ENTRY_TRIGGER_SIGNAL_REFRESH_LIMIT || '25') || 25),
+  }).catch((error) => ({
+    enabled: true,
+    refreshEnabled: true,
+    error: error?.message || String(error),
+    refreshed: 0,
+    armed: 0,
+    fired: 0,
+    blocked: 0,
+    sourceSignals: 0,
+  }));
   let events = parseEvents();
   if (events.length === 0 && hasFlag('--derive-market-events')) {
     events = await deriveMarketEvents({ exchange });
@@ -167,6 +187,7 @@ export async function runLunaEntryTriggerWorker() {
     exchange,
     eventSource: events.length > 0 ? 'provided_or_derived' : 'none',
     eventCount: events.length,
+    refresh,
     result,
   };
   const heartbeat = writeEntryTriggerWorkerHeartbeat(output);

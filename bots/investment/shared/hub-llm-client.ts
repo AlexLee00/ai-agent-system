@@ -26,6 +26,17 @@ const _hubClient = _require('../../../packages/core/lib/hub-client');
 const HUB_BASE = process.env.HUB_BASE_URL || 'http://localhost:7788';
 const HUB_TIMEOUT_MS = 65_000;
 
+function normalizeHubRequestTimeout(value: unknown): number {
+  const raw = Number(value || 0);
+  if (!Number.isFinite(raw) || raw <= 0) return HUB_TIMEOUT_MS - 5_000;
+  return Math.max(5_000, Math.min(HUB_TIMEOUT_MS - 1_000, Math.round(raw)));
+}
+
+function normalizeHubFetchTimeout(value: unknown): number {
+  const requestTimeoutMs = normalizeHubRequestTimeout(value);
+  return Math.max(6_000, Math.min(HUB_TIMEOUT_MS, requestTimeoutMs + 5_000));
+}
+
 export function isHubEnabled(): boolean {
   return process.env.INVESTMENT_LLM_HUB_ENABLED !== 'false';
 }
@@ -127,6 +138,7 @@ export function buildHubLlmCallPayload(
     incidentKey?: string;
     avoidProviders?: string[];
     chainAvoidProviders?: string[];
+    timeoutMs?: number;
   } = {}
 ) {
   // Phase C: 에이전트×시장×태스크 동적 라우팅 (chain 우선, abstractModel은 호환 유지)
@@ -150,7 +162,7 @@ export function buildHubLlmCallPayload(
     prompt:        userPrompt,
     systemPrompt,
     abstractModel,
-    timeoutMs:     HUB_TIMEOUT_MS - 5_000,
+    timeoutMs:     normalizeHubRequestTimeout(options.timeoutMs),
     agent:         agentName,
     callerTeam:    options.callerTeam || getHubCallerTeam(),
     urgency,
@@ -194,6 +206,7 @@ export async function callViaHub(
     incidentKey?: string;
     shadowCompare?: string;  // Shadow Mode일 때 직접 호출 결과 (비교용)
     avoidProviders?: string[]; // Phase G: Reflexion 회피 provider 목록
+    timeoutMs?: number;
   } = {}
 ): Promise<HubLLMResult> {
   const t0 = Date.now();
@@ -245,6 +258,7 @@ export async function callViaHub(
     incidentKey: options.incidentKey,
     avoidProviders: hardAvoidProviders,
     chainAvoidProviders,
+    timeoutMs: options.timeoutMs,
   });
 
   // Hard avoid는 Reflexion/명시 옵션만 Hub에 전달하고, route-health는 chain reorder로만 적용한다.
@@ -262,7 +276,7 @@ export async function callViaHub(
         'Authorization': `Bearer ${hubToken}`,
       },
       body,
-      signal: AbortSignal.timeout(HUB_TIMEOUT_MS),
+      signal: AbortSignal.timeout(normalizeHubFetchTimeout(options.timeoutMs)),
     });
 
     const latencyMs = Date.now() - t0;
@@ -464,6 +478,7 @@ export async function callLLMWithHub(
     purpose?: string;
     incidentKey?: string;
     workingState?: string;
+    timeoutMs?: number;
   } = {}
 ): Promise<string> {
   const shadow = isHubShadow();
@@ -515,6 +530,7 @@ export async function callLLMWithHub(
       taskType: opts.taskType || opts.purpose || 'default',
       incidentKey: opts.incidentKey,
       shadowCompare: directResult,
+      timeoutMs: opts.timeoutMs,
     }).catch(() => {});
     // Phase D: invocation 기록 (fire-and-forget)
     recordInvocation(agentName, opts.market ?? 'any').catch(() => {});
@@ -528,6 +544,7 @@ export async function callLLMWithHub(
     market: opts.market,
     taskType: opts.taskType || opts.purpose || 'default',
     incidentKey: opts.incidentKey,
+    timeoutMs: opts.timeoutMs,
   });
   if (hubResult.ok) {
     // Phase D: invocation 기록 (fire-and-forget)

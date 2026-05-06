@@ -177,6 +177,7 @@ function inferHanulBlockCode(reason = '', market = 'domestic') {
   if (reason.includes('현재가 조회 실패')) return 'quote_lookup_failed';
   if (reason.includes('최소 주문금액 미달')) return 'min_order_notional';
   if (reason.includes('1주 안전단가 미달')) return 'min_order_one_share_buffer';
+  if (reason.includes('1주 가격 미달')) return 'min_order_one_share_buffer';
   if (reason.includes('최대 주문금액 초과')) return 'max_order_notional';
   if (reason.includes('포지션 없음')) return 'missing_position';
   if (reason.includes('심볼 아님')) return 'invalid_symbol';
@@ -1973,6 +1974,13 @@ async function checkKisOverseasRisk(signal) {
           return {
             approved: false,
             reason: `1주 가격 미달 ($${amountUsd} < $${currentPrice.toFixed(2)})`,
+            code: 'min_order_one_share_buffer',
+            meta: {
+              currentPrice,
+              amountUsd,
+              requiredIntegerShares: 1,
+              policy: 'overseas_integer_share_required',
+            },
           };
         }
       }

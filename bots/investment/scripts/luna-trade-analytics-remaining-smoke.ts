@@ -42,6 +42,9 @@ export async function runSmoke() {
     const derivedWeak = checkSymbolBlacklist('OPN/USDT', 'crypto');
     assert.equal(derivedWeak.blocked, true);
     assert.equal(derivedWeak.source, 'pre_entry/trade_data_weak_symbol');
+    const poetWeak = checkSymbolBlacklist('POET', 'overseas');
+    assert.equal(poetWeak.blocked, true);
+    assert.equal(poetWeak.source, 'pre_entry/trade_data_weak_symbol');
     const lossStreak = await checkSymbolLossStreak('TAO/USDT', 'crypto');
     assert.equal(lossStreak.inCooldown, true, 'blacklist must feed pre-entry cooldown result');
     const sellNoop = resolveExpectedSellNoopStatus({ action: 'SELL', code: 'partial_sell_below_minimum' });
@@ -54,7 +57,8 @@ export async function runSmoke() {
       strategy_family: 'defensive_rotation',
     });
     assert.equal(domesticGuard.blocked, true);
-    assert.ok(domesticGuard.blockers.includes('domestic_defensive_rotation_validation_only'));
+    assert.ok(domesticGuard.blockers.includes('trade_data_weak_symbol'));
+    assert.ok(domesticGuard.warnings.includes('domestic_defensive_rotation_probe_only'));
 
     const dataset = buildAutotuneLearningDataset([
       {
@@ -67,6 +71,7 @@ export async function runSmoke() {
         exit_price: 101,
         pnl_percent: 1,
         autonomy_phase: LUNA_AUTONOMY_PHASES.L4_PRE_AUTOTUNE,
+        tp_sl_set: true,
       },
       {
         trade_id: 'post-1',
@@ -78,9 +83,24 @@ export async function runSmoke() {
         exit_price: 99,
         pnl_percent: -1,
         autonomy_phase: LUNA_AUTONOMY_PHASES.L4_POST_AUTOTUNE,
+        tp_sl_set: true,
+      },
+      {
+        trade_id: 'low-trust-no-tpsl',
+        symbol: 'LUNC/USDT',
+        market: 'crypto',
+        exchange: 'binance',
+        status: 'closed',
+        entry_price: 100,
+        exit_price: 101,
+        pnl_percent: 1,
+        autonomy_phase: LUNA_AUTONOMY_PHASES.L4_POST_AUTOTUNE,
+        tp_sl_set: false,
       },
     ]);
     assert.equal(dataset.preAutotuneIncluded, 1);
+    assert.equal(dataset.learningRows, 2);
+    assert.equal(dataset.skipped, 1);
     assert.equal(dataset.contract.includesPreAutotune, true);
     return {
       ok: true,
@@ -88,6 +108,7 @@ export async function runSmoke() {
       selectedFamily: route.selectedFamily,
       blacklist,
       derivedWeak,
+      poetWeak,
       sellNoop,
       domesticGuard,
       autotune: { learningRows: dataset.learningRows, preAutotuneIncluded: dataset.preAutotuneIncluded },

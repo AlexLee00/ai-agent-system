@@ -31,8 +31,20 @@ export function preFilterSignal(signal = {}, opts = {}) {
   const tradeDataGuard = evaluateTradeDataEntryGuard(signal, opts.env || process.env);
   blockers.push(...tradeDataGuard.blockers);
   warnings.push(...tradeDataGuard.warnings);
+  const adjustments = [];
+  if (Array.isArray(tradeDataGuard?.meta?.sizingAdjustments)) {
+    adjustments.push(...tradeDataGuard.meta.sizingAdjustments);
+  }
   const regime = String(signal.marketRegime || signal.regime || signal.market_regime || '').toLowerCase();
-  if (action === 'BUY' && (regime.includes('bear') || regime.includes('distribution'))) {
+  const softRegimeBuyGate = String((opts.env || process.env).LUNA_REGIME_BUY_SOFT_GATE_ENABLED ?? 'true').trim().toLowerCase() !== 'false';
+  if (action === 'BUY' && (regime.includes('bear') || regime.includes('distribution')) && softRegimeBuyGate) {
+    warnings.push('regime_buy_probe_only');
+    adjustments.push({
+      code: 'regime_buy_probe_only',
+      multiplier: regime.includes('distribution') ? 0.2 : 0.25,
+      reason: '약세/분산 국면 BUY는 차단 대신 probe sizing으로 축소',
+    });
+  } else if (action === 'BUY' && (regime.includes('bear') || regime.includes('distribution'))) {
     blockers.push('regime_buy_blocked');
   }
   const volatility = String(signal.volatilityBucket || signal.volatility || signal.volatility_bucket || '').toLowerCase();
@@ -65,6 +77,7 @@ export function preFilterSignal(signal = {}, opts = {}) {
     blockers,
     warnings,
     deferred,
+    adjustments,
     decision,
     tradeDataGuard: tradeDataGuard.blocked || tradeDataGuard.warnings.length > 0 ? tradeDataGuard : null,
   };
