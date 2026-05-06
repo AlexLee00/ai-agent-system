@@ -12,6 +12,17 @@ const DEFAULT_STATE_PATH = path.join(INVESTMENT_DIR, 'output', 'ops', 'luna-ops-
 const DEFAULT_LOCK_PATH = path.join(INVESTMENT_DIR, 'output', 'ops', 'luna-ops-scheduler.lock');
 const LOCK_STALE_MS = 20 * 60 * 1000;
 
+function isProcessAlive(pid) {
+  const numericPid = Number(pid);
+  if (!Number.isInteger(numericPid) || numericPid <= 0) return false;
+  try {
+    process.kill(numericPid, 0);
+    return true;
+  } catch (error) {
+    return error?.code === 'EPERM';
+  }
+}
+
 function nodeScript(script, args = []) {
   return {
     command: process.execPath,
@@ -186,7 +197,8 @@ function acquireLock(lockPath, now = new Date()) {
   if (fs.existsSync(lockPath)) {
     const current = readJsonSafe(lockPath, {});
     const lockedAt = current.lockedAt ? new Date(current.lockedAt).getTime() : 0;
-    if (lockedAt && now.getTime() - lockedAt < LOCK_STALE_MS) {
+    const lockFresh = lockedAt && now.getTime() - lockedAt < LOCK_STALE_MS;
+    if (lockFresh && isProcessAlive(current.pid)) {
       return { ok: false, status: 'locked', lockPath, current };
     }
   }
@@ -248,6 +260,9 @@ export function classifyOpsSchedulerOutcome(job, result = {}) {
   ].filter(Boolean).join('\n');
   const name = String(job?.name || '');
 
+  if (/LIVE OFF|LUNA_LIVE_(DOMESTIC|OVERSEAS)[^\n]*미설정|kill_switch_off/.test(text)) {
+    return { outcome: 'kill_switch_off', summary: compactOutcomeSummary(text, 'live kill switch off') };
+  }
   if (/사이클 스킵/.test(text)) {
     return { outcome: 'cadence_wait', summary: compactOutcomeSummary(text, '사이클 스킵') };
   }

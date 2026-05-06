@@ -28,6 +28,36 @@
     <string>true</string>
     <key>LUNA_DISCOVERY_SEC</key>
     <string>true</string>
+    <key>LUNA_NEWS_SYMBOL_MAPPING_ENABLED</key>
+    <string>true</string>
+    <key>LUNA_COMMUNITY_SENTIMENT_ENABLED</key>
+    <string>true</string>
+    <key>LUNA_WYCKOFF_DETECTION_ENABLED</key>
+    <string>true</string>
+    <key>LUNA_VSA_BAR_CLASSIFICATION</key>
+    <string>true</string>
+    <key>LUNA_MTF_ANALYZER_ENABLED</key>
+    <string>true</string>
+    <key>LUNA_ENTRY_TRIGGER_ENGINE_ENABLED</key>
+    <string>true</string>
+    <key>LUNA_DISCOVERY_SCORE_FUSION_ENABLED</key>
+    <string>true</string>
+    <key>LUNA_DISCOVERY_REFLECTION_ENABLED</key>
+    <string>true</string>
+    <key>LUNA_PREDICTIVE_VALIDATION_ENABLED</key>
+    <string>true</string>
+    <key>LUNA_PREDICTIVE_VALIDATION_MODE</key>
+    <string>hard_gate</string>
+    <key>LUNA_PREDICTIVE_OBSERVATION_LANE_ENABLED</key>
+    <string>true</string>
+    <key>LUNA_REGIME_8WAY_ENABLED</key>
+    <string>true</string>
+    <key>LUNA_DISCOVERY_MATURE_POLICY_ENABLED</key>
+    <string>true</string>
+    <key>LUNA_ML_PRICE_PREDICTOR_ENABLED</key>
+    <string>true</string>
+    <key>LUNA_ML_PRICE_PREDICTOR_SHADOW_MODE</key>
+    <string>true</string>
     <key>LUNA_LIVE_DOMESTIC</key>
     <string>true</string>
     <key>LUNA_LIVE_OVERSEAS</key>

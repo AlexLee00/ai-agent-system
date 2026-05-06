@@ -77,6 +77,9 @@ export function getLunaIntelligentDiscoveryFlags() {
       threshold: Math.max(0, Math.min(1, numEnv('LUNA_PREDICTIVE_VALIDATION_THRESHOLD', 0.55))),
       holdThreshold: Math.max(0, Math.min(1, numEnv('LUNA_PREDICTIVE_SCORE_HOLD_THRESHOLD', 0.40))),
       discardThreshold: Math.max(0, Math.min(1, numEnv('LUNA_PREDICTIVE_SCORE_DISCARD_THRESHOLD', 0.40))),
+      observationLaneEnabled: boolEnv('LUNA_PREDICTIVE_OBSERVATION_LANE_ENABLED', true),
+      observationThreshold: Math.max(0, Math.min(1, numEnv('LUNA_PREDICTIVE_OBSERVATION_THRESHOLD', numEnv('LUNA_PREDICTIVE_SCORE_HOLD_THRESHOLD', 0.40)))),
+      observationSizeRatio: Math.max(0.05, Math.min(1, numEnv('LUNA_PREDICTIVE_OBSERVATION_SIZE_RATIO', 0.35))),
       requireComponents: boolEnv('LUNA_PREDICTIVE_REQUIRE_COMPONENTS', false),
       weights: {
         backtest: Math.max(0, numEnv('LUNA_PREDICTIVE_WEIGHT_BACKTEST', 0.30)),

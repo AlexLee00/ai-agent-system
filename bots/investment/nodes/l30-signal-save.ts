@@ -76,6 +76,12 @@ async function run({ sessionId, market, symbol, decision: decisionOverride = nul
   const initialStatus = risk
     ? (risk.approved ? SIGNAL_STATUS.APPROVED : SIGNAL_STATUS.REJECTED)
     : SIGNAL_STATUS.PENDING;
+  const strategyRoute = decision?.strategy_route || decision?.strategyRoute || null;
+  const strategyFamily = decision?.strategy_family
+    || decision?.strategyFamily
+    || strategyRoute?.selectedFamily
+    || strategyRoute?.setupType
+    || null;
 
   const signalInsert = await db.insertSignalIfFresh({
     symbol,
@@ -89,6 +95,10 @@ async function run({ sessionId, market, symbol, decision: decisionOverride = nul
     tradeMode: decision?.trade_mode || null,
     nemesisVerdict: approvalUpdate?.nemesisVerdict ?? risk?.nemesis_verdict ?? null,
     approvedAt: approvalUpdate?.approvedAt ?? risk?.approved_at ?? null,
+    strategyFamily,
+    strategyQuality: decision?.strategy_quality || decision?.strategyQuality || strategyRoute?.quality || null,
+    strategyReadiness: decision?.strategy_readiness ?? decision?.strategyReadiness ?? strategyRoute?.readinessScore ?? null,
+    strategyRoute,
   });
   const signalId = signalInsert.id;
 

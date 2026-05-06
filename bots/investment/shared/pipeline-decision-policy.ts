@@ -9,6 +9,7 @@
 
 import { ACTIONS, ANALYST_TYPES } from './signal.ts';
 import { getOpenPositions, getCapitalConfigWithOverrides } from './capital-manager.ts';
+import { getMarketOrderRule } from './order-rules.ts';
 
 export function isActuallyExecuted(resultItem) {
   const execution = resultItem?.execution;
@@ -228,6 +229,31 @@ export function buildMidGapPromotedAmount(amountUsdt, exchange) {
     return Math.max(50, Math.round(numeric * 0.7));
   }
   return numeric;
+}
+
+export function isPredictiveObservationCandidate(decision) {
+  return decision?.action === ACTIONS.BUY
+    && decision?.block_meta?.predictiveValidation?.observation === true;
+}
+
+export function buildPredictiveObservationAmount(amountUsdt, exchange, ratio = 0.35) {
+  const rule = getMarketOrderRule(exchange) || {};
+  const fallback = exchange === 'kis'
+    ? (rule.minOrderAmount || 200_000)
+    : exchange === 'kis_overseas'
+      ? (rule.minOrderAmount || 200)
+      : 50;
+  const numeric = Number(amountUsdt || fallback);
+  const base = Number.isFinite(numeric) && numeric > 0 ? numeric : fallback;
+  const safeRatio = Math.max(0.05, Math.min(1, Number(ratio || 0.35)));
+  const reduced = base * safeRatio;
+  const minOrder = Number(rule.minOrderAmount || (exchange === 'binance' ? 10 : fallback));
+  const maxOrder = Number(rule.maxOrderAmount || 0);
+  const bounded = Math.max(minOrder, reduced);
+  const capped = maxOrder > 0 ? Math.min(maxOrder, bounded) : bounded;
+  if (exchange === 'kis') return Math.round(capped / 1000) * 1000;
+  if (exchange === 'binance') return Math.max(minOrder, Math.round(capped));
+  return Math.max(minOrder, Math.round(capped * 100) / 100);
 }
 
 export function mergeUniqueSymbols(primary = [], fallback = []) {

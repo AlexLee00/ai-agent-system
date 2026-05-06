@@ -42,6 +42,56 @@ export async function ensureCandidateUniverseTable(): Promise<void> {
     await db.run(`CREATE INDEX IF NOT EXISTS idx_candidate_universe_expires ON candidate_universe (expires_at)`);
     await db.run(`CREATE INDEX IF NOT EXISTS idx_candidate_universe_source ON candidate_universe (source, market, discovered_at DESC)`);
   } catch { /* 인덱스 중복 무시 */ }
+  await normalizeLegacyCryptoCandidateSymbols().catch(() => 0);
+}
+
+export async function normalizeLegacyCryptoCandidateSymbols(): Promise<number> {
+  const row = await db.get(`
+    WITH raw AS (
+      SELECT id,
+             REGEXP_REPLACE(symbol, 'USDT$', '/USDT') AS canonical_symbol
+      FROM candidate_universe
+      WHERE market = 'crypto'
+        AND symbol !~ '/'
+        AND symbol ~ '^[A-Z0-9]+USDT$'
+    ),
+    merged AS (
+      UPDATE candidate_universe target
+      SET score = GREATEST(target.score, source.score),
+          confidence = GREATEST(COALESCE(target.confidence, 0), COALESCE(source.confidence, 0)),
+          reason = CASE WHEN source.score >= target.score THEN source.reason ELSE target.reason END,
+          reason_code = CASE WHEN source.score >= target.score THEN source.reason_code ELSE target.reason_code END,
+          evidence_ref = CASE WHEN source.score >= target.score THEN source.evidence_ref ELSE target.evidence_ref END,
+          quality_flags = CASE WHEN source.score >= target.score THEN source.quality_flags ELSE target.quality_flags END,
+          ttl_hours = GREATEST(COALESCE(target.ttl_hours, 1), COALESCE(source.ttl_hours, 1)),
+          raw_data = CASE WHEN source.score >= target.score THEN source.raw_data ELSE target.raw_data END,
+          discovered_at = GREATEST(target.discovered_at, source.discovered_at),
+          expires_at = GREATEST(target.expires_at, source.expires_at)
+      FROM candidate_universe source
+      JOIN raw ON raw.id = source.id
+      WHERE target.market = 'crypto'
+        AND target.source = source.source
+        AND target.symbol = raw.canonical_symbol
+      RETURNING source.id
+    ),
+    deleted AS (
+      DELETE FROM candidate_universe
+      WHERE id IN (SELECT id FROM merged)
+      RETURNING 1
+    ),
+    renamed AS (
+      UPDATE candidate_universe
+      SET symbol = REGEXP_REPLACE(symbol, 'USDT$', '/USDT')
+      WHERE market = 'crypto'
+        AND symbol !~ '/'
+        AND symbol ~ '^[A-Z0-9]+USDT$'
+      RETURNING 1
+    )
+    SELECT
+      (SELECT COUNT(*) FROM deleted)::int AS deleted_count,
+      (SELECT COUNT(*) FROM renamed)::int AS renamed_count
+  `);
+  return Number(row?.deleted_count || 0) + Number(row?.renamed_count || 0);
 }
 
 // 시그널 배치 upsert (ON CONFLICT → score/reason/raw_data/expires_at 갱신)
@@ -114,13 +164,47 @@ function normalizeCandidateSymbolForMarket(symbol: string, market: DiscoveryMark
   return /^[A-Z][A-Z0-9.\-]{0,12}$/.test(raw) ? raw : null;
 }
 
+function candidateSourcePrioritySql(): string {
+  return `CASE
+    WHEN market = 'crypto' AND source = 'binance_market_momentum' THEN 30
+    WHEN market = 'crypto' AND source = 'coingecko_trending' THEN 20
+    ELSE 10
+  END`;
+}
+
 // 활성 universe 조회 (expires_at 기준 필터링)
 export async function getActiveCandidates(
   market: DiscoveryMarket,
   limit = 150,
 ): Promise<Array<{ symbol: string; market: string; source: string; score: number; reason: string }>> {
   return db.query(`
-    SELECT symbol,
+    WITH normalized AS (
+      SELECT *,
+             CASE
+               WHEN $1 = 'crypto' AND symbol ~ '^[A-Za-z0-9]+/USDT$' THEN UPPER(symbol)
+               WHEN $1 = 'crypto' AND symbol ~ '^[A-Za-z0-9]+USDT$' THEN REGEXP_REPLACE(UPPER(symbol), 'USDT$', '/USDT')
+               WHEN $1 = 'domestic' AND symbol ~ '^[0-9]{6}$' THEN symbol
+               WHEN $1 = 'overseas' AND symbol !~ '/' AND symbol !~ '^[0-9]{6}$' AND symbol ~ '^[A-Za-z][A-Za-z0-9.\\-]{0,12}$' THEN UPPER(symbol)
+               ELSE NULL
+             END AS normalized_symbol
+      FROM candidate_universe
+      WHERE market = $1
+        AND expires_at > NOW()
+    ),
+    ranked AS (
+      SELECT *,
+             ROW_NUMBER() OVER (
+               PARTITION BY normalized_symbol
+               ORDER BY
+                 ${candidateSourcePrioritySql()} DESC,
+                 score DESC,
+                 confidence DESC NULLS LAST,
+                 discovered_at DESC
+             ) AS rn
+      FROM normalized
+      WHERE normalized_symbol IS NOT NULL
+    )
+    SELECT normalized_symbol AS symbol,
            market,
            source,
            source_tier,
@@ -132,10 +216,9 @@ export async function getActiveCandidates(
            quality_flags,
            discovered_at,
            expires_at
-    FROM candidate_universe
-    WHERE market = $1
-      AND expires_at > NOW()
-    ORDER BY score DESC
+    FROM ranked
+    WHERE rn = 1
+    ORDER BY ${candidateSourcePrioritySql()} DESC, score DESC, confidence DESC NULLS LAST, discovered_at DESC
     LIMIT $2
   `, [market, limit]);
 }

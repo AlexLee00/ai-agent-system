@@ -61,7 +61,7 @@ export async function runLunaDecisionFilterReportSmoke() {
       `INSERT INTO candidate_universe
          (symbol, market, source, source_tier, score, confidence, reason, reason_code, ttl_hours, raw_data, expires_at)
        VALUES
-         ($1, 'crypto', 'decision_filter_smoke', 1, 0.91, 0.88, 'decision filter smoke', 'decision_filter_smoke', 2, '{}'::jsonb, now() + interval '2 hours')
+         ($1, 'crypto', 'binance_market_momentum', 1, 0.91, 0.88, 'decision filter smoke', 'decision_filter_smoke', 2, '{}'::jsonb, now() + interval '2 hours')
        ON CONFLICT (symbol, market, source) DO UPDATE SET
          score = excluded.score,
          confidence = excluded.confidence,
@@ -87,9 +87,19 @@ export async function runLunaDecisionFilterReportSmoke() {
     });
     assert.equal(activeReport.symbolScope, 'active_candidates');
     assert.ok(activeReport.activeCandidateSymbols.includes(fixtureSymbol));
+    assert.equal(activeReport.bottlenecks.includes('active_candidate_analysis_missing'), true);
+    assert.ok(Number(activeReport.activeCandidateCoverage?.missing || 0) >= 1);
+
+    const overseasReport = await buildLunaDecisionFilterReport({
+      market: 'overseas',
+      symbols: ['NVDA'],
+      hours: 1,
+      limit: 1,
+    });
+    assert.equal(overseasReport.exchange, 'kis_overseas');
   } finally {
     await db.run(`DELETE FROM analysis WHERE symbol = $1 AND metadata->>'smoke' = 'true'`, [fixtureSymbol]).catch(() => null);
-    await db.run(`DELETE FROM candidate_universe WHERE symbol = $1 AND source = 'decision_filter_smoke'`, [fixtureSymbol]).catch(() => null);
+    await db.run(`DELETE FROM candidate_universe WHERE symbol = $1 AND source = 'binance_market_momentum'`, [fixtureSymbol]).catch(() => null);
   }
 
   return {

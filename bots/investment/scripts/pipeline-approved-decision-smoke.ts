@@ -115,10 +115,48 @@ try {
   await db.run(`DELETE FROM signals WHERE symbol = $1`, [fullExitSymbol]).catch(() => {});
 }
 
+const strategySymbol = uniqueSymbol('PIPESTRAT');
+try {
+  const strategyRoute = {
+    selectedFamily: 'momentum_rotation',
+    setupType: 'trend_pullback',
+    quality: 'ready',
+    readinessScore: 0.82,
+  };
+  const saved = await l30SignalSave.run({
+    sessionId: `pipe-strategy-smoke-${Date.now()}`,
+    market: 'binance',
+    symbol: strategySymbol,
+    decision: {
+      symbol: strategySymbol,
+      action: ACTIONS.BUY,
+      amount_usdt: 50,
+      confidence: 0.78,
+      reasoning: 'strategy route persistence smoke',
+      trade_mode: 'normal',
+      strategy_route: strategyRoute,
+    },
+    risk: {
+      approved: true,
+      adjustedAmount: 45,
+      nemesis_verdict: 'approved',
+    },
+  });
+  assert.ok(saved.signalId);
+  const savedSignal = await db.getSignalById(saved.signalId);
+  assert.equal(savedSignal.strategy_family, 'momentum_rotation');
+  assert.equal(savedSignal.strategy_quality, 'ready');
+  assert.equal(Number(savedSignal.strategy_readiness), 0.82);
+  assert.equal(savedSignal.strategy_route.selectedFamily, 'momentum_rotation');
+} finally {
+  await db.run(`DELETE FROM signals WHERE symbol = $1`, [strategySymbol]).catch(() => {});
+  await db.run(`DELETE FROM investment.position_strategy_profiles WHERE symbol = $1`, [strategySymbol]).catch(() => {});
+}
+
 const result = {
   ok: true,
   smoke: 'pipeline-approved-decision',
-  checked: ['payload_builder', 'runner_reexport', 'function_exports', 'full_exit_sell_zero', 'exit_phase_analyst_marker'],
+  checked: ['payload_builder', 'runner_reexport', 'function_exports', 'full_exit_sell_zero', 'exit_phase_analyst_marker', 'l30_strategy_route_persistence'],
 };
 
 if (process.argv.includes('--json')) {

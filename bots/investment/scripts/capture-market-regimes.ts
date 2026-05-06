@@ -57,9 +57,21 @@ async function captureMarketRegimes({ dryRun = false, markets = [] } = {}) {
       regime: regime.regime,
       confidence: regime.confidence,
       reason: regime.reason,
+      summary: regime.summary,
       bias: regime.bias,
       tradingStyle: regime.guide?.tradingStyle || null,
       timeframe: regime.guide?.timeframe || null,
+      evidence: (regime.snapshots || []).map((item) => ({
+        label: item.label,
+        symbol: item.symbol,
+        source: item.source,
+        last: item.last,
+        dayChangePct: item.dayChangePct,
+        trendPct: item.trendPct,
+        fallbackSymbol: item.fallbackSymbol || null,
+        fallbackError: item.fallbackError || null,
+        error: item.error || null,
+      })),
       capturedAt: new Date().toISOString(),
     };
 
@@ -71,6 +83,8 @@ async function captureMarketRegimes({ dryRun = false, markets = [] } = {}) {
         indicators: {
           exchange: market,
           reason: row.reason,
+          summary: row.summary,
+          evidence: row.evidence,
           bias: row.bias,
           guide: regime.guide || null,
         },
@@ -113,4 +127,3 @@ if (isDirectExecution(import.meta.url)) {
     errorPrefix: '❌ market regime capture 오류:',
   });
 }
-

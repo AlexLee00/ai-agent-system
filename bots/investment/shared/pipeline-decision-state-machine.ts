@@ -35,11 +35,13 @@ import {
   buildAnalystSignals,
   buildExitEntryBridgeSummary,
   buildMidGapPromotedAmount,
+  buildPredictiveObservationAmount,
   buildPlannerRunMeta,
   classifyWeakSignalReason,
   isActuallyExecuted,
   isExecutionStillApproved,
   isMidGapPromotionCandidate,
+  isPredictiveObservationCandidate,
   mergeUniqueSymbols,
   normalizeCollectQuality,
   normalizeRegimeLabel,
@@ -458,6 +460,7 @@ export async function runDecisionExecutionStateMachine({
           threshold: intelligentFlags.predictive.threshold,
           blocked: predictiveGate.blocked,
           advisory: predictiveGate.advisory,
+          observation: predictiveGate.observation,
         },
       };
       predictiveValidationStats = portfolioDecision.predictiveValidation;
@@ -532,17 +535,28 @@ export async function runDecisionExecutionStateMachine({
 
     const analyses = symbolAnalysesMap.get(dec.symbol) || [];
     const analystSignals = buildAnalystSignals(analyses);
+    const predictiveObservationCandidate = isPredictiveObservationCandidate(dec);
+    const predictiveObservationRatio = dec?.block_meta?.predictiveValidation?.sizeRatio
+      ?? intelligentFlags.predictive?.observationSizeRatio
+      ?? 0.35;
     const amountUsdt = midGapPromotedCandidate
       ? buildMidGapPromotedAmount(dec.amount_usdt, exchange)
+      : predictiveObservationCandidate
+        ? buildPredictiveObservationAmount(dec.amount_usdt, exchange, predictiveObservationRatio)
       : (dec.amount_usdt || (exchange === 'binance' ? 100 : 500));
+    const effectiveTradeMode = (midGapPromotedCandidate || predictiveObservationCandidate)
+      ? 'validation'
+      : investmentTradeMode;
     const signalData = {
       symbol: dec.symbol,
       action: dec.action,
       amountUsdt,
       confidence: dec.confidence,
-      trade_mode: midGapPromotedCandidate ? 'validation' : investmentTradeMode,
+      trade_mode: effectiveTradeMode,
       reasoning: midGapPromotedCandidate
         ? `[루나] mid-gap validation 승격 | ${dec.reasoning}`
+        : predictiveObservationCandidate
+          ? `[루나] predictive observation 소액 검증 | ${dec.reasoning}`
         : `[루나] ${dec.reasoning}`,
       exchange,
       analystSignals,
@@ -608,6 +622,7 @@ export async function runDecisionExecutionStateMachine({
         skipReason: riskReason,
         risk: riskResult,
         midGapPromoted: midGapPromotedCandidate,
+        predictiveObservation: predictiveObservationCandidate,
       });
       continue;
     }
@@ -618,7 +633,7 @@ export async function runDecisionExecutionStateMachine({
       symbol: dec.symbol,
       decision: {
         ...dec,
-        trade_mode: midGapPromotedCandidate ? 'validation' : investmentTradeMode,
+        trade_mode: effectiveTradeMode,
         amount_usdt: amountUsdt,
       },
       risk: riskResult,
@@ -771,4 +786,3 @@ export async function runDecisionExecutionStateMachine({
     metrics: completedMetrics,
   };
 }
-

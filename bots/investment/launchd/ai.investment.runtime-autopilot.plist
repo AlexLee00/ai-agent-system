@@ -18,6 +18,36 @@
 		<string>true</string>
 		<key>LUNA_MASTER_REPORT_ONLY</key>
 		<string>true</string>
+		<key>LUNA_REGIME_8WAY_ENABLED</key>
+		<string>true</string>
+		<key>LUNA_POSITION_ADAPTIVE_CADENCE_ENABLED</key>
+		<string>true</string>
+		<key>LUNA_STRATEGY_VALIDITY_EVALUATOR_ENABLED</key>
+		<string>true</string>
+		<key>LUNA_STRATEGY_MUTATION_ENABLED</key>
+		<string>true</string>
+		<key>LUNA_POSITION_SIGNAL_REFRESH_ENABLED</key>
+		<string>true</string>
+		<key>LUNA_DYNAMIC_POSITION_SIZING_ENABLED</key>
+		<string>true</string>
+		<key>LUNA_DYNAMIC_TRAIL_ENGINE_ENABLED</key>
+		<string>true</string>
+		<key>LUNA_REFLEXIVE_PORTFOLIO_MONITORING_ENABLED</key>
+		<string>true</string>
+		<key>LUNA_POSITION_LIFECYCLE_EVENT_STREAM_ENABLED</key>
+		<string>true</string>
+		<key>LUNA_CROSS_AGENT_BUS_ENABLED</key>
+		<string>true</string>
+		<key>LUNA_AGENT_CROSS_BUS_ENABLED</key>
+		<string>true</string>
+		<key>LUNA_FAILED_SIGNAL_REFLEXION_AUTO</key>
+		<string>true</string>
+		<key>LUNA_POSTTRADE_AUTO_TRIGGER_ENABLED</key>
+		<string>true</string>
+		<key>LUNA_ML_PRICE_PREDICTOR_ENABLED</key>
+		<string>true</string>
+		<key>LUNA_ML_PRICE_PREDICTOR_SHADOW_MODE</key>
+		<string>true</string>
 		<key>LUNA_DELEGATED_AUTHORITY_REQUIRE_FINAL_GATE</key>
 		<string>true</string>
 		<key>LUNA_DELEGATED_MAX_TRADE_USDT</key>

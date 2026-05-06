@@ -94,10 +94,48 @@ export async function runLunaOpsSchedulerSmoke() {
   });
   assert.equal(seededPlan.due, 0);
 
-  fs.writeFileSync(lockPath, JSON.stringify({ lockedAt: now.toISOString(), pid: 999999 }));
+  fs.writeFileSync(lockPath, JSON.stringify({ lockedAt: now.toISOString(), pid: process.pid }));
   const locked = await runOpsScheduler({ now, statePath, lockPath, jobs });
   assert.equal(locked.ok, false);
   assert.equal(locked.status, 'locked');
+  fs.rmSync(lockPath, { force: true });
+
+  fs.writeFileSync(lockPath, JSON.stringify({ lockedAt: now.toISOString(), pid: 999999 }));
+  const staleRecovered = await runOpsScheduler({ now, statePath, lockPath, jobs: [], runner: () => ({ ok: true }) });
+  assert.equal(staleRecovered.ok, true);
+  assert.equal(staleRecovered.status, 'executed');
+  fs.rmSync(lockPath, { force: true });
+
+  const envEchoScript = path.join(tmp, 'echo-env.js');
+  fs.writeFileSync(
+    envEchoScript,
+    `console.log(JSON.stringify({ overseas: process.env.LUNA_LIVE_OVERSEAS || null }));\n`,
+    'utf8',
+  );
+  const envStatePath = path.join(tmp, 'env-state.json');
+  const envLockPath = path.join(tmp, 'env-lock.json');
+  const envExecution = await runOpsScheduler({
+    now,
+    statePath: envStatePath,
+    lockPath: envLockPath,
+    jobs: [{
+      name: 'market_cycle_overseas',
+      cadence: { type: 'interval', seconds: 1 },
+      command: process.execPath,
+      args: [envEchoScript],
+      env: { LUNA_LIVE_OVERSEAS: 'true' },
+    }],
+  });
+  assert.equal(envExecution.ok, true);
+  assert.match(envExecution.executed[0]?.stdoutTail || '', /"overseas":"true"/);
+
+  assert.equal(
+    classifyOpsSchedulerOutcome(
+      { name: 'market_cycle_overseas' },
+      { ok: true, stdoutTail: '[overseas] LIVE OFF — 사이클 스킵 (LUNA_LIVE_OVERSEAS 미설정)', stderrTail: '' },
+    ).outcome,
+    'kill_switch_off',
+  );
 
   return {
     ok: true,
@@ -107,6 +145,7 @@ export async function runLunaOpsSchedulerSmoke() {
     executed: calls.length,
     seededDue: seededPlan.due,
     locked: locked.status,
+    staleRecovered: staleRecovered.ok,
   };
 }
 

@@ -8,7 +8,10 @@ import path from 'node:path';
 import * as db from '../shared/db.ts';
 import { ensureCandidateUniverseTable } from '../team/discovery/discovery-store.ts';
 import { ensureLunaDiscoveryEntryTables } from '../shared/luna-discovery-entry-store.ts';
-import { buildLunaDiscoveryFunnelReport } from './runtime-luna-discovery-funnel-report.ts';
+import {
+  buildLunaDiscoveryFunnelReport,
+  buildRequiredAnalystCoverage,
+} from './runtime-luna-discovery-funnel-report.ts';
 import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
 
 async function seedFixture(symbol, historyFile) {
@@ -107,6 +110,63 @@ export async function runLunaDiscoveryFunnelReportSmoke() {
     assert.ok(crypto.entryTriggers.activeCount >= 1, 'entry trigger should include smoke armed trigger');
     assert.equal(report.autopilot.totals.candidateCount, 1, 'autopilot dispatch candidate count should come from fixture history');
     assert.equal(report.nextAction, 'continue_observation', 'complete fixture funnel should not request repair action');
+
+    const overseasClosedCoverage = buildRequiredAnalystCoverage({
+      market: 'overseas',
+      marketOpen: false,
+      analysisSymbols: ['NVDA'],
+      analysisRows: [
+        { symbol: 'NVDA', analyst: 'sentiment', count: 1, latest_created_at: new Date().toISOString() },
+        { symbol: 'NVDA', analyst: 'market_flow', count: 1, latest_created_at: new Date().toISOString() },
+      ],
+    });
+    assert.ok(
+      overseasClosedCoverage.bottlenecks.includes('technical_analysis_deferred_until_market_open'),
+      'overseas missing TA should be marked as deferred when market is closed',
+    );
+
+    const domesticPartialCoverage = buildRequiredAnalystCoverage({
+      market: 'domestic',
+      marketOpen: true,
+      analysisSymbols: ['005930', '000660'],
+      analysisRows: [
+        { symbol: '005930', analyst: 'ta_mtf', count: 1, latest_created_at: new Date().toISOString() },
+        { symbol: '005930', analyst: 'sentiment', count: 1, latest_created_at: new Date().toISOString() },
+        { symbol: '005930', analyst: 'market_flow', count: 1, latest_created_at: new Date().toISOString() },
+      ],
+    });
+    assert.ok(
+      domesticPartialCoverage.bottlenecks.includes('technical_analysis_partial_for_candidates'),
+      'partial domestic TA coverage should be visible as a bottleneck',
+    );
+
+    const overseasOpenCoverage = buildRequiredAnalystCoverage({
+      market: 'overseas',
+      marketOpen: true,
+      analysisSymbols: ['NVDA'],
+      analysisRows: [
+        { symbol: 'NVDA', analyst: 'sentiment', count: 1, latest_created_at: new Date().toISOString() },
+        { symbol: 'NVDA', analyst: 'market_flow', count: 1, latest_created_at: new Date().toISOString() },
+      ],
+    });
+    assert.ok(
+      overseasOpenCoverage.bottlenecks.includes('technical_analysis_missing_for_candidates'),
+      'overseas missing TA should be marked as a live bottleneck when market is open',
+    );
+
+    const cryptoCoverage = buildRequiredAnalystCoverage({
+      market: 'crypto',
+      marketOpen: true,
+      analysisSymbols: ['SOL/USDT'],
+      analysisRows: [
+        { symbol: 'SOL/USDT', analyst: 'ta_mtf', count: 1, latest_created_at: new Date().toISOString() },
+        { symbol: 'SOL/USDT', analyst: 'sentiment', count: 1, latest_created_at: new Date().toISOString() },
+      ],
+    });
+    assert.ok(
+      cryptoCoverage.bottlenecks.includes('onchain_analysis_missing_for_candidates'),
+      'crypto missing onchain should be visible in required analyst coverage',
+    );
     return {
       ok: true,
       smoke: 'luna-discovery-funnel-report',

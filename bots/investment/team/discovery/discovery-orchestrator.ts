@@ -17,6 +17,7 @@ import type {
 import { TossPopular100Collector } from './domestic/toss-popular-100.ts';
 import { DartDisclosureCollector } from './domestic/dart-disclosure-collector.ts';
 import { KisArgosScreenerCollector } from './domestic/kis-argos-screener.ts';
+import { BinanceMarketMomentumCollector } from './crypto/binance-market-momentum.ts';
 import { CoinGeckoTrendingCollector } from './crypto/coingecko-trending.ts';
 import { YahooTrendingCollector } from './overseas/yahoo-trending-collector.ts';
 import { SecEdgarCollector } from './overseas/sec-edgar-collector.ts';
@@ -36,6 +37,7 @@ function buildAdapters(): DiscoveryAdapter[] {
     new DartDisclosureCollector(),
     new KisArgosScreenerCollector(),
     // 암호화폐 tier1
+    new BinanceMarketMomentumCollector(),
     new CoinGeckoTrendingCollector(),
     // 해외주식 tier1
     new YahooTrendingCollector(),

@@ -1,0 +1,460 @@
+{
+  "ok": true,
+  "status": "needs_attention",
+  "generatedAt": "2026-05-06T05:49:41.243Z",
+  "summary": {
+    "total": 660,
+    "closed": 352,
+    "open": 308,
+    "rawPnlOutlierCount": 16,
+    "potentiallyCorrectedPnlCount": 16,
+    "pnlOutlierThreshold": 1000
+  },
+  "tpSl": {
+    "set": {
+      "name": "set",
+      "total": 347,
+      "closed": 115,
+      "wins": 42,
+      "losses": 53,
+      "pnlSum": 1093.0251999999998,
+      "pnlCount": 115,
+      "avgPnlPercent": 9.5046,
+      "winRate": 0.3652
+    },
+    "unset": {
+      "name": "unset",
+      "total": 313,
+      "closed": 237,
+      "wins": 40,
+      "losses": 108,
+      "pnlSum": 1396.1474980757032,
+      "pnlCount": 234,
+      "avgPnlPercent": 5.9664,
+      "winRate": 0.1709
+    }
+  },
+  "markets": [
+    {
+      "name": "crypto",
+      "total": 597,
+      "closed": 306,
+      "wins": 75,
+      "losses": 125,
+      "pnlSum": 2563.201715180242,
+      "pnlCount": 306,
+      "avgPnlPercent": 8.3765,
+      "winRate": 0.2451
+    },
+    {
+      "name": "domestic",
+      "total": 47,
+      "closed": 38,
+      "wins": 5,
+      "losses": 33,
+      "pnlSum": -25.87531710453976,
+      "pnlCount": 38,
+      "avgPnlPercent": -0.6809,
+      "winRate": 0.1316
+    },
+    {
+      "name": "overseas",
+      "total": 16,
+      "closed": 8,
+      "wins": 2,
+      "losses": 3,
+      "pnlSum": -48.15369999999999,
+      "pnlCount": 5,
+      "avgPnlPercent": -9.6307,
+      "winRate": 0.4
+    }
+  ],
+  "marketRegime": {
+    "trendingBullLosses": 102,
+    "buckets": [
+      {
+        "name": "trending_bull",
+        "total": 470,
+        "closed": 255,
+        "wins": 57,
+        "losses": 102,
+        "pnlSum": 2113.402815180242,
+        "pnlCount": 255,
+        "avgPnlPercent": 8.2879,
+        "winRate": 0.2235
+      },
+      {
+        "name": "trending_bear",
+        "total": 99,
+        "closed": 56,
+        "wins": 11,
+        "losses": 36,
+        "pnlSum": 146.73258289546013,
+        "pnlCount": 56,
+        "avgPnlPercent": 2.6202,
+        "winRate": 0.1964
+      },
+      {
+        "name": "ranging",
+        "total": 90,
+        "closed": 40,
+        "wins": 13,
+        "losses": 23,
+        "pnlSum": 122.72449999999999,
+        "pnlCount": 37,
+        "avgPnlPercent": 3.3169,
+        "winRate": 0.3514
+      },
+      {
+        "name": "volatile",
+        "total": 1,
+        "closed": 1,
+        "wins": 1,
+        "losses": 0,
+        "pnlSum": 106.3128,
+        "pnlCount": 1,
+        "avgPnlPercent": 106.3128,
+        "winRate": 1
+      }
+    ]
+  },
+  "strategyFamily": {
+    "coverage": 1,
+    "unknownCount": 0,
+    "shortTermCount": 0,
+    "buckets": [
+      {
+        "name": "momentum_rotation",
+        "total": 460,
+        "closed": 248,
+        "wins": 55,
+        "losses": 97,
+        "pnlSum": 2080.110015180242,
+        "pnlCount": 248,
+        "avgPnlPercent": 8.3875,
+        "winRate": 0.2218
+      },
+      {
+        "name": "mean_reversion",
+        "total": 155,
+        "closed": 69,
+        "wins": 22,
+        "losses": 34,
+        "pnlSum": 455.1991999999999,
+        "pnlCount": 66,
+        "avgPnlPercent": 6.897,
+        "winRate": 0.3333
+      },
+      {
+        "name": "defensive_rotation",
+        "total": 35,
+        "closed": 28,
+        "wins": 3,
+        "losses": 25,
+        "pnlSum": -79.42931710453978,
+        "pnlCount": 28,
+        "avgPnlPercent": -2.8368,
+        "winRate": 0.1071
+      },
+      {
+        "name": "equity_swing",
+        "total": 10,
+        "closed": 7,
+        "wins": 2,
+        "losses": 5,
+        "pnlSum": 33.2928,
+        "pnlCount": 7,
+        "avgPnlPercent": 4.7561,
+        "winRate": 0.2857
+      }
+    ]
+  },
+  "symbols": [
+    {
+      "name": "ORCA/USDT",
+      "total": 38,
+      "closed": 11,
+      "wins": 5,
+      "losses": 6,
+      "pnlSum": 193.8225,
+      "pnlCount": 11,
+      "avgPnlPercent": 17.6202,
+      "winRate": 0.4545
+    },
+    {
+      "name": "KAT/USDT",
+      "total": 34,
+      "closed": 10,
+      "wins": 2,
+      "losses": 7,
+      "pnlSum": -87.72470000000001,
+      "pnlCount": 10,
+      "avgPnlPercent": -8.7725,
+      "winRate": 0.2
+    },
+    {
+      "name": "TAO/USDT",
+      "total": 31,
+      "closed": 31,
+      "wins": 2,
+      "losses": 12,
+      "pnlSum": 1.7828893220664361,
+      "pnlCount": 31,
+      "avgPnlPercent": 0.0575,
+      "winRate": 0.0645
+    },
+    {
+      "name": "ZBT/USDT",
+      "total": 30,
+      "closed": 9,
+      "wins": 5,
+      "losses": 3,
+      "pnlSum": 107.7792,
+      "pnlCount": 9,
+      "avgPnlPercent": 11.9755,
+      "winRate": 0.5556
+    },
+    {
+      "name": "OPN/USDT",
+      "total": 28,
+      "closed": 14,
+      "wins": 0,
+      "losses": 14,
+      "pnlSum": -408.5244,
+      "pnlCount": 14,
+      "avgPnlPercent": -29.1803,
+      "winRate": 0
+    },
+    {
+      "name": "SAHARA/USDT",
+      "total": 27,
+      "closed": 14,
+      "wins": 2,
+      "losses": 11,
+      "pnlSum": -48.023799999999966,
+      "pnlCount": 14,
+      "avgPnlPercent": -3.4303,
+      "winRate": 0.1429
+    },
+    {
+      "name": "ZEC/USDT",
+      "total": 20,
+      "closed": 10,
+      "wins": 8,
+      "losses": 1,
+      "pnlSum": 177.4615,
+      "pnlCount": 10,
+      "avgPnlPercent": 17.7462,
+      "winRate": 0.8
+    },
+    {
+      "name": "MEGA/USDT",
+      "total": 19,
+      "closed": 8,
+      "wins": 4,
+      "losses": 4,
+      "pnlSum": 120.4802,
+      "pnlCount": 8,
+      "avgPnlPercent": 15.06,
+      "winRate": 0.5
+    },
+    {
+      "name": "ENSO/USDT",
+      "total": 18,
+      "closed": 8,
+      "wins": 4,
+      "losses": 4,
+      "pnlSum": 133.76599999999996,
+      "pnlCount": 8,
+      "avgPnlPercent": 16.7207,
+      "winRate": 0.5
+    },
+    {
+      "name": "KITE/USDT",
+      "total": 17,
+      "closed": 17,
+      "wins": 5,
+      "losses": 8,
+      "pnlSum": -229.1335,
+      "pnlCount": 17,
+      "avgPnlPercent": -13.4784,
+      "winRate": 0.2941
+    },
+    {
+      "name": "BARD/USDT",
+      "total": 15,
+      "closed": 15,
+      "wins": 5,
+      "losses": 2,
+      "pnlSum": 675.4856393442623,
+      "pnlCount": 15,
+      "avgPnlPercent": 45.0324,
+      "winRate": 0.3333
+    },
+    {
+      "name": "BABY/USDT",
+      "total": 11,
+      "closed": 3,
+      "wins": 2,
+      "losses": 1,
+      "pnlSum": 21.341900000000003,
+      "pnlCount": 3,
+      "avgPnlPercent": 7.114,
+      "winRate": 0.6667
+    },
+    {
+      "name": "NOM/USDT",
+      "total": 10,
+      "closed": 2,
+      "wins": 1,
+      "losses": 1,
+      "pnlSum": 204.46470000000002,
+      "pnlCount": 2,
+      "avgPnlPercent": 102.2324,
+      "winRate": 0.5
+    },
+    {
+      "name": "PHA/USDT",
+      "total": 10,
+      "closed": 10,
+      "wins": 4,
+      "losses": 3,
+      "pnlSum": 1399.1361296296297,
+      "pnlCount": 10,
+      "avgPnlPercent": 139.9136,
+      "winRate": 0.4
+    },
+    {
+      "name": "BIO/USDT",
+      "total": 9,
+      "closed": 3,
+      "wins": 1,
+      "losses": 2,
+      "pnlSum": -4.8231,
+      "pnlCount": 3,
+      "avgPnlPercent": -1.6077,
+      "winRate": 0.3333
+    },
+    {
+      "name": "APE/USDT",
+      "total": 8,
+      "closed": 7,
+      "wins": 1,
+      "losses": 5,
+      "pnlSum": -10.6024,
+      "pnlCount": 7,
+      "avgPnlPercent": -1.5146,
+      "winRate": 0.1429
+    },
+    {
+      "name": "PENDLE/USDT",
+      "total": 8,
+      "closed": 4,
+      "wins": 3,
+      "losses": 1,
+      "pnlSum": 15.253300000000001,
+      "pnlCount": 4,
+      "avgPnlPercent": 3.8133,
+      "winRate": 0.75
+    },
+    {
+      "name": "BROCCOLI714/USDT",
+      "total": 7,
+      "closed": 0,
+      "wins": 0,
+      "losses": 0,
+      "pnlSum": 0,
+      "pnlCount": 0,
+      "avgPnlPercent": null,
+      "winRate": null
+    },
+    {
+      "name": "HYPER/USDT",
+      "total": 7,
+      "closed": 5,
+      "wins": 3,
+      "losses": 1,
+      "pnlSum": 1.6238000000000001,
+      "pnlCount": 5,
+      "avgPnlPercent": 0.3248,
+      "winRate": 0.6
+    },
+    {
+      "name": "005090",
+      "total": 6,
+      "closed": 5,
+      "wins": 1,
+      "losses": 4,
+      "pnlSum": 63.2838,
+      "pnlCount": 5,
+      "avgPnlPercent": 12.6568,
+      "winRate": 0.2
+    }
+  ],
+  "reinforcementActions": [
+    {
+      "id": "stop_loss_required_for_closed_trades",
+      "status": "warning",
+      "evidence": {
+        "closedWithoutTpSl": 237
+      }
+    },
+    {
+      "id": "trending_bull_entry_quality_gate",
+      "status": "watch",
+      "evidence": {
+        "trendingBullLosses": 102
+      }
+    },
+    {
+      "id": "strategy_family_required",
+      "status": "ok",
+      "evidence": {
+        "unknownCount": 0,
+        "coverage": 1
+      }
+    },
+    {
+      "id": "symbol_loss_streak_reflexion",
+      "status": "ok",
+      "evidence": {
+        "contract": "symbol-level loss streak guard is source-backed by reflexion-guard"
+      }
+    },
+    {
+      "id": "pnl_percent_rebuild_and_outlier_guard",
+      "status": "warning",
+      "evidence": {
+        "rawPnlOutlierCount": 16,
+        "potentiallyCorrectedPnlCount": 16,
+        "threshold": 1000
+      }
+    },
+    {
+      "id": "short_term_strategy_families",
+      "status": "watch",
+      "evidence": {
+        "shortTermCount": 0
+      }
+    },
+    {
+      "id": "domestic_trending_bear_block",
+      "status": "ok",
+      "evidence": {
+        "contract": "domestic trending_bear entry block is source-backed by luna-constitution"
+      }
+    },
+    {
+      "id": "autotune_learning_data_expansion",
+      "status": "ok",
+      "evidence": {
+        "closedTradeCount": 352,
+        "minimumForStableLearning": 30
+      }
+    }
+  ],
+  "nextActions": [
+    "run rebuild-pnl-percent --dry-run, then apply after review",
+    "review closed trades without tp_sl_set=true"
+  ]
+}

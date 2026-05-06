@@ -11,10 +11,22 @@ function clamp01(value, fallback = 0) {
   return Math.max(0, Math.min(1, n));
 }
 
+function isObservationEligible(evidence = {}, predictiveConfig = {}) {
+  if (predictiveConfig?.observationLaneEnabled === false) return false;
+  if (evidence?.decision !== 'hold') return false;
+  const score = clamp01(evidence?.score, 0);
+  const observationThreshold = clamp01(
+    predictiveConfig?.observationThreshold ?? predictiveConfig?.holdThreshold ?? predictiveConfig?.discardThreshold ?? 0.40,
+    0.40,
+  );
+  return score >= observationThreshold;
+}
+
 export function applyPredictiveValidationGate(decisions = [], predictiveConfig = { mode: 'advisory', threshold: 0.55 }) {
   const next = [];
   let blocked = 0;
   let advisory = 0;
+  let observation = 0;
   for (const decision of decisions || []) {
     if (decision?.action !== ACTION_BUY) {
       next.push(decision);
@@ -39,6 +51,26 @@ export function applyPredictiveValidationGate(decisions = [], predictiveConfig =
       continue;
     }
     if (predictiveConfig?.mode === 'hard_gate') {
+      if (isObservationEligible(evidence, predictiveConfig)) {
+        observation++;
+        next.push({
+          ...decision,
+          predictiveScore,
+          reasoning: `predictive_observation(${predictiveScore.toFixed(2)} < ${threshold.toFixed(2)}) | ${decision.reasoning || ''}`.slice(0, 220),
+          block_meta: {
+            ...(decision?.block_meta || {}),
+            event_type: 'predictive_observation_lane',
+            predictiveValidation: {
+              ...evidence,
+              mode: 'hard_gate_observation',
+              blocked: false,
+              observation: true,
+              sizeRatio: clamp01(predictiveConfig?.observationSizeRatio, 0.35),
+            },
+          },
+        });
+        continue;
+      }
       blocked++;
       next.push({
         ...decision,
@@ -77,6 +109,7 @@ export function applyPredictiveValidationGate(decisions = [], predictiveConfig =
     decisions: next,
     blocked,
     advisory,
+    observation,
   };
 }
 

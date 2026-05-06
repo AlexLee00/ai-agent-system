@@ -77,13 +77,13 @@ export const REGIME_GUIDES = {
 
 const BENCHMARKS = {
   kis: [
-    { symbol: '^KS11', label: 'KOSPI', source: 'yahoo' },
-    { symbol: '^KQ11', label: 'KOSDAQ', source: 'yahoo' },
+    { symbol: '069500', label: 'KODEX200', source: 'kis_domestic', fallback: { symbol: '^KS11', source: 'yahoo' } },
+    { symbol: '229200', label: 'KODEX KOSDAQ150', source: 'kis_domestic', fallback: { symbol: '^KQ11', source: 'yahoo' } },
   ],
   kis_overseas: [
-    { symbol: '^GSPC', label: 'S&P500', source: 'yahoo' },
-    { symbol: '^IXIC', label: 'NASDAQ', source: 'yahoo' },
-    { symbol: '^VIX', label: 'VIX', source: 'yahoo' },
+    { symbol: 'QQQ', label: 'NASDAQ100 ETF', source: 'kis_overseas', fallback: { symbol: '^IXIC', source: 'yahoo' } },
+    { symbol: 'AAPL', label: 'Apple', source: 'kis_overseas', fallback: { symbol: 'AAPL', source: 'yahoo' } },
+    { symbol: 'MSFT', label: 'Microsoft', source: 'kis_overseas', fallback: { symbol: 'MSFT', source: 'yahoo' } },
   ],
   binance: [
     { symbol: 'BTCUSDT', label: 'BTC', source: 'binance' },
@@ -117,6 +117,37 @@ async function fetchYahooBenchmark(symbol) {
   return { last, dayChangePct, trendPct };
 }
 
+function summarizeDailyBars(bars = []) {
+  const rows = (Array.isArray(bars) ? bars : [])
+    .filter((bar) => Number(bar?.close || 0) > 0)
+    .sort((a, b) => String(a.date || a.timestamp || '').localeCompare(String(b.date || b.timestamp || '')));
+  const lastRow = rows.at(-1);
+  const prevRow = rows.at(-2) || lastRow;
+  const trendBase = rows.at(-6) || rows.at(0) || lastRow;
+  const last = Number(lastRow?.close || 0);
+  const prev = Number(prevRow?.close || last);
+  const first = Number(trendBase?.close || last);
+  return {
+    last,
+    dayChangePct: prev > 0 ? ((last - prev) / prev) * 100 : 0,
+    trendPct: first > 0 ? ((last - first) / first) * 100 : 0,
+    barCount: rows.length,
+    latestDate: lastRow?.date || null,
+  };
+}
+
+async function fetchKisDomesticBenchmark(symbol) {
+  const { getDomesticDailyPriceBars } = await import('./kis-client.ts');
+  const bars = await getDomesticDailyPriceBars(symbol, { days: 20, paper: false });
+  return summarizeDailyBars(bars);
+}
+
+async function fetchKisOverseasBenchmark(symbol) {
+  const { getOverseasDailyPriceBars } = await import('./kis-client.ts');
+  const bars = await getOverseasDailyPriceBars(symbol, { days: 20 });
+  return summarizeDailyBars(bars);
+}
+
 async function fetchBinanceBenchmark(symbol) {
   const url = `https://api.binance.com/api/v3/ticker/24hr?symbol=${encodeURIComponent(symbol)}`;
   const res = await fetch(url, {
@@ -130,6 +161,13 @@ async function fetchBinanceBenchmark(symbol) {
     dayChangePct: Number(data?.priceChangePercent || 0),
     trendPct: Number(data?.priceChangePercent || 0),
   };
+}
+
+async function fetchBenchmark(benchmark) {
+  if (benchmark.source === 'binance') return fetchBinanceBenchmark(benchmark.symbol);
+  if (benchmark.source === 'kis_domestic') return fetchKisDomesticBenchmark(benchmark.symbol);
+  if (benchmark.source === 'kis_overseas') return fetchKisOverseasBenchmark(benchmark.symbol);
+  return fetchYahooBenchmark(benchmark.symbol);
 }
 
 function summarizeBias(market, snapshots) {
@@ -241,11 +279,31 @@ export async function getMarketRegime(market = 'binance', signals = {}) {
 
   for (const benchmark of benchmarks) {
     try {
-      const snap = benchmark.source === 'binance'
-        ? await fetchBinanceBenchmark(benchmark.symbol)
-        : await fetchYahooBenchmark(benchmark.symbol);
+      const snap = await fetchBenchmark(benchmark);
       snapshots.push({ ...benchmark, ...snap });
     } catch (err) {
+      if (benchmark.fallback) {
+        try {
+          const fallback = await fetchYahooBenchmark(benchmark.fallback.symbol);
+          snapshots.push({
+            ...benchmark,
+            ...fallback,
+            source: `${benchmark.source}_fallback_yahoo`,
+            fallbackSymbol: benchmark.fallback.symbol,
+            fallbackError: err.message,
+          });
+          continue;
+        } catch (fallbackError) {
+          snapshots.push({
+            ...benchmark,
+            error: `${err.message}; fallback failed: ${fallbackError.message}`,
+            last: null,
+            dayChangePct: 0,
+            trendPct: 0,
+          });
+          continue;
+        }
+      }
       snapshots.push({ ...benchmark, error: err.message, last: null, dayChangePct: 0, trendPct: 0 });
     }
   }

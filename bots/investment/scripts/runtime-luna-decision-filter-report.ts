@@ -17,11 +17,13 @@ const NEWS_LIKE_ANALYSTS = new Set([ANALYST_TYPES.NEWS, ANALYST_TYPES.SENTINEL])
 
 function parseArgs(argv = process.argv.slice(2)) {
   const symbolArg = argv.find((arg) => arg.startsWith('--symbols='))?.split('=').slice(1).join('=') || '';
+  const market = argv.find((arg) => arg.startsWith('--market='))?.split('=')[1] || 'crypto';
+  const defaultExchange = market === 'overseas' ? 'kis_overseas' : market === 'domestic' ? 'kis' : 'binance';
   return {
     json: argv.includes('--json'),
     activeCandidates: argv.includes('--active-candidates'),
-    market: argv.find((arg) => arg.startsWith('--market='))?.split('=')[1] || 'crypto',
-    exchange: argv.find((arg) => arg.startsWith('--exchange='))?.split('=')[1] || 'binance',
+    market,
+    exchange: argv.find((arg) => arg.startsWith('--exchange='))?.split('=')[1] || defaultExchange,
     hours: Math.max(1, Number(argv.find((arg) => arg.startsWith('--hours='))?.split('=')[1] || DEFAULT_HOURS) || DEFAULT_HOURS),
     limit: Math.max(1, Number(argv.find((arg) => arg.startsWith('--limit='))?.split('=')[1] || 12) || 12),
     symbols: symbolArg
@@ -42,6 +44,24 @@ function candidateSymbolSqlFilter(market = 'crypto') {
   if (market === 'domestic') return `symbol ~ '^[0-9]{6}$'`;
   if (market === 'overseas') return `symbol !~ '/' AND symbol !~ '^[0-9]{6}$' AND symbol ~ '^[A-Za-z][A-Za-z0-9.\\-]{0,12}$'`;
   return `(symbol ~ '^[A-Za-z0-9]+/USDT$' OR symbol ~ '^[A-Za-z0-9]+USDT$')`;
+}
+
+function normalizedCandidateExpr() {
+  return `CASE
+    WHEN $1 = 'crypto' AND symbol ~ '^[A-Za-z0-9]+/USDT$' THEN UPPER(symbol)
+    WHEN $1 = 'crypto' AND symbol ~ '^[A-Za-z0-9]+USDT$' THEN REGEXP_REPLACE(UPPER(symbol), 'USDT$', '/USDT')
+    WHEN $1 = 'domestic' AND symbol ~ '^[0-9]{6}$' THEN symbol
+    WHEN $1 = 'overseas' AND symbol !~ '/' AND symbol !~ '^[0-9]{6}$' AND symbol ~ '^[A-Za-z][A-Za-z0-9.\\-]{0,12}$' THEN UPPER(symbol)
+    ELSE NULL
+  END`;
+}
+
+function candidateSourcePriorityExpr() {
+  return `CASE
+    WHEN market = 'crypto' AND source = 'binance_market_momentum' THEN 30
+    WHEN market = 'crypto' AND source = 'coingecko_trending' THEN 20
+    ELSE 10
+  END`;
 }
 
 function normalizeAction(value) {
@@ -201,13 +221,29 @@ async function queryRecentAnalysis({ exchange, hours, symbols }) {
 }
 
 async function queryActiveCandidateSymbols({ market, limit }) {
+  const normalizedExpr = normalizedCandidateExpr();
   const rows = await db.query(
-    `SELECT symbol
-     FROM candidate_universe
-     WHERE market = $1
-       AND expires_at > now()
-       AND ${candidateSymbolSqlFilter(market)}
-     ORDER BY score DESC, discovered_at DESC
+    `WITH normalized AS (
+       SELECT *,
+              ${normalizedExpr} AS normalized_symbol
+       FROM candidate_universe
+       WHERE market = $1
+         AND expires_at > now()
+         AND ${candidateSymbolSqlFilter(market)}
+     ),
+     ranked AS (
+       SELECT *,
+              ROW_NUMBER() OVER (
+                PARTITION BY normalized_symbol
+                ORDER BY ${candidateSourcePriorityExpr()} DESC, score DESC, confidence DESC NULLS LAST, discovered_at DESC
+              ) AS rn
+       FROM normalized
+       WHERE normalized_symbol IS NOT NULL
+     )
+     SELECT normalized_symbol AS symbol
+     FROM ranked
+     WHERE rn = 1
+     ORDER BY ${candidateSourcePriorityExpr()} DESC, score DESC, confidence DESC NULLS LAST, discovered_at DESC
      LIMIT $2`,
     [market, Math.max(1, Number(limit || 50))],
   ).catch(() => []);
@@ -217,8 +253,10 @@ async function queryActiveCandidateSymbols({ market, limit }) {
 }
 
 export async function buildLunaDecisionFilterReport(options = {}) {
-  const exchange = options.exchange || 'binance';
-  const market = options.market || (exchange === 'kis' ? 'domestic' : exchange === 'kis_overseas' ? 'overseas' : 'crypto');
+  const requestedMarket = options.market || null;
+  const defaultExchange = requestedMarket === 'overseas' ? 'kis_overseas' : requestedMarket === 'domestic' ? 'kis' : 'binance';
+  const exchange = options.exchange || defaultExchange;
+  const market = requestedMarket || (exchange === 'kis' ? 'domestic' : exchange === 'kis_overseas' ? 'overseas' : 'crypto');
   const hours = Math.max(1, Number(options.hours || DEFAULT_HOURS));
   const limit = Math.max(1, Number(options.limit || 12));
   await db.initSchema();
@@ -235,6 +273,8 @@ export async function buildLunaDecisionFilterReport(options = {}) {
     exchange,
     minConfidence: options.minConfidence,
   });
+  const checkedSymbolSet = new Set(diagnostics.map((item) => item.symbol));
+  const missingActiveCandidateSymbols = candidateSymbols.filter((symbol) => !checkedSymbolSet.has(symbol));
   const filtered = diagnostics.filter((item) => item.actionability !== 'likely_actionable');
   const likelyActionable = diagnostics.filter((item) => item.actionability === 'likely_actionable');
   const reasonCounts = {};
@@ -243,18 +283,31 @@ export async function buildLunaDecisionFilterReport(options = {}) {
       reasonCounts[reason] = (reasonCounts[reason] || 0) + 1;
     }
   }
+  if (missingActiveCandidateSymbols.length > 0) {
+    reasonCounts.active_candidate_analysis_missing = missingActiveCandidateSymbols.length;
+  }
+  const bottlenecks = [];
+  if (missingActiveCandidateSymbols.length > 0) bottlenecks.push('active_candidate_analysis_missing');
+  if (filtered.length > 0 && diagnostics.length > 0) bottlenecks.push('active_candidates_filtered_before_signal');
   return {
     ok: true,
-    status: filtered.length > 0 ? 'luna_decision_filter_attention' : 'luna_decision_filter_clear',
+    status: bottlenecks.length > 0 ? 'luna_decision_filter_attention' : 'luna_decision_filter_clear',
     exchange,
     market,
     hours,
     symbolScope: candidateSymbols.length > 0 ? 'active_candidates' : requestedSymbols.length > 0 ? 'explicit_symbols' : 'recent_analysis',
     activeCandidateSymbols: candidateSymbols,
+    activeCandidateCoverage: candidateSymbols.length > 0 ? {
+      total: candidateSymbols.length,
+      checked: checkedSymbolSet.size,
+      missing: missingActiveCandidateSymbols.length,
+    } : null,
+    missingActiveCandidateSymbols,
     checkedSymbols: diagnostics.length,
     likelyActionableCount: likelyActionable.length,
     filteredCount: filtered.length,
     reasonCounts,
+    bottlenecks,
     top: diagnostics.slice(0, limit),
     generatedAt: new Date().toISOString(),
   };

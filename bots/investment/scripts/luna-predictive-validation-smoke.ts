@@ -16,9 +16,18 @@ export function runLunaPredictiveValidationSmoke() {
   ];
 
   const hard = applyPredictiveValidationGate(decisions, { mode: 'hard_gate', threshold: 0.55 });
-  assert.equal(hard.blocked, 1);
-  assert.equal(hard.decisions[0].action, ACTIONS.HOLD);
+  assert.equal(hard.blocked, 0);
+  assert.equal(hard.observation, 1);
+  assert.equal(hard.decisions[0].action, ACTIONS.BUY);
+  assert.equal(hard.decisions[0].block_meta?.predictiveValidation?.observation, true);
   assert.equal(hard.decisions[1].action, ACTIONS.BUY);
+
+  const discard = applyPredictiveValidationGate([
+    { symbol: 'WEAK/USDT', action: ACTIONS.BUY, confidence: 0.66, predictiveScore: 0.19, reasoning: 'discard pred' },
+  ], { mode: 'hard_gate', threshold: 0.55, discardThreshold: 0.40, observationThreshold: 0.40 });
+  assert.equal(discard.blocked, 1);
+  assert.equal(discard.observation, 0);
+  assert.equal(discard.decisions[0].action, ACTIONS.HOLD);
 
   const advisory = applyPredictiveValidationGate(decisions, { mode: 'advisory', threshold: 0.55 });
   assert.equal(advisory.blocked, 0);
