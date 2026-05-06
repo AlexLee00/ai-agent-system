@@ -12,8 +12,26 @@ function normalizeSymbol(value) {
 }
 
 function toNumber(value, fallback = null) {
-  const n = Number(value);
+  const normalized = typeof value === 'string' ? value.replace(/[,\s]/g, '') : value;
+  const n = Number(normalized);
   return Number.isFinite(n) ? n : fallback;
+}
+
+function isNaverDomesticStock(row) {
+  const endType = String(row?.stockEndType || '').toLowerCase();
+  return !endType || endType === 'stock';
+}
+
+function normalizeNaverStock(row, index, source) {
+  return {
+    symbol: normalizeSymbol(row.stockCode || row.itemCode || row.reutersCode || row.cd || row.itemcode || row.code),
+    name: String(row.stockName || row.nm || row.itemname || row.name || '').trim(),
+    rank: index + 1,
+    price: toNumber(row.closePrice || row.nv || row.now || row.close),
+    changeRate: toNumber(row.fluctuationsRatio || row.cr || row.changeRate),
+    volume: toNumber(row.accumulatedTradingVolume || row.aq || row.quant || row.volume),
+    source,
+  };
 }
 
 async function fetchJSON(url, timeoutMs = 5000) {
@@ -56,22 +74,17 @@ async function fetchText(url, timeoutMs = 5000) {
 
 async function tryNaverMobileUp() {
   try {
-    const data = await fetchJSON('https://m.stock.naver.com/api/stocks/up?page=1&pageSize=30');
+    const data = await fetchJSON('https://m.stock.naver.com/api/stocks/up/KOSPI?page=1&pageSize=30');
     const stocks = data?.stocks
       || data?.result?.stocks
       || data?.data?.stocks
       || data?.result?.data
       || [];
     if (!Array.isArray(stocks) || !stocks.length) return [];
-    return stocks.map((stock, index) => ({
-      symbol: normalizeSymbol(stock.stockCode),
-      name: String(stock.stockName || stock.name || '').trim(),
-      rank: index + 1,
-      price: toNumber(stock.closePrice || stock.now || stock.close),
-      changeRate: toNumber(stock.fluctuationsRatio || stock.changeRate),
-      volume: toNumber(stock.accumulatedTradingVolume || stock.volume || stock.quant),
-      source: 'naver_mobile_up',
-    })).filter((item) => item.symbol);
+    return stocks
+      .filter(isNaverDomesticStock)
+      .map((stock, index) => normalizeNaverStock(stock, index, 'naver_mobile_up'))
+      .filter((item) => item.symbol);
   } catch {
     return [];
   }
@@ -79,18 +92,16 @@ async function tryNaverMobileUp() {
 
 async function tryNaverSiseUp() {
   try {
-    const data = await fetchJSON('https://finance.naver.com/api/sise/siseList.nhn?sosok=0&page=1&type=up');
-    const items = data?.result?.itemList || data?.itemList || data?.result || [];
+    const pages = await Promise.all([
+      fetchJSON('https://m.stock.naver.com/api/stocks/up/KOSPI?page=1&pageSize=30'),
+      fetchJSON('https://m.stock.naver.com/api/stocks/up/KOSDAQ?page=1&pageSize=30'),
+    ]);
+    const items = pages.flatMap((data) => data?.stocks || data?.result?.stocks || data?.itemList || data?.result || []);
     if (!Array.isArray(items) || !items.length) return [];
-    return items.map((item, index) => ({
-      symbol: normalizeSymbol(item.cd || item.itemcode || item.code),
-      name: String(item.nm || item.itemname || item.name || '').trim(),
-      rank: index + 1,
-      price: toNumber(item.nv || item.now || item.closePrice),
-      changeRate: toNumber(item.cr || item.changeRate),
-      volume: toNumber(item.aq || item.quant || item.volume),
-      source: 'naver_sise_up',
-    })).filter((row) => row.symbol);
+    return items
+      .filter(isNaverDomesticStock)
+      .map((item, index) => normalizeNaverStock(item, index, 'naver_sise_up'))
+      .filter((row) => row.symbol);
   } catch {
     return [];
   }

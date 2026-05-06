@@ -19,10 +19,11 @@ function nodeScript(script, args = []) {
   };
 }
 
-function marketScript(script, args = []) {
+function marketScript(script, args = [], env = {}) {
   return {
     command: process.execPath,
     args: [path.join(INVESTMENT_DIR, 'markets', script), ...args],
+    env,
   };
 }
 
@@ -49,12 +50,12 @@ export function getOpsSchedulerJobs() {
     {
       name: 'market_cycle_domestic',
       cadence: { type: 'interval', seconds: 1800 },
-      ...marketScript('domestic.ts'),
+      ...marketScript('domestic.ts', [], { LUNA_LIVE_DOMESTIC: 'true' }),
     },
     {
       name: 'market_cycle_overseas',
       cadence: { type: 'interval', seconds: 1800 },
-      ...marketScript('overseas.ts'),
+      ...marketScript('overseas.ts', [], { LUNA_LIVE_OVERSEAS: 'true' }),
     },
     {
       name: 'discovery_funnel_report',
@@ -166,6 +167,7 @@ export function buildOpsSchedulerPlan({
     cadence: job.cadence,
     due: isJobDue(job, now, state, force),
     command: [job.command, ...(job.args || [])].join(' '),
+    env: job.env || {},
     lastRunAt: state?.jobs?.[job.name]?.lastRunAt || null,
   }));
   return {
@@ -201,21 +203,97 @@ function releaseLock(lockPath) {
 }
 
 function runCommand(job, { timeoutMs = 10 * 60 * 1000, runner = null } = {}) {
-  if (runner) return runner(job);
+  if (runner) {
+    const result = runner(job);
+    return {
+      ...result,
+      ...(!result?.outcome ? classifyOpsSchedulerOutcome(job, result) : {}),
+    };
+  }
   const result = spawnSync(job.command, job.args || [], {
     cwd: INVESTMENT_DIR,
     encoding: 'utf8',
     timeout: Number(job.timeoutMs || timeoutMs),
-    env: process.env,
+    env: { ...process.env, ...(job.env || {}) },
   });
-  return {
+  const stdout = String(result.stdout || '');
+  const stderr = String(result.stderr || '');
+  const baseResult = {
     ok: result.status === 0,
     status: result.status,
     signal: result.signal || null,
-    stdoutTail: String(result.stdout || '').slice(-2000),
-    stderrTail: String(result.stderr || '').slice(-2000),
+    stdoutTail: stdout.slice(-2000),
+    stderrTail: stderr.slice(-2000),
     error: result.error?.message || null,
   };
+  return {
+    ...baseResult,
+    ...classifyOpsSchedulerOutcome(job, { ...baseResult, stdout, stderr }),
+  };
+}
+
+export function classifyOpsSchedulerOutcome(job, result = {}) {
+  if (!result?.ok) {
+    return {
+      outcome: 'command_failed',
+      summary: result?.error || result?.stderrTail || `status=${result?.status ?? 'unknown'}`,
+    };
+  }
+
+  const text = [
+    result.stdout,
+    result.stderr,
+    result.stdoutTail,
+    result.stderrTail,
+  ].filter(Boolean).join('\n');
+  const name = String(job?.name || '');
+
+  if (/사이클 스킵/.test(text)) {
+    return { outcome: 'cadence_wait', summary: compactOutcomeSummary(text, '사이클 스킵') };
+  }
+  if (/주말\/휴장 스킵|휴장/.test(text)) {
+    return { outcome: 'market_closed_skip', summary: compactOutcomeSummary(text, '휴장') };
+  }
+  if (/장외 시간|시장\s*닫힘|research[-_ ]only|연구 모드/.test(text)) {
+    return { outcome: 'market_closed_research', summary: compactOutcomeSummary(text, '장외') };
+  }
+  if (/liquidity_filtered_all|유동성 필터 통과 후보 없음/.test(text)) {
+    return { outcome: 'liquidity_filtered_all', summary: compactOutcomeSummary(text, '유동성') };
+  }
+
+  const approved = text.match(/최종 결과:\s*(\d+)개 신호 승인/);
+  if (approved) {
+    const count = Number(approved[1] || 0);
+    return {
+      outcome: count > 0 ? 'signals_approved' : 'no_signals',
+      summary: `approved_signals=${count}`,
+      approvedSignals: count,
+    };
+  }
+
+  const refreshed = text.match(/완료\s+—\s+성공\s+(\d+)\/(\d+),\s+총\s+(\d+)개\s+신호/);
+  if (name === 'discovery_candidate_refresh' && refreshed) {
+    return {
+      outcome: Number(refreshed[3] || 0) > 0 ? 'discovery_refreshed' : 'discovery_empty',
+      summary: `adapters=${refreshed[1]}/${refreshed[2]} signals=${refreshed[3]}`,
+    };
+  }
+
+  const domesticEmptyMarket = /discovery_orchestrator_empty_market/.test(text)
+    || /"emptyMarkets"\s*:\s*\[[^\]]*"domestic"/.test(text);
+  if (domesticEmptyMarket) {
+    return { outcome: 'discovery_empty_market', summary: compactOutcomeSummary(text, 'domestic') };
+  }
+
+  return { outcome: 'ok', summary: compactOutcomeSummary(text, 'ok') };
+}
+
+function compactOutcomeSummary(text, fallback = 'ok') {
+  const line = String(text || '')
+    .split(/\r?\n/)
+    .map((item) => item.trim())
+    .find((item) => item && item.length <= 220);
+  return line || fallback;
 }
 
 export async function runOpsScheduler({
@@ -256,6 +334,9 @@ export async function runOpsScheduler({
         nextState.jobs[job.name] = {
           lastRunAt: now.toISOString(),
           lastStatus: 'ok',
+          lastOutcome: result.outcome || 'ok',
+          lastSummary: result.summary || null,
+          approvedSignals: result.approvedSignals ?? null,
           updatedAt: finishedAt,
         };
       }
@@ -290,6 +371,9 @@ export function seedOpsSchedulerState({
     jobs: Object.fromEntries(jobs.map((job) => [job.name, {
       lastRunAt: now.toISOString(),
       lastStatus: 'seeded',
+      lastOutcome: 'seeded',
+      lastSummary: null,
+      approvedSignals: null,
       updatedAt: now.toISOString(),
     }])),
   };

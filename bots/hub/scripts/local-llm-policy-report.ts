@@ -1,5 +1,6 @@
 import fs from 'fs';
 import path from 'path';
+import { fileURLToPath } from 'url';
 import { PROFILES, LOCAL_LLM_BASE_URL } from '../lib/runtime-profiles';
 
 type RouteIssue = {
@@ -16,30 +17,30 @@ type FileIssue = {
   text: string;
 };
 
-const PROJECT_ROOT = '/Users/alexlee/projects/ai-agent-system';
+const SCRIPT_DIR = path.dirname(fileURLToPath(import.meta.url));
+const PROJECT_ROOT = process.env.PROJECT_ROOT || path.resolve(SCRIPT_DIR, '..', '..', '..');
+const repoFile = (...parts: string[]) => path.join(PROJECT_ROOT, ...parts);
 
 const ACTIVE_FILES = [
-  '/Users/alexlee/projects/ai-agent-system/packages/core/lib/llm-model-selector.ts',
-  '/Users/alexlee/projects/ai-agent-system/bots/hub/lib/runtime-profiles.ts',
-  '/Users/alexlee/projects/ai-agent-system/bots/blog/lib/runtime-config.ts',
-  '/Users/alexlee/projects/ai-agent-system/bots/blog/lib/commenter.ts',
-  '/Users/alexlee/projects/ai-agent-system/bots/claude/lib/config.ts',
-  '/Users/alexlee/projects/ai-agent-system/bots/darwin/lib/research-evaluator.ts',
-  '/Users/alexlee/projects/ai-agent-system/bots/darwin/lib/applicator.ts',
-  '/Users/alexlee/projects/ai-agent-system/bots/investment/team/chronos.ts',
-  '/Users/alexlee/projects/ai-agent-system/bots/legal/lib/llm-helper.js',
-  '/Users/alexlee/projects/ai-agent-system/bots/legal/config.json',
-  '/Users/alexlee/projects/ai-agent-system/bots/orchestrator/scripts/seed-agent-registry.ts',
-  '/Users/alexlee/projects/ai-agent-system/bots/orchestrator/scripts/seed-three-teams.ts',
-  '/Users/alexlee/projects/ai-agent-system/bots/orchestrator/scripts/seed-team-reinforce-phase6.ts',
-  '/Users/alexlee/projects/ai-agent-system/bots/orchestrator/scripts/seed-blog-reinforce.ts',
-  '/Users/alexlee/projects/ai-agent-system/bots/orchestrator/scripts/seed-blog-agents-phase2.ts',
-  '/Users/alexlee/projects/ai-agent-system/bots/orchestrator/scripts/seed-sigma-expansion.ts',
+  repoFile('packages', 'core', 'lib', 'llm-model-selector.ts'),
+  repoFile('bots', 'hub', 'lib', 'runtime-profiles.ts'),
+  repoFile('bots', 'blog', 'lib', 'runtime-config.ts'),
+  repoFile('bots', 'blog', 'lib', 'commenter.ts'),
+  repoFile('bots', 'claude', 'lib', 'config.ts'),
+  repoFile('bots', 'darwin', 'lib', 'research-evaluator.ts'),
+  repoFile('bots', 'darwin', 'lib', 'applicator.ts'),
+  repoFile('bots', 'investment', 'team', 'chronos.ts'),
+  repoFile('bots', 'orchestrator', 'scripts', 'seed-agent-registry.ts'),
+  repoFile('bots', 'orchestrator', 'scripts', 'seed-three-teams.ts'),
+  repoFile('bots', 'orchestrator', 'scripts', 'seed-team-reinforce-phase6.ts'),
+  repoFile('bots', 'orchestrator', 'scripts', 'seed-blog-reinforce.ts'),
+  repoFile('bots', 'orchestrator', 'scripts', 'seed-blog-agents-phase2.ts'),
+  repoFile('bots', 'orchestrator', 'scripts', 'seed-sigma-expansion.ts'),
 ];
 
 const COMPATIBILITY_FILES = [
-  '/Users/alexlee/projects/ai-agent-system/packages/core/lib/llm-model-selector.ts',
-  '/Users/alexlee/projects/ai-agent-system/bots/investment/team/chronos.ts',
+  repoFile('packages', 'core', 'lib', 'llm-model-selector.ts'),
+  repoFile('bots', 'investment', 'team', 'chronos.ts'),
 ];
 
 const LOCAL_PATTERNS = [
@@ -58,6 +59,7 @@ function shouldIgnoreCompatibilityTrace(filePath: string, text: string): boolean
 }
 
 function findActiveFileIssues(filePath: string): FileIssue[] {
+  if (!fs.existsSync(filePath)) return [];
   const content = fs.readFileSync(filePath, 'utf8');
   const lines = content.split('\n');
   const issues: FileIssue[] = [];
@@ -111,6 +113,7 @@ function findRuntimeRouteIssues(): RouteIssue[] {
 function buildReport() {
   const runtimeIssues = findRuntimeRouteIssues();
   const fileIssues = ACTIVE_FILES.flatMap((filePath) => findActiveFileIssues(filePath));
+  const missingFiles = ACTIVE_FILES.filter((filePath) => !fs.existsSync(filePath));
 
   const compatibilityIssues = fileIssues.filter((issue) => COMPATIBILITY_FILES.includes(issue.path));
   const activeIssues = fileIssues.filter((issue) => !COMPATIBILITY_FILES.includes(issue.path));
@@ -126,11 +129,13 @@ function buildReport() {
       runtimeIssues: runtimeIssues.length,
       activeFileIssues: activeIssues.length,
       compatibilityIssues: compatibilityIssues.length,
+      missingFiles: missingFiles.length,
       embeddingBaseUrl: LOCAL_LLM_BASE_URL,
     },
     runtimeIssues,
     activeFileIssues: activeIssues,
     compatibilityIssues,
+    missingFiles: missingFiles.map((filePath) => path.relative(PROJECT_ROOT, filePath)),
     checkedFiles: ACTIVE_FILES.map((filePath) => path.relative(PROJECT_ROOT, filePath)),
   };
 }
@@ -140,6 +145,7 @@ function printText(report: ReturnType<typeof buildReport>) {
   console.log(`runtime issues: ${report.summary.runtimeIssues}`);
   console.log(`active file issues: ${report.summary.activeFileIssues}`);
   console.log(`compatibility issues: ${report.summary.compatibilityIssues}`);
+  console.log(`missing checked files: ${report.summary.missingFiles}`);
   console.log(`embedding endpoint: ${report.summary.embeddingBaseUrl}`);
 
   if (report.runtimeIssues.length > 0) {
@@ -160,6 +166,13 @@ function printText(report: ReturnType<typeof buildReport>) {
     console.log('\nCompatibility-only traces:');
     for (const issue of report.compatibilityIssues) {
       console.log(`- ${path.relative(PROJECT_ROOT, issue.path)}:${issue.line} | ${issue.text}`);
+    }
+  }
+
+  if (report.missingFiles.length > 0) {
+    console.log('\nMissing checked files:');
+    for (const filePath of report.missingFiles) {
+      console.log(`- ${filePath}`);
     }
   }
 }

@@ -37,12 +37,14 @@ describe('hub llm admission-control', () => {
     process.env.HUB_LLM_MAX_IN_FLIGHT = '1';
     process.env.HUB_LLM_MAX_QUEUE = '0';
     process.env.HUB_LLM_QUEUE_TIMEOUT_MS = '300';
+    process.env.HUB_LLM_SHARED_LIMITER_ENABLED = '0';
   });
 
   afterEach(() => {
     delete process.env.HUB_LLM_MAX_IN_FLIGHT;
     delete process.env.HUB_LLM_MAX_QUEUE;
     delete process.env.HUB_LLM_QUEUE_TIMEOUT_MS;
+    delete process.env.HUB_LLM_SHARED_LIMITER_ENABLED;
   });
 
   test('rejects with 429 when in-flight is full and queue disabled', async () => {

@@ -119,11 +119,16 @@ async function collectPageTexts(page, url, {
     await page.waitForSelector(waitForSelector, { timeout: 8000 }).catch(() => {});
   }
   await sleep(1200);
-  return page.evaluate((maxItems) => {
-    const textOf = (value) => String(value?.textContent || '').replace(/\s+/g, ' ').trim();
+  const maxItems = Number.isFinite(Number(limit)) ? Math.max(1, Math.floor(Number(limit))) : 220;
+  // Keep the browser-context code as a string. tsx/esbuild can inject helper
+  // calls (for example __name) into function arguments, which do not exist
+  // inside Puppeteer's page context.
+  return page.evaluate(`(() => {
+    const maxItems = ${maxItems};
+    const textOf = (value) => String(value?.textContent || '').replace(/\\s+/g, ' ').trim();
     const bodyLines = String(document.body?.innerText || '')
-      .split('\n')
-      .map((line) => line.replace(/\s+/g, ' ').trim())
+      .split('\\n')
+      .map((line) => line.replace(/\\s+/g, ' ').trim())
       .filter(Boolean)
       .slice(0, maxItems);
     const texts = [
@@ -137,7 +142,7 @@ async function collectPageTexts(page, url, {
       bodyLines,
       texts,
     };
-  }, limit);
+  })()`);
 }
 
 function inferSignalSource(line, sections = {}) {

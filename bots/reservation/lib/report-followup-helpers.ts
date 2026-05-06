@@ -252,12 +252,16 @@ export function isExpectedManualFollowup(result: Record<string, any>): boolean {
 export function buildPayScanAlertMessage(
   successCount: number,
   failureCount: number,
+  unexpectedFailureCount: number,
   failures: PayScanFailure[],
   checklistPath: string | null,
 ): string {
+  const expectedOperationalCount = Math.max(0, Number(failureCount || 0) - Number(unexpectedFailureCount || 0));
   const lines = [
-    '⚠️ pickko-pay-scan 후속 확인 필요',
-    `성공 ${successCount}건 / 후속확인 ${failureCount}건`,
+    unexpectedFailureCount > 0
+      ? '⚠️ pickko-pay-scan 후속 확인 필요'
+      : 'ℹ️ pickko-pay-scan 운영 대기 현황',
+    `성공 ${successCount}건 / 운영대기 ${expectedOperationalCount}건 / 오류 ${unexpectedFailureCount}건`,
     '',
     ...failures.slice(0, 10).map(({ entry, result }) => buildFailureLine(entry, result)),
   ];

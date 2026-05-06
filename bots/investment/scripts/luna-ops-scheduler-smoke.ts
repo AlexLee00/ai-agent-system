@@ -7,6 +7,7 @@ import path from 'node:path';
 import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
 import {
   buildOpsSchedulerPlan,
+  classifyOpsSchedulerOutcome,
   getOpsSchedulerJobs,
   resolveOnlyJobArg,
   runOpsScheduler,
@@ -21,6 +22,8 @@ export async function runLunaOpsSchedulerSmoke() {
   assert.equal(jobs.some((job) => job.name === 'market_cycle_domestic'), true);
   assert.equal(jobs.some((job) => job.name === 'market_cycle_overseas'), true);
   assert.equal(jobs.some((job) => job.name === 'discovery_funnel_report'), true);
+  assert.equal(jobs.find((job) => job.name === 'market_cycle_domestic')?.env?.LUNA_LIVE_DOMESTIC, 'true');
+  assert.equal(jobs.find((job) => job.name === 'market_cycle_overseas')?.env?.LUNA_LIVE_OVERSEAS, 'true');
 
   const now = new Date('2026-05-04T02:00:00+09:00');
   const emptyPlan = buildOpsSchedulerPlan({ now, state: { jobs: {} }, jobs });
@@ -42,6 +45,7 @@ export async function runLunaOpsSchedulerSmoke() {
   const statePath = path.join(tmp, 'state.json');
   const lockPath = path.join(tmp, 'lock.json');
   const calls = [];
+  const envByJob = {};
   const executed = await runOpsScheduler({
     now,
     statePath,
@@ -49,12 +53,36 @@ export async function runLunaOpsSchedulerSmoke() {
     jobs,
     runner: (job) => {
       calls.push(job.name);
+      envByJob[job.name] = job.env || {};
+      if (job.name === 'market_cycle_domestic') {
+        return { ok: true, status: 0, stdoutTail: '⏭️ 장외 시간 (KST 08:50) — 연구 모드 전환', stderrTail: '' };
+      }
       return { ok: true, status: 0, stdoutTail: 'ok', stderrTail: '' };
     },
   });
   assert.equal(executed.ok, true);
   assert.equal(calls.length, 12);
-  assert.equal(Object.keys(JSON.parse(fs.readFileSync(statePath, 'utf8')).jobs).length, 12);
+  assert.equal(envByJob.market_cycle_domestic?.LUNA_LIVE_DOMESTIC, 'true');
+  assert.equal(envByJob.market_cycle_overseas?.LUNA_LIVE_OVERSEAS, 'true');
+  const executedState = JSON.parse(fs.readFileSync(statePath, 'utf8'));
+  assert.equal(Object.keys(executedState.jobs).length, 12);
+  assert.equal(executedState.jobs.market_cycle_domestic.lastOutcome, 'market_closed_research');
+  assert.equal(executedState.jobs.market_cycle_domestic.lastSummary.includes('장외 시간'), true);
+
+  assert.deepEqual(
+    classifyOpsSchedulerOutcome(
+      { name: 'market_cycle_domestic' },
+      { ok: true, stdoutTail: '최종 결과: 0개 신호 승인', stderrTail: '' },
+    ),
+    { outcome: 'no_signals', summary: 'approved_signals=0', approvedSignals: 0 },
+  );
+  assert.equal(
+    classifyOpsSchedulerOutcome(
+      { name: 'discovery_candidate_refresh' },
+      { ok: true, stdoutTail: '[discovery-orchestrator] 완료 — 성공 2/3, 총 2개 신호', stderrTail: '' },
+    ).outcome,
+    'discovery_refreshed',
+  );
 
   const seedPath = path.join(tmp, 'seeded-state.json');
   const seeded = seedOpsSchedulerState({ now, statePath: seedPath, jobs });

@@ -4,10 +4,12 @@
 import fs from 'fs';
 import { createRequire } from 'module';
 import path from 'path';
-import { pathToFileURL } from 'url';
+import { fileURLToPath, pathToFileURL } from 'url';
 
 const require = createRequire(import.meta.url);
 const selector = require('../../../packages/core/lib/llm-model-selector.ts');
+const SCRIPT_DIR = path.dirname(fileURLToPath(import.meta.url));
+const PROJECT_ROOT = process.env.PROJECT_ROOT || path.resolve(SCRIPT_DIR, '..', '..', '..');
 
 const HUB_BASE = process.env.HUB_BASE_URL || 'http://localhost:7788';
 const HUB_TOKEN = process.env.HUB_AUTH_TOKEN || '';
@@ -15,11 +17,11 @@ const HOURS = Math.min(Math.max(Number(process.env.LLM_OAUTH4_REVIEW_HOURS || 16
 const STRICT = ['1', 'true', 'yes', 'on'].includes(String(process.env.LLM_OAUTH4_REVIEW_STRICT || '').trim().toLowerCase());
 const OUTPUT_JSON = path.resolve(
   process.env.LLM_OAUTH4_REVIEW_JSON
-    || '/Users/alexlee/projects/ai-agent-system/bots/hub/output/llm-oauth4-master-review.json',
+    || path.join(PROJECT_ROOT, 'bots', 'hub', 'output', 'llm-oauth4-master-review.json'),
 );
 const OUTPUT_MD = path.resolve(
   process.env.LLM_OAUTH4_REVIEW_MD
-    || '/Users/alexlee/projects/ai-agent-system/docs/hub/LLM_OAUTH4_MASTER_REVIEW.md',
+    || path.join(PROJECT_ROOT, 'docs', 'hub', 'LLM_OAUTH4_MASTER_REVIEW.md'),
 );
 
 const PROVIDER_ORDER = [

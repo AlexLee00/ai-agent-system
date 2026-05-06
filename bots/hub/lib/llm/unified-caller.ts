@@ -182,8 +182,8 @@ async function _callWithProfileChain(req, profile, team) {
 }
 
 async function _callLegacy(req, _team) {
-  const ccModel = CLAUDE_CODE_MODEL[req.abstractModel] || 'sonnet';
-  const groqModel = _groqModel()[req.abstractModel] || 'llama-3.3-70b-versatile';
+  const ccModel = CLAUDE_CODE_MODEL[req.abstractModel] || 'haiku';
+  const groqModel = _groqModel()[req.abstractModel] || getGroqFallback('anthropic_haiku');
 
   const primary = await callClaudeCodeOAuth({
     prompt: req.prompt,
@@ -367,7 +367,7 @@ function _routeToProvider(route) {
   return route;
 }
 
-function _normalizeRoute(route, abstractModel = 'anthropic_sonnet') {
+function _normalizeRoute(route, abstractModel = 'anthropic_haiku') {
   const staleGroqRoutes = new Set([
     'groq/llama-4-scout-17b-16e-instruct',
     'groq/meta-llama/llama-4-scout-17b-16e-instruct',

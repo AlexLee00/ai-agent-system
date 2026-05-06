@@ -1,3 +1,5 @@
+const path = require('node:path');
+
 type RuntimeProfileValue = string | number | boolean | string[] | undefined;
 
 type RuntimeProfile = {
@@ -38,7 +40,9 @@ const GEMINI_CODEASSIST_PRO_ROUTE = 'gemini-codeassist-oauth/gemini-2.5-pro';
 const GEMINI_CLI_FLASH_LITE_ROUTE = 'gemini-cli-oauth/gemini-2.5-flash-lite';
 const GEMINI_CLI_FLASH_ROUTE = 'gemini-cli-oauth/gemini-2.5-flash';
 const GEMINI_CLI_PRO_ROUTE = 'gemini-cli-oauth/gemini-2.5-pro';
-const HUB_CLAUDE_CODE_SETTINGS_DIR = `${process.env.PROJECT_ROOT || '/Users/alexlee/projects/ai-agent-system'}/bots/hub/config/claude-code`;
+const PROJECT_ROOT = process.env.PROJECT_ROOT || path.resolve(__dirname, '..', '..', '..');
+const repoPath = (...parts: string[]) => path.join(PROJECT_ROOT, ...parts);
+const HUB_CLAUDE_CODE_SETTINGS_DIR = repoPath('bots', 'hub', 'config', 'claude-code');
 const CLAUDE_CODE_SETTINGS: Record<string, string> = {
   'blog-writer': `${HUB_CLAUDE_CODE_SETTINGS_DIR}/blog-writer.settings.json`,
   'claude-ops': `${HUB_CLAUDE_CODE_SETTINGS_DIR}/claude-ops.settings.json`,
@@ -113,7 +117,7 @@ export const PROFILES: Record<string, TeamProfiles> = {
       "engine": "comfyui",
       "base_url": "http://127.0.0.1:8188",
       "checkpoint_name": "sd_xl_base_1.0.safetensors",
-      "workflow_template_path": "/Users/alexlee/projects/ai-agent-system/bots/blog/config/comfyui-workflow-template.json",
+      "workflow_template_path": repoPath("bots", "blog", "config", "comfyui-workflow-template.json"),
       "timeout_ms": 300000,
       "poll_ms": 1500,
       "max_retries": 3

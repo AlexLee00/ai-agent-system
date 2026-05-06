@@ -1,7 +1,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 
-const REPO_ROOT = '/Users/alexlee/projects/ai-agent-system';
+const REPO_ROOT = process.env.PROJECT_ROOT || path.resolve(__dirname, '..', '..', '..', '..');
 const LOG_GLOBS = [
   '/tmp',
   path.join(REPO_ROOT, 'bots'),

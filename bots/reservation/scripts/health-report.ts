@@ -35,9 +35,9 @@ const CORE_SERVICES = [
   'ai.ska.commander',
   'ai.ska.naver-monitor',
   'ai.ska.kiosk-monitor',
-  'ai.ska.health-check',
 ];
 const SCHEDULED_SERVICES = [
+  'ai.ska.health-check',
   'ai.ska.today-audit',
   'ai.ska.pickko-verify',
   'ai.ska.pickko-daily-audit',

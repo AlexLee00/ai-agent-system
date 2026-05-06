@@ -28,6 +28,18 @@
     <string>true</string>
     <key>LUNA_DISCOVERY_SEC</key>
     <string>true</string>
+    <key>LUNA_LIVE_DOMESTIC</key>
+    <string>true</string>
+    <key>LUNA_LIVE_OVERSEAS</key>
+    <string>true</string>
+    <key>LUNA_TRADINGVIEW_ENTRY_GUARD_ENABLED</key>
+    <string>true</string>
+    <key>LUNA_ENTRY_DAILY_TREND_FILTER_ENABLED</key>
+    <string>true</string>
+    <key>LUNA_ENTRY_DAILY_TREND_FETCH_ENABLED</key>
+    <string>true</string>
+    <key>LUNA_ENTRY_CHART_KIS_DIRECT_REST_FALLBACK</key>
+    <string>true</string>
     <key>LUNA_VOYAGER_NATURAL_ACCELERATION_ENABLED</key>
     <string>true</string>
     <key>LUNA_DELEGATED_AUTHORITY_ENABLED</key>

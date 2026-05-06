@@ -118,7 +118,7 @@ function normalizeHubAbstractModel(model?: HubAbstractModel | string | null): Le
   if (raw === 'anthropic_haiku' || raw === 'claude_code_haiku' || raw === 'claude-code/haiku') return 'anthropic_haiku';
   if (raw === 'anthropic_opus' || raw === 'claude_code_opus' || raw === 'claude-code/opus') return 'anthropic_opus';
   if (raw === 'anthropic_sonnet' || raw === 'claude_code_sonnet' || raw === 'claude-code/sonnet') return 'anthropic_sonnet';
-  return 'anthropic_sonnet';
+  return 'anthropic_haiku';
 }
 
 function shouldUseCurlFallback(error: unknown, url: string): boolean {
@@ -483,7 +483,7 @@ export async function callHubLlm(request: HubLlmCallRequest): Promise<HubLlmCall
   // Hub route validation currently caps timeoutMs at 180s, so clamp here
   // to avoid rejecting otherwise valid writer calls that request a longer wait.
   const timeoutMs = Math.min(requestedTimeoutMs, 180_000);
-  const abstractModel = normalizeHubAbstractModel(request.abstractModel || 'claude_code_sonnet');
+  const abstractModel = normalizeHubAbstractModel(request.abstractModel || 'claude_code_haiku');
   const payload = {
     ...request,
     callerTeam,

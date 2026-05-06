@@ -30,11 +30,11 @@ const CORE_SERVICES = [
   'ai.ska.commander',
   'ai.ska.naver-monitor',
   'ai.ska.kiosk-monitor',
-  'ai.ska.health-check',
 ];
 
 // 스케줄 작업: 비정상 종료는 보되, 미로드 자체는 경고로 보지 않음
 const SCHEDULED_SERVICES = [
+  'ai.ska.health-check',
   'ai.ska.today-audit',
   'ai.ska.pickko-verify',
   'ai.ska.pickko-daily-audit',

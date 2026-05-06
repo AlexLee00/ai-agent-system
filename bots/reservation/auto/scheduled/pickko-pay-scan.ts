@@ -252,11 +252,11 @@ async function main() {
   }).catch(() => '');
 
   if (failureCount > 0) {
-    const message = `${buildPayScanAlertMessage(successCount, failureCount, failures, checklistPath)}${episodicHint}${semanticHint}`;
+    const message = `${buildPayScanAlertMessage(successCount, failureCount, unexpectedFailureCount, failures, checklistPath)}${episodicHint}${semanticHint}`;
     await publishReservationAlert({
       from_bot: 'ska',
-      event_type: 'alert',
-      alert_level: 2,
+      event_type: unexpectedFailureCount > 0 ? 'alert' : 'report',
+      alert_level: unexpectedFailureCount > 0 ? 2 : 1,
       message,
       payload: {
         successCount,

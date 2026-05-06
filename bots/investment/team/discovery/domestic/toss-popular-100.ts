@@ -81,7 +81,7 @@ function extractSignalsFromScout(raw: unknown, limit: number): DiscoverySignal[]
   for (const sig of rawSignals) {
     const s = sig as Record<string, unknown>;
     const symbol = String(s.symbol || '').trim();
-    if (!symbol || seen.has(symbol)) continue;
+    if (!/^\d{6}$/.test(symbol) || seen.has(symbol)) continue;
     seen.add(symbol);
     signals.push({
       symbol,

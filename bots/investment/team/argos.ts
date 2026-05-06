@@ -24,7 +24,14 @@ import { callLLM, parseJSON } from '../shared/llm-client.ts';
 import { callLLMWithHub } from '../shared/hub-llm-client.ts';
 import { publishAlert } from '../shared/alert-publisher.ts';
 import { search as searchRag } from '../shared/rag-client.ts';
-import { getDomesticRanking, getVolumeRank } from '../shared/kis-client.ts';
+import {
+  getDomesticDailyPriceBars,
+  getDomesticQuoteSnapshot,
+  getDomesticRanking,
+  getOverseasDailyPriceBars,
+  getOverseasQuoteSnapshot,
+  getVolumeRank,
+} from '../shared/kis-client.ts';
 import { getKisOverseasSymbols, getKisSymbols, isPaperMode } from '../shared/secrets.ts';
 import { getArgosRuntimeConfig } from '../shared/runtime-config.ts';
 import { recordEvidence } from '../shared/external-evidence-ledger.ts';
@@ -39,6 +46,29 @@ const _require = createRequire(import.meta.url);
 export const CORE_CRYPTO   = [];
 export const CORE_KIS      = [];
 export const CORE_OVERSEAS = [];
+
+const DOMESTIC_LIQUID_FALLBACK_SYMBOLS = [
+  '005930', // 삼성전자
+  '000660', // SK하이닉스
+  '035420', // NAVER
+  '035720', // 카카오
+  '005380', // 현대차
+  '000270', // 기아
+  '068270', // 셀트리온
+  '051910', // LG화학
+  '006400', // 삼성SDI
+  '005490', // POSCO홀딩스
+  '105560', // KB금융
+  '055550', // 신한지주
+  '012330', // 현대모비스
+  '028260', // 삼성물산
+  '066570', // LG전자
+  '096770', // SK이노베이션
+  '003550', // LG
+  '034730', // SK
+  '032830', // 삼성생명
+  '086790', // 하나금융지주
+];
 
 // ─── config.yaml 스크리닝 설정 로드 ─────────────────────────────────
 
@@ -72,6 +102,28 @@ const _redditCooldownUntil = new Map();
 function _num(value, fallback = 0) {
   const n = Number(value);
   return Number.isFinite(n) ? n : fallback;
+}
+
+function _numLoose(value, fallback = 0) {
+  if (typeof value === 'string') {
+    const normalized = value.replace(/[,\s]/g, '');
+    const n = Number(normalized);
+    return Number.isFinite(n) ? n : fallback;
+  }
+  return _num(value, fallback);
+}
+
+function _normalizeDomesticSymbol(value) {
+  const text = String(value || '').trim();
+  const exact = text.match(/^\d{6}$/);
+  if (exact) return exact[0];
+  const embedded = text.match(/\b(\d{6})\b/);
+  return embedded ? embedded[1] : '';
+}
+
+function _isNaverDomesticStock(row) {
+  const endType = String(row?.stockEndType || '').toLowerCase();
+  return !endType || endType === 'stock';
 }
 
 function execCurl(args) {
@@ -917,24 +969,38 @@ export async function screenDomesticSymbols(maxDynamic, fng = 50) {
   if (fng !== 50) console.log(`[아르고스] 국내주식 FNG=${fng} → max_dynamic ${baseMax}→${max}`);
   if (isPaperMode() && baseMax !== configuredMax) console.log(`[아르고스] 국내주식 PAPER 탐색 확장 ${configuredMax}→${baseMax}`);
 
-  const sourceResults = await Promise.all([
+  const primarySourceResults = await Promise.all([
     _tryKisVolumeRank(),
     _tryKisPlaceholderRank(),
     _tryNaverMobile(),
     _tryNaverSise(),
-    _tryNaverRiseHtml(),
   ]);
 
-  const merged = _mergeDomesticSourceCandidates(sourceResults);
+  let merged = _mergeDomesticSourceCandidates(primarySourceResults);
+  if (!merged.length) {
+    const htmlRows = await _tryNaverRiseHtml();
+    merged = _mergeDomesticSourceCandidates([...primarySourceResults, htmlRows]);
+  }
   if (merged.length) {
     const scoutIntel = await loadLatestScoutIntel();
     const boosted = boostCandidatesWithScout(merged, scoutIntel, { market: 'domestic', boost: 1.2 });
     return _finalizeDomesticResult(boosted, max);
   }
 
-  // 모두 실패 → 코어만 반환
+  const fallbackCandidates = _buildDomesticLiquidFallbackCandidates();
+  if (fallbackCandidates.length) {
+    console.warn('[아르고스] 국내주식 외부 랭킹 비어 있음 — KIS 일봉 유동성 fallback 평가');
+    const fallback = await _finalizeDomesticResult(fallbackCandidates, max);
+    if (fallback?.screening?.length) {
+      return {
+        ...fallback,
+        fallbackSource: 'kis_daily_liquid_universe',
+      };
+    }
+  }
+
   const fallbackSymbols = getKisSymbols();
-  console.warn('[아르고스] 국내주식 스크리닝 전체 실패 — 기본 종목 반환');
+  console.warn('[아르고스] 국내주식 스크리닝 전체 실패 — 설정 종목만 반환');
   return {
     core: fallbackSymbols,
     dynamic: [],
@@ -978,7 +1044,14 @@ async function _tryKisPlaceholderRank() {
 
 function _fetchText(url, timeout = 10000) {
   return new Promise((resolve, reject) => {
-    const req = https.get(url, { headers: { 'User-Agent': 'Mozilla/5.0' }, timeout }, res => {
+    const req = https.get(url, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (compatible; LunaArgos/1.0)',
+        'Referer': 'https://m.stock.naver.com/',
+        'Accept-Language': 'ko-KR,ko;q=0.9',
+      },
+      timeout,
+    }, res => {
       let body = '';
       res.on('data', c => body += c);
       res.on('end', () => {
@@ -1002,7 +1075,14 @@ function _fetchText(url, timeout = 10000) {
 /** 공통: JSON fetch 유틸 */
 function _fetchJSON(url, timeout = 10000) {
   return new Promise((resolve, reject) => {
-    const req = https.get(url, { headers: { 'User-Agent': 'Mozilla/5.0' }, timeout }, res => {
+    const req = https.get(url, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (compatible; LunaArgos/1.0)',
+        'Referer': 'https://m.stock.naver.com/',
+        'Accept-Language': 'ko-KR,ko;q=0.9',
+      },
+      timeout,
+    }, res => {
       let body = '';
       res.on('data', c => body += c);
       res.on('end', () => {
@@ -1034,13 +1114,17 @@ function _fetchJSON(url, timeout = 10000) {
 /** 공통: 결과 빌드 */
 function _normalizeDomesticCandidates(stocks) {
   return stocks
-    .filter(s => s.stockCode)
+    .map((s) => ({
+      ...s,
+      normalizedSymbol: _normalizeDomesticSymbol(s.stockCode || s.itemCode || s.reutersCode || s.symbol || s.code),
+    }))
+    .filter(s => s.normalizedSymbol)
     .map(s => ({
-      symbol:     String(s.stockCode).padStart(6, '0'),
+      symbol:     s.normalizedSymbol,
       name:       s.stockName || s.name || '',
-      price:      parseInt(s.closePrice || s.price) || 0,
-      changeRate: parseFloat(s.fluctuationsRatio || s.changeRate) || 0,
-      volume:     parseInt(s.accumulatedTradingVolume || s.volume) || 0,
+      price:      _numLoose(s.closePrice ?? s.price, 0),
+      changeRate: _numLoose(s.fluctuationsRatio ?? s.changeRate, 0),
+      volume:     _numLoose(s.accumulatedTradingVolume ?? s.volume, 0),
       sourceName: s.sourceName || 'unknown',
       sourcePriority: Number(s.sourcePriority || 1),
     }));
@@ -1079,10 +1163,39 @@ function _mergeDomesticSourceCandidates(sourceResults) {
   }));
 }
 
-function _finalizeDomesticResult(candidates, max) {
+function _buildDomesticLiquidFallbackCandidates() {
+  const configured = getKisSymbols();
+  const enabled = String(process.env.LUNA_DOMESTIC_KIS_FALLBACK_UNIVERSE_ENABLED || 'true').toLowerCase() !== 'false';
+  const symbols = enabled
+    ? [...configured, ...DOMESTIC_LIQUID_FALLBACK_SYMBOLS]
+    : configured;
+  return [...new Set(symbols.map(_normalizeDomesticSymbol).filter(Boolean))]
+    .map((symbol) => ({
+      symbol,
+      name: symbol,
+      price: 0,
+      volume: 0,
+      changeRate: 0,
+      sourceName: 'kis_daily_liquid_universe',
+      sourceNames: ['kis_daily_liquid_universe'],
+      sourceCount: 1,
+      sourcePriority: 0.85,
+      finalScore: 0.85,
+    }));
+}
 
+async function _finalizeDomesticResult(candidates, max) {
   if (!candidates.length) return null;
-  const liquidCandidates = _filterCandidatesByLiquidity(candidates, 'domestic');
+  const enrichedCandidates = await _enrichDomesticCandidatesWithKis(candidates);
+  let liquidCandidates = _filterCandidatesByLiquidity(enrichedCandidates, 'domestic');
+  if (!liquidCandidates.length) {
+    const fallbackCandidates = _buildDomesticLiquidFallbackCandidates();
+    if (fallbackCandidates.length) {
+      console.warn('[아르고스] 국내주식 동적 후보 유동성 탈락 — KIS 설정 종목 fallback 평가');
+      const enrichedFallback = await _enrichDomesticCandidatesWithKis(fallbackCandidates);
+      liquidCandidates = _filterCandidatesByLiquidity(enrichedFallback, 'domestic');
+    }
+  }
   if (!liquidCandidates.length) {
     console.warn('[아르고스] 국내주식 유동성 필터 통과 후보 없음');
     return {
@@ -1094,24 +1207,95 @@ function _finalizeDomesticResult(candidates, max) {
     };
   }
 
-  return _applyCandidateIntelligence(liquidCandidates, 'domestic', max).then((ranked) => {
-    const dynamicSymbols = ranked.map(c => c.symbol);
-    console.log(`[아르고스] 국내주식 스크리닝: 동적 ${dynamicSymbols.join(', ')}`);
-    ranked.forEach(c =>
-      console.log(
-        `  ${c.symbol}(${c.name}): ${c.changeRate > 0 ? '+' : ''}${c.changeRate}%`
-        + ` | 소스 ${c.sourceCount || 1}개 (${(c.sourceNames || []).join(', ')})`
-      )
+  const ranked = await _applyCandidateIntelligence(liquidCandidates, 'domestic', max);
+  const dynamicSymbols = ranked.map(c => c.symbol);
+  console.log(`[아르고스] 국내주식 스크리닝: 동적 ${dynamicSymbols.join(', ')}`);
+  ranked.forEach(c =>
+    console.log(
+      `  ${c.symbol}(${c.name}): ${c.changeRate > 0 ? '+' : ''}${c.changeRate}%`
+      + ` | 소스 ${c.sourceCount || 1}개 (${(c.sourceNames || []).join(', ')})`
+    )
+  );
+  return { core: CORE_KIS, dynamic: dynamicSymbols, all: dynamicSymbols, screening: ranked };
+}
+
+async function _enrichDomesticCandidatesWithKis(candidates) {
+  const maxFetch = Math.max(0, Number(_screenCfg('domestic', 'kis_quote_fallback_max', 12)) || 0);
+  if (!maxFetch || !Array.isArray(candidates) || !candidates.length) return candidates;
+
+  let fetchCount = 0;
+  const enriched = [];
+  for (const candidate of candidates) {
+    const symbol = _normalizeDomesticSymbol(candidate.symbol);
+    if (!symbol) continue;
+
+    const currentTurnover = _num(candidate.price, 0) * _num(candidate.volume, 0);
+    const needsKis = (
+      _num(candidate.price, 0) <= 0
+      || _num(candidate.volume, 0) <= 0
+      || currentTurnover <= 0
     );
-    return { core: CORE_KIS, dynamic: dynamicSymbols, all: dynamicSymbols, screening: ranked };
-  });
+    if (!needsKis || fetchCount >= maxFetch) {
+      enriched.push(candidate);
+      continue;
+    }
+
+    fetchCount += 1;
+    try {
+      const [quote, bars] = await Promise.all([
+        getDomesticQuoteSnapshot(symbol, false).catch(() => null),
+        getDomesticDailyPriceBars(symbol, { days: 30, paper: false }).catch(() => []),
+      ]);
+      const latestBar = Array.isArray(bars) && bars.length ? bars[bars.length - 1] : null;
+      const minShares = _num(_screenCfg('domestic', 'min_volume_shares', 100000));
+      const minTurnover = _num(_screenCfg('domestic', 'min_turnover_krw', 1_000_000_000));
+      const reversedBars = Array.isArray(bars) ? [...bars].reverse() : [];
+      const latestLiquidBar = reversedBars.find((bar) => {
+        const close = _num(bar?.close, 0);
+        const volume = _num(bar?.volume, 0);
+        return volume >= minShares && close * volume >= minTurnover;
+      });
+      const latestVolumeBar = Array.isArray(bars)
+        ? latestLiquidBar || reversedBars.find((bar) => _num(bar?.volume, 0) > 0) || latestBar
+        : latestBar;
+      const previousBar = Array.isArray(bars) && bars.length > 1 ? bars[bars.length - 2] : null;
+      const price = _num(quote?.price, 0) || _num(latestBar?.close, 0) || _num(candidate.price, 0);
+      const volume = Math.max(
+        _num(candidate.volume, 0),
+        _num(quote?.volume, 0),
+        _num(latestVolumeBar?.volume, 0),
+      );
+      const changeRate = _num(candidate.changeRate, NaN);
+      const dailyChangeRate = previousBar?.close
+        ? ((price - _num(previousBar.close, price)) / _num(previousBar.close, price)) * 100
+        : 0;
+      enriched.push({
+        ...candidate,
+        symbol,
+        price,
+        volume,
+        dollarVolume: price * volume,
+        changeRate: Number.isFinite(changeRate) ? changeRate : dailyChangeRate,
+        quoteSource: 'kis_domestic_fallback',
+        sourceNames: [...new Set([...(candidate.sourceNames || []), 'kis_domestic_fallback'])],
+        sourceCount: Math.max(candidate.sourceCount || 1, (candidate.sourceNames || []).length + 1),
+      });
+    } catch (error) {
+      _warnExternalOnce(
+        `kis_domestic_candidate_fallback:${symbol}`,
+        `[아르고스] KIS 국내 후보 보강 실패(${symbol}): ${error?.message || error}`,
+      );
+      enriched.push(candidate);
+    }
+  }
+  return enriched;
 }
 
 /** 대안 1: 네이버 모바일 상승률 API (불안정) */
 async function _tryNaverMobile() {
   try {
     const data = await _fetchJSON(
-      'https://m.stock.naver.com/api/stocks/up?page=1&pageSize=30', 5000
+      'https://m.stock.naver.com/api/stocks/up/KOSPI?page=1&pageSize=30', 5000
     );
     // 응답 구조 자동 감지 (API 변경 대응)
     const stocks = data?.stocks
@@ -1119,33 +1303,37 @@ async function _tryNaverMobile() {
       || data?.data?.stocks
       || data?.result?.data
       || [];
-    if (!stocks.length || !stocks[0]?.stockCode) return [];
-    return stocks.map(stock => ({ ...stock, sourceName: 'naver_mobile_up', sourcePriority: 1.1 }));
+    if (!stocks.length || !(stocks[0]?.stockCode || stocks[0]?.itemCode || stocks[0]?.reutersCode)) return [];
+    return stocks
+      .filter(_isNaverDomesticStock)
+      .map(stock => ({ ...stock, sourceName: 'naver_mobile_up', sourcePriority: 1.1 }));
   } catch (e) {
     console.warn(`[아르고스] 네이버 모바일 API 실패: ${e.message}`);
     return [];
   }
 }
 
-/** 대안 2: 네이버 증권 시세 API (더 안정적) */
+/** 대안 2: 네이버 모바일 상승 종목 API (KOSPI/KOSDAQ 명시 경로) */
 async function _tryNaverSise() {
   try {
-    // 네이버 증권 국내주식 상승률 상위
-    const data = await _fetchJSON(
-      'https://finance.naver.com/api/sise/siseList.nhn?sosok=0&page=1&type=up', 5000
-    );
-    const items = data?.result?.itemList || data?.itemList || data?.result || [];
+    const pages = await Promise.all([
+      _fetchJSON('https://m.stock.naver.com/api/stocks/up/KOSPI?page=1&pageSize=30', 5000),
+      _fetchJSON('https://m.stock.naver.com/api/stocks/up/KOSDAQ?page=1&pageSize=30', 5000),
+    ]);
+    const items = pages.flatMap((data) => data?.stocks || data?.result?.stocks || data?.itemList || data?.result || []);
     if (!Array.isArray(items) || !items.length) return [];
 
-    return items.map(s => ({
-      stockCode:                 s.cd   || s.itemcode || s.code,
-      stockName:                 s.nm   || s.itemname || s.name,
-      closePrice:                s.nv   || s.now      || s.closePrice,
-      fluctuationsRatio:         s.cr   || s.changeRate,
-      accumulatedTradingVolume:  s.aq   || s.quant    || s.volume,
-      sourceName:                'naver_sise_up',
-      sourcePriority:            1.15,
-    }));
+    return items
+      .filter(_isNaverDomesticStock)
+      .map(s => ({
+        stockCode:                 s.stockCode || s.itemCode || s.reutersCode || s.cd || s.itemcode || s.code,
+        stockName:                 s.stockName || s.nm || s.itemname || s.name,
+        closePrice:                s.closePrice || s.nv || s.now,
+        fluctuationsRatio:         s.fluctuationsRatio || s.cr || s.changeRate,
+        accumulatedTradingVolume:  s.accumulatedTradingVolume || s.aq || s.quant || s.volume,
+        sourceName:                'naver_sise_up',
+        sourcePriority:            1.15,
+      }));
   } catch (e) {
     console.warn(`[아르고스] 네이버 시세 API 실패: ${e.message}`);
     return [];
@@ -1203,7 +1391,7 @@ export async function screenOverseasSymbols(maxDynamic, fng = 50) {
     .filter(Boolean)
     .slice(0, Math.max(max * 2, 20));
   const quoteMap = quoteUniverse.length
-    ? await _fetchYahooQuoteMap(quoteUniverse)
+    ? await _fetchOverseasQuoteMap(quoteUniverse)
     : new Map();
   const candidates = _mergeOverseasSourceCandidates(yahooTickers, apeTickers, quoteMap);
   const liquidCandidates = _filterCandidatesByLiquidity(candidates, 'overseas');
@@ -1355,6 +1543,50 @@ async function _fetchYahooQuoteMap(symbols) {
     req.on('error', () => resolve(new Map()));
     req.on('timeout', () => { req.destroy(); resolve(new Map()); });
   });
+}
+
+async function _fetchKisOverseasQuoteMap(symbols, existing = new Map()) {
+  const maxFallback = Math.max(1, _num(_screenCfg('overseas', 'kis_quote_fallback_max', 12), 12));
+  const missing = (symbols || [])
+    .map((symbol) => String(symbol || '').trim().toUpperCase())
+    .filter((symbol) => symbol && !existing.has(symbol) && !symbol.includes('.') && symbol.length <= 6)
+    .slice(0, maxFallback);
+  const map = new Map();
+
+  for (const symbol of missing) {
+    try {
+      const [quote, dailyBars] = await Promise.all([
+        getOverseasQuoteSnapshot(symbol),
+        getOverseasDailyPriceBars(symbol, { days: 30 }).catch(() => []),
+      ]);
+      const latestBar = Array.isArray(dailyBars) && dailyBars.length > 0 ? dailyBars[dailyBars.length - 1] : null;
+      const price = Number(quote?.price || latestBar?.close || 0);
+      const volume = Number(latestBar?.volume || 0);
+      if (!(price > 0)) continue;
+      map.set(symbol, {
+        name: symbol,
+        price,
+        volume,
+        changeRate: Number(quote?.changePct || 0),
+        dollarVolume: price > 0 && volume > 0 ? price * volume : 0,
+        quoteSource: 'kis_overseas_fallback',
+      });
+    } catch {
+      // 개별 종목 실패는 전체 스크리닝 실패로 전파하지 않는다.
+    }
+  }
+
+  if (map.size > 0) {
+    console.warn(`[아르고스] Yahoo quote 공백 보강: KIS 해외시세 ${map.size}/${missing.length}건`);
+  }
+  return map;
+}
+
+async function _fetchOverseasQuoteMap(symbols) {
+  const yahooMap = await _fetchYahooQuoteMap(symbols);
+  if (yahooMap.size > 0) return yahooMap;
+  const kisMap = await _fetchKisOverseasQuoteMap(symbols, yahooMap);
+  return new Map([...yahooMap, ...kisMap]);
 }
 
 // ─── 통합 스크리닝 ───────────────────────────────────────────────────

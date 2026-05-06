@@ -1,4 +1,5 @@
 const pgPool = require('../../../../packages/core/lib/pg-pool');
+const crypto = require('node:crypto');
 const { callClaudeCodeOAuth } = require('../llm/claude-code-oauth');
 const { callGroqFallback } = require('../llm/groq-fallback');
 const { callWithFallback } = require('../llm/unified-caller');
@@ -17,6 +18,8 @@ const {
   resetProviderCooldown,
 } = require('../../../../packages/core/lib/llm-fallback');
 const { getProviderStats, resetProviderCircuit, resetAllProviderCircuits } = require('../llm/provider-registry');
+
+let routingLogAuditColumnsPromise = null;
 
 // POST /hub/llm/call — Primary(Claude Code OAuth) + Fallback(Groq) 체인
 export async function llmCallRoute(req, res) {
@@ -476,6 +479,47 @@ function redactJobPayload(job) {
 }
 
 async function logRouting(resp, body) {
+  const audit = buildRoutingLogAudit(body);
+  const includeAudit = await ensureRoutingLogAuditColumns();
+  try {
+    await insertRoutingLog(resp, body, audit, includeAudit);
+  } catch (err) {
+    if (includeAudit && isRoutingLogAuditColumnError(err)) {
+      routingLogAuditColumnsPromise = null;
+      await insertRoutingLog(resp, body, audit, false);
+      return;
+    }
+    throw err;
+  }
+}
+
+async function insertRoutingLog(resp, body, audit, includeAudit) {
+  if (includeAudit) {
+    await pgPool.run('public', `
+      INSERT INTO llm_routing_log (
+        created_at, provider, agent, caller_team, abstract_model,
+        success, duration_ms, cost_usd, fallback_count, error, session_id,
+        prompt_hash, system_prompt_hash, request_fingerprint, prompt_chars
+      ) VALUES (NOW(), $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+    `, [
+      resp.provider,
+      body.agent ?? null,
+      body.callerTeam ?? null,
+      body.abstractModel,
+      resp.ok,
+      resp.durationMs,
+      resp.totalCostUsd ?? 0,
+      resp.fallbackCount ?? 0,
+      resp.error ?? null,
+      resp.sessionId ?? body.traceId ?? null,
+      audit.promptHash,
+      audit.systemPromptHash,
+      audit.requestFingerprint,
+      audit.promptChars,
+    ]);
+    return;
+  }
+
   await pgPool.run('public', `
     INSERT INTO llm_routing_log (
       created_at, provider, agent, caller_team, abstract_model,
@@ -493,4 +537,87 @@ async function logRouting(resp, body) {
     resp.error ?? null,
     resp.sessionId ?? body.traceId ?? null,
   ]);
+}
+
+function buildRoutingLogAudit(body) {
+  const prompt = typeof body?.prompt === 'string' ? body.prompt : '';
+  const systemPrompt = typeof body?.systemPrompt === 'string' ? body.systemPrompt : '';
+  const promptHash = hashText(prompt);
+  const systemPromptHash = hashText(systemPrompt);
+  const requestFingerprint = hashText(JSON.stringify({
+    callerTeam: body?.callerTeam ?? null,
+    agent: body?.agent ?? null,
+    taskType: body?.taskType ?? null,
+    selectorKey: body?.selectorKey ?? null,
+    abstractModel: body?.abstractModel ?? null,
+    promptHash,
+    systemPromptHash,
+  }));
+  return {
+    promptHash,
+    systemPromptHash,
+    requestFingerprint,
+    promptChars: prompt.length,
+  };
+}
+
+function hashText(value) {
+  if (typeof value !== 'string' || value.length === 0) return null;
+  return crypto.createHash('sha256').update(value).digest('hex');
+}
+
+function ensureRoutingLogAuditColumns() {
+  if (!routingLogAuditColumnsPromise) {
+    routingLogAuditColumnsPromise = (async () => {
+      if (await routingLogAuditColumnsExist()) return true;
+      await pgPool.run('public', `
+          ALTER TABLE llm_routing_log
+            ADD COLUMN IF NOT EXISTS prompt_hash TEXT,
+            ADD COLUMN IF NOT EXISTS system_prompt_hash TEXT,
+            ADD COLUMN IF NOT EXISTS request_fingerprint TEXT,
+            ADD COLUMN IF NOT EXISTS prompt_chars INTEGER
+        `);
+      await createRoutingLogAuditIndexes();
+      return true;
+    })().catch((err) => {
+      console.warn('[llm] routing log audit column ensure skipped:', err?.message || err);
+      return false;
+    });
+  }
+  return routingLogAuditColumnsPromise;
+}
+
+async function routingLogAuditColumnsExist() {
+  const rows = await pgPool.query('public', `
+    SELECT COUNT(*)::int AS count
+    FROM information_schema.columns
+    WHERE table_schema = 'public'
+      AND table_name = 'llm_routing_log'
+      AND column_name = ANY($1::text[])
+  `, [['prompt_hash', 'system_prompt_hash', 'request_fingerprint', 'prompt_chars']]);
+  return Number(rows?.[0]?.count || 0) === 4;
+}
+
+async function createRoutingLogAuditIndexes() {
+  try {
+    await pgPool.run('public', `
+      CREATE INDEX IF NOT EXISTS idx_llm_routing_log_prompt_hash
+        ON llm_routing_log (prompt_hash, created_at DESC)
+    `);
+    await pgPool.run('public', `
+      CREATE INDEX IF NOT EXISTS idx_llm_routing_log_request_fingerprint
+        ON llm_routing_log (request_fingerprint, created_at DESC)
+    `);
+  } catch (err) {
+    console.warn('[llm] routing log audit index ensure skipped:', err?.message || err);
+  }
+}
+
+function isRoutingLogAuditColumnError(err) {
+  const message = String(err?.message || err || '').toLowerCase();
+  return message.includes('prompt_hash')
+    || message.includes('system_prompt_hash')
+    || message.includes('request_fingerprint')
+    || message.includes('prompt_chars')
+    || message.includes('column') && message.includes('does not exist');
 }
