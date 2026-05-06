@@ -146,6 +146,13 @@ function main(): void {
     const chain = selector.selectLLMChain('investment.agent_policy', { ...selectorOptions, agentName });
     assert(chain.length > 0, `investment/${agentName} chain must be non-empty`);
     assert.notEqual(chain[0]?.provider, 'anthropic', `investment/${agentName} primary must not use anthropic`);
+    if (['zeus', 'athena', 'nemesis', 'hermes', 'sophia'].includes(agentName)) {
+      assert.equal(
+        chain.some((entry: any) => entry.provider === 'claude-code'),
+        false,
+        `investment/${agentName} hot path must not fall back to claude-code while Sonnet quota is saturated`,
+      );
+    }
     const provider = String(chain[0]?.provider || '');
     if (providerCounts[provider] != null) providerCounts[provider] += 1;
     else providerCounts.other += 1;
@@ -165,8 +172,8 @@ function main(): void {
     groqPct: Number(pct(providerCounts.groq, total).toFixed(2)),
   };
 
-  assert(shares.claudeCodePct >= 5 && shares.claudeCodePct <= 25, `claude-code share out of range: ${shares.claudeCodePct}%`);
-  assert(shares.openaiPct >= 45 && shares.openaiPct <= 65, `openai share out of range: ${shares.openaiPct}%`);
+  assert(shares.claudeCodePct >= 0 && shares.claudeCodePct <= 10, `claude-code share out of range: ${shares.claudeCodePct}%`);
+  assert(shares.openaiPct >= 60 && shares.openaiPct <= 75, `openai share out of range: ${shares.openaiPct}%`);
   assert(shares.geminiPct >= 15 && shares.geminiPct <= 35, `gemini share out of range: ${shares.geminiPct}%`);
   assert(shares.groqPct >= 5 && shares.groqPct <= 20, `groq share out of range: ${shares.groqPct}%`);
   assert.equal(providerCounts.other, 0, 'unexpected provider should not appear in oauth4 matrix');

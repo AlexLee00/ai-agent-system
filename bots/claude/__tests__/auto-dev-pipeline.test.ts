@@ -1047,7 +1047,10 @@ async function test_launchd_plist_defaults_are_safe() {
   const autonomousPlist = fs.readFileSync(AUTO_DEV_AUTONOMOUS_PLIST_PATH, 'utf8');
   assert.match(plist, /<key>CLAUDE_AUTO_DEV_PROFILE<\/key>\s*<string>shadow<\/string>/);
   assert.match(shadowPlist, /<key>CLAUDE_AUTO_DEV_PROFILE<\/key>\s*<string>shadow<\/string>/);
-  assert.match(autonomousPlist, /<key>CLAUDE_AUTO_DEV_PROFILE<\/key>\s*<string>autonomous_l5<\/string>/);
+  assert.match(autonomousPlist, /<key>CLAUDE_AUTO_DEV_PROFILE<\/key>\s*<string>shadow<\/string>/);
+  assert.match(plist, /<key>CLAUDE_AUTO_DEV_DISABLED<\/key>\s*<string>true<\/string>/);
+  assert.match(shadowPlist, /<key>CLAUDE_AUTO_DEV_DISABLED<\/key>\s*<string>true<\/string>/);
+  assert.match(autonomousPlist, /<key>CLAUDE_AUTO_DEV_DISABLED<\/key>\s*<string>true<\/string>/);
   assert.doesNotMatch(shadowPlist, /CLAUDE_AUTO_DEV_EXECUTE_IMPLEMENTATION/);
   assert.doesNotMatch(autonomousPlist, /CLAUDE_AUTO_DEV_EXECUTE_IMPLEMENTATION/);
   assert.match(plist, /<key>KeepAlive<\/key>\s*<false\/>/);
@@ -1160,6 +1163,37 @@ async function test_profile_compatibility_mode_allows_legacy_overrides() {
 
   fs.rmSync(tmpRoot, { recursive: true, force: true });
   console.log('✅ auto-dev: compatibility mode allows legacy env overrides');
+}
+
+async function test_hard_disabled_blocks_pipeline_even_with_autonomous_profile() {
+  const tmpRoot = makeTempRoot();
+  const { mocks } = makeMocks(tmpRoot);
+
+  await withMocks(mocks, async pipeline => {
+    const runtime = pipeline.resolveAutoDevRuntimeConfig({}, {
+      CLAUDE_AUTO_DEV_PROFILE: 'autonomous_l5',
+      CLAUDE_AUTO_DEV_DISABLED: 'true',
+    });
+
+    assert.strictEqual(runtime.hardDisabled, true);
+    assert.strictEqual(runtime.enabled, false);
+    assert.strictEqual(runtime.shadow, true);
+    assert.strictEqual(runtime.executeImplementation, false);
+    assert.strictEqual(runtime.runHardTests, false);
+    assert.strictEqual(runtime.integrationMode, 'none');
+
+    const result = await pipeline.runAutoDevPipeline({
+      once: true,
+      runtimeConfig: runtime,
+    });
+    assert.strictEqual(result.ok, true);
+    assert.strictEqual(result.processedCount, 0);
+    assert.strictEqual(result.results[0].reason, 'hard_disabled');
+    assert.strictEqual(result.lock.acquired, false);
+  }, testEnv(tmpRoot));
+
+  fs.rmSync(tmpRoot, { recursive: true, force: true });
+  console.log('✅ auto-dev: hard disabled blocks autonomous pipeline execution');
 }
 
 async function test_profile_compatibility_mode_blocks_unallowlisted_model() {
@@ -1940,6 +1974,7 @@ async function main() {
     test_profile_resolver_maps_runtime_profiles,
     test_profile_authoritative_blocks_legacy_overrides,
     test_profile_compatibility_mode_allows_legacy_overrides,
+    test_hard_disabled_blocks_pipeline_even_with_autonomous_profile,
     test_profile_compatibility_mode_blocks_unallowlisted_model,
     test_implementation_model_policy_failure_is_fail_closed,
     test_implementation_invocation_includes_model_arg,

@@ -45,6 +45,10 @@ async function runOnce() {
 
 async function main() {
   const runtime = pipeline.resolveAutoDevRuntimeConfig({ profile, test, dryRun });
+  if (runtime.hardDisabled) {
+    console.log(`[auto-dev] Hard Kill Switch ON — ${runtime.disabledReason || 'CLAUDE_AUTO_DEV_DISABLED'}`);
+    return;
+  }
   const enabled = runtime.enabled || once || test;
   if (!enabled) {
     console.log(`[auto-dev] Kill Switch OFF — CLAUDE_AUTO_DEV_PROFILE=${runtime.profile} enabled=false`);

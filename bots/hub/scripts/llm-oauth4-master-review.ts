@@ -297,7 +297,11 @@ function buildReport(stats, options = {}) {
     warnings.push('runtime_reported_cost_is_accounting_or_cli_imputed_cost_not_oauth4_billing_gate');
   }
   if (claudeCodeRuntimeCostSharePct > claudeCodeRuntimeCostWarnPct) {
-    warnings.push('runtime_claude_code_reported_cost_share_high_reduce_sonnet_primary_routes');
+    warnings.push(
+      selectorSnapshot.claude_code_primary_share_pct > 0 || selectorSnapshot.claude_code_sonnet_primary_share_pct > 0
+        ? 'runtime_claude_code_reported_cost_share_high_reduce_sonnet_primary_routes'
+        : 'runtime_claude_code_reported_cost_share_high_historical_usage_wait_for_decay',
+    );
   }
   if (nonOauthReportedCost > 0) {
     warnings.push('non_oauth_runtime_cost_observed_groq_or_other_fallback_usage');

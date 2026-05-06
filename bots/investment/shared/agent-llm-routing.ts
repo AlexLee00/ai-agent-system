@@ -124,8 +124,8 @@ const DEFAULT_ROUTE: LLMRoute = {
 
 // 기존 AGENT_ABSTRACT_MODEL 하위 호환 매핑
 const LEGACY_FALLBACK: Record<string, LLMRoute> = {
-  luna:    { primary: 'openai-oauth/gpt-5.4', fallbacks: ['groq/llama-3.3-70b-versatile', 'claude-code/haiku'] },
-  chronos: { primary: 'openai-oauth/gpt-5.4', fallbacks: ['groq/qwen/qwen3-32b', 'claude-code/haiku'] },
+  luna:    { primary: 'openai-oauth/gpt-5.4', fallbacks: ['groq/llama-3.3-70b-versatile', 'gemini-cli-oauth/gemini-2.5-flash'] },
+  chronos: { primary: 'openai-oauth/gpt-5.4', fallbacks: ['groq/qwen/qwen3-32b', 'gemini-cli-oauth/gemini-2.5-flash'] },
 };
 
 // ─── 에이전트별 기본 라우트 ──────────────────────────────────────────────────
@@ -134,26 +134,26 @@ const AGENT_DEFAULTS: Record<string, LLMRoute> = {
   // 🌙 luna — 사령탑: 현재 healthy OAuth chain 우선
   luna: {
     primary: 'openai-oauth/gpt-5.4',
-    fallbacks: ['groq/llama-3.3-70b-versatile', 'claude-code/haiku'],
+    fallbacks: ['groq/llama-3.3-70b-versatile', 'gemini-cli-oauth/gemini-2.5-flash'],
   },
 
-  // 🛡️ nemesis — 리스크: critical 경로, 속도 우선
+  // 🛡️ nemesis — 리스크: critical 경로, OpenAI OAuth 우선으로 Claude quota 압박을 낮춘다.
   nemesis: {
-    primary: 'groq/qwen/qwen3-32b',
-    fallbacks: ['claude-code/haiku', 'openai-oauth/gpt-5.4-mini'],
+    primary: 'openai-oauth/gpt-5.4-mini',
+    fallbacks: ['groq/qwen/qwen3-32b', 'gemini-cli-oauth/gemini-2.5-flash'],
   },
 
   // 📊 aria — 기술 분석: 수학 연산 위주, LLM 최소화
   aria: {
     primary: 'rule-based',
-    fallbacks: ['claude-code/haiku'],
+    fallbacks: [],
     noLLM: true,
   },
 
   // 🧠 sophia — 감성: 운영 hot path. 실측상 Groq가 가장 안정적이고 빠르다.
   sophia: {
     primary: 'groq/llama-3.3-70b-versatile',
-    fallbacks: ['openai-oauth/gpt-5.4-mini', 'gemini-cli-oauth/gemini-2.5-flash', 'claude-code/haiku'],
+    fallbacks: ['openai-oauth/gpt-5.4-mini', 'gemini-cli-oauth/gemini-2.5-flash'],
   },
 
   // 👁️ argos — 스크리닝: 대량 처리 + 빠른 분류
@@ -165,43 +165,43 @@ const AGENT_DEFAULTS: Record<string, LLMRoute> = {
   // 📜 hermes — 뉴스: 운영 hot path. Gemini/Claude OAuth는 fallback으로만 둔다.
   hermes: {
     primary: 'groq/llama-3.3-70b-versatile',
-    fallbacks: ['openai-oauth/gpt-5.4-mini', 'gemini-cli-oauth/gemini-2.5-flash', 'claude-code/haiku'],
+    fallbacks: ['openai-oauth/gpt-5.4-mini', 'gemini-cli-oauth/gemini-2.5-flash'],
   },
 
   // 🔮 oracle — 온체인: 복잡한 추론 + 통합
   oracle: {
     primary: 'openai-oauth/gpt-5.4',
-    fallbacks: ['groq/qwen/qwen3-32b', 'claude-code/haiku'],
+    fallbacks: ['groq/qwen/qwen3-32b', 'gemini-cli-oauth/gemini-2.5-flash'],
   },
 
   // ⏰ chronos — 백테스팅: 정확도 critical
   chronos: {
     primary: 'openai-oauth/gpt-5.4',
-    fallbacks: ['groq/qwen/qwen3-32b', 'claude-code/haiku'],
+    fallbacks: ['groq/qwen/qwen3-32b', 'gemini-cli-oauth/gemini-2.5-flash'],
   },
 
   // 🦅 zeus — 매수 논거: 중간 품질 + 빠름
   zeus: {
     primary: 'openai-oauth/gpt-5.4-mini',
-    fallbacks: ['claude-code/haiku', 'groq/llama-3.3-70b-versatile'],
+    fallbacks: ['groq/llama-3.3-70b-versatile', 'gemini-cli-oauth/gemini-2.5-flash'],
   },
 
   // 🏛️ athena — 매도 논거: zeus와 동급
   athena: {
     primary: 'openai-oauth/gpt-5.4-mini',
-    fallbacks: ['claude-code/haiku', 'groq/llama-3.3-70b-versatile'],
+    fallbacks: ['groq/llama-3.3-70b-versatile', 'gemini-cli-oauth/gemini-2.5-flash'],
   },
 
   // 🛂 sentinel — 이상 탐지: 빠른 분류
   sentinel: {
     primary: 'openai-oauth/gpt-5.4-mini',
-    fallbacks: ['claude-code/haiku'],
+    fallbacks: ['groq/llama-3.3-70b-versatile', 'gemini-cli-oauth/gemini-2.5-flash'],
   },
 
   // ⚡ adaptive-risk — 빠른 리스크 분기
   'adaptive-risk': {
     primary: 'groq/qwen/qwen3-32b',
-    fallbacks: ['claude-code/haiku'],
+    fallbacks: ['openai-oauth/gpt-5.4-mini', 'gemini-cli-oauth/gemini-2.5-flash'],
   },
 
   // 🔥 hephaestos — 바이낸스 실행: rule-based
@@ -266,31 +266,31 @@ const ROUTING_MATRIX: Record<string, LLMRoute> = {
   // 암호화폐 최종 판단: 현재 healthy OAuth chain 우선
   'luna:crypto:final_decision': {
     primary: 'openai-oauth/gpt-5.4',
-    fallbacks: ['groq/llama-3.3-70b-versatile', 'claude-code/haiku'],
+    fallbacks: ['groq/llama-3.3-70b-versatile', 'gemini-cli-oauth/gemini-2.5-flash'],
   },
   // 국내장 최종 판단
   'luna:domestic:final_decision': {
     primary: 'openai-oauth/gpt-5.4',
-    fallbacks: ['groq/llama-3.3-70b-versatile', 'claude-code/haiku'],
+    fallbacks: ['groq/llama-3.3-70b-versatile', 'gemini-cli-oauth/gemini-2.5-flash'],
   },
   // 국외장 최종 판단
   'luna:overseas:final_decision': {
     primary: 'openai-oauth/gpt-5.4',
-    fallbacks: ['groq/llama-3.3-70b-versatile', 'claude-code/haiku'],
+    fallbacks: ['groq/llama-3.3-70b-versatile', 'gemini-cli-oauth/gemini-2.5-flash'],
   },
 
   // ── nemesis ────────────────────────────────────────────────────────────────
   // 리스크 평가: groq 최속 (critical 경로)
   'nemesis:any:risk_eval': {
-    primary: 'groq/qwen/qwen3-32b',
-    fallbacks: ['claude-code/haiku', 'openai-oauth/gpt-5.4-mini'],
+    primary: 'openai-oauth/gpt-5.4-mini',
+    fallbacks: ['groq/qwen/qwen3-32b', 'gemini-cli-oauth/gemini-2.5-flash'],
   },
 
   // ── aria ───────────────────────────────────────────────────────────────────
   // 기술 분석: rule-based (RSI/MACD 수학), LLM 불필요
   'aria:any:technical_analysis': {
     primary: 'rule-based',
-    fallbacks: ['claude-code/haiku'],
+    fallbacks: [],
     noLLM: true,
   },
 
@@ -298,15 +298,15 @@ const ROUTING_MATRIX: Record<string, LLMRoute> = {
   // 감성 분석: 운영 hot path는 Groq 우선. OAuth 계열은 timeout/quota 시 fallback.
   'sophia:crypto:sentiment': {
     primary: 'groq/llama-3.3-70b-versatile',
-    fallbacks: ['openai-oauth/gpt-5.4-mini', 'gemini-cli-oauth/gemini-2.5-flash', 'claude-code/haiku'],
+    fallbacks: ['openai-oauth/gpt-5.4-mini', 'gemini-cli-oauth/gemini-2.5-flash'],
   },
   'sophia:domestic:sentiment': {
     primary: 'groq/llama-3.3-70b-versatile',
-    fallbacks: ['openai-oauth/gpt-5.4-mini', 'gemini-cli-oauth/gemini-2.5-flash', 'claude-code/haiku'],
+    fallbacks: ['openai-oauth/gpt-5.4-mini', 'gemini-cli-oauth/gemini-2.5-flash'],
   },
   'sophia:overseas:sentiment': {
     primary: 'groq/llama-3.3-70b-versatile',
-    fallbacks: ['openai-oauth/gpt-5.4-mini', 'gemini-cli-oauth/gemini-2.5-flash', 'claude-code/haiku'],
+    fallbacks: ['openai-oauth/gpt-5.4-mini', 'gemini-cli-oauth/gemini-2.5-flash'],
   },
 
   // ── argos ──────────────────────────────────────────────────────────────────
@@ -320,38 +320,38 @@ const ROUTING_MATRIX: Record<string, LLMRoute> = {
   // 뉴스 다국어: 운영 실측상 Groq primary가 timeout 병목을 줄인다.
   'hermes:any:sentiment': {
     primary: 'groq/llama-3.3-70b-versatile',
-    fallbacks: ['openai-oauth/gpt-5.4-mini', 'gemini-cli-oauth/gemini-2.5-flash', 'claude-code/haiku'],
+    fallbacks: ['openai-oauth/gpt-5.4-mini', 'gemini-cli-oauth/gemini-2.5-flash'],
   },
 
   // ── oracle ─────────────────────────────────────────────────────────────────
   // 온체인 + 파생상품: gpt-5.4 우선, Groq reasoning 폴백
   'oracle:crypto:onchain': {
     primary: 'openai-oauth/gpt-5.4',
-    fallbacks: ['groq/qwen/qwen3-32b', 'claude-code/haiku'],
+    fallbacks: ['groq/qwen/qwen3-32b', 'gemini-cli-oauth/gemini-2.5-flash'],
   },
 
   // ── chronos ────────────────────────────────────────────────────────────────
   // 백테스팅: gpt-5.4 우선, Groq reasoning 폴백
   'chronos:any:backtest': {
     primary: 'openai-oauth/gpt-5.4',
-    fallbacks: ['groq/qwen/qwen3-32b', 'claude-code/haiku'],
+    fallbacks: ['groq/qwen/qwen3-32b', 'gemini-cli-oauth/gemini-2.5-flash'],
   },
 
   // ── zeus / athena ──────────────────────────────────────────────────────────
   // 토론 논거: gpt-5.4-mini (중간 품질 + 빠름 + 저비용)
   'zeus:any:debate_bull': {
     primary: 'openai-oauth/gpt-5.4-mini',
-    fallbacks: ['claude-code/haiku', 'groq/llama-3.3-70b-versatile'],
+    fallbacks: ['groq/llama-3.3-70b-versatile', 'gemini-cli-oauth/gemini-2.5-flash'],
   },
   'athena:any:debate_bear': {
     primary: 'openai-oauth/gpt-5.4-mini',
-    fallbacks: ['claude-code/haiku', 'groq/llama-3.3-70b-versatile'],
+    fallbacks: ['groq/llama-3.3-70b-versatile', 'gemini-cli-oauth/gemini-2.5-flash'],
   },
 
   // ── sentinel ───────────────────────────────────────────────────────────────
   'sentinel:any:anomaly_detect': {
     primary: 'openai-oauth/gpt-5.4-mini',
-    fallbacks: ['claude-code/haiku'],
+    fallbacks: ['groq/llama-3.3-70b-versatile', 'gemini-cli-oauth/gemini-2.5-flash'],
   },
 
   // ── kairos / stock-flow / sweeper ────────────────────────────────────────

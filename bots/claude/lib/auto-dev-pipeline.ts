@@ -285,6 +285,11 @@ function buildImplementationModelMeta(runtimeConfig = {}, extra = {}) {
 function resolveAutoDevRuntimeConfig(options = {}, envVars = process.env) {
   const profileName = normalizeAutoDevProfileName(options.profile || envVars.CLAUDE_AUTO_DEV_PROFILE);
   const profile = AUTO_DEV_PROFILES[profileName] || AUTO_DEV_PROFILES[DEFAULT_AUTO_DEV_PROFILE];
+  const hardDisabled = Boolean(
+    readEnvBool(envVars, 'CLAUDE_AUTO_DEV_DISABLED')
+    || readEnvBool(envVars, 'CLAUDE_AUTO_DEV_GLOBAL_DISABLED')
+    || options.disabled === true
+  );
   const compatibilityModeOption = typeof options.compatibilityMode === 'boolean'
     ? options.compatibilityMode
     : undefined;
@@ -308,6 +313,8 @@ function resolveAutoDevRuntimeConfig(options = {}, envVars = process.env) {
     allowDirtyBase: false,
     ignoredLegacyOverrides: [],
     ignoredLegacyModelOverrides: [],
+    hardDisabled,
+    disabledReason: hardDisabled ? 'CLAUDE_AUTO_DEV_DISABLED' : null,
   };
 
   const envOverrides = {
@@ -376,6 +383,15 @@ function resolveAutoDevRuntimeConfig(options = {}, envVars = process.env) {
   config.implementationCliModelArg = modelPolicy.implementationCliModelArg;
   config.implementationModelSource = modelPolicy.implementationModelSource;
   config.modelPolicyError = modelPolicy.modelPolicyError || null;
+  if (hardDisabled) {
+    config.enabled = false;
+    config.shadow = true;
+    config.executeImplementation = false;
+    config.archiveOnSuccess = false;
+    config.runHardTests = false;
+    config.integrationMode = 'none';
+    config.dryRun = true;
+  }
   return config;
 }
 
@@ -2976,6 +2992,45 @@ async function processAutoDevDocument(filePath, options = {}) {
 
 async function runAutoDevPipeline(options = {}) {
   const runtimeConfig = getRuntimeConfig(options);
+  if (runtimeConfig.hardDisabled) {
+    return {
+      ok: true,
+      count: 0,
+      processedCount: 0,
+      skippedCount: 1,
+      failedCount: 0,
+      stateFile: STATE_FILE,
+      runtime: {
+        profile: runtimeConfig.profile,
+        enabled: runtimeConfig.enabled,
+        shadow: runtimeConfig.shadow,
+        dryRun: runtimeConfig.dryRun,
+        executeImplementation: runtimeConfig.executeImplementation,
+        archiveOnSuccess: runtimeConfig.archiveOnSuccess,
+        runHardTests: runtimeConfig.runHardTests,
+        cleanupWorktree: runtimeConfig.cleanupWorktree,
+        integrationMode: runtimeConfig.integrationMode,
+        compatibilityMode: runtimeConfig.compatibilityMode,
+        hardDisabled: runtimeConfig.hardDisabled,
+        disabledReason: runtimeConfig.disabledReason,
+        implementationProvider: runtimeConfig.implementationProvider,
+        implementationModel: runtimeConfig.implementationModel,
+        implementationCliModelArg: runtimeConfig.implementationCliModelArg,
+        implementationModelSource: runtimeConfig.implementationModelSource,
+        modelPolicyError: runtimeConfig.modelPolicyError || null,
+      },
+      lock: {
+        acquired: false,
+        reason: 'hard_disabled',
+      },
+      results: [{
+        ok: true,
+        skipped: true,
+        reason: 'hard_disabled',
+        job: null,
+      }],
+    };
+  }
   const globalLock = acquireFileLock(
     AUTO_DEV_LOCK_FILE,
     { jobId: null, relPath: null },
@@ -3000,6 +3055,8 @@ async function runAutoDevPipeline(options = {}) {
         cleanupWorktree: runtimeConfig.cleanupWorktree,
         integrationMode: runtimeConfig.integrationMode,
         compatibilityMode: runtimeConfig.compatibilityMode,
+        hardDisabled: runtimeConfig.hardDisabled,
+        disabledReason: runtimeConfig.disabledReason,
         implementationProvider: runtimeConfig.implementationProvider,
         implementationModel: runtimeConfig.implementationModel,
         implementationCliModelArg: runtimeConfig.implementationCliModelArg,
@@ -3057,6 +3114,8 @@ async function runAutoDevPipeline(options = {}) {
       cleanupWorktree: runtimeConfig.cleanupWorktree,
       integrationMode: runtimeConfig.integrationMode,
       compatibilityMode: runtimeConfig.compatibilityMode,
+      hardDisabled: runtimeConfig.hardDisabled,
+      disabledReason: runtimeConfig.disabledReason,
       implementationProvider: runtimeConfig.implementationProvider,
       implementationModel: runtimeConfig.implementationModel,
       implementationCliModelArg: runtimeConfig.implementationCliModelArg,

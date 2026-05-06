@@ -47,8 +47,8 @@ async function main() {
     'orchestrator/summary selector must keep Gemini CLI OAuth fallback',
   );
   assert(
-    hasProvider(selected, 'claude-code'),
-    'orchestrator/summary selector must keep Claude Code fallback',
+    hasProvider(selected, 'groq'),
+    'orchestrator/summary selector must keep Groq fallback while Claude Code quota is saturated',
   );
 
   assert(
@@ -60,7 +60,7 @@ async function main() {
     ok: true,
     runtime_profile: 'orchestrator.summary',
     primary_provider: 'openai-oauth',
-    fallbacks: ['gemini-cli-oauth', 'claude-code'],
+    fallbacks: ['gemini-cli-oauth', 'groq'],
   }));
 }
 

@@ -10,6 +10,8 @@
 		<string>ops</string>
 		<key>PATH</key>
 		<string>/usr/local/bin:/usr/bin:/bin:/opt/homebrew/bin</string>
+		<key>CLAUDE_AUTO_DEV_DISABLED</key>
+		<string>true</string>
 		<key>CLAUDE_AUTO_DEV_PROFILE</key>
 		<string>shadow</string>
 	</dict>

@@ -140,14 +140,18 @@ function main() {
   for (const agentName of REQUIRED_INVESTMENT_AGENTS) {
     const chain = selector.selectLLMChain('investment.agent_policy', { agentName });
     assert.ok(chain.length > 0, `investment/${agentName} selector chain must be non-empty`);
-    assert.ok(chain.some((entry) => entry.provider === 'claude-code'), `investment/${agentName} must include Claude Code OAuth fallback`);
+    assert.equal(
+      chain.some((entry) => entry.provider === 'claude-code'),
+      false,
+      `investment/${agentName} must avoid Claude Code OAuth while runtime quota is saturated`,
+    );
   }
 
   const lunaDefault = selector.describeAgentModel('luna', 'default');
   assert.equal(
     lunaDefault?.chain?.[0]?.provider,
     'openai-oauth',
-    'luna/default must start with the cost-balanced OpenAI OAuth route and keep Claude Code as fallback',
+    'luna/default must start with the cost-balanced OpenAI OAuth route',
   );
 
   for (const agent of REQUIRED_ORCHESTRATOR_AGENTS) {
