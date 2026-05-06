@@ -30,6 +30,9 @@ const TELEGRAM_RETRY_ATTEMPTS = 2;
 const RECENT_ALERT_SNAPSHOT_PATH = String(process.env.HUB_ALARM_RECENT_ALERTS_PATH || '').trim()
   || path.join(env.AI_AGENT_WORKSPACE, 'recent-alerts.json');
 const RECENT_ALERT_LIMIT = 50;
+const RECENT_ALERT_SINGLETON_PRODUCERS = new Set([
+  'hub:hourly-status-digest:hourly_status_digest',
+]);
 
 const TEAM_TOPIC = {
   general: 'general',
@@ -661,11 +664,32 @@ function _readRecentAlertSnapshot(): RecentAlertSnapshotRow[] {
   }
 }
 
+function _buildRecentAlertSnapshotSingletonKey(row: Partial<RecentAlertSnapshotRow>): string {
+  const fromBot = _normalizeAlertText(row?.from_bot).toLowerCase();
+  const team = _normalizeAlertText(row?.team).toLowerCase();
+  const eventType = _normalizeAlertText(row?.event_type).toLowerCase();
+  return `${team}:${fromBot}:${eventType}`;
+}
+
+function _dedupeRecentAlertSnapshot(rows: RecentAlertSnapshotRow[]): RecentAlertSnapshotRow[] {
+  const seenSingletons = new Set<string>();
+  const next: RecentAlertSnapshotRow[] = [];
+  for (const row of rows) {
+    const singletonKey = _buildRecentAlertSnapshotSingletonKey(row);
+    if (RECENT_ALERT_SINGLETON_PRODUCERS.has(singletonKey)) {
+      if (seenSingletons.has(singletonKey)) continue;
+      seenSingletons.add(singletonKey);
+    }
+    next.push(row);
+  }
+  return next;
+}
+
 function _writeRecentAlertSnapshot(row: RecentAlertSnapshotRow): void {
   try {
     fs.mkdirSync(path.dirname(RECENT_ALERT_SNAPSHOT_PATH), { recursive: true });
     const current = _readRecentAlertSnapshot();
-    const next = [row, ...current].slice(0, RECENT_ALERT_LIMIT);
+    const next = _dedupeRecentAlertSnapshot([row, ...current]).slice(0, RECENT_ALERT_LIMIT);
     fs.writeFileSync(RECENT_ALERT_SNAPSHOT_PATH, `${JSON.stringify(next, null, 2)}\n`, 'utf8');
   } catch (error) {
     console.warn(`[hub-alarm-client] recent alert snapshot 저장 실패: ${(error as Error).message}`);
