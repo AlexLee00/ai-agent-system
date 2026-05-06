@@ -19,6 +19,7 @@
     "scout": "node team/scout.ts --dry-run --json",
     "runtime:luna-ops-scheduler": "node scripts/runtime-luna-ops-scheduler.ts",
     "runtime:luna-capital-state-report": "node scripts/runtime-luna-capital-state-report.ts --json",
+    "runtime:luna-source-health-audit": "node scripts/runtime-luna-source-health-audit.ts --json",
     "nemesis": "node team/nemesis.ts",
     "regime:capture": "node scripts/capture-market-regimes.ts",
     "chronos": "node team/chronos.ts --symbol=BTC/USDT --from=2026-03-01 --to=2026-04-01 --layer=3",

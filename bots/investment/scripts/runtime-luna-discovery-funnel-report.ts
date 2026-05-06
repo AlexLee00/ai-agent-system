@@ -8,7 +8,7 @@ import { publishAlert } from '../shared/alert-publisher.ts';
 import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
 import { evaluateKisMarketHours } from '../shared/kis-market-hours-guard.ts';
 import { ANALYST_TYPES } from '../shared/signal.ts';
-import { evaluateKisDailySnapshot, fetchEntryChartSnapshot } from '../shared/tradingview-entry-guard.ts';
+import { evaluateKisDailySnapshot, evaluateTradingViewSnapshot, fetchEntryChartSnapshot } from '../shared/tradingview-entry-guard.ts';
 import {
   DEFAULT_POSITION_RUNTIME_AUTOPILOT_HISTORY_FILE,
   readPositionRuntimeAutopilotHistoryLines,
@@ -159,9 +159,58 @@ async function queryRows(sql, params = []) {
   return db.query(sql, params).catch(() => []);
 }
 
-async function buildKisDailyTechnicalCoverage({ market, exchange, symbols = [], marketOpen = true } = {}) {
-  if (market === 'crypto' || marketOpen || symbols.length === 0) {
-    return { enabled: market !== 'crypto', checkedCount: 0, availableCount: 0, bullishCount: 0, rows: [] };
+function summarizeEntryChartSnapshot(snapshot = {}, evaluated = {}) {
+  return {
+    ok: evaluated.ok === true,
+    reason: evaluated.reason || snapshot?.error || null,
+    source: snapshot?.dailyTrendSource || snapshot?.source || null,
+    providerMode: snapshot?.providerMode || null,
+    bars: Number(snapshot?.dailyBars?.length || snapshot?.daily_bars?.length || snapshot?.ohlcv?.length || 0),
+    directHttpFallback: snapshot?.directHttpFallback?.ok === true
+      ? 'ok'
+      : snapshot?.directHttpFallback?.error || null,
+  };
+}
+
+async function buildDailyTechnicalCoverage({ market, exchange, symbols = [], marketOpen = true } = {}) {
+  if (symbols.length === 0) {
+    return {
+      enabled: true,
+      sourcePolicy: market === 'crypto' ? 'tradingview' : 'kis',
+      checkedCount: 0,
+      availableCount: 0,
+      bullishCount: 0,
+      rows: [],
+    };
+  }
+  if (market === 'crypto') {
+    const limit = Math.max(1, Math.min(10, Number(process.env.LUNA_DISCOVERY_FUNNEL_CRYPTO_DAILY_TA_LIMIT || process.env.LUNA_DISCOVERY_FUNNEL_KIS_DAILY_TA_LIMIT || 5)));
+    const rows = [];
+    for (const symbol of symbols.slice(0, limit)) {
+      const snapshot = await fetchEntryChartSnapshot({ symbol, exchange, timeframe: 'D' }).catch((error) => ({
+        ok: false,
+        error: error?.message || String(error),
+        symbol,
+      }));
+      const evaluated = evaluateTradingViewSnapshot(snapshot);
+      rows.push({
+        symbol,
+        sourcePolicy: 'tradingview',
+        ...summarizeEntryChartSnapshot(snapshot, evaluated),
+      });
+    }
+    return {
+      enabled: true,
+      sourcePolicy: 'tradingview',
+      checkedCount: rows.length,
+      availableCount: rows.filter((row) => row.ok || (row.source && !String(row.source).includes('luna-marketdata-mcp'))).length,
+      bullishCount: rows.filter((row) => row.ok).length,
+      blockedCount: rows.filter((row) => !row.ok).length,
+      rows,
+    };
+  }
+  if (marketOpen) {
+    return { enabled: true, sourcePolicy: 'kis', checkedCount: 0, availableCount: 0, bullishCount: 0, rows: [] };
   }
   const limit = Math.max(1, Math.min(10, Number(process.env.LUNA_DISCOVERY_FUNNEL_KIS_DAILY_TA_LIMIT || 5)));
   const rows = [];
@@ -174,17 +223,17 @@ async function buildKisDailyTechnicalCoverage({ market, exchange, symbols = [], 
     const evaluated = evaluateKisDailySnapshot(snapshot);
     rows.push({
       symbol,
-      ok: evaluated.ok === true,
-      reason: evaluated.reason || null,
-      source: snapshot?.dailyTrendSource || snapshot?.source || null,
-      bars: Number(snapshot?.dailyBars?.length || 0),
+      sourcePolicy: 'kis',
+      ...summarizeEntryChartSnapshot(snapshot, evaluated),
     });
   }
   return {
     enabled: true,
+    sourcePolicy: 'kis',
     checkedCount: rows.length,
     availableCount: rows.filter((row) => row.bars > 0 || row.source).length,
     bullishCount: rows.filter((row) => row.ok).length,
+    blockedCount: rows.filter((row) => !row.ok).length,
     rows,
   };
 }
@@ -327,7 +376,7 @@ async function buildMarketFunnel(market, { hours }) {
     latestCreatedAt: row.latest_created_at || null,
   }]));
   const analysisCoveredSymbols = analysisSymbols.filter((symbol) => number(analysisBySymbol[symbol]?.count) > 0);
-  const dailyTechnicalCoverage = await buildKisDailyTechnicalCoverage({
+  const dailyTechnicalCoverage = await buildDailyTechnicalCoverage({
     market,
     exchange,
     symbols: analysisSymbols,
@@ -371,6 +420,13 @@ async function buildMarketFunnel(market, { hours }) {
   if (marketOpen && number(candidate.active_count) > 0 && activeTriggerCount === 0 && recentBuySignals === 0) bottlenecks.push('candidates_filtered_before_entry_trigger');
   if (number(candidate.active_count) > 0 && analysisSymbols.length > 0) {
     bottlenecks.push(...requiredAnalystCoverage.bottlenecks);
+  }
+  if (market === 'crypto' && number(dailyTechnicalCoverage.checkedCount) > 0) {
+    if (number(dailyTechnicalCoverage.availableCount) === 0) {
+      bottlenecks.push('tradingview_daily_technical_coverage_unavailable');
+    } else if (number(dailyTechnicalCoverage.bullishCount) === 0) {
+      bottlenecks.push('tradingview_daily_no_bullish_candidate');
+    }
   }
 
   return {

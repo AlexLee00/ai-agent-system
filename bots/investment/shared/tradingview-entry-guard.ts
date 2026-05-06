@@ -428,8 +428,9 @@ function snapshotFromTradingViewBar({ symbol, timeframe, bar, row, status, env =
   const ageMs = Number(row?.ageMs ?? 0);
   return {
     ok: price > 0,
-    source: 'tradingview_ws_service',
-    providerMode: 'websocket_http_latest',
+    source: row?.source || 'tradingview_ws_service',
+    providerMode: row?.providerMode || 'websocket_http_latest',
+    fallbackReason: row?.fallbackReason || null,
     market: 'tradingview',
     symbol,
     timeframe,

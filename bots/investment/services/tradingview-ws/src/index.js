@@ -25,6 +25,10 @@ import { Registry, Gauge, Counter, collectDefaultMetrics } from 'prom-client';
 const TV_WS_PORT = parseInt(process.env.TV_WS_PORT || '8082', 10);
 const METRICS_PORT = parseInt(process.env.TV_METRICS_PORT || '8083', 10);
 const STALE_THRESHOLD_MS = parseInt(process.env.TV_STALE_THRESHOLD_MS || '30000', 10);
+const STALE_GRACE_MS = parseInt(process.env.TV_STALE_GRACE_MS || String(5 * 60 * 1000), 10);
+const INITIAL_BAR_TIMEOUT_MS = parseInt(process.env.TV_INITIAL_BAR_TIMEOUT_MS || String(2 * 60 * 1000), 10);
+const RESUBSCRIBE_COOLDOWN_MS = parseInt(process.env.TV_RESUBSCRIBE_COOLDOWN_MS || String(2 * 60 * 1000), 10);
+const BINANCE_REST_FALLBACK_ENABLED = process.env.TV_BINANCE_REST_FALLBACK_ENABLED !== 'false';
 const HUB_BASE = process.env.HUB_BASE_URL || 'http://localhost:7788';
 const HUB_TOKEN = process.env.HUB_AUTH_TOKEN || '';
 const RECONNECT_DELAY_BASE_MS = 2000;
@@ -197,6 +201,81 @@ function subscriptionKey(symbol, timeframe) {
   return `${symbol}:${timeframe}`;
 }
 
+function timeframeDurationMs(timeframe) {
+  const text = String(timeframe || '').trim().toLowerCase();
+  if (text === 'd' || text === '1d') return 24 * 60 * 60 * 1000;
+  if (text === 'w' || text === '1w') return 7 * 24 * 60 * 60 * 1000;
+  if (text.endsWith('h')) return Math.max(1, Number(text.slice(0, -1)) || 1) * 60 * 60 * 1000;
+  if (text.endsWith('m')) return Math.max(1, Number(text.slice(0, -1)) || 1) * 60 * 1000;
+  const numeric = Number(text);
+  return Number.isFinite(numeric) && numeric > 0 ? numeric * 60 * 1000 : 60 * 60 * 1000;
+}
+
+function staleThresholdFor(sub) {
+  if (!sub.lastBarAt) return Math.max(STALE_THRESHOLD_MS, INITIAL_BAR_TIMEOUT_MS);
+  return Math.max(STALE_THRESHOLD_MS, timeframeDurationMs(sub.timeframe) + STALE_GRACE_MS);
+}
+
+function binanceIntervalForTimeframe(timeframe) {
+  const text = String(timeframe || '60').trim().toLowerCase();
+  if (text === 'd' || text === '1d') return '1d';
+  if (text === 'w' || text === '1w') return '1w';
+  if (text.endsWith('h')) return `${Math.max(1, Number(text.slice(0, -1)) || 1)}h`;
+  if (text.endsWith('m')) return `${Math.max(1, Number(text.slice(0, -1)) || 1)}m`;
+  const minutes = Number(text);
+  if (!Number.isFinite(minutes) || minutes <= 0) return '1h';
+  if (minutes % 60 === 0) return `${Math.max(1, minutes / 60)}h`;
+  return `${minutes}m`;
+}
+
+function binanceSymbolFromTradingView(symbol) {
+  const text = String(symbol || '').trim().toUpperCase();
+  if (!text.startsWith('BINANCE:')) return null;
+  const raw = text.replace('BINANCE:', '').replace(/[^A-Z0-9]/g, '');
+  return raw.endsWith('USDT') ? raw : null;
+}
+
+async function fetchBinanceRestFallbackBar(symbol, timeframe) {
+  if (!BINANCE_REST_FALLBACK_ENABLED) return null;
+  const binanceSymbol = binanceSymbolFromTradingView(symbol);
+  if (!binanceSymbol) return null;
+  const interval = binanceIntervalForTimeframe(timeframe);
+  const url = new URL('https://api.binance.com/api/v3/klines');
+  url.searchParams.set('symbol', binanceSymbol);
+  url.searchParams.set('interval', interval);
+  url.searchParams.set('limit', '1');
+  try {
+    const response = await fetch(url, { signal: AbortSignal.timeout(5000) });
+    if (!response.ok) return null;
+    const rows = await response.json();
+    const row = Array.isArray(rows) ? rows[rows.length - 1] : null;
+    if (!Array.isArray(row)) return null;
+    const bar = {
+      symbol,
+      timeframe,
+      timestamp: Number(row[0] || 0),
+      open: Number(row[1] || 0),
+      high: Number(row[2] || 0),
+      low: Number(row[3] || 0),
+      close: Number(row[4] || 0),
+      volume: Number(row[5] || 0),
+    };
+    if (!(bar.close > 0)) return null;
+    return {
+      symbol,
+      timeframe,
+      lastBarAt: Date.now(),
+      ageMs: Math.max(0, Date.now() - Number(row[6] || row[0] || Date.now())),
+      source: 'tradingview_ws_service_binance_rest_fallback',
+      providerMode: 'binance_rest_live_fallback',
+      fallbackReason: 'tradingview_ws_latest_empty',
+      bar,
+    };
+  } catch {
+    return null;
+  }
+}
+
 function getSeriesId(symbol, timeframe) {
   const key = subscriptionKey(symbol, timeframe);
   if (!seriesIds.has(key)) {
@@ -212,7 +291,7 @@ function getSymbolAlias(symbol, timeframe) {
 function addSubscription(symbol, timeframe, source = 'api') {
   const key = subscriptionKey(symbol, timeframe);
   if (!subscriptions.has(key)) {
-    subscriptions.set(key, { symbol, timeframe, subscribedAt: Date.now(), lastBarAt: null });
+    subscriptions.set(key, { symbol, timeframe, subscribedAt: Date.now(), lastBarAt: null, lastResubscribeAt: 0, staleStrikes: 0 });
     sendTvSubscribe(symbol, timeframe);
     console.log(`[TV-WS] ${source} 구독 추가: ${key}`);
   }
@@ -260,6 +339,7 @@ function processOhlcvUpdate(msg) {
       };
 
       sub.lastBarAt = Date.now();
+      sub.staleStrikes = 0;
       latestBars.set(key, {
         symbol: sub.symbol,
         timeframe: sub.timeframe,
@@ -400,10 +480,15 @@ function startStaleChecker() {
     const now = Date.now();
     for (const [key, sub] of subscriptions.entries()) {
       const lastSeenAt = sub.lastBarAt || sub.subscribedAt || 0;
-      if (lastSeenAt && now - lastSeenAt > STALE_THRESHOLD_MS) {
+      if (lastSeenAt && now - lastSeenAt > staleThresholdFor(sub)) {
+        if (sub.lastResubscribeAt && now - sub.lastResubscribeAt < RESUBSCRIBE_COOLDOWN_MS) {
+          continue;
+        }
         console.warn(`[TV-WS] Stale 구독 감지: ${key}`);
         staleSubscriptionsGauge.set({ symbol: sub.symbol, timeframe: sub.timeframe }, 1);
         // 개별 재구독 시도
+        sub.lastResubscribeAt = now;
+        sub.staleStrikes = (sub.staleStrikes || 0) + 1;
         sendTvSubscribe(sub.symbol, sub.timeframe);
         recoveryAttemptsCounter.inc({ type: 'resubscribe' });
       }
@@ -537,8 +622,40 @@ const metricsServer = http.createServer(async (req, res) => {
       timeframe: item.timeframe,
       lastBarAt: item.lastBarAt,
       ageMs: item.lastBarAt ? Math.max(0, now - item.lastBarAt) : null,
+      source: item.source || 'tradingview_ws_service',
+      providerMode: item.providerMode || 'websocket_http_latest',
+      fallbackReason: item.fallbackReason || null,
       bar: item.bar,
     }));
+    const requested = [];
+    for (const symbol of symbols) {
+      for (const timeframe of timeframes.length > 0 ? timeframes : ['60']) {
+        requested.push({ symbol, timeframe });
+      }
+    }
+    const existing = new Set(rows.map((item) => `${item.symbol}:${item.timeframe}`));
+    for (const item of requested) {
+      const key = subscriptionKey(item.symbol, item.timeframe);
+      if (existing.has(key)) continue;
+      const fallback = await fetchBinanceRestFallbackBar(item.symbol, item.timeframe);
+      if (!fallback) continue;
+      const sub = subscriptions.get(key);
+      if (sub) {
+        sub.lastBarAt = fallback.lastBarAt;
+        sub.staleStrikes = 0;
+      }
+      latestBars.set(key, {
+        symbol: item.symbol,
+        timeframe: item.timeframe,
+        lastBarAt: fallback.lastBarAt,
+        source: fallback.source,
+        providerMode: fallback.providerMode,
+        fallbackReason: fallback.fallbackReason,
+        bar: fallback.bar,
+      });
+      rows.push(fallback);
+      existing.add(key);
+    }
     res.setHeader('Content-Type', 'application/json');
     res.end(JSON.stringify({
       status: 'ok',

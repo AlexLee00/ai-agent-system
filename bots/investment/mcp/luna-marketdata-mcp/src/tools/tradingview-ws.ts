@@ -64,12 +64,13 @@ function messageText(eventOrRaw) {
   return String(raw || '');
 }
 
-function snapshotFromBar(symbol, timeframe, bar = {}) {
+function snapshotFromBar(symbol, timeframe, bar = {}, meta = {}) {
   const price = Number(bar.close || bar.price || 0);
   return {
     ok: price > 0,
-    source: 'tradingview_ws_service',
-    providerMode: 'websocket',
+    source: meta.source || 'tradingview_ws_service',
+    providerMode: meta.providerMode || 'websocket',
+    fallbackReason: meta.fallbackReason || null,
     market: 'tradingview',
     symbol: normalizeSymbol(symbol),
     timeframe: normalizeTradingViewTimeframe(timeframe),
@@ -78,6 +79,7 @@ function snapshotFromBar(symbol, timeframe, bar = {}) {
     high: Number(bar.high || 0),
     low: Number(bar.low || 0),
     volume24h: Number(bar.volume || 0),
+    ageMs: Number.isFinite(Number(meta.ageMs)) ? Number(meta.ageMs) : null,
     stale: false,
     exchangeEventAt: bar.timestamp ? new Date(Number(bar.timestamp)).toISOString() : null,
     fetchedAt: new Date().toISOString(),
@@ -96,7 +98,7 @@ async function latestFromHttp(args = {}) {
   const body = await response.json();
   const row = body?.bars?.[0];
   if (!row?.bar) throw new Error('tradingview_latest_empty');
-  return snapshotFromBar(symbol, timeframe, row.bar);
+  return snapshotFromBar(symbol, timeframe, row.bar, row);
 }
 
 async function wsSnapshot(args = {}) {
