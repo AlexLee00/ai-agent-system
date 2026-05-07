@@ -1,18 +1,18 @@
 {
   "ok": true,
-  "generated_at": "2026-05-07T17:55:34.545Z",
+  "generated_at": "2026-05-07T18:55:36.917Z",
   "hours": 168,
   "totals": {
-    "total_calls": 30207,
-    "oauth_calls": 13650,
-    "oauth_share_pct": 45.19,
+    "total_calls": 30195,
+    "oauth_calls": 13729,
+    "oauth_share_pct": 45.47,
     "failed_calls": 89,
     "failed_rate_pct": 0.29,
-    "reported_cost_usd": 126.391639,
+    "reported_cost_usd": 126.388377,
     "oauth_reported_cost_usd": 124.30812,
     "claude_code_reported_cost_usd": 124.30812,
     "claude_code_runtime_cost_share_pct": 98.35,
-    "non_oauth_reported_cost_usd": 2.083519,
+    "non_oauth_reported_cost_usd": 2.080257,
     "anthropic_provider_calls": 0
   },
   "providers": {
@@ -24,18 +24,18 @@
       "avg_duration_ms": 19338,
       "max_duration_ms": 68011,
       "total_cost_usd": 124.30812,
-      "share_pct": 6.55,
+      "share_pct": 6.56,
       "success_rate_pct": 100
     },
     "openai-oauth": {
       "provider": "openai-oauth",
-      "calls": 9410,
-      "success_count": 9410,
+      "calls": 9489,
+      "success_count": 9489,
       "failed_count": 0,
-      "avg_duration_ms": 3631,
+      "avg_duration_ms": 3613,
       "max_duration_ms": 91515,
       "total_cost_usd": 0,
-      "share_pct": 31.15,
+      "share_pct": 31.43,
       "success_rate_pct": 100
     },
     "gemini-cli-oauth": {
@@ -73,13 +73,13 @@
     },
     "groq": {
       "provider": "groq",
-      "calls": 16468,
-      "success_count": 16468,
+      "calls": 16377,
+      "success_count": 16377,
       "failed_count": 0,
       "avg_duration_ms": 790,
       "max_duration_ms": 8650,
-      "total_cost_usd": 2.083519,
-      "share_pct": 54.52,
+      "total_cost_usd": 2.080257,
+      "share_pct": 54.24,
       "success_rate_pct": 100
     },
     "failed": {
