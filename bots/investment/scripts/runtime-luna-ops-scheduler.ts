@@ -64,6 +64,11 @@ export function getOpsSchedulerJobs() {
       ...marketScript('domestic.ts', [], { LUNA_LIVE_DOMESTIC: 'true' }),
     },
     {
+      name: 'market_cycle_domestic_open_catchup',
+      cadence: { type: 'interval', seconds: 300 },
+      ...marketScript('domestic.ts', ['--open-catchup'], { LUNA_LIVE_DOMESTIC: 'true' }),
+    },
+    {
       name: 'market_cycle_overseas',
       cadence: { type: 'interval', seconds: 1800 },
       ...marketScript('overseas.ts', [], { LUNA_LIVE_OVERSEAS: 'true' }),
@@ -72,6 +77,31 @@ export function getOpsSchedulerJobs() {
       name: 'discovery_funnel_report',
       cadence: { type: 'interval', seconds: 1800 },
       ...nodeScript('runtime-luna-discovery-funnel-report.ts', ['--hours=24', '--json']),
+    },
+    {
+      name: 'active_candidate_analysis_refresh_crypto',
+      cadence: { type: 'interval', seconds: 900 },
+      ...nodeScript('runtime-luna-active-candidate-analysis-refresh.ts', [
+        '--apply',
+        '--confirm=luna-active-candidate-analysis-refresh',
+        '--market=crypto',
+        '--hours=24',
+        '--limit=20',
+        '--max-symbols=4',
+        '--json',
+      ]),
+    },
+    {
+      name: 'near_miss_watchlist_crypto',
+      cadence: { type: 'interval', seconds: 900 },
+      ...nodeScript('runtime-luna-near-miss-watchlist.ts', [
+        '--apply',
+        '--confirm=luna-near-miss-watchlist',
+        '--market=crypto',
+        '--hours=24',
+        '--limit=20',
+        '--json',
+      ]),
     },
     {
       name: 'daily_backtest',
@@ -262,6 +292,9 @@ export function classifyOpsSchedulerOutcome(job, result = {}) {
 
   if (/LIVE OFF|LUNA_LIVE_(DOMESTIC|OVERSEAS)[^\n]*미설정|kill_switch_off/.test(text)) {
     return { outcome: 'kill_switch_off', summary: compactOutcomeSummary(text, 'live kill switch off') };
+  }
+  if (/open-catchup: 장외 시간/.test(text)) {
+    return { outcome: 'market_closed_catchup_wait', summary: compactOutcomeSummary(text, 'open-catchup') };
   }
   if (/사이클 스킵/.test(text)) {
     return { outcome: 'cadence_wait', summary: compactOutcomeSummary(text, '사이클 스킵') };

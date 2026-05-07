@@ -157,6 +157,17 @@ function tvHttpBase(env = process.env) {
   return strEnv('LUNA_TRADINGVIEW_WS_HTTP_URL', `http://127.0.0.1:${env.TV_METRICS_PORT || 8083}`, env).replace(/\/$/, '');
 }
 
+function tradingViewMaxAgeMsForTimeframe(timeframe = '60', env = process.env) {
+  const normalized = normalizeTradingViewTimeframe(timeframe);
+  if (normalized === 'D') {
+    return Math.max(24 * 60 * 60 * 1000, numEnv('LUNA_TRADINGVIEW_ENTRY_DAILY_MAX_AGE_MS', 36 * 60 * 60 * 1000, env));
+  }
+  if (normalized === 'W') {
+    return Math.max(7 * 24 * 60 * 60 * 1000, numEnv('LUNA_TRADINGVIEW_ENTRY_WEEKLY_MAX_AGE_MS', 10 * 24 * 60 * 60 * 1000, env));
+  }
+  return Math.max(60_000, numEnv('LUNA_TRADINGVIEW_ENTRY_MAX_AGE_MS', 7_200_000, env));
+}
+
 function directHttpFallbackEnabled(env = process.env) {
   return boolEnv('LUNA_TRADINGVIEW_ENTRY_GUARD_DIRECT_HTTP_FALLBACK', true, env);
 }
@@ -424,7 +435,7 @@ async function fetchOfficialRestEntrySnapshot({ market, symbol, exchange = 'kis'
 
 function snapshotFromTradingViewBar({ symbol, timeframe, bar, row, status, env = process.env }) {
   const price = Number(bar?.close || bar?.price || 0);
-  const maxAgeMs = Math.max(60_000, numEnv('LUNA_TRADINGVIEW_ENTRY_MAX_AGE_MS', 7_200_000, env));
+  const maxAgeMs = tradingViewMaxAgeMsForTimeframe(timeframe, env);
   const ageMs = Number(row?.ageMs ?? 0);
   return {
     ok: price > 0,

@@ -154,6 +154,55 @@ function buildRecommendation(reasons = []) {
   return 'eligible_for_signal_persistence_review';
 }
 
+function analystSignal(item, analysts = []) {
+  for (const analyst of analysts) {
+    const signal = item?.analystSummary?.byAnalyst?.[analyst]?.signal;
+    if (signal) return signal;
+  }
+  return null;
+}
+
+export function buildNearMissWatchCandidate(item = {}) {
+  if (item.actionability === 'likely_actionable') return null;
+  const reasons = new Set(item.reasons || []);
+  const technicalSignal = analystSignal(item, [ANALYST_TYPES.TA_MTF, ANALYST_TYPES.TA]);
+  const hardStopReasons = [
+    'insufficient_analyst_coverage',
+    'technical_not_confirmed',
+    'conflict_detected',
+    'news_only_buy',
+  ];
+  if (hardStopReasons.some((reason) => reasons.has(reason))) return null;
+  if (technicalSignal !== ACTIONS.BUY) return null;
+  if (Number(item?.fused?.averageConfidence || 0) < Math.max(0.38, Number(item?.minConfidence || 0.5) * 0.72)) return null;
+
+  const missingConfirmations = [];
+  if (reasons.has('onchain_not_confirmed')) missingConfirmations.push('onchain');
+  if (reasons.has('sentiment_not_confirmed')) missingConfirmations.push('sentiment');
+  if (reasons.has('market_flow_not_confirmed')) missingConfirmations.push('market_flow');
+  if (reasons.has('average_confidence_below_min')) missingConfirmations.push('confidence');
+  if (reasons.has('fusion_not_long')) missingConfirmations.push('fusion');
+  if (missingConfirmations.length === 0) return null;
+
+  return {
+    symbol: item.symbol,
+    exchange: item.exchange,
+    readiness: 'near_miss_watch',
+    watchReason: missingConfirmations.includes('onchain')
+      ? 'technical_and_sentiment_buy_waiting_onchain'
+      : missingConfirmations.includes('sentiment')
+        ? 'technical_buy_waiting_sentiment'
+        : 'technical_buy_waiting_fusion_quality',
+    missingConfirmations,
+    nextAction: missingConfirmations.includes('onchain')
+      ? 'refresh_onchain_and_keep_tradingview_daily_guard'
+      : 'refresh_missing_confirmation_before_signal_persistence',
+    fused: item.fused,
+    analystSummary: item.analystSummary,
+    recommendation: item.recommendation,
+  };
+}
+
 export function buildDecisionFilterDiagnostics(analysisRows = [], options = {}) {
   const exchange = options.exchange || 'binance';
   const weights = options.weights || buildAnalystWeights(exchange, options);
@@ -261,7 +310,7 @@ export async function buildLunaDecisionFilterReport(options = {}) {
   const limit = Math.max(1, Number(options.limit || 12));
   await db.initSchema();
   const candidateSymbols = options.activeCandidates
-    ? await queryActiveCandidateSymbols({ market, limit: Math.max(limit, 50) })
+    ? await queryActiveCandidateSymbols({ market, limit })
     : [];
   const requestedSymbols = Array.isArray(options.symbols) ? options.symbols : [];
   const rows = await queryRecentAnalysis({
@@ -277,6 +326,10 @@ export async function buildLunaDecisionFilterReport(options = {}) {
   const missingActiveCandidateSymbols = candidateSymbols.filter((symbol) => !checkedSymbolSet.has(symbol));
   const filtered = diagnostics.filter((item) => item.actionability !== 'likely_actionable');
   const likelyActionable = diagnostics.filter((item) => item.actionability === 'likely_actionable');
+  const nearMissWatchlist = filtered
+    .map(buildNearMissWatchCandidate)
+    .filter(Boolean)
+    .slice(0, limit);
   const reasonCounts = {};
   for (const item of filtered) {
     for (const reason of item.reasons || []) {
@@ -305,6 +358,8 @@ export async function buildLunaDecisionFilterReport(options = {}) {
     missingActiveCandidateSymbols,
     checkedSymbols: diagnostics.length,
     likelyActionableCount: likelyActionable.length,
+    nearMissWatchCount: nearMissWatchlist.length,
+    nearMissWatchlist,
     filteredCount: filtered.length,
     reasonCounts,
     bottlenecks,

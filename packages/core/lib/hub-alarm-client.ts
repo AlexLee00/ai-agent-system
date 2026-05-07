@@ -12,7 +12,7 @@ const env = require('./env.legacy.js');
 const { fetchHubSecrets } = require('./hub-client.legacy.js');
 
 const TIMEOUT_MS = 30_000;
-const HUB_ALARM_TIMEOUT_MS = Math.max(1000, Number(process.env.HUB_ALARM_TIMEOUT_MS || 5000) || 5000);
+const HUB_ALARM_TIMEOUT_MS = Math.max(1000, Number(process.env.HUB_ALARM_TIMEOUT_MS || 15000) || 15000);
 const HUB_ALARM_CLIENT_CIRCUIT_FAILURES = Math.max(
   1,
   Number(process.env.HUB_ALARM_CLIENT_CIRCUIT_FAILURES || 5) || 5,

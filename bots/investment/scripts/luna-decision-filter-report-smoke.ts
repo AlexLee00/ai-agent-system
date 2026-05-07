@@ -5,6 +5,7 @@ import assert from 'node:assert/strict';
 import * as db from '../shared/db.ts';
 import { ensureCandidateUniverseTable } from '../team/discovery/discovery-store.ts';
 import {
+  buildNearMissWatchCandidate,
   buildDecisionFilterDiagnostics,
   buildLunaDecisionFilterReport,
 } from './runtime-luna-decision-filter-report.ts';
@@ -37,6 +38,10 @@ export async function runLunaDecisionFilterReportSmoke() {
     row('LOW/USDT', 'ta_mtf', 'BUY', 0.52),
     row('LOW/USDT', 'onchain', 'BUY', 0.53),
     row('LOW/USDT', 'sentiment', 'BUY', 0.51),
+    row('WATCH/USDT', 'news', 'HOLD', 0.62),
+    row('WATCH/USDT', 'ta_mtf', 'BUY', 0.78),
+    row('WATCH/USDT', 'onchain', 'HOLD', 0.66),
+    row('WATCH/USDT', 'sentiment', 'BUY', 0.73),
   ];
 
   const diagnostics = buildDecisionFilterDiagnostics(rows, {
@@ -52,6 +57,10 @@ export async function runLunaDecisionFilterReportSmoke() {
   assert.ok(bySymbol['NEWS/USDT'].reasons.includes('onchain_not_confirmed'));
   assert.equal(bySymbol['LOW/USDT'].actionability, 'filtered_before_signal');
   assert.ok(bySymbol['LOW/USDT'].reasons.includes('average_confidence_below_min'));
+  const watchCandidate = buildNearMissWatchCandidate(bySymbol['WATCH/USDT']);
+  assert.equal(watchCandidate.readiness, 'near_miss_watch');
+  assert.equal(watchCandidate.watchReason, 'technical_and_sentiment_buy_waiting_onchain');
+  assert.ok(watchCandidate.missingConfirmations.includes('onchain'));
 
   const fixtureSymbol = `DFILTER${Date.now()}/USDT`;
   await db.initSchema();
@@ -87,6 +96,8 @@ export async function runLunaDecisionFilterReportSmoke() {
     });
     assert.equal(activeReport.symbolScope, 'active_candidates');
     assert.ok(activeReport.activeCandidateSymbols.includes(fixtureSymbol));
+    assert.ok(activeReport.activeCandidateSymbols.length <= 20);
+    assert.ok(Array.isArray(activeReport.nearMissWatchlist));
     assert.equal(activeReport.bottlenecks.includes('active_candidate_analysis_missing'), true);
     assert.ok(Number(activeReport.activeCandidateCoverage?.missing || 0) >= 1);
 

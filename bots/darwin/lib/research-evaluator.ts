@@ -81,7 +81,7 @@ async function evaluatePaper(paper: PaperCandidate): Promise<EvaluationResult> {
       abstractModel: 'anthropic_haiku',
       systemPrompt: SYSTEM_PROMPT,
       prompt: `제목: ${paper.title}\n초록: ${paper.summary}`,
-      timeoutMs: 15_000,
+      timeoutMs: 25_000,
     };
 
     let result = await callHubLlm(request);

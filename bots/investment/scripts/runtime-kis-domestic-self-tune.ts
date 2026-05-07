@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // @ts-nocheck
 
-import { readFileSync, writeFileSync } from 'fs';
+import { appendFileSync, readFileSync, writeFileSync } from 'fs';
 import { dirname, join } from 'path';
 import { fileURLToPath } from 'url';
 import yaml from 'js-yaml';
@@ -58,6 +58,25 @@ function readLastHistorySnapshot() {
   }
 }
 
+export function buildKisDomesticSelfTuneHistorySnapshot(report) {
+  return {
+    recordedAt: new Date().toISOString(),
+    candidateKey: report?.candidate?.key || null,
+    candidateCurrent: report?.candidate?.current ?? null,
+    candidateSuggested: report?.candidate?.suggested ?? null,
+    totalBuy: Number(report?.decision?.metrics?.totalBuy || 0),
+    executedSignals: Number(report?.decision?.metrics?.executedSignals || 0),
+    failedSignals: Number(report?.decision?.metrics?.failedSignals || 0),
+    normalRule1Blocks: Number(report?.decision?.metrics?.normalRule1Blocks || 0),
+    validationRule1Blocks: Number(report?.decision?.metrics?.validationRule1Blocks || 0),
+    orderPressureTotal: Number(report?.decision?.metrics?.orderPressureTotal || 0),
+  };
+}
+
+function appendHistorySnapshot(report) {
+  appendFileSync(HISTORY_PATH, `${JSON.stringify(buildKisDomesticSelfTuneHistorySnapshot(report))}\n`, 'utf8');
+}
+
 function buildCandidate(report) {
   const candidate = report?.candidate || null;
   if (!candidate) return null;
@@ -73,7 +92,7 @@ function buildCandidate(report) {
   };
 }
 
-function isSameEvidence(report, snapshot) {
+export function isSameKisDomesticSelfTuneEvidence(report, snapshot) {
   if (!report?.candidate || !snapshot) return false;
   return report.candidate.key === snapshot.candidateKey
     && Number(report?.decision?.metrics?.totalBuy || 0) === Number(snapshot.totalBuy || 0)
@@ -81,9 +100,7 @@ function isSameEvidence(report, snapshot) {
     && Number(report?.decision?.metrics?.failedSignals || 0) === Number(snapshot.failedSignals || 0)
     && Number(report?.decision?.metrics?.normalRule1Blocks || 0) === Number(snapshot.normalRule1Blocks || 0)
     && Number(report?.decision?.metrics?.validationRule1Blocks || 0) === Number(snapshot.validationRule1Blocks || 0)
-    && Number(report?.decision?.metrics?.orderPressureTotal || 0) === Number(snapshot.orderPressureTotal || 0)
-    && Number(report.candidate.current ?? NaN) === Number(snapshot.candidateCurrent ?? NaN)
-    && Number(report.candidate.suggested ?? NaN) === Number(snapshot.candidateSuggested ?? NaN);
+    && Number(report?.decision?.metrics?.orderPressureTotal || 0) === Number(snapshot.orderPressureTotal || 0);
 }
 
 function renderText(result) {
@@ -100,11 +117,11 @@ function renderText(result) {
 export async function buildRuntimeKisDomesticSelfTune({ days = 14, write = false, json = false } = {}) {
   const report = await buildRuntimeKisDomesticAutotuneReport({ days, json: true });
   const lastSnapshot = readLastHistorySnapshot();
-  const candidate = isSameEvidence(report, lastSnapshot) ? null : buildCandidate(report);
+  const candidate = isSameKisDomesticSelfTuneEvidence(report, lastSnapshot) ? null : buildCandidate(report);
   const result = {
     ok: true,
     status: 'kis_domestic_self_tune_idle',
-    headline: isSameEvidence(report, lastSnapshot)
+    headline: isSameKisDomesticSelfTuneEvidence(report, lastSnapshot)
       ? '같은 표본 기준 self-tune은 이미 한 번 검토돼 추가 변화 없이 관찰합니다.'
       : '자동 적용 가능한 국내장 self-tune 후보가 아직 없습니다.',
     days,
@@ -125,6 +142,7 @@ export async function buildRuntimeKisDomesticSelfTune({ days = 14, write = false
     const before = getByPath(rootNode, candidate.target.path);
     setByPath(rootNode, candidate.target.path, candidate.suggested);
     writeFileSync(CONFIG_PATH, yaml.dump(raw, { lineWidth: 120, noRefs: true }), 'utf8');
+    appendHistorySnapshot(report);
     result.applied = { key: candidate.key, before, after: candidate.suggested };
   }
   if (json) return result;

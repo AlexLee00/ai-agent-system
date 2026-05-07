@@ -27,9 +27,9 @@ const { postAlarm } = require('../../../packages/core/lib/hub-alarm-client');
 const kst = require('../../../packages/core/lib/kst');
 
 const MAX_EVALUATIONS_PER_RUN = _readPositiveIntEnv('DARWIN_MAX_EVALUATIONS_PER_RUN', 40, { min: 1, max: 100 });
-const EVALUATION_CONCURRENCY = _readPositiveIntEnv('DARWIN_EVALUATION_CONCURRENCY', 4, { min: 1, max: 8 });
+const EVALUATION_CONCURRENCY = _readPositiveIntEnv('DARWIN_EVALUATION_CONCURRENCY', 6, { min: 1, max: 8 });
 const DURATION_WARNING_THRESHOLD_SEC = 300;
-const ARXIV_DOMAIN_CONCURRENCY = _readPositiveIntEnv('DARWIN_ARXIV_DOMAIN_CONCURRENCY', 1, { min: 1, max: 3 });
+const ARXIV_DOMAIN_CONCURRENCY = _readPositiveIntEnv('DARWIN_ARXIV_DOMAIN_CONCURRENCY', 2, { min: 1, max: 3 });
 const ARXIV_RESULTS_PER_DOMAIN = _readPositiveIntEnv('DARWIN_ARXIV_RESULTS_PER_DOMAIN', 10, { min: 1, max: 50 });
 const SCHEMA = 'reservation';
 const TABLE = 'rag_research';
@@ -383,7 +383,7 @@ async function _enrichWithGitHub(evaluated: ResearchPaper[]): Promise<{ githubEn
 
       enriched += 1;
       console.log(`[research-scanner] GitHub 분석 완료: ${owner}/${repoName} (⭐${repoInfo.stars || 0})`);
-      await _sleep(2_000);
+      await _sleep(500);
     } catch (err) {
       console.warn(`[research-scanner] GitHub 분석 실패 (${owner}/${repoName}): ${toErrorMessage(err)}`);
     }
@@ -716,7 +716,7 @@ async function run(options: RunOptions = {}): Promise<ScanResult> {
       try {
         const applied = await applicator.apply(paper);
         proposalResults.push({ arxiv_id: paper.arxiv_id, ...applied });
-        await _sleep(3_000);
+        await _sleep(500);
       } catch (err) {
         console.warn(`[research-scanner] 적용 파이프라인 실패 (${paper.arxiv_id}): ${toErrorMessage(err)}`);
       }

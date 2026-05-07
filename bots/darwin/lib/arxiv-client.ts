@@ -7,10 +7,10 @@
 
 const ARXIV_API_URL = 'http://export.arxiv.org/api/query';
 const REQUEST_TIMEOUT_MS = _readPositiveIntEnv('DARWIN_ARXIV_REQUEST_TIMEOUT_MS', 20_000, { min: 5_000, max: 120_000 });
-const KEYWORD_DELAY_MS = _readPositiveIntEnv('DARWIN_ARXIV_KEYWORD_DELAY_MS', 3_000, { min: 500, max: 60_000 });
-const DOMAIN_DELAY_MS = _readPositiveIntEnv('DARWIN_ARXIV_DOMAIN_DELAY_MS', 3_000, { min: 500, max: 60_000 });
+const KEYWORD_DELAY_MS = _readPositiveIntEnv('DARWIN_ARXIV_KEYWORD_DELAY_MS', 1_000, { min: 500, max: 60_000 });
+const DOMAIN_DELAY_MS = _readPositiveIntEnv('DARWIN_ARXIV_DOMAIN_DELAY_MS', 1_000, { min: 500, max: 60_000 });
 const MAX_RETRIES = _readPositiveIntEnv('DARWIN_ARXIV_MAX_RETRIES', 2, { min: 0, max: 5 });
-const RETRY_BASE_DELAY_MS = _readPositiveIntEnv('DARWIN_ARXIV_RETRY_BASE_DELAY_MS', 3_000, { min: 500, max: 60_000 });
+const RETRY_BASE_DELAY_MS = _readPositiveIntEnv('DARWIN_ARXIV_RETRY_BASE_DELAY_MS', 1_000, { min: 500, max: 60_000 });
 
 type DarwinDomain =
   | 'neuron'

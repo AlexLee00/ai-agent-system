@@ -58,6 +58,41 @@ export async function runSmoke() {
   assert.equal(normalizeTradingViewTimeframe('1h'), '60');
   assert.equal(normalizeTradingViewTimeframe('1d'), 'D');
 
+  const directDailyFetchCalls = [];
+  const originalDailyFetch = globalThis.fetch;
+  globalThis.fetch = async (url, options = {}) => {
+    directDailyFetchCalls.push(String(url));
+    return {
+      ok: true,
+      async json() {
+        return {
+          status: 'ok',
+          bars: [{
+            symbol: 'BINANCE:BTCUSDT',
+            timeframe: 'D',
+            ageMs: 10 * 60 * 60 * 1000,
+            source: 'tradingview_ws_service_binance_rest_fallback',
+            providerMode: 'binance_rest_live_fallback',
+            bar: { open: 100, high: 132, low: 99, close: 130, volume: 1000 },
+          }],
+        };
+      },
+    };
+  };
+  try {
+    const dailySnapshot = await fetchEntryChartSnapshot({
+      symbol: 'BTC/USDT',
+      exchange: 'binance',
+      timeframe: 'D',
+      env: { ...baseEnv, LUNA_ENTRY_DAILY_TREND_FETCH_ENABLED: 'false' },
+    });
+    assert.equal(dailySnapshot.stale, false);
+    assert.equal(dailySnapshot.providerMode, 'binance_rest_live_fallback');
+    assert.ok(directDailyFetchCalls.some((url) => url.includes('timeframes=D')));
+  } finally {
+    globalThis.fetch = originalDailyFetch;
+  }
+
   const bullish = evaluateTradingViewSnapshot({
     ok: true,
     source: 'tradingview_ws_service',

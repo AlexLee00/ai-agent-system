@@ -55,18 +55,27 @@ const STATE_FILE     = getInvestmentStateFile('investment-domestic-state.json');
 const CYCLE_INTERVAL = 30 * 60 * 1000;  // 30분
 
 function loadState() {
-  return loadJsonState(STATE_FILE, { lastCycleAt: 0 });
+  return loadJsonState(STATE_FILE, { lastCycleAt: 0, lastResearchCycleAt: 0, lastLiveCycleAt: 0 });
 }
 
 function saveState(state) {
   saveJsonState(STATE_FILE, state);
 }
 
-function shouldRunCycle(force = false) {
+function patchState(patch = {}) {
+  saveState({ ...loadState(), ...patch });
+}
+
+export function resolveDomesticCycleLastRunAt(state = {}, { live = false } = {}) {
+  if (live) return Number(state.lastLiveCycleAt || 0);
+  return Number(state.lastResearchCycleAt || state.lastCycleAt || 0);
+}
+
+function shouldRunCycle(force = false, options = {}) {
   const state = loadState();
   return shouldRunFixedIntervalCycle({
     force,
-    lastCycleAt: state.lastCycleAt,
+    lastCycleAt: resolveDomesticCycleLastRunAt(state, options),
     intervalMs: CYCLE_INTERVAL,
     toKst: (date) => kst.toKST(date),
   });
@@ -218,7 +227,8 @@ export async function runDomesticCycle(symbols, universeMeta = {}) {
     await processAllPendingKisSignals();
 
     // ── 상태 저장 ──
-    saveState({ lastCycleAt: Date.now() });
+    const completedAt = Date.now();
+    patchState({ lastCycleAt: completedAt, lastLiveCycleAt: completedAt });
 
     const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
     const cost    = tracker.getToday();
@@ -298,7 +308,7 @@ export async function runDomesticResearchCycle(symbols, universeMeta = {}) {
       },
     });
 
-    saveState({ lastCycleAt: Date.now() });
+    patchState({ lastResearchCycleAt: Date.now() });
 
     const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
     logResearchCycleComplete({ marketLabel: '국내주식', elapsedSec: elapsed });
@@ -348,13 +358,19 @@ if (isDirectExecution(import.meta.url)) {
     },
     run: async () => {
       const args = process.argv.slice(2);
+      const openCatchup = args.includes('--open-catchup');
       const { symbols: cliSymbols, force, noDynamic, researchOnly } = parseUniverseCliFlags(args);
       const marketStatus = !force
         ? await getKisMarketStatus()
         : { isOpen: true, reason: '--force 옵션', holiday: { isHoliday: false, name: '' }, isWeekend: false };
       const check = researchOnly
         ? { run: true, reason: '--research-only 옵션' }
-        : shouldRunCycle(force);
+        : shouldRunCycle(force, { live: marketStatus.isOpen === true || openCatchup });
+
+      if (openCatchup && !marketStatus.isOpen) {
+        console.log(`⏭️ 국내장 open-catchup: 장외 시간 (${marketStatus.reason}) — live cycle 대기`);
+        return [];
+      }
 
       if (!check.run) {
         console.log(`⏳ 사이클 스킵: ${check.reason}`);

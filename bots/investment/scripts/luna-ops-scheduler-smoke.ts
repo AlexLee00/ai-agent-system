@@ -16,18 +16,22 @@ import {
 
 export async function runLunaOpsSchedulerSmoke() {
   const jobs = getOpsSchedulerJobs();
-  assert.equal(jobs.length, 12);
+  assert.equal(jobs.length, 15);
   assert.equal(jobs.some((job) => job.name === 'discovery_candidate_refresh'), true);
   assert.equal(jobs.some((job) => job.name === 'market_cycle_crypto'), true);
   assert.equal(jobs.some((job) => job.name === 'market_cycle_domestic'), true);
+  assert.equal(jobs.some((job) => job.name === 'market_cycle_domestic_open_catchup'), true);
   assert.equal(jobs.some((job) => job.name === 'market_cycle_overseas'), true);
   assert.equal(jobs.some((job) => job.name === 'discovery_funnel_report'), true);
+  assert.equal(jobs.some((job) => job.name === 'active_candidate_analysis_refresh_crypto'), true);
+  assert.equal(jobs.some((job) => job.name === 'near_miss_watchlist_crypto'), true);
   assert.equal(jobs.find((job) => job.name === 'market_cycle_domestic')?.env?.LUNA_LIVE_DOMESTIC, 'true');
+  assert.equal(jobs.find((job) => job.name === 'market_cycle_domestic_open_catchup')?.env?.LUNA_LIVE_DOMESTIC, 'true');
   assert.equal(jobs.find((job) => job.name === 'market_cycle_overseas')?.env?.LUNA_LIVE_OVERSEAS, 'true');
 
   const now = new Date('2026-05-04T02:00:00+09:00');
   const emptyPlan = buildOpsSchedulerPlan({ now, state: { jobs: {} }, jobs });
-  assert.equal(emptyPlan.due, 12);
+  assert.equal(emptyPlan.due, 15);
 
   const recentState = {
     jobs: Object.fromEntries(jobs.map((job) => [job.name, { lastRunAt: now.toISOString() }])),
@@ -61,13 +65,15 @@ export async function runLunaOpsSchedulerSmoke() {
     },
   });
   assert.equal(executed.ok, true);
-  assert.equal(calls.length, 12);
+  assert.equal(calls.length, 15);
   assert.equal(envByJob.market_cycle_domestic?.LUNA_LIVE_DOMESTIC, 'true');
+  assert.equal(envByJob.market_cycle_domestic_open_catchup?.LUNA_LIVE_DOMESTIC, 'true');
   assert.equal(envByJob.market_cycle_overseas?.LUNA_LIVE_OVERSEAS, 'true');
   const executedState = JSON.parse(fs.readFileSync(statePath, 'utf8'));
-  assert.equal(Object.keys(executedState.jobs).length, 12);
+  assert.equal(Object.keys(executedState.jobs).length, 15);
   assert.equal(executedState.jobs.market_cycle_domestic.lastOutcome, 'market_closed_research');
   assert.equal(executedState.jobs.market_cycle_domestic.lastSummary.includes('장외 시간'), true);
+  assert.equal(executedState.jobs.market_cycle_domestic_open_catchup.lastOutcome, 'ok');
 
   assert.deepEqual(
     classifyOpsSchedulerOutcome(
@@ -76,6 +82,14 @@ export async function runLunaOpsSchedulerSmoke() {
     ),
     { outcome: 'no_signals', summary: 'approved_signals=0', approvedSignals: 0 },
   );
+  assert.equal(
+    classifyOpsSchedulerOutcome(
+      { name: 'market_cycle_domestic_open_catchup' },
+      { ok: true, stdoutTail: '⏭️ 국내장 open-catchup: 장외 시간 (KST 08:55) — live cycle 대기', stderrTail: '' },
+    ).outcome,
+    'market_closed_catchup_wait',
+  );
+
   assert.equal(
     classifyOpsSchedulerOutcome(
       { name: 'discovery_candidate_refresh' },

@@ -27,8 +27,7 @@ function loadCapitalManagementConfig() {
 function loadRuntimeOverlayConfig() {
   try {
     const raw = yaml.load(readFileSync(join(__dirname, '..', 'config.yaml'), 'utf8')) || {};
-    return deepMerge(
-      {},
+    return mergeRuntimeOverrideObjects(
       raw?.capital_management?.runtime_config || {},
       raw?.runtime_config || {},
     );
@@ -55,6 +54,30 @@ function mergeRuntimeOverrideObjects(...sources) {
     }
   }
   return result;
+}
+
+export function extractInvestmentRuntimeConfig(raw = {}) {
+  const config = /** @type {{ runtime_config?: object, capital_management?: any }} */ (raw || {});
+  const legacyCapitalRuntime = config.capital_management && (
+    config.capital_management.dynamicTpSlEnabled !== undefined ||
+    config.capital_management.luna ||
+    config.capital_management.nemesis ||
+    config.capital_management.timeMode ||
+    config.capital_management.llmPolicies
+  )
+    ? {
+        dynamicTpSlEnabled: config.capital_management.dynamicTpSlEnabled,
+        luna: config.capital_management.luna,
+        nemesis: config.capital_management.nemesis,
+        timeMode: config.capital_management.timeMode,
+        llmPolicies: config.capital_management.llmPolicies,
+      }
+    : {};
+  return mergeRuntimeOverrideObjects(
+    legacyCapitalRuntime || {},
+    config.capital_management?.runtime_config || {},
+    config.runtime_config || {},
+  );
 }
 
 function getDefaultLunaMaxPosCount() {
@@ -459,36 +482,13 @@ const runtimeConfigLoader =
   defaults: DEFAULT_RUNTIME_CONFIG,
   configPath: join(__dirname, '..', 'config.yaml'),
   format: 'yaml',
-  extractRuntimeConfig: (raw) => {
-    const config = /** @type {{ runtime_config?: object, capital_management?: any }} */ (raw || {});
-    const legacyCapitalRuntime = config.capital_management && (
-      config.capital_management.dynamicTpSlEnabled !== undefined ||
-      config.capital_management.luna ||
-      config.capital_management.nemesis ||
-      config.capital_management.timeMode ||
-      config.capital_management.llmPolicies
-    )
-      ? {
-          dynamicTpSlEnabled: config.capital_management.dynamicTpSlEnabled,
-          luna: config.capital_management.luna,
-          nemesis: config.capital_management.nemesis,
-          timeMode: config.capital_management.timeMode,
-          llmPolicies: config.capital_management.llmPolicies,
-        }
-      : {};
-    return deepMerge(
-      {},
-      legacyCapitalRuntime || {},
-      config.capital_management?.runtime_config || {},
-      config.runtime_config || {},
-    );
-  },
+  extractRuntimeConfig: extractInvestmentRuntimeConfig,
 }));
 
 const { loadRuntimeConfig } = runtimeConfigLoader;
 
 export function getInvestmentRuntimeConfig() {
-  const runtimeConfig = deepMerge({}, loadRuntimeConfig(), loadRuntimeOverlayConfig());
+  const runtimeConfig = mergeRuntimeOverrideObjects(loadRuntimeConfig(), loadRuntimeOverlayConfig());
   const lunaMaxPosCount = Number(runtimeConfig?.luna?.maxPosCount);
   if (Number.isFinite(lunaMaxPosCount) && lunaMaxPosCount > 0) return runtimeConfig;
   return deepMerge(runtimeConfig, {
