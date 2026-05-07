@@ -13,6 +13,7 @@ import { recordNodeResult, runNode } from './node-runner.ts';
 import { ACTIONS, validateSignal } from './signal.ts';
 import { evaluateSignal } from '../team/nemesis.ts';
 import { buildAnalystSignals } from './pipeline-decision-policy.ts';
+import { shouldRunExecutionAuxiliaryNode } from './pipeline-decision-agent-plan.ts';
 
 function buildFullExitRiskResult(decision = {}) {
   return {
@@ -82,6 +83,7 @@ export async function executeApprovedDecision({
   stage = 'execute',
   analystSignalsOverride = null,
   plannerCompact = null,
+  decisionAgentPlan = null,
 }) {
   const analyses = symbolAnalysesMap.get(decision.symbol) || [];
   const analystSignals = analystSignalsOverride || buildAnalystSignals(analyses);
@@ -206,34 +208,38 @@ export async function executeApprovedDecision({
     console.warn(`  ⚠️ risk approval rationale 기록 실패: ${error.message}`);
   });
 
-  const ragStore = await runNode(l33Node, {
-    sessionId,
-    market: exchange,
-    symbol: decision.symbol,
-    saved: saved.result,
-    meta: await buildDecisionBridgeMeta({
+  const ragStore = shouldRunExecutionAuxiliaryNode(decisionAgentPlan, 'L33')
+    ? await runNode(l33Node, {
       sessionId,
       market: exchange,
       symbol: decision.symbol,
-      stage,
-      planner: plannerCompact,
-    }),
-  });
+      saved: saved.result,
+      meta: await buildDecisionBridgeMeta({
+        sessionId,
+        market: exchange,
+        symbol: decision.symbol,
+        stage,
+        planner: plannerCompact,
+      }),
+    })
+    : { result: { skipped: true, reason: 'agent_plan_auxiliary_node_disabled', nodeId: 'L33' } };
 
-  const notify = await runNode(l32Node, {
-    sessionId,
-    market: exchange,
-    symbol: decision.symbol,
-    saved: saved.result,
-    meta: await buildDecisionBridgeMeta({
+  const notify = shouldRunExecutionAuxiliaryNode(decisionAgentPlan, 'L32')
+    ? await runNode(l32Node, {
       sessionId,
       market: exchange,
       symbol: decision.symbol,
-      stage,
-      planner: plannerCompact,
-    }),
-    storeArtifact: false,
-  });
+      saved: saved.result,
+      meta: await buildDecisionBridgeMeta({
+        sessionId,
+        market: exchange,
+        symbol: decision.symbol,
+        stage,
+        planner: plannerCompact,
+      }),
+      storeArtifact: false,
+    })
+    : { result: { skipped: true, reason: 'agent_plan_auxiliary_node_disabled', nodeId: 'L32' } };
 
   const execute = await runNode(l31Node, {
     sessionId,

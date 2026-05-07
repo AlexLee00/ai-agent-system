@@ -40,6 +40,7 @@ import { getMarketOrderRule } from '../shared/order-rules.ts';
 import { buildExecutionRiskApprovalGuard } from '../shared/risk-approval-execution-guard.ts';
 import { attachExecutionToPositionStrategyTracked } from '../shared/execution-attach.ts';
 import { resolveExpectedSellNoopStatus } from '../shared/trade-data-derived-guards.ts';
+import { buildHanulExecutionAgentPlan } from './hanul/execution-agent-plan.ts';
 import pgPool from '../../../packages/core/lib/pg-pool.js';
 
 // ─── 심볼 유효성 ────────────────────────────────────────────────────
@@ -1335,14 +1336,18 @@ function normalizeExecutionPlan(plan = null) {
   return plan && typeof plan === 'object' ? plan : {};
 }
 
-function applyHanulResponsibilityExecutionSizing(amount, {
+export function applyHanulResponsibilityExecutionSizing(amount, {
   action = ACTIONS.BUY,
   confidence = 0,
   responsibilityPlan = null,
   executionPlan = null,
+  executionAgentPlan = null,
 } = {}) {
   const numericAmount = Number(amount || 0);
   if (!(numericAmount > 0) || action !== ACTIONS.BUY) {
+    return { amount: numericAmount, multiplier: 1, reason: null };
+  }
+  if (executionAgentPlan?.responsibilityExecutionSizingEnabled === false) {
     return { amount: numericAmount, multiplier: 1, reason: null };
   }
 
@@ -1388,6 +1393,12 @@ function applyHanulResponsibilityExecutionSizing(amount, {
   if (entrySizingMultiplier > 0 && entrySizingMultiplier !== 1) {
     multiplier *= entrySizingMultiplier;
     reasons.push(`executionPlan entry x${entrySizingMultiplier}`);
+  }
+
+  const agentEntrySizingMultiplier = Number(executionAgentPlan?.entrySizingMultiplier || 1);
+  if (agentEntrySizingMultiplier > 0 && agentEntrySizingMultiplier !== 1) {
+    multiplier *= agentEntrySizingMultiplier;
+    reasons.push(`agentPlan entry x${agentEntrySizingMultiplier}`);
   }
 
   const normalizedMultiplier = Number(multiplier.toFixed(4));
@@ -2265,11 +2276,16 @@ export async function executeSignal(signal) {
   const exitReasonOverride = signal.exit_reason_override || null;
   const partialExitRatio = normalizePartialExitRatio(signal.partial_exit_ratio || signal.partialExitRatio);
   const journalContext = buildHanulSignalJournalContext(signal);
+  const hanulExecutionAgentPlan = buildHanulExecutionAgentPlan({
+    agentPlan: signal,
+    market: 'domestic',
+  });
   const domesticBuySizing = applyHanulResponsibilityExecutionSizing(amountKrw, {
     action,
     confidence: signal.confidence,
     responsibilityPlan: signal.existingResponsibilityPlan || null,
     executionPlan: signal.existingExecutionPlan || null,
+    executionAgentPlan: hanulExecutionAgentPlan,
   });
   const domesticMinOrderKrw = action === ACTIONS.BUY
     ? await getDynamicMinOrderAmount('kis', signalTradeMode)
@@ -2378,6 +2394,9 @@ export async function executeSignal(signal) {
 
       if (domesticBuySizing.reason && domesticBuySizing.multiplier !== 1) {
         console.log(`  🎛️ [execution tone] ${symbol} 책임계획 반영 x${domesticBuySizing.multiplier.toFixed(2)} (${domesticBuySizing.reason})`);
+      }
+      if (hanulExecutionAgentPlan.warnings.length > 0) {
+        console.log(`  ⚙️ [hanul agent-plan] ${hanulExecutionAgentPlan.warnings.join(', ')}`);
       }
 
       const domesticBuyBeforeSnapshot = await getHanulBrokerHoldingSnapshot({
@@ -2947,11 +2966,16 @@ export async function executeOverseasSignal(signal) {
   const exitReasonOverride = signal.exit_reason_override || null;
   const partialExitRatio = normalizePartialExitRatio(signal.partial_exit_ratio || signal.partialExitRatio);
   const journalContext = buildHanulSignalJournalContext(signal);
+  const hanulExecutionAgentPlan = buildHanulExecutionAgentPlan({
+    agentPlan: signal,
+    market: 'overseas',
+  });
   const overseasBuySizing = applyHanulResponsibilityExecutionSizing(amountUsd, {
     action,
     confidence: signal.confidence,
     responsibilityPlan: signal.existingResponsibilityPlan || null,
     executionPlan: signal.existingExecutionPlan || null,
+    executionAgentPlan: hanulExecutionAgentPlan,
   });
   const overseasMinOrderUsd = action === ACTIONS.BUY
     ? await getDynamicMinOrderAmount('kis_overseas', signalTradeMode)
@@ -3046,6 +3070,9 @@ export async function executeOverseasSignal(signal) {
 
       if (overseasBuySizing.reason && overseasBuySizing.multiplier !== 1) {
         console.log(`  🎛️ [execution tone] ${symbol} 책임계획 반영 x${overseasBuySizing.multiplier.toFixed(2)} (${overseasBuySizing.reason})`);
+      }
+      if (hanulExecutionAgentPlan.warnings.length > 0) {
+        console.log(`  ⚙️ [hanul agent-plan] ${hanulExecutionAgentPlan.warnings.join(', ')}`);
       }
 
       const overseasBuyBeforeQty = await getHanulBrokerHoldingQty({

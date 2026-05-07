@@ -7,6 +7,7 @@ import {
   buildCollectionAuditRemediation,
   inferObservedCollectQuality,
 } from './runtime-collection-audit.ts';
+import { buildPerSymbolCollectBatches } from '../shared/pipeline-market-runner.ts';
 
 const explicit = inferObservedCollectQuality({
   explicitQuality: { status: 'degraded', readinessScore: 0.5, reasons: ['x'] },
@@ -71,5 +72,14 @@ const missing = inferObservedCollectQuality({
 });
 assert.equal(missing.source, 'missing_meta');
 assert.equal(missing.quality.status, 'unknown');
+
+assert.deepEqual(
+  buildPerSymbolCollectBatches('kis', ['L02', 'L03', 'L04']),
+  [['L02', 'L03'], ['L04']],
+);
+assert.deepEqual(
+  buildPerSymbolCollectBatches('binance', ['L02', 'L03', 'L05']),
+  [['L02', 'L03', 'L05']],
+);
 
 console.log('runtime collection audit smoke ok');

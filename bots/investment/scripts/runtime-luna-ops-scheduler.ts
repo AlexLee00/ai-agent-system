@@ -5,6 +5,7 @@ import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
+import { buildOpsSchedulerAgentPlan } from '../shared/luna-ops-scheduler-agent-plan.ts';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const INVESTMENT_DIR = path.resolve(__dirname, '..');
@@ -42,11 +43,16 @@ export function getOpsSchedulerJobs() {
   return [
     {
       name: 'market_regime_capture',
+      category: 'market_state',
+      market: 'all',
+      immutable: true,
       cadence: { type: 'interval', seconds: 1800 },
       ...nodeScript('capture-market-regimes.ts', ['--markets=binance,kis,kis_overseas', '--json']),
     },
     {
       name: 'discovery_candidate_refresh',
+      category: 'discovery',
+      market: 'all',
       cadence: { type: 'interval', seconds: 1800 },
       ...nodeScript('runtime-discovery-orchestrator-refresh.ts', [
         '--markets=crypto,domestic,overseas',
@@ -55,31 +61,47 @@ export function getOpsSchedulerJobs() {
     },
     {
       name: 'market_cycle_crypto',
+      category: 'market_cycle',
+      market: 'crypto',
+      immutable: true,
       cadence: { type: 'interval', seconds: 300 },
       ...marketScript('crypto.ts'),
     },
     {
       name: 'market_cycle_domestic',
+      category: 'market_cycle',
+      market: 'domestic',
+      immutable: true,
       cadence: { type: 'interval', seconds: 1800 },
       ...marketScript('domestic.ts', [], { LUNA_LIVE_DOMESTIC: 'true' }),
     },
     {
       name: 'market_cycle_domestic_open_catchup',
+      category: 'market_cycle',
+      market: 'domestic',
+      immutable: true,
       cadence: { type: 'interval', seconds: 300 },
       ...marketScript('domestic.ts', ['--open-catchup'], { LUNA_LIVE_DOMESTIC: 'true' }),
     },
     {
       name: 'market_cycle_overseas',
+      category: 'market_cycle',
+      market: 'overseas',
+      immutable: true,
       cadence: { type: 'interval', seconds: 1800 },
       ...marketScript('overseas.ts', [], { LUNA_LIVE_OVERSEAS: 'true' }),
     },
     {
       name: 'discovery_funnel_report',
+      category: 'report',
+      market: 'all',
       cadence: { type: 'interval', seconds: 1800 },
       ...nodeScript('runtime-luna-discovery-funnel-report.ts', ['--hours=24', '--json']),
     },
     {
       name: 'active_candidate_analysis_refresh_crypto',
+      category: 'analysis_refresh',
+      market: 'crypto',
       cadence: { type: 'interval', seconds: 900 },
       ...nodeScript('runtime-luna-active-candidate-analysis-refresh.ts', [
         '--apply',
@@ -92,7 +114,24 @@ export function getOpsSchedulerJobs() {
       ]),
     },
     {
+      name: 'active_candidate_analysis_refresh_domestic',
+      category: 'analysis_refresh',
+      market: 'domestic',
+      cadence: { type: 'interval', seconds: 900 },
+      ...nodeScript('runtime-luna-active-candidate-analysis-refresh.ts', [
+        '--apply',
+        '--confirm=luna-active-candidate-analysis-refresh',
+        '--market=domestic',
+        '--hours=24',
+        '--limit=20',
+        '--max-symbols=4',
+        '--json',
+      ]),
+    },
+    {
       name: 'near_miss_watchlist_crypto',
+      category: 'watchlist',
+      market: 'crypto',
       cadence: { type: 'interval', seconds: 900 },
       ...nodeScript('runtime-luna-near-miss-watchlist.ts', [
         '--apply',
@@ -104,32 +143,60 @@ export function getOpsSchedulerJobs() {
       ]),
     },
     {
+      name: 'near_miss_watchlist_domestic',
+      category: 'watchlist',
+      market: 'domestic',
+      cadence: { type: 'interval', seconds: 900 },
+      ...nodeScript('runtime-luna-near-miss-watchlist.ts', [
+        '--apply',
+        '--confirm=luna-near-miss-watchlist',
+        '--market=domestic',
+        '--hours=24',
+        '--limit=20',
+        '--json',
+      ]),
+    },
+    {
       name: 'daily_backtest',
+      category: 'backtest',
+      market: 'all',
       cadence: { type: 'daily', hour: 1, minute: 10 },
       ...nodeScript('runtime-luna-daily-backtest.ts', ['--json', '--dry-run']),
     },
     {
       name: 'guardrails_hourly',
+      category: 'guardrail',
+      market: 'all',
+      immutable: true,
       cadence: { type: 'interval', seconds: 3600 },
       ...nodeScript('runtime-luna-guardrails-hourly.ts', ['--json']),
     },
     {
       name: 'natural_7day_checkpoint',
+      category: 'learning',
+      market: 'all',
       cadence: { type: 'interval', seconds: 86400 },
       ...nodeScript('runtime-luna-7day-natural-checkpoint.ts', ['--write', '--json']),
     },
     {
       name: 'trade_journal_dashboard',
+      category: 'report',
+      market: 'all',
       cadence: { type: 'interval', seconds: 3600 },
       ...nodeScript('runtime-trade-journal-dashboard-html.ts', ['--json']),
     },
     {
       name: 'voyager_skill_acceleration',
+      category: 'learning',
+      market: 'all',
       cadence: { type: 'interval', seconds: 3600 },
       ...nodeScript('runtime-voyager-natural-acceleration.ts', ['--json']),
     },
     {
       name: 'reconcile_auto_settle',
+      category: 'reconcile',
+      market: 'all',
+      immutable: true,
       cadence: { type: 'interval', seconds: 300 },
       ...nodeScript('runtime-luna-reconcile-auto-settle.ts', [
         '--apply',
@@ -152,6 +219,26 @@ function argValue(name, fallback = null, argv = process.argv.slice(2)) {
 
 export function resolveOnlyJobArg(argv = process.argv.slice(2)) {
   return argValue('only-job', argValue('job', null, argv), argv);
+}
+
+export function resolveAgentPlanArg(argv = process.argv.slice(2)) {
+  const jsonArg = argValue('agent-plan-json', null, argv);
+  if (jsonArg) {
+    try {
+      return JSON.parse(jsonArg);
+    } catch {
+      return { invalid: true, reason: 'invalid_agent_plan_json_arg' };
+    }
+  }
+  const fileArg = argValue('agent-plan-file', null, argv);
+  if (fileArg) {
+    try {
+      return JSON.parse(fs.readFileSync(path.resolve(fileArg), 'utf8'));
+    } catch {
+      return { invalid: true, reason: 'invalid_agent_plan_file' };
+    }
+  }
+  return null;
 }
 
 function readJsonSafe(filePath, fallback = {}) {
@@ -201,10 +288,15 @@ export function buildOpsSchedulerPlan({
   jobs = getOpsSchedulerJobs(),
   onlyJob = null,
   force = false,
+  agentPlan = null,
 } = {}) {
-  const selected = jobs.filter((job) => !onlyJob || job.name === onlyJob);
+  const schedulerAgentPlan = buildOpsSchedulerAgentPlan({ agentPlan, jobs });
+  const selected = schedulerAgentPlan.jobs.filter((job) => !onlyJob || job.name === onlyJob);
   const plannedJobs = selected.map((job) => ({
     name: job.name,
+    category: job.category || null,
+    market: job.market || null,
+    immutable: job.immutable === true,
     cadence: job.cadence,
     due: isJobDue(job, now, state, force),
     command: [job.command, ...(job.args || [])].join(' '),
@@ -218,6 +310,7 @@ export function buildOpsSchedulerPlan({
     onlyJob,
     total: plannedJobs.length,
     due: plannedJobs.filter((job) => job.due).length,
+    agentPlan: schedulerAgentPlan,
     jobs: plannedJobs,
   };
 }
@@ -354,6 +447,7 @@ export async function runOpsScheduler({
   now = new Date(),
   runner = null,
   jobs = getOpsSchedulerJobs(),
+  agentPlan = null,
 } = {}) {
   if (String(process.env.LUNA_OPS_SCHEDULER_ENABLED || 'true').toLowerCase() === 'false') {
     return { ok: true, status: 'disabled', dryRun, generatedAt: now.toISOString(), executed: [] };
@@ -364,8 +458,9 @@ export async function runOpsScheduler({
 
   try {
     const state = readJsonSafe(statePath, { jobs: {} });
-    const plan = buildOpsSchedulerPlan({ now, state, jobs, onlyJob, force });
-    const dueJobs = jobs.filter((job) => plan.jobs.find((item) => item.name === job.name && item.due));
+    const plan = buildOpsSchedulerPlan({ now, state, jobs, onlyJob, force, agentPlan });
+    const scheduledJobs = plan.agentPlan?.jobs || jobs;
+    const dueJobs = scheduledJobs.filter((job) => plan.jobs.find((item) => item.name === job.name && item.due));
     const executed = [];
     const nextState = { ...state, jobs: { ...(state.jobs || {}) } };
 
@@ -452,6 +547,7 @@ async function main() {
     statePath: argValue('state-path', DEFAULT_STATE_PATH, argv),
     lockPath: argValue('lock-path', DEFAULT_LOCK_PATH, argv),
     writeState: !hasArg('no-write-state', argv),
+    agentPlan: resolveAgentPlanArg(argv),
   });
   if (hasArg('json', argv)) console.log(JSON.stringify(result, null, 2));
   else console.log(`runtime-luna-ops-scheduler ${result.status} due=${result.plan?.due || 0} executed=${result.executed?.length || 0}`);

@@ -19,6 +19,7 @@ import {
   upsertPositionRuntimeMarketQueueEntry,
   writePositionRuntimeMarketQueue,
 } from './runtime-position-runtime-market-queue-store.ts';
+import { serializeAgentPlanArg } from '../shared/execution-runner-agent-plan.ts';
 
 const INVESTMENT_BOT_PREFIX = '/Users/alexlee/projects/ai-agent-system/bots/investment';
 const FAILURE_STATUSES = new Set(['failed', 'fail', 'error', 'blocked', 'rejected', 'canceled', 'cancelled', 'child_process_error']);
@@ -103,6 +104,9 @@ function mapRuntimeCandidate(row = {}) {
       confirm: 'position-runtime-autopilot',
       'run-context': 'position-runtime-autopilot',
       json: true,
+      ...(serializeAgentPlanArg(row.runtimeState?.agentPlan)
+        ? { 'agent-plan-json': serializeAgentPlanArg(row.runtimeState?.agentPlan) }
+        : {}),
     }
     : null;
   return {

@@ -18,28 +18,29 @@ function assertSnapshot(snapshot, market, symbol) {
 
 export async function runSmoke() {
   try {
-    const binance = await binanceSnapshot({ symbol: 'BTC/USDT', disableReal: true });
+    const fixtureArgs = { disableReal: true, allowSimulatedFallback: true };
+    const binance = await binanceSnapshot({ symbol: 'BTC/USDT', ...fixtureArgs });
     assertSnapshot(binance, 'binance', 'BTC/USDT');
     assert.equal(binance.providerMode, 'simulated_fallback');
 
-    const binanceBook = await binanceOrderBook({ symbol: 'BTC/USDT', depth: 3, disableReal: true });
+    const binanceBook = await binanceOrderBook({ symbol: 'BTC/USDT', depth: 3, ...fixtureArgs });
     assert.equal(binanceBook.ok, true);
     assert.equal(binanceBook.bids.length, 3);
     assert.equal(binanceBook.asks.length, 3);
 
-    const domestic = await kisDomesticSnapshot({ symbol: '005930', disableReal: true });
+    const domestic = await kisDomesticSnapshot({ symbol: '005930', ...fixtureArgs });
     assertSnapshot(domestic, 'kis_domestic', '005930');
 
-    const overseas = await kisOverseasSnapshot({ symbol: 'AAPL', disableReal: true });
+    const overseas = await kisOverseasSnapshot({ symbol: 'AAPL', ...fixtureArgs });
     assertSnapshot(overseas, 'kis_overseas', 'AAPL');
 
-    const tv = await tradingViewSnapshot({ symbol: 'BINANCE:BTCUSDT', timeframe: '1h', disableReal: true });
+    const tv = await tradingViewSnapshot({ symbol: 'BINANCE:BTCUSDT', timeframe: '1h', ...fixtureArgs });
     assertSnapshot(tv, 'tradingview', 'BINANCE:BTCUSDT');
 
     const subscribed = await callMarketdataTool('subscribe_market_data', {
       market: 'binance',
       symbol: 'BTC/USDT',
-      disableReal: true,
+      ...fixtureArgs,
     });
     assert.equal(subscribed.ok, true);
     assert.equal(subscribed.subscribed, true);

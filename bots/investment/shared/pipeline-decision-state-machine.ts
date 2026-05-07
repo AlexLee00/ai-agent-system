@@ -28,6 +28,7 @@ import { buildPipelineDecisionFinishMeta } from './pipeline-decision-finish-meta
 import { buildPipelineSymbolCandidate, recordStrategyRouteStats } from './pipeline-symbol-candidate.ts';
 import { executeApprovedDecision, persistRiskApprovalRationale } from './pipeline-approved-decision.ts';
 import { buildDecisionBridgeMeta, loadDecisionPlannerCompact } from './pipeline-decision-bridge.ts';
+import { buildDecisionAgentPlan, shouldRunExecutionAuxiliaryNode } from './pipeline-decision-agent-plan.ts';
 import {
   applyCollectQualityGuard,
   applyDiscoveryHardCap,
@@ -67,6 +68,7 @@ export async function runDecisionExecutionStateMachine({
   portfolio = null,
   analystWeights,
   params = null,
+  meta = {},
 } = {}) {
   const startedAt = Date.now();
   const intelligentFlags = getLunaIntelligentDiscoveryFlags();
@@ -75,6 +77,14 @@ export async function runDecisionExecutionStateMachine({
   let discoveryCandidates = [];
   const investmentTradeMode = getInvestmentTradeMode();
   const currentPortfolio = portfolio || await inspectPortfolioContext(exchange);
+  const configuredDebateLimit = getDebateLimit(exchange, runtimeSymbols.length);
+  const decisionAgentPlan = buildDecisionAgentPlan({
+    exchange,
+    meta,
+    params,
+    defaultDebateLimit: configuredDebateLimit,
+    runtimeFlags: intelligentFlags,
+  });
   const l10Node = getDecisionNode('L10');
   const l11Node = getDecisionNode('L11');
   const l12Node = getDecisionNode('L12');
@@ -137,7 +147,7 @@ export async function runDecisionExecutionStateMachine({
   const symbolAnalysesMap = new Map();
   const intelligentBySymbol = new Map();
   let debateCount = 0;
-  const debateLimit = getDebateLimit(exchange, runtimeSymbols.length);
+  const debateLimit = decisionAgentPlan.debateLimit;
   let riskRejected = 0;
   const riskRejectReasons = {};
   let weakSignalSkipped = 0;
@@ -168,35 +178,43 @@ export async function runDecisionExecutionStateMachine({
   let strategyRouteReadinessSum = 0;
   let strategyRouteReadinessCount = 0;
 
-  const buildMetrics = (extra = {}) => buildDecisionPipelineMetrics({
-    startedAt,
-    runtimeSymbols,
-    symbolDecisions,
-    debateCount,
-    debateLimit,
-    riskRejected,
-    riskRejectReasons,
-    weakSignalSkipped,
-    weakSignalReasons,
-    strategyRouteCounts,
-    strategyRouteQualityCounts,
-    strategyRouteReadinessSum,
-    strategyRouteReadinessCount,
-    midGapPromoted,
-    midGapRejectedByRisk,
-    invalidSignalSkipped,
-    exitPhaseEvaluated,
-    exitPhaseSellSignals,
-    exitPhaseExecuted,
-    exitBelowMinSkipped,
-    representativeReduction,
-    collectQuality,
-    collectQualityBlockedBuyCount,
-    collectQualityReducedBuyCount,
-    entryTriggerStats,
-    predictiveValidationStats,
-    extra,
-  });
+  const buildMetrics = (extra = {}) => {
+    const metrics = buildDecisionPipelineMetrics({
+      startedAt,
+      runtimeSymbols,
+      symbolDecisions,
+      debateCount,
+      debateLimit,
+      riskRejected,
+      riskRejectReasons,
+      weakSignalSkipped,
+      weakSignalReasons,
+      strategyRouteCounts,
+      strategyRouteQualityCounts,
+      strategyRouteReadinessSum,
+      strategyRouteReadinessCount,
+      midGapPromoted,
+      midGapRejectedByRisk,
+      invalidSignalSkipped,
+      exitPhaseEvaluated,
+      exitPhaseSellSignals,
+      exitPhaseExecuted,
+      exitBelowMinSkipped,
+      representativeReduction,
+      collectQuality,
+      collectQualityBlockedBuyCount,
+      collectQualityReducedBuyCount,
+      entryTriggerStats,
+      predictiveValidationStats,
+      extra,
+    });
+    metrics.decisionAgentPlan = decisionAgentPlan;
+    metrics.decisionAgentPlanWarnings = decisionAgentPlan.warnings;
+    for (const warning of decisionAgentPlan.warnings || []) {
+      if (!metrics.warnings.includes(warning)) metrics.warnings.push(warning);
+    }
+    return metrics;
+  };
 
   function getTopRiskRejectReason() {
     const entries = Object.entries(riskRejectReasons);
@@ -268,6 +286,7 @@ export async function runDecisionExecutionStateMachine({
           stage: 'exit',
           analystSignalsOverride: 'EXIT_PHASE',
           plannerCompact,
+          decisionAgentPlan,
         });
 
         if (exitResult?.invalidSignal) {
@@ -314,7 +333,7 @@ export async function runDecisionExecutionStateMachine({
         }),
       });
 
-      if (debateCount < debateLimit && shouldDebateForSymbol(analyses, exchange, analystWeights)) {
+      if (decisionAgentPlan.debateEnabled && debateCount < debateLimit && shouldDebateForSymbol(analyses, exchange, analystWeights)) {
         try {
           await runNode(l11Node, {
             sessionId,
@@ -447,7 +466,7 @@ export async function runDecisionExecutionStateMachine({
     collectQualityReducedBuyCount = collectQualityGuard.reducedBuyCount;
     collectQualityBlockedBuyCount = collectQualityGuard.blockedBuyCount;
 
-    if (intelligentFlags.phases.predictiveValidationEnabled) {
+    if (decisionAgentPlan.predictiveValidationEnabled && intelligentFlags.phases.predictiveValidationEnabled) {
       const predictiveGate = applyPredictiveValidationGate(
         portfolioDecision.decisions || [],
         intelligentFlags.predictive,
@@ -466,7 +485,7 @@ export async function runDecisionExecutionStateMachine({
       predictiveValidationStats = portfolioDecision.predictiveValidation;
     }
 
-    if (intelligentFlags.phases.entryTriggerEnabled) {
+    if (decisionAgentPlan.entryTriggerEnabled && intelligentFlags.phases.entryTriggerEnabled) {
       const triggerResult = await evaluateEntryTriggers(portfolioDecision.decisions || [], {
         exchange,
         regime: normalizeRegimeLabel(currentPortfolio?.marketRegime || null),
@@ -671,34 +690,38 @@ export async function runDecisionExecutionStateMachine({
       console.warn(`  ⚠️ risk approval rationale 기록 실패: ${error.message}`);
     });
 
-    const ragStore = await runNode(l33Node, {
-      sessionId,
-      market: exchange,
-      symbol: dec.symbol,
-      saved: saved.result,
-      meta: await buildDecisionBridgeMeta({
+    const ragStore = shouldRunExecutionAuxiliaryNode(decisionAgentPlan, 'L33')
+      ? await runNode(l33Node, {
         sessionId,
         market: exchange,
         symbol: dec.symbol,
-        stage: 'execute',
-        planner: plannerCompact,
-      }),
-    });
+        saved: saved.result,
+        meta: await buildDecisionBridgeMeta({
+          sessionId,
+          market: exchange,
+          symbol: dec.symbol,
+          stage: 'execute',
+          planner: plannerCompact,
+        }),
+      })
+      : { result: { skipped: true, reason: 'agent_plan_auxiliary_node_disabled', nodeId: 'L33' } };
 
-    const notify = await runNode(l32Node, {
-      sessionId,
-      market: exchange,
-      symbol: dec.symbol,
-      saved: saved.result,
-      meta: await buildDecisionBridgeMeta({
+    const notify = shouldRunExecutionAuxiliaryNode(decisionAgentPlan, 'L32')
+      ? await runNode(l32Node, {
         sessionId,
         market: exchange,
         symbol: dec.symbol,
-        stage: 'execute',
-        planner: plannerCompact,
-      }),
-      storeArtifact: false,
-    });
+        saved: saved.result,
+        meta: await buildDecisionBridgeMeta({
+          sessionId,
+          market: exchange,
+          symbol: dec.symbol,
+          stage: 'execute',
+          planner: plannerCompact,
+        }),
+        storeArtifact: false,
+      })
+      : { result: { skipped: true, reason: 'agent_plan_auxiliary_node_disabled', nodeId: 'L32' } };
 
     const execute = await runNode(l31Node, {
       sessionId,

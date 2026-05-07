@@ -8,6 +8,24 @@ export function isHephaestosHotPathPrefetchEnabled(env = process.env) {
   return true;
 }
 
+function extractExecutionAgentPlan(signal = {}) {
+  return (
+    signal?.agentPlan?.execution
+    || signal?.agent_plan?.execution
+    || signal?.executionAgentPlan
+    || signal?.execution_agent_plan
+    || signal?.block_meta?.agentPlan?.execution
+    || signal?.block_meta?.agent_plan?.execution
+    || signal?.block_meta?.executionAgentPlan
+    || signal?.block_meta?.execution_agent_plan
+    || signal?.strategy_route?.agentPlan?.execution
+    || signal?.strategy_route?.agent_plan?.execution
+    || signal?.strategy_route?.executionAgentPlan
+    || signal?.strategy_route?.execution_agent_plan
+    || null
+  );
+}
+
 export function createHephaestosSignalExecutor(deps = {}) {
   const {
     ACTIONS,
@@ -79,6 +97,7 @@ async function executeSignal(signal) {
     tag,
   } = executionContext;
   let { effectivePaperMode } = executionContext;
+  const executionAgentPlan = extractExecutionAgentPlan(signal);
 
   // ★ SEC-004 가드: 네메시스 승인/실행 freshness 재검증 (BUY 전용 — SELL은 포지션 청산이므로 예외)
   if (action !== ACTIONS.SELL && !globalPaperMode) {
@@ -186,6 +205,7 @@ async function executeSignal(signal) {
         action,
         signalTradeMode,
         effectivePaperMode,
+        agentPlan: executionAgentPlan,
       });
       if (buyReentryState?.success === false) return buyReentryState;
 
@@ -222,6 +242,7 @@ async function executeSignal(signal) {
         signalTradeMode,
         globalPaperMode,
         capitalPolicy,
+        agentPlan: executionAgentPlan,
       });
       if (executionModeState?.success === false) return executionModeState;
       effectivePaperMode = executionModeState.effectivePaperMode;

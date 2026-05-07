@@ -28,6 +28,8 @@ const meta = buildPipelineDecisionFinishMeta({
     exitBelowMinSkipped: 0,
     savedExecutionWork: 3,
     warnings: ['sample_warning'],
+    decisionAgentPlan: { source: 'smoke_plan', debateEnabled: false },
+    decisionAgentPlanWarnings: ['immutable_safety_gate:entry_trigger'],
     entryTriggerStats: { fired: 1 },
     predictiveValidationStats: { blocked: 0 },
   },
@@ -52,6 +54,8 @@ assert.equal(meta.exit_reclaimed_usdt, 12.5);
 assert.equal(meta.investment_trade_mode, 'validation');
 assert.equal(meta.planner_source, 'smoke');
 assert.equal(meta.portfolio_view, 'balanced');
+assert.equal(meta.decision_agent_plan.source, 'smoke_plan');
+assert.equal(meta.decision_agent_plan_warnings.includes('immutable_safety_gate:entry_trigger'), true);
 assert.equal(meta.entry_trigger_stats.fired, 1);
 assert.equal(meta.predictive_validation.blocked, 0);
 

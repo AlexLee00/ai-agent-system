@@ -20,6 +20,10 @@ import {
   getBinanceBalanceSnapshot,
   getBinanceOpenOrders,
 } from '../shared/binance-client.ts';
+import {
+  buildSignalAgentPlanPayload,
+  readExecutionRunnerAgentPlanArg,
+} from '../shared/execution-runner-agent-plan.ts';
 
 function parseArgs(argv = process.argv.slice(2)) {
   const values = {};
@@ -39,6 +43,7 @@ function parseArgs(argv = process.argv.slice(2)) {
     runContext: values['run-context'] ? String(values['run-context']) : null,
     ratio: values.ratio != null ? Number(values.ratio) : null,
     minutesBack: values.minutes ? Math.max(10, Number(values.minutes)) : 180,
+    agentPlan: readExecutionRunnerAgentPlanArg(argv, { envKey: 'LUNA_PARTIAL_ADJUST_AGENT_PLAN_JSON' }),
   };
 }
 
@@ -244,6 +249,9 @@ function mapCandidate(row, strategyProfile = null, overrideRatio = null) {
     executionIntent: row.executionIntent
       || strategyProfileSnapshot?.positionRuntimeState?.executionIntent
       || null,
+    agentPlan: row?.runtimeState?.agentPlan
+      || strategyProfileSnapshot?.positionRuntimeState?.agentPlan
+      || null,
     strategyProfile: strategyProfileSnapshot,
   };
 }
@@ -358,9 +366,14 @@ export async function buildPartialAdjustRunnerPreflightForDispatchCandidate(disp
   };
 }
 
-async function createPartialAdjustSignal(candidate) {
+async function createPartialAdjustSignal(candidate, explicitAgentPlan = null) {
   const incidentLink = candidate.signalIncidentLink || `partial_adjust:${candidate.reasonCode}${buildFamilyFeedbackIncidentSuffix(candidate.strategyProfile)}`;
   const idempotencyKey = buildPartialAdjustIdempotencyKey(candidate);
+  const signalAgentPlan = buildSignalAgentPlanPayload({
+    explicitAgentPlan,
+    candidate,
+    runner: 'partial_adjust_runner',
+  });
   const signalId = await db.insertSignal({
     symbol: candidate.symbol,
     action: 'SELL',
@@ -383,6 +396,7 @@ async function createPartialAdjustSignal(candidate) {
     ...signal,
     exchange: candidate.exchange,
     trade_mode: candidate.tradeMode,
+    agentPlan: signalAgentPlan,
     exit_reason_override: incidentLink,
     partial_exit_ratio: candidate.partialExitRatio,
     _idempotencyKey: idempotencyKey,
@@ -612,7 +626,7 @@ async function main() {
   }
 
   await syncPartialAdjustCandidateStates([candidate], 'execute');
-  const signal = await createPartialAdjustSignal(candidate);
+  const signal = await createPartialAdjustSignal(candidate, args.agentPlan);
   const lifecyclePolicySnapshot = candidate?.strategyProfile?.positionRuntimeState?.policyMatrix
     || candidate?.executionIntent?.policyMatrix
     || {};

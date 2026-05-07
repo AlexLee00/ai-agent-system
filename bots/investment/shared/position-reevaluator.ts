@@ -17,6 +17,11 @@ import { refreshPositionSignals } from './position-signal-refresh.ts';
 import { computeDynamicTrail } from './dynamic-trail-engine.ts';
 import { computeDynamicPositionSizing } from './dynamic-position-sizer.ts';
 import { analyzeReflexivePortfolioState } from './portfolio-reflexive-monitor.ts';
+import {
+  buildDisabledDynamicPositionSizingSnapshot,
+  buildDisabledDynamicTrailSnapshot,
+  buildPositionMonitorAgentPlan,
+} from './position-monitor-agent-plan.ts';
 
 const execFileAsync = promisify(execFile);
 const TRADINGVIEW_MCP_SCRIPT = new URL('../scripts/tradingview-mcp-server.py', import.meta.url);
@@ -847,6 +852,7 @@ export async function reevaluateOpenPositions({
   attentionType = null,
   attentionReason = null,
   eventPayload = null,
+  agentPlan = null,
 } = {}) {
   const lifecycleFlags = resolvePositionLifecycleFlags();
   const positions = (await db.getOpenPositions(exchange, paper, tradeMode))
@@ -860,6 +866,12 @@ export async function reevaluateOpenPositions({
   const reflexivePortfolioState = analyzeReflexivePortfolioState({
     positions,
     latestRegimeByMarket: regimeByMarket,
+  });
+  const monitorAgentPlan = buildPositionMonitorAgentPlan({
+    agentPlan,
+    eventPayload,
+    liveIndicators,
+    lifecycleFlags,
   });
 
   for (const position of positions) {
@@ -917,7 +929,7 @@ export async function reevaluateOpenPositions({
       }).catch(() => null),
       db.getLatestVectorbtBacktestForSymbol(position.symbol, position.exchange === 'binance' ? 45 : 180).catch(() => null),
     ]);
-    const signalRefreshResult = lifecycleFlags.shouldExecuteSignalRefresh()
+    const signalRefreshResult = monitorAgentPlan.signalRefreshEnabled
       ? await refreshPositionSignals({
           exchange: position.exchange,
           symbol: position.symbol,
@@ -930,23 +942,30 @@ export async function reevaluateOpenPositions({
     const regimeMarket = getPositionRuntimeMarket(position.exchange);
     const regimeKey = regimeMarket === 'crypto' ? 'binance' : regimeMarket;
     const regimeSnapshot = await db.getLatestMarketRegimeSnapshot(regimeKey).catch(() => null);
-    const externalEvidenceSummary = await buildEvidenceSummaryForAgent({
-      symbol: position.symbol,
-      market: regimeMarket,
-      days: 3,
-    }).catch(() => null);
-    const externalEvidenceGapState = updateExternalEvidenceGapTaskQueue({
-      symbol: position.symbol,
-      exchange: position.exchange,
-      tradeMode: effectiveTradeMode,
-      evidenceCount: Number(externalEvidenceSummary?.evidenceCount || 0),
-      threshold: 3,
-      cooldownMinutes: 60,
-      reason: externalEvidenceSummary?.warning || null,
-    });
+    const externalEvidenceSummary = monitorAgentPlan.externalEvidenceEnabled
+      ? await buildEvidenceSummaryForAgent({
+          symbol: position.symbol,
+          market: regimeMarket,
+          days: 3,
+        }).catch(() => null)
+      : null;
+    const externalEvidenceGapState = monitorAgentPlan.externalEvidenceEnabled
+      ? updateExternalEvidenceGapTaskQueue({
+          symbol: position.symbol,
+          exchange: position.exchange,
+          tradeMode: effectiveTradeMode,
+          evidenceCount: Number(externalEvidenceSummary?.evidenceCount || 0),
+          threshold: 3,
+          cooldownMinutes: 60,
+          reason: externalEvidenceSummary?.warning || null,
+        })
+      : {
+          status: 'disabled_by_monitor_agent_plan',
+          reason: 'external_evidence_agent_plan_disabled',
+        };
     let indicatorAnalyses = [];
     let indicatorAnalysis = null;
-    if (liveIndicators) {
+    if (monitorAgentPlan.liveIndicatorsEnabled) {
       const intervals = getIndicatorFramesForExchange(position.exchange);
       const indicatorFrames = await Promise.all(
         intervals.map((interval) =>
@@ -982,7 +1001,7 @@ export async function reevaluateOpenPositions({
     const validityDecision = applyValidityActionDecision(decision?.decision, validityResult);
     let effectiveDecision = validityDecision.decision;
     let mutationResult = null;
-    if (validityDecision.mutationRequired) {
+    if (validityDecision.mutationRequired && monitorAgentPlan.strategyMutationEnabled) {
       mutationResult = await evaluateStrategyMutation({
         position: {
           symbol: position.symbol,
@@ -1031,10 +1050,16 @@ export async function reevaluateOpenPositions({
           reason: `mutation rejected: ${mutationResult.rejectionReason}`,
         };
       }
+    } else if (validityDecision.mutationRequired && !monitorAgentPlan.strategyMutationEnabled) {
+      mutationResult = {
+        mutationApplied: false,
+        rejectionReason: 'strategy_mutation_agent_plan_disabled',
+        shadowMode: true,
+      };
     }
 
     if (
-      lifecycleFlags.shouldApplyReflexiveMonitoring()
+      monitorAgentPlan.reflexivePortfolioEnabled
       && reflexivePortfolioState?.protective
       && effectiveDecision.recommendation === 'HOLD'
     ) {
@@ -1053,14 +1078,16 @@ export async function reevaluateOpenPositions({
       newsEvent: attentionType?.includes('news') || attentionType?.includes('뉴스') || false,
       volumeBurst: attentionType?.includes('volume') || attentionType?.includes('거래량') || false,
     });
-    const dynamicSizing = computeDynamicPositionSizing({
-      pnlPct,
-      currentWeightPct: 0.12,
-      targetVolatility: 0.03,
-      realizedVolatility: Math.max(0.01, Math.abs(Number(analysisSummary?.liveIndicator?.weightedBias || 0)) * 0.04),
-      winRate: Number(getFamilyPerformanceFeedback(strategyProfile)?.winRatePct || 50) / 100,
-      rewardRisk: 1.8,
-    });
+    const dynamicSizing = monitorAgentPlan.dynamicSizingEvaluationEnabled
+      ? computeDynamicPositionSizing({
+          pnlPct,
+          currentWeightPct: 0.12,
+          targetVolatility: 0.03,
+          realizedVolatility: Math.max(0.01, Math.abs(Number(analysisSummary?.liveIndicator?.weightedBias || 0)) * 0.04),
+          winRate: Number(getFamilyPerformanceFeedback(strategyProfile)?.winRatePct || 50) / 100,
+          rewardRisk: 1.8,
+        })
+      : buildDisabledDynamicPositionSizingSnapshot();
     if (
       dynamicSizing?.enabled === true
       && dynamicSizing?.mode === 'pyramid'
@@ -1077,17 +1104,19 @@ export async function reevaluateOpenPositions({
     const previousTrail = previousRuntimeState?.dynamicTrail
       || previousRuntimeState?.marketState?.trailSnapshot
       || null;
-    const dynamicTrail = computeDynamicTrail({
-      method: 'atr',
-      side: 'long',
-      close: analysisSummary?.liveIndicator?.timeframes?.[0]?.close || position?.avg_price || 0,
-      atr: Math.max(0.000001, Math.abs(safeNumber(analysisSummary?.liveIndicator?.weightedBias, 0)) * safeNumber(position?.avg_price, 0) * 0.02),
-      highestHigh: analysisSummary?.liveIndicator?.timeframes?.[0]?.high || position?.avg_price || 0,
-      lowestLow: analysisSummary?.liveIndicator?.timeframes?.[0]?.low || position?.avg_price || 0,
-      vwap: analysisSummary?.liveIndicator?.timeframes?.[0]?.close || position?.avg_price || 0,
-      sar: analysisSummary?.liveIndicator?.timeframes?.[0]?.close || position?.avg_price || 0,
-      previousStopPrice: previousTrail?.stopPrice || null,
-    });
+    const dynamicTrail = monitorAgentPlan.dynamicTrailEvaluationEnabled
+      ? computeDynamicTrail({
+          method: 'atr',
+          side: 'long',
+          close: analysisSummary?.liveIndicator?.timeframes?.[0]?.close || position?.avg_price || 0,
+          atr: Math.max(0.000001, Math.abs(safeNumber(analysisSummary?.liveIndicator?.weightedBias, 0)) * safeNumber(position?.avg_price, 0) * 0.02),
+          highestHigh: analysisSummary?.liveIndicator?.timeframes?.[0]?.high || position?.avg_price || 0,
+          lowestLow: analysisSummary?.liveIndicator?.timeframes?.[0]?.low || position?.avg_price || 0,
+          vwap: analysisSummary?.liveIndicator?.timeframes?.[0]?.close || position?.avg_price || 0,
+          sar: analysisSummary?.liveIndicator?.timeframes?.[0]?.close || position?.avg_price || 0,
+          previousStopPrice: previousTrail?.stopPrice || null,
+        })
+      : buildDisabledDynamicTrailSnapshot();
     if (
       dynamicTrail?.breached === true
       && effectiveDecision.recommendation !== 'EXIT'
@@ -1126,6 +1155,9 @@ export async function reevaluateOpenPositions({
       },
       previousState: previousRuntimeState,
     });
+    runtimeState.agentPlan = {
+      monitor: monitorAgentPlan,
+    };
     if (strategyProfile?.id) {
       const attentionAt = effectiveDecision.recommendation === 'HOLD' ? null : new Date().toISOString();
       const baseStrategyState = buildStrategyStateUpdate({
@@ -1179,6 +1211,7 @@ export async function reevaluateOpenPositions({
           reasonCode: effectiveDecision.reasonCode,
           reason: effectiveDecision.reason,
           pnlPct,
+          monitorAgentPlanWarnings: monitorAgentPlan.warnings || [],
           strategyValidityScore: validityResult.score,
           strategyValidityActionScore: validityResult.actionScore,
           strategyValidityAction: validityResult.recommendedAction,
@@ -1216,6 +1249,7 @@ export async function reevaluateOpenPositions({
           validationSeverity: runtimeState?.validationState?.severity || null,
           executionAllowed: runtimeState?.executionIntent?.executionAllowed === true,
           stageId: 'stage_5',
+          monitorAgentPlanWarnings: monitorAgentPlan.warnings || [],
           dynamicTrailBreached: dynamicTrail?.breached === true,
           dynamicSizingMode: dynamicSizing?.mode || null,
         },
@@ -1251,6 +1285,7 @@ export async function reevaluateOpenPositions({
         shadowMode: validityResult.shadowMode,
       },
       strategyMutation: mutationResult || null,
+      monitorAgentPlan,
       adaptiveCadence: {
         cadenceMs: adaptiveCadence.cadenceMs,
         triggerType: adaptiveCadence.triggerType,
@@ -1275,6 +1310,8 @@ export async function reevaluateOpenPositions({
       },
       analysisSnapshot: {
         ...analysisSummary,
+        monitorAgentPlan,
+        monitorAgentPlanWarnings: monitorAgentPlan.warnings || [],
         backtestDrift: decision.driftContext,
         regime: regimeSnapshot ? {
           market: regimeSnapshot.market || regimeKey,

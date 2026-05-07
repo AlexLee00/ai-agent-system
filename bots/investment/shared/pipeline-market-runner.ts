@@ -5,18 +5,9 @@ import { publishAlert } from './alert-publisher.ts';
 import { getInvestmentNode } from '../nodes/index.ts';
 import { buildPreScreenPlannerContext } from './pre-screen-planner-bridge.ts';
 import { recordLifecyclePhaseSnapshot } from './lifecycle-contract.ts';
+import { buildCollectAgentPlan, buildPerSymbolCollectBatches } from './pipeline-agent-plan.ts';
 
-const COLLECT_NODE_SETS = {
-  binance: ['L06', 'L02', 'L03', 'L05'],
-  kis: ['L06', 'L02', 'L03', 'L04'],
-  kis_overseas: ['L06', 'L02', 'L03', 'L04'],
-};
-
-const COLLECT_CONCURRENCY_LIMIT = {
-  binance: 6,
-  kis: 5,
-  kis_overseas: 5,
-};
+export { buildCollectAgentPlan, buildPerSymbolCollectBatches } from './pipeline-agent-plan.ts';
 
 const ENRICHMENT_NODE_IDS = new Set(['L03', 'L04', 'L05']);
 const ENRICHMENT_NODE_LABELS = {
@@ -255,8 +246,9 @@ export async function runMarketCollectPipeline({
   universeMeta = {},
 } = {}) {
   const startedAt = Date.now();
-  const nodeIds = COLLECT_NODE_SETS[market];
-  if (!nodeIds) throw new Error(`지원하지 않는 market: ${market}`);
+  const collectAgentPlan = buildCollectAgentPlan({ market, meta });
+  const nodeIds = collectAgentPlan.nodeIds;
+  if (!Array.isArray(nodeIds) || nodeIds.length === 0) throw new Error(`수집 노드 계획이 비어 있습니다: ${market}`);
 
   const sessionId = await createPipelineSession({
     pipeline: 'luna_pipeline',
@@ -267,12 +259,15 @@ export async function runMarketCollectPipeline({
     meta: {
       ...(meta || {}),
       planner_payload: buildRuntimePlannerPayload({ market, symbols, meta }),
+      collect_agent_plan: collectAgentPlan,
     },
   });
 
   try {
     const summaries = [];
-    const portfolioNode = getInvestmentNode('L06');
+    const portfolioNode = collectAgentPlan.portfolioNodeId
+      ? getInvestmentNode(collectAgentPlan.portfolioNodeId)
+      : null;
     if (portfolioNode) {
       try {
         const result = await runNode(portfolioNode, {
@@ -280,13 +275,13 @@ export async function runMarketCollectPipeline({
           market,
           meta: { stage: 'collect', ...meta },
         });
-        summaries.push({ nodeId: 'L06', status: 'completed', symbol: null, outputRef: result.outputRef });
+        summaries.push({ nodeId: collectAgentPlan.portfolioNodeId, status: 'completed', symbol: null, outputRef: result.outputRef });
       } catch (err) {
-        summaries.push({ nodeId: 'L06', status: 'failed', symbol: null, error: err.message });
+        summaries.push({ nodeId: collectAgentPlan.portfolioNodeId, status: 'failed', symbol: null, error: err.message });
       }
     }
 
-    const perSymbolNodes = nodeIds.filter(nodeId => nodeId !== 'L06');
+    const perSymbolNodes = collectAgentPlan.perSymbolNodeIds;
     await emitPhase1CollectStarted({
       sessionId,
       market,
@@ -297,37 +292,42 @@ export async function runMarketCollectPipeline({
     }).catch(() => {});
 
     const tasks = [];
-    for (const symbol of symbols) {
-      for (const nodeId of perSymbolNodes) {
-        const node = getInvestmentNode(nodeId);
-        if (!node) continue;
-        tasks.push(async () => (
-          runNode(node, {
-            sessionId,
-            market,
-            symbol,
-            meta: { stage: 'collect', ...meta },
-            // Collect nodes already persist their real analysis into DB.
-            // Skip RAG artifacts here to avoid search/store storms on wide universes.
-            storeArtifact: false,
-          }).then(result => ({
-            nodeId,
-            status: 'completed',
-            symbol,
-            outputRef: result.outputRef,
-            partialFallback: Boolean(result?.result?.partialFallback),
-            errors: Array.isArray(result?.result?.errors) ? result.result.errors : [],
-          })).catch(err => ({
-            nodeId,
-            status: 'failed',
-            symbol,
-            error: err.message,
-          }))
-        ));
+    const nodeBatches = collectAgentPlan.perSymbolBatches;
+    for (const batch of nodeBatches) {
+      const batchTasks = [];
+      for (const symbol of symbols) {
+        for (const nodeId of batch) {
+          const node = getInvestmentNode(nodeId);
+          if (!node) continue;
+          const task = async () => (
+            runNode(node, {
+              sessionId,
+              market,
+              symbol,
+              meta: { stage: 'collect', ...meta },
+              // Collect nodes already persist their real analysis into DB.
+              // Skip RAG artifacts here to avoid search/store storms on wide universes.
+              storeArtifact: false,
+            }).then(result => ({
+              nodeId,
+              status: 'completed',
+              symbol,
+              outputRef: result.outputRef,
+              partialFallback: Boolean(result?.result?.partialFallback),
+              errors: Array.isArray(result?.result?.errors) ? result.result.errors : [],
+            })).catch(err => ({
+              nodeId,
+              status: 'failed',
+              symbol,
+              error: err.message,
+            }))
+          );
+          batchTasks.push(task);
+          tasks.push(task);
+        }
       }
+      summaries.push(...await runWithConcurrencyLimit(batchTasks, collectAgentPlan.concurrencyLimit || 4));
     }
-
-    summaries.push(...await runWithConcurrencyLimit(tasks, COLLECT_CONCURRENCY_LIMIT[market] || 4));
 
     const totalTasks = tasks.length + (portfolioNode ? 1 : 0);
     const failedTasks = summaries.filter(item => item.status === 'failed').length;
@@ -386,7 +386,9 @@ export async function runMarketCollectPipeline({
       partialFallbackTasks: partialFallbackSummaries.length,
       partialFallbackNodeCounts,
       partialFallbackErrorSources,
-      concurrencyLimit: COLLECT_CONCURRENCY_LIMIT[market] || 4,
+      concurrencyLimit: collectAgentPlan.concurrencyLimit || 4,
+      collectAgentPlan,
+      collectAgentPlanWarnings: collectAgentPlan.warnings,
       ragArtifactsSkipped: tasks.length,
       overloadDetected: tasks.length >= COLLECT_WARNING_THRESHOLDS.overloadTasks,
       overloadProfile: buildCollectOverloadProfile({
@@ -401,14 +403,14 @@ export async function runMarketCollectPipeline({
         symbols,
         failedTasks,
         totalTasks,
-        limit: COLLECT_CONCURRENCY_LIMIT[market] || 4,
+        limit: collectAgentPlan.concurrencyLimit || 4,
         totalCoreTasks,
         failedCoreTasks,
         totalEnrichmentTasks,
         failedEnrichmentTasks,
         dataSparsityFailures,
         llmGuardFailedTasks,
-      }),
+      }).concat(collectAgentPlan.warnings || []),
     };
     metrics.collectQuality = buildCollectQualityGate({
       collectMode: metrics.collectMode,
@@ -709,6 +711,8 @@ export async function logMarketPipelineMetrics(label, metrics = {}) {
 
 export default {
   runMarketCollectPipeline,
+  buildCollectAgentPlan,
+  buildPerSymbolCollectBatches,
   summarizeNodeStatuses,
   summarizeCollectWarnings,
   buildCollectAlertMessage,

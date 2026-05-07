@@ -14,6 +14,7 @@ import { buildHephaestosExecutionContext } from '../team/hephaestos/execution-co
 import {
   buildRiskApprovalRationalePayload as runnerPayloadBuilder,
 } from '../shared/pipeline-decision-runner.ts';
+import { buildDecisionAgentPlan } from '../shared/pipeline-decision-agent-plan.ts';
 
 function uniqueSymbol(prefix) {
   return `${prefix}${Date.now().toString(36).toUpperCase()}/USDT`;
@@ -103,6 +104,9 @@ try {
     stage: 'exit',
     analystSignalsOverride: 'EXIT_PHASE',
     plannerCompact: null,
+    decisionAgentPlan: buildDecisionAgentPlan({
+      meta: { agentPlan: { decision: { execution: { auxiliaryNodeIds: [] } } } },
+    }),
   });
 
   assert.ok(fullExitResult.signalId);
@@ -111,6 +115,8 @@ try {
   assert.equal(savedSignal.status, 'approved');
   assert.equal(Number(savedSignal.amount_usdt), 0);
   assert.equal(savedSignal.analyst_signals, 'EXIT_PHASE');
+  assert.equal(fullExitResult.notify.skipped, true);
+  assert.equal(fullExitResult.ragStore.skipped, true);
 } finally {
   await db.run(`DELETE FROM signals WHERE symbol = $1`, [fullExitSymbol]).catch(() => {});
 }

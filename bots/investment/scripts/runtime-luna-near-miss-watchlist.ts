@@ -8,7 +8,12 @@ import { investmentOpsRuntimeFile } from '../shared/runtime-ops-path.ts';
 import { buildLunaDecisionFilterReport } from './runtime-luna-decision-filter-report.ts';
 
 const CONFIRM = 'luna-near-miss-watchlist';
-const DEFAULT_OUTPUT_PATH = investmentOpsRuntimeFile('luna-near-miss-watchlist.json');
+const DEFAULT_MARKET = 'crypto';
+
+export function defaultNearMissWatchlistOutputPath(market = DEFAULT_MARKET) {
+  const normalized = String(market || DEFAULT_MARKET).toLowerCase();
+  return investmentOpsRuntimeFile(`luna-near-miss-watchlist-${normalized}.json`);
+}
 
 function hasArg(name, argv = process.argv.slice(2)) {
   return argv.includes(`--${name}`);
@@ -88,14 +93,15 @@ export async function buildLunaNearMissWatchlist({
 export async function runLunaNearMissWatchlist({
   apply = false,
   confirm = null,
-  outputPath = DEFAULT_OUTPUT_PATH,
+  outputPath = null,
   ...options
 } = {}) {
+  const resolvedOutputPath = outputPath || defaultNearMissWatchlistOutputPath(options.market || DEFAULT_MARKET);
   const payload = await buildLunaNearMissWatchlist(options);
   if (!apply) {
     return {
       ...payload,
-      outputPath,
+      outputPath: resolvedOutputPath,
       applyCommand: `node scripts/runtime-luna-near-miss-watchlist.ts --apply --confirm=${CONFIRM} --json`,
     };
   }
@@ -106,21 +112,21 @@ export async function runLunaNearMissWatchlist({
       status: 'near_miss_watchlist_confirm_required',
       dryRun: false,
       applied: false,
-      outputPath,
+      outputPath: resolvedOutputPath,
       confirmRequired: CONFIRM,
     };
   }
-  writeJson(outputPath, {
+  writeJson(resolvedOutputPath, {
     ...payload,
     dryRun: false,
     applied: true,
-    outputPath,
+    outputPath: resolvedOutputPath,
   });
   return {
     ...payload,
     dryRun: false,
     applied: true,
-    outputPath,
+    outputPath: resolvedOutputPath,
   };
 }
 
@@ -133,7 +139,7 @@ async function main() {
     exchange: argValue('exchange', null, argv),
     hours: Math.max(1, Number(argValue('hours', 24, argv)) || 24),
     limit: Math.max(1, Number(argValue('limit', 20, argv)) || 20),
-    outputPath: argValue('output', DEFAULT_OUTPUT_PATH, argv),
+    outputPath: argValue('output', null, argv),
   });
   if (hasArg('json', argv)) console.log(JSON.stringify(result, null, 2));
   else console.log(`runtime-luna-near-miss-watchlist ${result.status}`);

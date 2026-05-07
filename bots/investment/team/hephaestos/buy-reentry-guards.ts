@@ -1,5 +1,7 @@
 // @ts-nocheck
 
+import { buildHephaestosExecutionAgentPlan } from './execution-agent-plan.ts';
+
 export function createBuyReentryGuardPolicy({
   db,
   findAnyLivePosition,
@@ -14,6 +16,7 @@ export function createBuyReentryGuardPolicy({
     action,
     signalTradeMode,
     effectivePaperMode,
+    agentPlan = null,
   }) {
     const [livePosition, paperPosition, sameDayBuyTrade] = await Promise.all([
       db.getLivePosition(symbol, 'binance', signalTradeMode),
@@ -61,10 +64,17 @@ export function createBuyReentryGuardPolicy({
     }
     if (!effectivePaperMode && livePosition) {
       const validationLiveReentrySoftening = getValidationLiveReentrySofteningPolicy();
+      const executionAgentPlan = buildHephaestosExecutionAgentPlan({
+        agentPlan,
+        enabled: {
+          validation_live_reentry_softening: validationLiveReentrySoftening?.enabled !== false,
+        },
+      });
       const reentryReductionMultiplier = Number(validationLiveReentrySoftening?.reductionMultiplier || 0);
       if (
         signalTradeMode === 'validation'
         && validationLiveReentrySoftening?.enabled !== false
+        && executionAgentPlan.validationLiveReentrySofteningEnabled !== false
         && reentryReductionMultiplier > 0
         && reentryReductionMultiplier < 1
       ) {

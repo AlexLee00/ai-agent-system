@@ -14,6 +14,7 @@ const HISTORY_PATH = '/tmp/investment-runtime-kis-domestic-autotune-history.json
 const AUTO_KEYS = new Set([
   'runtime_config.luna.stockOrderDefaults.kis.buyDefault',
   'runtime_config.luna.minConfidence.live.kis',
+  'runtime_config.luna.stockStrategyProfiles.aggressive.minConfidence.live',
   'capital_management.by_exchange.kis.trade_modes.validation.max_position_pct',
   'runtime_config.execution.signalSafetySoftening.byExchange.kis.tradeModes.normal.amountCapMultiplier',
 ]);

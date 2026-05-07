@@ -20,6 +20,10 @@ import { loadCandidates, getMarketLabel } from './force-exit-candidate-report.ts
 import { executeSignal as executeCryptoSignal } from '../team/hephaestos.ts';
 import { executeSignal as executeDomesticSignal, executeOverseasSignal } from '../team/hanul.ts';
 import {
+  buildSignalAgentPlanPayload,
+  readExecutionRunnerAgentPlanArg,
+} from '../shared/execution-runner-agent-plan.ts';
+import {
   getKisExecutionModeInfo,
   getKisMarketStatus,
   getKisOverseasMarketStatus,
@@ -40,6 +44,7 @@ function parseArgs(argv = process.argv.slice(2)) {
     exchange: values.exchange ? String(values.exchange) : null,
     confirm: values.confirm ? String(values.confirm) : null,
     reason: values.reason ? String(values.reason) : 'force_exit',
+    agentPlan: readExecutionRunnerAgentPlanArg(argv, { envKey: 'LUNA_FORCE_EXIT_AGENT_PLAN_JSON' }),
   };
 }
 
@@ -127,7 +132,12 @@ async function getExecutionPreflight(candidate) {
   };
 }
 
-async function createForceExitSignal(candidate, reason) {
+async function createForceExitSignal(candidate, reason, explicitAgentPlan = null) {
+  const signalAgentPlan = buildSignalAgentPlanPayload({
+    explicitAgentPlan,
+    candidate,
+    runner: 'force_exit_runner',
+  });
   const signalId = await db.insertSignal({
     symbol: candidate.symbol,
     action: 'SELL',
@@ -149,12 +159,13 @@ async function createForceExitSignal(candidate, reason) {
     ...signal,
     exchange: candidate.exchange,
     trade_mode: candidate.tradeMode || 'normal',
+    agentPlan: signalAgentPlan,
     exit_reason_override: reason,
   };
 }
 
-async function executeCandidate(candidate, reason) {
-  const signal = await createForceExitSignal(candidate, reason);
+async function executeCandidate(candidate, reason, explicitAgentPlan = null) {
+  const signal = await createForceExitSignal(candidate, reason, explicitAgentPlan);
   if (candidate.exchange === 'binance') {
     return executeCryptoSignal(signal);
   }
@@ -229,7 +240,7 @@ async function main() {
     throw new Error(`force-exit preflight blocked: ${preflight.lines.join(' | ')}`);
   }
 
-  const result = await executeCandidate(candidate, options.reason);
+  const result = await executeCandidate(candidate, options.reason, options.agentPlan);
   const payload = {
     mode: 'execute',
     candidate,

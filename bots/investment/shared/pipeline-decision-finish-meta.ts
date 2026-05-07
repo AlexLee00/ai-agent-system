@@ -59,6 +59,8 @@ export function buildPipelineDecisionFinishMeta({
     exit_closed_count: Number(exitEntrySummary?.closedCount || 0),
     saved_execution_work: Number(metrics.savedExecutionWork || 0),
     warnings: metrics.warnings || [],
+    decision_agent_plan: metrics.decisionAgentPlan || null,
+    decision_agent_plan_warnings: metrics.decisionAgentPlanWarnings || [],
     investment_trade_mode: investmentTradeMode,
     ...plannerMeta,
   };

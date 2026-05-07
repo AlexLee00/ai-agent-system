@@ -18,12 +18,18 @@
  */
 
 import * as db from '../shared/db.ts';
+import fs from 'node:fs';
+import path from 'node:path';
 import { getPosttradeFeedbackRuntimeConfig } from '../shared/runtime-config.ts';
 import { evaluateTradeQuality, fetchPendingPosttradeCandidates } from '../shared/trade-quality-evaluator.ts';
 import { analyzeStageAttribution } from '../shared/stage-attribution-analyzer.ts';
 import { runReflexion } from '../shared/reflexion-engine.ts';
 import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
 import { recordOutcome as recordCurriculumOutcome } from '../shared/agent-curriculum-tracker.ts';
+import {
+  buildPosttradeFeedbackAgentPlan,
+  shouldRunPosttradePhase,
+} from '../shared/posttrade-feedback-agent-plan.ts';
 
 function normalizeCurriculumMarket(rawExchange: unknown): string {
   const value = String(rawExchange || '').trim().toLowerCase();
@@ -67,14 +73,35 @@ async function applyCurriculumOutcome(tradeId: number, quality: any, stageAttrs:
   );
 }
 
+function parseJsonObjectArg(rawValue: string, source: string) {
+  try {
+    const parsed = JSON.parse(String(rawValue || '').trim());
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      throw new Error('agent plan must be a JSON object');
+    }
+    return parsed;
+  } catch (error) {
+    throw new Error(`invalid ${source}: ${error?.message || error}`);
+  }
+}
+
+function readAgentPlanFile(rawPath: string) {
+  const filePath = path.isAbsolute(rawPath)
+    ? rawPath
+    : path.resolve(process.cwd(), rawPath);
+  return parseJsonObjectArg(fs.readFileSync(filePath, 'utf8'), `agent plan file ${filePath}`);
+}
+
 function parseArgs(argv = process.argv.slice(2)) {
-  const args = { limit: 20, dryRun: false, tradeId: null, market: 'all', json: false };
+  const args = { limit: 20, dryRun: false, tradeId: null, market: 'all', json: false, agentPlan: null };
   for (const raw of argv) {
     if (raw === '--dry-run')                        args.dryRun = true;
     else if (raw === '--json')                      args.json = true;
     else if (raw.startsWith('--limit='))            args.limit = Math.max(1, Number(raw.split('=')[1]) || 20);
     else if (raw.startsWith('--trade-id='))         args.tradeId = Number(raw.split('=')[1]);
     else if (raw.startsWith('--market='))           args.market = String(raw.split('=')[1] || 'all').trim().toLowerCase();
+    else if (raw.startsWith('--agent-plan-json='))  args.agentPlan = parseJsonObjectArg(raw.slice('--agent-plan-json='.length), 'agent plan json');
+    else if (raw.startsWith('--agent-plan-file='))  args.agentPlan = readAgentPlanFile(raw.slice('--agent-plan-file='.length));
   }
   return args;
 }
@@ -84,12 +111,28 @@ async function runPosttradeFeedback(args) {
   const enabledA = cfg.trade_quality?.enabled ?? false;
   const enabledB = cfg.stage_attribution?.enabled ?? false;
   const enabledC = cfg.reflexion?.enabled ?? false;
+  const posttradeAgentPlan = buildPosttradeFeedbackAgentPlan({
+    agentPlan: args.agentPlan,
+    enabled: {
+      trade_quality: enabledA,
+      stage_attribution: enabledB,
+      reflexion: enabledC,
+      curriculum: true,
+    },
+  });
+  const runA = shouldRunPosttradePhase(posttradeAgentPlan, 'trade_quality');
+  const runB = shouldRunPosttradePhase(posttradeAgentPlan, 'stage_attribution');
+  const runC = shouldRunPosttradePhase(posttradeAgentPlan, 'reflexion');
+  const runCurriculum = shouldRunPosttradePhase(posttradeAgentPlan, 'curriculum');
 
-  console.error(`[PosttradeFeedback] enabled: A=${enabledA} B=${enabledB} C=${enabledC} dryRun=${args.dryRun} market=${args.market}`);
+  console.error(`[PosttradeFeedback] enabled: A=${runA} B=${runB} C=${runC} curriculum=${runCurriculum} dryRun=${args.dryRun} market=${args.market}`);
+  if (posttradeAgentPlan.warnings.length > 0) {
+    console.error(`[PosttradeFeedback] agent plan warnings: ${posttradeAgentPlan.warnings.join(', ')}`);
+  }
 
-  if (!enabledA && !enabledB && !enabledC) {
+  if (!runA && !runB && !runC) {
     console.error('[PosttradeFeedback] 모든 Phase 비활성 — Kill switch: posttrade_feedback.*.enabled=false');
-    return { skipped: true, reason: 'all_disabled' };
+    return { skipped: true, reason: 'all_disabled', posttradeAgentPlan };
   }
 
   // 처리할 trade ID 목록 결정
@@ -102,7 +145,7 @@ async function runPosttradeFeedback(args) {
 
   if (candidates.length === 0) {
     console.error('[PosttradeFeedback] 처리할 거래 없음 (모두 이미 평가됨)');
-    return { processed: 0, source: 'none' };
+    return { processed: 0, source: 'none', posttradeAgentPlan };
   }
 
   console.error(`[PosttradeFeedback] 처리 대상: ${candidates.length}건`);
@@ -125,7 +168,7 @@ async function runPosttradeFeedback(args) {
       }
       // ── Phase A: Trade Quality Score ──────────────────────────────────────
       let quality = null;
-      if (enabledA) {
+      if (runA) {
         quality = await evaluateTradeQuality(tradeId, { dryRun: args.dryRun });
         if (quality) {
           results[quality.category]++;
@@ -147,17 +190,19 @@ async function runPosttradeFeedback(args) {
 
       // ── Phase B: Stage Attribution ────────────────────────────────────────
       let stageAttrs = [];
-      if (enabledB) {
+      if (runB) {
         stageAttrs = await analyzeStageAttribution(tradeId, Number(pnlPct), { dryRun: args.dryRun });
         if (stageAttrs.length > 0) {
           console.log(`[B] trade=${tradeId} stages=${stageAttrs.length}`);
         }
       }
 
-      await applyCurriculumOutcome(tradeId, quality, stageAttrs, args.dryRun);
+      if (runCurriculum) {
+        await applyCurriculumOutcome(tradeId, quality, stageAttrs, args.dryRun);
+      }
 
       // ── Phase C: Reflexion (rejected만) ───────────────────────────────────
-      if (enabledC && quality.category === 'rejected') {
+      if (runC && quality.category === 'rejected') {
         const reflexion = await runReflexion(quality, stageAttrs, { dryRun: args.dryRun });
         if (reflexion) {
           results.reflexions++;
@@ -181,7 +226,7 @@ async function runPosttradeFeedback(args) {
 
   console.error(`[PosttradeFeedback] 완료 — preferred:${results.preferred} neutral:${results.neutral} rejected:${results.rejected} reflexions:${results.reflexions} errors:${results.errors}`);
 
-  return { processed: candidates.length, ...results };
+  return { processed: candidates.length, ...results, posttradeAgentPlan };
 }
 
 async function main() {
@@ -196,7 +241,10 @@ async function main() {
 }
 
 if (isDirectExecution(import.meta.url)) {
-  runCliMain(main);
+  await runCliMain({
+    run: main,
+    errorPrefix: '[PosttradeFeedback]',
+  });
 }
 
 export { runPosttradeFeedback };

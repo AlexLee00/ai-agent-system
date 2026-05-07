@@ -11,7 +11,7 @@ import {
 function reportFixture({ current = 0.22, suggested = 0.2, totalBuy = 36 } = {}) {
   return {
     candidate: {
-      key: 'runtime_config.luna.minConfidence.live.kis',
+      key: 'runtime_config.luna.stockStrategyProfiles.aggressive.minConfidence.live',
       current,
       suggested,
     },
@@ -31,7 +31,7 @@ function reportFixture({ current = 0.22, suggested = 0.2, totalBuy = 36 } = {}) 
 export function runKisDomesticSelfTuneSmoke() {
   const first = reportFixture();
   const snapshot = buildKisDomesticSelfTuneHistorySnapshot(first);
-  assert.equal(snapshot.candidateKey, 'runtime_config.luna.minConfidence.live.kis');
+  assert.equal(snapshot.candidateKey, 'runtime_config.luna.stockStrategyProfiles.aggressive.minConfidence.live');
 
   const sameEvidenceLowerNext = reportFixture({ current: 0.2, suggested: 0.18 });
   assert.equal(isSameKisDomesticSelfTuneEvidence(sameEvidenceLowerNext, snapshot), true);

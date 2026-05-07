@@ -642,6 +642,7 @@ async function resolveBuyExecutionMode({
   signalTradeMode,
   globalPaperMode,
   capitalPolicy,
+  agentPlan = null,
 }) {
   return riskAndCapitalGates.resolveBuyExecutionMode({
     persistFailure,
@@ -652,6 +653,7 @@ async function resolveBuyExecutionMode({
     signalTradeMode,
     globalPaperMode,
     capitalPolicy,
+    agentPlan,
   });
 }
 

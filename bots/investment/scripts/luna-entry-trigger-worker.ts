@@ -10,6 +10,8 @@ import {
   evaluateActiveEntryTriggersAgainstMarketEvents,
   refreshEntryTriggersFromRecentBuySignals,
 } from '../shared/entry-trigger-engine.ts';
+import { buildEntryTriggerAgentPlan } from '../shared/entry-trigger-agent-plan.ts';
+import { getLunaIntelligentDiscoveryFlags } from '../shared/luna-intelligent-discovery-config.ts';
 import { listActiveEntryTriggers } from '../shared/luna-discovery-entry-store.ts';
 import { getOHLCV } from '../shared/ohlcv-fetcher.ts';
 
@@ -67,6 +69,27 @@ function parseEvents() {
   } catch (error) {
     throw new Error(`invalid_events_json: ${error?.message || error}`);
   }
+}
+
+function parseJsonObjectArg(rawValue: string, source: string) {
+  try {
+    const parsed = JSON.parse(String(rawValue || '').trim());
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      throw new Error('agent plan must be a JSON object');
+    }
+    return parsed;
+  } catch (error) {
+    throw new Error(`invalid ${source}: ${error?.message || error}`);
+  }
+}
+
+function readAgentPlanArg() {
+  const rawJson = argValue('--agent-plan-json', null);
+  if (rawJson) return parseJsonObjectArg(rawJson, 'agent plan json');
+  const rawFile = argValue('--agent-plan-file', null);
+  if (!rawFile) return null;
+  const filePath = path.isAbsolute(rawFile) ? rawFile : path.resolve(process.cwd(), rawFile);
+  return parseJsonObjectArg(fs.readFileSync(filePath, 'utf8'), `agent plan file ${filePath}`);
 }
 
 function hasFlag(name) {
@@ -163,30 +186,54 @@ async function deriveMarketEvents({ exchange = 'binance', limit = 100 } = {}) {
 export async function runLunaEntryTriggerWorker() {
   hydrateEntryTriggerEnvFromLaunchctl();
   const exchange = argValue('--exchange', process.env.LUNA_ENTRY_TRIGGER_EXCHANGE || 'binance');
-  const refresh = await refreshEntryTriggersFromRecentBuySignals({
-    exchange,
-    hours: Number(argValue('--refresh-hours', process.env.LUNA_ENTRY_TRIGGER_SIGNAL_REFRESH_HOURS || '6') || 6),
-    limit: Number(argValue('--refresh-limit', process.env.LUNA_ENTRY_TRIGGER_SIGNAL_REFRESH_LIMIT || '25') || 25),
-  }).catch((error) => ({
-    enabled: true,
-    refreshEnabled: true,
-    error: error?.message || String(error),
-    refreshed: 0,
-    armed: 0,
-    fired: 0,
-    blocked: 0,
-    sourceSignals: 0,
-  }));
+  const eventsRequested = hasFlag('--derive-market-events');
+  const flags = getLunaIntelligentDiscoveryFlags();
+  const agentPlan = buildEntryTriggerAgentPlan({
+    agentPlan: readAgentPlanArg(),
+    runtime: {
+      entryTriggerEnabled: flags.phases.entryTriggerEnabled === true,
+      signalRefreshEnabled: String(process.env.LUNA_ENTRY_TRIGGER_SIGNAL_REFRESH_ENABLED ?? 'true').trim().toLowerCase() !== 'false',
+      deriveMarketEventsRequested: eventsRequested,
+    },
+  });
+  const refresh = agentPlan.signalRefreshEnabled
+    ? await refreshEntryTriggersFromRecentBuySignals({
+      exchange,
+      hours: Number(argValue('--refresh-hours', process.env.LUNA_ENTRY_TRIGGER_SIGNAL_REFRESH_HOURS || '6') || 6),
+      limit: Number(argValue('--refresh-limit', process.env.LUNA_ENTRY_TRIGGER_SIGNAL_REFRESH_LIMIT || '25') || 25),
+    }).catch((error) => ({
+      enabled: true,
+      refreshEnabled: true,
+      error: error?.message || String(error),
+      refreshed: 0,
+      armed: 0,
+      fired: 0,
+      blocked: 0,
+      sourceSignals: 0,
+    }))
+    : {
+      enabled: true,
+      refreshEnabled: false,
+      reason: 'agent_plan_signal_refresh_disabled',
+      refreshed: 0,
+      armed: 0,
+      fired: 0,
+      blocked: 0,
+      sourceSignals: 0,
+    };
   let events = parseEvents();
-  if (events.length === 0 && hasFlag('--derive-market-events')) {
+  if (events.length === 0 && agentPlan.deriveMarketEventsEnabled) {
     events = await deriveMarketEvents({ exchange });
   }
-  const result = await evaluateActiveEntryTriggersAgainstMarketEvents(events, { exchange });
+  const result = agentPlan.activeEvaluationEnabled
+    ? await evaluateActiveEntryTriggersAgainstMarketEvents(events, { exchange })
+    : { enabled: false, fired: 0, readyBlocked: 0, checked: 0, results: [], reason: 'agent_plan_active_evaluation_disabled' };
   const output = {
     ok: true,
     exchange,
     eventSource: events.length > 0 ? 'provided_or_derived' : 'none',
     eventCount: events.length,
+    agentPlan,
     refresh,
     result,
   };

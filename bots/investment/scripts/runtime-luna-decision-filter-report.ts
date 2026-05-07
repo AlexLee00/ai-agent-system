@@ -137,7 +137,13 @@ function buildFilterReasons(analyses, fused, { exchange, minConfidence }) {
   if (!technical || technical.signal !== ACTIONS.BUY) reasons.push('technical_not_confirmed');
   if (exchange === 'binance' && (!onchain || onchain.signal !== ACTIONS.BUY)) reasons.push('onchain_not_confirmed');
   if (STOCK_EXCHANGES.has(exchange) && marketFlow && marketFlow.signal !== ACTIONS.BUY) reasons.push('market_flow_not_confirmed');
-  if (!sentiment || sentiment.signal !== ACTIONS.BUY) reasons.push('sentiment_not_confirmed');
+  if (
+    !sentiment
+    || sentiment.signal === ACTIONS.SELL
+    || (!STOCK_EXCHANGES.has(exchange) && sentiment.signal !== ACTIONS.BUY)
+  ) {
+    reasons.push('sentiment_not_confirmed');
+  }
   if (hasNewsOnlyBuy) reasons.push('news_only_buy');
 
   return [...new Set(reasons)];
@@ -174,7 +180,8 @@ export function buildNearMissWatchCandidate(item = {}) {
   ];
   if (hardStopReasons.some((reason) => reasons.has(reason))) return null;
   if (technicalSignal !== ACTIONS.BUY) return null;
-  if (Number(item?.fused?.averageConfidence || 0) < Math.max(0.38, Number(item?.minConfidence || 0.5) * 0.72)) return null;
+  const confidenceFloor = STOCK_EXCHANGES.has(item.exchange) ? 0.35 : 0.38;
+  if (Number(item?.fused?.averageConfidence || 0) < Math.max(confidenceFloor, Number(item?.minConfidence || 0.5) * 0.72)) return null;
 
   const missingConfirmations = [];
   if (reasons.has('onchain_not_confirmed')) missingConfirmations.push('onchain');

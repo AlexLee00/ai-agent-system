@@ -62,6 +62,39 @@ export async function runLunaDecisionFilterReportSmoke() {
   assert.equal(watchCandidate.watchReason, 'technical_and_sentiment_buy_waiting_onchain');
   assert.ok(watchCandidate.missingConfirmations.includes('onchain'));
 
+  const domesticNearMiss = buildNearMissWatchCandidate({
+    symbol: '005380',
+    exchange: 'kis',
+    actionability: 'filtered_before_signal',
+    recommendation: 'wait_for_market_flow_confirmation',
+    reasons: ['market_flow_not_confirmed'],
+    minConfidence: 0.18,
+    fused: { recommendation: 'LONG', fusedScore: 0.2071, averageConfidence: 0.3799, hasConflict: false },
+    analystSummary: {
+      byAnalyst: {
+        ta_mtf: { signal: 'BUY', confidence: 0.3 },
+        news: { signal: 'BUY', confidence: 0.7 },
+        sentiment: { signal: 'HOLD', confidence: 0.3 },
+        market_flow: { signal: 'HOLD', confidence: 0.2196 },
+      },
+    },
+  });
+  assert.equal(domesticNearMiss.watchReason, 'technical_buy_waiting_fusion_quality');
+  assert.deepEqual(domesticNearMiss.missingConfirmations, ['market_flow']);
+
+  const domesticNeutralSentimentRows = [
+    row('005380', 'news', 'BUY', 0.8),
+    row('005380', 'ta_mtf', 'BUY', 0.55),
+    row('005380', 'market_flow', 'BUY', 0.55),
+    row('005380', 'sentiment', 'HOLD', 0.4),
+  ];
+  const domesticNeutral = buildDecisionFilterDiagnostics(domesticNeutralSentimentRows, {
+    exchange: 'kis',
+    minConfidence: 0.18,
+  })[0];
+  assert.equal(domesticNeutral.actionability, 'likely_actionable');
+  assert.equal(domesticNeutral.reasons.includes('sentiment_not_confirmed'), false);
+
   const fixtureSymbol = `DFILTER${Date.now()}/USDT`;
   await db.initSchema();
   await ensureCandidateUniverseTable();

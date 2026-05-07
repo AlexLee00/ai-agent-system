@@ -14,6 +14,10 @@ import {
 import { publishToMainBot } from '../shared/mainbot-client.ts';
 import { beginCloseout, finalizeCloseout } from '../shared/position-closeout-engine.ts';
 import { recordLifecyclePhaseSnapshot } from '../shared/lifecycle-contract.ts';
+import {
+  buildSignalAgentPlanPayload,
+  readExecutionRunnerAgentPlanArg,
+} from '../shared/execution-runner-agent-plan.ts';
 
 function parseArgs(argv = process.argv.slice(2)) {
   const values = {};
@@ -32,6 +36,7 @@ function parseArgs(argv = process.argv.slice(2)) {
     confirm: values.confirm ? String(values.confirm) : null,
     runContext: values['run-context'] ? String(values['run-context']) : null,
     minutesBack: values.minutes ? Math.max(10, Number(values.minutes)) : 180,
+    agentPlan: readExecutionRunnerAgentPlanArg(argv, { envKey: 'LUNA_STRATEGY_EXIT_AGENT_PLAN_JSON' }),
   };
 }
 
@@ -221,6 +226,9 @@ function mapCandidate(row, strategyProfile = null) {
     heldHours,
     executionIntent: row.executionIntent
       || strategyProfileSnapshot?.positionRuntimeState?.executionIntent
+      || null,
+    agentPlan: row?.runtimeState?.agentPlan
+      || strategyProfileSnapshot?.positionRuntimeState?.agentPlan
       || null,
     strategyProfile: strategyProfileSnapshot,
   };
@@ -461,9 +469,14 @@ export async function buildStrategyExitRunnerPreflightForDispatchCandidate(dispa
   };
 }
 
-async function createStrategyExitSignal(candidate) {
+async function createStrategyExitSignal(candidate, explicitAgentPlan = null) {
   const incidentLink = candidate.signalIncidentLink || `${candidate.exitReasonOverride}${buildFamilyFeedbackIncidentSuffix(candidate.strategyProfile)}`;
   const idempotencyKey = buildStrategyExitIdempotencyKey(candidate);
+  const signalAgentPlan = buildSignalAgentPlanPayload({
+    explicitAgentPlan,
+    candidate,
+    runner: 'strategy_exit_runner',
+  });
   const signalId = await db.insertSignal({
     symbol: candidate.symbol,
     action: 'SELL',
@@ -484,6 +497,7 @@ async function createStrategyExitSignal(candidate) {
     ...signal,
     exchange: candidate.exchange,
     trade_mode: candidate.tradeMode,
+    agentPlan: signalAgentPlan,
     exit_reason_override: incidentLink,
     _idempotencyKey: idempotencyKey,
     _regime: candidate?.strategyProfile?.positionRuntimeState?.regime || null,
@@ -528,8 +542,8 @@ export function buildStrategyExitIdempotencyKey(candidate) {
   ].join(':');
 }
 
-async function executeCandidate(candidate) {
-  const signal = await createStrategyExitSignal(candidate);
+async function executeCandidate(candidate, explicitAgentPlan = null) {
+  const signal = await createStrategyExitSignal(candidate, explicitAgentPlan);
   if (candidate.exchange === 'binance') return executeCryptoSignal(signal);
   if (candidate.exchange === 'kis') return executeDomesticSignal(signal);
   if (candidate.exchange === 'kis_overseas') return executeOverseasSignal(signal);
@@ -590,7 +604,7 @@ async function main() {
   }
 
   await syncStrategyExitCandidateStates([candidate], 'execute');
-  const signal = await createStrategyExitSignal(candidate);
+  const signal = await createStrategyExitSignal(candidate, options.agentPlan);
   const lifecyclePolicySnapshot = candidate?.strategyProfile?.positionRuntimeState?.policyMatrix
     || candidate?.executionIntent?.policyMatrix
     || {};

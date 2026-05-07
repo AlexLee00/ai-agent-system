@@ -7,6 +7,7 @@ import { getExchangeEvidenceBaseline } from '../shared/runtime-config.ts';
 import { getParameterGovernance } from '../shared/runtime-parameter-governance.ts';
 import { getCapitalConfig } from '../shared/capital-manager.ts';
 import { buildRuntimeKisOrderPressureReport } from './runtime-kis-order-pressure-report.ts';
+import { buildLunaDecisionFilterReport } from './runtime-luna-decision-filter-report.ts';
 import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
 import { buildInvestmentCliInsight } from '../shared/cli-insight.ts';
 
@@ -120,8 +121,12 @@ function summarizeTrades(rows = []) {
   };
 }
 
-function buildCandidate(config, signalSummary, orderPressureSummary) {
+function buildCandidate(config, signalSummary, orderPressureSummary, decisionFilterSummary = null) {
   const execution = getInvestmentExecutionRuntimeConfig();
+  const stockStrategyMode = String(config.luna?.stockStrategyMode?.live || 'aggressive');
+  const stockStrategyProfile = config.luna?.stockStrategyProfiles?.[stockStrategyMode]
+    || config.luna?.stockStrategyProfiles?.aggressive
+    || {};
   const orderMetrics = orderPressureSummary?.decision?.metrics || {};
   const totalOrderPressure = Number(orderMetrics.total || 0);
   const validationRule1Blocks = signalSummary.validationRule1Blocks || [];
@@ -177,9 +182,15 @@ function buildCandidate(config, signalSummary, orderPressureSummary) {
     };
   }
 
-  if (signalSummary.totalBuy >= 8 && signalSummary.executedSignals > 0 && signalSummary.executionRate < 40) {
-    const key = 'runtime_config.luna.minConfidence.live.kis';
-    const current = Number(config.luna?.minConfidence?.live?.kis || 0.22);
+  const confidenceFilterBlocks = Number(decisionFilterSummary?.reasonCounts?.average_confidence_below_min || 0);
+  if (
+    signalSummary.totalBuy >= 8
+    && signalSummary.executedSignals > 0
+    && signalSummary.executionRate < 40
+    && confidenceFilterBlocks > 0
+  ) {
+    const key = `runtime_config.luna.stockStrategyProfiles.${stockStrategyMode}.minConfidence.live`;
+    const current = Number(stockStrategyProfile?.minConfidence?.live || config.luna?.minConfidence?.live?.kis || 0.22);
     const suggested = Math.max(0.12, Number((current - 0.02).toFixed(2)));
     if (suggested === current) return null;
     return {
@@ -188,16 +199,17 @@ function buildCandidate(config, signalSummary, orderPressureSummary) {
       suggested,
       action: 'adjust',
       confidence: 'low',
-      reason: `국내장 LIVE 실행률이 ${signalSummary.executionRate}%로 낮아 최소 확신도를 소폭 완화해 비교할 수 있습니다.`,
+      reason: `국내장 LIVE 실행률이 ${signalSummary.executionRate}%이고 평균 확신도 미달 후보 ${confidenceFilterBlocks}건이 있어, 실제 필터 경로의 최소 확신도를 소폭 완화해 비교할 수 있습니다.`,
       governance: getParameterGovernance(key),
     };
   }
   return null;
 }
 
-function buildDecision(signalSummary, tradeSummary, orderPressureSummary, candidate = null) {
+function buildDecision(signalSummary, tradeSummary, orderPressureSummary, candidate = null, decisionFilterSummary = null) {
   const baseline = getExchangeEvidenceBaseline('kis');
   const orderStatus = orderPressureSummary?.decision?.status || 'unknown';
+  const decisionReasonCounts = decisionFilterSummary?.reasonCounts || {};
   let status = 'kis_domestic_autotune_idle';
   let headline = '실계좌 전환 이후 국내장 self-tune 후보가 아직 없습니다.';
   const reasons = [
@@ -207,6 +219,18 @@ function buildDecision(signalSummary, tradeSummary, orderPressureSummary, candid
     `주문 초과 압력 ${orderStatus}`,
     signalSummary.normalRule1Blocks?.length > 0 ? `normal 원칙1 차단 ${signalSummary.normalRule1Blocks.length}건` : null,
     signalSummary.validationRule1Blocks?.length > 0 ? `validation 원칙1 차단 ${signalSummary.validationRule1Blocks.length}건` : null,
+    decisionFilterSummary?.activeCandidateCoverage
+      ? `활성 후보 분석 커버리지 ${decisionFilterSummary.activeCandidateCoverage.checked}/${decisionFilterSummary.activeCandidateCoverage.total}`
+      : null,
+    Number(decisionReasonCounts.technical_not_confirmed || 0) > 0
+      ? `기술 확인 미충족 ${decisionReasonCounts.technical_not_confirmed}건`
+      : null,
+    Number(decisionReasonCounts.market_flow_not_confirmed || 0) > 0
+      ? `시장흐름 확인 미충족 ${decisionReasonCounts.market_flow_not_confirmed}건`
+      : null,
+    Number(decisionReasonCounts.sentiment_not_confirmed || 0) > 0
+      ? `감성 확인 미충족 ${decisionReasonCounts.sentiment_not_confirmed}건`
+      : null,
   ].filter(Boolean);
   const actionItems = [];
   if (candidate) {
@@ -218,7 +242,11 @@ function buildDecision(signalSummary, tradeSummary, orderPressureSummary, candid
     headline = '국내장은 현재 병목이 약해 관찰 유지가 더 안전합니다.';
   }
   if (actionItems.length === 0) {
-    actionItems.push('현재 국내장 실거래 흐름을 유지하며 다음 표본을 관찰합니다.');
+    if (decisionFilterSummary?.status === 'luna_decision_filter_attention') {
+      actionItems.push('최소 확신도보다 기술/감성/시장흐름 확인이 병목이므로, 임계값 추가 완화 대신 후보 분석 refresh와 시장흐름 확인을 지속합니다.');
+    } else {
+      actionItems.push('현재 국내장 실거래 흐름을 유지하며 다음 표본을 관찰합니다.');
+    }
   }
   return {
     status,
@@ -272,16 +300,17 @@ function buildFallback(payload = {}) {
 
 export async function buildRuntimeKisDomesticAutotuneReport({ days = 14, json = false } = {}) {
   await db.initSchema();
-  const [signalRows, tradeRows, orderPressureSummary] = await Promise.all([
+  const [signalRows, tradeRows, orderPressureSummary, decisionFilterSummary] = await Promise.all([
     loadSignalRows(days),
     loadTradeRows(days),
     buildRuntimeKisOrderPressureReport({ days, json: true }),
+    buildLunaDecisionFilterReport({ market: 'domestic', exchange: 'kis', activeCandidates: true, hours: 24, limit: 20 }),
   ]);
   const config = getInvestmentRuntimeConfig();
   const signalSummary = summarizeSignals(signalRows);
   const tradeSummary = summarizeTrades(tradeRows);
-  const candidate = buildCandidate(config, signalSummary, orderPressureSummary);
-  const decision = buildDecision(signalSummary, tradeSummary, orderPressureSummary, candidate);
+  const candidate = buildCandidate(config, signalSummary, orderPressureSummary, decisionFilterSummary);
+  const decision = buildDecision(signalSummary, tradeSummary, orderPressureSummary, candidate, decisionFilterSummary);
   const payload = {
     ok: true,
     days,
@@ -290,6 +319,13 @@ export async function buildRuntimeKisDomesticAutotuneReport({ days = 14, json = 
     signalSummary,
     tradeSummary,
     orderPressureSummary,
+    decisionFilterSummary: {
+      status: decisionFilterSummary?.status || null,
+      activeCandidateCoverage: decisionFilterSummary?.activeCandidateCoverage || null,
+      reasonCounts: decisionFilterSummary?.reasonCounts || {},
+      bottlenecks: decisionFilterSummary?.bottlenecks || [],
+      likelyActionableCount: Number(decisionFilterSummary?.likelyActionableCount || 0),
+    },
     candidate,
     decision,
   };

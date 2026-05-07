@@ -9,6 +9,7 @@
 
 import { rejectExecution } from './execution-failure.ts';
 import { buildGuardTelemetryMeta } from './execution-guards.ts';
+import { buildHephaestosExecutionAgentPlan } from './execution-agent-plan.ts';
 
 export function createRiskAndCapitalGatePolicy(context = {}) {
   const {
@@ -71,9 +72,11 @@ export function createRiskAndCapitalGatePolicy(context = {}) {
     amountUsdt,
     reason,
     signalTradeMode,
+    executionAgentPlan = null,
   }) {
     const policy = getNormalToValidationFallbackPolicy();
     if (policy?.enabled === false) return null;
+    if (executionAgentPlan?.normalToValidationFallbackEnabled === false) return null;
 
     const guardKind = classifyValidationFallbackGuard(reason);
     const allowedGuardKinds = Array.isArray(policy?.allowedGuardKinds) ? policy.allowedGuardKinds : [];
@@ -108,7 +111,15 @@ export function createRiskAndCapitalGatePolicy(context = {}) {
     signalTradeMode,
     globalPaperMode,
     capitalPolicy,
+    agentPlan = null,
   }) {
+    const normalFallbackPolicy = getNormalToValidationFallbackPolicy();
+    const executionAgentPlan = buildHephaestosExecutionAgentPlan({
+      agentPlan,
+      enabled: {
+        normal_to_validation_fallback: normalFallbackPolicy?.enabled !== false,
+      },
+    });
     const preTradeAmount = capLiveFireTradeAmount(amountUsdt, globalPaperMode).amount;
     const check = await preTradeCheck(symbol, 'BUY', preTradeAmount, 'binance', signalTradeMode);
     if (check.allowed) {
@@ -161,6 +172,7 @@ export function createRiskAndCapitalGatePolicy(context = {}) {
         amountUsdt,
         reason: check.reason || '',
         signalTradeMode,
+        executionAgentPlan,
       });
       if (fallback) {
         console.log(

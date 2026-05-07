@@ -10,6 +10,10 @@ import { getKisExecutionModeInfo, getKisMarketStatus, getKisOverseasMarketStatus
 import { buildPositionScopeKey, recordLifecyclePhaseSnapshot } from '../shared/lifecycle-contract.ts';
 import { resolvePositionLifecycleFlags } from '../shared/position-lifecycle-flags.ts';
 import { adjustLunaBuyCandidate, getLunaBuyingPowerSnapshot } from '../shared/capital-manager.ts';
+import {
+  buildSignalAgentPlanPayload,
+  readExecutionRunnerAgentPlanArg,
+} from '../shared/execution-runner-agent-plan.ts';
 
 const DEFAULT_MAX_PYRAMID_COUNT = 3;
 const DEFAULT_DEDUPE_WINDOW_MINUTES = 180;
@@ -30,6 +34,7 @@ function parseArgs(argv = process.argv.slice(2)) {
     confirm: values.confirm ? String(values.confirm) : null,
     runContext: values['run-context'] ? String(values['run-context']) : null,
     minutesBack: values.minutes ? Math.max(10, Number(values.minutes)) : 180,
+    agentPlan: readExecutionRunnerAgentPlanArg(argv, { envKey: 'LUNA_PYRAMID_ADJUST_AGENT_PLAN_JSON' }),
   };
 }
 
@@ -98,6 +103,7 @@ function mapCandidate(row) {
     sizingDecision: sizing,
     runtimeState: row.runtimeState || null,
     executionIntent: row.executionIntent || row.runtimeState?.executionIntent || null,
+    agentPlan: row?.runtimeState?.agentPlan || null,
   };
 }
 
@@ -223,8 +229,13 @@ async function getExecutionPreflight(candidate, { strictCapital = false } = {}) 
   return { ok: true, lines, safety };
 }
 
-async function createPyramidSignal(candidate) {
+async function createPyramidSignal(candidate, explicitAgentPlan = null) {
   const idempotencyKey = buildPyramidIdempotencyKey(candidate);
+  const signalAgentPlan = buildSignalAgentPlanPayload({
+    explicitAgentPlan,
+    candidate,
+    runner: 'pyramid_adjust_runner',
+  });
   const inserted = await db.insertSignalIfFresh({
     symbol: candidate.symbol,
     action: 'BUY',
@@ -247,6 +258,7 @@ async function createPyramidSignal(candidate) {
     ...signal,
     exchange: candidate.exchange,
     trade_mode: candidate.tradeMode,
+    agentPlan: signalAgentPlan,
     _idempotencyKey: idempotencyKey,
     _duplicateSignal: inserted.duplicate === true,
   };
@@ -303,7 +315,7 @@ async function main() {
   }
   if (!preflight.ok) throw new Error(`pyramid-adjust preflight blocked: ${preflight.lines.join(' | ')}`);
 
-  const signal = await createPyramidSignal(executableCandidate);
+  const signal = await createPyramidSignal(executableCandidate, args.agentPlan);
   await recordLifecyclePhaseSnapshot({
     symbol: executableCandidate.symbol,
     exchange: executableCandidate.exchange,

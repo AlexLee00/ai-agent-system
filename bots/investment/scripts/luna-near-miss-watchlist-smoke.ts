@@ -8,6 +8,7 @@ import path from 'node:path';
 import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
 import {
   buildLunaNearMissWatchlist,
+  defaultNearMissWatchlistOutputPath,
   runLunaNearMissWatchlist,
 } from './runtime-luna-near-miss-watchlist.ts';
 
@@ -65,6 +66,8 @@ export async function runLunaNearMissWatchlistSmoke() {
   const written = JSON.parse(fs.readFileSync(outputPath, 'utf8'));
   assert.equal(written.summary.count, 1);
   assert.equal(written.watchlist[0].readiness, 'near_miss_watch');
+  assert.match(defaultNearMissWatchlistOutputPath('domestic'), /luna-near-miss-watchlist-domestic\.json$/);
+  assert.match(defaultNearMissWatchlistOutputPath('crypto'), /luna-near-miss-watchlist-crypto\.json$/);
 
   return {
     ok: true,
