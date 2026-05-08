@@ -11,6 +11,7 @@ type PickkoEntry = {
   end: string;
   amount: number;
   receiptText: string;
+  statusText: string;
 };
 
 type FetchPickkoEntriesOptions = {
@@ -243,6 +244,7 @@ async function fetchPickkoEntries(
     endText: string;
     amtText: string;
     receiptText: string;
+    statusText: string;
   }>;
   try {
     rawEntries = await page.evaluate((sd, cm, sk, ma, rd) => {
@@ -289,6 +291,7 @@ async function fetchPickkoEntries(
         const combinedText = cm.startTime >= 0 && texts[cm.startTime] ? texts[cm.startTime] : '';
         const endText = cm.isCombined ? '' : (cm.endTime >= 0 && texts[cm.endTime] ? texts[cm.endTime] : '');
         const receiptText = cm.receiptTime >= 0 && texts[cm.receiptTime] ? texts[cm.receiptTime] : '';
+        const statusText = cm.status >= 0 && texts[cm.status] ? texts[cm.status] : '';
 
         let reservationDate = '', startText = combinedText;
         const dm = combinedText.match(/(\d{4})-(\d{2})-(\d{2})/)
@@ -303,7 +306,7 @@ async function fetchPickkoEntries(
         const parsedStart = ti >= 0 ? startText.slice(0, ti).trim() : startText;
         const parsedEnd   = cm.isCombined ? (ti >= 0 ? startText.slice(ti + 1).trim() : '') : endText;
         const amtText2 = cm.amount >= 0 && texts[cm.amount] ? texts[cm.amount] : '';
-        entries.push({ name, phoneRaw, room, reservationDate, startText: parsedStart, endText: parsedEnd, amtText: amtText2, receiptText });
+        entries.push({ name, phoneRaw, room, reservationDate, startText: parsedStart, endText: parsedEnd, amtText: amtText2, receiptText, statusText });
       }
       return entries;
     }, startDate, colMap, statusKeyword, minAmount, receiptDate);
@@ -321,7 +324,8 @@ async function fetchPickkoEntries(
     start: _normalizeTime(e.startText),
     end: _normalizeTime(e.endText),
     amount: parseInt((e.amtText || '0').replace(/[^0-9]/g, ''), 10),
-    receiptText: e.receiptText || ''
+    receiptText: e.receiptText || '',
+    statusText: e.statusText || '',
   })).filter(e => e.phoneRaw && e.date && e.start);
 
   return { entries, fetchOk: colMap.headers.length > 0 };

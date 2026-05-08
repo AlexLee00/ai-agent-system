@@ -9,7 +9,7 @@ const { getPickkoLaunchOptions, setupDialogHandler } = require('../../lib/browse
 const { loginToPickko, fetchPickkoEntries } = require('../../lib/pickko');
 const { publishReservationAlert } = require('../../lib/alert-client');
 const { createErrorTracker } = require('../../lib/error-tracker');
-const { getKioskBlock, upsertKioskBlock, recordKioskBlockAttempt, getKioskBlocksForDate, pruneOldKioskBlocks } = require('../../lib/db');
+const { getKioskBlock, upsertKioskBlock, recordKioskBlockAttempt, getKioskBlocksForDate, getReservationsBySlot, pruneOldKioskBlocks } = require('../../lib/db');
 const { maskPhone, maskName } = require('../../lib/formatting');
 const {
   fmtPhone,
@@ -214,6 +214,7 @@ const kioskAuditService = createKioskAuditService({
   getKioskBlock,
   upsertKioskBlock,
   getKioskBlocksForDate,
+  getReservationsBySlot,
   maskName,
   getTodayKST,
   nowKST,

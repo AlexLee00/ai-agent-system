@@ -16,6 +16,7 @@ type PublishAlertFn = (payload: Record<string, any>) => Promise<any> | any;
 type GetKioskBlockFn = (...args: any[]) => Promise<any>;
 type UpsertKioskBlockFn = (...args: any[]) => Promise<any>;
 type GetKioskBlocksForDateFn = (date: string) => Promise<any[]>;
+type GetReservationsBySlotFn = (phone: string, date: string, start: string, room?: string | null) => Promise<any[]>;
 type MaskNameFn = (name: string) => string;
 type GetTodayKstFn = () => string;
 type NowKstFn = () => string;
@@ -39,6 +40,7 @@ export type CreateKioskAuditServiceDeps = {
   getKioskBlock: GetKioskBlockFn;
   upsertKioskBlock: UpsertKioskBlockFn;
   getKioskBlocksForDate: GetKioskBlocksForDateFn;
+  getReservationsBySlot: GetReservationsBySlotFn;
   maskName: MaskNameFn;
   getTodayKST: GetTodayKstFn;
   nowKST: NowKstFn;
@@ -69,6 +71,7 @@ export function createKioskAuditService(deps: CreateKioskAuditServiceDeps) {
     getKioskBlock,
     upsertKioskBlock,
     getKioskBlocksForDate,
+    getReservationsBySlot,
     maskName,
     getTodayKST,
     nowKST,
@@ -99,6 +102,7 @@ export function createKioskAuditService(deps: CreateKioskAuditServiceDeps) {
     log(`\n📋 [오늘 예약 검증] ${today} 시작`);
 
     let pickkoEntries: any[] = [];
+    let pickkoHistoryEntries: any[] = [];
     let browser: any;
     try {
       browser = await launchBrowser(getPickkoLaunchOptions());
@@ -113,6 +117,12 @@ export function createKioskAuditService(deps: CreateKioskAuditServiceDeps) {
       for (const entry of pickkoEntries) {
         log(`    • ${maskName(entry.name)} ${entry.date} ${entry.start}~${entry.end} ${entry.room}`);
       }
+      const historyResult = await fetchPickkoEntries(page, today, { statusKeyword: '', minAmount: 0 });
+      pickkoHistoryEntries = historyResult.entries.filter((entry) => {
+        const statusText = String(entry.statusText || '');
+        return !statusText.includes('취소') && !statusText.includes('환불');
+      });
+      log(`  픽코 예약내역(취소/환불 제외): ${pickkoHistoryEntries.length}건`);
     } finally {
       if (browser) {
         try { await browser.close(); } catch {}
@@ -291,8 +301,27 @@ export function createKioskAuditService(deps: CreateKioskAuditServiceDeps) {
       }
 
       const dbBlocks = await getKioskBlocksForDate(today);
-      const pickkoSet = new Set(pickkoEntries.map((entry) => `${entry.phoneRaw}|${entry.start}`));
-      const orphans = dbBlocks.filter((row) => !pickkoSet.has(`${row.phoneRaw}|${row.start}`));
+      const toAuditKey = (entry: { phoneRaw?: string; start?: string; end?: string; room?: string }) =>
+        `${entry.phoneRaw || ''}|${entry.start || ''}|${entry.end || ''}|${entry.room || ''}`;
+      const pickkoSet = new Set([...pickkoEntries, ...pickkoHistoryEntries].map((entry) => toAuditKey(entry)));
+      const orphanCandidates = dbBlocks.filter((row) => !pickkoSet.has(toAuditKey(row)));
+      const orphans: any[] = [];
+      for (const row of orphanCandidates) {
+        const reservations = await getReservationsBySlot(row.phoneRaw, row.date, row.start, row.room).catch(() => []);
+        const hasTerminalReservation = reservations.some((reservation) => {
+          if (!reservation) return false;
+          if (reservation.status === 'cancelled' || reservation.pickkoStatus === 'cancelled') return false;
+          return Boolean(
+            reservation.status === 'completed'
+            || ['manual', 'manual_retry', 'manual_pending', 'verified', 'time_elapsed'].includes(reservation.pickkoStatus),
+          );
+        });
+        if (hasTerminalReservation) {
+          log(`  🛡 고아 해제 보류: ${row.room} ${row.start}~${row.end} — 완료 예약 원장 존재`);
+          continue;
+        }
+        orphans.push(row);
+      }
       log(`\n[검증] DB 차단 항목: ${dbBlocks.length}건, 고아 항목: ${orphans.length}건`);
 
       for (const row of orphans) {
