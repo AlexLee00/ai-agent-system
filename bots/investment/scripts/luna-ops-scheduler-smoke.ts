@@ -14,11 +14,20 @@ import {
   runOpsScheduler,
   seedOpsSchedulerState,
 } from './runtime-luna-ops-scheduler.ts';
+import { shouldSkipPreScreen } from './pre-market-screen.ts';
 
 export async function runLunaOpsSchedulerSmoke() {
   const jobs = getOpsSchedulerJobs();
-  assert.equal(jobs.length, 17);
+  assert.equal(jobs.length, 19);
   assert.equal(jobs.some((job) => job.name === 'discovery_candidate_refresh'), true);
+  assert.equal(jobs.find((job) => job.name === 'discovery_candidate_refresh')?.market, 'crypto');
+  assert.equal(jobs.find((job) => job.name === 'discovery_candidate_refresh')?.args?.includes('--markets=crypto'), true);
+  assert.equal(jobs.some((job) => job.name === 'pre_market_screen_domestic'), true);
+  assert.equal(jobs.some((job) => job.name === 'pre_market_screen_overseas'), true);
+  assert.equal(jobs.find((job) => job.name === 'pre_market_screen_domestic')?.cadence?.type, 'daily');
+  assert.equal(jobs.find((job) => job.name === 'pre_market_screen_overseas')?.cadence?.type, 'daily');
+  assert.equal(shouldSkipPreScreen({ isOpen: true }), true);
+  assert.equal(shouldSkipPreScreen({ isOpen: false, isWeekend: false, holiday: { isHoliday: false } }), false);
   assert.equal(jobs.some((job) => job.name === 'market_cycle_crypto'), true);
   assert.equal(jobs.some((job) => job.name === 'market_cycle_domestic'), true);
   assert.equal(jobs.some((job) => job.name === 'market_cycle_domestic_open_catchup'), true);

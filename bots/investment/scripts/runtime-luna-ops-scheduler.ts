@@ -52,12 +52,28 @@ export function getOpsSchedulerJobs() {
     {
       name: 'discovery_candidate_refresh',
       category: 'discovery',
-      market: 'all',
+      market: 'crypto',
       cadence: { type: 'interval', seconds: 1800 },
       ...nodeScript('runtime-discovery-orchestrator-refresh.ts', [
-        '--markets=crypto,domestic,overseas',
+        '--markets=crypto',
         '--json',
       ]),
+    },
+    {
+      name: 'pre_market_screen_domestic',
+      category: 'candidate_selection',
+      market: 'domestic',
+      immutable: true,
+      cadence: { type: 'daily', hour: 8, minute: 35 },
+      ...nodeScript('pre-market-screen.ts', ['domestic']),
+    },
+    {
+      name: 'pre_market_screen_overseas',
+      category: 'candidate_selection',
+      market: 'overseas',
+      immutable: true,
+      cadence: { type: 'daily', hour: 21, minute: 35 },
+      ...nodeScript('pre-market-screen.ts', ['overseas']),
     },
     {
       name: 'market_cycle_crypto',

@@ -39,10 +39,11 @@ const PRESCREENED_FILE = {
 const PRESCREENED_TTL_MS     = 4  * 3600 * 1000;  // 4시간 유효 (정규)
 const PRESCREENED_RAG_TTL_MS = 24 * 3600 * 1000;  // 24시간 (RAG 폴백)
 
-function shouldSkipPreScreen(status) {
+export function shouldSkipPreScreen(status) {
   if (!status) return false;
   if (status.holiday?.isHoliday) return true;
   if (status.isWeekend) return true;
+  if (status.isOpen) return true;
   return false;
 }
 

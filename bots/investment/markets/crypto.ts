@@ -44,6 +44,7 @@ import { runDecisionExecutionPipeline } from '../shared/pipeline-decision-runner
 import { finishPipelineRun } from '../shared/pipeline-db.ts';
 import { updatePipelineRunMeta } from '../shared/pipeline-db.ts';
 import { mergeUniqueSymbols } from '../shared/luna-orchestration-policy.ts';
+import { buildStockIntradayLlmPolicyMeta } from '../shared/stock-intraday-llm-policy.ts';
 import { buildDiscoveryUniverse } from '../team/discovery/discovery-universe.ts';
 
 import { processAllPendingSignals, fetchUsdtBalance } from '../team/hephaestos.ts';
@@ -263,11 +264,16 @@ export async function runCryptoCycle(symbols, universeMeta = {}) {
   try {
     // ── 단계 1: 노드 기반 수집 실행 ──
     console.log('\n📊 [분석 단계] 노드 기반 수집 실행...');
+    const collectMeta = buildStockIntradayLlmPolicyMeta({
+      market: 'binance',
+      marketScript: 'crypto',
+      collectMode: 'screening_with_maintenance',
+    });
     const collect = await runMarketCollectPipeline({
       market: 'binance',
       symbols,
       triggerType: 'cycle',
-      meta: { market_script: 'crypto', collect_mode: 'screening_with_maintenance' },
+      meta: collectMeta,
       universeMeta: {
         screeningSymbolCount: Number(universeMeta.screeningSymbolCount || 0),
         heldSymbolCount: Number(universeMeta.heldSymbolCount || 0),
