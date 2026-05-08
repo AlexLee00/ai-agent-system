@@ -40,6 +40,10 @@
     <string>true</string>
     <key>LUNA_ENTRY_TRIGGER_ENGINE_ENABLED</key>
     <string>true</string>
+    <key>LUNA_CONSERVATIVE_RELAXATION_ENABLED</key>
+    <string>true</string>
+    <key>LUNA_CONSERVATIVE_RELAXATION_MAX_PER_CYCLE</key>
+    <string>3</string>
     <key>LUNA_DISCOVERY_SCORE_FUSION_ENABLED</key>
     <string>true</string>
     <key>LUNA_DISCOVERY_REFLECTION_ENABLED</key>

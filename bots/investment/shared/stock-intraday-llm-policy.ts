@@ -1,5 +1,7 @@
 // @ts-nocheck
 
+import { evaluateConservativeRelaxation } from './luna-conservative-relaxation-policy.ts';
+
 export const STOCK_INTRADAY_LIGHT_COLLECT_NODES = Object.freeze(['L06', 'L02', 'L04']);
 export const CRYPTO_INTRADAY_LIGHT_COLLECT_NODES = Object.freeze(['L06', 'L02']);
 const DEFAULT_DECISION_PREFILTER_CONFIDENCE = 0.55;
@@ -149,6 +151,21 @@ function findCryptoActionablePresignal(analyses = [], env = process.env) {
   };
 }
 
+function findRelaxedPresignal(market, analyses = [], env = process.env) {
+  const relaxation = evaluateConservativeRelaxation({
+    exchange: market,
+    analyses,
+    env,
+  });
+  if (!relaxation.ok) return null;
+  return {
+    run: true,
+    reason: relaxation.reason,
+    threshold: null,
+    relaxation,
+  };
+}
+
 function findStockActionablePresignal(analyses = [], env = process.env) {
   const taThreshold = getStockTaDecisionPrefilterConfidence(env);
   const flowThreshold = getStockFlowDecisionPrefilterConfidence(env);
@@ -218,7 +235,8 @@ export function shouldRunStockIntradayDecisionLlm({
   if (isCryptoMarket(market)) {
     if (!isCryptoIntradayDecisionPrefilterEnabled(env)) return { run: true, reason: 'crypto_prefilter_disabled' };
     if (liveHeldSymbols?.has?.(String(symbol || '').trim())) return { run: true, reason: 'held_symbol' };
-    return findCryptoActionablePresignal(analyses, env);
+    const strictCrypto = findCryptoActionablePresignal(analyses, env);
+    return strictCrypto.run ? strictCrypto : (findRelaxedPresignal(market, analyses, env) || strictCrypto);
   }
   if (!isStockMarket(market)) return { run: true, reason: 'non_stock_market' };
   if (!isStockIntradayDecisionPrefilterEnabled(env)) return { run: true, reason: 'prefilter_disabled' };
@@ -247,6 +265,14 @@ export function shouldRunStockIntradayDecisionLlm({
   if (composite.run) {
     return {
       ...composite,
+      threshold,
+    };
+  }
+
+  const relaxed = findRelaxedPresignal(market, analyses, env);
+  if (relaxed) {
+    return {
+      ...relaxed,
       threshold,
     };
   }

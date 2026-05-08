@@ -19,6 +19,7 @@ import {
 const disabledEnv = {
   LUNA_STOCK_INTRADAY_ENRICHMENT_ENABLED: 'false',
   LUNA_STOCK_INTRADAY_DEBATE_ENABLED: 'false',
+  LUNA_CONSERVATIVE_RELAXATION_ENABLED: 'false',
 };
 
 const lightMeta = buildStockIntradayLlmPolicyMeta({
@@ -178,6 +179,41 @@ const cryptoTaFlow = shouldRunStockIntradayDecisionLlm({
 assert.equal(cryptoTaFlow.run, true);
 assert.equal(cryptoTaFlow.reason, 'crypto_actionable_ta_flow_presignal');
 
+const relaxEnv = {
+  ...disabledEnv,
+  LUNA_CONSERVATIVE_RELAXATION_ENABLED: 'true',
+};
+
+const stockRelaxedNarrative = shouldRunStockIntradayDecisionLlm({
+  market: 'kis_overseas',
+  symbol: 'NVDA',
+  analyses: [
+    { analyst: 'news', signal: 'BUY', confidence: 0.54 },
+    { analyst: 'ta_mtf', signal: 'HOLD', confidence: 0.56 },
+    { analyst: 'market_flow', signal: 'HOLD', confidence: 0.55 },
+    { analyst: 'sentiment', signal: 'HOLD', confidence: 0.53 },
+  ],
+  env: relaxEnv,
+});
+assert.equal(stockRelaxedNarrative.run, true);
+assert.equal(stockRelaxedNarrative.reason, 'stock_relaxed_narrative_probe');
+assert.equal(stockRelaxedNarrative.relaxation.ok, true);
+
+const cryptoRelaxedNarrative = shouldRunStockIntradayDecisionLlm({
+  market: 'binance',
+  symbol: 'NIL/USDT',
+  analyses: [
+    { analyst: 'sentiment', signal: 'BUY', confidence: 0.86 },
+    { analyst: 'news', signal: 'BUY', confidence: 0.84 },
+    { analyst: 'ta_mtf', signal: 'HOLD', confidence: 0.7 },
+    { analyst: 'onchain', signal: 'HOLD', confidence: 0.7 },
+  ],
+  env: relaxEnv,
+});
+assert.equal(cryptoRelaxedNarrative.run, true);
+assert.equal(cryptoRelaxedNarrative.reason, 'crypto_relaxed_narrative_probe');
+assert.equal(cryptoRelaxedNarrative.relaxation.ok, true);
+
 let capturedRefreshMeta = null;
 const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'stock-intraday-llm-policy-'));
 const refresh = await runActiveCandidateAnalysisRefresh({
@@ -248,6 +284,8 @@ console.log(JSON.stringify({
   cryptoNarrativeOnly,
   cryptoTechnicalOnly,
   cryptoTaFlow,
+  stockRelaxedNarrative,
+  cryptoRelaxedNarrative,
   refreshCollectNodes: refreshCollect.nodeIds,
   cryptoRefreshCollectNodes: cryptoRefreshCollect.nodeIds,
 }, null, 2));

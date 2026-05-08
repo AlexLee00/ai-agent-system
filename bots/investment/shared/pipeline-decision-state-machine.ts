@@ -30,6 +30,7 @@ import { executeApprovedDecision, persistRiskApprovalRationale } from './pipelin
 import { buildDecisionBridgeMeta, loadDecisionPlannerCompact } from './pipeline-decision-bridge.ts';
 import { buildDecisionAgentPlan, shouldRunExecutionAuxiliaryNode } from './pipeline-decision-agent-plan.ts';
 import { shouldRunStockIntradayDecisionLlm } from './stock-intraday-llm-policy.ts';
+import { getConservativeRelaxationMaxPerCycle } from './luna-conservative-relaxation-policy.ts';
 import {
   applyCollectQualityGuard,
   applyDiscoveryHardCap,
@@ -179,6 +180,8 @@ export async function runDecisionExecutionStateMachine({
   const strategyRouteQualityCounts = {};
   let strategyRouteReadinessSum = 0;
   let strategyRouteReadinessCount = 0;
+  let relaxedPrefilterCount = 0;
+  const maxRelaxedPrefilterPerCycle = getConservativeRelaxationMaxPerCycle();
 
   const buildMetrics = (extra = {}) => {
     const metrics = buildDecisionPipelineMetrics({
@@ -213,6 +216,10 @@ export async function runDecisionExecutionStateMachine({
     });
     metrics.decisionAgentPlan = decisionAgentPlan;
     metrics.decisionAgentPlanWarnings = decisionAgentPlan.warnings;
+    metrics.conservativeRelaxation = {
+      used: relaxedPrefilterCount,
+      maxPerCycle: maxRelaxedPrefilterPerCycle,
+    };
     for (const warning of decisionAgentPlan.warnings || []) {
       if (!metrics.warnings.includes(warning)) metrics.warnings.push(warning);
     }
@@ -335,11 +342,20 @@ export async function runDecisionExecutionStateMachine({
         meta,
         liveHeldSymbols,
       });
+      if (stockIntradayPrefilter?.relaxation?.ok === true && relaxedPrefilterCount >= maxRelaxedPrefilterPerCycle) {
+        weakSignalSkipped++;
+        weakSignalReasons.conservative_relaxation_cap_reached = (weakSignalReasons.conservative_relaxation_cap_reached || 0) + 1;
+        console.log(`  ⏭️ [노드 브리지] ${symbol} L13 생략: conservative_relaxation_cap_reached (${relaxedPrefilterCount}/${maxRelaxedPrefilterPerCycle})`);
+        continue;
+      }
       if (!stockIntradayPrefilter.run) {
         weakSignalSkipped++;
         weakSignalReasons[stockIntradayPrefilter.reason] = (weakSignalReasons[stockIntradayPrefilter.reason] || 0) + 1;
         console.log(`  ⏭️ [노드 브리지] ${symbol} L13 생략: ${stockIntradayPrefilter.reason}`);
         continue;
+      }
+      if (stockIntradayPrefilter?.relaxation?.ok === true) {
+        relaxedPrefilterCount++;
       }
 
       await runNode(l10Node, {

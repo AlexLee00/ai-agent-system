@@ -47,6 +47,7 @@ export async function runLunaDecisionFilterReportSmoke() {
   const diagnostics = buildDecisionFilterDiagnostics(rows, {
     exchange: 'binance',
     minConfidence: 0.7,
+    env: { LUNA_CONSERVATIVE_RELAXATION_ENABLED: 'false' },
   });
   const bySymbol = Object.fromEntries(diagnostics.map((item) => [item.symbol, item]));
 
@@ -94,6 +95,34 @@ export async function runLunaDecisionFilterReportSmoke() {
   })[0];
   assert.equal(domesticNeutral.actionability, 'likely_actionable');
   assert.equal(domesticNeutral.reasons.includes('sentiment_not_confirmed'), false);
+
+  const relaxedStock = buildDecisionFilterDiagnostics([
+    row('005930', 'news', 'BUY', 0.9),
+    row('005930', 'ta_mtf', 'HOLD', 0.72),
+    row('005930', 'market_flow', 'HOLD', 0.68),
+    row('005930', 'sentiment', 'HOLD', 0.66),
+  ], {
+    exchange: 'kis',
+    minConfidence: 0.7,
+    env: { LUNA_CONSERVATIVE_RELAXATION_ENABLED: 'true' },
+  })[0];
+  assert.equal(relaxedStock.actionability, 'relaxed_probe_candidate');
+  assert.equal(relaxedStock.relaxation.reason, 'stock_relaxed_narrative_probe');
+  const relaxedWatch = buildNearMissWatchCandidate(relaxedStock);
+  assert.equal(relaxedWatch.readiness, 'relaxed_probe_watch');
+
+  const relaxedCrypto = buildDecisionFilterDiagnostics([
+    row('NIL/USDT', 'sentiment', 'BUY', 0.86),
+    row('NIL/USDT', 'news', 'BUY', 0.84),
+    row('NIL/USDT', 'ta_mtf', 'HOLD', 0.7),
+    row('NIL/USDT', 'onchain', 'HOLD', 0.7),
+  ], {
+    exchange: 'binance',
+    minConfidence: 0.7,
+    env: { LUNA_CONSERVATIVE_RELAXATION_ENABLED: 'true' },
+  })[0];
+  assert.equal(relaxedCrypto.actionability, 'relaxed_probe_candidate');
+  assert.equal(relaxedCrypto.relaxation.reason, 'crypto_relaxed_narrative_probe');
 
   const fixtureSymbol = `DFILTER${Date.now()}/USDT`;
   await db.initSchema();

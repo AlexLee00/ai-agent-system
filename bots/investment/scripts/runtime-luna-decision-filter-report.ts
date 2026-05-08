@@ -9,6 +9,7 @@ import {
   getMinConfidence,
 } from '../shared/luna-decision-policy.ts';
 import { shouldRunStockIntradayDecisionLlm } from '../shared/stock-intraday-llm-policy.ts';
+import { evaluateConservativeRelaxation } from '../shared/luna-conservative-relaxation-policy.ts';
 import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
 import { buildDiscoveryUniverse } from '../team/discovery/discovery-universe.ts';
 
@@ -155,6 +156,27 @@ function analystSignal(item, analysts = []) {
 export function buildNearMissWatchCandidate(item = {}) {
   if (item.actionability === 'likely_actionable') return null;
   const reasons = new Set(item.reasons || []);
+  if (item.actionability === 'relaxed_probe_candidate' && item.relaxation?.ok === true) {
+    const missingConfirmations = [];
+    if (reasons.has('technical_not_confirmed')) missingConfirmations.push('technical');
+    if (reasons.has('onchain_not_confirmed')) missingConfirmations.push('onchain');
+    if (reasons.has('sentiment_not_confirmed')) missingConfirmations.push('sentiment');
+    if (reasons.has('market_flow_not_confirmed')) missingConfirmations.push('market_flow');
+    if (reasons.has('average_confidence_below_min')) missingConfirmations.push('confidence');
+    if (reasons.has('fusion_not_long')) missingConfirmations.push('fusion');
+    return {
+      symbol: item.symbol,
+      exchange: item.exchange,
+      readiness: 'relaxed_probe_watch',
+      watchReason: item.relaxation.reason || 'conservative_policy_relaxed_probe',
+      missingConfirmations,
+      nextAction: 'run_l13_probe_with_existing_risk_and_entry_guards',
+      fused: item.fused,
+      analystSummary: item.analystSummary,
+      recommendation: item.recommendation,
+      relaxation: item.relaxation,
+    };
+  }
   const technicalSignal = analystSignal(item, [ANALYST_TYPES.TA_MTF, ANALYST_TYPES.TA]);
   const hardStopReasons = [
     'insufficient_analyst_coverage',
@@ -211,14 +233,24 @@ export function buildDecisionFilterDiagnostics(analysisRows = [], options = {}) 
     const analyses = latestByAnalyst(rows);
     const fused = fuseSignals(analyses, weights);
     const reasons = buildFilterReasons(analyses, fused, { exchange, minConfidence });
-    const actionability = reasons.length === 0 ? 'likely_actionable' : 'filtered_before_signal';
+    const relaxation = reasons.length > 0
+      ? evaluateConservativeRelaxation({ exchange, analyses, fused, env: options.env || process.env })
+      : { ok: false, reason: 'strict_actionable' };
+    const actionability = reasons.length === 0
+      ? 'likely_actionable'
+      : relaxation.ok
+        ? 'relaxed_probe_candidate'
+        : 'filtered_before_signal';
     const analystSummary = summarizeAnalysts(analyses);
     diagnostics.push({
       symbol,
       exchange,
       actionability,
-      recommendation: buildRecommendation(reasons),
+      recommendation: actionability === 'relaxed_probe_candidate'
+        ? 'run_l13_probe_with_reduced_sizing'
+        : buildRecommendation(reasons),
       reasons,
+      relaxation: relaxation.ok ? relaxation : null,
       minConfidence,
       fused: {
         recommendation: fused.recommendation,
@@ -237,7 +269,7 @@ export function buildDecisionFilterDiagnostics(analysisRows = [], options = {}) 
   }
 
   diagnostics.sort((a, b) => {
-    const actionabilityScore = (item) => item.actionability === 'likely_actionable' ? 1 : 0;
+    const actionabilityScore = (item) => item.actionability === 'likely_actionable' ? 2 : item.actionability === 'relaxed_probe_candidate' ? 1 : 0;
     return (actionabilityScore(b) - actionabilityScore(a))
       || (Number(b.fused.fusedScore || 0) - Number(a.fused.fusedScore || 0))
       || (Number(b.fused.averageConfidence || 0) - Number(a.fused.averageConfidence || 0));
@@ -297,6 +329,7 @@ export async function buildLunaDecisionFilterReport(options = {}) {
   const missingActiveCandidateSymbols = candidateSymbols.filter((symbol) => !checkedSymbolSet.has(symbol));
   const filtered = diagnostics.filter((item) => item.actionability !== 'likely_actionable');
   const likelyActionable = diagnostics.filter((item) => item.actionability === 'likely_actionable');
+  const relaxedProbeCandidates = diagnostics.filter((item) => item.actionability === 'relaxed_probe_candidate');
   const nearMissWatchlist = filtered
     .map(buildNearMissWatchCandidate)
     .filter(Boolean)
@@ -329,6 +362,7 @@ export async function buildLunaDecisionFilterReport(options = {}) {
     missingActiveCandidateSymbols,
     checkedSymbols: diagnostics.length,
     likelyActionableCount: likelyActionable.length,
+    relaxedProbeCount: relaxedProbeCandidates.length,
     nearMissWatchCount: nearMissWatchlist.length,
     nearMissWatchlist,
     filteredCount: filtered.length,
@@ -342,7 +376,7 @@ export async function buildLunaDecisionFilterReport(options = {}) {
 function renderText(report) {
   const lines = [
     `Luna decision filter report (${report.exchange}, ${report.hours}h, scope=${report.symbolScope || 'recent_analysis'})`,
-    `status=${report.status} checked=${report.checkedSymbols} likely_actionable=${report.likelyActionableCount} filtered=${report.filteredCount}`,
+    `status=${report.status} checked=${report.checkedSymbols} likely_actionable=${report.likelyActionableCount} relaxed_probe=${report.relaxedProbeCount || 0} filtered=${report.filteredCount}`,
     `reasons=${Object.entries(report.reasonCounts || {}).map(([key, value]) => `${key}:${value}`).join(', ') || 'none'}`,
     '',
   ];
