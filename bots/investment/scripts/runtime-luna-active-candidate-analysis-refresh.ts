@@ -48,6 +48,11 @@ function normalizeMarket(market = 'crypto') {
   return normalized;
 }
 
+function isCollectResultOk(result = {}) {
+  if (typeof result?.ok === 'boolean') return result.ok === true;
+  return Number(result?.metrics?.failedHardCoreTasks || 0) === 0;
+}
+
 function defaultExchangeForMarket(market = 'crypto') {
   if (market === 'domestic') return 'kis';
   if (market === 'overseas') return 'kis_overseas';
@@ -112,7 +117,7 @@ function updateAttemptState(state = {}, symbols = [], result = {}, now = new Dat
       symbol,
       exchange,
       lastAttemptAt: now.toISOString(),
-      lastStatus: result?.ok === true ? 'ok' : 'failed',
+      lastStatus: isCollectResultOk(result) ? 'ok' : 'failed',
       lastOutcome: result?.metrics?.collectQuality?.status || result?.status || null,
       lastSessionId: result?.sessionId || null,
     };

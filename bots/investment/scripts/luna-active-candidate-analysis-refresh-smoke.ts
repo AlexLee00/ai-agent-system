@@ -90,6 +90,9 @@ export async function runLunaActiveCandidateAnalysisRefreshSmoke() {
   assert.equal(finishedRuns[0].sessionId, 'smoke-session');
   assert.equal(finishedRuns[0].result.status, 'completed');
   assert.equal(finishedRuns[0].result.meta.decision_execution_skipped, true);
+  const appliedState = JSON.parse(fs.readFileSync(path.join(smokeDir, 'applied.json'), 'utf8'));
+  assert.equal(appliedState.symbols['binance:ENA/USDT'].lastStatus, 'ok');
+  assert.equal(appliedState.symbols['binance:BNB/USDT'].lastOutcome, 'ready');
 
   let domesticCollect = null;
   const domestic = await runActiveCandidateAnalysisRefresh({
@@ -120,6 +123,8 @@ export async function runLunaActiveCandidateAnalysisRefreshSmoke() {
   assert.deepEqual(domesticCollect.symbols, ['005490']);
   assert.equal(domesticCollect.meta.decision_execution_skipped, true);
   assert.equal(finishedRuns[1].sessionId, 'domestic-session');
+  const domesticState = JSON.parse(fs.readFileSync(path.join(smokeDir, 'domestic.json'), 'utf8'));
+  assert.equal(domesticState.symbols['kis:005490'].lastStatus, 'ok');
 
   const finishFailed = await runActiveCandidateAnalysisRefresh({
     apply: true,
