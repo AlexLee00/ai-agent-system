@@ -39,10 +39,11 @@ export async function runSmoke() {
     const blacklist = checkSymbolBlacklist('TAO/USDT', 'crypto');
     assert.equal(blacklist.blocked, true);
     assert.equal(blacklist.source, 'pre_entry/symbol_blacklist');
-    const derivedWeak = checkSymbolBlacklist('OPN/USDT', 'crypto');
+    const devGuardEnv = { LUNA_ALLOW_DEV_DATA_DERIVED_GUARDS: 'true' };
+    const derivedWeak = checkSymbolBlacklist('OPN/USDT', 'crypto', devGuardEnv);
     assert.equal(derivedWeak.blocked, true);
     assert.equal(derivedWeak.source, 'pre_entry/trade_data_weak_symbol');
-    const poetWeak = checkSymbolBlacklist('POET', 'overseas');
+    const poetWeak = checkSymbolBlacklist('POET', 'overseas', devGuardEnv);
     assert.equal(poetWeak.blocked, true);
     assert.equal(poetWeak.source, 'pre_entry/trade_data_weak_symbol');
     const lossStreak = await checkSymbolLossStreak('TAO/USDT', 'crypto');
@@ -55,7 +56,7 @@ export async function runSmoke() {
       action: 'BUY',
       confidence: 0.8,
       strategy_family: 'defensive_rotation',
-    });
+    }, devGuardEnv);
     assert.equal(domesticGuard.blocked, true);
     assert.ok(domesticGuard.blockers.includes('trade_data_weak_symbol'));
     assert.ok(domesticGuard.warnings.includes('domestic_defensive_rotation_probe_only'));

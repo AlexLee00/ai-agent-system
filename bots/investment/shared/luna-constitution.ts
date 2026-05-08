@@ -10,6 +10,10 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import {
+  getLunaOperatingEpoch,
+  shouldUseDevelopmentDerivedHardGates,
+} from './luna-operating-epoch.ts';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DEFAULT_CONSTITUTION_PATH = path.resolve(__dirname, '..', 'team', 'luna.constitution.md');
@@ -123,6 +127,8 @@ export function evaluateLunaConstitutionForEntry(candidate = {}, context = {}) {
   ).trim().toLowerCase();
 
   const violations = [];
+  const useDevelopmentDerivedHardGates = shouldUseDevelopmentDerivedHardGates(context.env || process.env);
+  const operatingEpoch = getLunaOperatingEpoch(context.env || process.env);
   if (Number.isFinite(analystAgreement) && analystAgreement < 3) {
     violations.push({ code: 'multi_signal_agreement_missing', severity: 'hard', detail: `analystAgreement=${analystAgreement}` });
   }
@@ -142,24 +148,36 @@ export function evaluateLunaConstitutionForEntry(candidate = {}, context = {}) {
   if (confidence < 0.5) {
     violations.push({ code: 'confidence_below_constitution_minimum', severity: 'hard', detail: `confidence=${confidence}` });
   }
-  // 보강 2: trending_bull regime 진입 기준 강화 — FOMO 방지
-  // 분석: trending_bull 219건 / 승률 20.5% (과잉 진입 의심)
   if (candidate.action === 'BUY' && regime === 'trending_bull' && confidence < 0.65) {
-    violations.push({ code: 'trending_bull_confidence_gate', severity: 'hard', detail: `trending_bull requires confidence>=0.65, got ${confidence}` });
+    violations.push(useDevelopmentDerivedHardGates
+      ? { code: 'trending_bull_confidence_gate', severity: 'hard', detail: `trending_bull requires confidence>=0.65, got ${confidence}` }
+      : {
+          code: 'trending_bull_confidence_development_stage_reference',
+          severity: 'soft',
+          detail: `pre-epoch trending_bull loss data is advisory only; confidence=${confidence}, epoch=${operatingEpoch.startedAt}`,
+        });
   }
   if (market === 'domestic' && candidate.action === 'BUY' && kstHour >= 15.20) {
     violations.push({ code: 'domestic_closing_auction_buy_block', severity: 'hard', detail: `kst=${kstHour}` });
   }
-  // 보강 7: domestic trending_bear 진입 차단 — 손실 Top 10 모두 국내 trending_bear
   if (market === 'domestic' && candidate.action === 'BUY' && regime === 'trending_bear') {
-    violations.push({ code: 'domestic_trending_bear_entry_block', severity: 'hard', detail: 'domestic BUY blocked in trending_bear regime (data: 28건 손실)' });
+    violations.push(useDevelopmentDerivedHardGates
+      ? { code: 'domestic_trending_bear_entry_block', severity: 'hard', detail: 'domestic BUY blocked in trending_bear regime (data: 28건 손실)' }
+      : {
+          code: 'domestic_trending_bear_development_stage_reference',
+          severity: 'soft',
+          detail: `pre-epoch domestic trending_bear loss data is advisory only; epoch=${operatingEpoch.startedAt}`,
+        });
   }
+  const hardViolations = violations.filter((item) => item.severity === 'hard');
 
   return {
-    ok: violations.length === 0,
-    blocked: violations.some((item) => item.severity === 'hard'),
+    ok: hardViolations.length === 0,
+    blocked: hardViolations.length > 0,
     violationCount: violations.length,
     violations,
+    hardViolationCount: hardViolations.length,
+    operatingEpoch,
   };
 }
 
@@ -188,4 +206,3 @@ export function evaluateLunaConstitutionForTrade({ trade = {}, reviewData = {}, 
     violations,
   };
 }
-

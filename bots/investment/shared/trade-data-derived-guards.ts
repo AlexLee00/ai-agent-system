@@ -6,6 +6,12 @@
  * trading behavior can be audited without depending on the current DB state.
  */
 
+import {
+  getLunaOperatingEpoch,
+  shouldUseDevelopmentDerivedHardGates,
+  shouldUseRowForPolicyLearning,
+} from './luna-operating-epoch.ts';
+
 const DISABLE_VALUES = new Set(['0', 'false', 'off', 'disabled']);
 
 export const EXPECTED_SELL_NOOP_CODES = new Set([
@@ -73,11 +79,16 @@ export function checkTradeDataWeakSymbol(symbol, market, env = process.env) {
   const key = keys.find((item) => TRADE_DATA_WEAK_SYMBOLS[item]);
   if (!key) return { blocked: false, source: null, reason: null, key: null };
   const row = TRADE_DATA_WEAK_SYMBOLS[key];
+  const hardGate = shouldUseDevelopmentDerivedHardGates(env);
+  const source = hardGate
+    ? 'pre_entry/trade_data_weak_symbol'
+    : 'pre_entry/trade_data_weak_symbol_development_stage';
   return {
-    blocked: true,
-    source: 'pre_entry/trade_data_weak_symbol',
+    blocked: hardGate,
+    source,
     reason: `[trade-data] ${normalizedSymbol} cooldown: ${row.reason}`,
     key,
+    epoch: getLunaOperatingEpoch(env),
   };
 }
 
@@ -105,7 +116,7 @@ function applySizingAdjustment(meta, {
   meta.sizingMultiplier = Number((Math.min(Number.isFinite(current) ? current : 1, next.multiplier)).toFixed(4));
 }
 
-export function evaluateLearningTradeQuality(row = {}) {
+export function evaluateLearningTradeQuality(row = {}, env = process.env) {
   const reasons = [];
   const status = String(row.status || '').toLowerCase();
   const closed = status === 'closed' || row.exit_time != null || row.exitTime != null;
@@ -113,8 +124,21 @@ export function evaluateLearningTradeQuality(row = {}) {
   const tpSlSet = row.tp_sl_set === true || row.tpSlSet === true;
   const excluded = row.exclude_from_learning === true || row.excludeFromLearning === true;
   const qualityFlag = String(row.quality_flag || row.qualityFlag || '').toLowerCase();
+  const hasPolicyTimestamp = [
+    row.created_at,
+    row.createdAt,
+    row.executed_at,
+    row.executedAt,
+    row.entry_time,
+    row.entryTime,
+    row.exit_time,
+    row.exitTime,
+  ].some((value) => value != null && value !== '');
 
   if (excluded || qualityFlag === 'exclude_from_learning') reasons.push('explicitly_excluded_from_learning');
+  if (hasPolicyTimestamp && !shouldUseRowForPolicyLearning(row, ['created_at', 'createdAt', 'executed_at', 'executedAt', 'entry_time', 'entryTime', 'exit_time', 'exitTime'], env)) {
+    reasons.push('development_stage_before_operating_epoch');
+  }
   if (!closed) reasons.push('trade_not_closed');
   if (!Number.isFinite(rawPnl) || Math.abs(rawPnl) > 1000) reasons.push('pnl_percent_outlier_or_missing');
   if (!tpSlSet) reasons.push('tp_sl_not_set');
@@ -150,9 +174,13 @@ export function evaluateTradeDataEntryGuard(signal = {}, env = process.env) {
   const meta = { market, strategyFamily: strategyFamily || null, tradeMode: tradeMode || null, regime: regime || null };
 
   const weak = checkTradeDataWeakSymbol(signal.symbol, market, env);
-  if (weak.blocked) {
-    blockers.push('trade_data_weak_symbol');
+  if (weak.key) {
     meta.weakSymbol = weak;
+    if (weak.blocked) {
+      blockers.push('trade_data_weak_symbol');
+    } else {
+      warnings.push('trade_data_weak_symbol_development_stage');
+    }
   }
 
   if (market === 'domestic' && strategyFamily === 'defensive_rotation') {

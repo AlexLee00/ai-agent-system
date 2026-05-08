@@ -7,6 +7,8 @@ import { getExchangeEvidenceBaseline } from '../shared/runtime-config.ts';
 import { getParameterGovernance } from '../shared/runtime-parameter-governance.ts';
 import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
 import { buildInvestmentCliInsight } from '../shared/cli-insight.ts';
+import { buildOperatingEpochLowerBoundSql, getLunaOperatingEpoch } from '../shared/luna-operating-epoch.ts';
+import { buildLunaDynamicPolicyDecision } from '../shared/luna-dynamic-policy-arbiter.ts';
 
 export const OVERSEAS_APPROVAL_PERSIST_CUTOVER = '2026-04-23T13:01:51.000Z';
 
@@ -23,7 +25,7 @@ async function loadSignalRows(days = 14) {
   const baseline = getExchangeEvidenceBaseline('kis_overseas');
   const bounds = [`now() - INTERVAL '${safeDays} days'`, `TIMESTAMP '${OVERSEAS_APPROVAL_PERSIST_CUTOVER}'`];
   if (baseline) bounds.push(`TIMESTAMP '${baseline}'`);
-  const lowerBound = `GREATEST(${bounds.join(', ')})`;
+  const lowerBound = buildOperatingEpochLowerBoundSql(`GREATEST(${bounds.join(', ')})`);
   return db.query(
     `SELECT
        status,
@@ -43,7 +45,7 @@ async function loadTradeRows(days = 14) {
   const baseline = getExchangeEvidenceBaseline('kis_overseas');
   const bounds = [`now() - INTERVAL '${safeDays} days'`, `TIMESTAMP '${OVERSEAS_APPROVAL_PERSIST_CUTOVER}'`];
   if (baseline) bounds.push(`TIMESTAMP '${baseline}'`);
-  const lowerBound = `GREATEST(${bounds.join(', ')})`;
+  const lowerBound = buildOperatingEpochLowerBoundSql(`GREATEST(${bounds.join(', ')})`);
   return db.query(
     `SELECT
        paper,
@@ -280,6 +282,13 @@ export async function buildRuntimeKisOverseasAutotuneReport({ days = 14, json = 
   const decision = buildDecision(signalSummary, tradeSummary, candidate, {
     approvalPersistCutover: OVERSEAS_APPROVAL_PERSIST_CUTOVER,
   });
+  const dynamicPolicy = buildLunaDynamicPolicyDecision({
+    market: 'overseas',
+    signalSummary,
+    tradeSummary,
+    guardSummary: { hardBlockers: signalSummary.operationalBlockCount || 0 },
+    operatingEpochSummary: { operating: signalSummary.totalBuy + tradeSummary.realBuyTrades },
+  });
 
   const payload = {
     ok: true,
@@ -290,7 +299,9 @@ export async function buildRuntimeKisOverseasAutotuneReport({ days = 14, json = 
     tradeSummary,
     candidate,
     decision,
+    dynamicPolicy,
     approvalPersistCutover: OVERSEAS_APPROVAL_PERSIST_CUTOVER,
+    operatingEpoch: getLunaOperatingEpoch(),
   };
 
   payload.aiSummary = await buildInvestmentCliInsight({

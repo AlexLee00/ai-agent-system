@@ -8,6 +8,8 @@ import { getCapitalConfigWithOverrides } from '../shared/capital-manager.ts';
 import { buildRuntimeBinanceCircuitBreakerReport } from './runtime-binance-circuit-breaker-report.ts';
 import { buildRuntimeBinanceCapitalGuardReport } from './runtime-binance-capital-guard-report.ts';
 import { buildRuntimeBinanceCorrelationGuardReport } from './runtime-binance-correlation-guard-report.ts';
+import { getLunaOperatingEpoch, shouldUseDevelopmentDerivedHardGates } from '../shared/luna-operating-epoch.ts';
+import { buildLunaDynamicPolicyDecision } from '../shared/luna-dynamic-policy-arbiter.ts';
 
 function parseArgs(argv = process.argv.slice(2)) {
   const daysArg = argv.find((arg) => arg.startsWith('--days='));
@@ -28,6 +30,9 @@ function clamp(value, min, max) {
 
 function buildGuardSuggestions({ capitalPolicy, correlation, circuit, capitalGuard }) {
   const suggestions = [];
+  if (!shouldUseDevelopmentDerivedHardGates()) {
+    return suggestions;
+  }
   const correlationTotal = Number(correlation?.decision?.metrics?.total || 0);
   const circuitTotal = Number(circuit?.decision?.metrics?.total || 0);
   const capitalGuardTotal = Number(capitalGuard?.decision?.metrics?.total || 0);
@@ -94,14 +99,16 @@ function buildGuardSuggestions({ capitalPolicy, correlation, circuit, capitalGua
 }
 
 function buildDecision({ capitalPolicy, suggestions, correlation, circuit, capitalGuard }) {
+  const epoch = getLunaOperatingEpoch();
   const actionable = suggestions.filter((item) => item.action === 'adjust');
   const observeOnly = suggestions.filter((item) => item.action === 'observe');
   const reasons = [
+    epoch.enabled ? `운영 epoch: ${epoch.startedAt} 이전 guard 통계는 개발단계 데이터로 제외` : null,
     `correlation guard: ${correlation?.decision?.status || 'unknown'}`,
     `capital guard: ${capitalGuard?.decision?.status || 'unknown'}`,
     `circuit breaker: ${circuit?.decision?.status || 'unknown'}`,
     `current normal lane: same-direction ${capitalPolicy?.max_same_direction_positions || 'n/a'} / cooldown ${capitalPolicy?.cooldown_minutes || 'n/a'}분 / loss streak ${capitalPolicy?.cooldown_after_loss_streak || 'n/a'}회`,
-  ];
+  ].filter(Boolean);
 
   let status = 'crypto_guard_autotune_idle';
   let headline = '지금은 crypto guard autotune 후보가 두드러지지 않습니다.';
@@ -179,6 +186,12 @@ export async function buildRuntimeCryptoGuardAutotuneReport({ days = 14, json = 
 
   const suggestions = buildGuardSuggestions({ capitalPolicy, correlation, circuit, capitalGuard });
   const decision = buildDecision({ capitalPolicy, suggestions, correlation, circuit, capitalGuard });
+  const dynamicPolicy = buildLunaDynamicPolicyDecision({
+    market: 'crypto',
+    signalSummary: { totalBuy: Number(capitalGuard?.decision?.metrics?.total || 0), executedSignals: 0 },
+    guardSummary: { hardBlockers: 0 },
+    operatingEpochSummary: { operating: 0 },
+  });
   const payload = {
     ok: true,
     days,
@@ -188,6 +201,8 @@ export async function buildRuntimeCryptoGuardAutotuneReport({ days = 14, json = 
     capitalGuard,
     suggestions,
     decision,
+    dynamicPolicy,
+    operatingEpoch: getLunaOperatingEpoch(),
   };
 
   payload.aiSummary = await buildInvestmentCliInsight({
@@ -201,6 +216,7 @@ export async function buildRuntimeCryptoGuardAutotuneReport({ days = 14, json = 
       correlation: correlation?.decision,
       circuit: circuit?.decision,
       capitalGuard: capitalGuard?.decision,
+      operatingEpoch: getLunaOperatingEpoch(),
     },
     fallback: buildFallback(payload),
   });

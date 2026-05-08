@@ -214,6 +214,27 @@ assert.equal(cryptoRelaxedNarrative.run, true);
 assert.equal(cryptoRelaxedNarrative.reason, 'crypto_relaxed_narrative_probe');
 assert.equal(cryptoRelaxedNarrative.relaxation.ok, true);
 
+const cryptoRelaxedMtfMomentum = shouldRunStockIntradayDecisionLlm({
+  market: 'binance',
+  symbol: 'NOT/USDT',
+  analyses: [
+    {
+      analyst: 'ta_mtf',
+      signal: 'BUY',
+      confidence: 0.19,
+      reasoning: '15분봉=BUY(40%) | 1시간봉=BUY(40%) | 4시간봉=HOLD(10%) | 일봉=SELL(10%); 가중점수 0.95; 추세보정 +0.28',
+    },
+    { analyst: 'onchain', signal: 'HOLD', confidence: 0.49 },
+    { analyst: 'sentiment', signal: 'HOLD', confidence: 0.45 },
+    { analyst: 'news', signal: 'HOLD', confidence: 0.35 },
+  ],
+  env: relaxEnv,
+});
+assert.equal(cryptoRelaxedMtfMomentum.run, true);
+assert.equal(cryptoRelaxedMtfMomentum.reason, 'crypto_relaxed_mtf_momentum_probe');
+assert.equal(cryptoRelaxedMtfMomentum.relaxation.momentumEvidence.intradayBuyFrames, 2);
+assert.equal(cryptoRelaxedMtfMomentum.relaxation.sizeRatio, 0.25);
+
 let capturedRefreshMeta = null;
 const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'stock-intraday-llm-policy-'));
 const refresh = await runActiveCandidateAnalysisRefresh({
@@ -286,6 +307,7 @@ console.log(JSON.stringify({
   cryptoTaFlow,
   stockRelaxedNarrative,
   cryptoRelaxedNarrative,
+  cryptoRelaxedMtfMomentum,
   refreshCollectNodes: refreshCollect.nodeIds,
   cryptoRefreshCollectNodes: cryptoRefreshCollect.nodeIds,
 }, null, 2));

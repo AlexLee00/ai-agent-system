@@ -1,6 +1,7 @@
 // @ts-nocheck
 import { query } from './db/core.ts';
 import { buildTradeAnalyticsReport } from './trade-analytics-report.ts';
+import { buildOperatingEpochLowerBoundSql, getLunaOperatingEpoch } from './luna-operating-epoch.ts';
 
 function rowsOf(result) {
   if (Array.isArray(result)) return result;
@@ -39,9 +40,16 @@ export const TRADE_DATA_REINFORCEMENT_CONTRACT = [
 ];
 
 export async function buildTradeDataAnalysisReport({ limit = 5000, generatedAt = new Date().toISOString() } = {}) {
+  const signalLowerBound = buildOperatingEpochLowerBoundSql(null);
+  const signalWhere = signalLowerBound ? `WHERE created_at >= ${signalLowerBound}` : '';
+  const tradeLowerBound = buildOperatingEpochLowerBoundSql(null);
+  const tradeWhere = tradeLowerBound ? `WHERE executed_at >= ${tradeLowerBound}` : '';
+  const journalLowerBound = buildOperatingEpochLowerBoundSql(null);
+  const journalWhere = journalLowerBound ? `WHERE created_at >= ${journalLowerBound}` : '';
   const signalStatusRows = await safeQuery(
     `SELECT COALESCE(status, 'unknown') AS status, COUNT(*)::int AS count
        FROM investment.signals
+      ${signalWhere}
       GROUP BY 1
       ORDER BY count DESC`,
   );
@@ -50,6 +58,7 @@ export async function buildTradeDataAnalysisReport({ limit = 5000, generatedAt =
             COALESCE(status, 'unknown') AS status,
             COUNT(*)::int AS count
        FROM investment.signals
+      ${signalWhere}
       GROUP BY 1, 2
       ORDER BY 1, count DESC`,
   );
@@ -59,6 +68,7 @@ export async function buildTradeDataAnalysisReport({ limit = 5000, generatedAt =
             COUNT(*)::int AS count
        FROM investment.signals
       WHERE LOWER(COALESCE(status, '')) = 'failed'
+      ${signalLowerBound ? `AND created_at >= ${signalLowerBound}` : ''}
       GROUP BY 1, 2
       ORDER BY count DESC
       LIMIT 20`,
@@ -68,6 +78,7 @@ export async function buildTradeDataAnalysisReport({ limit = 5000, generatedAt =
             COUNT(*)::int AS count
        FROM investment.signals
       WHERE LOWER(COALESCE(status, '')) = 'blocked'
+      ${signalLowerBound ? `AND created_at >= ${signalLowerBound}` : ''}
       GROUP BY 1
       ORDER BY count DESC
       LIMIT 20`,
@@ -77,12 +88,14 @@ export async function buildTradeDataAnalysisReport({ limit = 5000, generatedAt =
             COALESCE(side, 'unknown') AS side,
             COUNT(*)::int AS count
        FROM investment.trades
+      ${tradeWhere}
       GROUP BY 1, 2
       ORDER BY 1, count DESC`,
   );
   const journalRows = await safeQuery(
     `SELECT *
        FROM investment.trade_journal
+      ${journalWhere}
       ORDER BY created_at DESC NULLS LAST
       LIMIT $1`,
     [limit],
@@ -101,7 +114,8 @@ export async function buildTradeDataAnalysisReport({ limit = 5000, generatedAt =
     `SELECT
        COUNT(*) FILTER (WHERE LOWER(COALESCE(side, '')) = 'sell')::int AS sell_count,
        COUNT(*) FILTER (WHERE LOWER(COALESCE(side, '')) = 'sell' AND realized_pnl_pct IS NOT NULL)::int AS realized_count
-     FROM investment.trades`,
+     FROM investment.trades
+     ${tradeWhere}`,
   );
 
   const signalStatus = countMap(signalStatusRows, 'status');
@@ -129,6 +143,7 @@ export async function buildTradeDataAnalysisReport({ limit = 5000, generatedAt =
     ok: true,
     status: warnings.length ? 'needs_attention' : 'ready',
     generatedAt,
+    operatingEpoch: getLunaOperatingEpoch(),
     signals: {
       total: totalSignals,
       byStatus: signalStatus,

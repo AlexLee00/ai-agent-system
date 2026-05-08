@@ -22,6 +22,58 @@ function clamp(value, min, max) {
   return Math.max(min, Math.min(max, Number(value)));
 }
 
+function parseReasoningNumber(text, patterns = []) {
+  const source = String(text || '');
+  for (const pattern of patterns) {
+    const match = source.match(pattern);
+    if (!match) continue;
+    const value = Number(match[1]);
+    if (Number.isFinite(value)) return value;
+  }
+  return null;
+}
+
+function extractCryptoTechnicalEvidence(analyses = []) {
+  const evidence = {
+    weightedScore: null,
+    trendBoost: null,
+    intradayBuyFrames: 0,
+    intradaySellFrames: 0,
+    technicalBuyRows: 0,
+    technicalMaxConfidence: 0,
+  };
+
+  for (const row of analyses || []) {
+    if (roleFor('binance', row) !== 'technical') continue;
+    const action = normalizeAction(row?.signal);
+    const confidence = clamp(row?.confidence ?? 0, 0, 1);
+    if (action === ACTIONS.BUY) evidence.technicalBuyRows += 1;
+    evidence.technicalMaxConfidence = Math.max(evidence.technicalMaxConfidence, confidence);
+
+    const reasoning = String(row?.reasoning || row?.metadata?.reasoning || '');
+    const weightedScore = parseReasoningNumber(reasoning, [
+      /(?:가중점수|weighted[_\s-]*score)\s*(?:[:=]\s*)?([+-]?\d+(?:\.\d+)?)/i,
+    ]);
+    const trendBoost = parseReasoningNumber(reasoning, [
+      /(?:추세보정|trend[_\s-]*(?:boost|adjustment))\s*(?:[:=]\s*)?([+-]?\d+(?:\.\d+)?)/i,
+    ]);
+    if (weightedScore != null) evidence.weightedScore = Math.max(evidence.weightedScore ?? weightedScore, weightedScore);
+    if (trendBoost != null) evidence.trendBoost = Math.max(evidence.trendBoost ?? trendBoost, trendBoost);
+
+    const frameMatches = reasoning.matchAll(/(?:15분|15m|30분|30m|1시간|1h|4시간|4h|일봉|daily)[^|;\n]{0,60}?\b(BUY|SELL|LONG|SHORT|HOLD)\b/gi);
+    for (const match of frameMatches) {
+      const frameText = String(match[0] || '').toLowerCase();
+      const signal = normalizeAction(match[1]);
+      const isIntraday = /15분|15m|30분|30m|1시간|1h|4시간|4h/.test(frameText);
+      if (!isIntraday) continue;
+      if (signal === ACTIONS.BUY) evidence.intradayBuyFrames += 1;
+      if (signal === ACTIONS.SELL) evidence.intradaySellFrames += 1;
+    }
+  }
+
+  return evidence;
+}
+
 function normalizeAction(value) {
   const action = String(value || ACTIONS.HOLD).trim().toUpperCase();
   if (action === ACTIONS.BUY || action === ACTIONS.SELL || action === ACTIONS.HOLD) return action;
@@ -186,6 +238,29 @@ export function evaluateConservativeRelaxation({
     const avgFloor = clamp(numEnv(env, 'LUNA_CRYPTO_RELAXED_PROBE_MIN_AVG_CONFIDENCE', 0.36), 0, 1);
     const scoreFloor = clamp(numEnv(env, 'LUNA_CRYPTO_RELAXED_PROBE_MIN_FUSED_SCORE', -0.06), -1, 1);
     const narrativeAvgFloor = clamp(numEnv(env, 'LUNA_CRYPTO_RELAXED_NARRATIVE_MIN_AVG_CONFIDENCE', 0.50), 0, 1);
+    const mtfEvidence = extractCryptoTechnicalEvidence(analyses);
+    const mtfWeightedFloor = numEnv(env, 'LUNA_CRYPTO_RELAXED_MTF_WEIGHTED_SCORE', 0.85);
+    const mtfTrendFloor = numEnv(env, 'LUNA_CRYPTO_RELAXED_MTF_TREND_BOOST', 0.2);
+    const mtfAvgFloor = clamp(numEnv(env, 'LUNA_CRYPTO_RELAXED_MTF_MIN_AVG_CONFIDENCE', 0.32), 0, 1);
+    const mtfScoreFloor = clamp(numEnv(env, 'LUNA_CRYPTO_RELAXED_MTF_MIN_FUSED_SCORE', -0.03), -1, 1);
+    const mtfMomentumConfirmed = (Number(mtfEvidence.weightedScore ?? -Infinity) >= mtfWeightedFloor)
+      && (
+        Number(mtfEvidence.trendBoost ?? -Infinity) >= mtfTrendFloor
+        || mtfEvidence.intradayBuyFrames >= 2
+      )
+      && mtfEvidence.intradaySellFrames === 0;
+    if (signalSummary.technicalBuy && mtfMomentumConfirmed && avg >= mtfAvgFloor && score >= mtfScoreFloor) {
+      return {
+        enabled,
+        ok: true,
+        marketType,
+        reason: 'crypto_relaxed_mtf_momentum_probe',
+        sizeRatio: 0.25,
+        summary: signalSummary,
+        fused: fusion,
+        momentumEvidence: mtfEvidence,
+      };
+    }
     if (cryptoPrimary && avg >= avgFloor && score >= scoreFloor) {
       return {
         enabled,

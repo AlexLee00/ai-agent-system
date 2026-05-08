@@ -116,7 +116,7 @@ function buildActions({ summary, strategyFamily, tpSl, marketRegime }) {
     {
       id: 'domestic_trending_bear_block',
       status: 'ok',
-      evidence: { contract: 'domestic trending_bear entry block is source-backed by luna-constitution' },
+      evidence: { contract: 'domestic trending_bear pre-epoch losses are advisory; hard block requires current operating-epoch evidence or explicit override' },
     },
     {
       id: 'autotune_learning_data_expansion',

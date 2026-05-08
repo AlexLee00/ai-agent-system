@@ -124,6 +124,23 @@ export async function runLunaDecisionFilterReportSmoke() {
   assert.equal(relaxedCrypto.actionability, 'relaxed_probe_candidate');
   assert.equal(relaxedCrypto.relaxation.reason, 'crypto_relaxed_narrative_probe');
 
+  const relaxedCryptoMtf = buildDecisionFilterDiagnostics([
+    {
+      ...row('NOT/USDT', 'ta_mtf', 'BUY', 0.19),
+      reasoning: '15분봉=BUY(40%) | 1시간봉=BUY(40%) | 4시간봉=HOLD(10%) | 일봉=SELL(10%); 가중점수 0.95; 추세보정 +0.28',
+    },
+    row('NOT/USDT', 'onchain', 'HOLD', 0.49),
+    row('NOT/USDT', 'sentiment', 'HOLD', 0.45),
+    row('NOT/USDT', 'news', 'HOLD', 0.35),
+  ], {
+    exchange: 'binance',
+    minConfidence: 0.7,
+    env: { LUNA_CONSERVATIVE_RELAXATION_ENABLED: 'true' },
+  })[0];
+  assert.equal(relaxedCryptoMtf.actionability, 'relaxed_probe_candidate');
+  assert.equal(relaxedCryptoMtf.relaxation.reason, 'crypto_relaxed_mtf_momentum_probe');
+  assert.equal(relaxedCryptoMtf.relaxation.momentumEvidence.intradayBuyFrames, 2);
+
   const fixtureSymbol = `DFILTER${Date.now()}/USDT`;
   await db.initSchema();
   await ensureCandidateUniverseTable();

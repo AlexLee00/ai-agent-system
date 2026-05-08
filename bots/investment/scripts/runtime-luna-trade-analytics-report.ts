@@ -5,6 +5,7 @@ import path from 'node:path';
 import * as db from '../shared/db.ts';
 import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
 import { buildTradeAnalyticsReport } from '../shared/trade-analytics-report.ts';
+import { filterRowsForPolicyLearning, summarizeRowsByOperatingEpoch } from '../shared/luna-operating-epoch.ts';
 
 const DEFAULT_OUTPUT = path.resolve('output/reports/luna-trade-analytics-report.json');
 
@@ -82,8 +83,11 @@ async function loadRows({ limit }) {
 }
 
 export async function runTradeAnalyticsReport(args = parseArgs()) {
-  const rows = args.smoke ? buildSmokeRows() : await loadRows({ limit: args.limit });
+  const sourceRows = args.smoke ? buildSmokeRows() : await loadRows({ limit: args.limit });
+  const epochSummary = summarizeRowsByOperatingEpoch(sourceRows, ['exit_time', 'entry_time']);
+  const rows = args.smoke ? sourceRows : filterRowsForPolicyLearning(sourceRows, ['exit_time', 'entry_time']);
   const report = buildTradeAnalyticsReport(rows);
+  report.operatingEpochSummary = epochSummary;
   if (!args.noWrite) {
     fs.mkdirSync(path.dirname(args.output), { recursive: true });
     fs.writeFileSync(args.output, JSON.stringify(report, null, 2));

@@ -41,7 +41,8 @@ export async function runSmoke() {
   assert.equal(expectedSellNoop.classification, 'no_position_noop');
 
   const weakSymbol = preFilterSignal({ symbol: 'KITE/USDT', exchange: 'binance', action: 'BUY', confidence: 0.9 });
-  assert.ok(weakSymbol.blockers.includes('trade_data_weak_symbol'));
+  assert.equal(weakSymbol.ok, true);
+  assert.ok(weakSymbol.warnings.includes('trade_data_weak_symbol_development_stage'));
 
   const defensiveDomestic = preFilterSignal({
     symbol: '005930',

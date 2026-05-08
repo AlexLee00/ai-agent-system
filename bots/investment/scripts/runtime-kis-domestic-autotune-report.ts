@@ -6,6 +6,8 @@ import { getInvestmentExecutionRuntimeConfig, getInvestmentRuntimeConfig } from 
 import { getExchangeEvidenceBaseline } from '../shared/runtime-config.ts';
 import { getParameterGovernance } from '../shared/runtime-parameter-governance.ts';
 import { getCapitalConfig } from '../shared/capital-manager.ts';
+import { buildOperatingEpochLowerBoundSql, getLunaOperatingEpoch } from '../shared/luna-operating-epoch.ts';
+import { buildLunaDynamicPolicyDecision } from '../shared/luna-dynamic-policy-arbiter.ts';
 import { buildRuntimeKisOrderPressureReport } from './runtime-kis-order-pressure-report.ts';
 import { buildLunaDecisionFilterReport } from './runtime-luna-decision-filter-report.ts';
 import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
@@ -22,9 +24,10 @@ function parseArgs(argv = process.argv.slice(2)) {
 async function loadSignalRows(days = 14) {
   const safeDays = Math.max(1, Number(days || 14));
   const baseline = getExchangeEvidenceBaseline('kis');
-  const lowerBound = baseline
+  const evidenceLowerBound = baseline
     ? `GREATEST(now() - INTERVAL '${safeDays} days', TIMESTAMP '${baseline}')`
     : `now() - INTERVAL '${safeDays} days'`;
+  const lowerBound = buildOperatingEpochLowerBoundSql(evidenceLowerBound);
   return db.query(
     `SELECT
        status,
@@ -43,9 +46,10 @@ async function loadSignalRows(days = 14) {
 async function loadTradeRows(days = 14) {
   const safeDays = Math.max(1, Number(days || 14));
   const baseline = getExchangeEvidenceBaseline('kis');
-  const lowerBound = baseline
+  const evidenceLowerBound = baseline
     ? `GREATEST(now() - INTERVAL '${safeDays} days', TIMESTAMP '${baseline}')`
     : `now() - INTERVAL '${safeDays} days'`;
+  const lowerBound = buildOperatingEpochLowerBoundSql(evidenceLowerBound);
   return db.query(
     `SELECT
        paper,
@@ -311,6 +315,14 @@ export async function buildRuntimeKisDomesticAutotuneReport({ days = 14, json = 
   const tradeSummary = summarizeTrades(tradeRows);
   const candidate = buildCandidate(config, signalSummary, orderPressureSummary, decisionFilterSummary);
   const decision = buildDecision(signalSummary, tradeSummary, orderPressureSummary, candidate, decisionFilterSummary);
+  const dynamicPolicy = buildLunaDynamicPolicyDecision({
+    market: 'domestic',
+    signalSummary,
+    tradeSummary,
+    decisionFilterSummary,
+    guardSummary: { hardBlockers: 0 },
+    operatingEpochSummary: { operating: signalSummary.totalBuy + tradeSummary.realBuyTrades },
+  });
   const payload = {
     ok: true,
     days,
@@ -328,6 +340,8 @@ export async function buildRuntimeKisDomesticAutotuneReport({ days = 14, json = 
     },
     candidate,
     decision,
+    dynamicPolicy,
+    operatingEpoch: getLunaOperatingEpoch(),
   };
   payload.aiSummary = await buildInvestmentCliInsight({
     bot: 'runtime-kis-domestic-autotune-report',
