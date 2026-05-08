@@ -20,8 +20,8 @@ const CONFIRM = 'enable-luna-live-fire';
 const DEFAULT_MAX_TRADE_USDT = 50;
 const DEFAULT_MAX_DAILY_USDT = 200;
 const DEFAULT_MAX_OPEN_POSITIONS = 2;
-const CUTOVER_COMMAND = `launchctl setenv LUNA_INTELLIGENT_DISCOVERY_MODE autonomous_l5 && launchctl setenv LUNA_MAX_TRADE_USDT ${DEFAULT_MAX_TRADE_USDT} && launchctl setenv LUNA_LIVE_FIRE_MAX_DAILY ${DEFAULT_MAX_DAILY_USDT} && launchctl setenv LUNA_LIVE_FIRE_MAX_OPEN ${DEFAULT_MAX_OPEN_POSITIONS} && launchctl setenv LUNA_LIVE_FIRE_ENABLED true`;
-const ROLLBACK_COMMAND = 'launchctl unsetenv LUNA_INTELLIGENT_DISCOVERY_MODE && launchctl setenv LUNA_LIVE_FIRE_ENABLED false';
+const CUTOVER_COMMAND = `launchctl setenv LUNA_INTELLIGENT_DISCOVERY_MODE autonomous_l5 && launchctl setenv LUNA_MAX_TRADE_USDT ${DEFAULT_MAX_TRADE_USDT} && launchctl setenv LUNA_LIVE_FIRE_MAX_DAILY ${DEFAULT_MAX_DAILY_USDT} && launchctl setenv LUNA_LIVE_FIRE_MAX_OPEN ${DEFAULT_MAX_OPEN_POSITIONS} && launchctl setenv LUNA_POSITION_RUNTIME_AUTONOMOUS_DISPATCH_ENABLED false && launchctl setenv LUNA_LIVE_FIRE_ENABLED true`;
+const ROLLBACK_COMMAND = 'launchctl unsetenv LUNA_INTELLIGENT_DISCOVERY_MODE && launchctl setenv LUNA_LIVE_FIRE_ENABLED false && launchctl setenv LUNA_POSITION_RUNTIME_AUTONOMOUS_DISPATCH_ENABLED false';
 
 function hasFlag(name) {
   return process.argv.includes(name);
@@ -54,11 +54,12 @@ function applyCutoverEnv({ maxUsdt = DEFAULT_MAX_TRADE_USDT, maxDailyUsdt = DEFA
   const setMaxTrade = runCommand('launchctl', ['setenv', 'LUNA_MAX_TRADE_USDT', String(maxUsdt)]);
   const setMaxDaily = runCommand('launchctl', ['setenv', 'LUNA_LIVE_FIRE_MAX_DAILY', String(maxDailyUsdt)]);
   const setMaxOpen = runCommand('launchctl', ['setenv', 'LUNA_LIVE_FIRE_MAX_OPEN', String(maxOpen)]);
+  const disablePositionDispatch = runCommand('launchctl', ['setenv', 'LUNA_POSITION_RUNTIME_AUTONOMOUS_DISPATCH_ENABLED', 'false']);
   const enableLiveFire = runCommand('launchctl', ['setenv', 'LUNA_LIVE_FIRE_ENABLED', 'true']);
   return {
-    ok: setMode.ok && setMaxTrade.ok && setMaxDaily.ok && setMaxOpen.ok && enableLiveFire.ok,
+    ok: setMode.ok && setMaxTrade.ok && setMaxDaily.ok && setMaxOpen.ok && disablePositionDispatch.ok && enableLiveFire.ok,
     caps: { maxUsdt, maxDailyUsdt, maxOpen },
-    steps: { setMode, setMaxTrade, setMaxDaily, setMaxOpen, enableLiveFire },
+    steps: { setMode, setMaxTrade, setMaxDaily, setMaxOpen, disablePositionDispatch, enableLiveFire },
   };
 }
 

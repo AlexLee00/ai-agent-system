@@ -31,7 +31,7 @@ const GOVERNANCE_SPECS = [
   { key: 'runtime_config.luna.minConfidence.live.kis_overseas', tier: 'allow', min: 0.1, max: 0.4, label: '해외장 live 최소 확신도' },
   { key: 'runtime_config.luna.minConfidence.paper.kis_overseas', tier: 'allow', min: 0.1, max: 0.4, label: '해외장 paper 최소 확신도' },
   { key: 'runtime_config.luna.stockOrderDefaults.kis.buyDefault', tier: 'allow', min: 200000, max: 1200000, label: '국내장 기본 주문금액' },
-  { key: 'runtime_config.luna.stockOrderDefaults.kis_overseas.min', tier: 'allow', min: 200, max: 400, label: '해외장 최소 주문 floor' },
+  { key: 'runtime_config.luna.stockOrderDefaults.kis_overseas.min', tier: 'allow', min: 1, max: 400, label: '해외장 최소 주문 floor' },
   { key: 'runtime_config.luna.stockStrategyProfiles.aggressive.tradeModes.validation.minConfidence.live', tier: 'allow', min: 0.1, max: 0.4, label: '공격적 validation live 최소 확신도' },
   { key: 'runtime_config.nemesis.thresholds.stockStarterApproveDomestic', tier: 'allow', min: 200000, max: 1200000, label: '국내장 starter 자동승인 한도' },
   { key: 'runtime_config.nemesis.riskApprovalChain.mode', tier: 'escalate', label: '리스크 승인 체인 적용 모드' },

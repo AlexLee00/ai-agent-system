@@ -7,7 +7,7 @@ import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
 import { buildLunaPostLiveFireVerification } from './luna-post-live-fire-verify.ts';
 
 const CONFIRM = 'rollback-luna-live-fire';
-const ROLLBACK_COMMAND = 'launchctl unsetenv LUNA_INTELLIGENT_DISCOVERY_MODE && launchctl setenv LUNA_LIVE_FIRE_ENABLED false';
+const ROLLBACK_COMMAND = 'launchctl unsetenv LUNA_INTELLIGENT_DISCOVERY_MODE && launchctl setenv LUNA_LIVE_FIRE_ENABLED false && launchctl setenv LUNA_POSITION_RUNTIME_AUTONOMOUS_DISPATCH_ENABLED false';
 
 function hasFlag(name) {
   return process.argv.includes(name);
@@ -36,7 +36,7 @@ function readLaunchctlEnv(name) {
 }
 
 function envTrue(name) {
-  const raw = String(process.env[name] || readLaunchctlEnv(name) || '').trim().toLowerCase();
+  const raw = String(readLaunchctlEnv(name) || process.env[name] || '').trim().toLowerCase();
   return raw === 'true' || raw === '1' || raw === 'yes' || raw === 'on';
 }
 
@@ -50,9 +50,10 @@ function liveFireCapable(report = {}, { checkRuntimeEnv = true } = {}) {
 function applyRollbackEnv() {
   const unsetMode = runCommand('launchctl', ['unsetenv', 'LUNA_INTELLIGENT_DISCOVERY_MODE']);
   const disableLiveFire = runCommand('launchctl', ['setenv', 'LUNA_LIVE_FIRE_ENABLED', 'false']);
+  const disablePositionDispatch = runCommand('launchctl', ['setenv', 'LUNA_POSITION_RUNTIME_AUTONOMOUS_DISPATCH_ENABLED', 'false']);
   return {
-    ok: unsetMode.ok && disableLiveFire.ok,
-    steps: { unsetMode, disableLiveFire },
+    ok: unsetMode.ok && disableLiveFire.ok && disablePositionDispatch.ok,
+    steps: { unsetMode, disableLiveFire, disablePositionDispatch },
   };
 }
 
@@ -174,6 +175,7 @@ export async function runLunaLiveFireWatchdogSmoke() {
   assert.equal(rollback.status, 'rollback_recommended');
   assert.equal(rollback.rollbackRecommended, true);
   assert.equal(ROLLBACK_COMMAND.includes('LUNA_LIVE_FIRE_ENABLED false'), true);
+  assert.equal(ROLLBACK_COMMAND.includes('LUNA_POSITION_RUNTIME_AUTONOMOUS_DISPATCH_ENABLED false'), true);
 
   const preApprovalAutonomous = evaluateLunaLiveFireWatchdog({
     ok: false,

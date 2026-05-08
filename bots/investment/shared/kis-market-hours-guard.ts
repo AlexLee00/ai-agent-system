@@ -36,13 +36,33 @@ function yyyymmdd(date) {
   return `${y}-${m}-${d}`;
 }
 
+function timeZoneParts(date, timeZone) {
+  const formatter = new Intl.DateTimeFormat('en-US', {
+    timeZone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    weekday: 'short',
+    hour12: false,
+  });
+  const parts = Object.fromEntries(formatter.formatToParts(date).map((part) => [part.type, part.value]));
+  const hour = Number(parts.hour === '24' ? 0 : parts.hour);
+  const minute = Number(parts.minute || 0);
+  return {
+    weekday: parts.weekday,
+    dateStr: `${parts.year}-${parts.month}-${parts.day}`,
+    minutesOfDay: hour * 60 + minute,
+  };
+}
+
 function isKrHoliday(kstDate) {
   return KR_HOLIDAYS_2026.has(yyyymmdd(kstDate));
 }
 
-function isUsHoliday(kstDate) {
-  // US 날짜는 KST - 14~15시간 → 대략 KST 날짜 기준으로 체크 (보수적)
-  return US_HOLIDAYS_2026.has(yyyymmdd(kstDate));
+function isUsHolidayByDateStr(dateStr) {
+  return US_HOLIDAYS_2026.has(dateStr);
 }
 
 // 서머타임 여부 추정 (EDT: 3월 2번째 일 ~ 11월 1번째 일)
@@ -82,14 +102,24 @@ export function evaluateKisMarketHours({ market = 'domestic', now = new Date() }
     holiday = isKrHoliday(kst);
     isOpen = weekday && !holiday && mins >= openMins && mins <= closeMins;
   } else if (isOverseas) {
-    // 서머타임(EDT): KST 22:30~05:00, 표준시(EST): KST 23:30~06:00
-    const dst = isDst(now);
-    openMins = dst ? 22 * 60 + 30 : 23 * 60 + 30;
-    closeMins = dst ? 5 * 60 : 6 * 60;
-    holiday = isUsHoliday(kst);
-    // 야간 세션: 개장이 closeMins보다 큼 → wrap-around
-    const inWindow = mins >= openMins || mins <= closeMins;
-    isOpen = weekday && !holiday && inWindow;
+    const ny = timeZoneParts(now, 'America/New_York');
+    openMins = 9 * 60 + 30;
+    closeMins = 16 * 60;
+    holiday = isUsHolidayByDateStr(ny.dateStr);
+    const nyWeekday = !['Sat', 'Sun'].includes(ny.weekday || '');
+    isOpen = nyWeekday && !holiday && ny.minutesOfDay >= openMins && ny.minutesOfDay < closeMins;
+    return {
+      market,
+      isOpen,
+      state: isOpen ? 'open' : 'closed',
+      reasonCode: holiday ? 'holiday' : isOpen ? 'kis_market_open' : 'kis_market_closed',
+      nextAction: isOpen ? 'allow' : 'defer_until_open',
+      kst: kst.toISOString(),
+      dateStr,
+      marketDateStr: ny.dateStr,
+      marketTimezone: 'America/New_York',
+      minutesOfDay: ny.minutesOfDay,
+    };
   }
 
   return {
@@ -112,30 +142,21 @@ export function getNextOpenTime({ market = 'domestic', now = new Date() } = {}) 
   const check = evaluateKisMarketHours({ market, now });
   if (check.isOpen) return { nextOpen: now, alreadyOpen: true, market };
 
-  const isDomestic = String(market).toLowerCase().includes('domestic') ||
-                     String(market).toLowerCase() === 'kis';
-  const isOverseas = !isDomestic;
-
-  const kst = toKst(now);
-  let candidate = new Date(kst);
+  let candidate = new Date(now);
   candidate.setSeconds(0, 0);
 
-  // 최대 7일 앞을 탐색 (주말 + 공휴일 연속)
+  // 최대 7일 앞을 UTC 기준으로 탐색한다. 국내장은 KST, 해외장은 ET 기준
+  // 판정 함수가 자체 time zone을 적용하므로 후보 Date를 변환하지 않는다.
   for (let i = 0; i < 7 * 24 * 60; i += 1) {
-    candidate = new Date(candidate.getTime() + 60_000); // 1분씩 전진
-    const c = evaluateKisMarketHours({ market, now: new Date(candidate.getTime() - (9 * 3600_000)) });
-    // candidate는 이미 KST이므로 UTC 변환 없이 넘기면 안됨 — 재계산
-    const evalResult = evaluateKisMarketHours({
-      market,
-      now: new Date(candidate.getTime() - (9 * 60 * 60 * 1000)),
-    });
+    candidate = new Date(candidate.getTime() + 60_000);
+    const evalResult = evaluateKisMarketHours({ market, now: candidate });
     if (evalResult.isOpen) {
       return {
-        nextOpen: new Date(candidate.getTime() - (9 * 60 * 60 * 1000)),
+        nextOpen: candidate,
         alreadyOpen: false,
         market,
-        kst: candidate.toISOString(),
-        minutesUntilOpen: Math.round((candidate.getTime() - kst.getTime()) / 60_000),
+        kst: toKst(candidate).toISOString(),
+        minutesUntilOpen: Math.round((candidate.getTime() - now.getTime()) / 60_000),
       };
     }
   }

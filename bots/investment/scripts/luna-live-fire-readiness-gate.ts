@@ -26,7 +26,7 @@ function readLaunchctlEnv(name) {
 }
 
 function runtimeEnv(name) {
-  return String(process.env[name] || readLaunchctlEnv(name) || '').trim();
+  return String(readLaunchctlEnv(name) || process.env[name] || '').trim();
 }
 
 function runtimeEnvTrue(name) {

@@ -13,6 +13,7 @@ const DEFAULT_STOCK_FLOW_PREFILTER_CONFIDENCE = 0.35;
 const DEFAULT_STOCK_NARRATIVE_PREFILTER_CONFIDENCE = 0.6;
 const DEFAULT_CRYPTO_TA_PREFILTER_CONFIDENCE = 0.3;
 const DEFAULT_CRYPTO_FLOW_PREFILTER_CONFIDENCE = 0.55;
+const DEFAULT_STOCK_TA_MTF_PRESIGNAL_WEIGHTED_SCORE = 0.8;
 
 function envFlag(env, key, fallback = false) {
   const value = env?.[key];
@@ -92,6 +93,10 @@ export function getCryptoFlowDecisionPrefilterConfidence(env = process.env) {
   return DEFAULT_CRYPTO_FLOW_PREFILTER_CONFIDENCE;
 }
 
+export function isStockMtfTechnicalOnlyPrefilterEnabled(env = process.env) {
+  return envFlag(env, 'LUNA_STOCK_TA_MTF_TECHNICAL_ONLY_PREFILTER_ENABLED', true);
+}
+
 function normalizeAnalystName(value) {
   return String(value || '').trim().toLowerCase();
 }
@@ -115,6 +120,76 @@ function cryptoAnalystRole(row) {
   if (['onchain', 'market_flow', 'flow', 'orderbook', 'funding'].some((key) => analyst.includes(key))) return 'flow';
   if (['sentiment', 'news', 'hermes', 'sophia'].some((key) => analyst.includes(key))) return 'narrative';
   return 'other';
+}
+
+function extractStockTechnicalEvidence(analyses = []) {
+  const evidence = {
+    weightedScore: null,
+    intradayBuyFrames: 0,
+    intradaySellFrames: 0,
+    dailyBuyFrames: 0,
+    dailySellFrames: 0,
+    technicalBuyRows: 0,
+    technicalMaxConfidence: 0,
+  };
+
+  for (const row of analyses || []) {
+    if (stockAnalystRole(row) !== 'technical') continue;
+    const signal = String(row?.signal || '').trim().toUpperCase();
+    const confidence = Number(row?.confidence || 0);
+    if (signal === 'BUY') evidence.technicalBuyRows += 1;
+    if (Number.isFinite(confidence)) evidence.technicalMaxConfidence = Math.max(evidence.technicalMaxConfidence, confidence);
+
+    const reasoning = String(row?.reasoning || row?.metadata?.reasoning || '');
+    const weightedMatch = reasoning.match(/(?:가중점수|weighted[_\s-]*score)\s*(?:[:=]\s*)?([+-]?\d+(?:\.\d+)?)/i);
+    if (weightedMatch) {
+      const weighted = Number(weightedMatch[1]);
+      if (Number.isFinite(weighted)) evidence.weightedScore = Math.max(evidence.weightedScore ?? weighted, weighted);
+    }
+
+    const frameMatches = reasoning.matchAll(/(?:15분|15m|30분|30m|1시간|1h|4시간|4h|일봉|daily)[^|;\n]{0,60}?\b(BUY|SELL|LONG|SHORT|HOLD)\b/gi);
+    for (const match of frameMatches) {
+      const frameText = String(match[0] || '').toLowerCase();
+      const frameSignal = String(match[1] || '').toUpperCase();
+      const normalized = frameSignal === 'LONG' ? 'BUY' : frameSignal === 'SHORT' ? 'SELL' : frameSignal;
+      const isIntraday = /15분|15m|30분|30m|1시간|1h|4시간|4h/.test(frameText);
+      const isDaily = /일봉|daily/.test(frameText);
+      if (isIntraday && normalized === 'BUY') evidence.intradayBuyFrames += 1;
+      if (isIntraday && normalized === 'SELL') evidence.intradaySellFrames += 1;
+      if (isDaily && normalized === 'BUY') evidence.dailyBuyFrames += 1;
+      if (isDaily && normalized === 'SELL') evidence.dailySellFrames += 1;
+    }
+  }
+
+  return evidence;
+}
+
+function buildStockMtfTechnicalPresignal(analyses = [], env = process.env) {
+  const evidence = extractStockTechnicalEvidence(analyses);
+  const weightedFloor = numEnv(env, 'LUNA_STOCK_TA_MTF_PRESIGNAL_WEIGHTED_SCORE', DEFAULT_STOCK_TA_MTF_PRESIGNAL_WEIGHTED_SCORE);
+  const minDailyBuyFrames = Math.max(1, Math.round(numEnv(env, 'LUNA_STOCK_TA_MTF_PRESIGNAL_MIN_DAILY_BUY_FRAMES', 1)));
+  const weightedScore = evidence.weightedScore == null ? null : Number(evidence.weightedScore);
+  const hasDailyBuy = evidence.dailyBuyFrames >= minDailyBuyFrames || evidence.technicalBuyRows > 0;
+  const hasSellConflict = evidence.intradaySellFrames > 0 || evidence.dailySellFrames > 0;
+  const weightedOk = weightedScore != null && weightedScore >= weightedFloor;
+
+  if (!hasDailyBuy || hasSellConflict || !weightedOk) return null;
+
+  const confidence = Math.min(1, Math.max(
+    getStockTaDecisionPrefilterConfidence(env),
+    Number(evidence.technicalMaxConfidence || 0),
+    Math.min(1, Math.max(0, weightedScore / 2)),
+  ));
+  return {
+    row: {
+      analyst: 'ta_mtf',
+      signal: 'BUY',
+      confidence,
+      metadata: { mtfEvidence: evidence, synthetic_presignal: true },
+    },
+    confidence,
+    mtfEvidence: evidence,
+  };
 }
 
 function buildCryptoMtfTechnicalPresignal(analyses = [], env = process.env) {
@@ -276,12 +351,33 @@ function findStockActionablePresignal(analyses = [], env = process.env) {
 
   technical.sort((a, b) => b.confidence - a.confidence);
   support.sort((a, b) => b.confidence - a.confidence);
-  const bestTechnical = technical[0] || null;
+  const bestTechnical = technical[0] || buildStockMtfTechnicalPresignal(analyses, env);
   const bestSupport = support[0] || null;
   if (sellConflicts.length > 0) {
     return { run: false, reason: 'stock_intraday_sell_conflict', taThreshold, flowThreshold, narrativeThreshold };
   }
-  if (!bestTechnical || !bestSupport) {
+  if (!bestTechnical) {
+    return { run: false, reason: 'stock_intraday_no_actionable_presignal', taThreshold, flowThreshold, narrativeThreshold };
+  }
+
+  if (!bestSupport && bestTechnical.mtfEvidence && isStockMtfTechnicalOnlyPrefilterEnabled(env)) {
+    return {
+      run: true,
+      reason: 'stock_actionable_technical_presignal',
+      taThreshold,
+      flowThreshold,
+      narrativeThreshold,
+      technical: {
+        analyst: bestTechnical.row?.analyst || null,
+        signal: bestTechnical.row?.signal || null,
+        confidence: bestTechnical.confidence,
+        mtfEvidence: bestTechnical.mtfEvidence || bestTechnical.row?.metadata?.mtfEvidence || null,
+      },
+      support: null,
+    };
+  }
+
+  if (!bestSupport) {
     return { run: false, reason: 'stock_intraday_no_actionable_presignal', taThreshold, flowThreshold, narrativeThreshold };
   }
 

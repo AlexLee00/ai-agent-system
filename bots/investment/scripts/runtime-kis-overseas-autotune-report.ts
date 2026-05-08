@@ -124,8 +124,8 @@ export function buildCandidate(config, signalSummary) {
 
   if (signalSummary.minOrderNotional >= 5) {
     const key = 'runtime_config.luna.stockOrderDefaults.kis_overseas.min';
-    const current = Number(config.luna?.stockOrderDefaults?.kis_overseas?.min || 200);
-    const suggested = Math.max(current, Math.min(400, current + 25));
+    const current = Number(config.luna?.stockOrderDefaults?.kis_overseas?.min || 1);
+    const suggested = Math.max(current, Math.min(400, current + 5));
     if (suggested === current) return null;
     return {
       key,
@@ -133,7 +133,7 @@ export function buildCandidate(config, signalSummary) {
       suggested,
       action: 'adjust',
       confidence: 'medium',
-      reason: `최근 해외장 BUY 실패 ${signalSummary.failedSignals}건 중 최소 주문금액 미달이 ${signalSummary.minOrderNotional}건이라 주문 floor를 소폭 상향해 비교할 수 있습니다.`,
+      reason: `최근 해외장 BUY 실패 ${signalSummary.failedSignals}건 중 최소 주문금액 미달이 ${signalSummary.minOrderNotional}건이라 1주 매수 가능성을 유지하며 주문 floor를 소폭 상향해 비교할 수 있습니다.`,
       governance: getParameterGovernance(key),
     };
   }

@@ -11,6 +11,7 @@ const SCENARIOS = [
   { name: 'sar_long', input: { method: 'sar', side: 'long', close: 100, sar: 97.2 }, expectReason: 'trail_sar' },
   { name: 'vwap_long', input: { method: 'vwap', side: 'long', close: 100, vwap: 99.1, atr: 1.8 }, expectReason: 'trail_vwap' },
   { name: 'previous_stop_breach', input: { method: 'atr', side: 'long', close: 96, atr: 2, previousStopPrice: 98 }, expectReason: 'trail_atr', expectBreached: true },
+  { name: 'buffered_minor_breach_watch', input: { method: 'atr', side: 'long', close: 99.7, atr: 1.5, previousStopPrice: 100, breachBufferPct: 0.01 }, expectReason: 'trail_atr', expectBreached: false },
 ];
 
 export async function runDynamicTrailEngineSmoke({ json = false, strict = true } = {}) {

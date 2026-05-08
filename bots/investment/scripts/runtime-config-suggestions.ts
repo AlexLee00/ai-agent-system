@@ -694,10 +694,10 @@ export function buildOverseasSuggestions(config, overseas) {
     suggestions.push({
       key: 'runtime_config.luna.stockOrderDefaults.kis_overseas.min',
       current: config.luna.stockOrderDefaults.kis_overseas.min,
-      suggested: round(clamp(config.luna.stockOrderDefaults.kis_overseas.min + 25, 200, 400), 0),
+      suggested: round(clamp(config.luna.stockOrderDefaults.kis_overseas.min + 5, 1, 400), 0),
       action: 'adjust',
       confidence: 'medium',
-      reason: `해외장 BUY 실패 상위가 최소 주문금액 미달 ${overseas.topBlocks[0]?.count || 0}건이라 주문 floor를 소폭 올려 실제 체결 전환을 비교할 수 있습니다.`,
+      reason: `해외장 BUY 실패 상위가 최소 주문금액 미달 ${overseas.topBlocks[0]?.count || 0}건이라 1주 매수 가능성을 유지하는 범위에서 주문 floor를 소폭 올려 비교할 수 있습니다.`,
     });
   } else if (
     overseas.totalBuy >= 8

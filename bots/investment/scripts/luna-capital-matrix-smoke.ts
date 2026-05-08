@@ -4,6 +4,7 @@
 import assert from 'node:assert/strict';
 import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
 import { adjustLunaBuyCandidate, getCapitalConfig } from '../shared/capital-manager.ts';
+import { allowsFractionalQuantity, getMinOrderAmount, requiresIntegerQuantity } from '../shared/order-rules.ts';
 
 const EXCHANGES = ['binance', 'kis', 'kis_overseas'];
 const CAPITAL_MODES = [
@@ -69,6 +70,10 @@ function expectedResult(mode) {
 
 export function runLunaCapitalMatrixSmoke() {
   const cases = [];
+  assert.equal(getMinOrderAmount('kis_overseas'), 1, 'KIS overseas live-fire should allow 1-share probe sizing under MAX_USDT cap');
+  assert.equal(requiresIntegerQuantity('kis_overseas'), true, 'KIS overseas live orders must remain integer-share based');
+  assert.equal(allowsFractionalQuantity('kis_overseas'), false, 'KIS overseas must not assume fractional live support');
+
   for (const exchange of EXCHANGES) {
     const normalConfig = getCapitalConfig(exchange, 'normal');
     const validationConfig = getCapitalConfig(exchange, 'validation');

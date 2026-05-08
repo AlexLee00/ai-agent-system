@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 // @ts-nocheck
 
+import { execFileSync } from 'node:child_process';
 import * as db from '../shared/db.ts';
 import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
 import { runPositionRuntimeReport } from './runtime-position-runtime-report.ts';
@@ -11,6 +12,7 @@ import { retireOrphanStrategyProfiles } from './retire-orphan-strategy-profiles.
 import { assessPhase6SafetyReadiness } from '../shared/position-closeout-engine.ts';
 import { refreshPositionSignals } from '../shared/position-signal-refresh.ts';
 import { syncPositionsAtMarketOpen } from '../shared/position-sync.ts';
+import { reevaluateOpenPositions } from '../shared/position-reevaluator.ts';
 import { resolvePositionLifecycleFlags } from '../shared/position-lifecycle-flags.ts';
 import {
   buildLifecycleExecutionReadiness,
@@ -21,6 +23,9 @@ import {
   DEFAULT_POSITION_RUNTIME_AUTOPILOT_HISTORY_FILE,
   readPositionRuntimeAutopilotHistorySummary,
 } from './runtime-position-runtime-autopilot-history-store.ts';
+
+const DEFAULT_POSITION_SYNC_MARKETS = Object.freeze(['crypto', 'domestic', 'overseas']);
+const TRUE_VALUES = new Set(['1', 'true', 'yes', 'on']);
 
 function parseArgs(argv = []) {
   const args = {
@@ -34,7 +39,8 @@ function parseArgs(argv = []) {
     historyFile: DEFAULT_POSITION_RUNTIME_AUTOPILOT_HISTORY_FILE,
     recordHistory: true,
     requirePositionSync: false,
-    positionSyncMarkets: ['crypto'],
+    positionSyncMarkets: [...DEFAULT_POSITION_SYNC_MARKETS],
+    skipRuntimeReevaluation: false,
     skipOrphanProfileSweep: false,
     applyOrphanProfileSweep: false,
     orphanProfileSweepExchange: null,
@@ -51,6 +57,7 @@ function parseArgs(argv = []) {
     else if (raw === '--no-history') args.recordHistory = false;
     else if (raw === '--require-position-sync') args.requirePositionSync = true;
     else if (raw === '--run-sync-preflight') args.runSyncPreflight = true;
+    else if (raw === '--skip-runtime-reevaluation') args.skipRuntimeReevaluation = true;
     else if (raw === '--skip-orphan-profile-sweep') args.skipOrphanProfileSweep = true;
     else if (raw === '--apply-orphan-profile-sweep') args.applyOrphanProfileSweep = true;
     else if (raw.startsWith('--orphan-profile-sweep-exchange=')) args.orphanProfileSweepExchange = raw.split('=').slice(1).join('=') || null;
@@ -60,6 +67,85 @@ function parseArgs(argv = []) {
     }
   }
   return args;
+}
+
+export function normalizePositionSyncMarkets(markets = DEFAULT_POSITION_SYNC_MARKETS) {
+  const normalized = (markets || DEFAULT_POSITION_SYNC_MARKETS)
+    .flatMap((item) => String(item || '').split(','))
+    .map((item) => item.trim().toLowerCase())
+    .filter(Boolean)
+    .flatMap((item) => {
+      if (item === 'all') return [...DEFAULT_POSITION_SYNC_MARKETS];
+      if (item === 'binance') return ['crypto'];
+      if (item === 'kis') return ['domestic'];
+      if (item === 'kis_overseas') return ['overseas'];
+      return [item];
+    })
+    .filter((item) => DEFAULT_POSITION_SYNC_MARKETS.includes(item));
+  return [...new Set(normalized.length > 0 ? normalized : DEFAULT_POSITION_SYNC_MARKETS)];
+}
+
+export function shouldRunRuntimeReevaluation(args = {}, phase6SafetyReadiness = null) {
+  if (args.skipRuntimeReevaluation === true) return false;
+  if (String(process.env.LUNA_POSITION_RUNTIME_SKIP_REEVAL || '').trim() === '1') return false;
+  if (args.runRuntimeReevaluation === true) return true;
+  return args.execute === true
+    && args.confirm === 'position-runtime-autopilot'
+    && phase6SafetyReadiness?.ok === true;
+}
+
+function readLaunchctlEnv(name) {
+  try {
+    return execFileSync('launchctl', ['getenv', name], {
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+      timeout: 1000,
+    }).trim();
+  } catch {
+    return '';
+  }
+}
+
+function readRuntimeEnv(name) {
+  const launchctlValue = readLaunchctlEnv(name);
+  if (launchctlValue) return launchctlValue;
+  return String(process.env[name] || '').trim();
+}
+
+function runtimeFlagEnabled(name, readEnv = readRuntimeEnv) {
+  return TRUE_VALUES.has(String(readEnv(name) || '').trim().toLowerCase());
+}
+
+export function resolveAutonomousDispatchGate(args = {}, decision = {}, readEnv = readRuntimeEnv) {
+  const requested = args.executeDispatch === true && decision?.executeDispatch === true;
+  const autonomousDispatchEnabled = runtimeFlagEnabled('LUNA_POSITION_RUNTIME_AUTONOMOUS_DISPATCH_ENABLED', readEnv);
+  const liveFireEnabled = runtimeFlagEnabled('LUNA_LIVE_FIRE_ENABLED', readEnv);
+  if (!requested) {
+    return {
+      ok: true,
+      requested: false,
+      execute: false,
+      status: 'autonomous_dispatch_not_requested',
+      autonomousDispatchEnabled,
+      liveFireEnabled,
+      blockers: [],
+    };
+  }
+  const blockers = [
+    autonomousDispatchEnabled ? null : 'position_runtime_autonomous_dispatch_disabled',
+    liveFireEnabled ? null : 'live_fire_disabled',
+  ].filter(Boolean);
+  return {
+    ok: blockers.length === 0,
+    requested: true,
+    execute: blockers.length === 0,
+    status: blockers.length === 0
+      ? 'autonomous_dispatch_gate_clear'
+      : 'autonomous_dispatch_suppressed_by_runtime_gate',
+    autonomousDispatchEnabled,
+    liveFireEnabled,
+    blockers,
+  };
 }
 
 function buildCadenceRecommendationByExchange(tuning = null) {
@@ -218,6 +304,7 @@ function buildHistorySnapshot({
   lifecycleReadiness,
   signalRefresh,
   positionSyncSummary,
+  runtimeReevaluation,
   phase6SafetyReadiness,
   runtimeReport,
   tuning,
@@ -225,6 +312,7 @@ function buildHistorySnapshot({
   autotunePreview,
   autotuneResult,
   dispatchResult,
+  autonomousDispatchGate,
   orphanProfileSweep,
   status,
 }) {
@@ -254,11 +342,17 @@ function buildHistorySnapshot({
       applyTuning: Boolean(decision?.applyTuning),
       nextActions: decision?.nextActions || [],
     },
+    autonomousDispatchGate: autonomousDispatchGate || null,
     lifecycleReadiness: lifecycleReadiness || null,
     signalRefresh: signalRefresh ? {
       ok: signalRefresh.ok !== false,
       enabled: signalRefresh.enabled === true,
       count: Number(signalRefresh.count || 0),
+    } : null,
+    runtimeReevaluation: runtimeReevaluation ? {
+      ok: runtimeReevaluation.ok !== false,
+      enabled: runtimeReevaluation.enabled === true,
+      count: Number(runtimeReevaluation.count || 0),
     } : null,
     positionSyncSummary: positionSyncSummary || null,
     orphanProfileSweep: orphanProfileSweep ? {
@@ -335,8 +429,8 @@ function buildHistorySnapshot({
   };
 }
 
-async function runPositionSyncPreflight(markets = ['crypto']) {
-  const uniqueMarkets = [...new Set((markets || ['crypto']).map((item) => String(item || '').trim()).filter(Boolean))];
+async function runPositionSyncPreflight(markets = DEFAULT_POSITION_SYNC_MARKETS) {
+  const uniqueMarkets = normalizePositionSyncMarkets(markets);
   const results = await Promise.all(uniqueMarkets.map(async (market) => (
     syncPositionsAtMarketOpen(market).catch((error) => ({
       market,
@@ -345,6 +439,33 @@ async function runPositionSyncPreflight(markets = ['crypto']) {
     }))
   )));
   return summarizeLifecyclePositionSync(results);
+}
+
+function summarizeRuntimeReevaluation(result = null) {
+  if (!result) {
+    return {
+      ok: true,
+      enabled: false,
+      count: 0,
+      rows: [],
+    };
+  }
+  const rows = Array.isArray(result.rows) ? result.rows : [];
+  return {
+    ok: result.ok !== false,
+    enabled: true,
+    count: rows.length,
+    summary: result.summary || null,
+    rows: rows.slice(0, 10).map((row) => ({
+      exchange: row.exchange || null,
+      symbol: row.symbol || null,
+      tradeMode: row.tradeMode || row.trade_mode || 'normal',
+      recommendation: row.recommendation || null,
+      reasonCode: row.reasonCode || null,
+      runtimeActive: Boolean(row.runtimeState),
+      executionAction: row.runtimeState?.executionIntent?.action || row.executionIntent?.action || null,
+    })),
+  };
 }
 
 function isOrphanProfileSweepSkipped(args = {}) {
@@ -424,7 +545,7 @@ export async function runPositionRuntimeAutopilot(args = {}) {
     || String(process.env.LUNA_POSITION_LIFECYCLE_REQUIRE_SYNC || '').trim() === '1'
     || (lifecycleFlags.autonomous && String(process.env.LUNA_POSITION_LIFECYCLE_SKIP_SYNC_PREFLIGHT || '').trim() !== '1');
   const positionSyncSummary = requirePositionSync && (args.execute || args.runSyncPreflight === true)
-    ? await runPositionSyncPreflight(args.positionSyncMarkets || ['crypto'])
+    ? await runPositionSyncPreflight(args.positionSyncMarkets || DEFAULT_POSITION_SYNC_MARKETS)
     : null;
   const orphanProfileSweep = await runAutopilotOrphanProfileSweep(args, lifecycleFlags, phase6SafetyReadiness);
   if (orphanProfileSweep.ok === false && orphanProfileSweep.apply === true) {
@@ -437,6 +558,25 @@ export async function runPositionRuntimeAutopilot(args = {}) {
       reason: orphanProfileSweep.error || 'orphan profile sweep failed',
     };
   }
+  const runtimeReevaluation = shouldRunRuntimeReevaluation(args, phase6SafetyReadiness)
+    ? summarizeRuntimeReevaluation(await reevaluateOpenPositions({
+        exchange: args.exchange || null,
+        paper: false,
+        tradeMode: null,
+        persist: true,
+        minutesBack: 180,
+        eventSource: 'position_runtime_autopilot',
+        attentionType: 'autopilot_cycle',
+        eventPayload: {
+          requestedAt: new Date().toISOString(),
+          positionSyncMarkets: normalizePositionSyncMarkets(args.positionSyncMarkets || DEFAULT_POSITION_SYNC_MARKETS),
+        },
+      }).catch((error) => ({
+        ok: false,
+        rows: [],
+        summary: { error: error?.message || String(error) },
+      })))
+    : summarizeRuntimeReevaluation(null);
   const signalRefresh = await refreshPositionSignals({
     exchange: args.exchange || null,
     source: 'position_runtime_autopilot',
@@ -452,6 +592,7 @@ export async function runPositionRuntimeAutopilot(args = {}) {
   const dispatchPreview = await runPositionRuntimeDispatch({ exchange: args.exchange || null, limit: args.limit || 5, phase6: true, json: true });
   const autotunePreview = await runPositionRuntimeAutotune({ exchange: args.exchange || null, json: true });
   const decision = buildDecision(runtimeReport, tuning, dispatchPreview, autotunePreview, phase6SafetyReadiness);
+  const autonomousDispatchGate = resolveAutonomousDispatchGate(args, decision);
   const lifecycleReadiness = buildLifecycleExecutionReadiness({
     flags: lifecycleFlags,
     runtimeReport,
@@ -468,6 +609,8 @@ export async function runPositionRuntimeAutopilot(args = {}) {
       lifecycleReadiness,
       signalRefresh,
       positionSyncSummary,
+      runtimeReevaluation,
+      autonomousDispatchGate,
       orphanProfileSweep,
       phase6SafetyReadiness,
       runtimeReport,
@@ -481,6 +624,8 @@ export async function runPositionRuntimeAutopilot(args = {}) {
       lifecycleReadiness,
       signalRefresh,
       positionSyncSummary,
+      runtimeReevaluation,
+      autonomousDispatchGate,
       orphanProfileSweep,
       phase6SafetyReadiness,
       runtimeReport,
@@ -508,6 +653,8 @@ export async function runPositionRuntimeAutopilot(args = {}) {
       lifecycleReadiness,
       signalRefresh,
       positionSyncSummary,
+      runtimeReevaluation,
+      autonomousDispatchGate,
       orphanProfileSweep,
       phase6SafetyReadiness,
       reason: 'use --confirm=position-runtime-autopilot',
@@ -522,6 +669,8 @@ export async function runPositionRuntimeAutopilot(args = {}) {
       lifecycleReadiness,
       signalRefresh,
       positionSyncSummary,
+      runtimeReevaluation,
+      autonomousDispatchGate,
       orphanProfileSweep,
       phase6SafetyReadiness,
       reason: 'phase6 safety readiness failed; fix runtime guards before execute/apply',
@@ -536,6 +685,8 @@ export async function runPositionRuntimeAutopilot(args = {}) {
       lifecycleReadiness,
       signalRefresh,
       positionSyncSummary,
+      runtimeReevaluation,
+      autonomousDispatchGate,
       orphanProfileSweep,
       phase6SafetyReadiness,
       reason: lifecycleReadiness.blockers.join(', ') || 'lifecycle readiness blocked',
@@ -551,6 +702,7 @@ export async function runPositionRuntimeAutopilot(args = {}) {
     })
     : null;
   const dispatchResult = args.executeDispatch && decision.executeDispatch
+    && autonomousDispatchGate.ok === true
     ? await runPositionRuntimeDispatch({
       exchange: args.exchange || null,
       phase6: true,
@@ -560,13 +712,18 @@ export async function runPositionRuntimeAutopilot(args = {}) {
       json: true,
     })
     : null;
+  const dispatchSuppressedByGate = args.executeDispatch === true
+    && decision.executeDispatch === true
+    && autonomousDispatchGate.ok !== true;
   const dispatchFailures = (dispatchResult?.results || []).filter((item) => item?.autonomousActionStatus === 'autonomous_action_failed');
   const dispatchQueued = (dispatchResult?.results || []).filter((item) => item?.autonomousActionStatus === 'autonomous_action_queued').length;
   const dispatchRetrying = (dispatchResult?.results || []).filter((item) => item?.autonomousActionStatus === 'autonomous_action_retrying').length;
   const dispatchDeferred = (dispatchResult?.results || []).filter((item) => item?.autonomousActionStatus === 'autonomous_action_deferred_guard').length;
   const executionStatus = dispatchFailures.length > 0
     ? 'position_runtime_autopilot_executed_with_dispatch_failures'
-    : dispatchQueued > 0
+    : dispatchSuppressedByGate
+      ? 'position_runtime_autopilot_dispatch_suppressed_by_runtime_gate'
+      : dispatchQueued > 0
       ? 'position_runtime_autopilot_executed_with_market_queue'
       : dispatchDeferred > 0
         ? 'position_runtime_autopilot_executed_with_guard_deferred'
@@ -580,6 +737,8 @@ export async function runPositionRuntimeAutopilot(args = {}) {
     lifecycleReadiness,
     signalRefresh,
     positionSyncSummary,
+    runtimeReevaluation,
+    autonomousDispatchGate,
     orphanProfileSweep,
     phase6SafetyReadiness,
     runtimeReport,
@@ -602,6 +761,8 @@ export async function runPositionRuntimeAutopilot(args = {}) {
     lifecycleReadiness,
     signalRefresh,
     positionSyncSummary,
+    runtimeReevaluation,
+    autonomousDispatchGate,
     orphanProfileSweep,
     phase6SafetyReadiness,
     runtimeReport,

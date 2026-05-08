@@ -8,11 +8,11 @@ export const MARKET_ORDER_RULES = Object.freeze({
     currency: 'KRW',
   }),
   kis_overseas: Object.freeze({
-    minOrderAmount: 200,
+    minOrderAmount: 1,
     maxOrderAmount: 1_200,
     minOrderRatioOfAvailableFunds: 0.05,
-    quantityMode: 'fractional_mock_only',
-    allowFractional: true,
+    quantityMode: 'integer',
+    allowFractional: false,
     currency: 'USD',
   }),
   binance: Object.freeze({

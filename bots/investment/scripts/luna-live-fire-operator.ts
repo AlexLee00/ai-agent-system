@@ -44,11 +44,12 @@ function applyLiveFireEnv({ maxUsdt = DEFAULT_MAX_TRADE_USDT, maxDailyUsdt = DEF
   const setMaxTrade = runCommand('launchctl', ['setenv', 'LUNA_MAX_TRADE_USDT', String(maxUsdt)]);
   const setMaxDaily = runCommand('launchctl', ['setenv', 'LUNA_LIVE_FIRE_MAX_DAILY', String(maxDailyUsdt)]);
   const setMaxOpen = runCommand('launchctl', ['setenv', 'LUNA_LIVE_FIRE_MAX_OPEN', String(maxOpen)]);
+  const disablePositionDispatch = runCommand('launchctl', ['setenv', 'LUNA_POSITION_RUNTIME_AUTONOMOUS_DISPATCH_ENABLED', 'false']);
   const enableLiveFire = runCommand('launchctl', ['setenv', 'LUNA_LIVE_FIRE_ENABLED', 'true']);
   return {
-    ok: setMode.ok && setMaxTrade.ok && setMaxDaily.ok && setMaxOpen.ok && enableLiveFire.ok,
+    ok: setMode.ok && setMaxTrade.ok && setMaxDaily.ok && setMaxOpen.ok && disablePositionDispatch.ok && enableLiveFire.ok,
     caps: { maxUsdt, maxDailyUsdt, maxOpen },
-    steps: { setMode, setMaxTrade, setMaxDaily, setMaxOpen, enableLiveFire },
+    steps: { setMode, setMaxTrade, setMaxDaily, setMaxOpen, disablePositionDispatch, enableLiveFire },
   };
 }
 
@@ -71,8 +72,8 @@ export async function runLunaLiveFireOperator({
     readiness,
     caps,
   });
-  const command = `launchctl setenv LUNA_INTELLIGENT_DISCOVERY_MODE autonomous_l5 && launchctl setenv LUNA_MAX_TRADE_USDT ${caps.maxUsdt} && launchctl setenv LUNA_LIVE_FIRE_MAX_DAILY ${caps.maxDailyUsdt} && launchctl setenv LUNA_LIVE_FIRE_MAX_OPEN ${caps.maxOpen} && launchctl setenv LUNA_LIVE_FIRE_ENABLED true`;
-  const rollbackCommand = 'launchctl unsetenv LUNA_INTELLIGENT_DISCOVERY_MODE && launchctl setenv LUNA_LIVE_FIRE_ENABLED false';
+  const command = `launchctl setenv LUNA_INTELLIGENT_DISCOVERY_MODE autonomous_l5 && launchctl setenv LUNA_MAX_TRADE_USDT ${caps.maxUsdt} && launchctl setenv LUNA_LIVE_FIRE_MAX_DAILY ${caps.maxDailyUsdt} && launchctl setenv LUNA_LIVE_FIRE_MAX_OPEN ${caps.maxOpen} && launchctl setenv LUNA_POSITION_RUNTIME_AUTONOMOUS_DISPATCH_ENABLED false && launchctl setenv LUNA_LIVE_FIRE_ENABLED true`;
+  const rollbackCommand = 'launchctl unsetenv LUNA_INTELLIGENT_DISCOVERY_MODE && launchctl setenv LUNA_LIVE_FIRE_ENABLED false && launchctl setenv LUNA_POSITION_RUNTIME_AUTONOMOUS_DISPATCH_ENABLED false';
 
   const result = {
     ok: allowed,

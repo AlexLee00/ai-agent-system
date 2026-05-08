@@ -122,6 +122,30 @@ assert.equal(compositeBuyPrefilter.run, true, 'stock TA+flow BUY should pass int
 assert.equal(compositeBuyPrefilter.reason, 'actionable_presignal');
 assert.equal(compositeBuyPrefilter.support.role, 'flow');
 
+const mtfDailyBuyPrefilter = shouldRunStockIntradayDecisionLlm({
+  market: 'kis_overseas',
+  symbol: 'ABEV',
+  meta: lightMeta,
+  analyses: [
+    {
+      analyst: 'ta_mtf',
+      signal: 'HOLD',
+      confidence: 0.2,
+      reasoning: '미국주식 MTF: [일봉 60%] BUY (40%) | [1시간봉 40%] HOLD (10%) → 가중점수 1.00',
+    },
+    {
+      analyst: 'market_flow',
+      signal: 'HOLD',
+      confidence: 0.12,
+      reasoning: 'TA HOLD 20% | SEC 공시 증가',
+    },
+  ],
+  env: disabledEnv,
+});
+assert.equal(mtfDailyBuyPrefilter.run, true, 'daily BUY + strong MTF score should reach L13 instead of being dropped before decision');
+assert.equal(mtfDailyBuyPrefilter.reason, 'stock_actionable_technical_presignal');
+assert.equal(mtfDailyBuyPrefilter.technical.mtfEvidence.dailyBuyFrames, 1);
+
 const cryptoMeta = buildStockIntradayLlmPolicyMeta({
   market: 'binance',
   marketScript: 'crypto',

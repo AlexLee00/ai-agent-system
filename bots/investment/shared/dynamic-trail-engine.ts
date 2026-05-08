@@ -33,6 +33,7 @@ export function computeDynamicTrail(input = {}) {
   const chandelierMul = Math.max(0.1, n(flags.phaseF.chandelierMultiplier, 3.0));
   const atrMul = Math.max(0.1, n(flags.phaseF.atrMultiplier, 2.5));
   const previousStopPrice = Math.max(0, n(input.previousStopPrice, 0));
+  const breachBufferPct = clamp(n(input.breachBufferPct, 0), 0, 0.2);
 
   let stop = close;
   let reasonCode = 'trail_hold';
@@ -70,13 +71,16 @@ export function computeDynamicTrail(input = {}) {
       ? Math.max(previousStopPrice, proposedStop)
       : Math.min(previousStopPrice, proposedStop);
   }
+  const breachTriggerPrice = side === 'long'
+    ? previousStopPrice * (1 - breachBufferPct)
+    : previousStopPrice * (1 + breachBufferPct);
   const breached = enabled
     && previousStopPrice > 0
     && close > 0
     && (
       side === 'long'
-        ? close <= previousStopPrice
-        : close >= previousStopPrice
+        ? close <= breachTriggerPrice
+        : close >= breachTriggerPrice
     );
 
   return {
@@ -99,6 +103,8 @@ export function computeDynamicTrail(input = {}) {
       sar: round(sar),
       atrMultiplier: round(atrMul, 4),
       chandelierMultiplier: round(chandelierMul, 4),
+      breachBufferPct: round(breachBufferPct, 4),
+      breachTriggerPrice: previousStopPrice > 0 ? round(breachTriggerPrice) : null,
     },
   };
 }

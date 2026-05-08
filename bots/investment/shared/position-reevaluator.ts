@@ -6,6 +6,7 @@ import * as db from './db.ts';
 import { refreshInvestmentAgentRoles } from './agent-role-state.ts';
 import { getInvestmentSyncRuntimeConfig, getPositionReevaluationRuntimeConfig } from './runtime-config.ts';
 import { buildPositionRuntimeState, getPositionRuntimeMarket } from './position-runtime-state.ts';
+import { resolveEntryEvidenceCarryover } from './position-entry-evidence-carryover.ts';
 import { buildEvidenceSummaryForAgent } from './external-evidence-ledger.ts';
 import { updateExternalEvidenceGapTaskQueue } from './evidence-gap-task-queue.ts';
 import { recordLifecyclePhaseSnapshot } from './lifecycle-contract.ts';
@@ -132,7 +133,11 @@ async function fetchTradingViewIndicatorSnapshot(symbol, exchange, interval = '1
       macdSignal: payload?.macd_signal ?? null,
       macdHist: payload?.macd_hist ?? null,
       bbPct: payload?.bb_pct ?? null,
+      bbUpper: payload?.bb_upper ?? null,
+      bbMiddle: payload?.bb_middle ?? null,
+      bbLower: payload?.bb_lower ?? null,
       signal,
+      provider: payload?.provider || 'yfinance',
     },
   };
 }
@@ -264,6 +269,48 @@ function deriveHeldHours(position = {}) {
   return Math.max(0, (Date.now() - ts) / 3600000);
 }
 
+async function resolveEntrySeedSignal(position = {}, strategyProfile = null, effectiveTradeMode = 'normal') {
+  if (strategyProfile?.signal_id) {
+    const signal = await db.getSignalById(strategyProfile.signal_id).catch(() => null);
+    if (signal) return { signal, source: 'strategy_profile' };
+  }
+
+  if (!position?.symbol || !position?.exchange) {
+    return { signal: null, source: 'missing_position_scope' };
+  }
+
+  const latestBuyTrade = await db.get(
+    `SELECT signal_id
+       FROM trades
+      WHERE symbol = $1
+        AND exchange = $2
+        AND LOWER(COALESCE(side, '')) = 'buy'
+        AND COALESCE(trade_mode, 'normal') = $3
+      ORDER BY executed_at DESC
+      LIMIT 1`,
+    [position.symbol, position.exchange, effectiveTradeMode || 'normal'],
+  ).catch(() => null);
+  if (latestBuyTrade?.signal_id) {
+    const signal = await db.getSignalById(latestBuyTrade.signal_id).catch(() => null);
+    if (signal) return { signal, source: 'latest_buy_trade' };
+  }
+
+  const latestBuySignal = await db.get(
+    `SELECT *
+       FROM signals
+      WHERE symbol = $1
+        AND exchange = $2
+        AND LOWER(COALESCE(action, '')) = 'buy'
+        AND COALESCE(trade_mode, 'normal') = $3
+      ORDER BY created_at DESC
+      LIMIT 1`,
+    [position.symbol, position.exchange, effectiveTradeMode || 'normal'],
+  ).catch(() => null);
+  if (latestBuySignal) return { signal: latestBuySignal, source: 'latest_buy_signal' };
+
+  return { signal: null, source: 'not_found' };
+}
+
 function isStrongBearishExitSignal({ sell = 0, buy = 0, tvComposite = 'HOLD', tv4hSignal = 'HOLD', tv1dSignal = 'HOLD', overwhelmingSellVotes = 3 } = {}) {
   const stackedTvBearish = tv4hSignal === 'SELL' && (tv1dSignal === 'SELL' || tvComposite === 'SELL');
   const overwhelmingDbSell = sell >= Math.max(overwhelmingSellVotes, buy + 2);
@@ -311,6 +358,88 @@ function summarizeAnalyses(rows = []) {
 function getIndicatorFrame(summary = {}, interval = '4h') {
   const frames = Array.isArray(summary?.liveIndicatorFrames) ? summary.liveIndicatorFrames : [];
   return frames.find((item) => String(item?.interval || '') === interval) || null;
+}
+
+export function buildChartExitPolicySnapshot(analysisSummary = {}) {
+  const tvComposite = String(analysisSummary?.liveIndicator?.compositeSignal || 'HOLD').toUpperCase();
+  const tv4h = getIndicatorFrame(analysisSummary, '4h');
+  const tv1d = getIndicatorFrame(analysisSummary, '1d');
+  const tv4hSignal = String(tv4h?.signal || 'HOLD').toUpperCase();
+  const tv1dSignal = String(tv1d?.signal || 'HOLD').toUpperCase();
+  const bearishFrames = [tvComposite, tv4hSignal, tv1dSignal].filter((signal) => signal === 'SELL').length;
+  return {
+    tvComposite,
+    tv4hSignal,
+    tv1dSignal,
+    chartBearishConfirmed: tvComposite === 'SELL' || tv4hSignal === 'SELL' || tv1dSignal === 'SELL',
+    stackedBearishConfirmed: bearishFrames >= 2,
+    hasLiveIndicator: Boolean(analysisSummary?.liveIndicator),
+    bearishFrames,
+  };
+}
+
+function getTrailFallbackPct(exchange = 'binance') {
+  const runtime = getPositionReevaluationRuntimeConfig();
+  const configured = runtime?.dynamicTrail?.fallbackAtrPctByExchange?.[exchange]
+    ?? runtime?.dynamicTrail?.fallbackAtrPct;
+  const parsed = safeNumber(configured, null);
+  if (Number.isFinite(parsed) && parsed > 0) return parsed;
+  if (exchange === 'binance') return 0.008;
+  return 0.012;
+}
+
+function getTrailBreachBufferPct(exchange = 'binance') {
+  const runtime = getPositionReevaluationRuntimeConfig();
+  const configured = runtime?.dynamicTrail?.breachBufferPctByExchange?.[exchange]
+    ?? runtime?.dynamicTrail?.breachBufferPct;
+  const parsed = safeNumber(configured, null);
+  if (Number.isFinite(parsed) && parsed >= 0) return parsed;
+  if (exchange === 'binance') return 0.006;
+  return 0.01;
+}
+
+export function buildDynamicTrailInputFromChart({
+  position = {},
+  analysisSummary = {},
+  previousTrail = null,
+} = {}) {
+  const exchange = String(position?.exchange || 'binance');
+  const frames = Array.isArray(analysisSummary?.liveIndicator?.timeframes)
+    ? analysisSummary.liveIndicator.timeframes.filter(Boolean)
+    : [];
+  const closes = frames
+    .map((frame) => safeNumber(frame?.close, null))
+    .filter((value) => Number.isFinite(value) && value > 0);
+  const primaryClose = closes[0] || safeNumber(position?.avg_price, 0);
+  const bbRanges = frames
+    .map((frame) => {
+      const upper = safeNumber(frame?.bbUpper, null);
+      const lower = safeNumber(frame?.bbLower, null);
+      return Number.isFinite(upper) && Number.isFinite(lower) && upper > lower
+        ? upper - lower
+        : null;
+    })
+    .filter((value) => Number.isFinite(value) && value > 0);
+  const closeRange = closes.length >= 2 ? Math.max(...closes) - Math.min(...closes) : 0;
+  const fallbackAtr = Math.max(primaryClose * getTrailFallbackPct(exchange), 0.000001);
+  const bbAtr = bbRanges.length > 0 ? Math.max(...bbRanges) / 4 : 0;
+  const rangeAtr = closeRange > 0 ? closeRange / 2 : 0;
+  const atr = Math.max(fallbackAtr, bbAtr, rangeAtr, 0.000001);
+  const highestHigh = Math.max(primaryClose, safeNumber(position?.avg_price, primaryClose), ...closes);
+  const lowestLow = Math.min(primaryClose, safeNumber(position?.avg_price, primaryClose), ...closes);
+  return {
+    method: 'atr',
+    side: 'long',
+    close: primaryClose,
+    atr,
+    highestHigh,
+    lowestLow,
+    vwap: primaryClose,
+    sar: primaryClose,
+    previousStopPrice: previousTrail?.stopPrice || null,
+    breachBufferPct: getTrailBreachBufferPct(exchange),
+    source: frames.length > 0 ? 'chart_indicator_snapshot' : 'position_fallback',
+  };
 }
 
 function getStrategySetupType(strategyProfile = null) {
@@ -413,6 +542,7 @@ function applyBacktestDriftDecision(baseDecision, {
   strategyProfile = null,
   latestBacktest = null,
   pnlPct = 0,
+  analysisSummary = {},
 } = {}) {
   const driftConfig = getBacktestDriftConfig();
   if (!driftConfig.enabled) return { decision: baseDecision, driftContext: null };
@@ -437,6 +567,16 @@ function applyBacktestDriftDecision(baseDecision, {
     && baseDecision.recommendation !== 'EXIT'
     && pnlPct < 0
   ) {
+    const chartExitPolicy = buildChartExitPolicySnapshot(analysisSummary);
+    if (!chartExitPolicy.chartBearishConfirmed) {
+      return {
+        decision: baseDecision,
+        driftContext: {
+          ...driftContext,
+          ignored: 'chart_exit_unconfirmed',
+        },
+      };
+    }
     return {
       decision: {
         recommendation: 'EXIT',
@@ -570,6 +710,7 @@ function decideReevaluation(position, analysisSummary, strategyProfile = null, l
   const tv4hRsi = safeNumber(tv4h?.rsi, null);
   const tv1dSignal = String(tv1d?.signal || 'HOLD').toUpperCase();
   const tv1dRsi = safeNumber(tv1d?.rsi, null);
+  const chartExitPolicy = buildChartExitPolicySnapshot(analysisSummary);
   const exitGuards = getExitGuardConfig();
   const strongBearishExit = isStrongBearishExitSignal({
     sell,
@@ -598,17 +739,17 @@ function decideReevaluation(position, analysisSummary, strategyProfile = null, l
       reasonCode: 'mild_loss_hold_guard',
       reason: `작은 손실 ${pnlPct.toFixed(2)}% / 짧은 보유 ${heldHours.toFixed(1)}h 구간이라 즉시 청산보다 관찰 유지`,
     };
-  } else if (sell >= buy && pnlPct < 0 && sell > 0) {
+  } else if (sell >= buy && pnlPct < 0 && sell > 0 && chartExitPolicy.chartBearishConfirmed) {
     baseDecision = {
       recommendation: 'EXIT',
       reasonCode: 'bearish_loss_consensus',
-      reason: `SELL 우세(${sell} > ${buy})이며 손실 구간 ${pnlPct.toFixed(2)}%`,
+      reason: `SELL 우세(${sell} > ${buy})와 차트 약세(${tv4hSignal}/${tv1dSignal}/${tvComposite})가 겹친 손실 구간 ${pnlPct.toFixed(2)}%`,
     };
-  } else if (pnlPct < 0 && sell >= buy && sell > 0 && (tv4hSignal === 'SELL' || tv1dSignal === 'SELL' || tvComposite === 'SELL')) {
+  } else if (sell >= buy && pnlPct < 0 && sell > 0) {
     baseDecision = {
-      recommendation: 'EXIT',
-      reasonCode: 'mtf_bearish_consensus_exit',
-      reason: `DB 약세 우세(BUY ${buy} / SELL ${sell})와 TV 약세(${tv4hSignal}/${tv1dSignal}/${tvComposite})가 겹친 손실 구간 ${pnlPct.toFixed(2)}%`,
+      recommendation: 'HOLD',
+      reasonCode: 'bearish_loss_chart_unconfirmed_watch',
+      reason: `SELL 우세(${sell} > ${buy})지만 차트 약세 확인이 없어 손실 구간 ${pnlPct.toFixed(2)}%는 관찰 유지`,
     };
   } else if (pnlPct < 0 && tv4hSignal === 'SELL') {
     baseDecision = {
@@ -648,9 +789,11 @@ function decideReevaluation(position, analysisSummary, strategyProfile = null, l
     };
   } else if (buy === 0 && hold > 0 && avgConfidence < 0.35) {
     baseDecision = {
-      recommendation: 'ADJUST',
+      recommendation: chartExitPolicy.chartBearishConfirmed ? 'ADJUST' : 'HOLD',
       reasonCode: 'weak_support',
-      reason: `BUY 지지 없이 HOLD 중심(${hold})이며 평균 확신도 ${avgConfidence.toFixed(2)}`,
+      reason: chartExitPolicy.chartBearishConfirmed
+        ? `BUY 지지 없이 HOLD 중심(${hold})이며 평균 확신도 ${avgConfidence.toFixed(2)} / 차트 약세 확인`
+        : `BUY 지지 없이 HOLD 중심(${hold})이나 차트 약세가 없어 평균 확신도 ${avgConfidence.toFixed(2)}는 관찰 강화로만 반영`,
     };
   } else {
     baseDecision = {
@@ -675,10 +818,11 @@ function decideReevaluation(position, analysisSummary, strategyProfile = null, l
     strategyProfile,
     latestBacktest,
     pnlPct,
+    analysisSummary,
   });
 }
 
-function applyValidityActionDecision(decision = null, validityResult = null) {
+function applyValidityActionDecision(decision = null, validityResult = null, context = {}) {
   const baseDecision = decision && typeof decision === 'object'
     ? {
         recommendation: String(decision.recommendation || 'HOLD'),
@@ -695,6 +839,18 @@ function applyValidityActionDecision(decision = null, validityResult = null) {
   }
 
   if (validityResult.recommendedAction === 'EXIT' && baseDecision.recommendation !== 'EXIT') {
+    const chartExitPolicy = buildChartExitPolicySnapshot(context?.analysisSummary || {});
+    if (!chartExitPolicy.chartBearishConfirmed) {
+      return {
+        decision: {
+          recommendation: 'HOLD',
+          reasonCode: 'validity_exit_chart_unconfirmed_watch',
+          reason: `strategy validity ${safeNumber(validityResult.score).toFixed(3)} / action EXIT이나 차트 약세 확인이 없어 관찰 유지`,
+        },
+        mutationRequired: false,
+        validityReason: 'chart_exit_unconfirmed',
+      };
+    }
     return {
       decision: {
         recommendation: 'EXIT',
@@ -721,6 +877,23 @@ function applyValidityActionDecision(decision = null, validityResult = null) {
   }
 
   if (validityResult.recommendedAction === 'CAUTION' && baseDecision.recommendation === 'HOLD') {
+    const heldHours = safeNumber(context?.heldHours, 0);
+    const entryCarryoverActive = context?.entryEvidenceCarryover?.usedCarryover === true;
+    const analysisSummary = context?.analysisSummary || {};
+    const sell = Number(analysisSummary.sell || 0);
+    const buy = Number(analysisSummary.buy || 0);
+    const tvComposite = String(analysisSummary?.liveIndicator?.compositeSignal || 'HOLD').toUpperCase();
+    if (entryCarryoverActive && heldHours < 6 && sell <= buy && tvComposite !== 'SELL') {
+      return {
+        decision: {
+          recommendation: 'HOLD',
+          reasonCode: 'fresh_entry_caution_hold_guard',
+          reason: `신규 진입 ${heldHours.toFixed(1)}h / 진입 근거 carryover 활성 상태라 CAUTION은 관찰 강화로만 반영`,
+        },
+        mutationRequired: false,
+        validityReason: 'fresh_entry_caution_hold_guard',
+      };
+    }
     return {
       decision: {
         recommendation: 'ADJUST',
@@ -929,6 +1102,8 @@ export async function reevaluateOpenPositions({
       }).catch(() => null),
       db.getLatestVectorbtBacktestForSymbol(position.symbol, position.exchange === 'binance' ? 45 : 180).catch(() => null),
     ]);
+    const seedSignalResolution = await resolveEntrySeedSignal(position, strategyProfile, effectiveTradeMode);
+    const seedSignal = seedSignalResolution.signal;
     const signalRefreshResult = monitorAgentPlan.signalRefreshEnabled
       ? await refreshPositionSignals({
           exchange: position.exchange,
@@ -942,13 +1117,22 @@ export async function reevaluateOpenPositions({
     const regimeMarket = getPositionRuntimeMarket(position.exchange);
     const regimeKey = regimeMarket === 'crypto' ? 'binance' : regimeMarket;
     const regimeSnapshot = await db.getLatestMarketRegimeSnapshot(regimeKey).catch(() => null);
-    const externalEvidenceSummary = monitorAgentPlan.externalEvidenceEnabled
+    const rawExternalEvidenceSummary = monitorAgentPlan.externalEvidenceEnabled
       ? await buildEvidenceSummaryForAgent({
           symbol: position.symbol,
           market: regimeMarket,
           days: 3,
         }).catch(() => null)
       : null;
+    const entryEvidenceCarryover = resolveEntryEvidenceCarryover({
+      externalEvidenceSummary: rawExternalEvidenceSummary,
+      strategyProfile,
+      seedSignal,
+      heldHours: deriveHeldHours(position),
+    });
+    entryEvidenceCarryover.seedSignalSource = seedSignalResolution.source;
+    entryEvidenceCarryover.seedSignalId = seedSignal?.id || null;
+    const externalEvidenceSummary = entryEvidenceCarryover.summary;
     const externalEvidenceGapState = monitorAgentPlan.externalEvidenceEnabled
       ? updateExternalEvidenceGapTaskQueue({
           symbol: position.symbol,
@@ -957,7 +1141,9 @@ export async function reevaluateOpenPositions({
           evidenceCount: Number(externalEvidenceSummary?.evidenceCount || 0),
           threshold: 3,
           cooldownMinutes: 60,
-          reason: externalEvidenceSummary?.warning || null,
+          reason: entryEvidenceCarryover.usedCarryover
+            ? entryEvidenceCarryover.reason
+            : externalEvidenceSummary?.warning || null,
         })
       : {
           status: 'disabled_by_monitor_agent_plan',
@@ -998,7 +1184,12 @@ export async function reevaluateOpenPositions({
       previousScore: strategyProfile?.strategy_state?.positionRuntimeState?.strategyValidityScore ?? null,
     });
 
-    const validityDecision = applyValidityActionDecision(decision?.decision, validityResult);
+    const heldHours = deriveHeldHours(position);
+    const validityDecision = applyValidityActionDecision(decision?.decision, validityResult, {
+      heldHours,
+      entryEvidenceCarryover,
+      analysisSummary,
+    });
     let effectiveDecision = validityDecision.decision;
     let mutationResult = null;
     if (validityDecision.mutationRequired && monitorAgentPlan.strategyMutationEnabled) {
@@ -1063,11 +1254,30 @@ export async function reevaluateOpenPositions({
       && reflexivePortfolioState?.protective
       && effectiveDecision.recommendation === 'HOLD'
     ) {
-      effectiveDecision = {
-        recommendation: reflexivePortfolioState?.bias?.preferExit ? 'EXIT' : 'ADJUST',
-        reasonCode: 'portfolio_reflexive_protective_bias',
-        reason: `portfolio reflexive guard: ${(reflexivePortfolioState.reasonCodes || []).join(', ') || 'protective bias'}`,
-      };
+      const chartExitPolicy = buildChartExitPolicySnapshot(analysisSummary);
+      if (
+        entryEvidenceCarryover?.usedCarryover === true
+        && heldHours < 6
+        && reflexivePortfolioState?.bias?.preferExit !== true
+      ) {
+        effectiveDecision = {
+          recommendation: 'HOLD',
+          reasonCode: 'fresh_entry_portfolio_reflexive_hold_guard',
+          reason: `신규 진입 ${heldHours.toFixed(1)}h / portfolio reflexive guard는 관찰로 유예: ${(reflexivePortfolioState.reasonCodes || []).join(', ') || 'protective bias'}`,
+        };
+      } else if (chartExitPolicy.chartBearishConfirmed !== true) {
+        effectiveDecision = {
+          recommendation: 'HOLD',
+          reasonCode: 'portfolio_reflexive_chart_unconfirmed_watch',
+          reason: `portfolio reflexive guard but chart exit is unconfirmed: ${(reflexivePortfolioState.reasonCodes || []).join(', ') || 'protective bias'}`,
+        };
+      } else {
+        effectiveDecision = {
+          recommendation: reflexivePortfolioState?.bias?.preferExit ? 'EXIT' : 'ADJUST',
+          reasonCode: 'portfolio_reflexive_protective_bias',
+          reason: `portfolio reflexive guard: ${(reflexivePortfolioState.reasonCodes || []).join(', ') || 'protective bias'}`,
+        };
+      }
     }
 
     // Phase A — Adaptive Cadence (shadow mode 기본값: kill switch false 시 5분 반환)
@@ -1105,26 +1315,32 @@ export async function reevaluateOpenPositions({
       || previousRuntimeState?.marketState?.trailSnapshot
       || null;
     const dynamicTrail = monitorAgentPlan.dynamicTrailEvaluationEnabled
-      ? computeDynamicTrail({
-          method: 'atr',
-          side: 'long',
-          close: analysisSummary?.liveIndicator?.timeframes?.[0]?.close || position?.avg_price || 0,
-          atr: Math.max(0.000001, Math.abs(safeNumber(analysisSummary?.liveIndicator?.weightedBias, 0)) * safeNumber(position?.avg_price, 0) * 0.02),
-          highestHigh: analysisSummary?.liveIndicator?.timeframes?.[0]?.high || position?.avg_price || 0,
-          lowestLow: analysisSummary?.liveIndicator?.timeframes?.[0]?.low || position?.avg_price || 0,
-          vwap: analysisSummary?.liveIndicator?.timeframes?.[0]?.close || position?.avg_price || 0,
-          sar: analysisSummary?.liveIndicator?.timeframes?.[0]?.close || position?.avg_price || 0,
-          previousStopPrice: previousTrail?.stopPrice || null,
-        })
+      ? computeDynamicTrail(buildDynamicTrailInputFromChart({
+          position,
+          analysisSummary,
+          previousTrail,
+        }))
       : buildDisabledDynamicTrailSnapshot();
+    const chartExitPolicy = buildChartExitPolicySnapshot(analysisSummary);
     if (
       dynamicTrail?.breached === true
       && effectiveDecision.recommendation !== 'EXIT'
+      && chartExitPolicy.chartBearishConfirmed === true
     ) {
       effectiveDecision = {
         recommendation: 'EXIT',
         reasonCode: dynamicTrail.breachReasonCode || 'dynamic_trail_stop_breached',
         reason: `dynamic trail stop breached: close=${dynamicTrail.close}, previousStop=${dynamicTrail.previousStopPrice}`,
+      };
+    } else if (
+      dynamicTrail?.breached === true
+      && effectiveDecision.recommendation === 'HOLD'
+      && chartExitPolicy.chartBearishConfirmed !== true
+    ) {
+      effectiveDecision = {
+        recommendation: 'HOLD',
+        reasonCode: 'dynamic_trail_chart_unconfirmed_watch',
+        reason: `dynamic trail breached but chart exit is unconfirmed: close=${dynamicTrail.close}, previousStop=${dynamicTrail.previousStopPrice}`,
       };
     }
 
@@ -1158,6 +1374,7 @@ export async function reevaluateOpenPositions({
     runtimeState.agentPlan = {
       monitor: monitorAgentPlan,
     };
+    runtimeState.entryEvidenceCarryover = entryEvidenceCarryover;
     if (strategyProfile?.id) {
       const attentionAt = effectiveDecision.recommendation === 'HOLD' ? null : new Date().toISOString();
       const baseStrategyState = buildStrategyStateUpdate({
@@ -1228,6 +1445,7 @@ export async function reevaluateOpenPositions({
           } : null,
           externalEvidenceSummary: externalEvidenceSummary || null,
           externalEvidenceGapState: externalEvidenceGapState || null,
+          entryEvidenceCarryover,
         },
         idempotencyKey: `phase2:${lifecycleBase}`,
       }).catch(() => null),
@@ -1260,6 +1478,7 @@ export async function reevaluateOpenPositions({
         evidenceSnapshot: {
           externalEvidenceSummary: externalEvidenceSummary || null,
           externalEvidenceGapState: externalEvidenceGapState || null,
+          entryEvidenceCarryover,
         },
         idempotencyKey: `phase5:${lifecycleBase}`,
       }).catch(() => null),
@@ -1308,6 +1527,7 @@ export async function reevaluateOpenPositions({
           positionRuntimeState: runtimeState,
         } : null,
       },
+      entryEvidenceCarryover,
       analysisSnapshot: {
         ...analysisSummary,
         monitorAgentPlan,
@@ -1321,6 +1541,7 @@ export async function reevaluateOpenPositions({
         } : null,
         externalEvidenceSummary: externalEvidenceSummary || null,
         externalEvidenceGapState: externalEvidenceGapState || null,
+        entryEvidenceCarryover,
         runtimeState,
         latestBacktest: latestBacktest ? {
           createdAt: latestBacktest.created_at || null,

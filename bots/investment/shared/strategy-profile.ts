@@ -4,6 +4,7 @@ import * as db from './db.ts';
 import * as journalDb from './trade-journal-db.ts';
 import { recommendStrategy } from '../team/argos.ts';
 import { buildRoutedStrategyFallback } from './strategy-router.ts';
+import { buildEntryEvidenceContext } from './position-entry-evidence-carryover.ts';
 
 function parseAnalystSignals(raw = '') {
   const result = {};
@@ -395,6 +396,12 @@ export async function createOrUpdatePositionStrategyProfile({
     strategy?.entry_condition ? `entry=${strategy.entry_condition}` : null,
     seedSignal?.id ? `seedSignal=${seedSignal.id}` : null,
   ].filter(Boolean).join(' | ');
+  const entryEvidenceContext = buildEntryEvidenceContext({
+    decision,
+    seedSignal,
+    strategy,
+    strategyRoute,
+  });
 
   return db.upsertPositionStrategyProfile({
     symbol,
@@ -420,6 +427,7 @@ export async function createOrUpdatePositionStrategyProfile({
       decisionConfidence: decision?.confidence ?? null,
       amountUsdt: decision?.amount_usdt ?? null,
       strategyRoute,
+      ...entryEvidenceContext,
       familyPerformanceFeedback,
       responsibilityPlan,
       executionPlan,
