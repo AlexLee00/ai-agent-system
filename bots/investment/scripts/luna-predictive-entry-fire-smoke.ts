@@ -98,13 +98,42 @@ export async function runLunaPredictiveEntryFireSmoke() {
       assert.equal(strong.stats.fired, 1);
       assert.equal(strong.decisions[0].action, 'BUY');
 
+      const observationSymbol = weakSymbol.replace('PREDWEAK', 'PREDOBS');
+      const observation = await evaluateEntryTriggers([
+        candidate(observationSymbol, {
+          confidence: 0.39,
+          predictiveScore: 0.48,
+          triggerHints: {
+            mtfAgreement: 0.35,
+            discoveryScore: 0.45,
+            breakoutRetest: false,
+            volumeBurst: 1.0,
+          },
+          block_meta: {
+            predictiveValidation: {
+              observation: true,
+              blocked: false,
+              mode: 'hard_gate_observation',
+            },
+          },
+        }),
+      ], { exchange: 'binance', capitalSnapshot, regime: 'trending_bull' });
+      assert.equal(observation.stats.fired, 1);
+      assert.equal(observation.decisions[0].action, 'BUY');
+      assert.equal(observation.decisions[0].block_meta?.entryTrigger?.state, 'fired');
+
       return {
         ok: true,
         weak: weak.decisions[0].block_meta?.entryTrigger,
         strong: strong.decisions[0].block_meta?.entryTrigger,
+        observation: observation.decisions[0].block_meta?.entryTrigger,
       };
     } finally {
-      await db.run(`DELETE FROM entry_triggers WHERE symbol = $1 OR symbol = $2`, [weakSymbol, strongSymbol]).catch(() => {});
+      await db.run(`DELETE FROM entry_triggers WHERE symbol = $1 OR symbol = $2 OR symbol = $3`, [
+        weakSymbol,
+        strongSymbol,
+        weakSymbol.replace('PREDWEAK', 'PREDOBS'),
+      ]).catch(() => {});
     }
   });
 }

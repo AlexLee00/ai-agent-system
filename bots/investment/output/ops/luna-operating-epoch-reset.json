@@ -1,0 +1,53 @@
+{
+  "ok": true,
+  "status": "operating_epoch_marker_written",
+  "dryRun": false,
+  "epoch": {
+    "enabled": true,
+    "startedAt": "2026-05-08T09:08:31.000Z",
+    "startedAtMs": 1778231311000,
+    "valid": true,
+    "developmentDataPolicy": "exclude_from_policy_learning",
+    "devDataDerivedPolicyAllowed": false
+  },
+  "tables": [
+    {
+      "id": "signals",
+      "table": "investment.signals",
+      "timestamp": "created_at",
+      "ok": true,
+      "total": 2360,
+      "development": 2357,
+      "operating": 3
+    },
+    {
+      "id": "trades",
+      "table": "investment.trades",
+      "timestamp": "executed_at",
+      "ok": true,
+      "total": 823,
+      "development": 823,
+      "operating": 0
+    },
+    {
+      "id": "analysis",
+      "table": "investment.analysis",
+      "timestamp": "created_at",
+      "ok": true,
+      "total": 235220,
+      "development": 233979,
+      "operating": 1241
+    }
+  ],
+  "summary": {
+    "developmentRows": 237159,
+    "operatingRows": 1244,
+    "policy": "development rows are preserved for audit but excluded from policy learning and historical hard gates"
+  },
+  "applyContract": {
+    "destructiveDbReset": false,
+    "requiresConfirm": "luna-operating-epoch-reset",
+    "effect": "writes an ops marker only; live code uses epoch filtering at read time"
+  },
+  "writtenAt": "2026-05-08T09:08:32.223Z"
+}

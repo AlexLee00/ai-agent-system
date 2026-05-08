@@ -76,6 +76,19 @@ function annotateEntryTrigger(candidate = {}, entryTrigger = {}) {
   };
 }
 
+function isPredictiveObservationCandidate(candidate = {}) {
+  const predictive = candidate?.block_meta?.predictiveValidation || {};
+  return predictive.observation === true && predictive.blocked !== true;
+}
+
+function getPredictiveObservationMaxPerCycle(flags = {}) {
+  const raw = process.env.LUNA_PREDICTIVE_OBSERVATION_MAX_PER_CYCLE
+    ?? flags?.predictive?.maxObservationPerCycle
+    ?? 1;
+  const num = Number(raw);
+  return Number.isFinite(num) && num > 0 ? Math.floor(num) : 1;
+}
+
 function finiteNumber(value, fallback = 0) {
   const num = Number(value);
   return Number.isFinite(num) ? num : fallback;
@@ -190,12 +203,16 @@ export function evaluateEntryTriggerLiveRiskGate({ candidate = {}, trigger = nul
   const minLiveConfidence = finiteNumber(gate.minLiveConfidence, 0.68);
   const minPredictiveScore = finiteNumber(gate.minLivePredictiveScore, 0);
   const minLiveAmountUsdt = finiteNumber(gate.minLiveAmountUsdt, 0);
+  const predictiveObservation = isPredictiveObservationCandidate(candidate);
+  const effectiveMinLiveConfidence = predictiveObservation
+    ? finiteNumber(gate.minPredictiveObservationConfidence, 0.35)
+    : minLiveConfidence;
 
-  if (confidence < minLiveConfidence) {
+  if (confidence < effectiveMinLiveConfidence) {
     return {
       ok: false,
       reason: 'live_confidence_below_min',
-      details: { confidence, minLiveConfidence },
+      details: { confidence, minLiveConfidence: effectiveMinLiveConfidence, predictiveObservation },
     };
   }
 
@@ -224,7 +241,7 @@ export function evaluateEntryTriggerLiveRiskGate({ candidate = {}, trigger = nul
         details: evidence,
       };
     }
-    if (evidence.blocked) {
+    if (evidence.blocked && !predictiveObservation) {
       return {
         ok: false,
         reason: `predictive_validation_${evidence.decision}`,
@@ -332,6 +349,8 @@ export async function evaluateEntryTriggers(candidates = [], context = {}) {
   let fired = 0;
   let blocked = 0;
   let observed = 0;
+  let predictiveObservationFired = 0;
+  const predictiveObservationMaxPerCycle = getPredictiveObservationMaxPerCycle(flags);
 
   for (const candidate of candidates) {
     if (candidate?.action !== ACTIONS.BUY) {
@@ -380,7 +399,8 @@ export async function evaluateEntryTriggers(candidates = [], context = {}) {
     }
     const key = `${candidate.symbol}:${triggerType}`;
     const existingTrigger = activeMap.get(key) || null;
-    const fireNow = shouldFireTrigger(candidate, context);
+    const predictiveObservation = isPredictiveObservationCandidate(candidate);
+    const fireNow = predictiveObservation || shouldFireTrigger(candidate, context);
     const baseMeta = {
       setupType: candidate?.setup_type || candidate?.strategy_route?.setupType || null,
       confidence,
@@ -491,7 +511,7 @@ export async function evaluateEntryTriggers(candidates = [], context = {}) {
       continue;
     }
 
-    if (confidence < minConfidence) {
+    if (confidence < minConfidence && !predictiveObservation) {
       blocked++;
       if (!shouldMutate) {
         observed++;
@@ -759,7 +779,37 @@ export async function evaluateEntryTriggers(candidates = [], context = {}) {
       continue;
     }
 
+    if (predictiveObservation && predictiveObservationFired >= predictiveObservationMaxPerCycle) {
+      blocked++;
+      await updateEntryTriggerState(persisted.id, {
+        triggerState: 'waiting',
+        triggerMetaPatch: {
+          reason: 'predictive_observation_cycle_cap',
+          maxPerCycle: predictiveObservationMaxPerCycle,
+        },
+      }).catch(() => {});
+      output.push({
+        ...activeCandidate,
+        action: ACTIONS.HOLD,
+        amount_usdt: 0,
+        reasoning: `entry_trigger_blocked: predictive_observation_cycle_cap(${predictiveObservationMaxPerCycle}) | ${candidate.reasoning || ''}`.slice(0, 220),
+        block_meta: {
+          ...(activeCandidate.block_meta || {}),
+          event_type: 'entry_trigger_blocked',
+          entryTrigger: {
+            triggerId: persisted.id,
+            triggerType,
+            state: 'waiting',
+            reason: 'predictive_observation_cycle_cap',
+            maxPerCycle: predictiveObservationMaxPerCycle,
+          },
+        },
+      });
+      continue;
+    }
+
     fired++;
+    if (predictiveObservation) predictiveObservationFired++;
     await updateEntryTriggerState(persisted.id, {
       triggerState: 'fired',
       firedAt: nowIso(),
@@ -795,6 +845,8 @@ export async function evaluateEntryTriggers(candidates = [], context = {}) {
       allowLiveFire,
       shouldMutate,
       mode: flags.mode,
+      predictiveObservationFired,
+      predictiveObservationMaxPerCycle,
     },
   };
 }

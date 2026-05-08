@@ -8,6 +8,65 @@ function clamp01(value, fallback = 0.5) {
   return Math.max(0, Math.min(1, n));
 }
 
+function finitePositiveNumber(...values) {
+  for (const value of values) {
+    const n = Number(value);
+    if (Number.isFinite(n) && n > 0) return n;
+  }
+  return null;
+}
+
+function resolveNestedTfNumber(meta = {}, fieldNames = []) {
+  const tfResults = meta?.tfResults || meta?.timeframes || null;
+  if (!tfResults || typeof tfResults !== 'object') return null;
+  for (const frame of ['15m', '30m', '1h', '4h', '1d', 'daily']) {
+    const row = tfResults[frame];
+    if (!row || typeof row !== 'object') continue;
+    const value = finitePositiveNumber(...fieldNames.map((field) => row?.[field]));
+    if (value) return value;
+  }
+  for (const row of Object.values(tfResults)) {
+    if (!row || typeof row !== 'object') continue;
+    const value = finitePositiveNumber(...fieldNames.map((field) => row?.[field]));
+    if (value) return value;
+  }
+  return null;
+}
+
+export function resolvePipelineAnalysisTradeContext(analyses = []) {
+  let currentPrice = null;
+  let atr = null;
+  for (const row of analyses || []) {
+    const meta = row?.metadata || {};
+    currentPrice = currentPrice || finitePositiveNumber(
+      meta.currentPrice,
+      meta.current_price,
+      meta.lastPrice,
+      meta.last_price,
+      meta.close,
+      row?.currentPrice,
+      row?.current_price,
+      row?.price,
+      resolveNestedTfNumber(meta, ['currentPrice', 'current_price', 'close', 'price']),
+    );
+    atr = atr || finitePositiveNumber(
+      meta.atr,
+      meta.atrValue,
+      meta.atr_value,
+      row?.atr,
+      row?.atrValue,
+      row?.atr_value,
+      resolveNestedTfNumber(meta, ['atr', 'atrValue', 'atr_value']),
+    );
+    if (!atr && currentPrice) {
+      const atrRatio = finitePositiveNumber(meta.atrRatio, meta.atr_ratio, row?.atrRatio, row?.atr_ratio);
+      if (atrRatio) atr = currentPrice * atrRatio;
+    }
+    if (currentPrice && atr) return { currentPrice, atr };
+  }
+  return { currentPrice, atr };
+}
+
 export async function buildPipelineSymbolCandidate({
   symbol,
   exchange,
@@ -42,6 +101,7 @@ export async function buildPipelineSymbolCandidate({
     }
   }
   const taAnalysis = analyses.find((a) => a.analyst === ANALYST_TYPES.TA_MTF || a.analyst === ANALYST_TYPES.TA);
+  const tradeContext = resolvePipelineAnalysisTradeContext(analyses);
   const discoverySeed = discoveryCandidateBySymbol.get(symbol) || null;
   const fused = intelligentFlags.phases.scoreFusionEnabled
     ? fuseDiscoveryScore({
@@ -67,6 +127,9 @@ export async function buildPipelineSymbolCandidate({
   const enrichedDecision = {
     ...decision,
     confidence: Number(blendedConfidence.toFixed(4)),
+    entryPrice: decision?.entryPrice ?? decision?.entry_price ?? tradeContext.currentPrice,
+    entry_price: decision?.entry_price ?? decision?.entryPrice ?? tradeContext.currentPrice,
+    atr: decision?.atr ?? tradeContext.atr,
     setup_type: shouldMutateDecision ? (decision?.setup_type || fused?.setupType || null) : (decision?.setup_type || null),
     entry_strategy: shouldMutateDecision ? (decision?.entry_strategy || fused?.entryStrategy || null) : (decision?.entry_strategy || null),
     predictiveScore: Number(predictiveScore.toFixed(4)),
@@ -79,6 +142,9 @@ export async function buildPipelineSymbolCandidate({
     },
     block_meta: {
       ...(decision?.block_meta || {}),
+      entry_price: decision?.entry_price ?? decision?.entryPrice ?? tradeContext.currentPrice,
+      entryPrice: decision?.entryPrice ?? decision?.entry_price ?? tradeContext.currentPrice,
+      atr: decision?.atr ?? tradeContext.atr,
       discoveryContext: {
         source: discoverySeed?.source || null,
         market: discoveryMarket,

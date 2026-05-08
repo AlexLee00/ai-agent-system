@@ -172,6 +172,10 @@ function _truthyEnv(name: string): boolean {
   return ['1', 'true', 'yes', 'y', 'on'].includes(String(process.env[name] || '').trim().toLowerCase());
 }
 
+function _publicOpenAIDirectEnabled(): boolean {
+  return _truthyEnv('HUB_LLM_PUBLIC_OPENAI_ENABLED') || _truthyEnv('LLM_PUBLIC_OPENAI_ENABLED');
+}
+
 function _timeGateActive(name: string): boolean {
   const raw = String(process.env[name] || '').trim();
   if (!raw) return false;
@@ -516,6 +520,9 @@ async function _callOpenAI({
   userPrompt: string;
   baseURL?: string | null;
 }) {
+  if (!_publicOpenAIDirectEnabled()) {
+    throw new Error('Public OpenAI direct provider disabled — use openai-oauth selector or set HUB_LLM_PUBLIC_OPENAI_ENABLED=true for an explicit exception');
+  }
   const apiKey = getOpenAIKey();
   if (!apiKey) throw new Error('OpenAI API 키 없음');
   const openaiModule = require('openai');

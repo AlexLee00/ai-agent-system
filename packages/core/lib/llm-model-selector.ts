@@ -193,7 +193,12 @@ function applyPolicyOverride(resolved: any, policyOverride: any, options: Select
 function resolvePreferredProvider(preferredApi: string, groqModel: string, maxTokens: number): LLMChainEntry {
   if (preferredApi === 'claude-code') return { provider: 'claude-code', model: 'claude-code/haiku', maxTokens, temperature: 0.1 };
   if (preferredApi === 'anthropic') return { provider: 'claude-code', model: 'claude-code/haiku', maxTokens, temperature: 0.1 };
-  if (preferredApi === 'openai') return { provider: 'openai', model: 'gpt-4o-mini', maxTokens, temperature: 0.1 };
+  if (preferredApi === 'openai') return {
+    provider: publicOpenAiDirectEnabled() ? 'openai' : 'openai-oauth',
+    model: 'gpt-4o-mini',
+    maxTokens,
+    temperature: 0.1,
+  };
   if (preferredApi === 'gemini' || preferredApi === 'gemini-oauth' || preferredApi === 'gemini-cli-oauth') {
     return { provider: 'gemini-cli-oauth', model: GEMINI_CLI_FLASH_MODEL, maxTokens, temperature: 0.1 };
   }
@@ -279,6 +284,25 @@ function shouldAvoidClaudeCode(entry: LLMChainEntry, options: SelectorOptions = 
   return false;
 }
 
+function publicOpenAiDirectEnabled(options: SelectorOptions = {}): boolean {
+  const optionFlag = parseEnabledFlag(options.publicOpenAiDirectEnabled);
+  if (optionFlag !== null) return optionFlag;
+  return parseEnabledFlag(process.env.HUB_LLM_PUBLIC_OPENAI_ENABLED) === true
+    || parseEnabledFlag(process.env.LLM_PUBLIC_OPENAI_ENABLED) === true;
+}
+
+function shouldAvoidPublicOpenAi(entry: LLMChainEntry, options: SelectorOptions = {}): boolean {
+  return String(entry?.provider || '') === 'openai' && !publicOpenAiDirectEnabled(options);
+}
+
+function replacementForPublicOpenAi(entry: LLMChainEntry): LLMChainEntry {
+  return {
+    ...entry,
+    provider: 'openai-oauth',
+    model: String(entry?.model || '').replace(/^openai\//, '').replace(/^openai-oauth\//, ''),
+  };
+}
+
 function replacementForClaudeCode(entry: LLMChainEntry, options: SelectorOptions = {}): LLMChainEntry {
   const configured = String(
     options.claudeCodeReplacementModel
@@ -295,9 +319,11 @@ function replacementForClaudeCode(entry: LLMChainEntry, options: SelectorOptions
 }
 
 function applyProviderRuntimeGuards(chain: LLMChainEntry[], options: SelectorOptions = {}): LLMChainEntry[] {
-  return dedupeByProviderModel(chain.map((entry) => (
-    shouldAvoidClaudeCode(entry, options) ? replacementForClaudeCode(entry, options) : entry
-  )));
+  return dedupeByProviderModel(chain.map((entry) => {
+    if (shouldAvoidClaudeCode(entry, options)) return replacementForClaudeCode(entry, options);
+    if (shouldAvoidPublicOpenAi(entry, options)) return replacementForPublicOpenAi(entry);
+    return entry;
+  }));
 }
 
 const TEAM_SELECTOR_DEFAULTS_LEGACY: Record<string, any> = {

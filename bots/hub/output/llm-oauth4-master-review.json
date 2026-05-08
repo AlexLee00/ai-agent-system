@@ -1,41 +1,41 @@
 {
   "ok": true,
-  "generated_at": "2026-05-08T05:55:40.934Z",
+  "generated_at": "2026-05-08T11:55:43.208Z",
   "hours": 168,
   "totals": {
-    "total_calls": 29379,
-    "oauth_calls": 14196,
-    "oauth_share_pct": 48.32,
+    "total_calls": 28264,
+    "oauth_calls": 13966,
+    "oauth_share_pct": 49.41,
     "failed_calls": 83,
-    "failed_rate_pct": 0.28,
-    "reported_cost_usd": 126.352098,
-    "oauth_reported_cost_usd": 124.30812,
-    "claude_code_reported_cost_usd": 124.30812,
-    "claude_code_runtime_cost_share_pct": 98.38,
-    "non_oauth_reported_cost_usd": 2.043978,
+    "failed_rate_pct": 0.29,
+    "reported_cost_usd": 126.196924,
+    "oauth_reported_cost_usd": 124.240522,
+    "claude_code_reported_cost_usd": 124.240522,
+    "claude_code_runtime_cost_share_pct": 98.45,
+    "non_oauth_reported_cost_usd": 1.956402,
     "anthropic_provider_calls": 0
   },
   "providers": {
     "claude-code-oauth": {
       "provider": "claude-code-oauth",
-      "calls": 1980,
-      "success_count": 1980,
+      "calls": 1979,
+      "success_count": 1979,
       "failed_count": 0,
-      "avg_duration_ms": 19338,
+      "avg_duration_ms": 19332,
       "max_duration_ms": 68011,
-      "total_cost_usd": 124.30812,
-      "share_pct": 6.74,
+      "total_cost_usd": 124.240522,
+      "share_pct": 7,
       "success_rate_pct": 100
     },
     "openai-oauth": {
       "provider": "openai-oauth",
-      "calls": 9953,
-      "success_count": 9953,
+      "calls": 9724,
+      "success_count": 9724,
       "failed_count": 0,
-      "avg_duration_ms": 3522,
+      "avg_duration_ms": 3557,
       "max_duration_ms": 91515,
       "total_cost_usd": 0,
-      "share_pct": 33.88,
+      "share_pct": 34.4,
       "success_rate_pct": 100
     },
     "gemini-cli-oauth": {
@@ -46,7 +46,7 @@
       "avg_duration_ms": 14530,
       "max_duration_ms": 59171,
       "total_cost_usd": 0,
-      "share_pct": 7.7,
+      "share_pct": 8.01,
       "success_rate_pct": 100
     },
     "gemini-oauth": {
@@ -73,13 +73,13 @@
     },
     "groq": {
       "provider": "groq",
-      "calls": 15088,
-      "success_count": 15088,
+      "calls": 14203,
+      "success_count": 14203,
       "failed_count": 0,
-      "avg_duration_ms": 803,
+      "avg_duration_ms": 808,
       "max_duration_ms": 8650,
-      "total_cost_usd": 2.043978,
-      "share_pct": 51.36,
+      "total_cost_usd": 1.956402,
+      "share_pct": 50.25,
       "success_rate_pct": 100
     },
     "failed": {
@@ -90,7 +90,7 @@
       "avg_duration_ms": 30645,
       "max_duration_ms": 245143,
       "total_cost_usd": 0,
-      "share_pct": 0.28,
+      "share_pct": 0.29,
       "success_rate_pct": 0
     }
   },

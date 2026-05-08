@@ -236,6 +236,106 @@ export function isPredictiveObservationCandidate(decision) {
     && decision?.block_meta?.predictiveValidation?.observation === true;
 }
 
+export function promotePredictiveObservationHoldCandidates(portfolioDecision, predictiveConfig = {}, options = {}) {
+  if (!portfolioDecision || !Array.isArray(portfolioDecision.decisions)) {
+    return { portfolioDecision, promoted: [] };
+  }
+  if (predictiveConfig?.observationLaneEnabled === false) {
+    return { portfolioDecision, promoted: [] };
+  }
+  if ((portfolioDecision.decisions || []).some((item) => item?.action === ACTIONS.BUY)) {
+    return { portfolioDecision, promoted: [] };
+  }
+
+  const observationThreshold = clamp01(
+    predictiveConfig?.observationThreshold ?? predictiveConfig?.holdThreshold ?? predictiveConfig?.discardThreshold ?? 0.40,
+    0.40,
+  );
+  const minConfidence = clamp01(
+    options?.minConfidence ?? process.env.LUNA_PREDICTIVE_OBSERVATION_MIN_CONFIDENCE ?? predictiveConfig?.observationMinConfidence ?? 0.38,
+    0.38,
+  );
+  const maxPerCycleRaw = Number(
+    options?.maxPerCycle
+      ?? process.env.LUNA_PREDICTIVE_OBSERVATION_MAX_PER_CYCLE
+      ?? predictiveConfig?.maxObservationPerCycle
+      ?? 1,
+  );
+  const maxPerCycle = Number.isFinite(maxPerCycleRaw) && maxPerCycleRaw > 0 ? Math.floor(maxPerCycleRaw) : 1;
+  const sizeRatio = clamp01(predictiveConfig?.observationSizeRatio, 0.35);
+
+  const ranked = (portfolioDecision.decisions || [])
+    .filter((item) => item?.action === ACTIONS.HOLD)
+    .map((item) => {
+      const predictiveScore = clamp01(item?.predictiveScore ?? item?.block_meta?.predictiveValidation?.score, 0);
+      const confidence = clamp01(item?.confidence, 0);
+      const score = Math.max(predictiveScore, confidence);
+      return { item, predictiveScore, confidence, score };
+    })
+    .filter((row) => row.score >= observationThreshold && row.confidence >= minConfidence)
+    .sort((a, b) => {
+      const confidenceGap = b.confidence - a.confidence;
+      if (confidenceGap !== 0) return confidenceGap;
+      const scoreGap = b.score - a.score;
+      if (scoreGap !== 0) return scoreGap;
+      return String(a.item?.symbol || '').localeCompare(String(b.item?.symbol || ''));
+    });
+
+  const promoted = ranked.slice(0, maxPerCycle).map((row) => ({
+    symbol: row.item.symbol,
+    confidence: row.confidence,
+    predictiveScore: row.predictiveScore,
+    score: row.score,
+  }));
+  if (promoted.length === 0) {
+    return { portfolioDecision, promoted: [] };
+  }
+
+  const promotedSymbols = new Set(promoted.map((item) => item.symbol));
+  const decisions = portfolioDecision.decisions.map((decision) => {
+    if (!promotedSymbols.has(decision.symbol)) return decision;
+    const promotedMeta = promoted.find((item) => item.symbol === decision.symbol) || {};
+    return {
+      ...decision,
+      action: ACTIONS.BUY,
+      amount_usdt: Number(decision.amount_usdt || (options?.exchange === 'binance' ? 80 : 500)),
+      reasoning: `predictive_observation_hold_promoted(${Number(promotedMeta.score || 0).toFixed(2)}) | ${decision.reasoning || decision.reason || ''}`.slice(0, 220),
+      block_meta: {
+        ...(decision.block_meta || {}),
+        event_type: 'predictive_observation_lane',
+        predictiveValidation: {
+          ...(decision.block_meta?.predictiveValidation || {}),
+          score: Number(promotedMeta.score || 0),
+          predictiveScore: Number(promotedMeta.predictiveScore || 0),
+          confidence: Number(promotedMeta.confidence || 0),
+          threshold: clamp01(predictiveConfig?.threshold, 0.55),
+          decision: 'hold_promoted',
+          blocked: false,
+          observation: true,
+          mode: 'hard_gate_observation',
+          sizeRatio,
+          source: 'hold_candidate_promotion',
+        },
+      },
+    };
+  });
+
+  return {
+    portfolioDecision: {
+      ...portfolioDecision,
+      decisions,
+      predictiveObservationPromotion: {
+        promotedCount: promoted.length,
+        promoted,
+        observationThreshold,
+        minConfidence,
+        maxPerCycle,
+      },
+    },
+    promoted,
+  };
+}
+
 export function buildPredictiveObservationAmount(amountUsdt, exchange, ratio = 0.35) {
   const rule = getMarketOrderRule(exchange) || {};
   const fallback = exchange === 'kis'
@@ -252,7 +352,7 @@ export function buildPredictiveObservationAmount(amountUsdt, exchange, ratio = 0
   const bounded = Math.max(minOrder, reduced);
   const capped = maxOrder > 0 ? Math.min(maxOrder, bounded) : bounded;
   if (exchange === 'kis') return Math.round(capped / 1000) * 1000;
-  if (exchange === 'binance') return Math.max(minOrder, Math.round(capped));
+  if (exchange === 'binance') return Math.max(minOrder, 50, Math.round(capped));
   return Math.max(minOrder, Math.round(capped * 100) / 100);
 }
 

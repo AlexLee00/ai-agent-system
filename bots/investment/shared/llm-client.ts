@@ -3,9 +3,9 @@
  * shared/llm-client.js — 통합 LLM 클라이언트 (Phase 3-A v2.4)
  *
  * 에이전트별 LLM 라우팅:
- *   - 루나 전용    (luna)                    → OpenAI gpt-4o (판단 최고 품질)
+ *   - 루나 전용    (luna)                    → Hub selector / OpenAI OAuth chain
  *   - Groq 경쟁   (nemesis, oracle)          → Groq dual model (gpt-oss-20b vs scout)
- *   - Mini 우선   (hermes, sophia, zeus, athena) → gpt-4o-mini 메인 + scout 폴백
+ *   - Mini 우선   (hermes, sophia, zeus, athena) → selector mini chain + scout 폴백
  *   - 속도 우선   (argos, 기타)              → Groq llama-4-scout (무료)
  *
  * Groq 라운드로빈 (다중 키, 429 시 자동 다음 키)
@@ -69,6 +69,14 @@ try {
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const require = createRequire(import.meta.url);
+
+function envEnabled(value) {
+  return ['1', 'true', 'yes', 'y', 'on'].includes(String(value || '').trim().toLowerCase());
+}
+
+function isPublicOpenAiDirectEnabled() {
+  return envEnabled(process.env.INVESTMENT_LLM_PUBLIC_OPENAI_ENABLED);
+}
 
 // ─── 설정 로드 (config.yaml 런타임 + Hub secrets 병합) ───────────────
 
@@ -222,6 +230,9 @@ function getOpenAIClass() {
 
 function getOpenAI() {
   if (_openai) return _openai;
+  if (!isPublicOpenAiDirectEnabled()) {
+    throw new Error('Public OpenAI direct LLM path disabled — use Hub openai-oauth selector or set INVESTMENT_LLM_PUBLIC_OPENAI_ENABLED=true for an explicit emergency exception');
+  }
   const apiKey = loadSecrets().openai_api_key || '';
   if (!apiKey) throw new Error('OpenAI API 키 없음 — Hub secrets openai.api_key 설정 필요');
   const OpenAIClass = getOpenAIClass();

@@ -305,6 +305,10 @@ export async function runCryptoCycle(symbols, universeMeta = {}) {
       symbols,
       exchange: 'binance',
       params,
+      meta: {
+        manualUniverseMode: universeMeta.discoveryUniverseSource || null,
+        disableDiscoveryExpansion: ['explicit_symbols', 'no_dynamic'].includes(String(universeMeta.discoveryUniverseSource || '')),
+      },
     });
     const results = decision.results;
     await logMarketPipelineMetrics('암호화폐 판단', decision.metrics);
@@ -382,7 +386,8 @@ if (isDirectExecution(import.meta.url)) {
         heldSymbolCount: 0,
         heldAddedCount: 0,
       };
-      if (Array.isArray(cliSymbols) && cliSymbols.length > 0) {
+      const explicitSymbolsRequested = Array.isArray(cliSymbols) && cliSymbols.length > 0;
+      if (explicitSymbolsRequested) {
         symbols = cliSymbols;
         universeMeta.screeningSymbolCount = symbols.length;
       } else if (noDynamic) {
@@ -427,13 +432,19 @@ if (isDirectExecution(import.meta.url)) {
       universeMeta.maintenanceDustSkippedCount = Array.isArray(maintenanceUniverse.dustSymbols) ? maintenanceUniverse.dustSymbols.length : 0;
       universeMeta.maintenanceLifecycleCounts = maintenanceUniverse.lifecycleCounts || {};
       symbols = await appendHeldSymbols(symbols, 'binance', heldSymbols);
-      const discoveryMerge = await mergeDiscoveryUniverseForCollect(symbols, cryptoMaxDynamic, { pinnedSymbols: heldSymbols });
-      symbols = discoveryMerge.symbols;
-      universeMeta.discoveryUniverseAddedCount = discoveryMerge.addedCount;
-      universeMeta.discoveryUniverseDroppedCount = discoveryMerge.droppedCount || 0;
-      universeMeta.discoveryUniverseSource = discoveryMerge.source;
-      if (discoveryMerge.addedCount > 0) {
-        console.log(`🌐 [discovery universe] 수집 전 후보 ${discoveryMerge.addedCount}개 추가: ${symbols.join(', ')}`);
+      if (explicitSymbolsRequested || noDynamic) {
+        universeMeta.discoveryUniverseAddedCount = 0;
+        universeMeta.discoveryUniverseDroppedCount = 0;
+        universeMeta.discoveryUniverseSource = explicitSymbolsRequested ? 'explicit_symbols' : 'no_dynamic';
+      } else {
+        const discoveryMerge = await mergeDiscoveryUniverseForCollect(symbols, cryptoMaxDynamic, { pinnedSymbols: heldSymbols });
+        symbols = discoveryMerge.symbols;
+        universeMeta.discoveryUniverseAddedCount = discoveryMerge.addedCount;
+        universeMeta.discoveryUniverseDroppedCount = discoveryMerge.droppedCount || 0;
+        universeMeta.discoveryUniverseSource = discoveryMerge.source;
+        if (discoveryMerge.addedCount > 0) {
+          console.log(`🌐 [discovery universe] 수집 전 후보 ${discoveryMerge.addedCount}개 추가: ${symbols.join(', ')}`);
+        }
       }
 
       console.log(getMarketExecutionModeInfo('crypto', '암호화폐').logLine);

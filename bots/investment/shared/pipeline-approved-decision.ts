@@ -14,6 +14,7 @@ import { ACTIONS, validateSignal } from './signal.ts';
 import { evaluateSignal } from '../team/nemesis.ts';
 import { buildAnalystSignals } from './pipeline-decision-policy.ts';
 import { shouldRunExecutionAuxiliaryNode } from './pipeline-decision-agent-plan.ts';
+import { resolvePipelineAnalysisTradeContext } from './pipeline-symbol-candidate.ts';
 
 function buildFullExitRiskResult(decision = {}) {
   return {
@@ -115,7 +116,7 @@ export async function executeApprovedDecision({
     };
   }
 
-  const taAnalysis = analyses.find(a => a.metadata?.currentPrice != null || a.metadata?.atrRatio != null);
+  const tradeContext = resolvePipelineAnalysisTradeContext(analyses);
   const riskResult = isFullExitSell
     ? buildFullExitRiskResult(decision)
     : await evaluateSignal({
@@ -127,8 +128,8 @@ export async function executeApprovedDecision({
       exchange,
     }, {
       totalUsdt: currentPortfolio.totalAsset,
-      atrRatio: taAnalysis?.metadata?.atrRatio ?? null,
-      currentPrice: taAnalysis?.metadata?.currentPrice ?? null,
+      atrRatio: tradeContext.currentPrice && tradeContext.atr ? tradeContext.atr / tradeContext.currentPrice : null,
+      currentPrice: tradeContext.currentPrice ?? null,
       persist: false,
     }).catch(err => ({ approved: false, reason: err.message, error: true }));
 

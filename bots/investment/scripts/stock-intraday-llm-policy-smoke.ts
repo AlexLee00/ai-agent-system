@@ -155,26 +155,98 @@ const cryptoNarrativeOnly = shouldRunStockIntradayDecisionLlm({
 assert.equal(cryptoNarrativeOnly.run, false);
 assert.equal(cryptoNarrativeOnly.reason, 'crypto_intraday_no_technical_presignal');
 
+const cryptoMtfTechnicalFirst = shouldRunStockIntradayDecisionLlm({
+  market: 'binance',
+  symbol: 'CHIP/USDT',
+  meta: cryptoMeta,
+  analyses: [
+    {
+      analyst: 'ta_mtf',
+      signal: 'HOLD',
+      confidence: 0.1,
+      reasoning: '15m BUY | weightedScore 0.50 | trendBoost 0.1',
+    },
+  ],
+  env: disabledEnv,
+});
+assert.equal(cryptoMtfTechnicalFirst.run, true);
+assert.equal(cryptoMtfTechnicalFirst.reason, 'crypto_actionable_technical_presignal');
+assert.equal(cryptoMtfTechnicalFirst.technical.mtfEvidence.intradayBuyFrames, 1);
+
+const cryptoMtfSellConflict = shouldRunStockIntradayDecisionLlm({
+  market: 'binance',
+  symbol: 'NOT/USDT',
+  meta: cryptoMeta,
+  analyses: [
+    {
+      analyst: 'ta_mtf',
+      signal: 'HOLD',
+      confidence: 0.1,
+      reasoning: '15m BUY | daily SELL | weightedScore 0.70',
+    },
+  ],
+  env: disabledEnv,
+});
+assert.equal(cryptoMtfSellConflict.run, false);
+assert.equal(cryptoMtfSellConflict.reason, 'crypto_intraday_technical_conflict');
+assert.equal(cryptoMtfSellConflict.mtfEvidence.dailySellFrames, 1);
+
+const cryptoMtfWeak = shouldRunStockIntradayDecisionLlm({
+  market: 'binance',
+  symbol: 'DYDX/USDT',
+  meta: cryptoMeta,
+  analyses: [
+    {
+      analyst: 'ta_mtf',
+      signal: 'HOLD',
+      confidence: 0.1,
+      reasoning: '4h BUY | daily BUY | weightedScore 0.20',
+    },
+  ],
+  env: disabledEnv,
+});
+assert.equal(cryptoMtfWeak.run, false);
+assert.equal(cryptoMtfWeak.reason, 'crypto_intraday_technical_presignal_weak');
+
+const cryptoMtfFullRequiresFlow = shouldRunStockIntradayDecisionLlm({
+  market: 'binance',
+  symbol: 'CHIP/USDT',
+  meta: cryptoFullMeta,
+  analyses: [
+    {
+      analyst: 'ta_mtf',
+      signal: 'HOLD',
+      confidence: 0.1,
+      reasoning: '15m BUY | weightedScore 0.50',
+    },
+  ],
+  env: { ...disabledEnv, LUNA_CRYPTO_INTRADAY_ENRICHMENT_ENABLED: 'true' },
+});
+assert.equal(cryptoMtfFullRequiresFlow.run, false);
+assert.equal(cryptoMtfFullRequiresFlow.reason, 'crypto_intraday_no_flow_presignal');
+
 const cryptoTechnicalOnly = shouldRunStockIntradayDecisionLlm({
   market: 'binance',
   symbol: 'NIL/USDT',
+  meta: cryptoMeta,
   analyses: [
     { analyst: 'ta_mtf', signal: 'BUY', confidence: 0.33 },
     { analyst: 'onchain', signal: 'HOLD', confidence: 0.8 },
   ],
   env: disabledEnv,
 });
-assert.equal(cryptoTechnicalOnly.run, false);
-assert.equal(cryptoTechnicalOnly.reason, 'crypto_intraday_no_flow_presignal');
+assert.equal(cryptoTechnicalOnly.run, true);
+assert.equal(cryptoTechnicalOnly.reason, 'crypto_actionable_technical_presignal');
 
 const cryptoTaFlow = shouldRunStockIntradayDecisionLlm({
   market: 'binance',
   symbol: 'NIL/USDT',
+  meta: cryptoFullMeta,
   analyses: [
     { analyst: 'ta_mtf', signal: 'BUY', confidence: 0.33 },
     { analyst: 'onchain', signal: 'BUY', confidence: 0.61 },
   ],
-  env: disabledEnv,
+  env: { ...disabledEnv, LUNA_CRYPTO_INTRADAY_ENRICHMENT_ENABLED: 'true' },
 });
 assert.equal(cryptoTaFlow.run, true);
 assert.equal(cryptoTaFlow.reason, 'crypto_actionable_ta_flow_presignal');

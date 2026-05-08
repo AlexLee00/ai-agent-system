@@ -72,6 +72,14 @@ function incrementUsage() {
   }
 }
 
+function envEnabled(value) {
+  return ['1', 'true', 'yes', 'y', 'on'].includes(String(value || '').trim().toLowerCase());
+}
+
+function isPublicOpenAiVisionEnabled() {
+  return envEnabled(process.env.LUNA_CHART_VISION_PUBLIC_OPENAI_ENABLED);
+}
+
 // ─── 차트 URL 생성 ─────────────────────────────────────────────────────
 
 /**
@@ -170,6 +178,17 @@ async function analyzeChartWithVision(screenshotPath, symbol, dryRun = false) {
       signal: 'HOLD',
       confidence: 0.0,
       reasoning: 'dry-run 모드: Vision API 호출 없음',
+      key_levels: { support: null, resistance: null },
+    };
+  }
+
+  if (!isPublicOpenAiVisionEnabled()) {
+    console.warn('  ⚠️ [차트비전] public OpenAI Vision 직접 호출 비활성화 — KIS/TradingView 기술 필터를 사용합니다');
+    return {
+      pattern: 'public_openai_disabled',
+      signal: 'HOLD',
+      confidence: 0.0,
+      reasoning: 'LUNA_CHART_VISION_PUBLIC_OPENAI_ENABLED=true가 아니므로 OpenAI Vision 직접 호출을 수행하지 않음',
       key_levels: { support: null, resistance: null },
     };
   }

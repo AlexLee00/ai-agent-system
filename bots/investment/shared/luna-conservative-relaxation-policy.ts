@@ -33,12 +33,14 @@ function parseReasoningNumber(text, patterns = []) {
   return null;
 }
 
-function extractCryptoTechnicalEvidence(analyses = []) {
+export function extractCryptoTechnicalEvidence(analyses = []) {
   const evidence = {
     weightedScore: null,
     trendBoost: null,
     intradayBuyFrames: 0,
     intradaySellFrames: 0,
+    dailyBuyFrames: 0,
+    dailySellFrames: 0,
     technicalBuyRows: 0,
     technicalMaxConfidence: 0,
   };
@@ -65,9 +67,11 @@ function extractCryptoTechnicalEvidence(analyses = []) {
       const frameText = String(match[0] || '').toLowerCase();
       const signal = normalizeAction(match[1]);
       const isIntraday = /15분|15m|30분|30m|1시간|1h|4시간|4h/.test(frameText);
-      if (!isIntraday) continue;
-      if (signal === ACTIONS.BUY) evidence.intradayBuyFrames += 1;
-      if (signal === ACTIONS.SELL) evidence.intradaySellFrames += 1;
+      const isDaily = /일봉|daily/.test(frameText);
+      if (isIntraday && signal === ACTIONS.BUY) evidence.intradayBuyFrames += 1;
+      if (isIntraday && signal === ACTIONS.SELL) evidence.intradaySellFrames += 1;
+      if (isDaily && signal === ACTIONS.BUY) evidence.dailyBuyFrames += 1;
+      if (isDaily && signal === ACTIONS.SELL) evidence.dailySellFrames += 1;
     }
   }
 
@@ -297,6 +301,7 @@ export function evaluateConservativeRelaxation({
 
 export default {
   evaluateConservativeRelaxation,
+  extractCryptoTechnicalEvidence,
   getConservativeRelaxationMaxPerCycle,
   isConservativeRelaxationEnabled,
 };

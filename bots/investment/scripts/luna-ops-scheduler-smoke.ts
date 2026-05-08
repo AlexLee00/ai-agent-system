@@ -18,7 +18,9 @@ import { shouldSkipPreScreen } from './pre-market-screen.ts';
 
 export async function runLunaOpsSchedulerSmoke() {
   const jobs = getOpsSchedulerJobs();
-  assert.equal(jobs.length, 21);
+  assert.equal(jobs.length, 22);
+  assert.equal(jobs.some((job) => job.name === 'dynamic_policy_operator'), true);
+  assert.equal(jobs.find((job) => job.name === 'dynamic_policy_operator')?.args?.includes('--confirm=luna-dynamic-policy-autotune'), true);
   assert.equal(jobs.some((job) => job.name === 'discovery_candidate_refresh'), true);
   assert.equal(jobs.find((job) => job.name === 'discovery_candidate_refresh')?.market, 'crypto');
   assert.equal(jobs.find((job) => job.name === 'discovery_candidate_refresh')?.args?.includes('--markets=crypto'), true);
@@ -45,7 +47,7 @@ export async function runLunaOpsSchedulerSmoke() {
 
   const now = new Date('2026-05-04T02:00:00+09:00');
   const emptyPlan = buildOpsSchedulerPlan({ now, state: { jobs: {} }, jobs });
-  assert.equal(emptyPlan.due, 19);
+  assert.equal(emptyPlan.due, 20);
 
   const recentState = {
     jobs: Object.fromEntries(jobs.map((job) => [job.name, { lastRunAt: now.toISOString() }])),
@@ -109,12 +111,12 @@ export async function runLunaOpsSchedulerSmoke() {
     },
   });
   assert.equal(executed.ok, true);
-  assert.equal(calls.length, 19);
+  assert.equal(calls.length, 20);
   assert.equal(envByJob.market_cycle_domestic?.LUNA_LIVE_DOMESTIC, 'true');
   assert.equal(envByJob.market_cycle_domestic_open_catchup?.LUNA_LIVE_DOMESTIC, 'true');
   assert.equal(envByJob.market_cycle_overseas?.LUNA_LIVE_OVERSEAS, 'true');
   const executedState = JSON.parse(fs.readFileSync(statePath, 'utf8'));
-  assert.equal(Object.keys(executedState.jobs).length, 19);
+  assert.equal(Object.keys(executedState.jobs).length, 20);
   assert.equal(executedState.jobs.market_cycle_domestic.lastOutcome, 'market_closed_research');
   assert.equal(executedState.jobs.market_cycle_domestic.lastSummary.includes('장외 시간'), true);
   assert.equal(executedState.jobs.market_cycle_domestic_open_catchup.lastOutcome, 'ok');

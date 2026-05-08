@@ -1,6 +1,9 @@
 // @ts-nocheck
 
-import { evaluateConservativeRelaxation } from './luna-conservative-relaxation-policy.ts';
+import {
+  evaluateConservativeRelaxation,
+  extractCryptoTechnicalEvidence,
+} from './luna-conservative-relaxation-policy.ts';
 
 export const STOCK_INTRADAY_LIGHT_COLLECT_NODES = Object.freeze(['L06', 'L02', 'L04']);
 export const CRYPTO_INTRADAY_LIGHT_COLLECT_NODES = Object.freeze(['L06', 'L02']);
@@ -18,6 +21,11 @@ function envFlag(env, key, fallback = false) {
   if (['1', 'true', 'yes', 'on', 'enabled'].includes(text)) return true;
   if (['0', 'false', 'no', 'off', 'disabled'].includes(text)) return false;
   return fallback;
+}
+
+function numEnv(env, key, fallback) {
+  const value = Number(env?.[key]);
+  return Number.isFinite(value) ? value : fallback;
 }
 
 export function isStockMarket(market) {
@@ -109,7 +117,63 @@ function cryptoAnalystRole(row) {
   return 'other';
 }
 
-function findCryptoActionablePresignal(analyses = [], env = process.env) {
+function buildCryptoMtfTechnicalPresignal(analyses = [], env = process.env) {
+  const evidence = extractCryptoTechnicalEvidence(analyses);
+  const weightedFloor = numEnv(env, 'LUNA_CRYPTO_TA_MTF_PRESIGNAL_WEIGHTED_SCORE', 0.45);
+  const minBuyFrames = Math.max(1, Math.round(numEnv(env, 'LUNA_CRYPTO_TA_MTF_PRESIGNAL_MIN_BUY_FRAMES', 1)));
+  const hasBuyBias = evidence.intradayBuyFrames >= minBuyFrames || evidence.dailyBuyFrames > 0;
+  const hasSellConflict = evidence.intradaySellFrames > 0 || evidence.dailySellFrames > 0;
+  const weightedScore = evidence.weightedScore == null ? null : Number(evidence.weightedScore);
+  const weightedOk = weightedScore == null || weightedScore >= weightedFloor;
+
+  if (!hasBuyBias || hasSellConflict || !weightedOk) return null;
+
+  const confidence = Math.max(
+    getCryptoTaDecisionPrefilterConfidence(env),
+    Number(evidence.technicalMaxConfidence || 0),
+    Number(weightedScore || 0),
+  );
+  return {
+    row: {
+      analyst: 'ta_mtf',
+      signal: 'BUY',
+      confidence,
+      metadata: { mtfEvidence: evidence, synthetic_presignal: true },
+    },
+    confidence,
+    mtfEvidence: evidence,
+  };
+}
+
+function classifyCryptoMtfTechnicalBlockReason(analyses = [], env = process.env) {
+  const evidence = extractCryptoTechnicalEvidence(analyses);
+  const weightedFloor = numEnv(env, 'LUNA_CRYPTO_TA_MTF_PRESIGNAL_WEIGHTED_SCORE', 0.45);
+  const hasBuyBias = evidence.intradayBuyFrames > 0 || evidence.dailyBuyFrames > 0 || evidence.technicalBuyRows > 0;
+  const hasSellConflict = evidence.intradaySellFrames > 0 || evidence.dailySellFrames > 0;
+  const weightedScore = evidence.weightedScore == null ? null : Number(evidence.weightedScore);
+
+  if (hasSellConflict) {
+    return {
+      reason: 'crypto_intraday_technical_conflict',
+      mtfEvidence: evidence,
+      weightedFloor,
+    };
+  }
+  if (hasBuyBias && weightedScore != null && weightedScore < weightedFloor) {
+    return {
+      reason: 'crypto_intraday_technical_presignal_weak',
+      mtfEvidence: evidence,
+      weightedFloor,
+    };
+  }
+  return {
+    reason: 'crypto_intraday_no_technical_presignal',
+    mtfEvidence: evidence,
+    weightedFloor,
+  };
+}
+
+function findCryptoActionablePresignal(analyses = [], env = process.env, { requireFlow = true } = {}) {
   const taThreshold = getCryptoTaDecisionPrefilterConfidence(env);
   const flowThreshold = getCryptoFlowDecisionPrefilterConfidence(env);
   const technical = [];
@@ -128,9 +192,24 @@ function findCryptoActionablePresignal(analyses = [], env = process.env) {
 
   technical.sort((a, b) => b.confidence - a.confidence);
   flow.sort((a, b) => b.confidence - a.confidence);
-  const bestTechnical = technical[0] || null;
+  const bestTechnical = technical[0] || buildCryptoMtfTechnicalPresignal(analyses, env);
   const bestFlow = flow[0] || null;
-  if (!bestTechnical) return { run: false, reason: 'crypto_intraday_no_technical_presignal', taThreshold, flowThreshold };
+  if (!bestTechnical) return { run: false, ...classifyCryptoMtfTechnicalBlockReason(analyses, env), taThreshold, flowThreshold };
+  if (!requireFlow) {
+    return {
+      run: true,
+      reason: 'crypto_actionable_technical_presignal',
+      taThreshold,
+      flowThreshold,
+      requireFlow,
+      technical: {
+        analyst: bestTechnical.row?.analyst || null,
+        signal: bestTechnical.row?.signal || null,
+        confidence: bestTechnical.confidence,
+        mtfEvidence: bestTechnical.mtfEvidence || bestTechnical.row?.metadata?.mtfEvidence || null,
+      },
+    };
+  }
   if (!bestFlow) return { run: false, reason: 'crypto_intraday_no_flow_presignal', taThreshold, flowThreshold };
 
   return {
@@ -138,10 +217,12 @@ function findCryptoActionablePresignal(analyses = [], env = process.env) {
     reason: 'crypto_actionable_ta_flow_presignal',
     taThreshold,
     flowThreshold,
+    requireFlow,
     technical: {
       analyst: bestTechnical.row?.analyst || null,
       signal: bestTechnical.row?.signal || null,
       confidence: bestTechnical.confidence,
+      mtfEvidence: bestTechnical.mtfEvidence || bestTechnical.row?.metadata?.mtfEvidence || null,
     },
     flow: {
       analyst: bestFlow.row?.analyst || null,
@@ -235,7 +316,9 @@ export function shouldRunStockIntradayDecisionLlm({
   if (isCryptoMarket(market)) {
     if (!isCryptoIntradayDecisionPrefilterEnabled(env)) return { run: true, reason: 'crypto_prefilter_disabled' };
     if (liveHeldSymbols?.has?.(String(symbol || '').trim())) return { run: true, reason: 'held_symbol' };
-    const strictCrypto = findCryptoActionablePresignal(analyses, env);
+    const sourceMode = meta?.llm_call_policy?.source_enrichment || null;
+    const requireFlow = sourceMode !== 'technical_first_only' && isCryptoIntradayEnrichmentEnabled(env);
+    const strictCrypto = findCryptoActionablePresignal(analyses, env, { requireFlow });
     return strictCrypto.run ? strictCrypto : (findRelaxedPresignal(market, analyses, env) || strictCrypto);
   }
   if (!isStockMarket(market)) return { run: true, reason: 'non_stock_market' };

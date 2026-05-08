@@ -32,6 +32,24 @@ export function createTelegramTradeAlerts(context = {}) {
     return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
   }
 
+  function resolveOpenJournalEntry(openEntries, symbol, isPaper, tradeMode) {
+    const exact = openEntries.find(e =>
+      e.symbol === symbol
+        && Boolean(e.is_paper) === Boolean(isPaper)
+        && (e.trade_mode || 'normal') === tradeMode
+    );
+    if (exact) return exact;
+
+    const sameLiveScope = openEntries.filter(e =>
+      e.symbol === symbol
+        && Boolean(e.is_paper) === Boolean(isPaper)
+    );
+    if (!isPaper && sameLiveScope.length === 1) {
+      return sameLiveScope[0];
+    }
+    return null;
+  }
+
   async function closeOpenJournalForSymbol(
     symbol,
     isPaper,
@@ -49,11 +67,7 @@ export function createTelegramTradeAlerts(context = {}) {
   ) {
     const openEntries = await journalDb.getOpenJournalEntries('crypto');
     const effectiveTradeMode = tradeMode || getInvestmentTradeMode();
-    const entry = openEntries.find(e =>
-      e.symbol === symbol
-        && Boolean(e.is_paper) === Boolean(isPaper)
-        && (e.trade_mode || 'normal') === effectiveTradeMode
-    );
+    const entry = resolveOpenJournalEntry(openEntries, symbol, isPaper, effectiveTradeMode);
     if (!entry) return;
 
     const pnlAmount = (exitValue || 0) - (entry.entry_value || 0);
@@ -133,11 +147,7 @@ export function createTelegramTradeAlerts(context = {}) {
   ) {
     const openEntries = await journalDb.getOpenJournalEntries('crypto');
     const effectiveTradeMode = tradeMode || getInvestmentTradeMode();
-    const entry = openEntries.find((e) =>
-      e.symbol === symbol
-        && Boolean(e.is_paper) === Boolean(isPaper)
-        && (e.trade_mode || 'normal') === effectiveTradeMode
-    );
+    const entry = resolveOpenJournalEntry(openEntries, symbol, isPaper, effectiveTradeMode);
     if (!entry) return { partial: false, updated: false };
 
     const normalizedRatio = normalizePartialExitRatio(partialExitRatio);
@@ -266,6 +276,7 @@ export function createTelegramTradeAlerts(context = {}) {
       const signal = signalId ? await db.getSignalById(signalId).catch(() => null) : null;
       const executionOrigin = trade.executionOrigin || 'strategy';
       const excludeFromLearning = Boolean(trade.excludeFromLearning ?? false);
+      const effectiveTradeMode = trade.tradeMode || trade.trade_mode || signal?.trade_mode || getInvestmentTradeMode();
       await journalDb.insertJournalEntry({
         trade_id: tradeId,
         signal_id: signalId,
@@ -273,6 +284,7 @@ export function createTelegramTradeAlerts(context = {}) {
         exchange: trade.exchange,
         symbol: trade.symbol,
         is_paper: trade.paper,
+        trade_mode: effectiveTradeMode,
         entry_time: execTime,
         entry_price: trade.price || 0,
         entry_size: trade.amount || 0,

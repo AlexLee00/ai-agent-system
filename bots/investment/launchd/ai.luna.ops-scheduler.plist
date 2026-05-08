@@ -44,6 +44,14 @@
     <string>true</string>
     <key>LUNA_CONSERVATIVE_RELAXATION_MAX_PER_CYCLE</key>
     <string>3</string>
+    <key>LUNA_DYNAMIC_POLICY_ENABLED</key>
+    <string>true</string>
+    <key>LUNA_DYNAMIC_POLICY_AUTO_APPLY_ENABLED</key>
+    <string>true</string>
+    <key>LUNA_DYNAMIC_POLICY_MIN_OPERATING_SAMPLES</key>
+    <string>5</string>
+    <key>LUNA_DYNAMIC_POLICY_ALLOW_BEARISH_PROBE</key>
+    <string>false</string>
     <key>LUNA_OPERATING_EPOCH_ENABLED</key>
     <string>true</string>
     <key>LUNA_OPERATING_EPOCH_STARTED_AT</key>

@@ -74,6 +74,7 @@ assert.equal(calls.find((item) => item[0] === 'notifySettlement')?.[1]?.winRate,
 
 const buyJournalAlerts = buildAlerts({
   signal: {
+    trade_mode: 'validation',
     strategy_family: 'breakout',
     strategy_quality: 'high',
     strategy_readiness: 0.8,
@@ -90,11 +91,25 @@ await buyJournalAlerts.recordExecutedTradeJournal({
     price: 10,
     amount: 4,
     totalUsdt: 40,
+    tradeMode: 'validation',
   },
 });
 const buyEntry = calls.find((item) => item[0] === 'insertJournalEntry')?.[1];
 assert.equal(buyEntry.strategy_family, 'breakout');
+assert.equal(buyEntry.trade_mode, 'validation');
 assert.equal(calls.some((item) => item[0] === 'notifyJournalEntry'), true);
+
+const validationOpenEntry = {
+  ...openEntry,
+  trade_id: 'OPEN-VALIDATION-1',
+  symbol: 'BTC/USDT',
+  trade_mode: 'validation',
+};
+const unifiedScopeAlerts = buildAlerts({ openEntries: [validationOpenEntry] });
+await unifiedScopeAlerts.settleOpenJournalForSell('BTC/USDT', false, 80000, 50, 'target', 'normal', {
+  soldAmount: 0.0006,
+});
+assert.equal(calls.find((item) => item[0] === 'closeJournalEntry')?.[1], 'OPEN-VALIDATION-1');
 
 const suppressedAlerts = buildAlerts();
 await suppressedAlerts.recordExecutedTradeJournal({
@@ -143,6 +158,8 @@ const payload = {
   smoke: 'hephaestos-telegram-trade-alerts',
   settlementClosed: true,
   buyJournalStrategy: buyEntry.strategy_family,
+  buyJournalTradeMode: buyEntry.trade_mode,
+  unifiedLiveScopeClosed: true,
   cleanupSuppressed: true,
   finalizeSynced: true,
 };

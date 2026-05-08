@@ -50,6 +50,17 @@ export function getOpsSchedulerJobs() {
       ...nodeScript('capture-market-regimes.ts', ['--markets=binance,kis,kis_overseas', '--json']),
     },
     {
+      name: 'dynamic_policy_operator',
+      category: 'policy',
+      market: 'all',
+      cadence: { type: 'interval', seconds: 1800 },
+      ...nodeScript('runtime-luna-dynamic-policy-operator.ts', [
+        '--apply',
+        '--confirm=luna-dynamic-policy-autotune',
+        '--json',
+      ]),
+    },
+    {
       name: 'discovery_candidate_refresh',
       category: 'discovery',
       market: 'crypto',

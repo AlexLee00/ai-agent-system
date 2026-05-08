@@ -13,13 +13,14 @@ function clamp01(value, fallback = 0) {
 
 function isObservationEligible(evidence = {}, predictiveConfig = {}) {
   if (predictiveConfig?.observationLaneEnabled === false) return false;
-  if (evidence?.decision !== 'hold') return false;
+  if (evidence?.decision !== 'hold' && evidence?.decision !== 'discard') return false;
   const score = clamp01(evidence?.score, 0);
   const observationThreshold = clamp01(
     predictiveConfig?.observationThreshold ?? predictiveConfig?.holdThreshold ?? predictiveConfig?.discardThreshold ?? 0.40,
     0.40,
   );
-  return score >= observationThreshold;
+  const predictionScore = clamp01(evidence?.components?.prediction?.score, 0);
+  return Math.max(score, predictionScore) >= observationThreshold;
 }
 
 export function applyPredictiveValidationGate(decisions = [], predictiveConfig = { mode: 'advisory', threshold: 0.55 }) {

@@ -25,7 +25,7 @@ import { recordDiscoveryAttribution, buildDiscoveryReflectionSummary } from './d
 import { getOHLCV } from './ohlcv-fetcher.ts';
 import { buildDecisionPipelineMetrics, countDecisionActions } from './pipeline-decision-metrics.ts';
 import { buildPipelineDecisionFinishMeta } from './pipeline-decision-finish-meta.ts';
-import { buildPipelineSymbolCandidate, recordStrategyRouteStats } from './pipeline-symbol-candidate.ts';
+import { buildPipelineSymbolCandidate, recordStrategyRouteStats, resolvePipelineAnalysisTradeContext } from './pipeline-symbol-candidate.ts';
 import { executeApprovedDecision, persistRiskApprovalRationale } from './pipeline-approved-decision.ts';
 import { buildDecisionBridgeMeta, loadDecisionPlannerCompact } from './pipeline-decision-bridge.ts';
 import { buildDecisionAgentPlan, shouldRunExecutionAuxiliaryNode } from './pipeline-decision-agent-plan.ts';
@@ -48,6 +48,7 @@ import {
   mergeUniqueSymbols,
   normalizeCollectQuality,
   normalizeRegimeLabel,
+  promotePredictiveObservationHoldCandidates,
 } from './pipeline-decision-policy.ts';
 
 function getDecisionNode(id) {
@@ -61,6 +62,78 @@ async function runApprovedDecision(args) {
     ...args,
     buildDecisionBridgeMeta,
   });
+}
+
+function decisionSymbolKey(value) {
+  return String(value?.symbol || '').trim().toUpperCase();
+}
+
+function buildSignalDecisionTraceMeta({
+  sessionId,
+  exchange,
+  decision,
+  amountUsdt,
+  tradeMode,
+  predictiveObservation,
+  midGapPromoted,
+} = {}) {
+  const blockMeta = decision?.block_meta || {};
+  return {
+    ...(blockMeta.entryTrigger ? { entryTrigger: blockMeta.entryTrigger } : {}),
+    ...(blockMeta.predictiveValidation ? { predictiveValidation: blockMeta.predictiveValidation } : {}),
+    ...(blockMeta.discoveryContext ? { discoveryContext: blockMeta.discoveryContext } : {}),
+    decisionTrace: {
+      sessionId: sessionId || null,
+      market: exchange || null,
+      symbol: decision?.symbol || null,
+      action: decision?.action || null,
+      sourceConfidence: decision?.confidence ?? null,
+      sourceAmountUsdt: decision?.amount_usdt ?? null,
+      effectiveAmountUsdt: amountUsdt ?? null,
+      tradeMode: tradeMode || null,
+      predictiveObservation: Boolean(predictiveObservation),
+      midGapPromoted: Boolean(midGapPromoted),
+      strategyRoute: decision?.strategy_route || decision?.strategyRoute || null,
+      setupType: decision?.setup_type || decision?.strategy_route?.setupType || decision?.strategyRoute?.setupType || null,
+      recordedAt: new Date().toISOString(),
+    },
+  };
+}
+
+export function mergePortfolioDecisionPredictiveEvidence(portfolioDecision = {}, symbolDecisions = []) {
+  const evidenceBySymbol = new Map(
+    (symbolDecisions || [])
+      .filter((item) => decisionSymbolKey(item))
+      .map((item) => [decisionSymbolKey(item), item]),
+  );
+  return {
+    ...(portfolioDecision || {}),
+    decisions: (portfolioDecision?.decisions || []).map((decision) => {
+      const evidence = evidenceBySymbol.get(decisionSymbolKey(decision));
+      if (!evidence) return decision;
+      return {
+        ...evidence,
+        ...decision,
+        exchange: decision.exchange || evidence.exchange,
+        strategy_route: decision.strategy_route || evidence.strategy_route,
+        strategyRoute: decision.strategyRoute || evidence.strategyRoute,
+        setup_type: decision.setup_type || evidence.setup_type,
+        entry_strategy: decision.entry_strategy || evidence.entry_strategy,
+        entryPrice: decision.entryPrice ?? decision.entry_price ?? evidence.entryPrice ?? evidence.entry_price,
+        entry_price: decision.entry_price ?? decision.entryPrice ?? evidence.entry_price ?? evidence.entryPrice,
+        atr: decision.atr ?? evidence.atr,
+        predictiveScore: decision.predictiveScore ?? evidence.predictiveScore,
+        triggerHints: {
+          ...(evidence.triggerHints || {}),
+          ...(decision.triggerHints || {}),
+        },
+        block_meta: {
+          ...(evidence.block_meta || {}),
+          ...(decision.block_meta || {}),
+        },
+      };
+    }),
+  };
 }
 
 export async function runDecisionExecutionStateMachine({
@@ -77,6 +150,8 @@ export async function runDecisionExecutionStateMachine({
   const discoveryMarket = toDiscoveryMarket(exchange);
   let runtimeSymbols = Array.isArray(symbols) ? symbols.filter(Boolean) : [];
   let discoveryCandidates = [];
+  const disableDiscoveryExpansion = meta?.disableDiscoveryExpansion === true
+    || ['explicit_symbols', 'no_dynamic'].includes(String(meta?.manualUniverseMode || ''));
   const investmentTradeMode = getInvestmentTradeMode();
   const currentPortfolio = portfolio || await inspectPortfolioContext(exchange);
   const configuredDebateLimit = getDebateLimit(exchange, runtimeSymbols.length);
@@ -103,7 +178,7 @@ export async function runDecisionExecutionStateMachine({
     await ensureLunaDiscoveryEntryTables().catch(() => {});
   }
 
-  if (intelligentFlags.phases.discoveryOrchestratorEnabled) {
+  if (intelligentFlags.phases.discoveryOrchestratorEnabled && !disableDiscoveryExpansion) {
     const universe = await buildDiscoveryUniverse(discoveryMarket, new Date(), {
       refresh: true,
       fallbackSymbols: runtimeSymbols,
@@ -117,7 +192,7 @@ export async function runDecisionExecutionStateMachine({
     }
   }
 
-  if (intelligentFlags.phases.newsSymbolMappingEnabled) {
+  if (intelligentFlags.phases.newsSymbolMappingEnabled && !disableDiscoveryExpansion) {
     await runNewsToSymbolMapping({
       exchange,
       market: discoveryMarket,
@@ -492,6 +567,7 @@ export async function runDecisionExecutionStateMachine({
   });
   portfolioDecision = portfolioDecisionResult.result?.portfolioDecision;
   if (portfolioDecision) {
+    portfolioDecision = mergePortfolioDecisionPredictiveEvidence(portfolioDecision, symbolDecisions);
     const representativePass = await applyRuntimeCryptoRepresentativePass({
       portfolioDecision,
       exchange,
@@ -521,12 +597,30 @@ export async function runDecisionExecutionStateMachine({
         },
       };
       predictiveValidationStats = portfolioDecision.predictiveValidation;
+      if (predictiveGate.observation === 0 && predictiveGate.blocked === 0) {
+        const promotion = promotePredictiveObservationHoldCandidates(
+          portfolioDecision,
+          intelligentFlags.predictive,
+          { exchange },
+        );
+        if (promotion.promoted.length > 0) {
+          portfolioDecision = promotion.portfolioDecision;
+          portfolioDecision.predictiveValidation = {
+            ...(portfolioDecision.predictiveValidation || {}),
+            holdPromoted: promotion.promoted.length,
+            holdPromotedSymbols: promotion.promoted.map((item) => item.symbol),
+          };
+          predictiveValidationStats = portfolioDecision.predictiveValidation;
+        }
+      }
     }
 
     if (decisionAgentPlan.entryTriggerEnabled && intelligentFlags.phases.entryTriggerEnabled) {
       const triggerResult = await evaluateEntryTriggers(portfolioDecision.decisions || [], {
         exchange,
         regime: normalizeRegimeLabel(currentPortfolio?.marketRegime || null),
+        capitalSnapshot: currentPortfolio?.capitalSnapshot || null,
+        defaultAmountUsdt: exchange === 'binance' ? 50 : null,
       }).catch(() => null);
       if (triggerResult?.decisions) {
         entryTriggerStats = triggerResult.stats || null;
@@ -588,9 +682,13 @@ export async function runDecisionExecutionStateMachine({
       ? Math.min(params?.minSignalScore ?? runtimeMinConf, runtimeMinConf)
       : (params?.minSignalScore ?? runtimeMinConf);
     let midGapPromotedCandidate = false;
+    const predictiveObservationCandidate = isPredictiveObservationCandidate(dec);
     if ((dec.confidence || 0) < minConf) {
       const weakReason = classifyWeakSignalReason(dec.confidence, minConf);
-      if (isMidGapPromotionCandidate({
+      if (predictiveObservationCandidate) {
+        // Observation-lane BUYs already passed the predictive hard gate's
+        // hold band; execute only as reduced validation trades below.
+      } else if (isMidGapPromotionCandidate({
         exchange,
         investmentTradeMode,
         decision: dec,
@@ -607,7 +705,6 @@ export async function runDecisionExecutionStateMachine({
 
     const analyses = symbolAnalysesMap.get(dec.symbol) || [];
     const analystSignals = buildAnalystSignals(analyses);
-    const predictiveObservationCandidate = isPredictiveObservationCandidate(dec);
     const predictiveObservationRatio = dec?.block_meta?.predictiveValidation?.sizeRatio
       ?? intelligentFlags.predictive?.observationSizeRatio
       ?? 0.35;
@@ -639,7 +736,7 @@ export async function runDecisionExecutionStateMachine({
       continue;
     }
 
-    const taAnalysis = analyses.find(a => a.metadata?.currentPrice != null || a.metadata?.atrRatio != null);
+    const tradeContext = resolvePipelineAnalysisTradeContext(analyses);
     const riskResult = await evaluateSignal({
       symbol: dec.symbol,
       action: dec.action,
@@ -649,8 +746,8 @@ export async function runDecisionExecutionStateMachine({
       exchange,
     }, {
       totalUsdt: currentPortfolio.totalAsset,
-      atrRatio: taAnalysis?.metadata?.atrRatio ?? null,
-      currentPrice: taAnalysis?.metadata?.currentPrice ?? null,
+      atrRatio: tradeContext.currentPrice && tradeContext.atr ? tradeContext.atr / tradeContext.currentPrice : null,
+      currentPrice: tradeContext.currentPrice ?? null,
       persist: false,
     }).catch(err => ({ approved: false, reason: err.message, error: true }));
 
@@ -717,6 +814,19 @@ export async function runDecisionExecutionStateMachine({
         planner: plannerCompact,
       }),
     });
+    if (saved?.result?.signalId) {
+      await db.mergeSignalBlockMeta(saved.result.signalId, buildSignalDecisionTraceMeta({
+        sessionId,
+        exchange,
+        decision: dec,
+        amountUsdt,
+        tradeMode: effectiveTradeMode,
+        predictiveObservation: predictiveObservationCandidate,
+        midGapPromoted: midGapPromotedCandidate,
+      })).catch((error) => {
+        console.warn(`  ⚠️ signal decision trace 기록 실패: ${error.message}`);
+      });
+    }
     if (intelligentFlags.phases.reflectionEnabled && saved?.result?.signalId) {
       const intel = intelligentBySymbol.get(dec.symbol) || {};
       await recordDiscoveryAttribution({

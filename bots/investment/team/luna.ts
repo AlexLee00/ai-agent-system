@@ -528,6 +528,92 @@ export async function inspectPortfolioContext(exchange = 'binance') {
   return inspectLunaPortfolioContext(exchange);
 }
 
+function finitePositiveNumber(...values) {
+  for (const value of values) {
+    const num = Number(value);
+    if (Number.isFinite(num) && num > 0) return num;
+  }
+  return null;
+}
+
+function resolveNestedTfNumber(meta = {}, fieldNames = []) {
+  const tfResults = meta?.tfResults || meta?.timeframes || null;
+  if (!tfResults || typeof tfResults !== 'object') return null;
+  for (const frame of ['15m', '30m', '1h', '4h', '1d', 'daily']) {
+    const row = tfResults[frame];
+    if (!row || typeof row !== 'object') continue;
+    const value = finitePositiveNumber(...fieldNames.map((field) => row?.[field]));
+    if (value) return value;
+  }
+  for (const row of Object.values(tfResults)) {
+    if (!row || typeof row !== 'object') continue;
+    const value = finitePositiveNumber(...fieldNames.map((field) => row?.[field]));
+    if (value) return value;
+  }
+  return null;
+}
+
+function resolveAnalysisTradeContext(analyses = []) {
+  let currentPrice = null;
+  let atr = null;
+  for (const row of analyses || []) {
+    const meta = row?.metadata || {};
+    currentPrice = currentPrice || finitePositiveNumber(
+      meta.currentPrice,
+      meta.current_price,
+      meta.lastPrice,
+      meta.last_price,
+      meta.close,
+      row?.currentPrice,
+      row?.current_price,
+      row?.price,
+      resolveNestedTfNumber(meta, ['currentPrice', 'current_price', 'close', 'price']),
+    );
+    atr = atr || finitePositiveNumber(
+      meta.atr,
+      meta.atrValue,
+      meta.atr_value,
+      row?.atr,
+      row?.atrValue,
+      row?.atr_value,
+      resolveNestedTfNumber(meta, ['atr', 'atrValue', 'atr_value']),
+    );
+    if (!atr && currentPrice) {
+      const atrRatio = finitePositiveNumber(meta.atrRatio, meta.atr_ratio, row?.atrRatio, row?.atr_ratio);
+      if (atrRatio) atr = currentPrice * atrRatio;
+    }
+    if (currentPrice && atr) return { currentPrice, atr };
+  }
+  return { currentPrice, atr };
+}
+
+function resolveBullishTradePlan(decision = {}, debate = null) {
+  const bull = debate?.bull || {};
+  const stopLoss = finitePositiveNumber(
+    decision?.stopLoss,
+    decision?.stop_loss,
+    decision?.sl_price,
+    bull?.stopLoss,
+    bull?.stop_loss,
+  );
+  const takeProfit = finitePositiveNumber(
+    decision?.takeProfit,
+    decision?.take_profit,
+    decision?.tp_price,
+    decision?.targetPrice,
+    decision?.target_price,
+    bull?.takeProfit,
+    bull?.take_profit,
+    bull?.targetPrice,
+    bull?.target_price,
+  );
+  return {
+    stopLoss,
+    takeProfit,
+    tpSlSet: stopLoss != null || takeProfit != null || decision?.tp_sl_set === true || decision?.tpSlSet === true,
+  };
+}
+
 // ─── 2라운드 토론 ───────────────────────────────────────────────────
 
 /**
@@ -538,12 +624,12 @@ export async function inspectPortfolioContext(exchange = 'binance') {
  * @param {object|null} prevDebate  1라운드 결과 (null이면 1라운드)
  * @returns {Promise<{ bull: any, bear: any, round: number }>}
  */
-async function runDebateRound(symbol, summary, exchange, prevDebate = null) {
+async function runDebateRound(symbol, summary, exchange, prevDebate = null, currentPrice = null) {
   if (!prevDebate) {
     // 1라운드: 병렬 실행
     const [bull, bear] = await Promise.all([
-      runBullResearcher(symbol, summary, null, exchange),
-      runBearResearcher(symbol, summary, null, exchange),
+      runBullResearcher(symbol, summary, currentPrice, exchange),
+      runBearResearcher(symbol, summary, currentPrice, exchange),
     ]);
     return { bull, bear, round: 1 };
   }
@@ -557,8 +643,8 @@ async function runDebateRound(symbol, summary, exchange, prevDebate = null) {
     : summary;
 
   const [bull2, bear2] = await Promise.all([
-    runBullResearcher(symbol, bullCtx, null, exchange),
-    runBearResearcher(symbol, bearCtx, null, exchange),
+    runBullResearcher(symbol, bullCtx, currentPrice, exchange),
+    runBearResearcher(symbol, bearCtx, currentPrice, exchange),
   ]);
   return { bull: bull2, bear: bear2, round: 2 };
 }
@@ -703,6 +789,7 @@ export async function orchestrate(symbols, exchange = 'binance', params = null) 
 
       symbolAnalysesMap.set(symbol, analyses);
       console.log(`  📋 [루나] ${symbol}: ${analyses.length}개 분석 결과`);
+      const tradeContext = resolveAnalysisTradeContext(analyses);
 
       let debate = null;
       const baseDebateLimit = getDebateLimit(exchange, discoverySymbols.length);
@@ -714,12 +801,12 @@ export async function orchestrate(symbols, exchange = 'binance', params = null) 
           const summary = buildAnalysisSummary(analyses);
 
           // 1라운드
-          const r1 = await runDebateRound(symbol, summary, exchange, null);
+          const r1 = await runDebateRound(symbol, summary, exchange, null, tradeContext.currentPrice);
           if (r1.bull) console.log(`  🐂 [제우스 R1] 목표가 ${r1.bull.targetPrice} | ${r1.bull.reasoning?.slice(0, 50)}`);
           if (r1.bear) console.log(`  🐻 [아테나 R1] 목표가 ${r1.bear.targetPrice} | ${r1.bear.reasoning?.slice(0, 50)}`);
 
           // 2라운드 (상대방 주장 보고 재반박)
-          const r2 = await runDebateRound(symbol, summary, exchange, r1);
+          const r2 = await runDebateRound(symbol, summary, exchange, r1, tradeContext.currentPrice);
           if (r2.bull) console.log(`  🐂 [제우스 R2] ${r2.bull.reasoning?.slice(0, 60)}`);
           if (r2.bear) console.log(`  🐻 [아테나 R2] ${r2.bear.reasoning?.slice(0, 60)}`);
 
@@ -766,6 +853,7 @@ export async function orchestrate(symbols, exchange = 'binance', params = null) 
 
       console.log(`\n  🤖 [루나] ${symbol} 신호 판단 중...`);
       const decision = await getSymbolDecision(symbol, analyses, exchange, debate, analystWeights);
+      const tradePlan = resolveBullishTradePlan(decision, debate);
       const discoveryScore = clamp01(fused?.discoveryScore ?? decision?.confidence ?? 0.5, 0.5);
       const shouldMutateDecision = intelligentFlags.shouldApplyDecisionMutation();
       const shouldApplyScoreFusion = intelligentFlags.shouldApplyScoreFusion();
@@ -780,6 +868,18 @@ export async function orchestrate(symbols, exchange = 'binance', params = null) 
       const enrichedDecision = {
         ...decision,
         confidence: Number(blendedConfidence.toFixed(4)),
+        entryPrice: decision?.entryPrice ?? decision?.entry_price ?? tradeContext.currentPrice,
+        entry_price: decision?.entry_price ?? decision?.entryPrice ?? tradeContext.currentPrice,
+        atr: decision?.atr ?? tradeContext.atr,
+        stopLoss: decision?.stopLoss ?? decision?.stop_loss ?? tradePlan.stopLoss,
+        stop_loss: decision?.stop_loss ?? decision?.stopLoss ?? tradePlan.stopLoss,
+        sl_price: decision?.sl_price ?? decision?.stop_loss ?? decision?.stopLoss ?? tradePlan.stopLoss,
+        takeProfit: decision?.takeProfit ?? decision?.take_profit ?? decision?.targetPrice ?? decision?.target_price ?? tradePlan.takeProfit,
+        take_profit: decision?.take_profit ?? decision?.takeProfit ?? decision?.target_price ?? decision?.targetPrice ?? tradePlan.takeProfit,
+        targetPrice: decision?.targetPrice ?? decision?.target_price ?? tradePlan.takeProfit,
+        target_price: decision?.target_price ?? decision?.targetPrice ?? tradePlan.takeProfit,
+        tp_price: decision?.tp_price ?? decision?.take_profit ?? decision?.takeProfit ?? decision?.target_price ?? decision?.targetPrice ?? tradePlan.takeProfit,
+        tp_sl_set: decision?.tp_sl_set === true || decision?.tpSlSet === true || tradePlan.tpSlSet,
         setup_type: shouldMutateDecision ? (decision?.setup_type || fused?.setupType || null) : (decision?.setup_type || null),
         entry_strategy: shouldMutateDecision ? (decision?.entry_strategy || fused?.entryStrategy || null) : (decision?.entry_strategy || null),
         predictiveScore: Number(predictiveScore.toFixed(4)),
@@ -792,6 +892,12 @@ export async function orchestrate(symbols, exchange = 'binance', params = null) 
         },
         block_meta: {
           ...(decision?.block_meta || {}),
+          entry_price: decision?.entry_price ?? decision?.entryPrice ?? tradeContext.currentPrice,
+          entryPrice: decision?.entryPrice ?? decision?.entry_price ?? tradeContext.currentPrice,
+          atr: decision?.atr ?? tradeContext.atr,
+          sl_price: decision?.sl_price ?? decision?.stop_loss ?? decision?.stopLoss ?? tradePlan.stopLoss,
+          tp_price: decision?.tp_price ?? decision?.take_profit ?? decision?.takeProfit ?? decision?.target_price ?? decision?.targetPrice ?? tradePlan.takeProfit,
+          tp_sl_set: decision?.tp_sl_set === true || decision?.tpSlSet === true || tradePlan.tpSlSet,
           discoveryContext: {
             source: discoverySeed?.source || null,
             market: discoveryMarket,
