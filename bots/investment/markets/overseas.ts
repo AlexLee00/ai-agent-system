@@ -40,6 +40,7 @@ import { finishPipelineRun } from '../shared/pipeline-db.ts';
 import { updatePipelineRunMeta } from '../shared/pipeline-db.ts';
 import { inspectLunaPortfolioContext } from '../shared/luna-portfolio-context.ts';
 import { buildStockIntradayLlmPolicyMeta, buildStockResearchLlmPolicyMeta } from '../shared/stock-intraday-llm-policy.ts';
+import { commitResearchAlertState, evaluateResearchAlertState } from '../shared/research-alert-policy.ts';
 import { buildDiscoveryUniverse } from '../team/discovery/discovery-universe.ts';
 
 import { processAllPendingKisOverseasSignals } from '../team/hanul.ts';
@@ -329,12 +330,43 @@ export async function runOverseasResearchCycle(symbols, universeMeta = {}) {
     const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
     logResearchCycleComplete({ marketLabel: '미국주식', elapsedSec: elapsed });
 
-    publishAlert({
-      from_bot: 'luna',
-      event_type: 'report',
-      alert_level: 1,
-      message: `📚 미국주식 장외 연구 완료\n심볼: ${symbols.join(', ')}\n다음 장 watchlist 갱신 완료\n소요: ${elapsed}초`,
+    const alertDecision = evaluateResearchAlertState({
+      market: 'overseas',
+      symbols,
+      meta: {
+        elapsedSec: elapsed,
+        sessionId,
+      },
+      write: false,
     });
+
+    if (alertDecision.shouldPublish) {
+      const published = await publishAlert({
+        from_bot: 'luna',
+        event_type: 'report',
+        alert_level: 1,
+        message: `📚 미국주식 장외 연구 완료\n심볼: ${symbols.join(', ')}\n다음 장 watchlist 갱신 완료\n소요: ${elapsed}초`,
+        payload: {
+          research_alert_reason: alertDecision.reason,
+          research_alert_cooldown_minutes: alertDecision.cooldownMinutes,
+        },
+      });
+      if (published) {
+        commitResearchAlertState({
+          market: 'overseas',
+          symbols,
+          meta: {
+            elapsedSec: elapsed,
+            sessionId,
+            reason: alertDecision.reason,
+          },
+        });
+      }
+    } else {
+      console.log(
+        `🔕 미국주식 장외 연구 알림 생략: ${alertDecision.reason} (next=${alertDecision.nextEligibleAt || 'n/a'})`
+      );
+    }
 
     await finishPipelineRun(sessionId, {
       status: 'completed',
