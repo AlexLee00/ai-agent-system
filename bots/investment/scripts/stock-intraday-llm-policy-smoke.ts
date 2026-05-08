@@ -107,6 +107,20 @@ const buyPrefilter = shouldRunStockIntradayDecisionLlm({
 assert.equal(buyPrefilter.run, true);
 assert.equal(buyPrefilter.reason, 'actionable_presignal');
 
+const compositeBuyPrefilter = shouldRunStockIntradayDecisionLlm({
+  market: 'kis',
+  symbol: '005380',
+  meta: lightMeta,
+  analyses: [
+    { analyst: 'ta_mtf', signal: 'BUY', confidence: 0.4 },
+    { analyst: 'market_flow', signal: 'BUY', confidence: 0.43 },
+  ],
+  env: disabledEnv,
+});
+assert.equal(compositeBuyPrefilter.run, true, 'stock TA+flow BUY should pass intraday prefilter even when each signal is below 0.55');
+assert.equal(compositeBuyPrefilter.reason, 'actionable_presignal');
+assert.equal(compositeBuyPrefilter.support.role, 'flow');
+
 const cryptoMeta = buildStockIntradayLlmPolicyMeta({
   market: 'binance',
   marketScript: 'crypto',
@@ -185,6 +199,7 @@ const refresh = await runActiveCandidateAnalysisRefresh({
       metrics: { failedHardCoreTasks: 0 },
     };
   },
+  finishRun: async () => ({ updated: true, reason: 'fixture' }),
 });
 
 assert.equal(refresh.ok, true);
@@ -211,6 +226,7 @@ const cryptoRefresh = await runActiveCandidateAnalysisRefresh({
       metrics: { failedHardCoreTasks: 0 },
     };
   },
+  finishRun: async () => ({ updated: true, reason: 'fixture' }),
 });
 
 assert.equal(cryptoRefresh.ok, true);

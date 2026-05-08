@@ -9,6 +9,7 @@ import * as db from '../shared/db.ts';
 import { ensureCandidateUniverseTable } from '../team/discovery/discovery-store.ts';
 import { ensureLunaDiscoveryEntryTables } from '../shared/luna-discovery-entry-store.ts';
 import {
+  buildDailyTechnicalCoverage,
   buildLunaDiscoveryFunnelReport,
   buildRequiredAnalystCoverage,
 } from './runtime-luna-discovery-funnel-report.ts';
@@ -154,6 +155,50 @@ export async function runLunaDiscoveryFunnelReportSmoke() {
       domesticPartialCoverage.bottlenecks.includes('technical_analysis_partial_for_candidates'),
       'partial domestic TA coverage should be visible as a bottleneck',
     );
+    const domesticDailyFallbackCoverage = buildRequiredAnalystCoverage({
+      market: 'domestic',
+      marketOpen: true,
+      analysisSymbols: ['005930', '000660'],
+      analysisRows: [
+        { symbol: '005930', analyst: 'ta_mtf', count: 1, latest_created_at: new Date().toISOString() },
+        { symbol: '005930', analyst: 'sentiment', count: 1, latest_created_at: new Date().toISOString() },
+        { symbol: '005930', analyst: 'market_flow', count: 1, latest_created_at: new Date().toISOString() },
+        { symbol: '000660', analyst: 'sentiment', count: 1, latest_created_at: new Date().toISOString() },
+        { symbol: '000660', analyst: 'market_flow', count: 1, latest_created_at: new Date().toISOString() },
+      ],
+      dailyTechnicalCoverage: {
+        rows: [{ symbol: '000660', source: 'kis_domestic_daily_price', bars: 90, ok: true }],
+      },
+    });
+    assert.equal(
+      domesticDailyFallbackCoverage.bottlenecks.includes('technical_analysis_partial_for_candidates'),
+      false,
+      'KIS daily technical coverage should count as domestic TA coverage evidence',
+    );
+    const domesticOpenDailyCoverage = await buildDailyTechnicalCoverage({
+      market: 'domestic',
+      exchange: 'kis',
+      marketOpen: true,
+      symbols: ['005930'],
+      fetchSnapshot: async () => ({
+        ok: true,
+        source: 'kis_domestic_daily_price',
+        providerMode: 'rest',
+        price: 71000,
+        open: 70000,
+        high: 71500,
+        low: 69000,
+        dailyBars: [
+          { open: 69000, high: 70000, low: 68000, close: 69500 },
+          { open: 69500, high: 70500, low: 69000, close: 70200 },
+          { open: 70200, high: 71500, low: 70000, close: 71000 },
+        ],
+        stale: false,
+      }),
+    });
+    assert.equal(domesticOpenDailyCoverage.checkedCount, 1);
+    assert.equal(domesticOpenDailyCoverage.availableCount, 1);
+    assert.equal(domesticOpenDailyCoverage.bullishCount, 1);
 
     const overseasOpenCoverage = buildRequiredAnalystCoverage({
       market: 'overseas',

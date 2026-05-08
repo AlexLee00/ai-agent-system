@@ -13,6 +13,8 @@ import {
   DEFAULT_POSITION_RUNTIME_AUTOPILOT_HISTORY_FILE,
   readPositionRuntimeAutopilotHistoryLines,
 } from './runtime-position-runtime-autopilot-history-store.ts';
+import { buildDiscoveryUniverse } from '../team/discovery/discovery-universe.ts';
+import { buildDecisionFilterDiagnostics } from './runtime-luna-decision-filter-report.ts';
 
 const MARKET_EXCHANGES = {
   crypto: 'binance',
@@ -69,6 +71,10 @@ export function buildRequiredAnalystCoverage({ market, analysisSymbols = [], ana
   const requiredAnalysts = REQUIRED_ANALYSTS[market] || [];
   const byAnalyst = {};
   const bySymbol = Object.fromEntries((analysisSymbols || []).map((symbol) => [symbol, {}]));
+  const dailyTechnicalSymbols = new Set((dailyTechnicalCoverage?.rows || [])
+    .filter((row) => row?.source || Number(row?.bars || 0) > 0)
+    .map((row) => normalizeCandidateSymbolForAnalysis(row.symbol, market))
+    .filter(Boolean));
 
   for (const row of analysisRows || []) {
     const symbol = String(row.symbol || '').trim().toUpperCase();
@@ -97,7 +103,11 @@ export function buildRequiredAnalystCoverage({ market, analysisSymbols = [], ana
   const bottlenecks = [];
   for (const analyst of requiredAnalysts) {
     const covered = new Set(byAnalyst[analyst]?.symbols || []);
-    const missingSymbols = (analysisSymbols || []).filter((symbol) => !covered.has(symbol));
+    const missingSymbols = (analysisSymbols || []).filter((symbol) => {
+      if (covered.has(symbol)) return false;
+      if (analyst === ANALYST_TYPES.TA_MTF && market !== 'crypto' && dailyTechnicalSymbols.has(symbol)) return false;
+      return true;
+    });
     missingByAnalyst[analyst] = missingSymbols;
     if (analysisSymbols.length > 0 && missingSymbols.length === analysisSymbols.length) {
       if (analyst === ANALYST_TYPES.TA_MTF && market !== 'crypto' && !marketOpen) {
@@ -172,7 +182,15 @@ function summarizeEntryChartSnapshot(snapshot = {}, evaluated = {}) {
   };
 }
 
-async function buildDailyTechnicalCoverage({ market, exchange, symbols = [], marketOpen = true } = {}) {
+export async function buildDailyTechnicalCoverage({
+  market,
+  exchange,
+  symbols = [],
+  marketOpen = true,
+  fetchSnapshot = fetchEntryChartSnapshot,
+  evaluateTradingView = evaluateTradingViewSnapshot,
+  evaluateKis = evaluateKisDailySnapshot,
+} = {}) {
   if (symbols.length === 0) {
     return {
       enabled: true,
@@ -187,12 +205,12 @@ async function buildDailyTechnicalCoverage({ market, exchange, symbols = [], mar
     const limit = Math.max(1, Math.min(10, Number(process.env.LUNA_DISCOVERY_FUNNEL_CRYPTO_DAILY_TA_LIMIT || process.env.LUNA_DISCOVERY_FUNNEL_KIS_DAILY_TA_LIMIT || 5)));
     const rows = [];
     for (const symbol of symbols.slice(0, limit)) {
-      const snapshot = await fetchEntryChartSnapshot({ symbol, exchange, timeframe: 'D' }).catch((error) => ({
+      const snapshot = await fetchSnapshot({ symbol, exchange, timeframe: 'D' }).catch((error) => ({
         ok: false,
         error: error?.message || String(error),
         symbol,
       }));
-      const evaluated = evaluateTradingViewSnapshot(snapshot);
+      const evaluated = evaluateTradingView(snapshot);
       rows.push({
         symbol,
         sourcePolicy: 'tradingview',
@@ -209,18 +227,15 @@ async function buildDailyTechnicalCoverage({ market, exchange, symbols = [], mar
       rows,
     };
   }
-  if (marketOpen) {
-    return { enabled: true, sourcePolicy: 'kis', checkedCount: 0, availableCount: 0, bullishCount: 0, rows: [] };
-  }
-  const limit = Math.max(1, Math.min(10, Number(process.env.LUNA_DISCOVERY_FUNNEL_KIS_DAILY_TA_LIMIT || 5)));
+  const limit = Math.max(1, Math.min(10, Number(process.env.LUNA_DISCOVERY_FUNNEL_KIS_DAILY_TA_LIMIT || 10)));
   const rows = [];
   for (const symbol of symbols.slice(0, limit)) {
-    const snapshot = await fetchEntryChartSnapshot({ symbol, exchange }).catch((error) => ({
+    const snapshot = await fetchSnapshot({ symbol, exchange }).catch((error) => ({
       ok: false,
       error: error?.message || String(error),
       symbol,
     }));
-    const evaluated = evaluateKisDailySnapshot(snapshot);
+    const evaluated = evaluateKis(snapshot);
     rows.push({
       symbol,
       sourcePolicy: 'kis',
@@ -344,7 +359,16 @@ async function buildMarketFunnel(market, { hours }) {
       [exchange],
     ),
   ]);
-  const analysisSymbols = Array.from(new Set((latestCandidates || [])
+  const executionUniverse = await buildDiscoveryUniverse(market, new Date(), {
+    refresh: false,
+    fallbackSymbols: [],
+    preferCandidates: true,
+    limit: 10,
+  }).catch(() => null);
+  const executionCandidates = Array.isArray(executionUniverse?.symbols) && executionUniverse.symbols.length > 0
+    ? executionUniverse.symbols.map((symbol) => ({ symbol }))
+    : latestCandidates || [];
+  const analysisSymbols = Array.from(new Set((executionCandidates || [])
     .map((row) => normalizeCandidateSymbolForAnalysis(row.symbol, market))
     .filter(Boolean)));
   const analysisRows = analysisSymbols.length > 0
@@ -371,6 +395,20 @@ async function buildMarketFunnel(market, { hours }) {
       [exchange, analysisSymbols, hours],
     )
     : [];
+  const analysisDetailRows = analysisSymbols.length > 0
+    ? await queryRows(
+      `SELECT symbol, analyst, signal, confidence, reasoning, metadata, exchange, created_at
+       FROM analysis
+       WHERE exchange = $1
+         AND symbol = ANY($2::text[])
+         AND created_at >= now() - ($3::int * INTERVAL '1 hour')
+       ORDER BY created_at DESC`,
+      [exchange, analysisSymbols, hours],
+    )
+    : [];
+  const decisionDiagnostics = buildDecisionFilterDiagnostics(analysisDetailRows, { exchange });
+  const likelyActionable = decisionDiagnostics.filter((item) => item.actionability === 'likely_actionable');
+  const filteredBeforeSignal = decisionDiagnostics.filter((item) => item.actionability !== 'likely_actionable');
   const analysisBySymbol = Object.fromEntries((analysisRows || []).map((row) => [row.symbol, {
     count: number(row.count),
     latestCreatedAt: row.latest_created_at || null,
@@ -414,10 +452,11 @@ async function buildMarketFunnel(market, { hours }) {
   if (sourceSignalCount === 0) bottlenecks.push('source_metric_empty');
   if (!marketOpen && number(candidate.active_count) > 0) bottlenecks.push('market_closed_waiting_open');
   if (marketOpen && number(candidate.active_count) > 0 && recentSignalCount === 0 && analysisCoveredSymbols.length === 0) bottlenecks.push('candidate_not_persisted_to_signal_window');
-  if (marketOpen && number(candidate.active_count) > 0 && recentSignalCount === 0 && analysisCoveredSymbols.length > 0) bottlenecks.push('analysis_completed_no_actionable_signal');
+  if (marketOpen && number(candidate.active_count) > 0 && recentSignalCount === 0 && analysisCoveredSymbols.length > 0 && likelyActionable.length === 0) bottlenecks.push('analysis_completed_no_actionable_signal');
+  if (marketOpen && likelyActionable.length > 0 && recentBuySignals === 0) bottlenecks.push('actionable_candidate_waiting_signal_persistence');
   if (recentBuySignals > 0 && activeTriggerCount === 0) bottlenecks.push('buy_signal_without_active_entry_trigger');
   if (activeTriggerCount === 0 && number(triggerByState.expired) > 0) bottlenecks.push('entry_triggers_expired_without_active_replacement');
-  if (marketOpen && number(candidate.active_count) > 0 && activeTriggerCount === 0 && recentBuySignals === 0) bottlenecks.push('candidates_filtered_before_entry_trigger');
+  if (marketOpen && number(candidate.active_count) > 0 && activeTriggerCount === 0 && recentBuySignals === 0 && likelyActionable.length === 0) bottlenecks.push('candidates_filtered_before_entry_trigger');
   if (number(candidate.active_count) > 0 && analysisSymbols.length > 0) {
     bottlenecks.push(...requiredAnalystCoverage.bottlenecks);
   }
@@ -438,7 +477,10 @@ async function buildMarketFunnel(market, { hours }) {
       recentCount: number(candidate.recent_count),
       avgScore: candidate.avg_score != null ? number(candidate.avg_score) : null,
       latestDiscoveredAt: candidate.latest_discovered_at || null,
-      top: latestCandidates || [],
+      top: executionCandidates || [],
+      promotedCount: Number(executionUniverse?.promotedCount || 0),
+      promotedSymbols: executionUniverse?.promotedSymbols || [],
+      selectionPolicy: executionUniverse?.selectionPolicy || null,
     },
     sourceMetrics: {
       rows: sourceRows || [],
@@ -453,6 +495,13 @@ async function buildMarketFunnel(market, { hours }) {
       bySymbol: analysisBySymbol,
       dailyTechnicalCoverage,
       required: requiredAnalystCoverage,
+    },
+    decisionFilter: {
+      checkedCount: decisionDiagnostics.length,
+      likelyActionableCount: likelyActionable.length,
+      filteredCount: filteredBeforeSignal.length,
+      likelyActionableSymbols: likelyActionable.map((item) => item.symbol),
+      top: decisionDiagnostics.slice(0, 5),
     },
     signalPersistence: {
       recentCount: recentSignalCount,
@@ -521,9 +570,11 @@ export async function buildLunaDiscoveryFunnelReport({
   const allBottlenecks = marketReports.flatMap((item) => item.bottlenecks.map((code) => `${item.market}:${code}`));
   const candidateTotal = marketReports.reduce((sum, item) => sum + item.candidateUniverse.activeCount, 0);
   const activeTriggerTotal = marketReports.reduce((sum, item) => sum + item.entryTriggers.activeCount, 0);
+  const actionableWaitingTotal = marketReports.reduce((sum, item) => sum + number(item.decisionFilter?.likelyActionableCount), 0);
   const recommendations = [];
   if (candidateTotal === 0) recommendations.push('all_markets_discovery_candidate_empty');
-  if (candidateTotal > 0 && activeTriggerTotal === 0) recommendations.push('candidate_to_entry_trigger_funnel_needs_review');
+  if (candidateTotal > 0 && activeTriggerTotal === 0 && actionableWaitingTotal > 0) recommendations.push('actionable_candidates_waiting_market_cycle_or_signal_persistence');
+  if (candidateTotal > 0 && activeTriggerTotal === 0 && actionableWaitingTotal === 0) recommendations.push('candidate_to_entry_trigger_funnel_needs_review');
   if (autopilot.totals.samples === 0) recommendations.push('runtime_autopilot_history_missing');
   if (autopilot.totals.candidateCount === 0) recommendations.push('dispatch_idle_no_candidates_in_window');
   return {
@@ -538,6 +589,8 @@ export async function buildLunaDiscoveryFunnelReport({
     recommendations,
     nextAction: recommendations.includes('candidate_to_entry_trigger_funnel_needs_review')
       ? 'inspect_score_fusion_predictive_validation_entry_trigger_thresholds'
+      : recommendations.includes('actionable_candidates_waiting_market_cycle_or_signal_persistence')
+        ? 'run_or_wait_next_market_cycle_to_persist_buy_signal'
       : recommendations.includes('all_markets_discovery_candidate_empty')
         ? 'inspect_discovery_orchestrator_sources'
         : recommendations.includes('dispatch_idle_no_candidates_in_window')
@@ -563,7 +616,7 @@ export function renderLunaDiscoveryFunnelReport(report = {}) {
       })
       .join(' ');
     lines.push(
-      `${item.market}: market=${item.marketHours?.state || 'unknown'} candidates=${item.candidateUniverse?.activeCount || 0} analysis=${item.analysisCoverage?.coveredCount || 0}/${item.analysisCoverage?.checkedCount || 0} recentSignals=${item.signalPersistence?.recentCount || 0} buySignals=${item.signalPersistence?.buyCount || 0} activeTriggers=${item.entryTriggers?.activeCount || 0} bottlenecks=${(item.bottlenecks || []).join(',') || 'none'}`,
+      `${item.market}: market=${item.marketHours?.state || 'unknown'} candidates=${item.candidateUniverse?.activeCount || 0} analysis=${item.analysisCoverage?.coveredCount || 0}/${item.analysisCoverage?.checkedCount || 0} actionable=${item.decisionFilter?.likelyActionableCount || 0} recentSignals=${item.signalPersistence?.recentCount || 0} buySignals=${item.signalPersistence?.buyCount || 0} activeTriggers=${item.entryTriggers?.activeCount || 0} bottlenecks=${(item.bottlenecks || []).join(',') || 'none'}`,
     );
     if (requiredLine) lines.push(`  required_analysis: ${requiredLine}`);
   }

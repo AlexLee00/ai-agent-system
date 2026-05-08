@@ -85,6 +85,11 @@ async function main(): Promise<void> {
       });
       assert(responseId > 0 || responseId === -1, '응답 ID는 양수 또는 -1(오류) 필요');
       console.log(`  respondToMessage → responseId=${responseId}`);
+      const responseRow = await db.get(
+        `SELECT responded_at FROM investment.agent_messages WHERE id = $1`,
+        [responseId],
+      );
+      assert(!!responseRow?.responded_at, 'response 메시지는 terminal record로 즉시 responded_at이 기록되어야 함');
     }
 
     // 2-5. incident_key 전체 조회

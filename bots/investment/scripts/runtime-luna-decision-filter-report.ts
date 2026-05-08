@@ -8,7 +8,9 @@ import {
   fuseSignals,
   getMinConfidence,
 } from '../shared/luna-decision-policy.ts';
+import { shouldRunStockIntradayDecisionLlm } from '../shared/stock-intraday-llm-policy.ts';
 import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
+import { buildDiscoveryUniverse } from '../team/discovery/discovery-universe.ts';
 
 const DEFAULT_HOURS = 2;
 const STOCK_EXCHANGES = new Set(['kis', 'kis_overseas']);
@@ -38,30 +40,6 @@ function normalizeCandidateSymbol(symbol, market = 'crypto') {
   if (!raw) return raw;
   if (market === 'crypto' && !raw.includes('/') && raw.endsWith('USDT')) return `${raw.slice(0, -4)}/USDT`;
   return raw;
-}
-
-function candidateSymbolSqlFilter(market = 'crypto') {
-  if (market === 'domestic') return `symbol ~ '^[0-9]{6}$'`;
-  if (market === 'overseas') return `symbol !~ '/' AND symbol !~ '^[0-9]{6}$' AND symbol ~ '^[A-Za-z][A-Za-z0-9.\\-]{0,12}$'`;
-  return `(symbol ~ '^[A-Za-z0-9]+/USDT$' OR symbol ~ '^[A-Za-z0-9]+USDT$')`;
-}
-
-function normalizedCandidateExpr() {
-  return `CASE
-    WHEN $1 = 'crypto' AND symbol ~ '^[A-Za-z0-9]+/USDT$' THEN UPPER(symbol)
-    WHEN $1 = 'crypto' AND symbol ~ '^[A-Za-z0-9]+USDT$' THEN REGEXP_REPLACE(UPPER(symbol), 'USDT$', '/USDT')
-    WHEN $1 = 'domestic' AND symbol ~ '^[0-9]{6}$' THEN symbol
-    WHEN $1 = 'overseas' AND symbol !~ '/' AND symbol !~ '^[0-9]{6}$' AND symbol ~ '^[A-Za-z][A-Za-z0-9.\\-]{0,12}$' THEN UPPER(symbol)
-    ELSE NULL
-  END`;
-}
-
-function candidateSourcePriorityExpr() {
-  return `CASE
-    WHEN market = 'crypto' AND source = 'binance_market_momentum' THEN 30
-    WHEN market = 'crypto' AND source = 'coingecko_trending' THEN 20
-    ELSE 10
-  END`;
 }
 
 function normalizeAction(value) {
@@ -129,6 +107,12 @@ function buildFilterReasons(analyses, fused, { exchange, minConfidence }) {
   const onchain = findAnalyst(analyses, [ANALYST_TYPES.ONCHAIN]);
   const marketFlow = findAnalyst(analyses, [ANALYST_TYPES.MARKET_FLOW]);
   const hasNewsOnlyBuy = buyAnalysts.length > 0 && buyAnalysts.every((analysis) => NEWS_LIKE_ANALYSTS.has(analysis.analyst));
+  const stockDecisionPrefilter = STOCK_EXCHANGES.has(exchange)
+    ? shouldRunStockIntradayDecisionLlm({ market: exchange, analyses })
+    : null;
+  const stockMissingSentimentAllowed = STOCK_EXCHANGES.has(exchange)
+    && !sentiment
+    && stockDecisionPrefilter?.run === true;
 
   if (analyses.length < 2) reasons.push('insufficient_analyst_coverage');
   if (fused.recommendation !== 'LONG') reasons.push('fusion_not_long');
@@ -138,9 +122,9 @@ function buildFilterReasons(analyses, fused, { exchange, minConfidence }) {
   if (exchange === 'binance' && (!onchain || onchain.signal !== ACTIONS.BUY)) reasons.push('onchain_not_confirmed');
   if (STOCK_EXCHANGES.has(exchange) && marketFlow && marketFlow.signal !== ACTIONS.BUY) reasons.push('market_flow_not_confirmed');
   if (
-    !sentiment
-    || sentiment.signal === ACTIONS.SELL
-    || (!STOCK_EXCHANGES.has(exchange) && sentiment.signal !== ACTIONS.BUY)
+    (!sentiment && !stockMissingSentimentAllowed)
+    || (sentiment && sentiment.signal === ACTIONS.SELL)
+    || (sentiment && !STOCK_EXCHANGES.has(exchange) && sentiment.signal !== ACTIONS.BUY)
   ) {
     reasons.push('sentiment_not_confirmed');
   }
@@ -277,34 +261,14 @@ async function queryRecentAnalysis({ exchange, hours, symbols }) {
 }
 
 async function queryActiveCandidateSymbols({ market, limit }) {
-  const normalizedExpr = normalizedCandidateExpr();
-  const rows = await db.query(
-    `WITH normalized AS (
-       SELECT *,
-              ${normalizedExpr} AS normalized_symbol
-       FROM candidate_universe
-       WHERE market = $1
-         AND expires_at > now()
-         AND ${candidateSymbolSqlFilter(market)}
-     ),
-     ranked AS (
-       SELECT *,
-              ROW_NUMBER() OVER (
-                PARTITION BY normalized_symbol
-                ORDER BY ${candidateSourcePriorityExpr()} DESC, score DESC, confidence DESC NULLS LAST, discovered_at DESC
-              ) AS rn
-       FROM normalized
-       WHERE normalized_symbol IS NOT NULL
-     )
-     SELECT normalized_symbol AS symbol
-     FROM ranked
-     WHERE rn = 1
-     ORDER BY ${candidateSourcePriorityExpr()} DESC, score DESC, confidence DESC NULLS LAST, discovered_at DESC
-     LIMIT $2`,
-    [market, Math.max(1, Number(limit || 50))],
-  ).catch(() => []);
-  return [...new Set((rows || [])
-    .map((row) => normalizeCandidateSymbol(row.symbol, market))
+  const universe = await buildDiscoveryUniverse(market, new Date(), {
+    refresh: false,
+    fallbackSymbols: [],
+    preferCandidates: true,
+    limit: Math.max(1, Number(limit || 50)),
+  }).catch(() => null);
+  return [...new Set((universe?.symbols || [])
+    .map((symbol) => normalizeCandidateSymbol(symbol, market))
     .filter(Boolean))];
 }
 

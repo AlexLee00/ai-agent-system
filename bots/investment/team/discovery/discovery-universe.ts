@@ -2,6 +2,7 @@
 import { getActiveCandidates } from './discovery-store.ts';
 import { runDiscoveryOrchestrator } from './discovery-orchestrator.ts';
 import { getLunaIntelligentDiscoveryFlags } from '../../shared/luna-intelligent-discovery-config.ts';
+import * as db from '../../shared/db.ts';
 
 export function toDiscoveryMarket(exchange = 'binance') {
   if (exchange === 'kis') return 'domestic';
@@ -43,11 +44,99 @@ function resolveTopN(flags, market, explicitLimit) {
   return flags.discovery.topCrypto ?? 50;
 }
 
+function exchangeForMarket(market = 'crypto') {
+  if (market === 'domestic') return 'kis';
+  if (market === 'overseas') return 'kis_overseas';
+  return 'binance';
+}
+
+function isBuySignal(value) {
+  return String(value || '').trim().toUpperCase() === 'BUY';
+}
+
+function isSellSignal(value) {
+  return String(value || '').trim().toUpperCase() === 'SELL';
+}
+
+function buildActionablePromotionScore(rows = [], market = 'crypto') {
+  const byAnalyst = {};
+  for (const row of rows || []) {
+    const analyst = String(row?.analyst || '').trim().toLowerCase();
+    if (!analyst) continue;
+    if (!byAnalyst[analyst] || new Date(row.created_at || 0) > new Date(byAnalyst[analyst].created_at || 0)) {
+      byAnalyst[analyst] = row;
+    }
+  }
+  const latest = Object.values(byAnalyst);
+  const sellCount = latest.filter((row) => isSellSignal(row.signal)).length;
+  const buyAnalysts = new Set(latest.filter((row) => isBuySignal(row.signal)).map((row) => String(row.analyst || '').toLowerCase()));
+  const avgConfidence = latest.length
+    ? latest.reduce((sum, row) => sum + Number(row.confidence || 0), 0) / latest.length
+    : 0;
+  const hasTaBuy = buyAnalysts.has('ta_mtf');
+  const hasFlowBuy = buyAnalysts.has('market_flow');
+  const hasNewsBuy = buyAnalysts.has('news');
+  const hasSentimentBuy = buyAnalysts.has('sentiment');
+  const hasOnchainBuy = buyAnalysts.has('onchain');
+  const supportingBuy = market === 'crypto'
+    ? (hasOnchainBuy || hasSentimentBuy || hasNewsBuy)
+    : (hasFlowBuy || hasSentimentBuy || hasNewsBuy);
+  const threshold = market === 'crypto' ? 0.28 : 0.18;
+  const actionable = sellCount === 0 && hasTaBuy && supportingBuy && avgConfidence >= threshold;
+  return {
+    actionable,
+    score: (actionable ? 10 : 0)
+      + (hasTaBuy ? 2 : 0)
+      + (supportingBuy ? 2 : 0)
+      + buyAnalysts.size
+      + avgConfidence,
+    avgConfidence,
+    buyAnalysts: Array.from(buyAnalysts),
+    sellCount,
+  };
+}
+
+async function findRecentActionableCandidateSymbols(market, candidates = [], options = {}) {
+  const enabled = options.promoteRecentActionable !== false
+    && String(process.env.LUNA_DISCOVERY_PROMOTE_ACTIONABLE_ENABLED || 'true').toLowerCase() !== 'false';
+  if (!enabled || candidates.length === 0) return [];
+  const symbols = candidates.map((row) => row.symbol).filter(Boolean);
+  if (symbols.length === 0) return [];
+  const hours = Math.max(1, Number(options.actionableLookbackHours || process.env.LUNA_DISCOVERY_ACTIONABLE_LOOKBACK_HOURS || 6));
+  const exchange = exchangeForMarket(market);
+  const rows = await db.query(
+    `SELECT symbol, analyst, signal, confidence, created_at
+       FROM analysis
+      WHERE exchange = $1
+        AND created_at >= now() - ($2::int * INTERVAL '1 hour')
+        AND symbol = ANY($3::text[])`,
+    [exchange, hours, symbols],
+  ).catch(() => []);
+  const grouped = new Map();
+  for (const row of rows || []) {
+    const normalized = normalizeDiscoverySymbol(row.symbol, market);
+    if (!normalized) continue;
+    if (!grouped.has(normalized)) grouped.set(normalized, []);
+    grouped.get(normalized).push(row);
+  }
+  return Array.from(grouped.entries())
+    .map(([symbol, items]) => ({ symbol, ...buildActionablePromotionScore(items, market) }))
+    .filter((item) => item.actionable)
+    .sort((a, b) => Number(b.score || 0) - Number(a.score || 0))
+    .map((item) => item.symbol);
+}
+
 export async function buildDiscoveryUniverse(market, now = new Date(), options = {}) {
   const flags = getLunaIntelligentDiscoveryFlags();
   const refresh = options.refresh === true;
   const limit = resolveTopN(flags, market, options.limit ?? null);
   const fallbackSymbols = Array.isArray(options.fallbackSymbols) ? options.fallbackSymbols : [];
+  const pinnedSymbols = Array.isArray(options.pinnedSymbols) ? options.pinnedSymbols : [];
+  const preferCandidates = options.preferCandidates === true;
+  const candidateScanLimit = Math.max(
+    limit,
+    Number(options.candidateScanLimit || process.env.LUNA_DISCOVERY_CANDIDATE_SCAN_LIMIT || 0) || Math.min(200, Math.max(80, limit * 8)),
+  );
 
   if (flags.phases.discoveryOrchestratorEnabled && refresh) {
     await runDiscoveryOrchestrator({
@@ -61,7 +150,7 @@ export async function buildDiscoveryUniverse(market, now = new Date(), options =
     });
   }
 
-  const rows = await getActiveCandidates(market, limit).catch(() => []);
+  const rows = await getActiveCandidates(market, candidateScanLimit).catch(() => []);
   const candidates = dedupeCandidateRows(
     rows
       .map((row) => {
@@ -86,16 +175,23 @@ export async function buildDiscoveryUniverse(market, now = new Date(), options =
 
   const mergedSymbols = [];
   const seen = new Set();
-  for (const item of fallbackSymbols) {
+  const promotedSymbols = await findRecentActionableCandidateSymbols(market, candidates, options);
+
+  function addSymbol(item) {
     const normalized = normalizeDiscoverySymbol(item, market);
-    if (!normalized || seen.has(normalized)) continue;
+    if (!normalized || seen.has(normalized)) return;
     seen.add(normalized);
     mergedSymbols.push(normalized);
   }
-  for (const item of candidates) {
-    if (seen.has(item.symbol)) continue;
-    seen.add(item.symbol);
-    mergedSymbols.push(item.symbol);
+
+  for (const item of pinnedSymbols) addSymbol(item);
+  for (const item of promotedSymbols) addSymbol(item);
+  if (preferCandidates) {
+    for (const item of candidates) addSymbol(item.symbol);
+    for (const item of fallbackSymbols) addSymbol(item);
+  } else {
+    for (const item of fallbackSymbols) addSymbol(item);
+    for (const item of candidates) addSymbol(item.symbol);
   }
   const limitedSymbols = mergedSymbols.slice(0, limit);
 
@@ -105,6 +201,11 @@ export async function buildDiscoveryUniverse(market, now = new Date(), options =
     candidates,
     symbols: limitedSymbols,
     limit,
+    candidateScanLimit,
+    selectionPolicy: preferCandidates ? 'candidate_first' : 'fallback_first',
+    pinnedCount: pinnedSymbols.length,
+    promotedCount: promotedSymbols.length,
+    promotedSymbols,
     source: candidates.length > 0 ? 'candidate_universe' : 'fallback',
   };
 }

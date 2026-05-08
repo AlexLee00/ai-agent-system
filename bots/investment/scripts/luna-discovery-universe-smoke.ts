@@ -64,6 +64,48 @@ export async function runLunaDiscoveryUniverseSmoke() {
          ('BTC/USDT', 'crypto', $1, 1, 0.6500, 0.65, 'canonical smoke', 1, '{}'::jsonb, now() + interval '1 hour')`,
       [smokeSource],
     );
+    await db.run(
+      `INSERT INTO candidate_universe
+         (symbol, market, source, source_tier, score, confidence, reason, ttl_hours, raw_data, expires_at)
+       VALUES
+         ('SMOKEPREFER/USDT', 'crypto', 'binance_market_momentum', 1, 0.9999, 0.99, 'candidate first smoke', 1, '{}'::jsonb, now() + interval '1 hour')`,
+    );
+    const preferred = await buildDiscoveryUniverse('crypto', new Date(), {
+      refresh: false,
+      fallbackSymbols: ['FALLBACK1USDT', 'FALLBACK2USDT'],
+      preferCandidates: true,
+      limit: 1,
+    });
+    assert.deepEqual(preferred.symbols, ['SMOKEPREFER/USDT']);
+    const pinned = await buildDiscoveryUniverse('crypto', new Date(), {
+      refresh: false,
+      fallbackSymbols: ['FALLBACK1USDT'],
+      pinnedSymbols: ['PINNED1USDT'],
+      preferCandidates: true,
+      limit: 1,
+    });
+    assert.deepEqual(pinned.symbols, ['PINNED1/USDT']);
+    await db.run(
+      `INSERT INTO candidate_universe
+         (symbol, market, source, source_tier, score, confidence, reason, ttl_hours, raw_data, expires_at)
+       VALUES
+         ('SMOKEACTION/USDT', 'crypto', 'binance_market_momentum', 1, 0.1000, 0.75, 'actionable promotion smoke', 1, '{}'::jsonb, now() + interval '1 hour')`,
+    );
+    await db.run(
+      `INSERT INTO analysis (symbol, analyst, signal, confidence, reasoning, metadata, exchange, created_at)
+       VALUES
+         ('SMOKEACTION/USDT', 'ta_mtf', 'BUY', 0.72, 'promotion smoke ta', '{}'::jsonb, 'binance', now()),
+         ('SMOKEACTION/USDT', 'onchain', 'BUY', 0.64, 'promotion smoke onchain', '{}'::jsonb, 'binance', now())`,
+    );
+    const promoted = await buildDiscoveryUniverse('crypto', new Date(), {
+      refresh: false,
+      fallbackSymbols: ['FALLBACK1USDT'],
+      preferCandidates: true,
+      limit: 1,
+      candidateScanLimit: 500,
+    });
+    assert.deepEqual(promoted.symbols, ['SMOKEACTION/USDT']);
+    assert.equal(promoted.promotedCount >= 1, true);
     const normalized = await normalizeLegacyCryptoCandidateSymbols();
     const rows = await db.query(
       `SELECT symbol, score::float AS score, reason
@@ -89,7 +131,8 @@ export async function runLunaDiscoveryUniverseSmoke() {
     const smokeMomentum = trusted.find((row) => row.symbol === 'SMOKEMOMENTUM/USDT');
     assert.equal(smokeMomentum?.source, 'binance_market_momentum');
   } finally {
-    await db.run(`DELETE FROM candidate_universe WHERE source = $1 OR symbol = 'SMOKEMOMENTUM/USDT'`, [smokeSource]).catch(() => null);
+    await db.run(`DELETE FROM candidate_universe WHERE source = $1 OR symbol IN ('SMOKEMOMENTUM/USDT', 'SMOKEPREFER/USDT', 'SMOKEACTION/USDT')`, [smokeSource]).catch(() => null);
+    await db.run(`DELETE FROM analysis WHERE symbol = 'SMOKEACTION/USDT' AND reasoning LIKE 'promotion smoke%'`).catch(() => null);
   }
 
   return {

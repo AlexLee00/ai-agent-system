@@ -189,6 +189,7 @@ export async function respondToMessage(
     const responseId = await sendMessage(fromAgent, originalSender, responsePayload, {
       incidentKey: incidentKey ?? undefined,
       messageType: 'response',
+      noAckExpected: true,
     });
     if (responseId > 0) {
       recordHintEvent('cross_agent_hint_consumed', {

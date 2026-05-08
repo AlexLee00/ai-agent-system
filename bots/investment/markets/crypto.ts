@@ -43,7 +43,6 @@ import { logMarketPipelineMetrics, runMarketCollectPipeline, summarizeNodeStatus
 import { runDecisionExecutionPipeline } from '../shared/pipeline-decision-runner.ts';
 import { finishPipelineRun } from '../shared/pipeline-db.ts';
 import { updatePipelineRunMeta } from '../shared/pipeline-db.ts';
-import { mergeUniqueSymbols } from '../shared/luna-orchestration-policy.ts';
 import { buildStockIntradayLlmPolicyMeta } from '../shared/stock-intraday-llm-policy.ts';
 import { buildDiscoveryUniverse } from '../team/discovery/discovery-universe.ts';
 
@@ -92,10 +91,12 @@ async function getManagedHeldSymbols() {
   return resolved.symbols || [];
 }
 
-async function mergeDiscoveryUniverseForCollect(symbols = [], limit = 50) {
+async function mergeDiscoveryUniverseForCollect(symbols = [], limit = 50, options = {}) {
   const universe = await buildDiscoveryUniverse('crypto', new Date(), {
     refresh: false,
     fallbackSymbols: symbols,
+    pinnedSymbols: options.pinnedSymbols || [],
+    preferCandidates: true,
     limit: Math.max(Number(limit || 0), symbols.length, 1),
   }).catch((error) => {
     console.warn(`  ⚠️ [discovery universe] 수집 전 후보 병합 실패: ${error?.message || error}`);
@@ -104,10 +105,13 @@ async function mergeDiscoveryUniverseForCollect(symbols = [], limit = 50) {
   if (!universe?.symbols?.length) {
     return { symbols, addedCount: 0, source: 'none' };
   }
-  const merged = mergeUniqueSymbols(universe.symbols, symbols);
+  const merged = universe.symbols || [];
+  const original = new Set(symbols || []);
+  const next = new Set(merged || []);
   return {
     symbols: merged,
-    addedCount: Math.max(0, merged.length - symbols.length),
+    addedCount: merged.filter((symbol) => !original.has(symbol)).length,
+    droppedCount: (symbols || []).filter((symbol) => !next.has(symbol)).length,
     source: universe.source || 'candidate_universe',
   };
 }
@@ -423,9 +427,10 @@ if (isDirectExecution(import.meta.url)) {
       universeMeta.maintenanceDustSkippedCount = Array.isArray(maintenanceUniverse.dustSymbols) ? maintenanceUniverse.dustSymbols.length : 0;
       universeMeta.maintenanceLifecycleCounts = maintenanceUniverse.lifecycleCounts || {};
       symbols = await appendHeldSymbols(symbols, 'binance', heldSymbols);
-      const discoveryMerge = await mergeDiscoveryUniverseForCollect(symbols, cryptoMaxDynamic);
+      const discoveryMerge = await mergeDiscoveryUniverseForCollect(symbols, cryptoMaxDynamic, { pinnedSymbols: heldSymbols });
       symbols = discoveryMerge.symbols;
       universeMeta.discoveryUniverseAddedCount = discoveryMerge.addedCount;
+      universeMeta.discoveryUniverseDroppedCount = discoveryMerge.droppedCount || 0;
       universeMeta.discoveryUniverseSource = discoveryMerge.source;
       if (discoveryMerge.addedCount > 0) {
         console.log(`🌐 [discovery universe] 수집 전 후보 ${discoveryMerge.addedCount}개 추가: ${symbols.join(', ')}`);
