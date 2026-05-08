@@ -280,7 +280,12 @@ function shouldAvoidClaudeCode(entry: LLMChainEntry, options: SelectorOptions = 
 }
 
 function replacementForClaudeCode(entry: LLMChainEntry, options: SelectorOptions = {}): LLMChainEntry {
-  const configured = String(options.claudeCodeReplacementModel || process.env.LLM_CLAUDE_CODE_REPLACEMENT_MODEL || '').trim();
+  const configured = String(
+    options.claudeCodeReplacementModel
+    || process.env.LLM_CLAUDE_CODE_REPLACEMENT_MODEL
+    || process.env.LLM_CLAUDE_CODE_SONNET_REPLACEMENT
+    || '',
+  ).trim();
   const model = configured || (String(entry?.model || '').toLowerCase().includes('haiku') ? 'gpt-5.4-mini' : (options.openaiPerfModel || 'gpt-5.4'));
   return {
     ...entry,
