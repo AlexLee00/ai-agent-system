@@ -64,6 +64,7 @@ export function shouldPublishResearchAlert({
   const elapsedMs = Number.isFinite(lastAlertMs) ? now.getTime() - lastAlertMs : Infinity;
   const cooldownMs = minutes * 60 * 1000;
   const changed = currentDigest !== String(previous.symbolDigest || '');
+  const publishChangedWithinCooldown = parseBool(env.LUNA_RESEARCH_ALERT_PUBLISH_CHANGED_WITHIN_COOLDOWN, false);
 
   if (parseBool(env.LUNA_RESEARCH_ALERT_EVERY_CYCLE, false)) {
     return {
@@ -85,7 +86,7 @@ export function shouldPublishResearchAlert({
     };
   }
 
-  if (changed) {
+  if (changed && (elapsedMs >= cooldownMs || publishChangedWithinCooldown)) {
     return {
       shouldPublish: true,
       reason: 'watchlist_changed',
@@ -93,6 +94,18 @@ export function shouldPublishResearchAlert({
       cooldownMinutes: minutes,
       symbols: currentSymbols,
       lastAlertAt: previous.lastAlertAt,
+    };
+  }
+
+  if (changed) {
+    return {
+      shouldPublish: false,
+      reason: 'watchlist_changed_cooldown_suppressed',
+      changed: true,
+      cooldownMinutes: minutes,
+      symbols: currentSymbols,
+      lastAlertAt: previous.lastAlertAt,
+      nextEligibleAt: new Date(lastAlertMs + cooldownMs).toISOString(),
     };
   }
 

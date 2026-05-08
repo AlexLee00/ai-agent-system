@@ -49,8 +49,19 @@ function runSmoke() {
     now: new Date('2026-05-08T00:31:00.000Z'),
     cooldownMinutes: 360,
   });
-  assert.equal(changed.shouldPublish, true);
-  assert.equal(changed.reason, 'watchlist_changed');
+  assert.equal(changed.shouldPublish, false);
+  assert.equal(changed.reason, 'watchlist_changed_cooldown_suppressed');
+
+  const changedForced = shouldPublishResearchAlert({
+    market: 'overseas',
+    symbols: ['AAPL', 'MSFT', 'NVDA'],
+    state,
+    now: new Date('2026-05-08T00:32:00.000Z'),
+    cooldownMinutes: 360,
+    env: { LUNA_RESEARCH_ALERT_PUBLISH_CHANGED_WITHIN_COOLDOWN: 'true' },
+  });
+  assert.equal(changedForced.shouldPublish, true);
+  assert.equal(changedForced.reason, 'watchlist_changed');
 
   const elapsed = shouldPublishResearchAlert({
     market: 'overseas',
@@ -117,7 +128,7 @@ function runSmoke() {
   return {
     smoke: 'research-alert-policy',
     ok: true,
-    checked: ['first', 'repeat_suppressed', 'watchlist_changed', 'cooldown_elapsed', 'forced'],
+    checked: ['first', 'repeat_suppressed', 'watchlist_changed_suppressed', 'cooldown_elapsed', 'forced'],
   };
 }
 
