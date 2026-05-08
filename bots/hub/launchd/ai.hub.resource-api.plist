@@ -69,6 +69,10 @@
     <string>240</string>
     <key>HUB_LLM_MAX_QUEUE</key>
     <string>128</string>
+    <key>HUB_LLM_CACHE_ENABLED</key>
+    <string>true</string>
+    <key>HUB_LLM_CACHE_SENTIMENT_TTL_MS</key>
+    <string>2700000</string>
     <key>HUB_LLM_QUEUE_TIMEOUT_MS</key>
     <string>15000</string>
   </dict>

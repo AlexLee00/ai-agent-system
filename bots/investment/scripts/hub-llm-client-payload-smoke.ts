@@ -51,6 +51,7 @@ async function main(): Promise<void> {
       urgency: 'medium',
       symbol: 'BTC/USDT',
       market: 'binance',
+      taskType: 'sentiment',
       maxTokens: 128,
     });
     const lunaPayload = buildHubLlmCallPayload('luna', 'system', 'user');
@@ -61,6 +62,8 @@ async function main(): Promise<void> {
     assert(lunaPayload.callerTeam === 'luna', 'Luna payload should route through Luna team profile');
     assert(hermesPayload.selectorKey === 'investment.agent_policy', 'Hermes payload should use the investment selector policy');
     assert(lunaPayload.selectorKey === 'investment.agent_policy', 'Luna payload should use the investment selector policy');
+    assert(hermesPayload.cacheEnabled === true, 'Hermes sentiment payload should enable exact-prompt cache');
+    assert(hermesPayload.cacheType === 'sentiment_realtime', 'Hermes sentiment payload should use short sentiment cache TTL');
 
     const hermesParsed = parseLlmCallPayload(hermesPayload);
     const lunaParsed = parseLlmCallPayload(lunaPayload);

@@ -90,6 +90,7 @@
     "llm:agent-model-inventory-report": "tsx scripts/llm-agent-model-inventory-report.ts",
     "llm:claude-code-quota-guard": "tsx scripts/llm-claude-code-quota-guard-smoke.ts",
     "llm:leak-duplicate-audit": "tsx scripts/llm-leak-duplicate-audit.ts --json",
+    "llm:cache-contract-smoke": "tsx scripts/llm-cache-contract-smoke.ts",
     "llm:provider-pressure-smoke": "tsx scripts/llm-inflight-dedupe-smoke.ts && tsx scripts/groq-retry-after-blacklist-smoke.ts",
     "llm:sonnet-hotspot-guard": "tsx scripts/llm-sonnet-hotspot-guard-smoke.ts",
     "llm:routing-log-prompt-hash-smoke": "tsx scripts/llm-routing-log-prompt-hash-smoke.ts",

@@ -27,6 +27,10 @@ function launchctlGetenv(name) {
   }
 }
 
+function excludedAuditProvidersSql() {
+  return `provider NOT IN ('dedupe', 'cache')`;
+}
+
 async function tableExists() {
   const rows = await pgPool.query('public', `
     SELECT 1
@@ -114,7 +118,7 @@ async function runAudit(hours) {
         ROUND(SUM(cost_usd)::numeric, 6)::float AS cost_usd
       FROM llm_routing_log
       WHERE created_at > NOW() - ($1 || ' hours')::interval
-        AND provider <> 'dedupe'
+        AND ${excludedAuditProvidersSql()}
       GROUP BY minute, caller_team, agent, provider
       HAVING COUNT(*) >= $2
       ORDER BY calls DESC, minute DESC
@@ -131,7 +135,7 @@ async function runAudit(hours) {
       FROM llm_routing_log
       WHERE created_at > NOW() - ($1 || ' hours')::interval
         AND fallback_count > 0
-        AND provider <> 'dedupe'
+        AND ${excludedAuditProvidersSql()}
       GROUP BY caller_team, agent, provider
       ORDER BY fallback_sum DESC, calls DESC
       LIMIT 25
@@ -163,7 +167,7 @@ async function runAudit(hours) {
       FROM llm_routing_log
       WHERE created_at > NOW() - ($1 || ' hours')::interval
         AND prompt_hash IS NOT NULL
-        AND provider <> 'dedupe'
+        AND ${excludedAuditProvidersSql()}
       GROUP BY prompt_hash, caller_team, agent, abstract_model
       HAVING COUNT(*) > 1
       ORDER BY calls DESC, last_at DESC

@@ -6,8 +6,14 @@ const path = require('path');
 const PROJECT_ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname), '../../../..');
 const pgPool = require(path.join(PROJECT_ROOT, 'packages/core/lib/pg-pool'));
 
+function envTtlMs(name: string, fallback: number): number {
+  const value = Number(process.env[name] || 0);
+  return Number.isFinite(value) && value > 0 ? Math.round(value) : fallback;
+}
+
 const TTL_MAP: Record<string, number> = {
   realtime: 24 * 60 * 60 * 1000,
+  sentiment_realtime: envTtlMs('HUB_LLM_CACHE_SENTIMENT_TTL_MS', 45 * 60 * 1000),
   analysis: 7 * 24 * 60 * 60 * 1000,
   research: 30 * 24 * 60 * 60 * 1000,
   default: 24 * 60 * 60 * 1000,
@@ -17,6 +23,13 @@ export interface CacheKey {
   abstractModel: string;
   prompt: string;
   systemPrompt?: string;
+  callerTeam?: string;
+  agent?: string;
+  taskType?: string;
+  selectorKey?: string;
+  jsonSchema?: unknown;
+  maxTokens?: number | null;
+  temperature?: number | null;
 }
 
 export interface CacheCheckResult {
@@ -28,7 +41,18 @@ export interface CacheCheckResult {
 }
 
 export function computeHash(key: CacheKey): string {
-  const raw = `${key.abstractModel}||${key.prompt}||${key.systemPrompt || ''}`;
+  const raw = JSON.stringify({
+    abstractModel: key.abstractModel,
+    callerTeam: key.callerTeam || null,
+    agent: key.agent || null,
+    taskType: key.taskType || null,
+    selectorKey: key.selectorKey || null,
+    systemPrompt: key.systemPrompt || '',
+    prompt: key.prompt || '',
+    jsonSchema: key.jsonSchema || null,
+    maxTokens: key.maxTokens ?? null,
+    temperature: key.temperature ?? null,
+  });
   return crypto.createHash('sha256').update(raw).digest('hex');
 }
 
@@ -37,7 +61,8 @@ export async function checkCache(key: CacheKey): Promise<CacheCheckResult> {
 
   const hash = computeHash(key);
   try {
-    const result = await pgPool.query(
+    const rows = await pgPool.query(
+      'public',
       `UPDATE llm_cache
        SET hit_count = hit_count + 1, last_hit_at = NOW()
        WHERE prompt_hash = $1 AND expires_at > NOW()
@@ -45,9 +70,9 @@ export async function checkCache(key: CacheKey): Promise<CacheCheckResult> {
       [hash]
     );
 
-    if (result.rows.length === 0) return { hit: false };
+    if (rows.length === 0) return { hit: false };
 
-    const row = result.rows[0];
+    const row = rows[0];
     return {
       hit: true,
       response: row.response,
@@ -75,7 +100,8 @@ export async function saveCache(
   const expiresAt = new Date(Date.now() + ttlMs);
 
   try {
-    await pgPool.query(
+    await pgPool.run(
+      'public',
       `INSERT INTO llm_cache
          (prompt_hash, abstract_model, response, tokens_in, tokens_out, cost_usd, cache_type, expires_at)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
@@ -96,7 +122,8 @@ export async function saveCache(
 
 export async function cleanupExpiredCache(): Promise<number> {
   try {
-    const result = await pgPool.query(
+    const result = await pgPool.run(
+      'public',
       `DELETE FROM llm_cache WHERE expires_at < NOW() RETURNING id`
     );
     return result.rowCount || 0;

@@ -124,6 +124,7 @@ function unitSmokeScripts(): string[] {
     'llm-routing-log-prompt-hash-smoke.ts',
     'llm-inflight-dedupe-smoke.ts',
     'groq-retry-after-blacklist-smoke.ts',
+    'llm-cache-contract-smoke.ts',
     'hub-hardcoded-path-smoke.ts',
     'agent-hub-transition-audit.ts',
     'hub-transition-completion-gate.ts',

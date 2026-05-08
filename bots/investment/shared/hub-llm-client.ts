@@ -64,6 +64,13 @@ export function isDirectFallbackEnabled(): boolean {
   return process.env.INVESTMENT_LLM_DIRECT_FALLBACK === 'true';
 }
 
+function sentimentCacheEnabled(agentName: string, taskType: string): boolean {
+  if (process.env.INVESTMENT_LLM_SENTIMENT_CACHE_ENABLED === 'false') return false;
+  const agent = String(agentName || '').toLowerCase();
+  const task = String(taskType || '').toLowerCase();
+  return task === 'sentiment' && (agent === 'hermes' || agent === 'sophia');
+}
+
 export interface HubLLMResult {
   ok: boolean;
   text: string;
@@ -173,6 +180,10 @@ export function buildHubLlmCallPayload(
     maxTokens:     options.maxTokens,
     incidentKey:   options.incidentKey || null,
   };
+  if (sentimentCacheEnabled(agentName, String(options.taskType || 'trade_signal'))) {
+    payload.cacheEnabled = true;
+    payload.cacheType = 'sentiment_realtime';
+  }
   if (Array.isArray(chain) && chain.length > 0) {
     payload.chain = chain;
   }

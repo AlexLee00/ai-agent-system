@@ -77,7 +77,7 @@ async function _callWithFallbackInternal(req) {
   // 1. Cache check
   if (req.cacheEnabled) {
     try {
-      const cacheKey = { abstractModel: req.abstractModel, prompt: req.prompt, systemPrompt: req.systemPrompt };
+      const cacheKey = _cacheKey(req);
       const cached = await checkCache(cacheKey);
       if (cached.hit) {
         console.log(`[llm/unified] 캐시 히트 (${req.abstractModel})`);
@@ -547,11 +547,26 @@ function resolveClaudeCodeMaxBudgetUsd(requestedBudgetUsd, model = 'sonnet') {
 
 async function _saveCache(req, resp) {
   try {
-    const cacheKey = { abstractModel: req.abstractModel, prompt: req.prompt, systemPrompt: req.systemPrompt };
+    const cacheKey = _cacheKey(req);
     const tokensIn = (resp.modelUsage && resp.modelUsage.input_tokens) || 0;
     const tokensOut = (resp.modelUsage && resp.modelUsage.output_tokens) || 0;
     await saveCache(cacheKey, resp.result, { in: tokensIn, out: tokensOut }, resp.totalCostUsd || 0, req.cacheType || 'default');
   } catch {}
+}
+
+function _cacheKey(req) {
+  return {
+    abstractModel: req.abstractModel,
+    callerTeam: req.callerTeam || 'hub',
+    agent: req.agent || null,
+    taskType: req.taskType || null,
+    selectorKey: req.selectorKey || null,
+    prompt: req.prompt,
+    systemPrompt: req.systemPrompt,
+    jsonSchema: req.jsonSchema || null,
+    maxTokens: req.maxTokens ?? null,
+    temperature: req.temperature ?? null,
+  };
 }
 
 async function _notifyFallbackExhaustion(req, attempts, team) {

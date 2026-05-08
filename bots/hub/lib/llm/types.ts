@@ -1,4 +1,14 @@
-export type LLMProvider = 'claude-code-oauth' | 'groq' | 'failed';
+export type LLMProvider =
+  | 'claude-code-oauth'
+  | 'openai-oauth'
+  | 'gemini-oauth'
+  | 'gemini-cli-oauth'
+  | 'gemini-codeassist-oauth'
+  | 'groq'
+  | 'local'
+  | 'cache'
+  | 'dedupe'
+  | 'failed';
 
 export type AbstractModel = 'anthropic_haiku' | 'anthropic_sonnet' | 'anthropic_opus';
 
@@ -16,7 +26,7 @@ export interface LLMCallRequest {
   urgency?: 'low' | 'normal' | 'high' | 'critical';
   taskType?: string;
   cacheEnabled?: boolean;
-  cacheType?: 'realtime' | 'analysis' | 'research' | 'default';
+  cacheType?: 'realtime' | 'sentiment_realtime' | 'analysis' | 'research' | 'default' | string;
 }
 
 export interface LLMCallResponse {
