@@ -23,6 +23,7 @@ import { callLLMWithHub } from '../shared/hub-llm-client.ts';
 import { loadSecrets } from '../shared/secrets.ts';
 import { ANALYST_TYPES, ACTIONS } from '../shared/signal.ts';
 import { loadLatestScoutIntel, getScoutSignalForSymbol } from '../shared/scout-intel.ts';
+import { getAnalysisReuseTtlMinutes, getReusableAnalysis } from '../shared/analysis-reuse-cache.ts';
 
 // ─── 소스 설정 ────────────────────────────────────────────────────────
 
@@ -72,9 +73,9 @@ const NAVER_DISC_NAMES = {
 // ─── 인메모리 캐시 ─────────────────────────────────────────────────────
 
 const _fgCache   = { data: null, ts: 0 };  // Fear & Greed 캐시 (1시간)
-const _sentCache = new Map();               // 감성 결과 캐시 (5분, key: `exchange:symbol`)
+const _sentCache = new Map();               // 감성 결과 캐시 (key: `exchange:symbol`)
 const FG_TTL     = 3_600_000;
-const SENT_TTL   = 300_000;
+const SENT_TTL   = getAnalysisReuseTtlMinutes(ANALYST_TYPES.SENTIMENT) * 60_000;
 const SENT_CACHE_MAX = 1000;
 
 function execCurl(args) {
@@ -386,6 +387,19 @@ export async function analyzeSentiment(symbol = 'BTC/USDT', exchange = 'binance'
   if (cached && (now - cached.ts) < SENT_TTL) {
     console.log(`  💾 [소피아] 캐시 히트 (${symbol} ${label})`);
     return cached.data;
+  }
+
+  const reusable = await getReusableAnalysis({
+    symbol,
+    exchange,
+    analyst: ANALYST_TYPES.SENTIMENT,
+    ttlMinutes: getAnalysisReuseTtlMinutes(ANALYST_TYPES.SENTIMENT),
+    source: 'sophia',
+  });
+  if (reusable) {
+    console.log(`  💾 [소피아] 최근 감성 분석 재사용 (${symbol} ${label}, ${reusable.metadata?.ageMinutes ?? '?'}분 전)`);
+    _sentCache.set(cacheKey, { data: reusable, ts: now });
+    return reusable;
   }
 
   console.log(`\n💬 [소피아] ${symbol}(${label}) 커뮤니티 수집 중...`);

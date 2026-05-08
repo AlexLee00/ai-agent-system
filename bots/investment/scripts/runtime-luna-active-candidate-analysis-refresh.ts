@@ -7,6 +7,7 @@ import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
 import { investmentOpsRuntimeFile } from '../shared/runtime-ops-path.ts';
 import { runMarketCollectPipeline } from '../shared/pipeline-market-runner.ts';
 import { buildLunaDecisionFilterReport } from './runtime-luna-decision-filter-report.ts';
+import { buildStockIntradayLlmPolicyMeta, isStockMarket } from '../shared/stock-intraday-llm-policy.ts';
 
 const CONFIRM = 'luna-active-candidate-analysis-refresh';
 const DEFAULT_STATE_PATH = investmentOpsRuntimeFile('luna-active-candidate-analysis-refresh-state.json');
@@ -217,11 +218,20 @@ export async function runActiveCandidateAnalysisRefresh({
     market: resolvedExchange,
     symbols: plan.selected,
     triggerType: 'active_candidate_analysis_refresh',
-    meta: {
-      market_script: 'active_candidate_analysis_refresh',
-      collect_mode: 'active_candidate_analysis_refresh',
-      decision_execution_skipped: true,
-    },
+    meta: isStockMarket(resolvedExchange)
+      ? buildStockIntradayLlmPolicyMeta({
+          market: resolvedExchange,
+          marketScript: 'active_candidate_analysis_refresh',
+          collectMode: 'active_candidate_analysis_refresh',
+          extraMeta: {
+            decision_execution_skipped: true,
+          },
+        })
+      : {
+          market_script: 'active_candidate_analysis_refresh',
+          collect_mode: 'active_candidate_analysis_refresh',
+          decision_execution_skipped: true,
+        },
     universeMeta: {
       screeningSymbolCount: plan.selected.length,
       activeCandidateRefresh: true,

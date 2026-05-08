@@ -29,6 +29,7 @@ import { buildPipelineSymbolCandidate, recordStrategyRouteStats } from './pipeli
 import { executeApprovedDecision, persistRiskApprovalRationale } from './pipeline-approved-decision.ts';
 import { buildDecisionBridgeMeta, loadDecisionPlannerCompact } from './pipeline-decision-bridge.ts';
 import { buildDecisionAgentPlan, shouldRunExecutionAuxiliaryNode } from './pipeline-decision-agent-plan.ts';
+import { shouldRunStockIntradayDecisionLlm } from './stock-intraday-llm-policy.ts';
 import {
   applyCollectQualityGuard,
   applyDiscoveryHardCap,
@@ -326,6 +327,20 @@ export async function runDecisionExecutionStateMachine({
       const analyses = analysisLoad.analyses || [];
       if (analyses.length === 0) continue;
       symbolAnalysesMap.set(symbol, analyses);
+
+      const stockIntradayPrefilter = shouldRunStockIntradayDecisionLlm({
+        market: exchange,
+        symbol,
+        analyses,
+        meta,
+        liveHeldSymbols,
+      });
+      if (!stockIntradayPrefilter.run) {
+        weakSignalSkipped++;
+        weakSignalReasons[stockIntradayPrefilter.reason] = (weakSignalReasons[stockIntradayPrefilter.reason] || 0) + 1;
+        console.log(`  ⏭️ [노드 브리지] ${symbol} L13 생략: ${stockIntradayPrefilter.reason}`);
+        continue;
+      }
 
       await runNode(l10Node, {
         sessionId,

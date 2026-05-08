@@ -23,6 +23,7 @@ import { callLLMWithHub } from '../shared/hub-llm-client.ts';
 import { loadSecrets }        from '../shared/secrets.ts';
 import { ANALYST_TYPES, ACTIONS } from '../shared/signal.ts';
 import { loadLatestScoutIntel, getScoutSignalForSymbol } from '../shared/scout-intel.ts';
+import { getAnalysisReuseTtlMinutes, getReusableAnalysis } from '../shared/analysis-reuse-cache.ts';
 import { createRequire } from 'module';
 
 const _require = createRequire(import.meta.url);
@@ -354,6 +355,18 @@ const PROMPTS = {
 
 export async function analyzeNews(symbol = 'BTC/USDT', exchange = 'binance') {
   const label = exchange === 'kis_overseas' ? '미국주식' : exchange === 'kis' ? '국내주식' : '암호화폐';
+  const reusable = await getReusableAnalysis({
+    symbol,
+    exchange,
+    analyst: ANALYST_TYPES.NEWS,
+    ttlMinutes: getAnalysisReuseTtlMinutes(ANALYST_TYPES.NEWS),
+    source: 'hermes',
+  });
+  if (reusable) {
+    console.log(`  💾 [헤르메스] 최근 뉴스 분석 재사용 (${symbol} ${label}, ${reusable.metadata?.ageMinutes ?? '?'}분 전)`);
+    return reusable;
+  }
+
   const domesticMeta = exchange === 'kis' ? await resolveDomesticMeta(symbol) : null;
   const displaySymbol = domesticMeta?.stockName ? `${symbol}/${domesticMeta.stockName}` : symbol;
   const scoutIntel = await loadLatestScoutIntel();

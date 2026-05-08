@@ -122,14 +122,19 @@ const DEFAULT_ROUTE: LLMRoute = {
   fallbacks: ['groq/llama-3.3-70b-versatile', 'gemini-cli-oauth/gemini-2.5-flash'],
 };
 
+const FAST_SENTIMENT_ROUTE: LLMRoute = {
+  primary: 'groq/llama-3.1-8b-instant',
+  fallbacks: ['openai-oauth/gpt-5.4-mini'],
+};
+
 // 기존 AGENT_ABSTRACT_MODEL 하위 호환 매핑
 const LEGACY_FALLBACK: Record<string, LLMRoute> = {
   luna:    { primary: 'openai-oauth/gpt-5.4', fallbacks: ['groq/llama-3.3-70b-versatile', 'gemini-cli-oauth/gemini-2.5-flash'] },
   chronos: { primary: 'openai-oauth/gpt-5.4', fallbacks: ['groq/qwen/qwen3-32b', 'gemini-cli-oauth/gemini-2.5-flash'] },
   zeus:    { primary: 'openai-oauth/gpt-5.4-mini', fallbacks: ['groq/llama-3.3-70b-versatile', 'gemini-cli-oauth/gemini-2.5-flash'] },
   athena:  { primary: 'openai-oauth/gpt-5.4-mini', fallbacks: ['groq/llama-3.3-70b-versatile', 'gemini-cli-oauth/gemini-2.5-flash'] },
-  hermes:  { primary: 'groq/llama-3.3-70b-versatile', fallbacks: ['openai-oauth/gpt-5.4-mini', 'gemini-cli-oauth/gemini-2.5-flash'] },
-  sophia:  { primary: 'groq/llama-3.3-70b-versatile', fallbacks: ['openai-oauth/gpt-5.4-mini', 'gemini-cli-oauth/gemini-2.5-flash'] },
+  hermes:  FAST_SENTIMENT_ROUTE,
+  sophia:  FAST_SENTIMENT_ROUTE,
   oracle:  { primary: 'openai-oauth/gpt-5.4', fallbacks: ['groq/qwen/qwen3-32b', 'gemini-cli-oauth/gemini-2.5-flash'] },
   nemesis: { primary: 'openai-oauth/gpt-5.4-mini', fallbacks: ['groq/qwen/qwen3-32b', 'gemini-cli-oauth/gemini-2.5-flash'] },
 };
@@ -156,11 +161,8 @@ const AGENT_DEFAULTS: Record<string, LLMRoute> = {
     noLLM: true,
   },
 
-  // 🧠 sophia — 감성: 운영 hot path. 실측상 Groq가 가장 안정적이고 빠르다.
-  sophia: {
-    primary: 'groq/llama-3.3-70b-versatile',
-    fallbacks: ['openai-oauth/gpt-5.4-mini', 'gemini-cli-oauth/gemini-2.5-flash'],
-  },
+  // 🧠 sophia — 감성: high-volume hot path. 70B TPD 소진과 CLI timeout을 피한다.
+  sophia: FAST_SENTIMENT_ROUTE,
 
   // 👁️ argos — 스크리닝: 대량 처리 + 빠른 분류
   argos: {
@@ -168,11 +170,8 @@ const AGENT_DEFAULTS: Record<string, LLMRoute> = {
     fallbacks: ['groq/llama-3.3-70b-versatile', 'gemini-cli-oauth/gemini-2.5-flash'],
   },
 
-  // 📜 hermes — 뉴스: 운영 hot path. Gemini/Claude OAuth는 fallback으로만 둔다.
-  hermes: {
-    primary: 'groq/llama-3.3-70b-versatile',
-    fallbacks: ['openai-oauth/gpt-5.4-mini', 'gemini-cli-oauth/gemini-2.5-flash'],
-  },
+  // 📜 hermes — 뉴스: high-volume hot path. Groq 8B + OpenAI fallback으로 지연을 제한한다.
+  hermes: FAST_SENTIMENT_ROUTE,
 
   // 🔮 oracle — 온체인: 복잡한 추론 + 통합
   oracle: {
@@ -301,19 +300,10 @@ const ROUTING_MATRIX: Record<string, LLMRoute> = {
   },
 
   // ── sophia ─────────────────────────────────────────────────────────────────
-  // 감성 분석: 운영 hot path는 Groq 우선. OAuth 계열은 timeout/quota 시 fallback.
-  'sophia:crypto:sentiment': {
-    primary: 'groq/llama-3.3-70b-versatile',
-    fallbacks: ['openai-oauth/gpt-5.4-mini', 'gemini-cli-oauth/gemini-2.5-flash'],
-  },
-  'sophia:domestic:sentiment': {
-    primary: 'groq/llama-3.3-70b-versatile',
-    fallbacks: ['openai-oauth/gpt-5.4-mini', 'gemini-cli-oauth/gemini-2.5-flash'],
-  },
-  'sophia:overseas:sentiment': {
-    primary: 'groq/llama-3.3-70b-versatile',
-    fallbacks: ['openai-oauth/gpt-5.4-mini', 'gemini-cli-oauth/gemini-2.5-flash'],
-  },
+  // 감성 분석: 운영 hot path는 8B로 빠르게 처리하고, 70B TPD/CLI timeout 병목을 피한다.
+  'sophia:crypto:sentiment': FAST_SENTIMENT_ROUTE,
+  'sophia:domestic:sentiment': FAST_SENTIMENT_ROUTE,
+  'sophia:overseas:sentiment': FAST_SENTIMENT_ROUTE,
 
   // ── argos ──────────────────────────────────────────────────────────────────
   // 스크리닝: gpt-5.4-mini (대량 처리 + 고속)
@@ -323,11 +313,8 @@ const ROUTING_MATRIX: Record<string, LLMRoute> = {
   },
 
   // ── hermes ─────────────────────────────────────────────────────────────────
-  // 뉴스 다국어: 운영 실측상 Groq primary가 timeout 병목을 줄인다.
-  'hermes:any:sentiment': {
-    primary: 'groq/llama-3.3-70b-versatile',
-    fallbacks: ['openai-oauth/gpt-5.4-mini', 'gemini-cli-oauth/gemini-2.5-flash'],
-  },
+  // 뉴스 다국어: high-volume route는 8B + OpenAI fallback으로 bounded latency를 유지한다.
+  'hermes:any:sentiment': FAST_SENTIMENT_ROUTE,
 
   // ── oracle ─────────────────────────────────────────────────────────────────
   // 온체인 + 파생상품: gpt-5.4 우선, Groq reasoning 폴백

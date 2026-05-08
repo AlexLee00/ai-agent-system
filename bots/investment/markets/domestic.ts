@@ -43,6 +43,7 @@ import { finishPipelineRun } from '../shared/pipeline-db.ts';
 import { updatePipelineRunMeta } from '../shared/pipeline-db.ts';
 import { getMockUntradableSymbolCooldownMinutes } from '../shared/runtime-config.ts';
 import { mergeUniqueSymbols } from '../shared/luna-orchestration-policy.ts';
+import { buildStockIntradayLlmPolicyMeta } from '../shared/stock-intraday-llm-policy.ts';
 import { buildDiscoveryUniverse } from '../team/discovery/discovery-universe.ts';
 
 import { processAllPendingKisSignals } from '../team/hanul.ts';
@@ -197,7 +198,11 @@ export async function runDomesticCycle(symbols, universeMeta = {}) {
       market: 'kis',
       symbols,
       triggerType: 'cycle',
-      meta: { market_script: 'domestic', collect_mode: 'screening_with_maintenance' },
+      meta: buildStockIntradayLlmPolicyMeta({
+        market: 'kis',
+        marketScript: 'domestic',
+        collectMode: 'screening_with_maintenance',
+      }),
       universeMeta,
     });
     sessionId = collect.sessionId;

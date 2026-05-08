@@ -274,14 +274,15 @@ async function _callLegacy(req, _team) {
 async function _callRoute(route, req, timeoutMs, chainEntry = {}) {
   const normalizedRoute = _normalizeRoute(route, req.abstractModel);
   const provider = _routeToProvider(normalizedRoute);
+  const circuitKey = _providerCircuitKey(provider, normalizedRoute);
   const started = Date.now();
 
-  if (_providerCircuitEnabled(provider) && !providerRegistry.canCall(provider)) {
+  if (_providerCircuitEnabled(provider) && !providerRegistry.canCall(circuitKey)) {
     return {
       ok: false,
       provider: 'failed',
       durationMs: 0,
-      error: `provider_circuit_open:${provider}`,
+      error: `provider_circuit_open:${circuitKey}`,
     };
   }
 
@@ -289,9 +290,9 @@ async function _callRoute(route, req, timeoutMs, chainEntry = {}) {
   const latencyMs = Number(result.durationMs || 0) || (Date.now() - started);
   if (_providerCircuitEnabled(provider)) {
     if (result.ok) {
-      providerRegistry.recordSuccess(provider, latencyMs);
+      providerRegistry.recordSuccess(circuitKey, latencyMs);
     } else {
-      providerRegistry.recordFailure(provider, result.error || 'provider_failed', latencyMs);
+      providerRegistry.recordFailure(circuitKey, result.error || 'provider_failed', latencyMs);
     }
   }
   return result;
@@ -379,6 +380,13 @@ async function _callRouteUnchecked(normalizedRoute, req, timeoutMs, chainEntry =
 function _providerCircuitEnabled(provider) {
   if (process.env.HUB_LLM_PROVIDER_CIRCUIT_ENABLED === 'false') return false;
   return Boolean(provider && provider !== 'failed');
+}
+
+function _providerCircuitKey(provider, normalizedRoute) {
+  if (provider === 'groq' && String(normalizedRoute || '').startsWith('groq/')) {
+    return String(normalizedRoute);
+  }
+  return provider;
 }
 
 function _chainEntryToRoute(entry) {
@@ -594,5 +602,6 @@ module.exports = {
     _runWithInflightDedupe,
     _inflightDedupeSize: () => inFlightDedupe.size,
     _normalizeRoute,
+    _providerCircuitKey,
   },
 };

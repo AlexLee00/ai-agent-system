@@ -22,6 +22,7 @@
     "runtime:luna-source-health-audit": "node scripts/runtime-luna-source-health-audit.ts --json",
     "runtime:luna-active-candidate-analysis-refresh": "node scripts/runtime-luna-active-candidate-analysis-refresh.ts --json",
     "runtime:luna-near-miss-watchlist": "node scripts/runtime-luna-near-miss-watchlist.ts --json",
+    "runtime:stock-intraday-llm-policy-smoke": "node scripts/stock-intraday-llm-policy-smoke.ts",
     "nemesis": "node team/nemesis.ts",
     "regime:capture": "node scripts/capture-market-regimes.ts",
     "chronos": "node team/chronos.ts --symbol=BTC/USDT --from=2026-03-01 --to=2026-04-01 --layer=3",

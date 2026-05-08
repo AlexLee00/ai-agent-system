@@ -64,6 +64,10 @@ async function main(): Promise<void> {
     assert(lunaPayload.selectorKey === 'investment.agent_policy', 'Luna payload should use the investment selector policy');
     assert(hermesPayload.cacheEnabled === true, 'Hermes sentiment payload should enable exact-prompt cache');
     assert(hermesPayload.cacheType === 'sentiment_realtime', 'Hermes sentiment payload should use short sentiment cache TTL');
+    assert(Array.isArray(hermesPayload.chain), 'Hermes sentiment payload should carry explicit chain');
+    assert((hermesPayload.chain as any[])[0]?.provider === 'groq', 'Hermes sentiment primary should remain Groq');
+    assert((hermesPayload.chain as any[])[0]?.model === 'llama-3.1-8b-instant', 'Hermes sentiment primary should use Groq 8B instant');
+    assert(!(hermesPayload.chain as any[]).some((entry) => entry?.provider === 'gemini-cli-oauth'), 'Hermes sentiment hot path should not use slow Gemini CLI fallback');
 
     const hermesParsed = parseLlmCallPayload(hermesPayload);
     const lunaParsed = parseLlmCallPayload(lunaPayload);

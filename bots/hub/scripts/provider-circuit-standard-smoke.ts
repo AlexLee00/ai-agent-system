@@ -21,6 +21,18 @@ function main() {
   assert(routeSource.includes('provider_circuits'), '/hub/llm/circuit must expose provider circuit state');
   assert(routeSource.includes('direct_llm_provider_route_disabled'), 'direct provider routes must be disabled by default');
 
+  const unified = require('../lib/llm/unified-caller.ts');
+  assert.equal(
+    unified._testOnly._providerCircuitKey('groq', 'groq/llama-3.1-8b-instant'),
+    'groq/llama-3.1-8b-instant',
+    'Groq circuit keys should be model-aware so a 70B TPD outage does not block 8B fallback',
+  );
+  assert.equal(
+    unified._testOnly._providerCircuitKey('openai-oauth', 'openai-oauth/gpt-5.4-mini'),
+    'openai-oauth',
+    'non-Groq provider circuits should remain provider-scoped',
+  );
+
   const registry = require('../lib/llm/provider-registry.ts');
   const provider = 'hub-provider-circuit-smoke';
   registry.resetProviderCircuit(provider);
@@ -38,9 +50,19 @@ function main() {
   registry.resetProviderCircuit(provider);
   assert.equal(registry.canCall(provider), true, 'provider circuit reset should allow calls');
 
+  const groqModelProvider = 'groq/hub-provider-circuit-smoke-model';
+  registry.resetProviderCircuit('groq');
+  registry.recordFailure(groqModelProvider, 'smoke_failure', 1);
+  registry.recordFailure(groqModelProvider, 'smoke_failure', 1);
+  registry.recordFailure(groqModelProvider, 'smoke_failure', 1);
+  assert.equal(registry.canCall(groqModelProvider), false, 'model-scoped Groq circuit should open after failures');
+  const resetKeys = registry.resetProviderCircuit('groq');
+  assert(resetKeys.includes(groqModelProvider), 'resetting provider=groq should clear model-scoped Groq circuits');
+  assert.equal(registry.canCall(groqModelProvider), true, 'provider reset should reopen model-scoped Groq circuit');
+
   console.log(JSON.stringify({
     ok: true,
-    provider_circuit: 'centralized',
+    provider_circuit: 'model_aware_for_groq',
     direct_provider_routes_default: 'disabled',
   }));
 }

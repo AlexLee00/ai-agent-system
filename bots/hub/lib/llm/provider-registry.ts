@@ -85,9 +85,26 @@ function getProviderStats() {
   return result;
 }
 
+function _providerResetKeys(provider) {
+  const normalized = String(provider || '').trim().toLowerCase();
+  if (!normalized) return [];
+  const keys = new Set([normalized]);
+  for (const key of stats.keys()) {
+    const normalizedKey = String(key || '').trim().toLowerCase();
+    if (normalizedKey === normalized || normalizedKey.startsWith(`${normalized}/`)) {
+      keys.add(key);
+    }
+  }
+  return Array.from(keys);
+}
+
 function resetProviderCircuit(provider) {
-  resetCircuit(provider);
-  stats.delete(provider);
+  const reset = _providerResetKeys(provider);
+  for (const key of reset) {
+    resetCircuit(key);
+    stats.delete(key);
+  }
+  return reset;
 }
 
 function resetAllProviderCircuits() {

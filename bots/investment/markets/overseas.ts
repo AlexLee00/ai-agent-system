@@ -40,6 +40,7 @@ import { finishPipelineRun } from '../shared/pipeline-db.ts';
 import { updatePipelineRunMeta } from '../shared/pipeline-db.ts';
 import { inspectLunaPortfolioContext } from '../shared/luna-portfolio-context.ts';
 import { mergeUniqueSymbols } from '../shared/luna-orchestration-policy.ts';
+import { buildStockIntradayLlmPolicyMeta } from '../shared/stock-intraday-llm-policy.ts';
 import { buildDiscoveryUniverse } from '../team/discovery/discovery-universe.ts';
 
 import { processAllPendingKisOverseasSignals } from '../team/hanul.ts';
@@ -202,7 +203,11 @@ export async function runOverseasCycle(symbols, universeMeta = {}) {
       market: 'kis_overseas',
       symbols,
       triggerType: 'cycle',
-      meta: { market_script: 'overseas', collect_mode: 'screening_with_maintenance' },
+      meta: buildStockIntradayLlmPolicyMeta({
+        market: 'kis_overseas',
+        marketScript: 'overseas',
+        collectMode: 'screening_with_maintenance',
+      }),
       universeMeta,
     });
     sessionId = collect.sessionId;
