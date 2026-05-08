@@ -466,7 +466,7 @@ function buildProviderBackpressure(resp) {
     return {
       kind: 'provider_rate_limit',
       provider,
-      retryAfterMs: Number(process.env.HUB_LLM_PROVIDER_RETRY_AFTER_MS || 60_000),
+      retryAfterMs: Number(resp?.retryAfterMs || process.env.HUB_LLM_PROVIDER_RETRY_AFTER_MS || 60_000),
       httpStatus: 429,
       provider_cooldowns: getProviderCooldownSnapshot(),
       provider_circuits: getProviderStats(),
@@ -519,6 +519,7 @@ async function logRouting(resp, body) {
 }
 
 async function insertRoutingLog(resp, body, audit, includeAudit) {
+  const providerForLog = resp?.dedupeHit ? 'dedupe' : resp.provider;
   if (includeAudit) {
     await pgPool.run('public', `
       INSERT INTO llm_routing_log (
@@ -527,7 +528,7 @@ async function insertRoutingLog(resp, body, audit, includeAudit) {
         prompt_hash, system_prompt_hash, request_fingerprint, prompt_chars
       ) VALUES (NOW(), $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
     `, [
-      resp.provider,
+      providerForLog,
       body.agent ?? null,
       body.callerTeam ?? null,
       body.abstractModel,
@@ -551,7 +552,7 @@ async function insertRoutingLog(resp, body, audit, includeAudit) {
       success, duration_ms, cost_usd, fallback_count, error, session_id
     ) VALUES (NOW(), $1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
   `, [
-    resp.provider,
+    providerForLog,
     body.agent ?? null,
     body.callerTeam ?? null,
     body.abstractModel,

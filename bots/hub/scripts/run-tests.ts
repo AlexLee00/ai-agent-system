@@ -122,6 +122,8 @@ function unitSmokeScripts(): string[] {
     'llm-claude-code-quota-guard-smoke.ts',
     'hub-client-default-model-smoke.ts',
     'llm-routing-log-prompt-hash-smoke.ts',
+    'llm-inflight-dedupe-smoke.ts',
+    'groq-retry-after-blacklist-smoke.ts',
     'hub-hardcoded-path-smoke.ts',
     'agent-hub-transition-audit.ts',
     'hub-transition-completion-gate.ts',

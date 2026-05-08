@@ -32,8 +32,20 @@ let rotationIndex = 0;
 const blacklistedKeys = new Map<string, number>();
 const BLACKLIST_DURATION_MS = 60_000;
 
+function isBlacklisted(apiKey: string, now = Date.now()): boolean {
+  const until = blacklistedKeys.get(apiKey) ?? 0;
+  if (until <= now) {
+    if (until > 0) blacklistedKeys.delete(apiKey);
+    return false;
+  }
+  return true;
+}
+
 export function pickGroqApiKey(): string | null {
-  if (process.env.GROQ_API_KEY) return process.env.GROQ_API_KEY;
+  if (process.env.GROQ_API_KEY) {
+    const envKey = process.env.GROQ_API_KEY;
+    return isBlacklisted(envKey) ? null : envKey;
+  }
 
   const accounts = loadGroqAccounts();
   if (accounts.length === 0) return null;
@@ -48,16 +60,21 @@ export function pickGroqApiKey(): string | null {
   for (let attempt = 0; attempt < accounts.length; attempt++) {
     const idx = (rotationIndex + attempt) % accounts.length;
     const key = accounts[idx];
-    const blacklistUntil = blacklistedKeys.get(key) ?? 0;
-    if (blacklistUntil > now) continue;
+    if (isBlacklisted(key, now)) continue;
     rotationIndex = (idx + 1) % accounts.length;
     return key;
   }
 
-  // 전부 블랙리스트 → 가장 앞 키 반환 (곧 만료)
-  return accounts[rotationIndex++ % accounts.length];
+  // 전부 블랙리스트면 곧바로 재시도하지 않는다. Groq의 retry-after
+  // 힌트를 존중하지 않으면 계정 풀 전체가 429 루프에 들어간다.
+  return null;
 }
 
 export function blacklistGroqKey(apiKey: string, ms = BLACKLIST_DURATION_MS): void {
   blacklistedKeys.set(apiKey, Date.now() + ms);
+}
+
+export function resetGroqKeyBlacklistForTests(): void {
+  blacklistedKeys.clear();
+  rotationIndex = 0;
 }

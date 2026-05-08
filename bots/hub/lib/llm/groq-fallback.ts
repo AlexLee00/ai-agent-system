@@ -16,10 +16,41 @@ const GROQ_PRICING: Record<string, { input: number; output: number }> = {
   'qwen-qwq-32b':            { input: 2.9e-7, output: 3.9e-7 },
 };
 
+const DEFAULT_GROQ_RETRY_AFTER_MS = 60_000;
+const MAX_GROQ_RETRY_AFTER_MS = 30 * 60_000;
+
 function estimateCost(model: string, promptTokens: number, completionTokens: number): number {
   const pricing = GROQ_PRICING[model];
   if (!pricing) return 0;
   return promptTokens * pricing.input + completionTokens * pricing.output;
+}
+
+function parseDurationMs(value: string): number | null {
+  const raw = String(value || '').trim().toLowerCase();
+  if (!raw) return null;
+  const directSeconds = Number(raw);
+  if (Number.isFinite(directSeconds) && directSeconds > 0) return directSeconds * 1000;
+
+  let totalMs = 0;
+  const pattern = /(\d+(?:\.\d+)?)\s*(ms|milliseconds?|s|sec|secs|seconds?|m|min|mins|minutes?|h|hr|hrs|hours?)/g;
+  let match: RegExpExecArray | null;
+  while ((match = pattern.exec(raw)) !== null) {
+    const amount = Number(match[1]);
+    if (!Number.isFinite(amount) || amount <= 0) continue;
+    const unit = match[2];
+    if (unit.startsWith('ms') || unit.startsWith('millisecond')) totalMs += amount;
+    else if (unit.startsWith('s') || unit.startsWith('sec')) totalMs += amount * 1000;
+    else if (unit.startsWith('m') || unit.startsWith('min')) totalMs += amount * 60_000;
+    else if (unit.startsWith('h') || unit.startsWith('hr') || unit.startsWith('hour')) totalMs += amount * 3_600_000;
+  }
+  return totalMs > 0 ? totalMs : null;
+}
+
+function resolveGroqRetryAfterMs(resp: Response, body: string): number {
+  const headerMs = parseDurationMs(resp.headers.get('retry-after') || '');
+  const messageMs = parseDurationMs(String(body || '').match(/try again in ([^."}]+)/i)?.[1] || '');
+  const parsed = headerMs || messageMs || DEFAULT_GROQ_RETRY_AFTER_MS;
+  return Math.min(Math.max(parsed, DEFAULT_GROQ_RETRY_AFTER_MS), MAX_GROQ_RETRY_AFTER_MS);
 }
 
 async function doGroqCall(
@@ -51,12 +82,20 @@ async function doGroqCall(
     const durationMs = Date.now() - started;
 
     if (resp.status === 429 && retryCount < 3) {
-      blacklistGroqKey(apiKey);
+      const body = await resp.text().catch(() => '');
+      const retryAfterMs = resolveGroqRetryAfterMs(resp, body);
+      blacklistGroqKey(apiKey, retryAfterMs);
       const nextKey = pickGroqApiKey();
       if (nextKey && nextKey !== apiKey) {
         return doGroqCall(req, nextKey, retryCount + 1);
       }
-      return { ok: false, provider: 'failed', durationMs, error: `Groq 429: 전체 계정 풀 소진` };
+      return {
+        ok: false,
+        provider: 'failed',
+        durationMs,
+        retryAfterMs,
+        error: `Groq 429: ${body.slice(0, 300) || '전체 계정 풀 rate-limited'}`,
+      } as LLMCallResponse & { retryAfterMs: number };
     }
 
     if (!resp.ok) {
@@ -91,7 +130,18 @@ async function doGroqCall(
 export async function callGroqFallback(req: GroqRequest): Promise<LLMCallResponse> {
   const apiKey = pickGroqApiKey();
   if (!apiKey) {
-    return { ok: false, provider: 'failed', durationMs: 0, error: 'Groq 계정 풀 비어있음 (env+secrets 모두)' };
+    return {
+      ok: false,
+      provider: 'failed',
+      durationMs: 0,
+      retryAfterMs: DEFAULT_GROQ_RETRY_AFTER_MS,
+      error: 'Groq 계정 풀 비어있음 또는 rate-limit cooldown 중',
+    } as LLMCallResponse & { retryAfterMs: number };
   }
   return doGroqCall(req, apiKey);
 }
+
+export const _testOnly = {
+  parseDurationMs,
+  resolveGroqRetryAfterMs,
+};

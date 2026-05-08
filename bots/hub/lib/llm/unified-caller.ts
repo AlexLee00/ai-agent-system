@@ -4,6 +4,8 @@
 // Priority: claude-code/ → groq/ → local/ (based on team/agent profile)
 // Legacy (no team/agent): Claude Code → Groq 2-step
 
+const crypto = require('node:crypto');
+
 const { callClaudeCodeOAuth } = require('./claude-code-oauth');
 const { callGroqFallback } = require('./groq-fallback');
 const { callLocalOllama } = require('./local-ollama');
@@ -34,6 +36,8 @@ const CLAUDE_CODE_BUDGET_FLOORS_USD = {
   opus: 0.5,
 };
 
+const inFlightDedupe = new Map();
+
 let _groqModelCache;
 function _groqModel() {
   if (!_groqModelCache) {
@@ -47,6 +51,13 @@ function _groqModel() {
 }
 
 async function callWithFallback(req) {
+  if (_inflightDedupeEnabled(req)) {
+    return _runWithInflightDedupe(req, () => _callWithFallbackInternal(req));
+  }
+  return _callWithFallbackInternal(req);
+}
+
+async function _callWithFallbackInternal(req) {
   const team = req.callerTeam || 'hub';
 
   // 0. Budget check
@@ -90,6 +101,54 @@ async function callWithFallback(req) {
     return _callWithProfileChain(req, profile, team);
   }
   return _callLegacy(req, team);
+}
+
+function _inflightDedupeEnabled(req) {
+  if (_flagDisabled('HUB_LLM_INFLIGHT_DEDUPE_ENABLED')) return false;
+  return typeof req?.prompt === 'string' && req.prompt.length > 0;
+}
+
+function _inflightDedupeKey(req) {
+  const payload = {
+    callerTeam: req?.callerTeam || 'hub',
+    agent: req?.agent || null,
+    selectorKey: req?.selectorKey || null,
+    taskType: req?.taskType || null,
+    abstractModel: req?.abstractModel || null,
+    systemPrompt: req?.systemPrompt || '',
+    prompt: req?.prompt || '',
+    jsonSchema: req?.jsonSchema || null,
+    maxTokens: req?.maxTokens ?? null,
+    temperature: req?.temperature ?? null,
+    timeoutMs: req?.timeoutMs ?? null,
+    maxBudgetUsd: req?.maxBudgetUsd ?? null,
+    chain: req?.chain || null,
+  };
+  return crypto.createHash('sha256').update(JSON.stringify(payload)).digest('hex');
+}
+
+async function _runWithInflightDedupe(req, executor) {
+  const key = _inflightDedupeKey(req);
+  const existing = inFlightDedupe.get(key);
+  if (existing) {
+    const started = Date.now();
+    const resp = await existing;
+    return {
+      ...resp,
+      dedupeHit: true,
+      dedupeProvider: resp.provider,
+      durationMs: Date.now() - started,
+      totalCostUsd: 0,
+    };
+  }
+
+  const promise = Promise.resolve().then(executor);
+  inFlightDedupe.set(key, promise);
+  try {
+    return await promise;
+  } finally {
+    inFlightDedupe.delete(key);
+  }
 }
 
 function _resolveSelectorChain(req, team) {
@@ -507,4 +566,9 @@ module.exports = {
   callWithFallback,
   resolveClaudeCodeTimeoutMs,
   resolveClaudeCodeMaxBudgetUsd,
+  _testOnly: {
+    _inflightDedupeKey,
+    _runWithInflightDedupe,
+    _inflightDedupeSize: () => inFlightDedupe.size,
+  },
 };
