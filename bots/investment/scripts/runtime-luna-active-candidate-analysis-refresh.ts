@@ -6,6 +6,7 @@ import path from 'node:path';
 import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
 import { investmentOpsRuntimeFile } from '../shared/runtime-ops-path.ts';
 import { runMarketCollectPipeline } from '../shared/pipeline-market-runner.ts';
+import { finishPipelineRun } from '../shared/pipeline-db.ts';
 import { buildLunaDecisionFilterReport } from './runtime-luna-decision-filter-report.ts';
 import { buildStockIntradayLlmPolicyMeta } from '../shared/stock-intraday-llm-policy.ts';
 
@@ -132,6 +133,7 @@ export async function runActiveCandidateAnalysisRefresh({
   statePath = DEFAULT_STATE_PATH,
   reportBuilder = buildLunaDecisionFilterReport,
   collectRunner = runMarketCollectPipeline,
+  finishRun = finishPipelineRun,
   now = new Date(),
 } = {}) {
   const normalizedMarket = normalizeMarket(market);
@@ -231,12 +233,38 @@ export async function runActiveCandidateAnalysisRefresh({
       activeCandidateRefresh: true,
     },
   });
+  const collectOk = Number(collect?.metrics?.failedHardCoreTasks || 0) === 0;
+  let finishResult = null;
+  try {
+    finishResult = await finishRun(collect.sessionId, {
+      status: collectOk ? 'completed' : 'failed',
+      meta: {
+        bridge_status: collectOk
+          ? 'active_candidate_analysis_refresh_collected'
+          : 'active_candidate_analysis_refresh_collect_degraded',
+        market_script: 'active_candidate_analysis_refresh',
+        decision_execution_skipped: true,
+        collect_metrics: collect.metrics || null,
+        collect_quality: collect.metrics?.collectQuality || null,
+        collect_warnings: collect.metrics?.warnings || [],
+      },
+    });
+  } catch (error) {
+    finishResult = {
+      updated: false,
+      reason: 'finish_pipeline_run_failed',
+      error: error?.message || String(error),
+    };
+  }
+  const finishOk = finishResult?.updated === true || finishResult?.reason === 'already_terminal';
   const nextState = updateAttemptState(state, plan.selected, collect, now, { exchange: resolvedExchange });
   writeJson(statePath, nextState);
 
   return {
-    ok: Number(collect?.metrics?.failedHardCoreTasks || 0) === 0,
-    status: 'active_candidate_analysis_refresh_collected',
+    ok: collectOk && finishOk,
+    status: finishOk
+      ? 'active_candidate_analysis_refresh_collected'
+      : 'active_candidate_analysis_refresh_finish_failed',
     dryRun: false,
     applied: true,
     market: normalizedMarket,
@@ -249,6 +277,7 @@ export async function runActiveCandidateAnalysisRefresh({
       summaries: collect.summaries,
       metrics: collect.metrics,
     },
+    finish: finishResult,
   };
 }
 

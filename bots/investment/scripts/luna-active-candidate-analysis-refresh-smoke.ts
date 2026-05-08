@@ -59,6 +59,7 @@ export async function runLunaActiveCandidateAnalysisRefreshSmoke() {
   assert.equal(blocked.status, 'active_candidate_analysis_refresh_confirm_required');
 
   let collectedSymbols = null;
+  const finishedRuns = [];
   const applied = await runActiveCandidateAnalysisRefresh({
     apply: true,
     confirm: 'luna-active-candidate-analysis-refresh',
@@ -73,14 +74,22 @@ export async function runLunaActiveCandidateAnalysisRefreshSmoke() {
         metrics: { failedHardCoreTasks: 0, collectQuality: { status: 'ready' } },
       };
     },
+    finishRun: async (sessionId, result) => {
+      finishedRuns.push({ sessionId, result });
+      return { updated: true, status: result?.status || 'completed' };
+    },
     maxSymbols: 2,
     statePath: path.join(smokeDir, 'applied.json'),
     now,
   });
   assert.equal(applied.ok, true);
   assert.equal(applied.applied, true);
+  assert.equal(applied.finish.updated, true);
   assert.deepEqual(collectedSymbols, ['ENA/USDT', 'BNB/USDT']);
   assert.equal(applied.exchange, 'binance');
+  assert.equal(finishedRuns[0].sessionId, 'smoke-session');
+  assert.equal(finishedRuns[0].result.status, 'completed');
+  assert.equal(finishedRuns[0].result.meta.decision_execution_skipped, true);
 
   let domesticCollect = null;
   const domestic = await runActiveCandidateAnalysisRefresh({
@@ -97,14 +106,57 @@ export async function runLunaActiveCandidateAnalysisRefreshSmoke() {
         metrics: { failedHardCoreTasks: 0, collectQuality: { status: 'ready' } },
       };
     },
+    finishRun: async (sessionId, result) => {
+      finishedRuns.push({ sessionId, result });
+      return { updated: true, status: result?.status || 'completed' };
+    },
     statePath: path.join(smokeDir, 'domestic.json'),
     now,
   });
   assert.equal(domestic.ok, true);
+  assert.equal(domestic.finish.updated, true);
   assert.equal(domestic.exchange, 'kis');
   assert.equal(domesticCollect.market, 'kis');
   assert.deepEqual(domesticCollect.symbols, ['005490']);
   assert.equal(domesticCollect.meta.decision_execution_skipped, true);
+  assert.equal(finishedRuns[1].sessionId, 'domestic-session');
+
+  const finishFailed = await runActiveCandidateAnalysisRefresh({
+    apply: true,
+    confirm: 'luna-active-candidate-analysis-refresh',
+    reportBuilder: async () => fixtureReport(['ADA/USDT']),
+    collectRunner: async () => ({
+      sessionId: 'finish-failed-session',
+      symbols: ['ADA/USDT'],
+      summaries: [],
+      metrics: { failedHardCoreTasks: 0, collectQuality: { status: 'ready' } },
+    }),
+    finishRun: async () => {
+      throw new Error('pipeline finish unavailable');
+    },
+    statePath: path.join(smokeDir, 'finish-failed.json'),
+    now,
+  });
+  assert.equal(finishFailed.ok, false);
+  assert.equal(finishFailed.status, 'active_candidate_analysis_refresh_finish_failed');
+  assert.equal(finishFailed.finish.reason, 'finish_pipeline_run_failed');
+
+  const alreadyTerminal = await runActiveCandidateAnalysisRefresh({
+    apply: true,
+    confirm: 'luna-active-candidate-analysis-refresh',
+    reportBuilder: async () => fixtureReport(['XRP/USDT']),
+    collectRunner: async () => ({
+      sessionId: 'already-terminal-session',
+      symbols: ['XRP/USDT'],
+      summaries: [],
+      metrics: { failedHardCoreTasks: 0, collectQuality: { status: 'ready' } },
+    }),
+    finishRun: async () => ({ updated: false, reason: 'already_terminal', status: 'completed' }),
+    statePath: path.join(smokeDir, 'already-terminal.json'),
+    now,
+  });
+  assert.equal(alreadyTerminal.ok, true);
+  assert.equal(alreadyTerminal.finish.reason, 'already_terminal');
 
   return {
     ok: true,
