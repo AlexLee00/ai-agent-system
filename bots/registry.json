@@ -114,6 +114,8 @@
     "reservation": {
       "name": "스카 (Ska)",
       "team": "스카팀",
+      "canonicalTeam": "ska",
+      "inventoryKind": "visible_agent",
       "teamRole": "메인봇",
       "description": "스터디카페 예약 관리 메인봇 - 네이버 ↔ 픽코 자동 동기화",
       "subBots": {
@@ -164,6 +166,8 @@
     "ska": {
       "name": "레베카 (Rebecca)",
       "team": "스카팀",
+      "canonicalTeam": "ska",
+      "inventoryKind": "visible_agent",
       "teamRole": "분석봇",
       "description": "스터디카페 매출·예측 분석봇 — ETL, 환경요인 수집, 일간·주간 리포트",
       "status": "ops",
@@ -189,6 +193,8 @@
     "eve": {
       "name": "이브 (Eve)",
       "team": "스카팀",
+      "canonicalTeam": "ska",
+      "inventoryKind": "visible_agent",
       "teamRole": "환경수집봇",
       "description": "공공API 환경요소 수집봇 — 공휴일·날씨·학사일정·축제 데이터 수집 → ska.duckdb environment_factors",
       "status": "ops",
@@ -374,6 +380,7 @@
       "name": "비서봇",
       "description": "개인 일정 관리 및 업무 보조",
       "status": "planned",
+      "inventoryKind": "planned",
       "contextPath": "bots/secretary/context",
       "model": {
         "primary": "ollama/qwen2.5:14b",
@@ -387,6 +394,7 @@
       "name": "업무봇",
       "description": "기획 및 업무 종합 보조",
       "status": "planned",
+      "inventoryKind": "planned",
       "contextPath": "bots/business/context",
       "model": {
         "primary": "ollama/qwen2.5:32b",
@@ -400,6 +408,7 @@
       "name": "학술봇",
       "description": "박사 논문 작성 및 연구 보조 (SE 기반 소프트웨어 감정평가)",
       "status": "planned",
+      "inventoryKind": "planned",
       "contextPath": "bots/academic/context",
       "model": {
         "primary": "ollama/deepseek-r1:32b",
@@ -413,7 +422,8 @@
       "name": "저스틴팀",
       "teamLeader": "저스틴 (Justin)",
       "description": "법원 SW 감정 자동화 — 마스터(Jay) 법원 감정인 업무 지원. 9에이전트(저스틴/브리핑/렌즈/가람/아틀라스/클레임/디펜스/퀼/밸런스/컨트로)",
-      "status": "active",
+      "status": "pending_runtime",
+      "inventoryKind": "pending_runtime",
       "contextPath": "bots/legal/context",
       "model": {
         "primary": "openai-oauth/gpt-5.4",
@@ -431,6 +441,7 @@
       "name": "메인봇 (팀장)",
       "description": "지시 해석, 팀원봇 업무 분배, 결과 취합 및 보고",
       "status": "planned",
+      "inventoryKind": "planned",
       "contextPath": "bots/orchestrator/context",
       "model": {
         "primary": "ollama/qwen2.5:32b",

@@ -22,6 +22,19 @@ type SelectorOptions = {
   [key: string]: any;
 };
 
+type LlmRouteTargetKind = 'visible_agent' | 'task_route' | 'runtime_service' | 'retired' | 'planned' | 'pending_runtime' | 'alias';
+
+type LlmRouteTarget = {
+  team: string;
+  agent: string;
+  selectorKey: string | null;
+  selected: boolean;
+  kind: LlmRouteTargetKind;
+  canonicalTeam: string;
+  countable: boolean;
+  blockReason: string | null;
+};
+
 const GEMINI_CLI_FLASH_LITE_MODEL = 'gemini-cli-oauth/gemini-2.5-flash-lite';
 const GEMINI_CLI_FLASH_MODEL = 'gemini-cli-oauth/gemini-2.5-flash';
 const TEAM_SELECTOR_VERSION_LEGACY = 'v2_legacy';
@@ -233,6 +246,53 @@ function stripGroqPrefix(model = ''): string {
 
 function dedupeByProvider(chain: LLMChainEntry[]): LLMChainEntry[] {
   return chain.filter((entry, index, array) => array.findIndex((candidate) => candidate.provider === entry.provider) === index);
+}
+
+function dedupeByProviderModel(chain: LLMChainEntry[]): LLMChainEntry[] {
+  return chain.filter((entry, index, array) => array.findIndex((candidate) => (
+    candidate.provider === entry.provider && candidate.model === entry.model
+  )) === index);
+}
+
+function isTimeGateActive(value: any): boolean {
+  const raw = String(value || '').trim();
+  if (!raw) return false;
+  const timestamp = Date.parse(raw);
+  if (!Number.isFinite(timestamp)) return false;
+  return timestamp > Date.now();
+}
+
+function shouldAvoidClaudeCode(entry: LLMChainEntry, options: SelectorOptions = {}): boolean {
+  if (String(entry?.provider || '') !== 'claude-code') return false;
+  const model = String(entry?.model || '').toLowerCase();
+  const quotaMode = String(
+    options.claudeCodeQuotaMode || process.env.LLM_CLAUDE_CODE_QUOTA_MODE || '',
+  ).trim().toLowerCase();
+  if (['avoid', 'saturated', 'openai_only', 'openai-only', 'disabled'].includes(quotaMode)) return true;
+  if (parseEnabledFlag(options.claudeCodeDisabled ?? process.env.LLM_CLAUDE_CODE_DISABLED) === true) return true;
+  if (parseEnabledFlag(options.claudeCodeUsageSaturated ?? process.env.LLM_CLAUDE_CODE_USAGE_SATURATED) === true) return true;
+  if (isTimeGateActive(options.forceOpenaiOauthUntil ?? process.env.LLM_FORCE_OPENAI_OAUTH_UNTIL)) return true;
+  if (
+    model.includes('sonnet')
+    && parseEnabledFlag(options.claudeCodeSonnetDisabled ?? process.env.LLM_CLAUDE_CODE_SONNET_DISABLED) === true
+  ) return true;
+  return false;
+}
+
+function replacementForClaudeCode(entry: LLMChainEntry, options: SelectorOptions = {}): LLMChainEntry {
+  const configured = String(options.claudeCodeReplacementModel || process.env.LLM_CLAUDE_CODE_REPLACEMENT_MODEL || '').trim();
+  const model = configured || (String(entry?.model || '').toLowerCase().includes('haiku') ? 'gpt-5.4-mini' : (options.openaiPerfModel || 'gpt-5.4'));
+  return {
+    ...entry,
+    provider: 'openai-oauth',
+    model: model.replace(/^openai-oauth\//, ''),
+  };
+}
+
+function applyProviderRuntimeGuards(chain: LLMChainEntry[], options: SelectorOptions = {}): LLMChainEntry[] {
+  return dedupeByProviderModel(chain.map((entry) => (
+    shouldAvoidClaudeCode(entry, options) ? replacementForClaudeCode(entry, options) : entry
+  )));
 }
 
 const TEAM_SELECTOR_DEFAULTS_LEGACY: Record<string, any> = {
@@ -840,6 +900,204 @@ const AGENT_MODEL_REGISTRY: Record<string, Record<string, string | null>> = {
   },
 };
 
+const RETIRED_GATEWAY_NAME = ['open', 'claw'].join('');
+const RETIRED_GATEWAY_LABEL = [RETIRED_GATEWAY_NAME, 'gateway'].join('-');
+
+const RETIRED_TARGET_MARKERS = new Set([
+  'worker',
+  'video',
+  'edi',
+  RETIRED_GATEWAY_NAME,
+  RETIRED_GATEWAY_LABEL,
+  'worker-ops',
+  'video-edi',
+]);
+
+const PLANNED_TEAMS = new Set(['secretary', 'business', 'academic']);
+const PENDING_RUNTIME_TEAMS = new Set(['legal']);
+const ACTIVE_BLOG_VISIBLE_AGENTS = new Set(['blo', 'richer', 'pos', 'gems', 'publ', 'star']);
+const ACTIVE_SKA_VISIBLE_AGENTS = new Set(['andy', 'jimmy', 'rebecca', 'eve']);
+
+function normalizeTargetToken(value: any): string {
+  return String(value || '').trim().toLowerCase();
+}
+
+function containsRetiredTargetMarker(team: string, agent: string, selectorKey: string | null): boolean {
+  const tokens = [
+    normalizeTargetToken(team),
+    normalizeTargetToken(agent),
+    normalizeTargetToken(selectorKey),
+  ].filter(Boolean);
+  return tokens.some((token) => (
+    RETIRED_TARGET_MARKERS.has(token)
+      || token.includes(RETIRED_GATEWAY_NAME)
+      || token.includes('worker-ops')
+      || token.includes('video-edi')
+  ));
+}
+
+function isDarwinAlias(agent: string): boolean {
+  const key = normalizeTargetToken(agent);
+  if (!key || key.includes('.')) return false;
+  return Boolean((AGENT_MODEL_REGISTRY.darwin || {})[`darwin.${key}`]);
+}
+
+function isDarwinTaskRoute(agent: string): boolean {
+  const key = normalizeTargetToken(agent);
+  return key.includes('.rag.')
+    || key.includes('self_rag')
+    || key.startsWith('self_rag.')
+    || key.startsWith('espl.')
+    || key.includes('.espl')
+    || key.startsWith('principle.')
+    || key.includes('.principle.');
+}
+
+function isTaskRoute(team: string, agent: string): boolean {
+  const normalizedTeam = normalizeTargetToken(team);
+  const normalizedAgent = normalizeTargetToken(agent);
+  if (normalizedTeam === 'core') return true;
+  if (normalizedTeam === 'blog') return !ACTIVE_BLOG_VISIBLE_AGENTS.has(normalizedAgent);
+  if (normalizedTeam === 'ska') return !ACTIVE_SKA_VISIBLE_AGENTS.has(normalizedAgent);
+  if (normalizedTeam === 'sigma') return normalizedAgent !== 'commander';
+  if (normalizedTeam === 'darwin') return isDarwinTaskRoute(normalizedAgent);
+  return false;
+}
+
+export function classifyLlmRouteTarget(team: string, agent = '', selectorKey: string | null = null): LlmRouteTarget {
+  const normalizedTeam = normalizeTargetToken(team || String(selectorKey || '').split('.')[0]);
+  const normalizedAgent = normalizeTargetToken(agent);
+  const normalizedSelectorKey = selectorKey ? String(selectorKey) : null;
+
+  if (containsRetiredTargetMarker(normalizedTeam, normalizedAgent, normalizedSelectorKey)) {
+    return {
+      team: normalizedTeam,
+      agent: normalizedAgent,
+      selectorKey: normalizedSelectorKey,
+      selected: Boolean(normalizedSelectorKey),
+      kind: 'retired',
+      canonicalTeam: normalizedTeam,
+      countable: false,
+      blockReason: 'retired_llm_target',
+    };
+  }
+  if (PLANNED_TEAMS.has(normalizedTeam)) {
+    return {
+      team: normalizedTeam,
+      agent: normalizedAgent,
+      selectorKey: normalizedSelectorKey,
+      selected: Boolean(normalizedSelectorKey),
+      kind: 'planned',
+      canonicalTeam: normalizedTeam,
+      countable: false,
+      blockReason: 'planned_llm_target',
+    };
+  }
+  if (PENDING_RUNTIME_TEAMS.has(normalizedTeam)) {
+    return {
+      team: normalizedTeam,
+      agent: normalizedAgent,
+      selectorKey: normalizedSelectorKey,
+      selected: Boolean(normalizedSelectorKey),
+      kind: 'pending_runtime',
+      canonicalTeam: normalizedTeam,
+      countable: false,
+      blockReason: 'pending_runtime_llm_target',
+    };
+  }
+  if (normalizedTeam === 'luna') {
+    return {
+      team: normalizedTeam,
+      agent: normalizedAgent,
+      selectorKey: normalizedSelectorKey,
+      selected: Boolean(normalizedSelectorKey),
+      kind: 'alias',
+      canonicalTeam: 'investment',
+      countable: false,
+      blockReason: null,
+    };
+  }
+  if (normalizedTeam === 'orchestrator' || normalizedTeam === 'hub') {
+    return {
+      team: normalizedTeam,
+      agent: normalizedAgent,
+      selectorKey: normalizedSelectorKey,
+      selected: Boolean(normalizedSelectorKey),
+      kind: 'runtime_service',
+      canonicalTeam: normalizedTeam,
+      countable: false,
+      blockReason: null,
+    };
+  }
+  if (normalizedTeam === 'darwin' && isDarwinAlias(normalizedAgent)) {
+    return {
+      team: normalizedTeam,
+      agent: normalizedAgent,
+      selectorKey: normalizedSelectorKey,
+      selected: Boolean(normalizedSelectorKey),
+      kind: 'alias',
+      canonicalTeam: 'darwin',
+      countable: false,
+      blockReason: null,
+    };
+  }
+  const kind: LlmRouteTargetKind = isTaskRoute(normalizedTeam, normalizedAgent) ? 'task_route' : 'visible_agent';
+  return {
+    team: normalizedTeam,
+    agent: normalizedAgent,
+    selectorKey: normalizedSelectorKey,
+    selected: Boolean(normalizedSelectorKey),
+    kind,
+    canonicalTeam: normalizedTeam,
+    countable: kind === 'visible_agent',
+    blockReason: null,
+  };
+}
+
+export function isLlmRouteTargetAllowed(input: { callerTeam?: string | null; agent?: string | null; selectorKey?: string | null } = {}): {
+  ok: boolean;
+  target: LlmRouteTarget;
+  error: string | null;
+} {
+  const target = classifyLlmRouteTarget(
+    input.callerTeam || String(input.selectorKey || '').split('.')[0],
+    input.agent || '',
+    input.selectorKey || null,
+  );
+  const allowPlanned = parseEnabledFlag(process.env.HUB_ALLOW_PLANNED_LLM_ROUTES) === true;
+  if (target.kind === 'retired') {
+    return { ok: false, target, error: target.blockReason || 'retired_llm_target' };
+  }
+  if (target.blockReason && !allowPlanned) {
+    return { ok: false, target, error: target.blockReason };
+  }
+  return { ok: true, target, error: null };
+}
+
+export function listLlmRouteTargets(options: {
+  team?: string | null;
+  includeInternal?: boolean;
+  includeAliases?: boolean;
+  includeBlocked?: boolean;
+} = {}): LlmRouteTarget[] {
+  const requestedTeam = options.team ? normalizeTargetToken(options.team) : null;
+  const includeInternal = Boolean(options.includeInternal);
+  const includeAliases = options.includeAliases ?? Boolean(requestedTeam);
+  const includeBlocked = options.includeBlocked ?? Boolean(requestedTeam);
+  const teams = requestedTeam ? { [requestedTeam]: AGENT_MODEL_REGISTRY[requestedTeam] || {} } : AGENT_MODEL_REGISTRY;
+  const entries: LlmRouteTarget[] = [];
+  for (const [teamName, agents] of Object.entries(teams)) {
+    for (const [agentName, selectorKey] of Object.entries(agents || {})) {
+      const target = classifyLlmRouteTarget(teamName, agentName, selectorKey || null);
+      if (!includeInternal && (target.kind === 'task_route' || target.kind === 'runtime_service')) continue;
+      if (!includeAliases && target.kind === 'alias') continue;
+      if (!includeBlocked && ['retired', 'planned', 'pending_runtime'].includes(target.kind)) continue;
+      entries.push(target);
+    }
+  }
+  return entries.sort((a, b) => `${a.team}.${a.agent}`.localeCompare(`${b.team}.${b.agent}`));
+}
+
 function normalizeTeamDefaultEntry(entry: any): any {
   if (isObject(entry) && entry.enabled === false) {
     return { enabled: false, primary: null, fallbacks: [], chain: [] };
@@ -1287,7 +1545,7 @@ export function selectLLMChain(key: string, options: SelectorOptions = {}): LLMC
   const resolved = selectLLMPolicy(key, options);
   const normalizedChain = normalizeChainFromPolicy(resolved);
   if (!normalizedChain) throw new Error(`LLM selector key ${key} 는 chain이 아닙니다`);
-  return normalizedChain;
+  return applyProviderRuntimeGuards(normalizedChain, options);
 }
 
 export function describeLLMSelector(key: string, options: SelectorOptions = {}): any {
@@ -1297,7 +1555,8 @@ export function describeLLMSelector(key: string, options: SelectorOptions = {}):
   }
   const chain = normalizeChainFromPolicy(resolved);
   if (chain) {
-    return { key, kind: 'chain', primary: chain[0] || null, fallbacks: chain.slice(1), chain };
+    const guardedChain = applyProviderRuntimeGuards(chain, options);
+    return { key, kind: 'chain', primary: guardedChain[0] || null, fallbacks: guardedChain.slice(1), chain: guardedChain };
   }
   return { key, kind: 'policy', policy: resolved };
 }
@@ -1306,20 +1565,17 @@ export function listLLMSelectorKeys(): string[] {
   return Object.keys(SELECTOR_REGISTRY).sort();
 }
 
-export function listAgentModelTargets(team: string | null = null): Array<{ team: string; agent: string; selectorKey: string | null; selected: boolean }> {
-  const teams = team ? { [team]: AGENT_MODEL_REGISTRY[team] || {} } : AGENT_MODEL_REGISTRY;
-  const entries: Array<{ team: string; agent: string; selectorKey: string | null; selected: boolean }> = [];
-  for (const [teamName, agents] of Object.entries(teams)) {
-    for (const [agentName, selectorKey] of Object.entries(agents || {})) {
-      entries.push({
-        team: teamName,
-        agent: agentName,
-        selectorKey: selectorKey || null,
-        selected: Boolean(selectorKey),
-      });
-    }
-  }
-  return entries.sort((a, b) => `${a.team}.${a.agent}`.localeCompare(`${b.team}.${b.agent}`));
+export function listAgentModelTargets(team: string | null = null): LlmRouteTarget[] {
+  return listLlmRouteTargets({
+    team,
+    includeInternal: true,
+    includeAliases: Boolean(team),
+    includeBlocked: false,
+  }).filter((target) => (
+    target.kind === 'visible_agent'
+    || target.kind === 'runtime_service'
+    || (Boolean(team) && target.kind === 'alias')
+  ));
 }
 
 export function describeAgentModel(team: string, agentName: string, selectorOptions: Record<string, SelectorOptions> = {}): any {

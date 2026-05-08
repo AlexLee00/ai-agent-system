@@ -126,9 +126,17 @@ function buildSelectorSnapshot(selectorModule = selector) {
   const selectorKeys = typeof selectorModule.listLLMSelectorKeys === 'function'
     ? selectorModule.listLLMSelectorKeys()
     : [];
+  const routeTargets = typeof selectorModule.listLlmRouteTargets === 'function'
+    ? selectorModule.listLlmRouteTargets({ includeInternal: true, includeAliases: true, includeBlocked: true })
+    : [];
   const agentTargets = typeof selectorModule.listAgentModelTargets === 'function'
     ? selectorModule.listAgentModelTargets()
     : [];
+  const targetKindCounts = routeTargets.reduce((acc, target) => {
+    const kind = String(target?.kind || 'unknown');
+    acc[kind] = (acc[kind] || 0) + 1;
+    return acc;
+  }, {});
   const primaryProviderCounts = {};
   const primaryModelCounts = {};
   const chainProviderCounts = {};
@@ -216,6 +224,8 @@ function buildSelectorSnapshot(selectorModule = selector) {
     checked: {
       selector_keys: selectorKeyCount,
       agent_routes: agentRouteCount,
+      route_targets: routeTargets.length,
+      target_kinds: targetKindCounts,
       total_primary_routes: totalPrimaryRoutes,
     },
     primary_provider_counts: primaryProviderCounts,

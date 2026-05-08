@@ -12,6 +12,7 @@ const {
   getJobStoreState,
 } = require('../llm/job-store');
 const { parseLlmCallPayload } = require('../llm/request-schema');
+const { isLlmRouteTargetAllowed } = require('../../../../packages/core/lib/llm-model-selector');
 const { getAllCircuitStatuses, resetCircuit, resetAllCircuits } = require('../../../../packages/core/lib/local-circuit-breaker');
 const {
   getProviderCooldownSnapshot,
@@ -40,6 +41,18 @@ export async function llmCallRoute(req, res) {
     urgency: body.urgency || context.priority || undefined,
     traceId: context.traceId || undefined,
   };
+  const targetPolicy = isLlmRouteTargetAllowed(normalizedRequest);
+  if (!targetPolicy.ok) {
+    return res.status(403).json({
+      ok: false,
+      error: {
+        code: targetPolicy.error,
+        message: 'LLM route target is not active',
+        target: targetPolicy.target,
+      },
+      traceId: context.traceId || null,
+    });
+  }
 
   try {
     const resp = await callWithFallback(normalizedRequest);
@@ -96,6 +109,18 @@ export async function llmJobsCreateRoute(req, res) {
     urgency: body.urgency || context.priority || undefined,
     traceId: context.traceId || undefined,
   };
+  const targetPolicy = isLlmRouteTargetAllowed(normalizedRequest);
+  if (!targetPolicy.ok) {
+    return res.status(403).json({
+      ok: false,
+      error: {
+        code: targetPolicy.error,
+        message: 'LLM route target is not active',
+        target: targetPolicy.target,
+      },
+      traceId: context.traceId || null,
+    });
+  }
   const job = await createLlmJob(normalizedRequest, context, { source: 'api' });
   return res.status(202).json({
     ok: true,

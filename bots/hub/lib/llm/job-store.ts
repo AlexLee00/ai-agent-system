@@ -2,6 +2,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { callWithFallback } = require('./unified-caller');
 const { acquireSharedLimiterLease } = require('./shared-limiter');
+const { isLlmRouteTargetAllowed } = require('../../../../packages/core/lib/llm-model-selector');
 
 type LlmJobStatus = 'queued' | 'running' | 'completed' | 'failed';
 
@@ -166,6 +167,20 @@ function summarizePayload(payload: LlmJobPayload = {}): Record<string, unknown> 
 }
 
 async function createLlmJob(payload: LlmJobPayload, context: JobContext = {}, options: CreateJobOptions = {}): Promise<LlmJob> {
+  const targetPolicy = isLlmRouteTargetAllowed({
+    callerTeam: payload.callerTeam || context.callerTeam || null,
+    agent: payload.agent || context.agent || null,
+    selectorKey: payload.selectorKey || null,
+  });
+  if (!targetPolicy.ok) {
+    const error = new Error(targetPolicy.error || 'llm_route_target_blocked') as Error & {
+      code?: string;
+      target?: unknown;
+    };
+    error.code = targetPolicy.error || 'llm_route_target_blocked';
+    error.target = targetPolicy.target;
+    throw error;
+  }
   const job: LlmJob = {
     id: createJobId(),
     status: 'queued',

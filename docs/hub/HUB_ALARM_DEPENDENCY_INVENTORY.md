@@ -2,10 +2,10 @@
 
 This inventory tracks the Hub alarm migration surface. `hub_alarm_native` entries are the desired path; `retired_gateway_guard` entries are regression guards; `legacy_gateway_compat` entries are remaining migration targets and must stay at 0.
 
-- generated_at: 2026-05-05T05:04:49.432Z
-- total_matches: 310
-- unique_files: 153
-- hub_alarm_native: 297
+- generated_at: 2026-05-08T02:20:44.860Z
+- total_matches: 311
+- unique_files: 154
+- hub_alarm_native: 298
 - retired_gateway_guard: 13
 - legacy_gateway_compat: 0
 
@@ -112,7 +112,7 @@ This inventory tracks the Hub alarm migration surface. `hub_alarm_native` entrie
 - L204 [hub_alarm_native]: `'../../../packages/core/lib/hub-alarm-client': {`
 
 ### `bots/claude/__tests__/commander.test.ts`
-- L53 [hub_alarm_native]: `'../../../packages/core/lib/hub-alarm-client': {`
+- L61 [hub_alarm_native]: `'../../../packages/core/lib/hub-alarm-client': {`
 
 ### `bots/claude/__tests__/e2e/full-flow.test.ts`
 - L21 [hub_alarm_native]: `'../../../packages/core/lib/hub-alarm-client': { postAlarm: async () => {} },`
@@ -241,9 +241,9 @@ This inventory tracks the Hub alarm migration surface. `hub_alarm_native` entrie
 - L25 [hub_alarm_native]: `const limit = Math.max(1, Number(process.env.HUB_ALARM_INTERPRETER_LLM_DAILY_LIMIT || 200) || 200);`
 
 ### `bots/hub/lib/alarm/alarm-roundtable-engine.ts`
-- L91 [hub_alarm_native]: `const raw = String(process.env.HUB_ALARM_ROUNDTABLE_ENABLED || '').trim().toLowerCase();`
-- L101 [hub_alarm_native]: `const limit = Math.max(1, Number(process.env.HUB_ALARM_ROUNDTABLE_DAILY_LIMIT || 10) || 10);`
-- L170 [hub_alarm_native]: `const threshold = Math.max(1, Number(process.env.HUB_ALARM_ROUNDTABLE_TRIGGER_FINGERPRINT_THRESHOLD || 3) || 3);`
+- L135 [hub_alarm_native]: `const raw = String(process.env.HUB_ALARM_ROUNDTABLE_ENABLED || '').trim().toLowerCase();`
+- L145 [hub_alarm_native]: `const limit = Math.max(1, Number(process.env.HUB_ALARM_ROUNDTABLE_DAILY_LIMIT || 10) || 10);`
+- L215 [hub_alarm_native]: `const threshold = Math.max(1, Number(process.env.HUB_ALARM_ROUNDTABLE_TRIGGER_FINGERPRINT_THRESHOLD || 3) || 3);`
 
 ### `bots/hub/lib/alarm/auto-dev-incident.ts`
 - L209 [hub_alarm_native]: `const dir = process.env.HUB_ALARM_AUTO_DEV_DIR || DEFAULT_AUTO_DEV_DIR;`
@@ -300,16 +300,16 @@ This inventory tracks the Hub alarm migration surface. `hub_alarm_native` entrie
 ### `bots/hub/scripts/alarm-activation-stage3-smoke.ts`
 - L62 [hub_alarm_native]: `await withEnv({ HUB_ALARM_ROUNDTABLE_ENABLED: 'false' }, async () => {`
 - L66 [hub_alarm_native]: `await withEnv({ HUB_ALARM_ROUNDTABLE_ENABLED: 'true' }, async () => {`
-- L156 [hub_alarm_native]: `HUB_ALARM_DISPATCH_MODE: 'autonomous',`
-- L157 [hub_alarm_native]: `HUB_ALARM_LLM_CLASSIFIER_ENABLED: 'true',`
-- L158 [hub_alarm_native]: `HUB_ALARM_INTERPRETER_ENABLED: 'true',`
-- L159 [hub_alarm_native]: `HUB_ALARM_ENRICHMENT_ENABLED: 'true',`
-- L160 [hub_alarm_native]: `HUB_ALARM_CRITICAL_TYPE_ENABLED: 'true',`
-- L161 [hub_alarm_native]: `HUB_ALARM_INTERPRETER_FAIL_OPEN: 'true',`
-- L162 [hub_alarm_native]: `HUB_ALARM_ROUNDTABLE_ENABLED: 'true',`
-- L163 [hub_alarm_native]: `HUB_ALARM_ROUNDTABLE_DAILY_LIMIT: '10',`
-- L164 [hub_alarm_native]: `HUB_ALARM_ROUNDTABLE_TRIGGER_FINGERPRINT_THRESHOLD: '3',`
-- L165 [hub_alarm_native]: `HUB_ALARM_USE_CLASS_TOPICS: 'true',`
+- L166 [hub_alarm_native]: `HUB_ALARM_DISPATCH_MODE: 'autonomous',`
+- L167 [hub_alarm_native]: `HUB_ALARM_LLM_CLASSIFIER_ENABLED: 'true',`
+- L168 [hub_alarm_native]: `HUB_ALARM_INTERPRETER_ENABLED: 'true',`
+- L169 [hub_alarm_native]: `HUB_ALARM_ENRICHMENT_ENABLED: 'true',`
+- L170 [hub_alarm_native]: `HUB_ALARM_CRITICAL_TYPE_ENABLED: 'true',`
+- L171 [hub_alarm_native]: `HUB_ALARM_INTERPRETER_FAIL_OPEN: 'true',`
+- L172 [hub_alarm_native]: `HUB_ALARM_ROUNDTABLE_ENABLED: 'true',`
+- L173 [hub_alarm_native]: `HUB_ALARM_ROUNDTABLE_DAILY_LIMIT: '10',`
+- L174 [hub_alarm_native]: `HUB_ALARM_ROUNDTABLE_TRIGGER_FINGERPRINT_THRESHOLD: '3',`
+- L175 [hub_alarm_native]: `HUB_ALARM_USE_CLASS_TOPICS: 'true',`
 
 ### `bots/hub/scripts/alarm-auto-repair-stale-scan.ts`
 - L5 [hub_alarm_native]: `const { postAlarm } = require('../../../packages/core/lib/hub-alarm-client');`
@@ -526,6 +526,9 @@ This inventory tracks the Hub alarm migration surface. `hub_alarm_native` entrie
 ### `bots/reservation/tsconfig.json`
 - L23 [hub_alarm_native]: `"../../packages/core/lib/hub-alarm-client.ts",`
 
+### `bots/sigma/scripts/sigma-alarm-dispatch.ts`
+- L4 [hub_alarm_native]: `const hubAlarm = require('../../../packages/core/lib/hub-alarm-client.js') as {`
+
 ### `bots/sigma/ts/src/sigma-daily-report.ts`
 - L19 [hub_alarm_native]: `const hubAlarm = require(path.join(PROJECT_ROOT, 'packages/core/lib/hub-alarm-client.js'));`
 
@@ -551,7 +554,7 @@ This inventory tracks the Hub alarm migration surface. `hub_alarm_native` entrie
 
 ### `packages/core/lib/hub-alarm-client.ts`
 - L2 [hub_alarm_native]: `* packages/core/lib/hub-alarm-client.js — Hub alarm 클라이언트`
-- L15 [hub_alarm_native]: `const HUB_ALARM_TIMEOUT_MS = Math.max(1000, Number(process.env.HUB_ALARM_TIMEOUT_MS || 5000) || 5000);`
+- L15 [hub_alarm_native]: `const HUB_ALARM_TIMEOUT_MS = Math.max(1000, Number(process.env.HUB_ALARM_TIMEOUT_MS || 15000) || 15000);`
 - L16 [hub_alarm_native]: `const HUB_ALARM_CLIENT_CIRCUIT_FAILURES = Math.max(`
 - L18 [hub_alarm_native]: `Number(process.env.HUB_ALARM_CLIENT_CIRCUIT_FAILURES || 5) || 5,`
 - L20 [hub_alarm_native]: `const HUB_ALARM_CLIENT_CIRCUIT_COOLDOWN_MS = Math.max(`
@@ -559,20 +562,20 @@ This inventory tracks the Hub alarm migration surface. `hub_alarm_native` entrie
 - L24 [hub_alarm_native]: `const HUB_ALARM_WARN_THROTTLE_MS = Math.max(`
 - L26 [hub_alarm_native]: `Number(process.env.HUB_ALARM_WARN_THROTTLE_MS || 60_000) || 60_000,`
 - L30 [hub_alarm_native]: `const RECENT_ALERT_SNAPSHOT_PATH = String(process.env.HUB_ALARM_RECENT_ALERTS_PATH || '').trim()`
-- L171 [hub_alarm_native]: `if (_hubAlarmConsecutiveFailures >= HUB_ALARM_CLIENT_CIRCUIT_FAILURES) {`
-- L172 [hub_alarm_native]: `_hubAlarmCircuitOpenUntil = Date.now() + HUB_ALARM_CLIENT_CIRCUIT_COOLDOWN_MS;`
-- L180 [hub_alarm_native]: `if (now - lastAt < HUB_ALARM_WARN_THROTTLE_MS) return;`
-- L182 [hub_alarm_native]: `console.warn(`[hub-alarm-client] hub alarm failed: ${message}`);`
-- L215 [hub_alarm_native]: `const classMode = _readBooleanEnv('HUB_ALARM_USE_CLASS_TOPICS')`
-- L217 [hub_alarm_native]: `&& !_readFalseBooleanEnv('HUB_ALARM_USE_CLASS_TOPICS'));`
-- L279 [hub_alarm_native]: `if (_readBooleanEnv('HUB_ALARM_USE_CLASS_TOPICS')) return true;`
-- L280 [hub_alarm_native]: `if (_readFalseBooleanEnv('HUB_ALARM_USE_CLASS_TOPICS')) return false;`
-- L614 [hub_alarm_native]: `signal: AbortSignal.timeout(HUB_ALARM_TIMEOUT_MS),`
-- L655 [hub_alarm_native]: `console.warn(`[hub-alarm-client] recent alert snapshot 저장 실패: ${(error as Error).message}`);`
-- L688 [hub_alarm_native]: `console.warn('[hub-alarm-client] inline telegram 발송 실패: bot token/group id 미설정');`
-- L717 [hub_alarm_native]: `console.warn(`[hub-alarm-client] inline telegram 429 — ${delayMs}ms 후 재시도`);`
-- L728 [hub_alarm_native]: `console.warn(`[hub-alarm-client] inline telegram 실패: ${error.message}`);`
-- L778 [hub_alarm_native]: `const hubDirectBlocked = _readBooleanEnv('HUB_ALARM_SKIP_DIRECT');`
+- L190 [hub_alarm_native]: `if (_hubAlarmConsecutiveFailures >= HUB_ALARM_CLIENT_CIRCUIT_FAILURES) {`
+- L191 [hub_alarm_native]: `_hubAlarmCircuitOpenUntil = Date.now() + HUB_ALARM_CLIENT_CIRCUIT_COOLDOWN_MS;`
+- L199 [hub_alarm_native]: `if (now - lastAt < HUB_ALARM_WARN_THROTTLE_MS) return;`
+- L201 [hub_alarm_native]: `console.warn(`[hub-alarm-client] hub alarm failed: ${message}`);`
+- L234 [hub_alarm_native]: `const classMode = _readBooleanEnv('HUB_ALARM_USE_CLASS_TOPICS')`
+- L236 [hub_alarm_native]: `&& !_readFalseBooleanEnv('HUB_ALARM_USE_CLASS_TOPICS'));`
+- L298 [hub_alarm_native]: `if (_readBooleanEnv('HUB_ALARM_USE_CLASS_TOPICS')) return true;`
+- L299 [hub_alarm_native]: `if (_readFalseBooleanEnv('HUB_ALARM_USE_CLASS_TOPICS')) return false;`
+- L633 [hub_alarm_native]: `signal: AbortSignal.timeout(HUB_ALARM_TIMEOUT_MS),`
+- L695 [hub_alarm_native]: `console.warn(`[hub-alarm-client] recent alert snapshot 저장 실패: ${(error as Error).message}`);`
+- L728 [hub_alarm_native]: `console.warn('[hub-alarm-client] inline telegram 발송 실패: bot token/group id 미설정');`
+- L757 [hub_alarm_native]: `console.warn(`[hub-alarm-client] inline telegram 429 — ${delayMs}ms 후 재시도`);`
+- L768 [hub_alarm_native]: `console.warn(`[hub-alarm-client] inline telegram 실패: ${error.message}`);`
+- L823 [hub_alarm_native]: `const hubDirectBlocked = _readBooleanEnv('HUB_ALARM_SKIP_DIRECT');`
 
 ### `packages/core/lib/reporting-hub.ts`
 - L3 [hub_alarm_native]: `const hubAlarmClient = require('./hub-alarm-client');`
