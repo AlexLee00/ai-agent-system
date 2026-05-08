@@ -155,6 +155,7 @@ export async function runDecisionExecutionStateMachine({
   let midGapPromoted = 0;
   let midGapRejectedByRisk = 0;
   let invalidSignalSkipped = 0;
+  let missingPositionSellSkipped = 0;
   let portfolioDecision = null;
   let exitPhaseEvaluated = 0;
   let exitPhaseSellSignals = 0;
@@ -196,6 +197,7 @@ export async function runDecisionExecutionStateMachine({
       midGapPromoted,
       midGapRejectedByRisk,
       invalidSignalSkipped,
+      missingPositionSellSkipped,
       exitPhaseEvaluated,
       exitPhaseSellSignals,
       exitPhaseExecuted,
@@ -231,6 +233,11 @@ export async function runDecisionExecutionStateMachine({
   }
 
   const openPositions = await db.getOpenPositions(exchange, false, investmentTradeMode).catch(() => []);
+  const liveHeldSymbols = new Set(
+    (await db.getOpenPositions(exchange, false).catch(() => []))
+      .map((row) => String(row?.symbol || '').trim())
+      .filter(Boolean),
+  );
   if (openPositions.length > 0) {
     console.log(`\n🔴 [EXIT Phase] ${openPositions.length}개 보유 포지션 청산 판단...`);
     try {
@@ -530,6 +537,21 @@ export async function runDecisionExecutionStateMachine({
   const results = [...exitResults];
   for (const dec of (portfolioDecision.decisions || [])) {
     if (dec.action === ACTIONS.HOLD) continue;
+    if (dec.action === ACTIONS.SELL && !liveHeldSymbols.has(String(dec.symbol || '').trim())) {
+      missingPositionSellSkipped++;
+      console.log(`⏭️ [ENTRY SELL skip] ${dec.symbol} live 포지션 없음 — SELL 신호 생성 차단`);
+      results.push({
+        symbol: dec.symbol,
+        action: dec.action,
+        confidence: dec.confidence,
+        reasoning: dec.reasoning,
+        adjustedAmount: null,
+        signalId: null,
+        skipped: true,
+        skipReason: 'missing_position_preflight',
+      });
+      continue;
+    }
     const runtimeMinConf = getMinConfidence(exchange);
     const minConf = exchange === 'binance'
       ? Math.min(params?.minSignalScore ?? runtimeMinConf, runtimeMinConf)
