@@ -353,6 +353,7 @@
     "runtime:position-signal-refresh": "node scripts/runtime-position-signal-refresh.ts --json",
     "runtime:position-signal-refresh-smoke": "node scripts/position-signal-refresh-smoke.ts --json",
     "runtime:position-chart-exit-policy-smoke": "node scripts/position-chart-exit-policy-smoke.ts",
+    "runtime:signal-concurrent-position-guard-smoke": "node scripts/signal-concurrent-position-guard-smoke.ts --json",
     "runtime:dynamic-position-sizer-smoke": "node scripts/dynamic-position-sizer-smoke.ts --json",
     "runtime:dynamic-trail-engine-smoke": "node scripts/dynamic-trail-engine-smoke.ts --json",
     "runtime:portfolio-monitor-reflexive-smoke": "node scripts/portfolio-monitor-reflexive-smoke.ts --json",

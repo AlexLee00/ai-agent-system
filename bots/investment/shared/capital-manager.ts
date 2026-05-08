@@ -55,6 +55,12 @@ function applyLunaLiveFireCaps(policy = {}) {
   return patched;
 }
 
+export function hasOpenPositionForSymbol(positions = [], symbol = '') {
+  const target = String(symbol || '').trim().toUpperCase();
+  if (!target) return false;
+  return positions.some((position) => String(position?.symbol || '').trim().toUpperCase() === target);
+}
+
 // ─── 설정 로드 ───────────────────────────────────────────────────────
 
 function loadCapitalConfig() {
@@ -812,7 +818,8 @@ export async function preTradeCheck(symbol, direction, estimatedAmount = 0, exch
 
     // 3. 동시 포지션 제한
     const openPositions = await getOpenPositions(exchange, false, effectiveTradeMode);
-    if (openPositions.length >= policy.max_concurrent_positions) {
+    const opensNewConcurrentPosition = !hasOpenPositionForSymbol(openPositions, symbol);
+    if (opensNewConcurrentPosition && openPositions.length >= policy.max_concurrent_positions) {
       return { allowed: false, reason: `최대 포지션 도달: ${openPositions.length}/${policy.max_concurrent_positions}` };
     }
   }

@@ -140,6 +140,12 @@ function roundAdjustedOrderAmount(exchange, amount) {
   return Math.round(numeric * 100) / 100;
 }
 
+export function hasOpenPositionForSymbol(positions = [], symbol = '') {
+  const target = String(symbol || '').trim().toUpperCase();
+  if (!target) return false;
+  return positions.some((position) => String(position?.symbol || '').trim().toUpperCase() === target);
+}
+
 function getSignalSafetySoftening(signal) {
   const executionConfig = getInvestmentExecutionRuntimeConfig();
   const exchange = signal.exchange || 'binance';
@@ -278,7 +284,8 @@ export async function checkSafetyGates(signal) {
     }
 
     // 원칙 3 — 동시 포지션 ≤ config.max_concurrent_positions
-    if (positions.length >= maxPositions) {
+    const opensNewConcurrentPosition = !hasOpenPositionForSymbol(positions, symbol);
+    if (opensNewConcurrentPosition && positions.length >= maxPositions) {
       return { passed: false, reason: `원칙3 위반: 동시 포지션 한도 (현재 ${positions.length}개, 최대 ${maxPositions}개)` };
     }
   }
