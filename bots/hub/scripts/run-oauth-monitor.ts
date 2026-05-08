@@ -880,19 +880,14 @@ async function runGeminiCliLiveRefreshProbe() {
     return { ok: false, skipped: true, error: 'live_probe_disabled' };
   }
   try {
+    const probeModel = String(process.env.GEMINI_CLI_MONITOR_PROBE_MODEL || '').trim();
+    if (probeModel) process.env.LLM_GEMINI_FLASH_LITE_MODEL = probeModel;
     const { callWithFallback } = await import('../lib/llm/unified-caller.ts');
     const started = Date.now();
     const result = await callWithFallback({
       callerTeam: 'hub',
       agent: 'oauth-monitor',
       selectorKey: 'hub.oauth.gemini_cli.expiry_probe',
-      chain: [{
-        provider: 'gemini-cli-oauth',
-        model: process.env.GEMINI_CLI_MONITOR_PROBE_MODEL || 'gemini-cli-oauth/gemini-2.5-flash-lite',
-        maxTokens: 24,
-        temperature: 0,
-        timeoutMs: Number(process.env.GEMINI_CLI_MONITOR_PROBE_TIMEOUT_MS || 30_000),
-      }],
       systemPrompt: 'You are an OAuth readiness probe. Do not reveal secrets.',
       prompt: 'Reply exactly: gemini oauth ok',
       timeoutMs: Number(process.env.GEMINI_CLI_MONITOR_PROBE_TIMEOUT_MS || 30_000),

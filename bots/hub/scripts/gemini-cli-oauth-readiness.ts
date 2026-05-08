@@ -89,18 +89,13 @@ function projectFromRecord(record: any): string {
 }
 
 async function runLiveProbe() {
+  const readinessModel = String(process.env.GEMINI_CLI_READINESS_MODEL || '').trim();
+  if (readinessModel) process.env.LLM_GEMINI_FLASH_MODEL = readinessModel;
   const { callWithFallback } = await import('../lib/llm/unified-caller.ts');
   return callWithFallback({
     callerTeam: 'orchestrator',
     agent: 'steward',
     selectorKey: 'hub.gemini.cli.readiness.live',
-    chain: [{
-      provider: 'gemini-cli-oauth',
-      model: process.env.GEMINI_CLI_READINESS_MODEL || 'gemini-cli-oauth/gemini-2.5-flash',
-      maxTokens: 32,
-      temperature: 0,
-      timeoutMs: Number(process.env.GEMINI_CLI_READINESS_TIMEOUT_MS || 30_000),
-    }],
     systemPrompt: 'You are a readiness probe. Do not reveal secrets.',
     prompt: 'Reply exactly: gemini cli ok',
     timeoutMs: Number(process.env.GEMINI_CLI_READINESS_TIMEOUT_MS || 30_000),

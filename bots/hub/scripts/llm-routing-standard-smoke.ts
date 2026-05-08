@@ -150,8 +150,12 @@ function main() {
   const lunaDefault = selector.describeAgentModel('luna', 'default');
   assert.equal(
     lunaDefault?.chain?.[0]?.provider,
-    'openai-oauth',
-    'luna/default must start with the cost-balanced OpenAI OAuth route',
+    'groq',
+    'luna/default must start with the role-balanced Groq route and keep OpenAI as fallback only',
+  );
+  assert.ok(
+    lunaDefault?.chain?.some((entry) => entry.provider === 'openai-oauth'),
+    'luna/default must keep OpenAI OAuth as a safety fallback',
   );
 
   for (const agent of REQUIRED_ORCHESTRATOR_AGENTS) {
@@ -162,12 +166,12 @@ function main() {
   const orchestratorSummary = selector.describeAgentModel('orchestrator', 'summary');
   assert.equal(
     orchestratorSummary?.chain?.[0]?.provider,
-    'openai-oauth',
-    'orchestrator/summary must start with the stable OpenAI OAuth summary route',
+    'gemini-cli-oauth',
+    'orchestrator/summary must start with the low-cost Gemini CLI OAuth summary route',
   );
   assert.ok(
-    orchestratorSummary?.chain?.some((entry) => entry.provider === 'gemini-cli-oauth'),
-    'orchestrator/summary must keep Gemini CLI OAuth as a low-cost fallback route',
+    orchestratorSummary?.chain?.some((entry) => entry.provider === 'openai-oauth'),
+    'orchestrator/summary must keep OpenAI OAuth as a safety fallback route',
   );
 
   const hubClient = require('../../../packages/core/lib/hub-client');

@@ -28,23 +28,23 @@ async function main() {
   assert(runtimeSummary, 'orchestrator.summary runtime profile is required');
   assert.equal(
     runtimeSummary.primary_routes?.[0],
-    'openai-oauth/gpt-5.4-mini',
-    'orchestrator.summary runtime primary must use the stable OpenAI OAuth summary route',
+    'gemini-cli-oauth/gemini-2.5-flash',
+    'orchestrator.summary runtime primary must use the low-cost Gemini summary route',
   );
   assert(
-    runtimeSummary.fallback_routes?.includes('gemini-cli-oauth/gemini-2.5-flash'),
-    'orchestrator.summary runtime must keep Gemini CLI OAuth as a low-cost fallback',
+    runtimeSummary.fallback_routes?.includes('openai-oauth/gpt-5.4-mini'),
+    'orchestrator.summary runtime must keep OpenAI OAuth as a safety fallback',
   );
 
   const selected = selector.describeAgentModel('orchestrator', 'summary');
   assert.equal(
     firstProviderFromSelector(selected),
-    'openai-oauth',
-    'orchestrator/summary selector primary must use the stable OpenAI OAuth summary route',
+    'gemini-cli-oauth',
+    'orchestrator/summary selector primary must use the low-cost Gemini summary route',
   );
   assert(
-    hasProvider(selected, 'gemini-cli-oauth'),
-    'orchestrator/summary selector must keep Gemini CLI OAuth fallback',
+    hasProvider(selected, 'openai-oauth'),
+    'orchestrator/summary selector must keep OpenAI OAuth fallback',
   );
   assert(
     hasProvider(selected, 'groq'),
@@ -59,8 +59,8 @@ async function main() {
   console.log(JSON.stringify({
     ok: true,
     runtime_profile: 'orchestrator.summary',
-    primary_provider: 'openai-oauth',
-    fallbacks: ['gemini-cli-oauth', 'groq'],
+    primary_provider: 'gemini-cli-oauth',
+    fallbacks: ['groq', 'openai-oauth'],
   }));
 }
 

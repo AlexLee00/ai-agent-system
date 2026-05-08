@@ -1,7 +1,6 @@
 'use strict';
 
-const { callWithFallback } = require('../../../../packages/core/lib/llm-fallback');
-const { selectLLMChain } = require('../../../../packages/core/lib/llm-model-selector');
+const { callWithFallback } = require('../llm/unified-caller');
 
 const ALARM_TYPES = ['work', 'report', 'error', 'critical'] as const;
 type AlarmType = (typeof ALARM_TYPES)[number];
@@ -58,13 +57,6 @@ export async function classifyAlarmWithLLM({
   if (!isEnabled()) return null;
   if (!checkAndIncrementDailyCount()) return null;
 
-  let chain: any[];
-  try {
-    chain = selectLLMChain('hub.alarm.classifier');
-  } catch {
-    return null;
-  }
-
   const userPrompt = [
     `team: ${team}`,
     `severity: ${severity}`,
@@ -75,13 +67,17 @@ export async function classifyAlarmWithLLM({
 
   try {
     const result = await callWithFallback({
-      chain,
+      selectorKey: 'hub.alarm.classifier',
+      callerTeam: 'hub',
+      agent: 'alarm-classifier',
+      taskType: 'alarm_classification',
       systemPrompt: SYSTEM_PROMPT,
-      userPrompt,
+      prompt: userPrompt,
       logMeta: { team: 'hub', bot: 'alarm-classifier', requestType: 'alarm_classification', selectorKey: 'hub.alarm.classifier' },
     });
-    if (!result?.text) return null;
-    const text = result.text.trim().replace(/^```json\s*/i, '').replace(/\s*```$/i, '');
+    const output = result?.result || result?.text || '';
+    if (!output) return null;
+    const text = output.trim().replace(/^```json\s*/i, '').replace(/\s*```$/i, '');
     const parsed = JSON.parse(text);
     let type = ALARM_TYPES.includes(parsed?.type) ? (parsed.type as AlarmType) : null;
     if (!type) return null;

@@ -12,6 +12,8 @@
 		<string>production</string>
 		<key>PATH</key>
 		<string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+		<key>CLAUDE_COMMANDER_MODEL</key>
+		<string>openai-oauth/gpt-5.4</string>
 		<key>PG_DIRECT</key>
 		<string>true</string>
 	</dict>

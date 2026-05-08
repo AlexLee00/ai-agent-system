@@ -38,7 +38,6 @@ console.log(JSON.stringify({
       callerTeam: 'orchestrator',
       agent: 'steward',
       selectorKey: 'hub.gemini.cli.adapter.smoke',
-      chain: [{ provider: 'gemini-cli-oauth', model: 'gemini-cli-oauth/gemini-2.5-pro', maxTokens: 64, temperature: 0 }],
       systemPrompt: 'You are a smoke test.',
       prompt: 'Reply with adapter ok.',
       timeoutMs: 5_000,

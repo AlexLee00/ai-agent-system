@@ -2,8 +2,7 @@
 
 const pgPool = require('../../../../packages/core/lib/pg-pool');
 const telegramSender = require('../../../../packages/core/lib/telegram-sender');
-const { callWithFallback } = require('../../../../packages/core/lib/llm-fallback');
-const { selectLLMChain } = require('../../../../packages/core/lib/llm-model-selector');
+const { callWithFallback } = require('../llm/unified-caller');
 const { isExpectedIdleService, isOptionalService } = require('../../../../packages/core/lib/service-ownership');
 
 let dailyCount = 0;
@@ -231,14 +230,16 @@ async function callParticipant({
   participantName: string;
 }): Promise<string | null> {
   try {
-    const chain = selectLLMChain(selectorKey);
     const result = await callWithFallback({
-      chain,
+      selectorKey,
+      callerTeam: 'hub',
+      agent: `roundtable-${participantName}`,
+      taskType: 'alarm_roundtable',
       systemPrompt,
-      userPrompt,
+      prompt: userPrompt,
       logMeta: { team: 'hub', bot: `roundtable-${participantName}`, requestType: 'alarm_roundtable', selectorKey },
     });
-    return result?.text?.trim() || null;
+    return (result?.result || result?.text || '').trim() || null;
   } catch {
     return null;
   }

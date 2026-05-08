@@ -11,10 +11,7 @@
 
 import { createRequire } from 'module';
 import { resolveHubRoutingPlan } from './agent-llm-routing.ts';
-import {
-  buildRouteHealthAvoidance,
-  reorderChainForRouteHealth,
-} from './agent-llm-route-health.ts';
+import { buildRouteHealthAvoidance } from './agent-llm-route-health.ts';
 import { injectMemoryIntoSystemPrompt } from './agent-memory-orchestrator.ts';
 import { recordLLMFailure, getAvoidProviders } from './reflexion-guard.ts';
 import { recordInvocation } from './agent-curriculum-tracker.ts';
@@ -161,9 +158,6 @@ export function buildHubLlmCallPayload(
     : Array.isArray(options.avoidProviders)
       ? options.avoidProviders
     : [];
-  const chain = routeHealthAvoidProviders.length > 0
-    ? reorderChainForRouteHealth(routingPlan.chain, routeHealthAvoidProviders)
-    : routingPlan.chain;
   const urgency = normalizeHubUrgency(options.urgency ?? (agentName === 'luna' ? 'high' : 'normal'));
   const payload: Record<string, unknown> = {
     prompt:        userPrompt,
@@ -174,7 +168,7 @@ export function buildHubLlmCallPayload(
     callerTeam:    options.callerTeam || getHubCallerTeam(),
     urgency,
     taskType:      options.taskType || 'trade_signal',
-    selectorKey:   'investment.agent_policy',
+    selectorKey:   routingPlan.selectorKey || 'investment._default',
     market:        options.market || null,
     symbol:        options.symbol || null,
     maxTokens:     options.maxTokens,
@@ -184,9 +178,11 @@ export function buildHubLlmCallPayload(
     payload.cacheEnabled = true;
     payload.cacheType = 'sentiment_realtime';
   }
-  if (Array.isArray(chain) && chain.length > 0) {
-    payload.chain = chain;
+  if (routeHealthAvoidProviders.length > 0) {
+    payload.avoidProviders = routeHealthAvoidProviders;
   }
+  // Hub owns selector-chain materialization. Luna only passes selectorKey and
+  // provider avoidance hints so model changes stay centralized in the selector.
   return payload;
 }
 
@@ -271,11 +267,6 @@ export async function callViaHub(
     chainAvoidProviders,
     timeoutMs: options.timeoutMs,
   });
-
-  // Hard avoid는 Reflexion/명시 옵션만 Hub에 전달하고, route-health는 chain reorder로만 적용한다.
-  if (hardAvoidProviders.length > 0) {
-    (payload as any).avoidProviders = hardAvoidProviders;
-  }
 
   const body = JSON.stringify(payload);
 

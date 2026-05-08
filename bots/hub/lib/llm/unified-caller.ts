@@ -1,8 +1,7 @@
 'use strict';
 
-// Unified LLM Caller — Runtime-profile chain + Circuit Breaker + Fallback Exhaustion
-// Priority: claude-code/ → groq/ → local/ (based on team/agent profile)
-// Legacy (no team/agent): Claude Code → Groq 2-step
+// Unified LLM Caller — Hub selector chain + Circuit Breaker + Fallback Exhaustion
+// Route decision authority lives in packages/core/lib/llm-model-selector.ts.
 
 const crypto = require('node:crypto');
 
@@ -88,7 +87,17 @@ async function _callWithFallbackInternal(req) {
     }
   }
 
-  // 2. Build chain from the Hub selector registry, runtime-profiles, or legacy 2-step.
+  // 2. Build chain from the Hub selector registry. Runtime profiles only map
+  // team/purpose to selector keys; they do not own model selection.
+  if (_hasAdhocChain(req) && !_adhocChainAllowed()) {
+    return {
+      ok: false,
+      provider: 'failed',
+      durationMs: 0,
+      error: 'llm_adhoc_chain_blocked',
+      fallbackCount: 0,
+    };
+  }
   const selectorChain = _resolveSelectorChain(req, team);
   if (selectorChain) {
     return _callWithSelectorChain(req, selectorChain, team);
@@ -100,7 +109,14 @@ async function _callWithFallbackInternal(req) {
   if (hasChain) {
     return _callWithProfileChain(req, profile, team);
   }
-  return _callLegacy(req, team);
+  if (process.env.HUB_LLM_ALLOW_LEGACY_CHAIN === 'true') return _callLegacy(req, team);
+  return {
+    ok: false,
+    provider: 'failed',
+    durationMs: 0,
+    error: 'llm_selector_chain_required',
+    fallbackCount: 0,
+  };
 }
 
 function _inflightDedupeEnabled(req) {
@@ -153,8 +169,9 @@ async function _runWithInflightDedupe(req, executor) {
 
 function _resolveSelectorChain(req, team) {
   try {
-    if (Array.isArray(req.chain) && req.chain.length > 0) {
-      return { selectorKey: req.selectorKey || 'hub.adhoc.chain', chain: req.chain };
+    if (_hasAdhocChain(req) && !_adhocChainAllowed()) return null;
+    if (_hasAdhocChain(req)) {
+      return _applySelectorAvoidProviders(req, { selectorKey: req.selectorKey || 'hub.adhoc.chain', chain: req.chain });
     }
     if (req.selectorKey) {
       const chain = selectLLMChain(String(req.selectorKey), {
@@ -164,18 +181,68 @@ function _resolveSelectorChain(req, team) {
         groqModel: req.groqModel,
         configuredProviders: req.configuredProviders,
       });
-      return chain && chain.length ? { selectorKey: String(req.selectorKey), chain } : null;
+      return chain && chain.length ? _applySelectorAvoidProviders(req, { selectorKey: String(req.selectorKey), chain }) : null;
     }
     if (req.agent) {
       const resolved = describeAgentModel(team, String(req.agent));
       if (resolved?.selected && Array.isArray(resolved.chain) && resolved.chain.length > 0) {
-        return { selectorKey: resolved.selectorKey, chain: resolved.chain };
+        return _applySelectorAvoidProviders(req, { selectorKey: resolved.selectorKey, chain: resolved.chain });
       }
+    }
+    const profileName = req.agent || 'default';
+    const profile = selectRuntimeProfile(team, profileName);
+    if (profile?.selector_key) {
+      const chain = selectLLMChain(String(profile.selector_key), {
+        maxTokens: req.maxTokens ?? profile.max_tokens,
+        temperature: req.temperature ?? profile.temperature,
+        agentName: profile.selector_agent || req.agent,
+        ...(profile.selector_options || {}),
+      });
+      if (chain?.length) {
+        return _applySelectorAvoidProviders(req, {
+          selectorKey: String(profile.selector_key),
+          runtimeProfile: `${team}.${profileName}`,
+          chain,
+        });
+      }
+    }
+    if (!req.selectorKey && !req.agent) {
+      const chain = selectLLMChain('hub._default', {
+        maxTokens: req.maxTokens,
+        temperature: req.temperature,
+      });
+      if (chain?.length) return _applySelectorAvoidProviders(req, { selectorKey: 'hub._default', runtimeProfile: 'hub.default', chain });
     }
   } catch (e) {
     console.warn(`[llm/unified] selector chain 해석 실패 (${team}/${req.agent || req.selectorKey || 'unknown'}): ${e.message}`);
   }
   return null;
+}
+
+function _hasAdhocChain(req) {
+  return Array.isArray(req?.chain) && req.chain.length > 0;
+}
+
+function _adhocChainAllowed() {
+  return _truthyEnv('HUB_LLM_ALLOW_ADHOC_CHAIN');
+}
+
+function _applySelectorAvoidProviders(req, selectorChain) {
+  const avoidProviders = Array.isArray(req?.avoidProviders)
+    ? req.avoidProviders.map((item) => String(item || '').trim().toLowerCase()).filter(Boolean)
+    : [];
+  if (!avoidProviders.length || !Array.isArray(selectorChain?.chain)) return selectorChain;
+
+  const avoid = new Set(avoidProviders);
+  const preferred = [];
+  const avoided = [];
+  for (const entry of selectorChain.chain) {
+    const provider = String(entry?.provider || _routeToProvider(_chainEntryToRoute(entry))).trim().toLowerCase();
+    if (avoid.has(provider)) avoided.push(entry);
+    else preferred.push(entry);
+  }
+  if (!preferred.length) return { ...selectorChain, avoidedProviders: avoidProviders };
+  return { ...selectorChain, chain: preferred.concat(avoided), avoidedProviders: avoidProviders };
 }
 
 async function _callWithSelectorChain(req, selectorChain, team) {
@@ -193,6 +260,7 @@ async function _callWithSelectorChain(req, selectorChain, team) {
         provider: _routeToProvider(selectedRoute),
         selected_route: selectedRoute,
         selectorKey: selectorChain.selectorKey,
+        runtimeProfile: selectorChain.runtimeProfile || null,
         fallbackCount: attempts.length,
         attempted_providers: attempts.map(a => a.provider),
       };
@@ -210,6 +278,7 @@ async function _callWithSelectorChain(req, selectorChain, team) {
     attempted_providers: attempts.map(a => a.provider),
     fallbackCount: attempts.length,
     selectorKey: selectorChain.selectorKey,
+    runtimeProfile: selectorChain.runtimeProfile || null,
   };
 }
 
@@ -603,5 +672,7 @@ module.exports = {
     _inflightDedupeSize: () => inFlightDedupe.size,
     _normalizeRoute,
     _providerCircuitKey,
+    _resolveSelectorChain,
+    _adhocChainAllowed,
   },
 };

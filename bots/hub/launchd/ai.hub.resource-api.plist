@@ -27,6 +27,22 @@
     <string>100</string>
     <key>LLM_TEAM_SELECTOR_VERSION_PCT</key>
     <string>100</string>
+    <key>LLM_OPENAI_PERF_MODEL</key>
+    <string>gpt-5.4</string>
+    <key>LLM_OPENAI_MINI_MODEL</key>
+    <string>gpt-5.4-mini</string>
+    <key>LLM_GROQ_FAST_MODEL</key>
+    <string>llama-3.1-8b-instant</string>
+    <key>LLM_GROQ_DEEP_MODEL</key>
+    <string>qwen/qwen3-32b</string>
+    <key>LLM_GEMINI_FLASH_MODEL</key>
+    <string>gemini-cli-oauth/gemini-2.5-flash</string>
+    <key>LLM_GEMINI_FLASH_LITE_MODEL</key>
+    <string>gemini-cli-oauth/gemini-2.5-flash-lite</string>
+    <key>LLM_CLAUDE_CODE_REPLACEMENT_MODEL</key>
+    <string>openai-oauth/gpt-5.4</string>
+    <key>LLM_CLAUDE_CODE_SONNET_REPLACEMENT</key>
+    <string>openai-oauth/gpt-5.4</string>
     <key>GEMINI_OAUTH_PROJECT_ID</key>
     <string>gen-lang-client-0627707293</string>
     <key>PATH</key>

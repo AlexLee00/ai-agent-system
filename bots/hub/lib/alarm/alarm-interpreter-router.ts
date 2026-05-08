@@ -1,7 +1,6 @@
 'use strict';
 
-const { callWithFallback } = require('../../../../packages/core/lib/llm-fallback');
-const { selectLLMChain } = require('../../../../packages/core/lib/llm-model-selector');
+const { callWithFallback } = require('../llm/unified-caller');
 
 let dailyCount = 0;
 let dailyResetDate = '';
@@ -83,13 +82,6 @@ export async function interpretAlarm({
 
   const config = INTERPRETER_CONFIGS[alarmType] || INTERPRETER_CONFIGS.work;
 
-  let chain: any[];
-  try {
-    chain = selectLLMChain(config.selectorKey);
-  } catch {
-    return null;
-  }
-
   const userPrompt = [
     `team: ${team}`,
     `severity: ${severity}`,
@@ -99,13 +91,17 @@ export async function interpretAlarm({
 
   try {
     const result = await callWithFallback({
-      chain,
+      selectorKey: config.selectorKey,
+      callerTeam: 'hub',
+      agent: `alarm-interpreter-${alarmType}`,
+      taskType: 'alarm_interpretation',
       systemPrompt: config.systemPrompt,
-      userPrompt,
+      prompt: userPrompt,
       logMeta: { team: 'hub', bot: `alarm-interpreter-${alarmType}`, requestType: 'alarm_interpretation', selectorKey: config.selectorKey },
     });
-    if (!result?.text) return isFailOpen() ? null : null;
-    const text = result.text.trim().replace(/^```json\s*/i, '').replace(/\s*```$/i, '');
+    const output = result?.result || result?.text || '';
+    if (!output) return isFailOpen() ? null : null;
+    const text = output.trim().replace(/^```json\s*/i, '').replace(/\s*```$/i, '');
     const parsed = JSON.parse(text);
     if (!parsed?.summary) return null;
     return {

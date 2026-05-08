@@ -66,8 +66,8 @@ function main(): void {
     () => {
       assert.equal(
         providerFromChain('investment.agent_policy', { agentName: 'default' }),
-        'openai-oauth',
-        'oauth4 selector without explicit percent must default to the cost-balanced v3 route, not legacy',
+        'groq',
+        'oauth4 selector without explicit percent must default to the role-balanced v3 route, not OpenAI-heavy legacy',
       );
     },
   );
@@ -173,9 +173,9 @@ function main(): void {
   };
 
   assert(shares.claudeCodePct >= 0 && shares.claudeCodePct <= 10, `claude-code share out of range: ${shares.claudeCodePct}%`);
-  assert(shares.openaiPct >= 60 && shares.openaiPct <= 75, `openai share out of range: ${shares.openaiPct}%`);
-  assert(shares.geminiPct >= 15 && shares.geminiPct <= 35, `gemini share out of range: ${shares.geminiPct}%`);
-  assert(shares.groqPct >= 5 && shares.groqPct <= 20, `groq share out of range: ${shares.groqPct}%`);
+  assert(shares.openaiPct >= 25 && shares.openaiPct <= 40, `openai share out of range: ${shares.openaiPct}%`);
+  assert(shares.geminiPct >= 20 && shares.geminiPct <= 45, `gemini share out of range: ${shares.geminiPct}%`);
+  assert(shares.groqPct >= 25 && shares.groqPct <= 50, `groq share out of range: ${shares.groqPct}%`);
   assert.equal(providerCounts.other, 0, 'unexpected provider should not appear in oauth4 matrix');
 
   const { PROFILES } = require('../lib/runtime-profiles.ts');
