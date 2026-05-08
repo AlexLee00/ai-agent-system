@@ -1,13 +1,10 @@
 #!/usr/bin/env node
 // @ts-nocheck
 
-import { execFile } from 'child_process';
-import { promisify } from 'util';
 import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
 import { buildInvestmentCliInsight } from '../shared/cli-insight.ts';
 import { buildVectorBtBacktestReport } from './vectorbt-backtest-report.ts';
-
-const execFileAsync = promisify(execFile);
+import { buildRuntimeConfigSuggestionsReport } from './runtime-config-suggestions.ts';
 
 function parseArgs(argv = process.argv.slice(2)) {
   const daysArg = argv.find((arg) => arg.startsWith('--days='));
@@ -20,21 +17,7 @@ function parseArgs(argv = process.argv.slice(2)) {
 }
 
 async function loadRuntimeSuggestionReport(days) {
-  const { stdout } = await execFileAsync('node', [
-    new URL('./runtime-config-suggestions.ts', import.meta.url).pathname,
-    `--days=${days}`,
-    '--json',
-  ], {
-    encoding: 'utf8',
-    maxBuffer: 1024 * 1024 * 8,
-  });
-  const text = String(stdout || '').trim();
-  const start = text.indexOf('{');
-  const end = text.lastIndexOf('}');
-  if (start === -1 || end === -1 || end < start) {
-    throw new Error('runtime-config-suggestions JSON 본문을 찾지 못했습니다.');
-  }
-  return JSON.parse(text.slice(start, end + 1));
+  return buildRuntimeConfigSuggestionsReport({ days, write: false });
 }
 
 function classifyCandidate(item) {

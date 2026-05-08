@@ -416,9 +416,8 @@
       "status": "active",
       "contextPath": "bots/legal/context",
       "model": {
-        "primary": "claude-code/sonnet",
+        "primary": "openai-oauth/gpt-5.4",
         "fallbacks": [
-          "anthropic/claude-sonnet-4-6",
           "groq/qwen3-32b",
           "local/deepseek-r1-32b"
         ]

@@ -92,6 +92,17 @@ const AUTO_DEV_IMPLEMENTATION_MODEL_ALLOWLIST = {
   },
 };
 const DEFAULT_AUTO_DEV_IMPLEMENTATION_MODEL = 'openai-oauth/gpt-5.4';
+
+function isTruthyEnvValue(value) {
+  return ['1', 'true', 'yes', 'y', 'on'].includes(String(value || '').trim().toLowerCase());
+}
+
+function isTimeGateActive(value) {
+  const raw = String(value || '').trim();
+  if (!raw) return false;
+  const expiresAt = Date.parse(raw);
+  return Number.isFinite(expiresAt) && Date.now() < expiresAt;
+}
 const AUTO_DEV_PROFILES = {
   shadow: {
     label: 'shadow',
@@ -270,6 +281,17 @@ function resolveImplementationModelPolicy({
   } else {
     if (optionOverrideRaw) ignoredLegacyModelOverrides.push('option:implementationModel');
     if (envOverrideRaw) ignoredLegacyModelOverrides.push('env:CLAUDE_AUTO_DEV_MODEL');
+  }
+
+  const redirected = model.startsWith('claude-code/')
+    && (isTruthyEnvValue(envVars.LLM_CLAUDE_CODE_DISABLED)
+      || isTimeGateActive(envVars.LLM_CLAUDE_CODE_DISABLED_UNTIL)
+      || (model === 'claude-code/sonnet' && (isTruthyEnvValue(envVars.LLM_CLAUDE_CODE_SONNET_DISABLED) || isTimeGateActive(envVars.LLM_FORCE_OPENAI_OAUTH_UNTIL))));
+  if (redirected) {
+    const replacement = normalizeImplementationModel(envVars.LLM_CLAUDE_CODE_SONNET_REPLACEMENT || DEFAULT_AUTO_DEV_IMPLEMENTATION_MODEL)
+      || DEFAULT_AUTO_DEV_IMPLEMENTATION_MODEL;
+    model = replacement;
+    source = `${source}_redirected`;
   }
 
   const allowlisted = AUTO_DEV_IMPLEMENTATION_MODEL_ALLOWLIST[model];

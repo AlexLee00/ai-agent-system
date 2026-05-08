@@ -9,6 +9,7 @@ const { describeLLMSelector } = require('../../../packages/core/lib/llm-model-se
 
 const ROOT = path.resolve(__dirname, '..', '..', '..');
 const CLAUDE_CONFIG_PATH = path.join(ROOT, 'bots', 'claude', 'config.json');
+const CLAUDE_COMMANDER_PATH = path.join(ROOT, 'bots', 'claude', 'src', 'claude-commander.ts');
 const CLAUDE_SELECTOR_KEYS = [
   'claude.archer.tech_analysis',
   'claude.lead.system_issue_triage',
@@ -72,9 +73,22 @@ function checkCoreSelector() {
   }
 }
 
+function checkCommanderDefault() {
+  const source = fs.readFileSync(CLAUDE_COMMANDER_PATH, 'utf8');
+  assert.ok(
+    source.includes("argOverrideRaw || envOverrideRaw || 'openai-oauth/gpt-5.4'"),
+    'claude commander default must use OpenAI OAuth, not Claude Code Sonnet',
+  );
+  assert.ok(
+    source.includes("if (input === 'gpt-5.4') return 'openai-oauth/gpt-5.4'"),
+    'claude commander must accept OpenAI OAuth model aliases',
+  );
+}
+
 checkRuntimeProfiles();
 checkClaudeConfig();
 checkCoreSelector();
+checkCommanderDefault();
 
 console.log(JSON.stringify({
   ok: true,
@@ -82,6 +96,7 @@ console.log(JSON.stringify({
     runtime_profiles: Object.keys(PROFILES.claude || {}).length,
     config_selectors: CLAUDE_SELECTOR_KEYS.length,
     core_selector_versions: 2,
+    commander_default: true,
   },
   policy: 'claude_team_automatic_routes_use_openai_oauth_primary_without_claude_code_fallback',
 }, null, 2));

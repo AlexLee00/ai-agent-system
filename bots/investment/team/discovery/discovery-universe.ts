@@ -86,16 +86,16 @@ export async function buildDiscoveryUniverse(market, now = new Date(), options =
 
   const mergedSymbols = [];
   const seen = new Set();
-  for (const item of candidates) {
-    if (seen.has(item.symbol)) continue;
-    seen.add(item.symbol);
-    mergedSymbols.push(item.symbol);
-  }
   for (const item of fallbackSymbols) {
     const normalized = normalizeDiscoverySymbol(item, market);
     if (!normalized || seen.has(normalized)) continue;
     seen.add(normalized);
     mergedSymbols.push(normalized);
+  }
+  for (const item of candidates) {
+    if (seen.has(item.symbol)) continue;
+    seen.add(item.symbol);
+    mergedSymbols.push(item.symbol);
   }
   const limitedSymbols = mergedSymbols.slice(0, limit);
 

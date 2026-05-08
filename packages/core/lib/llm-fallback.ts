@@ -113,6 +113,7 @@ type ProviderCallResult = {
 };
 
 const DEFAULT_CLAUDE_CODE_TIMEOUT_MS = 90_000;
+const CLAUDE_CODE_SONNET_REPLACEMENT_ROUTE = 'openai-oauth/gpt-5.4';
 
 type OAuthStore = {
   openai_oauth?: {
@@ -166,6 +167,34 @@ const CLAUDE_CODE_AUTH_ENV_KEYS = [
   'CLAUDE_CODE_OAUTH_REFRESH_TOKEN',
   'CLAUDE_CODE_OAUTH_TOKEN',
 ];
+
+function _truthyEnv(name: string): boolean {
+  return ['1', 'true', 'yes', 'y', 'on'].includes(String(process.env[name] || '').trim().toLowerCase());
+}
+
+function _timeGateActive(name: string): boolean {
+  const raw = String(process.env[name] || '').trim();
+  if (!raw) return false;
+  const expiresAt = Date.parse(raw);
+  return Number.isFinite(expiresAt) && Date.now() < expiresAt;
+}
+
+function _resolveClaudeCodeSonnetReplacement(provider: string, model: string | null | undefined): { provider: string; model: string } | null {
+  if (String(provider || '').trim() !== 'claude-code') return null;
+  const normalizedModel = String(model || '').trim().toLowerCase();
+  const claudeCodeDisabled = _truthyEnv('LLM_CLAUDE_CODE_DISABLED') || _timeGateActive('LLM_CLAUDE_CODE_DISABLED_UNTIL');
+  const sonnetDisabled = normalizedModel.includes('sonnet')
+    && (_truthyEnv('LLM_CLAUDE_CODE_SONNET_DISABLED') || _timeGateActive('LLM_FORCE_OPENAI_OAUTH_UNTIL'));
+  if (!claudeCodeDisabled && !sonnetDisabled) return null;
+
+  const replacement = String(process.env.LLM_CLAUDE_CODE_SONNET_REPLACEMENT || CLAUDE_CODE_SONNET_REPLACEMENT_ROUTE).trim()
+    || CLAUDE_CODE_SONNET_REPLACEMENT_ROUTE;
+  const [replacementProvider, ...modelParts] = replacement.split('/');
+  return {
+    provider: replacementProvider || 'openai-oauth',
+    model: modelParts.join('/') || 'gpt-5.4',
+  };
+}
 
 const GEMINI_CLI_PUBLIC_API_ENV_KEYS = [
   'GEMINI_API_KEY',
@@ -1586,7 +1615,12 @@ async function _callProvider(
   timeoutMs: number | null,
   runtimeProfile: RuntimeProfile = null,
 ): Promise<ProviderCallResult> {
-  const { provider, model, maxTokens, temperature } = cfg;
+  let { provider, model, maxTokens, temperature } = cfg;
+  const sonnetReplacement = _resolveClaudeCodeSonnetReplacement(provider, model);
+  if (sonnetReplacement) {
+    provider = sonnetReplacement.provider as FallbackChainEntry['provider'];
+    model = sonnetReplacement.model;
+  }
   const opts = {
     model,
     maxTokens,

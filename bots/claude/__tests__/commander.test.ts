@@ -28,6 +28,14 @@ function makeCommanderMocks(overrides = {}) {
     '../../../packages/core/lib/llm-keys': {
       initHubConfig: async () => {},
     },
+    '../../../packages/core/lib/hub-client': {
+      callHubLlm: async () => ({
+        ok: true,
+        text: 'runtime ask response',
+        provider: 'openai-oauth',
+        selected_route: 'openai-oauth/gpt-5.4',
+      }),
+    },
     '../../../packages/core/lib/intent-core': {
       AUTO_PROMOTE_DEFAULTS: {},
       normalizeIntentText:       (t) => t,
@@ -324,18 +332,13 @@ async function test_ask_claude_runtime_invocation_uses_model_arg() {
   await withCommanderModule(mocks, async commander => {
     const result = await commander.__test__.handleAskClaude({ query: 'model check' });
     assert.strictEqual(result.ok, true);
-    assert.ok(result.message.includes('[llm model=claude-code/sonnet cli=sonnet source=policy_default]'));
-    assert.strictEqual(result.data?.llm?.model, 'claude-code/sonnet');
-    assert.strictEqual(result.data?.llm?.cliModelArg, 'sonnet');
+    assert.ok(result.message.includes('[llm model=openai-oauth/gpt-5.4 source=policy_default]'));
+    assert.strictEqual(result.data?.llm?.model, 'openai-oauth/gpt-5.4');
+    assert.strictEqual(result.data?.llm?.provider, 'openai-oauth');
   });
 
-  assert.ok(spawnCalls.length > 0, 'spawn should be called');
-  const first = spawnCalls[0];
-  assert.strictEqual(first.command, 'claude');
-  const idx = first.args.indexOf('--model');
-  assert.ok(idx >= 0, 'runtime argv should include --model');
-  assert.strictEqual(first.args[idx + 1], 'sonnet');
-  console.log('✅ commander: ask_claude runtime invocation includes --model and llm metadata');
+  assert.strictEqual(spawnCalls.length, 0, 'default ask_claude should use Hub/OpenAI instead of claude CLI');
+  console.log('✅ commander: ask_claude defaults to Hub/OpenAI and emits llm metadata');
 }
 
 // ─── Test 16: analyze_unknown 실제 실행 argv/메타 검증 ─────────────────
@@ -380,18 +383,13 @@ async function test_analyze_unknown_runtime_invocation_uses_model_arg() {
   await withCommanderModule(mocks, async commander => {
     const result = await commander.__test__.handleAnalyzeUnknown({ text: '미분류 질문 테스트' });
     assert.strictEqual(result.ok, true);
-    assert.ok(result.message.includes('[llm model=claude-code/sonnet cli=sonnet source=policy_default]'));
-    assert.strictEqual(result.data?.llm?.model, 'claude-code/sonnet');
-    assert.strictEqual(result.data?.llm?.cliModelArg, 'sonnet');
+    assert.ok(result.message.includes('[llm model=openai-oauth/gpt-5.4 source=policy_default]'));
+    assert.strictEqual(result.data?.llm?.model, 'openai-oauth/gpt-5.4');
+    assert.strictEqual(result.data?.llm?.provider, 'openai-oauth');
   });
 
-  assert.ok(spawnCalls.length > 0, 'spawn should be called');
-  const first = spawnCalls[0];
-  assert.strictEqual(first.command, 'claude');
-  const idx = first.args.indexOf('--model');
-  assert.ok(idx >= 0, 'runtime argv should include --model');
-  assert.strictEqual(first.args[idx + 1], 'sonnet');
-  console.log('✅ commander: analyze_unknown runtime invocation includes --model and llm metadata');
+  assert.strictEqual(spawnCalls.length, 0, 'default analyze_unknown should use Hub/OpenAI instead of claude CLI');
+  console.log('✅ commander: analyze_unknown defaults to Hub/OpenAI and emits llm metadata');
 }
 
 // ─── 실행 ─────────────────────────────────────────────────────────────

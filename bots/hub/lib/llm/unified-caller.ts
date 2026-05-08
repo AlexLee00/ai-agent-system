@@ -27,6 +27,7 @@ const CLAUDE_CODE_MODEL = {
 };
 
 const DEFAULT_CLAUDE_CODE_TIMEOUT_MS = 90_000;
+const CLAUDE_CODE_SONNET_REPLACEMENT_ROUTE = 'openai-oauth/gpt-5.4';
 const CLAUDE_CODE_BUDGET_FLOORS_USD = {
   haiku: 0.05,
   sonnet: 0.2,
@@ -124,20 +125,21 @@ async function _callWithSelectorChain(req, selectorChain, team) {
 
   for (const entry of selectorChain.chain) {
     const route = _chainEntryToRoute(entry);
+    const selectedRoute = _normalizeRoute(route, req.abstractModel);
     const result = await _callRoute(route, req, entry.timeoutMs || chainTimeout, entry);
     if (result.ok) {
       if (req.cacheEnabled && result.result) _saveCache(req, result).catch(() => {});
       return {
         ...result,
-        provider: _routeToProvider(route),
-        selected_route: route,
+        provider: _routeToProvider(selectedRoute),
+        selected_route: selectedRoute,
         selectorKey: selectorChain.selectorKey,
         fallbackCount: attempts.length,
         attempted_providers: attempts.map(a => a.provider),
       };
     }
-    attempts.push({ provider: route, error: result.error || 'unknown', durationMs: result.durationMs });
-    console.warn(`[llm/unified] ${selectorChain.selectorKey}:${route} 실패 (${result.error}) → 다음 시도`);
+    attempts.push({ provider: selectedRoute, error: result.error || 'unknown', durationMs: result.durationMs });
+    console.warn(`[llm/unified] ${selectorChain.selectorKey}:${selectedRoute} 실패 (${result.error}) → 다음 시도`);
   }
 
   await _notifyFallbackExhaustion(req, attempts, team);
@@ -162,13 +164,20 @@ async function _callWithProfileChain(req, profile, team) {
   const attempts = [];
 
   for (const route of chain) {
+    const selectedRoute = _normalizeRoute(route, req.abstractModel);
     const result = await _callRoute(route, req, chainTimeout);
     if (result.ok) {
       if (req.cacheEnabled && result.result) _saveCache(req, result).catch(() => {});
-      return { ...result, provider: _routeToProvider(route), fallbackCount: attempts.length, attempted_providers: attempts.map(a => a.provider) };
+      return {
+        ...result,
+        provider: _routeToProvider(selectedRoute),
+        selected_route: selectedRoute,
+        fallbackCount: attempts.length,
+        attempted_providers: attempts.map(a => a.provider),
+      };
     }
-    attempts.push({ provider: route, error: result.error || 'unknown', durationMs: result.durationMs });
-    console.warn(`[llm/unified] ${route} 실패 (${result.error}) → 다음 시도`);
+    attempts.push({ provider: selectedRoute, error: result.error || 'unknown', durationMs: result.durationMs });
+    console.warn(`[llm/unified] ${selectedRoute} 실패 (${result.error}) → 다음 시도`);
   }
 
   await _notifyFallbackExhaustion(req, attempts, team);
@@ -368,6 +377,9 @@ function _routeToProvider(route) {
 }
 
 function _normalizeRoute(route, abstractModel = 'anthropic_haiku') {
+  const sonnetReplacement = _claudeCodeSonnetReplacementRoute(route);
+  if (sonnetReplacement) return sonnetReplacement;
+
   const staleGroqRoutes = new Set([
     'groq/llama-4-scout-17b-16e-instruct',
     'groq/meta-llama/llama-4-scout-17b-16e-instruct',
@@ -396,6 +408,28 @@ function _normalizeRoute(route, abstractModel = 'anthropic_haiku') {
   }
 
   return route;
+}
+
+function _truthyEnv(name) {
+  return ['1', 'true', 'yes', 'y', 'on'].includes(String(process.env[name] || '').trim().toLowerCase());
+}
+
+function _timeGateActive(name) {
+  const raw = String(process.env[name] || '').trim();
+  if (!raw) return false;
+  const expiresAt = Date.parse(raw);
+  return Number.isFinite(expiresAt) && Date.now() < expiresAt;
+}
+
+function _claudeCodeSonnetReplacementRoute(route) {
+  const normalizedRoute = String(route || '').trim();
+  if (!normalizedRoute.startsWith('claude-code/')) return null;
+  const claudeCodeDisabled = _truthyEnv('LLM_CLAUDE_CODE_DISABLED') || _timeGateActive('LLM_CLAUDE_CODE_DISABLED_UNTIL');
+  const sonnetDisabled = normalizedRoute === 'claude-code/sonnet'
+    && (_truthyEnv('LLM_CLAUDE_CODE_SONNET_DISABLED') || _timeGateActive('LLM_FORCE_OPENAI_OAUTH_UNTIL'));
+  if (!claudeCodeDisabled && !sonnetDisabled) return null;
+  const replacement = String(process.env.LLM_CLAUDE_CODE_SONNET_REPLACEMENT || CLAUDE_CODE_SONNET_REPLACEMENT_ROUTE).trim();
+  return replacement || CLAUDE_CODE_SONNET_REPLACEMENT_ROUTE;
 }
 
 function _flagDisabled(name) {

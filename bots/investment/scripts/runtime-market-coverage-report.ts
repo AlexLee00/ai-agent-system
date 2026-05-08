@@ -35,14 +35,27 @@ function countBy(rows = [], pick) {
 
 function buildMarketRow(market, report) {
   const rows = report?.rows || [];
-  const plannerAttached = rows.filter((row) => row.plannerMode).length;
+  const decisionRows = rows.filter((row) =>
+    !row?.researchOnly
+    && (
+      row?.plannerMode
+      || row?.bridgeStatus === 'completed'
+      || Number(row?.decisionCount || 0) > 0
+      || Number(row?.debateCount || 0) > 0
+      || Number(row?.approvedSignals || 0) > 0
+      || Number(row?.executedSymbols || 0) > 0
+    )
+  );
+  const plannerAttached = decisionRows.filter((row) => row.plannerMode).length;
   const topBridge = countBy(rows, (row) => row.bridgeStatus).top;
   const latest = rows[0] || null;
 
   return {
     market: market.key,
     label: market.label,
-    count: Number(report?.count || 0),
+    count: decisionRows.length,
+    rawCount: Number(report?.count || 0),
+    researchOnlyCount: rows.filter((row) => row.researchOnly).length,
     approvedSignals: Number(report?.summary?.approvedSignals || 0),
     executedSymbols: Number(report?.summary?.executedSymbols || 0),
     riskRejected: Number(report?.summary?.riskRejected || 0),
@@ -70,7 +83,14 @@ function buildDecision(rows = []) {
     status = 'coverage_gap';
     headline = 'runtime decision 세션이 없는 시장이 있습니다.';
     reasons.push(`세션 없음: ${rows.filter((row) => row.count === 0).map((row) => row.label).join(', ')}`);
-    actionItems.push('coverage가 비어 있는 시장은 run-pipeline-node no-op 드라이런부터 누적합니다.');
+    const researchOnlyMissing = rows.filter((row) => row.count === 0 && Number(row.researchOnlyCount || 0) > 0);
+    if (researchOnlyMissing.length > 0) {
+      actionItems.push(`장외 research-only만 누적된 시장(${researchOnlyMissing.map((row) => row.label).join(', ')})은 장중 cycle 또는 승인된 --force dry-run으로 decision coverage를 확인합니다.`);
+    }
+    const emptyMissing = rows.filter((row) => row.count === 0 && Number(row.rawCount || 0) === 0);
+    if (emptyMissing.length > 0) {
+      actionItems.push(`세션 자체가 없는 시장(${emptyMissing.map((row) => row.label).join(', ')})은 run-pipeline-node no-op 드라이런부터 누적합니다.`);
+    }
   }
   if (plannerMissing > 0) {
     reasons.push(`planner 미부착 시장 ${plannerMissing}개`);
@@ -106,7 +126,7 @@ function renderText(payload) {
     '',
     '시장별:',
     ...payload.rows.map((row) =>
-      `- ${row.label}(${row.market}) | count=${row.count} | approved=${row.approvedSignals} | executed=${row.executedSymbols} | riskRejected=${row.riskRejected} | planner=${row.plannerAttached}/${row.count} | bridge=${row.topBridgeStatus || 'none'}`
+      `- ${row.label}(${row.market}) | decision=${row.count} / raw=${row.rawCount} / research=${row.researchOnlyCount} | approved=${row.approvedSignals} | executed=${row.executedSymbols} | riskRejected=${row.riskRejected} | planner=${row.plannerAttached}/${row.count} | bridge=${row.topBridgeStatus || 'none'}`
     ),
     '',
     '권장 조치:',

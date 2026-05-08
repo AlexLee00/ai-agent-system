@@ -1,18 +1,18 @@
 {
   "ok": true,
-  "generated_at": "2026-05-07T18:55:36.917Z",
+  "generated_at": "2026-05-07T23:55:38.548Z",
   "hours": 168,
   "totals": {
-    "total_calls": 30195,
-    "oauth_calls": 13729,
-    "oauth_share_pct": 45.47,
+    "total_calls": 30192,
+    "oauth_calls": 14136,
+    "oauth_share_pct": 46.82,
     "failed_calls": 89,
     "failed_rate_pct": 0.29,
-    "reported_cost_usd": 126.388377,
+    "reported_cost_usd": 126.408287,
     "oauth_reported_cost_usd": 124.30812,
     "claude_code_reported_cost_usd": 124.30812,
-    "claude_code_runtime_cost_share_pct": 98.35,
-    "non_oauth_reported_cost_usd": 2.080257,
+    "claude_code_runtime_cost_share_pct": 98.34,
+    "non_oauth_reported_cost_usd": 2.100167,
     "anthropic_provider_calls": 0
   },
   "providers": {
@@ -29,24 +29,24 @@
     },
     "openai-oauth": {
       "provider": "openai-oauth",
-      "calls": 9489,
-      "success_count": 9489,
+      "calls": 9895,
+      "success_count": 9895,
       "failed_count": 0,
-      "avg_duration_ms": 3613,
+      "avg_duration_ms": 3540,
       "max_duration_ms": 91515,
       "total_cost_usd": 0,
-      "share_pct": 31.43,
+      "share_pct": 32.77,
       "success_rate_pct": 100
     },
     "gemini-cli-oauth": {
       "provider": "gemini-cli-oauth",
-      "calls": 2260,
-      "success_count": 2260,
+      "calls": 2261,
+      "success_count": 2261,
       "failed_count": 0,
-      "avg_duration_ms": 14539,
+      "avg_duration_ms": 14538,
       "max_duration_ms": 59171,
       "total_cost_usd": 0,
-      "share_pct": 7.48,
+      "share_pct": 7.49,
       "success_rate_pct": 100
     },
     "gemini-oauth": {
@@ -73,13 +73,13 @@
     },
     "groq": {
       "provider": "groq",
-      "calls": 16377,
-      "success_count": 16377,
+      "calls": 15967,
+      "success_count": 15967,
       "failed_count": 0,
-      "avg_duration_ms": 790,
+      "avg_duration_ms": 795,
       "max_duration_ms": 8650,
-      "total_cost_usd": 2.080257,
-      "share_pct": 54.24,
+      "total_cost_usd": 2.100167,
+      "share_pct": 52.88,
       "success_rate_pct": 100
     },
     "failed": {

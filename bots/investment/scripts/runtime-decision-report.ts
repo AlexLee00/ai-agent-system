@@ -97,6 +97,7 @@ async function loadRuntimeDecisions({ market = 'all', limit = 5, includeSmoke = 
     durationMs: row.duration_ms == null ? null : Number(row.duration_ms),
     bridgeStatus: row.meta?.bridge_status || 'unknown',
     investmentTradeMode: row.meta?.investment_trade_mode || 'unknown',
+    researchOnly: Boolean(row.meta?.research_only),
     plannerMode: row.meta?.planner_mode || null,
     plannerTimeMode: row.meta?.planner_time_mode || null,
     plannerTradeMode: row.meta?.planner_trade_mode || null,

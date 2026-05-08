@@ -2,9 +2,10 @@
 // @ts-nocheck
 
 import { runMarketCollectPipeline } from '../shared/pipeline-market-runner.ts';
-import { runDecisionExecutionPipeline } from '../shared/pipeline-decision-runner.ts';
 import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
-import { getPipelineRun } from '../shared/pipeline-db.ts';
+import { finishPipelineRun, getPipelineRun } from '../shared/pipeline-db.ts';
+import { loadDecisionPlannerCompact } from '../shared/pipeline-decision-bridge.ts';
+import { buildPlannerRunMeta } from '../shared/pipeline-decision-policy.ts';
 
 function parseArgs(argv = []) {
   const args = { market: 'binance', json: false };
@@ -51,10 +52,16 @@ export async function runRuntimePlannerAttachDryrun({ market = 'binance', json =
     },
   });
 
-  await runDecisionExecutionPipeline({
-    sessionId: collect.sessionId,
-    symbols: [],
-    exchange: resolvedMarket,
+  const plannerCompact = await loadDecisionPlannerCompact(collect.sessionId);
+  await finishPipelineRun(collect.sessionId, {
+    status: 'completed',
+    meta: {
+      bridge_status: 'planner_attach_dryrun_completed',
+      market_script: 'runtime_planner_attach_dryrun',
+      research_only: true,
+      dryrun: true,
+      ...buildPlannerRunMeta(plannerCompact),
+    },
   });
 
   const row = await getPipelineRun(collect.sessionId);

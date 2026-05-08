@@ -142,7 +142,7 @@ async function tryLlmPlan(input) {
   const llmResult = await callWithFallback({
     chain: [
       { provider: 'openai-oauth', model: 'gpt-4.1-mini', maxTokens: 1200, temperature: 0.1, timeoutMs: 8000 },
-      { provider: 'claude-code', model: 'sonnet', maxTokens: 1200, temperature: 0.1, timeoutMs: 10000 },
+      { provider: 'gemini-cli-oauth', model: 'gemini-cli-oauth/gemini-2.5-flash', maxTokens: 1200, temperature: 0.1, timeoutMs: 10000 },
     ],
     selectorKey: 'hub.control.planner',
     callerTeam: 'hub',

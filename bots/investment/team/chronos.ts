@@ -283,9 +283,8 @@ function splitProviderModel(spec = '') {
   }
   if (text.startsWith('anthropic/')) {
     const legacyModel = text.replace(/^anthropic\//, '');
-    if (legacyModel.includes('opus')) return { provider: 'claude-code', model: 'claude-code/opus' };
-    if (legacyModel.includes('haiku')) return { provider: 'claude-code', model: 'claude-code/haiku' };
-    return { provider: 'claude-code', model: 'claude-code/sonnet' };
+    if (legacyModel.includes('haiku')) return { provider: 'openai-oauth', model: 'openai-oauth/gpt-5.4-mini' };
+    return { provider: 'openai-oauth', model: 'openai-oauth/gpt-5.4' };
   }
   if (text.startsWith('groq/')) {
     return { provider: 'groq', model: text.slice('groq/'.length) };

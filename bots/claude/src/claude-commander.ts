@@ -18,6 +18,7 @@ const { execSync, spawn, spawnSync } = require('child_process');
 process.env.PG_DIRECT = process.env.PG_DIRECT || 'true';
 const pgPool = require('../../../packages/core/lib/pg-pool');
 const { initHubConfig } = require('../../../packages/core/lib/llm-keys');
+const { callHubLlm } = require('../../../packages/core/lib/hub-client');
 const teamBus = require('../lib/team-bus');
 const runtimePaths = require('../lib/runtime-paths.js');
 const {
@@ -93,9 +94,22 @@ const NLP_LEARNINGS_PATH = getNamedIntentLearningPath('jay');
 // 텔레그램 메시지 최대 길이 (안전 마진 포함)
 const TG_MAX_CHARS = 3500;
 const COMMANDER_CLAUDE_MODEL_ALLOWLIST = {
+  'openai-oauth/gpt-5.4': { provider: 'openai-oauth', model: 'openai-oauth/gpt-5.4', selectorKey: 'claude.lead.system_issue_triage' },
+  'openai-oauth/gpt-5.4-mini': { provider: 'openai-oauth', model: 'openai-oauth/gpt-5.4-mini', selectorKey: 'claude._default' },
   'claude-code/sonnet': { provider: 'claude-code', model: 'claude-code/sonnet', cliModelArg: 'sonnet' },
   'claude-code/opus': { provider: 'claude-code', model: 'claude-code/opus', cliModelArg: 'opus' },
 };
+
+function truthyEnv(name) {
+  return ['1', 'true', 'yes', 'y', 'on'].includes(String(process.env[name] || '').trim().toLowerCase());
+}
+
+function timeGateActive(name) {
+  const raw = String(process.env[name] || '').trim();
+  if (!raw) return false;
+  const expiresAt = Date.parse(raw);
+  return Number.isFinite(expiresAt) && Date.now() < expiresAt;
+}
 
 function runCommandAsync(command, args = [], opts = {}) {
   const {
@@ -177,7 +191,12 @@ function normalizeCommanderClaudeModel(value) {
   if (!input) return null;
   if (input === 'sonnet') return 'claude-code/sonnet';
   if (input === 'opus') return 'claude-code/opus';
+  if (input === 'gpt-5.4') return 'openai-oauth/gpt-5.4';
+  if (input === 'gpt-5.4-mini') return 'openai-oauth/gpt-5.4-mini';
   if (input.startsWith('claude-code/')) {
+    return Object.prototype.hasOwnProperty.call(COMMANDER_CLAUDE_MODEL_ALLOWLIST, input) ? input : null;
+  }
+  if (input.startsWith('openai-oauth/')) {
     return Object.prototype.hasOwnProperty.call(COMMANDER_CLAUDE_MODEL_ALLOWLIST, input) ? input : null;
   }
   return null;
@@ -186,7 +205,7 @@ function normalizeCommanderClaudeModel(value) {
 function resolveCommanderClaudeModel(args = {}, envVars = process.env) {
   const argOverrideRaw = String(args.model || args.claude_model || '').trim();
   const envOverrideRaw = String(envVars.CLAUDE_COMMANDER_MODEL || '').trim();
-  const selectedRaw = argOverrideRaw || envOverrideRaw || 'claude-code/sonnet';
+  const selectedRaw = argOverrideRaw || envOverrideRaw || 'openai-oauth/gpt-5.4';
   const normalized = normalizeCommanderClaudeModel(selectedRaw);
   if (!normalized) {
     return {
@@ -194,13 +213,21 @@ function resolveCommanderClaudeModel(args = {}, envVars = process.env) {
       error: `지원하지 않는 commander Claude model: ${selectedRaw}`,
     };
   }
-  const allowlisted = COMMANDER_CLAUDE_MODEL_ALLOWLIST[normalized];
+  const redirected = normalized.startsWith('claude-code/')
+    && (truthyEnv('LLM_CLAUDE_CODE_DISABLED')
+      || timeGateActive('LLM_CLAUDE_CODE_DISABLED_UNTIL')
+      || (normalized === 'claude-code/sonnet' && (truthyEnv('LLM_CLAUDE_CODE_SONNET_DISABLED') || timeGateActive('LLM_FORCE_OPENAI_OAUTH_UNTIL'))));
+  const effectiveModel = redirected
+    ? (normalizeCommanderClaudeModel(process.env.LLM_CLAUDE_CODE_SONNET_REPLACEMENT || 'openai-oauth/gpt-5.4') || 'openai-oauth/gpt-5.4')
+    : normalized;
+  const allowlisted = COMMANDER_CLAUDE_MODEL_ALLOWLIST[effectiveModel];
+  const sourceBase = argOverrideRaw ? 'arg_override' : envOverrideRaw ? 'env_override' : 'policy_default';
   return {
     ok: true,
     provider: allowlisted.provider,
     model: allowlisted.model,
     cliModelArg: allowlisted.cliModelArg,
-    source: argOverrideRaw ? 'arg_override' : envOverrideRaw ? 'env_override' : 'policy_default',
+    source: redirected ? `${sourceBase}_redirected` : sourceBase,
     fallbackUsed: false,
     degradedFallback: false,
   };
@@ -208,7 +235,35 @@ function resolveCommanderClaudeModel(args = {}, envVars = process.env) {
 
 function formatCommanderModelLine(modelPolicy = null) {
   if (!modelPolicy) return '';
-  return `[llm model=${modelPolicy.model} cli=${modelPolicy.cliModelArg} source=${modelPolicy.source}]`;
+  const cli = modelPolicy.cliModelArg ? ` cli=${modelPolicy.cliModelArg}` : '';
+  return `[llm model=${modelPolicy.model}${cli} source=${modelPolicy.source}]`;
+}
+
+async function callCommanderLlm(prompt, modelPolicy, options = {}) {
+  if (modelPolicy.provider === 'claude-code') {
+    return runCommandAsync('claude', [
+      '-p',
+      prompt,
+      '--model',
+      modelPolicy.cliModelArg,
+      '--dangerously-skip-permissions',
+    ], {
+      cwd: PROJECT_ROOT,
+      timeout: options.timeout || 280000,
+      env: { ...process.env },
+      allowExitCodes: [0],
+    });
+  }
+  const result = await callHubLlm({
+    callerTeam: 'claude',
+    agent: 'commander',
+    selectorKey: modelPolicy.selectorKey || 'claude.lead.system_issue_triage',
+    prompt,
+    taskType: options.taskType || 'commander',
+    timeoutMs: options.timeout || 120000,
+    maxTokens: options.maxTokens || 1200,
+  });
+  return { code: 0, stdout: result.text || result.result || '', stderr: '' };
 }
 
 // ─── 명령 핸들러 ─────────────────────────────────────────────────────
@@ -285,17 +340,10 @@ async function handleAskClaude(args) {
 
   let result;
   try {
-    result = await runCommandAsync('claude', [
-      '-p',
-      query,
-      '--model',
-      modelPolicy.cliModelArg,
-      '--dangerously-skip-permissions',
-    ], {
-      cwd: PROJECT_ROOT,
-      timeout: 280000,
-      env: { ...process.env },
-      allowExitCodes: [0],
+    result = await callCommanderLlm(query, modelPolicy, {
+      taskType: 'ask_claude',
+      timeout: 120000,
+      maxTokens: 1600,
     });
   } catch (e) {
     const errMsg = (e.stderr || '').trim().slice(0, 300);
@@ -500,17 +548,10 @@ async function handleAnalyzeUnknown(args) {
 
   let result;
   try {
-    result = await runCommandAsync('claude', [
-      '-p',
-      prompt,
-      '--model',
-      modelPolicy.cliModelArg,
-      '--dangerously-skip-permissions',
-    ], {
-      cwd: PROJECT_ROOT,
+    result = await callCommanderLlm(prompt, modelPolicy, {
+      taskType: 'analyze_unknown',
       timeout: 120000,
-      env: { ...process.env },
-      allowExitCodes: [0],
+      maxTokens: 900,
     });
   } catch (e) {
     const errMsg = (e.stderr || '').trim().slice(0, 300);
