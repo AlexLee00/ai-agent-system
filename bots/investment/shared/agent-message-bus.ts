@@ -35,6 +35,7 @@ export interface AgentMessage {
 export interface SendMessageOpts {
   incidentKey?: string;
   messageType?: MessageType;
+  noAckExpected?: boolean;
 }
 
 /**
@@ -52,8 +53,8 @@ export async function sendMessage(
   try {
     const result = await db.run(
       `INSERT INTO investment.agent_messages
-         (from_agent, to_agent, incident_key, message_type, payload)
-       VALUES ($1, $2, $3, $4, $5)
+         (from_agent, to_agent, incident_key, message_type, payload, responded_at)
+       VALUES ($1, $2, $3, $4, $5, $6)
        RETURNING id`,
       [
         fromAgent,
@@ -61,6 +62,7 @@ export async function sendMessage(
         opts.incidentKey ?? null,
         opts.messageType ?? 'query',
         JSON.stringify(payload),
+        opts.noAckExpected === true ? new Date().toISOString() : null,
       ],
     );
     const messageId = result.rows?.[0]?.id ?? -1;

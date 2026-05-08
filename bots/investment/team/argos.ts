@@ -807,6 +807,8 @@ export async function recommendStrategy(symbol, exchange = 'binance') {
   }, {
     incidentKey: `argos:${exchange}:${symbol}`,
     messageType: 'query',
+    // sophia/hermes do not consume this hint from the bus today.
+    noAckExpected: true,
   }).catch(() => {
     console.warn(`  ⚠️ [아르고스] 교차 힌트 전송 실패 (sophia/hermes): ${symbol}`);
   });

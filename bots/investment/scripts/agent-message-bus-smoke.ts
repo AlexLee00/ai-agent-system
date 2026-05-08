@@ -95,6 +95,22 @@ async function main(): Promise<void> {
     assert(fromAgents.includes('luna'), 'luna의 브로드캐스트가 incident 내 포함 필요');
     console.log(`  getMessagesByIncident → ${allMsgs.length}건`);
 
+    // 2-5b. noAckExpected 메시지는 즉시 hygiene 대상에서 제외되어야 함
+    const noAckIncidentKey = `${testIncidentKey}:no-ack`;
+    const noAckId = await sendMessage('argos', 'hermes', { type: 'strategy_context', smoke: true }, {
+      incidentKey: noAckIncidentKey,
+      messageType: 'query',
+      noAckExpected: true,
+    });
+    assert(noAckId > 0, `noAckExpected sendMessage 성공 시 양수 ID 반환 필요, got=${noAckId}`);
+    const noAckPending = await getPendingMessages('hermes', { incidentKey: noAckIncidentKey });
+    assert(noAckPending.length === 0, 'noAckExpected 메시지는 pending queue에 남지 않아야 함');
+    const noAckRow = await db.get(
+      `SELECT responded_at FROM investment.agent_messages WHERE id = $1`,
+      [noAckId],
+    );
+    assert(!!noAckRow?.responded_at, 'noAckExpected 메시지는 즉시 responded_at이 기록되어야 함');
+
     // 2-6. message_type 검증
     const broadcastMsg = allMsgs.find((m) => m.fromAgent === 'luna');
     assert(broadcastMsg?.messageType === 'broadcast', 'luna 메시지는 broadcast type이어야 함');

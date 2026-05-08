@@ -17,7 +17,7 @@ export async function publishAgentHint(
   fromAgent: string,
   toAgents: string[],
   payload: Record<string, unknown>,
-  opts: { incidentKey?: string; messageType?: 'query' | 'broadcast' } = {},
+  opts: { incidentKey?: string; messageType?: 'query' | 'broadcast'; noAckExpected?: boolean } = {},
 ) {
   const delivered: Array<{ toAgent: string; messageId: number }> = [];
   const failed: string[] = [];
@@ -26,6 +26,7 @@ export async function publishAgentHint(
       const messageId = await sendMessage(fromAgent, toAgent, payload, {
         incidentKey: opts.incidentKey,
         messageType: opts.messageType || 'query',
+        noAckExpected: opts.noAckExpected === true,
       });
       if (messageId > 0) delivered.push({ toAgent, messageId });
       else failed.push(toAgent);
@@ -73,4 +74,3 @@ export async function consumeAgentHints(
     return [];
   }
 }
-
