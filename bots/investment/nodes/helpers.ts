@@ -7,10 +7,11 @@ import { ANALYST_TYPES } from '../shared/signal.ts';
 const ANALYST_BY_NODE = {
   L02: ANALYST_TYPES.TA_MTF,
   L03: ANALYST_TYPES.SENTINEL,
+  L04: ANALYST_TYPES.MARKET_FLOW,
   L05: ANALYST_TYPES.ONCHAIN,
 };
 
-const COLLECT_NODE_IDS = ['L02', 'L03', 'L05'];
+const COLLECT_NODE_IDS = ['L02', 'L03', 'L04', 'L05'];
 const _pipelineRunCache = new Map();
 const _sessionCollectCache = new Map();
 
@@ -38,7 +39,7 @@ export async function loadLatestNodePayload(sessionId, nodeId, symbol) {
 }
 
 export async function loadAnalysesForSession(sessionId, symbol, market) {
-  const artifacts = await loadNodePayloads(sessionId, ['L02', 'L03', 'L05'], symbol);
+  const artifacts = await loadNodePayloads(sessionId, COLLECT_NODE_IDS, symbol);
   const fromArtifacts = artifacts
     .flatMap(item => normalizeAnalysisPayloads(item.nodeId, item.payload, symbol, market))
     .filter(Boolean);

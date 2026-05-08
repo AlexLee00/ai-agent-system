@@ -51,6 +51,20 @@ export function runLunaBuyingPowerAdjustmentSmoke() {
   assert.equal(dynamicSlots.adjustedAmount >= 200000, true);
   assert.equal(dynamicSlots.effectiveSlots, 4);
 
+  const raisedToMinimum = adjustLunaBuyCandidate(
+    96250,
+    snapshot({
+      exchange: 'kis',
+      freeCash: 1020320,
+      buyableAmount: 385000,
+      minOrderAmount: 200000,
+      remainingSlots: 2,
+    }),
+  );
+  assert.equal(raisedToMinimum.result, 'reduced');
+  assert.equal(raisedToMinimum.adjustedAmount, 200000);
+  assert.equal(raisedToMinimum.reason.includes('buy_amount_adjusted_to_min_order'), true);
+
   const blockedCash = adjustLunaBuyCandidate(100, snapshot({ buyableAmount: 40, minOrderAmount: 50 }));
   assert.equal(blockedCash.result, 'blocked_cash');
   assert.equal(blockedCash.adjustedAmount, 0);
@@ -76,6 +90,10 @@ export function runLunaBuyingPowerAdjustmentSmoke() {
         result: dynamicSlots.result,
         adjustedAmount: dynamicSlots.adjustedAmount,
         effectiveSlots: dynamicSlots.effectiveSlots,
+      },
+      raisedToMinimum: {
+        result: raisedToMinimum.result,
+        adjustedAmount: raisedToMinimum.adjustedAmount,
       },
       blockedCash: blockedCash.result,
       blockedSlots: blockedSlots.result,

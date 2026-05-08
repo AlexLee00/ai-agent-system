@@ -395,6 +395,7 @@ if (isDirectExecution(import.meta.url)) {
       }
 
       let symbols;
+      const explicitSymbolsRequested = Array.isArray(cliSymbols) && cliSymbols.length > 0;
       const universeMeta = {
         screeningSymbolCount: 0,
         heldSymbolCount: 0,
@@ -404,7 +405,7 @@ if (isDirectExecution(import.meta.url)) {
         maintenanceDustSkippedCount: 0,
         maintenanceLifecycleCounts: {},
       };
-      if (Array.isArray(cliSymbols) && cliSymbols.length > 0) {
+      if (explicitSymbolsRequested) {
         symbols = cliSymbols;
         universeMeta.screeningSymbolCount = symbols.length;
       } else if (noDynamic) {
@@ -457,13 +458,19 @@ if (isDirectExecution(import.meta.url)) {
       universeMeta.maintenanceDustSkippedCount = Array.isArray(maintenanceUniverse.dustSymbols) ? maintenanceUniverse.dustSymbols.length : 0;
       universeMeta.maintenanceLifecycleCounts = maintenanceUniverse.lifecycleCounts || {};
       symbols = await appendHeldSymbols(symbols, 'kis', heldSymbols);
-      const discoveryMerge = await mergeDiscoveryUniverseForCollect(symbols, getDomesticScreeningMaxDynamic(), { pinnedSymbols: heldSymbols });
-      symbols = discoveryMerge.symbols;
-      universeMeta.discoveryUniverseAddedCount = discoveryMerge.addedCount;
-      universeMeta.discoveryUniverseDroppedCount = discoveryMerge.droppedCount || 0;
-      universeMeta.discoveryUniverseSource = discoveryMerge.source;
-      if (discoveryMerge.addedCount > 0) {
-        console.log(`🌐 [discovery universe] 국내 수집 전 후보 ${discoveryMerge.addedCount}개 추가: ${symbols.join(', ')}`);
+      if (explicitSymbolsRequested) {
+        universeMeta.discoveryUniverseAddedCount = 0;
+        universeMeta.discoveryUniverseDroppedCount = 0;
+        universeMeta.discoveryUniverseSource = 'explicit_symbols';
+      } else {
+        const discoveryMerge = await mergeDiscoveryUniverseForCollect(symbols, getDomesticScreeningMaxDynamic(), { pinnedSymbols: heldSymbols });
+        symbols = discoveryMerge.symbols;
+        universeMeta.discoveryUniverseAddedCount = discoveryMerge.addedCount;
+        universeMeta.discoveryUniverseDroppedCount = discoveryMerge.droppedCount || 0;
+        universeMeta.discoveryUniverseSource = discoveryMerge.source;
+        if (discoveryMerge.addedCount > 0) {
+          console.log(`🌐 [discovery universe] 국내 수집 전 후보 ${discoveryMerge.addedCount}개 추가: ${symbols.join(', ')}`);
+        }
       }
       console.log(getKisExecutionModeInfo('국내주식').logLine);
       const marketOpen = marketStatus.isOpen;

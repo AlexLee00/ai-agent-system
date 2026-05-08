@@ -1168,7 +1168,10 @@ export function adjustLunaBuyCandidate(
   const feasibleSlotsByCash = Math.max(1, Math.floor(buyableAmount / Math.max(1, minOrderAmount)));
   const effectiveSlots = Math.max(1, Math.min(remainingSlots, feasibleSlotsByCash));
   const perSlotAmount = Math.floor(buyableAmount / effectiveSlots);
-  const adjustedAmount = Math.min(desiredAmount, perSlotAmount);
+  const normalizedDesiredAmount = desiredAmount > 0 && desiredAmount < minOrderAmount
+    ? minOrderAmount
+    : desiredAmount;
+  const adjustedAmount = Math.min(normalizedDesiredAmount, perSlotAmount);
 
   if (adjustedAmount < minOrderAmount) {
     return {
@@ -1189,6 +1192,18 @@ export function adjustLunaBuyCandidate(
       adjustedAmount,
       minOrderAmount,
       reason: `buy_amount_adjusted: ${desiredAmount} → ${adjustedAmount} (가용 ${buyableAmount.toFixed(2)}, 슬롯 ${remainingSlots}→${effectiveSlots})`,
+      effectiveSlots,
+      originalRemainingSlots: remainingSlots,
+    };
+  }
+
+  if (adjustedAmount > desiredAmount) {
+    return {
+      result: 'reduced',
+      desiredAmount,
+      adjustedAmount,
+      minOrderAmount,
+      reason: `buy_amount_adjusted_to_min_order: ${desiredAmount} → ${adjustedAmount} (최소 ${minOrderAmount}, 가용 ${buyableAmount.toFixed(2)}, 슬롯 ${remainingSlots}→${effectiveSlots})`,
       effectiveSlots,
       originalRemainingSlots: remainingSlots,
     };
