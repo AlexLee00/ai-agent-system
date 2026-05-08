@@ -78,3 +78,17 @@ export function resetGroqKeyBlacklistForTests(): void {
   blacklistedKeys.clear();
   rotationIndex = 0;
 }
+
+export function _testOnlySetGroqAccounts(accounts: string[]): void {
+  cachedAccounts = accounts.filter(Boolean);
+  lastLoadAt = Date.now();
+  blacklistedKeys.clear();
+  rotationIndex = 0;
+}
+
+export function _testOnlyResetGroqAccounts(): void {
+  cachedAccounts = null;
+  lastLoadAt = 0;
+  blacklistedKeys.clear();
+  rotationIndex = 0;
+}

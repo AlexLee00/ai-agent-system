@@ -316,6 +316,15 @@ async function _callRouteUnchecked(normalizedRoute, req, timeoutMs, chainEntry =
       prompt: req.prompt,
       model,
       systemPrompt: req.systemPrompt,
+      jsonSchema: req.jsonSchema,
+      jsonSchemaName: chainEntry.jsonSchemaName,
+      strictJsonSchema: chainEntry.strictJsonSchema,
+      responseFormat: chainEntry.responseFormat,
+      reasoningEffort: chainEntry.reasoningEffort,
+      reasoningFormat: chainEntry.reasoningFormat,
+      includeReasoning: chainEntry.includeReasoning,
+      seed: chainEntry.seed,
+      serviceTier: chainEntry.serviceTier,
       maxTokens: chainEntry.maxTokens,
       temperature: chainEntry.temperature,
     });
@@ -441,11 +450,10 @@ function _normalizeRoute(route, abstractModel = 'anthropic_haiku') {
 
   const staleGroqRoutes = new Set([
     'groq/llama-4-scout-17b-16e-instruct',
-    'groq/meta-llama/llama-4-scout-17b-16e-instruct',
   ]);
 
   if (staleGroqRoutes.has(route)) {
-    const replacement = `groq/${getGroqFallback(abstractModel)}`;
+    const replacement = 'groq/meta-llama/llama-4-scout-17b-16e-instruct';
     console.warn(`[llm/unified] stale groq route 정규화: ${route} -> ${replacement}`);
     return replacement;
   }
@@ -585,5 +593,6 @@ module.exports = {
     _inflightDedupeKey,
     _runWithInflightDedupe,
     _inflightDedupeSize: () => inFlightDedupe.size,
+    _normalizeRoute,
   },
 };

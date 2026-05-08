@@ -2,16 +2,42 @@
 
 const assert = require('node:assert/strict');
 const { callGroqFallback, _testOnly } = require('../lib/llm/groq-fallback.ts');
-const { resetGroqKeyBlacklistForTests } = require('../lib/llm/secrets-loader.ts');
+const {
+  resetGroqKeyBlacklistForTests,
+  _testOnlySetGroqAccounts,
+  _testOnlyResetGroqAccounts,
+} = require('../lib/llm/secrets-loader.ts');
 
 const ORIGINAL_FETCH = global.fetch;
 const ORIGINAL_GROQ_API_KEY = process.env.GROQ_API_KEY;
+const ORIGINAL_GROQ_SERVICE_TIER = process.env.HUB_GROQ_SERVICE_TIER;
+const ORIGINAL_GROQ_MAX_KEY_ATTEMPTS = process.env.HUB_GROQ_MAX_KEY_ATTEMPTS;
 
 async function main() {
   resetGroqKeyBlacklistForTests();
   process.env.GROQ_API_KEY = 'groq-smoke-key';
+  delete process.env.HUB_GROQ_MAX_KEY_ATTEMPTS;
 
   assert.equal(_testOnly.parseDurationMs('1m51.455s'), 111455);
+  process.env.HUB_GROQ_SERVICE_TIER = 'flex';
+  const payload = _testOnly.buildGroqRequestBody({
+    prompt: 'payload check',
+    model: 'openai/gpt-oss-20b',
+    jsonSchema: {
+      type: 'object',
+      properties: { signal: { type: 'string' } },
+      required: ['signal'],
+      additionalProperties: false,
+    },
+    strictJsonSchema: true,
+    temperature: 0,
+  }, 'openai/gpt-oss-20b');
+  assert.equal(payload.max_completion_tokens, 1024);
+  assert.equal(payload.temperature, 1e-8);
+  assert.equal(payload.reasoning_effort, 'low');
+  assert.equal(payload.service_tier, 'flex');
+  assert.equal(payload.response_format.type, 'json_schema');
+  assert.equal(payload.response_format.json_schema.strict, true);
 
   let fetchCalls = 0;
   global.fetch = async () => {
@@ -38,7 +64,48 @@ async function main() {
   assert.match(String(second.error), /cooldown/);
   assert.equal(fetchCalls, 1, 'blacklisted Groq key must not be retried immediately');
 
-  console.log(JSON.stringify({ ok: true, retry_after_ms: first.retryAfterMs, fetch_calls: fetchCalls }));
+  resetGroqKeyBlacklistForTests();
+  delete process.env.GROQ_API_KEY;
+  delete process.env.HUB_GROQ_SERVICE_TIER;
+  _testOnlySetGroqAccounts(['groq-smoke-1', 'groq-smoke-2', 'groq-smoke-3', 'groq-smoke-4', 'groq-smoke-5']);
+
+  fetchCalls = 0;
+  global.fetch = async (_url, init) => {
+    fetchCalls += 1;
+    const auth = String(init?.headers?.Authorization || init?.headers?.authorization || '');
+    assert.match(auth, /groq-smoke-/);
+    if (fetchCalls < 5) {
+      return new Response(JSON.stringify({ error: { message: 'Rate limit reached. Please try again in 1s.' } }), {
+        status: 429,
+        headers: { 'retry-after': '1' },
+      });
+    }
+    return new Response(JSON.stringify({
+      choices: [{ message: { content: 'ok' } }],
+      usage: { prompt_tokens: 10, completion_tokens: 2 },
+    }), {
+      status: 200,
+      headers: { 'x-ratelimit-remaining-requests': '999' },
+    });
+  };
+
+  const pooled = await callGroqFallback({ prompt: 'pooled retry', model: 'llama-3.1-8b-instant' });
+  assert.equal(pooled.ok, true);
+  assert.equal(pooled.result, 'ok');
+  assert.equal(fetchCalls, 5, 'Groq fallback must exhaust the configured key pool before failing');
+  assert.equal(pooled.rateLimit['x-ratelimit-remaining-requests'], '999');
+
+  const { _testOnly: unifiedTestOnly } = require('../lib/llm/unified-caller.ts');
+  assert.equal(
+    unifiedTestOnly._normalizeRoute('groq/llama-4-scout-17b-16e-instruct'),
+    'groq/meta-llama/llama-4-scout-17b-16e-instruct',
+  );
+  assert.equal(
+    unifiedTestOnly._normalizeRoute('groq/meta-llama/llama-4-scout-17b-16e-instruct'),
+    'groq/meta-llama/llama-4-scout-17b-16e-instruct',
+  );
+
+  console.log(JSON.stringify({ ok: true, retry_after_ms: first.retryAfterMs, pooled_fetch_calls: fetchCalls }));
 }
 
 main()
@@ -50,5 +117,10 @@ main()
     global.fetch = ORIGINAL_FETCH;
     if (ORIGINAL_GROQ_API_KEY === undefined) delete process.env.GROQ_API_KEY;
     else process.env.GROQ_API_KEY = ORIGINAL_GROQ_API_KEY;
+    if (ORIGINAL_GROQ_SERVICE_TIER === undefined) delete process.env.HUB_GROQ_SERVICE_TIER;
+    else process.env.HUB_GROQ_SERVICE_TIER = ORIGINAL_GROQ_SERVICE_TIER;
+    if (ORIGINAL_GROQ_MAX_KEY_ATTEMPTS === undefined) delete process.env.HUB_GROQ_MAX_KEY_ATTEMPTS;
+    else process.env.HUB_GROQ_MAX_KEY_ATTEMPTS = ORIGINAL_GROQ_MAX_KEY_ATTEMPTS;
+    _testOnlyResetGroqAccounts();
     resetGroqKeyBlacklistForTests();
   });

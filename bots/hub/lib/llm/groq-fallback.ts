@@ -1,19 +1,33 @@
-import { pickGroqApiKey, blacklistGroqKey } from './secrets-loader';
+import { loadGroqAccounts, pickGroqApiKey, blacklistGroqKey } from './secrets-loader';
 import type { LLMCallResponse } from './types';
 
 export interface GroqRequest {
   prompt: string;
-  model?: 'llama-3.3-70b-versatile' | 'llama-3.1-8b-instant' | 'qwen-qwq-32b' | string;
+  model?: 'llama-3.3-70b-versatile' | 'llama-3.1-8b-instant' | 'qwen/qwen3-32b' | string;
   systemPrompt?: string;
   maxTokens?: number;
   temperature?: number;
+  jsonSchema?: Record<string, unknown>;
+  jsonSchemaName?: string;
+  strictJsonSchema?: boolean;
+  responseFormat?: 'text' | 'json_object' | 'json_schema';
+  reasoningEffort?: 'none' | 'default' | 'low' | 'medium' | 'high';
+  reasoningFormat?: 'hidden' | 'raw' | 'parsed';
+  includeReasoning?: boolean;
+  seed?: number;
+  serviceTier?: 'auto' | 'on_demand' | 'flex' | 'performance';
 }
 
-// Groq Developer Tier 가격 (per token)
+// Groq Developer Tier 가격 (per token), 공식 model page 기준.
 const GROQ_PRICING: Record<string, { input: number; output: number }> = {
-  'llama-3.1-8b-instant':    { input: 5.0e-8, output: 8.0e-8 },
-  'llama-3.3-70b-versatile': { input: 5.9e-7, output: 7.9e-7 },
-  'qwen-qwq-32b':            { input: 2.9e-7, output: 3.9e-7 },
+  'llama-3.1-8b-instant':                         { input: 5.0e-8, output: 8.0e-8 },
+  'llama-3.3-70b-versatile':                      { input: 5.9e-7, output: 7.9e-7 },
+  'meta-llama/llama-4-scout-17b-16e-instruct':    { input: 1.1e-7, output: 3.4e-7 },
+  'llama-4-scout-17b-16e-instruct':               { input: 1.1e-7, output: 3.4e-7 },
+  'qwen/qwen3-32b':                               { input: 2.9e-7, output: 5.9e-7 },
+  'qwen-qwq-32b':                                 { input: 2.9e-7, output: 5.9e-7 },
+  'openai/gpt-oss-20b':                           { input: 7.5e-8, output: 3.0e-7 },
+  'openai/gpt-oss-120b':                          { input: 1.5e-7, output: 6.0e-7 },
 };
 
 const DEFAULT_GROQ_RETRY_AFTER_MS = 60_000;
@@ -53,10 +67,113 @@ function resolveGroqRetryAfterMs(resp: Response, body: string): number {
   return Math.min(Math.max(parsed, DEFAULT_GROQ_RETRY_AFTER_MS), MAX_GROQ_RETRY_AFTER_MS);
 }
 
+function readHeader(resp: Response, name: string): string | null {
+  const value = resp.headers.get(name);
+  return value === null ? null : value;
+}
+
+function extractRateLimitHeaders(resp: Response): Record<string, string> {
+  const entries = [
+    'retry-after',
+    'x-ratelimit-limit-requests',
+    'x-ratelimit-limit-tokens',
+    'x-ratelimit-remaining-requests',
+    'x-ratelimit-remaining-tokens',
+    'x-ratelimit-reset-requests',
+    'x-ratelimit-reset-tokens',
+  ];
+  return Object.fromEntries(
+    entries
+      .map((name) => [name, readHeader(resp, name)] as const)
+      .filter(([, value]) => value !== null),
+  );
+}
+
+function normalizeTemperature(value: number | undefined): number {
+  const temperature = Number(value ?? 0.3);
+  if (!Number.isFinite(temperature)) return 0.3;
+  // Groq/OpenAI compatibility converts 0 to 1e-8; keep our payload explicit.
+  if (temperature <= 0) return 1e-8;
+  return Math.min(temperature, 2);
+}
+
+function resolveGroqMaxAttempts(): number {
+  const configured = Number(process.env.HUB_GROQ_MAX_KEY_ATTEMPTS || process.env.HUB_GROQ_MAX_KEY_RETRIES || '');
+  if (Number.isFinite(configured) && configured > 0) return Math.max(1, Math.min(Math.floor(configured), 25));
+  if (process.env.GROQ_API_KEY) return 1;
+  return Math.max(1, Math.min(loadGroqAccounts().length || 1, 25));
+}
+
+function resolveServiceTier(req: GroqRequest): string | undefined {
+  const raw = String(req.serviceTier || process.env.HUB_GROQ_SERVICE_TIER || '').trim();
+  if (!raw) return undefined;
+  return ['auto', 'on_demand', 'flex', 'performance'].includes(raw) ? raw : undefined;
+}
+
+function isGptOssModel(model: string): boolean {
+  return model === 'openai/gpt-oss-20b' || model === 'openai/gpt-oss-120b';
+}
+
+function isStructuredOutputModel(model: string): boolean {
+  return isGptOssModel(model)
+    || model === 'openai/gpt-oss-safeguard-20b'
+    || model === 'meta-llama/llama-4-scout-17b-16e-instruct';
+}
+
+function resolveReasoningEffort(req: GroqRequest, model: string): string | undefined {
+  if (req.reasoningEffort) return req.reasoningEffort;
+  if (isGptOssModel(model)) return 'low';
+  return undefined;
+}
+
+function buildResponseFormat(req: GroqRequest, model: string): Record<string, unknown> | undefined {
+  if (req.jsonSchema && isStructuredOutputModel(model)) {
+    return {
+      type: 'json_schema',
+      json_schema: {
+        name: req.jsonSchemaName || 'hub_response',
+        strict: Boolean(req.strictJsonSchema),
+        schema: req.jsonSchema,
+      },
+    };
+  }
+  if (req.responseFormat === 'json_object' || (req.jsonSchema && !isStructuredOutputModel(model))) {
+    return { type: 'json_object' };
+  }
+  return undefined;
+}
+
+function buildGroqRequestBody(req: GroqRequest, model: string): Record<string, unknown> {
+  const body: Record<string, unknown> = {
+    model,
+    messages: [
+      ...(req.systemPrompt ? [{ role: 'system', content: req.systemPrompt }] : []),
+      { role: 'user', content: req.prompt },
+    ],
+    max_completion_tokens: req.maxTokens ?? 1024,
+    temperature: normalizeTemperature(req.temperature),
+  };
+
+  const serviceTier = resolveServiceTier(req);
+  if (serviceTier) body.service_tier = serviceTier;
+
+  const responseFormat = buildResponseFormat(req, model);
+  if (responseFormat) body.response_format = responseFormat;
+
+  const reasoningEffort = resolveReasoningEffort(req, model);
+  if (reasoningEffort) body.reasoning_effort = reasoningEffort;
+  if (req.reasoningFormat) body.reasoning_format = req.reasoningFormat;
+  if (typeof req.includeReasoning === 'boolean') body.include_reasoning = req.includeReasoning;
+  if (Number.isInteger(req.seed)) body.seed = req.seed;
+
+  return body;
+}
+
 async function doGroqCall(
   req: GroqRequest,
   apiKey: string,
-  retryCount = 0,
+  attempt = 1,
+  maxAttempts = resolveGroqMaxAttempts(),
 ): Promise<LLMCallResponse> {
   const started = Date.now();
   const model = req.model ?? 'llama-3.3-70b-versatile';
@@ -68,55 +185,69 @@ async function doGroqCall(
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${apiKey}`,
       },
-      body: JSON.stringify({
-        model,
-        messages: [
-          ...(req.systemPrompt ? [{ role: 'system', content: req.systemPrompt }] : []),
-          { role: 'user', content: req.prompt },
-        ],
-        max_tokens: req.maxTokens ?? 1024,
-        temperature: req.temperature ?? 0.3,
-      }),
+      body: JSON.stringify(buildGroqRequestBody(req, model)),
     });
 
     const durationMs = Date.now() - started;
+    const rateLimit = extractRateLimitHeaders(resp);
 
-    if (resp.status === 429 && retryCount < 3) {
+    if (resp.status === 429) {
       const body = await resp.text().catch(() => '');
       const retryAfterMs = resolveGroqRetryAfterMs(resp, body);
       blacklistGroqKey(apiKey, retryAfterMs);
-      const nextKey = pickGroqApiKey();
-      if (nextKey && nextKey !== apiKey) {
-        return doGroqCall(req, nextKey, retryCount + 1);
+      if (attempt < maxAttempts) {
+        const nextKey = pickGroqApiKey();
+        if (nextKey && nextKey !== apiKey) {
+          return doGroqCall(req, nextKey, attempt + 1, maxAttempts);
+        }
       }
       return {
         ok: false,
         provider: 'failed',
         durationMs,
         retryAfterMs,
+        rateLimit,
         error: `Groq 429: ${body.slice(0, 300) || '전체 계정 풀 rate-limited'}`,
-      } as LLMCallResponse & { retryAfterMs: number };
+      } as LLMCallResponse & { retryAfterMs: number; rateLimit: Record<string, string> };
+    }
+
+    if (resp.status === 498) {
+      const body = await resp.text().catch(() => '');
+      return {
+        ok: false,
+        provider: 'failed',
+        durationMs,
+        retryAfterMs: 5_000,
+        rateLimit,
+        error: `Groq 498 capacity_exceeded: ${body.slice(0, 300)}`,
+      } as LLMCallResponse & { retryAfterMs: number; rateLimit: Record<string, string> };
     }
 
     if (!resp.ok) {
       const body = await resp.text().catch(() => '');
-      return { ok: false, provider: 'failed', durationMs, error: `Groq ${resp.status}: ${body.slice(0, 300)}` };
+      return { ok: false, provider: 'failed', durationMs, rateLimit, error: `Groq ${resp.status}: ${body.slice(0, 300)}` } as LLMCallResponse & { rateLimit: Record<string, string> };
     }
 
     const data = await resp.json() as any;
     const content: string = data?.choices?.[0]?.message?.content ?? '';
     const usage = data?.usage ?? {};
     const totalCostUsd = estimateCost(model, usage.prompt_tokens ?? 0, usage.completion_tokens ?? 0);
+    let structuredOutput: unknown;
+    if (req.jsonSchema && content) {
+      try { structuredOutput = JSON.parse(content); } catch {}
+    }
 
     return {
       ok: true,
       provider: 'groq',
       result: content,
+      structuredOutput,
       durationMs,
       apiDurationMs: durationMs,
       totalCostUsd,
       modelUsage: { [model]: usage },
-    };
+      rateLimit,
+    } as LLMCallResponse & { rateLimit: Record<string, string> };
   } catch (err) {
     return {
       ok: false,
@@ -144,4 +275,6 @@ export async function callGroqFallback(req: GroqRequest): Promise<LLMCallRespons
 export const _testOnly = {
   parseDurationMs,
   resolveGroqRetryAfterMs,
+  buildGroqRequestBody,
+  resolveGroqMaxAttempts,
 };
