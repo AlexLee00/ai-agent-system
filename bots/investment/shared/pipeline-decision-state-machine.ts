@@ -28,6 +28,7 @@ import { buildPipelineSymbolCandidate, recordStrategyRouteStats, resolvePipeline
 import { persistRiskApprovalRationale } from './pipeline-approved-decision.ts';
 import { buildDecisionBridgeMeta, loadDecisionPlannerCompact } from './pipeline-decision-bridge.ts';
 import { buildDecisionAgentPlan, shouldRunExecutionAuxiliaryNode } from './pipeline-decision-agent-plan.ts';
+import { createDecisionLlmBudgetGate } from './pipeline-decision-llm-budget.ts';
 import { shouldRunStockIntradayDecisionLlm } from './stock-intraday-llm-policy.ts';
 import { getConservativeRelaxationMaxPerCycle } from './luna-conservative-relaxation-policy.ts';
 import {
@@ -51,6 +52,7 @@ import {
 } from './pipeline-decision-policy.ts';
 import {
   buildSignalDecisionTraceMeta,
+  getTopReason,
   getDecisionNode,
   mergePortfolioDecisionPredictiveEvidence,
   runApprovedDecision,
@@ -179,6 +181,7 @@ export async function runDecisionExecutionStateMachine({
   let strategyRouteReadinessCount = 0;
   let relaxedPrefilterCount = 0;
   const maxRelaxedPrefilterPerCycle = getConservativeRelaxationMaxPerCycle();
+  let decisionLlmBudgetGate = null;
 
   const buildMetrics = (extra = {}) => {
     const metrics = buildDecisionPipelineMetrics({
@@ -217,25 +220,12 @@ export async function runDecisionExecutionStateMachine({
       used: relaxedPrefilterCount,
       maxPerCycle: maxRelaxedPrefilterPerCycle,
     };
+    if (decisionLlmBudgetGate) metrics.decisionLlmBudget = decisionLlmBudgetGate.snapshot();
     for (const warning of decisionAgentPlan.warnings || []) {
       if (!metrics.warnings.includes(warning)) metrics.warnings.push(warning);
     }
     return metrics;
   };
-
-  function getTopRiskRejectReason() {
-    const entries = Object.entries(riskRejectReasons);
-    if (entries.length === 0) return null;
-    entries.sort((a, b) => b[1] - a[1]);
-    return entries[0][0];
-  }
-
-  function getTopWeakSignalReason() {
-    const entries = Object.entries(weakSignalReasons);
-    if (entries.length === 0) return null;
-    entries.sort((a, b) => b[1] - a[1]);
-    return entries[0][0];
-  }
 
   const openPositions = await db.getOpenPositions(exchange, false, investmentTradeMode).catch(() => []);
   const liveHeldSymbols = new Set(
@@ -243,6 +233,7 @@ export async function runDecisionExecutionStateMachine({
       .map((row) => String(row?.symbol || '').trim())
       .filter(Boolean),
   );
+  decisionLlmBudgetGate = createDecisionLlmBudgetGate({ exchange, liveHeldSymbols });
   if (openPositions.length > 0) {
     console.log(`\n🔴 [EXIT Phase] ${openPositions.length}개 보유 포지션 청산 판단...`);
     try {
@@ -349,6 +340,13 @@ export async function runDecisionExecutionStateMachine({
         weakSignalSkipped++;
         weakSignalReasons[stockIntradayPrefilter.reason] = (weakSignalReasons[stockIntradayPrefilter.reason] || 0) + 1;
         console.log(`  ⏭️ [노드 브리지] ${symbol} L13 생략: ${stockIntradayPrefilter.reason}`);
+        continue;
+      }
+      const budgetDecision = decisionLlmBudgetGate.allow({ symbol, prefilter: stockIntradayPrefilter });
+      if (!budgetDecision.allow) {
+        weakSignalSkipped++;
+        weakSignalReasons[budgetDecision.reason] = (weakSignalReasons[budgetDecision.reason] || 0) + 1;
+        console.log(`  ⏭️ [노드 브리지] ${symbol} L13 생략: ${budgetDecision.reason}`);
         continue;
       }
       if (stockIntradayPrefilter?.relaxation?.ok === true) {
@@ -875,8 +873,8 @@ export async function runDecisionExecutionStateMachine({
       investmentTradeMode,
       plannerMeta: buildPlannerRunMeta(plannerCompact),
       portfolioDecision,
-      topRiskRejectReason: getTopRiskRejectReason(),
-      topWeakSignalReason: getTopWeakSignalReason(),
+      topRiskRejectReason: getTopReason(riskRejectReasons),
+      topWeakSignalReason: getTopReason(weakSignalReasons),
       midGapExecuted: completedMetrics.midGapExecuted,
       postExecutionBlocked: completedMetrics.postExecutionBlocked,
     }),

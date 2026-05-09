@@ -253,11 +253,18 @@ function findCryptoActionablePresignal(analyses = [], env = process.env, { requi
   const flowThreshold = getCryptoFlowDecisionPrefilterConfidence(env);
   const technical = [];
   const flow = [];
+  const sellConflicts = [];
 
   for (const row of analyses || []) {
     if (!isActionableSignal(row)) continue;
+    const signal = String(row?.signal || '').trim().toUpperCase();
     const confidence = Number(row?.confidence || 0);
     const role = cryptoAnalystRole(row);
+    if (signal === 'SELL' && ((role === 'technical' && confidence >= taThreshold) || (role === 'flow' && confidence >= flowThreshold))) {
+      sellConflicts.push({ row, confidence, role });
+      continue;
+    }
+    if (signal !== 'BUY') continue;
     if (role === 'technical' && confidence >= taThreshold) {
       technical.push({ row, confidence });
     } else if (role === 'flow' && confidence >= flowThreshold) {
@@ -269,6 +276,7 @@ function findCryptoActionablePresignal(analyses = [], env = process.env, { requi
   flow.sort((a, b) => b.confidence - a.confidence);
   const bestTechnical = technical[0] || buildCryptoMtfTechnicalPresignal(analyses, env);
   const bestFlow = flow[0] || null;
+  if (sellConflicts.length > 0) return { run: false, reason: 'crypto_intraday_sell_conflict', taThreshold, flowThreshold };
   if (!bestTechnical) return { run: false, ...classifyCryptoMtfTechnicalBlockReason(analyses, env), taThreshold, flowThreshold };
   if (!requireFlow) {
     return {
@@ -426,7 +434,7 @@ export function shouldRunStockIntradayDecisionLlm({
   const actionable = (analyses || []).find((row) => {
     const signal = String(row?.signal || '').trim().toUpperCase();
     const confidence = Number(row?.confidence || 0);
-    return confidence >= threshold && (signal === 'BUY' || signal === 'SELL');
+    return confidence >= threshold && signal === 'BUY';
   });
 
   if (actionable) {

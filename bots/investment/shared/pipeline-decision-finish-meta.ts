@@ -61,6 +61,7 @@ export function buildPipelineDecisionFinishMeta({
     warnings: metrics.warnings || [],
     decision_agent_plan: metrics.decisionAgentPlan || null,
     decision_agent_plan_warnings: metrics.decisionAgentPlanWarnings || [],
+    decision_llm_budget: metrics.decisionLlmBudget || null,
     investment_trade_mode: investmentTradeMode,
     ...plannerMeta,
   };

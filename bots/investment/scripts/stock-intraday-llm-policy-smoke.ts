@@ -108,6 +108,18 @@ const buyPrefilter = shouldRunStockIntradayDecisionLlm({
 assert.equal(buyPrefilter.run, true);
 assert.equal(buyPrefilter.reason, 'actionable_presignal');
 
+const stockSellOnlyPrefilter = shouldRunStockIntradayDecisionLlm({
+  market: 'kis',
+  symbol: '005930',
+  meta: lightMeta,
+  analyses: [
+    { analyst: 'ta_mtf', signal: 'SELL', confidence: 0.9 },
+  ],
+  env: disabledEnv,
+});
+assert.equal(stockSellOnlyPrefilter.run, false, 'non-held stock SELL must not spend entry L13 budget');
+assert.equal(stockSellOnlyPrefilter.reason, 'stock_intraday_sell_conflict');
+
 const compositeBuyPrefilter = shouldRunStockIntradayDecisionLlm({
   market: 'kis',
   symbol: '005380',
@@ -261,6 +273,18 @@ const cryptoTechnicalOnly = shouldRunStockIntradayDecisionLlm({
 });
 assert.equal(cryptoTechnicalOnly.run, true);
 assert.equal(cryptoTechnicalOnly.reason, 'crypto_actionable_technical_presignal');
+
+const cryptoSellOnly = shouldRunStockIntradayDecisionLlm({
+  market: 'binance',
+  symbol: 'NIL/USDT',
+  meta: cryptoMeta,
+  analyses: [
+    { analyst: 'ta_mtf', signal: 'SELL', confidence: 0.92 },
+  ],
+  env: disabledEnv,
+});
+assert.equal(cryptoSellOnly.run, false, 'non-held crypto SELL must not spend entry L13 budget');
+assert.equal(cryptoSellOnly.reason, 'crypto_intraday_sell_conflict');
 
 const cryptoTaFlow = shouldRunStockIntradayDecisionLlm({
   market: 'binance',

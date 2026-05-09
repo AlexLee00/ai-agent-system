@@ -87,3 +87,10 @@ export function mergePortfolioDecisionPredictiveEvidence(portfolioDecision = {},
     }),
   };
 }
+
+export function getTopReason(reasons = {}) {
+  const entries = Object.entries(reasons || {});
+  if (entries.length === 0) return null;
+  entries.sort((a, b) => Number(b[1] || 0) - Number(a[1] || 0));
+  return entries[0][0];
+}
