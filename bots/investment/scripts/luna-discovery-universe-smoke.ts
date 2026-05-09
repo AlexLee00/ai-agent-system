@@ -10,6 +10,7 @@ import {
   ensureCandidateUniverseTable,
   getActiveCandidates,
   normalizeLegacyCryptoCandidateSymbols,
+  pruneSourceCandidatesNotInSignals,
 } from '../team/discovery/discovery-store.ts';
 import { BinanceMarketMomentumCollector } from '../team/discovery/crypto/binance-market-momentum.ts';
 import { CoinGeckoTrendingCollector } from '../team/discovery/crypto/coingecko-trending.ts';
@@ -130,8 +131,28 @@ export async function runLunaDiscoveryUniverseSmoke() {
     const trusted = await getActiveCandidates('crypto', 200);
     const smokeMomentum = trusted.find((row) => row.symbol === 'SMOKEMOMENTUM/USDT');
     assert.equal(smokeMomentum?.source, 'binance_market_momentum');
+    const pruneSource = `${smokeSource}_prune`;
+    await db.run(
+      `INSERT INTO candidate_universe
+         (symbol, market, source, source_tier, score, confidence, reason, ttl_hours, raw_data, expires_at)
+       VALUES
+         ('SMOKEKEEP/USDT', 'crypto', $1, 1, 0.8000, 0.80, 'prune keep smoke', 1, '{}'::jsonb, now() + interval '1 hour'),
+         ('SMOKESTALE/USDT', 'crypto', $1, 1, 0.7900, 0.79, 'prune stale smoke', 1, '{}'::jsonb, now() + interval '1 hour')`,
+      [pruneSource],
+    );
+    const pruned = await pruneSourceCandidatesNotInSignals(
+      [{ symbol: 'SMOKEKEEP/USDT', score: 0.8 }],
+      'crypto',
+      pruneSource,
+    );
+    assert.equal(pruned, 1);
+    const afterPrune = await db.query(
+      `SELECT symbol FROM candidate_universe WHERE market = 'crypto' AND source = $1 ORDER BY symbol`,
+      [pruneSource],
+    );
+    assert.deepEqual(afterPrune.map((row) => row.symbol), ['SMOKEKEEP/USDT']);
   } finally {
-    await db.run(`DELETE FROM candidate_universe WHERE source = $1 OR symbol IN ('SMOKEMOMENTUM/USDT', 'SMOKEPREFER/USDT', 'SMOKEACTION/USDT')`, [smokeSource]).catch(() => null);
+    await db.run(`DELETE FROM candidate_universe WHERE source LIKE $1 OR symbol IN ('SMOKEMOMENTUM/USDT', 'SMOKEPREFER/USDT', 'SMOKEACTION/USDT')`, [`${smokeSource}%`]).catch(() => null);
     await db.run(`DELETE FROM analysis WHERE symbol = 'SMOKEACTION/USDT' AND reasoning LIKE 'promotion smoke%'`).catch(() => null);
   }
 

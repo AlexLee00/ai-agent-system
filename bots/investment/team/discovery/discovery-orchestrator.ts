@@ -25,6 +25,7 @@ import {
   upsertCandidateSignals,
   ensureCandidateUniverseTable,
   purgeExpiredCandidates,
+  pruneSourceCandidatesNotInSignals,
 } from './discovery-store.ts';
 import { insertDiscoverySourceMetric } from '../../shared/luna-discovery-entry-store.ts';
 
@@ -151,6 +152,13 @@ export async function runDiscoveryOrchestrator(
         errors.push({ adapter: adapter.source, error: e?.message });
         if (failClosedOnDbError) throw e;
       });
+      if (process.env.LUNA_DISCOVERY_SOURCE_PRUNE_ENABLED !== 'false') {
+        await pruneSourceCandidatesNotInSignals(result.signals, market, adapter.source).catch((e) => {
+          console.log(`[discovery-orchestrator] stale 후보 정리 오류 (${adapter.source}): ${e?.message}`);
+          errors.push({ adapter: adapter.source, error: e?.message });
+          if (failClosedOnDbError) throw e;
+        });
+      }
     }
     await insertDiscoverySourceMetric({
       source: adapter.source,

@@ -18,6 +18,7 @@ import { refreshPositionSignals } from './position-signal-refresh.ts';
 import { computeDynamicTrail } from './dynamic-trail-engine.ts';
 import { computeDynamicPositionSizing } from './dynamic-position-sizer.ts';
 import { analyzeReflexivePortfolioState } from './portfolio-reflexive-monitor.ts';
+import { fetchEntryChartSnapshot, fetchTradingViewHttpLatestSnapshot, normalizeTradingViewTimeframe } from './tradingview-entry-guard.ts';
 import {
   buildDisabledDynamicPositionSizingSnapshot,
   buildDisabledDynamicTrailSnapshot,
@@ -87,6 +88,70 @@ function getIndicatorThresholdsForExchange(exchange = 'binance') {
   return { buy: 0.25, sell: -0.25 };
 }
 
+async function fetchAuthoritativeChartOverlay(symbol, exchange, interval = '1h') {
+  try {
+    if (exchange === 'binance') {
+      const normalizedTimeframe = normalizeTradingViewTimeframe(interval);
+      if (!['1', '3', '5', '15', '30', '60'].includes(normalizedTimeframe)) {
+        return null;
+      }
+      const snapshot = await fetchTradingViewHttpLatestSnapshot({ symbol, exchange, timeframe: interval });
+      if (snapshot?.ok && snapshot?.stale !== true && !snapshot?.fallbackReason) {
+        return {
+          ...snapshot,
+          provider: 'tradingview_ws',
+          indicatorProvider: null,
+        };
+      }
+      return null;
+    }
+    if (exchange === 'kis' || exchange === 'kis_overseas') {
+      const snapshot = await fetchEntryChartSnapshot({ symbol, exchange, timeframe: interval });
+      if (snapshot?.ok && snapshot?.stale !== true) {
+        return {
+          ...snapshot,
+          provider: 'kis',
+          indicatorProvider: null,
+        };
+      }
+    }
+  } catch {
+    return null;
+  }
+  return null;
+}
+
+export function buildAuthoritativeIndicatorSnapshot({ payload = {}, overlay = null, yahooSymbol = null, interval = '1h' } = {}) {
+  const close = overlay?.price ?? overlay?.close ?? payload?.close ?? null;
+  const provider = overlay
+    ? `${overlay.provider}+${payload?.provider || 'yfinance'}_indicators`
+    : payload?.provider || 'yfinance';
+  return {
+    symbol: overlay?.symbol || yahooSymbol,
+    interval,
+    close,
+    open: overlay?.open ?? payload?.open ?? null,
+    high: overlay?.high ?? payload?.high ?? null,
+    low: overlay?.low ?? payload?.low ?? null,
+    rsi: payload?.rsi ?? null,
+    macd: payload?.macd ?? null,
+    macdSignal: payload?.macd_signal ?? null,
+    macdHist: payload?.macd_hist ?? null,
+    bbPct: payload?.bb_pct ?? null,
+    bbUpper: payload?.bb_upper ?? null,
+    bbMiddle: payload?.bb_middle ?? null,
+    bbLower: payload?.bb_lower ?? null,
+    signal: String(payload?.signal || 'HOLD').toUpperCase(),
+    provider,
+    indicatorProvider: payload?.provider || 'yfinance',
+    authoritativeSource: overlay?.source || overlay?.provider || null,
+    providerMode: overlay?.providerMode || null,
+    fallbackReason: overlay?.fallbackReason || null,
+    realtimeAgeMs: overlay?.ageMs ?? null,
+    exchangeEventAt: overlay?.exchangeEventAt || null,
+  };
+}
+
 async function fetchTradingViewIndicatorSnapshot(symbol, exchange, interval = '1h') {
   const yahooSymbol = toYahooTicker(symbol, exchange);
   const { stdout } = await execFileAsync('python3', [
@@ -104,6 +169,8 @@ async function fetchTradingViewIndicatorSnapshot(symbol, exchange, interval = '1
   if (String(payload?.status || 'error') !== 'ok') {
     throw new Error(payload?.message || 'indicator fetch failed');
   }
+  const overlay = await fetchAuthoritativeChartOverlay(symbol, exchange, interval);
+  const snapshot = buildAuthoritativeIndicatorSnapshot({ payload, overlay, yahooSymbol, interval });
 
   const signal = String(payload?.signal || 'HOLD').toUpperCase();
   const confidence = signal === 'HOLD'
@@ -120,25 +187,12 @@ async function fetchTradingViewIndicatorSnapshot(symbol, exchange, interval = '1
     confidence,
     reasoning: [
       `TV ${interval}`,
+      overlay ? `LIVE ${overlay.provider}` : `fallback ${payload?.provider || 'yfinance'}`,
       `RSI ${safeNumber(payload?.rsi).toFixed(1)}`,
       `MACD ${safeNumber(payload?.macd).toFixed(4)}`,
       `BB ${safeNumber(payload?.bb_pct).toFixed(2)}`,
     ].join(' | '),
-    snapshot: {
-      symbol: yahooSymbol,
-      interval,
-      close: payload?.close ?? null,
-      rsi: payload?.rsi ?? null,
-      macd: payload?.macd ?? null,
-      macdSignal: payload?.macd_signal ?? null,
-      macdHist: payload?.macd_hist ?? null,
-      bbPct: payload?.bb_pct ?? null,
-      bbUpper: payload?.bb_upper ?? null,
-      bbMiddle: payload?.bb_middle ?? null,
-      bbLower: payload?.bb_lower ?? null,
-      signal,
-      provider: payload?.provider || 'yfinance',
-    },
+    snapshot,
   };
 }
 

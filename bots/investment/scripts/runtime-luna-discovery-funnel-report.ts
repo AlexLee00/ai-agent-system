@@ -8,13 +8,14 @@ import { publishAlert } from '../shared/alert-publisher.ts';
 import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
 import { evaluateKisMarketHours } from '../shared/kis-market-hours-guard.ts';
 import { ANALYST_TYPES } from '../shared/signal.ts';
-import { evaluateKisDailySnapshot, evaluateTradingViewSnapshot, fetchEntryChartSnapshot } from '../shared/tradingview-entry-guard.ts';
+import { evaluateDailyTrendSnapshot, evaluateKisDailySnapshot, evaluateTradingViewSnapshot, fetchEntryChartSnapshot } from '../shared/tradingview-entry-guard.ts';
 import {
   DEFAULT_POSITION_RUNTIME_AUTOPILOT_HISTORY_FILE,
   readPositionRuntimeAutopilotHistoryLines,
 } from './runtime-position-runtime-autopilot-history-store.ts';
 import { buildDiscoveryUniverse } from '../team/discovery/discovery-universe.ts';
 import { buildDecisionFilterDiagnostics } from './runtime-luna-decision-filter-report.ts';
+import { getLunaIntelligentDiscoveryFlags } from '../shared/luna-intelligent-discovery-config.ts';
 
 const MARKET_EXCHANGES = {
   crypto: 'binance',
@@ -182,6 +183,55 @@ function summarizeEntryChartSnapshot(snapshot = {}, evaluated = {}) {
   };
 }
 
+function isoDateDaysAgo(days = 90) {
+  return new Date(Date.now() - Math.max(1, Number(days || 90)) * 24 * 60 * 60 * 1000).toISOString();
+}
+
+function normalizeCryptoDailyBars(rows = []) {
+  return (Array.isArray(rows) ? rows : [])
+    .map((row) => ({
+      timestamp: Number(row.timestamp ?? row.time ?? row[0] ?? 0),
+      open: Number(row.open ?? row[1] ?? 0),
+      high: Number(row.high ?? row[2] ?? 0),
+      low: Number(row.low ?? row[3] ?? 0),
+      close: Number(row.close ?? row[4] ?? 0),
+      volume: Number(row.volume ?? row[5] ?? 0),
+    }))
+    .filter((row) => row.close > 0);
+}
+
+async function fetchCryptoDailyCoverageFallback(symbol, { getOhlcv = null } = {}) {
+  const days = Math.max(30, Math.round(Number(process.env.LUNA_ENTRY_DAILY_TREND_LOOKBACK_DAYS || 90)));
+  const loader = getOhlcv || (await import('../shared/ohlcv-fetcher.ts')).getOHLCV;
+  const rows = normalizeCryptoDailyBars(await loader(symbol, '1d', isoDateDaysAgo(days), null, 'binance'));
+  const latest = rows[rows.length - 1] || {};
+  const snapshot = {
+    ok: rows.length > 0,
+    source: 'binance_ohlcv_daily_for_tradingview_guard',
+    providerMode: 'binance_ohlcv',
+    market: 'tradingview',
+    symbol,
+    timeframe: '1d',
+    price: Number(latest.close || 0),
+    open: Number(latest.open || 0),
+    high: Number(latest.high || 0),
+    low: Number(latest.low || 0),
+    dailyBars: rows.slice(-days),
+    stale: false,
+  };
+  const evaluated = evaluateDailyTrendSnapshot(snapshot);
+  return {
+    symbol,
+    sourcePolicy: 'tradingview',
+    ok: evaluated.ok === true,
+    reason: evaluated.reason || (rows.length > 0 ? 'daily_trend_not_bullish' : 'binance_ohlcv_daily_empty'),
+    source: snapshot.source,
+    providerMode: snapshot.providerMode,
+    bars: rows.length,
+    directHttpFallback: 'binance_ohlcv_daily',
+  };
+}
+
 export async function buildDailyTechnicalCoverage({
   market,
   exchange,
@@ -190,6 +240,7 @@ export async function buildDailyTechnicalCoverage({
   fetchSnapshot = fetchEntryChartSnapshot,
   evaluateTradingView = evaluateTradingViewSnapshot,
   evaluateKis = evaluateKisDailySnapshot,
+  fetchCryptoDailyFallback = fetchCryptoDailyCoverageFallback,
 } = {}) {
   if (symbols.length === 0) {
     return {
@@ -203,19 +254,53 @@ export async function buildDailyTechnicalCoverage({
   }
   if (market === 'crypto') {
     const limit = Math.max(1, Math.min(10, Number(process.env.LUNA_DISCOVERY_FUNNEL_CRYPTO_DAILY_TA_LIMIT || process.env.LUNA_DISCOVERY_FUNNEL_KIS_DAILY_TA_LIMIT || 5)));
+    const providerMode = String(process.env.LUNA_DISCOVERY_FUNNEL_CRYPTO_DAILY_TA_PROVIDER || 'binance_ohlcv').toLowerCase();
+    if (providerMode !== 'tradingview_realtime') {
+      const rows = [];
+      for (const symbol of symbols.slice(0, limit)) {
+        rows.push(await fetchCryptoDailyFallback(symbol).catch((error) => ({
+          symbol,
+          sourcePolicy: 'tradingview',
+          ok: false,
+          reason: error?.message || String(error),
+          source: 'binance_ohlcv_daily_for_tradingview_guard',
+          providerMode: 'binance_ohlcv',
+          bars: 0,
+          directHttpFallback: 'binance_ohlcv_daily_error',
+        })));
+      }
+      return {
+        enabled: true,
+        sourcePolicy: 'tradingview',
+        checkedCount: rows.length,
+        availableCount: rows.filter((row) => row.source && row.bars > 0).length,
+        bullishCount: rows.filter((row) => row.ok).length,
+        blockedCount: rows.filter((row) => !row.ok).length,
+        rows,
+      };
+    }
+    const realtimeTimeframe = process.env.LUNA_TRADINGVIEW_ENTRY_GUARD_TIMEFRAME || '1h';
     const rows = [];
     for (const symbol of symbols.slice(0, limit)) {
-      const snapshot = await fetchSnapshot({ symbol, exchange, timeframe: 'D' }).catch((error) => ({
+      const snapshot = await fetchSnapshot({ symbol, exchange, timeframe: realtimeTimeframe }).catch((error) => ({
         ok: false,
         error: error?.message || String(error),
         symbol,
       }));
       const evaluated = evaluateTradingView(snapshot);
-      rows.push({
+      const row = {
         symbol,
         sourcePolicy: 'tradingview',
         ...summarizeEntryChartSnapshot(snapshot, evaluated),
-      });
+      };
+      if (!row.ok && row.bars <= 0) {
+        rows.push(await fetchCryptoDailyFallback(symbol).catch((error) => ({
+          ...row,
+          reason: row.reason || error?.message || String(error),
+        })));
+      } else {
+        rows.push(row);
+      }
     }
     return {
       enabled: true,
@@ -301,20 +386,28 @@ async function buildMarketFunnel(market, { hours }) {
     queryRows(
       `SELECT COALESCE(status, 'unknown') AS status,
               COALESCE(action, 'unknown') AS action,
+              COALESCE(block_code, 'none') AS block_code,
               (
                 COALESCE(exclude_from_learning, false) = true
                 OR COALESCE(quality_flag, '') = 'exclude_from_learning'
                 OR COALESCE(block_code, '') = 'synthetic_reflection_signal'
                 OR symbol LIKE 'REFLECT_%'
               ) AS ignored,
+              (
+                action = 'BUY'
+                AND COALESCE(status, 'pending') IN ('pending', 'approved', 'queued', 'retrying')
+                AND COALESCE(confidence, 0) >= $3
+                AND COALESCE(exclude_from_learning, false) = false
+                AND COALESCE(quality_flag, 'trusted') <> 'exclude_from_learning'
+              ) AS trigger_eligible,
               COUNT(*)::int AS count,
               MAX(created_at) AS latest_created_at
        FROM signals
        WHERE exchange = $1
          AND created_at >= now() - ($2::int * INTERVAL '1 hour')
-       GROUP BY status, action, ignored
+       GROUP BY status, action, block_code, ignored, trigger_eligible
        ORDER BY count DESC`,
-      [exchange, hours],
+      [exchange, hours, Number(getLunaIntelligentDiscoveryFlags().entryTrigger?.minConfidence || 0.48)],
     ),
     queryRows(
       `SELECT trigger_state AS state, COUNT(*)::int AS count, MAX(COALESCE(fired_at, updated_at, created_at)) AS latest_at
@@ -431,8 +524,10 @@ async function buildMarketFunnel(market, { hours }) {
   const candidate = candidateRows?.[0] || {};
   const signalsByStatus = {};
   const signalsByAction = {};
+  const signalsByBlockCode = {};
   const ignoredSignalsByAction = {};
   let ignoredSignalCount = 0;
+  let triggerEligibleBuySignals = 0;
   for (const row of signalRows || []) {
     if (row.ignored === true || row.ignored === 't') {
       ignoredSignalCount += number(row.count);
@@ -441,6 +536,10 @@ async function buildMarketFunnel(market, { hours }) {
     }
     signalsByStatus[row.status] = (signalsByStatus[row.status] || 0) + number(row.count);
     signalsByAction[row.action] = (signalsByAction[row.action] || 0) + number(row.count);
+    signalsByBlockCode[row.block_code] = (signalsByBlockCode[row.block_code] || 0) + number(row.count);
+    if (row.trigger_eligible === true || row.trigger_eligible === 't') {
+      triggerEligibleBuySignals += number(row.count);
+    }
   }
   const triggerByState = rowsToStateMap(triggerRows);
   const activeTriggerCount = number(triggerByState.armed) + number(triggerByState.waiting);
@@ -454,8 +553,10 @@ async function buildMarketFunnel(market, { hours }) {
   if (marketOpen && number(candidate.active_count) > 0 && recentSignalCount === 0 && analysisCoveredSymbols.length === 0) bottlenecks.push('candidate_not_persisted_to_signal_window');
   if (marketOpen && number(candidate.active_count) > 0 && recentSignalCount === 0 && analysisCoveredSymbols.length > 0 && likelyActionable.length === 0) bottlenecks.push('analysis_completed_no_actionable_signal');
   if (marketOpen && likelyActionable.length > 0 && recentBuySignals === 0) bottlenecks.push('actionable_candidate_waiting_signal_persistence');
-  if (recentBuySignals > 0 && activeTriggerCount === 0) bottlenecks.push('buy_signal_without_active_entry_trigger');
+  if (triggerEligibleBuySignals > 0 && activeTriggerCount === 0) bottlenecks.push('buy_signal_without_active_entry_trigger');
   if (activeTriggerCount === 0 && number(triggerByState.expired) > 0) bottlenecks.push('entry_triggers_expired_without_active_replacement');
+  if (number(signalsByBlockCode.capital_guard_rejected) > 0) bottlenecks.push('capital_guard_rejected_recent_buy_signal');
+  if (number(signalsByBlockCode.live_position_reentry_blocked) > 0) bottlenecks.push('live_position_reentry_blocked_recent_buy_signal');
   if (marketOpen && number(candidate.active_count) > 0 && activeTriggerCount === 0 && recentBuySignals === 0 && likelyActionable.length === 0) bottlenecks.push('candidates_filtered_before_entry_trigger');
   if (number(candidate.active_count) > 0 && analysisSymbols.length > 0) {
     bottlenecks.push(...requiredAnalystCoverage.bottlenecks);
@@ -506,10 +607,12 @@ async function buildMarketFunnel(market, { hours }) {
     signalPersistence: {
       recentCount: recentSignalCount,
       buyCount: recentBuySignals,
+      triggerEligibleBuyCount: triggerEligibleBuySignals,
       ignoredCount: ignoredSignalCount,
       ignoredByAction: ignoredSignalsByAction,
       byStatus: signalsByStatus,
       byAction: signalsByAction,
+      byBlockCode: signalsByBlockCode,
     },
     entryTriggers: {
       activeCount: activeTriggerCount,

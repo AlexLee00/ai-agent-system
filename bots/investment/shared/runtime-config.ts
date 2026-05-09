@@ -56,6 +56,19 @@ function mergeRuntimeOverrideObjects(...sources) {
   return result;
 }
 
+function normalizeOpenAiRuntimeModel(value, fallback) {
+  const raw = String(value || fallback || '').trim();
+  return raw.replace(/^openai-oauth\//i, '').replace(/^openai\//i, '') || fallback;
+}
+
+function getDefaultOpenAiPerfModel() {
+  return normalizeOpenAiRuntimeModel(process.env.LLM_OPENAI_PERF_MODEL, 'gpt-5.4');
+}
+
+function getDefaultOpenAiMiniModel() {
+  return normalizeOpenAiRuntimeModel(process.env.LLM_OPENAI_MINI_MODEL, 'gpt-5.4-mini');
+}
+
 export function extractInvestmentRuntimeConfig(raw = {}) {
   const config = /** @type {{ runtime_config?: object, capital_management?: any }} */ (raw || {});
   const legacyCapitalRuntime = config.capital_management && (
@@ -447,8 +460,8 @@ const DEFAULT_RUNTIME_CONFIG = {
   llmPolicies: {
     investmentAgentPolicy: {
       useSharedFallbackEngine: true,
-      openaiPerfModel: 'gpt-4o',
-      openaiMiniModel: 'gpt-4o-mini',
+      openaiPerfModel: getDefaultOpenAiPerfModel(),
+      openaiMiniModel: getDefaultOpenAiMiniModel(),
       groqScoutModel: 'meta-llama/llama-4-scout-17b-16e-instruct',
       groqCompetitionModels: [
         'openai/gpt-oss-20b',

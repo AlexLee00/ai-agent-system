@@ -14,6 +14,7 @@ const ANALYST_BY_NODE = {
 const COLLECT_NODE_IDS = ['L02', 'L03', 'L04', 'L05'];
 const _pipelineRunCache = new Map();
 const _sessionCollectCache = new Map();
+const DEFAULT_ANALYSIS_CARRYOVER_MINUTES = 90;
 
 export async function loadNodePayloads(sessionId, nodeIds, symbol) {
   const results = [];
@@ -45,7 +46,13 @@ export async function loadAnalysesForSession(sessionId, symbol, market) {
     .filter(Boolean);
 
   if (fromArtifacts.length > 0) {
-    return { analyses: fromArtifacts, source: 'artifacts', artifacts };
+    const carryover = await loadRecentAnalysisCarryover(symbol, market);
+    const merged = mergeAnalysesPreferCurrentSession(fromArtifacts, carryover);
+    return {
+      analyses: merged,
+      source: merged.length > fromArtifacts.length ? 'artifacts_with_recent_db_carryover' : 'artifacts',
+      artifacts,
+    };
   }
 
   const sessionCollect = await getSessionCollectState(sessionId, symbol);
@@ -71,6 +78,44 @@ export async function loadAnalysesForSession(sessionId, symbol, market) {
 
   const analyses = await db.getRecentAnalysis(symbol, 70, market);
   return { analyses, source: 'db', artifacts: [] };
+}
+
+function analysisIdentity(row = {}) {
+  return String(row?.analyst || row?.metadata?.analyst || row?.source || '').trim().toLowerCase();
+}
+
+function normalizeCarryoverRow(row = {}) {
+  return {
+    ...row,
+    metadata: {
+      ...(row?.metadata || {}),
+      carryover: true,
+    },
+  };
+}
+
+function mergeAnalysesPreferCurrentSession(current = [], carryover = []) {
+  const merged = [];
+  const seen = new Set();
+  for (const row of current || []) {
+    const key = analysisIdentity(row);
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    merged.push(row);
+  }
+  for (const row of carryover || []) {
+    const key = analysisIdentity(row);
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    merged.push(normalizeCarryoverRow(row));
+  }
+  return merged;
+}
+
+async function loadRecentAnalysisCarryover(symbol, market) {
+  const minutes = Number(process.env.LUNA_ANALYSIS_CARRYOVER_MINUTES || DEFAULT_ANALYSIS_CARRYOVER_MINUTES);
+  const lookbackMinutes = Number.isFinite(minutes) && minutes > 0 ? minutes : DEFAULT_ANALYSIS_CARRYOVER_MINUTES;
+  return db.getRecentAnalysis(symbol, lookbackMinutes, market).catch(() => []);
 }
 
 export function buildAnalystSignals(analyses = []) {

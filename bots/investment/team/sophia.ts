@@ -77,6 +77,8 @@ const _sentCache = new Map();               // 감성 결과 캐시 (key: `excha
 const FG_TTL     = 3_600_000;
 const SENT_TTL   = getAnalysisReuseTtlMinutes(ANALYST_TYPES.SENTIMENT) * 60_000;
 const SENT_CACHE_MAX = 1000;
+const SOPHIA_SENTIMENT_TIMEOUT_MS = Math.max(30_000, Number(process.env.SOPHIA_SENTIMENT_TIMEOUT_MS || 90_000) || 90_000);
+const SOPHIA_MAX_PROMPT_POSTS = Math.max(3, Math.min(15, Number(process.env.SOPHIA_MAX_PROMPT_POSTS || 10) || 10));
 
 function execCurl(args) {
   return new Promise((resolve, reject) => {
@@ -446,28 +448,38 @@ export async function analyzeSentiment(symbol = 'BTC/USDT', exchange = 'binance'
     return { symbol, signal: ACTIONS.HOLD, confidence: 0.1, reasoning: '게시물 부족', fearGreed };
   }
 
-  const postList = posts.slice(0, 15).map((p, i) => `${i + 1}. [${p.source}] ${p.title}`).join('\n');
+  const promptPosts = posts.slice(0, SOPHIA_MAX_PROMPT_POSTS);
+  const postList = promptPosts.map((p, i) => `${i + 1}. [${p.source}] ${p.title}`).join('\n');
   const systemPrompt = PROMPTS[exchange] || PROMPTS.binance;
   const userMsg = [
     `심볼: ${symbol} (${label})`,
     scoutSignal
       ? `스카우트 힌트: ${scoutSignal.source} / score=${scoutSignal.score} / ${scoutSignal.evidence || scoutSignal.label}`
       : null,
-    `커뮤니티 게시물 (${posts.length}건):\n${postList}`,
+    `커뮤니티 게시물 ${posts.length}건 중 핵심 ${promptPosts.length}건:\n${postList}`,
   ].filter(Boolean).join('\n');
-  const responseText = await callLLMWithHub('sophia', systemPrompt, userMsg, callLLM, 300, {
-    symbol,
-    market: exchange,
-    taskType: 'sentiment',
-    incidentKey: `sophia:${exchange}:${symbol}`,
-  });
-  const parsed       = parseJSON(responseText);
+  let parsed = null;
+  let llmFallbackError = null;
+  try {
+    const responseText = await callLLMWithHub('sophia', systemPrompt, userMsg, callLLM, 300, {
+      symbol,
+      market: exchange,
+      taskType: 'sentiment',
+      incidentKey: `sophia:${exchange}:${symbol}`,
+      timeoutMs: SOPHIA_SENTIMENT_TIMEOUT_MS,
+    });
+    parsed = parseJSON(responseText);
+  } catch (error) {
+    llmFallbackError = error?.message || String(error || 'unknown_sophia_llm_error');
+    console.warn(`  ⚠️ [소피아] LLM 감성 분석 실패, 키워드 폴백 적용: ${llmFallbackError.slice(0, 160)}`);
+  }
 
   let signal, confidence, reasoning, sentiment = '중립';
   if (parsed?.action) {
     signal = parsed.action; confidence = parsed.confidence; reasoning = parsed.reasoning; sentiment = parsed.sentiment || '중립';
   } else {
     ({ signal, confidence, reasoning } = keywordFallback(posts, exchange));
+    if (llmFallbackError) reasoning = `${reasoning}; LLM 폴백(${llmFallbackError.slice(0, 120)})`;
   }
 
   console.log(`  → [소피아] ${signal} (${(confidence * 100).toFixed(0)}%) | ${sentiment}`);
@@ -489,7 +501,9 @@ export async function analyzeSentiment(symbol = 'BTC/USDT', exchange = 'binance'
   await db.insertAnalysis({
     symbol, analyst: ANALYST_TYPES.SENTIMENT, signal, confidence,
     reasoning: `[감성] ${reasoning}`,
-    metadata:  { filteredCount: posts.length, sentiment, exchange, combinedScore,
+    metadata:  { filteredCount: posts.length, promptPostCount: promptPosts.length, sentiment, exchange, combinedScore,
+                 llmFallback: Boolean(llmFallbackError),
+                 llmFallbackError: llmFallbackError ? llmFallbackError.slice(0, 300) : null,
                  scoutSignal: scoutSignal ? {
                    source: scoutSignal.source,
                    score: scoutSignal.score,

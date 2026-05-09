@@ -47,6 +47,13 @@ function messageText(eventOrRaw) {
   return String(raw || '');
 }
 
+export function redactKisWsDiagnosticMessage(text) {
+  return String(text || '')
+    .replace(/("approval_key"\s*:\s*")[^"]+(")/gi, '$1[redacted]$2')
+    .replace(/("key"\s*:\s*")[^"]+(")/gi, '$1[redacted]$2')
+    .replace(/("iv"\s*:\s*")[^"]+(")/gi, '$1[redacted]$2');
+}
+
 function readYaml(file, fallback = {}) {
   try {
     return yaml.load(fs.readFileSync(file, 'utf8')) || fallback;
@@ -211,7 +218,7 @@ export async function probeKisDomesticRealtime(args = {}) {
       });
       addWsListener(ws, 'message', (event) => {
         const text = messageText(event);
-        result.messages.push(text.slice(0, 240));
+        result.messages.push(redactKisWsDiagnosticMessage(text).slice(0, 240));
         try {
           const parsed = JSON.parse(text);
           const rtCd = String(parsed?.body?.rt_cd ?? '');

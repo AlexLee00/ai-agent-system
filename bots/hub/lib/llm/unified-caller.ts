@@ -89,7 +89,7 @@ async function _callWithFallbackInternal(req) {
 
   // 2. Build chain from the Hub selector registry. Runtime profiles only map
   // team/purpose to selector keys; they do not own model selection.
-  if (_hasAdhocChain(req) && !_adhocChainAllowed()) {
+  if (_hasAdhocChain(req) && !req.selectorKey && !_adhocChainAllowed()) {
     return {
       ok: false,
       provider: 'failed',
@@ -169,10 +169,6 @@ async function _runWithInflightDedupe(req, executor) {
 
 function _resolveSelectorChain(req, team) {
   try {
-    if (_hasAdhocChain(req) && !_adhocChainAllowed()) return null;
-    if (_hasAdhocChain(req)) {
-      return _applySelectorAvoidProviders(req, { selectorKey: req.selectorKey || 'hub.adhoc.chain', chain: req.chain });
-    }
     if (req.selectorKey) {
       const chain = selectLLMChain(String(req.selectorKey), {
         maxTokens: req.maxTokens,
@@ -182,6 +178,10 @@ function _resolveSelectorChain(req, team) {
         configuredProviders: req.configuredProviders,
       });
       return chain && chain.length ? _applySelectorAvoidProviders(req, { selectorKey: String(req.selectorKey), chain }) : null;
+    }
+    if (_hasAdhocChain(req) && !_adhocChainAllowed()) return null;
+    if (_hasAdhocChain(req)) {
+      return _applySelectorAvoidProviders(req, { selectorKey: 'hub.adhoc.chain', chain: req.chain });
     }
     if (req.agent) {
       const resolved = describeAgentModel(team, String(req.agent));
@@ -261,6 +261,7 @@ async function _callWithSelectorChain(req, selectorChain, team) {
         selected_route: selectedRoute,
         selectorKey: selectorChain.selectorKey,
         runtimeProfile: selectorChain.runtimeProfile || null,
+        avoidedProviders: selectorChain.avoidedProviders || [],
         fallbackCount: attempts.length,
         attempted_providers: attempts.map(a => a.provider),
       };
@@ -276,6 +277,7 @@ async function _callWithSelectorChain(req, selectorChain, team) {
     durationMs: attempts.reduce((s, a) => s + a.durationMs, 0),
     error: `fallback_exhausted: ${(attempts[attempts.length - 1] || {}).error || 'unknown'}`,
     attempted_providers: attempts.map(a => a.provider),
+    avoidedProviders: selectorChain.avoidedProviders || [],
     fallbackCount: attempts.length,
     selectorKey: selectorChain.selectorKey,
     runtimeProfile: selectorChain.runtimeProfile || null,

@@ -23,6 +23,10 @@ const pgPool    = require('../../../packages/core/lib/pg-pool');
 const { callHubLlm } = require('../../../packages/core/lib/hub-client');
 const stateBus  = require('./state-bus-bridge.js');
 const cfg = require('./config');
+const fs = require('fs');
+const path = require('path');
+const crypto = require('crypto');
+const runtimePaths = require('./runtime-paths.js');
 
 const SCHEMA  = 'reservation';   // shadow_log는 reservation 스키마
 
@@ -31,6 +35,7 @@ const LLM_SELECTOR_KEY = 'claude.lead.system_issue_triage';
 const PRIMARY_MODEL = LLM_SELECTOR_KEY;  // selector primary 표시용
 const TEAM    = 'claude-lead';
 const CONTEXT = 'system_issue_triage';
+const TRIAGE_STATE_FILE = runtimePaths.workspacePath('claude-lead-triage-state.json');
 
 // ── 팀장 자동화 모드 ─────────────────────────────────────────────────
 /**
@@ -316,6 +321,204 @@ function _buildUserPrompt(issues, ragContext = '') {
   return `덱스터가 감지한 이슈 ${issues.length}건을 분석해주세요:\n\n${lines.join('\n')}${ragContext}`;
 }
 
+function _asBool(value, fallback = false) {
+  if (value == null || value === '') return fallback;
+  const normalized = String(value).trim().toLowerCase();
+  if (['1', 'true', 'yes', 'on'].includes(normalized)) return true;
+  if (['0', 'false', 'no', 'off'].includes(normalized)) return false;
+  return fallback;
+}
+
+function _asPositiveInt(value, fallback) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : fallback;
+}
+
+function _getLeadTriagePolicy(env = process.env) {
+  return {
+    force: _asBool(env.CLAUDE_LEAD_LLM_FORCE, false),
+    softTriageEnabled: _asBool(env.CLAUDE_LEAD_LLM_SOFT_TRIAGE_ENABLED, false),
+    criticalCooldownMs: _asPositiveInt(env.CLAUDE_LEAD_LLM_CRITICAL_COOLDOWN_MS, 10 * 60 * 1000),
+    hardCooldownMs: _asPositiveInt(env.CLAUDE_LEAD_LLM_HARD_COOLDOWN_MS, 60 * 60 * 1000),
+    softCooldownMs: _asPositiveInt(env.CLAUDE_LEAD_LLM_SOFT_COOLDOWN_MS, 6 * 60 * 60 * 1000),
+    maxStateEntries: _asPositiveInt(env.CLAUDE_LEAD_LLM_TRIAGE_STATE_MAX, 500),
+  };
+}
+
+function _severityRank(status) {
+  const normalized = String(status || '').toLowerCase();
+  if (normalized === 'critical') return 4;
+  if (normalized === 'error') return 3;
+  if (normalized === 'warn') return 2;
+  return 1;
+}
+
+function _isOperationalHardTriageIssue(issue) {
+  const status = String(issue?.status || '').toLowerCase();
+  if (status === 'critical') return true;
+  if (status !== 'error') return false;
+
+  const check = String(issue?.checkName || '').toLowerCase();
+  const label = String(issue?.label || '').toLowerCase();
+  const detail = String(issue?.detail || '').toLowerCase();
+  const text = `${check} ${label} ${detail}`;
+
+  if (text.includes('현재 상태 정상') || text.includes('퇴역 launchd')) return false;
+  if (check.includes('git 무결성') || label === 'git 상태') return false;
+  if (check.includes('코드 무결성')) {
+    return (
+      text.includes('문법') ||
+      text.includes('끊긴 참조') ||
+      text.includes('무단 수정 의심')
+    );
+  }
+
+  if (check.includes('네트워크')) return true;
+  if (check.includes('에러 로그')) return true;
+  return true;
+}
+
+function _classifyLeadTriageIssues(issues) {
+  const hardIssues = issues.filter(_isOperationalHardTriageIssue);
+  const rankSource = hardIssues.length > 0 ? hardIssues : issues;
+  const maxRank = rankSource.reduce((acc, issue) => Math.max(acc, _severityRank(issue.status)), 1);
+  const severity = maxRank >= 4 ? 'critical' : maxRank >= 3 ? 'error' : maxRank >= 2 ? 'warn' : 'ok';
+  return {
+    severity,
+    hard: hardIssues.length > 0,
+    hardIssueCount: hardIssues.length,
+    issueCount: issues.length,
+  };
+}
+
+function _buildLeadTriageDigest(issues) {
+  const normalized = (issues || [])
+    .map((issue) => [
+      String(issue.checkName || '').trim().toLowerCase(),
+      String(issue.label || '').trim().toLowerCase(),
+      String(issue.status || '').trim().toLowerCase(),
+    ].join('|'))
+    .sort()
+    .join('\n');
+  return crypto.createHash('sha256').update(normalized).digest('hex');
+}
+
+function _readLeadTriageState(filePath = TRIAGE_STATE_FILE) {
+  try {
+    if (!fs.existsSync(filePath)) return { version: 1, digests: {} };
+    const parsed = JSON.parse(fs.readFileSync(filePath, 'utf8'));
+    return {
+      version: 1,
+      digests: parsed?.digests && typeof parsed.digests === 'object' ? parsed.digests : {},
+    };
+  } catch {
+    return { version: 1, digests: {} };
+  }
+}
+
+function _writeLeadTriageState(state, filePath = TRIAGE_STATE_FILE) {
+  try {
+    fs.mkdirSync(path.dirname(filePath), { recursive: true });
+    fs.writeFileSync(filePath, JSON.stringify(state, null, 2));
+  } catch (error) {
+    console.warn('[claude-lead-brain] triage state 저장 실패 (무시):', error.message);
+  }
+}
+
+function _pruneLeadTriageState(state, maxEntries) {
+  const entries = Object.entries(state.digests || {});
+  if (entries.length <= maxEntries) return state;
+  entries.sort((a, b) => Number(b[1]?.lastSeenAtMs || 0) - Number(a[1]?.lastSeenAtMs || 0));
+  return {
+    version: 1,
+    digests: Object.fromEntries(entries.slice(0, maxEntries)),
+  };
+}
+
+function _shouldCallLeadLlm(issues, opts = {}) {
+  const nowMs = Number(opts.nowMs || Date.now());
+  const policy = opts.policy || _getLeadTriagePolicy(opts.env || process.env);
+  const state = opts.state || _readLeadTriageState(opts.filePath || TRIAGE_STATE_FILE);
+  const digest = _buildLeadTriageDigest(issues);
+  const classification = _classifyLeadTriageIssues(issues);
+  const previous = state.digests?.[digest] || null;
+
+  if (policy.force) {
+    return { call: true, reason: 'force', digest, classification, policy, previous };
+  }
+
+  if (!classification.hard && !policy.softTriageEnabled) {
+    return { call: false, reason: 'soft_triage_llm_disabled', digest, classification, policy, previous };
+  }
+
+  const cooldownMs = classification.severity === 'critical'
+    ? policy.criticalCooldownMs
+    : classification.hard
+      ? policy.hardCooldownMs
+      : policy.softCooldownMs;
+  const lastLlmAtMs = Number(previous?.lastLlmAtMs || 0);
+  if (lastLlmAtMs > 0 && nowMs - lastLlmAtMs < cooldownMs) {
+    return {
+      call: false,
+      reason: 'triage_digest_cooldown',
+      digest,
+      classification,
+      policy,
+      previous,
+      remainingMs: cooldownMs - (nowMs - lastLlmAtMs),
+    };
+  }
+
+  return { call: true, reason: 'new_or_expired_digest', digest, classification, policy, previous };
+}
+
+function _recordLeadTriageDecision(decision, opts = {}) {
+  const nowMs = Number(opts.nowMs || Date.now());
+  const policy = decision.policy || _getLeadTriagePolicy(opts.env || process.env);
+  const state = opts.state || _readLeadTriageState(opts.filePath || TRIAGE_STATE_FILE);
+  const previous = state.digests?.[decision.digest] || {};
+  state.digests = state.digests || {};
+  state.digests[decision.digest] = {
+    firstSeenAtMs: Number(previous.firstSeenAtMs || nowMs),
+    lastSeenAtMs: nowMs,
+    lastLlmAtMs: decision.call ? nowMs : Number(previous.lastLlmAtMs || 0),
+    seenCount: Number(previous.seenCount || 0) + 1,
+    severity: decision.classification?.severity || 'unknown',
+    issueCount: Number(decision.classification?.issueCount || 0),
+    lastReason: decision.reason,
+  };
+  const next = _pruneLeadTriageState(state, policy.maxStateEntries);
+  if (!opts.state) _writeLeadTriageState(next, opts.filePath || TRIAGE_STATE_FILE);
+  return next;
+}
+
+async function _insertLeadShadowLog({ issues, ruleResult, llmResult, llmError, match, leadMode, elapsed }) {
+  const inputSummary = issues
+    .map(i => `[${i.checkName}] ${i.label}(${i.status})`)
+    .join(' | ')
+    .slice(0, 500);
+
+  try {
+    await pgPool.run(SCHEMA, `
+      INSERT INTO shadow_log
+        (team, context, input_summary, rule_result, llm_result, llm_error, match, mode, elapsed_ms)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+    `, [
+      TEAM,
+      CONTEXT,
+      inputSummary,
+      JSON.stringify(ruleResult),
+      llmResult ? JSON.stringify(llmResult) : null,
+      llmError  ?? null,
+      match,
+      leadMode,
+      elapsed,
+    ]);
+  } catch (e) {
+    console.warn('[claude-lead-brain] shadow_log INSERT 실패 (무시):', e.message);
+  }
+}
+
 // ── 메인 평가 함수 ────────────────────────────────────────────────────
 /**
  * 덱스터 체크 결과를 Sonnet으로 종합 판단 (Shadow Mode)
@@ -343,6 +546,35 @@ async function evaluateWithClaudeLead(results) {
 
   // 2. 규칙 엔진 판단 (동기)
   const ruleResult = _ruleEngine(issues);
+  const leadModeInfo = await _resolveAdaptiveLeadMode(issues);
+  const leadMode = leadModeInfo.effectiveMode;
+  const triageDecision = _shouldCallLeadLlm(issues);
+
+  if (!triageDecision.call) {
+    const repeatedSoftSkip = triageDecision.reason === 'soft_triage_llm_disabled'
+      && Number(triageDecision.previous?.seenCount || 0) > 0;
+    _recordLeadTriageDecision(triageDecision);
+    const elapsed = Date.now() - t0;
+    const llmError = `skipped:${triageDecision.reason}`;
+    if (!repeatedSoftSkip) {
+      await _insertLeadShadowLog({
+        issues,
+        ruleResult,
+        llmResult: null,
+        llmError,
+        match: null,
+        leadMode,
+        elapsed,
+      });
+    }
+    try {
+      const teamBus = require('../lib/team-bus');
+      await teamBus.setStatus('claude-lead', 'idle', `이슈 ${issues.length}건 규칙 기반 처리`);
+    } catch { /* team-bus 실패 무시 */ }
+    const logMode = repeatedSoftSkip ? '반복 soft 기록 생략' : 'shadow 기록';
+    console.log(`  ⏭ [클로드 팀장] LLM 판단 생략 — ${triageDecision.reason} (${triageDecision.classification.severity}, ${logMode}, digest=${triageDecision.digest.slice(0, 8)})`);
+    return;
+  }
 
   // 3. Sonnet LLM 판단 (비동기, Shadow)
   // RAG 검색: 유사 과거 장애/복구 사례 조회 → LLM 컨텍스트 보강
@@ -401,6 +633,7 @@ async function evaluateWithClaudeLead(results) {
   } catch (e) {
     llmError = e.message?.slice(0, 150) ?? '알 수 없는 오류';
   }
+  _recordLeadTriageDecision(triageDecision);
 
   // 4. 일치 여부
   const match = llmResult
@@ -409,33 +642,7 @@ async function evaluateWithClaudeLead(results) {
 
   // 5. shadow_log 기록
   const elapsed      = Date.now() - t0;
-  const inputSummary = issues
-    .map(i => `[${i.checkName}] ${i.label}(${i.status})`)
-    .join(' | ')
-    .slice(0, 500);
-
-  const leadModeInfo = await _resolveAdaptiveLeadMode(issues);
-  const leadMode = leadModeInfo.effectiveMode;
-
-  try {
-    await pgPool.run(SCHEMA, `
-      INSERT INTO shadow_log
-        (team, context, input_summary, rule_result, llm_result, llm_error, match, mode, elapsed_ms)
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-    `, [
-      TEAM,
-      CONTEXT,
-      inputSummary,
-      JSON.stringify(ruleResult),
-      llmResult ? JSON.stringify(llmResult) : null,
-      llmError  ?? null,
-      match,
-      leadMode,
-      elapsed,
-    ]);
-  } catch (e) {
-    console.warn('[claude-lead-brain] shadow_log INSERT 실패 (무시):', e.message);
-  }
+  await _insertLeadShadowLog({ issues, ruleResult, llmResult, llmError, match, leadMode, elapsed });
 
   // RAG 저장: 이슈 분석 이력을 rag_operations에 학습 데이터로 기록
   try {
@@ -639,4 +846,10 @@ module.exports = {
   LEAD_MODES,
   _getLeadMode,
   _resolveAdaptiveLeadMode,
+  _buildLeadTriageDigest,
+  _classifyLeadTriageIssues,
+  _getLeadTriagePolicy,
+  _isOperationalHardTriageIssue,
+  _shouldCallLeadLlm,
+  _recordLeadTriageDecision,
 };

@@ -5,11 +5,14 @@ import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { createRequire } from 'node:module';
 import { buildHubLlmCallPayload } from '../shared/hub-llm-client.ts';
 import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, '../../..');
+const require = createRequire(import.meta.url);
+const { selectLLMChain } = require('../../../packages/core/lib/llm-model-selector.js');
 
 const LUNA_LAUNCHD_PLISTS = [
   'bots/investment/launchd/ai.investment.commander.plist',
@@ -89,6 +92,14 @@ function buildAgentPayloadWithRouting(agentName, taskType, enabled) {
   }
 }
 
+function selectorProviders(selectorKey, agentName) {
+  return selectLLMChain(String(selectorKey), {
+    agentName,
+    selectorVersion: 'v3.0_oauth_4',
+    rolloutPercent: 100,
+  }).map((entry) => entry.provider);
+}
+
 export function runLunaLaunchdLlmRoutingEnvSmoke() {
   const plistChecks = LUNA_LAUNCHD_PLISTS.map((file) => {
     const plist = readPlist(file);
@@ -112,48 +123,43 @@ export function runLunaLaunchdLlmRoutingEnvSmoke() {
   });
 
   const legacyPayload = buildPayloadWithRouting(false);
-  const legacyChain = Array.isArray(legacyPayload.chain) ? legacyPayload.chain : [];
-  const legacyProviders = legacyChain.map((entry) => entry.provider);
-  assert.ok(
-    legacyChain.length >= 3,
-    'disabled routing should still keep the Luna legacy safety fallback chain',
-  );
-  assert.equal(
-    legacyProviders[0],
-    'openai-oauth',
-    'disabled routing keeps OpenAI OAuth as the Luna legacy primary',
-  );
+  assert.equal(legacyPayload.selectorKey, 'investment.luna', 'disabled routing must still delegate to Hub selector key');
+  assert.equal(legacyPayload.chain, undefined, 'disabled routing must not materialize legacy chain client-side');
+  const legacyProviders = selectorProviders(legacyPayload.selectorKey, 'luna');
   assert.ok(
     legacyProviders.includes('groq'),
-    'disabled routing keeps Groq as the Luna legacy fallback',
+    'disabled routing keeps Groq available through Hub selector',
   );
   assert.ok(
     !legacyProviders.includes('claude-code'),
-    'disabled routing must not leak Luna legacy calls to Claude Code',
+    'disabled routing must not leak Luna selector calls to Claude Code',
   );
 
   const routedPayload = buildPayloadWithRouting(true);
-  const routedChain = Array.isArray(routedPayload.chain) ? routedPayload.chain : [];
-  const providers = routedChain.map((entry) => entry.provider);
-  assert.ok(routedChain.length >= 3, 'enabled routing should keep a provider fallback chain');
+  assert.equal(routedPayload.selectorKey, 'investment.luna', 'enabled routing must delegate to Hub selector key');
+  assert.equal(routedPayload.chain, undefined, 'enabled routing must not materialize selector chain client-side');
+  const providers = selectorProviders(routedPayload.selectorKey, 'luna');
+  assert.ok(providers.length >= 3, 'enabled routing should keep a provider fallback chain in Hub selector');
   assert.ok(!providers.includes('claude-code'), 'enabled routing should not include Claude Code fallback');
   assert.ok(providers.includes('openai-oauth'), 'enabled routing should include OpenAI OAuth fallback');
   assert.ok(providers.includes('groq'), 'enabled routing should include Groq fallback');
 
   const zeusPayload = buildAgentPayloadWithRouting('zeus', 'debate_bull', false);
-  const zeusProviders = (Array.isArray(zeusPayload.chain) ? zeusPayload.chain : [])
-    .map((entry) => entry.provider);
-  assert.ok(zeusProviders.length >= 3, 'disabled zeus routing should still keep fallback chain');
-  assert.equal(zeusProviders[0], 'openai-oauth', 'disabled zeus routing should use OpenAI OAuth primary');
+  assert.equal(zeusPayload.selectorKey, 'investment.zeus', 'disabled zeus routing must still delegate to Hub selector key');
+  assert.equal(zeusPayload.chain, undefined, 'disabled zeus routing must not materialize chain client-side');
+  const zeusProviders = selectorProviders(zeusPayload.selectorKey, 'zeus');
+  assert.ok(zeusProviders.length >= 3, 'disabled zeus routing should still keep Hub fallback chain');
+  assert.equal(zeusProviders[0], 'groq', 'disabled zeus routing should use Hub selector primary');
   assert.ok(!zeusProviders.includes('claude-code'), 'disabled zeus routing must not leak to Claude Code');
 
   const sentimentPayload = buildAgentPayloadWithRouting('sophia', 'sentiment', true);
-  const sentimentProviders = (Array.isArray(sentimentPayload.chain) ? sentimentPayload.chain : [])
-    .map((entry) => entry.provider);
+  assert.equal(sentimentPayload.selectorKey, 'investment.sophia', 'sentiment routing must delegate to Hub selector key');
+  assert.equal(sentimentPayload.chain, undefined, 'sentiment routing must not materialize chain client-side');
+  const sentimentProviders = selectorProviders(sentimentPayload.selectorKey, 'sophia');
   assert.equal(
     sentimentProviders[0],
-    'groq',
-    'sentiment routing should use fast Groq primary; OAuth providers remain fallback only',
+    'gemini-cli-oauth',
+    'sentiment routing should use Gemini CLI OAuth primary; Groq/OpenAI remain fallback only',
   );
   assert.equal(
     sentimentProviders.includes('gemini-oauth'),

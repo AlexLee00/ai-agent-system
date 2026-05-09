@@ -21,17 +21,21 @@ const _require = createRequire(import.meta.url);
 const _hubClient = _require('../../../packages/core/lib/hub-client');
 
 const HUB_BASE = process.env.HUB_BASE_URL || 'http://localhost:7788';
-const HUB_TIMEOUT_MS = 65_000;
+const HUB_DEFAULT_TIMEOUT_MS = 65_000;
+const HUB_MAX_TIMEOUT_MS = Math.max(
+  HUB_DEFAULT_TIMEOUT_MS,
+  Math.min(180_000, Number(process.env.INVESTMENT_LLM_HUB_MAX_TIMEOUT_MS || 180_000) || 180_000),
+);
 
 function normalizeHubRequestTimeout(value: unknown): number {
   const raw = Number(value || 0);
-  if (!Number.isFinite(raw) || raw <= 0) return HUB_TIMEOUT_MS - 5_000;
-  return Math.max(5_000, Math.min(HUB_TIMEOUT_MS - 1_000, Math.round(raw)));
+  if (!Number.isFinite(raw) || raw <= 0) return HUB_DEFAULT_TIMEOUT_MS - 5_000;
+  return Math.max(5_000, Math.min(HUB_MAX_TIMEOUT_MS - 1_000, Math.round(raw)));
 }
 
 function normalizeHubFetchTimeout(value: unknown): number {
   const requestTimeoutMs = normalizeHubRequestTimeout(value);
-  return Math.max(6_000, Math.min(HUB_TIMEOUT_MS, requestTimeoutMs + 5_000));
+  return Math.max(6_000, Math.min(HUB_MAX_TIMEOUT_MS, requestTimeoutMs + 5_000));
 }
 
 export function isHubEnabled(): boolean {

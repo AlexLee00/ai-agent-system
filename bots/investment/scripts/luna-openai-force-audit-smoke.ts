@@ -29,7 +29,11 @@ function providersFor(agentName, taskType = 'final_decision') {
       taskType,
       maxTokens: 64,
     });
-    return (Array.isArray(payload.chain) ? payload.chain : []).map((entry) => entry.provider);
+    const chain = selectLLMChain(String(payload.selectorKey || 'investment._default'), {
+      agentName,
+      maxTokens: 64,
+    });
+    return (Array.isArray(chain) ? chain : []).map((entry) => entry.provider);
   } finally {
     if (prevHubEnabled == null) delete process.env.INVESTMENT_LLM_HUB_ENABLED;
     else process.env.INVESTMENT_LLM_HUB_ENABLED = prevHubEnabled;

@@ -4,6 +4,7 @@
 import assert from 'node:assert/strict';
 import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
 import { classifyKisRealtime, classifyTradingViewRealtime } from './runtime-marketdata-realtime-connectivity.ts';
+import { redactKisWsDiagnosticMessage } from '../mcp/luna-marketdata-mcp/src/tools/kis-ws-domestic.ts';
 
 export async function runSmoke() {
   const tvReady = classifyTradingViewRealtime({
@@ -62,6 +63,31 @@ export async function runSmoke() {
   assert.equal(kisPreopen.ok, true);
   assert.equal(kisPreopen.status, 'kis_overseas_preopen_realtime_subscription_ready');
 
+  const kisSharedWs = classifyKisRealtime({
+    market: 'kis_overseas',
+    symbol: 'AAPL',
+    probe: {
+      ok: false,
+      approvalKeyIssued: true,
+      wsOpened: true,
+      subscriptionSent: true,
+      subscriptionAccepted: false,
+      firstTickReceived: false,
+      error: 'ALREADY IN USE appkey',
+    },
+    rest: { ok: true, providerMode: 'rest', price: 100 },
+  });
+  assert.equal(kisSharedWs.ok, true);
+  assert.equal(kisSharedWs.status, 'kis_overseas_shared_ws_in_use_rest_ready');
+  assert.equal(kisSharedWs.blockers.length, 0);
+  assert.equal(kisSharedWs.warnings.includes('kis_overseas_ws_appkey_already_in_use_existing_stream_assumed'), true);
+
+  const redacted = redactKisWsDiagnosticMessage('{"header":{"approval_key":"abc"},"body":{"output":{"iv":"iv-secret","key":"key-secret"}}}');
+  assert.equal(redacted.includes('abc'), false);
+  assert.equal(redacted.includes('iv-secret'), false);
+  assert.equal(redacted.includes('key-secret'), false);
+  assert.equal(redacted.includes('[redacted]'), true);
+
   const kisMissingApproval = classifyKisRealtime({
     market: 'kis_domestic',
     symbol: '005930',
@@ -77,7 +103,7 @@ export async function runSmoke() {
   assert.equal(kisMissingApproval.ok, false);
   assert.equal(kisMissingApproval.blockers.includes('kis_domestic_approval_key_missing'), true);
 
-  return { ok: true, tvReady, tvFallback, kisPreopen, kisMissingApproval };
+  return { ok: true, tvReady, tvFallback, kisPreopen, kisSharedWs, kisMissingApproval, redactionChecked: true };
 }
 
 async function main() {

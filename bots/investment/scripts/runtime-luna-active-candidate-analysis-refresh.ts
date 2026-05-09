@@ -12,6 +12,10 @@ import { buildStockIntradayLlmPolicyMeta } from '../shared/stock-intraday-llm-po
 
 const CONFIRM = 'luna-active-candidate-analysis-refresh';
 const DEFAULT_STATE_PATH = investmentOpsRuntimeFile('luna-active-candidate-analysis-refresh-state.json');
+const DEFAULT_DECISION_FILTER_HOURS = 2;
+const DEFAULT_TARGETED_ENRICHMENT_MAX_SYMBOLS = 3;
+const DEFAULT_TARGETED_ENRICHMENT_COOLDOWN_BYPASS_MINUTES = 10;
+const DEFAULT_TARGETED_ENRICHMENT_COOLDOWN_BYPASS_MAX_SYMBOLS = 1;
 
 function hasArg(name, argv = process.argv.slice(2)) {
   return argv.includes(`--${name}`);
@@ -59,12 +63,134 @@ function defaultExchangeForMarket(market = 'crypto') {
   return 'binance';
 }
 
+function missingEnrichmentNodeIds(item = {}) {
+  const exchange = String(item.exchange || '').trim();
+  const reasons = new Set(Array.isArray(item.reasons) ? item.reasons : []);
+  const nodes = [];
+  if (reasons.has('sentiment_not_confirmed')) nodes.push('L03');
+  if (exchange === 'binance' && reasons.has('onchain_not_confirmed')) nodes.push('L05');
+  if ((exchange === 'kis' || exchange === 'kis_overseas') && reasons.has('market_flow_not_confirmed')) nodes.push('L04');
+  return [...new Set(nodes)];
+}
+
+function hasTechnicalBuy(item = {}) {
+  const byAnalyst = item?.analystSummary?.byAnalyst || {};
+  return ['ta_mtf', 'ta', 'technical'].some((analyst) => String(byAnalyst?.[analyst]?.signal || '').toUpperCase() === 'BUY')
+    || String(item?.fused?.recommendation || '').toUpperCase() === 'LONG';
+}
+
+function isProbeCriticalCandidate(item = {}) {
+  if (item?.actionability === 'relaxed_probe_candidate') return true;
+  if (item?.relaxation?.ok === true) return true;
+  return false;
+}
+
+function buildTargetedEnrichmentPlan({
+  report,
+  state = {},
+  now = new Date(),
+  maxSymbols = DEFAULT_TARGETED_ENRICHMENT_MAX_SYMBOLS,
+  cooldownMinutes = 45,
+  cooldownBypassMinMinutes = DEFAULT_TARGETED_ENRICHMENT_COOLDOWN_BYPASS_MINUTES,
+  cooldownBypassMaxSymbols = DEFAULT_TARGETED_ENRICHMENT_COOLDOWN_BYPASS_MAX_SYMBOLS,
+  exchange = null,
+  excludeSymbols = [],
+} = {}) {
+  const attempts = state?.symbols || {};
+  const cooldownMs = Math.max(1, Number(cooldownMinutes || 45)) * 60 * 1000;
+  const bypassMs = Math.max(1, Number(cooldownBypassMinMinutes || DEFAULT_TARGETED_ENRICHMENT_COOLDOWN_BYPASS_MINUTES)) * 60 * 1000;
+  const bypassMax = Math.max(0, Number(cooldownBypassMaxSymbols || 0));
+  const excluded = new Set((excludeSymbols || []).map((symbol) => String(symbol || '').trim().toUpperCase()).filter(Boolean));
+  const selected = [];
+  const skippedCooldown = [];
+  const nodeIds = new Set();
+  let cooldownBypassed = 0;
+
+  for (const item of report?.top || []) {
+    const symbol = String(item?.symbol || '').trim().toUpperCase();
+    if (!symbol || excluded.has(symbol)) continue;
+    if (item.actionability === 'likely_actionable') continue;
+    if (!hasTechnicalBuy(item)) continue;
+    const reasons = new Set(Array.isArray(item.reasons) ? item.reasons : []);
+    if (reasons.has('conflict_detected') || reasons.has('news_only_buy')) continue;
+    const missingNodes = missingEnrichmentNodeIds(item);
+    if (missingNodes.length === 0) continue;
+
+    const key = exchange ? `${exchange}:targeted_enrichment:${symbol}` : `targeted_enrichment:${symbol}`;
+    const attempt = attempts?.[key] || null;
+    const lastAttemptAt = attempt?.lastAttemptAt || null;
+    const ageMs = lastAttemptAt ? now.getTime() - new Date(lastAttemptAt).getTime() : Infinity;
+    if (Number.isFinite(ageMs) && ageMs >= 0 && ageMs < cooldownMs) {
+      const bypassAllowed = isProbeCriticalCandidate(item)
+        && cooldownBypassed < bypassMax
+        && ageMs >= bypassMs
+        && selected.length < Math.max(0, Number(maxSymbols || 0));
+      if (bypassAllowed) {
+        cooldownBypassed += 1;
+        selected.push({
+          symbol,
+          reasons: [...reasons],
+          missingNodes,
+          fused: item.fused || null,
+          recommendation: item.recommendation || null,
+          cooldownBypassed: true,
+          lastAttemptAt,
+          nextEligibleAt: new Date(new Date(lastAttemptAt).getTime() + cooldownMs).toISOString(),
+        });
+        for (const nodeId of missingNodes) nodeIds.add(nodeId);
+        if (selected.length >= Math.max(0, Number(maxSymbols || 0))) break;
+        continue;
+      }
+      skippedCooldown.push({
+        symbol,
+        lastAttemptAt,
+        nextEligibleAt: new Date(new Date(lastAttemptAt).getTime() + cooldownMs).toISOString(),
+        missingNodes,
+      });
+      continue;
+    }
+
+    selected.push({
+      symbol,
+      reasons: [...reasons],
+      missingNodes,
+      fused: item.fused || null,
+      recommendation: item.recommendation || null,
+    });
+    for (const nodeId of missingNodes) nodeIds.add(nodeId);
+    if (selected.length >= Math.max(0, Number(maxSymbols || 0))) break;
+  }
+
+  return {
+    ok: true,
+    enabled: Math.max(0, Number(maxSymbols || 0)) > 0,
+    status: selected.length > 0
+      ? 'targeted_enrichment_needed'
+      : skippedCooldown.length > 0
+        ? 'targeted_enrichment_cooldown'
+        : 'targeted_enrichment_clear',
+    selected,
+    selectedSymbols: selected.map((item) => item.symbol),
+    nodeIds: [...nodeIds],
+    skippedCooldown,
+    cooldownBypassed,
+    cooldownBypassedSymbols: selected.filter((item) => item.cooldownBypassed).map((item) => item.symbol),
+    maxSymbols: Math.max(0, Number(maxSymbols || 0)),
+    cooldownMinutes: Math.max(1, Number(cooldownMinutes || 45)),
+    cooldownBypassMinMinutes: Math.max(1, Number(cooldownBypassMinMinutes || DEFAULT_TARGETED_ENRICHMENT_COOLDOWN_BYPASS_MINUTES)),
+    cooldownBypassMaxSymbols: bypassMax,
+  };
+}
+
 export function buildActiveCandidateAnalysisRefreshPlan({
   report,
   state = {},
   now = new Date(),
   maxSymbols = 4,
+  maxEnrichmentSymbols = DEFAULT_TARGETED_ENRICHMENT_MAX_SYMBOLS,
   cooldownMinutes = 45,
+  cooldownBypassMinMinutes = DEFAULT_TARGETED_ENRICHMENT_COOLDOWN_BYPASS_MINUTES,
+  cooldownBypassMaxSymbols = DEFAULT_TARGETED_ENRICHMENT_COOLDOWN_BYPASS_MAX_SYMBOLS,
   exchange = null,
 } = {}) {
   const missing = [...new Set((report?.missingActiveCandidateSymbols || []).map((symbol) => String(symbol || '').trim().toUpperCase()).filter(Boolean))];
@@ -72,10 +198,10 @@ export function buildActiveCandidateAnalysisRefreshPlan({
   const attempts = state?.symbols || {};
   const selected = [];
   const skippedCooldown = [];
-  const attemptKeyFor = (symbol) => exchange ? `${exchange}:${symbol}` : symbol;
+  const attemptKeyFor = (symbol) => exchange ? `${exchange}:analysis:${symbol}` : `analysis:${symbol}`;
 
   for (const symbol of missing) {
-    const attempt = attempts?.[attemptKeyFor(symbol)] || attempts?.[symbol] || null;
+    const attempt = attempts?.[attemptKeyFor(symbol)] || attempts?.[exchange ? `${exchange}:${symbol}` : symbol] || null;
     const lastAttemptAt = attempt?.lastAttemptAt || null;
     const ageMs = lastAttemptAt ? now.getTime() - new Date(lastAttemptAt).getTime() : Infinity;
     if (Number.isFinite(ageMs) && ageMs >= 0 && ageMs < cooldownMs) {
@@ -89,33 +215,49 @@ export function buildActiveCandidateAnalysisRefreshPlan({
     if (selected.length < Math.max(1, Number(maxSymbols || 4))) selected.push(symbol);
   }
 
+  const targetedEnrichment = buildTargetedEnrichmentPlan({
+    report,
+    state,
+    now,
+    maxSymbols: maxEnrichmentSymbols,
+    cooldownMinutes,
+    cooldownBypassMinMinutes,
+    cooldownBypassMaxSymbols,
+    exchange,
+    excludeSymbols: selected,
+  });
+  const hasWork = selected.length > 0 || targetedEnrichment.selected.length > 0;
+
   return {
     ok: true,
-    status: selected.length > 0 ? 'active_candidate_analysis_refresh_needed' : missing.length > 0 ? 'active_candidate_analysis_refresh_cooldown' : 'active_candidate_analysis_refresh_clear',
+    status: hasWork ? 'active_candidate_analysis_refresh_needed' : missing.length > 0 ? 'active_candidate_analysis_refresh_cooldown' : 'active_candidate_analysis_refresh_clear',
     missing,
     selected,
     skippedCooldown,
+    targetedEnrichment,
     maxSymbols: Math.max(1, Number(maxSymbols || 4)),
+    maxEnrichmentSymbols: Math.max(0, Number(maxEnrichmentSymbols || 0)),
     cooldownMinutes: Math.max(1, Number(cooldownMinutes || 45)),
-    nextAction: selected.length > 0
-      ? 'collect_missing_active_candidate_analysis_without_decision_execution'
+    nextAction: hasWork
+      ? 'collect_missing_or_targeted_enrichment_without_decision_execution'
       : missing.length > 0
         ? 'wait_for_refresh_cooldown_or_regular_market_cycle'
         : 'continue_observation',
   };
 }
 
-function updateAttemptState(state = {}, symbols = [], result = {}, now = new Date(), { exchange = null } = {}) {
+function updateAttemptState(state = {}, symbols = [], result = {}, now = new Date(), { exchange = null, purpose = 'analysis' } = {}) {
   const next = {
     ...(state || {}),
     updatedAt: now.toISOString(),
     symbols: { ...((state || {}).symbols || {}) },
   };
   for (const symbol of symbols || []) {
-    const key = exchange ? `${exchange}:${symbol}` : symbol;
+    const key = exchange ? `${exchange}:${purpose}:${symbol}` : `${purpose}:${symbol}`;
     next.symbols[key] = {
       symbol,
       exchange,
+      purpose,
       lastAttemptAt: now.toISOString(),
       lastStatus: isCollectResultOk(result) ? 'ok' : 'failed',
       lastOutcome: result?.metrics?.collectQuality?.status || result?.status || null,
@@ -128,11 +270,15 @@ function updateAttemptState(state = {}, symbols = [], result = {}, now = new Dat
 export async function runActiveCandidateAnalysisRefresh({
   market = 'crypto',
   exchange = null,
-  hours = 24,
+  hours = Number(process.env.LUNA_ACTIVE_CANDIDATE_REFRESH_HOURS || DEFAULT_DECISION_FILTER_HOURS),
   limit = 20,
   maxSymbols = Number(process.env.LUNA_ACTIVE_CANDIDATE_REFRESH_MAX_SYMBOLS || 4),
+  maxEnrichmentSymbols = Number(process.env.LUNA_ACTIVE_CANDIDATE_TARGETED_ENRICHMENT_MAX_SYMBOLS || DEFAULT_TARGETED_ENRICHMENT_MAX_SYMBOLS),
   cooldownMinutes = Number(process.env.LUNA_ACTIVE_CANDIDATE_REFRESH_COOLDOWN_MINUTES || 45),
+  cooldownBypassMinMinutes = Number(process.env.LUNA_ACTIVE_CANDIDATE_TARGETED_ENRICHMENT_COOLDOWN_BYPASS_MINUTES || DEFAULT_TARGETED_ENRICHMENT_COOLDOWN_BYPASS_MINUTES),
+  cooldownBypassMaxSymbols = Number(process.env.LUNA_ACTIVE_CANDIDATE_TARGETED_ENRICHMENT_COOLDOWN_BYPASS_MAX_SYMBOLS || DEFAULT_TARGETED_ENRICHMENT_COOLDOWN_BYPASS_MAX_SYMBOLS),
   enabled = boolEnv('LUNA_ACTIVE_CANDIDATE_REFRESH_ENABLED', true),
+  targetedEnrichmentEnabled = boolEnv('LUNA_ACTIVE_CANDIDATE_TARGETED_ENRICHMENT_ENABLED', true),
   apply = false,
   confirm = null,
   statePath = DEFAULT_STATE_PATH,
@@ -174,7 +320,10 @@ export async function runActiveCandidateAnalysisRefresh({
     state,
     now,
     maxSymbols,
+    maxEnrichmentSymbols: targetedEnrichmentEnabled ? maxEnrichmentSymbols : 0,
     cooldownMinutes,
+    cooldownBypassMinMinutes,
+    cooldownBypassMaxSymbols,
     exchange: resolvedExchange,
   });
 
@@ -208,7 +357,7 @@ export async function runActiveCandidateAnalysisRefresh({
     };
   }
 
-  if (plan.selected.length === 0) {
+  if (plan.selected.length === 0 && plan.targetedEnrichment.selected.length === 0) {
     return {
       ok: true,
       status: plan.status,
@@ -221,10 +370,51 @@ export async function runActiveCandidateAnalysisRefresh({
     };
   }
 
-  const collect = await collectRunner({
-    market: resolvedExchange,
+  const collectRuns = [];
+  async function runCollectStage({ symbols, purpose, meta, universeMeta }) {
+    if (!Array.isArray(symbols) || symbols.length === 0) return null;
+    const collect = await collectRunner({
+      market: resolvedExchange,
+      symbols,
+      triggerType: purpose === 'targeted_enrichment'
+        ? 'active_candidate_targeted_enrichment'
+        : 'active_candidate_analysis_refresh',
+      meta,
+      universeMeta,
+    });
+    const collectOk = Number(collect?.metrics?.failedHardCoreTasks || 0) === 0;
+    let finishResult = null;
+    try {
+      finishResult = await finishRun(collect.sessionId, {
+        status: collectOk ? 'completed' : 'failed',
+        meta: {
+          bridge_status: collectOk
+            ? `${purpose}_collected`
+            : `${purpose}_collect_degraded`,
+          market_script: 'active_candidate_analysis_refresh',
+          decision_execution_skipped: true,
+          collect_purpose: purpose,
+          collect_metrics: collect.metrics || null,
+          collect_quality: collect.metrics?.collectQuality || null,
+          collect_warnings: collect.metrics?.warnings || [],
+        },
+      });
+    } catch (error) {
+      finishResult = {
+        updated: false,
+        reason: 'finish_pipeline_run_failed',
+        error: error?.message || String(error),
+      };
+    }
+    const finishOk = finishResult?.updated === true || finishResult?.reason === 'already_terminal';
+    const record = { purpose, collect, collectOk, finish: finishResult, finishOk };
+    collectRuns.push(record);
+    return record;
+  }
+
+  const baseRun = await runCollectStage({
     symbols: plan.selected,
-    triggerType: 'active_candidate_analysis_refresh',
+    purpose: 'analysis',
     meta: buildStockIntradayLlmPolicyMeta({
       market: resolvedExchange,
       marketScript: 'active_candidate_analysis_refresh',
@@ -238,31 +428,43 @@ export async function runActiveCandidateAnalysisRefresh({
       activeCandidateRefresh: true,
     },
   });
-  const collectOk = Number(collect?.metrics?.failedHardCoreTasks || 0) === 0;
-  let finishResult = null;
-  try {
-    finishResult = await finishRun(collect.sessionId, {
-      status: collectOk ? 'completed' : 'failed',
-      meta: {
-        bridge_status: collectOk
-          ? 'active_candidate_analysis_refresh_collected'
-          : 'active_candidate_analysis_refresh_collect_degraded',
-        market_script: 'active_candidate_analysis_refresh',
+
+  const enrichmentRun = await runCollectStage({
+    symbols: plan.targetedEnrichment.selectedSymbols,
+    purpose: 'targeted_enrichment',
+    meta: buildStockIntradayLlmPolicyMeta({
+      market: resolvedExchange,
+      marketScript: 'active_candidate_analysis_refresh',
+      collectMode: 'active_candidate_targeted_enrichment',
+      extraMeta: {
         decision_execution_skipped: true,
-        collect_metrics: collect.metrics || null,
-        collect_quality: collect.metrics?.collectQuality || null,
-        collect_warnings: collect.metrics?.warnings || [],
+        targeted_enrichment: true,
+        targeted_enrichment_reason: 'fill_missing_confirmation_before_l13',
+        agentPlan: {
+          collect: {
+            nodeIds: plan.targetedEnrichment.nodeIds,
+            concurrencyLimit: Math.min(3, Math.max(1, plan.targetedEnrichment.nodeIds.length || 1)),
+          },
+        },
+        llm_call_policy: {
+          source_enrichment: 'targeted_top_n_only',
+          targeted_enrichment_nodes: plan.targetedEnrichment.nodeIds,
+          targeted_enrichment_max_symbols: plan.targetedEnrichment.maxSymbols,
+          targeted_enrichment_cooldown_bypassed_symbols: plan.targetedEnrichment.cooldownBypassedSymbols || [],
+        },
       },
-    });
-  } catch (error) {
-    finishResult = {
-      updated: false,
-      reason: 'finish_pipeline_run_failed',
-      error: error?.message || String(error),
-    };
-  }
-  const finishOk = finishResult?.updated === true || finishResult?.reason === 'already_terminal';
-  const nextState = updateAttemptState(state, plan.selected, collect, now, { exchange: resolvedExchange });
+    }),
+    universeMeta: {
+      screeningSymbolCount: plan.targetedEnrichment.selectedSymbols.length,
+      activeCandidateRefresh: true,
+      targetedEnrichment: true,
+    },
+  });
+
+  const finishOk = collectRuns.every((run) => run.finishOk);
+  const collectOk = collectRuns.every((run) => run.collectOk);
+  let nextState = updateAttemptState(state, plan.selected, baseRun?.collect || {}, now, { exchange: resolvedExchange, purpose: 'analysis' });
+  nextState = updateAttemptState(nextState, plan.targetedEnrichment.selectedSymbols, enrichmentRun?.collect || {}, now, { exchange: resolvedExchange, purpose: 'targeted_enrichment' });
   writeJson(statePath, nextState);
 
   return {
@@ -276,13 +478,27 @@ export async function runActiveCandidateAnalysisRefresh({
     exchange: resolvedExchange,
     statePath,
     plan,
-    collect: {
-      sessionId: collect.sessionId,
-      symbols: collect.symbols,
-      summaries: collect.summaries,
-      metrics: collect.metrics,
-    },
-    finish: finishResult,
+    collect: baseRun ? {
+      sessionId: baseRun.collect.sessionId,
+      symbols: baseRun.collect.symbols,
+      summaries: baseRun.collect.summaries,
+      metrics: baseRun.collect.metrics,
+    } : null,
+    targetedEnrichmentCollect: enrichmentRun ? {
+      sessionId: enrichmentRun.collect.sessionId,
+      symbols: enrichmentRun.collect.symbols,
+      summaries: enrichmentRun.collect.summaries,
+      metrics: enrichmentRun.collect.metrics,
+    } : null,
+    finish: baseRun?.finish || enrichmentRun?.finish || null,
+    collectRuns: collectRuns.map((run) => ({
+      purpose: run.purpose,
+      sessionId: run.collect?.sessionId || null,
+      symbols: run.collect?.symbols || [],
+      collectOk: run.collectOk,
+      finishOk: run.finishOk,
+      finish: run.finish,
+    })),
   };
 }
 
@@ -291,10 +507,13 @@ async function main() {
   const result = await runActiveCandidateAnalysisRefresh({
     market: argValue('market', 'crypto', argv),
     exchange: argValue('exchange', null, argv),
-    hours: Math.max(1, Number(argValue('hours', 24, argv)) || 24),
+    hours: Math.max(1, Number(argValue('hours', process.env.LUNA_ACTIVE_CANDIDATE_REFRESH_HOURS || DEFAULT_DECISION_FILTER_HOURS, argv)) || DEFAULT_DECISION_FILTER_HOURS),
     limit: Math.max(1, Number(argValue('limit', 20, argv)) || 20),
     maxSymbols: Math.max(1, Number(argValue('max-symbols', process.env.LUNA_ACTIVE_CANDIDATE_REFRESH_MAX_SYMBOLS || 4, argv)) || 4),
+    maxEnrichmentSymbols: Math.max(0, Number(argValue('max-enrichment-symbols', process.env.LUNA_ACTIVE_CANDIDATE_TARGETED_ENRICHMENT_MAX_SYMBOLS || DEFAULT_TARGETED_ENRICHMENT_MAX_SYMBOLS, argv)) || 0),
     cooldownMinutes: Math.max(1, Number(argValue('cooldown-minutes', process.env.LUNA_ACTIVE_CANDIDATE_REFRESH_COOLDOWN_MINUTES || 45, argv)) || 45),
+    cooldownBypassMinMinutes: Math.max(1, Number(argValue('cooldown-bypass-minutes', process.env.LUNA_ACTIVE_CANDIDATE_TARGETED_ENRICHMENT_COOLDOWN_BYPASS_MINUTES || DEFAULT_TARGETED_ENRICHMENT_COOLDOWN_BYPASS_MINUTES, argv)) || DEFAULT_TARGETED_ENRICHMENT_COOLDOWN_BYPASS_MINUTES),
+    cooldownBypassMaxSymbols: Math.max(0, Number(argValue('cooldown-bypass-max-symbols', process.env.LUNA_ACTIVE_CANDIDATE_TARGETED_ENRICHMENT_COOLDOWN_BYPASS_MAX_SYMBOLS || DEFAULT_TARGETED_ENRICHMENT_COOLDOWN_BYPASS_MAX_SYMBOLS, argv)) || 0),
     apply: hasArg('apply', argv),
     confirm: argValue('confirm', null, argv),
     statePath: argValue('state-path', DEFAULT_STATE_PATH, argv),

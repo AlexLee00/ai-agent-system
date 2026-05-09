@@ -107,6 +107,8 @@ export async function runLunaDiscoveryFunnelReportSmoke() {
     assert.ok(crypto.candidateUniverse.activeCount >= 1, 'candidate universe should include smoke candidate');
     assert.ok(crypto.analysisCoverage.coveredCount >= 1, 'analysis coverage should include smoke candidate');
     assert.ok(crypto.signalPersistence.buyCount >= 1, 'signal persistence should include smoke BUY');
+    assert.ok(crypto.signalPersistence.triggerEligibleBuyCount >= 1, 'trigger eligibility should only count live BUY signals');
+    assert.ok(crypto.signalPersistence.byBlockCode.none >= 1, 'signal persistence should expose non-blocked BUY/SIGNAL rows');
     assert.ok(crypto.signalPersistence.ignoredCount >= 1, 'synthetic reflection signal should be tracked as ignored');
     assert.ok(crypto.entryTriggers.activeCount >= 1, 'entry trigger should include smoke armed trigger');
     assert.equal(report.autopilot.totals.candidateCount, 1, 'autopilot dispatch candidate count should come from fixture history');
@@ -199,6 +201,122 @@ export async function runLunaDiscoveryFunnelReportSmoke() {
     assert.equal(domesticOpenDailyCoverage.checkedCount, 1);
     assert.equal(domesticOpenDailyCoverage.availableCount, 1);
     assert.equal(domesticOpenDailyCoverage.bullishCount, 1);
+
+    const cryptoSnapshotCalls = [];
+    const cryptoDailyCoverage = await buildDailyTechnicalCoverage({
+      market: 'crypto',
+      exchange: 'binance',
+      marketOpen: true,
+      symbols: ['BTC/USDT'],
+      fetchSnapshot: async (request) => {
+        cryptoSnapshotCalls.push(request);
+        return {
+          ok: true,
+          source: 'tradingview_ws_service',
+          providerMode: 'websocket_http_latest',
+          symbol: 'BINANCE:BTCUSDT',
+          timeframe: '60',
+          price: 120,
+          open: 118,
+          high: 122,
+          low: 117,
+          dailyBars: Array.from({ length: 30 }, (_, index) => ({
+            open: 90 + index,
+            high: 92 + index,
+            low: 89 + index,
+            close: 91 + index,
+          })),
+          stale: false,
+        };
+      },
+      fetchCryptoDailyFallback: async (fallbackSymbol) => ({
+        symbol: fallbackSymbol,
+        sourcePolicy: 'tradingview',
+        ok: true,
+        reason: 'daily_trend_bullish',
+        source: 'binance_ohlcv_daily_for_tradingview_guard',
+        providerMode: 'binance_ohlcv',
+        bars: 90,
+        directHttpFallback: 'binance_ohlcv_daily',
+      }),
+    });
+    assert.equal(cryptoDailyCoverage.checkedCount, 1);
+    assert.equal(cryptoDailyCoverage.availableCount, 1);
+    assert.equal(cryptoDailyCoverage.bullishCount, 1);
+    assert.equal(
+      cryptoSnapshotCalls.length,
+      0,
+      'crypto candidate daily coverage should not open TradingView subscriptions by default',
+    );
+
+    const previousProvider = process.env.LUNA_DISCOVERY_FUNNEL_CRYPTO_DAILY_TA_PROVIDER;
+    process.env.LUNA_DISCOVERY_FUNNEL_CRYPTO_DAILY_TA_PROVIDER = 'tradingview_realtime';
+    try {
+      await buildDailyTechnicalCoverage({
+        market: 'crypto',
+        exchange: 'binance',
+        marketOpen: true,
+        symbols: ['BTC/USDT'],
+        fetchSnapshot: async (request) => {
+          cryptoSnapshotCalls.push(request);
+          return {
+            ok: true,
+            source: 'tradingview_ws_service',
+            providerMode: 'websocket_http_latest',
+            symbol: 'BINANCE:BTCUSDT',
+            timeframe: '60',
+            price: 120,
+            open: 118,
+            high: 122,
+            low: 117,
+            dailyBars: Array.from({ length: 30 }, (_, index) => ({
+              open: 90 + index,
+              high: 92 + index,
+              low: 89 + index,
+              close: 91 + index,
+            })),
+            stale: false,
+          };
+        },
+      });
+      assert.notEqual(
+        String(cryptoSnapshotCalls[0]?.timeframe || '').toUpperCase(),
+        'D',
+        'optional TradingView crypto coverage should use entry timeframe, not realtime D bars',
+      );
+    } finally {
+      if (previousProvider == null) delete process.env.LUNA_DISCOVERY_FUNNEL_CRYPTO_DAILY_TA_PROVIDER;
+      else process.env.LUNA_DISCOVERY_FUNNEL_CRYPTO_DAILY_TA_PROVIDER = previousProvider;
+    }
+
+    const cryptoFallbackCoverage = await buildDailyTechnicalCoverage({
+      market: 'crypto',
+      exchange: 'binance',
+      marketOpen: true,
+      symbols: ['ONDO/USDT'],
+      fetchSnapshot: async () => ({
+        ok: false,
+        error: 'tradingview_http_latest_empty',
+        directHttpFallback: { error: 'tradingview_http_latest_empty' },
+      }),
+      fetchCryptoDailyFallback: async (fallbackSymbol) => ({
+        symbol: fallbackSymbol,
+        sourcePolicy: 'tradingview',
+        ok: true,
+        reason: 'daily_trend_bullish',
+        source: 'binance_ohlcv_daily_for_tradingview_guard',
+        providerMode: 'binance_ohlcv',
+        bars: 90,
+        directHttpFallback: 'binance_ohlcv_daily',
+      }),
+    });
+    assert.equal(cryptoFallbackCoverage.availableCount, 1);
+    assert.equal(cryptoFallbackCoverage.bullishCount, 1);
+    assert.equal(
+      cryptoFallbackCoverage.rows[0]?.source,
+      'binance_ohlcv_daily_for_tradingview_guard',
+      'crypto daily coverage should fall back to Binance OHLCV when TradingView realtime bar is missing for candidate symbols',
+    );
 
     const overseasOpenCoverage = buildRequiredAnalystCoverage({
       market: 'overseas',

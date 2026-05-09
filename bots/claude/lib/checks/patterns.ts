@@ -21,22 +21,44 @@ const ERROR_THRESH = Number(cfg.RUNTIME?.patterns?.errorThreshold || 5);
 const WARN_THRESH = Number(cfg.RUNTIME?.patterns?.warnThreshold || 3);
 const CLEANUP_DAYS = Number(cfg.RUNTIME?.patterns?.cleanupDays || 30);
 
-function buildActiveIssueSet(results = []) {
-  const active = new Set();
+function severityRank(status) {
+  const normalized = String(status || '').toLowerCase();
+  if (normalized === 'critical') return 3;
+  if (normalized === 'error') return 2;
+  if (normalized === 'warn') return 1;
+  return 0;
+}
+
+function buildActiveIssueMap(results = []) {
+  const active = new Map();
   for (const result of results) {
     for (const item of (result.items || [])) {
       if (!['warn', 'error', 'critical'].includes(item.status)) continue;
-      active.add(`${result.name}||${String(item.label || '').trim()}`);
+      const key = `${result.name}||${String(item.label || '').trim()}`;
+      const prev = active.get(key);
+      if (!prev || severityRank(item.status) > severityRank(prev)) {
+        active.set(key, item.status);
+      }
     }
   }
   return active;
 }
 
+function classifyPatternStatus(pattern, activeStatus) {
+  const normalized = String(activeStatus || '').toLowerCase();
+  const currentlyHard = ['error', 'critical'].includes(normalized);
+  const repeatedEnough = Number(pattern?.cnt || 0) >= ERROR_THRESH;
+  if (currentlyHard) return repeatedEnough ? 'error' : 'warn';
+  if (normalized === 'warn') return 'ok';
+  return repeatedEnough ? 'error' : 'warn';
+}
+
 async function run(results = []) {
   const items = [];
-  const activeIssues = buildActiveIssueSet(results);
+  const activeIssues = buildActiveIssueMap(results);
   let hiddenResolvedPatterns = 0;
   let hiddenResolvedNew = 0;
+  let trackedSoftPatterns = 0;
 
   // 오래된 이력 정리 (30일)
   const deleted = await cleanup(CLEANUP_DAYS);
@@ -51,12 +73,18 @@ async function run(results = []) {
     items.push({ label: `반복 패턴 (${PATTERN_DAYS}일)`, status: 'ok', detail: '반복 오류 없음' });
   } else {
     for (const p of patterns) {
-      if (activeIssues.size > 0 && !activeIssues.has(`${p.check_name}||${String(p.label || '').trim()}`)) {
+      const key = `${p.check_name}||${String(p.label || '').trim()}`;
+      const activeStatus = activeIssues.get(key);
+      if (activeIssues.size > 0 && !activeStatus) {
         hiddenResolvedPatterns++;
         continue;
       }
-      const isError = p.cnt >= ERROR_THRESH;
-      const status  = isError ? 'error' : 'warn';
+      const status = classifyPatternStatus(p, activeStatus || (activeIssues.size > 0 ? 'warn' : 'unknown'));
+      if (status === 'ok') {
+        trackedSoftPatterns++;
+        continue;
+      }
+      const isError = status === 'error';
       // UTC → KST (+9h) 변환 (last_seen이 이미 Z 포함 가능)
       const lastSeenStr = p.last_seen?.endsWith('Z') ? p.last_seen : (p.last_seen + 'Z');
       const utcMs   = new Date(lastSeenStr).getTime();
@@ -69,12 +97,21 @@ async function run(results = []) {
     }
   }
 
+  if (trackedSoftPatterns > 0) {
+    items.push({
+      label: '반복 soft 패턴 추적',
+      status: 'ok',
+      detail: `현재 WARN으로 이미 노출된 반복 패턴 ${trackedSoftPatterns}건은 추가 경고로 중복 집계하지 않음`,
+    });
+  }
+
   // 2. 신규 오류 감지 (24시간 내 첫 등장)
   const newErrors = await getNewErrors(NEW_ERROR_HOURS, PATTERN_DAYS);
 
   if (newErrors.length > 0) {
     for (const e of newErrors) {
-      if (activeIssues.size > 0 && !activeIssues.has(`${e.check_name}||${String(e.label || '').trim()}`)) {
+      const key = `${e.check_name}||${String(e.label || '').trim()}`;
+      if (activeIssues.size > 0 && !activeIssues.has(key)) {
         hiddenResolvedNew++;
         continue;
       }
@@ -109,4 +146,4 @@ async function run(results = []) {
   };
 }
 
-module.exports = { run };
+module.exports = { run, buildActiveIssueMap, classifyPatternStatus };

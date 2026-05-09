@@ -590,6 +590,50 @@ const TEAM_SELECTOR_DEFAULTS_LEGACY: Record<string, any> = {
       ],
     },
   },
+  justin: {
+    'stage-3': {
+      primary: { provider: 'openai-oauth', model: OPENAI_PERF_MODEL, maxTokens: 4096, temperature: 0.2, timeoutMs: 60_000 },
+      fallbacks: [
+        { provider: 'gemini-cli-oauth', model: GEMINI_CLI_FLASH_MODEL, maxTokens: 4096, temperature: 0.2, timeoutMs: 45_000 },
+        { provider: 'groq', model: GROQ_DEEP_MODEL, maxTokens: 4096, temperature: 0.2, timeoutMs: 30_000 },
+      ],
+    },
+    analysis: {
+      primary: { provider: 'gemini-cli-oauth', model: GEMINI_CLI_FLASH_MODEL, maxTokens: 4096, temperature: 0.2, timeoutMs: 45_000 },
+      fallbacks: [
+        { provider: 'groq', model: GROQ_DEEP_MODEL, maxTokens: 4096, temperature: 0.2, timeoutMs: 30_000 },
+        { provider: 'openai-oauth', model: OPENAI_PERF_MODEL, maxTokens: 4096, temperature: 0.2, timeoutMs: 60_000 },
+      ],
+    },
+    citation: {
+      primary: { provider: 'gemini-cli-oauth', model: GEMINI_CLI_FLASH_LITE_MODEL, maxTokens: 2048, temperature: 0.1, timeoutMs: 25_000 },
+      fallbacks: [
+        { provider: 'groq', model: GROQ_FAST_MODEL, maxTokens: 2048, temperature: 0.1, timeoutMs: 20_000 },
+        { provider: 'openai-oauth', model: OPENAI_MINI_MODEL, maxTokens: 2048, temperature: 0.1, timeoutMs: 30_000 },
+      ],
+    },
+    opinion: {
+      primary: { provider: 'gemini-cli-oauth', model: GEMINI_CLI_FLASH_MODEL, maxTokens: 4096, temperature: 0.2, timeoutMs: 45_000 },
+      fallbacks: [
+        { provider: 'openai-oauth', model: OPENAI_PERF_MODEL, maxTokens: 4096, temperature: 0.2, timeoutMs: 60_000 },
+        { provider: 'groq', model: GROQ_DEEP_MODEL, maxTokens: 4096, temperature: 0.2, timeoutMs: 30_000 },
+      ],
+    },
+    'simple-qa': {
+      primary: { provider: 'gemini-cli-oauth', model: GEMINI_CLI_FLASH_LITE_MODEL, maxTokens: 700, temperature: 0.1, timeoutMs: 20_000 },
+      fallbacks: [
+        { provider: 'groq', model: GROQ_FAST_MODEL, maxTokens: 700, temperature: 0.1, timeoutMs: 12_000 },
+        { provider: 'openai-oauth', model: OPENAI_MINI_MODEL, maxTokens: 700, temperature: 0.1, timeoutMs: 12_000 },
+      ],
+    },
+    _fallback: {
+      primary: { provider: 'gemini-cli-oauth', model: GEMINI_CLI_FLASH_MODEL, maxTokens: 4096, temperature: 0.2, timeoutMs: 45_000 },
+      fallbacks: [
+        { provider: 'openai-oauth', model: OPENAI_PERF_MODEL, maxTokens: 4096, temperature: 0.2, timeoutMs: 60_000 },
+        { provider: 'groq', model: GROQ_DEEP_MODEL, maxTokens: 4096, temperature: 0.2, timeoutMs: 30_000 },
+      ],
+    },
+  },
   ska: {
     'parsing.level3': {
       primary: { provider: 'claude-code', model: 'claude-code/opus', maxTokens: 2000, temperature: 0.1, timeoutMs: 15000 },
@@ -907,6 +951,32 @@ const AGENT_MODEL_REGISTRY: Record<string, Record<string, string | null>> = {
   core: {
     'chunked-gpt4o': 'core.chunked.gpt4o',
     'chunked-default': 'core.chunked.default',
+  },
+  justin: {
+    default: 'justin._default',
+    justin: 'justin.stage-3',
+    'stage-3': 'justin.stage-3',
+    'simple-qa': 'justin.simple-qa',
+    analysis: 'justin.analysis',
+    citation: 'justin.citation',
+    opinion: 'justin.opinion',
+    briefing: 'justin.analysis',
+    lens: 'justin.analysis',
+    garam: 'justin.citation',
+    atlas: 'justin.citation',
+    claim: 'justin.analysis',
+    defense: 'justin.analysis',
+    quill: 'justin.opinion',
+    balance: 'justin.opinion',
+    contro: 'justin.analysis',
+    citecheck: 'justin.citation',
+    chain: 'justin.analysis',
+    bench: 'justin.opinion',
+    delta: 'justin.analysis',
+    'ledger-law': 'justin.analysis',
+    'plaintiff-x': 'justin.analysis',
+    'defense-x': 'justin.analysis',
+    'neutral-bench': 'justin.opinion',
   },
   orchestrator: {
     default: 'orchestrator.jay.intent',
@@ -1405,6 +1475,13 @@ function buildSelectorRegistry(): Record<string, any> {
     'core._default': (options: SelectorOptions = {}) => resolveFromTeamDefault('core._default', options),
     'core.chunked.gpt4o': (options: SelectorOptions = {}) => resolveFromTeamDefault('core.chunked.gpt4o', options),
     'core.chunked.default': (options: SelectorOptions = {}) => resolveFromTeamDefault('core.chunked.default', options),
+
+    'justin._default': (options: SelectorOptions = {}) => resolveFromTeamDefault('justin._default', options),
+    'justin.stage-3': (options: SelectorOptions = {}) => resolveFromTeamDefault('justin.stage-3', options),
+    'justin.analysis': (options: SelectorOptions = {}) => resolveFromTeamDefault('justin.analysis', options),
+    'justin.citation': (options: SelectorOptions = {}) => resolveFromTeamDefault('justin.citation', options),
+    'justin.opinion': (options: SelectorOptions = {}) => resolveFromTeamDefault('justin.opinion', options),
+    'justin.simple-qa': (options: SelectorOptions = {}) => resolveFromTeamDefault('justin.simple-qa', options),
 
     'ska._default': (options: SelectorOptions = {}) => resolveFromTeamDefault('ska._default', options),
     'ska.parsing.level3': (options: SelectorOptions = {}) => resolveFromTeamDefault('ska.parsing.level3', options),

@@ -472,7 +472,8 @@ export function buildStockIntradayLlmPolicyMeta({
   extraMeta = {},
 } = {}) {
   if (isCryptoMarket(market)) {
-    const enrichmentEnabled = isCryptoIntradayEnrichmentEnabled(env);
+    const targetedEnrichment = extraMeta?.targeted_enrichment === true;
+    const enrichmentEnabled = targetedEnrichment || isCryptoIntradayEnrichmentEnabled(env);
     return {
       ...(extraMeta || {}),
       market_script: marketScript || extraMeta?.market_script || null,
@@ -488,7 +489,7 @@ export function buildStockIntradayLlmPolicyMeta({
       },
       llm_call_policy: {
         ...(extraMeta?.llm_call_policy || {}),
-        source_enrichment: enrichmentEnabled ? 'intraday_enabled' : 'technical_first_only',
+        source_enrichment: targetedEnrichment ? 'targeted_top_n_only' : enrichmentEnabled ? 'intraday_enabled' : 'technical_first_only',
         light_collect_nodes: enrichmentEnabled ? null : [...CRYPTO_INTRADAY_LIGHT_COLLECT_NODES],
       },
     };
@@ -502,7 +503,8 @@ export function buildStockIntradayLlmPolicyMeta({
     };
   }
 
-  const enrichmentEnabled = isStockIntradayEnrichmentEnabled(env);
+  const targetedEnrichment = extraMeta?.targeted_enrichment === true;
+  const enrichmentEnabled = targetedEnrichment || isStockIntradayEnrichmentEnabled(env);
   const debateEnabled = isStockIntradayDebateEnabled(env);
   const agentPlan = {
     ...(extraMeta?.agentPlan || {}),
@@ -531,7 +533,7 @@ export function buildStockIntradayLlmPolicyMeta({
     agentPlan,
     llm_call_policy: {
       ...(extraMeta?.llm_call_policy || {}),
-      source_enrichment: enrichmentEnabled ? 'intraday_enabled' : 'pre_market_or_research_only',
+      source_enrichment: targetedEnrichment ? 'targeted_top_n_only' : enrichmentEnabled ? 'intraday_enabled' : 'pre_market_or_research_only',
       debate: debateEnabled ? 'intraday_enabled' : 'pre_market_or_research_only',
       light_collect_nodes: enrichmentEnabled ? null : [...STOCK_INTRADAY_LIGHT_COLLECT_NODES],
     },

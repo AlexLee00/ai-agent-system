@@ -106,6 +106,27 @@ async function withCommanderModule(mocks, fn) {
   }
 }
 
+async function withCommanderModelEnvCleared(fn) {
+  const keys = [
+    'CLAUDE_COMMANDER_MODEL',
+    'LLM_CLAUDE_CODE_DISABLED',
+    'LLM_CLAUDE_CODE_DISABLED_UNTIL',
+    'LLM_CLAUDE_CODE_SONNET_DISABLED',
+    'LLM_FORCE_OPENAI_OAUTH_UNTIL',
+    'LLM_CLAUDE_CODE_SONNET_REPLACEMENT',
+  ];
+  const saved = Object.fromEntries(keys.map((key) => [key, process.env[key]]));
+  for (const key of keys) delete process.env[key];
+  try {
+    return await fn();
+  } finally {
+    for (const [key, value] of Object.entries(saved)) {
+      if (value == null) delete process.env[key];
+      else process.env[key] = value;
+    }
+  }
+}
+
 // Commander를 임포트하지 않고 HANDLERS만 검사하기 위해
 // 파일에서 직접 HANDLERS 패턴을 grep으로 추출
 function getHandlerNamesFromSource() {
@@ -329,13 +350,13 @@ async function test_ask_claude_runtime_invocation_uses_model_arg() {
     return { mocks: localMocks };
   })();
 
-  await withCommanderModule(mocks, async commander => {
+  await withCommanderModelEnvCleared(() => withCommanderModule(mocks, async commander => {
     const result = await commander.__test__.handleAskClaude({ query: 'model check' });
     assert.strictEqual(result.ok, true);
     assert.ok(result.message.includes('[llm model=openai-oauth/gpt-5.4 source=policy_default]'));
     assert.strictEqual(result.data?.llm?.model, 'openai-oauth/gpt-5.4');
     assert.strictEqual(result.data?.llm?.provider, 'openai-oauth');
-  });
+  }));
 
   assert.strictEqual(spawnCalls.length, 0, 'default ask_claude should use Hub/OpenAI instead of claude CLI');
   console.log('✅ commander: ask_claude defaults to Hub/OpenAI and emits llm metadata');
@@ -380,13 +401,13 @@ async function test_analyze_unknown_runtime_invocation_uses_model_arg() {
     return { mocks: localMocks };
   })();
 
-  await withCommanderModule(mocks, async commander => {
+  await withCommanderModelEnvCleared(() => withCommanderModule(mocks, async commander => {
     const result = await commander.__test__.handleAnalyzeUnknown({ text: '미분류 질문 테스트' });
     assert.strictEqual(result.ok, true);
     assert.ok(result.message.includes('[llm model=openai-oauth/gpt-5.4 source=policy_default]'));
     assert.strictEqual(result.data?.llm?.model, 'openai-oauth/gpt-5.4');
     assert.strictEqual(result.data?.llm?.provider, 'openai-oauth');
-  });
+  }));
 
   assert.strictEqual(spawnCalls.length, 0, 'default analyze_unknown should use Hub/OpenAI instead of claude CLI');
   console.log('✅ commander: analyze_unknown defaults to Hub/OpenAI and emits llm metadata');

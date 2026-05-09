@@ -2,6 +2,7 @@
 // @ts-nocheck
 
 import assert from 'node:assert/strict';
+import { createRequire } from 'node:module';
 import {
   classifyRouteFailure,
   deriveAvoidProvidersFromHealth,
@@ -10,6 +11,9 @@ import {
 } from '../shared/agent-llm-route-health.ts';
 import { buildHubLlmCallPayload } from '../shared/hub-llm-client.ts';
 import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
+
+const require = createRequire(import.meta.url);
+const { selectLLMChain } = require('../../../packages/core/lib/llm-model-selector.js');
 
 export async function runLunaLlmRouteHealthSmoke() {
   assert.equal(classifyRouteFailure('provider_cooldown'), 'cooldown');
@@ -66,15 +70,24 @@ export async function runLunaLlmRouteHealthSmoke() {
     if (previousRoutingEnabled == null) delete process.env.LUNA_AGENT_LLM_ROUTING_ENABLED;
     else process.env.LUNA_AGENT_LLM_ROUTING_ENABLED = previousRoutingEnabled;
   }
-  assert.ok(Array.isArray(payload.chain), 'payload should include route chain');
-  assert.notEqual(payload.chain[0].provider, 'claude-code', 'payload chain should honor route-health reordering');
+  assert.equal(payload.selectorKey, 'investment.luna', 'payload should pass selectorKey instead of materialized route chain');
+  assert.deepEqual(payload.avoidProviders, ['claude-code'], 'payload should pass route-health provider hints to Hub');
+  assert.equal(payload.chain, undefined, 'payload must not materialize selector chain outside Hub');
+  const selectorChain = selectLLMChain(String(payload.selectorKey), {
+    agentName: 'luna',
+    selectorVersion: 'v3.0_oauth_4',
+    rolloutPercent: 100,
+  });
+  const hubSideReordered = reorderChainForRouteHealth(selectorChain, payload.avoidProviders);
+  assert.notEqual(hubSideReordered[0].provider, 'claude-code', 'Hub-side selector chain should honor route-health reordering');
 
   return {
     ok: true,
     smoke: 'luna-llm-route-health',
     avoidProviders,
     firstProviderAfterReorder: reordered[0].provider,
-    payloadFirstProvider: payload.chain[0].provider,
+    payloadSelectorKey: payload.selectorKey,
+    hubSideFirstProvider: hubSideReordered[0].provider,
   };
 }
 

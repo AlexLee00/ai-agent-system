@@ -648,7 +648,7 @@ async function callOpenAIMini(agentName, systemPrompt, userPrompt, maxTokens, { 
   } catch (err) {
     if (skipFallback) throw err;
     // 1차 폴백: Groq Scout
-    console.warn(`  ⚠️ [${agentName}] gpt-4o-mini 실패 (${err.message?.slice(0,60)}) → Groq Scout 폴백`);
+    console.warn(`  ⚠️ [${agentName}] ${MINI_MODEL} 실패 (${err.message?.slice(0,60)}) → Groq Scout 폴백`);
     try {
       return await callGroq(agentName, systemPrompt, userPrompt, maxTokens, { skipFallback: true, symbol, guardScope });
     } catch (groqErr) {
@@ -732,9 +732,9 @@ async function callGroq(agentName, systemPrompt, userPrompt, maxTokens, { skipFa
     }
   }
   if (skipFallback) throw lastErr ?? new Error(`Groq 전체 실패 — ${agentName}`);
-  // Groq 전체 실패 → gpt-4o-mini 폴백 (비용 절감)
+  // Groq 전체 실패 → configured mini OpenAI model 폴백
   const reason = lastErr?.status === 429 ? '전체 키 rate limit' : (lastErr?.message?.slice(0, 60) ?? '알 수 없는 오류');
-  console.warn(`  ⚠️ [${agentName}] Groq 실패 (${reason}) → gpt-4o-mini 폴백`);
+  console.warn(`  ⚠️ [${agentName}] Groq 실패 (${reason}) → ${OPENAI_MINI_MODEL} 폴백`);
   return callOpenAIMini(agentName, systemPrompt, userPrompt, maxTokens, { skipFallback: true, symbol, guardScope });
 }
 

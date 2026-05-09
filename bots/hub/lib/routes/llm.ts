@@ -534,8 +534,9 @@ async function insertRoutingLog(resp, body, audit, includeAudit) {
       INSERT INTO llm_routing_log (
         created_at, provider, agent, caller_team, abstract_model,
         success, duration_ms, cost_usd, fallback_count, error, session_id,
-        prompt_hash, system_prompt_hash, request_fingerprint, prompt_chars
-      ) VALUES (NOW(), $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+        prompt_hash, system_prompt_hash, request_fingerprint, prompt_chars,
+        selector_key, selected_route, runtime_profile, attempted_providers, avoided_providers
+      ) VALUES (NOW(), $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18::jsonb, $19::jsonb)
     `, [
       providerForLog,
       body.agent ?? null,
@@ -551,6 +552,11 @@ async function insertRoutingLog(resp, body, audit, includeAudit) {
       audit.systemPromptHash,
       audit.requestFingerprint,
       audit.promptChars,
+      resp.selectorKey ?? body.selectorKey ?? null,
+      resp.selected_route ?? null,
+      resp.runtimeProfile ?? null,
+      JSON.stringify(Array.isArray(resp.attempted_providers) ? resp.attempted_providers : []),
+      JSON.stringify(Array.isArray(resp.avoidedProviders) ? resp.avoidedProviders : []),
     ]);
     return;
   }
@@ -610,7 +616,12 @@ function ensureRoutingLogAuditColumns() {
             ADD COLUMN IF NOT EXISTS prompt_hash TEXT,
             ADD COLUMN IF NOT EXISTS system_prompt_hash TEXT,
             ADD COLUMN IF NOT EXISTS request_fingerprint TEXT,
-            ADD COLUMN IF NOT EXISTS prompt_chars INTEGER
+            ADD COLUMN IF NOT EXISTS prompt_chars INTEGER,
+            ADD COLUMN IF NOT EXISTS selector_key TEXT,
+            ADD COLUMN IF NOT EXISTS selected_route TEXT,
+            ADD COLUMN IF NOT EXISTS runtime_profile TEXT,
+            ADD COLUMN IF NOT EXISTS attempted_providers JSONB NOT NULL DEFAULT '[]'::jsonb,
+            ADD COLUMN IF NOT EXISTS avoided_providers JSONB NOT NULL DEFAULT '[]'::jsonb
         `);
       await createRoutingLogAuditIndexes();
       return true;
@@ -629,8 +640,18 @@ async function routingLogAuditColumnsExist() {
     WHERE table_schema = 'public'
       AND table_name = 'llm_routing_log'
       AND column_name = ANY($1::text[])
-  `, [['prompt_hash', 'system_prompt_hash', 'request_fingerprint', 'prompt_chars']]);
-  return Number(rows?.[0]?.count || 0) === 4;
+  `, [[
+    'prompt_hash',
+    'system_prompt_hash',
+    'request_fingerprint',
+    'prompt_chars',
+    'selector_key',
+    'selected_route',
+    'runtime_profile',
+    'attempted_providers',
+    'avoided_providers',
+  ]]);
+  return Number(rows?.[0]?.count || 0) === 9;
 }
 
 async function createRoutingLogAuditIndexes() {
@@ -643,6 +664,14 @@ async function createRoutingLogAuditIndexes() {
       CREATE INDEX IF NOT EXISTS idx_llm_routing_log_request_fingerprint
         ON llm_routing_log (request_fingerprint, created_at DESC)
     `);
+    await pgPool.run('public', `
+      CREATE INDEX IF NOT EXISTS idx_llm_routing_log_selector_key
+        ON llm_routing_log (selector_key, created_at DESC)
+    `);
+    await pgPool.run('public', `
+      CREATE INDEX IF NOT EXISTS idx_llm_routing_log_selected_route
+        ON llm_routing_log (selected_route, created_at DESC)
+    `);
   } catch (err) {
     console.warn('[llm] routing log audit index ensure skipped:', err?.message || err);
   }
@@ -654,5 +683,10 @@ function isRoutingLogAuditColumnError(err) {
     || message.includes('system_prompt_hash')
     || message.includes('request_fingerprint')
     || message.includes('prompt_chars')
+    || message.includes('selector_key')
+    || message.includes('selected_route')
+    || message.includes('runtime_profile')
+    || message.includes('attempted_providers')
+    || message.includes('avoided_providers')
     || message.includes('column') && message.includes('does not exist');
 }

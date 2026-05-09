@@ -122,10 +122,12 @@ const PROFILE_DEFINITIONS: Record<string, TeamProfileDefinitions> = {
     review: llm(darwinRuntime(), 'darwin.agent_policy', 'darwin.verifier'),
   },
   justin: {
-    default: llm(justinRuntime(), 'core.chunked.gpt4o'),
-    citation: llm(justinRuntime(), 'core.chunked.gpt4o'),
-    analysis: llm(justinRuntime(), 'core.chunked.gpt4o'),
-    opinion: llm(justinRuntime(), 'core.chunked.gpt4o'),
+    default: llm(justinRuntime(), 'justin._default'),
+    'stage-3': llm(justinRuntime(), 'justin.stage-3'),
+    citation: llm(justinRuntime(), 'justin.citation'),
+    analysis: llm(justinRuntime(), 'justin.analysis'),
+    opinion: llm(justinRuntime(), 'justin.opinion'),
+    'simple-qa': llm(justinRuntime(), 'justin.simple-qa'),
   },
   sigma: {
     default: llm(sigmaRuntime(), 'sigma.agent_policy', 'mapek.monitor'),

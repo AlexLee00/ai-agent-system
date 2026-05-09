@@ -25,6 +25,9 @@ const SERVICE_LABEL_MAP = {
   'investment-market-alert-crypto-daily': 'ai.investment.market-alert-crypto-daily',
   'unrealized-pnl': 'ai.investment.unrealized-pnl',
   'ai.luna.tradingview-ws': 'ai.luna.tradingview-ws',
+  'ai.luna.marketdata-mcp': 'ai.luna.marketdata-mcp',
+  'hub-severity-decay': 'ai.hub.severity-decay',
+  'ai.hub.severity-decay': 'ai.hub.severity-decay',
   'mlx-server': 'ai.mlx.server',
 };
 

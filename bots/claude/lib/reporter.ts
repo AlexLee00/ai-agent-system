@@ -143,16 +143,45 @@ function writeFixLog(fixes) {
 
 // ─── agent_events 발행 ──────────────────────────────────────────────
 
+const EVENT_SKIP_CHECKS = new Set(['오류 패턴 분석', '덱스터 자기진단', '자동 수정']);
+
+function getReportableDexterResults(results = []) {
+  return (results || []).filter((result) => !EVENT_SKIP_CHECKS.has(String(result?.name || '')));
+}
+
+function truthyEnv(name, defaultValue = false) {
+  const value = process.env[name];
+  if (value == null || value === '') return defaultValue;
+  const normalized = String(value).trim().toLowerCase();
+  if (['1', 'true', 'yes', 'on'].includes(normalized)) return true;
+  if (['0', 'false', 'no', 'off'].includes(normalized)) return false;
+  return defaultValue;
+}
+
+function shouldEmitDexterEvent(overall) {
+  if (overall === 'ok') return false;
+  if (overall === 'warn') return truthyEnv('CLAUDE_DEXTER_SOFT_EVENT_ENABLED', false);
+  return true;
+}
+
 /**
  * 덱스터 체크 결과를 agent_events에 발행 (이중 경로 — 기존 텔레그램 경로 유지)
  * dexter → claude-lead 이벤트 채널
  */
 async function emitDexterEvent(results, elapsed) {
-  const overall = results.some(r => r.status === 'error') ? 'error'
-                : results.some(r => r.status === 'warn')  ? 'warn'
+  const reportable = getReportableDexterResults(results);
+  const overall = reportable.some(r => r.status === 'error') ? 'error'
+                : reportable.some(r => r.status === 'warn')  ? 'warn'
                 : 'ok';
-  const errors = results.flatMap(r => r.items.filter(i => i.status === 'error'));
-  const warns  = results.flatMap(r => r.items.filter(i => i.status === 'warn'));
+  const errors = reportable.flatMap(r => (r.items || []).filter(i => i.status === 'error'));
+  const warns  = reportable.flatMap(r => (r.items || []).filter(i => i.status === 'warn'));
+
+  if (!shouldEmitDexterEvent(overall)) {
+    if (overall === 'warn') {
+      console.log(`  ⏭ [덱스터] soft warn 이벤트/RAG 생략 — 경고 ${warns.length}건`);
+    }
+    return;
+  }
 
   try {
     const stateBus = require('./state-bus-bridge.js');
@@ -314,5 +343,6 @@ function sendRecoveryComplete({ service, method, durationSec, taskId }) {
 
 module.exports = {
   printReport, buildTelegramText, sendTelegram, writeLog, writeFixLog, emitDexterEvent,
+  getReportableDexterResults, shouldEmitDexterEvent,
   sendWarning, sendCriticalAlert, sendEmergencyAlert, sendNormalModeRestore, sendRecoveryComplete,
 };

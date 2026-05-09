@@ -72,10 +72,19 @@ export function classifyTradingViewRealtime({ health = {}, latest = {}, symbol =
 
 export function classifyKisRealtime({ market, probe = {}, rest = {}, symbol } = {}) {
   const restOk = rest?.ok === true || Number(rest?.price || 0) > 0;
-  const ok = probe?.ok === true && probe?.subscriptionAccepted === true && !probe?.error && restOk;
+  const probeError = String(probe?.error || '');
+  const appkeyAlreadyInUse = /ALREADY IN USE appkey/i.test(probeError);
+  const sharedWsReady = appkeyAlreadyInUse
+    && probe?.approvalKeyIssued === true
+    && probe?.wsOpened === true
+    && probe?.subscriptionSent === true
+    && restOk;
+  const ok = (probe?.ok === true && probe?.subscriptionAccepted === true && !probe?.error && restOk) || sharedWsReady;
   return {
     ok,
-    status: ok
+    status: sharedWsReady
+      ? `${market}_shared_ws_in_use_rest_ready`
+      : ok
       ? probe.firstTickReceived
         ? `${market}_realtime_tick_ready`
         : `${market}_preopen_realtime_subscription_ready`
@@ -93,12 +102,17 @@ export function classifyKisRealtime({ market, probe = {}, rest = {}, symbol } = 
       ...(probe.approvalKeyIssued ? [] : [`${market}_approval_key_missing`]),
       ...(probe.wsOpened ? [] : [`${market}_ws_not_opened`]),
       ...(probe.subscriptionSent ? [] : [`${market}_subscription_not_sent`]),
-      ...(probe.subscriptionAccepted ? [] : [`${market}_subscription_not_accepted`]),
-      ...(probe.error ? [`${market}_ws_error:${String(probe.error).slice(0, 120)}`] : []),
+      ...(probe.subscriptionAccepted || sharedWsReady ? [] : [`${market}_subscription_not_accepted`]),
+      ...(probe.error && !sharedWsReady ? [`${market}_ws_error:${String(probe.error).slice(0, 120)}`] : []),
       ...(restOk ? [] : [`${market}_rest_quote_unavailable`]),
+    ],
+    warnings: [
+      ...(sharedWsReady ? [`${market}_ws_appkey_already_in_use_existing_stream_assumed`] : []),
     ],
     note: probe.firstTickReceived
       ? 'market tick received'
+      : sharedWsReady
+        ? 'KIS allows limited appkey websocket sessions; an existing stream is using the appkey while REST quote is healthy'
       : 'no tick is acceptable before market open if approval/ws/subscription/rest are ready',
   };
 }

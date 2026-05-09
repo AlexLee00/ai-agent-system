@@ -61,6 +61,12 @@ assert.equal(orchestratorSummary.primary_routes[0], 'gemini-cli-oauth/runtime-en
 assert(orchestratorSummary.fallback_routes.includes('groq/runtime-env-fast'));
 assert(orchestratorSummary.fallback_routes.includes('openai-oauth/runtime-env-mini'));
 
+const justinStage3 = selectRuntimeProfile('justin', 'stage-3');
+assert.equal(justinStage3.selector_key, 'justin.stage-3');
+assert.equal(justinStage3.primary_routes[0], 'openai-oauth/runtime-env-perf');
+assert(justinStage3.fallback_routes.includes('gemini-cli-oauth/runtime-env-flash'));
+assert(justinStage3.fallback_routes.includes('groq/runtime-env-deep'));
+
 const resolveSelectorChain = unifiedCaller._testOnly._resolveSelectorChain;
 const blogDefaultChain = resolveSelectorChain({ callerTeam: 'blog', agent: 'default' }, 'blog');
 assert.equal(blogDefaultChain.selectorKey, 'blog._default');
@@ -88,6 +94,12 @@ const runtimeSelectorKeys = [
   'hub.gemini.cli.readiness.live',
   'hub.unified.oauth.openai.smoke',
   'hub.unified.oauth.gemini.smoke',
+  'justin._default',
+  'justin.stage-3',
+  'justin.analysis',
+  'justin.citation',
+  'justin.opinion',
+  'justin.simple-qa',
 ];
 for (const key of runtimeSelectorKeys) {
   const chain = selector.selectLLMChain(key);
@@ -127,6 +139,16 @@ async function main() {
   const adhocChain = resolveSelectorChain({ callerTeam: 'hub', chain: [{ provider: 'openai-oauth', model: 'manual' }] }, 'hub');
   assert.equal(adhocChain.selectorKey, 'hub.adhoc.chain');
   assert.equal(adhocChain.chain[0]?.provider, 'openai-oauth');
+
+  const selectorWinsOverAdhoc = resolveSelectorChain({
+    callerTeam: 'justin',
+    agent: 'stage-3',
+    selectorKey: 'justin.stage-3',
+    chain: [{ provider: 'openai-oauth', model: 'manual-single-route' }],
+  }, 'justin');
+  assert.equal(selectorWinsOverAdhoc.selectorKey, 'justin.stage-3');
+  assert(selectorWinsOverAdhoc.chain.length >= 3, 'justin.stage-3 must preserve managed fallback routes');
+  assert.notEqual(selectorWinsOverAdhoc.chain[0]?.model, 'manual-single-route');
   delete process.env.HUB_LLM_ALLOW_ADHOC_CHAIN;
 
   console.log(JSON.stringify({
@@ -138,6 +160,7 @@ async function main() {
     runtime_selector_keys_checked: runtimeSelectorKeys.length,
     selector_only_runtime_files_checked: selectorOnlyRuntimeFiles.length,
     adhoc_chain_default: 'blocked',
+    selector_key_precedence: 'managed_selector_over_adhoc_chain',
   }, null, 2));
 }
 

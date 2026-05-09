@@ -149,6 +149,25 @@ export async function upsertCandidateSignals(
   return { inserted, updated };
 }
 
+export async function pruneSourceCandidatesNotInSignals(
+  signals: DiscoverySignal[],
+  market: DiscoveryMarket,
+  source: string,
+): Promise<number> {
+  const activeSymbols = [...new Set((signals || [])
+    .map((sig) => normalizeCandidateSymbolForMarket(sig.symbol, market))
+    .filter(Boolean))];
+  if (!source || activeSymbols.length === 0) return 0;
+  const result = await db.run(`
+    DELETE FROM candidate_universe
+    WHERE market = $1
+      AND source = $2
+      AND expires_at > NOW()
+      AND NOT (symbol = ANY($3::text[]))
+  `, [market, source, activeSymbols]);
+  return result.rowCount || 0;
+}
+
 function normalizeCandidateSymbolForMarket(symbol: string, market: DiscoveryMarket): string | null {
   const raw = String(symbol || '').trim().toUpperCase();
   if (!raw) return null;
