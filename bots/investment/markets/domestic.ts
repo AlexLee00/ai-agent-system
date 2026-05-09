@@ -16,7 +16,13 @@
 import { readFileSync, writeFileSync, mkdirSync } from 'fs';
 import { homedir } from 'os';
 import { join } from 'path';
-import { loadPreScreened, loadPreScreenedFallback, savePreScreened, saveResearchWatchlist } from '../scripts/pre-market-screen.ts';
+import {
+  loadPreScreened,
+  loadPreScreenedFallback,
+  persistPreScreenedCandidates,
+  savePreScreened,
+  saveResearchWatchlist,
+} from '../scripts/pre-market-screen.ts';
 
 import { createRequire } from 'module';
 const kst = createRequire(import.meta.url)('../../../packages/core/lib/kst');
@@ -313,12 +319,23 @@ export async function runDomesticResearchCycle(symbols, universeMeta = {}) {
     console.log(`  🧩 [노드] ${summarizeNodeStatuses(collect.summaries)}`);
     await logMarketPipelineMetrics('국내주식 연구수집', collect.metrics);
 
-    saveResearchWatchlist('domestic', symbols, {
+    const researchSymbols = saveResearchWatchlist('domestic', symbols, {
       label: '국내주식',
       research: {
         phase: 'analysis_only',
         session: 'off_hours',
       },
+    });
+    await persistPreScreenedCandidates('domestic', researchSymbols, {
+      label: '국내주식',
+      source: 'off_hours_research_watchlist',
+      research: {
+        mode: 'off_hours',
+        phase: 'analysis_only',
+        session: 'off_hours',
+      },
+    }).catch((error) => {
+      console.warn(`  ⚠️ [국내주식] watchlist candidate_universe 반영 실패: ${error?.message || error}`);
     });
 
     patchState({ lastResearchCycleAt: Date.now() });
@@ -469,6 +486,12 @@ if (isDirectExecution(import.meta.url)) {
           symbols = await filterMockUntradableDomesticCandidates(symbols);
           if (resolved.source === 'screening') {
             savePreScreened('domestic', symbols);
+            await persistPreScreenedCandidates('domestic', symbols, {
+              label: '국내주식',
+              source: 'pre_market_screen',
+            }).catch((error) => {
+              console.warn(`  ⚠️ [국내주식] screening candidate_universe 반영 실패: ${error?.message || error}`);
+            });
             const { recordScreeningSuccess } = await import('../scripts/screening-monitor.ts');
             await recordScreeningSuccess('domestic');
           } else if (resolved.error && resolved.shouldCountFailure !== false) {

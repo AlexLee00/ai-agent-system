@@ -394,7 +394,7 @@ if (isDirectExecution(import.meta.url)) {
         symbols = getSymbols();
         universeMeta.screeningSymbolCount = symbols.length;
       } else {
-        const { loadPreScreenedFallback, savePreScreened } = await import('../scripts/pre-market-screen.ts');
+        const { loadPreScreenedFallback, persistPreScreenedCandidates, savePreScreened } = await import('../scripts/pre-market-screen.ts');
         const resolved = await resolveSymbolsWithFallback({
           market: 'crypto',
           screen: async () => {
@@ -410,6 +410,12 @@ if (isDirectExecution(import.meta.url)) {
         universeMeta.screeningSymbolCount = symbols.length;
         if (resolved.source === 'screening') {
           savePreScreened('crypto', symbols);
+          await persistPreScreenedCandidates('crypto', symbols, {
+            label: '암호화폐',
+            source: 'pre_market_screen',
+          }).catch((error) => {
+            console.warn(`  ⚠️ [암호화폐] screening candidate_universe 반영 실패: ${error?.message || error}`);
+          });
           const { recordScreeningSuccess } = await import('../scripts/screening-monitor.ts');
           await recordScreeningSuccess('crypto');
         } else if (resolved.error && resolved.shouldCountFailure !== false) {

@@ -78,7 +78,8 @@ export function buildRequiredAnalystCoverage({
   dailyTechnicalCoverage = null,
 } = {}) {
   const requiredAnalysts = REQUIRED_ANALYSTS[market] || [];
-  const scopedSymbols = Array.isArray(requiredSymbols) && requiredSymbols.length > 0
+  const hasExplicitRequiredSymbols = Array.isArray(requiredSymbols);
+  const scopedSymbols = hasExplicitRequiredSymbols
     ? [...new Set(requiredSymbols.map((symbol) => normalizeCandidateSymbolForAnalysis(symbol, market)).filter(Boolean))]
     : analysisSymbols;
   const byAnalyst = {};
@@ -137,7 +138,7 @@ export function buildRequiredAnalystCoverage({
   return {
     requiredAnalysts,
     scope: {
-      source: scopedSymbols.length === analysisSymbols.length ? 'all_candidates' : 'entry_targetable_candidates',
+      source: hasExplicitRequiredSymbols ? 'entry_targetable_candidates' : 'all_candidates',
       checkedSymbols: scopedSymbols,
       ignoredSymbols: (analysisSymbols || []).filter((symbol) => !scopedSymbols.includes(symbol)),
     },
@@ -146,6 +147,20 @@ export function buildRequiredAnalystCoverage({
     missingByAnalyst,
     dailyTechnicalCoverage,
     bottlenecks: [...new Set(bottlenecks)],
+  };
+}
+
+export function classifyCoverageBottlenecksForMarket({ market, marketOpen = true, bottlenecks = [] } = {}) {
+  const unique = [...new Set(bottlenecks || [])];
+  if (market === 'crypto' || marketOpen) {
+    return {
+      bottlenecks: unique,
+      observations: [],
+    };
+  }
+  return {
+    bottlenecks: [],
+    observations: unique.map((code) => `preopen_${code}`),
   };
 }
 
@@ -212,17 +227,11 @@ function isDailyTechnicalBullish(row = {}) {
 export function buildRequiredCoverageSymbols({ market, analysisSymbols = [], decisionDiagnostics = [], dailyTechnicalCoverage = null } = {}) {
   if (market !== 'crypto') return analysisSymbols;
   const targetable = new Set();
-  for (const row of dailyTechnicalCoverage?.rows || []) {
-    if (!isDailyTechnicalBullish(row)) continue;
-    const symbol = normalizeCandidateSymbolForAnalysis(row.symbol, market);
-    if (symbol) targetable.add(symbol);
-  }
   for (const item of decisionDiagnostics || []) {
     if (item?.actionability !== 'likely_actionable' && item?.actionability !== 'relaxed_probe_candidate') continue;
     const symbol = normalizeCandidateSymbolForAnalysis(item.symbol, market);
     if (symbol) targetable.add(symbol);
   }
-  if (targetable.size === 0) return analysisSymbols;
   return analysisSymbols.filter((symbol) => targetable.has(symbol));
 }
 
@@ -673,9 +682,15 @@ async function buildMarketFunnel(market, { hours }) {
   const sourceSignalCount = sourceRows.reduce((sum, row) => sum + number(row.signal_count), 0);
   const bottlenecks = [];
   const observations = [];
-  if (number(candidate.active_count) === 0) bottlenecks.push('discovery_candidate_empty');
-  if (sourceSignalCount === 0) bottlenecks.push('source_metric_empty');
-  if (!marketOpen && number(candidate.active_count) > 0) bottlenecks.push('market_closed_waiting_open');
+
+  function addMarketPrepGap(code, preopenCode = `preopen_${code}`) {
+    if (market === 'crypto' || marketOpen) bottlenecks.push(code);
+    else observations.push(preopenCode);
+  }
+
+  if (number(candidate.active_count) === 0) addMarketPrepGap('discovery_candidate_empty', 'preopen_candidate_universe_empty');
+  if (sourceSignalCount === 0) addMarketPrepGap('source_metric_empty', 'preopen_source_metric_empty');
+  if (!marketOpen && number(candidate.active_count) > 0) observations.push('market_closed_waiting_open');
   if (marketOpen && number(candidate.active_count) > 0 && recentSignalCount === 0 && analysisCoveredSymbols.length === 0) bottlenecks.push('candidate_not_persisted_to_signal_window');
   if (marketOpen && number(candidate.active_count) > 0 && recentSignalCount === 0 && analysisCoveredSymbols.length > 0 && likelyActionable.length === 0 && relaxedProbeCandidates.length === 0) bottlenecks.push('analysis_completed_no_actionable_signal');
   if (marketOpen && likelyActionable.length > 0 && recentBuySignals === 0) bottlenecks.push('actionable_candidate_waiting_signal_persistence');
@@ -707,7 +722,13 @@ async function buildMarketFunnel(market, { hours }) {
   }
   if (marketOpen && number(candidate.active_count) > 0 && activeTriggerCount === 0 && recentBuySignals === 0 && likelyActionable.length === 0 && relaxedProbeCandidates.length === 0) bottlenecks.push('candidates_filtered_before_entry_trigger');
   if (number(candidate.active_count) > 0 && analysisSymbols.length > 0) {
-    bottlenecks.push(...requiredAnalystCoverage.bottlenecks);
+    const classifiedCoverage = classifyCoverageBottlenecksForMarket({
+      market,
+      marketOpen,
+      bottlenecks: requiredAnalystCoverage.bottlenecks,
+    });
+    bottlenecks.push(...classifiedCoverage.bottlenecks);
+    observations.push(...classifiedCoverage.observations);
   }
   if (market === 'crypto' && number(dailyTechnicalCoverage.checkedCount) > 0) {
     if (number(dailyTechnicalCoverage.availableCount) === 0) {
@@ -744,6 +765,14 @@ async function buildMarketFunnel(market, { hours }) {
       bySymbol: analysisBySymbol,
       dailyTechnicalCoverage,
       required: requiredAnalystCoverage,
+    },
+    preopenReadiness: {
+      enabled: market !== 'crypto',
+      marketOpen,
+      candidateUniverseReady: number(candidate.active_count) > 0,
+      sourceMetricsReady: sourceSignalCount > 0,
+      requiredAnalysisReady: (requiredAnalystCoverage.bottlenecks || []).length === 0,
+      pending: observations.filter((code) => String(code).startsWith('preopen_')),
     },
     decisionFilter: {
       checkedCount: decisionDiagnostics.length,
@@ -837,12 +866,17 @@ export async function buildLunaDiscoveryFunnelReport({
   const marketReports = await Promise.all(markets.map((m) => buildMarketFunnel(m, { hours })));
   const autopilot = buildAutopilotFunnel({ historyFile, hours });
   const allBottlenecks = marketReports.flatMap((item) => item.bottlenecks.map((code) => `${item.market}:${code}`));
+  const preopenGaps = marketReports.flatMap((item) => (item.observations || [])
+    .filter((code) => String(code).startsWith('preopen_'))
+    .map((code) => `${item.market}:${code}`));
+  const liveMarketReports = marketReports.filter((item) => item.market === 'crypto' || item.marketHours?.isOpen === true);
   const candidateTotal = marketReports.reduce((sum, item) => sum + item.candidateUniverse.activeCount, 0);
-  const activeTriggerTotal = marketReports.reduce((sum, item) => sum + item.entryTriggers.activeCount, 0);
-  const actionableWaitingTotal = marketReports.reduce((sum, item) => sum + number(item.decisionFilter?.likelyActionableCount), 0);
-  const relaxedProbeReadyTotal = marketReports.reduce((sum, item) => sum + number(item.decisionFilter?.relaxedProbeReadyCount), 0);
+  const activeTriggerTotal = liveMarketReports.reduce((sum, item) => sum + item.entryTriggers.activeCount, 0);
+  const actionableWaitingTotal = liveMarketReports.reduce((sum, item) => sum + number(item.decisionFilter?.likelyActionableCount), 0);
+  const relaxedProbeReadyTotal = liveMarketReports.reduce((sum, item) => sum + number(item.decisionFilter?.relaxedProbeReadyCount), 0);
   const recommendations = [];
   if (candidateTotal === 0) recommendations.push('all_markets_discovery_candidate_empty');
+  if (allBottlenecks.length === 0 && preopenGaps.length > 0) recommendations.push('preopen_market_preparation_pending');
   if (candidateTotal > 0 && activeTriggerTotal === 0 && actionableWaitingTotal > 0) recommendations.push('actionable_candidates_waiting_market_cycle_or_signal_persistence');
   if (candidateTotal > 0 && activeTriggerTotal === 0 && actionableWaitingTotal === 0 && relaxedProbeReadyTotal > 0) recommendations.push('relaxed_probe_candidates_waiting_l13_probe');
   if (
@@ -858,13 +892,18 @@ export async function buildLunaDiscoveryFunnelReport({
   if (autopilot.totals.candidateCount === 0) recommendations.push('dispatch_idle_no_candidates_in_window');
   return {
     ok: true,
-    status: allBottlenecks.length ? 'luna_discovery_funnel_attention' : 'luna_discovery_funnel_clear',
+    status: allBottlenecks.length
+      ? 'luna_discovery_funnel_attention'
+      : preopenGaps.length
+        ? 'luna_discovery_funnel_preopen_pending'
+        : 'luna_discovery_funnel_clear',
     generatedAt: new Date().toISOString(),
     hours,
     market,
     markets: marketReports,
     autopilot,
     bottlenecks: allBottlenecks,
+    preopenGaps,
     recommendations,
     nextAction: recommendations.includes('candidate_to_entry_trigger_funnel_needs_review')
       ? 'inspect_score_fusion_predictive_validation_entry_trigger_thresholds'
@@ -874,6 +913,8 @@ export async function buildLunaDiscoveryFunnelReport({
         ? 'run_or_wait_next_market_cycle_to_persist_buy_signal'
       : recommendations.includes('all_markets_discovery_candidate_empty')
         ? 'inspect_discovery_orchestrator_sources'
+        : recommendations.includes('preopen_market_preparation_pending')
+          ? 'run_or_wait_preopen_refresh_before_next_session'
         : recommendations.includes('dispatch_idle_no_candidates_in_window')
           ? 'continue_observation_or_lower_discovery_thresholds_after_review'
           : 'continue_observation',

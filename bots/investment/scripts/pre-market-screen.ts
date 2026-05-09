@@ -27,6 +27,7 @@ import { publishAlert } from '../shared/alert-publisher.ts';
 import { resolveSymbolsWithFallback } from '../shared/universe-fallback.ts';
 import { getMockUntradableSymbolCooldownMinutes } from '../shared/runtime-config.ts';
 import { getInvestmentStateFile } from '../shared/market-cycle-support.ts';
+import { ensureCandidateUniverseTable, upsertCandidateSignals } from '../team/discovery/discovery-store.ts';
 import { createRequire } from 'module';
 const kst = createRequire(import.meta.url)('../../../packages/core/lib/kst');
 
@@ -161,6 +162,56 @@ export function savePreScreened(market, symbols, meta = {}) {
   }
 }
 
+function getPrescreenCandidateTtlHours(meta = {}) {
+  const configured = Number(meta.ttlHours || process.env.LUNA_PRESCREEN_CANDIDATE_TTL_HOURS);
+  if (Number.isFinite(configured) && configured > 0) return Math.ceil(configured);
+  const isOffHoursResearch = meta?.research?.mode === 'off_hours'
+    || meta?.research?.phase === 'analysis_only'
+    || meta?.source === 'off_hours_research_watchlist';
+  return isOffHoursResearch ? 72 : 24;
+}
+
+export function buildPreScreenedCandidateSignals(market, symbols = [], meta = {}) {
+  const ttlHours = getPrescreenCandidateTtlHours(meta);
+  const source = meta.source || (meta?.research?.mode === 'off_hours' ? 'off_hours_research_watchlist' : 'pre_market_screen');
+  const reasonCode = meta.reasonCode || source;
+  const uniqueSymbols = [...new Set((symbols || []).map((symbol) => String(symbol || '').trim().toUpperCase()).filter(Boolean))];
+  return uniqueSymbols.map((symbol, index) => {
+    const rankPenalty = Math.min(0.25, index * 0.01);
+    const score = Math.max(0.55, 0.82 - rankPenalty);
+    return {
+      symbol,
+      score,
+      confidence: Math.max(0.50, score - 0.08),
+      reason: meta.reason || `${market} ${source} candidate`,
+      reasonCode,
+      ttlHours,
+      evidenceRef: {
+        source,
+        savedAt: meta.savedAt || new Date().toISOString(),
+        label: meta.label || null,
+        research: meta.research || null,
+      },
+      raw: {
+        market,
+        source,
+        rank: index + 1,
+      },
+    };
+  });
+}
+
+export async function persistPreScreenedCandidates(market, symbols = [], meta = {}) {
+  if (!['crypto', 'domestic', 'overseas'].includes(market) || !Array.isArray(symbols) || symbols.length === 0) {
+    return { inserted: 0, updated: 0, skipped: true };
+  }
+  const source = meta.source || (meta?.research?.mode === 'off_hours' ? 'off_hours_research_watchlist' : 'pre_market_screen');
+  const ttlHours = getPrescreenCandidateTtlHours({ ...meta, source });
+  const signals = buildPreScreenedCandidateSignals(market, symbols, { ...meta, source, ttlHours });
+  await ensureCandidateUniverseTable();
+  return upsertCandidateSignals(signals, market, source, 1, ttlHours);
+}
+
 /**
  * 장외 연구 결과를 다음 장 시작에 재사용할 수 있도록 watchlist 메타 갱신
  * - 기존 심볼 목록은 유지/병합
@@ -185,6 +236,7 @@ export function saveResearchWatchlist(market, symbols, meta = {}) {
       ...(meta.research || {}),
     },
   });
+  return mergedSymbols;
 }
 
 // ─── 메인 ───────────────────────────────────────────────────────────
@@ -233,7 +285,11 @@ async function main() {
     ? symbols.join(', ')
     : `${symbols.slice(0, 6).join(', ')} 외 ${symbols.length - 6}개`;
 
-  savePreScreened(market, symbols, { label, learningLoopSummary });
+  const savedMeta = { label, learningLoopSummary, source: 'pre_market_screen' };
+  savePreScreened(market, symbols, savedMeta);
+  await persistPreScreenedCandidates(market, symbols, savedMeta).catch((error) => {
+    console.warn(`  ⚠️ candidate_universe 반영 실패: ${error?.message || error}`);
+  });
   console.log(`  💾 저장: ${PRESCREENED_FILE[market]}`);
 
   const lines = [

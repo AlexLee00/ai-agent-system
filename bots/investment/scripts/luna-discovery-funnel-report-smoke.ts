@@ -13,6 +13,7 @@ import {
   buildLunaDiscoveryFunnelReport,
   buildRequiredCoverageSymbols,
   buildRequiredAnalystCoverage,
+  classifyCoverageBottlenecksForMarket,
 } from './runtime-luna-discovery-funnel-report.ts';
 import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
 
@@ -127,6 +128,21 @@ export async function runLunaDiscoveryFunnelReportSmoke() {
     assert.ok(
       overseasClosedCoverage.bottlenecks.includes('technical_analysis_deferred_until_market_open'),
       'overseas missing TA should be marked as deferred when market is closed',
+    );
+    const overseasClosedClassified = classifyCoverageBottlenecksForMarket({
+      market: 'overseas',
+      marketOpen: false,
+      bottlenecks: ['sentiment_analysis_missing_for_candidates'],
+    });
+    assert.deepEqual(
+      overseasClosedClassified.bottlenecks,
+      [],
+      'closed overseas required-analysis gaps should not be live blockers',
+    );
+    assert.deepEqual(
+      overseasClosedClassified.observations,
+      ['preopen_sentiment_analysis_missing_for_candidates'],
+      'closed overseas required-analysis gaps should be preserved as pre-open observations',
     );
     const overseasClosedDailyReady = buildRequiredAnalystCoverage({
       market: 'overseas',
@@ -359,6 +375,17 @@ export async function runLunaDiscoveryFunnelReportSmoke() {
     });
     assert.deepEqual(
       cryptoScopedSymbols,
+      [],
+      'daily bullish crypto evidence alone should not force sentiment/onchain required coverage',
+    );
+    const cryptoDecisionScopedSymbols = buildRequiredCoverageSymbols({
+      market: 'crypto',
+      analysisSymbols: ['SAHARA/USDT', 'PLUME/USDT'],
+      decisionDiagnostics: [{ symbol: 'SAHARA/USDT', actionability: 'relaxed_probe_candidate' }],
+      dailyTechnicalCoverage: null,
+    });
+    assert.deepEqual(
+      cryptoDecisionScopedSymbols,
       ['SAHARA/USDT'],
       'crypto required analyst coverage should scope to entry-targetable candidates',
     );
@@ -366,7 +393,7 @@ export async function runLunaDiscoveryFunnelReportSmoke() {
       market: 'crypto',
       marketOpen: true,
       analysisSymbols: ['SAHARA/USDT', 'PLUME/USDT'],
-      requiredSymbols: cryptoScopedSymbols,
+      requiredSymbols: cryptoDecisionScopedSymbols,
       analysisRows: [
         { symbol: 'SAHARA/USDT', analyst: 'ta_mtf', count: 1, latest_created_at: new Date().toISOString() },
         { symbol: 'SAHARA/USDT', analyst: 'sentiment', count: 1, latest_created_at: new Date().toISOString() },

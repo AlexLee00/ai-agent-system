@@ -18,7 +18,7 @@ import { shouldSkipPreScreen } from './pre-market-screen.ts';
 
 export async function runLunaOpsSchedulerSmoke() {
   const jobs = getOpsSchedulerJobs();
-  assert.equal(jobs.length, 23);
+  assert.equal(jobs.length, 25);
   assert.equal(jobs.some((job) => job.name === 'dynamic_policy_operator'), true);
   assert.equal(jobs.find((job) => job.name === 'dynamic_policy_operator')?.args?.includes('--confirm=luna-dynamic-policy-autotune'), true);
   assert.equal(jobs.some((job) => job.name === 'discovery_candidate_refresh'), true);
@@ -26,8 +26,14 @@ export async function runLunaOpsSchedulerSmoke() {
   assert.equal(jobs.find((job) => job.name === 'discovery_candidate_refresh')?.args?.includes('--markets=crypto'), true);
   assert.equal(jobs.some((job) => job.name === 'pre_market_screen_domestic'), true);
   assert.equal(jobs.some((job) => job.name === 'pre_market_screen_overseas'), true);
+  assert.equal(jobs.some((job) => job.name === 'pre_market_analysis_refresh_domestic'), true);
+  assert.equal(jobs.some((job) => job.name === 'pre_market_analysis_refresh_overseas'), true);
   assert.equal(jobs.find((job) => job.name === 'pre_market_screen_domestic')?.cadence?.type, 'daily');
   assert.equal(jobs.find((job) => job.name === 'pre_market_screen_overseas')?.cadence?.type, 'daily');
+  assert.equal(jobs.find((job) => job.name === 'pre_market_analysis_refresh_domestic')?.requiresMarketOpen, undefined);
+  assert.equal(jobs.find((job) => job.name === 'pre_market_analysis_refresh_domestic')?.args?.includes('--max-symbols=2'), true);
+  assert.equal(jobs.find((job) => job.name === 'pre_market_analysis_refresh_overseas')?.requiresMarketOpen, undefined);
+  assert.equal(jobs.find((job) => job.name === 'pre_market_analysis_refresh_overseas')?.args?.includes('--max-enrichment-symbols=2'), true);
   assert.equal(shouldSkipPreScreen({ isOpen: true }), true);
   assert.equal(shouldSkipPreScreen({ isOpen: false, isWeekend: false, holiday: { isHoliday: false } }), false);
   assert.equal(jobs.some((job) => job.name === 'market_cycle_crypto'), true);
