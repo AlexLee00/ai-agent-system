@@ -8,7 +8,7 @@ defmodule Sigma.V2.Registry do
   @doc "현재 operational 분석가 프롬프트 세대 조회."
   def current_prompts do
     sql = """
-    SELECT name, system_prompt, generation, fitness_score, created_at
+    SELECT name, system_prompt, generation, fitness_score, inserted_at AS created_at
     FROM sigma_analyst_prompts
     WHERE status = 'operational'
     ORDER BY name, generation DESC
@@ -31,8 +31,8 @@ defmodule Sigma.V2.Registry do
     Enum.each(offspring, fn child ->
       sql = """
       INSERT INTO sigma_analyst_prompts
-        (name, system_prompt, generation, status, parents, created_at)
-      VALUES ($1, $2, $3, 'shadow', $4, NOW())
+        (name, system_prompt, generation, status, parents, inserted_at, updated_at)
+      VALUES ($1, $2, $3, 'shadow', $4, NOW(), NOW())
       """
 
       Jay.Core.Repo.query(sql, [

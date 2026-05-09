@@ -11,12 +11,12 @@ defmodule Sigma.V2.Mailbox do
 
     sql = """
     INSERT INTO sigma_v2_mailbox
-      (directive_id, tier, team, action, enqueued_at, status)
-    VALUES ($1, $2, $3, $4::jsonb, NOW(), 'pending')
+      (directive_id, tier, team, action, enqueued_at, status, inserted_at, updated_at)
+    VALUES ($1::uuid, $2, $3, $4::jsonb, NOW(), 'pending', NOW(), NOW())
     """
 
     case Jay.Core.Repo.query(sql, [
-           directive_id,
+           uuid_param(directive_id),
            directive.tier,
            directive.team,
            Jason.encode!(directive.action)
@@ -54,7 +54,10 @@ defmodule Sigma.V2.Mailbox do
 
   @doc "대기 중인 Directive 수 조회."
   def pending_count do
-    case Jay.Core.Repo.query("SELECT COUNT(*)::int FROM sigma_v2_mailbox WHERE status = 'pending'", []) do
+    case Jay.Core.Repo.query(
+           "SELECT COUNT(*)::int FROM sigma_v2_mailbox WHERE status = 'pending'",
+           []
+         ) do
       {:ok, %{rows: [[count]]}} -> count
       _ -> 0
     end
@@ -76,11 +79,11 @@ defmodule Sigma.V2.Mailbox do
   def execute_with_patch(directive_id, patch_action) do
     sql = """
     UPDATE sigma_v2_mailbox
-    SET status = 'approved', action = $1::jsonb, resolved_at = NOW()
-    WHERE directive_id = $2
+    SET status = 'approved', action = $1::jsonb, resolved_at = NOW(), updated_at = NOW()
+    WHERE directive_id = $2::uuid
     """
 
-    case Jay.Core.Repo.query(sql, [Jason.encode!(patch_action), directive_id]) do
+    case Jay.Core.Repo.query(sql, [Jason.encode!(patch_action), uuid_param(directive_id)]) do
       {:ok, _} -> :ok
       {:error, reason} -> {:error, reason}
     end
@@ -93,15 +96,26 @@ defmodule Sigma.V2.Mailbox do
   defp update_status(directive_id, status) do
     sql = """
     UPDATE sigma_v2_mailbox
-    SET status = $1, resolved_at = NOW()
-    WHERE directive_id = $2
+    SET status = $1, resolved_at = NOW(), updated_at = NOW()
+    WHERE directive_id = $2::uuid
     """
 
-    case Jay.Core.Repo.query(sql, [status, directive_id]) do
+    case Jay.Core.Repo.query(sql, [status, uuid_param(directive_id)]) do
       {:ok, _} -> :ok
       {:error, reason} -> {:error, reason}
     end
   rescue
     e -> {:error, e}
   end
+
+  defp uuid_param(<<_::128>> = uuid), do: uuid
+
+  defp uuid_param(value) when is_binary(value) do
+    case Ecto.UUID.dump(value) do
+      {:ok, uuid} -> uuid
+      :error -> value
+    end
+  end
+
+  defp uuid_param(value), do: value
 end

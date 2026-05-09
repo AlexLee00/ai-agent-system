@@ -44,6 +44,7 @@ defmodule Sigma.V2.Monitoring do
 
   defp cycle_stats(opts) do
     interval = build_interval(opts)
+
     sql = """
     SELECT
       COUNT(*) AS total,
@@ -56,7 +57,9 @@ defmodule Sigma.V2.Monitoring do
     case Jay.Core.Repo.query(sql, []) do
       {:ok, %{rows: [[total, s, e]]}} ->
         %{total: to_int(total), success_count: to_int(s), error_count: to_int(e)}
-      _ -> %{total: 0, success_count: 0, error_count: 0}
+
+      _ ->
+        %{total: 0, success_count: 0, error_count: 0}
     end
   rescue
     _ -> %{total: 0, success_count: 0, error_count: 0}
@@ -64,6 +67,7 @@ defmodule Sigma.V2.Monitoring do
 
   defp directive_stats(opts) do
     interval = build_interval(opts)
+
     sql = """
     SELECT
       COUNT(*) AS total,
@@ -80,7 +84,9 @@ defmodule Sigma.V2.Monitoring do
           tier2_applied: to_int(tier2),
           accepted: to_int(accepted)
         }
-      _ -> %{total: 0, tier2_applied: 0, accepted: 0}
+
+      _ ->
+        %{total: 0, tier2_applied: 0, accepted: 0}
     end
   rescue
     _ -> %{total: 0, tier2_applied: 0, accepted: 0}
@@ -88,6 +94,7 @@ defmodule Sigma.V2.Monitoring do
 
   defp pod_stats(opts) do
     interval = build_interval(opts)
+
     sql = """
     SELECT pod_name, AVG(accuracy)::float AS avg_accuracy, COUNT(*) AS evaluations
     FROM sigma_pod_performance
@@ -100,7 +107,9 @@ defmodule Sigma.V2.Monitoring do
         Map.new(rows, fn [pod, acc, cnt] ->
           {pod, %{accuracy: to_float(acc), evaluations: to_int(cnt)}}
         end)
-      _ -> %{}
+
+      _ ->
+        %{}
     end
   rescue
     _ -> %{}
@@ -108,10 +117,11 @@ defmodule Sigma.V2.Monitoring do
 
   defp cost_by_period(opts) do
     interval = build_interval(opts)
+
     sql = """
     SELECT COALESCE(SUM(cost_usd), 0)::float AS total_cost
     FROM sigma_llm_cost_tracking
-    WHERE tracked_at >= NOW() - INTERVAL '#{interval}'
+    WHERE timestamp >= NOW() - INTERVAL '#{interval}'
     """
 
     case Jay.Core.Repo.query(sql, []) do
@@ -129,6 +139,7 @@ defmodule Sigma.V2.Monitoring do
 
   defp recent_violations(opts) do
     interval = build_interval(opts)
+
     sql = """
     SELECT COUNT(*) AS cnt
     FROM sigma_v2_directive_audit
@@ -144,31 +155,41 @@ defmodule Sigma.V2.Monitoring do
   end
 
   defp dpo_weekly_stats do
-    case Jay.Core.Repo.query("""
-    SELECT
-      COUNT(*) FILTER (WHERE category = 'preferred') AS preferred,
-      COUNT(*) FILTER (WHERE category = 'rejected') AS rejected,
-      COUNT(*) AS total
-    FROM sigma_dpo_preference_pairs
-    WHERE inserted_at >= NOW() - INTERVAL '7 days'
-    """, []) do
+    case Jay.Core.Repo.query(
+           """
+           SELECT
+             COUNT(*) FILTER (WHERE category = 'preferred') AS preferred,
+             COUNT(*) FILTER (WHERE category = 'rejected') AS rejected,
+             COUNT(*) AS total
+           FROM sigma_dpo_preference_pairs
+           WHERE inserted_at >= NOW() - INTERVAL '7 days'
+           """,
+           []
+         ) do
       {:ok, %{rows: [[p, r, t]]}} ->
         %{preferred_pairs: to_int(p), rejected_pairs: to_int(r), total: to_int(t)}
-      _ -> %{preferred_pairs: 0, rejected_pairs: 0, total: 0}
+
+      _ ->
+        %{preferred_pairs: 0, rejected_pairs: 0, total: 0}
     end
   rescue
     _ -> %{preferred_pairs: 0, rejected_pairs: 0, total: 0}
   end
 
   defp espl_weekly_stats do
-    case Jay.Core.Repo.query("""
-    SELECT MAX(generation) AS max_gen, MAX(max_fitness) AS max_fit
-    FROM sigma_analyst_prompts
-    WHERE created_at >= NOW() - INTERVAL '7 days'
-    """, []) do
+    case Jay.Core.Repo.query(
+           """
+           SELECT MAX(generation) AS max_gen, MAX(fitness_score) AS max_fit
+           FROM sigma_analyst_prompts
+           WHERE inserted_at >= NOW() - INTERVAL '7 days'
+           """,
+           []
+         ) do
       {:ok, %{rows: [[gen, fit]]}} ->
         %{espl_generation: to_int(gen), espl_max_fitness: to_float(fit)}
-      _ -> %{espl_generation: 0, espl_max_fitness: 0.0}
+
+      _ ->
+        %{espl_generation: 0, espl_max_fitness: 0.0}
     end
   rescue
     _ -> %{espl_generation: 0, espl_max_fitness: 0.0}
@@ -176,6 +197,7 @@ defmodule Sigma.V2.Monitoring do
 
   defp directive_acceptance_rate(opts) do
     interval = build_interval(opts)
+
     sql = """
     SELECT
       COUNT(*) FILTER (WHERE outcome = 'success')::float / NULLIF(COUNT(*), 0) AS rate
@@ -186,7 +208,9 @@ defmodule Sigma.V2.Monitoring do
     case Jay.Core.Repo.query(sql, []) do
       {:ok, %{rows: [[rate]]}} when not is_nil(rate) ->
         Float.round(to_float(rate) * 100, 1)
-      _ -> 0.0
+
+      _ ->
+        0.0
     end
   rescue
     _ -> 0.0
@@ -205,22 +229,26 @@ defmodule Sigma.V2.Monitoring do
   defp to_int(nil), do: 0
   defp to_int(v) when is_integer(v), do: v
   defp to_int(v) when is_float(v), do: round(v)
+
   defp to_int(v) when is_binary(v) do
     case Integer.parse(v) do
       {n, _} -> n
       :error -> 0
     end
   end
+
   defp to_int(_), do: 0
 
   defp to_float(nil), do: 0.0
   defp to_float(v) when is_float(v), do: Float.round(v, 4)
   defp to_float(v) when is_integer(v), do: v * 1.0
+
   defp to_float(v) when is_binary(v) do
     case Float.parse(v) do
       {f, _} -> Float.round(f, 4)
       :error -> 0.0
     end
   end
+
   defp to_float(_), do: 0.0
 end

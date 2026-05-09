@@ -19,8 +19,8 @@ defmodule Sigma.V2.Pod.Performance do
   def record_directive(pod_name, team, directive_id, success) do
     sql = """
     INSERT INTO sigma_pod_performance
-      (pod_name, team, directive_id, success, evaluated_at)
-    VALUES ($1, $2, $3, $4, NOW())
+      (pod_name, team, directive_id, success, evaluated_at, created_at)
+    VALUES ($1, $2, $3, $4, NOW(), NOW())
     """
 
     Jay.Core.Repo.query(sql, [pod_name, team, directive_id, success])
@@ -59,7 +59,10 @@ defmodule Sigma.V2.Pod.Performance do
           end
 
           update_ucb_score(pod_name, acc, to_int(total))
-          Logger.info("[Sigma.V2.Pod.Performance] #{pod_name}: accuracy=#{Float.round(acc * 1.0, 3)}, total=#{total}")
+
+          Logger.info(
+            "[Sigma.V2.Pod.Performance] #{pod_name}: accuracy=#{Float.round(acc * 1.0, 3)}, total=#{total}"
+          )
         end)
 
         :ok
@@ -94,7 +97,8 @@ defmodule Sigma.V2.Pod.Performance do
           {pod, %{accuracy: to_float(acc), total: to_int(total)}}
         end)
 
-      _ -> %{}
+      _ ->
+        %{}
     end
   rescue
     _ -> %{}
@@ -136,11 +140,13 @@ defmodule Sigma.V2.Pod.Performance do
   defp to_float(nil), do: 0.0
   defp to_float(v) when is_float(v), do: Float.round(v, 4)
   defp to_float(v) when is_integer(v), do: v * 1.0
+
   defp to_float(v) when is_binary(v) do
     case Float.parse(v) do
       {f, _} -> f
       :error -> 0.0
     end
   end
+
   defp to_float(_), do: 0.0
 end

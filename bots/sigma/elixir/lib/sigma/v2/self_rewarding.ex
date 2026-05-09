@@ -53,17 +53,26 @@ defmodule Sigma.V2.SelfRewarding do
   # ─────────────────────────────────────────────────
 
   defp do_evaluate(cycle_result) do
-    metrics = build_metrics(cycle_result)
+    if not llm_available?() do
+      Logger.debug("[Sigma.V2.SelfRewarding] LLM routing unavailable — evaluate_cycle 스킵")
+      :ok
+    else
+      metrics = build_metrics(cycle_result)
 
-    case llm_judge(metrics) do
-      {:ok, judgment} ->
-        store_preference_pair(metrics, judgment)
-        Logger.info("[Sigma.V2.SelfRewarding] cycle #{metrics.cycle_id} 평가 완료: score=#{judgment.score}, category=#{judgment.category}")
-        {:ok, judgment}
+      case llm_judge(metrics) do
+        {:ok, judgment} ->
+          store_preference_pair(metrics, judgment)
 
-      {:error, reason} ->
-        Logger.warning("[Sigma.V2.SelfRewarding] LLM 평가 실패: #{inspect(reason)}")
-        :ok
+          Logger.info(
+            "[Sigma.V2.SelfRewarding] cycle #{metrics.cycle_id} 평가 완료: score=#{judgment.score}, category=#{judgment.category}"
+          )
+
+          {:ok, judgment}
+
+        {:error, reason} ->
+          Logger.warning("[Sigma.V2.SelfRewarding] LLM 평가 실패: #{inspect(reason)}")
+          :ok
+      end
     end
   rescue
     e ->
@@ -72,28 +81,40 @@ defmodule Sigma.V2.SelfRewarding do
   end
 
   defp do_evaluate_week do
-    sql = """
-    SELECT cycle_id, date, analyst, team, success_count, error_count
-    FROM sigma_v2_directive_audit
-    WHERE executed_at > NOW() - INTERVAL '7 days'
-      AND NOT EXISTS (
-        SELECT 1 FROM sigma_dpo_preference_pairs p
-        WHERE p.cycle_id = sigma_v2_directive_audit.directive_id::text
-      )
-    ORDER BY executed_at DESC
-    LIMIT #{@week_eval_limit}
-    """
+    unless llm_available?() do
+      Logger.debug("[Sigma.V2.SelfRewarding] LLM routing unavailable — weekly 평가 스킵")
+      :ok
+    else
+      sql = """
+      SELECT
+        directive_id::text AS cycle_id,
+        executed_at::date::text AS date,
+        COALESCE(principle_check_result->>'analyst', 'commander') AS analyst,
+        team,
+        CASE WHEN outcome IN ('success', 'signal_sent', 'tier2_applied', 'applied', 'auto_applied', 'observed') THEN 1 ELSE 0 END AS success_count,
+        CASE WHEN outcome IN ('failure', 'failed', 'blocked', 'rollback', 'error', 'rejected') THEN 1 ELSE 0 END AS error_count,
+        CASE WHEN tier = 2 AND outcome IN ('success', 'signal_sent', 'tier2_applied', 'applied', 'auto_applied') THEN 1 ELSE 0 END AS tier2_applied
+      FROM sigma_v2_directive_audit
+      WHERE executed_at > NOW() - INTERVAL '7 days'
+        AND NOT EXISTS (
+          SELECT 1 FROM sigma_dpo_preference_pairs p
+          WHERE p.cycle_id = sigma_v2_directive_audit.directive_id::text
+        )
+      ORDER BY executed_at DESC
+      LIMIT #{@week_eval_limit}
+      """
 
-    case Jay.Core.Repo.query(sql, []) do
-      {:ok, %{rows: rows, columns: cols}} ->
-        cycles = rows_to_maps(rows, cols)
-        Enum.each(cycles, fn c -> do_evaluate(c) end)
-        Logger.info("[Sigma.V2.SelfRewarding] 주간 평가 완료: #{length(cycles)}건")
-        :ok
+      case Jay.Core.Repo.query(sql, []) do
+        {:ok, %{rows: rows, columns: cols}} ->
+          cycles = rows_to_maps(rows, cols)
+          Enum.each(cycles, fn c -> do_evaluate(c) end)
+          Logger.info("[Sigma.V2.SelfRewarding] 주간 평가 완료: #{length(cycles)}건")
+          :ok
 
-      _ ->
-        Logger.debug("[Sigma.V2.SelfRewarding] 주간 평가 — DB 접근 불가 또는 미평가 없음")
-        :ok
+        _ ->
+          Logger.debug("[Sigma.V2.SelfRewarding] 주간 평가 — DB 접근 불가 또는 미평가 없음")
+          :ok
+      end
     end
   rescue
     e ->
@@ -122,6 +143,7 @@ defmodule Sigma.V2.SelfRewarding do
             notify_poor_performance(analyst, preferred_ratio, preferred_count, total)
           end
         end)
+
         :ok
 
       _ ->
@@ -178,12 +200,14 @@ defmodule Sigma.V2.SelfRewarding do
         case Jason.decode(json_str) do
           {:ok, decoded} ->
             score = Map.get(decoded, "score", 0.5) |> to_float()
-            {:ok, %{
-              score: score,
-              critique: Map.get(decoded, "critique", ""),
-              improvements: Map.get(decoded, "improvements", []),
-              category: classify(score)
-            }}
+
+            {:ok,
+             %{
+               score: score,
+               critique: Map.get(decoded, "critique", ""),
+               improvements: Map.get(decoded, "improvements", []),
+               category: classify(score)
+             }}
 
           _ ->
             {:ok, neutral_judgment(content)}
@@ -234,7 +258,9 @@ defmodule Sigma.V2.SelfRewarding do
 
   defp notify_poor_performance(analyst, preferred_ratio, preferred, total) do
     ratio_str = :erlang.float_to_binary(preferred_ratio * 1.0, decimals: 2)
-    msg = "시그마 분석가 #{analyst} 성과 저하: preferred #{ratio_str} (#{preferred}/#{total}건). ESPL 진화 또는 프롬프트 재조정 권장. (자동 변경 없음)"
+
+    msg =
+      "시그마 분석가 #{analyst} 성과 저하: preferred #{ratio_str} (#{preferred}/#{total}건). ESPL 진화 또는 프롬프트 재조정 권장. (자동 변경 없음)"
 
     try do
       Sigma.V2.TelegramReporter.on_meta_change("self_rewarding_alert", %{
@@ -257,20 +283,35 @@ defmodule Sigma.V2.SelfRewarding do
       Map.get(cycle_result, key) || Map.get(cycle_result, to_string(key)) || default
     end
 
-    results = get.(:results, [])
-    success_count = Enum.count(results, &(Map.get(&1, :status) == :ok))
-    error_count = Enum.count(results, &(Map.get(&1, :status) == :error))
-    tier2_applied = Enum.count(results, &(get_in(&1, [:feedback, :tier]) == 2 and Map.get(&1, :status) == :ok))
-    total = max(length(results), 1)
+    results = get.(:results, nil)
+
+    {success_count, error_count, tier2_applied, total} =
+      if is_list(results) do
+        success = Enum.count(results, &(Map.get(&1, :status) == :ok))
+        errors = Enum.count(results, &(Map.get(&1, :status) == :error))
+
+        tier2 =
+          Enum.count(
+            results,
+            &(get_in(&1, [:feedback, :tier]) == 2 and Map.get(&1, :status) == :ok)
+          )
+
+        {success, errors, tier2, max(length(results), 1)}
+      else
+        success = to_int(get.(:success_count, 0))
+        errors = to_int(get.(:error_count, 0))
+        tier2 = to_int(get.(:tier2_applied, 0))
+        {success, errors, tier2, max(success + errors, 1)}
+      end
 
     %{
-      cycle_id:        get.(:cycle_id, "unknown"),
-      date:            get.(:date, Date.to_iso8601(Date.utc_today())),
-      analyst:         get.(:analyst, "commander"),
-      team:            get.(:team, "all"),
-      success_count:   success_count,
-      error_count:     error_count,
-      tier2_applied:   tier2_applied,
+      cycle_id: get.(:cycle_id, "unknown"),
+      date: get.(:date, Date.to_iso8601(Date.utc_today())),
+      analyst: get.(:analyst, "commander"),
+      team: get.(:team, "all"),
+      success_count: success_count,
+      error_count: error_count,
+      tier2_applied: tier2_applied,
       acceptance_rate: Float.round(success_count / total * 1.0, 2)
     }
   end
@@ -295,13 +336,29 @@ defmodule Sigma.V2.SelfRewarding do
 
   defp enabled?, do: System.get_env("SIGMA_SELF_REWARDING_ENABLED") == "true"
 
+  defp llm_available?, do: Sigma.V2.LLM.Policy.llm_available?()
+
   defp to_float(v) when is_float(v), do: v
   defp to_float(v) when is_integer(v), do: v * 1.0
+
   defp to_float(v) when is_binary(v) do
     case Float.parse(v) do
       {f, _} -> f
       :error -> 0.5
     end
   end
+
   defp to_float(_), do: 0.5
+
+  defp to_int(v) when is_integer(v), do: v
+  defp to_int(v) when is_float(v), do: round(v)
+
+  defp to_int(v) when is_binary(v) do
+    case Integer.parse(v) do
+      {n, _} -> n
+      :error -> 0
+    end
+  end
+
+  defp to_int(_), do: 0
 end

@@ -62,8 +62,8 @@ defmodule Sigma.V2.PodSelectorV2 do
   @spec update_reward(String.t(), String.t(), float()) :: :ok
   def update_reward(pod_name, target_team, reward) when pod_name in @pods do
     sql = """
-    INSERT INTO sigma_pod_bandit_stats (pod_name, target_team, trials, successes, failures, total_reward, avg_reward, last_selection_at, updated_at)
-    VALUES ($1, $2, 1, $3, $4, $5, $5, NOW(), NOW())
+    INSERT INTO sigma_pod_bandit_stats (pod_name, target_team, trials, successes, failures, total_reward, avg_reward, last_selection_at, created_at, updated_at)
+    VALUES ($1, $2, 1, $3, $4, $5, $5, NOW(), NOW(), NOW())
     ON CONFLICT (pod_name, target_team) DO UPDATE SET
       trials = sigma_pod_bandit_stats.trials + 1,
       successes = sigma_pod_bandit_stats.successes + $3,
@@ -120,7 +120,11 @@ defmodule Sigma.V2.PodSelectorV2 do
       end)
 
     selected = Enum.max_by(scored, & &1.ucb_score)
-    Logger.debug("[Sigma.V2.PodSelectorV2] UCB1 선택: #{selected.pod_name} (ucb=#{Float.round(selected.ucb_score, 3)})")
+
+    Logger.debug(
+      "[Sigma.V2.PodSelectorV2] UCB1 선택: #{selected.pod_name} (ucb=#{Float.round(selected.ucb_score, 3)})"
+    )
+
     {:ok, selected.pod_name}
   end
 
@@ -134,7 +138,11 @@ defmodule Sigma.V2.PodSelectorV2 do
       end)
 
     selected = Enum.max_by(sampled, & &1.thompson_sample)
-    Logger.debug("[Sigma.V2.PodSelectorV2] Thompson 선택: #{selected.pod_name} (sample=#{Float.round(selected.thompson_sample, 3)})")
+
+    Logger.debug(
+      "[Sigma.V2.PodSelectorV2] Thompson 선택: #{selected.pod_name} (sample=#{Float.round(selected.thompson_sample, 3)})"
+    )
+
     {:ok, selected.pod_name}
   end
 
@@ -158,7 +166,11 @@ defmodule Sigma.V2.PodSelectorV2 do
       end)
 
     selected = Enum.max_by(scored, & &1.context_score)
-    Logger.debug("[Sigma.V2.PodSelectorV2] Contextual 선택: #{selected.pod_name} (score=#{Float.round(selected.context_score, 3)})")
+
+    Logger.debug(
+      "[Sigma.V2.PodSelectorV2] Contextual 선택: #{selected.pod_name} (score=#{Float.round(selected.context_score, 3)})"
+    )
+
     {:ok, selected.pod_name}
   end
 
@@ -231,7 +243,11 @@ defmodule Sigma.V2.PodSelectorV2 do
 
         age_hours =
           if selected_at do
-            dt = if is_binary(selected_at), do: DateTime.from_iso8601(selected_at) |> elem(1), else: selected_at
+            dt =
+              if is_binary(selected_at),
+                do: DateTime.from_iso8601(selected_at) |> elem(1),
+                else: selected_at
+
             max(0, (now_unix - DateTime.to_unix(dt)) / 3600)
           else
             168
@@ -283,10 +299,12 @@ defmodule Sigma.V2.PodSelectorV2 do
   defp log_selection(pod_name, target_team, strategy, context) do
     try do
       strategy_str = to_string(strategy)
-      ctx_json = case Jason.encode(context) do
-        {:ok, json} -> json
-        _ -> "{}"
-      end
+
+      ctx_json =
+        case Jason.encode(context) do
+          {:ok, json} -> json
+          _ -> "{}"
+        end
 
       sql = """
       INSERT INTO sigma_pod_selection_log (pod_name, target_team, strategy, context, selected_at)

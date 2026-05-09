@@ -7,33 +7,33 @@ defmodule Sigma.V2.LLM.Policy do
   @behaviour Jay.Core.LLM.Policy
 
   @agent_policies %{
-    "commander"               => %{route: :anthropic_sonnet, fallback: [:anthropic_haiku]},
-    "pod.risk"                => %{route: :anthropic_sonnet, fallback: [:anthropic_haiku]},
-    "pod.growth"              => %{route: :anthropic_haiku,  fallback: []},
-    "pod.trend"               => %{route: :anthropic_haiku,  fallback: []},
-    "skill.data_quality"      => %{route: :anthropic_haiku,  fallback: []},
-    "skill.causal"            => %{route: :anthropic_sonnet, fallback: [:anthropic_haiku]},
+    "commander" => %{route: :anthropic_sonnet, fallback: [:anthropic_haiku]},
+    "pod.risk" => %{route: :anthropic_sonnet, fallback: [:anthropic_haiku]},
+    "pod.growth" => %{route: :anthropic_haiku, fallback: []},
+    "pod.trend" => %{route: :anthropic_haiku, fallback: []},
+    "skill.data_quality" => %{route: :anthropic_haiku, fallback: []},
+    "skill.causal" => %{route: :anthropic_sonnet, fallback: [:anthropic_haiku]},
     "skill.experiment_design" => %{route: :anthropic_sonnet, fallback: [:anthropic_haiku]},
-    "skill.feature_planner"   => %{route: :anthropic_haiku,  fallback: []},
-    "skill.observability"     => %{route: :anthropic_haiku,  fallback: []},
-    "principle.self_critique" => %{route: :anthropic_opus,   fallback: [:anthropic_sonnet]},
-    "reflexion"               => %{route: :anthropic_sonnet, fallback: [:anthropic_haiku]},
-    "espl"                    => %{route: :anthropic_sonnet, fallback: [:anthropic_haiku]},
-    "self_rewarding_judge"    => %{route: :anthropic_sonnet, fallback: [:anthropic_haiku]},
-    "mapek.monitor"           => %{route: :anthropic_haiku,  fallback: []},
-    "rag.query_planner"       => %{route: :anthropic_haiku,  fallback: []},
-    "rag.retriever"           => %{route: :anthropic_haiku,  fallback: []},
-    "rag.quality_evaluator"   => %{route: :anthropic_haiku,  fallback: []},
-    "rag.synthesizer"         => %{route: :anthropic_haiku,  fallback: []},
+    "skill.feature_planner" => %{route: :anthropic_haiku, fallback: []},
+    "skill.observability" => %{route: :anthropic_haiku, fallback: []},
+    "principle.self_critique" => %{route: :anthropic_opus, fallback: [:anthropic_sonnet]},
+    "reflexion" => %{route: :anthropic_sonnet, fallback: [:anthropic_haiku]},
+    "espl" => %{route: :anthropic_sonnet, fallback: [:anthropic_haiku]},
+    "self_rewarding_judge" => %{route: :anthropic_sonnet, fallback: [:anthropic_haiku]},
+    "mapek.monitor" => %{route: :anthropic_haiku, fallback: []},
+    "rag.query_planner" => %{route: :anthropic_haiku, fallback: []},
+    "rag.retriever" => %{route: :anthropic_haiku, fallback: []},
+    "rag.quality_evaluator" => %{route: :anthropic_haiku, fallback: []},
+    "rag.synthesizer" => %{route: :anthropic_haiku, fallback: []}
   }
 
   @agent_affinity %{
-    "reflexion"              => %{anthropic_sonnet: 1.0, anthropic_haiku: 0.6, anthropic_opus: 0.3},
-    "espl.crossover"         => %{anthropic_sonnet: 1.0, anthropic_haiku: 0.5},
-    "espl.mutation"          => %{anthropic_haiku: 1.0, anthropic_sonnet: 0.7},
+    "reflexion" => %{anthropic_sonnet: 1.0, anthropic_haiku: 0.6, anthropic_opus: 0.3},
+    "espl.crossover" => %{anthropic_sonnet: 1.0, anthropic_haiku: 0.5},
+    "espl.mutation" => %{anthropic_haiku: 1.0, anthropic_sonnet: 0.7},
     "self_rag.retrieve_gate" => %{anthropic_haiku: 1.0},
-    "self_rag.relevance"     => %{anthropic_haiku: 1.0},
-    "principle.critique"     => %{anthropic_sonnet: 1.0, anthropic_haiku: 0.7},
+    "self_rag.relevance" => %{anthropic_haiku: 1.0},
+    "principle.critique" => %{anthropic_sonnet: 1.0, anthropic_haiku: 0.7}
   }
 
   @impl true
@@ -49,7 +49,7 @@ defmodule Sigma.V2.LLM.Policy do
   def daily_budget_usd do
     case Float.parse(System.get_env("SIGMA_LLM_DAILY_BUDGET_USD", "10.0")) do
       {f, _} -> f
-      :error  -> 10.0
+      :error -> 10.0
     end
   end
 
@@ -85,6 +85,10 @@ defmodule Sigma.V2.LLM.Policy do
 
   @impl true
   def hub_shadow?, do: System.get_env("LLM_HUB_ROUTING_SHADOW") == "true"
+
+  def llm_available? do
+    hub_routing_enabled?() or hub_shadow?() or anthropic_public_api_enabled?()
+  end
 
   defp load_from_secrets do
     candidates = [

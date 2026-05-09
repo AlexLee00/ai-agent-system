@@ -15,19 +15,25 @@ defmodule Sigma.V2.LLM.Selector do
   반환: {:ok, %{response:, model:, provider:, tokens:, latency_ms:}} | {:error, reason}
   """
   def call_with_fallback(agent_name, prompt, opts) when is_binary(prompt) do
-    case complete(agent_name, [%{role: "user", content: prompt}], opts) do
-      {:ok, content} ->
-        policy = policy_for(agent_name)
-        {:ok, %{
-          response:   content,
-          model:      to_string(policy.route),
-          provider:   "hub_or_direct",
-          tokens:     %{in: 0, out: 0},
-          latency_ms: 0
-        }}
+    if Sigma.V2.LLM.Policy.llm_available?() do
+      case complete(agent_name, [%{role: "user", content: prompt}], opts) do
+        {:ok, content} ->
+          policy = policy_for(agent_name)
 
-      error ->
-        error
+          {:ok,
+           %{
+             response: content,
+             model: to_string(policy.route),
+             provider: "hub_or_direct",
+             tokens: %{in: 0, out: 0},
+             latency_ms: 0
+           }}
+
+        error ->
+          error
+      end
+    else
+      {:error, :llm_routing_unavailable}
     end
   end
 end

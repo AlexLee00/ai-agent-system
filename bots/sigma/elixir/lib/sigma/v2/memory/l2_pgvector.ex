@@ -7,13 +7,14 @@ defmodule Sigma.V2.Memory.L2 do
   use Jido.Action,
     name: "sigma_v2_memory_recall",
     description: "Store and retrieve Reflexion notes via pgvector similarity search",
-    schema: Zoi.object(%{
-      operation: Zoi.enum([:store, :retrieve]) |> Zoi.required(),
-      content: Zoi.optional(Zoi.string()),
-      team: Zoi.optional(Zoi.string()),
-      top_k: Zoi.default(Zoi.integer(), 5),
-      threshold: Zoi.default(Zoi.float(), 0.3)
-    })
+    schema:
+      Zoi.object(%{
+        operation: Zoi.enum([:store, :retrieve]) |> Zoi.required(),
+        content: Zoi.optional(Zoi.string()),
+        team: Zoi.optional(Zoi.string()),
+        top_k: Zoi.default(Zoi.integer(), 5),
+        threshold: Zoi.default(Zoi.float(), 0.3)
+      })
 
   # MLX-openai-server (OpenAI 호환, launchd ai.mlx.server, port 11434)
   # 루나팀 실사용 중인 형식 (POST /v1/embeddings with "input" key)
@@ -31,8 +32,8 @@ defmodule Sigma.V2.Memory.L2 do
           Jay.Core.Repo.query(
             """
             INSERT INTO rag.agent_memory
-              (agent_id, team, content, embedding, memory_type, inserted_at, updated_at, created_at)
-            VALUES ($1, $2, $3, $4::vector, 'semantic', NOW(), NOW(), NOW())
+              (agent_id, team, content, embedding, memory_type, updated_at, created_at)
+            VALUES ($1, $2, $3, $4::vector, 'semantic', NOW(), NOW())
             ON CONFLICT DO NOTHING
             RETURNING id
             """,
@@ -90,9 +91,14 @@ defmodule Sigma.V2.Memory.L2 do
   def encode(text) when is_binary(text) do
     body = Jason.encode!(%{model: @embed_model, input: text})
 
-    case Req.post(@embed_url, body: body, headers: [{"content-type", "application/json"}], receive_timeout: 10_000) do
+    case Req.post(@embed_url,
+           body: body,
+           headers: [{"content-type", "application/json"}],
+           receive_timeout: 10_000
+         ) do
       # OpenAI 호환 형식: {"data": [{"embedding": [...]}]}
-      {:ok, %{status: 200, body: %{"data" => [%{"embedding" => embedding} | _]}}} when is_list(embedding) ->
+      {:ok, %{status: 200, body: %{"data" => [%{"embedding" => embedding} | _]}}}
+      when is_list(embedding) ->
         {:ok, embedding}
 
       # 폴백: 혹시 Ollama 형식 응답 (다른 버전 호환용)

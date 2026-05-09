@@ -45,6 +45,7 @@ export interface SelfImprovementPlan {
 }
 
 export type SelfImprovementApplyMode = 'shadow' | 'supervised' | 'autonomous';
+type EnvMap = Record<string, string | undefined>;
 
 export interface AppliedSkill {
   ok: boolean;
@@ -57,8 +58,8 @@ export interface AppliedSkill {
   appliedAt: string;
 }
 
-function boolEnv(name: string): boolean {
-  return ['1', 'true', 'yes', 'on'].includes(String(process.env[name] ?? '').toLowerCase());
+function boolEnv(name: string, env: EnvMap = process.env): boolean {
+  return ['1', 'true', 'yes', 'on'].includes(String(env[name] ?? '').toLowerCase());
 }
 
 function resolveApplyMode(value = process.env.SIGMA_SELF_IMPROVEMENT_APPLY_MODE): SelfImprovementApplyMode {
@@ -88,8 +89,12 @@ function buildApplyBlockedReason({
   return null;
 }
 
-export function buildSelfImprovementPlan(signals: SelfImprovementSignal[], opts: { dryRun?: boolean } = {}): SelfImprovementPlan {
+export function buildSelfImprovementPlan(
+  signals: SelfImprovementSignal[],
+  opts: { dryRun?: boolean; env?: EnvMap } = {},
+): SelfImprovementPlan {
   const dryRun = opts.dryRun !== false;
+  const env = opts.env ?? process.env;
   const base = planSelfImprovement(signals);
   const supportByPrompt = new Map<string, number>();
   for (const signal of signals) {
@@ -104,9 +109,9 @@ export function buildSelfImprovementPlan(signals: SelfImprovementSignal[], opts:
     reason: 'success_pattern_candidate',
   }));
 
-  const applyMode = resolveApplyMode();
-  const selfImprovementEnabled = boolEnv('SIGMA_SELF_IMPROVEMENT_ENABLED');
-  const voyagerSkillAutoExtractionEnabled = boolEnv('SIGMA_VOYAGER_SKILL_AUTO_EXTRACTION');
+  const applyMode = resolveApplyMode(env.SIGMA_SELF_IMPROVEMENT_APPLY_MODE);
+  const selfImprovementEnabled = boolEnv('SIGMA_SELF_IMPROVEMENT_ENABLED', env);
+  const voyagerSkillAutoExtractionEnabled = boolEnv('SIGMA_VOYAGER_SKILL_AUTO_EXTRACTION', env);
   const applyBlocked = buildApplyBlockedReason({
     dryRun,
     selfImprovementEnabled,
@@ -122,8 +127,8 @@ export function buildSelfImprovementPlan(signals: SelfImprovementSignal[], opts:
     activation: {
       selfImprovementEnabled,
       voyagerSkillAutoExtractionEnabled,
-      fineTuningNotifyEnabled: boolEnv('SIGMA_FINE_TUNING_NOTIFY_ENABLED'),
-      autonomyMode: process.env.SIGMA_LIBRARY_AUTONOMY_MODE || 'shadow',
+      fineTuningNotifyEnabled: boolEnv('SIGMA_FINE_TUNING_NOTIFY_ENABLED', env),
+      autonomyMode: env.SIGMA_LIBRARY_AUTONOMY_MODE || 'shadow',
       applyMode,
       operatorApplyEnabled: applyMode !== 'shadow',
       voyagerApplyEnabled: applyMode !== 'shadow' && voyagerSkillAutoExtractionEnabled,
@@ -150,7 +155,7 @@ export function buildSelfImprovementPlan(signals: SelfImprovementSignal[], opts:
   };
 }
 
-export function toPosttradeSkillPayload(candidate: SkillExtractionPlan) {
+export function toPosttradeSkillPayload(candidate: SkillExtractionPlan, env: EnvMap = process.env) {
   const skillType = candidate.kind === 'SUCCESS' ? 'success' : 'avoid';
   const normalizedPattern = candidate.pattern
     .toLowerCase()
@@ -177,7 +182,7 @@ export function toPosttradeSkillPayload(candidate: SkillExtractionPlan) {
       kind: candidate.kind,
       fileName: candidate.fileName,
       support: candidate.support,
-      applyMode: resolveApplyMode(),
+      applyMode: resolveApplyMode(env.SIGMA_SELF_IMPROVEMENT_APPLY_MODE),
     },
   };
 }
@@ -190,7 +195,7 @@ async function countPosttradeSkills(): Promise<number | null> {
 
 export async function runSelfImprovementPipeline(
   signals: SelfImprovementSignal[],
-  opts: { dryRun?: boolean } = {},
+  opts: { dryRun?: boolean; env?: EnvMap } = {},
 ): Promise<SelfImprovementPlan> {
   const plan = buildSelfImprovementPlan(signals, opts);
   plan.skillCountBefore = null;
@@ -206,7 +211,7 @@ export async function runSelfImprovementPipeline(
   }
 
   for (const candidate of plan.skillCandidates) {
-    const payload = toPosttradeSkillPayload(candidate);
+    const payload = toPosttradeSkillPayload(candidate, opts.env);
     const row = await upsertPosttradeSkill(payload);
     plan.appliedSkills.push({
       ok: Boolean(row?.id),

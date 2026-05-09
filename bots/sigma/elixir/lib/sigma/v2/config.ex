@@ -29,7 +29,10 @@ defmodule Sigma.V2.Config do
         end
 
       {:error, reason} ->
-        Logger.warning("[sigma/config] snapshot 실패 — team=#{team} path=#{path}: #{inspect(reason)}")
+        Logger.warning(
+          "[sigma/config] snapshot 실패 — team=#{team} path=#{path}: #{inspect(reason)}"
+        )
+
         {:error, {:file_read_error, reason}}
     end
   rescue
@@ -76,17 +79,19 @@ defmodule Sigma.V2.Config do
 
   # ---
 
-  defp config_path("luna"),       do: Path.join(["bots", "investment", "config.yaml"])
+  defp config_path("luna"), do: Path.join(["bots", "investment", "config.yaml"])
   defp config_path("investment"), do: Path.join(["bots", "investment", "config.yaml"])
-  defp config_path("blog"),       do: Path.join(["bots", "blog", "config.yaml"])
-  defp config_path("ska"),        do: Path.join(["bots", "ska", "config.yaml"])
-  defp config_path("claude"),     do: Path.join(["bots", "claude", "config.json"])
-  defp config_path("darwin"),     do: Path.join(["bots", "darwin", "config.yaml"])
-  defp config_path(team),         do: Path.join(["bots", team, "config.yaml"])
+  defp config_path("blog"), do: Path.join(["bots", "blog", "config.json"])
+  defp config_path("ska"), do: Path.join(["bots", "ska", "config.json"])
+  defp config_path("claude"), do: Path.join(["bots", "claude", "config.json"])
+  defp config_path("darwin"), do: Path.join(["bots", "darwin", "config.yaml"])
+  defp config_path(team), do: Path.join(["bots", team, "config.yaml"])
 
   defp parse_config(content) do
     case Jason.decode(content) do
-      {:ok, map} -> {:ok, map}
+      {:ok, map} ->
+        {:ok, map}
+
       {:error, _} ->
         # YAML fallback
         case YamlElixir.read_from_string(content) do
@@ -99,6 +104,7 @@ defmodule Sigma.V2.Config do
   defp merge_patch(current, patch) when is_map(patch) do
     Map.merge(current, patch, fn _k, _old, new -> new end)
   end
+
   defp merge_patch(current, _), do: current
 
   defp verify_patch_safety(current, patched) do
