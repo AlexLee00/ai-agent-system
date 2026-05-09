@@ -24,15 +24,27 @@ async function fetchJson(url, timeoutMs = 5000) {
   return response.json();
 }
 
+function timeframeDurationMs(timeframe = '60') {
+  const text = String(timeframe || '60').trim().toLowerCase();
+  if (text === 'd' || text === '1d') return 24 * 60 * 60 * 1000;
+  if (text === 'w' || text === '1w') return 7 * 24 * 60 * 60 * 1000;
+  if (text.endsWith('h')) return Math.max(1, Number(text.slice(0, -1)) || 1) * 60 * 60 * 1000;
+  if (text.endsWith('m')) return Math.max(1, Number(text.slice(0, -1)) || 1) * 60 * 1000;
+  const minutes = Number(text);
+  return Number.isFinite(minutes) && minutes > 0 ? minutes * 60 * 1000 : 60 * 60 * 1000;
+}
+
 export function classifyTradingViewRealtime({ health = {}, latest = {}, symbol = 'BINANCE:BTCUSDT', timeframe = '60' } = {}) {
   const bars = Array.isArray(latest?.bars) ? latest.bars : [];
+  const staleThresholdMs = Math.max(5 * 60 * 1000, timeframeDurationMs(timeframe) + 5 * 60 * 1000);
   const realBars = bars.filter((row) => {
     const source = String(row.source || '').toLowerCase();
     const providerMode = String(row.providerMode || '').toLowerCase();
     return source === 'tradingview_ws_service' && providerMode.includes('websocket') && !row.fallbackReason;
   });
-  const staleBars = realBars.filter((row) => Number(row.ageMs || 0) > 5 * 60 * 1000);
+  const staleBars = realBars.filter((row) => Number(row.ageMs || 0) > staleThresholdMs);
   const ok = health?.tv_ws === 'connected' && realBars.length > 0 && staleBars.length === 0;
+  const staleSubscriptionCount = Number(health?.staleSubscriptions || 0);
   return {
     ok,
     status: ok ? 'tradingview_realtime_ready' : 'tradingview_realtime_attention',
@@ -41,16 +53,19 @@ export function classifyTradingViewRealtime({ health = {}, latest = {}, symbol =
     tvWs: health?.tv_ws || 'unknown',
     serviceRealtimeOk: health?.realtimeOk === true,
     subscriptions: Number(health?.subscriptions || 0),
-    staleSubscriptions: Number(health?.staleSubscriptions || 0),
+    staleSubscriptions: staleSubscriptionCount,
     fallbackBars: Number(health?.fallbackBars || 0),
     latestCount: bars.length,
     realBars: realBars.length,
     staleRealBars: staleBars.length,
+    staleThresholdMs,
     blockers: [
       ...(health?.tv_ws === 'connected' ? [] : ['tradingview_ws_disconnected']),
       ...(realBars.length > 0 ? [] : ['tradingview_realtime_bar_missing']),
       ...(staleBars.length === 0 ? [] : ['tradingview_realtime_bar_stale']),
-      ...(Number(health?.staleSubscriptions || 0) === 0 ? [] : ['tradingview_stale_subscriptions_present']),
+    ],
+    warnings: [
+      ...(staleSubscriptionCount === 0 ? [] : ['tradingview_stale_subscriptions_present']),
     ],
   };
 }

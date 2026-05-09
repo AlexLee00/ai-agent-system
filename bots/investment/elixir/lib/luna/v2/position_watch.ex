@@ -486,7 +486,7 @@ defmodule Luna.V2.PositionWatch do
   defp fetch_tradingview_snapshot(positions, true, timeframes, _tv_stale_ms) do
     symbols =
       positions
-      |> Enum.map(&to_tv_symbol/1)
+      |> Enum.map(&to_crypto_tv_symbol/1)
       |> Enum.reject(&is_nil/1)
       |> Enum.uniq()
 
@@ -500,10 +500,14 @@ defmodule Luna.V2.PositionWatch do
       end)
     end)
 
-    case Req.get("#{KillSwitch.position_watch_tv_base_url()}/latest",
-           params: [symbols: Enum.join(symbols, ","), timeframes: Enum.join(timeframes, ",")],
-           retry: false
-         ) do
+	    case Req.get("#{KillSwitch.position_watch_tv_base_url()}/latest",
+	           params: [
+	             symbols: Enum.join(symbols, ","),
+	             timeframes: Enum.join(timeframes, ","),
+	             requireReal: "true"
+	           ],
+	           retry: false
+	         ) do
       {:ok, %Req.Response{status: 200, body: %{"bars" => bars, "tv_ws" => tv_ws}}} ->
         mapped =
           Enum.reduce(bars || [], %{}, fn row, acc ->
@@ -529,7 +533,7 @@ defmodule Luna.V2.PositionWatch do
 
   defp attach_tv_snapshot(positions, tv_snapshot) do
     Enum.map(positions, fn position ->
-      tv_symbol = to_tv_symbol(position)
+      tv_symbol = to_crypto_tv_symbol(position)
 
       tv =
         if is_binary(tv_symbol) do
@@ -942,48 +946,14 @@ defmodule Luna.V2.PositionWatch do
     end
   end
 
-  defp to_tv_symbol(position) do
+  defp to_crypto_tv_symbol(position) do
     symbol = to_string(position[:symbol] || "")
     exchange = to_string(position[:exchange] || "")
 
-    cond do
-      exchange == "binance" and String.contains?(symbol, "/") ->
-        "BINANCE:" <> String.replace(symbol, "/", "")
-
-      exchange == "kis" and Regex.match?(~r/^\d{6}$/, symbol) ->
-        "KRX:" <> symbol
-
-      exchange == "kis_overseas" and Regex.match?(~r/^[A-Z]{1,10}$/, symbol) ->
-        to_us_tv_symbol(symbol)
-
-      true ->
-        nil
-    end
-  end
-
-  # 미국장은 현재 포지션 symbol에 거래소 메타가 항상 함께 오지 않아서,
-  # 자주 쓰는 종목/ETF는 명시 매핑하고 나머지는 NASDAQ 우선으로 본다.
-  # 필요시 NYSE/AMEX 매핑 테이블을 계속 확장하면 된다.
-  defp to_us_tv_symbol(symbol) do
-    case symbol do
-      "AAPL" -> "NASDAQ:AAPL"
-      "AMD" -> "NASDAQ:AMD"
-      "AMZN" -> "NASDAQ:AMZN"
-      "ASTS" -> "NASDAQ:ASTS"
-      "MSFT" -> "NASDAQ:MSFT"
-      "NFLX" -> "NASDAQ:NFLX"
-      "NVDA" -> "NASDAQ:NVDA"
-      "NVTS" -> "NASDAQ:NVTS"
-      "OPEN" -> "NASDAQ:OPEN"
-      "POET" -> "NASDAQ:POET"
-      "QQQ" -> "NASDAQ:QQQ"
-      "TSLA" -> "NASDAQ:TSLA"
-      "CAR" -> "NYSE:CAR"
-      "DTE" -> "NYSE:DTE"
-      "GE" -> "NYSE:GE"
-      "UNH" -> "NYSE:UNH"
-      "SPY" -> "AMEX:SPY"
-      _ -> "NASDAQ:" <> symbol
+    if exchange == "binance" and String.contains?(symbol, "/") do
+      "BINANCE:" <> String.replace(symbol, "/", "")
+    else
+      nil
     end
   end
 
