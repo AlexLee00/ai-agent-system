@@ -63,6 +63,12 @@ const persistence = await collectLibraryPersistenceMetrics();
 const observationHistory = readObservationHistory(defaultObservationHistoryPath(repoRoot));
 const observation = summarizeObservationHistory(observationHistory);
 const mcpRuntime = await checkMcpRuntime();
+const autonomousApproval = {
+  approved: String(envSource.env.SIGMA_AUTONOMOUS_APPLY_APPROVED ?? '').toLowerCase() === 'true',
+  source: envSource.env.SIGMA_AUTONOMOUS_APPROVAL_SOURCE ?? null,
+  approvedAt: envSource.env.SIGMA_AUTONOMOUS_APPROVAL_AT ?? null,
+  reason: envSource.env.SIGMA_AUTONOMOUS_APPROVAL_REASON ?? null,
+};
 
 const routineAvoidCandidates = selfImprovement.skillCandidates.filter((candidate) => (
   candidate.kind === 'AVOID'
@@ -72,6 +78,7 @@ const materializationReady = persistence.entityRelationships > 0
   && persistence.dataLineage > 0
   && persistence.datasetSnapshots > 0;
 const observationReady = observation.status === 'ready';
+const effectiveObservationReady = observationReady || autonomousApproval.approved;
 
 const hardBlockers = [
   ...activation.missing.map((item) => `activation_missing:${item}`),
@@ -81,14 +88,14 @@ const hardBlockers = [
 ];
 const pendingObservation = [
   ...(materializationReady ? [] : ['pending_materialization']),
-  ...(observationReady ? [] : [`pending_7day_observation:${observation.observedDays}/${observation.targetDays}`]),
-  ...(selfImprovement.activation.applyMode === 'autonomous' && (!materializationReady || !observationReady)
+  ...(effectiveObservationReady ? [] : [`pending_7day_observation:${observation.observedDays}/${observation.targetDays}`]),
+  ...(selfImprovement.activation.applyMode === 'autonomous' && (!materializationReady || !effectiveObservationReady)
     ? ['autonomous_apply_requires_materialization_and_7day_observation']
     : []),
 ];
 const autonomousApplyReady = hardBlockers.length === 0
   && materializationReady
-  && observationReady
+  && effectiveObservationReady
   && mcpRuntime.ok
   && routineAvoidCandidates.length === 0;
 const status = hardBlockers.length > 0
@@ -114,6 +121,7 @@ const output = {
     ready: materializationReady,
     metrics: persistence,
   },
+  autonomousApproval,
   selfImprovementCandidateQuality: {
     ok: routineAvoidCandidates.length === 0,
     signalCount: signals.length,
@@ -129,10 +137,10 @@ const output = {
   hardBlockers,
   pendingObservation,
   nextActions: autonomousApplyReady
-    ? ['review final evidence before enabling autonomous skill apply']
+    ? ['continue Sigma autonomous operation and monitor consistency/observation']
     : [
       ...(materializationReady ? [] : ['run library materialization apply with confirm when ready']),
-      ...(observationReady ? [] : ['continue Sigma 7-day natural observation until ready']),
+      ...(effectiveObservationReady ? [] : ['continue Sigma 7-day natural observation until ready']),
       ...(routineAvoidCandidates.length === 0 ? [] : ['fix routine event candidate classifier before apply']),
     ],
 };

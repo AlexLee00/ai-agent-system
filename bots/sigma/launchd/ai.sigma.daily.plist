@@ -70,6 +70,14 @@
     <string>true</string>
     <key>SIGMA_FINE_TUNING_NOTIFY_ENABLED</key>
     <string>true</string>
+    <key>SIGMA_AUTONOMOUS_APPLY_APPROVED</key>
+    <string>true</string>
+    <key>SIGMA_AUTONOMOUS_APPROVAL_SOURCE</key>
+    <string>master-session</string>
+    <key>SIGMA_AUTONOMOUS_APPROVAL_AT</key>
+    <string>2026-05-09T02:35:46Z</string>
+    <key>SIGMA_AUTONOMOUS_APPROVAL_REASON</key>
+    <string>master approved autonomous apply after 5 of 7 clean observation days and zero blockers</string>
     <key>SIGMA_MAPEK_ENABLED</key>
     <string>true</string>
     <key>SIGMA_SELF_REWARDING_ENABLED</key>
