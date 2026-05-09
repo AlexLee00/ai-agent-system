@@ -20,6 +20,7 @@ function fixtureWatchlist() {
         readiness: 'relaxed_probe_watch',
         nextAction: 'run_l13_probe_with_existing_risk_and_entry_guards',
         watchReason: 'crypto_relaxed_mtf_momentum_probe',
+        missingConfirmations: ['onchain', 'sentiment', 'fusion'],
       },
       {
         symbol: 'WAIT/USDT',
@@ -105,8 +106,10 @@ export async function runLunaRelaxedProbeRunnerSmoke() {
       assert.equal(meta.relaxed_probe_runner, true);
       assert.equal(meta.decision_execution_skipped, false);
       assert.equal(meta.disableDiscoveryExpansion, true);
-      assert.equal(meta.llm_call_policy.source_enrichment, 'technical_first_only');
-      assert.deepEqual(meta.agentPlan.collect.nodeIds, ['L06', 'L02']);
+      assert.equal(meta.targeted_enrichment, true);
+      assert.equal(meta.llm_call_policy.source_enrichment, 'targeted_top_n_only');
+      assert.deepEqual(meta.llm_call_policy.targeted_enrichment_nodes, ['L03', 'L05']);
+      assert.deepEqual(meta.agentPlan.collect.nodeIds, ['L06', 'L02', 'L03', 'L05']);
       return {
         sessionId: 'relaxed-probe-session',
         symbols,

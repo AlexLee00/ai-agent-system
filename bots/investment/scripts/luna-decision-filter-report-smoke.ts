@@ -141,6 +141,34 @@ export async function runLunaDecisionFilterReportSmoke() {
   assert.equal(relaxedCryptoMtf.relaxation.reason, 'crypto_relaxed_mtf_momentum_probe');
   assert.equal(relaxedCryptoMtf.relaxation.momentumEvidence.intradayBuyFrames, 2);
 
+  const dailyBullishProbe = buildNearMissWatchCandidate({
+    symbol: 'SAHARA/USDT',
+    exchange: 'binance',
+    actionability: 'filtered_before_signal',
+    recommendation: 'wait_for_trend_confirmation',
+    reasons: [
+      'insufficient_analyst_coverage',
+      'fusion_not_long',
+      'average_confidence_below_min',
+      'technical_not_confirmed',
+      'onchain_not_confirmed',
+      'sentiment_not_confirmed',
+    ],
+    minConfidence: 0.35,
+    fused: { recommendation: 'HOLD', fusedScore: 0, averageConfidence: 0.11, hasConflict: false },
+    analystSummary: {
+      byAnalyst: {
+        ta_mtf: { signal: 'HOLD', confidence: 0.12 },
+      },
+    },
+    activeCandidate: { rank: 1, score: 0.84, confidence: 0.8 },
+    dailyTechnical: { ok: true, reason: 'daily_trend_bullish', source: 'binance_ohlcv_daily_for_tradingview_guard' },
+  });
+  assert.equal(dailyBullishProbe.readiness, 'relaxed_probe_watch');
+  assert.equal(dailyBullishProbe.watchReason, 'daily_bullish_active_candidate_probe');
+  assert.equal(dailyBullishProbe.nextAction, 'run_l13_probe_with_existing_risk_and_entry_guards');
+  assert.ok(dailyBullishProbe.missingConfirmations.includes('intraday_technical'));
+
   const fixtureSymbol = `DFILTER${Date.now()}/USDT`;
   await db.initSchema();
   await ensureCandidateUniverseTable();

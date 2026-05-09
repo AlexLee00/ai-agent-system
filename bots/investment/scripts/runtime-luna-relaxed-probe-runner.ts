@@ -124,7 +124,20 @@ function applyRecentTradeCooldown(plan = {}, cooldownsInput = new Map(), cooldow
   };
 }
 
-function buildCollectMeta({ exchange, symbols, reason = 'relaxed_probe_l13' } = {}) {
+function buildCollectNodeIds({ exchange, plan = {} } = {}) {
+  const nodeIds = new Set(['L06', 'L02']);
+  for (const item of plan.selected || []) {
+    const missing = new Set(Array.isArray(item?.missingConfirmations) ? item.missingConfirmations : []);
+    if (missing.has('sentiment')) nodeIds.add('L03');
+    if (exchange === 'binance' && missing.has('onchain')) nodeIds.add('L05');
+    if ((exchange === 'kis' || exchange === 'kis_overseas') && missing.has('market_flow')) nodeIds.add('L04');
+  }
+  return [...nodeIds];
+}
+
+function buildCollectMeta({ exchange, symbols, plan = {}, reason = 'relaxed_probe_l13' } = {}) {
+  const nodeIds = buildCollectNodeIds({ exchange, plan });
+  const hasTargetedEnrichment = nodeIds.some((nodeId) => !['L06', 'L02'].includes(nodeId));
   return buildStockIntradayLlmPolicyMeta({
     market: exchange,
     marketScript: 'luna_relaxed_probe_runner',
@@ -136,15 +149,17 @@ function buildCollectMeta({ exchange, symbols, reason = 'relaxed_probe_l13' } = 
       manualUniverseMode: 'explicit_symbols',
       disableDiscoveryExpansion: true,
       collect_reason: reason,
+      targeted_enrichment: hasTargetedEnrichment,
       llm_call_policy: {
-        source_enrichment: 'technical_first_only',
+        source_enrichment: hasTargetedEnrichment ? 'targeted_top_n_only' : 'technical_first_only',
         relaxed_probe_runner: true,
         max_symbols: symbols.length,
+        targeted_enrichment_nodes: hasTargetedEnrichment ? nodeIds.filter((nodeId) => !['L06', 'L02'].includes(nodeId)) : [],
       },
       agentPlan: {
         collect: {
-          nodeIds: exchange === 'binance' ? ['L06', 'L02'] : ['L06', 'L02', 'L04'],
-          concurrencyLimit: 2,
+          nodeIds,
+          concurrencyLimit: Math.min(3, Math.max(1, nodeIds.length)),
         },
       },
     },
@@ -292,6 +307,7 @@ export async function runLunaRelaxedProbeRunner({
   const collectMeta = buildCollectMeta({
     exchange: resolvedExchange,
     symbols: plan.selectedSymbols,
+    plan,
   });
   const collect = await collectRunner({
     market: resolvedExchange,

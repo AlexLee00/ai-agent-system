@@ -153,9 +153,35 @@ function analystSignal(item, analysts = []) {
   return null;
 }
 
+function hasDailyBullishPresignal(item = {}) {
+  const row = item?.dailyTechnical || item?.dailyTechnicalCoverage || null;
+  if (!row || typeof row !== 'object' || Array.isArray(row)) return false;
+  const reason = String(row.reason || '').toLowerCase();
+  return row.ok === true || reason.includes('daily_trend_bullish');
+}
+
+function activeCandidateConfidence(item = {}) {
+  const candidate = item?.activeCandidate || {};
+  return Math.max(
+    0,
+    Number(candidate.score || 0),
+    Number(candidate.confidence || 0),
+  );
+}
+
+function isDailyBullishProbeCandidate(item = {}) {
+  if (item.exchange !== 'binance') return false;
+  if (!hasDailyBullishPresignal(item)) return false;
+  const candidate = item?.activeCandidate || {};
+  const rank = Number(candidate.rank || 999999);
+  const confidence = activeCandidateConfidence(item);
+  return rank >= 1 && rank <= 10 && confidence >= 0.55;
+}
+
 export function buildNearMissWatchCandidate(item = {}) {
   if (item.actionability === 'likely_actionable') return null;
   const reasons = new Set(item.reasons || []);
+  const dailyBullishProbeCandidate = isDailyBullishProbeCandidate(item);
   if (item.actionability === 'relaxed_probe_candidate' && item.relaxation?.ok === true) {
     const missingConfirmations = [];
     if (reasons.has('technical_not_confirmed')) missingConfirmations.push('technical');
@@ -179,17 +205,22 @@ export function buildNearMissWatchCandidate(item = {}) {
   }
   const technicalSignal = analystSignal(item, [ANALYST_TYPES.TA_MTF, ANALYST_TYPES.TA]);
   const hardStopReasons = [
-    'insufficient_analyst_coverage',
-    'technical_not_confirmed',
     'conflict_detected',
     'news_only_buy',
   ];
+  if (!dailyBullishProbeCandidate) {
+    hardStopReasons.push('insufficient_analyst_coverage', 'technical_not_confirmed');
+  }
   if (hardStopReasons.some((reason) => reasons.has(reason))) return null;
-  if (technicalSignal !== ACTIONS.BUY) return null;
+  if (technicalSignal !== ACTIONS.BUY && !dailyBullishProbeCandidate) return null;
   const confidenceFloor = STOCK_EXCHANGES.has(item.exchange) ? 0.35 : 0.38;
-  if (Number(item?.fused?.averageConfidence || 0) < Math.max(confidenceFloor, Number(item?.minConfidence || 0.5) * 0.72)) return null;
+  const effectiveConfidence = dailyBullishProbeCandidate
+    ? Math.max(Number(item?.fused?.averageConfidence || 0), activeCandidateConfidence(item))
+    : Number(item?.fused?.averageConfidence || 0);
+  if (effectiveConfidence < Math.max(confidenceFloor, Number(item?.minConfidence || 0.5) * 0.72)) return null;
 
   const missingConfirmations = [];
+  if (dailyBullishProbeCandidate && technicalSignal !== ACTIONS.BUY) missingConfirmations.push('intraday_technical');
   if (reasons.has('onchain_not_confirmed')) missingConfirmations.push('onchain');
   if (reasons.has('sentiment_not_confirmed')) missingConfirmations.push('sentiment');
   if (reasons.has('market_flow_not_confirmed')) missingConfirmations.push('market_flow');
@@ -200,14 +231,18 @@ export function buildNearMissWatchCandidate(item = {}) {
   return {
     symbol: item.symbol,
     exchange: item.exchange,
-    readiness: 'near_miss_watch',
-    watchReason: missingConfirmations.includes('onchain')
+    readiness: dailyBullishProbeCandidate ? 'relaxed_probe_watch' : 'near_miss_watch',
+    watchReason: dailyBullishProbeCandidate
+      ? 'daily_bullish_active_candidate_probe'
+      : missingConfirmations.includes('onchain')
       ? 'technical_and_sentiment_buy_waiting_onchain'
       : missingConfirmations.includes('sentiment')
         ? 'technical_buy_waiting_sentiment'
         : 'technical_buy_waiting_fusion_quality',
     missingConfirmations,
-    nextAction: missingConfirmations.includes('onchain')
+    nextAction: dailyBullishProbeCandidate
+      ? 'run_l13_probe_with_existing_risk_and_entry_guards'
+      : missingConfirmations.includes('onchain')
       ? 'refresh_onchain_and_keep_tradingview_daily_guard'
       : 'refresh_missing_confirmation_before_signal_persistence',
     fused: item.fused,

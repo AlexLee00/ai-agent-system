@@ -217,12 +217,51 @@ export async function runLunaOpsSchedulerSmoke() {
   assert.equal(envExecution.ok, true);
   assert.match(envExecution.executed[0]?.stdoutTail || '', /"overseas":"true"/);
 
+  const failedStatePath = path.join(tmp, 'failed-state.json');
+  const failedLockPath = path.join(tmp, 'failed-lock.json');
+  const failedExecution = await runOpsScheduler({
+    now,
+    statePath: failedStatePath,
+    lockPath: failedLockPath,
+    jobs: [{
+      name: 'bounded_failure_job',
+      cadence: { type: 'interval', seconds: 300 },
+      command: process.execPath,
+      args: ['-e', 'process.exit(1)'],
+    }],
+    runner: () => ({ ok: false, status: 1, error: 'fixture_failure' }),
+  });
+  assert.equal(failedExecution.ok, false);
+  const failedState = JSON.parse(fs.readFileSync(failedStatePath, 'utf8'));
+  assert.equal(failedState.jobs.bounded_failure_job.lastStatus, 'failed');
+  assert.equal(failedState.jobs.bounded_failure_job.lastOutcome, 'command_failed');
+  assert.equal(
+    buildOpsSchedulerPlan({
+      now: new Date(now.getTime() + 60_000),
+      state: failedState,
+      jobs: [{
+        name: 'bounded_failure_job',
+        cadence: { type: 'interval', seconds: 300 },
+        command: process.execPath,
+        args: ['-e', 'process.exit(1)'],
+      }],
+    }).due,
+    0,
+  );
+
   assert.equal(
     classifyOpsSchedulerOutcome(
       { name: 'market_cycle_overseas' },
       { ok: true, stdoutTail: '[overseas] LIVE OFF — 사이클 스킵 (LUNA_LIVE_OVERSEAS 미설정)', stderrTail: '' },
     ).outcome,
     'kill_switch_off',
+  );
+  assert.equal(
+    classifyOpsSchedulerOutcome(
+      { name: 'slow_job' },
+      { ok: false, error: 'spawnSync ETIMEDOUT', signal: 'SIGTERM', stderrTail: '' },
+    ).outcome,
+    'command_timeout',
   );
 
   return {

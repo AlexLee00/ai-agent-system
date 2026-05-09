@@ -5,7 +5,10 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
 import { investmentOpsRuntimeFile } from '../shared/runtime-ops-path.ts';
-import { buildLunaDecisionFilterReport } from './runtime-luna-decision-filter-report.ts';
+import {
+  buildLunaDecisionFilterReport,
+  buildNearMissWatchCandidate,
+} from './runtime-luna-decision-filter-report.ts';
 
 const CONFIRM = 'luna-near-miss-watchlist';
 const DEFAULT_MARKET = 'crypto';
@@ -48,12 +51,59 @@ function summarizeWatchlist(watchlist = []) {
   };
 }
 
+function normalizeSymbol(symbol = '') {
+  const raw = String(symbol || '').trim().toUpperCase();
+  if (!raw) return raw;
+  if (!raw.includes('/') && raw.endsWith('USDT')) return `${raw.slice(0, -4)}/USDT`;
+  return raw;
+}
+
+async function attachCryptoDailyTechnical(report = {}, { market, exchange, dailyTechnicalCoverageBuilder = null } = {}) {
+  if (market !== 'crypto' || exchange !== 'binance' || !Array.isArray(report?.top) || report.top.length === 0) {
+    return report;
+  }
+  try {
+    const buildDailyTechnicalCoverage = dailyTechnicalCoverageBuilder
+      || (await import('./runtime-luna-discovery-funnel-report.ts')).buildDailyTechnicalCoverage;
+    const symbols = report.top.map((item) => item.symbol).filter(Boolean);
+    const coverage = await buildDailyTechnicalCoverage({
+      market,
+      exchange,
+      symbols,
+      marketOpen: true,
+    });
+    const bySymbol = new Map((coverage?.rows || []).map((row) => [normalizeSymbol(row?.symbol), row]));
+    return {
+      ...report,
+      dailyTechnicalCoverage: coverage,
+      top: report.top.map((item) => {
+        const row = bySymbol.get(normalizeSymbol(item?.symbol));
+        return row ? { ...item, dailyTechnical: row } : item;
+      }),
+    };
+  } catch (error) {
+    return {
+      ...report,
+      dailyTechnicalCoverage: {
+        enabled: true,
+        sourcePolicy: 'tradingview',
+        checkedCount: 0,
+        availableCount: 0,
+        bullishCount: 0,
+        rows: [],
+        error: error?.message || String(error),
+      },
+    };
+  }
+}
+
 export async function buildLunaNearMissWatchlist({
   market = 'crypto',
   exchange = null,
   hours = 24,
   limit = 20,
   reportBuilder = buildLunaDecisionFilterReport,
+  dailyTechnicalCoverageBuilder = null,
 } = {}) {
   const resolvedExchange = exchange || (market === 'domestic' ? 'kis' : market === 'overseas' ? 'kis_overseas' : 'binance');
   const report = await reportBuilder({
@@ -63,7 +113,14 @@ export async function buildLunaNearMissWatchlist({
     hours,
     limit,
   });
-  const watchlist = Array.isArray(report?.nearMissWatchlist) ? report.nearMissWatchlist : [];
+  const enrichedReport = await attachCryptoDailyTechnical(report, {
+    market,
+    exchange: resolvedExchange,
+    dailyTechnicalCoverageBuilder,
+  });
+  const watchlist = Array.isArray(enrichedReport?.nearMissWatchlist) && enrichedReport.nearMissWatchlist.length > 0
+    ? enrichedReport.nearMissWatchlist
+    : (enrichedReport?.top || []).map(buildNearMissWatchCandidate).filter(Boolean);
   return {
     ok: true,
     status: watchlist.length > 0 ? 'near_miss_watchlist_attention' : 'near_miss_watchlist_clear',
@@ -79,6 +136,14 @@ export async function buildLunaNearMissWatchlist({
     evidence: {
       decisionFilterStatus: report?.status || null,
       activeCandidateCoverage: report?.activeCandidateCoverage || null,
+      dailyTechnicalCoverage: enrichedReport?.dailyTechnicalCoverage
+        ? {
+            checkedCount: enrichedReport.dailyTechnicalCoverage.checkedCount,
+            availableCount: enrichedReport.dailyTechnicalCoverage.availableCount,
+            bullishCount: enrichedReport.dailyTechnicalCoverage.bullishCount,
+            error: enrichedReport.dailyTechnicalCoverage.error || null,
+          }
+        : null,
       likelyActionableCount: Number(report?.likelyActionableCount || 0),
       filteredCount: Number(report?.filteredCount || 0),
       reasonCounts: report?.reasonCounts || {},

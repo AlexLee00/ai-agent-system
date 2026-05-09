@@ -13,6 +13,7 @@ const INVESTMENT_DIR = path.resolve(__dirname, '..');
 const DEFAULT_STATE_PATH = path.join(INVESTMENT_DIR, 'output', 'ops', 'luna-ops-scheduler-state.json');
 const DEFAULT_LOCK_PATH = path.join(INVESTMENT_DIR, 'output', 'ops', 'luna-ops-scheduler.lock');
 const LOCK_STALE_MS = 20 * 60 * 1000;
+const DEFAULT_JOB_TIMEOUT_MS = 3 * 60 * 1000;
 
 function isProcessAlive(pid) {
   const numericPid = Number(pid);
@@ -491,7 +492,14 @@ function releaseLock(lockPath) {
   }
 }
 
-function runCommand(job, { timeoutMs = 10 * 60 * 1000, runner = null } = {}) {
+function resolveJobTimeoutMs(job = {}, fallback = DEFAULT_JOB_TIMEOUT_MS) {
+  const raw = job.timeoutMs ?? process.env.LUNA_OPS_SCHEDULER_JOB_TIMEOUT_MS ?? fallback;
+  const parsed = Number(raw);
+  if (!Number.isFinite(parsed) || parsed <= 0) return fallback;
+  return Math.max(10_000, Math.round(parsed));
+}
+
+function runCommand(job, { timeoutMs = DEFAULT_JOB_TIMEOUT_MS, runner = null } = {}) {
   if (runner) {
     const result = runner(job);
     return {
@@ -502,7 +510,7 @@ function runCommand(job, { timeoutMs = 10 * 60 * 1000, runner = null } = {}) {
   const result = spawnSync(job.command, job.args || [], {
     cwd: INVESTMENT_DIR,
     encoding: 'utf8',
-    timeout: Number(job.timeoutMs || timeoutMs),
+    timeout: resolveJobTimeoutMs(job, timeoutMs),
     env: { ...process.env, ...(job.env || {}) },
   });
   const stdout = String(result.stdout || '');
@@ -523,6 +531,15 @@ function runCommand(job, { timeoutMs = 10 * 60 * 1000, runner = null } = {}) {
 
 export function classifyOpsSchedulerOutcome(job, result = {}) {
   if (!result?.ok) {
+    const timeoutLike = result?.error === 'spawnSync ETIMEDOUT'
+      || /ETIMEDOUT|timed out/i.test(String(result?.error || ''))
+      || result?.signal === 'SIGTERM';
+    if (timeoutLike) {
+      return {
+        outcome: 'command_timeout',
+        summary: result?.error || result?.stderrTail || `status=${result?.status ?? 'timeout'}`,
+      };
+    }
     return {
       outcome: 'command_failed',
       summary: result?.error || result?.stderrTail || `status=${result?.status ?? 'unknown'}`,
@@ -627,13 +644,14 @@ export async function runOpsScheduler({
       const result = runCommand(job, { runner });
       const finishedAt = new Date().toISOString();
       executed.push({ name: job.name, dryRun: false, startedAt, finishedAt, ...result });
-      if (result.ok && writeState) {
+      if (writeState) {
         nextState.jobs[job.name] = {
           lastRunAt: now.toISOString(),
-          lastStatus: 'ok',
+          lastStatus: result.ok ? 'ok' : 'failed',
           lastOutcome: result.outcome || 'ok',
           lastSummary: result.summary || null,
           approvedSignals: result.approvedSignals ?? null,
+          lastError: result.ok ? null : result.error || result.stderrTail || result.signal || null,
           updatedAt: finishedAt,
         };
       }
