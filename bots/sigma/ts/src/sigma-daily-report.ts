@@ -2,7 +2,7 @@
  * sigma-daily-report.ts
  * 매일 06:30 KST 실행 — ai.sigma.daily-report launchd plist
  *
- * 어제(24시간 이내) MAPE-K 사이클 통계 + Pod 성과 + Directive 이행율을
+ * 어제(24시간 이내) MAPE-K 사이클 통계 + Pod 성과 + Directive 발행/전송 통계를
  * 수집해 TelegramReporter.on_daily_report 경로로 Telegram 발송.
  */
 
@@ -22,8 +22,8 @@ const SIGMA_HTTP_PORT = process.env.SIGMA_HTTP_PORT || '4010';
 const SIGMA_V2_ENDPOINT =
   process.env.SIGMA_V2_ENDPOINT || `http://127.0.0.1:${SIGMA_HTTP_PORT}/sigma/v2`;
 
-const SUCCESS_OUTCOMES = ['success', 'signal_sent', 'applied', 'auto_applied'];
-const FAILURE_OUTCOMES = ['failure', 'failed', 'rejected', 'error'];
+const FAILURE_OUTCOMES = ['failure', 'failed', 'rejected', 'error', 'blocked'];
+const SUCCESS_ISSUED_STATUSES = ['ok'];
 
 function kstDateLabel(): string {
   return new Intl.DateTimeFormat('en-CA', {
@@ -43,28 +43,30 @@ function firstRow<T extends Record<string, any>>(rows: T[]): T {
 }
 
 async function collectDailyStats() {
-  const [cycleRows, directiveRows, dpoRows, costRows] = await Promise.all([
+  const [cycleRows, directiveRows, anomalyRows, dpoRows, costRows] = await Promise.all([
     queryPublic(`
       SELECT
-        COUNT(DISTINCT DATE_TRUNC('second', executed_at)) AS total_cycles,
-        COUNT(DISTINCT DATE_TRUNC('second', executed_at)) FILTER (
-          WHERE outcome = ANY($1::text[])
-        ) AS success_count,
-        COUNT(DISTINCT DATE_TRUNC('second', executed_at)) FILTER (
-          WHERE outcome = ANY($2::text[])
-        ) AS error_count
-      FROM public.sigma_v2_directive_audit
-      WHERE executed_at >= NOW() - INTERVAL '24 hours'
-    `, [SUCCESS_OUTCOMES, FAILURE_OUTCOMES]),
+        COUNT(DISTINCT cycle_id) AS total_cycles,
+        COUNT(DISTINCT cycle_id) FILTER (
+          WHERE issued_status = ANY($1::text[])
+        ) AS success_count
+      FROM public.sigma_directive_tracking
+      WHERE issued_at >= NOW() - INTERVAL '24 hours'
+    `, [SUCCESS_ISSUED_STATUSES]),
     queryPublic(`
       SELECT
         COUNT(*) AS total_directives,
-        COUNT(*) FILTER (WHERE tier = 2) AS tier2_count,
-        COUNT(*) FILTER (WHERE outcome = ANY($1::text[])) AS applied_count,
-        COUNT(*) FILTER (WHERE outcome = ANY($2::text[])) AS rejected_count
+        COUNT(*) FILTER (WHERE issued_status = ANY($1::text[])) AS dispatched_count,
+        COUNT(*) FILTER (WHERE issued_status <> ALL($1::text[])) AS blocked_count
+      FROM public.sigma_directive_tracking
+      WHERE issued_at >= NOW() - INTERVAL '24 hours'
+    `, [SUCCESS_ISSUED_STATUSES]),
+    queryPublic(`
+      SELECT COUNT(*) AS anomaly_count
       FROM public.sigma_v2_directive_audit
       WHERE executed_at >= NOW() - INTERVAL '24 hours'
-    `, [SUCCESS_OUTCOMES, FAILURE_OUTCOMES]),
+        AND outcome = ANY($1::text[])
+    `, [FAILURE_OUTCOMES]),
     queryPublic(`
       SELECT category, COUNT(*) AS cnt
       FROM public.sigma_dpo_preference_pairs
@@ -80,6 +82,7 @@ async function collectDailyStats() {
 
   const cycle = firstRow(cycleRows);
   const directive = firstRow(directiveRows);
+  const anomaly = firstRow(anomalyRows);
   const dpo = dpoRows;
   const cost = firstRow(costRows);
 
@@ -90,11 +93,10 @@ async function collectDailyStats() {
     date: kstDateLabel(),
     total_cycles: Number(cycle.total_cycles ?? 0),
     success_count: Number(cycle.success_count ?? 0),
-    error_count: Number(cycle.error_count ?? 0),
+    error_count: Number(anomaly.anomaly_count ?? 0),
     directives_issued: Number(directive.total_directives ?? 0),
-    directives_applied: Number(directive.applied_count ?? 0),
-    directives_rejected: Number(directive.rejected_count ?? 0),
-    tier2_applied: Number(directive.tier2_count ?? 0),
+    directives_applied: Number(directive.dispatched_count ?? 0),
+    directives_rejected: Number(directive.blocked_count ?? 0),
     self_rewarding_preferred: Number(preferredCount),
     self_rewarding_rejected: Number(rejectedCount),
     llm_cost_usd: Number(cost.llm_cost_usd ?? 0).toFixed(4),
@@ -113,11 +115,12 @@ function formatReport(stats: ReturnType<typeof collectDailyStats> extends Promis
     `🔮 시그마 일일 리포트 (${stats.date})`,
     ``,
     `📊 MAPE-K 사이클`,
-    `  총 ${stats.total_cycles}회 | 성공 ${stats.success_count} | 실패 ${stats.error_count} | 성공률 ${successRate}%`,
+    `  총 ${stats.total_cycles}회 | 정상 종료 ${stats.success_count} | 완료율 ${successRate}%`,
+    `  실행 이상 이벤트 ${stats.error_count}건`,
     ``,
     `📋 Directive 발행`,
-    `  발행 ${stats.directives_issued}건 | 이행 ${stats.directives_applied}건 | 거절 ${stats.directives_rejected}건`,
-    `  이행률 ${applyRate}% | Tier2 자동 ${stats.tier2_applied}건`,
+    `  발행 ${stats.directives_issued}건 | 전송 성공 ${stats.directives_applied}건 | 차단 ${stats.directives_rejected}건`,
+    `  전송률 ${applyRate}%`,
     ``,
     `🧠 Self-Rewarding (DPO)`,
     `  Preferred ${stats.self_rewarding_preferred}건 | Rejected ${stats.self_rewarding_rejected}건`,
