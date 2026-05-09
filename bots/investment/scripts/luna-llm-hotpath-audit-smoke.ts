@@ -63,9 +63,42 @@ export async function runLunaLlmHotPathAuditSmoke() {
   assert.ok(cryptoRegressResult.reasons.includes('crypto_light_path_includes_sentiment_node_L03'));
   assert.ok(cryptoRegressResult.reasons.includes('crypto_light_path_includes_onchain_node_L05'));
 
+  const targetedOk = fixtureSession({
+    collect_mode: 'active_candidate_targeted_enrichment',
+    targeted_enrichment: true,
+    agentPlan: {
+      collect: { nodeIds: ['L03', 'L05'] },
+    },
+    llm_call_policy: {
+      source_enrichment: 'targeted_top_n_only',
+      targeted_enrichment_max_symbols: 1,
+      targeted_enrichment_cooldown_minutes: 120,
+    },
+  }, { market: 'binance', triggerType: 'active_candidate_targeted_enrichment' });
+  const targetedOkResult = classifyPipelineLlmHotPath(targetedOk);
+  assert.equal(targetedOkResult.ok, true);
+  assert.equal(targetedOkResult.targetedEnrichment, true);
+
+  const targetedTooBroad = fixtureSession({
+    collect_mode: 'active_candidate_targeted_enrichment',
+    targeted_enrichment: true,
+    agentPlan: {
+      collect: { nodeIds: ['L03', 'L05'] },
+    },
+    llm_call_policy: {
+      source_enrichment: 'targeted_top_n_only',
+      targeted_enrichment_max_symbols: 3,
+      targeted_enrichment_cooldown_minutes: 45,
+    },
+  }, { market: 'binance', triggerType: 'active_candidate_targeted_enrichment' });
+  const targetedTooBroadResult = classifyPipelineLlmHotPath(targetedTooBroad);
+  assert.equal(targetedTooBroadResult.ok, false);
+  assert.ok(targetedTooBroadResult.reasons.includes('targeted_enrichment_symbol_cap_too_high'));
+  assert.ok(targetedTooBroadResult.reasons.includes('targeted_enrichment_cooldown_too_short'));
+
   const auditClear = buildLlmHotPathAudit({
     topCalls: [{ agent_name: 'luna', calls: 2, failed_calls: 0 }],
-    pipelineSessions: [stockLight, cryptoLight],
+    pipelineSessions: [stockLight, cryptoLight, targetedOk],
     staleActiveRefreshRunning: [],
     generatedAt: '2026-05-08T00:00:00.000Z',
   });
@@ -74,12 +107,12 @@ export async function runLunaLlmHotPathAuditSmoke() {
 
   const auditAttention = buildLlmHotPathAudit({
     topCalls: [{ agent_name: 'hermes', calls: 15, failed_calls: 0 }],
-    pipelineSessions: [stockRegress, cryptoRegress],
+    pipelineSessions: [stockRegress, cryptoRegress, targetedTooBroad],
     staleActiveRefreshRunning: [fixtureSession({}, { triggerType: 'active_candidate_analysis_refresh' })],
     generatedAt: '2026-05-08T00:00:00.000Z',
   });
   assert.equal(auditAttention.ok, false);
-  assert.equal(auditAttention.totals.suspiciousSessions, 2);
+  assert.equal(auditAttention.totals.suspiciousSessions, 3);
   assert.equal(auditAttention.totals.staleActiveRefreshRunning, 1);
   assert.ok(auditAttention.warnings.includes('unexpected_llm_enrichment_path_detected'));
   assert.ok(auditAttention.nonBlockingWarnings.includes('stale_active_candidate_refresh_sessions_detected'));

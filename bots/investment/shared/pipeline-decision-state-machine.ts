@@ -1,7 +1,6 @@
 // @ts-nocheck
 import { finishPipelineRun } from './pipeline-db.ts';
 import { getPipelineRun } from './pipeline-db.ts';
-import { getInvestmentNode } from '../nodes/index.ts';
 import { recordNodeResult, runNode } from './node-runner.ts';
 import * as db from './db.ts';
 import { ACTIONS, validateSignal } from './signal.ts';
@@ -26,7 +25,7 @@ import { getOHLCV } from './ohlcv-fetcher.ts';
 import { buildDecisionPipelineMetrics, countDecisionActions } from './pipeline-decision-metrics.ts';
 import { buildPipelineDecisionFinishMeta } from './pipeline-decision-finish-meta.ts';
 import { buildPipelineSymbolCandidate, recordStrategyRouteStats, resolvePipelineAnalysisTradeContext } from './pipeline-symbol-candidate.ts';
-import { executeApprovedDecision, persistRiskApprovalRationale } from './pipeline-approved-decision.ts';
+import { persistRiskApprovalRationale } from './pipeline-approved-decision.ts';
 import { buildDecisionBridgeMeta, loadDecisionPlannerCompact } from './pipeline-decision-bridge.ts';
 import { buildDecisionAgentPlan, shouldRunExecutionAuxiliaryNode } from './pipeline-decision-agent-plan.ts';
 import { shouldRunStockIntradayDecisionLlm } from './stock-intraday-llm-policy.ts';
@@ -50,91 +49,14 @@ import {
   normalizeRegimeLabel,
   promotePredictiveObservationHoldCandidates,
 } from './pipeline-decision-policy.ts';
+import {
+  buildSignalDecisionTraceMeta,
+  getDecisionNode,
+  mergePortfolioDecisionPredictiveEvidence,
+  runApprovedDecision,
+} from './pipeline-decision-state-helpers.ts';
 
-function getDecisionNode(id) {
-  const node = getInvestmentNode(id);
-  if (!node) throw new Error(`노드 없음: ${id}`);
-  return node;
-}
-
-async function runApprovedDecision(args) {
-  return executeApprovedDecision({
-    ...args,
-    buildDecisionBridgeMeta,
-  });
-}
-
-function decisionSymbolKey(value) {
-  return String(value?.symbol || '').trim().toUpperCase();
-}
-
-function buildSignalDecisionTraceMeta({
-  sessionId,
-  exchange,
-  decision,
-  amountUsdt,
-  tradeMode,
-  predictiveObservation,
-  midGapPromoted,
-} = {}) {
-  const blockMeta = decision?.block_meta || {};
-  return {
-    ...(blockMeta.entryTrigger ? { entryTrigger: blockMeta.entryTrigger } : {}),
-    ...(blockMeta.predictiveValidation ? { predictiveValidation: blockMeta.predictiveValidation } : {}),
-    ...(blockMeta.discoveryContext ? { discoveryContext: blockMeta.discoveryContext } : {}),
-    decisionTrace: {
-      sessionId: sessionId || null,
-      market: exchange || null,
-      symbol: decision?.symbol || null,
-      action: decision?.action || null,
-      sourceConfidence: decision?.confidence ?? null,
-      sourceAmountUsdt: decision?.amount_usdt ?? null,
-      effectiveAmountUsdt: amountUsdt ?? null,
-      tradeMode: tradeMode || null,
-      predictiveObservation: Boolean(predictiveObservation),
-      midGapPromoted: Boolean(midGapPromoted),
-      strategyRoute: decision?.strategy_route || decision?.strategyRoute || null,
-      setupType: decision?.setup_type || decision?.strategy_route?.setupType || decision?.strategyRoute?.setupType || null,
-      recordedAt: new Date().toISOString(),
-    },
-  };
-}
-
-export function mergePortfolioDecisionPredictiveEvidence(portfolioDecision = {}, symbolDecisions = []) {
-  const evidenceBySymbol = new Map(
-    (symbolDecisions || [])
-      .filter((item) => decisionSymbolKey(item))
-      .map((item) => [decisionSymbolKey(item), item]),
-  );
-  return {
-    ...(portfolioDecision || {}),
-    decisions: (portfolioDecision?.decisions || []).map((decision) => {
-      const evidence = evidenceBySymbol.get(decisionSymbolKey(decision));
-      if (!evidence) return decision;
-      return {
-        ...evidence,
-        ...decision,
-        exchange: decision.exchange || evidence.exchange,
-        strategy_route: decision.strategy_route || evidence.strategy_route,
-        strategyRoute: decision.strategyRoute || evidence.strategyRoute,
-        setup_type: decision.setup_type || evidence.setup_type,
-        entry_strategy: decision.entry_strategy || evidence.entry_strategy,
-        entryPrice: decision.entryPrice ?? decision.entry_price ?? evidence.entryPrice ?? evidence.entry_price,
-        entry_price: decision.entry_price ?? decision.entryPrice ?? evidence.entry_price ?? evidence.entryPrice,
-        atr: decision.atr ?? evidence.atr,
-        predictiveScore: decision.predictiveScore ?? evidence.predictiveScore,
-        triggerHints: {
-          ...(evidence.triggerHints || {}),
-          ...(decision.triggerHints || {}),
-        },
-        block_meta: {
-          ...(evidence.block_meta || {}),
-          ...(decision.block_meta || {}),
-        },
-      };
-    }),
-  };
-}
+export { mergePortfolioDecisionPredictiveEvidence } from './pipeline-decision-state-helpers.ts';
 
 export async function runDecisionExecutionStateMachine({
   sessionId,

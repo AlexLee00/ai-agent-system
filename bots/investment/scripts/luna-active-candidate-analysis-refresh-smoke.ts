@@ -33,10 +33,22 @@ function fixtureFilteredCandidate(symbol, reasons = ['sentiment_not_confirmed', 
     actionability: 'filtered_before_signal',
     recommendation: 'wait_for_onchain_confirmation',
     reasons,
+    fused: { recommendation: 'LONG', fusedScore: 0.62, averageConfidence: 0.62, hasConflict: false },
+    analystSummary: {
+      byAnalyst: {
+        ta_mtf: { signal: 'BUY', confidence: 0.62, reasoning: 'technical presignal' },
+      },
+    },
+  };
+}
+
+function fixtureLowConfidenceCandidate(symbol, reasons = ['sentiment_not_confirmed', 'onchain_not_confirmed']) {
+  return {
+    ...fixtureFilteredCandidate(symbol, reasons),
     fused: { recommendation: 'LONG', fusedScore: 0.42, averageConfidence: 0.42, hasConflict: false },
     analystSummary: {
       byAnalyst: {
-        ta_mtf: { signal: 'BUY', confidence: 0.42, reasoning: 'technical presignal' },
+        ta_mtf: { signal: 'BUY', confidence: 0.42, reasoning: 'weak technical presignal' },
       },
     },
   };
@@ -92,6 +104,43 @@ export async function runLunaActiveCandidateAnalysisRefreshSmoke() {
   assert.deepEqual(enrichmentPlan.targetedEnrichment.selectedSymbols, ['EDEN/USDT', 'BANANAS31/USDT']);
   assert.deepEqual(enrichmentPlan.targetedEnrichment.nodeIds, ['L03', 'L05']);
 
+  const qualityFilteredPlan = buildActiveCandidateAnalysisRefreshPlan({
+    report: fixtureReport([], [
+      fixtureLowConfidenceCandidate('WEAK/USDT'),
+    ]),
+    state: {},
+    now,
+    maxSymbols: 1,
+    maxEnrichmentSymbols: 2,
+    cooldownMinutes: 45,
+    exchange: 'binance',
+  });
+  assert.equal(qualityFilteredPlan.status, 'active_candidate_analysis_refresh_clear');
+  assert.equal(qualityFilteredPlan.targetedEnrichment.status, 'targeted_enrichment_quality_filtered');
+  assert.equal(qualityFilteredPlan.targetedEnrichment.skippedQuality[0].symbol, 'WEAK/USDT');
+
+  const globalCooldownPlan = buildActiveCandidateAnalysisRefreshPlan({
+    report: fixtureReport([], [
+      fixtureFilteredCandidate('EDEN/USDT'),
+      fixtureFilteredCandidate('BANANAS31/USDT'),
+    ]),
+    state: {
+      symbols: {
+        'binance:targeted_enrichment:__global__': { lastAttemptAt: '2026-05-06T23:30:00.000Z' },
+      },
+    },
+    now,
+    maxSymbols: 1,
+    maxEnrichmentSymbols: 2,
+    cooldownMinutes: 45,
+    targetedCooldownMinutes: 120,
+    exchange: 'binance',
+  });
+  assert.equal(globalCooldownPlan.status, 'active_candidate_analysis_refresh_clear');
+  assert.equal(globalCooldownPlan.targetedEnrichment.status, 'targeted_enrichment_cooldown');
+  assert.equal(globalCooldownPlan.targetedEnrichment.globalCooldown.cooldownMinutes, 120);
+  assert.equal(globalCooldownPlan.targetedEnrichment.skippedCooldown[0].scope, 'market_global');
+
   const cooldownBypassPlan = buildActiveCandidateAnalysisRefreshPlan({
     report: fixtureReport([], [
       fixtureRelaxedProbeCandidate('DYM/USDT'),
@@ -107,6 +156,7 @@ export async function runLunaActiveCandidateAnalysisRefreshSmoke() {
     maxSymbols: 1,
     maxEnrichmentSymbols: 2,
     cooldownMinutes: 45,
+    targetedCooldownMinutes: 45,
     cooldownBypassMinMinutes: 10,
     cooldownBypassMaxSymbols: 1,
     exchange: 'binance',
@@ -194,6 +244,8 @@ export async function runLunaActiveCandidateAnalysisRefreshSmoke() {
       assert.equal(meta.collect_mode, 'active_candidate_targeted_enrichment');
       assert.deepEqual(meta.agentPlan.collect.nodeIds, ['L03', 'L05']);
       assert.equal(meta.llm_call_policy.source_enrichment, 'targeted_top_n_only');
+      assert.equal(meta.llm_call_policy.targeted_enrichment_cooldown_minutes, 120);
+      assert.equal(meta.llm_call_policy.targeted_enrichment_min_confidence, 0.58);
       return {
         sessionId: 'targeted-session',
         symbols,
@@ -216,6 +268,7 @@ export async function runLunaActiveCandidateAnalysisRefreshSmoke() {
   assert.equal(targeted.collectRuns[0].purpose, 'targeted_enrichment');
   const targetedState = JSON.parse(fs.readFileSync(path.join(smokeDir, 'targeted.json'), 'utf8'));
   assert.equal(targetedState.symbols['binance:targeted_enrichment:EDEN/USDT'].lastStatus, 'ok');
+  assert.equal(targetedState.symbols['binance:targeted_enrichment:__global__'].lastStatus, 'ok');
 
   let domesticCollect = null;
   const domestic = await runActiveCandidateAnalysisRefresh({

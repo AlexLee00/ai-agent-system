@@ -6,6 +6,8 @@ import { query } from '../shared/db.ts';
 
 const DEFAULT_HOURS = 6;
 const DEFAULT_LIMIT = 30;
+const DEFAULT_TARGETED_ENRICHMENT_MAX_SYMBOLS = 1;
+const DEFAULT_TARGETED_ENRICHMENT_MIN_COOLDOWN_MINUTES = 90;
 
 function hasArg(name, argv = process.argv.slice(2)) {
   return argv.includes(`--${name}`);
@@ -74,6 +76,10 @@ export function extractCollectPlan(meta = {}) {
     decisionExecutionSkipped: parsed.decision_execution_skipped === true,
     marketScript: parsed.market_script || null,
     researchOnly: parsed.research_only === true || parsed.planner_payload?.planner_context?.researchOnly === true,
+    targetedEnrichment:
+      parsed.targeted_enrichment === true ||
+      String(parsed.collect_mode || parsed.collectMode || '').toLowerCase() === 'active_candidate_targeted_enrichment',
+    llmCallPolicy: parsed.llm_call_policy || {},
   };
 }
 
@@ -85,6 +91,44 @@ function isCryptoMarket(market) {
   return normalizeMarket(market) === 'binance';
 }
 
+function classifyTargetedEnrichment({ market, triggerType, plan }) {
+  const collectMode = String(plan.collectMode || '').toLowerCase();
+  const intentional =
+    plan.targetedEnrichment === true ||
+    triggerType === 'active_candidate_targeted_enrichment' ||
+    collectMode === 'active_candidate_targeted_enrichment';
+  if (!intentional) return { intentional: false, reasons: [] };
+
+  const policy = plan.llmCallPolicy || {};
+  const reasons = [];
+  const allowedNodes = isCryptoMarket(market) ? new Set(['L03', 'L05']) : new Set(['L03', 'L04']);
+  const disallowedNodes = (plan.nodeIds || []).filter((nodeId) => !allowedNodes.has(nodeId));
+  if (disallowedNodes.length > 0) reasons.push(`targeted_enrichment_unexpected_nodes:${disallowedNodes.join(',')}`);
+  if (String(policy.source_enrichment || '') !== 'targeted_top_n_only') {
+    reasons.push('targeted_enrichment_missing_top_n_policy');
+  }
+
+  const allowedMaxSymbols = Math.max(
+    1,
+    Number(process.env.LUNA_LLM_HOTPATH_TARGETED_ENRICHMENT_MAX_SYMBOLS || DEFAULT_TARGETED_ENRICHMENT_MAX_SYMBOLS),
+  );
+  const maxSymbols = Number(policy.targeted_enrichment_max_symbols);
+  if (!Number.isFinite(maxSymbols) || maxSymbols > allowedMaxSymbols) {
+    reasons.push('targeted_enrichment_symbol_cap_too_high');
+  }
+
+  const requiredCooldownMinutes = Math.max(
+    1,
+    Number(process.env.LUNA_LLM_HOTPATH_TARGETED_ENRICHMENT_MIN_COOLDOWN_MINUTES || DEFAULT_TARGETED_ENRICHMENT_MIN_COOLDOWN_MINUTES),
+  );
+  const cooldownMinutes = Number(policy.targeted_enrichment_cooldown_minutes);
+  if (!Number.isFinite(cooldownMinutes) || cooldownMinutes < requiredCooldownMinutes) {
+    reasons.push('targeted_enrichment_cooldown_too_short');
+  }
+
+  return { intentional: true, reasons };
+}
+
 export function classifyPipelineLlmHotPath(row = {}) {
   const market = normalizeMarket(row.market);
   const triggerType = String(row.trigger_type || '').toLowerCase();
@@ -92,6 +136,25 @@ export function classifyPipelineLlmHotPath(row = {}) {
   const collectMode = String(plan.collectMode || '').toLowerCase();
   const nodeIds = plan.nodeIds || [];
   const reasons = [];
+  const targeted = classifyTargetedEnrichment({ market, triggerType, plan });
+
+  if (targeted.intentional) {
+    reasons.push(...targeted.reasons);
+    return {
+      ok: reasons.length === 0,
+      severity: reasons.length > 0 ? 'warning' : 'clear',
+      sessionId: row.session_id || null,
+      market,
+      triggerType,
+      status: row.status || null,
+      startedAt: row.started_at || null,
+      collectMode: plan.collectMode,
+      source: plan.source,
+      nodeIds,
+      targetedEnrichment: true,
+      reasons,
+    };
+  }
 
   const stockLight =
     isStockMarket(market) &&
@@ -132,6 +195,7 @@ export function classifyPipelineLlmHotPath(row = {}) {
     collectMode: plan.collectMode,
     source: plan.source,
     nodeIds,
+    targetedEnrichment: false,
     reasons,
   };
 }
