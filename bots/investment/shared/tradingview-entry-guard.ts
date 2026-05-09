@@ -470,11 +470,12 @@ export async function fetchTradingViewHttpLatestSnapshot({
   const tvTimeframe = normalizeTradingViewTimeframe(timeframe || env.LUNA_TRADINGVIEW_ENTRY_GUARD_TIMEFRAME || '1h');
   const timeoutMs = Math.max(250, numEnv('LUNA_TRADINGVIEW_ENTRY_GUARD_TIMEOUT_MS', 2500, env));
   const base = tvHttpBase(env);
+  const requireReal = boolEnv('LUNA_TRADINGVIEW_ENTRY_GUARD_REQUIRE_REAL', true, env);
 
   try {
     const subscribeUrl = `${base}/subscribe?symbol=${encodeURIComponent(normalizedSymbol)}&timeframe=${encodeURIComponent(tvTimeframe)}`;
     await fetch(subscribeUrl, { signal: AbortSignal.timeout(timeoutMs) }).catch(() => null);
-    const latestUrl = `${base}/latest?symbols=${encodeURIComponent(normalizedSymbol)}&timeframes=${encodeURIComponent(tvTimeframe)}`;
+    const latestUrl = `${base}/latest?symbols=${encodeURIComponent(normalizedSymbol)}&timeframes=${encodeURIComponent(tvTimeframe)}${requireReal ? '&requireReal=true' : ''}`;
     const response = await fetch(latestUrl, { signal: AbortSignal.timeout(timeoutMs) });
     if (!response.ok) return { ok: false, error: `tradingview_http_latest_${response.status}` };
     const payload = await response.json();

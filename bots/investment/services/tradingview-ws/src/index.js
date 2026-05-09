@@ -29,6 +29,8 @@ const STALE_GRACE_MS = parseInt(process.env.TV_STALE_GRACE_MS || String(5 * 60 *
 const INITIAL_BAR_TIMEOUT_MS = parseInt(process.env.TV_INITIAL_BAR_TIMEOUT_MS || String(2 * 60 * 1000), 10);
 const RESUBSCRIBE_COOLDOWN_MS = parseInt(process.env.TV_RESUBSCRIBE_COOLDOWN_MS || String(2 * 60 * 1000), 10);
 const BINANCE_REST_FALLBACK_ENABLED = process.env.TV_BINANCE_REST_FALLBACK_ENABLED !== 'false';
+const MAX_SUBSCRIPTIONS = parseInt(process.env.TV_MAX_SUBSCRIPTIONS || '24', 10);
+const MAX_STALE_STRIKES = parseInt(process.env.TV_MAX_STALE_STRIKES || '3', 10);
 const HUB_BASE = process.env.HUB_BASE_URL || 'http://localhost:7788';
 const HUB_TOKEN = process.env.HUB_AUTH_TOKEN || '';
 const RECONNECT_DELAY_BASE_MS = 2000;
@@ -60,6 +62,7 @@ const DEFAULT_SUBSCRIPTIONS = String(process.env.TV_DEFAULT_SUBSCRIPTIONS || '')
     return symbol && timeframe ? { symbol, timeframe } : null;
   })
   .filter(Boolean);
+const DEFAULT_SUBSCRIPTION_KEYS = new Set(DEFAULT_SUBSCRIPTIONS.map((item) => subscriptionKey(item.symbol, item.timeframe)));
 const execFileAsync = promisify(execFile);
 
 // Prometheus 메트릭스
@@ -201,6 +204,47 @@ function subscriptionKey(symbol, timeframe) {
   return `${symbol}:${timeframe}`;
 }
 
+function isTradingViewRealtimeBar(item = {}) {
+  const source = String(item.source || 'tradingview_ws_service');
+  const providerMode = String(item.providerMode || 'websocket_http_latest');
+  return source === 'tradingview_ws_service'
+    && providerMode.includes('websocket')
+    && !item.fallbackReason;
+}
+
+function removeSubscription(key, reason = 'removed') {
+  const sub = subscriptions.get(key);
+  if (!sub) return false;
+  subscriptions.delete(key);
+  latestBars.delete(key);
+  seriesIds.delete(key);
+  staleSubscriptionsGauge.remove({ symbol: sub.symbol, timeframe: sub.timeframe });
+  console.log(`[TV-WS] 구독 제거: ${key} (${reason})`);
+  return true;
+}
+
+function pruneSubscriptionsIfNeeded(nextKey = null) {
+  const max = Math.max(DEFAULT_SUBSCRIPTION_KEYS.size || 1, Number(MAX_SUBSCRIPTIONS || 24));
+  if (subscriptions.size < max) return [];
+  const removable = [...subscriptions.entries()]
+    .filter(([key, sub]) => key !== nextKey && !sub.protected)
+    .sort((left, right) => {
+      const [, a] = left;
+      const [, b] = right;
+      const aDaily = String(a.timeframe).toUpperCase() === 'D' ? 1 : 0;
+      const bDaily = String(b.timeframe).toUpperCase() === 'D' ? 1 : 0;
+      if (aDaily !== bDaily) return bDaily - aDaily;
+      if ((a.staleStrikes || 0) !== (b.staleStrikes || 0)) return (b.staleStrikes || 0) - (a.staleStrikes || 0);
+      return (a.lastBarAt || a.subscribedAt || 0) - (b.lastBarAt || b.subscribedAt || 0);
+    });
+  const removed = [];
+  while (subscriptions.size >= max && removable.length > 0) {
+    const [key] = removable.shift();
+    if (removeSubscription(key, 'max_subscription_prune')) removed.push(key);
+  }
+  return removed;
+}
+
 function timeframeDurationMs(timeframe) {
   const text = String(timeframe || '').trim().toLowerCase();
   if (text === 'd' || text === '1d') return 24 * 60 * 60 * 1000;
@@ -291,7 +335,16 @@ function getSymbolAlias(symbol, timeframe) {
 function addSubscription(symbol, timeframe, source = 'api') {
   const key = subscriptionKey(symbol, timeframe);
   if (!subscriptions.has(key)) {
-    subscriptions.set(key, { symbol, timeframe, subscribedAt: Date.now(), lastBarAt: null, lastResubscribeAt: 0, staleStrikes: 0 });
+    pruneSubscriptionsIfNeeded(key);
+    subscriptions.set(key, {
+      symbol,
+      timeframe,
+      subscribedAt: Date.now(),
+      lastBarAt: null,
+      lastResubscribeAt: 0,
+      staleStrikes: 0,
+      protected: source === 'default' || DEFAULT_SUBSCRIPTION_KEYS.has(key),
+    });
     sendTvSubscribe(symbol, timeframe);
     console.log(`[TV-WS] ${source} 구독 추가: ${key}`);
   }
@@ -489,11 +542,40 @@ function startStaleChecker() {
         // 개별 재구독 시도
         sub.lastResubscribeAt = now;
         sub.staleStrikes = (sub.staleStrikes || 0) + 1;
+        if (!sub.protected && sub.staleStrikes >= Math.max(1, MAX_STALE_STRIKES)) {
+          removeSubscription(key, `stale_strikes_${sub.staleStrikes}`);
+          recoveryAttemptsCounter.inc({ type: 'evict_stale' });
+          continue;
+        }
         sendTvSubscribe(sub.symbol, sub.timeframe);
         recoveryAttemptsCounter.inc({ type: 'resubscribe' });
       }
     }
   }, 10_000);
+}
+
+function healthPayload() {
+  const now = Date.now();
+  const bars = [...latestBars.values()];
+  const staleRows = [...subscriptions.values()].filter((sub) => {
+    const lastSeenAt = sub.lastBarAt || sub.subscribedAt || 0;
+    return lastSeenAt && now - lastSeenAt > staleThresholdFor(sub);
+  });
+  const fallbackBars = bars.filter((item) => !isTradingViewRealtimeBar(item));
+  const realtimeBars = bars.filter((item) => isTradingViewRealtimeBar(item));
+  const tvStatus = tvWs?.readyState === WebSocket.OPEN ? 'connected' : 'disconnected';
+  return {
+    status: 'ok',
+    tv_ws: tvStatus,
+    realtimeOk: tvStatus === 'connected' && realtimeBars.length > 0 && staleRows.length === 0,
+    subscriptions: subscriptions.size,
+    bars: latestBars.size,
+    realtimeBars: realtimeBars.length,
+    fallbackBars: fallbackBars.length,
+    staleSubscriptions: staleRows.length,
+    maxSubscriptions: Math.max(DEFAULT_SUBSCRIPTION_KEYS.size || 1, Number(MAX_SUBSCRIPTIONS || 24)),
+    clients: clientSockets.size,
+  };
 }
 
 // JayBus Hub 브릿지
@@ -568,15 +650,8 @@ const metricsServer = http.createServer(async (req, res) => {
     res.setHeader('Content-Type', registry.contentType);
     res.end(await registry.metrics());
   } else if (url.pathname === '/health') {
-    const tvStatus = tvWs?.readyState === WebSocket.OPEN ? 'connected' : 'disconnected';
     res.setHeader('Content-Type', 'application/json');
-    res.end(JSON.stringify({
-      status: 'ok',
-      tv_ws: tvStatus,
-      subscriptions: subscriptions.size,
-      bars: latestBars.size,
-      clients: clientSockets.size,
-    }));
+    res.end(JSON.stringify(healthPayload()));
   } else if (url.pathname === '/subscribe') {
     const symbol = url.searchParams.get('symbol');
     const timeframe = url.searchParams.get('timeframe');
@@ -604,6 +679,7 @@ const metricsServer = http.createServer(async (req, res) => {
     res.setHeader('Content-Type', 'application/json');
     res.end(JSON.stringify({ ok: true, key, subscriptions: subscriptions.size }));
   } else if (url.pathname === '/latest') {
+    const requireReal = ['1', 'true', 'yes', 'on'].includes(String(url.searchParams.get('requireReal') || '').toLowerCase());
     const symbols = (url.searchParams.get('symbols') || '')
       .split(',')
       .map((item) => item.trim())
@@ -616,6 +692,7 @@ const metricsServer = http.createServer(async (req, res) => {
     const rows = [...latestBars.values()].filter((item) => {
       if (symbols.length > 0 && !symbols.includes(item.symbol)) return false;
       if (timeframes.length > 0 && !timeframes.includes(item.timeframe)) return false;
+      if (requireReal && !isTradingViewRealtimeBar(item)) return false;
       return true;
     }).map((item) => ({
       symbol: item.symbol,
@@ -637,6 +714,7 @@ const metricsServer = http.createServer(async (req, res) => {
     for (const item of requested) {
       const key = subscriptionKey(item.symbol, item.timeframe);
       if (existing.has(key)) continue;
+      if (requireReal) continue;
       const fallback = await fetchBinanceRestFallbackBar(item.symbol, item.timeframe);
       if (!fallback) continue;
       const sub = subscriptions.get(key);
@@ -660,6 +738,8 @@ const metricsServer = http.createServer(async (req, res) => {
     res.end(JSON.stringify({
       status: 'ok',
       tv_ws: tvWs?.readyState === WebSocket.OPEN ? 'connected' : 'disconnected',
+      requireReal,
+      realtimeOk: tvWs?.readyState === WebSocket.OPEN && rows.some((item) => isTradingViewRealtimeBar(item)),
       count: rows.length,
       bars: rows,
     }));

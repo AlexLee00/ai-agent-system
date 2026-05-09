@@ -4,9 +4,10 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import yaml from 'js-yaml';
+import { getKisRealtimeApprovalKey } from './kis-approval-key.ts';
 
-const KIS_WS_LIVE = 'wss://openapi.koreainvestment.com:9443';
-const KIS_WS_MOCK = 'wss://openapivts.koreainvestment.com:31000';
+const KIS_WS_LIVE = 'ws://ops.koreainvestment.com:21000';
+const KIS_WS_MOCK = 'ws://ops.koreainvestment.com:31000';
 const DEFAULT_TIMEOUT_MS = Number(process.env.LUNA_MARKETDATA_REAL_TIMEOUT_MS || 5000);
 const subscriptions = new Map();
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -81,20 +82,7 @@ async function getKisSecrets() {
 }
 
 async function getApprovalKey(args = {}) {
-  const { appKey, appSecret } = await getKisSecrets();
-  if (!appKey || !appSecret) throw new Error('kis_credentials_missing');
-  const paper = args.paper === true || process.env.KIS_MODE === 'mock';
-  const apiBase = paper ? 'https://openapivts.koreainvestment.com:29443' : 'https://openapi.koreainvestment.com:9443';
-  const response = await fetch(`${apiBase}/oauth2/Approval`, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ grant_type: 'client_credentials', appkey: appKey, secretkey: appSecret }),
-    signal: AbortSignal.timeout(Math.max(250, Number(args.timeoutMs || DEFAULT_TIMEOUT_MS))),
-  });
-  if (!response.ok) throw new Error(`kis_approval_http_${response.status}`);
-  const body = await response.json();
-  if (!body.approval_key) throw new Error('kis_approval_key_missing');
-  return body.approval_key;
+  return getKisRealtimeApprovalKey(args);
 }
 
 function parseOverseasCsv(raw, symbol) {
@@ -166,6 +154,104 @@ async function kisOverseasWsSnapshot(args = {}) {
   });
 
   return entry.lastSnapshot;
+}
+
+export async function probeKisOverseasRealtime(args = {}) {
+  const symbol = normalizeSymbol(args.symbol || 'AAPL');
+  const startedAt = new Date().toISOString();
+  const timeoutMs = Math.max(250, Number(args.timeoutMs || DEFAULT_TIMEOUT_MS));
+  const result = {
+    ok: false,
+    market: 'kis_overseas',
+    symbol,
+    startedAt,
+    approvalKeyIssued: false,
+    wsOpened: false,
+    subscriptionSent: false,
+    subscriptionAccepted: false,
+    firstTickReceived: false,
+    providerMode: 'websocket_probe',
+    messages: [],
+    error: null,
+  };
+
+  if (!isRealEnabled(args)) {
+    return { ...result, error: 'real_ws_disabled', checkedAt: new Date().toISOString() };
+  }
+  if (typeof globalThis.WebSocket !== 'function') {
+    return { ...result, error: 'native_websocket_unavailable', checkedAt: new Date().toISOString() };
+  }
+
+  let ws = null;
+  try {
+    const approvalKey = await getApprovalKey(args);
+    result.approvalKeyIssued = Boolean(approvalKey);
+    const paper = args.paper === true || process.env.KIS_MODE === 'mock';
+    ws = new globalThis.WebSocket(args.wsUrl || (paper ? KIS_WS_MOCK : KIS_WS_LIVE));
+
+    await new Promise((resolve) => {
+      const timer = setTimeout(resolve, timeoutMs);
+      addWsListener(ws, 'open', () => {
+        result.wsOpened = true;
+        try {
+          ws.send(JSON.stringify({
+            header: { approval_key: approvalKey, custtype: 'P', tr_type: '1', 'content-type': 'utf-8' },
+            body: { input: { tr_id: 'HDFSCNT0', tr_key: symbol } },
+          }));
+          ws.send(JSON.stringify({
+            header: { approval_key: approvalKey, custtype: 'P', tr_type: '1', 'content-type': 'utf-8' },
+            body: { input: { tr_id: 'HDFSASP0', tr_key: symbol } },
+          }));
+          result.subscriptionSent = true;
+        } catch (error) {
+          result.error = error?.message || String(error);
+          clearTimeout(timer);
+          resolve();
+        }
+      });
+      addWsListener(ws, 'message', (event) => {
+        const text = messageText(event);
+        result.messages.push(text.slice(0, 240));
+        try {
+          const parsed = JSON.parse(text);
+          const rtCd = String(parsed?.body?.rt_cd ?? '');
+          if (rtCd === '0') result.subscriptionAccepted = true;
+          else if (rtCd) result.error = parsed?.body?.msg1 || parsed?.body?.msg_cd || `kis_overseas_ws_rejected:${rtCd}`;
+        } catch (_) {
+          // Non-JSON payloads are handled by the market-data parser below.
+        }
+        const snapshot = text.startsWith('0|') || text.startsWith('1|') ? parseOverseasCsv(text, symbol) : null;
+        if (snapshot?.ok) {
+          result.subscriptionAccepted = true;
+          result.firstTickReceived = true;
+          clearTimeout(timer);
+          resolve();
+        }
+      });
+      addWsListener(ws, 'error', (event) => {
+        result.error = result.error || event?.message || 'kis_overseas_ws_error';
+        clearTimeout(timer);
+        resolve();
+      });
+    });
+  } catch (error) {
+    result.error = error?.message || String(error);
+  } finally {
+    try {
+      ws?.close?.();
+    } catch (_) {
+      // best-effort cleanup only
+    }
+  }
+
+  result.ok = result.approvalKeyIssued && result.wsOpened && result.subscriptionSent && result.subscriptionAccepted && !result.error;
+  result.status = result.firstTickReceived
+    ? 'kis_overseas_realtime_tick_ready'
+    : result.ok
+      ? 'kis_overseas_realtime_subscription_ready_no_tick'
+      : 'kis_overseas_realtime_probe_failed';
+  result.checkedAt = new Date().toISOString();
+  return result;
 }
 
 async function kisOverseasRestSnapshot(args = {}) {

@@ -1,5 +1,5 @@
 import { getMarketSnapshot } from './market-snapshot.ts';
-import { simulatedFallbackOrBlock } from './live-fallback-policy.ts';
+import { isStrictRealMarketDataRequired, simulatedFallbackOrBlock } from './live-fallback-policy.ts';
 
 const DEFAULT_TIMEOUT_MS = Number(process.env.LUNA_MARKETDATA_REAL_TIMEOUT_MS || 5000);
 const DEFAULT_TV_WS_URL = `ws://127.0.0.1:${process.env.TV_WS_PORT || 8082}`;
@@ -90,15 +90,27 @@ async function latestFromHttp(args = {}) {
   const symbol = normalizeSymbol(args.symbol || 'BINANCE:BTCUSDT');
   const timeframe = normalizeTradingViewTimeframe(args.timeframe || '60');
   const base = String(args.httpBase || DEFAULT_TV_HTTP_URL).replace(/\/$/, '');
+  const requireReal = isStrictRealMarketDataRequired(args) || args.requireTradingViewRealtime === true;
   const subscribeUrl = `${base}/subscribe?symbol=${encodeURIComponent(symbol)}&timeframe=${encodeURIComponent(timeframe)}`;
   await fetch(subscribeUrl, { signal: AbortSignal.timeout(Math.max(250, Number(args.timeoutMs || DEFAULT_TIMEOUT_MS))) }).catch(() => null);
-  const latestUrl = `${base}/latest?symbols=${encodeURIComponent(symbol)}&timeframes=${encodeURIComponent(timeframe)}`;
+  const latestUrl = `${base}/latest?symbols=${encodeURIComponent(symbol)}&timeframes=${encodeURIComponent(timeframe)}${requireReal ? '&requireReal=true' : ''}`;
   const response = await fetch(latestUrl, { signal: AbortSignal.timeout(Math.max(250, Number(args.timeoutMs || DEFAULT_TIMEOUT_MS))) });
   if (!response.ok) throw new Error(`tradingview_latest_http_${response.status}`);
   const body = await response.json();
   const row = body?.bars?.[0];
   if (!row?.bar) throw new Error('tradingview_latest_empty');
-  return snapshotFromBar(symbol, timeframe, row.bar, row);
+  const snapshot = snapshotFromBar(symbol, timeframe, row.bar, row);
+  if (requireReal && !isTradingViewRealtimeSnapshot(snapshot)) throw new Error('tradingview_realtime_required');
+  return snapshot;
+}
+
+function isTradingViewRealtimeSnapshot(snapshot = {}) {
+  const source = String(snapshot.source || '').toLowerCase();
+  const providerMode = String(snapshot.providerMode || '').toLowerCase();
+  return snapshot.ok === true
+    && source === 'tradingview_ws_service'
+    && providerMode.includes('websocket')
+    && !snapshot.fallbackReason;
 }
 
 async function wsSnapshot(args = {}) {
@@ -149,8 +161,11 @@ async function wsSnapshot(args = {}) {
 
 export async function tradingViewSnapshot(args = {}) {
   if (!isRealEnabled(args)) return fallbackSnapshot(args, 'real_ws_disabled');
+  const requireReal = isStrictRealMarketDataRequired(args) || args.requireTradingViewRealtime === true;
   try {
-    return await wsSnapshot(args);
+    const snapshot = await wsSnapshot(args);
+    if (requireReal && !isTradingViewRealtimeSnapshot(snapshot)) throw new Error('tradingview_realtime_required');
+    return snapshot;
   } catch (wsError) {
     try {
       return await latestFromHttp(args);
