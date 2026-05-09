@@ -6,6 +6,7 @@ import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
 import { buildOpsSchedulerAgentPlan } from '../shared/luna-ops-scheduler-agent-plan.ts';
+import { evaluateKisMarketHours } from '../shared/kis-market-hours-guard.ts';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const INVESTMENT_DIR = path.resolve(__dirname, '..');
@@ -129,14 +130,14 @@ export function getOpsSchedulerJobs() {
       name: 'active_candidate_analysis_refresh_crypto',
       category: 'analysis_refresh',
       market: 'crypto',
-      cadence: { type: 'interval', seconds: 900 },
+      cadence: { type: 'interval', seconds: 1800 },
       ...nodeScript('runtime-luna-active-candidate-analysis-refresh.ts', [
         '--apply',
         '--confirm=luna-active-candidate-analysis-refresh',
         '--market=crypto',
         '--hours=24',
         '--limit=20',
-        '--max-symbols=4',
+        '--max-symbols=2',
         '--json',
       ]),
     },
@@ -144,7 +145,8 @@ export function getOpsSchedulerJobs() {
       name: 'active_candidate_analysis_refresh_domestic',
       category: 'analysis_refresh',
       market: 'domestic',
-      cadence: { type: 'interval', seconds: 900 },
+      requiresMarketOpen: true,
+      cadence: { type: 'interval', seconds: 1800 },
       ...nodeScript('runtime-luna-active-candidate-analysis-refresh.ts', [
         '--apply',
         '--confirm=luna-active-candidate-analysis-refresh',
@@ -159,7 +161,8 @@ export function getOpsSchedulerJobs() {
       name: 'active_candidate_analysis_refresh_overseas',
       category: 'analysis_refresh',
       market: 'overseas',
-      cadence: { type: 'interval', seconds: 900 },
+      requiresMarketOpen: true,
+      cadence: { type: 'interval', seconds: 1800 },
       ...nodeScript('runtime-luna-active-candidate-analysis-refresh.ts', [
         '--apply',
         '--confirm=luna-active-candidate-analysis-refresh',
@@ -174,7 +177,7 @@ export function getOpsSchedulerJobs() {
       name: 'near_miss_watchlist_crypto',
       category: 'watchlist',
       market: 'crypto',
-      cadence: { type: 'interval', seconds: 900 },
+      cadence: { type: 'interval', seconds: 1800 },
       ...nodeScript('runtime-luna-near-miss-watchlist.ts', [
         '--apply',
         '--confirm=luna-near-miss-watchlist',
@@ -188,7 +191,8 @@ export function getOpsSchedulerJobs() {
       name: 'near_miss_watchlist_domestic',
       category: 'watchlist',
       market: 'domestic',
-      cadence: { type: 'interval', seconds: 900 },
+      requiresMarketOpen: true,
+      cadence: { type: 'interval', seconds: 1800 },
       ...nodeScript('runtime-luna-near-miss-watchlist.ts', [
         '--apply',
         '--confirm=luna-near-miss-watchlist',
@@ -202,7 +206,8 @@ export function getOpsSchedulerJobs() {
       name: 'near_miss_watchlist_overseas',
       category: 'watchlist',
       market: 'overseas',
-      cadence: { type: 'interval', seconds: 900 },
+      requiresMarketOpen: true,
+      cadence: { type: 'interval', seconds: 1800 },
       ...nodeScript('runtime-luna-near-miss-watchlist.ts', [
         '--apply',
         '--confirm=luna-near-miss-watchlist',
@@ -331,8 +336,16 @@ function intervalDue(cadence, now, lastRunAt) {
   return elapsedMs >= Number(cadence.seconds || 0) * 1000;
 }
 
+function getJobMarketSession(job, now) {
+  if (job?.requiresMarketOpen !== true) return null;
+  if (!['domestic', 'overseas', 'kis', 'kis_overseas'].includes(String(job?.market || ''))) return null;
+  return evaluateKisMarketHours({ market: job.market, now });
+}
+
 function isJobDue(job, now, state, force = false) {
   if (force) return true;
+  const marketSession = getJobMarketSession(job, now);
+  if (marketSession && marketSession.isOpen !== true) return false;
   const lastRunAt = state?.jobs?.[job.name]?.lastRunAt || null;
   if (job.cadence?.type === 'daily') return dailyDue(job.cadence, now, lastRunAt);
   return intervalDue(job.cadence || {}, now, lastRunAt);
@@ -353,6 +366,8 @@ export function buildOpsSchedulerPlan({
     category: job.category || null,
     market: job.market || null,
     immutable: job.immutable === true,
+    requiresMarketOpen: job.requiresMarketOpen === true,
+    marketSession: getJobMarketSession(job, now),
     cadence: job.cadence,
     due: isJobDue(job, now, state, force),
     command: [job.command, ...(job.args || [])].join(' '),

@@ -13,6 +13,11 @@ import { buildStockIntradayLlmPolicyMeta } from '../shared/stock-intraday-llm-po
 const CONFIRM = 'luna-active-candidate-analysis-refresh';
 const DEFAULT_STATE_PATH = investmentOpsRuntimeFile('luna-active-candidate-analysis-refresh-state.json');
 const DEFAULT_DECISION_FILTER_HOURS = 2;
+const DEFAULT_REFRESH_MAX_SYMBOLS_BY_MARKET = Object.freeze({
+  crypto: 2,
+  domestic: 4,
+  overseas: 4,
+});
 const DEFAULT_TARGETED_ENRICHMENT_MAX_SYMBOLS = 1;
 const DEFAULT_TARGETED_ENRICHMENT_COOLDOWN_MINUTES = 120;
 const DEFAULT_TARGETED_ENRICHMENT_MIN_CONFIDENCE = 0.58;
@@ -64,6 +69,17 @@ function defaultExchangeForMarket(market = 'crypto') {
   if (market === 'domestic') return 'kis';
   if (market === 'overseas') return 'kis_overseas';
   return 'binance';
+}
+
+function defaultRefreshMaxSymbols(market = 'crypto') {
+  return DEFAULT_REFRESH_MAX_SYMBOLS_BY_MARKET[market] || 2;
+}
+
+function positiveIntOrNull(value) {
+  if (value == null || value === '') return null;
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed <= 0) return null;
+  return Math.floor(parsed);
 }
 
 function missingEnrichmentNodeIds(item = {}) {
@@ -358,7 +374,7 @@ export async function runActiveCandidateAnalysisRefresh({
   exchange = null,
   hours = Number(process.env.LUNA_ACTIVE_CANDIDATE_REFRESH_HOURS || DEFAULT_DECISION_FILTER_HOURS),
   limit = 20,
-  maxSymbols = Number(process.env.LUNA_ACTIVE_CANDIDATE_REFRESH_MAX_SYMBOLS || 4),
+  maxSymbols = positiveIntOrNull(process.env.LUNA_ACTIVE_CANDIDATE_REFRESH_MAX_SYMBOLS),
   maxEnrichmentSymbols = Number(process.env.LUNA_ACTIVE_CANDIDATE_TARGETED_ENRICHMENT_MAX_SYMBOLS || DEFAULT_TARGETED_ENRICHMENT_MAX_SYMBOLS),
   cooldownMinutes = Number(process.env.LUNA_ACTIVE_CANDIDATE_REFRESH_COOLDOWN_MINUTES || 45),
   targetedCooldownMinutes = Number(process.env.LUNA_ACTIVE_CANDIDATE_TARGETED_ENRICHMENT_COOLDOWN_MINUTES || DEFAULT_TARGETED_ENRICHMENT_COOLDOWN_MINUTES),
@@ -377,6 +393,7 @@ export async function runActiveCandidateAnalysisRefresh({
 } = {}) {
   const normalizedMarket = normalizeMarket(market);
   const resolvedExchange = exchange || defaultExchangeForMarket(normalizedMarket);
+  const resolvedMaxSymbols = Math.max(1, Number(maxSymbols || defaultRefreshMaxSymbols(normalizedMarket)));
   if (!['crypto', 'domestic', 'overseas'].includes(normalizedMarket)) {
     return {
       ok: true,
@@ -407,7 +424,7 @@ export async function runActiveCandidateAnalysisRefresh({
     report,
     state,
     now,
-    maxSymbols,
+    maxSymbols: resolvedMaxSymbols,
     maxEnrichmentSymbols: targetedEnrichmentEnabled ? maxEnrichmentSymbols : 0,
     cooldownMinutes,
     targetedCooldownMinutes,
@@ -602,7 +619,7 @@ async function main() {
     exchange: argValue('exchange', null, argv),
     hours: Math.max(1, Number(argValue('hours', process.env.LUNA_ACTIVE_CANDIDATE_REFRESH_HOURS || DEFAULT_DECISION_FILTER_HOURS, argv)) || DEFAULT_DECISION_FILTER_HOURS),
     limit: Math.max(1, Number(argValue('limit', 20, argv)) || 20),
-    maxSymbols: Math.max(1, Number(argValue('max-symbols', process.env.LUNA_ACTIVE_CANDIDATE_REFRESH_MAX_SYMBOLS || 4, argv)) || 4),
+    maxSymbols: positiveIntOrNull(argValue('max-symbols', process.env.LUNA_ACTIVE_CANDIDATE_REFRESH_MAX_SYMBOLS || null, argv)),
     maxEnrichmentSymbols: Math.max(0, Number(argValue('max-enrichment-symbols', process.env.LUNA_ACTIVE_CANDIDATE_TARGETED_ENRICHMENT_MAX_SYMBOLS || DEFAULT_TARGETED_ENRICHMENT_MAX_SYMBOLS, argv)) || 0),
     cooldownMinutes: Math.max(1, Number(argValue('cooldown-minutes', process.env.LUNA_ACTIVE_CANDIDATE_REFRESH_COOLDOWN_MINUTES || 45, argv)) || 45),
     targetedCooldownMinutes: Math.max(1, Number(argValue('targeted-cooldown-minutes', process.env.LUNA_ACTIVE_CANDIDATE_TARGETED_ENRICHMENT_COOLDOWN_MINUTES || DEFAULT_TARGETED_ENRICHMENT_COOLDOWN_MINUTES, argv)) || DEFAULT_TARGETED_ENRICHMENT_COOLDOWN_MINUTES),

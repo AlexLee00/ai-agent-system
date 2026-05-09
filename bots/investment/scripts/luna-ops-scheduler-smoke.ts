@@ -38,16 +38,25 @@ export async function runLunaOpsSchedulerSmoke() {
   assert.equal(jobs.some((job) => job.name === 'active_candidate_analysis_refresh_crypto'), true);
   assert.equal(jobs.some((job) => job.name === 'active_candidate_analysis_refresh_domestic'), true);
   assert.equal(jobs.some((job) => job.name === 'active_candidate_analysis_refresh_overseas'), true);
+  assert.equal(jobs.find((job) => job.name === 'active_candidate_analysis_refresh_crypto')?.cadence?.seconds, 1800);
+  assert.equal(jobs.find((job) => job.name === 'active_candidate_analysis_refresh_crypto')?.args?.includes('--max-symbols=2'), true);
+  assert.equal(jobs.find((job) => job.name === 'active_candidate_analysis_refresh_domestic')?.requiresMarketOpen, true);
+  assert.equal(jobs.find((job) => job.name === 'active_candidate_analysis_refresh_overseas')?.requiresMarketOpen, true);
   assert.equal(jobs.some((job) => job.name === 'near_miss_watchlist_crypto'), true);
   assert.equal(jobs.some((job) => job.name === 'near_miss_watchlist_domestic'), true);
   assert.equal(jobs.some((job) => job.name === 'near_miss_watchlist_overseas'), true);
+  assert.equal(jobs.find((job) => job.name === 'near_miss_watchlist_crypto')?.cadence?.seconds, 1800);
+  assert.equal(jobs.find((job) => job.name === 'near_miss_watchlist_domestic')?.requiresMarketOpen, true);
+  assert.equal(jobs.find((job) => job.name === 'near_miss_watchlist_overseas')?.requiresMarketOpen, true);
   assert.equal(jobs.find((job) => job.name === 'market_cycle_domestic')?.env?.LUNA_LIVE_DOMESTIC, 'true');
   assert.equal(jobs.find((job) => job.name === 'market_cycle_domestic_open_catchup')?.env?.LUNA_LIVE_DOMESTIC, 'true');
   assert.equal(jobs.find((job) => job.name === 'market_cycle_overseas')?.env?.LUNA_LIVE_OVERSEAS, 'true');
 
   const now = new Date('2026-05-04T02:00:00+09:00');
   const emptyPlan = buildOpsSchedulerPlan({ now, state: { jobs: {} }, jobs });
-  assert.equal(emptyPlan.due, 20);
+  assert.equal(emptyPlan.due, 16);
+  assert.equal(emptyPlan.jobs.find((job) => job.name === 'active_candidate_analysis_refresh_domestic')?.due, false);
+  assert.equal(emptyPlan.jobs.find((job) => job.name === 'active_candidate_analysis_refresh_domestic')?.marketSession?.isOpen, false);
 
   const recentState = {
     jobs: Object.fromEntries(jobs.map((job) => [job.name, { lastRunAt: now.toISOString() }])),
@@ -111,12 +120,12 @@ export async function runLunaOpsSchedulerSmoke() {
     },
   });
   assert.equal(executed.ok, true);
-  assert.equal(calls.length, 20);
+  assert.equal(calls.length, 16);
   assert.equal(envByJob.market_cycle_domestic?.LUNA_LIVE_DOMESTIC, 'true');
   assert.equal(envByJob.market_cycle_domestic_open_catchup?.LUNA_LIVE_DOMESTIC, 'true');
   assert.equal(envByJob.market_cycle_overseas?.LUNA_LIVE_OVERSEAS, 'true');
   const executedState = JSON.parse(fs.readFileSync(statePath, 'utf8'));
-  assert.equal(Object.keys(executedState.jobs).length, 20);
+  assert.equal(Object.keys(executedState.jobs).length, 16);
   assert.equal(executedState.jobs.market_cycle_domestic.lastOutcome, 'market_closed_research');
   assert.equal(executedState.jobs.market_cycle_domestic.lastSummary.includes('장외 시간'), true);
   assert.equal(executedState.jobs.market_cycle_domestic_open_catchup.lastOutcome, 'ok');
