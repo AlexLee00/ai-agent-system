@@ -182,6 +182,36 @@ export async function runLunaActiveCandidateAnalysisRefreshSmoke() {
   assert.deepEqual(dailyBullishHighPriorityPlan.targetedEnrichment.selectedSymbols, ['SAHARA/USDT']);
   assert.equal(dailyBullishHighPriorityPlan.targetedEnrichment.selected[0].technicalPresignal, 'daily_technical_bullish');
 
+  const dailyBullishAlreadyAnalyzedPlan = buildActiveCandidateAnalysisRefreshPlan({
+    report: fixtureReport([], [
+      {
+        ...fixtureHighPriorityCandidate('SAHARA/USDT'),
+        analystSummary: {
+          byAnalyst: {
+            ta_mtf: { signal: 'HOLD', confidence: 0.12 },
+            onchain: { signal: 'HOLD', confidence: 0.3 },
+            sentiment: { signal: 'HOLD', confidence: 0.4 },
+          },
+        },
+        dailyTechnical: {
+          symbol: 'SAHARA/USDT',
+          ok: true,
+          reason: 'daily_trend_bullish',
+          source: 'binance_ohlcv_daily_for_tradingview_guard',
+        },
+      },
+    ]),
+    state: {},
+    now,
+    maxSymbols: 1,
+    maxEnrichmentSymbols: 1,
+    cooldownMinutes: 45,
+    exchange: 'binance',
+  });
+  assert.equal(dailyBullishAlreadyAnalyzedPlan.status, 'active_candidate_analysis_refresh_clear');
+  assert.deepEqual(dailyBullishAlreadyAnalyzedPlan.targetedEnrichment.selectedSymbols, []);
+  assert.deepEqual(dailyBullishAlreadyAnalyzedPlan.targetedEnrichment.nodeIds, []);
+
   const highPriorityOverridePlan = buildActiveCandidateAnalysisRefreshPlan({
     report: fixtureReport([], [
       fixtureHighPriorityCandidate('SAHARA/USDT'),

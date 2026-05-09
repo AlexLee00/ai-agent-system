@@ -17,6 +17,7 @@ const DEFAULT_HOURS = 2;
 const STOCK_EXCHANGES = new Set(['kis', 'kis_overseas']);
 const TECHNICAL_ANALYSTS = new Set([ANALYST_TYPES.TA_MTF, ANALYST_TYPES.TA]);
 const NEWS_LIKE_ANALYSTS = new Set([ANALYST_TYPES.NEWS, ANALYST_TYPES.SENTINEL]);
+const DEFAULT_DAILY_BULLISH_PROBE_MIN_INTRADAY_CONFIDENCE = 0.18;
 
 function parseArgs(argv = process.argv.slice(2)) {
   const symbolArg = argv.find((arg) => arg.startsWith('--symbols='))?.split('=').slice(1).join('=') || '';
@@ -153,6 +154,18 @@ function analystSignal(item, analysts = []) {
   return null;
 }
 
+function analystConfidence(item, analysts = []) {
+  for (const analyst of analysts) {
+    const value = item?.analystSummary?.byAnalyst?.[analyst]?.confidence;
+    if (value != null && Number.isFinite(Number(value))) return Number(value);
+  }
+  return null;
+}
+
+function hasAnalystEvidence(item, analysts = []) {
+  return Boolean(analystSignal(item, analysts));
+}
+
 function hasDailyBullishPresignal(item = {}) {
   const row = item?.dailyTechnical || item?.dailyTechnicalCoverage || null;
   if (!row || typeof row !== 'object' || Array.isArray(row)) return false;
@@ -169,9 +182,23 @@ function activeCandidateConfidence(item = {}) {
   );
 }
 
+function dailyBullishProbeHasIntradayFloor(item = {}) {
+  const technicalSignal = analystSignal(item, [ANALYST_TYPES.TA_MTF, ANALYST_TYPES.TA]);
+  if (!technicalSignal) return true;
+  if (technicalSignal === ACTIONS.BUY) return true;
+  if (technicalSignal === ACTIONS.SELL) return false;
+  const confidence = analystConfidence(item, [ANALYST_TYPES.TA_MTF, ANALYST_TYPES.TA]);
+  const minConfidence = Math.max(
+    0,
+    Number(process.env.LUNA_DAILY_BULLISH_PROBE_MIN_INTRADAY_CONFIDENCE || DEFAULT_DAILY_BULLISH_PROBE_MIN_INTRADAY_CONFIDENCE),
+  );
+  return confidence == null || confidence >= minConfidence;
+}
+
 function isDailyBullishProbeCandidate(item = {}) {
   if (item.exchange !== 'binance') return false;
   if (!hasDailyBullishPresignal(item)) return false;
+  if (!dailyBullishProbeHasIntradayFloor(item)) return false;
   const candidate = item?.activeCandidate || {};
   const rank = Number(candidate.rank || 999999);
   const confidence = activeCandidateConfidence(item);
@@ -185,9 +212,9 @@ export function buildNearMissWatchCandidate(item = {}) {
   if (item.actionability === 'relaxed_probe_candidate' && item.relaxation?.ok === true) {
     const missingConfirmations = [];
     if (reasons.has('technical_not_confirmed')) missingConfirmations.push('technical');
-    if (reasons.has('onchain_not_confirmed')) missingConfirmations.push('onchain');
-    if (reasons.has('sentiment_not_confirmed')) missingConfirmations.push('sentiment');
-    if (reasons.has('market_flow_not_confirmed')) missingConfirmations.push('market_flow');
+    if (reasons.has('onchain_not_confirmed') && !hasAnalystEvidence(item, [ANALYST_TYPES.ONCHAIN])) missingConfirmations.push('onchain');
+    if (reasons.has('sentiment_not_confirmed') && !hasAnalystEvidence(item, [ANALYST_TYPES.SENTIMENT, ANALYST_TYPES.SENTINEL])) missingConfirmations.push('sentiment');
+    if (reasons.has('market_flow_not_confirmed') && !hasAnalystEvidence(item, [ANALYST_TYPES.MARKET_FLOW])) missingConfirmations.push('market_flow');
     if (reasons.has('average_confidence_below_min')) missingConfirmations.push('confidence');
     if (reasons.has('fusion_not_long')) missingConfirmations.push('fusion');
     return {
@@ -221,9 +248,9 @@ export function buildNearMissWatchCandidate(item = {}) {
 
   const missingConfirmations = [];
   if (dailyBullishProbeCandidate && technicalSignal !== ACTIONS.BUY) missingConfirmations.push('intraday_technical');
-  if (reasons.has('onchain_not_confirmed')) missingConfirmations.push('onchain');
-  if (reasons.has('sentiment_not_confirmed')) missingConfirmations.push('sentiment');
-  if (reasons.has('market_flow_not_confirmed')) missingConfirmations.push('market_flow');
+  if (reasons.has('onchain_not_confirmed') && !hasAnalystEvidence(item, [ANALYST_TYPES.ONCHAIN])) missingConfirmations.push('onchain');
+  if (reasons.has('sentiment_not_confirmed') && !hasAnalystEvidence(item, [ANALYST_TYPES.SENTIMENT, ANALYST_TYPES.SENTINEL])) missingConfirmations.push('sentiment');
+  if (reasons.has('market_flow_not_confirmed') && !hasAnalystEvidence(item, [ANALYST_TYPES.MARKET_FLOW])) missingConfirmations.push('market_flow');
   if (reasons.has('average_confidence_below_min')) missingConfirmations.push('confidence');
   if (reasons.has('fusion_not_long')) missingConfirmations.push('fusion');
   if (missingConfirmations.length === 0) return null;

@@ -60,7 +60,7 @@ function dailyBullishFallbackReport() {
         ],
         minConfidence: 0.35,
         fused: { recommendation: 'HOLD', fusedScore: 0, averageConfidence: 0.11, hasConflict: false },
-        analystSummary: { byAnalyst: { ta_mtf: { signal: 'HOLD', confidence: 0.12 } } },
+        analystSummary: { byAnalyst: { ta_mtf: { signal: 'HOLD', confidence: 0.22 } } },
         activeCandidate: { rank: 1, score: 0.84, confidence: 0.8 },
       },
     ],

@@ -101,10 +101,14 @@ function positiveIntOrNull(value) {
 function missingEnrichmentNodeIds(item = {}) {
   const exchange = String(item.exchange || '').trim();
   const reasons = new Set(Array.isArray(item.reasons) ? item.reasons : []);
+  const byAnalyst = item?.analystSummary?.byAnalyst || {};
   const nodes = [];
-  if (reasons.has('sentiment_not_confirmed')) nodes.push('L03');
-  if (exchange === 'binance' && reasons.has('onchain_not_confirmed')) nodes.push('L05');
-  if ((exchange === 'kis' || exchange === 'kis_overseas') && reasons.has('market_flow_not_confirmed')) nodes.push('L04');
+  const hasSentiment = Boolean(byAnalyst.sentiment || byAnalyst.sentinel);
+  const hasOnchain = Boolean(byAnalyst.onchain);
+  const hasMarketFlow = Boolean(byAnalyst.market_flow);
+  if (reasons.has('sentiment_not_confirmed') && !hasSentiment) nodes.push('L03');
+  if (exchange === 'binance' && reasons.has('onchain_not_confirmed') && !hasOnchain) nodes.push('L05');
+  if ((exchange === 'kis' || exchange === 'kis_overseas') && reasons.has('market_flow_not_confirmed') && !hasMarketFlow) nodes.push('L04');
   return [...new Set(nodes)];
 }
 
