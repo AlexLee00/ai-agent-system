@@ -4,6 +4,16 @@
 > 상세 내용: `reservation-dev-summary.md` / `reservation-handoff.md`
 > 최초 작성: 2026-02-27
 
+## 2026-05-09: Darwin CODEX-E — Phase E 센서 확장 완성 (98차 세션)
+
+- `Darwin.V2.Sensor.PapersWithCode` 신규 (PWC API, stars>=10 필터, 6h 폴링)
+- `Darwin.V2.Sensor.SemanticScholar` 신규 (9 도메인 쿼리, citations>=5, API 키 선택)
+- Supervisor에 센서 6종 OTP 등록 (기존 4 + 신규 2)
+- Scanner.ex: `darwin.sensor.papers_with_code` / `darwin.sensor.semantic_scholar` 구독 추가
+- Config: 신규 킬 스위치 (`DARWIN_SENSOR_PWC_ENABLED`, `DARWIN_SENSOR_SEMANTIC_SCHOLAR_ENABLED`)
+- CODEX_DARWIN_INTELLIGENT_RND_PLAN 분석: Phase A-H 이미 완성 확인, Phase E 갭(3 센서) 구현
+- mix compile --warnings-as-errors: 경고 0건 통과
+
 ## 2026-05-06: Darwin Phase H — CodebaseAnalyzer 완성 (97차 세션)
 
 - `Darwin.V2.CodebaseAnalyzer` GenServer 신규 구현 (9팀 코드 자동 분석)
