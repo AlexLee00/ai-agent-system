@@ -20,7 +20,7 @@ const DEFAULT_REFRESH_MAX_SYMBOLS_BY_MARKET = Object.freeze({
   overseas: 4,
 });
 const DEFAULT_TARGETED_ENRICHMENT_MAX_SYMBOLS_BY_MARKET = Object.freeze({
-  crypto: 2,
+  crypto: 1,
   domestic: 1,
   overseas: 1,
 });
@@ -31,7 +31,7 @@ const DEFAULT_TARGETED_ENRICHMENT_CANDIDATE_SCORE = 0.55;
 const DEFAULT_TARGETED_ENRICHMENT_CANDIDATE_RANK = 10;
 const DEFAULT_TARGETED_ENRICHMENT_COOLDOWN_BYPASS_MINUTES = 10;
 const DEFAULT_TARGETED_ENRICHMENT_COOLDOWN_BYPASS_MAX_SYMBOLS = 0;
-const DEFAULT_TARGETED_ENRICHMENT_GLOBAL_COOLDOWN_ENABLED = false;
+const DEFAULT_TARGETED_ENRICHMENT_GLOBAL_COOLDOWN_ENABLED = true;
 const DEFAULT_CRYPTO_TARGETED_ENRICHMENT_REQUIRE_TECHNICAL_PRESIGNAL = true;
 const DEFAULT_CRYPTO_TARGETED_ENRICHMENT_DAILY_TECHNICAL_ENABLED = true;
 const GLOBAL_TARGETED_ENRICHMENT_SYMBOL = '__global__';
@@ -777,6 +777,11 @@ async function main() {
     minTargetedConfidence: Math.max(0, Math.min(1, Number(argValue('targeted-min-confidence', process.env.LUNA_ACTIVE_CANDIDATE_TARGETED_ENRICHMENT_MIN_CONFIDENCE || DEFAULT_TARGETED_ENRICHMENT_MIN_CONFIDENCE, argv)) || DEFAULT_TARGETED_ENRICHMENT_MIN_CONFIDENCE)),
     cooldownBypassMinMinutes: Math.max(1, Number(argValue('cooldown-bypass-minutes', process.env.LUNA_ACTIVE_CANDIDATE_TARGETED_ENRICHMENT_COOLDOWN_BYPASS_MINUTES || DEFAULT_TARGETED_ENRICHMENT_COOLDOWN_BYPASS_MINUTES, argv)) || DEFAULT_TARGETED_ENRICHMENT_COOLDOWN_BYPASS_MINUTES),
     cooldownBypassMaxSymbols: Math.max(0, Number(argValue('cooldown-bypass-max-symbols', process.env.LUNA_ACTIVE_CANDIDATE_TARGETED_ENRICHMENT_COOLDOWN_BYPASS_MAX_SYMBOLS || DEFAULT_TARGETED_ENRICHMENT_COOLDOWN_BYPASS_MAX_SYMBOLS, argv)) || 0),
+    globalCooldownEnabled: hasArg('targeted-global-cooldown', argv)
+      ? true
+      : hasArg('no-targeted-global-cooldown', argv)
+        ? false
+        : boolEnv('LUNA_ACTIVE_CANDIDATE_TARGETED_ENRICHMENT_GLOBAL_COOLDOWN_ENABLED', DEFAULT_TARGETED_ENRICHMENT_GLOBAL_COOLDOWN_ENABLED),
     apply: hasArg('apply', argv),
     confirm: argValue('confirm', null, argv),
     statePath: argValue('state-path', DEFAULT_STATE_PATH, argv),

@@ -212,11 +212,31 @@ export async function insertExternalEvidence({
   return row?.id || null;
 }
 
-export async function getRecentExternalEvidence({ days = 7, symbol = null, sourceType = null, limit = 50 } = {}) {
+function shouldIncludeTestExternalEvidence() {
+  return String(process.env.LUNA_INCLUDE_TEST_EXTERNAL_EVIDENCE || '').toLowerCase() === 'true';
+}
+
+export async function getRecentExternalEvidence({
+  days = 7,
+  symbol = null,
+  sourceType = null,
+  limit = 50,
+  includeTestEvidence = false,
+} = {}) {
   const conds = [`created_at >= now() - ($1::int * INTERVAL '1 day')`];
   const params = [days];
   if (symbol) { conds.push(`symbol = $${params.length + 1}`); params.push(symbol); }
   if (sourceType) { conds.push(`source_type = $${params.length + 1}`); params.push(sourceType); }
+  if (!includeTestEvidence && !shouldIncludeTestExternalEvidence()) {
+    conds.push(`NOT (
+      COALESCE(source_name, '') ILIKE '%smoke%'
+      OR COALESCE(source_name, '') ILIKE '%fixture%'
+      OR COALESCE(evidence_summary, '') ILIKE '%smoke%'
+      OR COALESCE(evidence_summary, '') ILIKE '%fixture%'
+      OR COALESCE(raw_ref::text, '') ILIKE '%"testOnly":true%'
+      OR COALESCE(raw_ref::text, '') ILIKE '%"fixture":true%'
+    )`);
+  }
   params.push(limit);
   return query(
     `SELECT * FROM external_evidence_events WHERE ${conds.join(' AND ')} ORDER BY created_at DESC LIMIT $${params.length}`,

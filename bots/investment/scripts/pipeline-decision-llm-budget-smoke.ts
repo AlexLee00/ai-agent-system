@@ -2,6 +2,9 @@
 // @ts-nocheck
 
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
 import {
   createDecisionDebateBudgetGate,
@@ -15,6 +18,7 @@ export async function runPipelineDecisionLlmBudgetSmoke() {
   const cryptoPolicy = resolveDecisionLlmBudget({ exchange: 'binance', env: {} });
   assert.equal(cryptoPolicy.enabled, true);
   assert.equal(cryptoPolicy.maxSymbols, 3);
+  assert.equal(cryptoPolicy.cooldownMinutes, 30);
 
   const cryptoDebatePolicy = resolveDecisionDebateBudget({ exchange: 'binance', env: {} });
   assert.equal(cryptoDebatePolicy.enabled, true);
@@ -41,6 +45,7 @@ export async function runPipelineDecisionLlmBudgetSmoke() {
     exchange: 'binance',
     liveHeldSymbols: new Set(['HELD/USDT']),
     env: { LUNA_CRYPTO_DECISION_LLM_MAX_SYMBOLS_PER_CYCLE: '2' },
+    stateFile: path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'luna-decision-budget-smoke-')), 'state.json'),
   });
   assert.equal(gate.allow({ symbol: 'BTC/USDT', prefilter: { technical: { confidence: 0.9 } } }).allow, true);
   assert.equal(gate.allow({ symbol: 'SOL/USDT', prefilter: { technical: { confidence: 0.8 } } }).allow, true);
@@ -56,6 +61,32 @@ export async function runPipelineDecisionLlmBudgetSmoke() {
   assert.equal(snapshot.heldBypass, 1);
   assert.equal(snapshot.skipped, 1);
   assert.deepEqual(snapshot.skippedSymbols.map((item) => item.symbol), ['LINK/USDT']);
+
+  const now = new Date('2026-05-09T12:00:00.000Z');
+  const cooldownStateFile = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'luna-decision-budget-cooldown-smoke-')), 'state.json');
+  const firstCooldownGate = createDecisionLlmBudgetGate({
+    exchange: 'binance',
+    env: {
+      LUNA_CRYPTO_DECISION_LLM_MAX_SYMBOLS_PER_CYCLE: '2',
+      LUNA_CRYPTO_DECISION_LLM_COOLDOWN_MINUTES: '30',
+    },
+    stateFile: cooldownStateFile,
+    now: () => now,
+  });
+  assert.equal(firstCooldownGate.allow({ symbol: 'BTC/USDT', prefilter: { technical: { confidence: 0.9 } } }).allow, true);
+  const secondCooldownGate = createDecisionLlmBudgetGate({
+    exchange: 'binance',
+    env: {
+      LUNA_CRYPTO_DECISION_LLM_MAX_SYMBOLS_PER_CYCLE: '2',
+      LUNA_CRYPTO_DECISION_LLM_COOLDOWN_MINUTES: '30',
+    },
+    stateFile: cooldownStateFile,
+    now: () => new Date('2026-05-09T12:10:00.000Z'),
+  });
+  const cooled = secondCooldownGate.allow({ symbol: 'BTC/USDT', prefilter: { technical: { confidence: 0.9 } } });
+  assert.equal(cooled.allow, false);
+  assert.equal(cooled.reason, 'decision_llm_symbol_cooldown');
+  assert.equal(secondCooldownGate.snapshot().cooldownSkipped, 1);
 
   const debateGate = createDecisionDebateBudgetGate({
     exchange: 'binance',

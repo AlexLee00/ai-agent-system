@@ -245,6 +245,7 @@ export async function runLunaActiveCandidateAnalysisRefreshSmoke() {
     maxEnrichmentSymbols: 2,
     cooldownMinutes: 45,
     targetedCooldownMinutes: 120,
+    globalCooldownEnabled: false,
     exchange: 'binance',
   });
   assert.equal(globalCooldownPlan.status, 'active_candidate_analysis_refresh_needed');

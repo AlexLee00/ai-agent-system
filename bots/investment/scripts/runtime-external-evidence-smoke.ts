@@ -16,6 +16,8 @@ import {
 
 let passed = 0;
 let failed = 0;
+const smokeRunId = `external-evidence-smoke-${Date.now()}`;
+const smokeEvidenceIds = [];
 
 function assert(label, condition) {
   if (condition) { console.log(`  ✅ ${label}`); passed++; }
@@ -48,7 +50,9 @@ async function main() {
     sourceQuality: 0.55,
     freshnessScore: 0.9,
     evidenceSummary: 'smoke test community evidence',
+    rawRef: { testOnly: true, smokeRunId },
   });
+  if (id1) smokeEvidenceIds.push(id1);
   assert('recordEvidence 반환값 존재', typeof id1 === 'string');
 
   // 4. recordBacktestEvidence
@@ -61,7 +65,9 @@ async function main() {
     totalTrades: 45,
     backwindowDays: 30,
     isOutOfSample: true,
+    summary: `backtest smoke evidence ${smokeRunId}`,
   });
+  if (id2) smokeEvidenceIds.push(id2);
   assert('recordBacktestEvidence (out-of-sample) 반환값 존재', typeof id2 === 'string');
 
   // 5. recordScoutEvidence
@@ -72,7 +78,9 @@ async function main() {
     signalDirection: 'bullish',
     score: 0.72,
     summary: 'scout smoke evidence',
+    rawRef: { testOnly: true, smokeRunId },
   });
+  if (id3) smokeEvidenceIds.push(id3);
   assert('recordScoutEvidence 반환값 존재', typeof id3 === 'string');
 
   // 6. buildEvidenceSummaryForAgent — 존재하는 심볼
@@ -185,6 +193,14 @@ async function main() {
   const compactedStates = readExternalEvidenceGapTaskQueue(staleStateFile);
   assert('stale evidence gap state 압축', Number(compactedStates.summary?.scopes || 0) === 1);
   assert('fresh evidence gap state 유지', Boolean(compactedStates.states?.['binance:LIVE/USDT:normal']));
+
+  await db.run(
+    `DELETE FROM external_evidence_events
+      WHERE raw_ref::text ILIKE $1
+         OR evidence_summary ILIKE $1
+         OR id::text = ANY($2::text[])`,
+    [`%${smokeRunId}%`, smokeEvidenceIds],
+  ).catch(() => null);
 
   console.log('');
   console.log(`결과: ${passed}/${passed + failed} passed`);

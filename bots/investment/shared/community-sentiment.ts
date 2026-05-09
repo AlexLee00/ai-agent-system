@@ -71,6 +71,14 @@ export async function scoreCommunitySentiment(symbols = [], {
           WHERE source_type = 'community'
             AND symbol = ANY($1::text[])
             AND created_at >= now() - INTERVAL '1 minute' * $2
+            AND NOT (
+              COALESCE(source_name, '') ILIKE '%smoke%'
+              OR COALESCE(source_name, '') ILIKE '%fixture%'
+              OR COALESCE(evidence_summary, '') ILIKE '%smoke%'
+              OR COALESCE(evidence_summary, '') ILIKE '%fixture%'
+              OR COALESCE(raw_ref::text, '') ILIKE '%"testOnly":true%'
+              OR COALESCE(raw_ref::text, '') ILIKE '%"fixture":true%'
+            )
           ORDER BY created_at DESC
           LIMIT $3`,
         [unique, Math.max(30, Number(minutes || 720)), Math.max(20, unique.length * 20)],
