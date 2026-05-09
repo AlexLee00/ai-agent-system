@@ -33,4 +33,9 @@ config :darwin,
     System.get_env("DARWIN_HYPOTHESIS_LLM_DAILY_BUDGET_USD", "2.0") |> String.to_float(),
   # CODEX Phase C — Measure Stage (기본 false)
   measure_stage_enabled:
-    System.get_env("DARWIN_MEASURE_STAGE_ENABLED", "false") == "true"
+    System.get_env("DARWIN_MEASURE_STAGE_ENABLED", "false") == "true",
+  # Phase E — 커뮤니티 센서 확장 (기본 true — 무료 API, 인증 불필요)
+  sensor_pwc_enabled:
+    System.get_env("DARWIN_SENSOR_PWC_ENABLED", "true") == "true",
+  sensor_semantic_scholar_enabled:
+    System.get_env("DARWIN_SENSOR_SEMANTIC_SCHOLAR_ENABLED", "true") == "true"

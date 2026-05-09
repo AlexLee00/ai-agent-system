@@ -160,6 +160,23 @@ defmodule Darwin.V2.Config do
   end
 
   @doc """
+  Papers with Code 센서 활성화 여부 (Phase E).
+  환경변수: DARWIN_SENSOR_PWC_ENABLED (기본 true)
+  """
+  def papers_with_code_sensor_enabled? do
+    System.get_env("DARWIN_SENSOR_PWC_ENABLED", "true") == "true"
+  end
+
+  @doc """
+  Semantic Scholar 센서 활성화 여부 (Phase E).
+  환경변수: DARWIN_SENSOR_SEMANTIC_SCHOLAR_ENABLED (기본 true)
+  선택적 API 키: SEMANTIC_SCHOLAR_API_KEY (rate limit 완화)
+  """
+  def semantic_scholar_sensor_enabled? do
+    System.get_env("DARWIN_SENSOR_SEMANTIC_SCHOLAR_ENABLED", "true") == "true"
+  end
+
+  @doc """
   현재 활성화된 Kill Switch 상태 요약.
   """
   def status do
@@ -173,8 +190,10 @@ defmodule Darwin.V2.Config do
       self_rag_enabled:            self_rag_enabled?(),
       tier2_auto_apply:            tier2_auto_apply?(),
       mcp_server_enabled:          mcp_server_enabled?(),
-      codebase_analyzer_enabled:   codebase_analyzer_enabled?(),
-      daily_budget_usd:            daily_budget_usd(),
+      codebase_analyzer_enabled:          codebase_analyzer_enabled?(),
+      papers_with_code_sensor_enabled:    papers_with_code_sensor_enabled?(),
+      semantic_scholar_sensor_enabled:    semantic_scholar_sensor_enabled?(),
+      daily_budget_usd:                   daily_budget_usd(),
       http_port:                   http_port(),
       mlx_base_url:                mlx_base_url(),
       local_model_fast:            local_model_fast(),

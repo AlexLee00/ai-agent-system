@@ -10,6 +10,7 @@ defmodule Darwin.V2.Supervisor do
   Phase 5: ShadowRunner (Shadow Mode) + HTTP(Bandit) + MCP Server 활성화
   Phase 6: TelegramBridge + 강화된 RollbackScheduler (24h 효과 측정) 추가
   Phase A~C: TeamConnector + HypothesisEngine + Cycle.Measure 추가
+  Phase E: 커뮤니티 센서 6종 (ArxivRSS/HN/Reddit/OpenReview/PWC/SemanticScholar)
   """
 
   use Supervisor
@@ -30,6 +31,7 @@ defmodule Darwin.V2.Supervisor do
 
       children =
         core_children() ++
+          sensor_children() ++
           cycle_children(kill_switch_on) ++
           support_children(kill_switch_on) ++
           maybe_shadow_children() ++
@@ -47,6 +49,22 @@ defmodule Darwin.V2.Supervisor do
       Logger.info("[다윈V2] V2 비활성 — 빈 수퍼바이저 트리")
       Supervisor.init([], strategy: :one_for_one)
     end
+  end
+
+  # ---
+  # 커뮤니티 센서 GenServer (Phase 7 + Phase E: 6종)
+  # V2_ENABLED 여부 무관하게 항상 기동 — 논문 수집은 독립적으로 동작
+
+  defp sensor_children do
+    [
+      Darwin.V2.Sensor.ArxivRss,
+      Darwin.V2.Sensor.HackerNews,
+      Darwin.V2.Sensor.Reddit,
+      Darwin.V2.Sensor.OpenReview,
+      # Phase E: 신규 센서
+      Darwin.V2.Sensor.PapersWithCode,
+      Darwin.V2.Sensor.SemanticScholar
+    ]
   end
 
   # ---

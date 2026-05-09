@@ -63,7 +63,10 @@ defmodule Darwin.V2.Scanner do
     Registry.register(Jay.Core.JayBus, "darwin.sensor.hackernews", [])
     Registry.register(Jay.Core.JayBus, "darwin.sensor.reddit", [])
     Registry.register(Jay.Core.JayBus, "darwin.sensor.openreview", [])
-    Logger.debug("[다윈V2 스캐너] JayBus 구독 완료 (센서 4종)")
+    # Phase E: 신규 센서 토픽
+    Registry.register(Jay.Core.JayBus, "darwin.sensor.papers_with_code", [])
+    Registry.register(Jay.Core.JayBus, "darwin.sensor.semantic_scholar", [])
+    Logger.debug("[다윈V2 스캐너] JayBus 구독 완료 (센서 6종)")
     {:noreply, state}
   end
 
@@ -79,7 +82,9 @@ defmodule Darwin.V2.Scanner do
         "darwin.sensor.arxiv",
         "darwin.sensor.hackernews",
         "darwin.sensor.reddit",
-        "darwin.sensor.openreview"
+        "darwin.sensor.openreview",
+        "darwin.sensor.papers_with_code",
+        "darwin.sensor.semantic_scholar"
       ] do
     papers = extract_papers_from_sensor(payload, topic)
     new_state = process_papers(papers, state)
@@ -182,11 +187,13 @@ defmodule Darwin.V2.Scanner do
   defp extract_papers_from_sensor(payload, topic) do
     source =
       case topic do
-        "darwin.sensor.arxiv"       -> "arxiv_rss"
-        "darwin.sensor.hackernews"  -> "hackernews"
-        "darwin.sensor.reddit"      -> "reddit"
-        "darwin.sensor.openreview"  -> "openreview"
-        _                           -> "unknown"
+        "darwin.sensor.arxiv"            -> "arxiv_rss"
+        "darwin.sensor.hackernews"       -> "hackernews"
+        "darwin.sensor.reddit"           -> "reddit"
+        "darwin.sensor.openreview"       -> "openreview"
+        "darwin.sensor.papers_with_code" -> "papers_with_code"
+        "darwin.sensor.semantic_scholar" -> "semantic_scholar"
+        _                                -> "unknown"
       end
 
     papers = payload[:papers] || payload["papers"] || [payload]
