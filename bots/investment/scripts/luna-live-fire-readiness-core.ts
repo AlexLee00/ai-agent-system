@@ -14,14 +14,16 @@ export function evaluateLunaLiveFireReadinessGate({
   const blockers = [];
   const observations = [];
   const killSwitches = operating.killSwitches || {};
-  const result = heartbeatResult(worker);
   const workerMigrated = worker?.status === 'entry_trigger_worker_migrated_to_luna_skill';
+  const legacyHeartbeatResult = heartbeatResult(worker);
+  const result = workerMigrated ? {} : legacyHeartbeatResult;
   const mode = String(runtimeDiscoveryMode || result?.mode || '').toLowerCase();
-  const heartbeatAllowLiveFire = result?.allowLiveFire === true;
+  const heartbeatAllowLiveFire = workerMigrated ? null : result?.allowLiveFire === true;
   const allowLiveFire = runtimeLiveFireEnabled === true;
-  const readyBlocked = Number(result?.readyBlocked || 0);
+  const readyBlocked = workerMigrated ? 0 : Number(result?.readyBlocked || 0);
   const duplicateFiredScopeCount = Number(worker?.stats?.duplicateFiredScopeCount || operating?.entryTrigger?.duplicateFiredScopeCount || 0);
-  const heartbeatAgeMinutes = worker?.heartbeat?.ageMinutes ?? operating?.entryTrigger?.heartbeatAgeMinutes ?? null;
+  const legacyHeartbeatAgeMinutes = worker?.heartbeat?.ageMinutes ?? operating?.entryTrigger?.heartbeatAgeMinutes ?? null;
+  const heartbeatAgeMinutes = workerMigrated ? null : legacyHeartbeatAgeMinutes;
 
   if (operating.status !== 'luna_l5_operating') blockers.push(`operating_not_ready:${operating.status || 'unknown'}`);
   if (Array.isArray(operating.readinessWarnings) && operating.readinessWarnings.length) blockers.push('luna_readiness_warnings');
@@ -58,6 +60,7 @@ export function evaluateLunaLiveFireReadinessGate({
     allowLiveFire,
     heartbeatAllowLiveFire,
     heartbeatAgeMinutes,
+    legacyHeartbeatAgeMinutes,
     readyBlocked,
     duplicateFiredScopeCount,
     commands: ready && !allowLiveFire ? [

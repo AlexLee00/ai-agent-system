@@ -86,6 +86,14 @@ function snapshotFromBar(symbol, timeframe, bar = {}, meta = {}) {
   };
 }
 
+export function isTradingViewPayloadForRequest(payload = {}, symbol = 'BINANCE:BTCUSDT', timeframe = '60') {
+  const expectedSymbol = normalizeSymbol(symbol);
+  const expectedTimeframe = normalizeTradingViewTimeframe(timeframe);
+  const actualSymbol = normalizeSymbol(payload.symbol || payload.bar?.symbol || '');
+  const actualTimeframe = normalizeTradingViewTimeframe(payload.timeframe || payload.bar?.timeframe || '');
+  return actualSymbol === expectedSymbol && actualTimeframe === expectedTimeframe;
+}
+
 async function latestFromHttp(args = {}) {
   const symbol = normalizeSymbol(args.symbol || 'BINANCE:BTCUSDT');
   const timeframe = normalizeTradingViewTimeframe(args.timeframe || '60');
@@ -99,6 +107,7 @@ async function latestFromHttp(args = {}) {
   const body = await response.json();
   const row = body?.bars?.[0];
   if (!row?.bar) throw new Error('tradingview_latest_empty');
+  if (!isTradingViewPayloadForRequest(row, symbol, timeframe)) throw new Error('tradingview_latest_symbol_mismatch');
   const snapshot = snapshotFromBar(symbol, timeframe, row.bar, row);
   if (requireReal && !isTradingViewRealtimeSnapshot(snapshot)) throw new Error('tradingview_realtime_required');
   return snapshot;
@@ -139,6 +148,7 @@ async function wsSnapshot(args = {}) {
       try {
         const payload = JSON.parse(messageText(event));
         if (payload.ok || payload.type === 'connected') return;
+        if (!isTradingViewPayloadForRequest(payload, symbol, timeframe)) return;
         const snapshot = snapshotFromBar(symbol, timeframe, payload.bar || payload);
         if (snapshot.ok) {
           entry.status = 'ready';

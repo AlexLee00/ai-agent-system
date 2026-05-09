@@ -27,8 +27,9 @@ export async function runSmoke() {
   assert.equal(batch.blocked, 1);
 
   const weakSymbol = preFilterSignal({ symbol: 'OPN/USDT', exchange: 'binance', action: 'BUY', confidence: 0.9 });
-  assert.equal(weakSymbol.ok, false);
-  assert.ok(weakSymbol.blockers.includes('trade_data_weak_symbol'));
+  assert.equal(weakSymbol.ok, true);
+  assert.equal(weakSymbol.decision, 'watch');
+  assert.ok(weakSymbol.warnings.includes('trade_data_weak_symbol_development_stage'));
 
   const defensiveDomestic = preFilterSignal({
     symbol: '005930',

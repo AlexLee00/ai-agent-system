@@ -29,6 +29,18 @@ function argValue(name, fallback = null) {
   return found ? found.slice(prefix.length) : fallback;
 }
 
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function isTelemetryOnlyPreflightBlock(preflight = {}) {
+  const blockers = preflight.blockers || [];
+  if (!blockers.length) return false;
+  return blockers.every((item) =>
+    String(item).startsWith('post_live_fire_attention:')
+    || String(item).startsWith('live_fire_readiness_blocked:'));
+}
+
 function summarizeBlockers({
   preflight,
   ackPreflight,
@@ -94,13 +106,29 @@ export async function buildLunaLiveFireFinalGate({
   liveLookup = false,
   withPositionParity = true,
 } = {}) {
-  const [preflight, ackPreflight, manualPlaybook, killSwitch, worker] = await Promise.all([
+  let [preflight, ackPreflight, manualPlaybook, killSwitch, worker] = await Promise.all([
     buildLunaLiveFireCutoverPreflight({ exchange, hours, withPositionParity }),
     buildLunaReconcileAckPreflight({ exchange, hours, liveLookup }),
     buildLunaManualReconcilePlaybook({ exchange, hours }),
     buildLunaKillSwitchConsistency(),
     buildLunaEntryTriggerWorkerReadiness({ exchange, hours }),
   ]);
+
+  if (!preflight.ok && isTelemetryOnlyPreflightBlock(preflight)) {
+    const firstBlockers = preflight.blockers || [];
+    await sleep(750);
+    const retry = await buildLunaLiveFireCutoverPreflight({ exchange, hours, withPositionParity });
+    preflight = {
+      ...retry,
+      stabilizationRetry: {
+        attempted: true,
+        firstStatus: preflight.status,
+        firstBlockers,
+        recovered: retry.ok === true,
+      },
+    };
+  }
+
   const blockers = summarizeBlockers({ preflight, ackPreflight, manualPlaybook, killSwitch, worker });
   const operatingSummary = buildOperatingSummary({ blockers, preflight, ackPreflight, manualPlaybook, killSwitch, worker });
   const delegatedAuthority = buildLunaDelegatedAuthorityDecision({
@@ -210,6 +238,12 @@ export async function publishLunaLiveFireFinalGate(report = {}) {
 }
 
 export async function runLunaLiveFireFinalGateSmoke() {
+  assert.equal(isTelemetryOnlyPreflightBlock({
+    blockers: ['post_live_fire_attention:2', 'live_fire_readiness_blocked:1'],
+  }), true);
+  assert.equal(isTelemetryOnlyPreflightBlock({
+    blockers: ['position_parity_not_clear'],
+  }), false);
   const blockers = summarizeBlockers({
     preflight: { ok: false, blockers: ['reconcile_resolution_required:1'] },
     ackPreflight: { summary: { unsafe: 1, lookupFailed: 0 } },

@@ -30,6 +30,7 @@ export async function buildLunaEntryTriggerOperatingReport({ exchange = 'binance
     buildLunaEntryTriggerWorkerReadiness({ exchange, hours }),
   ]);
   const heartbeatResult = readiness?.heartbeat?.payload?.result || {};
+  const workerMigrated = readiness?.status === 'entry_trigger_worker_migrated_to_luna_skill';
   const fired = Number(stats?.recentByState?.fired || 0);
   const waiting = Number(stats?.recentByState?.waiting || 0);
   const armed = Number(stats?.recentByState?.armed || 0);
@@ -50,12 +51,14 @@ export async function buildLunaEntryTriggerOperatingReport({ exchange = 'binance
       waiting,
       armed,
       duplicateFiredScopeCount,
-      heartbeatAgeMinutes: readiness?.heartbeat?.ageMinutes ?? null,
-      heartbeatMode: heartbeatResult?.mode || null,
-      heartbeatAllowLiveFire: heartbeatResult?.allowLiveFire === true,
-      heartbeatChecked: Number(heartbeatResult?.checked || 0),
-      heartbeatFired: Number(heartbeatResult?.fired || 0),
-      heartbeatReadyBlocked: Number(heartbeatResult?.readyBlocked || 0),
+      heartbeatSource: workerMigrated ? 'retired_legacy_ignored' : 'worker_heartbeat',
+      heartbeatAgeMinutes: workerMigrated ? null : (readiness?.heartbeat?.ageMinutes ?? null),
+      legacyHeartbeatAgeMinutes: workerMigrated ? (readiness?.heartbeat?.ageMinutes ?? null) : null,
+      heartbeatMode: workerMigrated ? null : (heartbeatResult?.mode || null),
+      heartbeatAllowLiveFire: workerMigrated ? null : heartbeatResult?.allowLiveFire === true,
+      heartbeatChecked: workerMigrated ? 0 : Number(heartbeatResult?.checked || 0),
+      heartbeatFired: workerMigrated ? 0 : Number(heartbeatResult?.fired || 0),
+      heartbeatReadyBlocked: workerMigrated ? 0 : Number(heartbeatResult?.readyBlocked || 0),
     },
     stats,
     readiness: {
@@ -80,7 +83,9 @@ export function renderLunaEntryTriggerOperatingReport(report = {}) {
     '🎯 Luna entry-trigger operating report',
     `status: ${report.status || 'unknown'} / exchange=${report.exchange || 'n/a'} / ${report.hours || 24}h`,
     `active=${summary.activeCount ?? 'n/a'} / armed=${summary.armed ?? 'n/a'} / waiting=${summary.waiting ?? 'n/a'} / fired=${summary.fired ?? 'n/a'} / dup=${summary.duplicateFiredScopeCount ?? 'n/a'}`,
-    `heartbeat: ${summary.heartbeatAgeMinutes ?? 'n/a'}m / mode=${summary.heartbeatMode || 'n/a'} / live=${summary.heartbeatAllowLiveFire === true} / checked=${summary.heartbeatChecked ?? 'n/a'} / readyBlocked=${summary.heartbeatReadyBlocked ?? 'n/a'}`,
+    summary.heartbeatSource === 'retired_legacy_ignored'
+      ? `heartbeat: retired legacy ignored / legacyAge=${summary.legacyHeartbeatAgeMinutes ?? 'n/a'}m`
+      : `heartbeat: ${summary.heartbeatAgeMinutes ?? 'n/a'}m / mode=${summary.heartbeatMode || 'n/a'} / live=${summary.heartbeatAllowLiveFire === true} / checked=${summary.heartbeatChecked ?? 'n/a'} / readyBlocked=${summary.heartbeatReadyBlocked ?? 'n/a'}`,
     `warnings: ${(report.warnings || []).length ? report.warnings.join(' / ') : 'none'}`,
   ].join('\n');
 }

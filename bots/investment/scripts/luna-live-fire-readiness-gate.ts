@@ -106,7 +106,7 @@ export async function runLunaLiveFireReadinessGateSmoke() {
   assert.equal(migrated.ok, true);
   assert.equal(migrated.status, 'live_fire_ready');
   assert.equal(migrated.allowLiveFire, false);
-  assert.equal(migrated.heartbeatAllowLiveFire, false);
+  assert.equal(migrated.heartbeatAllowLiveFire, null);
   assert.equal(migrated.blockers.some((item) => item.includes('worker_heartbeat_stale')), false);
 
   const runtimeEnabled = evaluateLunaLiveFireReadinessGate({
