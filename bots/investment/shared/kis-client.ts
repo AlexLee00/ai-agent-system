@@ -80,6 +80,8 @@ const KIS_RATE_LIMIT_RETRY_MS = 1100;
 const KIS_RATE_LIMIT_MAX_RETRIES = 2;
 const KIS_DEBUG_ENABLED = process.env.KIS_DEBUG === '1';
 export const KIS_DOMESTIC_BUY_SLIPPAGE_BUFFER = 1.01;
+const KIS_MARKETDATA_MCP_SERVER_MODE = String(process.env.LUNA_MCP_SERVER_ENABLED || '').toLowerCase() === 'true'
+  && Boolean(process.env.LUNA_MARKETDATA_MCP_PORT);
 const KIS_MCP_ENABLED_DEFAULT = String(process.env.KIS_USE_MCP ?? 'true').toLowerCase() !== 'false';
 const KIS_MCP_BRIDGE_MODE = process.env.KIS_MCP_BRIDGE === '1';
 const KIS_MCP_TIMEOUT_MS = Math.max(4_000, Number(process.env.KIS_MCP_TIMEOUT_MS || 20_000));
@@ -201,7 +203,16 @@ function parseKisErrorBody(raw = '') {
 }
 
 function shouldUseKisMcp() {
-  return KIS_MCP_ENABLED_DEFAULT && !KIS_MCP_BRIDGE_MODE;
+  return KIS_MCP_ENABLED_DEFAULT && !KIS_MCP_BRIDGE_MODE && !KIS_MARKETDATA_MCP_SERVER_MODE;
+}
+
+export function getKisMcpRoutingDiagnostics() {
+  return {
+    enabledDefault: KIS_MCP_ENABLED_DEFAULT,
+    bridgeMode: KIS_MCP_BRIDGE_MODE,
+    marketdataMcpServerMode: KIS_MARKETDATA_MCP_SERVER_MODE,
+    useBridge: shouldUseKisMcp(),
+  };
 }
 
 function resolveUsePaper(paper) {

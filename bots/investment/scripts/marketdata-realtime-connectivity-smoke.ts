@@ -2,9 +2,37 @@
 // @ts-nocheck
 
 import assert from 'node:assert/strict';
+import { execFileSync } from 'node:child_process';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
 import { classifyKisRealtime, classifyTradingViewRealtime } from './runtime-marketdata-realtime-connectivity.ts';
 import { redactKisWsDiagnosticMessage } from '../mcp/luna-marketdata-mcp/src/tools/kis-ws-domestic.ts';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const investmentRoot = path.resolve(__dirname, '..');
+
+function readMarketdataMcpKisRoutingDiagnostic() {
+  const raw = execFileSync(
+    process.execPath,
+    [
+      '--input-type=module',
+      '-e',
+      [
+        "process.env.LUNA_MCP_SERVER_ENABLED='true';",
+        "process.env.LUNA_MARKETDATA_MCP_PORT='4088';",
+        "process.env.KIS_USE_MCP='true';",
+        "const mod = await import('./shared/kis-client.ts');",
+        'console.log(JSON.stringify(mod.getKisMcpRoutingDiagnostics()));',
+      ].join(' '),
+    ],
+    {
+      cwd: investmentRoot,
+      encoding: 'utf8',
+    },
+  );
+  return JSON.parse(String(raw || '{}'));
+}
 
 export async function runSmoke() {
   const tvReady = classifyTradingViewRealtime({
@@ -103,7 +131,12 @@ export async function runSmoke() {
   assert.equal(kisMissingApproval.ok, false);
   assert.equal(kisMissingApproval.blockers.includes('kis_domestic_approval_key_missing'), true);
 
-  return { ok: true, tvReady, tvFallback, kisPreopen, kisSharedWs, kisMissingApproval, redactionChecked: true };
+  const kisRouting = readMarketdataMcpKisRoutingDiagnostic();
+  assert.equal(kisRouting.marketdataMcpServerMode, true);
+  assert.equal(kisRouting.enabledDefault, true);
+  assert.equal(kisRouting.useBridge, false);
+
+  return { ok: true, tvReady, tvFallback, kisPreopen, kisSharedWs, kisMissingApproval, kisRouting, redactionChecked: true };
 }
 
 async function main() {

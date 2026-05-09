@@ -119,6 +119,13 @@ export function runLunaLaunchdLlmRoutingEnvSmoke() {
       assert.equal(String(env.LUNA_AGENT_LLM_ROUTING_ENABLED || '').toLowerCase(), 'true', `${file} must keep agent LLM routing enabled`);
       assert.equal(String(env.INVESTMENT_LLM_DIRECT_FALLBACK || '').toLowerCase(), 'false', `${file} must keep direct LLM fallback disabled`);
     }
+    if (label === 'ai.luna.marketdata-mcp') {
+      assert.equal(
+        String(env.KIS_USE_MCP || '').toLowerCase(),
+        'false',
+        `${file} must not route KIS requests back through the KIS MCP bridge`,
+      );
+    }
     return { file, label, oauthPrimary, teamSelectorPercent };
   });
 
@@ -158,8 +165,13 @@ export function runLunaLaunchdLlmRoutingEnvSmoke() {
   const sentimentProviders = selectorProviders(sentimentPayload.selectorKey, 'sophia');
   assert.equal(
     sentimentProviders[0],
-    'gemini-cli-oauth',
-    'sentiment routing should use Gemini CLI OAuth primary; Groq/OpenAI remain fallback only',
+    'groq',
+    'sentiment routing should use Groq primary; OpenAI/Gemini remain fallback only',
+  );
+  assert.equal(
+    sentimentProviders.includes('gemini-cli-oauth'),
+    true,
+    'sentiment routing should keep Gemini CLI OAuth as a fallback',
   );
   assert.equal(
     sentimentProviders.includes('gemini-oauth'),

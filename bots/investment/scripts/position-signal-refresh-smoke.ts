@@ -25,6 +25,7 @@ export async function runPositionSignalRefreshSmoke({ json = false, strict = tru
           { id: 'e1', source_type: 'reddit', score: -0.6, source_quality: 0.7, freshness_score: 1.0 },
           { id: 'e2', source_type: 'news', score: -0.2, source_quality: 0.6, freshness_score: 0.9 },
         ]),
+        getPositionStrategyProfile: async () => null,
         insertPositionSignalHistory: async (payload) => {
           writes.push(payload);
           return { id: 'psh_1', created_at: new Date().toISOString() };
@@ -32,12 +33,60 @@ export async function runPositionSignalRefreshSmoke({ json = false, strict = tru
         recordLifecycle: async () => 'evt_1',
       },
     });
+    const carryoverWrites = [];
+    const carryoverOutput = await refreshPositionSignals({
+      exchange: 'kis_overseas',
+      symbol: 'ABEV',
+      tradeMode: 'normal',
+      source: 'smoke',
+      limit: 1,
+      deps: {
+        getOpenPositions: async () => ([
+          {
+            exchange: 'kis_overseas',
+            symbol: 'ABEV',
+            trade_mode: 'normal',
+            amount: 11,
+            avg_price: 4.5,
+            entry_time: new Date().toISOString(),
+          },
+        ]),
+        getRecentExternalEvidence: async () => [],
+        getPositionStrategyProfile: async () => ({
+          strategy_context: {
+            entryEvidenceSummary: {
+              source: 'entry_signal_snapshot',
+              evidenceCount: 3,
+              sourceCount: 3,
+              sources: [
+                { source: 'entry_decision_confidence', count: 1, avgScore: 0.2, avgQuality: 0.72, weight: 0.5 },
+                { source: 'entry_analyst_consensus', count: 1, avgScore: 0.2, avgQuality: 0.72, weight: 0.25 },
+                { source: 'technical_strategy_route', count: 1, avgScore: 0.2, avgQuality: 0.72, weight: 0.65 },
+              ],
+              sentimentScore: 0.2,
+              qualityScore: 0.72,
+              carryoverMaxHours: 24,
+              entryEvidence: true,
+            },
+          },
+        }),
+        insertPositionSignalHistory: async (payload) => {
+          carryoverWrites.push(payload);
+          return { id: 'psh_2', created_at: new Date().toISOString() };
+        },
+        recordLifecycle: async () => 'evt_2',
+      },
+    });
     const row = output.rows?.[0] || null;
+    const carryoverRow = carryoverOutput.rows?.[0] || null;
     const cases = [
       { name: 'refresh_ok', pass: output.ok === true },
       { name: 'one_row', pass: output.count === 1 },
       { name: 'attention_set', pass: typeof row?.attentionType === 'string' && row.attentionType.length > 0 },
       { name: 'history_written', pass: writes.length === 1 },
+      { name: 'carryover_refresh_ok', pass: carryoverOutput.ok === true && carryoverOutput.count === 1 },
+      { name: 'carryover_clears_low_evidence', pass: carryoverRow?.attentionType == null && !carryoverRow?.qualityFlags?.includes('low_evidence') },
+      { name: 'carryover_marked', pass: carryoverRow?.carryover?.reason === 'external_evidence_empty_entry_snapshot_carryover' && Boolean(carryoverWrites[0]?.evidenceSnapshot?.carryover) },
     ];
     const passed = cases.filter((item) => item.pass).length;
     const total = cases.length;

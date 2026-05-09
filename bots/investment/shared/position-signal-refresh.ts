@@ -2,6 +2,7 @@
 
 import * as db from './db.ts';
 import { buildPositionScopeKey, recordPositionLifecycleStageEvent } from './lifecycle-contract.ts';
+import { resolveEntryEvidenceCarryover } from './position-entry-evidence-carryover.ts';
 import { resolvePositionLifecycleFlags } from './position-lifecycle-flags.ts';
 
 function n(value, fallback = 0) {
@@ -80,6 +81,14 @@ function buildRefreshQualityAdjustment(summary = {}, qualityFlags = []) {
   };
 }
 
+function deriveHeldHours(position = {}) {
+  const entryTime = position?.entry_time || position?.created_at || position?.updated_at || null;
+  if (!entryTime) return 0;
+  const ts = new Date(entryTime).getTime();
+  if (!Number.isFinite(ts) || ts <= 0) return 0;
+  return Math.max(0, (Date.now() - ts) / 3600000);
+}
+
 export async function refreshPositionSignals({
   exchange = null,
   symbol = null,
@@ -101,6 +110,7 @@ export async function refreshPositionSignals({
   const runtimeDeps = deps || {
     getOpenPositions: db.getOpenPositions,
     getRecentExternalEvidence: db.getRecentExternalEvidence,
+    getPositionStrategyProfile: db.getPositionStrategyProfile,
     insertPositionSignalHistory: db.insertPositionSignalHistory,
     recordLifecycle: recordPositionLifecycleStageEvent,
   };
@@ -117,7 +127,18 @@ export async function refreshPositionSignals({
       days: flags.phaseD.refreshEvidenceDays,
       limit: 12,
     }).catch(() => []);
-    const summary = summarizeEvidence(evidenceRows);
+    const rawSummary = summarizeEvidence(evidenceRows);
+    const strategyProfile = await runtimeDeps.getPositionStrategyProfile?.(position.symbol, {
+      exchange: position.exchange,
+      tradeMode: position.trade_mode || 'normal',
+    }).catch(() => null);
+    const entryCarryover = resolveEntryEvidenceCarryover({
+      externalEvidenceSummary: rawSummary,
+      strategyProfile,
+      seedSignal: null,
+      heldHours: deriveHeldHours(position),
+    });
+    const summary = entryCarryover.summary || rawSummary;
     const minEvidence = flags.phaseD.minEvidenceCount;
     const qualityFlags = [];
     let attentionType = null;
@@ -125,6 +146,9 @@ export async function refreshPositionSignals({
     if (summary.evidenceCount < minEvidence) {
       qualityFlags.push('low_evidence');
       attentionType = 'signal_refresh_evidence_gap';
+    }
+    if (entryCarryover.usedCarryover) {
+      qualityFlags.push('entry_evidence_carryover');
     }
     if (summary.sentimentScore <= -0.4) {
       qualityFlags.push('bearish_sentiment');
@@ -148,6 +172,13 @@ export async function refreshPositionSignals({
       evidenceSnapshot: {
         summary,
         evidenceIds: evidenceRows.map((item) => item.id),
+        carryover: entryCarryover.usedCarryover ? {
+          reason: entryCarryover.reason,
+          seedSignalSource: entryCarryover.seedSignalSource || null,
+          seedSignalId: entryCarryover.seedSignalId || null,
+          heldHours: entryCarryover.heldHours ?? null,
+          carryoverMaxHours: entryCarryover.carryoverMaxHours ?? null,
+        } : null,
         qualityAdjustment,
       },
       qualityFlags,
@@ -163,6 +194,7 @@ export async function refreshPositionSignals({
       inputSnapshot: {
         source,
         evidenceDays: flags.phaseD.refreshEvidenceDays,
+        usedCarryover: entryCarryover.usedCarryover === true,
       },
       outputSnapshot: {
         signalHistoryId: history?.id || null,
@@ -174,6 +206,7 @@ export async function refreshPositionSignals({
       },
       evidenceSnapshot: {
         evidenceSources: summary.sources,
+        carryoverReason: entryCarryover.usedCarryover ? entryCarryover.reason : null,
       },
       idempotencyKey: `stage5:signal_refresh:${scopeKey}:${history?.id || 'none'}`,
     }).catch(() => null);
@@ -188,6 +221,11 @@ export async function refreshPositionSignals({
       qualityFlags,
       qualityAdjustment,
       summary,
+      carryover: entryCarryover.usedCarryover ? {
+        reason: entryCarryover.reason,
+        heldHours: entryCarryover.heldHours ?? null,
+        carryoverMaxHours: entryCarryover.carryoverMaxHours ?? null,
+      } : null,
     });
   }
 
