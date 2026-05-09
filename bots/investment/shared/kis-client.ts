@@ -83,6 +83,10 @@ export const KIS_DOMESTIC_BUY_SLIPPAGE_BUFFER = 1.01;
 const KIS_MCP_ENABLED_DEFAULT = String(process.env.KIS_USE_MCP ?? 'true').toLowerCase() !== 'false';
 const KIS_MCP_BRIDGE_MODE = process.env.KIS_MCP_BRIDGE === '1';
 const KIS_MCP_TIMEOUT_MS = Math.max(4_000, Number(process.env.KIS_MCP_TIMEOUT_MS || 20_000));
+const KIS_MCP_NON_MUTATING_FAILURE_COOLDOWN_MS = Math.max(
+  0,
+  Number(process.env.KIS_MCP_NON_MUTATING_FAILURE_COOLDOWN_MS || 60_000),
+);
 const KIS_MCP_MUTATING_ACTIONS = new Set([
   'domestic_buy',
   'domestic_sell',
@@ -93,6 +97,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const KIS_MCP_SERVER_PATH = process.env.KIS_MCP_SERVER_PATH || path.resolve(__dirname, '../scripts/kis-market-mcp-server.py');
 const execFileAsync = promisify(execFile);
+const _kisMcpNonMutatingFailureCooldowns = new Map();
 
 const _requestState = {
   paper: {
@@ -233,6 +238,11 @@ async function runKisMcpBridge(action, payload = {}) {
   if (!shouldUseKisMcp()) return null;
   const normalizedAction = String(action || '').trim().toLowerCase();
   const isMutatingAction = KIS_MCP_MUTATING_ACTIONS.has(normalizedAction);
+  const now = Date.now();
+  if (!isMutatingAction && KIS_MCP_NON_MUTATING_FAILURE_COOLDOWN_MS > 0) {
+    const cooldownUntil = _kisMcpNonMutatingFailureCooldowns.get(normalizedAction) || 0;
+    if (cooldownUntil > now) return null;
+  }
   try {
     const { stdout } = await execFileAsync(
       'python3',
@@ -251,6 +261,7 @@ async function runKisMcpBridge(action, payload = {}) {
           PROJECT_ROOT: process.env.PROJECT_ROOT || path.resolve(__dirname, '../../..'),
           REPO_ROOT: process.env.REPO_ROOT || path.resolve(__dirname, '../../..'),
           USE_HUB_SECRETS: process.env.USE_HUB_SECRETS || 'true',
+          KIS_MCP_BRIDGE: '1',
         },
         timeout: KIS_MCP_TIMEOUT_MS,
         maxBuffer: 10 * 1024 * 1024,
@@ -270,6 +281,7 @@ async function runKisMcpBridge(action, payload = {}) {
       };
       throw bridgeActionError;
     }
+    _kisMcpNonMutatingFailureCooldowns.delete(normalizedAction);
     return parsed;
   } catch (error) {
     const parsedError = parseJsonFromMixedStdout(error?.stdout || '');
@@ -293,6 +305,12 @@ async function runKisMcpBridge(action, payload = {}) {
         ...(error?.meta && typeof error.meta === 'object' ? error.meta : {}),
       };
       throw failClosed;
+    }
+    if (KIS_MCP_NON_MUTATING_FAILURE_COOLDOWN_MS > 0) {
+      _kisMcpNonMutatingFailureCooldowns.set(
+        normalizedAction,
+        Date.now() + KIS_MCP_NON_MUTATING_FAILURE_COOLDOWN_MS,
+      );
     }
     console.warn(`  ⚠️ [KIS MCP] bridge 실패 (${action}) — direct fallback: ${error?.message || error}`);
     return null;

@@ -31,6 +31,8 @@ const RESUBSCRIBE_COOLDOWN_MS = parseInt(process.env.TV_RESUBSCRIBE_COOLDOWN_MS 
 const BINANCE_REST_FALLBACK_ENABLED = process.env.TV_BINANCE_REST_FALLBACK_ENABLED !== 'false';
 const MAX_SUBSCRIPTIONS = parseInt(process.env.TV_MAX_SUBSCRIPTIONS || '24', 10);
 const MAX_STALE_STRIKES = parseInt(process.env.TV_MAX_STALE_STRIKES || '3', 10);
+const HTTP_SUBSCRIPTION_TTL_MS = parseInt(process.env.TV_HTTP_SUBSCRIPTION_TTL_MS || String(10 * 60 * 1000), 10);
+const STALE_LOG_COOLDOWN_MS = parseInt(process.env.TV_STALE_LOG_COOLDOWN_MS || String(5 * 60 * 1000), 10);
 const HUB_BASE = process.env.HUB_BASE_URL || 'http://localhost:7788';
 const HUB_TOKEN = process.env.HUB_AUTH_TOKEN || '';
 const RECONNECT_DELAY_BASE_MS = 2000;
@@ -93,6 +95,7 @@ const subscriptions = new Map(); // key: `${symbol}:${timeframe}` → { symbol, 
 const clientSockets = new Set(); // 연결된 클라이언트 WebSocket
 const latestBars = new Map(); // key: `${symbol}:${timeframe}` → { symbol, timeframe, lastBarAt, bar }
 const seriesIds = new Map(); // key → TradingView series id
+let nextClientId = 1;
 
 // TradingView 연결 (실제 환경에서는 TV WebSocket API)
 // NOTE: TradingView WebSocket은 공식 API가 없어 dovudo 패턴의 비공개 프로토콜 사용
@@ -215,6 +218,7 @@ function isTradingViewRealtimeBar(item = {}) {
 function removeSubscription(key, reason = 'removed') {
   const sub = subscriptions.get(key);
   if (!sub) return false;
+  sendTvUnsubscribe(sub.symbol, sub.timeframe);
   subscriptions.delete(key);
   latestBars.delete(key);
   seriesIds.delete(key);
@@ -243,6 +247,27 @@ function pruneSubscriptionsIfNeeded(nextKey = null) {
     if (removeSubscription(key, 'max_subscription_prune')) removed.push(key);
   }
   return removed;
+}
+
+function resolveSubscriptionTtlMs(source, options = {}) {
+  if (Number.isFinite(Number(options.ttlMs)) && Number(options.ttlMs) > 0) return Number(options.ttlMs);
+  if (source === 'HTTP') return Math.max(30_000, Number(HTTP_SUBSCRIPTION_TTL_MS || 0));
+  return 0;
+}
+
+function addSubscriptionOwner(sub, ownerId) {
+  if (!ownerId) return;
+  if (!sub.owners) sub.owners = new Set();
+  sub.owners.add(ownerId);
+}
+
+function removeSubscriptionOwner(key, ownerId, reason = 'client_closed') {
+  if (!ownerId) return false;
+  const sub = subscriptions.get(key);
+  if (!sub?.owners) return false;
+  sub.owners.delete(ownerId);
+  if (sub.protected || sub.owners.size > 0) return false;
+  return removeSubscription(key, reason);
 }
 
 function timeframeDurationMs(timeframe) {
@@ -332,21 +357,36 @@ function getSymbolAlias(symbol, timeframe) {
   return `sym_${sanitizeTvId(subscriptionKey(symbol, timeframe))}`;
 }
 
-function addSubscription(symbol, timeframe, source = 'api') {
+function addSubscription(symbol, timeframe, source = 'api', options = {}) {
   const key = subscriptionKey(symbol, timeframe);
+  const now = Date.now();
+  const ttlMs = resolveSubscriptionTtlMs(source, options);
   if (!subscriptions.has(key)) {
     pruneSubscriptionsIfNeeded(key);
-    subscriptions.set(key, {
+    const sub = {
       symbol,
       timeframe,
-      subscribedAt: Date.now(),
+      subscribedAt: now,
+      lastRequestedAt: now,
       lastBarAt: null,
       lastResubscribeAt: 0,
+      lastStaleLogAt: 0,
       staleStrikes: 0,
       protected: source === 'default' || DEFAULT_SUBSCRIPTION_KEYS.has(key),
-    });
+      source,
+      expiresAt: ttlMs > 0 ? now + ttlMs : null,
+      owners: new Set(),
+    };
+    addSubscriptionOwner(sub, options.ownerId);
+    subscriptions.set(key, sub);
     sendTvSubscribe(symbol, timeframe);
     console.log(`[TV-WS] ${source} 구독 추가: ${key}`);
+  } else {
+    const sub = subscriptions.get(key);
+    sub.lastRequestedAt = now;
+    sub.source = sub.source || source;
+    if (ttlMs > 0 && !sub.protected) sub.expiresAt = Math.max(Number(sub.expiresAt || 0), now + ttlMs);
+    addSubscriptionOwner(sub, options.ownerId);
   }
   return key;
 }
@@ -512,6 +552,12 @@ function sendTvSubscribe(symbol, timeframe) {
   sendTvMessage({ m: 'create_series', p: [chartSessionId, seriesId, 's1', symbolAlias, timeframe, 300, ''] });
 }
 
+function sendTvUnsubscribe(symbol, timeframe) {
+  if (!tvWs || tvWs.readyState !== WebSocket.OPEN) return;
+  const seriesId = getSeriesId(symbol, timeframe);
+  sendTvMessage({ m: 'remove_series', p: [chartSessionId, seriesId] });
+}
+
 function scheduleReconnect() {
   if (reconnectTimer) return;
   if (reconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
@@ -532,12 +578,20 @@ function startStaleChecker() {
   staleCheckTimer = setInterval(() => {
     const now = Date.now();
     for (const [key, sub] of subscriptions.entries()) {
+      if (!sub.protected && sub.expiresAt && now > sub.expiresAt && (!sub.owners || sub.owners.size === 0)) {
+        removeSubscription(key, 'subscription_ttl_expired');
+        recoveryAttemptsCounter.inc({ type: 'evict_expired' });
+        continue;
+      }
       const lastSeenAt = sub.lastBarAt || sub.subscribedAt || 0;
       if (lastSeenAt && now - lastSeenAt > staleThresholdFor(sub)) {
         if (sub.lastResubscribeAt && now - sub.lastResubscribeAt < RESUBSCRIBE_COOLDOWN_MS) {
           continue;
         }
-        console.warn(`[TV-WS] Stale 구독 감지: ${key}`);
+        if (!sub.lastStaleLogAt || now - sub.lastStaleLogAt > STALE_LOG_COOLDOWN_MS) {
+          console.warn(`[TV-WS] Stale 구독 감지: ${key}`);
+          sub.lastStaleLogAt = now;
+        }
         staleSubscriptionsGauge.set({ symbol: sub.symbol, timeframe: sub.timeframe }, 1);
         // 개별 재구독 시도
         sub.lastResubscribeAt = now;
@@ -574,6 +628,7 @@ function healthPayload() {
     fallbackBars: fallbackBars.length,
     staleSubscriptions: staleRows.length,
     maxSubscriptions: Math.max(DEFAULT_SUBSCRIPTION_KEYS.size || 1, Number(MAX_SUBSCRIPTIONS || 24)),
+    expiringSubscriptions: [...subscriptions.values()].filter((sub) => sub.expiresAt && !sub.protected).length,
     clients: clientSockets.size,
   };
 }
@@ -614,19 +669,23 @@ const wss = new WebSocketServer({ port: TV_WS_PORT });
 wss.on('connection', (ws, req) => {
   console.log(`[TV-WS] 클라이언트 연결: ${req.socket.remoteAddress}`);
   clientSockets.add(ws);
+  const ownerId = `client-${nextClientId++}`;
+  const ownedKeys = new Set();
 
   ws.on('message', (raw) => {
     try {
       const msg = JSON.parse(raw.toString());
       if (msg.action === 'subscribe' && msg.symbol && msg.timeframe) {
-        const key = addSubscription(msg.symbol, msg.timeframe, 'client');
+        const key = addSubscription(msg.symbol, msg.timeframe, 'client', { ownerId });
+        ownedKeys.add(key);
         ws.send(JSON.stringify({ ok: true, action: 'subscribed', key }));
       } else if (msg.action === 'unsubscribe' && msg.symbol && msg.timeframe) {
         const key = `${msg.symbol}:${msg.timeframe}`;
-        subscriptions.delete(key);
-        latestBars.delete(key);
-        seriesIds.delete(key);
-        staleSubscriptionsGauge.remove({ symbol: msg.symbol, timeframe: msg.timeframe });
+        ownedKeys.delete(key);
+        if (!removeSubscriptionOwner(key, ownerId, 'client_unsubscribe')) {
+          const sub = subscriptions.get(key);
+          if (sub && !sub.protected && (!sub.owners || sub.owners.size === 0)) removeSubscription(key, 'client_unsubscribe');
+        }
         ws.send(JSON.stringify({ ok: true, action: 'unsubscribed', key }));
       } else if (msg.action === 'list') {
         ws.send(JSON.stringify({ ok: true, subscriptions: [...subscriptions.keys()] }));
@@ -636,8 +695,15 @@ wss.on('connection', (ws, req) => {
     }
   });
 
-  ws.on('close', () => clientSockets.delete(ws));
-  ws.on('error', () => clientSockets.delete(ws));
+  const cleanupClient = () => {
+    clientSockets.delete(ws);
+    for (const key of ownedKeys) {
+      removeSubscriptionOwner(key, ownerId, 'client_closed');
+    }
+    ownedKeys.clear();
+  };
+  ws.on('close', cleanupClient);
+  ws.on('error', cleanupClient);
 
   // 환영 메시지 + 현재 구독 목록
   ws.send(JSON.stringify({ type: 'connected', subscriptions: [...subscriptions.keys()] }));
@@ -660,7 +726,8 @@ const metricsServer = http.createServer(async (req, res) => {
       res.end(JSON.stringify({ ok: false, error: 'symbol,timeframe required' }));
       return;
     }
-    const key = addSubscription(symbol, timeframe, 'HTTP');
+    const ttlMs = Number(url.searchParams.get('ttlMs') || 0) || undefined;
+    const key = addSubscription(symbol, timeframe, 'HTTP', { ttlMs });
     res.setHeader('Content-Type', 'application/json');
     res.end(JSON.stringify({ ok: true, key, subscriptions: subscriptions.size }));
   } else if (url.pathname === '/unsubscribe') {
@@ -672,10 +739,7 @@ const metricsServer = http.createServer(async (req, res) => {
       return;
     }
     const key = `${symbol}:${timeframe}`;
-    subscriptions.delete(key);
-    latestBars.delete(key);
-    seriesIds.delete(key);
-    staleSubscriptionsGauge.remove({ symbol, timeframe });
+    removeSubscription(key, 'http_unsubscribe');
     res.setHeader('Content-Type', 'application/json');
     res.end(JSON.stringify({ ok: true, key, subscriptions: subscriptions.size }));
   } else if (url.pathname === '/latest') {
