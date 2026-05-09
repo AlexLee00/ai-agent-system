@@ -8,6 +8,7 @@ import { investmentOpsRuntimeFile } from '../shared/runtime-ops-path.ts';
 import { runMarketCollectPipeline } from '../shared/pipeline-market-runner.ts';
 import { finishPipelineRun } from '../shared/pipeline-db.ts';
 import { buildLunaDecisionFilterReport } from './runtime-luna-decision-filter-report.ts';
+import { buildDailyTechnicalCoverage } from './runtime-luna-discovery-funnel-report.ts';
 import { buildStockIntradayLlmPolicyMeta } from '../shared/stock-intraday-llm-policy.ts';
 
 const CONFIRM = 'luna-active-candidate-analysis-refresh';
@@ -18,11 +19,21 @@ const DEFAULT_REFRESH_MAX_SYMBOLS_BY_MARKET = Object.freeze({
   domestic: 4,
   overseas: 4,
 });
+const DEFAULT_TARGETED_ENRICHMENT_MAX_SYMBOLS_BY_MARKET = Object.freeze({
+  crypto: 2,
+  domestic: 1,
+  overseas: 1,
+});
 const DEFAULT_TARGETED_ENRICHMENT_MAX_SYMBOLS = 1;
 const DEFAULT_TARGETED_ENRICHMENT_COOLDOWN_MINUTES = 120;
 const DEFAULT_TARGETED_ENRICHMENT_MIN_CONFIDENCE = 0.58;
+const DEFAULT_TARGETED_ENRICHMENT_CANDIDATE_SCORE = 0.55;
+const DEFAULT_TARGETED_ENRICHMENT_CANDIDATE_RANK = 10;
 const DEFAULT_TARGETED_ENRICHMENT_COOLDOWN_BYPASS_MINUTES = 10;
 const DEFAULT_TARGETED_ENRICHMENT_COOLDOWN_BYPASS_MAX_SYMBOLS = 0;
+const DEFAULT_TARGETED_ENRICHMENT_GLOBAL_COOLDOWN_ENABLED = false;
+const DEFAULT_CRYPTO_TARGETED_ENRICHMENT_REQUIRE_TECHNICAL_PRESIGNAL = true;
+const DEFAULT_CRYPTO_TARGETED_ENRICHMENT_DAILY_TECHNICAL_ENABLED = true;
 const GLOBAL_TARGETED_ENRICHMENT_SYMBOL = '__global__';
 
 function hasArg(name, argv = process.argv.slice(2)) {
@@ -75,6 +86,10 @@ function defaultRefreshMaxSymbols(market = 'crypto') {
   return DEFAULT_REFRESH_MAX_SYMBOLS_BY_MARKET[market] || 2;
 }
 
+function defaultTargetedEnrichmentMaxSymbols(market = 'crypto') {
+  return DEFAULT_TARGETED_ENRICHMENT_MAX_SYMBOLS_BY_MARKET[normalizeMarket(market)] || DEFAULT_TARGETED_ENRICHMENT_MAX_SYMBOLS;
+}
+
 function positiveIntOrNull(value) {
   if (value == null || value === '') return null;
   const parsed = Number(value);
@@ -98,6 +113,35 @@ function hasTechnicalBuy(item = {}) {
     || String(item?.fused?.recommendation || '').toUpperCase() === 'LONG';
 }
 
+function normalizeSymbol(symbol = '') {
+  const raw = String(symbol || '').trim().toUpperCase();
+  if (!raw) return raw;
+  if (!raw.includes('/') && raw.endsWith('USDT')) return `${raw.slice(0, -4)}/USDT`;
+  return raw;
+}
+
+function dailyTechnicalRow(item = {}) {
+  const direct = item?.dailyTechnical || item?.dailyTechnicalCoverage || item?.entryChartDailyTechnical || null;
+  if (direct && typeof direct === 'object' && !Array.isArray(direct)) return direct;
+  const rows = item?.dailyTechnicalRows || item?.analysisCoverage?.dailyTechnicalCoverage?.rows || [];
+  const symbol = normalizeSymbol(item?.symbol);
+  return (rows || []).find((row) => normalizeSymbol(row?.symbol) === symbol) || null;
+}
+
+function hasDailyBullishTechnicalPresignal(item = {}) {
+  const row = dailyTechnicalRow(item);
+  if (!row) return false;
+  const reason = String(row.reason || '').toLowerCase();
+  return row.ok === true || reason.includes('daily_trend_bullish');
+}
+
+function targetedTechnicalPresignal(item = {}) {
+  if (hasTechnicalBuy(item)) return 'analyst_technical_buy';
+  if (hasDailyBullishTechnicalPresignal(item)) return 'daily_technical_bullish';
+  if (isProbeCriticalCandidate(item)) return 'relaxed_probe_candidate';
+  return null;
+}
+
 function isProbeCriticalCandidate(item = {}) {
   if (item?.actionability === 'relaxed_probe_candidate') return true;
   if (item?.relaxation?.ok === true) return true;
@@ -117,10 +161,64 @@ function candidateConfidence(item = {}) {
     item?.fused?.averageConfidence,
     item?.fused?.confidence,
     item?.relaxation?.confidence,
+    item?.activeCandidate?.score,
+    item?.activeCandidate?.confidence,
     ...analystConfidences,
   ]);
   if (values.length === 0) return 0;
   return Math.max(...values);
+}
+
+function isHighPriorityActiveCandidate(item = {}) {
+  const activeCandidate = item?.activeCandidate || null;
+  if (!activeCandidate) return false;
+  const rank = Number(activeCandidate.rank || 999999);
+  const score = Number(activeCandidate.score ?? activeCandidate.confidence ?? 0);
+  return rank >= 1
+    && rank <= DEFAULT_TARGETED_ENRICHMENT_CANDIDATE_RANK
+    && score >= DEFAULT_TARGETED_ENRICHMENT_CANDIDATE_SCORE;
+}
+
+function shouldTargetCandidateForEnrichment(item = {}, { exchange = null, env = process.env } = {}) {
+  const reasons = new Set(Array.isArray(item.reasons) ? item.reasons : []);
+  if (reasons.has('conflict_detected') || reasons.has('news_only_buy')) return false;
+  if (targetedTechnicalPresignal(item)) return true;
+  const requireTechnicalPresignal = String(exchange || '').trim() === 'binance'
+    ? boolEnv(
+      'LUNA_CRYPTO_TARGETED_ENRICHMENT_REQUIRE_TECHNICAL_PRESIGNAL',
+      DEFAULT_CRYPTO_TARGETED_ENRICHMENT_REQUIRE_TECHNICAL_PRESIGNAL,
+      env,
+    )
+    : false;
+  if (requireTechnicalPresignal) return false;
+  if (!isHighPriorityActiveCandidate(item)) return false;
+  return missingEnrichmentNodeIds(item).length > 0;
+}
+
+function buildDailyTechnicalBySymbol(coverage = null) {
+  const bySymbol = new Map();
+  for (const row of coverage?.rows || []) {
+    const symbol = normalizeSymbol(row?.symbol);
+    if (symbol && !bySymbol.has(symbol)) bySymbol.set(symbol, row);
+  }
+  return bySymbol;
+}
+
+function attachDailyTechnicalCoverage(report = {}, coverage = null) {
+  if (!coverage || !Array.isArray(report?.top)) return report;
+  const bySymbol = buildDailyTechnicalBySymbol(coverage);
+  if (bySymbol.size === 0) return {
+    ...report,
+    dailyTechnicalCoverage: coverage,
+  };
+  return {
+    ...report,
+    dailyTechnicalCoverage: coverage,
+    top: report.top.map((item) => {
+      const row = bySymbol.get(normalizeSymbol(item?.symbol));
+      return row ? { ...item, dailyTechnical: row } : item;
+    }),
+  };
 }
 
 function buildTargetedEnrichmentPlan({
@@ -132,8 +230,10 @@ function buildTargetedEnrichmentPlan({
   minConfidence = DEFAULT_TARGETED_ENRICHMENT_MIN_CONFIDENCE,
   cooldownBypassMinMinutes = DEFAULT_TARGETED_ENRICHMENT_COOLDOWN_BYPASS_MINUTES,
   cooldownBypassMaxSymbols = DEFAULT_TARGETED_ENRICHMENT_COOLDOWN_BYPASS_MAX_SYMBOLS,
+  globalCooldownEnabled = DEFAULT_TARGETED_ENRICHMENT_GLOBAL_COOLDOWN_ENABLED,
   exchange = null,
   excludeSymbols = [],
+  env = process.env,
 } = {}) {
   const attempts = state?.symbols || {};
   const safeCooldownMinutes = Math.max(1, Number(cooldownMinutes || DEFAULT_TARGETED_ENRICHMENT_COOLDOWN_MINUTES));
@@ -166,7 +266,7 @@ function buildTargetedEnrichmentPlan({
     const symbol = String(item?.symbol || '').trim().toUpperCase();
     if (!symbol || excluded.has(symbol)) continue;
     if (item.actionability === 'likely_actionable') continue;
-    if (!hasTechnicalBuy(item)) continue;
+    if (!shouldTargetCandidateForEnrichment(item, { exchange, env })) continue;
     const confidence = candidateConfidence(item);
     if (!isProbeCriticalCandidate(item) && confidence < safeMinConfidence) {
       skippedQuality.push({
@@ -181,7 +281,7 @@ function buildTargetedEnrichmentPlan({
     if (reasons.has('conflict_detected') || reasons.has('news_only_buy')) continue;
     const missingNodes = missingEnrichmentNodeIds(item);
     if (missingNodes.length === 0) continue;
-    if (globalCooldown) {
+    if (globalCooldown && globalCooldownEnabled === true) {
       skippedCooldown.push({
         symbol,
         lastAttemptAt: globalCooldown.lastAttemptAt,
@@ -234,6 +334,7 @@ function buildTargetedEnrichmentPlan({
       confidence,
       fused: item.fused || null,
       recommendation: item.recommendation || null,
+      technicalPresignal: targetedTechnicalPresignal(item),
     });
     for (const nodeId of missingNodes) nodeIds.add(nodeId);
     if (selected.length >= Math.max(0, Number(maxSymbols || 0))) break;
@@ -255,6 +356,14 @@ function buildTargetedEnrichmentPlan({
     skippedCooldown,
     skippedQuality,
     globalCooldown,
+    globalCooldownEnabled: globalCooldownEnabled === true,
+    requireTechnicalPresignal: String(exchange || '').trim() === 'binance'
+      ? boolEnv(
+        'LUNA_CRYPTO_TARGETED_ENRICHMENT_REQUIRE_TECHNICAL_PRESIGNAL',
+        DEFAULT_CRYPTO_TARGETED_ENRICHMENT_REQUIRE_TECHNICAL_PRESIGNAL,
+        env,
+      )
+      : false,
     cooldownBypassed,
     cooldownBypassedSymbols: selected.filter((item) => item.cooldownBypassed).map((item) => item.symbol),
     maxSymbols: Math.max(0, Number(maxSymbols || 0)),
@@ -276,7 +385,9 @@ export function buildActiveCandidateAnalysisRefreshPlan({
   minTargetedConfidence = DEFAULT_TARGETED_ENRICHMENT_MIN_CONFIDENCE,
   cooldownBypassMinMinutes = DEFAULT_TARGETED_ENRICHMENT_COOLDOWN_BYPASS_MINUTES,
   cooldownBypassMaxSymbols = DEFAULT_TARGETED_ENRICHMENT_COOLDOWN_BYPASS_MAX_SYMBOLS,
+  globalCooldownEnabled = DEFAULT_TARGETED_ENRICHMENT_GLOBAL_COOLDOWN_ENABLED,
   exchange = null,
+  env = process.env,
 } = {}) {
   const missing = [...new Set((report?.missingActiveCandidateSymbols || []).map((symbol) => String(symbol || '').trim().toUpperCase()).filter(Boolean))];
   const cooldownMs = Math.max(1, Number(cooldownMinutes || 45)) * 60 * 1000;
@@ -309,8 +420,10 @@ export function buildActiveCandidateAnalysisRefreshPlan({
     minConfidence: minTargetedConfidence,
     cooldownBypassMinMinutes,
     cooldownBypassMaxSymbols,
+    globalCooldownEnabled,
     exchange,
     excludeSymbols: selected,
+    env,
   });
   const hasWork = selected.length > 0 || targetedEnrichment.selected.length > 0;
 
@@ -372,17 +485,20 @@ function updateAttemptState(state = {}, symbols = [], result = {}, now = new Dat
 export async function runActiveCandidateAnalysisRefresh({
   market = 'crypto',
   exchange = null,
+  env = process.env,
   hours = Number(process.env.LUNA_ACTIVE_CANDIDATE_REFRESH_HOURS || DEFAULT_DECISION_FILTER_HOURS),
   limit = 20,
   maxSymbols = positiveIntOrNull(process.env.LUNA_ACTIVE_CANDIDATE_REFRESH_MAX_SYMBOLS),
-  maxEnrichmentSymbols = Number(process.env.LUNA_ACTIVE_CANDIDATE_TARGETED_ENRICHMENT_MAX_SYMBOLS || DEFAULT_TARGETED_ENRICHMENT_MAX_SYMBOLS),
+  maxEnrichmentSymbols = Number(process.env.LUNA_ACTIVE_CANDIDATE_TARGETED_ENRICHMENT_MAX_SYMBOLS || defaultTargetedEnrichmentMaxSymbols(market)),
   cooldownMinutes = Number(process.env.LUNA_ACTIVE_CANDIDATE_REFRESH_COOLDOWN_MINUTES || 45),
   targetedCooldownMinutes = Number(process.env.LUNA_ACTIVE_CANDIDATE_TARGETED_ENRICHMENT_COOLDOWN_MINUTES || DEFAULT_TARGETED_ENRICHMENT_COOLDOWN_MINUTES),
   minTargetedConfidence = Number(process.env.LUNA_ACTIVE_CANDIDATE_TARGETED_ENRICHMENT_MIN_CONFIDENCE || DEFAULT_TARGETED_ENRICHMENT_MIN_CONFIDENCE),
   cooldownBypassMinMinutes = Number(process.env.LUNA_ACTIVE_CANDIDATE_TARGETED_ENRICHMENT_COOLDOWN_BYPASS_MINUTES || DEFAULT_TARGETED_ENRICHMENT_COOLDOWN_BYPASS_MINUTES),
   cooldownBypassMaxSymbols = Number(process.env.LUNA_ACTIVE_CANDIDATE_TARGETED_ENRICHMENT_COOLDOWN_BYPASS_MAX_SYMBOLS || DEFAULT_TARGETED_ENRICHMENT_COOLDOWN_BYPASS_MAX_SYMBOLS),
+  globalCooldownEnabled = boolEnv('LUNA_ACTIVE_CANDIDATE_TARGETED_ENRICHMENT_GLOBAL_COOLDOWN_ENABLED', DEFAULT_TARGETED_ENRICHMENT_GLOBAL_COOLDOWN_ENABLED),
   enabled = boolEnv('LUNA_ACTIVE_CANDIDATE_REFRESH_ENABLED', true),
   targetedEnrichmentEnabled = boolEnv('LUNA_ACTIVE_CANDIDATE_TARGETED_ENRICHMENT_ENABLED', true),
+  dailyTechnicalTargetingEnabled = boolEnv('LUNA_ACTIVE_CANDIDATE_TARGETED_DAILY_TECHNICAL_ENABLED', DEFAULT_CRYPTO_TARGETED_ENRICHMENT_DAILY_TECHNICAL_ENABLED, env),
   apply = false,
   confirm = null,
   statePath = DEFAULT_STATE_PATH,
@@ -413,13 +529,37 @@ export async function runActiveCandidateAnalysisRefresh({
   }
 
   const state = readJsonSafe(statePath, { symbols: {} });
-  const report = await reportBuilder({
+  let report = await reportBuilder({
     market: normalizedMarket,
     exchange: resolvedExchange,
     activeCandidates: true,
     hours,
     limit,
   });
+  let targetedDailyTechnicalCoverage = null;
+  if (
+    targetedEnrichmentEnabled
+    && dailyTechnicalTargetingEnabled
+    && resolvedExchange === 'binance'
+    && Array.isArray(report?.activeCandidateSymbols)
+    && report.activeCandidateSymbols.length > 0
+  ) {
+    targetedDailyTechnicalCoverage = await buildDailyTechnicalCoverage({
+      market: normalizedMarket,
+      exchange: resolvedExchange,
+      symbols: report.activeCandidateSymbols,
+      marketOpen: true,
+    }).catch((error) => ({
+      enabled: true,
+      sourcePolicy: 'tradingview',
+      checkedCount: 0,
+      availableCount: 0,
+      bullishCount: 0,
+      rows: [],
+      error: error?.message || String(error),
+    }));
+    report = attachDailyTechnicalCoverage(report, targetedDailyTechnicalCoverage);
+  }
   const plan = buildActiveCandidateAnalysisRefreshPlan({
     report,
     state,
@@ -431,7 +571,9 @@ export async function runActiveCandidateAnalysisRefresh({
     minTargetedConfidence,
     cooldownBypassMinMinutes,
     cooldownBypassMaxSymbols,
+    globalCooldownEnabled,
     exchange: resolvedExchange,
+    env,
   });
 
   if (!apply) {
@@ -447,6 +589,14 @@ export async function runActiveCandidateAnalysisRefresh({
       report: {
         status: report.status,
         activeCandidateCoverage: report.activeCandidateCoverage,
+        dailyTechnicalCoverage: report.dailyTechnicalCoverage
+          ? {
+              checkedCount: report.dailyTechnicalCoverage.checkedCount,
+              availableCount: report.dailyTechnicalCoverage.availableCount,
+              bullishCount: report.dailyTechnicalCoverage.bullishCount,
+              error: report.dailyTechnicalCoverage.error || null,
+            }
+          : null,
         bottlenecks: report.bottlenecks,
       },
       applyCommand: `node scripts/runtime-luna-active-candidate-analysis-refresh.ts --apply --confirm=${CONFIRM} --json`,
@@ -614,13 +764,14 @@ export async function runActiveCandidateAnalysisRefresh({
 
 async function main() {
   const argv = process.argv.slice(2);
+  const market = argValue('market', 'crypto', argv);
   const result = await runActiveCandidateAnalysisRefresh({
-    market: argValue('market', 'crypto', argv),
+    market,
     exchange: argValue('exchange', null, argv),
     hours: Math.max(1, Number(argValue('hours', process.env.LUNA_ACTIVE_CANDIDATE_REFRESH_HOURS || DEFAULT_DECISION_FILTER_HOURS, argv)) || DEFAULT_DECISION_FILTER_HOURS),
     limit: Math.max(1, Number(argValue('limit', 20, argv)) || 20),
     maxSymbols: positiveIntOrNull(argValue('max-symbols', process.env.LUNA_ACTIVE_CANDIDATE_REFRESH_MAX_SYMBOLS || null, argv)),
-    maxEnrichmentSymbols: Math.max(0, Number(argValue('max-enrichment-symbols', process.env.LUNA_ACTIVE_CANDIDATE_TARGETED_ENRICHMENT_MAX_SYMBOLS || DEFAULT_TARGETED_ENRICHMENT_MAX_SYMBOLS, argv)) || 0),
+    maxEnrichmentSymbols: Math.max(0, Number(argValue('max-enrichment-symbols', process.env.LUNA_ACTIVE_CANDIDATE_TARGETED_ENRICHMENT_MAX_SYMBOLS || defaultTargetedEnrichmentMaxSymbols(market), argv)) || 0),
     cooldownMinutes: Math.max(1, Number(argValue('cooldown-minutes', process.env.LUNA_ACTIVE_CANDIDATE_REFRESH_COOLDOWN_MINUTES || 45, argv)) || 45),
     targetedCooldownMinutes: Math.max(1, Number(argValue('targeted-cooldown-minutes', process.env.LUNA_ACTIVE_CANDIDATE_TARGETED_ENRICHMENT_COOLDOWN_MINUTES || DEFAULT_TARGETED_ENRICHMENT_COOLDOWN_MINUTES, argv)) || DEFAULT_TARGETED_ENRICHMENT_COOLDOWN_MINUTES),
     minTargetedConfidence: Math.max(0, Math.min(1, Number(argValue('targeted-min-confidence', process.env.LUNA_ACTIVE_CANDIDATE_TARGETED_ENRICHMENT_MIN_CONFIDENCE || DEFAULT_TARGETED_ENRICHMENT_MIN_CONFIDENCE, argv)) || DEFAULT_TARGETED_ENRICHMENT_MIN_CONFIDENCE)),

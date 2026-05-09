@@ -292,16 +292,33 @@ async function queryRecentAnalysis({ exchange, hours, symbols }) {
   ).catch(() => []);
 }
 
-async function queryActiveCandidateSymbols({ market, limit }) {
+async function queryActiveCandidateUniverse({ market, limit }) {
   const universe = await buildDiscoveryUniverse(market, new Date(), {
     refresh: false,
     fallbackSymbols: [],
     preferCandidates: true,
     limit: Math.max(1, Number(limit || 50)),
   }).catch(() => null);
-  return [...new Set((universe?.symbols || [])
+  const candidates = Array.isArray(universe?.candidates) ? universe.candidates : [];
+  const candidateMeta = {};
+  let rank = 0;
+  for (const candidate of candidates) {
+    const symbol = normalizeCandidateSymbol(candidate.symbol, market);
+    if (!symbol || candidateMeta[symbol]) continue;
+    rank += 1;
+    candidateMeta[symbol] = {
+      rank,
+      score: Number(candidate.score || 0),
+      confidence: Number(candidate.confidence ?? candidate.score ?? 0),
+      source: candidate.source || null,
+      reasonCode: candidate.reasonCode || candidate.reason_code || null,
+      discoveredAt: candidate.discoveredAt || candidate.discovered_at || null,
+    };
+  }
+  const symbols = [...new Set((universe?.symbols || [])
     .map((symbol) => normalizeCandidateSymbol(symbol, market))
     .filter(Boolean))];
+  return { symbols, candidateMeta };
 }
 
 export async function buildLunaDecisionFilterReport(options = {}) {
@@ -312,9 +329,10 @@ export async function buildLunaDecisionFilterReport(options = {}) {
   const hours = Math.max(1, Number(options.hours || DEFAULT_HOURS));
   const limit = Math.max(1, Number(options.limit || 12));
   await db.initSchema();
-  const candidateSymbols = options.activeCandidates
-    ? await queryActiveCandidateSymbols({ market, limit })
-    : [];
+  const activeUniverse = options.activeCandidates
+    ? await queryActiveCandidateUniverse({ market, limit })
+    : { symbols: [], candidateMeta: {} };
+  const candidateSymbols = activeUniverse.symbols || [];
   const requestedSymbols = Array.isArray(options.symbols) ? options.symbols : [];
   const rows = await queryRecentAnalysis({
     exchange,
@@ -324,7 +342,9 @@ export async function buildLunaDecisionFilterReport(options = {}) {
   const diagnostics = buildDecisionFilterDiagnostics(rows, {
     exchange,
     minConfidence: options.minConfidence,
-  });
+  }).map((item) => activeUniverse.candidateMeta?.[item.symbol]
+    ? { ...item, activeCandidate: activeUniverse.candidateMeta[item.symbol] }
+    : item);
   const checkedSymbolSet = new Set(diagnostics.map((item) => item.symbol));
   const missingActiveCandidateSymbols = candidateSymbols.filter((symbol) => !checkedSymbolSet.has(symbol));
   const filtered = diagnostics.filter((item) => item.actionability !== 'likely_actionable');

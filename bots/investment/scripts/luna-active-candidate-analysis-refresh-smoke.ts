@@ -54,6 +54,29 @@ function fixtureLowConfidenceCandidate(symbol, reasons = ['sentiment_not_confirm
   };
 }
 
+function fixtureHighPriorityCandidate(symbol, reasons = ['sentiment_not_confirmed', 'onchain_not_confirmed']) {
+  return {
+    symbol,
+    exchange: 'binance',
+    actionability: 'filtered_before_signal',
+    recommendation: 'collect_missing_analysts',
+    reasons,
+    activeCandidate: {
+      rank: 1,
+      score: 0.84,
+      confidence: 0.84,
+      source: 'candidate_universe',
+      reasonCode: 'binance_momentum',
+    },
+    fused: { recommendation: 'HOLD', fusedScore: 0.08, averageConfidence: 0.12, hasConflict: false },
+    analystSummary: {
+      byAnalyst: {
+        ta_mtf: { signal: 'HOLD', confidence: 0.12, reasoning: 'daily bullish, intraday not confirmed yet' },
+      },
+    },
+  };
+}
+
 function fixtureRelaxedProbeCandidate(symbol, reasons = ['fusion_not_long', 'sentiment_not_confirmed', 'onchain_not_confirmed']) {
   return {
     ...fixtureFilteredCandidate(symbol, reasons),
@@ -119,6 +142,94 @@ export async function runLunaActiveCandidateAnalysisRefreshSmoke() {
   assert.equal(qualityFilteredPlan.targetedEnrichment.status, 'targeted_enrichment_quality_filtered');
   assert.equal(qualityFilteredPlan.targetedEnrichment.skippedQuality[0].symbol, 'WEAK/USDT');
 
+  const highPriorityPlan = buildActiveCandidateAnalysisRefreshPlan({
+    report: fixtureReport([], [
+      fixtureHighPriorityCandidate('SAHARA/USDT'),
+    ]),
+    state: {},
+    now,
+    maxSymbols: 1,
+    maxEnrichmentSymbols: 1,
+    cooldownMinutes: 45,
+    exchange: 'binance',
+  });
+  assert.equal(highPriorityPlan.status, 'active_candidate_analysis_refresh_clear');
+  assert.deepEqual(highPriorityPlan.targetedEnrichment.selectedSymbols, []);
+  assert.equal(highPriorityPlan.targetedEnrichment.requireTechnicalPresignal, true);
+
+  const dailyBullishHighPriorityPlan = buildActiveCandidateAnalysisRefreshPlan({
+    report: fixtureReport([], [
+      {
+        ...fixtureHighPriorityCandidate('SAHARA/USDT'),
+        dailyTechnical: {
+          symbol: 'SAHARA/USDT',
+          ok: true,
+          reason: 'daily_trend_bullish',
+          source: 'binance_ohlcv_daily_for_tradingview_guard',
+          providerMode: 'binance_ohlcv',
+          bars: 90,
+        },
+      },
+    ]),
+    state: {},
+    now,
+    maxSymbols: 1,
+    maxEnrichmentSymbols: 1,
+    cooldownMinutes: 45,
+    exchange: 'binance',
+  });
+  assert.equal(dailyBullishHighPriorityPlan.status, 'active_candidate_analysis_refresh_needed');
+  assert.deepEqual(dailyBullishHighPriorityPlan.targetedEnrichment.selectedSymbols, ['SAHARA/USDT']);
+  assert.equal(dailyBullishHighPriorityPlan.targetedEnrichment.selected[0].technicalPresignal, 'daily_technical_bullish');
+
+  const highPriorityOverridePlan = buildActiveCandidateAnalysisRefreshPlan({
+    report: fixtureReport([], [
+      fixtureHighPriorityCandidate('SAHARA/USDT'),
+    ]),
+    state: {},
+    now,
+    maxSymbols: 1,
+    maxEnrichmentSymbols: 1,
+    cooldownMinutes: 45,
+    exchange: 'binance',
+    env: {
+      LUNA_CRYPTO_TARGETED_ENRICHMENT_REQUIRE_TECHNICAL_PRESIGNAL: 'false',
+    },
+  });
+  assert.equal(highPriorityOverridePlan.status, 'active_candidate_analysis_refresh_needed');
+  assert.deepEqual(highPriorityOverridePlan.targetedEnrichment.selectedSymbols, ['SAHARA/USDT']);
+  assert.equal(highPriorityOverridePlan.targetedEnrichment.requireTechnicalPresignal, false);
+
+  const stockHighPriorityPlan = buildActiveCandidateAnalysisRefreshPlan({
+    report: fixtureReport([], [
+      { ...fixtureHighPriorityCandidate('NVDA'), exchange: 'kis_overseas' },
+    ]),
+    state: {},
+    now,
+    maxSymbols: 1,
+    maxEnrichmentSymbols: 1,
+    cooldownMinutes: 45,
+    exchange: 'kis_overseas',
+  });
+  assert.equal(stockHighPriorityPlan.status, 'active_candidate_analysis_refresh_needed');
+  assert.deepEqual(stockHighPriorityPlan.targetedEnrichment.selectedSymbols, ['NVDA']);
+  assert.equal(stockHighPriorityPlan.targetedEnrichment.requireTechnicalPresignal, false);
+
+  const highPriorityTechnicalPlan = buildActiveCandidateAnalysisRefreshPlan({
+    report: fixtureReport([], [
+      fixtureFilteredCandidate('SAHARA/USDT'),
+    ]),
+    state: {},
+    now,
+    maxSymbols: 1,
+    maxEnrichmentSymbols: 1,
+    cooldownMinutes: 45,
+    exchange: 'binance',
+  });
+  assert.equal(highPriorityTechnicalPlan.status, 'active_candidate_analysis_refresh_needed');
+  assert.deepEqual(highPriorityTechnicalPlan.targetedEnrichment.selectedSymbols, ['SAHARA/USDT']);
+  assert.deepEqual(highPriorityTechnicalPlan.targetedEnrichment.nodeIds, ['L03', 'L05']);
+
   const globalCooldownPlan = buildActiveCandidateAnalysisRefreshPlan({
     report: fixtureReport([], [
       fixtureFilteredCandidate('EDEN/USDT'),
@@ -136,10 +247,33 @@ export async function runLunaActiveCandidateAnalysisRefreshSmoke() {
     targetedCooldownMinutes: 120,
     exchange: 'binance',
   });
-  assert.equal(globalCooldownPlan.status, 'active_candidate_analysis_refresh_clear');
-  assert.equal(globalCooldownPlan.targetedEnrichment.status, 'targeted_enrichment_cooldown');
+  assert.equal(globalCooldownPlan.status, 'active_candidate_analysis_refresh_needed');
+  assert.equal(globalCooldownPlan.targetedEnrichment.status, 'targeted_enrichment_needed');
   assert.equal(globalCooldownPlan.targetedEnrichment.globalCooldown.cooldownMinutes, 120);
-  assert.equal(globalCooldownPlan.targetedEnrichment.skippedCooldown[0].scope, 'market_global');
+  assert.equal(globalCooldownPlan.targetedEnrichment.globalCooldownEnabled, false);
+  assert.deepEqual(globalCooldownPlan.targetedEnrichment.selectedSymbols, ['EDEN/USDT', 'BANANAS31/USDT']);
+
+  const globalCooldownBlockedPlan = buildActiveCandidateAnalysisRefreshPlan({
+    report: fixtureReport([], [
+      fixtureFilteredCandidate('EDEN/USDT'),
+      fixtureFilteredCandidate('BANANAS31/USDT'),
+    ]),
+    state: {
+      symbols: {
+        'binance:targeted_enrichment:__global__': { lastAttemptAt: '2026-05-06T23:30:00.000Z' },
+      },
+    },
+    now,
+    maxSymbols: 1,
+    maxEnrichmentSymbols: 2,
+    cooldownMinutes: 45,
+    targetedCooldownMinutes: 120,
+    globalCooldownEnabled: true,
+    exchange: 'binance',
+  });
+  assert.equal(globalCooldownBlockedPlan.status, 'active_candidate_analysis_refresh_clear');
+  assert.equal(globalCooldownBlockedPlan.targetedEnrichment.status, 'targeted_enrichment_cooldown');
+  assert.equal(globalCooldownBlockedPlan.targetedEnrichment.skippedCooldown[0].scope, 'market_global');
 
   const cooldownBypassPlan = buildActiveCandidateAnalysisRefreshPlan({
     report: fixtureReport([], [

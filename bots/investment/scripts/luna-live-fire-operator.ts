@@ -12,6 +12,7 @@ const CONFIRM = 'enable-luna-live-fire';
 const DEFAULT_MAX_TRADE_USDT = 50;
 const DEFAULT_MAX_DAILY_USDT = 200;
 const DEFAULT_MAX_OPEN_POSITIONS = 2;
+const DEFAULT_POSITION_DISPATCH_ENABLED = false;
 
 function hasFlag(name) {
   return process.argv.includes(name);
@@ -39,17 +40,31 @@ function positiveNumber(value, fallback) {
   return Number.isFinite(n) && n > 0 ? n : fallback;
 }
 
-function applyLiveFireEnv({ maxUsdt = DEFAULT_MAX_TRADE_USDT, maxDailyUsdt = DEFAULT_MAX_DAILY_USDT, maxOpen = DEFAULT_MAX_OPEN_POSITIONS } = {}) {
+function buildLiveFireCommand({
+  maxUsdt = DEFAULT_MAX_TRADE_USDT,
+  maxDailyUsdt = DEFAULT_MAX_DAILY_USDT,
+  maxOpen = DEFAULT_MAX_OPEN_POSITIONS,
+  positionDispatchEnabled = DEFAULT_POSITION_DISPATCH_ENABLED,
+} = {}) {
+  return `launchctl setenv LUNA_INTELLIGENT_DISCOVERY_MODE autonomous_l5 && launchctl setenv LUNA_MAX_TRADE_USDT ${maxUsdt} && launchctl setenv LUNA_LIVE_FIRE_MAX_DAILY ${maxDailyUsdt} && launchctl setenv LUNA_LIVE_FIRE_MAX_OPEN ${maxOpen} && launchctl setenv LUNA_POSITION_RUNTIME_AUTONOMOUS_DISPATCH_ENABLED ${positionDispatchEnabled ? 'true' : 'false'} && launchctl setenv LUNA_LIVE_FIRE_ENABLED true`;
+}
+
+function applyLiveFireEnv({
+  maxUsdt = DEFAULT_MAX_TRADE_USDT,
+  maxDailyUsdt = DEFAULT_MAX_DAILY_USDT,
+  maxOpen = DEFAULT_MAX_OPEN_POSITIONS,
+  positionDispatchEnabled = DEFAULT_POSITION_DISPATCH_ENABLED,
+} = {}) {
   const setMode = runCommand('launchctl', ['setenv', 'LUNA_INTELLIGENT_DISCOVERY_MODE', 'autonomous_l5']);
   const setMaxTrade = runCommand('launchctl', ['setenv', 'LUNA_MAX_TRADE_USDT', String(maxUsdt)]);
   const setMaxDaily = runCommand('launchctl', ['setenv', 'LUNA_LIVE_FIRE_MAX_DAILY', String(maxDailyUsdt)]);
   const setMaxOpen = runCommand('launchctl', ['setenv', 'LUNA_LIVE_FIRE_MAX_OPEN', String(maxOpen)]);
-  const disablePositionDispatch = runCommand('launchctl', ['setenv', 'LUNA_POSITION_RUNTIME_AUTONOMOUS_DISPATCH_ENABLED', 'false']);
+  const setPositionDispatch = runCommand('launchctl', ['setenv', 'LUNA_POSITION_RUNTIME_AUTONOMOUS_DISPATCH_ENABLED', positionDispatchEnabled ? 'true' : 'false']);
   const enableLiveFire = runCommand('launchctl', ['setenv', 'LUNA_LIVE_FIRE_ENABLED', 'true']);
   return {
-    ok: setMode.ok && setMaxTrade.ok && setMaxDaily.ok && setMaxOpen.ok && disablePositionDispatch.ok && enableLiveFire.ok,
-    caps: { maxUsdt, maxDailyUsdt, maxOpen },
-    steps: { setMode, setMaxTrade, setMaxDaily, setMaxOpen, disablePositionDispatch, enableLiveFire },
+    ok: setMode.ok && setMaxTrade.ok && setMaxDaily.ok && setMaxOpen.ok && setPositionDispatch.ok && enableLiveFire.ok,
+    caps: { maxUsdt, maxDailyUsdt, maxOpen, positionDispatchEnabled },
+    steps: { setMode, setMaxTrade, setMaxDaily, setMaxOpen, setPositionDispatch, enableLiveFire },
   };
 }
 
@@ -59,11 +74,13 @@ export async function runLunaLiveFireOperator({
   maxUsdt = DEFAULT_MAX_TRADE_USDT,
   maxDailyUsdt = DEFAULT_MAX_DAILY_USDT,
   maxOpen = DEFAULT_MAX_OPEN_POSITIONS,
+  positionDispatchEnabled = DEFAULT_POSITION_DISPATCH_ENABLED,
 } = {}) {
   const caps = {
     maxUsdt: positiveNumber(maxUsdt, DEFAULT_MAX_TRADE_USDT),
     maxDailyUsdt: positiveNumber(maxDailyUsdt, DEFAULT_MAX_DAILY_USDT),
     maxOpen: Math.max(1, Math.round(positiveNumber(maxOpen, DEFAULT_MAX_OPEN_POSITIONS))),
+    positionDispatchEnabled: positionDispatchEnabled === true,
   };
   const readiness = await buildLunaLiveFireReadinessGate();
   const allowed = readiness.ok && readiness.status === 'live_fire_ready';
@@ -72,7 +89,7 @@ export async function runLunaLiveFireOperator({
     readiness,
     caps,
   });
-  const command = `launchctl setenv LUNA_INTELLIGENT_DISCOVERY_MODE autonomous_l5 && launchctl setenv LUNA_MAX_TRADE_USDT ${caps.maxUsdt} && launchctl setenv LUNA_LIVE_FIRE_MAX_DAILY ${caps.maxDailyUsdt} && launchctl setenv LUNA_LIVE_FIRE_MAX_OPEN ${caps.maxOpen} && launchctl setenv LUNA_POSITION_RUNTIME_AUTONOMOUS_DISPATCH_ENABLED false && launchctl setenv LUNA_LIVE_FIRE_ENABLED true`;
+  const command = buildLiveFireCommand(caps);
   const rollbackCommand = 'launchctl unsetenv LUNA_INTELLIGENT_DISCOVERY_MODE && launchctl setenv LUNA_LIVE_FIRE_ENABLED false && launchctl setenv LUNA_POSITION_RUNTIME_AUTONOMOUS_DISPATCH_ENABLED false';
 
   const result = {
@@ -130,6 +147,8 @@ export async function runLunaLiveFireOperatorSmoke() {
     caps: { maxUsdt: DEFAULT_MAX_TRADE_USDT, maxDailyUsdt: DEFAULT_MAX_DAILY_USDT, maxOpen: DEFAULT_MAX_OPEN_POSITIONS },
   });
   assert.equal(delegated.canSelfApprove, true);
+  assert.ok(buildLiveFireCommand().includes('LUNA_POSITION_RUNTIME_AUTONOMOUS_DISPATCH_ENABLED false'));
+  assert.ok(buildLiveFireCommand({ positionDispatchEnabled: true }).includes('LUNA_POSITION_RUNTIME_AUTONOMOUS_DISPATCH_ENABLED true'));
   return {
     ok: true,
     readiness,
@@ -150,9 +169,10 @@ async function main() {
   const maxUsdt = Number(argValue('--max-usdt', DEFAULT_MAX_TRADE_USDT));
   const maxDailyUsdt = Number(argValue('--max-daily-usdt', DEFAULT_MAX_DAILY_USDT));
   const maxOpen = Number(argValue('--max-open', DEFAULT_MAX_OPEN_POSITIONS));
+  const positionDispatchEnabled = hasFlag('--enable-position-dispatch');
   const result = smoke
     ? await runLunaLiveFireOperatorSmoke()
-    : await runLunaLiveFireOperator({ apply, confirm, maxUsdt, maxDailyUsdt, maxOpen });
+    : await runLunaLiveFireOperator({ apply, confirm, maxUsdt, maxDailyUsdt, maxOpen, positionDispatchEnabled });
   if (json) console.log(JSON.stringify(result, null, 2));
   else console.log(`${result.status || 'luna live-fire operator smoke ok'}${apply ? '' : ' (dry-run)'}`);
   if (!smoke && apply && !result.ok) process.exitCode = 1;

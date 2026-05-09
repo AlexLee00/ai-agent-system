@@ -11,6 +11,7 @@ import {
   evaluateTradingViewEntryGuard,
   evaluateTradingViewSnapshot,
   fetchEntryChartSnapshot,
+  fetchTradingViewHttpLatestSnapshot,
   normalizeOfficialSymbol,
   normalizeTradingViewSymbol,
 } from '../shared/tradingview-entry-guard.ts';
@@ -89,6 +90,55 @@ export async function runSmoke() {
     assert.equal(dailySnapshot.stale, false);
     assert.equal(dailySnapshot.providerMode, 'binance_rest_live_fallback');
     assert.ok(directDailyFetchCalls.some((url) => url.includes('timeframes=D')));
+  } finally {
+    globalThis.fetch = originalDailyFetch;
+  }
+
+  const realFallbackCalls = [];
+  globalThis.fetch = async (url) => {
+    const text = String(url);
+    realFallbackCalls.push(text);
+    if (text.includes('/subscribe')) {
+      return { ok: true, async json() { return { ok: true }; } };
+    }
+    if (text.includes('requireReal=true')) {
+      return {
+        ok: true,
+        async json() {
+          return { status: 'ok', bars: [] };
+        },
+      };
+    }
+    return {
+      ok: true,
+      async json() {
+        return {
+          status: 'ok',
+          bars: [{
+            symbol: 'BINANCE:USUALUSDT',
+            timeframe: '60',
+            ageMs: 1000,
+            source: 'tradingview_ws_service_binance_rest_fallback',
+            providerMode: 'binance_rest_live_fallback',
+            fallbackReason: 'tradingview_ws_latest_empty',
+            bar: { open: 0.017, high: 0.018, low: 0.0169, close: 0.0178, volume: 1000 },
+          }],
+        };
+      },
+    };
+  };
+  try {
+    const fallbackSnapshot = await fetchTradingViewHttpLatestSnapshot({
+      symbol: 'USUAL/USDT',
+      exchange: 'binance',
+      timeframe: '1h',
+      env: baseEnv,
+    });
+    assert.equal(fallbackSnapshot.ok, true);
+    assert.equal(fallbackSnapshot.providerMode, 'binance_rest_live_fallback');
+    assert.equal(fallbackSnapshot.realRequiredFallback, true);
+    assert.ok(realFallbackCalls.some((url) => url.includes('requireReal=true')));
+    assert.ok(realFallbackCalls.some((url) => url.includes('/latest') && !url.includes('requireReal=true')));
   } finally {
     globalThis.fetch = originalDailyFetch;
   }

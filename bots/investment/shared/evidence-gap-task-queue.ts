@@ -12,6 +12,9 @@ export const LEGACY_EXTERNAL_EVIDENCE_GAP_QUEUE_FILE = investmentOpsLegacyFile(E
 export const DEFAULT_EXTERNAL_EVIDENCE_GAP_QUEUE_FILE = investmentOpsRuntimeFile(EXTERNAL_EVIDENCE_GAP_QUEUE_FILENAME);
 const INVESTMENT_BOT_PREFIX = '/Users/alexlee/projects/ai-agent-system/bots/investment';
 const OPEN_TASK_MAX_AGE_MS = 3 * 60 * 60 * 1000;
+const TERMINAL_TASK_MAX_AGE_MS = 24 * 60 * 60 * 1000;
+const TERMINAL_TASK_HISTORY_LIMIT = 120;
+const TOTAL_TASK_HISTORY_LIMIT = 240;
 
 function ensureDir(file) {
   const dir = path.dirname(file);
@@ -84,14 +87,38 @@ function pruneOpenTasks(tasks = [], nowMs = Date.now()) {
   });
 }
 
+function taskTimeMs(task = {}) {
+  const raw = task?.updatedAt || task?.createdAt || null;
+  const parsed = raw ? new Date(raw).getTime() : 0;
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function compactTaskHistory(tasks = [], nowMs = Date.now()) {
+  const pruned = pruneOpenTasks(tasks, nowMs);
+  const open = pruned.filter((task) => ['queued', 'retrying', 'running'].includes(String(task?.status || '')));
+  const terminal = pruned
+    .filter((task) => !['queued', 'retrying', 'running'].includes(String(task?.status || '')))
+    .filter((task) => {
+      const ageMs = nowMs - taskTimeMs(task);
+      return !Number.isFinite(ageMs) || ageMs <= TERMINAL_TASK_MAX_AGE_MS;
+    })
+    .sort((a, b) => taskTimeMs(b) - taskTimeMs(a))
+    .slice(0, TERMINAL_TASK_HISTORY_LIMIT);
+
+  return [...open, ...terminal]
+    .sort((a, b) => taskTimeMs(a) - taskTimeMs(b))
+    .slice(-TOTAL_TASK_HISTORY_LIMIT);
+}
+
 function writeQueueRaw(payload = null, file = DEFAULT_EXTERNAL_EVIDENCE_GAP_QUEUE_FILE) {
   ensureDir(file);
+  const tasks = compactTaskHistory(Array.isArray(payload?.tasks) ? payload.tasks : []);
   const normalized = {
     file,
     version: 1,
     updatedAt: new Date().toISOString(),
     states: payload?.states && typeof payload.states === 'object' ? payload.states : {},
-    tasks: Array.isArray(payload?.tasks) ? payload.tasks : [],
+    tasks,
   };
   fs.writeFileSync(file, JSON.stringify(normalized, null, 2), 'utf8');
   return normalized;
@@ -142,22 +169,25 @@ function queueTaskIfNeeded(payload, {
     updatedAt: createdAt,
     command: buildTaskCommand(taskType, { symbol, exchange, tradeMode }),
   };
-  payload.tasks = [...(payload.tasks || []), task].slice(-600);
+  payload.tasks = compactTaskHistory([...(payload.tasks || []), task]);
   return task;
 }
 
 export function readExternalEvidenceGapTaskQueue(file = DEFAULT_EXTERNAL_EVIDENCE_GAP_QUEUE_FILE) {
   const payload = readQueueRaw(file);
-  const tasks = pruneOpenTasks(payload.tasks);
+  const tasks = compactTaskHistory(payload.tasks);
   if (JSON.stringify(tasks) !== JSON.stringify(payload.tasks || [])) {
     writeQueueRaw({ ...payload, tasks }, file);
   }
+  const openTasks = tasks.filter((task) => ['queued', 'retrying', 'running'].includes(String(task?.status || '')));
   return {
     ...payload,
     tasks,
     summary: {
       scopes: Object.keys(payload.states || {}).length,
       tasks: tasks.length,
+      openTasks: openTasks.length,
+      terminalTasks: tasks.length - openTasks.length,
       queued: tasks.filter((task) => task?.status === 'queued').length,
       retrying: tasks.filter((task) => task?.status === 'retrying').length,
       running: tasks.filter((task) => task?.status === 'running').length,

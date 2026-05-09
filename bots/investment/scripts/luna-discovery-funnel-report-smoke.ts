@@ -11,6 +11,7 @@ import { ensureLunaDiscoveryEntryTables } from '../shared/luna-discovery-entry-s
 import {
   buildDailyTechnicalCoverage,
   buildLunaDiscoveryFunnelReport,
+  buildRequiredCoverageSymbols,
   buildRequiredAnalystCoverage,
 } from './runtime-luna-discovery-funnel-report.ts';
 import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
@@ -345,6 +346,40 @@ export async function runLunaDiscoveryFunnelReportSmoke() {
       cryptoCoverage.bottlenecks.includes('onchain_analysis_missing_for_candidates'),
       'crypto missing onchain should be visible in required analyst coverage',
     );
+    const cryptoScopedSymbols = buildRequiredCoverageSymbols({
+      market: 'crypto',
+      analysisSymbols: ['SAHARA/USDT', 'PLUME/USDT'],
+      decisionDiagnostics: [],
+      dailyTechnicalCoverage: {
+        rows: [
+          { symbol: 'SAHARA/USDT', ok: true, reason: 'daily_trend_bullish' },
+          { symbol: 'PLUME/USDT', ok: false, reason: 'daily_trend_not_bullish' },
+        ],
+      },
+    });
+    assert.deepEqual(
+      cryptoScopedSymbols,
+      ['SAHARA/USDT'],
+      'crypto required analyst coverage should scope to entry-targetable candidates',
+    );
+    const cryptoScopedCoverage = buildRequiredAnalystCoverage({
+      market: 'crypto',
+      marketOpen: true,
+      analysisSymbols: ['SAHARA/USDT', 'PLUME/USDT'],
+      requiredSymbols: cryptoScopedSymbols,
+      analysisRows: [
+        { symbol: 'SAHARA/USDT', analyst: 'ta_mtf', count: 1, latest_created_at: new Date().toISOString() },
+        { symbol: 'SAHARA/USDT', analyst: 'sentiment', count: 1, latest_created_at: new Date().toISOString() },
+        { symbol: 'SAHARA/USDT', analyst: 'onchain', count: 1, latest_created_at: new Date().toISOString() },
+        { symbol: 'PLUME/USDT', analyst: 'ta_mtf', count: 1, latest_created_at: new Date().toISOString() },
+      ],
+    });
+    assert.equal(
+      cryptoScopedCoverage.bottlenecks.includes('sentiment_analysis_partial_for_candidates'),
+      false,
+      'non-targetable crypto candidates should not create false sentiment partial bottlenecks',
+    );
+    assert.deepEqual(cryptoScopedCoverage.scope.ignoredSymbols, ['PLUME/USDT']);
     return {
       ok: true,
       smoke: 'luna-discovery-funnel-report',

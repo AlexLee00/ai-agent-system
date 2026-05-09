@@ -68,7 +68,7 @@ export function evaluateLunaLiveFireReadinessGate({
       'launchctl setenv LUNA_MAX_TRADE_USDT 50',
       'launchctl setenv LUNA_LIVE_FIRE_MAX_DAILY 200',
       'launchctl setenv LUNA_LIVE_FIRE_MAX_OPEN 2',
-      'launchctl setenv LUNA_POSITION_RUNTIME_AUTONOMOUS_DISPATCH_ENABLED false',
+      'launchctl setenv LUNA_POSITION_RUNTIME_AUTONOMOUS_DISPATCH_ENABLED true',
       'launchctl setenv LUNA_LIVE_FIRE_ENABLED true',
       'npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run -s check:luna-l5',
       'npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run -s runtime:luna-entry-trigger-worker-readiness',

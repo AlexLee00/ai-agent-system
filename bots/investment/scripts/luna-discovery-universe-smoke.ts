@@ -75,6 +75,7 @@ export async function runLunaDiscoveryUniverseSmoke() {
       refresh: false,
       fallbackSymbols: ['FALLBACK1USDT', 'FALLBACK2USDT'],
       preferCandidates: true,
+      promoteRecentActionable: false,
       limit: 1,
     });
     assert.deepEqual(preferred.symbols, ['SMOKEPREFER/USDT']);

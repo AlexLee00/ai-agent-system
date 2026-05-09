@@ -281,7 +281,9 @@ function timeframeDurationMs(timeframe) {
 }
 
 function staleThresholdFor(sub) {
-  if (!sub.lastBarAt) return Math.max(STALE_THRESHOLD_MS, INITIAL_BAR_TIMEOUT_MS);
+  if (!sub.lastBarAt) {
+    return Math.max(STALE_THRESHOLD_MS, INITIAL_BAR_TIMEOUT_MS, timeframeDurationMs(sub.timeframe) + STALE_GRACE_MS);
+  }
   return Math.max(STALE_THRESHOLD_MS, timeframeDurationMs(sub.timeframe) + STALE_GRACE_MS);
 }
 

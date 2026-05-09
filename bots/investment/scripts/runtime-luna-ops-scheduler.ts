@@ -191,6 +191,21 @@ export function getOpsSchedulerJobs() {
       ]),
     },
     {
+      name: 'relaxed_probe_l13_crypto',
+      category: 'decision_probe',
+      market: 'crypto',
+      cadence: { type: 'interval', seconds: 1800 },
+      ...nodeScript('runtime-luna-relaxed-probe-runner.ts', [
+        '--apply',
+        '--confirm=luna-relaxed-probe-runner',
+        '--market=crypto',
+        '--hours=24',
+        '--limit=20',
+        '--max-symbols=1',
+        '--json',
+      ]),
+    },
+    {
       name: 'near_miss_watchlist_domestic',
       category: 'watchlist',
       market: 'domestic',

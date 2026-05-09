@@ -42,6 +42,7 @@ const ANALYST_PARTIAL_BOTTLENECK_CODES = {
   [ANALYST_TYPES.ONCHAIN]: 'onchain_analysis_partial_for_candidates',
   [ANALYST_TYPES.MARKET_FLOW]: 'market_flow_analysis_partial_for_candidates',
 };
+const DEFAULT_RELAXED_PROBE_RECENT_TRADE_COOLDOWN_HOURS = 6;
 
 function parseArgs(argv = process.argv.slice(2)) {
   return {
@@ -68,8 +69,18 @@ function rowsToStateMap(rows = []) {
   return Object.fromEntries((rows || []).map((row) => [String(row.state || row.trigger_state || row.status || 'unknown'), number(row.count)]));
 }
 
-export function buildRequiredAnalystCoverage({ market, analysisSymbols = [], analysisRows = [], marketOpen = true, dailyTechnicalCoverage = null } = {}) {
+export function buildRequiredAnalystCoverage({
+  market,
+  analysisSymbols = [],
+  requiredSymbols = null,
+  analysisRows = [],
+  marketOpen = true,
+  dailyTechnicalCoverage = null,
+} = {}) {
   const requiredAnalysts = REQUIRED_ANALYSTS[market] || [];
+  const scopedSymbols = Array.isArray(requiredSymbols) && requiredSymbols.length > 0
+    ? [...new Set(requiredSymbols.map((symbol) => normalizeCandidateSymbolForAnalysis(symbol, market)).filter(Boolean))]
+    : analysisSymbols;
   const byAnalyst = {};
   const bySymbol = Object.fromEntries((analysisSymbols || []).map((symbol) => [symbol, {}]));
   const dailyTechnicalSymbols = new Set((dailyTechnicalCoverage?.rows || [])
@@ -104,13 +115,13 @@ export function buildRequiredAnalystCoverage({ market, analysisSymbols = [], ana
   const bottlenecks = [];
   for (const analyst of requiredAnalysts) {
     const covered = new Set(byAnalyst[analyst]?.symbols || []);
-    const missingSymbols = (analysisSymbols || []).filter((symbol) => {
+    const missingSymbols = (scopedSymbols || []).filter((symbol) => {
       if (covered.has(symbol)) return false;
       if (analyst === ANALYST_TYPES.TA_MTF && market !== 'crypto' && dailyTechnicalSymbols.has(symbol)) return false;
       return true;
     });
     missingByAnalyst[analyst] = missingSymbols;
-    if (analysisSymbols.length > 0 && missingSymbols.length === analysisSymbols.length) {
+    if (scopedSymbols.length > 0 && missingSymbols.length === scopedSymbols.length) {
       if (analyst === ANALYST_TYPES.TA_MTF && market !== 'crypto' && !marketOpen) {
         if (Number(dailyTechnicalCoverage?.availableCount || 0) <= 0) {
           bottlenecks.push('technical_analysis_deferred_until_market_open');
@@ -125,12 +136,94 @@ export function buildRequiredAnalystCoverage({ market, analysisSymbols = [], ana
 
   return {
     requiredAnalysts,
+    scope: {
+      source: scopedSymbols.length === analysisSymbols.length ? 'all_candidates' : 'entry_targetable_candidates',
+      checkedSymbols: scopedSymbols,
+      ignoredSymbols: (analysisSymbols || []).filter((symbol) => !scopedSymbols.includes(symbol)),
+    },
     byAnalyst,
     bySymbol,
     missingByAnalyst,
     dailyTechnicalCoverage,
     bottlenecks: [...new Set(bottlenecks)],
   };
+}
+
+function getRelaxedProbeRecentTradeCooldownHours(env = process.env) {
+  const value = Number(env?.LUNA_RELAXED_PROBE_RECENT_TRADE_COOLDOWN_HOURS);
+  if (Number.isFinite(value) && value >= 0) return value;
+  return DEFAULT_RELAXED_PROBE_RECENT_TRADE_COOLDOWN_HOURS;
+}
+
+function getLiveFireMaxOpenPositions(env = process.env) {
+  const value = Number(env?.LUNA_LIVE_FIRE_MAX_OPEN || env?.LUNA_MAX_OPEN_POSITIONS);
+  if (Number.isFinite(value) && value > 0) return Math.floor(value);
+  return 2;
+}
+
+async function loadRecentExecutedSignalCooldowns({ exchange, symbols = [], hours = DEFAULT_RELAXED_PROBE_RECENT_TRADE_COOLDOWN_HOURS } = {}) {
+  const cleanSymbols = [...new Set((symbols || []).map((symbol) => String(symbol || '').trim()).filter(Boolean))];
+  const lookbackHours = Number(hours);
+  if (!exchange || cleanSymbols.length === 0 || !Number.isFinite(lookbackHours) || lookbackHours <= 0) return new Map();
+  const rows = await queryRows(
+    `SELECT symbol, action, status, created_at
+     FROM signals
+     WHERE exchange = $1
+       AND symbol = ANY($2::text[])
+       AND status = 'executed'
+       AND action IN ('BUY', 'SELL')
+       AND created_at >= now() - ($3::int * INTERVAL '1 hour')
+     ORDER BY created_at DESC`,
+    [exchange, cleanSymbols, Math.ceil(lookbackHours)],
+  );
+  const bySymbol = new Map();
+  for (const row of rows || []) {
+    const symbol = String(row?.symbol || '').trim();
+    if (!symbol || bySymbol.has(symbol)) continue;
+    bySymbol.set(symbol, {
+      symbol,
+      action: row.action || null,
+      status: row.status || null,
+      createdAt: row.created_at || null,
+    });
+  }
+  return bySymbol;
+}
+
+async function loadCurrentLivePositions(exchange) {
+  if (!exchange) return [];
+  return queryRows(
+    `SELECT symbol, amount, updated_at
+     FROM positions
+     WHERE exchange = $1
+       AND COALESCE(paper, false) = false
+       AND COALESCE(execution_mode, 'live') = 'live'
+       AND ABS(COALESCE(amount, 0)) > 0.00000001
+     ORDER BY updated_at DESC NULLS LAST`,
+    [exchange],
+  );
+}
+
+function isDailyTechnicalBullish(row = {}) {
+  const reason = String(row?.reason || '').toLowerCase();
+  return row?.ok === true || reason.includes('daily_trend_bullish');
+}
+
+export function buildRequiredCoverageSymbols({ market, analysisSymbols = [], decisionDiagnostics = [], dailyTechnicalCoverage = null } = {}) {
+  if (market !== 'crypto') return analysisSymbols;
+  const targetable = new Set();
+  for (const row of dailyTechnicalCoverage?.rows || []) {
+    if (!isDailyTechnicalBullish(row)) continue;
+    const symbol = normalizeCandidateSymbolForAnalysis(row.symbol, market);
+    if (symbol) targetable.add(symbol);
+  }
+  for (const item of decisionDiagnostics || []) {
+    if (item?.actionability !== 'likely_actionable' && item?.actionability !== 'relaxed_probe_candidate') continue;
+    const symbol = normalizeCandidateSymbolForAnalysis(item.symbol, market);
+    if (symbol) targetable.add(symbol);
+  }
+  if (targetable.size === 0) return analysisSymbols;
+  return analysisSymbols.filter((symbol) => targetable.has(symbol));
 }
 
 function normalizeCandidateSymbolForAnalysis(symbol, market) {
@@ -499,8 +592,22 @@ async function buildMarketFunnel(market, { hours }) {
       [exchange, analysisSymbols, hours],
     )
     : [];
+  const recentBlockedSignalDetails = await queryRows(
+    `SELECT symbol, COALESCE(block_code, 'none') AS block_code, COUNT(*)::int AS count, MAX(created_at) AS latest_created_at
+     FROM signals
+     WHERE exchange = $1
+       AND created_at >= now() - ($2::int * INTERVAL '1 hour')
+       AND COALESCE(block_code, '') IN ('capital_guard_rejected', 'live_position_reentry_blocked')
+     GROUP BY symbol, block_code
+     ORDER BY latest_created_at DESC`,
+    [exchange, hours],
+  );
+  const currentLivePositions = await loadCurrentLivePositions(exchange);
+  const currentOpenSymbols = new Set((currentLivePositions || []).map((row) => String(row.symbol || '').trim()).filter(Boolean));
+  const maxOpenPositions = getLiveFireMaxOpenPositions();
   const decisionDiagnostics = buildDecisionFilterDiagnostics(analysisDetailRows, { exchange });
   const likelyActionable = decisionDiagnostics.filter((item) => item.actionability === 'likely_actionable');
+  const relaxedProbeCandidates = decisionDiagnostics.filter((item) => item.actionability === 'relaxed_probe_candidate');
   const filteredBeforeSignal = decisionDiagnostics.filter((item) => item.actionability !== 'likely_actionable');
   const analysisBySymbol = Object.fromEntries((analysisRows || []).map((row) => [row.symbol, {
     count: number(row.count),
@@ -513,13 +620,31 @@ async function buildMarketFunnel(market, { hours }) {
     symbols: analysisSymbols,
     marketOpen,
   });
+  const requiredCoverageSymbols = buildRequiredCoverageSymbols({
+    market,
+    analysisSymbols,
+    decisionDiagnostics,
+    dailyTechnicalCoverage,
+  });
   const requiredAnalystCoverage = buildRequiredAnalystCoverage({
     market,
     analysisSymbols,
+    requiredSymbols: requiredCoverageSymbols,
     analysisRows: analysisByAnalystRows,
     marketOpen,
     dailyTechnicalCoverage,
   });
+  const relaxedProbeCooldownHours = getRelaxedProbeRecentTradeCooldownHours();
+  const relaxedProbeCooldowns = await loadRecentExecutedSignalCooldowns({
+    exchange,
+    symbols: relaxedProbeCandidates.map((item) => item.symbol),
+    hours: relaxedProbeCooldownHours,
+  });
+  const relaxedProbeCooldownSymbols = relaxedProbeCandidates
+    .map((item) => String(item.symbol || '').trim())
+    .filter((symbol) => relaxedProbeCooldowns.has(symbol));
+  const relaxedProbeReadyCandidates = relaxedProbeCandidates
+    .filter((item) => !relaxedProbeCooldowns.has(String(item.symbol || '').trim()));
 
   const candidate = candidateRows?.[0] || {};
   const signalsByStatus = {};
@@ -547,17 +672,40 @@ async function buildMarketFunnel(market, { hours }) {
   const recentBuySignals = number(signalsByAction.BUY);
   const sourceSignalCount = sourceRows.reduce((sum, row) => sum + number(row.signal_count), 0);
   const bottlenecks = [];
+  const observations = [];
   if (number(candidate.active_count) === 0) bottlenecks.push('discovery_candidate_empty');
   if (sourceSignalCount === 0) bottlenecks.push('source_metric_empty');
   if (!marketOpen && number(candidate.active_count) > 0) bottlenecks.push('market_closed_waiting_open');
   if (marketOpen && number(candidate.active_count) > 0 && recentSignalCount === 0 && analysisCoveredSymbols.length === 0) bottlenecks.push('candidate_not_persisted_to_signal_window');
-  if (marketOpen && number(candidate.active_count) > 0 && recentSignalCount === 0 && analysisCoveredSymbols.length > 0 && likelyActionable.length === 0) bottlenecks.push('analysis_completed_no_actionable_signal');
+  if (marketOpen && number(candidate.active_count) > 0 && recentSignalCount === 0 && analysisCoveredSymbols.length > 0 && likelyActionable.length === 0 && relaxedProbeCandidates.length === 0) bottlenecks.push('analysis_completed_no_actionable_signal');
   if (marketOpen && likelyActionable.length > 0 && recentBuySignals === 0) bottlenecks.push('actionable_candidate_waiting_signal_persistence');
+  if (marketOpen && relaxedProbeReadyCandidates.length > 0 && recentBuySignals === 0) bottlenecks.push('relaxed_probe_candidate_waiting_l13_probe');
   if (triggerEligibleBuySignals > 0 && activeTriggerCount === 0) bottlenecks.push('buy_signal_without_active_entry_trigger');
-  if (activeTriggerCount === 0 && number(triggerByState.expired) > 0) bottlenecks.push('entry_triggers_expired_without_active_replacement');
-  if (number(signalsByBlockCode.capital_guard_rejected) > 0) bottlenecks.push('capital_guard_rejected_recent_buy_signal');
-  if (number(signalsByBlockCode.live_position_reentry_blocked) > 0) bottlenecks.push('live_position_reentry_blocked_recent_buy_signal');
-  if (marketOpen && number(candidate.active_count) > 0 && activeTriggerCount === 0 && recentBuySignals === 0 && likelyActionable.length === 0) bottlenecks.push('candidates_filtered_before_entry_trigger');
+  if (
+    activeTriggerCount === 0
+    && number(triggerByState.expired) > 0
+    && (triggerEligibleBuySignals > 0 || likelyActionable.length > 0 || relaxedProbeReadyCandidates.length > 0)
+  ) {
+    bottlenecks.push('entry_triggers_expired_without_active_replacement');
+  }
+  if (number(signalsByBlockCode.capital_guard_rejected) > 0) {
+    if (currentLivePositions.length >= maxOpenPositions) {
+      bottlenecks.push('capital_guard_rejected_recent_buy_signal');
+    } else {
+      observations.push('historical_capital_guard_rejected_resolved_by_current_position_count');
+    }
+  }
+  if (number(signalsByBlockCode.live_position_reentry_blocked) > 0) {
+    const reentryRows = (recentBlockedSignalDetails || []).filter((row) => row.block_code === 'live_position_reentry_blocked');
+    const allBlockedSymbolsStillOpen = reentryRows.length > 0
+      && reentryRows.every((row) => currentOpenSymbols.has(String(row.symbol || '').trim()));
+    if (allBlockedSymbolsStillOpen) {
+      observations.push('open_position_reentry_block_expected_for_current_position');
+    } else {
+      bottlenecks.push('live_position_reentry_blocked_recent_buy_signal');
+    }
+  }
+  if (marketOpen && number(candidate.active_count) > 0 && activeTriggerCount === 0 && recentBuySignals === 0 && likelyActionable.length === 0 && relaxedProbeCandidates.length === 0) bottlenecks.push('candidates_filtered_before_entry_trigger');
   if (number(candidate.active_count) > 0 && analysisSymbols.length > 0) {
     bottlenecks.push(...requiredAnalystCoverage.bottlenecks);
   }
@@ -600,8 +748,19 @@ async function buildMarketFunnel(market, { hours }) {
     decisionFilter: {
       checkedCount: decisionDiagnostics.length,
       likelyActionableCount: likelyActionable.length,
+      relaxedProbeCount: relaxedProbeCandidates.length,
+      relaxedProbeReadyCount: relaxedProbeReadyCandidates.length,
+      relaxedProbeCooldownCount: relaxedProbeCooldownSymbols.length,
       filteredCount: filteredBeforeSignal.length,
       likelyActionableSymbols: likelyActionable.map((item) => item.symbol),
+      relaxedProbeSymbols: relaxedProbeCandidates.map((item) => item.symbol),
+      relaxedProbeReadySymbols: relaxedProbeReadyCandidates.map((item) => item.symbol),
+      relaxedProbeCooldown: {
+        enabled: relaxedProbeCooldownHours > 0,
+        hours: relaxedProbeCooldownHours,
+        symbols: relaxedProbeCooldownSymbols,
+        bySymbol: Object.fromEntries([...relaxedProbeCooldowns.entries()]),
+      },
       top: decisionDiagnostics.slice(0, 5),
     },
     signalPersistence: {
@@ -613,6 +772,12 @@ async function buildMarketFunnel(market, { hours }) {
       byStatus: signalsByStatus,
       byAction: signalsByAction,
       byBlockCode: signalsByBlockCode,
+      recentBlockedSignalDetails,
+    },
+    currentPositions: {
+      openCount: currentLivePositions.length,
+      maxOpenPositions,
+      symbols: currentLivePositions.map((row) => row.symbol).filter(Boolean),
     },
     entryTriggers: {
       activeCount: activeTriggerCount,
@@ -620,6 +785,7 @@ async function buildMarketFunnel(market, { hours }) {
       latest: latestTriggers || [],
     },
     bottlenecks,
+    observations,
   };
 }
 
@@ -674,10 +840,20 @@ export async function buildLunaDiscoveryFunnelReport({
   const candidateTotal = marketReports.reduce((sum, item) => sum + item.candidateUniverse.activeCount, 0);
   const activeTriggerTotal = marketReports.reduce((sum, item) => sum + item.entryTriggers.activeCount, 0);
   const actionableWaitingTotal = marketReports.reduce((sum, item) => sum + number(item.decisionFilter?.likelyActionableCount), 0);
+  const relaxedProbeReadyTotal = marketReports.reduce((sum, item) => sum + number(item.decisionFilter?.relaxedProbeReadyCount), 0);
   const recommendations = [];
   if (candidateTotal === 0) recommendations.push('all_markets_discovery_candidate_empty');
   if (candidateTotal > 0 && activeTriggerTotal === 0 && actionableWaitingTotal > 0) recommendations.push('actionable_candidates_waiting_market_cycle_or_signal_persistence');
-  if (candidateTotal > 0 && activeTriggerTotal === 0 && actionableWaitingTotal === 0) recommendations.push('candidate_to_entry_trigger_funnel_needs_review');
+  if (candidateTotal > 0 && activeTriggerTotal === 0 && actionableWaitingTotal === 0 && relaxedProbeReadyTotal > 0) recommendations.push('relaxed_probe_candidates_waiting_l13_probe');
+  if (
+    allBottlenecks.length > 0
+    && candidateTotal > 0
+    && activeTriggerTotal === 0
+    && actionableWaitingTotal === 0
+    && relaxedProbeReadyTotal === 0
+  ) {
+    recommendations.push('candidate_to_entry_trigger_funnel_needs_review');
+  }
   if (autopilot.totals.samples === 0) recommendations.push('runtime_autopilot_history_missing');
   if (autopilot.totals.candidateCount === 0) recommendations.push('dispatch_idle_no_candidates_in_window');
   return {
@@ -692,6 +868,8 @@ export async function buildLunaDiscoveryFunnelReport({
     recommendations,
     nextAction: recommendations.includes('candidate_to_entry_trigger_funnel_needs_review')
       ? 'inspect_score_fusion_predictive_validation_entry_trigger_thresholds'
+      : recommendations.includes('relaxed_probe_candidates_waiting_l13_probe')
+        ? 'run_l13_probe_with_existing_risk_and_entry_guards'
       : recommendations.includes('actionable_candidates_waiting_market_cycle_or_signal_persistence')
         ? 'run_or_wait_next_market_cycle_to_persist_buy_signal'
       : recommendations.includes('all_markets_discovery_candidate_empty')
@@ -714,13 +892,14 @@ export function renderLunaDiscoveryFunnelReport(report = {}) {
     const requiredLine = (required.requiredAnalysts || [])
       .map((analyst) => {
         const covered = required.byAnalyst?.[analyst]?.symbols?.length || 0;
-        const total = item.analysisCoverage?.checkedCount || 0;
+        const total = required.scope?.checkedSymbols?.length || item.analysisCoverage?.checkedCount || 0;
         return `${analyst}:${covered}/${total}`;
       })
       .join(' ');
     lines.push(
       `${item.market}: market=${item.marketHours?.state || 'unknown'} candidates=${item.candidateUniverse?.activeCount || 0} analysis=${item.analysisCoverage?.coveredCount || 0}/${item.analysisCoverage?.checkedCount || 0} actionable=${item.decisionFilter?.likelyActionableCount || 0} recentSignals=${item.signalPersistence?.recentCount || 0} buySignals=${item.signalPersistence?.buyCount || 0} activeTriggers=${item.entryTriggers?.activeCount || 0} bottlenecks=${(item.bottlenecks || []).join(',') || 'none'}`,
     );
+    if ((item.observations || []).length > 0) lines.push(`  observations: ${(item.observations || []).join(',')}`);
     if (requiredLine) lines.push(`  required_analysis: ${requiredLine}`);
   }
   lines.push(`dispatch: samples=${report.autopilot?.totals?.samples || 0} candidates=${report.autopilot?.totals?.candidateCount || 0} executed=${report.autopilot?.totals?.executedCount || 0} failures=${report.autopilot?.totals?.failureCount || 0}`);

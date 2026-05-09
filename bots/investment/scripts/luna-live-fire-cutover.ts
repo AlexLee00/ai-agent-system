@@ -20,7 +20,7 @@ const CONFIRM = 'enable-luna-live-fire';
 const DEFAULT_MAX_TRADE_USDT = 50;
 const DEFAULT_MAX_DAILY_USDT = 200;
 const DEFAULT_MAX_OPEN_POSITIONS = 2;
-const CUTOVER_COMMAND = `launchctl setenv LUNA_INTELLIGENT_DISCOVERY_MODE autonomous_l5 && launchctl setenv LUNA_MAX_TRADE_USDT ${DEFAULT_MAX_TRADE_USDT} && launchctl setenv LUNA_LIVE_FIRE_MAX_DAILY ${DEFAULT_MAX_DAILY_USDT} && launchctl setenv LUNA_LIVE_FIRE_MAX_OPEN ${DEFAULT_MAX_OPEN_POSITIONS} && launchctl setenv LUNA_POSITION_RUNTIME_AUTONOMOUS_DISPATCH_ENABLED false && launchctl setenv LUNA_LIVE_FIRE_ENABLED true`;
+const DEFAULT_POSITION_DISPATCH_ENABLED = false;
 const ROLLBACK_COMMAND = 'launchctl unsetenv LUNA_INTELLIGENT_DISCOVERY_MODE && launchctl setenv LUNA_LIVE_FIRE_ENABLED false && launchctl setenv LUNA_POSITION_RUNTIME_AUTONOMOUS_DISPATCH_ENABLED false';
 
 function hasFlag(name) {
@@ -49,17 +49,31 @@ function positiveNumber(value, fallback) {
   return Number.isFinite(n) && n > 0 ? n : fallback;
 }
 
-function applyCutoverEnv({ maxUsdt = DEFAULT_MAX_TRADE_USDT, maxDailyUsdt = DEFAULT_MAX_DAILY_USDT, maxOpen = DEFAULT_MAX_OPEN_POSITIONS } = {}) {
+function buildCutoverCommand({
+  maxUsdt = DEFAULT_MAX_TRADE_USDT,
+  maxDailyUsdt = DEFAULT_MAX_DAILY_USDT,
+  maxOpen = DEFAULT_MAX_OPEN_POSITIONS,
+  positionDispatchEnabled = DEFAULT_POSITION_DISPATCH_ENABLED,
+} = {}) {
+  return `launchctl setenv LUNA_INTELLIGENT_DISCOVERY_MODE autonomous_l5 && launchctl setenv LUNA_MAX_TRADE_USDT ${maxUsdt} && launchctl setenv LUNA_LIVE_FIRE_MAX_DAILY ${maxDailyUsdt} && launchctl setenv LUNA_LIVE_FIRE_MAX_OPEN ${maxOpen} && launchctl setenv LUNA_POSITION_RUNTIME_AUTONOMOUS_DISPATCH_ENABLED ${positionDispatchEnabled ? 'true' : 'false'} && launchctl setenv LUNA_LIVE_FIRE_ENABLED true`;
+}
+
+function applyCutoverEnv({
+  maxUsdt = DEFAULT_MAX_TRADE_USDT,
+  maxDailyUsdt = DEFAULT_MAX_DAILY_USDT,
+  maxOpen = DEFAULT_MAX_OPEN_POSITIONS,
+  positionDispatchEnabled = DEFAULT_POSITION_DISPATCH_ENABLED,
+} = {}) {
   const setMode = runCommand('launchctl', ['setenv', 'LUNA_INTELLIGENT_DISCOVERY_MODE', 'autonomous_l5']);
   const setMaxTrade = runCommand('launchctl', ['setenv', 'LUNA_MAX_TRADE_USDT', String(maxUsdt)]);
   const setMaxDaily = runCommand('launchctl', ['setenv', 'LUNA_LIVE_FIRE_MAX_DAILY', String(maxDailyUsdt)]);
   const setMaxOpen = runCommand('launchctl', ['setenv', 'LUNA_LIVE_FIRE_MAX_OPEN', String(maxOpen)]);
-  const disablePositionDispatch = runCommand('launchctl', ['setenv', 'LUNA_POSITION_RUNTIME_AUTONOMOUS_DISPATCH_ENABLED', 'false']);
+  const setPositionDispatch = runCommand('launchctl', ['setenv', 'LUNA_POSITION_RUNTIME_AUTONOMOUS_DISPATCH_ENABLED', positionDispatchEnabled ? 'true' : 'false']);
   const enableLiveFire = runCommand('launchctl', ['setenv', 'LUNA_LIVE_FIRE_ENABLED', 'true']);
   return {
-    ok: setMode.ok && setMaxTrade.ok && setMaxDaily.ok && setMaxOpen.ok && disablePositionDispatch.ok && enableLiveFire.ok,
-    caps: { maxUsdt, maxDailyUsdt, maxOpen },
-    steps: { setMode, setMaxTrade, setMaxDaily, setMaxOpen, disablePositionDispatch, enableLiveFire },
+    ok: setMode.ok && setMaxTrade.ok && setMaxDaily.ok && setMaxOpen.ok && setPositionDispatch.ok && enableLiveFire.ok,
+    caps: { maxUsdt, maxDailyUsdt, maxOpen, positionDispatchEnabled },
+    steps: { setMode, setMaxTrade, setMaxDaily, setMaxOpen, setPositionDispatch, enableLiveFire },
   };
 }
 
@@ -74,11 +88,13 @@ export async function runLunaLiveFireCutover({
   maxUsdt = DEFAULT_MAX_TRADE_USDT,
   maxDailyUsdt = DEFAULT_MAX_DAILY_USDT,
   maxOpen = DEFAULT_MAX_OPEN_POSITIONS,
+  positionDispatchEnabled = DEFAULT_POSITION_DISPATCH_ENABLED,
 } = {}) {
   const caps = {
     maxUsdt: positiveNumber(maxUsdt, DEFAULT_MAX_TRADE_USDT),
     maxDailyUsdt: positiveNumber(maxDailyUsdt, DEFAULT_MAX_DAILY_USDT),
     maxOpen: Math.max(1, Math.round(positiveNumber(maxOpen, DEFAULT_MAX_OPEN_POSITIONS))),
+    positionDispatchEnabled: positionDispatchEnabled === true,
   };
   const finalGate = await buildLunaLiveFireFinalGate({ exchange, hours, withPositionParity, liveLookup });
   const preflight = finalGate.preflight || await buildLunaLiveFireCutoverPreflight({ exchange, hours, withPositionParity });
@@ -93,7 +109,7 @@ export async function runLunaLiveFireCutover({
     status: finalGate.ok ? 'live_fire_cutover_ready' : 'live_fire_cutover_blocked',
     dryRun: !apply,
     applied: false,
-    command: CUTOVER_COMMAND,
+    command: buildCutoverCommand(caps),
     rollbackCommand: ROLLBACK_COMMAND,
     confirmRequired: CONFIRM,
     delegatedAuthority,
@@ -135,11 +151,15 @@ export async function runLunaLiveFireCutoverSmoke() {
     caps: { maxUsdt: DEFAULT_MAX_TRADE_USDT, maxDailyUsdt: DEFAULT_MAX_DAILY_USDT, maxOpen: DEFAULT_MAX_OPEN_POSITIONS },
   });
   assert.equal(delegated.canSelfApprove, true);
-  assert.ok(CUTOVER_COMMAND.includes('autonomous_l5'));
-  assert.ok(CUTOVER_COMMAND.includes('LUNA_MAX_TRADE_USDT 50'));
-  assert.ok(CUTOVER_COMMAND.includes('LUNA_LIVE_FIRE_MAX_DAILY 200'));
-  assert.ok(CUTOVER_COMMAND.includes('LUNA_LIVE_FIRE_MAX_OPEN 2'));
-  assert.ok(CUTOVER_COMMAND.includes('LUNA_LIVE_FIRE_ENABLED true'));
+  const safeDefaultCommand = buildCutoverCommand();
+  const autonomousCommand = buildCutoverCommand({ positionDispatchEnabled: true });
+  assert.ok(safeDefaultCommand.includes('autonomous_l5'));
+  assert.ok(safeDefaultCommand.includes('LUNA_MAX_TRADE_USDT 50'));
+  assert.ok(safeDefaultCommand.includes('LUNA_LIVE_FIRE_MAX_DAILY 200'));
+  assert.ok(safeDefaultCommand.includes('LUNA_LIVE_FIRE_MAX_OPEN 2'));
+  assert.ok(safeDefaultCommand.includes('LUNA_POSITION_RUNTIME_AUTONOMOUS_DISPATCH_ENABLED false'));
+  assert.ok(autonomousCommand.includes('LUNA_POSITION_RUNTIME_AUTONOMOUS_DISPATCH_ENABLED true'));
+  assert.ok(safeDefaultCommand.includes('LUNA_LIVE_FIRE_ENABLED true'));
   assert.ok(ROLLBACK_COMMAND.includes('LUNA_LIVE_FIRE_ENABLED false'));
   return { ok: true, confirmRequired: CONFIRM };
 }
@@ -157,9 +177,10 @@ async function main() {
   const maxUsdt = Number(argValue('--max-usdt', DEFAULT_MAX_TRADE_USDT));
   const maxDailyUsdt = Number(argValue('--max-daily-usdt', DEFAULT_MAX_DAILY_USDT));
   const maxOpen = Number(argValue('--max-open', DEFAULT_MAX_OPEN_POSITIONS));
+  const positionDispatchEnabled = hasFlag('--enable-position-dispatch');
   const result = smoke
     ? await runLunaLiveFireCutoverSmoke()
-    : await runLunaLiveFireCutover({ exchange, hours, withPositionParity, apply, confirm, telegram, liveLookup, maxUsdt, maxDailyUsdt, maxOpen });
+    : await runLunaLiveFireCutover({ exchange, hours, withPositionParity, apply, confirm, telegram, liveLookup, maxUsdt, maxDailyUsdt, maxOpen, positionDispatchEnabled });
   if (json) console.log(JSON.stringify(result, null, 2));
   else console.log(smoke ? 'luna live-fire cutover smoke ok' : `${result.status || 'unknown'}${apply ? '' : ' (dry-run)'}\n${renderLunaLiveFireFinalGate(result.finalGate || {})}\n\n${renderLunaLiveFireCutoverPreflight(result.preflight || {})}`);
   if (!smoke && apply && result.ok === false) process.exitCode = 1;

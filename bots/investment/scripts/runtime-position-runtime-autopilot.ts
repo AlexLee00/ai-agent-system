@@ -40,6 +40,7 @@ function parseArgs(argv = []) {
     recordHistory: true,
     requirePositionSync: false,
     positionSyncMarkets: [...DEFAULT_POSITION_SYNC_MARKETS],
+    skipSyncPreflight: false,
     skipRuntimeReevaluation: false,
     skipOrphanProfileSweep: false,
     applyOrphanProfileSweep: false,
@@ -57,6 +58,7 @@ function parseArgs(argv = []) {
     else if (raw === '--no-history') args.recordHistory = false;
     else if (raw === '--require-position-sync') args.requirePositionSync = true;
     else if (raw === '--run-sync-preflight') args.runSyncPreflight = true;
+    else if (raw === '--skip-sync-preflight') args.skipSyncPreflight = true;
     else if (raw === '--skip-runtime-reevaluation') args.skipRuntimeReevaluation = true;
     else if (raw === '--skip-orphan-profile-sweep') args.skipOrphanProfileSweep = true;
     else if (raw === '--apply-orphan-profile-sweep') args.applyOrphanProfileSweep = true;
@@ -92,6 +94,16 @@ export function shouldRunRuntimeReevaluation(args = {}, phase6SafetyReadiness = 
   return args.execute === true
     && args.confirm === 'position-runtime-autopilot'
     && phase6SafetyReadiness?.ok === true;
+}
+
+export function shouldRunPositionSyncPreflight(args = {}, requirePositionSync = false) {
+  if (requirePositionSync !== true) return false;
+  if (args.skipSyncPreflight === true) return false;
+  return args.execute === true || args.runSyncPreflight === true;
+}
+
+export function shouldEnforcePositionSyncReadiness(args = {}, requirePositionSync = false) {
+  return shouldRunPositionSyncPreflight(args, requirePositionSync);
 }
 
 function readLaunchctlEnv(name) {
@@ -544,9 +556,10 @@ export async function runPositionRuntimeAutopilot(args = {}) {
   const requirePositionSync = args.requirePositionSync === true
     || String(process.env.LUNA_POSITION_LIFECYCLE_REQUIRE_SYNC || '').trim() === '1'
     || (lifecycleFlags.autonomous && String(process.env.LUNA_POSITION_LIFECYCLE_SKIP_SYNC_PREFLIGHT || '').trim() !== '1');
-  const positionSyncSummary = requirePositionSync && (args.execute || args.runSyncPreflight === true)
+  const positionSyncSummary = shouldRunPositionSyncPreflight(args, requirePositionSync)
     ? await runPositionSyncPreflight(args.positionSyncMarkets || DEFAULT_POSITION_SYNC_MARKETS)
     : null;
+  const enforcePositionSyncReadiness = shouldEnforcePositionSyncReadiness(args, requirePositionSync);
   const orphanProfileSweep = await runAutopilotOrphanProfileSweep(args, lifecycleFlags, phase6SafetyReadiness);
   if (orphanProfileSweep.ok === false && orphanProfileSweep.apply === true) {
     return {
@@ -599,7 +612,7 @@ export async function runPositionRuntimeAutopilot(args = {}) {
     dispatchPreview,
     signalRefresh,
     positionSyncSummary,
-    requirePositionSync,
+    requirePositionSync: enforcePositionSyncReadiness,
   });
 
   if (!args.execute) {

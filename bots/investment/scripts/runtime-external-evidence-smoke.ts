@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 // @ts-nocheck
 
+import fs from 'node:fs';
 import * as db from '../shared/db.ts';
 import {
   recordEvidence, recordBacktestEvidence, recordScoutEvidence,
@@ -138,6 +139,21 @@ async function main() {
     '복구 시 queued/retrying task 해소',
     Number(queueAfterRecover.summary?.queued || 0) === 0 && Number(queueAfterRecover.summary?.retrying || 0) === 0,
   );
+  const staleQueueFile = `/tmp/investment-evidence-gap-stale-queue-smoke-${Date.now()}.json`;
+  const staleTasks = Array.from({ length: 300 }, (_, index) => ({
+    taskId: `stale-${index}`,
+    scopeKey: `binance:STALE${index % 3}/USDT:normal`,
+    symbol: `STALE${index % 3}/USDT`,
+    exchange: 'binance',
+    tradeMode: 'normal',
+    taskType: 'collection_refresh',
+    status: 'expired',
+    createdAt: '2026-04-01T00:00:00.000Z',
+    updatedAt: '2026-04-01T00:00:00.000Z',
+  }));
+  fs.writeFileSync(staleQueueFile, JSON.stringify({ version: 1, states: {}, tasks: staleTasks }, null, 2), 'utf8');
+  const compacted = readExternalEvidenceGapTaskQueue(staleQueueFile);
+  assert('terminal stale task history 압축', Number(compacted.summary?.tasks || 0) === 0);
 
   console.log('');
   console.log(`결과: ${passed}/${passed + failed} passed`);

@@ -172,6 +172,10 @@ function directHttpFallbackEnabled(env = process.env) {
   return boolEnv('LUNA_TRADINGVIEW_ENTRY_GUARD_DIRECT_HTTP_FALLBACK', true, env);
 }
 
+function trustedBinanceFallbackEnabled(env = process.env) {
+  return boolEnv('LUNA_TRADINGVIEW_ENTRY_GUARD_TRUST_BINANCE_FALLBACK', true, env);
+}
+
 function officialDirectRestFallbackEnabled(env = process.env) {
   return boolEnv('LUNA_ENTRY_CHART_KIS_DIRECT_REST_FALLBACK', true, env);
 }
@@ -442,6 +446,7 @@ function snapshotFromTradingViewBar({ symbol, timeframe, bar, row, status, env =
     source: row?.source || 'tradingview_ws_service',
     providerMode: row?.providerMode || 'websocket_http_latest',
     fallbackReason: row?.fallbackReason || null,
+    realRequiredFallback: row?.realRequiredFallback === true,
     market: 'tradingview',
     symbol,
     timeframe,
@@ -475,11 +480,39 @@ export async function fetchTradingViewHttpLatestSnapshot({
   try {
     const subscribeUrl = `${base}/subscribe?symbol=${encodeURIComponent(normalizedSymbol)}&timeframe=${encodeURIComponent(tvTimeframe)}`;
     await fetch(subscribeUrl, { signal: AbortSignal.timeout(timeoutMs) }).catch(() => null);
-    const latestUrl = `${base}/latest?symbols=${encodeURIComponent(normalizedSymbol)}&timeframes=${encodeURIComponent(tvTimeframe)}${requireReal ? '&requireReal=true' : ''}`;
-    const response = await fetch(latestUrl, { signal: AbortSignal.timeout(timeoutMs) });
-    if (!response.ok) return { ok: false, error: `tradingview_http_latest_${response.status}` };
-    const payload = await response.json();
-    const row = payload?.bars?.[0];
+    const fetchLatest = async (realOnly) => {
+      const latestUrl = `${base}/latest?symbols=${encodeURIComponent(normalizedSymbol)}&timeframes=${encodeURIComponent(tvTimeframe)}${realOnly ? '&requireReal=true' : ''}`;
+      const response = await fetch(latestUrl, { signal: AbortSignal.timeout(timeoutMs) });
+      if (!response.ok) return { ok: false, error: `tradingview_http_latest_${response.status}` };
+      const payload = await response.json();
+      return { ok: true, payload, row: payload?.bars?.[0] };
+    };
+    const latest = await fetchLatest(requireReal);
+    if (!latest.ok) return latest;
+    let payload = latest.payload;
+    let row = latest.row;
+    if (!row?.bar && requireReal && trustedBinanceFallbackEnabled(env)) {
+      const officialFallback = await fetchLatest(false);
+      const fallbackRow = officialFallback?.row;
+      const source = String(fallbackRow?.source || '').toLowerCase();
+      const providerMode = String(fallbackRow?.providerMode || '').toLowerCase();
+      if (
+        fallbackRow?.bar
+        && source === 'tradingview_ws_service_binance_rest_fallback'
+        && providerMode === 'binance_rest_live_fallback'
+      ) {
+        payload = {
+          ...officialFallback.payload,
+          realRequiredFallback: true,
+          strictRealtimePayload: latest.payload,
+        };
+        row = {
+          ...fallbackRow,
+          fallbackReason: fallbackRow.fallbackReason || 'tradingview_ws_latest_empty',
+          realRequiredFallback: true,
+        };
+      }
+    }
     if (!row?.bar) return { ok: false, error: 'tradingview_http_latest_empty', status: payload };
     return snapshotFromTradingViewBar({
       symbol: normalizedSymbol,

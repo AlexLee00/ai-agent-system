@@ -260,6 +260,47 @@ export async function expireEntryTriggers({ nowIso = null } = {}) {
   return Number(row?.count || 0);
 }
 
+export async function expireActiveEntryTriggersForSymbols({
+  symbols = [],
+  exchange = null,
+  reason = 'operator_expired',
+  triggerMetaPatch = {},
+} = {}) {
+  const cleanSymbols = [...new Set((symbols || [])
+    .map((symbol) => String(symbol || '').trim())
+    .filter(Boolean))];
+  if (cleanSymbols.length === 0) return { count: 0, symbols: [] };
+  await ensureLunaDiscoveryEntryTables();
+  const meta = {
+    reason,
+    expiredBy: 'luna-discovery-entry-store',
+    expiredAt: new Date().toISOString(),
+    ...(triggerMetaPatch || {}),
+  };
+  const params = [cleanSymbols, json(meta, {})];
+  const conds = [`symbol = ANY($1::text[])`, `trigger_state IN ('armed', 'waiting')`];
+  if (exchange) {
+    params.push(exchange);
+    conds.push(`exchange = $${params.length}`);
+  }
+  const row = await db.get(
+    `WITH updated AS (
+       UPDATE entry_triggers
+          SET trigger_state = 'expired',
+              trigger_meta = COALESCE(trigger_meta, '{}'::jsonb) || $2::jsonb,
+              updated_at = now()
+        WHERE ${conds.join(' AND ')}
+      RETURNING symbol
+     )
+     SELECT COUNT(*)::int AS count, ARRAY_AGG(symbol ORDER BY symbol) AS symbols FROM updated`,
+    params,
+  ).catch(() => ({ count: 0, symbols: [] }));
+  return {
+    count: Number(row?.count || 0),
+    symbols: Array.isArray(row?.symbols) ? row.symbols : [],
+  };
+}
+
 export async function insertDiscoverySourceMetric({
   source,
   market,

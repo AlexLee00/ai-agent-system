@@ -227,6 +227,42 @@ assert.equal(cryptoMtfSellConflict.run, false);
 assert.equal(cryptoMtfSellConflict.reason, 'crypto_intraday_technical_conflict');
 assert.equal(cryptoMtfSellConflict.mtfEvidence.dailySellFrames, 1);
 
+const cryptoRelaxedProbeContext = shouldRunStockIntradayDecisionLlm({
+  market: 'binance',
+  symbol: 'USUAL/USDT',
+  meta: {
+    relaxed_probe_runner: true,
+    relaxed_probe_context: {
+      bySymbol: {
+        'USUAL/USDT': {
+          source: 'near_miss_watchlist',
+          watchReason: 'crypto_relaxed_mtf_momentum_probe',
+          readiness: 'relaxed_probe_watch',
+          missingConfirmations: ['sentiment', 'onchain'],
+          relaxation: { ok: true, reason: 'crypto_relaxed_mtf_momentum_probe', sizeRatio: 0.25 },
+        },
+      },
+    },
+    llm_call_policy: { source_enrichment: 'technical_first_only' },
+  },
+  analyses: [
+    {
+      analyst: 'ta_mtf',
+      signal: 'BUY',
+      confidence: 0.23,
+      reasoning: '15분봉=HOLD(10%) | 1시간봉=BUY(40%) | 4시간봉=BUY(50%) | 일봉=SELL(30%); 가중점수 1.16; 추세보정 +0.28',
+    },
+    { analyst: 'sentiment', signal: 'HOLD', confidence: 0 },
+    { analyst: 'news', signal: 'BUY', confidence: 0.75 },
+    { analyst: 'onchain', signal: 'HOLD', confidence: 0.2 },
+  ],
+  env: disabledEnv,
+});
+assert.equal(cryptoRelaxedProbeContext.run, true);
+assert.equal(cryptoRelaxedProbeContext.reason, 'crypto_relaxed_probe_context');
+assert.equal(cryptoRelaxedProbeContext.relaxation.sizeRatio, 0.25);
+assert.equal(cryptoRelaxedProbeContext.relaxedProbeContext.currentTechnicalEvidence.dailySellFrames, 1);
+
 const cryptoMtfWeak = shouldRunStockIntradayDecisionLlm({
   market: 'binance',
   symbol: 'DYDX/USDT',

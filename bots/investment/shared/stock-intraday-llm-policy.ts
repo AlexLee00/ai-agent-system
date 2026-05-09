@@ -330,6 +330,52 @@ function findRelaxedPresignal(market, analyses = [], env = process.env) {
   };
 }
 
+function getRelaxedProbeContext(meta = {}, symbol = null) {
+  if (meta?.relaxed_probe_runner !== true) return null;
+  const context = meta?.relaxed_probe_context || meta?.relaxedProbeContext || null;
+  if (!context || typeof context !== 'object') return null;
+  const key = String(symbol || '').trim();
+  const bySymbol = context.bySymbol || context.by_symbol || {};
+  return bySymbol[key] || null;
+}
+
+function findCryptoRelaxedProbeContextPresignal({ symbol, analyses = [], meta = {}, env = process.env } = {}) {
+  const context = getRelaxedProbeContext(meta, symbol);
+  const reason = String(context?.watchReason || context?.relaxation?.reason || '').trim();
+  if (reason !== 'crypto_relaxed_mtf_momentum_probe') return null;
+
+  const evidence = extractCryptoTechnicalEvidence(analyses);
+  const weightedScore = Number(evidence.weightedScore ?? -Infinity);
+  const trendBoost = Number(evidence.trendBoost ?? -Infinity);
+  const weightedFloor = numEnv(env, 'LUNA_CRYPTO_RELAXED_MTF_WEIGHTED_SCORE', 0.85);
+  const trendFloor = numEnv(env, 'LUNA_CRYPTO_RELAXED_MTF_TREND_BOOST', 0.2);
+  const stillMomentum = weightedScore >= weightedFloor
+    && (trendBoost >= trendFloor || evidence.intradayBuyFrames >= 2)
+    && evidence.intradaySellFrames === 0;
+  if (!stillMomentum) return null;
+
+  return {
+    run: true,
+    reason: 'crypto_relaxed_probe_context',
+    threshold: null,
+    relaxation: {
+      ...(context.relaxation || {}),
+      ok: true,
+      reason,
+      source: context.source || 'near_miss_watchlist',
+      sizeRatio: Number(context.relaxation?.sizeRatio || 0.25),
+      momentumEvidence: evidence,
+    },
+    relaxedProbeContext: {
+      source: context.source || 'near_miss_watchlist',
+      watchReason: reason,
+      readiness: context.readiness || null,
+      missingConfirmations: context.missingConfirmations || [],
+      currentTechnicalEvidence: evidence,
+    },
+  };
+}
+
 function findStockActionablePresignal(analyses = [], env = process.env) {
   const taThreshold = getStockTaDecisionPrefilterConfidence(env);
   const flowThreshold = getStockFlowDecisionPrefilterConfidence(env);
@@ -420,6 +466,8 @@ export function shouldRunStockIntradayDecisionLlm({
   if (isCryptoMarket(market)) {
     if (!isCryptoIntradayDecisionPrefilterEnabled(env)) return { run: true, reason: 'crypto_prefilter_disabled' };
     if (liveHeldSymbols?.has?.(String(symbol || '').trim())) return { run: true, reason: 'held_symbol' };
+    const relaxedProbe = findCryptoRelaxedProbeContextPresignal({ symbol, analyses, meta, env });
+    if (relaxedProbe) return relaxedProbe;
     const sourceMode = meta?.llm_call_policy?.source_enrichment || null;
     const requireFlow = sourceMode !== 'technical_first_only' && isCryptoIntradayEnrichmentEnabled(env);
     const strictCrypto = findCryptoActionablePresignal(analyses, env, { requireFlow });
