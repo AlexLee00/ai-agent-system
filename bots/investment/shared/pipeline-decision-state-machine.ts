@@ -1,6 +1,5 @@
 // @ts-nocheck
-import { finishPipelineRun } from './pipeline-db.ts';
-import { getPipelineRun } from './pipeline-db.ts';
+import { finishPipelineRun, getPipelineRun } from './pipeline-db.ts';
 import { recordNodeResult, runNode } from './node-runner.ts';
 import * as db from './db.ts';
 import { ACTIONS, validateSignal } from './signal.ts';
@@ -28,7 +27,7 @@ import { buildPipelineSymbolCandidate, recordStrategyRouteStats, resolvePipeline
 import { persistRiskApprovalRationale } from './pipeline-approved-decision.ts';
 import { buildDecisionBridgeMeta, loadDecisionPlannerCompact } from './pipeline-decision-bridge.ts';
 import { buildDecisionAgentPlan, shouldRunExecutionAuxiliaryNode } from './pipeline-decision-agent-plan.ts';
-import { createDecisionLlmBudgetGate } from './pipeline-decision-llm-budget.ts';
+import { createDecisionDebateBudgetGate, createDecisionLlmBudgetGate } from './pipeline-decision-llm-budget.ts';
 import { shouldRunStockIntradayDecisionLlm } from './stock-intraday-llm-policy.ts';
 import { getConservativeRelaxationMaxPerCycle } from './luna-conservative-relaxation-policy.ts';
 import {
@@ -86,11 +85,8 @@ export async function runDecisionExecutionStateMachine({
     defaultDebateLimit: configuredDebateLimit,
     runtimeFlags: intelligentFlags,
   });
-  const l10Node = getDecisionNode('L10');
-  const l11Node = getDecisionNode('L11');
-  const l12Node = getDecisionNode('L12');
-  const l13Node = getDecisionNode('L13');
-  const l14Node = getDecisionNode('L14');
+  const l10Node = getDecisionNode('L10'), l11Node = getDecisionNode('L11'), l12Node = getDecisionNode('L12');
+  const l13Node = getDecisionNode('L13'), l14Node = getDecisionNode('L14');
   const l21Node = getDecisionNode('L21');
   const l30Node = getDecisionNode('L30');
   const l31Node = getDecisionNode('L31');
@@ -181,7 +177,7 @@ export async function runDecisionExecutionStateMachine({
   let strategyRouteReadinessCount = 0;
   let relaxedPrefilterCount = 0;
   const maxRelaxedPrefilterPerCycle = getConservativeRelaxationMaxPerCycle();
-  let decisionLlmBudgetGate = null;
+  let decisionLlmBudgetGate = null, decisionDebateBudgetGate = null;
 
   const buildMetrics = (extra = {}) => {
     const metrics = buildDecisionPipelineMetrics({
@@ -221,6 +217,7 @@ export async function runDecisionExecutionStateMachine({
       maxPerCycle: maxRelaxedPrefilterPerCycle,
     };
     if (decisionLlmBudgetGate) metrics.decisionLlmBudget = decisionLlmBudgetGate.snapshot();
+    if (decisionDebateBudgetGate) metrics.decisionDebateBudget = decisionDebateBudgetGate.snapshot();
     for (const warning of decisionAgentPlan.warnings || []) {
       if (!metrics.warnings.includes(warning)) metrics.warnings.push(warning);
     }
@@ -234,6 +231,7 @@ export async function runDecisionExecutionStateMachine({
       .filter(Boolean),
   );
   decisionLlmBudgetGate = createDecisionLlmBudgetGate({ exchange, liveHeldSymbols });
+  decisionDebateBudgetGate = createDecisionDebateBudgetGate({ exchange });
   if (openPositions.length > 0) {
     console.log(`\n🔴 [EXIT Phase] ${openPositions.length}개 보유 포지션 청산 판단...`);
     try {
@@ -367,34 +365,39 @@ export async function runDecisionExecutionStateMachine({
       });
 
       if (decisionAgentPlan.debateEnabled && debateCount < debateLimit && shouldDebateForSymbol(analyses, exchange, analystWeights)) {
-        try {
-          await runNode(l11Node, {
-            sessionId,
-            market: exchange,
-            symbol,
-            meta: await buildDecisionBridgeMeta({
+        const debateBudgetDecision = decisionDebateBudgetGate.allow({ symbol, prefilter: stockIntradayPrefilter });
+        if (!debateBudgetDecision.allow) {
+          console.log(`  ⏭️ [노드 브리지] ${symbol} debate 생략: ${debateBudgetDecision.reason}`);
+        } else {
+          try {
+            await runNode(l11Node, {
               sessionId,
               market: exchange,
               symbol,
-              stage: 'debate',
-              planner: plannerCompact,
-            }),
-          });
-          await runNode(l12Node, {
-            sessionId,
-            market: exchange,
-            symbol,
-            meta: await buildDecisionBridgeMeta({
+              meta: await buildDecisionBridgeMeta({
+                sessionId,
+                market: exchange,
+                symbol,
+                stage: 'debate',
+                planner: plannerCompact,
+              }),
+            });
+            await runNode(l12Node, {
               sessionId,
               market: exchange,
               symbol,
-              stage: 'debate',
-              planner: plannerCompact,
-            }),
-          });
-          debateCount++;
-        } catch (err) {
-          console.warn(`  ⚠️ [노드 브리지] ${symbol} debate 노드 실패: ${err.message}`);
+              meta: await buildDecisionBridgeMeta({
+                sessionId,
+                market: exchange,
+                symbol,
+                stage: 'debate',
+                planner: plannerCompact,
+              }),
+            });
+            debateCount++;
+          } catch (err) {
+            console.warn(`  ⚠️ [노드 브리지] ${symbol} debate 노드 실패: ${err.message}`);
+          }
         }
       }
 

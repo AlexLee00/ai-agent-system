@@ -51,6 +51,25 @@ export function resolveDecisionLlmBudget({ exchange, env = process.env } = {}) {
   };
 }
 
+export function resolveDecisionDebateBudget({ exchange, env = process.env } = {}) {
+  const market = normalizeMarket(exchange);
+  const prefix = marketPrefix(market);
+  const defaultEnabled = market === 'binance';
+  const enabled = envFlag(env, 'LUNA_DECISION_DEBATE_BUDGET_ENABLED', defaultEnabled)
+    && envFlag(env, `LUNA_${prefix}_DECISION_DEBATE_BUDGET_ENABLED`, defaultEnabled);
+  const defaultMaxSymbols = market === 'binance' ? 1 : 0;
+  const maxSymbols = Math.max(0, Math.floor(envNumber(env, [
+    `LUNA_${prefix}_DECISION_DEBATE_MAX_SYMBOLS_PER_CYCLE`,
+    'LUNA_DECISION_DEBATE_MAX_SYMBOLS_PER_CYCLE',
+  ], defaultMaxSymbols)));
+  return {
+    enabled: Boolean(enabled && maxSymbols > 0),
+    market,
+    maxSymbols,
+    reason: enabled && maxSymbols > 0 ? 'debate_budget_active' : 'debate_budget_disabled',
+  };
+}
+
 export function prefilterConfidence(prefilter = {}) {
   const values = [
     prefilter.confidence,
@@ -110,8 +129,51 @@ export function createDecisionLlmBudgetGate({ exchange, liveHeldSymbols = null, 
   };
 }
 
+export function createDecisionDebateBudgetGate({ exchange, env = process.env } = {}) {
+  const policy = resolveDecisionDebateBudget({ exchange, env });
+  const state = {
+    considered: 0,
+    used: 0,
+    skipped: 0,
+    selected: [],
+    skippedSymbols: [],
+  };
+
+  return {
+    policy,
+    allow({ symbol, prefilter } = {}) {
+      const normalizedSymbol = String(symbol || '').trim();
+      const confidence = prefilterConfidence(prefilter);
+      state.considered += 1;
+      if (!policy.enabled) {
+        state.used += 1;
+        state.selected.push({ symbol: normalizedSymbol, confidence, reason: 'debate_budget_disabled' });
+        return { allow: true, confidence, reason: 'debate_budget_disabled' };
+      }
+      if (state.used < policy.maxSymbols) {
+        state.used += 1;
+        state.selected.push({ symbol: normalizedSymbol, confidence, reason: 'within_debate_budget' });
+        return { allow: true, confidence, reason: 'within_debate_budget' };
+      }
+      state.skipped += 1;
+      state.skippedSymbols.push({ symbol: normalizedSymbol, confidence, reason: 'decision_debate_budget_reached' });
+      return { allow: false, confidence, reason: 'decision_debate_budget_reached' };
+    },
+    snapshot() {
+      return {
+        ...policy,
+        ...state,
+        selected: [...state.selected],
+        skippedSymbols: [...state.skippedSymbols],
+      };
+    },
+  };
+}
+
 export default {
   resolveDecisionLlmBudget,
+  resolveDecisionDebateBudget,
   prefilterConfidence,
   createDecisionLlmBudgetGate,
+  createDecisionDebateBudgetGate,
 };

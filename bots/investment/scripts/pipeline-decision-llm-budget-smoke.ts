@@ -4,8 +4,10 @@
 import assert from 'node:assert/strict';
 import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
 import {
+  createDecisionDebateBudgetGate,
   createDecisionLlmBudgetGate,
   prefilterConfidence,
+  resolveDecisionDebateBudget,
   resolveDecisionLlmBudget,
 } from '../shared/pipeline-decision-llm-budget.ts';
 
@@ -14,11 +16,21 @@ export async function runPipelineDecisionLlmBudgetSmoke() {
   assert.equal(cryptoPolicy.enabled, true);
   assert.equal(cryptoPolicy.maxSymbols, 3);
 
+  const cryptoDebatePolicy = resolveDecisionDebateBudget({ exchange: 'binance', env: {} });
+  assert.equal(cryptoDebatePolicy.enabled, true);
+  assert.equal(cryptoDebatePolicy.maxSymbols, 1);
+
   const disabledPolicy = resolveDecisionLlmBudget({
     exchange: 'binance',
     env: { LUNA_CRYPTO_DECISION_LLM_BUDGET_ENABLED: 'false' },
   });
   assert.equal(disabledPolicy.enabled, false);
+
+  const disabledDebatePolicy = resolveDecisionDebateBudget({
+    exchange: 'binance',
+    env: { LUNA_CRYPTO_DECISION_DEBATE_BUDGET_ENABLED: 'false' },
+  });
+  assert.equal(disabledDebatePolicy.enabled, false);
 
   assert.equal(prefilterConfidence({
     technical: { confidence: 0.42 },
@@ -45,11 +57,23 @@ export async function runPipelineDecisionLlmBudgetSmoke() {
   assert.equal(snapshot.skipped, 1);
   assert.deepEqual(snapshot.skippedSymbols.map((item) => item.symbol), ['LINK/USDT']);
 
+  const debateGate = createDecisionDebateBudgetGate({
+    exchange: 'binance',
+    env: { LUNA_CRYPTO_DECISION_DEBATE_MAX_SYMBOLS_PER_CYCLE: '1' },
+  });
+  assert.equal(debateGate.allow({ symbol: 'BTC/USDT', prefilter: { technical: { confidence: 0.9 } } }).allow, true);
+  const debateSkipped = debateGate.allow({ symbol: 'SOL/USDT', prefilter: { technical: { confidence: 0.8 } } });
+  assert.equal(debateSkipped.allow, false);
+  assert.equal(debateSkipped.reason, 'decision_debate_budget_reached');
+  assert.equal(debateGate.snapshot().skipped, 1);
+
   return {
     ok: true,
     smoke: 'pipeline-decision-llm-budget',
     defaultCryptoMaxSymbols: cryptoPolicy.maxSymbols,
+    defaultCryptoDebateMaxSymbols: cryptoDebatePolicy.maxSymbols,
     skippedReason: skipped.reason,
+    debateSkippedReason: debateSkipped.reason,
   };
 }
 
