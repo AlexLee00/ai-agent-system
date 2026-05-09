@@ -34,6 +34,7 @@ export async function runPositionSignalRefreshSmoke({ json = false, strict = tru
       },
     });
     const carryoverWrites = [];
+    const entryCreatedAt = new Date(Date.now() - (3 * 60 * 60 * 1000)).toISOString();
     const carryoverOutput = await refreshPositionSignals({
       exchange: 'kis_overseas',
       symbol: 'ABEV',
@@ -48,7 +49,6 @@ export async function runPositionSignalRefreshSmoke({ json = false, strict = tru
             trade_mode: 'normal',
             amount: 11,
             avg_price: 4.5,
-            entry_time: new Date().toISOString(),
           },
         ]),
         getRecentExternalEvidence: async () => [],
@@ -67,6 +67,10 @@ export async function runPositionSignalRefreshSmoke({ json = false, strict = tru
               qualityScore: 0.72,
               carryoverMaxHours: 24,
               entryEvidence: true,
+            },
+            entryThesisSnapshot: {
+              createdAt: entryCreatedAt,
+              signalId: 'entry-signal-1',
             },
           },
         }),
@@ -87,6 +91,7 @@ export async function runPositionSignalRefreshSmoke({ json = false, strict = tru
       { name: 'carryover_refresh_ok', pass: carryoverOutput.ok === true && carryoverOutput.count === 1 },
       { name: 'carryover_clears_low_evidence', pass: carryoverRow?.attentionType == null && !carryoverRow?.qualityFlags?.includes('low_evidence') },
       { name: 'carryover_marked', pass: carryoverRow?.carryover?.reason === 'external_evidence_empty_entry_snapshot_carryover' && Boolean(carryoverWrites[0]?.evidenceSnapshot?.carryover) },
+      { name: 'carryover_uses_entry_thesis_age', pass: Number(carryoverRow?.carryover?.heldHours || 0) >= 2.9 },
     ];
     const passed = cases.filter((item) => item.pass).length;
     const total = cases.length;

@@ -6,14 +6,20 @@ import path from 'node:path';
 import * as db from '../shared/db.ts';
 import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
 import {
-  investmentOpsLegacyFile,
-  investmentOpsRuntimeFile,
-} from '../shared/runtime-ops-path.ts';
+  LEGACY_POSITION_RUNTIME_OVERRIDE_FILE,
+  POSITION_RUNTIME_OVERRIDE_FILE as OVERRIDE_FILE,
+  POSITION_RUNTIME_OVERRIDE_FILENAME,
+  loadPositionRuntimeOverrides,
+  overrideKeyForExchange,
+} from '../shared/position-runtime-overrides.ts';
 import { runPositionRuntimeTuning } from './runtime-position-runtime-tuning.ts';
 
-export const POSITION_RUNTIME_OVERRIDE_FILENAME = 'position-runtime-overrides.json';
-export const LEGACY_POSITION_RUNTIME_OVERRIDE_FILE = investmentOpsLegacyFile(POSITION_RUNTIME_OVERRIDE_FILENAME);
-export const OVERRIDE_FILE = investmentOpsRuntimeFile(POSITION_RUNTIME_OVERRIDE_FILENAME);
+export {
+  LEGACY_POSITION_RUNTIME_OVERRIDE_FILE,
+  OVERRIDE_FILE,
+  POSITION_RUNTIME_OVERRIDE_FILENAME,
+  overrideKeyForExchange,
+};
 
 function parseArgs(argv = []) {
   const args = {
@@ -29,25 +35,6 @@ function parseArgs(argv = []) {
     else if (raw.startsWith('--confirm=')) args.confirm = raw.split('=').slice(1).join('=') || null;
   }
   return args;
-}
-
-function loadOverrides() {
-  try {
-    const readFile = !fs.existsSync(OVERRIDE_FILE) && fs.existsSync(LEGACY_POSITION_RUNTIME_OVERRIDE_FILE)
-      ? LEGACY_POSITION_RUNTIME_OVERRIDE_FILE
-      : OVERRIDE_FILE;
-    if (!fs.existsSync(readFile)) return {};
-    return JSON.parse(fs.readFileSync(readFile, 'utf8')) || {};
-  } catch {
-    return {};
-  }
-}
-
-export function overrideKeyForExchange(exchange) {
-  if (exchange === 'binance') return 'position_watch_crypto_realtime_ms';
-  if (exchange === 'kis') return 'position_watch_domestic_realtime_ms';
-  if (exchange === 'kis_overseas') return 'position_watch_overseas_realtime_ms';
-  return null;
 }
 
 export function buildUpdates(suggestions = []) {
@@ -85,7 +72,7 @@ export function buildUpdates(suggestions = []) {
 }
 
 function persistOverrides(updates = {}) {
-  const previous = loadOverrides();
+  const previous = loadPositionRuntimeOverrides();
   const next = { ...previous, ...updates, updatedAt: new Date().toISOString() };
   const dir = path.dirname(OVERRIDE_FILE);
   if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });

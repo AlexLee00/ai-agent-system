@@ -1,6 +1,7 @@
 // @ts-nocheck
 
 import { computeRegimePolicy } from './regime-strategy-policy.ts';
+import { resolvePositionRuntimeCadenceOverride } from './position-runtime-overrides.ts';
 
 function safeNumber(value, fallback = 0) {
   const parsed = Number(value);
@@ -65,6 +66,14 @@ function resolveFamilyBias(strategyProfile = null) {
     || strategyProfile?.strategy_state?.familyPerformanceFeedback
     || {};
   return normalizeString(feedback?.bias, null);
+}
+
+function applyCadenceOverride(policy = {}, exchange = 'binance') {
+  const cadenceMs = resolvePositionRuntimeCadenceOverride(exchange, policy.cadenceMs);
+  return {
+    ...policy,
+    cadenceMs,
+  };
 }
 
 function resolveInternalSourceQualityScore(analysisSummary = null) {
@@ -139,7 +148,7 @@ export function buildRegimeAwareMonitoringPolicy({
   const normalizedRecommendation = normalizeString(recommendation, 'HOLD');
   const normalizedAttentionType = normalizeString(attentionType, null);
   const sourceQualityScore = resolveSourceQualityScore(analysisSummary, externalEvidenceSummary);
-  const policy = computeRegimePolicy({
+  const policy = applyCadenceOverride(computeRegimePolicy({
     exchange,
     market: getPolicyMarket(exchange),
     regime: normalizedRegime,
@@ -150,7 +159,7 @@ export function buildRegimeAwareMonitoringPolicy({
     sourceQualityScore,
     recommendation: normalizedRecommendation,
     attentionType: normalizedAttentionType,
-  });
+  }), exchange);
 
   return {
     lane: policy.lane,
@@ -188,7 +197,7 @@ export function buildRegimeAwarePolicyMatrix({
   const sourceQualityScore = resolveSourceQualityScore(analysisSummary, externalEvidenceSummary);
   const closeoutAvgPnlPercent = nullableNumber(strategyProfile?.strategy_state?.phase6Closeout?.avgPnlPercent, null);
   const closeoutWinRate = nullableNumber(strategyProfile?.strategy_state?.phase6Closeout?.winRate, null);
-  const policy = computeRegimePolicy({
+  const policy = applyCadenceOverride(computeRegimePolicy({
     exchange,
     market: getPolicyMarket(exchange),
     regime: normalizedRegime,
@@ -200,7 +209,7 @@ export function buildRegimeAwarePolicyMatrix({
     closeoutWinRate,
     sourceQualityScore,
     recommendation,
-  });
+  }), exchange);
   const evidenceGap = resolveEvidenceGapState(externalEvidenceGapState);
   const evidenceGapPenalty = evidenceGap.gapSevere && recommendation !== 'EXIT';
   const evidenceGapExcessCycles = evidenceGapPenalty

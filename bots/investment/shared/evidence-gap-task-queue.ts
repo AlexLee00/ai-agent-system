@@ -15,6 +15,8 @@ const OPEN_TASK_MAX_AGE_MS = 3 * 60 * 60 * 1000;
 const TERMINAL_TASK_MAX_AGE_MS = 24 * 60 * 60 * 1000;
 const TERMINAL_TASK_HISTORY_LIMIT = 120;
 const TOTAL_TASK_HISTORY_LIMIT = 240;
+const STALE_STATE_MAX_AGE_MS = 72 * 60 * 60 * 1000;
+const RECOVERED_STATE_MAX_AGE_MS = 24 * 60 * 60 * 1000;
 
 function ensureDir(file) {
   const dir = path.dirname(file);
@@ -110,14 +112,49 @@ function compactTaskHistory(tasks = [], nowMs = Date.now()) {
     .slice(-TOTAL_TASK_HISTORY_LIMIT);
 }
 
+function stateTimeMs(state = {}) {
+  const raw = state?.lastSeenAt || state?.updatedAt || state?.lastQueuedAt || state?.lastEvidenceAt || null;
+  const parsed = raw ? new Date(raw).getTime() : 0;
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function compactStateHistory(states = {}, tasks = [], nowMs = Date.now()) {
+  const openTaskScopes = new Set((Array.isArray(tasks) ? tasks : [])
+    .filter((task) => ['queued', 'retrying', 'running'].includes(String(task?.status || '')))
+    .map((task) => String(task?.scopeKey || ''))
+    .filter(Boolean));
+  const compacted = {};
+  for (const [scopeKey, state] of Object.entries(states || {})) {
+    if (openTaskScopes.has(scopeKey)) {
+      compacted[scopeKey] = state;
+      continue;
+    }
+    const lastSeenMs = stateTimeMs(state);
+    if (!lastSeenMs) {
+      compacted[scopeKey] = state;
+      continue;
+    }
+    const ageMs = nowMs - lastSeenMs;
+    const status = String(state?.status || '');
+    const maxAgeMs = status === 'evidence_recovered'
+      ? RECOVERED_STATE_MAX_AGE_MS
+      : STALE_STATE_MAX_AGE_MS;
+    if (Number.isFinite(ageMs) && ageMs > maxAgeMs) continue;
+    compacted[scopeKey] = state;
+  }
+  return compacted;
+}
+
 function writeQueueRaw(payload = null, file = DEFAULT_EXTERNAL_EVIDENCE_GAP_QUEUE_FILE) {
   ensureDir(file);
+  const nowMs = Date.now();
   const tasks = compactTaskHistory(Array.isArray(payload?.tasks) ? payload.tasks : []);
+  const states = compactStateHistory(payload?.states && typeof payload.states === 'object' ? payload.states : {}, tasks, nowMs);
   const normalized = {
     file,
     version: 1,
     updatedAt: new Date().toISOString(),
-    states: payload?.states && typeof payload.states === 'object' ? payload.states : {},
+    states,
     tasks,
   };
   fs.writeFileSync(file, JSON.stringify(normalized, null, 2), 'utf8');
@@ -176,15 +213,17 @@ function queueTaskIfNeeded(payload, {
 export function readExternalEvidenceGapTaskQueue(file = DEFAULT_EXTERNAL_EVIDENCE_GAP_QUEUE_FILE) {
   const payload = readQueueRaw(file);
   const tasks = compactTaskHistory(payload.tasks);
-  if (JSON.stringify(tasks) !== JSON.stringify(payload.tasks || [])) {
-    writeQueueRaw({ ...payload, tasks }, file);
+  const states = compactStateHistory(payload.states || {}, tasks);
+  if (JSON.stringify(tasks) !== JSON.stringify(payload.tasks || []) || JSON.stringify(states) !== JSON.stringify(payload.states || {})) {
+    writeQueueRaw({ ...payload, tasks, states }, file);
   }
   const openTasks = tasks.filter((task) => ['queued', 'retrying', 'running'].includes(String(task?.status || '')));
   return {
     ...payload,
+    states,
     tasks,
     summary: {
-      scopes: Object.keys(payload.states || {}).length,
+      scopes: Object.keys(states || {}).length,
       tasks: tasks.length,
       openTasks: openTasks.length,
       terminalTasks: tasks.length - openTasks.length,

@@ -81,12 +81,33 @@ function buildRefreshQualityAdjustment(summary = {}, qualityFlags = []) {
   };
 }
 
-function deriveHeldHours(position = {}) {
-  const entryTime = position?.entry_time || position?.created_at || position?.updated_at || null;
-  if (!entryTime) return 0;
-  const ts = new Date(entryTime).getTime();
-  if (!Number.isFinite(ts) || ts <= 0) return 0;
-  return Math.max(0, (Date.now() - ts) / 3600000);
+function toTimestampMs(value) {
+  if (value == null || value === '') return null;
+  if (typeof value === 'number' || typeof value === 'bigint') {
+    const numeric = Number(value);
+    if (!Number.isFinite(numeric) || numeric <= 0) return null;
+    return numeric < 10_000_000_000 ? numeric * 1000 : numeric;
+  }
+  const parsed = new Date(value).getTime();
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+}
+
+function deriveHeldHours(position = {}, strategyProfile = null) {
+  const strategyContext = strategyProfile?.strategy_context || strategyProfile?.strategyContext || {};
+  const entryThesis = strategyContext?.entryThesisSnapshot || {};
+  const candidateTimes = [
+    position?.entry_time,
+    position?.created_at,
+    entryThesis?.createdAt,
+    strategyProfile?.created_at,
+  ].map(toTimestampMs).filter((value) => value != null);
+  if (candidateTimes.length <= 0) {
+    const updatedAt = toTimestampMs(position?.updated_at);
+    if (!updatedAt) return 0;
+    return Math.max(0, (Date.now() - updatedAt) / 3600000);
+  }
+  const oldestEntryMs = Math.min(...candidateTimes);
+  return Math.max(0, (Date.now() - oldestEntryMs) / 3600000);
 }
 
 export async function refreshPositionSignals({
@@ -136,7 +157,7 @@ export async function refreshPositionSignals({
       externalEvidenceSummary: rawSummary,
       strategyProfile,
       seedSignal: null,
-      heldHours: deriveHeldHours(position),
+      heldHours: deriveHeldHours(position, strategyProfile),
     });
     const summary = entryCarryover.summary || rawSummary;
     const minEvidence = flags.phaseD.minEvidenceCount;

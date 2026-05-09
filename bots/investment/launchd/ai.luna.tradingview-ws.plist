@@ -23,6 +23,8 @@
     <string>24</string>
     <key>TV_MAX_STALE_STRIKES</key>
     <string>3</string>
+    <key>TV_STALE_FORCE_RECONNECT_COOLDOWN_MS</key>
+    <string>300000</string>
     <key>TV_DEFAULT_SUBSCRIPTIONS</key>
     <string>BINANCE:BTCUSDT|60</string>
     <!-- HUB_BASE_URL / HUB_AUTH_TOKEN은 launchctl setenv로 주입 -->

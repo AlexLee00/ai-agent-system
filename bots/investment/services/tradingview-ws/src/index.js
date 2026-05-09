@@ -33,6 +33,7 @@ const MAX_SUBSCRIPTIONS = parseInt(process.env.TV_MAX_SUBSCRIPTIONS || '24', 10)
 const MAX_STALE_STRIKES = parseInt(process.env.TV_MAX_STALE_STRIKES || '3', 10);
 const HTTP_SUBSCRIPTION_TTL_MS = parseInt(process.env.TV_HTTP_SUBSCRIPTION_TTL_MS || String(10 * 60 * 1000), 10);
 const STALE_LOG_COOLDOWN_MS = parseInt(process.env.TV_STALE_LOG_COOLDOWN_MS || String(5 * 60 * 1000), 10);
+const STALE_FORCE_RECONNECT_COOLDOWN_MS = parseInt(process.env.TV_STALE_FORCE_RECONNECT_COOLDOWN_MS || String(5 * 60 * 1000), 10);
 const HUB_BASE = process.env.HUB_BASE_URL || 'http://localhost:7788';
 const HUB_TOKEN = process.env.HUB_AUTH_TOKEN || '';
 const RECONNECT_DELAY_BASE_MS = 2000;
@@ -105,6 +106,7 @@ const chartSessionId = `cs_luna_${Math.random().toString(36).slice(2, 10)}`;
 let reconnectAttempts = 0;
 let reconnectTimer = null;
 let staleCheckTimer = null;
+let lastStaleForceReconnectAt = 0;
 const runtimeReevalCooldowns = new Map();
 const runtimeActiveScopeCache = new Map();
 
@@ -576,6 +578,21 @@ function scheduleReconnect() {
   }, delay);
 }
 
+function forceTradingViewReconnect(reason = 'stale_protected_subscription') {
+  const now = Date.now();
+  if (lastStaleForceReconnectAt && now - lastStaleForceReconnectAt < STALE_FORCE_RECONNECT_COOLDOWN_MS) return false;
+  lastStaleForceReconnectAt = now;
+  recoveryAttemptsCounter.inc({ type: 'force_reconnect' });
+  console.warn(`[TV-WS] TradingView 세션 강제 재연결: ${reason}`);
+  try {
+    if (tvWs && tvWs.readyState === WebSocket.OPEN) tvWs.close(4000, reason);
+    else scheduleReconnect();
+  } catch (_) {
+    scheduleReconnect();
+  }
+  return true;
+}
+
 function startStaleChecker() {
   staleCheckTimer = setInterval(() => {
     const now = Date.now();
@@ -598,6 +615,11 @@ function startStaleChecker() {
         // 개별 재구독 시도
         sub.lastResubscribeAt = now;
         sub.staleStrikes = (sub.staleStrikes || 0) + 1;
+        if (sub.protected && sub.staleStrikes >= Math.max(1, MAX_STALE_STRIKES)) {
+          forceTradingViewReconnect(`protected_stale_strikes_${sub.staleStrikes}:${key}`);
+          recoveryAttemptsCounter.inc({ type: 'protected_stale_reconnect' });
+          continue;
+        }
         if (!sub.protected && sub.staleStrikes >= Math.max(1, MAX_STALE_STRIKES)) {
           removeSubscription(key, `stale_strikes_${sub.staleStrikes}`);
           recoveryAttemptsCounter.inc({ type: 'evict_stale' });
@@ -613,10 +635,17 @@ function startStaleChecker() {
 function healthPayload() {
   const now = Date.now();
   const bars = [...latestBars.values()];
-  const staleRows = [...subscriptions.values()].filter((sub) => {
+  const staleRows = [...subscriptions.entries()].filter(([, sub]) => {
     const lastSeenAt = sub.lastBarAt || sub.subscribedAt || 0;
     return lastSeenAt && now - lastSeenAt > staleThresholdFor(sub);
-  });
+  }).map(([key, sub]) => ({
+    key,
+    symbol: sub.symbol,
+    timeframe: sub.timeframe,
+    protected: Boolean(sub.protected),
+    staleStrikes: sub.staleStrikes || 0,
+    ageMs: Math.max(0, now - (sub.lastBarAt || sub.subscribedAt || now)),
+  }));
   const fallbackBars = bars.filter((item) => !isTradingViewRealtimeBar(item));
   const realtimeBars = bars.filter((item) => isTradingViewRealtimeBar(item));
   const tvStatus = tvWs?.readyState === WebSocket.OPEN ? 'connected' : 'disconnected';
@@ -632,6 +661,7 @@ function healthPayload() {
     maxSubscriptions: Math.max(DEFAULT_SUBSCRIPTION_KEYS.size || 1, Number(MAX_SUBSCRIPTIONS || 24)),
     expiringSubscriptions: [...subscriptions.values()].filter((sub) => sub.expiresAt && !sub.protected).length,
     clients: clientSockets.size,
+    staleDetails: staleRows.slice(0, 10),
   };
 }
 
@@ -720,6 +750,16 @@ const metricsServer = http.createServer(async (req, res) => {
   } else if (url.pathname === '/health') {
     res.setHeader('Content-Type', 'application/json');
     res.end(JSON.stringify(healthPayload()));
+  } else if (url.pathname === '/reconnect') {
+    const reason = url.searchParams.get('reason') || 'http_reconnect';
+    const forced = forceTradingViewReconnect(reason);
+    res.setHeader('Content-Type', 'application/json');
+    res.end(JSON.stringify({
+      ok: forced,
+      status: forced ? 'tradingview_reconnect_requested' : 'tradingview_reconnect_cooldown',
+      reason,
+      health: healthPayload(),
+    }));
   } else if (url.pathname === '/subscribe') {
     const symbol = url.searchParams.get('symbol');
     const timeframe = url.searchParams.get('timeframe');

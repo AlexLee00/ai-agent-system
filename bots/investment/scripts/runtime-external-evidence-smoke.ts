@@ -155,6 +155,37 @@ async function main() {
   const compacted = readExternalEvidenceGapTaskQueue(staleQueueFile);
   assert('terminal stale task history 압축', Number(compacted.summary?.tasks || 0) === 0);
 
+  const staleStateFile = `/tmp/investment-evidence-gap-stale-state-smoke-${Date.now()}.json`;
+  fs.writeFileSync(staleStateFile, JSON.stringify({
+    version: 1,
+    states: {
+      'binance:OLD/USDT:normal': {
+        scopeKey: 'binance:OLD/USDT:normal',
+        symbol: 'OLD/USDT',
+        exchange: 'binance',
+        tradeMode: 'normal',
+        evidenceCount: 0,
+        consecutiveGapCount: 999,
+        lastSeenAt: '2026-04-01T00:00:00.000Z',
+        status: 'evidence_gap_observed',
+      },
+      'binance:LIVE/USDT:normal': {
+        scopeKey: 'binance:LIVE/USDT:normal',
+        symbol: 'LIVE/USDT',
+        exchange: 'binance',
+        tradeMode: 'normal',
+        evidenceCount: 0,
+        consecutiveGapCount: 4,
+        lastSeenAt: new Date().toISOString(),
+        status: 'evidence_gap_observed',
+      },
+    },
+    tasks: [],
+  }, null, 2), 'utf8');
+  const compactedStates = readExternalEvidenceGapTaskQueue(staleStateFile);
+  assert('stale evidence gap state 압축', Number(compactedStates.summary?.scopes || 0) === 1);
+  assert('fresh evidence gap state 유지', Boolean(compactedStates.states?.['binance:LIVE/USDT:normal']));
+
   console.log('');
   console.log(`결과: ${passed}/${passed + failed} passed`);
   if (failed > 0) process.exit(1);

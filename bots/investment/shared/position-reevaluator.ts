@@ -315,12 +315,32 @@ function classifyDustPosition(position = {}) {
   };
 }
 
-function deriveHeldHours(position = {}) {
-  const entryTime = position?.entry_time || position?.created_at || position?.updated_at || null;
-  if (!entryTime) return 0;
-  const ts = new Date(entryTime).getTime();
-  if (!Number.isFinite(ts) || ts <= 0) return 0;
-  return Math.max(0, (Date.now() - ts) / 3600000);
+function toTimestampMs(value) {
+  if (value == null || value === '') return null;
+  if (typeof value === 'number' || typeof value === 'bigint') {
+    const numeric = Number(value);
+    if (!Number.isFinite(numeric) || numeric <= 0) return null;
+    return numeric < 10_000_000_000 ? numeric * 1000 : numeric;
+  }
+  const parsed = new Date(value).getTime();
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+}
+
+function deriveHeldHours(position = {}, strategyProfile = null) {
+  const strategyContext = strategyProfile?.strategy_context || strategyProfile?.strategyContext || {};
+  const entryThesis = strategyContext?.entryThesisSnapshot || {};
+  const candidateTimes = [
+    position?.entry_time,
+    position?.created_at,
+    entryThesis?.createdAt,
+    strategyProfile?.created_at,
+  ].map(toTimestampMs).filter((value) => value != null);
+  if (candidateTimes.length <= 0) {
+    const updatedAt = toTimestampMs(position?.updated_at);
+    if (!updatedAt) return 0;
+    return Math.max(0, (Date.now() - updatedAt) / 3600000);
+  }
+  return Math.max(0, (Date.now() - Math.min(...candidateTimes)) / 3600000);
 }
 
 async function resolveEntrySeedSignal(position = {}, strategyProfile = null, effectiveTradeMode = 'normal') {
@@ -752,7 +772,7 @@ function applyStrategyAwareDecision(baseDecision, {
 
 function decideReevaluation(position, analysisSummary, strategyProfile = null, latestBacktest = null) {
   const pnlPct = calcPnlPct(position);
-  const heldHours = deriveHeldHours(position);
+  const heldHours = deriveHeldHours(position, strategyProfile);
   const buy = Number(analysisSummary.buy || 0);
   const hold = Number(analysisSummary.hold || 0);
   const sell = Number(analysisSummary.sell || 0);
@@ -1182,7 +1202,7 @@ export async function reevaluateOpenPositions({
       externalEvidenceSummary: rawExternalEvidenceSummary,
       strategyProfile,
       seedSignal,
-      heldHours: deriveHeldHours(position),
+      heldHours: deriveHeldHours(position, strategyProfile),
     });
     entryEvidenceCarryover.seedSignalSource = seedSignalResolution.source;
     entryEvidenceCarryover.seedSignalId = seedSignal?.id || null;
@@ -1234,11 +1254,11 @@ export async function reevaluateOpenPositions({
       externalEvidenceSummary,
       driftContext: decision.driftContext,
       pnlPct,
-      heldHours: deriveHeldHours(position),
+      heldHours: deriveHeldHours(position, strategyProfile),
       previousScore: strategyProfile?.strategy_state?.positionRuntimeState?.strategyValidityScore ?? null,
     });
 
-    const heldHours = deriveHeldHours(position);
+    const heldHours = deriveHeldHours(position, strategyProfile);
     const validityDecision = applyValidityActionDecision(decision?.decision, validityResult, {
       heldHours,
       entryEvidenceCarryover,
@@ -1262,7 +1282,7 @@ export async function reevaluateOpenPositions({
         regimeSnapshot,
         latestBacktest,
         pnlPct,
-        heldHours: deriveHeldHours(position),
+        heldHours,
         analysisSummary,
       }).catch(() => null);
       if (mutationResult?.mutationApplied === true && mutationResult?.candidate) {

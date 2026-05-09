@@ -149,11 +149,22 @@ function buildSuggestions(summary = {}, history = []) {
       });
       continue;
     }
-    if (bucket.fastLane === bucket.total && bucket.adjust === 0 && bucket.total > 0 && pressureScore < 0.1) {
+    if (
+      bucket.fastLane === bucket.total
+      && bucket.adjust === 0
+      && bucket.total > 0
+      && pressureScore < 0.1
+      && (!avgCadenceMs || avgCadenceMs < baseRelaxedCadence)
+    ) {
+      const recommendedRelaxedCadence = Math.max(
+        baseRelaxedCadence,
+        Number(avgCadenceMs || 0),
+        Number(historyPressure.avgSuggestedCadenceMs || 0),
+      );
       suggestions.push({
         exchange,
         status: 'relax_runtime_watch',
-        recommendedCadenceMs: historyPressure.avgSuggestedCadenceMs || baseRelaxedCadence,
+        recommendedCadenceMs: recommendedRelaxedCadence,
         pressureScore,
         reason: `all positions already on fast lane without current adjust/exit pressure / pressure ${pressureScore}`,
         currentAverageCadenceMs: avgCadenceMs,
@@ -164,7 +175,7 @@ function buildSuggestions(summary = {}, history = []) {
     suggestions.push({
       exchange,
       status: 'runtime_watch_balanced',
-      recommendedCadenceMs: historyPressure.avgSuggestedCadenceMs || avgCadenceMs,
+      recommendedCadenceMs: avgCadenceMs || historyPressure.avgSuggestedCadenceMs,
       pressureScore,
       reason: `current runtime cadence is balanced / pressure ${pressureScore}`,
       currentAverageCadenceMs: avgCadenceMs,
