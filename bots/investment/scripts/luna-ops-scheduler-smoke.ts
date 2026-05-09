@@ -18,7 +18,7 @@ import { shouldSkipPreScreen } from './pre-market-screen.ts';
 
 export async function runLunaOpsSchedulerSmoke() {
   const jobs = getOpsSchedulerJobs();
-  assert.equal(jobs.length, 25);
+  assert.equal(jobs.length, 27);
   assert.equal(jobs.some((job) => job.name === 'dynamic_policy_operator'), true);
   assert.equal(jobs.find((job) => job.name === 'dynamic_policy_operator')?.args?.includes('--confirm=luna-dynamic-policy-autotune'), true);
   assert.equal(jobs.some((job) => job.name === 'discovery_candidate_refresh'), true);
@@ -33,7 +33,7 @@ export async function runLunaOpsSchedulerSmoke() {
   assert.equal(jobs.find((job) => job.name === 'pre_market_analysis_refresh_domestic')?.requiresMarketOpen, undefined);
   assert.equal(jobs.find((job) => job.name === 'pre_market_analysis_refresh_domestic')?.args?.includes('--max-symbols=2'), true);
   assert.equal(jobs.find((job) => job.name === 'pre_market_analysis_refresh_overseas')?.requiresMarketOpen, undefined);
-  assert.equal(jobs.find((job) => job.name === 'pre_market_analysis_refresh_overseas')?.args?.includes('--max-enrichment-symbols=2'), true);
+  assert.equal(jobs.find((job) => job.name === 'pre_market_analysis_refresh_overseas')?.args?.includes('--max-enrichment-symbols=1'), true);
   assert.equal(shouldSkipPreScreen({ isOpen: true }), true);
   assert.equal(shouldSkipPreScreen({ isOpen: false, isWeekend: false, holiday: { isHoliday: false } }), false);
   assert.equal(jobs.some((job) => job.name === 'market_cycle_crypto'), true);
@@ -63,10 +63,16 @@ export async function runLunaOpsSchedulerSmoke() {
   assert.equal(jobs.find((job) => job.name === 'market_cycle_domestic')?.env?.LUNA_LIVE_DOMESTIC, 'true');
   assert.equal(jobs.find((job) => job.name === 'market_cycle_domestic_open_catchup')?.env?.LUNA_LIVE_DOMESTIC, 'true');
   assert.equal(jobs.find((job) => job.name === 'market_cycle_overseas')?.env?.LUNA_LIVE_OVERSEAS, 'true');
+  assert.equal(jobs.some((job) => job.name === 'external_evidence_gap_queue_worker'), true);
+  assert.equal(jobs.find((job) => job.name === 'external_evidence_gap_queue_worker')?.args?.includes('--confirm=evidence-gap-queue'), true);
+  assert.equal(jobs.find((job) => job.name === 'external_evidence_gap_queue_worker')?.cadence?.seconds, 300);
+  assert.equal(jobs.some((job) => job.name === 'external_evidence_gap_backtest_worker'), true);
+  assert.equal(jobs.find((job) => job.name === 'external_evidence_gap_backtest_worker')?.args?.includes('--include-backtest'), true);
+  assert.equal(jobs.find((job) => job.name === 'external_evidence_gap_backtest_worker')?.cadence?.seconds, 3600);
 
   const now = new Date('2026-05-04T02:00:00+09:00');
   const emptyPlan = buildOpsSchedulerPlan({ now, state: { jobs: {} }, jobs });
-  assert.equal(emptyPlan.due, 14);
+  assert.equal(emptyPlan.due, 16);
   assert.equal(emptyPlan.jobs.find((job) => job.name === 'market_cycle_domestic')?.due, false);
   assert.equal(emptyPlan.jobs.find((job) => job.name === 'market_cycle_domestic')?.marketSession?.isOpen, false);
   assert.equal(emptyPlan.jobs.find((job) => job.name === 'market_cycle_domestic_open_catchup')?.due, false);
@@ -136,12 +142,12 @@ export async function runLunaOpsSchedulerSmoke() {
     },
   });
   assert.equal(executed.ok, true);
-  assert.equal(calls.length, 14);
+  assert.equal(calls.length, 16);
   assert.equal(calls.includes('market_cycle_domestic'), false);
   assert.equal(calls.includes('market_cycle_domestic_open_catchup'), false);
   assert.equal(calls.includes('market_cycle_overseas'), false);
   const executedState = JSON.parse(fs.readFileSync(statePath, 'utf8'));
-  assert.equal(Object.keys(executedState.jobs).length, 14);
+  assert.equal(Object.keys(executedState.jobs).length, 16);
 
   assert.deepEqual(
     classifyOpsSchedulerOutcome(

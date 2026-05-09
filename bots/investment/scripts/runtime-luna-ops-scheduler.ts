@@ -323,6 +323,31 @@ export function getOpsSchedulerJobs() {
         '--json',
       ]),
     },
+    {
+      name: 'external_evidence_gap_queue_worker',
+      category: 'position_monitor',
+      market: 'all',
+      immutable: true,
+      cadence: { type: 'interval', seconds: 300 },
+      ...nodeScript('runtime-external-evidence-gap-queue.ts', [
+        '--execute',
+        '--confirm=evidence-gap-queue',
+        '--json',
+      ]),
+    },
+    {
+      name: 'external_evidence_gap_backtest_worker',
+      category: 'position_monitor',
+      market: 'all',
+      cadence: { type: 'interval', seconds: 3600 },
+      ...nodeScript('runtime-external-evidence-gap-queue.ts', [
+        '--execute',
+        '--include-backtest',
+        '--confirm=evidence-gap-queue',
+        '--limit=2',
+        '--json',
+      ]),
+    },
   ];
 }
 

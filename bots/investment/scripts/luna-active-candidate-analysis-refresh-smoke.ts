@@ -269,12 +269,37 @@ export async function runLunaActiveCandidateAnalysisRefreshSmoke() {
     maxEnrichmentSymbols: 2,
     cooldownMinutes: 45,
     targetedCooldownMinutes: 120,
+    globalCooldownBypassMaxSymbols: 0,
     globalCooldownEnabled: true,
     exchange: 'binance',
   });
   assert.equal(globalCooldownBlockedPlan.status, 'active_candidate_analysis_refresh_clear');
   assert.equal(globalCooldownBlockedPlan.targetedEnrichment.status, 'targeted_enrichment_cooldown');
   assert.equal(globalCooldownBlockedPlan.targetedEnrichment.skippedCooldown[0].scope, 'market_global');
+
+  const globalCooldownLimitedBypassPlan = buildActiveCandidateAnalysisRefreshPlan({
+    report: fixtureReport([], [
+      fixtureFilteredCandidate('EDEN/USDT'),
+      fixtureFilteredCandidate('BANANAS31/USDT'),
+    ]),
+    state: {
+      symbols: {
+        'binance:targeted_enrichment:__global__': { lastAttemptAt: '2026-05-06T23:30:00.000Z' },
+      },
+    },
+    now,
+    maxSymbols: 1,
+    maxEnrichmentSymbols: 2,
+    cooldownMinutes: 45,
+    targetedCooldownMinutes: 120,
+    globalCooldownBypassMaxSymbols: 1,
+    globalCooldownEnabled: true,
+    exchange: 'binance',
+  });
+  assert.equal(globalCooldownLimitedBypassPlan.status, 'active_candidate_analysis_refresh_needed');
+  assert.deepEqual(globalCooldownLimitedBypassPlan.targetedEnrichment.selectedSymbols, ['EDEN/USDT']);
+  assert.equal(globalCooldownLimitedBypassPlan.targetedEnrichment.globalCooldownBypassed, 1);
+  assert.equal(globalCooldownLimitedBypassPlan.targetedEnrichment.selected[0].globalCooldownBypassed, true);
 
   const cooldownBypassPlan = buildActiveCandidateAnalysisRefreshPlan({
     report: fixtureReport([], [

@@ -31,6 +31,7 @@ const DEFAULT_TARGETED_ENRICHMENT_CANDIDATE_SCORE = 0.55;
 const DEFAULT_TARGETED_ENRICHMENT_CANDIDATE_RANK = 10;
 const DEFAULT_TARGETED_ENRICHMENT_COOLDOWN_BYPASS_MINUTES = 10;
 const DEFAULT_TARGETED_ENRICHMENT_COOLDOWN_BYPASS_MAX_SYMBOLS = 0;
+const DEFAULT_TARGETED_ENRICHMENT_GLOBAL_COOLDOWN_BYPASS_MAX_SYMBOLS = 1;
 const DEFAULT_TARGETED_ENRICHMENT_GLOBAL_COOLDOWN_ENABLED = true;
 const DEFAULT_CRYPTO_TARGETED_ENRICHMENT_REQUIRE_TECHNICAL_PRESIGNAL = true;
 const DEFAULT_CRYPTO_TARGETED_ENRICHMENT_DAILY_TECHNICAL_ENABLED = true;
@@ -195,6 +196,12 @@ function shouldTargetCandidateForEnrichment(item = {}, { exchange = null, env = 
   return missingEnrichmentNodeIds(item).length > 0;
 }
 
+function isGlobalCooldownBypassCandidate(item = {}, confidence = 0, minConfidence = DEFAULT_TARGETED_ENRICHMENT_MIN_CONFIDENCE) {
+  if (isProbeCriticalCandidate(item)) return true;
+  if (!targetedTechnicalPresignal(item)) return false;
+  return Number(confidence || 0) >= Math.max(Number(minConfidence || 0), 0.62);
+}
+
 function buildDailyTechnicalBySymbol(coverage = null) {
   const bySymbol = new Map();
   for (const row of coverage?.rows || []) {
@@ -230,6 +237,7 @@ function buildTargetedEnrichmentPlan({
   minConfidence = DEFAULT_TARGETED_ENRICHMENT_MIN_CONFIDENCE,
   cooldownBypassMinMinutes = DEFAULT_TARGETED_ENRICHMENT_COOLDOWN_BYPASS_MINUTES,
   cooldownBypassMaxSymbols = DEFAULT_TARGETED_ENRICHMENT_COOLDOWN_BYPASS_MAX_SYMBOLS,
+  globalCooldownBypassMaxSymbols = DEFAULT_TARGETED_ENRICHMENT_GLOBAL_COOLDOWN_BYPASS_MAX_SYMBOLS,
   globalCooldownEnabled = DEFAULT_TARGETED_ENRICHMENT_GLOBAL_COOLDOWN_ENABLED,
   exchange = null,
   excludeSymbols = [],
@@ -241,12 +249,14 @@ function buildTargetedEnrichmentPlan({
   const cooldownMs = safeCooldownMinutes * 60 * 1000;
   const bypassMs = Math.max(1, Number(cooldownBypassMinMinutes || DEFAULT_TARGETED_ENRICHMENT_COOLDOWN_BYPASS_MINUTES)) * 60 * 1000;
   const bypassMax = Math.max(0, Number(cooldownBypassMaxSymbols || 0));
+  const globalBypassMax = Math.max(0, Number(globalCooldownBypassMaxSymbols || 0));
   const excluded = new Set((excludeSymbols || []).map((symbol) => String(symbol || '').trim().toUpperCase()).filter(Boolean));
   const selected = [];
   const skippedCooldown = [];
   const skippedQuality = [];
   const nodeIds = new Set();
   let cooldownBypassed = 0;
+  let globalCooldownBypassed = 0;
   let globalCooldown = null;
   const globalKey = exchange
     ? `${exchange}:targeted_enrichment:${GLOBAL_TARGETED_ENRICHMENT_SYMBOL}`
@@ -281,7 +291,36 @@ function buildTargetedEnrichmentPlan({
     if (reasons.has('conflict_detected') || reasons.has('news_only_buy')) continue;
     const missingNodes = missingEnrichmentNodeIds(item);
     if (missingNodes.length === 0) continue;
+    const key = exchange ? `${exchange}:targeted_enrichment:${symbol}` : `targeted_enrichment:${symbol}`;
+    const attempt = attempts?.[key] || null;
+    const lastAttemptAt = attempt?.lastAttemptAt || null;
+    const ageMs = lastAttemptAt ? now.getTime() - new Date(lastAttemptAt).getTime() : Infinity;
     if (globalCooldown && globalCooldownEnabled === true) {
+      const globalBypassAllowed = isGlobalCooldownBypassCandidate(item, confidence, safeMinConfidence)
+        && globalCooldownBypassed < globalBypassMax
+        && globalAgeMs >= bypassMs
+        && selected.length < Math.max(0, Number(maxSymbols || 0))
+        && (!Number.isFinite(ageMs) || ageMs < 0 || ageMs >= bypassMs);
+      if (globalBypassAllowed) {
+        cooldownBypassed += 1;
+        globalCooldownBypassed += 1;
+        selected.push({
+          symbol,
+          reasons: [...reasons],
+          missingNodes,
+          confidence,
+          fused: item.fused || null,
+          recommendation: item.recommendation || null,
+          technicalPresignal: targetedTechnicalPresignal(item),
+          cooldownBypassed: true,
+          globalCooldownBypassed: true,
+          globalLastAttemptAt: globalCooldown.lastAttemptAt,
+          globalNextEligibleAt: globalCooldown.nextEligibleAt,
+        });
+        for (const nodeId of missingNodes) nodeIds.add(nodeId);
+        if (selected.length >= Math.max(0, Number(maxSymbols || 0))) break;
+        continue;
+      }
       skippedCooldown.push({
         symbol,
         lastAttemptAt: globalCooldown.lastAttemptAt,
@@ -291,11 +330,6 @@ function buildTargetedEnrichmentPlan({
       });
       continue;
     }
-
-    const key = exchange ? `${exchange}:targeted_enrichment:${symbol}` : `targeted_enrichment:${symbol}`;
-    const attempt = attempts?.[key] || null;
-    const lastAttemptAt = attempt?.lastAttemptAt || null;
-    const ageMs = lastAttemptAt ? now.getTime() - new Date(lastAttemptAt).getTime() : Infinity;
     if (Number.isFinite(ageMs) && ageMs >= 0 && ageMs < cooldownMs) {
       const bypassAllowed = isProbeCriticalCandidate(item)
         && cooldownBypassed < bypassMax
@@ -366,6 +400,8 @@ function buildTargetedEnrichmentPlan({
       : false,
     cooldownBypassed,
     cooldownBypassedSymbols: selected.filter((item) => item.cooldownBypassed).map((item) => item.symbol),
+    globalCooldownBypassed,
+    globalCooldownBypassMaxSymbols: globalBypassMax,
     maxSymbols: Math.max(0, Number(maxSymbols || 0)),
     cooldownMinutes: safeCooldownMinutes,
     minConfidence: safeMinConfidence,
@@ -385,6 +421,7 @@ export function buildActiveCandidateAnalysisRefreshPlan({
   minTargetedConfidence = DEFAULT_TARGETED_ENRICHMENT_MIN_CONFIDENCE,
   cooldownBypassMinMinutes = DEFAULT_TARGETED_ENRICHMENT_COOLDOWN_BYPASS_MINUTES,
   cooldownBypassMaxSymbols = DEFAULT_TARGETED_ENRICHMENT_COOLDOWN_BYPASS_MAX_SYMBOLS,
+  globalCooldownBypassMaxSymbols = DEFAULT_TARGETED_ENRICHMENT_GLOBAL_COOLDOWN_BYPASS_MAX_SYMBOLS,
   globalCooldownEnabled = DEFAULT_TARGETED_ENRICHMENT_GLOBAL_COOLDOWN_ENABLED,
   exchange = null,
   env = process.env,
@@ -420,6 +457,7 @@ export function buildActiveCandidateAnalysisRefreshPlan({
     minConfidence: minTargetedConfidence,
     cooldownBypassMinMinutes,
     cooldownBypassMaxSymbols,
+    globalCooldownBypassMaxSymbols,
     globalCooldownEnabled,
     exchange,
     excludeSymbols: selected,
@@ -495,6 +533,7 @@ export async function runActiveCandidateAnalysisRefresh({
   minTargetedConfidence = Number(process.env.LUNA_ACTIVE_CANDIDATE_TARGETED_ENRICHMENT_MIN_CONFIDENCE || DEFAULT_TARGETED_ENRICHMENT_MIN_CONFIDENCE),
   cooldownBypassMinMinutes = Number(process.env.LUNA_ACTIVE_CANDIDATE_TARGETED_ENRICHMENT_COOLDOWN_BYPASS_MINUTES || DEFAULT_TARGETED_ENRICHMENT_COOLDOWN_BYPASS_MINUTES),
   cooldownBypassMaxSymbols = Number(process.env.LUNA_ACTIVE_CANDIDATE_TARGETED_ENRICHMENT_COOLDOWN_BYPASS_MAX_SYMBOLS || DEFAULT_TARGETED_ENRICHMENT_COOLDOWN_BYPASS_MAX_SYMBOLS),
+  globalCooldownBypassMaxSymbols = Number(process.env.LUNA_ACTIVE_CANDIDATE_TARGETED_ENRICHMENT_GLOBAL_COOLDOWN_BYPASS_MAX_SYMBOLS || DEFAULT_TARGETED_ENRICHMENT_GLOBAL_COOLDOWN_BYPASS_MAX_SYMBOLS),
   globalCooldownEnabled = boolEnv('LUNA_ACTIVE_CANDIDATE_TARGETED_ENRICHMENT_GLOBAL_COOLDOWN_ENABLED', DEFAULT_TARGETED_ENRICHMENT_GLOBAL_COOLDOWN_ENABLED),
   enabled = boolEnv('LUNA_ACTIVE_CANDIDATE_REFRESH_ENABLED', true),
   targetedEnrichmentEnabled = boolEnv('LUNA_ACTIVE_CANDIDATE_TARGETED_ENRICHMENT_ENABLED', true),
@@ -571,6 +610,7 @@ export async function runActiveCandidateAnalysisRefresh({
     minTargetedConfidence,
     cooldownBypassMinMinutes,
     cooldownBypassMaxSymbols,
+    globalCooldownBypassMaxSymbols,
     globalCooldownEnabled,
     exchange: resolvedExchange,
     env,
@@ -710,6 +750,7 @@ export async function runActiveCandidateAnalysisRefresh({
           targeted_enrichment_cooldown_minutes: plan.targetedEnrichment.cooldownMinutes,
           targeted_enrichment_min_confidence: plan.targetedEnrichment.minConfidence,
           targeted_enrichment_cooldown_bypassed_symbols: plan.targetedEnrichment.cooldownBypassedSymbols || [],
+          targeted_enrichment_global_cooldown_bypassed: plan.targetedEnrichment.globalCooldownBypassed || 0,
           targeted_enrichment_global_cooldown: plan.targetedEnrichment.globalCooldown,
         },
       },
@@ -777,6 +818,7 @@ async function main() {
     minTargetedConfidence: Math.max(0, Math.min(1, Number(argValue('targeted-min-confidence', process.env.LUNA_ACTIVE_CANDIDATE_TARGETED_ENRICHMENT_MIN_CONFIDENCE || DEFAULT_TARGETED_ENRICHMENT_MIN_CONFIDENCE, argv)) || DEFAULT_TARGETED_ENRICHMENT_MIN_CONFIDENCE)),
     cooldownBypassMinMinutes: Math.max(1, Number(argValue('cooldown-bypass-minutes', process.env.LUNA_ACTIVE_CANDIDATE_TARGETED_ENRICHMENT_COOLDOWN_BYPASS_MINUTES || DEFAULT_TARGETED_ENRICHMENT_COOLDOWN_BYPASS_MINUTES, argv)) || DEFAULT_TARGETED_ENRICHMENT_COOLDOWN_BYPASS_MINUTES),
     cooldownBypassMaxSymbols: Math.max(0, Number(argValue('cooldown-bypass-max-symbols', process.env.LUNA_ACTIVE_CANDIDATE_TARGETED_ENRICHMENT_COOLDOWN_BYPASS_MAX_SYMBOLS || DEFAULT_TARGETED_ENRICHMENT_COOLDOWN_BYPASS_MAX_SYMBOLS, argv)) || 0),
+    globalCooldownBypassMaxSymbols: Math.max(0, Number(argValue('global-cooldown-bypass-max-symbols', process.env.LUNA_ACTIVE_CANDIDATE_TARGETED_ENRICHMENT_GLOBAL_COOLDOWN_BYPASS_MAX_SYMBOLS || DEFAULT_TARGETED_ENRICHMENT_GLOBAL_COOLDOWN_BYPASS_MAX_SYMBOLS, argv)) || 0),
     globalCooldownEnabled: hasArg('targeted-global-cooldown', argv)
       ? true
       : hasArg('no-targeted-global-cooldown', argv)

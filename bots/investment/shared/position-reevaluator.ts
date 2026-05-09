@@ -896,7 +896,7 @@ function decideReevaluation(position, analysisSummary, strategyProfile = null, l
   });
 }
 
-function applyValidityActionDecision(decision = null, validityResult = null, context = {}) {
+export function applyValidityActionDecision(decision = null, validityResult = null, context = {}) {
   const baseDecision = decision && typeof decision === 'object'
     ? {
         recommendation: String(decision.recommendation || 'HOLD'),
@@ -952,11 +952,13 @@ function applyValidityActionDecision(decision = null, validityResult = null, con
 
   if (validityResult.recommendedAction === 'CAUTION' && baseDecision.recommendation === 'HOLD') {
     const heldHours = safeNumber(context?.heldHours, 0);
+    const pnlPct = safeNumber(context?.pnlPct, 0);
     const entryCarryoverActive = context?.entryEvidenceCarryover?.usedCarryover === true;
     const analysisSummary = context?.analysisSummary || {};
     const sell = Number(analysisSummary.sell || 0);
     const buy = Number(analysisSummary.buy || 0);
     const tvComposite = String(analysisSummary?.liveIndicator?.compositeSignal || 'HOLD').toUpperCase();
+    const chartExitPolicy = buildChartExitPolicySnapshot(analysisSummary);
     if (entryCarryoverActive && heldHours < 6 && sell <= buy && tvComposite !== 'SELL') {
       return {
         decision: {
@@ -966,6 +968,17 @@ function applyValidityActionDecision(decision = null, validityResult = null, con
         },
         mutationRequired: false,
         validityReason: 'fresh_entry_caution_hold_guard',
+      };
+    }
+    if (sell <= buy && tvComposite !== 'SELL' && chartExitPolicy.chartBearishConfirmed !== true && pnlPct < 2.5) {
+      return {
+        decision: {
+          recommendation: 'HOLD',
+          reasonCode: 'validity_caution_monitor_only',
+          reason: `strategy validity ${safeNumber(validityResult.score).toFixed(3)} / action CAUTION이나 차트 약세와 매도압이 없어 실행 대신 관찰 강화`,
+        },
+        mutationRequired: false,
+        validityReason: 'caution_monitor_only',
       };
     }
     return {
