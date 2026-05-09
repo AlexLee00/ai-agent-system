@@ -1,4 +1,6 @@
 import { getNeighbors, type GraphEdge } from './intelligent-library.js';
+import { collectLibraryRecords, type LibraryRecord } from './library-data-source.js';
+import { createTeamMemory } from './team-memory-adapter.js';
 
 export interface HydePlan {
   query: string;
@@ -22,6 +24,25 @@ export interface SelfRagAssessment {
   faithfulnessRisk: 'low' | 'medium' | 'high';
   answerPolicy: 'answer' | 'retrieve_more' | 'abstain';
   reasons: string[];
+}
+
+export interface SelfRagEvidence {
+  source: 'record' | 'graph' | 'memory';
+  id: string;
+  team?: string;
+  text: string;
+  score: number;
+}
+
+export interface SelfRagPipelineResult {
+  ok: boolean;
+  query: string;
+  policy: 'answer' | 'retrieve_more' | 'abstain';
+  hyde: HydePlan;
+  multiHop: MultiHopPlan | null;
+  evidence: SelfRagEvidence[];
+  assessment: SelfRagAssessment;
+  warnings: string[];
 }
 
 const DEFAULT_COLLECTIONS = [
@@ -106,5 +127,140 @@ export function assessSelfRag(input: {
       `contexts:${input.retrievedContexts.length}`,
       ...(unsupportedAnswer ? ['answer_draft_not_grounded'] : []),
     ],
+  };
+}
+
+function queryTerms(query: string): string[] {
+  return [...new Set(query.toLowerCase().split(/[^a-z0-9가-힣/.-]+/).filter((term) => term.length >= 2))];
+}
+
+function scoreText(text: string, terms: readonly string[]): number {
+  if (terms.length === 0) return 0;
+  const lower = text.toLowerCase();
+  const matched = terms.filter((term) => lower.includes(term)).length;
+  return matched / terms.length;
+}
+
+export function buildSelfRagEvidenceBundle(input: {
+  query: string;
+  records?: readonly LibraryRecord[];
+  graphEdges?: readonly GraphEdge[];
+  memoryPrefix?: string;
+  limit?: number;
+}): SelfRagEvidence[] {
+  const terms = queryTerms(input.query);
+  const limit = Math.max(1, Math.min(20, input.limit ?? 8));
+  const evidence: SelfRagEvidence[] = [];
+
+  for (const record of input.records ?? []) {
+    const score = scoreText(record.piiRedactedText, terms);
+    if (score <= 0) continue;
+    evidence.push({
+      source: 'record',
+      id: record.sourceId,
+      team: record.team,
+      text: record.piiRedactedText.slice(0, 800),
+      score,
+    });
+  }
+
+  for (const edge of input.graphEdges ?? []) {
+    const graphText = `${edge.source} ${edge.relationship} ${edge.target}`;
+    const score = scoreText(graphText, terms);
+    if (score <= 0) continue;
+    evidence.push({
+      source: 'graph',
+      id: `${edge.source}->${edge.target}:${edge.relationship}`,
+      text: graphText,
+      score: Math.max(score, edge.confidence * 0.5),
+    });
+  }
+
+  if (input.memoryPrefix) {
+    const score = scoreText(input.memoryPrefix, terms);
+    if (score > 0) {
+      evidence.push({
+        source: 'memory',
+        id: 'team-memory-prefix',
+        text: input.memoryPrefix.slice(0, 1_200),
+        score,
+      });
+    }
+  }
+
+  return evidence
+    .sort((a, b) => b.score - a.score || a.id.localeCompare(b.id))
+    .slice(0, limit);
+}
+
+export async function runSelfRagPipeline(input: {
+  query: string;
+  team?: string;
+  agent?: string;
+  records?: readonly LibraryRecord[];
+  graphEdges?: readonly GraphEdge[];
+  includeMemory?: boolean;
+  enabled?: boolean;
+}): Promise<SelfRagPipelineResult> {
+  const warnings: string[] = [];
+  const records = input.records ?? (await collectLibraryRecords({ limitPerSource: 50 }).then((report) => {
+    warnings.push(...report.warnings);
+    return report.records;
+  }));
+  let memoryPrefix = '';
+  if (input.includeMemory && input.team && input.agent) {
+    try {
+      const memory = createTeamMemory(input.team, input.agent);
+      memoryPrefix = (await memory.getFullPrefix({ query: input.query, maxChars: 1_500 })).prefix;
+    } catch (error) {
+      warnings.push(`team_memory:${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+
+  const hyde = buildHydePlan(input.query, { enabled: input.enabled });
+  const graphEdges = input.graphEdges ?? [];
+  const seedEntity = queryTerms(input.query)[0] ?? '';
+  const multiHop = seedEntity
+    ? buildMultiHopPlan({
+      query: input.query,
+      seedEntity,
+      edges: graphEdges,
+      enabled: input.enabled,
+    })
+    : null;
+  const evidence = buildSelfRagEvidenceBundle({
+    query: input.query,
+    records,
+    graphEdges,
+    memoryPrefix,
+  });
+  const assessment = assessSelfRag({
+    query: input.query,
+    retrievedContexts: evidence.map((item) => item.text),
+    enabled: input.enabled,
+  });
+  const policy = evidence.length === 0
+    ? 'abstain'
+    : assessment.answerPolicy === 'answer'
+      ? 'answer'
+      : assessment.answerPolicy;
+
+  return {
+    ok: policy !== 'abstain' || evidence.length === 0,
+    query: input.query,
+    policy,
+    hyde,
+    multiHop,
+    evidence,
+    assessment: {
+      ...assessment,
+      answerPolicy: policy,
+      reasons: [
+        ...assessment.reasons,
+        `evidence:${evidence.length}`,
+        ...(evidence.length === 0 ? ['no_evidence_abstain'] : []),
+      ],
+    },
+    warnings,
   };
 }

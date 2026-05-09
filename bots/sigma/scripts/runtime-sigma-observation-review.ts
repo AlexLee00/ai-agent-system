@@ -5,6 +5,10 @@ import {
   createDashboardSummary,
   type SelfImprovementSignal,
 } from '../ts/lib/intelligent-library.js';
+import {
+  buildSelfImprovementSignalsFromRecords,
+  collectLibraryRecords,
+} from '../ts/lib/library-data-source.js';
 import { postSigmaAlarmWithRetry, summarizeAlarmResult } from './sigma-alarm-dispatch.js';
 import { kstDateLabel } from './sigma-date.js';
 import {
@@ -121,10 +125,13 @@ async function countRows(
 
 async function collectObservationMetrics(): Promise<ObservationMetrics> {
   const env = resolveSigmaRuntimeEnv(repoRoot);
+  const sourceReport = await collectLibraryRecords({ sinceHours: 24 * 7, limitPerSource: 80 });
+  const sourceTexts = sourceReport.records.map((record) => record.piiRedactedText).filter(Boolean);
+  const sourceSignals = buildSelfImprovementSignalsFromRecords(sourceReport.records);
   const dashboard = createDashboardSummary({
     env: env.env,
-    texts: dashboardSampleTexts,
-    signals: dashboardSampleSignals,
+    texts: sourceTexts.length > 0 ? sourceTexts : dashboardSampleTexts,
+    signals: sourceSignals.length > 0 ? sourceSignals : dashboardSampleSignals,
   });
   const [
     alarmRoundtables24h,

@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
+import { createRequire } from 'node:module';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -9,6 +10,10 @@ const __dirname = path.dirname(__filename);
 const repoRoot = path.resolve(__dirname, '../../..');
 const repoPlist = path.join(repoRoot, 'bots/sigma/launchd/ai.sigma.mcp-server.plist');
 const installedPlist = path.join(os.homedir(), 'Library/LaunchAgents/ai.sigma.mcp-server.plist');
+const require = createRequire(import.meta.url);
+const pgPool = require('../../../packages/core/lib/pg-pool.js') as {
+  query: <T = unknown>(schema: string, sql: string, params?: unknown[]) => Promise<T[]>;
+};
 
 function readLaunchdEnv(plistPath: string): Record<string, string> {
   const output = execFileSync('/usr/bin/plutil', [
@@ -44,6 +49,7 @@ assert.equal(repoEnv.SIGMA_MCP_TOKEN, '__SET_IN_LOCAL_LAUNCHAGENT__');
 
 let runtime: any = null;
 if (process.env.SIGMA_MCP_SERVER_SMOKE_RUNTIME === '1') {
+  const auditStartedAt = new Date().toISOString();
   const runtimeEnv = readLaunchdEnv(installedPlist);
   const token = runtimeEnv.SIGMA_MCP_TOKEN;
   assert.equal(runtimeEnv.SIGMA_HTTP_PORT, '4000');
@@ -86,12 +92,21 @@ if (process.env.SIGMA_MCP_SERVER_SMOKE_RUNTIME === '1') {
   assert.equal(callResponse.status, 200);
   assert.equal(typeof call.causal_risk, 'string');
 
+  const auditRows = await pgPool.query<{ cnt: number | string }>('public', `
+    SELECT COUNT(*)::int AS cnt
+      FROM public.sigma_mcp_usage_audit
+     WHERE request_at >= $1::timestamptz
+  `, [auditStartedAt]);
+  const auditCount = Number(auditRows[0]?.cnt ?? 0);
+  assert.ok(auditCount >= 2, `expected Sigma MCP audit rows to increase, got ${auditCount}`);
+
   runtime = {
     baseUrl,
     health: health.status,
     toolCount: tools.tools.length,
     toolCallStatus: callResponse.status,
     unauthorizedStatus: unauthorizedResponse.status,
+    auditCount,
   };
 }
 

@@ -41,7 +41,11 @@ const { createAgentMemory } = require('../../../../packages/core/lib/agent-memor
 
 const envModule = require('../../../../packages/core/lib/env') as { PROJECT_ROOT?: string };
 const PROJECT_ROOT = envModule.PROJECT_ROOT || process.cwd();
-const SKILLS_BASE = path.join(PROJECT_ROOT, 'packages/core/lib/skills');
+const SKILL_ROOTS = [
+  path.join(PROJECT_ROOT, 'bots'),
+  path.join(PROJECT_ROOT, 'bots/sigma/skills'),
+  path.join(PROJECT_ROOT, 'packages/core/lib/skills'),
+];
 
 // ─── Kill switches ───────────────────────────────────────────────────────────
 
@@ -374,21 +378,22 @@ async function _getEntityFacts(
 // ─── Layer 4-Procedural: Skills ──────────────────────────────────────────────
 
 function _loadSkillFiles(team: string, agentName: string, query: string, limit: number): string[] {
-  const skillDir = path.join(SKILLS_BASE, team, agentName);
-  if (!fs.existsSync(skillDir)) return [];
+  const skillDirs = resolveSkillDirs(team, agentName);
+  if (skillDirs.length === 0) return [];
   try {
-    const files = fs.readdirSync(skillDir)
-      .filter(f => f.endsWith('.md') && (f.startsWith('SUCCESS_') || f.startsWith('AVOID_')));
+    const files = skillDirs.flatMap((skillDir) => fs.readdirSync(skillDir)
+      .filter(f => f.endsWith('.md') && (f.startsWith('SUCCESS_') || f.startsWith('AVOID_')))
+      .map((file) => ({ file, skillDir })));
 
     const queryWords = query.toLowerCase().split(/\s+/).filter(Boolean);
     const scored = files
-      .map(f => ({
-        file: f,
-        score: queryWords.filter(w => f.toLowerCase().includes(w)).length,
+      .map(entry => ({
+        ...entry,
+        score: queryWords.filter(w => entry.file.toLowerCase().includes(w)).length,
       }))
       .sort((a, b) => b.score - a.score || a.file.localeCompare(b.file));
 
-    return scored.slice(0, limit).flatMap(({ file }) => {
+    return scored.slice(0, limit).flatMap(({ file, skillDir }) => {
       try {
         const content = fs.readFileSync(path.join(skillDir, file), 'utf-8');
         const firstLine = content.split('\n').find(l => l.trim()) ?? file;
@@ -401,6 +406,21 @@ function _loadSkillFiles(team: string, agentName: string, query: string, limit: 
   } catch {
     return [];
   }
+}
+
+function resolveSkillDirs(team: string, agentName: string): string[] {
+  const normalizedTeam = team === 'luna' ? 'investment' : team;
+  const candidates = [
+    path.join(SKILL_ROOTS[0], normalizedTeam, 'skills', agentName),
+    path.join(SKILL_ROOTS[0], normalizedTeam, 'skills', team),
+    path.join(SKILL_ROOTS[1], agentName),
+    path.join(SKILL_ROOTS[1], team),
+    path.join(SKILL_ROOTS[2], normalizedTeam, agentName),
+    path.join(SKILL_ROOTS[2], normalizedTeam),
+    path.join(SKILL_ROOTS[2], team, agentName),
+    path.join(SKILL_ROOTS[2], team),
+  ];
+  return [...new Set(candidates)].filter((dir) => fs.existsSync(dir) && fs.statSync(dir).isDirectory());
 }
 
 async function _saveProcedural(

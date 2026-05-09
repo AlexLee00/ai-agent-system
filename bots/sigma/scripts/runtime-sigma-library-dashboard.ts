@@ -7,6 +7,11 @@ import {
   type SigmaLibraryEnv,
   type SelfImprovementSignal,
 } from '../ts/lib/intelligent-library.js';
+import {
+  buildSelfImprovementSignalsFromRecords,
+  collectLibraryPersistenceMetrics,
+  collectLibraryRecords,
+} from '../ts/lib/library-data-source.js';
 import { resolveSigmaRuntimeEnv } from './sigma-runtime-env.js';
 
 function hasArg(name: string): boolean {
@@ -46,11 +51,26 @@ const sampleSignals: SelfImprovementSignal[] = [
 ];
 
 const dashboardEnv = resolveSigmaRuntimeEnv(repoRoot);
+const sourceReport = await collectLibraryRecords({
+  sinceHours: Number(argValue('--since-hours', String(24 * 7))),
+  limitPerSource: Number(argValue('--limit-per-source', '80')),
+});
+const persistenceMetrics = await collectLibraryPersistenceMetrics();
+const realTexts = sourceReport.records.map((record) => record.piiRedactedText).filter(Boolean);
+const realSignals = buildSelfImprovementSignalsFromRecords(sourceReport.records);
 const summary = createDashboardSummary({
-  texts: sampleTexts,
-  signals: sampleSignals,
+  texts: realTexts.length > 0 ? realTexts : sampleTexts,
+  signals: realSignals.length > 0 ? realSignals : sampleSignals,
   env: dashboardEnv.env,
 });
+const dashboardOutput = {
+  ...summary,
+  realMetrics: {
+    source: sourceReport.stats,
+    persistence: persistenceMetrics,
+  },
+  sourceWarnings: [...sourceReport.warnings, ...persistenceMetrics.warnings],
+};
 
 const outPath = argValue(
   '--out',
@@ -62,7 +82,7 @@ const htmlOutPath = argValue(
 );
 
 if (hasArg('--write')) {
-  writeDashboardJson(outPath, summary);
+  writeDashboardJson(outPath, dashboardOutput);
 }
 if (hasArg('--write-html')) {
   writeDashboardHtml(htmlOutPath, summary);
@@ -70,7 +90,7 @@ if (hasArg('--write-html')) {
 
 if (hasArg('--json') || !hasArg('--quiet')) {
   console.log(JSON.stringify({
-    ...summary,
+    ...dashboardOutput,
     activationEnvSource: dashboardEnv.source,
     outputPath: hasArg('--write') ? outPath : null,
     htmlOutputPath: hasArg('--write-html') ? htmlOutPath : null,
