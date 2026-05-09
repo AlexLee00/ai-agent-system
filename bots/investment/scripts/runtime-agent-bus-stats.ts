@@ -11,6 +11,7 @@ import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const INVESTMENT_DIR = path.resolve(__dirname, '..');
+const DEFAULT_OBSERVATION_DAYS = 14;
 
 function argValue(name, fallback = null) {
   const prefix = `--${name}=`;
@@ -19,7 +20,7 @@ function argValue(name, fallback = null) {
 }
 
 export async function runAgentBusStats({
-  days = Number(argValue('days', 7)),
+  days = Number(argValue('days', process.env.LUNA_NATURAL_OBSERVATION_DAYS || DEFAULT_OBSERVATION_DAYS)),
   write = process.argv.includes('--write'),
   outputDir = path.join(INVESTMENT_DIR, 'output', 'reports'),
 } = {}) {

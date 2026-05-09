@@ -17,10 +17,10 @@ export function buildAgentBusStatsFromRows(rows = [], { generatedAt = new Date()
     const from = String(row.from_agent || row.fromAgent || 'unknown');
     const to = String(row.to_agent || row.toAgent || 'unknown');
     const type = String(row.message_type || row.messageType || 'query');
-    const windowName = String(row.window || row.window_name || 'total');
+    const windowName = String(row.bucket || row.window || row.window_name || 'total');
     summary.totalMessages += count;
     if (windowName === '24h') summary.window24hMessages += count;
-    if (windowName === '7d') summary.window7dMessages += count;
+    if (windowName === '24h' || windowName === '7d') summary.window7dMessages += count;
     if (row.responded_at == null && row.pending !== false) summary.pendingMessages += Number(row.pending_count ?? 0) || 0;
     summary.byType[type] = (summary.byType[type] || 0) + count;
     summary.byAgent[from] = summary.byAgent[from] || { sent: 0, received: 0 };
@@ -49,14 +49,14 @@ export async function collectAgentBusStats({ days = 7 } = {}) {
            WHEN created_at >= NOW() - INTERVAL '24 hours' THEN '24h'
            WHEN created_at >= NOW() - ($1::int * INTERVAL '1 day') THEN '7d'
            ELSE 'older'
-         END AS window,
+         END AS bucket,
          from_agent,
          to_agent,
          message_type,
          COUNT(*)::int AS cnt
        FROM investment.agent_messages
        WHERE created_at >= NOW() - ($1::int * INTERVAL '1 day')
-       GROUP BY window, from_agent, to_agent, message_type`,
+       GROUP BY bucket, from_agent, to_agent, message_type`,
       [days],
     ).catch(() => []),
     db.get(

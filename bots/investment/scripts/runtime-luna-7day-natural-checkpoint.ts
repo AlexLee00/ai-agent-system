@@ -5,10 +5,12 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import * as db from '../shared/db.ts';
 import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
+import { getLunaOperatingEpoch } from '../shared/luna-operating-epoch.ts';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const INVESTMENT_DIR = path.resolve(__dirname, '..');
 const DEFAULT_OUTPUT_DIR = path.join(INVESTMENT_DIR, 'output', 'reports');
+const DEFAULT_OBSERVATION_DAYS = 14;
 
 function boolEnv(name, fallback = true) {
   const raw = String(process.env[name] ?? '').trim().toLowerCase();
@@ -44,31 +46,52 @@ async function countRows(sql, params = []) {
   return Number(row?.cnt || 0);
 }
 
-export async function collectNaturalAccumulation({ days = 7 } = {}) {
-  const safeDays = Math.max(1, Math.round(Number(days || 7)));
+async function collectNaturalCounts({ lowerBoundSql = null, lowerBoundParams = [] } = {}) {
+  const bound = lowerBoundSql ? `WHERE ${lowerBoundSql}` : '';
+  const params = lowerBoundParams || [];
   const [reflexions, skills, rag, agentMessages] = await Promise.all([
     countRows(
-      `SELECT COUNT(*)::int AS cnt FROM investment.luna_failure_reflexions
-       WHERE created_at >= NOW() - ($1::int * INTERVAL '1 day')`,
-      [safeDays],
+      `SELECT COUNT(*)::int AS cnt FROM investment.luna_failure_reflexions ${bound.replaceAll('{timestamp}', 'created_at')}`,
+      params,
     ),
     countRows(
-      `SELECT COUNT(*)::int AS cnt FROM investment.luna_posttrade_skills
-       WHERE updated_at >= NOW() - ($1::int * INTERVAL '1 day')`,
-      [safeDays],
+      `SELECT COUNT(*)::int AS cnt FROM investment.luna_posttrade_skills ${bound.replaceAll('{timestamp}', 'updated_at')}`,
+      params,
     ),
     countRows(
-      `SELECT COUNT(*)::int AS cnt FROM investment.luna_rag_documents
-       WHERE created_at >= NOW() - ($1::int * INTERVAL '1 day')`,
-      [safeDays],
+      `SELECT COUNT(*)::int AS cnt FROM investment.luna_rag_documents ${bound.replaceAll('{timestamp}', 'created_at')}`,
+      params,
     ),
     countRows(
-      `SELECT COUNT(*)::int AS cnt FROM investment.agent_messages
-       WHERE created_at >= NOW() - ($1::int * INTERVAL '1 day')`,
-      [safeDays],
+      `SELECT COUNT(*)::int AS cnt FROM investment.agent_messages ${bound.replaceAll('{timestamp}', 'created_at')}`,
+      params,
     ),
   ]);
-  return { days: safeDays, reflexions, skills, rag, agentMessages };
+  return { reflexions, skills, rag, agentMessages };
+}
+
+export async function collectNaturalAccumulation({ days = DEFAULT_OBSERVATION_DAYS } = {}) {
+  const safeDays = Math.max(1, Math.round(Number(days || 7)));
+  const epoch = getLunaOperatingEpoch();
+  const rolling = await collectNaturalCounts({
+    lowerBoundSql: `{timestamp} >= NOW() - ($1::int * INTERVAL '1 day')`,
+    lowerBoundParams: [safeDays],
+  });
+  const allTime = await collectNaturalCounts();
+  const operatingEpoch = epoch.enabled && epoch.valid
+    ? await collectNaturalCounts({
+        lowerBoundSql: `{timestamp} >= $1::timestamptz`,
+        lowerBoundParams: [epoch.startedAt],
+      })
+    : null;
+  return {
+    days: safeDays,
+    ...rolling,
+    scope: 'rolling_window',
+    epoch,
+    allTime,
+    operatingEpoch,
+  };
 }
 
 export function buildNaturalCheckpoint({
@@ -102,6 +125,27 @@ export function buildNaturalCheckpoint({
   const pendingObservation = Object.entries(progress)
     .filter(([, item]) => !item.ready)
     .map(([name, item]) => `${name}:${item.current}/${item.target}`);
+  const allTimeReady = accumulation?.allTime
+    ? Object.entries(targets).every(([name, target]) => Number(accumulation.allTime?.[name] || 0) >= Number(target || 0))
+    : null;
+  const operatingEpochReady = accumulation?.operatingEpoch
+    ? Object.entries(targets).every(([name, target]) => Number(accumulation.operatingEpoch?.[name] || 0) >= Number(target || 0))
+    : null;
+  const epochAgeHours = accumulation?.epoch?.enabled && accumulation?.epoch?.valid
+    ? Math.max(0, (new Date(generatedAt).getTime() - new Date(accumulation.epoch.startedAt).getTime()) / 36e5)
+    : null;
+  const diagnostics = {
+    scope: accumulation?.scope || 'rolling_window',
+    allTimeReady,
+    operatingEpochReady,
+    epochAgeHours: Number.isFinite(epochAgeHours) ? Number(epochAgeHours.toFixed(2)) : null,
+    developmentDataImpact: allTimeReady === true && pendingObservation.length > 0
+      ? 'historical_or_development_data_is_not_sufficient_for_current_rolling_window'
+      : null,
+    operatingEpochImpact: accumulation?.epoch?.enabled && pendingObservation.length > 0
+      ? 'operating_epoch_data_is_still_accumulating'
+      : null,
+  };
   return {
     ok: true,
     status: pendingObservation.length === 0 ? 'natural_targets_met' : 'pending_natural_accumulation',
@@ -109,19 +153,24 @@ export function buildNaturalCheckpoint({
     generatedAt,
     days: Number(accumulation?.days || 7),
     progress,
+    targets,
+    allTime: accumulation?.allTime || null,
+    operatingEpoch: accumulation?.operatingEpoch || null,
+    epoch: accumulation?.epoch || null,
+    diagnostics,
     pendingObservation,
     nextActions: pendingObservation.length === 0
       ? ['natural accumulation targets met; keep daily checkpoint active']
       : [
         'run failed-reflexion backfill dry-run, then apply only with explicit confirm if accepted',
         'run voyager natural acceleration dry-run; keep production writes behind confirm',
-        'continue 7-day natural observation before marking operational natural-complete',
+        'continue natural observation before marking operational natural-complete',
       ],
   };
 }
 
 export async function runLuna7DayNaturalCheckpoint({
-  days = 7,
+  days = Number(process.env.LUNA_NATURAL_OBSERVATION_DAYS || DEFAULT_OBSERVATION_DAYS),
   write = false,
   outputDir = DEFAULT_OUTPUT_DIR,
   accumulation = null,
@@ -166,7 +215,7 @@ async function main() {
   const result = hasArg('smoke')
     ? await runLuna7DayNaturalCheckpointSmoke()
     : await runLuna7DayNaturalCheckpoint({
-      days: Number(argValue('days', 7)),
+      days: Number(argValue('days', process.env.LUNA_NATURAL_OBSERVATION_DAYS || DEFAULT_OBSERVATION_DAYS)),
       write: hasArg('write'),
     });
   if (hasArg('json') || hasArg('smoke')) console.log(JSON.stringify(result, null, 2));

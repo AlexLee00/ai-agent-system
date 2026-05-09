@@ -9,9 +9,16 @@ import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const INVESTMENT_DIR = path.resolve(__dirname, '..');
+const DEFAULT_OBSERVATION_DAYS = 14;
 
 function boolArg(name) {
   return process.argv.includes(`--${name}`);
+}
+
+function argValue(name, fallback = null) {
+  const prefix = `--${name}=`;
+  const found = process.argv.find((arg) => arg.startsWith(prefix));
+  return found ? found.slice(prefix.length) : fallback;
 }
 
 export function build7DayCheckpointSummary({ report, busStats }) {
@@ -40,7 +47,7 @@ export function build7DayCheckpointSummary({ report, busStats }) {
 }
 
 export async function runLuna7DayCheckpoint({
-  days = 7,
+  days = Number(process.env.LUNA_NATURAL_OBSERVATION_DAYS || DEFAULT_OBSERVATION_DAYS),
   write = false,
   outputDir = path.join(INVESTMENT_DIR, 'output', 'reports'),
 } = {}) {
@@ -81,7 +88,10 @@ export async function runLuna7DayCheckpointSmoke() {
 async function main() {
   const result = boolArg('smoke')
     ? await runLuna7DayCheckpointSmoke()
-    : await runLuna7DayCheckpoint({ write: boolArg('write') });
+    : await runLuna7DayCheckpoint({
+      days: Number(argValue('days', process.env.LUNA_NATURAL_OBSERVATION_DAYS || DEFAULT_OBSERVATION_DAYS)),
+      write: boolArg('write'),
+    });
   if (process.argv.includes('--json') || boolArg('smoke')) console.log(JSON.stringify(result, null, 2));
   else console.log(`[luna-7day-checkpoint] ${result.status}`);
 }

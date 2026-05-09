@@ -12,13 +12,20 @@ export async function runSmoke() {
   const report = buildMemory100PercentReport({
     agents,
     checkpoint: { ok: true, status: 'pending_observation', pendingObservation: ['7day natural data pending'], evidence: { fired: 1 } },
+    naturalCheckpoint: {
+      ok: true,
+      status: 'pending_natural_accumulation',
+      pendingObservation: ['reflexions:0/1100'],
+      progress: { reflexions: { current: 0, target: 1100, ready: false } },
+    },
     busStats: { ok: true, stats: { window7dMessages: 10, window24hMessages: 2 } },
-    voyager: { ok: true, status: 'pending_observation', productionSkillPromoted: false, pendingReason: 'insufficient_natural_data' },
+    voyager: { ok: true, status: 'ready_for_extraction', naturalDataReady: true, productionSkillPromoted: false },
     failedReflexion: { triggerReady: true, backfillDryRun: true },
   });
   assert.equal(report.codeComplete, true);
   assert.equal(report.operationalStatus, 'code_complete_operational_pending');
   assert.equal(report.blockers.length, 0);
+  assert.ok(report.pendingObservation.includes('voyager_all_time_ready_but_rolling_natural_data_pending'));
   const markdown = renderMemory100PercentReport(report);
   assert.ok(markdown.includes('Phase ξ Checks'));
   assert.ok(markdown.includes('ξ3_failed_reflexion'));
@@ -26,6 +33,12 @@ export async function runSmoke() {
   const existingSkillEvidenceReport = buildMemory100PercentReport({
     agents,
     checkpoint: { ok: true, status: 'complete', pendingObservation: [], evidence: { fired: 200 } },
+    naturalCheckpoint: {
+      ok: true,
+      status: 'natural_targets_met',
+      pendingObservation: [],
+      progress: { reflexions: { current: 1100, target: 1100, ready: true } },
+    },
     busStats: { ok: true, stats: { window7dMessages: 100, window24hMessages: 20 } },
     voyager: {
       ok: true,

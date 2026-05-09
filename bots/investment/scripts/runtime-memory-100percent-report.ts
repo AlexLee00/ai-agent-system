@@ -5,6 +5,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { listAgentDefinitions } from '../shared/agent-yaml-loader.ts';
 import { runLuna7DayCheckpoint } from './runtime-luna-7day-checkpoint.ts';
+import { runLuna7DayNaturalCheckpoint } from './runtime-luna-7day-natural-checkpoint.ts';
 import { runAgentBusStats } from './runtime-agent-bus-stats.ts';
 import { runVoyagerSkillAutoExtractionVerify } from './voyager-skill-auto-extraction-verify.ts';
 import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
@@ -15,10 +16,17 @@ const INVESTMENT_DIR = path.resolve(__dirname, '..');
 export function buildMemory100PercentReport({
   agents = [],
   checkpoint = {},
+  naturalCheckpoint = {},
   busStats = {},
   voyager = {},
   failedReflexion = {},
 } = {}) {
+  const naturalPending = naturalCheckpoint.pendingObservation || [];
+  const voyagerAllTimeReady = voyager.naturalDataReady === true;
+  const rollingNaturalPending = naturalPending.length > 0;
+  const metricScopeMismatch = voyagerAllTimeReady && rollingNaturalPending
+    ? 'voyager_all_time_ready_but_rolling_natural_data_pending'
+    : null;
   const phaseChecks = [
     {
       phase: 'ξ1_yaml_collaboration',
@@ -38,7 +46,10 @@ export function buildMemory100PercentReport({
     {
       phase: 'ξ4_voyager_natural',
       ok: voyager.ok !== false && voyager.productionSkillPromoted !== true,
-      detail: voyager.summary || voyager.status || 'voyager dry-run natural extraction verified',
+      detail: [
+        voyager.summary || voyager.status || 'voyager dry-run natural extraction verified',
+        metricScopeMismatch ? `scope=${metricScopeMismatch}` : null,
+      ].filter(Boolean).join(' | '),
     },
     {
       phase: 'ξ5_bus_stats',
@@ -48,7 +59,10 @@ export function buildMemory100PercentReport({
     {
       phase: 'ξ6_7day_checkpoint',
       ok: checkpoint.ok !== false,
-      detail: checkpoint.status || 'checkpoint read-only',
+      detail: [
+        checkpoint.status || 'checkpoint read-only',
+        naturalCheckpoint.status ? `natural=${naturalCheckpoint.status}` : null,
+      ].filter(Boolean).join(' | '),
     },
     {
       phase: 'ξ7_100_report',
@@ -59,7 +73,9 @@ export function buildMemory100PercentReport({
   const blockers = phaseChecks.filter((phase) => !phase.ok).map((phase) => phase.phase);
   const pendingObservation = [
     ...(checkpoint.pendingObservation || []),
+    ...naturalPending,
     ...(voyager.pendingReason ? [voyager.pendingReason] : []),
+    ...(metricScopeMismatch ? [metricScopeMismatch] : []),
   ];
   return {
     ok: blockers.length === 0,
@@ -76,6 +92,15 @@ export function buildMemory100PercentReport({
       checkpoint: {
         status: checkpoint.status,
         evidence: checkpoint.evidence,
+      },
+      naturalCheckpoint: {
+        status: naturalCheckpoint.status,
+        days: naturalCheckpoint.days,
+        progress: naturalCheckpoint.progress,
+        diagnostics: naturalCheckpoint.diagnostics,
+        allTime: naturalCheckpoint.allTime,
+        operatingEpoch: naturalCheckpoint.operatingEpoch,
+        epoch: naturalCheckpoint.epoch,
       },
       voyager: {
         status: voyager.status,
@@ -120,10 +145,13 @@ export async function runMemory100PercentReport({
     runAgentBusStats({ write: false }).catch((error) => ({ ok: false, stats: { window7dMessages: 0 }, error: String(error?.message || error) })),
     runVoyagerSkillAutoExtractionVerify({ validationFixture: true }).catch((error) => ({ ok: false, status: 'voyager_error', error: String(error?.message || error) })),
   ]);
+  const naturalCheckpoint = await runLuna7DayNaturalCheckpoint({ write: false })
+    .catch((error) => ({ ok: false, status: 'natural_checkpoint_error', error: String(error?.message || error), pendingObservation: [] }));
   const agents = listAgentDefinitions();
   const data = buildMemory100PercentReport({
     agents,
     checkpoint,
+    naturalCheckpoint,
     busStats: bus,
     voyager,
     failedReflexion: {
