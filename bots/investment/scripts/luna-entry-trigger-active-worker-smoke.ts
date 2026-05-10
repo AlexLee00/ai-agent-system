@@ -11,8 +11,17 @@ import {
 } from '../shared/entry-trigger-engine.ts';
 import {
   buildEntryTriggerWorkerRiskContext,
+  deriveMarketEvents,
   materializeFiredEntryTriggerSignals,
 } from './luna-entry-trigger-worker.ts';
+
+function bullishCandles(length = 30, start = 100) {
+  return Array.from({ length }, (_, index) => {
+    const open = start + index * 0.12;
+    const close = open + 0.08;
+    return [Date.now() - (length - index) * 60_000, open, close + 0.04, open - 0.04, close, 1000 + index];
+  });
+}
 
 function withEnv(patch = {}, fn) {
   const prev = {};
@@ -42,6 +51,10 @@ export async function runLunaEntryTriggerActiveWorkerSmoke() {
     const pullbackSymbol = `PULLBACK${Date.now().toString(36).toUpperCase()}/USDT`;
     const refreshSymbol = `REFRESH${Date.now().toString(36).toUpperCase()}/USDT`;
     const openSymbol = `OPENPOS${Date.now().toString(36).toUpperCase()}/USDT`;
+    const mtfRefreshSymbol = `MTFREFRESH${Date.now().toString(36).toUpperCase()}/USDT`;
+    const bearishMtfSymbol = `BEARMTF${Date.now().toString(36).toUpperCase()}/USDT`;
+    const weakPullbackSymbol = `WEAKPULL${Date.now().toString(36).toUpperCase()}/USDT`;
+    const terminalLowConfSymbol = `TERMINALCONF${Date.now().toString(36).toUpperCase()}/USDT`;
     let signalId = null;
     let openSignalId = null;
     try {
@@ -185,6 +198,38 @@ export async function runLunaEntryTriggerActiveWorkerSmoke() {
       assert.equal(pullbackResult.fired, 1);
       assert.equal(pullbackResult.results[0].fired, true);
 
+      const weakPullbackTrigger = await insertEntryTrigger({
+        symbol: weakPullbackSymbol,
+        exchange: 'binance',
+        setupType: 'mean_reversion',
+        triggerType: 'pullback_to_support',
+        triggerState: 'armed',
+        confidence: 0.59,
+        predictiveScore: 0.51,
+        targetPrice: 101,
+        waitingFor: 'pullback_to_support',
+        triggerContext: {
+          hints: { mtfAgreement: 0.9, discoveryScore: 0.62, breakoutRetest: true },
+        },
+        expiresAt: new Date(Date.now() + 3600_000).toISOString(),
+      });
+      assert.ok(weakPullbackTrigger?.id);
+      const weakPullbackResult = await evaluateActiveEntryTriggersAgainstMarketEvents([
+        {
+          symbol: weakPullbackSymbol,
+          mtfAgreement: 0.9,
+          mtfAlignmentScore: 0.8,
+          mtfDominantSignal: 'BUY',
+          discoveryScore: 0.62,
+          breakoutRetest: true,
+        },
+      ], {
+        exchange: 'binance',
+        capitalSnapshot,
+      });
+      assert.equal(weakPullbackResult.results[0].fired, false, 'pullback trigger must not bypass predictive/confidence checks through generic MTF rules');
+      assert.equal(weakPullbackResult.results[0].fireReason, 'pullback_confirmation_incomplete');
+
       const openTrigger = await insertEntryTrigger({
         symbol: openSymbol,
         exchange: 'binance',
@@ -213,6 +258,142 @@ export async function runLunaEntryTriggerActiveWorkerSmoke() {
       assert.equal(openEventResult.checked, 0, 'open position trigger should be expired before event evaluation');
       const expiredOpenTrigger = await db.get(`SELECT trigger_state FROM entry_triggers WHERE id = $1`, [openTrigger.id]);
       assert.equal(expiredOpenTrigger?.trigger_state, 'expired');
+
+      const staleReasonSymbol = `STALEBLOCK${Date.now().toString(36).toUpperCase()}/USDT`;
+      const staleReasonTrigger = await insertEntryTrigger({
+        symbol: staleReasonSymbol,
+        exchange: 'binance',
+        setupType: 'mean_reversion',
+        triggerType: 'pullback_to_support',
+        triggerState: 'waiting',
+        confidence: 0.51,
+        predictiveScore: 0.41,
+        targetPrice: 100,
+        waitingFor: 'pullback_to_support',
+        triggerContext: {
+          hints: { mtfAgreement: 0, discoveryScore: 0.45, volumeBurst: 0.4, breakoutRetest: false },
+        },
+        triggerMeta: {
+          reason: 'live_risk_gate_blocked',
+          riskGateReason: 'capital_check_not_accepted',
+        },
+        expiresAt: new Date(Date.now() + 3600_000).toISOString(),
+      });
+      const staleReasonResult = await evaluateActiveEntryTriggersAgainstMarketEvents([
+        {
+          symbol: staleReasonSymbol,
+          price: 99,
+          targetPrice: 100,
+          mtfAgreement: 0,
+          discoveryScore: 0.45,
+          volumeBurst: 0.4,
+          breakoutRetest: false,
+        },
+      ], {
+        exchange: 'binance',
+      });
+      assert.equal(staleReasonResult.results[0].reason, 'conditions_not_met');
+      const staleReasonRow = await db.get(`SELECT trigger_meta FROM entry_triggers WHERE id = $1`, [staleReasonTrigger.id]);
+      assert.equal(staleReasonRow?.trigger_meta?.reason, 'conditions_not_met', 'stale blocker reason must be replaced by current readiness state');
+
+      const mtfRefreshTrigger = await insertEntryTrigger({
+        symbol: mtfRefreshSymbol,
+        exchange: 'binance',
+        setupType: 'breakout_confirmation',
+        triggerType: 'mtf_alignment',
+        triggerState: 'armed',
+        confidence: 0.71,
+        targetPrice: 99,
+        waitingFor: 'mtf_alignment',
+        triggerContext: {
+          hints: { mtfAgreement: 0, discoveryScore: 0.67 },
+        },
+        expiresAt: new Date(Date.now() + 3600_000).toISOString(),
+      });
+      assert.ok(mtfRefreshTrigger?.id);
+      const derivedEvents = await deriveMarketEvents({
+        exchange: 'binance',
+        limit: 50,
+        ohlcvFetcher: async (requestedSymbol) => {
+          if (requestedSymbol === mtfRefreshSymbol) return bullishCandles();
+          return [];
+        },
+      });
+      const mtfRefreshEvent = derivedEvents.find((item) => item.symbol === mtfRefreshSymbol);
+      assert.equal(mtfRefreshEvent?.mtfDominantSignal, 'BUY', 'deriveMarketEvents should refresh missing MTF direction from OHLCV');
+      assert.ok(Number(mtfRefreshEvent?.mtfAgreement || 0) > 0, 'fresh MTF agreement should be available when stored hints are empty');
+      assert.equal(mtfRefreshEvent?.triggerHints?.entryTriggerMtfRefresh?.source, 'ohlcv_mtf_refresh');
+
+      const bearishMtfTrigger = await insertEntryTrigger({
+        symbol: bearishMtfSymbol,
+        exchange: 'binance',
+        setupType: 'breakout_confirmation',
+        triggerType: 'mtf_alignment',
+        triggerState: 'armed',
+        confidence: 0.76,
+        waitingFor: 'mtf_alignment',
+        triggerContext: {
+          hints: { mtfAgreement: 0.9, discoveryScore: 0.8 },
+        },
+        expiresAt: new Date(Date.now() + 3600_000).toISOString(),
+      });
+      assert.ok(bearishMtfTrigger?.id);
+      const bearishMtfResult = await evaluateActiveEntryTriggersAgainstMarketEvents([
+        {
+          symbol: bearishMtfSymbol,
+          mtfAgreement: 1,
+          mtfAlignmentScore: -0.9,
+          mtfDominantSignal: 'SELL',
+          discoveryScore: 0.82,
+          breakoutRetest: true,
+        },
+      ], {
+        exchange: 'binance',
+      });
+      assert.equal(bearishMtfResult.results[0].fired, false, 'SELL-aligned MTF must not confirm a BUY trigger');
+      assert.equal(bearishMtfResult.results[0].fireReadiness.mtfBullish, false);
+
+      const terminalLowConfTrigger = await insertEntryTrigger({
+        symbol: terminalLowConfSymbol,
+        exchange: 'binance',
+        setupType: 'breakout_confirmation',
+        triggerType: 'mtf_alignment',
+        triggerState: 'armed',
+        confidence: 0.35,
+        waitingFor: 'mtf_alignment',
+        triggerContext: {
+          hints: { mtfAgreement: 0.9, discoveryScore: 0.8 },
+        },
+        expiresAt: new Date(Date.now() + 3600_000).toISOString(),
+      });
+      assert.ok(terminalLowConfTrigger?.id);
+      const terminalLowConfResult = await evaluateActiveEntryTriggersAgainstMarketEvents([
+        {
+          symbol: terminalLowConfSymbol,
+          mtfAgreement: 0.9,
+          mtfAlignmentScore: 0.8,
+          mtfDominantSignal: 'BUY',
+          discoveryScore: 0.8,
+          breakoutRetest: true,
+          tradingViewSnapshot: {
+            ok: true,
+            source: 'tradingview_ws_service',
+            providerMode: 'websocket',
+            market: 'tradingview',
+            price: 101,
+            open: 100,
+            stale: false,
+          },
+        },
+      ], {
+        exchange: 'binance',
+        capitalSnapshot,
+      });
+      assert.equal(terminalLowConfResult.results[0].state, 'expired', 'static confidence hard-fail should not stay in the active trigger loop');
+      assert.equal(terminalLowConfResult.results[0].reason, 'live_risk_gate_terminal_blocked');
+      const terminalLowConfRow = await db.get(`SELECT trigger_state, trigger_meta FROM entry_triggers WHERE id = $1`, [terminalLowConfTrigger.id]);
+      assert.equal(terminalLowConfRow?.trigger_state, 'expired');
+      assert.equal(terminalLowConfRow?.trigger_meta?.terminalBlock, true);
 
       const workerRiskContext = await buildEntryTriggerWorkerRiskContext({
         exchange: 'binance',
@@ -295,6 +476,11 @@ export async function runLunaEntryTriggerActiveWorkerSmoke() {
       await db.run(`DELETE FROM entry_triggers WHERE symbol = $1`, [pullbackSymbol]).catch(() => {});
       await db.run(`DELETE FROM entry_triggers WHERE symbol = $1`, [refreshSymbol]).catch(() => {});
       await db.run(`DELETE FROM entry_triggers WHERE symbol = $1`, [openSymbol]).catch(() => {});
+      await db.run(`DELETE FROM entry_triggers WHERE symbol = $1`, [mtfRefreshSymbol]).catch(() => {});
+      await db.run(`DELETE FROM entry_triggers WHERE symbol = $1`, [bearishMtfSymbol]).catch(() => {});
+      await db.run(`DELETE FROM entry_triggers WHERE symbol = $1`, [weakPullbackSymbol]).catch(() => {});
+      await db.run(`DELETE FROM entry_triggers WHERE symbol = $1`, [terminalLowConfSymbol]).catch(() => {});
+      await db.run(`DELETE FROM entry_triggers WHERE symbol LIKE 'STALEBLOCK%'`).catch(() => {});
       if (signalId) await db.run(`DELETE FROM signals WHERE id = $1`, [signalId]).catch(() => {});
       if (openSignalId) await db.run(`DELETE FROM signals WHERE id = $1`, [openSignalId]).catch(() => {});
     }

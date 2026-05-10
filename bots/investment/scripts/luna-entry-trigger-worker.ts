@@ -155,6 +155,105 @@ function clamp01(value, fallback = 0) {
   return Math.max(0, Math.min(1, Number(numeric ?? fallback ?? 0)));
 }
 
+function listEnv(name, fallback = []) {
+  const raw = String(process.env[name] || '').trim();
+  const values = raw
+    ? raw.split(',').map((item) => item.trim()).filter(Boolean)
+    : fallback;
+  return values.length > 0 ? values : fallback;
+}
+
+function average(values = []) {
+  const nums = values.map(Number).filter(Number.isFinite);
+  if (nums.length === 0) return null;
+  return nums.reduce((sum, value) => sum + value, 0) / nums.length;
+}
+
+function entryTriggerMtfLookbackDays(timeframe = '1m') {
+  const tf = String(timeframe || '').trim().toLowerCase();
+  if (tf.endsWith('m')) return 2;
+  if (tf.endsWith('h')) return 10;
+  if (tf.endsWith('d')) return 120;
+  return 5;
+}
+
+function analyzeEntryTriggerTimeframe(candles = []) {
+  const closes = (Array.isArray(candles) ? candles : [])
+    .map((row) => Number(row?.[4]))
+    .filter((value) => Number.isFinite(value) && value > 0);
+  if (closes.length < 8) return null;
+  const close = closes[closes.length - 1];
+  const previous = closes[Math.max(0, closes.length - 4)];
+  const fast = average(closes.slice(-5));
+  const slow = average(closes.slice(-Math.min(20, closes.length)));
+  if (!(close > 0) || !(fast > 0) || !(slow > 0) || !(previous > 0)) return null;
+
+  const recentChange = (close - previous) / previous;
+  const maSpread = (fast - slow) / slow;
+  let signal = 'HOLD';
+  if (close >= slow && fast >= slow && recentChange >= -0.003) signal = 'BUY';
+  else if (close <= slow && fast <= slow && recentChange <= 0.003) signal = 'SELL';
+  const confidence = clamp01(0.45 + Math.abs(maSpread) * 8 + Math.abs(recentChange) * 3, 0.5);
+  return {
+    signal,
+    confidence: Number(confidence.toFixed(4)),
+    close: Number(close.toFixed(8)),
+    fastSma: Number(fast.toFixed(8)),
+    slowSma: Number(slow.toFixed(8)),
+    recentChange: Number(recentChange.toFixed(6)),
+    maSpread: Number(maSpread.toFixed(6)),
+  };
+}
+
+function summarizeEntryTriggerMtf(frames = {}) {
+  const rows = Object.entries(frames).filter(([, row]) => row && row.signal);
+  if (rows.length === 0) return null;
+  const weights = {
+    '1m': 0.1,
+    '5m': 0.2,
+    '15m': 0.3,
+    '1h': 0.25,
+    '4h': 0.15,
+    '1d': 0.1,
+  };
+  let weighted = 0;
+  let total = 0;
+  let bullish = 0;
+  let bearish = 0;
+  for (const [tf, row] of rows) {
+    const weight = Number(weights[tf] || 0.1);
+    const score = row.signal === 'BUY' ? 1 : row.signal === 'SELL' ? -1 : 0;
+    weighted += score * Number(row.confidence || 0.5) * weight;
+    total += weight;
+    if (score > 0) bullish += 1;
+    if (score < 0) bearish += 1;
+  }
+  const alignmentScore = total > 0 ? Math.max(-1, Math.min(1, weighted / total)) : 0;
+  const dominantSignal = alignmentScore > 0.12 ? 'BUY' : alignmentScore < -0.12 ? 'SELL' : 'HOLD';
+  const directional = bullish + bearish;
+  return {
+    mtfAgreement: directional > 0 ? Number((Math.max(bullish, bearish) / directional).toFixed(4)) : 0,
+    mtfAlignmentScore: Number(alignmentScore.toFixed(4)),
+    mtfDominantSignal: dominantSignal,
+    bullishFrames: bullish,
+    bearishFrames: bearish,
+    frames,
+  };
+}
+
+async function deriveFreshEntryTriggerMtf({ symbol, exchange = 'binance', ohlcvFetcher = getOHLCV } = {}) {
+  if (exchange !== 'binance') return null;
+  const timeframes = listEnv('LUNA_ENTRY_TRIGGER_DERIVE_MTF_TIMEFRAMES', ['1m', '5m', '15m']);
+  const frames = {};
+  for (const timeframe of timeframes) {
+    const from = isoDaysAgo(entryTriggerMtfLookbackDays(timeframe));
+    const candles = await ohlcvFetcher(symbol, timeframe, from, null, exchange).catch(() => []);
+    const analysis = analyzeEntryTriggerTimeframe(candles);
+    if (analysis) frames[timeframe] = analysis;
+  }
+  return summarizeEntryTriggerMtf(frames);
+}
+
 function resolveEntryTriggerStrategyMetadata(trigger = {}) {
   const context = parseJsonMaybe(trigger.trigger_context, {}) || {};
   const meta = parseJsonMaybe(trigger.trigger_meta, {}) || {};
@@ -231,33 +330,56 @@ export function writeEntryTriggerWorkerHeartbeat(payload = {}, file = heartbeatP
   return { path: file, heartbeat: body };
 }
 
-async function deriveMarketEvents({ exchange = 'binance', limit = 100 } = {}) {
+export async function deriveMarketEvents({ exchange = 'binance', limit = 100, ohlcvFetcher = getOHLCV } = {}) {
   const active = await listActiveEntryTriggers({ exchange, limit }).catch(() => []);
   const events = [];
+  const mtfMaxSymbols = Math.max(0, Number(process.env.LUNA_ENTRY_TRIGGER_DERIVE_MTF_MAX_SYMBOLS || 20));
+  let mtfEnriched = 0;
   for (const trigger of active || []) {
     const symbol = String(trigger?.symbol || '').trim();
     if (!symbol) continue;
     const hints = trigger?.trigger_context?.hints || {};
     let close = null;
     if (exchange === 'binance') {
-      const candles = await getOHLCV(symbol, '1m', isoDaysAgo(1), null, exchange).catch(() => []);
+      const candles = await ohlcvFetcher(symbol, '1m', isoDaysAgo(1), null, exchange).catch(() => []);
       close = latestClose(candles);
     }
+    const storedMtfAgreement = Number(hints.mtfAgreement || 0);
+    const freshMtf = storedMtfAgreement > 0.05 || mtfEnriched >= mtfMaxSymbols
+      ? null
+      : await deriveFreshEntryTriggerMtf({ symbol, exchange, ohlcvFetcher }).catch(() => null);
+    if (freshMtf) mtfEnriched += 1;
     const targetPrice = Number(trigger?.target_price || 0);
     const breakoutRetest = targetPrice > 0 && close != null
       ? close >= targetPrice
       : hints.breakoutRetest === true;
+    const mtfAgreement = Number(freshMtf?.mtfAgreement ?? storedMtfAgreement);
+    const mtfAlignmentScore = Number(freshMtf?.mtfAlignmentScore ?? hints.mtfAlignmentScore ?? 0);
+    const mtfDominantSignal = freshMtf?.mtfDominantSignal || hints.mtfDominantSignal || null;
     events.push({
       symbol,
       price: close,
       targetPrice: Number.isFinite(targetPrice) && targetPrice > 0 ? targetPrice : null,
-      mtfAgreement: Number(hints.mtfAgreement || 0),
+      mtfAgreement,
+      mtfAlignmentScore,
+      mtfDominantSignal,
       discoveryScore: Number(hints.discoveryScore || 0),
       volumeBurst: Number(hints.volumeBurst || 0),
       breakoutRetest,
       newsMomentum: Number(hints.newsMomentum || 0),
       triggerHints: {
         ...hints,
+        mtfAgreement,
+        mtfAlignmentScore,
+        mtfDominantSignal,
+        entryTriggerMtfRefresh: freshMtf
+          ? {
+              source: 'ohlcv_mtf_refresh',
+              timeframes: Object.keys(freshMtf.frames || {}),
+              bullishFrames: freshMtf.bullishFrames,
+              bearishFrames: freshMtf.bearishFrames,
+            }
+          : undefined,
         breakoutRetest,
       },
     });

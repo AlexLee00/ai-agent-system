@@ -97,6 +97,14 @@ function resolvePullbackMinConfidence(context = {}) {
 export function buildEntryTriggerFireReadiness(candidate = {}, context = {}) {
   const hints = candidate?.triggerHints || {};
   const mtfAgreement = Number(hints.mtfAgreement ?? context?.mtfAgreement ?? 0);
+  const rawMtfAlignmentScore = hints.mtfAlignmentScore ?? hints.alignmentScore ?? context?.mtfAlignmentScore ?? null;
+  const mtfAlignmentScore = rawMtfAlignmentScore == null ? null : Number(rawMtfAlignmentScore);
+  const mtfDominantSignal = String(hints.mtfDominantSignal ?? hints.dominantSignal ?? context?.mtfDominantSignal ?? '').toUpperCase();
+  const mtfBullish = mtfDominantSignal
+    ? mtfDominantSignal === ACTIONS.BUY
+    : Number.isFinite(mtfAlignmentScore)
+      ? mtfAlignmentScore > 0
+      : true;
   const discoveryScore = Number(hints.discoveryScore ?? context?.discoveryScore ?? 0);
   const volumeBurst = Number(hints.volumeBurst ?? 0);
   const breakoutRetest = hints.breakoutRetest === true;
@@ -107,6 +115,9 @@ export function buildEntryTriggerFireReadiness(candidate = {}, context = {}) {
   const details = {
     triggerType,
     mtfAgreement,
+    mtfAlignmentScore: Number.isFinite(mtfAlignmentScore) ? mtfAlignmentScore : null,
+    mtfDominantSignal: mtfDominantSignal || null,
+    mtfBullish,
     discoveryScore,
     volumeBurst,
     breakoutRetest,
@@ -114,11 +125,6 @@ export function buildEntryTriggerFireReadiness(candidate = {}, context = {}) {
     confidence,
     predictiveScore,
   };
-
-  if (breakoutRetest && mtfAgreement >= 0.62) return { ok: true, reason: 'breakout_retest_mtf_confirmed', details };
-  if (volumeBurst >= 1.8 && mtfAgreement >= 0.58) return { ok: true, reason: 'volume_burst_mtf_confirmed', details };
-  if (newsMomentum >= 0.6 && discoveryScore >= 0.62) return { ok: true, reason: 'news_momentum_discovery_confirmed', details };
-  if (mtfAgreement >= 0.72 && discoveryScore >= 0.58) return { ok: true, reason: 'mtf_discovery_confirmed', details };
 
   if (triggerType === 'pullback_to_support') {
     const minConfidence = resolvePullbackMinConfidence(context);
@@ -140,6 +146,11 @@ export function buildEntryTriggerFireReadiness(candidate = {}, context = {}) {
     }
     return { ok: false, reason: 'pullback_confirmation_incomplete', details: pullbackDetails };
   }
+
+  if (mtfBullish && breakoutRetest && mtfAgreement >= 0.62) return { ok: true, reason: 'breakout_retest_mtf_confirmed', details };
+  if (mtfBullish && volumeBurst >= 1.8 && mtfAgreement >= 0.58) return { ok: true, reason: 'volume_burst_mtf_confirmed', details };
+  if (newsMomentum >= 0.6 && discoveryScore >= 0.62) return { ok: true, reason: 'news_momentum_discovery_confirmed', details };
+  if (mtfBullish && mtfAgreement >= 0.72 && discoveryScore >= 0.58) return { ok: true, reason: 'mtf_discovery_confirmed', details };
 
   return { ok: false, reason: 'fire_condition_unmet', details };
 }
@@ -460,6 +471,14 @@ export function evaluateEntryTriggerLiveRiskGate({ candidate = {}, trigger = nul
       capitalCheckResult: capitalCheck?.result || null,
     },
   };
+}
+
+function isTerminalEntryTriggerLiveRiskGateBlock(riskGate = {}) {
+  if (riskGate?.reason !== 'live_confidence_below_min') return false;
+  const confidence = finiteNumber(riskGate?.details?.confidence, 0);
+  const minLiveConfidence = finiteNumber(riskGate?.details?.minLiveConfidence, 0);
+  const tolerance = Math.max(0, finiteNumber(process.env.LUNA_ENTRY_TRIGGER_TERMINAL_CONFIDENCE_GAP, 0.08));
+  return confidence + tolerance < minLiveConfidence;
 }
 
 export async function evaluateEntryTriggers(candidates = [], context = {}) {
@@ -1134,6 +1153,8 @@ export async function evaluateActiveEntryTriggersAgainstMarketEvents(events = []
         ...(trigger.trigger_context?.hints || {}),
         ...(event.triggerHints || {}),
         mtfAgreement: event.mtfAgreement ?? event.triggerHints?.mtfAgreement ?? trigger.trigger_context?.hints?.mtfAgreement,
+        mtfAlignmentScore: event.mtfAlignmentScore ?? event.alignmentScore ?? event.triggerHints?.mtfAlignmentScore ?? trigger.trigger_context?.hints?.mtfAlignmentScore,
+        mtfDominantSignal: event.mtfDominantSignal ?? event.dominantSignal ?? event.triggerHints?.mtfDominantSignal ?? trigger.trigger_context?.hints?.mtfDominantSignal,
         discoveryScore: event.discoveryScore ?? event.triggerHints?.discoveryScore ?? trigger.trigger_context?.hints?.discoveryScore,
         volumeBurst: event.volumeBurst ?? event.triggerHints?.volumeBurst ?? trigger.trigger_context?.hints?.volumeBurst,
         breakoutRetest: event.breakoutRetest ?? event.triggerHints?.breakoutRetest ?? trigger.trigger_context?.hints?.breakoutRetest,
@@ -1143,10 +1164,19 @@ export async function evaluateActiveEntryTriggersAgainstMarketEvents(events = []
     const fireReadiness = buildEntryTriggerFireReadiness(candidate, context);
     const fireNow = fireReadiness.ok;
     if (!fireNow) {
+      await updateEntryTriggerState(trigger.id, {
+        triggerState: 'waiting',
+        triggerMetaPatch: {
+          reason: 'conditions_not_met',
+          fireReason: fireReadiness.reason,
+          fireReadiness: fireReadiness.details,
+          lastCheckedAt: nowIso(),
+        },
+      }).catch(() => null);
       results.push({
         triggerId: trigger.id,
         symbol: trigger.symbol,
-        state: trigger.trigger_state,
+        state: 'waiting',
         fired: false,
         reason: 'conditions_not_met',
         fireReason: fireReadiness.reason,
@@ -1197,21 +1227,25 @@ export async function evaluateActiveEntryTriggersAgainstMarketEvents(events = []
     const riskGate = evaluateEntryTriggerLiveRiskGate({ candidate, trigger, context, flags });
     if (!riskGate.ok) {
       readyBlocked++;
+      const terminalBlock = isTerminalEntryTriggerLiveRiskGateBlock(riskGate);
       await updateEntryTriggerState(trigger.id, {
-        triggerState: 'waiting',
+        triggerState: terminalBlock ? 'expired' : 'waiting',
         triggerMetaPatch: {
-          reason: 'live_risk_gate_blocked',
+          reason: terminalBlock ? 'live_risk_gate_terminal_blocked' : 'live_risk_gate_blocked',
           riskGateReason: riskGate.reason,
           riskGateDetails: riskGate.details || {},
+          terminalBlock,
+          terminalBlockedAt: terminalBlock ? nowIso() : undefined,
         },
       }).catch(() => null);
       results.push({
         triggerId: trigger.id,
         symbol: trigger.symbol,
-        state: 'waiting',
+        state: terminalBlock ? 'expired' : 'waiting',
         fired: false,
-        reason: 'live_risk_gate_blocked',
+        reason: terminalBlock ? 'live_risk_gate_terminal_blocked' : 'live_risk_gate_blocked',
         riskGateReason: riskGate.reason,
+        terminalBlock,
       });
       continue;
     }
