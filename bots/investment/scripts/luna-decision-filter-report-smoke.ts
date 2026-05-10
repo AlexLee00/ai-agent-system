@@ -141,6 +141,23 @@ export async function runLunaDecisionFilterReportSmoke() {
   assert.equal(relaxedCryptoMtf.relaxation.reason, 'crypto_relaxed_mtf_momentum_probe');
   assert.equal(relaxedCryptoMtf.relaxation.momentumEvidence.intradayBuyFrames, 2);
 
+  const cryptoMtfHoldPresignal = buildDecisionFilterDiagnostics([
+    {
+      ...row('UTK/USDT', 'ta_mtf', 'HOLD', 0.28),
+      reasoning: '15분봉=HOLD(10%) | 1시간봉=HOLD(15%) | 4시간봉=BUY(38%) | 일봉=HOLD(12%); 가중점수 0.85',
+    },
+    row('UTK/USDT', 'onchain', 'HOLD', 0.3),
+    row('UTK/USDT', 'sentiment', 'HOLD', 0.4),
+  ], {
+    exchange: 'binance',
+    minConfidence: 0.7,
+    env: { LUNA_CONSERVATIVE_RELAXATION_ENABLED: 'false' },
+  })[0];
+  assert.equal(cryptoMtfHoldPresignal.actionability, 'filtered_before_signal');
+  assert.equal(cryptoMtfHoldPresignal.reasons.includes('technical_not_confirmed'), false);
+  assert.equal(cryptoMtfHoldPresignal.reasons.includes('onchain_not_confirmed'), true);
+  assert.equal(cryptoMtfHoldPresignal.reasons.includes('sentiment_not_confirmed'), true);
+
   const dailyBullishProbeInput = {
     symbol: 'SAHARA/USDT',
     exchange: 'binance',

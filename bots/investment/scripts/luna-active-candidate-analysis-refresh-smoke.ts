@@ -77,6 +77,22 @@ function fixtureHighPriorityCandidate(symbol, reasons = ['sentiment_not_confirme
   };
 }
 
+function fixtureMtfWeightedCandidate(symbol, reasons = ['sentiment_not_confirmed', 'onchain_not_confirmed']) {
+  return {
+    ...fixtureHighPriorityCandidate(symbol, reasons),
+    fused: { recommendation: 'HOLD', fusedScore: 0.12, averageConfidence: 0.2, hasConflict: false },
+    analystSummary: {
+      byAnalyst: {
+        ta_mtf: {
+          signal: 'HOLD',
+          confidence: 0.28,
+          reasoning: '15분봉=HOLD(10%) | 1시간봉=HOLD(14%) | 4시간봉=BUY(38%) | 일봉=HOLD(15%); 가중점수 0.85',
+        },
+      },
+    },
+  };
+}
+
 function fixtureRelaxedProbeCandidate(symbol, reasons = ['fusion_not_long', 'sentiment_not_confirmed', 'onchain_not_confirmed']) {
   return {
     ...fixtureFilteredCandidate(symbol, reasons),
@@ -156,6 +172,22 @@ export async function runLunaActiveCandidateAnalysisRefreshSmoke() {
   assert.equal(highPriorityPlan.status, 'active_candidate_analysis_refresh_clear');
   assert.deepEqual(highPriorityPlan.targetedEnrichment.selectedSymbols, []);
   assert.equal(highPriorityPlan.targetedEnrichment.requireTechnicalPresignal, true);
+
+  const mtfWeightedPresignalPlan = buildActiveCandidateAnalysisRefreshPlan({
+    report: fixtureReport([], [
+      fixtureMtfWeightedCandidate('UTK/USDT'),
+    ]),
+    state: {},
+    now,
+    maxSymbols: 1,
+    maxEnrichmentSymbols: 1,
+    cooldownMinutes: 45,
+    exchange: 'binance',
+  });
+  assert.equal(mtfWeightedPresignalPlan.status, 'active_candidate_analysis_refresh_needed');
+  assert.deepEqual(mtfWeightedPresignalPlan.targetedEnrichment.selectedSymbols, ['UTK/USDT']);
+  assert.equal(mtfWeightedPresignalPlan.targetedEnrichment.selected[0].technicalPresignal, 'mtf_weighted_presignal');
+  assert.deepEqual(mtfWeightedPresignalPlan.targetedEnrichment.nodeIds, ['L03', 'L05']);
 
   const dailyBullishHighPriorityPlan = buildActiveCandidateAnalysisRefreshPlan({
     report: fixtureReport([], [

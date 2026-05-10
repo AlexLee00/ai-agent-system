@@ -99,6 +99,13 @@ const MARKET_PARAMS = {
   },
 };
 
+function mtfConfidenceFromScore(score, threshold, floor = 0.04) {
+  const numericScore = Math.abs(Number(score || 0));
+  if (!Number.isFinite(numericScore) || numericScore <= 0) return 0;
+  const numericThreshold = Math.max(0.1, Math.abs(Number(threshold || 1)));
+  return Math.max(floor, Math.min(numericScore / (numericThreshold * 2), 1));
+}
+
 // ─── 암호화폐 MTF 설정 ──────────────────────────────────────────────
 
 const CRYPTO_TIMEFRAMES = [
@@ -445,8 +452,8 @@ export async function analyzeCryptoMTF(symbol) {
       ? -0.28
       : 0;
   const adjustedScore = normalizedScore + trendBiasBoost;
-  const confidence      = Math.min(Math.abs(normalizedScore) / 5.0, 1);
   const threshold       = MARKET_PARAMS.binance.signalThreshold;
+  const confidence      = mtfConfidenceFromScore(adjustedScore, threshold);
 
   let signal;
   if (adjustedScore >= threshold)       signal = ACTIONS.BUY;
@@ -560,8 +567,8 @@ async function analyzeStockMTF(symbol, exchange, timeframes, exchangeLabel) {
   if (totalWeight === 0) return null;
 
   const normalizedScore = weightedScore / totalWeight;
-  const confidence      = Math.min(Math.abs(normalizedScore) / 5.0, 1);
   const threshold       = MARKET_PARAMS[exchange]?.signalThreshold ?? 1.5;
+  const confidence      = mtfConfidenceFromScore(normalizedScore, threshold);
 
   let signal;
   if (normalizedScore >= threshold)       signal = ACTIONS.BUY;

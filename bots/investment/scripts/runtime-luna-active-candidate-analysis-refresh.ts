@@ -10,6 +10,7 @@ import { finishPipelineRun } from '../shared/pipeline-db.ts';
 import { buildLunaDecisionFilterReport } from './runtime-luna-decision-filter-report.ts';
 import { buildDailyTechnicalCoverage } from './runtime-luna-discovery-funnel-report.ts';
 import { buildStockIntradayLlmPolicyMeta } from '../shared/stock-intraday-llm-policy.ts';
+import { extractCryptoTechnicalEvidence } from '../shared/luna-conservative-relaxation-policy.ts';
 
 const CONFIRM = 'luna-active-candidate-analysis-refresh';
 const DEFAULT_STATE_PATH = investmentOpsRuntimeFile('luna-active-candidate-analysis-refresh-state.json');
@@ -35,6 +36,8 @@ const DEFAULT_TARGETED_ENRICHMENT_GLOBAL_COOLDOWN_BYPASS_MAX_SYMBOLS = 1;
 const DEFAULT_TARGETED_ENRICHMENT_GLOBAL_COOLDOWN_ENABLED = true;
 const DEFAULT_CRYPTO_TARGETED_ENRICHMENT_REQUIRE_TECHNICAL_PRESIGNAL = true;
 const DEFAULT_CRYPTO_TARGETED_ENRICHMENT_DAILY_TECHNICAL_ENABLED = true;
+const DEFAULT_CRYPTO_MTF_PRESIGNAL_WEIGHTED_SCORE = 0.45;
+const DEFAULT_CRYPTO_MTF_PRESIGNAL_MIN_BUY_FRAMES = 1;
 const GLOBAL_TARGETED_ENRICHMENT_SYMBOL = '__global__';
 
 function hasArg(name, argv = process.argv.slice(2)) {
@@ -51,6 +54,11 @@ function boolEnv(name, fallback = true, env = process.env) {
   const raw = env[name];
   if (raw == null || raw === '') return fallback;
   return !['0', 'false', 'off', 'no'].includes(String(raw).toLowerCase());
+}
+
+function numEnv(name, fallback, env = process.env) {
+  const value = Number(env?.[name]);
+  return Number.isFinite(value) ? value : fallback;
 }
 
 function readJsonSafe(filePath, fallback = {}) {
@@ -118,6 +126,39 @@ function hasTechnicalBuy(item = {}) {
     || String(item?.fused?.recommendation || '').toUpperCase() === 'LONG';
 }
 
+function cryptoTechnicalRows(item = {}) {
+  const byAnalyst = item?.analystSummary?.byAnalyst || {};
+  return ['ta_mtf', 'ta', 'technical']
+    .map((analyst) => {
+      const row = byAnalyst?.[analyst];
+      if (!row) return null;
+      return {
+        analyst,
+        signal: row.signal,
+        confidence: row.confidence,
+        reasoning: row.reasoning || '',
+        metadata: row.metadata || {},
+      };
+    })
+    .filter(Boolean);
+}
+
+function hasCryptoMtfWeightedPresignal(item = {}, env = process.env) {
+  if (String(item?.exchange || '').trim() !== 'binance') return false;
+  const evidence = extractCryptoTechnicalEvidence(cryptoTechnicalRows(item));
+  const weightedFloor = numEnv('LUNA_CRYPTO_TA_MTF_PRESIGNAL_WEIGHTED_SCORE', DEFAULT_CRYPTO_MTF_PRESIGNAL_WEIGHTED_SCORE, env);
+  const minBuyFrames = Math.max(
+    1,
+    Math.round(numEnv('LUNA_CRYPTO_TA_MTF_PRESIGNAL_MIN_BUY_FRAMES', DEFAULT_CRYPTO_MTF_PRESIGNAL_MIN_BUY_FRAMES, env)),
+  );
+  const buyFrames = Number(evidence.intradayBuyFrames || 0) + Number(evidence.dailyBuyFrames || 0);
+  const hasSellConflict = Number(evidence.intradaySellFrames || 0) > 0 || Number(evidence.dailySellFrames || 0) > 0;
+  return evidence.weightedScore != null
+    && Number(evidence.weightedScore) >= weightedFloor
+    && buyFrames >= minBuyFrames
+    && !hasSellConflict;
+}
+
 function normalizeSymbol(symbol = '') {
   const raw = String(symbol || '').trim().toUpperCase();
   if (!raw) return raw;
@@ -140,8 +181,9 @@ function hasDailyBullishTechnicalPresignal(item = {}) {
   return row.ok === true || reason.includes('daily_trend_bullish');
 }
 
-function targetedTechnicalPresignal(item = {}) {
+function targetedTechnicalPresignal(item = {}, env = process.env) {
   if (hasTechnicalBuy(item)) return 'analyst_technical_buy';
+  if (hasCryptoMtfWeightedPresignal(item, env)) return 'mtf_weighted_presignal';
   if (hasDailyBullishTechnicalPresignal(item)) return 'daily_technical_bullish';
   if (isProbeCriticalCandidate(item)) return 'relaxed_probe_candidate';
   return null;
@@ -187,7 +229,7 @@ function isHighPriorityActiveCandidate(item = {}) {
 function shouldTargetCandidateForEnrichment(item = {}, { exchange = null, env = process.env } = {}) {
   const reasons = new Set(Array.isArray(item.reasons) ? item.reasons : []);
   if (reasons.has('conflict_detected') || reasons.has('news_only_buy')) return false;
-  if (targetedTechnicalPresignal(item)) return true;
+  if (targetedTechnicalPresignal(item, env)) return true;
   const requireTechnicalPresignal = String(exchange || '').trim() === 'binance'
     ? boolEnv(
       'LUNA_CRYPTO_TARGETED_ENRICHMENT_REQUIRE_TECHNICAL_PRESIGNAL',
@@ -200,9 +242,9 @@ function shouldTargetCandidateForEnrichment(item = {}, { exchange = null, env = 
   return missingEnrichmentNodeIds(item).length > 0;
 }
 
-function isGlobalCooldownBypassCandidate(item = {}, confidence = 0, minConfidence = DEFAULT_TARGETED_ENRICHMENT_MIN_CONFIDENCE) {
+function isGlobalCooldownBypassCandidate(item = {}, confidence = 0, minConfidence = DEFAULT_TARGETED_ENRICHMENT_MIN_CONFIDENCE, env = process.env) {
   if (isProbeCriticalCandidate(item)) return true;
-  if (!targetedTechnicalPresignal(item)) return false;
+  if (!targetedTechnicalPresignal(item, env)) return false;
   return Number(confidence || 0) >= Math.max(Number(minConfidence || 0), 0.62);
 }
 
@@ -300,7 +342,7 @@ function buildTargetedEnrichmentPlan({
     const lastAttemptAt = attempt?.lastAttemptAt || null;
     const ageMs = lastAttemptAt ? now.getTime() - new Date(lastAttemptAt).getTime() : Infinity;
     if (globalCooldown && globalCooldownEnabled === true) {
-      const globalBypassAllowed = isGlobalCooldownBypassCandidate(item, confidence, safeMinConfidence)
+      const globalBypassAllowed = isGlobalCooldownBypassCandidate(item, confidence, safeMinConfidence, env)
         && globalCooldownBypassed < globalBypassMax
         && globalAgeMs >= bypassMs
         && selected.length < Math.max(0, Number(maxSymbols || 0))
@@ -315,7 +357,7 @@ function buildTargetedEnrichmentPlan({
           confidence,
           fused: item.fused || null,
           recommendation: item.recommendation || null,
-          technicalPresignal: targetedTechnicalPresignal(item),
+          technicalPresignal: targetedTechnicalPresignal(item, env),
           cooldownBypassed: true,
           globalCooldownBypassed: true,
           globalLastAttemptAt: globalCooldown.lastAttemptAt,
@@ -372,7 +414,7 @@ function buildTargetedEnrichmentPlan({
       confidence,
       fused: item.fused || null,
       recommendation: item.recommendation || null,
-      technicalPresignal: targetedTechnicalPresignal(item),
+      technicalPresignal: targetedTechnicalPresignal(item, env),
     });
     for (const nodeId of missingNodes) nodeIds.add(nodeId);
     if (selected.length >= Math.max(0, Number(maxSymbols || 0))) break;

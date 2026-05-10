@@ -9,7 +9,10 @@ import {
   getMinConfidence,
 } from '../shared/luna-decision-policy.ts';
 import { shouldRunStockIntradayDecisionLlm } from '../shared/stock-intraday-llm-policy.ts';
-import { evaluateConservativeRelaxation } from '../shared/luna-conservative-relaxation-policy.ts';
+import {
+  evaluateConservativeRelaxation,
+  extractCryptoTechnicalEvidence,
+} from '../shared/luna-conservative-relaxation-policy.ts';
 import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
 import { buildDiscoveryUniverse } from '../team/discovery/discovery-universe.ts';
 
@@ -18,6 +21,13 @@ const STOCK_EXCHANGES = new Set(['kis', 'kis_overseas']);
 const TECHNICAL_ANALYSTS = new Set([ANALYST_TYPES.TA_MTF, ANALYST_TYPES.TA]);
 const NEWS_LIKE_ANALYSTS = new Set([ANALYST_TYPES.NEWS, ANALYST_TYPES.SENTINEL]);
 const DEFAULT_DAILY_BULLISH_PROBE_MIN_INTRADAY_CONFIDENCE = 0.18;
+const DEFAULT_CRYPTO_MTF_PRESIGNAL_WEIGHTED_SCORE = 0.45;
+const DEFAULT_CRYPTO_MTF_PRESIGNAL_MIN_BUY_FRAMES = 1;
+
+function numEnv(env, key, fallback) {
+  const value = Number(env?.[key]);
+  return Number.isFinite(value) ? value : fallback;
+}
 
 function parseArgs(argv = process.argv.slice(2)) {
   const symbolArg = argv.find((arg) => arg.startsWith('--symbols='))?.split('=').slice(1).join('=') || '';
@@ -100,7 +110,22 @@ function summarizeAnalysts(analyses = []) {
   return { bySignal, byAnalyst };
 }
 
-function buildFilterReasons(analyses, fused, { exchange, minConfidence }) {
+function hasCryptoMtfTechnicalPresignal(analyses = [], env = process.env) {
+  const evidence = extractCryptoTechnicalEvidence(analyses);
+  const weightedFloor = numEnv(env, 'LUNA_CRYPTO_TA_MTF_PRESIGNAL_WEIGHTED_SCORE', DEFAULT_CRYPTO_MTF_PRESIGNAL_WEIGHTED_SCORE);
+  const minBuyFrames = Math.max(
+    1,
+    Math.round(numEnv(env, 'LUNA_CRYPTO_TA_MTF_PRESIGNAL_MIN_BUY_FRAMES', DEFAULT_CRYPTO_MTF_PRESIGNAL_MIN_BUY_FRAMES)),
+  );
+  const buyFrames = Number(evidence.intradayBuyFrames || 0) + Number(evidence.dailyBuyFrames || 0);
+  const hasSellConflict = Number(evidence.intradaySellFrames || 0) > 0 || Number(evidence.dailySellFrames || 0) > 0;
+  return evidence.weightedScore != null
+    && Number(evidence.weightedScore) >= weightedFloor
+    && buyFrames >= minBuyFrames
+    && !hasSellConflict;
+}
+
+function buildFilterReasons(analyses, fused, { exchange, minConfidence, env = process.env }) {
   const reasons = [];
   const buyAnalysts = analyses.filter((analysis) => analysis.signal === ACTIONS.BUY);
   const sellAnalysts = analyses.filter((analysis) => analysis.signal === ACTIONS.SELL);
@@ -120,7 +145,9 @@ function buildFilterReasons(analyses, fused, { exchange, minConfidence }) {
   if (fused.recommendation !== 'LONG') reasons.push('fusion_not_long');
   if (Number(fused.averageConfidence || 0) < minConfidence) reasons.push('average_confidence_below_min');
   if (fused.hasConflict || sellAnalysts.length > 0) reasons.push('conflict_detected');
-  if (!technical || technical.signal !== ACTIONS.BUY) reasons.push('technical_not_confirmed');
+  const technicalConfirmed = technical?.signal === ACTIONS.BUY
+    || (exchange === 'binance' && hasCryptoMtfTechnicalPresignal(analyses, env));
+  if (!technicalConfirmed) reasons.push('technical_not_confirmed');
   if (exchange === 'binance' && (!onchain || onchain.signal !== ACTIONS.BUY)) reasons.push('onchain_not_confirmed');
   if (STOCK_EXCHANGES.has(exchange) && marketFlow && marketFlow.signal !== ACTIONS.BUY) reasons.push('market_flow_not_confirmed');
   if (
@@ -294,7 +321,7 @@ export function buildDecisionFilterDiagnostics(analysisRows = [], options = {}) 
   for (const [symbol, rows] of grouped.entries()) {
     const analyses = latestByAnalyst(rows);
     const fused = fuseSignals(analyses, weights);
-    const reasons = buildFilterReasons(analyses, fused, { exchange, minConfidence });
+    const reasons = buildFilterReasons(analyses, fused, { exchange, minConfidence, env: options.env || process.env });
     const relaxation = reasons.length > 0
       ? evaluateConservativeRelaxation({ exchange, analyses, fused, env: options.env || process.env })
       : { ok: false, reason: 'strict_actionable' };
