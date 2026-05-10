@@ -14,6 +14,8 @@ const DEFAULT_STATE_PATH = path.join(INVESTMENT_DIR, 'output', 'ops', 'luna-ops-
 const DEFAULT_LOCK_PATH = path.join(INVESTMENT_DIR, 'output', 'ops', 'luna-ops-scheduler.lock');
 const LOCK_STALE_MS = 20 * 60 * 1000;
 const DEFAULT_JOB_TIMEOUT_MS = 3 * 60 * 1000;
+const PRE_MARKET_ANALYSIS_MAX_SYMBOLS = '5';
+const PRE_MARKET_ANALYSIS_MAX_ENRICHMENT_SYMBOLS = '2';
 
 function isProcessAlive(pid) {
   const numericPid = Number(pid);
@@ -101,8 +103,8 @@ export function getOpsSchedulerJobs() {
         '--market=domestic',
         '--hours=24',
         '--limit=20',
-        '--max-symbols=2',
-        '--max-enrichment-symbols=1',
+        `--max-symbols=${PRE_MARKET_ANALYSIS_MAX_SYMBOLS}`,
+        `--max-enrichment-symbols=${PRE_MARKET_ANALYSIS_MAX_ENRICHMENT_SYMBOLS}`,
         '--targeted-global-cooldown',
         '--json',
       ]),
@@ -118,8 +120,8 @@ export function getOpsSchedulerJobs() {
         '--market=overseas',
         '--hours=24',
         '--limit=20',
-        '--max-symbols=2',
-        '--max-enrichment-symbols=1',
+        `--max-symbols=${PRE_MARKET_ANALYSIS_MAX_SYMBOLS}`,
+        `--max-enrichment-symbols=${PRE_MARKET_ANALYSIS_MAX_ENRICHMENT_SYMBOLS}`,
         '--targeted-global-cooldown',
         '--json',
       ]),

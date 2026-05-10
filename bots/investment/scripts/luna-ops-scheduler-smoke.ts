@@ -33,9 +33,11 @@ export async function runLunaOpsSchedulerSmoke() {
   assert.equal(jobs.find((job) => job.name === 'pre_market_screen_domestic')?.cadence?.type, 'daily');
   assert.equal(jobs.find((job) => job.name === 'pre_market_screen_overseas')?.cadence?.type, 'daily');
   assert.equal(jobs.find((job) => job.name === 'pre_market_analysis_refresh_domestic')?.requiresMarketOpen, undefined);
-  assert.equal(jobs.find((job) => job.name === 'pre_market_analysis_refresh_domestic')?.args?.includes('--max-symbols=2'), true);
+  assert.equal(jobs.find((job) => job.name === 'pre_market_analysis_refresh_domestic')?.args?.includes('--max-symbols=5'), true);
+  assert.equal(jobs.find((job) => job.name === 'pre_market_analysis_refresh_domestic')?.args?.includes('--max-enrichment-symbols=2'), true);
   assert.equal(jobs.find((job) => job.name === 'pre_market_analysis_refresh_overseas')?.requiresMarketOpen, undefined);
-  assert.equal(jobs.find((job) => job.name === 'pre_market_analysis_refresh_overseas')?.args?.includes('--max-enrichment-symbols=1'), true);
+  assert.equal(jobs.find((job) => job.name === 'pre_market_analysis_refresh_overseas')?.args?.includes('--max-symbols=5'), true);
+  assert.equal(jobs.find((job) => job.name === 'pre_market_analysis_refresh_overseas')?.args?.includes('--max-enrichment-symbols=2'), true);
   assert.equal(shouldSkipPreScreen({ isOpen: true }), true);
   assert.equal(shouldSkipPreScreen({ isOpen: false, isWeekend: false, holiday: { isHoliday: false } }), false);
   assert.equal(jobs.some((job) => job.name === 'market_cycle_crypto'), true);

@@ -6,7 +6,7 @@ import { ensureCandidateUniverseTable } from '../team/discovery/discovery-store.
 import { ensureLunaDiscoveryEntryTables } from '../shared/luna-discovery-entry-store.ts';
 import { publishAlert } from '../shared/alert-publisher.ts';
 import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
-import { evaluateKisMarketHours } from '../shared/kis-market-hours-guard.ts';
+import { evaluateKisMarketHours, getNextOpenTime } from '../shared/kis-market-hours-guard.ts';
 import { ANALYST_TYPES } from '../shared/signal.ts';
 import { evaluateDailyTrendSnapshot, evaluateKisDailySnapshot, evaluateTradingViewSnapshot, fetchEntryChartSnapshot } from '../shared/tradingview-entry-guard.ts';
 import {
@@ -43,6 +43,7 @@ const ANALYST_PARTIAL_BOTTLENECK_CODES = {
   [ANALYST_TYPES.MARKET_FLOW]: 'market_flow_analysis_partial_for_candidates',
 };
 const DEFAULT_RELAXED_PROBE_RECENT_TRADE_COOLDOWN_HOURS = 6;
+const DEFAULT_PREOPEN_READINESS_WINDOW_MINUTES = 12 * 60;
 
 function parseArgs(argv = process.argv.slice(2)) {
   return {
@@ -150,12 +151,41 @@ export function buildRequiredAnalystCoverage({
   };
 }
 
-export function classifyCoverageBottlenecksForMarket({ market, marketOpen = true, bottlenecks = [] } = {}) {
+function getPreopenReadinessWindowMinutes(env = process.env) {
+  const value = Number(env?.LUNA_PREOPEN_READINESS_WINDOW_MINUTES);
+  if (Number.isFinite(value) && value > 0) return Math.floor(value);
+  return DEFAULT_PREOPEN_READINESS_WINDOW_MINUTES;
+}
+
+function buildPreopenWindow({ market, marketOpen = false, now = new Date() } = {}) {
+  if (market === 'crypto') return { enabled: false, active: false, minutesUntilOpen: null, nextOpen: null };
+  const next = getNextOpenTime({ market, now });
+  const windowMinutes = getPreopenReadinessWindowMinutes();
+  const minutesUntilOpen = next?.alreadyOpen ? 0 : Number(next?.minutesUntilOpen);
+  const active = marketOpen === true
+    ? false
+    : Number.isFinite(minutesUntilOpen) && minutesUntilOpen >= 0 && minutesUntilOpen <= windowMinutes;
+  return {
+    enabled: true,
+    active,
+    windowMinutes,
+    minutesUntilOpen: Number.isFinite(minutesUntilOpen) ? minutesUntilOpen : null,
+    nextOpen: next?.nextOpen?.toISOString?.() || null,
+  };
+}
+
+export function classifyCoverageBottlenecksForMarket({ market, marketOpen = true, preopenActive = false, bottlenecks = [] } = {}) {
   const unique = [...new Set(bottlenecks || [])];
   if (market === 'crypto' || marketOpen) {
     return {
       bottlenecks: unique,
       observations: [],
+    };
+  }
+  if (!preopenActive) {
+    return {
+      bottlenecks: [],
+      observations: unique.length > 0 ? ['market_closed_preopen_window_not_started'] : [],
     };
   }
   return {
@@ -441,11 +471,13 @@ export async function buildDailyTechnicalCoverage({
 }
 
 async function buildMarketFunnel(market, { hours }) {
+  const now = new Date();
   const exchange = MARKET_EXCHANGES[market];
   const marketHours = market === 'crypto'
     ? { market, isOpen: true, state: 'open', reasonCode: 'crypto_24h_market', nextAction: 'allow' }
     : evaluateKisMarketHours({ market });
   const marketOpen = marketHours.isOpen === true;
+  const preopenWindow = buildPreopenWindow({ market, marketOpen, now });
   const candidateSqlFilter = candidateSymbolSqlFilter(market);
   const normalizedExpr = normalizedCandidateExpr();
   const [candidateRows, sourceRows, signalRows, triggerRows, latestCandidates, latestTriggers] = await Promise.all([
@@ -685,7 +717,8 @@ async function buildMarketFunnel(market, { hours }) {
 
   function addMarketPrepGap(code, preopenCode = `preopen_${code}`) {
     if (market === 'crypto' || marketOpen) bottlenecks.push(code);
-    else observations.push(preopenCode);
+    else if (preopenWindow.active) observations.push(preopenCode);
+    else observations.push('market_closed_preopen_window_not_started');
   }
 
   if (number(candidate.active_count) === 0) addMarketPrepGap('discovery_candidate_empty', 'preopen_candidate_universe_empty');
@@ -725,6 +758,7 @@ async function buildMarketFunnel(market, { hours }) {
     const classifiedCoverage = classifyCoverageBottlenecksForMarket({
       market,
       marketOpen,
+      preopenActive: preopenWindow.active,
       bottlenecks: requiredAnalystCoverage.bottlenecks,
     });
     bottlenecks.push(...classifiedCoverage.bottlenecks);
@@ -768,11 +802,15 @@ async function buildMarketFunnel(market, { hours }) {
     },
     preopenReadiness: {
       enabled: market !== 'crypto',
+      active: preopenWindow.active,
+      windowMinutes: preopenWindow.windowMinutes || null,
+      minutesUntilOpen: preopenWindow.minutesUntilOpen,
+      nextOpen: preopenWindow.nextOpen,
       marketOpen,
       candidateUniverseReady: number(candidate.active_count) > 0,
       sourceMetricsReady: sourceSignalCount > 0,
-      requiredAnalysisReady: (requiredAnalystCoverage.bottlenecks || []).length === 0,
-      pending: observations.filter((code) => String(code).startsWith('preopen_')),
+      requiredAnalysisReady: !preopenWindow.active || (requiredAnalystCoverage.bottlenecks || []).length === 0,
+      pending: preopenWindow.active ? observations.filter((code) => String(code).startsWith('preopen_')) : [],
     },
     decisionFilter: {
       checkedCount: decisionDiagnostics.length,

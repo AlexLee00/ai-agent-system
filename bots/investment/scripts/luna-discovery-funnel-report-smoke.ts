@@ -132,6 +132,7 @@ export async function runLunaDiscoveryFunnelReportSmoke() {
     const overseasClosedClassified = classifyCoverageBottlenecksForMarket({
       market: 'overseas',
       marketOpen: false,
+      preopenActive: true,
       bottlenecks: ['sentiment_analysis_missing_for_candidates'],
     });
     assert.deepEqual(
@@ -143,6 +144,22 @@ export async function runLunaDiscoveryFunnelReportSmoke() {
       overseasClosedClassified.observations,
       ['preopen_sentiment_analysis_missing_for_candidates'],
       'closed overseas required-analysis gaps should be preserved as pre-open observations',
+    );
+    const overseasClosedBeforePreopen = classifyCoverageBottlenecksForMarket({
+      market: 'overseas',
+      marketOpen: false,
+      preopenActive: false,
+      bottlenecks: ['sentiment_analysis_missing_for_candidates'],
+    });
+    assert.deepEqual(
+      overseasClosedBeforePreopen.bottlenecks,
+      [],
+      'closed overseas required-analysis gaps should not be blockers before pre-open window starts',
+    );
+    assert.deepEqual(
+      overseasClosedBeforePreopen.observations,
+      ['market_closed_preopen_window_not_started'],
+      'closed overseas gaps should avoid preopen pending noise before the prep window',
     );
     const overseasClosedDailyReady = buildRequiredAnalystCoverage({
       market: 'overseas',
