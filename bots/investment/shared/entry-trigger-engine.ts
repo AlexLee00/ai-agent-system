@@ -82,6 +82,18 @@ function isAllowedTriggerType(triggerType, flags) {
   return allowed.length <= 0 || allowed.includes(triggerType);
 }
 
+function clamp01(value, fallback) {
+  const numeric = finiteNumber(value, fallback);
+  return Math.max(0, Math.min(1, Number(numeric ?? fallback ?? 0)));
+}
+
+function resolvePullbackMinConfidence(context = {}) {
+  const explicit = context?.pullbackMinConfidence ?? process.env.LUNA_ENTRY_TRIGGER_PULLBACK_MIN_CONFIDENCE;
+  if (explicit != null && String(explicit).trim() !== '') return clamp01(explicit, 0.6);
+  const globalMin = finiteNumber(context?.entryTriggerMinConfidence ?? process.env.LUNA_ENTRY_TRIGGER_MIN_CONFIDENCE, null);
+  return clamp01(Math.max(globalMin ?? 0.6, 0.6), 0.6);
+}
+
 export function buildEntryTriggerFireReadiness(candidate = {}, context = {}) {
   const hints = candidate?.triggerHints || {};
   const mtfAgreement = Number(hints.mtfAgreement ?? context?.mtfAgreement ?? 0);
@@ -109,9 +121,9 @@ export function buildEntryTriggerFireReadiness(candidate = {}, context = {}) {
   if (mtfAgreement >= 0.72 && discoveryScore >= 0.58) return { ok: true, reason: 'mtf_discovery_confirmed', details };
 
   if (triggerType === 'pullback_to_support') {
-    const minConfidence = Number(context?.pullbackMinConfidence ?? process.env.LUNA_ENTRY_TRIGGER_PULLBACK_MIN_CONFIDENCE ?? 0.68);
-    const minPredictiveScore = Number(context?.pullbackMinPredictiveScore ?? process.env.LUNA_ENTRY_TRIGGER_PULLBACK_MIN_PREDICTIVE_SCORE ?? 0.55);
-    const minDiscoveryScore = Number(context?.pullbackMinDiscoveryScore ?? process.env.LUNA_ENTRY_TRIGGER_PULLBACK_MIN_DISCOVERY_SCORE ?? 0.58);
+    const minConfidence = resolvePullbackMinConfidence(context);
+    const minPredictiveScore = clamp01(context?.pullbackMinPredictiveScore ?? process.env.LUNA_ENTRY_TRIGGER_PULLBACK_MIN_PREDICTIVE_SCORE, 0.55);
+    const minDiscoveryScore = clamp01(context?.pullbackMinDiscoveryScore ?? process.env.LUNA_ENTRY_TRIGGER_PULLBACK_MIN_DISCOVERY_SCORE, 0.58);
     const pullbackDetails = {
       ...details,
       minConfidence,
@@ -295,19 +307,29 @@ export function evaluateEntryTriggerLiveRiskGate({ candidate = {}, trigger = nul
   const amountUsdt = finiteNumber(candidate?.amount_usdt ?? candidate?.amountUsdt ?? context?.defaultAmountUsdt, 0);
   const capitalSnapshot = resolveCapitalSnapshot(candidate, context);
   const capitalCheck = resolveCapitalCheck(candidate, context);
+  const triggerType = String(candidate?.triggerType || candidate?.trigger_type || trigger?.trigger_type || '').trim();
   const minLiveConfidence = finiteNumber(gate.minLiveConfidence, 0.68);
+  const pullbackMinLiveConfidence = triggerType === 'pullback_to_support'
+    ? Math.min(minLiveConfidence, resolvePullbackMinConfidence(context))
+    : minLiveConfidence;
   const minPredictiveScore = finiteNumber(gate.minLivePredictiveScore, 0);
   const minLiveAmountUsdt = finiteNumber(gate.minLiveAmountUsdt, 0);
   const predictiveObservation = isPredictiveObservationCandidate(candidate);
   const effectiveMinLiveConfidence = predictiveObservation
     ? finiteNumber(gate.minPredictiveObservationConfidence, 0.35)
-    : minLiveConfidence;
+    : pullbackMinLiveConfidence;
 
   if (confidence < effectiveMinLiveConfidence) {
     return {
       ok: false,
       reason: 'live_confidence_below_min',
-      details: { confidence, minLiveConfidence: effectiveMinLiveConfidence, predictiveObservation },
+      details: {
+        confidence,
+        minLiveConfidence: effectiveMinLiveConfidence,
+        configuredMinLiveConfidence: minLiveConfidence,
+        triggerType,
+        predictiveObservation,
+      },
     };
   }
 

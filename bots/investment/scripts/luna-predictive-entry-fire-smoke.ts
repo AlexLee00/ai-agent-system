@@ -4,7 +4,11 @@
 import assert from 'node:assert/strict';
 import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
 import * as db from '../shared/db.ts';
-import { evaluateEntryTriggers } from '../shared/entry-trigger-engine.ts';
+import {
+  buildEntryTriggerFireReadiness,
+  evaluateEntryTriggerLiveRiskGate,
+  evaluateEntryTriggers,
+} from '../shared/entry-trigger-engine.ts';
 
 function withEnv(patch = {}, fn) {
   const prev = {};
@@ -62,6 +66,58 @@ export async function runLunaPredictiveEntryFireSmoke() {
     LUNA_PREDICTIVE_VALIDATION_MODE: 'hard_gate',
     LUNA_PREDICTIVE_VALIDATION_THRESHOLD: '0.55',
   }, async () => {
+    const pullbackReady = buildEntryTriggerFireReadiness({
+      symbol: 'PULLBACKPASS/USDT',
+      action: 'BUY',
+      confidence: 0.63,
+      predictiveScore: 0.6261,
+      triggerType: 'pullback_to_support',
+      triggerHints: {
+        discoveryScore: 0.6033,
+        breakoutRetest: true,
+      },
+    });
+    assert.equal(pullbackReady.ok, true);
+    assert.equal(pullbackReady.reason, 'pullback_target_retest_predictive_confirmed');
+    assert.equal(pullbackReady.details.minConfidence, 0.6);
+
+    const weakPullback = buildEntryTriggerFireReadiness({
+      symbol: 'PULLBACKWEAK/USDT',
+      action: 'BUY',
+      confidence: 0.55,
+      predictiveScore: 0.6261,
+      triggerType: 'pullback_to_support',
+      triggerHints: {
+        discoveryScore: 0.6033,
+        breakoutRetest: true,
+      },
+    });
+    assert.equal(weakPullback.ok, false);
+    assert.equal(weakPullback.reason, 'pullback_confirmation_incomplete');
+
+    const pullbackRiskGate = evaluateEntryTriggerLiveRiskGate({
+      candidate: {
+        symbol: 'PULLBACKPASS/USDT',
+        action: 'BUY',
+        confidence: 0.63,
+        predictiveScore: 0.6261,
+        triggerType: 'pullback_to_support',
+      },
+      flags: {
+        shouldAllowLiveEntryFire: () => true,
+        phases: { predictiveValidationEnabled: false },
+        predictive: { mode: 'advisory' },
+        entryTrigger: {
+          liveRiskGateEnabled: true,
+          minLiveConfidence: 0.68,
+          minLivePredictiveScore: 0,
+          minLiveAmountUsdt: 0,
+          requirePredictiveScore: false,
+        },
+      },
+    });
+    assert.equal(pullbackRiskGate.ok, true);
+
     const weakSymbol = `PREDWEAK${Date.now().toString(36).toUpperCase()}/USDT`;
     const strongSymbol = weakSymbol.replace('PREDWEAK', 'PREDPASS');
     const capitalSnapshot = {

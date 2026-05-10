@@ -19,6 +19,7 @@ import { fileURLToPath } from 'node:url';
 import * as db from '../shared/db.ts';
 import { getLunaIntelligentDiscoveryFlags } from '../shared/luna-intelligent-discovery-config.ts';
 import { buildEntryTriggerFireReadiness } from '../shared/entry-trigger-engine.ts';
+import { getOHLCV } from '../shared/ohlcv-fetcher.ts';
 import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -64,6 +65,27 @@ function resolveEffectiveEnv(key: string): string | null {
   return process.env[key] || getLaunchctlEnv(key) || null;
 }
 
+function isoDaysAgo(days = 1) {
+  return new Date(Date.now() - Math.max(1, Number(days || 1)) * 24 * 3600_000).toISOString().slice(0, 10);
+}
+
+function latestClose(candles = []) {
+  const row = Array.isArray(candles) ? candles[candles.length - 1] : null;
+  const close = Number(row?.[4]);
+  return Number.isFinite(close) && close > 0 ? close : null;
+}
+
+function normalizeTriggerContext(context: any) {
+  if (!context) return {};
+  if (typeof context === 'object') return context;
+  try {
+    const parsed = JSON.parse(String(context));
+    return parsed && typeof parsed === 'object' ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
 async function getActiveEntryTriggers(exchange: string) {
   try {
     await db.initSchema();
@@ -82,6 +104,42 @@ async function getActiveEntryTriggers(exchange: string) {
   } catch (err: any) {
     return [];
   }
+}
+
+async function enrichActiveTriggersWithMarketEvents(triggers: any[], exchange: string) {
+  if (!Array.isArray(triggers) || triggers.length === 0) return [];
+  return Promise.all((triggers || []).map(async (trigger) => {
+    const triggerContext = normalizeTriggerContext(trigger?.trigger_context);
+    const hints = triggerContext?.hints || {};
+    const targetPrice = Number(trigger?.target_price || 0);
+    let latestPrice = null;
+    let source = 'stored_context';
+    if (exchange === 'binance') {
+      const candles = await getOHLCV(trigger.symbol, '1m', isoDaysAgo(1), null, exchange).catch(() => []);
+      latestPrice = latestClose(candles);
+      if (latestPrice != null) source = 'binance_1m';
+    }
+    const breakoutRetest = targetPrice > 0 && latestPrice != null
+      ? latestPrice >= targetPrice
+      : hints.breakoutRetest === true;
+    const enrichedHints = {
+      ...hints,
+      breakoutRetest,
+    };
+    return {
+      ...trigger,
+      trigger_context: {
+        ...triggerContext,
+        hints: enrichedHints,
+      },
+      diagnostic_market_event: {
+        source,
+        latestPrice,
+        targetPrice: Number.isFinite(targetPrice) && targetPrice > 0 ? targetPrice : null,
+        breakoutRetest,
+      },
+    };
+  }));
 }
 
 async function getRecentFiredTriggers(exchange: string, hours: number) {
@@ -248,12 +306,16 @@ function diagnoseBlockReasons(flags: any, activeTriggers: any[], env: Record<str
 }
 
 function renderActiveTrigger(t: any, verbose: boolean) {
-  const hints = t.trigger_context?.hints || {};
+  const hints = normalizeTriggerContext(t.trigger_context)?.hints || {};
+  const marketEvent = t.diagnostic_market_event || {};
   const lines = [
     `  ${t.symbol} [${t.trigger_type}] state=${t.trigger_state} conf=${Number(t.confidence || 0).toFixed(2)} pred=${t.predictive_score != null ? Number(t.predictive_score).toFixed(2) : 'n/a'}`,
   ];
   if (verbose) {
     lines.push(`    mtf=${Number(hints.mtfAgreement || 0).toFixed(2)} disc=${Number(hints.discoveryScore || 0).toFixed(2)} vol=${Number(hints.volumeBurst || 0).toFixed(2)} breakout=${hints.breakoutRetest === true}`);
+    if (marketEvent.source) {
+      lines.push(`    market=${marketEvent.source} latest=${marketEvent.latestPrice ?? 'n/a'} target=${marketEvent.targetPrice ?? 'n/a'} retest=${marketEvent.breakoutRetest === true}`);
+    }
     lines.push(`    expires=${t.expires_at ? new Date(t.expires_at).toLocaleString('ko-KR') : 'n/a'} created=${t.created_at ? new Date(t.created_at).toLocaleString('ko-KR') : 'n/a'}`);
   }
   return lines.join('\n');
@@ -297,11 +359,15 @@ export async function runLunaEntryTriggerDiagnose({
     getCooldownStatus(exchange),
   ]).then((results) => results.map((r) => (r.status === 'fulfilled' ? r.value : null)));
 
-  const { blocks, issues } = diagnoseBlockReasons(flags, activeTriggers || [], env);
-  const hasActiveTriggers = (activeTriggers || []).length > 0;
+  const activeTriggersWithMarket = await enrichActiveTriggersWithMarketEvents(activeTriggers || [], exchange);
+  const { blocks, issues } = diagnoseBlockReasons(flags, activeTriggersWithMarket, env);
+  const readyToFireTriggers = activeTriggersWithMarket.filter((t: any) => t.fire_readiness?.ok === true);
+  const hasActiveTriggers = activeTriggersWithMarket.length > 0;
   const hasHeartbeatFire = Number(hbResult.fired || 0) > 0 || Number(hbLastFire?.fired || 0) > 0;
   const hasRecentFire = (recentFired || []).length > 0;
-  const readinessStatus = issues.length > 0
+  const readinessStatus = readyToFireTriggers.length > 0
+    ? 'ready_to_fire'
+    : issues.length > 0
     ? 'blocked'
     : hasActiveTriggers
       ? 'armed'
@@ -310,7 +376,7 @@ export async function runLunaEntryTriggerDiagnose({
         : 'waiting_for_candidate';
 
   const diagnosis = {
-    ok: issues.length === 0,
+    ok: readyToFireTriggers.length > 0 || issues.length === 0,
     readinessStatus,
     checkedAt: new Date().toISOString(),
     exchange,
@@ -325,8 +391,14 @@ export async function runLunaEntryTriggerDiagnose({
       lastFire: hbLastFire,
     },
     activeTriggers: {
-      count: (activeTriggers || []).length,
-      symbols: (activeTriggers || []).map((t: any) => t.symbol),
+      count: activeTriggersWithMarket.length,
+      symbols: activeTriggersWithMarket.map((t: any) => t.symbol),
+      readyToFireCount: readyToFireTriggers.length,
+      readyToFireSymbols: readyToFireTriggers.map((t: any) => t.symbol),
+    },
+    diagnosticMarketEvents: {
+      count: activeTriggersWithMarket.filter((t: any) => t.diagnostic_market_event?.source === 'binance_1m').length,
+      source: exchange === 'binance' ? 'binance_1m' : 'stored_context',
     },
     recentFired: {
       count: (recentFired || []).length,
@@ -344,7 +416,7 @@ export async function runLunaEntryTriggerDiagnose({
     },
     budget: budgetStatus || { todayLlmCallsEstimate: 0, estimatedCostUsd: 0 },
     cooldown: cooldownStatus || { recentFiredCount: 0, recentFiredSymbols: [] },
-    triggers: verbose ? (activeTriggers || []) : (activeTriggers || []).slice(0, 5),
+    triggers: verbose ? activeTriggersWithMarket : activeTriggersWithMarket.slice(0, 5),
   };
 
   return diagnosis;

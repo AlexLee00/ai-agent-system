@@ -152,8 +152,8 @@ export async function publishLunaLiveFireCutoverPreflight(report = {}) {
 }
 
 export async function runLunaLiveFireCutoverPreflightSmoke() {
-  assert.equal(parityClear({ json: { summary: { ok: 3 } } }), true);
-  assert.equal(parityClear({ json: { summary: { quantityMismatch: 1 } } }), false);
+  assert.equal(parityClear({ ok: true, status: 0, json: { summary: { ok: 3 } } }), true);
+  assert.equal(parityClear({ ok: true, status: 0, json: { summary: { quantityMismatch: 1 } } }), false);
   return { ok: true };
 }
 
