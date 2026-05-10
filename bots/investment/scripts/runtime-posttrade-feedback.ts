@@ -179,7 +179,7 @@ async function runPosttradeFeedback(args) {
         quality = await evaluateTradeQuality(tradeId, { dryRun: args.dryRun });
         if (quality) {
           results[quality.category]++;
-          console.log(`[A] trade=${tradeId} overall=${quality.overall_score.toFixed(3)} category=${quality.category}`);
+          posttradeLog(args, `[A] trade=${tradeId} overall=${quality.overall_score.toFixed(3)} category=${quality.category}`);
         }
       } else {
         // Phase A 비활성 시 DB에서 기존 결과 조회
@@ -200,7 +200,7 @@ async function runPosttradeFeedback(args) {
       if (runB) {
         stageAttrs = await analyzeStageAttribution(tradeId, Number(pnlPct), { dryRun: args.dryRun });
         if (stageAttrs.length > 0) {
-          console.log(`[B] trade=${tradeId} stages=${stageAttrs.length}`);
+          posttradeLog(args, `[B] trade=${tradeId} stages=${stageAttrs.length}`);
         }
       }
 
@@ -213,7 +213,7 @@ async function runPosttradeFeedback(args) {
         const reflexion = await runReflexion(quality, stageAttrs, { dryRun: args.dryRun });
         if (reflexion) {
           results.reflexions++;
-          console.log(`[C] trade=${tradeId} hindsight="${reflexion.hindsight?.slice(0, 60)}..."`);
+          posttradeLog(args, `[C] trade=${tradeId} hindsight="${reflexion.hindsight?.slice(0, 60)}..."`);
         }
       }
 
