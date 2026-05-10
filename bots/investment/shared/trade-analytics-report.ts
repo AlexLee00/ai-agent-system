@@ -47,6 +47,12 @@ function finalizeBucket(bucket) {
   };
 }
 
+function parseDurationMs(value) {
+  if (value == null || value === '') return null;
+  const n = Number(value);
+  return Number.isFinite(n) && n >= 0 ? n : null;
+}
+
 function bucketMapToArray(map) {
   return Object.values(map).map(finalizeBucket).sort((a, b) => b.total - a.total || a.name.localeCompare(b.name));
 }
@@ -77,7 +83,12 @@ function resolvePnl(row = {}) {
   };
 }
 
-function buildActions({ summary, strategyFamily, tpSl, marketRegime }) {
+function findBucket(buckets = [], name) {
+  return (buckets || []).find((bucket) => bucket.name === name) || null;
+}
+
+function buildActions({ summary, strategyFamily, tpSl, marketRegime, earlyExit }) {
+  const trendFollowing = findBucket(strategyFamily.buckets, 'trend_following');
   const actions = [
     {
       id: 'stop_loss_required_for_closed_trades',
@@ -88,6 +99,20 @@ function buildActions({ summary, strategyFamily, tpSl, marketRegime }) {
       id: 'trending_bull_entry_quality_gate',
       status: marketRegime.trendingBullLosses > 0 ? 'watch' : 'ok',
       evidence: { trendingBullLosses: marketRegime.trendingBullLosses },
+    },
+    {
+      id: 'trend_following_quality_review',
+      status: trendFollowing?.closed >= 3 && Number(trendFollowing.avgPnlPercent) < 0 ? 'warning' : 'ok',
+      evidence: {
+        closed: trendFollowing?.closed || 0,
+        avgPnlPercent: trendFollowing?.avgPnlPercent ?? null,
+        winRate: trendFollowing?.winRate ?? null,
+      },
+    },
+    {
+      id: 'early_exit_cluster_review',
+      status: earlyExit.total > 0 ? 'watch' : 'ok',
+      evidence: earlyExit,
     },
     {
       id: 'strategy_family_required',
@@ -139,6 +164,13 @@ export function buildTradeAnalyticsReport(rows = [], { generatedAt = new Date().
   let shortTermCount = 0;
   let strategyUnknownCount = 0;
   let trendingBullLosses = 0;
+  const earlyExit = {
+    total: 0,
+    smallProfit: 0,
+    losses: 0,
+    underOneHour: true,
+    samples: [],
+  };
 
   for (const row of rows) {
     const pnl = resolvePnl(row);
@@ -153,6 +185,21 @@ export function buildTradeAnalyticsReport(rows = [], { generatedAt = new Date().
     if (strategyFamily === 'unknown') strategyUnknownCount += 1;
     if (strategyFamily === 'short_term_scalping' || strategyFamily === 'micro_swing') shortTermCount += 1;
     if (regime === 'trending_bull' && pnl.safe != null && pnl.safe < 0) trendingBullLosses += 1;
+    const holdMs = parseDurationMs(row.hold_duration ?? row.holdDuration);
+    if (isClosed(row) && holdMs != null && holdMs < 60 * 60 * 1000) {
+      earlyExit.total += 1;
+      if (pnl.safe != null && pnl.safe >= 0 && pnl.safe < 1) earlyExit.smallProfit += 1;
+      if (pnl.safe != null && pnl.safe < 0) earlyExit.losses += 1;
+      if (earlyExit.samples.length < 5) {
+        earlyExit.samples.push({
+          symbol: row.symbol || 'unknown',
+          holdMinutes: Number((holdMs / 60000).toFixed(2)),
+          pnlPercent: pnl.safe,
+          strategyFamily,
+          marketRegime: regime,
+        });
+      }
+    }
 
     addToBucket(getBucket(marketBuckets, market), row, pnl.safe);
     addToBucket(getBucket(regimeBuckets, regime), row, pnl.safe);
@@ -169,6 +216,7 @@ export function buildTradeAnalyticsReport(rows = [], { generatedAt = new Date().
     potentiallyCorrectedPnlCount,
     pnlOutlierThreshold: JOURNAL_PNL_OUTLIER_THRESHOLD,
   };
+  const markets = bucketMapToArray(marketBuckets);
   const strategyFamily = {
     coverage: rows.length > 0 ? Number(((rows.length - strategyUnknownCount) / rows.length).toFixed(4)) : 1,
     unknownCount: strategyUnknownCount,
@@ -183,11 +231,15 @@ export function buildTradeAnalyticsReport(rows = [], { generatedAt = new Date().
     trendingBullLosses,
     buckets: bucketMapToArray(regimeBuckets),
   };
-  const actions = buildActions({ summary, strategyFamily, tpSl, marketRegime });
+  const actions = buildActions({ summary, strategyFamily, tpSl, marketRegime, earlyExit });
   const nextActions = [];
-  if (rawPnlOutlierCount > 0) nextActions.push('run rebuild-pnl-percent --dry-run, then apply after review');
-  if (strategyUnknownCount > 0) nextActions.push('run backfill-trade-strategy-family --json, then apply after review');
+  if (rawPnlOutlierCount > 0) nextActions.push('npx tsx bots/investment/scripts/rebuild-pnl-percent.ts --dry-run, then apply after review');
+  if (strategyUnknownCount > 0) nextActions.push('npx tsx bots/investment/scripts/backfill-trade-strategy-family.ts --json, then apply after review');
   if (tpSl.unset.closed > 0) nextActions.push('review closed trades without tp_sl_set=true');
+  if (marketRegime.trendingBullLosses > 0) nextActions.push('tighten trending_bull entries with chart/MTF confirmation or route to validation until current-epoch win rate recovers');
+  if (findBucket(strategyFamily.buckets, 'trend_following')?.avgPnlPercent < 0) nextActions.push('reduce trend_following live sizing or require pullback/volume evidence before new entries');
+  if (earlyExit.total > 0) nextActions.push('review sub-1h exits and keep early small-profit/loss HOLD guard active before closing fresh positions');
+  if (summary.closed < 30) nextActions.push('keep autotune in sample-collection mode until at least 30 current-epoch closed trades');
 
   return {
     ok: true,
@@ -195,9 +247,10 @@ export function buildTradeAnalyticsReport(rows = [], { generatedAt = new Date().
     generatedAt,
     summary,
     tpSl,
-    markets: bucketMapToArray(marketBuckets),
+    markets,
     marketRegime,
     strategyFamily,
+    earlyExit,
     symbols: bucketMapToArray(symbolBuckets).slice(0, 20),
     reinforcementActions: actions,
     nextActions,

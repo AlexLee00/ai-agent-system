@@ -35,6 +35,7 @@ function buildSmokeRows() {
       tp_sl_set: true,
       market_regime: 'trending_bull',
       strategy_family: 'micro_swing',
+      hold_duration: 600000,
     },
     {
       trade_id: 'smoke-lunc-outlier',

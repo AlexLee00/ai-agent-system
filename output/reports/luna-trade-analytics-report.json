@@ -1,7 +1,7 @@
 {
   "ok": true,
-  "status": "ready",
-  "generatedAt": "2026-05-10T05:44:05.019Z",
+  "status": "needs_attention",
+  "generatedAt": "2026-05-10T06:57:11.032Z",
   "summary": {
     "total": 11,
     "closed": 5,
@@ -147,6 +147,35 @@
       }
     ]
   },
+  "earlyExit": {
+    "total": 3,
+    "smallProfit": 2,
+    "losses": 0,
+    "underOneHour": true,
+    "samples": [
+      {
+        "symbol": "PSG/USDT",
+        "holdMinutes": 10.06,
+        "pnlPercent": 0.06,
+        "strategyFamily": "mean_reversion",
+        "marketRegime": "ranging"
+      },
+      {
+        "symbol": "USUAL/USDT",
+        "holdMinutes": 32.87,
+        "pnlPercent": 1.1451,
+        "strategyFamily": "trend_following",
+        "marketRegime": "trending_bull"
+      },
+      {
+        "symbol": "ABEV",
+        "holdMinutes": 11.01,
+        "pnlPercent": 0,
+        "strategyFamily": "equity_live_fire_probe",
+        "marketRegime": "trending_bull"
+      }
+    ]
+  },
   "symbols": [
     {
       "name": "ABEV",
@@ -231,6 +260,48 @@
       }
     },
     {
+      "id": "trend_following_quality_review",
+      "status": "warning",
+      "evidence": {
+        "closed": 3,
+        "avgPnlPercent": -2.1066,
+        "winRate": 0.3333
+      }
+    },
+    {
+      "id": "early_exit_cluster_review",
+      "status": "watch",
+      "evidence": {
+        "total": 3,
+        "smallProfit": 2,
+        "losses": 0,
+        "underOneHour": true,
+        "samples": [
+          {
+            "symbol": "PSG/USDT",
+            "holdMinutes": 10.06,
+            "pnlPercent": 0.06,
+            "strategyFamily": "mean_reversion",
+            "marketRegime": "ranging"
+          },
+          {
+            "symbol": "USUAL/USDT",
+            "holdMinutes": 32.87,
+            "pnlPercent": 1.1451,
+            "strategyFamily": "trend_following",
+            "marketRegime": "trending_bull"
+          },
+          {
+            "symbol": "ABEV",
+            "holdMinutes": 11.01,
+            "pnlPercent": 0,
+            "strategyFamily": "equity_live_fire_probe",
+            "marketRegime": "trending_bull"
+          }
+        ]
+      }
+    },
+    {
       "id": "strategy_family_required",
       "status": "ok",
       "evidence": {
@@ -277,7 +348,12 @@
       }
     }
   ],
-  "nextActions": [],
+  "nextActions": [
+    "tighten trending_bull entries with chart/MTF confirmation or route to validation until current-epoch win rate recovers",
+    "reduce trend_following live sizing or require pullback/volume evidence before new entries",
+    "review sub-1h exits and keep early small-profit/loss HOLD guard active before closing fresh positions",
+    "keep autotune in sample-collection mode until at least 30 current-epoch closed trades"
+  ],
   "operatingEpochSummary": {
     "total": 671,
     "operating": 11,

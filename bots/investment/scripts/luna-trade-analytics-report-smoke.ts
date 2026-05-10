@@ -36,9 +36,13 @@ export async function runSmoke() {
   assert.equal(report.strategyFamily.unknownCount, 1);
   assert.equal(report.strategyFamily.shortTermCount, 2);
   assert.equal(report.tpSl.unset.closed, 1);
+  assert.equal(report.earlyExit.total, 1);
+  assert.equal(report.earlyExit.smallProfit, 0);
   assert.equal(findAction(report, 'pnl_percent_rebuild_and_outlier_guard')?.status, 'warning');
   assert.equal(findAction(report, 'strategy_family_required')?.status, 'warning');
+  assert.equal(findAction(report, 'early_exit_cluster_review')?.status, 'watch');
   assert.ok(report.nextActions.some((action) => action.includes('rebuild-pnl-percent')));
+  assert.ok(report.nextActions.some((action) => action.includes('autotune')));
   return {
     ok: true,
     status: report.status,

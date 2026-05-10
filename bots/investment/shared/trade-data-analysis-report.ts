@@ -1,7 +1,12 @@
 // @ts-nocheck
 import { query } from './db/core.ts';
 import { buildTradeAnalyticsReport } from './trade-analytics-report.ts';
-import { buildOperatingEpochLowerBoundSql, getLunaOperatingEpoch } from './luna-operating-epoch.ts';
+import {
+  buildOperatingEpochLowerBoundSql,
+  filterRowsForPolicyLearning,
+  getLunaOperatingEpoch,
+  summarizeRowsByOperatingEpoch,
+} from './luna-operating-epoch.ts';
 
 function rowsOf(result) {
   if (Array.isArray(result)) return result;
@@ -44,8 +49,6 @@ export async function buildTradeDataAnalysisReport({ limit = 5000, generatedAt =
   const signalWhere = signalLowerBound ? `WHERE created_at >= ${signalLowerBound}` : '';
   const tradeLowerBound = buildOperatingEpochLowerBoundSql(null);
   const tradeWhere = tradeLowerBound ? `WHERE executed_at >= ${tradeLowerBound}` : '';
-  const journalLowerBound = buildOperatingEpochLowerBoundSql(null);
-  const journalWhere = journalLowerBound ? `WHERE created_at >= ${journalLowerBound}` : '';
   const signalStatusRows = await safeQuery(
     `SELECT COALESCE(status, 'unknown') AS status, COUNT(*)::int AS count
        FROM investment.signals
@@ -92,11 +95,10 @@ export async function buildTradeDataAnalysisReport({ limit = 5000, generatedAt =
       GROUP BY 1, 2
       ORDER BY 1, count DESC`,
   );
-  const journalRows = await safeQuery(
+  const journalSourceRows = await safeQuery(
     `SELECT *
        FROM investment.trade_journal
-      ${journalWhere}
-      ORDER BY created_at DESC NULLS LAST
+      ORDER BY COALESCE(exit_time, entry_time, created_at) DESC NULLS LAST
       LIMIT $1`,
     [limit],
   );
@@ -124,7 +126,9 @@ export async function buildTradeDataAnalysisReport({ limit = 5000, generatedAt =
   const executedSignals = num(signalStatus.executed);
   const signalFailureRate = totalSignals > 0 ? Number((failedSignals / totalSignals).toFixed(4)) : null;
   const signalExecutionRate = totalSignals > 0 ? Number((executedSignals / totalSignals).toFixed(4)) : null;
+  const journalRows = filterRowsForPolicyLearning(journalSourceRows, ['exit_time', 'entry_time']);
   const analytics = buildTradeAnalyticsReport(journalRows, { generatedAt });
+  analytics.operatingEpochSummary = summarizeRowsByOperatingEpoch(journalSourceRows, ['exit_time', 'entry_time']);
   const realized = realizedRows[0] || {};
   const sellCount = num(realized.sell_count);
   const realizedCount = num(realized.realized_count);
@@ -173,7 +177,8 @@ export async function buildTradeDataAnalysisReport({ limit = 5000, generatedAt =
     reinforcementCoverage,
     warnings,
     nextActions: [
-      ...(sellCount > realizedCount ? ['run runtime-pnl-backfill --json, then apply with confirm after review'] : []),
+      ...(analytics.nextActions || []),
+      ...(sellCount > realizedCount ? ['npx tsx bots/investment/scripts/runtime-pnl-backfill.ts --json, then apply with --apply --confirm=runtime-pnl-backfill after review'] : []),
       ...(analytics.tpSl.unset.closed > 0 ? ['review historical closed trades without tp_sl_set=true'] : []),
       ...(qualityCount < analytics.summary.closed ? ['run posttrade feedback backfill/worker for unevaluated closed trades'] : []),
     ],
