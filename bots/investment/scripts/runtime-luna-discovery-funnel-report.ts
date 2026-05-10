@@ -70,6 +70,20 @@ function rowsToStateMap(rows = []) {
   return Object.fromEntries((rows || []).map((row) => [String(row.state || row.trigger_state || row.status || 'unknown'), number(row.count)]));
 }
 
+export function filterEntryDecisionDiagnosticsForOpenPositions(diagnostics = [], openSymbols = []) {
+  const openSet = openSymbols instanceof Set
+    ? openSymbols
+    : new Set((openSymbols || []).map((symbol) => String(symbol || '').trim()).filter(Boolean));
+  const included = [];
+  const excluded = [];
+  for (const item of diagnostics || []) {
+    const symbol = String(item?.symbol || '').trim();
+    if (symbol && openSet.has(symbol)) excluded.push(item);
+    else included.push(item);
+  }
+  return { included, excluded };
+}
+
 export function buildRequiredAnalystCoverage({
   market,
   analysisSymbols = [],
@@ -646,7 +660,10 @@ async function buildMarketFunnel(market, { hours }) {
   const currentLivePositions = await loadCurrentLivePositions(exchange);
   const currentOpenSymbols = new Set((currentLivePositions || []).map((row) => String(row.symbol || '').trim()).filter(Boolean));
   const maxOpenPositions = getLiveFireMaxOpenPositions();
-  const decisionDiagnostics = buildDecisionFilterDiagnostics(analysisDetailRows, { exchange });
+  const rawDecisionDiagnostics = buildDecisionFilterDiagnostics(analysisDetailRows, { exchange });
+  const decisionFilterScope = filterEntryDecisionDiagnosticsForOpenPositions(rawDecisionDiagnostics, currentOpenSymbols);
+  const openPositionDecisionCandidates = decisionFilterScope.excluded;
+  const decisionDiagnostics = decisionFilterScope.included;
   const likelyActionable = decisionDiagnostics.filter((item) => item.actionability === 'likely_actionable');
   const relaxedProbeCandidates = decisionDiagnostics.filter((item) => item.actionability === 'relaxed_probe_candidate');
   const filteredBeforeSignal = decisionDiagnostics.filter((item) => item.actionability !== 'likely_actionable');
@@ -738,7 +755,7 @@ async function buildMarketFunnel(market, { hours }) {
   }
   if (number(signalsByBlockCode.capital_guard_rejected) > 0) {
     if (currentLivePositions.length >= maxOpenPositions) {
-      bottlenecks.push('capital_guard_rejected_recent_buy_signal');
+      observations.push('capital_guard_rejected_expected_slots_full');
     } else {
       observations.push('historical_capital_guard_rejected_resolved_by_current_position_count');
     }
@@ -822,6 +839,7 @@ async function buildMarketFunnel(market, { hours }) {
       likelyActionableSymbols: likelyActionable.map((item) => item.symbol),
       relaxedProbeSymbols: relaxedProbeCandidates.map((item) => item.symbol),
       relaxedProbeReadySymbols: relaxedProbeReadyCandidates.map((item) => item.symbol),
+      openPositionExcludedSymbols: openPositionDecisionCandidates.map((item) => item.symbol),
       relaxedProbeCooldown: {
         enabled: relaxedProbeCooldownHours > 0,
         hours: relaxedProbeCooldownHours,

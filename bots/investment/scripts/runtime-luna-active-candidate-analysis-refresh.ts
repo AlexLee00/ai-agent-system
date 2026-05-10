@@ -99,6 +99,10 @@ function defaultTargetedEnrichmentMaxSymbols(market = 'crypto') {
   return DEFAULT_TARGETED_ENRICHMENT_MAX_SYMBOLS_BY_MARKET[normalizeMarket(market)] || DEFAULT_TARGETED_ENRICHMENT_MAX_SYMBOLS;
 }
 
+function shouldRefreshWhenCapacityFull(env = process.env) {
+  return boolEnv('LUNA_ACTIVE_CANDIDATE_REFRESH_WHEN_CAPACITY_FULL', false, env);
+}
+
 function positiveIntOrNull(value) {
   if (value == null || value === '') return null;
   const parsed = Number(value);
@@ -621,6 +625,25 @@ export async function runActiveCandidateAnalysisRefresh({
     hours,
     limit,
   });
+  if (report?.entryCapacity?.full === true && !shouldRefreshWhenCapacityFull(env)) {
+    return {
+      ok: true,
+      status: 'active_candidate_analysis_refresh_skipped_capacity_full',
+      dryRun: !apply,
+      applied: false,
+      market: normalizedMarket,
+      exchange: resolvedExchange,
+      statePath,
+      reason: 'entry_capacity_full_monitor_existing_positions_first',
+      entryCapacity: report.entryCapacity,
+      report: {
+        status: report.status,
+        activeCandidateCoverage: report.activeCandidateCoverage,
+        bottlenecks: report.bottlenecks,
+      },
+      nextAction: 'monitor_existing_positions_until_slot_available',
+    };
+  }
   let targetedDailyTechnicalCoverage = null;
   if (
     targetedEnrichmentEnabled

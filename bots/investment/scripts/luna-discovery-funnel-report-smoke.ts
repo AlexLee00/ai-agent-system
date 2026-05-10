@@ -14,6 +14,7 @@ import {
   buildRequiredCoverageSymbols,
   buildRequiredAnalystCoverage,
   classifyCoverageBottlenecksForMarket,
+  filterEntryDecisionDiagnosticsForOpenPositions,
 } from './runtime-luna-discovery-funnel-report.ts';
 import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
 
@@ -115,6 +116,21 @@ export async function runLunaDiscoveryFunnelReportSmoke() {
     assert.ok(crypto.entryTriggers.activeCount >= 1, 'entry trigger should include smoke armed trigger');
     assert.equal(report.autopilot.totals.candidateCount, 1, 'autopilot dispatch candidate count should come from fixture history');
     assert.equal(report.nextAction, 'continue_observation', 'complete fixture funnel should not request repair action');
+
+    const filteredDecisionScope = filterEntryDecisionDiagnosticsForOpenPositions([
+      { symbol: 'BTC/USDT', actionability: 'relaxed_probe_candidate' },
+      { symbol: 'NEW/USDT', actionability: 'likely_actionable' },
+    ], new Set(['BTC/USDT']));
+    assert.deepEqual(
+      filteredDecisionScope.included.map((item) => item.symbol),
+      ['NEW/USDT'],
+      'open positions should not be reported as new entry decision candidates',
+    );
+    assert.deepEqual(
+      filteredDecisionScope.excluded.map((item) => item.symbol),
+      ['BTC/USDT'],
+      'open-position decision candidates should remain auditable as excluded',
+    );
 
     const overseasClosedCoverage = buildRequiredAnalystCoverage({
       market: 'overseas',

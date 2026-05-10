@@ -415,6 +415,23 @@ export async function runLunaActiveCandidateAnalysisRefreshSmoke() {
   assert.equal(dryRunDefaultHours.status, 'active_candidate_analysis_refresh_needed');
   assert.equal(defaultHours, 2, 'refresh freshness window should match decision filter default');
 
+  const capacityFull = await runActiveCandidateAnalysisRefresh({
+    reportBuilder: async () => ({
+      ...fixtureReport(['FULL/USDT']),
+      entryCapacity: {
+        openCount: 2,
+        maxOpenPositions: 2,
+        remainingSlots: 0,
+        full: true,
+      },
+    }),
+    statePath: path.join(smokeDir, 'capacity-full.json'),
+    now,
+  });
+  assert.equal(capacityFull.ok, true);
+  assert.equal(capacityFull.status, 'active_candidate_analysis_refresh_skipped_capacity_full');
+  assert.equal(capacityFull.nextAction, 'monitor_existing_positions_until_slot_available');
+
   let collectedSymbols = null;
   const finishedRuns = [];
   const applied = await runActiveCandidateAnalysisRefresh({

@@ -54,6 +54,19 @@ function normalizeCandidateSymbol(symbol, market = 'crypto') {
   return raw;
 }
 
+async function loadOpenCandidateSymbols({ exchange = 'binance', market = 'crypto' } = {}) {
+  const rows = await db.getOpenPositions(exchange, false).catch(() => []);
+  return new Set((rows || [])
+    .map((row) => normalizeCandidateSymbol(row?.symbol, market))
+    .filter(Boolean));
+}
+
+function getLiveFireMaxOpenPositions(env = process.env) {
+  const value = Number(env?.LUNA_LIVE_FIRE_MAX_OPEN || env?.LUNA_MAX_OPEN_POSITIONS);
+  if (Number.isFinite(value) && value > 0) return Math.floor(value);
+  return 2;
+}
+
 function normalizeAction(value) {
   const action = String(value || ACTIONS.HOLD).trim().toUpperCase();
   if (action === ACTIONS.BUY || action === ACTIONS.SELL || action === ACTIONS.HOLD) return action;
@@ -419,11 +432,20 @@ export async function buildLunaDecisionFilterReport(options = {}) {
   const hours = Math.max(1, Number(options.hours || DEFAULT_HOURS));
   const limit = Math.max(1, Number(options.limit || 12));
   await db.initSchema();
+  const excludeOpenPositions = options.excludeOpenPositions !== false;
+  const openPositionSymbols = excludeOpenPositions
+    ? await loadOpenCandidateSymbols({ exchange, market })
+    : new Set();
   const activeUniverse = options.activeCandidates
     ? await queryActiveCandidateUniverse({ market, limit })
     : { symbols: [], candidateMeta: {} };
-  const candidateSymbols = activeUniverse.symbols || [];
-  const requestedSymbols = Array.isArray(options.symbols) ? options.symbols : [];
+  const rawCandidateSymbols = activeUniverse.symbols || [];
+  const excludedOpenPositionSymbols = rawCandidateSymbols.filter((symbol) => openPositionSymbols.has(symbol));
+  const candidateSymbols = rawCandidateSymbols.filter((symbol) => !openPositionSymbols.has(symbol));
+  const requestedSymbols = (Array.isArray(options.symbols) ? options.symbols : [])
+    .map((symbol) => normalizeCandidateSymbol(symbol, market))
+    .filter((symbol) => !openPositionSymbols.has(symbol));
+  const maxOpenPositions = getLiveFireMaxOpenPositions();
   const rows = await queryRecentAnalysis({
     exchange,
     hours,
@@ -432,7 +454,9 @@ export async function buildLunaDecisionFilterReport(options = {}) {
   const diagnostics = buildDecisionFilterDiagnostics(rows, {
     exchange,
     minConfidence: options.minConfidence,
-  }).map((item) => activeUniverse.candidateMeta?.[item.symbol]
+  })
+    .filter((item) => !openPositionSymbols.has(normalizeCandidateSymbol(item.symbol, market)))
+    .map((item) => activeUniverse.candidateMeta?.[item.symbol]
     ? { ...item, activeCandidate: activeUniverse.candidateMeta[item.symbol] }
     : item);
   const checkedSymbolSet = new Set(diagnostics.map((item) => item.symbol));
@@ -465,10 +489,19 @@ export async function buildLunaDecisionFilterReport(options = {}) {
     symbolScope: candidateSymbols.length > 0 ? 'active_candidates' : requestedSymbols.length > 0 ? 'explicit_symbols' : 'recent_analysis',
     activeCandidateSymbols: candidateSymbols,
     activeCandidateCoverage: candidateSymbols.length > 0 ? {
-      total: candidateSymbols.length,
+      total: rawCandidateSymbols.length,
       checked: checkedSymbolSet.size,
       missing: missingActiveCandidateSymbols.length,
+      excludedOpenPositions: excludedOpenPositionSymbols.length,
     } : null,
+    openPositionSymbols: [...openPositionSymbols],
+    excludedOpenPositionSymbols,
+    entryCapacity: {
+      openCount: openPositionSymbols.size,
+      maxOpenPositions,
+      remainingSlots: Math.max(0, maxOpenPositions - openPositionSymbols.size),
+      full: openPositionSymbols.size >= maxOpenPositions,
+    },
     missingActiveCandidateSymbols,
     checkedSymbols: diagnostics.length,
     likelyActionableCount: likelyActionable.length,
