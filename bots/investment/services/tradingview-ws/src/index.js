@@ -34,6 +34,7 @@ const MAX_STALE_STRIKES = parseInt(process.env.TV_MAX_STALE_STRIKES || '3', 10);
 const HTTP_SUBSCRIPTION_TTL_MS = parseInt(process.env.TV_HTTP_SUBSCRIPTION_TTL_MS || String(10 * 60 * 1000), 10);
 const STALE_LOG_COOLDOWN_MS = parseInt(process.env.TV_STALE_LOG_COOLDOWN_MS || String(5 * 60 * 1000), 10);
 const STALE_FORCE_RECONNECT_COOLDOWN_MS = parseInt(process.env.TV_STALE_FORCE_RECONNECT_COOLDOWN_MS || String(5 * 60 * 1000), 10);
+const SUBSCRIBE_STAGGER_MS = parseInt(process.env.TV_SUBSCRIBE_STAGGER_MS || '750', 10);
 const HUB_BASE = process.env.HUB_BASE_URL || 'http://localhost:7788';
 const HUB_TOKEN = process.env.HUB_AUTH_TOKEN || '';
 const RECONNECT_DELAY_BASE_MS = 2000;
@@ -96,16 +97,23 @@ const subscriptions = new Map(); // key: `${symbol}:${timeframe}` → { symbol, 
 const clientSockets = new Set(); // 연결된 클라이언트 WebSocket
 const latestBars = new Map(); // key: `${symbol}:${timeframe}` → { symbol, timeframe, lastBarAt, bar }
 const seriesIds = new Map(); // key → TradingView series id
+const chartSessionIds = new Map(); // key → TradingView chart session id
+const chartSessionKeys = new Map(); // chart session id → key
+const pendingSubscribeKeys = new Set();
 let nextClientId = 1;
 
 // TradingView 연결 (실제 환경에서는 TV WebSocket API)
 // NOTE: TradingView WebSocket은 공식 API가 없어 dovudo 패턴의 비공개 프로토콜 사용
 // 실제 배포 시 TV WS 인증 토큰/세션 필요
 let tvWs = null;
-const chartSessionId = `cs_luna_${Math.random().toString(36).slice(2, 10)}`;
+function newChartSessionId() {
+  return `cs_luna_${Math.random().toString(36).slice(2, 10)}`;
+}
+
 let reconnectAttempts = 0;
 let reconnectTimer = null;
 let staleCheckTimer = null;
+let subscribeQueueTimer = null;
 let lastStaleForceReconnectAt = 0;
 const runtimeReevalCooldowns = new Map();
 const runtimeActiveScopeCache = new Map();
@@ -155,8 +163,9 @@ function connectTradingView() {
     connectionStats.opens += 1;
     connectionStats.lastOpenAt = Date.now();
     reconnectAttempts = 0;
+    clearSubscribeQueue();
     sendTvMessage({ m: 'set_auth_token', p: ['unauthorized_user_token'] });
-    sendTvMessage({ m: 'chart_create_session', p: [chartSessionId, ''] });
+    resetChartSessions();
     // 기존 구독 복원
     for (const { symbol, timeframe } of subscriptions.values()) {
       sendTvSubscribe(symbol, timeframe);
@@ -173,6 +182,8 @@ function connectTradingView() {
     connectionStats.lastCloseCode = code;
     connectionStats.lastCloseReason = String(reason || '');
     console.warn(`[TV-WS] 연결 끊김 (code=${code}, reason=${connectionStats.lastCloseReason || 'none'}), 재연결 예정`);
+    clearSubscribeQueue();
+    resetChartSessions();
     scheduleReconnect();
   });
 
@@ -192,6 +203,19 @@ function sendTvMessage(payload) {
   if (!tvWs || tvWs.readyState !== WebSocket.OPEN) return false;
   tvWs.send(encodeTvFrame(payload));
   return true;
+}
+
+function clearSubscribeQueue() {
+  pendingSubscribeKeys.clear();
+  if (subscribeQueueTimer) {
+    clearTimeout(subscribeQueueTimer);
+    subscribeQueueTimer = null;
+  }
+}
+
+function resetChartSessions() {
+  chartSessionIds.clear();
+  chartSessionKeys.clear();
 }
 
 function decodeTvFrames(raw = '') {
@@ -238,10 +262,14 @@ function isTradingViewRealtimeBar(item = {}) {
 function removeSubscription(key, reason = 'removed') {
   const sub = subscriptions.get(key);
   if (!sub) return false;
+  pendingSubscribeKeys.delete(key);
   sendTvUnsubscribe(sub.symbol, sub.timeframe);
   subscriptions.delete(key);
   latestBars.delete(key);
   seriesIds.delete(key);
+  const chartSessionId = chartSessionIds.get(key);
+  if (chartSessionId) chartSessionKeys.delete(chartSessionId);
+  chartSessionIds.delete(key);
   staleSubscriptionsGauge.remove({ symbol: sub.symbol, timeframe: sub.timeframe });
   console.log(`[TV-WS] 구독 제거: ${key} (${reason})`);
   return true;
@@ -379,6 +407,15 @@ function getSymbolAlias(symbol, timeframe) {
   return `sym_${sanitizeTvId(subscriptionKey(symbol, timeframe))}`;
 }
 
+function createChartSessionForKey(key) {
+  const previous = chartSessionIds.get(key);
+  if (previous) chartSessionKeys.delete(previous);
+  const chartSessionId = newChartSessionId();
+  chartSessionIds.set(key, chartSessionId);
+  chartSessionKeys.set(chartSessionId, key);
+  return chartSessionId;
+}
+
 function addSubscription(symbol, timeframe, source = 'api', options = {}) {
   const key = subscriptionKey(symbol, timeframe);
   const now = Date.now();
@@ -459,36 +496,50 @@ function handleTvMessage(raw) {
 function processOhlcvUpdate(msg) {
   // msg.p[1].sds_1.s 에 bar 데이터
   if (!msg.p || !msg.p[1]) return;
+  const sessionId = msg.p[0];
   const seriesData = msg.p[1];
+  const scopedKey = chartSessionKeys.get(sessionId);
+
+  if (scopedKey) {
+    const sub = subscriptions.get(scopedKey);
+    const bars = seriesData.s1?.s;
+    if (sub && Array.isArray(bars)) {
+      processBarsForSubscription(scopedKey, sub, bars);
+    }
+    return;
+  }
 
   for (const [key, sub] of subscriptions.entries()) {
     const bars = seriesData[getSeriesId(sub.symbol, sub.timeframe)]?.s;
     if (!bars || !Array.isArray(bars)) continue;
+    processBarsForSubscription(key, sub, bars);
+  }
+}
 
-    for (const bar of bars) {
-      const [timestamp, open, high, low, close, volume] = bar.v;
-      const barPayload = {
-        symbol: sub.symbol,
-        timeframe: sub.timeframe,
-        timestamp: Math.floor(timestamp * 1000),
-        open, high, low, close, volume,
-      };
+function processBarsForSubscription(key, sub, bars) {
+  for (const bar of bars) {
+    const [timestamp, open, high, low, close, volume] = bar.v;
+    const barPayload = {
+      symbol: sub.symbol,
+      timeframe: sub.timeframe,
+      timestamp: Math.floor(timestamp * 1000),
+      open, high, low, close, volume,
+    };
 
-      sub.lastBarAt = Date.now();
-      sub.staleStrikes = 0;
-      latestBars.set(key, {
-        symbol: sub.symbol,
-        timeframe: sub.timeframe,
-        lastBarAt: sub.lastBarAt,
-        bar: barPayload,
-      });
-      staleSubscriptionsGauge.set({ symbol: sub.symbol, timeframe: sub.timeframe }, 0);
-      barPublishedCounter.inc({ symbol: sub.symbol, timeframe: sub.timeframe });
+    sub.lastBarAt = Date.now();
+    sub.staleStrikes = 0;
+    latestBars.set(key, {
+      symbol: sub.symbol,
+      timeframe: sub.timeframe,
+      lastBarAt: sub.lastBarAt,
+      bar: barPayload,
+    });
+    staleSubscriptionsGauge.set({ symbol: sub.symbol, timeframe: sub.timeframe }, 0);
+    barPublishedCounter.inc({ symbol: sub.symbol, timeframe: sub.timeframe });
 
-      broadcastToClients(barPayload);
-      publishToHub(sub.symbol, sub.timeframe, barPayload);
-      triggerRuntimeReevaluation(sub.symbol, sub.timeframe, barPayload).catch(() => {});
-    }
+    broadcastToClients(barPayload);
+    publishToHub(sub.symbol, sub.timeframe, barPayload);
+    triggerRuntimeReevaluation(sub.symbol, sub.timeframe, barPayload).catch(() => {});
   }
 }
 
@@ -582,24 +633,51 @@ async function hasActiveRuntimeScope(scope) {
   }
 }
 
-function sendTvSubscribe(symbol, timeframe) {
+function sendTvSubscribeNow(symbol, timeframe) {
   if (!tvWs || tvWs.readyState !== WebSocket.OPEN) return false;
-  const symbolAlias = getSymbolAlias(symbol, timeframe);
-  const seriesId = getSeriesId(symbol, timeframe);
+  const key = subscriptionKey(symbol, timeframe);
+  const chartSessionId = createChartSessionForKey(key);
+  const symbolAlias = 'symbol_1';
+  const seriesId = 's1';
   const symbolPayload = `=${JSON.stringify({
     symbol,
     adjustment: 'splits',
     session: 'regular',
   })}`;
+  sendTvMessage({ m: 'chart_create_session', p: [chartSessionId, ''] });
   sendTvMessage({ m: 'resolve_symbol', p: [chartSessionId, symbolAlias, symbolPayload] });
-  sendTvMessage({ m: 'create_series', p: [chartSessionId, seriesId, 's1', symbolAlias, timeframe, 300, ''] });
+  sendTvMessage({ m: 'create_series', p: [chartSessionId, seriesId, seriesId, symbolAlias, timeframe, 300, ''] });
+  sendTvMessage({ m: 'switch_timezone', p: [chartSessionId, 'Etc/UTC'] });
+  return true;
+}
+
+function drainSubscribeQueue() {
+  subscribeQueueTimer = null;
+  if (!tvWs || tvWs.readyState !== WebSocket.OPEN) return;
+  const [key] = pendingSubscribeKeys;
+  if (!key) return;
+  pendingSubscribeKeys.delete(key);
+  const sub = subscriptions.get(key);
+  if (sub) sendTvSubscribeNow(sub.symbol, sub.timeframe);
+  if (pendingSubscribeKeys.size > 0) {
+    subscribeQueueTimer = setTimeout(drainSubscribeQueue, Math.max(100, SUBSCRIBE_STAGGER_MS));
+  }
+}
+
+function sendTvSubscribe(symbol, timeframe) {
+  if (!tvWs || tvWs.readyState !== WebSocket.OPEN) return false;
+  const key = subscriptionKey(symbol, timeframe);
+  pendingSubscribeKeys.add(key);
+  if (!subscribeQueueTimer) drainSubscribeQueue();
   return true;
 }
 
 function sendTvUnsubscribe(symbol, timeframe) {
   if (!tvWs || tvWs.readyState !== WebSocket.OPEN) return;
-  const seriesId = getSeriesId(symbol, timeframe);
-  sendTvMessage({ m: 'remove_series', p: [chartSessionId, seriesId] });
+  const key = subscriptionKey(symbol, timeframe);
+  const chartSessionId = chartSessionIds.get(key);
+  if (!chartSessionId) return;
+  sendTvMessage({ m: 'remove_series', p: [chartSessionId, 's1'] });
 }
 
 function scheduleReconnect() {
