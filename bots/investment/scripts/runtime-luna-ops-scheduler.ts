@@ -135,6 +135,18 @@ export function getOpsSchedulerJobs() {
       ...marketScript('crypto.ts'),
     },
     {
+      name: 'active_entry_trigger_evaluator_crypto',
+      category: 'decision_probe',
+      market: 'crypto',
+      immutable: true,
+      cadence: { type: 'interval', seconds: 60 },
+      ...nodeScript('luna-entry-trigger-worker.ts', [
+        '--exchange=binance',
+        '--derive-market-events',
+        '--json',
+      ]),
+    },
+    {
       name: 'market_cycle_domestic',
       category: 'market_cycle',
       market: 'domestic',
@@ -564,6 +576,19 @@ export function classifyOpsSchedulerOutcome(job, result = {}) {
   if (/open-catchup: 장외 시간/.test(text)) {
     return { outcome: 'market_closed_catchup_wait', summary: compactOutcomeSummary(text, 'open-catchup') };
   }
+  if (name === 'active_entry_trigger_evaluator_crypto') {
+    const parsed = parseSchedulerJsonOutput(result.stdout || result.stdoutTail || text);
+    const triggerResult = parsed?.result || {};
+    const checked = Number(triggerResult.checked || 0);
+    const fired = Number(triggerResult.fired || 0);
+    const readyBlocked = Number(triggerResult.readyBlocked || 0);
+    const allowLiveFire = triggerResult.allowLiveFire === true;
+    return {
+      outcome: fired > 0 ? 'entry_trigger_fired' : checked > 0 ? 'entry_trigger_checked' : 'entry_trigger_idle',
+      summary: `checked=${checked} fired=${fired} readyBlocked=${readyBlocked} allowLiveFire=${allowLiveFire}`,
+      approvedSignals: fired > 0 ? fired : null,
+    };
+  }
   if (/사이클 스킵/.test(text)) {
     return { outcome: 'cadence_wait', summary: compactOutcomeSummary(text, '사이클 스킵') };
   }
@@ -602,6 +627,18 @@ export function classifyOpsSchedulerOutcome(job, result = {}) {
   }
 
   return { outcome: 'ok', summary: compactOutcomeSummary(text, 'ok') };
+}
+
+function parseSchedulerJsonOutput(text) {
+  const raw = String(text || '');
+  const start = raw.indexOf('{');
+  const end = raw.lastIndexOf('}');
+  if (start < 0 || end <= start) return null;
+  try {
+    return JSON.parse(raw.slice(start, end + 1));
+  } catch {
+    return null;
+  }
 }
 
 function compactOutcomeSummary(text, fallback = 'ok') {

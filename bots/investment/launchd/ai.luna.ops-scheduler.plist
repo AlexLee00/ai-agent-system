@@ -106,7 +106,7 @@
   <key>KeepAlive</key>
   <false/>
   <key>StartInterval</key>
-  <integer>120</integer>
+  <integer>60</integer>
   <key>StandardOutPath</key>
   <string>/tmp/ai.luna.ops-scheduler.out.log</string>
   <key>StandardErrorPath</key>

@@ -41,14 +41,16 @@ const LAUNCHCTL_ENV_KEYS = [
 ];
 
 function hydrateEntryTriggerEnvFromLaunchctl() {
+  const preferProcessEnv = String(process.env.LUNA_RUNTIME_ENV_SOURCE || '').trim().toLowerCase() === 'process';
   for (const key of LAUNCHCTL_ENV_KEYS) {
-    if (String(process.env[key] || '').trim()) continue;
     try {
       const value = execFileSync('launchctl', ['getenv', key], {
         encoding: 'utf8',
         stdio: ['ignore', 'pipe', 'ignore'],
       }).trim();
-      if (value) process.env[key] = value;
+      if (value && (!preferProcessEnv || !String(process.env[key] || '').trim())) {
+        process.env[key] = value;
+      }
     } catch {
       // Manual runs outside launchd should still work with explicit env or safe defaults.
     }
