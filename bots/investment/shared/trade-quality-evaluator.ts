@@ -25,10 +25,15 @@ const MARKET_ALIASES = {
   overseas: 'overseas',
 };
 
-function boolEnv(name: string, fallback = false) {
-  const raw = String(process.env[name] ?? '').trim().toLowerCase();
-  if (!raw) return fallback;
-  return ['1', 'true', 'yes', 'on'].includes(raw);
+export function shouldUseTradeQualityLlm(opts: { dryRun?: boolean } = {}, env = process.env) {
+  const explicit = String(env.LUNA_POSTTRADE_EVALUATION_LLM_ENABLED ?? '').trim().toLowerCase();
+  if (['1', 'true', 'yes', 'on', 'enabled'].includes(explicit)) return true;
+  if (['0', 'false', 'no', 'off', 'disabled'].includes(explicit)) return false;
+  if (opts?.dryRun === true) {
+    const dryRunExplicit = String(env.LUNA_POSTTRADE_DRY_RUN_LLM ?? '').trim().toLowerCase();
+    return ['1', 'true', 'yes', 'on', 'enabled'].includes(dryRunExplicit);
+  }
+  return false;
 }
 
 export interface TradeQualityResult {
@@ -59,21 +64,29 @@ export async function evaluateTradeQuality(tradeId: number, opts: { dryRun?: boo
   const backtestData = await fetchBacktestUtilization(tradeId, trade);
   const reviewData   = await fetchTradeReview(tradeId);
 
-  const withinBudget = await ensureDailyEvaluationBudget({
-    dryRun: opts?.dryRun === true,
-    budgetUsd: Number(qualityCfg?.llm_daily_budget_usd || 5),
-  });
-  if (!withinBudget.ok) {
-    await recordQualityEvaluationFailure(tradeId, 'llm_daily_budget_exceeded', {
-      budgetUsd: qualityCfg?.llm_daily_budget_usd,
-      usedEstimateUsd: withinBudget.usedEstimateUsd,
-    }).catch(() => {});
-    return null;
+  const useLlm = shouldUseTradeQualityLlm(opts);
+  if (useLlm) {
+    const withinBudget = await ensureDailyEvaluationBudget({
+      dryRun: opts?.dryRun === true,
+      budgetUsd: Number(qualityCfg?.llm_daily_budget_usd || 5),
+    });
+    if (!withinBudget.ok) {
+      await recordQualityEvaluationFailure(tradeId, 'llm_daily_budget_exceeded', {
+        budgetUsd: qualityCfg?.llm_daily_budget_usd,
+        usedEstimateUsd: withinBudget.usedEstimateUsd,
+      }).catch(() => {});
+      return null;
+    }
   }
 
-  const breakdown = opts?.dryRun === true && !boolEnv('LUNA_POSTTRADE_DRY_RUN_LLM', false)
-    ? buildRuleBasedEvaluation(trade, lifecycleEvt, reviewData, 'dry_run_rule_based_no_llm')
-    : await llmEvaluate(trade, rationale, analystData, lifecycleEvt, backtestData, reviewData);
+  const breakdown = useLlm
+    ? await llmEvaluate(trade, rationale, analystData, lifecycleEvt, backtestData, reviewData)
+    : buildRuleBasedEvaluation(
+        trade,
+        lifecycleEvt,
+        reviewData,
+        opts?.dryRun === true ? 'dry_run_rule_based_no_llm' : 'posttrade_rule_based_no_llm',
+      );
   if (!breakdown) {
     await recordQualityEvaluationFailure(tradeId, 'llm_evaluation_unavailable', {}).catch(() => {});
     return null;
@@ -541,7 +554,9 @@ async function ensureDailyEvaluationBudget({
   const row = await db.get(
     `SELECT COUNT(*)::int AS cnt
        FROM investment.trade_quality_evaluations
-      WHERE evaluated_at >= NOW()::date`,
+      WHERE evaluated_at >= NOW()::date
+        AND COALESCE(LOWER(sub_score_breakdown->>'source'), 'llm') NOT LIKE '%rule_based%'
+        AND COALESCE(LOWER(sub_score_breakdown->>'source'), 'llm') NOT LIKE '%no_llm%'`,
     [],
   ).catch(() => ({ cnt: 0 }));
   const cnt = Number(row?.cnt || 0);

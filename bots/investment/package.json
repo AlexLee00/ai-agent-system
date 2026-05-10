@@ -119,6 +119,8 @@
     "validate-review:smoke": "node scripts/validate-trade-review-smoke.ts",
     "runtime:learning-loop-feedback-smoke": "node scripts/runtime-learning-loop-feedback-smoke.ts",
     "runtime:pnl-backfill": "node scripts/runtime-pnl-backfill.ts",
+    "runtime:luna-trade-analytics-report": "node scripts/runtime-luna-trade-analytics-report.ts --json --no-write",
+    "runtime:luna-trade-data-analysis-report": "node scripts/runtime-luna-trade-data-analysis-report.ts --json",
     "runtime:posttrade-feedback": "node scripts/runtime-posttrade-feedback.ts --json",
     "runtime:posttrade-feedback-worker": "node scripts/runtime-posttrade-feedback-worker.ts --json",
     "runtime:posttrade-feedback-doctor": "node scripts/runtime-posttrade-feedback-doctor.ts --json",

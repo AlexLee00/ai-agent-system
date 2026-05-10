@@ -59,7 +59,9 @@ async function checkBudgets(cfg: any) {
   const qualityRow = await db.get(
     `SELECT COUNT(*)::int AS cnt
        FROM investment.trade_quality_evaluations
-      WHERE evaluated_at >= NOW()::date`,
+      WHERE evaluated_at >= NOW()::date
+        AND COALESCE(LOWER(sub_score_breakdown->>'source'), 'llm') NOT LIKE '%rule_based%'
+        AND COALESCE(LOWER(sub_score_breakdown->>'source'), 'llm') NOT LIKE '%no_llm%'`,
     [],
   ).catch(() => ({ cnt: 0 }));
   const reflexionRow = await db.get(
