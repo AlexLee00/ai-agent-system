@@ -2,7 +2,8 @@
 // @ts-nocheck
 
 import * as db from '../shared/db.ts';
-import { initJournalSchema } from '../shared/trade-journal-db.ts';
+import { initJournalSchema, safeJournalPnlPercent } from '../shared/trade-journal-db.ts';
+import { filterRowsForPolicyLearning } from '../shared/luna-operating-epoch.ts';
 import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
 
 function parseArgs(argv = []) {
@@ -118,6 +119,76 @@ function normalizeRow(row) {
     pnlNet: safeNumber(row.pnl_net),
     latestCreatedAt: row.latest_created_at != null ? Number(row.latest_created_at) : null,
   };
+}
+
+export function buildStrategyFamilyRowsFromJournalRows(rawRows = []) {
+  const buckets = new Map();
+  for (const row of filterRowsForPolicyLearning(rawRows, ['exit_time', 'entry_time', 'created_at'])) {
+    const family = String(row.strategy_family || 'unknown');
+    if (!family || family === 'unknown') continue;
+    const quality = String(row.strategy_quality || 'unknown');
+    const market = String(row.market || 'unknown');
+    const exchange = String(row.exchange || 'unknown');
+    const tradeMode = String(row.trade_mode || 'normal');
+    const key = [family, quality, market, exchange, tradeMode].join('\u0001');
+    if (!buckets.has(key)) {
+      buckets.set(key, {
+        strategy_family: family,
+        strategy_quality: quality,
+        market,
+        exchange,
+        trade_mode: tradeMode,
+        total: 0,
+        closed: 0,
+        wins: 0,
+        pnlSum: 0,
+        pnlCount: 0,
+        pnl_net: 0,
+        readinessSum: 0,
+        readinessCount: 0,
+        latest_created_at: null,
+      });
+    }
+    const bucket = buckets.get(key);
+    bucket.total += 1;
+    const readiness = Number(row.strategy_readiness);
+    if (Number.isFinite(readiness)) {
+      bucket.readinessSum += readiness;
+      bucket.readinessCount += 1;
+    }
+    const createdAt = Number(row.created_at);
+    if (Number.isFinite(createdAt)) {
+      bucket.latest_created_at = bucket.latest_created_at == null
+        ? createdAt
+        : Math.max(bucket.latest_created_at, createdAt);
+    }
+    const closed = String(row.status || '').toLowerCase() === 'closed' || row.exit_time != null;
+    if (!closed) continue;
+    bucket.closed += 1;
+    const safePnl = safeJournalPnlPercent({
+      entryPrice: row.entry_price,
+      exitPrice: row.exit_price,
+      entryValue: row.entry_value,
+      exitValue: row.exit_value,
+      direction: row.direction,
+      pnlPercent: row.pnl_percent,
+    });
+    if (safePnl != null) {
+      bucket.pnlSum += safePnl;
+      bucket.pnlCount += 1;
+      if (safePnl > 0) bucket.wins += 1;
+    } else if (Number(row.pnl_net ?? row.pnl_amount ?? 0) > 0) {
+      bucket.wins += 1;
+    }
+    bucket.pnl_net += Number(row.pnl_net ?? row.pnl_amount ?? 0) || 0;
+  }
+
+  return [...buckets.values()].map((bucket) => normalizeRow({
+    ...bucket,
+    avg_pnl_percent: bucket.pnlCount > 0 ? Number((bucket.pnlSum / bucket.pnlCount).toFixed(4)) : null,
+    avg_readiness: bucket.readinessCount > 0 ? Number((bucket.readinessSum / bucket.readinessCount).toFixed(4)) : null,
+    pnl_net: Number(bucket.pnl_net.toFixed(4)),
+  }));
 }
 
 function topEntry(counts = {}) {
@@ -254,23 +325,19 @@ export async function buildRuntimeStrategyFamilyReport({ days = 90, market = 'al
       COALESCE(NULLIF(market, ''), 'unknown') AS market,
       COALESCE(NULLIF(exchange, ''), 'unknown') AS exchange,
       COALESCE(NULLIF(trade_mode, ''), 'normal') AS trade_mode,
-      COUNT(*) AS total,
-      COUNT(*) FILTER (WHERE status = 'closed' OR exit_time IS NOT NULL) AS closed,
-      COUNT(*) FILTER (WHERE (status = 'closed' OR exit_time IS NOT NULL) AND COALESCE(pnl_net, pnl_amount, 0) > 0) AS wins,
-      ROUND(AVG(CASE WHEN status = 'closed' OR exit_time IS NOT NULL THEN pnl_percent ELSE NULL END)::numeric, 4) AS avg_pnl_percent,
-      ROUND(AVG(strategy_readiness)::numeric, 4) AS avg_readiness,
-      ROUND(SUM(CASE WHEN status = 'closed' OR exit_time IS NOT NULL THEN COALESCE(pnl_net, pnl_amount, 0) ELSE 0 END)::numeric, 4) AS pnl_net,
-      MAX(created_at) AS latest_created_at
+      status, entry_time, exit_time, created_at, quality_flag, exclude_from_learning,
+      entry_price, exit_price, entry_value, exit_value, direction, pnl_percent,
+      pnl_net, pnl_amount, strategy_readiness
     FROM trade_journal
     WHERE created_at >= ?
       ${marketSql}
       AND COALESCE(exclude_from_learning, false) = false
+      AND COALESCE(quality_flag, 'trusted') <> 'exclude_from_learning'
       AND COALESCE(NULLIF(strategy_family, ''), 'unknown') <> 'unknown'
-    GROUP BY 1, 2, 3, 4, 5
-    ORDER BY total DESC, closed DESC, strategy_family ASC
   `, params);
 
-  const rows = rawRows.map(normalizeRow);
+  const rows = buildStrategyFamilyRowsFromJournalRows(rawRows)
+    .sort((a, b) => b.total - a.total || b.closed - a.closed || a.strategyFamily.localeCompare(b.strategyFamily));
   const families = aggregateFamilies(rows);
   const decision = buildDecision({ families, rows, minClosed });
   const payload = {
