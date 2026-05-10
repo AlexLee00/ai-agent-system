@@ -145,6 +145,18 @@ function compactStateHistory(states = {}, tasks = [], nowMs = Date.now()) {
   return compacted;
 }
 
+function buildActionableQueueSummary(payload = {}) {
+  const tasks = Array.isArray(payload?.tasks) ? payload.tasks : [];
+  const openTasks = tasks.filter((task) => ['queued', 'retrying', 'running'].includes(String(task?.status || '')));
+  return {
+    scopes: Object.keys(payload?.states || {}).length,
+    tasks: openTasks.length,
+    openTasks: openTasks.length,
+    totalTasks: tasks.length,
+    terminalTasks: Math.max(0, tasks.length - openTasks.length),
+  };
+}
+
 function writeQueueRaw(payload = null, file = DEFAULT_EXTERNAL_EVIDENCE_GAP_QUEUE_FILE) {
   ensureDir(file);
   const nowMs = Date.now();
@@ -319,10 +331,7 @@ export function updateExternalEvidenceGapTaskStatus({
     ok: true,
     status: 'evidence_gap_task_updated',
     taskId,
-    queueSummary: {
-      scopes: Object.keys(written.states || {}).length,
-      tasks: (written.tasks || []).length,
-    },
+    queueSummary: buildActionableQueueSummary(written),
   };
 }
 
@@ -425,10 +434,7 @@ export function updateExternalEvidenceGapTaskQueue({
     queuedTasks,
     activeTasks,
     state,
-    queueSummary: {
-      scopes: Object.keys(written.states || {}).length,
-      tasks: (written.tasks || []).length,
-    },
+    queueSummary: buildActionableQueueSummary(written),
     file,
   };
 }

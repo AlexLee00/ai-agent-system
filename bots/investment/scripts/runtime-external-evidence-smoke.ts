@@ -142,6 +142,7 @@ async function main() {
     file: queueFile,
   });
   assert('evidence 복구 시 상태 recovered', recovered.status === 'evidence_recovered');
+  assert('복구 summary는 actionable open task 기준', Number(recovered.queueSummary?.tasks || 0) === 0 && Number(recovered.queueSummary?.totalTasks || 0) >= 1);
   const queueAfterRecover = readExternalEvidenceGapTaskQueue(queueFile);
   assert(
     '복구 시 queued/retrying task 해소',

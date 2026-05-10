@@ -146,6 +146,8 @@ export function buildAutopilotBottleneckReport({
   const staleWindowSize = Math.max(1, Number(recentStaleSamples || cleanWindow.requiredCleanSamples || 3));
   const recentStaleRows = rows.slice(-staleWindowSize);
   const recentStale = collectStaleCandidateStats(recentStaleRows);
+  const recentRetryingCount = recentStaleRows.reduce((sum, row) => sum + Number(row?.dispatchRetryingCount || 0), 0);
+  const historicalRetryingCount = dispatchRetryingCount;
   const historicalHardFailureCount = hardFailureCount;
   hardFailureCount = cleanWindow.recentHardFailureCount;
 
@@ -159,6 +161,9 @@ export function buildAutopilotBottleneckReport({
     recommendations.push('hard dispatch failure가 남아 있으므로 child runner stdout/stderr를 우선 점검한다.');
   } else if (historicalHardFailureCount > 0 && cleanWindow.recovered) {
     recommendations.push(`최근 ${cleanWindow.cleanStreakSamples}개 autopilot 샘플은 hard failure 없이 회복됐습니다.`);
+  }
+  if (historicalRetryingCount > 0 && recentRetryingCount === 0) {
+    recommendations.push(`dispatch retrying ${historicalRetryingCount}건은 최근 ${recentStaleRows.length}개 샘플에서 재발하지 않아 historical noise로 분리합니다.`);
   }
   if ((queueWaitingCounts.waiting_market_open || 0) > 0) {
     recommendations.push('KIS 장외 대기 queue는 오류가 아니라 market-open queue로 관찰한다.');
@@ -181,6 +186,8 @@ export function buildAutopilotBottleneckReport({
       executedCount: dispatchExecutedCount,
       queuedCount: dispatchQueuedCount,
       retryingCount: dispatchRetryingCount,
+      recentRetryingCount,
+      historicalRetryingCount,
       skippedCount: dispatchSkippedCount,
       failureCount: dispatchFailureCount,
       staleCandidateCount,
@@ -208,7 +215,7 @@ export function renderAutopilotBottleneckReport(report = {}) {
     `checkedAt: ${report.checkedAt || 'n/a'}`,
     `window: ${report.hours || 24}h / samples=${report.sampleCount || 0}`,
     `latest: ${report.latestRecordedAt || 'n/a'} / ${report.latestStatus || 'n/a'}`,
-    `dispatch: candidates=${dispatch.candidateCount || 0} executed=${dispatch.executedCount || 0} queued=${dispatch.queuedCount || 0} retrying=${dispatch.retryingCount || 0} skipped=${dispatch.skippedCount || 0} hardFailures=${dispatch.hardFailureCount || 0} historicalHardFailures=${dispatch.historicalHardFailureCount || 0} cleanStreak=${dispatch.cleanStreakSamples || 0}/${dispatch.requiredCleanSamples || 0}`,
+    `dispatch: candidates=${dispatch.candidateCount || 0} executed=${dispatch.executedCount || 0} queued=${dispatch.queuedCount || 0} retrying=${dispatch.recentRetryingCount || 0} historicalRetrying=${dispatch.historicalRetryingCount || dispatch.retryingCount || 0} skipped=${dispatch.skippedCount || 0} hardFailures=${dispatch.hardFailureCount || 0} historicalHardFailures=${dispatch.historicalHardFailureCount || 0} cleanStreak=${dispatch.cleanStreakSamples || 0}/${dispatch.requiredCleanSamples || 0}`,
     `staleCandidate: ${dispatch.staleCandidateCount || 0}`,
     `recommendations: ${(report.recommendations || []).length ? report.recommendations.join(' / ') : 'none'}`,
   ].join('\n');

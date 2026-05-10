@@ -58,6 +58,35 @@ function summarizeEvidence(rows = []) {
   };
 }
 
+function mergeEvidenceSummaries(primary = {}, supplemental = null) {
+  if (!supplemental || Number(supplemental?.evidenceCount || 0) <= 0) return primary;
+  const primaryCount = Math.max(0, Number(primary?.evidenceCount || 0));
+  const supplementalCount = Math.max(0, Number(supplemental?.evidenceCount || 0));
+  const totalCount = primaryCount + supplementalCount;
+  const weighted = (key, fallback = 0) => {
+    const primaryValue = n(primary?.[key], fallback);
+    const supplementalValue = n(supplemental?.[key], fallback);
+    if (totalCount <= 0) return fallback;
+    return ((primaryValue * primaryCount) + (supplementalValue * supplementalCount)) / totalCount;
+  };
+  const sources = [
+    ...(Array.isArray(primary?.sources) ? primary.sources : []),
+    ...(Array.isArray(supplemental?.sources) ? supplemental.sources : []),
+  ];
+  return {
+    ...primary,
+    evidenceCount: totalCount,
+    sourceCount: sources.length,
+    sources,
+    sentimentScore: weighted('sentimentScore', 0),
+    qualityScore: weighted('qualityScore', 0.5),
+    supplementalEvidence: {
+      evidenceCount: supplementalCount,
+      source: supplemental.source || 'supplemental_evidence',
+    },
+  };
+}
+
 function buildRefreshQualityAdjustment(summary = {}, qualityFlags = []) {
   let multiplier = 1;
   const reasons = [];
@@ -116,6 +145,7 @@ export async function refreshPositionSignals({
   tradeMode = 'normal',
   source = 'runtime_position_signal_refresh',
   limit = 100,
+  supplementalEvidenceSummary = null,
   deps = null,
 } = {}) {
   const flags = resolvePositionLifecycleFlags();
@@ -149,12 +179,13 @@ export async function refreshPositionSignals({
       limit: 12,
     }).catch(() => []);
     const rawSummary = summarizeEvidence(evidenceRows);
+    const mergedSummary = mergeEvidenceSummaries(rawSummary, supplementalEvidenceSummary);
     const strategyProfile = await runtimeDeps.getPositionStrategyProfile?.(position.symbol, {
       exchange: position.exchange,
       tradeMode: position.trade_mode || 'normal',
     }).catch(() => null);
     const entryCarryover = resolveEntryEvidenceCarryover({
-      externalEvidenceSummary: rawSummary,
+      externalEvidenceSummary: mergedSummary,
       strategyProfile,
       seedSignal: null,
       heldHours: deriveHeldHours(position, strategyProfile),
@@ -193,6 +224,7 @@ export async function refreshPositionSignals({
       evidenceSnapshot: {
         summary,
         evidenceIds: evidenceRows.map((item) => item.id),
+        supplementalEvidence: supplementalEvidenceSummary || null,
         carryover: entryCarryover.usedCarryover ? {
           reason: entryCarryover.reason,
           seedSignalSource: entryCarryover.seedSignalSource || null,

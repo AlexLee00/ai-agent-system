@@ -83,6 +83,41 @@ export async function runPositionSignalRefreshSmoke({ json = false, strict = tru
     });
     const row = output.rows?.[0] || null;
     const carryoverRow = carryoverOutput.rows?.[0] || null;
+    const chartWrites = [];
+    const chartOutput = await refreshPositionSignals({
+      exchange: 'binance',
+      symbol: 'UNI/USDT',
+      tradeMode: 'normal',
+      source: 'smoke',
+      limit: 1,
+      supplementalEvidenceSummary: {
+        source: 'chart_indicator_signal_refresh',
+        evidenceCount: 3,
+        sourceCount: 1,
+        sentimentScore: 0.25,
+        qualityScore: 0.72,
+        sources: [{
+          source: 'chart_indicator',
+          count: 3,
+          avgScore: 0.25,
+          avgQuality: 0.72,
+          weight: 2.16,
+        }],
+      },
+      deps: {
+        getOpenPositions: async () => ([
+          { exchange: 'binance', symbol: 'UNI/USDT', trade_mode: 'normal', amount: 1, avg_price: 4 },
+        ]),
+        getRecentExternalEvidence: async () => [],
+        getPositionStrategyProfile: async () => null,
+        insertPositionSignalHistory: async (payload) => {
+          chartWrites.push(payload);
+          return { id: 'psh_3', created_at: new Date().toISOString() };
+        },
+        recordLifecycle: async () => 'evt_3',
+      },
+    });
+    const chartRow = chartOutput.rows?.[0] || null;
     const cases = [
       { name: 'refresh_ok', pass: output.ok === true },
       { name: 'one_row', pass: output.count === 1 },
@@ -92,6 +127,8 @@ export async function runPositionSignalRefreshSmoke({ json = false, strict = tru
       { name: 'carryover_clears_low_evidence', pass: carryoverRow?.attentionType == null && !carryoverRow?.qualityFlags?.includes('low_evidence') },
       { name: 'carryover_marked', pass: carryoverRow?.carryover?.reason === 'external_evidence_empty_entry_snapshot_carryover' && Boolean(carryoverWrites[0]?.evidenceSnapshot?.carryover) },
       { name: 'carryover_uses_entry_thesis_age', pass: Number(carryoverRow?.carryover?.heldHours || 0) >= 2.9 },
+      { name: 'chart_evidence_clears_low_evidence', pass: chartRow?.attentionType == null && !chartRow?.qualityFlags?.includes('low_evidence') },
+      { name: 'chart_evidence_persisted', pass: chartWrites[0]?.evidenceSnapshot?.supplementalEvidence?.source === 'chart_indicator_signal_refresh' },
     ];
     const passed = cases.filter((item) => item.pass).length;
     const total = cases.length;

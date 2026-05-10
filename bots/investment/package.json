@@ -368,6 +368,7 @@
     "runtime:position-lifecycle-readiness-smoke": "node scripts/position-lifecycle-operational-readiness-smoke.ts",
     "runtime:position-lifecycle-hard-drill-smoke": "node scripts/position-lifecycle-hard-drill-smoke.ts",
     "runtime:position-runtime": "node scripts/runtime-position-runtime-report.ts --json",
+    "runtime:position-runtime-smoke": "node scripts/runtime-position-runtime-report-smoke.ts",
     "runtime:position-runtime-dispatch": "node scripts/runtime-position-runtime-dispatch.ts --json",
     "runtime:position-runtime-tuning": "node scripts/runtime-position-runtime-tuning.ts --json",
     "runtime:position-runtime-autotune": "node scripts/runtime-position-runtime-autotune.ts --json",

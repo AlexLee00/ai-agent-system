@@ -348,6 +348,36 @@ export function buildEvidenceGapTaskQueueInput({
   };
 }
 
+function buildChartEvidenceSummaryForSignalRefresh(indicatorAnalyses = []) {
+  const rows = (Array.isArray(indicatorAnalyses) ? indicatorAnalyses : [])
+    .filter((item) => item?.snapshot && (item.snapshot.close != null || item.signal));
+  if (rows.length <= 0) return null;
+  const signalScore = (signal) => {
+    const value = String(signal || '').toUpperCase();
+    if (value === 'BUY' || value === 'BULLISH') return 0.25;
+    if (value === 'SELL' || value === 'BEARISH') return -0.25;
+    return 0;
+  };
+  const qualitySum = rows.reduce((sum, item) => sum + Math.max(0.35, Math.min(1, safeNumber(item?.confidence, 0.65))), 0);
+  const sentimentSum = rows.reduce((sum, item) => sum + signalScore(item?.signal || item?.snapshot?.signal), 0);
+  const avgQuality = qualitySum / rows.length;
+  const avgScore = sentimentSum / rows.length;
+  return {
+    source: 'chart_indicator_signal_refresh',
+    evidenceCount: rows.length,
+    sourceCount: 1,
+    sentimentScore: avgScore,
+    qualityScore: avgQuality,
+    sources: [{
+      source: 'chart_indicator',
+      count: rows.length,
+      avgScore,
+      avgQuality,
+      weight: rows.length * Math.max(0.35, avgQuality),
+    }],
+  };
+}
+
 function calcPnlPct(position) {
   const amount = safeNumber(position?.amount);
   const avgPrice = safeNumber(position?.avg_price);
@@ -1335,16 +1365,8 @@ export async function reevaluateOpenPositions({
     ]);
     const seedSignalResolution = await resolveEntrySeedSignal(position, strategyProfile, effectiveTradeMode);
     const seedSignal = seedSignalResolution.signal;
-    const signalRefreshResult = monitorAgentPlan.signalRefreshEnabled
-      ? await refreshPositionSignals({
-          exchange: position.exchange,
-          symbol: position.symbol,
-          tradeMode: effectiveTradeMode,
-          source: eventSource || 'position_reevaluator',
-          limit: 1,
-        }).catch(() => ({ ok: false, rows: [] }))
-      : null;
-    const signalRefreshRow = signalRefreshResult?.rows?.[0] || null;
+    let signalRefreshResult = null;
+    let signalRefreshRow = null;
     const regimeMarket = getPositionRuntimeMarket(position.exchange);
     const regimeKey = regimeMarket === 'crypto' ? 'binance' : regimeMarket;
     const regimeSnapshot = await db.getLatestMarketRegimeSnapshot(regimeKey).catch(() => null);
@@ -1376,6 +1398,17 @@ export async function reevaluateOpenPositions({
       indicatorAnalyses = indicatorFrames.filter(Boolean);
       indicatorAnalysis = buildTradingViewMtfAnalysis(indicatorAnalyses, position.exchange);
     }
+    signalRefreshResult = monitorAgentPlan.signalRefreshEnabled
+      ? await refreshPositionSignals({
+          exchange: position.exchange,
+          symbol: position.symbol,
+          tradeMode: effectiveTradeMode,
+          source: eventSource || 'position_reevaluator',
+          limit: 1,
+          supplementalEvidenceSummary: buildChartEvidenceSummaryForSignalRefresh(indicatorAnalyses),
+        }).catch(() => ({ ok: false, rows: [] }))
+      : null;
+    signalRefreshRow = signalRefreshResult?.rows?.[0] || null;
     const evidenceGapInput = buildEvidenceGapTaskQueueInput({
       position,
       tradeMode: effectiveTradeMode,

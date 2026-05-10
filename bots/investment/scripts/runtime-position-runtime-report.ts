@@ -20,6 +20,12 @@ function parseArgs(argv = []) {
   return args;
 }
 
+export function normalizeReportExchange(exchange = null) {
+  const value = String(exchange || '').trim().toLowerCase();
+  if (!value || value === 'all' || value === '*') return null;
+  return String(exchange || '').trim();
+}
+
 function buildDecision(rows = []) {
   const active = rows.filter((row) => row.runtimeState);
   const exitReady = active.filter((row) => row.runtimeState?.executionIntent?.action === 'EXIT').length;
@@ -68,7 +74,7 @@ function renderText(payload = {}) {
 
 export async function runPositionRuntimeReport(args = {}) {
   const profiles = await db.getActivePositionStrategyProfiles({
-    exchange: args.exchange || null,
+    exchange: normalizeReportExchange(args.exchange),
     symbol: args.symbol || null,
     limit: args.limit || 50,
   });
