@@ -179,6 +179,7 @@ function buildRelaxedProbeContext(plan = {}) {
       missingConfirmations: Array.isArray(item.missingConfirmations) ? item.missingConfirmations : [],
       relaxation: item.relaxation || null,
       fused: item.fused || null,
+      dailyTechnical: item.dailyTechnical || item.dailyTechnicalCoverage || null,
     };
   }
   return {

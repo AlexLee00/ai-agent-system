@@ -97,6 +97,7 @@ export async function runLunaNearMissWatchlistSmoke() {
   assert.equal(dailyBullish.status, 'near_miss_watchlist_attention');
   assert.equal(dailyBullish.watchlist[0].readiness, 'relaxed_probe_watch');
   assert.equal(dailyBullish.watchlist[0].watchReason, 'daily_bullish_active_candidate_probe');
+  assert.equal(dailyBullish.watchlist[0].dailyTechnical.reason, 'daily_trend_bullish');
   assert.equal(dailyBullish.evidence.dailyTechnicalCoverage.bullishCount, 1);
 
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'luna-near-miss-watchlist-smoke-'));

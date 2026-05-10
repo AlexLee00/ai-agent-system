@@ -302,6 +302,7 @@ export function buildNearMissWatchCandidate(item = {}) {
     fused: item.fused,
     analystSummary: item.analystSummary,
     recommendation: item.recommendation,
+    dailyTechnical: dailyBullishProbeCandidate ? (item.dailyTechnical || item.dailyTechnicalCoverage || null) : null,
   };
 }
 

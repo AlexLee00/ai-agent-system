@@ -339,19 +339,65 @@ function getRelaxedProbeContext(meta = {}, symbol = null) {
   return bySymbol[key] || null;
 }
 
+function isDailyBullishProbeContext(context = {}) {
+  const reason = String(context?.watchReason || context?.relaxation?.reason || '').trim();
+  if (reason !== 'daily_bullish_active_candidate_probe') return false;
+  const daily = context?.dailyTechnical || context?.dailyTechnicalCoverage || null;
+  if (!daily || typeof daily !== 'object' || Array.isArray(daily)) return false;
+  const dailyReason = String(daily.reason || '').toLowerCase();
+  return dailyReason.includes('daily_trend_bullish') || dailyReason.includes('bullish');
+}
+
 function findCryptoRelaxedProbeContextPresignal({ symbol, analyses = [], meta = {}, env = process.env } = {}) {
   const context = getRelaxedProbeContext(meta, symbol);
   const reason = String(context?.watchReason || context?.relaxation?.reason || '').trim();
-  if (reason !== 'crypto_relaxed_mtf_momentum_probe') return null;
+  if (reason !== 'crypto_relaxed_mtf_momentum_probe' && reason !== 'daily_bullish_active_candidate_probe') return null;
 
   const evidence = extractCryptoTechnicalEvidence(analyses);
+  const technicalSellConflict = (analyses || []).some((row) => (
+    cryptoAnalystRole(row) === 'technical'
+    && String(row?.signal || '').trim().toUpperCase() === 'SELL'
+    && Number(row?.confidence || 0) >= getCryptoTaDecisionPrefilterConfidence(env)
+  ));
+  if (reason === 'daily_bullish_active_candidate_probe') {
+    const dailyBullish = isDailyBullishProbeContext(context);
+    const stillUsable = dailyBullish
+      && !technicalSellConflict
+      && evidence.intradaySellFrames === 0
+      && evidence.dailySellFrames === 0;
+    if (!stillUsable) return null;
+    return {
+      run: true,
+      reason: 'crypto_daily_bullish_probe_context',
+      threshold: null,
+      relaxation: {
+        ...(context.relaxation || {}),
+        ok: true,
+        reason,
+        source: context.source || 'near_miss_watchlist',
+        sizeRatio: Number(context.relaxation?.sizeRatio || 0.2),
+        momentumEvidence: evidence,
+        dailyTechnical: context.dailyTechnical || context.dailyTechnicalCoverage || null,
+      },
+      relaxedProbeContext: {
+        source: context.source || 'near_miss_watchlist',
+        watchReason: reason,
+        readiness: context.readiness || null,
+        missingConfirmations: context.missingConfirmations || [],
+        currentTechnicalEvidence: evidence,
+        dailyTechnical: context.dailyTechnical || context.dailyTechnicalCoverage || null,
+      },
+    };
+  }
+
   const weightedScore = Number(evidence.weightedScore ?? -Infinity);
   const trendBoost = Number(evidence.trendBoost ?? -Infinity);
   const weightedFloor = numEnv(env, 'LUNA_CRYPTO_RELAXED_MTF_WEIGHTED_SCORE', 0.85);
   const trendFloor = numEnv(env, 'LUNA_CRYPTO_RELAXED_MTF_TREND_BOOST', 0.2);
   const stillMomentum = weightedScore >= weightedFloor
     && (trendBoost >= trendFloor || evidence.intradayBuyFrames >= 2)
-    && evidence.intradaySellFrames === 0;
+    && evidence.intradaySellFrames === 0
+    && !technicalSellConflict;
   if (!stillMomentum) return null;
 
   return {

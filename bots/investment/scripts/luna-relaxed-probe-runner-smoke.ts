@@ -21,6 +21,7 @@ function fixtureWatchlist() {
         nextAction: 'run_l13_probe_with_existing_risk_and_entry_guards',
         watchReason: 'crypto_relaxed_mtf_momentum_probe',
         missingConfirmations: ['onchain', 'sentiment', 'fusion'],
+        dailyTechnical: { ok: true, reason: 'daily_trend_bullish' },
       },
       {
         symbol: 'WAIT/USDT',
@@ -124,6 +125,7 @@ export async function runLunaRelaxedProbeRunnerSmoke() {
       assert.equal(meta.manualUniverseMode, 'explicit_symbols');
       assert.equal(meta.disableDiscoveryExpansion, true);
       assert.equal(meta.relaxed_probe_context.bySymbol['USUAL/USDT'].watchReason, 'crypto_relaxed_mtf_momentum_probe');
+      assert.equal(meta.relaxed_probe_context.bySymbol['USUAL/USDT'].dailyTechnical.reason, 'daily_trend_bullish');
       return { results: [], metrics: { bridgeStatus: 'no_symbol_decisions' } };
     },
   });

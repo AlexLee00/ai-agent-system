@@ -263,6 +263,84 @@ assert.equal(cryptoRelaxedProbeContext.reason, 'crypto_relaxed_probe_context');
 assert.equal(cryptoRelaxedProbeContext.relaxation.sizeRatio, 0.25);
 assert.equal(cryptoRelaxedProbeContext.relaxedProbeContext.currentTechnicalEvidence.dailySellFrames, 1);
 
+const cryptoDailyBullishProbeContext = shouldRunStockIntradayDecisionLlm({
+  market: 'binance',
+  symbol: 'SAHARA/USDT',
+  meta: {
+    relaxed_probe_runner: true,
+    relaxed_probe_context: {
+      bySymbol: {
+        'SAHARA/USDT': {
+          source: 'near_miss_watchlist',
+          watchReason: 'daily_bullish_active_candidate_probe',
+          readiness: 'relaxed_probe_watch',
+          missingConfirmations: ['intraday_technical', 'fusion'],
+          dailyTechnical: { ok: true, reason: 'daily_trend_bullish' },
+        },
+      },
+    },
+    llm_call_policy: { source_enrichment: 'technical_first_only' },
+  },
+  analyses: [
+    {
+      analyst: 'ta_mtf',
+      signal: 'HOLD',
+      confidence: 0.2,
+      reasoning: '15분봉 HOLD | 1시간봉 HOLD | 4시간봉 HOLD | 일봉 HOLD | 가중점수 -0.46',
+    },
+    { analyst: 'sentiment', signal: 'HOLD', confidence: 0.4 },
+    { analyst: 'onchain', signal: 'HOLD', confidence: 0.3 },
+  ],
+  env: disabledEnv,
+});
+assert.equal(cryptoDailyBullishProbeContext.run, true);
+assert.equal(cryptoDailyBullishProbeContext.reason, 'crypto_daily_bullish_probe_context');
+assert.equal(cryptoDailyBullishProbeContext.relaxation.sizeRatio, 0.2);
+
+const cryptoDailyBullishProbeSellConflict = shouldRunStockIntradayDecisionLlm({
+  market: 'binance',
+  symbol: 'SAHARA/USDT',
+  meta: {
+    relaxed_probe_runner: true,
+    relaxed_probe_context: {
+      bySymbol: {
+        'SAHARA/USDT': {
+          watchReason: 'daily_bullish_active_candidate_probe',
+          dailyTechnical: { ok: true, reason: 'daily_trend_bullish' },
+        },
+      },
+    },
+  },
+  analyses: [
+    { analyst: 'ta_mtf', signal: 'SELL', confidence: 0.8, reasoning: '15분봉 SELL | 일봉 HOLD' },
+  ],
+  env: disabledEnv,
+});
+assert.equal(cryptoDailyBullishProbeSellConflict.run, false);
+assert.equal(cryptoDailyBullishProbeSellConflict.reason, 'crypto_intraday_sell_conflict');
+
+const cryptoDailyBullishProbeBearishDaily = shouldRunStockIntradayDecisionLlm({
+  market: 'binance',
+  symbol: 'SAHARA/USDT',
+  meta: {
+    relaxed_probe_runner: true,
+    relaxed_probe_context: {
+      bySymbol: {
+        'SAHARA/USDT': {
+          watchReason: 'daily_bullish_active_candidate_probe',
+          dailyTechnical: { ok: true, reason: 'daily_trend_bearish' },
+        },
+      },
+    },
+  },
+  analyses: [
+    { analyst: 'ta_mtf', signal: 'HOLD', confidence: 0.2, reasoning: '15분봉 HOLD | 일봉 HOLD' },
+  ],
+  env: disabledEnv,
+});
+assert.equal(cryptoDailyBullishProbeBearishDaily.run, false);
+assert.equal(cryptoDailyBullishProbeBearishDaily.reason, 'crypto_intraday_no_technical_presignal');
+
 const cryptoMtfWeak = shouldRunStockIntradayDecisionLlm({
   market: 'binance',
   symbol: 'DYDX/USDT',
