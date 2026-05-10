@@ -60,6 +60,20 @@ export async function runSmoke() {
     );
     assert.ok(adjustedTrend.amount_usdt < 75, `weak trend following should reduce sizing, got ${adjustedTrend.amount_usdt}`);
     assert.ok(adjustedTrend.confidence < 0.7, `weak trend following should reduce confidence, got ${adjustedTrend.confidence}`);
+    const trendGuard = evaluateTradeDataEntryGuard({
+      symbol: 'BTC/USDT',
+      exchange: 'binance',
+      action: 'BUY',
+      confidence: 0.7,
+      amount_usdt: 100,
+      strategy_route: {
+        selectedFamily: 'trend_following',
+        familyPerformance: { selectedBias: weakFamily.bias.trend_following },
+      },
+    });
+    assert.equal(trendGuard.blocked, false, 'weak trend_following must not hard-block learning trades');
+    assert.ok(trendGuard.warnings.includes('crypto_trend_following_current_epoch_probe_only'));
+    assert.equal(trendGuard.meta.sizingMultiplier, 0.75);
 
     const blacklist = checkSymbolBlacklist('TAO/USDT', 'crypto');
     assert.equal(blacklist.blocked, true);

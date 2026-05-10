@@ -116,6 +116,15 @@ function applySizingAdjustment(meta, {
   meta.sizingMultiplier = Number((Math.min(Number.isFinite(current) ? current : 1, next.multiplier)).toFixed(4));
 }
 
+function resolveStrategyFamilyPerformanceBias(signal = {}, strategyFamily = '') {
+  const route = signal.strategy_route || signal.strategyRoute || {};
+  const family = String(strategyFamily || route.selectedFamily || '').trim().toLowerCase();
+  const selectedBias = Number(route?.familyPerformance?.selectedBias);
+  if (Number.isFinite(selectedBias)) return selectedBias;
+  const familyBias = Number(route?.familyPerformance?.bias?.[family]);
+  return Number.isFinite(familyBias) ? familyBias : 0;
+}
+
 export function evaluateLearningTradeQuality(row = {}, env = process.env) {
   const reasons = [];
   const status = String(row.status || '').toLowerCase();
@@ -172,6 +181,20 @@ export function evaluateTradeDataEntryGuard(signal = {}, env = process.env) {
   const blockers = [];
   const warnings = [];
   const meta = { market, strategyFamily: strategyFamily || null, tradeMode: tradeMode || null, regime: regime || null };
+  const familyPerformanceBias = resolveStrategyFamilyPerformanceBias(signal, strategyFamily);
+
+  if (market === 'crypto' && strategyFamily === 'trend_following' && familyPerformanceBias <= -0.14) {
+    warnings.push('crypto_trend_following_current_epoch_probe_only');
+    meta.cryptoTrendFollowing = {
+      reason: 'current operating-epoch trend_following closed=3, avgPnl=-2.11%, winRate=33%; keep learning but reduce live exposure',
+      familyPerformanceBias,
+    };
+    applySizingAdjustment(meta, {
+      code: 'crypto_trend_following_current_epoch_probe_only',
+      multiplier: tradeMode === 'validation' ? 0.85 : 0.75,
+      reason: 'trend_following 최근 실현 성과가 약해 차단 대신 live/probe sizing을 축소',
+    });
+  }
 
   const weak = checkTradeDataWeakSymbol(signal.symbol, market, env);
   if (weak.key) {
