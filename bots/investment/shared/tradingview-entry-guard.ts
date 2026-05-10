@@ -333,6 +333,55 @@ export function evaluateDailyTrendSnapshot(snapshot = {}, env = process.env) {
   };
 }
 
+function resolveEntryChartMode(candidate = {}, event = {}) {
+  const values = [
+    candidate?.triggerType,
+    candidate?.trigger_type,
+    candidate?.setupType,
+    candidate?.setup_type,
+    candidate?.waitingFor,
+    candidate?.waiting_for,
+    candidate?.block_meta?.entryTrigger?.triggerType,
+    candidate?.entryTrigger?.triggerType,
+    event?.triggerType,
+    event?.trigger_type,
+    event?.setupType,
+    event?.setup_type,
+    event?.waitingFor,
+    event?.waiting_for,
+  ].map((value) => String(value || '').toLowerCase());
+  if (values.some((value) => value.includes('pullback') || value.includes('mean_reversion'))) return 'pullback';
+  return 'breakout';
+}
+
+function relaxPullbackSensitiveCheck(check = {}, enabled = true) {
+  if (!enabled || check.ok) return check;
+  if (check.name !== 'current_candle_change_pct' && check.name !== 'daily_close_location') return check;
+  return {
+    ...check,
+    ok: true,
+    relaxed: true,
+    originalOk: false,
+    relaxationReason: 'pullback_entry_allows_retest_dip',
+  };
+}
+
+function relaxDailyTrendForPullback(dailyTrend = {}) {
+  if (dailyTrend?.skipped) return dailyTrend;
+  const checks = (dailyTrend.checks || []).map((check) => (
+    check?.name === 'daily_close_location' ? relaxPullbackSensitiveCheck(check, true) : check
+  ));
+  const failed = checks.filter((check) => !check.ok);
+  if (failed.length > 0) return { ...dailyTrend, checks };
+  return {
+    ...dailyTrend,
+    ok: true,
+    blocked: false,
+    reason: dailyTrend.reason === 'daily_trend_bullish' ? dailyTrend.reason : 'daily_trend_bullish_pullback_relaxed',
+    checks,
+  };
+}
+
 async function fetchCryptoDailyTrendBars({ symbol, env = process.env } = {}) {
   const days = Math.max(30, Math.round(numEnv('LUNA_ENTRY_DAILY_TREND_LOOKBACK_DAYS', 90, env)));
   const { getOHLCV } = await import('./ohlcv-fetcher.ts');
@@ -706,10 +755,11 @@ function violatesEntryChartPolicy(snapshot = {}, policy = 'unsupported') {
   return true;
 }
 
-export function evaluateTradingViewSnapshot(snapshot = {}, env = process.env) {
+export function evaluateTradingViewSnapshot(snapshot = {}, env = process.env, options = {}) {
   const minChangePct24h = numEnv('LUNA_TRADINGVIEW_ENTRY_MIN_CHANGE_PCT_24H', 0, env);
   const minCandleChangePct = numEnv('LUNA_TRADINGVIEW_ENTRY_MIN_CANDLE_CHANGE_PCT', 0, env);
   const requireReal = boolEnv('LUNA_TRADINGVIEW_ENTRY_GUARD_REQUIRE_REAL', true, env);
+  const pullbackEntry = options?.entryMode === 'pullback' || options?.pullbackEntry === true;
   const source = String(snapshot?.source || '').toLowerCase();
   const providerMode = String(snapshot?.providerMode || '').toLowerCase();
   const price = Number(snapshot?.price ?? snapshot?.close ?? 0);
@@ -741,14 +791,15 @@ export function evaluateTradingViewSnapshot(snapshot = {}, env = process.env) {
   }
   if (open > 0) {
     const candleChangePct = (price - open) / open;
-    checks.push({
+    checks.push(relaxPullbackSensitiveCheck({
       name: 'current_candle_change_pct',
       ok: candleChangePct >= minCandleChangePct,
       value: candleChangePct,
       min: minCandleChangePct,
-    });
+    }, pullbackEntry));
   }
-  const dailyTrend = evaluateDailyTrendSnapshot(snapshot, env);
+  const rawDailyTrend = evaluateDailyTrendSnapshot(snapshot, env);
+  const dailyTrend = pullbackEntry ? relaxDailyTrendForPullback(rawDailyTrend) : rawDailyTrend;
   if (!dailyTrend.skipped) {
     checks.push(...dailyTrend.checks);
   }
@@ -760,7 +811,14 @@ export function evaluateTradingViewSnapshot(snapshot = {}, env = process.env) {
   if (failed.length > 0) {
     return { ok: false, blocked: true, reason: dailyTrend.blocked ? 'tradingview_daily_trend_not_bullish' : 'tradingview_chart_not_bullish', checks, dailyTrend, snapshot };
   }
-  return { ok: true, blocked: false, reason: 'tradingview_chart_bullish', checks, dailyTrend, snapshot };
+  return {
+    ok: true,
+    blocked: false,
+    reason: pullbackEntry ? 'tradingview_chart_bullish_pullback' : 'tradingview_chart_bullish',
+    checks,
+    dailyTrend,
+    snapshot,
+  };
 }
 
 export function evaluateKisDailySnapshot(snapshot = {}, env = process.env) {
@@ -859,13 +917,15 @@ export async function evaluateTradingViewEntryGuard({ candidate = {}, event = nu
       snapshot,
     };
   }
+  const entryMode = resolveEntryChartMode(candidate, event || {});
   const evaluated = sourcePolicy === 'kis'
     ? evaluateKisDailySnapshot(snapshot, env)
-    : evaluateTradingViewSnapshot(snapshot, env);
+    : evaluateTradingViewSnapshot(snapshot, env, { entryMode });
   return {
     ...evaluated,
     enabled: true,
     sourcePolicy,
+    entryMode,
     symbol: candidate?.symbol || event?.symbol || null,
     exchange,
   };

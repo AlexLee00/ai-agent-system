@@ -1656,7 +1656,7 @@ export async function screenAllMarkets() {
 
 // CLI 실행
 if (isDirectExecution(import.meta.url)) {
-  await runCliMain({
+  void runCliMain({
     run: () => collectStrategies(),
     onSuccess: async (count) => {
       console.log(`\n결과: ${count}개 전략`);

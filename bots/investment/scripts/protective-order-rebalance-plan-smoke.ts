@@ -3,6 +3,7 @@
 
 import assert from 'node:assert/strict';
 import {
+  applyProtectiveOrderRebalance,
   buildProtectiveOrderRebalancePlan,
   summarizeProtectiveSellOrders,
 } from './protective-order-rebalance-plan.ts';
@@ -86,6 +87,59 @@ assert.equal(clearPlan.status, 'protective_rebalance_not_required');
 assert.equal(clearPlan.executableNow, true);
 assert.equal(clearPlan.requiresLiveMutation, false);
 assert.equal(clearPlan.recommendedPlan.policy, 'partial_adjust_can_execute_without_rebalance');
+
+const confirmationBlocked = await applyProtectiveOrderRebalance({
+  symbol: 'API3/USDT',
+  exchange: 'binance',
+  tradeMode: 'normal',
+  positionAmount: 427.38219,
+  estimatedExitAmount: 300.10777382,
+}, {
+  apply: true,
+  confirm: 'wrong-confirm',
+  getBalanceSnapshot: async () => ({
+    free: { API3: 0.00219 },
+    total: { API3: 427.38219 },
+  }),
+  getOpenOrders: async () => openOrders,
+});
+assert.equal(confirmationBlocked.status, 'protective_rebalance_confirmation_required');
+
+let cancelled = 0;
+let executed = 0;
+let protectedAgain = 0;
+const applied = await applyProtectiveOrderRebalance({
+  symbol: 'API3/USDT',
+  exchange: 'binance',
+  tradeMode: 'normal',
+  positionAmount: 427.38219,
+  estimatedExitAmount: 300.10777382,
+  avgPrice: 0.38,
+}, {
+  apply: true,
+  confirm: 'protective-rebalance-partial-adjust',
+  getBalanceSnapshot: async () => ({
+    free: { API3: 127.27441618 },
+    total: { API3: 127.27441618 },
+  }),
+  getOpenOrders: async () => openOrders,
+  cancelOpenSellOrders: async () => {
+    cancelled += 1;
+    return { cancelledCount: 2 };
+  },
+  executePartialAdjust: async () => {
+    executed += 1;
+    return { ok: true, status: 'executed', payload: { ok: true } };
+  },
+  placeProtectiveExit: async () => {
+    protectedAgain += 1;
+    return { ok: true, mode: 'oco', tpOrderId: 'tp-new', slOrderId: 'sl-new' };
+  },
+});
+assert.equal(applied.status, 'protective_rebalance_applied');
+assert.equal(cancelled, 1);
+assert.equal(executed, 1);
+assert.equal(protectedAgain, 1);
 
 console.log(JSON.stringify({
   ok: true,

@@ -35,6 +35,14 @@ function nodeScript(script, args = []) {
   };
 }
 
+function teamScript(script, args = [], env = {}) {
+  return {
+    command: process.execPath,
+    args: [path.join(INVESTMENT_DIR, 'team', script), ...args],
+    env,
+  };
+}
+
 function marketScript(script, args = [], env = {}) {
   return {
     command: process.execPath,
@@ -145,6 +153,19 @@ export function getOpsSchedulerJobs() {
         '--derive-market-events',
         '--json',
       ]),
+    },
+    {
+      name: 'approved_signal_executor_crypto',
+      category: 'execution',
+      market: 'crypto',
+      immutable: true,
+      cadence: { type: 'interval', seconds: 60 },
+      ...teamScript('hephaestos.ts', [], {
+        PAPER_MODE: 'false',
+        INVESTMENT_TRADE_MODE: 'normal',
+        LUNA_LIVE_FIRE_ENABLED: 'true',
+        HEPHAESTOS_PENDING_SIGNAL_CONCURRENCY: '1',
+      }),
     },
     {
       name: 'market_cycle_domestic',
@@ -588,6 +609,26 @@ export function classifyOpsSchedulerOutcome(job, result = {}) {
       summary: `checked=${checked} fired=${fired} readyBlocked=${readyBlocked} allowLiveFire=${allowLiveFire}`,
       approvedSignals: fired > 0 ? fired : null,
     };
+  }
+  if (name === 'approved_signal_executor_crypto') {
+    const recovered = text.match(/실행대상 복구\s+(\d+)건/u);
+    const noSignals = /대기 신호 없음/.test(text);
+    const completed = /완료:\s*\[|success["']?\s*:\s*true|orderId|order_id/i.test(text);
+    if (recovered) {
+      const count = Number(recovered[1] || 0);
+      return {
+        outcome: count > 0 ? 'approved_signal_execution_attempted' : 'no_approved_signals',
+        summary: `approved_signal_candidates=${count}`,
+        approvedSignals: count,
+      };
+    }
+    if (noSignals) {
+      return { outcome: 'no_approved_signals', summary: 'approved_signal_candidates=0', approvedSignals: 0 };
+    }
+    if (completed) {
+      return { outcome: 'approved_signal_executor_completed', summary: compactOutcomeSummary(text, 'hephaestos completed') };
+    }
+    return { outcome: 'approved_signal_executor_checked', summary: compactOutcomeSummary(text, 'hephaestos checked') };
   }
   if (/사이클 스킵/.test(text)) {
     return { outcome: 'cadence_wait', summary: compactOutcomeSummary(text, '사이클 스킵') };

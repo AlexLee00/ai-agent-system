@@ -18,6 +18,7 @@ import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import * as db from '../shared/db.ts';
 import { getLunaIntelligentDiscoveryFlags } from '../shared/luna-intelligent-discovery-config.ts';
+import { buildEntryTriggerFireReadiness } from '../shared/entry-trigger-engine.ts';
 import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -226,21 +227,21 @@ function diagnoseBlockReasons(flags: any, activeTriggers: any[], env: Record<str
   // 5. fire 조건 미충족 (breakoutRetest / volumeBurst / mtfAgreement)
   const noFireCondition = activeTriggers.filter((t) => {
     const hints = t.trigger_context?.hints || {};
-    const mtf = Number(hints.mtfAgreement || 0);
-    const discovery = Number(hints.discoveryScore || 0);
-    const volume = Number(hints.volumeBurst || 0);
-    const breakout = hints.breakoutRetest === true;
-    const newsMomentum = Number(hints.newsMomentum || 0);
-    return !(
-      (breakout && mtf >= 0.62) ||
-      (volume >= 1.8 && mtf >= 0.58) ||
-      (newsMomentum >= 0.6 && discovery >= 0.62) ||
-      (mtf >= 0.72 && discovery >= 0.58)
-    );
+    const fire = buildEntryTriggerFireReadiness({
+      symbol: t.symbol,
+      confidence: Number(t.confidence || 0),
+      setup_type: t.setup_type || null,
+      triggerType: t.trigger_type || null,
+      predictiveScore: Number(t.predictive_score || 0) || null,
+      triggerHints: hints,
+    });
+    t.fire_readiness = fire;
+    return !fire.ok;
   });
   if (noFireCondition.length > 0) {
     blocks.live_gate_blocked = noFireCondition.length;
-    issues.push(`[fire_condition_unmet] mtf/volume/breakout 조건 미충족 → ${noFireCondition.length}개 관망 중`);
+    const reasons = [...new Set(noFireCondition.map((t) => t.fire_readiness?.reason || 'fire_condition_unmet'))].join(',');
+    issues.push(`[fire_condition_unmet] ${reasons} → ${noFireCondition.length}개 관망 중`);
   }
 
   return { blocks, issues };

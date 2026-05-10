@@ -20,7 +20,7 @@ export async function runLunaOpsSchedulerSmoke() {
   const jobs = getOpsSchedulerJobs();
   const launchdPlist = fs.readFileSync(new URL('../launchd/ai.luna.ops-scheduler.plist', import.meta.url), 'utf8');
   assert.match(launchdPlist, /<key>StartInterval<\/key>\s*<integer>60<\/integer>/);
-  assert.equal(jobs.length, 28);
+  assert.equal(jobs.length, 29);
   assert.equal(jobs.some((job) => job.name === 'dynamic_policy_operator'), true);
   assert.equal(jobs.find((job) => job.name === 'dynamic_policy_operator')?.args?.includes('--confirm=luna-dynamic-policy-autotune'), true);
   assert.equal(jobs.some((job) => job.name === 'discovery_candidate_refresh'), true);
@@ -46,6 +46,11 @@ export async function runLunaOpsSchedulerSmoke() {
   assert.equal(jobs.some((job) => job.name === 'active_entry_trigger_evaluator_crypto'), true);
   assert.equal(jobs.find((job) => job.name === 'active_entry_trigger_evaluator_crypto')?.cadence?.seconds, 60);
   assert.equal(jobs.find((job) => job.name === 'active_entry_trigger_evaluator_crypto')?.args?.includes('--derive-market-events'), true);
+  assert.equal(jobs.some((job) => job.name === 'approved_signal_executor_crypto'), true);
+  assert.equal(jobs.find((job) => job.name === 'approved_signal_executor_crypto')?.category, 'execution');
+  assert.equal(jobs.find((job) => job.name === 'approved_signal_executor_crypto')?.cadence?.seconds, 60);
+  assert.equal(jobs.find((job) => job.name === 'approved_signal_executor_crypto')?.env?.PAPER_MODE, 'false');
+  assert.equal(jobs.find((job) => job.name === 'approved_signal_executor_crypto')?.env?.INVESTMENT_TRADE_MODE, 'normal');
   assert.equal(jobs.some((job) => job.name === 'market_cycle_domestic'), true);
   assert.equal(jobs.some((job) => job.name === 'market_cycle_domestic_open_catchup'), true);
   assert.equal(jobs.some((job) => job.name === 'market_cycle_overseas'), true);
@@ -82,7 +87,7 @@ export async function runLunaOpsSchedulerSmoke() {
 
   const now = new Date('2026-05-04T02:00:00+09:00');
   const emptyPlan = buildOpsSchedulerPlan({ now, state: { jobs: {} }, jobs });
-  assert.equal(emptyPlan.due, 17);
+  assert.equal(emptyPlan.due, 18);
   assert.equal(emptyPlan.jobs.find((job) => job.name === 'market_cycle_domestic')?.due, false);
   assert.equal(emptyPlan.jobs.find((job) => job.name === 'market_cycle_domestic')?.marketSession?.isOpen, false);
   assert.equal(emptyPlan.jobs.find((job) => job.name === 'market_cycle_domestic_open_catchup')?.due, false);
@@ -152,12 +157,12 @@ export async function runLunaOpsSchedulerSmoke() {
     },
   });
   assert.equal(executed.ok, true);
-  assert.equal(calls.length, 17);
+  assert.equal(calls.length, 18);
   assert.equal(calls.includes('market_cycle_domestic'), false);
   assert.equal(calls.includes('market_cycle_domestic_open_catchup'), false);
   assert.equal(calls.includes('market_cycle_overseas'), false);
   const executedState = JSON.parse(fs.readFileSync(statePath, 'utf8'));
-  assert.equal(Object.keys(executedState.jobs).length, 17);
+  assert.equal(Object.keys(executedState.jobs).length, 18);
 
   assert.deepEqual(
     classifyOpsSchedulerOutcome(
@@ -181,6 +186,20 @@ export async function runLunaOpsSchedulerSmoke() {
       outcome: 'entry_trigger_checked',
       summary: 'checked=2 fired=0 readyBlocked=0 allowLiveFire=true',
       approvedSignals: null,
+    },
+  );
+  assert.deepEqual(
+    classifyOpsSchedulerOutcome(
+      { name: 'approved_signal_executor_crypto' },
+      {
+        ok: true,
+        stdoutTail: '[헤파이스토스] 실행대상 복구 1건 (pending=0, approved=1, trade_mode=normal)',
+      },
+    ),
+    {
+      outcome: 'approved_signal_execution_attempted',
+      summary: 'approved_signal_candidates=1',
+      approvedSignals: 1,
     },
   );
   assert.equal(

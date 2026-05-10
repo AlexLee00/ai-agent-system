@@ -82,19 +82,80 @@ function isAllowedTriggerType(triggerType, flags) {
   return allowed.length <= 0 || allowed.includes(triggerType);
 }
 
-function shouldFireTrigger(candidate = {}, context = {}) {
+export function buildEntryTriggerFireReadiness(candidate = {}, context = {}) {
   const hints = candidate?.triggerHints || {};
   const mtfAgreement = Number(hints.mtfAgreement ?? context?.mtfAgreement ?? 0);
   const discoveryScore = Number(hints.discoveryScore ?? context?.discoveryScore ?? 0);
   const volumeBurst = Number(hints.volumeBurst ?? 0);
   const breakoutRetest = hints.breakoutRetest === true;
   const newsMomentum = Number(hints.newsMomentum ?? 0);
+  const confidence = Number(candidate?.confidence ?? context?.confidence ?? 0);
+  const predictiveScore = Number(candidate?.predictiveScore ?? context?.predictiveScore ?? 0);
+  const triggerType = String(candidate?.triggerType || candidate?.trigger_type || resolveTriggerType(candidate));
+  const details = {
+    triggerType,
+    mtfAgreement,
+    discoveryScore,
+    volumeBurst,
+    breakoutRetest,
+    newsMomentum,
+    confidence,
+    predictiveScore,
+  };
 
-  if (breakoutRetest && mtfAgreement >= 0.62) return true;
-  if (volumeBurst >= 1.8 && mtfAgreement >= 0.58) return true;
-  if (newsMomentum >= 0.6 && discoveryScore >= 0.62) return true;
-  if (mtfAgreement >= 0.72 && discoveryScore >= 0.58) return true;
-  return false;
+  if (breakoutRetest && mtfAgreement >= 0.62) return { ok: true, reason: 'breakout_retest_mtf_confirmed', details };
+  if (volumeBurst >= 1.8 && mtfAgreement >= 0.58) return { ok: true, reason: 'volume_burst_mtf_confirmed', details };
+  if (newsMomentum >= 0.6 && discoveryScore >= 0.62) return { ok: true, reason: 'news_momentum_discovery_confirmed', details };
+  if (mtfAgreement >= 0.72 && discoveryScore >= 0.58) return { ok: true, reason: 'mtf_discovery_confirmed', details };
+
+  if (triggerType === 'pullback_to_support') {
+    const minConfidence = Number(context?.pullbackMinConfidence ?? process.env.LUNA_ENTRY_TRIGGER_PULLBACK_MIN_CONFIDENCE ?? 0.68);
+    const minPredictiveScore = Number(context?.pullbackMinPredictiveScore ?? process.env.LUNA_ENTRY_TRIGGER_PULLBACK_MIN_PREDICTIVE_SCORE ?? 0.55);
+    const minDiscoveryScore = Number(context?.pullbackMinDiscoveryScore ?? process.env.LUNA_ENTRY_TRIGGER_PULLBACK_MIN_DISCOVERY_SCORE ?? 0.58);
+    const pullbackDetails = {
+      ...details,
+      minConfidence,
+      minPredictiveScore,
+      minDiscoveryScore,
+    };
+    if (
+      breakoutRetest
+      && confidence >= minConfidence
+      && predictiveScore >= minPredictiveScore
+      && discoveryScore >= minDiscoveryScore
+    ) {
+      return { ok: true, reason: 'pullback_target_retest_predictive_confirmed', details: pullbackDetails };
+    }
+    return { ok: false, reason: 'pullback_confirmation_incomplete', details: pullbackDetails };
+  }
+
+  return { ok: false, reason: 'fire_condition_unmet', details };
+}
+
+function shouldFireTrigger(candidate = {}, context = {}) {
+  return buildEntryTriggerFireReadiness(candidate, context).ok;
+}
+
+function summarizeEntryChartGuard(guard = {}) {
+  return {
+    ok: guard?.ok === true,
+    blocked: guard?.blocked === true,
+    reason: guard?.reason || null,
+    entryMode: guard?.entryMode || null,
+    sourcePolicy: guard?.sourcePolicy || null,
+    symbol: guard?.symbol || null,
+    exchange: guard?.exchange || null,
+    checks: Array.isArray(guard?.checks) ? guard.checks : [],
+    dailyTrend: guard?.dailyTrend
+      ? {
+          ok: guard.dailyTrend.ok === true,
+          blocked: guard.dailyTrend.blocked === true,
+          reason: guard.dailyTrend.reason || null,
+          trend: guard.dailyTrend.trend || null,
+          checks: Array.isArray(guard.dailyTrend.checks) ? guard.dailyTrend.checks : [],
+        }
+      : null,
+  };
 }
 
 function annotateEntryTrigger(candidate = {}, entryTrigger = {}) {
@@ -872,8 +933,13 @@ export async function evaluateEntryTriggers(candidates = [], context = {}) {
       triggerState: 'fired',
       firedAt: nowIso(),
       triggerMetaPatch: {
+        reason: 'entry_trigger_fired',
         firedBy: 'entry_trigger_engine',
         eventType: 'entry_trigger_fired',
+        tradingViewReason: tradingViewGuard.reason || null,
+        tradingViewGuard: summarizeEntryChartGuard(tradingViewGuard),
+        riskGateReason: riskGate.reason || null,
+        riskGateDetails: riskGate.details || {},
       },
     }).catch(() => {});
 
@@ -1007,6 +1073,11 @@ export async function evaluateActiveEntryTriggersAgainstMarketEvents(events = []
       action: ACTIONS.BUY,
       confidence: Number(trigger.confidence || 0),
       setup_type: trigger.setup_type || null,
+      triggerType: trigger.trigger_type || null,
+      predictiveScore: Number(trigger.predictive_score || 0) || null,
+      prediction: Number(trigger.predictive_score || 0) > 0 ? { score: Number(trigger.predictive_score || 0) } : undefined,
+      analystAccuracy: Number(trigger.confidence || 0),
+      setupOutcome: trigger.trigger_context?.setupOutcome || trigger.trigger_meta?.setupOutcome || undefined,
       triggerHints: {
         ...(trigger.trigger_context?.hints || {}),
         ...(event.triggerHints || {}),
@@ -1017,9 +1088,18 @@ export async function evaluateActiveEntryTriggersAgainstMarketEvents(events = []
         newsMomentum: event.newsMomentum ?? event.triggerHints?.newsMomentum ?? trigger.trigger_context?.hints?.newsMomentum,
       },
     };
-    const fireNow = shouldFireTrigger(candidate, context);
+    const fireReadiness = buildEntryTriggerFireReadiness(candidate, context);
+    const fireNow = fireReadiness.ok;
     if (!fireNow) {
-      results.push({ triggerId: trigger.id, symbol: trigger.symbol, state: trigger.trigger_state, fired: false, reason: 'conditions_not_met' });
+      results.push({
+        triggerId: trigger.id,
+        symbol: trigger.symbol,
+        state: trigger.trigger_state,
+        fired: false,
+        reason: 'conditions_not_met',
+        fireReason: fireReadiness.reason,
+        fireReadiness: fireReadiness.details,
+      });
       continue;
     }
     if (!allowLiveFire) {
@@ -1114,9 +1194,14 @@ export async function evaluateActiveEntryTriggersAgainstMarketEvents(events = []
       triggerState: 'fired',
       firedAt: nowIso(),
       triggerMetaPatch: {
+        reason: 'entry_trigger_fired',
         firedBy: 'entry_trigger_event_worker',
         eventType: 'entry_trigger_fired',
         event,
+        tradingViewReason: tradingViewGuard.reason || null,
+        tradingViewGuard: summarizeEntryChartGuard(tradingViewGuard),
+        riskGateReason: riskGate.reason || null,
+        riskGateDetails: riskGate.details || {},
       },
     }).catch(() => null);
     results.push({ triggerId: trigger.id, symbol: trigger.symbol, state: updated?.trigger_state || 'fired', fired: true });

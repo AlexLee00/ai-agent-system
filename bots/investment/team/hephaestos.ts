@@ -142,6 +142,7 @@ const {
   fetchAssetBalances,
   cancelOpenSellOrdersForSymbol,
 } = exchangeHelpers;
+export { cancelOpenSellOrdersForSymbol };
 
 const pendingReconcileContext = createPendingReconcileContext({
   db,
@@ -333,6 +334,7 @@ const {
   normalizeProtectiveExitPrices,
   placeBinanceProtectiveExit,
 } = protectiveExitPolicy;
+export { normalizeProtectiveExitPrices, placeBinanceProtectiveExit };
 
 const {
   applyBuyProtectiveExit,

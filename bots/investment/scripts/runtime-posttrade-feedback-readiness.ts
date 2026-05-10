@@ -23,6 +23,7 @@ export async function runPosttradeFeedbackReadiness(input = {}) {
     once: true,
     force: true,
     dryRun: true,
+    quiet: true,
     limit: args.limit,
     market: args.market,
     heartbeatPath: '',

@@ -258,6 +258,39 @@ function buildTradingViewMtfAnalysis(snapshots = [], exchange = 'binance') {
   };
 }
 
+export function buildEvidenceGapTaskQueueInput({
+  position = {},
+  tradeMode = 'normal',
+  externalEvidenceSummary = null,
+  entryEvidenceCarryover = {},
+  indicatorAnalyses = [],
+} = {}) {
+  const externalEvidenceCount = Math.max(0, Number(externalEvidenceSummary?.evidenceCount || 0));
+  const chartEvidenceCount = (Array.isArray(indicatorAnalyses) ? indicatorAnalyses : [])
+    .filter((item) => item?.snapshot && (item.snapshot.close != null || item.signal))
+    .length;
+  const evidenceCount = Math.max(externalEvidenceCount, chartEvidenceCount);
+  const reason = externalEvidenceCount <= 0 && chartEvidenceCount > 0
+    ? `chart_indicator_evidence_available:${chartEvidenceCount}`
+    : entryEvidenceCarryover?.usedCarryover
+      ? entryEvidenceCarryover.reason
+      : externalEvidenceSummary?.warning || null;
+
+  return {
+    symbol: position.symbol,
+    exchange: position.exchange,
+    tradeMode,
+    evidenceCount,
+    threshold: 3,
+    cooldownMinutes: 60,
+    reason,
+    evidenceBreakdown: {
+      externalEvidenceCount,
+      chartEvidenceCount,
+    },
+  };
+}
+
 function calcPnlPct(position) {
   const amount = safeNumber(position?.amount);
   const avgPrice = safeNumber(position?.avg_price);
@@ -1220,22 +1253,6 @@ export async function reevaluateOpenPositions({
     entryEvidenceCarryover.seedSignalSource = seedSignalResolution.source;
     entryEvidenceCarryover.seedSignalId = seedSignal?.id || null;
     const externalEvidenceSummary = entryEvidenceCarryover.summary;
-    const externalEvidenceGapState = monitorAgentPlan.externalEvidenceEnabled
-      ? updateExternalEvidenceGapTaskQueue({
-          symbol: position.symbol,
-          exchange: position.exchange,
-          tradeMode: effectiveTradeMode,
-          evidenceCount: Number(externalEvidenceSummary?.evidenceCount || 0),
-          threshold: 3,
-          cooldownMinutes: 60,
-          reason: entryEvidenceCarryover.usedCarryover
-            ? entryEvidenceCarryover.reason
-            : externalEvidenceSummary?.warning || null,
-        })
-      : {
-          status: 'disabled_by_monitor_agent_plan',
-          reason: 'external_evidence_agent_plan_disabled',
-        };
     let indicatorAnalyses = [];
     let indicatorAnalysis = null;
     if (monitorAgentPlan.liveIndicatorsEnabled) {
@@ -1248,6 +1265,22 @@ export async function reevaluateOpenPositions({
       indicatorAnalyses = indicatorFrames.filter(Boolean);
       indicatorAnalysis = buildTradingViewMtfAnalysis(indicatorAnalyses, position.exchange);
     }
+    const evidenceGapInput = buildEvidenceGapTaskQueueInput({
+      position,
+      tradeMode: effectiveTradeMode,
+      externalEvidenceSummary,
+      entryEvidenceCarryover,
+      indicatorAnalyses,
+    });
+    const externalEvidenceGapState = monitorAgentPlan.externalEvidenceEnabled
+      ? {
+          ...updateExternalEvidenceGapTaskQueue(evidenceGapInput),
+          evidenceBreakdown: evidenceGapInput.evidenceBreakdown,
+        }
+      : {
+          status: 'disabled_by_monitor_agent_plan',
+          reason: 'external_evidence_agent_plan_disabled',
+        };
     const mergedAnalyses = [
       ...analyses,
       ...indicatorAnalyses,

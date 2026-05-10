@@ -190,9 +190,9 @@ export async function runSmoke() {
   assert.equal(disabled.ok, true);
   assert.equal(disabled.enabled, false);
 
-  const eventPass = await evaluateTradingViewEntryGuard({
-    candidate: { symbol: 'BTC/USDT' },
-    event: {
+	  const eventPass = await evaluateTradingViewEntryGuard({
+	    candidate: { symbol: 'BTC/USDT' },
+	    event: {
       tradingViewSnapshot: {
         ok: true,
         source: 'tradingview_ws_service',
@@ -207,11 +207,41 @@ export async function runSmoke() {
     },
     exchange: 'binance',
     env: baseEnv,
-  });
-  assert.equal(eventPass.ok, true);
+	  });
+	  assert.equal(eventPass.ok, true);
 
-  const domesticPass = await evaluateTradingViewEntryGuard({
-    candidate: { symbol: '005930' },
+	  const pullbackDipSnapshot = {
+	    ok: true,
+	    source: 'tradingview_ws_service',
+	    providerMode: 'websocket',
+	    price: 128,
+	    open: 132,
+	    high: 135,
+	    low: 125,
+	    dailyBars: bullishDailyBars,
+	    stale: false,
+	  };
+	  const pullbackDipPass = await evaluateTradingViewEntryGuard({
+	    candidate: { symbol: 'BTC/USDT', triggerType: 'pullback_to_support' },
+	    event: { tradingViewSnapshot: pullbackDipSnapshot },
+	    exchange: 'binance',
+	    env: baseEnv,
+	  });
+	  assert.equal(pullbackDipPass.ok, true);
+	  assert.equal(pullbackDipPass.reason, 'tradingview_chart_bullish_pullback');
+	  assert.ok(pullbackDipPass.checks.some((check) => check.name === 'current_candle_change_pct' && check.relaxed === true));
+	  assert.ok(pullbackDipPass.checks.some((check) => check.name === 'daily_close_location' && check.relaxed === true));
+
+	  const breakoutDipRejected = await evaluateTradingViewEntryGuard({
+	    candidate: { symbol: 'BTC/USDT', triggerType: 'breakout_confirmation' },
+	    event: { tradingViewSnapshot: pullbackDipSnapshot },
+	    exchange: 'binance',
+	    env: baseEnv,
+	  });
+	  assert.equal(breakoutDipRejected.blocked, true);
+
+	  const domesticPass = await evaluateTradingViewEntryGuard({
+	    candidate: { symbol: '005930' },
     event: {
       officialChartSnapshot: {
         ok: true,
@@ -383,10 +413,12 @@ export async function runSmoke() {
     ok: true,
     bullish,
     bearish,
-    fallback,
-    disabled,
-    eventPass,
-    domesticPass,
+	    fallback,
+	    disabled,
+	    eventPass,
+	    pullbackDipPass,
+	    breakoutDipRejected,
+	    domesticPass,
     overseasPass,
     domesticTradingViewRejected,
     officialDomesticPass,

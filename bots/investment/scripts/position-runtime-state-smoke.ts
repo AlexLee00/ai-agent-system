@@ -184,6 +184,40 @@ export function runPositionRuntimeStateSmoke() {
   assert.equal(pyramidIntent.runner, 'runtime:pyramid-adjust');
   assert.match(pyramidIntent.manualExecuteCommand, /--confirm=pyramid-adjust/);
 
+  const criticalPartialAdjustIntent = buildExecutionIntent({
+    position: { symbol: 'BTC/USDT', exchange: 'binance', trade_mode: 'normal' },
+    strategyProfile: { setup_type: 'trend_following' },
+    recommendation: 'ADJUST',
+    reasonCode: 'backtest_drift_adjust',
+    policyMatrix: { sourceQualityBlocked: false },
+    validationState: { severity: 'critical' },
+    positionSizingSnapshot: {
+      enabled: true,
+      mode: 'hold',
+      executionAction: 'HOLD',
+    },
+  });
+  assert.equal(criticalPartialAdjustIntent.runner, 'runtime:partial-adjust');
+  assert.equal(criticalPartialAdjustIntent.executionAllowed, true);
+  assert.equal(criticalPartialAdjustIntent.guardReasons.includes('validation_severity_critical_adjust_blocked'), false);
+
+  const criticalPyramidIntent = buildExecutionIntent({
+    position: { symbol: 'ETH/USDT', exchange: 'binance', trade_mode: 'normal' },
+    strategyProfile: { setup_type: 'trend_following' },
+    recommendation: 'ADJUST',
+    reasonCode: 'pyramid_continuation',
+    policyMatrix: { sourceQualityBlocked: false },
+    validationState: { severity: 'critical' },
+    positionSizingSnapshot: {
+      enabled: true,
+      mode: 'pyramid',
+      executionAction: 'BUY',
+    },
+  });
+  assert.equal(criticalPyramidIntent.runner, 'runtime:pyramid-adjust');
+  assert.equal(criticalPyramidIntent.executionAllowed, false);
+  assert.equal(criticalPyramidIntent.guardReasons.includes('validation_severity_critical_adjust_blocked'), true);
+
   const runtimeState = buildPositionRuntimeState({
     position: {
       symbol: 'BTC/USDT',

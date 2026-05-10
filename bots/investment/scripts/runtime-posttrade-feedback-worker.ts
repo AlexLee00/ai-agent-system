@@ -27,6 +27,7 @@ function parseArgs(argv = process.argv.slice(2)) {
     loop: argv.includes('--loop'),
     dryRun: argv.includes('--dry-run'),
     force: argv.includes('--force'),
+    quiet: argv.includes('--quiet'),
     intervalSec: Math.max(10, Number(intervalRaw || 0) || 0),
     limit: Math.max(1, Number(limitRaw || 20) || 20),
     market: String(market).trim().toLowerCase() || 'all',
@@ -147,6 +148,7 @@ export async function runPosttradeFeedbackWorker(input = {}) {
       market: args.market,
       dryRun: args.dryRun,
       json: false,
+      quiet: args.quiet,
       tradeId: null,
     });
     const learningDays = resolveLearningDays(cfg, args.market);

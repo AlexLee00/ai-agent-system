@@ -351,6 +351,7 @@ export function buildExecutionIntent({
     postActionAlertOnly: true,
   };
   let action = 'HOLD';
+  let adjustMode = null;
   let executionAllowed = false;
   const guardReasons = [];
 
@@ -380,6 +381,7 @@ export function buildExecutionIntent({
   } else if (recommendation === 'ADJUST' && symbol && exchange) {
     const sizingMode = String(positionSizingSnapshot?.mode || '').toLowerCase();
     const pyramidAdjust = positionSizingSnapshot?.enabled === true && sizingMode === 'pyramid';
+    adjustMode = pyramidAdjust ? 'pyramid' : 'partial_trim';
     action = 'ADJUST';
     runner = pyramidAdjust ? 'runtime:pyramid-adjust' : 'runtime:partial-adjust';
     const script = pyramidAdjust ? 'runtime:pyramid-adjust' : 'runtime:partial-adjust';
@@ -413,7 +415,7 @@ export function buildExecutionIntent({
       guardReasons.push(policyMatrix?.sourceQualityReason || 'source_quality_blocked');
       executionAllowed = false;
     }
-    if (normalizeString(validationState?.severity, 'stable') === 'critical' && action === 'ADJUST') {
+    if (normalizeString(validationState?.severity, 'stable') === 'critical' && action === 'ADJUST' && adjustMode === 'pyramid') {
       guardReasons.push('validation_severity_critical_adjust_blocked');
       executionAllowed = false;
     }

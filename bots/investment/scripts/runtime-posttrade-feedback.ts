@@ -93,10 +93,11 @@ function readAgentPlanFile(rawPath: string) {
 }
 
 function parseArgs(argv = process.argv.slice(2)) {
-  const args = { limit: 20, dryRun: false, tradeId: null, market: 'all', json: false, agentPlan: null };
+  const args = { limit: 20, dryRun: false, tradeId: null, market: 'all', json: false, quiet: false, agentPlan: null };
   for (const raw of argv) {
     if (raw === '--dry-run')                        args.dryRun = true;
     else if (raw === '--json')                      args.json = true;
+    else if (raw === '--quiet')                     args.quiet = true;
     else if (raw.startsWith('--limit='))            args.limit = Math.max(1, Number(raw.split('=')[1]) || 20);
     else if (raw.startsWith('--trade-id='))         args.tradeId = Number(raw.split('=')[1]);
     else if (raw.startsWith('--market='))           args.market = String(raw.split('=')[1] || 'all').trim().toLowerCase();
@@ -104,6 +105,11 @@ function parseArgs(argv = process.argv.slice(2)) {
     else if (raw.startsWith('--agent-plan-file='))  args.agentPlan = readAgentPlanFile(raw.slice('--agent-plan-file='.length));
   }
   return args;
+}
+
+function posttradeLog(args = {}, message: string, ...rest: any[]) {
+  if (args.quiet === true) return;
+  console.error(message, ...rest);
 }
 
 async function runPosttradeFeedback(args) {
@@ -125,13 +131,13 @@ async function runPosttradeFeedback(args) {
   const runC = shouldRunPosttradePhase(posttradeAgentPlan, 'reflexion');
   const runCurriculum = shouldRunPosttradePhase(posttradeAgentPlan, 'curriculum');
 
-  console.error(`[PosttradeFeedback] enabled: A=${runA} B=${runB} C=${runC} curriculum=${runCurriculum} dryRun=${args.dryRun} market=${args.market}`);
+  posttradeLog(args, `[PosttradeFeedback] enabled: A=${runA} B=${runB} C=${runC} curriculum=${runCurriculum} dryRun=${args.dryRun} market=${args.market}`);
   if (posttradeAgentPlan.warnings.length > 0) {
-    console.error(`[PosttradeFeedback] agent plan warnings: ${posttradeAgentPlan.warnings.join(', ')}`);
+    posttradeLog(args, `[PosttradeFeedback] agent plan warnings: ${posttradeAgentPlan.warnings.join(', ')}`);
   }
 
   if (!runA && !runB && !runC) {
-    console.error('[PosttradeFeedback] 모든 Phase 비활성 — Kill switch: posttrade_feedback.*.enabled=false');
+    posttradeLog(args, '[PosttradeFeedback] 모든 Phase 비활성 — Kill switch: posttrade_feedback.*.enabled=false');
     return { skipped: true, reason: 'all_disabled', posttradeAgentPlan };
   }
 
@@ -144,11 +150,11 @@ async function runPosttradeFeedback(args) {
   }
 
   if (candidates.length === 0) {
-    console.error('[PosttradeFeedback] 처리할 거래 없음 (모두 이미 평가됨)');
+    posttradeLog(args, '[PosttradeFeedback] 처리할 거래 없음 (모두 이미 평가됨)');
     return { processed: 0, source: 'none', posttradeAgentPlan };
   }
 
-  console.error(`[PosttradeFeedback] 처리 대상: ${candidates.length}건`);
+  posttradeLog(args, `[PosttradeFeedback] 처리 대상: ${candidates.length}건`);
 
   const results = {
     preferred: 0,
@@ -220,11 +226,11 @@ async function runPosttradeFeedback(args) {
 
     } catch (err) {
       results.errors++;
-      console.error(`[PosttradeFeedback] trade=${tradeId} 처리 오류:`, err);
+      posttradeLog(args, `[PosttradeFeedback] trade=${tradeId} 처리 오류:`, err);
     }
   }
 
-  console.error(`[PosttradeFeedback] 완료 — preferred:${results.preferred} neutral:${results.neutral} rejected:${results.rejected} reflexions:${results.reflexions} errors:${results.errors}`);
+  posttradeLog(args, `[PosttradeFeedback] 완료 — preferred:${results.preferred} neutral:${results.neutral} rejected:${results.rejected} reflexions:${results.reflexions} errors:${results.errors}`);
 
   return { processed: candidates.length, ...results, posttradeAgentPlan };
 }

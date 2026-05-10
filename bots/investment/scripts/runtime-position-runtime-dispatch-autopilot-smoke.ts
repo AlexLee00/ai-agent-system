@@ -284,6 +284,27 @@ async function main() {
     nonPhase6ManualFallback?.kind === 'shell' && nonPhase6ManualFallback?.command?.includes('--confirm=strategy-exit'),
   );
 
+  const protectiveCandidates = buildCandidates([
+    {
+      exchange: 'binance',
+      symbol: 'BTC/USDT',
+      tradeMode: 'normal',
+      runtimeState: {
+        policyMatrix: { portfolioReflexiveBias: { protective: true } },
+        executionIntent: {
+          action: 'ADJUST',
+          runner: 'runtime:partial-adjust',
+          executionAllowed: true,
+          guardReasons: ['portfolio_reflexive_protective_bias'],
+        },
+      },
+    },
+  ]);
+  assert(
+    'protective guard reason은 중복 누적하지 않음',
+    protectiveCandidates[0]?.guardReasons?.filter((item) => item === 'portfolio_reflexive_protective_bias').length === 1,
+  );
+
   const phase6NoAutonomousPath = buildExecutionInvocation({
     manualExecuteCommand: 'npm --prefix /tmp run runtime:strategy-exit -- --execute --confirm=strategy-exit',
   }, { phase6: true });

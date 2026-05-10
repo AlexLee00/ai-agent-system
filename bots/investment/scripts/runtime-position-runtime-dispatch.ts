@@ -156,7 +156,7 @@ export function buildCandidates(rows = []) {
         return {
           ...row,
           urgency: row.urgency === 'high' ? 'high' : 'normal',
-          guardReasons: [...(row.guardReasons || []), 'portfolio_reflexive_protective_bias'],
+          guardReasons: Array.from(new Set([...(row.guardReasons || []), 'portfolio_reflexive_protective_bias'])),
         };
       }
       return row;
