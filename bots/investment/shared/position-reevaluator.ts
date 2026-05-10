@@ -305,6 +305,8 @@ function getExitGuardConfig() {
   const guards = runtime?.exitGuards || {};
   return {
     mildLossHoldThresholdPct: safeNumber(guards?.mildLossHoldThresholdPct, -1.0),
+    smallProfitHoldThresholdPct: safeNumber(guards?.smallProfitHoldThresholdPct, 1.5),
+    smallProfitHoldHours: safeNumber(guards?.smallProfitHoldHours, safeNumber(guards?.shortHoldHours, 6)),
     shortHoldHours: safeNumber(guards?.shortHoldHours, 6),
     overwhelmingSellVotes: Math.max(1, Math.round(safeNumber(guards?.overwhelmingSellVotes, 3))),
   };
@@ -929,6 +931,58 @@ function decideReevaluation(position, analysisSummary, strategyProfile = null, l
   });
 }
 
+function shouldHoldFreshSmallProfitAdjustment({
+  pnlPct = 0,
+  heldHours = 0,
+  analysisSummary = {},
+  exitGuards = getExitGuardConfig(),
+} = {}) {
+  const normalizedPnlPct = safeNumber(pnlPct, 0);
+  const normalizedHeldHours = safeNumber(heldHours, 0);
+  if (normalizedPnlPct < 0 || normalizedPnlPct >= exitGuards.smallProfitHoldThresholdPct) return false;
+  if (normalizedHeldHours >= exitGuards.smallProfitHoldHours) return false;
+  const sell = Number(analysisSummary.sell || 0);
+  const buy = Number(analysisSummary.buy || 0);
+  const tvComposite = String(analysisSummary?.liveIndicator?.compositeSignal || 'HOLD').toUpperCase();
+  const tv4h = getIndicatorFrame(analysisSummary, '4h');
+  const tv1d = getIndicatorFrame(analysisSummary, '1d');
+  return !isStrongBearishExitSignal({
+    sell,
+    buy,
+    tvComposite,
+    tv4hSignal: String(tv4h?.signal || 'HOLD').toUpperCase(),
+    tv1dSignal: String(tv1d?.signal || 'HOLD').toUpperCase(),
+    overwhelmingSellVotes: exitGuards.overwhelmingSellVotes,
+  });
+}
+
+export function applyFreshSmallProfitAdjustGuard(decision = null, context = {}) {
+  const baseDecision = decision && typeof decision === 'object'
+    ? {
+        recommendation: String(decision.recommendation || 'HOLD'),
+        reasonCode: decision.reasonCode || null,
+        reason: decision.reason || null,
+      }
+    : { recommendation: 'HOLD', reasonCode: null, reason: null };
+  if (baseDecision.recommendation !== 'ADJUST') return baseDecision;
+  const exitGuards = getExitGuardConfig();
+  if (!shouldHoldFreshSmallProfitAdjustment({
+    pnlPct: context?.pnlPct,
+    heldHours: context?.heldHours,
+    analysisSummary: context?.analysisSummary,
+    exitGuards,
+  })) {
+    return baseDecision;
+  }
+  const pnlPct = safeNumber(context?.pnlPct, 0);
+  const heldHours = safeNumber(context?.heldHours, 0);
+  return {
+    recommendation: 'HOLD',
+    reasonCode: 'fresh_small_profit_adjust_hold_guard',
+    reason: `신규 포지션 ${heldHours.toFixed(1)}h / 소수익 ${pnlPct.toFixed(2)}% 구간이라 강한 약세 확인 전 보호 조정은 관찰로 유예`,
+  };
+}
+
 export function applyValidityActionDecision(decision = null, validityResult = null, context = {}) {
   const baseDecision = decision && typeof decision === 'object'
     ? {
@@ -1463,6 +1517,11 @@ export async function reevaluateOpenPositions({
         reason: `dynamic trail breached but chart exit is unconfirmed: close=${dynamicTrail.close}, previousStop=${dynamicTrail.previousStopPrice}`,
       };
     }
+    effectiveDecision = applyFreshSmallProfitAdjustGuard(effectiveDecision, {
+      pnlPct,
+      heldHours,
+      analysisSummary,
+    });
 
     const runtimeState = buildPositionRuntimeState({
       position: {

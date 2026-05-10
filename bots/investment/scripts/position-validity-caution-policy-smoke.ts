@@ -2,7 +2,10 @@
 // @ts-nocheck
 
 import assert from 'node:assert/strict';
-import { applyValidityActionDecision } from '../shared/position-reevaluator.ts';
+import {
+  applyFreshSmallProfitAdjustGuard,
+  applyValidityActionDecision,
+} from '../shared/position-reevaluator.ts';
 
 const validity = { recommendedAction: 'CAUTION', score: 1 };
 const baseHold = { recommendation: 'HOLD', reasonCode: 'hold_bias', reason: 'hold' };
@@ -60,6 +63,49 @@ const profitAdjust = applyValidityActionDecision(baseHold, validity, {
 assert.equal(profitAdjust.decision.recommendation, 'ADJUST');
 assert.equal(profitAdjust.decision.reasonCode, 'validity_caution_adjust');
 
+const freshSmallProfitAdjust = applyFreshSmallProfitAdjustGuard({
+  recommendation: 'ADJUST',
+  reasonCode: 'backtest_drift_adjust',
+  reason: 'drift',
+}, {
+  pnlPct: 0.6,
+  heldHours: 0.2,
+  analysisSummary: {
+    buy: 0,
+    hold: 9,
+    sell: 0,
+    liveIndicator: { compositeSignal: 'HOLD' },
+  },
+});
+
+assert.equal(freshSmallProfitAdjust.recommendation, 'HOLD');
+assert.equal(freshSmallProfitAdjust.reasonCode, 'fresh_small_profit_adjust_hold_guard');
+
+const bearishSmallProfitAdjust = applyFreshSmallProfitAdjustGuard({
+  recommendation: 'ADJUST',
+  reasonCode: 'backtest_drift_adjust',
+  reason: 'drift',
+}, {
+  pnlPct: 0.6,
+  heldHours: 0.2,
+  analysisSummary: {
+    buy: 0,
+    hold: 1,
+    sell: 3,
+    liveIndicator: {
+      compositeSignal: 'SELL',
+      timeframes: [
+        { interval: '1h', signal: 'BEARISH' },
+        { interval: '4h', signal: 'BEARISH' },
+        { interval: '1d', signal: 'BEARISH' },
+      ],
+    },
+  },
+});
+
+assert.equal(bearishSmallProfitAdjust.recommendation, 'ADJUST');
+assert.equal(bearishSmallProfitAdjust.reasonCode, 'backtest_drift_adjust');
+
 if (process.argv.includes('--json')) {
   console.log(JSON.stringify({
     ok: true,
@@ -67,6 +113,7 @@ if (process.argv.includes('--json')) {
     monitorOnly: monitorOnly.decision.reasonCode,
     bearishAdjust: bearishAdjust.decision.reasonCode,
     profitAdjust: profitAdjust.decision.reasonCode,
+    freshSmallProfitAdjust: freshSmallProfitAdjust.reasonCode,
   }, null, 2));
 } else {
   console.log('position-validity-caution-policy-smoke ok');
