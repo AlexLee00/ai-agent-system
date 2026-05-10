@@ -273,9 +273,25 @@ export async function runLunaActiveCandidateAnalysisRefreshSmoke() {
     cooldownMinutes: 45,
     exchange: 'kis_overseas',
   });
-  assert.equal(stockHighPriorityPlan.status, 'active_candidate_analysis_refresh_needed');
-  assert.deepEqual(stockHighPriorityPlan.targetedEnrichment.selectedSymbols, ['NVDA']);
+  assert.equal(stockHighPriorityPlan.status, 'active_candidate_analysis_refresh_clear');
+  assert.deepEqual(stockHighPriorityPlan.targetedEnrichment.selectedSymbols, []);
   assert.equal(stockHighPriorityPlan.targetedEnrichment.requireTechnicalPresignal, false);
+
+  const stockHighPriorityEnrichmentPlan = buildActiveCandidateAnalysisRefreshPlan({
+    report: fixtureReport([], [
+      { ...fixtureHighPriorityCandidate('NVDA'), exchange: 'kis_overseas' },
+    ]),
+    state: {},
+    now,
+    maxSymbols: 1,
+    maxEnrichmentSymbols: 1,
+    cooldownMinutes: 45,
+    exchange: 'kis_overseas',
+    env: { LUNA_STOCK_INTRADAY_ENRICHMENT_ENABLED: 'true' },
+  });
+  assert.equal(stockHighPriorityEnrichmentPlan.status, 'active_candidate_analysis_refresh_needed');
+  assert.deepEqual(stockHighPriorityEnrichmentPlan.targetedEnrichment.selectedSymbols, ['NVDA']);
+  assert.deepEqual(stockHighPriorityEnrichmentPlan.targetedEnrichment.nodeIds, ['L03']);
 
   const highPriorityTechnicalPlan = buildActiveCandidateAnalysisRefreshPlan({
     report: fixtureReport([], [

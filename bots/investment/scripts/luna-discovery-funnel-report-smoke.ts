@@ -15,6 +15,7 @@ import {
   buildRequiredAnalystCoverage,
   classifyCoverageBottlenecksForMarket,
   filterEntryDecisionDiagnosticsForOpenPositions,
+  getRequiredAnalystsForMarket,
 } from './runtime-luna-discovery-funnel-report.ts';
 import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
 
@@ -130,6 +131,31 @@ export async function runLunaDiscoveryFunnelReportSmoke() {
       filteredDecisionScope.excluded.map((item) => item.symbol),
       ['BTC/USDT'],
       'open-position decision candidates should remain auditable as excluded',
+    );
+    assert.deepEqual(
+      getRequiredAnalystsForMarket('domestic', { LUNA_STOCK_INTRADAY_ENRICHMENT_ENABLED: 'false' }),
+      ['ta_mtf', 'market_flow'],
+      'stock light-collect policy should not report missing sentiment as a required-analysis bottleneck',
+    );
+    assert.deepEqual(
+      getRequiredAnalystsForMarket('domestic', { LUNA_STOCK_INTRADAY_ENRICHMENT_ENABLED: 'true' }),
+      ['ta_mtf', 'sentiment', 'market_flow'],
+      'explicit stock enrichment should restore sentiment as required evidence',
+    );
+    const stockLightCoverage = buildRequiredAnalystCoverage({
+      market: 'domestic',
+      marketOpen: true,
+      analysisSymbols: ['005930'],
+      analysisRows: [
+        { symbol: '005930', analyst: 'ta_mtf', count: 1, latest_created_at: new Date().toISOString() },
+        { symbol: '005930', analyst: 'market_flow', count: 1, latest_created_at: new Date().toISOString() },
+      ],
+      env: { LUNA_STOCK_INTRADAY_ENRICHMENT_ENABLED: 'false' },
+    });
+    assert.equal(
+      stockLightCoverage.bottlenecks.includes('sentiment_analysis_missing_for_candidates'),
+      false,
+      'stock light-collect policy should avoid unfulfillable sentiment preopen gaps',
     );
 
     const overseasClosedCoverage = buildRequiredAnalystCoverage({
@@ -251,6 +277,44 @@ export async function runLunaDiscoveryFunnelReportSmoke() {
     assert.equal(domesticOpenDailyCoverage.checkedCount, 1);
     assert.equal(domesticOpenDailyCoverage.availableCount, 1);
     assert.equal(domesticOpenDailyCoverage.bullishCount, 1);
+
+    const kisCachePath = path.join(dir, 'kis-daily-cache.json');
+    let kisFetchCount = 0;
+    const cachedFetchSnapshot = async () => {
+      kisFetchCount += 1;
+      return {
+        ok: true,
+        source: 'kis_domestic_daily_price',
+        providerMode: 'rest',
+        price: 71000,
+        open: 70000,
+        dailyBars: [
+          { open: 69000, high: 70000, low: 68000, close: 69500 },
+          { open: 69500, high: 70500, low: 69000, close: 70200 },
+          { open: 70200, high: 71500, low: 70000, close: 71000 },
+        ],
+      };
+    };
+    const firstKisCachedCoverage = await buildDailyTechnicalCoverage({
+      market: 'domestic',
+      exchange: 'kis',
+      symbols: ['005930'],
+      fetchSnapshot: cachedFetchSnapshot,
+      cachePath: kisCachePath,
+      cacheMinutes: 60,
+    });
+    const secondKisCachedCoverage = await buildDailyTechnicalCoverage({
+      market: 'domestic',
+      exchange: 'kis',
+      symbols: ['005930'],
+      fetchSnapshot: cachedFetchSnapshot,
+      cachePath: kisCachePath,
+      cacheMinutes: 60,
+    });
+    assert.equal(kisFetchCount, 1, 'KIS daily TA cache should avoid duplicate API calls inside TTL');
+    assert.equal(firstKisCachedCoverage.cache.misses, 1);
+    assert.equal(secondKisCachedCoverage.cache.hits, 1);
+    assert.equal(secondKisCachedCoverage.rows[0].cached, true);
 
     const cryptoSnapshotCalls = [];
     const cryptoDailyCoverage = await buildDailyTechnicalCoverage({

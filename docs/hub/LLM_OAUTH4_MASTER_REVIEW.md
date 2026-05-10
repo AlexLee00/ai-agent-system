@@ -1,28 +1,28 @@
 # LLM OAuth4 Master Review
 
-- generated_at: 2026-05-10T11:56:01.630Z
+- generated_at: 2026-05-10T17:56:03.858Z
 - hours: 168
-- total_calls: 18018
-- oauth_share_pct: 55.98
-- failed_rate_pct: 0.47
-- reported_cost_usd: 100.299851
-- oauth_reported_cost_usd: 98.928962
-- claude_code_reported_cost_usd: 98.928962
-- claude_code_runtime_cost_share_pct: 98.63
-- non_oauth_reported_cost_usd: 1.370889
+- total_calls: 16956
+- oauth_share_pct: 56.44
+- failed_rate_pct: 0.5
+- reported_cost_usd: 90.849436
+- oauth_reported_cost_usd: 89.542834
+- claude_code_reported_cost_usd: 89.542834
+- claude_code_runtime_cost_share_pct: 98.56
+- non_oauth_reported_cost_usd: 1.306602
 - anthropic_provider_calls: 0
 - selector_claude_code_primary_share_pct: 0
 - selector_claude_code_sonnet_primary_share_pct: 0
 
 | Provider | Calls | Share % | Success % | Avg ms | Cost USD |
 |---|---:|---:|---:|---:|---:|
-| Claude Code OAuth | 1557 | 8.64 | 100.00 | 20673 | 98.928962 |
-| OpenAI OAuth | 6406 | 35.55 | 100.00 | 3871 | 0.000000 |
-| Gemini CLI OAuth | 2124 | 11.79 | 100.00 | 15088 | 0.000000 |
+| Claude Code OAuth | 1371 | 8.09 | 100.00 | 21546 | 89.542834 |
+| OpenAI OAuth | 6149 | 36.26 | 100.00 | 3903 | 0.000000 |
+| Gemini CLI OAuth | 2050 | 12.09 | 100.00 | 15088 | 0.000000 |
 | Gemini OAuth | 0 | 0.00 | 0.00 | 0 | 0.000000 |
 | Anthropic SDK | 0 | 0.00 | 0.00 | 0 | 0.000000 |
-| Groq | 7829 | 43.45 | 100.00 | 879 | 1.370889 |
-| Failed | 84 | 0.47 | 0.00 | 30995 | 0.000000 |
+| Groq | 7284 | 42.96 | 100.00 | 883 | 1.306602 |
+| Failed | 84 | 0.50 | 0.00 | 30995 | 0.000000 |
 
 ## Selector Matrix
 

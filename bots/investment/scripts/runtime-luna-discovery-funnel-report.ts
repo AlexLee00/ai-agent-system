@@ -1,6 +1,8 @@
 #!/usr/bin/env node
 // @ts-nocheck
 
+import fs from 'node:fs';
+import path from 'node:path';
 import * as db from '../shared/db.ts';
 import { ensureCandidateUniverseTable } from '../team/discovery/discovery-store.ts';
 import { ensureLunaDiscoveryEntryTables } from '../shared/luna-discovery-entry-store.ts';
@@ -16,6 +18,8 @@ import {
 import { buildDiscoveryUniverse } from '../team/discovery/discovery-universe.ts';
 import { buildDecisionFilterDiagnostics } from './runtime-luna-decision-filter-report.ts';
 import { getLunaIntelligentDiscoveryFlags } from '../shared/luna-intelligent-discovery-config.ts';
+import { investmentOpsRuntimeFile } from '../shared/runtime-ops-path.ts';
+import { isStockIntradayEnrichmentEnabled } from '../shared/stock-intraday-llm-policy.ts';
 
 const MARKET_EXCHANGES = {
   crypto: 'binance',
@@ -44,6 +48,7 @@ const ANALYST_PARTIAL_BOTTLENECK_CODES = {
 };
 const DEFAULT_RELAXED_PROBE_RECENT_TRADE_COOLDOWN_HOURS = 6;
 const DEFAULT_PREOPEN_READINESS_WINDOW_MINUTES = 12 * 60;
+const DEFAULT_KIS_DAILY_TA_CACHE_MINUTES = 60;
 
 function parseArgs(argv = process.argv.slice(2)) {
   return {
@@ -58,6 +63,19 @@ function parseArgs(argv = process.argv.slice(2)) {
 function number(value, fallback = 0) {
   const n = Number(value);
   return Number.isFinite(n) ? n : fallback;
+}
+
+function readJsonSafe(filePath, fallback = {}) {
+  try {
+    return JSON.parse(fs.readFileSync(filePath, 'utf8'));
+  } catch {
+    return fallback;
+  }
+}
+
+function writeJsonSafe(filePath, payload) {
+  fs.mkdirSync(path.dirname(filePath), { recursive: true });
+  fs.writeFileSync(filePath, JSON.stringify(payload, null, 2), 'utf8');
 }
 
 function normalizeMarketScope(market = 'all') {
@@ -84,6 +102,14 @@ export function filterEntryDecisionDiagnosticsForOpenPositions(diagnostics = [],
   return { included, excluded };
 }
 
+export function getRequiredAnalystsForMarket(market, env = process.env) {
+  const required = [...(REQUIRED_ANALYSTS[market] || [])];
+  if ((market === 'domestic' || market === 'overseas') && !isStockIntradayEnrichmentEnabled(env)) {
+    return required.filter((analyst) => analyst !== ANALYST_TYPES.SENTIMENT);
+  }
+  return required;
+}
+
 export function buildRequiredAnalystCoverage({
   market,
   analysisSymbols = [],
@@ -91,8 +117,9 @@ export function buildRequiredAnalystCoverage({
   analysisRows = [],
   marketOpen = true,
   dailyTechnicalCoverage = null,
+  env = process.env,
 } = {}) {
-  const requiredAnalysts = REQUIRED_ANALYSTS[market] || [];
+  const requiredAnalysts = getRequiredAnalystsForMarket(market, env);
   const hasExplicitRequiredSymbols = Array.isArray(requiredSymbols);
   const scopedSymbols = hasExplicitRequiredSymbols
     ? [...new Set(requiredSymbols.map((symbol) => normalizeCandidateSymbolForAnalysis(symbol, market)).filter(Boolean))]
@@ -214,6 +241,12 @@ function getRelaxedProbeRecentTradeCooldownHours(env = process.env) {
   return DEFAULT_RELAXED_PROBE_RECENT_TRADE_COOLDOWN_HOURS;
 }
 
+function getKisDailyTechnicalCacheMinutes(env = process.env) {
+  const value = Number(env?.LUNA_DISCOVERY_FUNNEL_KIS_DAILY_TA_CACHE_MINUTES);
+  if (Number.isFinite(value) && value >= 0) return value;
+  return DEFAULT_KIS_DAILY_TA_CACHE_MINUTES;
+}
+
 function getLiveFireMaxOpenPositions(env = process.env) {
   const value = Number(env?.LUNA_LIVE_FIRE_MAX_OPEN || env?.LUNA_MAX_OPEN_POSITIONS);
   if (Number.isFinite(value) && value > 0) return Math.floor(value);
@@ -329,6 +362,61 @@ function summarizeEntryChartSnapshot(snapshot = {}, evaluated = {}) {
   };
 }
 
+function dailyTechnicalCacheKey({ exchange, symbol }) {
+  return `${String(exchange || 'unknown').trim()}:${String(symbol || '').trim().toUpperCase()}`;
+}
+
+function defaultDailyTechnicalCacheFile(exchange = 'kis') {
+  const safeExchange = String(exchange || 'kis').trim().replace(/[^a-zA-Z0-9_-]/g, '_') || 'kis';
+  return investmentOpsRuntimeFile(`luna-discovery-daily-technical-cache-${safeExchange}.json`);
+}
+
+function resolveKisDailyTechnicalCachePath({ fetchSnapshot, evaluateKis, cachePath, exchange }) {
+  if (cachePath === false || cachePath === 'false' || cachePath === 'off') return null;
+  if (typeof cachePath === 'string' && cachePath.trim()) return cachePath;
+  if (fetchSnapshot === fetchEntryChartSnapshot && evaluateKis === evaluateKisDailySnapshot) {
+    return defaultDailyTechnicalCacheFile(exchange);
+  }
+  return null;
+}
+
+function readDailyTechnicalCache(cachePath) {
+  if (!cachePath) return { version: 1, updatedAt: null, items: {} };
+  const parsed = readJsonSafe(cachePath, { version: 1, updatedAt: null, items: {} });
+  return {
+    version: 1,
+    updatedAt: parsed?.updatedAt || null,
+    items: parsed?.items && typeof parsed.items === 'object' ? parsed.items : {},
+  };
+}
+
+function getCachedDailyTechnicalRow(cache, key, nowMs, ttlMinutes) {
+  const item = cache?.items?.[key];
+  if (!item?.row || !item?.cachedAt) return null;
+  const ageMs = nowMs - new Date(item.cachedAt).getTime();
+  const ttlMs = Math.max(0, Number(ttlMinutes || 0)) * 60 * 1000;
+  if (!Number.isFinite(ageMs) || ageMs < 0 || ageMs > ttlMs) return null;
+  return {
+    ...item.row,
+    cached: true,
+    cacheAgeMinutes: Number((ageMs / 60000).toFixed(2)),
+    cachedAt: item.cachedAt,
+  };
+}
+
+function storeDailyTechnicalCacheRow(cache, key, row, now = new Date()) {
+  cache.items[key] = {
+    cachedAt: now.toISOString(),
+    row: {
+      ...row,
+      cached: false,
+      cachedAt: undefined,
+      cacheAgeMinutes: undefined,
+    },
+  };
+  cache.updatedAt = now.toISOString();
+}
+
 function isoDateDaysAgo(days = 90) {
   return new Date(Date.now() - Math.max(1, Number(days || 90)) * 24 * 60 * 60 * 1000).toISOString();
 }
@@ -387,6 +475,8 @@ export async function buildDailyTechnicalCoverage({
   evaluateTradingView = evaluateTradingViewSnapshot,
   evaluateKis = evaluateKisDailySnapshot,
   fetchCryptoDailyFallback = fetchCryptoDailyCoverageFallback,
+  cachePath = null,
+  cacheMinutes = getKisDailyTechnicalCacheMinutes(),
 } = {}) {
   if (symbols.length === 0) {
     return {
@@ -460,19 +550,44 @@ export async function buildDailyTechnicalCoverage({
   }
   const limit = Math.max(1, Math.min(10, Number(process.env.LUNA_DISCOVERY_FUNNEL_KIS_DAILY_TA_LIMIT || 10)));
   const rows = [];
+  const resolvedCachePath = resolveKisDailyTechnicalCachePath({ fetchSnapshot, evaluateKis, cachePath, exchange });
+  const effectiveCacheMinutes = Math.max(0, Number(cacheMinutes || 0));
+  const cacheEnabled = Boolean(resolvedCachePath && effectiveCacheMinutes > 0);
+  const cache = cacheEnabled ? readDailyTechnicalCache(resolvedCachePath) : null;
+  const now = new Date();
+  let cacheHits = 0;
+  let cacheMisses = 0;
+  let cacheUpdated = false;
   for (const symbol of symbols.slice(0, limit)) {
+    const cacheKey = dailyTechnicalCacheKey({ exchange, symbol });
+    const cachedRow = cacheEnabled
+      ? getCachedDailyTechnicalRow(cache, cacheKey, now.getTime(), effectiveCacheMinutes)
+      : null;
+    if (cachedRow) {
+      cacheHits += 1;
+      rows.push(cachedRow);
+      continue;
+    }
+    if (cacheEnabled) cacheMisses += 1;
     const snapshot = await fetchSnapshot({ symbol, exchange }).catch((error) => ({
       ok: false,
       error: error?.message || String(error),
       symbol,
     }));
     const evaluated = evaluateKis(snapshot);
-    rows.push({
+    const row = {
       symbol,
       sourcePolicy: 'kis',
       ...summarizeEntryChartSnapshot(snapshot, evaluated),
-    });
+      cached: false,
+    };
+    rows.push(row);
+    if (cacheEnabled) {
+      storeDailyTechnicalCacheRow(cache, cacheKey, row, now);
+      cacheUpdated = true;
+    }
   }
+  if (cacheEnabled && cacheUpdated) writeJsonSafe(resolvedCachePath, cache);
   return {
     enabled: true,
     sourcePolicy: 'kis',
@@ -480,6 +595,13 @@ export async function buildDailyTechnicalCoverage({
     availableCount: rows.filter((row) => row.bars > 0 || row.source).length,
     bullishCount: rows.filter((row) => row.ok).length,
     blockedCount: rows.filter((row) => !row.ok).length,
+    cache: {
+      enabled: cacheEnabled,
+      path: resolvedCachePath,
+      ttlMinutes: effectiveCacheMinutes,
+      hits: cacheHits,
+      misses: cacheMisses,
+    },
     rows,
   };
 }
