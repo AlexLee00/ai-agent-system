@@ -63,6 +63,7 @@ import { computeTradeExcursions } from './trade-review-metrics.ts';
 import { getInvestmentTradeMode } from './secrets.ts';
 import { resolveLunaAutonomyPhase } from './autonomy-phase.ts';
 import { classifyStrategyFamily } from './strategy-family-classifier.ts';
+import { filterRowsForPolicyLearning } from './luna-operating-epoch.ts';
 import { createRequire } from 'module';
 const kst = createRequire(import.meta.url)('../../../packages/core/lib/kst');
 const hiringContract = createRequire(import.meta.url)('../../../packages/core/lib/hiring-contract');
@@ -811,34 +812,53 @@ export async function getStrategyFamilyPerformanceInsight(exchange = null, days 
   const rows = await query(`
     SELECT
       COALESCE(NULLIF(strategy_family, ''), 'unknown') AS strategy_family,
-      COUNT(*) AS total,
-      COUNT(*) FILTER (WHERE status = 'closed' OR exit_time IS NOT NULL) AS closed,
-      COUNT(*) FILTER (WHERE (status = 'closed' OR exit_time IS NOT NULL) AND COALESCE(pnl_net, pnl_amount, 0) > 0) AS wins,
-      ROUND(AVG(CASE WHEN status = 'closed' OR exit_time IS NOT NULL THEN pnl_percent ELSE NULL END)::numeric, 4) AS avg_pnl_percent,
-      ROUND(SUM(CASE WHEN status = 'closed' OR exit_time IS NOT NULL THEN COALESCE(pnl_net, pnl_amount, 0) ELSE 0 END)::numeric, 4) AS pnl_net
+      status, entry_time, exit_time, created_at, entry_price, exit_price,
+      entry_value, exit_value, direction, pnl_percent, pnl_net, pnl_amount
     FROM trade_journal
     WHERE created_at >= ?
       ${exchangeSql}
       AND COALESCE(exclude_from_learning, false) = false
       AND COALESCE(NULLIF(strategy_family, ''), 'unknown') <> 'unknown'
-    GROUP BY 1
-    ORDER BY closed DESC, total DESC, strategy_family ASC
   `, params);
 
-  const families = rows.map((row) => {
-    const total = Number(row.total || 0);
-    const closed = Number(row.closed || 0);
-    const wins = Number(row.wins || 0);
-    return {
-      strategyFamily: String(row.strategy_family || 'unknown'),
-      total,
-      closed,
-      wins,
-      winRate: closed > 0 ? wins / closed : null,
-      avgPnlPercent: row.avg_pnl_percent != null ? Number(row.avg_pnl_percent) : null,
-      pnlNet: row.pnl_net != null ? Number(row.pnl_net) : 0,
-    };
-  });
+  const buckets = new Map();
+  for (const row of filterRowsForPolicyLearning(rows, ['exit_time', 'entry_time', 'created_at'])) {
+    const family = String(row.strategy_family || 'unknown');
+    if (!buckets.has(family)) buckets.set(family, { strategyFamily: family, total: 0, closed: 0, wins: 0, pnlSum: 0, pnlCount: 0, pnlNet: 0 });
+    const bucket = buckets.get(family);
+    bucket.total += 1;
+    const closed = String(row.status || '').toLowerCase() === 'closed' || row.exit_time != null;
+    if (!closed) continue;
+    bucket.closed += 1;
+    const safePnl = safeJournalPnlPercent({
+      entryPrice: row.entry_price,
+      exitPrice: row.exit_price,
+      entryValue: row.entry_value,
+      exitValue: row.exit_value,
+      direction: row.direction,
+      pnlPercent: row.pnl_percent,
+    });
+    if (safePnl != null) {
+      bucket.pnlSum += safePnl;
+      bucket.pnlCount += 1;
+      if (safePnl > 0) bucket.wins += 1;
+    } else if (Number(row.pnl_net ?? row.pnl_amount ?? 0) > 0) {
+      bucket.wins += 1;
+    }
+    bucket.pnlNet += Number(row.pnl_net ?? row.pnl_amount ?? 0) || 0;
+  }
+
+  const families = [...buckets.values()]
+    .map((row) => ({
+      strategyFamily: row.strategyFamily,
+      total: row.total,
+      closed: row.closed,
+      wins: row.wins,
+      winRate: row.closed > 0 ? row.wins / row.closed : null,
+      avgPnlPercent: row.pnlCount > 0 ? Number((row.pnlSum / row.pnlCount).toFixed(4)) : null,
+      pnlNet: Number(row.pnlNet.toFixed(4)),
+    }))
+    .sort((a, b) => b.closed - a.closed || b.total - a.total || a.strategyFamily.localeCompare(b.strategyFamily));
 
   return {
     exchange: exchange || 'all',

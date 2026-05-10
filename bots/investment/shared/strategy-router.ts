@@ -221,33 +221,41 @@ async function buildFeedbackBias(symbol, exchange) {
   return { bias, notes };
 }
 
-async function buildStrategyFamilyPerformanceBias(exchange) {
+export function buildStrategyFamilyPerformanceBiasFromInsight(insight = null) {
   const notes = [];
   const bias = {};
-  try {
-    const insight = await journalDb.getStrategyFamilyPerformanceInsight(exchange, 90);
-    for (const item of insight?.families || []) {
-      const family = String(item.strategyFamily || '').trim();
-      if (!family) continue;
-      const closed = Number(item.closed || 0);
-      if (closed < 5) continue;
-      const winRate = Number(item.winRate);
-      const avgPnl = Number(item.avgPnlPercent);
-      if (Number.isFinite(avgPnl) && avgPnl < -2) {
-        bias[family] = (bias[family] || 0) - 0.14;
-        notes.push(`${family} weak avgPnl ${avgPnl.toFixed(2)}%`);
-      } else if (Number.isFinite(winRate) && winRate < 0.34) {
-        bias[family] = (bias[family] || 0) - 0.08;
-        notes.push(`${family} weak winRate ${(winRate * 100).toFixed(0)}%`);
-      } else if (Number.isFinite(avgPnl) && avgPnl > 1 && Number.isFinite(winRate) && winRate >= 0.42) {
-        bias[family] = (bias[family] || 0) + 0.08;
-        notes.push(`${family} strong avgPnl ${avgPnl.toFixed(2)}%`);
-      }
+  for (const item of insight?.families || []) {
+    const family = String(item.strategyFamily || '').trim();
+    if (!family) continue;
+    const closed = Number(item.closed || 0);
+    if (closed < 3) continue;
+    const earlySample = closed < 5;
+    const winRate = Number(item.winRate);
+    const avgPnl = Number(item.avgPnlPercent);
+    if (Number.isFinite(avgPnl) && avgPnl < -2) {
+      bias[family] = (bias[family] || 0) - (earlySample ? 0.12 : 0.14);
+      notes.push(`${family} ${earlySample ? 'early ' : ''}weak avgPnl ${avgPnl.toFixed(2)}%`);
     }
-  } catch {
-    // Family-level feedback is optional and should not block route selection.
+    if (Number.isFinite(winRate) && winRate <= 0.34) {
+      bias[family] = (bias[family] || 0) - (earlySample ? 0.06 : 0.08);
+      notes.push(`${family} ${earlySample ? 'early ' : ''}weak winRate ${(winRate * 100).toFixed(0)}%`);
+    }
+    if (Number.isFinite(avgPnl) && avgPnl > 1 && Number.isFinite(winRate) && winRate >= 0.42) {
+      bias[family] = (bias[family] || 0) + (earlySample ? 0.04 : 0.08);
+      notes.push(`${family} ${earlySample ? 'early ' : ''}strong avgPnl ${avgPnl.toFixed(2)}%`);
+    }
   }
   return { bias, notes };
+}
+
+async function buildStrategyFamilyPerformanceBias(exchange) {
+  try {
+    const insight = await journalDb.getStrategyFamilyPerformanceInsight(exchange, 90);
+    return buildStrategyFamilyPerformanceBiasFromInsight(insight);
+  } catch {
+    // Family-level feedback is optional and should not block route selection.
+    return { bias: {}, notes: [] };
+  }
 }
 
 export async function buildStrategyRoute({
@@ -321,10 +329,15 @@ export async function buildStrategyRoute({
   const runnerUp = ranked[1] || null;
   const margin = runnerUp ? selected.score - runnerUp.score : selected.score;
   const readinessScore = clamp(0.45 + selected.score + Math.max(0, margin) * 0.35, 0, 1);
-  const quality =
+  let quality =
     readinessScore >= 0.72 && margin >= 0.05 ? 'ready'
       : readinessScore >= 0.56 ? 'watch'
         : 'thin';
+  const selectedFamilyPerformanceBias = Number(familyFeedback.bias?.[selected.family] || 0);
+  if (selectedFamilyPerformanceBias <= -0.14 && quality === 'ready') {
+    quality = 'watch';
+    reasons.push(`${selected.family}: downgraded to watch by weak family performance`);
+  }
 
   return {
     symbol,
@@ -351,6 +364,11 @@ export async function buildStrategyRoute({
       signals: externalEvidenceSummary.signals || { bullish: 0, bearish: 0, neutral: 0 },
       warning: externalEvidenceSummary.warning || null,
     } : null,
+    familyPerformance: {
+      bias: familyFeedback.bias,
+      notes: familyFeedback.notes,
+      selectedBias: Number(selectedFamilyPerformanceBias.toFixed(4)),
+    },
     feedbackNotes: [...feedback.notes, ...familyFeedback.notes].slice(0, 6),
     reasons: reasons.slice(0, 8),
   };
@@ -395,12 +413,14 @@ export function applyStrategyRouteDecisionBias(decision = null, route = null, ex
   const isExit = action === ACTIONS.SELL;
   const quality = String(route.quality || '').toLowerCase();
   const family = String(route.selectedFamily || '').toLowerCase();
+  const familyPerformanceBias = Number(route.familyPerformance?.bias?.[family] || 0);
 
   if (Number.isFinite(Number(adjusted.confidence))) {
     let confidence = Number(adjusted.confidence);
     if (quality === 'ready') confidence += 0.03;
     else if (quality === 'thin') confidence -= 0.06;
     if (isEntry && family === 'defensive_rotation') confidence -= 0.03;
+    if (isEntry && familyPerformanceBias < 0) confidence += Math.max(-0.08, familyPerformanceBias * 0.25);
     if (isExit && family === 'defensive_rotation') confidence += 0.03;
     adjusted.confidence = clamp(confidence, 0, 1);
   }
@@ -411,6 +431,7 @@ export function applyStrategyRouteDecisionBias(decision = null, route = null, ex
     else if (quality === 'thin') amount *= 0.72;
     else if (quality === 'watch') amount *= 0.9;
     if (family === 'defensive_rotation') amount *= 0.82;
+    if (familyPerformanceBias < 0) amount *= familyPerformanceBias <= -0.14 ? 0.72 : 0.84;
     if ((exchange === 'kis' || exchange === 'kis_overseas') && amount > 0) {
       amount = Math.round(amount / 1000) * 1000;
     }

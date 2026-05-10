@@ -3,7 +3,11 @@
 import assert from 'node:assert/strict';
 import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
 import { enforceTpSlRequirement } from '../shared/tp-sl-enforcer.ts';
-import { buildStrategyRoute } from '../shared/strategy-router.ts';
+import {
+  applyStrategyRouteDecisionBias,
+  buildStrategyFamilyPerformanceBiasFromInsight,
+  buildStrategyRoute,
+} from '../shared/strategy-router.ts';
 import { ACTIONS, ANALYST_TYPES } from '../shared/signal.ts';
 import { checkSymbolBlacklist, checkSymbolLossStreak } from '../shared/reflexion-guard.ts';
 import { evaluateTradeDataEntryGuard, resolveExpectedSellNoopStatus } from '../shared/trade-data-derived-guards.ts';
@@ -35,6 +39,27 @@ export async function runSmoke() {
     });
     assert.ok(['short_term_scalping', 'micro_swing'].includes(route.selectedFamily), `short-term route selected=${route.selectedFamily}`);
     assert.ok(route.scores.short_term_scalping > 0, 'short_term_scalping must be scored');
+
+    const weakFamily = buildStrategyFamilyPerformanceBiasFromInsight({
+      families: [{
+        strategyFamily: 'trend_following',
+        closed: 3,
+        winRate: 1 / 3,
+        avgPnlPercent: -2.11,
+      }],
+    });
+    assert.ok(weakFamily.bias.trend_following <= -0.18, 'early weak trend_following feedback must affect routing before 5 samples');
+    const adjustedTrend = applyStrategyRouteDecisionBias(
+      { action: ACTIONS.BUY, confidence: 0.7, amount_usdt: 100, reasoning: 'trend entry' },
+      {
+        quality: 'watch',
+        selectedFamily: 'trend_following',
+        familyPerformance: { bias: weakFamily.bias },
+      },
+      'binance',
+    );
+    assert.ok(adjustedTrend.amount_usdt < 75, `weak trend following should reduce sizing, got ${adjustedTrend.amount_usdt}`);
+    assert.ok(adjustedTrend.confidence < 0.7, `weak trend following should reduce confidence, got ${adjustedTrend.confidence}`);
 
     const blacklist = checkSymbolBlacklist('TAO/USDT', 'crypto');
     assert.equal(blacklist.blocked, true);
