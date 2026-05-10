@@ -68,9 +68,14 @@
   { "label": "ai.luna.commander", "owner": "retired", "retired": true, "optional": true, "expectedIdle": true, "replacement": "ai.investment.commander" },
 
   { "label": "ai.blog.node-server", "owner": "launchd", "healthUrl": "http://127.0.0.1:3100/health" },
+  { "label": "ai.event.reminders", "owner": "launchd", "optional": true, "expectedIdle": true },
+  { "label": "ai.research.task-runner", "owner": "launchd", "optional": true, "expectedIdle": true },
   { "label": "ai.darwin.weekly.autonomous", "owner": "launchd", "optional": true, "expectedIdle": true },
   { "label": "ai.darwin.weekly-ops-report", "owner": "launchd", "optional": true, "expectedIdle": true },
   { "label": "ai.darwin.weekly-review", "owner": "launchd", "optional": true, "expectedIdle": true },
+  { "label": "ai.hub.llm-groq-fallback-test", "owner": "launchd", "optional": true, "expectedIdle": true },
+  { "label": "ai.hub.noisy-producer-auto-learn", "owner": "launchd", "optional": true, "expectedIdle": true },
+  { "label": "ai.claude.speed-test", "owner": "launchd", "optional": true, "expectedIdle": true },
   { "label": "ai.hub.resource-api", "owner": "launchd", "core": true, "healthUrl": "http://127.0.0.1:7788/hub/health" },
   { "label": "ai.jay.runtime", "owner": "launchd", "core": true },
 
