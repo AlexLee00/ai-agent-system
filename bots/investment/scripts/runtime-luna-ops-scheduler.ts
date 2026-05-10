@@ -159,6 +159,20 @@ export function getOpsSchedulerJobs() {
       ]),
     },
     {
+      name: 'tradingview_open_position_subscription_sync',
+      category: 'position_monitor',
+      market: 'crypto',
+      immutable: true,
+      cadence: { type: 'interval', seconds: 300 },
+      ...nodeScript('runtime-tradingview-open-position-subscription-sync.ts', [
+        '--apply',
+        '--confirm=luna-tradingview-position-subscription-sync',
+        '--exchange=binance',
+        '--timeframes=60,240,D',
+        '--json',
+      ]),
+    },
+    {
       name: 'approved_signal_executor_crypto',
       category: 'execution',
       market: 'crypto',

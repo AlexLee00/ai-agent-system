@@ -6,7 +6,11 @@ import { execFileSync } from 'node:child_process';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
-import { classifyKisRealtime, classifyTradingViewRealtime } from './runtime-marketdata-realtime-connectivity.ts';
+import {
+  classifyKisRealtime,
+  classifyTradingViewRealtime,
+  classifyTradingViewRealtimeSet,
+} from './runtime-marketdata-realtime-connectivity.ts';
 import { redactKisWsDiagnosticMessage } from '../mcp/luna-marketdata-mcp/src/tools/kis-ws-domestic.ts';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -75,6 +79,78 @@ export async function runSmoke() {
   assert.equal(tvFallback.ok, false);
   assert.equal(tvFallback.blockers.includes('tradingview_realtime_bar_missing'), true);
 
+  const tvSetReady = classifyTradingViewRealtimeSet({
+    health: {
+      tv_ws: 'connected',
+      realtimeOk: true,
+      subscriptions: 6,
+      protectedSubscriptions: 6,
+      staleSubscriptions: 0,
+      fallbackBars: 0,
+    },
+    latest: {
+      bars: [
+        { symbol: 'BINANCE:BTCUSDT', timeframe: '60', source: 'tradingview_ws_service', providerMode: 'websocket_http_latest', fallbackReason: null, ageMs: 30_000 },
+        { symbol: 'BINANCE:BTCUSDT', timeframe: '240', source: 'tradingview_ws_service', providerMode: 'websocket_http_latest', fallbackReason: null, ageMs: 30_000 },
+        { symbol: 'BINANCE:CETUSUSDT', timeframe: '60', source: 'tradingview_ws_service', providerMode: 'websocket_http_latest', fallbackReason: null, ageMs: 30_000 },
+        { symbol: 'BINANCE:CETUSUSDT', timeframe: '240', source: 'tradingview_ws_service', providerMode: 'websocket_http_latest', fallbackReason: null, ageMs: 30_000 },
+      ],
+    },
+    expected: [
+      { symbol: 'BINANCE:BTCUSDT', timeframe: '60' },
+      { symbol: 'BINANCE:BTCUSDT', timeframe: '240' },
+      { symbol: 'BINANCE:CETUSUSDT', timeframe: '60' },
+      { symbol: 'BINANCE:CETUSUSDT', timeframe: '240' },
+    ],
+  });
+  assert.equal(tvSetReady.ok, true);
+  assert.equal(tvSetReady.expectedCount, 4);
+  assert.equal(tvSetReady.realBars, 4);
+  assert.deepEqual(tvSetReady.missingRealBars, []);
+
+  const tvSetMissing = classifyTradingViewRealtimeSet({
+    health: {
+      tv_ws: 'connected',
+      realtimeOk: true,
+      subscriptions: 6,
+      protectedSubscriptions: 2,
+      staleSubscriptions: 0,
+      fallbackBars: 4,
+    },
+    latest: {
+      bars: [
+        { symbol: 'BINANCE:BTCUSDT', timeframe: '60', source: 'tradingview_ws_service', providerMode: 'websocket_http_latest', fallbackReason: null, ageMs: 30_000 },
+        { symbol: 'BINANCE:CETUSUSDT', timeframe: '60', source: 'tradingview_ws_service_binance_rest_fallback', providerMode: 'binance_rest_live_fallback', fallbackReason: 'tradingview_ws_latest_empty', ageMs: 30_000 },
+      ],
+    },
+    expected: [
+      { symbol: 'BINANCE:BTCUSDT', timeframe: '60' },
+      { symbol: 'BINANCE:CETUSUSDT', timeframe: '60' },
+    ],
+  });
+  assert.equal(tvSetMissing.ok, false);
+  assert.deepEqual(tvSetMissing.missingRealBars, ['BINANCE:CETUSUSDT:60']);
+  assert.equal(tvSetMissing.blockers.some((item) => item.includes('BINANCE:CETUSUSDT:60')), true);
+  assert.equal(tvSetMissing.warnings.includes('tradingview_rest_fallback_bars_present'), true);
+
+  const tvSetLegacyService = classifyTradingViewRealtimeSet({
+    health: {
+      tv_ws: 'connected',
+      realtimeOk: true,
+      subscriptions: 2,
+      staleSubscriptions: 0,
+      fallbackBars: 0,
+    },
+    latest: {
+      bars: [
+        { symbol: 'BINANCE:BTCUSDT', timeframe: '60', source: 'tradingview_ws_service', providerMode: 'websocket_http_latest', fallbackReason: null, ageMs: 30_000 },
+      ],
+    },
+    expected: [{ symbol: 'BINANCE:BTCUSDT', timeframe: '60' }],
+  });
+  assert.equal(tvSetLegacyService.ok, true);
+  assert.equal(tvSetLegacyService.warnings.includes('tradingview_service_reload_required_for_protected_subscriptions'), true);
+
   const kisPreopen = classifyKisRealtime({
     market: 'kis_overseas',
     symbol: 'AAPL',
@@ -136,7 +212,7 @@ export async function runSmoke() {
   assert.equal(kisRouting.enabledDefault, true);
   assert.equal(kisRouting.useBridge, false);
 
-  return { ok: true, tvReady, tvFallback, kisPreopen, kisSharedWs, kisMissingApproval, kisRouting, redactionChecked: true };
+  return { ok: true, tvReady, tvFallback, tvSetReady, tvSetMissing, tvSetLegacyService, kisPreopen, kisSharedWs, kisMissingApproval, kisRouting, redactionChecked: true };
 }
 
 async function main() {

@@ -109,6 +109,16 @@ let staleCheckTimer = null;
 let lastStaleForceReconnectAt = 0;
 const runtimeReevalCooldowns = new Map();
 const runtimeActiveScopeCache = new Map();
+const connectionStats = {
+  opens: 0,
+  closes: 0,
+  lastOpenAt: null,
+  lastCloseAt: null,
+  lastCloseCode: null,
+  lastCloseReason: null,
+  lastErrorAt: null,
+  lastError: null,
+};
 
 function extractJsonObject(raw = '') {
   const text = String(raw || '').trim();
@@ -142,6 +152,8 @@ function connectTradingView() {
 
   tvWs.on('open', () => {
     console.log('[TV-WS] TradingView 연결됨');
+    connectionStats.opens += 1;
+    connectionStats.lastOpenAt = Date.now();
     reconnectAttempts = 0;
     sendTvMessage({ m: 'set_auth_token', p: ['unauthorized_user_token'] });
     sendTvMessage({ m: 'chart_create_session', p: [chartSessionId, ''] });
@@ -155,12 +167,18 @@ function connectTradingView() {
     handleTvMessage(raw.toString());
   });
 
-  tvWs.on('close', (code) => {
-    console.warn(`[TV-WS] 연결 끊김 (code=${code}), 재연결 예정`);
+  tvWs.on('close', (code, reason) => {
+    connectionStats.closes += 1;
+    connectionStats.lastCloseAt = Date.now();
+    connectionStats.lastCloseCode = code;
+    connectionStats.lastCloseReason = String(reason || '');
+    console.warn(`[TV-WS] 연결 끊김 (code=${code}, reason=${connectionStats.lastCloseReason || 'none'}), 재연결 예정`);
     scheduleReconnect();
   });
 
   tvWs.on('error', (err) => {
+    connectionStats.lastErrorAt = Date.now();
+    connectionStats.lastError = err?.message || String(err);
     console.error('[TV-WS] 오류:', err.message);
   });
 }
@@ -365,6 +383,8 @@ function addSubscription(symbol, timeframe, source = 'api', options = {}) {
   const key = subscriptionKey(symbol, timeframe);
   const now = Date.now();
   const ttlMs = resolveSubscriptionTtlMs(source, options);
+  const protectedSubscription = options.protected === true;
+  let subscribeSent = false;
   if (!subscriptions.has(key)) {
     pruneSubscriptionsIfNeeded(key);
     const sub = {
@@ -376,23 +396,42 @@ function addSubscription(symbol, timeframe, source = 'api', options = {}) {
       lastResubscribeAt: 0,
       lastStaleLogAt: 0,
       staleStrikes: 0,
-      protected: source === 'default' || DEFAULT_SUBSCRIPTION_KEYS.has(key),
+      protected: protectedSubscription || source === 'default' || DEFAULT_SUBSCRIPTION_KEYS.has(key),
       source,
-      expiresAt: ttlMs > 0 ? now + ttlMs : null,
+      expiresAt: protectedSubscription ? null : ttlMs > 0 ? now + ttlMs : null,
       owners: new Set(),
     };
     addSubscriptionOwner(sub, options.ownerId);
     subscriptions.set(key, sub);
-    sendTvSubscribe(symbol, timeframe);
+    subscribeSent = sendTvSubscribe(symbol, timeframe);
     console.log(`[TV-WS] ${source} 구독 추가: ${key}`);
   } else {
     const sub = subscriptions.get(key);
+    const hadNoRealtimeBar = !sub.lastBarAt || !isTradingViewRealtimeBar(latestBars.get(key) || {});
+    const wasProtected = sub.protected === true;
     sub.lastRequestedAt = now;
     sub.source = sub.source || source;
-    if (ttlMs > 0 && !sub.protected) sub.expiresAt = Math.max(Number(sub.expiresAt || 0), now + ttlMs);
+    if (protectedSubscription) {
+      sub.protected = true;
+      sub.expiresAt = null;
+    } else if (ttlMs > 0 && !sub.protected) {
+      sub.expiresAt = Math.max(Number(sub.expiresAt || 0), now + ttlMs);
+    }
     addSubscriptionOwner(sub, options.ownerId);
+    const shouldResubscribe = source === 'HTTP'
+      && tvWs?.readyState === WebSocket.OPEN
+      && (
+        hadNoRealtimeBar
+        || (protectedSubscription && !wasProtected)
+        || (sub.lastResubscribeAt && now - sub.lastResubscribeAt > RESUBSCRIBE_COOLDOWN_MS)
+      );
+    if (shouldResubscribe) {
+      sub.lastResubscribeAt = now;
+      subscribeSent = sendTvSubscribe(sub.symbol, sub.timeframe);
+      recoveryAttemptsCounter.inc({ type: 'http_refresh_resubscribe' });
+    }
   }
-  return key;
+  return { key, subscribeSent };
 }
 
 function handleTvMessage(raw) {
@@ -544,7 +583,7 @@ async function hasActiveRuntimeScope(scope) {
 }
 
 function sendTvSubscribe(symbol, timeframe) {
-  if (!tvWs || tvWs.readyState !== WebSocket.OPEN) return;
+  if (!tvWs || tvWs.readyState !== WebSocket.OPEN) return false;
   const symbolAlias = getSymbolAlias(symbol, timeframe);
   const seriesId = getSeriesId(symbol, timeframe);
   const symbolPayload = `=${JSON.stringify({
@@ -554,6 +593,7 @@ function sendTvSubscribe(symbol, timeframe) {
   })}`;
   sendTvMessage({ m: 'resolve_symbol', p: [chartSessionId, symbolAlias, symbolPayload] });
   sendTvMessage({ m: 'create_series', p: [chartSessionId, seriesId, 's1', symbolAlias, timeframe, 300, ''] });
+  return true;
 }
 
 function sendTvUnsubscribe(symbol, timeframe) {
@@ -660,8 +700,20 @@ function healthPayload() {
     staleSubscriptions: staleRows.length,
     maxSubscriptions: Math.max(DEFAULT_SUBSCRIPTION_KEYS.size || 1, Number(MAX_SUBSCRIPTIONS || 24)),
     expiringSubscriptions: [...subscriptions.values()].filter((sub) => sub.expiresAt && !sub.protected).length,
+    protectedSubscriptions: [...subscriptions.values()].filter((sub) => sub.protected).length,
     clients: clientSockets.size,
     staleDetails: staleRows.slice(0, 10),
+    connectionStats,
+    subscriptionDetails: [...subscriptions.values()].map((sub) => ({
+      symbol: sub.symbol,
+      timeframe: sub.timeframe,
+      protected: Boolean(sub.protected),
+      source: sub.source,
+      expiresAt: sub.expiresAt || null,
+      lastBarAt: sub.lastBarAt || null,
+      lastRequestedAt: sub.lastRequestedAt || null,
+      staleStrikes: sub.staleStrikes || 0,
+    })).slice(0, 50),
   };
 }
 
@@ -708,7 +760,7 @@ wss.on('connection', (ws, req) => {
     try {
       const msg = JSON.parse(raw.toString());
       if (msg.action === 'subscribe' && msg.symbol && msg.timeframe) {
-        const key = addSubscription(msg.symbol, msg.timeframe, 'client', { ownerId });
+        const { key } = addSubscription(msg.symbol, msg.timeframe, 'client', { ownerId });
         ownedKeys.add(key);
         ws.send(JSON.stringify({ ok: true, action: 'subscribed', key }));
       } else if (msg.action === 'unsubscribe' && msg.symbol && msg.timeframe) {
@@ -769,9 +821,10 @@ const metricsServer = http.createServer(async (req, res) => {
       return;
     }
     const ttlMs = Number(url.searchParams.get('ttlMs') || 0) || undefined;
-    const key = addSubscription(symbol, timeframe, 'HTTP', { ttlMs });
+    const protectedSubscription = ['1', 'true', 'yes', 'on'].includes(String(url.searchParams.get('protected') || '').toLowerCase());
+    const { key, subscribeSent } = addSubscription(symbol, timeframe, 'HTTP', { ttlMs, protected: protectedSubscription });
     res.setHeader('Content-Type', 'application/json');
-    res.end(JSON.stringify({ ok: true, key, subscriptions: subscriptions.size }));
+    res.end(JSON.stringify({ ok: true, key, protected: protectedSubscription, subscribeSent, subscriptions: subscriptions.size }));
   } else if (url.pathname === '/unsubscribe') {
     const symbol = url.searchParams.get('symbol');
     const timeframe = url.searchParams.get('timeframe');

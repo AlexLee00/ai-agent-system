@@ -5,8 +5,13 @@ import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
 import { getDomesticQuoteSnapshot, getOverseasQuoteSnapshot } from '../shared/kis-client.ts';
 import { probeKisDomesticRealtime } from '../mcp/luna-marketdata-mcp/src/tools/kis-ws-domestic.ts';
 import { probeKisOverseasRealtime } from '../mcp/luna-marketdata-mcp/src/tools/kis-ws-overseas.ts';
+import * as db from '../shared/db.ts';
+import { normalizeBinanceTradingViewSymbol } from './runtime-tradingview-open-position-subscription-sync.ts';
 
 const DEFAULT_TV_HTTP = `http://127.0.0.1:${process.env.TV_METRICS_PORT || 8083}`;
+const DEFAULT_CRYPTO_TIMEFRAMES = process.env.LUNA_MARKETDATA_CRYPTO_TIMEFRAMES
+  || process.env.TV_OPEN_POSITION_TIMEFRAMES
+  || '60,240,D';
 
 function argValue(name, fallback = null, argv = process.argv.slice(2)) {
   const prefix = `--${name}=`;
@@ -16,6 +21,13 @@ function argValue(name, fallback = null, argv = process.argv.slice(2)) {
 
 function boolArg(name, argv = process.argv.slice(2)) {
   return argv.includes(`--${name}`);
+}
+
+function parseList(value = '') {
+  return String(value || '')
+    .split(',')
+    .map((item) => item.trim())
+    .filter(Boolean);
 }
 
 async function fetchJson(url, timeoutMs = 5000) {
@@ -66,6 +78,57 @@ export function classifyTradingViewRealtime({ health = {}, latest = {}, symbol =
     ],
     warnings: [
       ...(staleSubscriptionCount === 0 ? [] : ['tradingview_stale_subscriptions_present']),
+    ],
+  };
+}
+
+export function classifyTradingViewRealtimeSet({ health = {}, latest = {}, expected = [] } = {}) {
+  const bars = Array.isArray(latest?.bars) ? latest.bars : [];
+  const hasProtectedMetric = Object.prototype.hasOwnProperty.call(health || {}, 'protectedSubscriptions');
+  const expectedRows = (expected || []).map((item) => ({
+    symbol: String(item.symbol || '').trim(),
+    timeframe: String(item.timeframe || '60').trim(),
+  })).filter((item) => item.symbol && item.timeframe);
+  const realByKey = new Map();
+  const staleRealBars = [];
+  for (const row of bars) {
+    const source = String(row.source || '').toLowerCase();
+    const providerMode = String(row.providerMode || '').toLowerCase();
+    const realtime = source === 'tradingview_ws_service' && providerMode.includes('websocket') && !row.fallbackReason;
+    if (!realtime) continue;
+    const key = `${row.symbol}:${row.timeframe}`;
+    realByKey.set(key, row);
+    const threshold = Math.max(5 * 60 * 1000, timeframeDurationMs(row.timeframe) + 5 * 60 * 1000);
+    if (Number(row.ageMs || 0) > threshold) staleRealBars.push({ key, ageMs: row.ageMs, threshold });
+  }
+  const missing = expectedRows
+    .filter((item) => !realByKey.has(`${item.symbol}:${item.timeframe}`))
+    .map((item) => `${item.symbol}:${item.timeframe}`);
+  const staleSubscriptionCount = Number(health?.staleSubscriptions || 0);
+  const ok = health?.tv_ws === 'connected' && missing.length === 0 && staleRealBars.length === 0;
+  return {
+    ok,
+    status: ok ? 'tradingview_realtime_ready' : 'tradingview_realtime_attention',
+    tvWs: health?.tv_ws || 'unknown',
+    serviceRealtimeOk: health?.realtimeOk === true,
+    subscriptions: Number(health?.subscriptions || 0),
+    protectedSubscriptions: Number(health?.protectedSubscriptions || 0),
+    staleSubscriptions: staleSubscriptionCount,
+    fallbackBars: Number(health?.fallbackBars || 0),
+    latestCount: bars.length,
+    expectedCount: expectedRows.length,
+    realBars: realByKey.size,
+    missingRealBars: missing,
+    staleRealBars,
+    blockers: [
+      ...(health?.tv_ws === 'connected' ? [] : ['tradingview_ws_disconnected']),
+      ...(missing.length === 0 ? [] : [`tradingview_realtime_bar_missing:${missing.slice(0, 12).join(',')}`]),
+      ...(staleRealBars.length === 0 ? [] : ['tradingview_realtime_bar_stale']),
+    ],
+    warnings: [
+      ...(hasProtectedMetric ? [] : ['tradingview_service_reload_required_for_protected_subscriptions']),
+      ...(staleSubscriptionCount === 0 ? [] : ['tradingview_stale_subscriptions_present']),
+      ...(Number(health?.fallbackBars || 0) === 0 ? [] : ['tradingview_rest_fallback_bars_present']),
     ],
   };
 }
@@ -132,6 +195,28 @@ async function tradingViewCheck({ symbol, timeframe, timeoutMs, httpBase }) {
   };
 }
 
+async function tradingViewCheckSet({ symbols = [], timeframes = ['60'], timeoutMs, httpBase }) {
+  const base = String(httpBase || DEFAULT_TV_HTTP).replace(/\/$/, '');
+  const normalizedSymbols = [...new Set((symbols || []).map((symbol) => String(symbol || '').trim()).filter(Boolean))];
+  const normalizedTimeframes = [...new Set((timeframes || []).map((timeframe) => String(timeframe || '60').trim()).filter(Boolean))];
+  for (const symbol of normalizedSymbols) {
+    for (const timeframe of normalizedTimeframes) {
+      await fetchJson(`${base}/subscribe?symbol=${encodeURIComponent(symbol)}&timeframe=${encodeURIComponent(timeframe)}&protected=true`, timeoutMs).catch(() => null);
+    }
+  }
+  const [health, latest] = await Promise.all([
+    fetchJson(`${base}/health`, timeoutMs),
+    fetchJson(`${base}/latest?symbols=${encodeURIComponent(normalizedSymbols.join(','))}&timeframes=${encodeURIComponent(normalizedTimeframes.join(','))}&requireReal=true`, timeoutMs),
+  ]);
+  const expected = normalizedSymbols.flatMap((symbol) => normalizedTimeframes.map((timeframe) => ({ symbol, timeframe })));
+  return {
+    health,
+    latest,
+    expected,
+    decision: classifyTradingViewRealtimeSet({ health, latest, expected }),
+  };
+}
+
 async function kisDomesticCheck({ symbol, timeoutMs, paper }) {
   const [probe, quote] = await Promise.all([
     probeKisDomesticRealtime({ symbol, timeoutMs, paper }),
@@ -164,19 +249,31 @@ async function kisOverseasCheck({ symbol, timeoutMs, paper }) {
 
 export async function buildMarketdataRealtimeConnectivityReport({
   cryptoSymbol = 'BINANCE:BTCUSDT',
+  cryptoSymbols = null,
   cryptoTimeframe = '60',
+  cryptoTimeframes = DEFAULT_CRYPTO_TIMEFRAMES,
   domesticSymbol = '005930',
   overseasSymbol = 'AAPL',
   timeoutMs = 5000,
   httpBase = DEFAULT_TV_HTTP,
   paper = false,
 } = {}) {
-  const crypto = await tradingViewCheck({ symbol: cryptoSymbol, timeframe: cryptoTimeframe, timeoutMs, httpBase }).catch((error) => ({
+  await db.initSchema().catch(() => {});
+  const openCryptoPositions = await db.getOpenPositions('binance', false).catch(() => []);
+  const resolvedCryptoSymbols = parseList(cryptoSymbols || '')
+    .map(normalizeBinanceTradingViewSymbol)
+    .filter(Boolean);
+  const positionCryptoSymbols = openCryptoPositions
+    .map((row) => normalizeBinanceTradingViewSymbol(row?.symbol))
+    .filter(Boolean);
+  const cryptoSymbolList = [...new Set((resolvedCryptoSymbols.length > 0 ? resolvedCryptoSymbols : positionCryptoSymbols.length > 0 ? positionCryptoSymbols : [cryptoSymbol]) || [])];
+  const cryptoTimeframeList = parseList(cryptoTimeframes || cryptoTimeframe || '60');
+  const crypto = await tradingViewCheckSet({ symbols: cryptoSymbolList, timeframes: cryptoTimeframeList, timeoutMs, httpBase }).catch((error) => ({
       decision: {
         ok: false,
         status: 'tradingview_realtime_attention',
-        symbol: cryptoSymbol,
-        timeframe: cryptoTimeframe,
+        symbols: cryptoSymbolList,
+        timeframes: cryptoTimeframeList,
         blockers: [error?.message || String(error)],
       },
       error: error?.message || String(error),
@@ -197,6 +294,9 @@ export async function buildMarketdataRealtimeConnectivityReport({
       domestic: 'kis_realtime_probe_plus_rest',
       overseas: 'kis_realtime_probe_plus_rest',
       noTradeExecution: true,
+      cryptoScope: positionCryptoSymbols.length > 0 ? 'open_binance_positions' : 'fallback_symbol',
+      cryptoSymbols: cryptoSymbolList,
+      cryptoTimeframes: cryptoTimeframeList,
     },
     crypto,
     domestic,
@@ -208,7 +308,9 @@ export async function buildMarketdataRealtimeConnectivityReport({
 async function main() {
   const report = await buildMarketdataRealtimeConnectivityReport({
     cryptoSymbol: argValue('crypto-symbol', 'BINANCE:BTCUSDT'),
+    cryptoSymbols: argValue('crypto-symbols', null),
     cryptoTimeframe: argValue('crypto-timeframe', '60'),
+    cryptoTimeframes: argValue('crypto-timeframes', DEFAULT_CRYPTO_TIMEFRAMES),
     domesticSymbol: argValue('domestic-symbol', '005930'),
     overseasSymbol: argValue('overseas-symbol', 'AAPL'),
     timeoutMs: Number(argValue('timeout-ms', 5000)),
