@@ -82,6 +82,58 @@ function normalizeFamily(raw: string | null | undefined): StrategyFamily | null 
   return null;
 }
 
+function parseTimestampMs(value: any): number | null {
+  if (value == null || value === '') return null;
+  const n = Number(value);
+  if (Number.isFinite(n)) return n;
+  const parsed = Date.parse(String(value));
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+export function parseTradeHoldMs(row: any = {}): number | null {
+  const direct = Number(row.hold_duration ?? row.holdDuration);
+  if (Number.isFinite(direct) && direct >= 0) return direct;
+  const entry = parseTimestampMs(row.entry_time ?? row.entryTime);
+  const exit = parseTimestampMs(row.exit_time ?? row.exitTime);
+  if (entry == null || exit == null || exit < entry) return null;
+  return exit - entry;
+}
+
+function isClosedTrade(row: any = {}): boolean {
+  return String(row.status || '').toLowerCase() === 'closed'
+    || row.exit_time != null
+    || row.exitTime != null;
+}
+
+export function resolveEffectiveStrategyFamily(row: any = {}) {
+  const originalFamily = String(row.strategy_family ?? row.strategyFamily ?? 'unknown').trim() || 'unknown';
+  const normalized = normalizeFamily(originalFamily);
+  const holdMs = parseTradeHoldMs(row);
+  const shortTermFamilies = new Set(['short_term_scalping', 'micro_swing']);
+  if (
+    isClosedTrade(row)
+    && normalized
+    && !shortTermFamilies.has(normalized)
+    && holdMs != null
+    && holdMs < 60 * 60 * 1000
+  ) {
+    return {
+      family: 'short_term_scalping',
+      originalFamily,
+      horizonAdjusted: true,
+      reason: 'sub_1h_closed_trade',
+      holdMs,
+    };
+  }
+  return {
+    family: originalFamily,
+    originalFamily,
+    horizonAdjusted: false,
+    reason: null,
+    holdMs,
+  };
+}
+
 function parseAnalystSignals(raw: Record<string, string> | string | null): Record<string, string> {
   if (!raw) return {};
   if (typeof raw === 'object') return raw;

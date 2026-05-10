@@ -5,6 +5,7 @@ import * as db from '../shared/db.ts';
 import { initJournalSchema, safeJournalPnlPercent } from '../shared/trade-journal-db.ts';
 import { filterRowsForPolicyLearning } from '../shared/luna-operating-epoch.ts';
 import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
+import { resolveEffectiveStrategyFamily } from '../shared/strategy-family-classifier.ts';
 
 function parseArgs(argv = []) {
   const args = {
@@ -124,7 +125,8 @@ function normalizeRow(row) {
 export function buildStrategyFamilyRowsFromJournalRows(rawRows = []) {
   const buckets = new Map();
   for (const row of filterRowsForPolicyLearning(rawRows, ['exit_time', 'entry_time', 'created_at'])) {
-    const family = String(row.strategy_family || 'unknown');
+    const effectiveFamily = resolveEffectiveStrategyFamily(row);
+    const family = String(effectiveFamily.family || 'unknown');
     if (!family || family === 'unknown') continue;
     const quality = String(row.strategy_quality || 'unknown');
     const market = String(row.market || 'unknown');
@@ -327,7 +329,7 @@ export async function buildRuntimeStrategyFamilyReport({ days = 90, market = 'al
       COALESCE(NULLIF(trade_mode, ''), 'normal') AS trade_mode,
       status, entry_time, exit_time, created_at, quality_flag, exclude_from_learning,
       entry_price, exit_price, entry_value, exit_value, direction, pnl_percent,
-      pnl_net, pnl_amount, strategy_readiness
+      pnl_net, pnl_amount, strategy_readiness, hold_duration
     FROM trade_journal
     WHERE created_at >= ?
       ${marketSql}

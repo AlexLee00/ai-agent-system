@@ -57,6 +57,7 @@ export async function runSmoke() {
     ]);
 
     assert.equal(rows.length, 1);
+    assert.equal(rows[0].strategyFamily, 'short_term_scalping');
     assert.equal(rows[0].total, 1);
     assert.equal(rows[0].closed, 1);
     assert.equal(rows[0].wins, 1);

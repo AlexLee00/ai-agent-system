@@ -1,5 +1,6 @@
 // @ts-nocheck
 import { JOURNAL_PNL_OUTLIER_THRESHOLD, safeJournalPnlPercent } from './trade-journal-db.ts';
+import { parseTradeHoldMs, resolveEffectiveStrategyFamily } from './strategy-family-classifier.ts';
 
 function normalizeMarket(row = {}) {
   const market = String(row.market || '').toLowerCase();
@@ -45,12 +46,6 @@ function finalizeBucket(bucket) {
     avgPnlPercent: bucket.pnlCount > 0 ? Number((bucket.pnlSum / bucket.pnlCount).toFixed(4)) : null,
     winRate: bucket.pnlCount > 0 ? Number((bucket.wins / bucket.pnlCount).toFixed(4)) : null,
   };
-}
-
-function parseDurationMs(value) {
-  if (value == null || value === '') return null;
-  const n = Number(value);
-  return Number.isFinite(n) && n >= 0 ? n : null;
 }
 
 function bucketMapToArray(map) {
@@ -162,6 +157,7 @@ export function buildTradeAnalyticsReport(rows = [], { generatedAt = new Date().
   let rawPnlOutlierCount = 0;
   let potentiallyCorrectedPnlCount = 0;
   let shortTermCount = 0;
+  let horizonAdjustedCount = 0;
   let strategyUnknownCount = 0;
   let trendingBullLosses = 0;
   const earlyExit = {
@@ -180,12 +176,15 @@ export function buildTradeAnalyticsReport(rows = [], { generatedAt = new Date().
 
     const market = normalizeMarket(row);
     const regime = row.market_regime || row.marketRegime || 'unknown';
-    const strategyFamily = row.strategy_family || row.strategyFamily || 'unknown';
+    const effectiveFamily = resolveEffectiveStrategyFamily(row);
+    const originalStrategyFamily = effectiveFamily.originalFamily;
+    const strategyFamily = effectiveFamily.family;
     const symbol = row.symbol || 'unknown';
-    if (strategyFamily === 'unknown') strategyUnknownCount += 1;
+    if (originalStrategyFamily === 'unknown') strategyUnknownCount += 1;
     if (strategyFamily === 'short_term_scalping' || strategyFamily === 'micro_swing') shortTermCount += 1;
+    if (effectiveFamily.horizonAdjusted) horizonAdjustedCount += 1;
     if (regime === 'trending_bull' && pnl.safe != null && pnl.safe < 0) trendingBullLosses += 1;
-    const holdMs = parseDurationMs(row.hold_duration ?? row.holdDuration);
+    const holdMs = parseTradeHoldMs(row);
     if (isClosed(row) && holdMs != null && holdMs < 60 * 60 * 1000) {
       earlyExit.total += 1;
       if (pnl.safe != null && pnl.safe >= 0 && pnl.safe < 1) earlyExit.smallProfit += 1;
@@ -196,6 +195,8 @@ export function buildTradeAnalyticsReport(rows = [], { generatedAt = new Date().
           holdMinutes: Number((holdMs / 60000).toFixed(2)),
           pnlPercent: pnl.safe,
           strategyFamily,
+          originalStrategyFamily,
+          horizonAdjusted: effectiveFamily.horizonAdjusted,
           marketRegime: regime,
         });
       }
@@ -221,6 +222,7 @@ export function buildTradeAnalyticsReport(rows = [], { generatedAt = new Date().
     coverage: rows.length > 0 ? Number(((rows.length - strategyUnknownCount) / rows.length).toFixed(4)) : 1,
     unknownCount: strategyUnknownCount,
     shortTermCount,
+    horizonAdjustedCount,
     buckets: bucketMapToArray(strategyBuckets),
   };
   const tpSl = {

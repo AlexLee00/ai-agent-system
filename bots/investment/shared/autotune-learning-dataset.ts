@@ -2,6 +2,7 @@
 import { LUNA_AUTONOMY_PHASES } from './autonomy-phase.ts';
 import { safeJournalPnlPercent } from './trade-journal-db.ts';
 import { evaluateLearningTradeQuality } from './trade-data-derived-guards.ts';
+import { resolveEffectiveStrategyFamily } from './strategy-family-classifier.ts';
 
 function normalizePhase(value = null) {
   const phase = String(value || '').trim();
@@ -47,12 +48,16 @@ export function buildAutotuneLearningDataset(rows = []) {
     }
 
     if (phase === LUNA_AUTONOMY_PHASES.L4_PRE_AUTOTUNE) preAutotuneIncluded += 1;
+    const effectiveFamily = resolveEffectiveStrategyFamily(row);
     learningRows.push({
       tradeId: row.trade_id ?? row.tradeId ?? row.id,
       symbol: row.symbol,
       market: row.market,
       exchange: row.exchange,
-      strategyFamily: row.strategy_family ?? row.strategyFamily ?? 'unknown',
+      strategyFamily: effectiveFamily.family,
+      originalStrategyFamily: effectiveFamily.originalFamily,
+      strategyFamilyHorizonAdjusted: effectiveFamily.horizonAdjusted,
+      strategyFamilyAdjustmentReason: effectiveFamily.reason,
       marketRegime: row.market_regime ?? row.marketRegime ?? 'unknown',
       autonomyPhase: phase,
       pnlPercent,

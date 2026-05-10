@@ -13,6 +13,7 @@ import { checkSymbolBlacklist, checkSymbolLossStreak } from '../shared/reflexion
 import { evaluateTradeDataEntryGuard, resolveExpectedSellNoopStatus } from '../shared/trade-data-derived-guards.ts';
 import { buildAutotuneLearningDataset } from '../shared/autotune-learning-dataset.ts';
 import { LUNA_AUTONOMY_PHASES } from '../shared/autonomy-phase.ts';
+import { buildTradeAnalyticsReport } from '../shared/trade-analytics-report.ts';
 
 export async function runSmoke() {
   const previousBlacklist = process.env.LUNA_PRE_ENTRY_SYMBOL_BLACKLIST;
@@ -75,6 +76,23 @@ export async function runSmoke() {
     assert.ok(trendGuard.warnings.includes('crypto_trend_following_current_epoch_probe_only'));
     assert.equal(trendGuard.meta.sizingMultiplier, 0.75);
 
+    const horizonReport = buildTradeAnalyticsReport([{
+      symbol: 'FAST/USDT',
+      market: 'crypto',
+      exchange: 'binance',
+      status: 'closed',
+      strategy_family: 'trend_following',
+      hold_duration: 10 * 60 * 1000,
+      entry_price: 100,
+      exit_price: 99,
+      pnl_percent: -1,
+      tp_sl_set: true,
+    }]);
+    assert.equal(horizonReport.strategyFamily.shortTermCount, 1);
+    assert.equal(horizonReport.strategyFamily.horizonAdjustedCount, 1);
+    assert.ok(horizonReport.strategyFamily.buckets.some((bucket) => bucket.name === 'short_term_scalping'));
+    assert.equal(horizonReport.earlyExit.samples[0].originalStrategyFamily, 'trend_following');
+
     const blacklist = checkSymbolBlacklist('TAO/USDT', 'crypto');
     assert.equal(blacklist.blocked, true);
     assert.equal(blacklist.source, 'pre_entry/symbol_blacklist');
@@ -110,6 +128,8 @@ export async function runSmoke() {
         entry_price: 100,
         exit_price: 101,
         pnl_percent: 1,
+        strategy_family: 'trend_following',
+        hold_duration: 10 * 60 * 1000,
         autonomy_phase: LUNA_AUTONOMY_PHASES.L4_PRE_AUTOTUNE,
         tp_sl_set: true,
       },
@@ -141,6 +161,9 @@ export async function runSmoke() {
     assert.equal(dataset.preAutotuneIncluded, 1);
     assert.equal(dataset.learningRows, 2);
     assert.equal(dataset.skipped, 1);
+    assert.equal(dataset.dataset[0].strategyFamily, 'short_term_scalping');
+    assert.equal(dataset.dataset[0].originalStrategyFamily, 'trend_following');
+    assert.equal(dataset.dataset[0].strategyFamilyHorizonAdjusted, true);
     assert.equal(dataset.contract.includesPreAutotune, true);
     return {
       ok: true,
