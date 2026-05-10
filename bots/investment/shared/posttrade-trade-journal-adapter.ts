@@ -1,5 +1,14 @@
 // @ts-nocheck
 import * as db from './db.ts';
+import { getLunaOperatingEpoch } from './luna-operating-epoch.ts';
+
+const TRUE_VALUES = new Set(['1', 'true', 'yes', 'on', 'enabled']);
+
+function boolEnv(name: string, fallback = false, env = process.env) {
+  const raw = String(env?.[name] ?? '').trim().toLowerCase();
+  if (!raw) return fallback;
+  return TRUE_VALUES.has(raw);
+}
 
 export function deriveTradeJournalNumericId(rowOrId: any): number | null {
   const raw = typeof rowOrId === 'object' && rowOrId !== null
@@ -58,6 +67,29 @@ export function mapTradeJournalRowToPosttradeTrade(row: any = {}, numericId = nu
   };
 }
 
+export function resolveTradeJournalPosttradeScope({
+  includeDevelopment = null,
+  env = process.env,
+} = {}) {
+  const epoch = getLunaOperatingEpoch(env);
+  const includeDev = includeDevelopment === null || includeDevelopment === undefined
+    ? boolEnv('LUNA_POSTTRADE_INCLUDE_DEVELOPMENT_TRADES', false, env)
+    : includeDevelopment === true;
+  const enforceOperatingEpoch = epoch.enabled === true
+    && epoch.valid === true
+    && Number.isFinite(Number(epoch.startedAtMs))
+    && includeDev !== true;
+  return {
+    includeDevelopment: includeDev,
+    enforceOperatingEpoch,
+    operatingEpochStartedAt: epoch.startedAt,
+    operatingEpochStartedAtMs: epoch.startedAtMs,
+    developmentDataPolicy: enforceOperatingEpoch
+      ? 'exclude_development_trade_journal_rows'
+      : 'include_trade_journal_history',
+  };
+}
+
 export async function fetchTradeJournalPosttradeTrade(tradeId: number) {
   const expr = tradeJournalNumericIdSql('tj');
   const row = await db.get(
@@ -75,11 +107,26 @@ export async function fetchPendingTradeJournalPosttradeCandidates({
   limit = 50,
   market = 'all',
   seen = new Set(),
+  includeDevelopment = null,
 } = {}) {
   const safeLimit = Math.max(1, Number(limit || 50));
   const targetMarket = String(market || 'all').trim().toLowerCase();
   const idExpr = tradeJournalNumericIdSql('tj');
   const marketExpr = tradeJournalMarketSql('tj');
+  const scope = resolveTradeJournalPosttradeScope({ includeDevelopment });
+  const params = [safeLimit * 3];
+  const marketClause = targetMarket === 'all'
+    ? ''
+    : (() => {
+        params.push(targetMarket);
+        return `AND ${marketExpr} = $${params.length}`;
+      })();
+  const operatingEpochClause = scope.enforceOperatingEpoch
+    ? (() => {
+        params.push(Number(scope.operatingEpochStartedAtMs));
+        return `AND COALESCE(tj.exit_time, tj.entry_time, tj.created_at) >= $${params.length}`;
+      })()
+    : '';
   const rows = await db.query(
     `SELECT ${idExpr} AS trade_id,
             tj.id AS journal_id,
@@ -93,10 +140,11 @@ export async function fetchPendingTradeJournalPosttradeCandidates({
         AND tj.exit_time IS NOT NULL
         AND ${idExpr} IS NOT NULL
         AND tqe.trade_id IS NULL
-        ${targetMarket === 'all' ? '' : `AND ${marketExpr} = $2`}
+        ${marketClause}
+        ${operatingEpochClause}
       ORDER BY tj.exit_time DESC NULLS LAST, tj.created_at DESC NULLS LAST
       LIMIT $1`,
-    targetMarket === 'all' ? [safeLimit * 3] : [safeLimit * 3, targetMarket],
+    params,
   ).catch(() => []);
 
   const output = [];
@@ -109,6 +157,7 @@ export async function fetchPendingTradeJournalPosttradeCandidates({
       source: 'trade_journal_scan' as const,
       knowledgeId: null,
       journalId: row.journal_id || null,
+      scope: scope.developmentDataPolicy,
     });
     if (output.length >= safeLimit) break;
   }
@@ -123,4 +172,5 @@ export default {
   mapTradeJournalRowToPosttradeTrade,
   fetchTradeJournalPosttradeTrade,
   fetchPendingTradeJournalPosttradeCandidates,
+  resolveTradeJournalPosttradeScope,
 };

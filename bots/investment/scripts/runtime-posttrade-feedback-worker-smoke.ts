@@ -8,11 +8,30 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { runPosttradeFeedbackWorker } from './runtime-posttrade-feedback-worker.ts';
 import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
+import { resolveTradeJournalPosttradeScope } from '../shared/posttrade-trade-journal-adapter.ts';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const HEARTBEAT = path.join(os.tmpdir(), 'posttrade-feedback-worker-smoke-heartbeat.json');
 
 async function runSmoke() {
+  const scopedDefault = resolveTradeJournalPosttradeScope({
+    env: {
+      LUNA_OPERATING_EPOCH_ENABLED: 'true',
+      LUNA_OPERATING_EPOCH_STARTED_AT: '2026-05-08T00:00:00.000Z',
+    },
+  });
+  assert.equal(scopedDefault.enforceOperatingEpoch, true, 'trade journal scan defaults to operating epoch');
+  assert.equal(scopedDefault.includeDevelopment, false, 'development trade journal rows excluded by default');
+
+  const scopedOverride = resolveTradeJournalPosttradeScope({
+    env: {
+      LUNA_OPERATING_EPOCH_ENABLED: 'true',
+      LUNA_OPERATING_EPOCH_STARTED_AT: '2026-05-08T00:00:00.000Z',
+      LUNA_POSTTRADE_INCLUDE_DEVELOPMENT_TRADES: 'true',
+    },
+  });
+  assert.equal(scopedOverride.enforceOperatingEpoch, false, 'explicit opt-in includes development rows');
+
   const previous = process.env.LUNA_POSTTRADE_WORKER_ENABLED;
   process.env.LUNA_POSTTRADE_WORKER_ENABLED = 'false';
   const baseline = await runPosttradeFeedbackWorker({

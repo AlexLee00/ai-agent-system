@@ -154,7 +154,7 @@ export async function buildTradeDataAnalysisReport({ limit = 5000, generatedAt =
   if (signalFailureRate != null && signalFailureRate > 0.3) warnings.push('signal_failure_rate_high');
   if (analytics.tpSl.unset.closed > 0) warnings.push('closed_trade_tp_sl_missing_history');
   if (sellCount > realizedCount) warnings.push('realized_pnl_backfill_pending');
-  if (qualityCount < analytics.summary.closed) warnings.push('posttrade_evaluation_backfill_pending');
+  if (qualityCount < closedJournalTradeIds.length) warnings.push('posttrade_evaluation_backfill_pending');
   if (failedSignals > reflexionCount) warnings.push('failed_reflexion_backfill_pending');
 
   return {
@@ -199,7 +199,7 @@ export async function buildTradeDataAnalysisReport({ limit = 5000, generatedAt =
       ...(analytics.nextActions || []),
       ...(sellCount > realizedCount ? ['npm --prefix bots/investment run -s runtime:pnl-backfill -- --json, then apply with --apply --confirm=runtime-pnl-backfill after review'] : []),
       ...(analytics.tpSl.unset.closed > 0 ? ['review historical closed trades without tp_sl_set=true'] : []),
-      ...(qualityCount < closedJournalTradeIds.length ? ['npm --prefix bots/investment run -s runtime:posttrade-feedback-worker -- --once --force --market=all --limit=20 --dry-run --json, then run without --dry-run after review'] : []),
+      ...(qualityCount < closedJournalTradeIds.length ? ['npm --prefix bots/investment run -s runtime:posttrade-feedback-worker -- --once --force --market=all --limit=20 --dry-run --json (current operating epoch only), then run without --dry-run after review'] : []),
     ],
   };
 }
