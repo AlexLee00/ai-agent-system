@@ -176,6 +176,73 @@ function trustedBinanceFallbackEnabled(env = process.env) {
   return boolEnv('LUNA_TRADINGVIEW_ENTRY_GUARD_TRUST_BINANCE_FALLBACK', true, env);
 }
 
+function binanceIntervalForTradingViewTimeframe(timeframe = '60') {
+  const text = String(normalizeTradingViewTimeframe(timeframe) || '60').trim().toLowerCase();
+  if (text === 'd' || text === '1d') return '1d';
+  if (text === 'w' || text === '1w') return '1w';
+  if (text.endsWith('h')) return `${Math.max(1, Number(text.slice(0, -1)) || 1)}h`;
+  if (text.endsWith('m')) return `${Math.max(1, Number(text.slice(0, -1)) || 1)}m`;
+  const minutes = Number(text);
+  if (!Number.isFinite(minutes) || minutes <= 0) return '1h';
+  if (minutes % 60 === 0) return `${Math.max(1, minutes / 60)}h`;
+  return `${minutes}m`;
+}
+
+function binanceSymbolFromTradingViewSymbol(symbol = '') {
+  const text = String(symbol || '').trim().toUpperCase();
+  if (!text.startsWith('BINANCE:')) return null;
+  const raw = text.replace('BINANCE:', '').replace(/[^A-Z0-9]/g, '');
+  return raw.endsWith('USDT') ? raw : null;
+}
+
+async function fetchBinanceRestTradingViewFallbackRow({
+  symbol,
+  timeframe = '60',
+  env = process.env,
+  fallbackReason = 'tradingview_ws_latest_stale',
+} = {}) {
+  if (!trustedBinanceFallbackEnabled(env)) return null;
+  const binanceSymbol = binanceSymbolFromTradingViewSymbol(symbol);
+  if (!binanceSymbol) return null;
+  const timeoutMs = Math.max(250, numEnv('LUNA_TRADINGVIEW_ENTRY_GUARD_TIMEOUT_MS', 2500, env));
+  const url = new URL('https://api.binance.com/api/v3/klines');
+  url.searchParams.set('symbol', binanceSymbol);
+  url.searchParams.set('interval', binanceIntervalForTradingViewTimeframe(timeframe));
+  url.searchParams.set('limit', '1');
+  try {
+    const response = await fetch(url, { signal: AbortSignal.timeout(timeoutMs) });
+    if (!response.ok) return null;
+    const rows = await response.json();
+    const row = Array.isArray(rows) ? rows[rows.length - 1] : null;
+    if (!Array.isArray(row)) return null;
+    const close = Number(row[4] || 0);
+    if (!(close > 0)) return null;
+    const now = Date.now();
+    const closeTime = Number(row[6] || row[0] || now);
+    return {
+      symbol,
+      timeframe,
+      lastBarAt: now,
+      ageMs: Math.max(0, now - closeTime),
+      source: 'tradingview_ws_client_binance_rest_fallback',
+      providerMode: 'binance_rest_live_fallback',
+      fallbackReason,
+      bar: {
+        symbol,
+        timeframe,
+        timestamp: Number(row[0] || closeTime || now),
+        open: Number(row[1] || 0),
+        high: Number(row[2] || 0),
+        low: Number(row[3] || 0),
+        close,
+        volume: Number(row[5] || 0),
+      },
+    };
+  } catch {
+    return null;
+  }
+}
+
 function officialDirectRestFallbackEnabled(env = process.env) {
   return boolEnv('LUNA_ENTRY_CHART_KIS_DIRECT_REST_FALLBACK', true, env);
 }
@@ -540,7 +607,7 @@ export async function fetchTradingViewHttpLatestSnapshot({
     if (!latest.ok) return latest;
     let payload = latest.payload;
     let row = latest.row;
-    if (!row?.bar && requireReal && trustedBinanceFallbackEnabled(env)) {
+    const resolveTrustedBinanceFallback = async (reason) => {
       const officialFallback = await fetchLatest(false);
       const fallbackRow = officialFallback?.row;
       const source = String(fallbackRow?.source || '').toLowerCase();
@@ -549,16 +616,46 @@ export async function fetchTradingViewHttpLatestSnapshot({
         fallbackRow?.bar
         && source === 'tradingview_ws_service_binance_rest_fallback'
         && providerMode === 'binance_rest_live_fallback'
-      ) {
+      ) return {
+        payload: officialFallback.payload,
+        row: {
+          ...fallbackRow,
+          fallbackReason: fallbackRow.fallbackReason || reason,
+        },
+      };
+      const directRow = await fetchBinanceRestTradingViewFallbackRow({
+        symbol: normalizedSymbol,
+        timeframe: tvTimeframe,
+        env,
+        fallbackReason: reason,
+      });
+      if (!directRow) return null;
+      return {
+        payload: {
+          status: 'ok',
+          tv_ws: payload?.tv_ws || null,
+          directClientFallback: true,
+        },
+        row: directRow,
+      };
+    };
+    const rowAgeMs = Number(row?.ageMs ?? 0);
+    const rowStale = Boolean(row?.bar)
+      && Number.isFinite(rowAgeMs)
+      && rowAgeMs > tradingViewMaxAgeMsForTimeframe(tvTimeframe, env);
+    if ((!row?.bar || rowStale) && trustedBinanceFallbackEnabled(env)) {
+      const fallbackReason = rowStale ? 'tradingview_ws_latest_stale' : 'tradingview_ws_latest_empty';
+      const fallback = await resolveTrustedBinanceFallback(fallbackReason);
+      if (fallback?.row) {
         payload = {
-          ...officialFallback.payload,
-          realRequiredFallback: true,
+          ...fallback.payload,
+          realRequiredFallback: requireReal,
           strictRealtimePayload: latest.payload,
         };
         row = {
-          ...fallbackRow,
-          fallbackReason: fallbackRow.fallbackReason || 'tradingview_ws_latest_empty',
-          realRequiredFallback: true,
+          ...fallback.row,
+          fallbackReason: fallback.row.fallbackReason || fallbackReason,
+          realRequiredFallback: requireReal,
         };
       }
     }

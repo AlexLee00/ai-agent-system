@@ -88,18 +88,26 @@ function getIndicatorThresholdsForExchange(exchange = 'binance') {
   return { buy: 0.25, sell: -0.25 };
 }
 
+function isTrustedCryptoChartOverlay(snapshot = {}) {
+  if (snapshot?.ok !== true || snapshot?.stale === true) return false;
+  const source = String(snapshot?.source || '').toLowerCase();
+  const providerMode = String(snapshot?.providerMode || '').toLowerCase();
+  if (source === 'tradingview_ws_service' && providerMode.includes('websocket') && !snapshot?.fallbackReason) return true;
+  return (source === 'tradingview_ws_service_binance_rest_fallback' || source === 'tradingview_ws_client_binance_rest_fallback')
+    && providerMode === 'binance_rest_live_fallback'
+    && Number(snapshot?.price ?? snapshot?.close ?? 0) > 0;
+}
+
 async function fetchAuthoritativeChartOverlay(symbol, exchange, interval = '1h') {
   try {
     if (exchange === 'binance') {
-      const normalizedTimeframe = normalizeTradingViewTimeframe(interval);
-      if (!['1', '3', '5', '15', '30', '60'].includes(normalizedTimeframe)) {
-        return null;
-      }
       const snapshot = await fetchTradingViewHttpLatestSnapshot({ symbol, exchange, timeframe: interval });
-      if (snapshot?.ok && snapshot?.stale !== true && !snapshot?.fallbackReason) {
+      if (isTrustedCryptoChartOverlay(snapshot)) {
         return {
           ...snapshot,
-          provider: 'tradingview_ws',
+          provider: String(snapshot?.providerMode || '').includes('binance_rest')
+            ? 'tradingview_ws_binance_fallback'
+            : 'tradingview_ws',
           indicatorProvider: null,
         };
       }
@@ -119,6 +127,49 @@ async function fetchAuthoritativeChartOverlay(symbol, exchange, interval = '1h')
     return null;
   }
   return null;
+}
+
+export function buildChartOverlayIndicatorAnalysis({ symbol, exchange = 'binance', interval = '1h', overlay = null } = {}) {
+  if (!overlay || !(Number(overlay?.price ?? overlay?.close ?? 0) > 0)) return null;
+  const close = Number(overlay.price ?? overlay.close);
+  const open = Number(overlay.open || close);
+  const high = Number(overlay.high || Math.max(open, close));
+  const low = Number(overlay.low || Math.min(open, close));
+  const candleChange = open > 0 ? (close - open) / open : 0;
+  const closeLocation = high > low ? (close - low) / (high - low) : 0.5;
+  const signal = candleChange >= 0.0015 && closeLocation >= 0.55
+    ? 'BUY'
+    : candleChange <= -0.0015 && closeLocation <= 0.45
+      ? 'SELL'
+      : 'HOLD';
+  const confidence = signal === 'HOLD'
+    ? 0.35
+    : Math.min(0.85, Math.max(0.45, Math.abs(candleChange) * 30, Math.abs(closeLocation - 0.5) * 1.6));
+  const snapshot = buildAuthoritativeIndicatorSnapshot({
+    payload: {
+      provider: 'chart_overlay',
+      close,
+      open,
+      high,
+      low,
+      signal,
+    },
+    yahooSymbol: symbol,
+    interval,
+    overlay,
+  });
+  return {
+    analyst: `${exchange}_authoritative_chart_${interval}`,
+    signal,
+    confidence,
+    reasoning: [
+      `authoritative ${interval}`,
+      overlay.provider || overlay.source || 'chart_overlay',
+      `change ${(candleChange * 100).toFixed(2)}%`,
+      `closeLocation ${closeLocation.toFixed(2)}`,
+    ].join(' | '),
+    snapshot,
+  };
 }
 
 export function buildAuthoritativeIndicatorSnapshot({ payload = {}, overlay = null, yahooSymbol = null, interval = '1h' } = {}) {
@@ -154,22 +205,28 @@ export function buildAuthoritativeIndicatorSnapshot({ payload = {}, overlay = nu
 
 async function fetchTradingViewIndicatorSnapshot(symbol, exchange, interval = '1h') {
   const yahooSymbol = toYahooTicker(symbol, exchange);
-  const { stdout } = await execFileAsync('python3', [
-    TRADINGVIEW_MCP_SCRIPT.pathname,
-    '--indicators',
-    '--json',
-    `--symbol=${yahooSymbol}`,
-    `--interval=${interval}`,
-  ], {
-    encoding: 'utf8',
-    maxBuffer: 1024 * 1024 * 4,
-  });
-
-  const payload = JSON.parse(String(stdout || '{}'));
+  const overlay = await fetchAuthoritativeChartOverlay(symbol, exchange, interval);
+  let payload = null;
+  try {
+    const { stdout } = await execFileAsync('python3', [
+      TRADINGVIEW_MCP_SCRIPT.pathname,
+      '--indicators',
+      '--json',
+      `--symbol=${yahooSymbol}`,
+      `--interval=${interval}`,
+    ], {
+      encoding: 'utf8',
+      maxBuffer: 1024 * 1024 * 4,
+    });
+    payload = JSON.parse(String(stdout || '{}'));
+  } catch (error) {
+    if (overlay) return buildChartOverlayIndicatorAnalysis({ symbol, exchange, interval, overlay });
+    throw error;
+  }
   if (String(payload?.status || 'error') !== 'ok') {
+    if (overlay) return buildChartOverlayIndicatorAnalysis({ symbol, exchange, interval, overlay });
     throw new Error(payload?.message || 'indicator fetch failed');
   }
-  const overlay = await fetchAuthoritativeChartOverlay(symbol, exchange, interval);
   const snapshot = buildAuthoritativeIndicatorSnapshot({ payload, overlay, yahooSymbol, interval });
 
   const signal = String(payload?.signal || 'HOLD').toUpperCase();

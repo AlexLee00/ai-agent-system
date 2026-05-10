@@ -819,7 +819,29 @@ const metricsServer = http.createServer(async (req, res) => {
     const existing = new Set(rows.map((item) => `${item.symbol}:${item.timeframe}`));
     for (const item of requested) {
       const key = subscriptionKey(item.symbol, item.timeframe);
-      if (existing.has(key)) continue;
+      if (existing.has(key)) {
+        if (requireReal) continue;
+        const rowIndex = rows.findIndex((row) => subscriptionKey(row.symbol, row.timeframe) === key);
+        const current = rowIndex >= 0 ? rows[rowIndex] : null;
+        const sub = subscriptions.get(key) || { timeframe: item.timeframe, lastBarAt: current?.lastBarAt };
+        const ageMs = current?.lastBarAt ? Math.max(0, now - current.lastBarAt) : null;
+        const stale = Number.isFinite(ageMs) && ageMs > staleThresholdFor(sub);
+        if (!stale || !isTradingViewRealtimeBar(current)) continue;
+        const fallback = await fetchBinanceRestFallbackBar(item.symbol, item.timeframe);
+        if (!fallback) continue;
+        fallback.fallbackReason = 'tradingview_ws_latest_stale';
+        latestBars.set(key, {
+          symbol: item.symbol,
+          timeframe: item.timeframe,
+          lastBarAt: fallback.lastBarAt,
+          source: fallback.source,
+          providerMode: fallback.providerMode,
+          fallbackReason: fallback.fallbackReason,
+          bar: fallback.bar,
+        });
+        rows[rowIndex] = fallback;
+        continue;
+      }
       if (requireReal) continue;
       const fallback = await fetchBinanceRestFallbackBar(item.symbol, item.timeframe);
       if (!fallback) continue;

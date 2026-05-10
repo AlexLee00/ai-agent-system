@@ -54,6 +54,7 @@ export async function runLunaEntryTriggerActiveWorkerSmoke() {
     const mtfRefreshSymbol = `MTFREFRESH${Date.now().toString(36).toUpperCase()}/USDT`;
     const bearishMtfSymbol = `BEARMTF${Date.now().toString(36).toUpperCase()}/USDT`;
     const weakPullbackSymbol = `WEAKPULL${Date.now().toString(36).toUpperCase()}/USDT`;
+    const technicalProbePullbackSymbol = `TECHPULL${Date.now().toString(36).toUpperCase()}/USDT`;
     const terminalLowConfSymbol = `TERMINALCONF${Date.now().toString(36).toUpperCase()}/USDT`;
     let signalId = null;
     let openSignalId = null;
@@ -230,6 +231,50 @@ export async function runLunaEntryTriggerActiveWorkerSmoke() {
       assert.equal(weakPullbackResult.results[0].fired, false, 'pullback trigger must not bypass predictive/confidence checks through generic MTF rules');
       assert.equal(weakPullbackResult.results[0].fireReason, 'pullback_confirmation_incomplete');
 
+      const technicalProbePullbackTrigger = await insertEntryTrigger({
+        symbol: technicalProbePullbackSymbol,
+        exchange: 'binance',
+        setupType: 'mean_reversion',
+        triggerType: 'pullback_to_support',
+        triggerState: 'armed',
+        confidence: 0.5962,
+        predictiveScore: 0.5182,
+        targetPrice: 101,
+        waitingFor: 'pullback_to_support',
+        triggerContext: {
+          hints: { mtfAgreement: 0.2, discoveryScore: 0.5331, volumeBurst: 1.2105, breakoutRetest: false },
+        },
+        expiresAt: new Date(Date.now() + 3600_000).toISOString(),
+      });
+      assert.ok(technicalProbePullbackTrigger?.id);
+      const technicalProbePullbackResult = await evaluateActiveEntryTriggersAgainstMarketEvents([
+        {
+          symbol: technicalProbePullbackSymbol,
+          mtfAgreement: 1,
+          mtfAlignmentScore: 0.246,
+          mtfDominantSignal: 'BUY',
+          discoveryScore: 0.5331,
+          volumeBurst: 1.2105,
+          breakoutRetest: true,
+          tradingViewSnapshot: {
+            ok: true,
+            source: 'tradingview_ws_service',
+            providerMode: 'websocket',
+            market: 'tradingview',
+            price: 101,
+            open: 100,
+            stale: false,
+          },
+        },
+      ], {
+        exchange: 'binance',
+        capitalSnapshot,
+      });
+      assert.equal(technicalProbePullbackResult.results[0].fired, true, 'near-threshold pullback with fresh MTF/retest/volume confirmation should fire as a bounded technical probe');
+      const technicalProbeRow = await db.get(`SELECT trigger_meta FROM entry_triggers WHERE id = $1`, [technicalProbePullbackTrigger.id]);
+      assert.equal(technicalProbeRow?.trigger_meta?.fireReadiness?.technicalProbeApplied, true);
+      assert.equal(technicalProbeRow?.trigger_meta?.fireReadiness?.technicalConfirmation?.ok, true);
+
       const openTrigger = await insertEntryTrigger({
         symbol: openSymbol,
         exchange: 'binance',
@@ -295,6 +340,8 @@ export async function runLunaEntryTriggerActiveWorkerSmoke() {
       assert.equal(staleReasonResult.results[0].reason, 'conditions_not_met');
       const staleReasonRow = await db.get(`SELECT trigger_meta FROM entry_triggers WHERE id = $1`, [staleReasonTrigger.id]);
       assert.equal(staleReasonRow?.trigger_meta?.reason, 'conditions_not_met', 'stale blocker reason must be replaced by current readiness state');
+      assert.equal(staleReasonRow?.trigger_meta?.riskGateReason, null, 'stale risk gate reason must be cleared when current readiness is conditions_not_met');
+      assert.equal(staleReasonRow?.trigger_meta?.terminalBlock, false, 'terminal block flag must be reset when trigger returns to ordinary waiting state');
 
       const mtfRefreshTrigger = await insertEntryTrigger({
         symbol: mtfRefreshSymbol,
@@ -479,6 +526,7 @@ export async function runLunaEntryTriggerActiveWorkerSmoke() {
       await db.run(`DELETE FROM entry_triggers WHERE symbol = $1`, [mtfRefreshSymbol]).catch(() => {});
       await db.run(`DELETE FROM entry_triggers WHERE symbol = $1`, [bearishMtfSymbol]).catch(() => {});
       await db.run(`DELETE FROM entry_triggers WHERE symbol = $1`, [weakPullbackSymbol]).catch(() => {});
+      await db.run(`DELETE FROM entry_triggers WHERE symbol = $1`, [technicalProbePullbackSymbol]).catch(() => {});
       await db.run(`DELETE FROM entry_triggers WHERE symbol = $1`, [terminalLowConfSymbol]).catch(() => {});
       await db.run(`DELETE FROM entry_triggers WHERE symbol LIKE 'STALEBLOCK%'`).catch(() => {});
       if (signalId) await db.run(`DELETE FROM signals WHERE id = $1`, [signalId]).catch(() => {});

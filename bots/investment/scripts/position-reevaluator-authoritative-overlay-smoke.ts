@@ -2,7 +2,10 @@
 // @ts-nocheck
 
 import assert from 'node:assert/strict';
-import { buildAuthoritativeIndicatorSnapshot } from '../shared/position-reevaluator.ts';
+import {
+  buildAuthoritativeIndicatorSnapshot,
+  buildChartOverlayIndicatorAnalysis,
+} from '../shared/position-reevaluator.ts';
 
 const payload = {
   provider: 'yfinance',
@@ -73,4 +76,27 @@ assert.equal(fallbackSnapshot.close, 100);
 assert.equal(fallbackSnapshot.provider, 'yfinance');
 assert.equal(fallbackSnapshot.authoritativeSource, null);
 
-console.log(JSON.stringify({ ok: true, checked: 3 }, null, 2));
+const chartOnly = buildChartOverlayIndicatorAnalysis({
+  symbol: 'UNI/USDT',
+  exchange: 'binance',
+  interval: '4h',
+  overlay: {
+    ok: true,
+    provider: 'tradingview_ws_binance_fallback',
+    source: 'tradingview_ws_service_binance_rest_fallback',
+    providerMode: 'binance_rest_live_fallback',
+    fallbackReason: 'tradingview_ws_latest_empty',
+    symbol: 'BINANCE:UNIUSDT',
+    price: 3.94,
+    open: 3.91,
+    high: 3.95,
+    low: 3.9,
+  },
+});
+
+assert.equal(chartOnly.snapshot.symbol, 'BINANCE:UNIUSDT');
+assert.equal(chartOnly.snapshot.close, 3.94);
+assert.equal(chartOnly.snapshot.authoritativeSource, 'tradingview_ws_service_binance_rest_fallback');
+assert.equal(chartOnly.signal, 'BUY');
+
+console.log(JSON.stringify({ ok: true, checked: 4 }, null, 2));

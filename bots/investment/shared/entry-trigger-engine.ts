@@ -94,6 +94,94 @@ function resolvePullbackMinConfidence(context = {}) {
   return clamp01(Math.max(globalMin ?? 0.6, 0.6), 0.6);
 }
 
+function boolConfig(value, fallback = false) {
+  if (value == null || value === '') return fallback;
+  const normalized = String(value).trim().toLowerCase();
+  if (['1', 'true', 'yes', 'on', 'enabled'].includes(normalized)) return true;
+  if (['0', 'false', 'no', 'off', 'disabled'].includes(normalized)) return false;
+  return fallback;
+}
+
+function resolvePullbackTechnicalConfirmation(details = {}, thresholds = {}, context = {}) {
+  const enabled = boolConfig(
+    context?.pullbackTechnicalConfirmationEnabled ?? process.env.LUNA_ENTRY_TRIGGER_PULLBACK_TECHNICAL_CONFIRMATION_ENABLED,
+    true,
+  );
+  const gapTolerance = Math.max(0, finiteNumber(
+    context?.pullbackTechnicalConfirmationTolerance ?? process.env.LUNA_ENTRY_TRIGGER_PULLBACK_TECHNICAL_CONFIRMATION_TOLERANCE,
+    0.05,
+  ));
+  const minMtfAgreement = clamp01(
+    context?.pullbackTechnicalConfirmationMinMtfAgreement ?? process.env.LUNA_ENTRY_TRIGGER_PULLBACK_TECHNICAL_CONFIRMATION_MIN_MTF,
+    0.8,
+  );
+  const minMtfAlignmentScore = Math.max(0, finiteNumber(
+    context?.pullbackTechnicalConfirmationMinMtfAlignmentScore ?? process.env.LUNA_ENTRY_TRIGGER_PULLBACK_TECHNICAL_CONFIRMATION_MIN_ALIGNMENT,
+    0.18,
+  ));
+  const minVolumeBurst = Math.max(0, finiteNumber(
+    context?.pullbackTechnicalConfirmationMinVolumeBurst ?? process.env.LUNA_ENTRY_TRIGGER_PULLBACK_TECHNICAL_CONFIRMATION_MIN_VOLUME,
+    1.1,
+  ));
+  const mtfAlignmentScore = finiteNumber(details.mtfAlignmentScore, 0);
+  const gaps = {
+    confidence: Number((Number(thresholds.minConfidence || 0) - Number(details.confidence || 0)).toFixed(6)),
+    predictiveScore: Number((Number(thresholds.minPredictiveScore || 0) - Number(details.predictiveScore || 0)).toFixed(6)),
+    discoveryScore: Number((Number(thresholds.minDiscoveryScore || 0) - Number(details.discoveryScore || 0)).toFixed(6)),
+  };
+  const gapOk = Object.values(gaps).every((gap) => Number.isFinite(gap) && gap >= 0 && gap <= gapTolerance);
+  const ok = enabled
+    && details.breakoutRetest === true
+    && details.mtfBullish === true
+    && Number(details.mtfAgreement || 0) >= minMtfAgreement
+    && mtfAlignmentScore >= minMtfAlignmentScore
+    && Number(details.volumeBurst || 0) >= minVolumeBurst
+    && gapOk;
+  return {
+    ok,
+    enabled,
+    gapTolerance,
+    gaps,
+    minMtfAgreement,
+    minMtfAlignmentScore,
+    minVolumeBurst,
+    observedMtfAgreement: Number(details.mtfAgreement || 0),
+    observedMtfAlignmentScore: mtfAlignmentScore,
+    observedVolumeBurst: Number(details.volumeBurst || 0),
+  };
+}
+
+function applyEntryTriggerEffectiveScores(candidate = {}, fireReadiness = {}) {
+  const details = fireReadiness?.details || {};
+  if (details.technicalProbeApplied !== true) return candidate;
+  const effectiveConfidence = Math.max(Number(candidate.confidence || 0), Number(details.effectiveConfidence || 0));
+  const effectivePredictiveScore = Math.max(Number(candidate.predictiveScore || 0), Number(details.effectivePredictiveScore || 0));
+  const effectiveDiscoveryScore = Math.max(
+    Number(candidate.triggerHints?.discoveryScore || 0),
+    Number(details.effectiveDiscoveryScore || 0),
+  );
+  return {
+    ...candidate,
+    confidence: effectiveConfidence,
+    predictiveScore: effectivePredictiveScore,
+    prediction: {
+      ...(candidate.prediction || {}),
+      score: Math.max(Number(candidate.prediction?.score || 0), effectivePredictiveScore),
+      source: 'pullback_technical_confirmation',
+    },
+    analystAccuracy: Math.max(Number(candidate.analystAccuracy || 0), effectiveConfidence),
+    triggerHints: {
+      ...(candidate.triggerHints || {}),
+      discoveryScore: effectiveDiscoveryScore,
+      activeTechnicalConfirmation: details.technicalConfirmation || null,
+    },
+    block_meta: {
+      ...(candidate.block_meta || {}),
+      activeTechnicalConfirmation: details.technicalConfirmation || null,
+    },
+  };
+}
+
 export function buildEntryTriggerFireReadiness(candidate = {}, context = {}) {
   const hints = candidate?.triggerHints || {};
   const mtfAgreement = Number(hints.mtfAgreement ?? context?.mtfAgreement ?? 0);
@@ -144,7 +232,33 @@ export function buildEntryTriggerFireReadiness(candidate = {}, context = {}) {
     ) {
       return { ok: true, reason: 'pullback_target_retest_predictive_confirmed', details: pullbackDetails };
     }
-    return { ok: false, reason: 'pullback_confirmation_incomplete', details: pullbackDetails };
+    const technicalConfirmation = resolvePullbackTechnicalConfirmation(details, {
+      minConfidence,
+      minPredictiveScore,
+      minDiscoveryScore,
+    }, context);
+    if (technicalConfirmation.ok) {
+      return {
+        ok: true,
+        reason: 'pullback_retest_mtf_technical_probe_confirmed',
+        details: {
+          ...pullbackDetails,
+          technicalProbeApplied: true,
+          effectiveConfidence: minConfidence,
+          effectivePredictiveScore: minPredictiveScore,
+          effectiveDiscoveryScore: minDiscoveryScore,
+          technicalConfirmation,
+        },
+      };
+    }
+    return {
+      ok: false,
+      reason: 'pullback_confirmation_incomplete',
+      details: {
+        ...pullbackDetails,
+        technicalConfirmation,
+      },
+    };
   }
 
   if (mtfBullish && breakoutRetest && mtfAgreement >= 0.62) return { ok: true, reason: 'breakout_retest_mtf_confirmed', details };
@@ -1162,6 +1276,7 @@ export async function evaluateActiveEntryTriggersAgainstMarketEvents(events = []
       },
     };
     const fireReadiness = buildEntryTriggerFireReadiness(candidate, context);
+    const effectiveCandidate = applyEntryTriggerEffectiveScores(candidate, fireReadiness);
     const fireNow = fireReadiness.ok;
     if (!fireNow) {
       await updateEntryTriggerState(trigger.id, {
@@ -1170,6 +1285,15 @@ export async function evaluateActiveEntryTriggersAgainstMarketEvents(events = []
           reason: 'conditions_not_met',
           fireReason: fireReadiness.reason,
           fireReadiness: fireReadiness.details,
+          riskGateReason: null,
+          riskGateDetails: null,
+          tradingViewReason: null,
+          tradingViewGuard: null,
+          readyBlockedByMode: null,
+          duplicateFireCooldownMinutes: null,
+          recentFiredTriggerId: null,
+          terminalBlock: false,
+          terminalBlockedAt: null,
           lastCheckedAt: nowIso(),
         },
       }).catch(() => null);
@@ -1196,7 +1320,7 @@ export async function evaluateActiveEntryTriggersAgainstMarketEvents(events = []
       results.push({ triggerId: trigger.id, symbol: trigger.symbol, state: 'waiting', fired: false, reason: 'mode_blocked', mode: flags.mode });
       continue;
     }
-    const tradingViewGuard = await evaluateTradingViewEntryGuard({ candidate, event, exchange }).catch((error) => ({
+    const tradingViewGuard = await evaluateTradingViewEntryGuard({ candidate: effectiveCandidate, event, exchange }).catch((error) => ({
       ok: false,
       blocked: true,
       enabled: true,
@@ -1224,7 +1348,7 @@ export async function evaluateActiveEntryTriggersAgainstMarketEvents(events = []
       });
       continue;
     }
-    const riskGate = evaluateEntryTriggerLiveRiskGate({ candidate, trigger, context, flags });
+    const riskGate = evaluateEntryTriggerLiveRiskGate({ candidate: effectiveCandidate, trigger, context, flags });
     if (!riskGate.ok) {
       readyBlocked++;
       const terminalBlock = isTerminalEntryTriggerLiveRiskGateBlock(riskGate);
@@ -1288,6 +1412,7 @@ export async function evaluateActiveEntryTriggersAgainstMarketEvents(events = []
         tradingViewGuard: summarizeEntryChartGuard(tradingViewGuard),
         riskGateReason: riskGate.reason || null,
         riskGateDetails: riskGate.details || {},
+        fireReadiness: fireReadiness.details,
       },
     }).catch(() => null);
     results.push({ triggerId: trigger.id, symbol: trigger.symbol, state: updated?.trigger_state || 'fired', fired: true });

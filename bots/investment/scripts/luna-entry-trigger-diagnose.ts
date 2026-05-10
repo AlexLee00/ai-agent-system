@@ -21,6 +21,7 @@ import { getLunaIntelligentDiscoveryFlags } from '../shared/luna-intelligent-dis
 import { buildEntryTriggerFireReadiness } from '../shared/entry-trigger-engine.ts';
 import { getOHLCV } from '../shared/ohlcv-fetcher.ts';
 import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
+import { deriveMarketEvents } from './luna-entry-trigger-worker.ts';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const INVESTMENT_DIR = path.resolve(__dirname, '..');
@@ -90,9 +91,9 @@ async function getActiveEntryTriggers(exchange: string) {
   try {
     await db.initSchema();
     const rows = await db.query(
-      `SELECT id, symbol, exchange, trigger_type, trigger_state, confidence,
+      `SELECT id, symbol, exchange, setup_type, trigger_type, trigger_state, confidence,
               predictive_score, target_price, expires_at, fired_at,
-              created_at, updated_at, trigger_context
+              created_at, updated_at, trigger_context, trigger_meta
          FROM entry_triggers
         WHERE exchange = $1
           AND trigger_state IN ('armed', 'waiting')
@@ -108,22 +109,45 @@ async function getActiveEntryTriggers(exchange: string) {
 
 async function enrichActiveTriggersWithMarketEvents(triggers: any[], exchange: string) {
   if (!Array.isArray(triggers) || triggers.length === 0) return [];
+  const derivedEvents = await deriveMarketEvents({
+    exchange,
+    limit: Math.max(50, triggers.length),
+  }).catch(() => []);
+  const eventBySymbol = new Map(
+    (derivedEvents || [])
+      .filter((event: any) => event?.symbol)
+      .map((event: any) => [String(event.symbol), event]),
+  );
   return Promise.all((triggers || []).map(async (trigger) => {
     const triggerContext = normalizeTriggerContext(trigger?.trigger_context);
     const hints = triggerContext?.hints || {};
+    const derivedEvent = eventBySymbol.get(String(trigger?.symbol || '')) || null;
     const targetPrice = Number(trigger?.target_price || 0);
-    let latestPrice = null;
-    let source = 'stored_context';
+    let latestPrice = Number.isFinite(Number(derivedEvent?.price)) ? Number(derivedEvent.price) : null;
+    let source = derivedEvent
+      ? derivedEvent?.triggerHints?.entryTriggerMtfRefresh
+        ? 'derived_market_event_mtf'
+        : 'derived_market_event'
+      : 'stored_context';
     if (exchange === 'binance') {
-      const candles = await getOHLCV(trigger.symbol, '1m', isoDaysAgo(1), null, exchange).catch(() => []);
-      latestPrice = latestClose(candles);
-      if (latestPrice != null) source = 'binance_1m';
+      if (latestPrice == null) {
+        const candles = await getOHLCV(trigger.symbol, '1m', isoDaysAgo(1), null, exchange).catch(() => []);
+        latestPrice = latestClose(candles);
+        if (latestPrice != null) source = 'binance_1m';
+      }
     }
     const breakoutRetest = targetPrice > 0 && latestPrice != null
       ? latestPrice >= targetPrice
-      : hints.breakoutRetest === true;
+      : derivedEvent?.breakoutRetest === true || hints.breakoutRetest === true;
     const enrichedHints = {
       ...hints,
+      ...(derivedEvent?.triggerHints || {}),
+      mtfAgreement: derivedEvent?.mtfAgreement ?? hints.mtfAgreement,
+      mtfAlignmentScore: derivedEvent?.mtfAlignmentScore ?? hints.mtfAlignmentScore,
+      mtfDominantSignal: derivedEvent?.mtfDominantSignal ?? hints.mtfDominantSignal,
+      discoveryScore: derivedEvent?.discoveryScore ?? hints.discoveryScore,
+      volumeBurst: derivedEvent?.volumeBurst ?? hints.volumeBurst,
+      newsMomentum: derivedEvent?.newsMomentum ?? hints.newsMomentum,
       breakoutRetest,
     };
     return {
@@ -137,6 +161,10 @@ async function enrichActiveTriggersWithMarketEvents(triggers: any[], exchange: s
         latestPrice,
         targetPrice: Number.isFinite(targetPrice) && targetPrice > 0 ? targetPrice : null,
         breakoutRetest,
+        mtfAgreement: enrichedHints.mtfAgreement ?? null,
+        mtfAlignmentScore: enrichedHints.mtfAlignmentScore ?? null,
+        mtfDominantSignal: enrichedHints.mtfDominantSignal ?? null,
+        mtfRefresh: derivedEvent?.triggerHints?.entryTriggerMtfRefresh || null,
       },
     };
   }));
@@ -243,6 +271,18 @@ function diagnoseBlockReasons(flags: any, activeTriggers: any[], env: Record<str
   };
   const issues: string[] = [];
 
+  for (const t of activeTriggers) {
+    const hints = t.trigger_context?.hints || {};
+    t.fire_readiness = buildEntryTriggerFireReadiness({
+      symbol: t.symbol,
+      confidence: Number(t.confidence || 0),
+      setup_type: t.setup_type || null,
+      triggerType: t.trigger_type || null,
+      predictiveScore: Number(t.predictive_score || 0) || null,
+      triggerHints: hints,
+    });
+  }
+
   // 1. shadow 모드 점검
   if (flags.shadow) {
     blocks.mode_shadow = activeTriggers.length;
@@ -261,12 +301,12 @@ function diagnoseBlockReasons(flags: any, activeTriggers: any[], env: Record<str
   const predRequired = (env['LUNA_PREDICTIVE_REQUIRE_COMPONENTS'] || 'false').toLowerCase() === 'true';
   if (predMode === 'hard_gate') {
     if (predRequired) {
-      blocks.predictive_blocked = activeTriggers.filter((t) => !t.predictive_score || Number(t.predictive_score) < 0.55).length;
+      blocks.predictive_blocked = activeTriggers.filter((t) => t.fire_readiness?.ok !== true && (!t.predictive_score || Number(t.predictive_score) < 0.55)).length;
       if (blocks.predictive_blocked > 0) {
         issues.push(`[predictive_hard_gate + require_components=true] predictive_score 없거나 낮음 → ${blocks.predictive_blocked}개 트리거 차단`);
       }
     } else {
-      const lowScore = activeTriggers.filter((t) => t.predictive_score != null && Number(t.predictive_score) < 0.55).length;
+      const lowScore = activeTriggers.filter((t) => t.fire_readiness?.ok !== true && t.predictive_score != null && Number(t.predictive_score) < 0.55).length;
       if (lowScore > 0) {
         blocks.predictive_blocked = lowScore;
         issues.push(`[predictive_hard_gate] predictive_score < 0.55 → ${lowScore}개 트리거 차단`);
@@ -276,7 +316,7 @@ function diagnoseBlockReasons(flags: any, activeTriggers: any[], env: Record<str
 
   // 4. 최소 confidence 점검
   const minConf = Number(env['LUNA_ENTRY_TRIGGER_MIN_CONFIDENCE'] || 0.48);
-  const lowConfTriggers = activeTriggers.filter((t) => Number(t.confidence || 0) < minConf);
+  const lowConfTriggers = activeTriggers.filter((t) => t.fire_readiness?.ok !== true && Number(t.confidence || 0) < minConf);
   if (lowConfTriggers.length > 0) {
     blocks.confidence_blocked = lowConfTriggers.length;
     issues.push(`[min_confidence=${minConf}] confidence 부족 → ${lowConfTriggers.length}개 차단`);
@@ -284,17 +324,7 @@ function diagnoseBlockReasons(flags: any, activeTriggers: any[], env: Record<str
 
   // 5. fire 조건 미충족 (breakoutRetest / volumeBurst / mtfAgreement)
   const noFireCondition = activeTriggers.filter((t) => {
-    const hints = t.trigger_context?.hints || {};
-    const fire = buildEntryTriggerFireReadiness({
-      symbol: t.symbol,
-      confidence: Number(t.confidence || 0),
-      setup_type: t.setup_type || null,
-      triggerType: t.trigger_type || null,
-      predictiveScore: Number(t.predictive_score || 0) || null,
-      triggerHints: hints,
-    });
-    t.fire_readiness = fire;
-    return !fire.ok;
+    return t.fire_readiness?.ok !== true;
   });
   if (noFireCondition.length > 0) {
     blocks.live_gate_blocked = noFireCondition.length;
@@ -397,8 +427,10 @@ export async function runLunaEntryTriggerDiagnose({
       readyToFireSymbols: readyToFireTriggers.map((t: any) => t.symbol),
     },
     diagnosticMarketEvents: {
-      count: activeTriggersWithMarket.filter((t: any) => t.diagnostic_market_event?.source === 'binance_1m').length,
-      source: exchange === 'binance' ? 'binance_1m' : 'stored_context',
+      count: activeTriggersWithMarket.filter((t: any) => t.diagnostic_market_event?.source !== 'stored_context').length,
+      mtfRefreshedCount: activeTriggersWithMarket.filter((t: any) => t.diagnostic_market_event?.source === 'derived_market_event_mtf').length,
+      sources: [...new Set(activeTriggersWithMarket.map((t: any) => t.diagnostic_market_event?.source || 'unknown'))],
+      source: exchange === 'binance' ? 'derived_market_event_or_binance_1m' : 'stored_context',
     },
     recentFired: {
       count: (recentFired || []).length,

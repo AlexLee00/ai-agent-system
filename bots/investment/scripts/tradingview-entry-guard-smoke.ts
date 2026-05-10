@@ -143,6 +143,58 @@ export async function runSmoke() {
     globalThis.fetch = originalDailyFetch;
   }
 
+  const staleFallbackCalls = [];
+  globalThis.fetch = async (url) => {
+    const text = String(url);
+    staleFallbackCalls.push(text);
+    if (text.includes('/subscribe')) {
+      return { ok: true, async json() { return { ok: true }; } };
+    }
+    if (text.includes('/latest')) {
+      return {
+        ok: true,
+        async json() {
+          return {
+            status: 'ok',
+            bars: [{
+              symbol: 'BINANCE:BTCUSDT',
+              timeframe: '60',
+              ageMs: 8_000_000,
+              source: 'tradingview_ws_service',
+              providerMode: 'websocket_http_latest',
+              bar: { open: 100, high: 102, low: 99, close: 101, volume: 1000 },
+            }],
+          };
+        },
+      };
+    }
+    if (text.includes('api.binance.com/api/v3/klines')) {
+      const now = Date.now();
+      return {
+        ok: true,
+        async json() {
+          return [[now - 60_000, '101', '104', '100', '103', '2000', now]];
+        },
+      };
+    }
+    throw new Error(`unexpected fetch: ${text}`);
+  };
+  try {
+    const staleFallbackSnapshot = await fetchTradingViewHttpLatestSnapshot({
+      symbol: 'BTC/USDT',
+      exchange: 'binance',
+      timeframe: '1h',
+      env: baseEnv,
+    });
+    assert.equal(staleFallbackSnapshot.ok, true);
+    assert.equal(staleFallbackSnapshot.source, 'tradingview_ws_client_binance_rest_fallback');
+    assert.equal(staleFallbackSnapshot.providerMode, 'binance_rest_live_fallback');
+    assert.equal(staleFallbackSnapshot.fallbackReason, 'tradingview_ws_latest_stale');
+    assert.ok(staleFallbackCalls.some((url) => url.includes('api.binance.com/api/v3/klines')));
+  } finally {
+    globalThis.fetch = originalDailyFetch;
+  }
+
   const bullish = evaluateTradingViewSnapshot({
     ok: true,
     source: 'tradingview_ws_service',
