@@ -330,6 +330,29 @@ function isNeighborCommentUiTimeoutError(error) {
   );
 }
 
+function isTransientBrowserNavigationError(error) {
+  const message = String(error?.message || error || '');
+  return (
+    message.includes('fetch failed')
+    || message.includes('The operation was aborted')
+    || message.includes('Navigation timeout')
+    || message.includes('detached Frame')
+    || /net::ERR_(NAME_NOT_RESOLVED|INTERNET_DISCONNECTED|CONNECTION_RESET|CONNECTION_TIMED_OUT|TIMED_OUT|ABORTED|NETWORK_CHANGED)/.test(message)
+  );
+}
+
+function isRecoverableNeighborCommentFailure(error) {
+  const message = String(error?.message || error || '');
+  return (
+    isNeighborCommentUiTimeoutError(error)
+    || isTransientBrowserNavigationError(error)
+    || message === 'comment_submit_not_confirmed'
+    || message.startsWith('comment_submit_not_confirmed:')
+    || message === 'neighbor_comment_process_timeout'
+    || message.startsWith('neighbor_comment_process_timeout:')
+  );
+}
+
 function isDirectReplyUiError(error) {
   const message = String(error?.message || '');
   return (
@@ -2238,6 +2261,8 @@ async function collectNeighborCandidates({ testMode = false, persist = true, col
     commenterNetworkResolveFailedCount: 0,
     commenterNetworkSeenUrlSkipCount: 0,
     buddyFeedSourceCount: 0,
+    buddyFeedNavigationFailedCount: 0,
+    buddyFeedNavigationError: null,
     buddyFeedRecentBlogSkipCount: 0,
     buddyFeedSeenUrlSkipCount: 0,
     rawCollectedCount: 0,
@@ -2256,7 +2281,17 @@ async function collectNeighborCandidates({ testMode = false, persist = true, col
   diagnostics.commenterNetworkSourceCount = Array.isArray(commenterNetwork) ? commenterNetwork.length : 0;
 
   await withBrowserPage(testMode, async (page) => {
-    const buddyFeed = await extractBuddyFeedPosts(page, ownBlogId, effectiveCollectLimit);
+    let buddyFeed = [];
+    try {
+      buddyFeed = await extractBuddyFeedPosts(page, ownBlogId, effectiveCollectLimit);
+    } catch (error) {
+      if (!isTransientBrowserNavigationError(error)) throw error;
+      diagnostics.buddyFeedNavigationFailedCount += 1;
+      diagnostics.buddyFeedNavigationError = squeezeText(String(error?.message || error || ''), 300);
+      traceCommenter('neighborCollect:buddyFeedTransientFailure', {
+        error: diagnostics.buddyFeedNavigationError,
+      });
+    }
     diagnostics.buddyFeedSourceCount = Array.isArray(buddyFeed) ? buddyFeed.length : 0;
     const runCollectionPass = async ({ activeRecentBlogIds, activeSeenUrls, relaxed = false }) => {
       for (const item of buddyFeed) {
@@ -5972,21 +6007,24 @@ async function runNeighborCommenter({ testMode = false, limitOverride = 0, trigg
         elapsedMs: Date.now() - startedAt,
       });
     } catch (error) {
-      const uiTimeout = isNeighborCommentUiTimeoutError(error);
-      if (uiTimeout) {
+      const recoverableFailure = isRecoverableNeighborCommentFailure(error);
+      const errorMessage = String(error?.message || error || '');
+      if (recoverableFailure) {
         skipped += 1;
         await updateNeighborCommentStatus(candidate.id, 'skipped', {
-          errorMessage: 'comment_ui_timeout',
+          errorMessage: isNeighborCommentUiTimeoutError(error)
+            ? 'comment_ui_timeout'
+            : 'neighbor_comment_transient_skip',
           meta: {
             phase: 'post',
             sourceType: candidate.source_type || null,
-            timeoutError: String(error?.message || ''),
+            transientError: errorMessage,
           },
         });
       } else {
         failed += 1;
         await updateNeighborCommentStatus(candidate.id, 'failed', {
-          errorMessage: error.message,
+          errorMessage,
           meta: { phase: 'post', sourceType: candidate.source_type || null },
         });
       }
@@ -5997,14 +6035,14 @@ async function runNeighborCommenter({ testMode = false, limitOverride = 0, trigg
         success: false,
         meta: {
           neighborCommentId: candidate.id,
-          error: error.message,
-          terminalStatus: uiTimeout ? 'skipped' : 'failed',
+          error: errorMessage,
+          terminalStatus: recoverableFailure ? 'skipped' : 'failed',
         },
       }).catch(() => {});
       traceCommenter('neighborComment:failed', {
         candidateId: candidate.id,
-        error: error.message,
-        terminalStatus: uiTimeout ? 'skipped' : 'failed',
+        error: errorMessage,
+        terminalStatus: recoverableFailure ? 'skipped' : 'failed',
       });
     }
   }
@@ -6057,6 +6095,8 @@ module.exports = {
   diagnoseReplyUi,
   processComment,
   processCommentWithTimeout,
+  isTransientBrowserNavigationError,
+  isRecoverableNeighborCommentFailure,
   isStaleRecoverableReply,
   prioritizePendingComments,
   requeueRecoverableReplyFailures,
