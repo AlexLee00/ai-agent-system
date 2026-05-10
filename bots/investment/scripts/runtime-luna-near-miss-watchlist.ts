@@ -5,6 +5,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
 import { investmentOpsRuntimeFile } from '../shared/runtime-ops-path.ts';
+import * as db from '../shared/db.ts';
 import {
   buildLunaDecisionFilterReport,
   buildNearMissWatchCandidate,
@@ -58,6 +59,16 @@ function normalizeSymbol(symbol = '') {
   return raw;
 }
 
+async function loadOpenPositionSymbols(exchange = 'binance', injected = null) {
+  if (Array.isArray(injected)) return new Set(injected.map(normalizeSymbol).filter(Boolean));
+  try {
+    const positions = await db.getAllPositions(exchange, false);
+    return new Set((positions || []).map((row) => normalizeSymbol(row?.symbol)).filter(Boolean));
+  } catch {
+    return new Set();
+  }
+}
+
 async function attachCryptoDailyTechnical(report = {}, { market, exchange, dailyTechnicalCoverageBuilder = null } = {}) {
   if (market !== 'crypto' || exchange !== 'binance' || !Array.isArray(report?.top) || report.top.length === 0) {
     return report;
@@ -104,6 +115,7 @@ export async function buildLunaNearMissWatchlist({
   limit = 20,
   reportBuilder = buildLunaDecisionFilterReport,
   dailyTechnicalCoverageBuilder = null,
+  openPositionSymbols = null,
 } = {}) {
   const resolvedExchange = exchange || (market === 'domestic' ? 'kis' : market === 'overseas' ? 'kis_overseas' : 'binance');
   const report = await reportBuilder({
@@ -121,9 +133,14 @@ export async function buildLunaNearMissWatchlist({
   const watchlist = Array.isArray(enrichedReport?.nearMissWatchlist) && enrichedReport.nearMissWatchlist.length > 0
     ? enrichedReport.nearMissWatchlist
     : (enrichedReport?.top || []).map(buildNearMissWatchCandidate).filter(Boolean);
+  const openSymbols = await loadOpenPositionSymbols(resolvedExchange, openPositionSymbols);
+  const entryWatchlist = watchlist.filter((item) => !openSymbols.has(normalizeSymbol(item?.symbol)));
+  const excludedOpenPositionSymbols = watchlist
+    .filter((item) => openSymbols.has(normalizeSymbol(item?.symbol)))
+    .map((item) => normalizeSymbol(item?.symbol));
   return {
     ok: true,
-    status: watchlist.length > 0 ? 'near_miss_watchlist_attention' : 'near_miss_watchlist_clear',
+    status: entryWatchlist.length > 0 ? 'near_miss_watchlist_attention' : 'near_miss_watchlist_clear',
     generatedAt: new Date().toISOString(),
     market,
     exchange: resolvedExchange,
@@ -131,11 +148,12 @@ export async function buildLunaNearMissWatchlist({
     limit,
     dryRun: true,
     applied: false,
-    summary: summarizeWatchlist(watchlist),
-    watchlist,
+    summary: summarizeWatchlist(entryWatchlist),
+    watchlist: entryWatchlist,
     evidence: {
       decisionFilterStatus: report?.status || null,
       activeCandidateCoverage: report?.activeCandidateCoverage || null,
+      excludedOpenPositionSymbols,
       dailyTechnicalCoverage: enrichedReport?.dailyTechnicalCoverage
         ? {
             checkedCount: enrichedReport.dailyTechnicalCoverage.checkedCount,
@@ -149,7 +167,7 @@ export async function buildLunaNearMissWatchlist({
       reasonCounts: report?.reasonCounts || {},
       bottlenecks: report?.bottlenecks || [],
     },
-    nextAction: watchlist.length > 0
+    nextAction: entryWatchlist.length > 0
       ? 'monitor_near_miss_candidates_until_missing_confirmations_clear'
       : 'continue_regular_candidate_discovery',
   };

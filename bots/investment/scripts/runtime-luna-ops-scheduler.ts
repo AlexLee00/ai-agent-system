@@ -69,6 +69,8 @@ export function getOpsSchedulerJobs() {
       cadence: { type: 'interval', seconds: 1800 },
       ...nodeScript('runtime-discovery-orchestrator-refresh.ts', [
         '--markets=crypto',
+        '--limit=30',
+        '--ttl-hours=6',
         '--json',
       ]),
     },

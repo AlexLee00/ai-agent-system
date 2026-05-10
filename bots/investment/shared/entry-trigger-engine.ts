@@ -2,6 +2,7 @@
 import {
   ensureLunaDiscoveryEntryTables,
   expireEntryTriggers,
+  expireActiveEntryTriggersForSymbols,
   getRecentFiredEntryTrigger,
   insertEntryTrigger,
   updateEntryTriggerState,
@@ -29,6 +30,39 @@ function nowIso() {
 
 function plusMinutes(minutes = 180) {
   return new Date(Date.now() + Math.max(1, Number(minutes || 180)) * 60000).toISOString();
+}
+
+function normalizeSymbol(symbol = '') {
+  return String(symbol || '').trim().toUpperCase();
+}
+
+async function loadOpenEntryPositionSymbols(exchange = 'binance', context = {}) {
+  if (Array.isArray(context.openPositionSymbols)) {
+    return new Set(context.openPositionSymbols.map(normalizeSymbol).filter(Boolean));
+  }
+  const rows = await dbQuery(
+    `SELECT symbol
+       FROM positions
+      WHERE amount > 0
+        AND exchange = $1
+        AND COALESCE(paper, false) = false`,
+    [exchange],
+  ).catch(() => []);
+  return new Set((rows || []).map((row) => normalizeSymbol(row.symbol)).filter(Boolean));
+}
+
+async function expireOpenPositionEntryTriggers(exchange = 'binance', openPositionSymbols = new Set()) {
+  const symbols = [...openPositionSymbols].filter(Boolean);
+  if (symbols.length === 0) return { count: 0, symbols: [] };
+  return expireActiveEntryTriggersForSymbols({
+    symbols,
+    exchange,
+    reason: 'open_position_reentry_guard',
+    triggerMetaPatch: {
+      source: 'entry-trigger-engine',
+      openPositionEntryTriggerExpired: true,
+    },
+  }).catch(() => ({ count: 0, symbols: [] }));
 }
 
 function resolveTriggerType(candidate = {}) {
@@ -333,6 +367,8 @@ export async function evaluateEntryTriggers(candidates = [], context = {}) {
   await expireEntryTriggers().catch(() => 0);
 
   const exchange = String(context.exchange || 'binance');
+  const openPositionSymbols = await loadOpenEntryPositionSymbols(exchange, context);
+  await expireOpenPositionEntryTriggers(exchange, openPositionSymbols);
   const ttlMinutes = Number(flags.entryTrigger.ttlMinutes || 180);
   const minConfidence = Number(flags.entryTrigger.minConfidence || 0.48);
   const fireCooldownMinutes = Number(flags.entryTrigger.fireCooldownMinutes || 10);
@@ -359,6 +395,28 @@ export async function evaluateEntryTriggers(candidates = [], context = {}) {
     }
 
     const rawConfidence = Number(candidate?.confidence || 0);
+    if (openPositionSymbols.has(normalizeSymbol(candidate?.symbol))) {
+      blocked++;
+      const meta = {
+        triggerType: resolveTriggerType(candidate),
+        state: shouldMutate ? 'blocked' : 'observed',
+        reason: 'open_position_reentry_guard',
+        mode: flags.mode,
+      };
+      if (!shouldMutate) observed++;
+      output.push(shouldMutate ? {
+        ...candidate,
+        action: ACTIONS.HOLD,
+        amount_usdt: 0,
+        reasoning: `entry_trigger_blocked: open_position_reentry_guard | ${candidate.reasoning || ''}`.slice(0, 220),
+        block_meta: {
+          ...(candidate.block_meta || {}),
+          event_type: 'entry_trigger_blocked',
+          entryTrigger: meta,
+        },
+      } : annotateEntryTrigger(candidate, meta));
+      continue;
+    }
     const market = String(candidate?.market || context?.market || (exchange === 'kis' ? 'domestic' : exchange === 'kis_overseas' ? 'overseas' : 'crypto'));
     const regime = String(candidate?.regime || candidate?.market_regime || context?.regime || '').trim();
     const reflexionGuard = await checkAvoidPatterns(
@@ -919,6 +977,8 @@ export async function evaluateActiveEntryTriggersAgainstMarketEvents(events = []
   await expireEntryTriggers().catch(() => 0);
 
   const exchange = String(context.exchange || 'binance');
+  const openPositionSymbols = await loadOpenEntryPositionSymbols(exchange, context);
+  await expireOpenPositionEntryTriggers(exchange, openPositionSymbols);
   const allowLiveFire = flags.shouldAllowLiveEntryFire();
   const fireCooldownMinutes = Number(flags.entryTrigger.fireCooldownMinutes || 10);
   const eventsBySymbol = new Map();
@@ -935,6 +995,10 @@ export async function evaluateActiveEntryTriggersAgainstMarketEvents(events = []
   let checked = 0;
 
   for (const trigger of active || []) {
+    if (openPositionSymbols.has(normalizeSymbol(trigger.symbol))) {
+      results.push({ triggerId: trigger.id, symbol: trigger.symbol, state: 'expired', fired: false, reason: 'open_position_reentry_guard' });
+      continue;
+    }
     const event = eventsBySymbol.get(String(trigger.symbol || ''));
     if (!event) continue;
     checked++;

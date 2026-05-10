@@ -27,7 +27,7 @@ import { publishAlert } from '../shared/alert-publisher.ts';
 import { resolveSymbolsWithFallback } from '../shared/universe-fallback.ts';
 import { getMockUntradableSymbolCooldownMinutes } from '../shared/runtime-config.ts';
 import { getInvestmentStateFile } from '../shared/market-cycle-support.ts';
-import { ensureCandidateUniverseTable, upsertCandidateSignals } from '../team/discovery/discovery-store.ts';
+import { ensureCandidateUniverseTable, pruneSourceCandidatesNotInSignals, upsertCandidateSignals } from '../team/discovery/discovery-store.ts';
 import { createRequire } from 'module';
 const kst = createRequire(import.meta.url)('../../../packages/core/lib/kst');
 
@@ -209,7 +209,12 @@ export async function persistPreScreenedCandidates(market, symbols = [], meta = 
   const ttlHours = getPrescreenCandidateTtlHours({ ...meta, source });
   const signals = buildPreScreenedCandidateSignals(market, symbols, { ...meta, source, ttlHours });
   await ensureCandidateUniverseTable();
-  return upsertCandidateSignals(signals, market, source, 1, ttlHours);
+  const result = await upsertCandidateSignals(signals, market, source, 1, ttlHours);
+  if (source === 'pre_market_screen') {
+    const pruned = await pruneSourceCandidatesNotInSignals(signals, market, source).catch(() => 0);
+    return { ...result, pruned };
+  }
+  return result;
 }
 
 /**

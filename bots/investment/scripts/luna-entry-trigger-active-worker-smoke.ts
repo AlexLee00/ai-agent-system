@@ -35,7 +35,9 @@ export async function runLunaEntryTriggerActiveWorkerSmoke() {
   }, async () => {
     const symbol = `ACTIVE${Date.now().toString(36).toUpperCase()}/USDT`;
     const refreshSymbol = `REFRESH${Date.now().toString(36).toUpperCase()}/USDT`;
+    const openSymbol = `OPENPOS${Date.now().toString(36).toUpperCase()}/USDT`;
     let signalId = null;
+    let openSignalId = null;
     try {
       signalId = await db.insertSignal({
         symbol: refreshSymbol,
@@ -54,6 +56,33 @@ export async function runLunaEntryTriggerActiveWorkerSmoke() {
       const refresh = await refreshEntryTriggersFromRecentBuySignals({ exchange: 'binance', hours: 1, limit: 5 });
       assert.ok(refresh.sourceSignals >= 1, 'recent BUY signal should be considered for entry-trigger refresh');
       assert.ok(refresh.armed >= 1 || refresh.observed >= 1, 'recent BUY signal should arm or observe an entry trigger');
+
+      openSignalId = await db.insertSignal({
+        symbol: openSymbol,
+        action: 'BUY',
+        amountUsdt: 50,
+        confidence: 0.9,
+        reasoning: 'open position entry trigger should not be refreshed',
+        status: 'approved',
+        exchange: 'binance',
+        strategyFamily: 'breakout',
+      });
+      await db.run(
+        `UPDATE signals SET block_meta = $1::jsonb WHERE id = $2`,
+        [JSON.stringify({ atr: 2, entry_price: 100, tp_sl_set: true }), openSignalId],
+      );
+      const openRefresh = await refreshEntryTriggersFromRecentBuySignals({
+        exchange: 'binance',
+        hours: 1,
+        limit: 10,
+        context: { openPositionSymbols: [openSymbol] },
+      });
+      assert.ok(openRefresh.sourceSignals >= 1, 'open position BUY signal should still be inspected');
+      const openRows = await db.query(
+        `SELECT * FROM entry_triggers WHERE symbol = $1 AND trigger_state IN ('armed', 'waiting')`,
+        [openSymbol],
+      );
+      assert.equal(openRows.length, 0, 'open position symbol must not keep active entry triggers');
 
       const trigger = await insertEntryTrigger({
         symbol,
@@ -105,15 +134,47 @@ export async function runLunaEntryTriggerActiveWorkerSmoke() {
       const row = await db.get(`SELECT trigger_state FROM entry_triggers WHERE id = $1`, [trigger.id]);
       assert.equal(row?.trigger_state, 'fired');
 
+      const openTrigger = await insertEntryTrigger({
+        symbol: openSymbol,
+        exchange: 'binance',
+        setupType: 'breakout_confirmation',
+        triggerType: 'breakout_confirmation',
+        triggerState: 'armed',
+        confidence: 0.8,
+        waitingFor: 'breakout_confirmation',
+        triggerContext: {
+          hints: { mtfAgreement: 0.8, discoveryScore: 0.8 },
+        },
+        expiresAt: new Date(Date.now() + 3600_000).toISOString(),
+      });
+      assert.ok(openTrigger?.id);
+      const openEventResult = await evaluateActiveEntryTriggersAgainstMarketEvents([
+        {
+          symbol: openSymbol,
+          mtfAgreement: 0.85,
+          discoveryScore: 0.8,
+          breakoutRetest: true,
+        },
+      ], {
+        exchange: 'binance',
+        openPositionSymbols: [openSymbol],
+      });
+      assert.equal(openEventResult.checked, 0, 'open position trigger should be expired before event evaluation');
+      const expiredOpenTrigger = await db.get(`SELECT trigger_state FROM entry_triggers WHERE id = $1`, [openTrigger.id]);
+      assert.equal(expiredOpenTrigger?.trigger_state, 'expired');
+
       return {
         ok: true,
         triggerId: trigger.id,
         result,
+        openEventResult,
       };
     } finally {
       await db.run(`DELETE FROM entry_triggers WHERE symbol = $1`, [symbol]).catch(() => {});
       await db.run(`DELETE FROM entry_triggers WHERE symbol = $1`, [refreshSymbol]).catch(() => {});
+      await db.run(`DELETE FROM entry_triggers WHERE symbol = $1`, [openSymbol]).catch(() => {});
       if (signalId) await db.run(`DELETE FROM signals WHERE id = $1`, [signalId]).catch(() => {});
+      if (openSignalId) await db.run(`DELETE FROM signals WHERE id = $1`, [openSignalId]).catch(() => {});
     }
   });
 }

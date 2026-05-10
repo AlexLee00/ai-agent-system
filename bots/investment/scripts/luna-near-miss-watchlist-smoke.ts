@@ -70,6 +70,7 @@ function dailyBullishFallbackReport() {
 export async function runLunaNearMissWatchlistSmoke() {
   const built = await buildLunaNearMissWatchlist({
     reportBuilder: async () => fixtureReport(),
+    openPositionSymbols: [],
   });
   assert.equal(built.status, 'near_miss_watchlist_attention');
   assert.equal(built.summary.count, 1);
@@ -80,6 +81,7 @@ export async function runLunaNearMissWatchlistSmoke() {
     market: 'crypto',
     exchange: 'binance',
     reportBuilder: async () => dailyBullishFallbackReport(),
+    openPositionSymbols: [],
     dailyTechnicalCoverageBuilder: async ({ symbols }) => ({
       enabled: true,
       sourcePolicy: 'tradingview',
@@ -100,6 +102,14 @@ export async function runLunaNearMissWatchlistSmoke() {
   assert.equal(dailyBullish.watchlist[0].dailyTechnical.reason, 'daily_trend_bullish');
   assert.equal(dailyBullish.evidence.dailyTechnicalCoverage.bullishCount, 1);
 
+  const openPositionExcluded = await buildLunaNearMissWatchlist({
+    reportBuilder: async () => fixtureReport(),
+    openPositionSymbols: ['HMSTR/USDT'],
+  });
+  assert.equal(openPositionExcluded.status, 'near_miss_watchlist_clear');
+  assert.equal(openPositionExcluded.summary.count, 0);
+  assert.deepEqual(openPositionExcluded.evidence.excludedOpenPositionSymbols, ['HMSTR/USDT']);
+
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'luna-near-miss-watchlist-smoke-'));
   const outputPath = path.join(tmp, 'watchlist.json');
   const blocked = await runLunaNearMissWatchlist({
@@ -107,6 +117,7 @@ export async function runLunaNearMissWatchlistSmoke() {
     confirm: null,
     outputPath,
     reportBuilder: async () => fixtureReport(),
+    openPositionSymbols: [],
   });
   assert.equal(blocked.ok, false);
   assert.equal(blocked.status, 'near_miss_watchlist_confirm_required');
@@ -117,6 +128,7 @@ export async function runLunaNearMissWatchlistSmoke() {
     confirm: 'luna-near-miss-watchlist',
     outputPath,
     reportBuilder: async () => fixtureReport(),
+    openPositionSymbols: [],
   });
   assert.equal(applied.ok, true);
   assert.equal(applied.applied, true);

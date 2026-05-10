@@ -24,6 +24,8 @@ export async function runLunaOpsSchedulerSmoke() {
   assert.equal(jobs.some((job) => job.name === 'discovery_candidate_refresh'), true);
   assert.equal(jobs.find((job) => job.name === 'discovery_candidate_refresh')?.market, 'crypto');
   assert.equal(jobs.find((job) => job.name === 'discovery_candidate_refresh')?.args?.includes('--markets=crypto'), true);
+  assert.equal(jobs.find((job) => job.name === 'discovery_candidate_refresh')?.args?.includes('--limit=30'), true);
+  assert.equal(jobs.find((job) => job.name === 'discovery_candidate_refresh')?.args?.includes('--ttl-hours=6'), true);
   assert.equal(jobs.some((job) => job.name === 'pre_market_screen_domestic'), true);
   assert.equal(jobs.some((job) => job.name === 'pre_market_screen_overseas'), true);
   assert.equal(jobs.some((job) => job.name === 'pre_market_analysis_refresh_domestic'), true);
