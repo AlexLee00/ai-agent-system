@@ -96,6 +96,48 @@ export async function runLunaDecisionFilterReportSmoke() {
   assert.equal(domesticNeutral.actionability, 'likely_actionable');
   assert.equal(domesticNeutral.reasons.includes('sentiment_not_confirmed'), false);
 
+  const domesticDailyTechnicalPresignal = buildDecisionFilterDiagnostics([
+    row('000500', 'market_flow', 'BUY', 0.55),
+  ], {
+    exchange: 'kis',
+    minConfidence: 0.18,
+    dailyTechnicalBySymbol: {
+      '000500': {
+        ok: true,
+        reason: 'kis_daily_chart_bullish',
+        source: 'kis_domestic_daily_price',
+        providerMode: 'rest',
+        cachedAt: now,
+      },
+    },
+  })[0];
+  assert.equal(domesticDailyTechnicalPresignal.actionability, 'likely_actionable');
+  assert.equal(domesticDailyTechnicalPresignal.reasons.includes('insufficient_analyst_coverage'), false);
+  assert.equal(domesticDailyTechnicalPresignal.reasons.includes('technical_not_confirmed'), false);
+  assert.equal(domesticDailyTechnicalPresignal.reasons.includes('sentiment_not_confirmed'), false);
+  assert.equal(domesticDailyTechnicalPresignal.analystSummary.byAnalyst.ta_mtf.signal, 'BUY');
+  assert.equal(domesticDailyTechnicalPresignal.dailyTechnical.reason, 'kis_daily_chart_bullish');
+
+  const stockLightModeWithoutSentiment = buildDecisionFilterDiagnostics([
+    row('INOD', 'market_flow', 'BUY', 0.31),
+  ], {
+    exchange: 'kis_overseas',
+    minConfidence: 0.18,
+    dailyTechnicalBySymbol: {
+      INOD: {
+        ok: true,
+        reason: 'kis_daily_chart_bullish',
+        source: 'kis_overseas_daily_price',
+        providerMode: 'rest',
+        cachedAt: now,
+      },
+    },
+    env: { LUNA_STOCK_INTRADAY_ENRICHMENT_ENABLED: 'false' },
+  })[0];
+  assert.equal(stockLightModeWithoutSentiment.actionability, 'filtered_before_signal');
+  assert.equal(stockLightModeWithoutSentiment.reasons.includes('sentiment_not_confirmed'), false);
+  assert.equal(stockLightModeWithoutSentiment.reasons.includes('market_flow_not_confirmed'), true);
+
   const relaxedStock = buildDecisionFilterDiagnostics([
     row('005930', 'news', 'BUY', 0.9),
     row('005930', 'ta_mtf', 'HOLD', 0.72),

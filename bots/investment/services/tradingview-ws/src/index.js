@@ -21,6 +21,7 @@ import http from 'http';
 import { execFile } from 'child_process';
 import { promisify } from 'util';
 import { Registry, Gauge, Counter, collectDefaultMetrics } from 'prom-client';
+import { resolveTradingViewWsUrl } from './tradingview-url.js';
 
 const SERVICE_BUILD_ID = 'tvws-session-scoped-v2';
 const serviceStartedAt = new Date().toISOString();
@@ -144,7 +145,7 @@ function extractJsonObject(raw = '') {
 
 function connectTradingView() {
   // dovudo/tradingview-websocket 패턴: wss://data.tradingview.com/socket.io/websocket
-  const tvUrl = process.env.TV_WS_URL || 'wss://data.tradingview.com/socket.io/websocket?from=chart%2F&date=2024_09_25-10_03&type=chart';
+  const tvUrl = resolveTradingViewWsUrl(process.env);
   console.log(`[TV-WS] TradingView 연결 시도 #${reconnectAttempts + 1}: ${tvUrl.substring(0, 60)}...`);
 
   try {

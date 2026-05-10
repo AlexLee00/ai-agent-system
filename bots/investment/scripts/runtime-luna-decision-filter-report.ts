@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 // @ts-nocheck
 
+import fs from 'node:fs';
 import * as db from '../shared/db.ts';
 import { ACTIONS, ANALYST_TYPES } from '../shared/signal.ts';
 import {
@@ -8,13 +9,19 @@ import {
   fuseSignals,
   getMinConfidence,
 } from '../shared/luna-decision-policy.ts';
-import { shouldRunStockIntradayDecisionLlm } from '../shared/stock-intraday-llm-policy.ts';
+import {
+  getStockFlowDecisionPrefilterConfidence,
+  getStockTaDecisionPrefilterConfidence,
+  isStockIntradayEnrichmentEnabled,
+  shouldRunStockIntradayDecisionLlm,
+} from '../shared/stock-intraday-llm-policy.ts';
 import {
   evaluateConservativeRelaxation,
   extractCryptoTechnicalEvidence,
 } from '../shared/luna-conservative-relaxation-policy.ts';
 import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
 import { buildDiscoveryUniverse } from '../team/discovery/discovery-universe.ts';
+import { investmentOpsRuntimeFile } from '../shared/runtime-ops-path.ts';
 
 const DEFAULT_HOURS = 2;
 const STOCK_EXCHANGES = new Set(['kis', 'kis_overseas']);
@@ -23,6 +30,7 @@ const NEWS_LIKE_ANALYSTS = new Set([ANALYST_TYPES.NEWS, ANALYST_TYPES.SENTINEL])
 const DEFAULT_DAILY_BULLISH_PROBE_MIN_INTRADAY_CONFIDENCE = 0.18;
 const DEFAULT_CRYPTO_MTF_PRESIGNAL_WEIGHTED_SCORE = 0.45;
 const DEFAULT_CRYPTO_MTF_PRESIGNAL_MIN_BUY_FRAMES = 1;
+const DEFAULT_KIS_DAILY_TA_CACHE_MINUTES = 12 * 60;
 
 function numEnv(env, key, fallback) {
   const value = Number(env?.[key]);
@@ -52,6 +60,40 @@ function normalizeCandidateSymbol(symbol, market = 'crypto') {
   if (!raw) return raw;
   if (market === 'crypto' && !raw.includes('/') && raw.endsWith('USDT')) return `${raw.slice(0, -4)}/USDT`;
   return raw;
+}
+
+function dailyTechnicalCachePath(exchange = 'kis') {
+  return investmentOpsRuntimeFile(`luna-discovery-daily-technical-cache-${exchange}.json`);
+}
+
+function readJsonSafe(filePath, fallback = {}) {
+  try {
+    return JSON.parse(fs.readFileSync(filePath, 'utf8'));
+  } catch {
+    return fallback;
+  }
+}
+
+function loadDailyTechnicalRowsFromCache({ exchange = 'kis', symbols = [], env = process.env } = {}) {
+  if (!STOCK_EXCHANGES.has(exchange)) return {};
+  const payload = readJsonSafe(dailyTechnicalCachePath(exchange), {});
+  const items = payload?.items && typeof payload.items === 'object' ? payload.items : {};
+  const ttlMinutes = Math.max(1, Number(env?.LUNA_KIS_DAILY_TA_CACHE_MINUTES || DEFAULT_KIS_DAILY_TA_CACHE_MINUTES) || DEFAULT_KIS_DAILY_TA_CACHE_MINUTES);
+  const now = Date.now();
+  const bySymbol = {};
+  for (const symbol of symbols || []) {
+    const normalized = normalizeCandidateSymbol(symbol, exchange === 'kis' ? 'domestic' : 'overseas');
+    const item = items[`${exchange}:${normalized}`];
+    const cachedAt = Date.parse(item?.cachedAt || 0) || 0;
+    if (!item?.row || !cachedAt || now - cachedAt > ttlMinutes * 60 * 1000) continue;
+    bySymbol[normalized] = {
+      ...item.row,
+      cached: true,
+      cachedAt: item.cachedAt,
+      cacheAgeMinutes: Number(((now - cachedAt) / 60000).toFixed(2)),
+    };
+  }
+  return bySymbol;
 }
 
 async function loadOpenCandidateSymbols({ exchange = 'binance', market = 'crypto' } = {}) {
@@ -104,6 +146,38 @@ function latestByAnalyst(analyses = []) {
   return [...byAnalyst.values()];
 }
 
+function appendDailyTechnicalPresignals(analyses = [], { exchange, dailyTechnicalBySymbol = {}, env = process.env } = {}) {
+  if (!STOCK_EXCHANGES.has(exchange)) return analyses;
+  const grouped = new Map();
+  for (const analysis of analyses || []) {
+    const normalized = normalizeAnalysis(analysis);
+    if (!normalized.symbol) continue;
+    if (!grouped.has(normalized.symbol)) grouped.set(normalized.symbol, []);
+    grouped.get(normalized.symbol).push(normalized);
+  }
+  for (const [symbol, rows] of grouped.entries()) {
+    const hasTechnical = rows.some((row) => TECHNICAL_ANALYSTS.has(row.analyst));
+    const daily = dailyTechnicalBySymbol?.[symbol];
+    if (hasTechnical || daily?.ok !== true) continue;
+    rows.push(normalizeAnalysis({
+      symbol,
+      analyst: ANALYST_TYPES.TA_MTF,
+      signal: ACTIONS.BUY,
+      confidence: Math.max(getStockTaDecisionPrefilterConfidence(env), 0.35),
+      reasoning: `[KIS 일봉] ${daily.reason || 'kis_daily_chart_bullish'}; source=${daily.source || 'kis_daily_price'}`,
+      metadata: {
+        synthetic_daily_technical: true,
+        source: daily.source || null,
+        providerMode: daily.providerMode || null,
+        cachedAt: daily.cachedAt || null,
+      },
+      exchange,
+      created_at: daily.cachedAt || new Date().toISOString(),
+    }));
+  }
+  return [...grouped.values()].flat();
+}
+
 function findAnalyst(analyses, candidates) {
   const candidateSet = new Set(candidates);
   return analyses.find((analysis) => candidateSet.has(analysis.analyst)) || null;
@@ -152,7 +226,7 @@ function buildFilterReasons(analyses, fused, { exchange, minConfidence, env = pr
     : null;
   const stockMissingSentimentAllowed = STOCK_EXCHANGES.has(exchange)
     && !sentiment
-    && stockDecisionPrefilter?.run === true;
+    && (!isStockIntradayEnrichmentEnabled(env) || stockDecisionPrefilter?.run === true);
 
   if (analyses.length < 2) reasons.push('insufficient_analyst_coverage');
   if (fused.recommendation !== 'LONG') reasons.push('fusion_not_long');
@@ -162,7 +236,10 @@ function buildFilterReasons(analyses, fused, { exchange, minConfidence, env = pr
     || (exchange === 'binance' && hasCryptoMtfTechnicalPresignal(analyses, env));
   if (!technicalConfirmed) reasons.push('technical_not_confirmed');
   if (exchange === 'binance' && (!onchain || onchain.signal !== ACTIONS.BUY)) reasons.push('onchain_not_confirmed');
-  if (STOCK_EXCHANGES.has(exchange) && marketFlow && marketFlow.signal !== ACTIONS.BUY) reasons.push('market_flow_not_confirmed');
+  const stockFlowConfirmed = !STOCK_EXCHANGES.has(exchange)
+    || !marketFlow
+    || (marketFlow.signal === ACTIONS.BUY && Number(marketFlow.confidence || 0) >= getStockFlowDecisionPrefilterConfidence(env));
+  if (STOCK_EXCHANGES.has(exchange) && marketFlow && !stockFlowConfirmed) reasons.push('market_flow_not_confirmed');
   if (
     (!sentiment && !stockMissingSentimentAllowed)
     || (sentiment && sentiment.signal === ACTIONS.SELL)
@@ -323,8 +400,13 @@ export function buildDecisionFilterDiagnostics(analysisRows = [], options = {}) 
   const exchange = options.exchange || 'binance';
   const weights = options.weights || buildAnalystWeights(exchange, options);
   const minConfidence = Number(options.minConfidence ?? getMinConfidence(exchange));
+  const enrichedRows = appendDailyTechnicalPresignals(analysisRows, {
+    exchange,
+    dailyTechnicalBySymbol: options.dailyTechnicalBySymbol || {},
+    env: options.env || process.env,
+  });
   const grouped = new Map();
-  for (const row of analysisRows || []) {
+  for (const row of enrichedRows || []) {
     const analysis = normalizeAnalysis(row);
     if (!analysis.symbol) continue;
     if (!grouped.has(analysis.symbol)) grouped.set(analysis.symbol, []);
@@ -363,6 +445,7 @@ export function buildDecisionFilterDiagnostics(analysisRows = [], options = {}) 
       },
       analystCount: analyses.length,
       analystSummary,
+      dailyTechnical: options.dailyTechnicalBySymbol?.[symbol] || null,
       latestAt: analyses
         .map((analysis) => analysis.created_at)
         .filter(Boolean)
@@ -451,9 +534,18 @@ export async function buildLunaDecisionFilterReport(options = {}) {
     hours,
     symbols: candidateSymbols.length > 0 ? candidateSymbols : requestedSymbols,
   });
+  const dailyTechnicalBySymbol = STOCK_EXCHANGES.has(exchange) && options.activeCandidates
+    ? loadDailyTechnicalRowsFromCache({
+      exchange,
+      symbols: candidateSymbols.length > 0 ? candidateSymbols : requestedSymbols,
+      env: options.env || process.env,
+    })
+    : {};
   const diagnostics = buildDecisionFilterDiagnostics(rows, {
     exchange,
     minConfidence: options.minConfidence,
+    env: options.env || process.env,
+    dailyTechnicalBySymbol,
   })
     .filter((item) => !openPositionSymbols.has(normalizeCandidateSymbol(item.symbol, market)))
     .map((item) => activeUniverse.candidateMeta?.[item.symbol]
@@ -493,6 +585,12 @@ export async function buildLunaDecisionFilterReport(options = {}) {
       checked: checkedSymbolSet.size,
       missing: missingActiveCandidateSymbols.length,
       excludedOpenPositions: excludedOpenPositionSymbols.length,
+    } : null,
+    dailyTechnicalCoverage: Object.keys(dailyTechnicalBySymbol).length > 0 ? {
+      source: 'kis_daily_technical_cache',
+      checkedCount: candidateSymbols.length || requestedSymbols.length,
+      availableCount: Object.keys(dailyTechnicalBySymbol).length,
+      bullishCount: Object.values(dailyTechnicalBySymbol).filter((row) => row?.ok === true).length,
     } : null,
     openPositionSymbols: [...openPositionSymbols],
     excludedOpenPositionSymbols,
