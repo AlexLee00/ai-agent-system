@@ -64,7 +64,11 @@ export async function runLunaOpsSchedulerSmoke() {
   assert.equal(jobs.find((job) => job.name === 'active_candidate_analysis_refresh_crypto')?.cadence?.seconds, 1800);
   assert.equal(jobs.find((job) => job.name === 'active_candidate_analysis_refresh_crypto')?.args?.includes('--max-symbols=2'), true);
   assert.equal(jobs.find((job) => job.name === 'active_candidate_analysis_refresh_domestic')?.requiresMarketOpen, true);
+  assert.equal(jobs.find((job) => job.name === 'active_candidate_analysis_refresh_domestic')?.allowPreMarketRefresh, true);
+  assert.equal(jobs.find((job) => job.name === 'active_candidate_analysis_refresh_domestic')?.preMarketWindowMinutes, 240);
   assert.equal(jobs.find((job) => job.name === 'active_candidate_analysis_refresh_overseas')?.requiresMarketOpen, true);
+  assert.equal(jobs.find((job) => job.name === 'active_candidate_analysis_refresh_overseas')?.allowPreMarketRefresh, true);
+  assert.equal(jobs.find((job) => job.name === 'active_candidate_analysis_refresh_overseas')?.preMarketWindowMinutes, 1080);
   assert.equal(jobs.some((job) => job.name === 'near_miss_watchlist_crypto'), true);
   assert.equal(jobs.some((job) => job.name === 'near_miss_watchlist_domestic'), true);
   assert.equal(jobs.some((job) => job.name === 'near_miss_watchlist_overseas'), true);
@@ -94,6 +98,35 @@ export async function runLunaOpsSchedulerSmoke() {
   assert.equal(emptyPlan.jobs.find((job) => job.name === 'market_cycle_overseas')?.due, false);
   assert.equal(emptyPlan.jobs.find((job) => job.name === 'active_candidate_analysis_refresh_domestic')?.due, false);
   assert.equal(emptyPlan.jobs.find((job) => job.name === 'active_candidate_analysis_refresh_domestic')?.marketSession?.isOpen, false);
+
+  const domesticPreOpenPlan = buildOpsSchedulerPlan({
+    now: new Date('2026-05-04T06:30:00+09:00'),
+    state: { jobs: {} },
+    jobs,
+    onlyJob: 'active_candidate_analysis_refresh_domestic',
+  });
+  assert.equal(domesticPreOpenPlan.due, 1);
+  assert.equal(domesticPreOpenPlan.jobs[0]?.marketSession?.isOpen, false);
+  assert.equal(domesticPreOpenPlan.jobs[0]?.preMarketWindow?.active, true);
+  assert.equal(domesticPreOpenPlan.jobs[0]?.preMarketWindow?.reasonCode, 'pre_market_refresh_window');
+
+  const overseasPreOpenPlan = buildOpsSchedulerPlan({
+    now: new Date('2026-05-04T12:00:00+09:00'),
+    state: { jobs: {} },
+    jobs,
+    onlyJob: 'active_candidate_analysis_refresh_overseas',
+  });
+  assert.equal(overseasPreOpenPlan.due, 1);
+  assert.equal(overseasPreOpenPlan.jobs[0]?.marketSession?.isOpen, false);
+  assert.equal(overseasPreOpenPlan.jobs[0]?.preMarketWindow?.active, true);
+
+  const overseasCyclePreOpenPlan = buildOpsSchedulerPlan({
+    now: new Date('2026-05-04T12:00:00+09:00'),
+    state: { jobs: {} },
+    jobs,
+    onlyJob: 'market_cycle_overseas',
+  });
+  assert.equal(overseasCyclePreOpenPlan.due, 0);
 
   const recentState = {
     jobs: Object.fromEntries(jobs.map((job) => [job.name, { lastRunAt: now.toISOString() }])),

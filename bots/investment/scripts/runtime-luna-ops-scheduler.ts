@@ -6,7 +6,7 @@ import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
 import { buildOpsSchedulerAgentPlan } from '../shared/luna-ops-scheduler-agent-plan.ts';
-import { evaluateKisMarketHours } from '../shared/kis-market-hours-guard.ts';
+import { evaluateKisMarketHours, getNextOpenTime } from '../shared/kis-market-hours-guard.ts';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const INVESTMENT_DIR = path.resolve(__dirname, '..');
@@ -16,6 +16,10 @@ const LOCK_STALE_MS = 20 * 60 * 1000;
 const DEFAULT_JOB_TIMEOUT_MS = 3 * 60 * 1000;
 const PRE_MARKET_ANALYSIS_MAX_SYMBOLS = '5';
 const PRE_MARKET_ANALYSIS_MAX_ENRICHMENT_SYMBOLS = '2';
+const PRE_MARKET_REFRESH_WINDOW_MINUTES = Object.freeze({
+  domestic: 240,
+  overseas: 1080,
+});
 
 function isProcessAlive(pid) {
   const numericPid = Number(pid);
@@ -223,6 +227,8 @@ export function getOpsSchedulerJobs() {
       category: 'analysis_refresh',
       market: 'domestic',
       requiresMarketOpen: true,
+      allowPreMarketRefresh: true,
+      preMarketWindowMinutes: PRE_MARKET_REFRESH_WINDOW_MINUTES.domestic,
       cadence: { type: 'interval', seconds: 1800 },
       ...nodeScript('runtime-luna-active-candidate-analysis-refresh.ts', [
         '--apply',
@@ -241,6 +247,8 @@ export function getOpsSchedulerJobs() {
       category: 'analysis_refresh',
       market: 'overseas',
       requiresMarketOpen: true,
+      allowPreMarketRefresh: true,
+      preMarketWindowMinutes: PRE_MARKET_REFRESH_WINDOW_MINUTES.overseas,
       cadence: { type: 'interval', seconds: 1800 },
       ...nodeScript('runtime-luna-active-candidate-analysis-refresh.ts', [
         '--apply',
@@ -463,10 +471,40 @@ function getJobMarketSession(job, now) {
   return evaluateKisMarketHours({ market: job.market, now });
 }
 
+function getJobPreMarketWindow(job, now, marketSession = null) {
+  if (job?.requiresMarketOpen !== true || job?.allowPreMarketRefresh !== true) return null;
+  if (marketSession?.isOpen === true) {
+    return {
+      active: false,
+      reasonCode: 'market_open',
+      windowMinutes: Number(job.preMarketWindowMinutes || 0),
+      minutesUntilOpen: 0,
+      nextOpen: now.toISOString(),
+    };
+  }
+  const windowMinutes = Math.max(1, Number(job.preMarketWindowMinutes || 0));
+  if (!Number.isFinite(windowMinutes) || windowMinutes <= 0) return null;
+  const nextOpen = getNextOpenTime({ market: job.market, now });
+  const minutesUntilOpen = Number(nextOpen?.minutesUntilOpen);
+  const active = Number.isFinite(minutesUntilOpen)
+    && minutesUntilOpen >= 0
+    && minutesUntilOpen <= windowMinutes;
+  return {
+    active,
+    reasonCode: active ? 'pre_market_refresh_window' : 'outside_pre_market_refresh_window',
+    windowMinutes,
+    minutesUntilOpen: Number.isFinite(minutesUntilOpen) ? minutesUntilOpen : null,
+    nextOpen: nextOpen?.nextOpen?.toISOString?.() || null,
+  };
+}
+
 function isJobDue(job, now, state, force = false) {
   if (force) return true;
   const marketSession = getJobMarketSession(job, now);
-  if (marketSession && marketSession.isOpen !== true) return false;
+  if (marketSession && marketSession.isOpen !== true) {
+    const preMarketWindow = getJobPreMarketWindow(job, now, marketSession);
+    if (preMarketWindow?.active !== true) return false;
+  }
   const lastRunAt = state?.jobs?.[job.name]?.lastRunAt || null;
   if (job.cadence?.type === 'daily') return dailyDue(job.cadence, now, lastRunAt);
   return intervalDue(job.cadence || {}, now, lastRunAt);
@@ -482,19 +520,24 @@ export function buildOpsSchedulerPlan({
 } = {}) {
   const schedulerAgentPlan = buildOpsSchedulerAgentPlan({ agentPlan, jobs });
   const selected = schedulerAgentPlan.jobs.filter((job) => !onlyJob || job.name === onlyJob);
-  const plannedJobs = selected.map((job) => ({
-    name: job.name,
-    category: job.category || null,
-    market: job.market || null,
-    immutable: job.immutable === true,
-    requiresMarketOpen: job.requiresMarketOpen === true,
-    marketSession: getJobMarketSession(job, now),
-    cadence: job.cadence,
-    due: isJobDue(job, now, state, force),
-    command: [job.command, ...(job.args || [])].join(' '),
-    env: job.env || {},
-    lastRunAt: state?.jobs?.[job.name]?.lastRunAt || null,
-  }));
+  const plannedJobs = selected.map((job) => {
+    const marketSession = getJobMarketSession(job, now);
+    return {
+      name: job.name,
+      category: job.category || null,
+      market: job.market || null,
+      immutable: job.immutable === true,
+      requiresMarketOpen: job.requiresMarketOpen === true,
+      allowPreMarketRefresh: job.allowPreMarketRefresh === true,
+      marketSession,
+      preMarketWindow: getJobPreMarketWindow(job, now, marketSession),
+      cadence: job.cadence,
+      due: isJobDue(job, now, state, force),
+      command: [job.command, ...(job.args || [])].join(' '),
+      env: job.env || {},
+      lastRunAt: state?.jobs?.[job.name]?.lastRunAt || null,
+    };
+  });
   return {
     ok: true,
     generatedAt: now.toISOString(),

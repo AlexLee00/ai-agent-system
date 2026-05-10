@@ -121,8 +121,19 @@ function missingEnrichmentNodeIds(item = {}, { exchange: exchangeOverride = null
   const stockLightCollect = (exchange === 'kis' || exchange === 'kis_overseas') && !isStockIntradayEnrichmentEnabled(env);
   if (!stockLightCollect && reasons.has('sentiment_not_confirmed') && !hasSentiment) nodes.push('L03');
   if (exchange === 'binance' && reasons.has('onchain_not_confirmed') && !hasOnchain) nodes.push('L05');
-  if ((exchange === 'kis' || exchange === 'kis_overseas') && reasons.has('market_flow_not_confirmed') && !hasMarketFlow) nodes.push('L04');
+  if (
+    (exchange === 'kis' || exchange === 'kis_overseas')
+    && !hasMarketFlow
+    && (reasons.has('market_flow_not_confirmed') || reasons.has('news_only_buy'))
+  ) {
+    nodes.push('L04');
+  }
   return [...new Set(nodes)];
+}
+
+function isStockExchange(exchange = '') {
+  const normalized = String(exchange || '').trim();
+  return normalized === 'kis' || normalized === 'kis_overseas';
 }
 
 function hasTechnicalBuy(item = {}) {
@@ -233,7 +244,11 @@ function isHighPriorityActiveCandidate(item = {}) {
 
 function shouldTargetCandidateForEnrichment(item = {}, { exchange = null, env = process.env } = {}) {
   const reasons = new Set(Array.isArray(item.reasons) ? item.reasons : []);
-  if (reasons.has('conflict_detected') || reasons.has('news_only_buy')) return false;
+  if (reasons.has('conflict_detected')) return false;
+  const missingNodes = missingEnrichmentNodeIds(item, { exchange, env });
+  if (reasons.has('news_only_buy')) {
+    return isStockExchange(exchange) && missingNodes.includes('L04');
+  }
   if (targetedTechnicalPresignal(item, env)) return true;
   const requireTechnicalPresignal = String(exchange || '').trim() === 'binance'
     ? boolEnv(
@@ -244,7 +259,7 @@ function shouldTargetCandidateForEnrichment(item = {}, { exchange = null, env = 
     : false;
   if (requireTechnicalPresignal) return false;
   if (!isHighPriorityActiveCandidate(item)) return false;
-  return missingEnrichmentNodeIds(item, { exchange, env }).length > 0;
+  return missingNodes.length > 0;
 }
 
 function isGlobalCooldownBypassCandidate(item = {}, confidence = 0, minConfidence = DEFAULT_TARGETED_ENRICHMENT_MIN_CONFIDENCE, env = process.env) {
@@ -339,7 +354,7 @@ function buildTargetedEnrichmentPlan({
       continue;
     }
     const reasons = new Set(Array.isArray(item.reasons) ? item.reasons : []);
-    if (reasons.has('conflict_detected') || reasons.has('news_only_buy')) continue;
+    if (reasons.has('conflict_detected')) continue;
     const missingNodes = missingEnrichmentNodeIds(item, { exchange, env });
     if (missingNodes.length === 0) continue;
     const key = exchange ? `${exchange}:targeted_enrichment:${symbol}` : `targeted_enrichment:${symbol}`;

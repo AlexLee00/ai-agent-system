@@ -293,6 +293,33 @@ export async function runLunaActiveCandidateAnalysisRefreshSmoke() {
   assert.deepEqual(stockHighPriorityEnrichmentPlan.targetedEnrichment.selectedSymbols, ['NVDA']);
   assert.deepEqual(stockHighPriorityEnrichmentPlan.targetedEnrichment.nodeIds, ['L03']);
 
+  const stockNewsOnlyMarketFlowPlan = buildActiveCandidateAnalysisRefreshPlan({
+    report: fixtureReport([], [
+      {
+        symbol: 'INOD',
+        exchange: 'kis_overseas',
+        actionability: 'filtered_before_signal',
+        recommendation: 'wait_for_technical_and_flow_confirmation',
+        reasons: ['technical_not_confirmed', 'news_only_buy'],
+        fused: { recommendation: 'LONG', fusedScore: 0.95, averageConfidence: 0.95, hasConflict: false },
+        analystSummary: {
+          byAnalyst: {
+            news: { signal: 'BUY', confidence: 0.95, reasoning: 'news-only breakout candidate' },
+          },
+        },
+      },
+    ]),
+    state: {},
+    now,
+    maxSymbols: 1,
+    maxEnrichmentSymbols: 1,
+    cooldownMinutes: 45,
+    exchange: 'kis_overseas',
+  });
+  assert.equal(stockNewsOnlyMarketFlowPlan.status, 'active_candidate_analysis_refresh_needed');
+  assert.deepEqual(stockNewsOnlyMarketFlowPlan.targetedEnrichment.selectedSymbols, ['INOD']);
+  assert.deepEqual(stockNewsOnlyMarketFlowPlan.targetedEnrichment.nodeIds, ['L04']);
+
   const highPriorityTechnicalPlan = buildActiveCandidateAnalysisRefreshPlan({
     report: fixtureReport([], [
       fixtureFilteredCandidate('SAHARA/USDT'),
