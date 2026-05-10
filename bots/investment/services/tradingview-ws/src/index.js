@@ -22,6 +22,8 @@ import { execFile } from 'child_process';
 import { promisify } from 'util';
 import { Registry, Gauge, Counter, collectDefaultMetrics } from 'prom-client';
 
+const SERVICE_BUILD_ID = 'tvws-session-scoped-v2';
+const serviceStartedAt = new Date().toISOString();
 const TV_WS_PORT = parseInt(process.env.TV_WS_PORT || '8082', 10);
 const METRICS_PORT = parseInt(process.env.TV_METRICS_PORT || '8083', 10);
 const STALE_THRESHOLD_MS = parseInt(process.env.TV_STALE_THRESHOLD_MS || '30000', 10);
@@ -769,6 +771,8 @@ function healthPayload() {
   const tvStatus = tvWs?.readyState === WebSocket.OPEN ? 'connected' : 'disconnected';
   return {
     status: 'ok',
+    buildId: SERVICE_BUILD_ID,
+    startedAt: serviceStartedAt,
     tv_ws: tvStatus,
     realtimeOk: tvStatus === 'connected' && realtimeBars.length > 0 && staleRows.length === 0,
     subscriptions: subscriptions.size,

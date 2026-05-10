@@ -82,6 +82,7 @@ export async function runSmoke() {
   const tvSetReady = classifyTradingViewRealtimeSet({
     health: {
       tv_ws: 'connected',
+      buildId: 'tvws-session-scoped-v2',
       realtimeOk: true,
       subscriptions: 6,
       protectedSubscriptions: 6,
@@ -111,6 +112,7 @@ export async function runSmoke() {
   const tvSetMissing = classifyTradingViewRealtimeSet({
     health: {
       tv_ws: 'connected',
+      buildId: 'tvws-session-scoped-v2',
       realtimeOk: true,
       subscriptions: 6,
       protectedSubscriptions: 2,
@@ -132,6 +134,7 @@ export async function runSmoke() {
   assert.deepEqual(tvSetMissing.missingRealBars, ['BINANCE:CETUSUSDT:60']);
   assert.equal(tvSetMissing.blockers.some((item) => item.includes('BINANCE:CETUSUSDT:60')), true);
   assert.equal(tvSetMissing.warnings.includes('tradingview_rest_fallback_bars_present'), true);
+  assert.equal(tvSetMissing.warnings.includes('tradingview_service_reload_required_for_build_id'), false);
 
   const tvSetLegacyService = classifyTradingViewRealtimeSet({
     health: {
@@ -148,8 +151,9 @@ export async function runSmoke() {
     },
     expected: [{ symbol: 'BINANCE:BTCUSDT', timeframe: '60' }],
   });
-  assert.equal(tvSetLegacyService.ok, true);
-  assert.equal(tvSetLegacyService.warnings.includes('tradingview_service_reload_required_for_protected_subscriptions'), true);
+  assert.equal(tvSetLegacyService.ok, false);
+  assert.equal(tvSetLegacyService.blockers.includes('tradingview_service_reload_required_for_protected_subscriptions'), true);
+  assert.equal(tvSetLegacyService.blockers.includes('tradingview_service_reload_required_for_build_id'), true);
 
   const kisPreopen = classifyKisRealtime({
     market: 'kis_overseas',

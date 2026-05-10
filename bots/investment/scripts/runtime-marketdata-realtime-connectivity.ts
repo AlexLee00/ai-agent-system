@@ -12,6 +12,8 @@ const DEFAULT_TV_HTTP = `http://127.0.0.1:${process.env.TV_METRICS_PORT || 8083}
 const DEFAULT_CRYPTO_TIMEFRAMES = process.env.LUNA_MARKETDATA_CRYPTO_TIMEFRAMES
   || process.env.TV_OPEN_POSITION_TIMEFRAMES
   || '60,240,D';
+const DEFAULT_REALTIME_WAIT_MS = Number(process.env.LUNA_MARKETDATA_REALTIME_WAIT_MS || 15_000);
+const DEFAULT_REALTIME_POLL_MS = Number(process.env.LUNA_MARKETDATA_REALTIME_POLL_MS || 1_500);
 
 function argValue(name, fallback = null, argv = process.argv.slice(2)) {
   const prefix = `--${name}=`;
@@ -34,6 +36,15 @@ async function fetchJson(url, timeoutMs = 5000) {
   const response = await fetch(url, { signal: AbortSignal.timeout(Math.max(250, Number(timeoutMs || 5000))) });
   if (!response.ok) throw new Error(`http_${response.status}:${url}`);
   return response.json();
+}
+
+function positiveMs(value, fallback) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : fallback;
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, Math.max(0, Number(ms || 0))));
 }
 
 function timeframeDurationMs(timeframe = '60') {
@@ -105,11 +116,17 @@ export function classifyTradingViewRealtimeSet({ health = {}, latest = {}, expec
     .filter((item) => !realByKey.has(`${item.symbol}:${item.timeframe}`))
     .map((item) => `${item.symbol}:${item.timeframe}`);
   const staleSubscriptionCount = Number(health?.staleSubscriptions || 0);
-  const ok = health?.tv_ws === 'connected' && missing.length === 0 && staleRealBars.length === 0;
+  const hasBuildId = Boolean(health?.buildId);
+  const ok = health?.tv_ws === 'connected'
+    && hasProtectedMetric
+    && hasBuildId
+    && missing.length === 0
+    && staleRealBars.length === 0;
   return {
     ok,
     status: ok ? 'tradingview_realtime_ready' : 'tradingview_realtime_attention',
     tvWs: health?.tv_ws || 'unknown',
+    buildId: health?.buildId || null,
     serviceRealtimeOk: health?.realtimeOk === true,
     subscriptions: Number(health?.subscriptions || 0),
     protectedSubscriptions: Number(health?.protectedSubscriptions || 0),
@@ -122,11 +139,12 @@ export function classifyTradingViewRealtimeSet({ health = {}, latest = {}, expec
     staleRealBars,
     blockers: [
       ...(health?.tv_ws === 'connected' ? [] : ['tradingview_ws_disconnected']),
+      ...(hasProtectedMetric ? [] : ['tradingview_service_reload_required_for_protected_subscriptions']),
+      ...(hasBuildId ? [] : ['tradingview_service_reload_required_for_build_id']),
       ...(missing.length === 0 ? [] : [`tradingview_realtime_bar_missing:${missing.slice(0, 12).join(',')}`]),
       ...(staleRealBars.length === 0 ? [] : ['tradingview_realtime_bar_stale']),
     ],
     warnings: [
-      ...(hasProtectedMetric ? [] : ['tradingview_service_reload_required_for_protected_subscriptions']),
       ...(staleSubscriptionCount === 0 ? [] : ['tradingview_stale_subscriptions_present']),
       ...(Number(health?.fallbackBars || 0) === 0 ? [] : ['tradingview_rest_fallback_bars_present']),
     ],
@@ -195,15 +213,7 @@ async function tradingViewCheck({ symbol, timeframe, timeoutMs, httpBase }) {
   };
 }
 
-async function tradingViewCheckSet({ symbols = [], timeframes = ['60'], timeoutMs, httpBase }) {
-  const base = String(httpBase || DEFAULT_TV_HTTP).replace(/\/$/, '');
-  const normalizedSymbols = [...new Set((symbols || []).map((symbol) => String(symbol || '').trim()).filter(Boolean))];
-  const normalizedTimeframes = [...new Set((timeframes || []).map((timeframe) => String(timeframe || '60').trim()).filter(Boolean))];
-  for (const symbol of normalizedSymbols) {
-    for (const timeframe of normalizedTimeframes) {
-      await fetchJson(`${base}/subscribe?symbol=${encodeURIComponent(symbol)}&timeframe=${encodeURIComponent(timeframe)}&protected=true`, timeoutMs).catch(() => null);
-    }
-  }
+async function fetchTradingViewSetSnapshot({ base, normalizedSymbols, normalizedTimeframes, timeoutMs }) {
   const [health, latest] = await Promise.all([
     fetchJson(`${base}/health`, timeoutMs),
     fetchJson(`${base}/latest?symbols=${encodeURIComponent(normalizedSymbols.join(','))}&timeframes=${encodeURIComponent(normalizedTimeframes.join(','))}&requireReal=true`, timeoutMs),
@@ -214,6 +224,42 @@ async function tradingViewCheckSet({ symbols = [], timeframes = ['60'], timeoutM
     latest,
     expected,
     decision: classifyTradingViewRealtimeSet({ health, latest, expected }),
+  };
+}
+
+async function tradingViewCheckSet({
+  symbols = [],
+  timeframes = ['60'],
+  timeoutMs,
+  httpBase,
+  realtimeWaitMs = DEFAULT_REALTIME_WAIT_MS,
+  realtimePollMs = DEFAULT_REALTIME_POLL_MS,
+}) {
+  const base = String(httpBase || DEFAULT_TV_HTTP).replace(/\/$/, '');
+  const normalizedSymbols = [...new Set((symbols || []).map((symbol) => String(symbol || '').trim()).filter(Boolean))];
+  const normalizedTimeframes = [...new Set((timeframes || []).map((timeframe) => String(timeframe || '60').trim()).filter(Boolean))];
+  for (const symbol of normalizedSymbols) {
+    for (const timeframe of normalizedTimeframes) {
+      await fetchJson(`${base}/subscribe?symbol=${encodeURIComponent(symbol)}&timeframe=${encodeURIComponent(timeframe)}&protected=true`, timeoutMs).catch(() => null);
+    }
+  }
+  const waitMs = Math.max(0, positiveMs(realtimeWaitMs, DEFAULT_REALTIME_WAIT_MS));
+  const pollMs = Math.max(250, positiveMs(realtimePollMs, DEFAULT_REALTIME_POLL_MS));
+  const deadline = Date.now() + waitMs;
+  let attempts = 0;
+  let snapshot = null;
+  do {
+    attempts += 1;
+    snapshot = await fetchTradingViewSetSnapshot({ base, normalizedSymbols, normalizedTimeframes, timeoutMs });
+    if (snapshot.decision?.ok === true) break;
+    if (Date.now() >= deadline) break;
+    await sleep(Math.min(pollMs, Math.max(0, deadline - Date.now())));
+  } while (Date.now() <= deadline);
+  return {
+    ...snapshot,
+    realtimeWaitMs: waitMs,
+    realtimePollMs: pollMs,
+    pollAttempts: attempts,
   };
 }
 
@@ -257,6 +303,8 @@ export async function buildMarketdataRealtimeConnectivityReport({
   timeoutMs = 5000,
   httpBase = DEFAULT_TV_HTTP,
   paper = false,
+  realtimeWaitMs = DEFAULT_REALTIME_WAIT_MS,
+  realtimePollMs = DEFAULT_REALTIME_POLL_MS,
 } = {}) {
   await db.initSchema().catch(() => {});
   const openCryptoPositions = await db.getOpenPositions('binance', false).catch(() => []);
@@ -268,7 +316,14 @@ export async function buildMarketdataRealtimeConnectivityReport({
     .filter(Boolean);
   const cryptoSymbolList = [...new Set((resolvedCryptoSymbols.length > 0 ? resolvedCryptoSymbols : positionCryptoSymbols.length > 0 ? positionCryptoSymbols : [cryptoSymbol]) || [])];
   const cryptoTimeframeList = parseList(cryptoTimeframes || cryptoTimeframe || '60');
-  const crypto = await tradingViewCheckSet({ symbols: cryptoSymbolList, timeframes: cryptoTimeframeList, timeoutMs, httpBase }).catch((error) => ({
+  const crypto = await tradingViewCheckSet({
+    symbols: cryptoSymbolList,
+    timeframes: cryptoTimeframeList,
+    timeoutMs,
+    httpBase,
+    realtimeWaitMs,
+    realtimePollMs,
+  }).catch((error) => ({
       decision: {
         ok: false,
         status: 'tradingview_realtime_attention',
@@ -316,6 +371,8 @@ async function main() {
     timeoutMs: Number(argValue('timeout-ms', 5000)),
     httpBase: argValue('tv-http-base', DEFAULT_TV_HTTP),
     paper: boolArg('paper'),
+    realtimeWaitMs: Number(argValue('realtime-wait-ms', DEFAULT_REALTIME_WAIT_MS)),
+    realtimePollMs: Number(argValue('realtime-poll-ms', DEFAULT_REALTIME_POLL_MS)),
   });
   if (boolArg('json')) console.log(JSON.stringify(report, null, 2));
   else {
