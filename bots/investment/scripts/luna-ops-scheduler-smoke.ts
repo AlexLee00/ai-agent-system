@@ -56,6 +56,7 @@ export async function runLunaOpsSchedulerSmoke() {
   assert.equal(jobs.some((job) => job.name === 'near_miss_watchlist_overseas'), true);
   assert.equal(jobs.find((job) => job.name === 'near_miss_watchlist_crypto')?.cadence?.seconds, 1800);
   assert.equal(jobs.some((job) => job.name === 'relaxed_probe_l13_crypto'), true);
+  assert.equal(jobs.find((job) => job.name === 'relaxed_probe_l13_crypto')?.cadence?.seconds, 900);
   assert.equal(jobs.find((job) => job.name === 'relaxed_probe_l13_crypto')?.args?.includes('--confirm=luna-relaxed-probe-runner'), true);
   assert.equal(jobs.find((job) => job.name === 'relaxed_probe_l13_crypto')?.args?.includes('--max-symbols=1'), true);
   assert.equal(jobs.find((job) => job.name === 'near_miss_watchlist_domestic')?.requiresMarketOpen, true);

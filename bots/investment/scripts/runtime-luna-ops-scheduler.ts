@@ -235,7 +235,7 @@ export function getOpsSchedulerJobs() {
       name: 'relaxed_probe_l13_crypto',
       category: 'decision_probe',
       market: 'crypto',
-      cadence: { type: 'interval', seconds: 1800 },
+      cadence: { type: 'interval', seconds: 900 },
       ...nodeScript('runtime-luna-relaxed-probe-runner.ts', [
         '--apply',
         '--confirm=luna-relaxed-probe-runner',
