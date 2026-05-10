@@ -34,6 +34,8 @@ export async function runSmoke() {
     { id: 'dev', created_at: '2026-05-07T12:00:00.000Z' },
     { id: 'live', created_at: '2026-05-08T12:00:00.000Z' },
     { id: 'epoch-ms', entry_time: String(epochStartMs + 60_000) },
+    { id: 'excluded-bool', created_at: '2026-05-08T12:10:00.000Z', exclude_from_learning: true },
+    { id: 'excluded-flag', created_at: '2026-05-08T12:20:00.000Z', quality_flag: 'exclude_from_learning' },
   ], ['created_at', 'entry_time'], env);
   assert.deepEqual(rows.map((row) => row.id), ['live']);
   assert.deepEqual(mixedRows.map((row) => row.id), ['live', 'epoch-ms']);

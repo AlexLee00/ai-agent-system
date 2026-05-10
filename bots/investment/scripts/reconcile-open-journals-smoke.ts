@@ -7,6 +7,7 @@ import {
   buildScopeMap,
   buildWriteImpactGuard,
   entryAgeHours,
+  isDustNoPositionScope,
   parseReconcileOpenJournalsArgs,
   pickMatchingSellTradeForOpenScope,
   reconcileOpenJournals,
@@ -26,6 +27,8 @@ const entry = {
 assert.equal(scopeKey(entry), 'binance:PHA/USDT:live:validation');
 assert.ok(tolerance(100) >= 1);
 assert.ok(entryAgeHours(entry) >= 6.9);
+assert.equal(isDustNoPositionScope(0.05, 1), true);
+assert.equal(isDustNoPositionScope(1.01, 1), false);
 
 const grouped = buildScopeMap([
   { ...entry, trade_id: 'old', entry_time: Date.now() - 10_000 },
@@ -75,6 +78,8 @@ assert.equal(buildWriteImpactGuard({ affectedTradeCount: 10 }, 10), null);
 const parsedOverseas = parseReconcileOpenJournalsArgs(['--market=overseas', '--symbols=POET,AAPL']);
 assert.equal(parsedOverseas.market, 'overseas');
 assert.deepEqual(parsedOverseas.symbols, ['POET', 'AAPL']);
+const parsedDust = parseReconcileOpenJournalsArgs(['--dust-close-max-value-usdt=0.5']);
+assert.equal(parsedDust.dustCloseMaxValueUsdt, 0.5);
 
 const blocked = await reconcileOpenJournals({ dryRun: false, confirmLive: false });
 assert.equal(blocked.ok, false);

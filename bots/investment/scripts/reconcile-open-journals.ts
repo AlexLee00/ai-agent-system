@@ -19,6 +19,12 @@ export function tolerance(value) {
   return Math.max(0.000001, numeric * 0.01);
 }
 
+export function isDustNoPositionScope(totalValue = 0, dustCloseMaxValueUsdt = 1) {
+  const value = Math.abs(Number(totalValue || 0));
+  const threshold = Number(dustCloseMaxValueUsdt);
+  return value > 0 && Number.isFinite(threshold) && threshold > 0 && value <= threshold;
+}
+
 export function entryAgeHours(entry) {
   const entryTime = Number(entry?.entry_time || 0);
   if (!(entryTime > 0)) return Number.POSITIVE_INFINITY;
@@ -242,6 +248,7 @@ export function parseReconcileOpenJournalsArgs(args = []) {
   const confirmLive = args.includes('--confirm-live');
   const marketArg = args.find((arg) => arg.startsWith('--market='))?.split('=')[1];
   const minAgeArg = args.find((arg) => arg.startsWith('--no-position-min-age-hours='))?.split('=')[1];
+  const dustCloseMaxValueArg = args.find((arg) => arg.startsWith('--dust-close-max-value-usdt='))?.split('=')[1];
   const maxAffectedArg = args.find((arg) => arg.startsWith('--max-affected-trades='))?.split('=')[1];
   const symbolsArg = args.find((arg) => arg.startsWith('--symbols='))?.split('=')[1];
   const symbols = symbolsArg
@@ -256,6 +263,7 @@ export function parseReconcileOpenJournalsArgs(args = []) {
     confirmLive,
     symbols,
     noPositionMinAgeHours: Number.isFinite(Number(minAgeArg)) ? Number(minAgeArg) : 6,
+    dustCloseMaxValueUsdt: Number.isFinite(Number(dustCloseMaxValueArg)) ? Number(dustCloseMaxValueArg) : 1,
     maxAffectedTrades: Number.isFinite(Number(maxAffectedArg)) ? Number(maxAffectedArg) : 10,
   };
 }
@@ -264,6 +272,7 @@ export async function reconcileOpenJournals({
   dryRun = true,
   market = 'crypto',
   noPositionMinAgeHours = 6,
+  dustCloseMaxValueUsdt = 1,
   symbols = [],
   confirmLive = false,
   maxAffectedTrades = 10,
@@ -288,6 +297,7 @@ export async function reconcileOpenJournals({
       dryRun: true,
       market,
       noPositionMinAgeHours,
+      dustCloseMaxValueUsdt,
       symbols,
       confirmLive: true,
       maxAffectedTrades: null,
@@ -324,16 +334,19 @@ export async function reconcileOpenJournals({
     });
     const targetQty = Number(position?.amount || 0);
     const totalQty = rows.reduce((sum, row) => sum + Number(row.entry_size || 0), 0);
+    const totalValue = rows.reduce((sum, row) => sum + Math.abs(Number(row.entry_value || 0)), 0);
+    const dustNoPositionScope = isDustNoPositionScope(totalValue, dustCloseMaxValueUsdt);
 
     if (targetQty <= 0 && rows.length > 0) {
       const newestAgeHours = entryAgeHours(latest);
-      if (newestAgeHours < noPositionMinAgeHours) {
+      if (!dustNoPositionScope && newestAgeHours < noPositionMinAgeHours) {
         results.push({
           scope: key,
           symbol: latest.symbol,
           action: 'observe_no_position_too_fresh',
           targetQty,
           totalQty,
+          totalValue,
           latestQty: Number(latest.entry_size || 0),
           newestAgeHours,
           openTradeIds: rows.map((row) => row.trade_id),
@@ -350,6 +363,7 @@ export async function reconcileOpenJournals({
           action: 'close_all_no_position_from_sell_trade',
           targetQty,
           totalQty,
+          totalValue,
           latestQty: Number(latest.entry_size || 0),
           ...closePlan,
         });
@@ -361,9 +375,11 @@ export async function reconcileOpenJournals({
       results.push({
         scope: key,
         symbol: latest.symbol,
-        action: 'close_all_no_position',
+        action: dustNoPositionScope ? 'close_all_no_position_dust' : 'close_all_no_position',
         targetQty,
         totalQty,
+        totalValue,
+        dustCloseMaxValueUsdt: Number(dustCloseMaxValueUsdt || 0),
         latestQty: Number(latest.entry_size || 0),
         closedTradeIds,
       });

@@ -152,6 +152,7 @@ export async function buildTradeDataAnalysisReport({ limit = 5000, generatedAt =
   const reinforcementCoverage = TRADE_DATA_REINFORCEMENT_CONTRACT.map((id) => ({ id, status: 'implemented' }));
   const warnings = [];
   if (signalFailureRate != null && signalFailureRate > 0.3) warnings.push('signal_failure_rate_high');
+  if (analytics.status !== 'ready') warnings.push('trade_analytics_needs_attention');
   if (analytics.tpSl.unset.closed > 0) warnings.push('closed_trade_tp_sl_missing_history');
   if (sellCount > realizedCount) warnings.push('realized_pnl_backfill_pending');
   if (qualityCount < closedJournalTradeIds.length) warnings.push('posttrade_evaluation_backfill_pending');

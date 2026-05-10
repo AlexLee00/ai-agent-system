@@ -75,7 +75,8 @@ async function loadRows({ limit }) {
     `SELECT
        trade_id, market, exchange, symbol, status, direction,
        entry_time, exit_time, entry_price, exit_price, entry_value, exit_value,
-       pnl_percent, tp_sl_set, market_regime, strategy_family, hold_duration
+       pnl_percent, tp_sl_set, market_regime, strategy_family, hold_duration,
+       quality_flag, exclude_from_learning
      FROM investment.trade_journal
      ORDER BY COALESCE(exit_time, entry_time, 0) DESC
      LIMIT $1`,

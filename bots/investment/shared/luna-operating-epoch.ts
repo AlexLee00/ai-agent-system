@@ -65,6 +65,7 @@ export function isDevelopmentStageTimestamp(value, env = process.env) {
 }
 
 export function shouldUseRowForPolicyLearning(row = {}, timestampFields = ['created_at', 'executed_at', 'entry_time', 'exit_time'], env = process.env) {
+  if (isExplicitlyExcludedFromPolicyLearning(row)) return false;
   const epoch = getLunaOperatingEpoch(env);
   if (!epoch.enabled) return true;
   for (const field of timestampFields) {
@@ -77,6 +78,14 @@ export function shouldUseRowForPolicyLearning(row = {}, timestampFields = ['crea
 
 export function filterRowsForPolicyLearning(rows = [], timestampFields, env = process.env) {
   return (rows || []).filter((row) => shouldUseRowForPolicyLearning(row, timestampFields, env));
+}
+
+export function isExplicitlyExcludedFromPolicyLearning(row = {}) {
+  const excluded = row?.exclude_from_learning ?? row?.excludeFromLearning;
+  const qualityFlag = String(row?.quality_flag ?? row?.qualityFlag ?? '').trim().toLowerCase();
+  return excluded === true
+    || String(excluded || '').trim().toLowerCase() === 'true'
+    || qualityFlag === 'exclude_from_learning';
 }
 
 export function summarizeRowsByOperatingEpoch(rows = [], timestampFields = ['created_at', 'executed_at', 'entry_time', 'exit_time'], env = process.env) {
@@ -126,6 +135,7 @@ export default {
   isDevelopmentStageTimestamp,
   shouldUseRowForPolicyLearning,
   filterRowsForPolicyLearning,
+  isExplicitlyExcludedFromPolicyLearning,
   summarizeRowsByOperatingEpoch,
   buildOperatingEpochLowerBoundSql,
   shouldUseDevelopmentDerivedHardGates,

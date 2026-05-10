@@ -154,6 +154,11 @@ try {
   assert.equal(savedSignal.strategy_quality, 'ready');
   assert.equal(Number(savedSignal.strategy_readiness), 0.82);
   assert.equal(savedSignal.strategy_route.selectedFamily, 'momentum_rotation');
+  const profile = await db.getPositionStrategyProfile(strategySymbol, {
+    exchange: 'binance',
+    tradeMode: 'normal',
+  }).catch(() => null);
+  assert.equal(profile, null, 'L30 must not mutate active position strategy profiles before execution attach');
 } finally {
   await db.run(`DELETE FROM signals WHERE symbol = $1`, [strategySymbol]).catch(() => {});
   await db.run(`DELETE FROM investment.position_strategy_profiles WHERE symbol = $1`, [strategySymbol]).catch(() => {});
@@ -162,7 +167,7 @@ try {
 const result = {
   ok: true,
   smoke: 'pipeline-approved-decision',
-  checked: ['payload_builder', 'runner_reexport', 'function_exports', 'full_exit_sell_zero', 'exit_phase_analyst_marker', 'l30_strategy_route_persistence'],
+  checked: ['payload_builder', 'runner_reexport', 'function_exports', 'full_exit_sell_zero', 'exit_phase_analyst_marker', 'l30_strategy_route_persistence', 'l30_no_pre_execution_profile_mutation'],
 };
 
 if (process.argv.includes('--json')) {

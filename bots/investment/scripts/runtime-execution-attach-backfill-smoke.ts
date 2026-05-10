@@ -21,6 +21,7 @@ export function runExecutionAttachBackfillSmoke() {
   assert.equal(drySummary.writeEligible, 1);
   assert.equal(drySummary.missingSignalId, 1);
   assert.equal(drySummary.openPositionBlocked, 1);
+  assert.equal(drySummary.supersededByNewerTrade, 0);
 
   const dryDecision = buildExecutionAttachBackfillDecision(drySummary, {
     dryRun: true,
@@ -46,6 +47,14 @@ export function runExecutionAttachBackfillSmoke() {
     buildExecutionAttachBackfillDecision(blockedSummary, { dryRun: true }).status,
     'execution_attach_backfill_no_open_position',
   );
+
+  const supersededSummary = summarizeExecutionAttachBackfillRows([
+    { status: 'would_refresh_profile', attached: false, signalId: 'signal-new', metaPersisted: false },
+    { status: 'skipped_superseded_by_newer_trade', attached: false, signalId: 'signal-old', metaPersisted: false },
+  ], { dryRun: true });
+  assert.equal(supersededSummary.wouldAttach, 1);
+  assert.equal(supersededSummary.attachCandidates, 1);
+  assert.equal(supersededSummary.supersededByNewerTrade, 1);
 
   return {
     ok: true,

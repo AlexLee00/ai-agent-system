@@ -63,7 +63,7 @@ import { computeTradeExcursions } from './trade-review-metrics.ts';
 import { getInvestmentTradeMode } from './secrets.ts';
 import { resolveLunaAutonomyPhase } from './autonomy-phase.ts';
 import { classifyStrategyFamily } from './strategy-family-classifier.ts';
-import { filterRowsForPolicyLearning } from './luna-operating-epoch.ts';
+import { filterRowsForPolicyLearning, getLunaOperatingEpoch } from './luna-operating-epoch.ts';
 import { createRequire } from 'module';
 const kst = createRequire(import.meta.url)('../../../packages/core/lib/kst');
 const hiringContract = createRequire(import.meta.url)('../../../packages/core/lib/hiring-contract');
@@ -760,7 +760,11 @@ export async function getReviewByTradeId(tradeId) {
 
 export async function getTradeReviewInsight(symbol, exchange, days = 60) {
   await ensureInit();
-  const since = Date.now() - days * 24 * 60 * 60 * 1000;
+  const epoch = getLunaOperatingEpoch();
+  const historySince = Date.now() - days * 24 * 60 * 60 * 1000;
+  const since = epoch.enabled && epoch.valid
+    ? Math.max(historySince, Number(epoch.startedAtMs || 0))
+    : historySince;
   const row = await get(`
     SELECT
       COUNT(*) AS closed_trades,
@@ -779,6 +783,8 @@ export async function getTradeReviewInsight(symbol, exchange, days = 60) {
       AND j.status = 'closed'
       AND j.exit_time IS NOT NULL
       AND j.created_at >= ?
+      AND COALESCE(j.exclude_from_learning, false) = false
+      AND COALESCE(j.quality_flag, 'trusted') <> 'exclude_from_learning'
   `, [symbol, exchange, since]);
 
   const closedTrades = Number(row?.closed_trades ?? 0);
@@ -812,12 +818,13 @@ export async function getStrategyFamilyPerformanceInsight(exchange = null, days 
   const rows = await query(`
     SELECT
       COALESCE(NULLIF(strategy_family, ''), 'unknown') AS strategy_family,
-      status, entry_time, exit_time, created_at, entry_price, exit_price,
+      status, entry_time, exit_time, created_at, quality_flag, exclude_from_learning, entry_price, exit_price,
       entry_value, exit_value, direction, pnl_percent, pnl_net, pnl_amount
     FROM trade_journal
     WHERE created_at >= ?
       ${exchangeSql}
       AND COALESCE(exclude_from_learning, false) = false
+      AND COALESCE(quality_flag, 'trusted') <> 'exclude_from_learning'
       AND COALESCE(NULLIF(strategy_family, ''), 'unknown') <> 'unknown'
   `, params);
 

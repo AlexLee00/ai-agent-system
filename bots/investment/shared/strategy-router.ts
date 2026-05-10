@@ -338,6 +338,13 @@ export async function buildStrategyRoute({
     quality = 'watch';
     reasons.push(`${selected.family}: downgraded to watch by weak family performance`);
   }
+  const selectedTrendFollowingNeedsEvidence = selected.family === 'trend_following'
+    && selectedFamilyPerformanceBias <= -0.14
+    && Number(externalEvidenceSummary?.evidenceCount || 0) <= 0;
+  if (selectedTrendFollowingNeedsEvidence && quality !== 'thin') {
+    quality = 'thin';
+    reasons.push('trend_following: weak recent outcome requires pullback/volume/external confirmation before full sizing');
+  }
 
   return {
     symbol,

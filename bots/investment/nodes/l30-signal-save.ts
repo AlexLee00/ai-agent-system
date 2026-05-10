@@ -1,7 +1,6 @@
 // @ts-nocheck
 import * as db from '../shared/db.ts';
 import * as journalDb from '../shared/trade-journal-db.ts';
-import { createOrUpdatePositionStrategyProfile } from '../shared/strategy-profile.ts';
 import { buildSignalApprovalUpdate } from '../shared/signal-approval.ts';
 import { ACTIONS, SIGNAL_STATUS } from '../shared/signal.ts';
 import { loadAnalysesForSession, loadLatestNodePayload, buildAnalystSignals } from './helpers.ts';
@@ -127,13 +126,6 @@ async function run({ sessionId, market, symbol, decision: decisionOverride = nul
       }).catch((error) => {
         console.warn(`  ⚠️ risk approval rationale 저장 실패(${symbol}): ${error.message}`);
       });
-      await createOrUpdatePositionStrategyProfile({
-        signalId,
-        symbol,
-        exchange: market,
-        tradeMode: decision?.trade_mode || null,
-        decision,
-      }).catch(() => null);
     } else {
       status = SIGNAL_STATUS.REJECTED;
       await db.updateSignalBlock(signalId, {

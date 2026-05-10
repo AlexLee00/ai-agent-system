@@ -58,6 +58,7 @@ export function summarizeExecutionAttachBackfillRows(rows = [], { dryRun = true 
   const metaPersisted = rows.filter((row) => row.metaPersisted).length;
   const attachCandidates = rows.filter((row) => row.attached || String(row.status || '').startsWith('would_')).length;
   const openPositionBlocked = rows.filter((row) => row.status === 'skipped_no_open_position').length;
+  const supersededByNewerTrade = rows.filter((row) => row.status === 'skipped_superseded_by_newer_trade').length;
   return {
     total: rows.length,
     attached: rows.filter((row) => row.attached).length,
@@ -66,6 +67,7 @@ export function summarizeExecutionAttachBackfillRows(rows = [], { dryRun = true 
     metaPersisted,
     missingSignalId,
     openPositionBlocked,
+    supersededByNewerTrade,
     writeEligible: dryRun ? attachCandidates : 0,
     byStatus,
   };
@@ -143,8 +145,29 @@ export async function runExecutionAttachBackfill({
   const trades = await loadBuyTrades({ days, limit, exchange });
   const signalById = await loadSignals(trades);
   const rows = [];
+  const seenRefreshScopes = new Set();
 
   for (const trade of trades) {
+    const scopeKey = [
+      String(trade.exchange || '').trim(),
+      String(trade.symbol || '').trim(),
+      String(trade.trade_mode || trade.tradeMode || 'normal').trim() || 'normal',
+    ].join(':');
+    if (forceRefresh && requireOpenPosition && seenRefreshScopes.has(scopeKey)) {
+      rows.push({
+        tradeId: trade.id || null,
+        signalId: trade.signal_id || null,
+        symbol: trade.symbol,
+        exchange: trade.exchange,
+        tradeMode: trade.trade_mode || 'normal',
+        executedAt: trade.executed_at,
+        metaPersisted: false,
+        attached: false,
+        status: 'skipped_superseded_by_newer_trade',
+        reason: 'newer buy trade already selected for this open position scope',
+      });
+      continue;
+    }
     const signal = trade.signal_id ? signalById.get(trade.signal_id) || null : null;
     const attachFn = dryRun
       ? attachExecutionToPositionStrategy
@@ -157,6 +180,9 @@ export async function runExecutionAttachBackfill({
       requireOpenPosition,
       persistMeta: !dryRun,
     });
+    if (forceRefresh && requireOpenPosition && (result.attached || String(result.status || '').startsWith('would_'))) {
+      seenRefreshScopes.add(scopeKey);
+    }
     rows.push({
       tradeId: trade.id || null,
       signalId: trade.signal_id || null,

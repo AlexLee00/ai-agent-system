@@ -143,7 +143,10 @@ export async function getOpenPositions(exchange = null, paper = false, tradeMode
                   WHERE tj.symbol = p.symbol
                     AND tj.exchange = p.exchange
                     AND tj.is_paper = p.paper
-                    AND COALESCE(tj.trade_mode, 'normal') = COALESCE(p.trade_mode, 'normal')
+                    AND (
+                      (p.exchange = 'binance' AND p.paper = false)
+                      OR COALESCE(tj.trade_mode, 'normal') = COALESCE(p.trade_mode, 'normal')
+                    )
                     AND tj.status = 'open'
                 ),
                 (EXTRACT(EPOCH FROM p.updated_at) * 1000)::bigint
@@ -166,7 +169,10 @@ export async function getOpenPositions(exchange = null, paper = false, tradeMode
                   WHERE tj.symbol = p.symbol
                     AND tj.exchange = p.exchange
                     AND tj.is_paper = p.paper
-                    AND COALESCE(tj.trade_mode, 'normal') = COALESCE(p.trade_mode, 'normal')
+                    AND (
+                      (p.exchange = 'binance' AND p.paper = false)
+                      OR COALESCE(tj.trade_mode, 'normal') = COALESCE(p.trade_mode, 'normal')
+                    )
                     AND tj.status = 'open'
                 ),
                 (EXTRACT(EPOCH FROM p.updated_at) * 1000)::bigint
@@ -188,7 +194,10 @@ export async function getOpenPositions(exchange = null, paper = false, tradeMode
                 WHERE tj.symbol = p.symbol
                   AND tj.exchange = p.exchange
                   AND tj.is_paper = p.paper
-                  AND COALESCE(tj.trade_mode, 'normal') = COALESCE(p.trade_mode, 'normal')
+                  AND (
+                    (p.exchange = 'binance' AND p.paper = false)
+                    OR COALESCE(tj.trade_mode, 'normal') = COALESCE(p.trade_mode, 'normal')
+                  )
                   AND tj.status = 'open'
               ),
               (EXTRACT(EPOCH FROM p.updated_at) * 1000)::bigint
