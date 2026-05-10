@@ -98,6 +98,9 @@ export function getExitGuardConfig() {
     shortHoldHours: Number.isFinite(Number(guards?.shortHoldHours))
       ? Number(guards.shortHoldHours)
       : 6,
+    smallProfitHoldThresholdPct: Number.isFinite(Number(guards?.smallProfitHoldThresholdPct))
+      ? Number(guards.smallProfitHoldThresholdPct)
+      : 1.0,
     overwhelmingSellVotes: Math.max(
       1,
       Number.isFinite(Number(guards?.overwhelmingSellVotes))
@@ -131,7 +134,13 @@ export function shouldDowngradeEarlyExit(position, decision) {
   const guards = getExitGuardConfig();
   const heldHours = Number(position?.held_hours || 0);
   const pnlPct = getPositionPnlPct(position);
-  if (!(pnlPct < 0 && pnlPct > guards.mildLossHoldThresholdPct && heldHours < guards.shortHoldHours)) {
+  const earlyMildLoss = pnlPct < 0
+    && pnlPct > guards.mildLossHoldThresholdPct
+    && heldHours < guards.shortHoldHours;
+  const earlySmallProfit = pnlPct >= 0
+    && pnlPct < guards.smallProfitHoldThresholdPct
+    && heldHours < guards.shortHoldHours;
+  if (!earlyMildLoss && !earlySmallProfit) {
     return false;
   }
   const { buy, sellLike } = countExitVotes(position);
@@ -148,7 +157,9 @@ export function applyExitGuard(position, decision) {
     ...decision,
     action: ACTIONS.HOLD,
     confidence: Math.min(Number(decision?.confidence ?? 0.5), 0.58),
-    reasoning: `EXIT 가드 — 작은 손실 ${pnlPct.toFixed(2)}% / 짧은 보유 ${heldHours.toFixed(1)}h 구간이라 관찰 유지`,
+    reasoning: pnlPct >= 0
+      ? `EXIT 가드 — 작은 수익 ${pnlPct.toFixed(2)}% / 짧은 보유 ${heldHours.toFixed(1)}h 구간이라 관찰 유지`
+      : `EXIT 가드 — 작은 손실 ${pnlPct.toFixed(2)}% / 짧은 보유 ${heldHours.toFixed(1)}h 구간이라 관찰 유지`,
   };
 }
 

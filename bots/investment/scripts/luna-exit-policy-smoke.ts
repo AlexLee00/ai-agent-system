@@ -45,6 +45,20 @@ const guarded = applyExitGuard(position, normalized);
 assert.equal(guarded.action, ACTIONS.HOLD);
 assert.equal(guarded.reasoning.includes('EXIT 가드'), true);
 
+const smallProfitGuarded = applyExitGuard({
+  ...position,
+  symbol: 'PSG/USDT',
+  current_price: 10.006,
+  unrealized_pnl: 0.06,
+  held_hours: 0.17,
+  analyses: [
+    { analyst: ANALYST_TYPES.TA_MTF, signal: 'BUY', confidence: 0.52, reasoning: 'short trend still valid' },
+    { analyst: ANALYST_TYPES.NEWS, signal: 'SELL', confidence: 0.65, reasoning: 'generic market risk' },
+  ],
+}, normalizeExitDecision({ symbol: 'PSG/USDT', action: 'SELL', confidence: 0.68, reasoning: 'small profit' }, position));
+assert.equal(smallProfitGuarded.action, ACTIONS.HOLD);
+assert.equal(smallProfitGuarded.reasoning.includes('작은 수익'), true);
+
 const fallback = buildExitFallback([
   { symbol: 'OLD/USDT', avg_price: 10, current_price: 11, held_hours: 80, analyses: [] },
   { symbol: 'LOSS/USDT', avg_price: 10, current_price: 9.4, held_hours: 1, analyses: [] },
@@ -63,6 +77,7 @@ const payload = {
   ok: true,
   smoke: 'luna-exit-policy',
   guarded,
+  smallProfitGuarded,
   fallback,
   normalizedResult,
 };

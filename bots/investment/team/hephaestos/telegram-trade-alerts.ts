@@ -50,6 +50,24 @@ export function createTelegramTradeAlerts(context = {}) {
     return null;
   }
 
+  function getJournalDustToleranceUsdt() {
+    const configured = Number(process.env.LUNA_JOURNAL_DUST_TOLERANCE_USDT);
+    return Number.isFinite(configured) && configured >= 0 ? configured : 1;
+  }
+
+  function isDustRemainderAfterSell({ entrySize = 0, entryValue = 0, soldAmount = 0 } = {}) {
+    const normalizedEntrySize = Number(entrySize || 0);
+    const normalizedEntryValue = Number(entryValue || 0);
+    const normalizedSoldAmount = Math.max(0, Number(soldAmount || 0));
+    if (!(normalizedEntrySize > 0) || !(normalizedSoldAmount > 0)) return false;
+    const remainingSize = Math.max(0, normalizedEntrySize - normalizedSoldAmount);
+    if (remainingSize <= 0.00000001) return true;
+    const remainingEntryValue = normalizedEntrySize > 0
+      ? normalizedEntryValue * (remainingSize / normalizedEntrySize)
+      : 0;
+    return remainingEntryValue <= getJournalDustToleranceUsdt();
+  }
+
   async function closeOpenJournalForSymbol(
     symbol,
     isPaper,
@@ -154,10 +172,15 @@ export function createTelegramTradeAlerts(context = {}) {
     const entrySize = Number(entry.entry_size || 0);
     const entryValue = Number(entry.entry_value || 0);
     const realizedSize = Math.min(entrySize, Math.max(0, Number(soldAmount || 0)));
-    const isPartial = isEffectivePartialExit({
+    const rawPartial = isEffectivePartialExit({
       entrySize,
       soldAmount: realizedSize,
       partialExitRatio: normalizedRatio,
+    });
+    const isPartial = rawPartial && !isDustRemainderAfterSell({
+      entrySize,
+      entryValue,
+      soldAmount: realizedSize,
     });
 
     if (!isPartial) {

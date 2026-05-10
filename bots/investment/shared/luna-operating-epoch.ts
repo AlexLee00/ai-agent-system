@@ -14,6 +14,10 @@ export const DEFAULT_LUNA_OPERATING_EPOCH_STARTED_AT = '2026-05-08T00:00:00.000Z
 
 function parseDateMs(value) {
   if (value == null || value === '') return null;
+  const numeric = Number(value);
+  if (Number.isFinite(numeric) && numeric > 0) {
+    return numeric > 10_000_000_000 ? numeric : numeric * 1000;
+  }
   const ms = new Date(value).getTime();
   return Number.isFinite(ms) ? ms : null;
 }

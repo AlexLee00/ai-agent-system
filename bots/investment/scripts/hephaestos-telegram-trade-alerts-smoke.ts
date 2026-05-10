@@ -3,6 +3,7 @@
 
 import assert from 'assert/strict';
 import { createTelegramTradeAlerts } from '../team/hephaestos/telegram-trade-alerts.ts';
+import { isEffectivePartialExit, normalizePartialExitRatio } from '../team/hephaestos/partial-exit-policy.ts';
 
 const calls = [];
 let tradeIdSeq = 0;
@@ -37,13 +38,8 @@ function buildAlerts({
     notifyTrade: async (payload) => calls.push(['notifyTrade', payload]),
     notifyJournalEntry: async (payload) => calls.push(['notifyJournalEntry', payload]),
     getInvestmentTradeMode: () => 'normal',
-    normalizePartialExitRatio: (value) => Number(value || 1),
-    isEffectivePartialExit: ({ entrySize, soldAmount, partialExitRatio }) => (
-      Number(partialExitRatio || 1) > 0
-      && Number(partialExitRatio || 1) < 1
-      && Number(soldAmount || 0) > 0
-      && Number(soldAmount || 0) < Number(entrySize || 0)
-    ),
+    normalizePartialExitRatio,
+    isEffectivePartialExit,
     getAvailableBalance: async () => 1000,
     getOpenPositions: async () => [{ symbol: 'ORCA/USDT' }],
     getDailyPnL: async () => 15,
@@ -104,12 +100,45 @@ const validationOpenEntry = {
   trade_id: 'OPEN-VALIDATION-1',
   symbol: 'BTC/USDT',
   trade_mode: 'validation',
+  entry_size: 0.0006,
+  entry_value: 48,
 };
 const unifiedScopeAlerts = buildAlerts({ openEntries: [validationOpenEntry] });
 await unifiedScopeAlerts.settleOpenJournalForSell('BTC/USDT', false, 80000, 50, 'target', 'normal', {
   soldAmount: 0.0006,
 });
 assert.equal(calls.find((item) => item[0] === 'closeJournalEntry')?.[1], 'OPEN-VALIDATION-1');
+
+const feeDustOpenEntry = {
+  ...openEntry,
+  trade_id: 'OPEN-FEE-DUST',
+  symbol: 'PSG/USDT',
+  entry_price: 1.0213867211440246,
+  entry_size: 48.95,
+  entry_value: 49.99688,
+};
+const feeDustAlerts = buildAlerts({ openEntries: [feeDustOpenEntry] });
+await feeDustAlerts.settleOpenJournalForSell('PSG/USDT', false, 1.022, 49.9758, 'normal_exit', 'normal', {
+  soldAmount: 48.9,
+});
+assert.equal(calls.find((item) => item[0] === 'closeJournalEntry')?.[1], 'OPEN-FEE-DUST');
+assert.equal(calls.some((item) => item[0] === 'insertJournalEntry'), false);
+
+const intentionalPartialOpenEntry = {
+  ...openEntry,
+  trade_id: 'OPEN-PARTIAL',
+  symbol: 'ETH/USDT',
+  entry_price: 100,
+  entry_size: 1,
+  entry_value: 100,
+};
+const intentionalPartialAlerts = buildAlerts({ openEntries: [intentionalPartialOpenEntry] });
+await intentionalPartialAlerts.settleOpenJournalForSell('ETH/USDT', false, 110, 55, 'partial_profit', 'normal', {
+  soldAmount: 0.5,
+  partialExitRatio: 0.5,
+});
+assert.equal(calls.find((item) => item[0] === 'insertJournalEntry')?.[1]?.trade_id, 'TRD-1');
+assert.equal(calls.find((item) => item[0] === 'run')?.[1]?.includes('UPDATE trade_journal'), true);
 
 const suppressedAlerts = buildAlerts();
 await suppressedAlerts.recordExecutedTradeJournal({
@@ -160,6 +189,8 @@ const payload = {
   buyJournalStrategy: buyEntry.strategy_family,
   buyJournalTradeMode: buyEntry.trade_mode,
   unifiedLiveScopeClosed: true,
+  feeDustClosedAsFull: true,
+  intentionalPartialRecorded: true,
   cleanupSuppressed: true,
   finalizeSynced: true,
 };

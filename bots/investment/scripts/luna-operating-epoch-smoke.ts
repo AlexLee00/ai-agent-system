@@ -17,15 +17,26 @@ export async function runSmoke() {
     LUNA_OPERATING_EPOCH_STARTED_AT: '2026-05-08T00:00:00.000Z',
   };
   const epoch = getLunaOperatingEpoch(env);
+  const epochStartMs = Date.parse(env.LUNA_OPERATING_EPOCH_STARTED_AT);
   assert.equal(epoch.enabled, true);
   assert.equal(classifyLunaOperatingTimestamp('2026-05-07T23:59:59.000Z', env).stage, 'development');
   assert.equal(classifyLunaOperatingTimestamp('2026-05-08T00:00:00.000Z', env).stage, 'operating');
+  assert.equal(classifyLunaOperatingTimestamp(epochStartMs, env).stage, 'operating');
+  assert.equal(classifyLunaOperatingTimestamp(String(epochStartMs - 1000), env).stage, 'development');
+  assert.equal(classifyLunaOperatingTimestamp(Math.floor(epochStartMs / 1000), env).stage, 'operating');
 
   const rows = filterRowsForPolicyLearning([
     { id: 'dev', created_at: '2026-05-07T12:00:00.000Z' },
     { id: 'live', created_at: '2026-05-08T12:00:00.000Z' },
+    { id: 'epoch-ms', entry_time: String(epochStartMs + 60_000) },
   ], ['created_at'], env);
+  const mixedRows = filterRowsForPolicyLearning([
+    { id: 'dev', created_at: '2026-05-07T12:00:00.000Z' },
+    { id: 'live', created_at: '2026-05-08T12:00:00.000Z' },
+    { id: 'epoch-ms', entry_time: String(epochStartMs + 60_000) },
+  ], ['created_at', 'entry_time'], env);
   assert.deepEqual(rows.map((row) => row.id), ['live']);
+  assert.deepEqual(mixedRows.map((row) => row.id), ['live', 'epoch-ms']);
 
   const weakDefault = checkTradeDataWeakSymbol('OPN/USDT', 'crypto', env);
   assert.equal(weakDefault.blocked, false, 'dev-stage weak symbol stats must not hard block by default');

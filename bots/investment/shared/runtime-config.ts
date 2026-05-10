@@ -289,6 +289,7 @@ const DEFAULT_RUNTIME_CONFIG = {
     exitGuards: {
       mildLossHoldThresholdPct: -1.0,
       shortHoldHours: 6,
+      smallProfitHoldThresholdPct: 1.0,
       overwhelmingSellVotes: 3,
     },
     backtestDrift: {
