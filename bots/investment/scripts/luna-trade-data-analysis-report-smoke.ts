@@ -58,6 +58,8 @@ export async function runSmoke() {
   const report = await buildTradeDataAnalysisReport({ limit: 200 });
   assert.equal(report.ok, true);
   assert.ok(report.signals.total >= 0);
+  assert.ok(report.posttrade.qualityCoverage);
+  assert.ok(report.posttrade.qualityCoverage.coverage >= 0);
   assert.equal(report.reinforcementCoverage.length, TRADE_DATA_REINFORCEMENT_CONTRACT.length);
   for (const id of TRADE_DATA_REINFORCEMENT_CONTRACT) {
     assert.ok(report.reinforcementCoverage.some((item) => item.id === id && item.status === 'implemented'), `coverage ${id}`);
@@ -73,6 +75,7 @@ export async function runSmoke() {
       warningCount: report.warnings.length,
       coverage: report.reinforcementCoverage.length,
       realizedCoverage: report.trades.realizedPnlCoverage,
+      qualityCoverage: report.posttrade.qualityCoverage,
     },
   };
 }

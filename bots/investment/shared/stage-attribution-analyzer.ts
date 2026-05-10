@@ -7,6 +7,7 @@
  */
 
 import * as db from './db.ts';
+import { fetchTradeJournalPosttradeTrade } from './posttrade-trade-journal-adapter.ts';
 
 export interface StageAttribution {
   trade_id: number;
@@ -70,6 +71,9 @@ async function fetchTradeBasic(tradeId: number) {
     WHERE id = $1
   `, [tradeId]).catch(() => null);
   if (historyTrade) return historyTrade;
+
+  const journalTrade = await fetchTradeJournalPosttradeTrade(tradeId).catch(() => null);
+  if (journalTrade) return journalTrade;
 
   const closeTrade = await db.get(
     `SELECT id, signal_id, symbol, side, amount, price, total_usdt,

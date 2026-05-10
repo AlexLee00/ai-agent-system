@@ -164,6 +164,7 @@ async function runPosttradeFeedback(args) {
     reflexions: 0,
     queuedSource: candidates.filter((item) => item.source === 'knowledge').length,
     fallbackSource: candidates.filter((item) => item.source === 'fallback_scan').length,
+    journalSource: candidates.filter((item) => item.source === 'trade_journal_scan').length,
   };
 
   for (const candidate of candidates) {

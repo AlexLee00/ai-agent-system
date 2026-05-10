@@ -13,6 +13,10 @@ import * as db from './db.ts';
 import { callLLM } from './llm-client.ts';
 import { getPosttradeFeedbackRuntimeConfig } from './runtime-config.ts';
 import { evaluateLunaConstitutionForTrade } from './luna-constitution.ts';
+import {
+  fetchPendingTradeJournalPosttradeCandidates,
+  fetchTradeJournalPosttradeTrade,
+} from './posttrade-trade-journal-adapter.ts';
 
 const MARKET_ALIASES = {
   all: 'all',
@@ -20,6 +24,12 @@ const MARKET_ALIASES = {
   domestic: 'domestic',
   overseas: 'overseas',
 };
+
+function boolEnv(name: string, fallback = false) {
+  const raw = String(process.env[name] ?? '').trim().toLowerCase();
+  if (!raw) return fallback;
+  return ['1', 'true', 'yes', 'on'].includes(raw);
+}
 
 export interface TradeQualityResult {
   trade_id: number;
@@ -61,7 +71,9 @@ export async function evaluateTradeQuality(tradeId: number, opts: { dryRun?: boo
     return null;
   }
 
-  const breakdown = await llmEvaluate(trade, rationale, analystData, lifecycleEvt, backtestData, reviewData);
+  const breakdown = opts?.dryRun === true && !boolEnv('LUNA_POSTTRADE_DRY_RUN_LLM', false)
+    ? buildRuleBasedEvaluation(trade, lifecycleEvt, reviewData, 'dry_run_rule_based_no_llm')
+    : await llmEvaluate(trade, rationale, analystData, lifecycleEvt, backtestData, reviewData);
   if (!breakdown) {
     await recordQualityEvaluationFailure(tradeId, 'llm_evaluation_unavailable', {}).catch(() => {});
     return null;
@@ -132,7 +144,7 @@ export async function fetchPendingPosttradeCandidates({
 }: {
   limit?: number;
   market?: string;
-} = {}): Promise<Array<{ tradeId: number; source: 'knowledge' | 'fallback_scan'; knowledgeId?: number | null }>> {
+} = {}): Promise<Array<{ tradeId: number; source: 'knowledge' | 'fallback_scan' | 'trade_journal_scan'; knowledgeId?: number | null; journalId?: string | null }>> {
   const safeLimit = Math.max(1, Number(limit || 50));
   const targetMarket = normalizeMarketKey(market);
   const rows = await db.query(
@@ -220,6 +232,14 @@ export async function fetchPendingPosttradeCandidates({
     fromKnowledge.push({ tradeId, source: 'fallback_scan' as const, knowledgeId: null });
     if (fromKnowledge.length >= safeLimit) break;
   }
+  if (fromKnowledge.length < safeLimit) {
+    const journalCandidates = await fetchPendingTradeJournalPosttradeCandidates({
+      limit: safeLimit - fromKnowledge.length,
+      market: targetMarket,
+      seen,
+    });
+    fromKnowledge.push(...journalCandidates);
+  }
   return fromKnowledge;
 }
 
@@ -233,6 +253,9 @@ async function fetchTrade(tradeId: number) {
     WHERE id = $1
   `, [tradeId]).catch(() => null);
   if (historyTrade) return historyTrade;
+
+  const journalTrade = await fetchTradeJournalPosttradeTrade(tradeId).catch(() => null);
+  if (journalTrade) return journalTrade;
 
   const closeTrade = await db.get(
     `SELECT id, signal_id, symbol, side, amount, price, total_usdt,

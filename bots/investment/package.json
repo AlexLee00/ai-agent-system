@@ -118,6 +118,7 @@
     "risk:approval-ops-suite": "node scripts/risk-approval-ops-suite.ts",
     "validate-review:smoke": "node scripts/validate-trade-review-smoke.ts",
     "runtime:learning-loop-feedback-smoke": "node scripts/runtime-learning-loop-feedback-smoke.ts",
+    "runtime:pnl-backfill": "node scripts/runtime-pnl-backfill.ts",
     "runtime:posttrade-feedback": "node scripts/runtime-posttrade-feedback.ts --json",
     "runtime:posttrade-feedback-worker": "node scripts/runtime-posttrade-feedback-worker.ts --json",
     "runtime:posttrade-feedback-doctor": "node scripts/runtime-posttrade-feedback-doctor.ts --json",

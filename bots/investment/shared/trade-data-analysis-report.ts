@@ -7,6 +7,7 @@ import {
   getLunaOperatingEpoch,
   summarizeRowsByOperatingEpoch,
 } from './luna-operating-epoch.ts';
+import { deriveTradeJournalNumericId } from './posttrade-trade-journal-adapter.ts';
 
 function rowsOf(result) {
   if (Array.isArray(result)) return result;
@@ -102,7 +103,6 @@ export async function buildTradeDataAnalysisReport({ limit = 5000, generatedAt =
       LIMIT $1`,
     [limit],
   );
-  const qualityRows = await safeQuery(`SELECT COUNT(*)::int AS count FROM investment.trade_quality_evaluations`);
   const reflexionRows = await safeQuery(`SELECT COUNT(*)::int AS count FROM investment.luna_failure_reflexions`);
   const skillRows = await safeQuery(`SELECT COUNT(*)::int AS count FROM investment.luna_posttrade_skills`);
   const agentRows = await safeQuery(
@@ -129,6 +129,20 @@ export async function buildTradeDataAnalysisReport({ limit = 5000, generatedAt =
   const journalRows = filterRowsForPolicyLearning(journalSourceRows, ['exit_time', 'entry_time']);
   const analytics = buildTradeAnalyticsReport(journalRows, { generatedAt });
   analytics.operatingEpochSummary = summarizeRowsByOperatingEpoch(journalSourceRows, ['exit_time', 'entry_time']);
+  const closedJournalTradeIds = [...new Set(
+    journalRows
+      .filter((row) => String(row.status || '').toLowerCase() === 'closed' || row.exit_time != null)
+      .map((row) => deriveTradeJournalNumericId(row))
+      .filter((id) => Number.isSafeInteger(id)),
+  )];
+  const qualityRows = closedJournalTradeIds.length > 0
+    ? await safeQuery(
+        `SELECT COUNT(*)::int AS count
+           FROM investment.trade_quality_evaluations
+          WHERE trade_id = ANY($1::BIGINT[])`,
+        [closedJournalTradeIds],
+      )
+    : [{ count: 0 }];
   const realized = realizedRows[0] || {};
   const sellCount = num(realized.sell_count);
   const realizedCount = num(realized.realized_count);
@@ -168,6 +182,11 @@ export async function buildTradeDataAnalysisReport({ limit = 5000, generatedAt =
     journal: analytics,
     posttrade: {
       qualityEvaluations: qualityCount,
+      qualityCoverage: {
+        closedJournalTrades: closedJournalTradeIds.length,
+        evaluatedClosedJournalTrades: qualityCount,
+        coverage: closedJournalTradeIds.length > 0 ? Number((qualityCount / closedJournalTradeIds.length).toFixed(4)) : 1,
+      },
       failureReflexions: reflexionCount,
       posttradeSkills: num(skillRows[0]?.count),
     },
@@ -178,9 +197,9 @@ export async function buildTradeDataAnalysisReport({ limit = 5000, generatedAt =
     warnings,
     nextActions: [
       ...(analytics.nextActions || []),
-      ...(sellCount > realizedCount ? ['npx tsx bots/investment/scripts/runtime-pnl-backfill.ts --json, then apply with --apply --confirm=runtime-pnl-backfill after review'] : []),
+      ...(sellCount > realizedCount ? ['npm --prefix bots/investment run -s runtime:pnl-backfill -- --json, then apply with --apply --confirm=runtime-pnl-backfill after review'] : []),
       ...(analytics.tpSl.unset.closed > 0 ? ['review historical closed trades without tp_sl_set=true'] : []),
-      ...(qualityCount < analytics.summary.closed ? ['run posttrade feedback backfill/worker for unevaluated closed trades'] : []),
+      ...(qualityCount < closedJournalTradeIds.length ? ['npm --prefix bots/investment run -s runtime:posttrade-feedback-worker -- --once --force --market=all --limit=20 --dry-run --json, then run without --dry-run after review'] : []),
     ],
   };
 }

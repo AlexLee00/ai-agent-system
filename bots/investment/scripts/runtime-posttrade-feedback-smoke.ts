@@ -16,6 +16,10 @@ import { analyzeStageAttribution } from '../shared/stage-attribution-analyzer.ts
 import { runReflexion } from '../shared/reflexion-engine.ts';
 import { checkAvoidPatterns } from '../shared/reflexion-engine.ts';
 import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
+import {
+  deriveTradeJournalNumericId,
+  mapTradeJournalRowToPosttradeTrade,
+} from '../shared/posttrade-trade-journal-adapter.ts';
 
 let passed = 0;
 let failed = 0;
@@ -187,6 +191,32 @@ async function testScenario5_StageAttributionStructure() {
   assert(worst.stage_id === 'stage_5', `worst stage = ${worst.stage_id}`);
 }
 
+async function testScenario6_TradeJournalAdapter() {
+  console.log('\n[Scenario 6] trade_journal posttrade adapter 검증');
+
+  const numericId = deriveTradeJournalNumericId({ trade_id: 'TRD-20260510-002' });
+  const trade = mapTradeJournalRowToPosttradeTrade({
+    id: '879a36fb-7924-43f9-aedc-e09bbeb34ecc',
+    trade_id: 'TRD-20260510-002',
+    symbol: 'PSG/USDT',
+    exchange: 'binance',
+    status: 'closed',
+    entry_time: 1778386569876,
+    exit_time: 1778387173396,
+    entry_price: 1,
+    exit_price: 1.01,
+    entry_value: 50,
+    exit_value: 50.5,
+    strategy_family: 'trend_following',
+  });
+
+  assert(numericId === 20260510002, `numeric trade id = ${numericId}`);
+  assert(trade?.id === 20260510002, 'mapped trade id uses stable numeric TRD id');
+  assert(trade?.market === 'crypto', 'binance journal maps to crypto market');
+  assert(trade?.entry_at === 1778386569876, 'entry timestamp preserved as epoch ms');
+  assert(trade?.exit_at === 1778387173396, 'exit timestamp preserved as epoch ms');
+}
+
 // ─── Main ─────────────────────────────────────────────────────────────────────
 
 async function main() {
@@ -197,6 +227,7 @@ async function main() {
   await testScenario3_Neutral();
   await testScenario4_WeightedSum();
   await testScenario5_StageAttributionStructure();
+  await testScenario6_TradeJournalAdapter();
 
   console.log(`\n결과: ${passed}/${passed + failed} 통과`);
 
