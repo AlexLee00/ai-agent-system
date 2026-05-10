@@ -262,9 +262,31 @@ function parseJsonMaybe(value, fallback = null) {
   }
 }
 
+function resolveCandidateStrategyRoute(candidate = {}) {
+  return candidate?.strategy_route || candidate?.strategyRoute || null;
+}
+
+function resolveCandidateStrategyQuality(candidate = {}, route = null) {
+  return candidate?.strategy_quality || candidate?.strategyQuality || route?.quality || null;
+}
+
+function resolveCandidateStrategyReadiness(candidate = {}, route = null) {
+  const value = candidate?.strategy_readiness
+    ?? candidate?.strategyReadiness
+    ?? route?.readinessScore
+    ?? route?.readiness
+    ?? null;
+  const numeric = Number(value);
+  return Number.isFinite(numeric) ? numeric : null;
+}
+
 function signalRowToEntryCandidate(row = {}) {
   const strategyRoute = parseJsonMaybe(row.strategy_route, null);
   const blockMeta = parseJsonMaybe(row.block_meta, {});
+  const strategyQuality = row.strategy_quality || strategyRoute?.quality || null;
+  const strategyReadiness = resolveCandidateStrategyReadiness({
+    strategy_readiness: row.strategy_readiness,
+  }, strategyRoute);
   return {
     symbol: row.symbol,
     action: ACTIONS.BUY,
@@ -274,6 +296,8 @@ function signalRowToEntryCandidate(row = {}) {
     exchange: row.exchange || 'binance',
     strategy_family: row.strategy_family || strategyRoute?.selectedFamily || null,
     strategy_route: strategyRoute,
+    strategy_quality: strategyQuality,
+    strategy_readiness: strategyReadiness,
     setup_type: strategyRoute?.setupType || row.strategy_family || null,
     entry_price: blockMeta?.entry_price ?? blockMeta?.entryPrice ?? null,
     atr: blockMeta?.atr ?? blockMeta?.atr_value ?? null,
@@ -542,12 +566,18 @@ export async function evaluateEntryTriggers(candidates = [], context = {}) {
     const existingTrigger = activeMap.get(key) || null;
     const predictiveObservation = isPredictiveObservationCandidate(candidate);
     const fireNow = predictiveObservation || shouldFireTrigger(candidate, context);
+    const strategyRoute = resolveCandidateStrategyRoute(candidate);
+    const strategyQuality = resolveCandidateStrategyQuality(candidate, strategyRoute);
+    const strategyReadiness = resolveCandidateStrategyReadiness(candidate, strategyRoute);
     const baseMeta = {
-      setupType: candidate?.setup_type || candidate?.strategy_route?.setupType || null,
+      setupType: candidate?.setup_type || strategyRoute?.setupType || null,
       confidence,
       source: 'entry_trigger_engine',
       evaluatedAt: nowIso(),
       hints: candidate?.triggerHints || {},
+      strategyRoute,
+      strategyQuality,
+      strategyReadiness,
     };
 
     const tpSlEnforcement = enforceTpSlRequirement(resolveCandidateTpSlInput(candidate, context, market));
@@ -1015,7 +1045,7 @@ export async function refreshEntryTriggersFromRecentBuySignals({
   const minConfidence = Number(flags.entryTrigger.minConfidence || 0.48);
   const rows = await dbQuery(
     `SELECT id, symbol, action, amount_usdt, confidence, reasoning, status, exchange,
-            strategy_family, strategy_route, block_meta, created_at
+            strategy_family, strategy_quality, strategy_readiness, strategy_route, block_meta, created_at
        FROM signals
       WHERE exchange = $1
         AND action = 'BUY'

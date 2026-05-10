@@ -135,6 +135,68 @@ function numberEnv(name, fallback = 0) {
   return Number.isFinite(value) ? value : fallback;
 }
 
+function parseJsonMaybe(value, fallback = null) {
+  if (value == null) return fallback;
+  if (typeof value === 'object') return value;
+  try {
+    return JSON.parse(String(value));
+  } catch {
+    return fallback;
+  }
+}
+
+function finiteNumber(value, fallback = null) {
+  const numeric = Number(value);
+  return Number.isFinite(numeric) ? numeric : fallback;
+}
+
+function clamp01(value, fallback = 0) {
+  const numeric = finiteNumber(value, fallback);
+  return Math.max(0, Math.min(1, Number(numeric ?? fallback ?? 0)));
+}
+
+function resolveEntryTriggerStrategyMetadata(trigger = {}) {
+  const context = parseJsonMaybe(trigger.trigger_context, {}) || {};
+  const meta = parseJsonMaybe(trigger.trigger_meta, {}) || {};
+  const route = context.strategyRoute || context.strategy_route || meta.strategyRoute || meta.strategy_route || {};
+  const setupType = trigger.setup_type || route.setupType || route.selectedFamily || trigger.trigger_type || 'entry_trigger';
+  const confidence = clamp01(trigger.confidence, 0);
+  const predictiveScore = clamp01(trigger.predictive_score ?? route.predictiveScore, 0);
+  const readiness = clamp01(
+    context.strategyReadiness
+      ?? context.strategy_readiness
+      ?? meta.strategyReadiness
+      ?? meta.strategy_readiness
+      ?? route.readinessScore
+      ?? route.readiness
+      ?? Math.max(confidence, predictiveScore),
+    Math.max(confidence, predictiveScore),
+  );
+  const quality = context.strategyQuality
+    || context.strategy_quality
+    || meta.strategyQuality
+    || meta.strategy_quality
+    || route.quality
+    || (readiness >= 0.72 ? 'ready' : readiness >= 0.56 ? 'watch' : 'thin');
+  const family = route.selectedFamily || route.strategyFamily || trigger.strategy_family || setupType || 'entry_trigger';
+
+  return {
+    family,
+    quality,
+    readiness: Number(readiness.toFixed(4)),
+    route: {
+      ...route,
+      source: 'entry_trigger_fired',
+      triggerId: trigger.id,
+      triggerType: trigger.trigger_type || null,
+      setupType: setupType || null,
+      predictiveScore: predictiveScore > 0 ? predictiveScore : null,
+      quality,
+      readinessScore: Number(readiness.toFixed(4)),
+    },
+  };
+}
+
 export function writeEntryTriggerWorkerHeartbeat(payload = {}, file = heartbeatPath()) {
   if (!shouldWriteHeartbeat() || !file) return null;
   let previous = null;
@@ -312,6 +374,7 @@ export async function materializeFiredEntryTriggerSignals({
       continue;
     }
     const event = events.find((row) => String(row?.symbol || '').toUpperCase() === symbol.toUpperCase()) || trigger.trigger_meta?.event || null;
+    const strategy = resolveEntryTriggerStrategyMetadata(trigger);
     const signalId = await signalInserter({
       symbol,
       action: 'BUY',
@@ -320,14 +383,10 @@ export async function materializeFiredEntryTriggerSignals({
       reasoning: `entry_trigger_fired(${trigger.trigger_type}) ${symbol}`,
       status: 'approved',
       exchange,
-      strategyFamily: trigger.setup_type || trigger.trigger_type || 'entry_trigger',
-      strategyRoute: {
-        source: 'entry_trigger_fired',
-        triggerId: trigger.id,
-        triggerType: trigger.trigger_type || null,
-        setupType: trigger.setup_type || null,
-        predictiveScore: Number(trigger.predictive_score || 0) || null,
-      },
+      strategyFamily: strategy.family,
+      strategyQuality: strategy.quality,
+      strategyReadiness: strategy.readiness,
+      strategyRoute: strategy.route,
       executionOrigin: 'entry_trigger',
       qualityFlag: 'trusted',
       nemesisVerdict: 'approved',
@@ -341,6 +400,12 @@ export async function materializeFiredEntryTriggerSignals({
         state: 'fired',
         firedAt: trigger.fired_at || null,
         materializedAt: new Date().toISOString(),
+        strategy: {
+          family: strategy.family,
+          quality: strategy.quality,
+          readiness: strategy.readiness,
+          route: strategy.route,
+        },
       },
       capitalSnapshot: {
         mode: riskContext.capitalSnapshot?.mode || null,

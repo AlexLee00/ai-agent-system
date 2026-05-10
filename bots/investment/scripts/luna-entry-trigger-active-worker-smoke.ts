@@ -242,6 +242,16 @@ export async function runLunaEntryTriggerActiveWorkerSmoke() {
             trigger_state: 'fired',
             confidence: 0.73,
             predictive_score: 0.63,
+            trigger_context: {
+              strategyRoute: {
+                selectedFamily: 'mean_reversion',
+                setupType: 'pullback_to_support',
+                quality: 'watch',
+                readinessScore: 0.66,
+              },
+              strategyQuality: 'watch',
+              strategyReadiness: 0.66,
+            },
             trigger_meta: {},
           }),
           duplicateFinder: async () => null,
@@ -263,7 +273,12 @@ export async function runLunaEntryTriggerActiveWorkerSmoke() {
       assert.equal(materializedPayloads[0].executionOrigin, 'entry_trigger');
       assert.equal(materializedPayloads[0].nemesisVerdict, 'approved');
       assert.equal(materializedPayloads[0].amountUsdt, 50);
+      assert.equal(materializedPayloads[0].strategyFamily, 'mean_reversion');
+      assert.equal(materializedPayloads[0].strategyQuality, 'watch');
+      assert.equal(materializedPayloads[0].strategyReadiness, 0.66);
+      assert.equal(materializedPayloads[0].strategyRoute.readinessScore, 0.66);
       assert.equal(materializedMeta[0].meta.event_type, 'entry_trigger_fired_signal_materialized');
+      assert.equal(materializedMeta[0].meta.entryTrigger.strategy.quality, 'watch');
       assert.equal(materializedUpdates[0].patch.triggerMetaPatch.materializeStatus, 'approved_signal_inserted');
 
       return {

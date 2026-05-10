@@ -23,17 +23,64 @@ function normalizeFamily(value = null) {
   return text;
 }
 
+function finiteNumber(value, fallback = null) {
+  const numeric = Number(value);
+  return Number.isFinite(numeric) ? numeric : fallback;
+}
+
+function deriveQuality(readiness = null) {
+  const score = finiteNumber(readiness, null);
+  if (score == null) return null;
+  if (score >= 0.72) return 'ready';
+  if (score >= 0.56) return 'watch';
+  return 'thin';
+}
+
+function normalizeRoute(route = null, family = null, quality = null, readiness = null) {
+  const body = route && typeof route === 'object' ? { ...route } : {};
+  if (family && !body.selectedFamily) body.selectedFamily = family;
+  if (family && !body.setupType) body.setupType = family;
+  if (quality && !body.quality) body.quality = quality;
+  if (readiness != null && body.readinessScore == null) body.readinessScore = readiness;
+  return Object.keys(body).length > 0 ? body : null;
+}
+
+function buildCandidateFromSignal(signal = null) {
+  if (!signal) return null;
+  const route = signal.strategy_route || null;
+  const family = normalizeFamily(signal.strategy_family || route?.selectedFamily || route?.setupType || null);
+  if (!family) return null;
+  const readiness = finiteNumber(
+    signal.strategy_readiness
+      ?? route?.readinessScore
+      ?? route?.readiness
+      ?? route?.predictiveScore
+      ?? signal.confidence,
+    null,
+  );
+  const quality = signal.strategy_quality || route?.quality || deriveQuality(readiness);
+  return {
+    source: 'signal',
+    strategyFamily: family,
+    strategyQuality: quality,
+    strategyReadiness: readiness,
+    strategyRoute: normalizeRoute(route, family, quality, readiness),
+  };
+}
+
 function buildCandidateFromProfile(profile = null) {
   if (!profile) return null;
   const route = profile.strategy_context?.strategyRoute || null;
   const family = normalizeFamily(route?.selectedFamily || route?.setupType || profile.setup_type || null);
   if (!family) return null;
+  const readiness = finiteNumber(route?.readinessScore ?? route?.readiness, null);
+  const quality = route?.quality || deriveQuality(readiness);
   return {
     source: 'profile',
     strategyFamily: family,
-    strategyQuality: route?.quality || null,
-    strategyReadiness: route?.readinessScore ?? null,
-    strategyRoute: route || { selectedFamily: family, setupType: profile.setup_type || family },
+    strategyQuality: quality,
+    strategyReadiness: readiness,
+    strategyRoute: normalizeRoute(route, family, quality, readiness) || { selectedFamily: family, setupType: profile.setup_type || family },
   };
 }
 
@@ -41,12 +88,14 @@ function buildCandidateFromRationale(rationale = null) {
   const config = rationale?.strategy_config || null;
   const family = normalizeFamily(config?.selected_strategy_family || config?.setup_type || config?.strategy_family || null);
   if (!family) return null;
+  const readiness = finiteNumber(config?.strategy_readiness ?? config?.strategy_route?.readinessScore, null);
+  const quality = config?.strategy_quality || config?.strategy_route?.quality || deriveQuality(readiness);
   return {
     source: 'rationale',
     strategyFamily: family,
-    strategyQuality: config?.strategy_quality || null,
-    strategyReadiness: config?.strategy_readiness ?? null,
-    strategyRoute: config?.strategy_route || { selectedFamily: family, setupType: config?.setup_type || family },
+    strategyQuality: quality,
+    strategyReadiness: readiness,
+    strategyRoute: normalizeRoute(config?.strategy_route, family, quality, readiness) || { selectedFamily: family, setupType: config?.setup_type || family },
   };
 }
 
@@ -77,9 +126,13 @@ async function backfillSignalStrategyRoutes({ dryRun = false, limit = 3000 } = {
   await db.initSchema();
 
   const rows = await db.query(
-    `SELECT id, symbol, exchange, trade_mode
+    `SELECT id, symbol, exchange, trade_mode, confidence,
+            strategy_family, strategy_quality, strategy_readiness, strategy_route
      FROM investment.signals
      WHERE COALESCE(strategy_family, '') = ''
+        OR COALESCE(strategy_quality, '') = ''
+        OR strategy_readiness IS NULL
+        OR strategy_route IS NULL
      ORDER BY created_at DESC
      LIMIT $1`,
     [Math.max(1, Number(limit || 3000))],
@@ -87,7 +140,7 @@ async function backfillSignalStrategyRoutes({ dryRun = false, limit = 3000 } = {
 
   let updated = 0;
   let unresolved = 0;
-  const bySource = { profile: 0, rationale: 0 };
+  const bySource = { signal: 0, profile: 0, rationale: 0 };
   const samples = [];
 
   for (const row of rows) {
@@ -103,7 +156,7 @@ async function backfillSignalStrategyRoutes({ dryRun = false, limit = 3000 } = {
       ).catch(() => null),
     ]);
 
-    const candidate = buildCandidateFromProfile(profile) || buildCandidateFromRationale(rationale);
+    const candidate = buildCandidateFromSignal(row) || buildCandidateFromProfile(profile) || buildCandidateFromRationale(rationale);
     if (!candidate?.strategyFamily) {
       unresolved += 1;
       continue;
@@ -115,7 +168,11 @@ async function backfillSignalStrategyRoutes({ dryRun = false, limit = 3000 } = {
          SET strategy_family = COALESCE(strategy_family, $1),
              strategy_quality = COALESCE(strategy_quality, $2),
              strategy_readiness = COALESCE(strategy_readiness, $3),
-             strategy_route = COALESCE(strategy_route, $4::jsonb)
+             strategy_route = CASE
+               WHEN $4::jsonb IS NULL THEN strategy_route
+               WHEN strategy_route IS NULL THEN $4::jsonb
+               ELSE strategy_route || $4::jsonb
+             END
          WHERE id = $5`,
         [
           candidate.strategyFamily,

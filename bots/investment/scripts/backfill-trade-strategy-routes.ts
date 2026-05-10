@@ -24,17 +24,57 @@ function normalizeFamily(value = null) {
   return text;
 }
 
+function finiteNumber(value, fallback = null) {
+  const numeric = Number(value);
+  return Number.isFinite(numeric) ? numeric : fallback;
+}
+
+function deriveQuality(readiness = null) {
+  const score = finiteNumber(readiness, null);
+  if (score == null) return null;
+  if (score >= 0.72) return 'ready';
+  if (score >= 0.56) return 'watch';
+  return 'thin';
+}
+
+function normalizeRoute(route = null, family = null, quality = null, readiness = null) {
+  const body = route && typeof route === 'object' ? { ...route } : {};
+  if (family && !body.selectedFamily) body.selectedFamily = family;
+  if (family && !body.setupType) body.setupType = family;
+  if (quality && !body.quality) body.quality = quality;
+  if (readiness != null && body.readinessScore == null) body.readinessScore = readiness;
+  return Object.keys(body).length > 0 ? body : null;
+}
+
+function buildCandidateFromJournal(row = null) {
+  if (!row) return null;
+  const route = row.strategy_route || null;
+  const family = normalizeFamily(row.strategy_family || route?.selectedFamily || route?.setupType || null);
+  if (!family) return null;
+  const readiness = finiteNumber(row.strategy_readiness ?? route?.readinessScore ?? route?.readiness ?? route?.predictiveScore, null);
+  const quality = row.strategy_quality || route?.quality || deriveQuality(readiness);
+  return {
+    source: 'journal',
+    strategyFamily: family,
+    strategyQuality: quality,
+    strategyReadiness: readiness,
+    strategyRoute: normalizeRoute(route, family, quality, readiness),
+  };
+}
+
 function buildCandidateFromSignal(signal = null) {
   if (!signal) return null;
   const route = signal.strategy_route || null;
   const family = normalizeFamily(signal.strategy_family || route?.selectedFamily || route?.setupType || null);
   if (!family) return null;
+  const readiness = finiteNumber(signal.strategy_readiness ?? route?.readinessScore ?? route?.readiness ?? route?.predictiveScore, null);
+  const quality = signal.strategy_quality || route?.quality || deriveQuality(readiness);
   return {
     source: 'signal',
     strategyFamily: family,
-    strategyQuality: signal.strategy_quality || route?.quality || null,
-    strategyReadiness: signal.strategy_readiness ?? route?.readinessScore ?? null,
-    strategyRoute: route || null,
+    strategyQuality: quality,
+    strategyReadiness: readiness,
+    strategyRoute: normalizeRoute(route, family, quality, readiness),
   };
 }
 
@@ -43,12 +83,14 @@ function buildCandidateFromProfile(profile = null) {
   const route = profile.strategy_context?.strategyRoute || null;
   const family = normalizeFamily(route?.selectedFamily || route?.setupType || profile.setup_type || null);
   if (!family) return null;
+  const readiness = finiteNumber(route?.readinessScore ?? route?.readiness, null);
+  const quality = route?.quality || deriveQuality(readiness);
   return {
     source: 'profile',
     strategyFamily: family,
-    strategyQuality: route?.quality || null,
-    strategyReadiness: route?.readinessScore ?? null,
-    strategyRoute: route || (family ? { selectedFamily: family, setupType: profile.setup_type || family } : null),
+    strategyQuality: quality,
+    strategyReadiness: readiness,
+    strategyRoute: normalizeRoute(route, family, quality, readiness) || (family ? { selectedFamily: family, setupType: profile.setup_type || family } : null),
   };
 }
 
@@ -56,13 +98,21 @@ function buildCandidateFromRationale(rationale = null) {
   const config = rationale?.strategy_config || null;
   const family = normalizeFamily(config?.selected_strategy_family || config?.setup_type || config?.strategy_family || null);
   if (!family) return null;
+  const readiness = finiteNumber(config?.strategy_readiness ?? config?.strategy_route?.readinessScore, null);
+  const quality = config?.strategy_quality || config?.strategy_route?.quality || deriveQuality(readiness);
   return {
     source: 'rationale',
     strategyFamily: family,
-    strategyQuality: config?.strategy_quality || null,
-    strategyReadiness: config?.strategy_readiness ?? null,
-    strategyRoute: config?.strategy_route || { selectedFamily: family, setupType: config?.setup_type || family },
+    strategyQuality: quality,
+    strategyReadiness: readiness,
+    strategyRoute: normalizeRoute(config?.strategy_route, family, quality, readiness) || { selectedFamily: family, setupType: config?.setup_type || family },
   };
+}
+
+function isUsefulCandidate(candidate = null, row = {}) {
+  if (!candidate?.strategyFamily) return false;
+  if (!row.strategy_family || !row.strategy_route) return true;
+  return Boolean(candidate.strategyQuality || candidate.strategyReadiness != null);
 }
 
 async function findProfile(row) {
@@ -94,9 +144,13 @@ async function backfillTradeStrategyRoutes({ dryRun = false, limit = 2000 } = {}
   await journalDb.initJournalSchema();
 
   const rows = await db.query(
-    `SELECT trade_id, signal_id, symbol, exchange, trade_mode
+    `SELECT trade_id, signal_id, symbol, exchange, trade_mode,
+            strategy_family, strategy_quality, strategy_readiness, strategy_route
      FROM investment.trade_journal
      WHERE COALESCE(strategy_family, '') = ''
+        OR COALESCE(strategy_quality, '') = ''
+        OR strategy_readiness IS NULL
+        OR strategy_route IS NULL
      ORDER BY created_at DESC
      LIMIT $1`,
     [Math.max(1, Number(limit || 2000))],
@@ -104,7 +158,7 @@ async function backfillTradeStrategyRoutes({ dryRun = false, limit = 2000 } = {}
 
   let updated = 0;
   let unresolved = 0;
-  const bySource = { signal: 0, profile: 0, rationale: 0 };
+  const bySource = { journal: 0, signal: 0, profile: 0, rationale: 0 };
   const samples = [];
 
   for (const row of rows) {
@@ -121,10 +175,13 @@ async function backfillTradeStrategyRoutes({ dryRun = false, limit = 2000 } = {}
       ).catch(() => null),
     ]);
 
-    const candidate =
-      buildCandidateFromSignal(signal)
-      || buildCandidateFromProfile(profile)
-      || buildCandidateFromRationale(rationale);
+    const candidates = [
+      buildCandidateFromJournal(row),
+      buildCandidateFromSignal(signal),
+      buildCandidateFromProfile(profile),
+      buildCandidateFromRationale(rationale),
+    ].filter(Boolean);
+    const candidate = candidates.find((item) => isUsefulCandidate(item, row)) || candidates[0];
 
     if (!candidate?.strategyFamily) {
       unresolved += 1;
@@ -137,7 +194,11 @@ async function backfillTradeStrategyRoutes({ dryRun = false, limit = 2000 } = {}
          SET strategy_family = COALESCE(strategy_family, $1),
              strategy_quality = COALESCE(strategy_quality, $2),
              strategy_readiness = COALESCE(strategy_readiness, $3),
-             strategy_route = COALESCE(strategy_route, $4::jsonb)
+             strategy_route = CASE
+               WHEN $4::jsonb IS NULL THEN strategy_route
+               WHEN strategy_route IS NULL THEN $4::jsonb
+               ELSE strategy_route || $4::jsonb
+             END
          WHERE trade_id = $5`,
         [
           candidate.strategyFamily,
