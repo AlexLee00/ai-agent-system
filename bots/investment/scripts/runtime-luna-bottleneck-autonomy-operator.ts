@@ -153,7 +153,7 @@ function buildSafeFixCandidates({ discovery, llm, marketdata, blockerPack, actio
       });
     }
   }
-  if (discoveryBottlenecks.some((item) => /sentiment|onchain|market_flow/.test(item))) {
+  if (discoveryBottlenecks.some((item) => /technical|sentiment|onchain|market_flow/.test(item))) {
     candidates.push({
       id: 'targeted_top_n_enrichment',
       type: 'runtime_operator',
@@ -457,7 +457,23 @@ export async function runLunaBottleneckAutonomyOperatorSmoke() {
     item.id === 'repair_signal_persistence_gap_domestic'
     && item.applyMode === 'codex_patch_required'
     && item.command.includes('--market=domestic')));
-  return { ok: true, report, transientBusReport, signalPersistenceReport };
+
+  const technicalRefreshReport = buildReportFromEvidence({
+    sourceHealth: { ok: true, status: 'source_health_clear', blockers: [] },
+    discovery: {
+      status: 'luna_discovery_funnel_attention',
+      bottlenecks: ['crypto:technical_analysis_missing_for_candidates'],
+      recommendations: [],
+    },
+    blockerPack: { status: 'operational_clear', hardBlockers: [] },
+    finalGate: { status: 'luna_live_fire_final_gate_clear', blockers: [] },
+    postLive: { status: 'post_live_fire_verified', blockers: [] },
+  });
+  assert.ok(technicalRefreshReport.safeFixCandidates.some((item) =>
+    item.id === 'targeted_top_n_enrichment'
+    && item.applyMode === 'confirm_required'
+    && item.command.includes('luna-active-candidate-analysis-refresh')));
+  return { ok: true, report, transientBusReport, signalPersistenceReport, technicalRefreshReport };
 }
 
 async function main() {

@@ -106,6 +106,29 @@ function fixtureRelaxedProbeCandidate(symbol, reasons = ['fusion_not_long', 'sen
   };
 }
 
+function fixtureRelaxedNarrativeProbeWithoutTechnical(symbol) {
+  return {
+    symbol,
+    exchange: 'binance',
+    actionability: 'relaxed_probe_candidate',
+    recommendation: 'run_l13_probe_with_reduced_sizing',
+    reasons: ['fusion_not_long', 'technical_not_confirmed', 'onchain_not_confirmed'],
+    fused: { recommendation: 'HOLD', fusedScore: 0.1, averageConfidence: 0.58, hasConflict: false },
+    analystSummary: {
+      byAnalyst: {
+        news: { signal: 'HOLD', confidence: 0.3, reasoning: 'neutral news' },
+        sentiment: { signal: 'BUY', confidence: 0.85, reasoning: 'strong narrative' },
+        onchain: { signal: 'HOLD', confidence: 0.6, reasoning: 'neutral onchain evidence exists' },
+      },
+    },
+    relaxation: {
+      ok: true,
+      reason: 'crypto_relaxed_narrative_probe',
+      sizeRatio: 0.3,
+    },
+  };
+}
+
 export async function runLunaActiveCandidateAnalysisRefreshSmoke() {
   const now = new Date('2026-05-07T00:00:00.000Z');
   const smokeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'luna-active-candidate-refresh-smoke-'));
@@ -188,6 +211,21 @@ export async function runLunaActiveCandidateAnalysisRefreshSmoke() {
   assert.deepEqual(mtfWeightedPresignalPlan.targetedEnrichment.selectedSymbols, ['UTK/USDT']);
   assert.equal(mtfWeightedPresignalPlan.targetedEnrichment.selected[0].technicalPresignal, 'mtf_weighted_presignal');
   assert.deepEqual(mtfWeightedPresignalPlan.targetedEnrichment.nodeIds, ['L03', 'L05']);
+
+  const relaxedNarrativeTechnicalRefreshPlan = buildActiveCandidateAnalysisRefreshPlan({
+    report: fixtureReport([], [
+      fixtureRelaxedNarrativeProbeWithoutTechnical('ETH/USDT'),
+    ]),
+    state: {},
+    now,
+    maxSymbols: 1,
+    maxEnrichmentSymbols: 1,
+    cooldownMinutes: 45,
+    exchange: 'binance',
+  });
+  assert.equal(relaxedNarrativeTechnicalRefreshPlan.status, 'active_candidate_analysis_refresh_needed');
+  assert.deepEqual(relaxedNarrativeTechnicalRefreshPlan.targetedEnrichment.selectedSymbols, ['ETH/USDT']);
+  assert.deepEqual(relaxedNarrativeTechnicalRefreshPlan.targetedEnrichment.nodeIds, ['L02']);
 
   const dailyBullishHighPriorityPlan = buildActiveCandidateAnalysisRefreshPlan({
     report: fixtureReport([], [

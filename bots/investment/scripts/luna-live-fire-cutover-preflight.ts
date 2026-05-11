@@ -69,7 +69,12 @@ export async function buildLunaLiveFireCutoverPreflight({
     buildLunaLiveFireReadinessGate({ hours }),
   ]);
   const parity = withPositionParity
-    ? runJsonCommand('node', ['scripts/runtime-position-parity-report.ts', '--json'])
+    ? runJsonCommand('node', [
+        'scripts/runtime-position-parity-report.ts',
+        '--json',
+        '--max-cache-age-minutes=10',
+        '--stale-on-rate-limit-minutes=120',
+      ])
     : null;
   const parityOk = parityClear(parity);
   const blockers = [
@@ -103,6 +108,9 @@ export async function buildLunaLiveFireCutoverPreflight({
       ok: parity.ok,
       clear: parityOk,
       summary: parity.json?.summary || null,
+      reportStatus: parity.json?.status || null,
+      cache: parity.json?.cache || null,
+      rateLimit: parity.json?.rateLimit || null,
       command: parity.command,
       status: parity.status,
       stderrTail: parity.stderrTail,

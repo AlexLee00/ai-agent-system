@@ -118,7 +118,9 @@ function missingEnrichmentNodeIds(item = {}, { exchange: exchangeOverride = null
   const hasSentiment = Boolean(byAnalyst.sentiment || byAnalyst.sentinel);
   const hasOnchain = Boolean(byAnalyst.onchain);
   const hasMarketFlow = Boolean(byAnalyst.market_flow);
+  const hasTechnical = Boolean(byAnalyst.ta_mtf || byAnalyst.ta || byAnalyst.technical);
   const stockLightCollect = (exchange === 'kis' || exchange === 'kis_overseas') && !isStockIntradayEnrichmentEnabled(env);
+  if (exchange === 'binance' && reasons.has('technical_not_confirmed') && !hasTechnical) nodes.push('L02');
   if (!stockLightCollect && reasons.has('sentiment_not_confirmed') && !hasSentiment) nodes.push('L03');
   if (exchange === 'binance' && reasons.has('onchain_not_confirmed') && !hasOnchain) nodes.push('L05');
   if (
@@ -250,6 +252,7 @@ function shouldTargetCandidateForEnrichment(item = {}, { exchange = null, env = 
     return isStockExchange(exchange) && missingNodes.includes('L04');
   }
   if (targetedTechnicalPresignal(item, env)) return true;
+  if (isProbeCriticalCandidate(item) && missingNodes.includes('L02')) return true;
   const requireTechnicalPresignal = String(exchange || '').trim() === 'binance'
     ? boolEnv(
       'LUNA_CRYPTO_TARGETED_ENRICHMENT_REQUIRE_TECHNICAL_PRESIGNAL',
