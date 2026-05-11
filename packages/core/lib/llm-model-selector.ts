@@ -541,17 +541,17 @@ const TEAM_SELECTOR_DEFAULTS_LEGACY: Record<string, any> = {
       ],
     },
     'commenter.reply': {
-      primary: { provider: 'groq', model: GROQ_FAST_MODEL, maxTokens: 600, temperature: 0.65, timeoutMs: 15000 },
+      primary: { provider: 'openai-oauth', model: OPENAI_PERF_MODEL, maxTokens: 600, temperature: 0.4, timeoutMs: 22000 },
       fallbacks: [
-        { provider: 'openai-oauth', model: OPENAI_MINI_MODEL, maxTokens: 600, temperature: 0.5, timeoutMs: 12000 },
-        { provider: 'claude-code', model: 'claude-code/haiku', maxTokens: 600, temperature: 0.75, timeoutMs: 12000 },
+        { provider: 'groq', model: 'meta-llama/llama-4-scout-17b-16e-instruct', maxTokens: 600, temperature: 0.55, timeoutMs: 15000 },
+        { provider: 'openai-oauth', model: OPENAI_MINI_MODEL, maxTokens: 600, temperature: 0.45, timeoutMs: 14000 },
       ],
     },
     'commenter.neighbor': {
-      primary: { provider: 'groq', model: GROQ_FAST_MODEL, maxTokens: 700, temperature: 0.7, timeoutMs: 15000 },
+      primary: { provider: 'openai-oauth', model: OPENAI_PERF_MODEL, maxTokens: 700, temperature: 0.45, timeoutMs: 22000 },
       fallbacks: [
-        { provider: 'openai-oauth', model: OPENAI_MINI_MODEL, maxTokens: 700, temperature: 0.55, timeoutMs: 12000 },
-        { provider: 'claude-code', model: 'claude-code/haiku', maxTokens: 700, temperature: 0.8, timeoutMs: 15000 },
+        { provider: 'groq', model: 'meta-llama/llama-4-scout-17b-16e-instruct', maxTokens: 700, temperature: 0.6, timeoutMs: 15000 },
+        { provider: 'openai-oauth', model: OPENAI_MINI_MODEL, maxTokens: 700, temperature: 0.5, timeoutMs: 14000 },
       ],
     },
     'book_review.preview': {
@@ -832,17 +832,17 @@ const TEAM_SELECTOR_DEFAULTS_OAUTH4: Record<string, any> = deepMerge(clone(TEAM_
       ],
     },
     'commenter.reply': {
-      primary: { provider: 'groq', model: GROQ_FAST_MODEL, maxTokens: 600, temperature: 0.65, timeoutMs: 15_000 },
+      primary: { provider: 'openai-oauth', model: OPENAI_PERF_MODEL, maxTokens: 600, temperature: 0.4, timeoutMs: 22_000 },
       fallbacks: [
-        { provider: 'openai-oauth', model: OPENAI_MINI_MODEL, maxTokens: 600, temperature: 0.5, timeoutMs: 12_000 },
-        { provider: 'gemini-cli-oauth', model: GEMINI_CLI_FLASH_LITE_MODEL, maxTokens: 600, temperature: 0.5, timeoutMs: 12_000 },
+        { provider: 'groq', model: 'meta-llama/llama-4-scout-17b-16e-instruct', maxTokens: 600, temperature: 0.55, timeoutMs: 15_000 },
+        { provider: 'openai-oauth', model: OPENAI_MINI_MODEL, maxTokens: 600, temperature: 0.45, timeoutMs: 14_000 },
       ],
     },
     'commenter.neighbor': {
-      primary: { provider: 'groq', model: GROQ_FAST_MODEL, maxTokens: 700, temperature: 0.7, timeoutMs: 15_000 },
+      primary: { provider: 'openai-oauth', model: OPENAI_PERF_MODEL, maxTokens: 700, temperature: 0.45, timeoutMs: 22_000 },
       fallbacks: [
-        { provider: 'openai-oauth', model: OPENAI_MINI_MODEL, maxTokens: 700, temperature: 0.55, timeoutMs: 12_000 },
-        { provider: 'gemini-cli-oauth', model: GEMINI_CLI_FLASH_LITE_MODEL, maxTokens: 700, temperature: 0.55, timeoutMs: 12_000 },
+        { provider: 'groq', model: 'meta-llama/llama-4-scout-17b-16e-instruct', maxTokens: 700, temperature: 0.6, timeoutMs: 15_000 },
+        { provider: 'openai-oauth', model: OPENAI_MINI_MODEL, maxTokens: 700, temperature: 0.5, timeoutMs: 14_000 },
       ],
     },
     'book_review.preview': {

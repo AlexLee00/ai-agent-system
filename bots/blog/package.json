@@ -63,6 +63,8 @@
     "mark-published": "node scripts/mark-published-url.ts",
     "backfill:naver-urls": "node scripts/backfill-naver-published-urls.ts",
     "backfill:naver-urls:auto": "node scripts/backfill-naver-published-urls.ts --write --min-confidence=0.9 --json",
+    "naver:publish-assist": "node scripts/run-naver-publish-assist.ts",
+    "check:naver-publish-assist": "node --check lib/naver-ui/html-to-editor-blocks.ts && node --check lib/naver-ui/scheduled-publish-policy.ts && node --check lib/naver-ui/driver.ts && node --check lib/naver-ui/scheduled-review-store.ts && node --check scripts/run-naver-publish-assist.ts && node --check scripts/naver-publish-assist-smoke.ts && node scripts/naver-publish-assist-smoke.ts --json",
     "setup:n8n": "node n8n/setup-blog-workflows.ts",
     "check:n8n-pipeline": "node scripts/check-n8n-pipeline-path.ts",
     "seed-curriculum": "node scripts/seed-curriculum.ts",

@@ -159,6 +159,21 @@ const DEFAULTS = {
     maxCommentLen: 220,
     processTimeoutMs: 180000,
   },
+  naverPublishAssist: {
+    enabled: false,
+    blogId: 'cafe_library',
+    writeUrlTemplate: 'https://blog.naver.com/PostWriteForm.naver?blogId={blogId}',
+    browserHttpUrl: 'http://127.0.0.1:18791',
+    browserWsEndpoint: '',
+    browserToken: '',
+    profileDir: '~/.ai-agent-system/workspace/naver-profile',
+    typingDelayMs: 2,
+    actionDelayMs: 350,
+    minScheduleDays: 5,
+    scheduleHour: 7,
+    scheduleMinute: 0,
+    clickFinalPublish: false,
+  },
   llmSelectorOverrides: {
     'blog.pos.writer': {
       chain: [
@@ -265,6 +280,10 @@ function getBlogNeighborCommenterConfig() {
   return loadRuntimeConfig().neighborCommenter || {};
 }
 
+function getBlogNaverPublishAssistConfig() {
+  return loadRuntimeConfig().naverPublishAssist || {};
+}
+
 module.exports = {
   getBlogHealthRuntimeConfig,
   getBlogGenerationRuntimeConfig,
@@ -273,5 +292,6 @@ module.exports = {
   getBlogSectionRatioRuntimeConfig,
   getBlogCommenterConfig,
   getBlogNeighborCommenterConfig,
+  getBlogNaverPublishAssistConfig,
   getBlogLLMSelectorOverrides,
 };
