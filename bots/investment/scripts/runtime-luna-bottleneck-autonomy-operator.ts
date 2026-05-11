@@ -61,10 +61,9 @@ function getAgentBusClassification(blockerPack = {}) {
 }
 
 function normalizeOperationalHardBlockers(blockerPack = {}) {
-  const classification = getAgentBusClassification(blockerPack);
   return compactList(blockerPack.hardBlockers || []).filter((item) => {
     if (!isAgentBusQueryFailed(item)) return true;
-    return classification.ok === false || Number(classification.blocked || 0) > 0;
+    return false;
   });
 }
 
@@ -95,10 +94,20 @@ function marketsWithDiscoveryBottleneck(discovery = {}, pattern) {
     .filter(Boolean);
 }
 
-function buildSafeFixCandidates({ discovery, llm, marketdata, actionBoard } = {}) {
+function buildSafeFixCandidates({ discovery, llm, marketdata, blockerPack, actionBoard } = {}) {
   const candidates = [];
   const discoveryBottlenecks = discovery?.bottlenecks || [];
   const recommendations = discovery?.recommendations || [];
+  if (compactList(blockerPack?.hardBlockers || []).some(isAgentBusQueryFailed)) {
+    candidates.push({
+      id: 'inspect_agent_bus_hygiene',
+      type: 'diagnostic',
+      risk: 'low',
+      applyMode: 'read_only',
+      reason: 'agent bus hygiene query failed in the aggregated operator path',
+      command: 'npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run -s runtime:agent-message-bus-hygiene -- --json',
+    });
+  }
   if (recommendations.includes('all_markets_discovery_candidate_empty')) {
     candidates.push({
       id: 'refresh_discovery_candidates_dry_run',
@@ -223,7 +232,7 @@ function buildReportFromEvidence({
     ...prefixList('marketdata', marketdata.domestic?.decision?.warnings || []),
     ...prefixList('marketdata', marketdata.overseas?.decision?.warnings || []),
   ]);
-  const safeFixCandidates = buildSafeFixCandidates({ discovery, llm, marketdata, actionBoard });
+  const safeFixCandidates = buildSafeFixCandidates({ discovery, llm, marketdata, blockerPack, actionBoard });
   const status = hardBlockers.length > 0
     ? 'luna_bottleneck_hard_blocked'
     : bottlenecks.length > 0
@@ -391,6 +400,27 @@ export async function runLunaBottleneckAutonomyOperatorSmoke() {
   assert.equal(transientBusReport.hardBlockers.includes('operational:agent_message_bus_hygiene:query_failed'), false);
   assert.ok(transientBusReport.warnings.includes('operational:agent_message_bus_hygiene_query_failed_unconfirmed'));
   assert.ok(transientBusReport.warnings.includes('operational:agent_message_bus_hygiene_review_required:2'));
+
+  const failedBusReport = buildReportFromEvidence({
+    sourceHealth: { ok: true, status: 'source_health_clear', blockers: [] },
+    discovery: { status: 'luna_discovery_funnel_clear', bottlenecks: [], recommendations: [] },
+    blockerPack: {
+      status: 'operational_blocked',
+      hardBlockers: ['agent_message_bus_hygiene:query_failed'],
+      evidence: {
+        busHygiene: {
+          status: 'agent_message_bus_hygiene_failed',
+          classification: { ok: false, safeExpire: 0, reviewRequired: 0, blocked: 0 },
+        },
+      },
+    },
+    finalGate: { status: 'luna_live_fire_final_gate_clear', blockers: [] },
+    postLive: { status: 'post_live_fire_verified', blockers: [] },
+  });
+  assert.equal(failedBusReport.hardBlockers.includes('operational:agent_message_bus_hygiene:query_failed'), false);
+  assert.ok(failedBusReport.warnings.includes('operational:agent_message_bus_hygiene_query_failed_unconfirmed'));
+  assert.ok(failedBusReport.safeFixCandidates.some((item) =>
+    item.id === 'inspect_agent_bus_hygiene' && item.applyMode === 'read_only'));
 
   const signalPersistenceReport = buildReportFromEvidence({
     sourceHealth: { ok: true, status: 'source_health_clear', blockers: [] },
