@@ -1,7 +1,7 @@
 # 팀 제이 (Team Jay) — Claude Code 세션 가이드
 
 > 레포: AlexLee00/ai-agent-system
-> 최종 업데이트: 2026-04-24
+> 최종 업데이트: 2026-05-12
 
 ---
 
@@ -16,10 +16,11 @@
 | 시스템팀장 | 클로드 | 모니터링, 유지보수 (덱스터/아처/닥터) |
 | SKA팀장 | 스카 | 스터디카페 예약/매출 관리 |
 | 블로팀장 | 블로 | 네이버 블로그 자동화 |
-| 연구팀장 | (예정) | 새 기술 R&D, 시스템 매시간 업그레이드 |
-| 감정팀장 | (예정) | 법원 소프트웨어 감정 자동화 |
+| 연구팀장 | 다윈 | 자율 R&D, 시스템 매시간 업그레이드 |
+| 메타팀장 | 시그마 | 메타 최적화, 시스템 일관성 검증 |
 
 > 워커팀/에디팀은 2026-04-30부로 은퇴 처리됐다. 설계 기록만 `docs/archive/retired-teams/`에 보존한다.
+> 저스틴팀(법원 감정)은 2026-05-05부로 독립 분리됐다. 별도 레포: `justin-court-appraisal/` (Claude Code 100% 패턴).
 
 ### 3계층 에이전트 모델
 ```
@@ -68,7 +69,7 @@ LLM 아키텍처:
 개발:     docs/DEVELOPMENT.md + docs/dev/{팀}.md
 히스토리: docs/history/ (WORK_HISTORY, CHANGELOG, TEST_RESULTS)
 연구:     docs/research/ (RESEARCH_JOURNAL, RESEARCH_2026)
-코덱스:   docs/auto_dev/ (자동 구현 인박스)
+코덱스:   docs/codex/ (메티+코덱스 작업 분석/프롬프트, gitignore) + docs/auto_dev/ (자동 구현 인박스)
 가이드:   docs/guides/ (coding, security, ops, db, llm)
 아카이브: docs/archive/ (완료된 문서)
 ```
