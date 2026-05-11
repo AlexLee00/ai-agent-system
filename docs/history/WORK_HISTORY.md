@@ -6,6 +6,11 @@
 
 ## 2026-05-11: Luna bottleneck loop — position parity REST rate-limit guard
 
+- Luna bottleneck autonomy operator가 `repair_llm_hotpath_plan` 후보를 다시 제시했고, 원인은 `relaxed_probe_l13` targeted enrichment collect plan이 baseline `L06/L02`까지 함께 실행하면서 top-N/cooldown 정책 메타를 남기지 않는 문제로 확인했다.
+- `runtime-luna-relaxed-probe-runner.ts`에서 targeted enrichment 실행 노드를 실제 보강 노드(`L03/L05` 등)로 좁히고 `targeted_enrichment_max_symbols=1`, `targeted_enrichment_cooldown_minutes=120` 메타를 명시했다.
+- 검증 결과 `check:luna-llm-hotpath-audit`, `luna-relaxed-probe-runner-smoke`, `check:luna-bottleneck-autonomy`, `git diff --check`가 통과했다.
+- 패치 후 operator 재실행에서 LLM hotpath는 `luna_llm_hotpath_clear`로 해소됐지만, Hub/KIS fetch `AggregateError`로 discovery/blocker/finalGate/postLive 수집과 `luna_bottleneck_autonomy` event publish가 실패했다. 별도 read-only 진단 기준 marketdata와 agent bus는 clear였다.
+
 - Luna bottleneck autonomy operator가 구성 리포트를 한 번에 병렬 수집하면서 KIS/Hub/marketdata 경로에 transient `AggregateError` false hard-blocker를 만들 수 있음을 확인했다.
 - `runtime-luna-bottleneck-autonomy-operator.ts`의 수집을 순차 실행으로 바꿔 공유 클라이언트 경합을 줄이고, 표준 operator 재실행에서 `luna_bottleneck_clear_with_warnings`, hard blockers 0, safeFixCandidates 0, event publish id `353681`을 확인했다.
 - read-only 진단으로 `runtime:marketdata-realtime-connectivity`, `runtime:agent-message-bus-hygiene`, `runtime:luna-llm-hotpath-audit`, `runtime:luna-decision-filter`를 실행했고, confirm_required 명령은 실행하지 않았다.

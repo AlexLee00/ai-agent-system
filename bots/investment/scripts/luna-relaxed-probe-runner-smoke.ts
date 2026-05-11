@@ -110,7 +110,9 @@ export async function runLunaRelaxedProbeRunnerSmoke() {
       assert.equal(meta.targeted_enrichment, true);
       assert.equal(meta.llm_call_policy.source_enrichment, 'targeted_top_n_only');
       assert.deepEqual(meta.llm_call_policy.targeted_enrichment_nodes, ['L03', 'L05']);
-      assert.deepEqual(meta.agentPlan.collect.nodeIds, ['L06', 'L02', 'L03', 'L05']);
+      assert.equal(meta.llm_call_policy.targeted_enrichment_max_symbols, 1);
+      assert.equal(meta.llm_call_policy.targeted_enrichment_cooldown_minutes, 120);
+      assert.deepEqual(meta.agentPlan.collect.nodeIds, ['L03', 'L05']);
       return {
         sessionId: 'relaxed-probe-session',
         symbols,

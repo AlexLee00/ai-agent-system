@@ -8,6 +8,18 @@
 
 | 테스트 | 결과 |
 |--------|------|
+| `npm --prefix bots/investment run -s runtime:luna-bottleneck-autonomy -- --json --publish-events --no-fail` | ⚠️ 패치 전 `luna_bottleneck_attention`, hard 0, `repair_llm_hotpath_plan` 1건 |
+| `npm --prefix bots/investment run -s runtime:luna-llm-hotpath-audit -- --hours=6 --json` | ⚠️ `relaxed_probe_l13` 세션 1건이 `L06/L02/L03/L05`, cap/cooldown 메타 누락으로 attention |
+| `npm --prefix bots/investment run -s check:luna-llm-hotpath-audit` | ✅ 통과 |
+| `npm --prefix bots/investment run -s runtime:luna-relaxed-probe-runner -- --json` | ✅ dry-run `relaxed_probe_l13_clear`, 실행 후보 0 |
+| `node bots/investment/scripts/luna-relaxed-probe-runner-smoke.ts --json` | ✅ targeted enrichment collect node/cap/cooldown 메타 회귀 통과 |
+| `npm --prefix bots/investment run -s check:luna-bottleneck-autonomy` | ✅ 통과 |
+| `npm --prefix bots/investment run -s runtime:marketdata-realtime-connectivity -- --json --no-fail` | ✅ `marketdata_realtime_connectivity_ready`, blockers 0 |
+| `npm --prefix bots/investment run -s runtime:agent-message-bus-hygiene -- --json` | ✅ `agent_message_bus_hygiene_clear`, stale 0 |
+| `npm --prefix bots/investment run -s runtime:luna-decision-filter -- --json` | ⚠️ crypto entry capacity 2/2 full, likely actionable 0 |
+| `npm --prefix bots/investment run -s runtime:luna-decision-filter -- --market=domestic --hours=24 --limit=12 --active-candidates --json` | ⚠️ 국내 likely actionable 2건, 장 마감/다음 market cycle 대기 |
+| `npm --prefix bots/investment run -s runtime:luna-bottleneck-autonomy -- --json --publish-events --no-fail` | ⚠️ 패치 후 LLM hotpath clear, Hub/KIS fetch `AggregateError`로 collection/event publish 실패 |
+| `git diff --check` | ✅ 통과 |
 | `npm --prefix bots/investment run -s runtime:luna-bottleneck-autonomy -- --json --publish-events --no-fail` | ✅ 패치 후 `luna_bottleneck_clear_with_warnings`, hard 0, safeFixes 0 |
 | direct `buildLunaBottleneckAutonomyReport` + `publishLunaBottleneckEvent` | ✅ event publish id `353681`, hard 0, safeFixes 0 |
 | `npm --prefix bots/investment run -s runtime:luna-llm-hotpath-audit -- --hours=6 --json` | ✅ `luna_llm_hotpath_clear`, suspicious 0 |

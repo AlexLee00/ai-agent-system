@@ -15,6 +15,8 @@ const DEFAULT_HOURS = 24;
 const DEFAULT_LIMIT = 20;
 const DEFAULT_MAX_SYMBOLS = 1;
 const DEFAULT_RECENT_TRADE_COOLDOWN_HOURS = 6;
+const DEFAULT_TARGETED_ENRICHMENT_MAX_SYMBOLS = 1;
+const DEFAULT_TARGETED_ENRICHMENT_COOLDOWN_MINUTES = 120;
 
 function hasArg(name, argv = process.argv.slice(2)) {
   return argv.includes(`--${name}`);
@@ -135,9 +137,16 @@ function buildCollectNodeIds({ exchange, plan = {} } = {}) {
   return [...nodeIds];
 }
 
+function buildTargetedEnrichmentNodeIds(nodeIds = []) {
+  return (nodeIds || []).filter((nodeId) => !['L06', 'L02'].includes(nodeId));
+}
+
 function buildCollectMeta({ exchange, symbols, plan = {}, reason = 'relaxed_probe_l13' } = {}) {
   const nodeIds = buildCollectNodeIds({ exchange, plan });
-  const hasTargetedEnrichment = nodeIds.some((nodeId) => !['L06', 'L02'].includes(nodeId));
+  const targetedNodeIds = buildTargetedEnrichmentNodeIds(nodeIds);
+  const hasTargetedEnrichment = targetedNodeIds.length > 0;
+  const collectNodeIds = hasTargetedEnrichment ? targetedNodeIds : nodeIds;
+  const targetedMaxSymbols = Math.max(1, Math.min(DEFAULT_TARGETED_ENRICHMENT_MAX_SYMBOLS, Number(symbols?.length || 1)));
   return buildStockIntradayLlmPolicyMeta({
     market: exchange,
     marketScript: 'luna_relaxed_probe_runner',
@@ -154,12 +163,14 @@ function buildCollectMeta({ exchange, symbols, plan = {}, reason = 'relaxed_prob
         source_enrichment: hasTargetedEnrichment ? 'targeted_top_n_only' : 'technical_first_only',
         relaxed_probe_runner: true,
         max_symbols: symbols.length,
-        targeted_enrichment_nodes: hasTargetedEnrichment ? nodeIds.filter((nodeId) => !['L06', 'L02'].includes(nodeId)) : [],
+        targeted_enrichment_nodes: hasTargetedEnrichment ? targetedNodeIds : [],
+        targeted_enrichment_max_symbols: hasTargetedEnrichment ? targetedMaxSymbols : null,
+        targeted_enrichment_cooldown_minutes: hasTargetedEnrichment ? DEFAULT_TARGETED_ENRICHMENT_COOLDOWN_MINUTES : null,
       },
       agentPlan: {
         collect: {
-          nodeIds,
-          concurrencyLimit: Math.min(3, Math.max(1, nodeIds.length)),
+          nodeIds: collectNodeIds,
+          concurrencyLimit: Math.min(3, Math.max(1, collectNodeIds.length)),
         },
       },
     },

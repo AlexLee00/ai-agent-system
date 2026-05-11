@@ -5,6 +5,11 @@ Format based on [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/).
 
 ## 2026-05-11 — Luna position parity rate-limit guard
 
+- `bots/investment/scripts/runtime-luna-relaxed-probe-runner.ts`
+  - relaxed probe targeted enrichment collect plan에서 baseline `L06/L02`를 제외하고 실제 보강 노드만 실행하도록 좁혔다.
+  - hotpath audit가 요구하는 `targeted_enrichment_max_symbols=1`, `targeted_enrichment_cooldown_minutes=120` 정책 메타를 명시했다.
+- `bots/investment/scripts/luna-relaxed-probe-runner-smoke.ts`
+  - targeted enrichment가 `L03/L05`만 collect하고 top-N/cooldown 메타를 남기는 회귀 검증을 추가했다.
 - `bots/investment/scripts/runtime-luna-bottleneck-autonomy-operator.ts`
   - source/LLM/discovery/blocker/final-gate/post-live/marketdata 수집을 순차 실행으로 바꿨다.
   - KIS/Hub/marketdata 공유 클라이언트를 동시에 호출해 `AggregateError`가 false hard-blocker로 승격되는 현상을 줄인다.
