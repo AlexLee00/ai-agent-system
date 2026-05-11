@@ -22,6 +22,7 @@ function dpoRows() {
       score: 0.32,
       critique: 'entry timing failed and stop loss was too loose',
       category: 'rejected',
+      source: 'trade_quality_evaluations',
       created_at: '2026-05-11T00:00:00.000Z',
     },
     {
@@ -30,6 +31,7 @@ function dpoRows() {
       score: 0.76,
       critique: 'trend alignment worked',
       category: 'preferred',
+      source: 'trade_quality_evaluations',
       created_at: '2026-05-11T01:00:00.000Z',
     },
     {
@@ -38,6 +40,7 @@ function dpoRows() {
       score: 0.52,
       critique: 'neutral result',
       category: 'neutral',
+      source: 'trade_quality_evaluations',
       created_at: '2026-05-11T02:00:00.000Z',
     },
   ];
@@ -47,15 +50,20 @@ function fakeDeps() {
   const writes = [];
   const llmCalls = [];
   const schemaInits = [];
+  const queries = [];
   return {
     writes,
     llmCalls,
     schemaInits,
+    queries,
     initSchema: async () => {
       schemaInits.push(new Date().toISOString());
       return { ok: true };
     },
     query: async (sql) => {
+      queries.push(sql);
+      if (sql.includes('investment.trade_quality_evaluations')) return dpoRows();
+      if (sql.includes('FROM investment.luna_failure_reflexions')) return [];
       if (sql.includes('luna_dpo_preference_pairs')) return dpoRows();
       if (sql.includes('mapek_knowledge')) {
         return [{
@@ -110,6 +118,7 @@ export async function runLunaMetaReflexionSmoke() {
   });
   assert.equal(input.tradeSummary.totalTrades, 3);
   assert.equal(input.tradeSummary.rejectedCount, 1);
+  assert.equal(input.tradeSummary.sourceCounts.trade_quality_evaluations, 3);
   assert.equal(input.tradeSummary.lossPatterns[0].pattern, 'exit_or_stop_loss_quality');
 
   const deterministic = buildDeterministicMetaNeuralReflexion(input);
@@ -143,6 +152,8 @@ export async function runLunaMetaReflexionSmoke() {
   assert.equal(planned.summary.llmCalls, 0);
   assert.equal(dryDeps.writes.length, 0);
   assert.equal(dryDeps.schemaInits.length, 0);
+  assert.ok(dryDeps.queries.some((sql) => sql.includes('investment.trade_quality_evaluations')));
+  assert.equal(dryDeps.queries.some((sql) => sql.includes('luna_dpo_preference_pairs')), false);
   assert.equal(planned.rows[0].telegramPayload.shadowOnly, true);
 
   const wrongConfirmDeps = fakeDeps();

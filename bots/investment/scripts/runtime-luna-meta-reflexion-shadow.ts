@@ -61,9 +61,66 @@ function redactError(value) {
     .slice(0, 500);
 }
 
-async function fetchDpoRows(queryFn, { periodStart, periodEnd, limit }) {
+async function fetchPosttradeQualityRows(queryFn, { periodStart, periodEnd, limit }) {
   return Promise.resolve(queryFn(
-    `SELECT trade_id, rationale, outcome_summary, score, critique, category, created_at
+    `SELECT
+        tqe.trade_id,
+        tqe.rationale,
+        tqe.sub_score_breakdown AS outcome_summary,
+        tqe.overall_score AS score,
+        COALESCE(lfr.hindsight, tqe.rationale) AS critique,
+        tqe.category,
+        tqe.evaluated_at AS created_at,
+        'trade_quality_evaluations' AS source,
+        lfr.five_why,
+        lfr.stage_attribution,
+        lfr.avoid_pattern
+       FROM investment.trade_quality_evaluations tqe
+       LEFT JOIN LATERAL (
+         SELECT five_why, stage_attribution, hindsight, avoid_pattern, created_at
+           FROM investment.luna_failure_reflexions lfr
+          WHERE lfr.trade_id = tqe.trade_id
+          ORDER BY lfr.created_at DESC
+          LIMIT 1
+       ) lfr ON true
+      WHERE tqe.evaluated_at >= $1::date
+        AND tqe.evaluated_at <  $2::date + interval '1 day'
+      ORDER BY tqe.evaluated_at DESC
+      LIMIT $3`,
+    [periodStart, periodEnd, Math.max(1, Number(limit || 100))],
+  )).catch(() => []);
+}
+
+async function fetchFailureReflexionRows(queryFn, { periodStart, periodEnd, limit }) {
+  return Promise.resolve(queryFn(
+    `SELECT
+        lfr.trade_id,
+        NULL::text AS rationale,
+        jsonb_build_object(
+          'five_why', lfr.five_why,
+          'stage_attribution', lfr.stage_attribution,
+          'avoid_pattern', lfr.avoid_pattern
+        ) AS outcome_summary,
+        0.25::double precision AS score,
+        COALESCE(lfr.hindsight, 'failure reflexion') AS critique,
+        'rejected' AS category,
+        lfr.created_at,
+        'luna_failure_reflexions' AS source,
+        lfr.five_why,
+        lfr.stage_attribution,
+        lfr.avoid_pattern
+       FROM investment.luna_failure_reflexions lfr
+      WHERE lfr.created_at >= $1::date
+        AND lfr.created_at <  $2::date + interval '1 day'
+      ORDER BY lfr.created_at DESC
+      LIMIT $3`,
+    [periodStart, periodEnd, Math.max(1, Number(limit || 100))],
+  )).catch(() => []);
+}
+
+async function fetchLegacyDpoRows(queryFn, { periodStart, periodEnd, limit }) {
+  return Promise.resolve(queryFn(
+    `SELECT trade_id, rationale, outcome_summary, score, critique, category, created_at, 'luna_dpo_preference_pairs' AS source
        FROM luna_dpo_preference_pairs
       WHERE created_at >= $1::date
         AND created_at <  $2::date + interval '1 day'
@@ -71,6 +128,22 @@ async function fetchDpoRows(queryFn, { periodStart, periodEnd, limit }) {
       LIMIT $3`,
     [periodStart, periodEnd, Math.max(1, Number(limit || 100))],
   )).catch(() => []);
+}
+
+async function fetchFeedbackRows(queryFn, period) {
+  const limit = Math.max(1, Number(period.limit || 100));
+  const [qualityRows, failureRows] = await Promise.all([
+    fetchPosttradeQualityRows(queryFn, period),
+    fetchFailureReflexionRows(queryFn, period),
+  ]);
+  const byKey = new Map();
+  for (const row of [...qualityRows, ...failureRows]) {
+    const key = row?.trade_id != null ? `trade:${row.trade_id}` : `row:${byKey.size}`;
+    if (!byKey.has(key)) byKey.set(key, row);
+  }
+  const currentRows = Array.from(byKey.values()).slice(0, limit);
+  if (currentRows.length > 0) return currentRows;
+  return fetchLegacyDpoRows(queryFn, period);
 }
 
 async function fetchMapekRows(queryFn, { periodStart, periodEnd, limit }) {
@@ -98,15 +171,15 @@ async function analyzeLayer(layer, options, deps, budget, period) {
   const queryFn = deps.query || db.query;
   const runFn = deps.run || db.run;
   const llmCaller = deps.callViaHub || callViaHub;
-  const [dpoRows, mapekRows] = await Promise.all([
-    fetchDpoRows(queryFn, { ...period, limit: options.limit }),
+  const [feedbackRows, mapekRows] = await Promise.all([
+    fetchFeedbackRows(queryFn, { ...period, limit: options.limit }),
     fetchMapekRows(queryFn, { ...period, limit: options.limit }),
   ]);
   const input = buildMetaNeuralReflexionInput({
     layer,
     periodStart: period.periodStart,
     periodEnd: period.periodEnd,
-    dpoRows,
+    feedbackRows,
     mapekRows,
     scope: options.scope,
   });

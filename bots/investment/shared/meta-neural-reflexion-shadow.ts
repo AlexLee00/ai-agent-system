@@ -68,6 +68,14 @@ function categoryCounts(rows = []) {
   }, {});
 }
 
+function sourceCounts(rows = []) {
+  return rows.reduce((acc, row) => {
+    const key = String(row.source || row.source_kind || 'unknown').toLowerCase();
+    acc[key] = (acc[key] || 0) + 1;
+    return acc;
+  }, {});
+}
+
 function inferPattern(text = '') {
   const lower = String(text || '').toLowerCase();
   if (/stop|sl|손절|청산|exit/.test(lower)) return 'exit_or_stop_loss_quality';
@@ -79,8 +87,34 @@ function inferPattern(text = '') {
   return 'trade_rationale_quality';
 }
 
-function summarizeDpoRows(rows = []) {
-  const safeRows = Array.isArray(rows) ? rows : [];
+function normalizeFeedbackRow(row = {}) {
+  const score = finiteNumber(row.score ?? row.overall_score ?? row.overallScore, 0);
+  const outcomeSummary = parseJsonMaybe(row.outcome_summary ?? row.outcomeSummary ?? row.sub_score_breakdown, {});
+  const fiveWhy = parseJsonMaybe(row.five_why, {});
+  const stageAttribution = parseJsonMaybe(row.stage_attribution, {});
+  const avoidPattern = parseJsonMaybe(row.avoid_pattern, {});
+  const critique = [
+    row.critique,
+    row.hindsight,
+    row.rationale,
+    Object.keys(fiveWhy).length ? JSON.stringify(fiveWhy) : '',
+    Object.keys(stageAttribution).length ? JSON.stringify(stageAttribution) : '',
+    Object.keys(avoidPattern).length ? JSON.stringify(avoidPattern) : '',
+  ].filter(Boolean).join(' ');
+  const explicitCategory = String(row.category || '').toLowerCase();
+  const category = explicitCategory || (score >= 0.7 ? 'preferred' : score <= 0.45 ? 'rejected' : 'neutral');
+  return {
+    ...row,
+    score,
+    category,
+    critique,
+    outcome_summary: outcomeSummary,
+    source: row.source || row.source_kind || 'unknown',
+  };
+}
+
+function summarizeFeedbackRows(rows = []) {
+  const safeRows = (Array.isArray(rows) ? rows : []).map(normalizeFeedbackRow);
   const counts = categoryCounts(safeRows);
   const scores = safeRows.map((row) => finiteNumber(row.score, 0)).filter((n) => Number.isFinite(n));
   const rejected = safeRows.filter((row) => String(row.category || '').toLowerCase() === 'rejected');
@@ -93,6 +127,7 @@ function summarizeDpoRows(rows = []) {
 
   return {
     totalTrades: safeRows.length,
+    sourceCounts: sourceCounts(safeRows),
     preferredCount: counts.preferred || 0,
     neutralCount: counts.neutral || 0,
     rejectedCount: counts.rejected || 0,
@@ -145,12 +180,18 @@ export function buildMetaNeuralReflexionInput({
   layer = 'l2',
   periodStart = null,
   periodEnd = null,
+  feedbackRows = null,
   dpoRows = [],
+  qualityRows = [],
+  failureRows = [],
   mapekRows = [],
   scope = 'luna_phase4_shadow',
 } = {}) {
   const normalizedLayer = normalizeLayer(layer) === 'all' ? 'l2' : normalizeLayer(layer);
-  const tradeSummary = summarizeDpoRows(dpoRows);
+  const sourceRows = Array.isArray(feedbackRows)
+    ? feedbackRows
+    : [...(Array.isArray(dpoRows) ? dpoRows : []), ...(Array.isArray(qualityRows) ? qualityRows : []), ...(Array.isArray(failureRows) ? failureRows : [])];
+  const tradeSummary = summarizeFeedbackRows(sourceRows);
   return {
     layer: normalizedLayer,
     scope,
@@ -162,7 +203,7 @@ export function buildMetaNeuralReflexionInput({
 }
 
 export function buildDeterministicMetaNeuralReflexion(input = {}) {
-  const summary = input.tradeSummary || summarizeDpoRows([]);
+  const summary = input.tradeSummary || summarizeFeedbackRows([]);
   const recommendations = deterministicRecommendations(input.layer, summary);
   const confidence = summary.totalTrades >= 5
     ? clamp(0.55 + Math.min(summary.totalTrades, 20) / 100, 0.55, 0.8, 0.6)

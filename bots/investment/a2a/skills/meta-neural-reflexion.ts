@@ -76,6 +76,7 @@ function outputFromParams(params = {}, skillId) {
     layer,
     periodStart: params.periodStart || null,
     periodEnd: params.periodEnd || null,
+    feedbackRows: params.feedbackRows || null,
     dpoRows: params.dpoRows || [],
     mapekRows: params.mapekRows || [],
     scope: params.scope || 'luna_phase4_shadow',

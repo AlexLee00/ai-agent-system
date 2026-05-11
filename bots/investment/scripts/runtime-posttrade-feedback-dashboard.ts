@@ -38,7 +38,16 @@ async function buildQualitySummary(days = 14, market = 'all') {
   if (normalized !== 'all') {
     params.push(normalized);
     marketClause = `
-      AND COALESCE(th.market, CASE WHEN th.exchange = 'binance' THEN 'crypto' WHEN th.exchange = 'kis' THEN 'domestic' ELSE 'overseas' END) = $2
+      AND COALESCE(
+        th.market,
+        tj.market,
+        CASE
+          WHEN COALESCE(th.exchange, tj.exchange) = 'binance' THEN 'crypto'
+          WHEN COALESCE(th.exchange, tj.exchange) = 'kis' THEN 'domestic'
+          WHEN COALESCE(th.exchange, tj.exchange) IS NOT NULL THEN 'overseas'
+          ELSE NULL
+        END
+      ) = $2
     `;
   }
   return db.query(
@@ -46,13 +55,23 @@ async function buildQualitySummary(days = 14, market = 'all') {
        COALESCE(tqe.category, 'unknown') AS category,
        COUNT(*)::int AS cnt
      FROM investment.trade_quality_evaluations tqe
-     JOIN investment.trade_history th ON th.id = tqe.trade_id
+     LEFT JOIN investment.trade_history th ON th.id = tqe.trade_id
+     LEFT JOIN investment.trade_journal tj ON tj.trade_id = tqe.trade_id::text
      WHERE tqe.evaluated_at >= NOW() - ($1::int * INTERVAL '1 day')
        ${marketClause}
      GROUP BY 1
      ORDER BY cnt DESC`,
     params,
-  ).catch(() => []);
+  ).catch(() => db.query(
+    `SELECT
+       COALESCE(tqe.category, 'unknown') AS category,
+       COUNT(*)::int AS cnt
+     FROM investment.trade_quality_evaluations tqe
+     WHERE tqe.evaluated_at >= NOW() - ($1::int * INTERVAL '1 day')
+     GROUP BY 1
+     ORDER BY cnt DESC`,
+    [Math.max(1, Number(days || 14))],
+  ).catch(() => []));
 }
 
 async function buildConstitutionSummary(days = 14, market = 'all') {
@@ -62,7 +81,16 @@ async function buildConstitutionSummary(days = 14, market = 'all') {
   if (normalized !== 'all') {
     params.push(normalized);
     marketClause = `
-      AND COALESCE(th.market, CASE WHEN th.exchange = 'binance' THEN 'crypto' WHEN th.exchange = 'kis' THEN 'domestic' ELSE 'overseas' END) = $2
+      AND COALESCE(
+        th.market,
+        tj.market,
+        CASE
+          WHEN COALESCE(th.exchange, tj.exchange) = 'binance' THEN 'crypto'
+          WHEN COALESCE(th.exchange, tj.exchange) = 'kis' THEN 'domestic'
+          WHEN COALESCE(th.exchange, tj.exchange) IS NOT NULL THEN 'overseas'
+          ELSE NULL
+        END
+      ) = $2
     `;
   }
   const rows = await db.query(
@@ -70,7 +98,8 @@ async function buildConstitutionSummary(days = 14, market = 'all') {
        violation.value::text AS violation,
        COUNT(*)::int AS cnt
      FROM investment.trade_quality_evaluations tqe
-     JOIN investment.trade_history th ON th.id = tqe.trade_id
+     LEFT JOIN investment.trade_history th ON th.id = tqe.trade_id
+     LEFT JOIN investment.trade_journal tj ON tj.trade_id = tqe.trade_id::text
      CROSS JOIN LATERAL jsonb_array_elements_text(
        CASE
          WHEN jsonb_typeof(tqe.sub_score_breakdown->'constitution_violations') = 'array'
