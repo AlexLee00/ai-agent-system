@@ -144,6 +144,38 @@ function buildSafeFixCandidates({ discovery, llm, marketdata, blockerPack, actio
       command: 'npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run -s runtime:luna-decision-filter -- --json',
     });
   }
+  if (discoveryBottlenecks.some((item) => /candidates_filtered_before_entry_trigger|analysis_completed_no_actionable_signal/.test(item))) {
+    const markets = marketsWithDiscoveryBottleneck(discovery, /candidates_filtered_before_entry_trigger|analysis_completed_no_actionable_signal/);
+    for (const market of markets.length > 0 ? markets : ['all']) {
+      const marketArg = market === 'all' ? 'all' : market;
+      candidates.push({
+        id: `inspect_entry_prefilter_block_${market}`,
+        type: 'diagnostic',
+        risk: 'low',
+        applyMode: 'read_only',
+        reason: `${market} candidates are being filtered before entry trigger; inspect per-symbol reasons before changing thresholds`,
+        command: `npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run -s runtime:luna-decision-filter -- --market=${marketArg === 'all' ? 'crypto' : marketArg} --hours=24 --limit=20 --active-candidates --json`,
+      });
+      candidates.push({
+        id: `repair_entry_prefilter_block_${market}`,
+        type: 'code_review',
+        risk: 'medium',
+        applyMode: 'codex_patch_required',
+        reason: `${market} has analyzed candidates but no entry-trigger path; inspect discovery context, market-flow, and technical prefilter wiring`,
+        command: `npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run -s runtime:luna-decision-filter -- --market=${marketArg === 'all' ? 'crypto' : marketArg} --hours=24 --limit=20 --active-candidates --json`,
+      });
+      if (marketArg !== 'all') {
+        candidates.push({
+          id: `refresh_entry_prefilter_evidence_${market}`,
+          type: 'runtime_operator',
+          risk: 'medium',
+          applyMode: 'confirm_required',
+          reason: `${market} has candidate evidence but no entry-trigger path; refresh top-N missing or stale confirmation nodes without executing decisions`,
+          command: `npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run -s runtime:luna-active-candidate-analysis-refresh -- --apply --confirm=luna-active-candidate-analysis-refresh --market=${marketArg} --hours=24 --limit=20 --max-symbols=2 --max-enrichment-symbols=1 --targeted-global-cooldown --json`,
+        });
+      }
+    }
+  }
   if (recommendations.includes('preopen_market_preparation_pending')) {
     const markets = marketsWithPreopenGap(discovery, /market_flow|technical|sentiment|onchain/);
     for (const market of markets) {
@@ -487,6 +519,32 @@ export async function runLunaBottleneckAutonomyOperatorSmoke() {
     && item.applyMode === 'codex_patch_required'
     && item.command.includes('--market=domestic')));
 
+  const entryPrefilterReport = buildReportFromEvidence({
+    sourceHealth: { ok: true, status: 'source_health_clear', blockers: [] },
+    discovery: {
+      status: 'luna_discovery_funnel_attention',
+      bottlenecks: [
+        'overseas:analysis_completed_no_actionable_signal',
+        'overseas:candidates_filtered_before_entry_trigger',
+      ],
+      recommendations: [],
+      markets: [
+        { market: 'overseas', bottlenecks: ['analysis_completed_no_actionable_signal', 'candidates_filtered_before_entry_trigger'] },
+      ],
+    },
+    blockerPack: { status: 'operational_clear', hardBlockers: [] },
+    finalGate: { status: 'luna_live_fire_final_gate_clear', blockers: [] },
+    postLive: { status: 'post_live_fire_verified', blockers: [] },
+  });
+  assert.ok(entryPrefilterReport.safeFixCandidates.some((item) =>
+    item.id === 'inspect_entry_prefilter_block_overseas'
+    && item.applyMode === 'read_only'
+    && item.command.includes('--market=overseas')));
+  assert.ok(entryPrefilterReport.safeFixCandidates.some((item) =>
+    item.id === 'repair_entry_prefilter_block_overseas'
+    && item.applyMode === 'codex_patch_required'
+    && item.command.includes('--market=overseas')));
+
   const technicalRefreshReport = buildReportFromEvidence({
     sourceHealth: { ok: true, status: 'source_health_clear', blockers: [] },
     discovery: {
@@ -540,7 +598,7 @@ export async function runLunaBottleneckAutonomyOperatorSmoke() {
     && item.applyMode === 'confirm_required'
     && item.command.includes('--market=overseas')
     && item.command.includes(`--hours=${DEFAULT_HOURS}`)));
-  return { ok: true, report, transientBusReport, signalPersistenceReport, technicalRefreshReport };
+  return { ok: true, report, transientBusReport, signalPersistenceReport, entryPrefilterReport, technicalRefreshReport };
 }
 
 async function main() {

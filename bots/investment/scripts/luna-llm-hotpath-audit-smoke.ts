@@ -79,6 +79,25 @@ export async function runLunaLlmHotPathAuditSmoke() {
   assert.equal(targetedOkResult.ok, true);
   assert.equal(targetedOkResult.targetedEnrichment, true);
 
+  const stockL04TargetedOk = fixtureSession({
+    collect_mode: 'active_candidate_targeted_enrichment',
+    targeted_enrichment: true,
+    agentPlan: {
+      collect: { nodeIds: ['L04'] },
+    },
+    llm_call_policy: {
+      source_enrichment: 'targeted_top_n_only',
+      targeted_enrichment_max_symbols: 4,
+      targeted_enrichment_cooldown_minutes: 120,
+    },
+  }, { market: 'kis_overseas', triggerType: 'active_candidate_targeted_enrichment' });
+  const stockL04TargetedOkResult = classifyPipelineLlmHotPath(stockL04TargetedOk);
+  assert.equal(
+    stockL04TargetedOkResult.ok,
+    true,
+    'stock L04-only targeted refresh should allow a wider non-decision evidence cap',
+  );
+
   const targetedTooBroad = fixtureSession({
     collect_mode: 'active_candidate_targeted_enrichment',
     targeted_enrichment: true,
@@ -124,7 +143,7 @@ export async function runLunaLlmHotPathAuditSmoke() {
 
   const auditClear = buildLlmHotPathAudit({
     topCalls: [{ agent_name: 'luna', calls: 2, failed_calls: 0 }],
-    pipelineSessions: [stockLight, cryptoLight, targetedOk],
+    pipelineSessions: [stockLight, cryptoLight, targetedOk, stockL04TargetedOk],
     staleActiveRefreshRunning: [],
     generatedAt: '2026-05-08T00:00:00.000Z',
   });

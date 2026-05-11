@@ -165,6 +165,12 @@ function isCryptoMarket(market) {
   return normalizeMarket(market) === 'binance';
 }
 
+function isStockL04OnlyTargetedEnrichment({ market, nodeIds = [] } = {}) {
+  return isStockMarket(market)
+    && nodeIds.length > 0
+    && nodeIds.every((nodeId) => nodeId === 'L04');
+}
+
 function classifyTargetedEnrichment({ market, triggerType, plan }) {
   const collectMode = String(plan.collectMode || '').toLowerCase();
   const intentional =
@@ -182,9 +188,14 @@ function classifyTargetedEnrichment({ market, triggerType, plan }) {
     reasons.push('targeted_enrichment_missing_top_n_policy');
   }
 
+  const stockL04Only = isStockL04OnlyTargetedEnrichment({ market, nodeIds: plan.nodeIds || [] });
   const allowedMaxSymbols = Math.max(
     1,
-    Number(process.env.LUNA_LLM_HOTPATH_TARGETED_ENRICHMENT_MAX_SYMBOLS || DEFAULT_TARGETED_ENRICHMENT_MAX_SYMBOLS),
+    Number(
+      stockL04Only
+        ? process.env.LUNA_LLM_HOTPATH_STOCK_L04_TARGETED_MAX_SYMBOLS || 4
+        : process.env.LUNA_LLM_HOTPATH_TARGETED_ENRICHMENT_MAX_SYMBOLS || DEFAULT_TARGETED_ENRICHMENT_MAX_SYMBOLS,
+    ),
   );
   const maxSymbols = Number(policy.targeted_enrichment_max_symbols);
   if (!Number.isFinite(maxSymbols) || maxSymbols > allowedMaxSymbols) {

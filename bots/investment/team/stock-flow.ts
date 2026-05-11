@@ -8,6 +8,7 @@
  *   - maintenance collect에서 장중 변화 체감을 암호화폐 수준으로 끌어올리는 보강 축
  */
 
+import fs from 'node:fs';
 import * as db from '../shared/db.ts';
 import { ANALYST_TYPES, ACTIONS } from '../shared/signal.ts';
 import { getDomesticQuoteSnapshot, getOverseasQuoteSnapshot, getVolumeRank } from '../shared/kis-client.ts';
@@ -15,6 +16,8 @@ import { loadLatestScoutIntel, getScoutSignalForSymbol } from '../shared/scout-i
 import { getYahooStockEventIntel } from '../shared/stock-event-intel.ts';
 import { getRecentHubMarketPulse } from '../shared/hub-market-pulse.ts';
 import { getDomesticMomentumSnapshot } from '../shared/domestic-market-intel.ts';
+import { investmentOpsRuntimeFile } from '../shared/runtime-ops-path.ts';
+import { getActiveCandidates } from './discovery/discovery-store.ts';
 
 const FLOW_THRESHOLDS = {
   buy: 0.55,
@@ -130,7 +133,102 @@ function deriveDomesticScoutContext(symbol, scoutIntel, scoutSignal) {
   };
 }
 
-function deriveFlowDecision({
+function readJsonSafe(filePath, fallback = {}) {
+  try {
+    return JSON.parse(fs.readFileSync(filePath, 'utf8'));
+  } catch {
+    return fallback;
+  }
+}
+
+function normalizeCandidateSymbol(symbol) {
+  return String(symbol || '').trim().toUpperCase();
+}
+
+async function loadActiveCandidateContext(symbol, exchange) {
+  const market = exchange === 'kis'
+    ? 'domestic'
+    : exchange === 'kis_overseas'
+      ? 'overseas'
+      : null;
+  if (!market) return null;
+  const normalized = normalizeCandidateSymbol(symbol);
+  const rows = await getActiveCandidates(market, 100).catch(() => []);
+  const index = rows.findIndex((row) => normalizeCandidateSymbol(row.symbol) === normalized);
+  if (index < 0) return null;
+  const row = rows[index];
+  return {
+    rank: index + 1,
+    score: Number(row.score || 0),
+    confidence: Number(row.confidence ?? row.score ?? 0),
+    source: row.source || null,
+    reasonCode: row.reasonCode || row.reason_code || null,
+    discoveredAt: row.discoveredAt || row.discovered_at || null,
+  };
+}
+
+function loadDailyTechnicalContext(symbol, exchange, env = process.env) {
+  if (exchange !== 'kis' && exchange !== 'kis_overseas') return null;
+  const normalized = normalizeCandidateSymbol(symbol);
+  const ttlMinutes = Math.max(1, Number(env.LUNA_KIS_DAILY_TA_CACHE_MINUTES || 12 * 60) || 12 * 60);
+  const cachePath = investmentOpsRuntimeFile(`luna-discovery-daily-technical-cache-${exchange}.json`);
+  const payload = readJsonSafe(cachePath, {});
+  const item = payload?.items?.[`${exchange}:${normalized}`];
+  const cachedAt = Date.parse(item?.cachedAt || 0) || 0;
+  if (!item?.row || !cachedAt) return null;
+  const ageMs = Date.now() - cachedAt;
+  if (!Number.isFinite(ageMs) || ageMs < 0 || ageMs > ttlMinutes * 60 * 1000) return null;
+  return {
+    ...item.row,
+    cached: true,
+    cachedAt: item.cachedAt,
+    cacheAgeMinutes: Number((ageMs / 60000).toFixed(2)),
+  };
+}
+
+function scoreActiveCandidateContext(activeCandidateContext, exchange) {
+  if (!activeCandidateContext) return { boost: 0, reasons: [] };
+  const rank = Number(activeCandidateContext.rank || 999999);
+  const score = Number(activeCandidateContext.score || 0);
+  const confidence = Number(activeCandidateContext.confidence || 0);
+  const source = String(activeCandidateContext.source || 'candidate').trim();
+  let boost = 0;
+  const reasons = [];
+
+  if (rank <= 5 && score >= 0.8) boost += exchange === 'kis_overseas' ? 0.20 : 0.16;
+  else if (rank <= 12 && score >= 0.75) boost += 0.12;
+  else if (rank <= 20 && score >= 0.7) boost += 0.06;
+
+  if (confidence >= 0.78) boost += 0.08;
+  else if (confidence >= 0.68) boost += 0.04;
+
+  if (['pre_market_screen', 'yahoo_trending'].includes(source)) boost += 0.08;
+  else if (['sec_edgar', 'off_hours_research_watchlist'].includes(source)) boost += 0.04;
+
+  if (boost > 0) {
+    reasons.push(`활성후보 ${rank}위 ${source} score=${score.toFixed(2)}`);
+  }
+  return { boost: Number(boost.toFixed(4)), reasons };
+}
+
+function scoreDailyTechnicalContext(dailyTechnicalContext) {
+  if (!dailyTechnicalContext) return { boost: 0, reasons: [] };
+  if (dailyTechnicalContext.ok === true) {
+    return {
+      boost: 0.22,
+      reasons: [`KIS 일봉 ${dailyTechnicalContext.reason || 'bullish'}`],
+    };
+  }
+  if (dailyTechnicalContext.ok === false) {
+    return {
+      boost: -0.10,
+      reasons: [`KIS 일봉 ${dailyTechnicalContext.reason || 'not_bullish'}`],
+    };
+  }
+  return { boost: 0, reasons: [] };
+}
+
+export function deriveFlowDecision({
   exchange,
   quote,
   position,
@@ -143,6 +241,8 @@ function deriveFlowDecision({
   domesticMomentum,
   overseasEvent,
   hubPulse,
+  activeCandidateContext,
+  dailyTechnicalContext,
 } = {}) {
   let score = 0;
   const reasons = [];
@@ -175,6 +275,18 @@ function deriveFlowDecision({
   if (exchange === 'kis' && domesticScoutContext?.boost) {
     score += Number(domesticScoutContext.boost || 0);
     reasons.push(...(Array.isArray(domesticScoutContext.reasons) ? domesticScoutContext.reasons : []));
+  }
+
+  const activeCandidateScore = scoreActiveCandidateContext(activeCandidateContext, exchange);
+  if (activeCandidateScore.boost) {
+    score += activeCandidateScore.boost;
+    reasons.push(...activeCandidateScore.reasons);
+  }
+
+  const dailyTechnicalScore = scoreDailyTechnicalContext(dailyTechnicalContext);
+  if (dailyTechnicalScore.boost) {
+    score += dailyTechnicalScore.boost;
+    reasons.push(...dailyTechnicalScore.reasons);
   }
 
   if (exchange === 'kis' && domesticRank) {
@@ -228,7 +340,7 @@ function deriveFlowDecision({
       reasons.push(`실적발표 임박 D-${overseasEvent.earningsDays}`);
     }
 
-    if (Number.isFinite(Number(overseasEvent.recommendationMean))) {
+    if (Number.isFinite(Number(overseasEvent.recommendationMean)) && Number(overseasEvent.recommendationMean) > 0) {
       if (overseasEvent.recommendationMean <= 2.2) {
         score += 0.18;
         reasons.push(`애널리스트 우호 ${Number(overseasEvent.recommendationMean).toFixed(2)}`);
@@ -316,7 +428,7 @@ export async function analyzeStockFlow(symbol, exchange = 'kis') {
     loadLatestScoutIntel({ minutes: 24 * 60 }).catch(() => null),
   ]);
 
-  const [quote, domesticRank, domesticMomentum, overseasEvent, hubPulse] = await Promise.all([
+  const [quote, domesticRank, domesticMomentum, overseasEvent, hubPulse, activeCandidateContext] = await Promise.all([
     exchange === 'kis'
       ? getDomesticQuoteSnapshot(symbol, false).catch((error) => ({
           error: error?.message || 'domestic_quote_failed',
@@ -334,7 +446,9 @@ export async function analyzeStockFlow(symbol, exchange = 'kis') {
       ? getYahooStockEventIntel(symbol).catch(() => null)
       : Promise.resolve(null),
     getRecentHubMarketPulse(symbol, exchange, { minutes: 120, limit: 24 }).catch(() => null),
+    loadActiveCandidateContext(symbol, exchange).catch(() => null),
   ]);
+  const dailyTechnicalContext = loadDailyTechnicalContext(symbol, exchange);
 
   const scoutSignal = getScoutSignalForSymbol(scoutIntel, symbol);
   const domesticScoutContext = exchange === 'kis'
@@ -357,6 +471,8 @@ export async function analyzeStockFlow(symbol, exchange = 'kis') {
     domesticMomentum,
     overseasEvent,
     hubPulse,
+    activeCandidateContext,
+    dailyTechnicalContext,
   });
 
   const metadata = {
@@ -367,6 +483,8 @@ export async function analyzeStockFlow(symbol, exchange = 'kis') {
     domesticMomentum,
     overseasEvent: overseasEvent && !overseasEvent.error ? overseasEvent : null,
     hubPulse,
+    activeCandidateContext,
+    dailyTechnicalContext,
     scoutSignal: scoutSignal ? {
       source: scoutSignal.source,
       score: scoutSignal.score,

@@ -177,6 +177,76 @@ export function classifySignalPersistenceState({
   };
 }
 
+export function classifyEntryPrefilterWaitState({
+  market,
+  marketOpen = true,
+  activeCandidateCount = 0,
+  recentSignalCount = 0,
+  activeTriggerCount = 0,
+  recentBuySignals = 0,
+  analysisCoveredCount = 0,
+  likelyActionableCount = 0,
+  relaxedProbeCount = 0,
+  requiredCoverageBottlenecks = [],
+  decisionDiagnostics = [],
+} = {}) {
+  const normalizedMarket = String(market || '').trim();
+  if (normalizedMarket !== 'domestic' && normalizedMarket !== 'overseas') {
+    return { suppressBottleneck: false, observation: null, reason: 'not_stock_market' };
+  }
+  if (
+    !marketOpen
+    || number(activeCandidateCount) <= 0
+    || number(analysisCoveredCount) <= 0
+    || number(likelyActionableCount) > 0
+    || number(relaxedProbeCount) > 0
+    || number(recentSignalCount) > 0
+    || number(activeTriggerCount) > 0
+    || number(recentBuySignals) > 0
+  ) {
+    return { suppressBottleneck: false, observation: null, reason: 'not_entry_prefilter_wait' };
+  }
+  if ((requiredCoverageBottlenecks || []).length > 0) {
+    return { suppressBottleneck: false, observation: null, reason: 'required_evidence_gap' };
+  }
+
+  const diagnostics = (decisionDiagnostics || []).filter((item) => item?.actionability !== 'likely_actionable');
+  if (diagnostics.length === 0) {
+    return { suppressBottleneck: false, observation: null, reason: 'no_filtered_diagnostics' };
+  }
+
+  const waitReasons = new Set([
+    'fusion_not_long',
+    'technical_not_confirmed',
+    'market_flow_not_confirmed',
+    'average_confidence_below_min',
+  ]);
+  const reasonCounts = {};
+  const hardReasons = new Set();
+  for (const item of diagnostics) {
+    for (const reason of item?.reasons || []) {
+      reasonCounts[reason] = (reasonCounts[reason] || 0) + 1;
+      if (!waitReasons.has(reason)) hardReasons.add(reason);
+    }
+  }
+  if (hardReasons.size > 0) {
+    return {
+      suppressBottleneck: false,
+      observation: null,
+      reason: 'hard_filter_reasons_present',
+      hardReasons: [...hardReasons],
+      reasonCounts,
+    };
+  }
+
+  return {
+    suppressBottleneck: true,
+    observation: 'stock_entry_prefilter_market_condition_wait',
+    reason: 'analysis_complete_waiting_for_intraday_flow_or_fusion_confirmation',
+    reasonCounts,
+  };
+}
+
 function readJsonSafe(filePath, fallback = {}) {
   try {
     return JSON.parse(fs.readFileSync(filePath, 'utf8'));
@@ -979,22 +1049,42 @@ async function buildMarketFunnel(market, { hours }) {
     recentBuySignals,
     pipelineEntryTriggerEvidence,
   });
+  const entryPrefilterWaitState = classifyEntryPrefilterWaitState({
+    market,
+    marketOpen,
+    activeCandidateCount: number(candidate.active_count),
+    recentSignalCount,
+    activeTriggerCount,
+    recentBuySignals,
+    analysisCoveredCount: analysisCoveredSymbols.length,
+    likelyActionableCount: likelyActionable.length,
+    relaxedProbeCount: relaxedProbeCandidates.length,
+    requiredCoverageBottlenecks: requiredAnalystCoverage.bottlenecks || [],
+    decisionDiagnostics,
+  });
   const bottlenecks = [];
   const observations = [];
 
+  function addObservation(code) {
+    if (code && !observations.includes(code)) observations.push(code);
+  }
+
   function addMarketPrepGap(code, preopenCode = `preopen_${code}`) {
     if (market === 'crypto' || marketOpen) bottlenecks.push(code);
-    else if (preopenWindow.active) observations.push(preopenCode);
-    else observations.push('market_closed_preopen_window_not_started');
+    else if (preopenWindow.active) addObservation(preopenCode);
+    else addObservation('market_closed_preopen_window_not_started');
   }
 
   if (number(candidate.active_count) === 0) addMarketPrepGap('discovery_candidate_empty', 'preopen_candidate_universe_empty');
   if (sourceSignalCount === 0) addMarketPrepGap('source_metric_empty', 'preopen_source_metric_empty');
-  if (!marketOpen && number(candidate.active_count) > 0) observations.push('market_closed_waiting_open');
+  if (!marketOpen && number(candidate.active_count) > 0) addObservation('market_closed_waiting_open');
   if (marketOpen && number(candidate.active_count) > 0 && recentSignalCount === 0 && analysisCoveredSymbols.length === 0) bottlenecks.push('candidate_not_persisted_to_signal_window');
-  if (marketOpen && number(candidate.active_count) > 0 && recentSignalCount === 0 && analysisCoveredSymbols.length > 0 && likelyActionable.length === 0 && relaxedProbeCandidates.length === 0) bottlenecks.push('analysis_completed_no_actionable_signal');
+  if (marketOpen && number(candidate.active_count) > 0 && recentSignalCount === 0 && analysisCoveredSymbols.length > 0 && likelyActionable.length === 0 && relaxedProbeCandidates.length === 0) {
+    if (entryPrefilterWaitState.suppressBottleneck) addObservation(entryPrefilterWaitState.observation);
+    else bottlenecks.push('analysis_completed_no_actionable_signal');
+  }
   if (signalPersistenceState.bottleneck) bottlenecks.push(signalPersistenceState.bottleneck);
-  if (signalPersistenceState.observation) observations.push(signalPersistenceState.observation);
+  if (signalPersistenceState.observation) addObservation(signalPersistenceState.observation);
   if (marketOpen && relaxedProbeReadyCandidates.length > 0 && recentBuySignals === 0) bottlenecks.push('relaxed_probe_candidate_waiting_l13_probe');
   if (triggerEligibleBuySignals > 0 && activeTriggerCount === 0) bottlenecks.push('buy_signal_without_active_entry_trigger');
   if (
@@ -1006,9 +1096,9 @@ async function buildMarketFunnel(market, { hours }) {
   }
   if (number(signalsByBlockCode.capital_guard_rejected) > 0) {
     if (currentLivePositions.length >= maxOpenPositions) {
-      observations.push('capital_guard_rejected_expected_slots_full');
+      addObservation('capital_guard_rejected_expected_slots_full');
     } else {
-      observations.push('historical_capital_guard_rejected_resolved_by_current_position_count');
+      addObservation('historical_capital_guard_rejected_resolved_by_current_position_count');
     }
   }
   if (number(signalsByBlockCode.live_position_reentry_blocked) > 0) {
@@ -1016,12 +1106,15 @@ async function buildMarketFunnel(market, { hours }) {
     const allBlockedSymbolsStillOpen = reentryRows.length > 0
       && reentryRows.every((row) => currentOpenSymbols.has(String(row.symbol || '').trim()));
     if (allBlockedSymbolsStillOpen) {
-      observations.push('open_position_reentry_block_expected_for_current_position');
+      addObservation('open_position_reentry_block_expected_for_current_position');
     } else {
       bottlenecks.push('live_position_reentry_blocked_recent_buy_signal');
     }
   }
-  if (marketOpen && number(candidate.active_count) > 0 && activeTriggerCount === 0 && recentBuySignals === 0 && likelyActionable.length === 0 && relaxedProbeCandidates.length === 0) bottlenecks.push('candidates_filtered_before_entry_trigger');
+  if (marketOpen && number(candidate.active_count) > 0 && activeTriggerCount === 0 && recentBuySignals === 0 && likelyActionable.length === 0 && relaxedProbeCandidates.length === 0) {
+    if (entryPrefilterWaitState.suppressBottleneck) addObservation(entryPrefilterWaitState.observation);
+    else bottlenecks.push('candidates_filtered_before_entry_trigger');
+  }
   if (number(candidate.active_count) > 0 && analysisSymbols.length > 0) {
     const classifiedCoverage = classifyCoverageBottlenecksForMarket({
       market,
@@ -1030,7 +1123,7 @@ async function buildMarketFunnel(market, { hours }) {
       bottlenecks: requiredAnalystCoverage.bottlenecks,
     });
     bottlenecks.push(...classifiedCoverage.bottlenecks);
-    observations.push(...classifiedCoverage.observations);
+    for (const observation of classifiedCoverage.observations) addObservation(observation);
   }
   if (market === 'crypto' && number(dailyTechnicalCoverage.checkedCount) > 0) {
     if (number(dailyTechnicalCoverage.availableCount) === 0) {
@@ -1097,6 +1190,7 @@ async function buildMarketFunnel(market, { hours }) {
         symbols: relaxedProbeCooldownSymbols,
         bySymbol: Object.fromEntries([...relaxedProbeCooldowns.entries()]),
       },
+      entryPrefilterWaitState,
       top: decisionDiagnostics.slice(0, 5),
     },
     signalPersistence: {

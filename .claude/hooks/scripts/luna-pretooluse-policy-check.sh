@@ -17,6 +17,47 @@ fi
 
 echo "[Luna][PreToolUse] 매매 정책 검증 중..." >&2
 
+readonly_shadow_command="$(
+  COMMAND_STR="$command_str" python3 - <<'PY'
+import os
+import re
+import shlex
+
+cmd = os.environ.get("COMMAND_STR", "")
+if any(token in cmd for token in [";", "&&", "||", "|", "`", "$(", "\n", "\r"]):
+    print("false")
+    raise SystemExit
+
+try:
+    parts = shlex.split(cmd)
+except Exception:
+    print("false")
+    raise SystemExit
+
+while parts and re.match(r"^[A-Za-z_][A-Za-z0-9_]*=", parts[0]):
+    parts = parts[1:]
+
+ok = False
+if len(parts) >= 7 and parts[0] == "npm" and parts[1] == "--prefix":
+    prefix = parts[2].rstrip("/")
+    if prefix.endswith("bots/investment") and parts[3:6] == ["run", "-s", "runtime:luna-dynamic-tpsl-shadow"] and parts[6] == "--":
+        allowed = [
+            re.compile(r"^--json$"),
+            re.compile(r"^--max-llm-calls=0$"),
+            re.compile(r"^--limit=[0-9]+$"),
+            re.compile(r"^--hours=[0-9]+$"),
+            re.compile(r"^--ttl-minutes=[0-9]+$"),
+            re.compile(r"^--exchange(s)?=[A-Za-z0-9_,_-]+$"),
+            re.compile(r"^--symbol=[A-Za-z0-9_./:-]+$"),
+            re.compile(r"^--trigger-id=[A-Za-z0-9_.:/-]+$"),
+        ]
+        tail = parts[7:]
+        ok = all(any(pattern.match(arg) for pattern in allowed) for arg in tail)
+
+print("true" if ok else "false")
+PY
+)"
+
 # Kill Switch 확인
 CANONICAL_KILL_SWITCH_FILE="$REPO_ROOT/bots/investment/data/kill-switch.json"
 if [[ "${LUNA_HOOK_TEST_MODE:-false}" == "true" && -n "${LUNA_HOOK_KILL_SWITCH_FILE:-}" ]]; then
@@ -27,6 +68,10 @@ fi
 if [[ -f "$KILL_SWITCH_FILE" ]]; then
   kill_active="$(python3 -c "import sys,json; d=json.load(open('$KILL_SWITCH_FILE')); print(d.get('active', False))" 2>/dev/null || echo "false")"
   if [[ "$kill_active" == "True" || "$kill_active" == "true" ]]; then
+    if [[ "$readonly_shadow_command" == "true" ]]; then
+      echo "[Luna][PreToolUse] ✅ Kill Switch 활성 상태지만 read-only shadow 명령은 허용." >&2
+      exit 0
+    fi
     echo "[Luna][PreToolUse] ❌ Kill Switch 활성! 모든 매매 차단." >&2
     echo "BLOCKED: Luna kill switch is active. Deactivate before trading."
     exit 2

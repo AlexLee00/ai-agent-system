@@ -45,7 +45,26 @@ export function runLunaHooksSmoke() {
     }, { LUNA_HOOK_TEST_MODE: 'true', LUNA_HOOK_KILL_SWITCH_FILE: killSwitchPath });
     assert.equal(passEntryShadow.status, 0, passEntryShadow.stderr || passEntryShadow.stdout);
 
+    const passDynamicTpSlShadow = runHook(PRE_HOOK, {
+      tool_name: 'Bash',
+      tool_input: { command: 'npm --prefix bots/investment run -s runtime:luna-dynamic-tpsl-shadow -- --json --max-llm-calls=0' },
+    }, { LUNA_HOOK_TEST_MODE: 'true', LUNA_HOOK_KILL_SWITCH_FILE: killSwitchPath });
+    assert.equal(passDynamicTpSlShadow.status, 0, passDynamicTpSlShadow.stderr || passDynamicTpSlShadow.stdout);
+
     writeFileSync(killSwitchPath, JSON.stringify({ active: true }), 'utf8');
+    const dynamicTpSlReadonly = runHook(PRE_HOOK, {
+      tool_name: 'Bash',
+      tool_input: { command: 'npm --prefix bots/investment run -s runtime:luna-dynamic-tpsl-shadow -- --json --max-llm-calls=0' },
+    }, { LUNA_HOOK_TEST_MODE: 'true', LUNA_HOOK_KILL_SWITCH_FILE: killSwitchPath });
+    assert.equal(dynamicTpSlReadonly.status, 0, dynamicTpSlReadonly.stderr || dynamicTpSlReadonly.stdout);
+
+    const dynamicTpSlChainedBlocked = runHook(PRE_HOOK, {
+      tool_name: 'Bash',
+      tool_input: { command: 'npm --prefix bots/investment run -s runtime:luna-dynamic-tpsl-shadow -- --json --max-llm-calls=0 ; npm --prefix bots/investment run -s luna -- --symbol=BTC/USDT' },
+    }, { LUNA_HOOK_TEST_MODE: 'true', LUNA_HOOK_KILL_SWITCH_FILE: killSwitchPath });
+    assert.equal(dynamicTpSlChainedBlocked.status, 2, dynamicTpSlChainedBlocked.stderr || dynamicTpSlChainedBlocked.stdout);
+    assert.match(`${dynamicTpSlChainedBlocked.stdout}\n${dynamicTpSlChainedBlocked.stderr}`, /Kill Switch|kill switch/i);
+
     const blocked = runHook(PRE_HOOK, {
       tool_name: 'Bash',
       tool_input: { command: 'npm --prefix bots/investment run -s luna -- --symbol=BTC/USDT' },
@@ -59,6 +78,13 @@ export function runLunaHooksSmoke() {
     }, { LUNA_HOOK_TEST_MODE: 'true', LUNA_HOOK_KILL_SWITCH_FILE: killSwitchPath });
     assert.equal(entryShadowBlocked.status, 2, entryShadowBlocked.stderr || entryShadowBlocked.stdout);
     assert.match(`${entryShadowBlocked.stdout}\n${entryShadowBlocked.stderr}`, /Kill Switch|kill switch/i);
+
+    const dynamicTpSlBlocked = runHook(PRE_HOOK, {
+      tool_name: 'Bash',
+      tool_input: { command: 'npm --prefix bots/investment run -s runtime:luna-dynamic-tpsl-shadow -- --apply --confirm=luna-dynamic-tpsl-shadow --json' },
+    }, { LUNA_HOOK_TEST_MODE: 'true', LUNA_HOOK_KILL_SWITCH_FILE: killSwitchPath });
+    assert.equal(dynamicTpSlBlocked.status, 2, dynamicTpSlBlocked.stderr || dynamicTpSlBlocked.stdout);
+    assert.match(`${dynamicTpSlBlocked.stdout}\n${dynamicTpSlBlocked.stderr}`, /Kill Switch|kill switch/i);
 
     const post = runHook(POST_HOOK, {
       tool_name: 'Bash',
@@ -74,6 +100,8 @@ export function runLunaHooksSmoke() {
       lunaPass: true,
       killSwitchBlocked: true,
       entryShadowCommandChecked: true,
+      dynamicTpSlShadowCommandChecked: true,
+      dynamicTpSlChainedBlocked: true,
       postHookFailOpen: true,
     };
   } finally {

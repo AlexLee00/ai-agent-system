@@ -216,6 +216,38 @@ export async function runInvestmentSchemaBootstrap(run, { log = true } = {}) {
   try { await run(`CREATE INDEX IF NOT EXISTS idx_luna_entry_llm_shadow_match ON luna_entry_llm_shadow(match, observed_at DESC)`); } catch { /* 무시 */ }
 
   await run(`
+    CREATE TABLE IF NOT EXISTS luna_dynamic_tpsl_shadow (
+      id               BIGSERIAL PRIMARY KEY,
+      trigger_id       TEXT,
+      symbol           TEXT NOT NULL,
+      exchange         TEXT NOT NULL DEFAULT 'binance',
+      market           TEXT NOT NULL DEFAULT 'crypto',
+      entry_price      NUMERIC(24,10),
+      side             TEXT NOT NULL DEFAULT 'BUY',
+      rule_tp_pct      NUMERIC(8,6),
+      rule_sl_pct      NUMERIC(8,6),
+      rule_tp_price    NUMERIC(24,10),
+      rule_sl_price    NUMERIC(24,10),
+      llm_tp_pct       NUMERIC(8,6),
+      llm_sl_pct       NUMERIC(8,6),
+      llm_tp_price     NUMERIC(24,10),
+      llm_sl_price     NUMERIC(24,10),
+      rr_ratio         NUMERIC(8,4),
+      reasoning        TEXT,
+      risk_assessment  JSONB DEFAULT '{}'::jsonb,
+      rule_tpsl        JSONB DEFAULT '{}'::jsonb,
+      context_evidence JSONB DEFAULT '{}'::jsonb,
+      shadow_only      BOOLEAN NOT NULL DEFAULT true,
+      match            BOOLEAN DEFAULT false,
+      observed_at      TIMESTAMPTZ DEFAULT NOW()
+    )
+  `);
+  try { await run(`ALTER TABLE luna_dynamic_tpsl_shadow ADD COLUMN IF NOT EXISTS context_evidence JSONB DEFAULT '{}'::jsonb`); } catch { /* 무시 */ }
+  try { await run(`CREATE INDEX IF NOT EXISTS idx_luna_dynamic_tpsl_shadow_trigger_observed ON luna_dynamic_tpsl_shadow(trigger_id, observed_at DESC)`); } catch { /* 무시 */ }
+  try { await run(`CREATE INDEX IF NOT EXISTS idx_luna_dynamic_tpsl_shadow_symbol_observed ON luna_dynamic_tpsl_shadow(exchange, symbol, observed_at DESC)`); } catch { /* 무시 */ }
+  try { await run(`CREATE INDEX IF NOT EXISTS idx_luna_dynamic_tpsl_shadow_match ON luna_dynamic_tpsl_shadow(match, observed_at DESC)`); } catch { /* 무시 */ }
+
+  await run(`
     CREATE TABLE IF NOT EXISTS mapek_knowledge (
       id          BIGSERIAL PRIMARY KEY,
       event_type  TEXT NOT NULL,
@@ -846,6 +878,7 @@ export async function runInvestmentSchemaBootstrap(run, { log = true } = {}) {
       [13, 'posttrade_feedback_loop_core'],
       [14, 'luna_regime_llm_shadow'],
       [15, 'luna_entry_llm_shadow'],
+      [16, 'luna_dynamic_tpsl_shadow'],
     ]) {
       await run(
         `INSERT INTO schema_migrations (version, name) VALUES ($1, $2) ON CONFLICT DO NOTHING`,

@@ -131,7 +131,7 @@ function missingEnrichmentNodeIds(item = {}, { exchange: exchangeOverride = null
   if (exchange === 'binance' && reasons.has('onchain_not_confirmed') && !hasOnchain) nodes.push('L05');
   if (
     (exchange === 'kis' || exchange === 'kis_overseas')
-    && !hasMarketFlow
+    && (!hasMarketFlow || isStockMarketFlowRecheckCandidate(item, exchange))
     && (reasons.has('market_flow_not_confirmed') || reasons.has('news_only_buy'))
   ) {
     nodes.push('L04');
@@ -217,6 +217,17 @@ function isProbeCriticalCandidate(item = {}) {
   if (item?.actionability === 'relaxed_probe_candidate') return true;
   if (item?.relaxation?.ok === true) return true;
   return false;
+}
+
+function isStockMarketFlowRecheckCandidate(item = {}, exchange = '') {
+  if (!isStockExchange(exchange)) return false;
+  const reasons = new Set(Array.isArray(item.reasons) ? item.reasons : []);
+  if (!reasons.has('market_flow_not_confirmed') || reasons.has('conflict_detected')) return false;
+  if (!hasDailyBullishTechnicalPresignal(item)) return false;
+  const candidate = item?.activeCandidate || {};
+  const rank = Number(candidate.rank || 999999);
+  const confidence = Math.max(Number(candidate.score || 0), Number(candidate.confidence || 0));
+  return rank >= 1 && rank <= DEFAULT_TARGETED_ENRICHMENT_CANDIDATE_RANK && confidence >= DEFAULT_TARGETED_ENRICHMENT_CANDIDATE_SCORE;
 }
 
 function numericValues(values = []) {

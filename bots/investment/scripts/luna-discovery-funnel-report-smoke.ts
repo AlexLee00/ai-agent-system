@@ -13,6 +13,7 @@ import {
   buildLunaDiscoveryFunnelReport,
   buildRequiredCoverageSymbols,
   buildRequiredAnalystCoverage,
+  classifyEntryPrefilterWaitState,
   classifySignalPersistenceState,
   classifyCoverageBottlenecksForMarket,
   filterEntryDecisionDiagnosticsForOpenPositions,
@@ -184,6 +185,74 @@ export async function runLunaDiscoveryFunnelReportSmoke() {
       }).bottleneck,
       'actionable_candidate_waiting_signal_persistence',
       'missing BUY persistence without entry-trigger evidence should remain a repair gap',
+    );
+    const stockMarketWait = classifyEntryPrefilterWaitState({
+      market: 'overseas',
+      marketOpen: true,
+      activeCandidateCount: 20,
+      recentSignalCount: 0,
+      activeTriggerCount: 0,
+      recentBuySignals: 0,
+      analysisCoveredCount: 20,
+      likelyActionableCount: 0,
+      relaxedProbeCount: 0,
+      requiredCoverageBottlenecks: [],
+      decisionDiagnostics: [
+        {
+          symbol: 'AAPL',
+          actionability: 'not_actionable',
+          reasons: ['fusion_not_long', 'technical_not_confirmed', 'market_flow_not_confirmed'],
+        },
+        {
+          symbol: 'NVDA',
+          actionability: 'not_actionable',
+          reasons: ['fusion_not_long', 'average_confidence_below_min', 'market_flow_not_confirmed'],
+        },
+      ],
+    });
+    assert.equal(
+      stockMarketWait.suppressBottleneck,
+      true,
+      'fully covered stock candidates waiting on flow/technical confirmation should be market-condition observations',
+    );
+    assert.equal(stockMarketWait.observation, 'stock_entry_prefilter_market_condition_wait');
+    assert.equal(
+      classifyEntryPrefilterWaitState({
+        market: 'overseas',
+        marketOpen: true,
+        activeCandidateCount: 20,
+        recentSignalCount: 0,
+        activeTriggerCount: 0,
+        recentBuySignals: 0,
+        analysisCoveredCount: 20,
+        likelyActionableCount: 0,
+        relaxedProbeCount: 0,
+        requiredCoverageBottlenecks: [],
+        decisionDiagnostics: [
+          { symbol: 'AAPL', actionability: 'not_actionable', reasons: ['conflict_detected', 'market_flow_not_confirmed'] },
+        ],
+      }).suppressBottleneck,
+      false,
+      'hard filter reasons should remain actionable bottlenecks',
+    );
+    assert.equal(
+      classifyEntryPrefilterWaitState({
+        market: 'overseas',
+        marketOpen: true,
+        activeCandidateCount: 20,
+        recentSignalCount: 0,
+        activeTriggerCount: 0,
+        recentBuySignals: 0,
+        analysisCoveredCount: 20,
+        likelyActionableCount: 0,
+        relaxedProbeCount: 0,
+        requiredCoverageBottlenecks: ['market_flow_analysis_partial_for_candidates'],
+        decisionDiagnostics: [
+          { symbol: 'AAPL', actionability: 'not_actionable', reasons: ['market_flow_not_confirmed'] },
+        ],
+      }).suppressBottleneck,
+      false,
+      'required evidence gaps should remain repair candidates instead of market-condition waits',
     );
     assert.deepEqual(
       getRequiredAnalystsForMarket('domestic', { LUNA_STOCK_INTRADAY_ENRICHMENT_ENABLED: 'false' }),

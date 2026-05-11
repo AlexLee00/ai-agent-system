@@ -107,6 +107,38 @@ function fixtureHighPriorityCandidate(symbol, reasons = ['sentiment_not_confirme
   };
 }
 
+function fixtureStockMarketFlowHoldCandidate(symbol) {
+  return {
+    symbol,
+    exchange: 'kis_overseas',
+    actionability: 'filtered_before_signal',
+    recommendation: 'wait_for_market_flow_confirmation',
+    reasons: ['market_flow_not_confirmed', 'fusion_not_long'],
+    activeCandidate: {
+      rank: 2,
+      score: 0.84,
+      confidence: 0.81,
+      source: 'pre_market_screen',
+      reasonCode: 'pre_market_screen',
+    },
+    fused: { recommendation: 'HOLD', fusedScore: 0.08, averageConfidence: 0.12, hasConflict: false },
+    analystSummary: {
+      byAnalyst: {
+        ta_mtf: { signal: 'HOLD', confidence: 0.12, reasoning: 'intraday not confirmed yet' },
+        market_flow: { signal: 'HOLD', confidence: 0.12, reasoning: 'old market flow before active candidate context' },
+      },
+    },
+    dailyTechnical: {
+      symbol,
+      ok: true,
+      reason: 'kis_daily_chart_bullish',
+      source: 'kis_overseas_daily_price',
+      providerMode: 'rest',
+      bars: 90,
+    },
+  };
+}
+
 function fixtureMtfWeightedCandidate(symbol, reasons = ['sentiment_not_confirmed', 'onchain_not_confirmed']) {
   return {
     ...fixtureHighPriorityCandidate(symbol, reasons),
@@ -387,6 +419,23 @@ export async function runLunaActiveCandidateAnalysisRefreshSmoke() {
   assert.equal(stockNewsOnlyMarketFlowPlan.status, 'active_candidate_analysis_refresh_needed');
   assert.deepEqual(stockNewsOnlyMarketFlowPlan.targetedEnrichment.selectedSymbols, ['INOD']);
   assert.deepEqual(stockNewsOnlyMarketFlowPlan.targetedEnrichment.nodeIds, ['L04']);
+
+  const stockDailyBullishMarketFlowRecheckPlan = buildActiveCandidateAnalysisRefreshPlan({
+    report: fixtureReport(['NVTS'], [
+      fixtureStockMarketFlowHoldCandidate('NVDA'),
+    ]),
+    state: {},
+    now,
+    maxSymbols: 1,
+    maxEnrichmentSymbols: 1,
+    cooldownMinutes: 45,
+    exchange: 'kis_overseas',
+  });
+  assert.equal(stockDailyBullishMarketFlowRecheckPlan.status, 'active_candidate_analysis_refresh_needed');
+  assert.deepEqual(stockDailyBullishMarketFlowRecheckPlan.selected, ['NVTS']);
+  assert.deepEqual(stockDailyBullishMarketFlowRecheckPlan.targetedEnrichment.selectedSymbols, ['NVDA']);
+  assert.deepEqual(stockDailyBullishMarketFlowRecheckPlan.targetedEnrichment.nodeIds, ['L04']);
+  assert.equal(stockDailyBullishMarketFlowRecheckPlan.targetedEnrichment.selected[0].technicalPresignal, 'daily_technical_bullish');
 
   const highPriorityTechnicalPlan = buildActiveCandidateAnalysisRefreshPlan({
     report: fixtureReport([], [
