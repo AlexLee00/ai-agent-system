@@ -50,6 +50,51 @@ function prefixList(prefix, values = []) {
   return compactList(values).map((value) => `${prefix}:${value}`);
 }
 
+function isAgentBusQueryFailed(value) {
+  return String(value || '') === 'agent_message_bus_hygiene:query_failed';
+}
+
+function getAgentBusClassification(blockerPack = {}) {
+  return blockerPack.evidence?.busHygiene?.classification
+    || blockerPack.evidence?.busHygiene
+    || {};
+}
+
+function normalizeOperationalHardBlockers(blockerPack = {}) {
+  const classification = getAgentBusClassification(blockerPack);
+  return compactList(blockerPack.hardBlockers || []).filter((item) => {
+    if (!isAgentBusQueryFailed(item)) return true;
+    return classification.ok === false || Number(classification.blocked || 0) > 0;
+  });
+}
+
+function buildOperationalWarnings(blockerPack = {}) {
+  const warnings = [];
+  const rawHardBlockers = compactList(blockerPack.hardBlockers || []);
+  const normalizedHardBlockers = normalizeOperationalHardBlockers(blockerPack);
+  const classification = getAgentBusClassification(blockerPack);
+  if (
+    rawHardBlockers.some(isAgentBusQueryFailed)
+    && !normalizedHardBlockers.some(isAgentBusQueryFailed)
+  ) {
+    warnings.push('agent_message_bus_hygiene_query_failed_unconfirmed');
+  }
+  if (Number(classification.reviewRequired || 0) > 0) {
+    warnings.push(`agent_message_bus_hygiene_review_required:${Number(classification.reviewRequired || 0)}`);
+  }
+  if (Number(classification.safeExpire || 0) > 0) {
+    warnings.push(`agent_message_bus_hygiene_safe_expire_available:${Number(classification.safeExpire || 0)}`);
+  }
+  return warnings;
+}
+
+function marketsWithDiscoveryBottleneck(discovery = {}, pattern) {
+  return (discovery.markets || [])
+    .filter((market) => (market.bottlenecks || []).some((code) => pattern.test(String(code || ''))))
+    .map((market) => market.market)
+    .filter(Boolean);
+}
+
 function buildSafeFixCandidates({ discovery, llm, marketdata, actionBoard } = {}) {
   const candidates = [];
   const discoveryBottlenecks = discovery?.bottlenecks || [];
@@ -73,6 +118,22 @@ function buildSafeFixCandidates({ discovery, llm, marketdata, actionBoard } = {}
       reason: 'candidates exist but no actionable entry path is forming',
       command: 'npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run -s runtime:luna-decision-filter -- --json',
     });
+  }
+  if (
+    discoveryBottlenecks.some((item) => /actionable_candidate_waiting_signal_persistence/.test(item))
+    || recommendations.includes('actionable_candidates_waiting_market_cycle_or_signal_persistence')
+  ) {
+    const markets = marketsWithDiscoveryBottleneck(discovery, /actionable_candidate_waiting_signal_persistence/);
+    for (const market of markets.length > 0 ? markets : ['all']) {
+      candidates.push({
+        id: `inspect_signal_persistence_gap_${market}`,
+        type: 'diagnostic',
+        risk: 'low',
+        applyMode: 'read_only',
+        reason: `${market} has actionable candidates that did not become persisted BUY signals`,
+        command: `npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run -s runtime:luna-decision-filter -- --market=${market === 'all' ? 'crypto' : market} --hours=24 --limit=12 --active-candidates --json`,
+      });
+    }
   }
   if (discoveryBottlenecks.some((item) => /sentiment|onchain|market_flow/.test(item))) {
     candidates.push({
@@ -140,10 +201,12 @@ function buildReportFromEvidence({
   postLive = {},
   collectionErrors = [],
 } = {}) {
+  const operationalHardBlockers = normalizeOperationalHardBlockers(blockerPack);
+  const operationalWarnings = buildOperationalWarnings(blockerPack);
   const hardBlockers = compactList([
     ...collectionErrors.map((item) => `collection:${item.name}:${item.error}`),
     ...prefixList('source_health', sourceHealth.blockers || []),
-    ...prefixList('operational', blockerPack.hardBlockers || []),
+    ...prefixList('operational', operationalHardBlockers),
     ...prefixList('live_fire_final_gate', finalGate.blockers || []),
   ]);
   const bottlenecks = compactList([
@@ -155,6 +218,7 @@ function buildReportFromEvidence({
   const warnings = compactList([
     ...prefixList('llm_hotpath', llm.nonBlockingWarnings || []),
     ...prefixList('discovery', discovery.recommendations || []),
+    ...prefixList('operational', operationalWarnings),
     ...prefixList('marketdata', marketdata.crypto?.decision?.warnings || []),
     ...prefixList('marketdata', marketdata.domestic?.decision?.warnings || []),
     ...prefixList('marketdata', marketdata.overseas?.decision?.warnings || []),
@@ -308,7 +372,45 @@ export async function runLunaBottleneckAutonomyOperatorSmoke() {
   assert.ok(report.safeFixCandidates.some((item) => item.id === 'repair_llm_hotpath_plan'));
   assert.equal(report.protected6.labels.includes('ai.hub.resource-api'), true);
   assert.match(report.commands.liveFireRollback, /rollback-luna-live-fire/);
-  return { ok: true, report };
+
+  const transientBusReport = buildReportFromEvidence({
+    sourceHealth: { ok: true, status: 'source_health_clear', blockers: [] },
+    discovery: { status: 'luna_discovery_funnel_clear', bottlenecks: [], recommendations: [] },
+    blockerPack: {
+      status: 'operational_warning',
+      hardBlockers: ['agent_message_bus_hygiene:query_failed'],
+      evidence: {
+        busHygiene: {
+          classification: { ok: true, safeExpire: 0, reviewRequired: 2, blocked: 0 },
+        },
+      },
+    },
+    finalGate: { status: 'luna_live_fire_final_gate_clear', blockers: [] },
+    postLive: { status: 'post_live_fire_verified', blockers: [] },
+  });
+  assert.equal(transientBusReport.hardBlockers.includes('operational:agent_message_bus_hygiene:query_failed'), false);
+  assert.ok(transientBusReport.warnings.includes('operational:agent_message_bus_hygiene_query_failed_unconfirmed'));
+  assert.ok(transientBusReport.warnings.includes('operational:agent_message_bus_hygiene_review_required:2'));
+
+  const signalPersistenceReport = buildReportFromEvidence({
+    sourceHealth: { ok: true, status: 'source_health_clear', blockers: [] },
+    discovery: {
+      status: 'luna_discovery_funnel_attention',
+      bottlenecks: ['domestic:actionable_candidate_waiting_signal_persistence'],
+      recommendations: ['actionable_candidates_waiting_market_cycle_or_signal_persistence'],
+      markets: [
+        { market: 'domestic', bottlenecks: ['actionable_candidate_waiting_signal_persistence'] },
+      ],
+    },
+    blockerPack: { status: 'operational_clear', hardBlockers: [] },
+    finalGate: { status: 'luna_live_fire_final_gate_clear', blockers: [] },
+    postLive: { status: 'post_live_fire_verified', blockers: [] },
+  });
+  assert.ok(signalPersistenceReport.safeFixCandidates.some((item) =>
+    item.id === 'inspect_signal_persistence_gap_domestic'
+    && item.applyMode === 'read_only'
+    && item.command.includes('--market=domestic')));
+  return { ok: true, report, transientBusReport, signalPersistenceReport };
 }
 
 async function main() {
