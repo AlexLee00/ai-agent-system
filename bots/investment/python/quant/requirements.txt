@@ -1,0 +1,7 @@
+PyPortfolioOpt
+statsmodels
+alphalens-reloaded
+empyrical
+pyfolio-reloaded
+pandas
+numpy

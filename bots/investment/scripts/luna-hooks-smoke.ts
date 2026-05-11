@@ -57,6 +57,12 @@ export function runLunaHooksSmoke() {
     }, { LUNA_HOOK_TEST_MODE: 'true', LUNA_HOOK_KILL_SWITCH_FILE: killSwitchPath });
     assert.equal(passMetaReflexionShadow.status, 0, passMetaReflexionShadow.stderr || passMetaReflexionShadow.stdout);
 
+    const passFactorModelShadow = runHook(PRE_HOOK, {
+      tool_name: 'Bash',
+      tool_input: { command: 'npm --prefix bots/investment run -s runtime:luna-factor-model-shadow -- --json --limit=10 --exchanges=binance,kis_overseas' },
+    }, { LUNA_HOOK_TEST_MODE: 'true', LUNA_HOOK_KILL_SWITCH_FILE: killSwitchPath });
+    assert.equal(passFactorModelShadow.status, 0, passFactorModelShadow.stderr || passFactorModelShadow.stdout);
+
     writeFileSync(killSwitchPath, JSON.stringify({ active: true }), 'utf8');
     const dynamicTpSlReadonly = runHook(PRE_HOOK, {
       tool_name: 'Bash',
@@ -69,6 +75,12 @@ export function runLunaHooksSmoke() {
       tool_input: { command: 'npm --prefix bots/investment run -s runtime:luna-meta-reflexion-shadow -- --json --max-llm-calls=0 --layer=l2' },
     }, { LUNA_HOOK_TEST_MODE: 'true', LUNA_HOOK_KILL_SWITCH_FILE: killSwitchPath });
     assert.equal(metaReflexionReadonly.status, 0, metaReflexionReadonly.stderr || metaReflexionReadonly.stdout);
+
+    const factorModelReadonly = runHook(PRE_HOOK, {
+      tool_name: 'Bash',
+      tool_input: { command: 'npm --prefix bots/investment run -s runtime:luna-factor-model-shadow -- --json --limit=5 --hours=24' },
+    }, { LUNA_HOOK_TEST_MODE: 'true', LUNA_HOOK_KILL_SWITCH_FILE: killSwitchPath });
+    assert.equal(factorModelReadonly.status, 0, factorModelReadonly.stderr || factorModelReadonly.stdout);
 
     const dynamicTpSlChainedBlocked = runHook(PRE_HOOK, {
       tool_name: 'Bash',
@@ -105,6 +117,13 @@ export function runLunaHooksSmoke() {
     assert.equal(metaReflexionBlocked.status, 2, metaReflexionBlocked.stderr || metaReflexionBlocked.stdout);
     assert.match(`${metaReflexionBlocked.stdout}\n${metaReflexionBlocked.stderr}`, /Kill Switch|kill switch/i);
 
+    const factorModelBlocked = runHook(PRE_HOOK, {
+      tool_name: 'Bash',
+      tool_input: { command: 'npm --prefix bots/investment run -s runtime:luna-factor-model-shadow -- --apply --confirm=luna-factor-model-shadow --json' },
+    }, { LUNA_HOOK_TEST_MODE: 'true', LUNA_HOOK_KILL_SWITCH_FILE: killSwitchPath });
+    assert.equal(factorModelBlocked.status, 2, factorModelBlocked.stderr || factorModelBlocked.stdout);
+    assert.match(`${factorModelBlocked.stdout}\n${factorModelBlocked.stderr}`, /Kill Switch|kill switch/i);
+
     const post = runHook(POST_HOOK, {
       tool_name: 'Bash',
       tool_input: { command: 'npm --prefix bots/investment run -s smoke:luna-regime-llm' },
@@ -121,6 +140,7 @@ export function runLunaHooksSmoke() {
       entryShadowCommandChecked: true,
       dynamicTpSlShadowCommandChecked: true,
       metaReflexionShadowCommandChecked: true,
+      factorModelShadowCommandChecked: true,
       dynamicTpSlChainedBlocked: true,
       postHookFailOpen: true,
     };

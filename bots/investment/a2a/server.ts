@@ -18,6 +18,7 @@ import { registerMarketRegimeAnalysisSkill } from './skills/market-regime-analys
 import { registerEntryDecisionShadowSkill } from './skills/entry-decision-shadow.ts';
 import { registerDynamicTpSlShadowSkill } from './skills/dynamic-tpsl-shadow.ts';
 import { registerMetaNeuralReflexionSkill } from './skills/meta-neural-reflexion.ts';
+import { registerFactorModelShadowSkill } from './skills/factor-model-shadow.ts';
 
 const _require = createRequire(import.meta.url);
 const express = _require('express');
@@ -34,6 +35,7 @@ registerMarketRegimeAnalysisSkill();
 registerEntryDecisionShadowSkill();
 registerDynamicTpSlShadowSkill();
 registerMetaNeuralReflexionSkill();
+registerFactorModelShadowSkill();
 
 // ── SSE 스트림 저장소 ──────────────────────────────────────────────
 const _streams: Map<string, ReturnType<typeof express.response.write>[]> = new Map();

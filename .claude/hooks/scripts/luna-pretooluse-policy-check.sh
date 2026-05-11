@@ -61,6 +61,15 @@ if len(parts) >= 7 and parts[0] == "npm" and parts[1] == "--prefix":
             re.compile(r"^--lookback-days=[0-9]+$"),
             re.compile(r"^--scope=[A-Za-z0-9_.:-]+$"),
         ],
+        "runtime:luna-factor-model-shadow": [
+            re.compile(r"^--json$"),
+            re.compile(r"^--limit=[0-9]+$"),
+            re.compile(r"^--hours=[0-9]+$"),
+            re.compile(r"^--ttl-minutes=[0-9]+$"),
+            re.compile(r"^--lookback-days=[0-9]+$"),
+            re.compile(r"^--exchange(s)?=[A-Za-z0-9_,_-]+$"),
+            re.compile(r"^--symbol=[A-Za-z0-9_./:-]+$"),
+        ],
     }
     runtime_script = parts[5] if len(parts) > 5 else ""
     if prefix.endswith("bots/investment") and parts[3:5] == ["run", "-s"] and runtime_script in allowed_runtime_scripts and parts[6] == "--":
