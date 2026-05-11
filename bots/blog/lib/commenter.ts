@@ -1622,10 +1622,14 @@ async function generateReply(postTitle, postSummary, commentText) {
   const systemPrompt = [
     '너는 IT 블로그 운영자다.',
     '네이버 블로그 댓글에 사람이 직접 쓴 것처럼 자연스럽고 따뜻한 한국어 답글을 JSON으로만 작성한다.',
-    '답글은 반드시 2~4문장으로 쓴다.',
+    '답글은 보통 2문장, 길어도 3문장으로 쓴다.',
     '첫 문장에서는 댓글의 핵심 포인트를 정확히 짚어 공감하거나 반응한다.',
+    '댓글에 질문이 있으면 둘째 문장 안에서 바로 답한다.',
     '둘째 문장 이후에는 글 내용이나 운영 맥락을 반영한 구체적인 한마디를 덧붙인다.',
     '마지막 문장은 너무 상투적인 감사 인사 대신 자연스러운 마무리로 끝낸다.',
+    '블로그 주인 본인 시점으로만 말하고, 제3자가 글을 평론하듯 쓰지 않는다.',
+    '"~하실 것 같아요", "~겠어요", "정말 기대되네요", "감사드립니다" 같은 거리감 있는 표현은 피한다.',
+    '댓글 작성자의 인사말이나 장식을 길게 되받지 말고, 핵심 내용과 질문에 바로 반응한다.',
   ].join(' ');
   const userPrompt = [
     `[글 제목] ${postTitle || ''}`,
@@ -1633,10 +1637,13 @@ async function generateReply(postTitle, postSummary, commentText) {
     `[댓글] ${commentText || ''}`,
     '',
     '규칙:',
-    '- 70~160자',
-    '- 반드시 2~4문장',
+    '- 45~120자',
+    '- 2~3문장 권장',
     '- 댓글의 구체 표현이나 핵심 의도를 반영',
     '- 블로그 운영자 1인칭 시점 유지',
+    '- 제3자가 내 글을 해설하거나 평가하는 말투 금지',
+    '- 추측형 칭찬이나 과한 리액션 금지',
+    '- 질문이 있으면 인사보다 답변을 우선',
     '- 기계적인 감사 인사만 반복 금지',
     '- "좋은 하루 되세요", "방문 감사합니다", "공감하고 갑니다" 같은 상투 표현 금지',
     '- 필요하면 이모지 0~1개만 자연스럽게 사용',
@@ -1665,8 +1672,9 @@ async function generateReply(postTitle, postSummary, commentText) {
     reply = normalizeText(parsed.reply || reply);
     tone = normalizeText(parsed.tone || '');
   }
+  reply = sanitizeGeneratedReplyForComment(reply, commentText);
 
-  if (!reply || reply.length < 70) {
+  if (!reply || reply.length < 50) {
     result = await callHubLlm({
       callerTeam: 'blog',
       agent: 'commenter',
@@ -1678,9 +1686,10 @@ async function generateReply(postTitle, postSummary, commentText) {
         '',
         '추가 지시:',
         '이전 답글이 너무 짧았습니다.',
-        '이번에는 반드시 2~4문장으로, 더 구체적으로 써주세요.',
-        '댓글 작성자가 언급한 포인트를 한 번 짚고, 글 내용과 연결되는 한 문장을 추가하세요.',
-        '반드시 70자 이상 160자 이하로 맞춰주세요.',
+        '이번에는 2~3문장으로, 더 구체적으로 써주세요.',
+        '제3자 평론처럼 쓰지 말고 운영자 본인 시점으로 답하세요.',
+        '댓글 작성자가 질문한 내용이 있으면 바로 답하고, 글 내용과 연결되는 한 문장을 추가하세요.',
+        '반드시 45자 이상 120자 이하로 맞춰주세요.',
         'JSON만 응답하세요.',
       ].join('\n'),
       maxTokens: 600,
@@ -1696,12 +1705,57 @@ async function generateReply(postTitle, postSummary, commentText) {
       reply = normalizeText(parsed.reply || reply);
       tone = normalizeText(parsed.tone || tone);
     }
+    reply = sanitizeGeneratedReplyForComment(reply, commentText);
   }
 
   return {
     reply,
     tone,
   };
+}
+
+function sanitizeGeneratedReplyForComment(reply = '', commentText = '') {
+  let normalized = normalizeText(reply);
+  if (!normalized) return normalized;
+
+  const rawSentences = normalized
+    .split(/(?<=[.!?！？])\s+/)
+    .map((item) => normalizeText(item))
+    .filter(Boolean);
+
+  const bannedSentencePatterns = [
+    /효과를 보신 분들께서는/i,
+    /정말 뿌듯하시겠/i,
+    /기분이 더욱 좋으셨겠/i,
+    /정말 기대되네요/i,
+    /감사드립니다/i,
+    /제대로 느끼셨겠/i,
+  ];
+
+  const sentences = rawSentences.filter((sentence) => {
+    if (!sentence) return false;
+    return !bannedSentencePatterns.some((pattern) => pattern.test(sentence));
+  });
+
+  normalized = normalizeText((sentences.length ? sentences : rawSentences).join(' '));
+
+  normalized = normalized
+    .replace(/많은 분들이 실제로 좋은 성과를 얻으셨다니/gi, '실제로 반응이 오는 순간이 가장 크게 남습니다.')
+    .replace(/저도 이번 주에[^.?!]*공부해야겠습니다[.?!]?/gi, '저도 이 부분은 실제 적용 기준으로 더 잘게 나눠서 정리해보려 합니다.')
+    .replace(/일단 새로운 주를 시작하겠습니다[.?!]?/gi, '이번 글도 적용 과정 중심으로 더 이어보겠습니다.')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  if (!normalized) return normalized;
+
+  const hasQuestion = /[?？]|궁금|문의|질문|혹시/i.test(normalizeText(commentText));
+  const sentenceParts = normalized
+    .split(/(?<=[.!?！？])\s+/)
+    .map((item) => normalizeText(item))
+    .filter(Boolean)
+    .slice(0, hasQuestion ? 3 : 2);
+
+  return normalizeText(sentenceParts.join(' '));
 }
 
 function isReplyGenerationTransientError(error) {
@@ -6080,6 +6134,7 @@ module.exports = {
   detectNewComments,
   collectNeighborCandidates,
   generateReply,
+  sanitizeGeneratedReplyForComment,
   buildSimpleAcknowledgementReply,
   buildDeterministicReplyFallback,
   generateNeighborComment,
