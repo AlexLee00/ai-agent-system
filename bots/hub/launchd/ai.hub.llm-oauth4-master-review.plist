@@ -31,7 +31,7 @@
   <key>StandardErrorPath</key>
   <string>/tmp/hub-llm-oauth4-master-review.err.log</string>
   <key>StartInterval</key>
-  <integer>3600</integer>
+  <integer>86400</integer>
   <key>RunAtLoad</key>
   <true/>
 </dict>

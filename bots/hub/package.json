@@ -48,6 +48,7 @@
     "oauth:runtime-refresh-gate:report": "tsx scripts/oauth-runtime-refresh-gate.ts --write-report",
     "oauth:lock-janitor": "tsx scripts/oauth-refresh-lock-janitor.ts",
     "oauth:ops-readiness": "tsx scripts/hub-oauth-operational-readiness.ts",
+    "oauth:ops-events-smoke": "tsx scripts/oauth-ops-events-smoke.ts",
     "github:token-smoke": "tsx scripts/github-token-smoke.ts",
     "oauth:gemini-cli-import": "tsx scripts/gemini-cli-oauth-import.ts",
     "oauth:gemini-cli-readiness": "tsx scripts/gemini-cli-oauth-readiness.ts",

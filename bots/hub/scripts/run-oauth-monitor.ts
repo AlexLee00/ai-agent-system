@@ -24,6 +24,7 @@ const {
   CLOUD_AI_COMPANION_SERVICE,
 } = require('../lib/oauth/gemini-codeassist-service-status.ts');
 const { postAlarm } = require('../../../packages/core/lib/hub-alarm-client.ts');
+const { publishOAuthMonitorEvents } = require('../lib/oauth/ops-events.ts');
 
 function flag(name: string, fallback = false): boolean {
   const raw = String(process.env[name] || '').trim().toLowerCase();
@@ -1214,7 +1215,7 @@ async function main() {
   const groq = await checkGroqAccounts();
   console.log(`[oauth-monitor] Groq 계정: ${groq.available_accounts}/${groq.total_accounts} 정상`);
 
-  console.log(JSON.stringify({
+  const report = {
     ok: Boolean(
       claudeOauth.healthy
         && openaiOauth.healthy
@@ -1296,6 +1297,19 @@ async function main() {
       activation_url: geminiCodeAssistService.activation_url || null,
     },
     groq_pool: groq,
+  };
+
+  const eventPublish = await publishOAuthMonitorEvents(report);
+  console.log(JSON.stringify({
+    ...report,
+    event_publish: {
+      ok: eventPublish.ok,
+      attempted: eventPublish.attempted,
+      published: eventPublish.published,
+      skipped: eventPublish.skipped,
+      failed: eventPublish.failed,
+      error: eventPublish.results?.find((result: any) => !result.ok && !result.skipped)?.error || null,
+    },
   }));
 }
 

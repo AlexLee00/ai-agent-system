@@ -142,6 +142,7 @@ function unitSmokeScripts(): string[] {
     'gemini-route-assignment-smoke.ts',
     'steward-gemini-model-drill-smoke.ts',
     'oauth-ops-readiness-smoke.ts',
+    'oauth-ops-events-smoke.ts',
     'telegram-pending-queue-migration-smoke.ts',
     'telegram-hub-secrets-smoke.ts',
     'telegram-topic-routing-precedence-smoke.ts',

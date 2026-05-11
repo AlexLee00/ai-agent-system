@@ -25,6 +25,82 @@ function getEventLake() {
   return require('../../../../packages/core/lib/event-lake');
 }
 
+function tokenExpiresInHours(token) {
+  const expiresAt = token?.expires_at || token?.expiresAt || null;
+  const expiresMs = expiresAt ? new Date(expiresAt).getTime() : NaN;
+  if (!Number.isFinite(expiresMs)) return null;
+  return (expiresMs - Date.now()) / (60 * 60 * 1000);
+}
+
+async function getOAuthOpsStatus() {
+  const {
+    checkTokenHealth,
+    checkOpenAIOAuthHealth,
+    checkGeminiOAuthHealth,
+    checkGroqAccounts,
+  } = require('../llm/oauth-monitor');
+  const { getProviderRecord } = require('../oauth/token-store');
+
+  const [
+    claude,
+    openai,
+    gemini,
+    groq,
+  ] = await Promise.all([
+    checkTokenHealth().catch((error) => ({ healthy: false, error: error?.message || String(error) })),
+    checkOpenAIOAuthHealth().catch((error) => ({ healthy: false, error: error?.message || String(error) })),
+    checkGeminiOAuthHealth().catch((error) => ({ healthy: false, error: error?.message || String(error) })),
+    checkGroqAccounts().catch(() => ({ available_accounts: 0, total_accounts: 0 })),
+  ]);
+
+  const geminiCliRecord = getProviderRecord('gemini-cli-oauth');
+  const geminiCliHours = tokenExpiresInHours(geminiCliRecord?.token || null);
+  const geminiCli = {
+    healthy: Boolean(geminiCliRecord?.token?.access_token || geminiCliRecord?.token?.refresh_token),
+    source: geminiCliRecord?.metadata?.source || null,
+    expires_in_hours: Number.isFinite(Number(geminiCliHours)) ? Math.round(Number(geminiCliHours) * 100) / 100 : null,
+    needs_refresh: Number.isFinite(Number(geminiCliHours)) ? Number(geminiCliHours) <= 1 : false,
+    quota_project_configured: Boolean(
+      process.env.GEMINI_OAUTH_PROJECT_ID
+        || process.env.GOOGLE_CLOUD_QUOTA_PROJECT
+        || process.env.GOOGLE_CLOUD_PROJECT
+        || geminiCliRecord?.metadata?.quota_project_id
+        || geminiCliRecord?.metadata?.project_id
+        || geminiCliRecord?.token?.quota_project_id
+        || geminiCliRecord?.token?.project_id,
+    ),
+  };
+
+  return {
+    checkedAt: new Date().toISOString(),
+    providers: {
+      claude_code_oauth: {
+        healthy: Boolean(claude.healthy),
+        expires_in_hours: Number.isFinite(Number(claude.expires_in_hours)) ? Math.round(Number(claude.expires_in_hours) * 10) / 10 : null,
+        needs_refresh: Boolean(claude.needs_refresh),
+        error: claude.error || null,
+      },
+      openai_oauth: {
+        healthy: Boolean(openai.healthy),
+        source: openai.source || null,
+        expires_at: openai.expires_at || null,
+        needs_refresh: Boolean(openai.needs_refresh),
+        error: openai.error || null,
+      },
+      gemini_oauth: {
+        healthy: Boolean(gemini.healthy),
+        source: gemini.source || null,
+        expires_in_hours: Number.isFinite(Number(gemini.expires_in_hours)) ? Math.round(Number(gemini.expires_in_hours) * 100) / 100 : null,
+        needs_refresh: Boolean(gemini.needs_refresh),
+        quota_project_configured: Boolean(gemini.quota_project_configured),
+        error: gemini.error || null,
+      },
+      gemini_cli_oauth: geminiCli,
+      groq_pool: groq,
+    },
+  };
+}
+
 const HUB_TOOLS = [
   {
     name: 'hub.health.query',
@@ -188,6 +264,62 @@ const HUB_TOOLS = [
       agentId: input?.agentId,
       incidentKey: input?.incidentKey,
     }),
+  },
+  {
+    name: 'oauth.ops.status',
+    ownerTeam: 'hub',
+    description: 'OAuth provider 상태 조회(토큰 원문 비노출)',
+    sideEffect: 'read_only',
+    defaultRisk: 'low',
+    requiredTopicLevel: 'L1',
+    executeEnabled: true,
+    handler: async () => getOAuthOpsStatus(),
+  },
+  {
+    name: 'oauth.ops.events',
+    ownerTeam: 'hub',
+    description: 'OAuth monitor 표준 이벤트 조회',
+    sideEffect: 'read_only',
+    defaultRisk: 'low',
+    requiredTopicLevel: 'L1',
+    executeEnabled: true,
+    handler: async (input) => {
+      const minutes = Math.max(1, Number(input?.minutes ?? 24 * 60) || 24 * 60);
+      const limit = Math.min(100, Math.max(1, Number(input?.limit ?? 20) || 20));
+      const rows = await getEventLake().search({
+        eventType: 'hub_oauth_monitor',
+        team: 'hub',
+        minutes,
+        limit,
+      });
+      return {
+        checkedAt: new Date().toISOString(),
+        minutes,
+        limit,
+        rows: rows.map((row) => ({
+          id: row.id,
+          severity: row.severity,
+          title: row.title,
+          message: row.message,
+          tags: row.tags || [],
+          metadata: row.metadata || {},
+          created_at: row.created_at,
+        })),
+      };
+    },
+  },
+  {
+    name: 'oauth.ops.lock_janitor_plan',
+    ownerTeam: 'hub',
+    description: 'OAuth refresh lock janitor dry-run 계획 조회',
+    sideEffect: 'read_only',
+    defaultRisk: 'low',
+    requiredTopicLevel: 'L1',
+    executeEnabled: true,
+    handler: async () => {
+      const { cleanupOAuthRefreshLocks } = require('../oauth/refresh-lock');
+      return cleanupOAuthRefreshLocks({ apply: false });
+    },
   },
   {
     name: 'launchd.restart',
