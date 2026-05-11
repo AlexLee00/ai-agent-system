@@ -65,6 +65,118 @@ function number(value, fallback = 0) {
   return Number.isFinite(n) ? n : fallback;
 }
 
+function parseJsonObject(value) {
+  if (!value) return {};
+  if (typeof value === 'object') return value;
+  if (typeof value !== 'string') return {};
+  try {
+    const parsed = JSON.parse(value);
+    return parsed && typeof parsed === 'object' ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+function epochMsToIso(value) {
+  const n = Number(value);
+  if (!Number.isFinite(n) || n <= 0) return null;
+  return new Date(n).toISOString();
+}
+
+export function summarizeRecentEntryTriggerPipelineEvidence(rows = []) {
+  const sessions = (rows || []).map((row) => {
+    const meta = parseJsonObject(row.meta);
+    const stats = parseJsonObject(meta.entry_trigger_stats);
+    const hasEntryTriggerStats = Object.keys(stats).length > 0;
+    return {
+      sessionId: row.session_id || row.sessionId || null,
+      status: row.status || null,
+      triggerType: row.trigger_type || row.triggerType || null,
+      startedAt: epochMsToIso(row.started_at || row.startedAt),
+      finishedAt: epochMsToIso(row.finished_at || row.finishedAt),
+      decisionCount: number(meta.decision_count),
+      buyDecisions: number(meta.buy_decisions),
+      holdDecisions: number(meta.hold_decisions),
+      approvedSignals: number(meta.approved_signals),
+      executedSymbols: number(meta.executed_symbols),
+      weakSignalReasonTop: meta.weak_signal_reason_top || null,
+      entryTriggerStats: {
+        hasStats: hasEntryTriggerStats,
+        enabled: stats.enabled === true,
+        shouldMutate: stats.shouldMutate === true,
+        allowLiveFire: stats.allowLiveFire === true,
+        blocked: number(stats.blocked),
+        armed: number(stats.armed),
+        fired: number(stats.fired),
+        observed: number(stats.observed),
+      },
+    };
+  }).filter((row) => row.sessionId);
+
+  const latestWithEntryTriggerStats = sessions.find((row) => row.entryTriggerStats.hasStats) || null;
+  const totals = sessions.reduce((acc, row) => {
+    acc.decisionCount += number(row.decisionCount);
+    acc.buyDecisions += number(row.buyDecisions);
+    acc.holdDecisions += number(row.holdDecisions);
+    acc.approvedSignals += number(row.approvedSignals);
+    acc.executedSymbols += number(row.executedSymbols);
+    acc.entryTriggerBlocked += number(row.entryTriggerStats.blocked);
+    acc.entryTriggerArmed += number(row.entryTriggerStats.armed);
+    acc.entryTriggerFired += number(row.entryTriggerStats.fired);
+    acc.entryTriggerObserved += number(row.entryTriggerStats.observed);
+    return acc;
+  }, {
+    decisionCount: 0,
+    buyDecisions: 0,
+    holdDecisions: 0,
+    approvedSignals: 0,
+    executedSymbols: 0,
+    entryTriggerBlocked: 0,
+    entryTriggerArmed: 0,
+    entryTriggerFired: 0,
+    entryTriggerObserved: 0,
+  });
+
+  return {
+    recentCount: sessions.length,
+    latest: sessions[0] || null,
+    latestWithEntryTriggerStats,
+    totals,
+    blockedBeforeSignalPersistence: Boolean(
+      latestWithEntryTriggerStats
+      && number(latestWithEntryTriggerStats.entryTriggerStats.blocked) > 0
+      && number(latestWithEntryTriggerStats.approvedSignals) === 0
+    ),
+  };
+}
+
+export function classifySignalPersistenceState({
+  marketOpen = true,
+  likelyActionableCount = 0,
+  recentBuySignals = 0,
+  pipelineEntryTriggerEvidence = null,
+} = {}) {
+  if (!marketOpen || number(likelyActionableCount) <= 0 || number(recentBuySignals) > 0) {
+    return {
+      bottleneck: null,
+      observation: null,
+      recommendationEligible: false,
+    };
+  }
+  if (pipelineEntryTriggerEvidence?.blockedBeforeSignalPersistence === true) {
+    return {
+      bottleneck: null,
+      observation: 'entry_trigger_gate_blocked_before_signal_persistence',
+      recommendationEligible: false,
+    };
+  }
+  return {
+    bottleneck: 'actionable_candidate_waiting_signal_persistence',
+    observation: null,
+    recommendationEligible: true,
+  };
+}
+
 function readJsonSafe(filePath, fallback = {}) {
   try {
     return JSON.parse(fs.readFileSync(filePath, 'utf8'));
@@ -616,7 +728,7 @@ async function buildMarketFunnel(market, { hours }) {
   const preopenWindow = buildPreopenWindow({ market, marketOpen, now });
   const candidateSqlFilter = candidateSymbolSqlFilter(market);
   const normalizedExpr = normalizedCandidateExpr();
-  const [candidateRows, sourceRows, signalRows, triggerRows, latestCandidates, latestTriggers] = await Promise.all([
+  const [candidateRows, sourceRows, signalRows, triggerRows, latestCandidates, latestTriggers, recentPipelineRows] = await Promise.all([
     queryRows(
       `WITH normalized AS (
          SELECT *,
@@ -717,9 +829,18 @@ async function buildMarketFunnel(market, { hours }) {
       `SELECT symbol, trigger_type, trigger_state, confidence, predictive_score, updated_at, fired_at, created_at
        FROM entry_triggers
        WHERE exchange = $1
-       ORDER BY COALESCE(fired_at, updated_at, created_at) DESC
+      ORDER BY COALESCE(fired_at, updated_at, created_at) DESC
        LIMIT 10`,
       [exchange],
+    ),
+    queryRows(
+      `SELECT session_id, market, trigger_type, status, started_at, finished_at, meta
+       FROM pipeline_runs
+       WHERE market = $1
+         AND started_at >= $2
+       ORDER BY started_at DESC
+       LIMIT 10`,
+      [exchange, now.getTime() - Math.max(1, number(hours, 24)) * 3600 * 1000],
     ),
   ]);
   const executionUniverse = await buildDiscoveryUniverse(market, new Date(), {
@@ -851,6 +972,13 @@ async function buildMarketFunnel(market, { hours }) {
   const recentSignalCount = Object.values(signalsByStatus).reduce((sum, count) => sum + number(count), 0);
   const recentBuySignals = number(signalsByAction.BUY);
   const sourceSignalCount = sourceRows.reduce((sum, row) => sum + number(row.signal_count), 0);
+  const pipelineEntryTriggerEvidence = summarizeRecentEntryTriggerPipelineEvidence(recentPipelineRows);
+  const signalPersistenceState = classifySignalPersistenceState({
+    marketOpen,
+    likelyActionableCount: likelyActionable.length,
+    recentBuySignals,
+    pipelineEntryTriggerEvidence,
+  });
   const bottlenecks = [];
   const observations = [];
 
@@ -865,7 +993,8 @@ async function buildMarketFunnel(market, { hours }) {
   if (!marketOpen && number(candidate.active_count) > 0) observations.push('market_closed_waiting_open');
   if (marketOpen && number(candidate.active_count) > 0 && recentSignalCount === 0 && analysisCoveredSymbols.length === 0) bottlenecks.push('candidate_not_persisted_to_signal_window');
   if (marketOpen && number(candidate.active_count) > 0 && recentSignalCount === 0 && analysisCoveredSymbols.length > 0 && likelyActionable.length === 0 && relaxedProbeCandidates.length === 0) bottlenecks.push('analysis_completed_no_actionable_signal');
-  if (marketOpen && likelyActionable.length > 0 && recentBuySignals === 0) bottlenecks.push('actionable_candidate_waiting_signal_persistence');
+  if (signalPersistenceState.bottleneck) bottlenecks.push(signalPersistenceState.bottleneck);
+  if (signalPersistenceState.observation) observations.push(signalPersistenceState.observation);
   if (marketOpen && relaxedProbeReadyCandidates.length > 0 && recentBuySignals === 0) bottlenecks.push('relaxed_probe_candidate_waiting_l13_probe');
   if (triggerEligibleBuySignals > 0 && activeTriggerCount === 0) bottlenecks.push('buy_signal_without_active_entry_trigger');
   if (
@@ -980,6 +1109,8 @@ async function buildMarketFunnel(market, { hours }) {
       byAction: signalsByAction,
       byBlockCode: signalsByBlockCode,
       recentBlockedSignalDetails,
+      state: signalPersistenceState,
+      pipelineEntryTriggerEvidence,
     },
     currentPositions: {
       openCount: currentLivePositions.length,
@@ -1051,11 +1182,15 @@ export async function buildLunaDiscoveryFunnelReport({
   const candidateTotal = marketReports.reduce((sum, item) => sum + item.candidateUniverse.activeCount, 0);
   const activeTriggerTotal = liveMarketReports.reduce((sum, item) => sum + item.entryTriggers.activeCount, 0);
   const actionableWaitingTotal = liveMarketReports.reduce((sum, item) => sum + number(item.decisionFilter?.likelyActionableCount), 0);
+  const signalPersistenceGapActionableTotal = liveMarketReports.reduce((sum, item) => {
+    if (item.signalPersistence?.state?.recommendationEligible !== true) return sum;
+    return sum + number(item.decisionFilter?.likelyActionableCount);
+  }, 0);
   const relaxedProbeReadyTotal = liveMarketReports.reduce((sum, item) => sum + number(item.decisionFilter?.relaxedProbeReadyCount), 0);
   const recommendations = [];
   if (candidateTotal === 0) recommendations.push('all_markets_discovery_candidate_empty');
   if (allBottlenecks.length === 0 && preopenGaps.length > 0) recommendations.push('preopen_market_preparation_pending');
-  if (candidateTotal > 0 && activeTriggerTotal === 0 && actionableWaitingTotal > 0) recommendations.push('actionable_candidates_waiting_market_cycle_or_signal_persistence');
+  if (candidateTotal > 0 && activeTriggerTotal === 0 && signalPersistenceGapActionableTotal > 0) recommendations.push('actionable_candidates_waiting_market_cycle_or_signal_persistence');
   if (candidateTotal > 0 && activeTriggerTotal === 0 && actionableWaitingTotal === 0 && relaxedProbeReadyTotal > 0) recommendations.push('relaxed_probe_candidates_waiting_l13_probe');
   if (
     allBottlenecks.length > 0

@@ -13,9 +13,11 @@ import {
   buildLunaDiscoveryFunnelReport,
   buildRequiredCoverageSymbols,
   buildRequiredAnalystCoverage,
+  classifySignalPersistenceState,
   classifyCoverageBottlenecksForMarket,
   filterEntryDecisionDiagnosticsForOpenPositions,
   getRequiredAnalystsForMarket,
+  summarizeRecentEntryTriggerPipelineEvidence,
 } from './runtime-luna-discovery-funnel-report.ts';
 import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
 
@@ -131,6 +133,57 @@ export async function runLunaDiscoveryFunnelReportSmoke() {
       filteredDecisionScope.excluded.map((item) => item.symbol),
       ['BTC/USDT'],
       'open-position decision candidates should remain auditable as excluded',
+    );
+    const blockedEntryTriggerEvidence = summarizeRecentEntryTriggerPipelineEvidence([
+      {
+        session_id: 'entry-trigger-blocked-smoke',
+        status: 'completed',
+        started_at: Date.now(),
+        meta: {
+          decision_count: 1,
+          buy_decisions: 0,
+          hold_decisions: 1,
+          approved_signals: 0,
+          entry_trigger_stats: {
+            enabled: true,
+            shouldMutate: true,
+            allowLiveFire: true,
+            blocked: 1,
+            armed: 0,
+            fired: 0,
+            observed: 0,
+          },
+        },
+      },
+    ]);
+    assert.equal(
+      blockedEntryTriggerEvidence.blockedBeforeSignalPersistence,
+      true,
+      'recent entry-trigger blocks should be exposed as signal-persistence evidence',
+    );
+    assert.deepEqual(
+      classifySignalPersistenceState({
+        marketOpen: true,
+        likelyActionableCount: 1,
+        recentBuySignals: 0,
+        pipelineEntryTriggerEvidence: blockedEntryTriggerEvidence,
+      }),
+      {
+        bottleneck: null,
+        observation: 'entry_trigger_gate_blocked_before_signal_persistence',
+        recommendationEligible: false,
+      },
+      'entry-trigger gate blocks should not be classified as signal persistence repair gaps',
+    );
+    assert.equal(
+      classifySignalPersistenceState({
+        marketOpen: true,
+        likelyActionableCount: 1,
+        recentBuySignals: 0,
+        pipelineEntryTriggerEvidence: summarizeRecentEntryTriggerPipelineEvidence([]),
+      }).bottleneck,
+      'actionable_candidate_waiting_signal_persistence',
+      'missing BUY persistence without entry-trigger evidence should remain a repair gap',
     );
     assert.deepEqual(
       getRequiredAnalystsForMarket('domestic', { LUNA_STOCK_INTRADAY_ENRICHMENT_ENABLED: 'false' }),
