@@ -19,6 +19,7 @@ const SERVICE_LABEL_MAP = {
   'investment-prescreen-domestic': 'ai.investment.prescreen-domestic',
   'investment-reporter': 'ai.investment.reporter',
   'investment-argos': 'ai.investment.argos',
+  'investment-runtime-autopilot': 'ai.investment.runtime-autopilot',
   'investment-market-alert-overseas-open': 'ai.investment.market-alert-overseas-open',
   'investment-market-alert-overseas-close': 'ai.investment.market-alert-overseas-close',
   'investment-market-alert-domestic-open': 'ai.investment.market-alert-domestic-open',

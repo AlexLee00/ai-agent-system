@@ -15,6 +15,7 @@ import { redactKisWsDiagnosticMessage } from '../mcp/luna-marketdata-mcp/src/too
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const investmentRoot = path.resolve(__dirname, '..');
+const kisClientModuleUrl = new URL('../shared/kis-client.ts', import.meta.url).href;
 
 function readMarketdataMcpKisRoutingDiagnostic() {
   const raw = execFileSync(
@@ -26,7 +27,7 @@ function readMarketdataMcpKisRoutingDiagnostic() {
         "process.env.LUNA_MCP_SERVER_ENABLED='true';",
         "process.env.LUNA_MARKETDATA_MCP_PORT='4088';",
         "process.env.KIS_USE_MCP='true';",
-        "const mod = await import('./shared/kis-client.ts');",
+        `const mod = await import(${JSON.stringify(kisClientModuleUrl)});`,
         'console.log(JSON.stringify(mod.getKisMcpRoutingDiagnostics()));',
       ].join(' '),
     ],

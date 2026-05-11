@@ -68,7 +68,7 @@ export function buildLunaSourceHealthAudit() {
     const content = readRel(file);
     return {
       file,
-      importsPolicy: content.includes("from './live-fallback-policy.ts'"),
+      importsPolicy: content.includes('live-fallback-policy.ts'),
       usesPolicy: content.includes('simulatedFallbackOrBlock'),
     };
   });
