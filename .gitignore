@@ -181,6 +181,7 @@ tmp/blog-commenter-debug/
 bots/claude/*.log
 bots/claude/dexter-fixes.json
 bots/claude/archer-cache.json
+bots/claude/output/symphony-shadow/
 
 # 블로그 서버 로그
 bots/blog/*.log

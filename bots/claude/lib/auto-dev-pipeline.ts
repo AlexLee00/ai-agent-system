@@ -148,6 +148,7 @@ const AUTO_DEV_PROFILE_ALIASES = {
   autonomous: 'autonomous_l5',
   autonomous_l5: 'autonomous_l5',
 };
+const AUTO_DEV_SYMPHONY_MODES = new Set(['off', 'shadow', 'implementation', 'validation', 'runtime']);
 const REQUIRED_METADATA_FIELDS = [
   'target_team',
   'owner_agent',
@@ -241,6 +242,11 @@ function normalizeImplementationModel(value) {
     return Object.prototype.hasOwnProperty.call(AUTO_DEV_IMPLEMENTATION_MODEL_ALLOWLIST, input) ? input : null;
   }
   return null;
+}
+
+function normalizeSymphonyMode(value) {
+  const normalized = toSafeString(value || 'off').toLowerCase().replace(/-/g, '_');
+  return AUTO_DEV_SYMPHONY_MODES.has(normalized) ? normalized : 'off';
 }
 
 function resolveImplementationModelPolicy({
@@ -358,6 +364,7 @@ function resolveAutoDevRuntimeConfig(options = {}, envVars = process.env) {
     ignoredLegacyModelOverrides: [],
     hardDisabled,
     disabledReason: hardDisabled ? 'CLAUDE_AUTO_DEV_DISABLED' : null,
+    symphonyMode: normalizeSymphonyMode(options.symphonyMode || envVars.CLAUDE_AUTO_DEV_SYMPHONY_MODE),
   };
 
   const envOverrides = {
@@ -3330,6 +3337,7 @@ module.exports = {
   AUTO_DEV_DIR,
   STATE_FILE,
   AUTO_DEV_PROFILES,
+  AUTO_DEV_SYMPHONY_MODES: [...AUTO_DEV_SYMPHONY_MODES],
   resolveAutoDevRuntimeConfig,
   listAutoDevDocuments,
   analyzeAutoDevDocument,
@@ -3338,8 +3346,11 @@ module.exports = {
   runAutoDevPipeline,
   getAutoDevStatusSnapshot,
   loadState,
+  _testOnly_buildImplementationModelMeta: buildImplementationModelMeta,
   _testOnly_buildAutoDevChildEnv: buildAutoDevChildEnv,
+  _testOnly_evaluateDocumentPolicy: evaluateDocumentPolicy,
   _testOnly_extractAlarmIncidentContext: extractAlarmIncidentContext,
   _testOnly_formatAlarmRepairResultMessage: formatAlarmRepairResultMessage,
+  _testOnly_normalizeSymphonyMode: normalizeSymphonyMode,
   _testOnly_resolveScopedTestCommands: resolveScopedTestCommands,
 };
