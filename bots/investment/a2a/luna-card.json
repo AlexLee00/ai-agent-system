@@ -61,6 +61,30 @@
       "outputModes": ["application/json"]
     },
     {
+      "id": "rl-policy-shadow",
+      "name": "RL Policy Shadow",
+      "description": "FinRL/PPO 정책 추론을 Shadow Mode로 산출하고 기존 live 의사결정을 변경하지 않음",
+      "tags": ["finance", "rl", "ppo", "policy", "shadow", "a2a"],
+      "inputModes": ["application/json"],
+      "outputModes": ["application/json"]
+    },
+    {
+      "id": "policy-inference",
+      "name": "정책 추론 Shadow",
+      "description": "RL 정책 추론 결과를 Shadow Mode evidence로 반환하며 live 주문에는 반영하지 않음",
+      "tags": ["finance", "rl", "inference", "shadow"],
+      "inputModes": ["application/json"],
+      "outputModes": ["application/json"]
+    },
+    {
+      "id": "policy-update",
+      "name": "정책 업데이트 Shadow",
+      "description": "PPO 정책 업데이트 계획만 반환하고 학습/승격/배포는 수행하지 않음",
+      "tags": ["finance", "rl", "training", "shadow"],
+      "inputModes": ["application/json"],
+      "outputModes": ["application/json"]
+    },
+    {
       "id": "trade-signal-generation",
       "name": "매매 시그널 생성",
       "description": "Phase 2에서는 Entry Decision Shadow 결과를 반환하고 실제 시그널 생성은 수행하지 않음",

@@ -69,6 +69,12 @@ export function runLunaHooksSmoke() {
     }, { LUNA_HOOK_TEST_MODE: 'true', LUNA_HOOK_KILL_SWITCH_FILE: killSwitchPath });
     assert.equal(passStatArbShadow.status, 0, passStatArbShadow.stderr || passStatArbShadow.stdout);
 
+    const passRlPolicyShadow = runHook(PRE_HOOK, {
+      tool_name: 'Bash',
+      tool_input: { command: 'npm --prefix bots/investment run -s runtime:luna-rl-policy-shadow -- --json --limit=10 --max-inference-calls=0 --exchanges=binance,kis_overseas' },
+    }, { LUNA_HOOK_TEST_MODE: 'true', LUNA_HOOK_KILL_SWITCH_FILE: killSwitchPath });
+    assert.equal(passRlPolicyShadow.status, 0, passRlPolicyShadow.stderr || passRlPolicyShadow.stdout);
+
     writeFileSync(killSwitchPath, JSON.stringify({ active: true }), 'utf8');
     const dynamicTpSlReadonly = runHook(PRE_HOOK, {
       tool_name: 'Bash',
@@ -93,6 +99,12 @@ export function runLunaHooksSmoke() {
       tool_input: { command: 'npm --prefix bots/investment run -s runtime:luna-stat-arb-shadow -- --json --limit=5 --hours=24 --strategy=mean_reversion' },
     }, { LUNA_HOOK_TEST_MODE: 'true', LUNA_HOOK_KILL_SWITCH_FILE: killSwitchPath });
     assert.equal(statArbReadonly.status, 0, statArbReadonly.stderr || statArbReadonly.stdout);
+
+    const rlPolicyReadonly = runHook(PRE_HOOK, {
+      tool_name: 'Bash',
+      tool_input: { command: 'npm --prefix bots/investment run -s runtime:luna-rl-policy-shadow -- --json --limit=5 --hours=24 --max-inference-calls=0' },
+    }, { LUNA_HOOK_TEST_MODE: 'true', LUNA_HOOK_KILL_SWITCH_FILE: killSwitchPath });
+    assert.equal(rlPolicyReadonly.status, 0, rlPolicyReadonly.stderr || rlPolicyReadonly.stdout);
 
     const dynamicTpSlChainedBlocked = runHook(PRE_HOOK, {
       tool_name: 'Bash',
@@ -143,6 +155,13 @@ export function runLunaHooksSmoke() {
     assert.equal(statArbBlocked.status, 2, statArbBlocked.stderr || statArbBlocked.stdout);
     assert.match(`${statArbBlocked.stdout}\n${statArbBlocked.stderr}`, /Kill Switch|kill switch/i);
 
+    const rlPolicyBlocked = runHook(PRE_HOOK, {
+      tool_name: 'Bash',
+      tool_input: { command: 'npm --prefix bots/investment run -s runtime:luna-rl-policy-shadow -- --apply --confirm=luna-rl-policy-shadow --json' },
+    }, { LUNA_HOOK_TEST_MODE: 'true', LUNA_HOOK_KILL_SWITCH_FILE: killSwitchPath });
+    assert.equal(rlPolicyBlocked.status, 2, rlPolicyBlocked.stderr || rlPolicyBlocked.stdout);
+    assert.match(`${rlPolicyBlocked.stdout}\n${rlPolicyBlocked.stderr}`, /Kill Switch|kill switch/i);
+
     const post = runHook(POST_HOOK, {
       tool_name: 'Bash',
       tool_input: { command: 'npm --prefix bots/investment run -s smoke:luna-regime-llm' },
@@ -161,6 +180,7 @@ export function runLunaHooksSmoke() {
       metaReflexionShadowCommandChecked: true,
       factorModelShadowCommandChecked: true,
       statArbShadowCommandChecked: true,
+      rlPolicyShadowCommandChecked: true,
       dynamicTpSlChainedBlocked: true,
       postHookFailOpen: true,
     };

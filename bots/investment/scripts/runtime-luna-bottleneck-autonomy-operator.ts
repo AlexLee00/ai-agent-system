@@ -598,7 +598,19 @@ export async function runLunaBottleneckAutonomyOperatorSmoke() {
     && item.applyMode === 'confirm_required'
     && item.command.includes('--market=overseas')
     && item.command.includes(`--hours=${DEFAULT_HOURS}`)));
-  return { ok: true, report, transientBusReport, signalPersistenceReport, entryPrefilterReport, technicalRefreshReport };
+  return {
+    ok: true,
+    fixtureReport: {
+      ...report,
+      current: false,
+      fixture: true,
+      note: 'regression fixture only; do not treat as live operator state',
+    },
+    transientBusReport,
+    signalPersistenceReport,
+    entryPrefilterReport,
+    technicalRefreshReport,
+  };
 }
 
 async function main() {

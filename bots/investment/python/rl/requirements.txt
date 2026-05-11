@@ -1,0 +1,10 @@
+# Phase 7 FinRL/PPO optional dependencies.
+# The shadow scaffold does not require these packages for smoke tests.
+finrl
+stable-baselines3[extra]
+gymnasium
+torch
+numpy
+pandas
+fastapi
+uvicorn

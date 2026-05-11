@@ -19,7 +19,17 @@ export async function runLunaOpsMcpSmoke() {
   assert.equal(applyPlan.mode, 'read_only_plan');
   assert.equal(applyPlan.noLiveTradeExecution, true);
   assert.ok(applyPlan.safeFixCandidates.some((item) => item.id === 'repair_llm_hotpath_plan'));
-  return { ok: true, tools: toolNames, status, applyPlan };
+  return {
+    ok: true,
+    tools: toolNames,
+    fixtureStatus: {
+      ...status,
+      current: false,
+      fixture: true,
+      note: 'regression fixture only; do not treat as live operator state',
+    },
+    applyPlan,
+  };
 }
 
 async function main() {
