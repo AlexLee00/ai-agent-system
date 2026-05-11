@@ -2,6 +2,20 @@
 
 > Day별 테스트 통과/실패 누적 기록
 
+## 2026-05-11
+
+### Luna bottleneck position parity rate-limit guard
+
+| 테스트 | 결과 |
+|--------|------|
+| `npm --prefix bots/investment run -s runtime:agent-message-bus-hygiene -- --json` | ✅ `agent_message_bus_hygiene_clear`, stale 0 |
+| `npm --prefix bots/investment run -s runtime:marketdata-realtime-connectivity -- --json --no-fail` | ✅ `marketdata_realtime_connectivity_ready`, blockers 0 |
+| `npm --prefix bots/investment run -s runtime:position-parity -- --json` | ✅ crypto parity `mismatchCount=0`, cache 생성 |
+| `npm --prefix bots/investment run -s runtime:luna-live-fire-final-gate -- --json` | ✅ `luna_live_fire_final_gate_clear`, blockers 0 |
+| `npm --prefix bots/investment run -s runtime:luna-bottleneck-autonomy -- --json --publish-events --no-fail` | ✅ 재실행 기준 `luna_bottleneck_attention`, hard 0, safeFixes 0 |
+| `npm --prefix bots/investment run -s check:luna-bottleneck-autonomy` | ✅ 통과 |
+| `git diff --check` | ✅ 통과 |
+
 ## 2026-04-17
 
 ### Luna parallel ops 재점검 및 report 경로 확인

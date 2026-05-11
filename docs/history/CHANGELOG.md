@@ -3,6 +3,16 @@
 All notable changes to ai-agent-system will be documented in this file.
 Format based on [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/).
 
+## 2026-05-11 — Luna position parity rate-limit guard
+
+- `bots/investment/scripts/runtime-position-parity-report.ts`
+  - Binance REST `-1003`/418 request-weight ban을 감지해 retry 시각을 기록한다.
+  - 최신 parity 결과를 ops cache로 저장하고, rate-limit 중에는 허용 시간 안의 stale cache를 사용해 final gate가 반복 REST 조회로 막히지 않게 했다.
+- `bots/investment/scripts/runtime-position-parity-cache-smoke.ts`
+  - rate-limit 판정, retry 시각 파싱, stale cache payload 생성을 검증한다.
+- `bots/investment/package.json`
+  - `check:luna-bottleneck-autonomy`에 parity report/cache smoke 검사를 포함했다.
+
 ## 13주차 보안 검증 마감 (2026-04-17) — SEC-004/005 재검증 완료
 
 - `SEC-004`

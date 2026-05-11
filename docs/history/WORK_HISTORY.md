@@ -4,6 +4,14 @@
 > 상세 내용: `reservation-dev-summary.md` / `reservation-handoff.md`
 > 최초 작성: 2026-02-27
 
+## 2026-05-11: Luna bottleneck loop — position parity REST rate-limit guard
+
+- Luna bottleneck autonomy operator가 `position_parity_not_clear`로 hard blocked 된 상태를 확인했다.
+- `runtime-position-parity-report.ts`에 Binance REST `-1003`/418 rate-limit guard와 parity cache fallback을 추가했다.
+- `runtime-position-parity-cache-smoke.ts`를 추가하고 `check:luna-bottleneck-autonomy`에 연결했다.
+- `runtime:position-parity -- --json` 재실행 결과 crypto parity `mismatchCount=0`, final gate `luna_live_fire_final_gate_clear`.
+- 재실행한 bottleneck operator 결과: `luna_bottleneck_attention`, hard blockers 0, safeFixCandidates 0.
+
 ## 2026-05-09: Darwin CODEX-E — Phase E 센서 확장 완성 (98차 세션)
 
 - `Darwin.V2.Sensor.PapersWithCode` 신규 (PWC API, stars>=10 필터, 6h 폴링)

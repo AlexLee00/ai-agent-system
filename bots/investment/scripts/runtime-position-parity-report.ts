@@ -2,12 +2,21 @@
 // @ts-nocheck
 
 import ccxt from 'ccxt';
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import * as db from '../shared/db.ts';
 import { initHubSecrets, loadSecrets } from '../shared/secrets.ts';
 import { syncPositionsAtMarketOpen } from '../shared/position-sync.ts';
 import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
 
 const SUPPORTED_SYNC_MARKETS = ['domestic', 'overseas', 'crypto'];
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const OPS_DIR = path.resolve(__dirname, '../output/ops');
+const PARITY_CACHE_PATH = path.join(OPS_DIR, 'position-parity-report-cache.json');
+const BINANCE_REST_GUARD_PATH = path.join(OPS_DIR, 'binance-rest-rate-limit-guard.json');
+const DEFAULT_CACHE_MAX_AGE_MINUTES = 10;
+const DEFAULT_STALE_ON_RATE_LIMIT_MINUTES = 120;
 
 export function parseSyncMarkets(argv = []) {
   const raw = (argv.find((arg) => arg.startsWith('--markets=')) || '').split('=')[1] || 'crypto';
@@ -23,6 +32,135 @@ function parseArgs(argv = []) {
     sync: argv.includes('--sync'),
     markets: parseSyncMarkets(argv),
     limit: Math.max(1, Number((argv.find((arg) => arg.startsWith('--limit=')) || '').split('=')[1] || 20)),
+    noCache: argv.includes('--no-cache'),
+    forceRefresh: argv.includes('--force-refresh'),
+    maxCacheAgeMinutes: Math.max(0, Number((argv.find((arg) => arg.startsWith('--max-cache-age-minutes=')) || '').split('=')[1] || DEFAULT_CACHE_MAX_AGE_MINUTES)),
+    staleOnRateLimitMinutes: Math.max(0, Number((argv.find((arg) => arg.startsWith('--stale-on-rate-limit-minutes=')) || '').split('=')[1] || DEFAULT_STALE_ON_RATE_LIMIT_MINUTES)),
+  };
+}
+
+function ensureOpsDir() {
+  fs.mkdirSync(OPS_DIR, { recursive: true });
+}
+
+function readJsonFile(filePath) {
+  try {
+    return JSON.parse(fs.readFileSync(filePath, 'utf8'));
+  } catch {
+    return null;
+  }
+}
+
+function writeJsonFile(filePath, payload) {
+  ensureOpsDir();
+  fs.writeFileSync(filePath, `${JSON.stringify(payload, null, 2)}\n`);
+}
+
+function ageMinutes(iso) {
+  const time = Date.parse(iso || '');
+  if (!Number.isFinite(time)) return Infinity;
+  return (Date.now() - time) / 60000;
+}
+
+export function readParityCache({ maxAgeMinutes = DEFAULT_CACHE_MAX_AGE_MINUTES } = {}) {
+  const cached = readJsonFile(PARITY_CACHE_PATH);
+  if (!cached?.scannedAt) return null;
+  const age = ageMinutes(cached.scannedAt);
+  if (age > Number(maxAgeMinutes || 0)) return null;
+  return {
+    ...cached,
+    cache: {
+      ...(cached.cache || {}),
+      hit: true,
+      ageMinutes: Math.round(age * 100) / 100,
+      path: PARITY_CACHE_PATH,
+    },
+  };
+}
+
+function readAnyParityCache() {
+  const cached = readJsonFile(PARITY_CACHE_PATH);
+  if (!cached?.scannedAt) return null;
+  return {
+    ...cached,
+    cache: {
+      ...(cached.cache || {}),
+      hit: true,
+      stale: true,
+      ageMinutes: Math.round(ageMinutes(cached.scannedAt) * 100) / 100,
+      path: PARITY_CACHE_PATH,
+    },
+  };
+}
+
+export function parseBinanceRetryAt(error) {
+  const text = [
+    error?.message,
+    error?.body,
+    error?.response,
+    error?.stack,
+  ].filter(Boolean).join(' ');
+  const direct = text.match(/banned until (\d{10,})/i)?.[1];
+  if (direct) return Number(direct);
+  const json = text.match(/"code"\s*:\s*-1003[\s\S]*?"msg"\s*:\s*"([^"]+)"/);
+  const fromJson = json?.[1]?.match(/until (\d{10,})/i)?.[1];
+  return fromJson ? Number(fromJson) : null;
+}
+
+export function isBinanceRateLimited(error) {
+  const text = String(error?.message || error?.body || error || '');
+  return Number(error?.status || error?.httpStatus || 0) === 418
+    || Number(error?.code || 0) === -1003
+    || /Way too much request weight|IP banned|-1003|418 I'm a teapot/i.test(text);
+}
+
+function writeBinanceRateLimitGuard(error) {
+  const retryAtMs = parseBinanceRetryAt(error);
+  const payload = {
+    ok: false,
+    status: 'binance_rest_rate_limited',
+    checkedAt: new Date().toISOString(),
+    retryAt: retryAtMs ? new Date(retryAtMs).toISOString() : null,
+    retryAtMs,
+    message: String(error?.message || error || ''),
+  };
+  writeJsonFile(BINANCE_REST_GUARD_PATH, payload);
+  return payload;
+}
+
+export function readBinanceRateLimitGuard() {
+  const guard = readJsonFile(BINANCE_REST_GUARD_PATH);
+  if (!guard?.retryAtMs) return null;
+  if (Number(guard.retryAtMs) <= Date.now()) return null;
+  return guard;
+}
+
+function withCacheMeta(payload, meta = {}) {
+  return {
+    ...payload,
+    cache: {
+      ...(payload.cache || {}),
+      ...meta,
+      path: PARITY_CACHE_PATH,
+    },
+  };
+}
+
+export function buildRateLimitedPayload({ guard, cached = null }) {
+  return {
+    ok: false,
+    status: 'binance_rest_rate_limited',
+    scannedAt: new Date().toISOString(),
+    summary: null,
+    rows: [],
+    rateLimit: {
+      guarded: true,
+      retryAt: guard?.retryAt || null,
+      retryAtMs: guard?.retryAtMs || null,
+      message: guard?.message || null,
+    },
+    cache: cached?.cache || null,
+    paperPositionCount: null,
   };
 }
 
@@ -213,6 +351,56 @@ async function main() {
   await db.initSchema();
   await initHubSecrets().catch(() => false);
 
+  const freshCache = !args.noCache && !args.forceRefresh
+    ? readParityCache({ maxAgeMinutes: args.maxCacheAgeMinutes })
+    : null;
+  if (freshCache && !args.sync) {
+    const payload = withCacheMeta(freshCache, {
+      source: 'position_parity_cache',
+      maxAgeMinutes: args.maxCacheAgeMinutes,
+    });
+    if (args.json) {
+      console.log(JSON.stringify(payload, null, 2));
+      return;
+    }
+    console.log('\n=== Binance Position Parity ===\n');
+    console.log(`cache=hit age=${payload.cache.ageMinutes}m path=${payload.cache.path}`);
+    console.log(`symbols=${payload.summary?.totalSymbols ?? 0} ok=${payload.summary?.ok ?? 0} qty_mismatch=${payload.summary?.quantityMismatch ?? 0} pnl_mismatch=${payload.summary?.pnlMismatch ?? 0} wallet_journal_only=${payload.summary?.walletJournalOnly ?? 0} wallet_journal_dust=${payload.summary?.walletJournalDust ?? 0} wallet_only=${payload.summary?.walletOnly ?? 0} wallet_only_dust=${payload.summary?.walletOnlyDust ?? 0} db_only=${payload.summary?.dbOnly ?? 0}`);
+    return;
+  }
+
+  const activeRateLimitGuard = readBinanceRateLimitGuard();
+  if (activeRateLimitGuard && !args.forceRefresh) {
+    const staleCache = !args.noCache ? readAnyParityCache() : null;
+    if (staleCache && ageMinutes(staleCache.scannedAt) <= args.staleOnRateLimitMinutes) {
+      const payload = withCacheMeta(staleCache, {
+        source: 'position_parity_stale_cache_due_to_binance_rate_limit',
+        maxAgeMinutes: args.maxCacheAgeMinutes,
+        staleOnRateLimitMinutes: args.staleOnRateLimitMinutes,
+        rateLimitGuarded: true,
+      });
+      payload.rateLimit = {
+        guarded: true,
+        retryAt: activeRateLimitGuard.retryAt || null,
+        retryAtMs: activeRateLimitGuard.retryAtMs || null,
+        message: activeRateLimitGuard.message || null,
+      };
+      if (args.json) {
+        console.log(JSON.stringify(payload, null, 2));
+        return;
+      }
+      console.log('\n=== Binance Position Parity ===\n');
+      console.log(`cache=stale_due_to_rate_limit age=${payload.cache.ageMinutes}m retryAt=${payload.rateLimit.retryAt || 'unknown'}`);
+      console.log(`symbols=${payload.summary?.totalSymbols ?? 0} ok=${payload.summary?.ok ?? 0} qty_mismatch=${payload.summary?.quantityMismatch ?? 0} pnl_mismatch=${payload.summary?.pnlMismatch ?? 0} wallet_journal_only=${payload.summary?.walletJournalOnly ?? 0} wallet_journal_dust=${payload.summary?.walletJournalDust ?? 0} wallet_only=${payload.summary?.walletOnly ?? 0} wallet_only_dust=${payload.summary?.walletOnlyDust ?? 0} db_only=${payload.summary?.dbOnly ?? 0}`);
+      return;
+    }
+    const payload = buildRateLimitedPayload({ guard: activeRateLimitGuard, cached: staleCache });
+    if (args.json) console.log(JSON.stringify(payload, null, 2));
+    else console.log(`Binance REST rate limited until ${payload.rateLimit.retryAt || 'unknown'}`);
+    process.exitCode = 1;
+    return;
+  }
+
   let syncResults = [];
   if (args.sync) {
     syncResults = await Promise.all(args.markets.map(async (market) => syncPositionsAtMarketOpen(market).catch((error) => ({
@@ -222,37 +410,73 @@ async function main() {
     }))));
   }
 
-  const exchange = getExchange();
-  await exchange.loadMarkets();
+  let payload;
+  try {
+    const exchange = getExchange();
+    await exchange.loadMarkets();
 
-  const [dbRows, walletMap, journalMap] = await Promise.all([
-    db.getAllPositions('binance', false).catch(() => []),
-    fetchWalletMap(exchange),
-    fetchOpenJournalMap(),
-  ]);
-  const liveRows = dbRows.filter((row) => String(row.exchange || '') === 'binance' && row.paper !== true);
-  const dbMap = groupLivePositions(liveRows);
-  const tickerMap = await fetchTickerMap(exchange, [...new Set([
-    ...walletMap.keys(),
-    ...dbMap.keys(),
-    ...journalMap.keys(),
-  ])]);
+    const [dbRows, walletMap, journalMap] = await Promise.all([
+      db.getAllPositions('binance', false).catch(() => []),
+      fetchWalletMap(exchange),
+      fetchOpenJournalMap(),
+    ]);
+    const liveRows = dbRows.filter((row) => String(row.exchange || '') === 'binance' && row.paper !== true);
+    const dbMap = groupLivePositions(liveRows);
+    const tickerMap = await fetchTickerMap(exchange, [...new Set([
+      ...walletMap.keys(),
+      ...dbMap.keys(),
+      ...journalMap.keys(),
+    ])]);
 
-  const rows = buildParityRows({ walletMap, dbMap, journalMap, tickerMap });
-  const summary = summarize(rows);
-  const topRows = rows
-    .filter((row) => !['ok', 'wallet_journal_dust', 'wallet_only_dust'].includes(row.class))
-    .sort((a, b) => Math.abs(b.walletValue || 0) - Math.abs(a.walletValue || 0))
-    .slice(0, args.limit);
+    const rows = buildParityRows({ walletMap, dbMap, journalMap, tickerMap });
+    const summary = summarize(rows);
+    const topRows = rows
+      .filter((row) => !['ok', 'wallet_journal_dust', 'wallet_only_dust'].includes(row.class))
+      .sort((a, b) => Math.abs(b.walletValue || 0) - Math.abs(a.walletValue || 0))
+      .slice(0, args.limit);
 
-  const payload = {
-    scannedAt: new Date().toISOString(),
-    syncResult: syncResults.find((item) => item?.market === 'crypto') || null,
-    syncResults,
-    summary,
-    rows: topRows,
-    paperPositionCount: dbRows.filter((row) => row.paper === true).length,
-  };
+    payload = {
+      scannedAt: new Date().toISOString(),
+      syncResult: syncResults.find((item) => item?.market === 'crypto') || null,
+      syncResults,
+      summary,
+      rows: topRows,
+      paperPositionCount: dbRows.filter((row) => row.paper === true).length,
+      cache: {
+        hit: false,
+        path: PARITY_CACHE_PATH,
+        maxAgeMinutes: args.maxCacheAgeMinutes,
+      },
+    };
+    writeJsonFile(PARITY_CACHE_PATH, payload);
+  } catch (error) {
+    if (isBinanceRateLimited(error)) {
+      const guard = writeBinanceRateLimitGuard(error);
+      const staleCache = !args.noCache ? readAnyParityCache() : null;
+      if (staleCache && ageMinutes(staleCache.scannedAt) <= args.staleOnRateLimitMinutes) {
+        payload = withCacheMeta(staleCache, {
+          source: 'position_parity_stale_cache_due_to_binance_rate_limit',
+          maxAgeMinutes: args.maxCacheAgeMinutes,
+          staleOnRateLimitMinutes: args.staleOnRateLimitMinutes,
+          rateLimitGuarded: true,
+        });
+        payload.rateLimit = {
+          guarded: true,
+          retryAt: guard.retryAt || null,
+          retryAtMs: guard.retryAtMs || null,
+          message: guard.message || null,
+        };
+      } else {
+        payload = buildRateLimitedPayload({ guard, cached: staleCache });
+        if (args.json) console.log(JSON.stringify(payload, null, 2));
+        else console.log(`Binance REST rate limited until ${payload.rateLimit.retryAt || 'unknown'}`);
+        process.exitCode = 1;
+        return;
+      }
+    } else {
+      throw error;
+    }
+  }
 
   if (args.json) {
     console.log(JSON.stringify(payload, null, 2));
