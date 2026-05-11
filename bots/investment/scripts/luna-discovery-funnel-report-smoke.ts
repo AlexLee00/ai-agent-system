@@ -18,6 +18,7 @@ import {
   classifyCoverageBottlenecksForMarket,
   filterEntryDecisionDiagnosticsForOpenPositions,
   getRequiredAnalystsForMarket,
+  shouldReportDispatchIdleWithoutEntryEvidence,
   summarizeRecentEntryTriggerPipelineEvidence,
 } from './runtime-luna-discovery-funnel-report.ts';
 import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
@@ -142,6 +143,60 @@ export async function runLunaDiscoveryFunnelReportSmoke() {
       idleWithActiveTrigger.recommendations.includes('dispatch_idle_no_candidates_in_window'),
       false,
       'dispatch idle should not be reported when active entry-trigger evidence is already present',
+    );
+
+    await db.run(`DELETE FROM entry_triggers WHERE symbol = $1`, [symbol]);
+    const idleHistoryWithCandidateOnlyFile = path.join(dir, 'idle-history-with-candidate-only.jsonl');
+    fs.writeFileSync(idleHistoryWithCandidateOnlyFile, `${JSON.stringify({
+      recordedAt: new Date().toISOString(),
+      status: 'position_runtime_autopilot_executed',
+      dispatchCandidateCount: 0,
+      dispatchExecutedCount: 0,
+      dispatchQueuedCount: 0,
+      dispatchRetryingCount: 0,
+      dispatchSkippedCount: 0,
+      dispatchFailureCount: 0,
+      dispatchMarketQueue: { total: 0, waitingMarketOpen: 0 },
+    })}\n`);
+    const idleWithCandidateOnly = await buildLunaDiscoveryFunnelReport({
+      hours: 1,
+      market: 'crypto',
+      historyFile: idleHistoryWithCandidateOnlyFile,
+    });
+    const candidateOnlyCrypto = idleWithCandidateOnly.markets.find((item) => item.market === 'crypto');
+    assert.ok(candidateOnlyCrypto.candidateUniverse.activeCount >= 1, 'candidate-only fixture should still expose an active universe');
+    assert.equal(
+      idleWithCandidateOnly.recommendations.includes('dispatch_idle_no_candidates_in_window'),
+      false,
+      'dispatch idle should not be reported when candidates exist but no entry trigger is active yet',
+    );
+    assert.equal(
+      shouldReportDispatchIdleWithoutEntryEvidence({
+        autopilotSamples: 1,
+        candidateTotal: 1,
+        autopilotCandidateCount: 0,
+        autopilotMarketQueueTotal: 0,
+        activeTriggerTotal: 0,
+        actionableWaitingTotal: 0,
+        relaxedProbeReadyTotal: 0,
+        signalPersistenceGapActionableTotal: 0,
+      }),
+      false,
+      'dispatch idle classifier should require a truly empty candidate universe',
+    );
+    assert.equal(
+      shouldReportDispatchIdleWithoutEntryEvidence({
+        autopilotSamples: 1,
+        candidateTotal: 0,
+        autopilotCandidateCount: 0,
+        autopilotMarketQueueTotal: 0,
+        activeTriggerTotal: 0,
+        actionableWaitingTotal: 0,
+        relaxedProbeReadyTotal: 0,
+        signalPersistenceGapActionableTotal: 0,
+      }),
+      true,
+      'dispatch idle classifier should still flag a fully idle empty-candidate window',
     );
 
     const filteredDecisionScope = filterEntryDecisionDiagnosticsForOpenPositions([

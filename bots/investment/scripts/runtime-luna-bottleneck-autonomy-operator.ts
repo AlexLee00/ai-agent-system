@@ -446,6 +446,16 @@ export function buildLunaBottleneckAutonomyFixtureReport() {
   });
 }
 
+function markFixtureScenario(report = {}, name = 'fixture_scenario') {
+  return {
+    ...report,
+    current: false,
+    fixture: true,
+    fixtureScenario: name,
+    note: 'regression fixture only; do not treat as live operator state',
+  };
+}
+
 export async function runLunaBottleneckAutonomyOperatorSmoke() {
   const report = buildLunaBottleneckAutonomyFixtureReport();
   assert.equal(report.ok, false);
@@ -600,16 +610,11 @@ export async function runLunaBottleneckAutonomyOperatorSmoke() {
     && item.command.includes(`--hours=${DEFAULT_HOURS}`)));
   return {
     ok: true,
-    fixtureReport: {
-      ...report,
-      current: false,
-      fixture: true,
-      note: 'regression fixture only; do not treat as live operator state',
-    },
-    transientBusReport,
-    signalPersistenceReport,
-    entryPrefilterReport,
-    technicalRefreshReport,
+    fixtureReport: markFixtureScenario(report, 'hard_blocked_regression'),
+    transientBusReport: markFixtureScenario(transientBusReport, 'transient_bus_warning_regression'),
+    signalPersistenceReport: markFixtureScenario(signalPersistenceReport, 'signal_persistence_gap_regression'),
+    entryPrefilterReport: markFixtureScenario(entryPrefilterReport, 'entry_prefilter_gap_regression'),
+    technicalRefreshReport: markFixtureScenario(technicalRefreshReport, 'technical_refresh_gap_regression'),
   };
 }
 

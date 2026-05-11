@@ -65,6 +65,26 @@ function number(value, fallback = 0) {
   return Number.isFinite(n) ? n : fallback;
 }
 
+export function shouldReportDispatchIdleWithoutEntryEvidence({
+  autopilotSamples = 0,
+  candidateTotal = 0,
+  autopilotCandidateCount = 0,
+  autopilotMarketQueueTotal = 0,
+  activeTriggerTotal = 0,
+  actionableWaitingTotal = 0,
+  relaxedProbeReadyTotal = 0,
+  signalPersistenceGapActionableTotal = 0,
+} = {}) {
+  return number(autopilotSamples) > 0
+    && number(candidateTotal) === 0
+    && number(autopilotCandidateCount) === 0
+    && number(autopilotMarketQueueTotal) === 0
+    && number(activeTriggerTotal) === 0
+    && number(actionableWaitingTotal) === 0
+    && number(relaxedProbeReadyTotal) === 0
+    && number(signalPersistenceGapActionableTotal) === 0;
+}
+
 function parseJsonObject(value) {
   if (!value) return {};
   if (typeof value === 'object') return value;
@@ -1296,13 +1316,16 @@ export async function buildLunaDiscoveryFunnelReport({
     recommendations.push('candidate_to_entry_trigger_funnel_needs_review');
   }
   if (autopilot.totals.samples === 0) recommendations.push('runtime_autopilot_history_missing');
-  const dispatchIdleWithoutEntryEvidence = autopilot.totals.samples > 0
-    && autopilot.totals.candidateCount === 0
-    && autopilot.totals.marketQueueTotal === 0
-    && activeTriggerTotal === 0
-    && actionableWaitingTotal === 0
-    && relaxedProbeReadyTotal === 0
-    && signalPersistenceGapActionableTotal === 0;
+  const dispatchIdleWithoutEntryEvidence = shouldReportDispatchIdleWithoutEntryEvidence({
+    autopilotSamples: autopilot.totals.samples,
+    candidateTotal,
+    autopilotCandidateCount: autopilot.totals.candidateCount,
+    autopilotMarketQueueTotal: autopilot.totals.marketQueueTotal,
+    activeTriggerTotal,
+    actionableWaitingTotal,
+    relaxedProbeReadyTotal,
+    signalPersistenceGapActionableTotal,
+  });
   if (dispatchIdleWithoutEntryEvidence) recommendations.push('dispatch_idle_no_candidates_in_window');
   return {
     ok: true,
