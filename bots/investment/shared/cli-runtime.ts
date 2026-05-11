@@ -33,7 +33,9 @@ export async function runCliMain({
     if (typeof onSuccess === 'function') {
       await onSuccess(result);
     }
-    process.exit(0);
+    const exitCodeRaw = process.exitCode;
+    const exitCode = exitCodeRaw == null ? 0 : Number(exitCodeRaw);
+    process.exit(Number.isFinite(exitCode) ? exitCode : 0);
   } catch (error) {
     if (typeof onError === 'function') {
       await onError(error);
