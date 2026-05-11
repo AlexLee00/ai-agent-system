@@ -10,15 +10,23 @@ async function runSmoke() {
   await db.initSchema();
   const incidentPrefix = `bus-hygiene-smoke-${Date.now()}`;
   const incidentKey = `${incidentPrefix}:1`;
+  const syntheticIncidentKey = `${incidentPrefix}:synthetic-hermes`;
   await db.run(
     `INSERT INTO investment.agent_messages
        (from_agent, to_agent, incident_key, message_type, payload, created_at)
      VALUES ($1,$2,$3,$4,$5::jsonb,NOW() - INTERVAL '30 hours')`,
     ['argos', 'sophia', incidentKey, 'query', JSON.stringify({ smoke: true })],
   );
+  await db.run(
+    `INSERT INTO investment.agent_messages
+       (from_agent, to_agent, incident_key, message_type, payload, created_at)
+     VALUES ($1,$2,$3,$4,$5::jsonb,NOW() - INTERVAL '30 hours')`,
+    ['argos', 'hermes', syntheticIncidentKey, 'query', JSON.stringify({ smoke: true, type: 'strategy_context' })],
+  );
 
   const before = await getMessageBusHygiene({ staleHours: 1, limit: 20 });
   assert.ok(before.staleCount >= 1, 'stale message detected');
+  assert.ok(!before.rows.some((row) => row.to_agent === 'hermes'), 'synthetic hermes strategy_context should be excluded from hygiene');
 
   const dry = await expireStaleAgentMessages({ staleHours: 1, incidentKeyPrefix: incidentPrefix, dryRun: true });
   assert.equal(dry.expired, 0, 'dry run does not expire');

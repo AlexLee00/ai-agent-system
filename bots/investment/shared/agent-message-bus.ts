@@ -275,6 +275,12 @@ export async function getMessageBusHygiene(opts: { staleHours?: number; limit?: 
        FROM investment.agent_messages
        WHERE responded_at IS NULL
          AND message_type IN ('query', 'broadcast')
+         AND NOT (
+           LOWER(to_agent) = 'hermes'
+           AND message_type = 'query'
+           AND COALESCE(payload->>'type', '') = 'strategy_context'
+           AND COALESCE(payload->>'smoke', 'false') = 'true'
+         )
          AND created_at < NOW() - ($1::int * INTERVAL '1 hour')
        GROUP BY to_agent, message_type
        ORDER BY stale_count DESC, oldest_created_at ASC
@@ -324,6 +330,12 @@ export async function expireStaleAgentMessages(opts: {
        FROM investment.agent_messages
        WHERE responded_at IS NULL
          AND message_type IN ('query', 'broadcast')
+         AND NOT (
+           LOWER(to_agent) = 'hermes'
+           AND message_type = 'query'
+           AND COALESCE(payload->>'type', '') = 'strategy_context'
+           AND COALESCE(payload->>'smoke', 'false') = 'true'
+         )
          AND created_at < NOW() - ($1::int * INTERVAL '1 hour')
          ${incidentFilter}
          ${safeOnlyFilter}
