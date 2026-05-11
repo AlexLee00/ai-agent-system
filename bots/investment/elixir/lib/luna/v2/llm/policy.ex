@@ -20,6 +20,7 @@ defmodule Luna.V2.LLM.Policy do
     "luna.principle.critique"    => %{route: :anthropic_opus,   fallback: [:anthropic_sonnet]},
     "luna.mapek.analyzer"        => %{route: :anthropic_haiku,  fallback: [:anthropic_sonnet]},
     "luna.strategy.validator"    => %{route: :anthropic_haiku,  fallback: [:anthropic_sonnet]},
+    "luna.regime.analyzer"       => %{route: :anthropic_haiku,  fallback: [:anthropic_sonnet]},
   }
 
   @agent_affinity %{
@@ -32,6 +33,7 @@ defmodule Luna.V2.LLM.Policy do
     "luna.principle.critique"     => %{anthropic_opus: 1.0, anthropic_sonnet: 0.8},
     "luna.mapek.analyzer"         => %{anthropic_haiku: 1.0, anthropic_sonnet: 0.7},
     "luna.strategy.validator"     => %{anthropic_haiku: 1.0, anthropic_sonnet: 0.8},
+    "luna.regime.analyzer"        => %{anthropic_haiku: 1.0, anthropic_sonnet: 0.7},
   }
 
   @impl true
