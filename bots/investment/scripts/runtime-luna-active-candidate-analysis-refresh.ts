@@ -8,7 +8,7 @@ import { investmentOpsRuntimeFile } from '../shared/runtime-ops-path.ts';
 import { runMarketCollectPipeline } from '../shared/pipeline-market-runner.ts';
 import { finishPipelineRun } from '../shared/pipeline-db.ts';
 import { buildLunaDecisionFilterReport } from './runtime-luna-decision-filter-report.ts';
-import { buildDailyTechnicalCoverage } from './runtime-luna-discovery-funnel-report.ts';
+import { buildDailyTechnicalCoverage, buildLunaDiscoveryFunnelReport } from './runtime-luna-discovery-funnel-report.ts';
 import { buildStockIntradayLlmPolicyMeta, isStockIntradayEnrichmentEnabled } from '../shared/stock-intraday-llm-policy.ts';
 import { extractCryptoTechnicalEvidence } from '../shared/luna-conservative-relaxation-policy.ts';
 
@@ -108,6 +108,12 @@ function positiveIntOrNull(value) {
   const parsed = Number(value);
   if (!Number.isFinite(parsed) || parsed <= 0) return null;
   return Math.floor(parsed);
+}
+
+function nonNegativeNumberOrFallback(value, fallback = 0) {
+  if (value == null || value === '') return Math.max(0, Number(fallback || 0));
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? Math.max(0, parsed) : Math.max(0, Number(fallback || 0));
 }
 
 function missingEnrichmentNodeIds(item = {}, { exchange: exchangeOverride = null, env = process.env } = {}) {
@@ -554,6 +560,128 @@ export function buildActiveCandidateAnalysisRefreshPlan({
   };
 }
 
+function isPreopenMarketFlowPending(marketReport = {}) {
+  if (marketReport?.preopenReadiness?.active !== true) return false;
+  const pending = [
+    ...(marketReport?.preopenReadiness?.pending || []),
+    ...(marketReport?.observations || []),
+  ];
+  return pending.some((code) => String(code || '').includes('preopen_market_flow_analysis_missing_for_candidates'));
+}
+
+function discoveryTopSymbols(marketReport = {}) {
+  return (marketReport?.candidateUniverse?.top || [])
+    .map((item) => String(item?.symbol || '').trim().toUpperCase())
+    .filter(Boolean);
+}
+
+function bullishDailySymbols(marketReport = {}) {
+  return new Set((marketReport?.analysisCoverage?.dailyTechnicalCoverage?.rows || [])
+    .filter((row) => row?.ok === true || String(row?.reason || '').toLowerCase().includes('bullish'))
+    .map((row) => String(row?.symbol || '').trim().toUpperCase())
+    .filter(Boolean));
+}
+
+export function buildPreopenMarketFlowRefreshPlan({
+  marketReport = {},
+  state = {},
+  now = new Date(),
+  maxSymbols = 2,
+  cooldownMinutes = DEFAULT_TARGETED_ENRICHMENT_COOLDOWN_MINUTES,
+  exchange = null,
+} = {}) {
+  if (!isPreopenMarketFlowPending(marketReport)) {
+    return {
+      ok: true,
+      enabled: false,
+      status: 'preopen_market_flow_refresh_not_needed',
+      selected: [],
+      selectedSymbols: [],
+      nodeIds: [],
+      skippedCooldown: [],
+    };
+  }
+  const missing = (marketReport?.analysisCoverage?.required?.missingByAnalyst?.market_flow || [])
+    .map((symbol) => String(symbol || '').trim().toUpperCase())
+    .filter(Boolean);
+  const top = discoveryTopSymbols(marketReport);
+  const rank = new Map(top.map((symbol, index) => [symbol, index]));
+  const bullish = bullishDailySymbols(marketReport);
+  const candidateSymbols = (missing.length > 0 ? missing : top)
+    .filter((symbol, index, arr) => arr.indexOf(symbol) === index)
+    .sort((a, b) => (rank.get(a) ?? 9999) - (rank.get(b) ?? 9999));
+  const preferredSymbols = bullish.size > 0
+    ? candidateSymbols.filter((symbol) => bullish.has(symbol))
+    : candidateSymbols;
+  const fallbackSymbols = preferredSymbols.length > 0 ? preferredSymbols : candidateSymbols;
+  const attempts = state?.symbols || {};
+  const cooldownMs = Math.max(1, Number(cooldownMinutes || DEFAULT_TARGETED_ENRICHMENT_COOLDOWN_MINUTES)) * 60 * 1000;
+  const selected = [];
+  const skippedCooldown = [];
+  const limit = Math.max(0, Number(maxSymbols || 0));
+  if (limit <= 0) {
+    return {
+      ok: true,
+      enabled: false,
+      status: 'preopen_market_flow_refresh_disabled_by_cap',
+      selected: [],
+      selectedSymbols: [],
+      nodeIds: [],
+      skippedCooldown: [],
+      missingSymbols: candidateSymbols,
+      preferredSymbols,
+      pending: marketReport?.preopenReadiness?.pending || [],
+      nextOpen: marketReport?.preopenReadiness?.nextOpen || null,
+      minutesUntilOpen: marketReport?.preopenReadiness?.minutesUntilOpen ?? null,
+      maxSymbols: 0,
+      cooldownMinutes: Math.max(1, Number(cooldownMinutes || DEFAULT_TARGETED_ENRICHMENT_COOLDOWN_MINUTES)),
+    };
+  }
+  for (const symbol of fallbackSymbols) {
+    const key = exchange ? `${exchange}:preopen_market_flow:${symbol}` : `preopen_market_flow:${symbol}`;
+    const attempt = attempts?.[key] || null;
+    const lastAttemptAt = attempt?.lastAttemptAt || null;
+    const ageMs = lastAttemptAt ? now.getTime() - new Date(lastAttemptAt).getTime() : Infinity;
+    if (Number.isFinite(ageMs) && ageMs >= 0 && ageMs < cooldownMs) {
+      skippedCooldown.push({
+        symbol,
+        lastAttemptAt,
+        nextEligibleAt: new Date(new Date(lastAttemptAt).getTime() + cooldownMs).toISOString(),
+      });
+      continue;
+    }
+    if (selected.length < limit) selected.push(symbol);
+    if (selected.length >= limit) break;
+  }
+  return {
+    ok: true,
+    enabled: true,
+    status: selected.length > 0
+      ? 'preopen_market_flow_refresh_needed'
+      : fallbackSymbols.length > 0
+        ? 'preopen_market_flow_refresh_cooldown'
+        : 'preopen_market_flow_refresh_no_symbols',
+    selected,
+    selectedSymbols: selected,
+    nodeIds: selected.length > 0 ? ['L04'] : [],
+    skippedCooldown,
+    missingSymbols: candidateSymbols,
+    preferredSymbols,
+    pending: marketReport?.preopenReadiness?.pending || [],
+    nextOpen: marketReport?.preopenReadiness?.nextOpen || null,
+    minutesUntilOpen: marketReport?.preopenReadiness?.minutesUntilOpen ?? null,
+    maxSymbols: limit,
+    cooldownMinutes: Math.max(1, Number(cooldownMinutes || DEFAULT_TARGETED_ENRICHMENT_COOLDOWN_MINUTES)),
+  };
+}
+
+function combineRefreshStatus(plan = {}, preopenMarketFlow = {}) {
+  if ((plan.selected || []).length > 0 || (plan.targetedEnrichment?.selected || []).length > 0) return plan.status;
+  if ((preopenMarketFlow.selected || []).length > 0) return 'active_candidate_preopen_market_flow_refresh_needed';
+  if ((preopenMarketFlow.skippedCooldown || []).length > 0) return 'active_candidate_preopen_market_flow_refresh_cooldown';
+  return plan.status;
+}
+
 function updateAttemptState(state = {}, symbols = [], result = {}, now = new Date(), { exchange = null, purpose = 'analysis' } = {}) {
   const next = {
     ...(state || {}),
@@ -613,6 +741,7 @@ export async function runActiveCandidateAnalysisRefresh({
   reportBuilder = buildLunaDecisionFilterReport,
   collectRunner = runMarketCollectPipeline,
   finishRun = finishPipelineRun,
+  discoveryReportBuilder = buildLunaDiscoveryFunnelReport,
   now = new Date(),
 } = {}) {
   const normalizedMarket = normalizeMarket(market);
@@ -703,17 +832,57 @@ export async function runActiveCandidateAnalysisRefresh({
     exchange: resolvedExchange,
     env,
   });
+  let preopenMarketFlow = {
+    ok: true,
+    enabled: false,
+    status: 'preopen_market_flow_refresh_not_checked',
+    selected: [],
+    selectedSymbols: [],
+    nodeIds: [],
+    skippedCooldown: [],
+  };
+  if (
+    isStockExchange(resolvedExchange)
+    && plan.selected.length === 0
+    && plan.targetedEnrichment.selected.length === 0
+  ) {
+    const discoveryReport = await discoveryReportBuilder({
+      market: normalizedMarket,
+      hours: Math.max(Number(hours || 0), 6),
+    }).catch((error) => ({
+      ok: false,
+      status: 'luna_discovery_funnel_unavailable',
+      error: error?.message || String(error),
+      markets: [],
+    }));
+    const marketReport = (discoveryReport?.markets || []).find((item) => item?.market === normalizedMarket)
+      || discoveryReport?.markets?.[0]
+      || {};
+    preopenMarketFlow = buildPreopenMarketFlowRefreshPlan({
+      marketReport,
+      state,
+      now,
+      maxSymbols: nonNegativeNumberOrFallback(
+        maxEnrichmentSymbols == null || maxEnrichmentSymbols === '' ? resolvedMaxSymbols : maxEnrichmentSymbols,
+        resolvedMaxSymbols,
+      ),
+      cooldownMinutes: targetedCooldownMinutes,
+      exchange: resolvedExchange,
+    });
+  }
+  const effectivePlan = { ...plan, preopenMarketFlow };
+  const effectiveStatus = combineRefreshStatus(plan, preopenMarketFlow);
 
   if (!apply) {
     return {
       ok: true,
-      status: plan.status,
+      status: effectiveStatus,
       dryRun: true,
       applied: false,
       market: normalizedMarket,
       exchange: resolvedExchange,
       statePath,
-      plan,
+      plan: effectivePlan,
       report: {
         status: report.status,
         activeCandidateCoverage: report.activeCandidateCoverage,
@@ -738,20 +907,20 @@ export async function runActiveCandidateAnalysisRefresh({
       dryRun: false,
       applied: false,
       confirmRequired: CONFIRM,
-      plan,
+      plan: effectivePlan,
     };
   }
 
-  if (plan.selected.length === 0 && plan.targetedEnrichment.selected.length === 0) {
+  if (plan.selected.length === 0 && plan.targetedEnrichment.selected.length === 0 && preopenMarketFlow.selected.length === 0) {
     return {
       ok: true,
-      status: plan.status,
+      status: effectiveStatus,
       dryRun: false,
       applied: false,
       market: normalizedMarket,
       exchange: resolvedExchange,
       statePath,
-      plan,
+      plan: effectivePlan,
     };
   }
 
@@ -763,7 +932,9 @@ export async function runActiveCandidateAnalysisRefresh({
       symbols,
       triggerType: purpose === 'targeted_enrichment'
         ? 'active_candidate_targeted_enrichment'
-        : 'active_candidate_analysis_refresh',
+        : purpose === 'preopen_market_flow'
+          ? 'preopen_market_flow_refresh'
+          : 'active_candidate_analysis_refresh',
       meta,
       universeMeta,
     });
@@ -850,10 +1021,44 @@ export async function runActiveCandidateAnalysisRefresh({
     },
   });
 
+  const preopenMarketFlowRun = await runCollectStage({
+    symbols: preopenMarketFlow.selectedSymbols,
+    purpose: 'preopen_market_flow',
+    meta: buildStockIntradayLlmPolicyMeta({
+      market: resolvedExchange,
+      marketScript: 'active_candidate_analysis_refresh',
+      collectMode: 'preopen_market_flow_refresh',
+      extraMeta: {
+        decision_execution_skipped: true,
+        preopen_market_flow: true,
+        targeted_enrichment: true,
+        targeted_enrichment_reason: 'fill_preopen_market_flow_before_next_session',
+        agentPlan: {
+          collect: {
+            nodeIds: preopenMarketFlow.nodeIds,
+            concurrencyLimit: 1,
+          },
+        },
+        llm_call_policy: {
+          source_enrichment: 'preopen_market_flow_top_n_only',
+          targeted_enrichment_nodes: preopenMarketFlow.nodeIds,
+          targeted_enrichment_max_symbols: preopenMarketFlow.maxSymbols,
+          targeted_enrichment_cooldown_minutes: preopenMarketFlow.cooldownMinutes,
+        },
+      },
+    }),
+    universeMeta: {
+      screeningSymbolCount: preopenMarketFlow.selectedSymbols.length,
+      activeCandidateRefresh: true,
+      preopenMarketFlow: true,
+    },
+  });
+
   const finishOk = collectRuns.every((run) => run.finishOk);
   const collectOk = collectRuns.every((run) => run.collectOk);
   let nextState = updateAttemptState(state, plan.selected, baseRun?.collect || {}, now, { exchange: resolvedExchange, purpose: 'analysis' });
   nextState = updateAttemptState(nextState, plan.targetedEnrichment.selectedSymbols, enrichmentRun?.collect || {}, now, { exchange: resolvedExchange, purpose: 'targeted_enrichment' });
+  nextState = updateAttemptState(nextState, preopenMarketFlow.selectedSymbols, preopenMarketFlowRun?.collect || {}, now, { exchange: resolvedExchange, purpose: 'preopen_market_flow' });
   writeJson(statePath, nextState);
 
   return {
@@ -866,7 +1071,7 @@ export async function runActiveCandidateAnalysisRefresh({
     market: normalizedMarket,
     exchange: resolvedExchange,
     statePath,
-    plan,
+    plan: effectivePlan,
     collect: baseRun ? {
       sessionId: baseRun.collect.sessionId,
       symbols: baseRun.collect.symbols,
@@ -879,7 +1084,13 @@ export async function runActiveCandidateAnalysisRefresh({
       summaries: enrichmentRun.collect.summaries,
       metrics: enrichmentRun.collect.metrics,
     } : null,
-    finish: baseRun?.finish || enrichmentRun?.finish || null,
+    preopenMarketFlowCollect: preopenMarketFlowRun ? {
+      sessionId: preopenMarketFlowRun.collect.sessionId,
+      symbols: preopenMarketFlowRun.collect.symbols,
+      summaries: preopenMarketFlowRun.collect.summaries,
+      metrics: preopenMarketFlowRun.collect.metrics,
+    } : null,
+    finish: baseRun?.finish || enrichmentRun?.finish || preopenMarketFlowRun?.finish || null,
     collectRuns: collectRuns.map((run) => ({
       purpose: run.purpose,
       sessionId: run.collect?.sessionId || null,

@@ -116,6 +116,10 @@ export function classifyTradingViewRealtimeSet({ health = {}, latest = {}, expec
     .filter((item) => !realByKey.has(`${item.symbol}:${item.timeframe}`))
     .map((item) => `${item.symbol}:${item.timeframe}`);
   const staleSubscriptionCount = Number(health?.staleSubscriptions || 0);
+  const protectedWithoutBars = (Array.isArray(health?.subscriptionDetails) ? health.subscriptionDetails : [])
+    .filter((item) => item?.protected === true && item?.lastBarAt == null)
+    .map((item) => `${item.symbol || 'unknown'}:${item.timeframe || 'unknown'}`)
+    .slice(0, 12);
   const hasBuildId = Boolean(health?.buildId);
   const ok = health?.tv_ws === 'connected'
     && hasProtectedMetric
@@ -131,6 +135,7 @@ export function classifyTradingViewRealtimeSet({ health = {}, latest = {}, expec
     subscriptions: Number(health?.subscriptions || 0),
     protectedSubscriptions: Number(health?.protectedSubscriptions || 0),
     staleSubscriptions: staleSubscriptionCount,
+    protectedWithoutBars,
     fallbackBars: Number(health?.fallbackBars || 0),
     latestCount: bars.length,
     expectedCount: expectedRows.length,
@@ -146,6 +151,7 @@ export function classifyTradingViewRealtimeSet({ health = {}, latest = {}, expec
     ],
     warnings: [
       ...(staleSubscriptionCount === 0 ? [] : ['tradingview_stale_subscriptions_present']),
+      ...(protectedWithoutBars.length === 0 ? [] : [`tradingview_protected_subscription_without_bar:${protectedWithoutBars.join(',')}`]),
       ...(Number(health?.fallbackBars || 0) === 0 ? [] : ['tradingview_rest_fallback_bars_present']),
     ],
   };

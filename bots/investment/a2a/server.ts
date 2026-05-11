@@ -14,6 +14,8 @@ import { createRequire } from 'module';
 import { handleTask, registerSkillHandler } from './handlers/task-handler.ts';
 import { handleMessage } from './handlers/message-handler.ts';
 import { handleNotification } from './handlers/notification-handler.ts';
+import { registerMarketRegimeAnalysisSkill } from './skills/market-regime-analysis.ts';
+import { registerEntryDecisionShadowSkill } from './skills/entry-decision-shadow.ts';
 
 const _require = createRequire(import.meta.url);
 const express = _require('express');
@@ -25,6 +27,9 @@ const agentCard = JSON.parse(
 const PORT = parseInt(process.env.LUNA_A2A_PORT || '8765', 10);
 const app = express();
 app.use(express.json());
+
+registerMarketRegimeAnalysisSkill();
+registerEntryDecisionShadowSkill();
 
 // ── SSE 스트림 저장소 ──────────────────────────────────────────────
 const _streams: Map<string, ReturnType<typeof express.response.write>[]> = new Map();

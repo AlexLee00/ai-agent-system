@@ -169,6 +169,9 @@ export async function listActiveEntryTriggers({
   symbol = null,
   states = ['armed', 'waiting'],
   limit = 500,
+  updatedAfter = null,
+  createdAfter = null,
+  orderBy = 'created_asc',
 } = {}) {
   await ensureLunaDiscoveryEntryTables();
   const conds = [`trigger_state = ANY($1)`];
@@ -181,11 +184,20 @@ export async function listActiveEntryTriggers({
     params.push(symbol);
     conds.push(`symbol = $${params.length}`);
   }
+  if (updatedAfter) {
+    params.push(updatedAfter);
+    conds.push(`updated_at >= $${params.length}`);
+  }
+  if (createdAfter) {
+    params.push(createdAfter);
+    conds.push(`created_at >= $${params.length}`);
+  }
+  const orderSql = orderBy === 'updated_desc' ? 'updated_at DESC, created_at DESC' : 'created_at ASC';
   params.push(Math.max(1, Number(limit || 500)));
   return db.query(
     `SELECT * FROM entry_triggers
       WHERE ${conds.join(' AND ')}
-      ORDER BY created_at ASC
+      ORDER BY ${orderSql}
       LIMIT $${params.length}`,
     params,
   ).catch(() => []);

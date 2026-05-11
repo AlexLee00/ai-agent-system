@@ -18,7 +18,12 @@ fi
 echo "[Luna][PreToolUse] 매매 정책 검증 중..." >&2
 
 # Kill Switch 확인
-KILL_SWITCH_FILE="$REPO_ROOT/bots/investment/data/kill-switch.json"
+CANONICAL_KILL_SWITCH_FILE="$REPO_ROOT/bots/investment/data/kill-switch.json"
+if [[ "${LUNA_HOOK_TEST_MODE:-false}" == "true" && -n "${LUNA_HOOK_KILL_SWITCH_FILE:-}" ]]; then
+  KILL_SWITCH_FILE="$LUNA_HOOK_KILL_SWITCH_FILE"
+else
+  KILL_SWITCH_FILE="$CANONICAL_KILL_SWITCH_FILE"
+fi
 if [[ -f "$KILL_SWITCH_FILE" ]]; then
   kill_active="$(python3 -c "import sys,json; d=json.load(open('$KILL_SWITCH_FILE')); print(d.get('active', False))" 2>/dev/null || echo "false")"
   if [[ "$kill_active" == "True" || "$kill_active" == "true" ]]; then

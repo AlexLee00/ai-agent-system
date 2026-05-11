@@ -94,6 +94,22 @@ function marketsWithDiscoveryBottleneck(discovery = {}, pattern) {
     .filter(Boolean);
 }
 
+function marketsWithPreopenGap(discovery = {}, pattern) {
+  return compactList([
+    ...(discovery.preopenGaps || []).map((item) => {
+      const [market, ...rest] = String(item || '').split(':');
+      return pattern.test(rest.join(':')) ? market : null;
+    }),
+    ...(discovery.markets || []).flatMap((market) => {
+      const pending = [
+        ...(market.preopenReadiness?.pending || []),
+        ...(market.observations || []),
+      ];
+      return pending.some((code) => pattern.test(String(code || ''))) ? market.market : [];
+    }),
+  ]).filter((market) => market === 'domestic' || market === 'overseas');
+}
+
 function buildSafeFixCandidates({ discovery, llm, marketdata, blockerPack, actionBoard } = {}) {
   const candidates = [];
   const discoveryBottlenecks = discovery?.bottlenecks || [];
@@ -127,6 +143,19 @@ function buildSafeFixCandidates({ discovery, llm, marketdata, blockerPack, actio
       reason: 'candidates exist but no actionable entry path is forming',
       command: 'npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run -s runtime:luna-decision-filter -- --json',
     });
+  }
+  if (recommendations.includes('preopen_market_preparation_pending')) {
+    const markets = marketsWithPreopenGap(discovery, /market_flow|technical|sentiment|onchain/);
+    for (const market of markets) {
+      candidates.push({
+        id: `preopen_targeted_analysis_refresh_${market}`,
+        type: 'runtime_operator',
+        risk: 'medium',
+        applyMode: 'confirm_required',
+        reason: `${market} has preopen candidate evidence gaps before the next session`,
+        command: `npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run -s runtime:luna-active-candidate-analysis-refresh -- --apply --confirm=luna-active-candidate-analysis-refresh --market=${market} --hours=${DEFAULT_HOURS} --limit=20 --max-symbols=5 --max-enrichment-symbols=2 --targeted-global-cooldown --json`,
+      });
+    }
   }
   if (
     discoveryBottlenecks.some((item) => /actionable_candidate_waiting_signal_persistence/.test(item))
@@ -473,6 +502,44 @@ export async function runLunaBottleneckAutonomyOperatorSmoke() {
     item.id === 'targeted_top_n_enrichment'
     && item.applyMode === 'confirm_required'
     && item.command.includes('luna-active-candidate-analysis-refresh')));
+
+  const preopenRefreshReport = buildReportFromEvidence({
+    sourceHealth: { ok: true, status: 'source_health_clear', blockers: [] },
+    discovery: {
+      status: 'luna_discovery_funnel_preopen_pending',
+      bottlenecks: [],
+      preopenGaps: [
+        'domestic:preopen_market_flow_analysis_missing_for_candidates',
+        'overseas:preopen_market_flow_analysis_missing_for_candidates',
+      ],
+      recommendations: ['preopen_market_preparation_pending'],
+      markets: [
+        {
+          market: 'domestic',
+          preopenReadiness: { pending: ['preopen_market_flow_analysis_missing_for_candidates'] },
+          observations: ['preopen_market_flow_analysis_missing_for_candidates'],
+        },
+        {
+          market: 'overseas',
+          preopenReadiness: { pending: ['preopen_market_flow_analysis_missing_for_candidates'] },
+          observations: ['preopen_market_flow_analysis_missing_for_candidates'],
+        },
+      ],
+    },
+    blockerPack: { status: 'operational_clear', hardBlockers: [] },
+    finalGate: { status: 'luna_live_fire_final_gate_clear', blockers: [] },
+    postLive: { status: 'post_live_fire_verified', blockers: [] },
+  });
+  assert.ok(preopenRefreshReport.safeFixCandidates.some((item) =>
+    item.id === 'preopen_targeted_analysis_refresh_domestic'
+    && item.applyMode === 'confirm_required'
+    && item.command.includes('--market=domestic')
+    && item.command.includes(`--hours=${DEFAULT_HOURS}`)));
+  assert.ok(preopenRefreshReport.safeFixCandidates.some((item) =>
+    item.id === 'preopen_targeted_analysis_refresh_overseas'
+    && item.applyMode === 'confirm_required'
+    && item.command.includes('--market=overseas')
+    && item.command.includes(`--hours=${DEFAULT_HOURS}`)));
   return { ok: true, report, transientBusReport, signalPersistenceReport, technicalRefreshReport };
 }
 

@@ -168,6 +168,54 @@ export async function runInvestmentSchemaBootstrap(run, { log = true } = {}) {
   try { await run(`CREATE INDEX IF NOT EXISTS idx_market_regime_market_captured ON market_regime_snapshots(market, captured_at DESC)`); } catch { /* 무시 */ }
 
   await run(`
+    CREATE TABLE IF NOT EXISTS luna_regime_llm_shadow (
+      id              BIGSERIAL PRIMARY KEY,
+      market          TEXT NOT NULL,
+      rule_regime     TEXT NOT NULL,
+      rule_confidence NUMERIC(5,3) DEFAULT 0.5,
+      llm_regime      TEXT NOT NULL,
+      llm_confidence  NUMERIC(5,3) DEFAULT 0.5,
+      llm_rationale   TEXT,
+      llm_duration    TEXT,
+      llm_key_signals JSONB DEFAULT '[]'::jsonb,
+      match           BOOLEAN GENERATED ALWAYS AS (rule_regime = llm_regime) STORED,
+      captured_at     TIMESTAMPTZ DEFAULT NOW()
+    )
+  `);
+  try { await run(`CREATE INDEX IF NOT EXISTS idx_luna_regime_llm_shadow_market_captured ON luna_regime_llm_shadow(market, captured_at DESC)`); } catch { /* 무시 */ }
+  try { await run(`CREATE INDEX IF NOT EXISTS idx_luna_regime_llm_shadow_match ON luna_regime_llm_shadow(match, captured_at DESC)`); } catch { /* 무시 */ }
+
+  await run(`
+    CREATE TABLE IF NOT EXISTS luna_entry_llm_shadow (
+      id                       BIGSERIAL PRIMARY KEY,
+      trigger_id               TEXT,
+      symbol                   TEXT NOT NULL,
+      exchange                 TEXT NOT NULL DEFAULT 'binance',
+      market                   TEXT NOT NULL DEFAULT 'crypto',
+      trigger_type             TEXT,
+      deterministic_fire       BOOLEAN NOT NULL DEFAULT false,
+      deterministic_reason     TEXT,
+      deterministic_confidence NUMERIC(5,3) DEFAULT 0.0,
+      rule_regime              TEXT,
+      llm_regime               TEXT,
+      llm_fire                 BOOLEAN NOT NULL DEFAULT false,
+      llm_confidence           NUMERIC(5,3) DEFAULT 0.0,
+      dynamic_threshold        NUMERIC(5,3) DEFAULT 0.7,
+      position_size_pct        NUMERIC(5,3) DEFAULT 0.1,
+      reasoning                TEXT,
+      risk_assessment          JSONB DEFAULT '{}'::jsonb,
+      n_agent_debate           JSONB DEFAULT '{}'::jsonb,
+      context_evidence         JSONB DEFAULT '{}'::jsonb,
+      match                    BOOLEAN GENERATED ALWAYS AS (deterministic_fire = llm_fire) STORED,
+      observed_at              TIMESTAMPTZ DEFAULT NOW()
+    )
+  `);
+  try { await run(`ALTER TABLE luna_entry_llm_shadow ADD COLUMN IF NOT EXISTS context_evidence JSONB DEFAULT '{}'::jsonb`); } catch { /* 무시 */ }
+  try { await run(`CREATE INDEX IF NOT EXISTS idx_luna_entry_llm_shadow_trigger_observed ON luna_entry_llm_shadow(trigger_id, observed_at DESC)`); } catch { /* 무시 */ }
+  try { await run(`CREATE INDEX IF NOT EXISTS idx_luna_entry_llm_shadow_symbol_observed ON luna_entry_llm_shadow(exchange, symbol, observed_at DESC)`); } catch { /* 무시 */ }
+  try { await run(`CREATE INDEX IF NOT EXISTS idx_luna_entry_llm_shadow_match ON luna_entry_llm_shadow(match, observed_at DESC)`); } catch { /* 무시 */ }
+
+  await run(`
     CREATE TABLE IF NOT EXISTS mapek_knowledge (
       id          BIGSERIAL PRIMARY KEY,
       event_type  TEXT NOT NULL,
@@ -796,6 +844,8 @@ export async function runInvestmentSchemaBootstrap(run, { log = true } = {}) {
       [11, 'external_evidence_events'],
       [12, 'candidate_universe_phase_a_discovery'],
       [13, 'posttrade_feedback_loop_core'],
+      [14, 'luna_regime_llm_shadow'],
+      [15, 'luna_entry_llm_shadow'],
     ]) {
       await run(
         `INSERT INTO schema_migrations (version, name) VALUES ($1, $2) ON CONFLICT DO NOTHING`,

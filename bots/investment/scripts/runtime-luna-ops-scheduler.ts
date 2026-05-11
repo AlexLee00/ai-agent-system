@@ -66,6 +66,20 @@ export function getOpsSchedulerJobs() {
       ...nodeScript('capture-market-regimes.ts', ['--markets=binance,kis,kis_overseas', '--json']),
     },
     {
+      name: 'market_regime_llm_shadow',
+      category: 'market_state',
+      market: 'all',
+      cadence: { type: 'interval', seconds: 3600 },
+      timeoutMs: 120_000,
+      ...nodeScript('runtime-luna-regime-llm-shadow.ts', [
+        '--apply',
+        '--confirm=luna-regime-llm-shadow',
+        '--markets=crypto,domestic,overseas',
+        '--ttl-minutes=360',
+        '--json',
+      ]),
+    },
+    {
       name: 'dynamic_policy_operator',
       category: 'policy',
       market: 'all',
@@ -155,6 +169,22 @@ export function getOpsSchedulerJobs() {
       ...nodeScript('luna-entry-trigger-worker.ts', [
         '--exchange=binance',
         '--derive-market-events',
+        '--json',
+      ]),
+    },
+    {
+      name: 'entry_llm_shadow',
+      category: 'decision_shadow',
+      market: 'all',
+      cadence: { type: 'interval', seconds: 600 },
+      timeoutMs: 120_000,
+      ...nodeScript('runtime-luna-entry-llm-shadow.ts', [
+        '--apply',
+        '--confirm=luna-entry-llm-shadow',
+        '--exchanges=binance,kis,kis_overseas',
+        '--limit=20',
+        '--max-llm-calls=3',
+        '--ttl-minutes=120',
         '--json',
       ]),
     },

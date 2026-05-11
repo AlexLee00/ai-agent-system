@@ -15,7 +15,6 @@ defmodule Luna.V2.Reflexion.L3Weekly do
     또는 Scheduler가 매주 일요일 KST 23:00에 자동 실행
   """
   require Logger
-  alias Luna.V2.Registry.StrategyRegistry
 
   @lookback_days 7
 

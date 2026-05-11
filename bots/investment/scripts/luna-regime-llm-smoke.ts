@@ -61,13 +61,31 @@ export function runLunaRegimeLlmSmoke() {
   checkFileContains(policyPath, 'luna.regime.analyzer', 'policy.ex regime.analyzer 등록');
   results.policy = 'ok';
 
-  // 4. 프롬프트 문서
+  // 4. initSchema 자동 DDL 경로
+  const schemaBootstrapPath = path.join(INVESTMENT_ROOT, 'shared/db/schema/tables/bootstrap.ts');
+  checkFileExists(schemaBootstrapPath, 'initSchema bootstrap');
+  checkFileContains(schemaBootstrapPath, 'CREATE TABLE IF NOT EXISTS luna_regime_llm_shadow', 'initSchema Shadow DDL');
+  checkFileContains(schemaBootstrapPath, 'idx_luna_regime_llm_shadow_market_captured', 'initSchema Shadow index');
+  results.initSchema = 'ok';
+
+  // 4-1. 운영 Shadow 누적 경로
+  const runtimeShadowPath = path.join(INVESTMENT_ROOT, 'scripts/runtime-luna-regime-llm-shadow.ts');
+  checkFileExists(runtimeShadowPath, 'runtime Shadow operator');
+  checkFileContains(runtimeShadowPath, 'luna-regime-llm-shadow', 'Shadow operator confirm token');
+  checkFileContains(runtimeShadowPath, 'callViaHub', 'Shadow operator Hub LLM 호출');
+  checkFileContains(runtimeShadowPath, 'normalizeLlmConfidence', 'Shadow operator confidence 정규화');
+  checkFileContains(runtimeShadowPath, 'raw > 1 ? raw / 100 : raw', 'Shadow operator 0..1/0..100 confidence 호환');
+  const schedulerPath = path.join(INVESTMENT_ROOT, 'scripts/runtime-luna-ops-scheduler.ts');
+  checkFileContains(schedulerPath, 'market_regime_llm_shadow', 'ops scheduler Shadow job');
+  results.runtimeShadow = 'ok';
+
+  // 5. 프롬프트 문서
   const promptPath = path.join(INVESTMENT_ROOT, 'prompts/regime-analyzer.md');
   checkFileExists(promptPath, '프롬프트 문서');
   checkFileContains(promptPath, 'Shadow Mode', '프롬프트 문서 Shadow Mode 섹션');
   results.prompt = 'ok';
 
-  // 5. Elixir 모듈 구조 심층 검증
+  // 6. Elixir 모듈 구조 심층 검증
   const analyzerContent = fs.readFileSync(analyzerPath, 'utf8');
   assert.ok(analyzerContent.includes('fetch_rule_snapshot'), '규칙 스냅샷 조회 함수 존재');
   assert.ok(analyzerContent.includes('analyze_with_llm'), 'LLM 분석 함수 존재');
@@ -82,7 +100,8 @@ export function runLunaRegimeLlmSmoke() {
     shadow_mode: '활성 (1주 운영 후 Promotion Gate)',
     checks: results,
     next: [
-      'OPS DB에 마이그레이션 실행: psql -d jay -f migrations/20260511_luna_regime_llm_shadow.sql',
+      'initSchema와 ops scheduler가 luna_regime_llm_shadow DDL/Shadow 누적을 자동 처리',
+      '수동 1회 점검: npm --prefix bots/investment run -s runtime:luna-regime-llm-shadow -- --json',
       'Elixir 컴파일: mix compile (bots/investment/elixir/)',
       '7일 Shadow 운영 후 일치율 확인:',
       '  SELECT market, ROUND(AVG(match::int)*100,1) AS match_rate FROM investment.luna_regime_llm_shadow WHERE captured_at >= NOW()-INTERVAL \'7 days\' GROUP BY market;',

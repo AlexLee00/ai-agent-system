@@ -27,7 +27,7 @@ export async function handleTask(task: A2ATask): Promise<A2ATaskResult> {
 
   try {
     const result = await handler(task.params);
-    return { id: task.id, status: 'completed', ...result };
+    return { ...result, id: task.id, status: result.status || 'completed' };
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     return { id: task.id, status: 'failed', error: { code: -32000, message: msg } };

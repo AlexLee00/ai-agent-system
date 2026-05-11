@@ -252,6 +252,28 @@ export async function runLunaDecisionFilterReportSmoke() {
   });
   assert.equal(weakIntradayDailyBullish, null);
 
+  const overseasDailyBullishWatch = buildNearMissWatchCandidate({
+    symbol: 'NVDA',
+    exchange: 'kis_overseas',
+    actionability: 'filtered_before_signal',
+    recommendation: 'wait_for_market_flow_confirmation',
+    reasons: ['market_flow_not_confirmed'],
+    minConfidence: 0.18,
+    fused: { recommendation: 'LONG', fusedScore: 0.2054, averageConfidence: 0.235, hasConflict: false },
+    analystSummary: {
+      byAnalyst: {
+        market_flow: { signal: 'HOLD', confidence: 0.12 },
+        ta_mtf: { signal: 'BUY', confidence: 0.35 },
+      },
+    },
+    activeCandidate: { rank: 1, score: 0.84, confidence: 0.81 },
+    dailyTechnical: { ok: true, reason: 'kis_daily_chart_bullish', source: 'kis_overseas_daily_price' },
+  });
+  assert.equal(overseasDailyBullishWatch.readiness, 'relaxed_probe_watch');
+  assert.equal(overseasDailyBullishWatch.watchReason, 'stock_daily_bullish_active_candidate_probe');
+  assert.deepEqual(overseasDailyBullishWatch.missingConfirmations, ['market_flow']);
+  assert.equal(overseasDailyBullishWatch.nextAction, 'refresh_market_flow_then_l13_probe_with_existing_guards');
+
   const fixtureSymbol = `DFILTER${Date.now()}/USDT`;
   const openFixtureSymbol = `DFILTEROPEN${Date.now()}/USDT`;
   await db.initSchema();
@@ -281,15 +303,6 @@ export async function runLunaDecisionFilterReportSmoke() {
          expires_at = now() + interval '2 hours'`,
       [openFixtureSymbol],
     );
-    await db.upsertPosition({
-      symbol: openFixtureSymbol,
-      amount: 1,
-      avgPrice: 1,
-      unrealizedPnl: 0,
-      exchange: 'binance',
-      paper: false,
-      tradeMode: 'normal',
-    });
     await db.insertAnalysis({
       symbol: fixtureSymbol,
       analyst: 'ta_mtf',
@@ -312,6 +325,7 @@ export async function runLunaDecisionFilterReportSmoke() {
       exchange: 'binance',
       market: 'crypto',
       activeCandidates: true,
+      openPositionSymbols: [openFixtureSymbol],
       hours: 1,
       limit: 20,
     });
@@ -336,7 +350,6 @@ export async function runLunaDecisionFilterReportSmoke() {
     await db.run(`DELETE FROM analysis WHERE symbol = $1 AND metadata->>'smoke' = 'true'`, [openFixtureSymbol]).catch(() => null);
     await db.run(`DELETE FROM candidate_universe WHERE symbol = $1 AND source = 'binance_market_momentum'`, [fixtureSymbol]).catch(() => null);
     await db.run(`DELETE FROM candidate_universe WHERE symbol = $1 AND source = 'binance_market_momentum'`, [openFixtureSymbol]).catch(() => null);
-    await db.run(`DELETE FROM positions WHERE symbol = $1 AND exchange = 'binance' AND paper = false`, [openFixtureSymbol]).catch(() => null);
   }
 
   return {

@@ -322,10 +322,20 @@ function isDailyBullishProbeCandidate(item = {}) {
   return rank >= 1 && rank <= 10 && confidence >= 0.55;
 }
 
+function isStockDailyBullishProbeCandidate(item = {}) {
+  if (!STOCK_EXCHANGES.has(item.exchange)) return false;
+  if (!hasDailyBullishPresignal(item)) return false;
+  const candidate = item?.activeCandidate || {};
+  const rank = Number(candidate.rank || 999999);
+  const confidence = activeCandidateConfidence(item);
+  return rank >= 1 && rank <= 12 && confidence >= 0.7;
+}
+
 export function buildNearMissWatchCandidate(item = {}) {
   if (item.actionability === 'likely_actionable') return null;
   const reasons = new Set(item.reasons || []);
   const dailyBullishProbeCandidate = isDailyBullishProbeCandidate(item);
+  const stockDailyBullishProbeCandidate = isStockDailyBullishProbeCandidate(item);
   if (item.actionability === 'relaxed_probe_candidate' && item.relaxation?.ok === true) {
     const missingConfirmations = [];
     if (reasons.has('technical_not_confirmed')) missingConfirmations.push('technical');
@@ -352,13 +362,13 @@ export function buildNearMissWatchCandidate(item = {}) {
     'conflict_detected',
     'news_only_buy',
   ];
-  if (!dailyBullishProbeCandidate) {
+  if (!dailyBullishProbeCandidate && !stockDailyBullishProbeCandidate) {
     hardStopReasons.push('insufficient_analyst_coverage', 'technical_not_confirmed');
   }
   if (hardStopReasons.some((reason) => reasons.has(reason))) return null;
-  if (technicalSignal !== ACTIONS.BUY && !dailyBullishProbeCandidate) return null;
+  if (technicalSignal !== ACTIONS.BUY && !dailyBullishProbeCandidate && !stockDailyBullishProbeCandidate) return null;
   const confidenceFloor = STOCK_EXCHANGES.has(item.exchange) ? 0.35 : 0.38;
-  const effectiveConfidence = dailyBullishProbeCandidate
+  const effectiveConfidence = dailyBullishProbeCandidate || stockDailyBullishProbeCandidate
     ? Math.max(Number(item?.fused?.averageConfidence || 0), activeCandidateConfidence(item))
     : Number(item?.fused?.averageConfidence || 0);
   if (effectiveConfidence < Math.max(confidenceFloor, Number(item?.minConfidence || 0.5) * 0.72)) return null;
@@ -367,7 +377,12 @@ export function buildNearMissWatchCandidate(item = {}) {
   if (dailyBullishProbeCandidate && technicalSignal !== ACTIONS.BUY) missingConfirmations.push('intraday_technical');
   if (reasons.has('onchain_not_confirmed') && !hasAnalystEvidence(item, [ANALYST_TYPES.ONCHAIN])) missingConfirmations.push('onchain');
   if (reasons.has('sentiment_not_confirmed') && !hasAnalystEvidence(item, [ANALYST_TYPES.SENTIMENT, ANALYST_TYPES.SENTINEL])) missingConfirmations.push('sentiment');
-  if (reasons.has('market_flow_not_confirmed') && !hasAnalystEvidence(item, [ANALYST_TYPES.MARKET_FLOW])) missingConfirmations.push('market_flow');
+  if (
+    reasons.has('market_flow_not_confirmed')
+    && (stockDailyBullishProbeCandidate || !hasAnalystEvidence(item, [ANALYST_TYPES.MARKET_FLOW]))
+  ) {
+    missingConfirmations.push('market_flow');
+  }
   if (reasons.has('average_confidence_below_min')) missingConfirmations.push('confidence');
   if (reasons.has('fusion_not_long')) missingConfirmations.push('fusion');
   if (missingConfirmations.length === 0) return null;
@@ -375,10 +390,12 @@ export function buildNearMissWatchCandidate(item = {}) {
   return {
     symbol: item.symbol,
     exchange: item.exchange,
-    readiness: dailyBullishProbeCandidate ? 'relaxed_probe_watch' : 'near_miss_watch',
+    readiness: dailyBullishProbeCandidate || stockDailyBullishProbeCandidate ? 'relaxed_probe_watch' : 'near_miss_watch',
     watchReason: dailyBullishProbeCandidate
       ? 'daily_bullish_active_candidate_probe'
-      : missingConfirmations.includes('onchain')
+      : stockDailyBullishProbeCandidate
+        ? 'stock_daily_bullish_active_candidate_probe'
+        : missingConfirmations.includes('onchain')
       ? 'technical_and_sentiment_buy_waiting_onchain'
       : missingConfirmations.includes('sentiment')
         ? 'technical_buy_waiting_sentiment'
@@ -386,13 +403,15 @@ export function buildNearMissWatchCandidate(item = {}) {
     missingConfirmations,
     nextAction: dailyBullishProbeCandidate
       ? 'run_l13_probe_with_existing_risk_and_entry_guards'
-      : missingConfirmations.includes('onchain')
+      : stockDailyBullishProbeCandidate
+        ? 'refresh_market_flow_then_l13_probe_with_existing_guards'
+        : missingConfirmations.includes('onchain')
       ? 'refresh_onchain_and_keep_tradingview_daily_guard'
       : 'refresh_missing_confirmation_before_signal_persistence',
     fused: item.fused,
     analystSummary: item.analystSummary,
     recommendation: item.recommendation,
-    dailyTechnical: dailyBullishProbeCandidate ? (item.dailyTechnical || item.dailyTechnicalCoverage || null) : null,
+    dailyTechnical: dailyBullishProbeCandidate || stockDailyBullishProbeCandidate ? (item.dailyTechnical || item.dailyTechnicalCoverage || null) : null,
   };
 }
 
@@ -517,7 +536,9 @@ export async function buildLunaDecisionFilterReport(options = {}) {
   await db.initSchema();
   const excludeOpenPositions = options.excludeOpenPositions !== false;
   const openPositionSymbols = excludeOpenPositions
-    ? await loadOpenCandidateSymbols({ exchange, market })
+    ? Array.isArray(options.openPositionSymbols)
+      ? new Set(options.openPositionSymbols.map((symbol) => normalizeCandidateSymbol(symbol, market)).filter(Boolean))
+      : await loadOpenCandidateSymbols({ exchange, market })
     : new Set();
   const activeUniverse = options.activeCandidates
     ? await queryActiveCandidateUniverse({ market, limit })

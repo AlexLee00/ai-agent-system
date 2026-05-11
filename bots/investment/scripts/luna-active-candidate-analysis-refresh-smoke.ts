@@ -8,6 +8,7 @@ import path from 'node:path';
 import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
 import {
   buildActiveCandidateAnalysisRefreshPlan,
+  buildPreopenMarketFlowRefreshPlan,
   runActiveCandidateAnalysisRefresh,
 } from './runtime-luna-active-candidate-analysis-refresh.ts';
 
@@ -37,6 +38,35 @@ function fixtureFilteredCandidate(symbol, reasons = ['sentiment_not_confirmed', 
     analystSummary: {
       byAnalyst: {
         ta_mtf: { signal: 'BUY', confidence: 0.62, reasoning: 'technical presignal' },
+      },
+    },
+  };
+}
+
+function fixturePreopenMarketFlowReport() {
+  return {
+    market: 'overseas',
+    preopenReadiness: {
+      active: true,
+      pending: ['preopen_market_flow_analysis_missing_for_candidates'],
+      nextOpen: '2026-05-11T13:30:00.000Z',
+      minutesUntilOpen: 60,
+    },
+    candidateUniverse: {
+      top: [{ symbol: 'RKLB' }, { symbol: 'MU' }, { symbol: 'NET' }],
+    },
+    analysisCoverage: {
+      required: {
+        missingByAnalyst: {
+          market_flow: ['RKLB', 'MU', 'NET'],
+        },
+      },
+      dailyTechnicalCoverage: {
+        rows: [
+          { symbol: 'RKLB', ok: true, reason: 'kis_daily_chart_bullish' },
+          { symbol: 'MU', ok: true, reason: 'kis_daily_chart_bullish' },
+          { symbol: 'NET', ok: false, reason: 'kis_daily_trend_not_bullish' },
+        ],
       },
     },
   };
@@ -621,6 +651,83 @@ export async function runLunaActiveCandidateAnalysisRefreshSmoke() {
   assert.equal(finishedRuns.some((run) => run.sessionId === 'domestic-session'), true);
   const domesticState = JSON.parse(fs.readFileSync(path.join(smokeDir, 'domestic.json'), 'utf8'));
   assert.equal(domesticState.symbols['kis:analysis:005490'].lastStatus, 'ok');
+
+  const preopenMarketFlowPlan = buildPreopenMarketFlowRefreshPlan({
+    marketReport: fixturePreopenMarketFlowReport(),
+    state: {},
+    now,
+    maxSymbols: 2,
+    cooldownMinutes: 120,
+    exchange: 'kis_overseas',
+  });
+  assert.equal(preopenMarketFlowPlan.status, 'preopen_market_flow_refresh_needed');
+  assert.deepEqual(preopenMarketFlowPlan.selectedSymbols, ['RKLB', 'MU']);
+  assert.deepEqual(preopenMarketFlowPlan.nodeIds, ['L04']);
+
+  let preopenCollect = null;
+  const preopen = await runActiveCandidateAnalysisRefresh({
+    market: 'overseas',
+    apply: true,
+    confirm: 'luna-active-candidate-analysis-refresh',
+    reportBuilder: async () => fixtureReport([]),
+    discoveryReportBuilder: async () => ({
+      ok: true,
+      status: 'luna_discovery_funnel_preopen_pending',
+      markets: [fixturePreopenMarketFlowReport()],
+    }),
+    collectRunner: async ({ triggerType, market, symbols, meta }) => {
+      preopenCollect = { triggerType, market, symbols, meta };
+      return {
+        sessionId: 'preopen-market-flow-session',
+        symbols,
+        summaries: symbols.map((symbol) => ({ nodeId: 'L04', status: 'completed', symbol })),
+        metrics: { failedHardCoreTasks: 0, collectQuality: { status: 'ready' } },
+      };
+    },
+    finishRun: async (sessionId, result) => {
+      finishedRuns.push({ sessionId, result });
+      return { updated: true, status: result?.status || 'completed' };
+    },
+    maxEnrichmentSymbols: 2,
+    statePath: path.join(smokeDir, 'preopen-market-flow.json'),
+    now,
+  });
+  assert.equal(preopen.ok, true);
+  assert.equal(preopen.status, 'active_candidate_analysis_refresh_collected');
+  assert.equal(preopen.preopenMarketFlowCollect.sessionId, 'preopen-market-flow-session');
+  assert.equal(preopenCollect.triggerType, 'preopen_market_flow_refresh');
+  assert.equal(preopenCollect.market, 'kis_overseas');
+  assert.deepEqual(preopenCollect.symbols, ['RKLB', 'MU']);
+  assert.deepEqual(preopenCollect.meta.agentPlan.collect.nodeIds, ['L04']);
+  assert.equal(preopenCollect.meta.preopen_market_flow, true);
+  const preopenState = JSON.parse(fs.readFileSync(path.join(smokeDir, 'preopen-market-flow.json'), 'utf8'));
+  assert.equal(preopenState.symbols['kis_overseas:preopen_market_flow:RKLB'].lastStatus, 'ok');
+
+  let preopenZeroCollectCalled = false;
+  const preopenZeroCap = await runActiveCandidateAnalysisRefresh({
+    market: 'overseas',
+    apply: true,
+    confirm: 'luna-active-candidate-analysis-refresh',
+    reportBuilder: async () => fixtureReport([]),
+    discoveryReportBuilder: async () => ({
+      ok: true,
+      status: 'luna_discovery_funnel_preopen_pending',
+      markets: [fixturePreopenMarketFlowReport()],
+    }),
+    collectRunner: async () => {
+      preopenZeroCollectCalled = true;
+      throw new Error('preopen zero cap should not collect');
+    },
+    maxSymbols: 5,
+    maxEnrichmentSymbols: 0,
+    statePath: path.join(smokeDir, 'preopen-market-flow-zero-cap.json'),
+    now,
+  });
+  assert.equal(preopenZeroCap.ok, true);
+  assert.equal(preopenZeroCap.plan.preopenMarketFlow.enabled, false);
+  assert.equal(preopenZeroCap.plan.preopenMarketFlow.maxSymbols, 0);
+  assert.deepEqual(preopenZeroCap.plan.preopenMarketFlow.selectedSymbols, []);
+  assert.equal(preopenZeroCollectCalled, false);
 
   const finishFailed = await runActiveCandidateAnalysisRefresh({
     apply: true,

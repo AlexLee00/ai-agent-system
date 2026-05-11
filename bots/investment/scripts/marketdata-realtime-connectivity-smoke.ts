@@ -136,6 +136,31 @@ export async function runSmoke() {
   assert.equal(tvSetMissing.warnings.includes('tradingview_rest_fallback_bars_present'), true);
   assert.equal(tvSetMissing.warnings.includes('tradingview_service_reload_required_for_build_id'), false);
 
+  const tvSetProtectedWithoutBar = classifyTradingViewRealtimeSet({
+    health: {
+      tv_ws: 'connected',
+      buildId: 'tvws-session-scoped-v2',
+      realtimeOk: true,
+      subscriptions: 2,
+      protectedSubscriptions: 2,
+      staleSubscriptions: 0,
+      fallbackBars: 0,
+      subscriptionDetails: [
+        { symbol: 'BINANCE:BTCUSDT', timeframe: '60', protected: true, lastBarAt: Date.now() },
+        { symbol: 'BINANCE:DFILTEROPENSMOKEUSDT', timeframe: '60', protected: true, lastBarAt: null },
+      ],
+    },
+    latest: {
+      bars: [
+        { symbol: 'BINANCE:BTCUSDT', timeframe: '60', source: 'tradingview_ws_service', providerMode: 'websocket_http_latest', fallbackReason: null, ageMs: 30_000 },
+      ],
+    },
+    expected: [{ symbol: 'BINANCE:BTCUSDT', timeframe: '60' }],
+  });
+  assert.equal(tvSetProtectedWithoutBar.ok, true);
+  assert.deepEqual(tvSetProtectedWithoutBar.protectedWithoutBars, ['BINANCE:DFILTEROPENSMOKEUSDT:60']);
+  assert.equal(tvSetProtectedWithoutBar.warnings.some((item) => item.includes('tradingview_protected_subscription_without_bar')), true);
+
   const tvSetLegacyService = classifyTradingViewRealtimeSet({
     health: {
       tv_ws: 'connected',

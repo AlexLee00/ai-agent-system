@@ -21,9 +21,17 @@
       "outputModes": ["application/json"]
     },
     {
+      "id": "entry-decision-shadow",
+      "name": "진입 판단 Shadow",
+      "description": "기존 fixed threshold 진입 판단과 LLM dynamic threshold 판단을 Shadow Mode로 비교",
+      "tags": ["finance", "entry", "shadow", "a2a"],
+      "inputModes": ["application/json"],
+      "outputModes": ["application/json"]
+    },
+    {
       "id": "trade-signal-generation",
       "name": "매매 시그널 생성",
-      "description": "11개 에이전트 합의 기반 BUY/SELL/HOLD 시그널 생성",
+      "description": "Phase 2에서는 Entry Decision Shadow 결과를 반환하고 실제 시그널 생성은 수행하지 않음",
       "tags": ["finance", "signal", "trading"],
       "inputModes": ["application/json"],
       "outputModes": ["application/json"]
