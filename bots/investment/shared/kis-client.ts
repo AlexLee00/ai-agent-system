@@ -56,6 +56,8 @@ const KIS_OVERSEAS_PRICE_EXCD = {
   QCOM: 'NAS', AVGO: 'NAS', ADBE: 'NAS', CSCO: 'NAS', PYPL: 'NAS',
   COIN: 'NAS', MSTR: 'NAS', JBLU: 'NAS', NBIS: 'NAS',
   RKLB: 'NAS', MU: 'NAS', MELI: 'NAS', INOD: 'NAS', MRNA: 'NAS', EOSE: 'NAS',
+  QQQ: 'NAS',
+  SPY: 'AMS',
   JPM: 'NYS', BAC: 'NYS', WMT: 'NYS', JNJ: 'NYS', BRK: 'NYS',
   XOM: 'NYS', CVX: 'NYS', UNH: 'NYS', HD:  'NYS',
   NIO:  'NYS', XPEV: 'NYS', LI:  'NYS', BABA: 'NYS', PDD: 'NYS',
@@ -70,6 +72,8 @@ const KIS_OVERSEAS_ORDER_EXCD = {
   QCOM: 'NASD', AVGO: 'NASD', ADBE: 'NASD', CSCO: 'NASD', PYPL: 'NASD',
   COIN: 'NASD', MSTR: 'NASD', JBLU: 'NASD', NBIS: 'NASD',
   RKLB: 'NASD', MU: 'NASD', MELI: 'NASD', INOD: 'NASD', MRNA: 'NASD', EOSE: 'NASD',
+  QQQ: 'NASD',
+  SPY: 'AMEX',
   JPM: 'NYSE', BAC: 'NYSE', WMT: 'NYSE', JNJ: 'NYSE', BRK: 'NYSE',
   XOM: 'NYSE', CVX: 'NYSE', UNH: 'NYSE', HD:  'NYSE',
   NIO:  'NYSE', XPEV: 'NYSE', LI:  'NYSE', BABA: 'NYSE', PDD: 'NYSE',
@@ -819,7 +823,7 @@ export async function getOverseasDailyPriceBars(symbol, {
     KIS_OVERSEAS_PRICE_EXCD[normalizedSymbol],
     'NAS',
     'NYS',
-    'AMX',
+    'AMS',
   ].filter(Boolean);
   let lastError = null;
   for (const excd of [...new Set(excdCandidates)]) {

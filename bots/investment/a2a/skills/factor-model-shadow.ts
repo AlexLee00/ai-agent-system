@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { query as defaultQuery } from '../../shared/db.ts';
 import {
   buildFactorModelShadow,

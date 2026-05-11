@@ -53,6 +53,14 @@
       "outputModes": ["application/json"]
     },
     {
+      "id": "stat-arb-shadow",
+      "name": "Stat Arb Shadow",
+      "description": "페어 트레이딩·평균회귀 통계 차익 evidence를 Shadow Mode로 산출",
+      "tags": ["finance", "stat-arb", "pairs", "mean-reversion", "shadow", "a2a"],
+      "inputModes": ["application/json"],
+      "outputModes": ["application/json"]
+    },
+    {
       "id": "trade-signal-generation",
       "name": "매매 시그널 생성",
       "description": "Phase 2에서는 Entry Decision Shadow 결과를 반환하고 실제 시그널 생성은 수행하지 않음",

@@ -268,6 +268,28 @@ export async function runInvestmentSchemaBootstrap(run, { log = true } = {}) {
   try { await run(`CREATE INDEX IF NOT EXISTS idx_luna_factor_model_shadow_scores ON luna_factor_model_shadow USING GIN (factor_scores)`); } catch { /* 무시 */ }
 
   await run(`
+    CREATE TABLE IF NOT EXISTS luna_stat_arb_shadow (
+      id                       BIGSERIAL PRIMARY KEY,
+      strategy_type            TEXT NOT NULL,
+      symbols                  JSONB NOT NULL DEFAULT '[]'::jsonb,
+      exchange                 TEXT NOT NULL DEFAULT 'binance',
+      market                   TEXT NOT NULL DEFAULT 'crypto',
+      pair_metrics             JSONB DEFAULT '{}'::jsonb,
+      mean_reversion_metrics   JSONB DEFAULT '{}'::jsonb,
+      signal                   TEXT DEFAULT 'neutral',
+      z_score                  NUMERIC(12,6) DEFAULT 0,
+      confidence               NUMERIC(8,6) DEFAULT 0,
+      data_health              TEXT DEFAULT 'unknown',
+      context_evidence         JSONB DEFAULT '{}'::jsonb,
+      shadow_only              BOOLEAN NOT NULL DEFAULT true,
+      observed_at              TIMESTAMPTZ DEFAULT NOW()
+    )
+  `);
+  try { await run(`CREATE INDEX IF NOT EXISTS idx_luna_stat_arb_shadow_strategy_observed ON luna_stat_arb_shadow(strategy_type, exchange, observed_at DESC)`); } catch { /* 무시 */ }
+  try { await run(`CREATE INDEX IF NOT EXISTS idx_luna_stat_arb_shadow_market_signal ON luna_stat_arb_shadow(market, signal, observed_at DESC)`); } catch { /* 무시 */ }
+  try { await run(`CREATE INDEX IF NOT EXISTS idx_luna_stat_arb_shadow_symbols ON luna_stat_arb_shadow USING GIN (symbols)`); } catch { /* 무시 */ }
+
+  await run(`
     CREATE TABLE IF NOT EXISTS mapek_knowledge (
       id          BIGSERIAL PRIMARY KEY,
       event_type  TEXT NOT NULL,
