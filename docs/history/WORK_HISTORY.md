@@ -6,6 +6,11 @@
 
 ## 2026-05-11: Luna bottleneck loop — position parity REST rate-limit guard
 
+- Luna bottleneck autonomy operator가 직전 패치 이후에도 `repair_llm_hotpath_plan` 후보를 다시 제시하는 현상을 확인했다.
+- 원인은 현재 런타임 경로가 아니라 최근 6시간 audit 창 안에 남은 pre-fix `relaxed_probe_l13` 세션(`L06/L02/L03/L05`, cap/cooldown 메타 누락)을 계속 현재 source 문제로 승격하는 판단 계층 문제였다.
+- `runtime-luna-llm-hotpath-audit.ts`가 `relaxed_probe_l13`/`active_candidate_targeted_enrichment` 관련 source mtime 이후에는 이전 세션을 `historicalMitigatedSessions` 및 non-blocking warning으로 분류하도록 보강했다.
+- 패치 후 operator 재실행 결과 `luna_bottleneck_clear_with_warnings`, hard blockers 0, bottlenecks 0, safeFixCandidates 0을 확인했다.
+
 - Luna bottleneck autonomy operator가 `repair_llm_hotpath_plan` 후보를 다시 제시했고, 원인은 `relaxed_probe_l13` targeted enrichment collect plan이 baseline `L06/L02`까지 함께 실행하면서 top-N/cooldown 정책 메타를 남기지 않는 문제로 확인했다.
 - `runtime-luna-relaxed-probe-runner.ts`에서 targeted enrichment 실행 노드를 실제 보강 노드(`L03/L05` 등)로 좁히고 `targeted_enrichment_max_symbols=1`, `targeted_enrichment_cooldown_minutes=120` 메타를 명시했다.
 - 검증 결과 `check:luna-llm-hotpath-audit`, `luna-relaxed-probe-runner-smoke`, `check:luna-bottleneck-autonomy`, `git diff --check`가 통과했다.

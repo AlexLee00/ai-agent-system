@@ -96,6 +96,32 @@ export async function runLunaLlmHotPathAuditSmoke() {
   assert.ok(targetedTooBroadResult.reasons.includes('targeted_enrichment_symbol_cap_too_high'));
   assert.ok(targetedTooBroadResult.reasons.includes('targeted_enrichment_cooldown_too_short'));
 
+  const historicalTargeted = fixtureSession({
+    collect_mode: 'relaxed_probe_l13_collect',
+    targeted_enrichment: true,
+    market_script: 'luna_relaxed_probe_runner',
+    agentPlan: {
+      collect: { nodeIds: ['L06', 'L02', 'L03', 'L05'] },
+    },
+    llm_call_policy: {
+      source_enrichment: 'targeted_top_n_only',
+    },
+  }, {
+    market: 'binance',
+    triggerType: 'relaxed_probe_l13',
+    sessionId: 'historical-relaxed-probe',
+  });
+  const historicalAudit = buildLlmHotPathAudit({
+    pipelineSessions: [historicalTargeted],
+    sourceMitigationCutoffs: { relaxed_probe_l13: 1778217795381 },
+    generatedAt: '2026-05-08T00:00:00.000Z',
+  });
+  assert.equal(historicalAudit.ok, true);
+  assert.equal(historicalAudit.status, 'luna_llm_hotpath_clear_with_historical_mitigated_sessions');
+  assert.equal(historicalAudit.totals.suspiciousSessions, 0);
+  assert.equal(historicalAudit.totals.historicalMitigatedSessions, 1);
+  assert.ok(historicalAudit.nonBlockingWarnings.includes('historical_llm_hotpath_sessions_before_current_source'));
+
   const auditClear = buildLlmHotPathAudit({
     topCalls: [{ agent_name: 'luna', calls: 2, failed_calls: 0 }],
     pipelineSessions: [stockLight, cryptoLight, targetedOk],

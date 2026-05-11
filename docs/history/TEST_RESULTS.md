@@ -4,6 +4,25 @@
 
 ## 2026-05-11
 
+### Luna bottleneck historical hotpath evidence cleanup
+
+| 테스트 | 결과 |
+|--------|------|
+| `npm --prefix bots/investment run -s runtime:luna-bottleneck-autonomy -- --json --publish-events --no-fail` | ⚠️ 패치 전 `luna_bottleneck_attention`, hard 0, `repair_llm_hotpath_plan` 1건 |
+| `npm --prefix bots/investment run -s runtime:luna-llm-hotpath-audit -- --hours=6 --json` | ⚠️ pre-fix `relaxed_probe_l13` 세션 1건이 현재 source 문제로 반복 승격됨 |
+| `npm --prefix bots/investment run -s runtime:luna-relaxed-probe-runner -- --json` | ✅ 현재 런타임 dry-run `relaxed_probe_l13_clear`, 실행 후보 0 |
+| `node bots/investment/scripts/luna-relaxed-probe-runner-smoke.ts --json` | ✅ targeted enrichment node/cap/cooldown 경로 통과 |
+| `node bots/investment/scripts/luna-llm-hotpath-audit-smoke.ts --json` | ✅ historical mitigated 분류 회귀 통과 |
+| `npm --prefix bots/investment run -s runtime:luna-llm-hotpath-audit -- --hours=6 --json` | ✅ `luna_llm_hotpath_clear_with_historical_mitigated_sessions`, suspicious 0, historical mitigated 1 |
+| `npm --prefix bots/investment run -s runtime:luna-bottleneck-autonomy -- --json --publish-events --no-fail` | ✅ 패치 후 `luna_bottleneck_clear_with_warnings`, hard 0, bottlenecks 0, safeFixCandidates 0 |
+| `npm --prefix bots/investment run -s check:luna-llm-hotpath-audit` | ✅ 통과 |
+| `npm --prefix bots/investment run -s check:luna-bottleneck-autonomy` | ✅ 통과 |
+| `npm --prefix bots/investment run -s runtime:marketdata-realtime-connectivity -- --json --no-fail` | ✅ `marketdata_realtime_connectivity_ready`, blockers 0 |
+| `npm --prefix bots/investment run -s runtime:agent-message-bus-hygiene -- --json` | ✅ `agent_message_bus_hygiene_clear`, stale 0 |
+| `npm --prefix bots/investment run -s runtime:luna-decision-filter -- --market=domestic --hours=24 --limit=12 --active-candidates --json` | ⚠️ 국내 likely actionable 2건, signal persistence/market cycle 대기 |
+| `npm --prefix bots/investment run -s runtime:luna-decision-filter -- --json` | ⚠️ crypto entry capacity 2/2 full, likely actionable 0 |
+| `git diff --check` | ✅ 통과 |
+
 ### Luna bottleneck position parity rate-limit guard
 
 | 테스트 | 결과 |

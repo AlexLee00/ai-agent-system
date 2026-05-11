@@ -5,6 +5,11 @@ Format based on [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/).
 
 ## 2026-05-11 — Luna position parity rate-limit guard
 
+- `bots/investment/scripts/runtime-luna-llm-hotpath-audit.ts`
+  - `relaxed_probe_l13`/`active_candidate_targeted_enrichment` source mtime보다 오래된 targeted enrichment 경고를 `historicalMitigatedSessions`로 분리한다.
+  - 이미 패치된 pre-fix 세션이 6시간 audit 창에 남아 같은 `repair_llm_hotpath_plan`을 반복 생성하지 않도록 non-blocking warning으로 낮췄다.
+- `bots/investment/scripts/luna-llm-hotpath-audit-smoke.ts`
+  - pre-fix targeted enrichment 세션이 source update 이후 historical mitigated로 분류되는 회귀 검증을 추가했다.
 - `bots/investment/scripts/runtime-luna-relaxed-probe-runner.ts`
   - relaxed probe targeted enrichment collect plan에서 baseline `L06/L02`를 제외하고 실제 보강 노드만 실행하도록 좁혔다.
   - hotpath audit가 요구하는 `targeted_enrichment_max_symbols=1`, `targeted_enrichment_cooldown_minutes=120` 정책 메타를 명시했다.

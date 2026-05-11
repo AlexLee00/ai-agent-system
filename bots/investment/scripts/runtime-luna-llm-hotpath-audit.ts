@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 // @ts-nocheck
 
+import { statSync } from 'node:fs';
 import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
 import { query } from '../shared/db.ts';
 
@@ -8,6 +9,10 @@ const DEFAULT_HOURS = 6;
 const DEFAULT_LIMIT = 30;
 const DEFAULT_TARGETED_ENRICHMENT_MAX_SYMBOLS = 1;
 const DEFAULT_TARGETED_ENRICHMENT_MIN_COOLDOWN_MINUTES = 90;
+const SOURCE_MITIGATION_FILES = {
+  relaxed_probe_l13: new URL('./runtime-luna-relaxed-probe-runner.ts', import.meta.url),
+  active_candidate_targeted_enrichment: new URL('./runtime-luna-active-candidate-analysis-refresh.ts', import.meta.url),
+};
 
 function hasArg(name, argv = process.argv.slice(2)) {
   return argv.includes(`--${name}`);
@@ -46,6 +51,75 @@ function normalizeNodeIds(nodes = []) {
     if (typeof node === 'string') return node;
     return node?.nodeId || node?.id || '';
   }));
+}
+
+function parseTimeMs(value) {
+  if (value == null) return null;
+  if (value instanceof Date) {
+    const ms = value.getTime();
+    return Number.isFinite(ms) ? ms : null;
+  }
+  if (typeof value === 'number') {
+    if (!Number.isFinite(value)) return null;
+    return value < 1_000_000_000_000 ? value * 1000 : value;
+  }
+  const text = String(value || '').trim();
+  if (!text) return null;
+  if (/^\d+$/.test(text)) {
+    const numeric = Number(text);
+    if (!Number.isFinite(numeric)) return null;
+    return numeric < 1_000_000_000_000 ? numeric * 1000 : numeric;
+  }
+  const parsed = new Date(text).getTime();
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function toIsoOrNull(ms) {
+  return Number.isFinite(ms) ? new Date(ms).toISOString() : null;
+}
+
+export function buildSourceMitigationCutoffs() {
+  return Object.fromEntries(Object.entries(SOURCE_MITIGATION_FILES).map(([key, fileUrl]) => {
+    try {
+      return [key, statSync(fileUrl).mtimeMs];
+    } catch {
+      return [key, null];
+    }
+  }));
+}
+
+function sourceMitigationKeyForPlan({ triggerType, plan }) {
+  const normalizedTrigger = String(triggerType || '').toLowerCase();
+  const collectMode = String(plan?.collectMode || '').toLowerCase();
+  const marketScript = String(plan?.marketScript || '').toLowerCase();
+  if (normalizedTrigger === 'relaxed_probe_l13' || marketScript === 'luna_relaxed_probe_runner') {
+    return 'relaxed_probe_l13';
+  }
+  if (
+    normalizedTrigger === 'active_candidate_targeted_enrichment'
+    || collectMode === 'active_candidate_targeted_enrichment'
+  ) {
+    return 'active_candidate_targeted_enrichment';
+  }
+  return null;
+}
+
+function assessSourceMitigation({ row, triggerType, plan, sourceMitigationCutoffs }) {
+  const source = sourceMitigationKeyForPlan({ triggerType, plan });
+  const sourceUpdatedAtMs = Number(source ? sourceMitigationCutoffs?.[source] : null);
+  const observedAtMs = parseTimeMs(row.finished_at) || parseTimeMs(row.started_at);
+  const mitigated = Boolean(
+    source
+    && Number.isFinite(sourceUpdatedAtMs)
+    && Number.isFinite(observedAtMs)
+    && observedAtMs < sourceUpdatedAtMs
+  );
+  return {
+    mitigated,
+    source,
+    observedAt: toIsoOrNull(observedAtMs),
+    sourceUpdatedAt: toIsoOrNull(sourceUpdatedAtMs),
+  };
 }
 
 export function extractCollectPlan(meta = {}) {
@@ -129,7 +203,7 @@ function classifyTargetedEnrichment({ market, triggerType, plan }) {
   return { intentional: true, reasons };
 }
 
-export function classifyPipelineLlmHotPath(row = {}) {
+export function classifyPipelineLlmHotPath(row = {}, { sourceMitigationCutoffs = null } = {}) {
   const market = normalizeMarket(row.market);
   const triggerType = String(row.trigger_type || '').toLowerCase();
   const plan = extractCollectPlan(row.meta || {});
@@ -140,18 +214,26 @@ export function classifyPipelineLlmHotPath(row = {}) {
 
   if (targeted.intentional) {
     reasons.push(...targeted.reasons);
+    const sourceMitigation = reasons.length > 0
+      ? assessSourceMitigation({ row, triggerType, plan, sourceMitigationCutoffs })
+      : { mitigated: false, source: null, observedAt: null, sourceUpdatedAt: null };
     return {
-      ok: reasons.length === 0,
-      severity: reasons.length > 0 ? 'warning' : 'clear',
+      ok: reasons.length === 0 || sourceMitigation.mitigated,
+      severity: reasons.length > 0
+        ? sourceMitigation.mitigated ? 'historical' : 'warning'
+        : 'clear',
       sessionId: row.session_id || null,
       market,
       triggerType,
       status: row.status || null,
       startedAt: row.started_at || null,
+      finishedAt: row.finished_at || null,
       collectMode: plan.collectMode,
       source: plan.source,
       nodeIds,
       targetedEnrichment: true,
+      historicalMitigated: sourceMitigation.mitigated,
+      sourceMitigation: sourceMitigation.source ? sourceMitigation : null,
       reasons,
     };
   }
@@ -192,10 +274,13 @@ export function classifyPipelineLlmHotPath(row = {}) {
     triggerType,
     status: row.status || null,
     startedAt: row.started_at || null,
+    finishedAt: row.finished_at || null,
     collectMode: plan.collectMode,
     source: plan.source,
     nodeIds,
     targetedEnrichment: false,
+    historicalMitigated: false,
+    sourceMitigation: null,
     reasons,
   };
 }
@@ -207,25 +292,35 @@ export function buildLlmHotPathAudit({
   generatedAt = new Date().toISOString(),
   hours = DEFAULT_HOURS,
   since = null,
+  sourceMitigationCutoffs = null,
 } = {}) {
-  const suspiciousSessions = (pipelineSessions || [])
-    .map(classifyPipelineLlmHotPath)
-    .filter((item) => !item.ok);
+  const classifiedSessions = (pipelineSessions || [])
+    .map((row) => classifyPipelineLlmHotPath(row, { sourceMitigationCutoffs }));
+  const suspiciousSessions = classifiedSessions
+    .filter((item) => !item.ok && !item.historicalMitigated);
+  const historicalMitigatedSessions = classifiedSessions
+    .filter((item) => item.historicalMitigated);
   const totalCalls = (topCalls || []).reduce((sum, row) => sum + Number(row.calls || 0), 0);
   const failedCalls = (topCalls || []).reduce((sum, row) => sum + Number(row.failed_calls || 0), 0);
   const topCall = topCalls?.[0] || null;
   const warnings = [];
   const nonBlockingWarnings = [];
   if (suspiciousSessions.length > 0) warnings.push('unexpected_llm_enrichment_path_detected');
+  if (historicalMitigatedSessions.length > 0) nonBlockingWarnings.push('historical_llm_hotpath_sessions_before_current_source');
   if ((staleActiveRefreshRunning || []).length > 0) nonBlockingWarnings.push('stale_active_candidate_refresh_sessions_detected');
+  const status = warnings.length > 0
+    ? 'luna_llm_hotpath_attention'
+    : historicalMitigatedSessions.length > 0 && (staleActiveRefreshRunning || []).length > 0
+      ? 'luna_llm_hotpath_clear_with_historical_warnings'
+      : historicalMitigatedSessions.length > 0
+        ? 'luna_llm_hotpath_clear_with_historical_mitigated_sessions'
+        : nonBlockingWarnings.length > 0
+          ? 'luna_llm_hotpath_clear_with_historical_stale_sessions'
+          : 'luna_llm_hotpath_clear';
 
   return {
     ok: warnings.length === 0,
-    status: warnings.length > 0
-      ? 'luna_llm_hotpath_attention'
-      : nonBlockingWarnings.length > 0
-        ? 'luna_llm_hotpath_clear_with_historical_stale_sessions'
-        : 'luna_llm_hotpath_clear',
+    status,
     generatedAt,
     hours,
     since,
@@ -235,18 +330,23 @@ export function buildLlmHotPathAudit({
       topCalls: topCalls.length,
       pipelineSessions: pipelineSessions.length,
       suspiciousSessions: suspiciousSessions.length,
+      historicalMitigatedSessions: historicalMitigatedSessions.length,
       staleActiveRefreshRunning: staleActiveRefreshRunning.length,
     },
     topCall,
     topCalls,
     suspiciousSessions,
+    historicalMitigatedSessions,
     staleActiveRefreshRunning,
     warnings,
     nonBlockingWarnings,
     recommendations: warnings.length === 0
       ? [
           'continue monitoring next scheduled market cycle',
-          nonBlockingWarnings.length > 0
+          historicalMitigatedSessions.length > 0
+            ? 'historical LLM hotpath sessions predate the current source update and should age out of the window'
+            : null,
+          (staleActiveRefreshRunning || []).length > 0
             ? 'historical stale active refresh sessions can be closed with a separate explicit apply operator after review'
             : null,
         ].filter(Boolean)
@@ -328,6 +428,7 @@ export async function runLunaLlmHotPathAudit({
     generatedAt: now.toISOString(),
     hours: safeHours,
     since: sinceIso,
+    sourceMitigationCutoffs: buildSourceMitigationCutoffs(),
   });
 }
 
