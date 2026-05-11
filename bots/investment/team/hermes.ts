@@ -457,6 +457,65 @@ export async function analyzeNews(symbol = 'BTC/USDT', exchange = 'binance') {
   return { symbol, signal, confidence, reasoning, sentiment };
 }
 
+// ─── N-Agent Debate: Quant 리서처 ────────────────────────────────────
+// 4-에이전트 토론에서 헤르메스가 뉴스 + 퀀트 중립 관점을 제공한다.
+const QUANT_PROMPTS: Record<string, string> = {
+  binance: `당신은 암호화폐 퀀트 분석가입니다.
+뉴스 흐름과 정량 지표를 기반으로 중립적 근거를 제시하세요.
+감정에 휘둘리지 말고 데이터와 확률에만 집중하세요.
+
+응답 형식 (JSON만, 마크다운 없음):
+{"fair_value":숫자,"expected_return_pct":숫자,"confidence":0~1,"reasoning":"퀀트 분석 2문장 (한국어)","key_metrics":["지표1","지표2"]}`,
+
+  kis_overseas: `당신은 미국 주식시장 퀀트 분석가입니다.
+뉴스 흐름과 정량 지표를 기반으로 중립적 근거를 제시하세요.
+
+응답 형식 (JSON만, 마크다운 없음):
+{"fair_value":숫자,"expected_return_pct":숫자,"confidence":0~1,"reasoning":"퀀트 분석 2문장 (한국어)","key_metrics":["지표1","지표2"]}`,
+
+  kis: `당신은 한국 주식시장 퀀트 분석가입니다.
+뉴스 흐름과 정량 지표를 기반으로 중립적 근거를 제시하세요.
+
+응답 형식 (JSON만, 마크다운 없음):
+{"fair_value":숫자,"expected_return_pct":숫자,"confidence":0~1,"reasoning":"퀀트 분석 2문장 (한국어)","key_metrics":["지표1","지표2"]}`,
+};
+
+export async function runQuantResearcher(
+  symbol: string,
+  analysisSummary: string,
+  currentPrice: number | null,
+  exchange = 'binance'
+): Promise<{
+  fairValue: number | null;
+  expectedReturnPct: number | null;
+  confidence: number;
+  reasoning: string;
+  keyMetrics: string[];
+} | null> {
+  const label = exchange === 'kis' ? '국내주식' : exchange === 'kis_overseas' ? '미국주식' : '암호화폐';
+  const unit  = exchange === 'kis' ? 'KRW' : 'USD';
+  const priceStr = currentPrice ? `${currentPrice.toLocaleString()} ${unit}` : '정보 없음';
+  const prompt = QUANT_PROMPTS[exchange] || QUANT_PROMPTS.binance;
+  const userMsg = `심볼: ${symbol} (${label}) | 현재가: ${priceStr}\n\n시장 분석:\n${analysisSummary}\n\n퀀트 중립 관점을 제시하세요.`;
+
+  const raw = await callLLMWithHub('hermes', prompt, userMsg, callLLM, 300, {
+    symbol,
+    market: exchange,
+    taskType: 'debate_quant',
+    incidentKey: `hermes:quant:${exchange}:${symbol}`,
+  });
+  const parsed = parseJSON(raw);
+  if (!parsed) return null;
+
+  return {
+    fairValue:         parsed.fair_value ?? null,
+    expectedReturnPct: parsed.expected_return_pct ?? null,
+    confidence:        parsed.confidence ?? 0.5,
+    reasoning:         parsed.reasoning ?? '',
+    keyMetrics:        parsed.key_metrics || [],
+  };
+}
+
 // CLI 실행
 if (isDirectExecution(import.meta.url)) {
   await runCliMain({

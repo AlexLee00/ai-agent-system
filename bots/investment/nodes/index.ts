@@ -7,7 +7,9 @@ import l05Onchain from './l05-onchain.ts';
 import l06PortfolioContext from './l06-portfolio-context.ts';
 import l10SignalFusion from './l10-signal-fusion.ts';
 import l11BullDebate from './l11-bull-debate.ts';
+import l11bQuantDebate from './l11b-quant-debate.ts';
 import l12BearDebate from './l12-bear-debate.ts';
+import l12bRiskDebate from './l12b-risk-debate.ts';
 import l13FinalDecision from './l13-final-decision.ts';
 import l14PortfolioDecision from './l14-portfolio-decision.ts';
 import l21LlmRisk from './l21-llm-risk.ts';
@@ -26,7 +28,9 @@ export const INVESTMENT_NODES = [
   l06PortfolioContext,
   l10SignalFusion,
   l11BullDebate,
+  l11bQuantDebate,
   l12BearDebate,
+  l12bRiskDebate,
   l13FinalDecision,
   l14PortfolioDecision,
   l21LlmRisk,

@@ -11,6 +11,11 @@ defmodule Luna.V2.Scheduler do
   require Logger
 
   alias Luna.V2.{MapeKLoop, MarketHoursGate, KillSwitch}
+  alias Luna.V2.Reflexion.{L2Daily, L3Weekly}
+
+  # L2: 매일 KST 22:30 (UTC 13:30), L3: 매주 일요일 KST 23:00 (UTC 14:00)
+  @reflexion_l2_interval_ms 86_400_000
+  @reflexion_l3_interval_ms 604_800_000
 
   def start_link(opts \\ []) do
     GenServer.start_link(__MODULE__, opts, name: __MODULE__)
@@ -34,6 +39,8 @@ defmodule Luna.V2.Scheduler do
     schedule(:crypto, crypto_interval)
     schedule(:domestic, stock_interval_for(:domestic))
     schedule(:overseas, stock_interval_for(:overseas))
+    schedule_reflexion_l2()
+    schedule_reflexion_l3()
     {:ok, %{ticks: %{crypto: 0, domestic: 0, overseas: 0}, started_at: DateTime.utc_now()}}
   end
 
@@ -59,12 +66,43 @@ defmodule Luna.V2.Scheduler do
     {:noreply, update_in(state, [:ticks, market], &(&1 + 1))}
   end
 
+  def handle_info(:reflexion_l2, state) do
+    Task.start(fn ->
+      case L2Daily.run() do
+        {:ok, :skipped} -> Logger.info("[Scheduler][Reflexion.L2] 샘플 부족, 스킵")
+        {:ok, result}   -> Logger.info("[Scheduler][Reflexion.L2] 완료: #{inspect(result)}")
+        {:error, e}     -> Logger.warning("[Scheduler][Reflexion.L2] 실패: #{inspect(e)}")
+      end
+    end)
+    schedule_reflexion_l2()
+    {:noreply, state}
+  end
+
+  def handle_info(:reflexion_l3, state) do
+    Task.start(fn ->
+      case L3Weekly.run() do
+        {:ok, result} -> Logger.info("[Scheduler][Reflexion.L3] 완료: #{inspect(result)}")
+        {:error, e}   -> Logger.warning("[Scheduler][Reflexion.L3] 실패: #{inspect(e)}")
+      end
+    end)
+    schedule_reflexion_l3()
+    {:noreply, state}
+  end
+
   def handle_info(_, state), do: {:noreply, state}
 
   # ─── Internal ────────────────────────────────────────────────────
 
   defp schedule(market, interval_ms) do
     Process.send_after(self(), {:tick, market}, interval_ms)
+  end
+
+  defp schedule_reflexion_l2 do
+    Process.send_after(self(), :reflexion_l2, @reflexion_l2_interval_ms)
+  end
+
+  defp schedule_reflexion_l3 do
+    Process.send_after(self(), :reflexion_l3, @reflexion_l3_interval_ms)
   end
 
   defp crypto_interval_ms do

@@ -1,0 +1,60 @@
+{
+  "name": "Luna Trading Agent",
+  "description": "AI 자동매매 사령탑 — 시장 체제 분석, 멀티에이전트 토론, 최종 매매 결정",
+  "version": "1.0.0",
+  "url": "http://localhost:8765",
+  "documentationUrl": "https://github.com/AlexLee00/ai-agent-system/blob/main/bots/investment/README.md",
+  "capabilities": {
+    "streaming": true,
+    "pushNotifications": true,
+    "stateTransitionHistory": true
+  },
+  "defaultInputModes": ["application/json"],
+  "defaultOutputModes": ["application/json"],
+  "skills": [
+    {
+      "id": "market-regime-analysis",
+      "name": "시장 체제 분석",
+      "description": "현재 시장 체제 (BULL/BEAR/SIDEWAYS/VOLATILE) 를 LLM 기반으로 분류",
+      "tags": ["finance", "regime", "crypto", "stocks"],
+      "inputModes": ["application/json"],
+      "outputModes": ["application/json"]
+    },
+    {
+      "id": "trade-signal-generation",
+      "name": "매매 시그널 생성",
+      "description": "11개 에이전트 합의 기반 BUY/SELL/HOLD 시그널 생성",
+      "tags": ["finance", "signal", "trading"],
+      "inputModes": ["application/json"],
+      "outputModes": ["application/json"]
+    },
+    {
+      "id": "portfolio-optimization",
+      "name": "포트폴리오 최적화",
+      "description": "현재 포지션 기반 자본 배분 최적화 (Kelly criterion 활용)",
+      "tags": ["finance", "portfolio", "optimization"],
+      "inputModes": ["application/json"],
+      "outputModes": ["application/json"]
+    },
+    {
+      "id": "n-agent-debate",
+      "name": "N-에이전트 토론",
+      "description": "제우스/아테나/헤르메스(Quant)/네메시스(Risk) 4-에이전트 토론 + 루나 합의 투표",
+      "tags": ["finance", "debate", "multi-agent"],
+      "inputModes": ["application/json"],
+      "outputModes": ["application/json"]
+    },
+    {
+      "id": "daily-pnl-report",
+      "name": "일일 PnL 리포트",
+      "description": "오늘 거래 성과 요약 (PnL, Sharpe, 최대낙폭 포함)",
+      "tags": ["finance", "reporting", "pnl"],
+      "inputModes": ["application/json"],
+      "outputModes": ["application/json"]
+    }
+  ],
+  "provider": {
+    "organization": "Team Jay",
+    "url": "https://github.com/AlexLee00/ai-agent-system"
+  }
+}

@@ -1136,3 +1136,70 @@ export async function evaluateSignal(signal, opts = {}) {
     ...tpslResult,
   };
 }
+
+// ─── N-Agent Debate: Risk 리서처 ─────────────────────────────────────
+// 4-에이전트 토론에서 네메시스가 리스크 관점의 의견을 제공한다.
+// evaluateSignal의 전체 승인 체인과 달리 토론용 경량 LLM 평가만 수행한다.
+
+const RISK_DEBATE_PROMPTS: Record<string, string> = {
+  binance: `당신은 암호화폐 리스크 매니저입니다.
+주어진 분석 데이터에서 하방 리스크 요인만 도출하세요.
+손실 가능성과 리스크-보상 비율에 집중하세요.
+
+응답 형식 (JSON만, 마크다운 없음):
+{"max_loss_pct":숫자,"risk_reward_ratio":숫자,"verdict":"PROCEED|CAUTION|AVOID","confidence":0~1,"reasoning":"리스크 분석 2문장 (한국어)","risk_factors":["위험1","위험2"]}`,
+
+  kis_overseas: `당신은 미국 주식시장 리스크 매니저입니다.
+하방 리스크 요인만 도출하세요.
+
+응답 형식 (JSON만, 마크다운 없음):
+{"max_loss_pct":숫자,"risk_reward_ratio":숫자,"verdict":"PROCEED|CAUTION|AVOID","confidence":0~1,"reasoning":"리스크 분석 2문장 (한국어)","risk_factors":["위험1","위험2"]}`,
+
+  kis: `당신은 한국 주식시장 리스크 매니저입니다.
+하방 리스크 요인만 도출하세요.
+
+응답 형식 (JSON만, 마크다운 없음):
+{"max_loss_pct":숫자,"risk_reward_ratio":숫자,"verdict":"PROCEED|CAUTION|AVOID","confidence":0~1,"reasoning":"리스크 분석 2문장 (한국어)","risk_factors":["위험1","위험2"]}`,
+};
+
+export async function runRiskDebater(
+  symbol: string,
+  analysisSummary: string,
+  currentPrice: number | null,
+  exchange = 'binance'
+): Promise<{
+  maxLossPct: number | null;
+  riskRewardRatio: number | null;
+  verdict: 'PROCEED' | 'CAUTION' | 'AVOID';
+  confidence: number;
+  reasoning: string;
+  riskFactors: string[];
+} | null> {
+  const label    = exchange === 'kis' ? '국내주식' : exchange === 'kis_overseas' ? '미국주식' : '암호화폐';
+  const unit     = exchange === 'kis' ? 'KRW' : 'USD';
+  const priceStr = currentPrice ? `${currentPrice.toLocaleString()} ${unit}` : '정보 없음';
+  const prompt   = RISK_DEBATE_PROMPTS[exchange] || RISK_DEBATE_PROMPTS.binance;
+  const userMsg  = `심볼: ${symbol} (${label}) | 현재가: ${priceStr}\n\n시장 분석:\n${analysisSummary}\n\n리스크 관점 의견을 제시하세요.`;
+
+  const raw = await callLLMWithHub('nemesis', prompt, userMsg, callLLM, 300, {
+    symbol,
+    market: exchange,
+    taskType: 'debate_risk',
+    incidentKey: `nemesis:debate:${exchange}:${symbol}`,
+  });
+  const parsed = parseJSON(raw);
+  if (!parsed) return null;
+
+  const rawVerdict = (parsed.verdict || 'CAUTION').toUpperCase();
+  const verdict: 'PROCEED' | 'CAUTION' | 'AVOID' =
+    rawVerdict === 'PROCEED' ? 'PROCEED' : rawVerdict === 'AVOID' ? 'AVOID' : 'CAUTION';
+
+  return {
+    maxLossPct:       parsed.max_loss_pct ?? null,
+    riskRewardRatio:  parsed.risk_reward_ratio ?? null,
+    verdict,
+    confidence:       parsed.confidence ?? 0.5,
+    reasoning:        parsed.reasoning ?? '',
+    riskFactors:      parsed.risk_factors || [],
+  };
+}
