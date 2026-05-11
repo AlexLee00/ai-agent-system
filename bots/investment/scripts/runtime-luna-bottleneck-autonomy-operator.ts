@@ -311,21 +311,25 @@ export async function buildLunaBottleneckAutonomyReport({
   includePostLive = true,
 } = {}) {
   const tasks = [
-    capture('sourceHealth', () => buildLunaSourceHealthAudit()),
-    capture('llm', () => runLunaLlmHotPathAudit({ hours, limit: 30 })),
-    capture('discovery', () => buildLunaDiscoveryFunnelReport({ hours, market: 'all' })),
-    capture('blockerPack', () => buildLunaOperationalBlockerPack({ hours, days: 7 })),
+    () => capture('sourceHealth', () => buildLunaSourceHealthAudit()),
+    () => capture('llm', () => runLunaLlmHotPathAudit({ hours, limit: 30 })),
+    () => capture('discovery', () => buildLunaDiscoveryFunnelReport({ hours, market: 'all' })),
+    () => capture('blockerPack', () => buildLunaOperationalBlockerPack({ hours, days: 7 })),
   ];
   if (includeRealtime) {
-    tasks.push(capture('marketdata', () => buildMarketdataRealtimeConnectivityReport({
+    tasks.push(() => capture('marketdata', () => buildMarketdataRealtimeConnectivityReport({
       timeoutMs: 2500,
       realtimeWaitMs: 2500,
       realtimePollMs: 750,
     })));
   }
-  if (includeFinalGate) tasks.push(capture('finalGate', () => buildLunaLiveFireFinalGate({ hours })));
-  if (includePostLive) tasks.push(capture('postLive', () => buildLunaPostLiveFireVerification({ hours })));
-  const collected = await Promise.all(tasks);
+  if (includeFinalGate) tasks.push(() => capture('finalGate', () => buildLunaLiveFireFinalGate({ hours })));
+  if (includePostLive) tasks.push(() => capture('postLive', () => buildLunaPostLiveFireVerification({ hours })));
+  const collected = [];
+  // These reports share Hub, KIS, and marketdata clients; serial collection avoids transient AggregateError storms.
+  for (const task of tasks) {
+    collected.push(await task());
+  }
   const byName = Object.fromEntries(collected.map((item) => [item.name, item]));
   const blockerPack = byName.blockerPack?.value || {};
   const actionBoard = blockerPack ? buildLunaOperationalActionBoardFromPack(blockerPack) : {};

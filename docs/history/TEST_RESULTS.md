@@ -8,6 +8,10 @@
 
 | 테스트 | 결과 |
 |--------|------|
+| `npm --prefix bots/investment run -s runtime:luna-bottleneck-autonomy -- --json --publish-events --no-fail` | ✅ 패치 후 `luna_bottleneck_clear_with_warnings`, hard 0, safeFixes 0 |
+| direct `buildLunaBottleneckAutonomyReport` + `publishLunaBottleneckEvent` | ✅ event publish id `353681`, hard 0, safeFixes 0 |
+| `npm --prefix bots/investment run -s runtime:luna-llm-hotpath-audit -- --hours=6 --json` | ✅ `luna_llm_hotpath_clear`, suspicious 0 |
+| `npm --prefix bots/investment run -s runtime:luna-decision-filter -- --market=domestic --hours=24 --limit=12 --active-candidates --json` | ⚠️ 국내 후보 2건 `likely_actionable`, 장 개장/신호 persistence 대기 |
 | `npm --prefix bots/investment run -s runtime:agent-message-bus-hygiene -- --json` | ✅ `agent_message_bus_hygiene_clear`, stale 0 |
 | `npm --prefix bots/investment run -s runtime:marketdata-realtime-connectivity -- --json --no-fail` | ✅ `marketdata_realtime_connectivity_ready`, blockers 0 |
 | `npm --prefix bots/investment run -s runtime:position-parity -- --json` | ✅ crypto parity `mismatchCount=0`, cache 생성 |

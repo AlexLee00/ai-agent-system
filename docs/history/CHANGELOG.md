@@ -5,6 +5,9 @@ Format based on [Keep a Changelog](https://keepachangelog.com/ko/1.0.0/).
 
 ## 2026-05-11 — Luna position parity rate-limit guard
 
+- `bots/investment/scripts/runtime-luna-bottleneck-autonomy-operator.ts`
+  - source/LLM/discovery/blocker/final-gate/post-live/marketdata 수집을 순차 실행으로 바꿨다.
+  - KIS/Hub/marketdata 공유 클라이언트를 동시에 호출해 `AggregateError`가 false hard-blocker로 승격되는 현상을 줄인다.
 - `bots/investment/scripts/runtime-position-parity-report.ts`
   - Binance REST `-1003`/418 request-weight ban을 감지해 retry 시각을 기록한다.
   - 최신 parity 결과를 ops cache로 저장하고, rate-limit 중에는 허용 시간 안의 stale cache를 사용해 final gate가 반복 REST 조회로 막히지 않게 했다.

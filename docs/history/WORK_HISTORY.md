@@ -6,6 +6,10 @@
 
 ## 2026-05-11: Luna bottleneck loop — position parity REST rate-limit guard
 
+- Luna bottleneck autonomy operator가 구성 리포트를 한 번에 병렬 수집하면서 KIS/Hub/marketdata 경로에 transient `AggregateError` false hard-blocker를 만들 수 있음을 확인했다.
+- `runtime-luna-bottleneck-autonomy-operator.ts`의 수집을 순차 실행으로 바꿔 공유 클라이언트 경합을 줄이고, 표준 operator 재실행에서 `luna_bottleneck_clear_with_warnings`, hard blockers 0, safeFixCandidates 0, event publish id `353681`을 확인했다.
+- read-only 진단으로 `runtime:marketdata-realtime-connectivity`, `runtime:agent-message-bus-hygiene`, `runtime:luna-llm-hotpath-audit`, `runtime:luna-decision-filter`를 실행했고, confirm_required 명령은 실행하지 않았다.
+
 - Luna bottleneck autonomy operator가 `position_parity_not_clear`로 hard blocked 된 상태를 확인했다.
 - `runtime-position-parity-report.ts`에 Binance REST `-1003`/418 rate-limit guard와 parity cache fallback을 추가했다.
 - `runtime-position-parity-cache-smoke.ts`를 추가하고 `check:luna-bottleneck-autonomy`에 연결했다.
