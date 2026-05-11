@@ -1,5 +1,3 @@
-// @ts-nocheck
-
 const VALID_EXCHANGES = new Set(['binance', 'kis', 'kis_overseas']);
 
 function finiteNumber(value, fallback = 0) {

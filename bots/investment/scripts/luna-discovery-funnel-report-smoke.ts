@@ -121,6 +121,29 @@ export async function runLunaDiscoveryFunnelReportSmoke() {
     assert.equal(report.autopilot.totals.candidateCount, 1, 'autopilot dispatch candidate count should come from fixture history');
     assert.equal(report.nextAction, 'continue_observation', 'complete fixture funnel should not request repair action');
 
+    const idleHistoryWithActiveTriggerFile = path.join(dir, 'idle-history-with-active-trigger.jsonl');
+    fs.writeFileSync(idleHistoryWithActiveTriggerFile, `${JSON.stringify({
+      recordedAt: new Date().toISOString(),
+      status: 'position_runtime_autopilot_executed',
+      dispatchCandidateCount: 0,
+      dispatchExecutedCount: 0,
+      dispatchQueuedCount: 0,
+      dispatchRetryingCount: 0,
+      dispatchSkippedCount: 0,
+      dispatchFailureCount: 0,
+      dispatchMarketQueue: { total: 0, waitingMarketOpen: 0 },
+    })}\n`);
+    const idleWithActiveTrigger = await buildLunaDiscoveryFunnelReport({
+      hours: 1,
+      market: 'crypto',
+      historyFile: idleHistoryWithActiveTriggerFile,
+    });
+    assert.equal(
+      idleWithActiveTrigger.recommendations.includes('dispatch_idle_no_candidates_in_window'),
+      false,
+      'dispatch idle should not be reported when active entry-trigger evidence is already present',
+    );
+
     const filteredDecisionScope = filterEntryDecisionDiagnosticsForOpenPositions([
       { symbol: 'BTC/USDT', actionability: 'relaxed_probe_candidate' },
       { symbol: 'NEW/USDT', actionability: 'likely_actionable' },

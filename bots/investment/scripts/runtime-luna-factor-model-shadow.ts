@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-// @ts-nocheck
 
 import * as db from '../shared/db.ts';
 import { listActiveEntryTriggers } from '../shared/luna-discovery-entry-store.ts';

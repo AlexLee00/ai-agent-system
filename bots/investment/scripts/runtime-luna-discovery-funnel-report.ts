@@ -1296,7 +1296,14 @@ export async function buildLunaDiscoveryFunnelReport({
     recommendations.push('candidate_to_entry_trigger_funnel_needs_review');
   }
   if (autopilot.totals.samples === 0) recommendations.push('runtime_autopilot_history_missing');
-  if (autopilot.totals.candidateCount === 0) recommendations.push('dispatch_idle_no_candidates_in_window');
+  const dispatchIdleWithoutEntryEvidence = autopilot.totals.samples > 0
+    && autopilot.totals.candidateCount === 0
+    && autopilot.totals.marketQueueTotal === 0
+    && activeTriggerTotal === 0
+    && actionableWaitingTotal === 0
+    && relaxedProbeReadyTotal === 0
+    && signalPersistenceGapActionableTotal === 0;
+  if (dispatchIdleWithoutEntryEvidence) recommendations.push('dispatch_idle_no_candidates_in_window');
   return {
     ok: true,
     status: allBottlenecks.length
