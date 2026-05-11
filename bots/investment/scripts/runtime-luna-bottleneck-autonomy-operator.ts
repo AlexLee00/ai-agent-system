@@ -134,13 +134,22 @@ function buildSafeFixCandidates({ discovery, llm, marketdata, blockerPack, actio
   ) {
     const markets = marketsWithDiscoveryBottleneck(discovery, /actionable_candidate_waiting_signal_persistence/);
     for (const market of markets.length > 0 ? markets : ['all']) {
+      const marketArg = market === 'all' ? 'crypto' : market;
       candidates.push({
         id: `inspect_signal_persistence_gap_${market}`,
         type: 'diagnostic',
         risk: 'low',
         applyMode: 'read_only',
         reason: `${market} has actionable candidates that did not become persisted BUY signals`,
-        command: `npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run -s runtime:luna-decision-filter -- --market=${market === 'all' ? 'crypto' : market} --hours=24 --limit=12 --active-candidates --json`,
+        command: `npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run -s runtime:luna-decision-filter -- --market=${marketArg} --hours=24 --limit=12 --active-candidates --json`,
+      });
+      candidates.push({
+        id: `repair_signal_persistence_gap_${market}`,
+        type: 'code_review',
+        risk: 'medium',
+        applyMode: 'codex_patch_required',
+        reason: `${market} has likely actionable candidates but no BUY signal persistence; inspect and patch the discovery-to-signal persistence runtime path`,
+        command: `npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run -s runtime:luna-decision-filter -- --market=${marketArg} --hours=24 --limit=12 --active-candidates --json`,
       });
     }
   }
@@ -439,6 +448,10 @@ export async function runLunaBottleneckAutonomyOperatorSmoke() {
   assert.ok(signalPersistenceReport.safeFixCandidates.some((item) =>
     item.id === 'inspect_signal_persistence_gap_domestic'
     && item.applyMode === 'read_only'
+    && item.command.includes('--market=domestic')));
+  assert.ok(signalPersistenceReport.safeFixCandidates.some((item) =>
+    item.id === 'repair_signal_persistence_gap_domestic'
+    && item.applyMode === 'codex_patch_required'
     && item.command.includes('--market=domestic')));
   return { ok: true, report, transientBusReport, signalPersistenceReport };
 }
