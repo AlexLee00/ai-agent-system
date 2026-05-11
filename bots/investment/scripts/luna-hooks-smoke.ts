@@ -51,12 +51,24 @@ export function runLunaHooksSmoke() {
     }, { LUNA_HOOK_TEST_MODE: 'true', LUNA_HOOK_KILL_SWITCH_FILE: killSwitchPath });
     assert.equal(passDynamicTpSlShadow.status, 0, passDynamicTpSlShadow.stderr || passDynamicTpSlShadow.stdout);
 
+    const passMetaReflexionShadow = runHook(PRE_HOOK, {
+      tool_name: 'Bash',
+      tool_input: { command: 'npm --prefix bots/investment run -s runtime:luna-meta-reflexion-shadow -- --json --max-llm-calls=0 --layer=all' },
+    }, { LUNA_HOOK_TEST_MODE: 'true', LUNA_HOOK_KILL_SWITCH_FILE: killSwitchPath });
+    assert.equal(passMetaReflexionShadow.status, 0, passMetaReflexionShadow.stderr || passMetaReflexionShadow.stdout);
+
     writeFileSync(killSwitchPath, JSON.stringify({ active: true }), 'utf8');
     const dynamicTpSlReadonly = runHook(PRE_HOOK, {
       tool_name: 'Bash',
       tool_input: { command: 'npm --prefix bots/investment run -s runtime:luna-dynamic-tpsl-shadow -- --json --max-llm-calls=0' },
     }, { LUNA_HOOK_TEST_MODE: 'true', LUNA_HOOK_KILL_SWITCH_FILE: killSwitchPath });
     assert.equal(dynamicTpSlReadonly.status, 0, dynamicTpSlReadonly.stderr || dynamicTpSlReadonly.stdout);
+
+    const metaReflexionReadonly = runHook(PRE_HOOK, {
+      tool_name: 'Bash',
+      tool_input: { command: 'npm --prefix bots/investment run -s runtime:luna-meta-reflexion-shadow -- --json --max-llm-calls=0 --layer=l2' },
+    }, { LUNA_HOOK_TEST_MODE: 'true', LUNA_HOOK_KILL_SWITCH_FILE: killSwitchPath });
+    assert.equal(metaReflexionReadonly.status, 0, metaReflexionReadonly.stderr || metaReflexionReadonly.stdout);
 
     const dynamicTpSlChainedBlocked = runHook(PRE_HOOK, {
       tool_name: 'Bash',
@@ -86,6 +98,13 @@ export function runLunaHooksSmoke() {
     assert.equal(dynamicTpSlBlocked.status, 2, dynamicTpSlBlocked.stderr || dynamicTpSlBlocked.stdout);
     assert.match(`${dynamicTpSlBlocked.stdout}\n${dynamicTpSlBlocked.stderr}`, /Kill Switch|kill switch/i);
 
+    const metaReflexionBlocked = runHook(PRE_HOOK, {
+      tool_name: 'Bash',
+      tool_input: { command: 'npm --prefix bots/investment run -s runtime:luna-meta-reflexion-shadow -- --apply --confirm=luna-meta-reflexion-shadow --json' },
+    }, { LUNA_HOOK_TEST_MODE: 'true', LUNA_HOOK_KILL_SWITCH_FILE: killSwitchPath });
+    assert.equal(metaReflexionBlocked.status, 2, metaReflexionBlocked.stderr || metaReflexionBlocked.stdout);
+    assert.match(`${metaReflexionBlocked.stdout}\n${metaReflexionBlocked.stderr}`, /Kill Switch|kill switch/i);
+
     const post = runHook(POST_HOOK, {
       tool_name: 'Bash',
       tool_input: { command: 'npm --prefix bots/investment run -s smoke:luna-regime-llm' },
@@ -101,6 +120,7 @@ export function runLunaHooksSmoke() {
       killSwitchBlocked: true,
       entryShadowCommandChecked: true,
       dynamicTpSlShadowCommandChecked: true,
+      metaReflexionShadowCommandChecked: true,
       dynamicTpSlChainedBlocked: true,
       postHookFailOpen: true,
     };

@@ -40,8 +40,8 @@ while parts and re.match(r"^[A-Za-z_][A-Za-z0-9_]*=", parts[0]):
 ok = False
 if len(parts) >= 7 and parts[0] == "npm" and parts[1] == "--prefix":
     prefix = parts[2].rstrip("/")
-    if prefix.endswith("bots/investment") and parts[3:6] == ["run", "-s", "runtime:luna-dynamic-tpsl-shadow"] and parts[6] == "--":
-        allowed = [
+    allowed_runtime_scripts = {
+        "runtime:luna-dynamic-tpsl-shadow": [
             re.compile(r"^--json$"),
             re.compile(r"^--max-llm-calls=0$"),
             re.compile(r"^--limit=[0-9]+$"),
@@ -50,7 +50,21 @@ if len(parts) >= 7 and parts[0] == "npm" and parts[1] == "--prefix":
             re.compile(r"^--exchange(s)?=[A-Za-z0-9_,_-]+$"),
             re.compile(r"^--symbol=[A-Za-z0-9_./:-]+$"),
             re.compile(r"^--trigger-id=[A-Za-z0-9_.:/-]+$"),
-        ]
+        ],
+        "runtime:luna-meta-reflexion-shadow": [
+            re.compile(r"^--json$"),
+            re.compile(r"^--max-llm-calls=0$"),
+            re.compile(r"^--limit=[0-9]+$"),
+            re.compile(r"^--layer=(all|l1|l2|l3|1|2|3)$"),
+            re.compile(r"^--date=[0-9]{4}-[0-9]{2}-[0-9]{2}$"),
+            re.compile(r"^--end-date=[0-9]{4}-[0-9]{2}-[0-9]{2}$"),
+            re.compile(r"^--lookback-days=[0-9]+$"),
+            re.compile(r"^--scope=[A-Za-z0-9_.:-]+$"),
+        ],
+    }
+    runtime_script = parts[5] if len(parts) > 5 else ""
+    if prefix.endswith("bots/investment") and parts[3:5] == ["run", "-s"] and runtime_script in allowed_runtime_scripts and parts[6] == "--":
+        allowed = allowed_runtime_scripts[runtime_script]
         tail = parts[7:]
         ok = all(any(pattern.match(arg) for pattern in allowed) for arg in tail)
 

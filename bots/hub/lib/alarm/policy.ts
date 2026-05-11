@@ -62,6 +62,12 @@ function classifyOperationalSnapshot({
     return { type: 'report', confidence: 0.94 };
   }
 
+  if (event === 'blog_weekly_evolution'
+    && (lower.includes('weekly-evolution 완료')
+      || lower.includes('블로그팀 주간 전략 진화 완료'))) {
+    return { type: 'report', confidence: 0.96 };
+  }
+
   if (event === 'alert'
     && lower.includes('👀 포지션 watch')
     && lower.includes('autopilot: position_runtime_autopilot_ready')) {

@@ -37,6 +37,14 @@
       "outputModes": ["application/json"]
     },
     {
+      "id": "meta-neural-reflexion",
+      "name": "Meta-Neural Reflexion Shadow",
+      "description": "L1/L2/L3 거래 성과 Reflexion을 Shadow Mode로 요약하고 정책 추천·메모리 기록 계획을 반환",
+      "tags": ["finance", "reflexion", "memory", "shadow", "a2a"],
+      "inputModes": ["application/json"],
+      "outputModes": ["application/json"]
+    },
+    {
       "id": "trade-signal-generation",
       "name": "매매 시그널 생성",
       "description": "Phase 2에서는 Entry Decision Shadow 결과를 반환하고 실제 시그널 생성은 수행하지 않음",

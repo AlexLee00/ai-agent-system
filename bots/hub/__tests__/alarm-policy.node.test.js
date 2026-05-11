@@ -62,6 +62,18 @@ test('downgrades blog instagram publish success snapshot to report', async () =>
   assert.deepEqual(result, { type: 'report', confidence: 0.94 });
 });
 
+test('downgrades blog weekly evolution completion to report', async () => {
+  const { classifyAlarmTypeWithConfidence } = await loadModule();
+  const result = classifyAlarmTypeWithConfidence({
+    severity: 'info',
+    eventType: 'blog_weekly_evolution',
+    title: 'blog alarm',
+    message: '블로그팀 주간 전략 진화 완료\n14건 분석 / 약점: title_pattern_bias\nweekly-evolution 완료',
+  });
+
+  assert.deepEqual(result, { type: 'report', confidence: 0.96 });
+});
+
 test('keeps actionable runtime failure as error', async () => {
   const { classifyAlarmTypeWithConfidence } = await loadModule();
   const result = classifyAlarmTypeWithConfidence({

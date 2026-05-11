@@ -186,7 +186,8 @@ defmodule Luna.V2.Reflexion.L3Weekly do
   # 다윈팀 R&D 의뢰를 A2A broadcast로 전달 (비동기, 실패 무시)
   defp broadcast_to_darwin(evolution) do
     requests = evolution[:darwin_rnd_requests] || []
-    if requests != [] do
+    broadcast_enabled? = System.get_env("LUNA_A2A_BROADCAST_ENABLED") == "true"
+    if requests != [] and broadcast_enabled? do
       Task.start(fn ->
         url = System.get_env("DARWIN_A2A_URL", "http://localhost:8766")
         payload = Jason.encode!(%{
@@ -200,6 +201,8 @@ defmodule Luna.V2.Reflexion.L3Weekly do
           err -> Logger.debug("[Reflexion.L3] 다윈 broadcast 실패 (무시): #{inspect(err)}")
         end
       end)
+    else
+      :ok
     end
   end
 

@@ -17,6 +17,7 @@ import { handleNotification } from './handlers/notification-handler.ts';
 import { registerMarketRegimeAnalysisSkill } from './skills/market-regime-analysis.ts';
 import { registerEntryDecisionShadowSkill } from './skills/entry-decision-shadow.ts';
 import { registerDynamicTpSlShadowSkill } from './skills/dynamic-tpsl-shadow.ts';
+import { registerMetaNeuralReflexionSkill } from './skills/meta-neural-reflexion.ts';
 
 const _require = createRequire(import.meta.url);
 const express = _require('express');
@@ -32,6 +33,7 @@ app.use(express.json());
 registerMarketRegimeAnalysisSkill();
 registerEntryDecisionShadowSkill();
 registerDynamicTpSlShadowSkill();
+registerMetaNeuralReflexionSkill();
 
 // ── SSE 스트림 저장소 ──────────────────────────────────────────────
 const _streams: Map<string, ReturnType<typeof express.response.write>[]> = new Map();
