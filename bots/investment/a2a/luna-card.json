@@ -109,6 +109,14 @@
       "outputModes": ["application/json"]
     },
     {
+      "id": "communication-infrastructure-gate",
+      "name": "Communication Infrastructure Gate",
+      "description": "Phase 1-8 A2A/Hook/Debate/Reflexion/Cross-team 통신 인프라를 Shadow Mode로 검증",
+      "tags": ["finance", "a2a", "hooks", "communication", "shadow"],
+      "inputModes": ["application/json"],
+      "outputModes": ["application/json"]
+    },
+    {
       "id": "trade-signal-generation",
       "name": "매매 시그널 생성",
       "description": "Phase 2에서는 Entry Decision Shadow 결과를 반환하고 실제 시그널 생성은 수행하지 않음",

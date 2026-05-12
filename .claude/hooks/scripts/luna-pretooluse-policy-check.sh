@@ -41,6 +41,23 @@ ok = False
 if len(parts) >= 7 and parts[0] == "npm" and parts[1] == "--prefix":
     prefix = parts[2].rstrip("/")
     allowed_runtime_scripts = {
+        "runtime:luna-regime-llm-shadow": [
+            re.compile(r"^--json$"),
+            re.compile(r"^--max-llm-calls=0$"),
+            re.compile(r"^--ttl-minutes=[0-9]+$"),
+            re.compile(r"^--market(s)?=[A-Za-z0-9_,_-]+$"),
+        ],
+        "runtime:luna-entry-llm-shadow": [
+            re.compile(r"^--json$"),
+            re.compile(r"^--max-llm-calls=0$"),
+            re.compile(r"^--limit=[0-9]+$"),
+            re.compile(r"^--hours=[0-9]+$"),
+            re.compile(r"^--ttl-minutes=[0-9]+$"),
+            re.compile(r"^--market=[A-Za-z0-9_,_-]+$"),
+            re.compile(r"^--exchange(s)?=[A-Za-z0-9_,_-]+$"),
+            re.compile(r"^--symbol=[A-Za-z0-9_./:-]+$"),
+            re.compile(r"^--trigger-id=[A-Za-z0-9_.:/-]+$"),
+        ],
         "runtime:luna-dynamic-tpsl-shadow": [
             re.compile(r"^--json$"),
             re.compile(r"^--max-llm-calls=0$"),
@@ -103,6 +120,10 @@ if len(parts) >= 7 and parts[0] == "npm" and parts[1] == "--prefix":
             re.compile(r"^--symbols=[A-Za-z0-9_./:,-]+$"),
             re.compile(r"^--analysis=(all|monte|monte_carlo|stress|stress_test)$"),
             re.compile(r"^--scenario(s)?=[A-Za-z0-9_,_-]+$"),
+        ],
+        "runtime:luna-communication-infra-gate": [
+            re.compile(r"^--json$"),
+            re.compile(r"^--strict$"),
         ],
     }
     runtime_script = parts[5] if len(parts) > 5 else ""
