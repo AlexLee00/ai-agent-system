@@ -164,7 +164,12 @@ async function reportPublish(report) {
           },
         }))
       : Promise.resolve(null),
-    postAlarm(msg, { team: 'blog', bot: 'publish-reporter', level: status === 'success' ? 'info' : 'critical' }).catch(() => {}),
+    postAlarm({
+      message: msg,
+      team: 'blog',
+      fromBot: 'publish-reporter',
+      alertLevel: status === 'success' ? 1 : 4,
+    }).catch(() => {}),
   ]);
 }
 
@@ -257,7 +262,12 @@ async function reportDailySummary(date = null) {
     }
 
     const msg = lines.join('\n');
-    await postAlarm(msg, { team: 'blog', bot: 'publish-reporter', level: 'info' }).catch(() => {});
+    await postAlarm({
+      message: msg,
+      team: 'blog',
+      fromBot: 'publish-reporter',
+      alertLevel: 1,
+    }).catch(() => {});
 
     return byPlatform;
   } catch (e) {

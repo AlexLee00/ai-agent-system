@@ -95,7 +95,12 @@ async function diagnoseImageGeneration() {
  */
 async function reportImageGenFailure(title, errorMessage) {
   const message = `🔴 [블로팀] 이미지 생성 실패\n글: ${title}\n원인: ${errorMessage}`;
-  await postAlarm(message, { team: 'blog', bot: 'img-gen-doctor', level: 'critical' }).catch(() => {});
+  await postAlarm({
+    message,
+    team: 'blog',
+    fromBot: 'img-gen-doctor',
+    alertLevel: 4,
+  }).catch(() => {});
 }
 
 /**
@@ -104,7 +109,12 @@ async function reportImageGenFailure(title, errorMessage) {
 async function reportImageDiagnosis(issues) {
   if (!issues?.length) return;
   const message = `🔴 [블로팀] 이미지 생성 진단 결과\n${issues.join('\n')}`;
-  await postAlarm(message, { team: 'blog', bot: 'img-gen-doctor', level: 'critical' }).catch(() => {});
+  await postAlarm({
+    message,
+    team: 'blog',
+    fromBot: 'img-gen-doctor',
+    alertLevel: 4,
+  }).catch(() => {});
 }
 
 /**
