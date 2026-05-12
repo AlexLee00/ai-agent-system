@@ -114,6 +114,9 @@ function main() {
   assertHasMatches('callHubLlm', STANDARDIZED_SCOPES, 'standardized team LLM scopes');
 
   const selector = require('../../../packages/core/lib/llm-model-selector.ts');
+  const {
+    getBlogLLMSelectorOverrides,
+  } = require('../../../bots/blog/lib/runtime-config.ts');
 
   const { PROFILES } = require('../lib/runtime-profiles.ts');
   for (const profile of REQUIRED_DARWIN_PROFILES) {
@@ -129,6 +132,24 @@ function main() {
     const description = selector.describeAgentModel('blog', agent);
     assert.ok(description?.selected, `blog/${agent} must resolve to a selector chain`);
     assert.ok(Array.isArray(description.chain) && description.chain.length > 0, `blog/${agent} selector chain must be non-empty`);
+  }
+
+  const blogSelectorOverrides = getBlogLLMSelectorOverrides();
+  for (const selectorKey of ['blog.pos.writer', 'blog.gems.writer']) {
+    const chain = selector.selectLLMChain(selectorKey, {
+      policyOverride: blogSelectorOverrides[selectorKey] || null,
+    });
+    assert.ok(chain.length > 0, `${selectorKey} chain must be non-empty`);
+    assert.equal(
+      chain[0]?.provider,
+      'openai-oauth',
+      `${selectorKey} primary must stay on OpenAI OAuth for long-form draft quality`,
+    );
+    assert.equal(
+      chain[0]?.model,
+      'gpt-5.4',
+      `${selectorKey} primary model must stay on gpt-5.4`,
+    );
   }
 
   for (const agent of REQUIRED_SKA_AGENTS) {

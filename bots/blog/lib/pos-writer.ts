@@ -27,6 +27,13 @@ const BLOG_WRITER_TIMEOUT_MS = Number(generationRuntimeConfig.writerTimeoutMs ||
 const BLOG_CONTINUE_TIMEOUT_MS = Number(generationRuntimeConfig.continueTimeoutMs || BLOG_WRITER_TIMEOUT_MS);
 const BLOG_CHUNK_TIMEOUT_MS = Number(generationRuntimeConfig.chunkTimeoutMs || Math.max(BLOG_WRITER_TIMEOUT_MS, 120000));
 
+function isHubWriterTimeout(error) {
+  const message = String(error?.message || error || '');
+  return message.includes('hub_llm_call_failed:타임아웃')
+    || message.includes('AbortError')
+    || message.includes('timeout');
+}
+
 async function callPosWriterLlm({ systemPrompt, userPrompt, taskType, maxTokens = 16000, timeoutMs = BLOG_WRITER_TIMEOUT_MS }) {
   const selectorOverrides = getBlogLLMSelectorOverrides();
   return callHubLlm({
@@ -391,6 +398,7 @@ ${_buildVariationBlock(sectionVariation)}
   const startTime = Date.now();
   let usedModel = 'gpt-4o';
   let fallbackUsed = false;
+  let usedChunkedFallback = false;
   let content;
 
   try {
@@ -404,6 +412,14 @@ ${_buildVariationBlock(sectionVariation)}
     usedModel    = result.selected_route || result.model || result.provider || 'hub';
     fallbackUsed = Number(result.fallbackCount || 0) > 0;
     if (fallbackUsed) console.log(`[포스] LLM 폴백 발생: ${usedModel} (${result.fallbackCount} fallback)`);
+  } catch (error) {
+    if (!isHubWriterTimeout(error)) throw error;
+    console.warn(`[포스] 단일 writer 타임아웃 → chunked writer 폴백: ${error.message}`);
+    const chunked = await writeLecturePostChunked(lectureNumber, lectureTitle, researchData, sectionVariation);
+    content = chunked.content;
+    usedModel = chunked.model || 'chunked-hub:blog.pos.writer';
+    fallbackUsed = true;
+    usedChunkedFallback = true;
   } finally {
     await toolLogger.logToolCall('llm', 'callHubLlm', {
       bot: 'blog-pos', success: !!content,
@@ -415,7 +431,7 @@ ${_buildVariationBlock(sectionVariation)}
   const MIN_CHARS_LECTURE = Number(generationRuntimeConfig.posMinChars || 7000);
 
   // ── Continue 이어쓰기: 글자수 부족 + _THE_END_ 없으면 2차 호출 ──
-  if (content.length < MIN_CHARS_LECTURE && !content.includes('_THE_END_')) {
+  if (!usedChunkedFallback && content.length < MIN_CHARS_LECTURE && !content.includes('_THE_END_')) {
     console.log(`[포스] 글자수 부족 (${content.length}자) — 이어쓰기 호출`);
 
     // 마지막 800자만 컨텍스트로 전달 (전체 내용 전달 시 LLM이 새 글을 시작하는 문제 방지)
