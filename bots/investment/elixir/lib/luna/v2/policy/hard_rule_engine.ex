@@ -17,12 +17,26 @@ defmodule Luna.V2.Policy.HardRuleEngine do
 
   @blacklist_symbols ~w[LUNA2 LUNC UST BUSD]
 
+  # KIS 전략 개선 (2026-05-12): 33 LIVE 거래 분석 기반
+  # Shadow mode: true → 로그만, false → 실제 차단
+  @kis_shadow_mode true
+
+  # 09시(장시작 15.4% 승률 -$186), 15시(마감 0% 승률 -$110) 차단
+  @kis_blocked_hours_kst [9, 15]
+
+  # 반복 + 0% 승률 종목 차단
+  @kis_blacklist_symbols ~w[018470 100090 008350 322000 066970 005870]
+
+  # SMA 기반 전략만 허용 (normal_exit 11% vs strategy_exit 25%)
+  @kis_allowed_strategy_families ~w[equity_swing sma_crossover sma_pullback]
+
   def check(candidate, context \\ %{}) do
     with :ok <- check_notional(candidate),
          :ok <- check_balance(candidate, context),
          :ok <- check_duplicate(candidate),
          :ok <- check_blacklist(candidate),
-         :ok <- check_market_hours(candidate) do
+         :ok <- check_market_hours(candidate),
+         :ok <- check_kis_rules(candidate) do
       {:ok, :passed}
     end
   end
@@ -87,4 +101,68 @@ defmodule Luna.V2.Policy.HardRuleEngine do
   end
 
   defp check_market_hours(_), do: :ok
+
+  # ── KIS 전략 개선 규칙 (Shadow Mode 지원) ────────────────────────────────
+
+  defp check_kis_rules(%{exchange: ex} = candidate) when ex in ["kis", :kis] do
+    violations =
+      []
+      |> maybe_add(check_kis_time_slot(), :kis_blocked_hour)
+      |> maybe_add(check_kis_symbol(candidate), :kis_blacklisted_symbol)
+      |> maybe_add(check_kis_strategy(candidate), :kis_non_sma_strategy)
+
+    case violations do
+      [] ->
+        :ok
+
+      reasons ->
+        combined = Enum.join(reasons, "; ")
+        Logger.info("[HardRule/KIS] #{@kis_shadow_mode && "SHADOW" || "BLOCK"} #{candidate[:symbol]}: #{combined}")
+        if @kis_shadow_mode, do: :ok, else: {:error, :kis_rule_violation, combined}
+    end
+  end
+
+  defp check_kis_rules(_), do: :ok
+
+  defp check_kis_time_slot do
+    kst_hour = kst_hour_now()
+
+    if kst_hour in @kis_blocked_hours_kst do
+      "시간 차단 #{kst_hour}시 KST"
+    else
+      nil
+    end
+  end
+
+  defp check_kis_symbol(%{symbol: symbol}) when is_binary(symbol) do
+    if symbol in @kis_blacklist_symbols do
+      "종목 블랙리스트 #{symbol}"
+    else
+      nil
+    end
+  end
+
+  defp check_kis_symbol(_), do: nil
+
+  defp check_kis_strategy(%{strategy_family: family}) when is_binary(family) do
+    unless family in @kis_allowed_strategy_families do
+      "비SMA 전략 #{family} (허용: #{Enum.join(@kis_allowed_strategy_families, "/")})"
+    end
+  end
+
+  defp check_kis_strategy(_), do: nil
+
+  defp maybe_add(list, nil, _tag), do: list
+  defp maybe_add(list, reason, _tag) when is_binary(reason), do: [reason | list]
+
+  defp kst_hour_now do
+    utc = DateTime.utc_now()
+    {:ok, kst} = DateTime.shift_zone(utc, "Asia/Seoul")
+    kst.hour
+  rescue
+    _ ->
+      # Asia/Seoul 타임존 미사용 환경 폴백
+      utc = DateTime.utc_now()
+      rem(utc.hour + 9, 24)
+  end
 end

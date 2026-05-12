@@ -127,6 +127,7 @@ defmodule Luna.V2.PositionWatch do
       COALESCE(unrealized_pnl, 0) AS unrealized_pnl,
       COALESCE(size, 0) * COALESCE(entry_price, 0) AS notional_value,
       updated_at,
+      investment.live_positions.created_at AS position_created_at,
       psp.strategy_name,
       psp.setup_type,
       psp.monitoring_plan,
@@ -254,6 +255,7 @@ defmodule Luna.V2.PositionWatch do
     execution_plan = execution_plan(position[:strategy_context])
     adjusted_gain_pct = strategy_adjust_gain_pct(adjust_gain_pct, setup_type)
     adjusted_stop_loss_pct = strategy_stop_loss_pct(stop_loss_pct, setup_type)
+    kis_hold_attention = classify_kis_hold_time(position)
 
     strategy_tv_attention =
       classify_strategy_tv_attention(
@@ -269,6 +271,9 @@ defmodule Luna.V2.PositionWatch do
 
     base_attention =
       cond do
+        not is_nil(kis_hold_attention) ->
+          Map.merge(position, kis_hold_attention)
+
         not is_nil(strategy_tv_attention) ->
           Map.merge(position, strategy_tv_attention)
 
@@ -321,6 +326,50 @@ defmodule Luna.V2.PositionWatch do
   end
 
   defp stale_position?(_, _stale_minutes), do: false
+
+  # KIS 최대 보유 시간 감지 — 목표 1일(1440분), 경고 80%=1152분
+  # 데이터 기반: 평균 4,535분(3.15일) → 목표 1,440분
+  @kis_max_hold_minutes 1440
+  @kis_hold_warn_pct 0.80
+
+  defp classify_kis_hold_time(%{exchange: ex, position_created_at: created_at})
+       when ex in ["kis", :kis] and not is_nil(created_at) do
+    age_minutes = position_age_minutes(created_at)
+    warn_threshold = trunc(@kis_max_hold_minutes * @kis_hold_warn_pct)
+
+    cond do
+      age_minutes >= @kis_max_hold_minutes ->
+        %{
+          attention_type: :kis_max_hold_exceeded,
+          reason: "KIS 최대 보유 #{@kis_max_hold_minutes}분 초과 (현재 #{age_minutes}분)",
+          kis_hold_minutes: age_minutes,
+          kis_max_hold_minutes: @kis_max_hold_minutes
+        }
+
+      age_minutes >= warn_threshold ->
+        %{
+          attention_type: :kis_hold_warning,
+          reason: "KIS 보유 시간 경고 #{age_minutes}/#{@kis_max_hold_minutes}분",
+          kis_hold_minutes: age_minutes,
+          kis_max_hold_minutes: @kis_max_hold_minutes
+        }
+
+      true ->
+        nil
+    end
+  end
+
+  defp classify_kis_hold_time(_), do: nil
+
+  defp position_age_minutes(%NaiveDateTime{} = created_at) do
+    NaiveDateTime.diff(NaiveDateTime.utc_now(), created_at, :minute)
+  end
+
+  defp position_age_minutes(%DateTime{} = created_at) do
+    DateTime.diff(DateTime.utc_now(), created_at, :minute)
+  end
+
+  defp position_age_minutes(_), do: 0
 
   defp build_watch_context(positions, tv_snapshot) do
     counts =

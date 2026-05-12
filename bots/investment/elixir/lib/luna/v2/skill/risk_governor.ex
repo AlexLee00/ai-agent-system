@@ -14,6 +14,10 @@ defmodule Luna.V2.Skill.RiskGovernor do
   @max_single_position_pct 0.20   # 단일 포지션 최대 20% NAV
   @daily_loss_limit_usd    200.0  # 일일 손실 한도 $200
 
+  # KIS Stop Loss 강화 (2026-05-12): 데이터 기반 -2% 절대
+  # force_exit 7건 -$201 방지 목적
+  @kis_sl_pct 0.02
+
   def run(%{symbol: symbol, exchange: exchange}, _context) do
     Logger.info("[루나V2/RiskGovernor] 리스크 점검 symbol=#{symbol} exchange=#{exchange}")
 
@@ -21,6 +25,7 @@ defmodule Luna.V2.Skill.RiskGovernor do
       |> check_position_concentration(symbol, exchange)
       |> check_total_exposure()
       |> check_daily_loss()
+      |> check_kis_stop_loss(symbol, exchange)
 
     status = if violations == [], do: :ok, else: :violation
     {:ok, %{status: status, violations: violations, checked_at: DateTime.utc_now()}}
@@ -72,4 +77,48 @@ defmodule Luna.V2.Skill.RiskGovernor do
       _ -> violations
     end
   end
+
+  # KIS 포지션 -2% SL 위반 체크 (force_exit 사전 방지)
+  defp check_kis_stop_loss(violations, symbol, exchange)
+       when exchange in ["kis", :kis, "kis_overseas", :kis_overseas] do
+    sym_filter = if symbol && symbol != "", do: "AND symbol = '#{symbol}'", else: ""
+
+    query = """
+    SELECT symbol, exchange,
+      CASE
+        WHEN COALESCE(size, 0) * COALESCE(entry_price, 0) > 0
+        THEN COALESCE(unrealized_pnl, 0) / (COALESCE(size, 0) * COALESCE(entry_price, 0))
+        ELSE NULL
+      END AS pnl_ratio
+    FROM investment.live_positions
+    WHERE status = 'open'
+      AND exchange IN ('kis', 'kis_overseas')
+      #{sym_filter}
+    """
+
+    case Jay.Core.Repo.query(query, []) do
+      {:ok, %{rows: rows}} ->
+        breaches =
+          Enum.filter(rows, fn [_, _, pnl_ratio] ->
+            pnl_ratio != nil and
+              (is_struct(pnl_ratio, Decimal) and Decimal.compare(pnl_ratio, -@kis_sl_pct) == :lt or
+                 is_number(pnl_ratio) and pnl_ratio < -@kis_sl_pct)
+          end)
+
+        if breaches != [] do
+          msgs = Enum.map(breaches, fn [sym, ex, ratio] ->
+            ratio_f = if is_struct(ratio, Decimal), do: Decimal.to_float(ratio), else: ratio
+            "#{ex}/#{sym} PnL #{Float.round(ratio_f * 100, 2)}% < -#{@kis_sl_pct * 100}%"
+          end)
+          [{:kis_sl_breach, msgs} | violations]
+        else
+          violations
+        end
+
+      _ ->
+        violations
+    end
+  end
+
+  defp check_kis_stop_loss(violations, _symbol, _exchange), do: violations
 end

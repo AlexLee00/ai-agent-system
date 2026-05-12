@@ -209,10 +209,59 @@ export function flushDeferredSignals(market = null, now = new Date()) {
   return { ready, still, readyCount: ready.length, stillCount: still.length };
 }
 
+// ── KIS 시간대 우선순위 정책 ────────────────────────────────────────────────
+// 데이터 기반: 33 LIVE 거래 분석 (2026-05-12)
+// 09시: 13건 15.4% 승률 -$186 → 차단
+// 12-13시: 7건 42.9% 승률 +$18 → 우선
+// 15시: 5건 0% 승률 -$110 → 차단
+
+export interface KisTimeSlotPolicy {
+  hour: number;
+  allow: boolean;
+  priority: 'high' | 'medium' | 'low' | 'avoid';
+  rationale: string;
+}
+
+export const KIS_TIME_SLOT_POLICY: KisTimeSlotPolicy[] = [
+  { hour: 9,  allow: false, priority: 'avoid',  rationale: '장시작 변동성 15.4% 승률 -$186' },
+  { hour: 10, allow: true,  priority: 'medium', rationale: '안정 시작' },
+  { hour: 11, allow: true,  priority: 'medium', rationale: '오전 중반' },
+  { hour: 12, allow: true,  priority: 'high',   rationale: '점심 안정 42.9% 승률 +$18' },
+  { hour: 13, allow: true,  priority: 'high',   rationale: '점심 안정 42.9% 승률 +$18' },
+  { hour: 14, allow: true,  priority: 'medium', rationale: '오후 안정' },
+  { hour: 15, allow: false, priority: 'avoid',  rationale: '마감 임박 0% 승률 -$110' },
+];
+
+export function getKisTimeSlotPolicy(now: Date = new Date()): KisTimeSlotPolicy {
+  const kstHour = parseInt(
+    now.toLocaleString('en-US', { timeZone: 'Asia/Seoul', hour: 'numeric', hour12: false })
+  );
+  return KIS_TIME_SLOT_POLICY.find((p) => p.hour === kstHour) ?? {
+    hour: kstHour,
+    allow: false,
+    priority: 'avoid',
+    rationale: '거래 시간 외',
+  };
+}
+
+export function isKisBlockedHour(now: Date = new Date()): boolean {
+  const policy = getKisTimeSlotPolicy(now);
+  return !policy.allow;
+}
+
+export function isKisPreferredHour(now: Date = new Date()): boolean {
+  const policy = getKisTimeSlotPolicy(now);
+  return policy.priority === 'high';
+}
+
 export default {
   evaluateKisMarketHours,
   getNextOpenTime,
   deferSignal,
   getDeferredSignals,
   flushDeferredSignals,
+  getKisTimeSlotPolicy,
+  isKisBlockedHour,
+  isKisPreferredHour,
+  KIS_TIME_SLOT_POLICY,
 };
