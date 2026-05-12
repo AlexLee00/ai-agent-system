@@ -1,3 +1,55 @@
+# 세션 인수인계 — 2026-05-12 (Blog CODEX V2 — G/H/I/J 영역 — 100차 세션)
+
+## 완료 요약 ✅ (100차 세션 — CODEX_BLOG_NEURAL_QUALITY_BOOST_V2)
+
+### 블로팀 V2 — 4개 영역 (G/H/I/J) 완전 구현
+
+**G영역 (소셜미디어 분리/OFF)** ✅:
+- `blo.ts`: `SOCIAL_MEDIA_ENABLED` 게이트 (기본 false)
+  - 인스타 콘텐츠 생성, 이미지 생성 즉시 OFF
+  - 재활성화: `BLOG_SOCIAL_MEDIA_ENABLED=true`
+- launchd 비활성화: instagram-publish, facebook-publish, instagram-token-refresh
+- `bots/social-media/` 디렉토리 생성 (별도 고도화 준비)
+- ⚠️ 파일 이동 보류: import 경로 20+개 충돌로 별도 세션에서 처리
+
+**H영역 (Reddit 트렌드 + 알라딘 베스트셀러)** ✅:
+- `bots/blog/python/reddit_trend_analyzer.py` (PRAW + Claude Haiku)
+  - 7개 서브레딧 수집, LLM 클러스터링, 한국 토픽 10-15개 생성
+  - ⚠️ praw 설치 필요: `pip install praw anthropic`
+  - ⚠️ secrets 필요: REDDIT_CLIENT_ID, REDDIT_CLIENT_SECRET
+- `bots/blog/lib/bestseller-fetcher.ts` (알라딘 Open API)
+  - 6카테고리 병렬 수집, book_review_queue 자동 추가
+  - ⚠️ secrets 필요: ALADIN_TTB_KEY
+- `bots/blog/scripts/run-trend-collector.ts` (통합 러너)
+- `bots/blog/launchd/ai.blog.trend-collector.plist` (매일 06:00 KST)
+  - ⚠️ launchd 로드 필요: `launchctl load ~/Library/LaunchAgents/ai.blog.trend-collector.plist`
+  - ⚠️ plist를 LaunchAgents로 복사 필요
+
+**I영역 (네이버 홈판 + 8채널 노출)** ✅:
+- `bots/blog/lib/naver-home-feed-optimizer.ts`
+  - 제목 홈판 점수 (0-100), 첫 문단 후크 평가
+  - 8채널 노출 감사 (홈판/스마트블록/검색/이웃/해시태그/인플루언서/모먼트/뉴스)
+  - 체류 시간 예측, 통합 홈판 리포트
+  - ⚠️ blo.ts 통합 미완: 품질 리포트에 연동 예정
+
+**J영역 (Humanize Layer)** ✅:
+- `bots/blog/lib/humanize-agent.ts`
+  - AI 시그널 감지 (hedging verbs/정형 표현/균일 문장)
+  - 최대 2회 LLM 변환, 목표 80점 이상
+  - 마스터 스타일 학습 (`learnFromMasterEdit`)
+- `blo.ts`: `BLOG_HUMANIZE_ENABLED` 게이트 + `_humanizeIfEnabled` 통합
+  - ⚠️ 현재 기본 false → 점진적 활성화 권장
+
+**다음 단계 (마스터 결정 필요)**:
+1. Reddit API 시크릿 등록: REDDIT_CLIENT_ID + REDDIT_CLIENT_SECRET → secrets-store.json
+2. 알라딘 TTB 키 발급 + 등록: ALADIN_TTB_KEY
+3. trend-collector launchd 활성화 (plist 복사 후 launchctl load)
+4. Humanize 테스트 활성화: `BLOG_HUMANIZE_ENABLED=true` (1주 shadow mode 권장)
+5. 홈판 최적화 → blo.ts 품질 리포트 연동
+6. V1 미완 영역: Week 5-12 (E/D/A/B/C 영역)
+
+---
+
 # 세션 인수인계 — 2026-05-12 (Blog CODEX — Neural Quality Boost — 99차 세션)
 
 ## 완료 요약 ✅ (99차 세션 — CODEX_BLOG_NEURAL_QUALITY_BOOST)
