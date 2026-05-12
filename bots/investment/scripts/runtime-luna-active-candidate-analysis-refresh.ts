@@ -121,10 +121,13 @@ function missingEnrichmentNodeIds(item = {}, { exchange: exchangeOverride = null
   const reasons = new Set(Array.isArray(item.reasons) ? item.reasons : []);
   const byAnalyst = item?.analystSummary?.byAnalyst || {};
   const nodes = [];
-  const hasSentiment = Boolean(byAnalyst.sentiment || byAnalyst.sentinel);
-  const hasOnchain = Boolean(byAnalyst.onchain);
-  const hasMarketFlow = Boolean(byAnalyst.market_flow);
-  const hasTechnical = Boolean(byAnalyst.ta_mtf || byAnalyst.ta || byAnalyst.technical);
+  const hasSentiment = hasUsableAnalystEvidence(byAnalyst.sentiment, 'sentiment')
+    || hasUsableAnalystEvidence(byAnalyst.sentinel, 'sentiment');
+  const hasOnchain = hasUsableAnalystEvidence(byAnalyst.onchain, 'onchain');
+  const hasMarketFlow = hasUsableAnalystEvidence(byAnalyst.market_flow, 'market_flow');
+  const hasTechnical = hasUsableAnalystEvidence(byAnalyst.ta_mtf, 'technical')
+    || hasUsableAnalystEvidence(byAnalyst.ta, 'technical')
+    || hasUsableAnalystEvidence(byAnalyst.technical, 'technical');
   const stockLightCollect = (exchange === 'kis' || exchange === 'kis_overseas') && !isStockIntradayEnrichmentEnabled(env);
   if (exchange === 'binance' && reasons.has('technical_not_confirmed') && !hasTechnical) nodes.push('L02');
   if (!stockLightCollect && reasons.has('sentiment_not_confirmed') && !hasSentiment) nodes.push('L03');
@@ -137,6 +140,24 @@ function missingEnrichmentNodeIds(item = {}, { exchange: exchangeOverride = null
     nodes.push('L04');
   }
   return [...new Set(nodes)];
+}
+
+function hasUsableAnalystEvidence(row = null, kind = 'generic') {
+  if (!row || typeof row !== 'object') return false;
+  const reasoning = String(row.reasoning || row.reason || row.error || '');
+  const signal = String(row.signal || '').toUpperCase();
+  const confidence = Number(row.confidence);
+  const text = reasoning.toLowerCase();
+  const explicitFailure = /(hub llm 호출 실패|llm 폴백|fallback.*failed|timeout|timed out|aborted|unavailable|api error|rate.?limit|nan|undefined|null)/i.test(reasoning);
+  if (explicitFailure) return false;
+  if (kind === 'onchain' && /불분명|정보가 충분하지|insufficient|unknown|missing/i.test(reasoning) && (!Number.isFinite(confidence) || confidence <= 0)) {
+    return false;
+  }
+  if (kind === 'sentiment' && /키워드 감성 \(점수:\s*0\.00/i.test(reasoning) && (!Number.isFinite(confidence) || confidence <= 0.05)) {
+    return false;
+  }
+  if (Number.isFinite(confidence) && confidence > 0) return true;
+  return ['BUY', 'SELL', 'HOLD'].includes(signal) && text.length > 0 && !/(failed|error|timeout|aborted)/i.test(reasoning);
 }
 
 function isStockExchange(exchange = '') {
@@ -550,10 +571,15 @@ export function buildActiveCandidateAnalysisRefreshPlan({
     env,
   });
   const hasWork = selected.length > 0 || targetedEnrichment.selected.length > 0;
+  const hasCooldown = skippedCooldown.length > 0 || targetedEnrichment.skippedCooldown.length > 0;
 
   return {
     ok: true,
-    status: hasWork ? 'active_candidate_analysis_refresh_needed' : missing.length > 0 ? 'active_candidate_analysis_refresh_cooldown' : 'active_candidate_analysis_refresh_clear',
+    status: hasWork
+      ? 'active_candidate_analysis_refresh_needed'
+      : hasCooldown || missing.length > 0
+        ? 'active_candidate_analysis_refresh_cooldown'
+        : 'active_candidate_analysis_refresh_clear',
     missing,
     selected,
     skippedCooldown,
@@ -565,7 +591,7 @@ export function buildActiveCandidateAnalysisRefreshPlan({
     minTargetedConfidence: Math.max(0, Math.min(1, Number(minTargetedConfidence ?? DEFAULT_TARGETED_ENRICHMENT_MIN_CONFIDENCE))),
     nextAction: hasWork
       ? 'collect_missing_or_targeted_enrichment_without_decision_execution'
-      : missing.length > 0
+      : hasCooldown || missing.length > 0
         ? 'wait_for_refresh_cooldown_or_regular_market_cycle'
         : 'continue_observation',
   };

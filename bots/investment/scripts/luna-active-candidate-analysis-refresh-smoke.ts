@@ -344,6 +344,66 @@ export async function runLunaActiveCandidateAnalysisRefreshSmoke() {
   assert.deepEqual(dailyBullishAlreadyAnalyzedPlan.targetedEnrichment.selectedSymbols, []);
   assert.deepEqual(dailyBullishAlreadyAnalyzedPlan.targetedEnrichment.nodeIds, []);
 
+  const degradedSentimentRowPlan = buildActiveCandidateAnalysisRefreshPlan({
+    report: fixtureReport([], [
+      {
+        ...fixtureHighPriorityCandidate('SAGA/USDT', ['sentiment_not_confirmed']),
+        analystSummary: {
+          byAnalyst: {
+            ta_mtf: { signal: 'HOLD', confidence: 0.18, reasoning: 'daily bullish, intraday not confirmed yet' },
+            sentiment: {
+              signal: 'HOLD',
+              confidence: 0,
+              reasoning: '키워드 감성 (점수: 0.00, 9건); LLM 폴백(Hub LLM 호출 실패: The operation was aborted due to timeout)',
+            },
+          },
+        },
+        dailyTechnical: {
+          symbol: 'SAGA/USDT',
+          ok: true,
+          reason: 'daily_trend_bullish',
+          source: 'binance_ohlcv_daily_for_tradingview_guard',
+        },
+      },
+    ]),
+    state: {},
+    now,
+    maxSymbols: 1,
+    maxEnrichmentSymbols: 1,
+    cooldownMinutes: 45,
+    exchange: 'binance',
+  });
+  assert.equal(degradedSentimentRowPlan.status, 'active_candidate_analysis_refresh_needed');
+  assert.deepEqual(degradedSentimentRowPlan.targetedEnrichment.selectedSymbols, ['SAGA/USDT']);
+  assert.deepEqual(degradedSentimentRowPlan.targetedEnrichment.nodeIds, ['L03']);
+
+  const degradedOnchainRowPlan = buildActiveCandidateAnalysisRefreshPlan({
+    report: fixtureReport([], [
+      {
+        ...fixtureHighPriorityCandidate('LUNC/USDT', ['onchain_not_confirmed']),
+        analystSummary: {
+          byAnalyst: {
+            ta_mtf: { signal: 'BUY', confidence: 0.74, reasoning: 'technical presignal' },
+            onchain: {
+              signal: 'HOLD',
+              confidence: 0,
+              reasoning: '펀딩비는 NaN으로 불분명합니다. 정보가 충분하지 않습니다.',
+            },
+          },
+        },
+      },
+    ]),
+    state: {},
+    now,
+    maxSymbols: 1,
+    maxEnrichmentSymbols: 1,
+    cooldownMinutes: 45,
+    exchange: 'binance',
+  });
+  assert.equal(degradedOnchainRowPlan.status, 'active_candidate_analysis_refresh_needed');
+  assert.deepEqual(degradedOnchainRowPlan.targetedEnrichment.selectedSymbols, ['LUNC/USDT']);
+  assert.deepEqual(degradedOnchainRowPlan.targetedEnrichment.nodeIds, ['L05']);
+
   const highPriorityOverridePlan = buildActiveCandidateAnalysisRefreshPlan({
     report: fixtureReport([], [
       fixtureHighPriorityCandidate('SAHARA/USDT'),
@@ -495,7 +555,7 @@ export async function runLunaActiveCandidateAnalysisRefreshSmoke() {
     globalCooldownEnabled: true,
     exchange: 'binance',
   });
-  assert.equal(globalCooldownBlockedPlan.status, 'active_candidate_analysis_refresh_clear');
+  assert.equal(globalCooldownBlockedPlan.status, 'active_candidate_analysis_refresh_cooldown');
   assert.equal(globalCooldownBlockedPlan.targetedEnrichment.status, 'targeted_enrichment_cooldown');
   assert.equal(globalCooldownBlockedPlan.targetedEnrichment.skippedCooldown[0].scope, 'market_global');
 

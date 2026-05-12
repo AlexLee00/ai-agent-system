@@ -18,6 +18,7 @@ import {
   classifyCoverageBottlenecksForMarket,
   filterEntryDecisionDiagnosticsForOpenPositions,
   getRequiredAnalystsForMarket,
+  normalizeDiscoveryFunnelCandidateLimit,
   shouldReportDispatchIdleWithoutEntryEvidence,
   summarizeRecentEntryTriggerPipelineEvidence,
 } from './runtime-luna-discovery-funnel-report.ts';
@@ -112,6 +113,17 @@ export async function runLunaDiscoveryFunnelReportSmoke() {
     const crypto = report.markets.find((item) => item.market === 'crypto');
     assert.equal(report.ok, true);
     assert.ok(crypto, 'crypto market report should exist');
+    assert.equal(report.candidateLimit, 20, 'discovery funnel should inspect enough candidates to align with L13 diagnostics');
+    assert.ok(
+      crypto.candidateUniverse.inspectedLimit >= 20,
+      'market funnel should not hide relaxed-probe candidates just outside the top 10',
+    );
+    assert.equal(report.analysisHours, 24, 'discovery window and analysis evidence lookback should be separated');
+    assert.equal(
+      crypto.analysisCoverage.lookbackHours,
+      24,
+      '6h automation checks should still consider valid 24h analyst evidence',
+    );
     assert.ok(crypto.candidateUniverse.activeCount >= 1, 'candidate universe should include smoke candidate');
     assert.ok(crypto.analysisCoverage.coveredCount >= 1, 'analysis coverage should include smoke candidate');
     assert.ok(crypto.signalPersistence.ignoredByAction.BUY >= 1, 'signal persistence should track smoke BUY as ignored');
@@ -518,6 +530,10 @@ export async function runLunaDiscoveryFunnelReportSmoke() {
     assert.equal(kisFetchCount, 1, 'KIS daily TA cache should avoid duplicate API calls inside TTL');
     assert.equal(firstKisCachedCoverage.cache.misses, 1);
     assert.equal(secondKisCachedCoverage.cache.hits, 1);
+    assert.equal(normalizeDiscoveryFunnelCandidateLimit(undefined), 20);
+    assert.equal(normalizeDiscoveryFunnelCandidateLimit('0'), 20);
+    assert.equal(normalizeDiscoveryFunnelCandidateLimit('12'), 12);
+    assert.equal(normalizeDiscoveryFunnelCandidateLimit('100'), 50);
     assert.equal(secondKisCachedCoverage.rows[0].cached, true);
 
     const cryptoSnapshotCalls = [];

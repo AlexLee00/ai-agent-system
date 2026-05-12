@@ -52,13 +52,25 @@ const ANALYST_PARTIAL_BOTTLENECK_CODES = {
 const DEFAULT_RELAXED_PROBE_RECENT_TRADE_COOLDOWN_HOURS = 6;
 const DEFAULT_PREOPEN_READINESS_WINDOW_MINUTES = 12 * 60;
 const DEFAULT_KIS_DAILY_TA_CACHE_MINUTES = 60;
+const DEFAULT_DISCOVERY_FUNNEL_CANDIDATE_LIMIT = 20;
+const MAX_DISCOVERY_FUNNEL_CANDIDATE_LIMIT = 50;
+const DEFAULT_DISCOVERY_FUNNEL_ANALYSIS_HOURS = 24;
 
 function parseArgs(argv = process.argv.slice(2)) {
   return {
     json: argv.includes('--json'),
     telegram: argv.includes('--telegram'),
     hours: Math.max(1, Number(argv.find((arg) => arg.startsWith('--hours='))?.split('=')[1] || 24) || 24),
+    analysisHours: Math.max(
+      1,
+      Number(argv.find((arg) => arg.startsWith('--analysis-hours='))?.split('=')[1] || DEFAULT_DISCOVERY_FUNNEL_ANALYSIS_HOURS)
+        || DEFAULT_DISCOVERY_FUNNEL_ANALYSIS_HOURS,
+    ),
     market: argv.find((arg) => arg.startsWith('--market='))?.split('=')[1] || 'all',
+    candidateLimit: normalizeDiscoveryFunnelCandidateLimit(
+      argv.find((arg) => arg.startsWith('--candidate-limit='))?.split('=')[1]
+        || argv.find((arg) => arg.startsWith('--limit='))?.split('=')[1],
+    ),
     historyFile: argv.find((arg) => arg.startsWith('--history-file='))?.split('=').slice(1).join('=') || DEFAULT_POSITION_RUNTIME_AUTOPILOT_HISTORY_FILE,
   };
 }
@@ -66,6 +78,12 @@ function parseArgs(argv = process.argv.slice(2)) {
 function number(value, fallback = 0) {
   const n = Number(value);
   return Number.isFinite(n) ? n : fallback;
+}
+
+export function normalizeDiscoveryFunnelCandidateLimit(value, fallback = DEFAULT_DISCOVERY_FUNNEL_CANDIDATE_LIMIT) {
+  const n = Number(value);
+  if (!Number.isFinite(n) || n <= 0) return fallback;
+  return Math.max(1, Math.min(MAX_DISCOVERY_FUNNEL_CANDIDATE_LIMIT, Math.floor(n)));
 }
 
 export function shouldReportDispatchIdleWithoutEntryEvidence({
@@ -850,9 +868,15 @@ export async function buildDailyTechnicalCoverage({
   };
 }
 
-async function buildMarketFunnel(market, { hours }) {
+async function buildMarketFunnel(market, {
+  hours,
+  analysisHours = DEFAULT_DISCOVERY_FUNNEL_ANALYSIS_HOURS,
+  candidateLimit = DEFAULT_DISCOVERY_FUNNEL_CANDIDATE_LIMIT,
+}) {
   const now = new Date();
   const exchange = MARKET_EXCHANGES[market];
+  const effectiveCandidateLimit = normalizeDiscoveryFunnelCandidateLimit(candidateLimit);
+  const effectiveAnalysisHours = Math.max(1, Number(analysisHours || DEFAULT_DISCOVERY_FUNNEL_ANALYSIS_HOURS) || DEFAULT_DISCOVERY_FUNNEL_ANALYSIS_HOURS);
   const marketHours = market === 'crypto'
     ? { market, isOpen: true, state: 'open', reasonCode: 'crypto_24h_market', nextAction: 'allow' }
     : evaluateKisMarketHours({ market });
@@ -956,7 +980,7 @@ async function buildMarketFunnel(market, { hours }) {
        FROM ranked
        WHERE rn = 1
        ORDER BY ${candidateSourcePriorityExpr()} DESC, score DESC, confidence DESC NULLS LAST, discovered_at DESC
-       LIMIT 10`,
+       LIMIT ${effectiveCandidateLimit}`,
       [market],
     ),
     queryRows(
@@ -981,7 +1005,7 @@ async function buildMarketFunnel(market, { hours }) {
     refresh: false,
     fallbackSymbols: [],
     preferCandidates: true,
-    limit: 10,
+    limit: effectiveCandidateLimit,
   }).catch(() => null);
   const executionCandidates = Array.isArray(executionUniverse?.symbols) && executionUniverse.symbols.length > 0
     ? executionUniverse.symbols.map((symbol) => ({ symbol }))
@@ -998,7 +1022,7 @@ async function buildMarketFunnel(market, { hours }) {
          AND created_at >= now() - ($3::int * INTERVAL '1 hour')
        GROUP BY symbol
        ORDER BY latest_created_at DESC`,
-      [exchange, analysisSymbols, hours],
+      [exchange, analysisSymbols, effectiveAnalysisHours],
     )
     : [];
   const analysisByAnalystRows = analysisSymbols.length > 0
@@ -1010,7 +1034,7 @@ async function buildMarketFunnel(market, { hours }) {
          AND created_at >= now() - ($3::int * INTERVAL '1 hour')
        GROUP BY symbol, analyst
        ORDER BY latest_created_at DESC`,
-      [exchange, analysisSymbols, hours],
+      [exchange, analysisSymbols, effectiveAnalysisHours],
     )
     : [];
   const analysisDetailRows = analysisSymbols.length > 0
@@ -1021,7 +1045,7 @@ async function buildMarketFunnel(market, { hours }) {
          AND symbol = ANY($2::text[])
          AND created_at >= now() - ($3::int * INTERVAL '1 hour')
        ORDER BY created_at DESC`,
-      [exchange, analysisSymbols, hours],
+      [exchange, analysisSymbols, effectiveAnalysisHours],
     )
     : [];
   const recentBlockedSignalDetails = await queryRows(
@@ -1229,6 +1253,7 @@ async function buildMarketFunnel(market, { hours }) {
       avgScore: candidate.avg_score != null ? number(candidate.avg_score) : null,
       latestDiscoveredAt: candidate.latest_discovered_at || null,
       top: executionCandidates || [],
+      inspectedLimit: effectiveCandidateLimit,
       promotedCount: Number(executionUniverse?.promotedCount || 0),
       promotedSymbols: executionUniverse?.promotedSymbols || [],
       selectionPolicy: executionUniverse?.selectionPolicy || null,
@@ -1239,6 +1264,7 @@ async function buildMarketFunnel(market, { hours }) {
     },
     analysisCoverage: {
       checkedCount: analysisSymbols.length,
+      lookbackHours: effectiveAnalysisHours,
       coveredCount: analysisCoveredSymbols.length,
       missingCount: Math.max(0, analysisSymbols.length - analysisCoveredSymbols.length),
       coveredSymbols: analysisCoveredSymbols,
@@ -1345,14 +1371,22 @@ function buildAutopilotFunnel({ historyFile, hours }) {
 
 export async function buildLunaDiscoveryFunnelReport({
   hours = 24,
+  analysisHours = DEFAULT_DISCOVERY_FUNNEL_ANALYSIS_HOURS,
   market = 'all',
+  candidateLimit = DEFAULT_DISCOVERY_FUNNEL_CANDIDATE_LIMIT,
   historyFile = DEFAULT_POSITION_RUNTIME_AUTOPILOT_HISTORY_FILE,
 } = {}) {
   await db.initSchema();
   await ensureCandidateUniverseTable();
   await ensureLunaDiscoveryEntryTables();
   const markets = normalizeMarketScope(market);
-  const marketReports = await Promise.all(markets.map((m) => buildMarketFunnel(m, { hours })));
+  const effectiveCandidateLimit = normalizeDiscoveryFunnelCandidateLimit(candidateLimit);
+  const effectiveAnalysisHours = Math.max(1, Number(analysisHours || DEFAULT_DISCOVERY_FUNNEL_ANALYSIS_HOURS) || DEFAULT_DISCOVERY_FUNNEL_ANALYSIS_HOURS);
+  const marketReports = await Promise.all(markets.map((m) => buildMarketFunnel(m, {
+    hours,
+    analysisHours: effectiveAnalysisHours,
+    candidateLimit: effectiveCandidateLimit,
+  })));
   const autopilot = buildAutopilotFunnel({ historyFile, hours });
   const allBottlenecks = marketReports.flatMap((item) => item.bottlenecks.map((code) => `${item.market}:${code}`));
   const preopenGaps = marketReports.flatMap((item) => (item.observations || [])
@@ -1402,7 +1436,9 @@ export async function buildLunaDiscoveryFunnelReport({
         : 'luna_discovery_funnel_clear',
     generatedAt: new Date().toISOString(),
     hours,
+    analysisHours: effectiveAnalysisHours,
     market,
+    candidateLimit: effectiveCandidateLimit,
     markets: marketReports,
     autopilot,
     bottlenecks: allBottlenecks,
@@ -1428,7 +1464,7 @@ export function renderLunaDiscoveryFunnelReport(report = {}) {
   const lines = [
     '🔎 루나 discovery funnel 병목 리포트',
     `checkedAt: ${report.generatedAt || 'n/a'}`,
-    `window: ${report.hours || 24}h / market=${report.market || 'all'}`,
+    `window: ${report.hours || 24}h / analysis=${report.analysisHours || DEFAULT_DISCOVERY_FUNNEL_ANALYSIS_HOURS}h / market=${report.market || 'all'} / candidateLimit=${report.candidateLimit || DEFAULT_DISCOVERY_FUNNEL_CANDIDATE_LIMIT}`,
     `status: ${report.status || 'unknown'}`,
   ];
   for (const item of report.markets || []) {
