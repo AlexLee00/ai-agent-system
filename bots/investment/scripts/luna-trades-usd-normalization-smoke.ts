@@ -8,9 +8,14 @@ import { buildLunaFxRefreshPlan } from './luna-fx-refresh.ts';
 import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
 
 const INVESTMENT_ROOT = path.resolve(import.meta.dirname, '..');
+const PROJECT_ROOT = path.resolve(INVESTMENT_ROOT, '../..');
 
 function read(relativePath) {
   return fs.readFileSync(path.join(INVESTMENT_ROOT, relativePath), 'utf8');
+}
+
+function readProject(relativePath) {
+  return fs.readFileSync(path.join(PROJECT_ROOT, relativePath), 'utf8');
 }
 
 export async function runLunaTradesUsdNormalizationSmoke() {
@@ -20,6 +25,7 @@ export async function runLunaTradesUsdNormalizationSmoke() {
   const fxRefreshScript = read('scripts/luna-fx-refresh.ts');
   const fxRefreshPlist = read('launchd/ai.luna.fx-refresh.plist');
   const dailyPnlPlist = read('launchd/ai.luna.daily-pnl-report.plist');
+  const telegramSenderBridge = readProject('packages/core/lib/telegram-sender.js');
 
   assert.match(fxSql, /CREATE TABLE IF NOT EXISTS investment\.fx_rates/);
   assert.match(fxSql, /'KRW'\s*,\s*'USD'\s*,\s*0\.000735/);
@@ -38,8 +44,10 @@ export async function runLunaTradesUsdNormalizationSmoke() {
   assert.match(fxRefreshPlist, /<integer>6<\/integer>/);
 
   assert.match(reportScript, /FROM investment\.v_trades_real_usd/);
+  assert.match(reportScript, /query\('investment',/);
   assert.match(reportScript, /telegramSender\.send\('luna', message\)/);
   assert.match(reportScript, /--dry-run/);
+  assert.match(telegramSenderBridge, /loadTsSourceBridge\(__dirname, 'telegram-sender'\)/);
   assert.match(dailyPnlPlist, /ai\.luna\.daily-pnl-report/);
   assert.match(dailyPnlPlist, /luna-daily-pnl-report\.ts/);
   assert.match(dailyPnlPlist, /<integer>23<\/integer>/);

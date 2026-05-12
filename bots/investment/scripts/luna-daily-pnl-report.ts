@@ -29,7 +29,7 @@ const DIVIDER = '──────────';
 // ─── 집계 함수 ───────────────────────────────────────────────────────
 
 async function fetchExchangeStats() {
-  const { rows } = await query(`
+  const rows = await query('investment', `
     SELECT
       exchange,
       COUNT(*)                                                       AS trades,
@@ -51,7 +51,7 @@ async function fetchExchangeStats() {
 }
 
 async function fetchTotalStats() {
-  const { rows } = await query(`
+  const rows = await query('investment', `
     SELECT
       COUNT(*)                          AS total_trades,
       COUNT(CASE WHEN pnl_usd > 0 THEN 1 END) AS total_wins,
@@ -63,7 +63,7 @@ async function fetchTotalStats() {
 }
 
 async function fetchTodayStats() {
-  const { rows } = await query(`
+  const rows = await query('investment', `
     SELECT
       COUNT(*)                          AS trades_today,
       ROUND(SUM(pnl_usd)::numeric, 2)  AS pnl_today
@@ -77,7 +77,7 @@ async function fetchTodayStats() {
 
 async function fetchCurrentFxRate() {
   try {
-    const { rows } = await query(`
+    const rows = await query('investment', `
       SELECT inverse_rate
       FROM investment.fx_rates
       WHERE base_currency = 'KRW' AND quote_currency = 'USD'
