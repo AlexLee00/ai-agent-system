@@ -1,0 +1,892 @@
+{
+  "ok": false,
+  "generatedAt": "2026-05-12T12:12:48.683Z",
+  "scope": "visible_agent_unique_selector_primary_live_probe",
+  "visibleAgents": 74,
+  "uniqueSelectors": 38,
+  "failed": 5,
+  "byProvider": {
+    "gemini-cli-oauth": {
+      "total": 16,
+      "ok": 11,
+      "failed": 5
+    },
+    "openai-oauth": {
+      "total": 6,
+      "ok": 6,
+      "failed": 0
+    },
+    "groq": {
+      "total": 16,
+      "ok": 16,
+      "failed": 0
+    }
+  },
+  "failures": [
+    {
+      "ok": false,
+      "httpStatus": null,
+      "team": "blog",
+      "agent": "blo",
+      "selectorKey": "blog._default",
+      "agents": [
+        "blog/blo",
+        "blog/publ",
+        "blog/richer"
+      ],
+      "primary": "gemini-cli-oauth/gemini-2.5-flash",
+      "selectedRoute": null,
+      "expectedProvider": "gemini-cli-oauth",
+      "provider": null,
+      "durationMs": 63130,
+      "fallbackCount": null,
+      "attemptedProviders": [],
+      "traceIdPresent": false,
+      "error": "timeout"
+    },
+    {
+      "ok": false,
+      "httpStatus": null,
+      "team": "investment",
+      "agent": "kairos",
+      "selectorKey": "investment.kairos",
+      "agents": [
+        "investment/kairos"
+      ],
+      "primary": "gemini-cli-oauth/gemini-2.5-flash",
+      "selectedRoute": null,
+      "expectedProvider": "gemini-cli-oauth",
+      "provider": null,
+      "durationMs": 64997,
+      "fallbackCount": null,
+      "attemptedProviders": [],
+      "traceIdPresent": false,
+      "error": "timeout"
+    },
+    {
+      "ok": false,
+      "httpStatus": null,
+      "team": "investment",
+      "agent": "scout",
+      "selectorKey": "investment.scout",
+      "agents": [
+        "investment/scout"
+      ],
+      "primary": "gemini-cli-oauth/gemini-2.5-flash",
+      "selectedRoute": null,
+      "expectedProvider": "gemini-cli-oauth",
+      "provider": null,
+      "durationMs": 64998,
+      "fallbackCount": null,
+      "attemptedProviders": [],
+      "traceIdPresent": false,
+      "error": "timeout"
+    },
+    {
+      "ok": false,
+      "httpStatus": null,
+      "team": "justin",
+      "agent": "balance",
+      "selectorKey": "justin.opinion",
+      "agents": [
+        "justin/balance",
+        "justin/bench",
+        "justin/neutral-bench",
+        "justin/opinion",
+        "justin/quill"
+      ],
+      "primary": "gemini-cli-oauth/gemini-2.5-flash",
+      "selectedRoute": null,
+      "expectedProvider": "gemini-cli-oauth",
+      "provider": null,
+      "durationMs": 64997,
+      "fallbackCount": null,
+      "attemptedProviders": [],
+      "traceIdPresent": false,
+      "error": "timeout"
+    },
+    {
+      "ok": false,
+      "httpStatus": 200,
+      "team": "justin",
+      "agent": "default",
+      "selectorKey": "justin._default",
+      "agents": [
+        "justin/default"
+      ],
+      "primary": "gemini-cli-oauth/gemini-2.5-flash",
+      "selectedRoute": "openai-oauth/gpt-5.4",
+      "expectedProvider": "gemini-cli-oauth",
+      "provider": "openai-oauth",
+      "durationMs": 1869,
+      "fallbackCount": 1,
+      "attemptedProviders": [
+        "gemini-cli-oauth/gemini-2.5-flash"
+      ],
+      "traceIdPresent": true,
+      "error": "selected_route_mismatch:openai-oauth/gpt-5.4"
+    }
+  ],
+  "results": [
+    {
+      "ok": false,
+      "httpStatus": null,
+      "team": "blog",
+      "agent": "blo",
+      "selectorKey": "blog._default",
+      "agents": [
+        "blog/blo",
+        "blog/publ",
+        "blog/richer"
+      ],
+      "primary": "gemini-cli-oauth/gemini-2.5-flash",
+      "selectedRoute": null,
+      "expectedProvider": "gemini-cli-oauth",
+      "provider": null,
+      "durationMs": 63130,
+      "fallbackCount": null,
+      "attemptedProviders": [],
+      "traceIdPresent": false,
+      "error": "timeout"
+    },
+    {
+      "ok": true,
+      "httpStatus": 200,
+      "team": "blog",
+      "agent": "gems",
+      "selectorKey": "blog.gems.writer",
+      "agents": [
+        "blog/gems"
+      ],
+      "primary": "gemini-cli-oauth/gemini-2.5-flash",
+      "selectedRoute": "gemini-cli-oauth/gemini-2.5-flash",
+      "expectedProvider": "gemini-cli-oauth",
+      "provider": "gemini-cli-oauth",
+      "durationMs": 24301,
+      "fallbackCount": 0,
+      "attemptedProviders": [],
+      "traceIdPresent": true,
+      "error": null
+    },
+    {
+      "ok": true,
+      "httpStatus": 200,
+      "team": "blog",
+      "agent": "pos",
+      "selectorKey": "blog.pos.writer",
+      "agents": [
+        "blog/pos"
+      ],
+      "primary": "gemini-cli-oauth/gemini-2.5-flash",
+      "selectedRoute": "gemini-cli-oauth/gemini-2.5-flash",
+      "expectedProvider": "gemini-cli-oauth",
+      "provider": "gemini-cli-oauth",
+      "durationMs": 24901,
+      "fallbackCount": 0,
+      "attemptedProviders": [],
+      "traceIdPresent": true,
+      "error": null
+    },
+    {
+      "ok": true,
+      "httpStatus": 200,
+      "team": "blog",
+      "agent": "star",
+      "selectorKey": "blog.star.summarize",
+      "agents": [
+        "blog/star"
+      ],
+      "primary": "gemini-cli-oauth/gemini-2.5-flash-lite",
+      "selectedRoute": "gemini-cli-oauth/gemini-2.5-flash-lite",
+      "expectedProvider": "gemini-cli-oauth",
+      "provider": "gemini-cli-oauth",
+      "durationMs": 6349,
+      "fallbackCount": 0,
+      "attemptedProviders": [],
+      "traceIdPresent": true,
+      "error": null
+    },
+    {
+      "ok": true,
+      "httpStatus": 200,
+      "team": "claude",
+      "agent": "archer",
+      "selectorKey": "claude.archer.tech_analysis",
+      "agents": [
+        "claude/archer"
+      ],
+      "primary": "openai-oauth/gpt-5.4-mini",
+      "selectedRoute": "openai-oauth/gpt-5.4-mini",
+      "expectedProvider": "openai-oauth",
+      "provider": "openai-oauth",
+      "durationMs": 1957,
+      "fallbackCount": 0,
+      "attemptedProviders": [],
+      "traceIdPresent": true,
+      "error": null
+    },
+    {
+      "ok": true,
+      "httpStatus": 200,
+      "team": "claude",
+      "agent": "builder",
+      "selectorKey": "claude._default",
+      "agents": [
+        "claude/builder",
+        "claude/quality-report",
+        "claude/reviewer"
+      ],
+      "primary": "openai-oauth/gpt-5.4",
+      "selectedRoute": "openai-oauth/gpt-5.4",
+      "expectedProvider": "openai-oauth",
+      "provider": "openai-oauth",
+      "durationMs": 3513,
+      "fallbackCount": 0,
+      "attemptedProviders": [],
+      "traceIdPresent": true,
+      "error": null
+    },
+    {
+      "ok": true,
+      "httpStatus": 200,
+      "team": "claude",
+      "agent": "commander",
+      "selectorKey": "claude.lead.system_issue_triage",
+      "agents": [
+        "claude/commander",
+        "claude/guardian",
+        "claude/lead"
+      ],
+      "primary": "openai-oauth/gpt-5.4",
+      "selectedRoute": "openai-oauth/gpt-5.4",
+      "expectedProvider": "openai-oauth",
+      "provider": "openai-oauth",
+      "durationMs": 1617,
+      "fallbackCount": 0,
+      "attemptedProviders": [],
+      "traceIdPresent": true,
+      "error": null
+    },
+    {
+      "ok": true,
+      "httpStatus": 200,
+      "team": "claude",
+      "agent": "dexter",
+      "selectorKey": "claude.dexter.ai_analyst",
+      "agents": [
+        "claude/dexter"
+      ],
+      "primary": "openai-oauth/gpt-5.4",
+      "selectedRoute": "openai-oauth/gpt-5.4",
+      "expectedProvider": "openai-oauth",
+      "provider": "openai-oauth",
+      "durationMs": 2206,
+      "fallbackCount": 0,
+      "attemptedProviders": [],
+      "traceIdPresent": true,
+      "error": null
+    },
+    {
+      "ok": true,
+      "httpStatus": 200,
+      "team": "darwin",
+      "agent": "applier",
+      "selectorKey": "darwin.agent_policy",
+      "agents": [
+        "darwin/applier",
+        "darwin/darwin.commander",
+        "darwin/darwin.edison",
+        "darwin/darwin.evaluator",
+        "darwin/darwin.planner",
+        "darwin/darwin.reflexion",
+        "darwin/darwin.scanner",
+        "darwin/darwin.self_rewarding_judge",
+        "darwin/darwin.verifier",
+        "darwin/implementor",
+        "darwin/learner"
+      ],
+      "primary": "gemini-cli-oauth/gemini-2.5-flash-lite",
+      "selectedRoute": "gemini-cli-oauth/gemini-2.5-flash-lite",
+      "expectedProvider": "gemini-cli-oauth",
+      "provider": "gemini-cli-oauth",
+      "durationMs": 5796,
+      "fallbackCount": 0,
+      "attemptedProviders": [],
+      "traceIdPresent": true,
+      "error": null
+    },
+    {
+      "ok": true,
+      "httpStatus": 200,
+      "team": "investment",
+      "agent": "adaptive-risk",
+      "selectorKey": "investment.adaptive-risk",
+      "agents": [
+        "investment/adaptive-risk"
+      ],
+      "primary": "groq/qwen/qwen3-32b",
+      "selectedRoute": "groq/qwen/qwen3-32b",
+      "expectedProvider": "groq",
+      "provider": "groq",
+      "durationMs": 707,
+      "fallbackCount": 0,
+      "attemptedProviders": [],
+      "traceIdPresent": true,
+      "error": null
+    },
+    {
+      "ok": true,
+      "httpStatus": 200,
+      "team": "investment",
+      "agent": "argos",
+      "selectorKey": "investment.argos",
+      "agents": [
+        "investment/argos"
+      ],
+      "primary": "groq/llama-3.1-8b-instant",
+      "selectedRoute": "groq/llama-3.1-8b-instant",
+      "expectedProvider": "groq",
+      "provider": "groq",
+      "durationMs": 259,
+      "fallbackCount": 0,
+      "attemptedProviders": [],
+      "traceIdPresent": true,
+      "error": null
+    },
+    {
+      "ok": true,
+      "httpStatus": 200,
+      "team": "investment",
+      "agent": "aria",
+      "selectorKey": "investment.aria",
+      "agents": [
+        "investment/aria"
+      ],
+      "primary": "gemini-cli-oauth/gemini-2.5-flash",
+      "selectedRoute": "gemini-cli-oauth/gemini-2.5-flash",
+      "expectedProvider": "gemini-cli-oauth",
+      "provider": "gemini-cli-oauth",
+      "durationMs": 33337,
+      "fallbackCount": 0,
+      "attemptedProviders": [],
+      "traceIdPresent": true,
+      "error": null
+    },
+    {
+      "ok": true,
+      "httpStatus": 200,
+      "team": "investment",
+      "agent": "athena",
+      "selectorKey": "investment.athena",
+      "agents": [
+        "investment/athena"
+      ],
+      "primary": "groq/llama-3.1-8b-instant",
+      "selectedRoute": "groq/llama-3.1-8b-instant",
+      "expectedProvider": "groq",
+      "provider": "groq",
+      "durationMs": 336,
+      "fallbackCount": 0,
+      "attemptedProviders": [],
+      "traceIdPresent": true,
+      "error": null
+    },
+    {
+      "ok": true,
+      "httpStatus": 200,
+      "team": "investment",
+      "agent": "budget",
+      "selectorKey": "investment.budget",
+      "agents": [
+        "investment/budget"
+      ],
+      "primary": "groq/llama-3.1-8b-instant",
+      "selectedRoute": "groq/llama-3.1-8b-instant",
+      "expectedProvider": "groq",
+      "provider": "groq",
+      "durationMs": 256,
+      "fallbackCount": 0,
+      "attemptedProviders": [],
+      "traceIdPresent": true,
+      "error": null
+    },
+    {
+      "ok": true,
+      "httpStatus": 200,
+      "team": "investment",
+      "agent": "chronos",
+      "selectorKey": "investment.chronos",
+      "agents": [
+        "investment/chronos"
+      ],
+      "primary": "groq/qwen/qwen3-32b",
+      "selectedRoute": "groq/qwen/qwen3-32b",
+      "expectedProvider": "groq",
+      "provider": "groq",
+      "durationMs": 750,
+      "fallbackCount": 0,
+      "attemptedProviders": [],
+      "traceIdPresent": true,
+      "error": null
+    },
+    {
+      "ok": true,
+      "httpStatus": 200,
+      "team": "investment",
+      "agent": "hanul",
+      "selectorKey": "investment.hanul",
+      "agents": [
+        "investment/hanul"
+      ],
+      "primary": "groq/qwen/qwen3-32b",
+      "selectedRoute": "groq/qwen/qwen3-32b",
+      "expectedProvider": "groq",
+      "provider": "groq",
+      "durationMs": 777,
+      "fallbackCount": 0,
+      "attemptedProviders": [],
+      "traceIdPresent": true,
+      "error": null
+    },
+    {
+      "ok": true,
+      "httpStatus": 200,
+      "team": "investment",
+      "agent": "hephaestos",
+      "selectorKey": "investment.hephaestos",
+      "agents": [
+        "investment/hephaestos"
+      ],
+      "primary": "groq/llama-3.1-8b-instant",
+      "selectedRoute": "groq/llama-3.1-8b-instant",
+      "expectedProvider": "groq",
+      "provider": "groq",
+      "durationMs": 244,
+      "fallbackCount": 0,
+      "attemptedProviders": [],
+      "traceIdPresent": true,
+      "error": null
+    },
+    {
+      "ok": true,
+      "httpStatus": 200,
+      "team": "investment",
+      "agent": "hermes",
+      "selectorKey": "investment.hermes",
+      "agents": [
+        "investment/hermes"
+      ],
+      "primary": "groq/llama-3.1-8b-instant",
+      "selectedRoute": "groq/llama-3.1-8b-instant",
+      "expectedProvider": "groq",
+      "provider": "groq",
+      "durationMs": 253,
+      "fallbackCount": 0,
+      "attemptedProviders": [],
+      "traceIdPresent": true,
+      "error": null
+    },
+    {
+      "ok": false,
+      "httpStatus": null,
+      "team": "investment",
+      "agent": "kairos",
+      "selectorKey": "investment.kairos",
+      "agents": [
+        "investment/kairos"
+      ],
+      "primary": "gemini-cli-oauth/gemini-2.5-flash",
+      "selectedRoute": null,
+      "expectedProvider": "gemini-cli-oauth",
+      "provider": null,
+      "durationMs": 64997,
+      "fallbackCount": null,
+      "attemptedProviders": [],
+      "traceIdPresent": false,
+      "error": "timeout"
+    },
+    {
+      "ok": true,
+      "httpStatus": 200,
+      "team": "investment",
+      "agent": "luna",
+      "selectorKey": "investment.luna",
+      "agents": [
+        "investment/luna"
+      ],
+      "primary": "groq/qwen/qwen3-32b",
+      "selectedRoute": "groq/qwen/qwen3-32b",
+      "expectedProvider": "groq",
+      "provider": "groq",
+      "durationMs": 584,
+      "fallbackCount": 0,
+      "attemptedProviders": [],
+      "traceIdPresent": true,
+      "error": null
+    },
+    {
+      "ok": true,
+      "httpStatus": 200,
+      "team": "investment",
+      "agent": "nemesis",
+      "selectorKey": "investment.nemesis",
+      "agents": [
+        "investment/nemesis"
+      ],
+      "primary": "groq/qwen/qwen3-32b",
+      "selectedRoute": "groq/qwen/qwen3-32b",
+      "expectedProvider": "groq",
+      "provider": "groq",
+      "durationMs": 781,
+      "fallbackCount": 0,
+      "attemptedProviders": [],
+      "traceIdPresent": true,
+      "error": null
+    },
+    {
+      "ok": true,
+      "httpStatus": 200,
+      "team": "investment",
+      "agent": "oracle",
+      "selectorKey": "investment.oracle",
+      "agents": [
+        "investment/oracle"
+      ],
+      "primary": "groq/llama-3.1-8b-instant",
+      "selectedRoute": "groq/llama-3.1-8b-instant",
+      "expectedProvider": "groq",
+      "provider": "groq",
+      "durationMs": 486,
+      "fallbackCount": 0,
+      "attemptedProviders": [],
+      "traceIdPresent": true,
+      "error": null
+    },
+    {
+      "ok": true,
+      "httpStatus": 200,
+      "team": "investment",
+      "agent": "reporter",
+      "selectorKey": "investment.reporter",
+      "agents": [
+        "investment/reporter"
+      ],
+      "primary": "groq/llama-3.1-8b-instant",
+      "selectedRoute": "groq/llama-3.1-8b-instant",
+      "expectedProvider": "groq",
+      "provider": "groq",
+      "durationMs": 344,
+      "fallbackCount": 0,
+      "attemptedProviders": [],
+      "traceIdPresent": true,
+      "error": null
+    },
+    {
+      "ok": false,
+      "httpStatus": null,
+      "team": "investment",
+      "agent": "scout",
+      "selectorKey": "investment.scout",
+      "agents": [
+        "investment/scout"
+      ],
+      "primary": "gemini-cli-oauth/gemini-2.5-flash",
+      "selectedRoute": null,
+      "expectedProvider": "gemini-cli-oauth",
+      "provider": null,
+      "durationMs": 64998,
+      "fallbackCount": null,
+      "attemptedProviders": [],
+      "traceIdPresent": false,
+      "error": "timeout"
+    },
+    {
+      "ok": true,
+      "httpStatus": 200,
+      "team": "investment",
+      "agent": "sentinel",
+      "selectorKey": "investment.sentinel",
+      "agents": [
+        "investment/sentinel"
+      ],
+      "primary": "gemini-cli-oauth/gemini-2.5-flash-lite",
+      "selectedRoute": "gemini-cli-oauth/gemini-2.5-flash-lite",
+      "expectedProvider": "gemini-cli-oauth",
+      "provider": "gemini-cli-oauth",
+      "durationMs": 6579,
+      "fallbackCount": 0,
+      "attemptedProviders": [],
+      "traceIdPresent": true,
+      "error": null
+    },
+    {
+      "ok": true,
+      "httpStatus": 200,
+      "team": "investment",
+      "agent": "sophia",
+      "selectorKey": "investment.sophia",
+      "agents": [
+        "investment/sophia"
+      ],
+      "primary": "groq/llama-3.1-8b-instant",
+      "selectedRoute": "groq/llama-3.1-8b-instant",
+      "expectedProvider": "groq",
+      "provider": "groq",
+      "durationMs": 274,
+      "fallbackCount": 0,
+      "attemptedProviders": [],
+      "traceIdPresent": true,
+      "error": null
+    },
+    {
+      "ok": true,
+      "httpStatus": 200,
+      "team": "investment",
+      "agent": "stock-flow",
+      "selectorKey": "investment.stock-flow",
+      "agents": [
+        "investment/stock-flow"
+      ],
+      "primary": "groq/qwen/qwen3-32b",
+      "selectedRoute": "groq/qwen/qwen3-32b",
+      "expectedProvider": "groq",
+      "provider": "groq",
+      "durationMs": 590,
+      "fallbackCount": 0,
+      "attemptedProviders": [],
+      "traceIdPresent": true,
+      "error": null
+    },
+    {
+      "ok": true,
+      "httpStatus": 200,
+      "team": "investment",
+      "agent": "sweeper",
+      "selectorKey": "investment.sweeper",
+      "agents": [
+        "investment/sweeper"
+      ],
+      "primary": "gemini-cli-oauth/gemini-2.5-flash-lite",
+      "selectedRoute": "gemini-cli-oauth/gemini-2.5-flash-lite",
+      "expectedProvider": "gemini-cli-oauth",
+      "provider": "gemini-cli-oauth",
+      "durationMs": 5623,
+      "fallbackCount": 0,
+      "attemptedProviders": [],
+      "traceIdPresent": true,
+      "error": null
+    },
+    {
+      "ok": true,
+      "httpStatus": 200,
+      "team": "investment",
+      "agent": "zeus",
+      "selectorKey": "investment.zeus",
+      "agents": [
+        "investment/zeus"
+      ],
+      "primary": "groq/qwen/qwen3-32b",
+      "selectedRoute": "groq/qwen/qwen3-32b",
+      "expectedProvider": "groq",
+      "provider": "groq",
+      "durationMs": 642,
+      "fallbackCount": 0,
+      "attemptedProviders": [],
+      "traceIdPresent": true,
+      "error": null
+    },
+    {
+      "ok": true,
+      "httpStatus": 200,
+      "team": "justin",
+      "agent": "analysis",
+      "selectorKey": "justin.analysis",
+      "agents": [
+        "justin/analysis",
+        "justin/briefing",
+        "justin/chain",
+        "justin/claim",
+        "justin/contro",
+        "justin/defense",
+        "justin/defense-x",
+        "justin/delta",
+        "justin/ledger-law",
+        "justin/lens",
+        "justin/plaintiff-x"
+      ],
+      "primary": "gemini-cli-oauth/gemini-2.5-flash",
+      "selectedRoute": "gemini-cli-oauth/gemini-2.5-flash",
+      "expectedProvider": "gemini-cli-oauth",
+      "provider": "gemini-cli-oauth",
+      "durationMs": 35089,
+      "fallbackCount": 0,
+      "attemptedProviders": [],
+      "traceIdPresent": true,
+      "error": null
+    },
+    {
+      "ok": true,
+      "httpStatus": 200,
+      "team": "justin",
+      "agent": "atlas",
+      "selectorKey": "justin.citation",
+      "agents": [
+        "justin/atlas",
+        "justin/citation",
+        "justin/citecheck",
+        "justin/garam"
+      ],
+      "primary": "gemini-cli-oauth/gemini-2.5-flash-lite",
+      "selectedRoute": "gemini-cli-oauth/gemini-2.5-flash-lite",
+      "expectedProvider": "gemini-cli-oauth",
+      "provider": "gemini-cli-oauth",
+      "durationMs": 5914,
+      "fallbackCount": 0,
+      "attemptedProviders": [],
+      "traceIdPresent": true,
+      "error": null
+    },
+    {
+      "ok": false,
+      "httpStatus": null,
+      "team": "justin",
+      "agent": "balance",
+      "selectorKey": "justin.opinion",
+      "agents": [
+        "justin/balance",
+        "justin/bench",
+        "justin/neutral-bench",
+        "justin/opinion",
+        "justin/quill"
+      ],
+      "primary": "gemini-cli-oauth/gemini-2.5-flash",
+      "selectedRoute": null,
+      "expectedProvider": "gemini-cli-oauth",
+      "provider": null,
+      "durationMs": 64997,
+      "fallbackCount": null,
+      "attemptedProviders": [],
+      "traceIdPresent": false,
+      "error": "timeout"
+    },
+    {
+      "ok": false,
+      "httpStatus": 200,
+      "team": "justin",
+      "agent": "default",
+      "selectorKey": "justin._default",
+      "agents": [
+        "justin/default"
+      ],
+      "primary": "gemini-cli-oauth/gemini-2.5-flash",
+      "selectedRoute": "openai-oauth/gpt-5.4",
+      "expectedProvider": "gemini-cli-oauth",
+      "provider": "openai-oauth",
+      "durationMs": 1869,
+      "fallbackCount": 1,
+      "attemptedProviders": [
+        "gemini-cli-oauth/gemini-2.5-flash"
+      ],
+      "traceIdPresent": true,
+      "error": "selected_route_mismatch:openai-oauth/gpt-5.4"
+    },
+    {
+      "ok": true,
+      "httpStatus": 200,
+      "team": "justin",
+      "agent": "justin",
+      "selectorKey": "justin.stage-3",
+      "agents": [
+        "justin/justin",
+        "justin/stage-3"
+      ],
+      "primary": "openai-oauth/gpt-5.4",
+      "selectedRoute": "openai-oauth/gpt-5.4",
+      "expectedProvider": "openai-oauth",
+      "provider": "openai-oauth",
+      "durationMs": 1425,
+      "fallbackCount": 0,
+      "attemptedProviders": [],
+      "traceIdPresent": true,
+      "error": null
+    },
+    {
+      "ok": true,
+      "httpStatus": 200,
+      "team": "justin",
+      "agent": "simple-qa",
+      "selectorKey": "justin.simple-qa",
+      "agents": [
+        "justin/simple-qa"
+      ],
+      "primary": "gemini-cli-oauth/gemini-2.5-flash-lite",
+      "selectedRoute": "gemini-cli-oauth/gemini-2.5-flash-lite",
+      "expectedProvider": "gemini-cli-oauth",
+      "provider": "gemini-cli-oauth",
+      "durationMs": 5648,
+      "fallbackCount": 0,
+      "attemptedProviders": [],
+      "traceIdPresent": true,
+      "error": null
+    },
+    {
+      "ok": true,
+      "httpStatus": 200,
+      "team": "sigma",
+      "agent": "commander",
+      "selectorKey": "sigma.agent_policy",
+      "agents": [
+        "sigma/commander"
+      ],
+      "primary": "openai-oauth/gpt-5.4",
+      "selectedRoute": "openai-oauth/gpt-5.4",
+      "expectedProvider": "openai-oauth",
+      "provider": "openai-oauth",
+      "durationMs": 1824,
+      "fallbackCount": 0,
+      "attemptedProviders": [],
+      "traceIdPresent": true,
+      "error": null
+    },
+    {
+      "ok": true,
+      "httpStatus": 200,
+      "team": "ska",
+      "agent": "andy",
+      "selectorKey": "ska.classify",
+      "agents": [
+        "ska/andy",
+        "ska/jimmy"
+      ],
+      "primary": "groq/llama-3.1-8b-instant",
+      "selectedRoute": "groq/llama-3.1-8b-instant",
+      "expectedProvider": "groq",
+      "provider": "groq",
+      "durationMs": 328,
+      "fallbackCount": 0,
+      "attemptedProviders": [],
+      "traceIdPresent": true,
+      "error": null
+    },
+    {
+      "ok": true,
+      "httpStatus": 200,
+      "team": "ska",
+      "agent": "eve",
+      "selectorKey": "ska._default",
+      "agents": [
+        "ska/eve",
+        "ska/rebecca"
+      ],
+      "primary": "gemini-cli-oauth/gemini-2.5-flash-lite",
+      "selectedRoute": "gemini-cli-oauth/gemini-2.5-flash-lite",
+      "expectedProvider": "gemini-cli-oauth",
+      "provider": "gemini-cli-oauth",
+      "durationMs": 5560,
+      "fallbackCount": 0,
+      "attemptedProviders": [],
+      "traceIdPresent": true,
+      "error": null
+    }
+  ]
+}

@@ -1,0 +1,149 @@
+{
+  "ok": false,
+  "generatedAt": "2026-05-12T12:18:14.819Z",
+  "scope": "failed_selector_recheck",
+  "results": [
+    {
+      "ok": true,
+      "httpStatus": 200,
+      "selectorKey": "blog._default",
+      "agents": [
+        "blog/blo",
+        "blog/publ",
+        "blog/richer"
+      ],
+      "primary": "gemini-cli-oauth/gemini-2.5-flash",
+      "selectedRoute": "gemini-cli-oauth/gemini-2.5-flash",
+      "expectedProvider": "gemini-cli-oauth",
+      "provider": "gemini-cli-oauth",
+      "durationMs": 13007,
+      "fallbackCount": 0,
+      "attemptedProviders": [],
+      "error": null
+    },
+    {
+      "ok": true,
+      "httpStatus": 200,
+      "selectorKey": "investment.kairos",
+      "agents": [
+        "investment/kairos"
+      ],
+      "primary": "gemini-cli-oauth/gemini-2.5-flash",
+      "selectedRoute": "gemini-cli-oauth/gemini-2.5-flash",
+      "expectedProvider": "gemini-cli-oauth",
+      "provider": "gemini-cli-oauth",
+      "durationMs": 22680,
+      "fallbackCount": 0,
+      "attemptedProviders": [],
+      "error": null
+    },
+    {
+      "ok": false,
+      "selectorKey": "investment.scout",
+      "agents": [
+        "investment/scout"
+      ],
+      "primary": "gemini-cli-oauth/gemini-2.5-flash",
+      "selectedRoute": null,
+      "expectedProvider": "gemini-cli-oauth",
+      "provider": null,
+      "durationMs": 94997,
+      "error": "timeout"
+    },
+    {
+      "ok": false,
+      "httpStatus": 200,
+      "selectorKey": "justin.opinion",
+      "agents": [
+        "justin/balance",
+        "justin/bench",
+        "justin/neutral-bench",
+        "justin/opinion",
+        "justin/quill"
+      ],
+      "primary": "gemini-cli-oauth/gemini-2.5-flash",
+      "selectedRoute": "openai-oauth/gpt-5.4",
+      "expectedProvider": "gemini-cli-oauth",
+      "provider": "openai-oauth",
+      "durationMs": 2515,
+      "fallbackCount": 1,
+      "attemptedProviders": [
+        "gemini-cli-oauth/gemini-2.5-flash"
+      ],
+      "error": "selected_route_mismatch:openai-oauth/gpt-5.4"
+    },
+    {
+      "ok": false,
+      "httpStatus": 200,
+      "selectorKey": "justin._default",
+      "agents": [
+        "justin/default"
+      ],
+      "primary": "gemini-cli-oauth/gemini-2.5-flash",
+      "selectedRoute": "openai-oauth/gpt-5.4",
+      "expectedProvider": "gemini-cli-oauth",
+      "provider": "openai-oauth",
+      "durationMs": 1193,
+      "fallbackCount": 1,
+      "attemptedProviders": [
+        "gemini-cli-oauth/gemini-2.5-flash"
+      ],
+      "error": "selected_route_mismatch:openai-oauth/gpt-5.4"
+    }
+  ],
+  "failures": [
+    {
+      "ok": false,
+      "selectorKey": "investment.scout",
+      "agents": [
+        "investment/scout"
+      ],
+      "primary": "gemini-cli-oauth/gemini-2.5-flash",
+      "selectedRoute": null,
+      "expectedProvider": "gemini-cli-oauth",
+      "provider": null,
+      "durationMs": 94997,
+      "error": "timeout"
+    },
+    {
+      "ok": false,
+      "httpStatus": 200,
+      "selectorKey": "justin.opinion",
+      "agents": [
+        "justin/balance",
+        "justin/bench",
+        "justin/neutral-bench",
+        "justin/opinion",
+        "justin/quill"
+      ],
+      "primary": "gemini-cli-oauth/gemini-2.5-flash",
+      "selectedRoute": "openai-oauth/gpt-5.4",
+      "expectedProvider": "gemini-cli-oauth",
+      "provider": "openai-oauth",
+      "durationMs": 2515,
+      "fallbackCount": 1,
+      "attemptedProviders": [
+        "gemini-cli-oauth/gemini-2.5-flash"
+      ],
+      "error": "selected_route_mismatch:openai-oauth/gpt-5.4"
+    },
+    {
+      "ok": false,
+      "httpStatus": 200,
+      "selectorKey": "justin._default",
+      "agents": [
+        "justin/default"
+      ],
+      "primary": "gemini-cli-oauth/gemini-2.5-flash",
+      "selectedRoute": "openai-oauth/gpt-5.4",
+      "expectedProvider": "gemini-cli-oauth",
+      "provider": "openai-oauth",
+      "durationMs": 1193,
+      "fallbackCount": 1,
+      "attemptedProviders": [
+        "gemini-cli-oauth/gemini-2.5-flash"
+      ],
+      "error": "selected_route_mismatch:openai-oauth/gpt-5.4"
+    }
+  ]
+}
