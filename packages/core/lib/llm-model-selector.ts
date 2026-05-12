@@ -1113,7 +1113,7 @@ const RETIRED_TARGET_MARKERS = new Set([
   'video-edi',
 ]);
 
-const PLANNED_TEAMS = new Set(['secretary', 'business', 'academic']);
+const PLANNED_TEAMS = new Set<string>([]);
 const PENDING_RUNTIME_TEAMS = new Set(['legal']);
 const ACTIVE_BLOG_VISIBLE_AGENTS = new Set(['blo', 'richer', 'pos', 'gems', 'publ', 'star']);
 const ACTIVE_SKA_VISIBLE_AGENTS = new Set(['andy', 'jimmy', 'rebecca', 'eve']);

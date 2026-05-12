@@ -24,22 +24,18 @@ function assertBlocked(team: string, expectedKind: string): void {
 
 function main(): void {
   withEnv('HUB_ALLOW_PLANNED_LLM_ROUTES', undefined, () => {
-    for (const team of ['secretary', 'business', 'academic']) assertBlocked(team, 'planned');
     assertBlocked('legal', 'pending_runtime');
   });
 
   withEnv('HUB_ALLOW_PLANNED_LLM_ROUTES', 'true', () => {
-    for (const team of ['secretary', 'business', 'academic', 'legal']) {
-      const result = selector.isLlmRouteTargetAllowed({ callerTeam: team, agent: 'default', selectorKey: `${team}._default` });
-      assert.equal(result.ok, true, `${team} may only be allowed behind HUB_ALLOW_PLANNED_LLM_ROUTES`);
-    }
+    const result = selector.isLlmRouteTargetAllowed({ callerTeam: 'legal', agent: 'default', selectorKey: 'legal._default' });
+    assert.equal(result.ok, true, 'legal may only be allowed behind HUB_ALLOW_PLANNED_LLM_ROUTES');
     const retired = selector.isLlmRouteTargetAllowed({ callerTeam: 'worker', agent: 'lead', selectorKey: 'worker._default' });
     assert.equal(retired.ok, false, 'retired teams must remain blocked even when planned routes are allowed');
   });
 
   console.log(JSON.stringify({
     ok: true,
-    planned_blocked_by_default: ['secretary', 'business', 'academic'],
     pending_runtime_blocked_by_default: ['legal'],
     planned_override_env: 'HUB_ALLOW_PLANNED_LLM_ROUTES',
   }, null, 2));

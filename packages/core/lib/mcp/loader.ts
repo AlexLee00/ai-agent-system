@@ -7,9 +7,7 @@ const path = require('path');
 const ROOT = path.resolve(__dirname, '../../../..');
 
 const BOT_CONFIGS = [
-  { id: 'academic', path: 'bots/academic/config.json' },
   { id: 'legal', path: 'bots/legal/config.json' },
-  { id: 'data', path: 'bots/data/config.json' },
   { id: 'blog', path: 'bots/blog/config.json' },
   { id: 'orchestrator', path: 'bots/orchestrator/config.json' },
   { id: 'investment', path: 'bots/investment/config.yaml' },
