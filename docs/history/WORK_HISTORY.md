@@ -4,6 +4,15 @@
 > 상세 내용: `reservation-dev-summary.md` / `reservation-handoff.md`
 > 최초 작성: 2026-02-27
 
+## 2026-05-12: CODEX_BLOG_NEURAL_QUALITY_BOOST — G-E-RG 7-Agent + 네이버 SEO + 마스터 학습 + 토픽 토론
+
+- `bots/blog/lib/quality-agents.ts` (신규, 504줄): 7-Agent G-E-RG 품질평가 시스템 구현. SEO/Style/FactCheck/Readability/Coherence Agent 병렬 평가 + FinalQuality Agent PASS/REVISE/REJECT 결정. arXiv 2505.04869(G-E-RG) + 2601.08003(LLM Blind Peer Review) 기반.
+- `bots/blog/lib/naver-seo-optimizer.ts` (신규, 309줄): C-Rank(Context/Content/Chain/Creator) + D.I.A.+(Intent/Depth/Uniqueness) + GEO(AI인용친화/구조/출처) 3개 알고리즘 통합 점수. 개선 제안 자동 생성 포함.
+- `bots/blog/lib/master-edit-analyzer.ts` (신규, 379줄): 마스터 발행 포스팅 탐색 → wordDiff/titleDiff 계산 → LLM 패턴 분류 → DB 저장 → 스타일 프로파일 빌드. 다음 작성 시 system_prompt에 자동 반영.
+- `bots/blog/lib/topic-debate.ts` (신규, 307줄): Writer/SEO/Marketer/Critic 4-Agent 병렬 투표. 가중 투표(Critic 1.5배, SEO 1.3배) + Critic 비토 룰(score<30→자동 skip) + 70%/50% 임계값 결정. selectBestTopicByDebate() 후보 자동 선택 포함.
+- `bots/blog/lib/quality-checker.ts` 업데이트: `checkQualityFull()` 신규 export — 기존 5-Round Critic + 신규 7-Agent G-E-RG 통합.
+- `bots/blog/lib/blo.ts` 업데이트: `_runPostPublishChecks`에 일일 마스터 편집 분석 자동 실행 추가. `_attachQualitySummary`에 SEO점수 포함. `_buildDailyGuideLine`에 SEO/G-E-RG 결과 표시.
+
 ## 2026-05-11: Luna bottleneck loop — position parity REST rate-limit guard
 
 - Luna bottleneck autonomy operator가 직전 패치 이후에도 `repair_llm_hotpath_plan` 후보를 다시 제시하는 현상을 확인했다.
