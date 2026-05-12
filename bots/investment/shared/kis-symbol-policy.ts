@@ -42,9 +42,20 @@ export const KIS_SYMBOL_POLICY: KisSymbolPolicy[] = [
   { symbol: '006340', policy: 'avoid', rationale: '-$38 단일 손실', trades: 1, win_rate: 0, total_pnl_usd: -38.48 },
 ];
 
+export function normalizeKisSymbol(symbol: string): string {
+  const normalized = String(symbol || '')
+    .trim()
+    .toUpperCase()
+    .replace(/^A/, '')
+    .replace(/\.KS$|\.KQ$/, '')
+    .replace(/[^0-9]/g, '');
+  return normalized.padStart(6, '0').slice(-6);
+}
+
 export function getKisSymbolPolicy(symbol: string): KisSymbolPolicy {
-  return KIS_SYMBOL_POLICY.find((p) => p.symbol === symbol) ?? {
-    symbol,
+  const normalized = normalizeKisSymbol(symbol);
+  return KIS_SYMBOL_POLICY.find((p) => p.symbol === normalized) ?? {
+    symbol: normalized,
     policy: 'neutral',
     rationale: 'No historical data',
   };
@@ -63,9 +74,38 @@ export function getKisSymbolBlockReason(symbol: string): string | null {
   return null;
 }
 
+export function isKisWhitelistedSymbol(symbol: string): boolean {
+  return getKisSymbolPolicy(symbol).policy === 'whitelist';
+}
+
+export function isKisBlacklistedSymbol(symbol: string): boolean {
+  return getKisSymbolPolicy(symbol).policy === 'blacklist';
+}
+
+export function isKisAvoidSymbol(symbol: string): boolean {
+  return getKisSymbolPolicy(symbol).policy === 'avoid';
+}
+
+export function evaluateKisSymbolPolicy(symbol: string) {
+  const policy = getKisSymbolPolicy(symbol);
+  const blockReason = getKisSymbolBlockReason(symbol);
+  return {
+    ...policy,
+    allowed: isKisSymbolAllowed(symbol),
+    blocked: Boolean(blockReason),
+    blockReason,
+    shadowOnly: true,
+  };
+}
+
 export default {
   KIS_SYMBOL_POLICY,
+  normalizeKisSymbol,
   getKisSymbolPolicy,
   isKisSymbolAllowed,
   getKisSymbolBlockReason,
+  isKisWhitelistedSymbol,
+  isKisBlacklistedSymbol,
+  isKisAvoidSymbol,
+  evaluateKisSymbolPolicy,
 };

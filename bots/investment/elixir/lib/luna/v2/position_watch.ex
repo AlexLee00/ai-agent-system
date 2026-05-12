@@ -332,8 +332,32 @@ defmodule Luna.V2.PositionWatch do
   @kis_max_hold_minutes 1440
   @kis_hold_warn_pct 0.80
 
+  def kis_max_hold_minutes, do: @kis_max_hold_minutes
+
+  def kis_hold_time_shadow(position) when is_map(position) do
+    normalized = %{
+      exchange: Map.get(position, :exchange, Map.get(position, "exchange")),
+      position_created_at:
+        Map.get(
+          position,
+          :position_created_at,
+          Map.get(position, "position_created_at", Map.get(position, :created_at, Map.get(position, "created_at")))
+        )
+    }
+
+    classify_kis_hold_time(normalized) ||
+      %{
+        attention_type: :kis_hold_ok,
+        reason: "KIS 최대 보유 #{@kis_max_hold_minutes}분 이내",
+        kis_hold_minutes: position_age_minutes(normalized.position_created_at),
+        kis_max_hold_minutes: @kis_max_hold_minutes,
+        shadow: true,
+        mutate: false
+      }
+  end
+
   defp classify_kis_hold_time(%{exchange: ex, position_created_at: created_at})
-       when ex in ["kis", :kis] and not is_nil(created_at) do
+       when ex in ["kis", :kis, "kis_overseas", :kis_overseas] and not is_nil(created_at) do
     age_minutes = position_age_minutes(created_at)
     warn_threshold = trunc(@kis_max_hold_minutes * @kis_hold_warn_pct)
 
@@ -343,7 +367,9 @@ defmodule Luna.V2.PositionWatch do
           attention_type: :kis_max_hold_exceeded,
           reason: "KIS 최대 보유 #{@kis_max_hold_minutes}분 초과 (현재 #{age_minutes}분)",
           kis_hold_minutes: age_minutes,
-          kis_max_hold_minutes: @kis_max_hold_minutes
+          kis_max_hold_minutes: @kis_max_hold_minutes,
+          shadow: true,
+          mutate: false
         }
 
       age_minutes >= warn_threshold ->
@@ -351,7 +377,9 @@ defmodule Luna.V2.PositionWatch do
           attention_type: :kis_hold_warning,
           reason: "KIS 보유 시간 경고 #{age_minutes}/#{@kis_max_hold_minutes}분",
           kis_hold_minutes: age_minutes,
-          kis_max_hold_minutes: @kis_max_hold_minutes
+          kis_max_hold_minutes: @kis_max_hold_minutes,
+          shadow: true,
+          mutate: false
         }
 
       true ->
@@ -367,6 +395,19 @@ defmodule Luna.V2.PositionWatch do
 
   defp position_age_minutes(%DateTime{} = created_at) do
     DateTime.diff(DateTime.utc_now(), created_at, :minute)
+  end
+
+  defp position_age_minutes(created_at) when is_binary(created_at) do
+    case DateTime.from_iso8601(created_at) do
+      {:ok, dt, _offset} ->
+        DateTime.diff(DateTime.utc_now(), dt, :minute)
+
+      _ ->
+        case NaiveDateTime.from_iso8601(created_at) do
+          {:ok, dt} -> NaiveDateTime.diff(NaiveDateTime.utc_now(), dt, :minute)
+          _ -> 0
+        end
+    end
   end
 
   defp position_age_minutes(_), do: 0

@@ -18,6 +18,31 @@ defmodule Luna.V2.Skill.RiskGovernor do
   # force_exit 7건 -$201 방지 목적
   @kis_sl_pct 0.02
 
+  def kis_stop_loss_pct, do: @kis_sl_pct
+
+  def kis_stop_loss_price(entry_price) do
+    entry = to_float(entry_price)
+    if entry > 0, do: Float.round(entry * (1.0 - @kis_sl_pct), 6), else: nil
+  end
+
+  def kis_stop_loss_shadow(position, current_price) when is_map(position) do
+    entry_price = to_float(Map.get(position, :entry_price, Map.get(position, "entry_price")))
+    current = to_float(current_price)
+    stop_price = kis_stop_loss_price(entry_price)
+    pnl_ratio = if entry_price > 0, do: current / entry_price - 1.0, else: 0.0
+
+    %{
+      shadow: true,
+      mutate: false,
+      entry_price: entry_price,
+      current_price: current,
+      stop_loss_pct: @kis_sl_pct,
+      stop_loss_price: stop_price,
+      breach: entry_price > 0 and current > 0 and pnl_ratio <= -@kis_sl_pct,
+      pnl_ratio: pnl_ratio
+    }
+  end
+
   def run(%{symbol: symbol, exchange: exchange}, _context) do
     Logger.info("[루나V2/RiskGovernor] 리스크 점검 symbol=#{symbol} exchange=#{exchange}")
 
@@ -32,19 +57,21 @@ defmodule Luna.V2.Skill.RiskGovernor do
   end
 
   defp check_position_concentration(violations, symbol, exchange) do
+    {filters, params} = symbol_exchange_filters(symbol, exchange)
+
     query = """
     SELECT symbol, exchange, ABS(size * entry_price) AS notional_usd
     FROM investment.live_positions
     WHERE status = 'open'
-    #{if symbol, do: "AND symbol = '#{symbol}'", else: ""}
-    #{if exchange, do: "AND exchange = '#{exchange}'", else: ""}
+    #{filters}
     ORDER BY notional_usd DESC
     LIMIT 10
     """
-    case Jay.Core.Repo.query(query, []) do
+
+    case Jay.Core.Repo.query(query, params) do
       {:ok, %{rows: rows}} ->
         oversized = Enum.filter(rows, fn [_, _, notional] ->
-          notional && Decimal.compare(notional, @max_single_position_pct * 10_000) == :gt
+          to_float(notional) > @max_single_position_pct * 10_000
         end)
         if oversized != [] do
           [{:concentration_exceeded, Enum.map(oversized, fn [sym, ex, n] -> "#{ex}/#{sym} $#{n}" end)} | violations]
@@ -80,8 +107,8 @@ defmodule Luna.V2.Skill.RiskGovernor do
 
   # KIS 포지션 -2% SL 위반 체크 (force_exit 사전 방지)
   defp check_kis_stop_loss(violations, symbol, exchange)
-       when exchange in ["kis", :kis, "kis_overseas", :kis_overseas] do
-    sym_filter = if symbol && symbol != "", do: "AND symbol = '#{symbol}'", else: ""
+       when exchange in [nil, "", "kis", :kis, "kis_overseas", :kis_overseas] do
+    {filters, params} = kis_stop_loss_filters(symbol, exchange)
 
     query = """
     SELECT symbol, exchange,
@@ -92,17 +119,14 @@ defmodule Luna.V2.Skill.RiskGovernor do
       END AS pnl_ratio
     FROM investment.live_positions
     WHERE status = 'open'
-      AND exchange IN ('kis', 'kis_overseas')
-      #{sym_filter}
+      #{filters}
     """
 
-    case Jay.Core.Repo.query(query, []) do
+    case Jay.Core.Repo.query(query, params) do
       {:ok, %{rows: rows}} ->
         breaches =
           Enum.filter(rows, fn [_, _, pnl_ratio] ->
-            pnl_ratio != nil and
-              (is_struct(pnl_ratio, Decimal) and Decimal.compare(pnl_ratio, -@kis_sl_pct) == :lt or
-                 is_number(pnl_ratio) and pnl_ratio < -@kis_sl_pct)
+            not is_nil(pnl_ratio) and to_float(pnl_ratio) < -@kis_sl_pct
           end)
 
         if breaches != [] do
@@ -121,4 +145,58 @@ defmodule Luna.V2.Skill.RiskGovernor do
   end
 
   defp check_kis_stop_loss(violations, _symbol, _exchange), do: violations
+
+  defp symbol_exchange_filters(symbol, exchange) do
+    []
+    |> maybe_add_filter([], "symbol", symbol)
+    |> maybe_add_filter("exchange", exchange)
+    |> render_filters()
+  end
+
+  defp kis_stop_loss_filters(symbol, exchange) do
+    base_exchange =
+      if exchange in ["kis", :kis, "kis_overseas", :kis_overseas] do
+        {[filter_clause("exchange", 1)], [to_string(exchange)]}
+      else
+        {["AND exchange IN ('kis', 'kis_overseas')"], []}
+      end
+
+    base_exchange
+    |> maybe_add_filter("symbol", symbol)
+    |> render_filters()
+  end
+
+  defp maybe_add_filter({clauses, params}, column, value) do
+    if present?(value) do
+      {[filter_clause(column, length(params) + 1) | clauses], params ++ [to_string(value)]}
+    else
+      {clauses, params}
+    end
+  end
+
+  defp maybe_add_filter(clauses, params, column, value) when is_list(clauses) and is_list(params) do
+    maybe_add_filter({clauses, params}, column, value)
+  end
+
+  defp filter_clause(column, index), do: "AND #{column} = $#{index}"
+
+  defp render_filters({clauses, params}) do
+    {clauses |> Enum.reverse() |> Enum.join("\n"), params}
+  end
+
+  defp present?(nil), do: false
+  defp present?(""), do: false
+  defp present?(_), do: true
+
+  defp to_float(nil), do: 0.0
+  defp to_float(value) when is_float(value), do: value
+  defp to_float(value) when is_integer(value), do: value * 1.0
+  defp to_float(%Decimal{} = value), do: Decimal.to_float(value)
+
+  defp to_float(value) do
+    case Float.parse(to_string(value)) do
+      {parsed, _} -> parsed
+      _ -> 0.0
+    end
+  end
 end

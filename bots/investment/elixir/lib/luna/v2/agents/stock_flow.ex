@@ -12,6 +12,8 @@ defmodule Luna.V2.Agents.StockFlow do
   @agent "stock-flow"
   @memory_key "agent:stock-flow:latest"
   @default_interval_ms 60_000
+  @kis_allowed_strategy_types ~w[sma_crossover sma_pullback]
+  @kis_strategy_exit_reason "strategy_exit"
 
   def start_link(opts \\ []) do
     name = Keyword.get(opts, :name, __MODULE__)
@@ -31,6 +33,7 @@ defmodule Luna.V2.Agents.StockFlow do
     quote_change = number(get_value(event, :quote_change_pct, 0.0), 0.0)
     scout_score = number(get_value(event, :scout_score, 0.0), 0.0)
     flow_score = clamp(quote_change * 1.4 + (volume_ratio - 1.0) * 0.25 + scout_score * 0.35, -1.0, 1.0)
+    kis_strategy = kis_strategy_shadow(event)
 
     pressure =
       cond do
@@ -50,11 +53,52 @@ defmodule Luna.V2.Agents.StockFlow do
       evidence: %{
         volume_ratio: round4(volume_ratio),
         quote_change_pct: round4(quote_change),
-        scout_score: round4(scout_score)
+        scout_score: round4(scout_score),
+        kis_strategy: kis_strategy
       },
       computed_at: now_iso()
     }
   end
+
+  def kis_strategy_shadow(event \\ %{}) do
+    strategy_type =
+      event
+      |> get_value(:strategy_type, get_value(event, :strategy_family, "unknown"))
+      |> normalize_strategy_type()
+
+    exit_reason = normalize_kis_exit_reason(get_value(event, :exit_reason, "normal_exit"), strategy_type)
+    sma_only? = sma_strategy_type?(strategy_type)
+
+    %{
+      shadow: true,
+      mutate: false,
+      strategy_type: strategy_type,
+      sma_only: sma_only?,
+      entry_allowed: sma_only?,
+      exit_reason: exit_reason,
+      rationale:
+        if(sma_only?,
+          do: "KIS Strategy C: SMA 기반 전략만 shadow 허용, normal_exit은 strategy_exit로 승격",
+          else: "KIS Strategy C: 비SMA 전략 shadow 차단 후보"
+        )
+    }
+  end
+
+  def sma_strategy_type?(strategy_type) do
+    normalize_strategy_type(strategy_type) in @kis_allowed_strategy_types
+  end
+
+  def normalize_kis_exit_reason(exit_reason, strategy_type) do
+    normalized_exit = to_string(exit_reason || "normal_exit")
+
+    if normalized_exit == "normal_exit" and sma_strategy_type?(strategy_type) do
+      @kis_strategy_exit_reason
+    else
+      normalized_exit
+    end
+  end
+
+  def kis_allowed_strategy_types, do: @kis_allowed_strategy_types
 
   @impl true
   def init(opts) do
@@ -100,6 +144,13 @@ defmodule Luna.V2.Agents.StockFlow do
   defp signal_from_score(score) when score >= 0.55, do: :BUY
   defp signal_from_score(score) when score <= -0.55, do: :SELL
   defp signal_from_score(_score), do: :HOLD
+
+  defp normalize_strategy_type(value) do
+    value
+    |> to_string()
+    |> String.trim()
+    |> String.downcase()
+  end
 
   defp get_value(map, key, fallback), do: Map.get(map, key, Map.get(map, Atom.to_string(key), fallback))
   defp number(value, _fallback) when is_number(value), do: value

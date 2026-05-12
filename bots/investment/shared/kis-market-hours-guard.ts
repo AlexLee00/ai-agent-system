@@ -249,9 +249,24 @@ export function isKisBlockedHour(now: Date = new Date()): boolean {
   return !policy.allow;
 }
 
+export function isKisAllowedTime(now: Date = new Date()): boolean {
+  return !isKisBlockedHour(now);
+}
+
 export function isKisPreferredHour(now: Date = new Date()): boolean {
   const policy = getKisTimeSlotPolicy(now);
   return policy.priority === 'high';
+}
+
+export function evaluateKisTimeSlotPolicy(now: Date = new Date()) {
+  const policy = getKisTimeSlotPolicy(now);
+  return {
+    ...policy,
+    allowed: policy.allow,
+    blocked: !policy.allow,
+    preferred: policy.priority === 'high',
+    shadowOnly: true,
+  };
 }
 
 export default {
@@ -262,6 +277,8 @@ export default {
   flushDeferredSignals,
   getKisTimeSlotPolicy,
   isKisBlockedHour,
+  isKisAllowedTime,
   isKisPreferredHour,
+  evaluateKisTimeSlotPolicy,
   KIS_TIME_SLOT_POLICY,
 };
