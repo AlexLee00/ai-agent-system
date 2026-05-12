@@ -1,10 +1,10 @@
 # LLM Agent Model Inventory
 
-Generated at: 2026-05-08T14:36:59.906Z
+Generated at: 2026-05-12T12:05:38.115Z
 
 ## Summary
-- Selector route targets: 132
-- Active visible agents: 50
+- Selector route targets: 156
+- Active visible agents: 74
 - Active runtime services: 9
 - Task routes: 43
 - Alias routes: 30
@@ -14,9 +14,9 @@ Generated at: 2026-05-08T14:36:59.906Z
 ## Primary Providers
 ```json
 {
-  "gemini-cli-oauth": 70,
-  "groq": 48,
-  "openai-oauth": 15
+  "gemini-cli-oauth": 88,
+  "openai-oauth": 19,
+  "groq": 50
 }
 ```
 
@@ -77,7 +77,7 @@ _없음_
 | investment | default | alias | selected | investment._default | groq/qwen/qwen3-32b | openai-oauth/gpt-5.4-mini<br>gemini-cli-oauth/gemini-2.5-flash-lite | selector_chain |
 | investment | hanul | alias | selected | investment.hanul | groq/qwen/qwen3-32b | openai-oauth/gpt-5.4-mini<br>gemini-cli-oauth/gemini-2.5-flash-lite | selector_chain |
 | investment | hephaestos | alias | selected | investment.hephaestos | groq/llama-3.1-8b-instant | openai-oauth/gpt-5.4-mini | selector_chain |
-| investment | hermes | alias | selected | investment.hermes | gemini-cli-oauth/gemini-2.5-flash-lite | groq/llama-3.1-8b-instant<br>openai-oauth/gpt-5.4-mini | selector_chain |
+| investment | hermes | alias | selected | investment.hermes | groq/llama-3.1-8b-instant | openai-oauth/gpt-5.4-mini<br>gemini-cli-oauth/gemini-2.5-flash-lite | selector_chain |
 | investment | kairos | alias | selected | investment.kairos | gemini-cli-oauth/gemini-2.5-flash | openai-oauth/gpt-5.4-mini<br>groq/llama-3.3-70b-versatile | selector_chain |
 | investment | luna | alias | selected | investment.luna | groq/qwen/qwen3-32b | openai-oauth/gpt-5.4-mini<br>gemini-cli-oauth/gemini-2.5-flash-lite | selector_chain |
 | investment | nemesis | alias | selected | investment.nemesis | groq/qwen/qwen3-32b | openai-oauth/gpt-5.4-mini<br>gemini-cli-oauth/gemini-2.5-flash-lite | selector_chain |
@@ -85,7 +85,7 @@ _없음_
 | investment | reporter | alias | selected | investment.reporter | groq/llama-3.1-8b-instant | groq/openai/gpt-oss-20b<br>openai-oauth/gpt-5.4-mini<br>gemini-cli-oauth/gemini-2.5-flash | selector_chain |
 | investment | scout | alias | selected | investment.scout | gemini-cli-oauth/gemini-2.5-flash | openai-oauth/gpt-5.4-mini<br>groq/llama-3.3-70b-versatile | selector_chain |
 | investment | sentinel | alias | selected | investment.sentinel | gemini-cli-oauth/gemini-2.5-flash-lite | groq/llama-3.1-8b-instant<br>openai-oauth/gpt-5.4-mini | selector_chain |
-| investment | sophia | alias | selected | investment.sophia | gemini-cli-oauth/gemini-2.5-flash-lite | groq/llama-3.1-8b-instant<br>openai-oauth/gpt-5.4-mini | selector_chain |
+| investment | sophia | alias | selected | investment.sophia | groq/llama-3.1-8b-instant | openai-oauth/gpt-5.4-mini<br>gemini-cli-oauth/gemini-2.5-flash-lite | selector_chain |
 | investment | stock-flow | alias | selected | investment.stock-flow | groq/qwen/qwen3-32b | openai-oauth/gpt-5.4-mini<br>gemini-cli-oauth/gemini-2.5-flash-lite | selector_chain |
 | investment | sweeper | alias | selected | investment.sweeper | gemini-cli-oauth/gemini-2.5-flash-lite | groq/llama-3.1-8b-instant<br>openai-oauth/gpt-5.4-mini | selector_chain |
 | investment | validator | alias | selected | investment.agent_policy | groq/llama-3.1-8b-instant | groq/openai/gpt-oss-20b<br>openai-oauth/gpt-5.4-mini<br>gemini-cli-oauth/gemini-2.5-flash | selector_chain |
@@ -99,7 +99,7 @@ _없음_
 | investment | chronos | visible_agent | selected | investment.chronos | groq/qwen/qwen3-32b | openai-oauth/gpt-5.4-mini<br>gemini-cli-oauth/gemini-2.5-flash-lite | selector_chain |
 | investment | hanul | visible_agent | selected | investment.hanul | groq/qwen/qwen3-32b | openai-oauth/gpt-5.4-mini<br>gemini-cli-oauth/gemini-2.5-flash-lite | selector_chain |
 | investment | hephaestos | visible_agent | selected | investment.hephaestos | groq/llama-3.1-8b-instant | openai-oauth/gpt-5.4-mini | selector_chain |
-| investment | hermes | visible_agent | selected | investment.hermes | gemini-cli-oauth/gemini-2.5-flash-lite | groq/llama-3.1-8b-instant<br>openai-oauth/gpt-5.4-mini | selector_chain |
+| investment | hermes | visible_agent | selected | investment.hermes | groq/llama-3.1-8b-instant | openai-oauth/gpt-5.4-mini<br>gemini-cli-oauth/gemini-2.5-flash-lite | selector_chain |
 | investment | kairos | visible_agent | selected | investment.kairos | gemini-cli-oauth/gemini-2.5-flash | openai-oauth/gpt-5.4-mini<br>groq/llama-3.3-70b-versatile | selector_chain |
 | investment | luna | visible_agent | selected | investment.luna | groq/qwen/qwen3-32b | openai-oauth/gpt-5.4-mini<br>gemini-cli-oauth/gemini-2.5-flash-lite | selector_chain |
 | investment | nemesis | visible_agent | selected | investment.nemesis | groq/qwen/qwen3-32b | openai-oauth/gpt-5.4-mini<br>gemini-cli-oauth/gemini-2.5-flash-lite | selector_chain |
@@ -107,10 +107,34 @@ _없음_
 | investment | reporter | visible_agent | selected | investment.reporter | groq/llama-3.1-8b-instant | groq/openai/gpt-oss-20b<br>openai-oauth/gpt-5.4-mini<br>gemini-cli-oauth/gemini-2.5-flash | selector_chain |
 | investment | scout | visible_agent | selected | investment.scout | gemini-cli-oauth/gemini-2.5-flash | openai-oauth/gpt-5.4-mini<br>groq/llama-3.3-70b-versatile | selector_chain |
 | investment | sentinel | visible_agent | selected | investment.sentinel | gemini-cli-oauth/gemini-2.5-flash-lite | groq/llama-3.1-8b-instant<br>openai-oauth/gpt-5.4-mini | selector_chain |
-| investment | sophia | visible_agent | selected | investment.sophia | gemini-cli-oauth/gemini-2.5-flash-lite | groq/llama-3.1-8b-instant<br>openai-oauth/gpt-5.4-mini | selector_chain |
+| investment | sophia | visible_agent | selected | investment.sophia | groq/llama-3.1-8b-instant | openai-oauth/gpt-5.4-mini<br>gemini-cli-oauth/gemini-2.5-flash-lite | selector_chain |
 | investment | stock-flow | visible_agent | selected | investment.stock-flow | groq/qwen/qwen3-32b | openai-oauth/gpt-5.4-mini<br>gemini-cli-oauth/gemini-2.5-flash-lite | selector_chain |
 | investment | sweeper | visible_agent | selected | investment.sweeper | gemini-cli-oauth/gemini-2.5-flash-lite | groq/llama-3.1-8b-instant<br>openai-oauth/gpt-5.4-mini | selector_chain |
 | investment | zeus | visible_agent | selected | investment.zeus | groq/qwen/qwen3-32b | openai-oauth/gpt-5.4-mini<br>gemini-cli-oauth/gemini-2.5-flash-lite | selector_chain |
+| justin | analysis | visible_agent | selected | justin.analysis | gemini-cli-oauth/gemini-2.5-flash | groq/qwen/qwen3-32b<br>openai-oauth/gpt-5.4 | selector_chain |
+| justin | atlas | visible_agent | selected | justin.citation | gemini-cli-oauth/gemini-2.5-flash-lite | groq/llama-3.1-8b-instant<br>openai-oauth/gpt-5.4-mini | selector_chain |
+| justin | balance | visible_agent | selected | justin.opinion | gemini-cli-oauth/gemini-2.5-flash | openai-oauth/gpt-5.4<br>groq/qwen/qwen3-32b | selector_chain |
+| justin | bench | visible_agent | selected | justin.opinion | gemini-cli-oauth/gemini-2.5-flash | openai-oauth/gpt-5.4<br>groq/qwen/qwen3-32b | selector_chain |
+| justin | briefing | visible_agent | selected | justin.analysis | gemini-cli-oauth/gemini-2.5-flash | groq/qwen/qwen3-32b<br>openai-oauth/gpt-5.4 | selector_chain |
+| justin | chain | visible_agent | selected | justin.analysis | gemini-cli-oauth/gemini-2.5-flash | groq/qwen/qwen3-32b<br>openai-oauth/gpt-5.4 | selector_chain |
+| justin | citation | visible_agent | selected | justin.citation | gemini-cli-oauth/gemini-2.5-flash-lite | groq/llama-3.1-8b-instant<br>openai-oauth/gpt-5.4-mini | selector_chain |
+| justin | citecheck | visible_agent | selected | justin.citation | gemini-cli-oauth/gemini-2.5-flash-lite | groq/llama-3.1-8b-instant<br>openai-oauth/gpt-5.4-mini | selector_chain |
+| justin | claim | visible_agent | selected | justin.analysis | gemini-cli-oauth/gemini-2.5-flash | groq/qwen/qwen3-32b<br>openai-oauth/gpt-5.4 | selector_chain |
+| justin | contro | visible_agent | selected | justin.analysis | gemini-cli-oauth/gemini-2.5-flash | groq/qwen/qwen3-32b<br>openai-oauth/gpt-5.4 | selector_chain |
+| justin | default | visible_agent | selected | justin._default | gemini-cli-oauth/gemini-2.5-flash | openai-oauth/gpt-5.4<br>groq/qwen/qwen3-32b | selector_chain |
+| justin | defense-x | visible_agent | selected | justin.analysis | gemini-cli-oauth/gemini-2.5-flash | groq/qwen/qwen3-32b<br>openai-oauth/gpt-5.4 | selector_chain |
+| justin | defense | visible_agent | selected | justin.analysis | gemini-cli-oauth/gemini-2.5-flash | groq/qwen/qwen3-32b<br>openai-oauth/gpt-5.4 | selector_chain |
+| justin | delta | visible_agent | selected | justin.analysis | gemini-cli-oauth/gemini-2.5-flash | groq/qwen/qwen3-32b<br>openai-oauth/gpt-5.4 | selector_chain |
+| justin | garam | visible_agent | selected | justin.citation | gemini-cli-oauth/gemini-2.5-flash-lite | groq/llama-3.1-8b-instant<br>openai-oauth/gpt-5.4-mini | selector_chain |
+| justin | justin | visible_agent | selected | justin.stage-3 | openai-oauth/gpt-5.4 | gemini-cli-oauth/gemini-2.5-flash<br>groq/qwen/qwen3-32b | selector_chain |
+| justin | ledger-law | visible_agent | selected | justin.analysis | gemini-cli-oauth/gemini-2.5-flash | groq/qwen/qwen3-32b<br>openai-oauth/gpt-5.4 | selector_chain |
+| justin | lens | visible_agent | selected | justin.analysis | gemini-cli-oauth/gemini-2.5-flash | groq/qwen/qwen3-32b<br>openai-oauth/gpt-5.4 | selector_chain |
+| justin | neutral-bench | visible_agent | selected | justin.opinion | gemini-cli-oauth/gemini-2.5-flash | openai-oauth/gpt-5.4<br>groq/qwen/qwen3-32b | selector_chain |
+| justin | opinion | visible_agent | selected | justin.opinion | gemini-cli-oauth/gemini-2.5-flash | openai-oauth/gpt-5.4<br>groq/qwen/qwen3-32b | selector_chain |
+| justin | plaintiff-x | visible_agent | selected | justin.analysis | gemini-cli-oauth/gemini-2.5-flash | groq/qwen/qwen3-32b<br>openai-oauth/gpt-5.4 | selector_chain |
+| justin | quill | visible_agent | selected | justin.opinion | gemini-cli-oauth/gemini-2.5-flash | openai-oauth/gpt-5.4<br>groq/qwen/qwen3-32b | selector_chain |
+| justin | simple-qa | visible_agent | selected | justin.simple-qa | gemini-cli-oauth/gemini-2.5-flash-lite | groq/llama-3.1-8b-instant<br>openai-oauth/gpt-5.4-mini | selector_chain |
+| justin | stage-3 | visible_agent | selected | justin.stage-3 | openai-oauth/gpt-5.4 | gemini-cli-oauth/gemini-2.5-flash<br>groq/qwen/qwen3-32b | selector_chain |
 | orchestrator | default | runtime_service | selected | orchestrator.jay.intent | gemini-cli-oauth/gemini-2.5-flash-lite | groq/llama-3.1-8b-instant | selector_chain |
 | orchestrator | fallback | runtime_service | selected | orchestrator.jay.chat_fallback | groq/openai/gpt-oss-20b | gemini-cli-oauth/gemini-2.5-flash | selector_chain |
 | orchestrator | intent | runtime_service | selected | orchestrator.jay.intent | gemini-cli-oauth/gemini-2.5-flash-lite | groq/llama-3.1-8b-instant | selector_chain |
@@ -125,7 +149,6 @@ _없음_
 | ska | eve | visible_agent | selected | ska._default | gemini-cli-oauth/gemini-2.5-flash-lite | groq/llama-3.1-8b-instant<br>openai-oauth/gpt-5.4-mini | selector_chain |
 | ska | jimmy | visible_agent | selected | ska.classify | groq/llama-3.1-8b-instant | gemini-cli-oauth/gemini-2.5-flash-lite<br>openai-oauth/gpt-5.4-mini | selector_chain |
 | ska | rebecca | visible_agent | selected | ska._default | gemini-cli-oauth/gemini-2.5-flash-lite | groq/llama-3.1-8b-instant<br>openai-oauth/gpt-5.4-mini | selector_chain |
-| ska | reservation | visible_agent | ops |  |  |  | team_container |
 
 ## Recommendations
 - planned/pending_runtime teams must remain blocked until runtime source and selector ownership exist

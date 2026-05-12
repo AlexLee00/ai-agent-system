@@ -1,11 +1,11 @@
 {
   "ok": true,
-  "generatedAt": "2026-05-08T14:36:59.906Z",
+  "generatedAt": "2026-05-12T12:05:38.115Z",
   "selectorVersion": "v3.0_oauth_4",
   "summary": {
-    "selectorRouteTargets": 132,
-    "activeTargets": 59,
-    "visibleAgents": 50,
+    "selectorRouteTargets": 156,
+    "activeTargets": 83,
+    "visibleAgents": 74,
     "runtimeServices": 9,
     "taskRoutes": 43,
     "aliases": 30,
@@ -13,28 +13,28 @@
     "pendingRuntime": 11,
     "retired": 0,
     "countsByKind": {
-      "visible_agent": 50,
+      "visible_agent": 74,
       "task_route": 43,
       "alias": 30,
       "runtime_service": 9
     },
     "countsByModelStatus": {
       "registry_model_only": 14,
-      "selector_chain": 132,
+      "selector_chain": 156,
       "team_container": 4,
       "auto_dev_implementation_model": 1,
       "non_llm_role": 3,
       "non_llm_service": 1
     },
     "primaryProviderCounts": {
-      "gemini-cli-oauth": 70,
-      "groq": 48,
-      "openai-oauth": 15
+      "gemini-cli-oauth": 88,
+      "openai-oauth": 19,
+      "groq": 50
     },
     "chainProviderCounts": {
-      "gemini-cli-oauth": 131,
-      "groq": 120,
-      "openai-oauth": 97
+      "gemini-cli-oauth": 153,
+      "groq": 144,
+      "openai-oauth": 123
     },
     "claudeCodePrimaryRoutes": [],
     "claudeCodeFallbackRoutes": [],
@@ -87,10 +87,10 @@
       "kind": "task_route",
       "status": "selected",
       "selectorKey": "blog.commenter.reply",
-      "primary": "groq/llama-3.1-8b-instant",
+      "primary": "openai-oauth/gpt-5.4",
       "fallbacks": [
-        "openai-oauth/gpt-5.4-mini",
-        "gemini-cli-oauth/gemini-2.5-flash-lite"
+        "groq/meta-llama/llama-4-scout-17b-16e-instruct",
+        "openai-oauth/gpt-5.4-mini"
       ],
       "modelStatus": "selector_chain",
       "blockReason": null,
@@ -155,10 +155,10 @@
       "kind": "task_route",
       "status": "selected",
       "selectorKey": "blog.commenter.neighbor",
-      "primary": "groq/llama-3.1-8b-instant",
+      "primary": "openai-oauth/gpt-5.4",
       "fallbacks": [
-        "openai-oauth/gpt-5.4-mini",
-        "gemini-cli-oauth/gemini-2.5-flash-lite"
+        "groq/meta-llama/llama-4-scout-17b-16e-instruct",
+        "openai-oauth/gpt-5.4-mini"
       ],
       "modelStatus": "selector_chain",
       "blockReason": null,
@@ -1239,10 +1239,10 @@
       "kind": "alias",
       "status": "selected",
       "selectorKey": "investment.hermes",
-      "primary": "gemini-cli-oauth/gemini-2.5-flash-lite",
+      "primary": "groq/llama-3.1-8b-instant",
       "fallbacks": [
-        "groq/llama-3.1-8b-instant",
-        "openai-oauth/gpt-5.4-mini"
+        "openai-oauth/gpt-5.4-mini",
+        "gemini-cli-oauth/gemini-2.5-flash-lite"
       ],
       "modelStatus": "selector_chain",
       "blockReason": null,
@@ -1393,10 +1393,10 @@
       "kind": "alias",
       "status": "selected",
       "selectorKey": "investment.sophia",
-      "primary": "gemini-cli-oauth/gemini-2.5-flash-lite",
+      "primary": "groq/llama-3.1-8b-instant",
       "fallbacks": [
-        "groq/llama-3.1-8b-instant",
-        "openai-oauth/gpt-5.4-mini"
+        "openai-oauth/gpt-5.4-mini",
+        "gemini-cli-oauth/gemini-2.5-flash-lite"
       ],
       "modelStatus": "selector_chain",
       "blockReason": null,
@@ -1638,10 +1638,10 @@
       "kind": "visible_agent",
       "status": "selected",
       "selectorKey": "investment.hermes",
-      "primary": "gemini-cli-oauth/gemini-2.5-flash-lite",
+      "primary": "groq/llama-3.1-8b-instant",
       "fallbacks": [
-        "groq/llama-3.1-8b-instant",
-        "openai-oauth/gpt-5.4-mini"
+        "openai-oauth/gpt-5.4-mini",
+        "gemini-cli-oauth/gemini-2.5-flash-lite"
       ],
       "modelStatus": "selector_chain",
       "blockReason": null,
@@ -1776,10 +1776,10 @@
       "kind": "visible_agent",
       "status": "selected",
       "selectorKey": "investment.sophia",
-      "primary": "gemini-cli-oauth/gemini-2.5-flash-lite",
+      "primary": "groq/llama-3.1-8b-instant",
       "fallbacks": [
-        "groq/llama-3.1-8b-instant",
-        "openai-oauth/gpt-5.4-mini"
+        "openai-oauth/gpt-5.4-mini",
+        "gemini-cli-oauth/gemini-2.5-flash-lite"
       ],
       "modelStatus": "selector_chain",
       "blockReason": null,
@@ -1831,6 +1831,414 @@
       "fallbacks": [
         "openai-oauth/gpt-5.4-mini",
         "gemini-cli-oauth/gemini-2.5-flash-lite"
+      ],
+      "modelStatus": "selector_chain",
+      "blockReason": null,
+      "countable": true
+    },
+    {
+      "source": "selector",
+      "team": "justin",
+      "namespace": "justin",
+      "agent": "analysis",
+      "kind": "visible_agent",
+      "status": "selected",
+      "selectorKey": "justin.analysis",
+      "primary": "gemini-cli-oauth/gemini-2.5-flash",
+      "fallbacks": [
+        "groq/qwen/qwen3-32b",
+        "openai-oauth/gpt-5.4"
+      ],
+      "modelStatus": "selector_chain",
+      "blockReason": null,
+      "countable": true
+    },
+    {
+      "source": "selector",
+      "team": "justin",
+      "namespace": "justin",
+      "agent": "atlas",
+      "kind": "visible_agent",
+      "status": "selected",
+      "selectorKey": "justin.citation",
+      "primary": "gemini-cli-oauth/gemini-2.5-flash-lite",
+      "fallbacks": [
+        "groq/llama-3.1-8b-instant",
+        "openai-oauth/gpt-5.4-mini"
+      ],
+      "modelStatus": "selector_chain",
+      "blockReason": null,
+      "countable": true
+    },
+    {
+      "source": "selector",
+      "team": "justin",
+      "namespace": "justin",
+      "agent": "balance",
+      "kind": "visible_agent",
+      "status": "selected",
+      "selectorKey": "justin.opinion",
+      "primary": "gemini-cli-oauth/gemini-2.5-flash",
+      "fallbacks": [
+        "openai-oauth/gpt-5.4",
+        "groq/qwen/qwen3-32b"
+      ],
+      "modelStatus": "selector_chain",
+      "blockReason": null,
+      "countable": true
+    },
+    {
+      "source": "selector",
+      "team": "justin",
+      "namespace": "justin",
+      "agent": "bench",
+      "kind": "visible_agent",
+      "status": "selected",
+      "selectorKey": "justin.opinion",
+      "primary": "gemini-cli-oauth/gemini-2.5-flash",
+      "fallbacks": [
+        "openai-oauth/gpt-5.4",
+        "groq/qwen/qwen3-32b"
+      ],
+      "modelStatus": "selector_chain",
+      "blockReason": null,
+      "countable": true
+    },
+    {
+      "source": "selector",
+      "team": "justin",
+      "namespace": "justin",
+      "agent": "briefing",
+      "kind": "visible_agent",
+      "status": "selected",
+      "selectorKey": "justin.analysis",
+      "primary": "gemini-cli-oauth/gemini-2.5-flash",
+      "fallbacks": [
+        "groq/qwen/qwen3-32b",
+        "openai-oauth/gpt-5.4"
+      ],
+      "modelStatus": "selector_chain",
+      "blockReason": null,
+      "countable": true
+    },
+    {
+      "source": "selector",
+      "team": "justin",
+      "namespace": "justin",
+      "agent": "chain",
+      "kind": "visible_agent",
+      "status": "selected",
+      "selectorKey": "justin.analysis",
+      "primary": "gemini-cli-oauth/gemini-2.5-flash",
+      "fallbacks": [
+        "groq/qwen/qwen3-32b",
+        "openai-oauth/gpt-5.4"
+      ],
+      "modelStatus": "selector_chain",
+      "blockReason": null,
+      "countable": true
+    },
+    {
+      "source": "selector",
+      "team": "justin",
+      "namespace": "justin",
+      "agent": "citation",
+      "kind": "visible_agent",
+      "status": "selected",
+      "selectorKey": "justin.citation",
+      "primary": "gemini-cli-oauth/gemini-2.5-flash-lite",
+      "fallbacks": [
+        "groq/llama-3.1-8b-instant",
+        "openai-oauth/gpt-5.4-mini"
+      ],
+      "modelStatus": "selector_chain",
+      "blockReason": null,
+      "countable": true
+    },
+    {
+      "source": "selector",
+      "team": "justin",
+      "namespace": "justin",
+      "agent": "citecheck",
+      "kind": "visible_agent",
+      "status": "selected",
+      "selectorKey": "justin.citation",
+      "primary": "gemini-cli-oauth/gemini-2.5-flash-lite",
+      "fallbacks": [
+        "groq/llama-3.1-8b-instant",
+        "openai-oauth/gpt-5.4-mini"
+      ],
+      "modelStatus": "selector_chain",
+      "blockReason": null,
+      "countable": true
+    },
+    {
+      "source": "selector",
+      "team": "justin",
+      "namespace": "justin",
+      "agent": "claim",
+      "kind": "visible_agent",
+      "status": "selected",
+      "selectorKey": "justin.analysis",
+      "primary": "gemini-cli-oauth/gemini-2.5-flash",
+      "fallbacks": [
+        "groq/qwen/qwen3-32b",
+        "openai-oauth/gpt-5.4"
+      ],
+      "modelStatus": "selector_chain",
+      "blockReason": null,
+      "countable": true
+    },
+    {
+      "source": "selector",
+      "team": "justin",
+      "namespace": "justin",
+      "agent": "contro",
+      "kind": "visible_agent",
+      "status": "selected",
+      "selectorKey": "justin.analysis",
+      "primary": "gemini-cli-oauth/gemini-2.5-flash",
+      "fallbacks": [
+        "groq/qwen/qwen3-32b",
+        "openai-oauth/gpt-5.4"
+      ],
+      "modelStatus": "selector_chain",
+      "blockReason": null,
+      "countable": true
+    },
+    {
+      "source": "selector",
+      "team": "justin",
+      "namespace": "justin",
+      "agent": "default",
+      "kind": "visible_agent",
+      "status": "selected",
+      "selectorKey": "justin._default",
+      "primary": "gemini-cli-oauth/gemini-2.5-flash",
+      "fallbacks": [
+        "openai-oauth/gpt-5.4",
+        "groq/qwen/qwen3-32b"
+      ],
+      "modelStatus": "selector_chain",
+      "blockReason": null,
+      "countable": true
+    },
+    {
+      "source": "selector",
+      "team": "justin",
+      "namespace": "justin",
+      "agent": "defense-x",
+      "kind": "visible_agent",
+      "status": "selected",
+      "selectorKey": "justin.analysis",
+      "primary": "gemini-cli-oauth/gemini-2.5-flash",
+      "fallbacks": [
+        "groq/qwen/qwen3-32b",
+        "openai-oauth/gpt-5.4"
+      ],
+      "modelStatus": "selector_chain",
+      "blockReason": null,
+      "countable": true
+    },
+    {
+      "source": "selector",
+      "team": "justin",
+      "namespace": "justin",
+      "agent": "defense",
+      "kind": "visible_agent",
+      "status": "selected",
+      "selectorKey": "justin.analysis",
+      "primary": "gemini-cli-oauth/gemini-2.5-flash",
+      "fallbacks": [
+        "groq/qwen/qwen3-32b",
+        "openai-oauth/gpt-5.4"
+      ],
+      "modelStatus": "selector_chain",
+      "blockReason": null,
+      "countable": true
+    },
+    {
+      "source": "selector",
+      "team": "justin",
+      "namespace": "justin",
+      "agent": "delta",
+      "kind": "visible_agent",
+      "status": "selected",
+      "selectorKey": "justin.analysis",
+      "primary": "gemini-cli-oauth/gemini-2.5-flash",
+      "fallbacks": [
+        "groq/qwen/qwen3-32b",
+        "openai-oauth/gpt-5.4"
+      ],
+      "modelStatus": "selector_chain",
+      "blockReason": null,
+      "countable": true
+    },
+    {
+      "source": "selector",
+      "team": "justin",
+      "namespace": "justin",
+      "agent": "garam",
+      "kind": "visible_agent",
+      "status": "selected",
+      "selectorKey": "justin.citation",
+      "primary": "gemini-cli-oauth/gemini-2.5-flash-lite",
+      "fallbacks": [
+        "groq/llama-3.1-8b-instant",
+        "openai-oauth/gpt-5.4-mini"
+      ],
+      "modelStatus": "selector_chain",
+      "blockReason": null,
+      "countable": true
+    },
+    {
+      "source": "selector",
+      "team": "justin",
+      "namespace": "justin",
+      "agent": "justin",
+      "kind": "visible_agent",
+      "status": "selected",
+      "selectorKey": "justin.stage-3",
+      "primary": "openai-oauth/gpt-5.4",
+      "fallbacks": [
+        "gemini-cli-oauth/gemini-2.5-flash",
+        "groq/qwen/qwen3-32b"
+      ],
+      "modelStatus": "selector_chain",
+      "blockReason": null,
+      "countable": true
+    },
+    {
+      "source": "selector",
+      "team": "justin",
+      "namespace": "justin",
+      "agent": "ledger-law",
+      "kind": "visible_agent",
+      "status": "selected",
+      "selectorKey": "justin.analysis",
+      "primary": "gemini-cli-oauth/gemini-2.5-flash",
+      "fallbacks": [
+        "groq/qwen/qwen3-32b",
+        "openai-oauth/gpt-5.4"
+      ],
+      "modelStatus": "selector_chain",
+      "blockReason": null,
+      "countable": true
+    },
+    {
+      "source": "selector",
+      "team": "justin",
+      "namespace": "justin",
+      "agent": "lens",
+      "kind": "visible_agent",
+      "status": "selected",
+      "selectorKey": "justin.analysis",
+      "primary": "gemini-cli-oauth/gemini-2.5-flash",
+      "fallbacks": [
+        "groq/qwen/qwen3-32b",
+        "openai-oauth/gpt-5.4"
+      ],
+      "modelStatus": "selector_chain",
+      "blockReason": null,
+      "countable": true
+    },
+    {
+      "source": "selector",
+      "team": "justin",
+      "namespace": "justin",
+      "agent": "neutral-bench",
+      "kind": "visible_agent",
+      "status": "selected",
+      "selectorKey": "justin.opinion",
+      "primary": "gemini-cli-oauth/gemini-2.5-flash",
+      "fallbacks": [
+        "openai-oauth/gpt-5.4",
+        "groq/qwen/qwen3-32b"
+      ],
+      "modelStatus": "selector_chain",
+      "blockReason": null,
+      "countable": true
+    },
+    {
+      "source": "selector",
+      "team": "justin",
+      "namespace": "justin",
+      "agent": "opinion",
+      "kind": "visible_agent",
+      "status": "selected",
+      "selectorKey": "justin.opinion",
+      "primary": "gemini-cli-oauth/gemini-2.5-flash",
+      "fallbacks": [
+        "openai-oauth/gpt-5.4",
+        "groq/qwen/qwen3-32b"
+      ],
+      "modelStatus": "selector_chain",
+      "blockReason": null,
+      "countable": true
+    },
+    {
+      "source": "selector",
+      "team": "justin",
+      "namespace": "justin",
+      "agent": "plaintiff-x",
+      "kind": "visible_agent",
+      "status": "selected",
+      "selectorKey": "justin.analysis",
+      "primary": "gemini-cli-oauth/gemini-2.5-flash",
+      "fallbacks": [
+        "groq/qwen/qwen3-32b",
+        "openai-oauth/gpt-5.4"
+      ],
+      "modelStatus": "selector_chain",
+      "blockReason": null,
+      "countable": true
+    },
+    {
+      "source": "selector",
+      "team": "justin",
+      "namespace": "justin",
+      "agent": "quill",
+      "kind": "visible_agent",
+      "status": "selected",
+      "selectorKey": "justin.opinion",
+      "primary": "gemini-cli-oauth/gemini-2.5-flash",
+      "fallbacks": [
+        "openai-oauth/gpt-5.4",
+        "groq/qwen/qwen3-32b"
+      ],
+      "modelStatus": "selector_chain",
+      "blockReason": null,
+      "countable": true
+    },
+    {
+      "source": "selector",
+      "team": "justin",
+      "namespace": "justin",
+      "agent": "simple-qa",
+      "kind": "visible_agent",
+      "status": "selected",
+      "selectorKey": "justin.simple-qa",
+      "primary": "gemini-cli-oauth/gemini-2.5-flash-lite",
+      "fallbacks": [
+        "groq/llama-3.1-8b-instant",
+        "openai-oauth/gpt-5.4-mini"
+      ],
+      "modelStatus": "selector_chain",
+      "blockReason": null,
+      "countable": true
+    },
+    {
+      "source": "selector",
+      "team": "justin",
+      "namespace": "justin",
+      "agent": "stage-3",
+      "kind": "visible_agent",
+      "status": "selected",
+      "selectorKey": "justin.stage-3",
+      "primary": "openai-oauth/gpt-5.4",
+      "fallbacks": [
+        "gemini-cli-oauth/gemini-2.5-flash",
+        "groq/qwen/qwen3-32b"
       ],
       "modelStatus": "selector_chain",
       "blockReason": null,
