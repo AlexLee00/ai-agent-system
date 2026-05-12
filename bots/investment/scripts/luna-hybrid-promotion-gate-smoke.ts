@@ -42,9 +42,11 @@ export async function runLunaHybridPromotionGateSmoke() {
   const noDb = await runLunaHybridPromotionGate({ json: true, strict: true, noDb: true, hours: 168 });
   assert.equal(noDb.ok, true);
   assert.equal(noDb.contractReady, true);
+  assert.equal(noDb.dataChecked, false);
+  assert.equal(noDb.dataRequired, false);
   assert.equal(noDb.dataReady, false);
-  assert.equal(noDb.status, 'luna_hybrid_promotion_gate_shadow_ready_data_pending');
-  assert.ok(noDb.warnings.length > 0);
+  assert.equal(noDb.status, 'luna_hybrid_promotion_gate_contract_only');
+  assert.equal(noDb.warnings.length, 0);
 
   const applyBlocked = await runLunaHybridPromotionGate({ apply: true, json: true, noDb: true, hours: 168 });
   assert.equal(applyBlocked.ok, false);

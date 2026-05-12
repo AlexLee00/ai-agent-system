@@ -185,6 +185,7 @@ export function classifyKisRealtime({ market, probe = {}, rest = {}, symbol } = 
     firstTickReceived: probe.firstTickReceived === true,
     restOk,
     restProviderMode: rest?.providerMode || 'rest',
+    sharedWsReady,
     blockers: [
       ...(probe.approvalKeyIssued ? [] : [`${market}_approval_key_missing`]),
       ...(probe.wsOpened ? [] : [`${market}_ws_not_opened`]),
@@ -193,7 +194,8 @@ export function classifyKisRealtime({ market, probe = {}, rest = {}, symbol } = 
       ...(probe.error && !sharedWsReady ? [`${market}_ws_error:${String(probe.error).slice(0, 120)}`] : []),
       ...(restOk ? [] : [`${market}_rest_quote_unavailable`]),
     ],
-    warnings: [
+    warnings: [],
+    observations: [
       ...(sharedWsReady ? [`${market}_ws_appkey_already_in_use_existing_stream_assumed`] : []),
     ],
     note: probe.firstTickReceived

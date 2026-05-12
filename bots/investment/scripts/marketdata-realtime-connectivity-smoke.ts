@@ -214,7 +214,9 @@ export async function runSmoke() {
   assert.equal(kisSharedWs.ok, true);
   assert.equal(kisSharedWs.status, 'kis_overseas_shared_ws_in_use_rest_ready');
   assert.equal(kisSharedWs.blockers.length, 0);
-  assert.equal(kisSharedWs.warnings.includes('kis_overseas_ws_appkey_already_in_use_existing_stream_assumed'), true);
+  assert.equal(kisSharedWs.sharedWsReady, true);
+  assert.equal(kisSharedWs.warnings.length, 0);
+  assert.equal(kisSharedWs.observations.includes('kis_overseas_ws_appkey_already_in_use_existing_stream_assumed'), true);
 
   const redacted = redactKisWsDiagnosticMessage('{"header":{"approval_key":"abc"},"body":{"output":{"iv":"iv-secret","key":"key-secret"}}}');
   assert.equal(redacted.includes('abc'), false);

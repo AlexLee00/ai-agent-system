@@ -93,6 +93,12 @@ export function runLunaHooksSmoke() {
     }, { LUNA_HOOK_TEST_MODE: 'true', LUNA_HOOK_KILL_SWITCH_FILE: killSwitchPath });
     assert.equal(passHybridPromotionGate.status, 0, passHybridPromotionGate.stderr || passHybridPromotionGate.stdout);
 
+    const passHybridPromotionReview = runHook(PRE_HOOK, {
+      tool_name: 'Bash',
+      tool_input: { command: 'npm --prefix bots/investment run -s runtime:luna-hybrid-promotion-review -- --json --no-db --hours=168' },
+    }, { LUNA_HOOK_TEST_MODE: 'true', LUNA_HOOK_KILL_SWITCH_FILE: killSwitchPath });
+    assert.equal(passHybridPromotionReview.status, 0, passHybridPromotionReview.stderr || passHybridPromotionReview.stdout);
+
     writeFileSync(killSwitchPath, JSON.stringify({ active: true }), 'utf8');
     const dynamicTpSlReadonly = runHook(PRE_HOOK, {
       tool_name: 'Bash',
@@ -141,6 +147,12 @@ export function runLunaHooksSmoke() {
       tool_input: { command: 'npm --prefix bots/investment run -s runtime:luna-hybrid-promotion-gate -- --json --strict --no-db --hours=168' },
     }, { LUNA_HOOK_TEST_MODE: 'true', LUNA_HOOK_KILL_SWITCH_FILE: killSwitchPath });
     assert.equal(hybridPromotionReadonly.status, 0, hybridPromotionReadonly.stderr || hybridPromotionReadonly.stdout);
+
+    const hybridPromotionReviewReadonly = runHook(PRE_HOOK, {
+      tool_name: 'Bash',
+      tool_input: { command: 'npm --prefix bots/investment run -s runtime:luna-hybrid-promotion-review -- --json --strict --no-db --hours=168' },
+    }, { LUNA_HOOK_TEST_MODE: 'true', LUNA_HOOK_KILL_SWITCH_FILE: killSwitchPath });
+    assert.equal(hybridPromotionReviewReadonly.status, 0, hybridPromotionReviewReadonly.stderr || hybridPromotionReviewReadonly.stdout);
 
     const dynamicTpSlChainedBlocked = runHook(PRE_HOOK, {
       tool_name: 'Bash',
@@ -219,6 +231,13 @@ export function runLunaHooksSmoke() {
     assert.equal(hybridPromotionApplyBlocked.status, 2, hybridPromotionApplyBlocked.stderr || hybridPromotionApplyBlocked.stdout);
     assert.match(`${hybridPromotionApplyBlocked.stdout}\n${hybridPromotionApplyBlocked.stderr}`, /Kill Switch|kill switch/i);
 
+    const hybridPromotionReviewApplyBlocked = runHook(PRE_HOOK, {
+      tool_name: 'Bash',
+      tool_input: { command: 'npm --prefix bots/investment run -s runtime:luna-hybrid-promotion-review -- --apply --json' },
+    }, { LUNA_HOOK_TEST_MODE: 'true', LUNA_HOOK_KILL_SWITCH_FILE: killSwitchPath });
+    assert.equal(hybridPromotionReviewApplyBlocked.status, 2, hybridPromotionReviewApplyBlocked.stderr || hybridPromotionReviewApplyBlocked.stdout);
+    assert.match(`${hybridPromotionReviewApplyBlocked.stdout}\n${hybridPromotionReviewApplyBlocked.stderr}`, /Kill Switch|kill switch/i);
+
     const post = runHook(POST_HOOK, {
       tool_name: 'Bash',
       tool_input: { command: 'npm --prefix bots/investment run -s smoke:luna-regime-llm' },
@@ -241,6 +260,7 @@ export function runLunaHooksSmoke() {
       riskSimulationShadowCommandChecked: true,
       communicationInfraGateCommandChecked: true,
       hybridPromotionGateCommandChecked: true,
+      hybridPromotionReviewCommandChecked: true,
       dynamicTpSlChainedBlocked: true,
       postHookFailOpen: true,
     };

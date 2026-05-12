@@ -187,7 +187,8 @@ function securityChecks({ projectRoot }) {
   ];
 }
 
-async function queryEvidence(queryFn, phase, hours) {
+async function queryEvidence(queryFn, phase, hours, options = {}) {
+  const dataRequired = options.dataRequired !== false;
   if (!phase.evidence) {
     return {
       phase: phase.phase,
@@ -202,11 +203,11 @@ async function queryEvidence(queryFn, phase, hours) {
     return {
       phase: phase.phase,
       name: phase.name,
-      status: 'not_checked',
+      status: dataRequired ? 'not_checked' : 'not_checked_contract_only',
       count: null,
       latestAt: null,
-      ok: false,
-      warning: 'queryFn unavailable; run without --no-db to check real shadow evidence',
+      ok: !dataRequired,
+      warning: dataRequired ? 'queryFn unavailable; run without --no-db to check real shadow evidence' : null,
     };
   }
 
@@ -247,10 +248,10 @@ async function queryEvidence(queryFn, phase, hours) {
   }
 }
 
-async function buildEvidenceStatus({ queryFn, hours }) {
+async function buildEvidenceStatus({ queryFn, hours, dataRequired }) {
   const checks = [];
   for (const phase of LUNA_HYBRID_PHASE_CONTRACTS) {
-    checks.push(await queryEvidence(queryFn, phase, hours));
+    checks.push(await queryEvidence(queryFn, phase, hours, { dataRequired }));
   }
   return checks;
 }
@@ -259,10 +260,12 @@ export async function buildLunaHybridPromotionGateReport(options = {}) {
   const investmentRoot = path.resolve(options.investmentRoot || defaultInvestmentRoot());
   const projectRoot = path.resolve(options.projectRoot || projectRootFromInvestmentRoot(investmentRoot));
   const hours = Math.max(1, Number(options.hours || 168));
+  const dataRequired = options.dataRequired !== false;
+  const dataChecked = typeof options.queryFn === 'function';
   const contractChecks = phaseContractStatus({ investmentRoot, projectRoot });
   const security = securityChecks({ projectRoot });
   const communication = buildLunaCommunicationInfrastructureReport({ investmentRoot, projectRoot });
-  const evidenceChecks = await buildEvidenceStatus({ queryFn: options.queryFn, hours });
+  const evidenceChecks = await buildEvidenceStatus({ queryFn: options.queryFn, hours, dataRequired });
 
   const contractFailures = contractChecks.filter((item) => !item.ok);
   const securityFailures = security.filter((item) => !item.ok);
@@ -289,13 +292,15 @@ export async function buildLunaHybridPromotionGateReport(options = {}) {
   }
 
   const contractReady = blockers.length === 0;
-  const dataReady = evidenceWarnings.length === 0;
+  const dataReady = dataChecked && evidenceWarnings.length === 0;
   const manualPromotionReviewCandidate = contractReady && dataReady;
   const status = !contractReady
     ? 'luna_hybrid_promotion_gate_blocked'
     : dataReady
       ? 'luna_hybrid_promotion_gate_ready_for_master_review'
-      : 'luna_hybrid_promotion_gate_shadow_ready_data_pending';
+      : !dataRequired
+        ? 'luna_hybrid_promotion_gate_contract_only'
+        : 'luna_hybrid_promotion_gate_shadow_ready_data_pending';
 
   return {
     ok: contractReady,
@@ -308,6 +313,8 @@ export async function buildLunaHybridPromotionGateReport(options = {}) {
     manualPromotionReviewCandidate,
     promotionPolicy: 'manual_master_approval_required_after_shadow_observation',
     contractReady,
+    dataChecked,
+    dataRequired,
     dataReady,
     evidenceLookbackHours: hours,
     summary: {
@@ -318,6 +325,8 @@ export async function buildLunaHybridPromotionGateReport(options = {}) {
       securityFailures: securityFailures.length,
       evidenceChecks: evidenceChecks.length,
       evidenceWarnings: evidenceWarnings.length,
+      dataChecked,
+      dataRequired,
       a2aSkills: communication.summary.a2aSkills,
     },
     contractChecks,

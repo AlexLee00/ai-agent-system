@@ -1,7 +1,10 @@
 #!/usr/bin/env node
 
 import { query as defaultQuery } from '../shared/db.ts';
-import { buildLunaHybridPromotionGateReport } from '../shared/luna-hybrid-promotion-gate.ts';
+import {
+  buildLunaHybridPromotionReviewReport,
+  LUNA_HYBRID_PHASE11,
+} from '../shared/luna-hybrid-promotion-review.ts';
 import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
 
 function argValue(name, fallback = null, argv = process.argv.slice(2)) {
@@ -20,25 +23,27 @@ function parseArgs(argv = process.argv.slice(2)) {
   };
 }
 
-export async function runLunaHybridPromotionGate(options = parseArgs(), deps = {}) {
+export async function runLunaHybridPromotionReview(options = parseArgs(), deps = {}) {
   if (options.apply) {
     return {
       ok: false,
-      phase: 'phase10_hybrid_promotion_gate',
-      status: 'luna_hybrid_promotion_gate_apply_blocked',
+      phase: LUNA_HYBRID_PHASE11,
+      status: 'luna_hybrid_promotion_review_apply_blocked',
       shadowMode: true,
       liveMutation: false,
+      protectedPidMutation: false,
       promotionReady: false,
+      masterApprovalRequired: true,
       blockers: [{
         type: 'safety',
         name: 'apply_not_supported',
-        detail: 'Phase 10 gate is read-only; promotion requires separate master-approved runbook.',
+        detail: 'Phase 11 is a read-only master review/runbook pack; live promotion requires a separate explicit approval path.',
       }],
     };
   }
 
   const queryFn = options.noDb ? null : deps.queryFn || defaultQuery;
-  return buildLunaHybridPromotionGateReport({
+  return buildLunaHybridPromotionReviewReport({
     queryFn,
     dataRequired: !options.noDb,
     hours: options.hours,
@@ -49,7 +54,7 @@ export async function runLunaHybridPromotionGate(options = parseArgs(), deps = {
 
 async function main() {
   const options = parseArgs();
-  const report = await runLunaHybridPromotionGate(options);
+  const report = await runLunaHybridPromotionReview(options);
   if (options.strict && !report.ok) {
     process.exitCode = 1;
   }
@@ -60,14 +65,14 @@ async function main() {
     console.log(JSON.stringify(report, null, 2));
     return;
   }
-  console.log(`${report.status} contractReady=${report.contractReady === true} dataReady=${report.dataReady === true}`);
+  console.log(`${report.status} readyForMasterReview=${report.readyForMasterReview === true} promotionReady=${report.promotionReady === true}`);
 }
 
 if (isDirectExecution(import.meta.url)) {
   await runCliMain({
     run: main,
-    errorPrefix: 'luna hybrid promotion gate failed:',
+    errorPrefix: 'luna hybrid promotion review failed:',
   });
 }
 
-export default { runLunaHybridPromotionGate };
+export default { runLunaHybridPromotionReview };

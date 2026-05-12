@@ -19,6 +19,8 @@ export const REQUIRED_A2A_SKILLS = [
   'stress-test-shadow',
   'n-agent-debate',
   'communication-infrastructure-gate',
+  'hybrid-promotion-gate',
+  'hybrid-promotion-review',
 ];
 
 export const REQUIRED_A2A_CORE_FILES = [
@@ -48,6 +50,8 @@ export const REQUIRED_SHADOW_RUNTIME_COMMANDS = [
   'runtime:luna-rl-policy-shadow',
   'runtime:luna-monte-carlo-stress-shadow',
   'runtime:luna-communication-infra-gate',
+  'runtime:luna-hybrid-promotion-gate',
+  'runtime:luna-hybrid-promotion-review',
 ];
 
 export const REQUIRED_DEBATE_FILES = [
@@ -154,6 +158,8 @@ export function buildLunaCommunicationInfrastructureReport(options = {}) {
     'registerRlPolicyShadowSkills',
     'registerRiskSimulationShadowSkills',
     'registerCommunicationInfrastructureGateSkill',
+    'registerHybridPromotionGateSkill',
+    'registerHybridPromotionReviewSkill',
   ]));
 
   const hooksConfigText = readText(path.join(projectRoot, '.claude/hooks/hooks.json'));
@@ -219,6 +225,8 @@ export function buildLunaCommunicationInfrastructureReport(options = {}) {
     'a2a/skills/rl-policy-shadow.ts',
     'a2a/skills/risk-simulation-shadow.ts',
     'a2a/skills/communication-infrastructure-gate.ts',
+    'a2a/skills/hybrid-promotion-gate.ts',
+    'a2a/skills/hybrid-promotion-review.ts',
   ];
   const broadcastChecks = phaseSkillFiles.map((file) => ({
     file,
@@ -230,7 +238,7 @@ export function buildLunaCommunicationInfrastructureReport(options = {}) {
     ok: missingBroadcastGate.length === 0,
     missing: missingBroadcastGate,
     detail: missingBroadcastGate.length === 0
-      ? 'all Phase 1-9 A2A skills require LUNA_A2A_BROADCAST_ENABLED=true for broadcastPlanned'
+      ? 'all Phase 1-11 A2A skills require LUNA_A2A_BROADCAST_ENABLED=true for broadcastPlanned'
       : `missing env gate: ${missingBroadcastGate.join(', ')}`,
   });
 

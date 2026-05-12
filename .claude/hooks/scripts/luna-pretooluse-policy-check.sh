@@ -131,6 +131,12 @@ if len(parts) >= 7 and parts[0] == "npm" and parts[1] == "--prefix":
             re.compile(r"^--no-db$"),
             re.compile(r"^--hours=[0-9]+$"),
         ],
+        "runtime:luna-hybrid-promotion-review": [
+            re.compile(r"^--json$"),
+            re.compile(r"^--strict$"),
+            re.compile(r"^--no-db$"),
+            re.compile(r"^--hours=[0-9]+$"),
+        ],
     }
     runtime_script = parts[5] if len(parts) > 5 else ""
     if prefix.endswith("bots/investment") and parts[3:5] == ["run", "-s"] and runtime_script in allowed_runtime_scripts and parts[6] == "--":
