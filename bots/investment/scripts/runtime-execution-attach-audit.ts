@@ -55,6 +55,18 @@ function normalizeTradeMode(value = null) {
   return String(value || 'normal').trim() || 'normal';
 }
 
+function amountTolerance(amount) {
+  const normalized = Math.abs(Number(amount || 0));
+  return Math.max(1e-8, normalized * 0.002);
+}
+
+function isAmountMatched(left = null, right = null) {
+  const leftNumber = Number(left || 0);
+  const rightNumber = Number(right || 0);
+  if (!(leftNumber > 0) || !(rightNumber > 0)) return false;
+  return Math.abs(leftNumber - rightNumber) <= amountTolerance(leftNumber);
+}
+
 function safeJson(value, fallback = null) {
   if (value == null) return fallback;
   if (typeof value === 'object') return value;
@@ -113,11 +125,11 @@ function findNearestJournalForTrade(trade = {}, journals = []) {
   const tradeMode = normalizeTradeMode(trade.trade_mode || trade.tradeMode);
   const maxDistanceMs = 6 * 60 * 60 * 1000;
   let best = null;
+  const crossModeAmountMatches = [];
 
   for (const journal of journals) {
     if (String(journal.exchange || '').trim() !== exchange) continue;
     if (String(journal.symbol || '').trim() !== symbol) continue;
-    if (normalizeTradeMode(journal.trade_mode) !== tradeMode) continue;
 
     const anchor = side === 'sell'
       ? toMillis(journal.exit_time)
@@ -125,12 +137,24 @@ function findNearestJournalForTrade(trade = {}, journals = []) {
     if (!anchor) continue;
     const distanceMs = Math.abs(tradeMs - anchor);
     if (distanceMs > maxDistanceMs) continue;
+    const journalTradeMode = normalizeTradeMode(journal.trade_mode);
+    if (journalTradeMode !== tradeMode) {
+      if (
+        side === 'sell'
+        && isAmountMatched(trade.amount, journal.entry_size)
+      ) {
+        crossModeAmountMatches.push({ row: journal, distanceMs });
+      }
+      continue;
+    }
     if (!best || distanceMs < best.distanceMs) {
       best = { row: journal, distanceMs };
     }
   }
 
-  return best?.row || null;
+  if (best?.row) return best.row;
+  if (crossModeAmountMatches.length === 1) return crossModeAmountMatches[0].row;
+  return null;
 }
 
 async function loadSignalsByIds(signalIds = []) {

@@ -6,7 +6,7 @@ function normalizeTradeMode(value) {
 
 function amountTolerance(amount) {
   const normalized = Math.abs(Number(amount || 0));
-  return Math.max(1e-8, normalized * 0.0001);
+  return Math.max(1e-8, normalized * 0.002);
 }
 
 function summarizeCandidate(entry) {
