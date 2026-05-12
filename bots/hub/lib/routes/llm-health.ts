@@ -2,6 +2,11 @@
 const { checkTokenHealth, checkOpenAIOAuthHealth, checkGroqAccounts } = require('../llm/oauth-monitor');
 const pgPool = require('../../../../packages/core/lib/pg-pool');
 const { BudgetGuardian } = require('../budget-guardian');
+const {
+  getAllCircuitStatuses,
+  resetCircuit,
+} = require('../../../../packages/core/lib/local-circuit-breaker');
+const { resetProviderCircuit } = require('../llm/provider-registry');
 
 export async function llmHealthRoute(_req: any, res: any) {
   const [claudeOauth, openaiOauth, groq, cacheCheck] = await Promise.all([
@@ -42,6 +47,57 @@ export async function llmHealthRoute(_req: any, res: any) {
       },
       cache: cacheCheck,
     },
+  });
+}
+
+// GET /hub/llm/tier-probe
+// OPEN/HALF_OPEN 상태의 로컬 프로바이더를 능동 탐지해 회로 복구 시도.
+// OAuth 프로바이더는 ai.hub.llm-oauth-monitor에서 처리하므로 여기서는 local/* 전용.
+export async function llmTierProbeRoute(_req: any, res: any) {
+  const statuses = getAllCircuitStatuses();
+  const results: Array<{
+    provider: string;
+    state: string;
+    action: string;
+    reason: string;
+  }> = [];
+
+  const localBaseUrl = process.env.LOCAL_LLM_BASE_URL || 'http://127.0.0.1:11434';
+
+  for (const [key, status] of Object.entries(statuses) as [string, any][]) {
+    if (status.state === 'CLOSED') continue;
+
+    if (key.startsWith('local/')) {
+      try {
+        const resp = await fetch(`${localBaseUrl}/v1/models`, {
+          signal: AbortSignal.timeout(3000),
+        });
+        if (resp.ok) {
+          resetCircuit(key);
+          resetProviderCircuit(key);
+          results.push({ provider: key, state: status.state, action: 'reset', reason: 'ollama_healthy' });
+        } else {
+          results.push({ provider: key, state: status.state, action: 'keep_open', reason: `ollama_http_${resp.status}` });
+        }
+      } catch {
+        results.push({ provider: key, state: status.state, action: 'keep_open', reason: 'ollama_unreachable' });
+      }
+    } else {
+      // OAuth/외부 프로바이더: 상태만 보고 (oauth-monitor 담당)
+      results.push({ provider: key, state: status.state, action: 'skip', reason: 'handled_by_oauth_monitor' });
+    }
+  }
+
+  const recovered = results.filter(r => r.action === 'reset').length;
+  console.log(`[tier-probe] probed=${results.length} recovered=${recovered}`);
+
+  res.json({
+    ok: true,
+    timestamp: new Date().toISOString(),
+    total_circuits: Object.keys(statuses).length,
+    non_closed: results.length,
+    recovered,
+    results,
   });
 }
 

@@ -85,7 +85,7 @@ const {
   agentDetailRoute,
 } = require('../lib/routes/agents');
 const { llmDashboardRoute, llmCacheStatsRoute } = require('../lib/routes/llm-dashboard');
-const { llmHealthRoute } = require('../lib/routes/llm-health');
+const { llmHealthRoute, llmTierProbeRoute } = require('../lib/routes/llm-health');
 const { reserveBudgetRoute, budgetUsageRoute } = require('../lib/routes/budget');
 const { metricsRoute, metricsJsonRoute } = require('../lib/metrics/prometheus-exporter');
 const {
@@ -251,6 +251,7 @@ export function registerHubRoutes(app: Express, opts: HubRouteOptions): void {
   app.get('/hub/llm/dashboard', generalLimiter, llmDashboardRoute);
   app.get('/hub/llm/cache-stats', generalLimiter, llmCacheStatsRoute);
   app.get('/hub/llm/health', generalLimiter, llmHealthRoute);
+  app.post('/hub/llm/tier-probe', generalLimiter, llmTierProbeRoute);
   app.post('/hub/budget/reserve', generalLimiter, reserveBudgetRoute);
   app.get('/hub/budget/usage', generalLimiter, budgetUsageRoute);
   app.get('/hub/metrics', generalLimiter, metricsRoute);

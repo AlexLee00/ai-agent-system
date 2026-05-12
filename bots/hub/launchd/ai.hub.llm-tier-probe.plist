@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>ai.hub.llm-tier-probe</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/opt/homebrew/bin/tsx</string>
+    <string>/Users/alexlee/projects/ai-agent-system/bots/hub/scripts/run-tier-probe.ts</string>
+  </array>
+  <key>WorkingDirectory</key>
+  <string>/Users/alexlee/projects/ai-agent-system</string>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key>
+    <string>/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/usr/bin:/bin</string>
+    <key>HOME</key>
+    <string>/Users/alexlee</string>
+    <key>MODE</key>
+    <string>ops</string>
+    <key>HUB_BASE_URL</key>
+    <string>http://127.0.0.1:7788</string>
+    <key>HUB_AUTH_TOKEN</key>
+    <string>__SET_IN_LOCAL_LAUNCHAGENT__</string>
+  </dict>
+  <key>StandardOutPath</key>
+  <string>/tmp/hub-llm-tier-probe.log</string>
+  <key>StandardErrorPath</key>
+  <string>/tmp/hub-llm-tier-probe.err.log</string>
+  <!-- 5분 간격: OPEN 회로 능동 복구 -->
+  <key>StartInterval</key>
+  <integer>300</integer>
+  <key>RunAtLoad</key>
+  <false/>
+</dict>
+</plist>
