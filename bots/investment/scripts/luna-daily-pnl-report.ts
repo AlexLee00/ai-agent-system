@@ -158,18 +158,12 @@ function buildMessage(
 async function main() {
   const dateStr = today();
 
-  const [exchangeRows, total, todayStats, fxRate] = await Promise.allSettled([
+  const [exchangeRows, total, todayStats, fxRate] = await Promise.all([
     fetchExchangeStats(),
     fetchTotalStats(),
     fetchTodayStats(),
     fetchCurrentFxRate(),
-  ]).then((results) =>
-    results.map((r, i) => {
-      if (r.status === 'fulfilled') return r.value;
-      console.error(`[luna-daily-pnl-report] 쿼리 ${i} 실패:`, r.reason);
-      return i === 3 ? 1360 : (i === 0 ? [] : {});
-    })
-  );
+  ]);
 
   const message = buildMessage(exchangeRows, total, todayStats, fxRate, dateStr);
 
@@ -183,10 +177,11 @@ async function main() {
     console.log('[luna-daily-pnl-report] 텔레그램 전송 완료');
   }
 
-  await closeAll();
 }
 
 main().catch((err) => {
   console.error('[luna-daily-pnl-report] 오류:', err);
   process.exit(1);
+}).finally(async () => {
+  await closeAll().catch(() => {});
 });

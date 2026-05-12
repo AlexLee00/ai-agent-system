@@ -7,10 +7,9 @@
 --   - journal_reconciled / sweeper_manual_dust / orphan_cleanup 자동 제외
 --   - KIS → KRW, Binance/Upbit → USDT, KIS Overseas → USD
 --   - latest_fx CTE로 최신 환율 자동 반영 (fx_rates 미갱신 시 fallback)
+--   - 기존 원천 테이블은 수정하지 않고, 기존 view가 있으면 보존
 
-DROP MATERIALIZED VIEW IF EXISTS investment.v_trades_real_usd;
-
-CREATE MATERIALIZED VIEW investment.v_trades_real_usd AS
+CREATE MATERIALIZED VIEW IF NOT EXISTS investment.v_trades_real_usd AS
 WITH latest_fx AS (
   SELECT DISTINCT ON (base_currency)
     base_currency,
@@ -78,17 +77,17 @@ normalized AS (
 SELECT * FROM normalized;
 
 -- 인덱스
-CREATE UNIQUE INDEX idx_v_trades_real_usd_id
+CREATE UNIQUE INDEX IF NOT EXISTS idx_v_trades_real_usd_id
   ON investment.v_trades_real_usd (id);
 
-CREATE INDEX idx_v_trades_real_usd_exchange
+CREATE INDEX IF NOT EXISTS idx_v_trades_real_usd_exchange
   ON investment.v_trades_real_usd (exchange);
 
-CREATE INDEX idx_v_trades_real_usd_exit_time
+CREATE INDEX IF NOT EXISTS idx_v_trades_real_usd_exit_time
   ON investment.v_trades_real_usd (exit_time DESC);
 
-CREATE INDEX idx_v_trades_real_usd_paper
+CREATE INDEX IF NOT EXISTS idx_v_trades_real_usd_paper
   ON investment.v_trades_real_usd (is_paper);
 
-CREATE INDEX idx_v_trades_real_usd_exchange_paper
+CREATE INDEX IF NOT EXISTS idx_v_trades_real_usd_exchange_paper
   ON investment.v_trades_real_usd (exchange, is_paper);

@@ -6,11 +6,9 @@
   <string>ai.luna.fx-refresh</string>
   <key>ProgramArguments</key>
   <array>
-    <string>/opt/homebrew/bin/psql</string>
-    <string>-d</string>
-    <string>jay</string>
-    <string>-c</string>
-    <string>REFRESH MATERIALIZED VIEW CONCURRENTLY investment.v_trades_real_usd;</string>
+    <string>/opt/homebrew/bin/node</string>
+    <string>/Users/alexlee/projects/ai-agent-system/bots/investment/scripts/luna-fx-refresh.ts</string>
+    <string>--json</string>
   </array>
   <key>EnvironmentVariables</key>
   <dict>
