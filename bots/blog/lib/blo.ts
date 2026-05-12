@@ -109,6 +109,32 @@ const COMPETITION_ENABLED                           = competitionRuntimeConfig.e
 const COMPETITION_DAYS                              = Array.isArray(competitionRuntimeConfig.days) && competitionRuntimeConfig.days.length
   ? competitionRuntimeConfig.days
   : [1, 3, 5];
+// 소셜미디어 마스터 스위치 — 기본 false (BLOG_SOCIAL_MEDIA_ENABLED=true 로 명시적 활성화 필요)
+const SOCIAL_MEDIA_ENABLED                          = process.env.BLOG_SOCIAL_MEDIA_ENABLED === 'true';
+if (!SOCIAL_MEDIA_ENABLED) {
+  console.log('[블로] 소셜미디어 OFF (BLOG_SOCIAL_MEDIA_ENABLED != true) — 인스타/이미지 생성 비활성');
+}
+// Humanize Layer — 기본 false (BLOG_HUMANIZE_ENABLED=true 로 명시적 활성화)
+const HUMANIZE_ENABLED                              = process.env.BLOG_HUMANIZE_ENABLED === 'true';
+
+async function _humanizeIfEnabled(content, title) {
+  if (!HUMANIZE_ENABLED || !content) return content;
+  try {
+    const { humanizeText, detectAiSignals } = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/humanize-agent.ts'));
+    const signals = detectAiSignals(content);
+    if (!signals.needsHumanize) return content;
+    console.log(`[블로/인간화] AI 시그널 감지 — humanize 적용 (현재: ${signals.humanizeScore}/100)`);
+    const result = await humanizeText(content, { maxAttempts: 2, targetScore: 80 });
+    if (result.improved) {
+      console.log(`[블로/인간화] 완료: ${result.signalsBefore.humanizeScore} → ${result.signalsAfter.humanizeScore}`);
+      return result.humanized;
+    }
+    return content;
+  } catch (e) {
+    console.warn('[블로/인간화] 실패 (원본 사용):', e.message);
+    return content;
+  }
+}
 
 async function _selectBlogWriter(taskLabel, fallbackName, taskHint = null) {
   try {
@@ -1445,7 +1471,7 @@ async function _finalizeLecturePost(post, quality, context, scheduleId, traceCtx
     advance: advanceLectureNumber,
   });
 
-  const instaContent = options.dryRun
+  const instaContent = (options.dryRun || !SOCIAL_MEDIA_ENABLED)
     ? null
     : await _createInstaContentSafe(
       post.content,
@@ -1502,7 +1528,9 @@ async function _finalizeGeneralPost(post, quality, context, scheduleId, traceCtx
       post.content = (post.content || '') + guard.mustAdd.join('\n');
     }
   }
-  const images = options.dryRun
+  // Humanize: 이미지 생성 전에 본문 인간화 (BLOG_HUMANIZE_ENABLED=true 시)
+  post.content = await _humanizeIfEnabled(post.content, genTitle);
+  const images = (options.dryRun || !SOCIAL_MEDIA_ENABLED)
     ? null
     : await generatePostImages({ title: genTitle, postType: 'general', category: context.category }).catch(async e => {
       console.error('[이미지] 생성 실패 (일반):', e.message);
@@ -1513,7 +1541,7 @@ async function _finalizeGeneralPost(post, quality, context, scheduleId, traceCtx
       return null;
     });
 
-  const instaContent = options.dryRun
+  const instaContent = (options.dryRun || !SOCIAL_MEDIA_ENABLED)
     ? null
     : await _createInstaContentSafe(
       post.content,

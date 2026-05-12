@@ -1,11 +1,20 @@
 # 블로팀 — Claude/Codex 운영 컨텍스트
 
-## 목적
-- 네이버 블로그 자동 발행 파이프라인 운영
-- 주제 다양화, 페르소나 작가 분리, RAG 강화, 이미지/댓글/조회수 자동화
-- Draw Things 기반 로컬 이미지 생성으로 일관된 운영
+## 목적 (V2 개편 후 — 2026-05-12)
+- **블로그 포스팅 + 댓글/공감에 집중** (인스타/페북/이미지 분리!)
+- 주제 다양화, 페르소나 작가 분리, RAG 강화, 댓글/조회수 자동화
+- Reddit 트렌드 + 알라딘 베스트셀러 기반 토픽 선정
+- "사람처럼 작성" Humanize Layer 적용
+
+## 소셜미디어 분리 (2026-05-12 G영역)
+- **인스타그램/페이스북/이미지 생성 = OFF** (기본 비활성)
+- 소스 파일은 bots/blog/lib/ 유지 (import 복잡도로 이동 보류)
+- 별도 고도화: `bots/social-media/` 디렉토리 참조
+- **ON 방법**: 환경변수 `BLOG_SOCIAL_MEDIA_ENABLED=true` 설정
+- launchd 비활성화됨: ai.blog.instagram-publish, ai.blog.facebook-publish, ai.blog.instagram-token-refresh
 
 ## 현재 운영 상태
+- 소셜미디어 분리 완료 (BLOG_SOCIAL_MEDIA_ENABLED=false 기본)
 - Draw Things 전환 완료
 - ComfyUI 운영 기본 경로 해제
 - 블로그 자동 작업 launchd 반영 완료
@@ -13,10 +22,10 @@
 - 텔레그램 카운트 분리 반영 완료
 
 ## 핵심 결정 사항
-- Draw Things 전용 운영
+- Draw Things 전용 운영 (SOCIAL_MEDIA_ENABLED=true 시에만 활성)
 - 32GB 환경에서는 양자화 모델 우선
 - 썸네일 1장 중심
-- 인스타 카드보다 숏폼 릴스 우선
+- 인스타 카드보다 숏폼 릴스 우선 (단, 현재 OFF)
 - Qwen Image 한글 고품질 운영은 상위 메모리 환경 이후 검토
 
 ## 실패한 접근
