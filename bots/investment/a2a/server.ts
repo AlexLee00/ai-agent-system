@@ -23,6 +23,7 @@ import { registerStatArbShadowSkill } from './skills/stat-arb-shadow.ts';
 import { registerRlPolicyShadowSkills } from './skills/rl-policy-shadow.ts';
 import { registerRiskSimulationShadowSkills } from './skills/risk-simulation-shadow.ts';
 import { registerCommunicationInfrastructureGateSkill } from './skills/communication-infrastructure-gate.ts';
+import { registerHybridPromotionGateSkill } from './skills/hybrid-promotion-gate.ts';
 
 const _require = createRequire(import.meta.url);
 const express = _require('express');
@@ -44,6 +45,7 @@ registerStatArbShadowSkill();
 registerRlPolicyShadowSkills();
 registerRiskSimulationShadowSkills();
 registerCommunicationInfrastructureGateSkill();
+registerHybridPromotionGateSkill();
 
 // ── SSE 스트림 저장소 ──────────────────────────────────────────────
 const _streams: Map<string, ReturnType<typeof express.response.write>[]> = new Map();

@@ -21,7 +21,7 @@ const { weatherToContext, estimateCost, loadPersonaGuide } = require('../../../p
 const env = require('../../../packages/core/lib/env');
 const { buildBlogSkillBundle } = require(path.join(env.PROJECT_ROOT, 'packages/core/lib/skills/blog/skill-loader.js'));
 const { buildAIBriefingSectionOrder, buildAIBriefingChecklist } = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/ai-briefing.ts'));
-const { getBlogGenerationRuntimeConfig } = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/runtime-config.ts'));
+const { getBlogGenerationRuntimeConfig, getBlogLLMSelectorOverrides } = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/runtime-config.ts'));
 const { calculateSectionChars, buildCharCountInstruction } = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/section-ratio.ts'));
 const { isExcludedReferenceTitle, isExcludedReferenceFilename } = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/reference-exclusions.ts'));
 const { detectTitlePattern } = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/performance-diagnostician.ts'));
@@ -34,10 +34,12 @@ const BLOG_CONTINUE_TIMEOUT_MS = Number(generationRuntimeConfig.continueTimeoutM
 const BLOG_CHUNK_TIMEOUT_MS = Number(generationRuntimeConfig.chunkTimeoutMs || Math.max(BLOG_WRITER_TIMEOUT_MS, 120000));
 
 async function callGemsWriterLlm({ systemPrompt, userPrompt, taskType, maxTokens = 16000, timeoutMs = BLOG_WRITER_TIMEOUT_MS }) {
+  const selectorOverrides = getBlogLLMSelectorOverrides();
   return callHubLlm({
     callerTeam: 'blog',
     agent: 'gems',
     selectorKey: 'blog.gems.writer',
+    policyOverride: selectorOverrides['blog.gems.writer'] || null,
     taskType,
     systemPrompt,
     prompt: userPrompt,
@@ -1853,9 +1855,11 @@ ${linkingBlock}
     },
   ];
 
+  const selectorOverrides = getBlogLLMSelectorOverrides();
   const result = await chunkedGenerate(GEMS_SYSTEM_PROMPT, chunks, {
     model,
     selectorKey: 'blog.gems.writer',
+    policyOverride: selectorOverrides['blog.gems.writer'] || null,
     callerTeam: 'blog',
     agent: 'gems',
     taskType: 'general_post_chunked',

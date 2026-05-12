@@ -176,6 +176,7 @@ function _resolveSelectorChain(req, team) {
         preferredApi: req.preferredApi,
         groqModel: req.groqModel,
         configuredProviders: req.configuredProviders,
+        policyOverride: req.policyOverride,
       });
       return chain && chain.length ? _applySelectorAvoidProviders(req, { selectorKey: String(req.selectorKey), chain }) : null;
     }
@@ -196,6 +197,7 @@ function _resolveSelectorChain(req, team) {
         maxTokens: req.maxTokens ?? profile.max_tokens,
         temperature: req.temperature ?? profile.temperature,
         agentName: profile.selector_agent || req.agent,
+        policyOverride: req.policyOverride,
         ...(profile.selector_options || {}),
       });
       if (chain?.length) {

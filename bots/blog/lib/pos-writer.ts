@@ -18,7 +18,7 @@ const env = require('../../../packages/core/lib/env');
 const path = require('path');
 const { buildBlogSkillBundle } = require(path.join(env.PROJECT_ROOT, 'packages/core/lib/skills/blog/skill-loader.js'));
 const { buildAIBriefingSectionOrder, buildAIBriefingChecklist } = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/ai-briefing.ts'));
-const { getBlogGenerationRuntimeConfig } = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/runtime-config.ts'));
+const { getBlogGenerationRuntimeConfig, getBlogLLMSelectorOverrides } = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/runtime-config.ts'));
 const { calculateSectionChars, buildCharCountInstruction } = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/section-ratio.ts'));
 const { AgentMemory } = require('../../../packages/core/lib/agent-memory');
 
@@ -28,10 +28,12 @@ const BLOG_CONTINUE_TIMEOUT_MS = Number(generationRuntimeConfig.continueTimeoutM
 const BLOG_CHUNK_TIMEOUT_MS = Number(generationRuntimeConfig.chunkTimeoutMs || Math.max(BLOG_WRITER_TIMEOUT_MS, 120000));
 
 async function callPosWriterLlm({ systemPrompt, userPrompt, taskType, maxTokens = 16000, timeoutMs = BLOG_WRITER_TIMEOUT_MS }) {
+  const selectorOverrides = getBlogLLMSelectorOverrides();
   return callHubLlm({
     callerTeam: 'blog',
     agent: 'pos',
     selectorKey: 'blog.pos.writer',
+    policyOverride: selectorOverrides['blog.pos.writer'] || null,
     taskType,
     systemPrompt,
     prompt: userPrompt,
@@ -719,9 +721,11 @@ ${experimentWeakLaneSummary ? `\n[최근 실험 약세 레인]\n${experimentWeak
   ];
 
   const startTime = Date.now();
+  const selectorOverrides = getBlogLLMSelectorOverrides();
   const result    = await chunkedGenerate(POS_SYSTEM_PROMPT, chunks, {
     model,
     selectorKey: 'blog.pos.writer',
+    policyOverride: selectorOverrides['blog.pos.writer'] || null,
     callerTeam: 'blog',
     agent: 'pos',
     taskType: 'lecture_post_chunked',

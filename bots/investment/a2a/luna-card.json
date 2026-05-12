@@ -117,6 +117,14 @@
       "outputModes": ["application/json"]
     },
     {
+      "id": "hybrid-promotion-gate",
+      "name": "Hybrid Promotion Gate",
+      "description": "Phase 1-9 Shadow evidence와 통신/보안 계약을 통합 검증하고 마스터 승격 리뷰 후보만 산출",
+      "tags": ["finance", "promotion", "hybrid", "shadow", "a2a"],
+      "inputModes": ["application/json"],
+      "outputModes": ["application/json"]
+    },
+    {
       "id": "trade-signal-generation",
       "name": "매매 시그널 생성",
       "description": "Phase 2에서는 Entry Decision Shadow 결과를 반환하고 실제 시그널 생성은 수행하지 않음",

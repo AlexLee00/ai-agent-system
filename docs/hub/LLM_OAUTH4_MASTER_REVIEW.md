@@ -1,27 +1,27 @@
 # LLM OAuth4 Master Review
 
-- generated_at: 2026-05-11T01:03:53.998Z
+- generated_at: 2026-05-12T01:03:54.726Z
 - hours: 168
-- total_calls: 15875
-- oauth_share_pct: 56.35
+- total_calls: 15885
+- oauth_share_pct: 53.79
 - failed_rate_pct: 0.53
-- reported_cost_usd: 79.084354
-- oauth_reported_cost_usd: 77.78836
-- claude_code_reported_cost_usd: 77.78836
-- claude_code_runtime_cost_share_pct: 98.36
-- non_oauth_reported_cost_usd: 1.295994
+- reported_cost_usd: 76.062176
+- oauth_reported_cost_usd: 74.510429
+- claude_code_reported_cost_usd: 74.510429
+- claude_code_runtime_cost_share_pct: 97.96
+- non_oauth_reported_cost_usd: 1.551747
 - anthropic_provider_calls: 0
 - selector_claude_code_primary_share_pct: 0
 - selector_claude_code_sonnet_primary_share_pct: 0
 
 | Provider | Calls | Share % | Success % | Avg ms | Cost USD |
 |---|---:|---:|---:|---:|---:|
-| Claude Code OAuth | 1148 | 7.23 | 100.00 | 22755 | 77.788360 |
-| OpenAI OAuth | 5836 | 36.76 | 100.00 | 3904 | 0.000000 |
-| Gemini CLI OAuth | 1962 | 12.36 | 100.00 | 15444 | 0.000000 |
+| Claude Code OAuth | 1091 | 6.87 | 100.00 | 23071 | 74.510429 |
+| OpenAI OAuth | 5429 | 34.18 | 100.00 | 3527 | 0.000000 |
+| Gemini CLI OAuth | 2025 | 12.75 | 100.00 | 16661 | 0.000000 |
 | Gemini OAuth | 0 | 0.00 | 0.00 | 0 | 0.000000 |
 | Anthropic SDK | 0 | 0.00 | 0.00 | 0 | 0.000000 |
-| Groq | 6827 | 43.00 | 100.00 | 893 | 1.295994 |
+| Groq | 7238 | 45.56 | 100.00 | 943 | 1.551747 |
 | Failed | 84 | 0.53 | 0.00 | 30995 | 0.000000 |
 
 ## Selector Matrix
@@ -29,10 +29,10 @@
 - selector_version: v3.0_oauth_4
 - checked_selector_keys: 78
 - checked_agent_routes: 83
-- selector_primary_provider_counts: {"gemini-cli-oauth":86,"groq":47,"openai-oauth":28}
-- selector_primary_provider_shares: {"gemini-cli-oauth":53.42,"groq":29.19,"openai-oauth":17.39}
-- selector_primary_model_counts: {"gemini-cli-oauth/gemini-2.5-flash":55,"groq/llama-3.1-8b-instant":26,"gemini-cli-oauth/gemini-2.5-flash-lite":30,"openai-oauth/gpt-5.4":22,"openai-oauth/gpt-5.4-mini":6,"gemini-cli-oauth/gemini-2.5-pro":1,"groq/qwen/qwen3-32b":19,"groq/openai/gpt-oss-20b":2}
-- selector_primary_model_shares: {"gemini-cli-oauth/gemini-2.5-flash":34.16,"gemini-cli-oauth/gemini-2.5-flash-lite":18.63,"gemini-cli-oauth/gemini-2.5-pro":0.62,"groq/llama-3.1-8b-instant":16.15,"groq/openai/gpt-oss-20b":1.24,"groq/qwen/qwen3-32b":11.8,"openai-oauth/gpt-5.4":13.66,"openai-oauth/gpt-5.4-mini":3.73}
+- selector_primary_provider_counts: {"gemini-cli-oauth":86,"openai-oauth":30,"groq":45}
+- selector_primary_provider_shares: {"gemini-cli-oauth":53.42,"groq":27.95,"openai-oauth":18.63}
+- selector_primary_model_counts: {"gemini-cli-oauth/gemini-2.5-flash":55,"openai-oauth/gpt-5.4":24,"groq/llama-3.1-8b-instant":24,"gemini-cli-oauth/gemini-2.5-flash-lite":30,"openai-oauth/gpt-5.4-mini":6,"gemini-cli-oauth/gemini-2.5-pro":1,"groq/qwen/qwen3-32b":19,"groq/openai/gpt-oss-20b":2}
+- selector_primary_model_shares: {"gemini-cli-oauth/gemini-2.5-flash":34.16,"gemini-cli-oauth/gemini-2.5-flash-lite":18.63,"gemini-cli-oauth/gemini-2.5-pro":0.62,"groq/llama-3.1-8b-instant":14.91,"groq/openai/gpt-oss-20b":1.24,"groq/qwen/qwen3-32b":11.8,"openai-oauth/gpt-5.4":14.91,"openai-oauth/gpt-5.4-mini":3.73}
 
 ## Verdict
 

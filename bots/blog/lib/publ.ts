@@ -548,6 +548,93 @@ async function publishToFile(postData) {
   return { filepath, postId, filename, content: linkedContent };
 }
 
+async function rewriteReadyDraft(postId, postData) {
+  if (!postId) throw new Error('postId required');
+  if (DEV_HUB_READONLY) throw new Error('rewriteReadyDraft unavailable in read-only mode');
+
+  const row = await pgPool.get('blog', `
+    SELECT id, status, publish_date, metadata, post_type, lecture_number
+    FROM blog.posts
+    WHERE id = $1
+  `, [postId]);
+  if (!row) throw new Error(`post ${postId} not found`);
+  if (String(row.status || '') !== 'ready') {
+    throw new Error(`rewriteReadyDraft requires ready status (got ${row.status || 'unknown'})`);
+  }
+
+  const {
+    title,
+    content,
+    category,
+    postType,
+    lectureNumber = null,
+    charCount = String(content || '').length,
+    hashtags = [],
+    images = null,
+    writerName = null,
+    metadata = {},
+  } = postData || {};
+
+  const publishDate = normalizePublishDate(row.publish_date || kst.today());
+  const safeTitle = String(title || '').replace(/[^가-힣a-zA-Z0-9\\s-]/g, '').slice(0, 50).trim();
+  const filename = `${publishDate}_${postType}_${safeTitle}.html`;
+  const filepath = path.join(OUTPUT_DIR, filename);
+  const today = kst.today();
+
+  const titleUrlMap = await loadPublishedLinkMap();
+  const normalizedContent = ensurePersonalVoiceFloor(
+    ensurePublishBriefingFloor(content, postType, title),
+    postType,
+    title,
+  );
+  const linkedContent = replaceInternalLinkPlaceholders(normalizedContent, titleUrlMap);
+  const htmlContent = _contentToHtml(linkedContent, title, images);
+
+  fs.writeFileSync(filepath, htmlContent, 'utf8');
+  try {
+    if (!fs.existsSync(GDRIVE_DIR)) fs.mkdirSync(GDRIVE_DIR, { recursive: true });
+    fs.writeFileSync(path.join(GDRIVE_DIR, filename), htmlContent, 'utf8');
+  } catch (e) {
+    console.warn('[퍼블] 구글드라이브 저장 실패:', e.message);
+  }
+
+  const mergedMetadata = {
+    ...(row.metadata || {}),
+    schedule_id: row.metadata?.schedule_id || null,
+    filename,
+    generated_on: today,
+    writer_name: writerName || row.metadata?.writer_name || null,
+    ...(metadata || {}),
+  };
+
+  await pgPool.run('blog', `
+    UPDATE blog.posts
+    SET title = $2,
+        category = $3,
+        post_type = $4,
+        lecture_number = $5,
+        char_count = $6,
+        content = $7,
+        html_content = $8,
+        hashtags = $9,
+        metadata = $10
+    WHERE id = $1
+  `, [
+    postId,
+    title,
+    category,
+    postType,
+    lectureNumber || row.lecture_number || null,
+    charCount,
+    linkedContent,
+    htmlContent,
+    hashtags || [],
+    mergedMetadata,
+  ]);
+
+  return { filepath, postId, filename, content: linkedContent };
+}
+
 async function markPublished(postId, naverUrl) {
   if (!postId) return;
   if (DEV_HUB_READONLY) return;
@@ -785,6 +872,7 @@ async function getViewCollectionCandidates(days = 14, limit = 10) {
 
 module.exports = {
   publishToFile,
+  rewriteReadyDraft,
   markPublished,
   recordPerformance,
   recordPerformancePartial,
