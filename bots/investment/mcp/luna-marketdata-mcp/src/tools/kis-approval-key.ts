@@ -67,17 +67,25 @@ export async function getKisRealtimeApprovalKey(args = {}) {
   const paper = args.paper === true || process.env.KIS_MODE === 'mock';
   const key = paper ? 'paper' : 'live';
   const now = Date.now();
+  const forceRefresh = args.forceRefreshApprovalKey === true;
   const cached = approvalCache.get(key);
-  if (cached?.approvalKey && now - cached.issuedAt < Math.max(30_000, APPROVAL_TTL_MS)) {
+  if (!forceRefresh && cached?.approvalKey && now - cached.issuedAt < Math.max(30_000, APPROVAL_TTL_MS)) {
     return cached.approvalKey;
   }
-  if (approvalInflight.has(key)) return approvalInflight.get(key);
-  const promise = fetchApprovalKey(args)
+  if (!forceRefresh && approvalInflight.has(key)) return approvalInflight.get(key);
+  let promise;
+  promise = fetchApprovalKey(args)
     .then((approvalKey) => {
-      approvalCache.set(key, { approvalKey, issuedAt: Date.now() });
+      if (approvalInflight.get(key) === promise) {
+        approvalCache.set(key, { approvalKey, issuedAt: Date.now() });
+      }
       return approvalKey;
     })
-    .finally(() => approvalInflight.delete(key));
+    .finally(() => {
+      if (approvalInflight.get(key) === promise) {
+        approvalInflight.delete(key);
+      }
+    });
   approvalInflight.set(key, promise);
   return promise;
 }
@@ -85,4 +93,12 @@ export async function getKisRealtimeApprovalKey(args = {}) {
 export function clearKisRealtimeApprovalKeyCache() {
   approvalCache.clear();
   approvalInflight.clear();
+}
+
+export function isKisInvalidApprovalError(value = '') {
+  return /invalid\s+approval/i.test(String(value || ''));
+}
+
+export function redactKisInvalidApprovalError(value = '') {
+  return String(value || '').replace(/(invalid\s+approval\s*:?\s*)[^\s,}\]]+/gi, '$1[redacted]');
 }

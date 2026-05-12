@@ -12,6 +12,10 @@ import {
   classifyTradingViewRealtimeSet,
 } from './runtime-marketdata-realtime-connectivity.ts';
 import { redactKisWsDiagnosticMessage } from '../mcp/luna-marketdata-mcp/src/tools/kis-ws-domestic.ts';
+import {
+  isKisInvalidApprovalError,
+  redactKisInvalidApprovalError,
+} from '../mcp/luna-marketdata-mcp/src/tools/kis-approval-key.ts';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const investmentRoot = path.resolve(__dirname, '..');
@@ -223,6 +227,11 @@ export async function runSmoke() {
   assert.equal(redacted.includes('iv-secret'), false);
   assert.equal(redacted.includes('key-secret'), false);
   assert.equal(redacted.includes('[redacted]'), true);
+  assert.equal(isKisInvalidApprovalError('invalid approval : 2f7a3ea0-cbad-4f9d-8dab-636da2c6e807'), true);
+  assert.equal(isKisInvalidApprovalError('ALREADY IN USE appkey'), false);
+  const invalidApprovalRedacted = redactKisInvalidApprovalError('invalid approval : 2f7a3ea0-cbad-4f9d-8dab-636da2c6e807');
+  assert.equal(invalidApprovalRedacted.includes('2f7a3ea0-cbad-4f9d-8dab-636da2c6e807'), false);
+  assert.match(invalidApprovalRedacted, /invalid approval : \[redacted\]/i);
 
   const kisMissingApproval = classifyKisRealtime({
     market: 'kis_domestic',

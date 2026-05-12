@@ -4,7 +4,12 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import yaml from 'js-yaml';
-import { getKisRealtimeApprovalKey } from './kis-approval-key.ts';
+import {
+  clearKisRealtimeApprovalKeyCache,
+  getKisRealtimeApprovalKey,
+  isKisInvalidApprovalError,
+  redactKisInvalidApprovalError,
+} from './kis-approval-key.ts';
 
 const KIS_WS_LIVE = 'ws://ops.koreainvestment.com:21000';
 const KIS_WS_MOCK = 'ws://ops.koreainvestment.com:31000';
@@ -48,7 +53,7 @@ function messageText(eventOrRaw) {
 }
 
 export function redactKisWsDiagnosticMessage(text) {
-  return String(text || '')
+  return redactKisInvalidApprovalError(text)
     .replace(/("approval_key"\s*:\s*")[^"]+(")/gi, '$1[redacted]$2')
     .replace(/("key"\s*:\s*")[^"]+(")/gi, '$1[redacted]$2')
     .replace(/("iv"\s*:\s*")[^"]+(")/gi, '$1[redacted]$2');
@@ -249,6 +254,23 @@ export async function probeKisDomesticRealtime(args = {}) {
     } catch (_) {
       // best-effort cleanup only
     }
+  }
+
+  if (!args.__approvalRetry && isKisInvalidApprovalError(result.error)) {
+    clearKisRealtimeApprovalKeyCache();
+    const retry = await probeKisDomesticRealtime({
+      ...args,
+      __approvalRetry: true,
+      forceRefreshApprovalKey: true,
+    });
+    return {
+      ...retry,
+      approvalKeyRetry: {
+        attempted: true,
+        firstError: redactKisInvalidApprovalError(result.error).slice(0, 120),
+      },
+      messages: [...result.messages, ...(retry.messages || [])].slice(-8),
+    };
   }
 
   result.ok = result.approvalKeyIssued && result.wsOpened && result.subscriptionSent && result.subscriptionAccepted && !result.error;

@@ -99,6 +99,12 @@ export function runLunaHooksSmoke() {
     }, { LUNA_HOOK_TEST_MODE: 'true', LUNA_HOOK_KILL_SWITCH_FILE: killSwitchPath });
     assert.equal(passHybridPromotionReview.status, 0, passHybridPromotionReview.stderr || passHybridPromotionReview.stdout);
 
+    const passHybridFinalClosure = runHook(PRE_HOOK, {
+      tool_name: 'Bash',
+      tool_input: { command: 'npm --prefix bots/investment run -s runtime:luna-hybrid-final-closure -- --json --no-exec --hours=168' },
+    }, { LUNA_HOOK_TEST_MODE: 'true', LUNA_HOOK_KILL_SWITCH_FILE: killSwitchPath });
+    assert.equal(passHybridFinalClosure.status, 0, passHybridFinalClosure.stderr || passHybridFinalClosure.stdout);
+
     writeFileSync(killSwitchPath, JSON.stringify({ active: true }), 'utf8');
     const dynamicTpSlReadonly = runHook(PRE_HOOK, {
       tool_name: 'Bash',
@@ -153,6 +159,12 @@ export function runLunaHooksSmoke() {
       tool_input: { command: 'npm --prefix bots/investment run -s runtime:luna-hybrid-promotion-review -- --json --strict --no-db --hours=168' },
     }, { LUNA_HOOK_TEST_MODE: 'true', LUNA_HOOK_KILL_SWITCH_FILE: killSwitchPath });
     assert.equal(hybridPromotionReviewReadonly.status, 0, hybridPromotionReviewReadonly.stderr || hybridPromotionReviewReadonly.stdout);
+
+    const hybridFinalClosureReadonly = runHook(PRE_HOOK, {
+      tool_name: 'Bash',
+      tool_input: { command: 'npm --prefix bots/investment run -s runtime:luna-hybrid-final-closure -- --json --strict --no-exec --hours=168' },
+    }, { LUNA_HOOK_TEST_MODE: 'true', LUNA_HOOK_KILL_SWITCH_FILE: killSwitchPath });
+    assert.equal(hybridFinalClosureReadonly.status, 0, hybridFinalClosureReadonly.stderr || hybridFinalClosureReadonly.stdout);
 
     const dynamicTpSlChainedBlocked = runHook(PRE_HOOK, {
       tool_name: 'Bash',
@@ -238,6 +250,13 @@ export function runLunaHooksSmoke() {
     assert.equal(hybridPromotionReviewApplyBlocked.status, 2, hybridPromotionReviewApplyBlocked.stderr || hybridPromotionReviewApplyBlocked.stdout);
     assert.match(`${hybridPromotionReviewApplyBlocked.stdout}\n${hybridPromotionReviewApplyBlocked.stderr}`, /Kill Switch|kill switch/i);
 
+    const hybridFinalClosureApplyBlocked = runHook(PRE_HOOK, {
+      tool_name: 'Bash',
+      tool_input: { command: 'npm --prefix bots/investment run -s runtime:luna-hybrid-final-closure -- --apply --json' },
+    }, { LUNA_HOOK_TEST_MODE: 'true', LUNA_HOOK_KILL_SWITCH_FILE: killSwitchPath });
+    assert.equal(hybridFinalClosureApplyBlocked.status, 2, hybridFinalClosureApplyBlocked.stderr || hybridFinalClosureApplyBlocked.stdout);
+    assert.match(`${hybridFinalClosureApplyBlocked.stdout}\n${hybridFinalClosureApplyBlocked.stderr}`, /Kill Switch|kill switch/i);
+
     const post = runHook(POST_HOOK, {
       tool_name: 'Bash',
       tool_input: { command: 'npm --prefix bots/investment run -s smoke:luna-regime-llm' },
@@ -261,6 +280,7 @@ export function runLunaHooksSmoke() {
       communicationInfraGateCommandChecked: true,
       hybridPromotionGateCommandChecked: true,
       hybridPromotionReviewCommandChecked: true,
+      hybridFinalClosureCommandChecked: true,
       dynamicTpSlChainedBlocked: true,
       postHookFailOpen: true,
     };
