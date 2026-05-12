@@ -1185,6 +1185,7 @@ export async function refreshEntryTriggersFromRecentBuySignals({
         AND created_at >= now() - ($2::int * INTERVAL '1 hour')
         AND COALESCE(exclude_from_learning, false) = false
         AND COALESCE(quality_flag, 'trusted') <> 'exclude_from_learning'
+        AND COALESCE(execution_origin, 'strategy') NOT IN ('smoke', 'test', 'fixture')
         AND COALESCE(status, 'pending') IN ('pending', 'approved', 'queued', 'retrying')
         AND COALESCE(confidence, 0) >= $3
       ORDER BY confidence DESC NULLS LAST, created_at DESC

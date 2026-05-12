@@ -16,7 +16,10 @@ import {
   readPositionRuntimeAutopilotHistoryLines,
 } from './runtime-position-runtime-autopilot-history-store.ts';
 import { buildDiscoveryUniverse } from '../team/discovery/discovery-universe.ts';
-import { buildDecisionFilterDiagnostics } from './runtime-luna-decision-filter-report.ts';
+import {
+  buildDecisionFilterDiagnostics,
+  promoteStockDailyBullishActiveCandidateProbe,
+} from './runtime-luna-decision-filter-report.ts';
 import { getLunaIntelligentDiscoveryFlags } from '../shared/luna-intelligent-discovery-config.ts';
 import { investmentOpsRuntimeFile } from '../shared/runtime-ops-path.ts';
 import { isStockIntradayEnrichmentEnabled } from '../shared/stock-intraday-llm-policy.ts';
@@ -134,6 +137,7 @@ export function summarizeRecentEntryTriggerPipelineEvidence(rows = []) {
   }).filter((row) => row.sessionId);
 
   const latestWithEntryTriggerStats = sessions.find((row) => row.entryTriggerStats.hasStats) || null;
+  const latestRelaxedProbeL13 = sessions.find((row) => row.triggerType === 'relaxed_probe_l13') || null;
   const totals = sessions.reduce((acc, row) => {
     acc.decisionCount += number(row.decisionCount);
     acc.buyDecisions += number(row.buyDecisions);
@@ -161,6 +165,7 @@ export function summarizeRecentEntryTriggerPipelineEvidence(rows = []) {
     recentCount: sessions.length,
     latest: sessions[0] || null,
     latestWithEntryTriggerStats,
+    latestRelaxedProbeL13,
     totals,
     blockedBeforeSignalPersistence: Boolean(
       latestWithEntryTriggerStats
@@ -504,12 +509,17 @@ function isDailyTechnicalBullish(row = {}) {
 }
 
 export function buildRequiredCoverageSymbols({ market, analysisSymbols = [], decisionDiagnostics = [], dailyTechnicalCoverage = null } = {}) {
-  if (market !== 'crypto') return analysisSymbols;
   const targetable = new Set();
   for (const item of decisionDiagnostics || []) {
     if (item?.actionability !== 'likely_actionable' && item?.actionability !== 'relaxed_probe_candidate') continue;
     const symbol = normalizeCandidateSymbolForAnalysis(item.symbol, market);
     if (symbol) targetable.add(symbol);
+  }
+  if (market !== 'crypto') {
+    if (targetable.size > 0) {
+      return analysisSymbols.filter((symbol) => targetable.has(normalizeCandidateSymbolForAnalysis(symbol, market)));
+    }
+    return analysisSymbols;
   }
   return analysisSymbols.filter((symbol) => targetable.has(symbol));
 }
@@ -521,6 +531,38 @@ function normalizeCandidateSymbolForAnalysis(symbol, market) {
     return `${raw.slice(0, -4)}/USDT`;
   }
   return raw;
+}
+
+function buildCandidateMetaBySymbol({ latestCandidates = [], executionUniverse = null, market = 'crypto' } = {}) {
+  const bySymbol = {};
+  const rows = Array.isArray(executionUniverse?.candidates) && executionUniverse.candidates.length > 0
+    ? executionUniverse.candidates
+    : latestCandidates;
+  let rank = 0;
+  for (const row of rows || []) {
+    const symbol = normalizeCandidateSymbolForAnalysis(row?.symbol, market);
+    if (!symbol || bySymbol[symbol]) continue;
+    rank += 1;
+    bySymbol[symbol] = {
+      rank,
+      score: number(row?.score),
+      confidence: number(row?.confidence ?? row?.score),
+      source: row?.source || null,
+      reasonCode: row?.reasonCode || row?.reason_code || null,
+      discoveredAt: row?.discoveredAt || row?.discovered_at || null,
+    };
+  }
+  return bySymbol;
+}
+
+function mapDailyTechnicalBySymbol({ rows = [], market = 'crypto' } = {}) {
+  const bySymbol = {};
+  for (const row of rows || []) {
+    const symbol = normalizeCandidateSymbolForAnalysis(row?.symbol, market);
+    if (!symbol) continue;
+    bySymbol[symbol] = row;
+  }
+  return bySymbol;
 }
 
 function candidateSymbolSqlFilter(market) {
@@ -862,6 +904,7 @@ async function buildMarketFunnel(market, { hours }) {
               (
                 COALESCE(exclude_from_learning, false) = true
                 OR COALESCE(quality_flag, '') = 'exclude_from_learning'
+                OR COALESCE(execution_origin, 'strategy') IN ('smoke', 'test', 'fixture')
                 OR COALESCE(block_code, '') = 'synthetic_reflection_signal'
                 OR symbol LIKE 'REFLECT_%'
               ) AS ignored,
@@ -871,6 +914,7 @@ async function buildMarketFunnel(market, { hours }) {
                 AND COALESCE(confidence, 0) >= $3
                 AND COALESCE(exclude_from_learning, false) = false
                 AND COALESCE(quality_flag, 'trusted') <> 'exclude_from_learning'
+                AND COALESCE(execution_origin, 'strategy') NOT IN ('smoke', 'test', 'fixture')
               ) AS trigger_eligible,
               COUNT(*)::int AS count,
               MAX(created_at) AS latest_created_at
@@ -993,7 +1037,32 @@ async function buildMarketFunnel(market, { hours }) {
   const currentLivePositions = await loadCurrentLivePositions(exchange);
   const currentOpenSymbols = new Set((currentLivePositions || []).map((row) => String(row.symbol || '').trim()).filter(Boolean));
   const maxOpenPositions = getLiveFireMaxOpenPositions();
-  const rawDecisionDiagnostics = buildDecisionFilterDiagnostics(analysisDetailRows, { exchange });
+  const dailyTechnicalCoverage = await buildDailyTechnicalCoverage({
+    market,
+    exchange,
+    symbols: analysisSymbols,
+    marketOpen,
+  });
+  const dailyTechnicalBySymbol = mapDailyTechnicalBySymbol({
+    rows: dailyTechnicalCoverage?.rows || [],
+    market,
+  });
+  const activeCandidateMetaBySymbol = buildCandidateMetaBySymbol({
+    latestCandidates,
+    executionUniverse,
+    market,
+  });
+  const rawDecisionDiagnostics = buildDecisionFilterDiagnostics(analysisDetailRows, {
+    exchange,
+    dailyTechnicalBySymbol,
+  }).map((item) => {
+    const symbol = normalizeCandidateSymbolForAnalysis(item?.symbol, market);
+    return promoteStockDailyBullishActiveCandidateProbe({
+      ...item,
+      activeCandidate: activeCandidateMetaBySymbol[symbol] || item.activeCandidate || null,
+      dailyTechnical: dailyTechnicalBySymbol[symbol] || item.dailyTechnical || null,
+    });
+  });
   const decisionFilterScope = filterEntryDecisionDiagnosticsForOpenPositions(rawDecisionDiagnostics, currentOpenSymbols);
   const openPositionDecisionCandidates = decisionFilterScope.excluded;
   const decisionDiagnostics = decisionFilterScope.included;
@@ -1005,12 +1074,6 @@ async function buildMarketFunnel(market, { hours }) {
     latestCreatedAt: row.latest_created_at || null,
   }]));
   const analysisCoveredSymbols = analysisSymbols.filter((symbol) => number(analysisBySymbol[symbol]?.count) > 0);
-  const dailyTechnicalCoverage = await buildDailyTechnicalCoverage({
-    market,
-    exchange,
-    symbols: analysisSymbols,
-    marketOpen,
-  });
   const requiredCoverageSymbols = buildRequiredCoverageSymbols({
     market,
     analysisSymbols,
@@ -1105,7 +1168,10 @@ async function buildMarketFunnel(market, { hours }) {
   }
   if (signalPersistenceState.bottleneck) bottlenecks.push(signalPersistenceState.bottleneck);
   if (signalPersistenceState.observation) addObservation(signalPersistenceState.observation);
-  if (marketOpen && relaxedProbeReadyCandidates.length > 0 && recentBuySignals === 0) bottlenecks.push('relaxed_probe_candidate_waiting_l13_probe');
+  if (marketOpen && relaxedProbeReadyCandidates.length > 0 && recentBuySignals === 0) {
+    if (pipelineEntryTriggerEvidence?.latestRelaxedProbeL13) addObservation('relaxed_probe_l13_recently_evaluated_no_buy_signal');
+    else bottlenecks.push('relaxed_probe_candidate_waiting_l13_probe');
+  }
   if (triggerEligibleBuySignals > 0 && activeTriggerCount === 0) bottlenecks.push('buy_signal_without_active_entry_trigger');
   if (
     activeTriggerCount === 0

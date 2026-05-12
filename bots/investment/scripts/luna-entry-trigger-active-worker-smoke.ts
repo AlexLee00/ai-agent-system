@@ -58,6 +58,7 @@ export async function runLunaEntryTriggerActiveWorkerSmoke() {
     const terminalLowConfSymbol = `TERMINALCONF${Date.now().toString(36).toUpperCase()}/USDT`;
     let signalId = null;
     let openSignalId = null;
+    let smokeOriginSignalId = null;
     try {
       signalId = await db.insertSignal({
         symbol: refreshSymbol,
@@ -76,6 +77,26 @@ export async function runLunaEntryTriggerActiveWorkerSmoke() {
       const refresh = await refreshEntryTriggersFromRecentBuySignals({ exchange: 'binance', hours: 1, limit: 5 });
       assert.ok(refresh.sourceSignals >= 1, 'recent BUY signal should be considered for entry-trigger refresh');
       assert.ok(refresh.armed >= 1 || refresh.observed >= 1, 'recent BUY signal should arm or observe an entry trigger');
+
+      smokeOriginSignalId = await db.insertSignal({
+        symbol: `SMOKEORIGIN${Date.now().toString(36).toUpperCase()}/USDT`,
+        action: 'BUY',
+        amountUsdt: 50,
+        confidence: 0.99,
+        reasoning: 'execution_origin smoke must not enter entry-trigger refresh',
+        status: 'approved',
+        exchange: 'binance',
+        executionOrigin: 'smoke',
+        qualityFlag: 'trusted',
+        excludeFromLearning: false,
+        strategyFamily: 'breakout',
+      });
+      const smokeOriginRefresh = await refreshEntryTriggersFromRecentBuySignals({ exchange: 'binance', hours: 1, limit: 10 });
+      assert.equal(
+        smokeOriginRefresh.sourceSignals,
+        refresh.sourceSignals,
+        'execution_origin=smoke BUY signal must be excluded from entry-trigger refresh source signals',
+      );
 
       openSignalId = await db.insertSignal({
         symbol: openSymbol,
@@ -531,6 +552,7 @@ export async function runLunaEntryTriggerActiveWorkerSmoke() {
       await db.run(`DELETE FROM entry_triggers WHERE symbol LIKE 'STALEBLOCK%'`).catch(() => {});
       if (signalId) await db.run(`DELETE FROM signals WHERE id = $1`, [signalId]).catch(() => {});
       if (openSignalId) await db.run(`DELETE FROM signals WHERE id = $1`, [openSignalId]).catch(() => {});
+      if (smokeOriginSignalId) await db.run(`DELETE FROM signals WHERE id = $1`, [smokeOriginSignalId]).catch(() => {});
     }
   });
 }

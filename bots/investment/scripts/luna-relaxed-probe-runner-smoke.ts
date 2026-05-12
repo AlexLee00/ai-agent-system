@@ -33,6 +33,25 @@ function fixtureWatchlist() {
   };
 }
 
+function stockFixtureWatchlist() {
+  return {
+    ok: true,
+    status: 'near_miss_watchlist_attention',
+    summary: { count: 1, symbols: ['NVDA'] },
+    watchlist: [
+      {
+        symbol: 'NVDA',
+        exchange: 'kis_overseas',
+        readiness: 'relaxed_probe_watch',
+        nextAction: 'run_l13_probe_with_existing_risk_and_entry_guards',
+        watchReason: 'stock_daily_bullish_active_candidate_probe',
+        missingConfirmations: ['market_flow', 'fusion'],
+        dailyTechnical: { ok: true, reason: 'kis_daily_chart_bullish' },
+      },
+    ],
+  };
+}
+
 export async function runLunaRelaxedProbeRunnerSmoke() {
   const plan = buildLunaRelaxedProbeRunnerPlan(fixtureWatchlist(), { maxSymbols: 1 });
   assert.equal(plan.status, 'relaxed_probe_l13_ready');
@@ -136,11 +155,46 @@ export async function runLunaRelaxedProbeRunnerSmoke() {
   assert.equal(applied.collect.sessionId, 'relaxed-probe-session');
   assert.deepEqual(calls.map((item) => item.type), ['collect', 'decision']);
 
+  const stockCalls = [];
+  const stockApplied = await runLunaRelaxedProbeRunner({
+    market: 'overseas',
+    exchange: 'kis_overseas',
+    apply: true,
+    confirm: 'luna-relaxed-probe-runner',
+    watchlistBuilder: async () => stockFixtureWatchlist(),
+    recentTradeCooldownLoader: async () => new Map(),
+    collectRunner: async ({ market, symbols, triggerType, meta }) => {
+      stockCalls.push({ type: 'collect', market, symbols, triggerType, meta });
+      assert.equal(market, 'kis_overseas');
+      assert.deepEqual(symbols, ['NVDA']);
+      assert.equal(triggerType, 'relaxed_probe_l13');
+      assert.equal(meta.targeted_enrichment, true);
+      assert.deepEqual(meta.llm_call_policy.targeted_enrichment_nodes, ['L04']);
+      assert.deepEqual(meta.agentPlan.collect.nodeIds, ['L04']);
+      return {
+        sessionId: 'stock-relaxed-probe-session',
+        symbols,
+        metrics: { failedHardCoreTasks: 0, collectQuality: { status: 'ready' } },
+      };
+    },
+    decisionRunner: async ({ sessionId, symbols, exchange, meta }) => {
+      stockCalls.push({ type: 'decision', sessionId, symbols, exchange, meta });
+      assert.equal(sessionId, 'stock-relaxed-probe-session');
+      assert.deepEqual(symbols, ['NVDA']);
+      assert.equal(exchange, 'kis_overseas');
+      assert.equal(meta.relaxed_probe_context.bySymbol.NVDA.watchReason, 'stock_daily_bullish_active_candidate_probe');
+      return { results: [], metrics: { bridgeStatus: 'no_symbol_decisions' } };
+    },
+  });
+  assert.equal(stockApplied.ok, true);
+  assert.equal(stockApplied.status, 'relaxed_probe_l13_executed');
+  assert.deepEqual(stockCalls.map((item) => item.type), ['collect', 'decision']);
+
   return {
     ok: true,
     smoke: 'luna-relaxed-probe-runner',
     selected: plan.selectedSymbols,
-    callCount: calls.length,
+    callCount: calls.length + stockCalls.length,
   };
 }
 

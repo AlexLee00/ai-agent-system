@@ -20,7 +20,7 @@ export async function runLunaOpsSchedulerSmoke() {
   const jobs = getOpsSchedulerJobs();
   const launchdPlist = fs.readFileSync(new URL('../launchd/ai.luna.ops-scheduler.plist', import.meta.url), 'utf8');
   assert.match(launchdPlist, /<key>StartInterval<\/key>\s*<integer>60<\/integer>/);
-  assert.equal(jobs.length, 32);
+  assert.equal(jobs.length, 34);
   assert.equal(jobs.some((job) => job.name === 'market_regime_llm_shadow'), true);
   assert.equal(jobs.find((job) => job.name === 'market_regime_llm_shadow')?.category, 'market_state');
   assert.equal(jobs.find((job) => job.name === 'market_regime_llm_shadow')?.cadence?.seconds, 3600);
@@ -92,6 +92,14 @@ export async function runLunaOpsSchedulerSmoke() {
   assert.equal(jobs.find((job) => job.name === 'relaxed_probe_l13_crypto')?.cadence?.seconds, 900);
   assert.equal(jobs.find((job) => job.name === 'relaxed_probe_l13_crypto')?.args?.includes('--confirm=luna-relaxed-probe-runner'), true);
   assert.equal(jobs.find((job) => job.name === 'relaxed_probe_l13_crypto')?.args?.includes('--max-symbols=1'), true);
+  assert.equal(jobs.some((job) => job.name === 'relaxed_probe_l13_domestic'), true);
+  assert.equal(jobs.find((job) => job.name === 'relaxed_probe_l13_domestic')?.requiresMarketOpen, true);
+  assert.equal(jobs.find((job) => job.name === 'relaxed_probe_l13_domestic')?.cadence?.seconds, 900);
+  assert.equal(jobs.find((job) => job.name === 'relaxed_probe_l13_domestic')?.args?.includes('--market=domestic'), true);
+  assert.equal(jobs.some((job) => job.name === 'relaxed_probe_l13_overseas'), true);
+  assert.equal(jobs.find((job) => job.name === 'relaxed_probe_l13_overseas')?.requiresMarketOpen, true);
+  assert.equal(jobs.find((job) => job.name === 'relaxed_probe_l13_overseas')?.cadence?.seconds, 900);
+  assert.equal(jobs.find((job) => job.name === 'relaxed_probe_l13_overseas')?.args?.includes('--market=overseas'), true);
   assert.equal(jobs.find((job) => job.name === 'near_miss_watchlist_domestic')?.requiresMarketOpen, true);
   assert.equal(jobs.find((job) => job.name === 'near_miss_watchlist_overseas')?.requiresMarketOpen, true);
   assert.equal(jobs.find((job) => job.name === 'market_cycle_domestic')?.env?.LUNA_LIVE_DOMESTIC, 'true');

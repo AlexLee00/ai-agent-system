@@ -45,9 +45,9 @@ async function seedFixture(symbol, historyFile) {
   );
   await db.run(
     `INSERT INTO signals
-       (symbol, action, amount_usdt, confidence, reasoning, status, exchange, trade_mode)
+       (symbol, action, amount_usdt, confidence, reasoning, status, exchange, trade_mode, execution_origin, quality_flag, exclude_from_learning, incident_link)
      VALUES
-       ($1, 'BUY', 25, 0.82, 'smoke funnel signal', 'approved', 'binance', 'normal')`,
+       ($1, 'BUY', 25, 0.82, 'smoke funnel signal', 'approved', 'binance', 'normal', 'smoke', 'exclude_from_learning', true, 'luna-discovery-funnel-report-smoke')`,
     [symbol],
   );
   await db.insertAnalysis({
@@ -114,11 +114,15 @@ export async function runLunaDiscoveryFunnelReportSmoke() {
     assert.ok(crypto, 'crypto market report should exist');
     assert.ok(crypto.candidateUniverse.activeCount >= 1, 'candidate universe should include smoke candidate');
     assert.ok(crypto.analysisCoverage.coveredCount >= 1, 'analysis coverage should include smoke candidate');
-    assert.ok(crypto.signalPersistence.buyCount >= 1, 'signal persistence should include smoke BUY');
-    assert.ok(crypto.signalPersistence.triggerEligibleBuyCount >= 1, 'trigger eligibility should only count live BUY signals');
-    assert.ok(crypto.signalPersistence.byBlockCode.none >= 1, 'signal persistence should expose non-blocked BUY/SIGNAL rows');
+    assert.ok(crypto.signalPersistence.ignoredByAction.BUY >= 1, 'signal persistence should track smoke BUY as ignored');
+    assert.equal(crypto.signalPersistence.triggerEligibleBuyCount, 0, 'smoke BUY signals must not be execution-trigger eligible');
     assert.ok(crypto.signalPersistence.ignoredCount >= 1, 'synthetic reflection signal should be tracked as ignored');
     assert.ok(crypto.entryTriggers.activeCount >= 1, 'entry trigger should include smoke armed trigger');
+    const executableSmokeSignals = [
+      ...(await db.getPendingSignals('binance', 'normal')),
+      ...(await db.getApprovedSignals('binance', 'normal')),
+    ].filter((row) => row.symbol === symbol);
+    assert.equal(executableSmokeSignals.length, 0, 'smoke fixture must not enter Hephaestos executable queues');
     assert.equal(report.autopilot.totals.candidateCount, 1, 'autopilot dispatch candidate count should come from fixture history');
     assert.equal(report.nextAction, 'continue_observation', 'complete fixture funnel should not request repair action');
 
@@ -704,6 +708,45 @@ export async function runLunaDiscoveryFunnelReportSmoke() {
       'non-targetable crypto candidates should not create false sentiment partial bottlenecks',
     );
     assert.deepEqual(cryptoScopedCoverage.scope.ignoredSymbols, ['PLUME/USDT']);
+    const stockDecisionScopedSymbols = buildRequiredCoverageSymbols({
+      market: 'domestic',
+      analysisSymbols: ['000660', '035420'],
+      decisionDiagnostics: [
+        { symbol: '000660', actionability: 'relaxed_probe_candidate' },
+        { symbol: '035420', actionability: 'filtered_before_signal' },
+      ],
+      dailyTechnicalCoverage: {
+        rows: [
+          { symbol: '000660', ok: true, reason: 'kis_daily_chart_bullish' },
+          { symbol: '035420', ok: false, reason: 'kis_daily_trend_not_bullish' },
+        ],
+      },
+    });
+    assert.deepEqual(
+      stockDecisionScopedSymbols,
+      ['000660'],
+      'stock required analyst coverage should scope to entry-targetable relaxed probe candidates',
+    );
+    const stockScopedCoverage = buildRequiredAnalystCoverage({
+      market: 'domestic',
+      marketOpen: true,
+      analysisSymbols: ['000660', '035420'],
+      requiredSymbols: stockDecisionScopedSymbols,
+      analysisRows: [
+        { symbol: '000660', analyst: 'ta_mtf', count: 1, latest_created_at: new Date().toISOString() },
+        { symbol: '000660', analyst: 'market_flow', count: 1, latest_created_at: new Date().toISOString() },
+      ],
+      dailyTechnicalCoverage: {
+        rows: [{ symbol: '000660', source: 'kis_domestic_daily_price', bars: 90, ok: true }],
+      },
+      env: { LUNA_STOCK_INTRADAY_ENRICHMENT_ENABLED: 'false' },
+    });
+    assert.equal(
+      stockScopedCoverage.bottlenecks.includes('market_flow_analysis_partial_for_candidates'),
+      false,
+      'non-targetable stock candidates should not create false market-flow partial bottlenecks',
+    );
+    assert.deepEqual(stockScopedCoverage.scope.ignoredSymbols, ['035420']);
     return {
       ok: true,
       smoke: 'luna-discovery-funnel-report',

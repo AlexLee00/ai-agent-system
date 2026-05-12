@@ -331,6 +331,41 @@ function isStockDailyBullishProbeCandidate(item = {}) {
   return rank >= 1 && rank <= 12 && confidence >= 0.7;
 }
 
+export function promoteStockDailyBullishActiveCandidateProbe(item = {}, env = process.env) {
+  if (item.actionability !== 'filtered_before_signal') return item;
+  if (!isStockDailyBullishProbeCandidate(item)) return item;
+  const reasons = new Set(item.reasons || []);
+  if (reasons.has('conflict_detected') || reasons.has('news_only_buy')) return item;
+  const fused = item.fused || {};
+  const candidate = item.activeCandidate || {};
+  const minFusedScore = Number(env?.LUNA_STOCK_DAILY_BULLISH_PROBE_MIN_FUSED_SCORE ?? -0.12);
+  const minAverageConfidence = Number(env?.LUNA_STOCK_DAILY_BULLISH_PROBE_MIN_AVG_CONFIDENCE ?? 0.12);
+  const fusedScore = Number(fused.fusedScore || 0);
+  const averageConfidence = Number(fused.averageConfidence || 0);
+  if (Number.isFinite(minFusedScore) && fusedScore < minFusedScore) return item;
+  if (Number.isFinite(minAverageConfidence) && averageConfidence < minAverageConfidence) return item;
+
+  return {
+    ...item,
+    actionability: 'relaxed_probe_candidate',
+    recommendation: 'run_l13_probe_with_reduced_sizing',
+    relaxation: {
+      enabled: true,
+      ok: true,
+      marketType: 'stock',
+      reason: 'stock_daily_bullish_active_candidate_probe',
+      sizeRatio: 0.25,
+      summary: {
+        source: 'daily_bullish_active_candidate',
+        activeCandidateRank: Number(candidate.rank || 0) || null,
+        activeCandidateConfidence: activeCandidateConfidence(item),
+        dailyTechnical: item.dailyTechnical || item.dailyTechnicalCoverage || null,
+      },
+      fused,
+    },
+  };
+}
+
 export function buildNearMissWatchCandidate(item = {}) {
   if (item.actionability === 'likely_actionable') return null;
   const reasons = new Set(item.reasons || []);
@@ -341,7 +376,12 @@ export function buildNearMissWatchCandidate(item = {}) {
     if (reasons.has('technical_not_confirmed')) missingConfirmations.push('technical');
     if (reasons.has('onchain_not_confirmed') && !hasAnalystEvidence(item, [ANALYST_TYPES.ONCHAIN])) missingConfirmations.push('onchain');
     if (reasons.has('sentiment_not_confirmed') && !hasAnalystEvidence(item, [ANALYST_TYPES.SENTIMENT, ANALYST_TYPES.SENTINEL])) missingConfirmations.push('sentiment');
-    if (reasons.has('market_flow_not_confirmed') && !hasAnalystEvidence(item, [ANALYST_TYPES.MARKET_FLOW])) missingConfirmations.push('market_flow');
+    if (
+      reasons.has('market_flow_not_confirmed')
+      && (STOCK_EXCHANGES.has(item.exchange) || !hasAnalystEvidence(item, [ANALYST_TYPES.MARKET_FLOW]))
+    ) {
+      missingConfirmations.push('market_flow');
+    }
     if (reasons.has('average_confidence_below_min')) missingConfirmations.push('confidence');
     if (reasons.has('fusion_not_long')) missingConfirmations.push('fusion');
     return {
@@ -571,7 +611,8 @@ export async function buildLunaDecisionFilterReport(options = {}) {
     .filter((item) => !openPositionSymbols.has(normalizeCandidateSymbol(item.symbol, market)))
     .map((item) => activeUniverse.candidateMeta?.[item.symbol]
     ? { ...item, activeCandidate: activeUniverse.candidateMeta[item.symbol] }
-    : item);
+    : item)
+    .map((item) => promoteStockDailyBullishActiveCandidateProbe(item, options.env || process.env));
   const checkedSymbolSet = new Set(diagnostics.map((item) => item.symbol));
   const missingActiveCandidateSymbols = candidateSymbols.filter((symbol) => !checkedSymbolSet.has(symbol));
   const filtered = diagnostics.filter((item) => item.actionability !== 'likely_actionable');

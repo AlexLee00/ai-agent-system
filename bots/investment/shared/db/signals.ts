@@ -257,7 +257,12 @@ export async function getSignalById(id) {
 }
 
 export async function getPendingSignals(exchange, tradeMode = null) {
-  const conditions = [`status = 'pending'`];
+  const conditions = [
+    `status = 'pending'`,
+    `COALESCE(exclude_from_learning, false) = false`,
+    `COALESCE(quality_flag, 'trusted') <> 'exclude_from_learning'`,
+    `COALESCE(execution_origin, 'strategy') NOT IN ('smoke', 'test', 'fixture')`,
+  ];
   const params = [];
 
   if (exchange) {
@@ -276,7 +281,12 @@ export async function getPendingSignals(exchange, tradeMode = null) {
 }
 
 export async function getApprovedSignals(exchange, tradeMode = null) {
-  const conditions = [`status = 'approved'`];
+  const conditions = [
+    `status = 'approved'`,
+    `COALESCE(exclude_from_learning, false) = false`,
+    `COALESCE(quality_flag, 'trusted') <> 'exclude_from_learning'`,
+    `COALESCE(execution_origin, 'strategy') NOT IN ('smoke', 'test', 'fixture')`,
+  ];
   const params = [];
 
   if (exchange) {

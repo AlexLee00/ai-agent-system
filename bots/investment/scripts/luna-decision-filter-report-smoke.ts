@@ -8,6 +8,7 @@ import {
   buildNearMissWatchCandidate,
   buildDecisionFilterDiagnostics,
   buildLunaDecisionFilterReport,
+  promoteStockDailyBullishActiveCandidateProbe,
 } from './runtime-luna-decision-filter-report.ts';
 import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
 
@@ -273,6 +274,29 @@ export async function runLunaDecisionFilterReportSmoke() {
   assert.equal(overseasDailyBullishWatch.watchReason, 'stock_daily_bullish_active_candidate_probe');
   assert.deepEqual(overseasDailyBullishWatch.missingConfirmations, ['market_flow']);
   assert.equal(overseasDailyBullishWatch.nextAction, 'refresh_market_flow_then_l13_probe_with_existing_guards');
+
+  const promotedOverseasDailyBullish = promoteStockDailyBullishActiveCandidateProbe({
+    symbol: 'NVDA',
+    exchange: 'kis_overseas',
+    actionability: 'filtered_before_signal',
+    recommendation: 'wait_for_market_flow_confirmation',
+    reasons: ['market_flow_not_confirmed', 'fusion_not_long'],
+    minConfidence: 0.18,
+    fused: { recommendation: 'HOLD', fusedScore: -0.02, averageConfidence: 0.235, hasConflict: false },
+    analystSummary: {
+      byAnalyst: {
+        market_flow: { signal: 'HOLD', confidence: 0.12 },
+        ta_mtf: { signal: 'BUY', confidence: 0.35 },
+      },
+    },
+    activeCandidate: { rank: 1, score: 0.84, confidence: 0.81 },
+    dailyTechnical: { ok: true, reason: 'kis_daily_chart_bullish', source: 'kis_overseas_daily_price' },
+  });
+  assert.equal(promotedOverseasDailyBullish.actionability, 'relaxed_probe_candidate');
+  assert.equal(promotedOverseasDailyBullish.relaxation.reason, 'stock_daily_bullish_active_candidate_probe');
+  const promotedOverseasWatch = buildNearMissWatchCandidate(promotedOverseasDailyBullish);
+  assert.equal(promotedOverseasWatch.nextAction, 'run_l13_probe_with_existing_risk_and_entry_guards');
+  assert.deepEqual(promotedOverseasWatch.missingConfirmations, ['market_flow', 'fusion']);
 
   const fixtureSymbol = `DFILTER${Date.now()}/USDT`;
   const openFixtureSymbol = `DFILTEROPEN${Date.now()}/USDT`;

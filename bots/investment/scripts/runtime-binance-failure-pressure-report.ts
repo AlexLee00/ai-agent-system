@@ -153,6 +153,11 @@ async function loadRows(days = 14) {
     FROM investment.signals
     WHERE exchange = 'binance'
       AND status = 'failed'
+      AND COALESCE(exclude_from_learning, false) = false
+      AND COALESCE(quality_flag, 'trusted') <> 'exclude_from_learning'
+      AND COALESCE(execution_origin, 'strategy') NOT IN ('smoke', 'test', 'fixture')
+      AND symbol NOT LIKE 'REFLECT_%'
+      AND symbol NOT LIKE 'FUNNEL%/USDT'
       AND created_at > now() - INTERVAL '${safeDays} days'
     GROUP BY COALESCE(block_code, ''), LEFT(COALESCE(block_reason, ''), 180)
     ORDER BY count DESC
