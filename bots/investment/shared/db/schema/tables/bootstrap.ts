@@ -313,6 +313,33 @@ export async function runInvestmentSchemaBootstrap(run, { log = true } = {}) {
   try { await run(`CREATE INDEX IF NOT EXISTS idx_luna_rl_policy_shadow_state_vector ON luna_rl_policy_shadow USING GIN (state_vector)`); } catch { /* 무시 */ }
 
   await run(`
+    CREATE TABLE IF NOT EXISTS luna_risk_simulation_shadow (
+      id                       BIGSERIAL PRIMARY KEY,
+      analysis_type            TEXT NOT NULL,
+      symbols                  JSONB NOT NULL DEFAULT '[]'::jsonb,
+      exchange                 TEXT NOT NULL DEFAULT 'binance',
+      market                   TEXT NOT NULL DEFAULT 'crypto',
+      scenario                 TEXT DEFAULT 'base',
+      simulations              INTEGER DEFAULT 0,
+      var_95                   NUMERIC(12,6) DEFAULT 0,
+      var_99                   NUMERIC(12,6) DEFAULT 0,
+      cvar_95                  NUMERIC(12,6) DEFAULT 0,
+      cvar_99                  NUMERIC(12,6) DEFAULT 0,
+      max_loss_estimate        NUMERIC(12,6) DEFAULT 0,
+      recovery_days_estimate   INTEGER,
+      risk_limits              JSONB DEFAULT '{}'::jsonb,
+      scenario_metrics         JSONB DEFAULT '{}'::jsonb,
+      data_health              TEXT DEFAULT 'unknown',
+      context_evidence         JSONB DEFAULT '{}'::jsonb,
+      shadow_only              BOOLEAN NOT NULL DEFAULT true,
+      observed_at              TIMESTAMPTZ DEFAULT NOW()
+    )
+  `);
+  try { await run(`CREATE INDEX IF NOT EXISTS idx_luna_risk_simulation_shadow_type_observed ON luna_risk_simulation_shadow(analysis_type, exchange, observed_at DESC)`); } catch { /* 무시 */ }
+  try { await run(`CREATE INDEX IF NOT EXISTS idx_luna_risk_simulation_shadow_market_scenario ON luna_risk_simulation_shadow(market, scenario, observed_at DESC)`); } catch { /* 무시 */ }
+  try { await run(`CREATE INDEX IF NOT EXISTS idx_luna_risk_simulation_shadow_symbols ON luna_risk_simulation_shadow USING GIN (symbols)`); } catch { /* 무시 */ }
+
+  await run(`
     CREATE TABLE IF NOT EXISTS mapek_knowledge (
       id          BIGSERIAL PRIMARY KEY,
       event_type  TEXT NOT NULL,

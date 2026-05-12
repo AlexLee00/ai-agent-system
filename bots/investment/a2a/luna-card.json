@@ -85,6 +85,30 @@
       "outputModes": ["application/json"]
     },
     {
+      "id": "risk-simulation-shadow",
+      "name": "Risk Simulation Shadow",
+      "description": "Monte Carlo VaR/CVaR와 역사적 스트레스 테스트를 Shadow Mode로 산출하고 live 주문에는 반영하지 않음",
+      "tags": ["finance", "risk", "monte-carlo", "stress-test", "shadow", "a2a"],
+      "inputModes": ["application/json"],
+      "outputModes": ["application/json"]
+    },
+    {
+      "id": "monte-carlo-shadow",
+      "name": "Monte Carlo Shadow",
+      "description": "시장별 가격 수익률 기반 VaR/CVaR Monte Carlo shadow evidence를 반환",
+      "tags": ["finance", "risk", "monte-carlo", "shadow"],
+      "inputModes": ["application/json"],
+      "outputModes": ["application/json"]
+    },
+    {
+      "id": "stress-test-shadow",
+      "name": "Stress Test Shadow",
+      "description": "2008/2020/2022/2018 역사적 위기 시나리오 stress shadow evidence를 반환",
+      "tags": ["finance", "risk", "stress-test", "shadow"],
+      "inputModes": ["application/json"],
+      "outputModes": ["application/json"]
+    },
+    {
       "id": "trade-signal-generation",
       "name": "매매 시그널 생성",
       "description": "Phase 2에서는 Entry Decision Shadow 결과를 반환하고 실제 시그널 생성은 수행하지 않음",

@@ -21,6 +21,7 @@ import { registerMetaNeuralReflexionSkill } from './skills/meta-neural-reflexion
 import { registerFactorModelShadowSkill } from './skills/factor-model-shadow.ts';
 import { registerStatArbShadowSkill } from './skills/stat-arb-shadow.ts';
 import { registerRlPolicyShadowSkills } from './skills/rl-policy-shadow.ts';
+import { registerRiskSimulationShadowSkills } from './skills/risk-simulation-shadow.ts';
 
 const _require = createRequire(import.meta.url);
 const express = _require('express');
@@ -40,6 +41,7 @@ registerMetaNeuralReflexionSkill();
 registerFactorModelShadowSkill();
 registerStatArbShadowSkill();
 registerRlPolicyShadowSkills();
+registerRiskSimulationShadowSkills();
 
 // ── SSE 스트림 저장소 ──────────────────────────────────────────────
 const _streams: Map<string, ReturnType<typeof express.response.write>[]> = new Map();
