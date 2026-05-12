@@ -234,8 +234,10 @@ export function classifyEntryPrefilterWaitState({
   decisionDiagnostics = [],
 } = {}) {
   const normalizedMarket = String(market || '').trim();
-  if (normalizedMarket !== 'domestic' && normalizedMarket !== 'overseas') {
-    return { suppressBottleneck: false, observation: null, reason: 'not_stock_market' };
+  const isStockMarket = normalizedMarket === 'domestic' || normalizedMarket === 'overseas';
+  const isCryptoMarket = normalizedMarket === 'crypto';
+  if (!isStockMarket && !isCryptoMarket) {
+    return { suppressBottleneck: false, observation: null, reason: 'unsupported_market' };
   }
   if (
     !marketOpen
@@ -244,7 +246,6 @@ export function classifyEntryPrefilterWaitState({
     || number(likelyActionableCount) > 0
     || number(relaxedProbeCount) > 0
     || number(recentSignalCount) > 0
-    || number(activeTriggerCount) > 0
     || number(recentBuySignals) > 0
   ) {
     return { suppressBottleneck: false, observation: null, reason: 'not_entry_prefilter_wait' };
@@ -252,18 +253,37 @@ export function classifyEntryPrefilterWaitState({
   if ((requiredCoverageBottlenecks || []).length > 0) {
     return { suppressBottleneck: false, observation: null, reason: 'required_evidence_gap' };
   }
+  if (number(activeTriggerCount) > 0) {
+    return {
+      suppressBottleneck: true,
+      observation: isCryptoMarket
+        ? 'crypto_entry_trigger_active_waiting_fire'
+        : 'stock_entry_trigger_active_waiting_fire',
+      reason: 'active_entry_trigger_exists_waiting_fire',
+    };
+  }
 
   const diagnostics = (decisionDiagnostics || []).filter((item) => item?.actionability !== 'likely_actionable');
   if (diagnostics.length === 0) {
     return { suppressBottleneck: false, observation: null, reason: 'no_filtered_diagnostics' };
   }
 
-  const waitReasons = new Set([
-    'fusion_not_long',
-    'technical_not_confirmed',
-    'market_flow_not_confirmed',
-    'average_confidence_below_min',
-  ]);
+  const waitReasons = isCryptoMarket
+    ? new Set([
+        'fusion_not_long',
+        'technical_not_confirmed',
+        'onchain_not_confirmed',
+        'sentiment_not_confirmed',
+        'average_confidence_below_min',
+        'news_only_buy',
+        'conflict_detected',
+      ])
+    : new Set([
+        'fusion_not_long',
+        'technical_not_confirmed',
+        'market_flow_not_confirmed',
+        'average_confidence_below_min',
+      ]);
   const reasonCounts = {};
   const hardReasons = new Set();
   for (const item of diagnostics) {
@@ -284,8 +304,12 @@ export function classifyEntryPrefilterWaitState({
 
   return {
     suppressBottleneck: true,
-    observation: 'stock_entry_prefilter_market_condition_wait',
-    reason: 'analysis_complete_waiting_for_intraday_flow_or_fusion_confirmation',
+    observation: isCryptoMarket
+      ? 'crypto_entry_prefilter_market_condition_wait'
+      : 'stock_entry_prefilter_market_condition_wait',
+    reason: isCryptoMarket
+      ? 'analysis_complete_waiting_for_crypto_confirmation_or_fusion_alignment'
+      : 'analysis_complete_waiting_for_intraday_flow_or_fusion_confirmation',
     reasonCounts,
   };
 }

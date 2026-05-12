@@ -256,9 +256,14 @@ export async function runLunaDynamicTpSlSmoke() {
     ttlMinutes: 120,
     maxLlmCalls: 0,
   }, cappedDeps);
-  assert.equal(capped.rows[0].reason, 'llm_call_cap_reached');
+  assert.equal(capped.rows[0].reason, 'rule_only_shadow_written_no_llm');
+  assert.equal(capped.rows[0].written, true);
+  assert.equal(capped.rows[0].llmCalled, false);
+  assert.equal(capped.rows[0].match, false);
+  assert.equal(capped.rows[0].comparison.reason, 'rule_only_no_llm_comparison');
   assert.equal(capped.summary.llmCalls, 0);
-  assert.equal(cappedDeps.inserts.length, 0);
+  assert.equal(cappedDeps.inserts.length, 1);
+  assert.equal(cappedDeps.inserts[0].params[20], false);
 
   const freshDeps = fakeDeps({ existingShadow: true });
   const fresh = await runLunaDynamicTpSlShadow({

@@ -198,6 +198,24 @@ async function insertDynamicTpSlShadow(runFn, payload) {
   ));
 }
 
+function buildRuleOnlyShadowTpSl(ruleTpSl = {}) {
+  return {
+    tpPct: ruleTpSl.tpPct,
+    slPct: ruleTpSl.slPct,
+    takeProfit: ruleTpSl.takeProfit,
+    stopLoss: ruleTpSl.stopLoss,
+    rrRatio: ruleTpSl.rrRatio,
+    reasoning: 'deterministic rule-only shadow stored because max LLM calls is 0',
+    riskAssessment: {
+      riskLevel: 'medium',
+      mainRisk: 'llm_shadow_comparison_not_available',
+      source: 'rule_only_shadow',
+    },
+    shadowOnly: true,
+    source: 'rule_only_shadow',
+  };
+}
+
 function candidateFromTrigger(trigger = {}, exchange = 'binance') {
   const blockMeta = typeof trigger.trigger_meta === 'object' && trigger.trigger_meta
     ? trigger.trigger_meta
@@ -325,6 +343,48 @@ async function analyzeTrigger(trigger, options, deps, budget) {
       contextEvidence: positionContext,
       llmCalled: false,
       written: false,
+    };
+  }
+  if (Number(options.maxLlmCalls || 0) <= 0) {
+    const llmTpSl = buildRuleOnlyShadowTpSl(ruleTpSl);
+    const comparison = {
+      ...compareTpSl(ruleTpSl, llmTpSl),
+      match: false,
+      reason: 'rule_only_no_llm_comparison',
+    };
+    await insertDynamicTpSlShadow(runFn, {
+      triggerId: trigger.id,
+      symbol,
+      exchange,
+      market,
+      entryPrice: ruleTpSl.entryPrice,
+      side: ruleTpSl.side,
+      ruleTpSl,
+      llmTpSl,
+      contextEvidence: {
+        ...positionContext,
+        entryShadow: input.entryShadow,
+        regime: {
+          ruleRegime: regimeShadow?.rule_regime || null,
+          llmRegime: regimeShadow?.llm_regime || null,
+          capturedAt: regimeShadow?.captured_at || null,
+        },
+      },
+      match: false,
+    });
+    return {
+      triggerId: trigger.id,
+      symbol,
+      exchange,
+      market,
+      status: 'written',
+      reason: 'rule_only_shadow_written_no_llm',
+      ruleTpSl,
+      llmTpSl,
+      match: false,
+      comparison,
+      llmCalled: false,
+      written: true,
     };
   }
   if (budget.llmCalls >= options.maxLlmCalls) {

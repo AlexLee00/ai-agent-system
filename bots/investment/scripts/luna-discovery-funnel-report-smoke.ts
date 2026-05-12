@@ -348,6 +348,95 @@ export async function runLunaDiscoveryFunnelReportSmoke() {
       false,
       'required evidence gaps should remain repair candidates instead of market-condition waits',
     );
+    const cryptoMarketWait = classifyEntryPrefilterWaitState({
+      market: 'crypto',
+      marketOpen: true,
+      activeCandidateCount: 20,
+      recentSignalCount: 0,
+      activeTriggerCount: 0,
+      recentBuySignals: 0,
+      analysisCoveredCount: 20,
+      likelyActionableCount: 0,
+      relaxedProbeCount: 0,
+      requiredCoverageBottlenecks: [],
+      decisionDiagnostics: [
+        {
+          symbol: 'GTC/USDT',
+          actionability: 'filtered_before_signal',
+          reasons: ['fusion_not_long', 'technical_not_confirmed', 'onchain_not_confirmed'],
+        },
+        {
+          symbol: 'SOL/USDT',
+          actionability: 'filtered_before_signal',
+          reasons: ['fusion_not_long', 'conflict_detected', 'sentiment_not_confirmed', 'news_only_buy'],
+        },
+      ],
+    });
+    assert.equal(
+      cryptoMarketWait.suppressBottleneck,
+      true,
+      'fully covered crypto candidates with only confirmation/fusion waits should be market-condition observations',
+    );
+    assert.equal(cryptoMarketWait.observation, 'crypto_entry_prefilter_market_condition_wait');
+    assert.equal(
+      classifyEntryPrefilterWaitState({
+        market: 'crypto',
+        marketOpen: true,
+        activeCandidateCount: 20,
+        recentSignalCount: 0,
+        activeTriggerCount: 0,
+        recentBuySignals: 0,
+        analysisCoveredCount: 20,
+        likelyActionableCount: 0,
+        relaxedProbeCount: 0,
+        requiredCoverageBottlenecks: ['onchain_analysis_partial_for_candidates'],
+        decisionDiagnostics: [
+          { symbol: 'GTC/USDT', actionability: 'filtered_before_signal', reasons: ['onchain_not_confirmed'] },
+        ],
+      }).suppressBottleneck,
+      false,
+      'crypto required evidence gaps should remain repair candidates instead of market-condition waits',
+    );
+    assert.equal(
+      classifyEntryPrefilterWaitState({
+        market: 'crypto',
+        marketOpen: true,
+        activeCandidateCount: 20,
+        recentSignalCount: 0,
+        activeTriggerCount: 3,
+        recentBuySignals: 0,
+        analysisCoveredCount: 20,
+        likelyActionableCount: 0,
+        relaxedProbeCount: 0,
+        requiredCoverageBottlenecks: ['onchain_analysis_partial_for_candidates'],
+        decisionDiagnostics: [
+          { symbol: 'OSMO/USDT', actionability: 'filtered_before_signal', reasons: ['fusion_not_long'] },
+        ],
+      }).suppressBottleneck,
+      false,
+      'active crypto triggers must not hide required evidence gaps',
+    );
+    const cryptoActiveTriggerWait = classifyEntryPrefilterWaitState({
+      market: 'crypto',
+      marketOpen: true,
+      activeCandidateCount: 20,
+      recentSignalCount: 0,
+      activeTriggerCount: 3,
+      recentBuySignals: 0,
+      analysisCoveredCount: 20,
+      likelyActionableCount: 0,
+      relaxedProbeCount: 0,
+      requiredCoverageBottlenecks: [],
+      decisionDiagnostics: [
+        { symbol: 'OSMO/USDT', actionability: 'filtered_before_signal', reasons: ['fusion_not_long'] },
+      ],
+    });
+    assert.equal(
+      cryptoActiveTriggerWait.suppressBottleneck,
+      true,
+      'existing crypto entry triggers should suppress no-actionable-signal repair noise',
+    );
+    assert.equal(cryptoActiveTriggerWait.observation, 'crypto_entry_trigger_active_waiting_fire');
     assert.deepEqual(
       getRequiredAnalystsForMarket('domestic', { LUNA_STOCK_INTRADAY_ENRICHMENT_ENABLED: 'false' }),
       ['ta_mtf', 'market_flow'],
