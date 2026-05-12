@@ -947,6 +947,9 @@ function _attachQualitySummary(result, quality) {
     ...result,
     qualityPassed: quality?.passed,
     qualityScore: Number(quality?.score || (quality?.passed ? 8 : 5)),
+    seoScore: quality?.seo?.seoScore || null,
+    seoLevel: quality?.seo?.seoLevel || null,
+    gergDecision: quality?.gergDecision || null,
   };
 }
 
@@ -1789,7 +1792,14 @@ function _formatDailyResultLine(result) {
 }
 
 function _buildDailyGuideLine(result) {
-  return `${result.type === 'lecture' ? `[${result.number}강]` : `[${result.category}]`} ${_buildRewriteGuide(result.aiRisk)}`;
+  const prefix = result.type === 'lecture' ? `[${result.number}강]` : `[${result.category}]`;
+  const seoNote = result.seoScore != null
+    ? ` | SEO: ${result.seoScore}점(${result.seoLevel || '?'})`
+    : '';
+  const gergNote = result.gergDecision && result.gergDecision !== 'PASS'
+    ? ` | G-E-RG: ${result.gergDecision}`
+    : '';
+  return `${prefix} ${_buildRewriteGuide(result.aiRisk)}${seoNote}${gergNote}`;
 }
 
 function _compactPreviewTitle(title = '', maxLength = 42) {
@@ -2149,6 +2159,16 @@ async function _runPostPublishChecks(options = {}) {
     await dailyCurriculumCheck().catch(e =>
       console.warn('[블로] 커리큘럼 체크 실패 (무시):', e.message)
     );
+    // 마스터 편집 분석 (발행 + 1일 diff → 스타일 학습)
+    try {
+      const { runDailyMasterEditAnalysis } = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/master-edit-analyzer.ts'));
+      const analysisResult = await runDailyMasterEditAnalysis({ days: 2 });
+      if (analysisResult.analyzed > 0) {
+        console.log(`[블로] 마스터 편집 분석: ${analysisResult.analyzed}건 완료`);
+      }
+    } catch (e) {
+      console.warn('[블로] 마스터 편집 분석 실패 (무시):', e.message);
+    }
     return;
   }
   console.log('[블로][dry-run] 커리큘럼 체크 생략');

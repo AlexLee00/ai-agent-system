@@ -621,10 +621,53 @@ async function checkQualityWithCritic(content, type, options = {}) {
   };
 }
 
+// ─── G-E-RG 7-Agent 통합 검증 ─────────────────────────────────────────────────
+
+/**
+ * 기존 checkQualityWithCritic + 신규 7-Agent G-E-RG 통합
+ * options.skipGERG = true 로 기존 5-Round만 실행 가능
+ */
+async function checkQualityFull(content, type, options = {}) {
+  const [base, gerg] = await Promise.allSettled([
+    checkQualityWithCritic(content, type, options),
+    options.skipGERG
+      ? Promise.resolve(null)
+      : (async () => {
+          const { runGERGEvaluation } = require('./quality-agents.ts');
+          return runGERGEvaluation(content, { title: options.title, persona: options.persona });
+        })(),
+  ]);
+
+  const baseResult = base.status === 'fulfilled' ? base.value : await checkQuality(content, type);
+  const gergResult = gerg.status === 'fulfilled' ? gerg.value : null;
+
+  const allIssues = [...(baseResult.issues || [])];
+  if (gergResult) {
+    for (const issue of gergResult.topIssues || []) {
+      if (!allIssues.some((i) => i.msg === issue)) {
+        allIssues.push({ severity: 'warn', msg: issue });
+      }
+    }
+    if (gergResult.decision === 'REJECT') {
+      allIssues.push({ severity: 'error', msg: `G-E-RG 7-Agent 거부: ${gergResult.final?.summary || ''}` });
+    }
+  }
+
+  return {
+    ...baseResult,
+    issues: allIssues,
+    passed: !allIssues.some((i) => i.severity === 'error'),
+    gerg: gergResult,
+    gergDecision: gergResult?.decision || null,
+    gergScore: gergResult?.score || null,
+  };
+}
+
 module.exports = {
   checkQuality,
   checkQualityEnhanced,
   checkQualityWithCritic,
+  checkQualityFull,
   checkAIDetectionRisk,
   scoreSEO,
   checkDuplicate30d,
