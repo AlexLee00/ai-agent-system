@@ -1,4 +1,5 @@
 // @ts-nocheck
+import { selectOpenJournalEntryForSell } from './open-journal-entry-resolver.ts';
 /**
  * Trade notification and journal settlement helpers for Hephaestos.
  *
@@ -32,24 +33,6 @@ export function createTelegramTradeAlerts(context = {}) {
     return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
   }
 
-  function resolveOpenJournalEntry(openEntries, symbol, isPaper, tradeMode) {
-    const exact = openEntries.find(e =>
-      e.symbol === symbol
-        && Boolean(e.is_paper) === Boolean(isPaper)
-        && (e.trade_mode || 'normal') === tradeMode
-    );
-    if (exact) return exact;
-
-    const sameLiveScope = openEntries.filter(e =>
-      e.symbol === symbol
-        && Boolean(e.is_paper) === Boolean(isPaper)
-    );
-    if (!isPaper && sameLiveScope.length === 1) {
-      return sameLiveScope[0];
-    }
-    return null;
-  }
-
   function getJournalDustToleranceUsdt() {
     const configured = Number(process.env.LUNA_JOURNAL_DUST_TOLERANCE_USDT);
     return Number.isFinite(configured) && configured >= 0 ? configured : 1;
@@ -68,14 +51,15 @@ export function createTelegramTradeAlerts(context = {}) {
     return remainingEntryValue <= getJournalDustToleranceUsdt();
   }
 
-  async function closeOpenJournalForSymbol(
-    symbol,
-    isPaper,
-    exitPrice,
-    exitValue,
-    exitReason,
-    tradeMode = null,
+  async function closeResolvedJournalEntry(
+    entry,
     {
+      symbol,
+      isPaper,
+      exitPrice,
+      exitValue,
+      exitReason,
+      tradeMode = null,
       exitTime = null,
       executionOrigin = null,
       qualityFlag = null,
@@ -83,11 +67,6 @@ export function createTelegramTradeAlerts(context = {}) {
       incidentLink = null,
     } = {},
   ) {
-    const openEntries = await journalDb.getOpenJournalEntries('crypto');
-    const effectiveTradeMode = tradeMode || getInvestmentTradeMode();
-    const entry = resolveOpenJournalEntry(openEntries, symbol, isPaper, effectiveTradeMode);
-    if (!entry) return;
-
     const pnlAmount = (exitValue || 0) - (entry.entry_value || 0);
     const pnlPercent = entry.entry_value > 0
       ? journalDb.ratioToPercent(pnlAmount / entry.entry_value)
@@ -125,7 +104,7 @@ export function createTelegramTradeAlerts(context = {}) {
       side: 'buy',
       market: 'crypto',
       exchange: 'binance',
-      tradeMode: tradeMode || getInvestmentTradeMode(),
+      tradeMode: entry.trade_mode || tradeMode || getInvestmentTradeMode(),
       entryPrice: entry.entry_price,
       exitPrice,
       pnl: pnlAmount,
@@ -143,6 +122,50 @@ export function createTelegramTradeAlerts(context = {}) {
       qualityFlag,
       incidentLink,
     }).catch(() => {});
+    return { updated: true, tradeId: entry.trade_id };
+  }
+
+  async function closeOpenJournalForSymbol(
+    symbol,
+    isPaper,
+    exitPrice,
+    exitValue,
+    exitReason,
+    tradeMode = null,
+    {
+      exitTime = null,
+      executionOrigin = null,
+      qualityFlag = null,
+      excludeFromLearning = null,
+      incidentLink = null,
+    } = {},
+  ) {
+    const openEntries = await journalDb.getOpenJournalEntries('crypto');
+    const effectiveTradeMode = tradeMode || getInvestmentTradeMode();
+    const selection = selectOpenJournalEntryForSell(openEntries, {
+      symbol,
+      isPaper,
+      tradeMode: effectiveTradeMode,
+      allowCrossModeSingleLive: true,
+      allowCrossModeAmountMatch: false,
+    });
+    if (!selection.entry) {
+      return { updated: false, reason: selection.reason, candidates: selection.candidates };
+    }
+
+    return closeResolvedJournalEntry(selection.entry, {
+      symbol,
+      isPaper,
+      exitPrice,
+      exitValue,
+      exitReason,
+      tradeMode: effectiveTradeMode,
+      exitTime,
+      executionOrigin,
+      qualityFlag,
+      excludeFromLearning,
+      incidentLink,
+    });
   }
 
   async function settleOpenJournalForSell(
@@ -165,8 +188,23 @@ export function createTelegramTradeAlerts(context = {}) {
   ) {
     const openEntries = await journalDb.getOpenJournalEntries('crypto');
     const effectiveTradeMode = tradeMode || getInvestmentTradeMode();
-    const entry = resolveOpenJournalEntry(openEntries, symbol, isPaper, effectiveTradeMode);
-    if (!entry) return { partial: false, updated: false };
+    const selection = selectOpenJournalEntryForSell(openEntries, {
+      symbol,
+      isPaper,
+      tradeMode: effectiveTradeMode,
+      soldAmount,
+      allowCrossModeSingleLive: true,
+      allowCrossModeAmountMatch: true,
+    });
+    const entry = selection.entry;
+    if (!entry) {
+      return {
+        partial: false,
+        updated: false,
+        reason: selection.reason,
+        candidates: selection.candidates,
+      };
+    }
 
     const normalizedRatio = normalizePartialExitRatio(partialExitRatio);
     const entrySize = Number(entry.entry_size || 0);
@@ -184,14 +222,20 @@ export function createTelegramTradeAlerts(context = {}) {
     });
 
     if (!isPartial) {
-      await closeOpenJournalForSymbol(symbol, isPaper, exitPrice, exitValue, exitReason, effectiveTradeMode, {
+      await closeResolvedJournalEntry(entry, {
+        symbol,
+        isPaper,
+        exitPrice,
+        exitValue,
+        exitReason,
+        tradeMode: effectiveTradeMode,
         exitTime,
         executionOrigin,
         qualityFlag,
         excludeFromLearning,
         incidentLink,
       });
-      return { partial: false, updated: true };
+      return { partial: false, updated: true, tradeId: entry.trade_id, matchType: selection.matchType };
     }
 
     const realizedEntryValue = entrySize > 0
@@ -267,6 +311,8 @@ export function createTelegramTradeAlerts(context = {}) {
     return {
       partial: true,
       updated: true,
+      tradeId: entry.trade_id,
+      matchType: selection.matchType,
       realizedTradeId: partialTradeId,
       remainingSize,
       remainingEntryValue,
@@ -329,6 +375,13 @@ export function createTelegramTradeAlerts(context = {}) {
         exclude_from_learning: excludeFromLearning,
         incident_link: trade.incidentLink || null,
       });
+      const persisted = await journalDb.getJournalEntryByTradeId(tradeId).catch(() => null);
+      if (!persisted) {
+        const err = new Error(`journal_insert_missing_after_buy:${trade.symbol}:${effectiveTradeMode}`);
+        err.code = 'journal_insert_missing_after_buy';
+        err.meta = { tradeId, symbol: trade.symbol, tradeMode: effectiveTradeMode, signalId };
+        throw err;
+      }
       await journalDb.linkRationaleToTrade(tradeId, signalId);
       const suppressUserFacingAlert = excludeFromLearning
         && ['reconciliation', 'cleanup'].includes(String(executionOrigin || '').toLowerCase());
@@ -350,7 +403,7 @@ export function createTelegramTradeAlerts(context = {}) {
     }
 
     if (trade.side === 'sell') {
-      await settleOpenJournalForSell(
+      const settlement = await settleOpenJournalForSell(
         trade.symbol,
         trade.paper,
         trade.price,
@@ -368,6 +421,20 @@ export function createTelegramTradeAlerts(context = {}) {
           incidentLink: trade.incidentLink || null,
         },
       );
+      if (!settlement?.updated) {
+        const err = new Error(`journal_settlement_missing_for_sell:${trade.symbol}:${trade.tradeMode || getInvestmentTradeMode()}`);
+        err.code = 'journal_settlement_missing_for_sell';
+        err.meta = {
+          symbol: trade.symbol,
+          tradeMode: trade.tradeMode || getInvestmentTradeMode(),
+          signalId,
+          reason: settlement?.reason || 'unknown',
+          candidates: settlement?.candidates || [],
+          soldAmount: trade.amount,
+          totalUsdt: trade.totalUsdt,
+        };
+        throw err;
+      }
     }
   }
 
@@ -399,6 +466,18 @@ export function createTelegramTradeAlerts(context = {}) {
       await recordExecutedTradeJournal({ trade, signalId, exitReason });
     } catch (journalErr) {
       console.warn(`  ⚠️ 매매일지 기록 실패: ${journalErr.message}`);
+      await db.updateSignalBlock(signalId, {
+        reason: String(journalErr.message || 'execution journal write failed').slice(0, 180),
+        code: journalErr?.code || 'execution_journal_write_failed',
+        meta: {
+          exchange: trade.exchange || 'binance',
+          symbol: trade.symbol,
+          side: trade.side,
+          tradeMode: trade.tradeMode || signalTradeMode,
+          journalError: String(journalErr.message || journalErr).slice(0, 240),
+          ...(journalErr?.meta || {}),
+        },
+      }).catch(() => {});
     }
 
     if (

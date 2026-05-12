@@ -6,9 +6,13 @@ import { createPortfolioPositionDelta } from '../team/hephaestos/portfolio-posit
 
 const calls = [];
 
-function buildDelta({ marketSellResult = null, assetBalances = { totalBalance: 0, freeBalance: 0 } } = {}) {
+function buildDelta({
+  marketSellResult = null,
+  assetBalances = { totalBalance: 0, freeBalance: 0 },
+  openJournalEntries = null,
+} = {}) {
   calls.length = 0;
-  const journalEntries = [
+  const journalEntries = openJournalEntries || [
     {
       trade_id: 'TRD-1',
       symbol: 'ORCA/USDT',
@@ -32,11 +36,14 @@ function buildDelta({ marketSellResult = null, assetBalances = { totalBalance: 0
     },
     getInvestmentTradeMode: () => 'normal',
     fetchAssetBalances: async () => assetBalances,
-    marketSell: async () => marketSellResult || {
+    marketSell: async (...args) => {
+      calls.push(['marketSell', ...args]);
+      return marketSellResult || {
       filled: 4,
       price: 12,
       cost: 48,
       status: 'closed',
+      };
     },
     buildDeterministicClientOrderId: () => 'ln_s_normal_orca_smoke',
     normalizePartialExitRatio: (value) => {
@@ -112,6 +119,22 @@ assert.equal(fullTrade.partialExit, false);
 assert.ok(calls.some((item) => item[0] === 'deletePosition'));
 assert.ok(calls.some((item) => item[0] === 'convertDust'));
 
+const missingJournalDelta = buildDelta({ openJournalEntries: [] });
+await assert.rejects(
+  missingJournalDelta.executeSellTrade({
+    signalId: 'sig-missing-journal',
+    symbol: 'ORCA/USDT',
+    amount: 10,
+    sellPaperMode: false,
+    effectivePositionTradeMode: 'normal',
+    position: { amount: 10, avg_price: 8, unrealized_pnl: 20 },
+    sourcePositionAmount: 10,
+    partialExitRatio: 1,
+  }),
+  (error) => error?.code === 'journal_open_entry_missing_for_sell',
+);
+assert.equal(calls.some((item) => item[0] === 'marketSell'), false);
+
 const payload = {
   ok: true,
   smoke: 'hephaestos-portfolio-position-delta',
@@ -120,6 +143,7 @@ const payload = {
   buyManagedAmount: buyUpsert[1].amount,
   partialRemaining: partialTrade.remainingAmount,
   fullSellPartial: fullTrade.partialExit,
+  missingJournalBlockedBeforeSell: true,
 };
 
 if (process.argv.includes('--json')) {

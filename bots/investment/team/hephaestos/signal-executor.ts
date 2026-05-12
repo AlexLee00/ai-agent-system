@@ -1,6 +1,7 @@
 // @ts-nocheck
 
 import { extractExecutionTimestampMs } from '../../shared/binance-order-execution-normalizer.ts';
+import { recordPositionLifecycleStageEvent } from '../../shared/lifecycle-contract.ts';
 
 export function isHephaestosHotPathPrefetchEnabled(env = process.env) {
   const raw = String(env?.HEPHAESTOS_HOT_PATH_PREFETCH_ENABLED || '').trim().toLowerCase();
@@ -73,6 +74,35 @@ export function createHephaestosSignalExecutor(deps = {}) {
     binanceExecutionReconcileHandler,
     notifyError,
   } = deps;
+
+async function recordHephaestosLifecycleStage({
+  symbol,
+  signalId,
+  signalTradeMode,
+  stageId,
+  eventType = 'completed',
+  inputSnapshot = {},
+  outputSnapshot = {},
+  policySnapshot = {},
+  evidenceSnapshot = {},
+}) {
+  return recordPositionLifecycleStageEvent({
+    symbol,
+    exchange: 'binance',
+    tradeMode: signalTradeMode || getInvestmentTradeMode(),
+    stageId,
+    ownerAgent: 'hephaestos',
+    eventType,
+    inputSnapshot,
+    outputSnapshot,
+    policySnapshot,
+    evidenceSnapshot,
+    idempotencyKey: signalId ? `hephaestos:${signalId}:${stageId}` : null,
+  }).catch((error) => {
+    console.warn(`  ⚠️ [lifecycle] ${symbol} ${stageId} 기록 실패: ${error.message}`);
+    return null;
+  });
+}
 
 async function executeSignal(signal) {
   const hephaestosRoleStatePromise = isHephaestosHotPathPrefetchEnabled()
@@ -349,6 +379,29 @@ async function executeSignal(signal) {
             scope: signalTradeMode || 'main',
           })
         : null;
+      await recordHephaestosLifecycleStage({
+        symbol,
+        signalId,
+        signalTradeMode,
+        stageId: 'stage_3',
+        eventType: 'completed',
+        inputSnapshot: {
+          action,
+          requestedAmountUsdt: Number(amountUsdt || 0),
+          actualAmountUsdt: Number(actualAmount || 0),
+          paper: effectivePaperMode,
+        },
+        policySnapshot: {
+          capitalPolicy,
+          minOrderUsdt,
+          softGuards: combinedSoftGuards,
+          responsibilityExecutionMultiplier: responsibilitySizing.multiplier,
+        },
+        evidenceSnapshot: {
+          executionClientOrderId,
+          riskApproval: 'passed',
+        },
+      });
       const order = await marketBuy(symbol, actualAmount, effectivePaperMode, {
         clientOrderId: executionClientOrderId,
         submittedAtMs: executionSubmittedAtMs,
@@ -390,6 +443,30 @@ async function executeSignal(signal) {
         executionMission: executionMeta?.agentRole?.mission || null,
         updatedBy: 'hephaestos_buy_execute',
       });
+      await recordHephaestosLifecycleStage({
+        symbol,
+        signalId,
+        signalTradeMode,
+        stageId: 'stage_4',
+        eventType: 'completed',
+        inputSnapshot: {
+          action,
+          orderSubmittedAtMs: executionSubmittedAtMs,
+          clientOrderId: executionClientOrderId,
+        },
+        outputSnapshot: {
+          side: trade.side,
+          amount: trade.amount,
+          price: trade.price,
+          totalUsdt: trade.totalUsdt,
+          paper: trade.paper,
+          tradeMode: trade.tradeMode,
+        },
+        evidenceSnapshot: {
+          executionAttachTracked: !effectivePaperMode,
+          lifecycleStatus: 'position_open',
+        },
+      });
       await applyBuyProtectiveExit({ trade, signal, order, effectivePaperMode, symbol });
 
     } else if (action === ACTIONS.SELL) {
@@ -428,6 +505,29 @@ async function executeSignal(signal) {
         sourcePositionAmount: sellAmountState.sourcePositionAmount,
         partialExitRatio: sellAmountState.partialExitRatio,
         qualityContext,
+      });
+      await recordHephaestosLifecycleStage({
+        symbol,
+        signalId,
+        signalTradeMode: sellContext.effectivePositionTradeMode || signalTradeMode,
+        stageId: 'stage_6',
+        eventType: trade.partialExit ? 'partial_adjust' : 'full_exit',
+        inputSnapshot: {
+          action,
+          requestedAmount: sellAmountState.amount,
+          partialExitRatio: sellAmountState.partialExitRatio,
+        },
+        outputSnapshot: {
+          side: trade.side,
+          amount: trade.amount,
+          price: trade.price,
+          totalUsdt: trade.totalUsdt,
+          partialExit: trade.partialExit,
+          remainingAmount: trade.remainingAmount,
+        },
+        evidenceSnapshot: {
+          journalCompleteness: 'prechecked',
+        },
       });
 
     } else {
@@ -469,8 +569,12 @@ async function executeSignal(signal) {
     }
     const pendingSourceError = pendingHandling?.error || e;
     console.error(`  ❌ 실행 오류: ${pendingSourceError.message}`);
-    const failureCode = pendingSourceError?.code === 'sell_amount_below_minimum'
-      ? 'sell_amount_below_minimum'
+    const failureCode = [
+      'sell_amount_below_minimum',
+      'journal_open_entry_missing_for_sell',
+      'journal_open_entry_ambiguous_for_sell',
+    ].includes(pendingSourceError?.code)
+      ? pendingSourceError.code
       : 'broker_execution_error';
     await persistFailure(pendingSourceError.message, {
       code: failureCode,

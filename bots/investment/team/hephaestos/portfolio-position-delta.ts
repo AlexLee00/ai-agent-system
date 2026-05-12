@@ -1,6 +1,7 @@
 // @ts-nocheck
 
 import { extractExecutionTimestampMs } from '../../shared/binance-order-execution-normalizer.ts';
+import { selectOpenJournalEntryForSell } from './open-journal-entry-resolver.ts';
 /**
  * Portfolio/position delta helpers for Hephaestos.
  *
@@ -84,6 +85,58 @@ export function createPortfolioPositionDelta(context = {}) {
     };
   }
 
+  function buildSellJournalCompletenessError(selection, {
+    symbol,
+    sellPaperMode,
+    effectivePositionTradeMode,
+    amount,
+    signalId,
+  }) {
+    const reason = selection?.reason || 'missing_open_journal_for_sell';
+    const err = new Error(`SELL journal completeness blocked: ${symbol} ${effectivePositionTradeMode || 'normal'} (${reason})`);
+    err.code = reason?.startsWith('ambiguous')
+      ? 'journal_open_entry_ambiguous_for_sell'
+      : 'journal_open_entry_missing_for_sell';
+    err.meta = {
+      symbol,
+      tradeMode: effectivePositionTradeMode || 'normal',
+      paper: Boolean(sellPaperMode),
+      requestedAmount: Number(amount || 0),
+      signalId,
+      reason,
+      candidates: selection?.candidates || [],
+    };
+    return err;
+  }
+
+  async function assertSellJournalCompleteness({
+    signalId,
+    symbol,
+    amount,
+    sellPaperMode,
+    effectivePositionTradeMode,
+  }) {
+    const openEntries = await journalDb.getOpenJournalEntries('crypto');
+    const selection = selectOpenJournalEntryForSell(openEntries, {
+      symbol,
+      isPaper: sellPaperMode,
+      tradeMode: effectivePositionTradeMode || getInvestmentTradeMode(),
+      soldAmount: amount,
+      allowCrossModeSingleLive: false,
+      allowCrossModeAmountMatch: false,
+    });
+    if (!selection.entry) {
+      throw buildSellJournalCompletenessError(selection, {
+        symbol,
+        sellPaperMode,
+        effectivePositionTradeMode,
+        amount,
+        signalId,
+      });
+    }
+    return selection;
+  }
+
   async function persistBuyPosition({ symbol, order, effectivePaperMode, signalTradeMode }) {
     let managedAmount = Number(order.filled || 0);
     let managedAvgPrice = Number(order.price || 0);
@@ -146,6 +199,14 @@ export function createPortfolioPositionDelta(context = {}) {
     partialExitRatio = null,
     qualityContext = null,
   }) {
+    await assertSellJournalCompleteness({
+      signalId,
+      symbol,
+      amount,
+      sellPaperMode,
+      effectivePositionTradeMode,
+    });
+
     const sellSubmittedAtMs = Date.now();
     const sellClientOrderId = !sellPaperMode
       ? buildDeterministicClientOrderId({

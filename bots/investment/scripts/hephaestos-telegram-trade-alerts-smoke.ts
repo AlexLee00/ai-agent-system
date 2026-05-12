@@ -32,6 +32,10 @@ function buildAlerts({
       getReviewByTradeId: async () => ({ max_favorable: 7, max_adverse: -2, signal_accuracy: 0.8, execution_speed: 0.9 }),
       generateTradeId: async () => `TRD-${++tradeIdSeq}`,
       insertJournalEntry: async (entry) => calls.push(['insertJournalEntry', entry]),
+      getJournalEntryByTradeId: async (tradeId) => {
+        const inserted = calls.find((item) => item[0] === 'insertJournalEntry' && item[1]?.trade_id === tradeId);
+        return inserted?.[1] || null;
+      },
       linkRationaleToTrade: async (...args) => calls.push(['linkRationaleToTrade', ...args]),
     },
     notifySettlement: async (payload) => calls.push(['notifySettlement', payload]),
@@ -107,6 +111,24 @@ const unifiedScopeAlerts = buildAlerts({ openEntries: [validationOpenEntry] });
 await unifiedScopeAlerts.settleOpenJournalForSell('BTC/USDT', false, 80000, 50, 'target', 'normal', {
   soldAmount: 0.0006,
 });
+assert.equal(calls.find((item) => item[0] === 'closeJournalEntry')?.[1], 'OPEN-VALIDATION-1');
+
+const multiModeAmountMatchAlerts = buildAlerts({
+  openEntries: [
+    validationOpenEntry,
+    {
+      ...validationOpenEntry,
+      trade_id: 'OPEN-VALIDATION-2',
+      entry_size: 0.00062,
+      entry_value: 49,
+    },
+  ],
+});
+const multiModeSettlement = await multiModeAmountMatchAlerts.settleOpenJournalForSell('BTC/USDT', false, 81254, 49.5, 'target', 'normal', {
+  soldAmount: 0.0006,
+});
+assert.equal(multiModeSettlement.updated, true);
+assert.equal(multiModeSettlement.matchType, 'cross_trade_mode_amount');
 assert.equal(calls.find((item) => item[0] === 'closeJournalEntry')?.[1], 'OPEN-VALIDATION-1');
 
 const feeDustOpenEntry = {
@@ -189,6 +211,7 @@ const payload = {
   buyJournalStrategy: buyEntry.strategy_family,
   buyJournalTradeMode: buyEntry.trade_mode,
   unifiedLiveScopeClosed: true,
+  multiModeAmountMatched: true,
   feeDustClosedAsFull: true,
   intentionalPartialRecorded: true,
   cleanupSuppressed: true,
