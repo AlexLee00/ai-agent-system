@@ -73,6 +73,7 @@ export function createHephaestosSignalExecutor(deps = {}) {
     finalizeExecutedTrade,
     binanceExecutionReconcileHandler,
     notifyError,
+    recordPositionLifecycleStageEvent: recordLifecycleStageEvent = recordPositionLifecycleStageEvent,
   } = deps;
 
 async function recordHephaestosLifecycleStage({
@@ -86,7 +87,7 @@ async function recordHephaestosLifecycleStage({
   policySnapshot = {},
   evidenceSnapshot = {},
 }) {
-  return recordPositionLifecycleStageEvent({
+  return recordLifecycleStageEvent({
     symbol,
     exchange: 'binance',
     tradeMode: signalTradeMode || getInvestmentTradeMode(),
