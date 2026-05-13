@@ -46,7 +46,7 @@ interface AladinBook {
 interface RankedBook extends AladinBook {
   category_name_local: string;
   final_score: number;
-  recency_months: number;
+  recencyMonths: number;
 }
 
 /**
