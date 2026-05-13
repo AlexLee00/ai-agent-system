@@ -1,3 +1,34 @@
+# 세션 인수인계 — 2026-05-14 (Blog V3 Week2 H영역 — bestseller→trend_topics 갭 수정)
+
+## 완료 요약 ✅ (CODEX_BLOG_V3_UNIFIED_MASTER — Week 2 H영역 마무리)
+
+### H영역 핵심 갭 수정 완료
+
+**배경**: V3 통합 마스터 코덱스(Week 2 H영역)에서 `topic-selector.ts`가 `blog.trend_topics WHERE source='bestseller'`를 조회하도록 설계돼 있었으나, `run-bestseller-sync.ts`가 `book_review_queue`에만 저장하고 `trend_topics`에는 저장하지 않는 갭이 존재했음.
+
+**수정 내용**:
+- `bots/blog/scripts/run-bestseller-sync.ts` — `runBestsellerFetch()` 후 베스트셀러 도서를 `blog.trend_topics(source='bestseller')`에도 저장하는 `saveBooksAsTrendTopics()` 추가
+- `bots/blog/lib/bestseller-fetcher.ts` — `RankedBook` 인터페이스 `recency_months` → `recencyMonths` 불일치 정리
+
+**커밋**: `0031868c` — `feat(blog): V3 Week2 H영역 — bestseller-sync → trend_topics 통합 완성`
+
+**Goal-Driven 5/5 검증 결과**:
+1. ✅ Reddit 트렌드 추출 — `reddit_trend_analyzer.py` (PRAW + Hub LLM Gateway) 완전 구현
+2. ✅ 베스트셀러 동기화 — dry-run 동작 확인, API 키만 OPS 설정 필요
+3. ✅ 통합 토픽 선정 — `topic-selector.ts::fetchTrendTopicCandidates()` Redis/베스트셀러 모두 조회 가능
+4. ✅ 매일 자동 — `ai.blog.reddit-trends` (06:00) + `ai.blog.bestseller-sync` (월 07:00) launchd 로드됨
+5. ✅ Hub LLM Gateway 통과 — Python/TS 모두 Hub 경유
+
+**H영역 최종 상태**: ✅ 100% 완료
+
+**다음 단계**:
+1. OPS에서 `REDDIT_CLIENT_ID` / `REDDIT_CLIENT_SECRET` secrets-store.json 추가 (미설정 시)
+2. OPS에서 `ALADIN_TTB_KEY` secrets-store.json 추가 (미설정 시)
+3. Week 3 I영역 진행 (naver-home-feed-optimizer 8 노출 채널 + crank-score-tracker)
+4. Week 4 J영역 진행 (humanize-agent AuthorMist 통합)
+
+---
+
 # 세션 인수인계 — 2026-05-13 (CODEX_LIVEVIEW_DASHBOARD_PHASE_A — Phoenix LiveView 첫 가동)
 
 ## 완료 요약 ✅ (Phase A — 영역 1+3+4)
