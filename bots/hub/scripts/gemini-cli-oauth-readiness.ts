@@ -93,8 +93,8 @@ async function runLiveProbe() {
   if (readinessModel) process.env.LLM_GEMINI_FLASH_MODEL = readinessModel;
   const { callWithFallback } = await import('../lib/llm/unified-caller.ts');
   return callWithFallback({
-    callerTeam: 'orchestrator',
-    agent: 'steward',
+    callerTeam: 'hub',
+    agent: 'gemini-cli-readiness',
     selectorKey: 'hub.gemini.cli.readiness.live',
     systemPrompt: 'You are a readiness probe. Do not reveal secrets.',
     prompt: 'Reply exactly: gemini cli ok',

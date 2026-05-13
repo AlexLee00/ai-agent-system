@@ -135,6 +135,7 @@ export function registerHubRoutes(app: Express, opts: HubRouteOptions): void {
     llmAdmissionMiddleware,
   } = opts;
 
+  app.get('/healthz', generalLimiter, healthRoute);
   app.get('/hub/health', generalLimiter, healthRoute);
   app.get('/hub/health/live', generalLimiter, (_req: Request, res: Response) => {
     const shuttingDown = isShuttingDown();
