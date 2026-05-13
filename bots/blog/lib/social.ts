@@ -1,4 +1,6 @@
 'use strict';
+const path = require('path');
+const env = require('../../../packages/core/lib/env');
 const kst = require('../../../packages/core/lib/kst');
 const { callHubLlm } = require('../../../packages/core/lib/hub-client');
 
@@ -13,11 +15,9 @@ const { callHubLlm } = require('../../../packages/core/lib/hub-client');
  * 비용: gpt-4o-mini(N40/N42) 유료(저렴), Nano Banana(N41) 무료 → OpenAI High 폴백 유료
  */
 
-const { generateInstaCard } = require('./img-gen.ts');
+const { generateInstaCard } = require(path.join(env.PROJECT_ROOT, 'bots/social-media/image-gen/lib/img-gen.ts'));
 const { loadStrategyBundle, normalizeExecutionDirectives } = require('./strategy-loader.ts');
-const env = require('../../../packages/core/lib/env');
 const fs = require('fs');
-const path = require('path');
 
 const INSTA_DIR = path.join(env.PROJECT_ROOT, 'bots', 'blog', 'output', 'images', 'insta');
 const GDRIVE_DIR = process.env.GDRIVE_BLOG_INSTA || '/tmp/blog-insta';

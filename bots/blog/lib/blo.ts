@@ -18,8 +18,8 @@ const path                                          = require('path');
 const env                                           = require('../../../packages/core/lib/env');
 const kst                                           = require('../../../packages/core/lib/kst');
 const maestro                                       = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/maestro.ts'));
-const { generatePostImages }                        = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/img-gen.ts'));
-const { createInstaContent }                        = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/star.ts'));
+const { generatePostImages }                        = require(path.join(env.PROJECT_ROOT, 'bots/social-media/image-gen/lib/img-gen.ts'));
+const { createInstaContent }                        = require(path.join(env.PROJECT_ROOT, 'bots/social-media/instagram/lib/star.ts'));
 const { getConfig }                                 = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/daily-config.ts'));
 const {
   GENERAL_CATEGORIES,
@@ -81,13 +81,13 @@ const {
 const { ensureBlogCoreSchema }                      = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/schema.ts'));
 const { checkQualityEnhanced }                      = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/quality-checker.ts'));
 const { publishToFile, recordPerformance }          = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/publ.ts'));
-const { crosspostToInstagram }                      = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/insta-crosspost.ts'));
+const { crosspostToInstagram }                      = require(path.join(env.PROJECT_ROOT, 'bots/social-media/instagram/lib/insta-crosspost.ts'));
 const { hasRemainingPublishQuota }                  = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/platform-orchestrator.ts'));
 const {
   diagnoseImageGeneration,
   reportImageGenFailure,
   reportImageDiagnosis,
-}                                                   = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/img-gen-doctor.ts'));
+}                                                   = require(path.join(env.PROJECT_ROOT, 'bots/social-media/image-gen/lib/img-gen-doctor.ts'));
 const { buildDailyReportContract }                  = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/report-contract.ts'));
 const pgPool                                        = require('../../../packages/core/lib/pg-pool');
 const rag                                           = require('../../../packages/core/lib/rag-safe');

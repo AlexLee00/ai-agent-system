@@ -2,7 +2,7 @@
 
 const path = require('path');
 const env = require('../../../packages/core/lib/env');
-const { loadStrategyBundle, normalizeExecutionDirectives } = require('./strategy-loader.ts');
+const { loadStrategyBundle, normalizeExecutionDirectives } = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/strategy-loader.ts'));
 
 const SHORTFORM_MIN_DURATION_SEC = 15;
 const SHORTFORM_MAX_DURATION_SEC = 20;

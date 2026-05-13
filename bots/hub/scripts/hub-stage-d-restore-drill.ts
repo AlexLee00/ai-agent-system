@@ -1,0 +1,104 @@
+#!/usr/bin/env tsx
+
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
+const { spawnSync } = require('node:child_process');
+
+const CONFIRM = 'hub-stage-d-restore-drill';
+const DEFAULT_BACKUP_DIR = path.join(os.homedir(), 'backups', 'hub');
+
+function hasFlag(flag: string): boolean {
+  return process.argv.includes(flag);
+}
+
+function argValue(name: string): string | null {
+  const prefix = `${name}=`;
+  const raw = process.argv.find((arg) => arg.startsWith(prefix));
+  return raw ? raw.slice(prefix.length) : null;
+}
+
+function run(command: string, args: string[]) {
+  const result = spawnSync(command, args, { encoding: 'utf8', timeout: 120_000 });
+  return {
+    ok: result.status === 0,
+    status: result.status,
+    command: [command, ...args].join(' '),
+    stdout: String(result.stdout || '').slice(0, 2_000),
+    stderr: String(result.stderr || '').slice(0, 2_000),
+  };
+}
+
+function latestManifest(backupDir: string): string | null {
+  if (!fs.existsSync(backupDir)) return null;
+  const candidates = fs.readdirSync(backupDir)
+    .map((name: string) => path.join(backupDir, name, 'manifest.json'))
+    .filter((filePath: string) => fs.existsSync(filePath))
+    .sort();
+  return candidates.pop() || null;
+}
+
+async function main(): Promise<void> {
+  const apply = hasFlag('--apply');
+  const confirm = argValue('--confirm');
+  const backupDir = argValue('--backup-dir') || process.env.HUB_STAGE_D_BACKUP_DIR || DEFAULT_BACKUP_DIR;
+  const manifestPath = argValue('--manifest') || latestManifest(backupDir);
+  const smokeDb = `hub_restore_smoke_${new Date().toISOString().replace(/\D/g, '').slice(0, 12)}`;
+
+  const result: any = {
+    ok: true,
+    checkedAt: new Date().toISOString(),
+    stage: 'hub_stage_d',
+    task: 'D4_restore_drill',
+    dryRun: !apply,
+    backupDir,
+    manifestPath,
+    smokeDb,
+    productionRestore: false,
+    applyGate: `--apply --confirm=${CONFIRM}`,
+    steps: [],
+  };
+
+  if (!manifestPath) {
+    result.ok = false;
+    result.error = 'backup_manifest_missing';
+    console.log(JSON.stringify(result, null, 2));
+    process.exit(apply ? 1 : 0);
+  }
+
+  const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+  const schemaFile = manifest.files?.hubSchema || manifest.files?.hub_schema || manifest.artifacts?.find?.((item: any) => item.key === 'hubSchema')?.path;
+  result.schemaFile = schemaFile;
+  if (!schemaFile || !fs.existsSync(schemaFile)) {
+    result.ok = false;
+    result.error = 'hub_schema_backup_missing';
+    console.log(JSON.stringify(result, null, 2));
+    process.exit(apply ? 1 : 0);
+  }
+
+  if (!apply) {
+    console.log(JSON.stringify(result, null, 2));
+    return;
+  }
+  if (confirm !== CONFIRM) {
+    result.ok = false;
+    result.error = 'confirm_required';
+    result.requiredConfirm = CONFIRM;
+    console.log(JSON.stringify(result, null, 2));
+    process.exit(2);
+  }
+
+  result.steps.push(run('createdb', [smokeDb]));
+  if (result.steps.at(-1).ok) {
+    result.steps.push(run('psql', ['-d', smokeDb, '-f', schemaFile]));
+  }
+  result.steps.push(run('dropdb', ['--if-exists', smokeDb]));
+  result.ok = result.steps.every((step: any) => step.ok);
+  console.log(JSON.stringify(result, null, 2));
+  if (!result.ok) process.exit(1);
+}
+
+main().catch((error: Error) => {
+  console.error(error);
+  process.exit(1);
+});

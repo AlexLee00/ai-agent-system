@@ -1,4 +1,5 @@
 'use strict';
+const path = require('path');
 const kst = require('../../../packages/core/lib/kst');
 const { callHubLlm } = require('../../../packages/core/lib/hub-client');
 const env = require('../../../packages/core/lib/env');
@@ -15,14 +16,13 @@ const env = require('../../../packages/core/lib/env');
  * 산출물: insta_content.html (Safari 복붙) + reel MP4
  */
 
-const { buildShortformPlan } = require('./shortform-planner.ts');
-const { renderShortformReel } = require('./shortform-renderer.ts');
-const { SHORTFORM_DEFAULT_DURATION_SEC } = require('./shortform-planner.ts');
-const { generatePostImages } = require('./img-gen.ts');
-const { selectThumbForTitle } = require('./shortform-files.ts');
-const { loadStrategyBundle, normalizeExecutionDirectives } = require('./strategy-loader.ts');
+const { buildShortformPlan } = require(path.join(env.PROJECT_ROOT, 'bots/social-media/shortform/lib/shortform-planner.ts'));
+const { renderShortformReel } = require(path.join(env.PROJECT_ROOT, 'bots/social-media/shortform/lib/shortform-renderer.ts'));
+const { SHORTFORM_DEFAULT_DURATION_SEC } = require(path.join(env.PROJECT_ROOT, 'bots/social-media/shortform/lib/shortform-planner.ts'));
+const { generatePostImages } = require(path.join(env.PROJECT_ROOT, 'bots/social-media/image-gen/lib/img-gen.ts'));
+const { selectThumbForTitle } = require(path.join(env.PROJECT_ROOT, 'bots/social-media/shortform/lib/shortform-files.ts'));
+const { loadStrategyBundle, normalizeExecutionDirectives } = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/strategy-loader.ts'));
 const fs = require('fs');
-const path = require('path');
 
 const BLOG_ROOT = path.join(env.PROJECT_ROOT, 'bots/blog');
 const INSTA_DIR = path.join(BLOG_ROOT, 'output', 'images', 'insta');

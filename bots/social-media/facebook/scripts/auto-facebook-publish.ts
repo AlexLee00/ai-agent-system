@@ -17,12 +17,12 @@
  */
 
 const path = require('path');
-const env = require('../../../packages/core/lib/env');
-const pgPool = require('../../../packages/core/lib/pg-pool');
-const { runIfOps } = require('../../../packages/core/lib/mode-guard');
-const { postAlarm } = require('../../../packages/core/lib/hub-alarm-client');
+const env = require('../../../../packages/core/lib/env');
+const pgPool = require('../../../../packages/core/lib/pg-pool');
+const { runIfOps } = require('../../../../packages/core/lib/mode-guard');
+const { postAlarm } = require('../../../../packages/core/lib/hub-alarm-client');
 const { publishFacebookPost, checkFacebookPublishReadiness } = require(
-  path.join(env.PROJECT_ROOT, 'bots/blog/lib/facebook-publisher.ts')
+  path.join(env.PROJECT_ROOT, 'bots/social-media/facebook/lib/facebook-publisher.ts')
 );
 const { ensurePublishLogSchema, reportPublishSuccess, reportPublishFailure } = require(
   path.join(env.PROJECT_ROOT, 'bots/blog/lib/publish-reporter.ts')
@@ -84,7 +84,7 @@ function buildPreviewBundleForTitle(title = '') {
   try {
     const {
       findReelPathForTitle, findReelCoverPathForTitle, findReelQaSheetPathForTitle,
-    } = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/shortform-files.ts'));
+    } = require(path.join(env.PROJECT_ROOT, 'bots/social-media/shortform/lib/shortform-files.ts'));
     const reelPath = findReelPathForTitle(title) || '';
     const coverPath = findReelCoverPathForTitle(title) || '';
     const qaSheetPath = findReelQaSheetPathForTitle(title) || '';

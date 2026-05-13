@@ -10,6 +10,7 @@ const {
   requestLoggingMiddleware,
 } = require('./middleware/request-lifecycle');
 const { hubRequestContextMiddleware } = require('./middleware/request-context');
+const { stageDChaosMiddleware } = require('./middleware/stage-d-chaos');
 const { createHubRateLimiters } = require('./rate-limiters');
 const { registerHubRoutes } = require('./route-registry');
 
@@ -29,6 +30,7 @@ export function createHubApp(options: HubAppOptions = {}): Express {
   app.use(createShutdownGuard(isShuttingDown));
   app.use(pathGuardMiddleware);
   app.use(hubRequestContextMiddleware);
+  app.use(stageDChaosMiddleware);
   app.use(requestLoggingMiddleware);
 
   const {

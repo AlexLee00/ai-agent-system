@@ -3,9 +3,9 @@
 
 const fs = require('fs');
 const path = require('path');
-const env = require('../../../packages/core/lib/env');
-const { publishToWebhook } = require('../../../packages/core/lib/reporting-hub');
-const { buildBlogCliInsight } = require('../lib/cli-insight.ts');
+const env = require('../../../../packages/core/lib/env');
+const { publishToWebhook } = require('../../../../packages/core/lib/reporting-hub');
+const { buildBlogCliInsight } = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/cli-insight.ts'));
 const {
   writeInstagramTokenAutoRefreshResult,
   AUTO_REFRESH_SCHEDULE_TEXT,

@@ -12,7 +12,7 @@ const path = require('path');
 const env = require('../../../packages/core/lib/env');
 const { selectRuntime } = require('../../../packages/core/lib/runtime-selector.js');
 const localImageClient = require('../../../packages/core/lib/local-image-client.js');
-const { loadStrategyBundle, normalizeExecutionDirectives } = require('./strategy-loader.ts');
+const { loadStrategyBundle, normalizeExecutionDirectives } = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/strategy-loader.ts'));
 
 const OUTPUT_DIR = path.join(env.PROJECT_ROOT, 'bots/blog/output');
 const IMAGES_DIR = path.join(OUTPUT_DIR, 'images');

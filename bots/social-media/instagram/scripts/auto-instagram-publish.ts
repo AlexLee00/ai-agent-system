@@ -19,18 +19,18 @@
 
 const path = require('path');
 const { execFileSync } = require('child_process');
-const env = require('../../../packages/core/lib/env');
-const pgPool = require('../../../packages/core/lib/pg-pool');
+const env = require('../../../../packages/core/lib/env');
+const pgPool = require('../../../../packages/core/lib/pg-pool');
 const { crosspostToInstagram, getCrosspostStats } = require(
-  path.join(env.PROJECT_ROOT, 'bots/blog/lib/insta-crosspost.ts')
+  path.join(env.PROJECT_ROOT, 'bots/social-media/instagram/lib/insta-crosspost.ts')
 );
 const { reportPublishSuccess, reportPublishFailure } = require(
   path.join(env.PROJECT_ROOT, 'bots/blog/lib/publish-reporter.ts')
 );
-const { runIfOps } = require('../../../packages/core/lib/mode-guard');
-const { postAlarm } = require('../../../packages/core/lib/hub-alarm-client');
+const { runIfOps } = require('../../../../packages/core/lib/mode-guard');
+const { postAlarm } = require('../../../../packages/core/lib/hub-alarm-client');
 const { ensureReelQaSheet } = require(
-  path.join(env.PROJECT_ROOT, 'bots/blog/lib/shortform-renderer.ts')
+  path.join(env.PROJECT_ROOT, 'bots/social-media/shortform/lib/shortform-renderer.ts')
 );
 const { claimNextPublishJob, claimPublishJobByQueueId, markPublishSuccess, markPublishFailure } = require(
   path.join(env.PROJECT_ROOT, 'bots/blog/lib/omnichannel/publish-queue.ts')
@@ -149,7 +149,7 @@ function resolveNativeReelFromLibrary(variant = {}) {
       findReelCoverPathForTitle,
       findReelQaSheetPathForTitle,
     } = require(
-      path.join(env.PROJECT_ROOT, 'bots/blog/lib/shortform-files.ts')
+      path.join(env.PROJECT_ROOT, 'bots/social-media/shortform/lib/shortform-files.ts')
     );
     const title = String(variant.title || '').trim();
     const hook = extractCaptionHook(variant.caption || '');
@@ -445,7 +445,7 @@ async function publishFromQueue(queueJob) {
         findReelCoverPathForTitle,
         findReelQaSheetPathForTitle,
       } = require(
-        path.join(env.PROJECT_ROOT, 'bots/blog/lib/shortform-files.ts')
+        path.join(env.PROJECT_ROOT, 'bots/social-media/shortform/lib/shortform-files.ts')
       );
       const variantTitle = String(variant.title || '').trim();
       const variantCaptionHook = String(variant.caption || '').split('\n')[0].trim();
@@ -587,7 +587,7 @@ async function publishFromNaverPost() {
     const {
       findLatestReelPath, findReelPathForTitle, findReelCoverPathForTitle,
       findReelQaSheetPathForTitle, findThumbPathForTitle,
-    } = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/shortform-files.ts'));
+    } = require(path.join(env.PROJECT_ROOT, 'bots/social-media/shortform/lib/shortform-files.ts'));
     reelPath = findReelPathForTitle(postTitle) || findLatestReelPath();
     coverPath = findReelCoverPathForTitle(postTitle) || '';
     qaSheetPath = findReelQaSheetPathForTitle(postTitle) || '';

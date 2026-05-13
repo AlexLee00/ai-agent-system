@@ -1,3 +1,5 @@
+const { captureHubError } = require('../../lib/sentry-mcp-adapter');
+
 function resolveErrorStatus(error) {
   const status = Number(error?.status || error?.statusCode);
   if (Number.isFinite(status) && status >= 400 && status <= 599) return Math.floor(status);
@@ -20,6 +22,7 @@ function hubErrorHandler(error, req, res, next) {
   const traceId = req.hubRequestContext?.traceId || '-';
   const code = publicErrorCode(status, error);
   console.error(`[hub] request_error code=${code} status=${status} trace=${traceId}:`, error?.message || error);
+  captureHubError(error, req);
   return res.status(status).json({
     ok: false,
     error: code,
