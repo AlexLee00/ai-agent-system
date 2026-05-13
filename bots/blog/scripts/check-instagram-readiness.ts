@@ -25,7 +25,7 @@ const {
   findLatestReelPath,
   findLatestReelCoverPath,
   findLatestReelQaSheetPath,
-} = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/shortform-files.ts'));
+} = require(path.join(env.PROJECT_ROOT, 'bots/social-media/shortform/lib/shortform-files.ts'));
 const { buildBlogCliInsight } = require('../lib/cli-insight.ts');
 
 function parseArgs(argv = []) {

@@ -3,15 +3,15 @@
 const fs = require('fs');
 const path = require('path');
 const env = require('../../../packages/core/lib/env');
-const { buildShortformPlan } = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/shortform-planner.ts'));
-const { SHORTFORM_DEFAULT_DURATION_SEC } = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/shortform-planner.ts'));
+const { buildShortformPlan } = require(path.join(env.PROJECT_ROOT, 'bots/social-media/shortform/lib/shortform-planner.ts'));
+const { SHORTFORM_DEFAULT_DURATION_SEC } = require(path.join(env.PROJECT_ROOT, 'bots/social-media/shortform/lib/shortform-planner.ts'));
 const { generateInstaCaption } = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/social.ts'));
-const { generatePostImages } = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/img-gen.ts'));
+const { generatePostImages } = require(path.join(env.PROJECT_ROOT, 'bots/social-media/image-gen/lib/img-gen.ts'));
 const { loadStrategyBundle } = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/strategy-loader.ts'));
 const {
   findLatestThumbPath,
   selectThumbForTitle,
-} = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/shortform-files.ts'));
+} = require(path.join(env.PROJECT_ROOT, 'bots/social-media/shortform/lib/shortform-files.ts'));
 
 const BLOG_ROOT = path.join(env.PROJECT_ROOT, 'bots/blog');
 const IMAGE_DIR = path.join(BLOG_ROOT, 'output/images');

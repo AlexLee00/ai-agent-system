@@ -2,7 +2,7 @@
 
 const fs = require('fs');
 const path = require('path');
-const env = require('../../../packages/core/lib/env');
+const env = require('../../../../packages/core/lib/env');
 
 const AUTO_REFRESH_RESULT_PATH = path.join(
   env.PROJECT_ROOT,

@@ -3,7 +3,7 @@
 
 const path = require('path');
 const env = require('../../../packages/core/lib/env');
-const { checkFacebookPublishReadiness } = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/facebook-publisher.ts'));
+const { checkFacebookPublishReadiness } = require(path.join(env.PROJECT_ROOT, 'bots/social-media/facebook/lib/facebook-publisher.ts'));
 const { buildBlogCliInsight } = require('../lib/cli-insight.ts');
 
 function parseArgs(argv = []) {

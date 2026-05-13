@@ -29,7 +29,7 @@ const {
   getInstagramImageHostConfig,
   resolveInstagramHostedMediaUrl,
 } = require(path.join(env.PROJECT_ROOT, 'packages/core/lib/instagram-image-host.ts'));
-const { checkFacebookPublishReadiness } = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/facebook-publisher.ts'));
+const { checkFacebookPublishReadiness } = require(path.join(env.PROJECT_ROOT, 'bots/social-media/facebook/lib/facebook-publisher.ts'));
 const { buildMarketingDigest } = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/marketing-digest.ts'));
 const { assessInboundComment } = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/commenter.ts'));
 const { readDevelopmentBaseline, buildSinceClause } = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/dev-baseline.ts'));
@@ -959,7 +959,7 @@ async function buildInstagramHealth() {
     const {
       readInstagramTokenAutoRefreshResult,
       AUTO_REFRESH_SCHEDULE_TEXT,
-    } = require('../lib/instagram-token-automation.ts');
+    } = require(path.join(env.PROJECT_ROOT, 'bots/social-media/instagram/lib/instagram-token-automation.ts'));
     const hostReady = Boolean(host.publicBaseUrl || host.githubPagesBaseUrl || host.opsStaticBaseUrl);
     const health = config.tokenHealth || {};
     const autoRefresh = readInstagramTokenAutoRefreshResult();
@@ -1086,7 +1086,7 @@ async function buildSocialAutomationHealth() {
     const latestRealInstagramError = String(latestRealInstagram?.error_msg || '');
     let latestRealHostedRecovery = false;
     try {
-      const { findReelPathForTitle } = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/shortform-files.ts'));
+      const { findReelPathForTitle } = require(path.join(env.PROJECT_ROOT, 'bots/social-media/shortform/lib/shortform-files.ts'));
       const latestRealReelPath = latestRealInstagramTitle ? findReelPathForTitle(latestRealInstagramTitle) : '';
       const latestRealHosted = latestRealReelPath
         ? resolveInstagramHostedMediaUrl(latestRealReelPath, { kind: 'reels' })

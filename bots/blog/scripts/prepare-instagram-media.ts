@@ -12,7 +12,7 @@ const {
   findLatestReelCoverPath,
   findLatestReelQaSheetPath,
   findLatestThumbPath,
-} = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/shortform-files.ts'));
+} = require(path.join(env.PROJECT_ROOT, 'bots/social-media/shortform/lib/shortform-files.ts'));
 
 function parseArgs(argv = []) {
   return {

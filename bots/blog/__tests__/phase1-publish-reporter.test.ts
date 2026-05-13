@@ -85,7 +85,7 @@ describe('publish-reporter', () => {
 // ─── img-gen-doctor ───────────────────────────────────────────────────────────
 
 describe('img-gen-doctor', () => {
-  const doctor = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/img-gen-doctor.ts'));
+  const doctor = require(path.join(env.PROJECT_ROOT, 'bots/social-media/image-gen/lib/img-gen-doctor.ts'));
 
   beforeEach(() => {
     jest.clearAllMocks();

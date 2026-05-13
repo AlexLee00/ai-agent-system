@@ -1,7 +1,7 @@
 'use strict';
 
 const path = require('path');
-const env = require('../../../packages/core/lib/env');
+const env = require('../../../../packages/core/lib/env');
 const { getFacebookConfigFromMeta } = require(path.join(env.PROJECT_ROOT, 'packages/core/lib/meta-graph-config.ts'));
 
 /**

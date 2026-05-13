@@ -3,14 +3,14 @@
 const fs = require('fs');
 const path = require('path');
 const env = require('../../../packages/core/lib/env');
-const { buildShortformPlan } = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/shortform-planner.ts'));
-const { SHORTFORM_DEFAULT_DURATION_SEC } = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/shortform-planner.ts'));
-const { renderShortformReel } = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/shortform-renderer.ts'));
-const { generatePostImages } = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/img-gen.ts'));
+const { buildShortformPlan } = require(path.join(env.PROJECT_ROOT, 'bots/social-media/shortform/lib/shortform-planner.ts'));
+const { SHORTFORM_DEFAULT_DURATION_SEC } = require(path.join(env.PROJECT_ROOT, 'bots/social-media/shortform/lib/shortform-planner.ts'));
+const { renderShortformReel } = require(path.join(env.PROJECT_ROOT, 'bots/social-media/shortform/lib/shortform-renderer.ts'));
+const { generatePostImages } = require(path.join(env.PROJECT_ROOT, 'bots/social-media/image-gen/lib/img-gen.ts'));
 const {
   findLatestThumbPath,
   selectThumbForTitle,
-} = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/shortform-files.ts'));
+} = require(path.join(env.PROJECT_ROOT, 'bots/social-media/shortform/lib/shortform-files.ts'));
 
 /**
  * @typedef {{

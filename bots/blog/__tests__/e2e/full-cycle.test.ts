@@ -100,7 +100,7 @@ describe('시나리오 1: 일일 3 플랫폼 발행 + 매출 연동', () => {
 // ─── 시나리오 2: 이미지 생성 실패 복구 ───────────────────────────────────────
 
 describe('시나리오 2: 이미지 생성 실패 + 진단 + 복구', () => {
-  const imgGenDoctor = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/img-gen-doctor.ts'));
+  const imgGenDoctor = require(path.join(env.PROJECT_ROOT, 'bots/social-media/image-gen/lib/img-gen-doctor.ts'));
 
   beforeEach(() => jest.clearAllMocks());
 

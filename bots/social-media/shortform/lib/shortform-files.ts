@@ -2,7 +2,7 @@
 
 const fs = require('fs');
 const path = require('path');
-const env = require('../../../packages/core/lib/env');
+const env = require('../../../../packages/core/lib/env');
 
 const BLOG_ROOT = path.join(env.PROJECT_ROOT, 'bots/blog');
 const SHORTFORM_DIR = path.join(BLOG_ROOT, 'output/shortform');

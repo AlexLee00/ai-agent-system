@@ -4,7 +4,7 @@
 const path = require('path');
 const env = require('../../../packages/core/lib/env');
 const pgPool = require('../../../packages/core/lib/pg-pool.js');
-const { checkFacebookPublishReadiness } = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/facebook-publisher.ts'));
+const { checkFacebookPublishReadiness } = require(path.join(env.PROJECT_ROOT, 'bots/social-media/facebook/lib/facebook-publisher.ts'));
 const { resolveInstagramHostedMediaUrl } = require(path.join(env.PROJECT_ROOT, 'packages/core/lib/instagram-image-host.ts'));
 const { buildBlogCliInsight } = require('../lib/cli-insight.ts');
 
@@ -20,7 +20,7 @@ function buildPreviewBundleForTitle(title = '') {
       findReelPathForTitle,
       findReelCoverPathForTitle,
       findReelQaSheetPathForTitle,
-    } = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/shortform-files.ts'));
+    } = require(path.join(env.PROJECT_ROOT, 'bots/social-media/shortform/lib/shortform-files.ts'));
     const reelPath = findReelPathForTitle(title) || '';
     const coverPath = findReelCoverPathForTitle(title) || '';
     const qaSheetPath = findReelQaSheetPathForTitle(title) || '';

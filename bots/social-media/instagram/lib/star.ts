@@ -1,8 +1,8 @@
 'use strict';
 const path = require('path');
-const kst = require('../../../packages/core/lib/kst');
-const { callHubLlm } = require('../../../packages/core/lib/hub-client');
-const env = require('../../../packages/core/lib/env');
+const kst = require('../../../../packages/core/lib/kst');
+const { callHubLlm } = require('../../../../packages/core/lib/hub-client');
+const env = require('../../../../packages/core/lib/env');
 
 /**
  * bots/blog/lib/star.ts — 스타(STAR) 봇

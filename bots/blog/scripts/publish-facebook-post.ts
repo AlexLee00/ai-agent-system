@@ -3,7 +3,7 @@
 
 const path = require('path');
 const env = require('../../../packages/core/lib/env');
-const { publishFacebookPost } = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/facebook-publisher.ts'));
+const { publishFacebookPost } = require(path.join(env.PROJECT_ROOT, 'bots/social-media/facebook/lib/facebook-publisher.ts'));
 
 function parseArgs(argv = []) {
   const args = {

@@ -10,7 +10,7 @@
  */
 
 const path = require('path');
-const env = require('../../../packages/core/lib/env');
+const env = require('../../../../packages/core/lib/env');
 
 const { publishInstagramReel, buildHostedVideoUrl } = require(
   path.join(env.PROJECT_ROOT, 'packages/core/lib/instagram-graph.ts')
@@ -18,9 +18,9 @@ const { publishInstagramReel, buildHostedVideoUrl } = require(
 const { parseInstagramAuthError } = require(
   path.join(env.PROJECT_ROOT, 'packages/core/lib/instagram-token-manager.ts')
 );
-const pgPool = require('../../../packages/core/lib/pg-pool');
-const { runIfOps } = require('../../../packages/core/lib/mode-guard');
-const { postAlarm } = require('../../../packages/core/lib/hub-alarm-client');
+const pgPool = require('../../../../packages/core/lib/pg-pool');
+const { runIfOps } = require('../../../../packages/core/lib/mode-guard');
+const { postAlarm } = require('../../../../packages/core/lib/hub-alarm-client');
 
 /**
  * @typedef {{

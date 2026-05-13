@@ -30,7 +30,7 @@ const {
   appendIncidentLine,
 } = require('../lib/critical-alerts.js');
 const { resolveInstagramHostedMediaUrl } = require('../../../packages/core/lib/instagram-image-host.ts');
-const { checkFacebookPublishReadiness } = require('../lib/facebook-publisher.ts');
+const { checkFacebookPublishReadiness } = require(path.join(env.PROJECT_ROOT, 'bots/social-media/facebook/lib/facebook-publisher.ts'));
 const { readDevelopmentBaseline, buildSinceClause } = require('../lib/dev-baseline.ts');
 const { readMarketingDigestTelemetry, describeMarketingDigestAge } = require('../lib/marketing-digest-telemetry.ts');
 const { readLatestBlogEvalCase } = require('../lib/eval-case-telemetry.ts');
@@ -69,7 +69,7 @@ function buildPreviewBundleForTitle(title = '') {
       findReelPathForTitle,
       findReelCoverPathForTitle,
       findReelQaSheetPathForTitle,
-    } = require('../lib/shortform-files.ts');
+    } = require(path.join(env.PROJECT_ROOT, 'bots/social-media/shortform/lib/shortform-files.ts'));
     const reelPath = findReelPathForTitle(title) || '';
     const coverPath = findReelCoverPathForTitle(title) || '';
     const qaSheetPath = findReelQaSheetPathForTitle(title) || '';
@@ -88,7 +88,7 @@ function getHostedReelStatusForTitle(title = '') {
   try {
     const {
       findReelPathForTitle,
-    } = require('../lib/shortform-files.ts');
+    } = require(path.join(env.PROJECT_ROOT, 'bots/social-media/shortform/lib/shortform-files.ts'));
     const reelPath = findReelPathForTitle(title) || '';
     if (!reelPath) return { reelPath: '', hostedReady: false, hostedUrl: '' };
     const hosted = resolveInstagramHostedMediaUrl(reelPath, { kind: 'reels' });

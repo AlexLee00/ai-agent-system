@@ -4,14 +4,14 @@
 const path = require('path');
 const env = require('../../../packages/core/lib/env');
 const pgPool = require('../../../packages/core/lib/pg-pool.js');
-const { checkFacebookPublishReadiness } = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/facebook-publisher.ts'));
+const { checkFacebookPublishReadiness } = require(path.join(env.PROJECT_ROOT, 'bots/social-media/facebook/lib/facebook-publisher.ts'));
 const { getInstagramConfig } = require(path.join(env.PROJECT_ROOT, 'packages/core/lib/instagram-graph.ts'));
 const { resolveInstagramHostedMediaUrl } = require(path.join(env.PROJECT_ROOT, 'packages/core/lib/instagram-image-host.ts'));
 const { buildBlogCliInsight } = require('../lib/cli-insight.ts');
 const {
   readInstagramTokenAutoRefreshResult,
   AUTO_REFRESH_SCHEDULE_TEXT,
-} = require('../lib/instagram-token-automation.ts');
+} = require(path.join(env.PROJECT_ROOT, 'bots/social-media/instagram/lib/instagram-token-automation.ts'));
 
 function parseArgs(argv = []) {
   return {
@@ -25,7 +25,7 @@ function buildPreviewBundleForTitle(title = '') {
       findReelPathForTitle,
       findReelCoverPathForTitle,
       findReelQaSheetPathForTitle,
-    } = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/shortform-files.ts'));
+    } = require(path.join(env.PROJECT_ROOT, 'bots/social-media/shortform/lib/shortform-files.ts'));
     const reelPath = findReelPathForTitle(title) || '';
     const coverPath = findReelCoverPathForTitle(title) || '';
     const qaSheetPath = findReelQaSheetPathForTitle(title) || '';
@@ -53,7 +53,7 @@ function getInstagramHostedRecovery(latestInstagram = null) {
     const title = String(latestInstagram?.post_title || '');
     const errorText = String(latestInstagram?.error_msg || '');
     if (!title || !errorText) return false;
-    const { findReelPathForTitle } = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/shortform-files.ts'));
+    const { findReelPathForTitle } = require(path.join(env.PROJECT_ROOT, 'bots/social-media/shortform/lib/shortform-files.ts'));
     const { getInstagramHostedAssetLocalPath } = require(path.join(env.PROJECT_ROOT, 'packages/core/lib/instagram-image-host.ts'));
     const reelPath = findReelPathForTitle(title) || '';
     if (!reelPath) return false;

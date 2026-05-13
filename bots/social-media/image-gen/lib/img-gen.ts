@@ -1,5 +1,5 @@
 'use strict';
-const kst = require('../../../packages/core/lib/kst');
+const kst = require('../../../../packages/core/lib/kst');
 
 /**
  * img-gen.js — 블로그팀 이미지 생성
@@ -9,9 +9,9 @@ const kst = require('../../../packages/core/lib/kst');
 
 const fs = require('fs');
 const path = require('path');
-const env = require('../../../packages/core/lib/env');
-const { selectRuntime } = require('../../../packages/core/lib/runtime-selector.js');
-const localImageClient = require('../../../packages/core/lib/local-image-client.js');
+const env = require('../../../../packages/core/lib/env');
+const { selectRuntime } = require('../../../../packages/core/lib/runtime-selector.js');
+const localImageClient = require('../../../../packages/core/lib/local-image-client.js');
 const { loadStrategyBundle, normalizeExecutionDirectives } = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/strategy-loader.ts'));
 
 const OUTPUT_DIR = path.join(env.PROJECT_ROOT, 'bots/blog/output');
