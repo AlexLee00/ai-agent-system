@@ -15,6 +15,7 @@ const { execSync } = require('child_process');
 const env      = require('../../../packages/core/lib/env');
 const kst      = require('../../../packages/core/lib/kst');
 const pgPool   = require('../../../packages/core/lib/pg-pool');
+const { fetchHubSecrets } = require('../../../packages/core/lib/hub-client');
 
 async function ensureTrendTopicsTable() {
   await pgPool.run('blog', `
@@ -34,12 +35,27 @@ async function ensureTrendTopicsTable() {
     );
     CREATE INDEX IF NOT EXISTS idx_trend_topics_date ON blog.trend_topics(date);
     CREATE INDEX IF NOT EXISTS idx_trend_topics_used ON blog.trend_topics(used) WHERE used = false;
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_trend_topics_uniq ON blog.trend_topics(date, source, topic_ko);
   `);
+}
+
+async function injectRedditSecrets() {
+  try {
+    const secrets = await fetchHubSecrets('blog').catch(() => null);
+    if (secrets?.REDDIT_CLIENT_ID && !process.env.REDDIT_CLIENT_ID) {
+      process.env.REDDIT_CLIENT_ID = secrets.REDDIT_CLIENT_ID;
+    }
+    if (secrets?.REDDIT_CLIENT_SECRET && !process.env.REDDIT_CLIENT_SECRET) {
+      process.env.REDDIT_CLIENT_SECRET = secrets.REDDIT_CLIENT_SECRET;
+    }
+  } catch {}
 }
 
 async function runRedditAnalyzer() {
   const scriptPath = path.join(env.PROJECT_ROOT, 'bots/blog/python/reddit_trend_analyzer.py');
   const outputPath = path.join(env.PROJECT_ROOT, 'bots/blog/output/reddit-trends-latest.json');
+
+  await injectRedditSecrets();
 
   try {
     console.log('[트렌드수집] Reddit 분석기 실행...');

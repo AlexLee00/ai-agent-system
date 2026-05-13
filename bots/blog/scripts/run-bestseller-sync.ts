@@ -32,6 +32,7 @@ async function ensureTrendTopicsTable() {
     );
     CREATE INDEX IF NOT EXISTS idx_trend_topics_date ON blog.trend_topics(date);
     CREATE INDEX IF NOT EXISTS idx_trend_topics_used ON blog.trend_topics(used) WHERE used = false;
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_trend_topics_uniq ON blog.trend_topics(date, source, topic_ko);
   `);
 }
 
