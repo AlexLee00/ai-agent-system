@@ -6,7 +6,10 @@ BEGIN
     'event_type', NEW.event_type,
     'team', NEW.team,
     'bot_name', NEW.bot_name,
-    'title', NEW.title
+    'severity', NEW.severity,
+    'title', NEW.title,
+    'metadata', NEW.metadata,
+    'created_at', NEW.created_at
   )::text);
   RETURN NEW;
 END;
@@ -17,4 +20,3 @@ CREATE TRIGGER event_lake_notify
   AFTER INSERT ON agent.event_lake
   FOR EACH ROW
   EXECUTE FUNCTION agent.notify_event_lake();
-

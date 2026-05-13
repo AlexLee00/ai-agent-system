@@ -36,7 +36,8 @@ function parseArgs(argv = process.argv.slice(2)) {
 async function runDaily() {
   console.log('[steward] 일일 모드 시작');
 
-  const moved = codexManager.archiveCompleted();
+  const codexTrace = await codexManager.traceActiveTasks();
+  const moved = await codexManager.archiveCompleted();
   const suspicious = gitHygiene.scanTracked();
   const commits = trackerSync.getRecentCommits(24);
   const drafted = trackerSync.appendToTracker(trackerSync.analyzeCommits(commits));
@@ -54,7 +55,7 @@ async function runDaily() {
   }
 
   console.log(summary);
-  return { moved, suspicious: suspicious.length, drafted, commits: commits.length, memoryConsolidation };
+  return { moved, codexTrace, suspicious: suspicious.length, drafted, commits: commits.length, memoryConsolidation };
 }
 
 async function runHourly() {

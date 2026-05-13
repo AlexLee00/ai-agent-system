@@ -15,7 +15,8 @@ defmodule Jay.V2.AutonomyController do
   require Logger
 
   @phase_key "jay.autonomy_phase"
-  @check_interval_ms 24 * 60 * 60 * 1_000  # 매일
+  # 매일
+  @check_interval_ms 24 * 60 * 60 * 1_000
 
   defstruct phase: 1,
             phase_since: nil,
@@ -35,8 +36,8 @@ defmodule Jay.V2.AutonomyController do
   def get_status, do: GenServer.call(__MODULE__, :get_status)
 
   @doc "마스터 개입 기록 (수동 알람 응답 등)"
-  def record_master_intervention do
-    GenServer.cast(__MODULE__, :master_intervention)
+  def record_master_intervention(metadata \\ %{}) do
+    GenServer.cast(__MODULE__, {:master_intervention, metadata})
   end
 
   @doc "이상 없는 하루 기록"
@@ -81,42 +82,63 @@ defmodule Jay.V2.AutonomyController do
     # Phase 1: 항상 발송
     # Phase 2: 항상 발송 (이상 여부는 내용으로 결정)
     # Phase 3: 월요일만 발송 (주간 리포트)
-    send? = case state.phase do
-      3 -> Date.day_of_week(Date.utc_today()) == 1  # 월요일
-      _ -> true
-    end
+    send? =
+      case state.phase do
+        # 월요일
+        3 -> Date.day_of_week(Date.utc_today()) == 1
+        _ -> true
+      end
+
     {:reply, send?, state}
   end
 
   @impl true
   def handle_call({:should_notify_pipeline, decision}, _from, state) do
-    notify? = case {state.phase, decision} do
-      {1, _}          -> true                    # Phase 1: 모두 알림
-      {2, :escalate}  -> true                    # Phase 2: escalate만
-      {2, :block}     -> true                    # Phase 2: block만
-      {3, :escalate}  -> true                    # Phase 3: escalate만
-      _               -> false
-    end
+    notify? =
+      case {state.phase, decision} do
+        # Phase 1: 모두 알림
+        {1, _} -> true
+        # Phase 2: escalate만
+        {2, :escalate} -> true
+        # Phase 2: block만
+        {2, :block} -> true
+        # Phase 3: escalate만
+        {3, :escalate} -> true
+        _ -> false
+      end
+
     {:reply, notify?, state}
   end
 
   @impl true
   def handle_cast(:master_intervention, state) do
+    handle_cast({:master_intervention, %{}}, state)
+  end
+
+  @impl true
+  def handle_cast({:master_intervention, metadata}, state) do
     Logger.info("[AutonomyController] 마스터 개입 기록")
-    new_state = %{state |
-      master_intervention_count: state.master_intervention_count + 1,
-      consecutive_clean_days: 0,
-      last_escalation_at: DateTime.utc_now()
+    cycle_id = next_cycle_id()
+    record_master_intervention_event(metadata, cycle_id)
+
+    new_state = %{
+      state
+      | master_intervention_count: state.master_intervention_count + 1,
+        consecutive_clean_days: 0,
+        last_escalation_at: DateTime.utc_now()
     }
+
     # Phase 3 → Phase 2 다운그레이드 검토
-    new_state = if state.phase == 3 do
-      Logger.warning("[AutonomyController] Phase 3 → Phase 2 다운그레이드 (마스터 개입)")
-      broadcast_phase_change(3, 2)
-      save_phase_to_db(2)
-      %{new_state | phase: 2, phase_since: Date.utc_today()}
-    else
-      new_state
-    end
+    new_state =
+      if state.phase == 3 do
+        Logger.warning("[AutonomyController] Phase 3 → Phase 2 다운그레이드 (마스터 개입)")
+        broadcast_phase_change(3, 2)
+        save_phase_to_db(2)
+        %{new_state | phase: 2, phase_since: Date.utc_today()}
+      else
+        new_state
+      end
+
     {:noreply, new_state}
   end
 
@@ -126,23 +148,77 @@ defmodule Jay.V2.AutonomyController do
     new_state = %{state | consecutive_clean_days: days}
 
     # 전환 조건 체크
-    new_state = cond do
-      state.phase == 1 and days >= 7 ->
-        Logger.info("[AutonomyController] Phase 1 → Phase 2 전환! (#{days}일 연속 이상 없음)")
-        broadcast_phase_change(1, 2)
-        save_phase_to_db(2)
-        %{new_state | phase: 2, phase_since: Date.utc_today(), consecutive_clean_days: 0}
+    new_state =
+      cond do
+        state.phase == 1 and days >= 7 ->
+          Logger.info("[AutonomyController] Phase 1 → Phase 2 전환! (#{days}일 연속 이상 없음)")
+          broadcast_phase_change(1, 2)
+          save_phase_to_db(2)
+          %{new_state | phase: 2, phase_since: Date.utc_today(), consecutive_clean_days: 0}
 
-      state.phase == 2 and days >= 30 ->
-        Logger.info("[AutonomyController] Phase 2 → Phase 3 전환! (#{days}일 연속 마스터 개입 없음)")
-        broadcast_phase_change(2, 3)
-        save_phase_to_db(3)
-        %{new_state | phase: 3, phase_since: Date.utc_today(), consecutive_clean_days: 0}
+        state.phase == 2 and days >= 30 ->
+          Logger.info("[AutonomyController] Phase 2 → Phase 3 전환! (#{days}일 연속 마스터 개입 없음)")
+          broadcast_phase_change(2, 3)
+          save_phase_to_db(3)
+          %{new_state | phase: 3, phase_since: Date.utc_today(), consecutive_clean_days: 0}
 
-      true -> new_state
-    end
+        true ->
+          new_state
+      end
 
     {:noreply, new_state}
+  end
+
+  defp record_master_intervention_event(metadata, cycle_id) do
+    meta = normalize_intervention_metadata(metadata)
+    subtype = meta |> Map.get("subtype", "decision") |> to_string()
+    title = Map.get(meta, "title", "마스터 개입")
+
+    event_metadata =
+      meta
+      |> Map.drop(["title", "subtype"])
+      |> Map.merge(%{"cycle_id" => cycle_id, "trigger" => "new_cycle"})
+
+    Jay.Core.EventLake.record(%{
+      event_type: "master.intervention.#{subtype}",
+      team: "meta",
+      bot_name: "master",
+      severity: "info",
+      title: title,
+      metadata: event_metadata,
+      tags: ["master", "intervention", "cycle"]
+    })
+  rescue
+    error ->
+      Logger.warning(
+        "[AutonomyController] master intervention EventLake 기록 실패: #{inspect(error)}"
+      )
+
+      :ok
+  end
+
+  defp normalize_intervention_metadata(metadata) when is_map(metadata) do
+    Map.new(metadata, fn {key, value} -> {to_string(key), value} end)
+  end
+
+  defp normalize_intervention_metadata(_), do: %{}
+
+  defp next_cycle_id do
+    case Jay.Core.HubClient.pg_query(
+           """
+           SELECT COALESCE(MAX((metadata->>'cycle_id')::int), 42) + 1 AS cycle_id
+           FROM agent.event_lake
+           WHERE metadata->>'cycle_id' IS NOT NULL
+           AND metadata->>'cycle_id' ~ '^[0-9]+$'
+           """,
+           "agent"
+         ) do
+      {:ok, %{"rows" => [%{"cycle_id" => id}]}} when is_integer(id) -> id
+      {:ok, %{"rows" => [%{"cycle_id" => id}]}} -> String.to_integer(to_string(id))
+      _ -> 43
+    end
+  rescue
+    _ -> 43
   end
 
   @impl true
@@ -159,6 +235,7 @@ defmodule Jay.V2.AutonomyController do
   defp check_and_maybe_advance(_state) do
     # 오늘 escalation 없으면 clean_day 기록
     escalated_today = escalation_today?()
+
     unless escalated_today do
       record_clean_day()
     end
@@ -166,13 +243,17 @@ defmodule Jay.V2.AutonomyController do
 
   defp escalation_today? do
     today = Date.utc_today() |> Date.to_string()
-    case Jay.Core.HubClient.pg_query("""
-      SELECT COUNT(*)::int AS cnt
-      FROM agent.event_lake
-      WHERE event_type = 'decision.escalate'
-        AND metadata->>'source' = 'jay.decision_engine'
-        AND created_at >= '#{today}'::date
-    """, "agent") do
+
+    case Jay.Core.HubClient.pg_query(
+           """
+             SELECT COUNT(*)::int AS cnt
+             FROM agent.event_lake
+             WHERE event_type = 'decision.escalate'
+               AND metadata->>'source' = 'jay.decision_engine'
+               AND created_at >= '#{today}'::date
+           """,
+           "agent"
+         ) do
       {:ok, %{"rows" => [%{"cnt" => n}]}} -> n > 0
       _ -> false
     end
@@ -185,9 +266,12 @@ defmodule Jay.V2.AutonomyController do
   # ────────────────────────────────────────────────────────────────
 
   defp kv_store_available? do
-    case Jay.Core.HubClient.pg_query("""
-      SELECT to_regclass('agent.kv_store') AS table_name
-    """, "agent") do
+    case Jay.Core.HubClient.pg_query(
+           """
+             SELECT to_regclass('agent.kv_store') AS table_name
+           """,
+           "agent"
+         ) do
       {:ok, %{"rows" => [%{"table_name" => "agent.kv_store"}]}} -> true
       _ -> false
     end
@@ -199,13 +283,17 @@ defmodule Jay.V2.AutonomyController do
     if not kv_store_available?() do
       %__MODULE__{phase: 1, phase_since: Date.utc_today()}
     else
-      case Jay.Core.HubClient.pg_query("""
-        SELECT value FROM agent.kv_store
-        WHERE key = '#{@phase_key}'
-        LIMIT 1
-      """, "agent") do
+      case Jay.Core.HubClient.pg_query(
+             """
+               SELECT value FROM agent.kv_store
+               WHERE key = '#{@phase_key}'
+               LIMIT 1
+             """,
+             "agent"
+           ) do
         {:ok, %{"rows" => [%{"value" => v}]}} when is_integer(v) ->
           %__MODULE__{phase: v, phase_since: Date.utc_today()}
+
         _ ->
           %__MODULE__{phase: 1, phase_since: Date.utc_today()}
       end
@@ -218,11 +306,14 @@ defmodule Jay.V2.AutonomyController do
     if not kv_store_available?() do
       :ok
     else
-      Jay.Core.HubClient.pg_query("""
-        INSERT INTO agent.kv_store (key, value, updated_at)
-        VALUES ('#{@phase_key}', #{phase}, NOW())
-        ON CONFLICT (key) DO UPDATE SET value = #{phase}, updated_at = NOW()
-      """, "agent")
+      Jay.Core.HubClient.pg_query(
+        """
+          INSERT INTO agent.kv_store (key, value, updated_at)
+          VALUES ('#{@phase_key}', #{phase}, NOW())
+          ON CONFLICT (key) DO UPDATE SET value = #{phase}, updated_at = NOW()
+        """,
+        "agent"
+      )
     end
   rescue
     _ -> :ok
@@ -231,14 +322,17 @@ defmodule Jay.V2.AutonomyController do
   defp broadcast_phase_change(from, to) do
     Jay.Core.HubClient.post_alarm(
       "🤖 [제이] 자율화 단계 전환!\n#{phase_label(from)} → #{phase_label(to)}",
-      "jay", "autonomy_controller"
+      "jay",
+      "autonomy_controller"
     )
+
     Jay.Core.EventLake.record(%{
       source: "jay.autonomy_controller",
       event_type: "autonomy.phase_changed",
       severity: "info",
       payload: %{from: from, to: to}
     })
+
     broadcast_dashboard_phase_change(from, to)
   rescue
     _ -> :ok
@@ -250,8 +344,17 @@ defmodule Jay.V2.AutonomyController do
         :ok
 
       pubsub ->
-        Phoenix.PubSub.broadcast(pubsub, "autonomy:phase_changed", {:phase_changed, %{from: from, to: to}})
-        Phoenix.PubSub.broadcast(pubsub, "autonomy_phase_change", {:autonomy_phase_change, from, to})
+        Phoenix.PubSub.broadcast(
+          pubsub,
+          "autonomy:phase_changed",
+          {:phase_changed, %{from: from, to: to}}
+        )
+
+        Phoenix.PubSub.broadcast(
+          pubsub,
+          "autonomy_phase_change",
+          {:autonomy_phase_change, from, to}
+        )
     end
   rescue
     _ -> :ok

@@ -24,6 +24,12 @@ type EventLakeRecordInput = {
   tags?: string[];
   metadata?: Record<string, unknown>;
 };
+type EventLakeRecordCompatInput = Omit<EventLakeRecordInput, 'eventType'> & {
+  eventType?: string;
+  event_type?: string;
+  bot_name?: string;
+  trace_id?: string;
+};
 type EventLakeSearchInput = {
   q?: string;
   eventType?: string;
@@ -113,6 +119,10 @@ export async function initSchema() {
       CREATE INDEX IF NOT EXISTS event_lake_tags_gin_idx
       ON ${TABLE} USING gin (tags)
     `, []);
+    await pgPool.run(SCHEMA, `
+      CREATE INDEX IF NOT EXISTS idx_event_lake_cycle_id
+      ON ${TABLE} ((metadata->>'cycle_id'))
+    `, []);
   })().catch((error) => {
     _initPromise = null;
     throw error;
@@ -157,6 +167,26 @@ export async function record({
   ]));
 
   return rows[0]?.id || null;
+}
+
+/**
+ * Compatibility wrapper for older design docs and scripts that use snake_case
+ * EventLake keys. Prefer `record()` for new TypeScript call sites.
+ *
+ * @param {EventLakeRecordCompatInput} input
+ */
+export async function recordEvent(input: EventLakeRecordCompatInput): Promise<number | string | null> {
+  return record({
+    eventType: input.eventType || input.event_type || 'general_event',
+    team: input.team,
+    botName: input.botName || input.bot_name,
+    severity: input.severity,
+    traceId: input.traceId || input.trace_id,
+    title: input.title,
+    message: input.message,
+    tags: input.tags,
+    metadata: input.metadata,
+  });
 }
 
 /**

@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>Label</key>
+	<string>ai.metty.trace</string>
+	<key>EnvironmentVariables</key>
+	<dict>
+		<key>HOME</key>
+		<string>/Users/alexlee</string>
+		<key>NODE_ENV</key>
+		<string>production</string>
+		<key>PATH</key>
+		<string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+	</dict>
+	<key>ProgramArguments</key>
+	<array>
+		<string>/opt/homebrew/bin/tsx</string>
+		<string>/Users/alexlee/projects/ai-agent-system/bots/orchestrator/lib/write/metty-trace.ts</string>
+		<string>--json</string>
+	</array>
+	<key>StartInterval</key>
+	<integer>300</integer>
+	<key>WorkingDirectory</key>
+	<string>/Users/alexlee/projects/ai-agent-system</string>
+	<key>StandardOutPath</key>
+	<string>/tmp/metty-trace.log</string>
+	<key>StandardErrorPath</key>
+	<string>/tmp/metty-trace.err</string>
+</dict>
+</plist>

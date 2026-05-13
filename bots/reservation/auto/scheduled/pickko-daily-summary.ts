@@ -141,14 +141,16 @@ async function main() {
       : 0;
     const pickkoStudyRoomTotal = pickkoStats
       ? (statsStudyRoomTotal > 0 ? statsStudyRoomTotal : entryStudyRoomTotal)
-      : 0;
-    const resolvedGeneralRevenue = pickkoStats ? Number(pickkoStats.generalRevenue || 0) : null;
+      : entryStudyRoomTotal;
+    const resolvedGeneralRevenue = pickkoStats
+      ? Number(pickkoStats.generalRevenue || 0)
+      : Math.max(Number(totalAmount || 0) - Number(entryStudyRoomTotal || 0), 0);
 
     upsertDailySummary(reportDate, {
       totalAmount,
       roomAmounts,
       entriesCount: entries.length,
-      pickkoStudyRoom: pickkoStats ? pickkoStudyRoomTotal : null,
+      pickkoStudyRoom: pickkoStudyRoomTotal,
       generalRevenue: resolvedGeneralRevenue,
     });
     log(`  daily_summary 저장: ${reportDate} | ${totalAmount}원 | ${entries.length}건`);

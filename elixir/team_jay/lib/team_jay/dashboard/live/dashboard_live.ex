@@ -33,7 +33,8 @@ defmodule TeamJay.Dashboard.Live.DashboardLive do
   def handle_info({:event_lake_new, event}, socket) do
     events = [event | Enum.take(socket.assigns.events, 49)]
     stats = safe_call(fn -> Jay.Core.EventLake.get_stats() end, socket.assigns.event_stats)
-    {:noreply, assign(socket, events: events, event_stats: stats)}
+    cycles = safe_call(fn -> load_recent_cycles() end, socket.assigns.cycles)
+    {:noreply, assign(socket, events: events, event_stats: stats, cycles: cycles)}
   end
 
   def handle_info({:phase_changed, _}, socket) do
@@ -80,23 +81,30 @@ defmodule TeamJay.Dashboard.Live.DashboardLive do
     <div class="min-h-screen p-4 space-y-4">
       <header class="flex items-center justify-between border-b border-gray-700 pb-3">
         <h1 class="text-xl font-bold text-white">🤖 팀 제이 대시보드</h1>
-        <span class="text-xs text-gray-400">Phase A • 영역 1+3+4</span>
+        <span class="text-xs text-gray-400">Phase B • 영역 1+2+3+4</span>
       </header>
 
-      <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        <!-- 영역 1: 자율화 Phase 보드 -->
-        <.phase_board phase_status={@phase_status} />
+      <div class="grid grid-cols-1 xl:grid-cols-3 gap-4">
+        <div class="xl:col-span-2 space-y-4">
+          <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            <!-- 영역 1: 자율화 Phase 보드 -->
+            <.phase_board phase_status={@phase_status} />
 
-        <!-- 영역 3: 오늘의 GrowthCycle -->
-        <.growth_cycle_board
-          growth_cycle={@growth_cycle}
-          cycle_status={@cycle_status}
-          teams_collected={@teams_collected}
-        />
+            <!-- 영역 3: 오늘의 GrowthCycle -->
+            <.growth_cycle_board
+              growth_cycle={@growth_cycle}
+              cycle_status={@cycle_status}
+              teams_collected={@teams_collected}
+            />
+          </div>
+
+          <!-- 영역 4: EventLake 실시간 스트림 -->
+          <.event_lake_board events={@events} event_stats={@event_stats} />
+        </div>
+
+        <!-- 영역 2: 협업 타임라인 -->
+        <.collab_timeline_board cycles={@cycles} />
       </div>
-
-      <!-- 영역 4: EventLake 실시간 스트림 -->
-      <.event_lake_board events={@events} event_stats={@event_stats} />
     </div>
     """
   end
@@ -356,6 +364,65 @@ defmodule TeamJay.Dashboard.Live.DashboardLive do
     """
   end
 
+  # ── 영역 2: 협업 타임라인 ───────────────────────────────────────
+
+  attr(:cycles, :list, required: true)
+
+  defp collab_timeline_board(assigns) do
+    ~H"""
+    <div class="bg-gray-800 rounded-xl p-5 space-y-4">
+      <div class="flex items-center justify-between border-b border-gray-700 pb-2">
+        <span class="text-sm font-semibold text-gray-300 uppercase tracking-wider">
+          [2] 협업 타임라인
+        </span>
+        <span class="text-xs text-gray-400">최근 5 cycle</span>
+      </div>
+
+      <%= if @cycles == [] do %>
+        <div class="text-center text-gray-500 py-8 text-sm">
+          cycle_id 기반 협업 이벤트 없음 — 마스터/메티/코덱스 trace 대기 중...
+        </div>
+      <% else %>
+        <div class="space-y-3 max-h-[760px] overflow-y-auto pr-1">
+          <%= for cycle <- @cycles do %>
+            <section class="bg-gray-900/70 border border-gray-700 rounded-lg p-3 space-y-2">
+              <div class="flex items-center justify-between">
+                <span class="text-sm font-semibold text-white">Cycle {cycle.cycle_id}</span>
+                <span class="text-xs text-gray-500">{length(cycle.events)} events</span>
+              </div>
+
+              <div class="space-y-2">
+                <%= for event <- cycle.events do %>
+                  <div class="flex gap-2 border-l border-gray-700 pl-3">
+                    <div class="text-lg leading-6">{bot_emoji(event.bot_name)}</div>
+                    <div class="min-w-0 flex-1">
+                      <div class="flex items-center gap-2">
+                        <span class="text-xs text-gray-400">{event.bot_name || "unknown"}</span>
+                        <span class={"text-[10px] font-semibold #{severity_class(event.severity)}"}>
+                          {event.severity || "info"}
+                        </span>
+                      </div>
+                      <div class="text-sm text-gray-100 truncate">
+                        {event.title || collab_event_label(event.event_type)}
+                      </div>
+                      <div class="text-[11px] text-gray-500 font-mono truncate">
+                        {event.event_type}
+                      </div>
+                      <div class="text-[11px] text-gray-500">
+                        {format_event_time(event.created_at)}
+                      </div>
+                    </div>
+                  </div>
+                <% end %>
+              </div>
+            </section>
+          <% end %>
+        </div>
+      <% end %>
+    </div>
+    """
+  end
+
   # ── 헬퍼 ────────────────────────────────────────────────────────
 
   defp assign_initial_state(socket) do
@@ -374,6 +441,8 @@ defmodule TeamJay.Dashboard.Live.DashboardLive do
     event_stats =
       safe_call(fn -> Jay.Core.EventLake.get_stats() end, %{total: 0, by_type: %{}, by_team: %{}})
 
+    cycles = safe_call(fn -> load_recent_cycles() end, [])
+
     socket
     |> assign(:phase_status, phase_status)
     |> assign(:growth_cycle, growth_cycle)
@@ -382,6 +451,7 @@ defmodule TeamJay.Dashboard.Live.DashboardLive do
     |> assign(:teams_collected, [])
     |> assign(:events, events)
     |> assign(:event_stats, event_stats)
+    |> assign(:cycles, cycles)
   end
 
   defp safe_call(func, default) do
@@ -398,6 +468,58 @@ defmodule TeamJay.Dashboard.Live.DashboardLive do
     Jay.V2.Topics.subscribe(topic)
   rescue
     _ -> :ok
+  end
+
+  defp load_recent_cycles do
+    sql = """
+    SELECT metadata->>'cycle_id' AS cycle_id
+    FROM agent.event_lake
+    WHERE metadata->>'cycle_id' IS NOT NULL
+      AND metadata->>'cycle_id' ~ '^[0-9]+$'
+    GROUP BY metadata->>'cycle_id'
+    ORDER BY (metadata->>'cycle_id')::int DESC
+    LIMIT 5
+    """
+
+    case Jay.Core.Repo.query(sql, []) do
+      {:ok, %{rows: rows}} ->
+        Enum.map(rows, fn [cycle_id] ->
+          %{cycle_id: cycle_id, events: load_cycle_events(cycle_id)}
+        end)
+
+      _ ->
+        []
+    end
+  rescue
+    _ -> []
+  end
+
+  defp load_cycle_events(cycle_id) do
+    sql = """
+    SELECT event_type, team, bot_name, title, severity, created_at
+    FROM agent.event_lake
+    WHERE metadata->>'cycle_id' = $1
+    ORDER BY created_at ASC
+    LIMIT 30
+    """
+
+    case Jay.Core.Repo.query(sql, [to_string(cycle_id)]) do
+      {:ok, %{rows: rows}} -> Enum.map(rows, &row_to_cycle_event/1)
+      _ -> []
+    end
+  rescue
+    _ -> []
+  end
+
+  defp row_to_cycle_event([event_type, team, bot_name, title, severity, created_at]) do
+    %{
+      event_type: event_type,
+      team: team,
+      bot_name: bot_name,
+      title: title,
+      severity: severity,
+      created_at: created_at
+    }
   end
 
   defp refresh_phase_status(socket) do
@@ -511,6 +633,24 @@ defmodule TeamJay.Dashboard.Live.DashboardLive do
   defp severity_class("warn"), do: "severity-warn"
   defp severity_class("warning"), do: "severity-warn"
   defp severity_class(_), do: "severity-info"
+
+  defp bot_emoji("master"), do: "🧑"
+  defp bot_emoji("metty"), do: "🧠"
+  defp bot_emoji("codex"), do: "⌨"
+  defp bot_emoji(_), do: "•"
+
+  defp collab_event_label("master.intervention.telegram"), do: "마스터 텔레그램 개입"
+  defp collab_event_label("master.intervention.phase_change"), do: "마스터 Phase 변경"
+  defp collab_event_label("master.intervention.decision"), do: "마스터 결정"
+  defp collab_event_label("metty.session.started"), do: "메티 세션 시작"
+  defp collab_event_label("metty.session.analyzed"), do: "메티 분석"
+  defp collab_event_label("metty.session.designed"), do: "메티 설계"
+  defp collab_event_label("metty.session.handoff_updated"), do: "메티 인수인계 갱신"
+  defp collab_event_label("metty.session.lesson_added"), do: "메티 레슨 추가"
+  defp collab_event_label("codex.task.started"), do: "코덱스 작업 시작"
+  defp collab_event_label("codex.task.checkbox_updated"), do: "코덱스 체크박스 갱신"
+  defp collab_event_label("codex.task.archived"), do: "코덱스 작업 아카이브"
+  defp collab_event_label(event_type), do: event_type || "협업 이벤트"
 
   defp steps_completed(team_count, cycle_status) do
     active_idx =
