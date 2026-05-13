@@ -111,6 +111,8 @@ const COMPETITION_DAYS                              = Array.isArray(competitionR
   : [1, 3, 5];
 // 소셜미디어 마스터 스위치 — 기본 false (BLOG_SOCIAL_MEDIA_ENABLED=true 로 명시적 활성화 필요)
 const SOCIAL_MEDIA_ENABLED                          = process.env.BLOG_SOCIAL_MEDIA_ENABLED === 'true';
+// 이미지 생성 스위치 — 기본 false (BLOG_IMAGE_GEN_ENABLED=true 로 명시적 활성화 필요)
+const IMAGE_GEN_ENABLED                             = process.env.BLOG_IMAGE_GEN_ENABLED === 'true';
 if (!SOCIAL_MEDIA_ENABLED) {
   console.log('[블로] 소셜미디어 OFF (BLOG_SOCIAL_MEDIA_ENABLED != true) — 인스타/이미지 생성 비활성');
 }
@@ -1530,7 +1532,7 @@ async function _finalizeGeneralPost(post, quality, context, scheduleId, traceCtx
   }
   // Humanize: 이미지 생성 전에 본문 인간화 (BLOG_HUMANIZE_ENABLED=true 시)
   post.content = await _humanizeIfEnabled(post.content, genTitle);
-  const images = (options.dryRun || !SOCIAL_MEDIA_ENABLED)
+  const images = (options.dryRun || !IMAGE_GEN_ENABLED)
     ? null
     : await generatePostImages({ title: genTitle, postType: 'general', category: context.category }).catch(async e => {
       console.error('[이미지] 생성 실패 (일반):', e.message);

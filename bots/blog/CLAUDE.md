@@ -6,11 +6,14 @@
 - Reddit 트렌드 + 알라딘 베스트셀러 기반 토픽 선정
 - "사람처럼 작성" Humanize Layer 적용
 
-## 소셜미디어 분리 (2026-05-12 G영역)
+## 소셜미디어 분리 (2026-05-12 G영역 — 완료!)
 - **인스타그램/페이스북/이미지 생성 = OFF** (기본 비활성)
-- 소스 파일은 bots/blog/lib/ 유지 (import 복잡도로 이동 보류)
-- 별도 고도화: `bots/social-media/` 디렉토리 참조
-- **ON 방법**: 환경변수 `BLOG_SOCIAL_MEDIA_ENABLED=true` 설정
+- 소스 파일 이동 완료 (2026-05-13 Codex Week1 구현):
+  - 인스타: `bots/social-media/instagram/lib/` (star, insta-crosspost, instagram-story, instagram-token-automation)
+  - 페북: `bots/social-media/facebook/lib/` (facebook-publisher)
+  - 이미지: `bots/social-media/image-gen/lib/` (img-gen, img-gen-doctor)
+  - 숏폼: `bots/social-media/shortform/lib/` (shortform-files, shortform-planner, shortform-renderer)
+- **ON 방법**: 환경변수 `BLOG_SOCIAL_MEDIA_ENABLED=true` (인스타/페북) / `BLOG_IMAGE_GEN_ENABLED=true` (이미지)
 - launchd 비활성화됨: ai.blog.instagram-publish, ai.blog.facebook-publish, ai.blog.instagram-token-refresh
 
 ## 현재 운영 상태

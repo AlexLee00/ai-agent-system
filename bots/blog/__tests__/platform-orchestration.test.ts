@@ -17,7 +17,7 @@ jest.mock('../../../packages/core/lib/mode-guard', () => ({
 jest.mock('../../../packages/core/lib/hub-alarm-client', () => ({
   postAlarm: jest.fn().mockResolvedValue(undefined),
 }));
-jest.mock('../lib/star.ts', () => ({
+jest.mock('../../social-media/instagram/lib/star.ts', () => ({
   createInstaContent: jest.fn().mockResolvedValue({
     caption: 'strategy-native caption',
     hashtags: ['#strategy_native'],

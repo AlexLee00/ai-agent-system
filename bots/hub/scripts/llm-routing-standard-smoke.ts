@@ -16,7 +16,7 @@ const STANDARDIZED_SCOPES = [
   'bots/claude/lib/archer/analyzer.ts',
   'bots/claude/lib/archer/config.ts',
   'bots/blog/lib/social.ts',
-  'bots/blog/lib/star.ts',
+  'bots/social-media/instagram/lib/star.ts',
   'bots/blog/lib/feedback-learner.ts',
   'bots/blog/lib/curriculum-planner.ts',
   'bots/blog/lib/commenter.ts',
