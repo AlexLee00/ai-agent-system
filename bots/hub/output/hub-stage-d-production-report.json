@@ -1,6 +1,6 @@
 {
   "ok": true,
-  "checkedAt": "2026-05-13T06:35:18.450Z",
+  "checkedAt": "2026-05-13T06:43:44.968Z",
   "stage": "hub_stage_d",
   "status": "stage_d_code_complete_promotion_evidence_pending",
   "codeComplete": true,
@@ -361,7 +361,7 @@
     },
     "uptime": {
       "ok": true,
-      "uptimeSeconds": 7349,
+      "uptimeSeconds": 7855,
       "startupComplete": true,
       "httpStatus": 200
     },
