@@ -12,6 +12,10 @@ defmodule TeamJay.Dashboard.Router do
   end
 
   scope "/" do
+    forward "/healthz", TeamJay.Dashboard.HealthPlug
+  end
+
+  scope "/" do
     pipe_through :browser
     live "/", TeamJay.Dashboard.Live.DashboardLive, :index
   end

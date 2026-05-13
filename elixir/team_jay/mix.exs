@@ -16,6 +16,7 @@ defmodule TeamJay.MixProject do
 
   defp aliases do
     [
+      "dashboard.phase_a_check": ["team_jay.dashboard.phase_a_check"],
       "sigma.migrate": ["sigma.migrate"],
       "darwin.migrate": ["darwin.migrate"],
       "luna.migrate":  ["luna.migrate"]

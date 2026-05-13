@@ -9,8 +9,6 @@ defmodule Jay.Core.EventLake do
   alias Jay.Core.Schemas.EventLake, as: EventLakeSchema
 
   @max_cache 1_000
-  @dashboard_pubsub Application.compile_env(:jay_core, :dashboard_pubsub, nil)
-
   defstruct [:events, :stats, :started_at, :pg_pid, :ref, :channel]
 
   def start_link(opts \\ []) do
@@ -46,9 +44,7 @@ defmodule Jay.Core.EventLake do
     new_events = [event | Enum.take(state.events, @max_cache - 1)]
     new_stats = update_stats(state.stats, event)
 
-    if @dashboard_pubsub do
-      Phoenix.PubSub.broadcast(@dashboard_pubsub, "event_lake:new", {:event_lake_new, event})
-    end
+    broadcast_dashboard_event(event)
 
     {:noreply, %{state | events: new_events, stats: new_stats}}
   end
@@ -145,5 +141,19 @@ defmodule Jay.Core.EventLake do
         by_type: Map.update(stats.by_type, type, 1, &(&1 + 1)),
         by_team: Map.update(stats.by_team, team, 1, &(&1 + 1))
     }
+  end
+
+  defp broadcast_dashboard_event(event) do
+    case dashboard_pubsub() do
+      nil -> :ok
+      pubsub -> Phoenix.PubSub.broadcast(pubsub, "event_lake:new", {:event_lake_new, event})
+    end
+  rescue
+    _ -> :ok
+  end
+
+  defp dashboard_pubsub do
+    Application.get_env(:jay_core, :dashboard_pubsub) ||
+      Application.get_env(:team_jay, :dashboard_pubsub)
   end
 end

@@ -20,19 +20,27 @@ config :team_jay,
 config :team_jay,
   repo_root: System.get_env("REPO_ROOT", "/Users/alexlee/projects/ai-agent-system")
 
+dashboard_port =
+  System.get_env("TEAM_JAY_DASHBOARD_PORT") ||
+    System.get_env("DASHBOARD_PORT") ||
+    "7787"
+
+dashboard_secret_key_base =
+  System.get_env("TEAM_JAY_DASHBOARD_SECRET_KEY_BASE") ||
+    System.get_env("DASHBOARD_SECRET_KEY_BASE") ||
+    "teamjay_dashboard_dev_key_changeme_in_prod_xxxxxxxxxxxxxxxxxxxxxxxx"
+
 # Phase A: LiveView 대시보드 (http://localhost:7787)
 config :team_jay, TeamJay.Dashboard.Endpoint,
-  http: [port: String.to_integer(System.get_env("DASHBOARD_PORT", "7787"))],
+  adapter: Bandit.PhoenixAdapter,
+  http: [port: String.to_integer(dashboard_port)],
   server: true,
   # 로컬 내부 도구용 — 운영 배포 시 환경변수로 교체 필수
-  secret_key_base:
-    System.get_env(
-      "DASHBOARD_SECRET_KEY_BASE",
-      "teamjay_dashboard_dev_key_changeme_in_prod_xxxxxxxxxxxxxxxxxxxxxxxx"
-    ),
+  secret_key_base: dashboard_secret_key_base,
   live_view: [signing_salt: "tvdashboard"],
   pubsub_server: TeamJay.PubSub
 
+config :team_jay, :dashboard_pubsub, TeamJay.PubSub
 config :jay_core, :dashboard_pubsub, TeamJay.PubSub
 
 # Phase 3: 코덱스 자동 실행 (true = 마스터 승인 없이 자동 실행)

@@ -15,10 +15,12 @@ defmodule TeamJay.Dashboard.Live.DashboardLive do
     if connected?(socket) do
       Phoenix.PubSub.subscribe(@pubsub, "event_lake:new")
       Phoenix.PubSub.subscribe(@pubsub, "autonomy:phase_changed")
+      Phoenix.PubSub.subscribe(@pubsub, "autonomy_phase_change")
       # GrowthCycle 토픽은 JayBus(Registry) 직접 구독
       safe_subscribe(:growth_cycle_started)
       safe_subscribe(:growth_cycle_completed)
       safe_subscribe(:team_data_collected)
+      safe_subscribe(:briefing_ready)
     end
 
     {:ok, assign_initial_state(socket)}
@@ -34,8 +36,11 @@ defmodule TeamJay.Dashboard.Live.DashboardLive do
   end
 
   def handle_info({:phase_changed, _}, socket) do
-    status = safe_call(fn -> Jay.V2.AutonomyController.get_status() end, socket.assigns.phase_status)
-    {:noreply, assign(socket, phase_status: status)}
+    {:noreply, refresh_phase_status(socket)}
+  end
+
+  def handle_info({:autonomy_phase_change, _from, _to}, socket) do
+    {:noreply, refresh_phase_status(socket)}
   end
 
   def handle_info({:jay_bus, :growth_cycle_started, payload}, socket) do
@@ -55,6 +60,11 @@ defmodule TeamJay.Dashboard.Live.DashboardLive do
   def handle_info({:jay_bus, :growth_cycle_completed, _payload}, socket) do
     growth_cycle = safe_call(fn -> Jay.V2.GrowthCycle.status() end, socket.assigns.growth_cycle)
     {:noreply, assign(socket, cycle_status: :completed, growth_cycle: growth_cycle, teams_collected: [])}
+  end
+
+  def handle_info({:jay_bus, :briefing_ready, _payload}, socket) do
+    growth_cycle = safe_call(fn -> Jay.V2.GrowthCycle.status() end, socket.assigns.growth_cycle)
+    {:noreply, assign(socket, cycle_status: :completed, growth_cycle: growth_cycle)}
   end
 
   def handle_info(_msg, socket), do: {:noreply, socket}
@@ -362,15 +372,24 @@ defmodule TeamJay.Dashboard.Live.DashboardLive do
   end
 
   defp safe_call(func, default) do
-    func.()
-  rescue
-    _ -> default
+    try do
+      func.()
+    rescue
+      _ -> default
+    catch
+      :exit, _ -> default
+    end
   end
 
   defp safe_subscribe(topic) do
     Jay.V2.Topics.subscribe(topic)
   rescue
     _ -> :ok
+  end
+
+  defp refresh_phase_status(socket) do
+    status = safe_call(fn -> Jay.V2.AutonomyController.get_status() end, socket.assigns.phase_status)
+    assign(socket, phase_status: status)
   end
 
   defp format_date(nil), do: "—"

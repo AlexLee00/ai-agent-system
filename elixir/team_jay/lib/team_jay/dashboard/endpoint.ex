@@ -24,6 +24,12 @@ defmodule TeamJay.Dashboard.Endpoint do
     gzip: false,
     only: ~w(phoenix_live_view.js)
 
+  plug Plug.Static,
+    at: "/assets",
+    from: :team_jay,
+    gzip: false,
+    only: ~w(dashboard.css)
+
   plug Plug.RequestId
   plug Plug.Telemetry, event_prefix: [:phoenix, :endpoint]
 

@@ -10,7 +10,7 @@ defmodule TeamJay.Dashboard.Layouts do
         <meta name="viewport" content="width=device-width, initial-scale=1" />
         <meta name="csrf-token" content={Plug.CSRFProtection.get_csrf_token()} />
         <title>팀 제이 대시보드</title>
-        <script src="https://cdn.tailwindcss.com"></script>
+        <link rel="stylesheet" href="/assets/dashboard.css" />
         <script src="/assets/phoenix.js"></script>
         <script src="/assets/phoenix_live_view.js"></script>
         <script>
@@ -18,12 +18,6 @@ defmodule TeamJay.Dashboard.Layouts do
           let liveSocket = new LiveView.LiveSocket("/live", Phoenix.Socket, {params: {_csrf_token: csrfToken}});
           liveSocket.connect();
         </script>
-        <style>
-          .step-box { @apply px-3 py-1 rounded text-xs font-mono font-semibold; }
-          .severity-info  { @apply text-blue-400; }
-          .severity-warn  { @apply text-yellow-400; }
-          .severity-error { @apply text-red-400; }
-        </style>
       </head>
       <body class="h-full bg-gray-900 text-gray-100">
         {@inner_content}
