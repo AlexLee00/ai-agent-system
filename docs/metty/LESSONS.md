@@ -206,4 +206,43 @@
 
 ---
 
+
+## Lesson #012 — 단편 grep으로 결론 내지 마라. 함수 호출 체인 끝까지 추적해라.
+
+**날짜**: 2026-05-13
+**계기**: 코덱스의 Phase A 검증 시 메티가 `grep "defp broadcast_phase_change"`만 보고 "Phoenix.PubSub.broadcast 누락"이라 잘못 평가. 마스터의 "다시 리뷰" 요청 (Lesson #002 안전망)으로 재검증. 실제 코드:
+
+```elixir
+defp broadcast_phase_change(from, to) do
+  Jay.Core.HubClient.post_alarm(...)
+  Jay.Core.EventLake.record(...)
+  broadcast_dashboard_phase_change(from, to)  ← 메티가 못 본 호출
+end
+
+defp broadcast_dashboard_phase_change(from, to) do
+  Phoenix.PubSub.broadcast(pubsub, "autonomy:phase_changed", {...})
+  Phoenix.PubSub.broadcast(pubsub, "autonomy_phase_change", {...})
+end
+```
+
+→ 코덱스가 이미 정확히 구현했는데 메티의 단편 grep이 "부족함"을 만들어냈음.
+
+**원칙**:
+- grep 결과는 단편적이다. **함수 호출 체인을 끝까지 따라가라**.
+- "누락" 결론 전에 자문: "이 함수가 다른 함수를 호출하지 않는가?"
+- 함수 정의만 보지 말고 **함수 본문의 모든 호출**까지 확인
+- Lesson #001 (마크다운 X, 코드)의 함수 레벨 버전
+- Lesson #002 (마스터 재검증)이 메티의 단편 판단을 잡는 안전망
+
+**기억할 문장**:
+> "메티의 grep 결과 = 한 줄의 단편. 함수 호출 체인의 끝에 진실이 있다.
+>  부족함 결론 전, 호출되는 다른 함수들도 본 후 결론지어라."
+
+**Lesson #001/#005와의 관계**:
+- #001: 마크다운 X, 폴더/lib 단위 코드
+- #005: 단일 자동화 X, 폴더 전체
+- **#012**: 단일 함수 X, 호출 체인 전체
+
+---
+
 _이 파일은 메티의 진짜 메모리. 핸드오프는 컨텍스트, LESSONS는 영혼._

@@ -4,6 +4,7 @@ defmodule TeamJay.Dashboard.Live.DashboardLive do
 
   @pubsub TeamJay.PubSub
 
+  @kst_offset_seconds 9 * 60 * 60
   @phase_labels %{1 => {"🔴", "감시"}, 2 => {"🟡", "반자율"}, 3 => {"🟢", "자율"}}
   @phase_thresholds %{1 => 7, 2 => 30}
   @cycle_steps ~w(SENSE ANALYZE DECIDE ACT MEASURE LEARN)
@@ -414,19 +415,25 @@ defmodule TeamJay.Dashboard.Live.DashboardLive do
   defp format_datetime(nil), do: "—"
 
   defp format_datetime(%DateTime{} = dt) do
-    dt |> DateTime.add(9 * 3600, :second) |> Calendar.strftime("%m/%d %H:%M KST")
+    dt |> DateTime.add(@kst_offset_seconds, :second) |> DateTime.to_naive() |> format_kst_label()
   rescue
     _ -> "—"
   end
 
-  defp format_datetime(s) when is_binary(s), do: String.slice(s, 0, 16)
+  defp format_datetime(s) when is_binary(s) do
+    case parse_event_time(s) do
+      nil -> String.slice(s, 0, 16)
+      parsed -> format_event_time(parsed)
+    end
+  end
+
   defp format_datetime(_), do: "—"
 
   defp format_event_time(nil), do: "—"
-  defp format_event_time(%NaiveDateTime{} = dt), do: Calendar.strftime(dt, "%m/%d %H:%M")
+  defp format_event_time(%NaiveDateTime{} = dt), do: format_kst_label(dt)
 
   defp format_event_time(%DateTime{} = dt) do
-    dt |> DateTime.add(9 * 3600, :second) |> Calendar.strftime("%m/%d %H:%M")
+    dt |> DateTime.add(@kst_offset_seconds, :second) |> DateTime.to_naive() |> format_kst_label()
   rescue
     _ -> "—"
   end
@@ -464,6 +471,12 @@ defmodule TeamJay.Dashboard.Live.DashboardLive do
 
   defp event_timestamp(_), do: nil
 
+  defp format_kst_label(%NaiveDateTime{} = dt) do
+    date = NaiveDateTime.to_date(dt)
+    time = Calendar.strftime(dt, "%H:%M")
+    "#{date.year}.#{pad2(date.month)}.#{pad2(date.day)} #{time}"
+  end
+
   defp parse_event_time(value) do
     normalized = String.replace(value, " ", "T")
 
@@ -477,6 +490,9 @@ defmodule TeamJay.Dashboard.Live.DashboardLive do
   rescue
     _ -> nil
   end
+
+  defp pad2(value) when is_integer(value) and value < 10, do: "0#{value}"
+  defp pad2(value), do: to_string(value)
 
   defp progress_color(1), do: "bg-red-500"
   defp progress_color(2), do: "bg-yellow-500"
