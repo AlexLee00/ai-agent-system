@@ -8,6 +8,7 @@ import {
   buildOpenProtectionJournalRestorePlan,
   buildProtectiveOrderJournalCloseInput,
   classifyProtectiveOrderJournalRepair,
+  inferProtectiveOrderRole,
   summarizeProtectiveOrderJournalRepair,
 } from './reconcile-protective-order-journals.ts';
 
@@ -34,13 +35,40 @@ const filledStop = classifyProtectiveOrderJournalRepair({
 });
 assert.equal(filledStop.action, 'close_from_protective_order');
 assert.equal(filledStop.closeSafe, true);
-assert.equal(filledStop.winningRole, 'stop_loss');
+assert.equal(filledStop.winningRole, 'take_profit');
 
 const closeInput = buildProtectiveOrderJournalCloseInput(entry, filledStop);
-assert.equal(closeInput.exitReason, 'protective_order_reconciled:stop_loss');
+assert.equal(closeInput.exitReason, 'protective_order_reconciled:take_profit');
 assert.equal(closeInput.exitValue, 120.5856);
 assert.equal(closeInput.execution_origin, 'reconciliation');
 assert.equal(closeInput.quality_flag, 'trusted');
+
+const swappedStopRole = inferProtectiveOrderRole(
+  { entry_size: 607.7, entry_value: 49.995479, entry_price: 0.08227 },
+  { status: 'closed', side: 'sell', type: 'stop_loss_limit', filled: 607, average: 0.07999, price: 0.07999 },
+  'take_profit',
+);
+assert.equal(swappedStopRole, 'stop_loss');
+
+const swappedStop = classifyProtectiveOrderJournalRepair({
+  entry: { ...entry, entry_size: 607.7, entry_value: 49.995479, entry_price: 0.08227 },
+  tpOrder: { id: 'stored-tp-but-actual-sl', status: 'closed', side: 'sell', type: 'stop_loss_limit', filled: 607, amount: 607, average: 0.07999, price: 0.07999, cost: 48.55393 },
+});
+assert.equal(swappedStop.winningRole, 'stop_loss');
+assert.equal(buildProtectiveOrderJournalCloseInput(
+  { ...entry, entry_size: 607.7, entry_value: 49.995479, entry_price: 0.08227 },
+  swappedStop,
+).exitReason, 'protective_order_reconciled:stop_loss');
+
+const swappedTakeProfit = classifyProtectiveOrderJournalRepair({
+  entry: { ...entry, entry_size: 1845, entry_value: 49.9995, entry_price: 0.0271 },
+  slOrder: { id: 'stored-sl-but-actual-tp', status: 'closed', side: 'sell', type: 'limit', filled: 1843.1, amount: 1843.1, average: 0.0287, price: 0.0287, cost: 52.89697 },
+});
+assert.equal(swappedTakeProfit.winningRole, 'take_profit');
+assert.equal(buildProtectiveOrderJournalCloseInput(
+  { ...entry, entry_size: 1845, entry_value: 49.9995, entry_price: 0.0271 },
+  swappedTakeProfit,
+).exitReason, 'protective_order_reconciled:take_profit');
 
 const stillOpen = classifyProtectiveOrderJournalRepair({
   entry,

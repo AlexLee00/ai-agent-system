@@ -55,6 +55,26 @@ function summarizeOrder(order = null, role = '') {
   };
 }
 
+export function inferProtectiveOrderRole(entry = {}, order = null, fallbackRole = '') {
+  const fallback = String(fallbackRole || '').trim() || 'unknown';
+  if (!order) return fallback;
+
+  const side = String(order.side || '').toLowerCase();
+  const entryPrice = safeNumber(entry.entry_price, 0)
+    || (safeNumber(entry.entry_size, 0) > 0
+      ? safeNumber(entry.entry_value, 0) / safeNumber(entry.entry_size, 0)
+      : 0);
+  const exitPrice = safeNumber(order.average, 0) || safeNumber(order.price, 0);
+  if (side === 'sell' && entryPrice > 0 && exitPrice > 0) {
+    return exitPrice >= entryPrice ? 'take_profit' : 'stop_loss';
+  }
+
+  const type = String(order.type || '').toLowerCase();
+  if (type.includes('stop')) return 'stop_loss';
+  if (type === 'limit') return 'take_profit';
+  return fallback;
+}
+
 function entryTolerance(entry = {}) {
   const qty = Math.abs(safeNumber(entry.entry_size, 0));
   return Math.max(0.000001, qty * 0.02);
@@ -70,7 +90,10 @@ export function classifyProtectiveOrderJournalRepair({
   const orders = [
     { role: 'take_profit', order: tpOrder, error: tpError },
     { role: 'stop_loss', order: slOrder, error: slError },
-  ];
+  ].map((item) => ({
+    ...item,
+    role: inferProtectiveOrderRole(entry, item.order, item.role),
+  }));
   const presentOrders = orders.filter((item) => item.order);
   const fetchErrors = orders.filter((item) => item.error).map((item) => ({
     role: item.role,
