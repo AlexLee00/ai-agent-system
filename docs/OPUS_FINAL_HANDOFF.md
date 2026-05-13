@@ -1,4 +1,62 @@
-# 세션 인수인계 — 2026-05-12 (Blog CODEX V2 — G/H/I/J 영역 — 100차 세션)
+# 세션 인수인계 — 2026-05-13 (Hub Stage D Week 1 — Blue-Green + secrets 자동 갱신)
+
+## 완료 요약 ✅ (Stage D Week 1 — CODEX_HUB_STAGE_D_PRODUCTION_PROMOTION)
+
+### Hub Stage D Week 1 — 2개 Task 완료
+
+**Task D1: Blue-Green 배포 (Hot Standby)** ✅:
+- `bots/hub/launchd/ai.hub.resource-api-green.plist` — Green 인스턴스 (port 7789, KeepAlive X, 수동 load)
+- `bots/hub/src/hub-proxy.ts` — `/tmp/hub-bg-state.json` 읽어 Blue/Green 라우팅 (port 7780)
+- `bots/hub/launchd/ai.hub.bg-proxy.plist` — 프록시 launchd (수동 load)
+- `bots/hub/scripts/hub-blue-green-deploy.ts` — `status/deploy/switch/rollback` CLI
+- npm scripts: `hub:bg-status`, `hub:bg-deploy`, `hub:bg-switch`, `hub:bg-rollback`
+- ⚠️ OPS 적용 필요: `cp bots/hub/launchd/ai.hub.resource-api-green.plist ~/Library/LaunchAgents/`
+- ⚠️ 프록시 로드: `cp bots/hub/launchd/ai.hub.bg-proxy.plist ~/Library/LaunchAgents/ && launchctl load ~/Library/LaunchAgents/ai.hub.bg-proxy.plist`
+
+**Task D2: secrets 자동 갱신** ✅:
+- `bots/hub/migrations/20261001000070_hub_secrets_rotation_log.sql` — `hub.secrets_rotation_log` 테이블
+- `bots/hub/lib/secrets-store-monitor.ts` — 만료 스캔 + DB 로깅 라이브러리
+- `bots/hub/scripts/secrets-store-monitor-runner.ts` — CLI 러너
+- `bots/hub/launchd/ai.hub.secrets-auto-rotate.plist` — 매일 06:00 KST
+- npm script: `hub:secrets-monitor`, `hub:secrets-monitor:apply-migration`
+- ⚠️ OPS 적용 필요: 마이그레이션 실행 + plist LaunchAgents 복사 + launchd load
+
+**Stage D 보고 프레임워크** ✅:
+- `bots/hub/lib/stage-d/production.ts` — Production Promotion Gate (D8용)
+- `bots/hub/scripts/hub-stage-d-report.ts` — 보고 CLI
+- npm: `hub:stage-d-report`, `hub:stage-d-report:write`
+
+**커밋**: `2be71cee` — `feat(hub): Stage D Week 1 — Blue-Green 배포 + secrets 자동 갱신`
+**태그**: `pre-stage-d-week1-20260513-1508`, `stage-d-week1-complete-20260513-1509`
+
+---
+
+### OPS 적용 체크리스트 (다음 세션에서 Alex가 직접!)
+
+```bash
+# 1. Green plist + BG proxy 설치
+cp ~/projects/ai-agent-system/bots/hub/launchd/ai.hub.resource-api-green.plist ~/Library/LaunchAgents/
+cp ~/projects/ai-agent-system/bots/hub/launchd/ai.hub.bg-proxy.plist ~/Library/LaunchAgents/
+cp ~/projects/ai-agent-system/bots/hub/launchd/ai.hub.secrets-auto-rotate.plist ~/Library/LaunchAgents/
+
+# 2. DB 마이그레이션 (secrets_rotation_log 테이블)
+cd ~/projects/ai-agent-system
+npm --prefix bots/hub run hub:secrets-monitor:apply-migration
+
+# 3. Blue 확인 후 Green 배포
+npm --prefix bots/hub run hub:bg-status
+npm --prefix bots/hub run hub:bg-deploy
+
+# 4. 프록시 시작
+launchctl load ~/Library/LaunchAgents/ai.hub.bg-proxy.plist
+
+# 5. Stage D 보고
+npm --prefix bots/hub run hub:stage-d-report
+```
+
+---
+
+# 이전 세션 인수인계 — 2026-05-12 (Blog CODEX V2 — G/H/I/J 영역 — 100차 세션)
 
 ## 완료 요약 ✅ (100차 세션 — CODEX_BLOG_NEURAL_QUALITY_BOOST_V2)
 
