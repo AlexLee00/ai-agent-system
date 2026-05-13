@@ -55,7 +55,8 @@ function buildProviderEvents(report) {
     const provider = normalizeProvider(providerKey);
     const skipped = Boolean(status.skipped);
     const healthy = Boolean(status.healthy);
-    const needsRefresh = Boolean(status.needs_refresh || status.local_credential_needs_refresh);
+    const needsRefresh = Boolean(status.needs_refresh);
+    const localCredentialNeedsRefresh = Boolean(status.local_credential_needs_refresh);
     const degraded = Boolean(status.degraded);
     const refreshOk = status.refresh_ok === true;
     const reimportOk = status.reimport_ok === true || status.post_probe_reimport_ok === true;
@@ -85,6 +86,7 @@ function buildProviderEvents(report) {
         message: String(status.error || 'oauth_provider_degraded').slice(0, 240),
         metadata: status,
       });
+      continue;
     }
 
     if (needsRefresh) {
@@ -98,6 +100,31 @@ function buildProviderEvents(report) {
           : `OAuth token expires in ${Math.round(expiresInHours * 100) / 100}h`,
         metadata: status,
       });
+      continue;
+    }
+
+    if (localCredentialNeedsRefresh && reimportOk) {
+      events.push({
+        kind: 'reimport_success',
+        severity: 'info',
+        provider,
+        title: `OAuth local reimport succeeded: ${provider}`,
+        message: 'OAuth local credential reimport completed through Hub monitor',
+        metadata: status,
+      });
+      continue;
+    }
+
+    if (localCredentialNeedsRefresh && liveProbeOk && !reimportOk) {
+      events.push({
+        kind: 'degraded',
+        severity: 'warn',
+        provider,
+        title: `OAuth local reimport pending: ${provider}`,
+        message: 'OAuth live route recovered, but local credential reimport did not complete',
+        metadata: status,
+      });
+      continue;
     }
 
     if (refreshOk) {
@@ -109,6 +136,7 @@ function buildProviderEvents(report) {
         message: 'OAuth refresh completed through Hub monitor',
         metadata: status,
       });
+      continue;
     }
 
     if (reimportOk) {
@@ -120,9 +148,10 @@ function buildProviderEvents(report) {
         message: 'OAuth local credential reimport completed through Hub monitor',
         metadata: status,
       });
+      continue;
     }
 
-    if (liveProbeOk) {
+    if (liveProbeOk && emitOkEvents) {
       events.push({
         kind: 'live_probe_success',
         severity: 'info',
@@ -131,9 +160,10 @@ function buildProviderEvents(report) {
         message: 'OAuth live route probe succeeded through Hub monitor',
         metadata: status,
       });
+      continue;
     }
 
-    if (emitOkEvents && healthy && !skipped && !needsRefresh && !refreshOk && !reimportOk && !liveProbeOk) {
+    if (emitOkEvents && healthy && !skipped) {
       events.push({
         kind: 'success',
         severity: 'info',
