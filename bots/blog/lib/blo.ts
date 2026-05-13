@@ -66,6 +66,7 @@ const { recordPublishedExperimentRun }             = require(path.join(env.PROJE
 const { readExperimentPlaybook }                   = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/experiment-os.ts'));
 const { fetchRevenueAttributionWeights }           = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/topic-selector.ts'));
 const { detectTitlePattern }                       = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/performance-diagnostician.ts'));
+const { scoreTitleForHomeFeed }                    = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/naver-home-feed-optimizer.ts'));
 const { decideAutonomy }                           = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/autonomy-gate.ts'));
 const { accumulatePostExperience }                 = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/rag-accumulator.ts'));
 const {
@@ -1517,6 +1518,13 @@ async function _finalizeGeneralPost(post, quality, context, scheduleId, traceCtx
   }
 
   const genTitle = post.title || `[${context.category}] 오늘의 포스팅`;
+
+  // 홈피드 제목 점수 평가 (로깅 전용 — 발행 차단 없음)
+  try {
+    const hfScore = scoreTitleForHomeFeed(genTitle);
+    console.log(`[블로/홈판] 제목 점수 ${hfScore.score}/100 — ${hfScore.recommendation}`);
+    if (hfScore.misses.length > 0) console.log(`[블로/홈판] 개선 포인트: ${hfScore.misses.join(', ')}`);
+  } catch { /* 점수 계산 실패 시 무시 */ }
 
   // 루나 요청 유래 포스트만 투자 가드레일 적용
   if (context.usedLunaRequestId) {

@@ -901,6 +901,37 @@ async function selectTopicWithCandidateFallback(category, targetDate, recentPost
     }
   }
 
+  // 2.5순위: trend_topics (Reddit/베스트셀러 — 당일 수집, 미사용분)
+  const trendCandidates = await fetchTrendTopicCandidates(targetDate, category);
+  if (trendCandidates && trendCandidates.length > 0) {
+    const { patterns, failures } = await _loadDpoHints();
+    const scored = _applyDpoScore(trendCandidates, patterns, failures)
+      .sort((a, b) => b.score - a.score);
+    const selected = scored.find((c) => {
+      if (!isReaderFriendlyTitle(c.title, category)) return false;
+      if (isTooCloseToRecentTitle(c, recentTitles)) return false;
+      return true;
+    });
+    if (selected) {
+      console.log(`[토픽] 트렌드 후보 채택 (${selected.source}): ${selected.title}`);
+      // 사용 표시 — 중복 방지 (fire-and-forget)
+      queryOpsDb(
+        `UPDATE blog.trend_topics SET used = true WHERE id = $1`,
+        'blog', [selected.trendId],
+      ).catch(() => {});
+      return enrichTopicSelection({
+        ...selected,
+        pattern: 'trend',
+        marketingSignalSummary: marketingHints.signalSummary,
+        marketingRecommendations: marketingHints.recommendations,
+        marketingCtaHint: marketingHints.ctaHint,
+        marketingWeight: marketingHints.categoryWeight,
+        recentTitleCount: recentTitles.length,
+        forced: false,
+      }, category, recentTitles);
+    }
+  }
+
   // 폴백: 기존 풀 기반 선택
   return selectAndValidateTopic(category, recentPosts, strategyPlan, senseState, revenueCorrelation, recentTitles, itNews);
 }
@@ -1087,6 +1118,42 @@ async function fetchDpoHints() {
   }
 }
 
+/**
+ * blog.trend_topics에서 오늘 수집된 Reddit/베스트셀러 트렌드 후보 조회.
+ * run-trend-collector.ts가 매일 06:00 저장한 데이터를 읽는다.
+ */
+async function fetchTrendTopicCandidates(targetDate, category = null) {
+  try {
+    const categoryFilter = category ? `AND (category = $2 OR category IS NULL)` : '';
+    const params = category ? [targetDate, category] : [targetDate];
+    const rows = await queryOpsDb(
+      `SELECT id, source, topic_ko, category, trend_score, korea_relevance
+       FROM blog.trend_topics
+       WHERE date = $1::date
+         AND used = false
+         ${categoryFilter}
+       ORDER BY trend_score DESC, korea_relevance DESC
+       LIMIT 5`,
+      'blog',
+      params,
+    );
+    if (!rows?.rows?.length) return null;
+    return rows.rows.map((row) => ({
+      id: row.id,
+      category: row.category || category || '최신IT트렌드',
+      title: row.topic_ko,
+      topic: row.topic_ko,
+      question: `${row.topic_ko}에 대해 무엇을 먼저 알아야 할까`,
+      diff: `트렌드 기반 (${row.source === 'reddit' ? 'Reddit' : '베스트셀러'})`,
+      score: ((row.trend_score || 0) / 100) + ((row.korea_relevance || 0) / 200),
+      source: `trend_${row.source}`,
+      trendId: row.id,
+    }));
+  } catch {
+    return null;
+  }
+}
+
 module.exports = {
   getRecentPosts,
   getCategorySelectionGuide,
@@ -1097,6 +1164,7 @@ module.exports = {
   selectTopicWithCandidateFallback,
   selectPrePlannedTopic,
   queryDailyCandidates,
+  fetchTrendTopicCandidates,
   similarity,
   synthesizeHybridTopic,
   getPendingLunaRequest,
