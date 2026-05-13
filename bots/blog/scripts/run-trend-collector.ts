@@ -2,10 +2,10 @@
 // @ts-nocheck
 'use strict';
 /**
- * 트렌드 수집기 — 매일 06:00 KST 자동 실행
+ * 트렌드 수집기 — 매일 06:00 KST 자동 실행 (ai.blog.reddit-trends)
  * 1. Reddit 트렌드 분석 (Python PRAW)
- * 2. 월요일: 알라딘 베스트셀러 수집
- * 3. 결과를 blog.trend_topics 테이블에 저장
+ * 2. 결과를 blog.trend_topics 테이블에 저장
+ * 베스트셀러: ai.blog.bestseller-sync (매주 월요일 07:00) 별도 처리
  *
  * 실행: npx tsx bots/blog/scripts/run-trend-collector.ts
  */
@@ -101,18 +101,8 @@ async function main() {
   const redditInserted = await saveTopicsToDb(redditTopics, 'reddit');
   console.log(`[트렌드수집] Reddit 토픽 저장: ${redditInserted}개`);
 
-  // 2. 알라딘 베스트셀러 (월요일만)
-  const dayOfWeek = new Date().getDay(); // 0=일, 1=월
-  if (dayOfWeek === 1) {
-    console.log('[트렌드수집] 월요일 — 알라딘 베스트셀러 수집...');
-    const { runBestsellerFetch } = require(
-      path.join(env.PROJECT_ROOT, 'bots/blog/lib/bestseller-fetcher.ts')
-    );
-    const result = await runBestsellerFetch();
-    console.log(`[트렌드수집] 베스트셀러 큐 추가: ${result.inserted}권`);
-  }
-
-  // 3. 오래된 토픽 정리 (30일 이상)
+  // 2. 오래된 토픽 정리 (30일 이상)
+  // 베스트셀러는 ai.blog.bestseller-sync (매주 월요일 07:00) 에서 별도 처리
   await pgPool.run('blog', `
     DELETE FROM blog.trend_topics
     WHERE date < CURRENT_DATE - INTERVAL '30 days'
