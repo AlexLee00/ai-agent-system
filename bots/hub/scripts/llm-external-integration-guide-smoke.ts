@@ -23,6 +23,7 @@ for (const required of [
   'POST /hub/llm/call',
   'POST /hub/llm/jobs',
   'GET /hub/llm/jobs/:id/result',
+  'GET /hub/llm/gateway-contract',
   'Authorization: Bearer <HUB_AUTH_TOKEN>',
   'X-Hub-Team',
   'X-Hub-Agent',
@@ -36,6 +37,7 @@ for (const required of [
   'direct provider endpoint',
   'Node.js 최소 클라이언트',
   'Python 최소 클라이언트',
+  'Stage C 운영 계약',
 ]) {
   assert(guide.includes(required), `external guide missing required contract text: ${required}`);
 }
@@ -50,6 +52,7 @@ assert(
   'Hub auth middleware must protect /hub/llm/call',
 );
 assert(llmRoute.includes('direct_llm_provider_route_disabled'), 'direct provider routes must remain disabled by default');
+assert(llmRoute.includes('llmGatewayContractRoute'), 'Hub must expose machine-readable external gateway contract');
 assert(requestContext.includes('x-hub-team'), 'request context must accept X-Hub-Team alias');
 assert(requestContext.includes('x-hub-agent'), 'request context must accept X-Hub-Agent alias');
 assert(requestContext.includes('x-hub-priority'), 'request context must accept X-Hub-Priority alias');
@@ -61,6 +64,7 @@ console.log(JSON.stringify({
   contracts: {
     sync_call: '/hub/llm/call',
     async_job: '/hub/llm/jobs',
+    gateway_contract: '/hub/llm/gateway-contract',
     auth: 'Bearer HUB_AUTH_TOKEN',
     external_headers: ['X-Hub-Team', 'X-Hub-Agent', 'X-Hub-Priority', 'X-Hub-Trace-Id'],
     observability: 'hub.llm_request_log',

@@ -91,6 +91,66 @@ export async function llmCallRoute(req, res) {
   }
 }
 
+// GET /hub/llm/gateway-contract — 외부 프로젝트용 LLM Gateway 계약
+export async function llmGatewayContractRoute(req, res) {
+  return res.json({
+    ok: true,
+    contractVersion: 'hub-llm-gateway/v1',
+    status: 'active',
+    auth: {
+      scheme: 'bearer',
+      header: 'Authorization: Bearer <HUB_AUTH_TOKEN>',
+      providerSecretsDistributedToClients: false,
+    },
+    endpoints: {
+      syncCall: {
+        method: 'POST',
+        path: '/hub/llm/call',
+        useCase: 'short classification, summarization, extraction, JSON response',
+      },
+      asyncJob: {
+        method: 'POST',
+        path: '/hub/llm/jobs',
+        resultPaths: ['/hub/llm/jobs/:id', '/hub/llm/jobs/:id/result'],
+        useCase: 'long research, multi-document synthesis, high-latency work',
+      },
+      stats: {
+        method: 'GET',
+        path: '/hub/llm/stats?hours=24&team=<callerTeam>',
+      },
+    },
+    headers: {
+      team: 'X-Hub-Team',
+      agent: 'X-Hub-Agent',
+      priority: 'X-Hub-Priority',
+      traceId: 'X-Hub-Trace-Id',
+    },
+    requiredBody: ['prompt', 'abstractModel'],
+    recommendedBody: ['callerTeam', 'agent', 'selectorKey', 'taskType', 'requestId', 'maxBudgetUsd', 'timeoutMs'],
+    selectorPolicy: {
+      normalPath: 'callerTeam + agent or selectorKey',
+      externalProjectDefault: 'Use selectorKey until the external project has approved registry entries.',
+      adHocChain: 'blocked_by_default',
+      directProviderRoutes: 'disabled_by_default',
+      nonLlmTargets: 'blocked',
+    },
+    observability: {
+      requestLog: 'hub.llm_request_log',
+      traceResponseHeader: 'X-Hub-Trace-Id',
+      budgetFields: ['estimated_cost_usd', 'budget_guard_status', 'provider_tier'],
+    },
+    safety: {
+      maxBudgetUsdRecommended: true,
+      providerTokenHandling: 'Hub only',
+      protectedServiceMutationByExternalProjects: false,
+    },
+    docs: {
+      integrationGuide: 'docs/hub/EXTERNAL_LLM_INTEGRATION_GUIDE.md',
+      stageCOperations: 'docs/hub/HUB_STAGE_C_OPERATIONS.md',
+    },
+  });
+}
+
 // POST /hub/llm/jobs — 비동기 LLM job 생성
 export async function llmJobsCreateRoute(req, res) {
   const context = req.hubRequestContext || {};

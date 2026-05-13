@@ -41,6 +41,16 @@ curl -fsS \
   "$HUB_BASE_URL/hub/llm/health"
 ```
 
+외부 프로젝트가 런타임에서 계약을 자동 점검해야 하면 Stage C의 기계 판독 계약을 조회한다.
+
+```bash
+curl -fsS \
+  -H "Authorization: Bearer $HUB_AUTH_TOKEN" \
+  "$HUB_BASE_URL/hub/llm/gateway-contract"
+```
+
+이 endpoint는 provider 호출을 하지 않는다. 인증, endpoint, header, 필수 body, selector 정책, 관측 필드를 JSON으로 반환한다.
+
 ## 4. 동기 호출
 
 `/hub/llm/call`은 짧은 응답, classification, summarization, JSON extraction 같은 fast path에 사용한다.
@@ -91,7 +101,7 @@ curl -fsS "$HUB_BASE_URL/hub/llm/call" \
 권장 순서는 다음과 같다.
 
 1. 외부 프로젝트가 이미 Hub registry에 등록된 팀/에이전트라면 `callerTeam + agent`를 사용한다.
-2. 정확한 라우팅 목적이 있으면 `selectorKey`를 사용한다.
+2. registry에 아직 등록되지 않은 외부 프로젝트는 `callerTeam + agent + selectorKey`를 사용한다.
 3. `chain` 직접 지정은 기본 차단된다. 운영 예외가 필요하면 Hub 쪽에서 별도 승인과 환경 게이트를 설정해야 한다.
 
 예시:
@@ -105,6 +115,23 @@ curl -fsS "$HUB_BASE_URL/hub/llm/call" \
   "prompt": "..."
 }
 ```
+
+미등록 외부 프로젝트의 표준 예시는 다음과 같다.
+
+```json
+{
+  "callerTeam": "external-blog",
+  "agent": "writer",
+  "selectorKey": "blog.pos.writer",
+  "taskType": "external_blog_post",
+  "requestId": "external-blog-20260513-0001",
+  "abstractModel": "anthropic_haiku",
+  "prompt": "...",
+  "maxBudgetUsd": 0.05
+}
+```
+
+이 방식은 비용/장애 집계는 `external-blog.writer`로 남기고, 모델 라우팅은 Hub가 승인한 `blog.pos.writer` selector를 사용한다.
 
 ```json
 {
@@ -291,12 +318,25 @@ curl -fsS \
 - `callerTeam` 이름을 정한다. 예: `external-blog`, `external-research`.
 - 사용할 `agent`와 `taskType` 목록을 정한다.
 - Hub registry/selector에 필요한 route target을 등록한다.
+- registry 등록 전에는 승인된 `selectorKey`를 함께 전송한다.
 - non-LLM 역할은 LLM 호출 대상에서 제외한다.
 - 외부 프로젝트에는 `HUB_BASE_URL`, `HUB_AUTH_TOKEN`, `HUB_CALLER_TEAM`, `HUB_AGENT`만 주입한다.
+- 런타임 시작 시 `/hub/llm/gateway-contract`를 조회해 계약 버전과 필수 header/body를 확인한다.
 - staging에서 `/hub/llm/call` 1회, `/hub/llm/jobs` 1회, `/hub/llm/stats` 조회를 통과시킨다.
 - 운영 전 `hub.llm_request_log`에 `request_id`, `runtime_purpose`, `estimated_cost_usd`, `budget_guard_status`가 남는지 확인한다.
 
-## 12. 운영 금지 사항
+## 12. Stage C 운영 계약
+
+Stage C부터 외부 프로젝트 연동은 Hub 표준 LLM Gateway 계약으로 관리한다.
+
+- Gateway contract: `GET /hub/llm/gateway-contract`
+- 통합 검증: `npm --prefix bots/hub run -s llm:external-gateway-contract-smoke`
+- 전체 Stage C 검증: `npm --prefix bots/hub run -s check:llm-stage-c`
+- 운영 문서: `docs/hub/HUB_STAGE_C_OPERATIONS.md`
+
+외부 프로젝트는 장애 시 자체 provider fallback을 구현하지 않는다. Hub 응답의 `Retry-After`, `providerBackpressure`, `fallbackCount`, `traceId`를 사용해 재시도/incident 정책만 수행한다.
+
+## 13. 운영 금지 사항
 
 - 외부 프로젝트에 provider API key 또는 OAuth token을 배포하지 않는다.
 - direct provider endpoint를 사용하지 않는다.
