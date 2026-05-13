@@ -21,11 +21,11 @@ const PROTECTED = new Set([
 ]);
 const CANARY_LABELS = ['ai.hub.llm-tier-probe'];
 
-function hasFlag(flag: string): boolean {
+function hasFlag(flag) {
   return process.argv.includes(flag);
 }
 
-function argValue(name: string): string | null {
+function argValue(name) {
   const prefix = `${name}=`;
   const raw = process.argv.find((arg) => arg.startsWith(prefix));
   return raw ? raw.slice(prefix.length) : null;
@@ -53,7 +53,7 @@ function buildPlan() {
   };
 }
 
-function launchctl(args: string[]) {
+function launchctl(args) {
   const result = spawnSync('launchctl', args, { encoding: 'utf8', timeout: 15_000 });
   return {
     ok: result.status === 0,
@@ -62,13 +62,13 @@ function launchctl(args: string[]) {
   };
 }
 
-async function main(): Promise<void> {
+async function main() {
   const apply = hasFlag('--apply');
   const confirm = argValue('--confirm');
   const label = argValue('--label') || CANARY_LABELS[0];
   const plan = buildPlan();
 
-  const result: any = {
+  const result = {
     ok: true,
     checkedAt: new Date().toISOString(),
     dryRun: !apply,
@@ -110,7 +110,7 @@ async function main(): Promise<void> {
   if (!result.ok) process.exit(1);
 }
 
-main().catch((error: Error) => {
+main().catch((error) => {
   console.error(error);
   process.exit(1);
 });

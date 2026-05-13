@@ -1,9 +1,9 @@
-// @ts-nocheck
 /**
- * production.ts — Stage D Production Promotion Gate
+ * production.ts — Hub Stage D Production Promotion Gate.
  *
- * Task D8: 모든 Stage A-D 게이트 통합 검증.
- * Stage B/C report 파일 + Stage D 인프라 존재 여부 + 운영 지표 확인.
+ * Stage D는 운영 승격 단계이므로 "코드 준비"와 "운영 증거 누적"을 분리한다.
+ * 이 모듈은 PROTECTED 14 무중단을 전제로 D1-D8 readiness를 검증하고,
+ * 실제 1주 Shadow/Canary 증거가 없으면 productionCertified=false로 둔다.
  */
 
 const fs = require('node:fs');
@@ -14,14 +14,50 @@ const PROJECT_ROOT = path.resolve(__dirname, '../../../..');
 const HUB_DIR = path.join(PROJECT_ROOT, 'bots/hub');
 const OUTPUT_PATH = path.join(HUB_DIR, 'output', 'hub-stage-d-production-report.json');
 
-function fileExists(rel) {
-  return fs.existsSync(path.join(PROJECT_ROOT, rel));
+const PROTECTED_HUB_LABELS = [
+  'ai.hub.resource-api',
+  'ai.hub.llm-oauth-monitor',
+  'ai.hub.llm-oauth4-master-review',
+  'ai.hub.llm-groq-fallback-test',
+  'ai.hub.llm-model-check',
+  'ai.hub.llm-cache-cleanup',
+  'ai.hub.incident-summary',
+  'ai.hub.severity-decay',
+  'ai.hub.noisy-producer-auto-learn',
+  'ai.hub.roundtable-reflection',
+  'ai.hub.daily-metrics-digest',
+  'ai.hub.hourly-status-digest',
+  'ai.hub.weekly-audit-digest',
+  'ai.hub.weekly-advisory-digest',
+];
+
+const SELF_HEALING_CANARY_LABELS = ['ai.hub.llm-tier-probe'];
+
+function repoPath(relativePath) {
+  return path.join(PROJECT_ROOT, relativePath);
+}
+
+function fileExists(relativePath) {
+  return fs.existsSync(repoPath(relativePath));
+}
+
+function readText(relativePath) {
+  return fs.readFileSync(repoPath(relativePath), 'utf8');
+}
+
+function readJsonIfExists(relativePath) {
+  if (!fileExists(relativePath)) return null;
+  try {
+    return JSON.parse(readText(relativePath));
+  } catch {
+    return null;
+  }
 }
 
 function httpGet(port, urlPath) {
   return new Promise((resolve) => {
     const req = http.request(
-      { hostname: '127.0.0.1', port, path: urlPath, method: 'GET', timeout: 5000 },
+      { hostname: '127.0.0.1', port, path: urlPath, method: 'GET', timeout: 5_000 },
       (res) => {
         let body = '';
         res.on('data', (c) => { body += c; });
@@ -42,15 +78,11 @@ async function checkBlueGreen() {
   } catch {}
 
   const blueHealth = await httpGet(7788, '/hub/health/live');
-  const proxyPlistExists = fileExists('bots/hub/launchd/ai.hub.bg-proxy.plist');
-  const greenPlistExists = fileExists('bots/hub/launchd/ai.hub.resource-api-green.plist');
-  const deployScriptExists = fileExists('bots/hub/scripts/hub-blue-green-deploy.ts');
-
   const checks = [
     { name: 'blue_healthy', ok: blueHealth.status === 200, evidence: `HTTP ${blueHealth.status}` },
-    { name: 'green_plist_exists', ok: greenPlistExists },
-    { name: 'proxy_plist_exists', ok: proxyPlistExists },
-    { name: 'deploy_script_exists', ok: deployScriptExists },
+    { name: 'green_plist_exists', ok: fileExists('bots/hub/launchd/ai.hub.resource-api-green.plist') },
+    { name: 'proxy_plist_exists', ok: fileExists('bots/hub/launchd/ai.hub.bg-proxy.plist') },
+    { name: 'deploy_script_exists', ok: fileExists('bots/hub/scripts/hub-blue-green-deploy.ts') },
   ];
 
   return {
@@ -71,110 +103,243 @@ function checkSecretsAutoRotate() {
   return { ok: checks.every((c) => c.ok), checks };
 }
 
-function checkStageBReport() {
-  const reportPath = 'bots/hub/output/hub-stage-b-stability-report.json';
-  if (!fileExists(reportPath)) {
-    return { ok: false, error: 'Stage B report not found' };
+function checkSelfHealing() {
+  const script = fileExists('bots/hub/scripts/hub-stage-d-self-healing.ts');
+  const protectedOverlap = SELF_HEALING_CANARY_LABELS.filter((label) => PROTECTED_HUB_LABELS.includes(label));
+  const checks = [
+    { name: 'self_healing_operator_exists', ok: script },
+    { name: 'canary_labels_are_non_protected', ok: protectedOverlap.length === 0, evidence: { protectedOverlap } },
+    { name: 'protected_14_declared', ok: PROTECTED_HUB_LABELS.length === 14, evidence: { count: PROTECTED_HUB_LABELS.length } },
+  ];
+  return {
+    ok: checks.every((c) => c.ok),
+    mode: 'shadow_then_canary',
+    currentPhase: 'phase_1_shadow_ready',
+    applyGate: '--apply --confirm=hub-stage-d-self-healing-canary --label=ai.hub.llm-tier-probe',
+    canaryLabels: SELF_HEALING_CANARY_LABELS,
+    protectedLabels: PROTECTED_HUB_LABELS,
+    checks,
+  };
+}
+
+function checkDrpActual() {
+  const checks = [
+    { name: 'daily_backup_script_exists', ok: fileExists('bots/hub/scripts/hub-stage-d-daily-backup.ts') },
+    { name: 'restore_drill_script_exists', ok: fileExists('bots/hub/scripts/hub-stage-d-restore-drill.ts') },
+    { name: 'daily_backup_plist_exists', ok: fileExists('bots/hub/launchd/ai.hub.daily-backup.plist') },
+    { name: 'monthly_restore_drill_plist_exists', ok: fileExists('bots/hub/launchd/ai.hub.monthly-restore-drill.plist') },
+  ];
+  return {
+    ok: checks.every((c) => c.ok),
+    mode: 'backup_actual_restore_smoke_confirmed_only',
+    backupCommand: 'npm --prefix bots/hub run -s hub:stage-d-backup',
+    restoreDrillGate: '--apply --confirm=hub-stage-d-restore-drill',
+    productionRestore: 'prohibited_without_separate_master_approval',
+    checks,
+  };
+}
+
+function checkLiveChaos() {
+  const source = fileExists('bots/hub/src/middleware/stage-d-chaos.ts')
+    ? readText('bots/hub/src/middleware/stage-d-chaos.ts')
+    : '';
+  const appSource = fileExists('bots/hub/src/app.ts') ? readText('bots/hub/src/app.ts') : '';
+  const checks = [
+    { name: 'chaos_operator_exists', ok: fileExists('bots/hub/scripts/hub-stage-d-live-chaos.ts') },
+    { name: 'chaos_middleware_exists', ok: Boolean(source) },
+    { name: 'chaos_middleware_registered', ok: appSource.includes('stageDChaosMiddleware') },
+    { name: 'chaos_default_file_gated', ok: source.includes('/tmp/hub-stage-d-chaos-state.json') },
+    { name: 'chaos_percent_capped', ok: source.includes('MAX_SAFE_PERCENT = 10') },
+  ];
+  return {
+    ok: checks.every((c) => c.ok),
+    mode: 'default_off_live_canary',
+    phase1: 'shadow_k6_plan_ready',
+    phase2Gate: '--apply --confirm=hub-stage-d-live-chaos-1pct --percent=1 --latency-ms=500',
+    maxSafePercent: 10,
+    protectedServiceMutation: false,
+    checks,
+  };
+}
+
+function checkSentryIntegration() {
+  const adapterExists = fileExists('bots/hub/lib/sentry-mcp-adapter.ts');
+  const handlerSource = fileExists('bots/hub/src/middleware/error-handler.ts')
+    ? readText('bots/hub/src/middleware/error-handler.ts')
+    : '';
+  let readiness = { ok: adapterExists, mode: 'adapter_missing' };
+  if (adapterExists) {
+    try {
+      const adapter = require('../sentry-mcp-adapter');
+      readiness = adapter.buildSentryMcpReadiness();
+    } catch (error) {
+      readiness = { ok: false, mode: 'adapter_load_failed', error: String(error?.message || error) };
+    }
   }
+  const checks = [
+    { name: 'sentry_adapter_exists', ok: adapterExists },
+    { name: 'hub_error_handler_captures_sentry', ok: handlerSource.includes('captureHubError(error, req)') },
+    { name: 'pii_redaction_enabled', ok: Boolean(readiness.piiRedaction) },
+    { name: 'rate_limit_enabled', ok: Number(readiness.rateLimitPerMinute || 0) > 0 },
+  ];
+  return {
+    ok: checks.every((c) => c.ok) && readiness.ok,
+    readiness,
+    checks,
+  };
+}
+
+function checkExternalGateway() {
+  let selector = { ok: false, error: 'selector_unavailable' };
   try {
-    const report = JSON.parse(fs.readFileSync(path.join(PROJECT_ROOT, reportPath), 'utf8'));
-    return { ok: report.ok === true, status: report.status || 'unknown' };
-  } catch {
-    return { ok: false, error: 'Stage B report parse failed' };
+    const { resolveHubLlmSelection } = require('../../src/llm-selector');
+    selector = resolveHubLlmSelection({
+      callerTeam: 'justin-court-appraisal',
+      agent: 'justin',
+      selectorKey: 'justin.stage-3',
+      taskType: 'external_gateway_canary',
+      requestId: 'hub-stage-d-production-report',
+      maxBudgetUsd: 0.05,
+    });
+  } catch (error) {
+    selector = { ok: false, error: String(error?.message || error) };
   }
+
+  const checks = [
+    { name: 'external_canary_script_exists', ok: fileExists('bots/hub/scripts/llm-stage-d-external-gateway-canary.ts') },
+    { name: 'external_onboarding_doc_exists', ok: fileExists('docs/hub/EXTERNAL_LLM_GATEWAY_PROJECT_ONBOARDING.md') },
+    { name: 'justin_selector_resolves', ok: Boolean(selector.ok), evidence: selector },
+  ];
+  return {
+    ok: checks.every((c) => c.ok),
+    project: 'justin-court-appraisal',
+    selector,
+    canaryGate: '--apply --confirm=hub-stage-d-external-gateway-canary',
+    checks,
+  };
+}
+
+function checkStageBReport() {
+  const report = readJsonIfExists('bots/hub/output/hub-stage-b-stability-report.json');
+  if (!report) return { ok: false, error: 'Stage B report not found or parse failed' };
+  return { ok: report.ok === true, status: report.status || 'unknown' };
 }
 
 function checkStageCReport() {
-  const reportPath = 'bots/hub/output/hub-stage-c-resilience-report.json';
-  if (!fileExists(reportPath)) {
-    return { ok: false, error: 'Stage C report not found' };
-  }
-  try {
-    const report = JSON.parse(fs.readFileSync(path.join(PROJECT_ROOT, reportPath), 'utf8'));
-    return { ok: report.ok === true, status: report.status || 'unknown' };
-  } catch {
-    return { ok: false, error: 'Stage C report parse failed' };
-  }
+  const report = readJsonIfExists('bots/hub/output/hub-stage-c-resilience-report.json');
+  if (!report) return { ok: false, error: 'Stage C report not found or parse failed' };
+  return { ok: report.ok === true, status: report.status || 'unknown' };
 }
 
 async function checkHubUptime() {
-  const blueHealth = await httpGet(7788, '/hub/health/startup');
+  const startup = await httpGet(7788, '/hub/health/startup');
   let uptimeSeconds = 0;
   let startupComplete = false;
   try {
-    const body = JSON.parse(blueHealth.body);
-    uptimeSeconds = body.uptime_seconds || 0;
+    const body = JSON.parse(startup.body);
+    uptimeSeconds = Number(body.uptime_seconds || body.uptime_s || 0);
     startupComplete = body.startup_complete === true;
   } catch {}
 
   return {
-    ok: blueHealth.status === 200 && startupComplete,
+    ok: startup.status === 200 && startupComplete,
     uptimeSeconds,
     startupComplete,
-    httpStatus: blueHealth.status,
+    httpStatus: startup.status,
   };
 }
 
-async function buildHubStageDProductionReport(options = {}) {
+function buildPromotionEvidence() {
+  return {
+    shadowWindowDays: Number(process.env.HUB_STAGE_D_SHADOW_DAYS || 0),
+    canaryPercent: Number(process.env.HUB_STAGE_D_CANARY_PERCENT || 0),
+    uptimeTargetMet: process.env.HUB_STAGE_D_UPTIME_99_9 === 'true',
+    latencyTargetMet: process.env.HUB_STAGE_D_LATENCY_LT_500MS === 'true',
+    errorRateTargetMet: process.env.HUB_STAGE_D_ERROR_RATE_LT_0_1 === 'true',
+    selfHealingTargetMet: process.env.HUB_STAGE_D_SELF_HEALING_GT_95 === 'true',
+  };
+}
+
+async function buildHubStageDProductionReport() {
   const checkedAt = new Date().toISOString();
-
-  const [blueGreen, uptime] = await Promise.all([
-    checkBlueGreen(),
-    checkHubUptime(),
-  ]);
-
-  const secretsRotate = checkSecretsAutoRotate();
+  const [blueGreen, uptime] = await Promise.all([checkBlueGreen(), checkHubUptime()]);
   const stageB = checkStageBReport();
   const stageC = checkStageCReport();
+  const secretsAutoRotate = checkSecretsAutoRotate();
+  const selfHealing = checkSelfHealing();
+  const drpActual = checkDrpActual();
+  const liveChaos = checkLiveChaos();
+  const sentry = checkSentryIntegration();
+  const externalGateway = checkExternalGateway();
+  const promotionEvidence = buildPromotionEvidence();
 
   const goals = {
-    stageA_llmControlPlane: stageB.ok,  // B report implies A passed
+    stageA_llmControlPlane: stageB.ok,
     stageB_stability: stageB.ok,
     stageC_resilience: stageC.ok,
     stageD_blueGreen: blueGreen.ok,
-    stageD_secretsAutoRotate: secretsRotate.ok,
-    // D3-D7: Phase 1 shadow (pending in Week 1)
-    stageD_selfHealing: false,
-    stageD_drpActual: false,
-    stageD_liveChaos: false,
-    stageD_sentryIntegration: false,
-    stageD_externalGateway: false,
+    stageD_secretsAutoRotate: secretsAutoRotate.ok,
+    stageD_selfHealing: selfHealing.ok,
+    stageD_drpActual: drpActual.ok,
+    stageD_liveChaos: liveChaos.ok,
+    stageD_sentryIntegration: sentry.ok,
+    stageD_externalGateway: externalGateway.ok,
   };
 
-  const week1Complete = goals.stageD_blueGreen && goals.stageD_secretsAutoRotate;
+  const codeComplete = Object.values(goals).every(Boolean);
+  const productionCertified = Boolean(
+    codeComplete
+    && promotionEvidence.shadowWindowDays >= 7
+    && promotionEvidence.canaryPercent >= 1
+    && promotionEvidence.uptimeTargetMet
+    && promotionEvidence.latencyTargetMet
+    && promotionEvidence.errorRateTargetMet
+    && promotionEvidence.selfHealingTargetMet
+  );
 
   const report = {
-    ok: false,
+    ok: codeComplete,
     checkedAt,
     stage: 'hub_stage_d',
-    status: 'stage_d_week1',
-    week1Complete,
+    status: productionCertified
+      ? 'stage_d_production_certified'
+      : codeComplete
+        ? 'stage_d_code_complete_promotion_evidence_pending'
+        : 'stage_d_attention',
+    codeComplete,
+    productionCertified,
     goals,
     details: {
       stageB,
       stageC,
       blueGreen,
-      secretsAutoRotate: secretsRotate,
+      secretsAutoRotate,
+      selfHealing,
+      drpActual,
+      liveChaos,
+      sentry,
+      externalGateway,
       uptime,
-    },
-    roadmap: {
-      week1: ['D1_blue_green', 'D2_secrets_auto_rotate'],
-      week2: ['D3_self_healing_phase1'],
-      week3: ['D4_drp_actual', 'D6_sentry'],
-      week4: ['D7_external_gateway', 'D5_chaos_phase1'],
-      week5: ['D5_chaos_phase2_3'],
-      week6: ['D8_production_promotion_gate'],
+      promotionEvidence,
     },
     safetyBoundary: {
       noProtectedRestart: true,
-      noSecretMutation: true,
+      noSecretMutationByCodex: true,
       noProductionRestore: true,
       blueNeverStopped: true,
+      protectedHubLabels: PROTECTED_HUB_LABELS,
+    },
+    promotionGate: {
+      requiredBeforeProductionCertified: [
+        '7d shadow evidence',
+        '1% canary pass, then approved 10%/100% rollout',
+        '99.9% uptime for 1w',
+        'avg latency < 500ms',
+        'error rate < 0.1%',
+        'self-healing success > 95%',
+      ],
     },
   };
-
-  report.ok = week1Complete && stageB.ok && stageC.ok;
-  report.status = report.ok ? 'stage_d_week1_complete' : 'stage_d_week1_in_progress';
 
   return report;
 }
@@ -187,8 +352,16 @@ async function writeHubStageDReport(report, outputPath = OUTPUT_PATH) {
 
 module.exports = {
   OUTPUT_PATH,
+  PROTECTED_HUB_LABELS,
+  SELF_HEALING_CANARY_LABELS,
   buildHubStageDProductionReport,
-  writeHubStageDReport,
+  buildPromotionEvidence,
   checkBlueGreen,
+  checkDrpActual,
+  checkExternalGateway,
+  checkLiveChaos,
   checkSecretsAutoRotate,
+  checkSelfHealing,
+  checkSentryIntegration,
+  writeHubStageDReport,
 };

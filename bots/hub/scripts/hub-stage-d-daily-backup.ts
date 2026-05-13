@@ -9,23 +9,23 @@ const { spawnSync } = require('node:child_process');
 const PROJECT_ROOT = path.resolve(__dirname, '../../..');
 const DEFAULT_BACKUP_DIR = path.join(os.homedir(), 'backups', 'hub');
 
-function hasFlag(flag: string): boolean {
+function hasFlag(flag) {
   return process.argv.includes(flag);
 }
 
-function argValue(name: string): string | null {
+function argValue(name) {
   const prefix = `${name}=`;
   const raw = process.argv.find((arg) => arg.startsWith(prefix));
   return raw ? raw.slice(prefix.length) : null;
 }
 
-function sha256(filePath: string): string {
+function sha256(filePath) {
   const hash = crypto.createHash('sha256');
   hash.update(fs.readFileSync(filePath));
   return hash.digest('hex');
 }
 
-function run(command: string, args: string[], options: Record<string, unknown> = {}) {
+function run(command, args, options = {}) {
   const result = spawnSync(command, args, {
     encoding: 'utf8',
     timeout: 120_000,
@@ -54,6 +54,7 @@ function buildPlan() {
     backupDir,
     runDir,
     files: {
+      supportSchema: path.join(runDir, 'hub_support_schema.sql'),
       hubSchema: path.join(runDir, 'hub_schema.sql'),
       hubRuntime: path.join(runDir, 'hub_runtime.sql'),
       launchdArchive: path.join(runDir, 'hub_launchd.tar.gz'),
@@ -68,7 +69,7 @@ function buildPlan() {
   };
 }
 
-async function main(): Promise<void> {
+async function main() {
   const json = hasFlag('--json');
   const planOnly = hasFlag('--plan');
   const plan = buildPlan();
@@ -79,6 +80,13 @@ async function main(): Promise<void> {
 
   fs.mkdirSync(plan.runDir, { recursive: true, mode: 0o700 });
   const results = [];
+  results.push(run('pg_dump', [
+    '-d', plan.database,
+    '--schema-only',
+    '-t', 'public.llm_routing_log',
+    '-t', 'agent.event_lake',
+    '-f', plan.files.supportSchema,
+  ]));
   results.push(run('pg_dump', ['-d', plan.database, '--schema=hub', '--schema-only', '-f', plan.files.hubSchema]));
   results.push(run('pg_dump', [
     '-d', plan.database,
@@ -97,12 +105,12 @@ async function main(): Promise<void> {
   }
 
   const files = Object.entries(plan.files)
-    .filter(([key, filePath]) => key !== 'manifest' && fs.existsSync(filePath as string))
+    .filter(([key, filePath]) => key !== 'manifest' && fs.existsSync(filePath))
     .map(([key, filePath]) => ({
       key,
       path: filePath,
-      bytes: fs.statSync(filePath as string).size,
-      sha256: sha256(filePath as string),
+      bytes: fs.statSync(filePath).size,
+      sha256: sha256(filePath),
     }));
 
   const manifest = {
@@ -123,7 +131,7 @@ async function main(): Promise<void> {
   if (!manifest.ok) process.exit(1);
 }
 
-main().catch((error: Error) => {
+main().catch((error) => {
   console.error(error);
   process.exit(1);
 });

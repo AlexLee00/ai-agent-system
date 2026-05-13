@@ -8,17 +8,17 @@ const { spawnSync } = require('node:child_process');
 const CONFIRM = 'hub-stage-d-restore-drill';
 const DEFAULT_BACKUP_DIR = path.join(os.homedir(), 'backups', 'hub');
 
-function hasFlag(flag: string): boolean {
+function hasFlag(flag) {
   return process.argv.includes(flag);
 }
 
-function argValue(name: string): string | null {
+function argValue(name) {
   const prefix = `${name}=`;
   const raw = process.argv.find((arg) => arg.startsWith(prefix));
   return raw ? raw.slice(prefix.length) : null;
 }
 
-function run(command: string, args: string[]) {
+function run(command, args) {
   const result = spawnSync(command, args, { encoding: 'utf8', timeout: 120_000 });
   return {
     ok: result.status === 0,
@@ -29,23 +29,23 @@ function run(command: string, args: string[]) {
   };
 }
 
-function latestManifest(backupDir: string): string | null {
+function latestManifest(backupDir) {
   if (!fs.existsSync(backupDir)) return null;
   const candidates = fs.readdirSync(backupDir)
-    .map((name: string) => path.join(backupDir, name, 'manifest.json'))
-    .filter((filePath: string) => fs.existsSync(filePath))
+    .map((name) => path.join(backupDir, name, 'manifest.json'))
+    .filter((filePath) => fs.existsSync(filePath))
     .sort();
   return candidates.pop() || null;
 }
 
-async function main(): Promise<void> {
+async function main() {
   const apply = hasFlag('--apply');
   const confirm = argValue('--confirm');
   const backupDir = argValue('--backup-dir') || process.env.HUB_STAGE_D_BACKUP_DIR || DEFAULT_BACKUP_DIR;
   const manifestPath = argValue('--manifest') || latestManifest(backupDir);
   const smokeDb = `hub_restore_smoke_${new Date().toISOString().replace(/\D/g, '').slice(0, 12)}`;
 
-  const result: any = {
+  const result = {
     ok: true,
     checkedAt: new Date().toISOString(),
     stage: 'hub_stage_d',
@@ -67,7 +67,9 @@ async function main(): Promise<void> {
   }
 
   const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
-  const schemaFile = manifest.files?.hubSchema || manifest.files?.hub_schema || manifest.artifacts?.find?.((item: any) => item.key === 'hubSchema')?.path;
+  const supportSchemaFile = manifest.files?.supportSchema || manifest.artifacts?.find?.((item) => item.key === 'supportSchema')?.path;
+  const schemaFile = manifest.files?.hubSchema || manifest.files?.hub_schema || manifest.artifacts?.find?.((item) => item.key === 'hubSchema')?.path;
+  result.supportSchemaFile = supportSchemaFile || null;
   result.schemaFile = schemaFile;
   if (!schemaFile || !fs.existsSync(schemaFile)) {
     result.ok = false;
@@ -80,6 +82,15 @@ async function main(): Promise<void> {
     console.log(JSON.stringify(result, null, 2));
     return;
   }
+  if (!hasFlag('--force')) {
+    const dayOfMonth = new Date().getDate();
+    if (dayOfMonth > 7) {
+      result.skipped = true;
+      result.skipReason = 'monthly_restore_drill_runs_only_during_first_week';
+      console.log(JSON.stringify(result, null, 2));
+      return;
+    }
+  }
   if (confirm !== CONFIRM) {
     result.ok = false;
     result.error = 'confirm_required';
@@ -90,15 +101,21 @@ async function main(): Promise<void> {
 
   result.steps.push(run('createdb', [smokeDb]));
   if (result.steps.at(-1).ok) {
-    result.steps.push(run('psql', ['-d', smokeDb, '-f', schemaFile]));
+    result.steps.push(run('psql', ['-v', 'ON_ERROR_STOP=1', '-d', smokeDb, '-c', 'CREATE SCHEMA IF NOT EXISTS agent; CREATE SCHEMA IF NOT EXISTS hub;']));
+    if (supportSchemaFile && fs.existsSync(supportSchemaFile)) {
+      result.steps.push(run('psql', ['-v', 'ON_ERROR_STOP=1', '-d', smokeDb, '-f', supportSchemaFile]));
+    }
+    if (result.steps.at(-1).ok) {
+      result.steps.push(run('psql', ['-v', 'ON_ERROR_STOP=1', '-d', smokeDb, '-f', schemaFile]));
+    }
   }
   result.steps.push(run('dropdb', ['--if-exists', smokeDb]));
-  result.ok = result.steps.every((step: any) => step.ok);
+  result.ok = result.steps.every((step) => step.ok);
   console.log(JSON.stringify(result, null, 2));
   if (!result.ok) process.exit(1);
 }
 
-main().catch((error: Error) => {
+main().catch((error) => {
   console.error(error);
   process.exit(1);
 });

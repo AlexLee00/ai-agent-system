@@ -1,0 +1,409 @@
+{
+  "ok": true,
+  "checkedAt": "2026-05-13T06:31:01.783Z",
+  "stage": "hub_stage_d",
+  "status": "stage_d_code_complete_promotion_evidence_pending",
+  "codeComplete": true,
+  "productionCertified": false,
+  "goals": {
+    "stageA_llmControlPlane": true,
+    "stageB_stability": true,
+    "stageC_resilience": true,
+    "stageD_blueGreen": true,
+    "stageD_secretsAutoRotate": true,
+    "stageD_selfHealing": true,
+    "stageD_drpActual": true,
+    "stageD_liveChaos": true,
+    "stageD_sentryIntegration": true,
+    "stageD_externalGateway": true
+  },
+  "details": {
+    "stageB": {
+      "ok": true,
+      "status": "stage_b_operational_ready"
+    },
+    "stageC": {
+      "ok": true,
+      "status": "stage_c_resilience_ready"
+    },
+    "blueGreen": {
+      "ok": true,
+      "activeSlot": "blue",
+      "switchedAt": null,
+      "checks": [
+        {
+          "name": "blue_healthy",
+          "ok": true,
+          "evidence": "HTTP 200"
+        },
+        {
+          "name": "green_plist_exists",
+          "ok": true
+        },
+        {
+          "name": "proxy_plist_exists",
+          "ok": true
+        },
+        {
+          "name": "deploy_script_exists",
+          "ok": true
+        }
+      ]
+    },
+    "secretsAutoRotate": {
+      "ok": true,
+      "checks": [
+        {
+          "name": "rotation_log_migration_exists",
+          "ok": true
+        },
+        {
+          "name": "monitor_library_exists",
+          "ok": true
+        },
+        {
+          "name": "monitor_runner_exists",
+          "ok": true
+        },
+        {
+          "name": "auto_rotate_plist_exists",
+          "ok": true
+        }
+      ]
+    },
+    "selfHealing": {
+      "ok": true,
+      "mode": "shadow_then_canary",
+      "currentPhase": "phase_1_shadow_ready",
+      "applyGate": "--apply --confirm=hub-stage-d-self-healing-canary --label=ai.hub.llm-tier-probe",
+      "canaryLabels": [
+        "ai.hub.llm-tier-probe"
+      ],
+      "protectedLabels": [
+        "ai.hub.resource-api",
+        "ai.hub.llm-oauth-monitor",
+        "ai.hub.llm-oauth4-master-review",
+        "ai.hub.llm-groq-fallback-test",
+        "ai.hub.llm-model-check",
+        "ai.hub.llm-cache-cleanup",
+        "ai.hub.incident-summary",
+        "ai.hub.severity-decay",
+        "ai.hub.noisy-producer-auto-learn",
+        "ai.hub.roundtable-reflection",
+        "ai.hub.daily-metrics-digest",
+        "ai.hub.hourly-status-digest",
+        "ai.hub.weekly-audit-digest",
+        "ai.hub.weekly-advisory-digest"
+      ],
+      "checks": [
+        {
+          "name": "self_healing_operator_exists",
+          "ok": true
+        },
+        {
+          "name": "canary_labels_are_non_protected",
+          "ok": true,
+          "evidence": {
+            "protectedOverlap": []
+          }
+        },
+        {
+          "name": "protected_14_declared",
+          "ok": true,
+          "evidence": {
+            "count": 14
+          }
+        }
+      ]
+    },
+    "drpActual": {
+      "ok": true,
+      "mode": "backup_actual_restore_smoke_confirmed_only",
+      "backupCommand": "npm --prefix bots/hub run -s hub:stage-d-backup",
+      "restoreDrillGate": "--apply --confirm=hub-stage-d-restore-drill",
+      "productionRestore": "prohibited_without_separate_master_approval",
+      "checks": [
+        {
+          "name": "daily_backup_script_exists",
+          "ok": true
+        },
+        {
+          "name": "restore_drill_script_exists",
+          "ok": true
+        },
+        {
+          "name": "daily_backup_plist_exists",
+          "ok": true
+        },
+        {
+          "name": "monthly_restore_drill_plist_exists",
+          "ok": true
+        }
+      ]
+    },
+    "liveChaos": {
+      "ok": true,
+      "mode": "default_off_live_canary",
+      "phase1": "shadow_k6_plan_ready",
+      "phase2Gate": "--apply --confirm=hub-stage-d-live-chaos-1pct --percent=1 --latency-ms=500",
+      "maxSafePercent": 10,
+      "protectedServiceMutation": false,
+      "checks": [
+        {
+          "name": "chaos_operator_exists",
+          "ok": true
+        },
+        {
+          "name": "chaos_middleware_exists",
+          "ok": true
+        },
+        {
+          "name": "chaos_middleware_registered",
+          "ok": true
+        },
+        {
+          "name": "chaos_default_file_gated",
+          "ok": true
+        },
+        {
+          "name": "chaos_percent_capped",
+          "ok": true
+        }
+      ]
+    },
+    "sentry": {
+      "ok": true,
+      "readiness": {
+        "ok": true,
+        "mode": "adapter_ready_config_pending",
+        "captureEnabled": false,
+        "dsnConfigured": false,
+        "piiRedaction": true,
+        "rateLimitPerMinute": 10
+      },
+      "checks": [
+        {
+          "name": "sentry_adapter_exists",
+          "ok": true
+        },
+        {
+          "name": "hub_error_handler_captures_sentry",
+          "ok": true
+        },
+        {
+          "name": "pii_redaction_enabled",
+          "ok": true
+        },
+        {
+          "name": "rate_limit_enabled",
+          "ok": true
+        }
+      ]
+    },
+    "externalGateway": {
+      "ok": true,
+      "project": "justin-court-appraisal",
+      "selector": {
+        "ok": true,
+        "selectorKey": "justin.stage-3",
+        "runtimeProfile": null,
+        "runtimePurpose": "external_gateway_canary",
+        "routeTargetKind": "visible_agent",
+        "target": {
+          "team": "justin-court-appraisal",
+          "agent": "justin",
+          "selectorKey": "justin.stage-3",
+          "selected": true,
+          "kind": "visible_agent",
+          "canonicalTeam": "justin-court-appraisal",
+          "countable": true,
+          "blockReason": null
+        },
+        "source": "selector_key",
+        "chain": [
+          {
+            "provider": "openai-oauth",
+            "model": "gpt-5.4",
+            "maxTokens": 4096,
+            "temperature": 0.2,
+            "timeoutMs": 60000,
+            "route": "openai-oauth/gpt-5.4",
+            "providerTier": 1,
+            "fallbackIndex": 0
+          },
+          {
+            "provider": "gemini-cli-oauth",
+            "model": "gemini-2.5-flash",
+            "maxTokens": 4096,
+            "temperature": 0.2,
+            "timeoutMs": 45000,
+            "route": "gemini-cli-oauth/gemini-2.5-flash",
+            "providerTier": 3,
+            "fallbackIndex": 1
+          },
+          {
+            "provider": "groq",
+            "model": "qwen/qwen3-32b",
+            "maxTokens": 4096,
+            "temperature": 0.2,
+            "timeoutMs": 30000,
+            "route": "groq/qwen/qwen3-32b",
+            "providerTier": 2,
+            "fallbackIndex": 2
+          }
+        ],
+        "providerTiers": [
+          {
+            "provider": "openai-oauth",
+            "route": "openai-oauth/gpt-5.4",
+            "tier": 1,
+            "fallbackIndex": 0
+          },
+          {
+            "provider": "gemini-cli-oauth",
+            "route": "gemini-cli-oauth/gemini-2.5-flash",
+            "tier": 3,
+            "fallbackIndex": 1
+          },
+          {
+            "provider": "groq",
+            "route": "groq/qwen/qwen3-32b",
+            "tier": 2,
+            "fallbackIndex": 2
+          }
+        ]
+      },
+      "canaryGate": "--apply --confirm=hub-stage-d-external-gateway-canary",
+      "checks": [
+        {
+          "name": "external_canary_script_exists",
+          "ok": true
+        },
+        {
+          "name": "external_onboarding_doc_exists",
+          "ok": true
+        },
+        {
+          "name": "justin_selector_resolves",
+          "ok": true,
+          "evidence": {
+            "ok": true,
+            "selectorKey": "justin.stage-3",
+            "runtimeProfile": null,
+            "runtimePurpose": "external_gateway_canary",
+            "routeTargetKind": "visible_agent",
+            "target": {
+              "team": "justin-court-appraisal",
+              "agent": "justin",
+              "selectorKey": "justin.stage-3",
+              "selected": true,
+              "kind": "visible_agent",
+              "canonicalTeam": "justin-court-appraisal",
+              "countable": true,
+              "blockReason": null
+            },
+            "source": "selector_key",
+            "chain": [
+              {
+                "provider": "openai-oauth",
+                "model": "gpt-5.4",
+                "maxTokens": 4096,
+                "temperature": 0.2,
+                "timeoutMs": 60000,
+                "route": "openai-oauth/gpt-5.4",
+                "providerTier": 1,
+                "fallbackIndex": 0
+              },
+              {
+                "provider": "gemini-cli-oauth",
+                "model": "gemini-2.5-flash",
+                "maxTokens": 4096,
+                "temperature": 0.2,
+                "timeoutMs": 45000,
+                "route": "gemini-cli-oauth/gemini-2.5-flash",
+                "providerTier": 3,
+                "fallbackIndex": 1
+              },
+              {
+                "provider": "groq",
+                "model": "qwen/qwen3-32b",
+                "maxTokens": 4096,
+                "temperature": 0.2,
+                "timeoutMs": 30000,
+                "route": "groq/qwen/qwen3-32b",
+                "providerTier": 2,
+                "fallbackIndex": 2
+              }
+            ],
+            "providerTiers": [
+              {
+                "provider": "openai-oauth",
+                "route": "openai-oauth/gpt-5.4",
+                "tier": 1,
+                "fallbackIndex": 0
+              },
+              {
+                "provider": "gemini-cli-oauth",
+                "route": "gemini-cli-oauth/gemini-2.5-flash",
+                "tier": 3,
+                "fallbackIndex": 1
+              },
+              {
+                "provider": "groq",
+                "route": "groq/qwen/qwen3-32b",
+                "tier": 2,
+                "fallbackIndex": 2
+              }
+            ]
+          }
+        }
+      ]
+    },
+    "uptime": {
+      "ok": true,
+      "uptimeSeconds": 7092,
+      "startupComplete": true,
+      "httpStatus": 200
+    },
+    "promotionEvidence": {
+      "shadowWindowDays": 0,
+      "canaryPercent": 0,
+      "uptimeTargetMet": false,
+      "latencyTargetMet": false,
+      "errorRateTargetMet": false,
+      "selfHealingTargetMet": false
+    }
+  },
+  "safetyBoundary": {
+    "noProtectedRestart": true,
+    "noSecretMutationByCodex": true,
+    "noProductionRestore": true,
+    "blueNeverStopped": true,
+    "protectedHubLabels": [
+      "ai.hub.resource-api",
+      "ai.hub.llm-oauth-monitor",
+      "ai.hub.llm-oauth4-master-review",
+      "ai.hub.llm-groq-fallback-test",
+      "ai.hub.llm-model-check",
+      "ai.hub.llm-cache-cleanup",
+      "ai.hub.incident-summary",
+      "ai.hub.severity-decay",
+      "ai.hub.noisy-producer-auto-learn",
+      "ai.hub.roundtable-reflection",
+      "ai.hub.daily-metrics-digest",
+      "ai.hub.hourly-status-digest",
+      "ai.hub.weekly-audit-digest",
+      "ai.hub.weekly-advisory-digest"
+    ]
+  },
+  "promotionGate": {
+    "requiredBeforeProductionCertified": [
+      "7d shadow evidence",
+      "1% canary pass, then approved 10%/100% rollout",
+      "99.9% uptime for 1w",
+      "avg latency < 500ms",
+      "error rate < 0.1%",
+      "self-healing success > 95%"
+    ]
+  }
+}

@@ -12,23 +12,23 @@ const {
 
 const CONFIRM_1PCT = 'hub-stage-d-live-chaos-1pct';
 
-function hasFlag(flag: string): boolean {
+function hasFlag(flag) {
   return process.argv.includes(flag);
 }
 
-function argValue(name: string): string | null {
+function argValue(name) {
   const prefix = `${name}=`;
   const raw = process.argv.find((arg) => arg.startsWith(prefix));
   return raw ? raw.slice(prefix.length) : null;
 }
 
-function clamp(value: unknown, min: number, max: number): number {
+function clamp(value, min, max) {
   const parsed = Number(value);
   if (!Number.isFinite(parsed)) return min;
   return Math.min(max, Math.max(min, parsed));
 }
 
-function buildState(percent: number, latencyMs: number, ttlMinutes: number) {
+function buildState(percent, latencyMs, ttlMinutes) {
   return {
     enabled: true,
     mode: 'live_canary_latency',
@@ -41,7 +41,7 @@ function buildState(percent: number, latencyMs: number, ttlMinutes: number) {
   };
 }
 
-async function main(): Promise<void> {
+async function main() {
   const apply = hasFlag('--apply');
   const disable = hasFlag('--disable');
   const confirm = argValue('--confirm');
@@ -49,7 +49,7 @@ async function main(): Promise<void> {
   const latencyMs = clamp(argValue('--latency-ms') || 500, 0, MAX_SAFE_LATENCY_MS);
   const ttlMinutes = clamp(argValue('--ttl-minutes') || 10, 1, 60);
 
-  const result: any = {
+  const result = {
     ok: true,
     checkedAt: new Date().toISOString(),
     stage: 'hub_stage_d',
@@ -96,7 +96,7 @@ async function main(): Promise<void> {
   console.log(JSON.stringify(result, null, 2));
 }
 
-main().catch((error: Error) => {
+main().catch((error) => {
   console.error(error);
   process.exit(1);
 });
