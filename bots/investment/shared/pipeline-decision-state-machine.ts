@@ -149,6 +149,7 @@ export async function runDecisionExecutionStateMachine({
   const riskRejectReasons = {};
   let weakSignalSkipped = 0;
   const weakSignalReasons = {};
+  const weakSignalTraceBySymbol = {};
   let midGapPromoted = 0;
   let midGapRejectedByRisk = 0;
   let invalidSignalSkipped = 0;
@@ -178,6 +179,19 @@ export async function runDecisionExecutionStateMachine({
   let relaxedPrefilterCount = 0;
   const maxRelaxedPrefilterPerCycle = getConservativeRelaxationMaxPerCycle();
   let decisionLlmBudgetGate = null, decisionDebateBudgetGate = null;
+
+  const recordWeakSignalTrace = (symbol, decision, reasonOverride = null) => {
+    const key = String(symbol || '').trim();
+    if (!key || Object.keys(weakSignalTraceBySymbol).length >= 30) return;
+    const trace = decision?.trace || {};
+    weakSignalTraceBySymbol[key] = {
+      ...(trace || {}),
+      symbol: trace?.symbol || key,
+      market: trace?.market || exchange,
+      reason: reasonOverride || decision?.reason || trace?.reason || null,
+      observedAt: new Date().toISOString(),
+    };
+  };
 
   const buildMetrics = (extra = {}) => {
     const metrics = buildDecisionPipelineMetrics({
@@ -216,6 +230,9 @@ export async function runDecisionExecutionStateMachine({
       used: relaxedPrefilterCount,
       maxPerCycle: maxRelaxedPrefilterPerCycle,
     };
+    if (Object.keys(weakSignalTraceBySymbol).length > 0) {
+      metrics.weakSignalTraceBySymbol = { ...weakSignalTraceBySymbol };
+    }
     if (decisionLlmBudgetGate) metrics.decisionLlmBudget = decisionLlmBudgetGate.snapshot();
     if (decisionDebateBudgetGate) metrics.decisionDebateBudget = decisionDebateBudgetGate.snapshot();
     for (const warning of decisionAgentPlan.warnings || []) {
@@ -331,19 +348,23 @@ export async function runDecisionExecutionStateMachine({
       if (stockIntradayPrefilter?.relaxation?.ok === true && relaxedPrefilterCount >= maxRelaxedPrefilterPerCycle) {
         weakSignalSkipped++;
         weakSignalReasons.conservative_relaxation_cap_reached = (weakSignalReasons.conservative_relaxation_cap_reached || 0) + 1;
+        recordWeakSignalTrace(symbol, stockIntradayPrefilter, 'conservative_relaxation_cap_reached');
         console.log(`  ⏭️ [노드 브리지] ${symbol} L13 생략: conservative_relaxation_cap_reached (${relaxedPrefilterCount}/${maxRelaxedPrefilterPerCycle})`);
         continue;
       }
       if (!stockIntradayPrefilter.run) {
         weakSignalSkipped++;
         weakSignalReasons[stockIntradayPrefilter.reason] = (weakSignalReasons[stockIntradayPrefilter.reason] || 0) + 1;
-        console.log(`  ⏭️ [노드 브리지] ${symbol} L13 생략: ${stockIntradayPrefilter.reason}`);
+        recordWeakSignalTrace(symbol, stockIntradayPrefilter);
+        const detail = stockIntradayPrefilter.trace?.reasonDetail ? `/${stockIntradayPrefilter.trace.reasonDetail}` : '';
+        console.log(`  ⏭️ [노드 브리지] ${symbol} L13 생략: ${stockIntradayPrefilter.reason}${detail}`);
         continue;
       }
       const budgetDecision = decisionLlmBudgetGate.allow({ symbol, prefilter: stockIntradayPrefilter });
       if (!budgetDecision.allow) {
         weakSignalSkipped++;
         weakSignalReasons[budgetDecision.reason] = (weakSignalReasons[budgetDecision.reason] || 0) + 1;
+        recordWeakSignalTrace(symbol, stockIntradayPrefilter, budgetDecision.reason);
         console.log(`  ⏭️ [노드 브리지] ${symbol} L13 생략: ${budgetDecision.reason}`);
         continue;
       }

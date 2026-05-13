@@ -13,6 +13,7 @@ import {
   STOCK_INTRADAY_LIGHT_COLLECT_NODES,
   buildStockResearchLlmPolicyMeta,
   buildStockIntradayLlmPolicyMeta,
+  buildStockIntradayPresignalTrace,
   shouldRunStockIntradayDecisionLlm,
 } from '../shared/stock-intraday-llm-policy.ts';
 
@@ -95,6 +96,22 @@ const holdPrefilter = shouldRunStockIntradayDecisionLlm({
 });
 assert.equal(holdPrefilter.run, false);
 assert.equal(holdPrefilter.reason, 'stock_intraday_no_actionable_presignal');
+assert.equal(holdPrefilter.trace.reasonDetail, 'missing_technical_presignal');
+assert.ok(holdPrefilter.trace.missing.includes('technical_buy_presignal'));
+assert.equal(holdPrefilter.trace.symbol, '005930');
+
+const targetSymbolTrace = buildStockIntradayPresignalTrace({
+  market: 'kis',
+  symbol: '417840',
+  analyses: [
+    { analyst: 'ta_mtf', signal: 'BUY', confidence: 0.66, reasoning: '일봉 BUY | 가중점수 0.90' },
+    { analyst: 'market_flow', signal: 'HOLD', confidence: 0.2 },
+  ],
+  env: disabledEnv,
+});
+assert.equal(targetSymbolTrace.symbol, '417840');
+assert.equal(targetSymbolTrace.reasonDetail, 'missing_support_presignal');
+assert.ok(targetSymbolTrace.missing.includes('flow_or_narrative_support'));
 
 const buyPrefilter = shouldRunStockIntradayDecisionLlm({
   market: 'kis',

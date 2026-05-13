@@ -77,6 +77,41 @@ async function runSmoke() {
         assert.equal(doctor.ok, true, 'doctor remains ok');
         assert.ok(doctor.recentRoutes?.length >= 1, 'route log visible to doctor');
 
+        const oldAuto = process.env.LUNA_AGENT_MEMORY_AUTO_PREFIX;
+        const oldPersona = process.env.LUNA_AGENT_PERSONA_ENABLED;
+        const oldConstitution = process.env.LUNA_AGENT_CONSTITUTION_ENABLED;
+        const oldLayer4 = process.env.LUNA_AGENT_MEMORY_LAYER_4;
+        process.env.LUNA_AGENT_MEMORY_AUTO_PREFIX = 'false';
+        process.env.LUNA_AGENT_PERSONA_ENABLED = 'false';
+        process.env.LUNA_AGENT_CONSTITUTION_ENABLED = 'false';
+        process.env.LUNA_AGENT_MEMORY_LAYER_4 = 'false';
+        try {
+          const kisMemory = await buildMemoryPrefix({
+            agentName: 'luna',
+            market: 'kis',
+            taskType: 'final_decision',
+            symbol: '417840',
+            workingState: 'fixture KIS final_decision working state',
+            maxPrefixChars: 2400,
+          });
+          assert.ok(kisMemory.totalChars > 0, 'KIS final_decision force memory prefix enabled');
+          assert.ok(kisMemory.layers.persona, 'KIS final_decision persona forced');
+          assert.ok(kisMemory.layers.constitution, 'KIS final_decision constitution forced');
+          assert.ok(kisMemory.layers.skills >= 1, 'KIS final_decision procedural memory forced');
+          assert.ok(kisMemory.layers.failures >= 1, 'KIS final_decision failure pattern forced');
+          assert.ok(kisMemory.layers.workingState, 'KIS final_decision working state forced');
+          assert.match(kisMemory.prefix, /KIS_STRATEGY_IMPROVEMENT|KIS_FAILURE_PATTERN/);
+        } finally {
+          if (oldAuto === undefined) delete process.env.LUNA_AGENT_MEMORY_AUTO_PREFIX;
+          else process.env.LUNA_AGENT_MEMORY_AUTO_PREFIX = oldAuto;
+          if (oldPersona === undefined) delete process.env.LUNA_AGENT_PERSONA_ENABLED;
+          else process.env.LUNA_AGENT_PERSONA_ENABLED = oldPersona;
+          if (oldConstitution === undefined) delete process.env.LUNA_AGENT_CONSTITUTION_ENABLED;
+          else process.env.LUNA_AGENT_CONSTITUTION_ENABLED = oldConstitution;
+          if (oldLayer4 === undefined) delete process.env.LUNA_AGENT_MEMORY_LAYER_4;
+          else process.env.LUNA_AGENT_MEMORY_LAYER_4 = oldLayer4;
+        }
+
         return { ok: true, agents: results.length, doctorStatus: doctor.status };
       } finally {
         await db.run(`DELETE FROM investment.llm_routing_log WHERE incident_key = $1`, [incidentKey]).catch(() => null);

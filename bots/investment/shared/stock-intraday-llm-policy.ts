@@ -192,6 +192,94 @@ function buildStockMtfTechnicalPresignal(analyses = [], env = process.env) {
   };
 }
 
+export function buildStockIntradayPresignalTrace({
+  symbol = null,
+  market = null,
+  analyses = [],
+  env = process.env,
+} = {}) {
+  const threshold = getStockIntradayDecisionPrefilterConfidence(env);
+  const taThreshold = getStockTaDecisionPrefilterConfidence(env);
+  const flowThreshold = getStockFlowDecisionPrefilterConfidence(env);
+  const narrativeThreshold = getStockNarrativeDecisionPrefilterConfidence(env);
+  const weightedFloor = numEnv(env, 'LUNA_STOCK_TA_MTF_PRESIGNAL_WEIGHTED_SCORE', DEFAULT_STOCK_TA_MTF_PRESIGNAL_WEIGHTED_SCORE);
+  const minDailyBuyFrames = Math.max(1, Math.round(numEnv(env, 'LUNA_STOCK_TA_MTF_PRESIGNAL_MIN_DAILY_BUY_FRAMES', 1)));
+  const mtfEvidence = extractStockTechnicalEvidence(analyses);
+  const mtfSynthetic = buildStockMtfTechnicalPresignal(analyses, env);
+  const analystRows = [];
+  const technicalBuys = [];
+  const supportBuys = [];
+  const sellConflicts = [];
+
+  for (const row of analyses || []) {
+    const signal = String(row?.signal || '').trim().toUpperCase();
+    const confidence = Number(row?.confidence || 0);
+    const role = stockAnalystRole(row);
+    analystRows.push({
+      analyst: row?.analyst || row?.metadata?.analyst || row?.source || null,
+      role,
+      signal,
+      confidence: Number.isFinite(confidence) ? Number(confidence.toFixed(4)) : 0,
+    });
+    if (signal === 'SELL' && (role === 'technical' || role === 'flow')) {
+      sellConflicts.push({ role, confidence });
+    }
+    if (signal !== 'BUY') continue;
+    if (role === 'technical' && confidence >= taThreshold) technicalBuys.push({ role, confidence });
+    if (role === 'flow' && confidence >= flowThreshold) supportBuys.push({ role, confidence });
+    if (role === 'narrative' && confidence >= narrativeThreshold) supportBuys.push({ role, confidence });
+  }
+
+  technicalBuys.sort((a, b) => b.confidence - a.confidence);
+  supportBuys.sort((a, b) => b.confidence - a.confidence);
+  const missing = [];
+  if (sellConflicts.length > 0) missing.push('sell_conflict');
+  if (technicalBuys.length === 0 && !mtfSynthetic) missing.push('technical_buy_presignal');
+  if (!mtfSynthetic && mtfEvidence.weightedScore == null) missing.push('mtf_weighted_score');
+  if (!mtfSynthetic && mtfEvidence.weightedScore != null && Number(mtfEvidence.weightedScore) < weightedFloor) missing.push('mtf_weighted_score_below_floor');
+  if (!mtfSynthetic && mtfEvidence.dailyBuyFrames < minDailyBuyFrames && mtfEvidence.technicalBuyRows === 0) missing.push('daily_buy_frame');
+  if (supportBuys.length === 0) missing.push('flow_or_narrative_support');
+
+  const reasonDetail = sellConflicts.length > 0
+    ? 'sell_conflict'
+    : (technicalBuys.length === 0 && !mtfSynthetic)
+      ? 'missing_technical_presignal'
+      : supportBuys.length === 0
+        ? 'missing_support_presignal'
+        : 'actionable';
+
+  return {
+    symbol: symbol ? String(symbol) : null,
+    market: market ? String(market) : null,
+    reasonDetail,
+    thresholds: {
+      decision: threshold,
+      technical: taThreshold,
+      flow: flowThreshold,
+      narrative: narrativeThreshold,
+      mtfWeightedFloor: weightedFloor,
+      minDailyBuyFrames,
+    },
+    counts: {
+      analyses: (analyses || []).length,
+      technicalBuyRows: technicalBuys.length,
+      supportBuyRows: supportBuys.length,
+      sellConflicts: sellConflicts.length,
+    },
+    bestTechnical: technicalBuys[0]
+      ? { confidence: Number(technicalBuys[0].confidence.toFixed(4)), source: 'analysis_row' }
+      : mtfSynthetic
+        ? { confidence: Number(mtfSynthetic.confidence.toFixed(4)), source: 'mtf_synthetic' }
+        : null,
+    bestSupport: supportBuys[0]
+      ? { role: supportBuys[0].role, confidence: Number(supportBuys[0].confidence.toFixed(4)) }
+      : null,
+    mtfEvidence,
+    missing: Array.from(new Set(missing)),
+    analysts: analystRows.slice(0, 12),
+  };
+}
+
 function buildCryptoMtfTechnicalPresignal(analyses = [], env = process.env) {
   const evidence = extractCryptoTechnicalEvidence(analyses);
   const weightedFloor = numEnv(env, 'LUNA_CRYPTO_TA_MTF_PRESIGNAL_WEIGHTED_SCORE', 0.45);
@@ -453,11 +541,12 @@ function findStockActionablePresignal(analyses = [], env = process.env) {
   support.sort((a, b) => b.confidence - a.confidence);
   const bestTechnical = technical[0] || buildStockMtfTechnicalPresignal(analyses, env);
   const bestSupport = support[0] || null;
+  const trace = buildStockIntradayPresignalTrace({ analyses, env });
   if (sellConflicts.length > 0) {
-    return { run: false, reason: 'stock_intraday_sell_conflict', taThreshold, flowThreshold, narrativeThreshold };
+    return { run: false, reason: 'stock_intraday_sell_conflict', taThreshold, flowThreshold, narrativeThreshold, trace };
   }
   if (!bestTechnical) {
-    return { run: false, reason: 'stock_intraday_no_actionable_presignal', taThreshold, flowThreshold, narrativeThreshold };
+    return { run: false, reason: 'stock_intraday_no_actionable_presignal', taThreshold, flowThreshold, narrativeThreshold, trace };
   }
 
   if (!bestSupport && bestTechnical.mtfEvidence && isStockMtfTechnicalOnlyPrefilterEnabled(env)) {
@@ -474,11 +563,12 @@ function findStockActionablePresignal(analyses = [], env = process.env) {
         mtfEvidence: bestTechnical.mtfEvidence || bestTechnical.row?.metadata?.mtfEvidence || null,
       },
       support: null,
+      trace,
     };
   }
 
   if (!bestSupport) {
-    return { run: false, reason: 'stock_intraday_no_actionable_presignal', taThreshold, flowThreshold, narrativeThreshold };
+    return { run: false, reason: 'stock_intraday_no_actionable_presignal', taThreshold, flowThreshold, narrativeThreshold, trace };
   }
 
   return {
@@ -498,6 +588,7 @@ function findStockActionablePresignal(analyses = [], env = process.env) {
       confidence: bestSupport.confidence,
       role: bestSupport.role,
     },
+    trace,
   };
 }
 
@@ -539,6 +630,7 @@ export function shouldRunStockIntradayDecisionLlm({
       analyst: actionable.analyst || null,
       signal: actionable.signal || null,
       confidence: Number(actionable.confidence || 0),
+      trace: buildStockIntradayPresignalTrace({ symbol, market, analyses, env }),
     };
   }
 
@@ -547,6 +639,11 @@ export function shouldRunStockIntradayDecisionLlm({
     return {
       ...composite,
       threshold,
+      trace: {
+        ...(composite.trace || buildStockIntradayPresignalTrace({ symbol, market, analyses, env })),
+        symbol: symbol ? String(symbol) : null,
+        market: market ? String(market) : null,
+      },
     };
   }
 
@@ -562,6 +659,11 @@ export function shouldRunStockIntradayDecisionLlm({
     run: false,
     reason: composite.reason || 'stock_intraday_no_actionable_presignal',
     threshold,
+    trace: {
+      ...(composite.trace || buildStockIntradayPresignalTrace({ symbol, market, analyses, env })),
+      symbol: symbol ? String(symbol) : null,
+      market: market ? String(market) : null,
+    },
   };
 }
 
@@ -678,6 +780,7 @@ export default {
   getCryptoTaDecisionPrefilterConfidence,
   getCryptoFlowDecisionPrefilterConfidence,
   shouldRunStockIntradayDecisionLlm,
+  buildStockIntradayPresignalTrace,
   buildStockIntradayLlmPolicyMeta,
   buildStockResearchLlmPolicyMeta,
 };

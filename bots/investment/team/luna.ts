@@ -107,6 +107,8 @@ import {
 } from '../shared/luna-portfolio-context.ts';
 import { persistRiskApprovalRationale } from '../shared/pipeline-approved-decision.ts';
 import { createLunaPortfolioDecisionGuards } from '../shared/luna-portfolio-decision-guards.ts';
+import { evaluateKisSymbolPolicy } from '../shared/kis-symbol-policy.ts';
+import { evaluateKisTimeSlotPolicy } from '../shared/kis-market-hours-guard.ts';
 import {
   buildAnalysisSummary as buildAnalysisSummaryBase,
   createLunaSymbolDecisionPromptBuilder,
@@ -369,6 +371,31 @@ function normalizePortfolioDecisionResult(parsed, symbols, exchange, symbolDecis
   return parsed;
 }
 
+function buildKisFinalDecisionWorkingState({ symbol, exchange, analyses, fused, strategyRoute, reviewHint }) {
+  if (exchange !== 'kis') return null;
+  const timePolicy = evaluateKisTimeSlotPolicy(new Date());
+  const symbolPolicy = evaluateKisSymbolPolicy(symbol);
+  const analystSummary = (analyses || []).slice(0, 8).map((row) => ({
+    analyst: row?.analyst || row?.source || null,
+    signal: row?.signal || null,
+    confidence: Number(row?.confidence || 0),
+  }));
+  return [
+    `market: kis/domestic`,
+    `symbol: ${symbol}`,
+    `task_type: final_decision`,
+    `kis_strategy_improvement: shadow_memory_required`,
+    `time_policy: hour=${timePolicy.hour}, allowed=${timePolicy.allowed}, priority=${timePolicy.priority}, rationale=${timePolicy.rationale}`,
+    `symbol_policy: policy=${symbolPolicy.policy}, allowed=${symbolPolicy.allowed}, rationale=${symbolPolicy.rationale}`,
+    `recent_failure_pattern: 국내장 손실은 장시작/마감 진입, normal_exit/force_exit, 1일 초과 보유, -2% 초과 손실에서 반복됐다.`,
+    `decision_rule: TA+flow presignal과 명확한 SMA/exit plan 없으면 HOLD. blacklist/avoid 종목은 BUY 금지. 12-13시 외 신규 BUY는 보수적으로 축소.`,
+    `fused: recommendation=${fused?.recommendation || 'n/a'}, score=${Number(fused?.fusedScore || 0).toFixed(4)}, avg_conf=${Number(fused?.averageConfidence || 0).toFixed(4)}, conflict=${fused?.hasConflict === true}`,
+    `strategy_route: family=${strategyRoute?.selectedFamily || 'n/a'}, setup=${strategyRoute?.setupType || 'n/a'}, readiness=${strategyRoute?.readinessScore ?? 'n/a'}, quality=${strategyRoute?.quality ?? 'n/a'}`,
+    `review_hint: delta=${Number(reviewHint?.delta || 0).toFixed(4)}, notes=${(reviewHint?.notes || []).join('|') || 'none'}`,
+    `analysts: ${JSON.stringify(analystSummary)}`,
+  ].join('\n');
+}
+
 // ─── 개별 심볼 LLM 판단 ────────────────────────────────────────────
 
 export async function getSymbolDecision(symbol, analyses, exchange = 'binance', debate = null, analystWeights = ANALYST_WEIGHTS) {
@@ -421,6 +448,14 @@ export async function getSymbolDecision(symbol, analyses, exchange = 'binance', 
           market: exchange,
           taskType: 'final_decision',
           incidentKey: `luna:symbol:${exchange}:${symbol}`,
+          workingState: buildKisFinalDecisionWorkingState({
+            symbol,
+            exchange,
+            analyses,
+            fused,
+            strategyRoute,
+            reviewHint,
+          }),
         });
         const parsed = parseJSON(raw);
         if (!parsed?.action) {

@@ -35,7 +35,9 @@ const env = _require('../../../packages/core/lib/env');
 
 const PROJECT_ROOT = env.PROJECT_ROOT || process.cwd();
 const TEAM_DIR = path.join(PROJECT_ROOT, 'bots/investment/team');
-const SKILLS_DIR = path.join(PROJECT_ROOT, 'packages/core/lib/skills/investment');
+const CORE_SKILLS_DIR = path.join(PROJECT_ROOT, 'packages/core/lib/skills/investment');
+const INVESTMENT_SKILLS_DIR = path.join(PROJECT_ROOT, 'bots/investment/skills');
+const MAX_SKILL_ITEMS = 4;
 
 // ─── 타입 ─────────────────────────────────────────────────────────────────────
 
@@ -80,6 +82,7 @@ export async function buildMemoryPrefix(
 ): Promise<OrchestratorResult> {
   const callId = `mem-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
   const maxChars = opts.maxPrefixChars ?? 8_000;
+  const forceKisFinalDecision = _isKisFinalDecisionMemoryPath(opts);
   const sections: string[] = [];
   const layers = {
     persona: false,
@@ -92,7 +95,7 @@ export async function buildMemoryPrefix(
     workingState: false,
   };
 
-  if (!isAgentMemoryFeatureEnabled('memoryAutoPrefix')) {
+  if (!isAgentMemoryFeatureEnabled('memoryAutoPrefix') && !forceKisFinalDecision) {
     await _logAgentContext({
       agentName: opts.agentName,
       callId,
@@ -106,7 +109,7 @@ export async function buildMemoryPrefix(
   }
 
   // 1. Persona
-  if (isAgentMemoryFeatureEnabled('personaEnabled')) {
+  if (isAgentMemoryFeatureEnabled('personaEnabled') || forceKisFinalDecision) {
     const persona = _loadMarkdownFile(TEAM_DIR, `${opts.agentName}.persona.md`);
     if (persona) {
       sections.push(`## 에이전트 정체성\n${persona}`);
@@ -115,7 +118,7 @@ export async function buildMemoryPrefix(
   }
 
   // 2. Constitution
-  if (isAgentMemoryFeatureEnabled('constitutionEnabled')) {
+  if (isAgentMemoryFeatureEnabled('constitutionEnabled') || forceKisFinalDecision) {
     const constitution = _loadMarkdownFile(TEAM_DIR, `${opts.agentName}.constitution.md`);
     if (constitution) {
       sections.push(`## 행동 원칙 (Constitution)\n${constitution}`);
@@ -139,17 +142,17 @@ export async function buildMemoryPrefix(
       : Promise.resolve([]),
 
     // 4. Layer 3 Failures (RAG similar failures)
-    isAgentMemoryFeatureEnabled('layer3EpisodicEnabled')
+    (isAgentMemoryFeatureEnabled('layer3EpisodicEnabled') || forceKisFinalDecision)
       ? _fetchFailureMemory(opts.agentName, opts.symbol, opts.market)
       : Promise.resolve([]),
 
     // 5. Layer 4 Procedural (skill files)
-    isAgentMemoryFeatureEnabled('layer4SemanticProceduralEnabled')
+    (isAgentMemoryFeatureEnabled('layer4SemanticProceduralEnabled') || forceKisFinalDecision)
       ? _fetchSkills(opts.agentName, opts.taskType, opts.market)
       : Promise.resolve([]),
 
     // 6. Layer 4 Semantic (entity_facts)
-    isAgentMemoryFeatureEnabled('layer4SemanticProceduralEnabled') && opts.symbol
+    (isAgentMemoryFeatureEnabled('layer4SemanticProceduralEnabled') || forceKisFinalDecision) && opts.symbol
       ? _fetchEntityFacts(opts.symbol, opts.market)
       : Promise.resolve([]),
 
@@ -170,7 +173,10 @@ export async function buildMemoryPrefix(
   }
 
   // 4. Failures
-  const failures = failureResult.status === 'fulfilled' ? failureResult.value : [];
+  const failures = failureResult.status === 'fulfilled' ? [...failureResult.value] : [];
+  if (forceKisFinalDecision && failures.length === 0) {
+    failures.push(..._buildKisFinalDecisionFailurePatterns());
+  }
   if (failures.length > 0) {
     const items = failures.slice(0, 2).map((f: any) =>
       `- [실패] ${(f.hindsight || f.content || '').slice(0, 200)}`
@@ -182,7 +188,7 @@ export async function buildMemoryPrefix(
   // 5. Skills
   const skills = skillResult.status === 'fulfilled' ? skillResult.value : [];
   if (skills.length > 0) {
-    const items = skills.slice(0, 2).map((s: string) => `- ${s}`).join('\n');
+    const items = skills.slice(0, MAX_SKILL_ITEMS).map((s: string) => `- ${s}`).join('\n');
     sections.push(`## 검증된 스킬 (Procedural Memory)\n${items}`);
     layers.skills = skills.length;
   }
@@ -430,16 +436,25 @@ async function _fetchFailureMemory(
 async function _fetchSkills(agentName: string, taskType?: string, market?: string): Promise<string[]> {
   try {
     const marketKey = String(market || '').trim().toLowerCase();
-    const collected: string[] = await _fetchDbPosttradeSkills(agentName, taskType, marketKey).catch(() => []);
-    if (collected.length >= 2) return collected.slice(0, 2);
+    const collected: string[] = [];
+    if (_isKisFinalDecisionRoute(agentName, taskType, marketKey)) {
+      collected.push(..._buildKisFinalDecisionProceduralMemory());
+    }
+    collected.push(...await _fetchDbPosttradeSkills(agentName, taskType, marketKey).catch(() => []));
+    if (collected.length >= MAX_SKILL_ITEMS) return collected.slice(0, MAX_SKILL_ITEMS);
 
     const dirCandidates = [
-      path.join(SKILLS_DIR, agentName),
-      path.join(SKILLS_DIR, 'luna', agentName, marketKey),
-      path.join(SKILLS_DIR, 'luna', agentName),
-      path.join(SKILLS_DIR, 'luna', marketKey),
-      path.join(SKILLS_DIR, 'luna'),
-      SKILLS_DIR,
+      path.join(CORE_SKILLS_DIR, agentName),
+      path.join(CORE_SKILLS_DIR, 'luna', agentName, marketKey),
+      path.join(CORE_SKILLS_DIR, 'luna', agentName),
+      path.join(CORE_SKILLS_DIR, 'luna', marketKey),
+      path.join(CORE_SKILLS_DIR, 'luna'),
+      path.join(INVESTMENT_SKILLS_DIR, agentName),
+      path.join(INVESTMENT_SKILLS_DIR, 'luna'),
+      path.join(INVESTMENT_SKILLS_DIR, 'stock-flow'),
+      path.join(INVESTMENT_SKILLS_DIR, 'argos'),
+      CORE_SKILLS_DIR,
+      INVESTMENT_SKILLS_DIR,
     ].filter((value, index, arr) => value && arr.indexOf(value) === index);
 
     const preferAvoid = String(taskType || '').toLowerCase().includes('risk')
@@ -449,7 +464,10 @@ async function _fetchSkills(agentName: string, taskType?: string, market?: strin
     for (const dirPath of dirCandidates) {
       if (!fs.existsSync(dirPath) || !fs.statSync(dirPath).isDirectory()) continue;
       const files = fs.readdirSync(dirPath)
-        .filter((f) => f.endsWith('.md') && prefixes.some((prefix) => f.startsWith(prefix)))
+        .filter((f) => f.endsWith('.md') && (
+          prefixes.some((prefix) => f.startsWith(prefix)) ||
+          (_isKisFinalDecisionRoute(agentName, taskType, marketKey) && f.endsWith('.skill.md'))
+        ))
         .sort((a, b) => a.localeCompare(b));
       for (const f of files) {
         const fullPath = path.join(dirPath, f);
@@ -459,13 +477,49 @@ async function _fetchSkills(agentName: string, taskType?: string, market?: strin
         } catch {
           collected.push(f);
         }
-        if (collected.length >= 2) return collected;
+        if (collected.length >= MAX_SKILL_ITEMS) return collected.slice(0, MAX_SKILL_ITEMS);
       }
     }
-    return collected;
+    return collected.slice(0, MAX_SKILL_ITEMS);
   } catch {
     return [];
   }
+}
+
+function _normalizeMemoryMarket(value?: string): string {
+  const raw = String(value || '').trim().toLowerCase();
+  if (raw === 'domestic') return 'kis';
+  if (raw === 'overseas') return 'kis_overseas';
+  return raw;
+}
+
+function _isKisFinalDecisionRoute(agentName?: string, taskType?: string, market?: string): boolean {
+  const agent = String(agentName || '').trim().toLowerCase();
+  const task = String(taskType || '').trim().toLowerCase();
+  const normalizedMarket = _normalizeMemoryMarket(market);
+  return agent === 'luna'
+    && task === 'final_decision'
+    && normalizedMarket === 'kis';
+}
+
+function _isKisFinalDecisionMemoryPath(opts: MemoryOrchestratorOptions): boolean {
+  return _isKisFinalDecisionRoute(opts.agentName, opts.taskType, opts.market);
+}
+
+function _buildKisFinalDecisionProceduralMemory(): string[] {
+  return [
+    '[KIS_STRATEGY_IMPROVEMENT] 국내장 final_decision은 Shadow 전략 개선 원칙을 우선 반영한다: 09시/15시 신규 진입 회피, 12-13시 우선, blacklist/avoid 종목 BUY 금지, SMA 기반 근거 없는 normal 진입은 HOLD.',
+    '[KIS_FAILURE_PATTERN] 최근 국내장 실거래 손실 패턴: normal_exit/force_exit, 장시작·마감 진입, 1일 초과 보유, -2% 초과 손실이 반복됐다. 강한 TA+flow presignal과 명확한 exit plan 없으면 HOLD.',
+  ];
+}
+
+function _buildKisFinalDecisionFailurePatterns(): any[] {
+  return [
+    {
+      content: 'KIS 국내장 33건 기준 승률 15.15%, PnL -$468.50. 09시/15시 진입과 normal_exit/force_exit가 손실 대부분을 만들었다.',
+      hindsight: '국내장 final_decision은 시간대·종목정책·SMA 근거·1일 보유 제한·-2% SL 근거를 모두 확인해야 한다.',
+    },
+  ];
 }
 
 async function _fetchDbPosttradeSkills(agentName: string, taskType?: string, market?: string): Promise<string[]> {
