@@ -5,14 +5,13 @@
  */
 import { createRequire } from 'module';
 const require = createRequire(import.meta.url);
-const path = require('path');
-const PROJECT_ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname), '../../..');
-const hub = require(path.join(PROJECT_ROOT, 'packages/core/lib/hub-client'));
+const { callGroqFallback } = require('../lib/llm/groq-fallback.ts');
+const { postAlarm } = require('../../../packages/core/lib/hub-alarm-client.ts');
 
 const GROQ_MODEL: Record<string, string> = {
   anthropic_haiku:  'llama-3.1-8b-instant',
   anthropic_sonnet: 'llama-3.3-70b-versatile',
-  anthropic_opus:   'qwen-qwq-32b',
+  anthropic_opus:   'qwen/qwen3-32b',
 };
 
 async function testGroqFallback() {
@@ -28,10 +27,11 @@ async function testGroqFallback() {
   for (const test of testCases) {
     const start = Date.now();
     try {
-      const resp = await hub.callHub('/hub/llm/groq', {
+      const resp = await callGroqFallback({
         prompt: test.prompt,
         model: GROQ_MODEL[test.abstractModel],
-        abstract_model: test.abstractModel,
+        maxTokens: 64,
+        temperature: 0,
       });
       results.push({
         abstract_model: test.abstractModel,
@@ -51,7 +51,26 @@ async function testGroqFallback() {
     : `✅ Groq 단독 운영 정상 — ${results.length}개 모델 모두 OK\n${results.map(r => `• ${r.abstract_model}: ${r.duration_ms}ms, ${r.response_length}자`).join('\n')}`;
 
   console.log('[groq-test]', msg);
-  await hub.callHub('/hub/alarm', { message: msg, channel: 'general' }).catch(() => {});
+  if (process.env.HUB_GROQ_FALLBACK_TEST_NOTIFY !== 'false') {
+    await postAlarm({
+      team: 'hub',
+      fromBot: 'llm-groq-fallback-test',
+      alertLevel: failed.length > 0 ? 3 : 1,
+      alarmType: failed.length > 0 ? 'error' : 'report',
+      visibility: failed.length > 0 ? 'notify' : 'digest',
+      title: failed.length > 0 ? 'Groq fallback 테스트 실패' : 'Groq fallback 테스트 정상',
+      message: msg,
+      eventType: 'llm_groq_fallback_test',
+      incidentKey: `hub:llm_groq_fallback_test:${new Date().toISOString().slice(0, 10)}`,
+      payload: {
+        event_type: 'llm_groq_fallback_test',
+        failures: failed.length,
+        results,
+      },
+    }).catch((err: Error) => {
+      console.warn('[groq-test] hub alarm failed:', err.message);
+    });
+  }
   process.exit(failed.length > 0 ? 1 : 0);
 }
 
