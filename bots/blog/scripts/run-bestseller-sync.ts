@@ -14,6 +14,27 @@ const env    = require('../../../packages/core/lib/env');
 const pgPool = require('../../../packages/core/lib/pg-pool');
 const kst    = require('../../../packages/core/lib/kst');
 
+async function ensureTrendTopicsTable() {
+  await pgPool.run('blog', `
+    CREATE TABLE IF NOT EXISTS blog.trend_topics (
+      id          SERIAL PRIMARY KEY,
+      date        DATE NOT NULL DEFAULT CURRENT_DATE,
+      source      TEXT NOT NULL,
+      topic_ko    TEXT NOT NULL,
+      category    TEXT,
+      keywords    JSONB,
+      trend_score INTEGER DEFAULT 0,
+      korea_relevance INTEGER DEFAULT 0,
+      is_book_topic BOOLEAN DEFAULT false,
+      used        BOOLEAN DEFAULT false,
+      meta        JSONB,
+      created_at  TIMESTAMPTZ DEFAULT NOW()
+    );
+    CREATE INDEX IF NOT EXISTS idx_trend_topics_date ON blog.trend_topics(date);
+    CREATE INDEX IF NOT EXISTS idx_trend_topics_used ON blog.trend_topics(used) WHERE used = false;
+  `);
+}
+
 async function saveBooksAsTrendTopics(books, dryRun = false) {
   if (books.length === 0) return 0;
   if (dryRun) {
@@ -71,6 +92,9 @@ async function main() {
   console.log(`[베스트셀러동기화] book_review_queue — 원본:${result.total} 필터:${result.filtered} 추가:${result.inserted}`);
 
   // trend_topics에도 저장 (topic-selector의 fetchTrendTopicCandidates에서 source='bestseller'로 조회)
+  if (!dryRun) {
+    await ensureTrendTopicsTable();
+  }
   await saveBooksAsTrendTopics(result.books, dryRun);
 
   process.exit(0);
