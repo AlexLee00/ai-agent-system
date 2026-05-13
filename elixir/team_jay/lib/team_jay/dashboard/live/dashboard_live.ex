@@ -59,7 +59,9 @@ defmodule TeamJay.Dashboard.Live.DashboardLive do
 
   def handle_info({:jay_bus, :growth_cycle_completed, _payload}, socket) do
     growth_cycle = safe_call(fn -> Jay.V2.GrowthCycle.status() end, socket.assigns.growth_cycle)
-    {:noreply, assign(socket, cycle_status: :completed, growth_cycle: growth_cycle, teams_collected: [])}
+
+    {:noreply,
+     assign(socket, cycle_status: :completed, growth_cycle: growth_cycle, teams_collected: [])}
   end
 
   def handle_info({:jay_bus, :briefing_ready, _payload}, socket) do
@@ -100,7 +102,7 @@ defmodule TeamJay.Dashboard.Live.DashboardLive do
 
   # ── 영역 1: Phase 보드 ────────────────────────────────────────────
 
-  attr :phase_status, :map, required: true
+  attr(:phase_status, :map, required: true)
 
   defp phase_board(assigns) do
     ~H"""
@@ -118,7 +120,7 @@ defmodule TeamJay.Dashboard.Live.DashboardLive do
     """
   end
 
-  attr :status, :map, required: true
+  attr(:status, :map, required: true)
 
   defp phase_header(assigns) do
     phase = assigns.status[:phase] || 1
@@ -138,7 +140,7 @@ defmodule TeamJay.Dashboard.Live.DashboardLive do
     """
   end
 
-  attr :status, :map, required: true
+  attr(:status, :map, required: true)
 
   defp phase_progress(assigns) do
     phase = assigns.status[:phase] || 1
@@ -146,7 +148,15 @@ defmodule TeamJay.Dashboard.Live.DashboardLive do
     threshold = Map.get(@phase_thresholds, phase, 30)
     pct = if phase == 3, do: 100, else: min(round(days / threshold * 100), 100)
     next_phase = phase + 1
-    assigns = assign(assigns, days: days, threshold: threshold, pct: pct, next_phase: next_phase, phase: phase)
+
+    assigns =
+      assign(assigns,
+        days: days,
+        threshold: threshold,
+        pct: pct,
+        next_phase: next_phase,
+        phase: phase
+      )
 
     ~H"""
     <div class="space-y-1">
@@ -166,7 +176,7 @@ defmodule TeamJay.Dashboard.Live.DashboardLive do
     """
   end
 
-  attr :status, :map, required: true
+  attr(:status, :map, required: true)
 
   defp phase_meta(assigns) do
     ~H"""
@@ -190,9 +200,9 @@ defmodule TeamJay.Dashboard.Live.DashboardLive do
 
   # ── 영역 3: GrowthCycle 보드 ─────────────────────────────────────
 
-  attr :growth_cycle, :map, required: true
-  attr :cycle_status, :atom, required: true
-  attr :teams_collected, :list, required: true
+  attr(:growth_cycle, :map, required: true)
+  attr(:cycle_status, :atom, required: true)
+  attr(:teams_collected, :list, required: true)
 
   defp growth_cycle_board(assigns) do
     last_result = assigns.growth_cycle[:last_result]
@@ -258,8 +268,8 @@ defmodule TeamJay.Dashboard.Live.DashboardLive do
 
   # ── 영역 4: EventLake 보드 ───────────────────────────────────────
 
-  attr :events, :list, required: true
-  attr :event_stats, :map, required: true
+  attr(:events, :list, required: true)
+  attr(:event_stats, :map, required: true)
 
   defp event_lake_board(assigns) do
     top_types = assigns.event_stats |> Map.get(:by_type, %{}) |> top_n(5)
@@ -331,7 +341,7 @@ defmodule TeamJay.Dashboard.Live.DashboardLive do
                   </span>
                 </td>
                 <td class="py-1 text-gray-400 whitespace-nowrap">
-                  {format_event_time(event["inserted_at"] || event["created_at"] || event[:inserted_at])}
+                  {event |> event_timestamp() |> format_event_time()}
                 </td>
               </tr>
             <% end %>
@@ -359,7 +369,9 @@ defmodule TeamJay.Dashboard.Live.DashboardLive do
 
     growth_cycle = safe_call(fn -> Jay.V2.GrowthCycle.status() end, %{})
     events = safe_call(fn -> Jay.Core.EventLake.get_recent(50) end, [])
-    event_stats = safe_call(fn -> Jay.Core.EventLake.get_stats() end, %{total: 0, by_type: %{}, by_team: %{}})
+
+    event_stats =
+      safe_call(fn -> Jay.Core.EventLake.get_stats() end, %{total: 0, by_type: %{}, by_team: %{}})
 
     socket
     |> assign(:phase_status, phase_status)
@@ -388,7 +400,9 @@ defmodule TeamJay.Dashboard.Live.DashboardLive do
   end
 
   defp refresh_phase_status(socket) do
-    status = safe_call(fn -> Jay.V2.AutonomyController.get_status() end, socket.assigns.phase_status)
+    status =
+      safe_call(fn -> Jay.V2.AutonomyController.get_status() end, socket.assigns.phase_status)
+
     assign(socket, phase_status: status)
   end
 
@@ -398,23 +412,71 @@ defmodule TeamJay.Dashboard.Live.DashboardLive do
   defp format_date(_), do: "—"
 
   defp format_datetime(nil), do: "—"
+
   defp format_datetime(%DateTime{} = dt) do
     dt |> DateTime.add(9 * 3600, :second) |> Calendar.strftime("%m/%d %H:%M KST")
   rescue
     _ -> "—"
   end
+
   defp format_datetime(s) when is_binary(s), do: String.slice(s, 0, 16)
   defp format_datetime(_), do: "—"
 
   defp format_event_time(nil), do: "—"
   defp format_event_time(%NaiveDateTime{} = dt), do: Calendar.strftime(dt, "%m/%d %H:%M")
+
   defp format_event_time(%DateTime{} = dt) do
     dt |> DateTime.add(9 * 3600, :second) |> Calendar.strftime("%m/%d %H:%M")
   rescue
     _ -> "—"
   end
-  defp format_event_time(s) when is_binary(s), do: String.slice(s, 5, 11)
+
+  defp format_event_time(s) when is_binary(s) do
+    s
+    |> parse_event_time()
+    |> case do
+      nil -> String.slice(s, 0, 16)
+      parsed -> format_event_time(parsed)
+    end
+  end
+
   defp format_event_time(_), do: "—"
+
+  defp event_timestamp(event) when is_map(event) do
+    Enum.find_value(
+      [
+        :created_at,
+        "created_at",
+        :inserted_at,
+        "inserted_at",
+        :event_at,
+        "event_at",
+        :occurred_at,
+        "occurred_at",
+        :timestamp,
+        "timestamp",
+        :received_at,
+        "received_at"
+      ],
+      &Map.get(event, &1)
+    )
+  end
+
+  defp event_timestamp(_), do: nil
+
+  defp parse_event_time(value) do
+    normalized = String.replace(value, " ", "T")
+
+    with {:error, _} <- DateTime.from_iso8601(normalized),
+         {:error, _} <- NaiveDateTime.from_iso8601(normalized) do
+      nil
+    else
+      {:ok, %DateTime{} = dt, _offset} -> dt
+      {:ok, %NaiveDateTime{} = dt} -> dt
+    end
+  rescue
+    _ -> nil
+  end
 
   defp progress_color(1), do: "bg-red-500"
   defp progress_color(2), do: "bg-yellow-500"

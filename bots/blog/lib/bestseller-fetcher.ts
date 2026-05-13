@@ -12,7 +12,7 @@ const path    = require('path');
 const env     = require('../../../packages/core/lib/env');
 const pgPool  = require('../../../packages/core/lib/pg-pool');
 const kst     = require('../../../packages/core/lib/kst');
-const { loadHubSecret } = require('../../../packages/core/lib/hub-client');
+const { fetchHubSecrets } = require('../../../packages/core/lib/hub-client');
 
 // 알라딘 카테고리 ID
 const CATEGORIES = [
@@ -170,8 +170,8 @@ export async function runBestsellerFetch(options: { dryRun?: boolean } = {}): Pr
   inserted: number;
   books: RankedBook[];
 }> {
-  const ttbKey = await loadHubSecret('ALADIN_TTB_KEY').catch(() => null)
-    || process.env.ALADIN_TTB_KEY;
+  const blogSecrets = await fetchHubSecrets('blog').catch(() => null);
+  const ttbKey = blogSecrets?.ALADIN_TTB_KEY || process.env.ALADIN_TTB_KEY;
 
   if (!ttbKey) {
     console.error('[베스트셀러] ALADIN_TTB_KEY 없음. secrets-store.json에 설정 필요');

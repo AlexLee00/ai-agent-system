@@ -38,7 +38,7 @@ defmodule Jay.Core.EventLake do
 
   @impl true
   def handle_info({:notification, _pid, _ref, _channel, payload}, state) do
-    event = Jason.decode!(payload)
+    event = payload |> Jason.decode!() |> ensure_event_time()
     Logger.info("[EventLake] #{event["event_type"]} (#{event["bot_name"]})")
 
     new_events = [event | Enum.take(state.events, @max_cache - 1)]
@@ -81,12 +81,34 @@ defmodule Jay.Core.EventLake do
       |> then(&EventLakeSchema.changeset(%EventLakeSchema{}, &1))
 
     case Repo.insert(changeset) do
-      {:ok, _row} -> Logger.debug("[EventLake] 기록 성공: #{Map.get(attrs, :event_type) || Map.get(attrs, "event_type")}")
-      {:error, err} -> Logger.error("[EventLake] 기록 실패: #{inspect(err)}")
+      {:ok, _row} ->
+        Logger.debug(
+          "[EventLake] 기록 성공: #{Map.get(attrs, :event_type) || Map.get(attrs, "event_type")}"
+        )
+
+      {:error, err} ->
+        Logger.error("[EventLake] 기록 실패: #{inspect(err)}")
     end
 
     {:noreply, state}
   end
+
+  defp ensure_event_time(event) when is_map(event) do
+    if Enum.any?(
+         ["created_at", "inserted_at", "event_at", "occurred_at", "timestamp", "received_at"],
+         &Map.has_key?(event, &1)
+       ) do
+      event
+    else
+      Map.put(
+        event,
+        "received_at",
+        DateTime.utc_now() |> DateTime.truncate(:second) |> DateTime.to_iso8601()
+      )
+    end
+  end
+
+  defp ensure_event_time(event), do: event
 
   defp normalize_record_attrs(attrs) when is_map(attrs) do
     source = map_get(attrs, :source)
@@ -116,7 +138,10 @@ defmodule Jay.Core.EventLake do
   defp normalize_record_attrs(other), do: %{event_type: inspect(other)}
 
   defp normalize_severity("warning"), do: "warn"
-  defp normalize_severity(severity) when is_atom(severity), do: severity |> Atom.to_string() |> normalize_severity()
+
+  defp normalize_severity(severity) when is_atom(severity),
+    do: severity |> Atom.to_string() |> normalize_severity()
+
   defp normalize_severity(severity) when is_binary(severity), do: severity
   defp normalize_severity(_), do: "info"
 
