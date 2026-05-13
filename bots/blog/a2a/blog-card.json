@@ -1,0 +1,56 @@
+{
+  "name": "Blog Content Agent",
+  "description": "네이버 블로그 자동화 에이전트 — 컨텐츠 생성·SEO 분석·트렌드 수집·발행 일정 관리",
+  "version": "1.0.0",
+  "url": "http://localhost:8770",
+  "documentationUrl": "https://github.com/AlexLee00/ai-agent-system/blob/main/bots/blog/README.md",
+  "capabilities": {
+    "streaming": true,
+    "pushNotifications": true,
+    "stateTransitionHistory": false
+  },
+  "defaultInputModes": ["application/json"],
+  "defaultOutputModes": ["application/json"],
+  "skills": [
+    {
+      "id": "content-generation",
+      "name": "블로그 컨텐츠 생성",
+      "description": "키워드·주제 기반 네이버 블로그 최적화 포스트 초안 생성",
+      "tags": ["blog", "content", "naver", "a2a"],
+      "inputModes": ["application/json"],
+      "outputModes": ["application/json"]
+    },
+    {
+      "id": "seo-analysis",
+      "name": "SEO 분석",
+      "description": "네이버 SEO 키워드 경쟁도·검색량·최적 태그 분석",
+      "tags": ["blog", "seo", "naver", "a2a"],
+      "inputModes": ["application/json"],
+      "outputModes": ["application/json"]
+    },
+    {
+      "id": "trend-check",
+      "name": "트렌드 수집",
+      "description": "Reddit·네이버 트렌드에서 오늘의 핫 키워드·주제 수집",
+      "tags": ["blog", "trend", "reddit", "a2a"],
+      "inputModes": ["application/json"],
+      "outputModes": ["application/json"]
+    },
+    {
+      "id": "publish-schedule",
+      "name": "발행 일정 관리",
+      "description": "예약 발행 큐 조회·추가·수정 및 성과 집계",
+      "tags": ["blog", "publish", "schedule", "a2a"],
+      "inputModes": ["application/json"],
+      "outputModes": ["application/json"]
+    },
+    {
+      "id": "performance-report",
+      "name": "성과 리포트",
+      "description": "최근 N일 조회수·댓글·공감 집계 및 상위 포스트 분석",
+      "tags": ["blog", "performance", "report", "a2a"],
+      "inputModes": ["application/json"],
+      "outputModes": ["application/json"]
+    }
+  ]
+}

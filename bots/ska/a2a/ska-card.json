@@ -1,0 +1,56 @@
+{
+  "name": "Ska Revenue Agent",
+  "description": "스터디카페 매출·예약 관리 에이전트 — 키오스크·예약·매출·프로모션 자동화",
+  "version": "1.0.0",
+  "url": "http://localhost:8772",
+  "documentationUrl": "https://github.com/AlexLee00/ai-agent-system/blob/main/bots/ska/README.md",
+  "capabilities": {
+    "streaming": false,
+    "pushNotifications": true,
+    "stateTransitionHistory": false
+  },
+  "defaultInputModes": ["application/json"],
+  "defaultOutputModes": ["application/json"],
+  "skills": [
+    {
+      "id": "reservation-status",
+      "name": "예약 현황",
+      "description": "오늘·이번주 예약 현황 집계 — 좌석별·시간대별 점유율",
+      "tags": ["ska", "reservation", "status", "a2a"],
+      "inputModes": ["application/json"],
+      "outputModes": ["application/json"]
+    },
+    {
+      "id": "revenue-report",
+      "name": "매출 리포트",
+      "description": "일·주·월 매출 집계 및 전기간 대비 증감율 반환",
+      "tags": ["ska", "revenue", "report", "a2a"],
+      "inputModes": ["application/json"],
+      "outputModes": ["application/json"]
+    },
+    {
+      "id": "promotion-gate",
+      "name": "프로모션 게이트",
+      "description": "신규 할인·이벤트 Shadow 테스트 후 Promotion Gate 통과 여부 판정",
+      "tags": ["ska", "promotion", "gate", "shadow", "a2a"],
+      "inputModes": ["application/json"],
+      "outputModes": ["application/json"]
+    },
+    {
+      "id": "kiosk-health",
+      "name": "키오스크 헬스체크",
+      "description": "키오스크 연결·결제·프린터 상태 확인 및 자동 복구 트리거",
+      "tags": ["ska", "kiosk", "health", "a2a"],
+      "inputModes": ["application/json"],
+      "outputModes": ["application/json"]
+    },
+    {
+      "id": "today-audit",
+      "name": "오늘 감사",
+      "description": "오늘 예약·결제·취소 이상 감지 및 정합성 검증",
+      "tags": ["ska", "audit", "today", "a2a"],
+      "inputModes": ["application/json"],
+      "outputModes": ["application/json"]
+    }
+  ]
+}

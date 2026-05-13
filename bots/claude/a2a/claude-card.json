@@ -1,0 +1,56 @@
+{
+  "name": "Claude Ops Agent",
+  "description": "시스템 모니터링·자동 복구 에이전트 — 덱스터(감지)·아처(분석)·닥터(복구) 오케스트레이션",
+  "version": "1.0.0",
+  "url": "http://localhost:8771",
+  "documentationUrl": "https://github.com/AlexLee00/ai-agent-system/blob/main/bots/claude/README.md",
+  "capabilities": {
+    "streaming": true,
+    "pushNotifications": true,
+    "stateTransitionHistory": true
+  },
+  "defaultInputModes": ["application/json"],
+  "defaultOutputModes": ["application/json"],
+  "skills": [
+    {
+      "id": "health-check",
+      "name": "시스템 헬스 체크",
+      "description": "22개 체크 항목 전체 실행 — DB·n8n·봇·비용·에러로그 종합",
+      "tags": ["ops", "health", "monitoring", "a2a"],
+      "inputModes": ["application/json"],
+      "outputModes": ["application/json"]
+    },
+    {
+      "id": "error-diagnosis",
+      "name": "에러 진단",
+      "description": "아처(Archer)가 에러 패턴을 분석하고 근본 원인·수정 제안 반환",
+      "tags": ["ops", "error", "diagnosis", "archer", "a2a"],
+      "inputModes": ["application/json"],
+      "outputModes": ["application/json"]
+    },
+    {
+      "id": "doctor-heal",
+      "name": "자동 복구",
+      "description": "닥터(Doctor) L1 재시작→L2 설정 보정→L3 패치 자동 실행",
+      "tags": ["ops", "doctor", "heal", "recovery", "a2a"],
+      "inputModes": ["application/json"],
+      "outputModes": ["application/json"]
+    },
+    {
+      "id": "system-monitor",
+      "name": "시스템 모니터링",
+      "description": "덱스터(Dexter) 22개 센서 현황 스냅샷 반환 (실시간)",
+      "tags": ["ops", "dexter", "monitor", "a2a"],
+      "inputModes": ["application/json"],
+      "outputModes": ["application/json"]
+    },
+    {
+      "id": "billing-check",
+      "name": "비용 체크",
+      "description": "LLM API·인프라 비용 현황 및 BillingGuard 임계값 대비 상태",
+      "tags": ["ops", "billing", "cost", "a2a"],
+      "inputModes": ["application/json"],
+      "outputModes": ["application/json"]
+    }
+  ]
+}

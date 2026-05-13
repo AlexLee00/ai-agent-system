@@ -1,0 +1,56 @@
+{
+  "name": "Sigma Meta Agent",
+  "description": "메타 최적화 에이전트 — 팀간 일관성 검증·시스템 감사·최적화 제안·KPI 집계",
+  "version": "1.0.0",
+  "url": "http://localhost:8767",
+  "documentationUrl": "https://github.com/AlexLee00/ai-agent-system/blob/main/bots/sigma/README.md",
+  "capabilities": {
+    "streaming": true,
+    "pushNotifications": true,
+    "stateTransitionHistory": true
+  },
+  "defaultInputModes": ["application/json"],
+  "defaultOutputModes": ["application/json"],
+  "skills": [
+    {
+      "id": "meta-analysis",
+      "name": "메타 분석",
+      "description": "6팀 전체 KPI·비용·성과를 집계하고 상위 인사이트를 반환",
+      "tags": ["meta", "analysis", "kpi", "a2a"],
+      "inputModes": ["application/json"],
+      "outputModes": ["application/json"]
+    },
+    {
+      "id": "consistency-check",
+      "name": "시스템 일관성 검증",
+      "description": "팀간 설정·DB 스키마·LLM 정책의 일관성을 자동 검증",
+      "tags": ["meta", "consistency", "validation", "a2a"],
+      "inputModes": ["application/json"],
+      "outputModes": ["application/json"]
+    },
+    {
+      "id": "optimization-proposal",
+      "name": "최적화 제안",
+      "description": "시스템 병목·비용·성능 이슈를 감지하고 우선순위화된 개선안을 제안",
+      "tags": ["meta", "optimization", "proposal", "a2a"],
+      "inputModes": ["application/json"],
+      "outputModes": ["application/json"]
+    },
+    {
+      "id": "team-audit",
+      "name": "팀별 감사",
+      "description": "특정 팀의 자율운영 수준·GAP·개선 기회를 정기 감사",
+      "tags": ["meta", "audit", "team", "a2a"],
+      "inputModes": ["application/json"],
+      "outputModes": ["application/json"]
+    },
+    {
+      "id": "cross-team-broadcast",
+      "name": "크로스팀 브로드캐스트",
+      "description": "시그마가 발견한 인사이트·경보를 모든 팀에 A2A 브로드캐스트",
+      "tags": ["meta", "broadcast", "notification", "a2a"],
+      "inputModes": ["application/json"],
+      "outputModes": ["application/json"]
+    }
+  ]
+}

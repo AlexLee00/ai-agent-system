@@ -1,6 +1,6 @@
 // @ts-nocheck
 /**
- * A2A Client — 외부 에이전트(다윈/시그마/저스틴) 호출
+ * ublog A2A Client — 외부 에이전트 호출
  * Google A2A Protocol (JSON-RPC 2.0 + SSE)
  */
 
@@ -12,13 +12,13 @@ interface AgentEndpoint {
 }
 
 const KNOWN_AGENTS: Record<string, AgentEndpoint> = {
-  darwin:     { name: 'Darwin R&D Agent',    url: process.env.DARWIN_A2A_URL    || 'http://localhost:8766' },
-  sigma:      { name: 'Sigma Meta Agent',    url: process.env.SIGMA_A2A_URL     || 'http://localhost:8767' },
-  justin:     { name: 'Justin Legal Agent',  url: process.env.JUSTIN_A2A_URL    || 'http://localhost:8768' },
-  reporter:   { name: 'Reporter Agent',      url: process.env.REPORTER_A2A_URL  || 'http://localhost:8769' },
-  blog:       { name: 'Blog Content Agent',  url: process.env.BLOG_A2A_URL      || 'http://localhost:8770' },
-  claude_bot: { name: 'Claude Ops Agent',    url: process.env.CLAUDE_A2A_URL    || 'http://localhost:8771' },
-  ska:        { name: 'Ska Revenue Agent',   url: process.env.SKA_A2A_URL       || 'http://localhost:8772' },
+  luna:       { name: 'Luna Trading Agent',  url: process.env.LUNA_A2A_URL    || 'http://localhost:8765' },
+  darwin:     { name: 'Darwin R&D Agent',    url: process.env.DARWIN_A2A_URL  || 'http://localhost:8766' },
+  sigma:      { name: 'Sigma Meta Agent',    url: process.env.SIGMA_A2A_URL   || 'http://localhost:8767' },
+  justin:     { name: 'Justin Legal Agent',  url: process.env.JUSTIN_A2A_URL  || 'http://localhost:8768' },
+  blog:       { name: 'Blog Content Agent',  url: process.env.BLOG_A2A_URL    || 'http://localhost:8770' },
+  claude_bot: { name: 'Claude Ops Agent',    url: process.env.CLAUDE_A2A_URL  || 'http://localhost:8771' },
+  ska:        { name: 'Ska Revenue Agent',   url: process.env.SKA_A2A_URL     || 'http://localhost:8772' },
 };
 
 let _fetchFn: typeof fetch = globalThis.fetch;
@@ -42,7 +42,7 @@ export async function sendTask(agentId: string, task: Omit<A2ATask, 'id'>): Prom
   const payload = {
     jsonrpc: '2.0',
     method: 'tasks/send',
-    id: `luna-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+    id: `blog-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
     params: { ...task, id: `task-${Date.now()}` },
   };
 
@@ -62,7 +62,7 @@ export async function broadcast(
   notification: Omit<A2ANotification, 'timestamp'>,
   targets: string[] = Object.keys(KNOWN_AGENTS)
 ): Promise<void> {
-  const notif: A2ANotification = { ...notification, timestamp: new Date().toISOString(), source: 'luna' };
+  const notif: A2ANotification = { ...notification, timestamp: new Date().toISOString(), source: 'blog' };
   await Promise.allSettled(
     targets.map(async (agentId) => {
       const ep = KNOWN_AGENTS[agentId];
@@ -74,7 +74,7 @@ export async function broadcast(
           body: JSON.stringify(notif),
         });
       } catch (err) {
-        console.log(`[A2A] broadcast to ${agentId} 실패: ${err}`);
+        console.log(`[ublog][A2A] broadcast to ${agentId} 실패: ${err}`);
       }
     })
   );

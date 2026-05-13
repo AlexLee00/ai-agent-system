@@ -1,0 +1,56 @@
+{
+  "name": "Darwin R&D Agent",
+  "description": "자율 R&D 에이전트 — 논문 수집·가설 생성·실험 설계·코드 자동 구현·효과 측정",
+  "version": "1.0.0",
+  "url": "http://localhost:8766",
+  "documentationUrl": "https://github.com/AlexLee00/ai-agent-system/blob/main/bots/darwin/README.md",
+  "capabilities": {
+    "streaming": true,
+    "pushNotifications": true,
+    "stateTransitionHistory": true
+  },
+  "defaultInputModes": ["application/json"],
+  "defaultOutputModes": ["application/json"],
+  "skills": [
+    {
+      "id": "paper-synthesis",
+      "name": "논문 합성 분석",
+      "description": "ArXiv/HuggingFace 논문을 수집하고 팀 적용 가능성을 분석·합성",
+      "tags": ["research", "paper", "synthesis", "a2a"],
+      "inputModes": ["application/json"],
+      "outputModes": ["application/json"]
+    },
+    {
+      "id": "hypothesis-generation",
+      "name": "가설 생성",
+      "description": "Sakana AI Scientist 패턴으로 연구 가설을 자동 생성하고 우선순위화",
+      "tags": ["research", "hypothesis", "ai-scientist", "a2a"],
+      "inputModes": ["application/json"],
+      "outputModes": ["application/json"]
+    },
+    {
+      "id": "experiment-design",
+      "name": "실험 설계",
+      "description": "가설 검증을 위한 Shadow A/B 실험 또는 백테스트 설계 방안 반환",
+      "tags": ["research", "experiment", "design", "a2a"],
+      "inputModes": ["application/json"],
+      "outputModes": ["application/json"]
+    },
+    {
+      "id": "code-generation",
+      "name": "코드 자동 생성",
+      "description": "연구 구현을 위한 코드 스캐폴딩·패치 생성 (팀별 CLAUDE.md 컨텍스트 반영)",
+      "tags": ["research", "code", "generation", "a2a"],
+      "inputModes": ["application/json"],
+      "outputModes": ["application/json"]
+    },
+    {
+      "id": "measure-effect",
+      "name": "효과 측정",
+      "description": "구현된 연구의 24h/7d/30d 효과를 측정하고 ESPL 진화 판단",
+      "tags": ["research", "measure", "effect", "espl", "a2a"],
+      "inputModes": ["application/json"],
+      "outputModes": ["application/json"]
+    }
+  ]
+}
