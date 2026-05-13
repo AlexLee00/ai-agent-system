@@ -1,3 +1,45 @@
+# 세션 인수인계 — 2026-05-13 (Blog V2 파이프라인 통합 — trend_topics + 홈판 점수)
+
+## 완료 요약 ✅ (CODEX_BLOG_NEURAL_QUALITY_BOOST_V2 파이프라인 통합)
+
+### Blog V2 파이프라인 통합 — 2개 핵심 통합 완료
+
+**배경**: V2 기본 구현(G/H/I/J 영역)은 2026-05-12 세션에서 완료됐으나,
+  수집 모듈(trend_topics)과 최적화 모듈(naver-home-feed-optimizer)이 파이프라인과 **미연결** 상태였음.
+
+**Task 1: topic-selector.ts → trend_topics 통합** ✅:
+- `fetchTrendTopicCandidates()` 함수 추가 — `blog.trend_topics` (Reddit/베스트셀러) DB 조회
+- `selectTopicWithCandidateFallback()`에 **2.5순위** 통합:
+  - 1순위: topic_queue (사전 선정)
+  - 2순위: topic_candidates (큐레이션)
+  - **2.5순위: trend_topics (Reddit/베스트셀러) ← 신규**
+  - 3순위: 정적 풀 폴백
+- 채택 시 `used=true` 마킹 (중복 방지)
+- DPO 힌트 + 최근 제목 중복 필터 동일 적용
+
+**Task 2: blo.ts → naver-home-feed-optimizer 통합** ✅:
+- `scoreTitleForHomeFeed` import 추가
+- 일반 포스팅 `genTitle` 설정 직후 홈판 점수 로깅:
+  `[블로/홈판] 제목 점수 XX/100 — ...`
+- 로깅 전용 (발행 차단 없음, graceful degradation)
+
+**커밋**: `39886f80` — `feat(blog): V2 파이프라인 통합 — trend_topics 토픽 선정 + 홈판 제목 점수`
+
+**V2 전체 상태** (2026-05-13 기준):
+- G영역 (소셜미디어 분리/OFF) ✅ 완료 — 2026-05-12
+- H영역 (Reddit + 베스트셀러 수집) ✅ 완료 — 수집 + **파이프라인 통합** 완료
+- I영역 (홈판 최적화 모듈) ✅ 완료 — 모듈 + **제목 점수 로깅 통합** 완료
+- J영역 (Humanize Layer) ✅ 완료 — BLOG_HUMANIZE_ENABLED=true 시 활성
+
+**다음 단계**:
+1. OPS에서 `ai.blog.trend-collector.plist` 설치 + launchd load (매일 06:00 Reddit/베스트셀러 수집)
+2. REDDIT_CLIENT_ID/SECRET를 secrets-store.json에 추가 (아직 미설정 시)
+3. ALADIN_TTB_KEY를 secrets-store.json에 추가 (아직 미설정 시)
+4. 1-2주 후 트렌드 토픽 채택 로그 확인 → 성과 모니터링
+5. 홈판 점수 < 60 사례 누적 후 LLM 제목 개선 자동화 고려
+
+---
+
 # 세션 인수인계 — 2026-05-13 (Hub Stage D FULL — All D1-D8 Tasks Complete)
 
 ## 완료 요약 ✅ (Stage D 전체 — CODEX_HUB_STAGE_D_PRODUCTION_PROMOTION)
