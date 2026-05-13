@@ -313,6 +313,7 @@ defmodule TeamJay.Ska.FailureTracker do
     SELECT id, error_type, error_message, agent, count
     FROM ska.failure_cases
     WHERE auto_resolved = FALSE
+      AND COALESCE(resolution, '') <> 'escalated'
       AND count >= $1
     ORDER BY last_seen DESC
     LIMIT 50
@@ -329,6 +330,7 @@ defmodule TeamJay.Ska.FailureTracker do
 
           if count >= @escalate_threshold do
             attempt_escalate(error_type, agent, failure, acc.phase)
+            mark_failure_case_resolution(id, "escalated")
           else
             attempt_auto_resolve(error_type, agent, failure, acc.phase)
           end
@@ -378,6 +380,20 @@ defmodule TeamJay.Ska.FailureTracker do
         keys = Enum.map(cols, &String.to_atom/1)
         Enum.map(rows, fn row -> Enum.zip(keys, row) |> Map.new() end)
       {:error, _} -> []
+    end
+  end
+
+  defp mark_failure_case_resolution(id, resolution) when is_integer(id) and is_binary(resolution) do
+    sql = """
+    UPDATE ska.failure_cases
+    SET resolution = $2
+    WHERE id = $1
+    """
+
+    case Jay.Core.Repo.query(sql, [id, resolution]) do
+      {:ok, _} -> :ok
+      {:error, err} ->
+        Logger.error("[FailureTracker] resolution 업데이트 실패: #{inspect(err)}")
     end
   end
 
