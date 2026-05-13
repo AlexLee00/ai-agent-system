@@ -5803,3 +5803,26 @@ RAG/MessageEnvelope/trace/StateBus/tool-logger/llm-cache/mode-guard 통합 | qua
 - ✅ 커뮤니티 범위 확장 (HN/Reddit 추가)
 - ✅ Darwin 전용 LLM Selector (로컬 우선, 비용 최소화)
 - ✅ Kill Switch 체계 (단계적 활성화)
+
+## 2026-05-14 — Cycle #45 Phase B: EventLake 협업 가시화 완료
+
+**작업**: CODEX_EVENTLAKE_COLLAB_TRACE 구현 완료
+
+**확인 완료 (기존 구현)**:
+- packages/core/lib/event-lake.ts (recordEvent, idx_event_lake_cycle_id)
+- packages/core/lib/cycle.ts (getCurrentCycleId, getNextCycleId)
+- bots/jay/elixir/lib/jay/v2/autonomy_controller.ex (record_master_intervention + next_cycle_id)
+- bots/orchestrator/lib/steward/codex-manager.ts (archiveCompleted async + codex.task.archived)
+- bots/orchestrator/lib/write/metty-trace.ts (5 WATCH_PATHS)
+- elixir/team_jay/.../dashboard_live.ex (영역 2 collab_timeline_board)
+
+**신규 작업**:
+- ai.metty.trace.plist에 MODE=ops 추가
+- ~/Library/LaunchAgents/ 설치 + launchctl load
+
+**검증**:
+- master.intervention.decision cycle_id=43 기록 (ID=366068)
+- codex.task.archived cycle_id=43 dogfooding 완료
+- http://localhost:7787 영역 2에 Cycle 43 + COLLAB_TRACE archived 표시
+
+**커밋**: 0e56e15c
