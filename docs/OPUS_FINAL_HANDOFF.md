@@ -1,4 +1,52 @@
-# 세션 인수인계 — 2026-05-13 (Hub Stage D Week 1 — Blue-Green + secrets 자동 갱신)
+# 세션 인수인계 — 2026-05-13 (Hub Stage D FULL — All D1-D8 Tasks Complete)
+
+## 완료 요약 ✅ (Stage D 전체 — CODEX_HUB_STAGE_D_PRODUCTION_PROMOTION)
+
+### Hub Stage D 전체 완료 — D1~D8 모든 Task 코드/게이트 완료
+
+**Stage D Production Report**:
+- `status: stage_d_code_complete_promotion_evidence_pending`
+- `codeComplete: true` / `productionCertified: false` (7d shadow + canary 증거 필요)
+- 10개 Goal 전부 ✅
+
+**Task D1: Blue-Green 배포** ✅ — `hub-proxy.ts` + green.plist + bg-proxy.plist + `hub-blue-green-deploy.ts`
+**Task D2: secrets 자동 갱신** ✅ — `secrets-store-monitor.ts` + rotation_log migration + launchd
+**Task D3: Self-Healing 실제** ✅ — `hub-stage-d-self-healing.ts` (shadow→canary 3단계 게이트)
+**Task D4: DRP 실제 실행** ✅ — `hub-stage-d-daily-backup.ts` + `hub-stage-d-restore-drill.ts` + launchd (03:00/매주일)
+**Task D5: Live Chaos** ✅ — `stage-d-chaos.ts` middleware + `hub-stage-d-live-chaos.ts` operator (MAX 10%)
+**Task D6: Sentry MCP** ✅ — `sentry-mcp-adapter.ts` (PII redaction + rate limit + error-handler 통합)
+**Task D7: External Gateway** ✅ — `llm-stage-d-external-gateway-canary.ts` + onboarding doc (justin-court-appraisal)
+**Task D8: Production Gate** ✅ — `lib/stage-d/production.ts` + `hub-stage-d-report.ts`
+
+**커밋**: `587a341e` — `feat(hub): Stage D Production Promotion 코드 완료 + 보고서 생성`
+**태그**: `stage-d-production-promotion-complete-20260513-1544`
+
+---
+
+### 다음 단계: Production Promotion 증거 누적 (6주 일정)
+
+```
+Week 1-2: OPS에 plist 설치 + Green 배포 + 7일 Shadow 모니터링
+Week 3:   DRP restore-drill 1회 실행 + Sentry DSN 설정
+Week 4:   External Gateway (justin) 실제 연동
+Week 5:   Live Chaos 1% Canary (마스터 confirm 필요!)
+Week 6:   Production Promotion Gate 통과 → productionCertified=true
+```
+
+**보고 명령**: `npm --prefix bots/hub run hub:stage-d-report`
+**환경변수 설정 필요** (productionCertified=true 조건):
+```
+HUB_STAGE_D_SHADOW_DAYS=7
+HUB_STAGE_D_CANARY_PERCENT=1
+HUB_STAGE_D_UPTIME_99_9=true
+HUB_STAGE_D_LATENCY_LT_500MS=true
+HUB_STAGE_D_ERROR_RATE_LT_0_1=true
+HUB_STAGE_D_SELF_HEALING_GT_95=true
+```
+
+---
+
+# 이전 세션 인수인계 — 2026-05-13 (Hub Stage D Week 1 — Blue-Green + secrets 자동 갱신)
 
 ## 완료 요약 ✅ (Stage D Week 1 — CODEX_HUB_STAGE_D_PRODUCTION_PROMOTION)
 

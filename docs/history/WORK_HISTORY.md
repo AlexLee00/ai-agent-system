@@ -4,6 +4,20 @@
 > 상세 내용: `reservation-dev-summary.md` / `reservation-handoff.md`
 > 최초 작성: 2026-02-27
 
+## 2026-05-13: CODEX_HUB_STAGE_D_PRODUCTION_PROMOTION — Stage D 전체 완료
+
+- **Hub Stage D 모든 Task (D1-D8) 코드/게이트 완료** — `status: stage_d_code_complete_promotion_evidence_pending`
+- D1: Blue-Green 배포 (`hub-proxy.ts` + green plist + `hub-blue-green-deploy.ts` CLI)
+- D2: secrets 자동 갱신 (`secrets-store-monitor.ts` + `hub.secrets_rotation_log` migration + launchd 06:00)
+- D3: Self-Healing 단계적 적용 (`hub-stage-d-self-healing.ts` — shadow/canary/gradual 3단계 게이트)
+- D4: DRP 실제 실행 (`hub-stage-d-daily-backup.ts` + `hub-stage-d-restore-drill.ts` + launchd)
+- D5: Live Chaos (`stage-d-chaos.ts` middleware MAX 10% + `hub-stage-d-live-chaos.ts` operator)
+- D6: Sentry MCP 실제 통합 (`sentry-mcp-adapter.ts` — PII redaction + rate limit + error-handler)
+- D7: External LLM Gateway (`llm-stage-d-external-gateway-canary.ts` + justin-court-appraisal)
+- D8: Production Promotion Gate (`lib/stage-d/production.ts` — 10 Goal 전부 ✅)
+- `hub-stage-d-report.ts` 실행 결과: codeComplete=true, 10/10 goals OK
+- 커밋: `587a341e` / 태그: `stage-d-production-promotion-complete-20260513-1544`
+
 ## 2026-05-12: CODEX_BLOG_NEURAL_QUALITY_BOOST — G-E-RG 7-Agent + 네이버 SEO + 마스터 학습 + 토픽 토론
 
 - `bots/blog/lib/quality-agents.ts` (신규, 504줄): 7-Agent G-E-RG 품질평가 시스템 구현. SEO/Style/FactCheck/Readability/Coherence Agent 병렬 평가 + FinalQuality Agent PASS/REVISE/REJECT 결정. arXiv 2505.04869(G-E-RG) + 2601.08003(LLM Blind Peer Review) 기반.
