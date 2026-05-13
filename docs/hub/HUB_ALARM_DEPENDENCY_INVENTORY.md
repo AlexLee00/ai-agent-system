@@ -2,10 +2,10 @@
 
 This inventory tracks the Hub alarm migration surface. `hub_alarm_native` entries are the desired path; `retired_gateway_guard` entries are regression guards; `legacy_gateway_compat` entries are remaining migration targets and must stay at 0.
 
-- generated_at: 2026-05-08T02:20:44.860Z
-- total_matches: 311
-- unique_files: 154
-- hub_alarm_native: 298
+- generated_at: 2026-05-13T12:59:11.870Z
+- total_matches: 325
+- unique_files: 157
+- hub_alarm_native: 312
 - retired_gateway_guard: 13
 - legacy_gateway_compat: 0
 
@@ -56,7 +56,7 @@ This inventory tracks the Hub alarm migration surface. `hub_alarm_native` entrie
 - L11 [hub_alarm_native]: `const { postAlarm } = require('../../../packages/core/lib/hub-alarm-client');`
 
 ### `bots/blog/lib/blo.ts`
-- L98 [hub_alarm_native]: `const { postAlarm }                                 = require('../../../packages/core/lib/hub-alarm-client');`
+- L99 [hub_alarm_native]: `const { postAlarm }                                 = require('../../../packages/core/lib/hub-alarm-client');`
 
 ### `bots/blog/lib/commenter.ts`
 - L13 [hub_alarm_native]: `const { postAlarm } = require('../../../packages/core/lib/hub-alarm-client');`
@@ -65,15 +65,6 @@ This inventory tracks the Hub alarm migration surface. `hub_alarm_native` entrie
 - L20 [hub_alarm_native]: `const { postAlarm } = require('../../../packages/core/lib/hub-alarm-client');`
 
 ### `bots/blog/lib/evolution-cycle.ts`
-- L13 [hub_alarm_native]: `const { postAlarm } = require('../../../packages/core/lib/hub-alarm-client');`
-
-### `bots/blog/lib/img-gen-doctor.ts`
-- L13 [hub_alarm_native]: `const { postAlarm } = require('../../../packages/core/lib/hub-alarm-client');`
-
-### `bots/blog/lib/insta-crosspost.ts`
-- L23 [hub_alarm_native]: `const { postAlarm } = require('../../../packages/core/lib/hub-alarm-client');`
-
-### `bots/blog/lib/instagram-story.ts`
 - L13 [hub_alarm_native]: `const { postAlarm } = require('../../../packages/core/lib/hub-alarm-client');`
 
 ### `bots/blog/lib/platform-orchestrator.ts`
@@ -90,12 +81,6 @@ This inventory tracks the Hub alarm migration surface. `hub_alarm_native` entrie
 
 ### `bots/blog/lib/signals/competitor-monitor.ts`
 - L12 [hub_alarm_native]: `const { postAlarm } = require('../../../../packages/core/lib/hub-alarm-client');`
-
-### `bots/blog/scripts/auto-facebook-publish.ts`
-- L23 [hub_alarm_native]: `const { postAlarm } = require('../../../packages/core/lib/hub-alarm-client');`
-
-### `bots/blog/scripts/auto-instagram-publish.ts`
-- L31 [hub_alarm_native]: `const { postAlarm } = require('../../../packages/core/lib/hub-alarm-client');`
 
 ### `bots/blog/scripts/compute-attribution.ts`
 - L13 [hub_alarm_native]: `const { postAlarm } = require('../../../packages/core/lib/hub-alarm-client');`
@@ -212,19 +197,33 @@ This inventory tracks the Hub alarm migration surface. `hub_alarm_native` entrie
 ### `bots/hub/launchd/ai.hub.noisy-producer-auto-learn.plist`
 - L26 [hub_alarm_native]: `<key>HUB_ALARM_USE_CLASS_TOPICS</key>`
 
+### `bots/hub/launchd/ai.hub.resource-api-green.plist`
+- L62 [hub_alarm_native]: `<key>HUB_ALARM_USE_CLASS_TOPICS</key>`
+- L64 [hub_alarm_native]: `<key>HUB_ALARM_DISPATCH_MODE</key>`
+- L66 [hub_alarm_native]: `<key>HUB_ALARM_LLM_CLASSIFIER_ENABLED</key>`
+- L68 [hub_alarm_native]: `<key>HUB_ALARM_LLM_DAILY_LIMIT</key>`
+- L70 [hub_alarm_native]: `<key>HUB_ALARM_CRITICAL_TYPE_ENABLED</key>`
+- L72 [hub_alarm_native]: `<key>HUB_ALARM_INTERPRETER_ENABLED</key>`
+- L74 [hub_alarm_native]: `<key>HUB_ALARM_INTERPRETER_FAIL_OPEN</key>`
+- L76 [hub_alarm_native]: `<key>HUB_ALARM_INTERPRETER_LLM_DAILY_LIMIT</key>`
+- L78 [hub_alarm_native]: `<key>HUB_ALARM_ENRICHMENT_ENABLED</key>`
+- L80 [hub_alarm_native]: `<key>HUB_ALARM_ROUNDTABLE_ENABLED</key>`
+- L82 [hub_alarm_native]: `<key>HUB_ALARM_ROUNDTABLE_DAILY_LIMIT</key>`
+- L84 [hub_alarm_native]: `<key>HUB_ALARM_ROUNDTABLE_TRIGGER_FINGERPRINT_THRESHOLD</key>`
+
 ### `bots/hub/launchd/ai.hub.resource-api.plist`
-- L42 [hub_alarm_native]: `<key>HUB_ALARM_USE_CLASS_TOPICS</key>`
-- L44 [hub_alarm_native]: `<key>HUB_ALARM_DISPATCH_MODE</key>`
-- L46 [hub_alarm_native]: `<key>HUB_ALARM_LLM_CLASSIFIER_ENABLED</key>`
-- L48 [hub_alarm_native]: `<key>HUB_ALARM_LLM_DAILY_LIMIT</key>`
-- L50 [hub_alarm_native]: `<key>HUB_ALARM_CRITICAL_TYPE_ENABLED</key>`
-- L52 [hub_alarm_native]: `<key>HUB_ALARM_INTERPRETER_ENABLED</key>`
-- L54 [hub_alarm_native]: `<key>HUB_ALARM_INTERPRETER_FAIL_OPEN</key>`
-- L56 [hub_alarm_native]: `<key>HUB_ALARM_INTERPRETER_LLM_DAILY_LIMIT</key>`
-- L58 [hub_alarm_native]: `<key>HUB_ALARM_ENRICHMENT_ENABLED</key>`
-- L60 [hub_alarm_native]: `<key>HUB_ALARM_ROUNDTABLE_ENABLED</key>`
-- L62 [hub_alarm_native]: `<key>HUB_ALARM_ROUNDTABLE_DAILY_LIMIT</key>`
-- L64 [hub_alarm_native]: `<key>HUB_ALARM_ROUNDTABLE_TRIGGER_FINGERPRINT_THRESHOLD</key>`
+- L58 [hub_alarm_native]: `<key>HUB_ALARM_USE_CLASS_TOPICS</key>`
+- L60 [hub_alarm_native]: `<key>HUB_ALARM_DISPATCH_MODE</key>`
+- L62 [hub_alarm_native]: `<key>HUB_ALARM_LLM_CLASSIFIER_ENABLED</key>`
+- L64 [hub_alarm_native]: `<key>HUB_ALARM_LLM_DAILY_LIMIT</key>`
+- L66 [hub_alarm_native]: `<key>HUB_ALARM_CRITICAL_TYPE_ENABLED</key>`
+- L68 [hub_alarm_native]: `<key>HUB_ALARM_INTERPRETER_ENABLED</key>`
+- L70 [hub_alarm_native]: `<key>HUB_ALARM_INTERPRETER_FAIL_OPEN</key>`
+- L72 [hub_alarm_native]: `<key>HUB_ALARM_INTERPRETER_LLM_DAILY_LIMIT</key>`
+- L74 [hub_alarm_native]: `<key>HUB_ALARM_ENRICHMENT_ENABLED</key>`
+- L76 [hub_alarm_native]: `<key>HUB_ALARM_ROUNDTABLE_ENABLED</key>`
+- L78 [hub_alarm_native]: `<key>HUB_ALARM_ROUNDTABLE_DAILY_LIMIT</key>`
+- L80 [hub_alarm_native]: `<key>HUB_ALARM_ROUNDTABLE_TRIGGER_FINGERPRINT_THRESHOLD</key>`
 
 ### `bots/hub/launchd/ai.hub.roundtable-reflection.plist`
 - L22 [hub_alarm_native]: `<key>HUB_ALARM_USE_CLASS_TOPICS</key>`
@@ -236,22 +235,22 @@ This inventory tracks the Hub alarm migration surface. `hub_alarm_native` entrie
 - L6 [hub_alarm_native]: `const raw = String(process.env.HUB_ALARM_ENRICHMENT_ENABLED || '').trim().toLowerCase();`
 
 ### `bots/hub/lib/alarm/alarm-interpreter-router.ts`
-- L10 [hub_alarm_native]: `const raw = String(process.env.HUB_ALARM_INTERPRETER_ENABLED || '').trim().toLowerCase();`
-- L15 [hub_alarm_native]: `const raw = String(process.env.HUB_ALARM_INTERPRETER_FAIL_OPEN ?? 'true').trim().toLowerCase();`
-- L25 [hub_alarm_native]: `const limit = Math.max(1, Number(process.env.HUB_ALARM_INTERPRETER_LLM_DAILY_LIMIT || 200) || 200);`
+- L9 [hub_alarm_native]: `const raw = String(process.env.HUB_ALARM_INTERPRETER_ENABLED || '').trim().toLowerCase();`
+- L14 [hub_alarm_native]: `const raw = String(process.env.HUB_ALARM_INTERPRETER_FAIL_OPEN ?? 'true').trim().toLowerCase();`
+- L24 [hub_alarm_native]: `const limit = Math.max(1, Number(process.env.HUB_ALARM_INTERPRETER_LLM_DAILY_LIMIT || 200) || 200);`
 
 ### `bots/hub/lib/alarm/alarm-roundtable-engine.ts`
-- L135 [hub_alarm_native]: `const raw = String(process.env.HUB_ALARM_ROUNDTABLE_ENABLED || '').trim().toLowerCase();`
-- L145 [hub_alarm_native]: `const limit = Math.max(1, Number(process.env.HUB_ALARM_ROUNDTABLE_DAILY_LIMIT || 10) || 10);`
-- L215 [hub_alarm_native]: `const threshold = Math.max(1, Number(process.env.HUB_ALARM_ROUNDTABLE_TRIGGER_FINGERPRINT_THRESHOLD || 3) || 3);`
+- L134 [hub_alarm_native]: `const raw = String(process.env.HUB_ALARM_ROUNDTABLE_ENABLED || '').trim().toLowerCase();`
+- L144 [hub_alarm_native]: `const limit = Math.max(1, Number(process.env.HUB_ALARM_ROUNDTABLE_DAILY_LIMIT || 10) || 10);`
+- L214 [hub_alarm_native]: `const threshold = Math.max(1, Number(process.env.HUB_ALARM_ROUNDTABLE_TRIGGER_FINGERPRINT_THRESHOLD || 3) || 3);`
 
 ### `bots/hub/lib/alarm/auto-dev-incident.ts`
 - L209 [hub_alarm_native]: `const dir = process.env.HUB_ALARM_AUTO_DEV_DIR || DEFAULT_AUTO_DEV_DIR;`
 
 ### `bots/hub/lib/alarm/classify-alarm-llm.ts`
-- L13 [hub_alarm_native]: `const raw = String(process.env.HUB_ALARM_LLM_CLASSIFIER_ENABLED || '').trim().toLowerCase();`
-- L18 [hub_alarm_native]: `const raw = String(process.env.HUB_ALARM_CRITICAL_TYPE_ENABLED || '').trim().toLowerCase();`
-- L28 [hub_alarm_native]: `const limit = Math.max(1, Number(process.env.HUB_ALARM_LLM_DAILY_LIMIT || 100) || 100);`
+- L12 [hub_alarm_native]: `const raw = String(process.env.HUB_ALARM_LLM_CLASSIFIER_ENABLED || '').trim().toLowerCase();`
+- L17 [hub_alarm_native]: `const raw = String(process.env.HUB_ALARM_CRITICAL_TYPE_ENABLED || '').trim().toLowerCase();`
+- L27 [hub_alarm_native]: `const limit = Math.max(1, Number(process.env.HUB_ALARM_LLM_DAILY_LIMIT || 100) || 100);`
 
 ### `bots/hub/lib/alarm/readiness.ts`
 - L99 [hub_alarm_native]: `const classTopicsEnabled = isEnabled(process.env.HUB_ALARM_USE_CLASS_TOPICS)`
@@ -473,6 +472,9 @@ This inventory tracks the Hub alarm migration surface. `hub_alarm_native` entrie
 - L47 [hub_alarm_native]: `delete process.env.HUB_ALARM_USE_CLASS_TOPICS;`
 - L98 [hub_alarm_native]: `process.env.HUB_ALARM_USE_CLASS_TOPICS = '1';`
 
+### `bots/hub/scripts/test-groq-fallback.ts`
+- L9 [hub_alarm_native]: `const { postAlarm } = require('../../../packages/core/lib/hub-alarm-client.ts');`
+
 ### `bots/hub/scripts/weekly-advisory-digest.ts`
 - L14 [hub_alarm_native]: `const { postAlarm } = require('../../../packages/core/lib/hub-alarm-client');`
 
@@ -500,6 +502,9 @@ This inventory tracks the Hub alarm migration surface. `hub_alarm_native` entrie
 ### `bots/orchestrator/launchd/ai.steward.weekly.plist`
 - L11 [hub_alarm_native]: `<key>HUB_ALARM_USE_CLASS_TOPICS</key>`
 
+### `bots/orchestrator/lib/steward/IDENTITY.md`
+- L18 [hub_alarm_native]: `- **알람 시그니처**: `fromBot: 'steward'` (hub-alarm-client)`
+
 ### `bots/orchestrator/lib/steward/daily-summary.ts`
 - L4 [hub_alarm_native]: `const { postAlarm } = require('../../../../packages/core/lib/hub-alarm-client');`
 
@@ -511,8 +516,8 @@ This inventory tracks the Hub alarm migration surface. `hub_alarm_native` entrie
 - L41 [hub_alarm_native]: `&& (String(process.env.HUB_ALARM_USE_CLASS_TOPICS || '').trim() !== '' || hubSecrets.telegram?.topic_alias_mode === 'class_topics');`
 
 ### `bots/orchestrator/n8n/setup-ska-workflows.ts`
-- L41 [hub_alarm_native]: `const CLASS_TOPIC_MODE = String(process.env.HUB_ALARM_USE_CLASS_TOPICS || '').trim().toLowerCase() !== 'false'`
-- L42 [hub_alarm_native]: `&& (String(process.env.HUB_ALARM_USE_CLASS_TOPICS || '').trim() !== '' || hubSecrets.telegram?.topic_alias_mode === 'class_topics');`
+- L38 [hub_alarm_native]: `const CLASS_TOPIC_MODE = String(process.env.HUB_ALARM_USE_CLASS_TOPICS || '').trim().toLowerCase() !== 'false'`
+- L39 [hub_alarm_native]: `&& (String(process.env.HUB_ALARM_USE_CLASS_TOPICS || '').trim() !== '' || hubSecrets.telegram?.topic_alias_mode === 'class_topics');`
 
 ### `bots/orchestrator/src/dashboard.ts`
 - L11 [hub_alarm_native]: `} = require('../../../packages/core/lib/hub-alarm-client') as {`
@@ -534,6 +539,21 @@ This inventory tracks the Hub alarm migration surface. `hub_alarm_native` entrie
 
 ### `bots/sigma/ts/src/sigma-weekly-review.ts`
 - L22 [hub_alarm_native]: `const hubAlarm = require(path.join(PROJECT_ROOT, 'packages/core/lib/hub-alarm-client.js'));`
+
+### `bots/social-media/facebook/scripts/auto-facebook-publish.ts`
+- L23 [hub_alarm_native]: `const { postAlarm } = require('../../../../packages/core/lib/hub-alarm-client');`
+
+### `bots/social-media/image-gen/lib/img-gen-doctor.ts`
+- L13 [hub_alarm_native]: `const { postAlarm } = require('../../../../packages/core/lib/hub-alarm-client');`
+
+### `bots/social-media/instagram/lib/insta-crosspost.ts`
+- L23 [hub_alarm_native]: `const { postAlarm } = require('../../../../packages/core/lib/hub-alarm-client');`
+
+### `bots/social-media/instagram/lib/instagram-story.ts`
+- L13 [hub_alarm_native]: `const { postAlarm } = require('../../../../packages/core/lib/hub-alarm-client');`
+
+### `bots/social-media/instagram/scripts/auto-instagram-publish.ts`
+- L31 [hub_alarm_native]: `const { postAlarm } = require('../../../../packages/core/lib/hub-alarm-client');`
 
 ### `docs/design/DESIGN_TEAM_JAY_AUTONOMOUS_ORCHESTRATION.md`
 - L106 [hub_alarm_native]: `- `hub-alarm-client`가 retired webhook보다 우선되는 구조로 이동했다.`
