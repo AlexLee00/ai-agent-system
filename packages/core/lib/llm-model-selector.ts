@@ -1519,8 +1519,8 @@ function buildSelectorRegistry(): Record<string, any> {
     'darwin.agent_policy': (options: SelectorOptions = {}) => {
       const { agentName } = options;
       const DARWIN_ROUTES: Record<string, { route: string; fallback: string[] }> = {
-        'darwin.scanner':              { route: 'anthropic_haiku', fallback: ['anthropic_sonnet'] },
-        'darwin.evaluator':            { route: 'qwen_deep', fallback: ['gemini_flash', 'openai_mini'] },
+        'darwin.scanner':              { route: 'openai_mini', fallback: ['qwen_deep'] },
+        'darwin.evaluator':            { route: 'openai_mini', fallback: ['qwen_deep'] },
         'darwin.planner':              { route: 'gemini_flash', fallback: ['qwen_deep', 'openai_mini'] },
         'darwin.edison':               { route: 'anthropic_sonnet', fallback: ['anthropic_haiku'] },
         'darwin.verifier':             { route: 'anthropic_sonnet', fallback: ['anthropic_haiku'] },
@@ -1532,13 +1532,13 @@ function buildSelectorRegistry(): Record<string, any> {
         'darwin.rag.query_planner':    { route: 'anthropic_haiku', fallback: [] },
         'darwin.rag.synthesizer':      { route: 'anthropic_haiku', fallback: ['anthropic_sonnet'] },
         commander:                     { route: 'openai_perf', fallback: ['anthropic_sonnet', 'anthropic_haiku'] },
-        evaluator:                     { route: 'qwen_deep', fallback: ['gemini_flash', 'openai_mini'] },
+        evaluator:                     { route: 'openai_mini', fallback: ['qwen_deep'] },
         planner:                       { route: 'gemini_flash', fallback: ['qwen_deep', 'openai_mini'] },
         implementor:                   { route: 'qwen_deep', fallback: ['gemini_flash', 'openai_mini'] },
         verifier:                      { route: 'anthropic_sonnet', fallback: ['anthropic_haiku'] },
         applier:                       { route: 'anthropic_haiku', fallback: [] },
         learner:                       { route: 'anthropic_haiku', fallback: [] },
-        scanner:                       { route: 'anthropic_haiku', fallback: [] },
+        scanner:                       { route: 'openai_mini', fallback: ['qwen_deep'] },
         reflexion:                     { route: 'gemini_flash', fallback: ['qwen_deep', 'openai_mini'] },
         'self_rag.retrieve':           { route: 'anthropic_haiku', fallback: [] },
         'self_rag.relevance':          { route: 'anthropic_haiku', fallback: [] },

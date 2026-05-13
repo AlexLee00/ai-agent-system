@@ -921,6 +921,34 @@ async function runGeminiCliLiveRefreshProbeWithReimport(reason: string, record: 
   });
 }
 
+function finalizeGeminiCliMonitorState({
+  expiresInHours,
+  warnHours,
+  liveRefreshProbe,
+  postProbeReimport,
+}: {
+  expiresInHours: number | null;
+  warnHours: number;
+  liveRefreshProbe: any;
+  postProbeReimport: any;
+}) {
+  const refreshedExpiresInHours = Number.isFinite(Number(postProbeReimport?.expires_in_hours))
+    ? Number(postProbeReimport.expires_in_hours)
+    : expiresInHours;
+  const reimportOk = postProbeReimport?.ok === true;
+  const liveRefreshOk = liveRefreshProbe?.ok === true;
+  const localCredentialNeedsRefresh = reimportOk
+    ? (Number.isFinite(Number(refreshedExpiresInHours)) ? Number(refreshedExpiresInHours) <= warnHours : false)
+    : (Number.isFinite(Number(expiresInHours)) ? Number(expiresInHours) <= warnHours : false);
+  const needsRefresh = localCredentialNeedsRefresh && !liveRefreshOk;
+
+  return {
+    expires_in_hours: refreshedExpiresInHours,
+    local_credential_needs_refresh: localCredentialNeedsRefresh,
+    needs_refresh: needsRefresh,
+  };
+}
+
 async function checkGeminiCliOAuth() {
   const record = getProviderRecord('gemini-cli-oauth');
   const required = geminiCliMonitorRequired();
@@ -955,7 +983,13 @@ async function checkGeminiCliOAuth() {
       : null;
     const liveRefreshProbe = liveRefreshResult?.probe || null;
     const postProbeReimport = liveRefreshResult?.reimport || null;
-    const needsRefresh = localCredentialNeedsRefresh && !liveRefreshProbe?.ok;
+    const finalState = finalizeGeminiCliMonitorState({
+      expiresInHours,
+      warnHours,
+      liveRefreshProbe,
+      postProbeReimport,
+    });
+    const needsRefresh = finalState.needs_refresh;
     if (localCredentialNeedsRefresh && liveRefreshProbe?.ok) {
       console.log(`[oauth-monitor] Gemini CLI OAuth local token is near/after expiry, live CLI refresh probe succeeded in ${liveRefreshProbe.duration_ms || 0}ms, token-store reimport=${postProbeReimport?.ok ? 'ok' : 'not_updated'}`);
     }
@@ -983,9 +1017,9 @@ async function checkGeminiCliOAuth() {
       healthy: true,
       skipped: false,
       source: cliImport.source || 'gemini_cli_oauth_creds',
-      expires_in_hours: expiresInHours,
-      needs_refresh: needsRefresh,
-      local_credential_needs_refresh: localCredentialNeedsRefresh,
+      expires_in_hours: finalState.expires_in_hours,
+      needs_refresh: finalState.needs_refresh,
+      local_credential_needs_refresh: finalState.local_credential_needs_refresh,
       live_refresh_ok: liveRefreshProbe?.ok ?? null,
       post_probe_reimport_ok: postProbeReimport?.ok ?? null,
       post_probe_expires_in_hours: postProbeReimport?.expires_in_hours ?? null,
@@ -1004,7 +1038,13 @@ async function checkGeminiCliOAuth() {
       : null;
     const liveRefreshProbe = liveRefreshResult?.probe || null;
     const postProbeReimport = liveRefreshResult?.reimport || null;
-    const needsRefresh = localCredentialNeedsRefresh && !liveRefreshProbe?.ok;
+    const finalState = finalizeGeminiCliMonitorState({
+      expiresInHours,
+      warnHours,
+      liveRefreshProbe,
+      postProbeReimport,
+    });
+    const needsRefresh = finalState.needs_refresh;
     if (localCredentialNeedsRefresh && liveRefreshProbe?.ok) {
       console.log(`[oauth-monitor] Gemini CLI OAuth token-store is near/after expiry, live CLI refresh probe succeeded in ${liveRefreshProbe.duration_ms || 0}ms, token-store reimport=${postProbeReimport?.ok ? 'ok' : 'not_updated'}`);
     }
@@ -1034,9 +1074,9 @@ async function checkGeminiCliOAuth() {
       degraded: true,
       skipped: false,
       source: record?.metadata?.source || 'token_store',
-      expires_in_hours: expiresInHours,
-      needs_refresh: needsRefresh,
-      local_credential_needs_refresh: localCredentialNeedsRefresh,
+      expires_in_hours: finalState.expires_in_hours,
+      needs_refresh: finalState.needs_refresh,
+      local_credential_needs_refresh: finalState.local_credential_needs_refresh,
       live_refresh_ok: liveRefreshProbe?.ok ?? null,
       post_probe_reimport_ok: postProbeReimport?.ok ?? null,
       post_probe_expires_in_hours: postProbeReimport?.expires_in_hours ?? null,

@@ -1,5 +1,7 @@
 // @ts-nocheck
 
+const fs = require('fs');
+const path = require('path');
 const eventLake = require('../../../../packages/core/lib/event-lake');
 
 const SECRET_KEY_PATTERN = /(access[_-]?token|refresh[_-]?token|id[_-]?token|authorization|api[_-]?key|client[_-]?secret|password|secret)/i;
@@ -35,6 +37,60 @@ function scrub(value, depth = 0) {
     output[key] = scrub(raw, depth + 1);
   }
   return output;
+}
+
+function oauthEventCachePath() {
+  const workspace = String(process.env.AI_AGENT_WORKSPACE || '').trim();
+  if (workspace) return path.join(workspace, 'oauth-monitor-event-cache.json');
+  return path.join(process.env.HOME || '/tmp', '.ai-agent-system', 'workspace', 'oauth-monitor-event-cache.json');
+}
+
+function oauthEventCooldownMs(event) {
+  if (event.severity === 'error') return 0;
+  if (event.kind === 'degraded' || event.kind === 'near_expiry') return 15 * 60 * 1000;
+  if (event.kind === 'reimport_success' || event.kind === 'refresh_success' || event.kind === 'live_probe_success' || event.kind === 'success') {
+    return 2 * 60 * 60 * 1000;
+  }
+  return 0;
+}
+
+function shouldSuppressRepeatedEvent(event) {
+  const cooldownMs = oauthEventCooldownMs(event);
+  if (cooldownMs <= 0) return false;
+  const signature = `${String(event.provider || 'unknown')}|${String(event.kind || 'event')}|${String(event.severity || 'info')}`;
+
+  try {
+    const cachePath = oauthEventCachePath();
+    fs.mkdirSync(path.dirname(cachePath), { recursive: true });
+    const now = Date.now();
+    let cache = {};
+    if (fs.existsSync(cachePath)) {
+      cache = JSON.parse(fs.readFileSync(cachePath, 'utf8') || '{}');
+    }
+    cache = Object.fromEntries(
+      Object.entries(cache).filter(([, row]) => now - Number(row?.last_seen_at || row?.emitted_at || 0) < 24 * 60 * 60 * 1000)
+    );
+    const prev = cache[signature];
+    if (prev && now - Number(prev.emitted_at || 0) < cooldownMs) {
+      cache[signature] = {
+        ...prev,
+        last_seen_at: now,
+        count: Number(prev.count || 0) + 1,
+      };
+      fs.writeFileSync(cachePath, JSON.stringify(cache, null, 2));
+      return true;
+    }
+    cache[signature] = {
+      emitted_at: now,
+      last_seen_at: now,
+      count: 1,
+    };
+    fs.writeFileSync(cachePath, JSON.stringify(cache, null, 2));
+  } catch (error) {
+    console.warn(`[oauth-ops-events] dedupe cache 실패: ${String(error?.message || error)}`);
+  }
+
+  return false;
 }
 
 function providerEntries(report) {
@@ -182,6 +238,9 @@ async function publishOAuthOpsEvent(event) {
   if (!enabled('HUB_OAUTH_MONITOR_PUBLISH_EVENTS', true)) {
     return { ok: false, skipped: true, reason: 'disabled' };
   }
+  if (shouldSuppressRepeatedEvent(event)) {
+    return { ok: false, skipped: true, reason: 'deduped' };
+  }
 
   try {
     const id = await eventLake.record({
@@ -232,6 +291,7 @@ async function publishOAuthMonitorEvents(report) {
 
 module.exports = {
   buildProviderEvents,
+  shouldSuppressRepeatedOauthEvent: shouldSuppressRepeatedEvent,
   publishOAuthOpsEvent,
   publishOAuthMonitorEvents,
   scrubOAuthOpsPayload: scrub,

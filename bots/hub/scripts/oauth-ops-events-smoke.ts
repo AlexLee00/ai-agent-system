@@ -2,8 +2,12 @@
 // @ts-nocheck
 
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
 const {
   buildProviderEvents,
+  shouldSuppressRepeatedOauthEvent,
   scrubOAuthOpsPayload,
 } = require('../lib/oauth/ops-events.ts');
 
@@ -46,6 +50,13 @@ assert(!events.some((event) => event.kind === 'near_expiry' && event.provider ==
 assert(!events.some((event) => event.kind === 'live_probe_success' && event.provider === 'gemini-cli-oauth'), 'live probe success should not emit by default');
 assert(events.some((event) => event.kind === 'degraded' && event.provider === 'gemini-codeassist-service'), 'live refresh success without reimport must remain visible as degraded');
 
+const tmpWorkspace = fs.mkdtempSync(path.join(os.tmpdir(), 'oauth-ops-events-'));
+process.env.AI_AGENT_WORKSPACE = tmpWorkspace;
+const repeatedInfoEvent = events.find((event) => event.kind === 'reimport_success' && event.provider === 'gemini-cli-oauth');
+assert.equal(shouldSuppressRepeatedOauthEvent(repeatedInfoEvent), false, 'first reimport success event should pass');
+assert.equal(shouldSuppressRepeatedOauthEvent(repeatedInfoEvent), true, 'second identical reimport success event should be deduped');
+delete process.env.AI_AGENT_WORKSPACE;
+
 const scrubbed = scrubOAuthOpsPayload(report);
 const serialized = JSON.stringify(scrubbed);
 assert(!serialized.includes('secret-access-token'), 'access token must be redacted');
@@ -56,5 +67,6 @@ assert(serialized.includes('[redacted]'), 'redaction marker must be present');
 console.log(JSON.stringify({
   ok: true,
   event_count: events.length,
+  dedupe: 'ok',
   redaction: 'ok',
 }));
