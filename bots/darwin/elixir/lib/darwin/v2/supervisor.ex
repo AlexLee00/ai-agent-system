@@ -57,7 +57,7 @@ defmodule Darwin.V2.Supervisor do
 
   defp sensor_children do
     [
-      Darwin.V2.Sensor.ArxivRss,
+      Darwin.V2.Sensor.ArxivRSS,
       Darwin.V2.Sensor.HackerNews,
       Darwin.V2.Sensor.Reddit,
       Darwin.V2.Sensor.OpenReview,
