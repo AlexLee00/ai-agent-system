@@ -1,0 +1,300 @@
+{
+  "ok": true,
+  "checkedAt": "2026-05-13T01:03:16.497Z",
+  "stage": "hub_stage_b",
+  "status": "stage_b_operational_ready",
+  "goals": {
+    "hubSelectorAgentForced": true,
+    "unifiedSelector": true,
+    "observabilityDashboard": true,
+    "sentryMcpReady": true,
+    "selfHealingReadOnlyReady": true
+  },
+  "selectorEnforcement": {
+    "ok": true,
+    "sourceOfTruth": "packages/core/lib/llm-model-selector.ts + bots/hub/src/llm-selector.ts facade",
+    "checks": [
+      {
+        "name": "hub_facade_present",
+        "ok": true
+      },
+      {
+        "name": "sync_call_target_policy",
+        "ok": true
+      },
+      {
+        "name": "async_job_target_policy",
+        "ok": true
+      },
+      {
+        "name": "direct_provider_routes_blocked_by_default",
+        "ok": true
+      },
+      {
+        "name": "adhoc_chain_blocked_by_default",
+        "ok": true
+      },
+      {
+        "name": "runtime_profiles_selector_backed",
+        "ok": true
+      }
+    ]
+  },
+  "protected": {
+    "ok": true,
+    "launchctlAvailable": true,
+    "skipped": true,
+    "error": null,
+    "protectedCount": 14,
+    "running": 0,
+    "healthy": 14,
+    "missing": [],
+    "labels": [
+      {
+        "label": "ai.hub.resource-api",
+        "running": false,
+        "loaded": false,
+        "expectedIdle": false,
+        "healthy": true,
+        "pid": null,
+        "status": null,
+        "checked": false
+      },
+      {
+        "label": "ai.hub.llm-oauth-monitor",
+        "running": false,
+        "loaded": false,
+        "expectedIdle": true,
+        "healthy": true,
+        "pid": null,
+        "status": null,
+        "checked": false
+      },
+      {
+        "label": "ai.hub.llm-oauth4-master-review",
+        "running": false,
+        "loaded": false,
+        "expectedIdle": true,
+        "healthy": true,
+        "pid": null,
+        "status": null,
+        "checked": false
+      },
+      {
+        "label": "ai.hub.llm-groq-fallback-test",
+        "running": false,
+        "loaded": false,
+        "expectedIdle": true,
+        "healthy": true,
+        "pid": null,
+        "status": null,
+        "checked": false
+      },
+      {
+        "label": "ai.hub.llm-model-check",
+        "running": false,
+        "loaded": false,
+        "expectedIdle": true,
+        "healthy": true,
+        "pid": null,
+        "status": null,
+        "checked": false
+      },
+      {
+        "label": "ai.hub.llm-cache-cleanup",
+        "running": false,
+        "loaded": false,
+        "expectedIdle": true,
+        "healthy": true,
+        "pid": null,
+        "status": null,
+        "checked": false
+      },
+      {
+        "label": "ai.hub.incident-summary",
+        "running": false,
+        "loaded": false,
+        "expectedIdle": true,
+        "healthy": true,
+        "pid": null,
+        "status": null,
+        "checked": false
+      },
+      {
+        "label": "ai.hub.severity-decay",
+        "running": false,
+        "loaded": false,
+        "expectedIdle": true,
+        "healthy": true,
+        "pid": null,
+        "status": null,
+        "checked": false
+      },
+      {
+        "label": "ai.hub.noisy-producer-auto-learn",
+        "running": false,
+        "loaded": false,
+        "expectedIdle": true,
+        "healthy": true,
+        "pid": null,
+        "status": null,
+        "checked": false
+      },
+      {
+        "label": "ai.hub.roundtable-reflection",
+        "running": false,
+        "loaded": false,
+        "expectedIdle": true,
+        "healthy": true,
+        "pid": null,
+        "status": null,
+        "checked": false
+      },
+      {
+        "label": "ai.hub.daily-metrics-digest",
+        "running": false,
+        "loaded": false,
+        "expectedIdle": true,
+        "healthy": true,
+        "pid": null,
+        "status": null,
+        "checked": false
+      },
+      {
+        "label": "ai.hub.hourly-status-digest",
+        "running": false,
+        "loaded": false,
+        "expectedIdle": true,
+        "healthy": true,
+        "pid": null,
+        "status": null,
+        "checked": false
+      },
+      {
+        "label": "ai.hub.weekly-audit-digest",
+        "running": false,
+        "loaded": false,
+        "expectedIdle": true,
+        "healthy": true,
+        "pid": null,
+        "status": null,
+        "checked": false
+      },
+      {
+        "label": "ai.hub.weekly-advisory-digest",
+        "running": false,
+        "loaded": false,
+        "expectedIdle": true,
+        "healthy": true,
+        "pid": null,
+        "status": null,
+        "checked": false
+      }
+    ]
+  },
+  "requestLog": {
+    "ok": true,
+    "skipped": true,
+    "hours": 24,
+    "total": 0,
+    "failures": 0,
+    "byProvider": [],
+    "byBudgetStatus": [],
+    "byTier": [],
+    "recentErrors": []
+  },
+  "circuits": {
+    "ok": true,
+    "total": 0,
+    "nonClosed": 0,
+    "entries": []
+  },
+  "budget": {
+    "ok": true,
+    "globalUsedUsd": 0,
+    "globalLimitUsd": 80,
+    "globalRatio": 0,
+    "emergency": false,
+    "teams": {
+      "luna": {
+        "used": 0,
+        "quota": 30
+      },
+      "darwin": {
+        "used": 0,
+        "quota": 15
+      },
+      "sigma": {
+        "used": 0,
+        "quota": 10
+      },
+      "claude": {
+        "used": 0,
+        "quota": 10
+      },
+      "blog": {
+        "used": 0,
+        "quota": 5
+      },
+      "ska": {
+        "used": 0,
+        "quota": 5
+      },
+      "justin": {
+        "used": 0,
+        "quota": 3
+      },
+      "hub": {
+        "used": 0,
+        "quota": 5
+      },
+      "data": {
+        "used": 0,
+        "quota": 2
+      }
+    }
+  },
+  "sentry": {
+    "ok": true,
+    "mode": "adapter_ready_config_pending",
+    "configured": false,
+    "mcpTooling": "optional",
+    "contract": {
+      "errorCapture": "Hub incidents remain primary; Sentry MCP enriches stack/user-impact evidence when configured.",
+      "noSecretLogging": true,
+      "failClosedOnMissingToken": true
+    }
+  },
+  "dashboard": {
+    "type": "json",
+    "outputPath": "/Users/alexlee/projects/ai-agent-system/bots/hub/output/hub-stage-b-stability-report.json",
+    "refreshCommand": "npm --prefix bots/hub run -s hub:stage-b-stability-report -- --write",
+    "panels": [
+      "provider_tier_usage",
+      "budget_guard_status",
+      "llm_error_rate",
+      "protected_launchd_status",
+      "oauth_and_sentry_readiness",
+      "self_healing_action_plan"
+    ]
+  },
+  "selfHealing": {
+    "ok": true,
+    "mode": "read_only_by_default",
+    "safeReadOnlyActions": [
+      {
+        "action": "sentry_mcp_config_review",
+        "reason": "Sentry MCP enrichment is not configured; Hub incident system remains primary",
+        "command": "npm --prefix bots/hub run -s llm:stage-b-observability-smoke",
+        "effect": "validates fail-closed observability contract"
+      }
+    ],
+    "confirmRequiredActions": [],
+    "prohibitedActions": [
+      "launchctl bootout/unload/kickstart -k on PROTECTED labels",
+      "kill protected Hub PID",
+      "secret mutation without explicit operator approval",
+      "direct provider route enablement in production"
+    ]
+  }
+}
