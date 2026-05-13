@@ -54,7 +54,8 @@ function buildPlan() {
     backupDir,
     runDir,
     files: {
-      supportSchema: path.join(runDir, 'hub_support_schema.sql'),
+      agentSchema: path.join(runDir, 'hub_agent_schema.sql'),
+      routingLogSchema: path.join(runDir, 'hub_routing_log_schema.sql'),
       hubSchema: path.join(runDir, 'hub_schema.sql'),
       hubRuntime: path.join(runDir, 'hub_runtime.sql'),
       launchdArchive: path.join(runDir, 'hub_launchd.tar.gz'),
@@ -83,9 +84,14 @@ async function main() {
   results.push(run('pg_dump', [
     '-d', plan.database,
     '--schema-only',
+    '--schema=agent',
+    '-f', plan.files.agentSchema,
+  ]));
+  results.push(run('pg_dump', [
+    '-d', plan.database,
+    '--schema-only',
     '-t', 'public.llm_routing_log',
-    '-t', 'agent.event_lake',
-    '-f', plan.files.supportSchema,
+    '-f', plan.files.routingLogSchema,
   ]));
   results.push(run('pg_dump', ['-d', plan.database, '--schema=hub', '--schema-only', '-f', plan.files.hubSchema]));
   results.push(run('pg_dump', [

@@ -68,8 +68,12 @@ async function main() {
 
   const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
   const supportSchemaFile = manifest.files?.supportSchema || manifest.artifacts?.find?.((item) => item.key === 'supportSchema')?.path;
+  const agentSchemaFile = manifest.files?.agentSchema || manifest.artifacts?.find?.((item) => item.key === 'agentSchema')?.path;
+  const routingLogSchemaFile = manifest.files?.routingLogSchema || manifest.artifacts?.find?.((item) => item.key === 'routingLogSchema')?.path;
   const schemaFile = manifest.files?.hubSchema || manifest.files?.hub_schema || manifest.artifacts?.find?.((item) => item.key === 'hubSchema')?.path;
   result.supportSchemaFile = supportSchemaFile || null;
+  result.agentSchemaFile = agentSchemaFile || null;
+  result.routingLogSchemaFile = routingLogSchemaFile || null;
   result.schemaFile = schemaFile;
   if (!schemaFile || !fs.existsSync(schemaFile)) {
     result.ok = false;
@@ -101,7 +105,16 @@ async function main() {
 
   result.steps.push(run('createdb', [smokeDb]));
   if (result.steps.at(-1).ok) {
-    result.steps.push(run('psql', ['-v', 'ON_ERROR_STOP=1', '-d', smokeDb, '-c', 'CREATE SCHEMA IF NOT EXISTS agent; CREATE SCHEMA IF NOT EXISTS hub;']));
+    const needsLegacyAgentSchema = !agentSchemaFile && supportSchemaFile && fs.existsSync(supportSchemaFile);
+    if (needsLegacyAgentSchema) {
+      result.steps.push(run('psql', ['-v', 'ON_ERROR_STOP=1', '-d', smokeDb, '-c', 'CREATE SCHEMA IF NOT EXISTS agent;']));
+    }
+    if (agentSchemaFile && fs.existsSync(agentSchemaFile)) {
+      result.steps.push(run('psql', ['-v', 'ON_ERROR_STOP=1', '-d', smokeDb, '-f', agentSchemaFile]));
+    }
+    if (routingLogSchemaFile && fs.existsSync(routingLogSchemaFile) && result.steps.at(-1).ok) {
+      result.steps.push(run('psql', ['-v', 'ON_ERROR_STOP=1', '-d', smokeDb, '-f', routingLogSchemaFile]));
+    }
     if (supportSchemaFile && fs.existsSync(supportSchemaFile)) {
       result.steps.push(run('psql', ['-v', 'ON_ERROR_STOP=1', '-d', smokeDb, '-f', supportSchemaFile]));
     }
