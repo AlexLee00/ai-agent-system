@@ -1,0 +1,116 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>ai.hub.resource-api-green</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>/Users/alexlee/projects/ai-agent-system/node_modules/.bin/tsx</string>
+    <string>bots/hub/src/hub.ts</string>
+  </array>
+
+  <key>WorkingDirectory</key>
+  <string>/Users/alexlee/projects/ai-agent-system</string>
+
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>HUB_PORT</key>
+    <string>7789</string>
+    <key>HUB_BG_SLOT</key>
+    <string>green</string>
+    <key>MODE</key>
+    <string>ops</string>
+    <key>LLM_USE_OAUTH_PRIMARY</key>
+    <string>true</string>
+    <key>LLM_TEAM_SELECTOR_VERSION</key>
+    <string>v3.0_oauth_4</string>
+    <key>LLM_TEAM_SELECTOR_AB_PERCENT</key>
+    <string>100</string>
+    <key>LLM_TEAM_SELECTOR_VERSION_PCT</key>
+    <string>100</string>
+    <key>LLM_OPENAI_PERF_MODEL</key>
+    <string>gpt-5.4</string>
+    <key>LLM_OPENAI_MINI_MODEL</key>
+    <string>gpt-5.4-mini</string>
+    <key>LLM_GROQ_FAST_MODEL</key>
+    <string>llama-3.1-8b-instant</string>
+    <key>LLM_GROQ_DEEP_MODEL</key>
+    <string>qwen/qwen3-32b</string>
+    <key>LLM_GEMINI_FLASH_MODEL</key>
+    <string>gemini-cli-oauth/gemini-2.5-flash</string>
+    <key>LLM_GEMINI_FLASH_LITE_MODEL</key>
+    <string>gemini-cli-oauth/gemini-2.5-flash-lite</string>
+    <key>LLM_CLAUDE_CODE_REPLACEMENT_MODEL</key>
+    <string>openai-oauth/gpt-5.4</string>
+    <key>LLM_CLAUDE_CODE_SONNET_REPLACEMENT</key>
+    <string>openai-oauth/gpt-5.4</string>
+    <key>GEMINI_OAUTH_PROJECT_ID</key>
+    <string>gen-lang-client-0627707293</string>
+    <key>PATH</key>
+    <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+    <key>HUB_PG_USER</key>
+    <string>hub_readonly</string>
+    <key>HUB_PG_PASSWORD</key>
+    <string>__SET_IN_LOCAL_LAUNCHAGENT__</string>
+    <key>HUB_PG_DATABASE</key>
+    <string>jay</string>
+    <key>HUB_CONTROL_CALLBACK_SECRET</key>
+    <string>__SET_IN_LOCAL_LAUNCHAGENT__</string>
+    <key>HUB_ALARM_USE_CLASS_TOPICS</key>
+    <string>true</string>
+    <key>HUB_ALARM_DISPATCH_MODE</key>
+    <string>autonomous</string>
+    <key>HUB_ALARM_LLM_CLASSIFIER_ENABLED</key>
+    <string>true</string>
+    <key>HUB_ALARM_LLM_DAILY_LIMIT</key>
+    <string>100</string>
+    <key>HUB_ALARM_CRITICAL_TYPE_ENABLED</key>
+    <string>true</string>
+    <key>HUB_ALARM_INTERPRETER_ENABLED</key>
+    <string>true</string>
+    <key>HUB_ALARM_INTERPRETER_FAIL_OPEN</key>
+    <string>true</string>
+    <key>HUB_ALARM_INTERPRETER_LLM_DAILY_LIMIT</key>
+    <string>200</string>
+    <key>HUB_ALARM_ENRICHMENT_ENABLED</key>
+    <string>true</string>
+    <key>HUB_ALARM_ROUNDTABLE_ENABLED</key>
+    <string>true</string>
+    <key>HUB_ALARM_ROUNDTABLE_DAILY_LIMIT</key>
+    <string>10</string>
+    <key>HUB_ALARM_ROUNDTABLE_TRIGGER_FINGERPRINT_THRESHOLD</key>
+    <string>3</string>
+    <key>HUB_LLM_RATE_LIMIT_PER_MIN</key>
+    <string>120</string>
+    <key>HUB_SECRETS_RATE_LIMIT_PER_MIN</key>
+    <string>240</string>
+    <key>HUB_LLM_MAX_QUEUE</key>
+    <string>128</string>
+    <key>HUB_LLM_CACHE_ENABLED</key>
+    <string>true</string>
+    <key>HUB_LLM_CACHE_SENTIMENT_TTL_MS</key>
+    <string>2700000</string>
+    <key>HUB_LLM_QUEUE_TIMEOUT_MS</key>
+    <string>15000</string>
+  </dict>
+
+  <!-- Green은 수동 load/unload — KeepAlive X! Blue 무중단 보장! -->
+  <key>RunAtLoad</key>
+  <false/>
+
+  <key>KeepAlive</key>
+  <false/>
+
+  <key>StandardOutPath</key>
+  <string>/Users/alexlee/projects/ai-agent-system/bots/hub/hub-green.log</string>
+
+  <key>StandardErrorPath</key>
+  <string>/Users/alexlee/projects/ai-agent-system/bots/hub/hub-green.err.log</string>
+
+  <key>ThrottleInterval</key>
+  <integer>10</integer>
+</dict>
+</plist>

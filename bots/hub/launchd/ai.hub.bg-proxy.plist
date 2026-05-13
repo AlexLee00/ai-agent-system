@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>ai.hub.bg-proxy</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>/Users/alexlee/projects/ai-agent-system/node_modules/.bin/tsx</string>
+    <string>bots/hub/src/hub-proxy.ts</string>
+  </array>
+
+  <key>WorkingDirectory</key>
+  <string>/Users/alexlee/projects/ai-agent-system</string>
+
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>HUB_BG_PROXY_PORT</key>
+    <string>7780</string>
+    <key>HUB_BG_BIND_HOST</key>
+    <string>127.0.0.1</string>
+    <key>PATH</key>
+    <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+    <key>MODE</key>
+    <string>ops</string>
+  </dict>
+
+  <!-- 프록시는 Blue/Green 양쪽이 존재할 때만 의미 있음 — 수동 load! -->
+  <key>RunAtLoad</key>
+  <false/>
+
+  <key>KeepAlive</key>
+  <false/>
+
+  <key>StandardOutPath</key>
+  <string>/tmp/hub-bg-proxy.log</string>
+
+  <key>StandardErrorPath</key>
+  <string>/tmp/hub-bg-proxy.err.log</string>
+
+  <key>ThrottleInterval</key>
+  <integer>5</integer>
+</dict>
+</plist>
