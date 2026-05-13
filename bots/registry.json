@@ -390,7 +390,18 @@
           "local/deepseek-r1-32b"
         ]
       },
-      "agents": ["justin", "briefing", "lens", "garam", "atlas", "claim", "defense", "quill", "balance", "contro"],
+      "agents": [
+        "justin",
+        "briefing",
+        "lens",
+        "garam",
+        "atlas",
+        "claim",
+        "defense",
+        "quill",
+        "balance",
+        "contro"
+      ],
       "db_schema": "legal",
       "security": "cases/ directory gitignored — no push to GitHub",
       "deployTargets": []

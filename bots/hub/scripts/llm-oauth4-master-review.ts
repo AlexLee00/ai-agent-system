@@ -8,6 +8,7 @@ import { fileURLToPath, pathToFileURL } from 'url';
 
 const require = createRequire(import.meta.url);
 const selector = require('../../../packages/core/lib/llm-model-selector.ts');
+const pgPool = require('../../../packages/core/lib/pg-pool.ts');
 const SCRIPT_DIR = path.dirname(fileURLToPath(import.meta.url));
 const PROJECT_ROOT = process.env.PROJECT_ROOT || path.resolve(SCRIPT_DIR, '..', '..', '..');
 
@@ -245,15 +246,70 @@ function buildSelectorSnapshot(selectorModule = selector) {
 
 async function fetchStats(hours = HOURS) {
   const url = `${HUB_BASE}/hub/llm/stats?hours=${hours}`;
-  const res = await fetch(url, {
-    headers: { Authorization: `Bearer ${HUB_TOKEN}` },
-  });
-  if (!res.ok) {
-    throw new Error(`hub_llm_stats_http_${res.status}`);
+  try {
+    const res = await fetch(url, {
+      headers: { Authorization: `Bearer ${HUB_TOKEN}` },
+      signal: AbortSignal.timeout(Number(process.env.LLM_OAUTH4_REVIEW_FETCH_TIMEOUT_MS || 5000)),
+    });
+    if (!res.ok) {
+      throw new Error(`hub_llm_stats_http_${res.status}`);
+    }
+    const body = await res.json();
+    if (!body?.ok) throw new Error(`hub_llm_stats_failed:${body?.error || 'unknown'}`);
+    return { ...body, stats_source: 'hub_http' };
+  } catch (error) {
+    const fallback = await fetchStatsFromDb(hours);
+    return {
+      ...fallback,
+      stats_source: 'db_fallback',
+      stats_source_error: String(error?.message || error),
+    };
   }
-  const body = await res.json();
-  if (!body?.ok) throw new Error(`hub_llm_stats_failed:${body?.error || 'unknown'}`);
-  return body;
+}
+
+async function fetchStatsFromDb(hours = HOURS) {
+  const summary = await pgPool.query('public', `
+    SELECT
+      provider,
+      caller_team,
+      COUNT(*)                                                AS total_calls,
+      SUM(CASE WHEN success THEN 1 ELSE 0 END)               AS success_count,
+      ROUND(AVG(duration_ms))::integer                       AS avg_duration_ms,
+      MAX(duration_ms)                                       AS max_duration_ms,
+      ROUND(SUM(cost_usd)::numeric, 6)                       AS total_cost_usd,
+      COUNT(DISTINCT agent)                                  AS unique_agents,
+      SUM(fallback_count)                                    AS total_fallbacks
+    FROM llm_routing_log
+    WHERE created_at > NOW() - ($1 || ' hours')::interval
+    GROUP BY provider, caller_team
+    ORDER BY total_calls DESC
+  `, [hours]);
+  const totalCalls = summary.reduce((sum, row) => sum + Number(row.total_calls || 0), 0);
+  const totalCost = summary.reduce((sum, row) => sum + Number(row.total_cost_usd || 0), 0);
+  const totalSuccess = summary.reduce((sum, row) => sum + Number(row.success_count || 0), 0);
+  const providerShare = {};
+  for (const row of summary) {
+    const provider = String(row.provider || 'unknown');
+    providerShare[provider] = totalCalls > 0 ? Number((Number(row.total_calls || 0) / totalCalls).toFixed(4)) : 0;
+  }
+
+  return {
+    ok: true,
+    hours,
+    team: 'all',
+    groq_pool_size: null,
+    summary,
+    by_agent: [],
+    by_hour: [],
+    totals: {
+      total_calls: totalCalls,
+      total_cost_usd: totalCost,
+      success_rate: totalCalls > 0 ? totalSuccess / totalCalls : 0,
+      provider_share: providerShare,
+    },
+    admission: null,
+    jobs: null,
+  };
 }
 
 function buildReport(stats, options = {}) {
@@ -303,6 +359,9 @@ function buildReport(stats, options = {}) {
     ? Number(((claudeCodeReportedCost / reportedCost) * 100).toFixed(2))
     : 0;
   const warnings = [];
+  if (stats.stats_source === 'db_fallback') {
+    warnings.push(`hub_http_stats_unavailable_used_db_fallback:${stats.stats_source_error || 'unknown'}`);
+  }
   if (reportedCost > 0) {
     warnings.push('runtime_reported_cost_is_accounting_or_cli_imputed_cost_not_oauth4_billing_gate');
   }
@@ -321,6 +380,7 @@ function buildReport(stats, options = {}) {
     ok: true,
     generated_at: new Date().toISOString(),
     hours: HOURS,
+    stats_source: stats.stats_source || 'unknown',
     totals: {
       total_calls: totalCalls,
       oauth_calls: oauthCalls,
@@ -373,6 +433,7 @@ function renderMarkdown(report) {
   lines.push('');
   lines.push(`- generated_at: ${report.generated_at}`);
   lines.push(`- hours: ${report.hours}`);
+  lines.push(`- stats_source: ${report.stats_source}`);
   lines.push(`- total_calls: ${report.totals.total_calls}`);
   lines.push(`- oauth_share_pct: ${report.totals.oauth_share_pct}`);
   lines.push(`- failed_rate_pct: ${report.totals.failed_rate_pct}`);

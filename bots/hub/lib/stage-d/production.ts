@@ -123,11 +123,25 @@ function checkSelfHealing() {
 }
 
 function checkDrpActual() {
+  const backupPlistSource = fileExists('bots/hub/launchd/ai.hub.daily-backup.plist')
+    ? readText('bots/hub/launchd/ai.hub.daily-backup.plist')
+    : '';
+  const backupScriptSource = fileExists('bots/hub/scripts/hub-stage-d-daily-backup.ts')
+    ? readText('bots/hub/scripts/hub-stage-d-daily-backup.ts')
+    : '';
   const checks = [
     { name: 'daily_backup_script_exists', ok: fileExists('bots/hub/scripts/hub-stage-d-daily-backup.ts') },
     { name: 'restore_drill_script_exists', ok: fileExists('bots/hub/scripts/hub-stage-d-restore-drill.ts') },
     { name: 'daily_backup_plist_exists', ok: fileExists('bots/hub/launchd/ai.hub.daily-backup.plist') },
     { name: 'monthly_restore_drill_plist_exists', ok: fileExists('bots/hub/launchd/ai.hub.monthly-restore-drill.plist') },
+    {
+      name: 'daily_backup_gpg_recipient_configured',
+      ok: backupPlistSource.includes('<key>HUB_BACKUP_GPG_RECIPIENT</key>'),
+    },
+    {
+      name: 'daily_backup_requires_encrypted_secrets',
+      ok: backupScriptSource.includes('&& secretsBackup.ok'),
+    },
   ];
   return {
     ok: checks.every((c) => c.ok),

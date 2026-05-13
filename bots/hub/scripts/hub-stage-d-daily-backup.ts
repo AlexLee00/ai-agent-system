@@ -122,7 +122,7 @@ async function main() {
   const manifest = {
     ...plan,
     completedAt: new Date().toISOString(),
-    ok: results.every((item) => item.ok),
+    ok: results.every((item) => item.ok) && secretsBackup.ok,
     commandResults: results,
     secretsBackup,
     artifacts: files,
