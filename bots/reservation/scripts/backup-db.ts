@@ -15,6 +15,7 @@ const path = require('path');
 const fs = require('fs');
 const zlib = require('zlib');
 const { execSync } = require('child_process');
+const { pipeline } = require('stream/promises');
 const { publishReservationAlert } = require('../lib/alert-client');
 const { createAgentMemory } = require('../../../packages/core/lib/agent-memory');
 const { getReservationRuntimeFile } = require('../lib/runtime-paths');
@@ -47,21 +48,28 @@ function extractDateKey(fileName) {
   return match ? match[1] : null;
 }
 
-function compressBackup(fileName) {
+async function compressFileGzip(sourcePath, targetPath) {
+  if (fs.existsSync(targetPath)) fs.unlinkSync(targetPath);
+  await pipeline(
+    fs.createReadStream(sourcePath),
+    zlib.createGzip({ level: zlib.constants.Z_BEST_SPEED }),
+    fs.createWriteStream(targetPath),
+  );
+}
+
+async function compressBackup(fileName) {
   if (!fileName.endsWith('.sql')) return fileName;
   const sourcePath = path.join(BACKUP_DIR, fileName);
   const targetPath = `${sourcePath}.gz`;
   if (!fs.existsSync(sourcePath) || fs.existsSync(targetPath)) return path.basename(targetPath);
 
-  const input = fs.readFileSync(sourcePath);
-  const output = zlib.gzipSync(input, { level: zlib.constants.Z_BEST_SPEED });
-  fs.writeFileSync(targetPath, output);
+  await compressFileGzip(sourcePath, targetPath);
   fs.unlinkSync(sourcePath);
   console.log(`[백업] 압축 보관: ${path.basename(targetPath)}`);
   return path.basename(targetPath);
 }
 
-function enforceBackupRetention() {
+async function enforceBackupRetention() {
   const files = listBackupFiles();
   const uniqueDates = [...new Set(files.map(extractDateKey).filter(Boolean))].sort();
   const keepDates = new Set(uniqueDates.slice(-KEEP_DAYS));
@@ -79,7 +87,7 @@ function enforceBackupRetention() {
     }
 
     if (!keepRawDates.has(dateKey) && fileName.endsWith('.sql')) {
-      compressBackup(fileName);
+      await compressBackup(fileName);
     }
   }
 }
@@ -115,7 +123,7 @@ async function main() {
     const sizeKB = Math.round(stat.size / 1024);
 
     // 백업 보관 정책 적용 (최근 2일 원본 유지, 그 이전은 gzip 보관, 전체 7일 초과 삭제)
-    enforceBackupRetention();
+    await enforceBackupRetention();
 
     const remaining = listBackupFiles().length;
 
@@ -195,4 +203,15 @@ async function main() {
   }
 }
 
-main();
+if (require.main === module) {
+  main();
+}
+
+module.exports = {
+  compressFileGzip,
+  compressBackup,
+  enforceBackupRetention,
+  listBackupFiles,
+  extractDateKey,
+  main,
+};

@@ -3,9 +3,9 @@
 /**
  * scripts/manual-batch-reserve.js — 대리예약 배치 스크립트
  *
- * 1단계: pickko-accurate.ts/js shim → 픽코 예약 등록
+ * 1단계: pickko-register.ts shim → 픽코 예약 등록 + reservation 원장 반영
  *   - 슬롯 사용 중이면 A1→A2→B 순으로 자동 폴백
- * 2단계: pickko-kiosk-monitor.ts/js shim --block-slot → 네이버 예약불가 처리
+ * 2단계: pickko-register 내부에서 네이버 예약불가까지 동기 처리
  *
  * 실행: tsx bots/reservation/scripts/manual-batch-reserve.ts
  */
@@ -42,7 +42,7 @@ const ROOM_FALLBACK: Record<Booking['room'], Booking['room'][]> = {
 };
 
 const PICKKO_SCRIPT  = path.join(__dirname, '../manual/reservation/pickko-accurate.js');
-const KIOSK_MONITOR  = path.join(__dirname, '../auto/monitors/pickko-kiosk-monitor.js');
+const PICKKO_REGISTER = path.join(__dirname, '../manual/reservation/pickko-register.ts');
 
 // ── 유틸 ─────────────────────────────────────────────────────────────
 
@@ -58,11 +58,6 @@ function runNode(scriptPath: string, args: string[]): Promise<number | null> {
   });
 }
 
-// 슬롯 사용 중 오류인지 판별 (exit 1 + OPS-CRITICAL 시간선택실패)
-// pickko-accurate.js는 슬롯 사용 중이면 exit 1 반환
-// exit 0=성공, exit 1=실패(슬롯사용중 포함), exit 2=시간경과
-const SLOT_FAIL_EXIT = 1;
-
 // ── 메인 ─────────────────────────────────────────────────────────────
 
 async function main() {
@@ -70,8 +65,7 @@ async function main() {
   console.log(`대리예약 배치: ${BOOKINGS.length}건`);
   console.log(`${'═'.repeat(60)}`);
 
-  let pickkoOk = 0, pickkoFail = 0;
-  let naverOk  = 0, naverFail  = 0;
+  let bookingOk = 0, bookingFail = 0;
 
   for (const b of BOOKINGS) {
     const baseLabel = `${b.date} ${b.start}~${b.end} (${b.name})`;
@@ -79,32 +73,33 @@ async function main() {
     console.log(`📋 처리 중: ${baseLabel}`);
     console.log(`${'─'.repeat(60)}`);
 
-    // ── Step 1: 픽코 예약 (A1→A2→B 폴백) ────────────────────────────
+    // ── Step 1: 예약 등록 (A1→A2→B 폴백) ────────────────────────────
     const fallbacks = ROOM_FALLBACK[b.room] || [b.room];
     let bookedRoom = null;
 
     for (const room of fallbacks) {
-      console.log(`\n[1/2] 픽코 예약 등록 — ${room}룸 시도`);
+      console.log(`\n[1/1] 예약 등록 — ${room}룸 시도`);
 
       // 이전 실행에서 락이 남아있을 수 있으므로 보장
       try { await releasePickkoLock('manual'); } catch {}
 
-      const code = await runNode(PICKKO_SCRIPT, [
+      const code = await runNode(PICKKO_REGISTER, [
         `--phone=${b.phone}`,
         `--date=${b.date}`,
         `--start=${b.start}`,
         `--end=${b.end}`,
         `--room=${room}`,
         `--name=${b.name}`,
+        '--skip-name-sync',
       ]).catch(() => 1);
 
       // 락 잔류 방지
       try { await releasePickkoLock('manual'); } catch {}
 
-      if (code === 0 || code === 2) {
+      if (code === 0) {
         bookedRoom = room;
-        console.log(`✅ 픽코 성공 (exit ${code}) — ${room}룸`);
-        pickkoOk++;
+        console.log(`✅ 예약 등록 + 네이버 차단 성공 (exit ${code}) — ${room}룸`);
+        bookingOk++;
         break;
       }
 
@@ -112,29 +107,9 @@ async function main() {
     }
 
     if (!bookedRoom) {
-      console.error(`❌ 픽코 실패 — 모든 룸 시도 실패: ${baseLabel}`);
-      pickkoFail++;
+      console.error(`❌ 예약 등록 실패 — 모든 룸 시도 실패: ${baseLabel}`);
+      bookingFail++;
       continue;
-    }
-
-    // ── Step 2: 네이버 예약불가 (실제 예약된 룸으로) ──────────────────
-    console.log(`\n[2/2] 네이버 예약불가 처리 — ${bookedRoom}룸`);
-    const naverCode = await runNode(KIOSK_MONITOR, [
-      '--block-slot',
-      `--phone=${b.phone}`,
-      `--date=${b.date}`,
-      `--start=${b.start}`,
-      `--end=${b.end}`,
-      `--room=${bookedRoom}`,
-      `--name=${b.name}`,
-    ]).catch(() => 1);
-
-    if (naverCode === 0) {
-      console.log(`✅ 네이버 차단 완료`);
-      naverOk++;
-    } else {
-      console.error(`❌ 네이버 차단 실패 (exit ${naverCode})`);
-      naverFail++;
     }
   }
 
@@ -142,11 +117,10 @@ async function main() {
   console.log(`\n${'═'.repeat(60)}`);
   console.log(`배치 완료 결과`);
   console.log(`${'═'.repeat(60)}`);
-  console.log(`픽코 예약: ✅ ${pickkoOk}건 / ❌ ${pickkoFail}건`);
-  console.log(`네이버 차단: ✅ ${naverOk}건 / ❌ ${naverFail}건`);
+  console.log(`예약 등록 + 네이버 차단: ✅ ${bookingOk}건 / ❌ ${bookingFail}건`);
   console.log(`${'═'.repeat(60)}\n`);
 
-  if (pickkoFail > 0 || naverFail > 0) process.exit(1);
+  if (bookingFail > 0) process.exit(1);
 }
 
 module.exports = {
