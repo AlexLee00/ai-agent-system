@@ -156,6 +156,16 @@ function buildSafeFixCandidates({ discovery, llm, marketdata, blockerPack, actio
         reason: `${market} candidates are being filtered before entry trigger; inspect per-symbol reasons before changing thresholds`,
         command: `npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run -s runtime:luna-decision-filter -- --market=${marketArg === 'all' ? 'crypto' : marketArg} --hours=24 --limit=20 --active-candidates --json`,
       });
+      if (marketArg === 'overseas') {
+        candidates.push({
+          id: 'inspect_kis_overseas_funnel_trace',
+          type: 'diagnostic',
+          risk: 'low',
+          applyMode: 'read_only',
+          reason: 'overseas candidates need symbol-level funnel trace with signal, agent activity, and LLM route health',
+          command: 'npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run -s runtime:kis-overseas-funnel-trace -- --hours=168 --limit=20 --json',
+        });
+      }
       candidates.push({
         id: `repair_entry_prefilter_block_${market}`,
         type: 'code_review',
@@ -550,6 +560,10 @@ export async function runLunaBottleneckAutonomyOperatorSmoke() {
     item.id === 'inspect_entry_prefilter_block_overseas'
     && item.applyMode === 'read_only'
     && item.command.includes('--market=overseas')));
+  assert.ok(entryPrefilterReport.safeFixCandidates.some((item) =>
+    item.id === 'inspect_kis_overseas_funnel_trace'
+    && item.applyMode === 'read_only'
+    && item.command.includes('runtime:kis-overseas-funnel-trace')));
   assert.ok(entryPrefilterReport.safeFixCandidates.some((item) =>
     item.id === 'repair_entry_prefilter_block_overseas'
     && item.applyMode === 'codex_patch_required'
