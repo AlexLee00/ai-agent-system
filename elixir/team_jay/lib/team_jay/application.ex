@@ -9,7 +9,7 @@ defmodule TeamJay.Application do
     children =
       base_children() ++
         if(enable_diagnostics?(), do: [Jay.Core.Diagnostics], else: []) ++
-        [Jay.Core.Scheduler]
+        [Jay.Core.Scheduler, TeamJay.Dashboard.Endpoint]
 
     opts = [strategy: :one_for_one, name: TeamJay.Supervisor]
     result = Supervisor.start_link(children, opts)
@@ -20,6 +20,7 @@ defmodule TeamJay.Application do
   defp base_children do
     [
       Jay.Core.Repo,
+      {Phoenix.PubSub, name: TeamJay.PubSub},
       {Registry, keys: :unique, name: TeamJay.AgentRegistry},
       {Registry, keys: :duplicate, name: TeamJay.InvestmentBus},
       {Registry, keys: :duplicate, name: TeamJay.BlogBus},

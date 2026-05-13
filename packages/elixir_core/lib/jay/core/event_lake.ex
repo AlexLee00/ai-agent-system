@@ -9,6 +9,7 @@ defmodule Jay.Core.EventLake do
   alias Jay.Core.Schemas.EventLake, as: EventLakeSchema
 
   @max_cache 1_000
+  @dashboard_pubsub Application.compile_env(:jay_core, :dashboard_pubsub, nil)
 
   defstruct [:events, :stats, :started_at, :pg_pid, :ref, :channel]
 
@@ -44,6 +45,10 @@ defmodule Jay.Core.EventLake do
 
     new_events = [event | Enum.take(state.events, @max_cache - 1)]
     new_stats = update_stats(state.stats, event)
+
+    if @dashboard_pubsub do
+      Phoenix.PubSub.broadcast(@dashboard_pubsub, "event_lake:new", {:event_lake_new, event})
+    end
 
     {:noreply, %{state | events: new_events, stats: new_stats}}
   end

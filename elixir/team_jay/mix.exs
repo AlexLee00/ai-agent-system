@@ -77,7 +77,12 @@ defmodule TeamJay.MixProject do
 
       # Phase 5: MCP Server HTTP 노출
       {:plug, "~> 1.16"},
-      {:bandit, "~> 1.6"}
+      {:bandit, "~> 1.6"},
+
+      # Phase A: LiveView 대시보드
+      {:phoenix, "~> 1.7"},
+      {:phoenix_live_view, "~> 1.0"},
+      {:phoenix_html, "~> 4.0"}
     ]
   end
 end

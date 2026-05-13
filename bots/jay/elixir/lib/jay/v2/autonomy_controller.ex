@@ -16,6 +16,7 @@ defmodule Jay.V2.AutonomyController do
 
   @phase_key "jay.autonomy_phase"
   @check_interval_ms 24 * 60 * 60 * 1_000  # 매일
+  @dashboard_pubsub Application.compile_env(:team_jay, :dashboard_pubsub, nil)
 
   defstruct phase: 1,
             phase_since: nil,
@@ -239,6 +240,9 @@ defmodule Jay.V2.AutonomyController do
       severity: "info",
       payload: %{from: from, to: to}
     })
+    if @dashboard_pubsub do
+      Phoenix.PubSub.broadcast(@dashboard_pubsub, "autonomy:phase_changed", {:phase_changed, %{from: from, to: to}})
+    end
   rescue
     _ -> :ok
   end
