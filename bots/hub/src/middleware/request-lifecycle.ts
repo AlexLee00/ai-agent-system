@@ -27,7 +27,13 @@ function requestLoggingMiddleware(req: Request, res: Response, next: NextFunctio
   const started = Date.now();
   res.on('finish', () => {
     const ms = Date.now() - started;
-    const tag = res.statusCode >= 400 ? '⚠️' : '✅';
+    const tag = res.statusCode >= 500
+      ? '⚠️'
+      : res.statusCode === 401 || res.statusCode === 403
+        ? '🔒'
+        : res.statusCode >= 400
+          ? '⚠️'
+          : '✅';
     const traceId = req.hubRequestContext?.traceId || '-';
     console.log(`${tag} ${req.method} ${req.path} → ${res.statusCode} (${ms}ms) trace=${traceId}`);
   });

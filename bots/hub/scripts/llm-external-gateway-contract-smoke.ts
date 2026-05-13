@@ -67,7 +67,29 @@ async function main(): Promise<void> {
       assert.equal(body.ok, true);
       assert.equal(body.contractVersion, 'hub-llm-gateway/v1');
       assert.equal(body.endpoints.syncCall.path, '/hub/llm/call');
+      assert.equal(body.endpoints.vision.path, '/hub/llm/vision');
+      assert.equal(body.endpoints.embeddings.path, '/hub/llm/embeddings');
       assert.equal(body.selectorPolicy.directProviderRoutes, 'disabled_by_default');
+
+      const invalidVision = await fetch(`${baseUrl}/hub/llm/vision`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${process.env.HUB_AUTH_TOKEN}`,
+          'Content-Type': 'application/json',
+          'X-Hub-Team': 'external-smoke',
+          'X-Hub-Agent': 'contract-checker',
+        },
+        body: JSON.stringify({
+          callerTeam: 'blog',
+          agent: 'blo',
+          selectorKey: 'blog._default',
+          prompt: 'invalid image smoke',
+          imageBase64: 'not-valid-base64!!',
+        }),
+      });
+      const invalidVisionBody = await invalidVision.json();
+      assert.equal(invalidVision.status, 400, 'vision endpoint must reject malformed base64 before provider calls');
+      assert.equal(invalidVisionBody.error, 'invalid_image_base64');
     });
   } finally {
     if (originalToken == null) delete process.env.HUB_AUTH_TOKEN;

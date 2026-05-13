@@ -38,14 +38,15 @@ export interface GeminiOAuthHealth {
 
 const STORE_PATH = path.join(env.PROJECT_ROOT, 'bots', 'hub', 'secrets-store.json');
 
-function tokenExpiry(token: any): { expired: boolean; needsRefresh: boolean; expiresAt: string | null } {
+function tokenExpiry(token: any, refreshWindowHours = 24): { expired: boolean; needsRefresh: boolean; expiresAt: string | null } {
   const expiresAt = token?.expires_at || token?.expiresAt || null;
   const expiresMs = expiresAt ? new Date(expiresAt).getTime() : NaN;
   if (!Number.isFinite(expiresMs)) return { expired: false, needsRefresh: false, expiresAt: expiresAt || null };
   const remainingMs = expiresMs - Date.now();
+  const refreshWindowMs = Math.max(1, Number(refreshWindowHours) || 24) * 60 * 60 * 1000;
   return {
     expired: remainingMs <= 0,
-    needsRefresh: remainingMs > 0 && remainingMs < 24 * 60 * 60 * 1000,
+    needsRefresh: remainingMs > 0 && remainingMs < refreshWindowMs,
     expiresAt: new Date(expiresMs).toISOString(),
   };
 }
@@ -53,8 +54,9 @@ function tokenExpiry(token: any): { expired: boolean; needsRefresh: boolean; exp
 export async function checkTokenHealth(): Promise<OAuthHealth> {
   const record = getProviderRecord('claude-code-cli');
   const storedToken = record?.token || null;
+  const claudeRefreshWindowHours = Number(process.env.HUB_CLAUDE_OAUTH_WARN_HOURS || 4) || 4;
   if (storedToken?.access_token) {
-    const expiry = tokenExpiry(storedToken);
+    const expiry = tokenExpiry(storedToken, claudeRefreshWindowHours);
     return {
       healthy: !expiry.expired,
       expires_in_hours: expiry.expiresAt
@@ -86,7 +88,7 @@ export async function checkTokenHealth(): Promise<OAuthHealth> {
       return {
         healthy: expiresInHours > 0,
         expires_in_hours: expiresInHours,
-        needs_refresh: expiresInHours < 24,
+        needs_refresh: expiresInHours < claudeRefreshWindowHours,
         auth_method: status.authMethod,
         account: status.email,
       };

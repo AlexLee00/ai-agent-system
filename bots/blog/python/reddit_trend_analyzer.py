@@ -3,14 +3,17 @@
 Reddit 트렌드 분석기 — H영역 (CODEX_BLOG_NEURAL_QUALITY_BOOST_V2)
 매일 06:00 KST 자동 실행. 한국 블로그 토픽 후보 10-20개 생성.
 
-의존성: pip install praw anthropic
+의존성: pip install praw
 시크릿: HUB secrets-store.json → REDDIT_CLIENT_ID, REDDIT_CLIENT_SECRET
+LLM: HUB_BASE_URL, HUB_AUTH_TOKEN을 통해 Hub 표준 LLM Gateway 호출
 """
 
 import os
 import sys
 import json
 import re
+import urllib.error
+import urllib.request
 from collections import Counter
 from datetime import datetime
 
@@ -19,12 +22,6 @@ try:
     import praw
 except ImportError:
     print("[reddit_trend] praw 미설치. 실행: pip install praw", file=sys.stderr)
-    sys.exit(1)
-
-try:
-    import anthropic
-except ImportError:
-    print("[reddit_trend] anthropic 미설치. 실행: pip install anthropic", file=sys.stderr)
     sys.exit(1)
 
 # ── 설정 ──────────────────────────────────────────────────────────────────────
@@ -54,6 +51,52 @@ STOP_WORDS = {
 }
 
 OUTPUT_DIR = os.path.join(os.path.dirname(__file__), "..", "output")
+
+
+def hub_llm_call(prompt):
+    base_url = os.environ.get("HUB_BASE_URL", "http://127.0.0.1:7788").rstrip("/")
+    auth_token = os.environ.get("HUB_AUTH_TOKEN", "").strip()
+    if not auth_token:
+        raise RuntimeError("HUB_AUTH_TOKEN 환경변수 미설정")
+
+    payload = {
+        "callerTeam": "blog",
+        "agent": "blo",
+        "selectorKey": "blog._default",
+        "taskType": "reddit_trend_cluster",
+        "abstractModel": "anthropic_haiku",
+        "prompt": prompt,
+        "maxTokens": 2000,
+        "temperature": 0.2,
+        "timeoutMs": 90000,
+        "maxBudgetUsd": 0.05,
+        "priority": "normal",
+    }
+    body = json.dumps(payload).encode("utf-8")
+    req = urllib.request.Request(
+        f"{base_url}/hub/llm/call",
+        data=body,
+        headers={
+            "Authorization": f"Bearer {auth_token}",
+            "Content-Type": "application/json",
+        },
+        method="POST",
+    )
+
+    try:
+        with urllib.request.urlopen(req, timeout=95) as response:
+            decoded = json.loads(response.read().decode("utf-8"))
+    except urllib.error.HTTPError as e:
+        detail = e.read().decode("utf-8", errors="replace")[:300]
+        raise RuntimeError(f"Hub LLM HTTP {e.code}: {detail}") from e
+
+    if decoded.get("ok") is False:
+        raise RuntimeError(f"Hub LLM 실패: {decoded.get('error') or decoded.get('reason')}")
+
+    text = str(decoded.get("result") or decoded.get("text") or "").strip()
+    if not text:
+        raise RuntimeError("Hub LLM 빈 응답")
+    return text
 
 
 # ── Reddit 수집 ──────────────────────────────────────────────────────────────
@@ -128,11 +171,9 @@ def extract_keywords(posts):
     return candidates[:50]
 
 
-# ── LLM 클러스터링 (Claude) ──────────────────────────────────────────────────
+# ── LLM 클러스터링 (Hub LLM Gateway) ─────────────────────────────────────────
 
 def cluster_with_llm(posts, keywords):
-    client = anthropic.Anthropic()
-
     top_posts_text = "\n".join(
         f"- [{p['subreddit']}] {p['title']} (score:{p['score']})"
         for p in sorted(posts, key=lambda x: x["score"], reverse=True)[:50]
@@ -172,14 +213,8 @@ def cluster_with_llm(posts, keywords):
 - trend_score와 korea_relevance 가중 평균으로 우선순위 결정
 - JSON만 반환 (다른 텍스트 없이)"""
 
-    response = client.messages.create(
-        model="claude-haiku-4-5-20251001",  # 비용 절약
-        max_tokens=2000,
-        messages=[{"role": "user", "content": prompt}],
-    )
-
     try:
-        text = response.content[0].text.strip()
+        text = hub_llm_call(prompt)
         # JSON 블록 추출
         if "```json" in text:
             text = text.split("```json")[1].split("```")[0].strip()

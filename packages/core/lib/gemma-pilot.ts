@@ -1,7 +1,7 @@
 import { logLLMCall } from './llm-logger';
 import { selectRuntime } from './runtime-selector';
 import { callLocalLLM } from './local-llm-client';
-import { callWithFallback } from './llm-fallback';
+import { callHubLlm } from './hub-client';
 
 type Runtime = {
   provider?: string;
@@ -10,6 +10,8 @@ type Runtime = {
   timeout_ms?: number;
   temperature?: number;
   max_tokens?: number;
+  selector_key?: string;
+  selector_agent?: string;
 };
 
 function estimateTokens(text = ''): number {
@@ -88,24 +90,17 @@ export async function generateGemmaPilotText({
         clearTimeout(timer);
       }
     } else if (runtime.provider === 'groq' || runtime.provider === 'openai-oauth' || runtime.provider === 'openai' || runtime.provider === 'claude-code' || runtime.provider === 'gemini-cli-oauth' || runtime.provider === 'gemini-oauth' || runtime.provider === 'gemini') {
-      const result = await callWithFallback({
-        chain: [{
-          provider: runtime.provider,
-          model: runtime.model,
-          maxTokens: maxTokens ?? runtime.max_tokens ?? 256,
-          temperature: temperature ?? runtime.temperature ?? 0.7,
-          timeoutMs: resolvedTimeoutMs,
-        }],
-        systemPrompt: '',
-        userPrompt: safePrompt,
-        logMeta: {
-          team: safeTeam,
-          bot: safeBot,
-          requestType: safeRequestType || 'gemma_pilot',
-        },
+      const result = await callHubLlm({
+        callerTeam: safeTeam || 'hub',
+        agent: runtime.selector_agent || safeBot || safePurpose || 'default',
+        selectorKey: runtime.selector_key,
+        taskType: safeRequestType || safePurpose || 'gemma_pilot',
+        prompt: safePrompt,
+        maxTokens: maxTokens ?? runtime.max_tokens ?? 256,
+        temperature: temperature ?? runtime.temperature ?? 0.7,
         timeoutMs: resolvedTimeoutMs,
-        team: safeTeam || null,
-        purpose: safePurpose || null,
+        maxBudgetUsd: 0.03,
+        priority: 'normal',
       });
       content = String(result?.text || '').trim();
     } else {

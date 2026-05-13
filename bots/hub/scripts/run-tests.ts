@@ -1,6 +1,7 @@
 #!/usr/bin/env tsx
 
 import { spawnSync } from 'node:child_process';
+import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -10,15 +11,16 @@ type Step = {
   command: string;
   args: string[];
   cwd?: string;
+  env?: NodeJS.ProcessEnv;
 };
 
-function run(command: string, args: string[], cwd?: string): number {
-  const result = spawnSync(command, args, { stdio: 'inherit', cwd });
+function run(command: string, args: string[], cwd?: string, env?: NodeJS.ProcessEnv): number {
+  const result = spawnSync(command, args, { stdio: 'inherit', cwd, env: env || process.env });
   return Number(result.status ?? 1);
 }
 
 function runStep(step: Step): void {
-  const status = run(step.command, step.args, step.cwd);
+  const status = run(step.command, step.args, step.cwd, step.env);
   if (status !== 0) {
     console.error(`[hub test] failed step: ${step.label}`);
     process.exit(status);
@@ -52,10 +54,15 @@ function runSteps(steps: Step[]): void {
 }
 
 function unitJestStep(jestBin: string, hubRoot: string): Step {
+  const nodeOptions = [
+    process.env.NODE_OPTIONS || '',
+    `--localstorage-file=${path.join(os.tmpdir(), 'hub-jest-localstorage.sqlite')}`,
+  ].filter(Boolean).join(' ');
   return {
     label: 'jest unit suites',
     command: jestBin,
     cwd: hubRoot,
+    env: { ...process.env, NODE_OPTIONS: nodeOptions },
     args: [
       '__tests__/request-context.test.ts',
       '__tests__/llm-request-schema.test.ts',

@@ -26,6 +26,7 @@ type HubLlmCallRequest = {
   jsonSchema?: any;
   timeoutMs?: number;
   maxTokens?: number;
+  temperature?: number;
   maxBudgetUsd?: number;
   preferredApi?: string;
   groqModel?: string;
@@ -52,6 +53,34 @@ type HubLlmCallResponse = {
   };
   error?: string;
   raw?: any;
+};
+
+type HubVisionRequest = {
+  callerTeam: string;
+  agent: string;
+  selectorKey?: string;
+  taskType?: string;
+  prompt: string;
+  systemPrompt?: string;
+  imageBase64?: string;
+  imageDataUrl?: string;
+  mimeType?: string;
+  timeoutMs?: number;
+  maxTokens?: number;
+  temperature?: number;
+  maxBudgetUsd?: number;
+  model?: string;
+  priority?: 'low' | 'normal' | 'high' | 'critical';
+};
+
+type HubEmbeddingRequest = {
+  callerTeam: string;
+  agent: string;
+  selectorKey?: string;
+  taskType?: string;
+  input: string | string[];
+  timeoutMs?: number;
+  expectedDimensions?: number;
 };
 
 const cache = new Map<string, CacheEntry>();
@@ -558,6 +587,106 @@ export async function callHubLlm(request: HubLlmCallRequest): Promise<HubLlmCall
       ? '타임아웃'
       : (stringifyHubErrorReason(err.message || err) || 'hub_call_error');
     throw new Error(`hub_llm_call_failed:${message}`);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+export async function callHubVision(request: HubVisionRequest): Promise<HubLlmCallResponse> {
+  const callerTeam = String(request?.callerTeam || '').trim();
+  const agent = String(request?.agent || '').trim();
+  const prompt = String(request?.prompt || '').trim();
+  if (!callerTeam) throw new Error('callerTeam required for Hub vision call');
+  if (!agent) throw new Error('agent required for Hub vision call');
+  if (!prompt) throw new Error('prompt required for Hub vision call');
+  if (!request?.imageBase64 && !request?.imageDataUrl) throw new Error('image required for Hub vision call');
+  if (!env.HUB_BASE_URL) throw new Error('HUB_BASE_URL required for Hub vision call');
+  if (!env.HUB_AUTH_TOKEN) throw new Error('HUB_AUTH_TOKEN required for Hub vision call');
+
+  const timeoutMs = Math.min(Math.max(5_000, Number(request.timeoutMs || 45_000) || 45_000), 180_000);
+  const payload = {
+    ...request,
+    callerTeam,
+    agent,
+    prompt,
+    taskType: request.taskType || 'vision',
+    timeoutMs,
+  };
+  const body = await postHubJson('/hub/llm/vision', payload, timeoutMs);
+  const text = String(body?.result || body?.text || '').trim();
+  if (!text) throw new Error('hub_vision_call_failed:empty_response');
+  return {
+    ok: true,
+    text,
+    result: text,
+    provider: body?.provider,
+    model: body?.model || body?.selected_route,
+    selected_route: body?.selected_route || body?.model,
+    fallbackCount: Number(body?.fallbackCount || 0),
+    attempted_providers: [],
+    durationMs: Number(body?.durationMs || 0),
+    traceId: body?.traceId || null,
+    raw: body,
+  };
+}
+
+export async function callHubEmbedding(request: HubEmbeddingRequest): Promise<{ ok: boolean; data: Array<{ index: number; embedding: number[] }>; model?: string; dimensions?: number; traceId?: string | null; raw?: any }> {
+  const callerTeam = String(request?.callerTeam || '').trim();
+  const agent = String(request?.agent || '').trim();
+  if (!callerTeam) throw new Error('callerTeam required for Hub embedding call');
+  if (!agent) throw new Error('agent required for Hub embedding call');
+  if (!env.HUB_BASE_URL) throw new Error('HUB_BASE_URL required for Hub embedding call');
+  if (!env.HUB_AUTH_TOKEN) throw new Error('HUB_AUTH_TOKEN required for Hub embedding call');
+
+  const timeoutMs = Math.min(Math.max(5_000, Number(request.timeoutMs || 30_000) || 30_000), 180_000);
+  const body = await postHubJson('/hub/llm/embeddings', {
+    ...request,
+    callerTeam,
+    agent,
+    taskType: request.taskType || 'embedding',
+  }, timeoutMs);
+  const data = Array.isArray(body?.data) ? body.data : [];
+  if (!data.length) throw new Error('hub_embedding_call_failed:empty_response');
+  return {
+    ok: true,
+    data,
+    model: body?.model,
+    dimensions: Number(body?.dimensions || 0) || undefined,
+    traceId: body?.traceId || null,
+    raw: body,
+  };
+}
+
+async function postHubJson(path: string, payload: any, timeoutMs: number): Promise<any> {
+  const url = `${env.HUB_BASE_URL}${path}`;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs + 1000);
+  try {
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${env.HUB_AUTH_TOKEN}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(payload),
+      signal: controller.signal,
+    });
+    const body = await res.json().catch(() => ({}));
+    if (!res.ok || body?.ok === false) {
+      const reason = stringifyHubErrorReason(body?.error || body?.reason || `HTTP ${res.status}`) || `HTTP ${res.status}`;
+      throw new Error(`hub_call_failed:${reason}`);
+    }
+    return body;
+  } catch (error) {
+    if (shouldUseCurlFallback(error, url)) {
+      const body = postJsonViaCurl(url, env.HUB_AUTH_TOKEN, payload, timeoutMs);
+      if (body && body?.ok !== false) return body;
+    }
+    const err = error as Error & { name?: string };
+    const message = err.name === 'AbortError'
+      ? '타임아웃'
+      : (stringifyHubErrorReason(err.message || err) || 'hub_call_error');
+    throw new Error(`hub_call_failed:${message}`);
   } finally {
     clearTimeout(timer);
   }

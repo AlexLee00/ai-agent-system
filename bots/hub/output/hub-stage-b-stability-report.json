@@ -1,6 +1,6 @@
 {
   "ok": true,
-  "checkedAt": "2026-05-13T01:03:16.497Z",
+  "checkedAt": "2026-05-13T01:38:10.987Z",
   "stage": "hub_stage_b",
   "status": "stage_b_operational_ready",
   "goals": {
@@ -43,165 +43,294 @@
   "protected": {
     "ok": true,
     "launchctlAvailable": true,
-    "skipped": true,
+    "skipped": false,
     "error": null,
     "protectedCount": 14,
-    "running": 0,
+    "running": 1,
     "healthy": 14,
     "missing": [],
     "labels": [
       {
         "label": "ai.hub.resource-api",
-        "running": false,
-        "loaded": false,
+        "running": true,
+        "loaded": true,
         "expectedIdle": false,
         "healthy": true,
-        "pid": null,
-        "status": null,
-        "checked": false
+        "pid": 57033,
+        "state": "running",
+        "status": "running",
+        "lastLaunchctlListStatus": "-9",
+        "historicalExitStatus": "-9",
+        "lastTerminatingSignal": "Killed: 9",
+        "runs": 12,
+        "checked": true
       },
       {
         "label": "ai.hub.llm-oauth-monitor",
         "running": false,
-        "loaded": false,
+        "loaded": true,
         "expectedIdle": true,
         "healthy": true,
         "pid": null,
-        "status": null,
-        "checked": false
+        "state": "not running",
+        "status": "0",
+        "lastLaunchctlListStatus": "0",
+        "historicalExitStatus": null,
+        "lastTerminatingSignal": null,
+        "runs": 192,
+        "checked": true
       },
       {
         "label": "ai.hub.llm-oauth4-master-review",
         "running": false,
-        "loaded": false,
+        "loaded": true,
         "expectedIdle": true,
         "healthy": true,
         "pid": null,
-        "status": null,
-        "checked": false
+        "state": "not running",
+        "status": "0",
+        "lastLaunchctlListStatus": "0",
+        "historicalExitStatus": null,
+        "lastTerminatingSignal": null,
+        "runs": 4,
+        "checked": true
       },
       {
         "label": "ai.hub.llm-groq-fallback-test",
         "running": false,
-        "loaded": false,
+        "loaded": true,
         "expectedIdle": true,
         "healthy": true,
         "pid": null,
-        "status": null,
-        "checked": false
+        "state": "not running",
+        "status": "1",
+        "lastLaunchctlListStatus": "1",
+        "historicalExitStatus": null,
+        "lastTerminatingSignal": null,
+        "runs": 3,
+        "checked": true
       },
       {
         "label": "ai.hub.llm-model-check",
         "running": false,
-        "loaded": false,
+        "loaded": true,
         "expectedIdle": true,
         "healthy": true,
         "pid": null,
-        "status": null,
-        "checked": false
+        "state": "not running",
+        "status": "0",
+        "lastLaunchctlListStatus": "0",
+        "historicalExitStatus": null,
+        "lastTerminatingSignal": null,
+        "runs": 3,
+        "checked": true
       },
       {
         "label": "ai.hub.llm-cache-cleanup",
         "running": false,
-        "loaded": false,
+        "loaded": true,
         "expectedIdle": true,
         "healthy": true,
         "pid": null,
-        "status": null,
-        "checked": false
+        "state": "not running",
+        "status": "0",
+        "lastLaunchctlListStatus": "0",
+        "historicalExitStatus": null,
+        "lastTerminatingSignal": null,
+        "runs": 23,
+        "checked": true
       },
       {
         "label": "ai.hub.incident-summary",
         "running": false,
-        "loaded": false,
+        "loaded": true,
         "expectedIdle": true,
         "healthy": true,
         "pid": null,
-        "status": null,
-        "checked": false
+        "state": "not running",
+        "status": "0",
+        "lastLaunchctlListStatus": "0",
+        "historicalExitStatus": null,
+        "lastTerminatingSignal": null,
+        "runs": 11,
+        "checked": true
       },
       {
         "label": "ai.hub.severity-decay",
         "running": false,
-        "loaded": false,
+        "loaded": true,
         "expectedIdle": true,
         "healthy": true,
         "pid": null,
-        "status": null,
-        "checked": false
+        "state": "not running",
+        "status": "0",
+        "lastLaunchctlListStatus": "0",
+        "historicalExitStatus": null,
+        "lastTerminatingSignal": null,
+        "runs": 269,
+        "checked": true
       },
       {
         "label": "ai.hub.noisy-producer-auto-learn",
         "running": false,
-        "loaded": false,
+        "loaded": true,
         "expectedIdle": true,
         "healthy": true,
         "pid": null,
-        "status": null,
-        "checked": false
+        "state": "not running",
+        "status": "0",
+        "lastLaunchctlListStatus": "0",
+        "historicalExitStatus": null,
+        "lastTerminatingSignal": null,
+        "runs": 3,
+        "checked": true
       },
       {
         "label": "ai.hub.roundtable-reflection",
         "running": false,
-        "loaded": false,
+        "loaded": true,
         "expectedIdle": true,
         "healthy": true,
         "pid": null,
-        "status": null,
-        "checked": false
+        "state": "not running",
+        "status": "0",
+        "lastLaunchctlListStatus": "0",
+        "historicalExitStatus": null,
+        "lastTerminatingSignal": null,
+        "runs": 1,
+        "checked": true
       },
       {
         "label": "ai.hub.daily-metrics-digest",
         "running": false,
-        "loaded": false,
+        "loaded": true,
         "expectedIdle": true,
         "healthy": true,
         "pid": null,
-        "status": null,
-        "checked": false
+        "state": "not running",
+        "status": "0",
+        "lastLaunchctlListStatus": "0",
+        "historicalExitStatus": null,
+        "lastTerminatingSignal": null,
+        "runs": 12,
+        "checked": true
       },
       {
         "label": "ai.hub.hourly-status-digest",
         "running": false,
-        "loaded": false,
+        "loaded": true,
         "expectedIdle": true,
         "healthy": true,
         "pid": null,
-        "status": null,
-        "checked": false
+        "state": "not running",
+        "status": "0",
+        "lastLaunchctlListStatus": "0",
+        "historicalExitStatus": null,
+        "lastTerminatingSignal": null,
+        "runs": 275,
+        "checked": true
       },
       {
         "label": "ai.hub.weekly-audit-digest",
         "running": false,
-        "loaded": false,
+        "loaded": true,
         "expectedIdle": true,
         "healthy": true,
         "pid": null,
-        "status": null,
-        "checked": false
+        "state": "not running",
+        "status": "0",
+        "lastLaunchctlListStatus": "0",
+        "historicalExitStatus": null,
+        "lastTerminatingSignal": null,
+        "runs": 2,
+        "checked": true
       },
       {
         "label": "ai.hub.weekly-advisory-digest",
         "running": false,
-        "loaded": false,
+        "loaded": true,
         "expectedIdle": true,
         "healthy": true,
         "pid": null,
-        "status": null,
-        "checked": false
+        "state": "not running",
+        "status": "0",
+        "lastLaunchctlListStatus": "0",
+        "historicalExitStatus": null,
+        "lastTerminatingSignal": null,
+        "runs": 2,
+        "checked": true
       }
     ]
   },
   "requestLog": {
     "ok": true,
-    "skipped": true,
+    "skipped": false,
     "hours": 24,
-    "total": 0,
-    "failures": 0,
-    "byProvider": [],
-    "byBudgetStatus": [],
-    "byTier": [],
-    "recentErrors": []
+    "total": 1132,
+    "failures": 1,
+    "unresolvedFailures": 0,
+    "byProvider": [
+      {
+        "provider": "groq",
+        "count": 688,
+        "cost_usd": 0.260795655
+      },
+      {
+        "provider": "gemini-cli-oauth",
+        "count": 237,
+        "cost_usd": 0
+      },
+      {
+        "provider": "openai-oauth",
+        "count": 206,
+        "cost_usd": 0
+      },
+      {
+        "provider": "failed",
+        "count": 1,
+        "cost_usd": 0
+      }
+    ],
+    "byBudgetStatus": [
+      {
+        "budget_guard_status": "unknown",
+        "count": 637
+      },
+      {
+        "budget_guard_status": "allowed",
+        "count": 495
+      }
+    ],
+    "byTier": [
+      {
+        "provider_tier": "1",
+        "count": 126
+      },
+      {
+        "provider_tier": "2",
+        "count": 172
+      },
+      {
+        "provider_tier": "3",
+        "count": 196
+      },
+      {
+        "provider_tier": "unknown",
+        "count": 638
+      }
+    ],
+    "recentErrors": [
+      {
+        "request_id": "8fcdbaf6-7c8b-4b92-bb2a-a1490b946c94",
+        "provider": "failed",
+        "caller_team": "ska",
+        "agent": "andy",
+        "abstract_model": "anthropic_haiku",
+        "error": "fallback_exhausted: gemini_cli_empty_stdout",
+        "created_at": "2026-05-12T23:20:36.605Z",
+        "resolved_by_later_success": true
+      }
+    ]
   },
   "circuits": {
     "ok": true,
@@ -281,14 +410,7 @@
   "selfHealing": {
     "ok": true,
     "mode": "read_only_by_default",
-    "safeReadOnlyActions": [
-      {
-        "action": "sentry_mcp_config_review",
-        "reason": "Sentry MCP enrichment is not configured; Hub incident system remains primary",
-        "command": "npm --prefix bots/hub run -s llm:stage-b-observability-smoke",
-        "effect": "validates fail-closed observability contract"
-      }
-    ],
+    "safeReadOnlyActions": [],
     "confirmRequiredActions": [],
     "prohibitedActions": [
       "launchctl bootout/unload/kickstart -k on PROTECTED labels",

@@ -2,7 +2,7 @@
 bots/ska/lib/rag_client.py — 스카팀 Python RAG 유틸
 
 packages/core/lib/rag.js와 동일한 pgvector 테이블에 접근.
-OpenAI text-embedding-3-small (1536차원) 사용.
+Embedding 생성은 Hub LLM Gateway(`/hub/llm/embeddings`)만 사용.
 
 사용법:
     from bots.ska.lib.rag_client import RagClient
@@ -14,12 +14,14 @@ OpenAI text-embedding-3-small (1536차원) 사용.
 import os
 import json
 import subprocess
+import urllib.error
+import urllib.request
 import psycopg2
 
 PG_RES  = "dbname=jay options='-c search_path=reservation,public'"
 SCHEMA  = 'reservation'
-EMBED_MODEL = 'text-embedding-3-small'
-EMBED_DIM   = 1536
+HUB_BASE = os.environ.get('HUB_BASE_URL', 'http://127.0.0.1:7788').rstrip('/')
+HUB_EMBED_TIMEOUT = max(5, int(os.environ.get('SKA_RAG_HUB_EMBED_TIMEOUT_SEC', '30') or '30'))
 
 # 허용 컬렉션 (rag.js와 동일)
 VALID_COLLECTIONS = [
@@ -29,24 +31,33 @@ VALID_COLLECTIONS = [
 ]
 
 
-def _get_api_key():
-    """llm-keys.js와 동일한 파일에서 OpenAI 키 로드"""
-    public_openai_enabled = os.environ.get('HUB_ENABLE_OPENAI_PUBLIC_API', '').lower() in ('1', 'true', 'yes', 'y', 'on')
-    if not public_openai_enabled:
-        return ''
+def _validate_collection(name):
+    table = name if name.startswith('rag_') else f'rag_{name}'
+    if table not in VALID_COLLECTIONS:
+        raise ValueError(f'유효하지 않은 컬렉션: {name}')
+    return table
 
-    key = os.environ.get('OPENAI_API_KEY', '')
-    if key:
-        return key
-    # packages/core/lib/llm-keys.js 참조 경로에서 로드
+
+def _get_hub_token():
+    token = os.environ.get('HUB_AUTH_TOKEN', '').strip()
+    if token:
+        return token
+
+    root = os.path.join(os.path.dirname(__file__), '../../../')
+    script = """
+const { fetchHubSecrets } = require('./packages/core/lib/hub-client');
+(async () => {
+  const secrets = await fetchHubSecrets('config');
+  process.stdout.write(String(secrets?.hub_auth_token || ''));
+})().catch(() => process.exit(1));
+"""
     try:
-        import subprocess, sys
-        root = os.path.join(os.path.dirname(__file__), '../../../')
         result = subprocess.run(
-            ['node', '-e',
-             "const k=require('./packages/core/lib/llm-keys');"
-             "process.stdout.write(k.getOpenAIKey()||'')"],
-            cwd=root, capture_output=True, text=True, timeout=5
+            ['node', '-e', script],
+            cwd=root,
+            capture_output=True,
+            text=True,
+            timeout=5,
         )
         if result.returncode == 0 and result.stdout.strip():
             return result.stdout.strip()
@@ -55,22 +66,43 @@ def _get_api_key():
     return ''
 
 
-def _validate_collection(name):
-    table = name if name.startswith('rag_') else f'rag_{name}'
-    if table not in VALID_COLLECTIONS:
-        raise ValueError(f'유효하지 않은 컬렉션: {name}')
-    return table
+def _create_embedding(text):
+    """Hub Embedding Gateway를 통해 벡터를 생성한다."""
+    token = _get_hub_token()
+    if not token:
+        raise RuntimeError('HUB_AUTH_TOKEN 없음 — SKA RAG embedding은 Hub Gateway만 사용한다')
 
-
-def _create_embedding(text, api_key):
-    """OpenAI text-embedding-3-small → 1536차원 벡터"""
-    from openai import OpenAI
-    client = OpenAI(api_key=api_key)
-    resp = client.embeddings.create(
-        model=EMBED_MODEL,
-        input=text[:8000],
+    payload = json.dumps({
+        'callerTeam': 'ska',
+        'agent': 'rebecca',
+        'selectorKey': 'ska._default',
+        'taskType': 'rag_embedding',
+        'input': str(text or '')[:8000],
+        'timeoutMs': HUB_EMBED_TIMEOUT * 1000,
+    }).encode('utf-8')
+    req = urllib.request.Request(
+        f'{HUB_BASE}/hub/llm/embeddings',
+        data=payload,
+        method='POST',
+        headers={
+            'Content-Type': 'application/json',
+            'Authorization': f'Bearer {token}',
+        },
     )
-    return resp.data[0].embedding
+    try:
+        with urllib.request.urlopen(req, timeout=HUB_EMBED_TIMEOUT) as res:
+            parsed = json.loads(res.read().decode('utf-8') or '{}')
+    except urllib.error.HTTPError as e:
+        body = e.read().decode('utf-8', errors='ignore')[:300]
+        raise RuntimeError(f'Hub embedding HTTP {e.code}: {body}') from e
+
+    if not parsed.get('ok'):
+        raise RuntimeError(f"Hub embedding 실패: {parsed.get('error') or 'unknown'}")
+    data = parsed.get('data') or []
+    embedding = data[0].get('embedding') if data and isinstance(data[0], dict) else None
+    if not isinstance(embedding, list) or not embedding:
+        raise RuntimeError('Hub embedding 응답에 벡터가 없음')
+    return embedding
 
 
 def _publish_via_reporting_hub(collection, content, metadata=None, source_bot='unknown'):
@@ -144,7 +176,7 @@ class RagClient:
     """스카팀 Python RAG 클라이언트"""
 
     def __init__(self):
-        self._api_key = _get_api_key()
+        pass
 
     def search(self, collection, query, limit=5, threshold=None, source_bot=None):
         """
@@ -153,11 +185,9 @@ class RagClient:
         반환: [{ id, content, metadata, source_bot, created_at, similarity }]
         실패 시: [] (예외 억제)
         """
-        if not self._api_key:
-            return []
         try:
             table = _validate_collection(collection)
-            vec   = _create_embedding(query, self._api_key)
+            vec   = _create_embedding(query)
             vec_str = '[' + ','.join(str(v) for v in vec) + ']'
 
             conditions = []
@@ -231,11 +261,9 @@ class RagClient:
         if via_hub is not None:
             return via_hub
 
-        if not self._api_key:
-            return None
         try:
             table   = _validate_collection(collection)
-            vec     = _create_embedding(content, self._api_key)
+            vec     = _create_embedding(content)
             vec_str = '[' + ','.join(str(v) for v in vec) + ']'
             meta    = json.dumps(metadata or {})
 

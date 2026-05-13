@@ -81,6 +81,27 @@ function readLaunchctlStatus(skipLaunchctl = false) {
   }
 }
 
+function readLaunchctlPrintState(label) {
+  try {
+    const target = `gui/${process.getuid ? process.getuid() : execFileSync('id', ['-u'], { encoding: 'utf8' }).trim()}/${label}`;
+    const text = execFileSync('launchctl', ['print', target], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+    const stateMatch = text.match(/^\s*state = (.+)$/m);
+    const pidMatch = text.match(/^\s*pid = (\d+)$/m);
+    const signalMatch = text.match(/^\s*last terminating signal = (.+)$/m);
+    const runsMatch = text.match(/^\s*runs = (\d+)$/m);
+    return {
+      loaded: true,
+      state: stateMatch ? stateMatch[1].trim() : null,
+      running: stateMatch ? stateMatch[1].trim() === 'running' : false,
+      pid: pidMatch ? Number(pidMatch[1]) : null,
+      lastTerminatingSignal: signalMatch ? signalMatch[1].trim() : null,
+      runs: runsMatch ? Number(runsMatch[1]) : null,
+    };
+  } catch {
+    return null;
+  }
+}
+
 function buildSelectorEnforcement() {
   const llmRouteSource = readText('bots/hub/lib/routes/llm.ts');
   const unifiedCallerSource = readText('bots/hub/lib/llm/unified-caller.ts');
@@ -145,7 +166,19 @@ async function buildRequestLogSummary(skipDb = false, hours = 24) {
     const [totals, byProvider, byBudgetStatus, byTier, recentErrors] = await Promise.all([
       pgPool.query('public', `
         SELECT count(*)::int AS total,
-               count(*) FILTER (WHERE success IS FALSE)::int AS failures
+               count(*) FILTER (WHERE success IS FALSE)::int AS failures,
+               count(*) FILTER (
+                 WHERE success IS FALSE
+                   AND NOT EXISTS (
+                     SELECT 1
+                     FROM hub.llm_request_log s
+                     WHERE s.created_at > hub.llm_request_log.created_at
+                       AND s.success IS TRUE
+                       AND COALESCE(s.caller_team, '') = COALESCE(hub.llm_request_log.caller_team, '')
+                       AND COALESCE(s.agent, '') = COALESCE(hub.llm_request_log.agent, '')
+                       AND COALESCE(s.abstract_model, '') = COALESCE(hub.llm_request_log.abstract_model, '')
+                   )
+               )::int AS unresolved_failures
         FROM hub.llm_request_log
         WHERE created_at >= now() - ($1::int * interval '1 hour')
       `, [hours]),
@@ -173,11 +206,26 @@ async function buildRequestLogSummary(skipDb = false, hours = 24) {
         ORDER BY provider_tier
       `, [hours]),
       pgPool.query('public', `
-        SELECT request_id, provider, caller_team, error, created_at
-        FROM hub.llm_request_log
-        WHERE created_at >= now() - ($1::int * interval '1 hour')
-          AND success IS FALSE
-        ORDER BY created_at DESC
+        SELECT f.request_id,
+               f.provider,
+               f.caller_team,
+               f.agent,
+               f.abstract_model,
+               f.error,
+               f.created_at,
+               EXISTS (
+                 SELECT 1
+                 FROM hub.llm_request_log s
+                 WHERE s.created_at > f.created_at
+                   AND s.success IS TRUE
+                   AND COALESCE(s.caller_team, '') = COALESCE(f.caller_team, '')
+                   AND COALESCE(s.agent, '') = COALESCE(f.agent, '')
+                   AND COALESCE(s.abstract_model, '') = COALESCE(f.abstract_model, '')
+               ) AS resolved_by_later_success
+        FROM hub.llm_request_log f
+        WHERE f.created_at >= now() - ($1::int * interval '1 hour')
+          AND f.success IS FALSE
+        ORDER BY f.created_at DESC
         LIMIT 10
       `, [hours]),
     ]);
@@ -188,6 +236,7 @@ async function buildRequestLogSummary(skipDb = false, hours = 24) {
       hours,
       total: Number(totals?.[0]?.total || 0),
       failures: Number(totals?.[0]?.failures || 0),
+      unresolvedFailures: Number(totals?.[0]?.unresolved_failures || 0),
       byProvider,
       byBudgetStatus,
       byTier,
@@ -220,18 +269,27 @@ function buildProtectedStatus(options = {}) {
   const ownershipByLabel = new Map(ownership.map((entry) => [entry.label, entry]));
   const labels = PROTECTED_HUB_LABELS.map((label) => {
     const row = launchctl.rows.get(label);
+    const detail = launchctl.skipped ? null : readLaunchctlPrintState(label);
     const catalog = ownershipByLabel.get(label) || {};
-    const loaded = Boolean(row);
+    const loaded = Boolean(row || detail?.loaded);
     const expectedIdle = Boolean(catalog.expectedIdle || catalog.optional);
-    const healthy = launchctl.skipped || Boolean(row?.running) || (expectedIdle && loaded);
+    const running = Boolean(detail?.running || row?.running);
+    const pid = detail?.pid || row?.pid || null;
+    const historicalExitStatus = running && row?.status && row.status !== '0' ? row.status : null;
+    const healthy = launchctl.skipped || running || (expectedIdle && loaded);
     return {
       label,
-      running: Boolean(row?.running),
+      running,
       loaded,
       expectedIdle,
       healthy,
-      pid: row?.pid || null,
-      status: row?.status || null,
+      pid,
+      state: detail?.state || (running ? 'running' : null),
+      status: running ? 'running' : row?.status || null,
+      lastLaunchctlListStatus: row?.status || null,
+      historicalExitStatus,
+      lastTerminatingSignal: detail?.lastTerminatingSignal || null,
+      runs: detail?.runs || null,
       checked: !launchctl.skipped,
     };
   });
@@ -308,6 +366,10 @@ function buildBudgetSummary() {
   }
 }
 
+function envFlag(name) {
+  return ['1', 'true', 'yes', 'y', 'on'].includes(String(process.env[name] || '').trim().toLowerCase());
+}
+
 function buildSelfHealingPlan(report) {
   const safeReadOnlyActions = [];
   const confirmRequiredActions = [];
@@ -355,7 +417,16 @@ function buildSelfHealingPlan(report) {
     });
   }
 
-  if (report.sentry?.mode === 'adapter_ready_config_pending') {
+  if ((report.requestLog?.unresolvedFailures || 0) > 0) {
+    safeReadOnlyActions.push({
+      action: 'targeted_llm_route_drill',
+      reason: 'unresolved LLM request failures exist in hub.llm_request_log',
+      command: 'npm --prefix bots/hub run -s team:agent-llm-drill:live -- --teams=<team> --primary-only',
+      effect: 'verifies the affected agent route without mutating protected services',
+    });
+  }
+
+  if (envFlag('HUB_STAGE_B_REQUIRE_SENTRY_MCP') && report.sentry?.mode === 'adapter_ready_config_pending') {
     safeReadOnlyActions.push({
       action: 'sentry_mcp_config_review',
       reason: 'Sentry MCP enrichment is not configured; Hub incident system remains primary',

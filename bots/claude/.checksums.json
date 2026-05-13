@@ -6,7 +6,7 @@
   "bots/investment/scripts/luna-live-fire-watchdog.ts": "11f812b95d2ceefbf360389bd53904745b6041f091c7880876d3be1756e12c5e",
   "bots/investment/scripts/runtime-luna-entry-trigger-diagnose.ts": "8e82c86e1f049644fc57bc7b511f93d2b69eee85b5bd9d41c7082ce05b0f294d",
   "bots/investment/shared/secrets.ts": "370963407089773a4649ee24465c4a06dc7b7d333e2785a9bdc1dc44fda19397",
-  "bots/investment/shared/llm-client.ts": "e58e9505998d9b84210ac90088baf1a608703302ae7dca0644f175347860b79b",
+  "bots/investment/shared/llm-client.ts": "ce72a84b6e4e0afcd73d99ed16fae2f067ca535868bb432a41aa8833efd5ace1",
   "bots/claude/src/dexter.js": "b8d0a0b5dad48f2befa61ca75275a38d1a6120b828d8924dbb4d961410da4db3",
   "bots/blog/lib/critical-alerts.js": "a799b6d1190aff1f9d7536cf67ff3bee531868d030674d6a87ff436a62fe13c4",
   "bots/blog/lib/health-memory-bridge.js": "eccea731de5befb070e45febaa183b84a855a8a188b3278979807533cb6ee3d0",

@@ -8,6 +8,12 @@ import path from 'node:path';
 const repoRoot = path.resolve(__dirname, '..', '..', '..');
 const ownershipPath = path.join(repoRoot, 'packages', 'core', 'config', 'service-ownership.json');
 const launchdDir = path.join(repoRoot, 'bots', 'hub', 'launchd');
+const healthProviderPath = path.join(repoRoot, 'packages', 'core', 'lib', 'health-provider.ts');
+const stageBPath = path.join(repoRoot, 'bots', 'hub', 'lib', 'stage-b', 'stability.ts');
+const {
+  getHubServiceLabels,
+  getHubCoreServiceLabels,
+} = require('../../../packages/core/lib/service-ownership.js');
 
 const PROTECTED_14 = [
   'ai.hub.resource-api',
@@ -43,8 +49,31 @@ assert(secretsEntry, 'secrets expiry label must be in ownership catalog');
 assert.equal(secretsEntry.owner, 'launchd');
 assert(fs.existsSync(path.join(launchdDir, 'ai.hub.secrets-expiry-check.plist')), 'secrets expiry launchd plist must exist');
 
+const healthProviderSource = fs.readFileSync(healthProviderPath, 'utf8');
+assert(
+  healthProviderSource.includes('sanitizeLaunchctlPrintDetail')
+    && healthProviderSource.includes('launchctlDetail: sanitizeLaunchctlPrintDetail(raw)'),
+  'launchctl print detail must be sanitized before health reports expose it',
+);
+assert(
+  !/launchctlDetail:\s*truncateText\(raw/.test(healthProviderSource),
+  'launchctl print raw output must not be exposed through launchctlDetail',
+);
+
+const stageBSource = fs.readFileSync(stageBPath, 'utf8');
+assert(stageBSource.includes('readLaunchctlPrintState'), 'Stage B protected status must inspect launchctl print state');
+assert(stageBSource.includes('historicalExitStatus'), 'Stage B must separate historical launchctl status from current running state');
+
+const hubServiceLabels = new Set(getHubServiceLabels());
+for (const label of getHubCoreServiceLabels()) {
+  assert(hubServiceLabels.has(label), `Hub service status labels must include core label: ${label}`);
+}
+
 console.log(JSON.stringify({
   ok: true,
   protected_hub_labels: PROTECTED_14.length,
   secrets_expiry_monitored: true,
+  launchctl_detail_redacted: true,
+  historical_status_separated: true,
+  core_service_labels_covered: true,
 }, null, 2));

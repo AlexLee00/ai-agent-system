@@ -17,12 +17,12 @@ import path from 'path';
 import os from 'os';
 import * as db from '../shared/db.ts';
 import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
-import { loadSecrets } from '../shared/secrets.ts';
 import { parseJSON } from '../shared/llm-client.ts';
 import { getChartVisionRuntimeConfig } from '../shared/runtime-config.ts';
 
 const require = createRequire(import.meta.url);
 const puppeteer = require('puppeteer');
+const { callHubVision } = require('../../../packages/core/lib/hub-client');
 
 // ─── 비용 제한 설정 ────────────────────────────────────────────────────
 
@@ -70,14 +70,6 @@ function incrementUsage() {
   } else {
     saveUsage({ date: today, count: (usage.count || 0) + 1 });
   }
-}
-
-function envEnabled(value) {
-  return ['1', 'true', 'yes', 'y', 'on'].includes(String(value || '').trim().toLowerCase());
-}
-
-function isPublicOpenAiVisionEnabled() {
-  return envEnabled(process.env.LUNA_CHART_VISION_PUBLIC_OPENAI_ENABLED);
 }
 
 // ─── 차트 URL 생성 ─────────────────────────────────────────────────────
@@ -151,7 +143,7 @@ async function captureChartScreenshot(symbol, exchange) {
   }
 }
 
-// ─── GPT-4o Vision 분석 ───────────────────────────────────────────────
+// ─── Hub Vision 분석 ─────────────────────────────────────────────────
 
 const VISION_SYSTEM_PROMPT = `당신은 전문 차트 패턴 분석가입니다.
 제공된 TradingView 차트 스크린샷을 분석하고 기술적 패턴을 파악합니다.
@@ -182,56 +174,27 @@ async function analyzeChartWithVision(screenshotPath, symbol, dryRun = false) {
     };
   }
 
-  if (!isPublicOpenAiVisionEnabled()) {
-    console.warn('  ⚠️ [차트비전] public OpenAI Vision 직접 호출 비활성화 — KIS/TradingView 기술 필터를 사용합니다');
-    return {
-      pattern: 'public_openai_disabled',
-      signal: 'HOLD',
-      confidence: 0.0,
-      reasoning: 'LUNA_CHART_VISION_PUBLIC_OPENAI_ENABLED=true가 아니므로 OpenAI Vision 직접 호출을 수행하지 않음',
-      key_levels: { support: null, resistance: null },
-    };
-  }
-
-  const secrets = loadSecrets();
-  const apiKey = secrets.openai_api_key || '';
-  if (!apiKey) throw new Error('OpenAI API 키 없음 — Hub secrets openai_api_key 설정 필요');
-
-  const OpenAI = (() => {
-    const mod = require('openai');
-    return mod.default || mod;
-  })();
-  const client = new OpenAI({ apiKey, timeout: 30000, maxRetries: 1 });
-
   const imageBuffer = fs.readFileSync(screenshotPath);
   const base64Image = imageBuffer.toString('base64');
 
-  console.log(`  🤖 [차트비전] GPT-4o Vision 분석 중...`);
-  const response = await client.chat.completions.create({
-    model: 'gpt-4o',
-    max_tokens: 300,
-    messages: [
-      { role: 'system', content: VISION_SYSTEM_PROMPT },
-      {
-        role: 'user',
-        content: [
-          {
-            type: 'text',
-            text: `심볼: ${symbol}\n위 차트를 분석하고 기술적 패턴과 매매 신호를 JSON으로 반환하세요.`,
-          },
-          {
-            type: 'image_url',
-            image_url: {
-              url: `data:image/png;base64,${base64Image}`,
-              detail: 'low', // 비용 절감: low detail
-            },
-          },
-        ],
-      },
-    ],
+  console.log(`  🤖 [차트비전] Hub Vision Gateway 분석 중...`);
+  const response = await callHubVision({
+    callerTeam: 'investment',
+    agent: 'luna',
+    selectorKey: 'investment.agent_policy',
+    taskType: 'chart_vision',
+    systemPrompt: VISION_SYSTEM_PROMPT,
+    prompt: `심볼: ${symbol}\n위 차트를 분석하고 기술적 패턴과 매매 신호를 JSON으로 반환하세요.`,
+    imageBase64: base64Image,
+    mimeType: 'image/png',
+    maxTokens: 300,
+    temperature: 0.1,
+    timeoutMs: 45_000,
+    maxBudgetUsd: 0.05,
+    priority: 'normal',
   });
 
-  const text = response.choices[0]?.message?.content || '';
+  const text = response.text || response.result || '';
   const parsed = parseJSON(text);
   if (!parsed?.signal) {
     console.warn(`  ⚠️ [차트비전] Vision 응답 파싱 실패: ${text.slice(0, 80)}`);

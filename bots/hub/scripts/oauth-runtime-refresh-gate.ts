@@ -154,7 +154,10 @@ function main() {
       gemini_cli_oauth: {
         healthy: Boolean(report.gemini_cli_oauth?.healthy),
         needs_refresh: Boolean(report.gemini_cli_oauth?.needs_refresh),
-        local_credential_needs_refresh: Boolean(report.gemini_cli_oauth?.local_credential_needs_refresh),
+        local_credential_in_refresh_window: Boolean(report.gemini_cli_oauth?.local_credential_needs_refresh),
+        local_credential_refresh_covered: providers.gemini_cli_refresh_covered,
+        local_credential_needs_refresh: Boolean(report.gemini_cli_oauth?.local_credential_needs_refresh)
+          && !providers.gemini_cli_refresh_covered,
         live_refresh_ok: report.gemini_cli_oauth?.live_refresh_ok ?? null,
         post_probe_reimport_ok: report.gemini_cli_oauth?.post_probe_reimport_ok ?? null,
         expires_in_hours: report.gemini_cli_oauth?.expires_in_hours ?? null,

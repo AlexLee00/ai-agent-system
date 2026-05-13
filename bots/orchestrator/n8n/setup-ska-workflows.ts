@@ -14,7 +14,6 @@
 const http = require('http');
 const path = require('path');
 const fs   = require('fs');
-const yaml = require('js-yaml');
 const { createN8nSetupClient } = require('../../../packages/core/lib/n8n-setup-client');
 const {
   buildN8nCredentialTrackingEvent,
@@ -29,13 +28,11 @@ const parsedBaseUrl = new URL(N8N_BASE);
 // ── secrets / config 로드 ──────────────────────────────────────────────────
 const SECRETS_PATH = path.join(__dirname, '../../../bots/reservation/secrets.json');
 const HUB_SECRETS_PATH = path.join(__dirname, '../../../bots/hub/secrets-store.json');
-const INVEST_CFG   = path.join(__dirname, '../../../bots/investment/config.yaml');
 
 const secrets    = JSON.parse(fs.readFileSync(SECRETS_PATH, 'utf8'));
 const hubSecrets = fs.existsSync(HUB_SECRETS_PATH)
   ? JSON.parse(fs.readFileSync(HUB_SECRETS_PATH, 'utf8'))
   : {};
-const investCfg  = yaml.load(fs.readFileSync(INVEST_CFG, 'utf8'));
 
 const CHAT_ID    = String(hubSecrets.telegram?.group_id || secrets.telegram_group_id);
 const CLASS_TOPIC_MODE = String(process.env.HUB_ALARM_USE_CLASS_TOPICS || '').trim().toLowerCase() !== 'false'
@@ -52,7 +49,6 @@ const TOPICS = CLASS_TOPIC_MODE
 const SKA_TOPIC  = String(TOPICS.ops_work || (!CLASS_TOPIC_MODE ? (TOPICS.general || TOPICS.ska || '') : ''));
 const GEN_TOPIC  = String(TOPICS.ops_reports || TOPICS.ops_work || (!CLASS_TOPIC_MODE ? (TOPICS.general || TOPICS.claude_lead || '') : ''));
 
-const GEMINI_KEY = investCfg.gemini?.api_key || '';
 const client = createN8nSetupClient({
   host: parsedBaseUrl.hostname || '127.0.0.1',
   port: Number(parsedBaseUrl.port || 5678),
@@ -452,35 +448,45 @@ return [{ json: { weekTrend, dowSummary, topDow, overallTrend } }];
       },
       {
         id: 'ska03-ai',
-        name: 'Gemini AI 분석',
+        name: 'Hub LLM 분석',
         type: 'n8n-nodes-base.httpRequest',
         typeVersion: 4.2,
         position: [1120, 300],
         parameters: {
           method: 'POST',
-          url: `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GEMINI_KEY}`,
+          url: `={{ (($env.HUB_BASE_URL || 'http://127.0.0.1:7788').replace(/\\/$/, '')) + '/hub/llm/call' }}`,
           sendHeaders: true,
           headerParameters: {
-            parameters: [{ name: 'Content-Type', value: 'application/json' }],
+            parameters: [
+              { name: 'Content-Type', value: 'application/json' },
+              { name: 'Authorization', value: `={{ 'Bearer ' + $env.HUB_AUTH_TOKEN }}` },
+            ],
           },
           sendBody: true,
           contentType: 'raw',
           rawContentType: 'application/json',
           body: `={{ JSON.stringify({
-  contents: [{
-    parts: [{
-      text: '스터디카페 매출 데이터를 분석해줘. 한국어로 4줄 이내로 간결하게.\\n\\n' +
-        '주별 추세: ' + JSON.stringify($json.weekTrend) + '\\n' +
-        '요일별 평균(원): ' + JSON.stringify($json.dowSummary) + '\\n' +
-        '4주 전 대비 전체 변화율: ' + $json.overallTrend + '%\\n\\n' +
-        '1. 매출 추세 (증가/감소/유지)\\n' +
-        '2. 가장 매출 높은 요일과 이유 추측\\n' +
-        '3. 이번 주 예상 매출 범위\\n' +
-        '4. 주의사항 또는 기회'
-    }]
-  }]
+  callerTeam: 'ska',
+  agent: 'rebecca',
+  selectorKey: 'ska._default',
+  taskType: 'weekly_sales_trend',
+  abstractModel: 'anthropic_haiku',
+  systemPrompt: '스터디카페 매출 데이터 분석가입니다. 한국어로 4줄 이내로 간결하게 답하세요.',
+  prompt: '스터디카페 매출 데이터를 분석해줘.\\n\\n' +
+    '주별 추세: ' + JSON.stringify($json.weekTrend) + '\\n' +
+    '요일별 평균(원): ' + JSON.stringify($json.dowSummary) + '\\n' +
+    '4주 전 대비 전체 변화율: ' + $json.overallTrend + '%\\n\\n' +
+    '1. 매출 추세 (증가/감소/유지)\\n' +
+    '2. 가장 매출 높은 요일과 이유 추측\\n' +
+    '3. 이번 주 예상 매출 범위\\n' +
+    '4. 주의사항 또는 기회',
+  maxTokens: 700,
+  temperature: 0.2,
+  timeoutMs: 45000,
+  maxBudgetUsd: 0.03,
+  priority: 'normal'
 }) }}`,
-          options: { timeout: 15000 },
+          options: { timeout: 50000 },
         },
       },
       {
@@ -492,10 +498,10 @@ return [{ json: { weekTrend, dowSummary, topDow, overallTrend } }];
         parameters: {
           jsCode: `
 const trend  = $('트렌드 분석').first().json;
-const aiBody = $('Gemini AI 분석').first().json;
+const aiBody = $('Hub LLM 분석').first().json;
 
-const aiText = aiBody?.candidates?.[0]?.content?.parts?.[0]?.text
-  || '분석 불가 (Gemini 오류)';
+const aiText = aiBody?.result || aiBody?.text
+  || (aiBody?.error ? '분석 불가 (Hub LLM 오류: ' + aiBody.error + ')' : '분석 불가 (Hub LLM 오류)');
 
 const fmt = n => Number(n).toLocaleString('ko-KR');
 
@@ -514,7 +520,7 @@ const report =
   '■ 주별 추이 (4주)\n' + weekLines + '\\n\\n' +
   '■ 요일별 평균\\n' + dowLines + '\\n' +
   '  → 최고: ' + (trend.topDow?.day || '?') + '요일 (평균 ' + fmt(trend.topDow?.avg || 0) + '원)\\n\\n' +
-  '■ AI 분석 (Gemini)\\n' + aiText;
+  '■ AI 분석 (Hub LLM)\\n' + aiText;
 
 return [{ json: { report } }];
           `.trim(),
@@ -557,8 +563,8 @@ return [{ json: { report } }];
       '매주 월 09:00':       { main: [[{ node: '최근 28일 일별 매출', type: 'main', index: 0 }]] },
       '최근 28일 일별 매출': { main: [[{ node: '주별 합계',            type: 'main', index: 0 }]] },
       '주별 합계':           { main: [[{ node: '트렌드 분석',          type: 'main', index: 0 }]] },
-      '트렌드 분석':         { main: [[{ node: 'Gemini AI 분석',       type: 'main', index: 0 }]] },
-      'Gemini AI 분석':      { main: [[{ node: '리포트 조합',          type: 'main', index: 0 }]] },
+      '트렌드 분석':         { main: [[{ node: 'Hub LLM 분석',         type: 'main', index: 0 }]] },
+      'Hub LLM 분석':        { main: [[{ node: '리포트 조합',          type: 'main', index: 0 }]] },
       '리포트 조합':         { main: [[{ node: '🏢 스카 토픽 발송',   type: 'main', index: 0 }]] },
       '🏢 스카 토픽 발송':  { main: [[{ node: '📌 총괄 토픽 발송',   type: 'main', index: 0 }]] },
     },
@@ -567,7 +573,7 @@ return [{ json: { report } }];
 
   console.log('\n✅ 스카팀 n8n 워크플로우 2개 설정 완료\n');
   console.log('  SKA-WF-01: 일간 매출 요약 + AI 분석  (매일 22:00)');
-  console.log('  SKA-WF-03: 주간 매출 트렌드 + Gemini  (매주 월 09:00)');
+  console.log('  SKA-WF-03: 주간 매출 트렌드 + Hub LLM (매주 월 09:00)');
   console.log('\n📌 테이블: reservation.daily_summary + reservation.room_revenue (SELECT 전용)');
 }
 

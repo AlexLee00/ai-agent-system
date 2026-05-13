@@ -68,9 +68,25 @@ async function main() {
     assert.equal(status.enabled, false, 'OpenAI public API provider must default to disabled');
     assert.equal(status.has_api_key, false, 'OpenAI public API provider must ignore keys while disabled');
 
+    const hubMigratedSources = [
+      { source: 'bots/ska/src/forecast.py', route: /\/hub\/llm\/call/ },
+      { source: 'bots/ska/lib/rag_client.py', route: /\/hub\/llm\/embeddings/ },
+    ];
+    for (const { source, route } of hubMigratedSources) {
+      const text = read(source);
+      assert.match(
+        text,
+        route,
+        `${source} must use Hub LLM Gateway instead of public API key usage`,
+      );
+      assert.doesNotMatch(
+        text,
+        /HUB_ENABLE_(OPENAI|CLAUDE|ANTHROPIC|GEMINI|GOOGLE)_PUBLIC_API/,
+        `${source} must not keep legacy public API gate after Hub migration`,
+      );
+    }
+
     const gatedSources = [
-      'bots/ska/src/forecast.py',
-      'bots/ska/lib/rag_client.py',
       'bots/darwin/elixir/lib/darwin/v2/config.ex',
       'bots/darwin/elixir/lib/darwin/v2/skill/vlm_feedback.ex',
       'bots/sigma/elixir/lib/sigma/v2/llm/policy.ex',
@@ -89,6 +105,7 @@ async function main() {
       ok: true,
       public_api_default_disabled: true,
       tracked_openai_public_provider: true,
+      hub_migrated_sources: hubMigratedSources.length,
       gated_sources: gatedSources.length,
     }));
   } finally {

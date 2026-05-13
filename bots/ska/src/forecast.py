@@ -35,6 +35,8 @@ import math
 import subprocess
 import logging
 import warnings
+import urllib.error
+import urllib.request
 import psycopg2
 import pandas as pd
 from datetime import date as date_type, timedelta
@@ -2179,23 +2181,52 @@ def auto_tune_prophet(hist_df):
     return best_params, best_mape
 
 
-def _call_llm_diagnosis(cv_metrics, accuracy_list, weekday_bias):
-    """OpenAI GPT-4o로 모델 진단 요청"""
-    import os
+def _call_hub_llm(system_prompt, user_prompt, max_tokens=300):
+    base_url = os.environ.get('HUB_BASE_URL', 'http://127.0.0.1:7788').rstrip('/')
+    auth_token = os.environ.get('HUB_AUTH_TOKEN', '').strip()
+    if not auth_token:
+        return '(HUB_AUTH_TOKEN 미설정)'
+
+    payload = {
+        'callerTeam': 'ska',
+        'agent': 'rebecca',
+        'selectorKey': 'ska._default',
+        'taskType': 'forecast_monthly_diagnosis',
+        'abstractModel': 'anthropic_haiku',
+        'systemPrompt': system_prompt,
+        'prompt': user_prompt,
+        'maxTokens': max_tokens,
+        'temperature': 0.1,
+        'timeoutMs': 45000,
+        'maxBudgetUsd': 0.03,
+        'priority': 'normal',
+    }
+    req = urllib.request.Request(
+        f'{base_url}/hub/llm/call',
+        data=json.dumps(payload).encode('utf-8'),
+        headers={
+            'Authorization': f'Bearer {auth_token}',
+            'Content-Type': 'application/json',
+        },
+        method='POST',
+    )
     try:
-        from openai import OpenAI
-        import openai
-    except ImportError:
-        return '(openai 패키지 미설치)'
+        with urllib.request.urlopen(req, timeout=50) as response:
+            decoded = json.loads(response.read().decode('utf-8'))
+    except urllib.error.HTTPError as e:
+        detail = e.read().decode('utf-8', errors='replace')[:200]
+        return f'(Hub LLM HTTP {e.code}: {detail})'
+    except Exception as e:
+        return f'(Hub LLM 호출 실패: {e})'
 
-    public_openai_enabled = os.environ.get('HUB_ENABLE_OPENAI_PUBLIC_API', '').lower() in ('1', 'true', 'yes', 'y', 'on')
-    if not public_openai_enabled:
-        return '(OpenAI public API 비활성화 — Hub OAuth 진단 경로 사용 필요)'
+    if decoded.get('ok') is False:
+        return f"(Hub LLM 실패: {decoded.get('error') or decoded.get('reason')})"
+    text = str(decoded.get('result') or decoded.get('text') or '').strip()
+    return text or '(Hub LLM 빈 응답)'
 
-    api_key = os.environ.get('OPENAI_API_KEY', '')
-    if not api_key:
-        return '(OPENAI_API_KEY 미설정)'
 
+def _call_llm_diagnosis(cv_metrics, accuracy_list, weekday_bias):
+    """Hub LLM Gateway로 모델 진단 요청"""
     SYSTEM_PROMPT = (
         "당신은 스터디카페 매출 예측 모델(Prophet) 전문 진단 AI입니다. "
         "성능 지표 데이터를 분석하여 한국어로 간결하고 실용적인 개선 방안을 제시합니다."
@@ -2252,24 +2283,7 @@ def _call_llm_diagnosis(cv_metrics, accuracy_list, weekday_bias):
 3. 파라미터 조정 권고
 4. prophet-v4 업그레이드 시점 권고"""
 
-    try:
-        client = OpenAI(api_key=api_key)
-        resp = client.chat.completions.create(
-            model='gpt-4o',
-            max_tokens=300,
-            temperature=0.1,
-            messages=[
-                {'role': 'system', 'content': SYSTEM_PROMPT},
-                {'role': 'user',   'content': user_content},
-            ],
-        )
-        return resp.choices[0].message.content.strip()
-    except openai.RateLimitError:
-        return '(API 한도 초과 — 잠시 후 재시도)'
-    except openai.AuthenticationError:
-        return '(OPENAI_API_KEY 인증 실패)'
-    except Exception as e:
-        return f'(LLM 호출 실패: {e})'
+    return _call_hub_llm(SYSTEM_PROMPT, user_content, max_tokens=300)
 
 
 def format_monthly_review(base_date, cv_metrics, weekday_bias, accuracy_list, llm_diagnosis, tune_result=None):

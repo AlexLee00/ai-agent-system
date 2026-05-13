@@ -19,8 +19,7 @@ const path    = require('path');
 const fs      = require('fs');
 const env     = require('../../../packages/core/lib/env');
 const kst     = require('../../../packages/core/lib/kst');
-const { callLlm }              = require('../../../packages/core/lib/llm-fallback');
-const { getLlmModelForAgent }  = require('../../../packages/core/lib/llm-model-selector');
+const { callHubLlm } = require('../../../packages/core/lib/hub-client');
 
 // ── AI 작성 표시 감지 ─────────────────────────────────────────────────────────
 
@@ -183,6 +182,36 @@ function buildHumanizeSystemPrompt(masterStyle: MasterStyleProfile | null): stri
 원본 내용의 핵심 정보는 100% 보존하면서 자연스러움만 개선하세요.`;
 }
 
+async function callBlogHumanizeHub({
+  taskType,
+  systemPrompt,
+  prompt,
+  maxTokens,
+  temperature,
+}: {
+  taskType: string;
+  systemPrompt?: string;
+  prompt: string;
+  maxTokens: number;
+  temperature: number;
+}): Promise<string> {
+  const response = await callHubLlm({
+    callerTeam: 'blog',
+    agent: 'blo',
+    selectorKey: 'blog._default',
+    taskType,
+    systemPrompt,
+    prompt,
+    maxTokens,
+    temperature,
+    timeoutMs: 90_000,
+    maxBudgetUsd: 0.08,
+    priority: 'normal',
+  });
+
+  return String(response?.text || response?.result || '').trim();
+}
+
 // ── 메인 Humanize 함수 ────────────────────────────────────────────────────────
 
 export interface HumanizeResult {
@@ -210,7 +239,6 @@ export async function humanizeText(
   const {
     maxAttempts = 2,
     targetScore = 80,
-    model = getLlmModelForAgent('blot', 'local_fast'),
   } = options;
 
   const signalsBefore = detectAiSignals(text);
@@ -238,28 +266,23 @@ export async function humanizeText(
   for (let i = 0; i < maxAttempts; i++) {
     attempts++;
 
-    const messages = [
-      {
-        role: 'user',
-        content: `다음 글을 사람이 직접 쓴 것처럼 자연스럽게 변환하세요.
+    const prompt = `다음 글을 사람이 직접 쓴 것처럼 자연스럽게 변환하세요.
 핵심 정보는 보존하고, AI 작성 표시(정형 표현, 균일 문장, hedging 등)만 제거하세요.
 
 === 원본 ===
 ${current}
 === 끝 ===
 
-변환된 글만 반환하세요 (추가 설명 없이).`,
-      },
-    ];
+변환된 글만 반환하세요 (추가 설명 없이).`;
 
     try {
-      const response = await callLlm(
-        model,
-        messages,
-        { systemPrompt, maxTokens: 4000, temperature: 0.7 }
-      );
-
-      const humanized = (response?.content?.[0]?.text || response?.text || '').trim();
+      const humanized = await callBlogHumanizeHub({
+        taskType: 'humanize_text',
+        systemPrompt,
+        prompt,
+        maxTokens: 4000,
+        temperature: 0.7,
+      });
       if (!humanized || humanized.length < text.length * 0.5) {
         console.warn(`[인간화] 시도 ${i + 1}: 결과 너무 짧음 — 스킵`);
         continue;
@@ -299,8 +322,6 @@ export async function learnFromMasterEdit(
   originalDraft: string,
   masterEdited: string
 ): Promise<void> {
-  const model = getLlmModelForAgent('blot', 'local_fast');
-
   const prompt = `두 버전의 블로그 포스팅을 비교하여 마스터 편집자의 스타일 선호도를 분석하세요.
 
 === 원본 초안 ===
@@ -320,12 +341,12 @@ ${masterEdited.substring(0, 1000)}
 JSON만 반환하세요.`;
 
   try {
-    const response = await callLlm(model, [{ role: 'user', content: prompt }], {
+    const text = await callBlogHumanizeHub({
+      taskType: 'master_style_learn',
+      prompt,
       maxTokens: 500,
       temperature: 0.3,
     });
-
-    const text = (response?.content?.[0]?.text || response?.text || '').trim();
     const match = text.match(/\{[\s\S]*\}/);
     if (!match) return;
 

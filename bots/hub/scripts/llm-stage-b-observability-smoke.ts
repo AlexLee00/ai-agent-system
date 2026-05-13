@@ -3,6 +3,7 @@
 
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { createRequire } from 'node:module';
 
@@ -25,10 +26,12 @@ async function main() {
   assert.equal(report.sentry.contract.noSecretLogging, true, 'Sentry contract must forbid secret logging');
   assert.equal(report.sentry.contract.failClosedOnMissingToken, true, 'Sentry contract must fail closed on missing token');
 
-  const written = await writeHubStageBStabilityReport(report, OUTPUT_PATH);
-  assert.equal(written, OUTPUT_PATH);
+  const smokeOutputPath = path.join(os.tmpdir(), `hub-stage-b-observability-smoke-${process.pid}.json`);
+  const written = await writeHubStageBStabilityReport(report, smokeOutputPath);
+  assert.equal(written, smokeOutputPath);
   const parsed = JSON.parse(fs.readFileSync(written, 'utf8'));
   assert.equal(parsed.stage, 'hub_stage_b');
+  fs.rmSync(smokeOutputPath, { force: true });
 
   const guidePath = path.join(repoRoot, 'docs/hub/HUB_STAGE_B_OPERATIONS.md');
   assert(fs.existsSync(guidePath), 'Stage B operations guide must exist');

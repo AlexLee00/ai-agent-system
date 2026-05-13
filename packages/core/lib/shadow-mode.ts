@@ -1,10 +1,7 @@
-import path from 'node:path';
-import fs from 'node:fs';
-
 const pgPool = require('./pg-pool');
 const cache = require('./llm-cache');
 const llmLog = require('./llm-logger');
-const { getTimeout } = require('./llm-timeouts');
+const { callHubLlm } = require('./hub-client');
 const { callLocalLLMJSON } = require('./local-llm-client');
 
 type ShadowResult = Record<string, unknown> | null;
@@ -19,7 +16,7 @@ const TEAM_MODE: Record<string, ShadowMode> = {
   luna: 'off',
 };
 
-const SHADOW_PRIMARY = 'meta-llama/llama-4-scout-17b-16e-instruct';
+const SHADOW_PRIMARY = 'hub-llm-gateway';
 const SHADOW_FALLBACK = 'qwen2.5-7b';
 const GROQ_MODEL = SHADOW_PRIMARY;
 
@@ -50,59 +47,48 @@ async function _ensureTable(): Promise<void> {
   _tableReady = true;
 }
 
-let _groqClients: any[] | null = null;
-let _groqIdx = 0;
-
-function _getGroqClients(): any[] {
-  if (_groqClients !== null) return _groqClients;
-  try {
-    const Groq = require('groq-sdk');
-    const yaml = require('js-yaml');
-    const cfgPath = path.join(__dirname, '../../../bots/investment/config.yaml');
-    const cfg = yaml.load(fs.readFileSync(cfgPath, 'utf8')) as { groq?: { accounts?: Array<{ api_key?: string }> } };
-    _groqClients = (cfg.groq?.accounts || [])
-      .filter((account) => account.api_key)
-      .map((account) => new Groq({ apiKey: account.api_key, timeout: getTimeout('groq') }));
-  } catch {
-    _groqClients = [];
-  }
-  return _groqClients;
+function _hubTeam(team: string): string {
+  return team === 'luna' ? 'investment' : team;
 }
 
-async function _callGroq(systemPrompt: string, userContent: string): Promise<Record<string, unknown>> {
-  const clients = _getGroqClients();
-  if (clients.length === 0) throw new Error('Groq API 키 없음 (bots/investment/config.yaml 확인)');
+function _hubAgent(team: string): string {
+  if (team === 'ska') return 'rebecca';
+  if (team === 'luna' || team === 'investment') return 'commander';
+  if (team === 'blog') return 'blo';
+  return 'default';
+}
 
+function _hubSelectorKey(team: string): string | undefined {
+  if (team === 'ska') return 'ska._default';
+  if (team === 'luna' || team === 'investment') return 'investment.agent_policy';
+  if (team === 'blog') return 'blog._default';
+  return undefined;
+}
+
+async function _callHubShadow(team: string, context: string, systemPrompt: string, userContent: string): Promise<Record<string, unknown>> {
   const sysPrompt = /json/i.test(systemPrompt)
     ? systemPrompt
     : systemPrompt + '\nJSON 형식으로만 답하세요.';
 
-  let lastErr: unknown;
-  for (let attempt = 0; attempt < Math.min(3, clients.length); attempt++) {
-    const groq = clients[(_groqIdx + attempt) % clients.length];
-    try {
-      const res = await groq.chat.completions.create({
-        model: SHADOW_PRIMARY,
-        messages: [
-          { role: 'system', content: sysPrompt },
-          { role: 'user', content: userContent },
-        ],
-        max_tokens: 400,
-        temperature: 0.1,
-        response_format: { type: 'json_object' },
-      });
-      _groqIdx = (_groqIdx + attempt + 1) % clients.length;
-      const text = res.choices[0]?.message?.content || '{}';
-      const parsed = JSON.parse(text) as Record<string, unknown> & { _in?: number; _out?: number };
-      parsed._in = res.usage?.prompt_tokens || 0;
-      parsed._out = res.usage?.completion_tokens || 0;
-      return parsed;
-    } catch (error) {
-      lastErr = error;
-      if ((error as { status?: number } | null)?.status !== 429) throw error;
-    }
-  }
-  throw lastErr;
+  const response = await callHubLlm({
+    callerTeam: _hubTeam(team),
+    agent: _hubAgent(team),
+    selectorKey: _hubSelectorKey(team),
+    taskType: `shadow_${context}`,
+    systemPrompt: sysPrompt,
+    prompt: userContent,
+    maxTokens: 400,
+    temperature: 0.1,
+    timeoutMs: 30_000,
+    maxBudgetUsd: 0.03,
+    priority: 'normal',
+  });
+
+  const text = String(response?.text || response?.result || '{}').trim();
+  const parsed = JSON.parse(text) as Record<string, unknown> & { _in?: number; _out?: number };
+  parsed._in = 0;
+  parsed._out = 0;
+  return parsed;
 }
 
 async function _callLocal(systemPrompt: string, userContent: string): Promise<Record<string, unknown>> {
@@ -244,7 +230,7 @@ async function evaluate({
     } else {
       let raw: Record<string, unknown>;
       try {
-        raw = await _callGroq(llmPrompt, inputStr);
+        raw = await _callHubShadow(team, context, llmPrompt, inputStr);
       } catch {
         raw = await _callLocal(llmPrompt, inputStr);
         usedFallback = true;

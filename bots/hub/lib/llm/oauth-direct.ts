@@ -164,7 +164,55 @@ function resolveOpenAiCodexResponsesUrl() {
   return `${baseUrl}/codex/responses`;
 }
 
-function buildOpenAiCodexBody({ model, systemPrompt, prompt, temperature }) {
+function normalizeImageParts(input) {
+  const images = [];
+  const appendImage = (item) => {
+    if (!item) return;
+    let data = String(item.dataBase64 || item.base64 || item.data || '').trim();
+    let mimeType = String(item.mimeType || item.mime_type || 'image/png').trim() || 'image/png';
+    const dataUrl = String(item.dataUrl || item.imageDataUrl || item.image_data_url || '').trim();
+    if (!data && dataUrl) {
+      const match = dataUrl.match(/^data:([^;,]+);base64,(.+)$/i);
+      if (match) {
+        mimeType = match[1] || mimeType;
+        data = match[2] || '';
+      }
+    }
+    if (data) images.push({ mimeType, data });
+  };
+
+  if (Array.isArray(input?.images)) {
+    for (const item of input.images) appendImage(item);
+  }
+  appendImage({
+    dataBase64: input?.imageBase64,
+    dataUrl: input?.imageDataUrl,
+    mimeType: input?.mimeType,
+  });
+  return images.slice(0, 4);
+}
+
+function buildOpenAiCodexContent(input) {
+  const content = [{ type: 'input_text', text: input?.prompt || '' }];
+  for (const image of normalizeImageParts(input)) {
+    content.push({
+      type: 'input_image',
+      image_url: `data:${image.mimeType};base64,${image.data}`,
+      detail: input?.imageDetail || 'low',
+    });
+  }
+  return content;
+}
+
+function buildGeminiParts(input) {
+  const parts = [{ text: input?.prompt || '' }];
+  for (const image of normalizeImageParts(input)) {
+    parts.push({ inlineData: { mimeType: image.mimeType, data: image.data } });
+  }
+  return parts;
+}
+
+function buildOpenAiCodexBody({ model, systemPrompt, prompt, temperature, images, imageBase64, imageDataUrl, mimeType, imageDetail }) {
   const body = {
     model: String(model || 'gpt-5.4').replace(/^openai-oauth\//, '').replace(/^openai-codex\//, ''),
     store: false,
@@ -173,7 +221,7 @@ function buildOpenAiCodexBody({ model, systemPrompt, prompt, temperature }) {
     input: [
       {
         role: 'user',
-        content: [{ type: 'input_text', text: prompt || '' }],
+        content: buildOpenAiCodexContent({ prompt, images, imageBase64, imageDataUrl, mimeType, imageDetail }),
       },
     ],
     text: { verbosity: 'medium' },
@@ -271,6 +319,11 @@ async function callOpenAiCodexOAuth(input) {
           systemPrompt: input?.systemPrompt || '',
           prompt: input?.prompt || '',
           temperature: input?.temperature ?? 0.3,
+          images: input?.images,
+          imageBase64: input?.imageBase64,
+          imageDataUrl: input?.imageDataUrl,
+          mimeType: input?.mimeType,
+          imageDetail: input?.imageDetail,
         })),
         signal,
       });
@@ -483,7 +536,7 @@ function buildGeminiCodeAssistBody(input, model, projectId) {
     user_prompt_id: `hub_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`,
     request: {
       ...(input?.systemPrompt ? { systemInstruction: { role: 'user', parts: [{ text: input.systemPrompt }] } } : {}),
-      contents: [{ role: 'user', parts: [{ text: input?.prompt || '' }] }],
+      contents: [{ role: 'user', parts: buildGeminiParts(input) }],
       generationConfig: {
         maxOutputTokens: resolveGeminiMaxOutputTokens(input?.maxTokens),
         temperature: input?.temperature ?? 0.1,
@@ -517,7 +570,7 @@ async function callGeminiOAuth(input) {
         },
         body: JSON.stringify({
           ...(input?.systemPrompt ? { systemInstruction: { parts: [{ text: input.systemPrompt }] } } : {}),
-          contents: [{ role: 'user', parts: [{ text: input?.prompt || '' }] }],
+          contents: [{ role: 'user', parts: buildGeminiParts(input) }],
           generationConfig: {
             maxOutputTokens: resolveGeminiMaxOutputTokens(input?.maxTokens),
             temperature: input?.temperature ?? 0.1,

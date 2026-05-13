@@ -16,8 +16,9 @@
 const fs      = require('fs');
 const path    = require('path');
 const os      = require('os');
-const { execSync, spawnSync } = require('child_process');
+const { execSync } = require('child_process');
 const pgPool       = require('../../packages/core/lib/pg-pool');
+const { callHubLlm } = require('../../packages/core/lib/hub-client');
 const {
   AUTO_PROMOTE_DEFAULTS,
   normalizeIntentText,
@@ -43,7 +44,6 @@ const {
 const BOT_NAME       = '루나';
 const BOT_ID         = 'luna';
 const IDENTITY_FILE  = path.join(__dirname, 'context/COMMANDER_IDENTITY.md');
-const PROJECT_ROOT   = path.join(os.homedir(), 'projects', 'ai-agent-system');
 const NLP_LEARNINGS_PATH = getNamedIntentLearningPath('jay');
 const TG_MAX_CHARS = 3500;
 const INTENT_SCHEMA = 'investment';
@@ -694,17 +694,25 @@ async function handleAnalyzeUnknown(args) {
   "reason": "판단 근거 한 줄"
 }`;
 
-  const result = spawnSync('claude', ['-p', prompt, '--dangerously-skip-permissions'], {
-    cwd: PROJECT_ROOT,
-    timeout: 120000,
-    env: { ...process.env },
-    encoding: 'utf8',
-  });
+  let output = '';
+  try {
+    const result = await callHubLlm({
+      callerTeam: 'investment',
+      agent: 'commander',
+      selectorKey: 'investment.agent_policy',
+      taskType: 'commander_unknown_intent_analysis',
+      prompt,
+      maxTokens: 1000,
+      temperature: 0.1,
+      timeoutMs: 120_000,
+      maxBudgetUsd: 0.05,
+      priority: 'normal',
+    });
+    output = String(result?.text || result?.result || '').trim();
+  } catch (error) {
+    return { ok: false, error: String(error?.message || error).slice(0, 300) };
+  }
 
-  if (result.error) return { ok: false, error: result.error.message };
-  if (result.status !== 0) return { ok: false, error: (result.stderr || '').slice(0, 300) };
-
-  const output = (result.stdout || '').trim();
   let parsed;
   try {
     const jsonMatch = output.match(/\{[\s\S]*\}/);

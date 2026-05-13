@@ -16,8 +16,7 @@
 
 const path    = require('path');
 const env     = require('../../../packages/core/lib/env');
-const { callLlm } = require('../../../packages/core/lib/llm-fallback');
-const { getLlmModelForAgent } = require('../../../packages/core/lib/llm-model-selector');
+const { callHubLlm } = require('../../../packages/core/lib/hub-client');
 
 // ── 홈판 제목 평가 기준 ────────────────────────────────────────────────────────
 
@@ -149,8 +148,6 @@ export async function generateOptimalHashtags(
   category: string,
   content: string
 ): Promise<string[]> {
-  const model = getLlmModelForAgent('blot', 'local_fast');
-
   const prompt = `블로그 포스팅의 최적 해시태그를 선정하세요.
 
 제목: ${title}
@@ -168,12 +165,19 @@ export async function generateOptimalHashtags(
 ["#키워드1", "#키워드2", ...]`;
 
   try {
-    const response = await callLlm(model, [{ role: 'user', content: prompt }], {
+    const response = await callHubLlm({
+      callerTeam: 'blog',
+      agent: 'social-caption',
+      selectorKey: 'blog.social.caption',
+      taskType: 'home_feed_hashtags',
+      prompt,
       maxTokens: 200,
       temperature: 0.3,
+      timeoutMs: 45_000,
+      maxBudgetUsd: 0.03,
     });
 
-    const text = response?.content?.[0]?.text || response?.text || '';
+    const text = response?.text || response?.result || '';
     const match = text.match(/\[.*?\]/s);
     if (match) {
       const tags = JSON.parse(match[0]);

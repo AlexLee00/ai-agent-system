@@ -1,9 +1,11 @@
 const pgPool = require('../../../../packages/core/lib/pg-pool');
 const crypto = require('node:crypto');
 const { callClaudeCodeOAuth } = require('../llm/claude-code-oauth');
+const { callGeminiOAuth, callGeminiCodeAssistOAuth, callOpenAiCodexOAuth } = require('../llm/oauth-direct');
 const { callGroqFallback } = require('../llm/groq-fallback');
 const { callWithFallback } = require('../llm/unified-caller');
 const { loadGroqAccounts } = require('../llm/secrets-loader');
+const rag = require('../../../../packages/core/lib/rag');
 const { getLlmAdmissionState } = require('../llm/admission-control');
 const {
   createLlmJob,
@@ -12,7 +14,7 @@ const {
   getJobStoreState,
 } = require('../llm/job-store');
 const { parseLlmCallPayload } = require('../llm/request-schema');
-const { isHubLlmRouteTargetAllowed } = require('../../src/llm-selector');
+const { isHubLlmRouteTargetAllowed, resolveHubLlmSelection } = require('../../src/llm-selector');
 const { getAllCircuitStatuses, resetCircuit, resetAllCircuits } = require('../../../../packages/core/lib/local-circuit-breaker');
 const {
   getProviderCooldownSnapshot,
@@ -91,6 +93,266 @@ export async function llmCallRoute(req, res) {
   }
 }
 
+// POST /hub/llm/vision — Hub-owned multimodal analysis gateway.
+export async function llmVisionRoute(req, res) {
+  const context = req.hubRequestContext || {};
+  const body = req.body || {};
+  const prompt = String(body.prompt || '').trim();
+  const callerTeam = String(body.callerTeam || context.callerTeam || '').trim();
+  const agent = String(body.agent || context.agent || '').trim();
+  const selectorKey = String(body.selectorKey || '').trim() || undefined;
+  const taskType = String(body.taskType || 'vision').trim();
+  const image = normalizeVisionImage(body);
+
+  if (!prompt) return res.status(400).json({ ok: false, error: 'prompt_required', traceId: context.traceId || null });
+  if (!callerTeam) return res.status(400).json({ ok: false, error: 'callerTeam_required', traceId: context.traceId || null });
+  if (!agent) return res.status(400).json({ ok: false, error: 'agent_required', traceId: context.traceId || null });
+  if (!image.ok) return res.status(image.status || 400).json({ ok: false, error: image.error, traceId: context.traceId || null });
+
+  const normalizedRequest = {
+    callerTeam,
+    agent,
+    selectorKey,
+    taskType,
+    prompt,
+    requestId: body.requestId || context.traceId || undefined,
+    traceId: context.traceId || undefined,
+  };
+  const targetPolicy = isHubLlmRouteTargetAllowed(normalizedRequest);
+  if (!targetPolicy.ok) {
+    return res.status(403).json({
+      ok: false,
+      error: {
+        code: targetPolicy.error,
+        message: 'LLM route target is not active',
+        target: targetPolicy.target,
+      },
+      traceId: context.traceId || null,
+    });
+  }
+
+  const timeoutMs = Math.max(5_000, Math.min(180_000, Number(body.timeoutMs || 45_000) || 45_000));
+  const maxTokens = Number(body.maxTokens || 512) || 512;
+  const temperature = body.temperature ?? 0.1;
+  const budget = checkVisionBudget(callerTeam, estimateVisionCostUsd(body, image, maxTokens));
+  if (!budget.ok) {
+    return res.status(429).json({
+      ok: false,
+      provider: 'failed',
+      error: `budget_exceeded: ${budget.reason}`,
+      estimatedCostUsd: budget.estimatedCostUsd,
+      budgetGuardStatus: 'blocked',
+      traceId: context.traceId || null,
+    });
+  }
+
+  const selection = resolveVisionSelection({
+    ...normalizedRequest,
+    maxTokens,
+    temperature,
+    timeoutMs,
+    maxBudgetUsd: body.maxBudgetUsd,
+  });
+  if (!selection.ok) {
+    return res.status(selection.status || 409).json({
+      ok: false,
+      provider: 'failed',
+      error: selection.error,
+      selectorKey: selection.selectorKey || null,
+      providerTiers: selection.providerTiers || [],
+      traceId: context.traceId || null,
+    });
+  }
+
+  const started = Date.now();
+  const input = {
+    prompt,
+    systemPrompt: body.systemPrompt || '',
+    maxTokens,
+    temperature,
+    timeoutMs,
+    images: [{ mimeType: image.mimeType, dataBase64: image.dataBase64 }],
+  };
+
+  const attempts = [];
+  let resp = null;
+  let selectedRoute = null;
+  for (const route of selection.routes) {
+    const attempt = await callVisionSelectorRoute(route, {
+      ...input,
+      imageDetail: body.imageDetail || 'low',
+    });
+    if (attempt.ok) {
+      resp = attempt;
+      selectedRoute = route.route;
+      break;
+    }
+    attempts.push({ provider: route.route, error: attempt.error || 'unknown', durationMs: attempt.durationMs || 0 });
+  }
+
+  if (!resp) {
+    resp = {
+      ok: false,
+      provider: 'failed',
+      model: null,
+      durationMs: Date.now() - started,
+      error: `fallback_exhausted: ${(attempts[attempts.length - 1] || {}).error || 'no_vision_route'}`,
+    };
+  }
+
+  const logBody = {
+    ...normalizedRequest,
+    abstractModel: 'vision',
+    systemPrompt: body.systemPrompt || '',
+    prompt: `${prompt}\n[image:${image.mimeType};sha256=${image.sha256};bytes=${image.bytes}]`,
+  };
+  logRouting({
+    ...resp,
+    durationMs: resp.durationMs || (Date.now() - started),
+    totalCostUsd: 0,
+    selected_route: selectedRoute,
+    selectorKey: selection.selectorKey,
+    runtimeProfile: selection.runtimeProfile || null,
+    runtimePurpose: selection.runtimePurpose || null,
+    routeTargetKind: selection.routeTargetKind || null,
+    providerTiers: selection.providerTiers || [],
+    estimatedCostUsd: budget.estimatedCostUsd,
+    budgetGuardStatus: budget.status,
+    attempted_providers: attempts.map((attempt) => attempt.provider),
+    fallbackCount: attempts.length,
+  }, logBody).catch((err) => console.error('[llm] vision routing log 기록 실패:', err.message));
+
+  if (!resp.ok) {
+    return res.status(500).json({
+      ok: false,
+      provider: resp.provider || 'failed',
+      error: resp.error || 'vision_call_failed',
+      primaryError: resp.primaryError || null,
+      durationMs: resp.durationMs || (Date.now() - started),
+      traceId: context.traceId || null,
+    });
+  }
+
+  return res.json({
+    ok: true,
+    text: resp.text || resp.result || '',
+    result: resp.result || resp.text || '',
+    provider: resp.provider,
+    model: resp.model,
+    selected_route: selectedRoute,
+    selectorKey: selection.selectorKey,
+    providerTiers: selection.providerTiers || [],
+    fallbackCount: attempts.length,
+    attempted_providers: attempts.map((attempt) => attempt.provider),
+    durationMs: resp.durationMs || (Date.now() - started),
+    admission: {
+      queued: Boolean(res.locals?.llmAdmissionQueued),
+    },
+    traceId: context.traceId || null,
+  });
+}
+
+// POST /hub/llm/embeddings — Hub-owned embedding gateway.
+export async function llmEmbeddingsRoute(req, res) {
+  const context = req.hubRequestContext || {};
+  const body = req.body || {};
+  const input = body.input ?? body.text ?? body.prompt;
+  const callerTeam = String(body.callerTeam || context.callerTeam || '').trim();
+  const agent = String(body.agent || context.agent || '').trim();
+  const selectorKey = String(body.selectorKey || '').trim() || undefined;
+  const taskType = String(body.taskType || 'embedding').trim();
+  const texts = Array.isArray(input) ? input.map((item) => String(item || '')) : [String(input || '')];
+  const nonEmptyTexts = texts.map((item) => item.trim()).filter(Boolean);
+
+  if (!nonEmptyTexts.length) return res.status(400).json({ ok: false, error: 'input_required', traceId: context.traceId || null });
+  if (!callerTeam) return res.status(400).json({ ok: false, error: 'callerTeam_required', traceId: context.traceId || null });
+  if (!agent) return res.status(400).json({ ok: false, error: 'agent_required', traceId: context.traceId || null });
+
+  const normalizedRequest = {
+    callerTeam,
+    agent,
+    selectorKey,
+    taskType,
+    prompt: nonEmptyTexts.join('\n\n').slice(0, 8000),
+    requestId: body.requestId || context.traceId || undefined,
+    traceId: context.traceId || undefined,
+  };
+  const targetPolicy = isHubLlmRouteTargetAllowed(normalizedRequest);
+  if (!targetPolicy.ok) {
+    return res.status(403).json({
+      ok: false,
+      error: {
+        code: targetPolicy.error,
+        message: 'LLM route target is not active',
+        target: targetPolicy.target,
+      },
+      traceId: context.traceId || null,
+    });
+  }
+
+  const started = Date.now();
+  try {
+    const embeddings = await rag.createEmbeddingBatch(nonEmptyTexts);
+    const dimensions = embeddings[0]?.length || 0;
+    const expectedDimensions = Number(body.expectedDimensions || 0) || null;
+    if (expectedDimensions && dimensions !== expectedDimensions) {
+      return res.status(409).json({
+        ok: false,
+        error: 'embedding_dimension_mismatch',
+        dimensions,
+        expectedDimensions,
+        model: rag.EMBED_MODEL,
+        traceId: context.traceId || null,
+      });
+    }
+
+    logRouting({
+      ok: true,
+      provider: 'local-embedding',
+      model: rag.EMBED_MODEL,
+      durationMs: Date.now() - started,
+      totalCostUsd: 0,
+      fallbackCount: 0,
+      selected_route: `local/${rag.EMBED_MODEL}`,
+    }, {
+      ...normalizedRequest,
+      abstractModel: 'embedding',
+      prompt: `[embedding:${nonEmptyTexts.length};sha256=${hashText(nonEmptyTexts.join('\n'))}]`,
+    }).catch((err) => console.error('[llm] embedding routing log 기록 실패:', err.message));
+
+    return res.json({
+      ok: true,
+      model: rag.EMBED_MODEL,
+      dimensions,
+      data: embeddings.map((embedding, index) => ({ index, embedding })),
+      durationMs: Date.now() - started,
+      traceId: context.traceId || null,
+    });
+  } catch (err) {
+    logRouting({
+      ok: false,
+      provider: 'local-embedding',
+      model: rag.EMBED_MODEL,
+      durationMs: Date.now() - started,
+      totalCostUsd: 0,
+      fallbackCount: 0,
+      error: err.message || String(err),
+      selected_route: `local/${rag.EMBED_MODEL}`,
+    }, {
+      ...normalizedRequest,
+      abstractModel: 'embedding',
+      prompt: `[embedding_failed:${nonEmptyTexts.length}]`,
+    }).catch(() => {});
+    return res.status(500).json({
+      ok: false,
+      error: err.message || String(err),
+      model: rag.EMBED_MODEL,
+      durationMs: Date.now() - started,
+      traceId: context.traceId || null,
+    });
+  }
+}
+
 // GET /hub/llm/gateway-contract — 외부 프로젝트용 LLM Gateway 계약
 export async function llmGatewayContractRoute(req, res) {
   return res.json({
@@ -113,6 +375,16 @@ export async function llmGatewayContractRoute(req, res) {
         path: '/hub/llm/jobs',
         resultPaths: ['/hub/llm/jobs/:id', '/hub/llm/jobs/:id/result'],
         useCase: 'long research, multi-document synthesis, high-latency work',
+      },
+      vision: {
+        method: 'POST',
+        path: '/hub/llm/vision',
+        useCase: 'image/chart analysis without distributing provider secrets',
+      },
+      embeddings: {
+        method: 'POST',
+        path: '/hub/llm/embeddings',
+        useCase: 'RAG embedding creation through Hub-owned local embedding infrastructure',
       },
       stats: {
         method: 'GET',
@@ -564,6 +836,154 @@ function buildProviderBackpressure(resp) {
     };
   }
   return null;
+}
+
+function normalizeVisionImage(body) {
+  let dataBase64 = String(body.imageBase64 || body.base64 || '').trim();
+  let mimeType = String(body.mimeType || 'image/png').trim() || 'image/png';
+  const dataUrl = String(body.imageDataUrl || body.dataUrl || '').trim();
+  if (!dataBase64 && dataUrl) {
+    const match = dataUrl.match(/^data:([^;,]+);base64,(.+)$/i);
+    if (match) {
+      mimeType = match[1] || mimeType;
+      dataBase64 = match[2] || '';
+    }
+  }
+  dataBase64 = dataBase64.replace(/\s+/g, '');
+  if (!dataBase64) return { ok: false, status: 400, error: 'image_required' };
+  if (!/^image\/(png|jpe?g|webp)$/i.test(mimeType)) {
+    return { ok: false, status: 400, error: 'unsupported_image_mime_type' };
+  }
+  if (!/^[A-Za-z0-9+/]*={0,2}$/.test(dataBase64)) {
+    return { ok: false, status: 400, error: 'invalid_image_base64' };
+  }
+  let decoded = null;
+  try {
+    decoded = Buffer.from(dataBase64, 'base64');
+  } catch {
+    return { ok: false, status: 400, error: 'invalid_image_base64' };
+  }
+  const canonicalBase64 = decoded.toString('base64');
+  if (canonicalBase64.replace(/=+$/g, '') !== dataBase64.replace(/=+$/g, '')) {
+    return { ok: false, status: 400, error: 'invalid_image_base64' };
+  }
+  const bytes = decoded.byteLength;
+  const maxBytes = Math.max(256_000, Number(process.env.HUB_LLM_VISION_MAX_BYTES || 5_000_000) || 5_000_000);
+  if (bytes <= 0) return { ok: false, status: 400, error: 'empty_image' };
+  if (bytes > maxBytes) return { ok: false, status: 413, error: 'image_too_large' };
+  return {
+    ok: true,
+    dataBase64: canonicalBase64,
+    mimeType,
+    bytes,
+    sha256: crypto.createHash('sha256').update(decoded).digest('hex'),
+  };
+}
+
+function estimateVisionCostUsd(body, image, maxTokens) {
+  const explicit = Number(body.maxBudgetUsd || 0);
+  if (Number.isFinite(explicit) && explicit > 0) return explicit;
+  const tokenCost = Math.max(0.01, Math.min(0.08, Number(maxTokens || 512) / 16_000));
+  const imageCost = Math.max(0.005, Math.min(0.05, Number(image.bytes || 0) / 50_000_000));
+  return Number((tokenCost + imageCost).toFixed(6));
+}
+
+function checkVisionBudget(team, estimatedCostUsd) {
+  if (process.env.HUB_BUDGET_GUARDIAN_ENABLED === 'false') {
+    return { ok: true, estimatedCostUsd, status: 'disabled' };
+  }
+  try {
+    const { BudgetGuardian } = require('../budget-guardian');
+    const check = BudgetGuardian.getInstance().checkAndReserve(team, estimatedCostUsd);
+    return {
+      ok: Boolean(check.ok),
+      reason: check.reason || null,
+      estimatedCostUsd,
+      status: check.ok ? 'allowed' : 'blocked',
+    };
+  } catch (err) {
+    console.warn('[llm] vision budget guardian 오류 (무시):', err.message);
+    return { ok: true, estimatedCostUsd, status: 'error_ignored' };
+  }
+}
+
+function resolveVisionSelection(request) {
+  const selection = resolveHubLlmSelection(request);
+  if (!selection?.ok) {
+    return {
+      ok: false,
+      status: 403,
+      error: selection?.error || 'llm_selector_chain_required',
+      selectorKey: selection?.selectorKey || null,
+      providerTiers: selection?.providerTiers || [],
+    };
+  }
+  const routes = (selection.chain || [])
+    .map((entry) => ({ entry, route: normalizeVisionRoute(entry.route || routeFromEntry(entry)) }))
+    .filter((item) => isVisionRouteSupported(item.route));
+  if (!routes.length) {
+    return {
+      ok: false,
+      status: 409,
+      error: 'llm_vision_route_unavailable',
+      selectorKey: selection.selectorKey || null,
+      providerTiers: selection.providerTiers || [],
+    };
+  }
+  return {
+    ok: true,
+    routes,
+    selectorKey: selection.selectorKey || null,
+    runtimeProfile: selection.runtimeProfile || null,
+    runtimePurpose: selection.runtimePurpose || null,
+    routeTargetKind: selection.routeTargetKind || selection.target?.kind || null,
+    providerTiers: selection.providerTiers || [],
+  };
+}
+
+function routeFromEntry(entry) {
+  const provider = String(entry?.provider || '').trim();
+  const model = String(entry?.model || '').trim();
+  if (!provider || !model) return model || provider;
+  return model.startsWith(`${provider}/`) ? model : `${provider}/${model}`;
+}
+
+function normalizeVisionRoute(route) {
+  const normalized = String(route || '').trim();
+  if (normalized.startsWith('openai/')) return `openai-oauth/${normalized.slice('openai/'.length)}`;
+  if (normalized.startsWith('gemini/')) return `gemini-oauth/${normalized.slice('gemini/'.length)}`;
+  if (normalized.startsWith('gemini-code-assist-oauth/')) {
+    return `gemini-codeassist-oauth/${normalized.slice('gemini-code-assist-oauth/'.length)}`;
+  }
+  return normalized;
+}
+
+function isVisionRouteSupported(route) {
+  return String(route || '').startsWith('openai-oauth/')
+    || String(route || '').startsWith('gemini-oauth/')
+    || String(route || '').startsWith('gemini-codeassist-oauth/');
+}
+
+async function callVisionSelectorRoute(route, input) {
+  if (route.route.startsWith('openai-oauth/')) {
+    return callOpenAiCodexOAuth({
+      ...input,
+      model: route.route.slice('openai-oauth/'.length),
+    });
+  }
+  if (route.route.startsWith('gemini-oauth/')) {
+    return callGeminiOAuth({
+      ...input,
+      model: route.route.slice('gemini-oauth/'.length),
+    });
+  }
+  if (route.route.startsWith('gemini-codeassist-oauth/')) {
+    return callGeminiCodeAssistOAuth({
+      ...input,
+      model: route.route.slice('gemini-codeassist-oauth/'.length),
+    });
+  }
+  return { ok: false, provider: 'failed', error: `unsupported_vision_route:${route.route}`, durationMs: 0 };
 }
 
 function redactJobPayload(job) {

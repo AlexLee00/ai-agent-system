@@ -56,10 +56,10 @@ function main() {
 
     assert.equal(isDirectFallbackEnabled(), false, 'direct LLM fallback must be disabled by default');
     assert.match(commanderPlist, /<key>INVESTMENT_LLM_DIRECT_FALLBACK<\/key>\s*<string>false<\/string>/, 'commander launchd must keep direct fallback disabled');
-    assert.match(llmClient, /INVESTMENT_LLM_PUBLIC_OPENAI_ENABLED/, 'direct public OpenAI LLM path must require explicit env');
-    assert.match(llmClient, /Public OpenAI direct LLM path disabled/, 'direct public OpenAI LLM path must fail closed by default');
-    assert.match(chartVision, /LUNA_CHART_VISION_PUBLIC_OPENAI_ENABLED/, 'chart vision public OpenAI path must require explicit env');
-    assert.match(chartVision, /public_openai_disabled/, 'chart vision must return a no-call disabled result by default');
+    assert.match(llmClient, /provider 직접 폴백은 제거됨/, 'investment LLM client must fail closed to Hub-only routing');
+    assert.doesNotMatch(llmClient, /INVESTMENT_LLM_PUBLIC_OPENAI_ENABLED|require\(['"]openai['"]\)|require\(['"]groq-sdk['"]\)|@anthropic-ai\/sdk|callWithFallback\s*\(/, 'investment LLM client must not keep direct provider fallback code');
+    assert.match(chartVision, /callHubVision\s*\(/, 'chart vision must use Hub Vision Gateway');
+    assert.doesNotMatch(chartVision, /LUNA_CHART_VISION_PUBLIC_OPENAI_ENABLED|public_openai_disabled|require\(['"]openai['"]\)|new\s+OpenAI|chat\.completions\.create/, 'chart vision must not keep direct public OpenAI path');
     assert.match(coreFallback, /HUB_LLM_PUBLIC_OPENAI_ENABLED/, 'core public OpenAI provider must require explicit env');
     assert.match(coreFallback, /Public OpenAI direct provider disabled/, 'core public OpenAI provider must fail closed by default');
 
@@ -83,8 +83,8 @@ function main() {
       smoke: 'luna-openai-force-audit',
       directFallbackDefault: isDirectFallbackEnabled(),
       checkedChains,
-      publicOpenAiDirectEnv: 'INVESTMENT_LLM_PUBLIC_OPENAI_ENABLED',
-      chartVisionDirectEnv: 'LUNA_CHART_VISION_PUBLIC_OPENAI_ENABLED',
+      investmentLlmGateway: '/hub/llm/call',
+      chartVisionGateway: '/hub/llm/vision',
       corePublicOpenAiDirectEnv: 'HUB_LLM_PUBLIC_OPENAI_ENABLED',
       selectorDirectOpenAiRewrittenTo: guardedOpenAiChain[0]?.provider,
     };

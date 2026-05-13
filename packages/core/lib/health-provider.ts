@@ -19,6 +19,7 @@ type LaunchctlServiceStatus = {
   exitCode: number;
   loaded?: boolean;
   state?: string;
+  lastTerminatingSignal?: string | null;
   stdoutPath?: string | null;
   stderrPath?: string | null;
   stdoutTail?: string | null;
@@ -93,6 +94,18 @@ function truncateText(text: string, max = 360): string {
   return normalized.length > max ? `${normalized.slice(0, max - 1)}…` : normalized;
 }
 
+function sanitizeLaunchctlPrintDetail(printText: string): string {
+  const safeLines: string[] = [];
+  for (const rawLine of String(printText || '').split(/\r?\n/)) {
+    const line = rawLine.trim();
+    if (!line) continue;
+    if (/^(state|pid|runs|last exit code|last terminating signal|stdout path|stderr path)\s*=/.test(line)) {
+      safeLines.push(line);
+    }
+  }
+  return truncateText(safeLines.join('\n'), 360);
+}
+
 function extractLaunchctlPath(printText: string, field: 'stdout' | 'stderr'): string | null {
   const match = String(printText || '').match(new RegExp(`\\b${field} path\\s*=\\s*(.+)$`, 'm'));
   return match ? String(match[1]).trim() : null;
@@ -136,6 +149,7 @@ function getLaunchctlPrintStatus(label: string): LaunchctlServiceStatus | null {
     const stateMatch = raw.match(/^\s*state = (.+)$/m);
     const pidMatch = raw.match(/^\s*pid = (\d+)$/m);
     const exitMatch = raw.match(/^\s*last exit code = (?:\((?:never exited)\)|(-?\d+))/m);
+    const signalMatch = raw.match(/^\s*last terminating signal = (.+)$/m);
     const stdoutPath = extractLaunchctlPath(raw, 'stdout');
     const stderrPath = extractLaunchctlPath(raw, 'stderr');
     return {
@@ -144,11 +158,12 @@ function getLaunchctlPrintStatus(label: string): LaunchctlServiceStatus | null {
       exitCode: exitMatch && exitMatch[1] ? Number.parseInt(exitMatch[1], 10) : 0,
       loaded: true,
       state: stateMatch ? stateMatch[1].trim() : undefined,
+      lastTerminatingSignal: signalMatch ? signalMatch[1].trim() : null,
       stdoutPath,
       stderrPath,
       stdoutTail: readLogTail(stdoutPath),
       stderrTail: readLogTail(stderrPath),
-      launchctlDetail: truncateText(raw, 360),
+      launchctlDetail: sanitizeLaunchctlPrintDetail(raw),
     };
   } catch {
     return null;

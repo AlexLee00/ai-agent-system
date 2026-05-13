@@ -1,11 +1,12 @@
 # Hub External LLM Integration Guide
 
-외부 프로젝트는 Hub를 단일 LLM gateway로 사용한다. 외부 프로젝트는 OpenAI/Groq/Gemini 토큰을 직접 보유하지 않고, Hub `/hub/llm/call` 또는 `/hub/llm/jobs`만 호출한다. 모델 선택, fallback, 비용 로그, BillingGuard, provider circuit은 Hub가 담당한다.
+외부 프로젝트는 Hub를 단일 LLM gateway로 사용한다. 외부 프로젝트는 OpenAI/Groq/Gemini 토큰을 직접 보유하지 않고, Hub `/hub/llm/call`, `/hub/llm/jobs`, `/hub/llm/vision`, `/hub/llm/embeddings`만 호출한다. 모델 선택, fallback, 비용 로그, BillingGuard, provider circuit은 Hub가 담당한다.
 
 ## 1. 연동 원칙
 
 - 외부 프로젝트는 provider 직접 엔드포인트(`/hub/llm/oauth`, `/hub/llm/groq`)를 사용하지 않는다. 기본 운영에서는 차단된다.
 - 기본 경로는 `POST /hub/llm/call`이다. 오래 걸리는 작업은 `POST /hub/llm/jobs`를 사용한다.
+- 이미지/차트 분석은 `POST /hub/llm/vision`, RAG embedding은 `POST /hub/llm/embeddings`를 사용한다.
 - 모델명 대신 `callerTeam + agent` 또는 `selectorKey`를 보낸다. Hub selector가 primary/fallback chain을 결정한다.
 - 모든 요청은 `Authorization: Bearer <HUB_AUTH_TOKEN>`을 사용한다.
 - 외부 프로젝트별 `callerTeam`, `agent`, `taskType`, `requestId`를 항상 넣어 비용/장애/품질 추적이 가능하게 한다.
@@ -180,7 +181,44 @@ curl -fsS \
   "$HUB_BASE_URL/hub/llm/jobs/$JOB_ID/result"
 ```
 
-## 7. Node.js 최소 클라이언트
+## 7. Vision/Embedding 호출
+
+차트, UI screenshot, 이미지 검수는 `/hub/llm/vision`을 사용한다. 외부 프로젝트는 이미지 base64만 보내고 provider token은 보유하지 않는다.
+
+```bash
+curl -fsS "$HUB_BASE_URL/hub/llm/vision" \
+  -H "Authorization: Bearer $HUB_AUTH_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "callerTeam": "external-chart",
+    "agent": "vision",
+    "selectorKey": "hub._default",
+    "taskType": "chart_vision",
+    "prompt": "이 차트의 패턴과 리스크를 JSON으로 요약해줘.",
+    "imageBase64": "<base64_png>",
+    "mimeType": "image/png",
+    "timeoutMs": 45000,
+    "maxBudgetUsd": 0.05
+  }'
+```
+
+RAG 벡터 생성은 `/hub/llm/embeddings`를 사용한다. 반환 dimension은 Hub embedding backend에 따라 달라질 수 있으므로 외부 DB vector column과 맞는지 초기 온보딩 때 확인한다.
+
+```bash
+curl -fsS "$HUB_BASE_URL/hub/llm/embeddings" \
+  -H "Authorization: Bearer $HUB_AUTH_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "callerTeam": "external-research",
+    "agent": "rag",
+    "selectorKey": "hub._default",
+    "taskType": "rag_embedding",
+    "input": "검색에 사용할 문서 텍스트",
+    "timeoutMs": 30000
+  }'
+```
+
+## 8. Node.js 최소 클라이언트
 
 ```js
 export async function callHubLlm({
@@ -228,7 +266,7 @@ export async function callHubLlm({
 }
 ```
 
-## 8. Python 최소 클라이언트
+## 9. Python 최소 클라이언트
 
 ```python
 import os
@@ -268,7 +306,7 @@ def call_hub_llm(prompt: str, *, task_type: str = "external_llm_call") -> dict:
     return payload
 ```
 
-## 9. 에러 처리 계약
+## 10. 에러 처리 계약
 
 외부 프로젝트는 아래 에러를 재시도/중단 정책에 반영한다.
 
@@ -282,7 +320,7 @@ def call_hub_llm(prompt: str, *, task_type: str = "external_llm_call") -> dict:
 | `503` | Hub 준비 안 됨 또는 shutdown | exponential backoff |
 | `ok=false`, `fallback_exhausted` | provider chain 전체 실패 | 짧은 backoff 후 1회 재시도, 이후 incident 발행 |
 
-## 10. 관측과 비용 확인
+## 11. 관측과 비용 확인
 
 최근 호출은 canonical view에서 확인한다.
 
@@ -313,7 +351,7 @@ curl -fsS \
   "$HUB_BASE_URL/hub/llm/stats?hours=24&team=external-blog"
 ```
 
-## 11. 외부 프로젝트 온보딩 체크리스트
+## 12. 외부 프로젝트 온보딩 체크리스트
 
 - `callerTeam` 이름을 정한다. 예: `external-blog`, `external-research`.
 - 사용할 `agent`와 `taskType` 목록을 정한다.
@@ -323,9 +361,10 @@ curl -fsS \
 - 외부 프로젝트에는 `HUB_BASE_URL`, `HUB_AUTH_TOKEN`, `HUB_CALLER_TEAM`, `HUB_AGENT`만 주입한다.
 - 런타임 시작 시 `/hub/llm/gateway-contract`를 조회해 계약 버전과 필수 header/body를 확인한다.
 - staging에서 `/hub/llm/call` 1회, `/hub/llm/jobs` 1회, `/hub/llm/stats` 조회를 통과시킨다.
+- 이미지/RAG 기능을 쓰는 프로젝트는 `/hub/llm/vision`, `/hub/llm/embeddings` dry-run fixture 호출도 통과시킨다.
 - 운영 전 `hub.llm_request_log`에 `request_id`, `runtime_purpose`, `estimated_cost_usd`, `budget_guard_status`가 남는지 확인한다.
 
-## 12. Stage C 운영 계약
+## 13. Stage C 운영 계약
 
 Stage C부터 외부 프로젝트 연동은 Hub 표준 LLM Gateway 계약으로 관리한다.
 
@@ -336,7 +375,7 @@ Stage C부터 외부 프로젝트 연동은 Hub 표준 LLM Gateway 계약으로 
 
 외부 프로젝트는 장애 시 자체 provider fallback을 구현하지 않는다. Hub 응답의 `Retry-After`, `providerBackpressure`, `fallbackCount`, `traceId`를 사용해 재시도/incident 정책만 수행한다.
 
-## 13. 운영 금지 사항
+## 14. 운영 금지 사항
 
 - 외부 프로젝트에 provider API key 또는 OAuth token을 배포하지 않는다.
 - direct provider endpoint를 사용하지 않는다.

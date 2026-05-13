@@ -62,6 +62,8 @@ const {
   llmJobStatusRoute,
   llmJobResultRoute,
   llmGatewayContractRoute,
+  llmVisionRoute,
+  llmEmbeddingsRoute,
 } = require('../lib/routes/llm');
 const {
   agentsListRoute,
@@ -230,6 +232,8 @@ export function registerHubRoutes(app: Express, opts: HubRouteOptions): void {
   app.get('/hub/secrets-meta/:category', secretsLimiter, secretsMetaRoute);
 
   app.post('/hub/llm/call', llmLimiter, llmAdmissionMiddleware, llmCallRoute);
+  app.post('/hub/llm/vision', llmLimiter, llmAdmissionMiddleware, llmVisionRoute);
+  app.post('/hub/llm/embeddings', llmLimiter, llmAdmissionMiddleware, llmEmbeddingsRoute);
   app.post('/hub/llm/jobs', llmLimiter, llmJobsCreateRoute);
   app.get('/hub/llm/jobs', generalLimiter, llmJobsListRoute);
   app.get('/hub/llm/jobs/:id/result', generalLimiter, llmJobResultRoute);
