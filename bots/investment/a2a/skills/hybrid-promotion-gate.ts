@@ -33,6 +33,8 @@ export function createHybridPromotionGateHandler(options = {}) {
       summary: report.summary,
       broadcastPlanned: broadcastEnabled() && params?.broadcast !== false,
       liveMutation: false,
+      verificationRequired: report.promotionReady,
+      verificationSkill: 'verification',
       evidence: {
         source: 'luna_hybrid_promotion_gate_report',
         generatedAt: report.generatedAt,

@@ -34,6 +34,8 @@ export function createHybridPromotionReviewHandler(options = {}) {
       summary: report.gate?.summary,
       broadcastPlanned: broadcastEnabled() && params?.broadcast !== false,
       liveMutation: false,
+      verificationRequired: report.readyForMasterReview,
+      verificationSkill: 'verification',
       evidence: {
         source: 'luna_hybrid_promotion_review_report',
         generatedAt: report.generatedAt,

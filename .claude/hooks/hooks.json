@@ -39,6 +39,24 @@
             "command": "./.claude/hooks/scripts/luna-posttooluse-feedback.sh"
           }
         ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "./.claude/hooks/scripts/posttooluse-systematic-debug.sh"
+          }
+        ]
+      },
+      {
+        "matcher": "Write|Edit|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "./.claude/hooks/scripts/posttooluse-verify.sh"
+          }
+        ]
       }
     ],
     "SessionStart": [
