@@ -1,6 +1,6 @@
 # LLM Agent Model Inventory
 
-Generated at: 2026-05-12T12:05:38.115Z
+Generated at: 2026-05-12T23:25:30.684Z
 
 ## Summary
 - Selector route targets: 156
@@ -8,7 +8,7 @@ Generated at: 2026-05-12T12:05:38.115Z
 - Active runtime services: 9
 - Task routes: 43
 - Alias routes: 30
-- Planned rows: 4
+- Planned rows: 1
 - Pending runtime rows: 11
 
 ## Primary Providers

@@ -8,14 +8,22 @@ const {
   describeAgentModel,
   listAgentModelTargets,
 } = require('../../../packages/core/lib/llm-model-selector.ts');
+const {
+  isHubNonLlmTarget,
+} = require('../src/llm-selector.ts');
 
-const TARGET_TEAMS = ['orchestrator', 'blog', 'claude', 'sigma', 'darwin'];
+const DEFAULT_TARGET_TEAMS = ['orchestrator', 'blog', 'claude', 'sigma', 'darwin'];
+const ALL_TARGET_TEAMS = ['orchestrator', 'blog', 'claude', 'sigma', 'darwin', 'luna', 'investment', 'justin', 'ska'];
 const TEAM_LABELS = {
   orchestrator: 'team-jay',
   blog: 'blog',
   claude: 'claude',
   sigma: 'sigma',
   darwin: 'darwin',
+  luna: 'luna',
+  investment: 'investment',
+  justin: 'justin',
+  ska: 'ska',
 };
 
 const PLACEHOLDER_RE = /(__SET_|CHANGE_ME|REPLACE_ME|TODO|PLACEHOLDER|changeme)/i;
@@ -27,6 +35,14 @@ function flag(name) {
 
 function argFlag(name) {
   return process.argv.slice(2).includes(name);
+}
+
+function argValue(name, fallback = '') {
+  const prefix = `${name}=`;
+  const found = process.argv.slice(2).find((arg) => arg === name || arg.startsWith(prefix));
+  if (!found) return fallback;
+  if (found === name) return 'true';
+  return found.slice(prefix.length);
 }
 
 function baseUrl() {
@@ -43,6 +59,23 @@ function maxTokens() {
 
 function concurrency() {
   return Math.min(4, Math.max(1, Number(process.env.HUB_MULTI_AGENT_LLM_DRILL_CONCURRENCY || 2) || 2));
+}
+
+function logFlushMs() {
+  return Math.max(0, Number(process.env.HUB_MULTI_AGENT_LLM_DRILL_LOG_FLUSH_MS || 1000) || 1000);
+}
+
+function targetTeams() {
+  const raw = String(argValue('--teams', process.env.HUB_MULTI_AGENT_LLM_DRILL_TEAMS || '') || '').trim();
+  if (!raw) return DEFAULT_TARGET_TEAMS;
+  if (raw.toLowerCase() === 'all') return ALL_TARGET_TEAMS;
+  return [...new Set(raw.split(',').map((item) => item.trim()).filter(Boolean))];
+}
+
+function slotFilter() {
+  if (argFlag('--primary-only')) return 'primary';
+  if (argFlag('--fallbacks-only')) return 'fallbacks';
+  return String(process.env.HUB_MULTI_AGENT_LLM_DRILL_SLOT_FILTER || 'all').trim().toLowerCase() || 'all';
 }
 
 function usableSecret(value) {
@@ -142,8 +175,11 @@ function budgetForRoute(route) {
 }
 
 function buildPlans() {
-  const agents = TARGET_TEAMS.flatMap((team) =>
-    listAgentModelTargets(team).map((target) => ({ ...target, label: TEAM_LABELS[team] || team }))
+  const teams = targetTeams();
+  const agents = teams.flatMap((team) =>
+    listAgentModelTargets(team)
+      .filter((target) => !isHubNonLlmTarget({ callerTeam: team, agent: target.agent, selectorKey: target.selectorKey }))
+      .map((target) => ({ ...target, label: TEAM_LABELS[team] || team }))
   );
 
   return agents.map((agent) => {
@@ -185,7 +221,12 @@ function buildPlans() {
 }
 
 function buildChecks(plans) {
-  return plans.flatMap((plan) => plan.slots.map((slot) => ({
+  const filter = slotFilter();
+  return plans.flatMap((plan) => plan.slots.filter((slot) => {
+    if (filter === 'primary') return slot.index === 0;
+    if (filter === 'fallbacks' || filter === 'fallback') return slot.index > 0;
+    return true;
+  }).map((slot) => ({
     team: plan.team,
     label: plan.label,
     agent: plan.agent,
@@ -230,10 +271,11 @@ function setupMockFetch(checks) {
   };
 }
 
-async function callCheck(check, token) {
+async function callCheck(check, token, targetBaseUrl = baseUrl()) {
   const started = Date.now();
+  const forceSlotChain = check.role !== 'primary';
   try {
-    const response = await fetch(`${baseUrl()}/hub/llm/call`, {
+    const response = await fetch(`${targetBaseUrl}/hub/llm/call`, {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${token}`,
@@ -253,7 +295,7 @@ async function callCheck(check, token) {
         timeoutMs: timeoutMs(),
         maxBudgetUsd: budgetForRoute(check.route),
         cacheEnabled: false,
-        selectorKey: check.selectorKey || undefined,
+        selectorKey: forceSlotChain ? undefined : check.selectorKey || undefined,
         chain: [check.entry],
       }),
       signal: AbortSignal.timeout(timeoutMs() + 5000),
@@ -315,15 +357,37 @@ async function mapConcurrent(items, limit, worker) {
 
 async function main() {
   const live = flag('HUB_MULTI_AGENT_LLM_DRILL_LIVE') || argFlag('--live');
+  const useLocalApp = live && (flag('HUB_MULTI_AGENT_LLM_DRILL_LOCAL_APP') || argFlag('--local-app'));
   const allowFailures = flag('HUB_MULTI_AGENT_LLM_DRILL_ALLOW_FAILURES') || argFlag('--allow-failures');
   const allowSkipped = flag('HUB_MULTI_AGENT_LLM_DRILL_ALLOW_SKIPPED') || argFlag('--allow-skipped');
   const plans = buildPlans();
   const checks = buildChecks(plans);
+  if (useLocalApp && !usableSecret(process.env.HUB_AUTH_TOKEN || launchctlGetenv('HUB_AUTH_TOKEN'))) {
+    process.env.HUB_AUTH_TOKEN = 'hub-multi-agent-llm-drill-local-token';
+  }
+  if (useLocalApp && checks.some((check) => check.role !== 'primary')) {
+    process.env.HUB_LLM_ALLOW_ADHOC_CHAIN = '1';
+  }
   const token = hubToken(live);
   const restoreFetch = live ? null : setupMockFetch(checks);
+  let server = null;
+  let targetBaseUrl = baseUrl();
 
   try {
-    const results = await mapConcurrent(checks, live ? concurrency() : 8, (check) => callCheck(check, token));
+    if (useLocalApp) {
+      const { createHubApp } = require('../src/app.ts');
+      const app = createHubApp({
+        isShuttingDown: () => false,
+        isStartupComplete: () => true,
+      });
+      server = await new Promise((resolve) => {
+        const started = app.listen(0, '127.0.0.1', () => resolve(started));
+      });
+      const address = server.address();
+      targetBaseUrl = `http://127.0.0.1:${address.port}`;
+    }
+    const results = await mapConcurrent(checks, live ? concurrency() : 8, (check) => callCheck(check, token, targetBaseUrl));
+    if (useLocalApp) await new Promise((resolve) => setTimeout(resolve, logFlushMs()));
     const skippedAgents = plans.filter((plan) => !plan.selected).map((plan) => ({
       team: plan.team,
       label: plan.label,
@@ -333,7 +397,7 @@ async function main() {
     }));
     const failed = results.filter((result) => !result.ok);
     const byTeam = {};
-    for (const team of TARGET_TEAMS) {
+    for (const team of targetTeams()) {
       const teamResults = results.filter((result) => result.team === team);
       byTeam[team] = {
         agents: plans.filter((plan) => plan.team === team).length,
@@ -348,9 +412,10 @@ async function main() {
     const report = {
       ok: failed.length === 0 && (allowSkipped || skippedAgents.length === 0),
       mode: live ? 'live' : 'mock',
-      baseUrl: live ? baseUrl() : 'mock',
+      baseUrl: live ? targetBaseUrl : 'mock',
       generatedAt: new Date().toISOString(),
-      teams: TARGET_TEAMS,
+      teams: targetTeams(),
+      slotFilter: slotFilter(),
       totals: {
         agents: plans.length,
         selectedAgents: plans.filter((plan) => plan.selected).length,
@@ -374,6 +439,7 @@ async function main() {
     console.log(JSON.stringify(report, null, 2));
     process.exit((failed.length === 0 || allowFailures) && (allowSkipped || skippedAgents.length === 0) ? 0 : 1);
   } finally {
+    if (server) await new Promise((resolve) => server.close(() => resolve(undefined)));
     restoreFetch?.();
   }
 }

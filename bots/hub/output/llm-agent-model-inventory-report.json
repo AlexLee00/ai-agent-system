@@ -1,6 +1,6 @@
 {
   "ok": true,
-  "generatedAt": "2026-05-12T12:05:38.115Z",
+  "generatedAt": "2026-05-12T23:25:30.684Z",
   "selectorVersion": "v3.0_oauth_4",
   "summary": {
     "selectorRouteTargets": 156,
@@ -9,7 +9,7 @@
     "runtimeServices": 9,
     "taskRoutes": 43,
     "aliases": 30,
-    "planned": 4,
+    "planned": 1,
     "pendingRuntime": 11,
     "retired": 0,
     "countsByKind": {
@@ -19,12 +19,12 @@
       "runtime_service": 9
     },
     "countsByModelStatus": {
-      "registry_model_only": 14,
       "selector_chain": 156,
       "team_container": 4,
       "auto_dev_implementation_model": 1,
       "non_llm_role": 3,
-      "non_llm_service": 1
+      "non_llm_service": 1,
+      "registry_model_only": 11
     },
     "primaryProviderCounts": {
       "gemini-cli-oauth": 88,
@@ -45,23 +45,6 @@
     "use LLM_CLAUDE_CODE_QUOTA_MODE=avoid or LLM_CLAUDE_CODE_DISABLED=true to shift legacy Claude Code usage to OpenAI OAuth during quota saturation"
   ],
   "rows": [
-    {
-      "source": "registry",
-      "team": "academic",
-      "namespace": "academic",
-      "agent": "academic",
-      "kind": "planned",
-      "status": "planned",
-      "selectorKey": null,
-      "primary": "ollama/deepseek-r1:32b",
-      "fallbacks": [
-        "anthropic/claude-sonnet-4-6"
-      ],
-      "modelStatus": "registry_model_only",
-      "blockReason": "planned",
-      "countable": false,
-      "role": "박사 논문 작성 및 연구 보조 (SE 기반 소프트웨어 감정평가)"
-    },
     {
       "source": "selector",
       "team": "blog",
@@ -323,23 +306,6 @@
       "registryModel": null,
       "registryFallbacks": [],
       "role": "insta_cross_posting"
-    },
-    {
-      "source": "registry",
-      "team": "business",
-      "namespace": "business",
-      "agent": "business",
-      "kind": "planned",
-      "status": "planned",
-      "selectorKey": null,
-      "primary": "ollama/qwen2.5:32b",
-      "fallbacks": [
-        "anthropic/claude-sonnet-4-6"
-      ],
-      "modelStatus": "registry_model_only",
-      "blockReason": "planned",
-      "countable": false,
-      "role": "기획 및 업무 종합 보조"
     },
     {
       "source": "registry",
@@ -2598,23 +2564,6 @@
       "modelStatus": "selector_chain",
       "blockReason": null,
       "countable": false
-    },
-    {
-      "source": "registry",
-      "team": "secretary",
-      "namespace": "secretary",
-      "agent": "secretary",
-      "kind": "planned",
-      "status": "planned",
-      "selectorKey": null,
-      "primary": "ollama/qwen2.5:14b",
-      "fallbacks": [
-        "anthropic/claude-haiku-4-5"
-      ],
-      "modelStatus": "registry_model_only",
-      "blockReason": "planned",
-      "countable": false,
-      "role": "개인 일정 관리 및 업무 보조"
     },
     {
       "source": "selector",

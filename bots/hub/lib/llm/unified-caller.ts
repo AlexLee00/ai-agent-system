@@ -1,7 +1,7 @@
 'use strict';
 
-// Unified LLM Caller — Hub selector chain + Circuit Breaker + Fallback Exhaustion
-// Route decision authority lives in packages/core/lib/llm-model-selector.ts.
+// Unified LLM Caller — Hub selector facade + Circuit Breaker + Fallback Exhaustion
+// Core selector remains the SSOT; Hub-specific routing goes through src/llm-selector.ts.
 
 const crypto = require('node:crypto');
 
@@ -15,9 +15,8 @@ const {
   callGeminiCodeAssistOAuth,
 } = require('./oauth-direct');
 const { checkCache, saveCache } = require('./cache');
-const { selectRuntimeProfile } = require('../runtime-profiles');
 const { getGroqFallback } = require('../../../../packages/core/lib/llm-models');
-const { describeAgentModel, selectLLMChain } = require('../../../../packages/core/lib/llm-model-selector');
+const { resolveHubLlmSelection } = require('../../src/llm-selector');
 const providerRegistry = require('./provider-registry');
 const sender = require('../../../../packages/core/lib/telegram-sender');
 
@@ -58,19 +57,32 @@ async function callWithFallback(req) {
 
 async function _callWithFallbackInternal(req) {
   const team = req.callerTeam || 'hub';
+  const estimatedCostUsd = _estimatedCostUsd(req);
+  req._estimatedCostUsd = estimatedCostUsd;
 
   // 0. Budget check
   if (process.env.HUB_BUDGET_GUARDIAN_ENABLED !== 'false') {
     try {
       const { BudgetGuardian } = require('../budget-guardian');
-      const budgetCheck = BudgetGuardian.getInstance().checkAndReserve(team, 0.01);
+      const budgetCheck = BudgetGuardian.getInstance().checkAndReserve(team, estimatedCostUsd);
+      req._budgetGuardStatus = budgetCheck.ok ? 'allowed' : 'blocked';
       if (!budgetCheck.ok) {
         console.warn(`[llm/unified] 예산 차단 (${team}): ${budgetCheck.reason}`);
-        return { ok: false, provider: 'failed', error: `budget_exceeded: ${budgetCheck.reason}`, durationMs: 0 };
+        return {
+          ok: false,
+          provider: 'failed',
+          error: `budget_exceeded: ${budgetCheck.reason}`,
+          durationMs: 0,
+          estimatedCostUsd,
+          budgetGuardStatus: 'blocked',
+        };
       }
     } catch (e) {
       console.warn('[llm/unified] BudgetGuardian 오류 (무시):', e.message);
+      req._budgetGuardStatus = 'error_ignored';
     }
+  } else {
+    req._budgetGuardStatus = 'disabled';
   }
 
   // 1. Cache check
@@ -98,16 +110,24 @@ async function _callWithFallbackInternal(req) {
       fallbackCount: 0,
     };
   }
-  const selectorChain = _resolveSelectorChain(req, team);
-  if (selectorChain) {
-    return _callWithSelectorChain(req, selectorChain, team);
+  const selection = _resolveSelectorChain(req, team);
+  if (selection?.chain?.length) {
+    return _callWithSelectorChain(req, selection, team);
   }
-
-  const profile = req.agent ? selectRuntimeProfile(team, req.agent) : null;
-  const hasChain = !!(profile && ((profile.primary_routes && profile.primary_routes.length) || (profile.fallback_routes && profile.fallback_routes.length)));
-
-  if (hasChain) {
-    return _callWithProfileChain(req, profile, team);
+  if (selection?.error) {
+    return {
+      ok: false,
+      provider: 'failed',
+      durationMs: 0,
+      error: selection.error,
+      fallbackCount: 0,
+      selectorKey: selection.selectorKey || null,
+      routeTargetKind: selection.routeTargetKind || selection.target?.kind || null,
+      runtimePurpose: selection.runtimePurpose || null,
+      estimatedCostUsd,
+      budgetGuardStatus: req._budgetGuardStatus || null,
+      providerTiers: selection.providerTiers || [],
+    };
   }
   if (process.env.HUB_LLM_ALLOW_LEGACY_CHAIN === 'true') return _callLegacy(req, team);
   return {
@@ -169,52 +189,10 @@ async function _runWithInflightDedupe(req, executor) {
 
 function _resolveSelectorChain(req, team) {
   try {
-    if (req.selectorKey) {
-      const chain = selectLLMChain(String(req.selectorKey), {
-        maxTokens: req.maxTokens,
-        agentName: req.agent,
-        preferredApi: req.preferredApi,
-        groqModel: req.groqModel,
-        configuredProviders: req.configuredProviders,
-        policyOverride: req.policyOverride,
-      });
-      return chain && chain.length ? _applySelectorAvoidProviders(req, { selectorKey: String(req.selectorKey), chain }) : null;
-    }
-    if (_hasAdhocChain(req) && !_adhocChainAllowed()) return null;
-    if (_hasAdhocChain(req)) {
-      return _applySelectorAvoidProviders(req, { selectorKey: 'hub.adhoc.chain', chain: req.chain });
-    }
-    if (req.agent) {
-      const resolved = describeAgentModel(team, String(req.agent));
-      if (resolved?.selected && Array.isArray(resolved.chain) && resolved.chain.length > 0) {
-        return _applySelectorAvoidProviders(req, { selectorKey: resolved.selectorKey, chain: resolved.chain });
-      }
-    }
-    const profileName = req.agent || 'default';
-    const profile = selectRuntimeProfile(team, profileName);
-    if (profile?.selector_key) {
-      const chain = selectLLMChain(String(profile.selector_key), {
-        maxTokens: req.maxTokens ?? profile.max_tokens,
-        temperature: req.temperature ?? profile.temperature,
-        agentName: profile.selector_agent || req.agent,
-        policyOverride: req.policyOverride,
-        ...(profile.selector_options || {}),
-      });
-      if (chain?.length) {
-        return _applySelectorAvoidProviders(req, {
-          selectorKey: String(profile.selector_key),
-          runtimeProfile: `${team}.${profileName}`,
-          chain,
-        });
-      }
-    }
-    if (!req.selectorKey && !req.agent) {
-      const chain = selectLLMChain('hub._default', {
-        maxTokens: req.maxTokens,
-        temperature: req.temperature,
-      });
-      if (chain?.length) return _applySelectorAvoidProviders(req, { selectorKey: 'hub._default', runtimeProfile: 'hub.default', chain });
-    }
+    const selection = resolveHubLlmSelection(req, { allowAdhocChain: _adhocChainAllowed() });
+    if (selection?.chain?.length) return _applySelectorAvoidProviders(req, selection);
+    if (selection?.error === 'llm_adhoc_chain_blocked') return null;
+    return selection?.error ? selection : null;
   } catch (e) {
     console.warn(`[llm/unified] selector chain 해석 실패 (${team}/${req.agent || req.selectorKey || 'unknown'}): ${e.message}`);
   }
@@ -263,6 +241,11 @@ async function _callWithSelectorChain(req, selectorChain, team) {
         selected_route: selectedRoute,
         selectorKey: selectorChain.selectorKey,
         runtimeProfile: selectorChain.runtimeProfile || null,
+        runtimePurpose: selectorChain.runtimePurpose || null,
+        routeTargetKind: selectorChain.routeTargetKind || selectorChain.target?.kind || null,
+        providerTiers: selectorChain.providerTiers || [],
+        estimatedCostUsd: req._estimatedCostUsd || null,
+        budgetGuardStatus: req._budgetGuardStatus || null,
         avoidedProviders: selectorChain.avoidedProviders || [],
         fallbackCount: attempts.length,
         attempted_providers: attempts.map(a => a.provider),
@@ -283,6 +266,11 @@ async function _callWithSelectorChain(req, selectorChain, team) {
     fallbackCount: attempts.length,
     selectorKey: selectorChain.selectorKey,
     runtimeProfile: selectorChain.runtimeProfile || null,
+    runtimePurpose: selectorChain.runtimePurpose || null,
+    routeTargetKind: selectorChain.routeTargetKind || selectorChain.target?.kind || null,
+    providerTiers: selectorChain.providerTiers || [],
+    estimatedCostUsd: req._estimatedCostUsd || null,
+    budgetGuardStatus: req._budgetGuardStatus || null,
   };
 }
 
@@ -588,6 +576,12 @@ function _positiveNumber(value, fallback = null) {
   const parsed = Number(value);
   if (Number.isFinite(parsed) && parsed > 0) return parsed;
   return fallback;
+}
+
+function _estimatedCostUsd(req) {
+  const explicit = _positiveNumber(req?.estimatedCostUsd ?? req?.estimated_cost_usd, null);
+  if (explicit !== null) return explicit;
+  return _positiveNumber(process.env.HUB_LLM_DEFAULT_ESTIMATED_COST_USD, 0.01);
 }
 
 function _claudeCodeFamily(model) {

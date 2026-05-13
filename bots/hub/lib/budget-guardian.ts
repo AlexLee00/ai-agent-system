@@ -2,6 +2,7 @@
 const path = require('path');
 const PROJECT_ROOT = path.resolve(__dirname, '../../..');
 const pgPool = require(path.join(PROJECT_ROOT, 'packages/core/lib/pg-pool'));
+const billingGuard = require(path.join(PROJECT_ROOT, 'packages/core/lib/billing-guard'));
 
 const TEAM_QUOTAS: Record<string, number> = {
   luna: 30,
@@ -83,9 +84,20 @@ export class BudgetGuardian {
       return { ok: true, globalRatio: 0, teamRatio: 0 };
     }
 
+    const normalizedTeam = normalizeTeam(team);
+    const activeStop = billingGuard.getBlockReason(normalizedTeam);
+    if (activeStop) {
+      return {
+        ok: false,
+        reason: `BillingGuard 차단(${activeStop.scope || normalizedTeam}): ${activeStop.reason || 'active_stop_file'}`,
+        globalRatio: this.globalUsed / GLOBAL_LIMIT_USD,
+        teamRatio: 0,
+      };
+    }
+
     const globalRatio = this.globalUsed / GLOBAL_LIMIT_USD;
-    const teamQuota = TEAM_QUOTAS[team] ?? 5;
-    const teamUsedAmt = this.teamUsed[team] ?? 0;
+    const teamQuota = TEAM_QUOTAS[normalizedTeam] ?? 5;
+    const teamUsedAmt = this.teamUsed[normalizedTeam] ?? 0;
     const teamRatio = teamUsedAmt / teamQuota;
 
     // Emergency cutoff
@@ -112,7 +124,7 @@ export class BudgetGuardian {
     if (teamUsedAmt + estimatedCost > teamQuota) {
       return {
         ok: false,
-        reason: `${team} 팀 예산 초과: $${teamUsedAmt.toFixed(2)}/$${teamQuota}`,
+        reason: `${normalizedTeam} 팀 예산 초과: $${teamUsedAmt.toFixed(2)}/$${teamQuota}`,
         globalRatio,
         teamRatio,
       };
@@ -122,6 +134,7 @@ export class BudgetGuardian {
   }
 
   trackCost(team: string, actualCost: number): void {
+    team = normalizeTeam(team);
     this.globalUsed += actualCost;
     this.teamUsed[team] = (this.teamUsed[team] ?? 0) + actualCost;
 
@@ -155,44 +168,26 @@ export class BudgetGuardian {
     };
 
     if (team) {
-      return { ...base, team: teams[team] };
+      return { ...base, team: teams[normalizeTeam(team)] };
     }
     return base;
   }
 
   async refreshFromDb(): Promise<void> {
     try {
-      // Query from all known routing log and cost tracking tables
-      const tables = [
-        { table: 'luna_llm_cost_tracking', team: 'luna' },
-        { table: 'darwin_llm_cost_tracking', team: 'darwin' },
-        { table: 'sigma_llm_cost_tracking', team: 'sigma' },
-        { table: 'jay_llm_cost_tracking', team: 'claude' },
-      ];
-
+      const rows = await queryRequestLogCosts();
       let newGlobal = 0;
       const newTeamUsed: Record<string, number> = {};
-
-      for (const { table, team } of tables) {
-        try {
-          const result = await pgPool.query(
-            `SELECT COALESCE(SUM(cost_usd), 0) AS total
-             FROM ${table}
-             WHERE inserted_at >= CURRENT_DATE`
-          );
-          const cost = Number(result.rows[0]?.total ?? 0);
-          newTeamUsed[team] = cost;
-          newGlobal += cost;
-        } catch {
-          // Table may not exist yet — keep existing value
-          newTeamUsed[team] = this.teamUsed[team] ?? 0;
-          newGlobal += newTeamUsed[team];
-        }
+      for (const row of rows) {
+        const team = normalizeTeam(row.caller_team || row.team || 'hub');
+        const cost = Number(row.total || row.cost || 0);
+        newTeamUsed[team] = (newTeamUsed[team] || 0) + cost;
+        newGlobal += cost;
       }
 
       this.globalUsed = newGlobal;
-      for (const [team, cost] of Object.entries(newTeamUsed)) {
-        this.teamUsed[team] = cost;
+      for (const team of Object.keys(TEAM_QUOTAS)) {
+        this.teamUsed[team] = newTeamUsed[team] ?? 0;
       }
     } catch (e: any) {
       console.warn('[budget-guardian] refreshFromDb 오류:', e.message);
@@ -206,5 +201,33 @@ export class BudgetGuardian {
     } catch {
       console.warn('[budget-guardian] 알람 전송 실패:', message);
     }
+  }
+}
+
+function normalizeTeam(team = 'hub'): string {
+  const normalized = String(team || 'hub').trim().toLowerCase() || 'hub';
+  if (normalized === 'luna') return 'luna';
+  if (normalized === 'investment') return 'luna';
+  if (normalized === 'jay' || normalized === 'orchestrator') return 'hub';
+  return normalized;
+}
+
+async function queryRequestLogCosts(): Promise<Array<{ caller_team?: string; team?: string; total?: number | string; cost?: number | string }>> {
+  try {
+    return await pgPool.query('public', `
+      SELECT COALESCE(NULLIF(caller_team, ''), 'hub') AS caller_team,
+             COALESCE(SUM(cost_usd), 0) AS total
+      FROM hub.llm_request_log
+      WHERE created_at >= CURRENT_DATE
+      GROUP BY 1
+    `);
+  } catch {
+    return pgPool.query('public', `
+      SELECT COALESCE(NULLIF(caller_team, ''), 'hub') AS caller_team,
+             COALESCE(SUM(cost_usd), 0) AS total
+      FROM public.llm_routing_log
+      WHERE created_at >= CURRENT_DATE
+      GROUP BY 1
+    `);
   }
 }

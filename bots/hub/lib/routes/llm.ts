@@ -12,7 +12,7 @@ const {
   getJobStoreState,
 } = require('../llm/job-store');
 const { parseLlmCallPayload } = require('../llm/request-schema');
-const { isLlmRouteTargetAllowed } = require('../../../../packages/core/lib/llm-model-selector');
+const { isHubLlmRouteTargetAllowed } = require('../../src/llm-selector');
 const { getAllCircuitStatuses, resetCircuit, resetAllCircuits } = require('../../../../packages/core/lib/local-circuit-breaker');
 const {
   getProviderCooldownSnapshot,
@@ -39,9 +39,10 @@ export async function llmCallRoute(req, res) {
     callerTeam: body.callerTeam || context.callerTeam || undefined,
     agent: body.agent || context.agent || undefined,
     urgency: body.urgency || context.priority || undefined,
+    requestId: body.requestId || context.traceId || undefined,
     traceId: context.traceId || undefined,
   };
-  const targetPolicy = isLlmRouteTargetAllowed(normalizedRequest);
+  const targetPolicy = isHubLlmRouteTargetAllowed(normalizedRequest);
   if (!targetPolicy.ok) {
     return res.status(403).json({
       ok: false,
@@ -107,9 +108,10 @@ export async function llmJobsCreateRoute(req, res) {
     callerTeam: body.callerTeam || context.callerTeam || undefined,
     agent: body.agent || context.agent || undefined,
     urgency: body.urgency || context.priority || undefined,
+    requestId: body.requestId || context.traceId || undefined,
     traceId: context.traceId || undefined,
   };
-  const targetPolicy = isLlmRouteTargetAllowed(normalizedRequest);
+  const targetPolicy = isHubLlmRouteTargetAllowed(normalizedRequest);
   if (!targetPolicy.ok) {
     return res.status(403).json({
       ok: false,
@@ -535,8 +537,9 @@ async function insertRoutingLog(resp, body, audit, includeAudit) {
         created_at, provider, agent, caller_team, abstract_model,
         success, duration_ms, cost_usd, fallback_count, error, session_id,
         prompt_hash, system_prompt_hash, request_fingerprint, prompt_chars,
-        selector_key, selected_route, runtime_profile, attempted_providers, avoided_providers
-      ) VALUES (NOW(), $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18::jsonb, $19::jsonb)
+        selector_key, selected_route, runtime_profile, attempted_providers, avoided_providers,
+        request_id, route_target_kind, runtime_purpose, estimated_cost_usd, budget_guard_status, provider_tier
+      ) VALUES (NOW(), $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18::jsonb, $19::jsonb, $20, $21, $22, $23, $24, $25)
     `, [
       providerForLog,
       body.agent ?? null,
@@ -557,6 +560,12 @@ async function insertRoutingLog(resp, body, audit, includeAudit) {
       resp.runtimeProfile ?? null,
       JSON.stringify(Array.isArray(resp.attempted_providers) ? resp.attempted_providers : []),
       JSON.stringify(Array.isArray(resp.avoidedProviders) ? resp.avoidedProviders : []),
+      body.requestId ?? body.traceId ?? resp.traceId ?? resp.sessionId ?? null,
+      resp.routeTargetKind ?? null,
+      resp.runtimePurpose ?? body.runtimePurpose ?? body.runtime_purpose ?? body.taskType ?? body.task_type ?? null,
+      Number(resp.estimatedCostUsd ?? body.estimatedCostUsd ?? body.estimated_cost_usd ?? 0) || 0,
+      resp.budgetGuardStatus ?? null,
+      resolveProviderTierForLog(resp),
     ]);
     return;
   }
@@ -610,7 +619,10 @@ function hashText(value) {
 function ensureRoutingLogAuditColumns() {
   if (!routingLogAuditColumnsPromise) {
     routingLogAuditColumnsPromise = (async () => {
-      if (await routingLogAuditColumnsExist()) return true;
+      if (await routingLogAuditColumnsExist()) {
+        await ensureHubLlmRequestLogView();
+        return true;
+      }
       await pgPool.run('public', `
           ALTER TABLE llm_routing_log
             ADD COLUMN IF NOT EXISTS prompt_hash TEXT,
@@ -621,9 +633,16 @@ function ensureRoutingLogAuditColumns() {
             ADD COLUMN IF NOT EXISTS selected_route TEXT,
             ADD COLUMN IF NOT EXISTS runtime_profile TEXT,
             ADD COLUMN IF NOT EXISTS attempted_providers JSONB NOT NULL DEFAULT '[]'::jsonb,
-            ADD COLUMN IF NOT EXISTS avoided_providers JSONB NOT NULL DEFAULT '[]'::jsonb
+            ADD COLUMN IF NOT EXISTS avoided_providers JSONB NOT NULL DEFAULT '[]'::jsonb,
+            ADD COLUMN IF NOT EXISTS request_id TEXT,
+            ADD COLUMN IF NOT EXISTS route_target_kind TEXT,
+            ADD COLUMN IF NOT EXISTS runtime_purpose TEXT,
+            ADD COLUMN IF NOT EXISTS estimated_cost_usd DOUBLE PRECISION DEFAULT 0,
+            ADD COLUMN IF NOT EXISTS budget_guard_status TEXT,
+            ADD COLUMN IF NOT EXISTS provider_tier TEXT
         `);
       await createRoutingLogAuditIndexes();
+      await ensureHubLlmRequestLogView();
       return true;
     })().catch((err) => {
       console.warn('[llm] routing log audit column ensure skipped:', err?.message || err);
@@ -647,11 +666,17 @@ async function routingLogAuditColumnsExist() {
     'prompt_chars',
     'selector_key',
     'selected_route',
-    'runtime_profile',
-    'attempted_providers',
-    'avoided_providers',
-  ]]);
-  return Number(rows?.[0]?.count || 0) === 9;
+      'runtime_profile',
+      'attempted_providers',
+      'avoided_providers',
+      'request_id',
+      'route_target_kind',
+      'runtime_purpose',
+      'estimated_cost_usd',
+      'budget_guard_status',
+      'provider_tier',
+    ]]);
+  return Number(rows?.[0]?.count || 0) === 15;
 }
 
 async function createRoutingLogAuditIndexes() {
@@ -672,9 +697,67 @@ async function createRoutingLogAuditIndexes() {
       CREATE INDEX IF NOT EXISTS idx_llm_routing_log_selected_route
         ON llm_routing_log (selected_route, created_at DESC)
     `);
+    await pgPool.run('public', `
+      CREATE INDEX IF NOT EXISTS idx_llm_routing_log_request_id
+        ON llm_routing_log (request_id)
+    `);
+    await pgPool.run('public', `
+      CREATE INDEX IF NOT EXISTS idx_llm_routing_log_runtime_purpose
+        ON llm_routing_log (caller_team, runtime_purpose, created_at DESC)
+    `);
   } catch (err) {
     console.warn('[llm] routing log audit index ensure skipped:', err?.message || err);
   }
+}
+
+async function ensureHubLlmRequestLogView() {
+  await pgPool.run('public', `CREATE SCHEMA IF NOT EXISTS hub`);
+  await pgPool.run('public', `
+    CREATE OR REPLACE VIEW hub.llm_request_log AS
+    SELECT
+      id,
+      COALESCE(request_id, session_id, id::text) AS request_id,
+      created_at,
+      provider,
+      agent,
+      caller_team,
+      abstract_model,
+      success,
+      duration_ms,
+      cost_usd,
+      fallback_count,
+      error,
+      session_id,
+      prompt_hash,
+      system_prompt_hash,
+      request_fingerprint,
+      prompt_chars,
+      selector_key,
+      selected_route,
+      runtime_profile,
+      attempted_providers,
+      avoided_providers,
+      route_target_kind,
+      runtime_purpose,
+      estimated_cost_usd,
+      budget_guard_status,
+      provider_tier
+    FROM public.llm_routing_log
+  `);
+}
+
+function resolveProviderTierForLog(resp) {
+  const tiers = Array.isArray(resp?.providerTiers) ? resp.providerTiers : [];
+  const selectedRoute = String(resp?.selected_route || '');
+  const selected = tiers.find((tier) => tier.route === selectedRoute || tier.provider === resp?.provider);
+  if (selected?.tier != null) return String(selected.tier);
+  const provider = String(resp?.provider || '');
+  if (provider === 'openai-oauth') return '1';
+  if (provider === 'groq') return '2';
+  if (provider === 'gemini-cli-oauth' || provider === 'gemini-oauth' || provider === 'gemini-codeassist-oauth') return '3';
+  if (provider === 'local') return '4';
+  if (provider === 'claude-code-oauth') return '5';
+  return null;
 }
 
 function isRoutingLogAuditColumnError(err) {
@@ -688,5 +771,11 @@ function isRoutingLogAuditColumnError(err) {
     || message.includes('runtime_profile')
     || message.includes('attempted_providers')
     || message.includes('avoided_providers')
+    || message.includes('request_id')
+    || message.includes('route_target_kind')
+    || message.includes('runtime_purpose')
+    || message.includes('estimated_cost_usd')
+    || message.includes('budget_guard_status')
+    || message.includes('provider_tier')
     || message.includes('column') && message.includes('does not exist');
 }

@@ -126,7 +126,12 @@ function loadAgentsFromSource(sourcePath: string, arrayName: string) {
         runtime_purpose: purpose,
       };
     };
-  const agents = vm.runInNewContext(`(${literal})`, { runtimeConfig }, { timeout: 1000 });
+  const nonLlmConfig = (reason: string) => ({
+    llm_management: 'non-llm',
+    non_llm_reason: reason,
+    llm_selector_key: null,
+  });
+  const agents = vm.runInNewContext(`(${literal})`, { runtimeConfig, nonLlmConfig }, { timeout: 1000 });
   assert(Array.isArray(agents), `${sourcePath}:${arrayName} must evaluate to an array`);
   return agents.map((agent: any) => ({ ...agent, _source: sourcePath }));
 }

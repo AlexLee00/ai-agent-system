@@ -35,8 +35,8 @@ console.log(JSON.stringify({
   try {
     const { callWithFallback } = await import('../lib/llm/unified-caller.ts');
     const result = await callWithFallback({
-      callerTeam: 'orchestrator',
-      agent: 'steward',
+      callerTeam: 'hub',
+      agent: 'gemini-cli-readiness',
       selectorKey: 'hub.gemini.cli.adapter.smoke',
       systemPrompt: 'You are a smoke test.',
       prompt: 'Reply with adapter ok.',
