@@ -54,6 +54,21 @@ assert.equal(circuitResult.success, false);
 assert.equal(circuit.captured[0].payload.code, 'capital_circuit_breaker');
 assert.equal(circuit.captured[0].payload.meta.circuitType, 'daily_loss');
 
+const tradeDataBlocked = createDeps({
+  symbol: 'RLUSD/USDT',
+  signal: {
+    symbol: 'RLUSD/USDT',
+    action: ACTIONS.BUY,
+    exchange: 'binance',
+    market: 'crypto',
+  },
+});
+const tradeDataResult = await runBuySafetyGuards(tradeDataBlocked.input);
+assert.equal(tradeDataResult.success, false);
+assert.equal(tradeDataBlocked.captured[0].payload.code, 'trade_data_entry_guard_rejected');
+assert.equal(tradeDataBlocked.captured[0].payload.meta.guardKind, 'trade_data_entry_guard');
+assert.deepEqual(tradeDataBlocked.captured[0].payload.meta.tradeDataGuard.blockers, ['trade_data_weak_symbol']);
+
 const maxPositions = createDeps({
   getOpenPositions: async () => [{}, {}],
 });
@@ -79,6 +94,7 @@ const payload = {
   ok: true,
   smoke: 'hephaestos-execution-guards',
   circuit: circuit.captured[0],
+  tradeDataBlocked: tradeDataBlocked.captured[0],
   maxPositions: maxPositions.captured[0],
   dailyLimit: dailyLimit.captured[0],
 };

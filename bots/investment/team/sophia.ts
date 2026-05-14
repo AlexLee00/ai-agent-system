@@ -28,12 +28,12 @@ import { getAnalysisReuseTtlMinutes, getReusableAnalysis } from '../shared/analy
 // ─── 소스 설정 ────────────────────────────────────────────────────────
 
 const REDDIT_SOURCES_CRYPTO = {
-  'BTC/USDT': ['Bitcoin', 'CryptoCurrency'],
-  'ETH/USDT': ['ethereum', 'CryptoCurrency'],
-  'SOL/USDT': ['solana',  'CryptoCurrency'],
+  'BTC/USDT': ['Bitcoin', 'BitcoinMarkets', 'CryptoCurrency', 'CryptoMarkets'],
+  'ETH/USDT': ['ethereum', 'ethfinance', 'CryptoCurrency', 'CryptoMarkets'],
+  'SOL/USDT': ['solana',  'CryptoCurrency', 'CryptoMarkets'],
   'BNB/USDT': ['binance', 'CryptoCurrency'],
 };
-const DEFAULT_REDDIT_CRYPTO = ['CryptoCurrency'];
+const DEFAULT_REDDIT_CRYPTO = ['CryptoCurrency', 'CryptoMarkets', 'CryptoTechnology'];
 
 const DC_SOURCES_CRYPTO = {
   'BTC/USDT': ['bitcoingall'],
@@ -79,6 +79,7 @@ const SENT_TTL   = getAnalysisReuseTtlMinutes(ANALYST_TYPES.SENTIMENT) * 60_000;
 const SENT_CACHE_MAX = 1000;
 const SOPHIA_SENTIMENT_TIMEOUT_MS = Math.max(30_000, Number(process.env.SOPHIA_SENTIMENT_TIMEOUT_MS || 90_000) || 90_000);
 const SOPHIA_MAX_PROMPT_POSTS = Math.max(3, Math.min(15, Number(process.env.SOPHIA_MAX_PROMPT_POSTS || 10) || 10));
+const SOPHIA_REDDIT_MAX_SUBREDDITS = Math.max(1, Math.min(6, Number(process.env.SOPHIA_REDDIT_MAX_SUBREDDITS || 4) || 4));
 
 function execCurl(args) {
   return new Promise((resolve, reject) => {
@@ -101,6 +102,11 @@ function cleanupSentCache(now = Date.now()) {
     if (!oldestKey) break;
     _sentCache.delete(oldestKey);
   }
+}
+
+function capSubreddits(list = []) {
+  return [...new Set((list || []).map((item) => String(item || '').trim()).filter(Boolean))]
+    .slice(0, SOPHIA_REDDIT_MAX_SUBREDDITS);
 }
 
 // ─── Fear & Greed Index (alternative.me) ─────────────────────────────
@@ -358,11 +364,11 @@ function keywordFallback(posts, exchange) {
 const PROMPTS = {
   binance: `당신은 암호화폐 커뮤니티 감성분석가입니다. Reddit/DCInside/CryptoPanic 데이터를 분석합니다.
 응답 (JSON만): {"action":"BUY"|"SELL"|"HOLD","confidence":0.0~1.0,"reasoning":"근거 (한국어)","sentiment":"극도의 낙관"|"낙관"|"중립"|"비관"|"극도의 비관"}
-규칙: FOMO → BUY (과도하면 역설적 SELL). FUD → SELL (과도하면 역설적 BUY). confidence 0.5 미만 → HOLD.`,
+규칙: FOMO → BUY (과도하면 역설적 SELL). FUD → SELL (과도하면 역설적 BUY). 커뮤니티 과열/봇/낮은 출처 다양성은 BUY 근거가 아니라 HOLD/SELL 리스크로 본다. 기술/거래량 확인 없는 narrative-only BUY 금지. confidence 0.5 미만 → HOLD.`,
 
   kis_overseas: `당신은 미국 주식 커뮤니티 감성분석가입니다. Reddit r/stocks, r/investing, r/wallstreetbets 분석.
 응답 (JSON만): {"action":"BUY"|"SELL"|"HOLD","confidence":0.0~1.0,"reasoning":"근거 (한국어)","sentiment":"극도의 낙관"|"낙관"|"중립"|"비관"|"극도의 비관"}
-규칙: WSB YOLO → 역발상. 극도의 낙관 → HOLD/SELL. confidence 0.5 미만 → HOLD.`,
+규칙: WSB YOLO → 역발상. 극도의 낙관 → HOLD/SELL. 커뮤니티 단독 BUY 금지, 실적/가격/거래량 확인 없으면 HOLD. confidence 0.5 미만 → HOLD.`,
 
   kis: `당신은 국내주식 커뮤니티 감성분석가입니다. 네이버 증권 종목토론실 게시글을 분석합니다.
 응답 (JSON만): {"action":"BUY"|"SELL"|"HOLD","confidence":0.0~1.0,"reasoning":"근거 (한국어)","sentiment":"극도의 낙관"|"낙관"|"중립"|"비관"|"극도의 비관"}
@@ -411,7 +417,7 @@ export async function analyzeSentiment(symbol = 'BTC/USDT', exchange = 'binance'
   let fearGreed  = null;
 
   if (exchange === 'kis_overseas') {
-    const subreddits    = [...DEFAULT_REDDIT_US, ...(REDDIT_SOURCES_US[symbol] || [])];
+    const subreddits    = capSubreddits([...DEFAULT_REDDIT_US, ...(REDDIT_SOURCES_US[symbol] || [])]);
     const redditResults = await Promise.all(subreddits.map(sub => fetchReddit(sub)));
     const allReddit     = redditResults.flat();
     posts               = filterAndRankUS(allReddit, symbol);
@@ -424,7 +430,7 @@ export async function analyzeSentiment(symbol = 'BTC/USDT', exchange = 'binance'
     posts = naverPosts;
 
   } else {
-    const subreddits = REDDIT_SOURCES_CRYPTO[symbol] || DEFAULT_REDDIT_CRYPTO;
+    const subreddits = capSubreddits(REDDIT_SOURCES_CRYPTO[symbol] || DEFAULT_REDDIT_CRYPTO);
     const dcGallIds  = DC_SOURCES_CRYPTO[symbol] || [];
 
     const [redditResults, dcResults, cpPosts, fg] = await Promise.all([

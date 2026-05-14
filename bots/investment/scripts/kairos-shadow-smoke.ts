@@ -24,9 +24,29 @@ export async function runSmoke() {
     assert.equal(forecast.shadowMode, true);
     assert.equal(forecast.recommendation, 'shadow_only');
     assert.ok(Number.isFinite(forecast.prediction.confidence));
+    let observedFrom = null;
+    const fetched = await forecastSymbol('BTC/USDT', {
+      timeframe: '1d',
+      limit: 60,
+      ohlcvFetcher: async (_symbol, _timeframe, from) => {
+        observedFrom = from;
+        return syntheticCloses().map((close, index) => [
+          Date.now() + index,
+          close,
+          close,
+          close,
+          close,
+          1,
+        ]);
+      },
+    });
+    assert.equal(typeof observedFrom, 'string');
+    assert.match(observedFrom, /^\d{4}-\d{2}-\d{2}T/);
+    assert.equal(fetched.source, 'ohlcv_fetcher');
+    assert.equal(fetched.recommendation, 'shadow_only');
     const batch = await forecastBatch({ 'ETH/USDT': syntheticCloses() }, { horizon: 3 });
     assert.equal(batch.shadowMode, true);
-    return { ok: true, forecast, batchSymbols: Object.keys(batch.predictions) };
+    return { ok: true, forecast, fetched, batchSymbols: Object.keys(batch.predictions) };
   } finally {
     if (prevActive === undefined) delete process.env.LUNA_KAIROS_ACTIVE_ENABLED;
     else process.env.LUNA_KAIROS_ACTIVE_ENABLED = prevActive;

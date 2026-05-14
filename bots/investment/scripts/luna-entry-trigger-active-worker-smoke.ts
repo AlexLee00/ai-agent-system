@@ -530,6 +530,53 @@ export async function runLunaEntryTriggerActiveWorkerSmoke() {
       assert.equal(materializedMeta[0].meta.entryTrigger.strategy.quality, 'watch');
       assert.equal(materializedUpdates[0].patch.triggerMetaPatch.materializeStatus, 'approved_signal_inserted');
 
+      const blockedPayloads = [];
+      const blockedUpdates = [];
+      const blockedMaterializeResult = await materializeFiredEntryTriggerSignals({
+        exchange: 'binance',
+        result: {
+          allowLiveFire: true,
+          results: [{ triggerId: 'fake-trigger-rlusd', symbol: 'RLUSD/USDT', fired: true }],
+        },
+        riskContext: { capitalSnapshot },
+        events: [{ symbol: 'RLUSD/USDT', price: 1, targetPrice: 1 }],
+        deps: {
+          triggerFetcher: async () => ({
+            id: 'fake-trigger-rlusd',
+            symbol: 'RLUSD/USDT',
+            exchange: 'binance',
+            setup_type: 'mean_reversion',
+            trigger_type: 'pullback_to_support',
+            trigger_state: 'fired',
+            confidence: 0.91,
+            predictive_score: 0.81,
+            trigger_context: {
+              strategyRoute: {
+                selectedFamily: 'mean_reversion',
+                setupType: 'pullback_to_support',
+                quality: 'ready',
+                readinessScore: 0.82,
+              },
+            },
+            trigger_meta: {},
+          }),
+          duplicateFinder: async () => null,
+          signalInserter: async (payload) => {
+            blockedPayloads.push(payload);
+            return 'should-not-insert';
+          },
+          blockMetaMerger: async () => null,
+          triggerUpdater: async (id, patch) => {
+            blockedUpdates.push({ id, patch });
+          },
+        },
+      });
+      assert.equal(blockedMaterializeResult.materialized, 0);
+      assert.equal(blockedMaterializeResult.skipped, 1);
+      assert.equal(blockedPayloads.length, 0);
+      assert.equal(blockedMaterializeResult.items[0].reason, 'trade_data_entry_guard_blocked');
+      assert.equal(blockedUpdates[0].patch.triggerMetaPatch.materializeStatus, 'blocked_by_trade_data_entry_guard');
+
       return {
         ok: true,
         triggerId: trigger.id,

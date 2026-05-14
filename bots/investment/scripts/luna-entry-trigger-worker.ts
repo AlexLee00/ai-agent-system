@@ -17,6 +17,7 @@ import { get as dbGet } from '../shared/db/core.ts';
 import { getLunaIntelligentDiscoveryFlags } from '../shared/luna-intelligent-discovery-config.ts';
 import { listActiveEntryTriggers, updateEntryTriggerState } from '../shared/luna-discovery-entry-store.ts';
 import { getOHLCV } from '../shared/ohlcv-fetcher.ts';
+import { evaluateTradeDataEntryGuard } from '../shared/trade-data-derived-guards.ts';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const INVESTMENT_DIR = path.resolve(__dirname, '..');
@@ -439,6 +440,14 @@ function resolveEntryTriggerSignalAmount({ capitalSnapshot = {}, trigger = {} } 
   return Number.isFinite(amount) && amount > 0 ? Number(amount.toFixed(6)) : null;
 }
 
+function resolveMaterializedSignalMarket(exchange = 'binance') {
+  const value = String(exchange || '').toLowerCase();
+  if (value === 'binance') return 'crypto';
+  if (value === 'kis') return 'domestic';
+  if (value === 'kis_overseas') return 'overseas';
+  return value || 'unknown';
+}
+
 export async function materializeFiredEntryTriggerSignals({
   exchange = 'binance',
   result = {},
@@ -471,6 +480,34 @@ export async function materializeFiredEntryTriggerSignals({
       items.push({ triggerId: fired.triggerId, status: 'skipped', reason: 'symbol_missing' });
       continue;
     }
+    const strategy = resolveEntryTriggerStrategyMetadata(trigger);
+    const tradeDataGuard = evaluateTradeDataEntryGuard({
+      symbol,
+      action: 'BUY',
+      exchange,
+      market: resolveMaterializedSignalMarket(exchange),
+      strategy_family: strategy.family,
+      strategy_route: strategy.route,
+    }, process.env);
+    if (tradeDataGuard.blocked) {
+      skipped += 1;
+      await Promise.resolve(triggerUpdater(trigger.id, {
+        triggerState: 'fired',
+        triggerMetaPatch: {
+          materializeStatus: 'blocked_by_trade_data_entry_guard',
+          tradeDataGuard,
+          materializeBlockedAt: new Date().toISOString(),
+        },
+      })).catch(() => null);
+      items.push({
+        triggerId: trigger.id,
+        symbol,
+        status: 'skipped',
+        reason: 'trade_data_entry_guard_blocked',
+        blockers: tradeDataGuard.blockers || [],
+      });
+      continue;
+    }
     const duplicate = await Promise.resolve(duplicateFinder({
       symbol,
       action: 'BUY',
@@ -496,7 +533,6 @@ export async function materializeFiredEntryTriggerSignals({
       continue;
     }
     const event = events.find((row) => String(row?.symbol || '').toUpperCase() === symbol.toUpperCase()) || trigger.trigger_meta?.event || null;
-    const strategy = resolveEntryTriggerStrategyMetadata(trigger);
     const signalId = await signalInserter({
       symbol,
       action: 'BUY',

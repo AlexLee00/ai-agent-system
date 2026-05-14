@@ -36,12 +36,33 @@ export async function runLunaCommunitySentimentSmoke() {
   });
   assert.equal(externalRows.length, 1);
   assert.ok(Number(externalRows[0].sentimentScore) > 0, 'external community evidence should lift sentiment');
+  assert.equal(externalRows[0].communityPolicy, 'community_as_advisory_not_standalone_buy');
+
+  const hypeRows = await scoreCommunitySentiment(['HYPE/USDT'], {
+    exchange: 'binance',
+    minutes: 240,
+    externalRows: [{
+      symbol: 'HYPE/USDT',
+      source_name: 'reddit_cryptocurrency',
+      signal_direction: 'bullish',
+      score: 0.95,
+      source_quality: 0.5,
+      freshness_score: 1,
+      raw_ref: { mentions: 1200 },
+      created_at: new Date().toISOString(),
+    }],
+  });
+  assert.equal(hypeRows.length, 1);
+  assert.equal(hypeRows[0].narrativeRisk, 'high');
+  assert.ok(hypeRows[0].narrativeRiskReasons.includes('hype_spike_requires_confirmation'));
+  assert.ok(Number(hypeRows[0].confidence) <= 0.6);
 
   return {
     ok: true,
     count: rows.length,
     sample: rows[0] || null,
     externalSample: externalRows[0] || null,
+    hypeSample: hypeRows[0] || null,
   };
 }
 

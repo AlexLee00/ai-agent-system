@@ -28,11 +28,36 @@ export function getKairosConfidenceMin() {
   return Math.max(0, Math.min(1, Number(process.env.LUNA_KAIROS_CONFIDENCE_MIN || 0.7) || 0.7));
 }
 
+const TIMEFRAME_MS = Object.freeze({
+  '1m': 60_000,
+  '3m': 3 * 60_000,
+  '5m': 5 * 60_000,
+  '15m': 15 * 60_000,
+  '30m': 30 * 60_000,
+  '1h': 60 * 60_000,
+  '2h': 2 * 60 * 60_000,
+  '4h': 4 * 60 * 60_000,
+  '1d': 24 * 60 * 60_000,
+});
+
+export function resolveKairosLookbackFrom(timeframe = '1d', limit = 120, now = new Date()) {
+  const tf = String(timeframe || '1d').trim().toLowerCase();
+  const stepMs = TIMEFRAME_MS[tf] || TIMEFRAME_MS['1d'];
+  const cappedLimit = Math.max(30, Math.min(2000, Math.round(Number(limit || 120) || 120)));
+  return new Date(new Date(now).getTime() - stepMs * cappedLimit).toISOString();
+}
+
 export async function forecastSymbol(symbol = 'BTC/USDT', opts = {}) {
   const horizon = Number(opts.horizon || 5);
+  const timeframe = String(opts.timeframe || '1d');
+  const limit = Math.max(30, Math.min(2000, Math.round(Number(opts.limit || 120) || 120)));
+  const from = opts.from || opts.since || resolveKairosLookbackFrom(timeframe, limit, opts.now || new Date());
+  const to = opts.to || null;
+  const exchange = opts.exchange || 'binance';
+  const ohlcvFetcher = opts.ohlcvFetcher || getOHLCV;
   const candles = opts.closes
     ? opts.closes
-    : (await getOHLCV(symbol, opts.timeframe || '1d', opts.limit || 120).catch(() => []))
+    : (await ohlcvFetcher(symbol, timeframe, from, to, exchange).catch(() => []))
       .map((row) => Array.isArray(row) ? Number(row[4]) : Number(row.close))
       .filter(Number.isFinite);
   const prediction = predictPrice(candles, horizon);
@@ -44,6 +69,10 @@ export async function forecastSymbol(symbol = 'BTC/USDT', opts = {}) {
     shadowMode: isKairosShadowMode() || prediction.shadowMode !== false,
     horizon,
     prediction,
+    dataHealth: candles.length >= 30 ? 'ok' : 'insufficient_ohlcv',
+    source: opts.closes ? 'provided_closes' : 'ohlcv_fetcher',
+    timeframe,
+    observedCandles: candles.length,
     confidenceMin: getKairosConfidenceMin(),
     recommendation: prediction.usable && isKairosActive() && !isKairosShadowMode() && Number(prediction.confidence || 0) >= getKairosConfidenceMin()
       ? prediction.direction

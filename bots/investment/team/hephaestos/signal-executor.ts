@@ -209,6 +209,7 @@ async function executeSignal(signal) {
         persistFailure,
         symbol,
         action,
+        signal,
         signalTradeMode,
         capitalPolicy,
         signalConfidence: Number(signal?.confidence || 0),

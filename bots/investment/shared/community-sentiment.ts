@@ -45,6 +45,68 @@ function freshnessWeight(createdAt = null, now = Date.now()) {
   return 0.45;
 }
 
+function mentionCount(row = {}) {
+  return Number(row?.metadata?.mentions || row?.metadata?.mentionCount || 0) || 0;
+}
+
+function sourceHint(row = {}) {
+  return String(row?.metadata?.source || row.analyst || 'unknown').trim().toLowerCase() || 'unknown';
+}
+
+function buildNarrativeRisk(entries = [], sentimentScore = 0) {
+  const sources = entries.map(sourceHint);
+  const uniqueSources = new Set(sources);
+  const mentionTotal = entries.reduce((sum, row) => sum + mentionCount(row), 0);
+  const qualityAverage = entries.length > 0
+    ? entries.reduce((sum, row) => sum + sourceQualityWeight(sourceHint(row)), 0) / entries.length
+    : 0;
+  const hypeMentionThreshold = Math.max(50, Number(process.env.LUNA_COMMUNITY_HYPE_MENTION_THRESHOLD || 250) || 250);
+  const reasons = [];
+  let penalty = 0;
+  let confidenceCap = 1;
+
+  if (entries.length > 0 && uniqueSources.size < 2) {
+    reasons.push('source_diversity_low');
+    penalty += 0.06;
+    confidenceCap = Math.min(confidenceCap, 0.55);
+  }
+  if (entries.length > 0 && qualityAverage < 0.4) {
+    reasons.push('low_quality_community_sources');
+    penalty += 0.08;
+    confidenceCap = Math.min(confidenceCap, 0.65);
+  }
+  if (mentionTotal >= hypeMentionThreshold && Math.abs(sentimentScore) >= 0.65) {
+    reasons.push('hype_spike_requires_confirmation');
+    penalty += 0.15;
+    confidenceCap = Math.min(confidenceCap, 0.6);
+  }
+  if (
+    entries.length > 0
+    && [...uniqueSources].every((source) => source.includes('reddit'))
+    && Math.abs(sentimentScore) >= 0.65
+  ) {
+    reasons.push('single_channel_reddit_extreme');
+    penalty += 0.08;
+    confidenceCap = Math.min(confidenceCap, 0.6);
+  }
+
+  const level = reasons.includes('hype_spike_requires_confirmation')
+    ? 'high'
+    : reasons.length > 0
+    ? 'medium'
+    : 'normal';
+  return {
+    level,
+    reasons,
+    penalty: Number(Math.min(0.35, penalty).toFixed(4)),
+    confidenceCap: Number(confidenceCap.toFixed(4)),
+    sourceDiversity: uniqueSources.size,
+    mentionTotal,
+    qualityAverage: Number(qualityAverage.toFixed(4)),
+    policy: 'community_as_advisory_not_standalone_buy',
+  };
+}
+
 export async function scoreCommunitySentiment(symbols = [], {
   exchange = 'binance',
   minutes = 720,
@@ -117,19 +179,20 @@ export async function scoreCommunitySentiment(symbols = [], {
     let botNoisePenalty = 0;
     for (const row of entries.slice(0, 20)) {
       const base = scoreFromSignal(row.signal, row.confidence);
-      const sourceHint = String(row?.metadata?.source || row.analyst || '');
-      const quality = sourceQualityWeight(sourceHint);
+      const quality = sourceQualityWeight(sourceHint(row));
       const fresh = freshnessWeight(row.created_at, now);
       const weight = quality * fresh;
       weightedSum += base * weight;
       totalWeight += weight;
 
-      const mentions = Number(row?.metadata?.mentions || row?.metadata?.mentionCount || 0);
+      const mentions = mentionCount(row);
       if (mentions > 400 && Math.abs(base) > 0.8) botNoisePenalty += 0.08;
     }
     const sentimentScore = totalWeight > 0 ? weightedSum / totalWeight : 0;
-    const confidence = Math.max(0, Math.min(1, totalWeight / Math.max(1, entries.length)));
-    const adjusted = clamp(sentimentScore * (1 - Math.min(0.35, botNoisePenalty)));
+    const narrativeRisk = buildNarrativeRisk(entries.slice(0, 20), sentimentScore);
+    const rawConfidence = Math.max(0, Math.min(1, totalWeight / Math.max(1, entries.length)));
+    const confidence = Math.min(rawConfidence, narrativeRisk.confidenceCap);
+    const adjusted = clamp(sentimentScore * (1 - Math.min(0.45, botNoisePenalty + narrativeRisk.penalty)));
 
     output.push({
       symbol,
@@ -138,6 +201,11 @@ export async function scoreCommunitySentiment(symbols = [], {
       freshnessScore: entries.length > 0 ? Number(freshnessWeight(entries[0].created_at, now).toFixed(4)) : 0.5,
       sourceCount: entries.length,
       botNoisePenalty: Number(botNoisePenalty.toFixed(4)),
+      narrativeRisk: narrativeRisk.level,
+      narrativeRiskReasons: narrativeRisk.reasons,
+      communityPolicy: narrativeRisk.policy,
+      sourceDiversity: narrativeRisk.sourceDiversity,
+      mentionTotal: narrativeRisk.mentionTotal,
     });
   }
   return output;

@@ -1,5 +1,6 @@
 // @ts-nocheck
 
+import { evaluateTradeDataEntryGuard } from '../../shared/trade-data-derived-guards.ts';
 import { rejectExecution } from './execution-failure.ts';
 
 export function buildGuardTelemetryMeta(symbol, action, signalTradeMode, meta = {}, extras = {}) {
@@ -17,6 +18,7 @@ export async function runBuySafetyGuards({
   persistFailure,
   symbol,
   action,
+  signal = {},
   signalTradeMode,
   capitalPolicy,
   signalConfidence = null,
@@ -27,6 +29,35 @@ export async function runBuySafetyGuards({
   formatDailyTradeLimitReason,
   notifyEnabled = true,
 }) {
+  const tradeDataGuard = evaluateTradeDataEntryGuard({
+    ...signal,
+    symbol,
+    action,
+    exchange: signal.exchange || 'binance',
+    market: signal.market || 'crypto',
+  }, process.env);
+  if (tradeDataGuard.blocked) {
+    const blockers = Array.isArray(tradeDataGuard.blockers) && tradeDataGuard.blockers.length > 0
+      ? tradeDataGuard.blockers.join(', ')
+      : 'trade_data_policy';
+    const reason = `trade-data entry guard blocked: ${blockers}`;
+    console.log(`  ⛔ [거래데이터 가드] ${reason}`);
+    return rejectExecution({
+      persistFailure,
+      symbol,
+      action,
+      reason,
+      code: 'trade_data_entry_guard_rejected',
+      meta: buildGuardTelemetryMeta(symbol, action, signalTradeMode, {
+        tradeDataGuard,
+      }, {
+        guardKind: 'trade_data_entry_guard',
+        pressureSource: 'trade_data_policy',
+      }),
+      notify: notifyEnabled ? 'skip' : false,
+    });
+  }
+
   const circuit = await checkCircuitBreaker('binance', signalTradeMode);
   if (circuit.triggered) {
     console.log(`  ⛔ [서킷 브레이커] ${circuit.reason}`);
