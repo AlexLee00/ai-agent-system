@@ -1,0 +1,28 @@
+{
+  "mcpServers": {
+    "context7": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@upstash/context7-mcp"
+      ]
+    },
+    "github": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-github"
+      ],
+      "env": {
+        "GITHUB_PERSONAL_ACCESS_TOKEN": "$GITHUB_TOKEN_READONLY"
+      }
+    }
+  },
+  "permissions": {
+    "allow": [
+      "Write(.claude/skills/**)",
+      "Write(.claude/hooks/scripts/*)",
+      "Write(.claude/hooks/hooks.json)"
+    ]
+  }
+}

@@ -67,6 +67,14 @@
             "command": "./.claude/hooks/scripts/luna-sessionstart-daily-brief.sh"
           }
         ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "./.claude/hooks/scripts/sessionstart-skills-loader.sh"
+          }
+        ]
       }
     ],
     "Stop": [
@@ -83,6 +91,14 @@
           {
             "type": "command",
             "command": "./.claude/hooks/scripts/luna-stop-session-summary.sh"
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "./.claude/hooks/scripts/stop-session-wrap.sh"
           }
         ]
       }
