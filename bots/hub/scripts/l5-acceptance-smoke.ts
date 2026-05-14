@@ -53,10 +53,13 @@ async function main() {
   delete process.env.TELEGRAM_CHAT_ID;
   process.env.TELEGRAM_ALERTS_DISABLED = 'false';
 
+  const eventLakeRecords = [];
+  const dbWrites = [];
   let eventId = 500;
   let humanImmediateSends = 0;
   eventLake.findRecentDuplicateAlarm = async () => null;
-  eventLake.record = async () => {
+  eventLake.record = async (payload) => {
+    eventLakeRecords.push(payload);
     eventId += 1;
     return eventId;
   };
@@ -73,9 +76,24 @@ async function main() {
 
   try {
     const alarmRoute = require('../lib/routes/alarm.ts');
+    if (typeof alarmRoute._testOnly_setAlarmEventLakeMocks === 'function') {
+      alarmRoute._testOnly_setAlarmEventLakeMocks({
+        findRecentDuplicateAlarm: async () => null,
+        record: async (payload) => {
+          eventLakeRecords.push(payload);
+          eventId += 1;
+          return eventId;
+        },
+      });
+    }
     if (typeof alarmRoute._testOnly_setAlarmRouteDbMocks === 'function') {
       alarmRoute._testOnly_setAlarmRouteDbMocks({
+        query: async () => [],
         get: async () => null,
+        run: async (_schema, sql) => {
+          dbWrites.push(String(sql));
+          return { rowCount: 1, rows: [] };
+        },
       });
     }
     const { createHubApp } = require('../src/app.ts');
@@ -121,6 +139,18 @@ async function main() {
       assert(emergencyResp.status === 200, `expected emergency alarm 200, got ${emergencyResp.status}`);
       assert(emergencyResp.body.visibility === 'emergency', 'expected emergency visibility');
       assert(humanImmediateSends >= 1, 'expected emergency to trigger immediate send');
+      assert(
+        eventLakeRecords.some((row) => row?.eventType === 'hub_alarm'),
+        'expected l5 smoke to exercise the mocked hub_alarm EventLake path',
+      );
+      assert(
+        dbWrites.some((sql) => sql.includes('agent.hub_alarm_classifications')),
+        'expected l5 smoke to exercise the mocked alarm classification mirror path',
+      );
+      assert(
+        dbWrites.some((sql) => sql.includes('agent.hub_alarms')),
+        'expected l5 smoke to exercise the mocked alarm mirror path',
+      );
 
       const planResp = await requestJson(baseUrl, process.env.HUB_AUTH_TOKEN, 'POST', '/hub/control/plan', {
         message: '루나팀 상태 보고해줘',
@@ -136,6 +166,9 @@ async function main() {
   } finally {
     try {
       const alarmRoute = require('../lib/routes/alarm.ts');
+      if (typeof alarmRoute._testOnly_resetAlarmEventLakeMocks === 'function') {
+        alarmRoute._testOnly_resetAlarmEventLakeMocks();
+      }
       if (typeof alarmRoute._testOnly_resetAlarmRouteDbMocks === 'function') {
         alarmRoute._testOnly_resetAlarmRouteDbMocks();
       }
