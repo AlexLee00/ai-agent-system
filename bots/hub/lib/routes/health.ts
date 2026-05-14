@@ -278,13 +278,24 @@ export async function collectHealthSnapshot(): Promise<HealthSnapshot> {
           WHERE created_at >= NOW() - INTERVAL '7 days'
         `)
       : await pgPool.query('reservation', `
+          WITH scored AS (
+            SELECT
+              created_at,
+              CASE
+                WHEN metadata ? 'score'
+                  AND (metadata->>'score') ~ '^-?[0-9]+(\\.[0-9]+)?$'
+                THEN (metadata->>'score')::numeric
+                ELSE NULL
+              END AS score
+            FROM reservation.rag_research
+            WHERE created_at >= NOW() - INTERVAL '7 days'
+          )
           SELECT
             COUNT(*)::int AS papers_7d,
-            0::int AS high_quality_7d,
-            0::numeric(4,1) AS avg_score,
+            COUNT(*) FILTER (WHERE score >= 6)::int AS high_quality_7d,
+            COALESCE(AVG(score), 0)::numeric(4,1) AS avg_score,
             MAX(created_at) AS last_scan_at
-          FROM reservation.rag_research
-          WHERE created_at >= NOW() - INTERVAL '7 days'
+          FROM scored
         `);
     const row = kpiRows?.[0] || {};
     let autonomyLevel = 'unknown';
@@ -299,7 +310,7 @@ export async function collectHealthSnapshot(): Promise<HealthSnapshot> {
 
     resources.darwin_kpi = {
       status: 'ok',
-      detail: `papers_7d ${Number(row.papers_7d || 0)}건 | high_quality ${Number(row.high_quality_7d || 0)}건 | avg_score ${Number(row.avg_score || 0)} | autonomy ${autonomyLevel}${!hasScore ? ' | score column missing (fallback)' : ''}${row.last_scan_at ? ` | last ${String(row.last_scan_at)}` : ''}`,
+      detail: `papers_7d ${Number(row.papers_7d || 0)}건 | high_quality ${Number(row.high_quality_7d || 0)}건 | avg_score ${Number(row.avg_score || 0)} | score_source ${hasScore ? 'column' : 'metadata'} | autonomy ${autonomyLevel}${row.last_scan_at ? ` | last ${String(row.last_scan_at)}` : ''}`,
     };
   } catch (error: any) {
     resources.darwin_kpi = {
