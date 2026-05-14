@@ -42,13 +42,21 @@ async function ensureTrendTopicsTable() {
 async function injectRedditSecrets() {
   try {
     const secrets = await fetchHubSecrets('blog').catch(() => null);
+    let injected = 0;
     if (secrets?.REDDIT_CLIENT_ID && !process.env.REDDIT_CLIENT_ID) {
       process.env.REDDIT_CLIENT_ID = secrets.REDDIT_CLIENT_ID;
+      injected++;
     }
     if (secrets?.REDDIT_CLIENT_SECRET && !process.env.REDDIT_CLIENT_SECRET) {
       process.env.REDDIT_CLIENT_SECRET = secrets.REDDIT_CLIENT_SECRET;
+      injected++;
     }
-  } catch {}
+    if (injected === 0 && (!process.env.REDDIT_CLIENT_ID || !process.env.REDDIT_CLIENT_SECRET)) {
+      console.warn('[트렌드수집] ⚠️  REDDIT API 키 미설정 — secrets-store.json의 blog 섹션에 REDDIT_CLIENT_ID / REDDIT_CLIENT_SECRET 추가 필요');
+    }
+  } catch (e: any) {
+    console.warn('[트렌드수집] Hub 시크릿 로드 실패:', e.message);
+  }
 }
 
 async function runRedditAnalyzer() {
@@ -57,9 +65,14 @@ async function runRedditAnalyzer() {
 
   await injectRedditSecrets();
 
+  if (!process.env.REDDIT_CLIENT_ID || !process.env.REDDIT_CLIENT_SECRET) {
+    console.warn('[트렌드수집] Reddit API 키 없음 — 트렌드 수집 건너뜀');
+    return [];
+  }
+
   try {
     console.log('[트렌드수집] Reddit 분석기 실행...');
-    execSync(`python3 ${scriptPath}`, {
+    execSync(`python3 "${scriptPath}"`, {
       env: { ...process.env },
       stdio: 'inherit',
       timeout: 120_000,
@@ -69,7 +82,7 @@ async function runRedditAnalyzer() {
     const data = JSON.parse(require('fs').readFileSync(outputPath, 'utf8'));
     return data.topics || [];
   } catch (e: any) {
-    console.warn('[트렌드수집] Reddit 분석기 실패 (무시):', e.message);
+    console.warn('[트렌드수집] Reddit 분석기 실패:', e.message);
     return [];
   }
 }
