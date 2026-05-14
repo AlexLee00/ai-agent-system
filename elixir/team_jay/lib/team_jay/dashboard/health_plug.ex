@@ -3,8 +3,8 @@ defmodule TeamJay.Dashboard.HealthPlug do
 
   import Plug.Conn
 
-  @dashboard_phase "E"
-  @dashboard_layer "Langfuse OTel + Telegram intervention bridge"
+  @dashboard_phase "F"
+  @dashboard_layer "Langfuse Trace 상세 (영역 9) + OTel OTLP init"
 
   def init(opts), do: opts
 

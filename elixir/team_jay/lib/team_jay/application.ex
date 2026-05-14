@@ -13,8 +13,27 @@ defmodule TeamJay.Application do
 
     opts = [strategy: :one_for_one, name: TeamJay.Supervisor]
     result = Supervisor.start_link(children, opts)
-
+    log_otel_status()
     result
+  end
+
+  defp log_otel_status do
+    langfuse_cfg = Application.get_env(:team_jay, :langfuse, [])
+    enabled = Keyword.get(langfuse_cfg, :enabled, false)
+    host = Keyword.get(langfuse_cfg, :host, "http://localhost:3000")
+    public_key_set? = System.get_env("LANGFUSE_PUBLIC_KEY", "") != ""
+    secret_key_set? = System.get_env("LANGFUSE_SECRET_KEY", "") != ""
+
+    if enabled and public_key_set? and secret_key_set? do
+      Logger.info(
+        "[TeamJay] OpenTelemetry OTLP → Langfuse 활성화 (#{host}/api/public/otel)"
+      )
+    else
+      Logger.info(
+        "[TeamJay] OpenTelemetry 비활성 — LANGFUSE_OTEL_ENABLED=#{enabled}, " <>
+          "PUBLIC_KEY=#{public_key_set?}, SECRET_KEY=#{secret_key_set?}"
+      )
+    end
   end
 
   defp base_children do

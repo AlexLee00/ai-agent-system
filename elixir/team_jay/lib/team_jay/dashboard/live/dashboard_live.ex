@@ -215,7 +215,43 @@ defmodule TeamJay.Dashboard.Live.DashboardLive do
     {:noreply, assign(socket, sigma_status: sigma_status, luna_pipeline: seeded_luna_pipeline)}
   end
 
+  # Phase F: Langfuse API 응답 수신
+  def handle_info({:fetch_trace, trace_id}, socket) do
+    result = TeamJay.Dashboard.LangfuseClient.get_trace(trace_id)
+
+    socket =
+      case result do
+        {:ok, trace} -> assign(socket, trace_detail: trace, trace_loading: false)
+        {:error, :not_found} -> assign(socket, trace_detail: :not_found, trace_loading: false)
+        {:error, reason} ->
+          Logger.warning("[DashboardLive] Langfuse API 오류: #{inspect(reason)}")
+          assign(socket, trace_detail: :error, trace_loading: false)
+      end
+
+    {:noreply, socket}
+  end
+
   def handle_info(_msg, socket), do: {:noreply, socket}
+
+  # ── Events ───────────────────────────────────────────────────────
+
+  # Phase F: 영역 9 — trace_id 클릭 시 비동기 API 조회
+  @impl true
+  def handle_event("show_trace", %{"id" => trace_id}, socket) do
+    socket =
+      assign(socket,
+        selected_trace_id: trace_id,
+        trace_loading: true,
+        trace_detail: nil
+      )
+
+    send(self(), {:fetch_trace, trace_id})
+    {:noreply, socket}
+  end
+
+  def handle_event("close_trace", _params, socket) do
+    {:noreply, assign(socket, selected_trace_id: nil, trace_detail: nil, trace_loading: false)}
+  end
 
   # ── Render ───────────────────────────────────────────────────────
 
@@ -225,7 +261,7 @@ defmodule TeamJay.Dashboard.Live.DashboardLive do
     <div class="min-h-screen p-4 space-y-4">
       <header class="flex items-center justify-between border-b border-gray-700 pb-3">
         <h1 class="text-xl font-bold text-white">🤖 팀 제이 대시보드</h1>
-        <span class="text-xs text-gray-400">Phase E • 영역 1+2+3+4+5+6+7+8 + Layer 1</span>
+        <span class="text-xs text-gray-400">Phase F • 영역 1+2+3+4+5+6+7+8+9 + Layer 1</span>
       </header>
 
       <div class="grid grid-cols-1 xl:grid-cols-3 gap-4">
@@ -244,6 +280,15 @@ defmodule TeamJay.Dashboard.Live.DashboardLive do
 
           <!-- 영역 4: EventLake 실시간 스트림 -->
           <.event_lake_board events={@events} event_stats={@event_stats} />
+
+          <!-- 영역 9: Langfuse Trace 상세 (phx-click으로 활성화) -->
+          <%= if @selected_trace_id do %>
+            <.trace_detail_board
+              trace_id={@selected_trace_id}
+              trace_detail={@trace_detail}
+              trace_loading={@trace_loading}
+            />
+          <% end %>
 
           <!-- 영역 5+6: 크로스팀 파이프라인 + 팀 헬스 -->
           <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
@@ -509,14 +554,23 @@ defmodule TeamJay.Dashboard.Live.DashboardLive do
                 </td>
                 <td class="py-1 pr-3 text-blue-300 font-mono whitespace-nowrap">
                   <%= if trace_id do %>
-                    <a
-                      href={langfuse_trace_url(trace_id)}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      class="hover:text-blue-200 underline decoration-blue-500/50"
-                    >
-                      {short_trace_id(trace_id)}
-                    </a>
+                    <span class="inline-flex items-center gap-1">
+                      <button
+                        phx-click="show_trace"
+                        phx-value-id={trace_id}
+                        class="hover:text-blue-200 underline decoration-blue-500/50 cursor-pointer"
+                        title="영역 9에서 Trace 상세 보기"
+                      >
+                        {short_trace_id(trace_id)}
+                      </button>
+                      <a
+                        href={langfuse_trace_url(trace_id)}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        class="text-gray-500 hover:text-gray-300 text-[10px]"
+                        title="Langfuse UI에서 열기"
+                      >↗</a>
+                    </span>
                   <% else %>
                     <span class="text-gray-600">—</span>
                   <% end %>
@@ -535,6 +589,217 @@ defmodule TeamJay.Dashboard.Live.DashboardLive do
     </div>
     """
   end
+
+  # ── 영역 9: Langfuse Trace 상세 ─────────────────────────────────
+
+  attr(:trace_id, :string, required: true)
+  attr(:trace_detail, :any, required: true)
+  attr(:trace_loading, :boolean, required: true)
+
+  defp trace_detail_board(assigns) do
+    observations =
+      case assigns.trace_detail do
+        %{"observations" => obs} when is_list(obs) ->
+          Enum.sort_by(obs, &(&1["startTime"] || ""), :asc)
+
+        _ ->
+          []
+      end
+
+    assigns = assign(assigns, observations: observations)
+
+    ~H"""
+    <div class="bg-gray-800 rounded-xl p-5 space-y-4 border border-blue-500/30">
+      <div class="flex items-center justify-between border-b border-gray-700 pb-2">
+        <span class="text-sm font-semibold text-gray-300 uppercase tracking-wider">
+          [9] Langfuse Trace 상세
+        </span>
+        <div class="flex items-center gap-3">
+          <span class="font-mono text-[10px] text-gray-500 truncate max-w-[260px]">
+            {@trace_id}
+          </span>
+          <button
+            phx-click="close_trace"
+            class="text-gray-400 hover:text-white text-xs px-2 py-1 bg-gray-700 hover:bg-gray-600 rounded transition-colors"
+          >
+            ✕ 닫기
+          </button>
+        </div>
+      </div>
+
+      <%= if @trace_loading do %>
+        <div class="flex items-center gap-2 text-gray-400 text-sm py-6 justify-center">
+          <span>⏳</span>
+          <span>Langfuse API 로딩 중...</span>
+        </div>
+      <% else %>
+        <%= case @trace_detail do %>
+          <% :error -> %>
+            <div class="bg-red-900/20 border border-red-500/30 rounded-lg p-4 text-sm text-red-300 space-y-1">
+              <div class="font-semibold">Langfuse API 오류</div>
+              <div class="text-xs text-red-400">
+                LANGFUSE_PUBLIC_KEY / LANGFUSE_SECRET_KEY 환경변수 확인 필요.
+                LANGFUSE_OTEL_ENABLED=true 설정 후 재시작하면 trace가 수집됩니다.
+              </div>
+            </div>
+          <% :not_found -> %>
+            <div class="bg-yellow-900/20 border border-yellow-500/30 rounded-lg p-4 text-sm text-yellow-300 space-y-1">
+              <div class="font-semibold">Trace 미발견</div>
+              <div class="text-xs text-yellow-400">
+                Langfuse에 아직 trace가 도달하지 않았습니다.
+                LANGFUSE_OTEL_ENABLED=true 설정 후 이벤트를 발생시키면 수집됩니다.
+              </div>
+            </div>
+          <% nil -> %>
+            <div class="text-gray-500 text-sm py-4 text-center">trace 데이터 없음</div>
+          <% trace -> %>
+            <.trace_meta_section trace={trace} />
+            <.trace_observations_section observations={@observations} />
+        <% end %>
+      <% end %>
+    </div>
+    """
+  end
+
+  attr(:trace, :map, required: true)
+
+  defp trace_meta_section(assigns) do
+    ~H"""
+    <div class="grid grid-cols-2 lg:grid-cols-4 gap-3 text-xs">
+      <div class="bg-gray-700 rounded-lg p-3">
+        <div class="text-gray-400 mb-1">Trace Name</div>
+        <div class="text-gray-200 font-mono truncate">{@trace["name"] || "—"}</div>
+      </div>
+      <div class="bg-gray-700 rounded-lg p-3">
+        <div class="text-gray-400 mb-1">User</div>
+        <div class="text-gray-200 truncate">{@trace["userId"] || "—"}</div>
+      </div>
+      <div class="bg-gray-700 rounded-lg p-3">
+        <div class="text-gray-400 mb-1">Session</div>
+        <div class="text-gray-200 font-mono truncate">
+          {if s = @trace["sessionId"], do: String.slice(s, 0, 16), else: "—"}
+        </div>
+      </div>
+      <div class="bg-gray-700 rounded-lg p-3">
+        <div class="text-gray-400 mb-1">Spans</div>
+        <div class="text-blue-300 font-semibold">
+          {length(@trace["observations"] || [])}건
+        </div>
+      </div>
+    </div>
+    """
+  end
+
+  attr(:observations, :list, required: true)
+
+  defp trace_observations_section(assigns) do
+    ~H"""
+    <div class="space-y-2">
+      <div class="text-xs text-gray-400 font-medium uppercase tracking-wider">Span 타임라인</div>
+      <%= if @observations == [] do %>
+        <div class="text-center text-gray-500 py-6 text-sm">
+          수집된 span 없음 — OTLP 발신 활성화 후 이벤트 발생 시 표시됩니다
+        </div>
+      <% else %>
+        <div class="overflow-x-auto">
+          <table class="w-full text-xs">
+            <thead>
+              <tr class="text-gray-400 border-b border-gray-700">
+                <th class="text-left py-1 pr-3 font-medium">타입</th>
+                <th class="text-left py-1 pr-3 font-medium">Span Name</th>
+                <th class="text-left py-1 pr-3 font-medium">시작</th>
+                <th class="text-left py-1 pr-3 font-medium w-20">소요</th>
+                <th class="text-left py-1 pr-3 font-medium">모델</th>
+                <th class="text-left py-1 font-medium">토큰</th>
+              </tr>
+            </thead>
+            <tbody>
+              <%= for obs <- @observations do %>
+                <tr class="border-b border-gray-700/50 hover:bg-gray-700/30">
+                  <td class="py-1 pr-3">
+                    <span class={obs_type_class(obs["type"])}>
+                      {obs_type_label(obs["type"])}
+                    </span>
+                  </td>
+                  <td class="py-1 pr-3 text-gray-200 font-mono truncate max-w-[200px]">
+                    {obs["name"] || "—"}
+                  </td>
+                  <td class="py-1 pr-3 text-gray-400 whitespace-nowrap">
+                    {format_obs_time(obs["startTime"])}
+                  </td>
+                  <td class="py-1 pr-3 text-yellow-300 whitespace-nowrap">
+                    {obs_duration(obs["startTime"], obs["endTime"])}
+                  </td>
+                  <td class="py-1 pr-3 text-purple-300 truncate max-w-[120px]">
+                    {obs["model"] || obs["calculatedInputCost"] && "—" || "—"}
+                  </td>
+                  <td class="py-1 text-green-300">
+                    {obs_tokens(obs["usage"])}
+                  </td>
+                </tr>
+              <% end %>
+            </tbody>
+          </table>
+        </div>
+      <% end %>
+    </div>
+    """
+  end
+
+  defp obs_type_label("GENERATION"), do: "GEN"
+  defp obs_type_label("SPAN"), do: "SPAN"
+  defp obs_type_label("EVENT"), do: "EVT"
+  defp obs_type_label(t) when is_binary(t), do: String.slice(t, 0, 4)
+  defp obs_type_label(_), do: "—"
+
+  defp obs_type_class("GENERATION"), do: "text-purple-400 font-semibold"
+  defp obs_type_class("SPAN"), do: "text-blue-400"
+  defp obs_type_class("EVENT"), do: "text-yellow-400"
+  defp obs_type_class(_), do: "text-gray-400"
+
+  defp format_obs_time(nil), do: "—"
+
+  defp format_obs_time(iso) when is_binary(iso) do
+    case DateTime.from_iso8601(iso) do
+      {:ok, dt, _} ->
+        kst = DateTime.add(dt, @kst_offset_seconds, :second)
+        Calendar.strftime(kst, "%H:%M:%S")
+
+      _ ->
+        String.slice(iso, 11, 8)
+    end
+  rescue
+    _ -> "—"
+  end
+
+  defp obs_duration(nil, _), do: "—"
+  defp obs_duration(_, nil), do: "실행 중"
+
+  defp obs_duration(start_iso, end_iso) when is_binary(start_iso) and is_binary(end_iso) do
+    with {:ok, s, _} <- DateTime.from_iso8601(start_iso),
+         {:ok, e, _} <- DateTime.from_iso8601(end_iso) do
+      ms = DateTime.diff(e, s, :millisecond)
+
+      cond do
+        ms < 1_000 -> "#{ms}ms"
+        ms < 60_000 -> "#{Float.round(ms / 1_000, 1)}s"
+        true -> "#{div(ms, 60_000)}m #{rem(div(ms, 1_000), 60)}s"
+      end
+    else
+      _ -> "—"
+    end
+  rescue
+    _ -> "—"
+  end
+
+  defp obs_tokens(nil), do: "—"
+
+  defp obs_tokens(usage) when is_map(usage) do
+    total = usage["totalTokens"] || usage["total_tokens"]
+    if total, do: "#{total}tok", else: "—"
+  end
+
+  defp obs_tokens(_), do: "—"
 
   # ── 영역 2: 협업 타임라인 ───────────────────────────────────────
 
@@ -1370,6 +1635,9 @@ defmodule TeamJay.Dashboard.Live.DashboardLive do
     |> assign(:team_health, team_health)
     |> assign(:sigma_status, sigma_status)
     |> assign(:luna_pipeline, luna_pipeline)
+    |> assign(:selected_trace_id, nil)
+    |> assign(:trace_detail, nil)
+    |> assign(:trace_loading, false)
   end
 
   defp safe_call(func, default) do
