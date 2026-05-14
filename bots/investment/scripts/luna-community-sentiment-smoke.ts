@@ -46,7 +46,7 @@ export async function runLunaCommunitySentimentSmoke() {
       source_name: 'reddit_cryptocurrency',
       signal_direction: 'bullish',
       score: 0.95,
-      source_quality: 0.5,
+      source_quality: 0.95,
       freshness_score: 1,
       raw_ref: { mentions: 1200 },
       created_at: new Date().toISOString(),
