@@ -1,6 +1,7 @@
 // @ts-nocheck
 
 import { get, query, run } from './db/core.ts';
+import { buildLunaDeploymentDecisionSpec } from './luna-deployment-spec.ts';
 
 const VALID_MARKETS = new Set(['crypto', 'domestic', 'overseas']);
 
@@ -183,6 +184,13 @@ export function buildLunaWeightVector(input = {}, config = {}) {
   const backtest = scoreBacktest(input.backtest || candidate?.backtest || {});
   const predictive = scorePredictive(input.predictive || candidate?.predictive || {});
   const community = scoreCommunity(input.community || candidate?.community || {});
+  const decisionSpec = buildLunaDeploymentDecisionSpec({
+    ...input,
+    candidate,
+    asOf,
+    mode: 'weight-vector-shadow',
+    exchange,
+  });
   const noLookahead = evaluateNoLookaheadContract({
     asOf,
     sources: [
@@ -250,6 +258,9 @@ export function buildLunaWeightVector(input = {}, config = {}) {
     evidence: {
       phase: 'luna_phase2_finrlx',
       source: 'weight_vector_shadow',
+      decisionSpecVersion: decisionSpec.specVersion,
+      decisionSpecHash: decisionSpec.specHash,
+      decisionSpec,
       components: {
         candidate: { score: round(candidateScore, 4), raw: candidate },
         backtest: { score: round(backtest.score, 4), pass: backtest.pass, raw: input.backtest || null },
@@ -300,6 +311,9 @@ export function buildLunaPaperTradingPlan(weightVector = {}, context = {}) {
     evidence: {
       phase: 'luna_phase2_finrlx',
       source: 'paper_trading_shadow',
+      decisionSpecVersion: weightVector?.evidence?.decisionSpecVersion || weightVector?.evidence?.decisionSpec?.specVersion || null,
+      decisionSpecHash: weightVector?.evidence?.decisionSpecHash || weightVector?.evidence?.decisionSpec?.specHash || null,
+      decisionSpec: weightVector?.evidence?.decisionSpec || null,
       weightVector,
       equityUsdt,
       maxOrderUsdt,
