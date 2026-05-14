@@ -22,7 +22,7 @@ async function main() {
   const dryRun = process.argv.includes('--dry-run');
   console.log(`[크랭크트래커] 시작: ${new Date().toISOString()} ${dryRun ? '(dry-run)' : ''}`);
 
-  const result = await runCrankTracker(14);
+  const result = await runCrankTracker(14, { dryRun });
   const report = await formatCrankReport(result);
 
   console.log('[크랭크트래커]', report);
@@ -37,6 +37,16 @@ async function main() {
   }
 
   console.log('[크랭크트래커] 완료!');
+  if (process.argv.includes('--json')) {
+    console.log(JSON.stringify({
+      ok: true,
+      dryRun,
+      shadowMode: true,
+      processed: result.processed,
+      alerts: result.alerts,
+      summary: result.summary,
+    }));
+  }
   process.exit(0);
 }
 

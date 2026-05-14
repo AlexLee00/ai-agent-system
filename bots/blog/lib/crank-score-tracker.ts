@@ -68,15 +68,19 @@ async function getRecentPublishedPosts(daysBack = 14) {
 }
 
 async function getPreviousScore(postId: number) {
-  const result = await pgPool.run('blog', `
-    SELECT overall, crank_total, dia_total, geo_total
-    FROM blog.crank_scores
-    WHERE post_id = $1
-      AND scored_date < CURRENT_DATE
-    ORDER BY scored_date DESC
-    LIMIT 1
-  `, [postId]);
-  return result?.rows?.[0] || null;
+  try {
+    const result = await pgPool.run('blog', `
+      SELECT overall, crank_total, dia_total, geo_total
+      FROM blog.crank_scores
+      WHERE post_id = $1
+        AND scored_date < CURRENT_DATE
+      ORDER BY scored_date DESC
+      LIMIT 1
+    `, [postId]);
+    return result?.rows?.[0] || null;
+  } catch {
+    return null;
+  }
 }
 
 async function upsertCrankScore(postId: number, scores: any) {
@@ -113,6 +117,7 @@ async function upsertCrankScore(postId: number, scores: any) {
 
 export interface CrankTrackResult {
   processed: number;
+  dryRun?: boolean;
   alerts: Array<{
     postId: number;
     title: string;
@@ -123,8 +128,11 @@ export interface CrankTrackResult {
   summary: string;
 }
 
-export async function runCrankTracker(daysBack = 14): Promise<CrankTrackResult> {
-  await ensureCrankScoresTable();
+export async function runCrankTracker(daysBack = 14, options: { dryRun?: boolean } = {}): Promise<CrankTrackResult> {
+  const dryRun = !!options.dryRun;
+  if (!dryRun) {
+    await ensureCrankScoresTable();
+  }
 
   const posts = await getRecentPublishedPosts(daysBack);
   const alerts: CrankTrackResult['alerts'] = [];
@@ -134,7 +142,9 @@ export async function runCrankTracker(daysBack = 14): Promise<CrankTrackResult> 
     try {
       const scores = calculateNaverSEOScore(post);
       const prev = await getPreviousScore(post.id);
-      await upsertCrankScore(post.id, scores);
+      if (!dryRun) {
+        await upsertCrankScore(post.id, scores);
+      }
       processed++;
 
       if (prev) {
@@ -161,7 +171,7 @@ export async function runCrankTracker(daysBack = 14): Promise<CrankTrackResult> 
       : '점수 변화 없음',
   ].join(' | ');
 
-  return { processed, alerts, summary };
+  return { processed, dryRun, alerts, summary };
 }
 
 export async function formatCrankReport(result: CrankTrackResult): Promise<string> {

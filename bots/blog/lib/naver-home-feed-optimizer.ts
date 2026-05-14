@@ -17,6 +17,8 @@
 const path    = require('path');
 const env     = require('../../../packages/core/lib/env');
 const { callHubLlm } = require('../../../packages/core/lib/hub-client');
+const pgPool  = require('../../../packages/core/lib/pg-pool');
+const { ensureBlogV3Tables } = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/blog-v3-unified.ts'));
 
 // ── 홈판 제목 평가 기준 ────────────────────────────────────────────────────────
 
@@ -359,4 +361,34 @@ export async function generateHomeFeedReport(params: {
   ])].slice(0, 5);
 
   return { titleScore, hookScore, dwellTime, channels, overallScore, topActions };
+}
+
+export async function recordHomeFeedAudit(params: {
+  postId?: number | null;
+  title: string;
+  category?: string | null;
+  report: Awaited<ReturnType<typeof generateHomeFeedReport>>;
+  dryRun?: boolean;
+  shadowOnly?: boolean;
+}): Promise<{ ok: boolean; dryRun: boolean; inserted: number }> {
+  if (params.dryRun) return { ok: true, dryRun: true, inserted: 0 };
+  await ensureBlogV3Tables();
+  const result = await pgPool.run('blog', `
+    INSERT INTO blog.naver_exposure_audits
+      (post_id, title, category, overall_score, title_score, hook_score, dwell_seconds, channels, top_actions, shadow_only)
+    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+    RETURNING id
+  `, [
+    params.postId || null,
+    params.title,
+    params.category || null,
+    params.report.overallScore || 0,
+    params.report.titleScore?.score || 0,
+    params.report.hookScore?.score || 0,
+    params.report.dwellTime?.estimatedSeconds || 0,
+    JSON.stringify(params.report.channels || []),
+    JSON.stringify(params.report.topActions || []),
+    params.shadowOnly !== false,
+  ]);
+  return { ok: true, dryRun: false, inserted: result?.rowCount || 0 };
 }

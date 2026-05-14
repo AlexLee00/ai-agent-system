@@ -15,6 +15,13 @@ const {
   isTooCloseToRecentTitle,
   mergeRecentTitles,
 } = require('./topic-title-guard.ts');
+const {
+  SOURCE_LABELS,
+  calculateTrendFusionScore,
+  normalizeSource,
+  recordShadowEvidence,
+  safeJson,
+} = require('./blog-v3-unified.ts');
 
 // DPO 힌트 (lazy load — BLOG_DPO_ENABLED=true일 때만 활성)
 let _dpoCached = null;
@@ -901,7 +908,7 @@ async function selectTopicWithCandidateFallback(category, targetDate, recentPost
     }
   }
 
-  // 2.5순위: trend_topics (Reddit/베스트셀러 — 당일 수집, 미사용분)
+  // 2.5순위: trend_topics (Blog V3 3-source fusion — Reddit/Aladin/Naver)
   const trendCandidates = await fetchTrendTopicCandidates(targetDate, category);
   if (trendCandidates && trendCandidates.length > 0) {
     const { patterns, failures } = await _loadDpoHints();
@@ -914,11 +921,30 @@ async function selectTopicWithCandidateFallback(category, targetDate, recentPost
     });
     if (selected) {
       console.log(`[토픽] 트렌드 후보 채택 (${selected.source}): ${selected.title}`);
-      // 사용 표시 — 중복 방지 (fire-and-forget)
+      // 사용 표시 + shadow evidence — 중복 방지 (fire-and-forget)
       queryOpsDb(
-        `UPDATE blog.trend_topics SET used = true WHERE id = $1`,
-        'blog', [selected.trendId],
+        `UPDATE blog.trend_topics
+         SET used = true,
+             evidence = COALESCE(evidence, '{}'::jsonb) || $2::jsonb
+         WHERE id = $1`,
+        'blog', [selected.trendId, JSON.stringify({ selected_by: 'blog_v3_unified', selected_at: new Date().toISOString() })],
       ).catch(() => {});
+      recordShadowEvidence('topic_fusion', {
+        ok: true,
+        selected: {
+          trendId: selected.trendId,
+          title: selected.title,
+          source: selected.source,
+          fusionScore: selected.fusionScore,
+        },
+        candidates: scored.slice(0, 5).map((c) => ({
+          trendId: c.trendId,
+          title: c.title,
+          source: c.source,
+          fusionScore: c.fusionScore,
+          score: c.score,
+        })),
+      }).catch(() => {});
       return enrichTopicSelection({
         ...selected,
         pattern: 'trend',
@@ -1119,36 +1145,63 @@ async function fetchDpoHints() {
 }
 
 /**
- * blog.trend_topics에서 오늘 수집된 Reddit/베스트셀러 트렌드 후보 조회.
- * run-trend-collector.ts가 매일 06:00 저장한 데이터를 읽는다.
+ * blog.trend_topics에서 오늘 수집된 Reddit/Aladin/Naver 트렌드 후보 조회.
+ * Blog V3 unified fusion score를 적용한다.
  */
 async function fetchTrendTopicCandidates(targetDate, category = null) {
   try {
     const categoryFilter = category ? `AND (category = $2 OR category IS NULL)` : '';
     const params = category ? [targetDate, category] : [targetDate];
     const rows = await queryOpsDb(
-      `SELECT id, source, topic_ko, category, trend_score, korea_relevance
+      `SELECT id, source, topic_ko, category, trend_score, korea_relevance, is_book_topic, meta, date, created_at
        FROM blog.trend_topics
        WHERE date = $1::date
          AND used = false
          ${categoryFilter}
-       ORDER BY trend_score DESC, korea_relevance DESC
-       LIMIT 5`,
+       ORDER BY date DESC, trend_score DESC, korea_relevance DESC
+       LIMIT 20`,
       'blog',
       params,
     );
     if (!rows?.rows?.length) return null;
-    return rows.rows.map((row) => ({
-      id: row.id,
-      category: row.category || category || '최신IT트렌드',
-      title: row.topic_ko,
-      topic: row.topic_ko,
-      question: `${row.topic_ko}에 대해 무엇을 먼저 알아야 할까`,
-      diff: `트렌드 기반 (${row.source === 'reddit' ? 'Reddit' : '베스트셀러'})`,
-      score: ((row.trend_score || 0) / 100) + ((row.korea_relevance || 0) / 200),
-      source: `trend_${row.source}`,
-      trendId: row.id,
-    }));
+    const sourceSetsByTitle = new Map();
+    for (const row of rows.rows) {
+      const key = normalizeTitle(row.topic_ko || '');
+      const set = sourceSetsByTitle.get(key) || new Set();
+      set.add(normalizeSource(row.source));
+      sourceSetsByTitle.set(key, set);
+    }
+
+    return rows.rows
+      .map((row) => {
+        const meta = safeJson(row.meta);
+        const titleKey = normalizeTitle(row.topic_ko || '');
+        const sourceSet = sourceSetsByTitle.get(titleKey) || new Set([normalizeSource(row.source)]);
+        const fusion = calculateTrendFusionScore({
+          ...row,
+          meta: {
+            ...meta,
+            source_count: sourceSet.size,
+            sources: Array.from(sourceSet),
+          },
+        });
+        const sourceLabel = SOURCE_LABELS[fusion.source] || row.source;
+        return {
+          id: row.id,
+          category: row.category || category || '최신IT트렌드',
+          title: row.topic_ko,
+          topic: row.topic_ko,
+          question: `${row.topic_ko}에 대해 무엇을 먼저 알아야 할까`,
+          diff: `트렌드 기반 (${sourceLabel}, fusion ${fusion.score}/100)`,
+          score: fusion.score / 100,
+          source: `trend_${fusion.source}`,
+          trendId: row.id,
+          fusionScore: fusion.score,
+          fusionEvidence: fusion,
+        };
+      })
+      .sort((a, b) => (b.fusionScore || 0) - (a.fusionScore || 0))
+      .slice(0, 8);
   } catch {
     return null;
   }

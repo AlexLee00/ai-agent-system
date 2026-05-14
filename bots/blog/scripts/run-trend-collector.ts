@@ -11,32 +11,18 @@
  */
 
 const path     = require('path');
-const { execSync } = require('child_process');
+const { execFileSync } = require('child_process');
 const env      = require('../../../packages/core/lib/env');
-const kst      = require('../../../packages/core/lib/kst');
 const pgPool   = require('../../../packages/core/lib/pg-pool');
 const { fetchHubSecrets } = require('../../../packages/core/lib/hub-client');
+const {
+  buildNaverTrendTopics,
+  ensureBlogV3Tables,
+  saveTrendTopics,
+} = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/blog-v3-unified.ts'));
 
 async function ensureTrendTopicsTable() {
-  await pgPool.run('blog', `
-    CREATE TABLE IF NOT EXISTS blog.trend_topics (
-      id          SERIAL PRIMARY KEY,
-      date        DATE NOT NULL DEFAULT CURRENT_DATE,
-      source      TEXT NOT NULL,            -- 'reddit' | 'bestseller'
-      topic_ko    TEXT NOT NULL,
-      category    TEXT,
-      keywords    JSONB,
-      trend_score INTEGER DEFAULT 0,
-      korea_relevance INTEGER DEFAULT 0,
-      is_book_topic BOOLEAN DEFAULT false,
-      used        BOOLEAN DEFAULT false,
-      meta        JSONB,
-      created_at  TIMESTAMPTZ DEFAULT NOW()
-    );
-    CREATE INDEX IF NOT EXISTS idx_trend_topics_date ON blog.trend_topics(date);
-    CREATE INDEX IF NOT EXISTS idx_trend_topics_used ON blog.trend_topics(used) WHERE used = false;
-    CREATE UNIQUE INDEX IF NOT EXISTS idx_trend_topics_uniq ON blog.trend_topics(date, source, topic_ko);
-  `);
+  await ensureBlogV3Tables();
 }
 
 async function injectRedditSecrets() {
@@ -59,89 +45,117 @@ async function injectRedditSecrets() {
   }
 }
 
-async function runRedditAnalyzer() {
+function parseArgs(argv) {
+  const args = new Set(argv.slice(2));
+  const sourceArg = argv.find((arg) => arg.startsWith('--source='));
+  return {
+    dryRun: args.has('--dry-run'),
+    json: args.has('--json'),
+    fixture: args.has('--fixture'),
+    noFail: args.has('--no-fail'),
+    source: sourceArg ? sourceArg.split('=')[1] : 'all',
+  };
+}
+
+async function runRedditAnalyzer(options = {}) {
   const scriptPath = path.join(env.PROJECT_ROOT, 'bots/blog/python/reddit_trend_analyzer.py');
   const outputPath = path.join(env.PROJECT_ROOT, 'bots/blog/output/reddit-trends-latest.json');
 
-  await injectRedditSecrets();
+  if (!options.fixture) {
+    await injectRedditSecrets();
+  }
 
-  if (!process.env.REDDIT_CLIENT_ID || !process.env.REDDIT_CLIENT_SECRET) {
+  if (!options.fixture && (!process.env.REDDIT_CLIENT_ID || !process.env.REDDIT_CLIENT_SECRET)) {
     console.warn('[트렌드수집] Reddit API 키 없음 — 트렌드 수집 건너뜀');
-    return [];
+    return { ok: false, status: 'blocked', reason: 'missing_secret:reddit', topics: [] };
   }
 
   try {
     console.log('[트렌드수집] Reddit 분석기 실행...');
-    execSync(`python3 "${scriptPath}"`, {
+    const pyArgs = [scriptPath];
+    if (options.dryRun) pyArgs.push('--dry-run');
+    if (options.fixture) pyArgs.push('--fixture');
+    if (options.json || options.dryRun) pyArgs.push('--json');
+    if (options.fixture) pyArgs.push('--max-llm-calls=0');
+
+    const stdout = execFileSync('python3', pyArgs, {
       env: { ...process.env },
-      stdio: 'inherit',
+      stdio: options.json || options.dryRun ? ['ignore', 'pipe', 'inherit'] : 'inherit',
       timeout: 120_000,
     });
 
-    // 결과 로드
-    const data = JSON.parse(require('fs').readFileSync(outputPath, 'utf8'));
-    return data.topics || [];
+    const data = (options.json || options.dryRun)
+      ? JSON.parse(String(stdout || '{}'))
+      : JSON.parse(require('fs').readFileSync(outputPath, 'utf8'));
+    return { ok: data.ok !== false, status: data.status || 'ok', reason: data.reason || null, topics: data.topics || [] };
   } catch (e: any) {
     console.warn('[트렌드수집] Reddit 분석기 실패:', e.message);
-    return [];
+    return { ok: false, status: 'failed', reason: e.message, topics: [] };
   }
 }
 
-async function saveTopicsToDb(topics: any[], source: string) {
-  if (topics.length === 0) return 0;
-  const today = kst.today();
-  let inserted = 0;
-
-  for (const t of topics) {
-    try {
-      const result = await pgPool.run('blog', `
-        INSERT INTO blog.trend_topics
-          (date, source, topic_ko, category, keywords, trend_score, korea_relevance, is_book_topic, meta)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-        ON CONFLICT DO NOTHING
-        RETURNING id
-      `, [
-        today,
-        source,
-        t.topic_ko || t.title,
-        t.category || null,
-        JSON.stringify(t.keywords || []),
-        t.trend_score || 0,
-        t.korea_relevance || 0,
-        t.is_book_topic || false,
-        JSON.stringify({ reason: t.reason, reddit_source: t.reddit_source }),
-      ]);
-      if (result?.rowCount > 0) inserted++;
-    } catch (e: any) {
-      console.warn(`[트렌드수집] DB 저장 실패 (${t.topic_ko}):`, e.message);
-    }
+async function runNaverTrendCollector(options = {}) {
+  if (options.fixture) {
+    return { ok: true, status: 'fixture', reason: null, topics: buildNaverTrendTopics() };
   }
-
-  return inserted;
+  if (process.env.BLOG_SIGNAL_COLLECTOR_ENABLED !== 'true') {
+    return { ok: false, status: 'blocked', reason: 'BLOG_SIGNAL_COLLECTOR_ENABLED!=true', topics: [] };
+  }
+  try {
+    const collector = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/signals/naver-trend-collector.ts'));
+    const raw = await collector.collectBlogKeywordTrends();
+    return { ok: true, status: 'ok', reason: null, topics: buildNaverTrendTopics(raw || []) };
+  } catch (e: any) {
+    return { ok: false, status: 'failed', reason: e.message, topics: [] };
+  }
 }
 
 async function main() {
-  console.log(`[트렌드수집] 시작: ${new Date().toISOString()}`);
+  const options = parseArgs(process.argv);
+  console.log(`[트렌드수집] 시작: ${new Date().toISOString()} ${options.dryRun ? '(dry-run)' : ''}`);
 
-  await ensureTrendTopicsTable();
+  if (!options.dryRun) {
+    await ensureTrendTopicsTable();
+  }
 
-  // 1. Reddit 트렌드
-  const redditTopics = await runRedditAnalyzer();
-  const redditInserted = await saveTopicsToDb(redditTopics, 'reddit');
-  console.log(`[트렌드수집] Reddit 토픽 저장: ${redditInserted}개`);
+  const result = {
+    ok: true,
+    dryRun: options.dryRun,
+    shadowMode: true,
+    sources: {},
+    startedAt: new Date().toISOString(),
+  };
+
+  if (options.source === 'all' || options.source === 'reddit') {
+    const reddit = await runRedditAnalyzer(options);
+    const saved = await saveTrendTopics(reddit.topics, 'reddit', { dryRun: options.dryRun, addedBy: 'reddit-trend-collector' });
+    result.sources.reddit = { ...reddit, ...saved };
+    console.log(`[트렌드수집] Reddit 토픽 ${options.dryRun ? '후보' : '저장'}: ${saved.candidates || 0}/${saved.inserted || 0}개`);
+  }
+
+  if (options.source === 'all' || options.source === 'naver') {
+    const naver = await runNaverTrendCollector(options);
+    const saved = await saveTrendTopics(naver.topics, 'naver', { dryRun: options.dryRun, addedBy: 'naver-trend-collector' });
+    result.sources.naver = { ...naver, ...saved };
+    console.log(`[트렌드수집] Naver 토픽 ${options.dryRun ? '후보' : '저장'}: ${saved.candidates || 0}/${saved.inserted || 0}개`);
+  }
 
   // 2. 오래된 토픽 정리 (30일 이상)
   // 베스트셀러는 ai.blog.bestseller-sync (매주 월요일 07:00) 에서 별도 처리
-  await pgPool.run('blog', `
-    DELETE FROM blog.trend_topics
-    WHERE date < CURRENT_DATE - INTERVAL '30 days'
-  `).catch(() => {});
+  if (!options.dryRun) {
+    await pgPool.run('blog', `
+      DELETE FROM blog.trend_topics
+      WHERE date < CURRENT_DATE - INTERVAL '30 days'
+    `).catch(() => {});
+  }
 
+  result.finishedAt = new Date().toISOString();
   console.log('[트렌드수집] 완료!');
+  if (options.json) console.log(JSON.stringify(result));
   process.exit(0);
 }
 
 main().catch(e => {
   console.error('[트렌드수집] 오류:', e.message);
-  process.exit(1);
+  process.exit(process.argv.includes('--no-fail') ? 0 : 1);
 });

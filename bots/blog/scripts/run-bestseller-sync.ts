@@ -11,80 +11,45 @@
 
 const path   = require('path');
 const env    = require('../../../packages/core/lib/env');
-const pgPool = require('../../../packages/core/lib/pg-pool');
-const kst    = require('../../../packages/core/lib/kst');
+const {
+  ensureBlogV3Tables,
+  saveTrendTopics,
+} = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/blog-v3-unified.ts'));
 
 async function ensureTrendTopicsTable() {
-  await pgPool.run('blog', `
-    CREATE TABLE IF NOT EXISTS blog.trend_topics (
-      id          SERIAL PRIMARY KEY,
-      date        DATE NOT NULL DEFAULT CURRENT_DATE,
-      source      TEXT NOT NULL,
-      topic_ko    TEXT NOT NULL,
-      category    TEXT,
-      keywords    JSONB,
-      trend_score INTEGER DEFAULT 0,
-      korea_relevance INTEGER DEFAULT 0,
-      is_book_topic BOOLEAN DEFAULT false,
-      used        BOOLEAN DEFAULT false,
-      meta        JSONB,
-      created_at  TIMESTAMPTZ DEFAULT NOW()
-    );
-    CREATE INDEX IF NOT EXISTS idx_trend_topics_date ON blog.trend_topics(date);
-    CREATE INDEX IF NOT EXISTS idx_trend_topics_used ON blog.trend_topics(used) WHERE used = false;
-    CREATE UNIQUE INDEX IF NOT EXISTS idx_trend_topics_uniq ON blog.trend_topics(date, source, topic_ko);
-  `);
+  await ensureBlogV3Tables();
 }
 
 async function saveBooksAsTrendTopics(books, dryRun = false) {
-  if (books.length === 0) return 0;
-  if (dryRun) {
-    console.log('[베스트셀러동기화][dry-run] trend_topics 저장 생략');
-    return 0;
-  }
-
-  const today = kst.today();
-  let inserted = 0;
-
-  for (const book of books) {
-    try {
-      const result = await pgPool.run('blog', `
-        INSERT INTO blog.trend_topics
-          (date, source, topic_ko, category, keywords, trend_score, korea_relevance, is_book_topic, meta)
-        VALUES ($1, 'bestseller', $2, $3, $4, $5, 85, true, $6)
-        ON CONFLICT DO NOTHING
-        RETURNING id
-      `, [
-        today,
-        book.title,
-        book.category_name_local || '도서',
-        JSON.stringify([book.author, book.publisher].filter(Boolean)),
-        Math.min(100, Math.round((book.final_score || 0) / 2)),
-        JSON.stringify({
-          isbn: book.isbn13,
-          author: book.author,
-          publisher: book.publisher,
-          cover_url: book.cover,
-          pub_date: book.pubDate,
-          rating: book.customerReviewRank,
-          sales_point: book.salesPoint,
-          added_by: 'bestseller-sync',
-        }),
-      ]);
-      if (result?.rowCount > 0) inserted++;
-    } catch (e) {
-      console.warn(`[베스트셀러동기화] trend_topics 저장 실패 (${book.title}):`, e.message);
-    }
-  }
-
-  console.log(`[베스트셀러동기화] trend_topics 저장: ${inserted}권`);
-  return inserted;
+  const topics = (books || []).map((book) => ({
+    topic_ko: book.title,
+    category: book.category_name_local || '도서',
+    keywords: [book.author, book.publisher].filter(Boolean),
+    trend_score: Math.min(100, Math.round((book.final_score || 0) / 2)),
+    korea_relevance: 85,
+    is_book_topic: true,
+    reason: 'Aladin bestseller 기반 V3 후보',
+    meta: {
+      isbn: book.isbn13,
+      author: book.author,
+      publisher: book.publisher,
+      cover_url: book.cover,
+      pub_date: book.pubDate,
+      rating: book.customerReviewRank,
+      sales_point: book.salesPoint,
+    },
+  }));
+  const saved = await saveTrendTopics(topics, 'bestseller', { dryRun, addedBy: 'bestseller-sync' });
+  if (dryRun) console.log('[베스트셀러동기화][dry-run] trend_topics 저장 생략');
+  console.log(`[베스트셀러동기화] trend_topics ${dryRun ? '후보' : '저장'}: ${saved.candidates}/${saved.inserted}`);
+  return saved;
 }
 
 async function main() {
   console.log(`[베스트셀러동기화] 시작: ${new Date().toISOString()}`);
 
   const dryRun = process.argv.includes('--dry-run');
+  const json = process.argv.includes('--json');
   const { runBestsellerFetch } = require(
     path.join(env.PROJECT_ROOT, 'bots/blog/lib/bestseller-fetcher.ts')
   );
@@ -96,8 +61,22 @@ async function main() {
   if (!dryRun) {
     await ensureTrendTopicsTable();
   }
-  await saveBooksAsTrendTopics(result.books, dryRun);
+  const trend = await saveBooksAsTrendTopics(result.books, dryRun);
 
+  if (json) {
+    console.log(JSON.stringify({
+      ok: true,
+      dryRun,
+      shadowMode: true,
+      bestseller: {
+        total: result.total,
+        filtered: result.filtered,
+        inserted: result.inserted,
+      },
+      trend,
+      finishedAt: new Date().toISOString(),
+    }));
+  }
   process.exit(0);
 }
 
