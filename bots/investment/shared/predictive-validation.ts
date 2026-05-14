@@ -215,14 +215,22 @@ function checkHardening(components, missingComponents, score, config = {}, conte
   const coverage = Object.keys(components).length / Math.max(1, Object.keys(components).length + (missingComponents?.length || 0));
   const coverageBlocked = coverage < COVERAGE_REQUIRED;
 
-  // prediction 컴포넌트 없거나 0이면 차단
-  const predictionBlocked = !components?.prediction;
+  // prediction 컴포넌트가 없거나 0 이하이면 차단
+  const predictionScore = finiteNumber(components?.prediction?.score, null);
+  const predictionBlocked = !components?.prediction || predictionScore == null || predictionScore <= 0;
 
   // analyst가 fallback confidence로 채워진 경우 (실 데이터 없음)
   const fallbackAnalyst = components?.analyst?.source === 'candidate_confidence_fallback';
 
   const backtestStatus = context?.freshBacktestStatus || null;
-  const backtestBlocked = context?.hasFreshBacktest === false || backtestStatus?.fresh === false;
+  const backtestSource = backtestStatus?.source || {};
+  const backtestUnhealthy =
+    backtestSource?.healthy === false
+    || String(backtestSource?.healthy).toLowerCase() === 'false'
+    || backtestSource?.would_block === true
+    || String(backtestSource?.would_block).toLowerCase() === 'true'
+    || String(backtestSource?.gate_status || '').startsWith('would_block');
+  const backtestBlocked = context?.hasFreshBacktest === false || backtestStatus?.fresh === false || backtestUnhealthy;
 
   const anyBlocked = coverageBlocked || predictionBlocked || backtestBlocked;
 
@@ -231,6 +239,7 @@ function checkHardening(components, missingComponents, score, config = {}, conte
     predictionBlocked,
     fallbackAnalyst,
     backtestBlocked: backtestBlocked || false,
+    backtestUnhealthy,
     anyBlocked,
     enforce: config?.hardeningEnforce === true,
     backtestStatus,
@@ -290,13 +299,14 @@ export function buildPredictiveValidationEvidence(candidate = {}, context = {}, 
     : hardening.enforce && hardening.predictionBlocked
       ? 'block_no_prediction'
       : hardening.enforce && hardening.backtestBlocked
-        ? 'block_stale_backtest'
+        ? hardening.backtestUnhealthy ? 'block_backtest_gate' : 'block_stale_backtest'
         : baseDecision;
 
   const reasonParts = [`predictive_${decision}:${score.toFixed(2)}`, `threshold=${threshold.toFixed(2)}`];
   if (hardening.coverageBlocked) reasonParts.push(`coverage=${componentCoverage.toFixed(2)}<${COVERAGE_REQUIRED}`);
-  if (hardening.backtestBlocked) reasonParts.push('fresh_backtest_missing_or_stale');
-  if (hardening.predictionBlocked) reasonParts.push('prediction_missing');
+  if (hardening.backtestBlocked && !hardening.backtestUnhealthy) reasonParts.push('fresh_backtest_missing_or_stale');
+  if (hardening.backtestUnhealthy) reasonParts.push('backtest_unhealthy_or_would_block');
+  if (hardening.predictionBlocked) reasonParts.push('prediction_missing_or_zero');
   if (hardening.fallbackAnalyst) reasonParts.push('analyst_fallback_only');
 
   return {

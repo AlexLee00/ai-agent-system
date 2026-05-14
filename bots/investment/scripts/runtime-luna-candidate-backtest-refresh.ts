@@ -34,14 +34,38 @@ function periodsFrom(value: any) {
 }
 
 async function getActiveCandidates(limit = 100) {
+  return getActiveCandidatesByMarket({ limit, market: 'crypto' });
+}
+
+function normalizeMarket(value: any = 'all') {
+  const raw = String(value || 'all').trim().toLowerCase();
+  if (raw === 'binance') return 'crypto';
+  if (raw === 'kis') return 'domestic';
+  if (raw === 'kis_overseas') return 'overseas';
+  return ['crypto', 'domestic', 'overseas', 'all'].includes(raw) ? raw : 'all';
+}
+
+async function getActiveCandidatesByMarket({ limit = 100, market = 'all' } = {}) {
+  const normalizedMarket = normalizeMarket(market);
+  const params: any[] = [];
+  const marketWhere = normalizedMarket === 'all'
+    ? ''
+    : `AND market = $${params.push(normalizedMarket)}`;
+  params.push(limit);
   return db.query(
-    `SELECT DISTINCT symbol, market
-       FROM candidate_universe
-      WHERE expires_at > NOW()
-        AND market = 'crypto'
-      ORDER BY symbol ASC
-      LIMIT $1`,
-    [limit],
+    `WITH active_candidates AS (
+      SELECT DISTINCT ON (symbol, market)
+             symbol, market, score, discovered_at
+        FROM candidate_universe
+       WHERE expires_at > NOW()
+         ${marketWhere}
+       ORDER BY symbol, market, score DESC, discovered_at DESC
+    )
+    SELECT symbol, market
+      FROM active_candidates
+     ORDER BY score DESC, discovered_at DESC
+     LIMIT $${params.length}`,
+    params,
   ).catch(() => []);
 }
 
@@ -241,6 +265,7 @@ export async function runCandidateBacktestRefresh(options: any = {}): Promise<an
   const json = options.json === true;
   const periods = periodsFrom(options.periods);
   const limit = Math.max(1, Number(options.limit || process.env.LUNA_CANDIDATE_BACKTEST_LIMIT || 100));
+  const market = normalizeMarket(options.market || process.env.LUNA_CANDIDATE_BACKTEST_MARKET || 'all');
   if (!dryRun) {
     await db.initSchema();
     await ensureCandidateBacktestSchema();
@@ -248,9 +273,9 @@ export async function runCandidateBacktestRefresh(options: any = {}): Promise<an
 
   const candidates = fixture
     ? [{ symbol: 'BTC/USDT', market: 'crypto' }, { symbol: 'NEG/USDT', market: 'crypto' }]
-    : await getActiveCandidates(limit);
+    : await getActiveCandidatesByMarket({ limit, market });
 
-  if (!json) console.log(`[luna-backtest-refresh] 활성 후보 ${candidates.length}건 (shadow=${SHADOW_MODE}, dryRun=${dryRun})`);
+  if (!json) console.log(`[luna-backtest-refresh] 활성 후보 ${candidates.length}건 market=${market} (shadow=${SHADOW_MODE}, dryRun=${dryRun})`);
 
   const results = [];
   for (const { symbol, market } of candidates) {
@@ -271,6 +296,7 @@ export async function runCandidateBacktestRefresh(options: any = {}): Promise<an
     dryRun,
     fixture,
     writeMode: dryRun ? 'dry-run' : 'shadow-apply',
+    market,
     periods,
     total: results.length,
     passed,
@@ -291,6 +317,7 @@ if (isDirectExecution(import.meta.url)) {
     run: async () => runCandidateBacktestRefresh({
       periods: argValue('periods', argValue('days', '30,90,180')),
       limit: Number(argValue('limit', process.env.LUNA_CANDIDATE_BACKTEST_LIMIT || 100)),
+      market: argValue('market', process.env.LUNA_CANDIDATE_BACKTEST_MARKET || 'all'),
       dryRun: hasFlag('dry-run'),
       fixture: hasFlag('fixture'),
       json: hasFlag('json'),

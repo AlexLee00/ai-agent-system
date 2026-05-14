@@ -25,6 +25,97 @@ const SYMBOL_KEYWORDS: Record<string, string[]> = {
   'AVAX/USDT': ['avalanche', 'avax'],
 };
 
+const AMBIGUOUS_SHORT_TICKERS = new Set([
+  'AI', 'AS', 'AT', 'IN', 'IT', 'ME', 'NO', 'NOT', 'OF', 'ON', 'ONE', 'OR', 'TO', 'US',
+]);
+
+function normalizeSymbol(value = '') {
+  return String(value || '').trim().toUpperCase();
+}
+
+function tickerFromSymbol(symbol = '') {
+  return normalizeSymbol(symbol).split('/')[0]?.replace(/[^A-Z0-9]/g, '') || '';
+}
+
+function uniq<T>(values: T[]): T[] {
+  return [...new Set(values.filter(Boolean))];
+}
+
+function isAmbiguousTicker(base = '') {
+  const normalized = normalizeSymbol(base);
+  return normalized.length <= 2 || AMBIGUOUS_SHORT_TICKERS.has(normalized);
+}
+
+function keywordsForSymbol(symbol = '') {
+  const normalized = normalizeSymbol(symbol);
+  const base = tickerFromSymbol(normalized);
+  const configured = SYMBOL_KEYWORDS[normalized] || [];
+  const ticker = base.toLowerCase();
+  const strict = [
+    `$${ticker}`,
+    `#${ticker}`,
+    `${ticker}/usdt`,
+    `${ticker}-usdt`,
+    `${ticker}usdt`,
+  ];
+  const dynamic = isAmbiguousTicker(base)
+    ? strict
+    : [
+      base,
+      base.length >= 3 ? ` ${ticker} ` : null,
+      base.length >= 3 ? `#${ticker}` : null,
+      normalized.replace('/USDT', '').toLowerCase(),
+      ...strict,
+    ].filter(Boolean);
+  return uniq([...configured, ...dynamic].map((item) => String(item).toLowerCase()));
+}
+
+function escapeRegExp(value = '') {
+  return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function matchesKeyword(text = '', keyword = '') {
+  const lower = String(text || '').toLowerCase();
+  const kw = String(keyword || '').trim().toLowerCase();
+  if (kw.length < 2) return false;
+  if (isAmbiguousTicker(kw.toUpperCase())) return false;
+  if (kw.startsWith('$') || kw.startsWith('#') || kw.includes('/') || kw.includes('-') || kw.endsWith('usdt')) {
+    return lower.includes(kw);
+  }
+  if (kw.startsWith(' ') || kw.endsWith(' ') || kw.includes(' ')) {
+    return lower.includes(kw);
+  }
+  return new RegExp(`(^|[^a-z0-9])${escapeRegExp(kw)}([^a-z0-9]|$)`).test(lower);
+}
+
+async function getActiveCryptoCandidateSymbols(limit = 60): Promise<string[]> {
+  const rows = await db.query(
+    `WITH active_candidates AS (
+      SELECT DISTINCT ON (symbol, market)
+             symbol, score, discovered_at
+        FROM candidate_universe
+       WHERE expires_at > NOW()
+         AND market = 'crypto'
+       ORDER BY symbol, market, score DESC, discovered_at DESC
+    )
+    SELECT symbol
+      FROM active_candidates
+     ORDER BY score DESC, discovered_at DESC
+     LIMIT $1`,
+    [limit],
+  ).catch(() => []);
+  return rows.map((row: any) => normalizeSymbol(row.symbol)).filter((symbol: string) => symbol.endsWith('/USDT'));
+}
+
+function buildTickerSymbolMap(activeSymbols: string[] = []) {
+  const map = { ...TICKER_SYMBOL_MAP };
+  for (const symbol of activeSymbols) {
+    const ticker = tickerFromSymbol(symbol);
+    if (ticker && !map[ticker]) map[ticker] = symbol;
+  }
+  return map;
+}
+
 const BULLISH_KW = [
   'bull', 'moon', 'pump', 'buy', 'long', 'rally', 'surge', 'breakout', 'ath',
   'gain', 'profit', 'uptrend', 'accumulate', 'hodl', 'bullish', 'green', 'rip',
@@ -155,14 +246,15 @@ function fixtureEvents(limit = 20) {
   ].slice(0, limit);
 }
 
-async function fetchApeWisdom(limit = 60): Promise<any[]> {
+async function fetchApeWisdom(limit = 60, activeSymbols: string[] = []): Promise<any[]> {
   const data = await fetchWithTimeout('https://apewisdom.io/api/v1.0/filter/all-crypto/page/1');
   const results: any[] = data?.results || [];
   const events: any[] = [];
+  const tickerSymbolMap = buildTickerSymbolMap(activeSymbols);
 
   for (const item of results.slice(0, limit)) {
     const ticker = String(item?.ticker || '').toUpperCase();
-    const symbol = TICKER_SYMBOL_MAP[ticker];
+    const symbol = tickerSymbolMap[ticker];
     if (!symbol) continue;
     const mentions = Number(item?.mentions || 0);
     const prev = Number(item?.mentions_24h_ago || 0);
@@ -194,7 +286,7 @@ async function fetchRedditSubreddit(subreddit: string, symbol: string, sourceQua
   const keywords = SYMBOL_KEYWORDS[symbol] || [symbol.replace('/USDT', '').toLowerCase()];
   const relevant = posts.filter((p) => {
     const title = String(p?.title || '').toLowerCase();
-    return keywords.some((kw) => title.includes(kw));
+    return keywords.some((kw) => matchesKeyword(title, kw));
   });
   if (relevant.length === 0) return [];
   const avgUpvoteRatio = relevant.reduce((s, p) => s + Number(p?.upvote_ratio || 0.5), 0) / relevant.length;
@@ -235,6 +327,91 @@ async function fetchAllRedditSources(limit = 20): Promise<any[]> {
   ];
   const settled = await Promise.allSettled(tasks);
   return settled.flatMap((r) => (r.status === 'fulfilled' ? r.value : [])).slice(0, limit);
+}
+
+async function fetchRedditCandidateMentions(activeSymbols: string[] = [], limit = 60): Promise<any[]> {
+  const symbols = activeSymbols.slice(0, Math.max(1, limit));
+  if (symbols.length === 0) return [];
+  const subreddits = ['CryptoCurrency', 'CryptoMarkets', 'altcoin'];
+  const settled = await Promise.allSettled(
+    subreddits.map(async (subreddit) => {
+      const data = await fetchWithTimeout(`https://www.reddit.com/r/${subreddit}/hot.json?limit=50`);
+      return {
+        subreddit,
+        posts: (data?.data?.children || []).map((c: any) => c?.data).filter(Boolean),
+      };
+    }),
+  );
+
+  const events: any[] = [];
+  for (const result of settled) {
+    if (result.status !== 'fulfilled') continue;
+    const { subreddit, posts } = result.value;
+    for (const symbol of symbols) {
+      const keywords = keywordsForSymbol(symbol);
+      const relevant = posts.filter((post: any) => {
+        const title = String(post?.title || '').toLowerCase();
+        return keywords.some((kw) => matchesKeyword(title, kw));
+      });
+      if (relevant.length === 0) continue;
+      const avgUpvoteRatio = relevant.reduce((s: number, p: any) => s + Number(p?.upvote_ratio || 0.5), 0) / relevant.length;
+      const totalScore = relevant.reduce((s: number, p: any) => s + Number(p?.score || 0), 0);
+      const combinedText = relevant.map((p: any) => p?.title || '').join(' ');
+      const direction = inferDirection(combinedText);
+      const magnitude = Math.min(1, 0.25 + avgUpvoteRatio * 0.35 + Math.min(0.25, relevant.length / 12));
+      events.push({
+        sourceType: 'community',
+        sourceName: `reddit_candidate_${subreddit.toLowerCase()}`,
+        sourceUrl: `https://www.reddit.com/r/${subreddit}/`,
+        symbol,
+        market: 'crypto',
+        strategyFamily: 'community_sentiment',
+        signalDirection: direction,
+        score: directionScore(direction, magnitude),
+        sourceQuality: 0.38,
+        freshnessScore: 1.0,
+        evidenceSummary: `Reddit candidate scan r/${subreddit}: ${symbol} mentions=${relevant.length} totalScore=${totalScore}`,
+        rawRef: {
+          candidateDriven: true,
+          mentions: relevant.length,
+          avgUpvoteRatio,
+          totalScore,
+          subreddit,
+          keywords,
+          topPosts: relevant.slice(0, 3).map((p: any) => ({ title: p?.title, score: p?.score, upvote_ratio: p?.upvote_ratio })),
+        },
+      });
+    }
+  }
+  return events.slice(0, limit);
+}
+
+function buildMissingCommunityEvidence(activeSymbols: string[] = [], existingEvents: any[] = [], limit = 60) {
+  if (String(process.env.LUNA_COMMUNITY_GAP_EVIDENCE_ENABLED || 'true').toLowerCase() === 'false') return [];
+  const seen = new Set(existingEvents.map((event) => normalizeSymbol(event.symbol)).filter(Boolean));
+  return activeSymbols
+    .filter((symbol) => !seen.has(normalizeSymbol(symbol)))
+    .slice(0, limit)
+    .map((symbol) => ({
+      sourceType: 'community',
+      sourceName: 'community_candidate_gap',
+      sourceUrl: null,
+      symbol,
+      market: 'crypto',
+      strategyFamily: 'community_sentiment',
+      signalDirection: 'neutral',
+      score: 0,
+      sourceQuality: 0.10,
+      freshnessScore: 1.0,
+      evidenceSummary: `Community evidence gap recorded for active candidate ${symbol}`,
+      rawRef: {
+        missing_data: true,
+        candidateDriven: true,
+        reason: 'no_reddit_apewisdom_news_match',
+        mentions: 0,
+        sourceDiversity: { sourceCount: 0, uniqueSources: [] },
+      },
+    }));
 }
 
 function missingSecretEvent(sourceName: string, missing: string[]) {
@@ -387,12 +564,14 @@ export async function runCommunityEvidenceRefresh(options: any = {}): Promise<an
   const fixture = options.fixture === true;
   const limit = Math.max(1, Number(options.limit || 60));
   if (!dryRun) await db.initSchema();
+  const activeSymbols = fixture ? [] : await getActiveCryptoCandidateSymbols(limit);
 
   const sourceResults = fixture
     ? [{ source: 'fixture', ok: true, count: fixtureEvents(limit).length, events: fixtureEvents(limit), error: null }]
     : await Promise.all([
-      collectSource('apewisdom_crypto', () => fetchApeWisdom(limit)),
+      collectSource('apewisdom_crypto', () => fetchApeWisdom(limit, activeSymbols)),
       collectSource('reddit', () => fetchAllRedditSources(limit)),
+      collectSource('reddit_candidate_scan', () => fetchRedditCandidateMentions(activeSymbols, limit)),
       collectSource('cryptopanic_news', () => fetchCryptoPanic(process.env.CRYPTOPANIC_API_KEY || null, limit)),
       collectSource('naver_news', () => fetchNaverNews({
         clientId: process.env.NAVER_CLIENT_ID || process.env.NAVER_NEWS_CLIENT_ID,
@@ -401,10 +580,15 @@ export async function runCommunityEvidenceRefresh(options: any = {}): Promise<an
       })),
     ]);
 
-  const allEvents = attachAggregates(sourceResults.flatMap((result) => result.events || [])).slice(0, limit);
+  const collectedEvents = sourceResults.flatMap((result) => result.events || []);
+  const gapEvents = buildMissingCommunityEvidence(activeSymbols, collectedEvents, limit);
+  const allEvents = attachAggregates([
+    ...collectedEvents.slice(0, limit),
+    ...gapEvents.slice(0, Math.max(0, limit - Math.min(limit, collectedEvents.length))),
+  ]);
   const mentionsBySymbol: Record<string, number> = {};
   for (const ev of allEvents) {
-    if (ev.symbol) mentionsBySymbol[ev.symbol] = (mentionsBySymbol[ev.symbol] || 0) + (ev.rawRef?.mentions || 1);
+    if (ev.symbol) mentionsBySymbol[ev.symbol] = (mentionsBySymbol[ev.symbol] || 0) + (ev.rawRef?.mentions ?? 1);
   }
 
   const inserted = await insertAllEvents(allEvents, dryRun);
@@ -416,6 +600,8 @@ export async function runCommunityEvidenceRefresh(options: any = {}): Promise<an
     collected: allEvents.length,
     inserted,
     bySource: Object.fromEntries(sourceResults.map((result) => [result.source, result.count])),
+    activeCandidateSymbols: activeSymbols,
+    gapEvidence: gapEvents.length,
     sourceReports: sourceResults.map(({ events, ...rest }) => rest),
     symbols: Object.keys(mentionsBySymbol),
     mentionsBySymbol,
@@ -425,6 +611,11 @@ export async function runCommunityEvidenceRefresh(options: any = {}): Promise<an
   if (!json) console.log(`[luna-community] 완료: collected=${allEvents.length} inserted=${inserted} dryRun=${dryRun} shadow=${SHADOW_MODE}`);
   return json ? payload : JSON.stringify(payload, null, 2);
 }
+
+export const __test = {
+  keywordsForSymbol,
+  matchesKeyword,
+};
 
 if (isDirectExecution(import.meta.url)) {
   await runCliMain({

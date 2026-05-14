@@ -149,10 +149,10 @@ function scoreBacktest(backtest = {}) {
 function scorePredictive(predictive = {}) {
   const decision = String(predictive?.decision || '').toLowerCase();
   const score = clamp(predictive?.score, 0, 1, 0);
-  const blocked = decision.includes('block') || decision.includes('would_block');
+  const pass = ['fire', 'pass', 'pass_prediction'].includes(decision);
   return {
-    score: blocked ? round(score * 0.35, 4) : score,
-    pass: !blocked,
+    score: pass ? score : round(score * 0.35, 4),
+    pass,
     decision: predictive?.decision || null,
   };
 }
@@ -217,9 +217,11 @@ export function buildLunaWeightVector(input = {}, config = {}) {
   };
   const hardReasons = [
     ...backtest.reasons,
+    !predictive.decision ? 'predictive_missing' : null,
+    !predictive.pass ? 'predictive_blocked' : null,
     !noLookahead.ok ? 'no_lookahead_violation' : null,
   ].filter(Boolean);
-  const eligible = backtest.pass && noLookahead.ok;
+  const eligible = backtest.pass && predictive.pass && Boolean(predictive.decision) && noLookahead.ok;
   const signal = !eligible ? 'hold' : confidence >= 0.72 ? 'increase' : confidence >= 0.55 ? 'watch' : 'hold';
   const cap = maxTargetWeightByMarket[market] ?? 0.08;
   const targetWeight = signal === 'increase'
@@ -309,7 +311,7 @@ export function buildLunaPaperTradingPlan(weightVector = {}, context = {}) {
 
 export async function loadLunaPhase2CandidateInputs({ limit = 50, market = null } = {}) {
   const params = [];
-  const marketWhere = market ? `AND cu.market = $${params.push(normalizeLunaPhase2Market(market))}` : '';
+  const marketWhere = market ? `AND market = $${params.push(normalizeLunaPhase2Market(market))}` : '';
   params.push(limit);
   const rows = await query(`
     WITH community AS (
@@ -319,10 +321,12 @@ export async function loadLunaPhase2CandidateInputs({ limit = 50, market = null 
              MAX(created_at) AS last_seen_at,
              MAX(CASE WHEN COALESCE((raw_ref->'botNoise'->>'score')::double precision, 0) > 0.5 THEN 1 ELSE 0 END)::int AS bot_noise_flag,
              MAX(CASE WHEN COALESCE((raw_ref->'hypeSpike'->>'detected')::boolean, false) THEN 1 ELSE 0 END)::int AS hype_spike_flag
-        FROM external_evidence_events
+       FROM external_evidence_events
        WHERE source_type = 'community'
          AND created_at >= NOW() - INTERVAL '24 hours'
          AND symbol IS NOT NULL
+         AND source_name <> 'community_candidate_gap'
+         AND COALESCE((raw_ref->>'missing_data')::boolean, false) = false
        GROUP BY symbol, market
     ),
     latest_predictive AS (
@@ -331,6 +335,14 @@ export async function loadLunaPhase2CandidateInputs({ limit = 50, market = null 
         FROM predictive_validation_log
        WHERE created_at >= NOW() - INTERVAL '7 days'
        ORDER BY symbol, market, created_at DESC
+    ),
+    active_candidates AS (
+      SELECT DISTINCT ON (symbol, market)
+             symbol, market, score, source, discovered_at, expires_at, reason, raw_data
+        FROM candidate_universe
+       WHERE expires_at > NOW()
+         ${marketWhere}
+       ORDER BY symbol, market, score DESC, discovered_at DESC
     )
     SELECT cu.symbol, cu.market, cu.score::double precision AS candidate_score, cu.source,
            cu.discovered_at, cu.expires_at, cu.reason, cu.raw_data,
@@ -343,15 +355,13 @@ export async function loadLunaPhase2CandidateInputs({ limit = 50, market = null 
            community.last_seen_at AS community_last_seen_at,
            community.bot_noise_flag AS community_bot_noise_flag,
            community.hype_spike_flag AS community_hype_spike_flag
-      FROM candidate_universe cu
+      FROM active_candidates cu
       LEFT JOIN candidate_backtest_status cbs
         ON cbs.symbol = cu.symbol AND cbs.market = cu.market
       LEFT JOIN latest_predictive lp
         ON lp.symbol = cu.symbol AND lp.market = cu.market
       LEFT JOIN community
         ON community.symbol = cu.symbol AND community.market = cu.market
-     WHERE cu.expires_at > NOW()
-       ${marketWhere}
      ORDER BY cu.score DESC, cu.discovered_at DESC
      LIMIT $${params.length}
   `, params).catch(() => []);
@@ -471,4 +481,3 @@ export async function insertLunaPaperTradingShadow(row = {}) {
     JSON.stringify(row.evidence || {}),
   ]);
 }
-
