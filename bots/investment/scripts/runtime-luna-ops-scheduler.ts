@@ -256,6 +256,22 @@ export function getOpsSchedulerJobs() {
       ]),
     },
     {
+      name: 'meta_reflexion_shadow_refresh',
+      category: 'neural_shadow',
+      market: 'all',
+      cadence: { type: 'interval', seconds: 21600 },
+      timeoutMs: 120_000,
+      ...nodeScript('runtime-luna-meta-reflexion-shadow.ts', [
+        '--apply',
+        '--confirm=luna-meta-reflexion-shadow',
+        '--layer=all',
+        '--lookback-days=7',
+        '--limit=50',
+        '--max-llm-calls=0',
+        '--json',
+      ]),
+    },
+    {
       name: 'risk_simulation_shadow_refresh',
       category: 'risk_shadow',
       market: 'all',
