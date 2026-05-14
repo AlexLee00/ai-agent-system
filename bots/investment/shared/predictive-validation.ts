@@ -105,6 +105,30 @@ function extractBacktestComponent(candidate = {}, context = {}) {
   };
 }
 
+function resolveFreshBacktestStatus(candidate = {}, context = {}) {
+  const source =
+    candidate?.candidateBacktestStatus
+    || candidate?.block_meta?.candidateBacktestStatus
+    || candidate?.block_meta?.candidate_backtest_status
+    || candidate?.backtestStatus
+    || context?.candidateBacktestStatus
+    || context?.backtestStatus
+    || {};
+  if (source.fresh === true || String(source.fresh).toLowerCase() === 'true') {
+    return { known: true, fresh: true, source };
+  }
+  if (source.fresh === false || String(source.fresh).toLowerCase() === 'false') {
+    return { known: true, fresh: false, source };
+  }
+  const lastBacktestAt = source.last_backtest_at || source.lastBacktestAt || candidate?.backtest?.lastBacktestAt || candidate?.backtest?.last_backtest_at;
+  if (lastBacktestAt) {
+    const ageMs = Date.now() - new Date(lastBacktestAt).getTime();
+    const staleHours = Number(context?.backtestStaleHours || candidate?.backtestStaleHours || process.env.LUNA_BACKTEST_STALE_HOURS || 24);
+    return { known: true, fresh: ageMs <= staleHours * 3600 * 1000, source: { ...source, lastBacktestAt } };
+  }
+  return { known: false, fresh: false, source: null };
+}
+
 function extractPredictionComponent(candidate = {}, context = {}) {
   const source =
     candidate?.prediction
@@ -183,8 +207,9 @@ function extractSetupOutcomeComponent(candidate = {}, context = {}) {
 const COVERAGE_REQUIRED = 0.75;
 
 function checkHardening(components, missingComponents, score, config = {}, context = {}) {
-  if (!config?.hardeningEnabled) {
-    return { coverageBlocked: false, predictionBlocked: false, fallbackAnalyst: false, anyBlocked: false };
+  const hardeningEnabled = config?.hardeningEnabled === true || config?.requireComponents === true;
+  if (!hardeningEnabled) {
+    return { coverageBlocked: false, predictionBlocked: false, fallbackAnalyst: false, backtestBlocked: false, anyBlocked: false, enforce: false };
   }
 
   const coverage = Object.keys(components).length / Math.max(1, Object.keys(components).length + (missingComponents?.length || 0));
@@ -196,12 +221,20 @@ function checkHardening(components, missingComponents, score, config = {}, conte
   // analyst가 fallback confidence로 채워진 경우 (실 데이터 없음)
   const fallbackAnalyst = components?.analyst?.source === 'candidate_confidence_fallback';
 
-  // fresh backtest 체크: context.hasFreshBacktest = false 이면 차단
-  const backtestBlocked = context?.hasFreshBacktest === false;
+  const backtestStatus = context?.freshBacktestStatus || null;
+  const backtestBlocked = context?.hasFreshBacktest === false || backtestStatus?.fresh === false;
 
   const anyBlocked = coverageBlocked || predictionBlocked || backtestBlocked;
 
-  return { coverageBlocked, predictionBlocked, fallbackAnalyst, backtestBlocked: backtestBlocked || false, anyBlocked };
+  return {
+    coverageBlocked,
+    predictionBlocked,
+    fallbackAnalyst,
+    backtestBlocked: backtestBlocked || false,
+    anyBlocked,
+    enforce: config?.hardeningEnforce === true,
+    backtestStatus,
+  };
 }
 
 export function buildPredictiveValidationEvidence(candidate = {}, context = {}, config = {}) {
@@ -210,6 +243,12 @@ export function buildPredictiveValidationEvidence(candidate = {}, context = {}, 
   const discardThreshold = clamp01(config?.discardThreshold ?? holdThreshold, holdThreshold);
   const regime = candidate?.regime || candidate?.market_regime || context?.regime || context?.marketRegime || '';
   const weights = resolveWeights(config, regime);
+  const freshBacktestStatus = resolveFreshBacktestStatus(candidate, context);
+  const hardeningContext = {
+    ...context,
+    freshBacktestStatus,
+    hasFreshBacktest: freshBacktestStatus.known ? freshBacktestStatus.fresh : context?.hasFreshBacktest,
+  };
   const componentExtractors = {
     backtest: extractBacktestComponent,
     prediction: extractPredictionComponent,
@@ -235,10 +274,10 @@ export function buildPredictiveValidationEvidence(candidate = {}, context = {}, 
   const fallbackScore = clamp01(candidate?.predictiveScore ?? candidate?.confidence ?? context?.predictiveScore ?? 0.5, 0.5);
   let score = usedWeight > 0 ? clamp01(weighted / usedWeight, fallbackScore) : fallbackScore;
 
-  const hardening = checkHardening(components, missingComponents, score, config, context);
+  const hardening = checkHardening(components, missingComponents, score, config, hardeningContext);
 
-  // Hardening 활성화 시 차단 조건 충족하면 score=0 (discard 강제)
-  if (hardening.anyBlocked) score = 0;
+  // Phase 1 기본값은 Shadow hardening이다. hardeningEnforce=true일 때만 score를 강제로 낮춘다.
+  if (hardening.anyBlocked && hardening.enforce) score = 0;
 
   const baseDecision = score >= threshold
     ? 'fire'
@@ -246,16 +285,18 @@ export function buildPredictiveValidationEvidence(candidate = {}, context = {}, 
       ? 'discard'
       : 'hold';
 
-  const decision = hardening.coverageBlocked
+  const decision = hardening.enforce && hardening.coverageBlocked
     ? 'block_coverage'
-    : hardening.predictionBlocked
+    : hardening.enforce && hardening.predictionBlocked
       ? 'block_no_prediction'
-      : hardening.backtestBlocked
+      : hardening.enforce && hardening.backtestBlocked
         ? 'block_stale_backtest'
         : baseDecision;
 
   const reasonParts = [`predictive_${decision}:${score.toFixed(2)}`, `threshold=${threshold.toFixed(2)}`];
   if (hardening.coverageBlocked) reasonParts.push(`coverage=${componentCoverage.toFixed(2)}<${COVERAGE_REQUIRED}`);
+  if (hardening.backtestBlocked) reasonParts.push('fresh_backtest_missing_or_stale');
+  if (hardening.predictionBlocked) reasonParts.push('prediction_missing');
   if (hardening.fallbackAnalyst) reasonParts.push('analyst_fallback_only');
 
   return {
@@ -272,6 +313,12 @@ export function buildPredictiveValidationEvidence(candidate = {}, context = {}, 
     regime: normalizeRegime(regime) || null,
     reason: reasonParts.join(' '),
     hardening,
+    wouldBlock: hardening.anyBlocked,
+    promotion: {
+      requiredConsecutivePasses: 3,
+      pass: !hardening.anyBlocked && score >= threshold,
+      reason: hardening.anyBlocked ? 'phase1_hardening_would_block' : 'phase1_hardening_clear',
+    },
   };
 }
 

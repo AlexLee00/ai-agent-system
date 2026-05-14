@@ -1,0 +1,175 @@
+// @ts-nocheck
+
+import { get, run } from './db/core.ts';
+
+const DISABLED = new Set(['0', 'false', 'off', 'disabled']);
+
+export function getCandidateBacktestGateMode(env = process.env) {
+  const raw = String(env.LUNA_CANDIDATE_BACKTEST_ENTRY_GATE_MODE || 'shadow').trim().toLowerCase();
+  if (DISABLED.has(raw)) return 'off';
+  if (raw === 'enforce' || raw === 'hard' || raw === 'block') return 'enforce';
+  return 'shadow';
+}
+
+export async function ensureCandidateBacktestSchema() {
+  await run(`
+    CREATE TABLE IF NOT EXISTS candidate_backtest_status (
+      id                    BIGSERIAL PRIMARY KEY,
+      symbol                TEXT NOT NULL,
+      market                TEXT NOT NULL,
+      fresh                 BOOLEAN DEFAULT FALSE,
+      healthy               BOOLEAN DEFAULT FALSE,
+      sharpe                DOUBLE PRECISION,
+      max_drawdown          DOUBLE PRECISION,
+      win_rate              DOUBLE PRECISION,
+      last_backtest_at      TIMESTAMPTZ,
+      next_refresh_at       TIMESTAMPTZ,
+      gate_status           TEXT DEFAULT 'pending',
+      would_block           BOOLEAN DEFAULT FALSE,
+      enforced              BOOLEAN DEFAULT FALSE,
+      block_reasons         JSONB DEFAULT '[]'::jsonb,
+      backtest_run_metadata JSONB DEFAULT '{}'::jsonb,
+      created_at            TIMESTAMPTZ DEFAULT NOW(),
+      updated_at            TIMESTAMPTZ DEFAULT NOW(),
+      UNIQUE (symbol, market)
+    )
+  `);
+  await run(`ALTER TABLE candidate_backtest_status ADD COLUMN IF NOT EXISTS would_block BOOLEAN DEFAULT FALSE`);
+  await run(`ALTER TABLE candidate_backtest_status ADD COLUMN IF NOT EXISTS enforced BOOLEAN DEFAULT FALSE`);
+  await run(`ALTER TABLE candidate_backtest_status ADD COLUMN IF NOT EXISTS block_reasons JSONB DEFAULT '[]'::jsonb`);
+  await run(`CREATE INDEX IF NOT EXISTS idx_cbs_gate ON candidate_backtest_status(gate_status, fresh, healthy)`);
+  await run(`CREATE INDEX IF NOT EXISTS idx_cbs_symbol ON candidate_backtest_status(symbol, market)`);
+
+  await run(`
+    CREATE TABLE IF NOT EXISTS predictive_validation_log (
+      id                  BIGSERIAL PRIMARY KEY,
+      symbol              TEXT,
+      market              TEXT,
+      decision            TEXT NOT NULL,
+      score               DOUBLE PRECISION,
+      threshold           DOUBLE PRECISION,
+      component_coverage  DOUBLE PRECISION,
+      blocked_reason      TEXT,
+      components          JSONB DEFAULT '{}'::jsonb,
+      missing_components  JSONB DEFAULT '[]'::jsonb,
+      candidate_snapshot  JSONB DEFAULT '{}'::jsonb,
+      created_at          TIMESTAMPTZ DEFAULT NOW()
+    )
+  `);
+  await run(`CREATE INDEX IF NOT EXISTS idx_pvl_symbol ON predictive_validation_log(symbol, market, created_at DESC)`);
+  await run(`CREATE INDEX IF NOT EXISTS idx_pvl_decision ON predictive_validation_log(decision, created_at DESC)`);
+}
+
+function normalizeMarket(market = '') {
+  const value = String(market || '').trim().toLowerCase();
+  if (value === 'binance') return 'crypto';
+  if (value === 'kis') return 'domestic';
+  if (value === 'kis_overseas') return 'overseas';
+  return value || 'crypto';
+}
+
+function normalizeSymbol(symbol = '') {
+  return String(symbol || '').trim().toUpperCase();
+}
+
+function parseReasons(value) {
+  if (Array.isArray(value)) return value;
+  if (typeof value === 'string') {
+    try {
+      const parsed = JSON.parse(value);
+      return Array.isArray(parsed) ? parsed : [value];
+    } catch {
+      return value ? [value] : [];
+    }
+  }
+  return [];
+}
+
+export function evaluateCandidateBacktestStatus(row = null, env = process.env) {
+  const mode = getCandidateBacktestGateMode(env);
+  if (mode === 'off') {
+    return { ok: true, mode, blocked: false, wouldBlock: false, reason: null, row };
+  }
+  if (!row) {
+    return {
+      ok: mode !== 'enforce',
+      mode,
+      blocked: mode === 'enforce',
+      wouldBlock: true,
+      reason: 'candidate_backtest_missing',
+      row: null,
+    };
+  }
+  const fresh = row.fresh === true || String(row.fresh).toLowerCase() === 'true';
+  const healthy = row.healthy === true || String(row.healthy).toLowerCase() === 'true';
+  const wouldBlock = row.would_block === true || String(row.would_block).toLowerCase() === 'true' || !fresh || !healthy;
+  const reasons = parseReasons(row.block_reasons);
+  const reason = !fresh
+    ? 'candidate_backtest_stale'
+    : !healthy
+      ? 'candidate_backtest_unhealthy'
+      : wouldBlock
+        ? 'candidate_backtest_would_block'
+        : null;
+  return {
+    ok: mode !== 'enforce' || !wouldBlock,
+    mode,
+    blocked: mode === 'enforce' && wouldBlock,
+    wouldBlock,
+    reason,
+    reasons,
+    row,
+  };
+}
+
+export async function getCandidateBacktestStatus(symbol, market) {
+  if (!symbol) return null;
+  return get(
+    `SELECT *
+       FROM candidate_backtest_status
+      WHERE symbol = $1 AND market = $2
+      ORDER BY updated_at DESC
+      LIMIT 1`,
+    [normalizeSymbol(symbol), normalizeMarket(market)],
+  ).catch(() => null);
+}
+
+async function auditBacktestGate({ symbol, market, result, signal }) {
+  if (!result?.wouldBlock) return;
+  await run(`
+    INSERT INTO predictive_validation_log
+      (symbol, market, decision, score, threshold, component_coverage,
+       blocked_reason, components, missing_components, candidate_snapshot)
+    VALUES ($1,$2,$3,$4,$5,$6,$7,$8::jsonb,$9::jsonb,$10::jsonb)
+  `, [
+    symbol,
+    market,
+    result.blocked ? 'block_backtest_gate' : 'would_block_backtest_gate',
+    result.row?.sharpe ?? null,
+    0,
+    signal?.block_meta?.predictiveValidation?.componentCoverage ?? null,
+    result.reason || result.reasons?.join(',') || 'candidate_backtest_gate',
+    JSON.stringify({ backtest: result.row || null }),
+    JSON.stringify([]),
+    JSON.stringify({ symbol, market, action: signal?.action || null, gateMode: result.mode }),
+  ]).catch(() => null);
+}
+
+export async function evaluateCandidateBacktestEntryGate(signal = {}, env = process.env) {
+  const mode = getCandidateBacktestGateMode(env);
+  if (mode === 'off') return { ok: true, mode, blocked: false, wouldBlock: false, reason: null };
+  const symbol = normalizeSymbol(signal.symbol);
+  const market = normalizeMarket(signal.market || signal.exchange);
+  const inline = signal?.block_meta?.candidateBacktestStatus || signal?.candidateBacktestStatus || null;
+  const row = inline || await getCandidateBacktestStatus(symbol, market);
+  const result = evaluateCandidateBacktestStatus(row, env);
+  await auditBacktestGate({ symbol, market, result, signal });
+  return result;
+}
+
+export default {
+  ensureCandidateBacktestSchema,
+  evaluateCandidateBacktestStatus,
+  evaluateCandidateBacktestEntryGate,
+  getCandidateBacktestGateMode,
+};

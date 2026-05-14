@@ -1,6 +1,7 @@
 // @ts-nocheck
 
 import { evaluateTradeDataEntryGuard } from '../../shared/trade-data-derived-guards.ts';
+import { evaluateCandidateBacktestEntryGate } from '../../shared/candidate-backtest-gate.ts';
 import { rejectExecution } from './execution-failure.ts';
 
 export function buildGuardTelemetryMeta(symbol, action, signalTradeMode, meta = {}, extras = {}) {
@@ -53,6 +54,40 @@ export async function runBuySafetyGuards({
       }, {
         guardKind: 'trade_data_entry_guard',
         pressureSource: 'trade_data_policy',
+      }),
+      notify: notifyEnabled ? 'skip' : false,
+    });
+  }
+
+  const backtestGate = await evaluateCandidateBacktestEntryGate({
+    ...signal,
+    symbol,
+    action,
+    exchange: signal.exchange || 'binance',
+    market: signal.market || 'crypto',
+  }, process.env).catch((error) => ({
+    ok: true,
+    mode: 'shadow',
+    blocked: false,
+    wouldBlock: true,
+    reason: `candidate_backtest_gate_error:${error?.message || error}`,
+  }));
+  if (backtestGate?.wouldBlock) {
+    console.log(`  🧪 [백테스트 게이트] mode=${backtestGate.mode} reason=${backtestGate.reason || 'would_block'}`);
+  }
+  if (backtestGate?.blocked) {
+    const reason = `candidate backtest gate blocked: ${backtestGate.reason || 'candidate_backtest_gate'}`;
+    return rejectExecution({
+      persistFailure,
+      symbol,
+      action,
+      reason,
+      code: 'candidate_backtest_gate_rejected',
+      meta: buildGuardTelemetryMeta(symbol, action, signalTradeMode, {
+        candidateBacktestGate: backtestGate,
+      }, {
+        guardKind: 'candidate_backtest_gate',
+        pressureSource: 'candidate_backtest_status',
       }),
       notify: notifyEnabled ? 'skip' : false,
     });

@@ -1,6 +1,6 @@
 // @ts-nocheck
 
-import { buildPredictiveValidationEvidence } from './predictive-validation.ts';
+import { buildPredictiveValidationEvidence, logPredictiveValidation } from './predictive-validation.ts';
 
 const ACTION_BUY = 'BUY';
 const ACTION_HOLD = 'HOLD';
@@ -34,6 +34,16 @@ export function applyPredictiveValidationGate(decisions = [], predictiveConfig =
       continue;
     }
     const evidence = buildPredictiveValidationEvidence(decision, {}, predictiveConfig || {});
+    void logPredictiveValidation(evidence, {
+      symbol: decision?.symbol || null,
+      market: decision?.market || decision?.exchange || 'crypto',
+      candidateSnapshot: {
+        symbol: decision?.symbol || null,
+        action: decision?.action || null,
+        confidence: decision?.confidence ?? null,
+        shadowHardening: evidence?.wouldBlock === true,
+      },
+    });
     const predictiveScore = clamp01(evidence?.score, 0);
     const threshold = clamp01(evidence?.threshold ?? predictiveConfig?.threshold ?? 0.55, 0.55);
     if (predictiveScore >= threshold) {
