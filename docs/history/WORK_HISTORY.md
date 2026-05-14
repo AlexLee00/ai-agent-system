@@ -4,6 +4,14 @@
 > 상세 내용: `reservation-dev-summary.md` / `reservation-handoff.md`
 > 최초 작성: 2026-02-27
 
+## 2026-05-14: CODEX_TEAM_JAY_FULL_AUDIT Stage A — 팀 폐기 + 스킬 Hook 강화
+
+- **폐기 4팀 확인**: bots/academic, business, data, secretary 이전 커밋에서 완료 확인
+- **sessionstart hook 강화**: ROOT `skills/` 9개 포함 (총 18개 가시성) + session-analyzer-cli.ts 위험도 분석 자동화
+- **stop hook 강화**: session-wrap-cli.ts 실제 호출 → 세션 커밋 요약 고도화 (fallback: git log)
+- skills/ ROOT 9개: health-engine-operator, luna-bottleneck-ops, oauth-ops 등 가시성 확보
+- 커밋: 36f292ab
+
 ## 2026-05-13: CODEX_LIVEVIEW_DASHBOARD_PHASE_A — Phoenix LiveView 대시보드 첫 가동
 
 - **Phoenix LiveView 1.0 대시보드 Phase A 구현** (Cycle #43, 영역 1+3+4)
