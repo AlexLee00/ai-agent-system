@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>ai.luna.community-evidence-refresh</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/opt/homebrew/bin/node</string>
+    <string>/Users/alexlee/projects/ai-agent-system/bots/investment/scripts/runtime-luna-community-evidence-refresh.ts</string>
+    <string>--json</string>
+  </array>
+  <key>WorkingDirectory</key>
+  <string>/Users/alexlee/projects/ai-agent-system/bots/investment</string>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key>
+    <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+    <key>NODE_ENV</key>
+    <string>production</string>
+    <key>LUNA_COMMUNITY_EVIDENCE_SHADOW_MODE</key>
+    <string>true</string>
+  </dict>
+  <key>RunAtLoad</key>
+  <false/>
+  <key>KeepAlive</key>
+  <false/>
+  <key>StartCalendarInterval</key>
+  <dict>
+    <key>Hour</key>
+    <integer>6</integer>
+    <key>Minute</key>
+    <integer>0</integer>
+  </dict>
+  <key>TimeOut</key>
+  <integer>600</integer>
+  <key>StandardOutPath</key>
+  <string>/tmp/logs/luna-community-evidence/out.log</string>
+  <key>StandardErrorPath</key>
+  <string>/tmp/logs/luna-community-evidence/err.log</string>
+</dict>
+</plist>

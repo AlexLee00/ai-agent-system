@@ -179,6 +179,31 @@ function extractSetupOutcomeComponent(candidate = {}, context = {}) {
   };
 }
 
+// ─── Hardening checks (config.hardeningEnabled = true 로 명시 활성화) ─────────
+const COVERAGE_REQUIRED = 0.75;
+
+function checkHardening(components, missingComponents, score, config = {}, context = {}) {
+  if (!config?.hardeningEnabled) {
+    return { coverageBlocked: false, predictionBlocked: false, fallbackAnalyst: false, anyBlocked: false };
+  }
+
+  const coverage = Object.keys(components).length / Math.max(1, Object.keys(components).length + (missingComponents?.length || 0));
+  const coverageBlocked = coverage < COVERAGE_REQUIRED;
+
+  // prediction 컴포넌트 없거나 0이면 차단
+  const predictionBlocked = !components?.prediction;
+
+  // analyst가 fallback confidence로 채워진 경우 (실 데이터 없음)
+  const fallbackAnalyst = components?.analyst?.source === 'candidate_confidence_fallback';
+
+  // fresh backtest 체크: context.hasFreshBacktest = false 이면 차단
+  const backtestBlocked = context?.hasFreshBacktest === false;
+
+  const anyBlocked = coverageBlocked || predictionBlocked || backtestBlocked;
+
+  return { coverageBlocked, predictionBlocked, fallbackAnalyst, backtestBlocked: backtestBlocked || false, anyBlocked };
+}
+
 export function buildPredictiveValidationEvidence(candidate = {}, context = {}, config = {}) {
   const threshold = clamp01(config?.threshold ?? config?.fireThreshold ?? 0.55, 0.55);
   const holdThreshold = clamp01(config?.holdThreshold ?? 0.40, 0.40);
@@ -206,13 +231,33 @@ export function buildPredictiveValidationEvidence(candidate = {}, context = {}, 
     usedWeight += Number(weight);
   }
 
+  const componentCoverage = Number((Object.keys(components).length / Math.max(1, Object.keys(weights).length)).toFixed(4));
   const fallbackScore = clamp01(candidate?.predictiveScore ?? candidate?.confidence ?? context?.predictiveScore ?? 0.5, 0.5);
-  const score = usedWeight > 0 ? clamp01(weighted / usedWeight, fallbackScore) : fallbackScore;
-  const decision = score >= threshold
+  let score = usedWeight > 0 ? clamp01(weighted / usedWeight, fallbackScore) : fallbackScore;
+
+  const hardening = checkHardening(components, missingComponents, score, config, context);
+
+  // Hardening 활성화 시 차단 조건 충족하면 score=0 (discard 강제)
+  if (hardening.anyBlocked) score = 0;
+
+  const baseDecision = score >= threshold
     ? 'fire'
     : score < discardThreshold
       ? 'discard'
       : 'hold';
+
+  const decision = hardening.coverageBlocked
+    ? 'block_coverage'
+    : hardening.predictionBlocked
+      ? 'block_no_prediction'
+      : hardening.backtestBlocked
+        ? 'block_stale_backtest'
+        : baseDecision;
+
+  const reasonParts = [`predictive_${decision}:${score.toFixed(2)}`, `threshold=${threshold.toFixed(2)}`];
+  if (hardening.coverageBlocked) reasonParts.push(`coverage=${componentCoverage.toFixed(2)}<${COVERAGE_REQUIRED}`);
+  if (hardening.fallbackAnalyst) reasonParts.push('analyst_fallback_only');
+
   return {
     score: Number(score.toFixed(4)),
     threshold,
@@ -222,11 +267,41 @@ export function buildPredictiveValidationEvidence(candidate = {}, context = {}, 
     blocked: decision !== 'fire',
     components,
     missingComponents,
-    componentCoverage: Number((Object.keys(components).length / Math.max(1, Object.keys(weights).length)).toFixed(4)),
+    componentCoverage,
     weights,
     regime: normalizeRegime(regime) || null,
-    reason: `predictive_${decision}:${score.toFixed(2)} threshold=${threshold.toFixed(2)}`,
+    reason: reasonParts.join(' '),
+    hardening,
   };
+}
+
+// ─── 감사 로그 (async, 호출자가 선택적으로 사용) ──────────────────────────────
+export async function logPredictiveValidation(
+  evidence: any,
+  { symbol = null, market = null, candidateSnapshot = {} } = {},
+): Promise<void> {
+  try {
+    const { query: dbQuery, run: dbRun } = await import('./db/core.ts');
+    await dbRun(`
+      INSERT INTO predictive_validation_log
+        (symbol, market, decision, score, threshold, component_coverage,
+         blocked_reason, components, missing_components, candidate_snapshot)
+      VALUES ($1,$2,$3,$4,$5,$6,$7,$8::jsonb,$9::jsonb,$10::jsonb)
+    `, [
+      symbol || null,
+      market || null,
+      evidence?.decision || 'unknown',
+      evidence?.score ?? null,
+      evidence?.threshold ?? null,
+      evidence?.componentCoverage ?? null,
+      evidence?.blocked ? evidence?.reason || null : null,
+      JSON.stringify(evidence?.components || {}),
+      JSON.stringify(evidence?.missingComponents || []),
+      JSON.stringify(candidateSnapshot || {}),
+    ]);
+  } catch {
+    // 감사 로그 실패는 조용히 무시 (주 흐름 방해 금지)
+  }
 }
 
 export default buildPredictiveValidationEvidence;
