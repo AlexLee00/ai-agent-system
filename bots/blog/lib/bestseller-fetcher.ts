@@ -131,7 +131,7 @@ async function addToBookReviewQueue(books: RankedBook[]): Promise<number> {
         INSERT INTO blog.book_review_queue
           (title, author, publisher, isbn, category, priority, status, source, meta, created_at)
         VALUES ($1, $2, $3, $4, $5, $6, 'queued', 'bestseller', $7, NOW())
-        ON CONFLICT (isbn) DO NOTHING
+        ON CONFLICT DO NOTHING
         RETURNING id
       `, [
         book.title,
