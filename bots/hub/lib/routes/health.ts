@@ -282,7 +282,7 @@ export async function collectHealthSnapshot(): Promise<HealthSnapshot> {
             SELECT
               created_at,
               CASE
-                WHEN metadata ? 'score'
+                WHEN jsonb_exists(metadata, 'score')
                   AND (metadata->>'score') ~ '^-?[0-9]+(\\.[0-9]+)?$'
                 THEN (metadata->>'score')::numeric
                 ELSE NULL
