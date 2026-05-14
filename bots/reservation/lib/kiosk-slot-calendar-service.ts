@@ -179,7 +179,12 @@ export function createKioskSlotCalendarService(deps: CreateKioskSlotCalendarServ
         for (const item of buttons) {
           const isSoldout = item.cls.includes('soldout') || item.cls.includes('disabled');
           const isBlocked = item.cls.includes('suspended') || item.cls.includes('btn-danger') || item.text.includes('예약불가');
-          const isAvailable = item.cls.includes('avail') || item.cls.includes('btn-info') || item.text.includes('예약가능');
+          const isAvailable = item.cls.includes('avail')
+            || item.cls.includes('btn-info')
+            || item.cls.includes('remaining')
+            || item.cls.includes('btn-silver-light')
+            || item.text.includes('예약가능')
+            || item.text.includes('잔여예약');
           if (isSoldout || isBlocked || !isAvailable) continue;
           (item.button as HTMLElement).scrollIntoView({ block: 'center', inline: 'center' });
           (item.button as HTMLElement).click();
@@ -256,7 +261,12 @@ export function createKioskSlotCalendarService(deps: CreateKioskSlotCalendarServ
           const text = normalize((button as HTMLElement).textContent || '');
           const isSoldout = cls.includes('soldout') || cls.includes('disabled');
           const isBlocked = cls.includes('suspended') || cls.includes('btn-danger') || text.includes('예약불가');
-          const isAvailable = cls.includes('avail') || cls.includes('btn-info') || text.includes('예약가능');
+          const isAvailable = cls.includes('avail')
+            || cls.includes('btn-info')
+            || cls.includes('remaining')
+            || cls.includes('btn-silver-light')
+            || text.includes('예약가능')
+            || text.includes('잔여예약');
 
           if (isSoldout || isBlocked || !isAvailable) {
             fallbackCandidates.push({
@@ -341,6 +351,23 @@ export function createKioskSlotCalendarService(deps: CreateKioskSlotCalendarServ
         selectedStart: effectiveStart,
         raw: result,
       };
+    }
+
+    if (result?.pos?.cx != null && result?.pos?.cy != null) {
+      log(`  ↻ DOM click 후 패널 미노출 → mouse.click 재시도 (${result.pos.cx}, ${result.pos.cy})`);
+      await page.mouse.click(result.pos.cx, result.pos.cy).catch(() => null);
+      await delay(1200);
+      if (await isSettingsPanelVisible(page)) {
+        const effectiveStart = result.targetSlot24 || startTime;
+        log(`  ✅ 설정 패널 열림 확인(mouse fallback)${result.targetLabel ? ` → 시작시간 ${effectiveStart} (${result.targetLabel})` : ''}`);
+        return {
+          ok: true,
+          reason: 'clicked_mouse_fallback',
+          looksAlreadyBlocked: false,
+          selectedStart: effectiveStart,
+          raw: result,
+        };
+      }
     }
 
     log('  ❌ 버튼 클릭 후에도 설정 패널이 열리지 않음');

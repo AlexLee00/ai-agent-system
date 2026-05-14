@@ -15,6 +15,7 @@ const IMPORT_RE = /\b(?:require\(|from\s+|import\()\s*['"]([^'"]+)['"]/g;
 const IGNORE_DIRS = new Set([
   'node_modules',
   '.git',
+  'deps',
   'dist',
   'coverage',
   '.next',
@@ -34,6 +35,7 @@ function walk(dir, files = []) {
       continue;
     }
     if (!/\.(?:[cm]?js|ts|tsx)$/u.test(entry.name)) continue;
+    if (/\.d\.ts$/u.test(entry.name)) continue;
     files.push(fullPath);
   }
   return files;

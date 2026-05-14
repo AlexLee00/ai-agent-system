@@ -2,6 +2,7 @@
 import { getActiveCandidates } from './discovery-store.ts';
 import { runDiscoveryOrchestrator } from './discovery-orchestrator.ts';
 import { getLunaIntelligentDiscoveryFlags } from '../../shared/luna-intelligent-discovery-config.ts';
+import { checkTradeDataWeakSymbol } from '../../shared/trade-data-derived-guards.ts';
 import * as db from '../../shared/db.ts';
 
 export function toDiscoveryMarket(exchange = 'binance') {
@@ -48,6 +49,12 @@ function exchangeForMarket(market = 'crypto') {
   if (market === 'domestic') return 'kis';
   if (market === 'overseas') return 'kis_overseas';
   return 'binance';
+}
+
+function getDiscoverySelectionBlock(symbol, market = 'crypto') {
+  const block = checkTradeDataWeakSymbol(symbol, market);
+  if (block?.blocked && block.source === 'pre_entry/crypto_structural_symbol_block') return block;
+  return null;
 }
 
 function isBuySignal(value) {
@@ -151,6 +158,17 @@ export async function buildDiscoveryUniverse(market, now = new Date(), options =
   }
 
   const rows = await getActiveCandidates(market, candidateScanLimit).catch(() => []);
+  const excludedSymbols = [];
+  function rememberExcluded(symbol, block, source = 'candidate') {
+    if (!symbol || !block?.blocked) return;
+    if (excludedSymbols.some((item) => item.symbol === symbol && item.source === block.source)) return;
+    excludedSymbols.push({
+      symbol,
+      source: block.source,
+      reason: block.reason,
+      inputSource: source,
+    });
+  }
   const candidates = dedupeCandidateRows(
     rows
       .map((row) => {
@@ -170,28 +188,41 @@ export async function buildDiscoveryUniverse(market, now = new Date(), options =
           expiresAt: row.expires_at || null,
         };
       })
-      .filter(Boolean),
+      .filter((row) => {
+        if (!row) return false;
+        const block = getDiscoverySelectionBlock(row.symbol, market);
+        if (block) {
+          rememberExcluded(row.symbol, block, 'candidate_universe');
+          return false;
+        }
+        return true;
+      }),
   );
 
   const mergedSymbols = [];
   const seen = new Set();
   const promotedSymbols = await findRecentActionableCandidateSymbols(market, candidates, options);
 
-  function addSymbol(item) {
+  function addSymbol(item, source = 'symbol') {
     const normalized = normalizeDiscoverySymbol(item, market);
     if (!normalized || seen.has(normalized)) return;
+    const block = getDiscoverySelectionBlock(normalized, market);
+    if (block) {
+      rememberExcluded(normalized, block, source);
+      return;
+    }
     seen.add(normalized);
     mergedSymbols.push(normalized);
   }
 
-  for (const item of pinnedSymbols) addSymbol(item);
-  for (const item of promotedSymbols) addSymbol(item);
+  for (const item of pinnedSymbols) addSymbol(item, 'pinned');
+  for (const item of promotedSymbols) addSymbol(item, 'promoted');
   if (preferCandidates) {
-    for (const item of candidates) addSymbol(item.symbol);
-    for (const item of fallbackSymbols) addSymbol(item);
+    for (const item of candidates) addSymbol(item.symbol, 'candidate');
+    for (const item of fallbackSymbols) addSymbol(item, 'fallback');
   } else {
-    for (const item of fallbackSymbols) addSymbol(item);
-    for (const item of candidates) addSymbol(item.symbol);
+    for (const item of fallbackSymbols) addSymbol(item, 'fallback');
+    for (const item of candidates) addSymbol(item.symbol, 'candidate');
   }
   const limitedSymbols = mergedSymbols.slice(0, limit);
 
@@ -206,6 +237,7 @@ export async function buildDiscoveryUniverse(market, now = new Date(), options =
     pinnedCount: pinnedSymbols.length,
     promotedCount: promotedSymbols.length,
     promotedSymbols,
+    excludedSymbols,
     source: candidates.length > 0 ? 'candidate_universe' : 'fallback',
   };
 }

@@ -83,6 +83,7 @@ export function createKioskAuditService(deps: CreateKioskAuditServiceDeps) {
         || message.includes('ProtocolError')
         || message.includes('Target closed')
         || message.includes('Session closed')
+        || message.includes('Execution context was destroyed')
         || message.toLowerCase().includes('timed out');
     },
     pickkoId,
@@ -99,6 +100,10 @@ export function createKioskAuditService(deps: CreateKioskAuditServiceDeps) {
     wsEndpoint?: string | null;
   }): Promise<void> {
     const today = dateOverride || getTodayKST();
+    const shouldAuditEntry = (entry: any) => {
+      const entryDate = String(entry?.date || '');
+      return entryDate.length > 0 && entryDate >= today;
+    };
     log(`\n📋 [오늘 예약 검증] ${today} 시작`);
 
     let pickkoEntries: any[] = [];
@@ -112,10 +117,17 @@ export function createKioskAuditService(deps: CreateKioskAuditServiceDeps) {
       setupDialogHandler(page, log);
       await loginToPickko(page, pickkoId, pickkoPw, delay);
       const result = await fetchPickkoEntries(page, today, { minAmount: 1 });
-      pickkoEntries = result.entries;
+      const skippedEntries = result.entries.filter((entry) => !shouldAuditEntry(entry));
+      pickkoEntries = result.entries.filter((entry) => shouldAuditEntry(entry));
       log(`  픽코 예약: ${pickkoEntries.length}건`);
       for (const entry of pickkoEntries) {
         log(`    • ${maskName(entry.name)} ${entry.date} ${entry.start}~${entry.end} ${entry.room}`);
+      }
+      if (skippedEntries.length > 0) {
+        log(`  감사 제외 예약: ${skippedEntries.length}건`);
+        for (const entry of skippedEntries) {
+          log(`    • 제외 ${maskName(entry.name)} ${entry.date} ${entry.start}~${entry.end} ${entry.room}`);
+        }
       }
       const historyResult = await fetchPickkoEntries(page, today, { statusKeyword: '', minAmount: 0 });
       pickkoHistoryEntries = historyResult.entries.filter((entry) => {
@@ -210,6 +222,7 @@ export function createKioskAuditService(deps: CreateKioskAuditServiceDeps) {
 
       const verifyBlockWithRecovery = async (pg: any, entry: any) => {
         try {
+          pg = await selectAuditDateWithRecovery(pg, entry.date || today);
           const verified = await verifyBlockInGrid(pg, entry.room, entry.start, entry.end);
           return { page: pg, verified };
         } catch (error) {
@@ -219,7 +232,7 @@ export function createKioskAuditService(deps: CreateKioskAuditServiceDeps) {
           log(`  ⚠️ 차단 검증 protocol timeout 감지 — 새 탭으로 1회 재시도 (${entry.room} ${entry.start}~${entry.end}) (${message})`);
           try { await pg.close(); } catch {}
 
-          const recovered = await reopenAuditPageForRecovery(today);
+          const recovered = await reopenAuditPageForRecovery(entry.date || today);
           const verified = await verifyBlockInGrid(recovered, entry.room, entry.start, entry.end);
           return { page: recovered, verified };
         }
@@ -236,8 +249,6 @@ export function createKioskAuditService(deps: CreateKioskAuditServiceDeps) {
         }));
         return;
       }
-
-      naverPg = await selectAuditDateWithRecovery(naverPg, today);
 
       log('\n[검증] 픽코 예약 → 네이버 차단 상태 확인');
       for (const entry of pickkoEntries) {
@@ -263,16 +274,17 @@ export function createKioskAuditService(deps: CreateKioskAuditServiceDeps) {
             let success = false;
             for (let attempt = 1; attempt <= 2; attempt += 1) {
               try {
+                naverPg = await selectAuditDateWithRecovery(naverPg, entry.date || today);
                 const blockResult = await blockNaverSlot(naverPg, entry);
                 success = typeof blockResult === 'boolean' ? blockResult : Boolean(blockResult?.ok);
                 break;
               } catch (error: any) {
-                if (String(error?.message || '').includes('detached Frame') && attempt === 1) {
-                  log('  ⚠️ Frame detach → 새 탭으로 재시도');
+                if (isProtocolTimeoutError(error) && attempt === 1) {
+                  log('  ⚠️ 차단 중 recoverable 오류 → 새 탭으로 재시도');
                   try { await naverPg.close(); } catch {}
-                  naverPg = await createPage();
-                  const reLoggedIn = await naverBookingLogin(naverPg);
-                  if (!reLoggedIn) break;
+                  const recovered = await openAuditPage();
+                  if (!recovered) break;
+                  naverPg = await selectAuditDateWithRecovery(recovered, entry.date || today);
                 } else {
                   log(`  ❌ blockNaverSlot 오류: ${error?.message || String(error)}`);
                   break;
@@ -329,15 +341,16 @@ export function createKioskAuditService(deps: CreateKioskAuditServiceDeps) {
         let unblocked = false;
         for (let attempt = 1; attempt <= 2; attempt += 1) {
           try {
+            naverPg = await selectAuditDateWithRecovery(naverPg, row.date || today);
             unblocked = await unblockNaverSlot(naverPg, row);
             break;
           } catch (error: any) {
-            if (String(error?.message || '').includes('detached Frame') && attempt === 1) {
-              log('  ⚠️ Frame detach → 새 탭으로 재시도');
+            if (isProtocolTimeoutError(error) && attempt === 1) {
+              log('  ⚠️ 해제 중 recoverable 오류 → 새 탭으로 재시도');
               try { await naverPg.close(); } catch {}
-              naverPg = await createPage();
-              const reLoggedIn = await naverBookingLogin(naverPg);
-              if (!reLoggedIn) break;
+              const recovered = await openAuditPage();
+              if (!recovered) break;
+              naverPg = await selectAuditDateWithRecovery(recovered, row.date || today);
             } else {
               log(`  ❌ unblockNaverSlot 오류: ${error?.message || String(error)}`);
               break;

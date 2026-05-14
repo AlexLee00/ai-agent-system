@@ -1280,6 +1280,7 @@ async function buildMarketFunnel(market, {
       inspectedLimit: effectiveCandidateLimit,
       promotedCount: Number(executionUniverse?.promotedCount || 0),
       promotedSymbols: executionUniverse?.promotedSymbols || [],
+      excludedSymbols: executionUniverse?.excludedSymbols || [],
       selectionPolicy: executionUniverse?.selectionPolicy || null,
     },
     sourceMetrics: {

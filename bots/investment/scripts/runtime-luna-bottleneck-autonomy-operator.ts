@@ -12,6 +12,7 @@ import { buildLunaOperationalBlockerPack } from './runtime-luna-operational-bloc
 import { buildLunaOperationalActionBoardFromPack } from './runtime-luna-operational-action-board.ts';
 import { buildLunaLiveFireFinalGate } from './luna-live-fire-final-gate.ts';
 import { buildLunaPostLiveFireVerification } from './luna-post-live-fire-verify.ts';
+import { buildTradeDataAnalysisReport } from '../shared/trade-data-analysis-report.ts';
 
 const DEFAULT_HOURS = 6;
 const PROTECTED_6 = [
@@ -110,10 +111,98 @@ function marketsWithPreopenGap(discovery = {}, pattern) {
   ]).filter((market) => market === 'domestic' || market === 'overseas');
 }
 
-function buildSafeFixCandidates({ discovery, llm, marketdata, blockerPack, actionBoard } = {}) {
+function findNamedBucket(buckets = [], names = []) {
+  const wanted = new Set((names || []).map((name) => String(name || '').toLowerCase()));
+  return (buckets || []).find((bucket) => wanted.has(String(bucket?.name || '').toLowerCase()));
+}
+
+function buildTradeDataBottlenecks(tradeData = {}) {
+  const bottlenecks = [];
+  if (!tradeData || tradeData.status !== 'needs_attention') return bottlenecks;
+  const crypto = findNamedBucket(tradeData.journal?.markets, ['crypto', 'binance']);
+  const trendFollowing = findNamedBucket(tradeData.journal?.strategyFamily?.buckets, ['trend_following']);
+  const meanReversion = findNamedBucket(tradeData.journal?.strategyFamily?.buckets, ['mean_reversion']);
+  const trendingBull = findNamedBucket(tradeData.journal?.marketRegime?.buckets, ['trending_bull']);
+  if (crypto && Number(crypto.pnlSum) < 0) {
+    bottlenecks.push('crypto_performance_needs_attention');
+  }
+  if (trendFollowing && Number(trendFollowing.pnlSum) < 0 && Number(trendFollowing.winRate) <= 0.3) {
+    bottlenecks.push('crypto_trend_following_underperforming');
+  }
+  if (meanReversion && Number(meanReversion.pnlSum) < 0 && Number(meanReversion.winRate) <= 0.3) {
+    bottlenecks.push('crypto_mean_reversion_underperforming');
+  }
+  if (trendingBull && Number(trendingBull.pnlSum) < 0 && Number(trendingBull.winRate) <= 0.3) {
+    bottlenecks.push('crypto_trending_bull_loss_pressure');
+  }
+  return bottlenecks;
+}
+
+function compactTradeDataEvidence(tradeData = {}) {
+  const crypto = findNamedBucket(tradeData.journal?.markets, ['crypto', 'binance']);
+  const trendFollowing = findNamedBucket(tradeData.journal?.strategyFamily?.buckets, ['trend_following']);
+  const meanReversion = findNamedBucket(tradeData.journal?.strategyFamily?.buckets, ['mean_reversion']);
+  const trendingBull = findNamedBucket(tradeData.journal?.marketRegime?.buckets, ['trending_bull']);
+  return {
+    status: tradeData.status || null,
+    warnings: tradeData.warnings || [],
+    nextActions: tradeData.nextActions || [],
+    signals: {
+      total: tradeData.signals?.total || 0,
+      failureRate: tradeData.signals?.failureRate ?? null,
+      executionRate: tradeData.signals?.executionRate ?? null,
+    },
+    crypto: crypto ? {
+      closed: crypto.closed,
+      winRate: crypto.winRate,
+      pnlSum: crypto.pnlSum,
+      avgPnlPercent: crypto.avgPnlPercent,
+    } : null,
+    strategyPressure: {
+      trendFollowing: trendFollowing ? {
+        closed: trendFollowing.closed,
+        winRate: trendFollowing.winRate,
+        pnlSum: trendFollowing.pnlSum,
+        avgPnlPercent: trendFollowing.avgPnlPercent,
+      } : null,
+      meanReversion: meanReversion ? {
+        closed: meanReversion.closed,
+        winRate: meanReversion.winRate,
+        pnlSum: meanReversion.pnlSum,
+        avgPnlPercent: meanReversion.avgPnlPercent,
+      } : null,
+      trendingBull: trendingBull ? {
+        closed: trendingBull.closed,
+        winRate: trendingBull.winRate,
+        pnlSum: trendingBull.pnlSum,
+        avgPnlPercent: trendingBull.avgPnlPercent,
+      } : null,
+    },
+  };
+}
+
+function buildSafeFixCandidates({ discovery, llm, marketdata, blockerPack, actionBoard, tradeData } = {}) {
   const candidates = [];
   const discoveryBottlenecks = discovery?.bottlenecks || [];
   const recommendations = discovery?.recommendations || [];
+  if (buildTradeDataBottlenecks(tradeData).length > 0) {
+    candidates.push({
+      id: 'inspect_crypto_trade_quality',
+      type: 'diagnostic',
+      risk: 'low',
+      applyMode: 'read_only',
+      reason: 'current operating epoch crypto PnL, win rate, or strategy bucket pressure needs review before relaxing entries',
+      command: 'npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run -s runtime:luna-trade-data-analysis-report -- --json --limit=5000',
+    });
+    candidates.push({
+      id: 'repair_crypto_selection_quality',
+      type: 'code_review',
+      risk: 'medium',
+      applyMode: 'codex_patch_required',
+      reason: 'crypto symbol selection and defensive/trend route evidence are underperforming; review data-derived guards, strategy route evidence, and backtest alignment',
+      command: 'npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run -s runtime:luna-discovery-funnel -- --market=crypto --candidate-limit=40 --json',
+    });
+  }
   if (compactList(blockerPack?.hardBlockers || []).some(isAgentBusQueryFailed)) {
     candidates.push({
       id: 'inspect_agent_bus_hygiene',
@@ -284,6 +373,7 @@ function buildReportFromEvidence({
   llm = {},
   discovery = {},
   marketdata = {},
+  tradeData = {},
   blockerPack = {},
   actionBoard = {},
   finalGate = {},
@@ -292,6 +382,7 @@ function buildReportFromEvidence({
 } = {}) {
   const operationalHardBlockers = normalizeOperationalHardBlockers(blockerPack);
   const operationalWarnings = buildOperationalWarnings(blockerPack);
+  const tradeDataBottlenecks = buildTradeDataBottlenecks(tradeData);
   const hardBlockers = compactList([
     ...collectionErrors.map((item) => `collection:${item.name}:${item.error}`),
     ...prefixList('source_health', sourceHealth.blockers || []),
@@ -301,18 +392,20 @@ function buildReportFromEvidence({
   const bottlenecks = compactList([
     ...prefixList('llm_hotpath', llm.warnings || []),
     ...prefixList('discovery', discovery.bottlenecks || []),
+    ...prefixList('trade_data', tradeDataBottlenecks),
     ...prefixList('marketdata', marketdata.blockers || []),
     ...prefixList('post_live', postLive.blockers || []),
   ]);
   const warnings = compactList([
     ...prefixList('llm_hotpath', llm.nonBlockingWarnings || []),
     ...prefixList('discovery', discovery.recommendations || []),
+    ...prefixList('trade_data', tradeData.warnings || []),
     ...prefixList('operational', operationalWarnings),
     ...prefixList('marketdata', marketdata.crypto?.decision?.warnings || []),
     ...prefixList('marketdata', marketdata.domestic?.decision?.warnings || []),
     ...prefixList('marketdata', marketdata.overseas?.decision?.warnings || []),
   ]);
-  const safeFixCandidates = buildSafeFixCandidates({ discovery, llm, marketdata, blockerPack, actionBoard });
+  const safeFixCandidates = buildSafeFixCandidates({ discovery, llm, marketdata, blockerPack, actionBoard, tradeData });
   const status = hardBlockers.length > 0
     ? 'luna_bottleneck_hard_blocked'
     : bottlenecks.length > 0
@@ -341,6 +434,7 @@ function buildReportFromEvidence({
       llmHotPath: llm.status || null,
       discoveryFunnel: discovery.status || null,
       marketdata: marketdata.status || null,
+      tradeData: tradeData.status || null,
       operationalBlockerPack: blockerPack.status || null,
       finalGate: finalGate.status || null,
       postLive: postLive.status || null,
@@ -352,6 +446,7 @@ function buildReportFromEvidence({
       llm,
       discovery,
       marketdata,
+      tradeData: compactTradeDataEvidence(tradeData),
       blockerPack: {
         status: blockerPack.status,
         hardBlockers: blockerPack.hardBlockers || [],
@@ -385,6 +480,7 @@ export async function buildLunaBottleneckAutonomyReport({
     () => capture('sourceHealth', () => buildLunaSourceHealthAudit()),
     () => capture('llm', () => runLunaLlmHotPathAudit({ hours, limit: 30 })),
     () => capture('discovery', () => buildLunaDiscoveryFunnelReport({ hours, market: 'all' })),
+    () => capture('tradeData', () => buildTradeDataAnalysisReport({ limit: 5000 })),
     () => capture('blockerPack', () => buildLunaOperationalBlockerPack({ hours, days: 7 })),
   ];
   if (includeRealtime) {
@@ -410,6 +506,7 @@ export async function buildLunaBottleneckAutonomyReport({
     llm: byName.llm?.value || {},
     discovery: byName.discovery?.value || {},
     marketdata: byName.marketdata?.value || {},
+    tradeData: byName.tradeData?.value || {},
     blockerPack,
     actionBoard,
     finalGate: byName.finalGate?.value || {},
@@ -622,6 +719,44 @@ export async function runLunaBottleneckAutonomyOperatorSmoke() {
     && item.applyMode === 'confirm_required'
     && item.command.includes('--market=overseas')
     && item.command.includes(`--hours=${DEFAULT_HOURS}`)));
+  const cryptoTradeDataPressureReport = buildReportFromEvidence({
+    sourceHealth: { ok: true, status: 'source_health_clear', blockers: [] },
+    discovery: { status: 'luna_discovery_funnel_clear', bottlenecks: [], recommendations: [] },
+    tradeData: {
+      status: 'needs_attention',
+      warnings: ['trade_analytics_needs_attention'],
+      journal: {
+        markets: [
+          { name: 'crypto', closed: 17, winRate: 0.4118, pnlSum: -13.0543, avgPnlPercent: -0.7679 },
+        ],
+        strategyFamily: {
+          buckets: [
+            { name: 'trend_following', closed: 2, winRate: 0, pnlSum: -7.4649, avgPnlPercent: -3.7325 },
+            { name: 'mean_reversion', closed: 4, winRate: 0.25, pnlSum: -8.5501, avgPnlPercent: -2.1375 },
+          ],
+        },
+        marketRegime: {
+          buckets: [
+            { name: 'trending_bull', closed: 9, winRate: 0.2222, pnlSum: -10.8977, avgPnlPercent: -1.2109 },
+          ],
+        },
+      },
+    },
+    blockerPack: { status: 'operational_clear', hardBlockers: [] },
+    finalGate: { status: 'luna_live_fire_final_gate_clear', blockers: [] },
+    postLive: { status: 'post_live_fire_verified', blockers: [] },
+  });
+  assert.equal(cryptoTradeDataPressureReport.status, 'luna_bottleneck_attention');
+  assert.ok(cryptoTradeDataPressureReport.bottlenecks.includes('trade_data:crypto_performance_needs_attention'));
+  assert.ok(cryptoTradeDataPressureReport.bottlenecks.includes('trade_data:crypto_trend_following_underperforming'));
+  assert.ok(cryptoTradeDataPressureReport.bottlenecks.includes('trade_data:crypto_mean_reversion_underperforming'));
+  assert.ok(cryptoTradeDataPressureReport.bottlenecks.includes('trade_data:crypto_trending_bull_loss_pressure'));
+  assert.ok(cryptoTradeDataPressureReport.safeFixCandidates.some((item) =>
+    item.id === 'inspect_crypto_trade_quality'
+    && item.applyMode === 'read_only'));
+  assert.ok(cryptoTradeDataPressureReport.safeFixCandidates.some((item) =>
+    item.id === 'repair_crypto_selection_quality'
+    && item.applyMode === 'codex_patch_required'));
   return {
     ok: true,
     fixtureReport: markFixtureScenario(report, 'hard_blocked_regression'),
@@ -629,6 +764,7 @@ export async function runLunaBottleneckAutonomyOperatorSmoke() {
     signalPersistenceReport: markFixtureScenario(signalPersistenceReport, 'signal_persistence_gap_regression'),
     entryPrefilterReport: markFixtureScenario(entryPrefilterReport, 'entry_prefilter_gap_regression'),
     technicalRefreshReport: markFixtureScenario(technicalRefreshReport, 'technical_refresh_gap_regression'),
+    cryptoTradeDataPressureReport: markFixtureScenario(cryptoTradeDataPressureReport, 'crypto_trade_data_pressure_regression'),
   };
 }
 

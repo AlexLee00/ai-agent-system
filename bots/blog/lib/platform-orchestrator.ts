@@ -14,6 +14,7 @@
  */
 
 const { postAlarm } = require('../../../packages/core/lib/hub-alarm-client');
+const path = require('path');
 const { runIfOps } = require('../../../packages/core/lib/mode-guard');
 const pgPool = require('../../../packages/core/lib/pg-pool');
 const { loadStrategyBundle } = require('./strategy-loader.ts');
@@ -236,7 +237,7 @@ async function buildIndependentPlatformCampaign(options = {}) {
   const trackingFacebook = generateTrackingLink(`${syntheticPostId}_facebook`, 'facebook', '', facebookVariantLabel);
   let instaContent = null;
   if (needInstagram) {
-    const starSocial = require('./star.ts');
+    const starSocial = require('./social.ts');
     instaContent = await starSocial.createInstaContent(instagramContentBody, instagramTitle, category, 0, {
       strategy: plan,
       blogUrl: trackingInstagram.url,
@@ -289,7 +290,7 @@ async function buildIndependentPlatformCampaign(options = {}) {
  */
 async function crosspostToInstagram(blogPost, dryRun = false) {
   try {
-    const crossposter = require('./insta-crosspost');
+    const crossposter = require(path.join(process.env.PROJECT_ROOT || process.cwd(), 'bots/social-media/instagram/lib/insta-crosspost.ts'));
     const payload = blogPost?.sourceMode === 'strategy_native'
       ? blogPost?.instaContent
       : { caption: `${blogPost.title}\n\n#스터디카페 #집중력 #공부 #개발`, thumbnailUrl: blogPost.thumbnail_url };
@@ -323,7 +324,7 @@ async function crosspostToInstagram(blogPost, dryRun = false) {
  */
 async function crosspostToFacebook(blogPost, dryRun = false) {
   try {
-    const fbPublisher = require('./facebook-publisher');
+    const { publishFacebookPost } = require(path.join(process.env.PROJECT_ROOT || process.cwd(), 'bots/social-media/facebook/lib/facebook-publisher.ts'));
     const prepared = blogPost?.sourceMode === 'strategy_native'
       ? (blogPost.facebookContent || {})
       : {
@@ -331,7 +332,7 @@ async function crosspostToFacebook(blogPost, dryRun = false) {
           link: blogPost.naver_url || blogPost.url || '',
         };
     const publishTitle = blogPost?.platformVariants?.facebook?.title || blogPost.title;
-    const result = await fbPublisher.publishFacebookPost({
+    const result = await publishFacebookPost({
       message: prepared.message,
       link: prepared.link || blogPost.naver_url || blogPost.url || '',
       dryRun,

@@ -311,10 +311,14 @@ export function createKioskCalendarService(deps: CreateKioskCalendarServiceDeps)
       const [eh, em] = String(endTime || '').split(':').map(Number);
       if ([sh, sm, eh, em].some(Number.isNaN)) return [];
       const startMinutes = sh * 60 + sm;
-      const endMinutes = eh * 60 + em;
+      let endMinutes = eh * 60 + em;
+      if (endMinutes <= startMinutes) {
+        endMinutes += 24 * 60;
+      }
       const slots: string[] = [];
       for (let minute = startMinutes; minute < endMinutes; minute += 30) {
-        slots.push(`${String(Math.floor(minute / 60)).padStart(2, '0')}:${String(minute % 60).padStart(2, '0')}`);
+        const normalizedMinute = ((minute % (24 * 60)) + (24 * 60)) % (24 * 60);
+        slots.push(`${String(Math.floor(normalizedMinute / 60)).padStart(2, '0')}:${String(normalizedMinute % 60).padStart(2, '0')}`);
       }
       return slots;
     }

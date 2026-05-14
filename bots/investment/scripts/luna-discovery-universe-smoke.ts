@@ -28,6 +28,21 @@ export async function runLunaDiscoveryUniverseSmoke() {
   });
   assert.ok(Array.isArray(baseUniverse.symbols));
   assert.ok(baseUniverse.symbols.includes('BTC/USDT'));
+  const structuralBlockedUniverse = await buildDiscoveryUniverse('crypto', new Date(), {
+    refresh: false,
+    fallbackSymbols: ['RLUSDUSDT', 'BTCUSDT'],
+    pinnedSymbols: ['USDCUSDT'],
+    promoteRecentActionable: false,
+    limit: 2,
+    candidateScanLimit: 1,
+  });
+  assert.equal(structuralBlockedUniverse.symbols.includes('RLUSD/USDT'), false);
+  assert.equal(structuralBlockedUniverse.symbols.includes('USDC/USDT'), false);
+  assert.ok(structuralBlockedUniverse.symbols.includes('BTC/USDT'));
+  assert.ok(structuralBlockedUniverse.excludedSymbols.some((item) =>
+    item.symbol === 'RLUSD/USDT' && item.source === 'pre_entry/crypto_structural_symbol_block'));
+  assert.ok(structuralBlockedUniverse.excludedSymbols.some((item) =>
+    item.symbol === 'USDC/USDT' && item.source === 'pre_entry/crypto_structural_symbol_block'));
 
   const prev = process.env.LUNA_DISCOVERY_ORCHESTRATOR_ENABLED;
   process.env.LUNA_DISCOVERY_ORCHESTRATOR_ENABLED = 'true';
@@ -97,7 +112,10 @@ export async function runLunaDiscoveryUniverseSmoke() {
       `INSERT INTO analysis (symbol, analyst, signal, confidence, reasoning, metadata, exchange, created_at)
        VALUES
          ('SMOKEACTION/USDT', 'ta_mtf', 'BUY', 0.72, 'promotion smoke ta', '{}'::jsonb, 'binance', now()),
-         ('SMOKEACTION/USDT', 'onchain', 'BUY', 0.64, 'promotion smoke onchain', '{}'::jsonb, 'binance', now())`,
+         ('SMOKEACTION/USDT', 'onchain', 'BUY', 0.99, 'promotion smoke onchain', '{}'::jsonb, 'binance', now()),
+         ('SMOKEACTION/USDT', 'sentiment', 'BUY', 0.99, 'promotion smoke sentiment', '{}'::jsonb, 'binance', now()),
+         ('SMOKEACTION/USDT', 'news', 'BUY', 0.99, 'promotion smoke news', '{}'::jsonb, 'binance', now()),
+         ('SMOKEACTION/USDT', 'market_flow', 'BUY', 0.99, 'promotion smoke market flow', '{}'::jsonb, 'binance', now())`,
     );
     const promoted = await buildDiscoveryUniverse('crypto', new Date(), {
       refresh: false,
