@@ -6,6 +6,51 @@ export type CreateNaverListScrapeServiceDeps = {
   log: Logger;
 };
 
+export function parseNaverDateTimeText(input: unknown): { date: string; start: string; end: string } | null {
+  const dateTimeText = String(input || '').replace(/\s+/g, ' ').trim();
+  if (!dateTimeText) return null;
+
+  const dateMatch = dateTimeText.match(/(\d{2})\.\s+(\d{1,2})\.\s+(\d{1,2})/);
+  const timeMatch = dateTimeText.match(/(오전|오후)\s*(\d{1,2}):(\d{2})\s*~\s*(오전|오후)?\s*(\d{1,2}):(\d{2})/);
+  if (!dateMatch || !timeMatch) return null;
+
+  const yyyy = `20${dateMatch[1]}`;
+  const mm = String(parseInt(dateMatch[2], 10)).padStart(2, '0');
+  const dd = String(parseInt(dateMatch[3], 10)).padStart(2, '0');
+
+  const startAmpm = timeMatch[1];
+  const startHour = parseInt(timeMatch[2], 10);
+  const startMin = parseInt(timeMatch[3], 10);
+  const endHour = parseInt(timeMatch[5], 10);
+  const endMin = parseInt(timeMatch[6], 10);
+  let endAmpm = timeMatch[4];
+
+  if (!endAmpm) {
+    if ((endHour >= 1 && endHour <= 11) && startAmpm === '오전') {
+      endAmpm = startHour === 12 || endHour >= startHour ? '오전' : '오후';
+    } else if (endHour === 12 && startAmpm === '오전') {
+      endAmpm = '오후';
+    } else if (startAmpm === '오후' && endHour >= 1 && endHour <= 11) {
+      endAmpm = startHour === 12 || endHour >= startHour ? '오후' : '오전';
+    } else {
+      endAmpm = startAmpm;
+    }
+  }
+
+  let startHour24 = startHour;
+  let endHour24 = endHour;
+  if (startAmpm === '오후' && startHour24 < 12) startHour24 += 12;
+  if (startAmpm === '오전' && startHour24 === 12) startHour24 = 0;
+  if (endAmpm === '오후' && endHour24 < 12) endHour24 += 12;
+  if (endAmpm === '오전' && endHour24 === 12) endHour24 = 0;
+
+  return {
+    date: `${yyyy}-${mm}-${dd}`,
+    start: `${String(startHour24).padStart(2, '0')}:${String(startMin).padStart(2, '0')}`,
+    end: `${String(endHour24).padStart(2, '0')}:${String(endMin).padStart(2, '0')}`,
+  };
+}
+
 export function createNaverListScrapeService(deps: CreateNaverListScrapeServiceDeps) {
   const { delay, log } = deps;
 
@@ -102,7 +147,7 @@ export function createNaverListScrapeService(deps: CreateNaverListScrapeServiceD
       return rows.length > 0 || noData;
     }, { timeout: 20000 });
 
-    return page.evaluate((n: number) => {
+    const scraped = await page.evaluate((n: number) => {
       const noData = document.querySelector('[class*="nodata-area"], [class*="nodata"], .nodata');
       if (noData) return [];
 
@@ -147,12 +192,11 @@ export function createNaverListScrapeService(deps: CreateNaverListScrapeServiceD
 
             if (!endAmpm) {
               if ((endHour >= 1 && endHour <= 11) && startAmpm === '오전') {
-                endAmpm = endHour < startHour ? '오후' : '오전';
+                endAmpm = startHour === 12 || endHour >= startHour ? '오전' : '오후';
               } else if (endHour === 12 && startAmpm === '오전') {
                 endAmpm = '오후';
               } else if (startAmpm === '오후' && endHour >= 1 && endHour <= 11) {
-                if (startHour === 12) endAmpm = '오후';
-                else endAmpm = endHour < startHour ? '오전' : '오후';
+                endAmpm = startHour === 12 || endHour >= startHour ? '오후' : '오전';
               } else {
                 endAmpm = startAmpm;
               }
@@ -196,6 +240,17 @@ export function createNaverListScrapeService(deps: CreateNaverListScrapeServiceD
 
       return out;
     }, limit);
+
+    return scraped.map((booking: any) => {
+      const parsed = parseNaverDateTimeText(booking?.raw?.dateTimeText);
+      if (!parsed) return booking;
+      return {
+        ...booking,
+        date: parsed.date,
+        start: parsed.start,
+        end: parsed.end,
+      };
+    });
   }
 
   return {

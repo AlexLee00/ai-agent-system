@@ -20,6 +20,7 @@ const { parseArgs } = require('../../lib/args');
 const { fail } = require('../../lib/cli');
 const { createAgentMemory } = require('../../../../packages/core/lib/agent-memory');
 const { buildReservationCliInsight } = require('../../lib/cli-insight');
+const { parseNaverDateTimeText } = require('../../lib/naver-list-scrape-service');
 const { getReadableReservationRuntimeFile } = require('../../lib/runtime-paths');
 
 const BOOKINGS_FILE = getReadableReservationRuntimeFile('naver-bookings-full.json');
@@ -111,6 +112,17 @@ try {
 if (!Array.isArray(bookings)) {
   fail('예약 데이터 형식 오류');
 }
+
+bookings = bookings.map((booking: Booking) => {
+  const parsed = parseNaverDateTimeText((booking.raw as any)?.dateTimeText);
+  if (!parsed) return booking;
+  return {
+    ...booking,
+    date: parsed.date,
+    start: parsed.start,
+    end: parsed.end,
+  };
+});
 
 let filtered: Booking[] = bookings;
 const filterDesc = [];
