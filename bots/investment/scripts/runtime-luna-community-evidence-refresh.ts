@@ -419,6 +419,7 @@ export async function runCommunityEvidenceRefresh(options: any = {}): Promise<an
     sourceReports: sourceResults.map(({ events, ...rest }) => rest),
     symbols: Object.keys(mentionsBySymbol),
     mentionsBySymbol,
+    sample: allEvents.slice(0, 3),
   };
 
   if (!json) console.log(`[luna-community] 완료: collected=${allEvents.length} inserted=${inserted} dryRun=${dryRun} shadow=${SHADOW_MODE}`);

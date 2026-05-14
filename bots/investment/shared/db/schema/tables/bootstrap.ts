@@ -651,6 +651,56 @@ export async function runInvestmentSchemaBootstrap(run, { log = true } = {}) {
   try { await run(`CREATE INDEX IF NOT EXISTS idx_eee_source_type ON external_evidence_events(source_type, created_at DESC)`); } catch { /* 무시 */ }
   try { await run(`CREATE INDEX IF NOT EXISTS idx_eee_symbol ON external_evidence_events(symbol, market, created_at DESC)`); } catch { /* 무시 */ }
 
+  // ── Luna Phase 1 P0: candidate backtest freshness + predictive audit ──
+  await run(`
+    CREATE TABLE IF NOT EXISTS candidate_backtest_status (
+      id                    BIGSERIAL PRIMARY KEY,
+      symbol                TEXT NOT NULL,
+      market                TEXT NOT NULL,
+      fresh                 BOOLEAN DEFAULT FALSE,
+      healthy               BOOLEAN DEFAULT FALSE,
+      sharpe                DOUBLE PRECISION,
+      max_drawdown          DOUBLE PRECISION,
+      win_rate              DOUBLE PRECISION,
+      last_backtest_at      TIMESTAMPTZ,
+      next_refresh_at       TIMESTAMPTZ,
+      gate_status           TEXT DEFAULT 'pending',
+      would_block           BOOLEAN DEFAULT FALSE,
+      enforced              BOOLEAN DEFAULT FALSE,
+      block_reasons         JSONB DEFAULT '[]'::jsonb,
+      backtest_run_metadata JSONB DEFAULT '{}'::jsonb,
+      created_at            TIMESTAMPTZ DEFAULT NOW(),
+      updated_at            TIMESTAMPTZ DEFAULT NOW(),
+      UNIQUE (symbol, market)
+    )
+  `);
+  try { await run(`ALTER TABLE candidate_backtest_status ADD COLUMN IF NOT EXISTS would_block BOOLEAN DEFAULT FALSE`); } catch { /* 무시 */ }
+  try { await run(`ALTER TABLE candidate_backtest_status ADD COLUMN IF NOT EXISTS enforced BOOLEAN DEFAULT FALSE`); } catch { /* 무시 */ }
+  try { await run(`ALTER TABLE candidate_backtest_status ADD COLUMN IF NOT EXISTS block_reasons JSONB DEFAULT '[]'::jsonb`); } catch { /* 무시 */ }
+  try { await run(`ALTER TABLE candidate_backtest_status ADD COLUMN IF NOT EXISTS backtest_run_metadata JSONB DEFAULT '{}'::jsonb`); } catch { /* 무시 */ }
+  try { await run(`CREATE INDEX IF NOT EXISTS idx_cbs_gate ON candidate_backtest_status(gate_status, fresh, healthy)`); } catch { /* 무시 */ }
+  try { await run(`CREATE INDEX IF NOT EXISTS idx_cbs_symbol ON candidate_backtest_status(symbol, market)`); } catch { /* 무시 */ }
+  try { await run(`CREATE INDEX IF NOT EXISTS idx_cbs_would_block ON candidate_backtest_status(would_block, updated_at DESC)`); } catch { /* 무시 */ }
+
+  await run(`
+    CREATE TABLE IF NOT EXISTS predictive_validation_log (
+      id                  BIGSERIAL PRIMARY KEY,
+      symbol              TEXT,
+      market              TEXT,
+      decision            TEXT NOT NULL,
+      score               DOUBLE PRECISION,
+      threshold           DOUBLE PRECISION,
+      component_coverage  DOUBLE PRECISION,
+      blocked_reason      TEXT,
+      components          JSONB DEFAULT '{}'::jsonb,
+      missing_components  JSONB DEFAULT '[]'::jsonb,
+      candidate_snapshot  JSONB DEFAULT '{}'::jsonb,
+      created_at          TIMESTAMPTZ DEFAULT NOW()
+    )
+  `);
+  try { await run(`CREATE INDEX IF NOT EXISTS idx_pvl_symbol ON predictive_validation_log(symbol, market, created_at DESC)`); } catch { /* 무시 */ }
+  try { await run(`CREATE INDEX IF NOT EXISTS idx_pvl_decision ON predictive_validation_log(decision, created_at DESC)`); } catch { /* 무시 */ }
+
   // ── position_signal_history (Phase D Continuous Signal Collection) ──
   await run(`
     CREATE TABLE IF NOT EXISTS position_signal_history (

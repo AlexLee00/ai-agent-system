@@ -270,6 +270,7 @@ export async function runCandidateBacktestRefresh(options: any = {}): Promise<an
     shadowMode: SHADOW_MODE,
     dryRun,
     fixture,
+    writeMode: dryRun ? 'dry-run' : 'shadow-apply',
     periods,
     total: results.length,
     passed,

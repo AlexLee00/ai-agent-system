@@ -1,0 +1,66 @@
+{
+  "ok": true,
+  "generatedAt": "2026-05-14T11:17:10.267Z",
+  "phase": "luna-phase1-codex-p0",
+  "tags": {
+    "preRollback": "pre-luna-phase1-codex-p0-20260514-200517",
+    "complete": "luna-phase1-codex-p0-complete-20260514-1903"
+  },
+  "goals": {
+    "communityEvidencePositive": true,
+    "backtestFreshStatusExists": true,
+    "gateAuditExists": true,
+    "launchdLabelsVisible": true,
+    "shadowLiveImpactZero": true
+  },
+  "db": {
+    "community24h": {
+      "count": 2
+    },
+    "candidateBacktestStatus": {
+      "total": 2,
+      "fresh": 2,
+      "healthy": 1,
+      "would_block": 1,
+      "newest_updated_at": "2026-05-14T11:16:10.682Z"
+    },
+    "predictiveAudit24h": [
+      {
+        "decision": "block_backtest_gate",
+        "count": 1
+      },
+      {
+        "decision": "pass_backtest",
+        "count": 1
+      },
+      {
+        "decision": "would_block_backtest",
+        "count": 1
+      },
+      {
+        "decision": "would_block_backtest_gate",
+        "count": 1
+      }
+    ]
+  },
+  "launchd": [
+    {
+      "label": "ai.luna.community-evidence-refresh",
+      "visible": true,
+      "pid": null,
+      "status": 0
+    },
+    {
+      "label": "ai.luna.candidate-backtest-refresh",
+      "visible": true,
+      "pid": null,
+      "status": 0
+    }
+  ],
+  "safety": {
+    "protectedRestartedByThisRuntime": false,
+    "destructiveSqlUsed": false,
+    "secretModified": false,
+    "maxTradeUsdt": "50"
+  }
+}

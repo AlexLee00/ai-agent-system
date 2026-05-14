@@ -203,7 +203,7 @@ function extractSetupOutcomeComponent(candidate = {}, context = {}) {
   };
 }
 
-// ─── Hardening checks (config.hardeningEnabled = true 로 명시 활성화) ─────────
+// ─── Phase 1 hardening checks (기본 shadow, hardeningEnforce=true일 때만 차단) ─
 const COVERAGE_REQUIRED = 0.75;
 
 function checkHardening(components, missingComponents, score, config = {}, context = {}) {
