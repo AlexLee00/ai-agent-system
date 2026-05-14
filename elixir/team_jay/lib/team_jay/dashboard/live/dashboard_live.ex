@@ -225,7 +225,7 @@ defmodule TeamJay.Dashboard.Live.DashboardLive do
     <div class="min-h-screen p-4 space-y-4">
       <header class="flex items-center justify-between border-b border-gray-700 pb-3">
         <h1 class="text-xl font-bold text-white">🤖 팀 제이 대시보드</h1>
-        <span class="text-xs text-gray-400">Phase D • 영역 1+2+3+4+5+6+7+8</span>
+        <span class="text-xs text-gray-400">Phase E • 영역 1+2+3+4+5+6+7+8 + Layer 1</span>
       </header>
 
       <div class="grid grid-cols-1 xl:grid-cols-3 gap-4">
@@ -485,11 +485,13 @@ defmodule TeamJay.Dashboard.Live.DashboardLive do
               <th class="text-left py-1 pr-3 font-medium">팀</th>
               <th class="text-left py-1 pr-3 font-medium">봇</th>
               <th class="text-left py-1 pr-3 font-medium w-12">심각도</th>
+              <th class="text-left py-1 pr-3 font-medium">Trace</th>
               <th class="text-left py-1 font-medium">시간</th>
             </tr>
           </thead>
           <tbody>
             <%= for event <- @events do %>
+              <% trace_id = event_trace_id(event) %>
               <tr class="border-b border-gray-700/50 hover:bg-gray-700/30">
                 <td class="py-1 pr-3 text-gray-200 font-mono truncate max-w-[180px]">
                   {event["event_type"] || event[:event_type] || "—"}
@@ -504,6 +506,20 @@ defmodule TeamJay.Dashboard.Live.DashboardLive do
                   <span class={"font-semibold #{severity_class(event["severity"] || event[:severity])}"}>
                     {event["severity"] || event[:severity] || "info"}
                   </span>
+                </td>
+                <td class="py-1 pr-3 text-blue-300 font-mono whitespace-nowrap">
+                  <%= if trace_id do %>
+                    <a
+                      href={langfuse_trace_url(trace_id)}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      class="hover:text-blue-200 underline decoration-blue-500/50"
+                    >
+                      {short_trace_id(trace_id)}
+                    </a>
+                  <% else %>
+                    <span class="text-gray-600">—</span>
+                  <% end %>
                 </td>
                 <td class="py-1 text-gray-400 whitespace-nowrap">
                   {event |> event_timestamp() |> format_event_time()}
@@ -1498,6 +1514,48 @@ defmodule TeamJay.Dashboard.Live.DashboardLive do
   end
 
   defp event_timestamp(_), do: nil
+
+  defp event_trace_id(event) when is_map(event) do
+    trace_id =
+      Enum.find_value([:trace_id, "trace_id"], fn key ->
+        case Map.get(event, key) do
+          value when is_binary(value) and value != "" -> value
+          _ -> nil
+        end
+      end)
+
+    if valid_trace_id?(trace_id), do: trace_id
+  end
+
+  defp event_trace_id(_), do: nil
+
+  defp langfuse_trace_url(trace_id) do
+    host =
+      :team_jay
+      |> Application.get_env(:langfuse, [])
+      |> Keyword.get(:host)
+      |> Kernel.||(System.get_env("LANGFUSE_HOST"))
+      |> Kernel.||("http://localhost:3000")
+      |> String.trim_trailing("/")
+
+    project_id =
+      :team_jay
+      |> Application.get_env(:langfuse, [])
+      |> Keyword.get(:project_id)
+      |> Kernel.||(System.get_env("LANGFUSE_PROJECT_ID"))
+      |> Kernel.||("team-jay-prod")
+
+    "#{host}/project/#{URI.encode_www_form(to_string(project_id))}/traces/#{URI.encode_www_form(to_string(trace_id))}"
+  end
+
+  defp short_trace_id(trace_id) when is_binary(trace_id), do: String.slice(trace_id, 0, 8)
+  defp short_trace_id(trace_id), do: trace_id |> to_string() |> String.slice(0, 8)
+
+  defp valid_trace_id?(trace_id) when is_binary(trace_id) do
+    trace_id != "" and trace_id != "00000000000000000000000000000000"
+  end
+
+  defp valid_trace_id?(_), do: false
 
   defp format_kst_label(%NaiveDateTime{} = dt) do
     date = NaiveDateTime.to_date(dt)

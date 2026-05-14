@@ -53,7 +53,9 @@ defmodule Jay.Core.EventLake do
   def get_stats, do: GenServer.call(__MODULE__, :get_stats)
   def get_by_type(type, count \\ 10), do: GenServer.call(__MODULE__, {:get_by_type, type, count})
 
-  def record(attrs) when is_map(attrs), do: GenServer.cast(__MODULE__, {:record, attrs})
+  def record(attrs) when is_map(attrs) do
+    GenServer.cast(__MODULE__, {:record, maybe_attach_current_trace_id(attrs)})
+  end
 
   @impl true
   def handle_call({:get_recent, count}, _from, state) do
@@ -136,6 +138,34 @@ defmodule Jay.Core.EventLake do
   end
 
   defp normalize_record_attrs(other), do: %{event_type: inspect(other)}
+
+  defp maybe_attach_current_trace_id(attrs) do
+    if blank_trace_id?(map_get(attrs, :trace_id)) do
+      case current_otel_trace_id() do
+        trace_id when is_binary(trace_id) -> Map.put(attrs, :trace_id, trace_id)
+        _ -> attrs
+      end
+    else
+      attrs
+    end
+  end
+
+  defp current_otel_trace_id do
+    case OpenTelemetry.Tracer.current_span_ctx() |> OpenTelemetry.Span.hex_span_ctx() do
+      %{otel_trace_id: trace_id} when is_binary(trace_id) ->
+        if blank_trace_id?(trace_id), do: nil, else: trace_id
+
+      _ ->
+        nil
+    end
+  rescue
+    _ -> nil
+  end
+
+  defp blank_trace_id?(nil), do: true
+  defp blank_trace_id?(""), do: true
+  defp blank_trace_id?("00000000000000000000000000000000"), do: true
+  defp blank_trace_id?(_), do: false
 
   defp normalize_severity("warning"), do: "warn"
 

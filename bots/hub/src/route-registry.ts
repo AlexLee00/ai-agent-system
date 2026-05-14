@@ -40,6 +40,7 @@ const {
 const { logsSearchRoute, logsStatsRoute } = require('../lib/routes/logs');
 const { darwinCallbackRoute } = require('../lib/routes/darwin-callback');
 const { lunaLiveFireCallbackRoute } = require('../lib/routes/luna-live-fire-callback');
+const { autonomyInterventionRoute } = require('../lib/routes/autonomy');
 const { memoryRememberRoute, memoryRecallRoute } = require('../lib/routes/memory');
 const {
   legalCaseCreateRoute,
@@ -190,6 +191,7 @@ export function registerHubRoutes(app: Express, opts: HubRouteOptions): void {
   app.get('/hub/logs/stats', generalLimiter, logsStatsRoute);
   app.post('/hub/darwin/callback', generalLimiter, darwinCallbackRoute);
   app.post('/hub/luna/live-fire/callback', generalLimiter, lunaLiveFireCallbackRoute);
+  app.post('/hub/v2/autonomy/intervention', generalLimiter, autonomyInterventionRoute);
   app.post('/hub/memory/remember', generalLimiter, memoryRememberRoute);
   app.post('/hub/memory/recall', generalLimiter, memoryRecallRoute);
   app.post('/hub/legal/case', generalLimiter, legalCaseCreateRoute);

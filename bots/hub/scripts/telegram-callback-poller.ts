@@ -19,9 +19,18 @@ type CallbackQuery = {
   message?: unknown;
 };
 
+type TelegramMessage = {
+  message_id?: number;
+  date?: number;
+  text?: string;
+  chat?: { id?: number | string };
+  from?: unknown;
+};
+
 type TelegramUpdate = {
   update_id?: number;
   callback_query?: CallbackQuery;
+  message?: TelegramMessage;
 };
 
 function sleep(ms: number): Promise<void> {
@@ -130,7 +139,7 @@ async function getUpdates(botToken: string, offset: number): Promise<TelegramUpd
     body: JSON.stringify({
       offset,
       timeout: POLL_TIMEOUT_SEC,
-      allowed_updates: ['callback_query'],
+      allowed_updates: ['callback_query', 'message'],
     }),
     signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
   });
@@ -179,6 +188,70 @@ async function forwardCallback(callbackQuery: CallbackQuery): Promise<unknown> {
   return body;
 }
 
+function masterChatIds(): Set<string> {
+  return new Set(
+    String(process.env.MASTER_TELEGRAM_CHAT_IDS || '')
+      .split(',')
+      .map((value) => value.trim())
+      .filter(Boolean),
+  );
+}
+
+function isMasterMessage(message: TelegramMessage): boolean {
+  const chatId = String(message?.chat?.id || '').trim();
+  if (!chatId) return false;
+
+  const allowed = masterChatIds();
+  return allowed.size > 0 && allowed.has(chatId);
+}
+
+async function forwardMasterMessage(message: TelegramMessage): Promise<unknown> {
+  if (!isMasterMessage(message)) {
+    return { skipped: true, reason: 'non_master_chat' };
+  }
+
+  const text = String(message?.text || '').trim();
+  if (!text) {
+    return { skipped: true, reason: 'empty_message' };
+  }
+
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  const hubToken = getHubToken();
+  if (hubToken) {
+    headers.Authorization = `Bearer ${hubToken}`;
+  }
+  const callbackSecret = getControlCallbackSecret();
+  if (callbackSecret) {
+    headers['x-hub-control-callback-secret'] = callbackSecret;
+  }
+
+  const chatId = String(message?.chat?.id || '').trim();
+  console.log(`[poller] 마스터 메시지 전달(chat=${chatId}, message=${message.message_id || 'unknown'})`);
+  const res = await fetch(`${HUB_BASE}/hub/v2/autonomy/intervention`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({
+      subtype: 'telegram',
+      title: text.slice(0, 120),
+      metadata: {
+        full_text: text,
+        chat_id: chatId,
+        message_id: message.message_id || null,
+        telegram_date: message.date || null,
+        from: message.from || null,
+        received_at: new Date().toISOString(),
+      },
+    }),
+    signal: AbortSignal.timeout(30_000),
+  });
+  const body = await res.json().catch(() => null);
+  console.log(`[poller] 마스터 메시지 결과: ${JSON.stringify(body || { status: res.status })}`);
+  if (!res.ok) {
+    throw new Error(`Hub autonomy intervention HTTP ${res.status}`);
+  }
+  return body;
+}
+
 async function pollLoop(): Promise<void> {
   const botToken = getBotToken();
   if (!botToken) {
@@ -196,6 +269,9 @@ async function pollLoop(): Promise<void> {
       for (const update of updates) {
         if (update.callback_query) {
           await forwardCallback(update.callback_query);
+        }
+        if (update.message) {
+          await forwardMasterMessage(update.message);
         }
         offset = Number(update.update_id || 0) + 1;
         saveOffset(offset);

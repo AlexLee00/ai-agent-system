@@ -27,4 +27,14 @@ defmodule TeamJay.DashboardPhaseATest do
     assert Enum.any?(routes, &(&1.path == "/" and &1.plug == Phoenix.LiveView.Plug))
     assert Enum.any?(routes, &String.starts_with?(&1.path, "/healthz"))
   end
+
+  test "router exposes Phase E master intervention API" do
+    routes = TeamJay.Dashboard.Router.__routes__()
+
+    assert Enum.any?(
+             routes,
+             &(&1.verb == :post and &1.path == "/api/master-intervention" and
+                 &1.plug == TeamJay.Dashboard.MasterInterventionController)
+           )
+  end
 end
