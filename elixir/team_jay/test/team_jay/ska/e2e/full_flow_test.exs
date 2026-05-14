@@ -6,39 +6,28 @@ defmodule TeamJay.Ska.E2E.FullFlowTest do
   alias TeamJay.Ska.SkillRegistry
 
   setup do
-    # 기존 SkillRegistry 정리 후 새로 시작
-    case Process.whereis(TeamJay.Ska.SkillRegistry) do
-      nil -> :ok
-      old_pid ->
-        GenServer.stop(old_pid, :normal)
-        # ETS 테이블 소멸 대기
-        :ok = wait_for_ets_gone(:ska_skill_registry)
-    end
+    # 앱 supervisor가 소유한 SkillRegistry는 테스트에서 중지하지 않는다.
+    {pid, owned?} =
+      case Process.whereis(TeamJay.Ska.SkillRegistry) do
+        nil ->
+          {:ok, new_pid} = SkillRegistry.start_link([])
+          {new_pid, true}
 
-    {:ok, pid} = SkillRegistry.start_link([])
+        existing_pid ->
+          {existing_pid, false}
+      end
 
     # handle_continue 완료 확인 (fetch는 ETS 직접 접근, call은 handle_continue 대기)
     # GenServer.call → handle_continue 완료 보장 (stats는 map 직접 반환)
     _ = SkillRegistry.stats()
 
-    on_exit(fn ->
-      if Process.alive?(pid), do: GenServer.stop(pid, :normal)
-    end)
+    if owned? do
+      on_exit(fn ->
+        if Process.alive?(pid), do: GenServer.stop(pid, :normal)
+      end)
+    end
 
     {:ok, registry_pid: pid}
-  end
-
-  defp wait_for_ets_gone(table_name, tries \\ 20) do
-    if :ets.whereis(table_name) == :undefined do
-      :ok
-    else
-      if tries > 0 do
-        Process.sleep(10)
-        wait_for_ets_gone(table_name, tries - 1)
-      else
-        :ok
-      end
-    end
   end
 
   describe "네이버 세션 만료 → 복구 전체 흐름" do
@@ -122,7 +111,8 @@ defmodule TeamJay.Ska.E2E.FullFlowTest do
             context: %{error: "connection_refused"}
           })
         rescue
-          UndefinedFunctionError -> {:ok, %{recovery_triggered: true, strategy: :pickko_reconnect}}
+          UndefinedFunctionError ->
+            {:ok, %{recovery_triggered: true, strategy: :pickko_reconnect}}
         end
 
       assert match?({:ok, %{recovery_triggered: _, strategy: :pickko_reconnect}}, result)
@@ -230,15 +220,24 @@ defmodule TeamJay.Ska.E2E.FullFlowTest do
 
     test "SkillRegistry — 12개 스킬 모두 등록됨 (fetch 기반 검증)" do
       expected_skills = [
-        :detect_session_expiry, :notify_failure, :persist_cycle_metrics,
-        :trigger_recovery, :audit_db_integrity,
-        :parse_naver_html, :classify_kiosk_state, :audit_pos_transactions,
-        :forecast_demand, :analyze_revenue, :detect_anomaly, :generate_report
+        :detect_session_expiry,
+        :notify_failure,
+        :persist_cycle_metrics,
+        :trigger_recovery,
+        :audit_db_integrity,
+        :parse_naver_html,
+        :classify_kiosk_state,
+        :audit_pos_transactions,
+        :forecast_demand,
+        :analyze_revenue,
+        :detect_anomaly,
+        :generate_report
       ]
 
       for skill_name <- expected_skills do
         assert {:ok, skill} = SkillRegistry.fetch(skill_name),
                "#{skill_name} 스킬이 등록되어 있어야 함"
+
         assert skill.name == skill_name
       end
     end

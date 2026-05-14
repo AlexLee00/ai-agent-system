@@ -7,8 +7,14 @@ defmodule TeamJay.Ska.SkillRegistryTest do
     @behaviour TeamJay.Ska.Skill
 
     def metadata do
-      %{name: :test_skill, domain: :test, version: "1.0",
-        description: "테스트 스킬", input_schema: %{}, output_schema: %{}}
+      %{
+        name: :test_skill,
+        domain: :test,
+        version: "1.0",
+        description: "테스트 스킬",
+        input_schema: %{},
+        output_schema: %{}
+      }
     end
 
     def run(%{fail: true}, _ctx), do: {:error, :intentional_failure}
@@ -18,24 +24,25 @@ defmodule TeamJay.Ska.SkillRegistryTest do
   end
 
   setup do
-    # 실행 중인 SkillRegistry를 사용하거나 없으면 새로 시작
-    # 슈퍼바이저가 즉시 재시작할 수 있으므로 {:already_started, pid} 도 허용
-    pid =
-      case SkillRegistry.start_link([]) do
-        {:ok, new_pid} ->
-          new_pid
+    {pid, owned?} =
+      case Process.whereis(TeamJay.Ska.SkillRegistry) do
+        nil ->
+          {:ok, new_pid} = SkillRegistry.start_link([])
+          {new_pid, true}
 
-        {:error, {:already_started, existing_pid}} ->
-          existing_pid
+        existing_pid ->
+          {existing_pid, false}
       end
 
-    on_exit(fn ->
-      try do
-        if Process.alive?(pid), do: GenServer.stop(pid)
-      catch
-        :exit, _ -> :ok
-      end
-    end)
+    if owned? do
+      on_exit(fn ->
+        try do
+          if Process.alive?(pid), do: GenServer.stop(pid)
+        catch
+          :exit, _ -> :ok
+        end
+      end)
+    end
 
     {:ok, %{registry: pid}}
   end

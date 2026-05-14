@@ -6,34 +6,25 @@ defmodule TeamJay.Ska.Load.StressTest do
   alias TeamJay.Ska.SkillRegistry
 
   setup do
-    case Process.whereis(TeamJay.Ska.SkillRegistry) do
-      nil -> :ok
-      old_pid ->
-        GenServer.stop(old_pid, :normal)
-        wait_for_ets_gone(:ska_skill_registry)
+    {pid, owned?} =
+      case Process.whereis(TeamJay.Ska.SkillRegistry) do
+        nil ->
+          {:ok, new_pid} = SkillRegistry.start_link([])
+          {new_pid, true}
+
+        existing_pid ->
+          {existing_pid, false}
+      end
+
+    _ = SkillRegistry.stats()
+
+    if owned? do
+      on_exit(fn ->
+        if Process.alive?(pid), do: GenServer.stop(pid, :normal)
+      end)
     end
-
-    {:ok, pid} = SkillRegistry.start_link([])
-    _ = SkillRegistry.stats()  # GenServer.call → handle_continue 완료 보장
-
-    on_exit(fn ->
-      if Process.alive?(pid), do: GenServer.stop(pid, :normal)
-    end)
 
     {:ok, registry_pid: pid}
-  end
-
-  defp wait_for_ets_gone(table_name, tries \\ 20) do
-    if :ets.whereis(table_name) == :undefined do
-      :ok
-    else
-      if tries > 0 do
-        Process.sleep(10)
-        wait_for_ets_gone(table_name, tries - 1)
-      else
-        :ok
-      end
-    end
   end
 
   describe "Skill Registry 동시 접근" do
@@ -61,7 +52,8 @@ defmodule TeamJay.Ska.Load.StressTest do
         {:detect_session_expiry, %{agent: :andy, response_html: "ok page", status_code: 200}},
         {:classify_kiosk_state, %{response: %{status: "idle"}, last_heartbeat_ms: 1000}},
         {:audit_pos_transactions, %{transactions: [], expected_total: 0.0}},
-        {:detect_anomaly, %{metric_name: "x", values: [1, 2, 3], method: :z_score, threshold: 3.0}},
+        {:detect_anomaly,
+         %{metric_name: "x", values: [1, 2, 3], method: :z_score, threshold: 3.0}},
         {:audit_db_integrity, %{table: "ska_cycle_metrics", checks: []}}
       ]
 
