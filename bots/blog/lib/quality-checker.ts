@@ -525,9 +525,9 @@ const CRITIC_ROUNDS = [
 ];
 
 async function runCriticLoop(content, type, options = {}) {
-  let callLocalLlm;
+  let callBlogLlm;
   try {
-    callLocalLlm = require('../../../packages/core/lib/local-llm-client').callLocalLlm;
+    callBlogLlm = require('./blog-llm-gateway.ts').callBlogLlm;
   } catch {
     return { criticScore: null, criticRounds: [], criticFeedback: 'LLM 클라이언트 로드 실패' };
   }
@@ -553,7 +553,15 @@ ${round.id === 5
   ? '0~10점으로 평가하고 다음 형식으로만 답하라:\n점수: N\n개선점: (한 문장)'
   : '이 항목 점수를 0~10으로 평가하고 숫자만 답하라.'}`;
 
-      const result = await callLocalLlm({ prompt, model: 'qwen2.5:7b', maxTokens: 60, temperature: 0.2 });
+      const result = await callBlogLlm({
+        prompt,
+        model: 'qwen2.5:7b',
+        maxTokens: 60,
+        temperature: 0.2,
+        taskType: 'quality_critic_loop',
+        selectorKey: 'blog._default',
+        maxBudgetUsd: 0.02,
+      });
       const text_ = result?.content || result?.text || '';
 
       if (round.id === 5) {

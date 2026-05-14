@@ -51,6 +51,14 @@
       "tags": ["blog", "performance", "report", "a2a"],
       "inputModes": ["application/json"],
       "outputModes": ["application/json"]
+    },
+    {
+      "id": "blog-v3-audit",
+      "name": "Blog V3 Shadow Audit",
+      "description": "네이버 홈피드·문장 자연스러움·V3 shadow evidence를 읽기 전용으로 점검",
+      "tags": ["blog", "v3", "naver", "shadow", "a2a"],
+      "inputModes": ["application/json"],
+      "outputModes": ["application/json"]
     }
   ]
 }

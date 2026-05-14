@@ -160,6 +160,21 @@
       "scheduleMinute": 0,
       "clickFinalPublish": false
     },
+    "blogV3AgentRegistry": {
+      "shadowModeDefault": true,
+      "llmAgents": {
+        "blo": { "runtimePurpose": "blog_lead_orchestration", "llmSelectorKey": "blog._default", "primaryModel": "sonnet-4.6" },
+        "pos": { "runtimePurpose": "blog_practical_writer", "llmSelectorKey": "blog.pos.writer", "primaryModel": "opus-4.7" },
+        "gems": { "runtimePurpose": "blog_variant_writer", "llmSelectorKey": "blog.gems.writer", "primaryModel": "opus-4.7" },
+        "richer": { "runtimePurpose": "blog_research_enrichment", "llmSelectorKey": "blog._default", "primaryModel": "haiku-4.5" },
+        "humanize": { "runtimePurpose": "blog_humanize_shadow", "llmSelectorKey": "blog._default", "primaryModel": "haiku-4.5" },
+        "home_feed": { "runtimePurpose": "blog_naver_exposure_shadow", "llmSelectorKey": "blog.social.caption", "primaryModel": "haiku-4.5" },
+        "reddit_trend": { "runtimePurpose": "blog_trend_cluster_shadow", "llmSelectorKey": "blog._default", "primaryModel": "haiku-4.5" }
+      },
+      "nonLlmAgents": ["publ", "maestro"],
+      "hubGatewayRequired": true,
+      "localLlmFallbackEnv": "BLOG_ALLOW_LOCAL_LLM_FALLBACK"
+    },
     "llmSelectorOverrides": {
       "blog.pos.writer": {
         "chain": [

@@ -244,11 +244,16 @@ async function synthesizeMarketingResponse(retrieved, intent) {
 
   // LLM 보강 시도
   try {
-    const { callLocalFast } = require('../../../../packages/core/lib/local-llm-client');
+    const { callBlogFast } = require('../blog-llm-gateway.ts');
     const contextText = retrieved.slice(0, 5).map((r) => `- ${r.snippet}`).join('\n');
     const prompt = `마케팅 의도: "${intent}"\n\n참고 데이터:\n${contextText}\n\n5일 콘텐츠 전략을 JSON으로 간결하게:\n{"primary_strategy":"...","expected_views_uplift":"...%","key_insight":"..."}`;
 
-    const resp = await callLocalFast(prompt, { maxTokens: 200 });
+    const resp = await callBlogFast(prompt, {
+      maxTokens: 200,
+      taskType: 'marketing_rag_strategy',
+      selectorKey: 'blog._default',
+      maxBudgetUsd: 0.03,
+    });
     const text = (resp?.text || resp || '').trim();
     const match = text.match(/\{[\s\S]*\}/);
     if (match) {

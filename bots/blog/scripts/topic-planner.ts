@@ -20,7 +20,7 @@ const path = require('path');
 const env = require('../../../packages/core/lib/env');
 const kst = require('../../../packages/core/lib/kst');
 const pgPool = require('../../../packages/core/lib/pg-pool');
-const { callLocalLlm } = require('../../../packages/core/lib/local-llm-client');
+const { callBlogLlm } = require('../lib/blog-llm-gateway.ts');
 const { ensureBlogCoreSchema } = require('../lib/schema.ts');
 const { ensureSchedule, getScheduleByDate } = require('../lib/schedule.ts');
 const {
@@ -284,11 +284,14 @@ ${issuesSummary || '(이슈 없음)'}
 ]`;
 
   try {
-    const result = await callLocalLlm({
+    const result = await callBlogLlm({
       prompt,
       model: 'qwen2.5:7b',
       maxTokens: 1000,
       temperature: 0.75,
+      taskType: 'topic_planner_candidates',
+      selectorKey: 'blog._default',
+      maxBudgetUsd: 0.06,
     });
     const text = result?.content || result?.text || '';
     const jsonMatch = text.match(/\[[\s\S]*?\]/);
@@ -437,11 +440,14 @@ async function scoreCandidateWithCritic(candidate, category, recentTitles) {
 
 이 주제가 독자에게 실용적 가치가 있는지 0~10점으로 평가하고 숫자만 출력하세요.`;
 
-    const result = await callLocalLlm({
+    const result = await callBlogLlm({
       prompt: criticPrompt,
       model: 'qwen2.5:7b',
       maxTokens: 10,
       temperature: 0.2,
+      taskType: 'topic_planner_critic',
+      selectorKey: 'blog._default',
+      maxBudgetUsd: 0.01,
     });
     const text = result?.content || result?.text || '';
     const numMatch = text.match(/\d+(\.\d+)?/);

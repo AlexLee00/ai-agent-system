@@ -20,6 +20,8 @@ const fs      = require('fs');
 const env     = require('../../../packages/core/lib/env');
 const kst     = require('../../../packages/core/lib/kst');
 const { callHubLlm } = require('../../../packages/core/lib/hub-client');
+const pgPool  = require('../../../packages/core/lib/pg-pool');
+const { ensureBlogV3Tables } = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/blog-v3-unified.ts'));
 
 // ── AI 작성 표시 감지 ─────────────────────────────────────────────────────────
 
@@ -61,6 +63,76 @@ export interface AiSignalReport {
   signals: Array<{ type: string; label: string; severity: string; count: number }>;
   humanizeScore: number;  // 0-100 (높을수록 사람처럼)
   needsHumanize: boolean;
+  sentenceNaturalness?: SentenceNaturalnessReport;
+}
+
+export interface SentenceNaturalnessReport {
+  sentenceCount: number;
+  averageLength: number;
+  lengthVariance: number;
+  rhythmScore: number;
+  personalMarkerScore: number;
+  concreteDetailScore: number;
+  formulaPenalty: number;
+  score: number;
+  evidence: string[];
+}
+
+function splitSentences(text: string): string[] {
+  return String(text || '')
+    .replace(/\n+/g, ' ')
+    .split(/(?<=[.!?。！？])\s+|(?<=[다요죠까])\s+/)
+    .map((s) => s.trim())
+    .filter((s) => s.length > 8);
+}
+
+export function scoreSentenceNaturalness(text: string): SentenceNaturalnessReport {
+  const sentences = splitSentences(text);
+  const lengths = sentences.map((s) => s.length);
+  const averageLength = lengths.length ? lengths.reduce((a, b) => a + b, 0) / lengths.length : 0;
+  const lengthVariance = lengths.length
+    ? lengths.reduce((a, b) => a + Math.pow(b - averageLength, 2), 0) / lengths.length
+    : 0;
+  const evidence: string[] = [];
+
+  let rhythmScore = 45;
+  if (sentences.length >= 8) rhythmScore += 10;
+  if (lengthVariance >= 350) rhythmScore += 20;
+  else if (lengthVariance >= 180) rhythmScore += 10;
+  else evidence.push('문장 길이 변화가 부족함');
+  if (averageLength >= 28 && averageLength <= 85) rhythmScore += 10;
+  else evidence.push('평균 문장 길이가 블로그 호흡과 어긋남');
+  rhythmScore = Math.max(0, Math.min(100, rhythmScore));
+
+  const personalMatches = text.match(/저는|제가|저도|솔직히|직접|해보니|느꼈|봤습니다|생각합니다|맞죠/g) || [];
+  const concreteMatches = text.match(/\d+|오전|오후|오늘|어제|이번 주|분|시간|원|명|곳|단계|체크리스트/g) || [];
+  const formulaMatches = text.match(/결론적으로|더 나아가|요약하자면|첫째|둘째|셋째|종합하면/g) || [];
+  const personalMarkerScore = Math.min(100, personalMatches.length * 18);
+  const concreteDetailScore = Math.min(100, concreteMatches.length * 10);
+  const formulaPenalty = Math.min(35, formulaMatches.length * 7);
+  if (personalMarkerScore < 20) evidence.push('개인 관찰/경험 표지가 부족함');
+  if (concreteDetailScore < 30) evidence.push('숫자/시간/단계 등 구체 디테일이 부족함');
+  if (formulaPenalty > 0) evidence.push('정형 연결 표현이 남아 있음');
+
+  const score = Math.round(Math.max(0, Math.min(100,
+    rhythmScore * 0.45
+    + personalMarkerScore * 0.25
+    + concreteDetailScore * 0.25
+    + 20
+    - formulaPenalty,
+  )));
+
+  return {
+    sentenceCount: sentences.length,
+    averageLength: Math.round(averageLength),
+    lengthVariance: Math.round(lengthVariance),
+    rhythmScore,
+    personalMarkerScore,
+    concreteDetailScore,
+    formulaPenalty,
+    score,
+    evidence,
+  };
 }
 
 /**
@@ -109,10 +181,22 @@ export function detectAiSignals(text: string): AiSignalReport {
     totalSignals += 5;
   }
 
-  const humanizeScore = Math.max(0, 100 - totalSignals * 8);
+  const sentenceNaturalness = scoreSentenceNaturalness(text);
+  if (sentenceNaturalness.score < 70) {
+    signals.push({
+      type: 'authorMistSentenceNaturalness',
+      label: '문장 단위 자연스러움 부족',
+      severity: 'medium',
+      count: 1,
+    });
+    totalSignals += 2;
+  }
+
+  const signalScore = Math.max(0, 100 - totalSignals * 8);
+  const humanizeScore = Math.round((signalScore * 0.65) + (sentenceNaturalness.score * 0.35));
   const needsHumanize = humanizeScore < 80;
 
-  return { signalCount: totalSignals, signals, humanizeScore, needsHumanize };
+  return { signalCount: totalSignals, signals, humanizeScore, needsHumanize, sentenceNaturalness };
 }
 
 // ── 마스터 스타일 프로필 ──────────────────────────────────────────────────────
@@ -221,6 +305,7 @@ export interface HumanizeResult {
   signalsAfter: AiSignalReport;
   improved: boolean;
   attempts: number;
+  shadowOnly?: boolean;
 }
 
 /**
@@ -234,15 +319,29 @@ export async function humanizeText(
     maxAttempts?: number;
     targetScore?: number;
     model?: string;
+    shadowOnly?: boolean;
   } = {}
 ): Promise<HumanizeResult> {
   const {
     maxAttempts = 2,
     targetScore = 80,
+    shadowOnly = process.env.BLOG_HUMANIZE_ENABLED !== 'true',
   } = options;
 
   const signalsBefore = detectAiSignals(text);
   const masterStyle = loadMasterStyleProfile();
+
+  if (shadowOnly) {
+    return {
+      original: text,
+      humanized: text,
+      signalsBefore,
+      signalsAfter: signalsBefore,
+      improved: false,
+      attempts: 0,
+      shadowOnly: true,
+    };
+  }
 
   if (!signalsBefore.needsHumanize) {
     return {
@@ -252,6 +351,7 @@ export async function humanizeText(
       signalsAfter: signalsBefore,
       improved: false,
       attempts: 0,
+      shadowOnly: false,
     };
   }
 
@@ -310,7 +410,45 @@ ${current}
     signalsAfter: lastSignals,
     improved: lastSignals.humanizeScore > signalsBefore.humanizeScore,
     attempts,
+    shadowOnly: false,
   };
+}
+
+export async function recordHumanizeAudit(params: {
+  postId?: number | null;
+  title?: string | null;
+  result: HumanizeResult | AiSignalReport;
+  dryRun?: boolean;
+  shadowOnly?: boolean;
+}): Promise<{ ok: boolean; dryRun: boolean; inserted: number }> {
+  if (params.dryRun) return { ok: true, dryRun: true, inserted: 0 };
+  await ensureBlogV3Tables();
+  const isResult = params.result && Object.prototype.hasOwnProperty.call(params.result, 'signalsBefore');
+  const before = isResult ? params.result.signalsBefore : params.result;
+  const after = isResult ? params.result.signalsAfter : params.result;
+  const sentence = after?.sentenceNaturalness || before?.sentenceNaturalness || scoreSentenceNaturalness('');
+  const result = await pgPool.run('blog', `
+    INSERT INTO blog.humanize_audits
+      (post_id, title, before_score, after_score, sentence_score, signal_count, improved, shadow_only, evidence)
+    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+    RETURNING id
+  `, [
+    params.postId || null,
+    params.title || null,
+    before?.humanizeScore || 0,
+    after?.humanizeScore || 0,
+    sentence?.score || 0,
+    after?.signalCount || before?.signalCount || 0,
+    !!(isResult && params.result.improved),
+    params.shadowOnly !== false,
+    JSON.stringify({
+      signalsBefore: before?.signals || [],
+      signalsAfter: after?.signals || [],
+      sentenceNaturalness: sentence,
+      attempts: isResult ? params.result.attempts : 0,
+    }),
+  ]);
+  return { ok: true, dryRun: false, inserted: result?.rowCount || 0 };
 }
 
 // ── 마스터 스타일 학습 ────────────────────────────────────────────────────────

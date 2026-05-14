@@ -19,20 +19,28 @@
  *   vote_score < 50%  → 다음 후보로
  */
 
-let callLocalLlm;
+let callBlogLlm;
 try {
-  callLocalLlm = require('../../../packages/core/lib/local-llm-client').callLocalLlm;
+  callBlogLlm = require('./blog-llm-gateway.ts').callBlogLlm;
 } catch {
-  callLocalLlm = null;
+  callBlogLlm = null;
 }
 
 const LLM_MODEL = 'qwen2.5:7b';
 const LLM_TEMP  = 0.3;  // 토론이므로 약간 높게
 
 async function askAgent(prompt, maxTokens = 150) {
-  if (!callLocalLlm) return { content: '' };
+  if (!callBlogLlm) return { content: '' };
   try {
-    return await callLocalLlm({ prompt, model: LLM_MODEL, maxTokens, temperature: LLM_TEMP });
+    return await callBlogLlm({
+      prompt,
+      model: LLM_MODEL,
+      maxTokens,
+      temperature: LLM_TEMP,
+      taskType: 'topic_debate',
+      selectorKey: 'blog._default',
+      maxBudgetUsd: 0.03,
+    });
   } catch {
     return { content: '' };
   }

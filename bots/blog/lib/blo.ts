@@ -66,7 +66,11 @@ const { recordPublishedExperimentRun }             = require(path.join(env.PROJE
 const { readExperimentPlaybook }                   = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/experiment-os.ts'));
 const { fetchRevenueAttributionWeights }           = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/topic-selector.ts'));
 const { detectTitlePattern }                       = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/performance-diagnostician.ts'));
-const { scoreTitleForHomeFeed }                    = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/naver-home-feed-optimizer.ts'));
+const {
+  generateHomeFeedReport,
+  recordHomeFeedAudit,
+  scoreTitleForHomeFeed,
+}                                                  = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/naver-home-feed-optimizer.ts'));
 const { decideAutonomy }                           = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/autonomy-gate.ts'));
 const { accumulatePostExperience }                 = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/rag-accumulator.ts'));
 const {
@@ -123,11 +127,12 @@ const HUMANIZE_ENABLED                              = process.env.BLOG_HUMANIZE_
 async function _humanizeIfEnabled(content, title) {
   if (!HUMANIZE_ENABLED || !content) return content;
   try {
-    const { humanizeText, detectAiSignals } = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/humanize-agent.ts'));
+    const { humanizeText, detectAiSignals, recordHumanizeAudit } = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/humanize-agent.ts'));
     const signals = detectAiSignals(content);
     if (!signals.needsHumanize) return content;
     console.log(`[블로/인간화] AI 시그널 감지 — humanize 적용 (현재: ${signals.humanizeScore}/100)`);
-    const result = await humanizeText(content, { maxAttempts: 2, targetScore: 80 });
+    const result = await humanizeText(content, { maxAttempts: 2, targetScore: 80, shadowOnly: false });
+    recordHumanizeAudit({ title, result, shadowOnly: false }).catch(() => {});
     if (result.improved) {
       console.log(`[블로/인간화] 완료: ${result.signalsBefore.humanizeScore} → ${result.signalsAfter.humanizeScore}`);
       return result.humanized;
@@ -1518,13 +1523,25 @@ async function _finalizeGeneralPost(post, quality, context, scheduleId, traceCtx
   }
 
   const genTitle = post.title || `[${context.category}] 오늘의 포스팅`;
+  let homeFeedReport = null;
+  let humanizeShadow = null;
 
-  // 홈피드 제목 점수 평가 (로깅 전용 — 발행 차단 없음)
+  // 홈피드/문장 자연스러움 shadow 평가 (발행 차단 없음)
   try {
-    const hfScore = scoreTitleForHomeFeed(genTitle);
-    console.log(`[블로/홈판] 제목 점수 ${hfScore.score}/100 — ${hfScore.recommendation}`);
-    if (hfScore.misses.length > 0) console.log(`[블로/홈판] 개선 포인트: ${hfScore.misses.join(', ')}`);
+    homeFeedReport = await generateHomeFeedReport({
+      title: genTitle,
+      content: post.content || '',
+      category: context.category,
+      hasImages: false,
+    });
+    console.log(`[블로/홈판] 통합 점수 ${homeFeedReport.overallScore}/100 — 제목 ${homeFeedReport.titleScore.score}, 후크 ${homeFeedReport.hookScore.score}`);
+    if (homeFeedReport.topActions.length > 0) console.log(`[블로/홈판] 개선 포인트: ${homeFeedReport.topActions.join(', ')}`);
   } catch { /* 점수 계산 실패 시 무시 */ }
+  try {
+    const { detectAiSignals } = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/humanize-agent.ts'));
+    humanizeShadow = detectAiSignals(post.content || '');
+    console.log(`[블로/인간화][shadow] 자연스러움 ${humanizeShadow.humanizeScore}/100`);
+  } catch { /* shadow audit 실패 시 무시 */ }
 
   // 루나 요청 유래 포스트만 투자 가드레일 적용
   if (context.usedLunaRequestId) {
@@ -1577,6 +1594,24 @@ async function _finalizeGeneralPost(post, quality, context, scheduleId, traceCtx
   if (titleAlignment?.preview_title || titleAlignment?.final_title) {
     metadata.title_alignment = titleAlignment;
   }
+  if (homeFeedReport) {
+    metadata.home_feed_v3 = {
+      overallScore: homeFeedReport.overallScore,
+      titleScore: homeFeedReport.titleScore.score,
+      hookScore: homeFeedReport.hookScore.score,
+      dwellSeconds: homeFeedReport.dwellTime.estimatedSeconds,
+      topActions: homeFeedReport.topActions,
+      shadowOnly: true,
+    };
+  }
+  if (humanizeShadow) {
+    metadata.humanize_v3 = {
+      score: humanizeShadow.humanizeScore,
+      sentenceScore: humanizeShadow.sentenceNaturalness?.score || 0,
+      signalCount: humanizeShadow.signalCount,
+      shadowOnly: true,
+    };
+  }
 
   const published = await _publishAndTrack({
     title:     genTitle,
@@ -1594,6 +1629,26 @@ async function _finalizeGeneralPost(post, quality, context, scheduleId, traceCtx
     title: post.title,
     charCount: post.charCount,
   }, options);
+  if (homeFeedReport) {
+    recordHomeFeedAudit({
+      postId: published.postId || null,
+      title: genTitle,
+      category: context.category,
+      report: homeFeedReport,
+      dryRun: !!options.dryRun,
+      shadowOnly: true,
+    }).catch((e) => console.warn('[블로/홈판] audit 저장 실패:', e.message));
+  }
+  if (humanizeShadow) {
+    const { recordHumanizeAudit } = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/humanize-agent.ts'));
+    recordHumanizeAudit({
+      postId: published.postId || null,
+      title: genTitle,
+      result: humanizeShadow,
+      dryRun: !!options.dryRun,
+      shadowOnly: true,
+    }).catch((e) => console.warn('[블로/인간화] shadow audit 저장 실패:', e.message));
+  }
   await _recordPublishedExperiment({
     postType: 'general',
     category: context.category,

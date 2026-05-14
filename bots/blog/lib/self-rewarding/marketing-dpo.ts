@@ -150,7 +150,7 @@ async function buildPreferencePairs(periodDays = 30) {
  */
 async function analyzePairWithLlm(preferred, rejected) {
   try {
-    const { callLocalFast } = require('../../../../packages/core/lib/local-llm-client');
+    const { callBlogFast } = require('../blog-llm-gateway.ts');
     const prompt = `마케팅 포스팅 A(성공) vs B(실패) 비교 분석.
 
 [A - 성공] 제목: "${preferred.title}" | 카테고리: ${preferred.category} | 조회: ${preferred.views_7d}
@@ -159,7 +159,12 @@ async function analyzePairWithLlm(preferred, rejected) {
 JSON만 응답:
 {"hook_difference":"...","key_insight":"...","action_hint":"..."}`;
 
-    const resp = await callLocalFast(prompt, { maxTokens: 200 });
+    const resp = await callBlogFast(prompt, {
+      maxTokens: 200,
+      taskType: 'marketing_dpo_pair_analysis',
+      selectorKey: 'blog._default',
+      maxBudgetUsd: 0.03,
+    });
     const text = (resp?.text || resp || '').trim();
     const match = text.match(/\{[\s\S]*\}/);
     if (match) return JSON.parse(match[0]);

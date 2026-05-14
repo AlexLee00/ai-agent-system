@@ -18,13 +18,8 @@ import urllib.request
 from collections import Counter
 from datetime import datetime
 
-# 의존성 지연 임포트 (설치 확인용)
-try:
-    import praw
-    PRAW_IMPORT_ERROR = None
-except ImportError as exc:
-    praw = None
-    PRAW_IMPORT_ERROR = exc
+# PRAW는 실제 Reddit 호출 시에만 import한다.
+# fixture/smoke 경로에서 urllib3/OpenSSL 경고나 의존성 누락이 smoke를 오염시키지 않게 한다.
 
 # ── 설정 ──────────────────────────────────────────────────────────────────────
 
@@ -158,7 +153,9 @@ def hub_llm_call(prompt):
 # ── Reddit 수집 ──────────────────────────────────────────────────────────────
 
 def get_reddit_client():
-    if praw is None:
+    try:
+        import praw
+    except ImportError:
         raise RuntimeError("missing_dependency:praw")
     client_id = os.environ.get("REDDIT_CLIENT_ID")
     client_secret = os.environ.get("REDDIT_CLIENT_SECRET")

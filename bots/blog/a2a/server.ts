@@ -13,6 +13,7 @@ import { registerSeoAnalysisSkill } from './skills/seo-analysis.ts';
 import { registerTrendCheckSkill } from './skills/trend-check.ts';
 import { registerPublishScheduleSkill } from './skills/publish-schedule.ts';
 import { registerPerformanceReportSkill } from './skills/performance-report.ts';
+import { registerBlogV3AuditSkill } from './skills/blog-v3-audit.ts';
 
 const _require = createRequire(import.meta.url);
 const express = _require('express');
@@ -30,6 +31,7 @@ registerSeoAnalysisSkill();
 registerTrendCheckSkill();
 registerPublishScheduleSkill();
 registerPerformanceReportSkill();
+registerBlogV3AuditSkill();
 
 const _streams: Map<string, any[]> = new Map();
 

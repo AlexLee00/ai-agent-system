@@ -17,11 +17,11 @@
  *   (Writer Agent는 pos-writer.ts / gems-writer.ts 별도)
  */
 
-let callLocalLlm;
+let callBlogLlm;
 try {
-  callLocalLlm = require('../../../packages/core/lib/local-llm-client').callLocalLlm;
+  callBlogLlm = require('./blog-llm-gateway.ts').callBlogLlm;
 } catch {
-  callLocalLlm = null;
+  callBlogLlm = null;
 }
 
 const LLM_MODEL = 'qwen2.5:7b';
@@ -38,9 +38,17 @@ function safeNum(text, fallback = 5) {
 }
 
 async function askLlm(prompt, maxTokens = MAX_TOKENS_SHORT) {
-  if (!callLocalLlm) return { content: '' };
+  if (!callBlogLlm) return { content: '' };
   try {
-    return await callLocalLlm({ prompt, model: LLM_MODEL, maxTokens, temperature: LLM_TEMP });
+    return await callBlogLlm({
+      prompt,
+      model: LLM_MODEL,
+      maxTokens,
+      temperature: LLM_TEMP,
+      taskType: 'quality_agents',
+      selectorKey: 'blog._default',
+      maxBudgetUsd: 0.04,
+    });
   } catch {
     return { content: '' };
   }

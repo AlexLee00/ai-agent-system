@@ -15,7 +15,7 @@
 const path = require('path');
 const env = require('../../../packages/core/lib/env');
 const kst = require('../../../packages/core/lib/kst');
-const { callLocalLlm } = require('../../../packages/core/lib/local-llm-client');
+const { callBlogLlm } = require('../lib/blog-llm-gateway.ts');
 
 const CATEGORIES = [
   '자기계발',
@@ -138,11 +138,14 @@ ${issuesSummary}
 ]`;
 
   try {
-    const result = await callLocalLlm({
+    const result = await callBlogLlm({
       prompt,
       model: 'qwen2.5:7b',
       maxTokens: 1200,
       temperature: 0.7,
+      taskType: 'curate_daily_topics',
+      selectorKey: 'blog._default',
+      maxBudgetUsd: 0.06,
     });
 
     const text = result?.content || result?.text || '';
