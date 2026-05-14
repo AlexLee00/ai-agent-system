@@ -3,13 +3,17 @@ defmodule TeamJay.Dashboard.HealthPlug do
 
   import Plug.Conn
 
+  @dashboard_phase "E"
+  @dashboard_layer "Langfuse OTel + Telegram intervention bridge"
+
   def init(opts), do: opts
 
   def call(conn, _opts) do
     payload = %{
       ok: true,
       service: "team_jay_dashboard",
-      phase: "A",
+      phase: @dashboard_phase,
+      layer: @dashboard_layer,
       checked_at: DateTime.utc_now()
     }
 

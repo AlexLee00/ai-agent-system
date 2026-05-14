@@ -15,6 +15,7 @@ defmodule Mix.Tasks.TeamJay.Dashboard.PhaseECheck do
     repo_root = repo_root()
 
     dashboard_source = read!("lib/team_jay/dashboard/live/dashboard_live.ex")
+    health_plug_source = read!("lib/team_jay/dashboard/health_plug.ex")
     event_lake_source = read!("../../packages/elixir_core/lib/jay/core/event_lake.ex")
     router_source = read!("lib/team_jay/dashboard/router.ex")
     controller_source = read!("lib/team_jay/dashboard/master_intervention_controller.ex")
@@ -28,6 +29,9 @@ defmodule Mix.Tasks.TeamJay.Dashboard.PhaseECheck do
     checks = %{
       phase_e_header:
         String.contains?(dashboard_source, "Phase E • 영역 1+2+3+4+5+6+7+8 + Layer 1"),
+      health_phase_e:
+        String.contains?(health_plug_source, ~s(@dashboard_phase "E")) and
+          String.contains?(health_plug_source, "Langfuse OTel + Telegram intervention bridge"),
       trace_column_rendered:
         String.contains?(dashboard_source, "langfuse_trace_url") and
           String.contains?(dashboard_source, "target=\"_blank\"") and

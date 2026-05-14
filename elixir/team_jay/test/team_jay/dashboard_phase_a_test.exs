@@ -2,14 +2,15 @@ defmodule TeamJay.DashboardPhaseATest do
   use ExUnit.Case, async: true
   import Plug.Test
 
-  test "health endpoint plug returns phase A readiness payload" do
+  test "health endpoint plug returns current dashboard phase readiness payload" do
     conn = conn(:get, "/healthz") |> TeamJay.Dashboard.HealthPlug.call([])
 
     assert conn.status == 200
     assert {:ok, payload} = Jason.decode(conn.resp_body)
     assert payload["ok"] == true
     assert payload["service"] == "team_jay_dashboard"
-    assert payload["phase"] == "A"
+    assert payload["phase"] == "E"
+    assert payload["layer"] == "Langfuse OTel + Telegram intervention bridge"
   end
 
   test "dashboard endpoint is wired to Bandit and TeamJay PubSub" do
