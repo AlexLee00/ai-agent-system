@@ -75,6 +75,47 @@ export async function runSmoke() {
     assert.equal(trendGuard.blocked, false, 'weak trend_following must not hard-block learning trades');
     assert.ok(trendGuard.warnings.includes('crypto_trend_following_current_epoch_probe_only'));
     assert.equal(trendGuard.meta.sizingMultiplier, 0.75);
+    const trendNoConfirmationGuard = evaluateTradeDataEntryGuard({
+      symbol: 'BTC/USDT',
+      exchange: 'binance',
+      action: 'BUY',
+      confidence: 0.7,
+      amount_usdt: 100,
+      strategy_route: {
+        selectedFamily: 'trend_following',
+        familyPerformance: { selectedBias: weakFamily.bias.trend_following },
+        externalEvidence: { evidenceCount: 0 },
+      },
+      hasTechnicalPresignal: false,
+    });
+    assert.equal(trendNoConfirmationGuard.blocked, true, 'underperforming trend_following without confirmation must be blocked');
+    assert.ok(trendNoConfirmationGuard.blockers.includes('crypto_trend_following_without_confirmation'));
+    const trendingBullGuard = evaluateTradeDataEntryGuard({
+      symbol: 'ETH/USDT',
+      exchange: 'binance',
+      action: 'BUY',
+      confidence: 0.72,
+      amount_usdt: 100,
+      strategy_family: 'momentum_rotation',
+      market_regime: 'trending_bull',
+      hasTechnicalPresignal: false,
+    });
+    assert.equal(trendingBullGuard.blocked, true, 'trending_bull without MTF confirmation must be blocked under current loss pressure');
+    assert.ok(trendingBullGuard.blockers.includes('crypto_trending_bull_without_mtf_confirmation'));
+    assert.equal(trendingBullGuard.meta.sizingMultiplier, 0.65);
+    const meanReversionGuard = evaluateTradeDataEntryGuard({
+      symbol: 'ROSE/USDT',
+      exchange: 'binance',
+      action: 'BUY',
+      confidence: 0.71,
+      amount_usdt: 100,
+      strategy_family: 'mean_reversion',
+      strategy_route: { selectedFamily: 'mean_reversion', externalEvidence: { evidenceCount: 0 } },
+    });
+    assert.equal(meanReversionGuard.blocked, true, 'mean_reversion without reversal evidence must be blocked');
+    assert.ok(meanReversionGuard.warnings.includes('crypto_mean_reversion_current_epoch_probe_only'));
+    assert.ok(meanReversionGuard.blockers.includes('crypto_mean_reversion_without_reversal_evidence'));
+    assert.equal(meanReversionGuard.meta.sizingMultiplier, 0.55);
 
     const stablecoinGuard = evaluateTradeDataEntryGuard({
       symbol: 'RLUSD/USDT',
@@ -206,6 +247,9 @@ export async function runSmoke() {
       poetWeak,
       stablecoinGuard,
       defensiveNoEvidenceGuard,
+      trendNoConfirmationGuard,
+      trendingBullGuard,
+      meanReversionGuard,
       sellNoop,
       domesticGuard,
       autotune: { learningRows: dataset.learningRows, preAutotuneIncluded: dataset.preAutotuneIncluded },

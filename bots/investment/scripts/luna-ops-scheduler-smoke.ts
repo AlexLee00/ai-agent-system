@@ -20,7 +20,7 @@ export async function runLunaOpsSchedulerSmoke() {
   const jobs = getOpsSchedulerJobs();
   const launchdPlist = fs.readFileSync(new URL('../launchd/ai.luna.ops-scheduler.plist', import.meta.url), 'utf8');
   assert.match(launchdPlist, /<key>StartInterval<\/key>\s*<integer>60<\/integer>/);
-  assert.equal(jobs.length, 39);
+  assert.equal(jobs.length, 40);
   assert.equal(jobs.some((job) => job.name === 'market_regime_llm_shadow'), true);
   assert.equal(jobs.find((job) => job.name === 'market_regime_llm_shadow')?.category, 'market_state');
   assert.equal(jobs.find((job) => job.name === 'market_regime_llm_shadow')?.cadence?.seconds, 3600);
@@ -69,6 +69,10 @@ export async function runLunaOpsSchedulerSmoke() {
   assert.equal(jobs.some((job) => job.name === 'rl_policy_shadow_refresh'), true);
   assert.equal(jobs.find((job) => job.name === 'rl_policy_shadow_refresh')?.category, 'neural_shadow');
   assert.equal(jobs.find((job) => job.name === 'rl_policy_shadow_refresh')?.args?.includes('--max-inference-calls=0'), true);
+  assert.equal(jobs.some((job) => job.name === 'meta_reflexion_shadow_refresh'), true);
+  assert.equal(jobs.find((job) => job.name === 'meta_reflexion_shadow_refresh')?.category, 'neural_shadow');
+  assert.equal(jobs.find((job) => job.name === 'meta_reflexion_shadow_refresh')?.args?.includes('--confirm=luna-meta-reflexion-shadow'), true);
+  assert.equal(jobs.find((job) => job.name === 'meta_reflexion_shadow_refresh')?.args?.includes('--max-llm-calls=0'), true);
   assert.equal(jobs.some((job) => job.name === 'risk_simulation_shadow_refresh'), true);
   assert.equal(jobs.find((job) => job.name === 'risk_simulation_shadow_refresh')?.args?.includes('--simulations=500'), true);
   assert.equal(jobs.some((job) => job.name === 'tradingview_open_position_subscription_sync'), true);
@@ -129,7 +133,7 @@ export async function runLunaOpsSchedulerSmoke() {
 
   const now = new Date('2026-05-04T02:00:00+09:00');
   const emptyPlan = buildOpsSchedulerPlan({ now, state: { jobs: {} }, jobs });
-  assert.equal(emptyPlan.due, 26);
+  assert.equal(emptyPlan.due, 27);
   assert.equal(emptyPlan.jobs.find((job) => job.name === 'market_cycle_domestic')?.due, false);
   assert.equal(emptyPlan.jobs.find((job) => job.name === 'market_cycle_domestic')?.marketSession?.isOpen, false);
   assert.equal(emptyPlan.jobs.find((job) => job.name === 'market_cycle_domestic_open_catchup')?.due, false);
@@ -228,12 +232,12 @@ export async function runLunaOpsSchedulerSmoke() {
     },
   });
   assert.equal(executed.ok, true);
-  assert.equal(calls.length, 26);
+  assert.equal(calls.length, 27);
   assert.equal(calls.includes('market_cycle_domestic'), false);
   assert.equal(calls.includes('market_cycle_domestic_open_catchup'), false);
   assert.equal(calls.includes('market_cycle_overseas'), false);
   const executedState = JSON.parse(fs.readFileSync(statePath, 'utf8'));
-  assert.equal(Object.keys(executedState.jobs).length, 26);
+  assert.equal(Object.keys(executedState.jobs).length, 27);
 
   assert.deepEqual(
     classifyOpsSchedulerOutcome(

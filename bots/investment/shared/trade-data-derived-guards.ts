@@ -29,6 +29,14 @@ export const TRADE_DATA_WEAK_SYMBOLS = Object.freeze({
   'CRYPTO:KITE/USDT': { reason: 'closed=17, avgPnl=-13.48%' },
   'CRYPTO:KAT/USDT': { reason: 'closed=10, avgPnl=-8.77%' },
   'CRYPTO:SAHARA/USDT': { reason: 'closed=14, avgPnl=-3.43%' },
+  'CRYPTO:MOVR/USDT': { reason: 'current epoch closed=2, avgPnl=-2.69%; require fresh confirmation before re-entry' },
+  'CRYPTO:PARTI/USDT': { reason: 'current epoch loss=-5.38%; require fresh confirmation before re-entry' },
+  'CRYPTO:MITO/USDT': { reason: 'current epoch loss=-2.88%; require fresh confirmation before re-entry' },
+  'CRYPTO:CETUS/USDT': { reason: 'current epoch loss=-3.13%; require fresh confirmation before re-entry' },
+  'CRYPTO:CHIP/USDT': { reason: 'current epoch loss=-2.69%; require fresh confirmation before re-entry' },
+  'CRYPTO:LUNC/USDT': { reason: 'current epoch loss=-3.10% plus historical reconcile pressure; require cooldown/probe-only evidence before re-entry' },
+  'CRYPTO:ATOM/USDT': { reason: 'current epoch loss=-1.66%; require fresh confirmation before re-entry' },
+  'CRYPTO:UNI/USDT': { reason: 'current epoch loss=-1.70%; require fresh confirmation before re-entry' },
   'DOMESTIC:006340': { reason: 'closed=6, winRate=0%, avgPnl=-11.48%' },
   'OVERSEAS:POET': { reason: 'closed=3, avgPnl=-15.11%; require cooldown/probe-only evidence before re-entry' },
 });
@@ -240,18 +248,44 @@ export function evaluateTradeDataEntryGuard(signal = {}, env = process.env) {
   const familyPerformanceBias = resolveStrategyFamilyPerformanceBias(signal, strategyFamily);
   const externalEvidenceCount = resolveExternalEvidenceCount(signal);
   const technicalPresignal = hasTechnicalPresignal(signal);
+  const noExternalEvidence = externalEvidenceCount != null && externalEvidenceCount <= 0;
+  const noTechnicalPresignal = technicalPresignal === false;
+
+  if (market === 'crypto' && regime.includes('trending_bull')) {
+    warnings.push('crypto_trending_bull_current_epoch_mtf_required');
+    meta.cryptoTrendingBullPressure = {
+      reason: 'current operating-epoch trending_bull closed=9, avgPnl=-1.21%, winRate=22%; new BUY requires explicit MTF/technical confirmation',
+      externalEvidenceCount,
+      hasTechnicalPresignal: technicalPresignal,
+    };
+    applySizingAdjustment(meta, {
+      code: 'crypto_trending_bull_current_epoch_mtf_required',
+      multiplier: tradeMode === 'validation' ? 0.8 : 0.65,
+      reason: 'trending_bull 최근 실현 손실 압력이 높아 명시적 기술 확인 전까지 sizing 축소',
+    });
+    if (noTechnicalPresignal) {
+      blockers.push('crypto_trending_bull_without_mtf_confirmation');
+      meta.cryptoTrendingBullPressure.blockerReason = 'explicit technical presignal=false under current-epoch trending_bull loss pressure';
+    }
+  }
 
   if (market === 'crypto' && strategyFamily === 'trend_following' && familyPerformanceBias <= -0.14) {
     warnings.push('crypto_trend_following_current_epoch_probe_only');
     meta.cryptoTrendFollowing = {
-      reason: 'current operating-epoch trend_following closed=3, avgPnl=-2.11%, winRate=33%; keep learning but reduce live exposure',
+      reason: 'current operating-epoch trend_following closed=2, avgPnl=-3.73%, winRate=0%; keep learning but require confirmation and reduce live exposure',
       familyPerformanceBias,
+      externalEvidenceCount,
+      hasTechnicalPresignal: technicalPresignal,
     };
     applySizingAdjustment(meta, {
       code: 'crypto_trend_following_current_epoch_probe_only',
       multiplier: tradeMode === 'validation' ? 0.85 : 0.75,
       reason: 'trend_following 최근 실현 성과가 약해 차단 대신 live/probe sizing을 축소',
     });
+    if (noExternalEvidence || noTechnicalPresignal) {
+      blockers.push('crypto_trend_following_without_confirmation');
+      meta.cryptoTrendFollowing.blockerReason = 'underperforming trend_following requires external evidence and technical presignal';
+    }
   }
 
   const weak = checkTradeDataWeakSymbol(signal.symbol, market, env);
@@ -289,8 +323,6 @@ export function evaluateTradeDataEntryGuard(signal = {}, env = process.env) {
   }
 
   if (market === 'crypto' && strategyFamily === 'defensive_rotation') {
-    const noExternalEvidence = externalEvidenceCount != null && externalEvidenceCount <= 0;
-    const noTechnicalPresignal = technicalPresignal === false;
     if (noExternalEvidence || noTechnicalPresignal) {
       blockers.push('crypto_defensive_rotation_without_live_evidence');
       meta.cryptoDefensiveRotationEvidence = {
@@ -298,6 +330,24 @@ export function evaluateTradeDataEntryGuard(signal = {}, env = process.env) {
         externalEvidenceCount,
         hasTechnicalPresignal: technicalPresignal,
       };
+    }
+  }
+
+  if (market === 'crypto' && strategyFamily === 'mean_reversion') {
+    warnings.push('crypto_mean_reversion_current_epoch_probe_only');
+    meta.cryptoMeanReversion = {
+      reason: 'current operating-epoch mean_reversion closed=4, avgPnl=-2.14%, winRate=25%; require reversal evidence before live-sized entry',
+      externalEvidenceCount,
+      hasTechnicalPresignal: technicalPresignal,
+    };
+    applySizingAdjustment(meta, {
+      code: 'crypto_mean_reversion_current_epoch_probe_only',
+      multiplier: tradeMode === 'validation' ? 0.65 : 0.55,
+      reason: 'mean_reversion 최근 실현 성과가 약해 reversal evidence 확인 전까지 sizing 축소',
+    });
+    if (noExternalEvidence || noTechnicalPresignal) {
+      blockers.push('crypto_mean_reversion_without_reversal_evidence');
+      meta.cryptoMeanReversion.blockerReason = 'mean_reversion requires positive external or technical reversal evidence under current-epoch loss pressure';
     }
   }
 
