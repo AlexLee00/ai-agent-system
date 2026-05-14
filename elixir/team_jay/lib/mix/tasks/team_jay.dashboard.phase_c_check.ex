@@ -55,7 +55,9 @@ defmodule Mix.Tasks.TeamJay.Dashboard.PhaseCCheck do
       all_team_keys: Enum.all?(@team_keys, &String.contains?(source, &1)),
       event_lake_before_phase_c_boards:
         source_order?(source, "<.event_lake_board", "<.cross_team_board"),
-      phase_c_header: String.contains?(source, "Phase C • 영역 1+2+3+4+5+6")
+      phase_c_or_later_header:
+        String.contains?(source, "Phase C • 영역 1+2+3+4+5+6") or
+          String.contains?(source, "Phase D • 영역 1+2+3+4+5+6+7+8")
     }
 
     result = %{

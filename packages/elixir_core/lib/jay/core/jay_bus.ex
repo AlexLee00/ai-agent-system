@@ -37,11 +37,13 @@ defmodule Jay.Core.JayBus do
 
   @doc "토픽 발행"
   def publish(topic, payload) do
-    Registry.dispatch(__MODULE__, topic, fn subscribers ->
-      for {pid, _meta} <- subscribers do
-        send(pid, {:jay_bus, topic, payload})
-      end
-    end)
+    topic
+    |> dispatch_topics()
+    |> Enum.flat_map(&Registry.lookup(__MODULE__, &1))
+    |> Enum.uniq_by(fn {pid, _meta} -> pid end)
+    |> Enum.each(fn {pid, _meta} -> send(pid, {:jay_bus, topic, payload}) end)
+
+    :ok
   end
 
   @doc "루나팀 전용 발행 헬퍼"
@@ -53,4 +55,38 @@ defmodule Jay.Core.JayBus do
   def subscribe_luna(topic) do
     subscribe(topic)
   end
+
+  defp dispatch_topics(topic) do
+    [topic | luna_parent_topics(topic)]
+    |> Enum.reject(&is_nil/1)
+    |> Enum.uniq()
+  end
+
+  defp luna_parent_topics(topic) do
+    topic_text = topic_to_string(topic)
+
+    if String.starts_with?(topic_text, "luna.") do
+      parts = String.split(topic_text, ".")
+
+      (length(parts) - 1)..3//-1
+      |> Enum.map(fn size -> parts |> Enum.take(size) |> Enum.join(".") end)
+      |> Enum.reject(&(&1 == topic_text))
+      |> Enum.map(&same_topic_type(topic, &1))
+    else
+      []
+    end
+  end
+
+  defp topic_to_string(topic) when is_atom(topic), do: Atom.to_string(topic)
+  defp topic_to_string(topic) when is_binary(topic), do: topic
+  defp topic_to_string(topic), do: to_string(topic)
+
+  defp same_topic_type(topic, topic_text) when is_atom(topic) do
+    String.to_existing_atom(topic_text)
+  rescue
+    ArgumentError -> nil
+  end
+
+  defp same_topic_type(topic, topic_text) when is_binary(topic), do: topic_text
+  defp same_topic_type(_topic, topic_text), do: topic_text
 end

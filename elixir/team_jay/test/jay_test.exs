@@ -319,4 +319,28 @@ defmodule TeamJay.JayTest do
       assert result == :ok
     end
   end
+
+  describe "JayBus Luna prefix fanout" do
+    test "루나 suffix 토픽은 대시보드용 parent prefix 구독자에게 전달된다" do
+      parent_topic = :"luna.analyst.result"
+      child_topic = :"luna.analyst.result.argos"
+
+      assert {:ok, _} = Jay.Core.JayBus.subscribe(parent_topic, dashboard: :phase_d_test)
+      assert :ok = Jay.Core.JayBus.publish(child_topic, %{signal: "buy"})
+
+      assert_receive {:jay_bus, ^child_topic, %{signal: "buy"}}, 200
+      refute_receive {:jay_bus, ^child_topic, %{signal: "buy"}}, 50
+    end
+
+    test "루나 문자열 suffix 토픽도 문자열 parent prefix 구독자에게 전달된다" do
+      parent_topic = "luna.execution.fill"
+      child_topic = "luna.execution.fill.BTCUSDT"
+
+      assert {:ok, _} = Jay.Core.JayBus.subscribe(parent_topic, dashboard: :phase_d_test)
+      assert :ok = Jay.Core.JayBus.publish(child_topic, %{qty: 1})
+
+      assert_receive {:jay_bus, ^child_topic, %{qty: 1}}, 200
+      refute_receive {:jay_bus, ^child_topic, %{qty: 1}}, 50
+    end
+  end
 end

@@ -8,6 +8,7 @@ defmodule TeamJay.Dashboard.Live.DashboardLive do
   @phase_labels %{1 => {"🔴", "감시"}, 2 => {"🟡", "반자율"}, 3 => {"🟢", "자율"}}
   @phase_thresholds %{1 => 7, 2 => 30}
   @cycle_steps ~w(SENSE ANALYZE DECIDE ACT MEASURE LEARN)
+  @mapek_phases ~w(M A P E K)
 
   # Phase C: 영역 5 파이프라인 메타
   @pipelines_meta [
@@ -47,6 +48,39 @@ defmodule TeamJay.Dashboard.Live.DashboardLive do
     "luna_to_ska" => :luna_to_ska
   }
 
+  # Phase D: 영역 7 Sigma MAPE-K + Pods 메타
+  @pods_meta [
+    {"🦉", "Trend", :trend_alive, ["owl", "forecaster"]},
+    {"🕊️", "Growth", :growth_alive, ["dove", "librarian"]},
+    {"🦅", "Risk", :risk_alive, ["hawk", "optimizer"]}
+  ]
+
+  # Phase D: 영역 8 Luna 6단계 파이프라인 메타
+  @luna_stages_meta [
+    {"📡", "market", :market_data},
+    {"📊", "analyst", :analyst},
+    {"💡", "decision", :decision},
+    {"🛡️", "policy", :policy},
+    {"⚡", "exec", :execution},
+    {"📝", "review", :review}
+  ]
+
+  @luna_topic_prefixes [
+    :"luna.tv.bar",
+    :"luna.binance.trade",
+    :"luna.binance.kline",
+    :"luna.binance.orderbook",
+    :"luna.kis.tick",
+    :"luna.kis.quote",
+    :"luna.analyst.result",
+    :"luna.decision.candidate",
+    :"luna.policy.verdict",
+    :"luna.execution.order",
+    :"luna.execution.fill",
+    :"luna.review.trade",
+    :"luna.circuit.breaker"
+  ]
+
   # ── Mount ────────────────────────────────────────────────────────
 
   @impl true
@@ -65,8 +99,14 @@ defmodule TeamJay.Dashboard.Live.DashboardLive do
         safe_subscribe(topic)
       end
 
-      # Phase C: Andy/Jimmy 30초 주기 갱신
+      # Phase D: Sigma/Luna 보드. Luna 토픽은 Jay.Core.JayBus에 직접 구독한다.
+      for topic <- safe_luna_topics() do
+        safe_jay_bus_subscribe(topic)
+      end
+
+      # Phase C/D: Andy/Jimmy + Sigma/Luna 30초 주기 갱신
       Process.send_after(self(), :refresh_agents, 30_000)
+      Process.send_after(self(), :refresh_sigma_luna, 30_000)
     end
 
     {:ok, assign_initial_state(socket)}
@@ -141,11 +181,38 @@ defmodule TeamJay.Dashboard.Live.DashboardLive do
     {:noreply, assign(socket, cross_pipelines: cross_pipelines)}
   end
 
+  # Phase D: Luna 13개 토픽 실시간 카운트 갱신
+  def handle_info({:jay_bus, topic, payload}, socket) do
+    topic_text = topic_to_string(topic)
+
+    if luna_topic?(topic_text) do
+      stage = topic_to_stage(topic_text)
+
+      luna_pipeline =
+        update_luna_pipeline(socket.assigns.luna_pipeline, stage, topic_text, payload)
+
+      {:noreply, assign(socket, luna_pipeline: luna_pipeline)}
+    else
+      {:noreply, socket}
+    end
+  end
+
   # Phase C: Andy/Jimmy 주기적 갱신
   def handle_info(:refresh_agents, socket) do
     team_health = safe_call(fn -> load_team_health() end, socket.assigns.team_health)
     Process.send_after(self(), :refresh_agents, 30_000)
     {:noreply, assign(socket, team_health: team_health)}
+  end
+
+  # Phase D: Sigma MAPE-K/Pod 상태와 Luna EventLake seed 주기 갱신
+  def handle_info(:refresh_sigma_luna, socket) do
+    sigma_status = safe_call(fn -> load_sigma_status() end, socket.assigns.sigma_status)
+
+    seeded_luna_pipeline =
+      merge_luna_pipeline_seed(socket.assigns.luna_pipeline, load_luna_pipeline_seed())
+
+    Process.send_after(self(), :refresh_sigma_luna, 30_000)
+    {:noreply, assign(socket, sigma_status: sigma_status, luna_pipeline: seeded_luna_pipeline)}
   end
 
   def handle_info(_msg, socket), do: {:noreply, socket}
@@ -158,7 +225,7 @@ defmodule TeamJay.Dashboard.Live.DashboardLive do
     <div class="min-h-screen p-4 space-y-4">
       <header class="flex items-center justify-between border-b border-gray-700 pb-3">
         <h1 class="text-xl font-bold text-white">🤖 팀 제이 대시보드</h1>
-        <span class="text-xs text-gray-400">Phase C • 영역 1+2+3+4+5+6</span>
+        <span class="text-xs text-gray-400">Phase D • 영역 1+2+3+4+5+6+7+8</span>
       </header>
 
       <div class="grid grid-cols-1 xl:grid-cols-3 gap-4">
@@ -182,6 +249,12 @@ defmodule TeamJay.Dashboard.Live.DashboardLive do
           <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
             <.cross_team_board cross_pipelines={@cross_pipelines} />
             <.team_health_board team_health={@team_health} />
+          </div>
+
+          <!-- 영역 7+8: Sigma 메타 + Luna 매매 흐름 -->
+          <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            <.sigma_board sigma_status={@sigma_status} />
+            <.luna_flow_board luna_pipeline={@luna_pipeline} />
           </div>
         </div>
 
@@ -592,7 +665,317 @@ defmodule TeamJay.Dashboard.Live.DashboardLive do
     """
   end
 
+  # ── 영역 7: Sigma 메타 보드 ─────────────────────────────────────
+
+  attr(:sigma_status, :map, required: true)
+
+  defp sigma_board(assigns) do
+    mapek = assigns.sigma_status[:mapek] || %{}
+
+    assigns =
+      assign(assigns,
+        mapek: mapek,
+        mapek_cycle_count: mapek_cycle_count(mapek),
+        mapek_current_phase: mapek_current_phase(mapek),
+        mapek_last_at: mapek_last_at(mapek),
+        mapek_phases: @mapek_phases,
+        pods_meta: @pods_meta
+      )
+
+    ~H"""
+    <div class="bg-gray-800 rounded-xl p-5 space-y-4">
+      <div class="flex items-center justify-between border-b border-gray-700 pb-2">
+        <span class="text-sm font-semibold text-gray-300 uppercase tracking-wider">
+          [7] Sigma 메타
+        </span>
+        <span class="text-xs text-gray-400">cycle: {@mapek_cycle_count}</span>
+      </div>
+
+      <div class="bg-gray-900/70 border border-gray-700 rounded-lg p-3">
+        <div class="flex items-center justify-between mb-2">
+          <span class="text-xs text-gray-400">MAPE-K Loop</span>
+          <span class={mapek_dormant_class(@mapek)}>
+            {if @mapek[:dormant], do: "dormant", else: "active"}
+          </span>
+        </div>
+        <div class="flex items-center gap-1 text-xs">
+          <%= for phase <- @mapek_phases do %>
+            <span class={mapek_phase_class(@mapek_current_phase, phase)}>
+              {phase}
+            </span>
+          <% end %>
+          <span class="text-[10px] text-gray-500 ml-2">
+            마지막: {format_relative_time(@mapek_last_at)}
+          </span>
+        </div>
+      </div>
+
+      <div class="bg-gray-900/70 border border-gray-700 rounded-lg p-3 flex items-center justify-between">
+        <div class="flex items-center gap-2">
+          <span class="text-base">🎯</span>
+          <span class="text-xs text-gray-300">Commander</span>
+          <span class="text-[10px] text-gray-500">(smart)</span>
+        </div>
+        <span class={alive_class(@sigma_status[:commander_alive])}>
+          {if @sigma_status[:commander_alive], do: "● 가동", else: "○ 정지"}
+        </span>
+      </div>
+
+      <div class="grid grid-cols-1 gap-2">
+        <%= for {emoji, label, key, analysts} <- @pods_meta do %>
+          <% alive = Map.get(@sigma_status, key, false) %>
+          <div class="bg-gray-900/70 border border-gray-700 rounded-lg p-2.5">
+            <div class="flex items-center justify-between">
+              <span class="text-xs text-gray-300">{emoji} {label}</span>
+              <span class={alive_class(alive)}>{if alive, do: "●", else: "○"}</span>
+            </div>
+            <div class="text-[10px] text-gray-500 mt-0.5">
+              {Enum.join(analysts, " · ")}
+            </div>
+          </div>
+        <% end %>
+      </div>
+    </div>
+    """
+  end
+
+  # ── 영역 8: Luna 매매 흐름 보드 ─────────────────────────────────
+
+  attr(:luna_pipeline, :map, required: true)
+
+  defp luna_flow_board(assigns) do
+    circuit = Map.get(assigns.luna_pipeline, :circuit_breaker, %{count: 0, last_at: nil})
+    assigns = assign(assigns, luna_stages_meta: @luna_stages_meta, circuit: circuit)
+
+    ~H"""
+    <div class="bg-gray-800 rounded-xl p-5 space-y-4">
+      <div class="flex items-center justify-between border-b border-gray-700 pb-2">
+        <span class="text-sm font-semibold text-gray-300 uppercase tracking-wider">
+          [8] Luna 매매 흐름
+        </span>
+        <span class="text-xs text-gray-400">13 토픽 실시간</span>
+      </div>
+
+      <div class="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 gap-2">
+        <%= for {emoji, label, stage} <- @luna_stages_meta do %>
+          <% stage_data = Map.get(@luna_pipeline, stage, %{count: 0, last_at: nil}) %>
+          <div class={luna_stage_class(stage_data)}>
+            <div class="text-base">{emoji}</div>
+            <div class="text-[10px] text-gray-300 truncate">{label}</div>
+            <div class="text-xs font-semibold mt-1">{stage_data[:count] || 0}</div>
+            <div class="text-[9px] text-gray-500">{format_relative_time(stage_data[:last_at])}</div>
+          </div>
+        <% end %>
+      </div>
+
+      <%= if (@circuit[:count] || 0) > 0 do %>
+        <div class="bg-red-950/40 border border-red-500/60 rounded-lg p-2 text-xs text-red-300">
+          🚨 Circuit Breaker 발동: {@circuit[:count]}건 · {format_relative_time(@circuit[:last_at])}
+        </div>
+      <% else %>
+        <div class="bg-gray-900/70 border border-gray-700 rounded-lg p-2 text-xs text-gray-500">
+          Circuit Breaker: 24시간 내 감지 없음
+        </div>
+      <% end %>
+    </div>
+    """
+  end
+
   # ── 헬퍼 ────────────────────────────────────────────────────────
+
+  # ── Phase D: Sigma/Luna 헬퍼 ───────────────────────────────────
+
+  defp safe_luna_topics, do: @luna_topic_prefixes
+
+  defp safe_jay_bus_subscribe(topic) do
+    Jay.Core.JayBus.subscribe(topic, dashboard: :luna_flow)
+    Jay.Core.JayBus.subscribe(topic_to_string(topic), dashboard: :luna_flow)
+  rescue
+    _ -> :ok
+  end
+
+  defp load_sigma_status do
+    mapek =
+      safe_call(fn -> Sigma.V2.MapeKLoop.status() end, %{
+        total_cycles: 0,
+        last_cycle_at: nil,
+        dormant: true
+      })
+
+    %{
+      mapek: mapek,
+      commander_alive: Process.whereis(Sigma.V2.Commander) != nil,
+      trend_alive: Process.whereis(Sigma.V2.Pod.Trend) != nil,
+      growth_alive: Process.whereis(Sigma.V2.Pod.Growth) != nil,
+      risk_alive: Process.whereis(Sigma.V2.Pod.Risk) != nil
+    }
+  rescue
+    _ ->
+      %{
+        mapek: %{total_cycles: 0, last_cycle_at: nil, dormant: true},
+        commander_alive: false,
+        trend_alive: false,
+        growth_alive: false,
+        risk_alive: false
+      }
+  end
+
+  defp init_luna_pipeline do
+    %{
+      market_data: %{count: 0, last_at: nil, recent: []},
+      analyst: %{count: 0, last_at: nil, recent: []},
+      decision: %{count: 0, last_at: nil, recent: []},
+      policy: %{count: 0, last_at: nil, recent: []},
+      execution: %{count: 0, last_at: nil, recent: []},
+      review: %{count: 0, last_at: nil, recent: []},
+      circuit_breaker: %{count: 0, last_at: nil, recent: []}
+    }
+  end
+
+  defp load_luna_pipeline_seed do
+    sql = """
+    SELECT event_type, COUNT(*) AS cnt, MAX(created_at) AS last_at
+    FROM agent.event_lake
+    WHERE event_type LIKE 'luna.%'
+      AND created_at > NOW() - INTERVAL '24 hours'
+    GROUP BY event_type
+    """
+
+    base = init_luna_pipeline()
+
+    case Jay.Core.Repo.query(sql, []) do
+      {:ok, %{rows: rows}} ->
+        Enum.reduce(rows, base, fn [event_type, cnt, last_at], acc ->
+          stage = topic_to_stage(event_type)
+
+          if stage == :other do
+            acc
+          else
+            existing = Map.get(acc, stage, %{count: 0, last_at: nil, recent: []})
+
+            Map.put(acc, stage, %{
+              count: (existing[:count] || 0) + cnt,
+              last_at: pick_later(existing[:last_at], last_at),
+              recent: existing[:recent] || []
+            })
+          end
+        end)
+
+      _ ->
+        base
+    end
+  rescue
+    _ -> init_luna_pipeline()
+  end
+
+  defp merge_luna_pipeline_seed(current, seed) do
+    Enum.reduce(init_luna_pipeline(), current, fn {stage, default_stage}, acc ->
+      current_stage = Map.get(acc, stage, default_stage)
+      seed_stage = Map.get(seed, stage, default_stage)
+
+      Map.put(acc, stage, %{
+        count: max(current_stage[:count] || 0, seed_stage[:count] || 0),
+        last_at: pick_later(current_stage[:last_at], seed_stage[:last_at]),
+        recent: current_stage[:recent] || []
+      })
+    end)
+  end
+
+  defp luna_topic?(topic_text) when is_binary(topic_text),
+    do: String.starts_with?(topic_text, "luna.")
+
+  defp luna_topic?(_), do: false
+
+  defp topic_to_stage(topic) do
+    topic_text = topic_to_string(topic)
+
+    cond do
+      String.starts_with?(topic_text, "luna.tv.") -> :market_data
+      String.starts_with?(topic_text, "luna.binance.") -> :market_data
+      String.starts_with?(topic_text, "luna.kis.") -> :market_data
+      String.starts_with?(topic_text, "luna.analyst.") -> :analyst
+      String.starts_with?(topic_text, "luna.decision.") -> :decision
+      String.starts_with?(topic_text, "luna.policy.") -> :policy
+      String.starts_with?(topic_text, "luna.execution.") -> :execution
+      String.starts_with?(topic_text, "luna.review.") -> :review
+      String.starts_with?(topic_text, "luna.circuit.") -> :circuit_breaker
+      true -> :other
+    end
+  end
+
+  defp update_luna_pipeline(luna_pipeline, :other, _topic, _payload), do: luna_pipeline
+
+  defp update_luna_pipeline(luna_pipeline, stage, topic, payload) do
+    now = DateTime.utc_now()
+    existing = Map.get(luna_pipeline, stage, %{count: 0, last_at: nil, recent: []})
+
+    recent =
+      [%{topic: topic, payload: payload, at: now} | existing[:recent] || []] |> Enum.take(5)
+
+    Map.put(luna_pipeline, stage, %{
+      count: (existing[:count] || 0) + 1,
+      last_at: now,
+      recent: recent
+    })
+  end
+
+  defp topic_to_string(topic) when is_atom(topic), do: Atom.to_string(topic)
+  defp topic_to_string(topic) when is_binary(topic), do: topic
+  defp topic_to_string(topic), do: to_string(topic)
+
+  defp mapek_cycle_count(mapek) when is_map(mapek),
+    do:
+      mapek[:cycle_count] || mapek["cycle_count"] || mapek[:total_cycles] || mapek["total_cycles"] ||
+        0
+
+  defp mapek_cycle_count(_), do: 0
+
+  defp mapek_current_phase(mapek) when is_map(mapek) do
+    phase = mapek[:current_phase] || mapek["current_phase"] || mapek[:phase] || mapek["phase"]
+
+    cond do
+      is_binary(phase) and String.trim(phase) != "" ->
+        phase |> String.first() |> String.upcase()
+
+      mapek[:dormant] || mapek["dormant"] ->
+        "—"
+
+      true ->
+        "M"
+    end
+  end
+
+  defp mapek_current_phase(_), do: "—"
+
+  defp mapek_last_at(mapek) when is_map(mapek) do
+    mapek[:last_at] || mapek["last_at"] || mapek[:last_cycle_at] || mapek["last_cycle_at"] ||
+      mapek[:last_monitor_at] || mapek["last_monitor_at"] || mapek[:started_at] ||
+      mapek["started_at"]
+  end
+
+  defp mapek_last_at(_), do: nil
+
+  defp mapek_phase_class(current_phase, phase) do
+    if current_phase == phase do
+      "inline-flex items-center justify-center w-7 h-7 rounded bg-blue-500 text-white font-bold"
+    else
+      "inline-flex items-center justify-center w-7 h-7 rounded bg-gray-700 text-gray-400"
+    end
+  end
+
+  defp mapek_dormant_class(%{dormant: true}), do: "text-[10px] text-yellow-400"
+  defp mapek_dormant_class(%{"dormant" => true}), do: "text-[10px] text-yellow-400"
+  defp mapek_dormant_class(_), do: "text-[10px] text-green-400"
+
+  defp alive_class(true), do: "text-[10px] font-semibold text-green-400"
+  defp alive_class(_), do: "text-[10px] font-semibold text-gray-500"
+
+  defp luna_stage_class(%{count: count}) when is_integer(count) and count > 0,
+    do:
+      "bg-green-950/30 border border-green-500/50 rounded-lg p-2.5 text-center min-w-0 text-green-300"
+
+  defp luna_stage_class(_),
+    do: "bg-gray-900/70 border border-gray-700 rounded-lg p-2.5 text-center min-w-0 text-gray-500"
 
   # ── Phase C: 영역 5 헬퍼 ───────────────────────────────────────
 
@@ -955,6 +1338,8 @@ defmodule TeamJay.Dashboard.Live.DashboardLive do
     cycles = safe_call(fn -> load_recent_cycles() end, [])
     cross_pipelines = safe_call(fn -> load_cross_pipelines() end, %{})
     team_health = safe_call(fn -> load_team_health() end, %{})
+    sigma_status = safe_call(fn -> load_sigma_status() end, %{})
+    luna_pipeline = safe_call(fn -> load_luna_pipeline_seed() end, init_luna_pipeline())
 
     socket
     |> assign(:phase_status, phase_status)
@@ -967,6 +1352,8 @@ defmodule TeamJay.Dashboard.Live.DashboardLive do
     |> assign(:cycles, cycles)
     |> assign(:cross_pipelines, cross_pipelines)
     |> assign(:team_health, team_health)
+    |> assign(:sigma_status, sigma_status)
+    |> assign(:luna_pipeline, luna_pipeline)
   end
 
   defp safe_call(func, default) do
