@@ -76,6 +76,9 @@ async function checkBlueGreen() {
   try {
     state = JSON.parse(fs.readFileSync(bgStateFile, 'utf8'));
   } catch {}
+  const deploySource = fileExists('bots/hub/scripts/hub-blue-green-deploy.ts')
+    ? readText('bots/hub/scripts/hub-blue-green-deploy.ts')
+    : '';
 
   const blueHealth = await httpGet(7788, '/hub/health/live');
   const checks = [
@@ -83,6 +86,10 @@ async function checkBlueGreen() {
     { name: 'green_plist_exists', ok: fileExists('bots/hub/launchd/ai.hub.resource-api-green.plist') },
     { name: 'proxy_plist_exists', ok: fileExists('bots/hub/launchd/ai.hub.bg-proxy.plist') },
     { name: 'deploy_script_exists', ok: fileExists('bots/hub/scripts/hub-blue-green-deploy.ts') },
+    {
+      name: 'deploy_script_uses_repo_root',
+      ok: deploySource.includes("path.resolve(__dirname, '../../..')"),
+    },
   ];
 
   return {
@@ -94,11 +101,18 @@ async function checkBlueGreen() {
 }
 
 function checkSecretsAutoRotate() {
+  const runnerSource = fileExists('bots/hub/scripts/secrets-store-monitor-runner.ts')
+    ? readText('bots/hub/scripts/secrets-store-monitor-runner.ts')
+    : '';
+  const monitorSource = fileExists('bots/hub/lib/secrets-store-monitor.ts')
+    ? readText('bots/hub/lib/secrets-store-monitor.ts')
+    : '';
   const checks = [
     { name: 'rotation_log_migration_exists', ok: fileExists('bots/hub/migrations/20261001000070_hub_secrets_rotation_log.sql') },
     { name: 'monitor_library_exists', ok: fileExists('bots/hub/lib/secrets-store-monitor.ts') },
     { name: 'monitor_runner_exists', ok: fileExists('bots/hub/scripts/secrets-store-monitor-runner.ts') },
     { name: 'auto_rotate_plist_exists', ok: fileExists('bots/hub/launchd/ai.hub.secrets-auto-rotate.plist') },
+    { name: 'manual_dry_run_supported', ok: runnerSource.includes('--dry-run') && monitorSource.includes('options.dryRun') },
   ];
   return { ok: checks.every((c) => c.ok), checks };
 }

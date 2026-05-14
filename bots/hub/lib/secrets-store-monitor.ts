@@ -40,6 +40,7 @@ export interface ExpiryEntry {
 
 export interface MonitorResult {
   checkedAt: string;
+  dryRun?: boolean;
   total: number;
   healthy: number;
   warn: number;
@@ -113,7 +114,7 @@ function formatEntry(e: ExpiryEntry): string {
   return `  • \`${e.path}\` — ${date} (${e.daysRemaining.toFixed(1)}일 남음)`;
 }
 
-export async function runSecretsMonitor(options: { silent?: boolean } = {}): Promise<MonitorResult> {
+export async function runSecretsMonitor(options: { silent?: boolean; dryRun?: boolean } = {}): Promise<MonitorResult> {
   const checkedAt = new Date().toISOString();
 
   let store: Record<string, unknown>;
@@ -129,6 +130,7 @@ export async function runSecretsMonitor(options: { silent?: boolean } = {}): Pro
 
   const result: MonitorResult = {
     checkedAt,
+    dryRun: Boolean(options.dryRun),
     total: allEntries.length,
     healthy,
     warn: issues.filter((e) => e.level === 'warn').length,
@@ -141,8 +143,8 @@ export async function runSecretsMonitor(options: { silent?: boolean } = {}): Pro
     console.log(`[secrets-monitor] ${checkedAt} 스캔: total=${result.total} healthy=${result.healthy} warn=${result.warn} critical=${result.critical} expired=${result.expired}`);
   }
 
-  // DB 로깅 (이슈 있는 항목만)
-  if (issues.length > 0) {
+  // DB 로깅 (이슈 있는 항목만). Dry-run은 수동 점검/CI에서 외부 부작용을 막는다.
+  if (issues.length > 0 && !options.dryRun) {
     const dbResult = await logToDb(issues);
     if (dbResult.error) {
       console.warn(`[secrets-monitor] DB 로깅 실패 (무시): ${dbResult.error}`);
@@ -151,8 +153,8 @@ export async function runSecretsMonitor(options: { silent?: boolean } = {}): Pro
     }
   }
 
-  // Telegram 알림 (이슈 있을 때만)
-  if (issues.length > 0) {
+  // Telegram 알림 (이슈 있을 때만). Dry-run은 발송하지 않는다.
+  if (issues.length > 0 && !options.dryRun) {
     const expired = issues.filter((e) => e.level === 'expired');
     const critical = issues.filter((e) => e.level === 'critical');
     const warn = issues.filter((e) => e.level === 'warn');

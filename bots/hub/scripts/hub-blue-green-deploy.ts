@@ -31,7 +31,7 @@ const HEALTH_TIMEOUT_MS = 5000;
 const HEALTH_MAX_RETRIES = 12;
 const HEALTH_RETRY_INTERVAL_MS = 5000;
 
-const PROJECT_ROOT = path.resolve(__dirname, '../../../..');
+const PROJECT_ROOT = path.resolve(__dirname, '../../..');
 
 interface BgState {
   active: 'blue' | 'green';

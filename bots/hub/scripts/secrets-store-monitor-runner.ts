@@ -8,12 +8,21 @@
 
 const { runSecretsMonitor } = require('../lib/secrets-store-monitor');
 
+function hasFlag(flag: string): boolean {
+  return process.argv.includes(flag);
+}
+
 (async () => {
-  console.log(`[secrets-monitor-runner] ${new Date().toISOString()} 시작`);
+  const json = hasFlag('--json');
+  if (!json) console.log(`[secrets-monitor-runner] ${new Date().toISOString()} 시작`);
   try {
-    const result = await runSecretsMonitor();
+    const result = await runSecretsMonitor({ dryRun: hasFlag('--dry-run'), silent: json });
     const hasCritical = result.critical > 0 || result.expired > 0;
-    console.log(`[secrets-monitor-runner] 완료: issues=${result.issues.length} critical/expired=${hasCritical ? '⚠️' : '✅'}`);
+    if (json) {
+      console.log(JSON.stringify(result, null, 2));
+    } else {
+      console.log(`[secrets-monitor-runner] 완료: issues=${result.issues.length} critical/expired=${hasCritical ? '⚠️' : '✅'}`);
+    }
     process.exit(0);
   } catch (err: any) {
     console.error('[secrets-monitor-runner] 오류:', err.message);
