@@ -32,6 +32,8 @@ const STANDARDIZED_SCOPES = [
 
 const REQUIRED_DARWIN_PROFILES = [
   'research',
+  'paper_evaluation',
+  'paper_evaluation_retry',
   'synthesis',
   'review',
 ];
@@ -127,6 +129,25 @@ function main() {
     ];
     assert.ok(routes.length > 0, `darwin/${profile} runtime profile must have routes`);
   }
+
+  const { resolveHubLlmSelection } = require('../src/llm-selector.ts');
+  const darwinResearchSelection = resolveHubLlmSelection({
+    callerTeam: 'darwin',
+    agent: 'research',
+    taskType: 'paper_evaluation',
+    abstractModel: 'anthropic_haiku',
+  });
+  const darwinResearchRoutes = (darwinResearchSelection.chain || []).map((entry) => entry.route);
+  assert.equal(
+    darwinResearchRoutes[0],
+    'openai-oauth/gpt-5.4-mini',
+    'darwin research paper evaluation must use OpenAI OAuth first',
+  );
+  assert.equal(
+    darwinResearchRoutes.some((route) => String(route).startsWith('gemini-cli-oauth/')),
+    false,
+    'darwin research paper evaluation must not fall back to Gemini CLI',
+  );
 
   for (const agent of REQUIRED_BLOG_AGENTS) {
     const description = selector.describeAgentModel('blog', agent);

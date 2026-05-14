@@ -77,6 +77,7 @@ async function evaluatePaper(paper: PaperCandidate): Promise<EvaluationResult> {
     const request = {
       callerTeam: 'darwin',
       agent: 'research',
+      selectorKey: 'darwin.agent_policy',
       taskType: 'paper_evaluation',
       abstractModel: 'anthropic_haiku',
       systemPrompt: SYSTEM_PROMPT,

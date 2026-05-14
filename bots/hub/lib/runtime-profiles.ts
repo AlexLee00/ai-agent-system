@@ -118,6 +118,8 @@ const PROFILE_DEFINITIONS: Record<string, TeamProfileDefinitions> = {
   darwin: {
     default: llm(darwinRuntime(), 'darwin.agent_policy', 'darwin.edison'),
     research: llm(darwinRuntime(), 'darwin.agent_policy', 'darwin.evaluator'),
+    paper_evaluation: llm(darwinRuntime(), 'darwin.agent_policy', 'darwin.evaluator'),
+    paper_evaluation_retry: llm(darwinRuntime(), 'darwin.agent_policy', 'darwin.evaluator'),
     synthesis: llm(darwinRuntime(), 'darwin.agent_policy', 'darwin.planner'),
     review: llm(darwinRuntime(), 'darwin.agent_policy', 'darwin.verifier'),
   },
