@@ -36,6 +36,13 @@ function latestTag(pattern: string) {
     .filter(Boolean)[0] || null;
 }
 
+function currentHeadTag(pattern: string) {
+  return execText('git', ['tag', '--points-at', 'HEAD'], '')
+    .split('\n')
+    .map((line) => line.trim())
+    .filter((line) => line && line.match(new RegExp(`^${pattern.replace(/\*/g, '.*')}$`)))[0] || null;
+}
+
 function launchdStatus(label: string) {
   const out = execText('launchctl', ['list'], '');
   const line = out.split('\n').find((item) => item.includes(label));
@@ -95,7 +102,8 @@ const payload = {
   phase: 'luna-phase1-codex-p0',
   tags: {
     preRollback: latestTag('pre-luna-phase1-codex-p0-*'),
-    complete: latestTag('luna-phase1-codex-p0-complete-*'),
+    latestComplete: latestTag('luna-phase1-codex-p0-complete-*'),
+    completeCurrentHead: currentHeadTag('luna-phase1-codex-p0-complete-*'),
   },
   goals,
   db: {
