@@ -9,6 +9,40 @@ defmodule TeamJay.Dashboard.Live.DashboardLive do
   @phase_thresholds %{1 => 7, 2 => 30}
   @cycle_steps ~w(SENSE ANALYZE DECIDE ACT MEASURE LEARN)
 
+  # Phase C: 영역 5 파이프라인 메타
+  @pipelines_meta [
+    {:ska_to_blog,   "스카→블로",   "📢"},
+    {:luna_to_blog,  "루나→블로",   "📊"},
+    {:blog_to_ska,   "블로→스카",   "🔑"},
+    {:ska_to_luna,   "스카→루나",   "💰"},
+    {:claude_to_all, "클로드→전체", "🚨"},
+    {:blog_to_luna,  "블로→루나",   "🔍"},
+    {:luna_to_ska,   "루나→스카",   "💸"}
+  ]
+
+  # Phase C: 영역 6 팀 메타
+  @teams_meta [
+    %{key: "ska",         label: "스카",   emoji: "🏫"},
+    %{key: "luna",        label: "루나",   emoji: "🌙"},
+    %{key: "blog",        label: "블로",   emoji: "✍️"},
+    %{key: "claude",      label: "클로드", emoji: "🖥️"},
+    %{key: "jay",         label: "제이",   emoji: "🤖"},
+    %{key: "sigma",       label: "시그마", emoji: "∑"},
+    %{key: "darwin",      label: "다윈",   emoji: "🧬"},
+    %{key: "hub",         label: "허브",   emoji: "🔌"},
+    %{key: "reservation", label: "예약",   emoji: "📋"}
+  ]
+
+  @pipeline_atom_map %{
+    "ska_to_blog"   => :ska_to_blog,
+    "luna_to_blog"  => :luna_to_blog,
+    "blog_to_ska"   => :blog_to_ska,
+    "ska_to_luna"   => :ska_to_luna,
+    "claude_to_all" => :claude_to_all,
+    "blog_to_luna"  => :blog_to_luna,
+    "luna_to_ska"   => :luna_to_ska
+  }
+
   # ── Mount ────────────────────────────────────────────────────────
 
   @impl true
@@ -22,6 +56,12 @@ defmodule TeamJay.Dashboard.Live.DashboardLive do
       safe_subscribe(:growth_cycle_completed)
       safe_subscribe(:team_data_collected)
       safe_subscribe(:briefing_ready)
+      # Phase C: 7개 크로스팀 파이프라인 토픽 구독
+      for topic <- Jay.V2.Topics.cross_topics() do
+        safe_subscribe(topic)
+      end
+      # Phase C: Andy/Jimmy 30초 주기 갱신
+      Process.send_after(self(), :refresh_agents, 30_000)
     end
 
     {:ok, assign_initial_state(socket)}
@@ -34,7 +74,8 @@ defmodule TeamJay.Dashboard.Live.DashboardLive do
     events = [event | Enum.take(socket.assigns.events, 49)]
     stats = safe_call(fn -> Jay.Core.EventLake.get_stats() end, socket.assigns.event_stats)
     cycles = safe_call(fn -> load_recent_cycles() end, socket.assigns.cycles)
-    {:noreply, assign(socket, events: events, event_stats: stats, cycles: cycles)}
+    team_health = update_team_last_active(socket.assigns.team_health, event)
+    {:noreply, assign(socket, events: events, event_stats: stats, cycles: cycles, team_health: team_health)}
   end
 
   def handle_info({:phase_changed, _}, socket) do
@@ -71,6 +112,28 @@ defmodule TeamJay.Dashboard.Live.DashboardLive do
     {:noreply, assign(socket, cycle_status: :completed, growth_cycle: growth_cycle)}
   end
 
+  # Phase C: 7개 크로스팀 파이프라인 실시간 카운트 갱신
+  def handle_info({:jay_bus, topic, _payload}, socket)
+      when topic in [
+             :ska_to_blog,
+             :luna_to_blog,
+             :blog_to_ska,
+             :ska_to_luna,
+             :claude_to_all,
+             :blog_to_luna,
+             :luna_to_ska
+           ] do
+    cross_pipelines = update_pipeline_count(socket.assigns.cross_pipelines, topic)
+    {:noreply, assign(socket, cross_pipelines: cross_pipelines)}
+  end
+
+  # Phase C: Andy/Jimmy 주기적 갱신
+  def handle_info(:refresh_agents, socket) do
+    team_health = update_agent_statuses(socket.assigns.team_health)
+    Process.send_after(self(), :refresh_agents, 30_000)
+    {:noreply, assign(socket, team_health: team_health)}
+  end
+
   def handle_info(_msg, socket), do: {:noreply, socket}
 
   # ── Render ───────────────────────────────────────────────────────
@@ -81,7 +144,7 @@ defmodule TeamJay.Dashboard.Live.DashboardLive do
     <div class="min-h-screen p-4 space-y-4">
       <header class="flex items-center justify-between border-b border-gray-700 pb-3">
         <h1 class="text-xl font-bold text-white">🤖 팀 제이 대시보드</h1>
-        <span class="text-xs text-gray-400">Phase B • 영역 1+2+3+4</span>
+        <span class="text-xs text-gray-400">Phase C • 영역 1+2+3+4+5+6</span>
       </header>
 
       <div class="grid grid-cols-1 xl:grid-cols-3 gap-4">
@@ -96,6 +159,12 @@ defmodule TeamJay.Dashboard.Live.DashboardLive do
               cycle_status={@cycle_status}
               teams_collected={@teams_collected}
             />
+          </div>
+
+          <!-- 영역 5+6: 크로스팀 파이프라인 + 팀 헬스 -->
+          <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            <.cross_team_board cross_pipelines={@cross_pipelines} />
+            <.team_health_board team_health={@team_health} />
           </div>
 
           <!-- 영역 4: EventLake 실시간 스트림 -->
@@ -423,7 +492,276 @@ defmodule TeamJay.Dashboard.Live.DashboardLive do
     """
   end
 
+  # ── 영역 5: 크로스팀 파이프라인 보드 ────────────────────────────
+
+  attr(:cross_pipelines, :map, required: true)
+
+  defp cross_team_board(assigns) do
+    assigns = assign(assigns, :pipelines_meta, @pipelines_meta)
+
+    ~H"""
+    <div class="bg-gray-800 rounded-xl p-5 space-y-4">
+      <div class="flex items-center justify-between border-b border-gray-700 pb-2">
+        <span class="text-sm font-semibold text-gray-300 uppercase tracking-wider">
+          [5] 크로스팀 파이프라인
+        </span>
+        <span class="text-xs text-gray-400">최근 24시간</span>
+      </div>
+
+      <div class="space-y-2">
+        <%= for {key, label, emoji} <- @pipelines_meta do %>
+          <% pipeline = Map.get(@cross_pipelines, key, %{}) %>
+          <div class="bg-gray-900/70 border border-gray-700 rounded-lg p-2.5 flex items-center justify-between gap-2">
+            <div class="flex items-center gap-2 min-w-0">
+              <span class="text-base shrink-0">{emoji}</span>
+              <span class="text-xs font-medium text-gray-300 truncate">{label}</span>
+            </div>
+            <div class="flex items-center gap-2 shrink-0">
+              <span class={pipeline_count_class(pipeline[:count])}>
+                {pipeline[:count] || 0}회
+              </span>
+              <span class="text-[10px] text-gray-500">
+                {format_relative_time(pipeline[:last_at])}
+              </span>
+            </div>
+          </div>
+        <% end %>
+      </div>
+    </div>
+    """
+  end
+
+  # ── 영역 6: 팀 헬스 보드 ─────────────────────────────────────────
+
+  attr(:team_health, :map, required: true)
+
+  defp team_health_board(assigns) do
+    assigns = assign(assigns, :teams_meta, @teams_meta)
+
+    ~H"""
+    <div class="bg-gray-800 rounded-xl p-5 space-y-4">
+      <div class="flex items-center justify-between border-b border-gray-700 pb-2">
+        <span class="text-sm font-semibold text-gray-300 uppercase tracking-wider">
+          [6] 팀 헬스
+        </span>
+        <span class="text-xs text-gray-400">이벤트 기반</span>
+      </div>
+
+      <div class="space-y-1.5">
+        <%= for %{key: key, label: label, emoji: emoji} <- @teams_meta do %>
+          <% health = Map.get(@team_health, key, %{}) %>
+          <% status = team_activity_status(health) %>
+          <div class="bg-gray-900/70 border border-gray-700 rounded-lg px-3 py-2 flex items-center justify-between gap-2">
+            <div class="flex items-center gap-2 min-w-0">
+              <span class="text-sm shrink-0">{emoji}</span>
+              <span class="text-xs font-medium text-gray-300">{label}</span>
+              <%= if key == "ska" and health[:andy_status] do %>
+                <span class="text-[10px] text-gray-500">
+                  A:{agent_status_emoji(health[:andy_status])} J:{agent_status_emoji(health[:jimmy_status])}
+                </span>
+              <% end %>
+            </div>
+            <div class="flex items-center gap-2 shrink-0 text-right">
+              <span class="text-[10px] text-gray-500">{format_relative_time(health[:last_at])}</span>
+              <span class={"text-[10px] font-semibold #{team_status_class(status)}"}>
+                {team_status_label(status)}
+              </span>
+            </div>
+          </div>
+        <% end %>
+      </div>
+    </div>
+    """
+  end
+
   # ── 헬퍼 ────────────────────────────────────────────────────────
+
+  # ── Phase C: 영역 5 헬퍼 ───────────────────────────────────────
+
+  defp load_cross_pipelines do
+    sql = """
+    SELECT event_type, COUNT(*) AS cnt, MAX(created_at) AS last_at
+    FROM agent.event_lake
+    WHERE event_type LIKE 'cross_pipeline.%'
+      AND created_at > NOW() - INTERVAL '24 hours'
+    GROUP BY event_type
+    ORDER BY last_at DESC
+    """
+
+    case Jay.Core.Repo.query(sql, []) do
+      {:ok, %{rows: rows}} ->
+        Enum.reduce(rows, %{}, fn [event_type, cnt, last_at], acc ->
+          case parse_pipeline_event_type(event_type) do
+            {key, _status} ->
+              existing = Map.get(acc, key, %{count: 0, last_at: nil})
+              Map.put(acc, key, %{
+                count: existing.count + cnt,
+                last_at: pick_later(existing.last_at, last_at)
+              })
+
+            nil ->
+              acc
+          end
+        end)
+
+      _ ->
+        %{}
+    end
+  rescue
+    _ -> %{}
+  end
+
+  defp parse_pipeline_event_type("cross_pipeline." <> rest) do
+    case String.split(rest, ".", parts: 2) do
+      [pipeline_str, status] ->
+        case Map.get(@pipeline_atom_map, pipeline_str) do
+          nil -> nil
+          key -> {key, status}
+        end
+
+      _ ->
+        nil
+    end
+  end
+
+  defp parse_pipeline_event_type(_), do: nil
+
+  defp update_pipeline_count(cross_pipelines, topic) do
+    existing = Map.get(cross_pipelines, topic, %{count: 0, last_at: nil})
+    Map.put(cross_pipelines, topic, %{count: (existing[:count] || 0) + 1, last_at: DateTime.utc_now()})
+  end
+
+  defp pipeline_count_class(count) when is_integer(count) and count > 0,
+    do: "text-xs font-semibold text-green-400"
+
+  defp pipeline_count_class(_), do: "text-xs font-semibold text-gray-500"
+
+  # ── Phase C: 영역 6 헬퍼 ───────────────────────────────────────
+
+  defp load_team_health do
+    sql = """
+    SELECT team, COUNT(*) AS cnt, MAX(created_at) AS last_at
+    FROM agent.event_lake
+    WHERE created_at > NOW() - INTERVAL '24 hours'
+      AND team IS NOT NULL AND team != '' AND team != 'general'
+    GROUP BY team
+    """
+
+    base =
+      case Jay.Core.Repo.query(sql, []) do
+        {:ok, %{rows: rows}} ->
+          Enum.reduce(rows, %{}, fn [team, cnt, last_at], acc ->
+            Map.put(acc, team, %{event_count: cnt, last_at: last_at})
+          end)
+
+        _ ->
+          %{}
+      end
+
+    update_agent_statuses(base)
+  rescue
+    _ -> %{}
+  end
+
+  defp update_agent_statuses(team_health) do
+    andy = safe_call(fn -> Jay.Core.Agents.Andy.get_status() end, nil)
+    jimmy = safe_call(fn -> Jay.Core.Agents.Jimmy.get_status() end, nil)
+    ska = Map.get(team_health, "ska", %{event_count: 0, last_at: nil})
+
+    Map.put(team_health, "ska", Map.merge(ska, %{
+      andy_status: andy && andy.status,
+      andy_last_check: andy && andy.last_check,
+      jimmy_status: jimmy && jimmy.status,
+      jimmy_last_check: jimmy && jimmy.last_check
+    }))
+  end
+
+  defp update_team_last_active(team_health, event) when is_map(event) do
+    team = event["team"] || event[:team]
+    ts = event_timestamp(event)
+
+    if team && team not in ["", "general"] && ts do
+      existing = Map.get(team_health, team, %{event_count: 0, last_at: nil})
+      Map.put(team_health, team, Map.merge(existing, %{
+        event_count: (existing[:event_count] || 0) + 1,
+        last_at: pick_later(existing[:last_at], ts)
+      }))
+    else
+      team_health
+    end
+  end
+
+  defp update_team_last_active(team_health, _), do: team_health
+
+  defp team_activity_status(%{last_at: nil}), do: :unknown
+  defp team_activity_status(%{last_at: last_at}) do
+    diff = DateTime.diff(DateTime.utc_now(), to_utc_datetime(last_at), :second)
+
+    cond do
+      diff < 3_600  -> :active
+      diff < 21_600 -> :recent
+      true          -> :stale
+    end
+  rescue
+    _ -> :unknown
+  end
+
+  defp team_activity_status(_), do: :unknown
+
+  defp team_status_class(:active), do: "text-green-400"
+  defp team_status_class(:recent), do: "text-yellow-400"
+  defp team_status_class(:stale), do: "text-orange-400"
+  defp team_status_class(:unknown), do: "text-gray-500"
+
+  defp team_status_label(:active), do: "● 활성"
+  defp team_status_label(:recent), do: "○ 최근"
+  defp team_status_label(:stale), do: "○ 부진"
+  defp team_status_label(:unknown), do: "— 없음"
+
+  defp agent_status_emoji(:ok), do: "✓"
+  defp agent_status_emoji(:error), do: "✗"
+  defp agent_status_emoji(:idle), do: "·"
+  defp agent_status_emoji(_), do: "·"
+
+  defp format_relative_time(nil), do: "—"
+
+  defp format_relative_time(dt) do
+    diff = DateTime.diff(DateTime.utc_now(), to_utc_datetime(dt), :second)
+
+    cond do
+      diff < 60    -> "방금"
+      diff < 3_600 -> "#{div(diff, 60)}분 전"
+      diff < 86_400 -> "#{div(diff, 3_600)}시간 전"
+      true         -> "24시간 이상"
+    end
+  rescue
+    _ -> "—"
+  end
+
+  defp pick_later(nil, b), do: b
+  defp pick_later(a, nil), do: a
+
+  defp pick_later(a, b) do
+    if DateTime.compare(to_utc_datetime(a), to_utc_datetime(b)) == :gt, do: a, else: b
+  rescue
+    _ -> b
+  end
+
+  defp to_utc_datetime(%DateTime{} = dt), do: dt
+  defp to_utc_datetime(%NaiveDateTime{} = ndt), do: DateTime.from_naive!(ndt, "Etc/UTC")
+
+  defp to_utc_datetime(s) when is_binary(s) do
+    normalized = String.replace(s, " ", "T")
+
+    case DateTime.from_iso8601(normalized) do
+      {:ok, dt, _} -> dt
+      _ -> DateTime.utc_now()
+    end
+  end
+
+  defp to_utc_datetime(_), do: DateTime.utc_now()
+
+  # ── 기존 헬퍼 ────────────────────────────────────────────────────
 
   defp assign_initial_state(socket) do
     phase_status =
@@ -442,6 +780,8 @@ defmodule TeamJay.Dashboard.Live.DashboardLive do
       safe_call(fn -> Jay.Core.EventLake.get_stats() end, %{total: 0, by_type: %{}, by_team: %{}})
 
     cycles = safe_call(fn -> load_recent_cycles() end, [])
+    cross_pipelines = safe_call(fn -> load_cross_pipelines() end, %{})
+    team_health = safe_call(fn -> load_team_health() end, %{})
 
     socket
     |> assign(:phase_status, phase_status)
@@ -452,6 +792,8 @@ defmodule TeamJay.Dashboard.Live.DashboardLive do
     |> assign(:events, events)
     |> assign(:event_stats, event_stats)
     |> assign(:cycles, cycles)
+    |> assign(:cross_pipelines, cross_pipelines)
+    |> assign(:team_health, team_health)
   end
 
   defp safe_call(func, default) do
