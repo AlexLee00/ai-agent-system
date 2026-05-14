@@ -76,6 +76,38 @@ export async function runSmoke() {
     assert.ok(trendGuard.warnings.includes('crypto_trend_following_current_epoch_probe_only'));
     assert.equal(trendGuard.meta.sizingMultiplier, 0.75);
 
+    const stablecoinGuard = evaluateTradeDataEntryGuard({
+      symbol: 'RLUSD/USDT',
+      exchange: 'binance',
+      action: 'BUY',
+      confidence: 0.73,
+      amount_usdt: 50,
+      strategy_family: 'defensive_rotation',
+      strategy_route: {
+        selectedFamily: 'defensive_rotation',
+        externalEvidence: { evidenceCount: 3 },
+      },
+    });
+    assert.equal(stablecoinGuard.blocked, true, 'stablecoin-like crypto pairs must be blocked before live auto-entry');
+    assert.ok(stablecoinGuard.blockers.includes('trade_data_weak_symbol'));
+    assert.equal(stablecoinGuard.meta.weakSymbol.source, 'pre_entry/crypto_structural_symbol_block');
+
+    const defensiveNoEvidenceGuard = evaluateTradeDataEntryGuard({
+      symbol: 'ROSE/USDT',
+      exchange: 'binance',
+      action: 'BUY',
+      confidence: 0.7,
+      amount_usdt: 50,
+      strategy_family: 'defensive_rotation',
+      strategy_route: {
+        selectedFamily: 'defensive_rotation',
+        externalEvidence: { evidenceCount: 0 },
+      },
+      hasTechnicalPresignal: false,
+    });
+    assert.equal(defensiveNoEvidenceGuard.blocked, true, 'defensive_rotation live entry without evidence/presignal must be blocked');
+    assert.ok(defensiveNoEvidenceGuard.blockers.includes('crypto_defensive_rotation_without_live_evidence'));
+
     const horizonReport = buildTradeAnalyticsReport([{
       symbol: 'FAST/USDT',
       market: 'crypto',
@@ -172,6 +204,8 @@ export async function runSmoke() {
       blacklist,
       derivedWeak,
       poetWeak,
+      stablecoinGuard,
+      defensiveNoEvidenceGuard,
       sellNoop,
       domesticGuard,
       autotune: { learningRows: dataset.learningRows, preAutotuneIncluded: dataset.preAutotuneIncluded },

@@ -33,6 +33,20 @@ export const TRADE_DATA_WEAK_SYMBOLS = Object.freeze({
   'OVERSEAS:POET': { reason: 'closed=3, avgPnl=-15.11%; require cooldown/probe-only evidence before re-entry' },
 });
 
+export const CRYPTO_STRUCTURAL_BLOCKED_SYMBOLS = Object.freeze({
+  'CRYPTO:RLUSD/USDT': { reason: 'stablecoin pair; directional edge is too small for Luna live auto-trading' },
+  'CRYPTO:USDC/USDT': { reason: 'stablecoin pair; directional edge is too small for Luna live auto-trading' },
+  'CRYPTO:FDUSD/USDT': { reason: 'stablecoin pair; directional edge is too small for Luna live auto-trading' },
+  'CRYPTO:TUSD/USDT': { reason: 'stablecoin pair; directional edge is too small for Luna live auto-trading' },
+  'CRYPTO:BUSD/USDT': { reason: 'stablecoin pair; directional edge is too small for Luna live auto-trading' },
+  'CRYPTO:USDP/USDT': { reason: 'stablecoin pair; directional edge is too small for Luna live auto-trading' },
+  'CRYPTO:PYUSD/USDT': { reason: 'stablecoin pair; directional edge is too small for Luna live auto-trading' },
+  'CRYPTO:DAI/USDT': { reason: 'stablecoin pair; directional edge is too small for Luna live auto-trading' },
+  'CRYPTO:USDE/USDT': { reason: 'stablecoin pair; directional edge is too small for Luna live auto-trading' },
+  'CRYPTO:USDS/USDT': { reason: 'stablecoin pair; directional edge is too small for Luna live auto-trading' },
+  'CRYPTO:USD1/USDT': { reason: 'stablecoin pair; directional edge is too small for Luna live auto-trading' },
+});
+
 export function isTradeDataGuardEnabled(env = process.env) {
   return !DISABLE_VALUES.has(String(env.LUNA_TRADE_DATA_DERIVED_GUARDS || '').trim().toLowerCase());
 }
@@ -76,6 +90,17 @@ export function checkTradeDataWeakSymbol(symbol, market, env = process.env) {
     `${normalizedMarket}:${normalizedSymbol}`,
     normalizedSymbol,
   ];
+  const structuralKey = keys.find((item) => CRYPTO_STRUCTURAL_BLOCKED_SYMBOLS[item]);
+  if (structuralKey) {
+    const row = CRYPTO_STRUCTURAL_BLOCKED_SYMBOLS[structuralKey];
+    return {
+      blocked: true,
+      source: 'pre_entry/crypto_structural_symbol_block',
+      reason: `[structural] ${normalizedSymbol} blocked: ${row.reason}`,
+      key: structuralKey,
+      epoch: getLunaOperatingEpoch(env),
+    };
+  }
   const key = keys.find((item) => TRADE_DATA_WEAK_SYMBOLS[item]);
   if (!key) return { blocked: false, source: null, reason: null, key: null };
   const row = TRADE_DATA_WEAK_SYMBOLS[key];
@@ -123,6 +148,37 @@ function resolveStrategyFamilyPerformanceBias(signal = {}, strategyFamily = '') 
   if (Number.isFinite(selectedBias)) return selectedBias;
   const familyBias = Number(route?.familyPerformance?.bias?.[family]);
   return Number.isFinite(familyBias) ? familyBias : 0;
+}
+
+function resolveExternalEvidenceCount(signal = {}) {
+  const candidates = [
+    signal?.externalEvidence?.evidenceCount,
+    signal?.external_evidence?.evidenceCount,
+    signal?.external_evidence?.evidence_count,
+    signal?.strategy_route?.externalEvidence?.evidenceCount,
+    signal?.strategyRoute?.externalEvidence?.evidenceCount,
+    signal?.block_meta?.externalEvidence?.evidenceCount,
+    signal?.block_meta?.entryEvidence?.evidenceCount,
+  ];
+  for (const value of candidates) {
+    const numeric = Number(value);
+    if (Number.isFinite(numeric)) return numeric;
+  }
+  return null;
+}
+
+function hasTechnicalPresignal(signal = {}) {
+  const values = [
+    signal?.hasTechnicalPresignal,
+    signal?.has_technical_presignal,
+    signal?.strategy_route?.hasTechnicalPresignal,
+    signal?.strategyRoute?.hasTechnicalPresignal,
+    signal?.block_meta?.technicalPresignal?.ok,
+    signal?.block_meta?.entryEvidence?.hasTechnicalPresignal,
+  ];
+  if (values.some((value) => value === true || String(value).toLowerCase() === 'true')) return true;
+  if (values.some((value) => value === false || String(value).toLowerCase() === 'false')) return false;
+  return null;
 }
 
 export function evaluateLearningTradeQuality(row = {}, env = process.env) {
@@ -182,6 +238,8 @@ export function evaluateTradeDataEntryGuard(signal = {}, env = process.env) {
   const warnings = [];
   const meta = { market, strategyFamily: strategyFamily || null, tradeMode: tradeMode || null, regime: regime || null };
   const familyPerformanceBias = resolveStrategyFamilyPerformanceBias(signal, strategyFamily);
+  const externalEvidenceCount = resolveExternalEvidenceCount(signal);
+  const technicalPresignal = hasTechnicalPresignal(signal);
 
   if (market === 'crypto' && strategyFamily === 'trend_following' && familyPerformanceBias <= -0.14) {
     warnings.push('crypto_trend_following_current_epoch_probe_only');
@@ -228,6 +286,19 @@ export function evaluateTradeDataEntryGuard(signal = {}, env = process.env) {
       multiplier: 0.35,
       reason: 'mean_reversion은 국내장 샘플이 약해 35% probe sizing으로 축소',
     });
+  }
+
+  if (market === 'crypto' && strategyFamily === 'defensive_rotation') {
+    const noExternalEvidence = externalEvidenceCount != null && externalEvidenceCount <= 0;
+    const noTechnicalPresignal = technicalPresignal === false;
+    if (noExternalEvidence || noTechnicalPresignal) {
+      blockers.push('crypto_defensive_rotation_without_live_evidence');
+      meta.cryptoDefensiveRotationEvidence = {
+        reason: 'defensive_rotation live BUY requires fresh external evidence or an explicit technical presignal',
+        externalEvidenceCount,
+        hasTechnicalPresignal: technicalPresignal,
+      };
+    }
   }
 
   if (tradeMode === 'validation' && (regime.includes('bear') || regime.includes('ranging'))) {
@@ -312,6 +383,7 @@ export function applyTradeDataEntryGuardToDecision(decision = {}, exchange = nul
 export default {
   EXPECTED_SELL_NOOP_CODES,
   TRADE_DATA_WEAK_SYMBOLS,
+  CRYPTO_STRUCTURAL_BLOCKED_SYMBOLS,
   isTradeDataGuardEnabled,
   normalizeTradeDataMarket,
   resolveExpectedSellNoopStatus,
