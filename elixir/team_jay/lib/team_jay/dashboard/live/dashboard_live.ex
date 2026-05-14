@@ -11,40 +11,40 @@ defmodule TeamJay.Dashboard.Live.DashboardLive do
 
   # Phase C: 영역 5 파이프라인 메타
   @pipelines_meta [
-    {:ska_to_blog,   "스카→블로",   "📢"},
-    {:luna_to_blog,  "루나→블로",   "📊"},
-    {:blog_to_ska,   "블로→스카",   "🔑"},
-    {:ska_to_luna,   "스카→루나",   "💰"},
+    {:ska_to_blog, "스카→블로", "📢"},
+    {:luna_to_blog, "루나→블로", "📊"},
+    {:blog_to_ska, "블로→스카", "🔑"},
+    {:ska_to_luna, "스카→루나", "💰"},
     {:claude_to_all, "클로드→전체", "🚨"},
-    {:blog_to_luna,  "블로→루나",   "🔍"},
-    {:luna_to_ska,   "루나→스카",   "💸"}
+    {:blog_to_luna, "블로→루나", "🔍"},
+    {:luna_to_ska, "루나→스카", "💸"}
   ]
 
   # Phase C: 영역 6 팀 메타
   @teams_meta [
-    %{key: "ska",         label: "스카",   emoji: "🏫"},
-    %{key: "luna",        label: "루나",   emoji: "🌙"},
-    %{key: "blog",        label: "블로",   emoji: "✍️"},
-    %{key: "claude",      label: "클로드", emoji: "🖥️"},
-    %{key: "jay",         label: "제이",   emoji: "🤖"},
-    %{key: "sigma",       label: "시그마", emoji: "∑"},
-    %{key: "darwin",      label: "다윈",   emoji: "🧬"},
-    %{key: "hub",         label: "허브",   emoji: "🔌"},
-    %{key: "reservation", label: "예약",   emoji: "📋"},
-    %{key: "social-media", label: "소셜",  emoji: "📣"},
-    %{key: "master",      label: "마스터", emoji: "🧑"},
-    %{key: "metty",       label: "메티",   emoji: "🧠"},
-    %{key: "codex",       label: "코덱스", emoji: "⌨"}
+    %{key: "ska", label: "스카", emoji: "🏫"},
+    %{key: "luna", label: "루나", emoji: "🌙"},
+    %{key: "blog", label: "블로", emoji: "✍️"},
+    %{key: "claude", label: "클로드", emoji: "🖥️"},
+    %{key: "jay", label: "제이", emoji: "🤖"},
+    %{key: "sigma", label: "시그마", emoji: "∑"},
+    %{key: "darwin", label: "다윈", emoji: "🧬"},
+    %{key: "hub", label: "허브", emoji: "🔌"},
+    %{key: "reservation", label: "예약", emoji: "📋"},
+    %{key: "social-media", label: "소셜", emoji: "📣"},
+    %{key: "master", label: "마스터", emoji: "🧑"},
+    %{key: "metty", label: "메티", emoji: "🧠"},
+    %{key: "codex", label: "코덱스", emoji: "⌨"}
   ]
 
   @pipeline_atom_map %{
-    "ska_to_blog"   => :ska_to_blog,
-    "luna_to_blog"  => :luna_to_blog,
-    "blog_to_ska"   => :blog_to_ska,
-    "ska_to_luna"   => :ska_to_luna,
+    "ska_to_blog" => :ska_to_blog,
+    "luna_to_blog" => :luna_to_blog,
+    "blog_to_ska" => :blog_to_ska,
+    "ska_to_luna" => :ska_to_luna,
     "claude_to_all" => :claude_to_all,
-    "blog_to_luna"  => :blog_to_luna,
-    "luna_to_ska"   => :luna_to_ska
+    "blog_to_luna" => :blog_to_luna,
+    "luna_to_ska" => :luna_to_ska
   }
 
   # ── Mount ────────────────────────────────────────────────────────
@@ -64,6 +64,7 @@ defmodule TeamJay.Dashboard.Live.DashboardLive do
       for topic <- safe_cross_topics() do
         safe_subscribe(topic)
       end
+
       # Phase C: Andy/Jimmy 30초 주기 갱신
       Process.send_after(self(), :refresh_agents, 30_000)
     end
@@ -611,10 +612,12 @@ defmodule TeamJay.Dashboard.Live.DashboardLive do
           case parse_pipeline_event_type(event_type) do
             {key, status} ->
               existing = Map.get(acc, key, %{count: 0, last_at: nil})
+
               Map.put(acc, key, %{
                 count: existing.count + cnt,
                 last_at: pick_later(existing.last_at, last_at),
-                status_counts: Map.update(existing[:status_counts] || %{}, status, cnt, &(&1 + cnt))
+                status_counts:
+                  Map.update(existing[:status_counts] || %{}, status, cnt, &(&1 + cnt))
               })
 
             nil ->
@@ -646,6 +649,7 @@ defmodule TeamJay.Dashboard.Live.DashboardLive do
 
   defp update_pipeline_count(cross_pipelines, topic) do
     existing = Map.get(cross_pipelines, topic, %{count: 0, last_at: nil})
+
     Map.put(cross_pipelines, topic, %{
       count: (existing[:count] || 0) + 1,
       last_at: DateTime.utc_now(),
@@ -675,17 +679,20 @@ defmodule TeamJay.Dashboard.Live.DashboardLive do
   defp update_pipeline_from_event(cross_pipelines, _), do: cross_pipelines
 
   defp pipeline_card_class(:claude_to_all),
-    do: "bg-yellow-950/30 border border-yellow-500/50 rounded-lg p-2.5 flex items-center justify-between gap-2"
+    do:
+      "bg-yellow-950/30 border border-yellow-500/50 rounded-lg p-2.5 flex items-center justify-between gap-2"
 
   defp pipeline_card_class(_),
-    do: "bg-gray-900/70 border border-gray-700 rounded-lg p-2.5 flex items-center justify-between gap-2"
+    do:
+      "bg-gray-900/70 border border-gray-700 rounded-lg p-2.5 flex items-center justify-between gap-2"
 
   defp pipeline_count_class(count) when is_integer(count) and count > 0,
     do: "text-xs font-semibold text-green-400"
 
   defp pipeline_count_class(_), do: "text-xs font-semibold text-gray-500"
 
-  defp pipeline_status_summary(status_counts) when is_map(status_counts) and map_size(status_counts) > 0 do
+  defp pipeline_status_summary(status_counts)
+       when is_map(status_counts) and map_size(status_counts) > 0 do
     status_counts
     |> Enum.sort_by(fn {status, _count} -> to_string(status) end)
     |> Enum.map(fn {status, count} -> "#{status}:#{count}" end)
@@ -736,28 +743,39 @@ defmodule TeamJay.Dashboard.Live.DashboardLive do
     jimmy = safe_call(fn -> Jay.Core.Agents.Jimmy.get_status() end, nil)
     ska = Map.get(team_health, "ska", %{event_count: 0, last_at: nil})
 
-    Map.put(team_health, "ska", Map.merge(ska, %{
-      andy_status: andy && andy.status,
-      andy_last_check: andy && andy.last_check,
-      jimmy_status: jimmy && jimmy.status,
-      jimmy_last_check: jimmy && jimmy.last_check
-    }))
+    Map.put(
+      team_health,
+      "ska",
+      Map.merge(ska, %{
+        andy_status: andy && andy.status,
+        andy_last_check: andy && andy.last_check,
+        jimmy_status: jimmy && jimmy.status,
+        jimmy_last_check: jimmy && jimmy.last_check
+      })
+    )
   end
 
   defp update_team_last_active(team_health, event) when is_map(event) do
-    team = canonical_team_key(
-      event["team"] || event[:team],
-      event["bot_name"] || event[:bot_name],
-      event["event_type"] || event[:event_type]
-    )
+    team =
+      canonical_team_key(
+        event["team"] || event[:team],
+        event["bot_name"] || event[:bot_name],
+        event["event_type"] || event[:event_type]
+      )
+
     ts = event_timestamp(event)
 
     if team && ts do
       existing = Map.get(team_health, team, %{event_count: 0, last_at: nil})
-      Map.put(team_health, team, Map.merge(existing, %{
-        event_count: (existing[:event_count] || 0) + 1,
-        last_at: pick_later(existing[:last_at], ts)
-      }))
+
+      Map.put(
+        team_health,
+        team,
+        Map.merge(existing, %{
+          event_count: (existing[:event_count] || 0) + 1,
+          last_at: pick_later(existing[:last_at], ts)
+        })
+      )
     else
       team_health
     end
@@ -772,7 +790,19 @@ defmodule TeamJay.Dashboard.Live.DashboardLive do
     combined = Enum.join([team_text, bot_text, event_text], " ")
 
     cond do
-      team_text in ["ska", "luna", "blog", "claude", "jay", "sigma", "darwin", "reservation", "master", "metty", "codex"] ->
+      team_text in [
+        "ska",
+        "luna",
+        "blog",
+        "claude",
+        "jay",
+        "sigma",
+        "darwin",
+        "reservation",
+        "master",
+        "metty",
+        "codex"
+      ] ->
         team_text
 
       team_text == "investment" ->
@@ -793,7 +823,8 @@ defmodule TeamJay.Dashboard.Live.DashboardLive do
       String.contains?(event_text, "codex.") or String.contains?(bot_text, "codex") ->
         "codex"
 
-      String.contains?(combined, "cross_team_router") or String.starts_with?(event_text, "cross_pipeline.") ->
+      String.contains?(combined, "cross_team_router") or
+          String.starts_with?(event_text, "cross_pipeline.") ->
         "jay"
 
       String.contains?(combined, "hub") ->
@@ -833,13 +864,14 @@ defmodule TeamJay.Dashboard.Live.DashboardLive do
   defp team_health_status(_team, health), do: team_activity_status(health)
 
   defp team_activity_status(%{last_at: nil}), do: :unknown
+
   defp team_activity_status(%{last_at: last_at}) do
     diff = DateTime.diff(DateTime.utc_now(), to_utc_datetime(last_at), :second)
 
     cond do
-      diff < 3_600  -> :active
+      diff < 3_600 -> :active
       diff < 21_600 -> :recent
-      true          -> :stale
+      true -> :stale
     end
   rescue
     _ -> :unknown
@@ -870,10 +902,10 @@ defmodule TeamJay.Dashboard.Live.DashboardLive do
     diff = DateTime.diff(DateTime.utc_now(), to_utc_datetime(dt), :second)
 
     cond do
-      diff < 60    -> "방금"
+      diff < 60 -> "방금"
       diff < 3_600 -> "#{div(diff, 60)}분 전"
       diff < 86_400 -> "#{div(diff, 3_600)}시간 전"
-      true         -> "24시간 이상"
+      true -> "24시간 이상"
     end
   rescue
     _ -> "—"

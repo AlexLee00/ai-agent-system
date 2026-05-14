@@ -2,7 +2,7 @@ defmodule TeamJay.JayTest do
   # DB 불필요한 순수 로직 테스트 (async: true 가능)
   use ExUnit.Case, async: true
 
-  alias Jay.V2.{Topics, DailyBriefing, DecisionEngine, WeeklyReport}
+  alias Jay.V2.{Topics, DailyBriefing, DecisionEngine}
 
   # ────────────────────────────────────────────────────────────────
   # Topics
@@ -52,18 +52,26 @@ defmodule TeamJay.JayTest do
       team_data = %{
         luna: %{
           metric_type: :trading_ops,
-          trades_7d: 5, pnl_usdt_7d: 100.0,
-          traded_usdt_7d: 500.0, win_count: 3,
-          live_positions: 2, market_regime: "bull"
+          trades_7d: 5,
+          pnl_usdt_7d: 100.0,
+          traded_usdt_7d: 500.0,
+          win_count: 3,
+          live_positions: 2,
+          market_regime: "bull"
         },
         ska: %{
           metric_type: :reservation_ops,
-          bookings_today: 8, completed: 7,
-          pending: 1, failed: 0, revenue_7d: 350_000
+          bookings_today: 8,
+          completed: 7,
+          pending: 1,
+          failed: 0,
+          revenue_7d: 350_000
         },
         blog: %{
           metric_type: :content_ops,
-          published_7d: 3, ready_count: 2, draft_count: 1
+          published_7d: 3,
+          ready_count: 2,
+          draft_count: 1
         }
       }
 
@@ -87,43 +95,86 @@ defmodule TeamJay.JayTest do
     end
 
     test "bull 시장 → 🚀 이모지" do
-      data = %{luna: %{metric_type: :trading_ops, market_regime: "bull",
-                       trades_7d: 1, pnl_usdt_7d: 10.0, traded_usdt_7d: 100.0,
-                       win_count: 1, live_positions: 0}}
+      data = %{
+        luna: %{
+          metric_type: :trading_ops,
+          market_regime: "bull",
+          trades_7d: 1,
+          pnl_usdt_7d: 10.0,
+          traded_usdt_7d: 100.0,
+          win_count: 1,
+          live_positions: 0
+        }
+      }
+
       briefing = DailyBriefing.generate(data, "2026-04-16")
       assert String.contains?(briefing, "🚀")
     end
 
     test "crisis 시장 → 🚨 이모지" do
-      data = %{luna: %{metric_type: :trading_ops, market_regime: "crisis",
-                       trades_7d: 0, pnl_usdt_7d: -500.0, traded_usdt_7d: 0.0,
-                       win_count: 0, live_positions: 1}}
+      data = %{
+        luna: %{
+          metric_type: :trading_ops,
+          market_regime: "crisis",
+          trades_7d: 0,
+          pnl_usdt_7d: -500.0,
+          traded_usdt_7d: 0.0,
+          win_count: 0,
+          live_positions: 1
+        }
+      }
+
       briefing = DailyBriefing.generate(data, "2026-04-16")
       assert String.contains?(briefing, "🚨")
     end
 
     test "포지션 10개+ → 크로스 알림" do
       data = %{
-        luna: %{metric_type: :trading_ops, market_regime: "ranging",
-                trades_7d: 10, pnl_usdt_7d: 0.0, traded_usdt_7d: 1000.0,
-                win_count: 5, live_positions: 12}
+        luna: %{
+          metric_type: :trading_ops,
+          market_regime: "ranging",
+          trades_7d: 10,
+          pnl_usdt_7d: 0.0,
+          traded_usdt_7d: 1000.0,
+          win_count: 5,
+          live_positions: 12
+        }
       }
+
       briefing = DailyBriefing.generate(data, "2026-04-16")
       assert String.contains?(briefing, "포지션") and String.contains?(briefing, "12")
     end
 
     test "PnL 양수 → +$ 형식" do
-      data = %{luna: %{metric_type: :trading_ops, market_regime: "bull",
-                       trades_7d: 3, pnl_usdt_7d: 123.45, traded_usdt_7d: 300.0,
-                       win_count: 2, live_positions: 0}}
+      data = %{
+        luna: %{
+          metric_type: :trading_ops,
+          market_regime: "bull",
+          trades_7d: 3,
+          pnl_usdt_7d: 123.45,
+          traded_usdt_7d: 300.0,
+          win_count: 2,
+          live_positions: 0
+        }
+      }
+
       briefing = DailyBriefing.generate(data, "2026-04-16")
       assert String.contains?(briefing, "+$")
     end
 
     test "PnL 음수 → -$ 형식" do
-      data = %{luna: %{metric_type: :trading_ops, market_regime: "bear",
-                       trades_7d: 2, pnl_usdt_7d: -50.0, traded_usdt_7d: 200.0,
-                       win_count: 0, live_positions: 0}}
+      data = %{
+        luna: %{
+          metric_type: :trading_ops,
+          market_regime: "bear",
+          trades_7d: 2,
+          pnl_usdt_7d: -50.0,
+          traded_usdt_7d: 200.0,
+          win_count: 0,
+          live_positions: 0
+        }
+      }
+
       briefing = DailyBriefing.generate(data, "2026-04-16")
       assert String.contains?(briefing, "-$")
     end
@@ -221,9 +272,16 @@ defmodule TeamJay.JayTest do
     end
 
     test "루나 데이터 포맷" do
-      data = %{metric_type: :trading_ops, market_regime: "bull",
-               trades_7d: 5, pnl_usdt_7d: 200.0, traded_usdt_7d: 1000.0,
-               win_count: 3, live_positions: 1}
+      data = %{
+        metric_type: :trading_ops,
+        market_regime: "bull",
+        trades_7d: 5,
+        pnl_usdt_7d: 200.0,
+        traded_usdt_7d: 1000.0,
+        win_count: 3,
+        live_positions: 1
+      }
+
       result = DailyBriefing.format_team_week(:luna, data)
       assert is_binary(result)
       assert String.contains?(result, "루나팀")

@@ -53,7 +53,8 @@ defmodule Mix.Tasks.TeamJay.Dashboard.PhaseCCheck do
       bot_name_team_mapping: String.contains?(source, "canonical_team_key"),
       all_pipeline_topics: Enum.all?(@pipeline_topics, &String.contains?(source, &1)),
       all_team_keys: Enum.all?(@team_keys, &String.contains?(source, &1)),
-      event_lake_before_phase_c_boards: source_order?(source, "<.event_lake_board", "<.cross_team_board"),
+      event_lake_before_phase_c_boards:
+        source_order?(source, "<.event_lake_board", "<.cross_team_board"),
       phase_c_header: String.contains?(source, "Phase C • 영역 1+2+3+4+5+6")
     }
 
