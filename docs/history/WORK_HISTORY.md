@@ -4,6 +4,14 @@
 > 상세 내용: `reservation-dev-summary.md` / `reservation-handoff.md`
 > 최초 작성: 2026-02-27
 
+## 2026-05-14: CODEX_LIVEVIEW_DASHBOARD_PHASE_E — v3.x 본질 100% 도달 (Langfuse + Telegram 통합)
+
+- **검증**: Phase E 코드 전체 이미 구현된 상태 확인 (docker-compose, runtime.exs, event_lake, dashboard_live, hub autonomy, telegram-callback-poller 등 12개 파일)
+- **Langfuse 컨테이너**: 이미 가동 중 (v3.174.1, http://localhost:3000) ✅
+- **plist 업데이트**: ai.elixir.supervisor에 LANGFUSE_OTEL_ENABLED=1 + 키 추가 (재시작 시 OTel 활성화)
+- **telegram-callback-poller**: MASTER_TELEGRAM_CHAT_IDS=665606590 추가 + 리로드 완료
+- **남은 것**: 마스터가 `launchctl unload && launchctl load ai.elixir.supervisor.plist` 실행 → OTel 활성화
+
 ## 2026-05-14: CODEX_TEAM_JAY_FULL_AUDIT Stage A — 팀 폐기 + 스킬 Hook 강화
 
 - **폐기 4팀 확인**: bots/academic, business, data, secretary 이전 커밋에서 완료 확인

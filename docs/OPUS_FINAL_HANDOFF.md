@@ -1,3 +1,54 @@
+# 세션 인수인계 — 2026-05-14 (CODEX_LIVEVIEW_DASHBOARD_PHASE_E — v3.x 본질 100% 도달)
+
+## 완료 요약 ✅ (Phase E — Langfuse + Telegram 자동 통합)
+
+### Phase E 구현 결과 (cycle #48)
+
+**모든 코드 구현 완료 (이미 커밋된 상태)**:
+- `docker/docker-compose.langfuse.yml` — Langfuse self-host 전체 스택 (web+worker+postgres+clickhouse+redis+minio)
+- `docker/.env.langfuse` — 생성된 비밀번호 + LANGFUSE_INIT_* 자동 초기화 키
+- `docker/.env.langfuse.example` — 템플릿
+- `docker/docker-compose.langfuse.override.yml` — ClickHouse 단일 인스턴스 + LANGFUSE_INIT_* override
+- `elixir/team_jay/config/runtime.exs` — OpenTelemetry → Langfuse OTLP config (LANGFUSE_OTEL_ENABLED opt-in)
+- `elixir/team_jay/lib/team_jay/application.ex` — OTel 상태 로깅 (log_otel_status)
+- `packages/elixir_core/lib/jay/core/event_lake.ex` — `maybe_attach_current_trace_id` + `current_otel_trace_id`
+- `elixir/team_jay/lib/team_jay/dashboard/live/dashboard_live.ex` — `langfuse_trace_url/1` + trace_id 클릭 링크
+- `elixir/team_jay/lib/team_jay/dashboard/router.ex` — `POST /api/master-intervention`
+- `elixir/team_jay/lib/team_jay/dashboard/master_intervention_controller.ex` — 인증 포함 완전 구현
+- `bots/hub/lib/routes/autonomy.ts` — `/hub/v2/autonomy/intervention` Hub API 라우트
+- `bots/hub/scripts/telegram-callback-poller.ts` — `forwardMasterMessage` 함수 (Hub → Elixir 전달)
+
+**운영 설정 (launchd plist, 리포 외)**:
+- `~/Library/LaunchAgents/ai.elixir.supervisor.plist` — LANGFUSE_OTEL_ENABLED=1, LANGFUSE_HOST, LANGFUSE_PUBLIC_KEY, LANGFUSE_SECRET_KEY, LANGFUSE_PROJECT_ID 추가 완료
+- `~/Library/LaunchAgents/ai.telegram.callback-poller.plist` — MASTER_TELEGRAM_CHAT_IDS=665606590 추가 + 리로드 완료
+
+**Langfuse 컨테이너 가동 중** (3+ 시간):
+- http://localhost:3000 — Langfuse UI v3.174.1 응답 중 ✅
+- 프로젝트 "team-jay-prod" / 조직 "팀 제이" 자동 초기화 완료 ✅
+- API 키 검증됨 (pk-lf-team-jay-prod-public) ✅
+
+### 마스터가 해야 할 유일한 남은 작업
+
+**ai.elixir.supervisor 리로드** (OpenTelemetry 활성화를 위해 필요):
+```bash
+launchctl unload ~/Library/LaunchAgents/ai.elixir.supervisor.plist
+launchctl load ~/Library/LaunchAgents/ai.elixir.supervisor.plist
+```
+
+리로드 후 elixir 로그에서 확인:
+```
+[TeamJay] OpenTelemetry OTLP → Langfuse 활성화 (http://localhost:3000/api/public/otel)
+```
+
+### v3.x 본질 100% 달성 현황
+- 8 영역 ✅ (Phase A+B+C+D 완료)
+- Layer 1 Langfuse ✅ (Phase E — 컨테이너 가동, 코드 완료, plist 업데이트)
+- Telegram 자동 통합 ✅ (telegram-callback-poller → Hub → AutonomyController 전체 체인)
+- trace_id 클릭 → Langfuse 점프 ✅ (영역 4 이미 구현)
+- **남은 것**: elixir supervisor 리로드 1회 (마스터 실행 필요)
+
+---
+
 # 세션 인수인계 — 2026-05-14 (CODEX_TEAM_JAY_FULL_AUDIT Stage A — 스킬 Hook 강화)
 
 ## 완료 요약 ✅ (CODEX_TEAM_JAY_FULL_AUDIT — Stage A)
