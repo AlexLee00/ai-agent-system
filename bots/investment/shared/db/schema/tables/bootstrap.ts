@@ -701,6 +701,56 @@ export async function runInvestmentSchemaBootstrap(run, { log = true } = {}) {
   try { await run(`CREATE INDEX IF NOT EXISTS idx_pvl_symbol ON predictive_validation_log(symbol, market, created_at DESC)`); } catch { /* 무시 */ }
   try { await run(`CREATE INDEX IF NOT EXISTS idx_pvl_decision ON predictive_validation_log(decision, created_at DESC)`); } catch { /* 무시 */ }
 
+  // ── Luna Phase 2 FinRL-X: weight vector shadow + paper trading shadow ──
+  await run(`
+    CREATE TABLE IF NOT EXISTS luna_weight_vector_shadow (
+      id                  BIGSERIAL PRIMARY KEY,
+      symbol              TEXT NOT NULL,
+      market              TEXT NOT NULL,
+      exchange            TEXT NOT NULL,
+      candidate_score     DOUBLE PRECISION DEFAULT 0,
+      backtest_score      DOUBLE PRECISION DEFAULT 0,
+      predictive_score    DOUBLE PRECISION DEFAULT 0,
+      community_score     DOUBLE PRECISION DEFAULT 0,
+      target_weight       DOUBLE PRECISION DEFAULT 0,
+      confidence          DOUBLE PRECISION DEFAULT 0,
+      risk_budget_usdt    DOUBLE PRECISION DEFAULT 0,
+      signal              TEXT NOT NULL DEFAULT 'hold',
+      gate_status         TEXT NOT NULL DEFAULT 'shadow',
+      no_lookahead_ok     BOOLEAN DEFAULT TRUE,
+      shadow_only         BOOLEAN DEFAULT TRUE,
+      evidence            JSONB DEFAULT '{}'::jsonb,
+      observed_at         TIMESTAMPTZ DEFAULT NOW()
+    )
+  `);
+  try { await run(`CREATE INDEX IF NOT EXISTS idx_luna_weight_vector_shadow_symbol ON luna_weight_vector_shadow(symbol, market, observed_at DESC)`); } catch { /* 무시 */ }
+  try { await run(`CREATE INDEX IF NOT EXISTS idx_luna_weight_vector_shadow_signal ON luna_weight_vector_shadow(signal, observed_at DESC)`); } catch { /* 무시 */ }
+  try { await run(`CREATE INDEX IF NOT EXISTS idx_luna_weight_vector_shadow_observed ON luna_weight_vector_shadow(observed_at DESC)`); } catch { /* 무시 */ }
+
+  await run(`
+    CREATE TABLE IF NOT EXISTS luna_paper_trading_shadow (
+      id                   BIGSERIAL PRIMARY KEY,
+      symbol               TEXT NOT NULL,
+      market               TEXT NOT NULL,
+      exchange             TEXT NOT NULL,
+      target_weight        DOUBLE PRECISION DEFAULT 0,
+      current_weight       DOUBLE PRECISION DEFAULT 0,
+      delta_weight         DOUBLE PRECISION DEFAULT 0,
+      paper_side           TEXT NOT NULL DEFAULT 'HOLD',
+      paper_notional_usdt  DOUBLE PRECISION DEFAULT 0,
+      paper_quantity       DOUBLE PRECISION DEFAULT 0,
+      reference_price      DOUBLE PRECISION DEFAULT 0,
+      confidence           DOUBLE PRECISION DEFAULT 0,
+      status               TEXT NOT NULL DEFAULT 'planned',
+      shadow_only          BOOLEAN DEFAULT TRUE,
+      evidence             JSONB DEFAULT '{}'::jsonb,
+      observed_at          TIMESTAMPTZ DEFAULT NOW()
+    )
+  `);
+  try { await run(`CREATE INDEX IF NOT EXISTS idx_luna_paper_trading_shadow_symbol ON luna_paper_trading_shadow(symbol, market, observed_at DESC)`); } catch { /* 무시 */ }
+  try { await run(`CREATE INDEX IF NOT EXISTS idx_luna_paper_trading_shadow_side ON luna_paper_trading_shadow(paper_side, observed_at DESC)`); } catch { /* 무시 */ }
+  try { await run(`CREATE INDEX IF NOT EXISTS idx_luna_paper_trading_shadow_observed ON luna_paper_trading_shadow(observed_at DESC)`); } catch { /* 무시 */ }
+
   // ── position_signal_history (Phase D Continuous Signal Collection) ──
   await run(`
     CREATE TABLE IF NOT EXISTS position_signal_history (
