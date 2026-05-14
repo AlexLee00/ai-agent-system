@@ -1,11 +1,11 @@
 {
   "ok": true,
-  "generatedAt": "2026-05-14T11:21:29.386Z",
+  "generatedAt": "2026-05-14T11:25:12.046Z",
   "phase": "luna-phase1-codex-p0",
   "tags": {
     "preRollback": "pre-luna-phase1-codex-p0-20260514-200517",
     "latestComplete": "luna-phase1-codex-p0-complete-20260514-2021",
-    "completeCurrentHead": "luna-phase1-codex-p0-complete-20260514-2021"
+    "completeCurrentHead": null
   },
   "goals": {
     "communityEvidencePositive": true,
@@ -28,23 +28,23 @@
     "predictiveAudit24h": [
       {
         "decision": "hold",
-        "count": 24
+        "count": 75
       },
       {
         "decision": "discard",
-        "count": 17
+        "count": 52
       },
       {
         "decision": "fire",
-        "count": 16
+        "count": 50
       },
       {
         "decision": "block_backtest_gate",
-        "count": 2
+        "count": 5
       },
       {
         "decision": "would_block_backtest_gate",
-        "count": 2
+        "count": 5
       },
       {
         "decision": "pass_backtest",
