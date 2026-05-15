@@ -39,6 +39,13 @@ function periodsFrom(value: any) {
     .filter((item) => Number.isFinite(item) && item > 0);
 }
 
+function symbolsFrom(value: any): string[] {
+  return String(value || '')
+    .split(',')
+    .map((item) => item.trim().toUpperCase())
+    .filter(Boolean);
+}
+
 async function getActiveCandidates(limit = 100) {
   return getActiveCandidatesByMarket({ limit, market: 'crypto' });
 }
@@ -244,15 +251,18 @@ async function runOhlcvFallbackBacktest(symbol: string, market: string, days: nu
 function evaluateQuality(rows: any[]) {
   const usable = (rows || []).filter((r) => (!r?.status || r.status === 'ok') && safeNum(r?.total_trades) > 0);
   if (usable.length === 0) {
+    const statuses = (rows || []).map((r) => String(r?.status || '').trim()).filter(Boolean);
+    const sawNoTrades = statuses.includes('no_trades') || (rows || []).some((r) => safeNum(r?.total_trades) === 0 && r?.status !== 'insufficient_ohlcv');
+    const sawInsufficient = statuses.includes('insufficient_ohlcv');
     return {
-      fresh: false,
+      fresh: sawNoTrades,
       sharpe: null,
       maxDrawdown: null,
       winRate: null,
       healthy: false,
-      gateStatus: 'would_block_no_data',
+      gateStatus: sawNoTrades ? 'would_block_no_trades' : 'would_block_no_data',
       wouldBlock: true,
-      reasons: ['backtest_no_data'],
+      reasons: [sawNoTrades ? 'backtest_no_trades' : sawInsufficient ? 'backtest_insufficient_ohlcv' : 'backtest_no_data'],
     };
   }
 
@@ -357,13 +367,13 @@ async function recordPredictiveAudit(symbol: string, market: string, payload: an
 }
 
 async function refreshCandidate(symbol: string, market: string, periods: number[], options: any = {}) {
-  const { dryRun = false, fixture = false } = options;
+  const { dryRun = false, fixture = false, force = false } = options;
   const existing = await getBacktestStatus(symbol, market);
   const existingHealthy = existing?.healthy === true || String(existing?.healthy).toLowerCase() === 'true';
   const existingWouldBlock = existing?.would_block === true || String(existing?.would_block).toLowerCase() === 'true';
   const existingFresh = existing && !isStale(existing.last_backtest_at);
   const existingRefreshDue = isRefreshDue(existing?.next_refresh_at);
-  if (!fixture && existingFresh && (existingHealthy || !REFRESH_UNHEALTHY || !existingRefreshDue)) {
+  if (!force && !fixture && existingFresh && (existingHealthy || !REFRESH_UNHEALTHY || !existingRefreshDue)) {
     return {
       symbol,
       market,
@@ -451,6 +461,8 @@ export async function runCandidateBacktestRefresh(options: any = {}): Promise<an
   const periods = periodsFrom(options.periods);
   const limit = Math.max(1, Number(options.limit || process.env.LUNA_CANDIDATE_BACKTEST_LIMIT || 100));
   const market = normalizeMarket(options.market || process.env.LUNA_CANDIDATE_BACKTEST_MARKET || 'all');
+  const force = options.force === true || String(process.env.LUNA_CANDIDATE_BACKTEST_FORCE || '').toLowerCase() === 'true';
+  const requestedSymbols = symbolsFrom(options.symbols || process.env.LUNA_CANDIDATE_BACKTEST_SYMBOLS || '');
   if (!dryRun) {
     await db.initSchema();
     await ensureCandidateBacktestSchema();
@@ -459,12 +471,15 @@ export async function runCandidateBacktestRefresh(options: any = {}): Promise<an
   const candidates = fixture
     ? [{ symbol: 'BTC/USDT', market: 'crypto' }, { symbol: 'NEG/USDT', market: 'crypto' }]
     : await getActiveCandidatesByMarket({ limit, market });
+  const selectedCandidates = requestedSymbols.length
+    ? candidates.filter((candidate) => requestedSymbols.includes(String(candidate.symbol || '').toUpperCase()))
+    : candidates;
 
-  if (!json) console.log(`[luna-backtest-refresh] 활성 후보 ${candidates.length}건 market=${market} (shadow=${SHADOW_MODE}, dryRun=${dryRun})`);
+  if (!json) console.log(`[luna-backtest-refresh] 활성 후보 ${selectedCandidates.length}/${candidates.length}건 market=${market} (shadow=${SHADOW_MODE}, dryRun=${dryRun})`);
 
   const results = [];
-  for (const { symbol, market } of candidates) {
-    const result = await refreshCandidate(symbol, market, periods, { dryRun, fixture });
+  for (const { symbol, market } of selectedCandidates) {
+    const result = await refreshCandidate(symbol, market, periods, { dryRun, fixture, force });
     results.push(result);
     if (!json) {
       const icon = result.skipped ? 'skip' : result.wouldBlock ? 'would-block' : 'pass';
@@ -483,6 +498,8 @@ export async function runCandidateBacktestRefresh(options: any = {}): Promise<an
     writeMode: dryRun ? 'dry-run' : 'shadow-apply',
     market,
     periods,
+    force,
+    requestedSymbols,
     total: results.length,
     passed,
     wouldBlocked,
@@ -509,8 +526,10 @@ if (isDirectExecution(import.meta.url)) {
       periods: argValue('periods', argValue('days', '30,90,180')),
       limit: Number(argValue('limit', process.env.LUNA_CANDIDATE_BACKTEST_LIMIT || 100)),
       market: argValue('market', process.env.LUNA_CANDIDATE_BACKTEST_MARKET || 'all'),
+      symbols: argValue('symbols', process.env.LUNA_CANDIDATE_BACKTEST_SYMBOLS || ''),
       dryRun: hasFlag('dry-run'),
       fixture: hasFlag('fixture'),
+      force: hasFlag('force'),
       json: hasFlag('json'),
     }),
     onSuccess: async (result) => {

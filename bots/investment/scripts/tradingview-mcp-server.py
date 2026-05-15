@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import sys
 from datetime import datetime, timezone
 
@@ -105,14 +106,23 @@ def fetch_ohlcv(symbol: str, interval: str, start: str, end: str | None, deps: d
 
     rows = []
     for index, row in history.iterrows():
+        open_price = float(row["Open"])
+        high_price = float(row["High"])
+        low_price = float(row["Low"])
+        close_price = float(row["Close"])
+        volume = float(row["Volume"])
+        if not all(math.isfinite(value) for value in [open_price, high_price, low_price, close_price]):
+            continue
+        if not math.isfinite(volume):
+            volume = 0.0
         timestamp_ms = int(index.to_pydatetime().timestamp() * 1000)
         rows.append([
             timestamp_ms,
-            float(row["Open"]),
-            float(row["High"]),
-            float(row["Low"]),
-            float(row["Close"]),
-            float(row["Volume"]),
+            open_price,
+            high_price,
+            low_price,
+            close_price,
+            volume,
         ])
     return rows
 

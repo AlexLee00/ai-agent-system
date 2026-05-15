@@ -41,6 +41,7 @@ export function normalizeLunaPaperPromotionGateConfig(config = {}) {
     minConsecutivePasses: Math.max(1, finiteNumber(config.minConsecutivePasses ?? process.env.LUNA_PAPER_PROMOTION_MIN_CONSECUTIVE_PASSES, 3)),
     minAvgConfidence: Math.max(0, Math.min(1, finiteNumber(config.minAvgConfidence ?? process.env.LUNA_PAPER_PROMOTION_MIN_AVG_CONFIDENCE, 0.62))),
     maxOrderUsdt: Math.max(0, finiteNumber(config.maxOrderUsdt ?? process.env.LUNA_MAX_TRADE_USDT, 50)),
+    maxPromotionSharpe: Math.max(1, finiteNumber(config.maxPromotionSharpe ?? process.env.LUNA_PAPER_PROMOTION_MAX_SHARPE, 8)),
   };
 }
 
@@ -63,6 +64,7 @@ export function normalizeLunaPaperPromotionRow(row = {}) {
     status: String(row.status || 'planned'),
     shadowOnly: normalizeBool(row.shadow_only ?? row.shadowOnly, true),
     evidence,
+    promotionBacktestQuality: evidence?.promotionBacktestQuality || {},
     observedAt: row.observed_at || row.observedAt || new Date().toISOString(),
   };
 }
@@ -76,6 +78,27 @@ function noLookaheadOk(row = {}) {
     ?? row.evidence?.weightVector?.evidence?.noLookahead?.ok
     ?? true;
   return normalizeBool(value, true);
+}
+
+function getPromotionBacktestQuality(row = {}, config = {}) {
+  const quality = row.promotionBacktestQuality || row.evidence?.promotionBacktestQuality || {};
+  const fallbackUsed = normalizeBool(quality.fallbackUsed, false);
+  const vectorbtEnabled = normalizeBool(quality.vectorbtEnabled, false);
+  const sharpe = finiteNumber(quality.sharpe, null);
+  const maxPromotionSharpe = finiteNumber(config.maxPromotionSharpe, 8);
+  const reasons = [
+    fallbackUsed && !vectorbtEnabled ? 'fallback_only_backtest' : null,
+    sharpe != null && Math.abs(sharpe) > maxPromotionSharpe ? 'unrealistic_sharpe' : null,
+  ].filter(Boolean);
+  return {
+    present: Object.keys(quality || {}).length > 0,
+    fallbackUsed,
+    vectorbtEnabled,
+    sharpe,
+    maxPromotionSharpe,
+    stable: reasons.length === 0,
+    reasons,
+  };
 }
 
 function isPaperPass(row = {}) {
@@ -106,6 +129,11 @@ export function evaluateLunaPaperPromotionHistory(rows = [], config = {}) {
   const preventedRows = history.filter((row) => normalizeBool(getBottleneckAvoidance(row).preventedOrder, false));
   const noLookaheadViolationRows = history.filter((row) => noLookaheadOk(row) === false);
   const overCapRows = history.filter((row) => row.paperNotionalUsdt > cfg.maxOrderUsdt + 0.000001);
+  const backtestQualityRows = history
+    .map((row) => getPromotionBacktestQuality(row, cfg))
+    .filter((quality) => quality.present);
+  const fallbackOnlyRows = backtestQualityRows.filter((quality) => quality.reasons.includes('fallback_only_backtest'));
+  const unrealisticSharpeRows = backtestQualityRows.filter((quality) => quality.reasons.includes('unrealistic_sharpe'));
   const avgConfidence = history.length
     ? history.reduce((sum, row) => sum + row.confidence, 0) / history.length
     : 0;
@@ -120,6 +148,8 @@ export function evaluateLunaPaperPromotionHistory(rows = [], config = {}) {
     preventedRows.length > 0 ? 'candidate_bottleneck_prevented_order_seen' : null,
     noLookaheadViolationRows.length > 0 ? 'no_lookahead_violation_seen' : null,
     overCapRows.length > 0 ? 'paper_order_cap_violation_seen' : null,
+    fallbackOnlyRows.length > 0 ? 'fallback_only_backtest_seen' : null,
+    unrealisticSharpeRows.length > 0 ? 'unrealistic_sharpe_seen' : null,
   ].filter(Boolean);
 
   const promotionCandidate = blockReasons.length === 0;
@@ -155,6 +185,9 @@ export function evaluateLunaPaperPromotionHistory(rows = [], config = {}) {
       preventedOrderCount: preventedRows.length,
       noLookaheadViolationCount: noLookaheadViolationRows.length,
       overCapCount: overCapRows.length,
+      fallbackOnlyBacktestCount: fallbackOnlyRows.length,
+      unrealisticSharpeCount: unrealisticSharpeRows.length,
+      backtestQualityMaxSharpe: cfg.maxPromotionSharpe,
       recent: history.slice(0, Math.max(cfg.minCycles, 5)).map((row) => ({
         observedAt: row.observedAt,
         paperSide: row.paperSide,
@@ -164,6 +197,7 @@ export function evaluateLunaPaperPromotionHistory(rows = [], config = {}) {
         bottleneckAction: getBottleneckAvoidance(row).action || null,
         bottleneckHardHold: normalizeBool(getBottleneckAvoidance(row).hardHold, false),
         noLookaheadOk: noLookaheadOk(row),
+        backtestQuality: getPromotionBacktestQuality(row, cfg),
         pass: isPaperPass(row),
       })),
       promotionRequiresExplicitMasterApproval: true,
@@ -213,16 +247,37 @@ export async function loadLunaPaperPromotionRows({ hours = 24, limit = 500, mark
   const normalizedMarket = requestedMarket && requestedMarket !== 'all'
     ? normalizeLunaPhase2Market(requestedMarket)
     : null;
-  const marketWhere = normalizedMarket ? `AND market = $${params.push(normalizedMarket)}` : '';
+  const marketWhere = normalizedMarket ? `AND pts.market = $${params.push(normalizedMarket)}` : '';
   return query(`
-    SELECT symbol, market, exchange, target_weight, current_weight, delta_weight,
-           paper_side, paper_notional_usdt, confidence, status, shadow_only,
-           evidence, observed_at
-      FROM luna_paper_trading_shadow
-     WHERE observed_at >= NOW() - ($1::int * INTERVAL '1 hour')
-       AND shadow_only IS TRUE
+    SELECT pts.symbol, pts.market, pts.exchange, pts.target_weight, pts.current_weight, pts.delta_weight,
+           pts.paper_side, pts.paper_notional_usdt, pts.confidence, pts.status, pts.shadow_only,
+           CASE
+             WHEN cbs.symbol IS NULL THEN pts.evidence
+             ELSE jsonb_set(
+               COALESCE(pts.evidence, '{}'::jsonb),
+               '{promotionBacktestQuality}',
+               jsonb_build_object(
+                 'fresh', cbs.fresh,
+                 'healthy', cbs.healthy,
+                 'sharpe', cbs.sharpe,
+                 'winRate', cbs.win_rate,
+                 'gateStatus', cbs.gate_status,
+                 'fallbackUsed', COALESCE((cbs.backtest_run_metadata->>'fallbackUsed')::boolean, false),
+                 'vectorbtEnabled', COALESCE((cbs.backtest_run_metadata->>'vectorbtEnabled')::boolean, false),
+                 'lastBacktestAt', cbs.last_backtest_at
+               ),
+               true
+             )
+           END AS evidence,
+           pts.observed_at
+      FROM luna_paper_trading_shadow pts
+      LEFT JOIN candidate_backtest_status cbs
+        ON cbs.symbol = pts.symbol
+       AND cbs.market = pts.market
+     WHERE pts.observed_at >= NOW() - ($1::int * INTERVAL '1 hour')
+       AND pts.shadow_only IS TRUE
        ${marketWhere}
-     ORDER BY symbol, market, observed_at DESC
+     ORDER BY pts.symbol, pts.market, pts.observed_at DESC
      LIMIT $2
   `, params).catch(() => []);
 }

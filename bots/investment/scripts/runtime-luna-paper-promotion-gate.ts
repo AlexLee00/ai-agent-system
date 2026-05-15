@@ -77,6 +77,7 @@ export async function runLunaPaperPromotionGateShadow(options: any = {}, deps: a
     minConsecutivePasses: options.minConsecutivePasses,
     minAvgConfidence: options.minAvgConfidence,
     maxOrderUsdt: options.maxOrderUsdt,
+    maxPromotionSharpe: options.maxPromotionSharpe,
   });
 
   if (apply && !dryRun && report.items.length > 0) {
@@ -125,6 +126,7 @@ if (isDirectExecution(import.meta.url)) {
       minConsecutivePasses: Number(argValue('min-consecutive-passes', process.env.LUNA_PAPER_PROMOTION_MIN_CONSECUTIVE_PASSES || 3)),
       minAvgConfidence: Number(argValue('min-avg-confidence', process.env.LUNA_PAPER_PROMOTION_MIN_AVG_CONFIDENCE || 0.62)),
       maxOrderUsdt: Number(argValue('max-order-usdt', process.env.LUNA_MAX_TRADE_USDT || 50)),
+      maxPromotionSharpe: Number(argValue('max-promotion-sharpe', process.env.LUNA_PAPER_PROMOTION_MAX_SHARPE || 8)),
     }),
     onSuccess: async (result) => console.log(JSON.stringify(result, null, 2)),
     errorPrefix: 'runtime-luna-paper-promotion-gate error:',
