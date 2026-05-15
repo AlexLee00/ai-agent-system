@@ -30,6 +30,10 @@ function getExchange() {
   return _exchange;
 }
 
+function isBinanceExchange(exchange = DEFAULT_EXCHANGE) {
+  return String(exchange || DEFAULT_EXCHANGE).trim().toLowerCase() === DEFAULT_EXCHANGE;
+}
+
 async function canUseCache() {
   if (_cacheAvailable !== null) return _cacheAvailable;
   try {
@@ -67,6 +71,16 @@ function mapSymbolToYahoo(symbol) {
   return symbol;
 }
 
+function mapSymbolsToYahooCandidates(symbol, exchange = DEFAULT_EXCHANGE) {
+  const mapped = mapSymbolToYahoo(symbol);
+  const normalizedExchange = String(exchange || DEFAULT_EXCHANGE).trim().toLowerCase();
+  const raw = String(symbol || '').trim();
+  if (normalizedExchange === 'kis' && /^\d{6}$/.test(raw)) {
+    return [`${raw}.KS`, `${raw}.KQ`];
+  }
+  return [mapped];
+}
+
 function mapTimeframeToYahoo(timeframe) {
   const map = {
     '1m': '1m',
@@ -79,45 +93,62 @@ function mapTimeframeToYahoo(timeframe) {
   return map[timeframe] || '1h';
 }
 
-function fetchOHLCVFromTradingViewFallback(symbol, timeframe, from, to = null) {
-  const yahooSymbol = mapSymbolToYahoo(symbol);
-  const interval = mapTimeframeToYahoo(timeframe);
-  const args = [
-    new URL(TRADINGVIEW_MCP_SCRIPT).pathname,
-    '--ohlcv',
-    '--json',
-    `--symbol=${yahooSymbol}`,
-    `--interval=${interval}`,
-    `--from-date=${from}`,
-  ];
-  if (to) {
-    args.push(`--to-date=${to}`);
-  }
+function mapDateToYahoo(value) {
+  if (!value) return value;
+  const raw = String(value);
+  const ms = Date.parse(raw);
+  if (!Number.isNaN(ms)) return new Date(ms).toISOString().slice(0, 10);
+  return raw.slice(0, 10);
+}
 
-  let payload = null;
-  try {
-    const raw = execFileSync('python3', args, {
-      encoding: 'utf8',
-      stdio: ['ignore', 'pipe', 'pipe'],
-    });
-    payload = JSON.parse(String(raw || '{}'));
-  } catch (error) {
-    const stdout = String(error?.stdout || '').trim();
-    if (stdout) {
-      try {
-        payload = JSON.parse(stdout);
-      } catch (_) {
-        payload = null;
+function fetchOHLCVFromTradingViewFallback(symbol, timeframe, from, to = null, exchange = DEFAULT_EXCHANGE) {
+  const interval = mapTimeframeToYahoo(timeframe);
+  const candidates = mapSymbolsToYahooCandidates(symbol, exchange);
+  let lastError = null;
+  let bestRows = [];
+
+  for (const yahooSymbol of candidates) {
+    const args = [
+      new URL(TRADINGVIEW_MCP_SCRIPT).pathname,
+      '--ohlcv',
+      '--json',
+      `--symbol=${yahooSymbol}`,
+      `--interval=${interval}`,
+      `--from-date=${mapDateToYahoo(from)}`,
+    ];
+    if (to) {
+      args.push(`--to-date=${mapDateToYahoo(to)}`);
+    }
+
+    let payload = null;
+    try {
+      const raw = execFileSync('python3', args, {
+        encoding: 'utf8',
+        stdio: ['ignore', 'pipe', 'pipe'],
+      });
+      payload = JSON.parse(String(raw || '{}'));
+    } catch (error) {
+      lastError = error;
+      const stdout = String(error?.stdout || '').trim();
+      if (stdout) {
+        try {
+          payload = JSON.parse(stdout);
+        } catch (_) {
+          payload = null;
+        }
+      }
+      if (!payload) {
+        continue;
       }
     }
-    if (!payload) {
-      throw error;
+    if (payload?.status === 'ok' && Array.isArray(payload?.rows)) {
+      if (payload.rows.length > bestRows.length) bestRows = payload.rows;
+      continue;
     }
+    lastError = new Error(payload?.message || 'TradingView MCP fallback failed');
   }
-  if (payload?.status !== 'ok' || !Array.isArray(payload?.rows)) {
-    throw new Error(payload?.message || 'TradingView MCP fallback failed');
-  }
-  return payload.rows;
+  if (bestRows.length > 0) return bestRows;
+  throw lastError || new Error('TradingView MCP fallback failed');
 }
 
 export async function ensureOHLCVCacheTable() {
@@ -193,13 +224,24 @@ async function loadCachedRows(symbol, timeframe, fromMs, toMs, exchange = DEFAUL
 }
 
 export async function fetchAndCacheOHLCV(symbol, timeframe, from, to = null, exchange = DEFAULT_EXCHANGE) {
-  const ex = getExchange();
   const stepMs = getTimeframeMs(timeframe);
   const fromMs = parseDateMs(from);
   const toMs = parseDateMs(to, Date.now());
   const useCache = await canUseCache();
   const collected = [];
 
+  if (!isBinanceExchange(exchange)) {
+    const fallbackRows = fetchOHLCVFromTradingViewFallback(symbol, timeframe, from, to, exchange);
+    if (Array.isArray(fallbackRows) && fallbackRows.length > 0) {
+      if (useCache) {
+        await upsertOHLCVRows(symbol, timeframe, fallbackRows, exchange).catch(() => {});
+      }
+      return fallbackRows;
+    }
+    return [];
+  }
+
+  const ex = getExchange();
   let cursor = fromMs;
   try {
     while (cursor <= toMs) {
@@ -219,10 +261,10 @@ export async function fetchAndCacheOHLCV(symbol, timeframe, from, to = null, exc
     }
   } catch (error) {
     console.warn(`  ⚠️ [ohlcv-fetcher] ${exchange} fetch 실패, TradingView MCP fallback 시도: ${error?.message || error}`);
-    const fallbackRows = fetchOHLCVFromTradingViewFallback(symbol, timeframe, from, to);
+    const fallbackRows = fetchOHLCVFromTradingViewFallback(symbol, timeframe, from, to, exchange);
     if (Array.isArray(fallbackRows) && fallbackRows.length > 0) {
       if (useCache) {
-        await upsertOHLCVRows(symbol, timeframe, fallbackRows, 'yfinance').catch(() => {});
+        await upsertOHLCVRows(symbol, timeframe, fallbackRows, exchange).catch(() => {});
       }
       return fallbackRows;
     }
@@ -244,10 +286,20 @@ export async function getOHLCV(symbol, timeframe, from, to = null, exchange = DE
   const cached = useCache
     ? await loadCachedRows(symbol, timeframe, fromMs, toMs, exchange).catch(() => [])
     : [];
+  const fallbackCached = useCache && cached.length === 0 && !isBinanceExchange(exchange)
+    ? await loadCachedRows(symbol, timeframe, fromMs, toMs, 'yfinance').catch(() => [])
+    : [];
   const expected = Math.max(1, Math.floor((toMs - fromMs) / stepMs) + 1);
+  const minCachedRows = !isBinanceExchange(exchange) ? 30 : Math.max(1, Math.floor(expected * 0.9));
 
-  if (cached.length >= Math.max(1, Math.floor(expected * 0.9))) {
+  if (cached.length >= minCachedRows) {
     return cached;
+  }
+  if (fallbackCached.length >= minCachedRows) {
+    if (useCache) {
+      await upsertOHLCVRows(symbol, timeframe, fallbackCached, exchange).catch(() => {});
+    }
+    return fallbackCached;
   }
 
   return fetchAndCacheOHLCV(symbol, timeframe, from, to, exchange);

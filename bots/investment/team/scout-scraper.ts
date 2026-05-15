@@ -76,6 +76,7 @@ function uniqueTexts(values, limit = 50) {
 function buildMockPayload(limit = 10) {
   const items = [
     'AI 시그널 강세 종목: 삼성전자, SK하이닉스, 네이버',
+    '미국 AI 시그널 강세 종목: NVIDIA, Tesla, Apple',
     '오늘의 TOP 10 거래대금: 삼성전자, 한화오션, 두산에너빌리티',
     '실적 캘린더 관심 종목: LG에너지솔루션, 현대차',
     '스크리너 전략: 신고가 돌파, 거래량 급증, 기관 수급 집중',
@@ -106,6 +107,8 @@ function buildMockPayload(limit = 10) {
       { symbol: '005930', market: 'domestic', label: '삼성전자', source: 'aiSignals', score: 0.82 },
       { symbol: '000660', market: 'domestic', label: 'SK하이닉스', source: 'strategies', score: 0.79 },
       { symbol: '035420', market: 'domestic', label: 'NAVER', source: 'calendar', score: 0.74 },
+      { symbol: 'NVDA', market: 'overseas', label: 'NVIDIA', source: 'aiSignals', score: 0.78 },
+      { symbol: 'TSLA', market: 'overseas', label: 'Tesla', source: 'aiSignals', score: 0.72 },
     ],
   };
 }
@@ -168,7 +171,16 @@ function extractSignalsFromTexts(lines = [], sections = {}) {
     { symbol: 'BTC/USDT', label: 'BTC', market: 'crypto', re: /\bBTC\b|비트코인/i },
     { symbol: 'ETH/USDT', label: 'ETH', market: 'crypto', re: /\bETH\b|이더리움/i },
     { symbol: 'NVDA', label: 'NVIDIA', market: 'overseas', re: /\bNVDA\b|NVIDIA/i },
+    { symbol: 'AAPL', label: 'Apple', market: 'overseas', re: /\bAAPL\b|Apple/i },
+    { symbol: 'MSFT', label: 'Microsoft', market: 'overseas', re: /\bMSFT\b|Microsoft/i },
+    { symbol: 'GOOGL', label: 'Alphabet', market: 'overseas', re: /\bGOOGL\b|\bGOOG\b|Google|Alphabet/i },
+    { symbol: 'META', label: 'Meta', market: 'overseas', re: /\bMETA\b|Meta Platforms/i },
     { symbol: 'TSLA', label: 'Tesla', market: 'overseas', re: /\bTSLA\b|Tesla/i },
+    { symbol: 'AMD', label: 'AMD', market: 'overseas', re: /\bAMD\b|Advanced Micro Devices/i },
+    { symbol: 'AMZN', label: 'Amazon', market: 'overseas', re: /\bAMZN\b|Amazon/i },
+    { symbol: 'NFLX', label: 'Netflix', market: 'overseas', re: /\bNFLX\b|Netflix/i },
+    { symbol: 'AVGO', label: 'Broadcom', market: 'overseas', re: /\bAVGO\b|Broadcom/i },
+    { symbol: 'CSCO', label: 'Cisco', market: 'overseas', re: /\bCSCO\b|Cisco/i },
   ];
 
   const signals = [];

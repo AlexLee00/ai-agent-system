@@ -133,6 +133,7 @@ export async function scoreCommunitySentiment(symbols = [], {
           WHERE source_type = 'community'
             AND symbol = ANY($1::text[])
             AND created_at >= now() - INTERVAL '1 minute' * $2
+            AND COALESCE(source_name, '') <> 'community_candidate_gap'
             AND NOT (
               COALESCE(source_name, '') ILIKE '%smoke%'
               OR COALESCE(source_name, '') ILIKE '%fixture%'

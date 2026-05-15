@@ -3,6 +3,7 @@
 
 import * as db from '../shared/db.ts';
 import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
+import { collectTossMarketIntel } from '../team/toss-market-intel.ts';
 
 const SHADOW_MODE = process.env.LUNA_COMMUNITY_EVIDENCE_SHADOW_MODE !== 'false';
 const DEFAULT_TIMEOUT_MS = Number(process.env.LUNA_COMMUNITY_EVIDENCE_TIMEOUT_MS || 8000);
@@ -28,6 +29,16 @@ const SYMBOL_KEYWORDS: Record<string, string[]> = {
 const AMBIGUOUS_SHORT_TICKERS = new Set([
   'AI', 'AS', 'AT', 'IN', 'IT', 'ME', 'NO', 'NOT', 'OF', 'ON', 'ONE', 'OR', 'TO', 'US',
 ]);
+
+type CandidateMarket = 'crypto' | 'domestic' | 'overseas';
+type ActiveCandidate = {
+  symbol: string;
+  market: CandidateMarket;
+  score?: number;
+  source?: string;
+  discoveredAt?: string | null;
+  rawData?: any;
+};
 
 function normalizeSymbol(value = '') {
   return String(value || '').trim().toUpperCase();
@@ -89,29 +100,44 @@ function matchesKeyword(text = '', keyword = '') {
 }
 
 async function getActiveCryptoCandidateSymbols(limit = 60): Promise<string[]> {
+  const rows = await getActiveCandidateRows('crypto', limit);
+  return rows.map((row: ActiveCandidate) => normalizeSymbol(row.symbol)).filter((symbol: string) => symbol.endsWith('/USDT'));
+}
+
+async function getActiveCandidateRows(market: CandidateMarket, limit = 60): Promise<ActiveCandidate[]> {
   const rows = await db.query(
     `WITH active_candidates AS (
       SELECT DISTINCT ON (symbol, market)
-             symbol, score, discovered_at
+             symbol, market, score, source, discovered_at, raw_data
         FROM candidate_universe
        WHERE expires_at > NOW()
-         AND market = 'crypto'
+         AND market = $1
        ORDER BY symbol, market, score DESC, discovered_at DESC
     )
-    SELECT symbol
+    SELECT symbol, market, score, source, discovered_at, raw_data
       FROM active_candidates
      ORDER BY score DESC, discovered_at DESC
-     LIMIT $1`,
-    [limit],
+     LIMIT $2`,
+    [market, limit],
   ).catch(() => []);
-  return rows.map((row: any) => normalizeSymbol(row.symbol)).filter((symbol: string) => symbol.endsWith('/USDT'));
+  return rows
+    .map((row: any) => ({
+      symbol: normalizeSymbol(row.symbol),
+      market: row.market,
+      score: Number(row.score || 0),
+      source: row.source || null,
+      discoveredAt: row.discovered_at || null,
+      rawData: row.raw_data || {},
+    }))
+    .filter((row: ActiveCandidate) => row.symbol && row.market === market);
 }
 
-function buildTickerSymbolMap(activeSymbols: string[] = []) {
+function buildTickerSymbolMap(activeSymbols: string[] = [], options: { includeAmbiguous?: boolean } = {}) {
+  const includeAmbiguous = options.includeAmbiguous !== false;
   const map = { ...TICKER_SYMBOL_MAP };
   for (const symbol of activeSymbols) {
     const ticker = tickerFromSymbol(symbol);
-    if (ticker && !map[ticker]) map[ticker] = symbol;
+    if (ticker && !map[ticker] && (includeAmbiguous || !isAmbiguousTicker(ticker))) map[ticker] = symbol;
   }
   return map;
 }
@@ -126,6 +152,34 @@ const BEARISH_KW = [
   'loss', 'bearish', 'red', 'collapse', 'fear', 'capitulate', 'downtrend',
   'rekt', 'liquidat', 'bankrupt',
 ];
+const KOREAN_BULLISH_KW = [
+  '상승', '매수', '급등', '강세', '호재', '실적', '목표가', '상향', '돌파',
+  '수급', '외인', '기관', '반등', '신고가', '흑자', '성장',
+];
+const KOREAN_BEARISH_KW = [
+  '하락', '매도', '급락', '약세', '악재', '손실', '하한가', '전환사채', '폭락',
+  '이탈', '물림', '적자', '유증', '감자', '리스크', '경고',
+];
+const EQUITY_SYMBOL_ALIASES: Record<string, string[]> = {
+  NVDA: ['nvda', '$nvda', 'nvidia'],
+  AAPL: ['aapl', '$aapl', 'apple'],
+  MSFT: ['msft', '$msft', 'microsoft'],
+  GOOGL: ['googl', '$googl', 'google', 'alphabet'],
+  GOOG: ['goog', '$goog', 'google', 'alphabet'],
+  META: ['meta', '$meta'],
+  TSLA: ['tsla', '$tsla', 'tesla'],
+  AMD: ['amd', '$amd'],
+  AVGO: ['avgo', '$avgo', 'broadcom'],
+  AMZN: ['amzn', '$amzn', 'amazon'],
+  NFLX: ['nflx', '$nflx', 'netflix'],
+  CSCO: ['csco', '$csco', 'cisco'],
+  F: ['$f', 'ford'],
+  POET: ['poet', '$poet'],
+  SNAL: ['snal', '$snal'],
+  ONDS: ['onds', '$onds'],
+  QUBT: ['qubt', '$qubt'],
+  QUCY: ['qucy', '$qucy'],
+};
 
 function argValue(name: string, fallback = null) {
   const prefix = `--${name}=`;
@@ -146,11 +200,39 @@ function inferDirection(text: string): 'bullish' | 'bearish' | 'neutral' {
   return 'neutral';
 }
 
+function keywordDirection(text: string, bullish: string[], bearish: string[]) {
+  const lower = String(text || '').toLowerCase();
+  const bullScore = bullish.filter((kw) => lower.includes(String(kw).toLowerCase())).length;
+  const bearScore = bearish.filter((kw) => lower.includes(String(kw).toLowerCase())).length;
+  const direction = bullScore > bearScore ? 'bullish' : bearScore > bullScore ? 'bearish' : 'neutral';
+  return { direction, bullScore, bearScore };
+}
+
 function directionScore(direction: string, magnitude = 0.5): number {
   const m = Math.min(1, Math.max(0.1, Number(magnitude) || 0.5));
   if (direction === 'bullish') return m;
   if (direction === 'bearish') return -m;
   return 0;
+}
+
+function keywordsForEquitySymbol(symbol = '') {
+  const normalized = normalizeSymbol(symbol).replace(/[^A-Z0-9.]/g, '');
+  const configured = EQUITY_SYMBOL_ALIASES[normalized] || [];
+  const ticker = normalized.toLowerCase();
+  const strict = [`$${ticker}`];
+  const dynamic = normalized.length <= 2
+    ? strict
+    : [ticker, `$${ticker}`];
+  return uniq([...configured, ...dynamic].map((item) => String(item).toLowerCase()));
+}
+
+function matchesEquityKeyword(text = '', keyword = '') {
+  const lower = String(text || '').toLowerCase();
+  const kw = String(keyword || '').trim().toLowerCase();
+  if (kw.length < 2) return false;
+  if (kw.startsWith('$')) return lower.includes(kw);
+  if (kw.includes(' ')) return lower.includes(kw);
+  return new RegExp(`(^|[^a-z0-9$])${escapeRegExp(kw)}([^a-z0-9]|$)`).test(lower);
 }
 
 function classifyBotNoise(rawRef: any = {}) {
@@ -208,6 +290,30 @@ async function fetchWithTimeout(url: string, timeoutMs = DEFAULT_TIMEOUT_MS): Pr
     });
     if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
     return await resp.json();
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function fetchTextWithTimeout(url: string, timeoutMs = DEFAULT_TIMEOUT_MS, headers: Record<string, string> = {}): Promise<string> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const resp = await fetch(url, {
+      signal: controller.signal,
+      headers: {
+        'User-Agent': 'Mozilla/5.0 luna-community-evidence/1.1 (team-jay research)',
+        ...headers,
+      },
+    });
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    const contentType = resp.headers.get('content-type') || '';
+    const buffer = await resp.arrayBuffer();
+    const charset = /charset=([^;\s]+)/i.exec(contentType)?.[1]?.toLowerCase();
+    if (charset && charset !== 'utf-8' && charset !== 'utf8') {
+      return new TextDecoder(charset).decode(buffer);
+    }
+    return new TextDecoder('utf-8').decode(buffer);
   } finally {
     clearTimeout(timer);
   }
@@ -386,28 +492,548 @@ async function fetchRedditCandidateMentions(activeSymbols: string[] = [], limit 
   return events.slice(0, limit);
 }
 
+async function fetchCoinGeckoTrendingCommunity(activeSymbols: string[] = [], limit = 60): Promise<any[]> {
+  const tickerSymbolMap = buildTickerSymbolMap(activeSymbols, { includeAmbiguous: false });
+  const data = await fetchWithTimeout('https://api.coingecko.com/api/v3/search/trending');
+  const coins: any[] = data?.coins || [];
+  const events: any[] = [];
+
+  for (const item of coins.slice(0, Math.max(1, limit))) {
+    const coin = item?.item || {};
+    const ticker = normalizeSymbol(coin?.symbol || '');
+    const symbol = tickerSymbolMap[ticker];
+    if (!symbol) continue;
+    const rank = Number(coin?.market_cap_rank || item?.score || events.length + 1);
+    const rankBoost = Math.max(0, 0.28 - events.length * 0.025);
+    events.push({
+      sourceType: 'community',
+      sourceName: 'coingecko_trending_community',
+      sourceUrl: 'https://www.coingecko.com/en/discover',
+      symbol,
+      market: 'crypto',
+      strategyFamily: 'community_sentiment',
+      signalDirection: 'neutral',
+      score: Number(rankBoost.toFixed(4)),
+      sourceQuality: 0.34,
+      freshnessScore: 1.0,
+      evidenceSummary: `CoinGecko trending/search interest: ${coin?.name || ticker} (${ticker}) rank=${rank || 'n/a'}`,
+      rawRef: {
+        ticker,
+        coinGeckoId: coin?.id || null,
+        name: coin?.name || null,
+        rank,
+        marketCapRank: coin?.market_cap_rank ?? null,
+        searchTrend: true,
+        candidateDriven: true,
+        mentions: 1,
+      },
+    });
+  }
+  return events;
+}
+
+async function fetchCoinGeckoSearchInterest(activeSymbols: string[] = [], limit = 60): Promise<any[]> {
+  const symbols = activeSymbols
+    .map((symbol) => ({ symbol, ticker: tickerFromSymbol(symbol) }))
+    .filter((item) => item.symbol && item.ticker && !isAmbiguousTicker(item.ticker))
+    .slice(0, Math.min(50, Math.max(1, limit)));
+  if (symbols.length === 0) return [];
+
+  const settled = await Promise.allSettled(symbols.map(async ({ symbol, ticker }) => {
+    const data = await fetchWithTimeout(`https://api.coingecko.com/api/v3/search?query=${encodeURIComponent(ticker)}`);
+    const coins: any[] = data?.coins || [];
+    const exact = coins.find((coin) => normalizeSymbol(coin?.symbol) === ticker)
+      || coins.find((coin) => String(coin?.name || '').toUpperCase().includes(ticker));
+    if (!exact) return null;
+    const rank = Number(exact.market_cap_rank || 9999);
+    const rankScore = Number(Math.max(0.03, 0.26 - Math.min(rank, 2500) / 12500).toFixed(4));
+    return {
+      sourceType: 'community',
+      sourceName: 'coingecko_search_interest',
+      sourceUrl: `https://www.coingecko.com/en/search?query=${encodeURIComponent(ticker)}`,
+      symbol,
+      market: 'crypto',
+      strategyFamily: 'community_sentiment',
+      signalDirection: 'neutral',
+      score: rankScore,
+      sourceQuality: 0.31,
+      freshnessScore: 1.0,
+      evidenceSummary: `CoinGecko search match: ${symbol} ${exact.name || ticker} rank=${rank || 'n/a'}`,
+      rawRef: {
+        candidateDriven: true,
+        searchInterest: true,
+        mentions: 1,
+        ticker,
+        coinGeckoId: exact.id || null,
+        name: exact.name || null,
+        marketCapRank: exact.market_cap_rank ?? null,
+      },
+    };
+  }));
+
+  return settled
+    .filter((result) => result.status === 'fulfilled' && result.value)
+    .map((result: any) => result.value)
+    .slice(0, limit);
+}
+
+async function fetchAlternativeFearGreed(): Promise<any[]> {
+  const data = await fetchWithTimeout('https://api.alternative.me/fng/?limit=1&format=json');
+  const latest = data?.data?.[0];
+  if (!latest) return [];
+  const value = Number(latest.value);
+  const classification = String(latest.value_classification || '').toLowerCase();
+  const normalized = Number.isFinite(value) ? (value - 50) / 50 : 0;
+  const direction = value >= 60 ? 'bullish' : value <= 40 ? 'bearish' : 'neutral';
+  return [{
+    sourceType: 'community',
+    sourceName: 'alternative_fear_greed_index',
+    sourceUrl: 'https://alternative.me/crypto/fear-and-greed-index/',
+    symbol: null,
+    market: 'crypto',
+    strategyFamily: 'market_sentiment',
+    signalDirection: direction,
+    score: Number(Math.max(-1, Math.min(1, normalized)).toFixed(4)),
+    sourceQuality: 0.44,
+    freshnessScore: 1.0,
+    evidenceSummary: `Alternative.me Fear & Greed: ${value} (${latest.value_classification || 'unknown'})`,
+    rawRef: {
+      marketWide: true,
+      value,
+      classification,
+      timestamp: latest.timestamp || null,
+      timeUntilUpdate: latest.time_until_update || null,
+      attributionRequired: true,
+      mentions: 1,
+    },
+  }];
+}
+
+function decodeHtmlText(value = '') {
+  return String(value || '')
+    .replace(/&quot;/g, '"')
+    .replace(/&#034;/g, '"')
+    .replace(/&#039;/g, "'")
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function extractNaverBoardTitles(html = '') {
+  const titles = [...String(html || '').matchAll(/title=["']([^"']{4,180})["']/g)]
+    .map((match) => decodeHtmlText(match[1]))
+    .filter((title) => {
+      if (!title || title.length < 4) return false;
+      if (/[<>]/.test(title)) return false;
+      return !/(종목명|지수명|검색|네이버|로그인|동일업종|더보기|관심종목|최근조회)/.test(title);
+    });
+  return uniq(titles).slice(0, 20);
+}
+
+async function fetchNaverFinanceDiscussion(activeCandidates: ActiveCandidate[] = [], limit = 40): Promise<any[]> {
+  const candidates = activeCandidates
+    .filter((candidate) => candidate.market === 'domestic' && /^\d{6}$/.test(candidate.symbol))
+    .slice(0, Math.min(40, Math.max(1, limit)));
+  if (candidates.length === 0) return [];
+
+  const settled = await Promise.allSettled(candidates.map(async (candidate) => {
+    const symbol = candidate.symbol;
+    const sourceUrl = `https://finance.naver.com/item/board.naver?code=${encodeURIComponent(symbol)}`;
+    const html = await fetchTextWithTimeout(sourceUrl, DEFAULT_TIMEOUT_MS, {
+      Referer: `https://finance.naver.com/item/main.naver?code=${encodeURIComponent(symbol)}`,
+      'Accept-Language': 'ko-KR,ko;q=0.9,en;q=0.8',
+    });
+    const titles = extractNaverBoardTitles(html);
+    if (titles.length === 0) return null;
+    const combinedText = titles.join(' ');
+    const { direction, bullScore, bearScore } = keywordDirection(combinedText, KOREAN_BULLISH_KW, KOREAN_BEARISH_KW);
+    const magnitude = Math.min(1, 0.24 + Math.min(0.32, titles.length / 40) + Math.min(0.24, Math.abs(bullScore - bearScore) * 0.08));
+    return {
+      sourceType: 'community',
+      sourceName: 'naver_finance_discussion',
+      sourceUrl,
+      symbol,
+      market: 'domestic',
+      strategyFamily: 'community_sentiment',
+      signalDirection: direction,
+      score: directionScore(direction, magnitude),
+      sourceQuality: 0.36,
+      freshnessScore: 1.0,
+      evidenceSummary: `Naver Finance discussion: ${symbol} posts=${titles.length} direction=${direction}`,
+      rawRef: {
+        candidateDriven: true,
+        mentions: titles.length,
+        source: 'naver_finance_board',
+        sourceCandidate: candidate.source || null,
+        candidateScore: candidate.score ?? null,
+        bullishHits: bullScore,
+        bearishHits: bearScore,
+        titles: titles.slice(0, 5),
+      },
+    };
+  }));
+
+  return settled
+    .filter((result) => result.status === 'fulfilled' && result.value)
+    .map((result: any) => result.value)
+    .slice(0, limit);
+}
+
+async function fetchDaumFinancePopularRanks(activeCandidates: ActiveCandidate[] = [], limit = 40): Promise<any[]> {
+  const activeByCode = new Map(
+    activeCandidates
+      .filter((candidate) => candidate.market === 'domestic' && /^\d{6}$/.test(candidate.symbol))
+      .map((candidate) => [`A${candidate.symbol}`, candidate]),
+  );
+  if (activeByCode.size === 0) return [];
+
+  const resp = await fetch('https://finance.daum.net/api/search/ranks?limit=100', {
+    headers: {
+      'User-Agent': 'Mozilla/5.0 luna-community-evidence/1.1',
+      Referer: 'https://finance.daum.net/',
+      Accept: 'application/json',
+    },
+    signal: AbortSignal.timeout(DEFAULT_TIMEOUT_MS),
+  });
+  if (!resp.ok) throw new Error(`Daum Finance HTTP ${resp.status}`);
+  const data = await resp.json();
+  const ranks: any[] = data?.data || [];
+  const events: any[] = [];
+
+  for (const item of ranks) {
+    const code = normalizeSymbol(item?.shortCode || item?.symbolCode || '');
+    const candidate = activeByCode.get(code);
+    if (!candidate) continue;
+    const rank = Number(item?.rank || events.length + 1);
+    const rankChange = Number(item?.rankChange || 0);
+    const direction = rankChange > 0 ? 'bullish' : rankChange < 0 ? 'bearish' : 'neutral';
+    const magnitude = Math.min(1, 0.22 + Math.max(0, 11 - rank) * 0.025 + Math.min(0.18, Math.abs(rankChange) * 0.015));
+    events.push({
+      sourceType: 'community',
+      sourceName: 'daum_finance_popular_rank',
+      sourceUrl: item?.boardUrl || `https://finance.daum.net/quotes/${code}`,
+      symbol: candidate.symbol,
+      market: 'domestic',
+      strategyFamily: 'community_sentiment',
+      signalDirection: direction,
+      score: directionScore(direction, magnitude),
+      sourceQuality: 0.34,
+      freshnessScore: 1.0,
+      evidenceSummary: `Daum Finance popular rank: ${candidate.symbol} rank=${rank} rankChange=${rankChange}`,
+      rawRef: {
+        candidateDriven: true,
+        trendingRank: true,
+        mentions: 1,
+        rank,
+        rankChange,
+        name: item?.name || null,
+        sourceCandidate: candidate.source || null,
+        candidateScore: candidate.score ?? null,
+      },
+    });
+  }
+  return events.slice(0, limit);
+}
+
+function directionFromTossSignal(signal: any = {}) {
+  const source = String(signal?.source || '').toLowerCase();
+  if (['aisignals', 'strategies', 'top10', 'community', 'sectors'].includes(source)) return 'bullish';
+  return 'neutral';
+}
+
+function inferMarketFromTossSignal(signal: any = {}): CandidateMarket | null {
+  const market = String(signal?.market || '').toLowerCase();
+  if (market === 'domestic' || market === 'overseas' || market === 'crypto') return market as CandidateMarket;
+  const symbol = normalizeSymbol(signal?.symbol);
+  if (/^\d{6}$/.test(symbol)) return 'domestic';
+  if (symbol.endsWith('/USDT')) return 'crypto';
+  if (/^[A-Z][A-Z0-9.]{0,9}$/.test(symbol)) return 'overseas';
+  return null;
+}
+
+function flattenTossSections(sections: Record<string, any> = {}) {
+  const rows: Array<{ section: string; text: string }> = [];
+  for (const [section, values] of Object.entries(sections || {})) {
+    for (const raw of Array.isArray(values) ? values : []) {
+      const text = String(raw || '').replace(/\s+/g, ' ').trim();
+      if (text) rows.push({ section, text });
+    }
+  }
+  return rows;
+}
+
+async function fetchTossMarketMcpIntel(activeCandidates: ActiveCandidate[] = [], limit = 40): Promise<any[]> {
+  const activeBySymbol = new Map(
+    activeCandidates
+      .filter((candidate) => (
+        (candidate.market === 'domestic' && /^\d{6}$/.test(candidate.symbol))
+        || (candidate.market === 'overseas' && /^[A-Z][A-Z0-9.]{0,9}$/.test(candidate.symbol))
+      ))
+      .map((candidate) => [`${candidate.market}|${candidate.symbol}`, candidate]),
+  );
+  if (activeBySymbol.size === 0) return [];
+
+  const payload = await collectTossMarketIntel({
+    dryRun: String(process.env.LUNA_TOSS_MCP_DRY_RUN || '').toLowerCase() === 'true',
+    limit: Math.min(40, Math.max(1, limit)),
+    headless: process.env.LUNA_TOSS_MCP_HEADLESS !== 'false',
+  });
+  const signals: any[] = Array.isArray(payload?.signals) ? payload.signals : [];
+  const events: any[] = [];
+  const qualityStatus = String(payload?.quality?.status || 'unknown');
+  const qualityWeight = qualityStatus === 'ready' ? 0.41 : qualityStatus === 'degraded' ? 0.32 : 0.20;
+  const emitted = new Set<string>();
+
+  for (const signal of signals) {
+    const symbol = normalizeSymbol(signal?.symbol);
+    const market = inferMarketFromTossSignal(signal);
+    const candidate = market ? activeBySymbol.get(`${market}|${symbol}`) : null;
+    if (!candidate) continue;
+    const direction = directionFromTossSignal(signal);
+    const signalScore = Math.max(0, Math.min(1, Number(signal?.score || 0.5)));
+    const magnitude = direction === 'neutral'
+      ? Math.min(0.32, 0.12 + signalScore * 0.22)
+      : Math.min(1, 0.24 + signalScore * 0.48);
+    emitted.add(`${candidate.market}|${symbol}`);
+    events.push({
+      sourceType: 'community',
+      sourceName: 'toss_market_mcp_intel',
+      sourceUrl: payload?.targetUrl || 'https://tossinvest.com/',
+      symbol,
+      market: candidate.market,
+      strategyFamily: 'community_sentiment',
+      signalDirection: direction,
+      score: direction === 'neutral' ? Number(magnitude.toFixed(4)) : directionScore(direction, magnitude),
+      sourceQuality: qualityWeight,
+      freshnessScore: 1.0,
+      evidenceSummary: `Toss MCP intel: ${symbol} ${signal?.label || ''} source=${signal?.source || 'unknown'} score=${signalScore.toFixed(2)}`,
+      rawRef: {
+        candidateDriven: true,
+        mcpServer: 'toss-market-mcp-server',
+        provider: 'toss_web_bridge',
+        transport: payload?.transport || null,
+        quality: payload?.quality || {},
+        sectionCounts: payload?.sectionCounts || {},
+        sourceCandidate: candidate.source || null,
+        candidateScore: candidate.score ?? null,
+        signal,
+        mentions: 1,
+        sectionsSample: Object.fromEntries(
+          Object.entries(payload?.sections || {}).map(([key, values]) => [
+            key,
+            (Array.isArray(values) ? values : []).slice(0, 3),
+          ]),
+        ),
+      },
+    });
+  }
+
+  const sectionRows = flattenTossSections(payload?.sections || {});
+  for (const candidate of activeCandidates.filter((item) => item.market === 'overseas')) {
+    const symbol = normalizeSymbol(candidate.symbol);
+    if (!symbol || emitted.has(`overseas|${symbol}`)) continue;
+    const keywords = keywordsForEquitySymbol(symbol);
+    const matches = sectionRows.filter((row) => keywords.some((kw) => matchesEquityKeyword(row.text, kw)));
+    if (matches.length === 0) continue;
+    const combinedText = matches.map((row) => row.text).join(' ');
+    const direction = inferDirection(combinedText);
+    const magnitude = Math.min(0.48, 0.18 + matches.length * 0.06);
+    emitted.add(`overseas|${symbol}`);
+    events.push({
+      sourceType: 'community',
+      sourceName: 'toss_market_mcp_intel',
+      sourceUrl: payload?.targetUrl || 'https://tossinvest.com/',
+      symbol,
+      market: 'overseas',
+      strategyFamily: 'community_sentiment',
+      signalDirection: direction,
+      score: direction === 'neutral' ? Number(magnitude.toFixed(4)) : directionScore(direction, magnitude),
+      sourceQuality: Math.max(0.26, qualityWeight - 0.05),
+      freshnessScore: 1.0,
+      evidenceSummary: `Toss MCP overseas section match: ${symbol} matches=${matches.length}`,
+      rawRef: {
+        candidateDriven: true,
+        mcpServer: 'toss-market-mcp-server',
+        provider: 'toss_web_bridge',
+        transport: payload?.transport || null,
+        quality: payload?.quality || {},
+        sectionCounts: payload?.sectionCounts || {},
+        sourceCandidate: candidate.source || null,
+        candidateScore: candidate.score ?? null,
+        signal: {
+          symbol,
+          market: 'overseas',
+          source: 'section_scan',
+          score: magnitude,
+        },
+        mentions: matches.length,
+        matchedKeywords: keywords,
+        matchedSections: matches.slice(0, 5),
+      },
+    });
+  }
+  return events.slice(0, limit);
+}
+
+async function fetchRedditEquityCandidateMentions(activeCandidates: ActiveCandidate[] = [], limit = 60): Promise<any[]> {
+  const candidates = activeCandidates
+    .filter((candidate) => candidate.market === 'overseas' && candidate.symbol)
+    .slice(0, Math.min(80, Math.max(1, limit)));
+  if (candidates.length === 0) return [];
+
+  const subreddits = ['stocks', 'investing', 'wallstreetbets'];
+  const settled = await Promise.allSettled(
+    subreddits.map(async (subreddit) => {
+      const data = await fetchWithTimeout(`https://www.reddit.com/r/${subreddit}/hot.json?limit=75`);
+      return {
+        subreddit,
+        posts: (data?.data?.children || []).map((c: any) => c?.data).filter(Boolean),
+      };
+    }),
+  );
+
+  const events: any[] = [];
+  for (const result of settled) {
+    if (result.status !== 'fulfilled') continue;
+    const { subreddit, posts } = result.value;
+    for (const candidate of candidates) {
+      const symbol = normalizeSymbol(candidate.symbol);
+      const keywords = keywordsForEquitySymbol(symbol);
+      const relevant = posts.filter((post: any) => {
+        const text = `${post?.title || ''} ${post?.selftext || ''}`.slice(0, 2000);
+        return keywords.some((kw) => matchesEquityKeyword(text, kw));
+      });
+      if (relevant.length === 0) continue;
+      const avgUpvoteRatio = relevant.reduce((sum: number, post: any) => sum + Number(post?.upvote_ratio || 0.5), 0) / relevant.length;
+      const totalScore = relevant.reduce((sum: number, post: any) => sum + Number(post?.score || 0), 0);
+      const combinedText = relevant.map((post: any) => `${post?.title || ''} ${post?.selftext || ''}`).join(' ');
+      const direction = inferDirection(combinedText);
+      const magnitude = Math.min(1, 0.22 + avgUpvoteRatio * 0.30 + Math.min(0.22, relevant.length / 14) + Math.min(0.18, totalScore / 1200));
+      const sourceQuality = subreddit === 'wallstreetbets' ? 0.32 : 0.35;
+      events.push({
+        sourceType: 'community',
+        sourceName: `reddit_equity_${subreddit.toLowerCase()}`,
+        sourceUrl: `https://www.reddit.com/r/${subreddit}/`,
+        symbol,
+        market: 'overseas',
+        strategyFamily: 'community_sentiment',
+        signalDirection: direction,
+        score: directionScore(direction, magnitude),
+        sourceQuality,
+        freshnessScore: 1.0,
+        evidenceSummary: `Reddit equity scan r/${subreddit}: ${symbol} mentions=${relevant.length} totalScore=${totalScore}`,
+        rawRef: {
+          candidateDriven: true,
+          mentions: relevant.length,
+          avgUpvoteRatio,
+          totalScore,
+          subreddit,
+          sourceCandidate: candidate.source || null,
+          candidateScore: candidate.score ?? null,
+          keywords,
+          topPosts: relevant.slice(0, 3).map((post: any) => ({
+            title: post?.title,
+            score: post?.score,
+            upvote_ratio: post?.upvote_ratio,
+          })),
+        },
+      });
+    }
+  }
+  return events.slice(0, limit);
+}
+
+async function fetchYahooFinanceNewsSearch(activeCandidates: ActiveCandidate[] = [], limit = 60): Promise<any[]> {
+  const candidates = activeCandidates
+    .filter((candidate) => candidate.market === 'overseas' && candidate.symbol)
+    .slice(0, Math.min(60, Math.max(1, limit)));
+  if (candidates.length === 0) return [];
+
+  const settled = await Promise.allSettled(candidates.map(async (candidate) => {
+    const symbol = normalizeSymbol(candidate.symbol);
+    const url = `https://query1.finance.yahoo.com/v1/finance/search?q=${encodeURIComponent(symbol)}&newsCount=6`;
+    const data = await fetchWithTimeout(url);
+    const news: any[] = data?.news || [];
+    const keywords = keywordsForEquitySymbol(symbol);
+    const relevant = news.filter((item) => {
+      const text = `${item?.title || ''} ${item?.publisher || ''}`;
+      return keywords.some((kw) => matchesEquityKeyword(text, kw));
+    });
+    if (relevant.length === 0) return null;
+    const combinedText = relevant.map((item) => item?.title || '').join(' ');
+    const direction = inferDirection(combinedText);
+    const recencyBoost = relevant.some((item) => {
+      const ts = Number(item?.providerPublishTime || 0) * 1000;
+      return ts > 0 && Date.now() - ts <= 12 * 3600_000;
+    }) ? 0.08 : 0;
+    const magnitude = Math.min(1, 0.28 + Math.min(0.28, relevant.length * 0.06) + recencyBoost);
+    return {
+      sourceType: 'community',
+      sourceName: 'yahoo_finance_news_search',
+      sourceUrl: relevant[0]?.link || `https://finance.yahoo.com/quote/${encodeURIComponent(symbol)}/news`,
+      symbol,
+      market: 'overseas',
+      strategyFamily: 'news_sentiment',
+      signalDirection: direction,
+      score: directionScore(direction, magnitude),
+      sourceQuality: 0.42,
+      freshnessScore: 1.0,
+      evidenceSummary: `Yahoo Finance news search: ${symbol} matched=${relevant.length} direction=${direction}`,
+      rawRef: {
+        candidateDriven: true,
+        mentions: relevant.length,
+        sourceCandidate: candidate.source || null,
+        candidateScore: candidate.score ?? null,
+        keywords,
+        topNews: relevant.slice(0, 4).map((item) => ({
+          title: item?.title,
+          publisher: item?.publisher,
+          providerPublishTime: item?.providerPublishTime,
+          link: item?.link,
+        })),
+      },
+    };
+  }));
+
+  return settled
+    .filter((result) => result.status === 'fulfilled' && result.value)
+    .map((result: any) => result.value)
+    .slice(0, limit);
+}
+
 function buildMissingCommunityEvidence(activeSymbols: string[] = [], existingEvents: any[] = [], limit = 60) {
   if (String(process.env.LUNA_COMMUNITY_GAP_EVIDENCE_ENABLED || 'true').toLowerCase() === 'false') return [];
-  const seen = new Set(existingEvents.map((event) => normalizeSymbol(event.symbol)).filter(Boolean));
-  return activeSymbols
-    .filter((symbol) => !seen.has(normalizeSymbol(symbol)))
+  const cryptoCandidates = activeSymbols.map((symbol) => ({ symbol, market: 'crypto' as CandidateMarket }));
+  return buildMissingCommunityEvidenceForCandidates(cryptoCandidates, existingEvents, limit);
+}
+
+function buildMissingCommunityEvidenceForCandidates(activeCandidates: ActiveCandidate[] = [], existingEvents: any[] = [], limit = 60) {
+  if (String(process.env.LUNA_COMMUNITY_GAP_EVIDENCE_ENABLED || 'true').toLowerCase() === 'false') return [];
+  const seen = new Set(existingEvents
+    .filter((event) => event.symbol && event.market)
+    .map((event) => `${event.market}|${normalizeSymbol(event.symbol)}`));
+  return activeCandidates
+    .filter((candidate) => candidate.symbol && candidate.market)
+    .filter((candidate) => !seen.has(`${candidate.market}|${normalizeSymbol(candidate.symbol)}`))
     .slice(0, limit)
-    .map((symbol) => ({
+    .map((candidate) => ({
       sourceType: 'community',
       sourceName: 'community_candidate_gap',
       sourceUrl: null,
-      symbol,
-      market: 'crypto',
+      symbol: candidate.symbol,
+      market: candidate.market,
       strategyFamily: 'community_sentiment',
       signalDirection: 'neutral',
       score: 0,
       sourceQuality: 0.10,
       freshnessScore: 1.0,
-      evidenceSummary: `Community evidence gap recorded for active candidate ${symbol}`,
+      evidenceSummary: `Community evidence gap recorded for active ${candidate.market} candidate ${candidate.symbol}`,
       rawRef: {
         missing_data: true,
         candidateDriven: true,
-        reason: 'no_reddit_apewisdom_news_match',
+        reason: candidate.market === 'crypto' ? 'no_reddit_apewisdom_news_match' : 'no_market_community_match',
         mentions: 0,
         sourceDiversity: { sourceCount: 0, uniqueSources: [] },
       },
@@ -502,7 +1128,7 @@ async function fetchNaverNews({ clientId, clientSecret, limit = 20 } = {}): Prom
   });
 }
 
-async function collectSource(name: string, fn: () => Promise<any[]>) {
+async function collectSource(name: string, fn: () => Promise<any[]>, market: CandidateMarket = 'crypto') {
   try {
     const events = await fn();
     return { source: name, ok: true, count: events.length, events, error: null };
@@ -516,7 +1142,7 @@ async function collectSource(name: string, fn: () => Promise<any[]>) {
         sourceName: name,
         sourceUrl: null,
         symbol: null,
-        market: 'crypto',
+        market,
         strategyFamily: 'community_sentiment',
         signalDirection: 'neutral',
         score: 0,
@@ -533,11 +1159,11 @@ async function collectSource(name: string, fn: () => Promise<any[]>) {
 function attachAggregates(events: any[]) {
   const bySymbol = new Map<string, any[]>();
   for (const event of events) {
-    const key = event.symbol || '__market__';
+    const key = `${event.market || 'unknown'}|${event.symbol || '__market__'}`;
     bySymbol.set(key, [...(bySymbol.get(key) || []), event]);
   }
   return events.map((event) => {
-    const scoped = bySymbol.get(event.symbol || '__market__') || [event];
+    const scoped = bySymbol.get(`${event.market || 'unknown'}|${event.symbol || '__market__'}`) || [event];
     const uniqueSources = [...new Set(scoped.map((item) => item.sourceName).filter(Boolean))];
     return normalizeEvent(event, {
       sourceDiversity: {
@@ -564,7 +1190,21 @@ export async function runCommunityEvidenceRefresh(options: any = {}): Promise<an
   const fixture = options.fixture === true;
   const limit = Math.max(1, Number(options.limit || 60));
   if (!dryRun) await db.initSchema();
-  const activeSymbols = fixture ? [] : await getActiveCryptoCandidateSymbols(limit);
+  const [activeCryptoCandidates, activeDomesticCandidates, activeOverseasCandidates] = fixture
+    ? [[], [], []]
+    : await Promise.all([
+      getActiveCandidateRows('crypto', limit),
+      getActiveCandidateRows('domestic', limit),
+      getActiveCandidateRows('overseas', limit),
+    ]);
+  const activeSymbols = activeCryptoCandidates
+    .map((candidate: ActiveCandidate) => normalizeSymbol(candidate.symbol))
+    .filter((symbol: string) => symbol.endsWith('/USDT'));
+  const allActiveCandidates = [
+    ...activeCryptoCandidates,
+    ...activeDomesticCandidates,
+    ...activeOverseasCandidates,
+  ];
 
   const sourceResults = fixture
     ? [{ source: 'fixture', ok: true, count: fixtureEvents(limit).length, events: fixtureEvents(limit), error: null }]
@@ -572,19 +1212,29 @@ export async function runCommunityEvidenceRefresh(options: any = {}): Promise<an
       collectSource('apewisdom_crypto', () => fetchApeWisdom(limit, activeSymbols)),
       collectSource('reddit', () => fetchAllRedditSources(limit)),
       collectSource('reddit_candidate_scan', () => fetchRedditCandidateMentions(activeSymbols, limit)),
+      collectSource('coingecko_trending_community', () => fetchCoinGeckoTrendingCommunity(activeSymbols, limit)),
+      collectSource('coingecko_search_interest', () => fetchCoinGeckoSearchInterest(activeSymbols, limit)),
+      collectSource('alternative_fear_greed_index', () => fetchAlternativeFearGreed()),
       collectSource('cryptopanic_news', () => fetchCryptoPanic(process.env.CRYPTOPANIC_API_KEY || null, limit)),
       collectSource('naver_news', () => fetchNaverNews({
         clientId: process.env.NAVER_CLIENT_ID || process.env.NAVER_NEWS_CLIENT_ID,
         clientSecret: process.env.NAVER_CLIENT_SECRET || process.env.NAVER_NEWS_CLIENT_SECRET,
         limit,
       })),
+      collectSource('naver_finance_discussion', () => fetchNaverFinanceDiscussion(activeDomesticCandidates, limit), 'domestic'),
+      collectSource('daum_finance_popular_rank', () => fetchDaumFinancePopularRanks(activeDomesticCandidates, limit), 'domestic'),
+      collectSource('toss_market_mcp_intel', () => fetchTossMarketMcpIntel([...activeDomesticCandidates, ...activeOverseasCandidates], limit), 'domestic'),
+      collectSource('reddit_equity_candidate_scan', () => fetchRedditEquityCandidateMentions(activeOverseasCandidates, limit), 'overseas'),
+      collectSource('yahoo_finance_news_search', () => fetchYahooFinanceNewsSearch(activeOverseasCandidates, limit), 'overseas'),
     ]);
 
   const collectedEvents = sourceResults.flatMap((result) => result.events || []);
-  const gapEvents = buildMissingCommunityEvidence(activeSymbols, collectedEvents, limit);
+  const gapEvents = buildMissingCommunityEvidenceForCandidates(allActiveCandidates, collectedEvents, limit);
+  const maxTotalEvents = fixture ? limit : limit * 3;
+  const selectedCollectedEvents = collectedEvents.slice(0, maxTotalEvents);
   const allEvents = attachAggregates([
-    ...collectedEvents.slice(0, limit),
-    ...gapEvents.slice(0, Math.max(0, limit - Math.min(limit, collectedEvents.length))),
+    ...selectedCollectedEvents,
+    ...gapEvents.slice(0, Math.max(0, maxTotalEvents - selectedCollectedEvents.length)),
   ]);
   const mentionsBySymbol: Record<string, number> = {};
   for (const ev of allEvents) {
@@ -601,6 +1251,11 @@ export async function runCommunityEvidenceRefresh(options: any = {}): Promise<an
     inserted,
     bySource: Object.fromEntries(sourceResults.map((result) => [result.source, result.count])),
     activeCandidateSymbols: activeSymbols,
+    activeCandidateSymbolsByMarket: {
+      crypto: activeCryptoCandidates.map((candidate: ActiveCandidate) => candidate.symbol),
+      domestic: activeDomesticCandidates.map((candidate: ActiveCandidate) => candidate.symbol),
+      overseas: activeOverseasCandidates.map((candidate: ActiveCandidate) => candidate.symbol),
+    },
     gapEvidence: gapEvents.length,
     sourceReports: sourceResults.map(({ events, ...rest }) => rest),
     symbols: Object.keys(mentionsBySymbol),
