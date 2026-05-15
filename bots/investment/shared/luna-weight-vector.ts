@@ -2,6 +2,10 @@
 
 import { get, query, run } from './db/core.ts';
 import { buildLunaDeploymentDecisionSpec } from './luna-deployment-spec.ts';
+import {
+  DEFAULT_LUNA_WEIGHT_POLICY,
+  normalizeLunaWeightPolicy,
+} from './luna-autonomous-weight-feedback.ts';
 
 const VALID_MARKETS = new Set(['crypto', 'domestic', 'overseas']);
 
@@ -26,6 +30,12 @@ function parseJsonMaybe(value, fallback = {}) {
   } catch {
     return fallback;
   }
+}
+
+function roundWeightMap(weights = {}) {
+  return Object.fromEntries(
+    Object.entries(weights || {}).map(([key, value]) => [key, round(value, 6)]),
+  );
 }
 
 export function normalizeLunaPhase2Market(value = '') {
@@ -159,16 +169,35 @@ function scorePredictive(predictive = {}) {
 }
 
 function scoreCommunity(community = {}) {
+  const hasSymbolScore = community?.avg_score != null || community?.score != null;
   const avg = finiteNumber(community?.avg_score ?? community?.score, 0);
-  const normalized = clamp((avg + 1) / 2, 0, 1, 0.5);
+  const marketAvg = finiteNumber(community?.market_avg_score ?? community?.marketAvgScore, 0);
+  const marketContext = community?.market_avg_score != null || community?.marketAvgScore != null
+    ? clamp((marketAvg + 1) / 2, 0, 1, 0.5) - 0.5
+    : 0;
+  const normalized = hasSymbolScore
+    ? clamp((avg + 1) / 2, 0, 1, 0.5)
+    : clamp(0.5 + marketContext * 0.35, 0, 1, 0.5);
   const sourceCount = finiteNumber(community?.source_count ?? community?.sourceCount, 0);
+  const marketSourceCount = finiteNumber(community?.market_source_count ?? community?.marketSourceCount, 0);
   const diversityBonus = Math.min(0.08, Math.max(0, sourceCount - 1) * 0.025);
+  const marketContextBonus = hasSymbolScore ? Math.min(0.025, marketSourceCount * 0.006) : Math.min(0.04, marketSourceCount * 0.008);
+  const sourceQuality = clamp(
+    community?.avg_source_quality ?? community?.avgSourceQuality ?? community?.market_avg_quality ?? community?.marketAvgQuality,
+    0,
+    1,
+    hasSymbolScore ? 0.45 : 0.35,
+  );
+  const qualityAdjustment = clamp((sourceQuality - 0.40) * 0.16, -0.06, 0.08, 0);
   const botNoise = clamp(community?.bot_noise_score ?? community?.botNoiseScore, 0, 1, 0);
   const hypeSpike = community?.hype_spike === true || community?.hypeSpike === true;
   const penalty = Math.min(0.20, botNoise * 0.15 + (hypeSpike ? 0.05 : 0));
   return {
-    score: round(clamp(normalized + diversityBonus - penalty, 0, 1, 0.5), 4),
+    score: round(clamp(normalized + diversityBonus + marketContextBonus + qualityAdjustment - penalty, 0, 1, 0.5), 4),
     sourceCount,
+    marketSourceCount,
+    sourceQuality,
+    marketContextScore: round(marketContext, 4),
     botNoise,
     hypeSpike,
   };
@@ -201,12 +230,11 @@ export function buildLunaWeightVector(input = {}, config = {}) {
     ],
   });
 
-  const weights = {
-    candidate: finiteNumber(config?.weights?.candidate, 0.20),
-    backtest: finiteNumber(config?.weights?.backtest, 0.35),
-    predictive: finiteNumber(config?.weights?.predictive, 0.25),
-    community: finiteNumber(config?.weights?.community, 0.20),
-  };
+  const weightFeedback = config?.autonomousWeightFeedback || config?.weightFeedback || null;
+  const weights = normalizeLunaWeightPolicy(
+    config?.weights || weightFeedback?.weights || DEFAULT_LUNA_WEIGHT_POLICY,
+    DEFAULT_LUNA_WEIGHT_POLICY,
+  );
   const weightTotal = Object.values(weights).reduce((sum, value) => sum + Math.max(0, value), 0) || 1;
   const confidence = clamp(
     (candidateScore * weights.candidate
@@ -266,6 +294,17 @@ export function buildLunaWeightVector(input = {}, config = {}) {
         backtest: { score: round(backtest.score, 4), pass: backtest.pass, raw: input.backtest || null },
         predictive: { score: round(predictive.score, 4), pass: predictive.pass, decision: predictive.decision, raw: input.predictive || null },
         community: { score: round(community.score, 4), ...community, raw: input.community || null },
+      },
+      weights: {
+        source: weightFeedback?.source || (config?.weights ? 'config_weights' : 'static_default'),
+        status: weightFeedback?.status || null,
+        applied: roundWeightMap(weights),
+        base: roundWeightMap(weightFeedback?.baseWeights || DEFAULT_LUNA_WEIGHT_POLICY),
+        deltas: roundWeightMap(weightFeedback?.deltas || {}),
+        reasons: weightFeedback?.reasons || [],
+        metrics: weightFeedback?.metrics || null,
+        shadowOnly: true,
+        liveMutation: false,
       },
       noLookahead,
       hardReasons,
@@ -328,10 +367,12 @@ export async function loadLunaPhase2CandidateInputs({ limit = 50, market = null 
   const marketWhere = market ? `AND market = $${params.push(normalizeLunaPhase2Market(market))}` : '';
   params.push(limit);
   const rows = await query(`
-    WITH community AS (
+    WITH symbol_community AS (
       SELECT symbol, market,
-             AVG(score)::double precision AS avg_score,
+             (SUM(score * GREATEST(0.05, COALESCE(source_quality, 0.5)) * GREATEST(0.2, COALESCE(freshness_score, 1.0)))
+              / NULLIF(SUM(GREATEST(0.05, COALESCE(source_quality, 0.5)) * GREATEST(0.2, COALESCE(freshness_score, 1.0))), 0))::double precision AS avg_score,
              COUNT(DISTINCT source_name)::int AS source_count,
+             AVG(source_quality)::double precision AS avg_source_quality,
              MAX(created_at) AS last_seen_at,
              MAX(CASE WHEN COALESCE((raw_ref->'botNoise'->>'score')::double precision, 0) > 0.5 THEN 1 ELSE 0 END)::int AS bot_noise_flag,
              MAX(CASE WHEN COALESCE((raw_ref->'hypeSpike'->>'detected')::boolean, false) THEN 1 ELSE 0 END)::int AS hype_spike_flag
@@ -342,6 +383,21 @@ export async function loadLunaPhase2CandidateInputs({ limit = 50, market = null 
          AND source_name <> 'community_candidate_gap'
          AND COALESCE((raw_ref->>'missing_data')::boolean, false) = false
        GROUP BY symbol, market
+    ),
+    market_community AS (
+      SELECT market,
+             (SUM(score * GREATEST(0.05, COALESCE(source_quality, 0.5)) * GREATEST(0.2, COALESCE(freshness_score, 1.0)))
+              / NULLIF(SUM(GREATEST(0.05, COALESCE(source_quality, 0.5)) * GREATEST(0.2, COALESCE(freshness_score, 1.0))), 0))::double precision AS market_avg_score,
+             COUNT(DISTINCT source_name)::int AS market_source_count,
+             AVG(source_quality)::double precision AS market_avg_quality,
+             MAX(created_at) AS market_last_seen_at
+       FROM external_evidence_events
+       WHERE source_type = 'community'
+         AND created_at >= NOW() - INTERVAL '24 hours'
+         AND symbol IS NULL
+         AND source_name <> 'community_candidate_gap'
+         AND COALESCE((raw_ref->>'missing_data')::boolean, false) = false
+       GROUP BY market
     ),
     latest_predictive AS (
       SELECT DISTINCT ON (symbol, market)
@@ -364,18 +420,25 @@ export async function loadLunaPhase2CandidateInputs({ limit = 50, market = null 
            cbs.last_backtest_at, cbs.gate_status, cbs.would_block, cbs.block_reasons,
            lp.decision AS predictive_decision, lp.score AS predictive_score,
            lp.threshold AS predictive_threshold, lp.component_coverage, lp.created_at AS predictive_created_at,
-           community.avg_score AS community_avg_score,
-           community.source_count AS community_source_count,
-           community.last_seen_at AS community_last_seen_at,
-           community.bot_noise_flag AS community_bot_noise_flag,
-           community.hype_spike_flag AS community_hype_spike_flag
+           symbol_community.avg_score AS community_avg_score,
+           symbol_community.source_count AS community_source_count,
+           symbol_community.avg_source_quality AS community_avg_source_quality,
+           symbol_community.last_seen_at AS community_last_seen_at,
+           symbol_community.bot_noise_flag AS community_bot_noise_flag,
+           symbol_community.hype_spike_flag AS community_hype_spike_flag,
+           market_community.market_avg_score AS community_market_avg_score,
+           market_community.market_source_count AS community_market_source_count,
+           market_community.market_avg_quality AS community_market_avg_quality,
+           market_community.market_last_seen_at AS community_market_last_seen_at
       FROM active_candidates cu
       LEFT JOIN candidate_backtest_status cbs
         ON cbs.symbol = cu.symbol AND cbs.market = cu.market
       LEFT JOIN latest_predictive lp
         ON lp.symbol = cu.symbol AND lp.market = cu.market
-      LEFT JOIN community
-        ON community.symbol = cu.symbol AND community.market = cu.market
+      LEFT JOIN symbol_community
+        ON symbol_community.symbol = cu.symbol AND symbol_community.market = cu.market
+      LEFT JOIN market_community
+        ON market_community.market = cu.market
      ORDER BY cu.score DESC, cu.discovered_at DESC
      LIMIT $${params.length}
   `, params).catch(() => []);
@@ -412,7 +475,12 @@ export async function loadLunaPhase2CandidateInputs({ limit = 50, market = null 
     community: {
       avg_score: row.community_avg_score,
       source_count: row.community_source_count,
+      avg_source_quality: row.community_avg_source_quality,
       last_seen_at: row.community_last_seen_at,
+      market_avg_score: row.community_market_avg_score,
+      market_source_count: row.community_market_source_count,
+      market_avg_quality: row.community_market_avg_quality,
+      market_last_seen_at: row.community_market_last_seen_at,
       bot_noise_score: row.community_bot_noise_flag ? 0.6 : 0,
       hype_spike: row.community_hype_spike_flag === 1,
     },

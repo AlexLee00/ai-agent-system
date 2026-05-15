@@ -7,7 +7,7 @@
  * LLM: Groq llama-4-scout (PAPER) / Groq llama-4-scout (LIVE, sophia는 Groq 전용)
  *
  * 소스:
- *   암호화폐: Reddit + DCInside + CryptoPanic
+ *   암호화폐: Reddit + DCInside + Fear & Greed
  *   미국주식:  Reddit (r/stocks, r/investing, r/wallstreetbets)
  *   국내주식:  네이버 증권 종목토론실
  *
@@ -151,7 +151,7 @@ async function fetchFearGreedIndex() {
  * 다중 소스 감성 점수 통합 (소셜은 커뮤니티에 포함)
  * @param {number}      communityScore  -1~1 (LLM/키워드 + Reddit/DC 종합)
  * @param {number|null} fearGreed       0~100 (alternative.me) 또는 null
- * @param {number|null} newsScore       -1~1 (CryptoPanic 뉴스 투표 비율) 또는 null
+ * @param {number|null} newsScore       -1~1 (별도 뉴스 점수) 또는 null
  * @returns {{ combined: number, fgNorm: number|null, label: string }}
  */
 export function combineSentiment(communityScore, fearGreed, newsScore) {
@@ -245,27 +245,8 @@ async function fetchDCinside(gallId) {
 // ─── CryptoPanic ─────────────────────────────────────────────────────
 
 async function fetchCryptoPanic(symbol) {
-  const s      = loadSecrets();
-  const apiKey = s.cryptopanic_api_key;
-  if (!apiKey) return [];
-
-  const ticker = symbol.split('/')[0].toLowerCase();
-  try {
-    const { status, body } = await httpsGet(
-      'cryptopanic.com',
-      `/api/v1/posts/?auth_token=${apiKey}&currencies=${ticker.toUpperCase()}&filter=hot`,
-    );
-    if (status !== 200) return [];
-    const data = JSON.parse(body);
-    return (data?.results || []).slice(0, 10).map(p => ({
-      title:  p.title || '',
-      score:  (p.votes?.positive || 0) - (p.votes?.negative || 0),
-      source: 'cryptopanic',
-    }));
-  } catch (e) {
-    console.warn(`  ⚠️ [소피아] CryptoPanic: ${e.message}`);
-    return [];
-  }
+  void symbol;
+  return [];
 }
 
 // ─── 네이버 증권 종목토론실 ───────────────────────────────────────────
@@ -314,10 +295,9 @@ function filterAndRankCrypto(redditPosts, dcPosts, cpPosts, symbol) {
     .sort((a, b) => b.recommend - a.recommend).slice(0, 5)
     .map(p => ({ source: 'dcinside', title: p.title, weight: Math.min(p.recommend / 10, 2) + 0.5 }));
 
-  const filteredCP = cpPosts
-    .map(p => ({ source: 'cryptopanic', title: p.title, weight: Math.max(p.score / 10 + 1, 0.5) }));
+  void cpPosts;
 
-  return [...filteredReddit, ...filteredDC, ...filteredCP];
+  return [...filteredReddit, ...filteredDC];
 }
 
 function filterAndRankUS(redditPosts, symbol) {
@@ -362,7 +342,7 @@ function keywordFallback(posts, exchange) {
 // ─── LLM 프롬프트 ────────────────────────────────────────────────────
 
 const PROMPTS = {
-  binance: `당신은 암호화폐 커뮤니티 감성분석가입니다. Reddit/DCInside/CryptoPanic 데이터를 분석합니다.
+  binance: `당신은 암호화폐 커뮤니티 감성분석가입니다. Reddit/DCInside/Fear & Greed 데이터를 분석합니다.
 응답 (JSON만): {"action":"BUY"|"SELL"|"HOLD","confidence":0.0~1.0,"reasoning":"근거 (한국어)","sentiment":"극도의 낙관"|"낙관"|"중립"|"비관"|"극도의 비관"}
 규칙: FOMO → BUY (과도하면 역설적 SELL). FUD → SELL (과도하면 역설적 BUY). 커뮤니티 과열/봇/낮은 출처 다양성은 BUY 근거가 아니라 HOLD/SELL 리스크로 본다. 기술/거래량 확인 없는 narrative-only BUY 금지. confidence 0.5 미만 → HOLD.`,
 
@@ -413,7 +393,7 @@ export async function analyzeSentiment(symbol = 'BTC/USDT', exchange = 'binance'
   console.log(`\n💬 [소피아] ${symbol}(${label}) 커뮤니티 수집 중...`);
 
   let posts;
-  let cpPostsRef = [];  // CryptoPanic 참조 (binance 전용, 뉴스 감성 계산용)
+  let cpPostsRef = [];  // Retired paid news source placeholder.
   let fearGreed  = null;
 
   if (exchange === 'kis_overseas') {
@@ -443,7 +423,7 @@ export async function analyzeSentiment(symbol = 'BTC/USDT', exchange = 'binance'
     fearGreed  = fg;
     const allReddit = redditResults.flat();
     const allDC     = dcResults.flat();
-    console.log(`  Reddit: ${allReddit.length}건 | DC: ${allDC.length}건 | CryptoPanic: ${cpPosts.length}건`);
+    console.log(`  Reddit: ${allReddit.length}건 | DC: ${allDC.length}건 | CryptoPanic: retired`);
     posts = filterAndRankCrypto(allReddit, allDC, cpPosts, symbol);
     console.log(`  관련 게시물: ${posts.length}건`);
   }
@@ -491,7 +471,7 @@ export async function analyzeSentiment(symbol = 'BTC/USDT', exchange = 'binance'
   console.log(`  → [소피아] ${signal} (${(confidence * 100).toFixed(0)}%) | ${sentiment}`);
   posts.slice(0, 2).forEach(p => console.log(`  • [${p.source}] ${p.title.slice(0, 60)}`));
 
-  // 암호화폐: 다중 소스 감성 통합 (커뮤니티 + Fear & Greed + CryptoPanic 뉴스)
+  // 암호화폐: 다중 소스 감성 통합 (커뮤니티 + Fear & Greed)
   let combinedScore = null;
   if (exchange === 'binance') {
     const communityScore = signal === ACTIONS.BUY ? confidence : signal === ACTIONS.SELL ? -confidence : 0;

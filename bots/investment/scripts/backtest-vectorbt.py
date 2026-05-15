@@ -13,7 +13,10 @@ import argparse
 import json
 import math
 import sys
+import warnings
 from datetime import datetime, timedelta, timezone
+
+warnings.filterwarnings("ignore", message="urllib3 v2 only supports OpenSSL")
 
 
 def load_optional_deps():

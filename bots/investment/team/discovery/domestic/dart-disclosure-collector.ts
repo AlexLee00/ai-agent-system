@@ -5,6 +5,10 @@
 // Kill switch: LUNA_DISCOVERY_DART=false
 
 import type { DiscoveryAdapter, DiscoveryResult, DiscoveryCollectOptions, DiscoverySignal } from '../types.ts';
+import { createRequire } from 'node:module';
+
+const require = createRequire(import.meta.url);
+const { resolveDartApiKey } = require('../../../../../packages/core/lib/news-credentials.legacy.js');
 
 const DART_BASE_URL = 'https://opendart.fss.or.kr/api';
 const SOURCE = 'dart_disclosure';
@@ -33,7 +37,7 @@ export class DartDisclosureCollector implements DiscoveryAdapter {
   private apiKey: string;
 
   constructor() {
-    this.apiKey = process.env.DART_API_KEY || '';
+    this.apiKey = process.env.DART_API_KEY || process.env.OPENDART_API_KEY || '';
   }
 
   async collect(options: DiscoveryCollectOptions = {}): Promise<DiscoveryResult> {
@@ -48,6 +52,7 @@ export class DartDisclosureCollector implements DiscoveryAdapter {
       return mkResult(fetchedAt, [], 'insufficient', 'kill_switch_off');
     }
 
+    await this.resolveApiKey();
     if (!this.apiKey) {
       console.log('[dart-collector] DART_API_KEY 없음 → mock 반환');
       return mkResult(fetchedAt, buildMockSignals(), 'degraded', 'no_api_key');
@@ -121,6 +126,16 @@ export class DartDisclosureCollector implements DiscoveryAdapter {
     }
 
     return Array.from(seen.values());
+  }
+
+  private async resolveApiKey(): Promise<string> {
+    if (this.apiKey) return this.apiKey;
+    try {
+      this.apiKey = await resolveDartApiKey({ timeoutMs: 3000 }) || '';
+    } catch {
+      this.apiKey = '';
+    }
+    return this.apiKey;
   }
 }
 

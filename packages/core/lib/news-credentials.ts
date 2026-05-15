@@ -11,6 +11,9 @@ type NewsConfig = {
   google_books_api_key?: string;
   data4library_auth_key?: string;
   kakao_rest_api_key?: string;
+  cryptopanic_api_key?: string;
+  dart_api_key?: string;
+  alpha_vantage_api_key?: string;
 };
 
 type ConfigRoot = {
@@ -127,6 +130,54 @@ async function resolveKakaoApiKey(options: { timeoutMs?: number } = {}): Promise
   );
 }
 
+async function resolveCryptoPanicApiKey(options: { timeoutMs?: number } = {}): Promise<string> {
+  const { timeoutMs = 3000 } = options;
+  const hubNews = await fetchHubNewsConfig(timeoutMs);
+  const sharedNews = loadSharedNewsConfig();
+  const localNews = loadLocalSecretsNewsConfig();
+
+  return (
+    process.env.CRYPTOPANIC_API_KEY ||
+    process.env.CRYPTOPANIC_AUTH_TOKEN ||
+    hubNews?.cryptopanic_api_key ||
+    localNews.cryptopanic_api_key ||
+    sharedNews.cryptopanic_api_key ||
+    ''
+  );
+}
+
+async function resolveDartApiKey(options: { timeoutMs?: number } = {}): Promise<string> {
+  const { timeoutMs = 3000 } = options;
+  const hubNews = await fetchHubNewsConfig(timeoutMs);
+  const sharedNews = loadSharedNewsConfig();
+  const localNews = loadLocalSecretsNewsConfig();
+
+  return (
+    process.env.DART_API_KEY ||
+    process.env.OPENDART_API_KEY ||
+    hubNews?.dart_api_key ||
+    localNews.dart_api_key ||
+    sharedNews.dart_api_key ||
+    ''
+  );
+}
+
+async function resolveAlphaVantageApiKey(options: { timeoutMs?: number } = {}): Promise<string> {
+  const { timeoutMs = 3000 } = options;
+  const hubNews = await fetchHubNewsConfig(timeoutMs);
+  const sharedNews = loadSharedNewsConfig();
+  const localNews = loadLocalSecretsNewsConfig();
+
+  return (
+    process.env.ALPHA_VANTAGE_API_KEY ||
+    process.env.ALPHAVANTAGE_API_KEY ||
+    hubNews?.alpha_vantage_api_key ||
+    localNews.alpha_vantage_api_key ||
+    sharedNews.alpha_vantage_api_key ||
+    ''
+  );
+}
+
 module.exports = {
   loadSharedNewsConfig,
   loadLocalSecretsNewsConfig,
@@ -134,4 +185,7 @@ module.exports = {
   resolveGoogleBooksApiKey,
   resolveData4LibraryKey,
   resolveKakaoApiKey,
+  resolveCryptoPanicApiKey,
+  resolveDartApiKey,
+  resolveAlphaVantageApiKey,
 };

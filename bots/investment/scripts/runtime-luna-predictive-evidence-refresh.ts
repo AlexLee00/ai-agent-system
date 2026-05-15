@@ -65,30 +65,57 @@ async function getBacktestStatus(symbol: string, market: string) {
 
 async function getCommunitySummary(symbol: string, market: string) {
   return db.get(`
-    SELECT AVG(score)::double precision AS avg_score,
-           COUNT(DISTINCT source_name)::int AS source_count,
-           MAX(created_at) AS last_seen_at,
-           MAX(CASE WHEN COALESCE((raw_ref->'botNoise'->>'score')::double precision, 0) > 0.5 THEN 1 ELSE 0 END)::int AS bot_noise_flag,
-           MAX(CASE WHEN COALESCE((raw_ref->'hypeSpike'->>'detected')::boolean, false) THEN 1 ELSE 0 END)::int AS hype_spike_flag
-      FROM external_evidence_events
-     WHERE source_type = 'community'
-       AND symbol = $1
-       AND market = $2
-       AND created_at >= NOW() - INTERVAL '24 hours'
-       AND source_name <> 'community_candidate_gap'
-       AND COALESCE((raw_ref->>'missing_data')::boolean, false) = false
+    WITH symbol_community AS (
+      SELECT (SUM(score * GREATEST(0.05, COALESCE(source_quality, 0.5)) * GREATEST(0.2, COALESCE(freshness_score, 1.0)))
+                / NULLIF(SUM(GREATEST(0.05, COALESCE(source_quality, 0.5)) * GREATEST(0.2, COALESCE(freshness_score, 1.0))), 0))::double precision AS avg_score,
+             COUNT(DISTINCT source_name)::int AS source_count,
+             AVG(source_quality)::double precision AS avg_source_quality,
+             MAX(created_at) AS last_seen_at,
+             MAX(CASE WHEN COALESCE((raw_ref->'botNoise'->>'score')::double precision, 0) > 0.5 THEN 1 ELSE 0 END)::int AS bot_noise_flag,
+             MAX(CASE WHEN COALESCE((raw_ref->'hypeSpike'->>'detected')::boolean, false) THEN 1 ELSE 0 END)::int AS hype_spike_flag
+        FROM external_evidence_events
+       WHERE source_type = 'community'
+         AND symbol = $1
+         AND market = $2
+         AND created_at >= NOW() - INTERVAL '24 hours'
+         AND source_name <> 'community_candidate_gap'
+         AND COALESCE((raw_ref->>'missing_data')::boolean, false) = false
+    ),
+    market_community AS (
+      SELECT (SUM(score * GREATEST(0.05, COALESCE(source_quality, 0.5)) * GREATEST(0.2, COALESCE(freshness_score, 1.0)))
+                / NULLIF(SUM(GREATEST(0.05, COALESCE(source_quality, 0.5)) * GREATEST(0.2, COALESCE(freshness_score, 1.0))), 0))::double precision AS market_avg_score,
+             COUNT(DISTINCT source_name)::int AS market_source_count,
+             AVG(source_quality)::double precision AS market_avg_quality,
+             MAX(created_at) AS market_last_seen_at
+        FROM external_evidence_events
+       WHERE source_type = 'community'
+         AND symbol IS NULL
+         AND market = $2
+         AND created_at >= NOW() - INTERVAL '24 hours'
+         AND source_name <> 'community_candidate_gap'
+         AND COALESCE((raw_ref->>'missing_data')::boolean, false) = false
+    )
+    SELECT *
+      FROM symbol_community CROSS JOIN market_community
   `, [symbol, market]).catch(() => null);
 }
 
 function scoreCommunity(row: any = {}) {
-  if (!row || row.avg_score == null) return null;
+  if (!row || (row.avg_score == null && row.market_avg_score == null)) return null;
+  const hasSymbolScore = row.avg_score != null;
   const avg = Number(row.avg_score);
+  const marketAvg = Number(row.market_avg_score || 0);
   const sourceCount = Number(row.source_count || 0);
-  const normalized = clamp((avg + 1) / 2, 0, 1, 0.5);
+  const marketSourceCount = Number(row.market_source_count || 0);
+  const marketContext = row.market_avg_score != null ? clamp((marketAvg + 1) / 2, 0, 1, 0.5) - 0.5 : 0;
+  const normalized = hasSymbolScore ? clamp((avg + 1) / 2, 0, 1, 0.5) : clamp(0.5 + marketContext * 0.35, 0, 1, 0.5);
   const diversityBonus = Math.min(0.08, Math.max(0, sourceCount - 1) * 0.025);
+  const marketContextBonus = hasSymbolScore ? Math.min(0.025, marketSourceCount * 0.006) : Math.min(0.04, marketSourceCount * 0.008);
+  const sourceQuality = clamp(row.avg_source_quality ?? row.market_avg_quality, 0, 1, hasSymbolScore ? 0.45 : 0.35);
+  const qualityAdjustment = clamp((sourceQuality - 0.40) * 0.16, -0.06, 0.08, 0);
   const botPenalty = Number(row.bot_noise_flag || 0) > 0 ? 0.08 : 0;
   const hypePenalty = Number(row.hype_spike_flag || 0) > 0 ? 0.04 : 0;
-  return clamp(normalized + diversityBonus - botPenalty - hypePenalty, 0, 1, 0.5);
+  return clamp(normalized + diversityBonus + marketContextBonus + qualityAdjustment - botPenalty - hypePenalty, 0, 1, 0.5);
 }
 
 function predictionScoreFromForecast(forecast: any = {}) {
@@ -103,6 +130,50 @@ function predictionScoreFromForecast(forecast: any = {}) {
       : 0.5;
   const returnAdjustment = clamp(expectedReturn * 8, -0.15, 0.15, 0);
   return Number(clamp(directionalBase + returnAdjustment, 0, 1, 0).toFixed(4));
+}
+
+async function forecastSymbolWithFallback(symbol: string, market: string, options: any = {}) {
+  const exchange = exchangeForLunaPhase2Market(market);
+  const primaryTimeframe = String(options.timeframe || '1h');
+  const horizon = Number(options.horizon || 5);
+  const primaryLimit = Number(options.ohlcvLimit || 180);
+  const attempts = [
+    { timeframe: primaryTimeframe, limit: primaryLimit, reason: 'primary' },
+    { timeframe: '5m', limit: Math.max(240, primaryLimit), reason: 'intraday_dense_fallback' },
+    { timeframe: '1d', limit: Math.max(120, Math.ceil(primaryLimit / 4)), reason: 'daily_history_fallback' },
+  ].filter((attempt, index, arr) => arr.findIndex((item) => item.timeframe === attempt.timeframe) === index);
+
+  const evidence = [];
+  let best: any = null;
+  for (const attempt of attempts) {
+    const forecast = await forecastSymbol(symbol, {
+      timeframe: attempt.timeframe,
+      limit: attempt.limit,
+      horizon,
+      exchange,
+    }).catch((error: any) => ({
+      ok: false,
+      symbol,
+      dataHealth: 'forecast_error',
+      error: String(error?.message || error),
+      prediction: { confidence: 0, direction: 'neutral', expectedReturn: 0 },
+      observedCandles: 0,
+      timeframe: attempt.timeframe,
+    }));
+    evidence.push({
+      timeframe: attempt.timeframe,
+      limit: attempt.limit,
+      reason: attempt.reason,
+      dataHealth: forecast?.dataHealth || 'unknown',
+      observedCandles: Number(forecast?.observedCandles || 0),
+      error: forecast?.error || null,
+    });
+    if (!best || Number(forecast?.observedCandles || 0) > Number(best?.observedCandles || 0)) best = forecast;
+    if (forecast?.dataHealth === 'ok') {
+      return { ...forecast, fallbackEvidence: evidence, selectedForecastReason: attempt.reason };
+    }
+  }
+  return { ...(best || {}), fallbackEvidence: evidence, selectedForecastReason: 'best_available_insufficient' };
 }
 
 function fixtureCandidates() {
@@ -154,18 +225,7 @@ async function refreshPredictiveForCandidate(candidate: any, options: any = {}) 
     : await getCommunitySummary(symbol, market);
   const forecast = fixture
     ? fixtureForecast(symbol)
-    : await forecastSymbol(symbol, {
-      timeframe: options.timeframe || '1h',
-      limit: options.ohlcvLimit || 180,
-      horizon: options.horizon || 5,
-      exchange: exchangeForLunaPhase2Market(market),
-    }).catch((error: any) => ({
-      ok: false,
-      symbol,
-      dataHealth: 'forecast_error',
-      error: String(error?.message || error),
-      prediction: { confidence: 0, direction: 'neutral', expectedReturn: 0 },
-    }));
+    : await forecastSymbolWithFallback(symbol, market, options);
 
   const predictionScore = predictionScoreFromForecast(forecast);
   const communityScore = scoreCommunity(community);
@@ -227,7 +287,10 @@ async function refreshPredictiveForCandidate(candidate: any, options: any = {}) 
     predictionScore,
     dataHealth: forecast?.dataHealth || 'unknown',
     backtestFresh: backtest?.fresh === true || String(backtest?.fresh).toLowerCase() === 'true',
-    communitySources: Number(community?.source_count || 0),
+    communitySources: Number(community?.source_count || 0) + Number(community?.market_source_count || 0),
+    forecastTimeframe: forecast?.timeframe || null,
+    forecastCandles: Number(forecast?.observedCandles || 0),
+    forecastFallbackReason: forecast?.selectedForecastReason || null,
     reason: evidence.reason,
   };
 }

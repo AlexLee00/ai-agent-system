@@ -10,6 +10,10 @@ import {
   loadLunaPhase2CandidateInputs,
   normalizeLunaPhase2Market,
 } from '../shared/luna-weight-vector.ts';
+import {
+  DEFAULT_LUNA_WEIGHT_POLICY,
+  fetchLunaAutonomousWeightFeedback,
+} from '../shared/luna-autonomous-weight-feedback.ts';
 
 function argValue(name: string, fallback = null) {
   const prefix = `--${name}=`;
@@ -48,13 +52,54 @@ export async function runLunaWeightVectorShadow(options: any = {}, deps: any = {
   const limit = Math.max(1, Number(options.limit || process.env.LUNA_PHASE2_WEIGHT_VECTOR_LIMIT || 50));
   const market = options.market ? normalizeLunaPhase2Market(options.market) : null;
   const asOf = options.asOf || new Date().toISOString();
-  const config = {
-    riskBudgetUsdt: Number(process.env.LUNA_MAX_TRADE_USDT || 50),
-  };
 
   if (apply && confirm !== 'luna-weight-vector-shadow') {
     throw new Error('runtime:luna-weight-vector-shadow apply requires --confirm=luna-weight-vector-shadow');
   }
+
+  const staticWeights = options.staticWeights === true;
+  const adaptiveWeights = staticWeights
+    ? {
+      ok: true,
+      status: 'static_weights_requested',
+      source: 'static_default',
+      mode: 'shadow',
+      shadowOnly: true,
+      liveMutation: false,
+      generatedAt: asOf,
+      baseWeights: DEFAULT_LUNA_WEIGHT_POLICY,
+      weights: DEFAULT_LUNA_WEIGHT_POLICY,
+      deltas: { candidate: 0, backtest: 0, predictive: 0, community: 0 },
+      reasons: ['static_weights_flag'],
+      metrics: null,
+    }
+    : fixture && options.adaptiveWeights !== true
+      ? {
+        ok: true,
+        status: 'fixture_static_weights',
+        source: 'static_fixture',
+        mode: 'shadow',
+        shadowOnly: true,
+        liveMutation: false,
+        generatedAt: asOf,
+        baseWeights: DEFAULT_LUNA_WEIGHT_POLICY,
+        weights: DEFAULT_LUNA_WEIGHT_POLICY,
+        deltas: { candidate: 0, backtest: 0, predictive: 0, community: 0 },
+        reasons: ['fixture_keeps_static_weights'],
+        metrics: null,
+      }
+      : deps.fetchWeightFeedback
+        ? await deps.fetchWeightFeedback({ days: options.weightFeedbackDays || 7, market })
+        : await fetchLunaAutonomousWeightFeedback({
+          days: options.weightFeedbackDays || process.env.LUNA_WEIGHT_FEEDBACK_DAYS || 7,
+          market,
+          mode: 'shadow',
+        });
+  const config = {
+    riskBudgetUsdt: Number(process.env.LUNA_MAX_TRADE_USDT || 50),
+    weights: adaptiveWeights?.weights || DEFAULT_LUNA_WEIGHT_POLICY,
+    autonomousWeightFeedback: adaptiveWeights,
+  };
 
   const inputs = fixture
     ? fixtureInputs()
@@ -95,6 +140,7 @@ export async function runLunaWeightVectorShadow(options: any = {}, deps: any = {
     shadowMode: true,
     asOf,
     market: market || 'all',
+    adaptiveWeights,
     summary,
     rows,
   };
@@ -116,9 +162,11 @@ if (isDirectExecution(import.meta.url)) {
       market: argValue('market', null),
       asOf: argValue('as-of', null),
       confirm: argValue('confirm', ''),
+      staticWeights: hasFlag('static-weights'),
+      adaptiveWeights: hasFlag('adaptive-weights'),
+      weightFeedbackDays: Number(argValue('weight-feedback-days', process.env.LUNA_WEIGHT_FEEDBACK_DAYS || 7)),
     }),
     onSuccess: async (result) => console.log(JSON.stringify(result, null, 2)),
     errorPrefix: 'runtime-luna-weight-vector-shadow error:',
   });
 }
-
