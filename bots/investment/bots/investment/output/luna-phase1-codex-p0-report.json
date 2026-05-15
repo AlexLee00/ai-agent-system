@@ -1,0 +1,84 @@
+{
+  "ok": true,
+  "generatedAt": "2026-05-15T02:49:34.269Z",
+  "phase": "luna-phase1-codex-p0",
+  "goals": {
+    "communityEvidencePositive": true,
+    "backtestFreshStatusExists": true,
+    "gateAuditExists": true,
+    "launchdLabelsVisible": true,
+    "shadowLiveImpactZero": true
+  },
+  "db": {
+    "community24h": {
+      "count": 1941
+    },
+    "candidateBacktestStatus": {
+      "total": 75,
+      "fresh": 75,
+      "healthy": 30,
+      "would_block": 45
+    },
+    "predictiveAudit24h": [
+      {
+        "decision": "hold",
+        "count": 699
+      },
+      {
+        "decision": "fire",
+        "count": 528
+      },
+      {
+        "decision": "discard",
+        "count": 451
+      },
+      {
+        "decision": "block_backtest_gate",
+        "count": 102
+      },
+      {
+        "decision": "block_coverage",
+        "count": 56
+      },
+      {
+        "decision": "would_block_backtest_gate",
+        "count": 54
+      },
+      {
+        "decision": "would_block_backtest",
+        "count": 45
+      },
+      {
+        "decision": "block_no_prediction",
+        "count": 33
+      },
+      {
+        "decision": "pass_backtest",
+        "count": 30
+      },
+      {
+        "decision": "block_stale_backtest",
+        "count": 16
+      }
+    ]
+  },
+  "launchd": [
+    {
+      "label": "ai.luna.community-evidence-refresh",
+      "visible": true,
+      "pid": null,
+      "status": 0
+    },
+    {
+      "label": "ai.luna.candidate-backtest-refresh",
+      "visible": true,
+      "pid": null,
+      "status": 0
+    }
+  ],
+  "safety": {
+    "destructiveSqlUsed": false,
+    "secretModified": false,
+    "shadowMode": true
+  }
+}
