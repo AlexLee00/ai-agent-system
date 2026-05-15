@@ -31,6 +31,14 @@ function normalizeRegime(value = '') {
   return String(value || '').trim().toLowerCase().replace(/[^a-z0-9]+/g, '_');
 }
 
+export function normalizePredictiveValidationMarket(value = '') {
+  const raw = String(value || '').trim().toLowerCase();
+  if (raw === 'binance') return 'crypto';
+  if (raw === 'kis') return 'domestic';
+  if (raw === 'kis_overseas') return 'overseas';
+  return raw || null;
+}
+
 function normalizeWeights(weights = DEFAULT_WEIGHTS) {
   const entries = Object.entries({
     backtest: finiteNumber(weights.backtest, DEFAULT_WEIGHTS.backtest),
@@ -339,6 +347,7 @@ export async function logPredictiveValidation(
 ): Promise<void> {
   try {
     const { query: dbQuery, run: dbRun } = await import('./db/core.ts');
+    const normalizedMarket = normalizePredictiveValidationMarket(market || candidateSnapshot?.market || candidateSnapshot?.exchange);
     await dbRun(`
       INSERT INTO predictive_validation_log
         (symbol, market, decision, score, threshold, component_coverage,
@@ -346,7 +355,7 @@ export async function logPredictiveValidation(
       VALUES ($1,$2,$3,$4,$5,$6,$7,$8::jsonb,$9::jsonb,$10::jsonb)
     `, [
       symbol || null,
-      market || null,
+      normalizedMarket,
       evidence?.decision || 'unknown',
       evidence?.score ?? null,
       evidence?.threshold ?? null,

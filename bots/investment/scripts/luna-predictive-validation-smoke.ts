@@ -4,7 +4,7 @@
 import assert from 'node:assert/strict';
 import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
 import { applyPredictiveValidationGate } from '../shared/predictive-validation-gate.ts';
-import { buildPredictiveValidationEvidence } from '../shared/predictive-validation.ts';
+import { buildPredictiveValidationEvidence, normalizePredictiveValidationMarket } from '../shared/predictive-validation.ts';
 import { mergePortfolioDecisionPredictiveEvidence } from '../shared/pipeline-decision-state-machine.ts';
 import { promotePredictiveObservationHoldCandidates } from '../shared/pipeline-decision-policy.ts';
 
@@ -106,6 +106,9 @@ export function runLunaPredictiveValidationSmoke() {
   assert.equal(evidence.decision, 'fire');
   assert.equal(Object.keys(evidence.components).length, 4);
   assert.ok(evidence.score >= 0.55);
+  assert.equal(normalizePredictiveValidationMarket('binance'), 'crypto');
+  assert.equal(normalizePredictiveValidationMarket('kis'), 'domestic');
+  assert.equal(normalizePredictiveValidationMarket('kis_overseas'), 'overseas');
 
   return {
     ok: true,
