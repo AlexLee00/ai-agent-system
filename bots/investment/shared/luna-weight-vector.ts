@@ -38,6 +38,32 @@ function roundWeightMap(weights = {}) {
   );
 }
 
+function normalizeBottleneck(bottleneck = {}) {
+  const action = String(bottleneck?.recommended_action || bottleneck?.recommendedAction || '').trim();
+  const severity = String(bottleneck?.severity || '').trim();
+  const parsedReasons = Array.isArray(bottleneck?.reasons)
+    ? bottleneck.reasons
+    : parseJsonMaybe(bottleneck?.reasons, []);
+  const reasons = Array.isArray(parsedReasons) ? parsedReasons : [];
+  const penalty = clamp(
+    bottleneck?.candidate_selection_penalty ?? bottleneck?.candidateSelectionPenalty,
+    0,
+    0.85,
+    0,
+  );
+  const hardHold = action === 'quarantine_candidate_shadow' || severity === 'blocker';
+  return {
+    present: Boolean(action || severity || penalty > 0 || reasons.length > 0),
+    action: action || null,
+    severity: severity || null,
+    reasons,
+    penalty,
+    hardHold,
+    observedAt: bottleneck?.observed_at || bottleneck?.observedAt || null,
+    raw: bottleneck || null,
+  };
+}
+
 export function normalizeLunaPhase2Market(value = '') {
   const raw = String(value || '').trim().toLowerCase();
   if (raw === 'binance') return 'crypto';
@@ -106,6 +132,29 @@ export async function ensureLunaPhase2Schema() {
   await run(`CREATE INDEX IF NOT EXISTS idx_luna_paper_trading_shadow_symbol ON luna_paper_trading_shadow(symbol, market, observed_at DESC)`);
   await run(`CREATE INDEX IF NOT EXISTS idx_luna_paper_trading_shadow_side ON luna_paper_trading_shadow(paper_side, observed_at DESC)`);
   await run(`CREATE INDEX IF NOT EXISTS idx_luna_paper_trading_shadow_observed ON luna_paper_trading_shadow(observed_at DESC)`);
+
+  await run(`
+    CREATE TABLE IF NOT EXISTS luna_paper_promotion_gate_shadow (
+      id                         BIGSERIAL PRIMARY KEY,
+      symbol                     TEXT NOT NULL,
+      market                     TEXT NOT NULL,
+      exchange                   TEXT NOT NULL,
+      decision                   TEXT NOT NULL DEFAULT 'shadow_promotion_blocked',
+      promotion_candidate        BOOLEAN DEFAULT FALSE,
+      cycle_count                INTEGER DEFAULT 0,
+      pass_count                 INTEGER DEFAULT 0,
+      consecutive_passes         INTEGER DEFAULT 0,
+      avg_confidence             DOUBLE PRECISION DEFAULT 0,
+      total_paper_notional_usdt  DOUBLE PRECISION DEFAULT 0,
+      block_reasons              JSONB DEFAULT '[]'::jsonb,
+      shadow_only                BOOLEAN DEFAULT TRUE,
+      evidence                   JSONB DEFAULT '{}'::jsonb,
+      observed_at                TIMESTAMPTZ DEFAULT NOW()
+    )
+  `);
+  await run(`CREATE INDEX IF NOT EXISTS idx_luna_paper_promotion_gate_symbol ON luna_paper_promotion_gate_shadow(symbol, market, observed_at DESC)`);
+  await run(`CREATE INDEX IF NOT EXISTS idx_luna_paper_promotion_gate_decision ON luna_paper_promotion_gate_shadow(decision, observed_at DESC)`);
+  await run(`CREATE INDEX IF NOT EXISTS idx_luna_paper_promotion_gate_candidate ON luna_paper_promotion_gate_shadow(promotion_candidate, observed_at DESC)`);
 }
 
 export function evaluateNoLookaheadContract({ asOf = new Date(), sources = [] } = {}) {
@@ -209,7 +258,9 @@ export function buildLunaWeightVector(input = {}, config = {}) {
   const market = normalizeLunaPhase2Market(candidate?.market || input?.market);
   const exchange = candidate?.exchange || exchangeForLunaPhase2Market(market);
   const asOf = input.asOf || new Date().toISOString();
-  const candidateScore = clamp(candidate?.score ?? candidate?.candidate_score, 0, 1, 0.5);
+  const rawCandidateScore = clamp(candidate?.score ?? candidate?.candidate_score, 0, 1, 0.5);
+  const bottleneck = normalizeBottleneck(input.bottleneck || candidate?.bottleneck || {});
+  const candidateScore = round(rawCandidateScore * (1 - bottleneck.penalty), 4);
   const backtest = scoreBacktest(input.backtest || candidate?.backtest || {});
   const predictive = scorePredictive(input.predictive || candidate?.predictive || {});
   const community = scoreCommunity(input.community || candidate?.community || {});
@@ -245,6 +296,15 @@ export function buildLunaWeightVector(input = {}, config = {}) {
     1,
     0,
   );
+  const counterfactualConfidence = clamp(
+    (rawCandidateScore * weights.candidate
+      + backtest.score * weights.backtest
+      + predictive.score * weights.predictive
+      + community.score * weights.community) / weightTotal,
+    0,
+    1,
+    0,
+  );
 
   const maxTargetWeightByMarket = {
     crypto: finiteNumber(config?.maxTargetWeightCrypto, 0.10),
@@ -252,18 +312,33 @@ export function buildLunaWeightVector(input = {}, config = {}) {
     overseas: finiteNumber(config?.maxTargetWeightOverseas, 0.08),
   };
   const hardReasons = [
+    bottleneck.hardHold ? 'candidate_bottleneck_quarantine' : null,
+    ...((bottleneck.reasons || []).map((reason) => `candidate_bottleneck_${reason}`)),
     ...backtest.reasons,
     !predictive.decision ? 'predictive_missing' : null,
     !predictive.pass ? 'predictive_blocked' : null,
     !noLookahead.ok ? 'no_lookahead_violation' : null,
   ].filter(Boolean);
-  const eligible = backtest.pass && predictive.pass && Boolean(predictive.decision) && noLookahead.ok;
+  const eligible = !bottleneck.hardHold && backtest.pass && predictive.pass && Boolean(predictive.decision) && noLookahead.ok;
   const signal = !eligible ? 'hold' : confidence >= 0.72 ? 'increase' : confidence >= 0.55 ? 'watch' : 'hold';
   const cap = maxTargetWeightByMarket[market] ?? 0.08;
+  const counterfactualEligible = backtest.pass && predictive.pass && Boolean(predictive.decision) && noLookahead.ok;
+  const counterfactualSignal = !counterfactualEligible
+    ? 'hold'
+    : counterfactualConfidence >= 0.72
+      ? 'increase'
+      : counterfactualConfidence >= 0.55
+        ? 'watch'
+        : 'hold';
   const targetWeight = signal === 'increase'
     ? cap * confidence
     : signal === 'watch'
       ? cap * confidence * 0.35
+      : 0;
+  const counterfactualTargetWeight = counterfactualSignal === 'increase'
+    ? cap * counterfactualConfidence
+    : counterfactualSignal === 'watch'
+      ? cap * counterfactualConfidence * 0.35
       : 0;
   const riskBudgetUsdt = finiteNumber(config?.riskBudgetUsdt, 50);
 
@@ -290,10 +365,35 @@ export function buildLunaWeightVector(input = {}, config = {}) {
       decisionSpecHash: decisionSpec.specHash,
       decisionSpec,
       components: {
-        candidate: { score: round(candidateScore, 4), raw: candidate },
+        candidate: {
+          score: round(candidateScore, 4),
+          rawScore: round(rawCandidateScore, 4),
+          bottleneckPenalty: round(bottleneck.penalty, 4),
+          raw: candidate,
+        },
         backtest: { score: round(backtest.score, 4), pass: backtest.pass, raw: input.backtest || null },
         predictive: { score: round(predictive.score, 4), pass: predictive.pass, decision: predictive.decision, raw: input.predictive || null },
         community: { score: round(community.score, 4), ...community, raw: input.community || null },
+      },
+      bottleneck: {
+        present: bottleneck.present,
+        action: bottleneck.action,
+        severity: bottleneck.severity,
+        reasons: bottleneck.reasons,
+        penalty: round(bottleneck.penalty, 4),
+        hardHold: bottleneck.hardHold,
+        observedAt: bottleneck.observedAt,
+        counterfactual: {
+          eligible: counterfactualEligible,
+          signal: counterfactualSignal,
+          confidence: round(counterfactualConfidence, 4),
+          targetWeight: round(counterfactualTargetWeight, 6),
+          confidenceDelta: round(counterfactualConfidence - confidence, 4),
+          targetWeightDelta: round(counterfactualTargetWeight - targetWeight, 6),
+        },
+        shadowOnly: true,
+        liveMutation: false,
+        raw: bottleneck.raw,
       },
       weights: {
         source: weightFeedback?.source || (config?.weights ? 'config_weights' : 'static_default'),
@@ -330,6 +430,20 @@ export function buildLunaPaperTradingPlan(weightVector = {}, context = {}) {
     : deltaWeight > 0
       ? 'BUY'
       : 'SELL';
+  const bottleneck = weightVector?.evidence?.bottleneck || {};
+  const counterfactual = bottleneck?.counterfactual || {};
+  const counterfactualTargetWeight = clamp(counterfactual.targetWeight, 0, 1, targetWeight);
+  const counterfactualDeltaWeight = counterfactualTargetWeight - currentWeight;
+  const counterfactualRawNotional = Math.abs(counterfactualDeltaWeight) * equityUsdt;
+  const counterfactualNotional = Math.min(counterfactualRawNotional, maxOrderUsdt || counterfactualRawNotional);
+  const counterfactualPaperSide = Math.abs(counterfactualDeltaWeight) < 0.001 || counterfactualNotional < minNotional
+    ? 'HOLD'
+    : counterfactualDeltaWeight > 0
+      ? 'BUY'
+      : 'SELL';
+  const bottleneckPreventedOrder = Boolean(bottleneck?.present)
+    && paperSide === 'HOLD'
+    && counterfactualPaperSide !== 'HOLD';
   const safePrice = referencePrice > 0 ? referencePrice : finiteNumber(context?.fallbackPrice, 1);
 
   return {
@@ -357,9 +471,44 @@ export function buildLunaPaperTradingPlan(weightVector = {}, context = {}) {
       equityUsdt,
       maxOrderUsdt,
       minNotionalUsdt: minNotional,
+      bottleneckAvoidance: {
+        present: Boolean(bottleneck?.present),
+        action: bottleneck?.action || null,
+        severity: bottleneck?.severity || null,
+        hardHold: bottleneck?.hardHold === true,
+        penalty: round(bottleneck?.penalty || 0, 4),
+        preventedOrder: bottleneckPreventedOrder,
+        counterfactualSignal: counterfactual?.signal || null,
+        counterfactualTargetWeight: round(counterfactualTargetWeight, 6),
+        counterfactualDeltaWeight: round(counterfactualDeltaWeight, 6),
+        counterfactualPaperSide,
+        avoidedNotionalUsdt: bottleneckPreventedOrder ? round(counterfactualNotional, 4) : 0,
+        shadowOnly: true,
+        liveMutation: false,
+      },
       liveMutation: false,
     },
   };
+}
+
+async function loadLatestCandidateBottleneckMap(rows = []) {
+  const symbols = [...new Set((rows || []).map((row) => normalizeLunaPhase2Symbol(row.symbol)).filter(Boolean))];
+  const markets = [...new Set((rows || []).map((row) => normalizeLunaPhase2Market(row.market)).filter(Boolean))];
+  if (symbols.length === 0 || markets.length === 0) return new Map();
+  const table = await get(`SELECT to_regclass('investment.luna_candidate_bottleneck_shadow') AS table_name`).catch(() => null);
+  if (!table?.table_name) return new Map();
+  const bottlenecks = await query(`
+    SELECT DISTINCT ON (symbol, market)
+           symbol, market, severity, recommended_action, candidate_selection_penalty,
+           reasons, evidence, observed_at
+      FROM investment.luna_candidate_bottleneck_shadow
+     WHERE symbol = ANY($1::text[])
+       AND market = ANY($2::text[])
+       AND observed_at >= NOW() - INTERVAL '24 hours'
+       AND shadow_only IS TRUE
+     ORDER BY symbol, market, observed_at DESC
+  `, [symbols, markets]).catch(() => []);
+  return new Map((bottlenecks || []).map((row) => [`${normalizeLunaPhase2Symbol(row.symbol)}|${normalizeLunaPhase2Market(row.market)}`, row]));
 }
 
 export async function loadLunaPhase2CandidateInputs({ limit = 50, market = null } = {}) {
@@ -443,6 +592,8 @@ export async function loadLunaPhase2CandidateInputs({ limit = 50, market = null 
      LIMIT $${params.length}
   `, params).catch(() => []);
 
+  const bottleneckMap = await loadLatestCandidateBottleneckMap(rows);
+
   return rows.map((row) => ({
     candidate: {
       symbol: row.symbol,
@@ -484,6 +635,7 @@ export async function loadLunaPhase2CandidateInputs({ limit = 50, market = null 
       bot_noise_score: row.community_bot_noise_flag ? 0.6 : 0,
       hype_spike: row.community_hype_spike_flag === 1,
     },
+    bottleneck: bottleneckMap.get(`${normalizeLunaPhase2Symbol(row.symbol)}|${normalizeLunaPhase2Market(row.market)}`) || null,
   }));
 }
 
@@ -517,7 +669,7 @@ export async function loadLatestLunaWeightVectors({ limit = 50, hours = 24, mark
   const marketWhere = market ? `AND market = $${params.push(normalizeLunaPhase2Market(market))}` : '';
   return query(`
     SELECT DISTINCT ON (symbol, market)
-           symbol, market, exchange, target_weight, confidence, signal, evidence, observed_at
+           symbol, market, exchange, target_weight, confidence, signal, shadow_only, evidence, observed_at
       FROM luna_weight_vector_shadow
      WHERE observed_at >= NOW() - ($1::int * INTERVAL '1 hour')
        AND shadow_only = true

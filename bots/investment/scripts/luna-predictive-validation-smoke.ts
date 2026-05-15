@@ -17,7 +17,9 @@ export function runLunaPredictiveValidationSmoke() {
     { symbol: 'SOL/USDT', action: ACTIONS.HOLD, confidence: 0.5, predictiveScore: 0.2, reasoning: 'hold' },
   ];
 
-  const hard = applyPredictiveValidationGate(decisions, { mode: 'hard_gate', threshold: 0.55 });
+  const noAudit = { auditLog: false };
+
+  const hard = applyPredictiveValidationGate(decisions, { ...noAudit, mode: 'hard_gate', threshold: 0.55 });
   assert.equal(hard.blocked, 0);
   assert.equal(hard.observation, 1);
   assert.equal(hard.decisions[0].action, ACTIONS.BUY);
@@ -26,7 +28,7 @@ export function runLunaPredictiveValidationSmoke() {
 
   const discard = applyPredictiveValidationGate([
     { symbol: 'WEAK/USDT', action: ACTIONS.BUY, confidence: 0.66, predictiveScore: 0.19, reasoning: 'discard pred' },
-  ], { mode: 'hard_gate', threshold: 0.55, discardThreshold: 0.40, observationThreshold: 0.40 });
+  ], { ...noAudit, mode: 'hard_gate', threshold: 0.55, discardThreshold: 0.40, observationThreshold: 0.40 });
   assert.equal(discard.blocked, 1);
   assert.equal(discard.observation, 0);
   assert.equal(discard.decisions[0].action, ACTIONS.HOLD);
@@ -41,6 +43,7 @@ export function runLunaPredictiveValidationSmoke() {
   assert.equal(mergedPortfolio.decisions[0].action, ACTIONS.BUY);
   assert.equal(mergedPortfolio.decisions[0].predictiveScore, 0.46);
   const mergedHard = applyPredictiveValidationGate(mergedPortfolio.decisions, {
+    ...noAudit,
     mode: 'hard_gate',
     threshold: 0.55,
     discardThreshold: 0.40,
@@ -53,6 +56,7 @@ export function runLunaPredictiveValidationSmoke() {
   const rawPredictionHoldBand = applyPredictiveValidationGate([
     { symbol: 'RAWPRED/USDT', action: ACTIONS.BUY, confidence: 0.35, predictiveScore: 0.43, reasoning: 'raw prediction hold band' },
   ], {
+    ...noAudit,
     mode: 'hard_gate',
     threshold: 0.55,
     discardThreshold: 0.40,
@@ -82,7 +86,7 @@ export function runLunaPredictiveValidationSmoke() {
   assert.equal(promotedHold.portfolioDecision.decisions.find((item) => item.symbol === 'TOP/USDT').action, ACTIONS.BUY);
   assert.equal(promotedHold.portfolioDecision.decisions.find((item) => item.symbol === 'SECOND/USDT').action, ACTIONS.HOLD);
 
-  const advisory = applyPredictiveValidationGate(decisions, { mode: 'advisory', threshold: 0.55 });
+  const advisory = applyPredictiveValidationGate(decisions, { ...noAudit, mode: 'advisory', threshold: 0.55 });
   assert.equal(advisory.blocked, 0);
   assert.equal(advisory.advisory, 1);
   assert.equal(advisory.decisions[0].action, ACTIONS.BUY);

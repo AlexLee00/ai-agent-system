@@ -36,6 +36,14 @@ function normalizeWeightRow(row = {}) {
   };
 }
 
+function countBy(rows: any[] = [], selector: any = () => 'unknown') {
+  return rows.reduce((acc, row) => {
+    const value = selector(row) || 'none';
+    acc[value] = (acc[value] || 0) + 1;
+    return acc;
+  }, {});
+}
+
 export async function runLunaPaperTradingShadow(options: any = {}, deps: any = {}) {
   const apply = options.apply === true;
   const dryRun = options.dryRun === true || !apply;
@@ -91,6 +99,14 @@ export async function runLunaPaperTradingShadow(options: any = {}, deps: any = {
     sell: rows.filter((row) => row.paperSide === 'SELL').length,
     hold: rows.filter((row) => row.paperSide === 'HOLD').length,
     plannedNotionalUsdt: Number(rows.reduce((sum, row) => sum + Number(row.paperNotionalUsdt || 0), 0).toFixed(4)),
+    bottleneckPenalized: rows.filter((row) => Number(row.evidence?.bottleneckAvoidance?.penalty || 0) > 0).length,
+    bottleneckHardHold: rows.filter((row) => row.evidence?.bottleneckAvoidance?.hardHold === true).length,
+    bottleneckPreventedOrder: rows.filter((row) => row.evidence?.bottleneckAvoidance?.preventedOrder === true).length,
+    bottleneckAvoidedNotionalUsdt: Number(rows.reduce((sum, row) => sum + Number(row.evidence?.bottleneckAvoidance?.avoidedNotionalUsdt || 0), 0).toFixed(4)),
+    byBottleneckAction: countBy(
+      rows.filter((row) => row.evidence?.bottleneckAvoidance?.present === true),
+      (row) => row.evidence?.bottleneckAvoidance?.action,
+    ),
     liveMutation: false,
   };
 

@@ -12,6 +12,7 @@ import {
 } from '../shared/luna-weight-vector.ts';
 import { runLunaWeightVectorShadow } from './runtime-luna-weight-vector-shadow.ts';
 import { runLunaPaperTradingShadow } from './runtime-luna-paper-trading-shadow.ts';
+import { runLunaPaperPromotionGateShadow } from './runtime-luna-paper-promotion-gate.ts';
 
 const now = new Date('2026-05-14T00:00:00.000Z').toISOString();
 const future = new Date('2026-05-14T00:10:00.000Z').toISOString();
@@ -40,6 +41,25 @@ assert.equal(leak.signal, 'hold');
 assert.equal(leak.targetWeight, 0);
 assert.equal(evaluateNoLookaheadContract({ asOf: now, sources: [{ source: 'future', observedAt: future }] }).ok, false);
 
+const bottleneckHold = buildLunaWeightVector({
+  asOf: now,
+  candidate: { symbol: 'RISK/USDT', market: 'crypto', score: 0.92, discovered_at: now },
+  backtest: { fresh: true, healthy: true, sharpe: 1.4, win_rate: 58, max_drawdown: 8, last_backtest_at: now },
+  predictive: { decision: 'pass_prediction', score: 0.82, created_at: now },
+  community: { avg_score: 0.48, source_count: 4, last_seen_at: now },
+  bottleneck: {
+    severity: 'blocker',
+    recommended_action: 'quarantine_candidate_shadow',
+    candidate_selection_penalty: 0.75,
+    reasons: ['backtest_unhealthy_or_would_block'],
+    observed_at: now,
+  },
+}, { riskBudgetUsdt: 50 });
+assert.equal(bottleneckHold.signal, 'hold');
+assert.equal(bottleneckHold.targetWeight, 0);
+assert.equal(bottleneckHold.evidence.bottleneck.hardHold, true);
+assert.ok(bottleneckHold.evidence.hardReasons.includes('candidate_bottleneck_quarantine'));
+
 const paper = buildLunaPaperTradingPlan(pass, {
   position: { amount: 0, avg_price: 65000 },
   equityUsdt: 1000,
@@ -65,6 +85,7 @@ assert.equal(weightRuntime.writeMode, 'plan-only');
 assert.equal(weightRuntime.summary.liveMutation, false);
 assert.equal(weightInserts.length, 0);
 assert.ok(weightRuntime.summary.total >= 2);
+assert.ok(weightRuntime.summary.bottleneckHardHold >= 1);
 
 const paperInserts = [];
 const paperRuntime = await runLunaPaperTradingShadow({
@@ -80,11 +101,29 @@ assert.equal(paperRuntime.ok, true);
 assert.equal(paperRuntime.writeMode, 'plan-only');
 assert.equal(paperRuntime.summary.liveMutation, false);
 assert.equal(paperInserts.length, 0);
+assert.ok(paperRuntime.summary.bottleneckHardHold >= 1);
+assert.ok(paperRuntime.rows.some((row) => row.evidence?.bottleneckAvoidance?.hardHold === true));
+
+const promotionGateInserts = [];
+const promotionGateRuntime = await runLunaPaperPromotionGateShadow({
+  json: true,
+  fixture: true,
+  dryRun: true,
+  apply: false,
+}, {
+  insertGate: async (row) => promotionGateInserts.push(row),
+});
+assert.equal(promotionGateRuntime.ok, true);
+assert.equal(promotionGateRuntime.writeMode, 'plan-only');
+assert.equal(promotionGateRuntime.promotionReady, false);
+assert.equal(promotionGateInserts.length, 0);
+assert.ok(promotionGateRuntime.summary.promotionCandidates >= 1);
 
 const root = path.resolve(import.meta.dirname, '..');
 const bootstrap = fs.readFileSync(path.join(root, 'shared/db/schema/tables/bootstrap.ts'), 'utf8');
 assert.match(bootstrap, /luna_weight_vector_shadow/);
 assert.match(bootstrap, /luna_paper_trading_shadow/);
+assert.match(bootstrap, /luna_paper_promotion_gate_shadow/);
 
 const deploy = path.join(root, 'deploy.sh');
 const bashCheck = spawnSync('bash', ['-n', deploy], { encoding: 'utf8' });
@@ -107,6 +146,11 @@ const payload = {
     leakBlocked: leak.signal === 'hold' && leak.noLookaheadOk === false,
     violations: leak.evidence.noLookahead.violations,
   },
+  bottleneck: {
+    hardHold: bottleneckHold.evidence.bottleneck.hardHold,
+    signal: bottleneckHold.signal,
+    penalty: bottleneckHold.evidence.bottleneck.penalty,
+  },
   paper: {
     side: paper.paperSide,
     notional: paper.paperNotionalUsdt,
@@ -114,6 +158,10 @@ const payload = {
   runtime: {
     weightWriteMode: weightRuntime.writeMode,
     paperWriteMode: paperRuntime.writeMode,
+    promotionGateWriteMode: promotionGateRuntime.writeMode,
+    promotionCandidates: promotionGateRuntime.summary.promotionCandidates,
+    paperBottleneckHardHold: paperRuntime.summary.bottleneckHardHold,
+    paperBottleneckPreventedOrder: paperRuntime.summary.bottleneckPreventedOrder,
   },
 };
 
@@ -122,4 +170,3 @@ if (process.argv.includes('--json')) {
 } else {
   console.log('luna-phase2-finrlx-smoke ok');
 }
-

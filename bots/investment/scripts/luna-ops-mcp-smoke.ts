@@ -12,6 +12,8 @@ export async function runLunaOpsMcpSmoke() {
   assert.ok(toolNames.includes('luna_llm_usage'));
   assert.ok(toolNames.includes('luna_guardrails'));
   assert.ok(toolNames.includes('luna_apply_plan'));
+  assert.ok(toolNames.includes('luna_phase5_mcp_bridge'));
+  assert.ok(toolNames.includes('luna_phase5_shadow_plan'));
   const status = await callLunaOpsTool('luna_status', { fixture: true });
   assert.equal(status.status, 'luna_bottleneck_hard_blocked');
   assert.equal(status.protected6.labels.includes('ai.luna.tradingview-ws'), true);
@@ -19,6 +21,12 @@ export async function runLunaOpsMcpSmoke() {
   assert.equal(applyPlan.mode, 'read_only_plan');
   assert.equal(applyPlan.noLiveTradeExecution, true);
   assert.ok(applyPlan.safeFixCandidates.some((item) => item.id === 'repair_llm_hotpath_plan'));
+  const phase5Bridge = await callLunaOpsTool('luna_phase5_mcp_bridge', { fixture: true });
+  assert.equal(phase5Bridge.toolCount, 12);
+  assert.equal(phase5Bridge.directTradeAllowed, false);
+  const phase5Plan = await callLunaOpsTool('luna_phase5_shadow_plan', { fixture: true });
+  assert.equal(phase5Plan.noLiveTradeExecution, true);
+  assert.equal(phase5Plan.summary.mcpTools, 12);
   return {
     ok: true,
     tools: toolNames,
@@ -29,6 +37,11 @@ export async function runLunaOpsMcpSmoke() {
       note: 'regression fixture only; do not treat as live operator state',
     },
     applyPlan,
+    phase5Bridge: {
+      toolCount: phase5Bridge.toolCount,
+      directTradeAllowed: phase5Bridge.directTradeAllowed,
+    },
+    phase5Plan: phase5Plan.summary,
   };
 }
 

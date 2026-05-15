@@ -11,6 +11,11 @@ import {
 import { buildLunaDiscoveryFunnelReport } from '../../../scripts/runtime-luna-discovery-funnel-report.ts';
 import { buildLunaLiveFireFinalGate } from '../../../scripts/luna-live-fire-final-gate.ts';
 import { buildMarketdataRealtimeConnectivityReport } from '../../../scripts/runtime-marketdata-realtime-connectivity.ts';
+import {
+  buildPhase5GeneticAlphaRows,
+  buildPhase5McpBridgeRows,
+  buildPhase5RlEnsembleRows,
+} from '../../../shared/luna-phase5-codex-p3.ts';
 
 export const LUNA_OPS_MCP_TOOLS = [
   {
@@ -36,6 +41,14 @@ export const LUNA_OPS_MCP_TOOLS = [
   {
     name: 'luna_discovery_funnel',
     description: 'Return the Luna discovery-to-entry funnel report.',
+  },
+  {
+    name: 'luna_phase5_mcp_bridge',
+    description: 'Return the read-only Phase 5 A2A-to-MCP tool manifest.',
+  },
+  {
+    name: 'luna_phase5_shadow_plan',
+    description: 'Return Phase 5 RL ensemble and Genetic Alpha shadow candidates; never executes trades.',
   },
 ];
 
@@ -121,6 +134,39 @@ export async function callLunaOpsTool(name, args = {}) {
   }
   if (name === 'luna_discovery_funnel') {
     return buildLunaDiscoveryFunnelReport({ hours, market: args.market || 'all' });
+  }
+  if (name === 'luna_phase5_mcp_bridge') {
+    const rows = buildPhase5McpBridgeRows({ fixture: args.fixture === true });
+    return {
+      ok: true,
+      mode: 'read_only_shadow_manifest',
+      toolCount: rows.length,
+      directTradeAllowed: false,
+      protectedPidMutationAllowed: false,
+      rows,
+    };
+  }
+  if (name === 'luna_phase5_shadow_plan') {
+    const limit = Math.max(1, Math.min(100, Number(args.limit || 50) || 50));
+    const fixtureMode = args.fixture === true;
+    const [mcpRows, rlRows, geneticRows] = await Promise.all([
+      Promise.resolve(buildPhase5McpBridgeRows({ fixture: fixtureMode })),
+      buildPhase5RlEnsembleRows({ fixture: fixtureMode, limit, market: args.market || null }),
+      buildPhase5GeneticAlphaRows({ fixture: fixtureMode, limit, market: args.market || null }),
+    ]);
+    return {
+      ok: true,
+      mode: 'shadow_plan_only',
+      noLiveTradeExecution: true,
+      directTradeAllowed: false,
+      summary: {
+        mcpTools: mcpRows.length,
+        rlRows: rlRows.length,
+        geneticRows: geneticRows.length,
+        liveMutation: false,
+      },
+      rows: { mcp: mcpRows, rl: rlRows, genetic: geneticRows },
+    };
   }
   throw new Error(`unknown_tool:${name}`);
 }

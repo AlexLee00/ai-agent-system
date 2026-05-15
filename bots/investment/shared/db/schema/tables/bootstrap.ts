@@ -751,6 +751,29 @@ export async function runInvestmentSchemaBootstrap(run, { log = true } = {}) {
   try { await run(`CREATE INDEX IF NOT EXISTS idx_luna_paper_trading_shadow_side ON luna_paper_trading_shadow(paper_side, observed_at DESC)`); } catch { /* 무시 */ }
   try { await run(`CREATE INDEX IF NOT EXISTS idx_luna_paper_trading_shadow_observed ON luna_paper_trading_shadow(observed_at DESC)`); } catch { /* 무시 */ }
 
+  await run(`
+    CREATE TABLE IF NOT EXISTS luna_paper_promotion_gate_shadow (
+      id                         BIGSERIAL PRIMARY KEY,
+      symbol                     TEXT NOT NULL,
+      market                     TEXT NOT NULL,
+      exchange                   TEXT NOT NULL,
+      decision                   TEXT NOT NULL DEFAULT 'shadow_promotion_blocked',
+      promotion_candidate        BOOLEAN DEFAULT FALSE,
+      cycle_count                INTEGER DEFAULT 0,
+      pass_count                 INTEGER DEFAULT 0,
+      consecutive_passes         INTEGER DEFAULT 0,
+      avg_confidence             DOUBLE PRECISION DEFAULT 0,
+      total_paper_notional_usdt  DOUBLE PRECISION DEFAULT 0,
+      block_reasons              JSONB DEFAULT '[]'::jsonb,
+      shadow_only                BOOLEAN DEFAULT TRUE,
+      evidence                   JSONB DEFAULT '{}'::jsonb,
+      observed_at                TIMESTAMPTZ DEFAULT NOW()
+    )
+  `);
+  try { await run(`CREATE INDEX IF NOT EXISTS idx_luna_paper_promotion_gate_symbol ON luna_paper_promotion_gate_shadow(symbol, market, observed_at DESC)`); } catch { /* 무시 */ }
+  try { await run(`CREATE INDEX IF NOT EXISTS idx_luna_paper_promotion_gate_decision ON luna_paper_promotion_gate_shadow(decision, observed_at DESC)`); } catch { /* 무시 */ }
+  try { await run(`CREATE INDEX IF NOT EXISTS idx_luna_paper_promotion_gate_candidate ON luna_paper_promotion_gate_shadow(promotion_candidate, observed_at DESC)`); } catch { /* 무시 */ }
+
   // ── Luna Phase 3 Codex P1: posttrade staged mutation + deployment spec audit ──
   await run(`
     CREATE TABLE IF NOT EXISTS luna_posttrade_mutation_shadow (
@@ -854,6 +877,68 @@ export async function runInvestmentSchemaBootstrap(run, { log = true } = {}) {
   try { await run(`CREATE INDEX IF NOT EXISTS idx_luna_phase4_strategy_symbol ON luna_phase4_strategy_enhancement_shadow(symbol, market, observed_at DESC)`); } catch { /* 무시 */ }
   try { await run(`CREATE INDEX IF NOT EXISTS idx_luna_phase4_strategy_status ON luna_phase4_strategy_enhancement_shadow(enhancement_status, observed_at DESC)`); } catch { /* 무시 */ }
   try { await run(`CREATE INDEX IF NOT EXISTS idx_luna_phase4_strategy_evidence ON luna_phase4_strategy_enhancement_shadow USING GIN (evidence)`); } catch { /* 무시 */ }
+
+  // ── Luna Phase 5 Codex P3: MCP bridge + RL ensemble + Genetic Alpha shadow ──
+  await run(`
+    CREATE TABLE IF NOT EXISTS luna_phase5_mcp_a2a_bridge_shadow (
+      id                    BIGSERIAL PRIMARY KEY,
+      skill_id              TEXT NOT NULL,
+      mcp_tool_name         TEXT NOT NULL,
+      status                TEXT NOT NULL DEFAULT 'shadow_read_only_ready',
+      direct_trade_allowed  BOOLEAN DEFAULT FALSE,
+      protected_policy      TEXT NOT NULL,
+      capability            JSONB DEFAULT '{}'::jsonb,
+      evidence              JSONB DEFAULT '{}'::jsonb,
+      observed_at           TIMESTAMPTZ DEFAULT NOW()
+    )
+  `);
+  try { await run(`CREATE INDEX IF NOT EXISTS idx_luna_phase5_mcp_skill ON luna_phase5_mcp_a2a_bridge_shadow(skill_id, observed_at DESC)`); } catch { /* 무시 */ }
+  try { await run(`CREATE INDEX IF NOT EXISTS idx_luna_phase5_mcp_tool ON luna_phase5_mcp_a2a_bridge_shadow(mcp_tool_name, observed_at DESC)`); } catch { /* 무시 */ }
+  try { await run(`CREATE INDEX IF NOT EXISTS idx_luna_phase5_mcp_evidence ON luna_phase5_mcp_a2a_bridge_shadow USING GIN (evidence)`); } catch { /* 무시 */ }
+
+  await run(`
+    CREATE TABLE IF NOT EXISTS luna_phase5_rl_ensemble_shadow (
+      id                    BIGSERIAL PRIMARY KEY,
+      symbol                TEXT NOT NULL,
+      market                TEXT NOT NULL,
+      exchange              TEXT NOT NULL,
+      ensemble_model        TEXT NOT NULL DEFAULT 'luna_phase5_codex_p3_shadow_v1',
+      action_type           TEXT NOT NULL DEFAULT 'hold',
+      action_size_pct       DOUBLE PRECISION DEFAULT 0,
+      confidence            DOUBLE PRECISION DEFAULT 0,
+      reward_estimate       DOUBLE PRECISION DEFAULT 0,
+      algorithm_votes       JSONB DEFAULT '[]'::jsonb,
+      data_health           TEXT NOT NULL DEFAULT 'unknown',
+      live_mutation         BOOLEAN DEFAULT FALSE,
+      shadow_only           BOOLEAN DEFAULT TRUE,
+      evidence              JSONB DEFAULT '{}'::jsonb,
+      observed_at           TIMESTAMPTZ DEFAULT NOW()
+    )
+  `);
+  try { await run(`CREATE INDEX IF NOT EXISTS idx_luna_phase5_rl_symbol ON luna_phase5_rl_ensemble_shadow(symbol, market, observed_at DESC)`); } catch { /* 무시 */ }
+  try { await run(`CREATE INDEX IF NOT EXISTS idx_luna_phase5_rl_action ON luna_phase5_rl_ensemble_shadow(action_type, confidence DESC, observed_at DESC)`); } catch { /* 무시 */ }
+  try { await run(`CREATE INDEX IF NOT EXISTS idx_luna_phase5_rl_votes ON luna_phase5_rl_ensemble_shadow USING GIN (algorithm_votes)`); } catch { /* 무시 */ }
+
+  await run(`
+    CREATE TABLE IF NOT EXISTS luna_phase5_genetic_alpha_shadow (
+      id                    BIGSERIAL PRIMARY KEY,
+      symbol                TEXT NOT NULL,
+      market                TEXT NOT NULL,
+      exchange              TEXT NOT NULL,
+      generation            INTEGER NOT NULL DEFAULT 1,
+      chromosome            JSONB DEFAULT '{}'::jsonb,
+      fitness_score         DOUBLE PRECISION DEFAULT 0,
+      promotion_status      TEXT NOT NULL DEFAULT 'shadow_observe',
+      blocked_reasons       JSONB DEFAULT '[]'::jsonb,
+      live_mutation         BOOLEAN DEFAULT FALSE,
+      shadow_only           BOOLEAN DEFAULT TRUE,
+      evidence              JSONB DEFAULT '{}'::jsonb,
+      observed_at           TIMESTAMPTZ DEFAULT NOW()
+    )
+  `);
+  try { await run(`CREATE INDEX IF NOT EXISTS idx_luna_phase5_genetic_symbol ON luna_phase5_genetic_alpha_shadow(symbol, market, observed_at DESC)`); } catch { /* 무시 */ }
+  try { await run(`CREATE INDEX IF NOT EXISTS idx_luna_phase5_genetic_status ON luna_phase5_genetic_alpha_shadow(promotion_status, fitness_score DESC, observed_at DESC)`); } catch { /* 무시 */ }
+  try { await run(`CREATE INDEX IF NOT EXISTS idx_luna_phase5_genetic_chromosome ON luna_phase5_genetic_alpha_shadow USING GIN (chromosome)`); } catch { /* 무시 */ }
 
   // ── position_signal_history (Phase D Continuous Signal Collection) ──
   await run(`

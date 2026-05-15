@@ -28,22 +28,25 @@ export function applyPredictiveValidationGate(decisions = [], predictiveConfig =
   let blocked = 0;
   let advisory = 0;
   let observation = 0;
+  const auditLogEnabled = predictiveConfig?.auditLog !== false;
   for (const decision of decisions || []) {
     if (decision?.action !== ACTION_BUY) {
       next.push(decision);
       continue;
     }
     const evidence = buildPredictiveValidationEvidence(decision, {}, predictiveConfig || {});
-    void logPredictiveValidation(evidence, {
-      symbol: decision?.symbol || null,
-      market: decision?.market || decision?.exchange || 'crypto',
-      candidateSnapshot: {
+    if (auditLogEnabled) {
+      void logPredictiveValidation(evidence, {
         symbol: decision?.symbol || null,
-        action: decision?.action || null,
-        confidence: decision?.confidence ?? null,
-        shadowHardening: evidence?.wouldBlock === true,
-      },
-    });
+        market: decision?.market || decision?.exchange || 'crypto',
+        candidateSnapshot: {
+          symbol: decision?.symbol || null,
+          action: decision?.action || null,
+          confidence: decision?.confidence ?? null,
+          shadowHardening: evidence?.wouldBlock === true,
+        },
+      });
+    }
     const predictiveScore = clamp01(evidence?.score, 0);
     const threshold = clamp01(evidence?.threshold ?? predictiveConfig?.threshold ?? 0.55, 0.55);
     if (predictiveScore >= threshold) {
