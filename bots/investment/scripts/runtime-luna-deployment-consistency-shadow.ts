@@ -31,6 +31,12 @@ function hasFlag(name: string) {
   return process.argv.includes(`--${name}`);
 }
 
+function normalizeMarketFilter(value: any = null) {
+  const raw = String(value || '').trim().toLowerCase();
+  if (!raw || raw === 'all' || raw === '*' || raw === 'any') return null;
+  return normalizeLunaPhase2Market(raw);
+}
+
 function fixtureRows() {
   const now = new Date('2026-05-14T00:00:00.000Z').toISOString();
   const weight = buildLunaWeightVector({
@@ -51,7 +57,8 @@ function fixtureRows() {
 
 async function loadLatestPaperPlans({ hours = 24, market = null, limit = 50 } = {}) {
   const params = [Number(hours), Number(limit)];
-  const marketWhere = market ? `AND market = $${params.push(normalizeLunaPhase2Market(market))}` : '';
+  const normalizedMarket = normalizeMarketFilter(market);
+  const marketWhere = normalizedMarket ? `AND market = $${params.push(normalizedMarket)}` : '';
   return db.query(`
     SELECT DISTINCT ON (symbol, market)
            symbol, market, exchange, target_weight, current_weight, delta_weight,
@@ -102,7 +109,7 @@ export async function runLunaDeploymentConsistencyShadow(options: any = {}, deps
   const confirm = String(options.confirm || '');
   const limit = Math.max(1, Number(options.limit || process.env.LUNA_PHASE3_CONSISTENCY_LIMIT || 50));
   const hours = Math.max(1, Number(options.hours || 24));
-  const market = options.market ? normalizeLunaPhase2Market(options.market) : null;
+  const market = normalizeMarketFilter(options.market);
 
   if (apply && options.dryRun === true) {
     throw new Error('runtime:luna-deployment-consistency-shadow cannot combine --apply with --dry-run');

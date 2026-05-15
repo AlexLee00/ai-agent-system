@@ -52,7 +52,10 @@ export async function runLunaPaperTradingShadow(options: any = {}, deps: any = {
   const json = options.json === true;
   const limit = Math.max(1, Number(options.limit || process.env.LUNA_PHASE2_PAPER_LIMIT || 50));
   const hours = Math.max(1, Number(options.hours || 24));
-  const market = options.market ? normalizeLunaPhase2Market(options.market) : null;
+  const requestedMarket = String(options.market || '').trim().toLowerCase();
+  const market = requestedMarket && requestedMarket !== 'all'
+    ? normalizeLunaPhase2Market(requestedMarket)
+    : null;
   const equityUsdt = Math.max(1, Number(options.equityUsdt || process.env.LUNA_PHASE2_PAPER_EQUITY_USDT || 1000));
   const maxOrderUsdt = Math.max(0, Number(process.env.LUNA_MAX_TRADE_USDT || 50));
 

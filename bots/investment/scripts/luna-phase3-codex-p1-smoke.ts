@@ -68,6 +68,21 @@ export async function runLunaPhase3CodexP1Smoke() {
   assert.equal(consistencyRuntime.writeMode, 'plan-only');
   assert.equal(consistencyRuntime.summary.liveMutation, false);
   assert.equal(consistencyRuntime.summary.inconsistent, 0);
+  let capturedConsistencyLoadArgs = null;
+  const consistencyAllMarketRuntime = await runLunaDeploymentConsistencyShadow({
+    dryRun: true,
+    apply: false,
+    json: true,
+    market: 'all',
+  }, {
+    loadPairs: async (args) => {
+      capturedConsistencyLoadArgs = args;
+      return [];
+    },
+  });
+  assert.equal(consistencyAllMarketRuntime.ok, true);
+  assert.equal(consistencyAllMarketRuntime.market, 'all');
+  assert.equal(capturedConsistencyLoadArgs?.market, null, 'market=all must not collapse to crypto');
   await assert.rejects(
     () => runLunaDeploymentConsistencyShadow({ fixture: true, dryRun: true, apply: true, confirm: 'luna-deployment-consistency-shadow', json: true }),
     /cannot combine --apply with --dry-run/,

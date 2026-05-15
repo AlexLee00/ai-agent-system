@@ -20,7 +20,7 @@ export async function runLunaOpsSchedulerSmoke() {
   const jobs = getOpsSchedulerJobs();
   const launchdPlist = fs.readFileSync(new URL('../launchd/ai.luna.ops-scheduler.plist', import.meta.url), 'utf8');
   assert.match(launchdPlist, /<key>StartInterval<\/key>\s*<integer>60<\/integer>/);
-  assert.equal(jobs.length, 40);
+  assert.equal(jobs.length, 50);
   assert.equal(jobs.some((job) => job.name === 'market_regime_llm_shadow'), true);
   assert.equal(jobs.find((job) => job.name === 'market_regime_llm_shadow')?.category, 'market_state');
   assert.equal(jobs.find((job) => job.name === 'market_regime_llm_shadow')?.cadence?.seconds, 3600);
@@ -56,6 +56,21 @@ export async function runLunaOpsSchedulerSmoke() {
   assert.equal(jobs.find((job) => job.name === 'entry_llm_shadow')?.args?.includes('--confirm=luna-entry-llm-shadow'), true);
   assert.equal(jobs.find((job) => job.name === 'entry_llm_shadow')?.args?.includes('--max-llm-calls=3'), true);
   assert.equal(jobs.find((job) => job.name === 'entry_llm_shadow')?.args?.includes('--exchanges=binance,kis,kis_overseas'), true);
+  assert.equal(jobs.some((job) => job.name === 'predictive_evidence_refresh_all'), true);
+  assert.equal(jobs.find((job) => job.name === 'predictive_evidence_refresh_all')?.category, 'evidence_shadow');
+  assert.equal(jobs.find((job) => job.name === 'predictive_evidence_refresh_all')?.args?.includes('--confirm=luna-predictive-evidence-refresh'), true);
+  assert.equal(jobs.some((job) => job.name === 'candidate_bottleneck_diagnostics_shadow'), true);
+  assert.equal(jobs.find((job) => job.name === 'candidate_bottleneck_diagnostics_shadow')?.args?.includes('--confirm=luna-candidate-bottleneck-shadow'), true);
+  assert.equal(jobs.some((job) => job.name === 'weight_vector_shadow_refresh'), true);
+  assert.equal(jobs.find((job) => job.name === 'weight_vector_shadow_refresh')?.category, 'decision_shadow');
+  assert.equal(jobs.find((job) => job.name === 'weight_vector_shadow_refresh')?.args?.includes('--confirm=luna-weight-vector-shadow'), true);
+  assert.equal(jobs.some((job) => job.name === 'paper_trading_shadow_refresh'), true);
+  assert.equal(jobs.find((job) => job.name === 'paper_trading_shadow_refresh')?.category, 'paper_shadow');
+  assert.equal(jobs.find((job) => job.name === 'paper_trading_shadow_refresh')?.args?.includes('--confirm=luna-paper-trading-shadow'), true);
+  assert.equal(jobs.some((job) => job.name === 'paper_promotion_gate_shadow_refresh'), true);
+  assert.equal(jobs.find((job) => job.name === 'paper_promotion_gate_shadow_refresh')?.category, 'promotion_shadow');
+  assert.equal(jobs.find((job) => job.name === 'paper_promotion_gate_shadow_refresh')?.args?.includes('--confirm=luna-paper-promotion-gate-shadow'), true);
+  assert.equal(jobs.find((job) => job.name === 'paper_promotion_gate_shadow_refresh')?.args?.includes('--hours=168'), true);
   assert.equal(jobs.some((job) => job.name === 'dynamic_tpsl_shadow_refresh'), true);
   assert.equal(jobs.find((job) => job.name === 'dynamic_tpsl_shadow_refresh')?.category, 'risk_shadow');
   assert.equal(jobs.find((job) => job.name === 'dynamic_tpsl_shadow_refresh')?.args?.includes('--confirm=luna-dynamic-tpsl-shadow'), true);
@@ -75,6 +90,18 @@ export async function runLunaOpsSchedulerSmoke() {
   assert.equal(jobs.find((job) => job.name === 'meta_reflexion_shadow_refresh')?.args?.includes('--max-llm-calls=0'), true);
   assert.equal(jobs.some((job) => job.name === 'risk_simulation_shadow_refresh'), true);
   assert.equal(jobs.find((job) => job.name === 'risk_simulation_shadow_refresh')?.args?.includes('--simulations=500'), true);
+  assert.equal(jobs.some((job) => job.name === 'posttrade_mutation_shadow_refresh'), true);
+  assert.equal(jobs.find((job) => job.name === 'posttrade_mutation_shadow_refresh')?.args?.includes('--confirm=luna-phase3-posttrade-mutation'), true);
+  assert.equal(jobs.some((job) => job.name === 'deployment_consistency_shadow_refresh'), true);
+  assert.equal(jobs.find((job) => job.name === 'deployment_consistency_shadow_refresh')?.args?.includes('--confirm=luna-deployment-consistency-shadow'), true);
+  assert.equal(jobs.some((job) => job.name === 'live_forward_validation_shadow_refresh'), true);
+  assert.equal(jobs.find((job) => job.name === 'live_forward_validation_shadow_refresh')?.args?.includes('--confirm=luna-phase4-live-forward-shadow'), true);
+  assert.equal(jobs.find((job) => job.name === 'live_forward_validation_shadow_refresh')?.args?.includes('--max-llm-calls=0'), true);
+  assert.equal(jobs.some((job) => job.name === 'strategy_enhancement_shadow_refresh'), true);
+  assert.equal(jobs.find((job) => job.name === 'strategy_enhancement_shadow_refresh')?.args?.includes('--confirm=luna-phase4-strategy-enhancement-shadow'), true);
+  assert.equal(jobs.some((job) => job.name === 'phase5_codex_p3_shadow_refresh'), true);
+  assert.equal(jobs.find((job) => job.name === 'phase5_codex_p3_shadow_refresh')?.args?.includes('--confirm=luna-phase5-codex-p3-shadow'), true);
+  assert.equal(jobs.find((job) => job.name === 'phase5_codex_p3_shadow_refresh')?.args?.includes('--task=all'), true);
   assert.equal(jobs.some((job) => job.name === 'tradingview_open_position_subscription_sync'), true);
   assert.equal(jobs.find((job) => job.name === 'tradingview_open_position_subscription_sync')?.category, 'position_monitor');
   assert.equal(jobs.find((job) => job.name === 'tradingview_open_position_subscription_sync')?.cadence?.seconds, 300);
@@ -133,7 +160,7 @@ export async function runLunaOpsSchedulerSmoke() {
 
   const now = new Date('2026-05-04T02:00:00+09:00');
   const emptyPlan = buildOpsSchedulerPlan({ now, state: { jobs: {} }, jobs });
-  assert.equal(emptyPlan.due, 27);
+  assert.equal(emptyPlan.due, 37);
   assert.equal(emptyPlan.jobs.find((job) => job.name === 'market_cycle_domestic')?.due, false);
   assert.equal(emptyPlan.jobs.find((job) => job.name === 'market_cycle_domestic')?.marketSession?.isOpen, false);
   assert.equal(emptyPlan.jobs.find((job) => job.name === 'market_cycle_domestic_open_catchup')?.due, false);
@@ -232,12 +259,12 @@ export async function runLunaOpsSchedulerSmoke() {
     },
   });
   assert.equal(executed.ok, true);
-  assert.equal(calls.length, 27);
+  assert.equal(calls.length, 37);
   assert.equal(calls.includes('market_cycle_domestic'), false);
   assert.equal(calls.includes('market_cycle_domestic_open_catchup'), false);
   assert.equal(calls.includes('market_cycle_overseas'), false);
   const executedState = JSON.parse(fs.readFileSync(statePath, 'utf8'));
-  assert.equal(Object.keys(executedState.jobs).length, 27);
+  assert.equal(Object.keys(executedState.jobs).length, 37);
 
   assert.deepEqual(
     classifyOpsSchedulerOutcome(

@@ -55,7 +55,10 @@ export async function runLunaPaperPromotionGateShadow(options: any = {}, deps: a
   const json = options.json === true;
   const hours = Math.max(1, Number(options.hours || 24));
   const limit = Math.max(1, Number(options.limit || 500));
-  const market = options.market ? normalizeLunaPhase2Market(options.market) : null;
+  const requestedMarket = String(options.market || '').trim().toLowerCase();
+  const market = requestedMarket && requestedMarket !== 'all'
+    ? normalizeLunaPhase2Market(requestedMarket)
+    : null;
 
   if (apply && confirm !== 'luna-paper-promotion-gate-shadow') {
     throw new Error('runtime:luna-paper-promotion-gate apply requires --confirm=luna-paper-promotion-gate-shadow');

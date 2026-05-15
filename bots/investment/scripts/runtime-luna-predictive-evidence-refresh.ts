@@ -37,6 +37,10 @@ async function getActiveCandidates({ limit = 100, market = 'all' } = {}) {
   const marketWhere = normalizedMarket === 'all'
     ? ''
     : `AND market = $${params.push(normalizedMarket)}`;
+  const perMarketLimit = Math.max(1, Math.ceil(Number(limit || 100) / 3));
+  const marketRankWhere = normalizedMarket === 'all'
+    ? `WHERE market_rank <= $${params.push(perMarketLimit)}`
+    : '';
   params.push(limit);
   return db.query(`
     WITH active_candidates AS (
@@ -46,9 +50,19 @@ async function getActiveCandidates({ limit = 100, market = 'all' } = {}) {
        WHERE expires_at > NOW()
          ${marketWhere}
        ORDER BY symbol, market, score DESC, discovered_at DESC
+    ),
+    balanced_candidates AS (
+      SELECT *,
+             ROW_NUMBER() OVER (PARTITION BY market ORDER BY score DESC, discovered_at DESC) AS market_rank
+        FROM active_candidates
+    ),
+    selected_candidates AS (
+      SELECT *
+        FROM balanced_candidates
+        ${marketRankWhere}
     )
     SELECT *
-      FROM active_candidates
+      FROM selected_candidates
      ORDER BY score DESC, discovered_at DESC
      LIMIT $${params.length}
   `, params).catch(() => []);

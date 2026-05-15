@@ -513,7 +513,15 @@ async function loadLatestCandidateBottleneckMap(rows = []) {
 
 export async function loadLunaPhase2CandidateInputs({ limit = 50, market = null } = {}) {
   const params = [];
-  const marketWhere = market ? `AND market = $${params.push(normalizeLunaPhase2Market(market))}` : '';
+  const requestedMarket = String(market || '').trim().toLowerCase();
+  const normalizedMarket = requestedMarket && requestedMarket !== 'all'
+    ? normalizeLunaPhase2Market(requestedMarket)
+    : null;
+  const marketWhere = normalizedMarket ? `AND market = $${params.push(normalizedMarket)}` : '';
+  const perMarketLimit = Math.max(1, Math.ceil(Number(limit || 50) / 3));
+  const marketRankWhere = normalizedMarket
+    ? ''
+    : `WHERE market_rank <= $${params.push(perMarketLimit)}`;
   params.push(limit);
   const rows = await query(`
     WITH symbol_community AS (
@@ -562,6 +570,16 @@ export async function loadLunaPhase2CandidateInputs({ limit = 50, market = null 
        WHERE expires_at > NOW()
          ${marketWhere}
        ORDER BY symbol, market, score DESC, discovered_at DESC
+    ),
+    balanced_candidates AS (
+      SELECT *,
+             ROW_NUMBER() OVER (PARTITION BY market ORDER BY score DESC, discovered_at DESC) AS market_rank
+        FROM active_candidates
+    ),
+    selected_candidates AS (
+      SELECT *
+        FROM balanced_candidates
+        ${marketRankWhere}
     )
     SELECT cu.symbol, cu.market, cu.score::double precision AS candidate_score, cu.source,
            cu.discovered_at, cu.expires_at, cu.reason, cu.raw_data,
@@ -579,7 +597,7 @@ export async function loadLunaPhase2CandidateInputs({ limit = 50, market = null 
            market_community.market_source_count AS community_market_source_count,
            market_community.market_avg_quality AS community_market_avg_quality,
            market_community.market_last_seen_at AS community_market_last_seen_at
-      FROM active_candidates cu
+      FROM selected_candidates cu
       LEFT JOIN candidate_backtest_status cbs
         ON cbs.symbol = cu.symbol AND cbs.market = cu.market
       LEFT JOIN latest_predictive lp
@@ -665,17 +683,41 @@ export async function insertLunaWeightVectorShadow(row = {}) {
 }
 
 export async function loadLatestLunaWeightVectors({ limit = 50, hours = 24, market = null } = {}) {
-  const params = [Number(hours), Number(limit)];
-  const marketWhere = market ? `AND market = $${params.push(normalizeLunaPhase2Market(market))}` : '';
+  const requestedMarket = String(market || '').trim().toLowerCase();
+  const normalizedMarket = requestedMarket && requestedMarket !== 'all'
+    ? normalizeLunaPhase2Market(requestedMarket)
+    : null;
+  const params = [Number(hours)];
+  const marketWhere = normalizedMarket ? `AND market = $${params.push(normalizedMarket)}` : '';
+  const perMarketLimit = Math.max(1, Math.ceil(Number(limit || 50) / 3));
+  const marketRankWhere = normalizedMarket
+    ? ''
+    : `WHERE market_rank <= $${params.push(perMarketLimit)}`;
+  params.push(Number(limit));
   return query(`
-    SELECT DISTINCT ON (symbol, market)
-           symbol, market, exchange, target_weight, confidence, signal, shadow_only, evidence, observed_at
-      FROM luna_weight_vector_shadow
-     WHERE observed_at >= NOW() - ($1::int * INTERVAL '1 hour')
-       AND shadow_only = true
-       ${marketWhere}
-     ORDER BY symbol, market, observed_at DESC
-     LIMIT $2
+    WITH latest_weights AS (
+      SELECT DISTINCT ON (symbol, market)
+             symbol, market, exchange, target_weight, confidence, signal, shadow_only, evidence, observed_at
+        FROM luna_weight_vector_shadow
+       WHERE observed_at >= NOW() - ($1::int * INTERVAL '1 hour')
+         AND shadow_only = true
+         ${marketWhere}
+       ORDER BY symbol, market, observed_at DESC
+    ),
+    balanced_weights AS (
+      SELECT *,
+             ROW_NUMBER() OVER (PARTITION BY market ORDER BY observed_at DESC, confidence DESC) AS market_rank
+        FROM latest_weights
+    ),
+    selected_weights AS (
+      SELECT *
+        FROM balanced_weights
+        ${marketRankWhere}
+    )
+    SELECT symbol, market, exchange, target_weight, confidence, signal, shadow_only, evidence, observed_at
+      FROM selected_weights
+     ORDER BY observed_at DESC, confidence DESC
+     LIMIT $${params.length}
   `, params).catch(() => []);
 }
 

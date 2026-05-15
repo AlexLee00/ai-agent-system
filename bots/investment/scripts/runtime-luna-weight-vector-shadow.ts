@@ -51,7 +51,10 @@ export async function runLunaWeightVectorShadow(options: any = {}, deps: any = {
   const fixture = options.fixture === true;
   const json = options.json === true;
   const limit = Math.max(1, Number(options.limit || process.env.LUNA_PHASE2_WEIGHT_VECTOR_LIMIT || 50));
-  const market = options.market ? normalizeLunaPhase2Market(options.market) : null;
+  const requestedMarket = String(options.market || '').trim().toLowerCase();
+  const market = requestedMarket && requestedMarket !== 'all'
+    ? normalizeLunaPhase2Market(requestedMarket)
+    : null;
   const asOf = options.asOf || new Date().toISOString();
 
   if (apply && confirm !== 'luna-weight-vector-shadow') {

@@ -209,7 +209,11 @@ export function buildLunaPaperPromotionGateReport(rows = [], config = {}) {
 
 export async function loadLunaPaperPromotionRows({ hours = 24, limit = 500, market = null } = {}) {
   const params = [Math.max(1, Number(hours)), Math.max(1, Number(limit))];
-  const marketWhere = market ? `AND market = $${params.push(normalizeLunaPhase2Market(market))}` : '';
+  const requestedMarket = String(market || '').trim().toLowerCase();
+  const normalizedMarket = requestedMarket && requestedMarket !== 'all'
+    ? normalizeLunaPhase2Market(requestedMarket)
+    : null;
+  const marketWhere = normalizedMarket ? `AND market = $${params.push(normalizedMarket)}` : '';
   return query(`
     SELECT symbol, market, exchange, target_weight, current_weight, delta_weight,
            paper_side, paper_notional_usdt, confidence, status, shadow_only,
