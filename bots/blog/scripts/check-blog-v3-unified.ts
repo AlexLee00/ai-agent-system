@@ -5,7 +5,7 @@
 const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
-const { execFileSync } = require('child_process');
+const { execFileSync, execSync } = require('child_process');
 const env = require('../../../packages/core/lib/env');
 
 const ROOT = env.PROJECT_ROOT;
@@ -16,7 +16,7 @@ function read(rel) {
 }
 
 function rgFiles(dir) {
-  const out = execFileSync('rg', ['--files', dir], { encoding: 'utf8' });
+  const out = execSync(`find ${JSON.stringify(dir)} -type f \\( -name '*.ts' -o -name '*.js' -o -name '*.py' \\)`, { encoding: 'utf8' });
   return out.split('\n').filter(Boolean);
 }
 

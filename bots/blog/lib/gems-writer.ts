@@ -1332,6 +1332,7 @@ async function writeGeneralPost(category, researchData, sectionVariation = {}) {
   const marketingSignalSummary = String(researchData.topic_marketing_signal_summary || '').trim();
   const marketingRecommendations = (researchData.topic_marketing_recommendations || []).filter(Boolean).join(' / ');
   const marketingCtaHint = String(researchData.topic_marketing_cta_hint || '').trim();
+  const masterStyleHint = String(sectionVariation?.masterStyleHint || '').trim();
   const selectedTopicDirection = _buildSelectedTopicDirection(researchData);
   const bonusInsights = sectionVariation.bonusInsights || [];
   const sectionPlan = calculateSectionChars('gems', bonusInsights);
@@ -1406,6 +1407,7 @@ ${strategyFocus ? `[이번 주 전략 포커스]\n${strategyFocus}\n` : ''}
 ${strategyRecommendations ? `[전략 권고]\n${strategyRecommendations}\n` : ''}
 ${experimentWinnerSummary ? `[최근 실험 승자]\n${experimentWinnerSummary}\n` : ''}
 ${experimentWeakLaneSummary ? `[최근 실험 약세 레인]\n${experimentWeakLaneSummary}\n` : ''}
+${masterStyleHint ? `[마스터 스타일 가이드]\n${masterStyleHint}\n` : ''}
 ${marketingSignalSummary ? `[매출/시즌 신호]\n${marketingSignalSummary}\n` : ''}
 ${marketingRecommendations ? `[마케팅 반영 지시]\n${marketingRecommendations}\n` : ''}
 ${marketingCtaHint ? `[전환 CTA 힌트]\n${marketingCtaHint}\n` : ''}
@@ -1727,6 +1729,7 @@ async function writeGeneralPostChunked(category, researchData, sectionVariation 
   const strategyRecommendations = (researchData.strategy_recommendations || []).filter(Boolean).join(' / ');
   const experimentWinnerSummary = String(researchData.strategy_experiment_winner || '').trim();
   const experimentWeakLaneSummary = String(researchData.strategy_experiment_weak_lane || '').trim();
+  const masterStyleHint = String(sectionVariation?.masterStyleHint || '').trim();
   const selectedTopicDirection = _buildSelectedTopicDirection(researchData);
 
   const weatherContext = weatherToContext(weather, { detailed: false });
@@ -1782,7 +1785,8 @@ ${topicTitleCandidate ? `\n[제목 후보 예시]\n${topicTitleCandidate}` : ''}
 ${strategyFocus ? `\n[이번 주 전략 포커스]\n${strategyFocus}` : ''}
 ${strategyRecommendations ? `\n[전략 권고]\n${strategyRecommendations}` : ''}
 ${experimentWinnerSummary ? `\n[최근 실험 승자]\n${experimentWinnerSummary}` : ''}
-${experimentWeakLaneSummary ? `\n[최근 실험 약세 레인]\n${experimentWeakLaneSummary}` : ''}`.trim();
+${experimentWeakLaneSummary ? `\n[최근 실험 약세 레인]\n${experimentWeakLaneSummary}` : ''}
+${masterStyleHint ? `\n[마스터 스타일 가이드]\n${masterStyleHint}` : ''}`.trim();
 
   const chunks = [
     {

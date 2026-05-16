@@ -293,6 +293,7 @@ async function writeLecturePost(lectureNumber, lectureTitle, researchData, secti
     : '';
   const experimentWinnerSummary = String(researchData.strategy_experiment_winner || '').trim();
   const experimentWeakLaneSummary = String(researchData.strategy_experiment_weak_lane || '').trim();
+  const masterStyleHint = String(sectionVariation?.masterStyleHint || '').trim();
 
   const weatherContext = weatherToContext(weather);
 
@@ -363,6 +364,7 @@ ${experienceBlock}${linkingBlock}${popularPatternBlock}
 ${marketingNotes ? `[마케팅/운영 신호]\n${marketingNotes}\n` : ''}
 ${experimentWinnerSummary ? `[최근 실험 승자]\n${experimentWinnerSummary}\n` : ''}
 ${experimentWeakLaneSummary ? `[최근 실험 약세 레인]\n${experimentWeakLaneSummary}\n` : ''}
+${masterStyleHint ? `[마스터 스타일 가이드]\n${masterStyleHint}\n` : ''}
 ${charInstruction}
 이전 강의 (${lectureNumber - 1}강) 내용을 자연스럽게 연결하고,
 다음 강의 (${lectureNumber + 1}강) 내용을 마무리에서 예고하라.
@@ -600,6 +602,7 @@ async function writeLecturePostChunked(lectureNumber, lectureTitle, researchData
   const popularPatterns = researchData.lecturePopularPatterns || researchData.popularPatterns || [];
   const experimentWinnerSummary = String(researchData.strategy_experiment_winner || '').trim();
   const experimentWeakLaneSummary = String(researchData.strategy_experiment_weak_lane || '').trim();
+  const masterStyleHint = String(sectionVariation?.masterStyleHint || '').trim();
 
   const weatherContext  = weatherToContext(weather);
   const model           = 'hub:blog.pos.writer';
@@ -637,6 +640,7 @@ ${LECTURE_AI_BRIEFING_CHECKLIST}
 ${lectureDirection}
 ${experimentWinnerSummary ? `\n[최근 실험 승자]\n${experimentWinnerSummary}` : ''}
 ${experimentWeakLaneSummary ? `\n[최근 실험 약세 레인]\n${experimentWeakLaneSummary}` : ''}
+${masterStyleHint ? `\n[마스터 스타일 가이드]\n${masterStyleHint}` : ''}
 
 작성할 섹션 (이것만 작성하라):
   [핵심 요약 3줄] — 150자 내외 AI 스니펫용

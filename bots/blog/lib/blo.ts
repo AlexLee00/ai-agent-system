@@ -2280,6 +2280,15 @@ async function runLecturePost(researchData, traceCtx, preloaded = {}, scheduleId
   const startTime = Date.now();
   const writerName = await _selectBlogWriter('강의', 'pos', '기술 강의 IT');
   context.sectionVariation = _attachWriterPersonas(context.sectionVariation, writerName, 'lecture');
+  try {
+    const { buildMasterStyleProfile, formatStyleProfileForPrompt } = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/master-edit-analyzer.ts'));
+    const profile = await buildMasterStyleProfile({ limit: 30 });
+    const hint = formatStyleProfileForPrompt(profile);
+    if (hint) {
+      context.sectionVariation.masterStyleHint = hint;
+      console.log(`[블로] 마스터 스타일 힌트 주입: ${profile.sample_count}건`);
+    }
+  } catch { /* 마스터 스타일 없으면 무시 */ }
   const contractId = await _hireBlogWriterContract(writerName, `lecture: ${context.lectureTitle || '자동 주제'}`);
 
   return _executeWithWriterContract(traceCtx, startTime, contractId, async () => {
@@ -2393,6 +2402,15 @@ async function runGeneralPost(researchData, traceCtx, preloaded = {}, scheduleId
     context.category === '도서리뷰' ? '도서 감성 에세이' : (context.category || '에세이')
   );
   context.sectionVariation = _attachWriterPersonas(context.sectionVariation, writerName, 'general');
+  try {
+    const { buildMasterStyleProfile, formatStyleProfileForPrompt } = require(path.join(env.PROJECT_ROOT, 'bots/blog/lib/master-edit-analyzer.ts'));
+    const profile = await buildMasterStyleProfile({ limit: 30 });
+    const hint = formatStyleProfileForPrompt(profile);
+    if (hint) {
+      context.sectionVariation.masterStyleHint = hint;
+      console.log(`[블로] 마스터 스타일 힌트 주입: ${profile.sample_count}건`);
+    }
+  } catch { /* 마스터 스타일 없으면 무시 */ }
   const contractId = await _hireBlogWriterContract(writerName, `general: ${context.category || '자동 주제'}`);
 
   return _executeWithWriterContract(traceCtx, startTime, contractId, async () => {
