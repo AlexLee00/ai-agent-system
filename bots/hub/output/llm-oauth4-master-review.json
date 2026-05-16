@@ -1,19 +1,19 @@
 {
   "ok": true,
-  "generated_at": "2026-05-15T04:32:52.076Z",
+  "generated_at": "2026-05-16T04:32:52.973Z",
   "hours": 168,
   "stats_source": "hub_http",
   "totals": {
-    "total_calls": 5187,
-    "oauth_calls": 1721,
-    "oauth_share_pct": 33.18,
+    "total_calls": 5056,
+    "oauth_calls": 1112,
+    "oauth_share_pct": 21.99,
     "failed_calls": 12,
-    "failed_rate_pct": 0.23,
-    "reported_cost_usd": 1.458957,
+    "failed_rate_pct": 0.24,
+    "reported_cost_usd": 1.782998,
     "oauth_reported_cost_usd": 0,
     "claude_code_reported_cost_usd": 0,
     "claude_code_runtime_cost_share_pct": 0,
-    "non_oauth_reported_cost_usd": 1.458957,
+    "non_oauth_reported_cost_usd": 1.782998,
     "anthropic_provider_calls": 0
   },
   "providers": {
@@ -30,24 +30,24 @@
     },
     "openai-oauth": {
       "provider": "openai-oauth",
-      "calls": 1196,
-      "success_count": 1196,
+      "calls": 579,
+      "success_count": 579,
       "failed_count": 0,
-      "avg_duration_ms": 5777,
+      "avg_duration_ms": 7127,
       "max_duration_ms": 146849,
       "total_cost_usd": 0,
-      "share_pct": 23.06,
+      "share_pct": 11.45,
       "success_rate_pct": 100
     },
     "gemini-cli-oauth": {
       "provider": "gemini-cli-oauth",
-      "calls": 525,
-      "success_count": 525,
+      "calls": 533,
+      "success_count": 533,
       "failed_count": 0,
-      "avg_duration_ms": 21098,
+      "avg_duration_ms": 21161,
       "max_duration_ms": 165151,
       "total_cost_usd": 0,
-      "share_pct": 10.12,
+      "share_pct": 10.54,
       "success_rate_pct": 100
     },
     "gemini-oauth": {
@@ -74,13 +74,13 @@
     },
     "groq": {
       "provider": "groq",
-      "calls": 3448,
-      "success_count": 3448,
+      "calls": 3926,
+      "success_count": 3926,
       "failed_count": 0,
-      "avg_duration_ms": 1372,
+      "avg_duration_ms": 1418,
       "max_duration_ms": 7591,
-      "total_cost_usd": 1.458957,
-      "share_pct": 66.47,
+      "total_cost_usd": 1.782998,
+      "share_pct": 77.65,
       "success_rate_pct": 100
     },
     "failed": {
@@ -91,7 +91,7 @@
       "avg_duration_ms": 61990,
       "max_duration_ms": 129573,
       "total_cost_usd": 0,
-      "share_pct": 0.23,
+      "share_pct": 0.24,
       "success_rate_pct": 0
     }
   },
