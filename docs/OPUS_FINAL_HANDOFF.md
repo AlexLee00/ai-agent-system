@@ -1,4 +1,39 @@
-# 세션 인수인계 — 2026-05-14 (CODEX_LIVEVIEW_DASHBOARD_PHASE_E — v3.x 본질 100% 도달)
+# 세션 인수인계 — 2026-05-16 (CODEX_BLOG_V3_UNIFIED_MASTER Week 2 — H영역 검증 완료)
+
+## 완료 요약 ✅ (Blog V3 Week 2 — H영역 Goal-Driven 5/5)
+
+### 검증 결과 (H1-H5 전부 통과)
+
+**H영역 모든 컴포넌트 이미 구현 완료 (코드 변경 없음, 검증만)**:
+- `bots/blog/python/reddit_trend_analyzer.py` — PRAW + Hub LLM Gateway, fixture/dry-run 정상 ✅
+- `bots/blog/scripts/run-trend-collector.ts` — Python 실행 → blog.trend_topics DB 저장 ✅
+- `bots/blog/lib/bestseller-fetcher.ts` — 알라딘 API, book_review_queue + trend_topics 저장 ✅
+- `bots/blog/lib/blog-v3-unified.ts` — calculateTrendFusionScore, saveTrendTopics ✅
+- `bots/blog/lib/topic-selector.ts` — fetchTrendTopicCandidates: blog.trend_topics → fusion score ✅
+- `ai.blog.reddit-trends.plist` — 매일 06:00 KST, 로드 & exit 0 ✅
+- `ai.blog.bestseller-sync.plist` — 매주 월 07:00 KST, 로드 & exit 0 ✅
+
+**3-source fusion 완성**:
+- Reddit (daily 06:00) → blog.trend_topics (source='reddit')
+- Naver (daily 06:00) → blog.trend_topics (source='naver')
+- Aladin/bestseller (weekly 월 07:00) → blog.trend_topics (source='aladin')
+- topic-selector.ts → calculateTrendFusionScore → 최적 토픽 선정
+
+### 마스터가 OPS에서 확인할 것
+
+1. **Reddit API 키**: secrets-store.json blog 섹션에 REDDIT_CLIENT_ID / REDDIT_CLIENT_SECRET 설정 여부 확인
+2. **Aladin API 키**: secrets-store.json blog 섹션에 ALADIN_TTB_KEY 설정 여부 확인
+3. **자동 실행 확인**: `launchctl list | grep ai.blog.reddit` → 내일 06:00 자동 실행 예정
+
+### 다음 세션: Week 3 — I영역
+
+- naver-home-feed-optimizer.ts 8 노출 채널 매핑 검증
+- crank-score-tracker.ts 매일 실행 검증
+- Shadow Mode 1주 적용
+
+---
+
+# 이전 세션 인수인계 — 2026-05-14 (CODEX_LIVEVIEW_DASHBOARD_PHASE_E — v3.x 본질 100% 도달)
 
 ## 완료 요약 ✅ (Phase E — Langfuse + Telegram 자동 통합)
 

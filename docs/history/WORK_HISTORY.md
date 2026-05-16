@@ -4,6 +4,16 @@
 > 상세 내용: `reservation-dev-summary.md` / `reservation-handoff.md`
 > 최초 작성: 2026-02-27
 
+## 2026-05-16: CODEX_BLOG_V3_UNIFIED_MASTER Week 2 — H영역 Goal-Driven 5/5 검증 완료
+
+- **검증 목표**: H1-H5 모든 H영역 컴포넌트 실제 코드 검증 + dry-run 실행
+- **H1** (reddit_trend_analyzer.py): fixture --dry-run → 2 토픽 정상 생성 ✅
+- **H2** (bestseller-fetcher.ts): dry-run → ALADIN_TTB_KEY 없어도 graceful 처리 ✅
+- **H3** (run-trend-collector.ts): fixture --dry-run → Reddit 2 + Naver 3 = 5 토픽, 3-source fusion ✅
+- **H4** (launchd): ai.blog.reddit-trends + ai.blog.bestseller-sync 로드 & exit 0 ✅
+- **H5**: topic-selector.ts의 `fetchTrendTopicCandidates` → `blog.trend_topics` → `calculateTrendFusionScore` 3원 통합 코드 확인 ✅
+- **결론**: H영역 이미 100% 구현 완료 상태. V3 Week 2 달성.
+
 ## 2026-05-14: CODEX_LIVEVIEW_DASHBOARD_PHASE_E — v3.x 본질 100% 도달 (Langfuse + Telegram 통합)
 
 - **검증**: Phase E 코드 전체 이미 구현된 상태 확인 (docker-compose, runtime.exs, event_lake, dashboard_live, hub autonomy, telegram-callback-poller 등 12개 파일)
