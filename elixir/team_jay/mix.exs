@@ -21,6 +21,7 @@ defmodule TeamJay.MixProject do
       "dashboard.phase_d_check": ["team_jay.dashboard.phase_d_check"],
       "dashboard.phase_e_check": ["team_jay.dashboard.phase_e_check"],
       "dashboard.phase_g_check": ["team_jay.dashboard.phase_g_check"],
+      "dashboard.phase_52_check": ["team_jay.dashboard.phase_52_check"],
       "sigma.migrate": ["sigma.migrate"],
       "darwin.migrate": ["darwin.migrate"],
       "luna.migrate": ["luna.migrate"]

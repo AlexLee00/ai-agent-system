@@ -31,6 +31,11 @@ defmodule Mix.Tasks.TeamJay.Dashboard.PhaseGCheck do
     dashboard_source = read!("lib/team_jay/dashboard/live/dashboard_live.ex")
     health_source = read!("lib/team_jay/dashboard/health_plug.ex")
     project_source = read!("lib/team_jay/dashboard/project_visibility.ex")
+    project_repo_source = read!("lib/team_jay/dashboard/project_repo.ex")
+    session_tracker_source = read!("lib/team_jay/dashboard/session_tracker.ex")
+    milestone_sentry_source = read!("lib/team_jay/dashboard/milestone_sentry.ex")
+    event_ingestor_source = read!("lib/team_jay/dashboard/project_event_ingestor.ex")
+    application_source = read!("lib/team_jay/application.ex")
 
     migration_source =
       read!("priv/repo/migrations/20260516000001_create_project_visibility_schema.exs")
@@ -75,6 +80,21 @@ defmodule Mix.Tasks.TeamJay.Dashboard.PhaseGCheck do
         String.contains?(project_source, "def snapshot") and
           String.contains?(project_source, "def ensure_schema!") and
           String.contains?(project_source, "seed_marker_data!"),
+      project_repo_boundary:
+        String.contains?(project_repo_source, "defmodule TeamJay.Dashboard.ProjectRepo") and
+          String.contains?(project_repo_source, "ingest_recent_event_lake_tasks!"),
+      session_tracker_boundary:
+        String.contains?(session_tracker_source, "defmodule TeamJay.Dashboard.SessionTracker") and
+          String.contains?(session_tracker_source, "conflict_files"),
+      milestone_sentry_boundary:
+        String.contains?(milestone_sentry_source, "defmodule TeamJay.Dashboard.MilestoneSentry") and
+          String.contains?(milestone_sentry_source, "reconcile_now"),
+      project_event_ingest_boundary:
+        String.contains?(event_ingestor_source, "defmodule TeamJay.Dashboard.ProjectEventIngestor") and
+          String.contains?(event_ingestor_source, "event_lake:new") and
+          String.contains?(application_source, "TeamJay.Dashboard.ProjectEventIngestor"),
+      milestone_sentry_supervised:
+        String.contains?(application_source, "TeamJay.Dashboard.MilestoneSentry"),
       whitelist_config:
         String.contains?(config_source, "included:") and
           String.contains?(config_source, "ai-agent-system") and
