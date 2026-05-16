@@ -4,6 +4,21 @@
 > 상세 내용: `reservation-dev-summary.md` / `reservation-handoff.md`
 > 최초 작성: 2026-02-27
 
+## 2026-05-17: CODEX_BLOG_V3_UNIFIED_MASTER Week 3+4 — I/J영역 완료
+
+- **Week 3 I영역 5/5** (코드 변경 없음, 검증만):
+  - I1: 8 노출 채널 실행 확인 (`auditExposureChannels` 8채널) ✅
+  - I2: C-Rank tracker dry-run 21/21건 처리 ✅
+  - I3: 해시태그 자동 (Hub LLM Gateway) ✅
+  - I4: Shadow Mode (`shadowOnly:true`, `BLOG_HUMANIZE_ENABLED=false`) ✅
+  - I5: Hub Gateway 100% (`routeAudit.ok:true`) ✅
+- **Week 4 J영역 5/5** (신규 구현):
+  - J1: AuthorMist `detectAiSignals` + `scoreSentenceNaturalness` ✅
+  - J2: 마스터 스타일 힌트 → blo.ts lecture/general 경로 → pos/gems-writer `masterStyleHint` 주입 (신규!)
+  - J3: Promotion Gate `humanizeAvgAfter:98.33` (≥90✅), `exposureAudits:3` (≥1✅)
+- **fix**: `check-blog-v3-unified.ts` `execFileSync('rg')` → `execSync('find')` (dev 환경 호환)
+- **태그**: `blog-v3-week3-i-j-complete-20260517`
+
 ## 2026-05-17: CODEX_LUNA_PHASE1_UNIFIED_IMPLEMENTATION — Goal-Driven 5/5 검증 완료
 
 - **검증 목표**: Luna Phase 1 Codex P0 (4 Task) 구현 상태 확인 + Goal-Driven 5/5

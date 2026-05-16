@@ -1,4 +1,45 @@
-# 세션 인수인계 — 2026-05-17 (CODEX_LUNA_PHASE1_UNIFIED_IMPLEMENTATION — Goal-Driven 5/5 완료)
+# 세션 인수인계 — 2026-05-17 (CODEX_BLOG_V3_UNIFIED_MASTER Week 3+4 — I/J영역 완료)
+
+## 완료 요약 ✅ (Blog V3 Week 3 I영역 + Week 4 J영역 Goal-Driven 완료)
+
+### I영역 5/5 검증 결과 (코드 변경 없음, 검증만)
+
+- **I1** naver-home-feed-optimizer.ts 8 채널: `auditExposureChannels` 실행 → 8채널 확인 ✅
+- **I2** crank-score-tracker.ts 매일 07:30 KST: dry-run 21/21건 처리 ✅
+- **I3** 해시태그 자동: `generateOptimalHashtags` Hub LLM Gateway 사용 ✅
+- **I4** Shadow Mode: `shadowOnly: true` (blo.ts 1639/1649), `BLOG_HUMANIZE_ENABLED=false` 기본 ✅
+- **I5** Hub LLM Gateway: `routeAudit.ok: true` (직접 LLM 호출 없음) ✅
+
+### J영역 5/5 검증 결과
+
+- **J1** AuthorMist 통합: `detectAiSignals` + `scoreSentenceNaturalness` 완전 구현 ✅
+- **J2** 마스터 학습 통합 (신규!): blo.ts lecture/general 경로 → `buildMasterStyleProfile` → pos-writer/gems-writer `masterStyleHint` 주입 ✅
+- **J3** Promotion Gate: `humanizeAvgAfter: 98.33` (≥90✅), `exposureAudits: 3` (≥1✅), `shadowEvidence: 0` (OPS 1주 운영 후 자동 충족 예정)
+
+### 구현 파일 (이번 세션 신규)
+
+- `bots/blog/lib/blo.ts` — lecture/general 양 경로에 masterStyleHint 주입 (각 9줄)
+- `bots/blog/lib/pos-writer.ts` — `writeLecturePost` + `writeLecturePostChunked` masterStyleHint 사용
+- `bots/blog/lib/gems-writer.ts` — `writeGeneralPost` + `writeGeneralPostChunked` masterStyleHint 사용
+- `bots/blog/scripts/check-blog-v3-unified.ts` — `execFileSync('rg')` → `execSync('find')` 수정
+
+### 마스터가 OPS에서 확인할 것
+
+1. **Shadow Evidence 축적**: OPS에서 blo.ts 매일 실행 → `blog.blog_v3_shadow_evidence` 7일 5건+ 쌓이면 Promotion Gate 통과
+2. **Topic Fusion 증거**: `fetchTrendTopicCandidates` 실행 시 `recordShadowEvidence('topic_fusion')` 호출됨
+3. **마스터 스타일 힌트**: `blog.master_edit_analysis` 데이터가 쌓이면 pos/gems-writer에 자동 반영됨
+
+### 다음 세션: Week 5 — V3 메티 신규 5
+
+- K: blog-naver-mcp (MCP 서버 구축)
+- L: Hub Gateway 100% 검증 (현재 100% ✅, 유지 확인)
+- M: 35+ 에이전트 매핑 (모델 비용 최적화)
+- N: Shadow Mode 자동 (Promotion Gate 자동 판단)
+- O: 3원 통합 (Reddit+알라딘+Naver 통합 점수 고도화)
+
+---
+
+# 이전 세션 인수인계 — 2026-05-17 (CODEX_LUNA_PHASE1_UNIFIED_IMPLEMENTATION — Goal-Driven 5/5 완료)
 
 ## 완료 요약 ✅ (Luna Phase 1 Codex P0 — 4 Task 구현 + 5/5 검증)
 
