@@ -82,6 +82,8 @@ defmodule TeamJay.Application do
       TeamJay.Blog.StrategyLearner,
       TeamJay.Blog.ContentLoop,
       Jay.Core.EventLake,
+      TeamJay.Dashboard.ProjectEventIngestor,
+      TeamJay.Dashboard.MilestoneSentry,
       Jay.Core.MarketRegime,
       TeamJay.Ska.CommandInbox,
       TeamJay.Ska.CommandActionHandler,

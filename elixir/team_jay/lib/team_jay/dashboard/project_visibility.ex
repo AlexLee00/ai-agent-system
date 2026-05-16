@@ -10,6 +10,7 @@ defmodule TeamJay.Dashboard.ProjectVisibility do
   require Logger
 
   alias Jay.Core.Repo
+  alias TeamJay.Dashboard.SessionTracker
 
   @stage_keys ~w(spec building verify observing done)
   @kanban_stages [
@@ -195,6 +196,108 @@ defmodule TeamJay.Dashboard.ProjectVisibility do
   end
 
   def update_task_stage(_task_id, _stage), do: {:error, :invalid_stage}
+
+  def ingest_event(event) when is_map(event) do
+    event_type = map_value(event, :event_type, "")
+    metadata = map_value(event, :metadata, %{}) |> ensure_map()
+
+    cond do
+      String.starts_with?(event_type, "codex.task.") ->
+        ingest_codex_task_event(event_type, event, metadata)
+
+      String.starts_with?(event_type, "project.task.") ->
+        ingest_project_task_event(event_type, event, metadata)
+
+      String.starts_with?(event_type, "project.milestone.") ->
+        ingest_project_milestone_event(event_type, event, metadata)
+
+      true ->
+        :ignored
+    end
+  end
+
+  def ingest_event(_), do: :ignored
+
+  def ingest_recent_event_lake_tasks!(opts \\ []) do
+    ensure_schema!()
+    limit = Keyword.get(opts, :limit, 200)
+
+    sql = """
+    SELECT event_type, team, bot_name, severity, trace_id, title, message, tags, metadata, created_at
+    FROM agent.event_lake
+    WHERE event_type LIKE 'codex.task.%'
+       OR event_type LIKE 'project.task.%'
+       OR event_type LIKE 'project.milestone.%'
+    ORDER BY created_at DESC
+    LIMIT $1
+    """
+
+    case Repo.query(sql, [limit]) do
+      {:ok, %{rows: rows}} ->
+        Enum.reduce(rows, %{checked: 0, ingested: 0, ignored: 0, failed: 0}, fn row, acc ->
+          event = row_to_event(row)
+
+          case ingest_event(event) do
+            {:ok, _} -> %{acc | checked: acc.checked + 1, ingested: acc.ingested + 1}
+            :ignored -> %{acc | checked: acc.checked + 1, ignored: acc.ignored + 1}
+            {:error, _} -> %{acc | checked: acc.checked + 1, failed: acc.failed + 1}
+          end
+        end)
+
+      {:error, reason} ->
+        %{checked: 0, ingested: 0, ignored: 0, failed: 1, error: inspect(reason)}
+    end
+  rescue
+    error -> %{checked: 0, ingested: 0, ignored: 0, failed: 1, error: inspect(error)}
+  end
+
+  def ingest_task!(attrs) when is_map(attrs) do
+    ensure_schema!()
+    project = project_for_event(attrs)
+    task = normalize_ingested_task(attrs, project)
+
+    upsert_project!(project)
+    upsert_task!(task)
+    broadcast_project_event("project.task.created", task)
+    {:ok, task}
+  rescue
+    error -> {:error, error}
+  end
+
+  def reconcile_milestone_statuses! do
+    ensure_schema!()
+
+    sql = """
+    SELECT id, date, title, owner, task_ids, status, project_id, created_at
+    FROM project.milestones
+    ORDER BY date ASC, id ASC
+    """
+
+    case Repo.query(sql, []) do
+      {:ok, %{rows: rows}} ->
+        rows
+        |> Enum.map(&row_to_milestone/1)
+        |> Enum.reduce(%{checked: 0, changed: 0, achieved: 0, missed: 0, upcoming: 0}, fn milestone, acc ->
+          new_status = milestone_reconciled_status(milestone)
+
+          if new_status == milestone.status do
+            %{acc | checked: acc.checked + 1}
+          else
+            update_milestone_status!(milestone, new_status)
+
+            acc
+            |> Map.update!(:checked, &(&1 + 1))
+            |> Map.update!(:changed, &(&1 + 1))
+            |> Map.update(status_counter_key(new_status), 1, &(&1 + 1))
+          end
+        end)
+
+      {:error, reason} ->
+        %{checked: 0, changed: 0, achieved: 0, missed: 0, upcoming: 0, error: inspect(reason)}
+    end
+  rescue
+    error -> %{checked: 0, changed: 0, achieved: 0, missed: 0, upcoming: 0, error: inspect(error)}
+  end
 
   def marker_counts do
     projects = load_config_projects()
@@ -523,7 +626,7 @@ defmodule TeamJay.Dashboard.ProjectVisibility do
       active_sessions: length(sessions),
       by_stage: by_stage,
       observe_warnings: count_observe_warnings(Map.get(tasks_by_stage, "observing", [])),
-      conflicts: count_session_conflicts(sessions)
+      conflicts: SessionTracker.count_conflicts(sessions)
     }
   end
 
@@ -655,7 +758,7 @@ defmodule TeamJay.Dashboard.ProjectVisibility do
     }
   end
 
-  defp upsert_project!(project) do
+  def upsert_project!(project) do
     Repo.query!(
       """
       INSERT INTO project.projects
@@ -686,7 +789,7 @@ defmodule TeamJay.Dashboard.ProjectVisibility do
     )
   end
 
-  defp upsert_task!(task) do
+  def upsert_task!(task) do
     Repo.query!(
       """
       INSERT INTO project.tasks
@@ -723,7 +826,7 @@ defmodule TeamJay.Dashboard.ProjectVisibility do
     )
   end
 
-  defp upsert_milestone!(milestone) do
+  def upsert_milestone!(milestone) do
     Repo.query!(
       """
       INSERT INTO project.milestones
@@ -750,7 +853,7 @@ defmodule TeamJay.Dashboard.ProjectVisibility do
     )
   end
 
-  defp upsert_session!(session) do
+  def upsert_session!(session) do
     Repo.query!(
       """
       INSERT INTO project.sessions
@@ -785,18 +888,317 @@ defmodule TeamJay.Dashboard.ProjectVisibility do
     _ -> :ok
   end
 
+  defp ingest_codex_task_event(event_type, event, metadata) do
+    stage =
+      cond do
+        String.ends_with?(event_type, ".archived") ->
+          "done"
+
+        complete_checklist?(metadata) ->
+          "verify"
+
+        true ->
+          "building"
+      end
+
+    attrs = %{
+      id: map_value(metadata, :task_id) || event_slug(event),
+      title: map_value(event, :title, "코덱스 작업"),
+      project_id: project_id_from_path(map_value(metadata, :file_path, "")),
+      stage: stage,
+      assignee: "codex",
+      source_doc: map_value(metadata, :file_path, "agent.event_lake"),
+      started_at: map_value(event, :created_at) || map_value(metadata, :observed_at),
+      finished_at: if(stage == "done", do: DateTime.utc_now(), else: nil),
+      verify: %{
+        "source_event" => event_type,
+        "total_checkboxes" => map_value(metadata, :total_checkboxes, 0),
+        "checked" => map_value(metadata, :checked, 0)
+      },
+      observe: %{
+        "cycle_id" => map_value(metadata, :cycle_id),
+        "trace_id" => map_value(event, :trace_id, "")
+      }
+    }
+
+    with {:ok, task} <- ingest_task!(attrs) do
+      broadcast_project_event("project.task.stage_changed", task)
+      {:ok, task}
+    end
+  end
+
+  defp ingest_project_task_event(event_type, event, metadata) do
+    attrs =
+      metadata
+      |> Map.merge(%{
+        id: map_value(metadata, :id) || map_value(metadata, :task_id) || event_slug(event),
+        title: map_value(metadata, :title, map_value(event, :title, "project task")),
+        project_id: map_value(metadata, :project_id, "ai-agent-system"),
+        stage: project_task_stage(event_type, metadata),
+        source_doc: map_value(metadata, :source_doc, "project.task event")
+      })
+
+    ingest_task!(attrs)
+  end
+
+  defp ingest_project_milestone_event(event_type, event, metadata) do
+    ensure_schema!()
+    project = project_for_event(metadata)
+
+    milestone = %{
+      id: map_value(metadata, :id) || map_value(metadata, :milestone_id) || event_slug(event),
+      date: parse_date(map_value(metadata, :date)) || Date.utc_today(),
+      title: map_value(metadata, :title, map_value(event, :title, "project milestone")),
+      owner: map_value(metadata, :owner, "codex"),
+      task_ids: list_value(map_value(metadata, :task_ids, [])),
+      status: milestone_event_status(event_type, metadata),
+      project_id: project.id,
+      created_at: DateTime.utc_now()
+    }
+
+    upsert_project!(project)
+    upsert_milestone!(milestone)
+    broadcast_project_event("project.milestone.#{milestone.status}", milestone)
+    {:ok, milestone}
+  rescue
+    error -> {:error, error}
+  end
+
+  defp project_for_event(attrs) do
+    project_id = map_value(attrs, :project_id) || project_id_from_path(map_value(attrs, :source_doc, ""))
+
+    load_config_projects()
+    |> Enum.find(&(&1.id == project_id))
+    |> Kernel.||(
+      load_config_projects()
+      |> Enum.find(&(&1.id == "ai-agent-system"))
+    )
+    |> Kernel.||(%{
+      id: "ai-agent-system",
+      name: "팀 제이 (ai-agent-system)",
+      path: "/Users/alexlee/projects/ai-agent-system",
+      github: nil,
+      phase: "Phase G",
+      progress: 0.82,
+      color: "green",
+      status: "active",
+      owner: ["codex"],
+      last_activity: DateTime.utc_now()
+    })
+  end
+
+  defp normalize_ingested_task(attrs, project) do
+    stage = map_value(attrs, :stage, "spec")
+    started_at = parse_datetime(map_value(attrs, :started_at)) || DateTime.utc_now()
+    finished_at = parse_datetime(map_value(attrs, :finished_at))
+
+    %{
+      id: "evt-#{safe_id(map_value(attrs, :id, event_fallback_id(attrs)))}",
+      title: map_value(attrs, :title, "project task"),
+      project_id: project.id,
+      project_name: project.name,
+      stage: if(stage in @stage_keys, do: stage, else: "spec"),
+      assignee: map_value(attrs, :assignee, "codex"),
+      started_at: started_at,
+      finished_at: finished_at,
+      elapsed_seconds: elapsed_seconds(started_at, finished_at),
+      source_doc: map_value(attrs, :source_doc, "event_lake"),
+      active_session_id: map_value(attrs, :active_session_id),
+      verify: ensure_map(map_value(attrs, :verify, %{})),
+      observe: ensure_map(map_value(attrs, :observe, %{}))
+    }
+  end
+
+  defp row_to_event([
+         event_type,
+         team,
+         bot_name,
+         severity,
+         trace_id,
+         title,
+         message,
+         tags,
+         metadata,
+         created_at
+       ]) do
+    %{
+      "event_type" => event_type,
+      "team" => team,
+      "bot_name" => bot_name,
+      "severity" => severity,
+      "trace_id" => trace_id,
+      "title" => title,
+      "message" => message,
+      "tags" => tags || [],
+      "metadata" => metadata || %{},
+      "created_at" => created_at
+    }
+  end
+
+  defp milestone_reconciled_status(%{status: "achieved"}), do: "achieved"
+
+  defp milestone_reconciled_status(%{date: date, task_ids: task_ids} = milestone) do
+    done? = task_ids != [] and all_milestone_tasks_done?(task_ids)
+
+    cond do
+      done? -> "achieved"
+      overdue?(date) -> "missed"
+      true -> milestone.status || "upcoming"
+    end
+  end
+
+  defp all_milestone_tasks_done?(task_ids) do
+    case Repo.query("SELECT stage FROM project.tasks WHERE id = ANY($1::text[])", [task_ids]) do
+      {:ok, %{rows: rows}} when length(rows) == length(task_ids) and rows != [] ->
+        Enum.all?(rows, fn [stage] -> stage == "done" end)
+
+      _ ->
+        false
+    end
+  rescue
+    _ -> false
+  end
+
+  defp update_milestone_status!(milestone, status) do
+    Repo.query!(
+      "UPDATE project.milestones SET status = $2 WHERE id = $1",
+      [milestone.id, status]
+    )
+
+    updated = %{milestone | status: status}
+    topic = if(status == "achieved", do: "project.milestone.achieved", else: "project.milestone.missed")
+    broadcast_project_event(topic, updated)
+  end
+
+  defp complete_checklist?(metadata) do
+    total = integer_value(map_value(metadata, :total_checkboxes, 0))
+    checked = integer_value(map_value(metadata, :checked, 0))
+    total > 0 and checked >= total
+  end
+
+  defp project_task_stage(event_type, metadata) do
+    stage = map_value(metadata, :stage)
+
+    cond do
+      stage in @stage_keys -> stage
+      String.ends_with?(event_type, ".stage_changed") -> "building"
+      String.ends_with?(event_type, ".created") -> "spec"
+      true -> "building"
+    end
+  end
+
+  defp milestone_event_status(event_type, metadata) do
+    status = map_value(metadata, :status)
+
+    cond do
+      status in ["upcoming", "achieved", "missed"] -> status
+      String.ends_with?(event_type, ".achieved") -> "achieved"
+      String.ends_with?(event_type, ".missed") -> "missed"
+      true -> "upcoming"
+    end
+  end
+
+  defp project_id_from_path(path) when is_binary(path) do
+    cond do
+      String.contains?(path, "bots/blog") -> "blog-automation"
+      String.contains?(path, "bots/investment") -> "luna-autonomy"
+      String.contains?(path, "bots/ska") -> "study-cafe"
+      true -> "ai-agent-system"
+    end
+  end
+
+  defp project_id_from_path(_), do: "ai-agent-system"
+
+  defp event_slug(event) do
+    [
+      map_value(event, :event_type, "event"),
+      map_value(event, :title, "task"),
+      map_value(event, :created_at, DateTime.utc_now() |> DateTime.to_iso8601())
+    ]
+    |> Enum.join("-")
+    |> safe_id()
+  end
+
+  defp event_fallback_id(attrs) do
+    [map_value(attrs, :project_id, "project"), map_value(attrs, :title, "task")]
+    |> Enum.join("-")
+  end
+
+  defp safe_id(value) do
+    value
+    |> to_string()
+    |> String.downcase()
+    |> String.replace(~r/[^a-z0-9가-힣_-]+/u, "-")
+    |> String.trim("-")
+    |> String.slice(0, 96)
+    |> then(fn
+      "" -> "task"
+      id -> id
+    end)
+  end
+
+  defp map_value(map, key, default \\ nil) when is_map(map) do
+    Map.get(map, key, Map.get(map, Atom.to_string(key), default))
+  end
+
+  defp map_value(_, _, default), do: default
+
+  defp ensure_map(value) when is_map(value), do: value
+  defp ensure_map(_), do: %{}
+
+  defp list_value(value) when is_list(value), do: Enum.map(value, &to_string/1)
+  defp list_value(value) when is_binary(value), do: [value]
+  defp list_value(_), do: []
+
+  defp integer_value(value) when is_integer(value), do: value
+
+  defp integer_value(value) when is_binary(value) do
+    case Integer.parse(value) do
+      {number, _} -> number
+      _ -> 0
+    end
+  end
+
+  defp integer_value(_), do: 0
+
+  defp parse_datetime(%DateTime{} = value), do: value
+  defp parse_datetime(%NaiveDateTime{} = value), do: DateTime.from_naive!(value, "Etc/UTC")
+
+  defp parse_datetime(value) when is_binary(value) do
+    case DateTime.from_iso8601(value) do
+      {:ok, dt, _} -> dt
+      _ -> nil
+    end
+  end
+
+  defp parse_datetime(_), do: nil
+
+  defp parse_date(%Date{} = value), do: value
+
+  defp parse_date(value) when is_binary(value) do
+    case Date.from_iso8601(value) do
+      {:ok, date} -> date
+      _ -> nil
+    end
+  end
+
+  defp parse_date(_), do: nil
+
+  defp elapsed_seconds(started_at, nil), do: DateTime.diff(DateTime.utc_now(), started_at, :second)
+  defp elapsed_seconds(started_at, finished_at), do: DateTime.diff(finished_at, started_at, :second)
+
+  defp overdue?(%Date{} = date), do: Date.compare(date, Date.utc_today()) == :lt
+  defp overdue?(_), do: false
+
+  defp status_counter_key("achieved"), do: :achieved
+  defp status_counter_key("missed"), do: :missed
+  defp status_counter_key(_), do: :upcoming
+
   defp count_observe_warnings(tasks) do
     Enum.count(tasks, fn task ->
       alerts = get_in(task, [:observe, "alerts"]) || get_in(task, [:observe, :alerts]) || []
       alerts != []
     end)
-  end
-
-  defp count_session_conflicts(sessions) do
-    sessions
-    |> Enum.flat_map(&(&1.files_touched || []))
-    |> Enum.frequencies()
-    |> Enum.count(fn {_file, count} -> count > 1 end)
   end
 
   defp owner_list(value) when is_list(value), do: Enum.map(value, &to_string/1)
