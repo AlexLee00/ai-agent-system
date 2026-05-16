@@ -355,14 +355,12 @@ defmodule TeamJay.Dashboard.Live.DashboardLive do
           <!-- 영역 4: EventLake 실시간 스트림 -->
           <.event_lake_board events={@events} event_stats={@event_stats} />
 
-          <!-- 영역 9: Langfuse Trace 상세 (phx-click으로 활성화) -->
-          <%= if @selected_trace_id do %>
-            <.trace_detail_board
-              trace_id={@selected_trace_id}
-              trace_detail={@trace_detail}
-              trace_loading={@trace_loading}
-            />
-          <% end %>
+          <!-- 영역 9: Langfuse Trace 상세 (항상 표시, 4상태 분기) -->
+          <.trace_detail_board
+            trace_id={@selected_trace_id}
+            trace_detail={@trace_detail}
+            trace_loading={@trace_loading}
+          />
 
           <!-- 영역 5+6: 크로스팀 파이프라인 + 팀 헬스 -->
           <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
@@ -682,9 +680,9 @@ defmodule TeamJay.Dashboard.Live.DashboardLive do
 
   # ── 영역 9: Langfuse Trace 상세 ─────────────────────────────────
 
-  attr(:trace_id, :string, required: true)
-  attr(:trace_detail, :any, required: true)
-  attr(:trace_loading, :boolean, required: true)
+  attr(:trace_id, :string, default: nil)
+  attr(:trace_detail, :any, default: nil)
+  attr(:trace_loading, :boolean, default: false)
 
   defp trace_detail_board(assigns) do
     observations =
@@ -704,48 +702,59 @@ defmodule TeamJay.Dashboard.Live.DashboardLive do
         <span class="text-sm font-semibold text-gray-300 uppercase tracking-wider">
           [9] Langfuse Trace 상세
         </span>
-        <div class="flex items-center gap-3">
-          <span class="font-mono text-[10px] text-gray-500 truncate max-w-[260px]">
-            {@trace_id}
-          </span>
-          <button
-            phx-click="close_trace"
-            class="text-gray-400 hover:text-white text-xs px-2 py-1 bg-gray-700 hover:bg-gray-600 rounded transition-colors"
-          >
-            ✕ 닫기
-          </button>
-        </div>
+        <%= if @trace_id do %>
+          <div class="flex items-center gap-3">
+            <span class="font-mono text-[10px] text-gray-500 truncate max-w-[260px]">
+              {@trace_id}
+            </span>
+            <button
+              phx-click="close_trace"
+              class="text-gray-400 hover:text-white text-xs px-2 py-1 bg-gray-700 hover:bg-gray-600 rounded transition-colors"
+            >
+              ✕ 닫기
+            </button>
+          </div>
+        <% else %>
+          <span class="text-xs text-gray-500">영역 4의 trace_id 클릭</span>
+        <% end %>
       </div>
 
-      <%= if @trace_loading do %>
-        <div class="flex items-center gap-2 text-gray-400 text-sm py-6 justify-center">
-          <span>⏳</span>
-          <span>Langfuse API 로딩 중...</span>
-        </div>
-      <% else %>
-        <%= case @trace_detail do %>
-          <% :error -> %>
-            <div class="bg-red-900/20 border border-red-500/30 rounded-lg p-4 text-sm text-red-300 space-y-1">
-              <div class="font-semibold">Langfuse API 오류</div>
-              <div class="text-xs text-red-400">
-                LANGFUSE_PUBLIC_KEY / LANGFUSE_SECRET_KEY 환경변수 확인 필요.
-                LANGFUSE_OTEL_ENABLED=true 설정 후 재시작하면 trace가 수집됩니다.
+      <%= cond do %>
+        <% is_nil(@trace_id) -> %>
+          <div class="text-center text-gray-500 py-12 text-sm">
+            Trace 선택 안 됨 — 영역 4에서 trace_id 클릭
+          </div>
+
+        <% @trace_loading -> %>
+          <div class="flex items-center gap-2 text-gray-400 text-sm py-6 justify-center">
+            <span>⏳</span>
+            <span>Langfuse API 로딩 중...</span>
+          </div>
+
+        <% true -> %>
+          <%= case @trace_detail do %>
+            <% :error -> %>
+              <div class="bg-red-900/20 border border-red-500/30 rounded-lg p-4 text-sm text-red-300 space-y-1">
+                <div class="font-semibold">Langfuse API 오류</div>
+                <div class="text-xs text-red-400">
+                  LANGFUSE_PUBLIC_KEY / LANGFUSE_SECRET_KEY 환경변수 확인 필요.
+                  LANGFUSE_OTEL_ENABLED=true 설정 후 재시작하면 trace가 수집됩니다.
+                </div>
               </div>
-            </div>
-          <% :not_found -> %>
-            <div class="bg-yellow-900/20 border border-yellow-500/30 rounded-lg p-4 text-sm text-yellow-300 space-y-1">
-              <div class="font-semibold">Trace 미발견</div>
-              <div class="text-xs text-yellow-400">
-                Langfuse에 아직 trace가 도달하지 않았습니다.
-                LANGFUSE_OTEL_ENABLED=true 설정 후 이벤트를 발생시키면 수집됩니다.
+            <% :not_found -> %>
+              <div class="bg-yellow-900/20 border border-yellow-500/30 rounded-lg p-4 text-sm text-yellow-300 space-y-1">
+                <div class="font-semibold">Trace 미발견</div>
+                <div class="text-xs text-yellow-400">
+                  Langfuse에 아직 trace가 도달하지 않았습니다.
+                  LANGFUSE_OTEL_ENABLED=true 설정 후 이벤트를 발생시키면 수집됩니다.
+                </div>
               </div>
-            </div>
-          <% nil -> %>
-            <div class="text-gray-500 text-sm py-4 text-center">trace 데이터 없음</div>
-          <% trace -> %>
-            <.trace_meta_section trace={trace} />
-            <.trace_observations_section observations={@observations} />
-        <% end %>
+            <% nil -> %>
+              <div class="text-gray-500 text-sm py-4 text-center">trace 데이터 없음</div>
+            <% trace -> %>
+              <.trace_meta_section trace={trace} />
+              <.trace_observations_section observations={@observations} />
+          <% end %>
       <% end %>
     </div>
     """
