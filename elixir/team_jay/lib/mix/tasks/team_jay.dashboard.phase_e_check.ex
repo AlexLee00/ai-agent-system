@@ -28,10 +28,13 @@ defmodule Mix.Tasks.TeamJay.Dashboard.PhaseECheck do
 
     checks = %{
       phase_e_header:
-        String.contains?(dashboard_source, "Phase E • 영역 1+2+3+4+5+6+7+8 + Layer 1"),
+        String.contains?(dashboard_source, "Phase E • 영역 1+2+3+4+5+6+7+8 + Layer 1") or
+          String.contains?(dashboard_source, "Phase F • 영역 1+2+3+4+5+6+7+8+9 + Layer 1") or
+          String.contains?(dashboard_source, "Phase G • 영역 1~11"),
       health_phase_e:
-        String.contains?(health_plug_source, ~s(@dashboard_phase "E")) and
-          String.contains?(health_plug_source, "Langfuse OTel + Telegram intervention bridge"),
+        Regex.match?(~r/@dashboard_phase "(E|F|G)"/, health_plug_source) and
+          (String.contains?(health_plug_source, "Langfuse") or
+             String.contains?(health_plug_source, "Visibility v3.3")),
       trace_column_rendered:
         String.contains?(dashboard_source, "langfuse_trace_url") and
           String.contains?(dashboard_source, "target=\"_blank\"") and

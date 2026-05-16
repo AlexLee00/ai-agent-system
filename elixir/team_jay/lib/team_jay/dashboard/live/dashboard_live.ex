@@ -81,6 +81,15 @@ defmodule TeamJay.Dashboard.Live.DashboardLive do
     :"luna.circuit.breaker"
   ]
 
+  # Phase G: v3.3 영역 10/11 Project + Milestone visibility topics
+  @project_topics [
+    "project.task.created",
+    "project.task.stage_changed",
+    "project.milestone.added",
+    "project.milestone.achieved",
+    "project.milestone.missed"
+  ]
+
   # ── Mount ────────────────────────────────────────────────────────
 
   @impl true
@@ -89,6 +98,7 @@ defmodule TeamJay.Dashboard.Live.DashboardLive do
       Phoenix.PubSub.subscribe(@pubsub, "event_lake:new")
       Phoenix.PubSub.subscribe(@pubsub, "autonomy:phase_changed")
       Phoenix.PubSub.subscribe(@pubsub, "autonomy_phase_change")
+      Phoenix.PubSub.subscribe(@pubsub, "project:visibility")
       # GrowthCycle 토픽은 JayBus(Registry) 직접 구독
       safe_subscribe(:growth_cycle_started)
       safe_subscribe(:growth_cycle_completed)
@@ -104,9 +114,14 @@ defmodule TeamJay.Dashboard.Live.DashboardLive do
         safe_jay_bus_subscribe(topic)
       end
 
+      for topic <- safe_project_topics() do
+        safe_jay_bus_subscribe(topic)
+      end
+
       # Phase C/D: Andy/Jimmy + Sigma/Luna 30초 주기 갱신
       Process.send_after(self(), :refresh_agents, 30_000)
       Process.send_after(self(), :refresh_sigma_luna, 30_000)
+      Process.send_after(self(), :refresh_project_visibility, 60_000)
     end
 
     {:ok, assign_initial_state(socket)}
@@ -181,19 +196,24 @@ defmodule TeamJay.Dashboard.Live.DashboardLive do
     {:noreply, assign(socket, cross_pipelines: cross_pipelines)}
   end
 
-  # Phase D: Luna 13개 토픽 실시간 카운트 갱신
+  # Phase D/G: Luna 13개 토픽 및 Project 토픽 실시간 갱신
   def handle_info({:jay_bus, topic, payload}, socket) do
     topic_text = topic_to_string(topic)
 
-    if luna_topic?(topic_text) do
-      stage = topic_to_stage(topic_text)
+    cond do
+      project_topic?(topic_text) ->
+        {:noreply, refresh_project_visibility(socket)}
 
-      luna_pipeline =
-        update_luna_pipeline(socket.assigns.luna_pipeline, stage, topic_text, payload)
+      luna_topic?(topic_text) ->
+        stage = topic_to_stage(topic_text)
 
-      {:noreply, assign(socket, luna_pipeline: luna_pipeline)}
-    else
-      {:noreply, socket}
+        luna_pipeline =
+          update_luna_pipeline(socket.assigns.luna_pipeline, stage, topic_text, payload)
+
+        {:noreply, assign(socket, luna_pipeline: luna_pipeline)}
+
+      true ->
+        {:noreply, socket}
     end
   end
 
@@ -215,14 +235,28 @@ defmodule TeamJay.Dashboard.Live.DashboardLive do
     {:noreply, assign(socket, sigma_status: sigma_status, luna_pipeline: seeded_luna_pipeline)}
   end
 
+  # Phase G: project schema/config visibility refresh
+  def handle_info(:refresh_project_visibility, socket) do
+    Process.send_after(self(), :refresh_project_visibility, 60_000)
+    {:noreply, refresh_project_visibility(socket)}
+  end
+
+  def handle_info({:project_event, _topic, _payload}, socket) do
+    {:noreply, refresh_project_visibility(socket)}
+  end
+
   # Phase F: Langfuse API 응답 수신
   def handle_info({:fetch_trace, trace_id}, socket) do
     result = TeamJay.Dashboard.LangfuseClient.get_trace(trace_id)
 
     socket =
       case result do
-        {:ok, trace} -> assign(socket, trace_detail: trace, trace_loading: false)
-        {:error, :not_found} -> assign(socket, trace_detail: :not_found, trace_loading: false)
+        {:ok, trace} ->
+          assign(socket, trace_detail: trace, trace_loading: false)
+
+        {:error, :not_found} ->
+          assign(socket, trace_detail: :not_found, trace_loading: false)
+
         {:error, reason} ->
           Logger.warning("[DashboardLive] Langfuse API 오류: #{inspect(reason)}")
           assign(socket, trace_detail: :error, trace_loading: false)
@@ -253,6 +287,32 @@ defmodule TeamJay.Dashboard.Live.DashboardLive do
     {:noreply, assign(socket, selected_trace_id: nil, trace_detail: nil, trace_loading: false)}
   end
 
+  # Phase G: 영역 10 task 상세/수동 stage 변경. 클릭 전에는 DB write 없음.
+  def handle_event("task_view", %{"id" => task_id}, socket) do
+    task = find_project_task(socket.assigns.tasks_by_stage, task_id)
+    {:noreply, assign(socket, selected_project_task: task, project_error: nil)}
+  end
+
+  def handle_event("close_task", _params, socket) do
+    {:noreply, assign(socket, selected_project_task: nil, project_error: nil)}
+  end
+
+  def handle_event("task_stage_change", %{"id" => task_id, "stage" => stage}, socket) do
+    socket =
+      case TeamJay.Dashboard.ProjectVisibility.update_task_stage(task_id, stage) do
+        {:ok, task} ->
+          socket
+          |> refresh_project_visibility()
+          |> assign(:selected_project_task, task)
+          |> assign(:project_error, nil)
+
+        {:error, reason} ->
+          assign(socket, :project_error, "task stage 변경 실패: #{inspect(reason)}")
+      end
+
+    {:noreply, socket}
+  end
+
   # ── Render ───────────────────────────────────────────────────────
 
   @impl true
@@ -261,7 +321,7 @@ defmodule TeamJay.Dashboard.Live.DashboardLive do
     <div class="min-h-screen p-4 space-y-4">
       <header class="flex items-center justify-between border-b border-gray-700 pb-3">
         <h1 class="text-xl font-bold text-white">🤖 팀 제이 대시보드</h1>
-        <span class="text-xs text-gray-400">Phase F • 영역 1+2+3+4+5+6+7+8+9 + Layer 1</span>
+        <span class="text-xs text-gray-400">Phase G • 영역 1~11 + Layer 1 + Project schema</span>
       </header>
 
       <div class="grid grid-cols-1 xl:grid-cols-3 gap-4">
@@ -301,10 +361,26 @@ defmodule TeamJay.Dashboard.Live.DashboardLive do
             <.sigma_board sigma_status={@sigma_status} />
             <.luna_flow_board luna_pipeline={@luna_pipeline} />
           </div>
+
+          <!-- 영역 10: Project + Milestone 보드 -->
+          <.project_milestone_board
+            projects={@projects}
+            metrics={@project_metrics}
+            tasks_by_stage={@tasks_by_stage}
+            milestones={@milestones}
+            kanban_stages={@kanban_stages}
+            selected_task={@selected_project_task}
+            schema_ready={@project_schema_ready?}
+            config_path={@projects_config_path}
+            project_error={@project_error}
+          />
+
+          <!-- 영역 11: TimelineGantt 2주 -->
+          <.timeline_gantt_board gantt={@gantt_data} />
         </div>
 
         <!-- 영역 2: 협업 타임라인 -->
-        <.collab_timeline_board cycles={@cycles} />
+        <.collab_timeline_board cycles={@cycles} active_sessions={@active_sessions} />
       </div>
     </div>
     """
@@ -804,6 +880,7 @@ defmodule TeamJay.Dashboard.Live.DashboardLive do
   # ── 영역 2: 협업 타임라인 ───────────────────────────────────────
 
   attr(:cycles, :list, required: true)
+  attr(:active_sessions, :list, required: true)
 
   defp collab_timeline_board(assigns) do
     ~H"""
@@ -856,6 +933,31 @@ defmodule TeamJay.Dashboard.Live.DashboardLive do
           <% end %>
         </div>
       <% end %>
+
+      <div class="border-t border-gray-700 pt-3 space-y-2">
+        <div class="flex items-center justify-between">
+          <span class="text-xs font-semibold text-gray-400 uppercase tracking-wider">활성 세션</span>
+          <span class="text-[10px] text-gray-500">{length(@active_sessions)} active</span>
+        </div>
+        <%= if @active_sessions == [] do %>
+          <div class="text-center text-gray-600 py-3 text-xs">활성 project session 없음</div>
+        <% else %>
+          <div class="space-y-2">
+            <%= for session <- @active_sessions do %>
+              <div class="bg-gray-900/70 border border-gray-700 rounded-lg p-2">
+                <div class="flex items-center justify-between gap-2">
+                  <span class="text-xs text-gray-200">{bot_emoji(session.agent_type)} {session.agent_type}</span>
+                  <span class="text-[10px] text-gray-500">{format_relative_time(session.started_at)}</span>
+                </div>
+                <div class="text-[11px] text-gray-400 truncate mt-1">{session.summary || session.id}</div>
+                <div class="text-[10px] text-gray-600 truncate mt-1">
+                  files: {Enum.join(session.files_touched || [], " · ")}
+                </div>
+              </div>
+            <% end %>
+          </div>
+        <% end %>
+      </div>
     </div>
     """
   end
@@ -1062,7 +1164,434 @@ defmodule TeamJay.Dashboard.Live.DashboardLive do
     """
   end
 
+  # ── 영역 10: Project + Milestone 보드 ─────────────────────────────
+
+  attr(:projects, :list, required: true)
+  attr(:metrics, :map, required: true)
+  attr(:tasks_by_stage, :map, required: true)
+  attr(:milestones, :list, required: true)
+  attr(:kanban_stages, :list, required: true)
+  attr(:selected_task, :any, required: true)
+  attr(:schema_ready, :boolean, required: true)
+  attr(:config_path, :string, required: true)
+  attr(:project_error, :any, required: true)
+
+  defp project_milestone_board(assigns) do
+    ~H"""
+    <div class="bg-gray-800 rounded-xl p-5 space-y-4 border border-emerald-500/20">
+      <div class="flex items-center justify-between border-b border-gray-700 pb-2">
+        <span class="text-sm font-semibold text-gray-300 uppercase tracking-wider">
+          [10] Project + Milestone 보드
+        </span>
+        <span class={project_schema_badge(@schema_ready)}>
+          {if @schema_ready, do: "project schema live", else: "marker fallback"}
+        </span>
+      </div>
+
+      <div class="grid grid-cols-2 lg:grid-cols-5 gap-2 text-xs">
+        <.metric_card label="Projects" value={@metrics[:active_projects] || 0} tone="green" />
+        <.metric_card label="Sessions" value={@metrics[:active_sessions] || 0} tone="blue" />
+        <.metric_card label="Building" value={get_in(@metrics, [:by_stage, "building"]) || 0} tone="amber" />
+        <.metric_card label="Observe Warn" value={@metrics[:observe_warnings] || 0} tone="purple" />
+        <.metric_card label="Conflicts" value={@metrics[:conflicts] || 0} tone="red" />
+      </div>
+
+      <div class="text-[10px] text-gray-500 truncate">
+        whitelist: {@config_path}
+      </div>
+
+      <%= if @project_error do %>
+        <div class="bg-red-950/40 border border-red-500/40 rounded-lg p-2 text-xs text-red-300">
+          {@project_error}
+        </div>
+      <% end %>
+
+      <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3">
+        <%= for project <- @projects do %>
+          <div class={"rounded-lg p-3 border #{project_color_class(project.color)}"}>
+            <div class="flex items-start justify-between gap-2">
+              <div class="min-w-0">
+                <div class="text-sm font-semibold text-white truncate">{project.name}</div>
+                <div class="text-xs text-gray-400 mt-0.5 truncate">{project.phase}</div>
+              </div>
+              <span class="text-[10px] text-gray-500">{project_task_count(@tasks_by_stage, project.id)} tasks</span>
+            </div>
+            <div class="mt-3">
+              <div class="h-2 bg-gray-700 rounded-full overflow-hidden">
+                <div
+                  class={"h-full rounded-full #{project_progress_color(project.progress)}"}
+                  style={"width: #{round((project.progress || 0) * 100)}%"}
+                />
+              </div>
+              <div class="text-[10px] text-gray-500 mt-1">
+                {round((project.progress || 0) * 100)}% · {owner_label(project.owner)}
+              </div>
+            </div>
+          </div>
+        <% end %>
+      </div>
+
+      <div class="grid grid-cols-1 xl:grid-cols-5 gap-2">
+        <%= for stage <- @kanban_stages do %>
+          <% tasks = Map.get(@tasks_by_stage, stage.stage, []) %>
+          <div class={"rounded-lg p-2 border border-gray-700 #{stage.class}"}>
+            <div class="flex items-center justify-between text-xs font-semibold text-gray-300 mb-2">
+              <span>{stage.icon} {stage.label}</span>
+              <span class="text-gray-500">{length(tasks)}</span>
+            </div>
+            <div class="space-y-1 max-h-64 overflow-y-auto pr-1">
+              <%= for task <- tasks do %>
+                <button
+                  type="button"
+                  phx-click="task_view"
+                  phx-value-id={task.id}
+                  class="w-full text-left bg-gray-950/60 hover:bg-gray-700/80 rounded p-2 transition-colors"
+                >
+                  <div class="text-[11px] text-gray-100 truncate">{task.title}</div>
+                  <div class="text-[9px] text-gray-500 mt-0.5 truncate">
+                    {task.assignee || "—"} · {format_elapsed(task.elapsed_seconds)} · {task.project_id}
+                  </div>
+                </button>
+              <% end %>
+              <%= if tasks == [] do %>
+                <div class="text-center text-[10px] text-gray-600 py-6">비어 있음</div>
+              <% end %>
+            </div>
+          </div>
+        <% end %>
+      </div>
+
+      <%= if @selected_task do %>
+        <.project_task_detail task={@selected_task} kanban_stages={@kanban_stages} />
+      <% end %>
+
+      <div class="border-t border-gray-700 pt-3">
+        <div class="text-xs font-semibold text-gray-400 mb-2">마일스톤 (다가오는 8개)</div>
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-2">
+          <%= for milestone <- @milestones do %>
+            <div class={"flex items-center gap-2 text-xs rounded-lg bg-gray-900/60 border border-gray-700 px-3 py-2 #{milestone_status_class(milestone.status)}"}>
+              <span class="font-mono text-gray-500 w-20">{format_project_date(milestone.date)}</span>
+              <span class={"px-1.5 py-0.5 rounded text-[10px] #{milestone_badge(milestone.status)}"}>
+                {milestone.status}
+              </span>
+              <span class="text-gray-300 truncate">{milestone.title}</span>
+              <span class="text-gray-500 ml-auto whitespace-nowrap">{milestone.owner}</span>
+            </div>
+          <% end %>
+        </div>
+      </div>
+    </div>
+    """
+  end
+
+  attr(:label, :string, required: true)
+  attr(:value, :any, required: true)
+  attr(:tone, :string, required: true)
+
+  defp metric_card(assigns) do
+    ~H"""
+    <div class={"rounded-lg border p-2 #{metric_card_class(@tone)}"}>
+      <div class="text-[10px] text-gray-400">{@label}</div>
+      <div class="text-lg font-bold text-white">{@value}</div>
+    </div>
+    """
+  end
+
+  attr(:task, :map, required: true)
+  attr(:kanban_stages, :list, required: true)
+
+  defp project_task_detail(assigns) do
+    ~H"""
+    <div class="bg-gray-950/70 border border-gray-700 rounded-lg p-3 space-y-3">
+      <div class="flex items-start justify-between gap-3">
+        <div class="min-w-0">
+          <div class="text-sm font-semibold text-white truncate">{@task.title}</div>
+          <div class="text-[11px] text-gray-500 font-mono truncate">
+            {@task.id} · {@task.project_id} · {@task.assignee || "unassigned"}
+          </div>
+        </div>
+        <button
+          phx-click="close_task"
+          class="text-gray-500 hover:text-white text-xs px-2 py-1 rounded bg-gray-800"
+        >
+          닫기
+        </button>
+      </div>
+
+      <div class="flex flex-wrap gap-1.5">
+        <%= for stage <- @kanban_stages do %>
+          <button
+            type="button"
+            phx-click="task_stage_change"
+            phx-value-id={@task.id}
+            phx-value-stage={stage.stage}
+            class={task_stage_button_class(@task.stage, stage.stage)}
+          >
+            {stage.icon} {stage.label}
+          </button>
+        <% end %>
+      </div>
+
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-2 text-[11px] text-gray-400">
+        <div>시작: {format_datetime(@task.started_at)}</div>
+        <div>종료: {format_datetime(@task.finished_at)}</div>
+        <div>경과: {format_elapsed(@task.elapsed_seconds)}</div>
+      </div>
+    </div>
+    """
+  end
+
+  # ── 영역 11: TimelineGantt 2주 ──────────────────────────────────
+
+  attr(:gantt, :map, required: true)
+
+  defp timeline_gantt_board(assigns) do
+    ~H"""
+    <div class="bg-gray-800 rounded-xl p-5 space-y-4 border border-cyan-500/20">
+      <div class="flex items-center justify-between border-b border-gray-700 pb-2">
+        <span class="text-sm font-semibold text-gray-300 uppercase tracking-wider">
+          [11] TimelineGantt 2주
+        </span>
+        <span class="text-xs text-gray-500">
+          {format_project_date(@gantt.start_date)} ~ {format_project_date(@gantt.end_date)}
+        </span>
+      </div>
+
+      <div class="overflow-x-auto">
+        <div class="min-w-[1040px] space-y-1">
+          <div class="grid gap-1" style={"grid-template-columns: 170px repeat(15, minmax(48px, 1fr));"}>
+            <div class="text-[10px] text-gray-500">Project</div>
+            <%= for date <- @gantt.dates do %>
+              <div class="text-[10px] text-gray-500 text-center">{format_project_date(date)}</div>
+            <% end %>
+          </div>
+
+          <%= for project <- @gantt.projects do %>
+            <div class="grid gap-1 items-stretch" style={"grid-template-columns: 170px repeat(15, minmax(48px, 1fr));"}>
+              <div class="bg-gray-900/70 border border-gray-700 rounded px-2 py-2 text-xs text-gray-200 truncate">
+                {project.name}
+              </div>
+              <%= for date <- @gantt.dates do %>
+                <% items = gantt_items_for_date(@gantt, project.id, date) %>
+                <div class="min-h-12 bg-gray-950/50 border border-gray-800 rounded p-1 space-y-1">
+                  <%= for task <- items.tasks do %>
+                    <div class={"h-2 rounded-full #{stage_dot_class(task.stage)}"} title={task.title}></div>
+                  <% end %>
+                  <%= for ms <- items.milestones do %>
+                    <div class="flex items-center justify-center" title={ms.title}>
+                      <span class={"inline-block w-2.5 h-2.5 rounded-full #{milestone_dot_class(ms.status)}"}></span>
+                    </div>
+                  <% end %>
+                </div>
+              <% end %>
+            </div>
+          <% end %>
+        </div>
+      </div>
+    </div>
+    """
+  end
+
   # ── 헬퍼 ────────────────────────────────────────────────────────
+
+  # ── Phase G: Project/Milestone 헬퍼 ─────────────────────────────
+
+  defp safe_project_topics, do: @project_topics
+
+  defp project_topic?(topic_text) when is_binary(topic_text),
+    do:
+      String.starts_with?(topic_text, "project.task.") or
+        String.starts_with?(topic_text, "project.milestone.")
+
+  defp project_topic?(_), do: false
+
+  defp load_project_visibility do
+    TeamJay.Dashboard.ProjectVisibility.snapshot()
+  rescue
+    _ ->
+      %{
+        schema_ready?: false,
+        config_path: TeamJay.Dashboard.ProjectVisibility.config_path(),
+        projects: [],
+        tasks_by_stage: %{},
+        milestones: [],
+        active_sessions: [],
+        metrics: %{
+          active_projects: 0,
+          active_sessions: 0,
+          by_stage: %{},
+          observe_warnings: 0,
+          conflicts: 0
+        },
+        gantt: %{
+          start_date: Date.utc_today(),
+          end_date: Date.utc_today(),
+          dates: [],
+          projects: [],
+          tasks_by_project: %{},
+          milestones_by_project: %{}
+        }
+      }
+  end
+
+  defp refresh_project_visibility(socket) do
+    assign_project_visibility(socket, load_project_visibility())
+  end
+
+  defp assign_project_visibility(socket, visibility) do
+    socket
+    |> assign(:project_schema_ready?, visibility[:schema_ready?] || false)
+    |> assign(
+      :projects_config_path,
+      visibility[:config_path] || TeamJay.Dashboard.ProjectVisibility.config_path()
+    )
+    |> assign(:projects, visibility[:projects] || [])
+    |> assign(:tasks_by_stage, visibility[:tasks_by_stage] || %{})
+    |> assign(:milestones, visibility[:milestones] || [])
+    |> assign(:active_sessions, visibility[:active_sessions] || [])
+    |> assign(:project_metrics, visibility[:metrics] || %{})
+    |> assign(:gantt_data, visibility[:gantt] || %{})
+  end
+
+  defp find_project_task(tasks_by_stage, task_id) do
+    tasks_by_stage
+    |> Map.values()
+    |> List.flatten()
+    |> Enum.find(&(&1.id == task_id))
+  end
+
+  defp project_schema_badge(true),
+    do:
+      "text-[10px] font-semibold text-green-300 bg-green-950/50 border border-green-500/40 rounded-full px-2 py-0.5"
+
+  defp project_schema_badge(_),
+    do:
+      "text-[10px] font-semibold text-yellow-300 bg-yellow-950/50 border border-yellow-500/40 rounded-full px-2 py-0.5"
+
+  defp metric_card_class("green"), do: "bg-green-950/30 border-green-500/40"
+  defp metric_card_class("blue"), do: "bg-blue-950/30 border-blue-500/40"
+  defp metric_card_class("amber"), do: "bg-amber-950/30 border-amber-500/40"
+  defp metric_card_class("purple"), do: "bg-purple-950/30 border-purple-500/40"
+  defp metric_card_class("red"), do: "bg-red-950/30 border-red-500/40"
+  defp metric_card_class(_), do: "bg-gray-900/40 border-gray-700"
+
+  defp project_color_class("green"), do: "border-green-500/50 bg-green-950/25"
+  defp project_color_class("amber"), do: "border-amber-500/50 bg-amber-950/25"
+  defp project_color_class("purple"), do: "border-purple-500/50 bg-purple-950/25"
+  defp project_color_class("blue"), do: "border-blue-500/50 bg-blue-950/25"
+  defp project_color_class(_), do: "border-gray-700 bg-gray-900/40"
+
+  defp project_progress_color(progress) when is_number(progress) and progress < 0.3,
+    do: "bg-amber-500"
+
+  defp project_progress_color(progress) when is_number(progress) and progress < 0.7,
+    do: "bg-blue-500"
+
+  defp project_progress_color(_), do: "bg-green-500"
+
+  defp owner_label(owner) when is_list(owner), do: Enum.join(owner, ", ")
+  defp owner_label(owner) when is_binary(owner), do: owner
+  defp owner_label(_), do: "—"
+
+  defp project_task_count(tasks_by_stage, project_id) do
+    tasks_by_stage
+    |> Map.values()
+    |> List.flatten()
+    |> Enum.count(&(&1.project_id == project_id))
+  end
+
+  defp milestone_status_class("achieved"), do: "opacity-60"
+  defp milestone_status_class("missed"), do: "text-red-300 border-red-500/40"
+  defp milestone_status_class(_), do: ""
+
+  defp milestone_badge("achieved"), do: "bg-green-900/50 text-green-300"
+  defp milestone_badge("missed"), do: "bg-red-900/50 text-red-300"
+  defp milestone_badge(_), do: "bg-blue-900/50 text-blue-300"
+
+  defp milestone_dot_class("achieved"), do: "bg-green-400"
+  defp milestone_dot_class("missed"), do: "bg-red-400"
+  defp milestone_dot_class(_), do: "bg-blue-400"
+
+  defp stage_dot_class("building"), do: "bg-blue-500"
+  defp stage_dot_class("verify"), do: "bg-amber-500"
+  defp stage_dot_class("observing"), do: "bg-purple-500"
+  defp stage_dot_class("done"), do: "bg-green-500"
+  defp stage_dot_class(_), do: "bg-gray-500"
+
+  defp task_stage_button_class(current_stage, stage) do
+    base = "text-[10px] rounded-full px-2 py-1 border transition-colors"
+
+    if current_stage == stage do
+      "#{base} bg-blue-600 border-blue-400 text-white"
+    else
+      "#{base} bg-gray-900 border-gray-700 text-gray-400 hover:text-white hover:border-gray-500"
+    end
+  end
+
+  defp format_elapsed(nil), do: "—"
+  defp format_elapsed(seconds) when is_integer(seconds) and seconds < 60, do: "#{seconds}s"
+
+  defp format_elapsed(seconds) when is_integer(seconds) and seconds < 3_600,
+    do: "#{div(seconds, 60)}m"
+
+  defp format_elapsed(seconds) when is_integer(seconds) and seconds < 86_400,
+    do: "#{div(seconds, 3_600)}h"
+
+  defp format_elapsed(seconds) when is_integer(seconds), do: "#{div(seconds, 86_400)}d"
+  defp format_elapsed(_), do: "—"
+
+  defp format_project_date(%Date{} = date), do: Calendar.strftime(date, "%m-%d")
+
+  defp format_project_date(%NaiveDateTime{} = dt),
+    do: dt |> NaiveDateTime.to_date() |> format_project_date()
+
+  defp format_project_date(%DateTime{} = dt),
+    do: dt |> DateTime.to_date() |> format_project_date()
+
+  defp format_project_date(value) when is_binary(value), do: String.slice(value, 5, 5)
+  defp format_project_date(_), do: "—"
+
+  defp gantt_items_for_date(gantt, project_id, date) do
+    tasks =
+      gantt
+      |> Map.get(:tasks_by_project, %{})
+      |> Map.get(project_id, [])
+      |> Enum.filter(&task_on_date?(&1, date))
+      |> Enum.take(2)
+
+    milestones =
+      gantt
+      |> Map.get(:milestones_by_project, %{})
+      |> Map.get(project_id, [])
+      |> Enum.filter(&(to_date(&1.date) == date))
+
+    %{tasks: tasks, milestones: milestones}
+  end
+
+  defp task_on_date?(task, date) do
+    start_date = to_date(task.started_at)
+    end_date = task.finished_at |> to_date() |> Kernel.||(Date.utc_today())
+    Date.compare(date, start_date) in [:eq, :gt] and Date.compare(date, end_date) in [:eq, :lt]
+  rescue
+    _ -> false
+  end
+
+  defp to_date(nil), do: nil
+  defp to_date(%Date{} = date), do: date
+  defp to_date(%NaiveDateTime{} = dt), do: NaiveDateTime.to_date(dt)
+  defp to_date(%DateTime{} = dt), do: DateTime.to_date(dt)
+
+  defp to_date(value) when is_binary(value) do
+    value
+    |> String.slice(0, 10)
+    |> Date.from_iso8601()
+    |> case do
+      {:ok, date} -> date
+      _ -> nil
+    end
+  end
+
+  defp to_date(_), do: nil
 
   # ── Phase D: Sigma/Luna 헬퍼 ───────────────────────────────────
 
@@ -1621,6 +2150,7 @@ defmodule TeamJay.Dashboard.Live.DashboardLive do
     team_health = safe_call(fn -> load_team_health() end, %{})
     sigma_status = safe_call(fn -> load_sigma_status() end, %{})
     luna_pipeline = safe_call(fn -> load_luna_pipeline_seed() end, init_luna_pipeline())
+    project_visibility = load_project_visibility()
 
     socket
     |> assign(:phase_status, phase_status)
@@ -1635,6 +2165,10 @@ defmodule TeamJay.Dashboard.Live.DashboardLive do
     |> assign(:team_health, team_health)
     |> assign(:sigma_status, sigma_status)
     |> assign(:luna_pipeline, luna_pipeline)
+    |> assign_project_visibility(project_visibility)
+    |> assign(:kanban_stages, TeamJay.Dashboard.ProjectVisibility.kanban_stages())
+    |> assign(:selected_project_task, nil)
+    |> assign(:project_error, nil)
     |> assign(:selected_trace_id, nil)
     |> assign(:trace_detail, nil)
     |> assign(:trace_loading, false)

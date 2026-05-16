@@ -58,7 +58,9 @@ defmodule Mix.Tasks.TeamJay.Dashboard.PhaseDCheck do
     checks = %{
       phase_d_header:
         String.contains?(dashboard_source, "Phase D • 영역 1+2+3+4+5+6+7+8") or
-          String.contains?(dashboard_source, "Phase E • 영역 1+2+3+4+5+6+7+8"),
+          String.contains?(dashboard_source, "Phase E • 영역 1+2+3+4+5+6+7+8") or
+          String.contains?(dashboard_source, "Phase F • 영역 1+2+3+4+5+6+7+8+9") or
+          String.contains?(dashboard_source, "Phase G • 영역 1~11"),
       sigma_board_rendered:
         source_order?(dashboard_source, "<.team_health_board", "<.sigma_board"),
       luna_flow_rendered: source_order?(dashboard_source, "<.sigma_board", "<.luna_flow_board"),

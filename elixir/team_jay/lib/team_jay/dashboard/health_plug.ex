@@ -3,8 +3,8 @@ defmodule TeamJay.Dashboard.HealthPlug do
 
   import Plug.Conn
 
-  @dashboard_phase "F"
-  @dashboard_layer "Langfuse Trace 상세 (영역 9) + OTel OTLP init"
+  @dashboard_phase "G"
+  @dashboard_layer "Visibility v3.3 영역 1~11 + Project/Milestone/Timeline"
 
   def init(opts), do: opts
 

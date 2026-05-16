@@ -1,0 +1,52 @@
+# Team Jay Visibility v3.3 project whitelist.
+# Only projects listed under `included` are shown in LiveView area 10/11.
+
+included:
+  - id: ai-agent-system
+    name: 팀 제이 (ai-agent-system)
+    path: /Users/alexlee/projects/ai-agent-system
+    phase: Phase G
+    progress: 0.82
+    color: green
+    owner:
+      - master
+      - metty
+      - codex
+
+  - id: blog-automation
+    name: 블로그 자동화
+    path: /Users/alexlee/projects/ai-agent-system/bots/blog
+    phase: V3 Shadow
+    progress: 0.68
+    color: amber
+    owner:
+      - blog
+      - codex
+
+  - id: luna-autonomy
+    name: 루나 자율매매
+    path: /Users/alexlee/projects/ai-agent-system/bots/investment
+    phase: Shadow/Live-Fire
+    progress: 0.74
+    color: purple
+    owner:
+      - luna
+      - sigma
+      - codex
+
+  - id: study-cafe
+    name: 스터디 카페 (스카팀)
+    path: /Users/alexlee/projects/ai-agent-system/bots/ska
+    phase: Phase 3
+    progress: 0.57
+    color: blue
+    owner:
+      - ska
+      - jay
+
+excluded:
+  - elsa
+  - agent-fantasy-world
+
+auto_discover: false
+discovery_path: /Users/alexlee/projects

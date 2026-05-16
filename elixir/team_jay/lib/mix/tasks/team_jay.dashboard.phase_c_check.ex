@@ -57,7 +57,9 @@ defmodule Mix.Tasks.TeamJay.Dashboard.PhaseCCheck do
         source_order?(source, "<.event_lake_board", "<.cross_team_board"),
       phase_c_or_later_header:
         String.contains?(source, "Phase C • 영역 1+2+3+4+5+6") or
-          String.contains?(source, "Phase D • 영역 1+2+3+4+5+6+7+8")
+          String.contains?(source, "Phase D • 영역 1+2+3+4+5+6+7+8") or
+          String.contains?(source, "Phase F • 영역 1+2+3+4+5+6+7+8+9") or
+          String.contains?(source, "Phase G • 영역 1~11")
     }
 
     result = %{

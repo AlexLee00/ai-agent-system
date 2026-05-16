@@ -17,7 +17,7 @@ async function runSmoke() {
 
   const events = mettyTrace.buildMettyEventsFromFiles([
     'docs/metty/LESSONS.md',
-    'docs/strategy/VISIBILITY_SYSTEM_v3.2.md',
+    'docs/strategy/VISIBILITY_SYSTEM_v3.3.md',
     'docs/strategy/NEXT_SESSION_HANDOFF_2026-05-14.md',
     'docs/codex/CODEX_EVENTLAKE_COLLAB_TRACE.md',
     'README.md',
