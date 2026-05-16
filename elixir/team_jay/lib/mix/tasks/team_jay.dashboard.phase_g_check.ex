@@ -54,6 +54,13 @@ defmodule Mix.Tasks.TeamJay.Dashboard.PhaseGCheck do
       area_11_rendered:
         String.contains?(dashboard_source, "timeline_gantt_board") and
           String.contains?(dashboard_source, "[11] TimelineGantt 2주"),
+      area_9_initial_slot:
+        String.contains?(dashboard_source, "<.trace_detail_board") and
+          String.contains?(dashboard_source, "trace_id={@selected_trace_id}") and
+          String.contains?(dashboard_source, "attr(:trace_id, :string, default: nil)") and
+          String.contains?(dashboard_source, "영역 4의 trace_id 클릭") and
+          String.contains?(dashboard_source, "Trace 선택 안 됨") and
+          not String.contains?(dashboard_source, "<%= if @selected_trace_id do %>"),
       project_topics:
         Enum.all?(
           [
