@@ -79,9 +79,15 @@ defmodule Darwin.V2.Sensor.PapersWithCode do
            receive_timeout: 20_000,
            headers: [{"User-Agent", "darwin-research-bot/2.0"}]
          ) do
-      {:ok, %{status: 200, body: body}} ->
-        results = Map.get(body, "results", [])
-        emitted = Enum.reduce(results, 0, fn paper, nacc ->
+      {:ok, %{status: 200, body: body}} when is_map(body) ->
+        results =
+          case Map.get(body, "results", []) do
+            list when is_list(list) -> list
+            _ -> []
+          end
+
+        emitted = Enum.reduce(results, 0, fn
+          paper, nacc when is_map(paper) ->
           paper_id = Map.get(paper, "id", "") |> to_string()
           if already_seen?(table, paper_id) or paper_id == "" do
             nacc
@@ -89,6 +95,9 @@ defmodule Darwin.V2.Sensor.PapersWithCode do
             mark_seen(table, paper_id)
             nacc + maybe_emit_paper(paper)
           end
+
+          _paper, nacc ->
+            nacc
         end)
 
         total = Map.get(body, "count", 0)
@@ -101,6 +110,13 @@ defmodule Darwin.V2.Sensor.PapersWithCode do
         else
           new_acc
         end
+
+      {:ok, %{status: 200, body: body}} ->
+        Logger.warning(
+          "#{@log_prefix} unexpected_body page=#{page} type=#{inspect(body_type(body))}; skip"
+        )
+
+        acc
 
       {:ok, %{status: status}} ->
         Logger.warning("#{@log_prefix} HTTP #{status} (page #{page})")
@@ -152,6 +168,11 @@ defmodule Darwin.V2.Sensor.PapersWithCode do
       0
     end
   end
+
+  defp body_type(body) when is_binary(body), do: :binary
+  defp body_type(body) when is_list(body), do: :list
+  defp body_type(body) when is_map(body), do: :map
+  defp body_type(_), do: :unknown
 
   defp emit(paper) do
     topic = Darwin.V2.Topics.paper_discovered()
