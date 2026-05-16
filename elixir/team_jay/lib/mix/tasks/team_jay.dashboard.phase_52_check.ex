@@ -114,6 +114,8 @@ defmodule Mix.Tasks.TeamJay.Dashboard.Phase52Check do
   end
 
   defp runtime_health do
+    Application.ensure_all_started(:req)
+
     port =
       System.get_env("TEAM_JAY_DASHBOARD_PORT")
       |> Kernel.||(System.get_env("DASHBOARD_PORT"))

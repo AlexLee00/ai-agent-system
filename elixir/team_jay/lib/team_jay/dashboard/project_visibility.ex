@@ -219,7 +219,7 @@ defmodule TeamJay.Dashboard.ProjectVisibility do
   def ingest_event(_), do: :ignored
 
   def ingest_recent_event_lake_tasks!(opts \\ []) do
-    ensure_schema!()
+    ensure_schema_cached!()
     limit = Keyword.get(opts, :limit, 200)
 
     sql = """
@@ -252,7 +252,7 @@ defmodule TeamJay.Dashboard.ProjectVisibility do
   end
 
   def ingest_task!(attrs) when is_map(attrs) do
-    ensure_schema!()
+    ensure_schema_cached!()
     project = project_for_event(attrs)
     task = normalize_ingested_task(attrs, project)
 
@@ -265,7 +265,7 @@ defmodule TeamJay.Dashboard.ProjectVisibility do
   end
 
   def reconcile_milestone_statuses! do
-    ensure_schema!()
+    ensure_schema_cached!()
 
     sql = """
     SELECT id, date, title, owner, task_ids, status, project_id, created_at
@@ -721,8 +721,8 @@ defmodule TeamJay.Dashboard.ProjectVisibility do
       elapsed_seconds: elapsed_seconds,
       source_doc: source_doc,
       active_session_id: active_session_id,
-      verify: verify || %{},
-      observe: observe || %{}
+      verify: json_map(verify),
+      observe: json_map(observe)
     }
   end
 
@@ -945,7 +945,7 @@ defmodule TeamJay.Dashboard.ProjectVisibility do
   end
 
   defp ingest_project_milestone_event(event_type, event, metadata) do
-    ensure_schema!()
+    ensure_schema_cached!()
     project = project_for_event(metadata)
 
     milestone = %{
@@ -961,7 +961,7 @@ defmodule TeamJay.Dashboard.ProjectVisibility do
 
     upsert_project!(project)
     upsert_milestone!(milestone)
-    broadcast_project_event("project.milestone.#{milestone.status}", milestone)
+    broadcast_project_event(milestone_event_topic(milestone.status), milestone)
     {:ok, milestone}
   rescue
     error -> {:error, error}
@@ -1105,6 +1105,19 @@ defmodule TeamJay.Dashboard.ProjectVisibility do
     end
   end
 
+  defp milestone_event_topic("achieved"), do: "project.milestone.achieved"
+  defp milestone_event_topic("missed"), do: "project.milestone.missed"
+  defp milestone_event_topic(_), do: "project.milestone.added"
+
+  defp ensure_schema_cached! do
+    unless Process.get(:team_jay_project_visibility_schema_ready) == true do
+      ensure_schema!()
+      Process.put(:team_jay_project_visibility_schema_ready, true)
+    end
+
+    :ok
+  end
+
   defp project_id_from_path(path) when is_binary(path) do
     cond do
       String.contains?(path, "bots/blog") -> "blog-automation"
@@ -1154,6 +1167,17 @@ defmodule TeamJay.Dashboard.ProjectVisibility do
 
   defp ensure_map(value) when is_map(value), do: value
   defp ensure_map(_), do: %{}
+
+  defp json_map(value) when is_map(value), do: value
+
+  defp json_map(value) when is_binary(value) do
+    case Jason.decode(value) do
+      {:ok, decoded} when is_map(decoded) -> decoded
+      _ -> %{}
+    end
+  end
+
+  defp json_map(_), do: %{}
 
   defp list_value(value) when is_list(value), do: Enum.map(value, &to_string/1)
   defp list_value(value) when is_binary(value), do: [value]
@@ -1208,7 +1232,8 @@ defmodule TeamJay.Dashboard.ProjectVisibility do
 
   defp count_observe_warnings(tasks) do
     Enum.count(tasks, fn task ->
-      alerts = get_in(task, [:observe, "alerts"]) || get_in(task, [:observe, :alerts]) || []
+      observe = task[:observe] || %{}
+      alerts = Map.get(observe, "alerts") || Map.get(observe, :alerts) || []
       alerts != []
     end)
   end
