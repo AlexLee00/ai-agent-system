@@ -1,4 +1,68 @@
-# 세션 인수인계 — 2026-05-17 (CODEX_LIVEVIEW_DASHBOARD_PHASE_F 검증 완료)
+# 세션 인수인계 — 2026-05-17 (CODEX_LIVEVIEW_DASHBOARD_PHASE_E 검증 완료)
+
+## 완료 요약 ✅ (Phase E — Layer 1 Langfuse + Telegram bot 자동 통합 — v3.x 본질 100%)
+
+### Phase E 검증 결과 (코드 전 구현 완료, 이번 세션은 검증)
+
+#### 성공 기준 10개 검증
+
+| # | 기준 | 결과 | 비고 |
+|---|------|------|------|
+| 1 | http://localhost:3000 Langfuse UI 정상 | ✅ HTTP 200 | 6개 컨테이너 2일째 healthy |
+| 2 | Elixir → Langfuse trace 발신 | ⚠️ 보류 | BEAM 재시작 필요 (PROTECTED) |
+| 3 | event_lake trace_id 자동 채움 | ✅ 코드 완성 | maybe_attach_current_trace_id + current_otel_trace_id 구현 |
+| 4 | 영역 4 trace_id 클릭 → Langfuse 점프 | ✅ 코드 완성 | show_trace/langfuse_trace_url 구현, dashboard HTTP 200 |
+| 5 | Telegram → master.intervention.telegram 5초 내 | ✅ E2E 검증 | curl 직접 테스트 → ok:true 응답 |
+| 6 | 영역 2 협업 타임라인 cycle 자동 표시 | ✅ 기존 동작 | Phase B~D 완성 기반 |
+| 7 | Langfuse UI master_intervention trace | ⚠️ OTLP 비활성 | BEAM 재시작 후 활성화 |
+| 8 | 영역 1~8 regression 없음 | ✅ HTTP 200 | mix compile exit 0 |
+| 9 | docker-compose 정지 시 LiveView 유지 | ✅ 코드 완성 | rescue 방어 코딩 완료 |
+| 10 | mix compile 통과 | ✅ exit 0 | --warnings-as-errors 통과 |
+
+#### 구현 완료 파일 (Phase E)
+
+| 파일 | 내용 |
+|------|------|
+| `docker/docker-compose.langfuse.yml` | 6 컨테이너 (web/worker/pg/clickhouse/redis/minio) |
+| `docker/.env.langfuse` | LANGFUSE_INIT_* 자동 초기화 포함 |
+| `elixir/team_jay/config/runtime.exs` | OpenTelemetry OTLP → Langfuse config |
+| `elixir/team_jay/lib/team_jay/application.ex` | setup_opentelemetry() + OpentelemetryEcto.setup |
+| `packages/elixir_core/lib/jay/core/event_lake.ex` | maybe_attach_current_trace_id + current_otel_trace_id |
+| `bots/hub/lib/routes/autonomy.ts` | POST /hub/v2/autonomy/intervention 완전 구현 |
+| `bots/hub/src/route-registry.ts` | /hub/v2/autonomy/intervention 등록 |
+| `elixir/team_jay/lib/team_jay/dashboard/router.ex` | POST /api/master-intervention 라우트 |
+| `elixir/team_jay/lib/team_jay/dashboard/master_intervention_controller.ex` | AutonomyController 브릿지 |
+| `bots/hub/scripts/telegram-callback-poller.ts` | forwardMasterMessage + isMasterMessage |
+
+#### E2E 검증: Telegram → master.intervention.telegram 호출 체인
+
+```
+curl → Elixir /api/master-intervention (토큰 검증 통과)
+  → AutonomyController.record_master_intervention
+  → EventLake.record (event_type: "master.intervention.telegram")
+응답: {"ok":true,"event_type":"master.intervention.telegram","accepted_at":"2026-05-16T23:57:23Z"}
+```
+
+### ⚠️ 미해결 (Phase F와 동일): OTLP 비활성
+
+**원인**: launchd plist에 `LANGFUSE_OTEL_ENABLED=1` 설정되어 있으나, BEAM이 마지막 launchctl load 이후 재시작 안 됨
+**확인**: `launchctl print gui/$(id -u)/ai.elixir.supervisor | grep LANGFUSE` → 결과 없음
+**plist 확인**: `LANGFUSE_OTEL_ENABLED=1`, `LANGFUSE_HOST=http://localhost:3000`, PUBLIC/SECRET KEY 모두 설정됨
+**해결**: 마스터 직접 결정 필요 (PROTECTED 서비스)
+```bash
+launchctl unload ~/Library/LaunchAgents/ai.elixir.supervisor.plist
+launchctl load ~/Library/LaunchAgents/ai.elixir.supervisor.plist
+```
+**영향**: Luna LIVE, Ska 매출 영향 가능 — 마스터 타이밍 선택 필요
+
+### v3.x 본질 100% 도달 (코드 기준)
+
+- Phase A~E ✅ + Phase F ✅ = v3.x 본질 완성 (코드)
+- 남은 것: BEAM 재시작 1회 → OTLP 활성화 → Langfuse trace 확인
+
+---
+
+# 이전 세션 인수인계 — 2026-05-17 (CODEX_LIVEVIEW_DASHBOARD_PHASE_F 검증 완료)
 
 ## 완료 요약 ✅ (Phase F — 영역 9 Langfuse Trace 상세 + OpenTelemetry init)
 

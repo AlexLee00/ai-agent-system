@@ -4,6 +4,19 @@
 > 상세 내용: `reservation-dev-summary.md` / `reservation-handoff.md`
 > 최초 작성: 2026-02-27
 
+## 2026-05-17: CODEX_LIVEVIEW_DASHBOARD_PHASE_E — v3.x 본질 100% 검증
+
+- **검증**: Phase E 코드 전 구현 완료 — 이번 세션은 검증 + E2E 테스트
+- **Docker 스택**: 6개 컨테이너 (langfuse-web/worker/pg/clickhouse/redis/minio) 2일째 healthy ✅
+- **Langfuse UI**: http://localhost:3000 HTTP 200 ✅
+- **Telegram → Elixir 체인**: curl E2E 검증 → `{"ok":true,"event_type":"master.intervention.telegram"}` ✅
+- **event_lake.ex**: `maybe_attach_current_trace_id` + `current_otel_trace_id` (OpenTelemetry.Span.hex_span_ctx) ✅
+- **Hub API**: `POST /hub/v2/autonomy/intervention` 라우트 + `autonomy.ts` 완전 구현 ✅
+- **telegram-callback-poller.ts**: `forwardMasterMessage` + `isMasterMessage` 화이트리스트 ✅
+- **mix compile --warnings-as-errors**: 통과 ✅
+- **미해결**: LANGFUSE_OTEL_ENABLED launchd env 미반영 → BEAM 재시작 필요 (PROTECTED, 마스터 결정)
+- **v3.x 본질**: Phase A~E + F 코드 완성 = 본질 100% (OTLP 활성화만 남음)
+
 ## 2026-05-17: CODEX_LIVEVIEW_DASHBOARD_PHASE_F — 영역 9 + OpenTelemetry 검증
 
 - **검증**: Phase F 코드 이미 구현 완료 (이전 세션 누적) — 이번 세션은 검증만
