@@ -4,6 +4,15 @@
 > 상세 내용: `reservation-dev-summary.md` / `reservation-handoff.md`
 > 최초 작성: 2026-02-27
 
+## 2026-05-17: CODEX_STAGE1_P1_REFINED_SKILLS_REVIEW — Stage 1 P1 완료
+
+- **신규 4개 스킬**: systematic-debugging / verification / mcp-builder / brainstorming
+- **보강 2개**: plan(Socratic+설계분할+brainstorming 연계) / verification(Goal-Driven 5/5 분리)
+- **MCP**: Context7 + GitHub (--read-only) 설정 완료
+- **Hook 활성화**: 기존 .ts 20개 중 핵심 4개 CLI 생성 + sessionstart/posttooluse/stop 통합
+- **검증**: 전체 .ts 문법 OK, 3개 hook 정상 작동 확인
+- **태그**: `stage1-p1-refined-complete-20260517`
+
 ## 2026-05-17: CODEX_BLOG_V3_UNIFIED_MASTER Week 3+4 — I/J영역 완료
 
 - **Week 3 I영역 5/5** (코드 변경 없음, 검증만):
