@@ -75,6 +75,7 @@ defmodule TeamJay.MixProject do
       # 보강 의존성
       {:opentelemetry, "~> 1.7"},
       {:opentelemetry_exporter, "~> 1.7"},
+      {:opentelemetry_ecto, "~> 1.2"},
       {:pgvector, "~> 0.3"},
 
       # Phase 1 명시적 추가 (transitive → explicit)

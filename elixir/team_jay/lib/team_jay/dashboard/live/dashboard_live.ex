@@ -245,24 +245,38 @@ defmodule TeamJay.Dashboard.Live.DashboardLive do
     {:noreply, refresh_project_visibility(socket)}
   end
 
-  # Phase F: Langfuse API 응답 수신
+  # Phase F: Langfuse API 비동기 조회 시작 (UI 블로킹 방지)
   def handle_info({:fetch_trace, trace_id}, socket) do
-    result = TeamJay.Dashboard.LangfuseClient.get_trace(trace_id)
+    parent = self()
 
-    socket =
-      case result do
-        {:ok, trace} ->
-          assign(socket, trace_detail: trace, trace_loading: false)
-
-        {:error, :not_found} ->
-          assign(socket, trace_detail: :not_found, trace_loading: false)
-
-        {:error, reason} ->
-          Logger.warning("[DashboardLive] Langfuse API 오류: #{inspect(reason)}")
-          assign(socket, trace_detail: :error, trace_loading: false)
-      end
+    Task.start(fn ->
+      result = TeamJay.Dashboard.LangfuseClient.get_trace(trace_id)
+      send(parent, {:langfuse_trace_loaded, trace_id, result})
+    end)
 
     {:noreply, socket}
+  end
+
+  # Phase F: Langfuse API 결과 수신 (race condition 방어)
+  def handle_info({:langfuse_trace_loaded, trace_id, result}, socket) do
+    if socket.assigns.selected_trace_id == trace_id do
+      socket =
+        case result do
+          {:ok, trace} ->
+            assign(socket, trace_detail: trace, trace_loading: false)
+
+          {:error, :not_found} ->
+            assign(socket, trace_detail: :not_found, trace_loading: false)
+
+          {:error, reason} ->
+            Logger.warning("[DashboardLive] Langfuse API 오류: #{inspect(reason)}")
+            assign(socket, trace_detail: :error, trace_loading: false)
+        end
+
+      {:noreply, socket}
+    else
+      {:noreply, socket}
+    end
   end
 
   def handle_info(_msg, socket), do: {:noreply, socket}

@@ -6,6 +6,8 @@ defmodule TeamJay.Application do
   def start(_type, _args) do
     Logger.info("🚀 TeamJay Elixir Phase 4 시작! (Jay 성장 오케스트레이터)")
 
+    setup_opentelemetry()
+
     children =
       base_children() ++
         if(enable_diagnostics?(), do: [Jay.Core.Diagnostics], else: []) ++
@@ -15,6 +17,20 @@ defmodule TeamJay.Application do
     result = Supervisor.start_link(children, opts)
     log_otel_status()
     result
+  end
+
+  # Phase F: Ecto 쿼리 자동 trace (OpenTelemetry → Langfuse OTLP)
+  defp setup_opentelemetry do
+    langfuse_cfg = Application.get_env(:team_jay, :langfuse, [])
+
+    if Keyword.get(langfuse_cfg, :enabled, false) do
+      try do
+        OpentelemetryEcto.setup([:jay, :core, :repo])
+        Logger.info("[OpenTelemetry] Ecto trace 활성화 → Langfuse OTLP")
+      rescue
+        e -> Logger.warning("[OpenTelemetry] Ecto setup 실패: #{inspect(e)}")
+      end
+    end
   end
 
   defp log_otel_status do
