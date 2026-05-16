@@ -1,15 +1,15 @@
 {
-  "generated_at": "2026-05-13T12:59:11.870Z",
+  "generated_at": "2026-05-16T11:24:59.321Z",
   "scan_patterns": [
     "hub-alarm-client",
     "openclaw-client",
     "HUB_ALARM_",
     "OPENCLAW_"
   ],
-  "total_matches": 325,
-  "unique_files": 157,
+  "total_matches": 327,
+  "unique_files": 159,
   "categories": {
-    "hub_alarm_native": 312,
+    "hub_alarm_native": 314,
     "retired_gateway_guard": 13,
     "legacy_gateway_compat": 0
   },
@@ -133,7 +133,7 @@
     "bots/blog/lib/blo.ts": [
       {
         "file": "bots/blog/lib/blo.ts",
-        "line": 99,
+        "line": 103,
         "category": "hub_alarm_native",
         "match": "const { postAlarm }                                 = require('../../../packages/core/lib/hub-alarm-client');"
       }
@@ -142,6 +142,14 @@
       {
         "file": "bots/blog/lib/commenter.ts",
         "line": 13,
+        "category": "hub_alarm_native",
+        "match": "const { postAlarm } = require('../../../packages/core/lib/hub-alarm-client');"
+      }
+    ],
+    "bots/blog/lib/crank-score-tracker.ts": [
+      {
+        "file": "bots/blog/lib/crank-score-tracker.ts",
+        "line": 18,
         "category": "hub_alarm_native",
         "match": "const { postAlarm } = require('../../../packages/core/lib/hub-alarm-client');"
       }
@@ -206,6 +214,14 @@
       {
         "file": "bots/blog/scripts/compute-attribution.ts",
         "line": 13,
+        "category": "hub_alarm_native",
+        "match": "const { postAlarm } = require('../../../packages/core/lib/hub-alarm-client');"
+      }
+    ],
+    "bots/blog/scripts/run-crank-tracker.ts": [
+      {
+        "file": "bots/blog/scripts/run-crank-tracker.ts",
+        "line": 16,
         "category": "hub_alarm_native",
         "match": "const { postAlarm } = require('../../../packages/core/lib/hub-alarm-client');"
       }

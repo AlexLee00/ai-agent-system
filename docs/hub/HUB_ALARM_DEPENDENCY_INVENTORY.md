@@ -2,10 +2,10 @@
 
 This inventory tracks the Hub alarm migration surface. `hub_alarm_native` entries are the desired path; `retired_gateway_guard` entries are regression guards; `legacy_gateway_compat` entries are remaining migration targets and must stay at 0.
 
-- generated_at: 2026-05-13T12:59:11.870Z
-- total_matches: 325
-- unique_files: 157
-- hub_alarm_native: 312
+- generated_at: 2026-05-16T11:24:59.321Z
+- total_matches: 327
+- unique_files: 159
+- hub_alarm_native: 314
 - retired_gateway_guard: 13
 - legacy_gateway_compat: 0
 
@@ -56,10 +56,13 @@ This inventory tracks the Hub alarm migration surface. `hub_alarm_native` entrie
 - L11 [hub_alarm_native]: `const { postAlarm } = require('../../../packages/core/lib/hub-alarm-client');`
 
 ### `bots/blog/lib/blo.ts`
-- L99 [hub_alarm_native]: `const { postAlarm }                                 = require('../../../packages/core/lib/hub-alarm-client');`
+- L103 [hub_alarm_native]: `const { postAlarm }                                 = require('../../../packages/core/lib/hub-alarm-client');`
 
 ### `bots/blog/lib/commenter.ts`
 - L13 [hub_alarm_native]: `const { postAlarm } = require('../../../packages/core/lib/hub-alarm-client');`
+
+### `bots/blog/lib/crank-score-tracker.ts`
+- L18 [hub_alarm_native]: `const { postAlarm } = require('../../../packages/core/lib/hub-alarm-client');`
 
 ### `bots/blog/lib/curriculum-planner.ts`
 - L20 [hub_alarm_native]: `const { postAlarm } = require('../../../packages/core/lib/hub-alarm-client');`
@@ -84,6 +87,9 @@ This inventory tracks the Hub alarm migration surface. `hub_alarm_native` entrie
 
 ### `bots/blog/scripts/compute-attribution.ts`
 - L13 [hub_alarm_native]: `const { postAlarm } = require('../../../packages/core/lib/hub-alarm-client');`
+
+### `bots/blog/scripts/run-crank-tracker.ts`
+- L16 [hub_alarm_native]: `const { postAlarm } = require('../../../packages/core/lib/hub-alarm-client');`
 
 ### `bots/claude/__tests__/auto-dev-pipeline.test.ts`
 - L78 [hub_alarm_native]: `'../../../packages/core/lib/hub-alarm-client': {`
