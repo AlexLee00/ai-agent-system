@@ -1,4 +1,40 @@
-# 세션 인수인계 — 2026-05-16 (CODEX_BLOG_V3_UNIFIED_MASTER Week 2 — H영역 검증 완료)
+# 세션 인수인계 — 2026-05-17 (CODEX_LUNA_PHASE1_UNIFIED_IMPLEMENTATION — Goal-Driven 5/5 완료)
+
+## 완료 요약 ✅ (Luna Phase 1 Codex P0 — 4 Task 구현 + 5/5 검증)
+
+### Goal-Driven 5/5 검증 결과
+
+- **G1** community_evidence_events source_type='community': **203건 (24h), 3,111건 전체** ✅
+- **G2** candidate_backtest_status fresh=true: **174건** (pass 70 + would_block 104) ✅
+- **G3** predictive_validation_log 최근 24h:
+  - block_backtest_gate: 1,208건 / fire: 681건 / block_stale_backtest: 105건 → Gate 동작 ✅
+- **G4** launchd 2 신규: ai.luna.community-evidence-refresh + ai.luna.candidate-backtest-refresh 로드 ✅
+- **G5** Shadow Mode: LUNA_COMMUNITY_EVIDENCE_SHADOW_MODE=true, LUNA_CANDIDATE_BACKTEST_SHADOW_MODE=true ✅
+
+### 구현 파일 (이전 세션 5/14~15에 완성)
+
+- `bots/investment/scripts/runtime-luna-community-evidence-refresh.ts` — Reddit/RSS/ApeWisdom → external_evidence_events
+- `bots/investment/scripts/runtime-luna-candidate-backtest-refresh.ts` — active candidate 전체 VectorBT 백테스트
+- `bots/investment/shared/predictive-validation.ts` — hardeningEnabled + checkHardening 강화 완료
+- `bots/investment/launchd/ai.luna.community-evidence-refresh.plist` — 매일 06:00 KST
+- `bots/investment/launchd/ai.luna.candidate-backtest-refresh.plist` — 매일 12:00 KST
+- `bots/investment/migrations/20260514_luna_phase1_tables.sql` — candidate_backtest_status + predictive_validation_log
+
+### 마스터가 OPS에서 확인할 것
+
+1. **Shadow → Live 전환 판단** (1주 후): block_backtest_gate 비율 / fire 비율 / win_rate 추이 확인
+2. **Promotion Gate 조건**: coverage 0.75+ / sharpe >= 1.0 / drawdown <= 20% / 3 연속 PASS 달성 시
+3. **candidate_backtest_status would_block 비율**: unhealthy 후보 정리 또는 재파라미터화 고려
+
+### 다음 세션: Phase 2 (FinRL-X 4 Layer)
+
+- Phase 1 Shadow 1주 누적 후 마스터 승인 → Phase 2 시작
+- Phase 2: Data Layer → Strategy Layer → Backtesting Layer → Broker Execution
+- 참고: docs/strategy/LUNA_AUTOMATION_REDESIGN_STRATEGY_2026-05-13.md
+
+---
+
+# 이전 세션 인수인계 — 2026-05-16 (CODEX_BLOG_V3_UNIFIED_MASTER Week 2 — H영역 검증 완료)
 
 ## 완료 요약 ✅ (Blog V3 Week 2 — H영역 Goal-Driven 5/5)
 

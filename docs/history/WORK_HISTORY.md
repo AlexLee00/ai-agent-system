@@ -4,6 +4,16 @@
 > 상세 내용: `reservation-dev-summary.md` / `reservation-handoff.md`
 > 최초 작성: 2026-02-27
 
+## 2026-05-17: CODEX_LUNA_PHASE1_UNIFIED_IMPLEMENTATION — Goal-Driven 5/5 검증 완료
+
+- **검증 목표**: Luna Phase 1 Codex P0 (4 Task) 구현 상태 확인 + Goal-Driven 5/5
+- **G1** external_evidence_events community 24h: **203건** (전체 3,111건) ✅
+- **G2** candidate_backtest_status fresh=true: **174건** (pass 70 / would_block 104) ✅
+- **G3** predictive_validation_log gate 동작: block_backtest_gate 1,208건 ✅
+- **G4** launchd 2 신규: community-evidence-refresh(06:00) + candidate-backtest-refresh(12:00) ✅
+- **G5** Shadow Mode 활성: 실매매 영향 0. 1주 Shadow 누적 중 ✅
+- **구현**: 이전 세션(5/14~15)에 완성. 오늘은 검증 + 보고서 업데이트
+
 ## 2026-05-16: CODEX_BLOG_V3_UNIFIED_MASTER Week 2 — H영역 Goal-Driven 5/5 검증 완료
 
 - **검증 목표**: H1-H5 모든 H영역 컴포넌트 실제 코드 검증 + dry-run 실행

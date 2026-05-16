@@ -1,11 +1,12 @@
 {
   "ok": true,
-  "generatedAt": "2026-05-14T11:25:12.046Z",
+  "generatedAt": "2026-05-17T00:00:00.000Z",
   "phase": "luna-phase1-codex-p0",
+  "verifiedAt": "2026-05-17",
   "tags": {
     "preRollback": "pre-luna-phase1-codex-p0-20260514-200517",
     "latestComplete": "luna-phase1-codex-p0-complete-20260514-2021",
-    "completeCurrentHead": null
+    "completeCurrentHead": "825884e0"
   },
   "goals": {
     "communityEvidencePositive": true,
@@ -14,66 +15,63 @@
     "launchdLabelsVisible": true,
     "shadowLiveImpactZero": true
   },
-  "db": {
-    "community24h": {
-      "count": 2
+  "goalDriven5of5": {
+    "g1_community_evidence_24h": {
+      "pass": true,
+      "count": 203,
+      "total": 3111,
+      "expected": "> 0"
     },
-    "candidateBacktestStatus": {
-      "total": 2,
-      "fresh": 2,
-      "healthy": 1,
-      "would_block": 1,
-      "newest_updated_at": "2026-05-14T11:16:10.682Z"
-    },
-    "predictiveAudit24h": [
-      {
-        "decision": "hold",
-        "count": 75
-      },
-      {
-        "decision": "discard",
-        "count": 52
-      },
-      {
-        "decision": "fire",
-        "count": 50
-      },
-      {
-        "decision": "block_backtest_gate",
-        "count": 5
-      },
-      {
-        "decision": "would_block_backtest_gate",
-        "count": 5
-      },
-      {
-        "decision": "pass_backtest",
-        "count": 1
-      },
-      {
-        "decision": "would_block_backtest",
-        "count": 1
+    "g2_fresh_backtest": {
+      "pass": true,
+      "fresh_count": 174,
+      "breakdown": {
+        "pass": 70,
+        "would_block_unhealthy": 85,
+        "would_block_no_trades": 15,
+        "would_block_no_data": 4,
+        "stale_no_data": 8
       }
-    ]
-  },
-  "launchd": [
-    {
-      "label": "ai.luna.community-evidence-refresh",
-      "visible": true,
-      "pid": null,
-      "status": 0
     },
-    {
-      "label": "ai.luna.candidate-backtest-refresh",
-      "visible": true,
-      "pid": null,
-      "status": 0
+    "g3_predictive_gate_24h": {
+      "pass": true,
+      "decisions": {
+        "block_backtest_gate": 1208,
+        "fire": 681,
+        "block_stale_backtest": 105,
+        "would_block_backtest": 45,
+        "hold": 10,
+        "pass_backtest": 16,
+        "would_block_backtest_gate": 4
+      },
+      "note": "Gate 동작 확인. block_backtest_gate 1208건 = Shadow Gate 정상 기록 중"
+    },
+    "g4_launchd_2_services": {
+      "pass": true,
+      "services": [
+        { "label": "ai.luna.community-evidence-refresh", "pid": null, "status": 0 },
+        { "label": "ai.luna.candidate-backtest-refresh", "pid": null, "status": 0 }
+      ]
+    },
+    "g5_shadow_mode_active": {
+      "pass": true,
+      "communityEvidenceShadow": "LUNA_COMMUNITY_EVIDENCE_SHADOW_MODE=true",
+      "backtestShadow": "LUNA_CANDIDATE_BACKTEST_SHADOW_MODE=true",
+      "note": "실매매 영향 0. 1주 Shadow 누적 후 Promotion Gate 평가 예정"
     }
-  ],
+  },
+  "files": {
+    "task1_community_refresh": "bots/investment/scripts/runtime-luna-community-evidence-refresh.ts",
+    "task2_backtest_refresh": "bots/investment/scripts/runtime-luna-candidate-backtest-refresh.ts",
+    "task3_predictive_validation": "bots/investment/shared/predictive-validation.ts",
+    "task4_launchd_community": "bots/investment/launchd/ai.luna.community-evidence-refresh.plist",
+    "task4_launchd_backtest": "bots/investment/launchd/ai.luna.candidate-backtest-refresh.plist",
+    "migration": "bots/investment/migrations/20260514_luna_phase1_tables.sql"
+  },
   "safety": {
     "protectedRestartedByThisRuntime": false,
     "destructiveSqlUsed": false,
     "secretModified": false,
-    "maxTradeUsdt": "50"
+    "shadowModeActive": true
   }
 }
