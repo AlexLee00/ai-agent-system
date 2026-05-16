@@ -4,6 +4,17 @@
 > 상세 내용: `reservation-dev-summary.md` / `reservation-handoff.md`
 > 최초 작성: 2026-02-27
 
+## 2026-05-17: CODEX_LIVEVIEW_DASHBOARD_PHASE_F — 영역 9 + OpenTelemetry 검증
+
+- **검증**: Phase F 코드 이미 구현 완료 (이전 세션 누적) — 이번 세션은 검증만
+- **Zone 9** `trace_detail_board/1`: http://localhost:7787 렌더링 ✅
+- **Zone 4 → Zone 9** `phx-click="show_trace"` 흐름: 코드 완전 구현 ✅
+- **LangfuseClient** `get_trace/1` + **application.ex** `setup_opentelemetry` ✅
+- **`mix compile --warnings-as-errors`**: 통과 ✅
+- **미해결**: LANGFUSE_OTEL_ENABLED launchd env 미반영 → 마스터 plist reload 필요
+- **v3.3 진행률**: Phase F 완료 → 약 50% (Phase G 영역 10/11 다음)
+- **태그**: `phase-f-verified-20260517`
+
 ## 2026-05-17: CODEX_STAGE1_P1_REFINED_SKILLS_REVIEW — Stage 1 P1 완료
 
 - **신규 4개 스킬**: systematic-debugging / verification / mcp-builder / brainstorming
