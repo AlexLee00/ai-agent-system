@@ -57,6 +57,15 @@
             "command": "./.claude/hooks/scripts/posttooluse-verify.sh"
           }
         ]
+      },
+      {
+        "matcher": "Write|Edit|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "./.claude/hooks/scripts/posttooluse-security-scan.sh"
+          }
+        ]
       }
     ],
     "SessionStart": [

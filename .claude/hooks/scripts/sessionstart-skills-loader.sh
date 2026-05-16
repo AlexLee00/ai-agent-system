@@ -38,4 +38,10 @@ if [[ -x "$TSX" && -f "$ANALYZER_CLI" ]]; then
   "$TSX" "$ANALYZER_CLI" "24 hours ago" 2>/dev/null | sed 's/^/[SessionStart]/' >&2 || true
 fi
 
+# team-orchestrator-cli.ts 실행 (팀 현황 리포트)
+ORCHESTRATOR_CLI="$REPO_ROOT/packages/core/lib/skills/bin/team-orchestrator-cli.ts"
+if [[ -f "$ORCHESTRATOR_CLI" && (-x "$TSX" || -f "$TSX") ]]; then
+  "$TSX" "$ORCHESTRATOR_CLI" 2>/dev/null | sed 's/^/[SessionStart]/' >&2 || true
+fi
+
 exit 0
