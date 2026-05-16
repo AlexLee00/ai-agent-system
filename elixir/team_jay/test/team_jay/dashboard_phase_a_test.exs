@@ -50,4 +50,27 @@ defmodule TeamJay.DashboardPhaseATest do
     assert Map.has_key?(snapshot.tasks_by_stage, "spec")
     assert Map.has_key?(snapshot.tasks_by_stage, "done")
   end
+
+  test "Visibility v3.3 Cycle #52 support modules are available" do
+    assert Code.ensure_loaded?(TeamJay.Dashboard.ProjectRepo)
+    assert Code.ensure_loaded?(TeamJay.Dashboard.SessionTracker)
+    assert Code.ensure_loaded?(TeamJay.Dashboard.MilestoneSentry)
+    assert Code.ensure_loaded?(TeamJay.Dashboard.ProjectEventIngestor)
+    assert function_exported?(TeamJay.Dashboard.ProjectRepo, :ingest_event, 1)
+    assert function_exported?(TeamJay.Dashboard.ProjectRepo, :reconcile_milestones!, 0)
+    assert function_exported?(TeamJay.Dashboard.MilestoneSentry, :reconcile_now, 0)
+  end
+
+  test "Visibility v3.3 session tracker detects touched-file conflicts" do
+    sessions = [
+      %{files_touched: ["a.ex", "b.ex"]},
+      %{files_touched: ["b.ex", "c.ex"]},
+      %{files_touched: ["d.ex"]}
+    ]
+
+    assert TeamJay.Dashboard.SessionTracker.count_conflicts(sessions) == 1
+
+    assert [%{file: "b.ex", active_sessions: 2}] =
+             TeamJay.Dashboard.SessionTracker.conflict_files(sessions)
+  end
 end

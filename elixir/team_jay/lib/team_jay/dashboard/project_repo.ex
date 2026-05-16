@@ -14,7 +14,10 @@ defmodule TeamJay.Dashboard.ProjectRepo do
   def snapshot(opts \\ []), do: ProjectVisibility.snapshot(opts)
   def update_task_stage(task_id, stage), do: ProjectVisibility.update_task_stage(task_id, stage)
   def ingest_event(event), do: ProjectVisibility.ingest_event(event)
-  def ingest_recent_event_lake_tasks!(opts \\ []), do: ProjectVisibility.ingest_recent_event_lake_tasks!(opts)
+
+  def ingest_recent_event_lake_tasks!(opts \\ []),
+    do: ProjectVisibility.ingest_recent_event_lake_tasks!(opts)
+
   def ingest_task!(attrs), do: ProjectVisibility.ingest_task!(attrs)
   def reconcile_milestones!, do: ProjectVisibility.reconcile_milestone_statuses!()
 end

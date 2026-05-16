@@ -25,9 +25,7 @@ defmodule TeamJay.Application do
     secret_key_set? = System.get_env("LANGFUSE_SECRET_KEY", "") != ""
 
     if enabled and public_key_set? and secret_key_set? do
-      Logger.info(
-        "[TeamJay] OpenTelemetry OTLP → Langfuse 활성화 (#{host}/api/public/otel)"
-      )
+      Logger.info("[TeamJay] OpenTelemetry OTLP → Langfuse 활성화 (#{host}/api/public/otel)")
     else
       Logger.info(
         "[TeamJay] OpenTelemetry 비활성 — LANGFUSE_OTEL_ENABLED=#{enabled}, " <>
@@ -119,5 +117,4 @@ defmodule TeamJay.Application do
         Node.alive?()
     end
   end
-
 end

@@ -159,7 +159,13 @@ defmodule Mix.Tasks.TeamJay.Dashboard.Phase52Check do
         }
 
       _ ->
-        %{total_events_24h: 0, traced_events_24h: 0, trace_ratio: 0.0, target_ratio: 0.5, target_met: false}
+        %{
+          total_events_24h: 0,
+          traced_events_24h: 0,
+          trace_ratio: 0.0,
+          target_ratio: 0.5,
+          target_met: false
+        }
     end
   rescue
     error ->

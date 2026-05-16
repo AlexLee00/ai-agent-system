@@ -90,7 +90,10 @@ defmodule Mix.Tasks.TeamJay.Dashboard.PhaseGCheck do
         String.contains?(milestone_sentry_source, "defmodule TeamJay.Dashboard.MilestoneSentry") and
           String.contains?(milestone_sentry_source, "reconcile_now"),
       project_event_ingest_boundary:
-        String.contains?(event_ingestor_source, "defmodule TeamJay.Dashboard.ProjectEventIngestor") and
+        String.contains?(
+          event_ingestor_source,
+          "defmodule TeamJay.Dashboard.ProjectEventIngestor"
+        ) and
           String.contains?(event_ingestor_source, "event_lake:new") and
           String.contains?(application_source, "TeamJay.Dashboard.ProjectEventIngestor"),
       milestone_sentry_supervised:

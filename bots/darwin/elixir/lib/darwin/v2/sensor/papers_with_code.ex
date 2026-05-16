@@ -35,12 +35,14 @@ defmodule Darwin.V2.Sensor.PapersWithCode do
   @impl GenServer
   def init(_opts) do
     table = :ets.new(:darwin_pwc_dedup, [:set, :private])
+
     if enabled?() do
       schedule_poll(0)
       Logger.info("#{@log_prefix} 시작 (Papers with Code API, 필터: stars>=#{@min_stars})")
     else
       Logger.info("#{@log_prefix} 비활성 (DARWIN_SENSOR_PWC_ENABLED != true)")
     end
+
     {:ok, %{table: table, emitted: 0}}
   end
 
@@ -73,7 +75,8 @@ defmodule Darwin.V2.Sensor.PapersWithCode do
   defp scan_page(page, _table, acc) when page > 5, do: acc
 
   defp scan_page(page, table, acc) do
-    url = "#{@api_base}/papers/?page=#{page}&items_per_page=#{@page_size}&format=json&ordering=-github_stars"
+    url =
+      "#{@api_base}/papers/?page=#{page}&items_per_page=#{@page_size}&format=json&ordering=-github_stars"
 
     case Req.get(url,
            receive_timeout: 20_000,
@@ -86,19 +89,21 @@ defmodule Darwin.V2.Sensor.PapersWithCode do
             _ -> []
           end
 
-        emitted = Enum.reduce(results, 0, fn
-          paper, nacc when is_map(paper) ->
-          paper_id = Map.get(paper, "id", "") |> to_string()
-          if already_seen?(table, paper_id) or paper_id == "" do
-            nacc
-          else
-            mark_seen(table, paper_id)
-            nacc + maybe_emit_paper(paper)
-          end
+        emitted =
+          Enum.reduce(results, 0, fn
+            paper, nacc when is_map(paper) ->
+              paper_id = Map.get(paper, "id", "") |> to_string()
 
-          _paper, nacc ->
-            nacc
-        end)
+              if already_seen?(table, paper_id) or paper_id == "" do
+                nacc
+              else
+                mark_seen(table, paper_id)
+                nacc + maybe_emit_paper(paper)
+              end
+
+            _paper, nacc ->
+              nacc
+          end)
 
         total = Map.get(body, "count", 0)
         fetched = (page - 1) * @page_size + length(results)
@@ -129,12 +134,12 @@ defmodule Darwin.V2.Sensor.PapersWithCode do
   end
 
   defp maybe_emit_paper(paper) do
-    title      = Map.get(paper, "title", "")
-    arxiv_id   = Map.get(paper, "arxiv_id", "")
-    stars      = Map.get(paper, "github_stars", 0) || 0
-    tasks      = Map.get(paper, "tasks", []) || []
-    abstract   = Map.get(paper, "abstract", "") || ""
-    published  = Map.get(paper, "published", "") || ""
+    title = Map.get(paper, "title", "")
+    arxiv_id = Map.get(paper, "arxiv_id", "")
+    stars = Map.get(paper, "github_stars", 0) || 0
+    tasks = Map.get(paper, "tasks", []) || []
+    abstract = Map.get(paper, "abstract", "") || ""
+    published = Map.get(paper, "published", "") || ""
 
     # 필터: stars >= @min_stars OR tasks 있음 (구현된 논문)
     if stars >= @min_stars or tasks != [] do
@@ -163,6 +168,7 @@ defmodule Darwin.V2.Sensor.PapersWithCode do
           arxiv_id: arxiv_id
         }
       })
+
       1
     else
       0
@@ -176,6 +182,7 @@ defmodule Darwin.V2.Sensor.PapersWithCode do
 
   defp emit(paper) do
     topic = Darwin.V2.Topics.paper_discovered()
+
     Registry.dispatch(Jay.Core.JayBus, topic, fn entries ->
       for {pid, _} <- entries, do: send(pid, {:jay_event, topic, paper})
     end)

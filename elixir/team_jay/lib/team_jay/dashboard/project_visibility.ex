@@ -277,20 +277,23 @@ defmodule TeamJay.Dashboard.ProjectVisibility do
       {:ok, %{rows: rows}} ->
         rows
         |> Enum.map(&row_to_milestone/1)
-        |> Enum.reduce(%{checked: 0, changed: 0, achieved: 0, missed: 0, upcoming: 0}, fn milestone, acc ->
-          new_status = milestone_reconciled_status(milestone)
+        |> Enum.reduce(
+          %{checked: 0, changed: 0, achieved: 0, missed: 0, upcoming: 0},
+          fn milestone, acc ->
+            new_status = milestone_reconciled_status(milestone)
 
-          if new_status == milestone.status do
-            %{acc | checked: acc.checked + 1}
-          else
-            update_milestone_status!(milestone, new_status)
+            if new_status == milestone.status do
+              %{acc | checked: acc.checked + 1}
+            else
+              update_milestone_status!(milestone, new_status)
 
-            acc
-            |> Map.update!(:checked, &(&1 + 1))
-            |> Map.update!(:changed, &(&1 + 1))
-            |> Map.update(status_counter_key(new_status), 1, &(&1 + 1))
+              acc
+              |> Map.update!(:checked, &(&1 + 1))
+              |> Map.update!(:changed, &(&1 + 1))
+              |> Map.update(status_counter_key(new_status), 1, &(&1 + 1))
+            end
           end
-        end)
+        )
 
       {:error, reason} ->
         %{checked: 0, changed: 0, achieved: 0, missed: 0, upcoming: 0, error: inspect(reason)}
@@ -965,7 +968,8 @@ defmodule TeamJay.Dashboard.ProjectVisibility do
   end
 
   defp project_for_event(attrs) do
-    project_id = map_value(attrs, :project_id) || project_id_from_path(map_value(attrs, :source_doc, ""))
+    project_id =
+      map_value(attrs, :project_id) || project_id_from_path(map_value(attrs, :source_doc, ""))
 
     load_config_projects()
     |> Enum.find(&(&1.id == project_id))
@@ -1066,7 +1070,10 @@ defmodule TeamJay.Dashboard.ProjectVisibility do
     )
 
     updated = %{milestone | status: status}
-    topic = if(status == "achieved", do: "project.milestone.achieved", else: "project.milestone.missed")
+
+    topic =
+      if(status == "achieved", do: "project.milestone.achieved", else: "project.milestone.missed")
+
     broadcast_project_event(topic, updated)
   end
 
@@ -1137,7 +1144,9 @@ defmodule TeamJay.Dashboard.ProjectVisibility do
     end)
   end
 
-  defp map_value(map, key, default \\ nil) when is_map(map) do
+  defp map_value(map, key, default \\ nil)
+
+  defp map_value(map, key, default) when is_map(map) do
     Map.get(map, key, Map.get(map, Atom.to_string(key), default))
   end
 
@@ -1184,8 +1193,11 @@ defmodule TeamJay.Dashboard.ProjectVisibility do
 
   defp parse_date(_), do: nil
 
-  defp elapsed_seconds(started_at, nil), do: DateTime.diff(DateTime.utc_now(), started_at, :second)
-  defp elapsed_seconds(started_at, finished_at), do: DateTime.diff(finished_at, started_at, :second)
+  defp elapsed_seconds(started_at, nil),
+    do: DateTime.diff(DateTime.utc_now(), started_at, :second)
+
+  defp elapsed_seconds(started_at, finished_at),
+    do: DateTime.diff(finished_at, started_at, :second)
 
   defp overdue?(%Date{} = date), do: Date.compare(date, Date.utc_today()) == :lt
   defp overdue?(_), do: false
