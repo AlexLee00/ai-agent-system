@@ -453,8 +453,8 @@ export async function insertLunaPhase4StrategyEnhancementShadow(row = {}) {
   ]);
 }
 
-export async function loadLunaPhase4Inputs({ limit = 50, market = null } = {}) {
-  return loadLunaPhase2CandidateInputs({ limit, market });
+export async function loadLunaPhase4Inputs({ limit = 50, market = null, symbols = [] } = {}) {
+  return loadLunaPhase2CandidateInputs({ limit, market, symbols });
 }
 
 export async function loadCachedPhase4Ohlcv({ inputs = [], timeframe = '1h', limit = 80 } = {}) {

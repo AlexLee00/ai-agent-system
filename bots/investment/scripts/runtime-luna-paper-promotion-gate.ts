@@ -9,7 +9,10 @@ import {
   insertLunaPaperPromotionGateShadow,
   loadLunaPaperPromotionRows,
 } from '../shared/luna-paper-promotion-gate.ts';
-import { normalizeLunaPhase2Market } from '../shared/luna-weight-vector.ts';
+import {
+  normalizeLunaPhase2Market,
+  normalizeLunaPhase2Symbol,
+} from '../shared/luna-weight-vector.ts';
 
 function argValue(name: string, fallback = null) {
   const prefix = `--${name}=`;
@@ -19,6 +22,11 @@ function argValue(name: string, fallback = null) {
 
 function hasFlag(name: string) {
   return process.argv.includes(`--${name}`);
+}
+
+function symbolsFrom(value: any = '') {
+  const values = Array.isArray(value) ? value : String(value || '').split(',');
+  return [...new Set(values.map((symbol) => normalizeLunaPhase2Symbol(symbol)).filter(Boolean))];
 }
 
 function fixtureRows() {
@@ -59,6 +67,7 @@ export async function runLunaPaperPromotionGateShadow(options: any = {}, deps: a
   const market = requestedMarket && requestedMarket !== 'all'
     ? normalizeLunaPhase2Market(requestedMarket)
     : null;
+  const requestedSymbols = symbolsFrom(options.symbols || process.env.LUNA_PAPER_PROMOTION_SYMBOLS || '');
 
   if (apply && confirm !== 'luna-paper-promotion-gate-shadow') {
     throw new Error('runtime:luna-paper-promotion-gate apply requires --confirm=luna-paper-promotion-gate-shadow');
@@ -67,11 +76,14 @@ export async function runLunaPaperPromotionGateShadow(options: any = {}, deps: a
     throw new Error('runtime:luna-paper-promotion-gate cannot combine --apply with --dry-run');
   }
 
-  const rows = fixture
+  const rawRows = fixture
     ? fixtureRows()
     : deps.loadRows
-      ? await deps.loadRows({ hours, limit, market })
-      : await loadLunaPaperPromotionRows({ hours, limit, market });
+      ? await deps.loadRows({ hours, limit, market, symbols: requestedSymbols })
+      : await loadLunaPaperPromotionRows({ hours, limit, market, symbols: requestedSymbols });
+  const rows = requestedSymbols.length
+    ? rawRows.filter((row) => requestedSymbols.includes(normalizeLunaPhase2Symbol(row.symbol)))
+    : rawRows;
   const report = buildLunaPaperPromotionGateReport(rows, {
     minCycles: options.minCycles,
     minConsecutivePasses: options.minConsecutivePasses,
@@ -100,6 +112,7 @@ export async function runLunaPaperPromotionGateShadow(options: any = {}, deps: a
     fixture,
     writeMode: apply ? 'promotion-gate-shadow-apply' : 'plan-only',
     market: market || 'all',
+    requestedSymbols,
     hours,
     limit,
     liveMutation: false,
@@ -121,6 +134,7 @@ if (isDirectExecution(import.meta.url)) {
       hours: Number(argValue('hours', 24)),
       limit: Number(argValue('limit', 500)),
       market: argValue('market', null),
+      symbols: argValue('symbols', process.env.LUNA_PAPER_PROMOTION_SYMBOLS || ''),
       confirm: argValue('confirm', ''),
       minCycles: Number(argValue('min-cycles', process.env.LUNA_PAPER_PROMOTION_MIN_CYCLES || 3)),
       minConsecutivePasses: Number(argValue('min-consecutive-passes', process.env.LUNA_PAPER_PROMOTION_MIN_CONSECUTIVE_PASSES || 3)),

@@ -9,6 +9,7 @@ import {
   insertLunaWeightVectorShadow,
   loadLunaPhase2CandidateInputs,
   normalizeLunaPhase2Market,
+  normalizeLunaPhase2Symbol,
 } from '../shared/luna-weight-vector.ts';
 import {
   DEFAULT_LUNA_WEIGHT_POLICY,
@@ -23,6 +24,11 @@ function argValue(name: string, fallback = null) {
 
 function hasFlag(name: string) {
   return process.argv.includes(`--${name}`);
+}
+
+function symbolsFrom(value: any = '') {
+  const values = Array.isArray(value) ? value : String(value || '').split(',');
+  return [...new Set(values.map((symbol) => normalizeLunaPhase2Symbol(symbol)).filter(Boolean))];
 }
 
 function fixtureInputs() {
@@ -56,6 +62,7 @@ export async function runLunaWeightVectorShadow(options: any = {}, deps: any = {
   const market = requestedMarket && requestedMarket !== 'all'
     ? normalizeLunaPhase2Market(requestedMarket)
     : null;
+  const requestedSymbols = symbolsFrom(options.symbols || process.env.LUNA_PHASE2_WEIGHT_VECTOR_SYMBOLS || '');
   const asOf = options.asOf || new Date().toISOString();
 
   if (apply && confirm !== 'luna-weight-vector-shadow') {
@@ -106,11 +113,17 @@ export async function runLunaWeightVectorShadow(options: any = {}, deps: any = {
     autonomousWeightFeedback: adaptiveWeights,
   };
 
-  const inputs = fixture
+  const rawInputs = fixture
     ? fixtureInputs()
     : deps.loadInputs
-      ? await deps.loadInputs({ limit, market })
-      : await loadLunaPhase2CandidateInputs({ limit, market });
+      ? await deps.loadInputs({ limit, market, symbols: requestedSymbols })
+      : await loadLunaPhase2CandidateInputs({ limit, market, symbols: requestedSymbols });
+  const inputs = requestedSymbols.length
+    ? rawInputs.filter((input) => {
+      const candidate = input.candidate || input;
+      return requestedSymbols.includes(normalizeLunaPhase2Symbol(candidate.symbol || input.symbol));
+    })
+    : rawInputs;
 
   const rows = inputs.map((input) => buildLunaWeightVector({ ...input, asOf }, config));
   const summary = {
@@ -149,6 +162,7 @@ export async function runLunaWeightVectorShadow(options: any = {}, deps: any = {
     shadowMode: true,
     asOf,
     market: market || 'all',
+    requestedSymbols,
     adaptiveWeights,
     summary,
     rows,
@@ -169,6 +183,7 @@ if (isDirectExecution(import.meta.url)) {
       fixture: hasFlag('fixture'),
       limit: Number(argValue('limit', process.env.LUNA_PHASE2_WEIGHT_VECTOR_LIMIT || 50)),
       market: argValue('market', null),
+      symbols: argValue('symbols', process.env.LUNA_PHASE2_WEIGHT_VECTOR_SYMBOLS || ''),
       asOf: argValue('as-of', null),
       confirm: argValue('confirm', ''),
       staticWeights: hasFlag('static-weights'),

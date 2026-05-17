@@ -10,6 +10,7 @@ import {
   loadCurrentPositionForWeightVector,
   loadLatestLunaWeightVectors,
   normalizeLunaPhase2Market,
+  normalizeLunaPhase2Symbol,
 } from '../shared/luna-weight-vector.ts';
 import { runLunaWeightVectorShadow } from './runtime-luna-weight-vector-shadow.ts';
 
@@ -21,6 +22,11 @@ function argValue(name: string, fallback = null) {
 
 function hasFlag(name: string) {
   return process.argv.includes(`--${name}`);
+}
+
+function symbolsFrom(value: any = '') {
+  const values = Array.isArray(value) ? value : String(value || '').split(',');
+  return [...new Set(values.map((symbol) => normalizeLunaPhase2Symbol(symbol)).filter(Boolean))];
 }
 
 function normalizeWeightRow(row = {}) {
@@ -56,6 +62,7 @@ export async function runLunaPaperTradingShadow(options: any = {}, deps: any = {
   const market = requestedMarket && requestedMarket !== 'all'
     ? normalizeLunaPhase2Market(requestedMarket)
     : null;
+  const requestedSymbols = symbolsFrom(options.symbols || process.env.LUNA_PHASE2_PAPER_SYMBOLS || '');
   const equityUsdt = Math.max(1, Number(options.equityUsdt || process.env.LUNA_PHASE2_PAPER_EQUITY_USDT || 1000));
   const maxOrderUsdt = Math.max(0, Number(process.env.LUNA_MAX_TRADE_USDT || 50));
 
@@ -64,10 +71,10 @@ export async function runLunaPaperTradingShadow(options: any = {}, deps: any = {
   }
 
   let rawWeights = fixture
-    ? (await runLunaWeightVectorShadow({ json: true, fixture: true, dryRun: true, apply: false })).rows
+    ? (await runLunaWeightVectorShadow({ json: true, fixture: true, dryRun: true, apply: false, symbols: requestedSymbols.join(',') })).rows
     : deps.loadWeights
-      ? await deps.loadWeights({ limit, hours, market })
-      : await loadLatestLunaWeightVectors({ limit, hours, market });
+      ? await deps.loadWeights({ limit, hours, market, symbols: requestedSymbols })
+      : await loadLatestLunaWeightVectors({ limit, hours, market, symbols: requestedSymbols });
   if (!fixture && !apply && rawWeights.length === 0) {
     const planned = await runLunaWeightVectorShadow({
       json: true,
@@ -75,11 +82,15 @@ export async function runLunaPaperTradingShadow(options: any = {}, deps: any = {
       apply: false,
       limit,
       market,
+      symbols: requestedSymbols.join(','),
     });
     rawWeights = planned.rows || [];
   }
 
-  const weights = rawWeights.map(normalizeWeightRow);
+  const filteredRawWeights = requestedSymbols.length
+    ? rawWeights.filter((row) => requestedSymbols.includes(normalizeLunaPhase2Symbol(row.symbol)))
+    : rawWeights;
+  const weights = filteredRawWeights.map(normalizeWeightRow);
   const rows = [];
   for (const weight of weights) {
     const position = deps.loadPosition
@@ -136,6 +147,7 @@ export async function runLunaPaperTradingShadow(options: any = {}, deps: any = {
     shadowMode: true,
     paperOnly: true,
     market: market || 'all',
+    requestedSymbols,
     equityUsdt,
     maxOrderUsdt,
     summary,
@@ -158,6 +170,7 @@ if (isDirectExecution(import.meta.url)) {
       limit: Number(argValue('limit', process.env.LUNA_PHASE2_PAPER_LIMIT || 50)),
       hours: Number(argValue('hours', 24)),
       market: argValue('market', null),
+      symbols: argValue('symbols', process.env.LUNA_PHASE2_PAPER_SYMBOLS || ''),
       equityUsdt: Number(argValue('equity-usdt', process.env.LUNA_PHASE2_PAPER_EQUITY_USDT || 1000)),
       confirm: argValue('confirm', ''),
     }),

@@ -122,6 +122,13 @@ export function normalizeLunaPhase2Symbol(symbol = '') {
   return String(symbol || '').trim().toUpperCase();
 }
 
+export function normalizeLunaPhase2Symbols(symbols = []) {
+  const values = Array.isArray(symbols)
+    ? symbols
+    : String(symbols || '').split(',');
+  return [...new Set(values.map((symbol) => normalizeLunaPhase2Symbol(symbol)).filter(Boolean))];
+}
+
 export async function ensureLunaPhase2Schema() {
   await run(`
     CREATE TABLE IF NOT EXISTS luna_weight_vector_shadow (
@@ -621,15 +628,17 @@ async function loadLatestStrategyQualityMap(rows = []) {
   return new Map((strategyRows || []).map((row) => [`${normalizeLunaPhase2Symbol(row.symbol)}|${normalizeLunaPhase2Market(row.market)}`, row]));
 }
 
-export async function loadLunaPhase2CandidateInputs({ limit = 50, market = null } = {}) {
+export async function loadLunaPhase2CandidateInputs({ limit = 50, market = null, symbols = [] } = {}) {
   const params = [];
   const requestedMarket = String(market || '').trim().toLowerCase();
   const normalizedMarket = requestedMarket && requestedMarket !== 'all'
     ? normalizeLunaPhase2Market(requestedMarket)
     : null;
+  const requestedSymbols = normalizeLunaPhase2Symbols(symbols);
   const marketWhere = normalizedMarket ? `AND market = $${params.push(normalizedMarket)}` : '';
+  const symbolWhere = requestedSymbols.length ? `AND symbol = ANY($${params.push(requestedSymbols)}::text[])` : '';
   const perMarketLimit = Math.max(1, Math.ceil(Number(limit || 50) / 3));
-  const marketRankWhere = normalizedMarket
+  const marketRankWhere = normalizedMarket || requestedSymbols.length
     ? ''
     : `WHERE market_rank <= $${params.push(perMarketLimit)}`;
   params.push(limit);
@@ -676,9 +685,10 @@ export async function loadLunaPhase2CandidateInputs({ limit = 50, market = null 
     active_candidates AS (
       SELECT DISTINCT ON (symbol, market)
              symbol, market, score, source, discovered_at, expires_at, reason, raw_data
-        FROM candidate_universe
+       FROM candidate_universe
        WHERE expires_at > NOW()
          ${marketWhere}
+         ${symbolWhere}
        ORDER BY symbol, market, score DESC, discovered_at DESC
     ),
     balanced_candidates AS (
@@ -794,15 +804,17 @@ export async function insertLunaWeightVectorShadow(row = {}) {
   ]);
 }
 
-export async function loadLatestLunaWeightVectors({ limit = 50, hours = 24, market = null } = {}) {
+export async function loadLatestLunaWeightVectors({ limit = 50, hours = 24, market = null, symbols = [] } = {}) {
   const requestedMarket = String(market || '').trim().toLowerCase();
   const normalizedMarket = requestedMarket && requestedMarket !== 'all'
     ? normalizeLunaPhase2Market(requestedMarket)
     : null;
+  const requestedSymbols = normalizeLunaPhase2Symbols(symbols);
   const params = [Number(hours)];
   const marketWhere = normalizedMarket ? `AND market = $${params.push(normalizedMarket)}` : '';
+  const symbolWhere = requestedSymbols.length ? `AND symbol = ANY($${params.push(requestedSymbols)}::text[])` : '';
   const perMarketLimit = Math.max(1, Math.ceil(Number(limit || 50) / 3));
-  const marketRankWhere = normalizedMarket
+  const marketRankWhere = normalizedMarket || requestedSymbols.length
     ? ''
     : `WHERE market_rank <= $${params.push(perMarketLimit)}`;
   params.push(Number(limit));
@@ -814,6 +826,7 @@ export async function loadLatestLunaWeightVectors({ limit = 50, hours = 24, mark
        WHERE observed_at >= NOW() - ($1::int * INTERVAL '1 hour')
          AND shadow_only = true
          ${marketWhere}
+         ${symbolWhere}
        ORDER BY symbol, market, observed_at DESC
     ),
     balanced_weights AS (

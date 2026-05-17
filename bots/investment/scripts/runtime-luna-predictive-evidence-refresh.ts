@@ -6,7 +6,11 @@ import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
 import { ensureCandidateBacktestSchema } from '../shared/candidate-backtest-gate.ts';
 import { buildPredictiveValidationEvidence, logPredictiveValidation } from '../shared/predictive-validation.ts';
 import { forecastSymbol } from '../team/kairos.ts';
-import { exchangeForLunaPhase2Market, normalizeLunaPhase2Market } from '../shared/luna-weight-vector.ts';
+import {
+  exchangeForLunaPhase2Market,
+  normalizeLunaPhase2Market,
+  normalizeLunaPhase2Symbol,
+} from '../shared/luna-weight-vector.ts';
 
 const SHADOW_MODE = process.env.LUNA_PREDICTIVE_EVIDENCE_SHADOW_MODE !== 'false';
 
@@ -31,14 +35,23 @@ function normalizeMarketOption(value: any = 'all') {
   return normalizeLunaPhase2Market(raw);
 }
 
-async function getActiveCandidates({ limit = 100, market = 'all' } = {}) {
+function symbolsFrom(value: any = '') {
+  const values = Array.isArray(value) ? value : String(value || '').split(',');
+  return [...new Set(values.map((symbol) => normalizeLunaPhase2Symbol(symbol)).filter(Boolean))];
+}
+
+async function getActiveCandidates({ limit = 100, market = 'all', symbols = [] } = {}) {
   const normalizedMarket = normalizeMarketOption(market);
+  const requestedSymbols = symbolsFrom(symbols);
   const params: any[] = [];
   const marketWhere = normalizedMarket === 'all'
     ? ''
     : `AND market = $${params.push(normalizedMarket)}`;
+  const symbolWhere = requestedSymbols.length
+    ? `AND symbol = ANY($${params.push(requestedSymbols)}::text[])`
+    : '';
   const perMarketLimit = Math.max(1, Math.ceil(Number(limit || 100) / 3));
-  const marketRankWhere = normalizedMarket === 'all'
+  const marketRankWhere = normalizedMarket === 'all' && requestedSymbols.length === 0
     ? `WHERE market_rank <= $${params.push(perMarketLimit)}`
     : '';
   params.push(limit);
@@ -46,9 +59,10 @@ async function getActiveCandidates({ limit = 100, market = 'all' } = {}) {
     WITH active_candidates AS (
       SELECT DISTINCT ON (symbol, market)
              symbol, market, score, source, discovered_at, expires_at, reason, raw_data
-        FROM candidate_universe
+      FROM candidate_universe
        WHERE expires_at > NOW()
          ${marketWhere}
+         ${symbolWhere}
        ORDER BY symbol, market, score DESC, discovered_at DESC
     ),
     balanced_candidates AS (
@@ -315,13 +329,17 @@ export async function runLunaPredictiveEvidenceRefresh(options: any = {}) {
   const json = options.json === true;
   const limit = Math.max(1, Number(options.limit || process.env.LUNA_PREDICTIVE_EVIDENCE_LIMIT || 50));
   const market = normalizeMarketOption(options.market || process.env.LUNA_PREDICTIVE_EVIDENCE_MARKET || 'all');
+  const requestedSymbols = symbolsFrom(options.symbols || process.env.LUNA_PREDICTIVE_EVIDENCE_SYMBOLS || '');
   if (!dryRun) {
     await db.initSchema();
     await ensureCandidateBacktestSchema();
   }
-  const candidates = fixture ? fixtureCandidates() : await getActiveCandidates({ limit, market });
+  const candidates = fixture ? fixtureCandidates() : await getActiveCandidates({ limit, market, symbols: requestedSymbols });
+  const selectedCandidates = requestedSymbols.length
+    ? candidates.filter((candidate) => requestedSymbols.includes(normalizeLunaPhase2Symbol(candidate.symbol)))
+    : candidates;
   const results = [];
-  for (const candidate of candidates) {
+  for (const candidate of selectedCandidates) {
     results.push(await refreshPredictiveForCandidate(candidate, options));
   }
   const payload = {
@@ -333,7 +351,9 @@ export async function runLunaPredictiveEvidenceRefresh(options: any = {}) {
     fixture,
     writeMode: dryRun ? 'dry-run' : 'shadow-apply',
     market,
+    requestedSymbols,
     total: results.length,
+    candidateTotal: candidates.length,
     passed: results.filter((row) => row.decision === 'fire').length,
     blocked: results.filter((row) => row.blocked).length,
     missingPrediction: results.filter((row) => row.predictionScore <= 0).length,
@@ -356,6 +376,7 @@ if (isDirectExecution(import.meta.url)) {
       timeframe: argValue('timeframe', process.env.LUNA_PREDICTIVE_EVIDENCE_TIMEFRAME || '1h'),
       horizon: Number(argValue('horizon', process.env.LUNA_PREDICTIVE_EVIDENCE_HORIZON || 5)),
       ohlcvLimit: Number(argValue('ohlcv-limit', process.env.LUNA_PREDICTIVE_EVIDENCE_OHLCV_LIMIT || 180)),
+      symbols: argValue('symbols', process.env.LUNA_PREDICTIVE_EVIDENCE_SYMBOLS || ''),
     }),
     onSuccess: async (result) => console.log(JSON.stringify(result, null, 2)),
     errorPrefix: 'runtime-luna-predictive-evidence-refresh error:',

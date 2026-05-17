@@ -6,6 +6,7 @@ import {
   exchangeForLunaPhase2Market,
   normalizeLunaPhase2Market,
   normalizeLunaPhase2Symbol,
+  normalizeLunaPhase2Symbols,
 } from './luna-weight-vector.ts';
 
 function finiteNumber(value, fallback = 0) {
@@ -506,13 +507,15 @@ export function buildLunaPaperPromotionGateReport(rows = [], config = {}) {
   };
 }
 
-export async function loadLunaPaperPromotionRows({ hours = 24, limit = 500, market = null } = {}) {
+export async function loadLunaPaperPromotionRows({ hours = 24, limit = 500, market = null, symbols = [] } = {}) {
   const params = [Math.max(1, Number(hours)), Math.max(1, Number(limit))];
   const requestedMarket = String(market || '').trim().toLowerCase();
   const normalizedMarket = requestedMarket && requestedMarket !== 'all'
     ? normalizeLunaPhase2Market(requestedMarket)
     : null;
+  const requestedSymbols = normalizeLunaPhase2Symbols(symbols);
   const marketWhere = normalizedMarket ? `AND pts.market = $${params.push(normalizedMarket)}` : '';
+  const symbolWhere = requestedSymbols.length ? `AND pts.symbol = ANY($${params.push(requestedSymbols)}::text[])` : '';
   return query(`
     WITH latest_strategy AS (
       SELECT DISTINCT ON (symbol, market)
@@ -552,6 +555,7 @@ export async function loadLunaPaperPromotionRows({ hours = 24, limit = 500, mark
        WHERE pts.observed_at >= NOW() - ($1::int * INTERVAL '1 hour')
          AND pts.shadow_only IS TRUE
          ${marketWhere}
+         ${symbolWhere}
     )
     SELECT pr.symbol, pr.market, pr.exchange, pr.target_weight, pr.current_weight, pr.delta_weight,
            pr.paper_side, pr.paper_notional_usdt, pr.confidence, pr.status, pr.shadow_only,

@@ -69,7 +69,17 @@ export async function runLunaPromotionReadinessAssistSmoke() {
   assert.equal(plan.actionSummary.byAction.predictive_evidence_refresh, 1);
   assert.equal(plan.actionSummary.byAction.candidate_backtest_refresh, 1);
   assert.equal(plan.actionSummary.byAction.candidate_quality_governance_shadow, 1);
+  assert.deepEqual(plan.actionSummary.predictiveSymbols, ['AAA/USDT']);
+  assert.deepEqual(plan.actionSummary.strategySymbols, ['CCC/USDT']);
+  assert.deepEqual(plan.actionSummary.weightSymbols, ['AAA/USDT', 'BBB/USDT', 'CCC/USDT']);
+  assert.deepEqual(plan.actionSummary.paperTradingSymbols, ['AAA/USDT', 'BBB/USDT', 'CCC/USDT']);
+  assert.deepEqual(plan.actionSummary.promotionGateSymbols, ['AAA/USDT', 'BBB/USDT', 'CCC/USDT', 'DDD/USDT']);
   assert.equal(plan.plannedCommands.some((cmd) => cmd.includes('runtime:luna-candidate-backtest-refresh') && cmd.includes('--symbols=CCC/USDT')), true);
+  assert.equal(plan.plannedCommands.some((cmd) => cmd.includes('runtime:luna-predictive-evidence-refresh') && cmd.includes('--symbols=AAA/USDT')), true);
+  assert.equal(plan.plannedCommands.some((cmd) => cmd.includes('runtime:luna-phase4-strategy-enhancement-shadow') && cmd.includes('--symbols=CCC/USDT')), true);
+  assert.equal(plan.plannedCommands.some((cmd) => cmd.includes('runtime:luna-weight-vector-shadow') && cmd.includes('--symbols=AAA/USDT,BBB/USDT,CCC/USDT')), true);
+  assert.equal(plan.plannedCommands.some((cmd) => cmd.includes('runtime:luna-paper-trading-shadow') && cmd.includes('--symbols=AAA/USDT,BBB/USDT,CCC/USDT')), true);
+  assert.equal(plan.plannedCommands.some((cmd) => cmd.includes('runtime:luna-paper-promotion-gate') && cmd.includes('--symbols=AAA/USDT,BBB/USDT,CCC/USDT,DDD/USDT')), true);
   assert.equal(plan.plannedCommands.every((cmd) => !cmd.includes('launchctl') && !cmd.includes('live-fire') && !cmd.includes('rollback')), true);
 
   await assert.rejects(
@@ -111,31 +121,31 @@ export async function runLunaPromotionReadinessAssistSmoke() {
     maxTargets: 4,
   }, {
     runGate: async (options) => {
-      calls.push(['gate', options.apply === true ? 'apply' : 'read']);
+      calls.push(['gate', options.apply === true ? 'apply' : 'read', options.symbols || '']);
       return fixtureGateReport();
     },
     runBacktest: async (options) => {
       calls.push(['backtest', options.symbols]);
       return { ok: true, total: 1, liveMutation: false };
     },
-    runPredictive: async () => {
-      calls.push(['predictive']);
+    runPredictive: async (options) => {
+      calls.push(['predictive', options.symbols]);
       return { ok: true, total: 4, liveMutation: false };
     },
-    runStrategy: async () => {
-      calls.push(['strategy']);
+    runStrategy: async (options) => {
+      calls.push(['strategy', options.symbols]);
       return { ok: true, summary: { total: 4 }, liveMutation: false };
     },
     runGovernance: async () => {
       calls.push(['governance']);
       return { ok: true, summary: { total: 4 }, liveMutation: false };
     },
-    runWeight: async () => {
-      calls.push(['weight']);
+    runWeight: async (options) => {
+      calls.push(['weight', options.symbols]);
       return { ok: true, summary: { total: 4 }, liveMutation: false };
     },
-    runPaperTrading: async () => {
-      calls.push(['paper']);
+    runPaperTrading: async (options) => {
+      calls.push(['paper', options.symbols]);
       return { ok: true, summary: { total: 4 }, liveMutation: false };
     },
   });
@@ -144,6 +154,11 @@ export async function runLunaPromotionReadinessAssistSmoke() {
   assert.equal(applied.executed.paperPromotionGate.ok, true);
   assert.equal(calls.some((call) => call[0] === 'gate' && call[1] === 'apply'), true);
   assert.equal(calls.some((call) => call[0] === 'backtest' && call[1] === 'CCC/USDT'), true);
+  assert.equal(calls.some((call) => call[0] === 'predictive' && call[1] === 'AAA/USDT'), true);
+  assert.equal(calls.some((call) => call[0] === 'strategy' && call[1] === 'CCC/USDT'), true);
+  assert.equal(calls.some((call) => call[0] === 'weight' && call[1] === 'AAA/USDT,BBB/USDT,CCC/USDT'), true);
+  assert.equal(calls.some((call) => call[0] === 'paper' && call[1] === 'AAA/USDT,BBB/USDT,CCC/USDT'), true);
+  assert.equal(calls.some((call) => call[0] === 'gate' && call[1] === 'apply' && call[2] === 'AAA/USDT,BBB/USDT,CCC/USDT,DDD/USDT'), true);
 
   return {
     ok: true,

@@ -39,6 +39,18 @@ function unique(values = []) {
   return [...new Set((values || []).map((value) => String(value || '').trim()).filter(Boolean))];
 }
 
+function actionSymbolsForTargets(targets = [], action = '') {
+  return unique(
+    targets
+      .filter((target) => target.recommendedAssistActions.includes(action))
+      .map((target) => target.symbol),
+  );
+}
+
+function symbolsOptionArg(symbols = []) {
+  return symbols.length ? ` --symbols=${symbols.join(',')}` : '';
+}
+
 function countBy(rows = [], selector = () => 'unknown') {
   return rows.reduce((acc, row) => {
     const key = selector(row) || 'unknown';
@@ -131,36 +143,36 @@ export function buildLunaPromotionReadinessAssistPlan(gateReport = {}, options =
 
   const actions = new Set(selectedTargets.flatMap((target) => target.recommendedAssistActions));
   actions.delete('master_review_only');
-  const backtestSymbols = unique(
-    selectedTargets
-      .filter((target) => target.recommendedAssistActions.includes('candidate_backtest_refresh'))
-      .map((target) => target.symbol),
-  );
+  const backtestSymbols = actionSymbolsForTargets(selectedTargets, 'candidate_backtest_refresh');
+  const predictiveSymbols = actionSymbolsForTargets(selectedTargets, 'predictive_evidence_refresh');
+  const strategySymbols = actionSymbolsForTargets(selectedTargets, 'strategy_enhancement_shadow');
+  const weightSymbols = actionSymbolsForTargets(selectedTargets, 'weight_vector_shadow');
+  const paperTradingSymbols = actionSymbolsForTargets(selectedTargets, 'paper_trading_shadow');
+  const promotionGateSymbols = actionSymbolsForTargets(selectedTargets, 'paper_promotion_gate_shadow');
   const mArg = marketArg(options.market || 'all');
   const limitArg = ` --limit=${Math.max(1, n(options.limit || 100, 100))}`;
   const hoursArg = ` --hours=${Math.max(1, n(options.hours || 168, 168))}`;
   const plannedCommands = [];
   if (actions.has('candidate_backtest_refresh')) {
-    const symbolsArg = backtestSymbols.length ? ` --symbols=${backtestSymbols.join(',')}` : '';
-    plannedCommands.push(`npm --prefix bots/investment run -s runtime:luna-candidate-backtest-refresh -- --json --force${mArg}${limitArg}${symbolsArg}`);
+    plannedCommands.push(`npm --prefix bots/investment run -s runtime:luna-candidate-backtest-refresh -- --json --force${mArg}${limitArg}${symbolsOptionArg(backtestSymbols)}`);
   }
   if (actions.has('predictive_evidence_refresh')) {
-    plannedCommands.push(`npm --prefix bots/investment run -s runtime:luna-predictive-evidence-refresh -- --json${mArg}${limitArg}`);
+    plannedCommands.push(`npm --prefix bots/investment run -s runtime:luna-predictive-evidence-refresh -- --json${mArg}${limitArg}${symbolsOptionArg(predictiveSymbols)}`);
   }
   if (actions.has('strategy_enhancement_shadow')) {
-    plannedCommands.push(`npm --prefix bots/investment run -s runtime:luna-phase4-strategy-enhancement-shadow -- --json --apply --confirm=luna-phase4-strategy-enhancement-shadow${mArg}${limitArg}`);
+    plannedCommands.push(`npm --prefix bots/investment run -s runtime:luna-phase4-strategy-enhancement-shadow -- --json --apply --confirm=luna-phase4-strategy-enhancement-shadow${mArg}${limitArg}${symbolsOptionArg(strategySymbols)}`);
   }
   if (actions.has('candidate_quality_governance_shadow')) {
     plannedCommands.push(`npm --prefix bots/investment run -s runtime:luna-candidate-quality-governance -- --json --apply --confirm=${QUALITY_GOVERNANCE_CONFIRM}${mArg}${limitArg}`);
   }
   if (actions.has('weight_vector_shadow')) {
-    plannedCommands.push(`npm --prefix bots/investment run -s runtime:luna-weight-vector-shadow -- --json --apply --confirm=luna-weight-vector-shadow${mArg}${limitArg}`);
+    plannedCommands.push(`npm --prefix bots/investment run -s runtime:luna-weight-vector-shadow -- --json --apply --confirm=luna-weight-vector-shadow${mArg}${limitArg}${symbolsOptionArg(weightSymbols)}`);
   }
   if (actions.has('paper_trading_shadow')) {
-    plannedCommands.push(`npm --prefix bots/investment run -s runtime:luna-paper-trading-shadow -- --json --apply --confirm=luna-paper-trading-shadow${mArg}${limitArg}`);
+    plannedCommands.push(`npm --prefix bots/investment run -s runtime:luna-paper-trading-shadow -- --json --apply --confirm=luna-paper-trading-shadow${mArg}${limitArg}${symbolsOptionArg(paperTradingSymbols)}`);
   }
   if (actions.has('paper_promotion_gate_shadow')) {
-    plannedCommands.push(`npm --prefix bots/investment run -s runtime:luna-paper-promotion-gate -- --json --apply --confirm=luna-paper-promotion-gate-shadow${mArg}${hoursArg} --limit=1000`);
+    plannedCommands.push(`npm --prefix bots/investment run -s runtime:luna-paper-promotion-gate -- --json --apply --confirm=luna-paper-promotion-gate-shadow${mArg}${hoursArg} --limit=1000${symbolsOptionArg(promotionGateSymbols)}`);
   }
 
   return {
@@ -173,6 +185,11 @@ export function buildLunaPromotionReadinessAssistPlan(gateReport = {}, options =
       byBlockerClass: countBy(selectedTargets, (target) => target.promotionBlockerClass),
       byAction: countBy(selectedTargets.flatMap((target) => target.recommendedAssistActions), (action) => action),
       backtestSymbols,
+      predictiveSymbols,
+      strategySymbols,
+      weightSymbols,
+      paperTradingSymbols,
+      promotionGateSymbols,
       liveMutation: false,
     },
     plannedCommands,
@@ -234,6 +251,11 @@ export async function runLunaPromotionReadinessAssistShadow(options = {}, deps =
   };
   const actions = new Set(plan.selectedTargets.flatMap((target) => target.recommendedAssistActions));
   const backtestSymbols = plan.actionSummary.backtestSymbols || [];
+  const predictiveSymbols = plan.actionSummary.predictiveSymbols || [];
+  const strategySymbols = plan.actionSummary.strategySymbols || [];
+  const weightSymbols = plan.actionSummary.weightSymbols || [];
+  const paperTradingSymbols = plan.actionSummary.paperTradingSymbols || [];
+  const promotionGateSymbols = plan.actionSummary.promotionGateSymbols || [];
 
   if (apply && !dryRun && plan.selectedTargets.length > 0) {
     if (actions.has('candidate_backtest_refresh')) {
@@ -250,12 +272,18 @@ export async function runLunaPromotionReadinessAssistShadow(options = {}, deps =
     }
     if (actions.has('predictive_evidence_refresh')) {
       executed.predictiveRefresh = deps.runPredictive
-        ? await deps.runPredictive({ json: true, dryRun: false, market, limit })
-        : await withSuppressedStdout(json, () => runLunaPredictiveEvidenceRefresh({ json: true, dryRun: false, market, limit }));
+        ? await deps.runPredictive({ json: true, dryRun: false, market, limit, symbols: predictiveSymbols.join(',') })
+        : await withSuppressedStdout(json, () => runLunaPredictiveEvidenceRefresh({
+          json: true,
+          dryRun: false,
+          market,
+          limit,
+          symbols: predictiveSymbols.join(','),
+        }));
     }
     if (actions.has('strategy_enhancement_shadow')) {
       executed.strategyEnhancementShadow = deps.runStrategy
-        ? await deps.runStrategy({ json: true, apply: true, dryRun: false, confirm: 'luna-phase4-strategy-enhancement-shadow', market, limit })
+        ? await deps.runStrategy({ json: true, apply: true, dryRun: false, confirm: 'luna-phase4-strategy-enhancement-shadow', market, limit, symbols: strategySymbols.join(',') })
         : await withSuppressedStdout(json, () => runLunaPhase4StrategyEnhancementShadow({
           json: true,
           apply: true,
@@ -263,6 +291,7 @@ export async function runLunaPromotionReadinessAssistShadow(options = {}, deps =
           confirm: 'luna-phase4-strategy-enhancement-shadow',
           market,
           limit,
+          symbols: strategySymbols.join(','),
         }));
     }
     if (actions.has('candidate_quality_governance_shadow')) {
@@ -279,7 +308,7 @@ export async function runLunaPromotionReadinessAssistShadow(options = {}, deps =
     }
     if (actions.has('weight_vector_shadow')) {
       executed.weightVectorShadow = deps.runWeight
-        ? await deps.runWeight({ json: true, apply: true, dryRun: false, confirm: 'luna-weight-vector-shadow', market, limit })
+        ? await deps.runWeight({ json: true, apply: true, dryRun: false, confirm: 'luna-weight-vector-shadow', market, limit, symbols: weightSymbols.join(',') })
         : await withSuppressedStdout(json, () => runLunaWeightVectorShadow({
           json: true,
           apply: true,
@@ -287,11 +316,12 @@ export async function runLunaPromotionReadinessAssistShadow(options = {}, deps =
           confirm: 'luna-weight-vector-shadow',
           market,
           limit,
+          symbols: weightSymbols.join(','),
         }));
     }
     if (actions.has('paper_trading_shadow')) {
       executed.paperTradingShadow = deps.runPaperTrading
-        ? await deps.runPaperTrading({ json: true, apply: true, dryRun: false, confirm: 'luna-paper-trading-shadow', market, limit })
+        ? await deps.runPaperTrading({ json: true, apply: true, dryRun: false, confirm: 'luna-paper-trading-shadow', market, limit, symbols: paperTradingSymbols.join(',') })
         : await withSuppressedStdout(json, () => runLunaPaperTradingShadow({
           json: true,
           apply: true,
@@ -299,11 +329,12 @@ export async function runLunaPromotionReadinessAssistShadow(options = {}, deps =
           confirm: 'luna-paper-trading-shadow',
           market,
           limit,
+          symbols: paperTradingSymbols.join(','),
         }));
     }
     if (actions.has('paper_promotion_gate_shadow')) {
       executed.paperPromotionGate = deps.runGate
-        ? await deps.runGate({ json: true, fixture, apply: true, dryRun: false, confirm: 'luna-paper-promotion-gate-shadow', market, hours, limit: 1000 })
+        ? await deps.runGate({ json: true, fixture, apply: true, dryRun: false, confirm: 'luna-paper-promotion-gate-shadow', market, hours, limit: 1000, symbols: promotionGateSymbols.join(',') })
         : await withSuppressedStdout(json, () => runLunaPaperPromotionGateShadow({
           json: true,
           fixture,
@@ -313,6 +344,7 @@ export async function runLunaPromotionReadinessAssistShadow(options = {}, deps =
           market,
           hours,
           limit: 1000,
+          symbols: promotionGateSymbols.join(','),
         }));
     }
   }

@@ -414,6 +414,11 @@ defmodule TeamJay.Dashboard.Live.DashboardLive do
       <.phase_header status={@phase_status} />
       <.phase_progress status={@phase_status} />
       <.phase_meta status={@phase_status} />
+
+      <div class="border-t border-gray-700/50 pt-2 text-[10px] text-gray-500 leading-relaxed">
+        <div>전이 조건 · Phase 1 → 2: 7일 연속 무사고 / Phase 2 → 3: 30일 연속 무사고</div>
+        <div class="text-gray-600">Trigger: GrowthCycle 일일 완료 · AutonomyGovernor skill · 마스터 수동 개입</div>
+      </div>
     </div>
     """
   end
@@ -423,7 +428,8 @@ defmodule TeamJay.Dashboard.Live.DashboardLive do
   defp phase_header(assigns) do
     phase = assigns.status[:phase] || 1
     {emoji, label} = Map.get(@phase_labels, phase, {"⚪", "알 수 없음"})
-    assigns = assign(assigns, phase: phase, emoji: emoji, label: label)
+    days_since = days_since_phase_start(assigns.status[:phase_since])
+    assigns = assign(assigns, phase: phase, emoji: emoji, label: label, days_since: days_since)
 
     ~H"""
     <div class="flex items-center gap-4">
@@ -431,7 +437,7 @@ defmodule TeamJay.Dashboard.Live.DashboardLive do
       <div>
         <div class="text-2xl">{@emoji} {@label}</div>
         <div class="text-xs text-gray-400 mt-1">
-          Phase Since: {format_date(@status[:phase_since])}
+          Phase Since: {format_date(@status[:phase_since])} · {@days_since}일째
         </div>
       </div>
     </div>
@@ -2280,6 +2286,23 @@ defmodule TeamJay.Dashboard.Live.DashboardLive do
   defp format_date(%Date{} = d), do: Date.to_string(d)
   defp format_date(s) when is_binary(s), do: s
   defp format_date(_), do: "—"
+
+  # cycle #61 B+C: phase_since로부터 며칠 지났는지 계산
+  defp days_since_phase_start(nil), do: 0
+
+  defp days_since_phase_start(%Date{} = since) do
+    Date.diff(Date.utc_today(), since)
+    |> max(0)
+  end
+
+  defp days_since_phase_start(s) when is_binary(s) do
+    case Date.from_iso8601(s) do
+      {:ok, d} -> days_since_phase_start(d)
+      _ -> 0
+    end
+  end
+
+  defp days_since_phase_start(_), do: 0
 
   defp format_datetime(nil), do: "—"
 

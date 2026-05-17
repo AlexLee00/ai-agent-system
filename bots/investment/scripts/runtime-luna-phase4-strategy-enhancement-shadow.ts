@@ -11,6 +11,7 @@ import {
   loadCachedPhase4Ohlcv,
   loadLunaPhase4Inputs,
 } from '../shared/luna-phase4-live-forward.ts';
+import { normalizeLunaPhase2Symbol } from '../shared/luna-weight-vector.ts';
 
 const CONFIRM = 'luna-phase4-strategy-enhancement-shadow';
 
@@ -22,6 +23,11 @@ function argValue(name, fallback = null) {
 
 function hasFlag(name) {
   return process.argv.includes(`--${name}`);
+}
+
+function symbolsFrom(value = '') {
+  const values = Array.isArray(value) ? value : String(value || '').split(',');
+  return [...new Set(values.map((symbol) => normalizeLunaPhase2Symbol(symbol)).filter(Boolean))];
 }
 
 function fixtureOhlcv(inputs) {
@@ -40,6 +46,7 @@ export async function runLunaPhase4StrategyEnhancementShadow(options = {}, deps 
   const market = options.market || null;
   const limit = Math.max(1, Number(options.limit || process.env.LUNA_PHASE4_STRATEGY_LIMIT || 50));
   const timeframe = String(options.timeframe || process.env.LUNA_PHASE4_OHLCV_TIMEFRAME || '1h');
+  const requestedSymbols = symbolsFrom(options.symbols || process.env.LUNA_PHASE4_STRATEGY_SYMBOLS || '');
 
   if (apply && options.dryRun === true) {
     throw new Error('runtime:luna-phase4-strategy-enhancement-shadow cannot combine --apply with --dry-run');
@@ -48,11 +55,17 @@ export async function runLunaPhase4StrategyEnhancementShadow(options = {}, deps 
     throw new Error(`runtime:luna-phase4-strategy-enhancement-shadow apply requires --confirm=${CONFIRM}`);
   }
 
-  const inputs = fixture
+  const rawInputs = fixture
     ? fixturePhase4Inputs()
     : deps.loadInputs
-      ? await deps.loadInputs({ limit, market })
-      : await loadLunaPhase4Inputs({ limit, market });
+      ? await deps.loadInputs({ limit, market, symbols: requestedSymbols })
+      : await loadLunaPhase4Inputs({ limit, market, symbols: requestedSymbols });
+  const inputs = requestedSymbols.length
+    ? rawInputs.filter((input) => {
+      const candidate = input.candidate || input;
+      return requestedSymbols.includes(normalizeLunaPhase2Symbol(candidate.symbol || input.symbol));
+    })
+    : rawInputs;
   const ohlcvByKey = fixture
     ? fixtureOhlcv(inputs)
     : deps.loadOhlcv
@@ -94,6 +107,7 @@ export async function runLunaPhase4StrategyEnhancementShadow(options = {}, deps 
     shadowMode: true,
     confirmToken: CONFIRM,
     market: market || 'all',
+    requestedSymbols,
     timeframe,
     summary,
     rows,
@@ -114,6 +128,7 @@ if (isDirectExecution(import.meta.url)) {
       limit: Number(argValue('limit', process.env.LUNA_PHASE4_STRATEGY_LIMIT || 50)),
       market: argValue('market', null),
       timeframe: argValue('timeframe', process.env.LUNA_PHASE4_OHLCV_TIMEFRAME || '1h'),
+      symbols: argValue('symbols', process.env.LUNA_PHASE4_STRATEGY_SYMBOLS || ''),
       confirm: argValue('confirm', ''),
     }),
     onSuccess: async (result) => console.log(JSON.stringify(result, null, 2)),
