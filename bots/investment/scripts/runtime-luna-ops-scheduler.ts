@@ -260,6 +260,22 @@ export function getOpsSchedulerJobs() {
       ]),
     },
     {
+      name: 'promotion_readiness_assist_shadow',
+      category: 'promotion_shadow',
+      market: 'all',
+      cadence: { type: 'interval', seconds: 3600 },
+      timeoutMs: 180_000,
+      ...nodeScript('runtime-luna-promotion-readiness-assist-shadow.ts', [
+        '--apply',
+        '--confirm=luna-promotion-readiness-assist-shadow',
+        '--market=all',
+        '--hours=168',
+        '--limit=100',
+        '--max-targets=8',
+        '--json',
+      ]),
+    },
+    {
       name: 'candidate_quality_remediation_shadow_loop',
       category: 'quality_remediation_shadow',
       market: 'all',
