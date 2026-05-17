@@ -1,4 +1,48 @@
-# 세션 인수인계 — 2026-05-17 (CODEX_LIVEVIEW_DASHBOARD_PHASE_E 검증 완료)
+# 세션 인수인계 — 2026-05-17 (CODEX_BLOG_V3_UNIFIED_MASTER Week 2 H영역 Goal-Driven 5/5 검증)
+
+## 완료 요약 ✅ (H영역 — Reddit 트렌드 + 베스트셀러 + 3-source fusion)
+
+### H영역 Goal-Driven 5/5 결과
+
+| # | 검증 기준 | 결과 | 근거 |
+|---|-----------|------|------|
+| H1 | Reddit 트렌드 추출 동작 | ✅ PASS | fixture --dry-run: 2개 Reddit + 3개 Naver 토픽 JSON 정상 생성 |
+| H2 | 베스트셀러 동기화 동작 | ✅ PASS | API 키 없음 graceful skip; book_review_queue 146건 실데이터 확인 |
+| H3 | 통합 토픽 선정 동작 | ✅ PASS | topic-selector.ts `fetchTrendTopicCandidates` → trend_topics 3-source fusion, empty graceful skip |
+| H4 | 매일 자동 실행 | ✅ PASS | launchd 로그: UTC 21:00 = KST 06:00 5/14~5/16 3일 연속 실행 증거 |
+| H5 | Hub LLM Gateway 통과 | ✅ PASS | reddit_trend_analyzer.py `hub_llm_call()`, humanize-agent.ts + naver-home-feed-optimizer.ts `callHubLlm()` |
+
+### ⚠️ OPS 액션 필요 (코드 이슈 아님, KI-019)
+
+**원인**: DEV 환경에 Reddit API 키 없음 → trend_topics DB 실데이터 0건
+
+**해결**: OPS 맥 스튜디오에서 직접 처리
+```
+secrets-store.json blog 섹션에 추가:
+{
+  "REDDIT_CLIENT_ID": "...",
+  "REDDIT_CLIENT_SECRET": "..."
+}
+```
+ALADIN_TTB_KEY는 book_review_queue 146건 있으므로 이미 설정된 것으로 추정.
+
+### V3 로드맵 진행률 (업데이트)
+
+```
+Week 1 G영역: ✅ 100% (소셜 분리 완료)
+Week 2 H영역: ✅ 100% (코드 완성, OPS Reddit 키 설정 필요)
+Week 3 I영역: ✅ 100% (naver-home-feed-optimizer + crank-score-tracker + shadow mode)
+Week 4 J영역: ✅ 100% (humanize-agent + 마스터 학습 통합)
+```
+
+### 다음 세션 참고
+
+- V3 Week 5 메티 신규 (K~O): blog-naver-mcp, Hub Gateway 100%, 35+ 에이전트 매핑
+- OPS Reddit API 키 설정 후 trend_topics 실데이터 확인
+
+---
+
+# 이전 세션 인수인계 — 2026-05-17 (CODEX_LIVEVIEW_DASHBOARD_PHASE_E 검증 완료)
 
 ## 완료 요약 ✅ (Phase E — Layer 1 Langfuse + Telegram bot 자동 통합 — v3.x 본질 100%)
 

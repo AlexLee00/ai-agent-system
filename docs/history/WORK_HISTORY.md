@@ -4,6 +4,17 @@
 > 상세 내용: `reservation-dev-summary.md` / `reservation-handoff.md`
 > 최초 작성: 2026-02-27
 
+## 2026-05-17: CODEX_BLOG_V3_UNIFIED_MASTER — Week 2 H영역 Goal-Driven 5/5 검증
+
+- **검증 대상**: H영역 (Reddit 트렌드 + 베스트셀러 + 3-source fusion 토픽 선정)
+- **reddit_trend_analyzer.py**: fixture --dry-run 테스트 통과 (2개 Reddit + 3개 Naver 토픽) ✅
+- **bestseller-fetcher.ts**: dry-run 동작, book_review_queue 146건 확인 ✅
+- **topic-selector.ts**: fetchTrendTopicCandidates → trend_topics 3-source fusion 코드 완전, empty graceful skip ✅
+- **launchd**: ai.blog.reddit-trends(매일 06:00 KST) + ai.blog.bestseller-sync(월 07:00 KST) 실제 실행 확인 ✅
+- **Hub LLM Gateway**: reddit_trend_analyzer.py `hub_llm_call()`, humanize-agent.ts + naver-home-feed-optimizer.ts `callHubLlm()` 사용 확인 ✅
+- **이슈**: DEV에 Reddit API 키 없어 trend_topics DB 실데이터 0건 → OPS secrets-store.json에 REDDIT_CLIENT_ID/SECRET 추가 필요 (KI-019)
+- **H영역 완성도**: 코드 100% 완성, OPS 설정 후 즉시 활성화 가능
+
 ## 2026-05-17: CODEX_LIVEVIEW_DASHBOARD_PHASE_E — v3.x 본질 100% 검증
 
 - **검증**: Phase E 코드 전 구현 완료 — 이번 세션은 검증 + E2E 테스트

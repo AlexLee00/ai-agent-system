@@ -18,6 +18,7 @@
 
 | ID | 컴포넌트 | 이슈 | 발견일 | 상태 |
 |----|----------|------|--------|------|
+| KI-019 | 블로팀 reddit-trends | OPS secrets-store.json blog 섹션에 `REDDIT_CLIENT_ID` / `REDDIT_CLIENT_SECRET` 미설정 → 매일 06:00 KST Reddit 트렌드 수집 0건. trend_topics DB 실데이터 없음. 코드 정상, 설정만 필요 | 2026-05-17 | OPS에서 secrets-store.json 업데이트 필요 (마스터 액션) |
 | KI-003 | 루나팀 | KIS PAPER 30일 검증 미완 | 2026-03-03 | 매일 로그 모니터링 |
 | KI-004 | 전체 | 맥미니 이전 전 맥북 단일 서버 리스크 | 2026-03-03 | launchd KeepAlive로 완화 |
 | KI-005 | 스카팀 kiosk-monitor | Navigation timeout (Puppeteer) 간헐적 발생 | 2026-03-11 | exit 1 → launchd 재기동으로 자동 복구 중 |
