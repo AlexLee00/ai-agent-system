@@ -24,6 +24,13 @@ const report = {
     refresh_ok: true,
     refresh_token: 'secret-refresh-token',
   },
+  gemini_oauth: {
+    healthy: true,
+    needs_refresh: true,
+    expires_in_hours: 0.4,
+    refresh_ok: false,
+    reimport_ok: false,
+  },
   gemini_cli_oauth: {
     healthy: true,
     local_credential_needs_refresh: true,
@@ -43,8 +50,9 @@ const report = {
 
 const events = buildProviderEvents(report);
 assert(events.some((event) => event.kind === 'failure' && event.provider === 'claude-code-oauth'), 'must emit failure event');
-assert(events.some((event) => event.kind === 'near_expiry' && event.provider === 'openai-oauth'), 'must emit near-expiry event');
-assert(!events.some((event) => event.kind === 'refresh_success' && event.provider === 'openai-oauth'), 'near-expiry provider should not also emit refresh success');
+assert(events.some((event) => event.kind === 'refresh_success' && event.provider === 'openai-oauth'), 'recovered near-expiry provider should emit refresh success');
+assert(!events.some((event) => event.kind === 'near_expiry' && event.provider === 'openai-oauth'), 'recovered near-expiry provider should not emit near-expiry warning');
+assert(events.some((event) => event.kind === 'near_expiry' && event.provider === 'gemini-oauth'), 'unrecovered near-expiry provider must remain visible');
 assert(events.some((event) => event.kind === 'reimport_success' && event.provider === 'gemini-cli-oauth'), 'gemini local credential stale state should emit reimport success');
 assert(!events.some((event) => event.kind === 'near_expiry' && event.provider === 'gemini-cli-oauth'), 'local credential stale state alone should not be treated as near-expiry');
 assert(!events.some((event) => event.kind === 'live_probe_success' && event.provider === 'gemini-cli-oauth'), 'live probe success should not emit by default');

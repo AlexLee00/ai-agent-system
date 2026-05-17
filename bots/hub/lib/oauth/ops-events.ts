@@ -145,20 +145,6 @@ function buildProviderEvents(report) {
       continue;
     }
 
-    if (needsRefresh) {
-      events.push({
-        kind: 'near_expiry',
-        severity: 'warn',
-        provider,
-        title: `OAuth provider near expiry: ${provider}`,
-        message: expiresInHours == null
-          ? 'OAuth token is in refresh window'
-          : `OAuth token expires in ${Math.round(expiresInHours * 100) / 100}h`,
-        metadata: status,
-      });
-      continue;
-    }
-
     if (localCredentialNeedsRefresh && reimportOk) {
       events.push({
         kind: 'reimport_success',
@@ -202,6 +188,20 @@ function buildProviderEvents(report) {
         provider,
         title: `OAuth local reimport succeeded: ${provider}`,
         message: 'OAuth local credential reimport completed through Hub monitor',
+        metadata: status,
+      });
+      continue;
+    }
+
+    if (needsRefresh) {
+      events.push({
+        kind: 'near_expiry',
+        severity: 'warn',
+        provider,
+        title: `OAuth provider near expiry: ${provider}`,
+        message: expiresInHours == null
+          ? 'OAuth token is in refresh window'
+          : `OAuth token expires in ${Math.round(expiresInHours * 100) / 100}h`,
         metadata: status,
       });
       continue;
