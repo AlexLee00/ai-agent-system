@@ -666,7 +666,7 @@ defmodule TeamJay.Dashboard.Live.DashboardLive do
                       >↗</a>
                     </span>
                   <% else %>
-                    <span class="text-gray-600">—</span>
+                    <span class="text-gray-700 text-[10px] opacity-60">—</span>
                   <% end %>
                 </td>
                 <td class="py-1 text-gray-400 whitespace-nowrap">

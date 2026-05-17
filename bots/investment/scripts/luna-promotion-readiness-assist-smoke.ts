@@ -71,12 +71,14 @@ export async function runLunaPromotionReadinessAssistSmoke() {
   assert.equal(plan.actionSummary.byAction.candidate_quality_governance_shadow, 1);
   assert.deepEqual(plan.actionSummary.predictiveSymbols, ['AAA/USDT']);
   assert.deepEqual(plan.actionSummary.strategySymbols, ['CCC/USDT']);
+  assert.deepEqual(plan.actionSummary.governanceSymbols, ['DDD/USDT']);
   assert.deepEqual(plan.actionSummary.weightSymbols, ['AAA/USDT', 'BBB/USDT', 'CCC/USDT']);
   assert.deepEqual(plan.actionSummary.paperTradingSymbols, ['AAA/USDT', 'BBB/USDT', 'CCC/USDT']);
   assert.deepEqual(plan.actionSummary.promotionGateSymbols, ['AAA/USDT', 'BBB/USDT', 'CCC/USDT', 'DDD/USDT']);
   assert.equal(plan.plannedCommands.some((cmd) => cmd.includes('runtime:luna-candidate-backtest-refresh') && cmd.includes('--symbols=CCC/USDT')), true);
   assert.equal(plan.plannedCommands.some((cmd) => cmd.includes('runtime:luna-predictive-evidence-refresh') && cmd.includes('--symbols=AAA/USDT')), true);
   assert.equal(plan.plannedCommands.some((cmd) => cmd.includes('runtime:luna-phase4-strategy-enhancement-shadow') && cmd.includes('--symbols=CCC/USDT')), true);
+  assert.equal(plan.plannedCommands.some((cmd) => cmd.includes('runtime:luna-candidate-quality-governance') && cmd.includes('--symbols=DDD/USDT')), true);
   assert.equal(plan.plannedCommands.some((cmd) => cmd.includes('runtime:luna-weight-vector-shadow') && cmd.includes('--symbols=AAA/USDT,BBB/USDT,CCC/USDT')), true);
   assert.equal(plan.plannedCommands.some((cmd) => cmd.includes('runtime:luna-paper-trading-shadow') && cmd.includes('--symbols=AAA/USDT,BBB/USDT,CCC/USDT')), true);
   assert.equal(plan.plannedCommands.some((cmd) => cmd.includes('runtime:luna-paper-promotion-gate') && cmd.includes('--symbols=AAA/USDT,BBB/USDT,CCC/USDT,DDD/USDT')), true);
@@ -136,8 +138,8 @@ export async function runLunaPromotionReadinessAssistSmoke() {
       calls.push(['strategy', options.symbols]);
       return { ok: true, summary: { total: 4 }, liveMutation: false };
     },
-    runGovernance: async () => {
-      calls.push(['governance']);
+    runGovernance: async (options) => {
+      calls.push(['governance', options.symbols]);
       return { ok: true, summary: { total: 4 }, liveMutation: false };
     },
     runWeight: async (options) => {
@@ -156,6 +158,7 @@ export async function runLunaPromotionReadinessAssistSmoke() {
   assert.equal(calls.some((call) => call[0] === 'backtest' && call[1] === 'CCC/USDT'), true);
   assert.equal(calls.some((call) => call[0] === 'predictive' && call[1] === 'AAA/USDT'), true);
   assert.equal(calls.some((call) => call[0] === 'strategy' && call[1] === 'CCC/USDT'), true);
+  assert.equal(calls.some((call) => call[0] === 'governance' && call[1] === 'DDD/USDT'), true);
   assert.equal(calls.some((call) => call[0] === 'weight' && call[1] === 'AAA/USDT,BBB/USDT,CCC/USDT'), true);
   assert.equal(calls.some((call) => call[0] === 'paper' && call[1] === 'AAA/USDT,BBB/USDT,CCC/USDT'), true);
   assert.equal(calls.some((call) => call[0] === 'gate' && call[1] === 'apply' && call[2] === 'AAA/USDT,BBB/USDT,CCC/USDT,DDD/USDT'), true);

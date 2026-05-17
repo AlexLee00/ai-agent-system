@@ -146,6 +146,7 @@ export function buildLunaPromotionReadinessAssistPlan(gateReport = {}, options =
   const backtestSymbols = actionSymbolsForTargets(selectedTargets, 'candidate_backtest_refresh');
   const predictiveSymbols = actionSymbolsForTargets(selectedTargets, 'predictive_evidence_refresh');
   const strategySymbols = actionSymbolsForTargets(selectedTargets, 'strategy_enhancement_shadow');
+  const governanceSymbols = actionSymbolsForTargets(selectedTargets, 'candidate_quality_governance_shadow');
   const weightSymbols = actionSymbolsForTargets(selectedTargets, 'weight_vector_shadow');
   const paperTradingSymbols = actionSymbolsForTargets(selectedTargets, 'paper_trading_shadow');
   const promotionGateSymbols = actionSymbolsForTargets(selectedTargets, 'paper_promotion_gate_shadow');
@@ -163,7 +164,7 @@ export function buildLunaPromotionReadinessAssistPlan(gateReport = {}, options =
     plannedCommands.push(`npm --prefix bots/investment run -s runtime:luna-phase4-strategy-enhancement-shadow -- --json --apply --confirm=luna-phase4-strategy-enhancement-shadow${mArg}${limitArg}${symbolsOptionArg(strategySymbols)}`);
   }
   if (actions.has('candidate_quality_governance_shadow')) {
-    plannedCommands.push(`npm --prefix bots/investment run -s runtime:luna-candidate-quality-governance -- --json --apply --confirm=${QUALITY_GOVERNANCE_CONFIRM}${mArg}${limitArg}`);
+    plannedCommands.push(`npm --prefix bots/investment run -s runtime:luna-candidate-quality-governance -- --json --apply --confirm=${QUALITY_GOVERNANCE_CONFIRM}${mArg}${limitArg}${symbolsOptionArg(governanceSymbols)}`);
   }
   if (actions.has('weight_vector_shadow')) {
     plannedCommands.push(`npm --prefix bots/investment run -s runtime:luna-weight-vector-shadow -- --json --apply --confirm=luna-weight-vector-shadow${mArg}${limitArg}${symbolsOptionArg(weightSymbols)}`);
@@ -187,6 +188,7 @@ export function buildLunaPromotionReadinessAssistPlan(gateReport = {}, options =
       backtestSymbols,
       predictiveSymbols,
       strategySymbols,
+      governanceSymbols,
       weightSymbols,
       paperTradingSymbols,
       promotionGateSymbols,
@@ -253,6 +255,7 @@ export async function runLunaPromotionReadinessAssistShadow(options = {}, deps =
   const backtestSymbols = plan.actionSummary.backtestSymbols || [];
   const predictiveSymbols = plan.actionSummary.predictiveSymbols || [];
   const strategySymbols = plan.actionSummary.strategySymbols || [];
+  const governanceSymbols = plan.actionSummary.governanceSymbols || [];
   const weightSymbols = plan.actionSummary.weightSymbols || [];
   const paperTradingSymbols = plan.actionSummary.paperTradingSymbols || [];
   const promotionGateSymbols = plan.actionSummary.promotionGateSymbols || [];
@@ -296,7 +299,7 @@ export async function runLunaPromotionReadinessAssistShadow(options = {}, deps =
     }
     if (actions.has('candidate_quality_governance_shadow')) {
       executed.candidateQualityGovernance = deps.runGovernance
-        ? await deps.runGovernance({ json: true, apply: true, dryRun: false, confirm: QUALITY_GOVERNANCE_CONFIRM, market, limit })
+        ? await deps.runGovernance({ json: true, apply: true, dryRun: false, confirm: QUALITY_GOVERNANCE_CONFIRM, market, limit, symbols: governanceSymbols.join(',') })
         : await withSuppressedStdout(json, () => runLunaCandidateQualityGovernanceShadow({
           json: true,
           apply: true,
@@ -304,6 +307,7 @@ export async function runLunaPromotionReadinessAssistShadow(options = {}, deps =
           confirm: QUALITY_GOVERNANCE_CONFIRM,
           market,
           limit,
+          symbols: governanceSymbols.join(','),
         }));
     }
     if (actions.has('weight_vector_shadow')) {

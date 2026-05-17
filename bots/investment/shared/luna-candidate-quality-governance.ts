@@ -9,7 +9,12 @@
  */
 
 import { query, run } from './db/core.ts';
-import { exchangeForLunaPhase2Market, normalizeLunaPhase2Market, normalizeLunaPhase2Symbol } from './luna-weight-vector.ts';
+import {
+  exchangeForLunaPhase2Market,
+  normalizeLunaPhase2Market,
+  normalizeLunaPhase2Symbol,
+  normalizeLunaPhase2Symbols,
+} from './luna-weight-vector.ts';
 
 function n(value: any, fallback = 0) {
   const parsed = Number(value);
@@ -161,16 +166,17 @@ function cooldownHoursFor(row: any = {}, governanceAction = '', options: any = {
 function commandFor(row: any = {}, governanceAction = '') {
   const market = normalizeLunaPhase2Market(row.market);
   const symbol = normalizeLunaPhase2Symbol(row.symbol);
+  const symbolArg = symbol ? ` --symbols=${symbol}` : '';
   if (governanceAction === 'refresh_backtest_priority') {
-    return `npm --prefix bots/investment run -s runtime:luna-candidate-backtest-refresh -- --json --force --market=${market} --symbols=${symbol}`;
+    return `npm --prefix bots/investment run -s runtime:luna-candidate-backtest-refresh -- --json --force --market=${market}${symbolArg}`;
   }
   if (governanceAction === 'strategy_repair_shadow') {
-    return `npm --prefix bots/investment run -s runtime:luna-phase4-strategy-enhancement-shadow -- --json --dry-run --market=${market}`;
+    return `npm --prefix bots/investment run -s runtime:luna-phase4-strategy-enhancement-shadow -- --json --dry-run --market=${market}${symbolArg}`;
   }
   if (governanceAction === 'candidate_cooldown_shadow') {
     return 'npm --prefix bots/investment run -s runtime:luna-discovery-refresh -- --json --force --markets=crypto,domestic,overseas --limit=30 --ttl-hours=6';
   }
-  return `npm --prefix bots/investment run -s runtime:luna-paper-promotion-gate -- --json --dry-run --market=${market}`;
+  return `npm --prefix bots/investment run -s runtime:luna-paper-promotion-gate -- --json --dry-run --market=${market}${symbolArg}`;
 }
 
 export function buildLunaCandidateQualityGovernanceRows(inputs: any[] = [], options: any = {}) {
@@ -218,13 +224,15 @@ export function buildLunaCandidateQualityGovernanceRows(inputs: any[] = [], opti
   });
 }
 
-export async function loadLunaCandidateQualityGovernanceInputs({ limit = 50, market = null } = {}) {
+export async function loadLunaCandidateQualityGovernanceInputs({ limit = 50, market = null, symbols = [] } = {}) {
   const table = await query(`SELECT to_regclass('investment.luna_candidate_bottleneck_shadow') AS table_name`).then((rows) => rows?.[0]).catch(() => null);
   if (!table?.table_name) return [];
   const params: any[] = [];
   const requestedMarket = String(market || '').trim().toLowerCase();
   const normalizedMarket = requestedMarket && requestedMarket !== 'all' ? normalizeLunaPhase2Market(requestedMarket) : null;
+  const requestedSymbols = normalizeLunaPhase2Symbols(symbols);
   const marketWhere = normalizedMarket ? `AND market = $${params.push(normalizedMarket)}` : '';
+  const symbolWhere = requestedSymbols.length ? `AND symbol = ANY($${params.push(requestedSymbols)}::text[])` : '';
   params.push(Math.max(1, Number(limit || 50)));
   const rows = await query(`
     WITH recent_counts AS (
@@ -232,20 +240,22 @@ export async function loadLunaCandidateQualityGovernanceInputs({ limit = 50, mar
              COUNT(*)::int AS recent_count_24h,
              COUNT(*) FILTER (WHERE reasons @> '["backtest_unhealthy_or_would_block"]'::jsonb)::int AS recent_unhealthy_count_24h,
              COUNT(*) FILTER (WHERE recommended_action = 'quarantine_candidate_shadow')::int AS recent_quarantine_count_24h
-        FROM luna_candidate_bottleneck_shadow
+       FROM luna_candidate_bottleneck_shadow
        WHERE observed_at >= NOW() - INTERVAL '24 hours'
          AND shadow_only IS TRUE
          ${marketWhere}
+         ${symbolWhere}
        GROUP BY symbol, market
     ),
     latest AS (
       SELECT DISTINCT ON (symbol, market)
              symbol, market, exchange, severity, recommended_action, candidate_score,
              candidate_selection_penalty, reasons, evidence, observed_at
-        FROM luna_candidate_bottleneck_shadow
+       FROM luna_candidate_bottleneck_shadow
        WHERE observed_at >= NOW() - INTERVAL '24 hours'
          AND shadow_only IS TRUE
          ${marketWhere}
+         ${symbolWhere}
        ORDER BY symbol, market, observed_at DESC
     )
     SELECT latest.*, recent_counts.recent_count_24h,

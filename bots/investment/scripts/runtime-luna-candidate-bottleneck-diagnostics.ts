@@ -10,6 +10,7 @@ import {
   insertLunaCandidateBottleneckShadow,
   loadLunaCandidateBottleneckInputs,
 } from '../shared/luna-candidate-bottleneck-diagnostics.ts';
+import { normalizeLunaPhase2Symbol } from '../shared/luna-weight-vector.ts';
 
 const CONFIRM = 'luna-candidate-bottleneck-shadow';
 
@@ -21,6 +22,11 @@ function argValue(name: string, fallback = null) {
 
 function hasFlag(name: string) {
   return process.argv.includes(`--${name}`);
+}
+
+function symbolsFrom(value: any = '') {
+  const values = Array.isArray(value) ? value : String(value || '').split(',');
+  return [...new Set(values.map((symbol) => normalizeLunaPhase2Symbol(symbol)).filter(Boolean))];
 }
 
 function countBy(rows: any[] = [], key: string) {
@@ -48,6 +54,7 @@ export async function runLunaCandidateBottleneckDiagnostics(options: any = {}, d
   const confirm = String(options.confirm || '');
   const limit = Math.max(1, Number(options.limit || process.env.LUNA_CANDIDATE_BOTTLENECK_LIMIT || 50));
   const market = options.market || null;
+  const requestedSymbols = symbolsFrom(options.symbols || process.env.LUNA_CANDIDATE_BOTTLENECK_SYMBOLS || '');
 
   if (apply && options.dryRun === true) {
     throw new Error('runtime:luna-candidate-bottleneck-diagnostics cannot combine --apply with --dry-run');
@@ -56,11 +63,17 @@ export async function runLunaCandidateBottleneckDiagnostics(options: any = {}, d
     throw new Error(`runtime:luna-candidate-bottleneck-diagnostics apply requires --confirm=${CONFIRM}`);
   }
 
-  const inputs = fixture
+  const rawInputs = fixture
     ? fixtureCandidateBottleneckInputs()
     : deps.loadInputs
-      ? await deps.loadInputs({ limit, market })
-      : await loadLunaCandidateBottleneckInputs({ limit, market });
+      ? await deps.loadInputs({ limit, market, symbols: requestedSymbols })
+      : await loadLunaCandidateBottleneckInputs({ limit, market, symbols: requestedSymbols });
+  const inputs = requestedSymbols.length
+    ? rawInputs.filter((input) => {
+      const candidate = input.candidate || input;
+      return requestedSymbols.includes(normalizeLunaPhase2Symbol(candidate.symbol || input.symbol));
+    })
+    : rawInputs;
   const rows = buildLunaCandidateBottleneckRows(inputs, {
     staleBacktestHours: Number(options.staleBacktestHours || process.env.LUNA_BACKTEST_STALE_HOURS || 24),
     stalePredictiveHours: Number(options.stalePredictiveHours || process.env.LUNA_PREDICTIVE_STALE_HOURS || 24 * 7),
@@ -108,6 +121,7 @@ export async function runLunaCandidateBottleneckDiagnostics(options: any = {}, d
     shadowMode: true,
     confirmToken: CONFIRM,
     market: market || 'all',
+    requestedSymbols,
     summary,
     rows,
   };
@@ -127,6 +141,7 @@ if (isDirectExecution(import.meta.url)) {
       fixture: hasFlag('fixture'),
       limit: Number(argValue('limit', process.env.LUNA_CANDIDATE_BOTTLENECK_LIMIT || 50)),
       market: argValue('market', null),
+      symbols: argValue('symbols', process.env.LUNA_CANDIDATE_BOTTLENECK_SYMBOLS || ''),
       confirm: argValue('confirm', ''),
       staleBacktestHours: Number(argValue('stale-backtest-hours', process.env.LUNA_BACKTEST_STALE_HOURS || 24)),
       stalePredictiveHours: Number(argValue('stale-predictive-hours', process.env.LUNA_PREDICTIVE_STALE_HOURS || 24 * 7)),

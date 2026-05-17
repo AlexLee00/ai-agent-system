@@ -39,6 +39,21 @@ export async function runLunaCandidateQualityRemediationSmoke() {
   assert.equal(planned.remediationPlan.paperPromotionGate, true, 'fixture plans paper promotion gate');
   assert.equal(planned.plannedCommands.length, 10, 'planned command count');
   assert.equal(planned.plannedCommands.some((cmd) => cmd.includes('runtime:luna-candidate-quality-governance')), true, 'planned commands include governance shadow');
+  assert.deepEqual(planned.targetedBacktestSymbols, ['MISS/USDT', 'NEG/USDT', 'ALPHA/USDT'], 'backtest refresh is symbol targeted');
+  assert.deepEqual(planned.targetedSymbols.predictiveSymbols, ['NEG/USDT', 'ALPHA/USDT', 'MISS/USDT'], 'predictive refresh is symbol targeted');
+  assert.deepEqual(planned.targetedSymbols.strategySymbols, ['NEG/USDT', 'ALPHA/USDT'], 'strategy enhancement is symbol targeted');
+  for (const expected of [
+    'runtime:luna-candidate-backtest-refresh -- --json --force --market=all --limit=12 --symbols=MISS/USDT,NEG/USDT,ALPHA/USDT',
+    'runtime:luna-predictive-evidence-refresh -- --json --market=all --limit=12 --symbols=NEG/USDT,ALPHA/USDT,MISS/USDT',
+    'runtime:luna-phase4-strategy-enhancement-shadow -- --json --apply --confirm=luna-phase4-strategy-enhancement-shadow --market=all --limit=12 --symbols=NEG/USDT,ALPHA/USDT',
+    'runtime:luna-candidate-bottleneck-diagnostics -- --json --apply --confirm=luna-candidate-bottleneck-shadow --market=all --limit=12 --symbols=BTC/USDT,NEG/USDT,ALPHA/USDT,MISS/USDT',
+    'runtime:luna-candidate-quality-governance -- --json --apply --confirm=luna-candidate-quality-governance-shadow --market=all --limit=12 --symbols=BTC/USDT,NEG/USDT,ALPHA/USDT,MISS/USDT',
+    'runtime:luna-weight-vector-shadow -- --json --apply --confirm=luna-weight-vector-shadow --market=all --limit=12 --symbols=BTC/USDT,NEG/USDT,ALPHA/USDT,MISS/USDT',
+    'runtime:luna-paper-trading-shadow -- --json --apply --confirm=luna-paper-trading-shadow --market=all --limit=12 --symbols=BTC/USDT,NEG/USDT,ALPHA/USDT,MISS/USDT',
+    'runtime:luna-paper-promotion-gate -- --json --apply --confirm=luna-paper-promotion-gate-shadow --market=all --limit=500 --symbols=BTC/USDT,NEG/USDT,ALPHA/USDT,MISS/USDT',
+  ]) {
+    assert.equal(planned.plannedCommands.some((cmd) => cmd.includes(expected)), true, `planned command includes targeted symbols: ${expected}`);
+  }
   assert.equal(planned.plannedCommands.every((cmd) => !cmd.includes('launchctl') && !cmd.includes('live-fire')), true, 'planned commands avoid protected/live-fire operations');
 
   return {
@@ -51,6 +66,7 @@ export async function runLunaCandidateQualityRemediationSmoke() {
       plannedCommands: planned.plannedCommands.length,
       fullShadowLoop: true,
       qualityGovernance: true,
+      symbolTargeted: true,
       liveMutation: false,
     },
   };

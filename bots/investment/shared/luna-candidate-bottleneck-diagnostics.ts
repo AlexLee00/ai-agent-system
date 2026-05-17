@@ -8,7 +8,12 @@
  */
 
 import { query, run } from './db/core.ts';
-import { exchangeForLunaPhase2Market, normalizeLunaPhase2Market, normalizeLunaPhase2Symbol } from './luna-weight-vector.ts';
+import {
+  exchangeForLunaPhase2Market,
+  normalizeLunaPhase2Market,
+  normalizeLunaPhase2Symbol,
+  normalizeLunaPhase2Symbols,
+} from './luna-weight-vector.ts';
 
 function n(value: any, fallback = 0) {
   const parsed = Number(value);
@@ -100,14 +105,16 @@ function actionFromReasons(reasons: string[], input: any = {}) {
 
 function refreshCommandFor(action: string, reasons: string[], row: any = {}) {
   const market = normalizeLunaPhase2Market(row.market || row.candidate?.market);
+  const symbol = normalizeLunaPhase2Symbol(row.symbol || row.candidate?.symbol);
+  const symbolArg = symbol ? ` --symbols=${symbol}` : '';
   if (action === 'strategy_enhancement_shadow') {
-    return `npm --prefix bots/investment run -s runtime:luna-phase4-strategy-enhancement-shadow -- --json --dry-run --market=${market}`;
+    return `npm --prefix bots/investment run -s runtime:luna-phase4-strategy-enhancement-shadow -- --json --dry-run --market=${market}${symbolArg}`;
   }
   if (reasons.some((reason) => reason.startsWith('backtest_') || reason === 'sharpe_negative' || reason === 'win_rate_low' || reason === 'drawdown_high')) {
-    return `npm --prefix bots/investment run -s runtime:luna-candidate-backtest-refresh -- --json --force --market=${market}`;
+    return `npm --prefix bots/investment run -s runtime:luna-candidate-backtest-refresh -- --json --force --market=${market}${symbolArg}`;
   }
   if (reasons.some((reason) => reason.startsWith('predictive_'))) {
-    return `npm --prefix bots/investment run -s runtime:luna-predictive-evidence-refresh -- --json --market=${market}`;
+    return `npm --prefix bots/investment run -s runtime:luna-predictive-evidence-refresh -- --json --market=${market}${symbolArg}`;
   }
   if (reasons.includes('community_coverage_low')) {
     return `npm --prefix bots/investment run -s runtime:luna-community-evidence-refresh -- --json`;
@@ -286,15 +293,17 @@ export function buildLunaCandidateBottleneckRows(inputs: any[] = [], options: an
   });
 }
 
-export async function loadLunaCandidateBottleneckInputs({ limit = 50, market = null } = {}) {
+export async function loadLunaCandidateBottleneckInputs({ limit = 50, market = null, symbols = [] } = {}) {
   const params: any[] = [];
   const requestedMarket = String(market || '').trim().toLowerCase();
   const normalizedMarket = requestedMarket && requestedMarket !== 'all'
     ? normalizeLunaPhase2Market(requestedMarket)
     : null;
+  const requestedSymbols = normalizeLunaPhase2Symbols(symbols);
   const marketWhere = normalizedMarket ? `AND market = $${params.push(normalizedMarket)}` : '';
+  const symbolWhere = requestedSymbols.length ? `AND symbol = ANY($${params.push(requestedSymbols)}::text[])` : '';
   const perMarketLimit = Math.max(1, Math.ceil(Number(limit || 50) / 3));
-  const marketRankWhere = normalizedMarket
+  const marketRankWhere = normalizedMarket || requestedSymbols.length
     ? ''
     : `WHERE market_rank <= $${params.push(perMarketLimit)}`;
   params.push(limit);
@@ -346,9 +355,10 @@ export async function loadLunaCandidateBottleneckInputs({ limit = 50, market = n
     active_candidates AS (
       SELECT DISTINCT ON (symbol, market)
              symbol, market, score, source, discovered_at, expires_at, reason, raw_data
-        FROM candidate_universe
+       FROM candidate_universe
        WHERE expires_at > NOW()
          ${marketWhere}
+         ${symbolWhere}
        ORDER BY symbol, market, score DESC, discovered_at DESC
     ),
     balanced_candidates AS (

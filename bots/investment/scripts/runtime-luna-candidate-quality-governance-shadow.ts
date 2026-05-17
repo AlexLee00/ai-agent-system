@@ -10,6 +10,7 @@ import {
   insertLunaCandidateQualityGovernanceShadow,
   loadLunaCandidateQualityGovernanceInputs,
 } from '../shared/luna-candidate-quality-governance.ts';
+import { normalizeLunaPhase2Symbol } from '../shared/luna-weight-vector.ts';
 
 export const CONFIRM = 'luna-candidate-quality-governance-shadow';
 
@@ -21,6 +22,11 @@ function argValue(name: string, fallback = null) {
 
 function hasFlag(name: string) {
   return process.argv.includes(`--${name}`);
+}
+
+function symbolsFrom(value: any = '') {
+  const values = Array.isArray(value) ? value : String(value || '').split(',');
+  return [...new Set(values.map((symbol) => normalizeLunaPhase2Symbol(symbol)).filter(Boolean))];
 }
 
 function countBy(rows: any[] = [], key: string) {
@@ -39,6 +45,7 @@ export async function runLunaCandidateQualityGovernanceShadow(options: any = {},
   const confirm = String(options.confirm || '');
   const limit = Math.max(1, Number(options.limit || process.env.LUNA_CANDIDATE_QUALITY_GOVERNANCE_LIMIT || 50));
   const market = options.market || null;
+  const requestedSymbols = symbolsFrom(options.symbols || process.env.LUNA_CANDIDATE_QUALITY_GOVERNANCE_SYMBOLS || '');
 
   if (apply && options.dryRun === true) {
     throw new Error('runtime:luna-candidate-quality-governance cannot combine --apply with --dry-run');
@@ -47,11 +54,14 @@ export async function runLunaCandidateQualityGovernanceShadow(options: any = {},
     throw new Error(`runtime:luna-candidate-quality-governance apply requires --confirm=${CONFIRM}`);
   }
 
-  const inputs = fixture
+  const rawInputs = fixture
     ? fixtureCandidateQualityGovernanceInputs()
     : deps.loadInputs
-      ? await deps.loadInputs({ limit, market })
-      : await loadLunaCandidateQualityGovernanceInputs({ limit, market });
+      ? await deps.loadInputs({ limit, market, symbols: requestedSymbols })
+      : await loadLunaCandidateQualityGovernanceInputs({ limit, market, symbols: requestedSymbols });
+  const inputs = requestedSymbols.length
+    ? rawInputs.filter((input) => requestedSymbols.includes(normalizeLunaPhase2Symbol(input.symbol)))
+    : rawInputs;
   const rows = buildLunaCandidateQualityGovernanceRows(inputs, {
     quarantineCooldownHours: Number(options.quarantineCooldownHours || process.env.LUNA_CANDIDATE_QUARANTINE_COOLDOWN_HOURS || 168),
     repeatUnhealthyCooldownHours: Number(options.repeatUnhealthyCooldownHours || process.env.LUNA_CANDIDATE_REPEAT_UNHEALTHY_COOLDOWN_HOURS || 72),
@@ -92,6 +102,7 @@ export async function runLunaCandidateQualityGovernanceShadow(options: any = {},
     shadowMode: true,
     confirmToken: CONFIRM,
     market: market || 'all',
+    requestedSymbols,
     summary,
     rows,
   };
@@ -111,6 +122,7 @@ if (isDirectExecution(import.meta.url)) {
       fixture: hasFlag('fixture'),
       limit: Number(argValue('limit', process.env.LUNA_CANDIDATE_QUALITY_GOVERNANCE_LIMIT || 50)),
       market: argValue('market', null),
+      symbols: argValue('symbols', process.env.LUNA_CANDIDATE_QUALITY_GOVERNANCE_SYMBOLS || ''),
       confirm: argValue('confirm', ''),
       quarantineCooldownHours: Number(argValue('quarantine-cooldown-hours', process.env.LUNA_CANDIDATE_QUARANTINE_COOLDOWN_HOURS || 168)),
       repeatUnhealthyCooldownHours: Number(argValue('repeat-unhealthy-cooldown-hours', process.env.LUNA_CANDIDATE_REPEAT_UNHEALTHY_COOLDOWN_HOURS || 72)),
