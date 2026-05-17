@@ -274,6 +274,22 @@ export function getOpsSchedulerJobs() {
       ]),
     },
     {
+      name: 'promotion_entry_trigger_bridge_shadow',
+      category: 'promotion_shadow',
+      market: 'crypto',
+      cadence: { type: 'interval', seconds: 600 },
+      timeoutMs: 60_000,
+      ...nodeScript('runtime-luna-promotion-entry-trigger-bridge.ts', [
+        '--apply',
+        '--confirm=luna-promotion-entry-trigger-bridge-shadow',
+        '--market=crypto',
+        '--exchange=binance',
+        '--hours=168',
+        '--limit=100',
+        '--json',
+      ]),
+    },
+    {
       name: 'promotion_readiness_assist_shadow',
       category: 'promotion_shadow',
       market: 'all',
