@@ -56,6 +56,21 @@ export async function runLunaCandidateQualityRemediationSmoke() {
   }
   assert.equal(planned.plannedCommands.every((cmd) => !cmd.includes('launchctl') && !cmd.includes('live-fire')), true, 'planned commands avoid protected/live-fire operations');
 
+  const capped = await runLunaCandidateQualityRemediation({
+    fixture: true,
+    dryRun: true,
+    json: true,
+    market: 'all',
+    limit: 12,
+    maxPredictiveSymbols: 2,
+    maxStrategySymbols: 1,
+    maxShadowSymbols: 2,
+  });
+  assert.deepEqual(capped.targetedSymbols.predictiveSymbols, ['NEG/USDT', 'ALPHA/USDT'], 'predictive symbol cap is enforced');
+  assert.deepEqual(capped.targetedSymbols.strategySymbols, ['NEG/USDT'], 'strategy symbol cap is enforced');
+  assert.deepEqual(capped.targetedSymbols.bottleneckSymbols, ['BTC/USDT', 'NEG/USDT'], 'shadow feedback symbol cap is enforced');
+  assert.equal(capped.plannedCommands.some((cmd) => cmd.includes('runtime:luna-weight-vector-shadow') && cmd.includes('--symbols=BTC/USDT,NEG/USDT')), true, 'shadow downstream commands use capped symbols');
+
   return {
     ok: true,
     smoke: 'luna-candidate-quality-remediation',
@@ -67,6 +82,7 @@ export async function runLunaCandidateQualityRemediationSmoke() {
       fullShadowLoop: true,
       qualityGovernance: true,
       symbolTargeted: true,
+      symbolCaps: true,
       liveMutation: false,
     },
   };

@@ -224,6 +224,9 @@ export async function runLunaCandidateQualityRemediation(options = {}) {
   const market = String(options.market || 'all').trim().toLowerCase() || 'all';
   const limit = Math.max(1, n(options.limit || process.env.LUNA_CANDIDATE_QUALITY_REMEDIATION_LIMIT || 50, 50));
   const maxBacktestSymbols = Math.max(1, n(options.maxBacktestSymbols || process.env.LUNA_CANDIDATE_QUALITY_MAX_BACKTEST_SYMBOLS || 12, 12));
+  const maxPredictiveSymbols = Math.max(1, n(options.maxPredictiveSymbols || process.env.LUNA_CANDIDATE_QUALITY_MAX_PREDICTIVE_SYMBOLS || 24, 24));
+  const maxStrategySymbols = Math.max(1, n(options.maxStrategySymbols || process.env.LUNA_CANDIDATE_QUALITY_MAX_STRATEGY_SYMBOLS || 16, 16));
+  const maxShadowSymbols = Math.max(1, n(options.maxShadowSymbols || process.env.LUNA_CANDIDATE_QUALITY_MAX_SHADOW_SYMBOLS || 30, 30));
   const forceBacktest = options.forceBacktest === true || String(process.env.LUNA_CANDIDATE_QUALITY_FORCE_BACKTEST || '').toLowerCase() === 'true';
 
   if (apply && options.dryRun === true) {
@@ -250,9 +253,9 @@ export async function runLunaCandidateQualityRemediation(options = {}) {
   const cooldownSymbolKeys = new Set((cooldownRows || []).map((row) => row.key));
   const needsBacktestRefresh = shouldRunBacktest(initialRows);
   const targetedBacktestSymbols = backtestTargetSymbols(initialRows, maxBacktestSymbols, cooldownSymbolKeys);
-  const targetedPredictiveSymbols = symbolsFromRows(initialRows, needsPredictiveRefresh, limit);
-  const targetedStrategySymbols = symbolsFromRows(initialRows, needsStrategyRefresh, limit);
-  const targetedEvidenceSymbols = symbolsFromRows(initialRows, () => true, limit);
+  const targetedPredictiveSymbols = symbolsFromRows(initialRows, needsPredictiveRefresh, Math.min(limit, maxPredictiveSymbols));
+  const targetedStrategySymbols = symbolsFromRows(initialRows, needsStrategyRefresh, Math.min(limit, maxStrategySymbols));
+  const targetedEvidenceSymbols = symbolsFromRows(initialRows, () => true, Math.min(limit, maxShadowSymbols));
   const effectiveForceBacktest = forceBacktest || targetedBacktestSymbols.length > 0;
   const marketCandidateSeedRefresh = shouldRunMarketSeed(coverage, initialRows, market);
   const plannedBacktestRefresh = needsBacktestRefresh
@@ -446,6 +449,9 @@ export async function runLunaCandidateQualityRemediation(options = {}) {
     market,
     limit,
     maxBacktestSymbols,
+    maxPredictiveSymbols,
+    maxStrategySymbols,
+    maxShadowSymbols,
     targetedBacktestSymbols,
     targetedSymbols: {
       predictiveSymbols: targetedPredictiveSymbols,
@@ -507,6 +513,9 @@ if (isDirectExecution(import.meta.url)) {
       market: argValue('market', process.env.LUNA_CANDIDATE_QUALITY_REMEDIATION_MARKET || 'all'),
       limit: Number(argValue('limit', process.env.LUNA_CANDIDATE_QUALITY_REMEDIATION_LIMIT || 50)),
       maxBacktestSymbols: Number(argValue('max-backtest-symbols', process.env.LUNA_CANDIDATE_QUALITY_MAX_BACKTEST_SYMBOLS || 12)),
+      maxPredictiveSymbols: Number(argValue('max-predictive-symbols', process.env.LUNA_CANDIDATE_QUALITY_MAX_PREDICTIVE_SYMBOLS || 24)),
+      maxStrategySymbols: Number(argValue('max-strategy-symbols', process.env.LUNA_CANDIDATE_QUALITY_MAX_STRATEGY_SYMBOLS || 16)),
+      maxShadowSymbols: Number(argValue('max-shadow-symbols', process.env.LUNA_CANDIDATE_QUALITY_MAX_SHADOW_SYMBOLS || 30)),
       forceBacktest: hasFlag('force-backtest'),
       confirm: argValue('confirm', ''),
     }),
