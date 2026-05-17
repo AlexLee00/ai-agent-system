@@ -145,6 +145,7 @@ function promotionReadySourceItems(gateReport = {}) {
       avgConfidence: n(item.avgConfidence ?? item.avg_confidence, 0),
       recommendedAssistActions: [
         'promotion_entry_trigger_bridge_shadow',
+        'promotion_entry_trigger_materialize_dry_run',
         'master_review_only',
       ],
       nextRequiredEvidence: item.nextRequiredEvidence || [{
@@ -189,6 +190,9 @@ export function buildLunaPromotionReadinessAssistPlan(gateReport = {}, options =
   const plannedCommands = [];
   if (actions.has('promotion_entry_trigger_bridge_shadow')) {
     plannedCommands.push(`npm --prefix bots/investment run -s runtime:luna-promotion-entry-trigger-bridge -- --json --apply --confirm=${LUNA_PROMOTION_ENTRY_TRIGGER_BRIDGE_CONFIRM}${mArg} --exchange=binance${hoursArg}${limitArg}${symbolsOptionArg(promotionReadySymbols)}`);
+  }
+  if (actions.has('promotion_entry_trigger_materialize_dry_run')) {
+    plannedCommands.push(`npm --prefix bots/investment run -s runtime:luna-promotion-entry-trigger-materialize -- --json --dry-run${mArg} --exchange=binance${hoursArg}${limitArg}${symbolsOptionArg(promotionReadySymbols)}`);
   }
   if (actions.has('candidate_backtest_refresh')) {
     plannedCommands.push(`npm --prefix bots/investment run -s runtime:luna-candidate-backtest-refresh -- --json --force${mArg}${limitArg}${symbolsOptionArg(backtestSymbols)}`);

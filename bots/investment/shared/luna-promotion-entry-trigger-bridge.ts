@@ -147,6 +147,7 @@ export function buildPromotionEntryTriggerBridgePlan(coverageReport = {}, option
       recommendedCommands: [
         `npm --prefix bots/investment run -s runtime:luna-promotion-entry-trigger-coverage -- --json --dry-run --market=${normalizeMarket(row.market)} --exchange=${normalizeExchange(row.exchange)} --hours=${coverageReport.hours || 168}`,
         `npm --prefix bots/investment run -s runtime:luna-entry-trigger-diagnose -- --json --symbols=${normalizeSymbol(row.symbol)}`,
+        `npm --prefix bots/investment run -s runtime:luna-promotion-entry-trigger-materialize -- --json --dry-run --market=${normalizeMarket(row.market)} --exchange=${normalizeExchange(row.exchange)} --hours=${coverageReport.hours || 168} --symbols=${normalizeSymbol(row.symbol)}`,
         'Do not insert active entry_triggers without explicit master live-promotion approval.',
       ],
     };
