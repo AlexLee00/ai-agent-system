@@ -80,10 +80,10 @@ defmodule Darwin.V2.LLM.Policy do
   def api_key, do: Darwin.V2.Config.anthropic_api_key()
 
   @impl true
-  def hub_routing_enabled?, do: System.get_env("LLM_HUB_ROUTING_ENABLED") == "true"
+  def hub_routing_enabled?, do: System.get_env("LLM_HUB_ROUTING_ENABLED", "true") == "true"
 
   @impl true
-  def hub_shadow?, do: System.get_env("LLM_HUB_ROUTING_SHADOW") == "true"
+  def hub_shadow?, do: System.get_env("LLM_HUB_ROUTING_SHADOW", "false") == "true"
 
   @impl true
   def kill_switch?, do: Darwin.V2.Config.kill_switch?()
