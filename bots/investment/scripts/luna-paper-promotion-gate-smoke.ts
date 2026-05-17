@@ -5,8 +5,11 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import {
+  buildLunaPaperPromotionRowsSql,
   buildLunaPaperPromotionGateReport,
   evaluateLunaPaperPromotionHistory,
+  LUNA_PAPER_PROMOTION_LOADER_LIMIT_SEMANTICS,
+  normalizeLunaPaperPromotionLoaderConfig,
 } from '../shared/luna-paper-promotion-gate.ts';
 import { runLunaPaperPromotionGateShadow } from './runtime-luna-paper-promotion-gate.ts';
 
@@ -15,12 +18,28 @@ const iso = (minutesAgo) => new Date(now - minutesAgo * 60_000).toISOString();
 const passEvidence = {
   bottleneckAvoidance: { present: false, hardHold: false, preventedOrder: false },
   weightVector: { noLookaheadOk: true },
+  promotionBacktestQuality: {
+    fresh: true,
+    healthy: true,
+    sharpe: 1.5,
+    winRate: 55,
+    gateStatus: 'pass',
+    fallbackUsed: false,
+    vectorbtEnabled: true,
+  },
+  promotionStrategyQuality: {
+    enhancementStatus: 'shadow_ready',
+    hyperoptStatus: 'not_required',
+    maxDrawdownGuard: 'observe',
+    indicatorScore: 0.75,
+  },
 };
 const hardHoldEvidence = {
+  ...passEvidence,
   bottleneckAvoidance: { present: true, hardHold: true, preventedOrder: false, action: 'quarantine_candidate_shadow' },
-  weightVector: { noLookaheadOk: true },
 };
 const strategyQualityEvidence = {
+  ...passEvidence,
   bottleneckAvoidance: { present: false, hardHold: false, preventedOrder: false },
   weightVector: { noLookaheadOk: true },
   promotionStrategyQuality: {
@@ -85,6 +104,32 @@ assert.ok(strategyBlocked.blockReasons.includes('strategy_quality_block_live_for
 assert.ok(strategyBlocked.blockReasons.includes('strategy_hyperopt_planned_seen'));
 assert.equal(strategyBlocked.promotionBlockerClass, 'risk_quality');
 
+const missingQuality = evaluateLunaPaperPromotionHistory(passHistory.map((row) => ({
+  ...row,
+  symbol: 'MISSING/USDT',
+  evidence: {
+    bottleneckAvoidance: { present: false, hardHold: false, preventedOrder: false },
+    weightVector: { noLookaheadOk: true },
+    promotionBacktestQuality: {
+      fresh: true,
+      healthy: true,
+      sharpe: 1.5,
+      gateStatus: 'pass',
+      fallbackUsed: false,
+      vectorbtEnabled: false,
+    },
+  },
+})), {
+  minCycles: 3,
+  minConsecutivePasses: 3,
+  minAvgConfidence: 0.62,
+  maxOrderUsdt: 50,
+});
+assert.equal(missingQuality.promotionCandidate, false);
+assert.ok(missingQuality.blockReasons.includes('non_vectorbt_backtest_seen'));
+assert.ok(missingQuality.blockReasons.includes('missing_strategy_quality_seen'));
+assert.equal(missingQuality.promotionBlockerClass, 'strategy_or_backtest_quality');
+
 const onePassAway = evaluateLunaPaperPromotionHistory([
   { symbol: 'NEAR/USDT', market: 'crypto', exchange: 'binance', paper_side: 'BUY', paper_notional_usdt: 20, confidence: 0.75, status: 'planned', shadow_only: true, evidence: passEvidence, observed_at: iso(1) },
   { symbol: 'NEAR/USDT', market: 'crypto', exchange: 'binance', paper_side: 'BUY', paper_notional_usdt: 18, confidence: 0.72, status: 'planned', shadow_only: true, evidence: passEvidence, observed_at: iso(31) },
@@ -126,7 +171,17 @@ const runtime = await runLunaPaperPromotionGateShadow({
 assert.equal(runtime.ok, true);
 assert.equal(runtime.writeMode, 'plan-only');
 assert.equal(runtime.summary.promotionCandidates, 1);
+assert.equal(runtime.limitSemantics, LUNA_PAPER_PROMOTION_LOADER_LIMIT_SEMANTICS);
 assert.equal(inserted.length, 0);
+
+const loaderConfig = normalizeLunaPaperPromotionLoaderConfig({ hours: 168, limit: 120 });
+assert.equal(loaderConfig.hours, 168);
+assert.equal(loaderConfig.perSymbolHistoryLimit, 120);
+
+const loaderSql = buildLunaPaperPromotionRowsSql();
+assert.match(loaderSql, /ROW_NUMBER\(\) OVER \(\s*PARTITION BY pts\.symbol, pts\.market/s);
+assert.match(loaderSql, /WHERE pr\.symbol_history_rank <= \$2/);
+assert.doesNotMatch(loaderSql, /ORDER BY pr\.symbol, pr\.market, pr\.observed_at DESC\s+LIMIT \$2/s);
 
 await assert.rejects(
   () => runLunaPaperPromotionGateShadow({
@@ -179,6 +234,10 @@ const payload = {
     decision: strategyBlocked.decision,
     reasons: strategyBlocked.blockReasons,
   },
+  missingQuality: {
+    decision: missingQuality.decision,
+    reasons: missingQuality.blockReasons,
+  },
   onePassAway: {
     cyclesRemaining: onePassAway.cyclesRemaining,
     consecutivePassesRemaining: onePassAway.consecutivePassesRemaining,
@@ -186,6 +245,7 @@ const payload = {
   },
   runtime: {
     writeMode: runtime.writeMode,
+    limitSemantics: runtime.limitSemantics,
     promotionCandidates: runtime.summary.promotionCandidates,
     nearReady: runtime.summary.nearReady,
     applyDryRunRejected: true,

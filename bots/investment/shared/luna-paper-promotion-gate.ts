@@ -36,6 +36,8 @@ function normalizeBool(value, fallback = false) {
   return fallback;
 }
 
+export const LUNA_PAPER_PROMOTION_LOADER_LIMIT_SEMANTICS = 'per_symbol_history_cap';
+
 export function normalizeLunaPaperPromotionGateConfig(config = {}) {
   return {
     minCycles: Math.max(1, finiteNumber(config.minCycles ?? process.env.LUNA_PAPER_PROMOTION_MIN_CYCLES, 3)),
@@ -43,6 +45,13 @@ export function normalizeLunaPaperPromotionGateConfig(config = {}) {
     minAvgConfidence: Math.max(0, Math.min(1, finiteNumber(config.minAvgConfidence ?? process.env.LUNA_PAPER_PROMOTION_MIN_AVG_CONFIDENCE, 0.62))),
     maxOrderUsdt: Math.max(0, finiteNumber(config.maxOrderUsdt ?? process.env.LUNA_MAX_TRADE_USDT, 50)),
     maxPromotionSharpe: Math.max(1, finiteNumber(config.maxPromotionSharpe ?? process.env.LUNA_PAPER_PROMOTION_MAX_SHARPE, 8)),
+  };
+}
+
+export function normalizeLunaPaperPromotionLoaderConfig(config = {}) {
+  return {
+    hours: Math.max(1, finiteNumber(config.hours ?? 24, 24)),
+    perSymbolHistoryLimit: Math.max(1, finiteNumber(config.limit ?? process.env.LUNA_PAPER_PROMOTION_HISTORY_LIMIT_PER_SYMBOL, 500)),
   };
 }
 
@@ -98,6 +107,9 @@ function promotionBlockerClass(blockReasons = [], promotionCandidate = false) {
   ].some((reason) => reasons.has(reason))) return 'risk_quality';
   if ([
     'fallback_only_backtest_seen',
+    'non_vectorbt_backtest_seen',
+    'missing_backtest_quality_seen',
+    'missing_strategy_quality_seen',
     'unrealistic_sharpe_seen',
     'strategy_hyperopt_planned_seen',
     'strategy_quality_not_shadow_ready_seen',
@@ -148,14 +160,23 @@ function buildNextRequiredEvidence({
       detail: 'Average paper confidence is below the promotion floor.',
     });
   }
-  if (reasons.has('fallback_only_backtest_seen') || reasons.has('unrealistic_sharpe_seen')) {
+  if (
+    reasons.has('fallback_only_backtest_seen')
+    || reasons.has('non_vectorbt_backtest_seen')
+    || reasons.has('missing_backtest_quality_seen')
+    || reasons.has('unrealistic_sharpe_seen')
+  ) {
     evidence.push({
       type: 'backtest_quality',
       action: 'refresh_vectorbt_backtest_before_promotion',
       detail: 'Promotion evidence needs stable vectorbt-backed backtest quality, not fallback-only or unrealistic Sharpe evidence.',
     });
   }
-  if (reasons.has('strategy_hyperopt_planned_seen') || reasons.has('strategy_quality_not_shadow_ready_seen')) {
+  if (
+    reasons.has('missing_strategy_quality_seen')
+    || reasons.has('strategy_hyperopt_planned_seen')
+    || reasons.has('strategy_quality_not_shadow_ready_seen')
+  ) {
     evidence.push({
       type: 'strategy_quality',
       action: 'complete_phase4_strategy_enhancement_shadow',
@@ -231,6 +252,7 @@ function getPromotionBacktestQuality(row = {}, config = {}) {
   const maxPromotionSharpe = finiteNumber(config.maxPromotionSharpe, 8);
   const reasons = [
     fallbackUsed && !vectorbtEnabled ? 'fallback_only_backtest' : null,
+    !vectorbtEnabled ? 'non_vectorbt_backtest' : null,
     sharpe != null && Math.abs(sharpe) > maxPromotionSharpe ? 'unrealistic_sharpe' : null,
   ].filter(Boolean);
   return {
@@ -314,7 +336,10 @@ export function evaluateLunaPaperPromotionHistory(rows = [], config = {}) {
   const backtestQualityRows = history
     .map((row) => getPromotionBacktestQuality(row, cfg))
     .filter((quality) => quality.present);
+  const latestBacktestQuality = getPromotionBacktestQuality(history[0] || {}, cfg);
+  const latestStrategyQuality = getPromotionStrategyQuality(history[0] || {});
   const fallbackOnlyRows = backtestQualityRows.filter((quality) => quality.reasons.includes('fallback_only_backtest'));
+  const nonVectorbtRows = backtestQualityRows.filter((quality) => quality.reasons.includes('non_vectorbt_backtest'));
   const unrealisticSharpeRows = backtestQualityRows.filter((quality) => quality.reasons.includes('unrealistic_sharpe'));
   const strategyQualityRows = history
     .map((row) => getPromotionStrategyQuality(row))
@@ -336,8 +361,11 @@ export function evaluateLunaPaperPromotionHistory(rows = [], config = {}) {
     preventedRows.length > 0 ? 'candidate_bottleneck_prevented_order_seen' : null,
     noLookaheadViolationRows.length > 0 ? 'no_lookahead_violation_seen' : null,
     overCapRows.length > 0 ? 'paper_order_cap_violation_seen' : null,
+    !latestBacktestQuality.present ? 'missing_backtest_quality_seen' : null,
     fallbackOnlyRows.length > 0 ? 'fallback_only_backtest_seen' : null,
+    nonVectorbtRows.length > 0 ? 'non_vectorbt_backtest_seen' : null,
     unrealisticSharpeRows.length > 0 ? 'unrealistic_sharpe_seen' : null,
+    !latestStrategyQuality.present ? 'missing_strategy_quality_seen' : null,
     strategyHardHoldRows.length > 0 ? 'strategy_quality_block_live_forward_seen' : null,
     strategyHyperoptPlannedRows.length > 0 ? 'strategy_hyperopt_planned_seen' : null,
     strategyNotReadyRows.length > 0 ? 'strategy_quality_not_shadow_ready_seen' : null,
@@ -391,8 +419,11 @@ export function evaluateLunaPaperPromotionHistory(rows = [], config = {}) {
       preventedOrderCount: preventedRows.length,
       noLookaheadViolationCount: noLookaheadViolationRows.length,
       overCapCount: overCapRows.length,
+      missingBacktestQuality: !latestBacktestQuality.present,
       fallbackOnlyBacktestCount: fallbackOnlyRows.length,
+      nonVectorbtBacktestCount: nonVectorbtRows.length,
       unrealisticSharpeCount: unrealisticSharpeRows.length,
+      missingStrategyQuality: !latestStrategyQuality.present,
       strategyQualityHardHoldCount: strategyHardHoldRows.length,
       strategyHyperoptPlannedCount: strategyHyperoptPlannedRows.length,
       strategyNotReadyCount: strategyNotReadyRows.length,
@@ -507,16 +538,8 @@ export function buildLunaPaperPromotionGateReport(rows = [], config = {}) {
   };
 }
 
-export async function loadLunaPaperPromotionRows({ hours = 24, limit = 500, market = null, symbols = [] } = {}) {
-  const params = [Math.max(1, Number(hours)), Math.max(1, Number(limit))];
-  const requestedMarket = String(market || '').trim().toLowerCase();
-  const normalizedMarket = requestedMarket && requestedMarket !== 'all'
-    ? normalizeLunaPhase2Market(requestedMarket)
-    : null;
-  const requestedSymbols = normalizeLunaPhase2Symbols(symbols);
-  const marketWhere = normalizedMarket ? `AND pts.market = $${params.push(normalizedMarket)}` : '';
-  const symbolWhere = requestedSymbols.length ? `AND pts.symbol = ANY($${params.push(requestedSymbols)}::text[])` : '';
-  return query(`
+export function buildLunaPaperPromotionRowsSql({ marketWhere = '', symbolWhere = '' } = {}) {
+  return `
     WITH latest_strategy AS (
       SELECT DISTINCT ON (symbol, market)
              symbol, market, enhancement_status, hyperopt_status, max_drawdown_guard,
@@ -547,7 +570,11 @@ export async function loadLunaPaperPromotionRows({ hours = 24, limit = 500, mark
                true
              )
            END AS evidence_with_backtest,
-             pts.observed_at
+             pts.observed_at,
+             ROW_NUMBER() OVER (
+               PARTITION BY pts.symbol, pts.market
+               ORDER BY pts.observed_at DESC
+             ) AS symbol_history_rank
         FROM luna_paper_trading_shadow pts
         LEFT JOIN candidate_backtest_status cbs
           ON cbs.symbol = pts.symbol
@@ -582,9 +609,22 @@ export async function loadLunaPaperPromotionRows({ hours = 24, limit = 500, mark
       LEFT JOIN latest_strategy ls
         ON ls.symbol = pr.symbol
        AND ls.market = pr.market
+     WHERE pr.symbol_history_rank <= $2
      ORDER BY pr.symbol, pr.market, pr.observed_at DESC
-     LIMIT $2
-  `, params).catch(() => []);
+  `;
+}
+
+export async function loadLunaPaperPromotionRows({ hours = 24, limit = 500, market = null, symbols = [] } = {}) {
+  const loaderConfig = normalizeLunaPaperPromotionLoaderConfig({ hours, limit });
+  const params = [loaderConfig.hours, loaderConfig.perSymbolHistoryLimit];
+  const requestedMarket = String(market || '').trim().toLowerCase();
+  const normalizedMarket = requestedMarket && requestedMarket !== 'all'
+    ? normalizeLunaPhase2Market(requestedMarket)
+    : null;
+  const requestedSymbols = normalizeLunaPhase2Symbols(symbols);
+  const marketWhere = normalizedMarket ? `AND pts.market = $${params.push(normalizedMarket)}` : '';
+  const symbolWhere = requestedSymbols.length ? `AND pts.symbol = ANY($${params.push(requestedSymbols)}::text[])` : '';
+  return query(buildLunaPaperPromotionRowsSql({ marketWhere, symbolWhere }), params).catch(() => []);
 }
 
 export async function insertLunaPaperPromotionGateShadow(row = {}) {
@@ -612,8 +652,11 @@ export async function insertLunaPaperPromotionGateShadow(row = {}) {
 
 export default {
   buildLunaPaperPromotionGateReport,
+  buildLunaPaperPromotionRowsSql,
   ensureLunaPaperPromotionGateSchema,
   evaluateLunaPaperPromotionHistory,
   insertLunaPaperPromotionGateShadow,
+  LUNA_PAPER_PROMOTION_LOADER_LIMIT_SEMANTICS,
   loadLunaPaperPromotionRows,
+  normalizeLunaPaperPromotionLoaderConfig,
 };

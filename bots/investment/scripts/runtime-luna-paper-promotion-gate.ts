@@ -7,6 +7,7 @@ import {
   buildLunaPaperPromotionGateReport,
   ensureLunaPaperPromotionGateSchema,
   insertLunaPaperPromotionGateShadow,
+  LUNA_PAPER_PROMOTION_LOADER_LIMIT_SEMANTICS,
   loadLunaPaperPromotionRows,
 } from '../shared/luna-paper-promotion-gate.ts';
 import {
@@ -35,15 +36,29 @@ function fixtureRows() {
   const buyEvidence = {
     bottleneckAvoidance: { present: false, hardHold: false, preventedOrder: false },
     weightVector: { noLookaheadOk: true },
+    promotionBacktestQuality: {
+      fresh: true,
+      healthy: true,
+      sharpe: 1.5,
+      gateStatus: 'pass',
+      fallbackUsed: false,
+      vectorbtEnabled: true,
+    },
+    promotionStrategyQuality: {
+      enhancementStatus: 'shadow_ready',
+      hyperoptStatus: 'not_required',
+      maxDrawdownGuard: 'observe',
+      indicatorScore: 0.75,
+    },
   };
   const hardHoldEvidence = {
+    ...buyEvidence,
     bottleneckAvoidance: {
       present: true,
       action: 'quarantine_candidate_shadow',
       hardHold: true,
       preventedOrder: false,
     },
-    weightVector: { noLookaheadOk: true },
   };
   return [
     { symbol: 'PASS/USDT', market: 'crypto', exchange: 'binance', paper_side: 'BUY', paper_notional_usdt: 20, confidence: 0.75, status: 'planned', shadow_only: true, evidence: buyEvidence, observed_at: observedAt(1) },
@@ -115,6 +130,7 @@ export async function runLunaPaperPromotionGateShadow(options: any = {}, deps: a
     requestedSymbols,
     hours,
     limit,
+    limitSemantics: LUNA_PAPER_PROMOTION_LOADER_LIMIT_SEMANTICS,
     liveMutation: false,
   };
 
