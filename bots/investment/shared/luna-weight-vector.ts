@@ -182,7 +182,9 @@ function scoreBacktest(backtest = {}) {
   const fresh = backtest?.fresh === true || String(backtest?.fresh).toLowerCase() === 'true';
   const healthy = backtest?.healthy === true || String(backtest?.healthy).toLowerCase() === 'true';
   const wouldBlock = backtest?.would_block === true || backtest?.wouldBlock === true || String(backtest?.would_block).toLowerCase() === 'true';
-  if (!fresh || !healthy || wouldBlock) {
+  const drawdown = Math.abs(finiteNumber(backtest?.max_drawdown ?? backtest?.maxDrawdown, 30));
+  const drawdownTooHigh = drawdown > 30;
+  if (!fresh || !healthy || wouldBlock || drawdownTooHigh) {
     return {
       score: 0,
       pass: false,
@@ -190,6 +192,7 @@ function scoreBacktest(backtest = {}) {
         !fresh ? 'backtest_stale_or_missing' : null,
         !healthy ? 'backtest_unhealthy' : null,
         wouldBlock ? 'backtest_would_block' : null,
+        drawdownTooHigh ? 'backtest_drawdown_high' : null,
       ].filter(Boolean),
     };
   }
@@ -197,7 +200,6 @@ function scoreBacktest(backtest = {}) {
   const sharpeScore = clamp((finiteNumber(backtest?.sharpe, 0) + 1) / 3, 0, 1, 0);
   const winRateRaw = finiteNumber(backtest?.win_rate ?? backtest?.winRate, 0);
   const winRateScore = clamp(winRateRaw > 1 ? winRateRaw / 100 : winRateRaw, 0, 1, 0);
-  const drawdown = Math.abs(finiteNumber(backtest?.max_drawdown ?? backtest?.maxDrawdown, 30));
   const drawdownScore = clamp(1 - drawdown / 30, 0, 1, 0);
   return {
     score: round(sharpeScore * 0.45 + winRateScore * 0.35 + drawdownScore * 0.20, 4),

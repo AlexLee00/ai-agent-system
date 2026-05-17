@@ -60,6 +60,14 @@ const staleEnforce = evaluateCandidateBacktestStatus(
 assert.equal(staleEnforce.wouldBlock, true);
 assert.equal(staleEnforce.blocked, true);
 
+const drawdownEnforce = evaluateCandidateBacktestStatus(
+  { fresh: true, healthy: true, max_drawdown: 42, block_reasons: [] },
+  { LUNA_CANDIDATE_BACKTEST_ENTRY_GATE_MODE: 'enforce', LUNA_CANDIDATE_BACKTEST_MAX_DRAWDOWN: '30' },
+);
+assert.equal(drawdownEnforce.wouldBlock, true);
+assert.equal(drawdownEnforce.blocked, true);
+assert.equal(drawdownEnforce.reason, 'candidate_backtest_drawdown_high');
+
 const prevMode = process.env.LUNA_CANDIDATE_BACKTEST_ENTRY_GATE_MODE;
 process.env.LUNA_CANDIDATE_BACKTEST_ENTRY_GATE_MODE = 'shadow';
 const shadowDeps = baseDeps();

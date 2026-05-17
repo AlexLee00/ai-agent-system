@@ -278,7 +278,7 @@ function evaluateQuality(rows: any[]) {
   if (maxDD > GATE.MAX_DRAWDOWN) reasons.push(`drawdown_high(${maxDD.toFixed(1)}%)`);
   if (avgWinRate < GATE.MIN_WIN_RATE) reasons.push(`win_rate_low(${avgWinRate.toFixed(1)}%)`);
 
-  const wouldBlock = reasons.some((r) => r.startsWith('sharpe_') || r.startsWith('win_rate_'));
+  const wouldBlock = reasons.some((r) => r.startsWith('sharpe_') || r.startsWith('win_rate_') || r.startsWith('drawdown_'));
   return {
     sharpe: Number(avgSharpe.toFixed(4)),
     maxDrawdown: Number(maxDD.toFixed(4)),

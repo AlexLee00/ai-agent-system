@@ -41,6 +41,17 @@ assert.equal(leak.signal, 'hold');
 assert.equal(leak.targetWeight, 0);
 assert.equal(evaluateNoLookaheadContract({ asOf: now, sources: [{ source: 'future', observedAt: future }] }).ok, false);
 
+const drawdownHold = buildLunaWeightVector({
+  asOf: now,
+  candidate: { symbol: 'DD/USDT', market: 'crypto', score: 0.9, discovered_at: now },
+  backtest: { fresh: true, healthy: true, sharpe: 1.4, win_rate: 62, max_drawdown: 42, last_backtest_at: now },
+  predictive: { decision: 'pass_prediction', score: 0.82, created_at: now },
+  community: { avg_score: 0.48, source_count: 4, last_seen_at: now },
+}, { riskBudgetUsdt: 50 });
+assert.equal(drawdownHold.signal, 'hold');
+assert.equal(drawdownHold.targetWeight, 0);
+assert.ok(drawdownHold.evidence.hardReasons.includes('backtest_drawdown_high'));
+
 const bottleneckHold = buildLunaWeightVector({
   asOf: now,
   candidate: { symbol: 'RISK/USDT', market: 'crypto', score: 0.92, discovered_at: now },

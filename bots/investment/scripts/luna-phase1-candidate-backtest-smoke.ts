@@ -47,6 +47,13 @@ assert.equal(candidateBacktestTest.rowsHaveUsableTrades(fallbackRows), true, 'OH
 const fallbackQuality = candidateBacktestTest.evaluateQuality(fallbackRows);
 assert.equal(fallbackQuality.fresh ?? true, true, 'usable OHLCV fallback should be considered fresh');
 
+const drawdownOnlyQuality = candidateBacktestTest.evaluateQuality([
+  { status: 'ok', total_trades: 8, sharpe_ratio: 1.4, max_drawdown: 42, win_rate: 62 },
+]);
+assert.equal(drawdownOnlyQuality.wouldBlock, true, 'drawdown-only violation must would-block');
+assert.equal(drawdownOnlyQuality.gateStatus, 'would_block_unhealthy', 'drawdown-only violation should not pass gate');
+assert.equal(drawdownOnlyQuality.healthy, false, 'drawdown-only violation should be unhealthy');
+
 const payload = {
   ok: true,
   smoke: 'luna-phase1-candidate-backtest',

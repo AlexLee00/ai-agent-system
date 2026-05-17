@@ -104,22 +104,30 @@ export function evaluateCandidateBacktestStatus(row = null, env = process.env) {
   }
   const fresh = row.fresh === true || String(row.fresh).toLowerCase() === 'true';
   const healthy = row.healthy === true || String(row.healthy).toLowerCase() === 'true';
-  const wouldBlock = row.would_block === true || String(row.would_block).toLowerCase() === 'true' || !fresh || !healthy;
+  const maxDrawdown = Math.abs(Number(row.max_drawdown ?? row.maxDrawdown ?? 0));
+  const maxDrawdownLimit = Number(env.LUNA_CANDIDATE_BACKTEST_MAX_DRAWDOWN || 30);
+  const drawdownWouldBlock = Number.isFinite(maxDrawdown) && Number.isFinite(maxDrawdownLimit) && maxDrawdown > maxDrawdownLimit;
+  const wouldBlock = row.would_block === true || String(row.would_block).toLowerCase() === 'true' || !fresh || !healthy || drawdownWouldBlock;
   const reasons = parseReasons(row.block_reasons);
   const reason = !fresh
     ? 'candidate_backtest_stale'
     : !healthy
       ? 'candidate_backtest_unhealthy'
-      : wouldBlock
-        ? 'candidate_backtest_would_block'
+      : drawdownWouldBlock
+        ? 'candidate_backtest_drawdown_high'
+        : wouldBlock
+          ? 'candidate_backtest_would_block'
         : null;
+  const effectiveReasons = drawdownWouldBlock && !reasons.some((item) => String(item).startsWith('drawdown_'))
+    ? [...reasons, `drawdown_high(${maxDrawdown.toFixed(1)}%)`]
+    : reasons;
   return {
     ok: mode !== 'enforce' || !wouldBlock,
     mode,
     blocked: mode === 'enforce' && wouldBlock,
     wouldBlock,
     reason,
-    reasons,
+    reasons: effectiveReasons,
     row,
   };
 }

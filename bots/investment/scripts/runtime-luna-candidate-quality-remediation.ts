@@ -48,11 +48,12 @@ function fixtureCoverageGate() {
   };
 }
 
-function plannedCommands({ market, limit }) {
+function plannedCommands({ market, limit, forceBacktest = false }) {
   const marketArg = market && market !== 'all' ? ` --market=${market}` : ' --market=all';
   const limitArg = ` --limit=${limit}`;
+  const forceArg = forceBacktest ? ' --force' : '';
   return [
-    `npm --prefix bots/investment run -s runtime:luna-candidate-backtest-refresh -- --json --force${marketArg}${limitArg}`,
+    `npm --prefix bots/investment run -s runtime:luna-candidate-backtest-refresh -- --json${forceArg}${marketArg}${limitArg}`,
     `npm --prefix bots/investment run -s runtime:luna-predictive-evidence-refresh -- --json${marketArg}${limitArg}`,
     `npm --prefix bots/investment run -s runtime:luna-phase4-strategy-enhancement-shadow -- --json --apply --confirm=luna-phase4-strategy-enhancement-shadow${marketArg}${limitArg}`,
     `npm --prefix bots/investment run -s runtime:luna-candidate-bottleneck-diagnostics -- --json --apply --confirm=luna-candidate-bottleneck-shadow${marketArg}${limitArg}`,
@@ -77,6 +78,17 @@ function shouldRunStrategy(initialRows = []) {
   return initialRows.some((row) => row?.recommendedAction === 'strategy_enhancement_shadow' || (row?.reasons || []).includes('drawdown_high'));
 }
 
+async function withSuppressedStdout(enabled, fn) {
+  if (!enabled) return fn();
+  const originalLog = console.log;
+  console.log = () => {};
+  try {
+    return await fn();
+  } finally {
+    console.log = originalLog;
+  }
+}
+
 export async function runLunaCandidateQualityRemediation(options = {}) {
   const apply = options.apply === true;
   const dryRun = options.dryRun === true || !apply;
@@ -85,6 +97,7 @@ export async function runLunaCandidateQualityRemediation(options = {}) {
   const confirm = String(options.confirm || '');
   const market = String(options.market || 'all').trim().toLowerCase() || 'all';
   const limit = Math.max(1, n(options.limit || process.env.LUNA_CANDIDATE_QUALITY_REMEDIATION_LIMIT || 50, 50));
+  const forceBacktest = options.forceBacktest === true || String(process.env.LUNA_CANDIDATE_QUALITY_FORCE_BACKTEST || '').toLowerCase() === 'true';
 
   if (apply && options.dryRun === true) {
     throw new Error('runtime:luna-candidate-quality-remediation cannot combine --apply with --dry-run');
@@ -95,16 +108,16 @@ export async function runLunaCandidateQualityRemediation(options = {}) {
 
   const coverage = fixture
     ? fixtureCoverageGate()
-    : await runLunaCommunityCoverageGate({ json: true });
-  const initialDiagnostics = await runLunaCandidateBottleneckDiagnostics({
+    : await withSuppressedStdout(json, () => runLunaCommunityCoverageGate({ json: true }));
+  const initialDiagnostics = await withSuppressedStdout(json, () => runLunaCandidateBottleneckDiagnostics({
     json: true,
     dryRun: true,
     fixture,
     market,
     limit,
-  });
+  }));
   const initialRows = initialDiagnostics.rows || [];
-  const planned = plannedCommands({ market, limit });
+  const planned = plannedCommands({ market, limit, forceBacktest });
 
   const remediationPlan = {
     backtestRefresh: shouldRunBacktest(initialRows),
@@ -122,26 +135,26 @@ export async function runLunaCandidateQualityRemediation(options = {}) {
 
   if (apply && !dryRun) {
     if (remediationPlan.backtestRefresh) {
-      executed.backtestRefresh = await runCandidateBacktestRefresh({
+      executed.backtestRefresh = await withSuppressedStdout(json, () => runCandidateBacktestRefresh({
         json: true,
         fixture,
         dryRun: false,
-        force: true,
+        force: forceBacktest,
         market,
         limit,
-      });
+      }));
     }
     if (remediationPlan.predictiveRefresh) {
-      executed.predictiveRefresh = await runLunaPredictiveEvidenceRefresh({
+      executed.predictiveRefresh = await withSuppressedStdout(json, () => runLunaPredictiveEvidenceRefresh({
         json: true,
         fixture,
         dryRun: false,
         market,
         limit,
-      });
+      }));
     }
     if (remediationPlan.strategyEnhancementShadow) {
-      executed.strategyEnhancementShadow = await runLunaPhase4StrategyEnhancementShadow({
+      executed.strategyEnhancementShadow = await withSuppressedStdout(json, () => runLunaPhase4StrategyEnhancementShadow({
         json: true,
         fixture,
         apply: true,
@@ -149,10 +162,10 @@ export async function runLunaCandidateQualityRemediation(options = {}) {
         confirm: 'luna-phase4-strategy-enhancement-shadow',
         market,
         limit,
-      });
+      }));
     }
     if (remediationPlan.bottleneckShadowAudit) {
-      executed.bottleneckShadowAudit = await runLunaCandidateBottleneckDiagnostics({
+      executed.bottleneckShadowAudit = await withSuppressedStdout(json, () => runLunaCandidateBottleneckDiagnostics({
         json: true,
         fixture,
         apply: true,
@@ -160,18 +173,18 @@ export async function runLunaCandidateQualityRemediation(options = {}) {
         confirm: 'luna-candidate-bottleneck-shadow',
         market,
         limit,
-      });
+      }));
     }
   }
 
   const finalDiagnostics = apply && !dryRun
-    ? await runLunaCandidateBottleneckDiagnostics({
+    ? await withSuppressedStdout(json, () => runLunaCandidateBottleneckDiagnostics({
       json: true,
       dryRun: true,
       fixture,
       market,
       limit,
-    })
+    }))
     : null;
   const finalRows = finalDiagnostics?.rows || initialRows;
   const byAction = countBy(finalRows, 'recommendedAction');
@@ -188,6 +201,7 @@ export async function runLunaCandidateQualityRemediation(options = {}) {
     confirmToken: CONFIRM,
     market,
     limit,
+    forceBacktest,
     coverage: {
       ok: coverage?.ok === true,
       blockers: coverage?.blockers || [],
@@ -221,6 +235,7 @@ if (isDirectExecution(import.meta.url)) {
       fixture: hasFlag('fixture'),
       market: argValue('market', process.env.LUNA_CANDIDATE_QUALITY_REMEDIATION_MARKET || 'all'),
       limit: Number(argValue('limit', process.env.LUNA_CANDIDATE_QUALITY_REMEDIATION_LIMIT || 50)),
+      forceBacktest: hasFlag('force-backtest'),
       confirm: argValue('confirm', ''),
     }),
     onSuccess: async (result) => console.log(JSON.stringify(result, null, 2)),

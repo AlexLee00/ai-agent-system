@@ -232,12 +232,16 @@ function checkHardening(components, missingComponents, score, config = {}, conte
 
   const backtestStatus = context?.freshBacktestStatus || null;
   const backtestSource = backtestStatus?.source || {};
+  const maxDrawdown = Math.abs(finiteNumber(backtestSource?.max_drawdown ?? backtestSource?.maxDrawdown, 0));
+  const maxDrawdownLimit = finiteNumber(context?.maxBacktestDrawdown ?? process.env.LUNA_CANDIDATE_BACKTEST_MAX_DRAWDOWN, 30);
+  const drawdownHigh = maxDrawdown > maxDrawdownLimit;
   const backtestUnhealthy =
     backtestSource?.healthy === false
     || String(backtestSource?.healthy).toLowerCase() === 'false'
     || backtestSource?.would_block === true
     || String(backtestSource?.would_block).toLowerCase() === 'true'
-    || String(backtestSource?.gate_status || '').startsWith('would_block');
+    || String(backtestSource?.gate_status || '').startsWith('would_block')
+    || drawdownHigh;
   const backtestBlocked = context?.hasFreshBacktest === false || backtestStatus?.fresh === false || backtestUnhealthy;
 
   const anyBlocked = coverageBlocked || predictionBlocked || backtestBlocked;
@@ -248,6 +252,7 @@ function checkHardening(components, missingComponents, score, config = {}, conte
     fallbackAnalyst,
     backtestBlocked: backtestBlocked || false,
     backtestUnhealthy,
+    drawdownHigh,
     anyBlocked,
     enforce: config?.hardeningEnforce === true,
     backtestStatus,
@@ -314,6 +319,7 @@ export function buildPredictiveValidationEvidence(candidate = {}, context = {}, 
   if (hardening.coverageBlocked) reasonParts.push(`coverage=${componentCoverage.toFixed(2)}<${COVERAGE_REQUIRED}`);
   if (hardening.backtestBlocked && !hardening.backtestUnhealthy) reasonParts.push('fresh_backtest_missing_or_stale');
   if (hardening.backtestUnhealthy) reasonParts.push('backtest_unhealthy_or_would_block');
+  if (hardening.drawdownHigh) reasonParts.push('drawdown_high');
   if (hardening.predictionBlocked) reasonParts.push('prediction_missing_or_zero');
   if (hardening.fallbackAnalyst) reasonParts.push('analyst_fallback_only');
 
