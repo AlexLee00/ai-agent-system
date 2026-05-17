@@ -174,19 +174,10 @@ defmodule Darwin.V2.ShadowRunner do
            task_type: :evaluation_scoring
          ) do
       {:ok, %{response: text}} ->
-        v2_score = parse_score(text)
-        matched  = ShadowCompare.score_match?(v1_score, v2_score, @match_tolerance)
+        handle_shadow_response(title, v1_score, text)
 
-        Logger.info("[다윈V2 섀도우] #{title} — V1:#{v1_score} V2:#{v2_score} #{if matched, do: "일치", else: "불일치"}")
-
-        record_shadow_run(%{
-          paper_title: title,
-          v1_score:    v1_score,
-          v2_score:    v2_score,
-          matched:     matched
-        })
-
-        maybe_notify_promotion()
+      {:ok, text} when is_binary(text) ->
+        handle_shadow_response(title, v1_score, text)
 
       {:error, :selector_disabled} ->
         Logger.debug("[다윈V2 섀도우] V2 LLM 비활성 — 스킵")
@@ -200,6 +191,17 @@ defmodule Darwin.V2.ShadowRunner do
           v2_score:    nil,
           matched:     false,
           error:       inspect(reason)
+        })
+
+      other ->
+        Logger.warning("[다윈V2 섀도우] V2 평가 응답 포맷 불일치 (#{title}): #{inspect(other)}")
+
+        record_shadow_run(%{
+          paper_title: title,
+          v1_score:    v1_score,
+          v2_score:    nil,
+          matched:     false,
+          error:       inspect(other)
         })
     end
   end
@@ -218,10 +220,12 @@ defmodule Darwin.V2.ShadowRunner do
              "darwin.evaluator",
              prompt,
              max_tokens: 256,
-             task_type: :evaluation_scoring
+           task_type: :evaluation_scoring
            ) do
         {:ok, %{response: text}} -> {:ok, parse_score(text)}
+        {:ok, text} when is_binary(text) -> {:ok, parse_score(text)}
         {:error, reason}         -> {:error, reason}
+        other                    -> {:error, {:unexpected_response, other}}
       end
 
     case v2_result do
@@ -349,6 +353,22 @@ defmodule Darwin.V2.ShadowRunner do
     점수: (0-10 정수)
     이유: (한 줄)
     """
+  end
+
+  defp handle_shadow_response(title, v1_score, text) do
+    v2_score = parse_score(text)
+    matched  = ShadowCompare.score_match?(v1_score, v2_score, @match_tolerance)
+
+    Logger.info("[다윈V2 섀도우] #{title} — V1:#{v1_score} V2:#{v2_score} #{if matched, do: "일치", else: "불일치"}")
+
+    record_shadow_run(%{
+      paper_title: title,
+      v1_score:    v1_score,
+      v2_score:    v2_score,
+      matched:     matched
+    })
+
+    maybe_notify_promotion()
   end
 
   defp parse_score(text) do
