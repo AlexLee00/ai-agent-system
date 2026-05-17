@@ -18,6 +18,7 @@ const handoffVerify = require('./handoff-verify');
 const systematicDebugging = require('./systematic-debugging');
 const brainstorming = require('./brainstorming');
 const verification = require('./verification');
+const mcpBuilder = require('./mcp-builder');
 const darwinSourceRanking = require('./darwin/source-ranking');
 const darwinCounterexample = require('./darwin/counterexample');
 const darwinReplicator = require('./darwin/replicator');
@@ -55,6 +56,7 @@ module.exports = {
   securityPipeline, evalHarness, teamOrchestrator, sessionWrap,
   buildSystem, instinctLearning, patternToSkill, skillExplorer, sessionAnalyzer,
   tdd, handoffVerify,
+  systematicDebugging, brainstorming, verification, mcpBuilder,
   darwin: {
     sourceRanking: darwinSourceRanking,
     counterexample: darwinCounterexample,
