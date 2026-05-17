@@ -138,6 +138,7 @@ function clamp01(value, fallback = 1) {
 
 function firstFinite(...values) {
   for (const value of values) {
+    if (value == null || value === '') continue;
     const numeric = Number(value);
     if (Number.isFinite(numeric)) return numeric;
   }
@@ -313,9 +314,12 @@ export function buildTradeDataConfirmationQuality(signal = {}) {
   const deficits = [];
   if (evidenceCount == null) deficits.push('external_evidence_missing');
   else if (evidenceCount < 2) deficits.push('external_evidence_count_lt_2');
-  if (sourceCount != null && sourceCount < 2) deficits.push('source_diversity_lt_2');
-  if (avgQuality != null && avgQuality < 0.55) deficits.push('source_quality_lt_0.55');
-  if (avgFreshness != null && avgFreshness < 0.5) deficits.push('freshness_lt_0.5');
+  if (evidenceCount > 0 && sourceCount == null) deficits.push('source_diversity_missing');
+  else if (sourceCount != null && sourceCount < 2) deficits.push('source_diversity_lt_2');
+  if (evidenceCount > 0 && avgQuality == null) deficits.push('source_quality_missing');
+  else if (avgQuality != null && avgQuality < 0.55) deficits.push('source_quality_lt_0.55');
+  if (evidenceCount > 0 && avgFreshness == null) deficits.push('freshness_missing');
+  else if (avgFreshness != null && avgFreshness < 0.5) deficits.push('freshness_lt_0.5');
   if (technical.direct === false) deficits.push('technical_presignal_false');
   else if (!technical.ok) deficits.push('technical_confirmation_missing');
   return {
