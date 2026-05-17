@@ -26,7 +26,10 @@ export function createHubApp(options: HubAppOptions = {}): Express {
   const isShuttingDown = options?.isShuttingDown || (() => false);
   const isStartupComplete = options?.isStartupComplete || (() => true);
 
-  app.use(express.json({ limit: '1mb' }));
+  app.use(express.json({
+    limit: '1mb',
+    verify: (req: any, _res: any, buf: Buffer) => { req.rawBody = buf; },
+  }));
   app.use(createShutdownGuard(isShuttingDown));
   app.use(pathGuardMiddleware);
   app.use(hubRequestContextMiddleware);

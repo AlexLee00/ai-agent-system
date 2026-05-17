@@ -341,11 +341,15 @@ Python:  Darwin R&D 서브프로세스 유지 (현행)
 
 ## 6. Phase별 구현 계획
 
-### Phase 1 (현재 — 2주) ✅ SPEC 정의
+### Phase 1 (2026-05-17 완료) ✅ SPEC + DB + API + Webhook
 - [x] SPEC.md 작성
 - [x] 6팀 ticket 유형 매핑
 - [x] 언어별 구현 경로 검토
-- [ ] 마스터 SPEC 승인
+- [x] agent.symphony_tasks DB 마이그레이션 (bots/hub/migrations/20260517000001_symphony_tasks.sql)
+- [x] Hub /hub/tasks API: POST/GET/:id/PATCH (bots/hub/lib/routes/tasks.ts)
+- [x] GitHub Issues Webhook 핸들러 (bots/hub/lib/webhooks/github-issues.ts)
+- [x] POST /github/webhook 엔드포인트 (X-Hub-Signature-256 검증)
+- [x] route-registry.ts 등록 완료
 
 ### Phase 2 (2-4주) — Orchestrator 구현
 ```

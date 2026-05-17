@@ -110,6 +110,13 @@ const {
   controlRunCancelRoute,
   controlCallbackRoute,
 } = require('../lib/routes/control');
+const {
+  tasksCreateRoute,
+  tasksListRoute,
+  tasksDetailRoute,
+  tasksPatchRoute,
+} = require('../lib/routes/tasks');
+const { githubWebhookRoute } = require('../lib/routes/github-webhook');
 
 type RuntimeFlag = () => boolean;
 
@@ -136,6 +143,9 @@ export function registerHubRoutes(app: Express, opts: HubRouteOptions): void {
     llmAdmissionMiddleware,
   } = opts;
 
+  // GitHub Webhook: /hub 인증 밖, GitHub Signature로 검증
+  app.post('/github/webhook', generalLimiter, githubWebhookRoute);
+
   app.get('/healthz', generalLimiter, healthRoute);
   app.get('/hub/health', generalLimiter, healthRoute);
   app.get('/hub/health/live', generalLimiter, (_req: Request, res: Response) => {
@@ -160,6 +170,12 @@ export function registerHubRoutes(app: Express, opts: HubRouteOptions): void {
   });
 
   app.use('/hub', authMiddleware);
+
+  // Symphony Orchestrator Tasks API
+  app.post('/hub/tasks', generalLimiter, tasksCreateRoute);
+  app.get('/hub/tasks', generalLimiter, tasksListRoute);
+  app.get('/hub/tasks/:id', generalLimiter, tasksDetailRoute);
+  app.patch('/hub/tasks/:id', generalLimiter, tasksPatchRoute);
 
   app.post('/hub/pg/query', pgLimiter, pgQueryRoute);
   app.post('/hub/alarm', generalLimiter, alarmRoute);
