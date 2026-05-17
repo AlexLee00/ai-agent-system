@@ -71,6 +71,26 @@ assert.equal(bottleneckHold.targetWeight, 0);
 assert.equal(bottleneckHold.evidence.bottleneck.hardHold, true);
 assert.ok(bottleneckHold.evidence.hardReasons.includes('candidate_bottleneck_quarantine'));
 
+const strategyQualityHold = buildLunaWeightVector({
+  asOf: now,
+  candidate: { symbol: 'SQ/USDT', market: 'crypto', score: 0.94, discovered_at: now },
+  backtest: { fresh: true, healthy: true, sharpe: 1.5, win_rate: 64, max_drawdown: 9, last_backtest_at: now },
+  predictive: { decision: 'pass_prediction', score: 0.84, created_at: now },
+  community: { avg_score: 0.52, source_count: 4, last_seen_at: now },
+  strategyQuality: {
+    enhancement_status: 'shadow_review',
+    hyperopt_status: 'planned',
+    max_drawdown_guard: 'block_live_forward',
+    indicator_score: 0.18,
+    reasons: ['max_drawdown_gt_20pct'],
+    observed_at: now,
+  },
+}, { riskBudgetUsdt: 50 });
+assert.equal(strategyQualityHold.signal, 'hold');
+assert.equal(strategyQualityHold.targetWeight, 0);
+assert.equal(strategyQualityHold.evidence.strategyQuality.hardHold, true);
+assert.ok(strategyQualityHold.evidence.hardReasons.includes('strategy_quality_block_live_forward'));
+
 const paper = buildLunaPaperTradingPlan(pass, {
   position: { amount: 0, avg_price: 65000 },
   equityUsdt: 1000,
@@ -97,6 +117,7 @@ assert.equal(weightRuntime.summary.liveMutation, false);
 assert.equal(weightInserts.length, 0);
 assert.ok(weightRuntime.summary.total >= 2);
 assert.ok(weightRuntime.summary.bottleneckHardHold >= 1);
+assert.ok(weightRuntime.summary.strategyQualityHardHold >= 1);
 
 const paperInserts = [];
 const paperRuntime = await runLunaPaperTradingShadow({
@@ -162,6 +183,11 @@ const payload = {
     signal: bottleneckHold.signal,
     penalty: bottleneckHold.evidence.bottleneck.penalty,
   },
+  strategyQuality: {
+    hardHold: strategyQualityHold.evidence.strategyQuality.hardHold,
+    signal: strategyQualityHold.signal,
+    penalty: strategyQualityHold.evidence.strategyQuality.penalty,
+  },
   paper: {
     side: paper.paperSide,
     notional: paper.paperNotionalUsdt,
@@ -173,6 +199,7 @@ const payload = {
     promotionCandidates: promotionGateRuntime.summary.promotionCandidates,
     paperBottleneckHardHold: paperRuntime.summary.bottleneckHardHold,
     paperBottleneckPreventedOrder: paperRuntime.summary.bottleneckPreventedOrder,
+    strategyQualityHardHold: weightRuntime.summary.strategyQualityHardHold,
   },
 };
 

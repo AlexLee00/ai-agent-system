@@ -65,6 +65,7 @@ export function normalizeLunaPaperPromotionRow(row = {}) {
     shadowOnly: normalizeBool(row.shadow_only ?? row.shadowOnly, true),
     evidence,
     promotionBacktestQuality: evidence?.promotionBacktestQuality || {},
+    promotionStrategyQuality: evidence?.promotionStrategyQuality || evidence?.strategyQualityAudit || evidence?.weightVector?.evidence?.strategyQuality || {},
     observedAt: row.observed_at || row.observedAt || new Date().toISOString(),
   };
 }
@@ -96,6 +97,35 @@ function getPromotionBacktestQuality(row = {}, config = {}) {
     vectorbtEnabled,
     sharpe,
     maxPromotionSharpe,
+    stable: reasons.length === 0,
+    reasons,
+  };
+}
+
+function getPromotionStrategyQuality(row = {}) {
+  const quality = row.promotionStrategyQuality
+    || row.evidence?.promotionStrategyQuality
+    || row.evidence?.strategyQualityAudit
+    || row.evidence?.weightVector?.evidence?.strategyQuality
+    || {};
+  const enhancementStatus = String(quality.enhancementStatus ?? quality.enhancement_status ?? '').trim();
+  const hyperoptStatus = String(quality.hyperoptStatus ?? quality.hyperopt_status ?? '').trim();
+  const maxDrawdownGuard = String(quality.maxDrawdownGuard ?? quality.max_drawdown_guard ?? '').trim();
+  const indicatorScore = finiteNumber(quality.indicatorScore ?? quality.indicator_score, 0);
+  const hardHold = normalizeBool(quality.hardHold ?? quality.hard_hold, false) || maxDrawdownGuard === 'block_live_forward';
+  const reasons = [
+    hardHold ? 'strategy_quality_block_live_forward' : null,
+    maxDrawdownGuard === 'tighten_risk' ? 'strategy_quality_tighten_risk' : null,
+    hyperoptStatus === 'planned' ? 'strategy_hyperopt_planned' : null,
+    enhancementStatus && enhancementStatus !== 'shadow_ready' ? 'strategy_quality_not_shadow_ready' : null,
+  ].filter(Boolean);
+  return {
+    present: Object.keys(quality || {}).length > 0,
+    enhancementStatus: enhancementStatus || null,
+    hyperoptStatus: hyperoptStatus || null,
+    maxDrawdownGuard: maxDrawdownGuard || null,
+    indicatorScore,
+    hardHold,
     stable: reasons.length === 0,
     reasons,
   };
@@ -134,6 +164,12 @@ export function evaluateLunaPaperPromotionHistory(rows = [], config = {}) {
     .filter((quality) => quality.present);
   const fallbackOnlyRows = backtestQualityRows.filter((quality) => quality.reasons.includes('fallback_only_backtest'));
   const unrealisticSharpeRows = backtestQualityRows.filter((quality) => quality.reasons.includes('unrealistic_sharpe'));
+  const strategyQualityRows = history
+    .map((row) => getPromotionStrategyQuality(row))
+    .filter((quality) => quality.present);
+  const strategyHardHoldRows = strategyQualityRows.filter((quality) => quality.reasons.includes('strategy_quality_block_live_forward'));
+  const strategyHyperoptPlannedRows = strategyQualityRows.filter((quality) => quality.reasons.includes('strategy_hyperopt_planned'));
+  const strategyNotReadyRows = strategyQualityRows.filter((quality) => quality.reasons.includes('strategy_quality_not_shadow_ready'));
   const avgConfidence = history.length
     ? history.reduce((sum, row) => sum + row.confidence, 0) / history.length
     : 0;
@@ -150,6 +186,9 @@ export function evaluateLunaPaperPromotionHistory(rows = [], config = {}) {
     overCapRows.length > 0 ? 'paper_order_cap_violation_seen' : null,
     fallbackOnlyRows.length > 0 ? 'fallback_only_backtest_seen' : null,
     unrealisticSharpeRows.length > 0 ? 'unrealistic_sharpe_seen' : null,
+    strategyHardHoldRows.length > 0 ? 'strategy_quality_block_live_forward_seen' : null,
+    strategyHyperoptPlannedRows.length > 0 ? 'strategy_hyperopt_planned_seen' : null,
+    strategyNotReadyRows.length > 0 ? 'strategy_quality_not_shadow_ready_seen' : null,
   ].filter(Boolean);
 
   const promotionCandidate = blockReasons.length === 0;
@@ -187,6 +226,9 @@ export function evaluateLunaPaperPromotionHistory(rows = [], config = {}) {
       overCapCount: overCapRows.length,
       fallbackOnlyBacktestCount: fallbackOnlyRows.length,
       unrealisticSharpeCount: unrealisticSharpeRows.length,
+      strategyQualityHardHoldCount: strategyHardHoldRows.length,
+      strategyHyperoptPlannedCount: strategyHyperoptPlannedRows.length,
+      strategyNotReadyCount: strategyNotReadyRows.length,
       backtestQualityMaxSharpe: cfg.maxPromotionSharpe,
       recent: history.slice(0, Math.max(cfg.minCycles, 5)).map((row) => ({
         observedAt: row.observedAt,
@@ -198,6 +240,7 @@ export function evaluateLunaPaperPromotionHistory(rows = [], config = {}) {
         bottleneckHardHold: normalizeBool(getBottleneckAvoidance(row).hardHold, false),
         noLookaheadOk: noLookaheadOk(row),
         backtestQuality: getPromotionBacktestQuality(row, cfg),
+        strategyQuality: getPromotionStrategyQuality(row),
         pass: isPaperPass(row),
       })),
       promotionRequiresExplicitMasterApproval: true,
@@ -249,8 +292,18 @@ export async function loadLunaPaperPromotionRows({ hours = 24, limit = 500, mark
     : null;
   const marketWhere = normalizedMarket ? `AND pts.market = $${params.push(normalizedMarket)}` : '';
   return query(`
-    SELECT pts.symbol, pts.market, pts.exchange, pts.target_weight, pts.current_weight, pts.delta_weight,
-           pts.paper_side, pts.paper_notional_usdt, pts.confidence, pts.status, pts.shadow_only,
+    WITH latest_strategy AS (
+      SELECT DISTINCT ON (symbol, market)
+             symbol, market, enhancement_status, hyperopt_status, max_drawdown_guard,
+             indicator_score, provider_status, reasons, observed_at
+        FROM luna_phase4_strategy_enhancement_shadow
+       WHERE shadow_only IS TRUE
+         AND observed_at >= NOW() - INTERVAL '24 hours'
+       ORDER BY symbol, market, observed_at DESC
+    ),
+    paper_rows AS (
+      SELECT pts.symbol, pts.market, pts.exchange, pts.target_weight, pts.current_weight, pts.delta_weight,
+             pts.paper_side, pts.paper_notional_usdt, pts.confidence, pts.status, pts.shadow_only,
            CASE
              WHEN cbs.symbol IS NULL THEN pts.evidence
              ELSE jsonb_set(
@@ -268,16 +321,42 @@ export async function loadLunaPaperPromotionRows({ hours = 24, limit = 500, mark
                ),
                true
              )
+           END AS evidence_with_backtest,
+             pts.observed_at
+        FROM luna_paper_trading_shadow pts
+        LEFT JOIN candidate_backtest_status cbs
+          ON cbs.symbol = pts.symbol
+         AND cbs.market = pts.market
+       WHERE pts.observed_at >= NOW() - ($1::int * INTERVAL '1 hour')
+         AND pts.shadow_only IS TRUE
+         ${marketWhere}
+    )
+    SELECT pr.symbol, pr.market, pr.exchange, pr.target_weight, pr.current_weight, pr.delta_weight,
+           pr.paper_side, pr.paper_notional_usdt, pr.confidence, pr.status, pr.shadow_only,
+           CASE
+             WHEN ls.symbol IS NULL THEN pr.evidence_with_backtest
+             ELSE jsonb_set(
+               COALESCE(pr.evidence_with_backtest, '{}'::jsonb),
+               '{promotionStrategyQuality}',
+               jsonb_build_object(
+                 'enhancementStatus', ls.enhancement_status,
+                 'hyperoptStatus', ls.hyperopt_status,
+                 'maxDrawdownGuard', ls.max_drawdown_guard,
+                 'indicatorScore', ls.indicator_score,
+                 'providerStatus', ls.provider_status,
+                 'reasons', COALESCE(ls.reasons, '[]'::jsonb),
+                 'observedAt', ls.observed_at,
+                 'source', 'luna_phase4_strategy_enhancement_shadow'
+               ),
+               true
+             )
            END AS evidence,
-           pts.observed_at
-      FROM luna_paper_trading_shadow pts
-      LEFT JOIN candidate_backtest_status cbs
-        ON cbs.symbol = pts.symbol
-       AND cbs.market = pts.market
-     WHERE pts.observed_at >= NOW() - ($1::int * INTERVAL '1 hour')
-       AND pts.shadow_only IS TRUE
-       ${marketWhere}
-     ORDER BY pts.symbol, pts.market, pts.observed_at DESC
+           pr.observed_at
+      FROM paper_rows pr
+      LEFT JOIN latest_strategy ls
+        ON ls.symbol = pr.symbol
+       AND ls.market = pr.market
+     ORDER BY pr.symbol, pr.market, pr.observed_at DESC
      LIMIT $2
   `, params).catch(() => []);
 }

@@ -40,6 +40,7 @@ function fixtureInputs() {
       predictive: { decision: 'would_block_prediction', score: 0.33, component_coverage: 0.5, created_at: now },
       community: { avg_score: 0.2, source_count: 1, last_seen_at: now, bot_noise_score: 0.6, hype_spike: true },
       bottleneck: { severity: 'blocker', recommended_action: 'quarantine_candidate_shadow', candidate_selection_penalty: 0.75, reasons: ['backtest_unhealthy_or_would_block', 'sharpe_negative'], observed_at: now },
+      strategyQuality: { enhancement_status: 'shadow_review', hyperopt_status: 'planned', max_drawdown_guard: 'block_live_forward', indicator_score: 0.18, reasons: ['max_drawdown_gt_20pct'], observed_at: now },
     },
   ];
 }
@@ -120,6 +121,8 @@ export async function runLunaWeightVectorShadow(options: any = {}, deps: any = {
     noLookaheadViolations: rows.filter((row) => !row.noLookaheadOk).length,
     bottleneckPenalized: rows.filter((row) => Number(row.evidence?.bottleneck?.penalty || 0) > 0).length,
     bottleneckHardHold: rows.filter((row) => row.evidence?.bottleneck?.hardHold === true).length,
+    strategyQualityPenalized: rows.filter((row) => Number(row.evidence?.strategyQuality?.penalty || 0) > 0).length,
+    strategyQualityHardHold: rows.filter((row) => row.evidence?.strategyQuality?.hardHold === true).length,
     liveMutation: false,
   };
 

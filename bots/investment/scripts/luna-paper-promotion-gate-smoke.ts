@@ -20,6 +20,17 @@ const hardHoldEvidence = {
   bottleneckAvoidance: { present: true, hardHold: true, preventedOrder: false, action: 'quarantine_candidate_shadow' },
   weightVector: { noLookaheadOk: true },
 };
+const strategyQualityEvidence = {
+  bottleneckAvoidance: { present: false, hardHold: false, preventedOrder: false },
+  weightVector: { noLookaheadOk: true },
+  promotionStrategyQuality: {
+    enhancementStatus: 'shadow_review',
+    hyperoptStatus: 'planned',
+    maxDrawdownGuard: 'block_live_forward',
+    indicatorScore: 0.2,
+    reasons: ['max_drawdown_gt_20pct'],
+  },
+};
 
 const passHistory = [
   { symbol: 'PASS/USDT', market: 'crypto', exchange: 'binance', paper_side: 'BUY', paper_notional_usdt: 20, confidence: 0.74, status: 'planned', shadow_only: true, evidence: passEvidence, observed_at: iso(1) },
@@ -51,6 +62,20 @@ assert.equal(blocked.promotionCandidate, false);
 assert.equal(blocked.decision, 'shadow_promotion_observe');
 assert.ok(blocked.blockReasons.includes('candidate_bottleneck_hard_hold_seen'));
 assert.equal(blocked.consecutivePasses, 0);
+
+const strategyBlocked = evaluateLunaPaperPromotionHistory([
+  { symbol: 'SQ/USDT', market: 'crypto', exchange: 'binance', paper_side: 'BUY', paper_notional_usdt: 20, confidence: 0.76, status: 'planned', shadow_only: true, evidence: strategyQualityEvidence, observed_at: iso(1) },
+  { symbol: 'SQ/USDT', market: 'crypto', exchange: 'binance', paper_side: 'BUY', paper_notional_usdt: 18, confidence: 0.72, status: 'planned', shadow_only: true, evidence: passEvidence, observed_at: iso(31) },
+  { symbol: 'SQ/USDT', market: 'crypto', exchange: 'binance', paper_side: 'BUY', paper_notional_usdt: 16, confidence: 0.70, status: 'planned', shadow_only: true, evidence: passEvidence, observed_at: iso(61) },
+], {
+  minCycles: 3,
+  minConsecutivePasses: 3,
+  minAvgConfidence: 0.62,
+  maxOrderUsdt: 50,
+});
+assert.equal(strategyBlocked.promotionCandidate, false);
+assert.ok(strategyBlocked.blockReasons.includes('strategy_quality_block_live_forward_seen'));
+assert.ok(strategyBlocked.blockReasons.includes('strategy_hyperopt_planned_seen'));
 
 const report = buildLunaPaperPromotionGateReport([...passHistory, ...passHistory.map((row) => ({ ...row, symbol: 'LOW/USDT', confidence: 0.4 }))], {
   minCycles: 3,
@@ -120,6 +145,10 @@ const payload = {
   blocked: {
     decision: blocked.decision,
     reasons: blocked.blockReasons,
+  },
+  strategyBlocked: {
+    decision: strategyBlocked.decision,
+    reasons: strategyBlocked.blockReasons,
   },
   runtime: {
     writeMode: runtime.writeMode,
