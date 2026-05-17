@@ -1,3 +1,32 @@
+# 세션 인수인계 — 2026-05-17 (CODEX_LUNA_PHASE1_UNIFIED_IMPLEMENTATION Goal-Driven 5/5 완료 검증)
+
+## 완료 요약 ✅ (루나팀 Phase 1 — community evidence + backtest + predictive validation + launchd)
+
+### Phase 1 Goal-Driven 5/5 결과
+
+| # | 검증 기준 | 결과 | 근거 |
+|---|-----------|------|------|
+| G1 | external_evidence_events community > 0건 | ✅ PASS | DB 직접 확인: 884건 (2일), 419건 (24h) |
+| G2 | active candidate backtest fresh | ✅ PASS | candidate_backtest_status: fresh=187건, total=182건 |
+| G3 | predictive validation Gate 작동 | ✅ PASS | predictive_validation_log: block_backtest_gate(2869), fire(1723), block_stale(378) |
+| G4 | launchd 2 신규 가동 | ✅ PASS | launchctl list: ai.luna.community-evidence-refresh + ai.luna.candidate-backtest-refresh |
+| G5 | Shadow Mode — 실 매매 영향 0 | ✅ PASS | 두 plist SHADOW_MODE=true, hardeningEnforce 기본 false |
+
+### 구현 파일 확인 (이전 세션 완성, 이번 세션 검증)
+
+- **Task 1** `scripts/runtime-luna-community-evidence-refresh.ts`: Reddit/.json + ApeWisdom API + RSS(crypto/domestic/overseas) ✅
+- **Task 2** `scripts/runtime-luna-candidate-backtest-refresh.ts`: active candidates → vectorbt+OHLCV fallback → candidate_backtest_status ✅
+- **Task 3** `shared/predictive-validation.ts:214`: COVERAGE_REQUIRED=0.75, checkHardening, logPredictiveValidation ✅
+- **Task 4** `launchd/ai.luna.community-evidence-refresh.plist` (06:00 KST, 600s) + `ai.luna.candidate-backtest-refresh.plist` (12:00 KST, 1800s) ✅
+
+### 다음 세션 참고
+
+- Shadow Mode 1주 누적 후 Promotion Gate 평가 (2026-05-24~)
+- hardeningEnforce=true 설정으로 실 차단 시작 (마스터 승인 후)
+- Phase 2: FinRL-X 4 Layer (다윈 R&D 또는 메티 기획)
+
+---
+
 # 세션 인수인계 — 2026-05-17 (CODEX_BLOG_V3_UNIFIED_MASTER Week 2 H영역 Goal-Driven 5/5 검증)
 
 ## 완료 요약 ✅ (H영역 — Reddit 트렌드 + 베스트셀러 + 3-source fusion)

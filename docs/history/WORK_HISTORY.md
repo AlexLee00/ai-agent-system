@@ -4,6 +4,16 @@
 > 상세 내용: `reservation-dev-summary.md` / `reservation-handoff.md`
 > 최초 작성: 2026-02-27
 
+## 2026-05-17: CODEX_LUNA_PHASE1_UNIFIED_IMPLEMENTATION — Goal-Driven 5/5 검증 완료
+
+- **검증 대상**: 루나팀 Phase 1 — community evidence + candidate backtest + predictive validation + launchd 2개
+- **G1 community evidence**: external_evidence_events community = 884건(2일) / 419건(24h) ✅
+- **G2 backtest fresh**: candidate_backtest_status fresh=187, total=182, healthy=69, would_block=113 ✅
+- **G3 validation gate**: predictive_validation_log — block_backtest_gate(2869), fire(1723), block_stale_backtest(378) ✅
+- **G4 launchd 2개**: ai.luna.community-evidence-refresh (06:00 KST) + ai.luna.candidate-backtest-refresh (12:00 KST) ✅
+- **G5 Shadow Mode**: 두 plist SHADOW_MODE=true, 실 매매 영향 0 ✅
+- **태그**: `luna-phase1-codex-p0-complete-20260517`
+
 ## 2026-05-17: CODEX_BLOG_V3_UNIFIED_MASTER — Week 2 H영역 Goal-Driven 5/5 검증
 
 - **검증 대상**: H영역 (Reddit 트렌드 + 베스트셀러 + 3-source fusion 토픽 선정)
