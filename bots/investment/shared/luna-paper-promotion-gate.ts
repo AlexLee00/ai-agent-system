@@ -312,6 +312,7 @@ function isPaperPass(row = {}) {
     && row.paperNotionalUsdt > 0
     && normalizeBool(row.shadowOnly, true) === true
     && normalizeBool(bottleneck.hardHold, false) === false
+    && normalizeBool(bottleneck.preventedOrder, false) === false
     && noLookaheadOk(row) === true;
 }
 
@@ -338,6 +339,7 @@ export function evaluateLunaPaperPromotionHistory(rows = [], config = {}) {
     .filter((quality) => quality.present);
   const latestBacktestQuality = getPromotionBacktestQuality(history[0] || {}, cfg);
   const latestStrategyQuality = getPromotionStrategyQuality(history[0] || {});
+  const latestBottleneckAvoidance = getBottleneckAvoidance(history[0] || {});
   const fallbackOnlyRows = backtestQualityRows.filter((quality) => quality.reasons.includes('fallback_only_backtest'));
   const nonVectorbtRows = backtestQualityRows.filter((quality) => quality.reasons.includes('non_vectorbt_backtest'));
   const unrealisticSharpeRows = backtestQualityRows.filter((quality) => quality.reasons.includes('unrealistic_sharpe'));
@@ -347,18 +349,24 @@ export function evaluateLunaPaperPromotionHistory(rows = [], config = {}) {
   const strategyHardHoldRows = strategyQualityRows.filter((quality) => quality.reasons.includes('strategy_quality_block_live_forward'));
   const strategyHyperoptPlannedRows = strategyQualityRows.filter((quality) => quality.reasons.includes('strategy_hyperopt_planned'));
   const strategyNotReadyRows = strategyQualityRows.filter((quality) => quality.reasons.includes('strategy_quality_not_shadow_ready'));
-  const avgConfidence = history.length
-    ? history.reduce((sum, row) => sum + row.confidence, 0) / history.length
+  const promotionConfidenceRows = passRows.length > 0 ? passRows : history;
+  const avgConfidence = promotionConfidenceRows.length
+    ? promotionConfidenceRows.reduce((sum, row) => sum + row.confidence, 0) / promotionConfidenceRows.length
     : 0;
   const totalPaperNotionalUsdt = history.reduce((sum, row) => sum + Math.max(0, row.paperNotionalUsdt), 0);
+  const latestStrategyHardHold = latestStrategyQuality.reasons.includes('strategy_quality_block_live_forward');
+  const latestStrategyHyperoptPlanned = latestStrategyQuality.reasons.includes('strategy_hyperopt_planned');
+  const latestStrategyNotReady = latestStrategyQuality.reasons.includes('strategy_quality_not_shadow_ready');
+  const latestBottleneckHardHold = normalizeBool(latestBottleneckAvoidance.hardHold, false);
+  const latestBottleneckPreventedOrder = normalizeBool(latestBottleneckAvoidance.preventedOrder, false);
 
   const blockReasons = [
     history.length < cfg.minCycles ? 'insufficient_shadow_cycles' : null,
     consecutivePasses < cfg.minConsecutivePasses ? 'insufficient_consecutive_paper_passes' : null,
     avgConfidence < cfg.minAvgConfidence ? 'avg_confidence_below_promotion_floor' : null,
     passRows.length === 0 ? 'no_paper_buy_pass' : null,
-    hardHoldRows.length > 0 ? 'candidate_bottleneck_hard_hold_seen' : null,
-    preventedRows.length > 0 ? 'candidate_bottleneck_prevented_order_seen' : null,
+    latestBottleneckHardHold ? 'candidate_bottleneck_hard_hold_seen' : null,
+    latestBottleneckPreventedOrder ? 'candidate_bottleneck_prevented_order_seen' : null,
     noLookaheadViolationRows.length > 0 ? 'no_lookahead_violation_seen' : null,
     overCapRows.length > 0 ? 'paper_order_cap_violation_seen' : null,
     !latestBacktestQuality.present ? 'missing_backtest_quality_seen' : null,
@@ -366,9 +374,9 @@ export function evaluateLunaPaperPromotionHistory(rows = [], config = {}) {
     nonVectorbtRows.length > 0 ? 'non_vectorbt_backtest_seen' : null,
     unrealisticSharpeRows.length > 0 ? 'unrealistic_sharpe_seen' : null,
     !latestStrategyQuality.present ? 'missing_strategy_quality_seen' : null,
-    strategyHardHoldRows.length > 0 ? 'strategy_quality_block_live_forward_seen' : null,
-    strategyHyperoptPlannedRows.length > 0 ? 'strategy_hyperopt_planned_seen' : null,
-    strategyNotReadyRows.length > 0 ? 'strategy_quality_not_shadow_ready_seen' : null,
+    latestStrategyHardHold ? 'strategy_quality_block_live_forward_seen' : null,
+    latestStrategyHyperoptPlanned ? 'strategy_hyperopt_planned_seen' : null,
+    latestStrategyNotReady ? 'strategy_quality_not_shadow_ready_seen' : null,
   ].filter(Boolean);
 
   const promotionCandidate = blockReasons.length === 0;
@@ -412,9 +420,12 @@ export function evaluateLunaPaperPromotionHistory(rows = [], config = {}) {
       phase: 'luna_phase2_finrlx',
       source: 'paper_promotion_gate_shadow',
       config: cfg,
+      avgConfidenceSource: passRows.length > 0 ? 'paper_buy_pass_rows' : 'all_history_rows_until_first_buy_pass',
       latestObservedAt: head.observedAt || null,
       latestPaperSide: head.paperSide || null,
       latestStatus: head.status || null,
+      latestBottleneckHardHold,
+      latestBottleneckPreventedOrder,
       hardHoldCount: hardHoldRows.length,
       preventedOrderCount: preventedRows.length,
       noLookaheadViolationCount: noLookaheadViolationRows.length,

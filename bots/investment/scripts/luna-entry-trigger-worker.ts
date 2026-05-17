@@ -18,6 +18,11 @@ import { getLunaIntelligentDiscoveryFlags } from '../shared/luna-intelligent-dis
 import { listActiveEntryTriggers, updateEntryTriggerState } from '../shared/luna-discovery-entry-store.ts';
 import { getOHLCV } from '../shared/ohlcv-fetcher.ts';
 import { evaluateTradeDataEntryGuard } from '../shared/trade-data-derived-guards.ts';
+import {
+  BINANCE_TOP_VOLUME_BLOCK_REASON,
+  evaluateBinanceTopVolumeUniverseGate,
+  getCachedBinanceTopVolumeUniverse,
+} from '../shared/binance-top-volume-universe.ts';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const INVESTMENT_DIR = path.resolve(__dirname, '..');
@@ -463,6 +468,15 @@ export async function materializeFiredEntryTriggerSignals({
   const signalInserter = deps.signalInserter || insertSignal;
   const blockMetaMerger = deps.blockMetaMerger || mergeSignalBlockMeta;
   const triggerUpdater = deps.triggerUpdater || updateEntryTriggerState;
+  const binanceTopVolumeUniverse = exchange === 'binance'
+    ? deps.binanceTopVolumeUniverse || await getCachedBinanceTopVolumeUniverse().catch((error) => ({
+      source: 'binance_top30_unavailable',
+      limit: 30,
+      symbols: [],
+      ranks: {},
+      error: String(error?.message || error),
+    }))
+    : null;
   const firedResults = (result?.results || []).filter((item) => item?.fired === true && item?.triggerId);
   const items = [];
   let materialized = 0;
@@ -479,6 +493,28 @@ export async function materializeFiredEntryTriggerSignals({
       skipped += 1;
       items.push({ triggerId: fired.triggerId, status: 'skipped', reason: 'symbol_missing' });
       continue;
+    }
+    if (exchange === 'binance') {
+      const top30Gate = evaluateBinanceTopVolumeUniverseGate(symbol, binanceTopVolumeUniverse);
+      if (top30Gate.blocked) {
+        skipped += 1;
+        await Promise.resolve(triggerUpdater(trigger.id, {
+          triggerState: 'fired',
+          triggerMetaPatch: {
+            materializeStatus: 'blocked_by_binance_top30_universe',
+            materializeBlockedAt: new Date().toISOString(),
+            binanceTop30Gate: top30Gate,
+          },
+        })).catch(() => null);
+        items.push({
+          triggerId: trigger.id,
+          symbol,
+          status: 'skipped',
+          reason: BINANCE_TOP_VOLUME_BLOCK_REASON,
+          binanceTop30Rank: top30Gate.rank,
+        });
+        continue;
+      }
     }
     const strategy = resolveEntryTriggerStrategyMetadata(trigger);
     const tradeDataGuard = evaluateTradeDataEntryGuard({

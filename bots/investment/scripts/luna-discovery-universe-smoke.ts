@@ -14,6 +14,21 @@ import {
 } from '../team/discovery/discovery-store.ts';
 import { BinanceMarketMomentumCollector } from '../team/discovery/crypto/binance-market-momentum.ts';
 import { CoinGeckoTrendingCollector } from '../team/discovery/crypto/coingecko-trending.ts';
+import { buildFixtureBinanceTopVolumeUniverse } from '../shared/binance-top-volume-universe.ts';
+
+function makeSmokeTop30Universe(symbols = []) {
+  const canonical = [...new Set(symbols)];
+  return {
+    source: 'smoke_binance_top30_universe',
+    fetchedAt: new Date().toISOString(),
+    quote: 'USDT',
+    limit: 30,
+    symbols: canonical,
+    ranks: Object.fromEntries(canonical.map((symbol, index) => [symbol, index + 1])),
+    rows: canonical.map((symbol, index) => ({ symbol, quoteVolume: 10_000_000 - index })),
+    excluded: {},
+  };
+}
 
 export async function runLunaDiscoveryUniverseSmoke() {
   const market = toDiscoveryMarket('binance');
@@ -25,6 +40,7 @@ export async function runLunaDiscoveryUniverseSmoke() {
     refresh: false,
     fallbackSymbols: ['BTC/USDT', 'ETH/USDT'],
     limit: 40,
+    binanceTopVolumeUniverse: buildFixtureBinanceTopVolumeUniverse(),
   });
   assert.ok(Array.isArray(baseUniverse.symbols));
   assert.ok(baseUniverse.symbols.includes('BTC/USDT'));
@@ -35,6 +51,7 @@ export async function runLunaDiscoveryUniverseSmoke() {
     promoteRecentActionable: false,
     limit: 2,
     candidateScanLimit: 1,
+    binanceTopVolumeUniverse: buildFixtureBinanceTopVolumeUniverse(),
   });
   assert.equal(structuralBlockedUniverse.symbols.includes('RLUSD/USDT'), false);
   assert.equal(structuralBlockedUniverse.symbols.includes('USDC/USDT'), false);
@@ -86,12 +103,24 @@ export async function runLunaDiscoveryUniverseSmoke() {
        VALUES
          ('SMOKEPREFER/USDT', 'crypto', 'binance_market_momentum', 1, 0.9999, 0.99, 'candidate first smoke', 1, '{}'::jsonb, now() + interval '1 hour')`,
     );
+    const smokeTop30Universe = makeSmokeTop30Universe([
+      'BTC/USDT',
+      'FALLBACK1/USDT',
+      'FALLBACK2/USDT',
+      'PINNED1/USDT',
+      'SMOKEPREFER/USDT',
+      'SMOKEACTION/USDT',
+      'SMOKEMOMENTUM/USDT',
+      'SMOKEKEEP/USDT',
+      'SMOKESTALE/USDT',
+    ]);
     const preferred = await buildDiscoveryUniverse('crypto', new Date(), {
       refresh: false,
       fallbackSymbols: ['FALLBACK1USDT', 'FALLBACK2USDT'],
       preferCandidates: true,
       promoteRecentActionable: false,
       limit: 1,
+      binanceTopVolumeUniverse: smokeTop30Universe,
     });
     assert.deepEqual(preferred.symbols, ['SMOKEPREFER/USDT']);
     const pinned = await buildDiscoveryUniverse('crypto', new Date(), {
@@ -100,6 +129,7 @@ export async function runLunaDiscoveryUniverseSmoke() {
       pinnedSymbols: ['PINNED1USDT'],
       preferCandidates: true,
       limit: 1,
+      binanceTopVolumeUniverse: smokeTop30Universe,
     });
     assert.deepEqual(pinned.symbols, ['PINNED1/USDT']);
     await db.run(
@@ -123,6 +153,7 @@ export async function runLunaDiscoveryUniverseSmoke() {
       preferCandidates: true,
       limit: 1,
       candidateScanLimit: 500,
+      binanceTopVolumeUniverse: smokeTop30Universe,
     });
     assert.deepEqual(promoted.symbols, ['SMOKEACTION/USDT']);
     assert.equal(promoted.promotedCount >= 1, true);
@@ -163,6 +194,7 @@ export async function runLunaDiscoveryUniverseSmoke() {
       [{ symbol: 'SMOKEKEEP/USDT', score: 0.8 }],
       'crypto',
       pruneSource,
+      { binanceTopVolumeUniverse: smokeTop30Universe },
     );
     assert.equal(pruned, 1);
     const afterPrune = await db.query(

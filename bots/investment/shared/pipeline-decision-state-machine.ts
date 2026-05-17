@@ -32,6 +32,7 @@ import { shouldRunStockIntradayDecisionLlm } from './stock-intraday-llm-policy.t
 import { getConservativeRelaxationMaxPerCycle } from './luna-conservative-relaxation-policy.ts';
 import { applyCollectQualityGuard, applyDiscoveryHardCap, applyRuntimeCryptoRepresentativePass, buildAnalystSignals, buildExitEntryBridgeSummary, buildMidGapPromotedAmount, buildPredictiveObservationAmount, buildPlannerRunMeta, classifyWeakSignalReason, isActuallyExecuted, isExecutionStillApproved, isMidGapPromotionCandidate, isPredictiveObservationCandidate, mergeUniqueSymbols, normalizeCollectQuality, normalizeRegimeLabel, promotePredictiveObservationHoldCandidates } from './pipeline-decision-policy.ts';
 import { buildSignalDecisionTraceMeta, getTopReason, getDecisionNode, mergePortfolioDecisionPredictiveEvidence, runApprovedDecision } from './pipeline-decision-state-helpers.ts';
+import { getCachedBinanceTopVolumeUniverse } from './binance-top-volume-universe.ts';
 
 export { mergePortfolioDecisionPredictiveEvidence } from './pipeline-decision-state-helpers.ts';
 
@@ -47,6 +48,15 @@ export async function runDecisionExecutionStateMachine({
   const startedAt = Date.now();
   const intelligentFlags = getLunaIntelligentDiscoveryFlags();
   const discoveryMarket = toDiscoveryMarket(exchange);
+  const binanceTopVolumeUniverse = exchange === 'binance'
+    ? await getCachedBinanceTopVolumeUniverse().catch((error) => ({
+      source: 'binance_top30_unavailable',
+      limit: 30,
+      symbols: [],
+      ranks: {},
+      error: String(error?.message || error),
+    }))
+    : null;
   let runtimeSymbols = Array.isArray(symbols) ? symbols.filter(Boolean) : [];
   let discoveryCandidates = [];
   const disableDiscoveryExpansion = meta?.disableDiscoveryExpansion === true
@@ -521,7 +531,7 @@ export async function runDecisionExecutionStateMachine({
         const promotion = promotePredictiveObservationHoldCandidates(
           portfolioDecision,
           intelligentFlags.predictive,
-          { exchange },
+          { exchange, binanceTopVolumeUniverse },
         );
         if (promotion.promoted.length > 0) {
           portfolioDecision = promotion.portfolioDecision;
@@ -538,6 +548,7 @@ export async function runDecisionExecutionStateMachine({
     if (decisionAgentPlan.entryTriggerEnabled && intelligentFlags.phases.entryTriggerEnabled) {
       const triggerResult = await evaluateEntryTriggers(portfolioDecision.decisions || [], {
         exchange,
+        binanceTopVolumeUniverse,
         regime: normalizeRegimeLabel(currentPortfolio?.marketRegime || null),
         capitalSnapshot: currentPortfolio?.capitalSnapshot || null,
         defaultAmountUsdt: exchange === 'binance' ? 50 : null,

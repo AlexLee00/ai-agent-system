@@ -45,6 +45,11 @@ import { finishPipelineRun } from '../shared/pipeline-db.ts';
 import { updatePipelineRunMeta } from '../shared/pipeline-db.ts';
 import { buildStockIntradayLlmPolicyMeta } from '../shared/stock-intraday-llm-policy.ts';
 import { buildDiscoveryUniverse } from '../team/discovery/discovery-universe.ts';
+import {
+  BINANCE_TOP_VOLUME_BLOCK_REASON,
+  evaluateBinanceTopVolumeUniverseGate,
+  getCachedBinanceTopVolumeUniverse,
+} from '../shared/binance-top-volume-universe.ts';
 
 import { processAllPendingSignals, fetchUsdtBalance } from '../team/hephaestos.ts';
 import { getInvestmentSyncRuntimeConfig } from '../shared/runtime-config.ts';
@@ -98,6 +103,7 @@ async function mergeDiscoveryUniverseForCollect(symbols = [], limit = 50, option
     pinnedSymbols: options.pinnedSymbols || [],
     preferCandidates: true,
     limit: Math.max(Number(limit || 0), symbols.length, 1),
+    binanceTopVolumeUniverse: options.binanceTopVolumeUniverse || null,
   }).catch((error) => {
     console.warn(`  ⚠️ [discovery universe] 수집 전 후보 병합 실패: ${error?.message || error}`);
     return null;
@@ -114,6 +120,27 @@ async function mergeDiscoveryUniverseForCollect(symbols = [], limit = 50, option
     droppedCount: (symbols || []).filter((symbol) => !next.has(symbol)).length,
     source: universe.source || 'candidate_universe',
   };
+}
+
+function filterCryptoTopVolumeUniverse(symbols = [], universe = null, source = 'crypto_cycle') {
+  if (!universe) {
+    return {
+      symbols: [],
+      dropped: (symbols || []).map((symbol) => ({ symbol, reason: 'binance_top30_universe_unavailable', source })),
+    };
+  }
+  const kept = [];
+  const dropped = [];
+  for (const symbol of symbols || []) {
+    const gate = evaluateBinanceTopVolumeUniverseGate(symbol, universe);
+    if (gate.ok) kept.push(gate.canonicalSymbol);
+    else dropped.push({ symbol, reason: BINANCE_TOP_VOLUME_BLOCK_REASON, source, rank: gate.rank });
+  }
+  const deduped = [...new Set(kept)];
+  if (dropped.length > 0) {
+    console.warn(`  ⛔ [Binance Top30] ${source} 후보 제외 ${dropped.length}건: ${dropped.slice(0, 8).map((item) => item.symbol).join(', ')}`);
+  }
+  return { symbols: deduped, dropped };
 }
 
 function fetchBtcPrice() {
@@ -381,17 +408,33 @@ if (isDirectExecution(import.meta.url)) {
 
       let symbols;
       const cryptoMaxDynamic = getCryptoScreeningMaxDynamic();
+      const binanceTopVolumeUniverse = await getCachedBinanceTopVolumeUniverse().catch((error) => {
+        console.warn(`  ⛔ [Binance Top30] universe 조회 실패: ${error?.message || error}`);
+        return null;
+      });
       let universeMeta = {
         screeningSymbolCount: 0,
         heldSymbolCount: 0,
         heldAddedCount: 0,
+        binanceTop30Universe: binanceTopVolumeUniverse ? {
+          source: binanceTopVolumeUniverse.source,
+          fetchedAt: binanceTopVolumeUniverse.fetchedAt,
+          limit: binanceTopVolumeUniverse.limit,
+          symbols: binanceTopVolumeUniverse.symbols,
+        } : null,
+        top30DroppedSymbols: [],
+        top30OffUniverseHeldSymbols: [],
       };
       const explicitSymbolsRequested = Array.isArray(cliSymbols) && cliSymbols.length > 0;
       if (explicitSymbolsRequested) {
-        symbols = cliSymbols;
+        const filtered = filterCryptoTopVolumeUniverse(cliSymbols, binanceTopVolumeUniverse, 'explicit_symbols');
+        symbols = filtered.symbols;
+        universeMeta.top30DroppedSymbols.push(...filtered.dropped);
         universeMeta.screeningSymbolCount = symbols.length;
       } else if (noDynamic) {
-        symbols = getSymbols();
+        const filtered = filterCryptoTopVolumeUniverse(getSymbols(), binanceTopVolumeUniverse, 'no_dynamic_config');
+        symbols = filtered.symbols;
+        universeMeta.top30DroppedSymbols.push(...filtered.dropped);
         universeMeta.screeningSymbolCount = symbols.length;
       } else {
         const { loadPreScreenedFallback, persistPreScreenedCandidates, savePreScreened } = await import('../scripts/pre-market-screen.ts');
@@ -406,7 +449,9 @@ if (isDirectExecution(import.meta.url)) {
           screenLabel: '아르고스 스크리닝',
           cacheLabel: 'RAG 폴백',
         });
-        symbols = capDynamicUniverse(resolved.symbols, cryptoMaxDynamic, resolved.source || 'dynamic');
+        const top30Filtered = filterCryptoTopVolumeUniverse(resolved.symbols, binanceTopVolumeUniverse, resolved.source || 'dynamic');
+        universeMeta.top30DroppedSymbols.push(...top30Filtered.dropped);
+        symbols = capDynamicUniverse(top30Filtered.symbols, cryptoMaxDynamic, resolved.source || 'dynamic');
         universeMeta.screeningSymbolCount = symbols.length;
         if (resolved.source === 'screening') {
           savePreScreened('crypto', symbols);
@@ -431,20 +476,31 @@ if (isDirectExecution(import.meta.url)) {
         cryptoDustThresholdUsdt: Number(getInvestmentSyncRuntimeConfig()?.cryptoMinNotionalUsdt || 10),
       }).catch(() => ({ symbols: [], managedCount: 0, profiledCount: 0, dustSymbols: [], lifecycleCounts: {} }));
       const heldSymbols = maintenanceUniverse.symbols || [];
+      const heldTop30 = filterCryptoTopVolumeUniverse(heldSymbols, binanceTopVolumeUniverse, 'held_position');
+      universeMeta.top30OffUniverseHeldSymbols = heldTop30.dropped.map((item) => ({
+        ...item,
+        liquidationCandidate: true,
+        code: 'off_universe_top30_liquidation_candidate',
+      }));
       universeMeta.heldSymbolCount = heldSymbols.length;
-      universeMeta.heldAddedCount = getHeldMergeStats(symbols, heldSymbols).heldAddedCount;
+      universeMeta.heldAddedCount = getHeldMergeStats(symbols, heldTop30.symbols).heldAddedCount;
       universeMeta.maintenanceSymbolCount = Number(maintenanceUniverse.managedCount || heldSymbols.length || 0);
       universeMeta.maintenanceProfiledCount = Number(maintenanceUniverse.profiledCount || 0);
       universeMeta.maintenanceDustSkippedCount = Array.isArray(maintenanceUniverse.dustSymbols) ? maintenanceUniverse.dustSymbols.length : 0;
       universeMeta.maintenanceLifecycleCounts = maintenanceUniverse.lifecycleCounts || {};
-      symbols = await appendHeldSymbols(symbols, 'binance', heldSymbols);
+      symbols = await appendHeldSymbols(symbols, 'binance', heldTop30.symbols);
       if (explicitSymbolsRequested || noDynamic) {
         universeMeta.discoveryUniverseAddedCount = 0;
         universeMeta.discoveryUniverseDroppedCount = 0;
         universeMeta.discoveryUniverseSource = explicitSymbolsRequested ? 'explicit_symbols' : 'no_dynamic';
       } else {
-        const discoveryMerge = await mergeDiscoveryUniverseForCollect(symbols, cryptoMaxDynamic, { pinnedSymbols: heldSymbols });
-        symbols = discoveryMerge.symbols;
+        const discoveryMerge = await mergeDiscoveryUniverseForCollect(symbols, cryptoMaxDynamic, {
+          pinnedSymbols: heldTop30.symbols,
+          binanceTopVolumeUniverse,
+        });
+        const discoveryTop30 = filterCryptoTopVolumeUniverse(discoveryMerge.symbols, binanceTopVolumeUniverse, 'discovery_universe');
+        universeMeta.top30DroppedSymbols.push(...discoveryTop30.dropped);
+        symbols = discoveryTop30.symbols;
         universeMeta.discoveryUniverseAddedCount = discoveryMerge.addedCount;
         universeMeta.discoveryUniverseDroppedCount = discoveryMerge.droppedCount || 0;
         universeMeta.discoveryUniverseSource = discoveryMerge.source;

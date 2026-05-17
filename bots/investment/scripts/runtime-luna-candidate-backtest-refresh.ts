@@ -7,6 +7,12 @@ import { getOHLCV } from '../shared/ohlcv-fetcher.ts';
 import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
 import { ensureCandidateBacktestSchema, evaluateCandidateBacktestStatus } from '../shared/candidate-backtest-gate.ts';
 import { exchangeForLunaPhase2Market } from '../shared/luna-weight-vector.ts';
+import {
+  BINANCE_TOP_VOLUME_BLOCK_REASON,
+  buildFixtureBinanceTopVolumeUniverse,
+  evaluateBinanceTopVolumeUniverseGate,
+  getCachedBinanceTopVolumeUniverse,
+} from '../shared/binance-top-volume-universe.ts';
 
 const SHADOW_MODE = process.env.LUNA_CANDIDATE_BACKTEST_SHADOW_MODE !== 'false';
 const STALE_HOURS = Number(process.env.LUNA_BACKTEST_STALE_HOURS || 24);
@@ -383,6 +389,46 @@ async function recordPredictiveAudit(symbol: string, market: string, payload: an
   ]).catch(() => null);
 }
 
+function evaluateTop30GateForCandidate(candidate: any, universe: any = null) {
+  const market = normalizeMarket(candidate?.market || 'crypto');
+  if (market !== 'crypto') return { ok: true, blocked: false, reason: 'non_crypto_market', rank: null };
+  return evaluateBinanceTopVolumeUniverseGate(candidate?.symbol, universe);
+}
+
+async function recordTop30BacktestBlock(candidate: any, gate: any, dryRun = false) {
+  const symbol = String(candidate.symbol || '').toUpperCase();
+  const market = normalizeMarket(candidate.market || 'crypto');
+  const payload = {
+    fresh: false,
+    healthy: false,
+    sharpe: null,
+    maxDrawdown: null,
+    winRate: null,
+    gateStatus: 'would_block_top30_universe',
+    wouldBlock: true,
+    reasons: [BINANCE_TOP_VOLUME_BLOCK_REASON],
+    periods: [],
+    rowsByPeriod: {},
+    top30Gate: gate,
+  };
+  await upsertStatus(symbol, market, payload, dryRun).catch(() => null);
+  await recordPredictiveAudit(symbol, market, payload, dryRun).catch(() => null);
+  return {
+    symbol,
+    market,
+    skipped: false,
+    gateStatus: payload.gateStatus,
+    healthy: false,
+    fresh: false,
+    wouldBlock: true,
+    reasons: payload.reasons,
+    binanceTop30Rank: gate.rank,
+    inBinanceTop30Universe: false,
+    top30Blocker: BINANCE_TOP_VOLUME_BLOCK_REASON,
+    error: null,
+  };
+}
+
 async function refreshCandidate(symbol: string, market: string, periods: number[], options: any = {}) {
   const { dryRun = false, fixture = false, force = false } = options;
   const existing = await getBacktestStatus(symbol, market);
@@ -488,6 +534,15 @@ export async function runCandidateBacktestRefresh(options: any = {}): Promise<an
   const candidates = fixture
     ? [{ symbol: 'BTC/USDT', market: 'crypto' }, { symbol: 'NEG/USDT', market: 'crypto' }]
     : await getActiveCandidatesByMarket({ limit, market });
+  const binanceTopVolumeUniverse = fixture
+    ? buildFixtureBinanceTopVolumeUniverse()
+    : await getCachedBinanceTopVolumeUniverse().catch((error) => ({
+      source: 'binance_top30_unavailable',
+      limit: 30,
+      symbols: [],
+      ranks: {},
+      error: String(error?.message || error),
+    }));
   const selectedCandidates = requestedSymbols.length
     ? candidates.filter((candidate) => requestedSymbols.includes(String(candidate.symbol || '').toUpperCase()))
     : candidates;
@@ -496,7 +551,14 @@ export async function runCandidateBacktestRefresh(options: any = {}): Promise<an
 
   const results = [];
   for (const { symbol, market } of selectedCandidates) {
+    const top30Gate = evaluateTop30GateForCandidate({ symbol, market }, binanceTopVolumeUniverse);
+    if (top30Gate.blocked) {
+      results.push(await recordTop30BacktestBlock({ symbol, market }, top30Gate, dryRun));
+      continue;
+    }
     const result = await refreshCandidate(symbol, market, periods, { dryRun, fixture, force });
+    result.binanceTop30Rank = top30Gate.rank;
+    result.inBinanceTop30Universe = true;
     results.push(result);
     if (!json) {
       const icon = result.skipped ? 'skip' : result.wouldBlock ? 'would-block' : 'pass';

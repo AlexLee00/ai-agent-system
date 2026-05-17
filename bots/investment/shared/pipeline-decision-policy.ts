@@ -10,6 +10,10 @@
 import { ACTIONS, ANALYST_TYPES } from './signal.ts';
 import { getOpenPositions, getCapitalConfigWithOverrides } from './capital-manager.ts';
 import { getMarketOrderRule } from './order-rules.ts';
+import {
+  BINANCE_TOP_VOLUME_BLOCK_REASON,
+  evaluateBinanceTopVolumeUniverseGate,
+} from './binance-top-volume-universe.ts';
 
 export function isActuallyExecuted(resultItem) {
   const execution = resultItem?.execution;
@@ -263,6 +267,9 @@ export function promotePredictiveObservationHoldCandidates(portfolioDecision, pr
   );
   const maxPerCycle = Number.isFinite(maxPerCycleRaw) && maxPerCycleRaw > 0 ? Math.floor(maxPerCycleRaw) : 1;
   const sizeRatio = clamp01(predictiveConfig?.observationSizeRatio, 0.35);
+  const exchange = String(options?.exchange || '').trim();
+  const binanceTopVolumeUniverse = options?.binanceTopVolumeUniverse || null;
+  const top30Blocked = [];
 
   const ranked = (portfolioDecision.decisions || [])
     .filter((item) => item?.action === ACTIONS.HOLD)
@@ -270,9 +277,22 @@ export function promotePredictiveObservationHoldCandidates(portfolioDecision, pr
       const predictiveScore = clamp01(item?.predictiveScore ?? item?.block_meta?.predictiveValidation?.score, 0);
       const confidence = clamp01(item?.confidence, 0);
       const score = Math.max(predictiveScore, confidence);
-      return { item, predictiveScore, confidence, score };
+      const top30Gate = exchange === 'binance'
+        ? evaluateBinanceTopVolumeUniverseGate(item?.symbol, binanceTopVolumeUniverse)
+        : null;
+      return { item, predictiveScore, confidence, score, top30Gate };
     })
     .filter((row) => row.score >= observationThreshold && row.confidence >= minConfidence)
+    .filter((row) => {
+      if (exchange !== 'binance') return true;
+      if (row.top30Gate?.ok === true) return true;
+      top30Blocked.push({
+        symbol: row.item?.symbol || null,
+        reason: BINANCE_TOP_VOLUME_BLOCK_REASON,
+        rank: row.top30Gate?.rank || null,
+      });
+      return false;
+    })
     .sort((a, b) => {
       const confidenceGap = b.confidence - a.confidence;
       if (confidenceGap !== 0) return confidenceGap;
@@ -327,6 +347,7 @@ export function promotePredictiveObservationHoldCandidates(portfolioDecision, pr
       predictiveObservationPromotion: {
         promotedCount: promoted.length,
         promoted,
+        top30Blocked,
         observationThreshold,
         minConfidence,
         maxPerCycle,

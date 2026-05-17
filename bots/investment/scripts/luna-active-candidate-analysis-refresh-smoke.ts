@@ -27,6 +27,17 @@ function fixtureReport(symbols = [], top = []) {
   };
 }
 
+function makeSmokeTop30Universe(symbols = []) {
+  const canonical = [...new Set(symbols)];
+  return {
+    source: 'smoke_binance_top30_universe',
+    fetchedAt: new Date().toISOString(),
+    limit: 30,
+    symbols: canonical,
+    ranks: Object.fromEntries(canonical.map((symbol, index) => [symbol, index + 1])),
+  };
+}
+
 function fixtureFilteredCandidate(symbol, reasons = ['sentiment_not_confirmed', 'onchain_not_confirmed']) {
   return {
     symbol,
@@ -194,6 +205,16 @@ function fixtureRelaxedNarrativeProbeWithoutTechnical(symbol) {
 export async function runLunaActiveCandidateAnalysisRefreshSmoke() {
   const now = new Date('2026-05-07T00:00:00.000Z');
   const smokeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'luna-active-candidate-refresh-smoke-'));
+  const binanceTopVolumeUniverse = makeSmokeTop30Universe([
+    'ENA/USDT',
+    'BNB/USDT',
+    'STALE/USDT',
+    'FULL/USDT',
+    'EDEN/USDT',
+    'BANANAS31/USDT',
+    'ADA/USDT',
+    'XRP/USDT',
+  ]);
   const plan = buildActiveCandidateAnalysisRefreshPlan({
     report: fixtureReport(['ENA/USDT', 'HMSTR/USDT', 'TIA/USDT']),
     state: {
@@ -617,6 +638,7 @@ export async function runLunaActiveCandidateAnalysisRefreshSmoke() {
       throw new Error('collect must not run without confirm');
     },
     statePath: path.join(smokeDir, 'blocked.json'),
+    binanceTopVolumeUniverse,
     now,
   });
   assert.equal(blocked.ok, false);
@@ -629,6 +651,7 @@ export async function runLunaActiveCandidateAnalysisRefreshSmoke() {
       return fixtureReport(['STALE/USDT']);
     },
     statePath: path.join(smokeDir, 'default-hours.json'),
+    binanceTopVolumeUniverse,
     now,
   });
   assert.equal(dryRunDefaultHours.ok, true);
@@ -646,6 +669,7 @@ export async function runLunaActiveCandidateAnalysisRefreshSmoke() {
       },
     }),
     statePath: path.join(smokeDir, 'capacity-full.json'),
+    binanceTopVolumeUniverse,
     now,
   });
   assert.equal(capacityFull.ok, true);
@@ -674,6 +698,7 @@ export async function runLunaActiveCandidateAnalysisRefreshSmoke() {
     },
     maxSymbols: 2,
     statePath: path.join(smokeDir, 'applied.json'),
+    binanceTopVolumeUniverse,
     now,
   });
   assert.equal(applied.ok, true);
@@ -718,6 +743,7 @@ export async function runLunaActiveCandidateAnalysisRefreshSmoke() {
     },
     maxEnrichmentSymbols: 2,
     statePath: path.join(smokeDir, 'targeted.json'),
+    binanceTopVolumeUniverse,
     now,
   });
   assert.equal(targeted.ok, true);
@@ -852,6 +878,7 @@ export async function runLunaActiveCandidateAnalysisRefreshSmoke() {
       throw new Error('pipeline finish unavailable');
     },
     statePath: path.join(smokeDir, 'finish-failed.json'),
+    binanceTopVolumeUniverse,
     now,
   });
   assert.equal(finishFailed.ok, false);
@@ -870,6 +897,7 @@ export async function runLunaActiveCandidateAnalysisRefreshSmoke() {
     }),
     finishRun: async () => ({ updated: false, reason: 'already_terminal', status: 'completed' }),
     statePath: path.join(smokeDir, 'already-terminal.json'),
+    binanceTopVolumeUniverse,
     now,
   });
   assert.equal(alreadyTerminal.ok, true);

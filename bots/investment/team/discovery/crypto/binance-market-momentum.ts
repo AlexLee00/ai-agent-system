@@ -5,6 +5,11 @@
 // CoinGecko while keeping CoinGecko as an independent trend source.
 
 import type { DiscoveryAdapter, DiscoveryCollectOptions, DiscoveryResult, DiscoverySignal } from '../types.ts';
+import {
+  buildBinanceTopVolumeUniverse,
+  buildFixtureBinanceTopVolumeUniverse,
+  DEFAULT_BINANCE_TOP_VOLUME_LIMIT,
+} from '../../../shared/binance-top-volume-universe.ts';
 
 const BINANCE_BASE = 'https://api.binance.com';
 const SOURCE = 'binance_market_momentum';
@@ -93,7 +98,7 @@ export class BinanceMarketMomentumCollector implements DiscoveryAdapter {
   reliability = 0.92;
 
   async collect(options: DiscoveryCollectOptions = {}): Promise<DiscoveryResult> {
-    const { limit = 50, timeoutMs = TIMEOUT_MS, dryRun = false } = options;
+    const { limit = DEFAULT_BINANCE_TOP_VOLUME_LIMIT, timeoutMs = TIMEOUT_MS, dryRun = false } = options;
     const fetchedAt = new Date().toISOString();
 
     if (process.env.LUNA_DISCOVERY_BINANCE_MARKET_ENABLED === 'false' && !dryRun) {
@@ -101,7 +106,8 @@ export class BinanceMarketMomentumCollector implements DiscoveryAdapter {
     }
 
     if (dryRun) {
-      return mkResult(fetchedAt, buildMockSignals(limit), 'ready');
+      const universe = buildFixtureBinanceTopVolumeUniverse({ limit: DEFAULT_BINANCE_TOP_VOLUME_LIMIT });
+      return mkResult(fetchedAt, buildMockSignals(limit, universe), 'ready');
     }
 
     try {
@@ -109,6 +115,14 @@ export class BinanceMarketMomentumCollector implements DiscoveryAdapter {
         fetchJson(`${BINANCE_BASE}/api/v3/exchangeInfo?permissions=SPOT`, timeoutMs),
         fetchJson(`${BINANCE_BASE}/api/v3/ticker/24hr`, timeoutMs),
       ]);
+      const topVolumeUniverse = buildBinanceTopVolumeUniverse({
+        exchangeInfo,
+        tickerRows,
+        limit: DEFAULT_BINANCE_TOP_VOLUME_LIMIT,
+        quote: 'USDT',
+        fetchedAt,
+      });
+      const allowedTopVolume = new Set(topVolumeUniverse.symbols || []);
       const tradable = new Set(
         (Array.isArray((exchangeInfo as any)?.symbols) ? (exchangeInfo as any).symbols : [])
           .filter(isTradableUsdtSymbol)
@@ -134,8 +148,9 @@ export class BinanceMarketMomentumCollector implements DiscoveryAdapter {
         })
         .filter(Boolean)
         .filter((item: any) => item.quoteVolume >= 750_000)
+        .filter((item: any) => allowedTopVolume.has(item.symbol))
         .sort((a: any, b: any) => b.quoteVolume - a.quoteVolume)
-        .slice(0, Math.max(20, Number(limit || 50) * 3));
+        .slice(0, DEFAULT_BINANCE_TOP_VOLUME_LIMIT);
 
       const signals = filtered
         .map((item: any, idx: number) => {
@@ -149,6 +164,12 @@ export class BinanceMarketMomentumCollector implements DiscoveryAdapter {
             qualityFlags: scored.qualityFlags,
             raw: {
               source: SOURCE,
+              binanceTop30Rank: topVolumeUniverse.ranks?.[item.symbol] || null,
+              topVolumeUniverse: {
+                source: topVolumeUniverse.source,
+                limit: topVolumeUniverse.limit,
+                fetchedAt: topVolumeUniverse.fetchedAt,
+              },
               binanceSymbol: String(item.row?.symbol || '').toUpperCase(),
               quoteVolume: item.quoteVolume,
               priceChangePercent: item.change,
@@ -159,7 +180,7 @@ export class BinanceMarketMomentumCollector implements DiscoveryAdapter {
           } as DiscoverySignal;
         })
         .sort((a: DiscoverySignal, b: DiscoverySignal) => Number(b.score || 0) - Number(a.score || 0))
-        .slice(0, Math.max(1, Number(limit || 50)));
+        .slice(0, Math.max(1, Math.min(DEFAULT_BINANCE_TOP_VOLUME_LIMIT, Number(limit || DEFAULT_BINANCE_TOP_VOLUME_LIMIT))));
 
       const status = signals.length >= 8 ? 'ready' : signals.length > 0 ? 'degraded' : 'insufficient';
       console.log(`[binance-market-collector] ${signals.length}개 시장 모멘텀 신호 수집`);
@@ -186,14 +207,21 @@ async function fetchJson(url: string, timeoutMs: number): Promise<unknown> {
   }
 }
 
-function buildMockSignals(limit = 50): DiscoverySignal[] {
-  return [
-    { symbol: 'BTC/USDT', score: 0.86, confidence: 0.88, reason: 'Binance mock liquidity leader: BTC', reasonCode: 'binance_liquidity_momentum', qualityFlags: ['high_liquidity'], raw: {} },
-    { symbol: 'ETH/USDT', score: 0.83, confidence: 0.86, reason: 'Binance mock liquidity leader: ETH', reasonCode: 'binance_liquidity_momentum', qualityFlags: ['high_liquidity'], raw: {} },
-    { symbol: 'SOL/USDT', score: 0.79, confidence: 0.81, reason: 'Binance mock relative momentum: SOL', reasonCode: 'binance_relative_momentum', qualityFlags: ['btc_eth_relative_strength'], raw: {} },
-    { symbol: 'ZEC/USDT', score: 0.74, confidence: 0.76, reason: 'Binance mock 24h momentum: ZEC', reasonCode: 'binance_relative_momentum', qualityFlags: ['overheated_24h_move'], raw: {} },
-    { symbol: 'DOGE/USDT', score: 0.69, confidence: 0.74, reason: 'Binance mock activity: DOGE', reasonCode: 'binance_liquidity_momentum', qualityFlags: [], raw: {} },
-  ].slice(0, Math.max(1, Number(limit || 50)));
+function buildMockSignals(limit = DEFAULT_BINANCE_TOP_VOLUME_LIMIT, universe: any = null): DiscoverySignal[] {
+  const rows = (universe?.rows || []).slice(0, Math.max(1, Math.min(DEFAULT_BINANCE_TOP_VOLUME_LIMIT, Number(limit || DEFAULT_BINANCE_TOP_VOLUME_LIMIT))));
+  return rows.map((row: any, index: number) => ({
+    symbol: row.symbol,
+    score: Number(Math.max(0.55, 0.88 - index * 0.01).toFixed(4)),
+    confidence: Number(Math.max(0.55, 0.88 - index * 0.008).toFixed(4)),
+    reason: `Binance mock top-volume #${index + 1}: ${row.symbol}`,
+    reasonCode: 'binance_liquidity_momentum',
+    qualityFlags: index < 8 ? ['high_liquidity'] : [],
+    raw: {
+      source: SOURCE,
+      binanceTop30Rank: index + 1,
+      quoteVolume: row.quoteVolume,
+    },
+  }));
 }
 
 function mkResult(

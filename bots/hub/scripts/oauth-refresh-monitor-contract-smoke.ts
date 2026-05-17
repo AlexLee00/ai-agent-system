@@ -55,8 +55,8 @@ assert.ok(!monitorSource.includes('gemini_oauth:'), 'oauth monitor report must n
 assert.ok(monitorSource.includes('HUB_OAUTH_MONITOR_REAUTH_ALARM_COOLDOWN_MINUTES'), 'healthy reauth alarms must use a longer dedicated cooldown');
 assert.ok(monitorSource.includes('refresh_config_missing'), 'OpenAI Codex OAuth alarms must expose missing refresh configuration');
 const oauthFlowSource = fs.readFileSync(path.join(repoRoot, 'bots/hub/lib/oauth/oauth-flow.ts'), 'utf8');
-assert.ok(oauthFlowSource.includes('app_EMoamEEZ73f0CkXaXp7hrann'), 'OpenAI Codex OAuth refresh must use the public OpenClaw/Codex client id by default');
-assert.ok(oauthFlowSource.includes('refreshIncludesScope: false'), 'OpenAI Codex OAuth refresh must match Codex/OpenClaw refresh grant and omit scope');
+assert.ok(oauthFlowSource.includes('app_EMoamEEZ73f0CkXaXp7hrann'), 'OpenAI Codex OAuth refresh must use the public Codex-compatible client id by default');
+assert.ok(oauthFlowSource.includes('refreshIncludesScope: false'), 'OpenAI Codex OAuth refresh must match Codex-compatible refresh grant and omit scope');
 assert.ok(monitorSource.includes('postAlarm'), 'OAuth monitor must alarm on refresh/unhealthy failures');
 assert.ok(readinessSource.includes('expires_in_hours'), 'team readiness report must include token expiry windows');
 assert.ok(readinessSource.includes('needs_refresh'), 'team readiness report must include refresh-needed flags');

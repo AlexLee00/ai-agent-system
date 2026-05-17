@@ -2,7 +2,7 @@ const crypto = require('crypto');
 
 const DEFAULT_OPENAI_CODEX_AUTH_URL = 'https://auth.openai.com/oauth/authorize';
 const DEFAULT_OPENAI_CODEX_TOKEN_URL = 'https://auth.openai.com/oauth/token';
-// Public client id used by Codex/OpenClaw's ChatGPT OAuth PKCE flow.
+// Public client id used by Codex-compatible ChatGPT OAuth PKCE flow.
 // This is not a secret; no client_secret is required for refresh_token grant.
 const DEFAULT_OPENAI_CODEX_CLIENT_ID = 'app_EMoamEEZ73f0CkXaXp7hrann';
 const DEFAULT_OAUTH_SCOPE = 'openid profile email offline_access';

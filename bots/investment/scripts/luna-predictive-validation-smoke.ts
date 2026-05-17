@@ -80,6 +80,13 @@ export function runLunaPredictiveValidationSmoke() {
   }, {
     exchange: 'binance',
     maxPerCycle: 1,
+    binanceTopVolumeUniverse: {
+      source: 'smoke_binance_top30_universe',
+      fetchedAt: new Date().toISOString(),
+      limit: 30,
+      symbols: ['TOP/USDT', 'SECOND/USDT', 'LOW/USDT'],
+      ranks: { 'TOP/USDT': 1, 'SECOND/USDT': 2, 'LOW/USDT': 3 },
+    },
   });
   assert.equal(promotedHold.promoted.length, 1);
   assert.equal(promotedHold.promoted[0].symbol, 'TOP/USDT');

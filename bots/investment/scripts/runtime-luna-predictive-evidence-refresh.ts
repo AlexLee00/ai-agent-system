@@ -11,6 +11,12 @@ import {
   normalizeLunaPhase2Market,
   normalizeLunaPhase2Symbol,
 } from '../shared/luna-weight-vector.ts';
+import {
+  BINANCE_TOP_VOLUME_BLOCK_REASON,
+  buildFixtureBinanceTopVolumeUniverse,
+  evaluateBinanceTopVolumeUniverseGate,
+  getCachedBinanceTopVolumeUniverse,
+} from '../shared/binance-top-volume-universe.ts';
 
 const SHADOW_MODE = process.env.LUNA_PREDICTIVE_EVIDENCE_SHADOW_MODE !== 'false';
 
@@ -238,6 +244,60 @@ async function refreshPredictiveForCandidate(candidate: any, options: any = {}) 
   const fixture = options.fixture === true;
   const symbol = String(candidate.symbol || '').toUpperCase();
   const market = normalizeLunaPhase2Market(candidate.market);
+  const top30Universe = options.binanceTopVolumeUniverse || null;
+  if (market === 'crypto' && top30Universe) {
+    const top30Gate = evaluateBinanceTopVolumeUniverseGate(symbol, top30Universe);
+    if (top30Gate.blocked) {
+      const evidence = {
+        symbol,
+        market,
+        decision: 'block',
+        score: 0,
+        threshold: Number(process.env.LUNA_PREDICTIVE_EVIDENCE_THRESHOLD || 0.55),
+        componentCoverage: 0,
+        blocked: true,
+        wouldBlock: true,
+        reason: BINANCE_TOP_VOLUME_BLOCK_REASON,
+        blockedReason: BINANCE_TOP_VOLUME_BLOCK_REASON,
+        top30Gate,
+      };
+      if (!dryRun) {
+        await logPredictiveValidation(evidence, {
+          symbol,
+          market,
+          candidateSnapshot: {
+            ...candidate,
+            shadowMode: SHADOW_MODE,
+            source: 'runtime-luna-predictive-evidence-refresh',
+            top30Gate,
+          },
+        }).catch(() => null);
+      }
+      return {
+        symbol,
+        market,
+        decision: 'block',
+        score: 0,
+        componentCoverage: 0,
+        blocked: true,
+        wouldBlock: true,
+        predictionScore: 0,
+        dataHealth: 'blocked',
+        backtestFresh: false,
+        communitySources: 0,
+        forecastTimeframe: null,
+        forecastCandles: 0,
+        forecastFallbackReason: null,
+        reason: BINANCE_TOP_VOLUME_BLOCK_REASON,
+        blockedReason: BINANCE_TOP_VOLUME_BLOCK_REASON,
+        binanceTop30Rank: top30Gate.rank,
+        inBinanceTop30Universe: false,
+        top30Blocker: BINANCE_TOP_VOLUME_BLOCK_REASON,
+      };
+    }
+    candidate.binanceTop30Rank = top30Gate.rank;
+    candidate.inBinanceTop30Universe = true;
+  }
   const backtest = fixture
     ? {
       fresh: symbol !== 'NEG/USDT',
@@ -316,6 +376,8 @@ async function refreshPredictiveForCandidate(candidate: any, options: any = {}) 
     dataHealth: forecast?.dataHealth || 'unknown',
     backtestFresh: backtest?.fresh === true || String(backtest?.fresh).toLowerCase() === 'true',
     communitySources: Number(community?.source_count || 0) + Number(community?.market_source_count || 0),
+    binanceTop30Rank: candidate.binanceTop30Rank || null,
+    inBinanceTop30Universe: market === 'crypto' ? candidate.inBinanceTop30Universe === true : null,
     forecastTimeframe: forecast?.timeframe || null,
     forecastCandles: Number(forecast?.observedCandles || 0),
     forecastFallbackReason: forecast?.selectedForecastReason || null,
@@ -335,12 +397,21 @@ export async function runLunaPredictiveEvidenceRefresh(options: any = {}) {
     await ensureCandidateBacktestSchema();
   }
   const candidates = fixture ? fixtureCandidates() : await getActiveCandidates({ limit, market, symbols: requestedSymbols });
+  const binanceTopVolumeUniverse = fixture
+    ? buildFixtureBinanceTopVolumeUniverse()
+    : await getCachedBinanceTopVolumeUniverse().catch((error) => ({
+      source: 'binance_top30_unavailable',
+      limit: 30,
+      symbols: [],
+      ranks: {},
+      error: String(error?.message || error),
+    }));
   const selectedCandidates = requestedSymbols.length
     ? candidates.filter((candidate) => requestedSymbols.includes(normalizeLunaPhase2Symbol(candidate.symbol)))
     : candidates;
   const results = [];
   for (const candidate of selectedCandidates) {
-    results.push(await refreshPredictiveForCandidate(candidate, options));
+    results.push(await refreshPredictiveForCandidate(candidate, { ...options, binanceTopVolumeUniverse }));
   }
   const payload = {
     ok: true,

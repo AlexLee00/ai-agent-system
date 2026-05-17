@@ -76,7 +76,9 @@ function normalizeStrategyQuality(strategyQuality = {}) {
   const indicatorScore = clamp(strategyQuality?.indicator_score ?? strategyQuality?.indicatorScore, 0, 1, 0);
   const present = Boolean(enhancementStatus || hyperoptStatus || maxDrawdownGuard || providerStatus || hasIndicatorScore || reasons.length > 0);
   const hardHold = maxDrawdownGuard === 'block_live_forward';
-  const statusPenalty = enhancementStatus && enhancementStatus !== 'shadow_ready' ? 0.18 : 0;
+  const readyStatus = ['shadow_ready', 'shadow_ready_with_risk_tightening', 'shadow_tuned', 'shadow_evaluated']
+    .includes(enhancementStatus);
+  const statusPenalty = enhancementStatus && !readyStatus ? 0.18 : 0;
   const hyperoptPenalty = hyperoptStatus === 'planned' ? 0.12 : 0;
   const drawdownPenalty = hardHold ? 0.85 : maxDrawdownGuard === 'tighten_risk' ? 0.22 : 0;
   const indicatorPenalty = hasIndicatorScore ? clamp((0.55 - indicatorScore) * 0.30, 0, 0.25, 0) : 0;

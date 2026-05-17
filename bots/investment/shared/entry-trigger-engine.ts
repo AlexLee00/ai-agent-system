@@ -17,6 +17,11 @@ import { isMaturePosition } from './luna-discovery-mature-policy.ts';
 import { enforceTpSlRequirement } from './tp-sl-enforcer.ts';
 import { evaluateTradingViewEntryGuard } from './tradingview-entry-guard.ts';
 import { query as dbQuery } from './db/core.ts';
+import {
+  BINANCE_TOP_VOLUME_BLOCK_REASON,
+  evaluateBinanceTopVolumeUniverseGate,
+  getCachedBinanceTopVolumeUniverse,
+} from './binance-top-volume-universe.ts';
 
 const ACTIONS = {
   BUY: 'BUY',
@@ -1233,6 +1238,15 @@ export async function evaluateActiveEntryTriggersAgainstMarketEvents(events = []
   await expireOpenPositionEntryTriggers(exchange, openPositionSymbols);
   const allowLiveFire = flags.shouldAllowLiveEntryFire();
   const fireCooldownMinutes = Number(flags.entryTrigger.fireCooldownMinutes || 10);
+  const binanceTopVolumeUniverse = exchange === 'binance'
+    ? context.binanceTopVolumeUniverse || await getCachedBinanceTopVolumeUniverse().catch((error) => ({
+      source: 'binance_top30_unavailable',
+      limit: 30,
+      symbols: [],
+      ranks: {},
+      error: String(error?.message || error),
+    }))
+    : null;
   const eventsBySymbol = new Map();
   for (const event of events || []) {
     const symbol = String(event?.symbol || '').trim();
@@ -1254,6 +1268,29 @@ export async function evaluateActiveEntryTriggersAgainstMarketEvents(events = []
     const event = eventsBySymbol.get(String(trigger.symbol || ''));
     if (!event) continue;
     checked++;
+    if (exchange === 'binance') {
+      const top30Gate = evaluateBinanceTopVolumeUniverseGate(trigger.symbol, binanceTopVolumeUniverse);
+      if (top30Gate.blocked) {
+        readyBlocked++;
+        await updateEntryTriggerState(trigger.id, {
+          triggerState: 'waiting',
+          triggerMetaPatch: {
+            lastReadyAt: nowIso(),
+            reason: BINANCE_TOP_VOLUME_BLOCK_REASON,
+            binanceTop30Gate: top30Gate,
+          },
+        }).catch(() => null);
+        results.push({
+          triggerId: trigger.id,
+          symbol: trigger.symbol,
+          state: 'waiting',
+          fired: false,
+          reason: BINANCE_TOP_VOLUME_BLOCK_REASON,
+          binanceTop30Rank: top30Gate.rank,
+        });
+        continue;
+      }
+    }
     const candidate = {
       symbol: trigger.symbol,
       action: ACTIONS.BUY,

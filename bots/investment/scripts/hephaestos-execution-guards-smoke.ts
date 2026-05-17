@@ -30,6 +30,13 @@ function createDeps(overrides = {}) {
       getDailyTradeCount: async () => 0,
       formatDailyTradeLimitReason: (current, limit) => `daily ${current}/${limit}`,
       notifyEnabled: false,
+      binanceTopVolumeUniverse: {
+        source: 'smoke_binance_top30_universe',
+        fetchedAt: new Date().toISOString(),
+        limit: 30,
+        symbols: ['ORCA/USDT', 'RLUSD/USDT'],
+        ranks: { 'ORCA/USDT': 1, 'RLUSD/USDT': 2 },
+      },
       ...overrides,
     },
   };

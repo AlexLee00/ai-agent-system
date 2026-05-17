@@ -39,6 +39,17 @@ function withEnv(patch = {}, fn) {
     });
 }
 
+function makeSmokeTop30Universe(symbols = []) {
+  const canonical = [...new Set(symbols)];
+  return {
+    source: 'smoke_binance_top30_universe',
+    fetchedAt: new Date().toISOString(),
+    limit: 30,
+    symbols: canonical,
+    ranks: Object.fromEntries(canonical.map((symbol, index) => [symbol, index + 1])),
+  };
+}
+
 export async function runLunaEntryTriggerActiveWorkerSmoke() {
   return withEnv({
     LUNA_ENTRY_TRIGGER_ENGINE_ENABLED: 'true',
@@ -56,6 +67,19 @@ export async function runLunaEntryTriggerActiveWorkerSmoke() {
     const weakPullbackSymbol = `WEAKPULL${Date.now().toString(36).toUpperCase()}/USDT`;
     const technicalProbePullbackSymbol = `TECHPULL${Date.now().toString(36).toUpperCase()}/USDT`;
     const terminalLowConfSymbol = `TERMINALCONF${Date.now().toString(36).toUpperCase()}/USDT`;
+    const binanceTopVolumeUniverse = makeSmokeTop30Universe([
+      symbol,
+      pullbackSymbol,
+      refreshSymbol,
+      openSymbol,
+      mtfRefreshSymbol,
+      bearishMtfSymbol,
+      weakPullbackSymbol,
+      technicalProbePullbackSymbol,
+      terminalLowConfSymbol,
+      'FAKE/USDT',
+      'RLUSD/USDT',
+    ]);
     let signalId = null;
     let openSignalId = null;
     let smokeOriginSignalId = null;
@@ -168,6 +192,7 @@ export async function runLunaEntryTriggerActiveWorkerSmoke() {
       ], {
         exchange: 'binance',
         capitalSnapshot,
+        binanceTopVolumeUniverse,
       });
       assert.equal(result.enabled, true);
       assert.equal(result.checked, 1);
@@ -215,6 +240,7 @@ export async function runLunaEntryTriggerActiveWorkerSmoke() {
       ], {
         exchange: 'binance',
         capitalSnapshot,
+        binanceTopVolumeUniverse,
       });
       assert.equal(pullbackResult.checked, 1);
       assert.equal(pullbackResult.fired, 1);
@@ -248,6 +274,7 @@ export async function runLunaEntryTriggerActiveWorkerSmoke() {
       ], {
         exchange: 'binance',
         capitalSnapshot,
+        binanceTopVolumeUniverse,
       });
       assert.equal(weakPullbackResult.results[0].fired, false, 'pullback trigger must not bypass predictive/confidence checks through generic MTF rules');
       assert.equal(weakPullbackResult.results[0].fireReason, 'pullback_confirmation_incomplete');
@@ -290,6 +317,7 @@ export async function runLunaEntryTriggerActiveWorkerSmoke() {
       ], {
         exchange: 'binance',
         capitalSnapshot,
+        binanceTopVolumeUniverse,
       });
       assert.equal(technicalProbePullbackResult.results[0].fired, true, 'near-threshold pullback with fresh MTF/retest/volume confirmation should fire as a bounded technical probe');
       const technicalProbeRow = await db.get(`SELECT trigger_meta FROM entry_triggers WHERE id = $1`, [technicalProbePullbackTrigger.id]);
@@ -320,12 +348,15 @@ export async function runLunaEntryTriggerActiveWorkerSmoke() {
       ], {
         exchange: 'binance',
         openPositionSymbols: [openSymbol],
+        binanceTopVolumeUniverse,
       });
       assert.equal(openEventResult.checked, 0, 'open position trigger should be expired before event evaluation');
       const expiredOpenTrigger = await db.get(`SELECT trigger_state FROM entry_triggers WHERE id = $1`, [openTrigger.id]);
       assert.equal(expiredOpenTrigger?.trigger_state, 'expired');
 
       const staleReasonSymbol = `STALEBLOCK${Date.now().toString(36).toUpperCase()}/USDT`;
+      binanceTopVolumeUniverse.symbols.push(staleReasonSymbol);
+      binanceTopVolumeUniverse.ranks[staleReasonSymbol] = binanceTopVolumeUniverse.symbols.length;
       const staleReasonTrigger = await insertEntryTrigger({
         symbol: staleReasonSymbol,
         exchange: 'binance',
@@ -357,6 +388,7 @@ export async function runLunaEntryTriggerActiveWorkerSmoke() {
         },
       ], {
         exchange: 'binance',
+        binanceTopVolumeUniverse,
       });
       assert.equal(staleReasonResult.results[0].reason, 'conditions_not_met');
       const staleReasonRow = await db.get(`SELECT trigger_meta FROM entry_triggers WHERE id = $1`, [staleReasonTrigger.id]);
@@ -417,6 +449,7 @@ export async function runLunaEntryTriggerActiveWorkerSmoke() {
         },
       ], {
         exchange: 'binance',
+        binanceTopVolumeUniverse,
       });
       assert.equal(bearishMtfResult.results[0].fired, false, 'SELL-aligned MTF must not confirm a BUY trigger');
       assert.equal(bearishMtfResult.results[0].fireReadiness.mtfBullish, false);
@@ -456,6 +489,7 @@ export async function runLunaEntryTriggerActiveWorkerSmoke() {
       ], {
         exchange: 'binance',
         capitalSnapshot,
+        binanceTopVolumeUniverse,
       });
       assert.equal(terminalLowConfResult.results[0].state, 'expired', 'static confidence hard-fail should not stay in the active trigger loop');
       assert.equal(terminalLowConfResult.results[0].reason, 'live_risk_gate_terminal_blocked');
@@ -482,6 +516,7 @@ export async function runLunaEntryTriggerActiveWorkerSmoke() {
         riskContext: { capitalSnapshot },
         events: [{ symbol: 'FAKE/USDT', price: 101, targetPrice: 101 }],
         deps: {
+          binanceTopVolumeUniverse,
           triggerFetcher: async () => ({
             id: 'fake-trigger-1',
             symbol: 'FAKE/USDT',
@@ -541,6 +576,7 @@ export async function runLunaEntryTriggerActiveWorkerSmoke() {
         riskContext: { capitalSnapshot },
         events: [{ symbol: 'RLUSD/USDT', price: 1, targetPrice: 1 }],
         deps: {
+          binanceTopVolumeUniverse,
           triggerFetcher: async () => ({
             id: 'fake-trigger-rlusd',
             symbol: 'RLUSD/USDT',

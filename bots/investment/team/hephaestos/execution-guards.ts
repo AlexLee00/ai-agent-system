@@ -2,6 +2,11 @@
 
 import { evaluateTradeDataEntryGuard } from '../../shared/trade-data-derived-guards.ts';
 import { evaluateCandidateBacktestEntryGate } from '../../shared/candidate-backtest-gate.ts';
+import {
+  BINANCE_TOP_VOLUME_BLOCK_REASON,
+  evaluateBinanceTopVolumeUniverseGate,
+  getCachedBinanceTopVolumeUniverse,
+} from '../../shared/binance-top-volume-universe.ts';
 import { rejectExecution } from './execution-failure.ts';
 
 export function buildGuardTelemetryMeta(symbol, action, signalTradeMode, meta = {}, extras = {}) {
@@ -29,7 +34,37 @@ export async function runBuySafetyGuards({
   getDailyTradeCount,
   formatDailyTradeLimitReason,
   notifyEnabled = true,
+  binanceTopVolumeUniverse = null,
 }) {
+  if (String(signal.exchange || 'binance') === 'binance') {
+    const topVolumeUniverse = binanceTopVolumeUniverse || await getCachedBinanceTopVolumeUniverse().catch((error) => ({
+      source: 'binance_top30_unavailable',
+      limit: 30,
+      symbols: [],
+      ranks: {},
+      error: String(error?.message || error),
+    }));
+    const top30Gate = evaluateBinanceTopVolumeUniverseGate(symbol, topVolumeUniverse);
+    if (top30Gate.blocked) {
+      const reason = `Binance Top 30 universe blocked: ${BINANCE_TOP_VOLUME_BLOCK_REASON}`;
+      console.log(`  ⛔ [Binance Top30] ${symbol} ${reason}`);
+      return rejectExecution({
+        persistFailure,
+        symbol,
+        action,
+        reason,
+        code: BINANCE_TOP_VOLUME_BLOCK_REASON,
+        meta: buildGuardTelemetryMeta(symbol, action, signalTradeMode, {
+          binanceTop30Gate: top30Gate,
+        }, {
+          guardKind: 'binance_top30_volume_universe',
+          pressureSource: 'binance_market_liquidity',
+        }),
+        notify: notifyEnabled ? 'skip' : false,
+      });
+    }
+  }
+
   const tradeDataGuard = evaluateTradeDataEntryGuard({
     ...signal,
     symbol,

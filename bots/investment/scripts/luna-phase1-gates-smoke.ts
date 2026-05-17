@@ -6,6 +6,7 @@ import { ACTIONS } from '../shared/signal.ts';
 import { buildPredictiveValidationEvidence } from '../shared/predictive-validation.ts';
 import { evaluateCandidateBacktestStatus } from '../shared/candidate-backtest-gate.ts';
 import { runBuySafetyGuards } from '../team/hephaestos/execution-guards.ts';
+import { buildFixtureBinanceTopVolumeUniverse } from '../shared/binance-top-volume-universe.ts';
 
 function baseDeps(overrides = {}) {
   const captured = [];
@@ -41,6 +42,7 @@ function baseDeps(overrides = {}) {
       getDailyTradeCount: async () => 0,
       formatDailyTradeLimitReason: (current, limit) => `daily ${current}/${limit}`,
       notifyEnabled: false,
+      binanceTopVolumeUniverse: buildFixtureBinanceTopVolumeUniverse(),
       ...overrides,
     },
   };

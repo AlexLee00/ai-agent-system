@@ -10,6 +10,7 @@ import {
   buildLunaCandidateBottleneckRows,
   loadLunaCandidateBottleneckInputs,
 } from '../shared/luna-candidate-bottleneck-diagnostics.ts';
+import { runLunaBinanceTopVolumeUniverse } from './runtime-luna-binance-top-volume-universe.ts';
 
 const ROOT = path.resolve(new URL('../../..', import.meta.url).pathname);
 const OUT = path.resolve(new URL('../output/luna-phase1-codex-p0-report.json', import.meta.url).pathname);
@@ -120,6 +121,18 @@ const candidateBottleneckRows = buildLunaCandidateBottleneckRows(
   await loadLunaCandidateBottleneckInputs({ limit: 30 }).catch(() => []),
 ).slice(0, 30);
 
+const binanceTopVolumeUniverse = await runLunaBinanceTopVolumeUniverse({
+  json: true,
+  dryRun: false,
+  candidateLimit: 200,
+}).catch((error) => ({
+  ok: false,
+  status: 'luna_binance_top_volume_universe_failed',
+  error: String(error?.message || error),
+  excludedActiveCandidates: [],
+  offUniverseHoldings: [],
+}));
+
 const maxTradeUsdt = execText('launchctl', ['getenv', 'LUNA_MAX_TRADE_USDT'], process.env.LUNA_MAX_TRADE_USDT || '');
 
 const goals = {
@@ -153,6 +166,10 @@ const payload = {
       sample: candidateBottleneckRows.slice(0, 5).map((row) => ({
         symbol: row.symbol,
         market: row.market,
+        binanceTop30Rank: row.binanceTop30Rank,
+        inBinanceTop30Universe: row.inBinanceTop30Universe,
+        top30Blocker: row.top30Blocker,
+        liquidationCandidate: row.liquidationCandidate,
         backtestFresh: row.backtestFresh,
         backtestGateStatus: row.backtestGateStatus,
         predictiveDecision: row.predictiveDecision,
@@ -161,6 +178,17 @@ const payload = {
         primaryBlocker: row.primaryBlocker,
         recommendedRefreshCommand: row.recommendedRefreshCommand,
       })),
+    },
+    binanceTopVolumeUniverse: {
+      ok: binanceTopVolumeUniverse.ok === true,
+      status: binanceTopVolumeUniverse.status,
+      source: binanceTopVolumeUniverse.universe?.source || null,
+      fetchedAt: binanceTopVolumeUniverse.universe?.fetchedAt || null,
+      limit: binanceTopVolumeUniverse.universe?.limit || 30,
+      symbols: binanceTopVolumeUniverse.universe?.symbols || [],
+      excludedActiveCandidates: binanceTopVolumeUniverse.excludedActiveCandidates || [],
+      offUniverseHoldings: binanceTopVolumeUniverse.offUniverseHoldings || [],
+      error: binanceTopVolumeUniverse.error || null,
     },
   },
   launchd,

@@ -25,6 +25,18 @@ function makeCryptoSymbols(count) {
   return Array.from({ length: count }, (_, i) => `TEST${i + 1}USDT`);
 }
 
+function makeSmokeTop30Universe(symbols = []) {
+  const canonical = symbols.map((symbol) => `${String(symbol).replace(/USDT$/u, '')}/USDT`);
+  return {
+    source: 'smoke_binance_top30_universe',
+    fetchedAt: new Date().toISOString(),
+    quote: 'USDT',
+    limit: 30,
+    symbols: canonical,
+    ranks: Object.fromEntries(canonical.map((symbol, index) => [symbol, index + 1])),
+  };
+}
+
 function makeDomesticSymbols(count) {
   return Array.from({ length: count }, (_, i) => String(100000 + i).slice(0, 6));
 }
@@ -47,6 +59,7 @@ export async function runDiscoveryTopNSmoke() {
     const crypto = await buildDiscoveryUniverse('crypto', new Date('2026-01-01T00:00:00Z'), {
       refresh: false,
       fallbackSymbols: makeCryptoSymbols(20),
+      binanceTopVolumeUniverse: makeSmokeTop30Universe(makeCryptoSymbols(20)),
     });
     const domestic = await buildDiscoveryUniverse('domestic', new Date('2026-01-01T00:00:00Z'), {
       refresh: false,

@@ -37,6 +37,11 @@ import { getArgosRuntimeConfig } from '../shared/runtime-config.ts';
 import { recordEvidence } from '../shared/external-evidence-ledger.ts';
 import { loadLatestScoutIntel, boostCandidatesWithScout } from '../shared/scout-intel.ts';
 import { publishAgentHint } from '../shared/agent-hint-bridge.ts';
+import {
+  DEFAULT_BINANCE_TOP_VOLUME_LIMIT,
+  buildBinanceTopVolumeUniverse,
+  evaluateBinanceTopVolumeUniverseGate,
+} from '../shared/binance-top-volume-universe.ts';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const _require = createRequire(import.meta.url);
@@ -851,8 +856,33 @@ export async function screenCryptoSymbols(maxDynamic, fng = 50) {
 
     const STABLECOINS = new Set(['USDT', 'USDC', 'BUSD', 'DAI', 'TUSD', 'FDUSD', 'PYUSD', 'USDP']);
 
+    const exchangeInfo = exchange.markets
+      ? { symbols: Object.values(exchange.markets).map((market: any) => ({
+        symbol: String(market?.id || '').toUpperCase(),
+        baseAsset: String(market?.base || '').toUpperCase(),
+        quoteAsset: String(market?.quote || '').toUpperCase(),
+        status: market?.active === false ? 'HALT' : 'TRADING',
+        isSpotTradingAllowed: market?.spot !== false,
+      })) }
+      : { symbols: [] };
+    const tickerRows = Object.entries(tickerMap).map(([symbol, ticker]: any[]) => ({
+      symbol: String(ticker?.info?.symbol || symbol.replace('/', '')).toUpperCase(),
+      quoteVolume: ticker?.quoteVolume,
+      priceChangePercent: ticker?.percentage,
+      count: ticker?.info?.count,
+      lastPrice: ticker?.last,
+    }));
+    const topVolumeUniverse = buildBinanceTopVolumeUniverse({
+      exchangeInfo,
+      tickerRows,
+      limit: DEFAULT_BINANCE_TOP_VOLUME_LIMIT,
+      quote: 'USDT',
+    });
+    const allowedTopVolume = new Set(topVolumeUniverse.symbols || []);
+
     const candidates = Object.entries(tickerMap)
       .filter(([sym]) => sym.endsWith('/USDT'))
+      .filter(([sym]) => allowedTopVolume.has(sym))
       .filter(([sym]) => {
         const base = sym.split('/')[0];
         if (STABLECOINS.has(base)) return false;
@@ -870,7 +900,7 @@ export async function screenCryptoSymbols(maxDynamic, fng = 50) {
       }))
       .filter(t => t.volume24h >= minVol)
       .sort((a, b) => b.volume24h - a.volume24h)
-      .slice(0, 50);  // 30 → 50으로 후보 풀 확대
+      .slice(0, DEFAULT_BINANCE_TOP_VOLUME_LIMIT);
 
     const liquidCandidates = _filterCandidatesByLiquidity(candidates, 'crypto');
     const scored = liquidCandidates.map(t => {
@@ -884,6 +914,7 @@ export async function screenCryptoSymbols(maxDynamic, fng = 50) {
       const relToBtc  = t.changePercent - btcChange;
       const relToEth  = t.changePercent - ethChange;
       const base = t.symbol.split('/')[0];
+      const top30Gate = evaluateBinanceTopVolumeUniverseGate(t.symbol, topVolumeUniverse);
       const pullbackScore = _computeCryptoPullbackScore(t.changePercent, rangePos);
       const regimeBonus = _computeCryptoRegimeBonus({
         symbol: base,
@@ -898,6 +929,8 @@ export async function screenCryptoSymbols(maxDynamic, fng = 50) {
         rangePos:   Math.round(rangePos * 100) / 100,
         relToBtc:   Math.round(relToBtc * 100) / 100,
         relToEth:   Math.round(relToEth * 100) / 100,
+        binanceTop30Rank: top30Gate.rank,
+        inBinanceTop30Universe: top30Gate.ok,
         finalScore: Math.round((
           (momentum * 0.55 + volScore * 0.25)
           + pullbackScore

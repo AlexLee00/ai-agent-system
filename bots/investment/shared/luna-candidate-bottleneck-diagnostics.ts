@@ -14,6 +14,12 @@ import {
   normalizeLunaPhase2Symbol,
   normalizeLunaPhase2Symbols,
 } from './luna-weight-vector.ts';
+import {
+  BINANCE_TOP_VOLUME_BLOCK_REASON,
+  buildFixtureBinanceTopVolumeUniverse,
+  evaluateBinanceTopVolumeUniverseGate,
+  getCachedBinanceTopVolumeUniverse,
+} from './binance-top-volume-universe.ts';
 
 function n(value: any, fallback = 0) {
   const parsed = Number(value);
@@ -182,30 +188,35 @@ export async function ensureLunaCandidateBottleneckSchema() {
 
 export function fixtureCandidateBottleneckInputs() {
   const now = new Date().toISOString();
+  const topVolumeUniverse = buildFixtureBinanceTopVolumeUniverse();
   return [
     {
       candidate: { symbol: 'BTC/USDT', market: 'crypto', score: 0.88, source: 'fixture', discovered_at: now },
       backtest: { fresh: true, healthy: true, sharpe: 1.1, max_drawdown: 9, win_rate: 54, gate_status: 'pass', last_backtest_at: now },
       predictive: { decision: 'fire', score: 0.74, component_coverage: 1, created_at: now },
       community: { avg_score: 0.35, event_count: 4, source_count: 3, market_event_count: 12, market_source_count: 8, last_seen_at: now },
+      binanceTop30Gate: evaluateBinanceTopVolumeUniverseGate('BTC/USDT', topVolumeUniverse),
     },
     {
       candidate: { symbol: 'NEG/USDT', market: 'crypto', score: 0.79, source: 'fixture', discovered_at: now },
       backtest: { fresh: true, healthy: false, would_block: true, sharpe: -0.7, max_drawdown: 18, win_rate: 24, gate_status: 'would_block_unhealthy', last_backtest_at: now },
       predictive: { decision: 'block_backtest_gate', score: 0.32, component_coverage: 1, blocked_reason: 'backtest_unhealthy', created_at: now },
       community: { avg_score: 0.12, event_count: 1, source_count: 1, market_event_count: 4, market_source_count: 4, last_seen_at: now },
+      binanceTop30Gate: evaluateBinanceTopVolumeUniverseGate('NEG/USDT', topVolumeUniverse),
     },
     {
       candidate: { symbol: 'ALPHA/USDT', market: 'crypto', score: 0.82, source: 'fixture', discovered_at: now },
       backtest: { fresh: true, healthy: false, would_block: true, sharpe: -0.2, max_drawdown: 14, win_rate: 29, gate_status: 'would_block_unhealthy', last_backtest_at: now },
       predictive: { decision: 'fire', score: 0.68, component_coverage: 1, created_at: now },
       community: { avg_score: 0.41, event_count: 3, source_count: 3, market_event_count: 8, market_source_count: 6, last_seen_at: now },
+      binanceTop30Gate: evaluateBinanceTopVolumeUniverseGate('ALPHA/USDT', topVolumeUniverse),
     },
     {
       candidate: { symbol: 'MISS/USDT', market: 'crypto', score: 0.71, source: 'fixture', discovered_at: now },
       backtest: null,
       predictive: { decision: null, score: null, component_coverage: 0, created_at: null },
       community: { avg_score: null, event_count: 0, source_count: 0, market_event_count: 0, market_source_count: 0, last_seen_at: null },
+      binanceTop30Gate: evaluateBinanceTopVolumeUniverseGate('MISS/USDT', topVolumeUniverse),
     },
   ];
 }
@@ -222,6 +233,13 @@ export function buildLunaCandidateBottleneckRows(inputs: any[] = [], options: an
     const market = normalizeLunaPhase2Market(candidate.market || input.market);
     const exchange = candidate.exchange || exchangeForLunaPhase2Market(market);
     const reasons: string[] = [];
+    const binanceTop30Gate = input.binanceTop30Gate || input.top30Gate || null;
+    const inBinanceTop30Universe = market === 'crypto'
+      ? binanceTop30Gate?.ok === true
+      : null;
+    if (market === 'crypto' && binanceTop30Gate?.blocked === true) {
+      reasons.push(BINANCE_TOP_VOLUME_BLOCK_REASON);
+    }
 
     const backtestFresh = isTrue(backtest.fresh) && ageHours(backtest.last_backtest_at) <= staleBacktestHours;
     const backtestHealthy = isTrue(backtest.healthy);
@@ -277,6 +295,10 @@ export function buildLunaCandidateBottleneckRows(inputs: any[] = [], options: an
       communityEvidenceCount24h,
       communitySourceCount24h,
       primaryBlocker,
+      binanceTop30Rank: binanceTop30Gate?.rank || null,
+      inBinanceTop30Universe,
+      top30Blocker: binanceTop30Gate?.blocked ? BINANCE_TOP_VOLUME_BLOCK_REASON : null,
+      liquidationCandidate: input.liquidationCandidate === true || false,
       candidateSelectionPenalty,
       reasons: uniqueReasons,
       shadowOnly: true,
@@ -298,6 +320,10 @@ export function buildLunaCandidateBottleneckRows(inputs: any[] = [], options: an
           communitySourceCount24h,
           primaryBlocker,
           recommendedRefreshCommand,
+          binanceTop30Rank: binanceTop30Gate?.rank || null,
+          inBinanceTop30Universe,
+          top30Blocker: binanceTop30Gate?.blocked ? BINANCE_TOP_VOLUME_BLOCK_REASON : null,
+          liquidationCandidate: input.liquidationCandidate === true || false,
         },
         thresholds: {
           staleBacktestHours,
@@ -420,6 +446,13 @@ export async function loadLunaCandidateBottleneckInputs({ limit = 50, market = n
      ORDER BY cu.score DESC, cu.discovered_at DESC
      LIMIT $${params.length}
   `, params).catch(() => []);
+  const binanceTopVolumeUniverse = await getCachedBinanceTopVolumeUniverse().catch((error) => ({
+    source: 'binance_top30_unavailable',
+    limit: 30,
+    symbols: [],
+    ranks: {},
+    error: String(error?.message || error),
+  }));
 
   return rows.map((row) => ({
     candidate: {
@@ -465,6 +498,9 @@ export async function loadLunaCandidateBottleneckInputs({ limit = 50, market = n
       bot_noise_score: row.community_bot_noise_flag ? 0.6 : 0,
       hype_spike: row.community_hype_spike_flag === 1,
     },
+    binanceTop30Gate: normalizeLunaPhase2Market(row.market) === 'crypto'
+      ? evaluateBinanceTopVolumeUniverseGate(row.symbol, binanceTopVolumeUniverse)
+      : null,
   }));
 }
 

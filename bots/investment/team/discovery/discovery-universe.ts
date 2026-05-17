@@ -3,6 +3,11 @@ import { getActiveCandidates } from './discovery-store.ts';
 import { runDiscoveryOrchestrator } from './discovery-orchestrator.ts';
 import { getLunaIntelligentDiscoveryFlags } from '../../shared/luna-intelligent-discovery-config.ts';
 import { checkTradeDataWeakSymbol } from '../../shared/trade-data-derived-guards.ts';
+import {
+  BINANCE_TOP_VOLUME_BLOCK_REASON,
+  evaluateBinanceTopVolumeUniverseGate,
+  getCachedBinanceTopVolumeUniverse,
+} from '../../shared/binance-top-volume-universe.ts';
 import * as db from '../../shared/db.ts';
 
 export function toDiscoveryMarket(exchange = 'binance') {
@@ -55,6 +60,30 @@ function getDiscoverySelectionBlock(symbol, market = 'crypto') {
   const block = checkTradeDataWeakSymbol(symbol, market);
   if (block?.blocked && block.source === 'pre_entry/crypto_structural_symbol_block') return block;
   return null;
+}
+
+async function resolveCryptoTopVolumeUniverse(market = 'crypto', options = {}) {
+  if (market !== 'crypto') return null;
+  if (options.enforceBinanceTopVolumeUniverse === false) return null;
+  if (options.binanceTopVolumeUniverse) return options.binanceTopVolumeUniverse;
+  return getCachedBinanceTopVolumeUniverse({
+    timeoutMs: Math.max(3000, Number(options.timeoutMs || 8000)),
+  }).catch((error) => {
+    console.warn(`[discovery-universe] Binance Top 30 universe fetch failed: ${error?.message || error}`);
+    return null;
+  });
+}
+
+function getBinanceTopVolumeSelectionBlock(symbol, market = 'crypto', universe = null) {
+  if (market !== 'crypto' || !universe) return null;
+  const gate = evaluateBinanceTopVolumeUniverseGate(symbol, universe);
+  if (gate.ok) return null;
+  return {
+    blocked: true,
+    source: 'pre_entry/binance_top30_volume_universe',
+    reason: BINANCE_TOP_VOLUME_BLOCK_REASON,
+    gate,
+  };
 }
 
 function isBuySignal(value) {
@@ -158,6 +187,7 @@ export async function buildDiscoveryUniverse(market, now = new Date(), options =
   }
 
   const rows = await getActiveCandidates(market, candidateScanLimit).catch(() => []);
+  const binanceTopVolumeUniverse = await resolveCryptoTopVolumeUniverse(market, options);
   const excludedSymbols = [];
   function rememberExcluded(symbol, block, source = 'candidate') {
     if (!symbol || !block?.blocked) return;
@@ -190,7 +220,8 @@ export async function buildDiscoveryUniverse(market, now = new Date(), options =
       })
       .filter((row) => {
         if (!row) return false;
-        const block = getDiscoverySelectionBlock(row.symbol, market);
+        const block = getDiscoverySelectionBlock(row.symbol, market)
+          || getBinanceTopVolumeSelectionBlock(row.symbol, market, binanceTopVolumeUniverse);
         if (block) {
           rememberExcluded(row.symbol, block, 'candidate_universe');
           return false;
@@ -206,7 +237,8 @@ export async function buildDiscoveryUniverse(market, now = new Date(), options =
   function addSymbol(item, source = 'symbol') {
     const normalized = normalizeDiscoverySymbol(item, market);
     if (!normalized || seen.has(normalized)) return;
-    const block = getDiscoverySelectionBlock(normalized, market);
+    const block = getDiscoverySelectionBlock(normalized, market)
+      || getBinanceTopVolumeSelectionBlock(normalized, market, binanceTopVolumeUniverse);
     if (block) {
       rememberExcluded(normalized, block, source);
       return;
@@ -238,6 +270,12 @@ export async function buildDiscoveryUniverse(market, now = new Date(), options =
     promotedCount: promotedSymbols.length,
     promotedSymbols,
     excludedSymbols,
+    binanceTopVolumeUniverse: binanceTopVolumeUniverse ? {
+      source: binanceTopVolumeUniverse.source,
+      fetchedAt: binanceTopVolumeUniverse.fetchedAt,
+      limit: binanceTopVolumeUniverse.limit,
+      symbols: binanceTopVolumeUniverse.symbols,
+    } : null,
     source: candidates.length > 0 ? 'candidate_universe' : 'fallback',
   };
 }

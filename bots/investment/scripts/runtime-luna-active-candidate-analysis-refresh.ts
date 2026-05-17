@@ -11,6 +11,11 @@ import { buildLunaDecisionFilterReport } from './runtime-luna-decision-filter-re
 import { buildDailyTechnicalCoverage, buildLunaDiscoveryFunnelReport } from './runtime-luna-discovery-funnel-report.ts';
 import { buildStockIntradayLlmPolicyMeta, isStockIntradayEnrichmentEnabled } from '../shared/stock-intraday-llm-policy.ts';
 import { extractCryptoTechnicalEvidence } from '../shared/luna-conservative-relaxation-policy.ts';
+import {
+  BINANCE_TOP_VOLUME_BLOCK_REASON,
+  evaluateBinanceTopVolumeUniverseGate,
+  getCachedBinanceTopVolumeUniverse,
+} from '../shared/binance-top-volume-universe.ts';
 
 const CONFIRM = 'luna-active-candidate-analysis-refresh';
 const DEFAULT_STATE_PATH = investmentOpsRuntimeFile('luna-active-candidate-analysis-refresh-state.json');
@@ -719,6 +724,41 @@ function combineRefreshStatus(plan = {}, preopenMarketFlow = {}) {
   return plan.status;
 }
 
+function filterTop30SelectedSymbols(symbols = [], universe = null) {
+  const selected = [];
+  const excluded = [];
+  for (const symbol of symbols || []) {
+    const gate = evaluateBinanceTopVolumeUniverseGate(symbol, universe);
+    if (gate.ok) selected.push(gate.canonicalSymbol);
+    else excluded.push({ symbol, reason: BINANCE_TOP_VOLUME_BLOCK_REASON, rank: gate.rank });
+  }
+  return { selected: [...new Set(selected)], excluded };
+}
+
+function applyCryptoTop30ToRefreshPlan(plan = {}, universe = null, exchange = '') {
+  if (String(exchange || '').trim() !== 'binance') return { plan, excluded: [] };
+  const base = filterTop30SelectedSymbols(plan.selected || [], universe);
+  const targeted = filterTop30SelectedSymbols(plan.targetedEnrichment?.selectedSymbols || [], universe);
+  const targetedSelectedSet = new Set(targeted.selected);
+  const targetedSelected = (plan.targetedEnrichment?.selected || [])
+    .filter((item) => targetedSelectedSet.has(String(item?.symbol || '').trim().toUpperCase()))
+    .map((item) => ({ ...item, binanceTop30Rank: evaluateBinanceTopVolumeUniverseGate(item.symbol, universe).rank }));
+  return {
+    plan: {
+      ...plan,
+      selected: base.selected,
+      targetedEnrichment: {
+        ...(plan.targetedEnrichment || {}),
+        selected: targetedSelected,
+        selectedSymbols: targeted.selected,
+        top30ExcludedSymbols: targeted.excluded,
+      },
+      top30ExcludedSymbols: base.excluded,
+    },
+    excluded: [...base.excluded, ...targeted.excluded],
+  };
+}
+
 function updateAttemptState(state = {}, symbols = [], result = {}, now = new Date(), { exchange = null, purpose = 'analysis' } = {}) {
   const next = {
     ...(state || {}),
@@ -779,6 +819,7 @@ export async function runActiveCandidateAnalysisRefresh({
   collectRunner = runMarketCollectPipeline,
   finishRun = finishPipelineRun,
   discoveryReportBuilder = buildLunaDiscoveryFunnelReport,
+  binanceTopVolumeUniverse: providedBinanceTopVolumeUniverse = null,
   now = new Date(),
 } = {}) {
   const normalizedMarket = normalizeMarket(market);
@@ -869,6 +910,17 @@ export async function runActiveCandidateAnalysisRefresh({
     exchange: resolvedExchange,
     env,
   });
+  const binanceTopVolumeUniverse = resolvedExchange === 'binance'
+    ? providedBinanceTopVolumeUniverse || await getCachedBinanceTopVolumeUniverse().catch((error) => ({
+      source: 'binance_top30_unavailable',
+      limit: 30,
+      symbols: [],
+      ranks: {},
+      error: String(error?.message || error),
+    }))
+    : null;
+  const top30Plan = applyCryptoTop30ToRefreshPlan(plan, binanceTopVolumeUniverse, resolvedExchange);
+  const effectiveBasePlan = top30Plan.plan;
   let preopenMarketFlow = {
     ok: true,
     enabled: false,
@@ -880,8 +932,8 @@ export async function runActiveCandidateAnalysisRefresh({
   };
   if (
     isStockExchange(resolvedExchange)
-    && plan.selected.length === 0
-    && plan.targetedEnrichment.selected.length === 0
+    && effectiveBasePlan.selected.length === 0
+    && effectiveBasePlan.targetedEnrichment.selected.length === 0
   ) {
     const discoveryReport = await discoveryReportBuilder({
       market: normalizedMarket,
@@ -907,8 +959,17 @@ export async function runActiveCandidateAnalysisRefresh({
       exchange: resolvedExchange,
     });
   }
-  const effectivePlan = { ...plan, preopenMarketFlow };
-  const effectiveStatus = combineRefreshStatus(plan, preopenMarketFlow);
+  const effectivePlan = {
+    ...effectiveBasePlan,
+    preopenMarketFlow,
+    binanceTopVolumeUniverse: binanceTopVolumeUniverse ? {
+      source: binanceTopVolumeUniverse.source,
+      fetchedAt: binanceTopVolumeUniverse.fetchedAt,
+      limit: binanceTopVolumeUniverse.limit,
+    } : null,
+    top30ExcludedSymbols: top30Plan.excluded,
+  };
+  const effectiveStatus = combineRefreshStatus(effectiveBasePlan, preopenMarketFlow);
 
   if (!apply) {
     return {
@@ -948,7 +1009,7 @@ export async function runActiveCandidateAnalysisRefresh({
     };
   }
 
-  if (plan.selected.length === 0 && plan.targetedEnrichment.selected.length === 0 && preopenMarketFlow.selected.length === 0) {
+  if (effectiveBasePlan.selected.length === 0 && effectiveBasePlan.targetedEnrichment.selected.length === 0 && preopenMarketFlow.selected.length === 0) {
     return {
       ok: true,
       status: effectiveStatus,
@@ -1006,7 +1067,7 @@ export async function runActiveCandidateAnalysisRefresh({
   }
 
   const baseRun = await runCollectStage({
-    symbols: plan.selected,
+    symbols: effectiveBasePlan.selected,
     purpose: 'analysis',
     meta: buildStockIntradayLlmPolicyMeta({
       market: resolvedExchange,
@@ -1017,13 +1078,14 @@ export async function runActiveCandidateAnalysisRefresh({
       },
     }),
     universeMeta: {
-      screeningSymbolCount: plan.selected.length,
+      screeningSymbolCount: effectiveBasePlan.selected.length,
       activeCandidateRefresh: true,
+      binanceTop30Universe: effectivePlan.binanceTopVolumeUniverse,
     },
   });
 
   const enrichmentRun = await runCollectStage({
-    symbols: plan.targetedEnrichment.selectedSymbols,
+    symbols: effectiveBasePlan.targetedEnrichment.selectedSymbols,
     purpose: 'targeted_enrichment',
     meta: buildStockIntradayLlmPolicyMeta({
       market: resolvedExchange,
@@ -1035,26 +1097,27 @@ export async function runActiveCandidateAnalysisRefresh({
         targeted_enrichment_reason: 'fill_missing_confirmation_before_l13',
         agentPlan: {
           collect: {
-            nodeIds: plan.targetedEnrichment.nodeIds,
-            concurrencyLimit: Math.min(3, Math.max(1, plan.targetedEnrichment.nodeIds.length || 1)),
+            nodeIds: effectiveBasePlan.targetedEnrichment.nodeIds,
+            concurrencyLimit: Math.min(3, Math.max(1, effectiveBasePlan.targetedEnrichment.nodeIds.length || 1)),
           },
         },
         llm_call_policy: {
           source_enrichment: 'targeted_top_n_only',
-          targeted_enrichment_nodes: plan.targetedEnrichment.nodeIds,
-          targeted_enrichment_max_symbols: plan.targetedEnrichment.maxSymbols,
-          targeted_enrichment_cooldown_minutes: plan.targetedEnrichment.cooldownMinutes,
-          targeted_enrichment_min_confidence: plan.targetedEnrichment.minConfidence,
-          targeted_enrichment_cooldown_bypassed_symbols: plan.targetedEnrichment.cooldownBypassedSymbols || [],
-          targeted_enrichment_global_cooldown_bypassed: plan.targetedEnrichment.globalCooldownBypassed || 0,
-          targeted_enrichment_global_cooldown: plan.targetedEnrichment.globalCooldown,
+          targeted_enrichment_nodes: effectiveBasePlan.targetedEnrichment.nodeIds,
+          targeted_enrichment_max_symbols: effectiveBasePlan.targetedEnrichment.maxSymbols,
+          targeted_enrichment_cooldown_minutes: effectiveBasePlan.targetedEnrichment.cooldownMinutes,
+          targeted_enrichment_min_confidence: effectiveBasePlan.targetedEnrichment.minConfidence,
+          targeted_enrichment_cooldown_bypassed_symbols: effectiveBasePlan.targetedEnrichment.cooldownBypassedSymbols || [],
+          targeted_enrichment_global_cooldown_bypassed: effectiveBasePlan.targetedEnrichment.globalCooldownBypassed || 0,
+          targeted_enrichment_global_cooldown: effectiveBasePlan.targetedEnrichment.globalCooldown,
         },
       },
     }),
     universeMeta: {
-      screeningSymbolCount: plan.targetedEnrichment.selectedSymbols.length,
+      screeningSymbolCount: effectiveBasePlan.targetedEnrichment.selectedSymbols.length,
       activeCandidateRefresh: true,
       targetedEnrichment: true,
+      binanceTop30Universe: effectivePlan.binanceTopVolumeUniverse,
     },
   });
 
@@ -1093,8 +1156,8 @@ export async function runActiveCandidateAnalysisRefresh({
 
   const finishOk = collectRuns.every((run) => run.finishOk);
   const collectOk = collectRuns.every((run) => run.collectOk);
-  let nextState = updateAttemptState(state, plan.selected, baseRun?.collect || {}, now, { exchange: resolvedExchange, purpose: 'analysis' });
-  nextState = updateAttemptState(nextState, plan.targetedEnrichment.selectedSymbols, enrichmentRun?.collect || {}, now, { exchange: resolvedExchange, purpose: 'targeted_enrichment' });
+  let nextState = updateAttemptState(state, effectiveBasePlan.selected, baseRun?.collect || {}, now, { exchange: resolvedExchange, purpose: 'analysis' });
+  nextState = updateAttemptState(nextState, effectiveBasePlan.targetedEnrichment.selectedSymbols, enrichmentRun?.collect || {}, now, { exchange: resolvedExchange, purpose: 'targeted_enrichment' });
   nextState = updateAttemptState(nextState, preopenMarketFlow.selectedSymbols, preopenMarketFlowRun?.collect || {}, now, { exchange: resolvedExchange, purpose: 'preopen_market_flow' });
   writeJson(statePath, nextState);
 

@@ -130,6 +130,7 @@ function main(): void {
       live_steward_drill: liveSteward,
       require_gemini_quota_project: requireGeminiQuotaProject,
       gemini_oauth_retired: true,
+      public_api_tokens_are_optional: true,
     },
     providers: provider,
     gemini_cli_readiness: {
@@ -185,6 +186,7 @@ function main(): void {
     ],
     notes: [
       'No provider token, account id, chat id, or raw secret is included in this report.',
+      'public_api_tokens_are_optional: OpenAI/Claude public API tokens are optional; Hub uses Codex/Claude Code OAuth paths unless strict public API mode is explicitly enabled.',
       'gemini-oauth is retired in Hub operations; gemini-cli-oauth is the only Gemini OAuth boundary for Steward/Jay summary routing.',
     ],
   };

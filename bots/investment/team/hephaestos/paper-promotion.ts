@@ -7,6 +7,12 @@
  * not carry the whole paper/live transition policy inline.
  */
 
+import {
+  BINANCE_TOP_VOLUME_BLOCK_REASON,
+  evaluateBinanceTopVolumeUniverseGate,
+  getCachedBinanceTopVolumeUniverse,
+} from '../../shared/binance-top-volume-universe.ts';
+
 export function createPaperPromotionPolicy(context = {}) {
   const {
     getCapitalConfig,
@@ -25,7 +31,18 @@ export function createPaperPromotionPolicy(context = {}) {
     calculatePositionSize,
     isPaperMode,
     getInvestmentTradeMode,
+    binanceTopVolumeUniverse = null,
   } = context;
+
+  async function resolveBinanceTopVolumeUniverse() {
+    return binanceTopVolumeUniverse || await getCachedBinanceTopVolumeUniverse().catch((error) => ({
+      source: 'binance_top30_unavailable',
+      limit: 30,
+      symbols: [],
+      ranks: {},
+      error: String(error?.message || error),
+    }));
+  }
 
   async function maybePromotePaperPositions({ reserveSlots = 0 } = {}) {
     const capitalPolicy = getCapitalConfig('binance', 'normal');
@@ -38,8 +55,11 @@ export function createPaperPromotionPolicy(context = {}) {
     if (liveOpenPositions.length >= maxPromotableOpenPositions) return [];
 
     const promoted = [];
+    const topVolumeUniverse = await resolveBinanceTopVolumeUniverse();
     for (const paperPos of paperPositions) {
       if (liveOpenPositions.length >= maxPromotableOpenPositions) break;
+      const top30Gate = evaluateBinanceTopVolumeUniverseGate(paperPos.symbol, topVolumeUniverse);
+      if (top30Gate.blocked) continue;
 
       const desiredUsdt = (paperPos.amount || 0) * (paperPos.avg_price || 0);
       if (desiredUsdt < minOrderUsdt) continue;
@@ -144,6 +164,7 @@ export function createPaperPromotionPolicy(context = {}) {
     const minOrderUsdt = await getDynamicMinOrderAmount('binance', 'normal');
     const freeUsdt = await getAvailableUSDT().catch(() => 0);
     const paperPositions = await db.getPaperPositions('binance', 'normal').catch(() => []);
+    const topVolumeUniverse = await resolveBinanceTopVolumeUniverse();
     const results = [];
 
     for (const paperPos of paperPositions) {
@@ -151,10 +172,18 @@ export function createPaperPromotionPolicy(context = {}) {
       const minOrder = minOrderUsdt;
       const tooSmall = desiredUsdt < minOrder;
       const enoughUsdt = freeUsdt >= desiredUsdt;
+      const top30Gate = evaluateBinanceTopVolumeUniverseGate(paperPos.symbol, topVolumeUniverse);
       /** @type {any} */
-      let check = { allowed: false, reason: tooSmall ? `최소 주문 미만: ${desiredUsdt.toFixed(2)} USDT` : 'USDT 부족' };
+      let check = {
+        allowed: false,
+        reason: top30Gate.blocked
+          ? BINANCE_TOP_VOLUME_BLOCK_REASON
+          : tooSmall
+            ? `최소 주문 미만: ${desiredUsdt.toFixed(2)} USDT`
+            : 'USDT 부족',
+      };
 
-      if (!tooSmall && enoughUsdt) {
+      if (!top30Gate.blocked && !tooSmall && enoughUsdt) {
         check = await preTradeCheck(paperPos.symbol, 'BUY', desiredUsdt, 'binance', 'normal');
       }
 
@@ -164,8 +193,11 @@ export function createPaperPromotionPolicy(context = {}) {
         avgPrice: paperPos.avg_price || 0,
         desiredUsdt,
         freeUsdt,
-        promotable: !tooSmall && enoughUsdt && check.allowed,
+        promotable: !top30Gate.blocked && !tooSmall && enoughUsdt && check.allowed,
         reason: !tooSmall && enoughUsdt ? (check.allowed ? '승격 가능' : check.reason) : check.reason,
+        binanceTop30Rank: top30Gate.rank,
+        inBinanceTop30Universe: top30Gate.ok,
+        top30Blocker: top30Gate.blocked ? BINANCE_TOP_VOLUME_BLOCK_REASON : null,
       });
     }
 
@@ -182,6 +214,29 @@ export function createPaperPromotionPolicy(context = {}) {
     const minOrderUsdt = await getDynamicMinOrderAmount('binance', tradeMode);
     const currentPrice = await fetchTicker(symbol).catch(() => 0);
     const slPrice = 0;
+    const top30Gate = evaluateBinanceTopVolumeUniverseGate(symbol, await resolveBinanceTopVolumeUniverse());
+    if (top30Gate.blocked) {
+      return {
+        symbol,
+        requestedAmountUsdt: amountUsdt,
+        currentPrice,
+        liveAllowed: false,
+        liveReason: BINANCE_TOP_VOLUME_BLOCK_REASON,
+        paperFallback: false,
+        finalMode: 'blocked',
+        suggestedLiveAmountUsdt: 0,
+        binanceTop30Rank: top30Gate.rank,
+        inBinanceTop30Universe: false,
+        top30Blocker: BINANCE_TOP_VOLUME_BLOCK_REASON,
+        capitalPolicy: {
+          reserveRatio: capitalPolicy.reserve_ratio,
+          minOrderUsdt,
+          maxPositionPct: capitalPolicy.max_position_pct,
+          maxConcurrentPositions: capitalPolicy.max_concurrent_positions,
+        },
+        sizing: { skip: true, reason: BINANCE_TOP_VOLUME_BLOCK_REASON },
+      };
+    }
     const check = await preTradeCheck(symbol, 'BUY', amountUsdt, 'binance');
     const sizing = await calculatePositionSize(symbol, currentPrice, slPrice, 'binance');
     const paperFallback = !isPaperMode() && !check.circuit && !check.allowed && isCapitalShortageReason(check.reason || '');

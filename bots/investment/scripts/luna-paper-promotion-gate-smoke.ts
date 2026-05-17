@@ -38,6 +38,10 @@ const hardHoldEvidence = {
   ...passEvidence,
   bottleneckAvoidance: { present: true, hardHold: true, preventedOrder: false, action: 'quarantine_candidate_shadow' },
 };
+const preventedOrderEvidence = {
+  ...passEvidence,
+  bottleneckAvoidance: { present: true, hardHold: false, preventedOrder: true, action: 'prevent_order_shadow' },
+};
 const strategyQualityEvidence = {
   ...passEvidence,
   bottleneckAvoidance: { present: false, hardHold: false, preventedOrder: false },
@@ -103,6 +107,40 @@ assert.equal(strategyBlocked.promotionCandidate, false);
 assert.ok(strategyBlocked.blockReasons.includes('strategy_quality_block_live_forward_seen'));
 assert.ok(strategyBlocked.blockReasons.includes('strategy_hyperopt_planned_seen'));
 assert.equal(strategyBlocked.promotionBlockerClass, 'risk_quality');
+
+const recoveredStrategyQuality = evaluateLunaPaperPromotionHistory([
+  { symbol: 'RECOVER/USDT', market: 'crypto', exchange: 'binance', paper_side: 'BUY', paper_notional_usdt: 20, confidence: 0.76, status: 'planned', shadow_only: true, evidence: passEvidence, observed_at: iso(1) },
+  { symbol: 'RECOVER/USDT', market: 'crypto', exchange: 'binance', paper_side: 'BUY', paper_notional_usdt: 18, confidence: 0.72, status: 'planned', shadow_only: true, evidence: passEvidence, observed_at: iso(31) },
+  { symbol: 'RECOVER/USDT', market: 'crypto', exchange: 'binance', paper_side: 'BUY', paper_notional_usdt: 16, confidence: 0.70, status: 'planned', shadow_only: true, evidence: passEvidence, observed_at: iso(61) },
+  { symbol: 'RECOVER/USDT', market: 'crypto', exchange: 'binance', paper_side: 'HOLD', paper_notional_usdt: 0, confidence: 0.2, status: 'no_action', shadow_only: true, evidence: strategyQualityEvidence, observed_at: iso(91) },
+  { symbol: 'RECOVER/USDT', market: 'crypto', exchange: 'binance', paper_side: 'HOLD', paper_notional_usdt: 0, confidence: 0.1, status: 'no_action', shadow_only: true, evidence: passEvidence, observed_at: iso(121) },
+], {
+  minCycles: 3,
+  minConsecutivePasses: 3,
+  minAvgConfidence: 0.62,
+  maxOrderUsdt: 50,
+});
+assert.equal(recoveredStrategyQuality.promotionCandidate, true, 'latest recovered BUY passes should not be blocked by older strategy-review rows');
+assert.equal(recoveredStrategyQuality.avgConfidence >= 0.7, true, 'promotion confidence should be based on BUY pass rows once they exist');
+assert.equal(recoveredStrategyQuality.evidence.avgConfidenceSource, 'paper_buy_pass_rows');
+
+const recoveredBottleneckAvoidance = evaluateLunaPaperPromotionHistory([
+  { symbol: 'RECOVER-BN/USDT', market: 'crypto', exchange: 'binance', paper_side: 'BUY', paper_notional_usdt: 20, confidence: 0.76, status: 'planned', shadow_only: true, evidence: passEvidence, observed_at: iso(1) },
+  { symbol: 'RECOVER-BN/USDT', market: 'crypto', exchange: 'binance', paper_side: 'BUY', paper_notional_usdt: 18, confidence: 0.72, status: 'planned', shadow_only: true, evidence: passEvidence, observed_at: iso(31) },
+  { symbol: 'RECOVER-BN/USDT', market: 'crypto', exchange: 'binance', paper_side: 'BUY', paper_notional_usdt: 16, confidence: 0.70, status: 'planned', shadow_only: true, evidence: passEvidence, observed_at: iso(61) },
+  { symbol: 'RECOVER-BN/USDT', market: 'crypto', exchange: 'binance', paper_side: 'HOLD', paper_notional_usdt: 0, confidence: 0.2, status: 'no_action', shadow_only: true, evidence: preventedOrderEvidence, observed_at: iso(91) },
+  { symbol: 'RECOVER-BN/USDT', market: 'crypto', exchange: 'binance', paper_side: 'HOLD', paper_notional_usdt: 0, confidence: 0.1, status: 'no_action', shadow_only: true, evidence: hardHoldEvidence, observed_at: iso(121) },
+], {
+  minCycles: 3,
+  minConsecutivePasses: 3,
+  minAvgConfidence: 0.62,
+  maxOrderUsdt: 50,
+});
+assert.equal(recoveredBottleneckAvoidance.promotionCandidate, true, 'latest clean BUY passes should not be blocked by older bottleneck avoidance rows');
+assert.equal(recoveredBottleneckAvoidance.evidence.hardHoldCount, 1);
+assert.equal(recoveredBottleneckAvoidance.evidence.preventedOrderCount, 1);
+assert.equal(recoveredBottleneckAvoidance.evidence.latestBottleneckHardHold, false);
+assert.equal(recoveredBottleneckAvoidance.evidence.latestBottleneckPreventedOrder, false);
 
 const missingQuality = evaluateLunaPaperPromotionHistory(passHistory.map((row) => ({
   ...row,
@@ -173,6 +211,22 @@ assert.equal(runtime.writeMode, 'plan-only');
 assert.equal(runtime.summary.promotionCandidates, 1);
 assert.equal(runtime.limitSemantics, LUNA_PAPER_PROMOTION_LOADER_LIMIT_SEMANTICS);
 assert.equal(inserted.length, 0);
+
+const activeFilteredRuntime = await runLunaPaperPromotionGateShadow({
+  json: true,
+  dryRun: true,
+  apply: false,
+}, {
+  loadRows: async () => [
+    ...passHistory,
+    ...passHistory.map((row) => ({ ...row, symbol: 'OLD/USDT' })),
+  ],
+  loadActiveSymbolKeys: async () => new Set(['PASS/USDT|crypto']),
+});
+assert.equal(activeFilteredRuntime.summary.totalSymbols, 1);
+assert.equal(activeFilteredRuntime.summary.promotionCandidates, 1);
+assert.equal(activeFilteredRuntime.activePromotionFilter.enabled, true);
+assert.equal(activeFilteredRuntime.activePromotionFilter.excludedInactiveRowCount, 3);
 
 const loaderConfig = normalizeLunaPaperPromotionLoaderConfig({ hours: 168, limit: 120 });
 assert.equal(loaderConfig.hours, 168);
@@ -249,6 +303,7 @@ const payload = {
     promotionCandidates: runtime.summary.promotionCandidates,
     nearReady: runtime.summary.nearReady,
     applyDryRunRejected: true,
+    activeFilteredSymbols: activeFilteredRuntime.summary.totalSymbols,
     applyRows: applied.length,
     liveMutation: runtime.liveMutation,
   },

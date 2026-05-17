@@ -162,7 +162,7 @@ describe('Hub native OAuth flow', () => {
     expect(JSON.stringify(res.payload)).not.toContain('new-access-token');
   });
 
-  test('OpenAI Codex refresh can use OpenClaw-compatible public client defaults and omits scope', async () => {
+  test('OpenAI Codex refresh can use Codex-compatible public client defaults and omits scope', async () => {
     const storeFile = path.join(tempRoot, 'token-store.json');
     process.env.HUB_OAUTH_STORE_FILE = storeFile;
     process.env.HUB_ENABLE_OPENAI_CODEX_OAUTH = 'true';

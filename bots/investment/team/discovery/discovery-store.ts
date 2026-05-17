@@ -7,6 +7,10 @@ const require = createRequire(import.meta.url);
 const pgPool = require('../../../../packages/core/lib/pg-pool');
 const { createSchemaDbHelpers } = require('../../../../packages/core/lib/db/helpers');
 import type { DiscoveryMarket, DiscoverySignal } from './types.ts';
+import {
+  evaluateBinanceTopVolumeUniverseGate,
+  getCachedBinanceTopVolumeUniverse,
+} from '../../shared/binance-top-volume-universe.ts';
 
 const db = createSchemaDbHelpers(pgPool, 'investment');
 
@@ -106,10 +110,24 @@ export async function upsertCandidateSignals(
 
   let inserted = 0;
   let updated = 0;
+  const binanceTopVolumeUniverse = market === 'crypto'
+    ? await getCachedBinanceTopVolumeUniverse().catch(() => null)
+    : null;
 
   for (const sig of signals) {
     const symbol = normalizeCandidateSymbolForMarket(sig.symbol, market);
     if (!symbol || typeof sig.score !== 'number') continue;
+    if (market === 'crypto' && !binanceTopVolumeUniverse) continue;
+    if (market === 'crypto' && binanceTopVolumeUniverse) {
+      const top30Gate = evaluateBinanceTopVolumeUniverseGate(symbol, binanceTopVolumeUniverse);
+      if (!top30Gate.ok) continue;
+      sig.raw = {
+        ...(sig.raw || {}),
+        binanceTop30Rank: top30Gate.rank,
+        inBinanceTop30Universe: true,
+      };
+      sig.qualityFlags = [...new Set([...(Array.isArray(sig.qualityFlags) ? sig.qualityFlags : []), 'binance_top30_volume_universe'])];
+    }
     const result = await db.get(`
       INSERT INTO candidate_universe
         (symbol, market, source, source_tier, score, confidence, reason, reason_code, evidence_ref, quality_flags, ttl_hours, raw_data, expires_at)
@@ -153,10 +171,18 @@ export async function pruneSourceCandidatesNotInSignals(
   signals: DiscoverySignal[],
   market: DiscoveryMarket,
   source: string,
+  options: any = {},
 ): Promise<number> {
+  const binanceTopVolumeUniverse = market === 'crypto'
+    ? options.binanceTopVolumeUniverse || await getCachedBinanceTopVolumeUniverse().catch(() => null)
+    : null;
   const activeSymbols = [...new Set((signals || [])
     .map((sig) => normalizeCandidateSymbolForMarket(sig.symbol, market))
-    .filter(Boolean))];
+    .filter(Boolean)
+    .filter((symbol) => {
+      if (market !== 'crypto' || !binanceTopVolumeUniverse) return true;
+      return evaluateBinanceTopVolumeUniverseGate(symbol, binanceTopVolumeUniverse).ok;
+    }))];
   if (!source || activeSymbols.length === 0) return 0;
   const result = await db.run(`
     DELETE FROM candidate_universe

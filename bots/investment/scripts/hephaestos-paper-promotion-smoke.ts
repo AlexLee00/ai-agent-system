@@ -76,6 +76,13 @@ const policy = createPaperPromotionPolicy({
   getInvestmentTradeMode() {
     return 'normal';
   },
+  binanceTopVolumeUniverse: {
+    source: 'smoke_binance_top30_universe',
+    fetchedAt: new Date().toISOString(),
+    limit: 30,
+    symbols: ['PROMO/USDT'],
+    ranks: { 'PROMO/USDT': 1 },
+  },
 });
 
 const promoted = await policy.maybePromotePaperPositions({ reserveSlots: 1 });

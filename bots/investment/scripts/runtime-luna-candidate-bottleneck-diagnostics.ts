@@ -106,6 +106,10 @@ export async function runLunaCandidateBottleneckDiagnostics(options: any = {}, d
       'communitySourceCount24h',
       'primaryBlocker',
       'recommendedRefreshCommand',
+      'binanceTop30Rank',
+      'inBinanceTop30Universe',
+      'top30Blocker',
+      'liquidationCandidate',
     ],
     averagePenalty: rows.length
       ? Number((rows.reduce((sum, row) => sum + Number(row.candidateSelectionPenalty || 0), 0) / rows.length).toFixed(4))

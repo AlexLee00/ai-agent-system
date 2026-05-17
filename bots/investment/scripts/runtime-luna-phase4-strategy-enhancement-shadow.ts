@@ -37,6 +37,15 @@ function fixtureOhlcv(inputs) {
   }));
 }
 
+function isShadowReadyEnhancementStatus(status = '') {
+  return [
+    'shadow_ready',
+    'shadow_ready_with_risk_tightening',
+    'shadow_tuned',
+    'shadow_evaluated',
+  ].includes(String(status || '').trim());
+}
+
 export async function runLunaPhase4StrategyEnhancementShadow(options = {}, deps = {}) {
   const apply = options.apply === true;
   const dryRun = options.dryRun === true || !apply;
@@ -87,8 +96,8 @@ export async function runLunaPhase4StrategyEnhancementShadow(options = {}, deps 
 
   const summary = {
     total: rows.length,
-    shadowReady: rows.filter((row) => row.enhancementStatus === 'shadow_ready').length,
-    shadowReview: rows.filter((row) => row.enhancementStatus !== 'shadow_ready').length,
+    shadowReady: rows.filter((row) => isShadowReadyEnhancementStatus(row.enhancementStatus)).length,
+    shadowReview: rows.filter((row) => !isShadowReadyEnhancementStatus(row.enhancementStatus)).length,
     hyperoptPlanned: rows.filter((row) => row.hyperoptStatus === 'planned').length,
     hyperoptShadowEvaluated: rows.filter((row) => row.hyperoptStatus === 'shadow_evaluated').length,
     maxDrawdownBlocks: rows.filter((row) => row.maxDrawdownGuard === 'block_live_forward').length,
