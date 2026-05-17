@@ -28,11 +28,17 @@ export async function runLunaCandidateQualityRemediationSmoke() {
   assert.equal(planned.writeMode, 'plan-only', 'plan-only write mode');
   assert.equal(planned.summary.liveMutation, false, 'no live mutation');
   assert.equal(planned.coverage.ok, true, 'fixture coverage passes');
+  assert.equal(planned.remediationPlan.discoveryRefresh, true, 'fixture plans replacement discovery refresh');
   assert.equal(planned.remediationPlan.backtestRefresh, true, 'fixture plans backtest refresh');
   assert.equal(planned.remediationPlan.predictiveRefresh, true, 'fixture plans predictive refresh');
   assert.equal(planned.remediationPlan.strategyEnhancementShadow, true, 'fixture plans strategy shadow');
   assert.equal(planned.remediationPlan.bottleneckShadowAudit, true, 'fixture plans bottleneck audit');
-  assert.equal(planned.plannedCommands.length, 4, 'planned command count');
+  assert.equal(planned.remediationPlan.candidateQualityGovernance, true, 'fixture plans quality governance shadow');
+  assert.equal(planned.remediationPlan.weightVectorShadow, true, 'fixture plans weight vector refresh');
+  assert.equal(planned.remediationPlan.paperTradingShadow, true, 'fixture plans paper trading shadow');
+  assert.equal(planned.remediationPlan.paperPromotionGate, true, 'fixture plans paper promotion gate');
+  assert.equal(planned.plannedCommands.length, 10, 'planned command count');
+  assert.equal(planned.plannedCommands.some((cmd) => cmd.includes('runtime:luna-candidate-quality-governance')), true, 'planned commands include governance shadow');
   assert.equal(planned.plannedCommands.every((cmd) => !cmd.includes('launchctl') && !cmd.includes('live-fire')), true, 'planned commands avoid protected/live-fire operations');
 
   return {
@@ -43,6 +49,8 @@ export async function runLunaCandidateQualityRemediationSmoke() {
       confirmGuard: true,
       applyDryRunRejected: true,
       plannedCommands: planned.plannedCommands.length,
+      fullShadowLoop: true,
+      qualityGovernance: true,
       liveMutation: false,
     },
   };

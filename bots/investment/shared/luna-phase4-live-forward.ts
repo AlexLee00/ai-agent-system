@@ -277,7 +277,20 @@ export function buildLunaPhase4StrategyEnhancementRows(inputs = [], ohlcvByKey =
     const indicators = calcIndicatorSnapshot(ohlcvByKey[key] || input.ohlcv || []);
     const effectiveDrawdown = Math.max(backtest.drawdown, indicators.maxDrawdownPct || 0);
     const maxDrawdownGuard = effectiveDrawdown > 20 ? 'block_live_forward' : effectiveDrawdown > 12 ? 'tighten_risk' : 'observe';
-    const hyperoptRequired = backtest.sharpe < 0.5 || effectiveDrawdown > 12 || indicators.indicatorScore < 0.45;
+    const hyperoptRequired = backtest.wouldBlock || !backtest.healthy || backtest.sharpe < 0.5 || effectiveDrawdown > 12 || indicators.indicatorScore < 0.45;
+    const hyperoptEvaluationBlocked = hyperoptRequired && (
+      backtest.sharpe < 0
+      || backtest.wouldBlock
+      || maxDrawdownGuard === 'block_live_forward'
+      || !indicators.ok
+      || indicators.indicatorScore < 0.35
+    );
+    const hyperoptStatus = !hyperoptRequired
+      ? 'not_required'
+      : hyperoptEvaluationBlocked
+        ? 'planned'
+        : 'shadow_evaluated';
+    const enhancementStatus = hyperoptStatus === 'planned' ? 'shadow_review' : 'shadow_ready';
     const bestParams = {
       rsiOversold: indicators.bollingerPosition < 0.25 ? 32 : 28,
       macdHistogramMin: indicators.macdHistogram > 0 ? 0 : 0.001,
@@ -288,6 +301,7 @@ export function buildLunaPhase4StrategyEnhancementRows(inputs = [], ohlcvByKey =
     };
     const reasons = [
       hyperoptRequired ? 'hyperopt_required' : null,
+      hyperoptStatus === 'shadow_evaluated' ? 'hyperopt_shadow_evaluated' : null,
       backtest.sharpe < 0 ? 'negative_sharpe' : null,
       effectiveDrawdown > 20 ? 'max_drawdown_gt_20pct' : null,
       !indicators.ok ? indicators.providerStatus : null,
@@ -298,8 +312,8 @@ export function buildLunaPhase4StrategyEnhancementRows(inputs = [], ohlcvByKey =
       market,
       exchange,
       enhancementModel: LUNA_PHASE4_STRATEGY_MODEL,
-      enhancementStatus: reasons.length ? 'shadow_review' : 'shadow_ready',
-      hyperoptStatus: hyperoptRequired ? 'planned' : 'not_required',
+      enhancementStatus,
+      hyperoptStatus,
       bestParams,
       maxDrawdownGuard,
       indicatorScore: round(indicators.indicatorScore, 4),
@@ -316,6 +330,15 @@ export function buildLunaPhase4StrategyEnhancementRows(inputs = [], ohlcvByKey =
         yfinance: {
           status: indicators.providerStatus === 'missing_ohlcv' ? 'available_as_fallback_not_called' : 'cache_or_fixture_used',
           directExternalFetch: false,
+        },
+        hyperoptShadow: {
+          required: hyperoptRequired,
+          status: hyperoptStatus,
+          evaluated: hyperoptStatus === 'shadow_evaluated',
+          blocked: hyperoptEvaluationBlocked,
+          bestParams,
+          riskGuard: maxDrawdownGuard,
+          promotionSafeWithoutMasterApproval: false,
         },
         liveMutation: false,
       },

@@ -20,7 +20,7 @@ export async function runLunaOpsSchedulerSmoke() {
   const jobs = getOpsSchedulerJobs();
   const launchdPlist = fs.readFileSync(new URL('../launchd/ai.luna.ops-scheduler.plist', import.meta.url), 'utf8');
   assert.match(launchdPlist, /<key>StartInterval<\/key>\s*<integer>60<\/integer>/);
-  assert.equal(jobs.length, 50);
+  assert.equal(jobs.length, 51);
   assert.equal(jobs.some((job) => job.name === 'market_regime_llm_shadow'), true);
   assert.equal(jobs.find((job) => job.name === 'market_regime_llm_shadow')?.category, 'market_state');
   assert.equal(jobs.find((job) => job.name === 'market_regime_llm_shadow')?.cadence?.seconds, 3600);
@@ -71,6 +71,12 @@ export async function runLunaOpsSchedulerSmoke() {
   assert.equal(jobs.find((job) => job.name === 'paper_promotion_gate_shadow_refresh')?.category, 'promotion_shadow');
   assert.equal(jobs.find((job) => job.name === 'paper_promotion_gate_shadow_refresh')?.args?.includes('--confirm=luna-paper-promotion-gate-shadow'), true);
   assert.equal(jobs.find((job) => job.name === 'paper_promotion_gate_shadow_refresh')?.args?.includes('--hours=168'), true);
+  assert.equal(jobs.some((job) => job.name === 'candidate_quality_remediation_shadow_loop'), true);
+  assert.equal(jobs.find((job) => job.name === 'candidate_quality_remediation_shadow_loop')?.category, 'quality_remediation_shadow');
+  assert.equal(jobs.find((job) => job.name === 'candidate_quality_remediation_shadow_loop')?.cadence?.seconds, 3600);
+  assert.equal(jobs.find((job) => job.name === 'candidate_quality_remediation_shadow_loop')?.args?.includes('--confirm=luna-candidate-quality-remediation-shadow'), true);
+  assert.equal(jobs.find((job) => job.name === 'candidate_quality_remediation_shadow_loop')?.args?.includes('--market=all'), true);
+  assert.equal(jobs.find((job) => job.name === 'candidate_quality_remediation_shadow_loop')?.args?.includes('--max-backtest-symbols=8'), true);
   assert.equal(jobs.some((job) => job.name === 'dynamic_tpsl_shadow_refresh'), true);
   assert.equal(jobs.find((job) => job.name === 'dynamic_tpsl_shadow_refresh')?.category, 'risk_shadow');
   assert.equal(jobs.find((job) => job.name === 'dynamic_tpsl_shadow_refresh')?.args?.includes('--confirm=luna-dynamic-tpsl-shadow'), true);
@@ -160,7 +166,7 @@ export async function runLunaOpsSchedulerSmoke() {
 
   const now = new Date('2026-05-04T02:00:00+09:00');
   const emptyPlan = buildOpsSchedulerPlan({ now, state: { jobs: {} }, jobs });
-  assert.equal(emptyPlan.due, 37);
+  assert.equal(emptyPlan.due, 38);
   assert.equal(emptyPlan.jobs.find((job) => job.name === 'market_cycle_domestic')?.due, false);
   assert.equal(emptyPlan.jobs.find((job) => job.name === 'market_cycle_domestic')?.marketSession?.isOpen, false);
   assert.equal(emptyPlan.jobs.find((job) => job.name === 'market_cycle_domestic_open_catchup')?.due, false);
@@ -259,12 +265,12 @@ export async function runLunaOpsSchedulerSmoke() {
     },
   });
   assert.equal(executed.ok, true);
-  assert.equal(calls.length, 37);
+  assert.equal(calls.length, 38);
   assert.equal(calls.includes('market_cycle_domestic'), false);
   assert.equal(calls.includes('market_cycle_domestic_open_catchup'), false);
   assert.equal(calls.includes('market_cycle_overseas'), false);
   const executedState = JSON.parse(fs.readFileSync(statePath, 'utf8'));
-  assert.equal(Object.keys(executedState.jobs).length, 37);
+  assert.equal(Object.keys(executedState.jobs).length, 38);
 
   assert.deepEqual(
     classifyOpsSchedulerOutcome(

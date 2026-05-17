@@ -2,11 +2,24 @@
 // @ts-nocheck
 
 import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
+import { loadLunaCandidateQualityCooldownSymbols } from '../shared/luna-candidate-quality-governance.ts';
 import { runCandidateBacktestRefresh } from './runtime-luna-candidate-backtest-refresh.ts';
+import { runDiscoveryOrchestratorRefresh } from './runtime-discovery-orchestrator-refresh.ts';
 import { runLunaCandidateBottleneckDiagnostics } from './runtime-luna-candidate-bottleneck-diagnostics.ts';
+import {
+  CONFIRM as QUALITY_GOVERNANCE_CONFIRM,
+  runLunaCandidateQualityGovernanceShadow,
+} from './runtime-luna-candidate-quality-governance-shadow.ts';
 import { runLunaCommunityCoverageGate } from './runtime-luna-community-coverage-gate.ts';
+import {
+  CONFIRM as MARKET_SEED_CONFIRM,
+  runLunaMarketCandidateSeedRefresh,
+} from './runtime-luna-market-candidate-seed-refresh.ts';
+import { runLunaPaperPromotionGateShadow } from './runtime-luna-paper-promotion-gate.ts';
+import { runLunaPaperTradingShadow } from './runtime-luna-paper-trading-shadow.ts';
 import { runLunaPhase4StrategyEnhancementShadow } from './runtime-luna-phase4-strategy-enhancement-shadow.ts';
 import { runLunaPredictiveEvidenceRefresh } from './runtime-luna-predictive-evidence-refresh.ts';
+import { runLunaWeightVectorShadow } from './runtime-luna-weight-vector-shadow.ts';
 
 export const CONFIRM = 'luna-candidate-quality-remediation-shadow';
 
@@ -48,16 +61,45 @@ function fixtureCoverageGate() {
   };
 }
 
-function plannedCommands({ market, limit, forceBacktest = false }) {
+function plannedCommands({ market, limit, forceBacktest = false, plan = {}, backtestSymbols = [] }) {
   const marketArg = market && market !== 'all' ? ` --market=${market}` : ' --market=all';
   const limitArg = ` --limit=${limit}`;
   const forceArg = forceBacktest ? ' --force' : '';
-  return [
-    `npm --prefix bots/investment run -s runtime:luna-candidate-backtest-refresh -- --json${forceArg}${marketArg}${limitArg}`,
-    `npm --prefix bots/investment run -s runtime:luna-predictive-evidence-refresh -- --json${marketArg}${limitArg}`,
-    `npm --prefix bots/investment run -s runtime:luna-phase4-strategy-enhancement-shadow -- --json --apply --confirm=luna-phase4-strategy-enhancement-shadow${marketArg}${limitArg}`,
-    `npm --prefix bots/investment run -s runtime:luna-candidate-bottleneck-diagnostics -- --json --apply --confirm=luna-candidate-bottleneck-shadow${marketArg}${limitArg}`,
-  ];
+  const symbolsArg = backtestSymbols.length ? ` --symbols=${backtestSymbols.join(',')}` : '';
+  const commands = [];
+  if (plan.discoveryRefresh) commands.push('npm --prefix bots/investment run -s runtime:luna-discovery-refresh -- --json --force --markets=crypto,domestic,overseas --limit=30 --ttl-hours=6');
+  if (plan.marketCandidateSeedRefresh) commands.push(`npm --prefix bots/investment run -s runtime:luna-market-candidate-seed-refresh -- --json --apply --confirm=${MARKET_SEED_CONFIRM} --markets=domestic,overseas --limit=5`);
+  if (plan.backtestRefresh || plan.marketCandidateSeedRefresh) commands.push(`npm --prefix bots/investment run -s runtime:luna-candidate-backtest-refresh -- --json${forceArg}${marketArg}${limitArg}${symbolsArg}`);
+  if (plan.predictiveRefresh || plan.marketCandidateSeedRefresh) commands.push(`npm --prefix bots/investment run -s runtime:luna-predictive-evidence-refresh -- --json${marketArg}${limitArg}`);
+  if (plan.strategyEnhancementShadow || plan.backtestRefresh || plan.marketCandidateSeedRefresh) commands.push(`npm --prefix bots/investment run -s runtime:luna-phase4-strategy-enhancement-shadow -- --json --apply --confirm=luna-phase4-strategy-enhancement-shadow${marketArg}${limitArg}`);
+  if (plan.bottleneckShadowAudit || plan.strategyEnhancementShadow || plan.backtestRefresh || plan.marketCandidateSeedRefresh) commands.push(`npm --prefix bots/investment run -s runtime:luna-candidate-bottleneck-diagnostics -- --json --apply --confirm=luna-candidate-bottleneck-shadow${marketArg}${limitArg}`);
+  if (plan.candidateQualityGovernance) commands.push(`npm --prefix bots/investment run -s runtime:luna-candidate-quality-governance -- --json --apply --confirm=${QUALITY_GOVERNANCE_CONFIRM}${marketArg}${limitArg}`);
+  if (plan.weightVectorShadow) commands.push(`npm --prefix bots/investment run -s runtime:luna-weight-vector-shadow -- --json --apply --confirm=luna-weight-vector-shadow${marketArg}${limitArg}`);
+  if (plan.paperTradingShadow) commands.push(`npm --prefix bots/investment run -s runtime:luna-paper-trading-shadow -- --json --apply --confirm=luna-paper-trading-shadow${marketArg}${limitArg}`);
+  if (plan.paperPromotionGate) commands.push(`npm --prefix bots/investment run -s runtime:luna-paper-promotion-gate -- --json --apply --confirm=luna-paper-promotion-gate-shadow${marketArg} --limit=500`);
+  return commands;
+}
+
+function shouldRunMarketSeed(coverage = {}, initialRows = [], market = 'all') {
+  const requestedMarket = String(market || 'all').toLowerCase();
+  if (requestedMarket === 'crypto') return false;
+  const stockMarkets = requestedMarket === 'all'
+    ? ['domestic', 'overseas']
+    : ['domestic', 'overseas'].filter((item) => item === requestedMarket);
+  if (stockMarkets.length === 0) return false;
+
+  const warnings = coverage?.warnings || [];
+  if (warnings.some((warning) => String(warning).includes('marketwide_only_or_unmapped_symbols'))) return true;
+
+  const rowsByMarket = countBy(initialRows, 'market');
+  const markets = coverage?.markets || [];
+  return stockMarkets.some((stockMarket) => {
+    const coverageMarket = markets.find((item) => item.market === stockMarket) || {};
+    const seedCandidateCount = n(coverageMarket.seedCandidateCount ?? coverageMarket.seed_candidate_count, 0);
+    const symbolCount = n(coverageMarket.symbolCount ?? coverageMarket.symbol_count, 0);
+    const activeCandidateCount = n(rowsByMarket[stockMarket], 0);
+    return activeCandidateCount < 3 || (symbolCount === 0 && seedCandidateCount === 0);
+  });
 }
 
 function shouldRunBacktest(initialRows = []) {
@@ -70,12 +112,66 @@ function shouldRunBacktest(initialRows = []) {
   ].includes(row?.primaryBlocker) || (row?.reasons || []).some((reason) => String(reason).startsWith('backtest_')));
 }
 
+function backtestRefreshPriority(row = {}) {
+  const reasons = (row?.reasons || []).map((reason) => String(reason));
+  const primary = String(row?.primaryBlocker || '');
+  const hasMissingOrStale = primary === 'backtest_missing_or_stale'
+    || reasons.some((reason) => reason === 'backtest_missing_or_stale'
+      || reason.includes('missing')
+      || reason.includes('stale')
+      || reason === 'no_backtest_data');
+  if (hasMissingOrStale) return 0;
+  if (['drawdown_high', 'sharpe_negative', 'win_rate_low'].includes(primary)) return 1;
+  if (reasons.some((reason) => ['drawdown_high', 'sharpe_negative', 'win_rate_low'].includes(reason))) return 1;
+  if (primary === 'backtest_unhealthy_or_would_block') return 2;
+  if (reasons.some((reason) => reason.startsWith('backtest_'))) return 2;
+  return 9;
+}
+
+function cooldownKey(row = {}) {
+  return `${String(row?.symbol || '').toUpperCase()}|${String(row?.market || 'all').toLowerCase()}`;
+}
+
+function backtestTargetSymbols(initialRows = [], maxSymbols = 12, cooldownKeys = new Set()) {
+  const targets = [];
+  const prioritizedRows = [...(initialRows || [])]
+    .map((row, index) => ({ row, index, priority: backtestRefreshPriority(row) }))
+    .sort((a, b) => a.priority - b.priority || a.index - b.index)
+    .map((item) => item.row);
+  for (const row of prioritizedRows) {
+    const reasons = row?.reasons || [];
+    const needsBacktest = [
+      'backtest_missing_or_stale',
+      'backtest_unhealthy_or_would_block',
+      'drawdown_high',
+      'sharpe_negative',
+      'win_rate_low',
+    ].includes(row?.primaryBlocker) || reasons.some((reason) => String(reason).startsWith('backtest_') || [
+      'drawdown_high',
+      'sharpe_negative',
+      'win_rate_low',
+    ].includes(reason));
+    if (needsBacktest && row?.symbol && !cooldownKeys.has(cooldownKey(row))) targets.push(String(row.symbol).toUpperCase());
+  }
+  return [...new Set(targets)].slice(0, Math.max(1, Number(maxSymbols || 12)));
+}
+
 function shouldRunPredictive(initialRows = []) {
   return initialRows.some((row) => (row?.reasons || []).some((reason) => String(reason).startsWith('predictive_') || reason === 'backtest_missing_or_stale' || reason === 'backtest_unhealthy_or_would_block'));
 }
 
 function shouldRunStrategy(initialRows = []) {
   return initialRows.some((row) => row?.recommendedAction === 'strategy_enhancement_shadow' || (row?.reasons || []).includes('drawdown_high'));
+}
+
+function shouldRunDiscoveryRefresh(initialRows = [], summary = {}) {
+  if (!initialRows.length) return true;
+  const monitorPasses = n(summary?.byAction?.monitor_pass_candidate, 0);
+  const refreshEvidence = n(summary?.byAction?.refresh_evidence, 0);
+  const strategyReview = n(summary?.byAction?.strategy_enhancement_shadow, 0);
+  const quarantine = n(summary?.byAction?.quarantine_candidate_shadow, 0);
+  const badCandidateRatio = (strategyReview + quarantine + refreshEvidence) / Math.max(1, initialRows.length);
+  return monitorPasses === 0 || quarantine > 0 || badCandidateRatio >= 0.55;
 }
 
 async function withSuppressedStdout(enabled, fn) {
@@ -97,6 +193,7 @@ export async function runLunaCandidateQualityRemediation(options = {}) {
   const confirm = String(options.confirm || '');
   const market = String(options.market || 'all').trim().toLowerCase() || 'all';
   const limit = Math.max(1, n(options.limit || process.env.LUNA_CANDIDATE_QUALITY_REMEDIATION_LIMIT || 50, 50));
+  const maxBacktestSymbols = Math.max(1, n(options.maxBacktestSymbols || process.env.LUNA_CANDIDATE_QUALITY_MAX_BACKTEST_SYMBOLS || 12, 12));
   const forceBacktest = options.forceBacktest === true || String(process.env.LUNA_CANDIDATE_QUALITY_FORCE_BACKTEST || '').toLowerCase() === 'true';
 
   if (apply && options.dryRun === true) {
@@ -117,34 +214,83 @@ export async function runLunaCandidateQualityRemediation(options = {}) {
     limit,
   }));
   const initialRows = initialDiagnostics.rows || [];
-  const planned = plannedCommands({ market, limit, forceBacktest });
+  const cooldownRows = fixture || forceBacktest
+    ? []
+    : await withSuppressedStdout(json, () => loadLunaCandidateQualityCooldownSymbols({ market, limit: 500 }));
+  const cooldownSymbolKeys = new Set((cooldownRows || []).map((row) => row.key));
+  const needsBacktestRefresh = shouldRunBacktest(initialRows);
+  const targetedBacktestSymbols = backtestTargetSymbols(initialRows, maxBacktestSymbols, cooldownSymbolKeys);
+  const effectiveForceBacktest = forceBacktest || targetedBacktestSymbols.length > 0;
 
   const remediationPlan = {
-    backtestRefresh: shouldRunBacktest(initialRows),
+    discoveryRefresh: shouldRunDiscoveryRefresh(initialRows, initialDiagnostics.summary),
+    marketCandidateSeedRefresh: shouldRunMarketSeed(coverage, initialRows, market),
+    backtestRefresh: needsBacktestRefresh,
     predictiveRefresh: shouldRunPredictive(initialRows),
     strategyEnhancementShadow: shouldRunStrategy(initialRows),
     bottleneckShadowAudit: initialRows.some((row) => row?.recommendedAction !== 'monitor_pass_candidate'),
+    candidateQualityGovernance: initialRows.length > 0,
+    weightVectorShadow: initialRows.length > 0,
+    paperTradingShadow: initialRows.length > 0,
+    paperPromotionGate: initialRows.length > 0,
   };
+  const planned = plannedCommands({
+    market,
+    limit,
+    forceBacktest: effectiveForceBacktest,
+    plan: remediationPlan,
+    backtestSymbols: targetedBacktestSymbols,
+  });
 
   const executed = {
+    discoveryRefresh: null,
+    marketCandidateSeedRefresh: null,
     backtestRefresh: null,
     predictiveRefresh: null,
     strategyEnhancementShadow: null,
     bottleneckShadowAudit: null,
+    candidateQualityGovernance: null,
+    weightVectorShadow: null,
+    paperTradingShadow: null,
+    paperPromotionGate: null,
   };
 
   if (apply && !dryRun) {
-    if (remediationPlan.backtestRefresh) {
+    if (remediationPlan.discoveryRefresh) {
+      executed.discoveryRefresh = await withSuppressedStdout(json, () => runDiscoveryOrchestratorRefresh({
+        markets: ['crypto', 'domestic', 'overseas'],
+        dryRun: false,
+        skipDbWrite: false,
+        limit: 30,
+        timeoutMs: 8000,
+        ttlHours: 6,
+        force: true,
+      }));
+    }
+    if (remediationPlan.marketCandidateSeedRefresh) {
+      executed.marketCandidateSeedRefresh = await withSuppressedStdout(json, () => runLunaMarketCandidateSeedRefresh({
+        json: true,
+        fixture,
+        apply: true,
+        dryRun: false,
+        confirm: MARKET_SEED_CONFIRM,
+        market: 'domestic,overseas',
+        limit: 5,
+        ttlHours: 24,
+      }));
+    }
+    if (remediationPlan.backtestRefresh || remediationPlan.marketCandidateSeedRefresh) {
       executed.backtestRefresh = await withSuppressedStdout(json, () => runCandidateBacktestRefresh({
         json: true,
         fixture,
         dryRun: false,
-        force: forceBacktest,
+        force: effectiveForceBacktest || remediationPlan.marketCandidateSeedRefresh,
         market,
         limit,
+        symbols: targetedBacktestSymbols.join(','),
       }));
     }
-    if (remediationPlan.predictiveRefresh) {
+    if (remediationPlan.predictiveRefresh || remediationPlan.marketCandidateSeedRefresh) {
       executed.predictiveRefresh = await withSuppressedStdout(json, () => runLunaPredictiveEvidenceRefresh({
         json: true,
         fixture,
@@ -153,7 +299,7 @@ export async function runLunaCandidateQualityRemediation(options = {}) {
         limit,
       }));
     }
-    if (remediationPlan.strategyEnhancementShadow) {
+    if (remediationPlan.strategyEnhancementShadow || remediationPlan.backtestRefresh || remediationPlan.marketCandidateSeedRefresh) {
       executed.strategyEnhancementShadow = await withSuppressedStdout(json, () => runLunaPhase4StrategyEnhancementShadow({
         json: true,
         fixture,
@@ -164,7 +310,7 @@ export async function runLunaCandidateQualityRemediation(options = {}) {
         limit,
       }));
     }
-    if (remediationPlan.bottleneckShadowAudit) {
+    if (remediationPlan.bottleneckShadowAudit || remediationPlan.strategyEnhancementShadow || remediationPlan.backtestRefresh || remediationPlan.marketCandidateSeedRefresh) {
       executed.bottleneckShadowAudit = await withSuppressedStdout(json, () => runLunaCandidateBottleneckDiagnostics({
         json: true,
         fixture,
@@ -173,6 +319,51 @@ export async function runLunaCandidateQualityRemediation(options = {}) {
         confirm: 'luna-candidate-bottleneck-shadow',
         market,
         limit,
+      }));
+    }
+    if (remediationPlan.candidateQualityGovernance) {
+      executed.candidateQualityGovernance = await withSuppressedStdout(json, () => runLunaCandidateQualityGovernanceShadow({
+        json: true,
+        fixture,
+        apply: true,
+        dryRun: false,
+        confirm: QUALITY_GOVERNANCE_CONFIRM,
+        market,
+        limit,
+      }));
+    }
+    if (remediationPlan.weightVectorShadow) {
+      executed.weightVectorShadow = await withSuppressedStdout(json, () => runLunaWeightVectorShadow({
+        json: true,
+        fixture,
+        apply: true,
+        dryRun: false,
+        confirm: 'luna-weight-vector-shadow',
+        market,
+        limit,
+      }));
+    }
+    if (remediationPlan.paperTradingShadow) {
+      executed.paperTradingShadow = await withSuppressedStdout(json, () => runLunaPaperTradingShadow({
+        json: true,
+        fixture,
+        apply: true,
+        dryRun: false,
+        confirm: 'luna-paper-trading-shadow',
+        market,
+        limit,
+      }));
+    }
+    if (remediationPlan.paperPromotionGate) {
+      executed.paperPromotionGate = await withSuppressedStdout(json, () => runLunaPaperPromotionGateShadow({
+        json: true,
+        fixture,
+        apply: true,
+        dryRun: false,
+        confirm: 'luna-paper-promotion-gate-shadow',
+        market,
+        limit: 500,
+        hours: 24,
       }));
     }
   }
@@ -201,12 +392,16 @@ export async function runLunaCandidateQualityRemediation(options = {}) {
     confirmToken: CONFIRM,
     market,
     limit,
-    forceBacktest,
+    maxBacktestSymbols,
+    targetedBacktestSymbols,
+    cooldownSymbolsSkipped: cooldownRows,
+    forceBacktest: effectiveForceBacktest,
     coverage: {
       ok: coverage?.ok === true,
       blockers: coverage?.blockers || [],
       warnings: coverage?.warnings || [],
       summary: coverage?.summary || {},
+      markets: coverage?.markets || [],
     },
     remediationPlan,
     plannedCommands: planned,
@@ -216,6 +411,20 @@ export async function runLunaCandidateQualityRemediation(options = {}) {
       final: finalDiagnostics?.summary || null,
       remainingByAction: byAction,
       remainingTopPrimaryBlockers: finalDiagnostics?.summary?.topPrimaryBlockers || initialDiagnostics.summary?.topPrimaryBlockers || [],
+      marketSeedPlanned: remediationPlan.marketCandidateSeedRefresh,
+      discoveryRefreshPlanned: remediationPlan.discoveryRefresh,
+      discoveryRefresh: executed.discoveryRefresh ? {
+        status: executed.discoveryRefresh.status,
+        ok: executed.discoveryRefresh.ok,
+        emptyMarkets: executed.discoveryRefresh.emptyMarkets,
+        merged: executed.discoveryRefresh.merged,
+        errorCount: executed.discoveryRefresh.stats?.errorCount ?? null,
+      } : null,
+      candidateQualityGovernance: executed.candidateQualityGovernance?.summary || null,
+      paperPromotion: executed.paperPromotionGate?.summary || null,
+      paperPromotionReadiness: executed.paperPromotionGate?.readinessSummary || null,
+      weightVector: executed.weightVectorShadow?.summary || null,
+      paperTrading: executed.paperTradingShadow?.summary || null,
       liveMutation: false,
     },
   };
@@ -235,6 +444,7 @@ if (isDirectExecution(import.meta.url)) {
       fixture: hasFlag('fixture'),
       market: argValue('market', process.env.LUNA_CANDIDATE_QUALITY_REMEDIATION_MARKET || 'all'),
       limit: Number(argValue('limit', process.env.LUNA_CANDIDATE_QUALITY_REMEDIATION_LIMIT || 50)),
+      maxBacktestSymbols: Number(argValue('max-backtest-symbols', process.env.LUNA_CANDIDATE_QUALITY_MAX_BACKTEST_SYMBOLS || 12)),
       forceBacktest: hasFlag('force-backtest'),
       confirm: argValue('confirm', ''),
     }),

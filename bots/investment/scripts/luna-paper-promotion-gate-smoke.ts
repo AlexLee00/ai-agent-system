@@ -46,6 +46,11 @@ const pass = evaluateLunaPaperPromotionHistory(passHistory, {
 assert.equal(pass.promotionCandidate, true);
 assert.equal(pass.decision, 'shadow_promotion_candidate_ready');
 assert.equal(pass.consecutivePasses, 3);
+assert.equal(pass.cyclesRemaining, 0);
+assert.equal(pass.consecutivePassesRemaining, 0);
+assert.equal(pass.confidenceGap, 0);
+assert.equal(pass.promotionBlockerClass, 'ready_for_master_review');
+assert.equal(pass.nextRequiredEvidence[0].type, 'master_review');
 assert.equal(pass.evidence.promotionRequiresExplicitMasterApproval, true);
 assert.equal(pass.liveMutation, false);
 
@@ -62,6 +67,8 @@ assert.equal(blocked.promotionCandidate, false);
 assert.equal(blocked.decision, 'shadow_promotion_observe');
 assert.ok(blocked.blockReasons.includes('candidate_bottleneck_hard_hold_seen'));
 assert.equal(blocked.consecutivePasses, 0);
+assert.equal(blocked.promotionBlockerClass, 'risk_quality');
+assert.ok(blocked.nextRequiredEvidence.some((item) => item.type === 'risk_quality'));
 
 const strategyBlocked = evaluateLunaPaperPromotionHistory([
   { symbol: 'SQ/USDT', market: 'crypto', exchange: 'binance', paper_side: 'BUY', paper_notional_usdt: 20, confidence: 0.76, status: 'planned', shadow_only: true, evidence: strategyQualityEvidence, observed_at: iso(1) },
@@ -76,6 +83,23 @@ const strategyBlocked = evaluateLunaPaperPromotionHistory([
 assert.equal(strategyBlocked.promotionCandidate, false);
 assert.ok(strategyBlocked.blockReasons.includes('strategy_quality_block_live_forward_seen'));
 assert.ok(strategyBlocked.blockReasons.includes('strategy_hyperopt_planned_seen'));
+assert.equal(strategyBlocked.promotionBlockerClass, 'risk_quality');
+
+const onePassAway = evaluateLunaPaperPromotionHistory([
+  { symbol: 'NEAR/USDT', market: 'crypto', exchange: 'binance', paper_side: 'BUY', paper_notional_usdt: 20, confidence: 0.75, status: 'planned', shadow_only: true, evidence: passEvidence, observed_at: iso(1) },
+  { symbol: 'NEAR/USDT', market: 'crypto', exchange: 'binance', paper_side: 'BUY', paper_notional_usdt: 18, confidence: 0.72, status: 'planned', shadow_only: true, evidence: passEvidence, observed_at: iso(31) },
+], {
+  minCycles: 3,
+  minConsecutivePasses: 3,
+  minAvgConfidence: 0.62,
+  maxOrderUsdt: 50,
+});
+assert.equal(onePassAway.promotionCandidate, false);
+assert.equal(onePassAway.promotionBlockerClass, 'paper_cycles');
+assert.equal(onePassAway.cyclesRemaining, 1);
+assert.equal(onePassAway.consecutivePassesRemaining, 1);
+assert.ok(onePassAway.readinessScore >= 0.55);
+assert.ok(onePassAway.nextRequiredEvidence.some((item) => item.type === 'paper_cycles'));
 
 const report = buildLunaPaperPromotionGateReport([...passHistory, ...passHistory.map((row) => ({ ...row, symbol: 'LOW/USDT', confidence: 0.4 }))], {
   minCycles: 3,
@@ -86,6 +110,9 @@ const report = buildLunaPaperPromotionGateReport([...passHistory, ...passHistory
 assert.equal(report.promotionReady, false);
 assert.equal(report.requiredApproval, 'explicit_master_live_promotion_approval');
 assert.equal(report.summary.promotionCandidates, 1);
+assert.equal(report.readinessSummary.promotionRequiresExplicitMasterApproval, true);
+assert.ok(Array.isArray(report.readinessSummary.topBlockers));
+assert.ok(Array.isArray(report.readinessSummary.nextPaperCycleTargets));
 
 const inserted = [];
 const runtime = await runLunaPaperPromotionGateShadow({
@@ -141,18 +168,26 @@ const payload = {
     decision: pass.decision,
     consecutivePasses: pass.consecutivePasses,
     promotionCandidate: pass.promotionCandidate,
+    readinessScore: pass.readinessScore,
   },
   blocked: {
     decision: blocked.decision,
+    promotionBlockerClass: blocked.promotionBlockerClass,
     reasons: blocked.blockReasons,
   },
   strategyBlocked: {
     decision: strategyBlocked.decision,
     reasons: strategyBlocked.blockReasons,
   },
+  onePassAway: {
+    cyclesRemaining: onePassAway.cyclesRemaining,
+    consecutivePassesRemaining: onePassAway.consecutivePassesRemaining,
+    readinessScore: onePassAway.readinessScore,
+  },
   runtime: {
     writeMode: runtime.writeMode,
     promotionCandidates: runtime.summary.promotionCandidates,
+    nearReady: runtime.summary.nearReady,
     applyDryRunRejected: true,
     applyRows: applied.length,
     liveMutation: runtime.liveMutation,

@@ -20,6 +20,7 @@ const GATE = {
   MIN_SHARPE: 0,
   MAX_DRAWDOWN: 30,
   MIN_WIN_RATE: 30,
+  MAX_ABS_SHARPE: Number(process.env.LUNA_BACKTEST_MAX_ABS_SHARPE || 8),
   STALE_HOURS,
 };
 
@@ -270,15 +271,17 @@ function evaluateQuality(rows: any[]) {
     };
   }
 
-  const avgSharpe = usable.reduce((s, r) => s + safeNum(r?.sharpe_ratio), 0) / usable.length;
+  const rawAvgSharpe = usable.reduce((s, r) => s + safeNum(r?.sharpe_ratio), 0) / usable.length;
+  const avgSharpe = Math.max(-GATE.MAX_ABS_SHARPE, Math.min(GATE.MAX_ABS_SHARPE, rawAvgSharpe));
   const maxDD = Math.max(...usable.map((r) => Math.abs(safeNum(r?.max_drawdown))));
   const avgWinRate = usable.reduce((s, r) => s + safeNum(r?.win_rate), 0) / usable.length;
   const reasons: string[] = [];
   if (avgSharpe < GATE.MIN_SHARPE) reasons.push(`sharpe_negative(${avgSharpe.toFixed(2)})`);
+  if (Math.abs(rawAvgSharpe) > GATE.MAX_ABS_SHARPE) reasons.push(`unrealistic_sharpe(${rawAvgSharpe.toFixed(2)})`);
   if (maxDD > GATE.MAX_DRAWDOWN) reasons.push(`drawdown_high(${maxDD.toFixed(1)}%)`);
   if (avgWinRate < GATE.MIN_WIN_RATE) reasons.push(`win_rate_low(${avgWinRate.toFixed(1)}%)`);
 
-  const wouldBlock = reasons.some((r) => r.startsWith('sharpe_') || r.startsWith('win_rate_') || r.startsWith('drawdown_'));
+  const wouldBlock = reasons.some((r) => r.startsWith('sharpe_') || r.startsWith('unrealistic_') || r.startsWith('win_rate_') || r.startsWith('drawdown_'));
   return {
     sharpe: Number(avgSharpe.toFixed(4)),
     maxDrawdown: Number(maxDD.toFixed(4)),

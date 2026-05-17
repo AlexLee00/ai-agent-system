@@ -77,6 +77,7 @@ export async function runLunaPhase4StrategyEnhancementShadow(options = {}, deps 
     shadowReady: rows.filter((row) => row.enhancementStatus === 'shadow_ready').length,
     shadowReview: rows.filter((row) => row.enhancementStatus !== 'shadow_ready').length,
     hyperoptPlanned: rows.filter((row) => row.hyperoptStatus === 'planned').length,
+    hyperoptShadowEvaluated: rows.filter((row) => row.hyperoptStatus === 'shadow_evaluated').length,
     maxDrawdownBlocks: rows.filter((row) => row.maxDrawdownGuard === 'block_live_forward').length,
     liveMutation: false,
   };

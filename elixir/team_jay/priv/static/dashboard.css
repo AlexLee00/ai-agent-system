@@ -1488,8 +1488,6 @@ table {
   border-collapse: collapse;
 }
 
-/* cycle #57 N7 launchd watcher 검증 마커 */
-
 .hover\:border-gray-500:hover {
   --tw-border-opacity: 1;
   border-color: rgb(107 114 128 / var(--tw-border-opacity));

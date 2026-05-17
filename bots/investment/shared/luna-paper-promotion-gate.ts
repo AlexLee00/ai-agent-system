@@ -81,6 +81,147 @@ function noLookaheadOk(row = {}) {
   return normalizeBool(value, true);
 }
 
+function clamp01(value) {
+  return Math.max(0, Math.min(1, finiteNumber(value, 0)));
+}
+
+function promotionBlockerClass(blockReasons = [], promotionCandidate = false) {
+  if (promotionCandidate) return 'ready_for_master_review';
+  const reasons = new Set(blockReasons || []);
+  if ([
+    'candidate_bottleneck_hard_hold_seen',
+    'candidate_bottleneck_prevented_order_seen',
+    'no_lookahead_violation_seen',
+    'paper_order_cap_violation_seen',
+    'strategy_quality_block_live_forward_seen',
+  ].some((reason) => reasons.has(reason))) return 'risk_quality';
+  if ([
+    'fallback_only_backtest_seen',
+    'unrealistic_sharpe_seen',
+    'strategy_hyperopt_planned_seen',
+    'strategy_quality_not_shadow_ready_seen',
+  ].some((reason) => reasons.has(reason))) return 'strategy_or_backtest_quality';
+  if (reasons.has('no_paper_buy_pass')) return 'paper_buy_absent';
+  if (reasons.has('insufficient_shadow_cycles') || reasons.has('insufficient_consecutive_paper_passes')) return 'paper_cycles';
+  if (reasons.has('avg_confidence_below_promotion_floor')) return 'confidence';
+  return 'shadow_observation';
+}
+
+function buildNextRequiredEvidence({
+  blockReasons = [],
+  cyclesRemaining = 0,
+  consecutivePassesRemaining = 0,
+  confidenceGap = 0,
+  promotionCandidate = false,
+} = {}) {
+  if (promotionCandidate) {
+    return [{
+      type: 'master_review',
+      action: 'explicit_master_live_promotion_review',
+      detail: 'Shadow evidence is promotion-candidate ready; live priority still requires explicit master approval.',
+    }];
+  }
+  const reasons = new Set(blockReasons || []);
+  const evidence = [];
+  if (reasons.has('no_paper_buy_pass')) {
+    evidence.push({
+      type: 'paper_buy_pass',
+      action: 'continue_shadow_weight_vector_and_paper_trading',
+      detail: 'Need at least one shadow BUY pass before promotion can be considered.',
+    });
+  }
+  if (cyclesRemaining > 0 || consecutivePassesRemaining > 0) {
+    evidence.push({
+      type: 'paper_cycles',
+      action: 'continue_shadow_paper_cycles',
+      remainingCycles: cyclesRemaining,
+      remainingConsecutivePasses: consecutivePassesRemaining,
+      detail: 'Need additional consecutive shadow paper BUY passes with no hard-hold, no lookahead violation, and cap-safe notional.',
+    });
+  }
+  if (confidenceGap > 0) {
+    evidence.push({
+      type: 'confidence',
+      action: 'improve_prediction_and_weight_vector_confidence',
+      confidenceGap: round(confidenceGap, 4),
+      detail: 'Average paper confidence is below the promotion floor.',
+    });
+  }
+  if (reasons.has('fallback_only_backtest_seen') || reasons.has('unrealistic_sharpe_seen')) {
+    evidence.push({
+      type: 'backtest_quality',
+      action: 'refresh_vectorbt_backtest_before_promotion',
+      detail: 'Promotion evidence needs stable vectorbt-backed backtest quality, not fallback-only or unrealistic Sharpe evidence.',
+    });
+  }
+  if (reasons.has('strategy_hyperopt_planned_seen') || reasons.has('strategy_quality_not_shadow_ready_seen')) {
+    evidence.push({
+      type: 'strategy_quality',
+      action: 'complete_phase4_strategy_enhancement_shadow',
+      detail: 'Strategy quality must reach a shadow-ready status before promotion review.',
+    });
+  }
+  if ([
+    'candidate_bottleneck_hard_hold_seen',
+    'candidate_bottleneck_prevented_order_seen',
+    'strategy_quality_block_live_forward_seen',
+    'no_lookahead_violation_seen',
+    'paper_order_cap_violation_seen',
+  ].some((reason) => reasons.has(reason))) {
+    evidence.push({
+      type: 'risk_quality',
+      action: 'keep_candidate_blocked_until_risk_evidence_clears',
+      detail: 'Risk-quality blockers must clear in later shadow cycles before promotion review.',
+    });
+  }
+  return evidence.length ? evidence : [{
+    type: 'shadow_observation',
+    action: 'continue_shadow_observation',
+    detail: 'No single hard blocker class dominates; continue shadow evidence accumulation.',
+  }];
+}
+
+function buildPromotionReadinessGap({
+  history = [],
+  passRows = [],
+  consecutivePasses = 0,
+  avgConfidence = 0,
+  blockReasons = [],
+  promotionCandidate = false,
+  cfg = {},
+} = {}) {
+  const cyclesRemaining = Math.max(0, finiteNumber(cfg.minCycles, 3) - history.length);
+  const consecutivePassesRemaining = Math.max(0, finiteNumber(cfg.minConsecutivePasses, 3) - consecutivePasses);
+  const confidenceGap = Math.max(0, finiteNumber(cfg.minAvgConfidence, 0.62) - avgConfidence);
+  const blockerClass = promotionBlockerClass(blockReasons, promotionCandidate);
+  const hardRiskPenalty = blockerClass === 'risk_quality' ? 0.3 : 0;
+  const qualityPenalty = blockerClass === 'strategy_or_backtest_quality' ? 0.18 : 0;
+  const noBuyPenalty = blockerClass === 'paper_buy_absent' ? 0.2 : 0;
+  const readinessScore = clamp01(
+    clamp01(history.length / Math.max(1, cfg.minCycles)) * 0.25
+    + clamp01(consecutivePasses / Math.max(1, cfg.minConsecutivePasses)) * 0.35
+    + clamp01(avgConfidence / Math.max(0.000001, cfg.minAvgConfidence)) * 0.25
+    + (passRows.length > 0 ? 0.15 : 0)
+    - hardRiskPenalty
+    - qualityPenalty
+    - noBuyPenalty,
+  );
+  return {
+    cyclesRemaining,
+    consecutivePassesRemaining,
+    confidenceGap: round(confidenceGap, 4),
+    readinessScore: round(readinessScore, 4),
+    promotionBlockerClass: blockerClass,
+    nextRequiredEvidence: buildNextRequiredEvidence({
+      blockReasons,
+      cyclesRemaining,
+      consecutivePassesRemaining,
+      confidenceGap,
+      promotionCandidate,
+    }),
+  };
+}
+
 function getPromotionBacktestQuality(row = {}, config = {}) {
   const quality = row.promotionBacktestQuality || row.evidence?.promotionBacktestQuality || {};
   const fallbackUsed = normalizeBool(quality.fallbackUsed, false);
@@ -102,6 +243,15 @@ function getPromotionBacktestQuality(row = {}, config = {}) {
   };
 }
 
+function isStrategyQualityReadyStatus(status = '') {
+  return [
+    'shadow_ready',
+    'shadow_ready_with_risk_tightening',
+    'shadow_tuned',
+    'shadow_evaluated',
+  ].includes(String(status || '').trim());
+}
+
 function getPromotionStrategyQuality(row = {}) {
   const quality = row.promotionStrategyQuality
     || row.evidence?.promotionStrategyQuality
@@ -113,11 +263,12 @@ function getPromotionStrategyQuality(row = {}) {
   const maxDrawdownGuard = String(quality.maxDrawdownGuard ?? quality.max_drawdown_guard ?? '').trim();
   const indicatorScore = finiteNumber(quality.indicatorScore ?? quality.indicator_score, 0);
   const hardHold = normalizeBool(quality.hardHold ?? quality.hard_hold, false) || maxDrawdownGuard === 'block_live_forward';
+  const readyStatus = !enhancementStatus || isStrategyQualityReadyStatus(enhancementStatus);
   const reasons = [
     hardHold ? 'strategy_quality_block_live_forward' : null,
     maxDrawdownGuard === 'tighten_risk' ? 'strategy_quality_tighten_risk' : null,
     hyperoptStatus === 'planned' ? 'strategy_hyperopt_planned' : null,
-    enhancementStatus && enhancementStatus !== 'shadow_ready' ? 'strategy_quality_not_shadow_ready' : null,
+    !readyStatus ? 'strategy_quality_not_shadow_ready' : null,
   ].filter(Boolean);
   return {
     present: Object.keys(quality || {}).length > 0,
@@ -192,6 +343,15 @@ export function evaluateLunaPaperPromotionHistory(rows = [], config = {}) {
   ].filter(Boolean);
 
   const promotionCandidate = blockReasons.length === 0;
+  const readinessGap = buildPromotionReadinessGap({
+    history,
+    passRows,
+    consecutivePasses,
+    avgConfidence,
+    blockReasons,
+    promotionCandidate,
+    cfg,
+  });
   const decision = promotionCandidate
     ? 'shadow_promotion_candidate_ready'
     : passRows.length > 0
@@ -211,6 +371,12 @@ export function evaluateLunaPaperPromotionHistory(rows = [], config = {}) {
     avgConfidence: round(avgConfidence, 4),
     totalPaperNotionalUsdt: round(totalPaperNotionalUsdt, 4),
     blockReasons,
+    cyclesRemaining: readinessGap.cyclesRemaining,
+    consecutivePassesRemaining: readinessGap.consecutivePassesRemaining,
+    confidenceGap: readinessGap.confidenceGap,
+    readinessScore: readinessGap.readinessScore,
+    promotionBlockerClass: readinessGap.promotionBlockerClass,
+    nextRequiredEvidence: readinessGap.nextRequiredEvidence,
     shadowOnly: true,
     liveMutation: false,
     evidence: {
@@ -230,6 +396,7 @@ export function evaluateLunaPaperPromotionHistory(rows = [], config = {}) {
       strategyHyperoptPlannedCount: strategyHyperoptPlannedRows.length,
       strategyNotReadyCount: strategyNotReadyRows.length,
       backtestQualityMaxSharpe: cfg.maxPromotionSharpe,
+      readinessGap,
       recent: history.slice(0, Math.max(cfg.minCycles, 5)).map((row) => ({
         observedAt: row.observedAt,
         paperSide: row.paperSide,
@@ -249,6 +416,46 @@ export function evaluateLunaPaperPromotionHistory(rows = [], config = {}) {
   };
 }
 
+function topBlockReasonSummary(items = []) {
+  const counts = {};
+  for (const item of items || []) {
+    for (const reason of item.blockReasons || []) {
+      counts[reason] = (counts[reason] || 0) + 1;
+    }
+  }
+  return Object.entries(counts)
+    .map(([reason, count]) => ({ reason, count }))
+    .sort((a, b) => b.count - a.count || a.reason.localeCompare(b.reason))
+    .slice(0, 10);
+}
+
+function isNearReadyPromotionItem(item = {}) {
+  return item.promotionCandidate !== true
+    && item.passCount > 0
+    && item.readinessScore >= 0.55
+    && ['paper_cycles', 'confidence', 'shadow_observation'].includes(item.promotionBlockerClass);
+}
+
+function nextPaperCycleTargets(items = [], limit = 10) {
+  return (items || [])
+    .filter((item) => item.promotionCandidate !== true)
+    .filter((item) => item.passCount > 0 || item.promotionBlockerClass === 'paper_cycles')
+    .sort((a, b) => b.readinessScore - a.readinessScore || b.consecutivePasses - a.consecutivePasses || b.avgConfidence - a.avgConfidence)
+    .slice(0, limit)
+    .map((item) => ({
+      symbol: item.symbol,
+      market: item.market,
+      exchange: item.exchange,
+      readinessScore: item.readinessScore,
+      promotionBlockerClass: item.promotionBlockerClass,
+      cyclesRemaining: item.cyclesRemaining,
+      consecutivePassesRemaining: item.consecutivePassesRemaining,
+      confidenceGap: item.confidenceGap,
+      blockReasons: item.blockReasons,
+      nextRequiredEvidence: item.nextRequiredEvidence,
+    }));
+}
+
 export function buildLunaPaperPromotionGateReport(rows = [], config = {}) {
   const groups = new Map();
   for (const row of rows || []) {
@@ -263,9 +470,13 @@ export function buildLunaPaperPromotionGateReport(rows = [], config = {}) {
     .map((history) => evaluateLunaPaperPromotionHistory(history, config))
     .sort((a, b) => {
       if (a.promotionCandidate !== b.promotionCandidate) return a.promotionCandidate ? -1 : 1;
+      if (a.readinessScore !== b.readinessScore) return b.readinessScore - a.readinessScore;
       if (a.consecutivePasses !== b.consecutivePasses) return b.consecutivePasses - a.consecutivePasses;
       return b.avgConfidence - a.avgConfidence;
     });
+  const nearReadyItems = items.filter(isNearReadyPromotionItem);
+  const promotionTargets = nextPaperCycleTargets(items);
+  const topBlockers = topBlockReasonSummary(items);
   return {
     ok: true,
     status: 'luna_paper_promotion_gate_shadow_ready',
@@ -278,6 +489,17 @@ export function buildLunaPaperPromotionGateReport(rows = [], config = {}) {
       promotionCandidates: items.filter((item) => item.promotionCandidate).length,
       observe: items.filter((item) => item.decision === 'shadow_promotion_observe').length,
       blocked: items.filter((item) => item.decision === 'shadow_promotion_blocked').length,
+      nearReady: nearReadyItems.length,
+      avgReadinessScore: round(items.reduce((sum, item) => sum + item.readinessScore, 0) / Math.max(1, items.length), 4),
+      topBlockers,
+      nextPaperCycleTargets: promotionTargets,
+      liveMutation: false,
+    },
+    readinessSummary: {
+      nearReady: nearReadyItems.length,
+      topBlockers,
+      nextPaperCycleTargets: promotionTargets,
+      promotionRequiresExplicitMasterApproval: true,
       liveMutation: false,
     },
     items,

@@ -260,6 +260,21 @@ export function getOpsSchedulerJobs() {
       ]),
     },
     {
+      name: 'candidate_quality_remediation_shadow_loop',
+      category: 'quality_remediation_shadow',
+      market: 'all',
+      cadence: { type: 'interval', seconds: 3600 },
+      timeoutMs: 360_000,
+      ...nodeScript('runtime-luna-candidate-quality-remediation.ts', [
+        '--apply',
+        '--confirm=luna-candidate-quality-remediation-shadow',
+        '--market=all',
+        '--limit=60',
+        '--max-backtest-symbols=8',
+        '--json',
+      ]),
+    },
+    {
       name: 'dynamic_tpsl_shadow_refresh',
       category: 'risk_shadow',
       market: 'all',

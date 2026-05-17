@@ -54,6 +54,13 @@ assert.equal(drawdownOnlyQuality.wouldBlock, true, 'drawdown-only violation must
 assert.equal(drawdownOnlyQuality.gateStatus, 'would_block_unhealthy', 'drawdown-only violation should not pass gate');
 assert.equal(drawdownOnlyQuality.healthy, false, 'drawdown-only violation should be unhealthy');
 
+const unrealisticSharpeQuality = candidateBacktestTest.evaluateQuality([
+  { status: 'ok', total_trades: 4, sharpe_ratio: 25, max_drawdown: 4, win_rate: 75 },
+]);
+assert.equal(unrealisticSharpeQuality.wouldBlock, true, 'unrealistic sharpe must would-block');
+assert.equal(unrealisticSharpeQuality.sharpe, 8, 'stored sharpe should be capped for promotion sanity');
+assert.ok(unrealisticSharpeQuality.reasons.some((reason) => reason.startsWith('unrealistic_sharpe')), 'unrealistic sharpe reason should be explicit');
+
 const payload = {
   ok: true,
   smoke: 'luna-phase1-candidate-backtest',
@@ -65,6 +72,7 @@ const payload = {
   wouldBlocked: result.wouldBlocked,
   negativeReasons: negative?.reasons || [],
   ohlcvFallbackUsable: candidateBacktestTest.rowsHaveUsableTrades(fallbackRows),
+  unrealisticSharpeCapped: unrealisticSharpeQuality.sharpe,
 };
 
 if (process.argv.includes('--json')) {
