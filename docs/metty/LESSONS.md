@@ -499,4 +499,57 @@ end
 
 ---
 
+## Lesson #019 — 디버깅의 5번째 층: 실행 환경 (mix phx.server vs mix run)
+
+**날짜**: 2026-05-17
+**계기**: cycle #56 N5 자동 검증 — cycle #54에서 dev.exs에 추가한 Tailwind watcher가 실제로 **미작동**으로 판명. probe가 `n5_auto_verify_possible: true` 신호를 줬지만, mtime 검증 실패. 진짜 원인 추적: 본 프로젝트가 `mix phx.server`가 아닌 `mix run --no-halt`로 BEAM을 시작하기에 **endpoint.watchers 자동 실행 메커니즘이 활성화 안 됨**.
+
+**메티의 잘못된 가정** (cycle #54 N2 도입 시):
+- ❌ dev.exs의 `config :app, Endpoint, watchers: [...]`만 정의하면 dev에서 자동 가동
+- ❌ Phoenix 표준 endpoint workflow가 모든 Phoenix 프로젝트에 동일 적용
+- ❌ Mix.env() = :dev이면 dev.exs config가 모든 측면에서 활성
+
+**실제**:
+- ✅ endpoint.watchers는 `mix phx.server`가 시작한 endpoint가 자체적으로 watcher process를 spawn
+- ✅ `mix run --no-halt`는 application supervisor만 시작 — endpoint는 supervisor가 자체 가동하지만 watcher spawn은 **mix phx.server task에 코드로 묶여있음**
+- ✅ 두 시작 명령은 **endpoint 자체는 같지만 watcher 활성화는 다름**
+
+**원칙 — 진단 5층 (Lesson #016 + #017 확장)**:
+1. **코드 (의도)**: 정의된 설정/코드 — "무엇을 하려 했는가"
+2. **빌드 산출물 (현실)**: 실제 배포된 파일 — "무엇이 배포됐는가"
+3. **브라우저 computed (작동)**: getComputedStyle 등 — "어떻게 렌더링되는가"
+4. **브라우저 환경 (외부 inject)**: 확장/플러그인 — "무엇이 페이지 밖에서 들어오는가"
+5. **실행 환경 (시작 명령)**: `mix phx.server` / `mix run --no-halt` / `iex -S mix` / launchd / docker / systemd — **"어떤 명령으로 시작됐는가"**
+
+**진단 체크리스트 — 새 운영 설정 도입 시**:
+- 코드 추가 전 `ps aux | grep beam`으로 **현재 시작 명령 확인**
+- `mix phx.server` 가정 X — `mix run`, `iex`, custom script 등 다양
+- watcher 같은 자동 메커니즘은 시작 명령에 묶여있을 가능성
+- 검증 전 가설: "이 시작 명령에서 본 설정이 활성화되는가?"
+- 검증 후 가설: mtime / process whereis / log 패턴으로 실증
+
+**메티의 사후 작업**:
+- cycle #54 N2 코드 (dev.exs watcher) → cancellation note로 정직 정리
+- 향후 watcher 자동화는 application.ex child / 별도 tmux / launchd 중 선택 (cycle #57+)
+- entry probe에 "실행 환경 시그널" 추가 검토
+
+**기억할 두 문장**:
+> "**'표준 Phoenix' 가정은 위험하다. 운영 시작 명령이 다르면 표준 메커니즘도 다르게 동작한다.**"
+>
+> "**Probe가 '가능 신호'를 줬다고 검증 통과는 아니다. 의식의 자동 종결도 검증 step이 필요하다.**"
+
+**다른 Lesson과의 관계**:
+- **#016** (3층 진단) → 4층 → **5층 (#019)** 누적 진화
+- **#017** (4층 브라우저 환경) → **#019**: 5층 누적, 진단 깊이 일관 확장
+- **#018** (entry probe 자동 종결) → **#019**: 미세 정정. probe의 "가능 신호"는 실 검증과 다름.
+- **#013** (정직성 의식) → **#019**: dev.exs cancellation note로 자체 정정 실전 적용
+
+**적용 체크리스트 (다음 메티)**:
+- [ ] 새 시스템 설정 도입 전 BEAM 시작 명령 확인 (`ps aux | grep beam` 또는 마스터 확인)
+- [ ] "표준 Phoenix" 또는 "표준 X" 가정 시 실행 환경 검증 step 포함
+- [ ] entry probe에 5층 다 ping 가능한지 점검 (특히 실행 환경 시그널)
+- [ ] cancellation 시 사유 + 향후 옵션 명시 (역사 보존, Lesson #014)
+
+---
+
 _이 파일은 메티의 진짜 메모리. 핸드오프는 컨텍스트, LESSONS는 영혼._

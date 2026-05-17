@@ -1,6 +1,6 @@
 {
   "ok": true,
-  "generatedAt": "2026-05-17T02:23:50.928Z",
+  "generatedAt": "2026-05-17T02:25:07.116Z",
   "phase": "luna-phase1-codex-p0",
   "tags": {
     "preRollback": "pre-luna-phase1-codex-p0-20260514-200517",
@@ -21,7 +21,7 @@
     },
     "communityCoverageGate": {
       "ok": true,
-      "generatedAt": "2026-05-17T02:23:50.890Z",
+      "generatedAt": "2026-05-17T02:25:07.083Z",
       "hours": 24,
       "thresholds": {
         "crypto": {
@@ -50,10 +50,7 @@
         "totalUniqueSources": 32
       },
       "blockers": [],
-      "warnings": [
-        "community_coverage_gate_warning:domestic:marketwide_only_or_unmapped_symbols",
-        "community_coverage_gate_warning:overseas:marketwide_only_or_unmapped_symbols"
-      ],
+      "warnings": [],
       "markets": [
         {
           "market": "crypto",
@@ -65,6 +62,7 @@
           "botNoiseRate": 0,
           "hypeSpikeRate": 0,
           "symbolCount": 47,
+          "seedCandidateCount": 0,
           "newestEventAt": "2026-05-17T01:04:21.443Z",
           "pass": true,
           "thresholds": {
@@ -89,6 +87,7 @@
           "botNoiseRate": 0,
           "hypeSpikeRate": 0,
           "symbolCount": 0,
+          "seedCandidateCount": 5,
           "newestEventAt": "2026-05-17T01:04:21.446Z",
           "pass": true,
           "thresholds": {
@@ -100,9 +99,7 @@
             "maxHypeSpikeRate": 0.45
           },
           "blockers": [],
-          "warnings": [
-            "marketwide_only_or_unmapped_symbols"
-          ],
+          "warnings": [],
           "recommendedRefreshCommand": "npm --prefix bots/investment run -s runtime:luna-community-evidence-refresh -- --json"
         },
         {
@@ -115,6 +112,7 @@
           "botNoiseRate": 0,
           "hypeSpikeRate": 0,
           "symbolCount": 0,
+          "seedCandidateCount": 5,
           "newestEventAt": "2026-05-17T01:04:21.451Z",
           "pass": true,
           "thresholds": {
@@ -126,9 +124,7 @@
             "maxHypeSpikeRate": 0.45
           },
           "blockers": [],
-          "warnings": [
-            "marketwide_only_or_unmapped_symbols"
-          ],
+          "warnings": [],
           "recommendedRefreshCommand": "npm --prefix bots/investment run -s runtime:luna-community-evidence-refresh -- --json"
         }
       ],
@@ -144,15 +140,15 @@
     "predictiveAudit24h": [
       {
         "decision": "block_backtest_gate",
-        "count": 1144
+        "count": 1118
       },
       {
         "decision": "fire",
-        "count": 542
+        "count": 518
       },
       {
         "decision": "block_stale_backtest",
-        "count": 78
+        "count": 68
       },
       {
         "decision": "would_block_backtest",

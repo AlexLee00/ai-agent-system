@@ -66,6 +66,21 @@ function runSmoke() {
   assert.equal(missingMarket.ok, false);
   assert.ok(missingMarket.blockers.some((blocker) => blocker.startsWith('community_coverage_gate_failed:overseas:')));
 
+  const marketwideMapped = evaluateCommunityCoverageMarket({
+    market: 'domestic',
+    event_count: 12,
+    unique_source_count: 3,
+    avg_freshness: 0.71,
+    avg_source_quality: 0.36,
+    missing_error_rate: 0,
+    bot_noise_rate: 0,
+    hype_spike_rate: 0,
+    symbol_count: 0,
+    seed_candidate_count: 4,
+  });
+  assert.equal(marketwideMapped.pass, true);
+  assert.equal(marketwideMapped.warnings.includes('marketwide_only_or_unmapped_symbols'), false);
+
   return {
     smoke: 'luna-community-coverage-gate',
     ok: true,

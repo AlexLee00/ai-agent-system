@@ -62,6 +62,7 @@ function normalizeCoverageRow(row: any = {}) {
     botNoiseRate: clamp(row.bot_noise_rate ?? row.botNoiseRate, 0, 1, 0),
     hypeSpikeRate: clamp(row.hype_spike_rate ?? row.hypeSpikeRate, 0, 1, 0),
     symbolCount: n(row.symbol_count ?? row.symbolCount, 0),
+    seedCandidateCount: n(row.seed_candidate_count ?? row.seedCandidateCount, 0),
     newestEventAt: row.newest_event_at || row.newestEventAt || null,
   };
 }
@@ -81,7 +82,7 @@ export function evaluateCommunityCoverageMarket(row: any = {}, options: any = {}
 
   if (item.eventCount === 0) warnings.push('no_recent_community_events');
   if (item.uniqueSourceCount === 0) warnings.push('no_recent_community_sources');
-  if (item.symbolCount === 0) warnings.push('marketwide_only_or_unmapped_symbols');
+  if (item.symbolCount === 0 && item.seedCandidateCount === 0) warnings.push('marketwide_only_or_unmapped_symbols');
 
   return {
     ...item,
@@ -151,20 +152,43 @@ export async function fetchLunaCommunityCoverageGate(options: any = {}) {
           AND COALESCE(source_name, '') <> 'community_candidate_gap'
           AND COALESCE(source_name, '') NOT LIKE 'fixture_%'
           AND COALESCE(source_name, '') <> 'cryptopanic_news'
-     )
-     SELECT market,
-            COUNT(*)::int AS event_count,
-            COUNT(DISTINCT source_name)::int AS unique_source_count,
-            COUNT(DISTINCT symbol) FILTER (WHERE symbol IS NOT NULL)::int AS symbol_count,
-            AVG(source_quality)::double precision AS avg_source_quality,
-            AVG(freshness_score)::double precision AS avg_freshness,
-            AVG(CASE WHEN missing_or_error THEN 1.0 ELSE 0.0 END)::double precision AS missing_error_rate,
-            AVG(CASE WHEN bot_noise_score >= 0.50 THEN 1.0 ELSE 0.0 END)::double precision AS bot_noise_rate,
-            AVG(CASE WHEN hype_spike_detected THEN 1.0 ELSE 0.0 END)::double precision AS hype_spike_rate,
-            MAX(created_at) AS newest_event_at
-       FROM evidence
-      GROUP BY market
-      ORDER BY market ASC`,
+     ),
+    grouped AS (
+      SELECT market,
+             COUNT(*)::int AS event_count,
+             COUNT(DISTINCT source_name)::int AS unique_source_count,
+             COUNT(DISTINCT symbol) FILTER (WHERE symbol IS NOT NULL)::int AS symbol_count,
+             AVG(source_quality)::double precision AS avg_source_quality,
+             AVG(freshness_score)::double precision AS avg_freshness,
+             AVG(CASE WHEN missing_or_error THEN 1.0 ELSE 0.0 END)::double precision AS missing_error_rate,
+             AVG(CASE WHEN bot_noise_score >= 0.50 THEN 1.0 ELSE 0.0 END)::double precision AS bot_noise_rate,
+             AVG(CASE WHEN hype_spike_detected THEN 1.0 ELSE 0.0 END)::double precision AS hype_spike_rate,
+             MAX(created_at) AS newest_event_at
+        FROM evidence
+       GROUP BY market
+    ),
+    seed_candidates AS (
+      SELECT market,
+             COUNT(DISTINCT symbol)::int AS seed_candidate_count
+        FROM candidate_universe
+       WHERE expires_at > NOW()
+         AND source = 'luna_market_candidate_seed_refresh'
+       GROUP BY market
+    )
+     SELECT grouped.market,
+            grouped.event_count,
+            grouped.unique_source_count,
+            grouped.symbol_count,
+            grouped.avg_source_quality,
+            grouped.avg_freshness,
+            grouped.missing_error_rate,
+            grouped.bot_noise_rate,
+            grouped.hype_spike_rate,
+            grouped.newest_event_at,
+            COALESCE(seed_candidates.seed_candidate_count, 0)::int AS seed_candidate_count
+       FROM grouped
+       LEFT JOIN seed_candidates ON seed_candidates.market = grouped.market
+      ORDER BY grouped.market ASC`,
     [hours],
   ).catch((error) => {
     queryError = String(error?.message || error);
