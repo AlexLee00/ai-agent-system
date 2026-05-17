@@ -34,6 +34,7 @@ async function main() {
   const record = getProviderRecord('gemini-cli-oauth');
   const projectId = String(
     args.projectId
+      || process.env.GEMINI_CLI_OAUTH_PROJECT_ID
       || process.env.GEMINI_OAUTH_PROJECT_ID
       || process.env.GOOGLE_CLOUD_QUOTA_PROJECT
       || process.env.GOOGLE_CLOUD_PROJECT
@@ -70,7 +71,7 @@ async function main() {
     },
     service_status: status,
     next_actions: ok ? [] : [
-      ...(!projectId ? ['Set GEMINI_OAUTH_PROJECT_ID or GOOGLE_CLOUD_PROJECT.'] : []),
+      ...(!projectId ? ['Set GEMINI_CLI_OAUTH_PROJECT_ID or GOOGLE_CLOUD_PROJECT.'] : []),
       ...(!credentials.ok ? ['Run gemini auth login or import Gemini CLI OAuth credentials.'] : []),
       ...(status?.activation_url ? [`Enable required Google API: ${status.activation_url}`] : []),
       ...(status?.operator_action ? [status.operator_action] : []),

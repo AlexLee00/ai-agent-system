@@ -8,10 +8,6 @@ import path from 'node:path';
 const originalEnv: Record<string, string | undefined> = {
   HUB_OAUTH_STORE_FILE: process.env.HUB_OAUTH_STORE_FILE,
   OPENAI_CODEX_BACKEND_BASE_URL: process.env.OPENAI_CODEX_BACKEND_BASE_URL,
-  GEMINI_OAUTH_BASE_URL: process.env.GEMINI_OAUTH_BASE_URL,
-  GEMINI_OAUTH_PROJECT_ID: process.env.GEMINI_OAUTH_PROJECT_ID,
-  GOOGLE_CLOUD_QUOTA_PROJECT: process.env.GOOGLE_CLOUD_QUOTA_PROJECT,
-  GOOGLE_CLOUD_PROJECT: process.env.GOOGLE_CLOUD_PROJECT,
   HUB_BUDGET_GUARDIAN_ENABLED: process.env.HUB_BUDGET_GUARDIAN_ENABLED,
   HUB_LLM_PROVIDER_CIRCUIT_ENABLED: process.env.HUB_LLM_PROVIDER_CIRCUIT_ENABLED,
 };
@@ -38,25 +34,11 @@ async function main() {
           token_type: 'Bearer',
         },
       },
-      'gemini-oauth': {
-        token: {
-          access_token: 'hub-unified-gemini-token',
-          expires_at: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
-          token_type: 'Bearer',
-        },
-        metadata: {
-          project_id: 'hub-unified-gemini-project',
-        },
-      },
     },
   })}\n`, 'utf8');
 
   process.env.HUB_OAUTH_STORE_FILE = tokenStoreFile;
   process.env.OPENAI_CODEX_BACKEND_BASE_URL = 'https://hub-unified-openai.local/backend-api';
-  process.env.GEMINI_OAUTH_BASE_URL = 'https://hub-unified-gemini.local';
-  delete process.env.GEMINI_OAUTH_PROJECT_ID;
-  delete process.env.GOOGLE_CLOUD_QUOTA_PROJECT;
-  delete process.env.GOOGLE_CLOUD_PROJECT;
   process.env.HUB_BUDGET_GUARDIAN_ENABLED = 'false';
   process.env.HUB_LLM_PROVIDER_CIRCUIT_ENABLED = 'false';
 
@@ -89,21 +71,6 @@ async function main() {
       });
     }
 
-    if (url.includes(':generateContent')) {
-      calls.push({ provider: 'gemini-oauth', url });
-      assert.equal(url, 'https://hub-unified-gemini.local/v1beta/models/gemini-2.5-flash:generateContent');
-      assert.equal(headers?.Authorization, 'Bearer hub-unified-gemini-token');
-      assert.equal(headers?.['x-goog-user-project'], 'hub-unified-gemini-project');
-      assert.equal(body.contents[0].parts[0].text, 'Reply exactly OK.');
-
-      return new Response(JSON.stringify({
-        candidates: [{ content: { parts: [{ text: 'gemini direct ok' }] } }],
-      }), {
-        status: 200,
-        headers: { 'Content-Type': 'application/json' },
-      });
-    }
-
     throw new Error(`unexpected fetch URL: ${url}`);
   }) as typeof fetch;
 
@@ -122,22 +89,12 @@ async function main() {
     assert.equal(openAiResult.provider, 'openai-oauth');
     assert.equal(openAiResult.result, 'openai direct ok');
 
-    const geminiResult = await callWithFallback({
-      callerTeam: 'blog',
-      agent: 'pos',
-      selectorKey: 'hub.unified.oauth.gemini.smoke',
-      systemPrompt: 'You are a smoke test.',
-      prompt: 'Reply exactly OK.',
-      timeoutMs: 5000,
-    });
-    assert.equal(geminiResult.ok, true);
-    assert.equal(geminiResult.provider, 'gemini-oauth');
-    assert.equal(geminiResult.result, 'gemini direct ok');
-    assert.deepEqual(calls.map((call) => call.provider), ['openai-oauth', 'gemini-oauth']);
+    assert.deepEqual(calls.map((call) => call.provider), ['openai-oauth']);
 
     console.log(JSON.stringify({
       ok: true,
       providers: calls.map((call) => call.provider),
+      gemini_oauth_retired: true,
       core_fallback_used: false,
     }));
   } finally {

@@ -1279,6 +1279,7 @@ defmodule TeamJay.Dashboard.Live.DashboardLive do
                   <div class="text-[11px] text-gray-100 truncate">{task.title}</div>
                   <div class="text-[9px] text-gray-500 mt-0.5 truncate">
                     {task.assignee || "—"} · {format_elapsed(task.elapsed_seconds)} · {task.project_id}
+                    <span class={task_stale_class(task.started_at)}> · {days_since_started(task.started_at)}d</span>
                   </div>
                 </button>
               <% end %>
@@ -2303,6 +2304,22 @@ defmodule TeamJay.Dashboard.Live.DashboardLive do
   end
 
   defp days_since_phase_start(_), do: 0
+
+  # cycle #62 A: 영역 10 task started_at으로부터 며칠 지났는지 (시드 간극 가시화)
+  defp days_since_started(nil), do: 0
+  defp days_since_started(%DateTime{} = dt) do
+    DateTime.diff(DateTime.utc_now(), dt, :day) |> max(0)
+  end
+  defp days_since_started(_), do: 0
+
+  defp task_stale_class(started_at) do
+    days = days_since_started(started_at)
+    cond do
+      days >= 7 -> "text-yellow-500/80"
+      days >= 3 -> "text-gray-400"
+      true -> "text-gray-600"
+    end
+  end
 
   defp format_datetime(nil), do: "—"
 

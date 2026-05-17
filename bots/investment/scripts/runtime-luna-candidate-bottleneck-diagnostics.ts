@@ -99,6 +99,8 @@ export async function runLunaCandidateBottleneckDiagnostics(options: any = {}, d
     traceFields: [
       'backtestFresh',
       'backtestGateStatus',
+      'backtestBlockReasons',
+      'backtestUnstableOrUnrealistic',
       'predictiveDecision',
       'communityEvidenceCount24h',
       'communitySourceCount24h',

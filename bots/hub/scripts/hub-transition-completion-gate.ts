@@ -104,10 +104,10 @@ function routeToProvider(route: string): string {
   if (normalized.startsWith('openai-oauth/')) return 'openai-oauth';
   if (normalized.startsWith('gemini-codeassist-oauth/')) return 'gemini-codeassist-oauth';
   if (normalized.startsWith('gemini-cli-oauth/')) return 'gemini-cli-oauth';
-  if (normalized.startsWith('gemini-oauth/')) return 'gemini-oauth';
+  if (normalized.startsWith('gemini-oauth/')) return 'gemini-cli-oauth';
   if (normalized.startsWith('groq/')) return 'groq';
   if (normalized.startsWith('openai/')) return 'openai';
-  if (normalized.startsWith('google-gemini-cli/') || normalized.startsWith('gemini/')) return 'gemini';
+  if (normalized.startsWith('google-gemini-cli/') || normalized.startsWith('gemini/')) return 'gemini-cli-oauth';
   if (normalized.startsWith('local/')) return 'local';
   return '';
 }

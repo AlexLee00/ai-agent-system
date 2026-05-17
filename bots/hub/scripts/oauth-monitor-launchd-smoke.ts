@@ -31,15 +31,22 @@ function main() {
   assert(args.some((entry) => String(entry).endsWith('/bots/hub/scripts/run-oauth-monitor.ts')), 'oauth monitor must run run-oauth-monitor.ts');
   assert.equal(plist.RunAtLoad, true, 'oauth monitor must run at load');
   assert(asNumber(plist.StartInterval, 'StartInterval') <= 900, 'oauth monitor interval must be 15 minutes or less');
-  assert.equal(String(env.HUB_OAUTH_MONITOR_REQUIRE_GEMINI || '').trim(), 'true', 'Gemini OAuth readiness must be required');
+  assert.equal(env.HUB_OAUTH_MONITOR_REQUIRE_GEMINI, undefined, 'retired gemini-oauth monitor must not be configured');
   assert.equal(String(env.HUB_OAUTH_MONITOR_REQUIRE_GEMINI_CLI || '').trim(), 'true', 'Gemini CLI OAuth monitor must be explicitly required');
   assert.equal(String(env.HUB_OAUTH_MONITOR_REQUIRE_GEMINI_CODEASSIST_SERVICE || '').trim(), 'true', 'Gemini Code Assist service monitor must be explicitly required');
   assert.equal(String(env.HUB_OAUTH_MONITOR_ALLOW_KEYCHAIN || '').trim(), 'true', 'Claude Code OAuth monitor must sync refreshed credentials into Keychain');
   assert.equal(String(env.HUB_OAUTH_MONITOR_PUBLISH_EVENTS || '').trim(), 'true', 'OAuth monitor must publish standard event_lake events');
+  assert.equal(String(env.HUB_ENABLE_OPENAI_CODEX_OAUTH || '').trim(), 'true', 'OpenAI Codex OAuth refresh must be enabled for the launchd monitor');
+  assert.equal(String(env.HUB_OAUTH_MONITOR_SYNC_LOCAL_CODEX || '').trim(), 'true', 'OpenAI Codex OAuth refresh must sync refreshed tokens back into Codex auth.json');
   assert.notEqual(String(env.HUB_CLAUDE_CODE_LIVE_PROBE_ON_MONITOR || '').trim().toLowerCase(), 'false', 'Claude Code OAuth monitor must keep the live CLI probe enabled');
-  assert.equal(String(env.GEMINI_OAUTH_PROJECT_ID || '').trim(), 'gen-lang-client-0627707293', 'Gemini quota project must be wired into oauth monitor launchd');
-  assert(asNumber(env.HUB_GEMINI_OAUTH_WARN_HOURS, 'HUB_GEMINI_OAUTH_WARN_HOURS') >= 0.5, 'Gemini warn window must allow proactive refresh');
-  assert(asNumber(env.HUB_GEMINI_OAUTH_CRITICAL_HOURS, 'HUB_GEMINI_OAUTH_CRITICAL_HOURS') >= 0.1, 'Gemini critical window must be non-zero');
+  assert.equal(String(env.GEMINI_CLI_OAUTH_PROJECT_ID || '').trim(), 'gen-lang-client-0627707293', 'Gemini CLI quota project must be wired into oauth monitor launchd');
+  for (const provider of ['CLAUDE', 'OPENAI', 'GEMINI_CLI']) {
+    const prefix = provider === 'OPENAI' ? 'HUB_OPENAI_OAUTH' : `HUB_${provider}_OAUTH`;
+    assert.equal(asNumber(env[`${prefix}_WARN_HOURS`], `${prefix}_WARN_HOURS`), 5, `${prefix} alarm window must be 5h`);
+    assert.equal(asNumber(env[`${prefix}_REFRESH_HOURS`], `${prefix}_REFRESH_HOURS`), 3, `${prefix} refresh window must be 3h`);
+    assert.equal(asNumber(env[`${prefix}_CRITICAL_HOURS`], `${prefix}_CRITICAL_HOURS`), 1, `${prefix} critical window must be 1h`);
+  }
+  assert(asNumber(env.HUB_OAUTH_MONITOR_REAUTH_ALARM_COOLDOWN_MINUTES, 'HUB_OAUTH_MONITOR_REAUTH_ALARM_COOLDOWN_MINUTES') >= 120, 'reauth alarms must be throttled for at least 120 minutes');
 
   for (const key of Object.keys(env)) {
     assert(
@@ -52,7 +59,8 @@ function main() {
     ok: true,
     label: plist.Label,
     interval_s: plist.StartInterval,
-    gemini_required: true,
+    gemini_oauth_retired: env.HUB_OAUTH_MONITOR_REQUIRE_GEMINI === undefined,
+    gemini_cli_required: String(env.HUB_OAUTH_MONITOR_REQUIRE_GEMINI_CLI || '').trim() === 'true',
   }));
 }
 

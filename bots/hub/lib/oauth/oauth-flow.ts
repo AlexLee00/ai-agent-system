@@ -2,14 +2,14 @@ const crypto = require('crypto');
 
 const DEFAULT_OPENAI_CODEX_AUTH_URL = 'https://auth.openai.com/oauth/authorize';
 const DEFAULT_OPENAI_CODEX_TOKEN_URL = 'https://auth.openai.com/oauth/token';
+// Public client id used by Codex/OpenClaw's ChatGPT OAuth PKCE flow.
+// This is not a secret; no client_secret is required for refresh_token grant.
+const DEFAULT_OPENAI_CODEX_CLIENT_ID = 'app_EMoamEEZ73f0CkXaXp7hrann';
 const DEFAULT_OAUTH_SCOPE = 'openid profile email offline_access';
 const DEFAULT_CLAUDE_CODE_AUTH_URL = 'https://claude.com/cai/oauth/authorize';
 const DEFAULT_CLAUDE_CODE_TOKEN_URL = 'https://platform.claude.com/v1/oauth/token';
 const DEFAULT_CLAUDE_CODE_CLIENT_ID = '9d1c250a-e61b-44d9-88ed-5944d1962f5e';
 const DEFAULT_CLAUDE_CODE_SCOPE = 'user:profile user:inference user:sessions:claude_code user:mcp_servers user:file_upload';
-const DEFAULT_GEMINI_AUTH_URL = 'https://accounts.google.com/o/oauth2/v2/auth';
-const DEFAULT_GEMINI_TOKEN_URL = 'https://oauth2.googleapis.com/token';
-const DEFAULT_GEMINI_SCOPE = 'https://www.googleapis.com/auth/cloud-platform https://www.googleapis.com/auth/generative-language.retriever';
 
 const PROVIDER_FLOW_CONFIG = {
   'openai-codex-oauth': {
@@ -22,9 +22,10 @@ const PROVIDER_FLOW_CONFIG = {
     scopeEnv: ['HUB_OPENAI_CODEX_OAUTH_SCOPES', 'OPENAI_CODEX_OAUTH_SCOPES'],
     defaultAuthUrl: DEFAULT_OPENAI_CODEX_AUTH_URL,
     defaultTokenUrl: DEFAULT_OPENAI_CODEX_TOKEN_URL,
-    defaultClientId: '',
+    defaultClientId: DEFAULT_OPENAI_CODEX_CLIENT_ID,
     defaultScope: DEFAULT_OAUTH_SCOPE,
     tokenBodyFormat: 'form',
+    refreshIncludesScope: false,
     publicProviderName: 'openai-codex',
   },
   'claude-code-cli': {
@@ -42,21 +43,6 @@ const PROVIDER_FLOW_CONFIG = {
     tokenBodyFormat: 'json',
     enabledDefault: true,
     publicProviderName: 'claude-code',
-  },
-  'gemini-oauth': {
-    enabledEnv: ['HUB_ENABLE_GEMINI_OAUTH'],
-    authUrlEnv: ['HUB_GEMINI_OAUTH_AUTH_URL', 'GEMINI_OAUTH_AUTH_URL'],
-    tokenUrlEnv: ['HUB_GEMINI_OAUTH_TOKEN_URL', 'GEMINI_OAUTH_TOKEN_URL'],
-    clientIdEnv: ['HUB_GEMINI_OAUTH_CLIENT_ID', 'GEMINI_OAUTH_CLIENT_ID'],
-    clientSecretEnv: ['HUB_GEMINI_OAUTH_CLIENT_SECRET', 'GEMINI_OAUTH_CLIENT_SECRET'],
-    redirectUriEnv: ['HUB_GEMINI_OAUTH_REDIRECT_URI', 'GEMINI_OAUTH_REDIRECT_URI'],
-    scopeEnv: ['HUB_GEMINI_OAUTH_SCOPES', 'GEMINI_OAUTH_SCOPES'],
-    defaultAuthUrl: DEFAULT_GEMINI_AUTH_URL,
-    defaultTokenUrl: DEFAULT_GEMINI_TOKEN_URL,
-    defaultClientId: '',
-    defaultScope: DEFAULT_GEMINI_SCOPE,
-    tokenBodyFormat: 'form',
-    publicProviderName: 'gemini',
   },
 };
 
@@ -98,7 +84,6 @@ function requestBaseUrl(req) {
 function providerPathSegment(provider) {
   if (provider === 'openai-codex-oauth') return 'openai-codex';
   if (provider === 'claude-code-cli') return 'claude-code';
-  if (provider === 'gemini-oauth') return 'gemini';
   return provider;
 }
 
@@ -174,6 +159,7 @@ function buildOAuthProviderConfig(provider, req) {
     audience,
     resource,
     tokenBodyFormat: template.tokenBodyFormat || 'form',
+    refreshIncludesScope: template.refreshIncludesScope !== false,
   };
 }
 
@@ -284,7 +270,7 @@ async function refreshOAuthToken(config, refreshToken) {
     grant_type: 'refresh_token',
     refresh_token: refreshToken,
     client_id: config.clientId,
-    ...(config.scope ? { scope: config.scope } : {}),
+    ...(config.refreshIncludesScope === false ? {} : config.scope ? { scope: config.scope } : {}),
   };
   if (config.clientSecret) body.client_secret = config.clientSecret;
 

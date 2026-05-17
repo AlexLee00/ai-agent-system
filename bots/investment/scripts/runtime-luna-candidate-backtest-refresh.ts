@@ -273,21 +273,30 @@ function evaluateQuality(rows: any[]) {
 
   const rawAvgSharpe = usable.reduce((s, r) => s + safeNum(r?.sharpe_ratio), 0) / usable.length;
   const avgSharpe = Math.max(-GATE.MAX_ABS_SHARPE, Math.min(GATE.MAX_ABS_SHARPE, rawAvgSharpe));
+  const totalTrades = usable.reduce((sum, r) => sum + safeNum(r?.total_trades), 0);
+  const minTrades = Math.min(...usable.map((r) => safeNum(r?.total_trades)));
   const maxDD = Math.max(...usable.map((r) => Math.abs(safeNum(r?.max_drawdown))));
   const avgWinRate = usable.reduce((s, r) => s + safeNum(r?.win_rate), 0) / usable.length;
   const reasons: string[] = [];
   if (avgSharpe < GATE.MIN_SHARPE) reasons.push(`sharpe_negative(${avgSharpe.toFixed(2)})`);
-  if (Math.abs(rawAvgSharpe) > GATE.MAX_ABS_SHARPE) reasons.push(`unrealistic_sharpe(${rawAvgSharpe.toFixed(2)})`);
+  const unrealisticSharpe = Math.abs(rawAvgSharpe) > GATE.MAX_ABS_SHARPE;
+  if (unrealisticSharpe) {
+    reasons.push(`unrealistic_sharpe(${rawAvgSharpe.toFixed(2)})`);
+    reasons.push(`backtest_unstable_sample(total_trades=${totalTrades},min_period_trades=${minTrades})`);
+  }
   if (maxDD > GATE.MAX_DRAWDOWN) reasons.push(`drawdown_high(${maxDD.toFixed(1)}%)`);
   if (avgWinRate < GATE.MIN_WIN_RATE) reasons.push(`win_rate_low(${avgWinRate.toFixed(1)}%)`);
 
   const wouldBlock = reasons.some((r) => r.startsWith('sharpe_') || r.startsWith('unrealistic_') || r.startsWith('win_rate_') || r.startsWith('drawdown_'));
+  const onlyUnstable = wouldBlock
+    && unrealisticSharpe
+    && !reasons.some((r) => r.startsWith('sharpe_negative') || r.startsWith('win_rate_low') || r.startsWith('drawdown_high'));
   return {
     sharpe: Number(avgSharpe.toFixed(4)),
     maxDrawdown: Number(maxDD.toFixed(4)),
     winRate: Number(avgWinRate.toFixed(4)),
     healthy: !wouldBlock,
-    gateStatus: wouldBlock ? 'would_block_unhealthy' : 'pass',
+    gateStatus: wouldBlock ? (onlyUnstable ? 'would_block_unstable_backtest' : 'would_block_unhealthy') : 'pass',
     wouldBlock,
     reasons,
   };

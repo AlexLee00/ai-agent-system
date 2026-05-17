@@ -66,6 +66,7 @@ export async function runLunaCandidateQualityGovernanceShadow(options: any = {},
     quarantineCooldownHours: Number(options.quarantineCooldownHours || process.env.LUNA_CANDIDATE_QUARANTINE_COOLDOWN_HOURS || 168),
     repeatUnhealthyCooldownHours: Number(options.repeatUnhealthyCooldownHours || process.env.LUNA_CANDIDATE_REPEAT_UNHEALTHY_COOLDOWN_HOURS || 72),
     unhealthyCooldownHours: Number(options.unhealthyCooldownHours || process.env.LUNA_CANDIDATE_UNHEALTHY_COOLDOWN_HOURS || 24),
+    stabilizationCooldownHours: Number(options.stabilizationCooldownHours || process.env.LUNA_CANDIDATE_BACKTEST_STABILIZATION_COOLDOWN_HOURS || 6),
   });
 
   if (apply && !dryRun && rows.length > 0) {
@@ -87,6 +88,7 @@ export async function runLunaCandidateQualityGovernanceShadow(options: any = {},
     cooldown: cooldownRows.length,
     replacementNeeded: rows.filter((row) => row.replacementNeeded).length,
     refreshPriority: rows.filter((row) => row.governanceAction === 'refresh_backtest_priority').length,
+    backtestStabilization: rows.filter((row) => row.governanceAction === 'backtest_stabilization_shadow').length,
     strategyRepair: rows.filter((row) => row.governanceAction === 'strategy_repair_shadow').length,
     promotionMonitor: rows.filter((row) => row.governanceAction === 'promotion_monitor_shadow').length,
     liveMutation: false,
@@ -127,6 +129,7 @@ if (isDirectExecution(import.meta.url)) {
       quarantineCooldownHours: Number(argValue('quarantine-cooldown-hours', process.env.LUNA_CANDIDATE_QUARANTINE_COOLDOWN_HOURS || 168)),
       repeatUnhealthyCooldownHours: Number(argValue('repeat-unhealthy-cooldown-hours', process.env.LUNA_CANDIDATE_REPEAT_UNHEALTHY_COOLDOWN_HOURS || 72)),
       unhealthyCooldownHours: Number(argValue('unhealthy-cooldown-hours', process.env.LUNA_CANDIDATE_UNHEALTHY_COOLDOWN_HOURS || 24)),
+      stabilizationCooldownHours: Number(argValue('stabilization-cooldown-hours', process.env.LUNA_CANDIDATE_BACKTEST_STABILIZATION_COOLDOWN_HOURS || 6)),
     }),
     onSuccess: async (result) => console.log(JSON.stringify(result, null, 2)),
     errorPrefix: 'runtime-luna-candidate-quality-governance error:',

@@ -58,10 +58,17 @@ function isPredictiveBlocked(decision: any, blockedReason: any) {
   return raw.includes('block') || raw.includes('would_block') || Boolean(blockedReason);
 }
 
+function hasReasonPrefix(reasons: any[] = [], prefix: string) {
+  return (reasons || []).some((reason) => String(reason).startsWith(prefix));
+}
+
 function actionFromReasons(reasons: string[], input: any = {}) {
   const predictive = input.predictive || {};
   const communitySources = n(input.community?.source_count, 0) + n(input.community?.market_source_count, 0);
   const predictiveScore = n(predictive.score, 0);
+  if (reasons.includes('backtest_unstable_or_unrealistic')) {
+    return 'stabilize_backtest_shadow';
+  }
   const hasFreshBacktestQualityIssue = !reasons.includes('backtest_missing_or_stale')
     && (
       reasons.includes('backtest_unhealthy_or_would_block')
@@ -107,6 +114,9 @@ function refreshCommandFor(action: string, reasons: string[], row: any = {}) {
   const market = normalizeLunaPhase2Market(row.market || row.candidate?.market);
   const symbol = normalizeLunaPhase2Symbol(row.symbol || row.candidate?.symbol);
   const symbolArg = symbol ? ` --symbols=${symbol}` : '';
+  if (action === 'stabilize_backtest_shadow') {
+    return `npm --prefix bots/investment run -s runtime:luna-candidate-backtest-refresh -- --json --force --periods=30,90,180,365 --market=${market}${symbolArg}`;
+  }
   if (action === 'strategy_enhancement_shadow') {
     return `npm --prefix bots/investment run -s runtime:luna-phase4-strategy-enhancement-shadow -- --json --dry-run --market=${market}${symbolArg}`;
   }
@@ -125,7 +135,7 @@ function refreshCommandFor(action: string, reasons: string[], row: any = {}) {
 function severityFrom(action: string, reasons: string[]) {
   if (action === 'monitor_pass_candidate') return 'pass';
   if (action === 'quarantine_candidate_shadow') return 'blocker';
-  if (action === 'refresh_evidence') return 'review';
+  if (action === 'refresh_evidence' || action === 'stabilize_backtest_shadow') return 'review';
   if (reasons.includes('predictive_blocked') || reasons.includes('backtest_unhealthy_or_would_block')) return 'review';
   return 'observe';
 }
@@ -135,6 +145,7 @@ function penaltyFromReasons(reasons: string[], action: string) {
   let penalty = 0.12;
   if (reasons.includes('sharpe_negative')) penalty += 0.22;
   if (reasons.includes('win_rate_low')) penalty += 0.18;
+  if (reasons.includes('backtest_unstable_or_unrealistic')) penalty += 0.14;
   if (reasons.includes('backtest_unhealthy_or_would_block')) penalty += 0.16;
   if (reasons.includes('predictive_blocked')) penalty += 0.14;
   if (reasons.includes('predictive_coverage_low')) penalty += 0.10;
@@ -215,11 +226,16 @@ export function buildLunaCandidateBottleneckRows(inputs: any[] = [], options: an
     const backtestFresh = isTrue(backtest.fresh) && ageHours(backtest.last_backtest_at) <= staleBacktestHours;
     const backtestHealthy = isTrue(backtest.healthy);
     const backtestWouldBlock = isTrue(backtest.would_block) || isTrue(backtest.wouldBlock);
+    const backtestBlockReasons = parseJsonMaybe(backtest.block_reasons ?? backtest.blockReasons, []);
+    const backtestUnstableOrUnrealistic = String(backtest.gate_status || backtest.gateStatus || '').toLowerCase().includes('unstable')
+      || hasReasonPrefix(backtestBlockReasons, 'unrealistic_sharpe')
+      || hasReasonPrefix(backtestBlockReasons, 'backtest_unstable_sample');
     const sharpe = n(backtest.sharpe, 0);
     const winRate = n(backtest.win_rate ?? backtest.winRate, 0);
     const drawdown = Math.abs(n(backtest.max_drawdown ?? backtest.maxDrawdown, 0));
 
     if (!backtest || Object.keys(backtest).length === 0 || !backtestFresh) reasons.push('backtest_missing_or_stale');
+    if (backtest && Object.keys(backtest).length > 0 && backtestUnstableOrUnrealistic) reasons.push('backtest_unstable_or_unrealistic');
     if (backtest && Object.keys(backtest).length > 0 && (!backtestHealthy || backtestWouldBlock || String(backtest.gate_status || '').startsWith('would_block'))) reasons.push('backtest_unhealthy_or_would_block');
     if (backtest && Object.keys(backtest).length > 0 && sharpe < 0) reasons.push('sharpe_negative');
     if (backtest && Object.keys(backtest).length > 0 && backtest.win_rate != null && winRate < 30) reasons.push('win_rate_low');
@@ -275,6 +291,8 @@ export function buildLunaCandidateBottleneckRows(inputs: any[] = [], options: an
         trace: {
           backtestFresh,
           backtestGateStatus: backtest.gate_status || (backtestFresh && backtestHealthy ? 'pass' : 'unknown'),
+          backtestBlockReasons,
+          backtestUnstableOrUnrealistic,
           predictiveDecision,
           communityEvidenceCount24h,
           communitySourceCount24h,

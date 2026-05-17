@@ -187,8 +187,8 @@ export function inferProviderFromModel(model = ''): string {
   if (model.startsWith('gpt-') || model.startsWith('o')) return 'openai';
   if (model.startsWith('gemini-codeassist-oauth/') || model.startsWith('gemini-code-assist-oauth/')) return 'gemini-codeassist-oauth';
   if (model.startsWith('gemini-cli-oauth/')) return 'gemini-cli-oauth';
-  if (model.startsWith('gemini-oauth/')) return 'gemini-oauth';
-  if (model.startsWith('gemini-') || model.startsWith('google-gemini-cli/')) return 'gemini';
+  if (model.startsWith('gemini-oauth/')) return 'gemini-cli-oauth';
+  if (model.startsWith('gemini-') || model.startsWith('google-gemini-cli/')) return 'gemini-cli-oauth';
   return 'claude-code';
 }
 
@@ -439,7 +439,7 @@ const TEAM_SELECTOR_DEFAULTS_LEGACY: Record<string, any> = {
       fallbacks: [],
     },
     'unified.oauth.gemini.smoke': {
-      primary: { provider: 'gemini-oauth', model: GEMINI_CLI_FLASH_MODEL, maxTokens: 32, temperature: 0 },
+      primary: { provider: 'gemini-cli-oauth', model: GEMINI_CLI_FLASH_MODEL, maxTokens: 32, temperature: 0 },
       fallbacks: [],
     },
     _fallback: {

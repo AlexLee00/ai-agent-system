@@ -1,10 +1,10 @@
 {
   "ok": true,
-  "generatedAt": "2026-05-17T02:25:07.116Z",
+  "generatedAt": "2026-05-17T09:58:41.080Z",
   "phase": "luna-phase1-codex-p0",
   "tags": {
     "preRollback": "pre-luna-phase1-codex-p0-20260514-200517",
-    "latestComplete": "luna-phase1-codex-p0-complete-20260514-2021",
+    "latestComplete": "luna-phase1-codex-p0-complete-20260517-1606",
     "completeCurrentHead": null
   },
   "goals": {
@@ -21,7 +21,7 @@
     },
     "communityCoverageGate": {
       "ok": true,
-      "generatedAt": "2026-05-17T02:25:07.083Z",
+      "generatedAt": "2026-05-17T09:58:41.035Z",
       "hours": 24,
       "thresholds": {
         "crypto": {
@@ -131,36 +131,36 @@
       "queryError": null
     },
     "candidateBacktestStatus": {
-      "total": 182,
-      "fresh": 174,
-      "healthy": 69,
-      "would_block": 113,
-      "newest_updated_at": "2026-05-17T01:11:12.475Z"
+      "total": 196,
+      "fresh": 189,
+      "healthy": 50,
+      "would_block": 146,
+      "newest_updated_at": "2026-05-17T09:45:25.404Z"
     },
     "predictiveAudit24h": [
       {
         "decision": "block_backtest_gate",
-        "count": 1118
+        "count": 1908
       },
       {
         "decision": "fire",
-        "count": 518
-      },
-      {
-        "decision": "block_stale_backtest",
-        "count": 68
+        "count": 431
       },
       {
         "decision": "would_block_backtest",
-        "count": 56
+        "count": 124
       },
       {
-        "decision": "pass_backtest",
-        "count": 17
+        "decision": "block_stale_backtest",
+        "count": 94
       },
       {
         "decision": "would_block_backtest_gate",
-        "count": 10
+        "count": 38
+      },
+      {
+        "decision": "pass_backtest",
+        "count": 16
       },
       {
         "decision": "hold",
@@ -168,41 +168,63 @@
       }
     ],
     "candidateBottleneckTrace": {
-      "total": 20,
+      "total": 30,
       "byPrimaryBlocker": {
-        "backtest_unhealthy_or_would_block": 10,
-        "unknown": 3,
-        "backtest_missing_or_stale": 6,
-        "drawdown_high": 1
+        "backtest_unstable_or_unrealistic": 13,
+        "unknown": 4,
+        "backtest_unhealthy_or_would_block": 9,
+        "backtest_missing_or_stale": 4
       },
       "topPrimaryBlockers": [
         {
+          "blocker": "backtest_unstable_or_unrealistic",
+          "count": 13
+        },
+        {
           "blocker": "backtest_unhealthy_or_would_block",
-          "count": 10
+          "count": 9
         },
         {
           "blocker": "backtest_missing_or_stale",
-          "count": 6
-        },
-        {
-          "blocker": "drawdown_high",
-          "count": 1
+          "count": 4
         }
       ],
       "sample": [
         {
-          "symbol": "BTC/USDT",
-          "market": "crypto",
+          "symbol": "NVDA",
+          "market": "overseas",
           "backtestFresh": true,
-          "backtestGateStatus": "would_block_unhealthy",
+          "backtestGateStatus": "would_block_unstable_backtest",
           "predictiveDecision": "block_backtest_gate",
-          "communityEvidenceCount24h": 34,
-          "communitySourceCount24h": 20,
-          "primaryBlocker": "backtest_unhealthy_or_would_block",
-          "recommendedRefreshCommand": "npm --prefix bots/investment run -s runtime:luna-phase4-strategy-enhancement-shadow -- --json --dry-run --market=crypto"
+          "communityEvidenceCount24h": 30,
+          "communitySourceCount24h": 6,
+          "primaryBlocker": "backtest_unstable_or_unrealistic",
+          "recommendedRefreshCommand": "npm --prefix bots/investment run -s runtime:luna-candidate-backtest-refresh -- --json --force --periods=30,90,180,365 --market=overseas --symbols=NVDA"
         },
         {
-          "symbol": "NVDA",
+          "symbol": "GOOGL",
+          "market": "overseas",
+          "backtestFresh": true,
+          "backtestGateStatus": "would_block_unstable_backtest",
+          "predictiveDecision": "block_backtest_gate",
+          "communityEvidenceCount24h": 30,
+          "communitySourceCount24h": 6,
+          "primaryBlocker": "backtest_unstable_or_unrealistic",
+          "recommendedRefreshCommand": "npm --prefix bots/investment run -s runtime:luna-candidate-backtest-refresh -- --json --force --periods=30,90,180,365 --market=overseas --symbols=GOOGL"
+        },
+        {
+          "symbol": "META",
+          "market": "overseas",
+          "backtestFresh": true,
+          "backtestGateStatus": "would_block_unstable_backtest",
+          "predictiveDecision": "block_backtest_gate",
+          "communityEvidenceCount24h": 30,
+          "communitySourceCount24h": 6,
+          "primaryBlocker": "backtest_unstable_or_unrealistic",
+          "recommendedRefreshCommand": "npm --prefix bots/investment run -s runtime:luna-candidate-backtest-refresh -- --json --force --periods=30,90,180,365 --market=overseas --symbols=META"
+        },
+        {
+          "symbol": "MSFT",
           "market": "overseas",
           "backtestFresh": true,
           "backtestGateStatus": "pass",
@@ -213,37 +235,15 @@
           "recommendedRefreshCommand": "npm --prefix bots/investment run -s runtime:luna-candidate-bottleneck-diagnostics -- --json --dry-run --market=overseas"
         },
         {
-          "symbol": "000660",
-          "market": "domestic",
+          "symbol": "AAPL",
+          "market": "overseas",
           "backtestFresh": true,
-          "backtestGateStatus": "would_block_no_trades",
-          "predictiveDecision": "would_block_backtest",
-          "communityEvidenceCount24h": 18,
-          "communitySourceCount24h": 3,
-          "primaryBlocker": "backtest_unhealthy_or_would_block",
-          "recommendedRefreshCommand": "npm --prefix bots/investment run -s runtime:luna-phase4-strategy-enhancement-shadow -- --json --dry-run --market=domestic"
-        },
-        {
-          "symbol": "005930",
-          "market": "domestic",
-          "backtestFresh": true,
-          "backtestGateStatus": "would_block_no_trades",
-          "predictiveDecision": "would_block_backtest",
-          "communityEvidenceCount24h": 18,
-          "communitySourceCount24h": 3,
-          "primaryBlocker": "backtest_unhealthy_or_would_block",
-          "recommendedRefreshCommand": "npm --prefix bots/investment run -s runtime:luna-phase4-strategy-enhancement-shadow -- --json --dry-run --market=domestic"
-        },
-        {
-          "symbol": "OSMO/USDT",
-          "market": "crypto",
-          "backtestFresh": true,
-          "backtestGateStatus": "would_block_unhealthy",
+          "backtestGateStatus": "would_block_unstable_backtest",
           "predictiveDecision": "block_backtest_gate",
-          "communityEvidenceCount24h": 7,
-          "communitySourceCount24h": 4,
-          "primaryBlocker": "backtest_unhealthy_or_would_block",
-          "recommendedRefreshCommand": "npm --prefix bots/investment run -s runtime:luna-phase4-strategy-enhancement-shadow -- --json --dry-run --market=crypto"
+          "communityEvidenceCount24h": 30,
+          "communitySourceCount24h": 6,
+          "primaryBlocker": "backtest_unstable_or_unrealistic",
+          "recommendedRefreshCommand": "npm --prefix bots/investment run -s runtime:luna-candidate-backtest-refresh -- --json --force --periods=30,90,180,365 --market=overseas --symbols=AAPL"
         }
       ]
     }

@@ -76,6 +76,7 @@ function getGeminiOAuthProjectId(record, model = '') {
     : '';
   return String(
     proProjectId
+      || process.env.GEMINI_CLI_OAUTH_PROJECT_ID
       || process.env.GEMINI_OAUTH_PROJECT_ID
       || process.env.GOOGLE_CLOUD_QUOTA_PROJECT
       || process.env.GOOGLE_CLOUD_PROJECT
@@ -497,6 +498,7 @@ function getGeminiCodeAssistProjectId(credential, model = '') {
     proProjectId
       || process.env.GEMINI_CODE_ASSIST_PROJECT_ID
       || process.env.GEMINI_CODEASSIST_PROJECT_ID
+      || process.env.GEMINI_CLI_OAUTH_PROJECT_ID
       || process.env.GEMINI_OAUTH_PROJECT_ID
       || process.env.GOOGLE_CLOUD_QUOTA_PROJECT
       || process.env.GOOGLE_CLOUD_PROJECT
@@ -587,7 +589,7 @@ async function callGeminiOAuth(input) {
       if (!text) throw new Error('gemini_oauth_empty_response');
       return {
         ok: true,
-        provider: 'gemini-oauth',
+        provider: 'gemini-cli-oauth',
         model,
         result: text,
         text,

@@ -37,6 +37,37 @@ export async function runLunaCandidateQualityGovernanceSmoke() {
   assert.equal(pass?.governanceAction, 'promotion_monitor_shadow', 'pass candidate maps to promotion monitor');
   assert.equal(rows.every((row) => row.shadowOnly === true && row.liveMutation === false), true, 'shadow-only rows');
   assert.equal(rows.every((row) => !String(row.recommendedNextCommand || '').includes('launchctl')), true, 'commands avoid launchctl');
+  const unstableRows = buildLunaCandidateQualityGovernanceRows([{
+    symbol: 'UNREAL/USDT',
+    market: 'crypto',
+    exchange: 'binance',
+    recommendedAction: 'stabilize_backtest_shadow',
+    severity: 'review',
+    candidateScore: 0.81,
+    candidateSelectionPenalty: 0.42,
+    reasons: ['backtest_unstable_or_unrealistic', 'backtest_unhealthy_or_would_block'],
+    recentUnhealthyCount24h: 1,
+    observedAt: '2026-05-17T00:00:00.000Z',
+  }], { now: '2026-05-17T00:00:00.000Z' });
+  const unstable = unstableRows[0];
+  assert.equal(unstable?.governanceAction, 'backtest_stabilization_shadow', 'unstable backtest maps to stabilization governance');
+  assert.ok(String(unstable?.recommendedNextCommand || '').includes('--periods=30,90,180,365'), 'stabilization command expands periods');
+  assert.equal(unstable?.replacementNeeded, false, 'unstable backtest is not replacement by default');
+  assert.equal(unstable?.skipBacktestUntilCooldown, true, 'stabilization gets short retry cooldown');
+  assert.ok(unstable?.cooldownUntil, 'stabilization row has cooldown_until');
+  const repeatedUnstable = buildLunaCandidateQualityGovernanceRows([{
+    symbol: 'REPEAT/USDT',
+    market: 'crypto',
+    exchange: 'binance',
+    recommendedAction: 'stabilize_backtest_shadow',
+    severity: 'review',
+    candidateScore: 0.81,
+    candidateSelectionPenalty: 0.42,
+    reasons: ['backtest_unstable_or_unrealistic', 'backtest_unhealthy_or_would_block'],
+    recentUnhealthyCount24h: 9,
+    observedAt: '2026-05-17T00:00:00.000Z',
+  }], { now: '2026-05-17T00:00:00.000Z' })[0];
+  assert.equal(repeatedUnstable?.governanceAction, 'backtest_stabilization_shadow', 'unstable backtest outranks repeated unhealthy cooldown');
 
   const runtime = await runLunaCandidateQualityGovernanceShadow({ fixture: true, dryRun: true, json: true });
   assert.equal(runtime.ok, true, 'runtime ok');

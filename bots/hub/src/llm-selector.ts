@@ -23,7 +23,6 @@ const PROVIDER_TIERS = {
   'openai-oauth': 1,
   groq: 2,
   'gemini-cli-oauth': 3,
-  'gemini-oauth': 3,
   'gemini-codeassist-oauth': 3,
   local: 4,
   'claude-code-oauth': 5,
@@ -71,7 +70,7 @@ function providerFromRoute(route) {
   if (normalized.startsWith('openai-oauth/') || normalized.startsWith('openai/')) return 'openai-oauth';
   if (normalized.startsWith('groq/')) return 'groq';
   if (normalized.startsWith('gemini-cli-oauth/')) return 'gemini-cli-oauth';
-  if (normalized.startsWith('gemini-oauth/') || normalized.startsWith('gemini/')) return 'gemini-oauth';
+  if (normalized.startsWith('gemini-oauth/') || normalized.startsWith('gemini/')) return 'gemini-cli-oauth';
   if (normalized.startsWith('gemini-codeassist-oauth/')) return 'gemini-codeassist-oauth';
   if (normalized.startsWith('local/')) return 'local';
   if (normalized.startsWith('claude-code/')) return 'claude-code-oauth';

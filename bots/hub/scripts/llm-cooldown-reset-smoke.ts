@@ -56,13 +56,13 @@ async function main() {
   assert.equal(snapshot['openai-oauth'], undefined);
 
   _testOnlySetProviderCooldown('groq');
-  _testOnlySetProviderCooldown('gemini-oauth');
+  _testOnlySetProviderCooldown('gemini-cli-oauth');
   recordFailure('openai-oauth', 'smoke_provider_stat', 12);
   const resetAll = await invoke('DELETE');
   assert.equal(resetAll.statusCode, 200);
   assert.equal(resetAll.body.reset, 'all');
   assert.ok(resetAll.body.reset_provider_circuits.includes('openai-oauth'));
-  assert.deepEqual(resetAll.body.reset_cooldowns.sort(), ['gemini-oauth', 'groq']);
+  assert.deepEqual(resetAll.body.reset_cooldowns.sort(), ['gemini-cli-oauth', 'groq']);
   assert.deepEqual(getProviderCooldownSnapshot(), {});
 
   console.log(JSON.stringify({

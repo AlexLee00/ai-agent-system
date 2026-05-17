@@ -162,6 +162,46 @@ describe('Hub native OAuth flow', () => {
     expect(JSON.stringify(res.payload)).not.toContain('new-access-token');
   });
 
+  test('OpenAI Codex refresh can use OpenClaw-compatible public client defaults and omits scope', async () => {
+    const storeFile = path.join(tempRoot, 'token-store.json');
+    process.env.HUB_OAUTH_STORE_FILE = storeFile;
+    process.env.HUB_ENABLE_OPENAI_CODEX_OAUTH = 'true';
+    process.env.HUB_PUBLIC_BASE_URL = 'https://hub.local';
+    const { setProviderToken } = require('../lib/oauth/token-store.ts');
+    const { oauthRefreshRoute } = require('../lib/oauth/routes.ts');
+    setProviderToken('openai-codex-oauth', {
+      access_token: 'old-access-token',
+      refresh_token: 'stored-refresh-token',
+      expires_at: '2026-04-27T00:00:00.000Z',
+      token_type: 'Bearer',
+    }, { source: 'fixture' });
+
+    globalThis.fetch = jest.fn(async (input, init) => {
+      expect(String(input)).toBe('https://auth.openai.com/oauth/token');
+      const body = new URLSearchParams(String(init.body));
+      expect(body.get('grant_type')).toBe('refresh_token');
+      expect(body.get('refresh_token')).toBe('stored-refresh-token');
+      expect(body.get('client_id')).toBe('app_EMoamEEZ73f0CkXaXp7hrann');
+      expect(body.has('scope')).toBe(false);
+      return new Response(JSON.stringify({
+        access_token: 'new-access-token',
+        refresh_token: 'new-refresh-token',
+        expires_in: 7200,
+        token_type: 'Bearer',
+      }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+    });
+
+    const res = makeRes();
+    await oauthRefreshRoute({ params: { provider: 'openai-codex' }, query: {}, body: {} }, res);
+
+    expect(res.statusCode).toBe(200);
+    const store = JSON.parse(fs.readFileSync(storeFile, 'utf8'));
+    expect(store.providers['openai-codex-oauth'].token.access_token).toBe('new-access-token');
+    expect(store.providers['openai-codex-oauth'].token.refresh_token).toBe('new-refresh-token');
+    expect(JSON.stringify(res.payload)).not.toContain('new-access-token');
+    expect(JSON.stringify(res.payload)).not.toContain('new-refresh-token');
+  });
+
   test('OpenAI Codex refresh atomically rotates refresh token when provider returns a new one', async () => {
     const storeFile = path.join(tempRoot, 'token-store.json');
     configureOpenAi(storeFile);

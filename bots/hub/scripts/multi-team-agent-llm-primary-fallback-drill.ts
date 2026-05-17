@@ -133,7 +133,7 @@ function routeFromEntry(entry) {
       : `gemini-codeassist-oauth/${model.replace(/^gemini-code-assist-oauth\//, '').replace(/^gemini-oauth\//, '')}`;
   }
   if (provider === 'gemini-oauth' || provider === 'gemini') {
-    return `gemini-oauth/${model.replace(/^gemini-oauth\//, '').replace(/^gemini\//, '')}`;
+    return `gemini-cli-oauth/${model.replace(/^google-gemini-cli\//, '').replace(/^gemini-oauth\//, '').replace(/^gemini\//, '')}`;
   }
   return model.includes('/') ? model : `${provider}/${model}`;
 }
@@ -145,7 +145,7 @@ function providerFromRoute(route) {
   if (normalized.startsWith('openai-oauth/') || normalized.startsWith('openai/')) return 'openai-oauth';
   if (normalized.startsWith('gemini-codeassist-oauth/')) return 'gemini-codeassist-oauth';
   if (normalized.startsWith('gemini-cli-oauth/')) return 'gemini-cli-oauth';
-  if (normalized.startsWith('gemini-oauth/') || normalized.startsWith('gemini/')) return 'gemini-oauth';
+  if (normalized.startsWith('gemini-oauth/') || normalized.startsWith('gemini/')) return 'gemini-cli-oauth';
   return normalized || 'unknown';
 }
 

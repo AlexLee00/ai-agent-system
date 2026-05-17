@@ -18,7 +18,6 @@ const {
 const { getOpenAiApiKeyStatus, runOpenAiApiKeyCanary } = require('./providers/openai-public-api');
 const { getOpenAiCodexOauthStatus, runOpenAiCodexOauthCanary } = require('./providers/openai-codex-oauth');
 const { getClaudeCodeCliStatus, runClaudeCodeCliCanary } = require('./providers/claude-code-cli');
-const { getGeminiOauthStatus, runGeminiOauthCanary } = require('./providers/gemini-oauth');
 
 const pendingOAuthStates = new Map();
 const OAUTH_STATE_TTL_MS = Number(process.env.HUB_OAUTH_STATE_TTL_MS || 10 * 60 * 1000);
@@ -32,8 +31,8 @@ const PROVIDER_ALIASES = {
   'claude-code': 'claude-code-cli',
   'claude-code-oauth': 'claude-code-cli',
   'claude-code-cli': 'claude-code-cli',
-  gemini: 'gemini-oauth',
-  'gemini-oauth': 'gemini-oauth',
+  gemini: null,
+  'gemini-oauth': null,
 };
 
 const PROVIDER_REGISTRY = {
@@ -48,10 +47,6 @@ const PROVIDER_REGISTRY = {
   'claude-code-cli': {
     resolveStatus: getClaudeCodeCliStatus,
     runCanary: runClaudeCodeCliCanary,
-  },
-  'gemini-oauth': {
-    resolveStatus: getGeminiOauthStatus,
-    runCanary: runGeminiOauthCanary,
   },
 };
 
@@ -101,7 +96,7 @@ function isCodexOAuthEnabled() {
 }
 
 function isOauthFlowProvider(provider) {
-  return provider === 'openai-codex-oauth' || provider === 'claude-code-cli' || provider === 'gemini-oauth';
+  return provider === 'openai-codex-oauth' || provider === 'claude-code-cli';
 }
 
 function prunePendingOAuthStates(now = Date.now()) {

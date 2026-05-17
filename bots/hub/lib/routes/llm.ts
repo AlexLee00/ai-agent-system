@@ -1,7 +1,7 @@
 const pgPool = require('../../../../packages/core/lib/pg-pool');
 const crypto = require('node:crypto');
 const { callClaudeCodeOAuth } = require('../llm/claude-code-oauth');
-const { callGeminiOAuth, callGeminiCodeAssistOAuth, callOpenAiCodexOAuth } = require('../llm/oauth-direct');
+const { callGeminiCliOAuth, callGeminiCodeAssistOAuth, callOpenAiCodexOAuth } = require('../llm/oauth-direct');
 const { callGroqFallback } = require('../llm/groq-fallback');
 const { callWithFallback } = require('../llm/unified-caller');
 const { loadGroqAccounts } = require('../llm/secrets-loader');
@@ -951,7 +951,8 @@ function routeFromEntry(entry) {
 function normalizeVisionRoute(route) {
   const normalized = String(route || '').trim();
   if (normalized.startsWith('openai/')) return `openai-oauth/${normalized.slice('openai/'.length)}`;
-  if (normalized.startsWith('gemini/')) return `gemini-oauth/${normalized.slice('gemini/'.length)}`;
+  if (normalized.startsWith('gemini/')) return `gemini-cli-oauth/${normalized.slice('gemini/'.length)}`;
+  if (normalized.startsWith('gemini-oauth/')) return `gemini-cli-oauth/${normalized.slice('gemini-oauth/'.length)}`;
   if (normalized.startsWith('gemini-code-assist-oauth/')) {
     return `gemini-codeassist-oauth/${normalized.slice('gemini-code-assist-oauth/'.length)}`;
   }
@@ -961,6 +962,7 @@ function normalizeVisionRoute(route) {
 function isVisionRouteSupported(route) {
   return String(route || '').startsWith('openai-oauth/')
     || String(route || '').startsWith('gemini-oauth/')
+    || String(route || '').startsWith('gemini-cli-oauth/')
     || String(route || '').startsWith('gemini-codeassist-oauth/');
 }
 
@@ -972,9 +974,15 @@ async function callVisionSelectorRoute(route, input) {
     });
   }
   if (route.route.startsWith('gemini-oauth/')) {
-    return callGeminiOAuth({
+    return callGeminiCliOAuth({
       ...input,
       model: route.route.slice('gemini-oauth/'.length),
+    });
+  }
+  if (route.route.startsWith('gemini-cli-oauth/')) {
+    return callGeminiCliOAuth({
+      ...input,
+      model: route.route.slice('gemini-cli-oauth/'.length),
     });
   }
   if (route.route.startsWith('gemini-codeassist-oauth/')) {

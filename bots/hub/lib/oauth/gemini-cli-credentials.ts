@@ -151,6 +151,7 @@ function normalizeCredentialPayload(payload, options = {}) {
   const scopes = normalizeScopes(payload.scope || payload.scopes || tokenPayload.scope || tokenPayload.scopes);
   const quotaProjectId = String(
     options.projectId
+      || process.env.GEMINI_CLI_OAUTH_PROJECT_ID
       || process.env.GEMINI_OAUTH_PROJECT_ID
       || process.env.GOOGLE_CLOUD_QUOTA_PROJECT
       || process.env.GOOGLE_CLOUD_PROJECT
@@ -408,6 +409,7 @@ function readGeminiCliCredentialsLegacyOnly(options = {}) {
   const scopes = normalizeScopes(payload.scope || payload.scopes);
   const quotaProjectId = String(
     options.projectId
+      || process.env.GEMINI_CLI_OAUTH_PROJECT_ID
       || process.env.GEMINI_OAUTH_PROJECT_ID
       || process.env.GOOGLE_CLOUD_QUOTA_PROJECT
       || process.env.GOOGLE_CLOUD_PROJECT

@@ -79,13 +79,9 @@ function refreshWindowCovered(provider: any, warnHours: number) {
 function providerOk(report: any) {
   const claude = report?.claude_code_oauth || {};
   const openai = report?.openai_oauth || {};
-  const gemini = report?.gemini_oauth || {};
   const geminiCli = report?.gemini_cli_oauth || {};
-  const claudeRefresh = refreshWindowCovered(claude, thresholdHours('HUB_CLAUDE_OAUTH_WARN_HOURS', 4));
-  const openaiRefresh = refreshWindowCovered(openai, thresholdHours('HUB_OPENAI_OAUTH_WARN_HOURS', 24));
-  const geminiRefresh = gemini.skipped
-    ? { in_window: false, covered: true, refresh_ok: null, reimport_ok: null, expires_in_hours: null, warn_hours: thresholdHours('HUB_GEMINI_OAUTH_WARN_HOURS', 0.25) }
-    : refreshWindowCovered(gemini, thresholdHours('HUB_GEMINI_OAUTH_WARN_HOURS', 0.25));
+  const claudeRefresh = refreshWindowCovered(claude, thresholdHours('HUB_CLAUDE_OAUTH_REFRESH_HOURS', 3));
+  const openaiRefresh = refreshWindowCovered(openai, thresholdHours('HUB_OPENAI_OAUTH_REFRESH_HOURS', 3));
   const geminiCliNearExpiry = Boolean(geminiCli.local_credential_needs_refresh);
   const geminiCliRefreshCovered = !geminiCliNearExpiry
     || (geminiCli.live_refresh_ok === true && geminiCli.post_probe_reimport_ok === true);
@@ -93,16 +89,13 @@ function providerOk(report: any) {
   return {
     claude_code_oauth: Boolean(claude.healthy && claudeRefresh.covered),
     openai_oauth: Boolean(openai.healthy && openaiRefresh.covered),
-    gemini_oauth: Boolean(gemini.skipped || (gemini.healthy && geminiRefresh.covered)),
     gemini_cli_oauth: Boolean(geminiCli.skipped || (geminiCli.healthy && geminiCliRefreshCovered)),
     claude_refresh_covered: claudeRefresh.covered,
     openai_refresh_covered: openaiRefresh.covered,
-    gemini_refresh_covered: geminiRefresh.covered,
     gemini_cli_refresh_covered: geminiCliRefreshCovered,
     refresh_windows: {
       claude_code_oauth: claudeRefresh,
       openai_oauth: openaiRefresh,
-      gemini_oauth: geminiRefresh,
     },
   };
 }
@@ -115,11 +108,9 @@ function main() {
   const providerChecks = {
     claude_code_oauth: providers.claude_code_oauth,
     openai_oauth: providers.openai_oauth,
-    gemini_oauth: providers.gemini_oauth,
     gemini_cli_oauth: providers.gemini_cli_oauth,
     claude_refresh_covered: providers.claude_refresh_covered,
     openai_refresh_covered: providers.openai_refresh_covered,
-    gemini_refresh_covered: providers.gemini_refresh_covered,
     gemini_cli_refresh_covered: providers.gemini_cli_refresh_covered,
   };
   const failures = Object.entries(providerChecks)
@@ -161,11 +152,6 @@ function main() {
         live_refresh_ok: report.gemini_cli_oauth?.live_refresh_ok ?? null,
         post_probe_reimport_ok: report.gemini_cli_oauth?.post_probe_reimport_ok ?? null,
         expires_in_hours: report.gemini_cli_oauth?.expires_in_hours ?? null,
-      },
-      gemini_oauth: {
-        healthy: Boolean(report.gemini_oauth?.healthy),
-        skipped: Boolean(report.gemini_oauth?.skipped),
-        refresh_ok: report.gemini_oauth?.refresh_ok ?? null,
       },
     },
     lock_janitor: {

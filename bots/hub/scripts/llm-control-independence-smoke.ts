@@ -64,11 +64,11 @@ function main() {
       assert.equal(support.loadOpenAIKey(fs), null, 'missing auth profile should not throw or read retired gateway');
 
       const selected = support.applyFastest(fs, [
-        { ok: true, provider: 'gemini-oauth', modelId: 'gemini-oauth/gemini-2.5-flash' },
+        { ok: true, provider: 'gemini-cli-oauth', modelId: 'gemini-cli-oauth/gemini-2.5-flash' },
       ]);
-      assert.equal(selected, 'gemini-oauth/gemini-2.5-flash');
+      assert.equal(selected, 'gemini-cli-oauth/gemini-2.5-flash');
       const saved = JSON.parse(fs.readFileSync(support.LLM_CONTROL_CONFIG, 'utf8'));
-      assert.equal(saved.agents.defaults.model.primary, 'gemini-oauth/gemini-2.5-flash');
+      assert.equal(saved.agents.defaults.model.primary, 'gemini-cli-oauth/gemini-2.5-flash');
     });
 
     console.log(JSON.stringify({

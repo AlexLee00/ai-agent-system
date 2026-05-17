@@ -42,7 +42,7 @@ async function generateReport() {
       const label = provider === 'claude-code-oauth' ? '🧠 Claude Code OAuth'
         : provider === 'openai-oauth' ? '🟩 OpenAI OAuth'
           : provider === 'gemini-cli-oauth' ? '🟦 Gemini CLI OAuth'
-            : provider === 'gemini-oauth' ? '🟪 Gemini OAuth'
+            : provider === 'gemini-oauth' ? '🟦 Gemini CLI OAuth'
               : provider === 'groq' ? '⚡ Groq'
                 : provider === 'failed' ? '❌ Failed'
                   : `🔹 ${provider || 'unknown'}`;

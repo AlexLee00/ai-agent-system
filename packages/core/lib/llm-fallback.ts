@@ -606,6 +606,7 @@ function _getGeminiOAuthProjectId(model = ''): string {
     : '';
   return String(
     proProjectId
+      || process.env.GEMINI_CLI_OAUTH_PROJECT_ID
       || process.env.GEMINI_OAUTH_PROJECT_ID
       || process.env.GOOGLE_CLOUD_QUOTA_PROJECT
       || process.env.GOOGLE_CLOUD_PROJECT
@@ -634,6 +635,7 @@ function _getGeminiCodeAssistProjectId(model = ''): string {
     proProjectId
       || process.env.GEMINI_CODE_ASSIST_PROJECT_ID
       || process.env.GEMINI_CODEASSIST_PROJECT_ID
+      || process.env.GEMINI_CLI_OAUTH_PROJECT_ID
       || process.env.GEMINI_OAUTH_PROJECT_ID
       || process.env.GOOGLE_CLOUD_QUOTA_PROJECT
       || process.env.GOOGLE_CLOUD_PROJECT
@@ -1533,7 +1535,7 @@ async function _callGeminiOAuth({ model, maxTokens, temperature = 0.1, systemPro
       choices: [{ message: { content: text } }],
       usage: null,
       _geminiOAuth: {
-        provider: 'gemini-oauth',
+        provider: 'gemini-cli-oauth',
         model: resolvedModel,
       },
     };
@@ -1691,12 +1693,12 @@ async function _callProvider(
       };
     }
     case 'gemini-oauth': {
-      const resp = await _callGeminiOAuth(normalizedOpts);
+      const resp = await _callGeminiCliOAuth(normalizedOpts);
       return {
         raw: resp,
         text: _extractText(resp, 'openai'),
         usage: resp.usage,
-        provider: resp?._geminiOAuth?.provider || provider,
+        provider: resp?._geminiOAuth?.provider || 'gemini-cli-oauth',
         model: resp?._geminiOAuth?.model || model,
       };
     }

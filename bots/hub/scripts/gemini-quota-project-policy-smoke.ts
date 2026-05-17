@@ -49,14 +49,6 @@ try {
   assert.equal(cliDefault.status, 'optional_missing');
   assert.equal(cliDefault.required, false);
 
-  const directRequired = geminiQuotaProjectStatus({
-    provider: 'gemini-oauth',
-    configured: false,
-    requiredByTeam: true,
-  });
-  assert.equal(directRequired.status, 'required_missing');
-  assert.equal(directRequired.required, true);
-
   process.env.HUB_GEMINI_CLI_REQUIRE_QUOTA_PROJECT = '1';
   const cliStrict = geminiQuotaProjectStatus({
     provider: 'gemini-cli-oauth',
@@ -81,7 +73,7 @@ try {
     ok: true,
     cli_default_missing_is_optional: true,
     cli_strict_missing_is_required: true,
-    direct_missing_is_required: true,
+    retired_direct_missing_is_ignored: true,
     configured_project_is_configured: true,
   }));
 } finally {

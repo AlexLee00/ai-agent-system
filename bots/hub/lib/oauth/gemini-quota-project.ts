@@ -1,4 +1,5 @@
 const QUOTA_PROJECT_ENV_NAMES = [
+  'GEMINI_CLI_OAUTH_PROJECT_ID',
   'GEMINI_OAUTH_PROJECT_ID',
   'GOOGLE_CLOUD_QUOTA_PROJECT',
   'GOOGLE_CLOUD_PROJECT',
@@ -10,7 +11,8 @@ function isEnabled(value) {
 
 function resolveGeminiQuotaProject(record = null, extra = null) {
   return String(
-    process.env.GEMINI_OAUTH_PROJECT_ID
+    process.env.GEMINI_CLI_OAUTH_PROJECT_ID
+      || process.env.GEMINI_OAUTH_PROJECT_ID
       || process.env.GOOGLE_CLOUD_QUOTA_PROJECT
       || process.env.GOOGLE_CLOUD_PROJECT
       || extra?.quota_project_id
@@ -30,7 +32,7 @@ function geminiCliQuotaProjectRequired(env = process.env) {
 }
 
 function geminiDirectQuotaProjectRequired(requiredByTeam) {
-  return Boolean(requiredByTeam);
+  return false;
 }
 
 function geminiQuotaProjectStatus(options) {

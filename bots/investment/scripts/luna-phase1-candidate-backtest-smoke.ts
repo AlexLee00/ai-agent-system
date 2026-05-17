@@ -58,8 +58,10 @@ const unrealisticSharpeQuality = candidateBacktestTest.evaluateQuality([
   { status: 'ok', total_trades: 4, sharpe_ratio: 25, max_drawdown: 4, win_rate: 75 },
 ]);
 assert.equal(unrealisticSharpeQuality.wouldBlock, true, 'unrealistic sharpe must would-block');
+assert.equal(unrealisticSharpeQuality.gateStatus, 'would_block_unstable_backtest', 'unrealistic sharpe should route to stabilization before strategy repair');
 assert.equal(unrealisticSharpeQuality.sharpe, 8, 'stored sharpe should be capped for promotion sanity');
 assert.ok(unrealisticSharpeQuality.reasons.some((reason) => reason.startsWith('unrealistic_sharpe')), 'unrealistic sharpe reason should be explicit');
+assert.ok(unrealisticSharpeQuality.reasons.some((reason) => reason.startsWith('backtest_unstable_sample')), 'unstable sample reason should be explicit');
 
 const payload = {
   ok: true,

@@ -4,7 +4,6 @@
 import { checkTokenHealth, checkOpenAIOAuthHealth, checkGroqAccounts } from '../lib/llm/oauth-monitor';
 
 const { PROFILES } = require('../lib/runtime-profiles.ts');
-const { getGeminiOauthStatus } = require('../lib/oauth/providers/gemini-oauth.ts');
 const { getProviderRecord } = require('../lib/oauth/token-store.ts');
 const { readGeminiCliCredentials } = require('../lib/oauth/gemini-cli-credentials.ts');
 const {
@@ -19,10 +18,10 @@ function routeToProvider(route: string) {
   if (normalized.startsWith('claude-code/')) return 'claude-code-oauth';
   if (normalized.startsWith('openai-oauth/')) return 'openai-oauth';
   if (normalized.startsWith('gemini-cli-oauth/')) return 'gemini-cli-oauth';
-  if (normalized.startsWith('gemini-oauth/')) return 'gemini-oauth';
+  if (normalized.startsWith('gemini-oauth/')) return 'gemini-cli-oauth';
   if (normalized.startsWith('groq/')) return 'groq';
   if (normalized.startsWith('openai/')) return 'openai';
-  if (normalized.startsWith('google-gemini-cli/') || normalized.startsWith('gemini/')) return 'gemini';
+  if (normalized.startsWith('google-gemini-cli/') || normalized.startsWith('gemini/')) return 'gemini-cli-oauth';
   if (normalized.startsWith('local/')) return 'local';
   return '';
 }
@@ -55,16 +54,14 @@ function firstOauthRoute(profile: any) {
     const provider = routeToProvider(route);
     return provider === 'openai-oauth'
       || provider === 'claude-code-oauth'
-      || provider === 'gemini-cli-oauth'
-      || provider === 'gemini-oauth';
+      || provider === 'gemini-cli-oauth';
   });
 }
 
 function isOauthProvider(provider: string) {
   return provider === 'openai-oauth'
     || provider === 'claude-code-oauth'
-    || provider === 'gemini-cli-oauth'
-    || provider === 'gemini-oauth';
+    || provider === 'gemini-cli-oauth';
 }
 
 function summarizeTeamCoverage() {
@@ -97,6 +94,9 @@ function routeFamily(route: string) {
   const text = String(route || '');
   if (!text) return null;
   const [provider, model] = text.split('/');
+  if (provider === 'gemini-oauth' || provider === 'gemini' || provider === 'google-gemini-cli') {
+    return model ? `gemini-cli-oauth/${model}` : 'gemini-cli-oauth';
+  }
   return model ? `${provider}/${model}` : provider;
 }
 
@@ -107,33 +107,22 @@ function anyProfileRouteUses(providerName: string) {
 }
 
 async function main() {
-  const [claude, openai, gemini, groq] = await Promise.all([
+  const [claude, openai, groq] = await Promise.all([
     checkTokenHealth(),
     checkOpenAIOAuthHealth(),
-    getGeminiOauthStatus(),
     checkGroqAccounts(),
   ]);
   const warnHours = refreshWarnHours();
   const openaiExpiresInHours = tokenExpiresInHours(getProviderRecord('openai-codex-oauth')?.token || null);
-  const geminiRecord = getProviderRecord('gemini-oauth');
   const geminiCliRecord = getProviderRecord('gemini-cli-oauth');
   const geminiCliLocal = readGeminiCliCredentials({
     credentialsFile: geminiCliRecord?.metadata?.credential_path || process.env.GEMINI_CLI_OAUTH_CREDS_FILE,
   });
-  const geminiExpiresInHours = tokenExpiresInHours(geminiRecord?.token || null);
   const geminiCliExpiresInHours = tokenExpiresInHours(geminiCliRecord?.token || geminiCliLocal?.token || null);
   const teamCoverage = summarizeTeamCoverage();
   const teamsWithoutOauthRoute = teamCoverage.filter((item) => !item.oauth_route_available);
-  const geminiRequired = teamCoverage.some((item) => item.selected_provider === 'gemini-oauth' || item.oauth_route_family?.startsWith('gemini-oauth/'));
   const geminiCliRequired = teamCoverage.some((item) => item.selected_provider === 'gemini-cli-oauth' || item.oauth_route_family?.startsWith('gemini-cli-oauth/'))
     || anyProfileRouteUses('gemini-cli-oauth');
-  const geminiReady = Boolean(gemini?.has_token && !gemini?.expired && gemini?.quota_project_configured);
-  const geminiQuotaConfigured = Boolean(gemini?.quota_project_configured);
-  const geminiQuotaPolicy = geminiQuotaProjectStatus({
-    provider: 'gemini-oauth',
-    configured: geminiQuotaConfigured,
-    requiredByTeam: geminiRequired,
-  });
   const geminiCliReady = Boolean(
     geminiCliRecord?.token?.refresh_token
       || geminiCliLocal?.token?.refresh_token,
@@ -151,7 +140,6 @@ async function main() {
   const ok = Boolean(
     claude.healthy
       && openai.healthy
-      && (!geminiRequired || geminiReady)
       && (!geminiCliRequired || geminiCliReady)
       && (!geminiCliQuotaPolicy.required || geminiCliQuotaPolicy.configured)
       && teamsWithoutOauthRoute.length === 0,
@@ -183,23 +171,6 @@ async function main() {
           ? Number(openaiExpiresInHours) <= warnHours
           : false,
         error: openai.error || null,
-      },
-      gemini_oauth: {
-        enabled: Boolean(gemini?.enabled),
-        required_by_team: geminiRequired,
-        healthy: geminiRequired ? geminiReady : Boolean(gemini?.has_token && !gemini?.expired && gemini?.quota_project_configured),
-        token_present: Boolean(gemini?.has_token),
-        expired: Boolean(gemini?.expired),
-        quota_project_configured: geminiQuotaConfigured,
-        quota_project_required: geminiQuotaPolicy.required,
-        quota_project_status: geminiQuotaPolicy.status,
-        quota_project_reason: geminiQuotaPolicy.reason,
-        expires_in_hours: Number.isFinite(Number(geminiExpiresInHours))
-          ? Math.round(Number(geminiExpiresInHours) * 100) / 100
-          : null,
-        needs_refresh: Number.isFinite(Number(geminiExpiresInHours))
-          ? Number(geminiExpiresInHours) <= warnHours
-          : Boolean(gemini?.expired),
       },
       gemini_cli_oauth: {
         required_by_team: geminiCliRequired,

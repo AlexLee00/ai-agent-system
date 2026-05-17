@@ -43,7 +43,7 @@
     <string>openai-oauth/gpt-5.4</string>
     <key>LLM_CLAUDE_CODE_SONNET_REPLACEMENT</key>
     <string>openai-oauth/gpt-5.4</string>
-    <key>GEMINI_OAUTH_PROJECT_ID</key>
+    <key>GEMINI_CLI_OAUTH_PROJECT_ID</key>
     <string>gen-lang-client-0627707293</string>
     <key>PATH</key>
     <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>

@@ -109,8 +109,13 @@ export function evaluateCandidateBacktestStatus(row = null, env = process.env) {
   const drawdownWouldBlock = Number.isFinite(maxDrawdown) && Number.isFinite(maxDrawdownLimit) && maxDrawdown > maxDrawdownLimit;
   const wouldBlock = row.would_block === true || String(row.would_block).toLowerCase() === 'true' || !fresh || !healthy || drawdownWouldBlock;
   const reasons = parseReasons(row.block_reasons);
+  const gateStatus = String(row.gate_status || row.gateStatus || '').toLowerCase();
+  const unstableBacktest = gateStatus.includes('unstable')
+    || reasons.some((item) => String(item).startsWith('unrealistic_sharpe') || String(item).startsWith('backtest_unstable_sample'));
   const reason = !fresh
     ? 'candidate_backtest_stale'
+    : unstableBacktest
+      ? 'candidate_backtest_unstable'
     : !healthy
       ? 'candidate_backtest_unhealthy'
       : drawdownWouldBlock

@@ -43,6 +43,27 @@ export async function runLunaCandidateBottleneckDiagnosticsSmoke() {
     String(rows.find((row) => row.symbol === 'ALPHA/USDT')?.recommendedRefreshCommand || '').includes('runtime:luna-phase4-strategy-enhancement-shadow'),
     'strategy enhancement rows point to phase4 shadow command',
   );
+  const unstableRows = buildLunaCandidateBottleneckRows([{
+    candidate: { symbol: 'UNREAL/USDT', market: 'crypto', score: 0.81, source: 'fixture', discovered_at: new Date().toISOString() },
+    backtest: {
+      fresh: true,
+      healthy: false,
+      would_block: true,
+      sharpe: 8,
+      max_drawdown: 4,
+      win_rate: 75,
+      gate_status: 'would_block_unstable_backtest',
+      block_reasons: ['unrealistic_sharpe(25.00)', 'backtest_unstable_sample(total_trades=4,min_period_trades=4)'],
+      last_backtest_at: new Date().toISOString(),
+    },
+    predictive: { decision: 'fire', score: 0.71, component_coverage: 1, created_at: new Date().toISOString() },
+    community: { avg_score: 0.39, event_count: 3, source_count: 3, market_event_count: 8, market_source_count: 6, last_seen_at: new Date().toISOString() },
+  }]);
+  const unstable = unstableRows[0];
+  assert.equal(unstable?.primaryBlocker, 'backtest_unstable_or_unrealistic', 'unrealistic sharpe becomes a distinct primary blocker');
+  assert.equal(unstable?.recommendedAction, 'stabilize_backtest_shadow', 'unrealistic sharpe routes to backtest stabilization');
+  assert.ok(String(unstable?.recommendedRefreshCommand || '').includes('--periods=30,90,180,365'), 'stabilization command expands walk-forward periods');
+  assert.equal(unstable?.evidence?.trace?.backtestUnstableOrUnrealistic, true, 'trace marks unstable backtest');
 
   await expectRejectsApplyDryRun();
   const runtime = await runLunaCandidateBottleneckDiagnostics({ fixture: true, dryRun: true, json: true });

@@ -80,15 +80,6 @@ function providerSummary(teamReadiness: any) {
       needs_cli_refresh: Boolean(providers.gemini_cli_oauth?.needs_cli_refresh),
       expires_in_hours: providers.gemini_cli_oauth?.expires_in_hours ?? null,
     },
-    gemini_public_api: {
-      enabled: Boolean(providers.gemini_oauth?.enabled),
-      required_by_team: Boolean(providers.gemini_oauth?.required_by_team),
-      healthy: Boolean(providers.gemini_oauth?.healthy),
-      quota_project_configured: Boolean(providers.gemini_oauth?.quota_project_configured),
-      quota_project_required: Boolean(providers.gemini_oauth?.quota_project_required),
-      quota_project_status: providers.gemini_oauth?.quota_project_status || null,
-      quota_project_reason: providers.gemini_oauth?.quota_project_reason || null,
-    },
   };
 }
 
@@ -138,7 +129,7 @@ function main(): void {
     mode: {
       live_steward_drill: liveSteward,
       require_gemini_quota_project: requireGeminiQuotaProject,
-      public_api_tokens_are_optional: true,
+      gemini_oauth_retired: true,
     },
     providers: provider,
     gemini_cli_readiness: {
@@ -184,9 +175,9 @@ function main(): void {
       error: step.error,
     })),
     next_actions: [
-      ...(geminiQuotaMissing ? ['Set GEMINI_OAUTH_PROJECT_ID or GOOGLE_CLOUD_PROJECT because strict Gemini CLI quota-project readiness is enabled.'] : []),
+      ...(geminiQuotaMissing ? ['Set GEMINI_CLI_OAUTH_PROJECT_ID or GOOGLE_CLOUD_PROJECT because strict Gemini CLI quota-project readiness is enabled.'] : []),
       ...(geminiCodeAssistService?.ok === false && geminiCodeAssistService?.service_status?.activation_url ? [`Enable Gemini for Google Cloud API: ${geminiCodeAssistService.service_status.activation_url}`] : []),
-      ...(!geminiQuotaMissing && provider.gemini_cli_oauth.quota_project_status === 'optional_missing' ? ['Optional: set GEMINI_OAUTH_PROJECT_ID or GOOGLE_CLOUD_PROJECT for direct Gemini API/pro quota attribution.'] : []),
+      ...(!geminiQuotaMissing && provider.gemini_cli_oauth.quota_project_status === 'optional_missing' ? ['Optional: set GEMINI_CLI_OAUTH_PROJECT_ID or GOOGLE_CLOUD_PROJECT for direct Gemini API/pro quota attribution.'] : []),
       ...(provider.claude_code_oauth.needs_refresh ? ['Run Claude Code browser re-auth before token expiry if refresh/import does not recover automatically.'] : []),
       ...(provider.openai_oauth.needs_refresh ? ['Run Codex/OpenAI OAuth re-auth before token expiry if refresh/import does not recover automatically.'] : []),
       ...(provider.gemini_cli_oauth.needs_cli_refresh ? ['Run npm --prefix bots/hub run -s oauth:gemini-cli-readiness -- --live to verify Gemini CLI refresh path; re-run gemini auth login only if live probe fails.'] : []),
@@ -194,7 +185,7 @@ function main(): void {
     ],
     notes: [
       'No provider token, account id, chat id, or raw secret is included in this report.',
-      'Gemini public API remains optional; gemini-cli-oauth is the default local OAuth boundary for Steward/Jay summary routing.',
+      'gemini-oauth is retired in Hub operations; gemini-cli-oauth is the only Gemini OAuth boundary for Steward/Jay summary routing.',
     ],
   };
 

@@ -29,12 +29,11 @@ const PROVIDER_ORDER = [
   'claude-code-oauth',
   'openai-oauth',
   'gemini-cli-oauth',
-  'gemini-oauth',
   'anthropic',
   'groq',
   'failed',
 ];
-const OAUTH_RUNTIME_PROVIDERS = new Set(['claude-code-oauth', 'openai-oauth', 'gemini-cli-oauth', 'gemini-oauth']);
+const OAUTH_RUNTIME_PROVIDERS = new Set(['claude-code-oauth', 'openai-oauth', 'gemini-cli-oauth']);
 const OAUTH4_SELECTOR_OPTIONS = {
   selectorVersion: 'v3.0_oauth_4',
   rolloutPercent: 100,
@@ -90,7 +89,7 @@ function providerLabel(provider = '') {
   if (provider === 'claude-code-oauth') return 'Claude Code OAuth';
   if (provider === 'openai-oauth') return 'OpenAI OAuth';
   if (provider === 'gemini-cli-oauth') return 'Gemini CLI OAuth';
-  if (provider === 'gemini-oauth') return 'Gemini OAuth';
+  if (provider === 'gemini-oauth') return 'Gemini CLI OAuth';
   if (provider === 'anthropic') return 'Anthropic SDK';
   if (provider === 'groq') return 'Groq';
   if (provider === 'failed') return 'Failed';

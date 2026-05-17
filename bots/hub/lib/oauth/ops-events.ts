@@ -21,7 +21,7 @@ function normalizeProvider(key) {
     .replace(/gemini-cli-oauth/i, 'gemini-cli-oauth')
     .replace(/gemini-codeassist-service/i, 'gemini-codeassist-service')
     .replace(/gemini-codeassist-oauth/i, 'gemini-codeassist-oauth')
-    .replace(/gemini-oauth/i, 'gemini-oauth');
+    .replace(/gemini-oauth/i, 'gemini-cli-oauth');
 }
 
 function scrub(value, depth = 0) {
@@ -97,7 +97,6 @@ function providerEntries(report) {
   return [
     ['claude-code-oauth', report?.claude_code_oauth],
     ['openai-oauth', report?.openai_oauth],
-    ['gemini-oauth', report?.gemini_oauth],
     ['gemini-cli-oauth', report?.gemini_cli_oauth],
     ['gemini-codeassist-service', report?.gemini_codeassist_service],
   ].filter(([, status]) => status && typeof status === 'object');

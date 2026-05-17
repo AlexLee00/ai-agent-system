@@ -63,7 +63,7 @@ function classifyGeminiCliLiveError(errorText: unknown): GeminiCliLiveErrorClass
       kind: 'quota_project_missing',
       service,
       activationUrl,
-      operatorAction: 'Set GEMINI_OAUTH_PROJECT_ID or GOOGLE_CLOUD_PROJECT to a Gemini CLI quota project.',
+      operatorAction: 'Set GEMINI_CLI_OAUTH_PROJECT_ID or GOOGLE_CLOUD_PROJECT to a Gemini CLI quota project.',
     };
   }
 

@@ -406,7 +406,7 @@ async function _callRouteUnchecked(normalizedRoute, req, timeoutMs, chainEntry =
     });
   }
   if (normalizedRoute.startsWith('gemini-oauth/')) {
-    return callGeminiOAuth({
+    return callGeminiCliOAuth({
       prompt: req.prompt,
       model: normalizedRoute.slice('gemini-oauth/'.length),
       systemPrompt: req.systemPrompt,
@@ -465,7 +465,11 @@ function _chainEntryToRoute(entry) {
     const normalizedModel = model.replace(/^openai\//, '').replace(/^openai-oauth\//, '');
     return `openai-oauth/${normalizedModel}`;
   }
-  if (provider === 'gemini-oauth') return model.startsWith('gemini-oauth/') ? model : `gemini-oauth/${model}`;
+  if (provider === 'gemini-oauth') {
+    return model.startsWith('gemini-cli-oauth/')
+      ? model
+      : `gemini-cli-oauth/${model.replace(/^google-gemini-cli\//, '').replace(/^gemini-oauth\//, '').replace(/^gemini\//, '')}`;
+  }
   if (provider === 'gemini-cli-oauth') {
     return model.startsWith('gemini-cli-oauth/')
       ? model
@@ -481,7 +485,7 @@ function _chainEntryToRoute(entry) {
       .replace(/^google-gemini-cli\//, '')
       .replace(/^gemini\//, '')
       .replace(/^gemini-oauth\//, '');
-    return `gemini-oauth/${normalizedModel}`;
+    return `gemini-cli-oauth/${normalizedModel}`;
   }
   return model.includes('/') ? model : `${provider}/${model}`;
 }
@@ -508,8 +512,8 @@ function _routeToProvider(route) {
   if (normalizedRoute.startsWith('openai/')) return 'openai-oauth';
   if (normalizedRoute.startsWith('gemini-codeassist-oauth/')) return 'gemini-codeassist-oauth';
   if (normalizedRoute.startsWith('gemini-cli-oauth/')) return 'gemini-cli-oauth';
-  if (normalizedRoute.startsWith('gemini-oauth/')) return 'gemini-oauth';
-  if (normalizedRoute.startsWith('google-gemini-cli/') || normalizedRoute.startsWith('gemini/')) return 'gemini-oauth';
+  if (normalizedRoute.startsWith('gemini-oauth/')) return 'gemini-cli-oauth';
+  if (normalizedRoute.startsWith('google-gemini-cli/') || normalizedRoute.startsWith('gemini/')) return 'gemini-cli-oauth';
   return route;
 }
 
@@ -531,7 +535,7 @@ function _normalizeRoute(route, abstractModel = 'anthropic_haiku') {
     return `openai-oauth/${route.slice('openai/'.length)}`;
   }
   if (route.startsWith('google-gemini-cli/')) {
-    return `gemini-oauth/${route.slice('google-gemini-cli/'.length)}`;
+    return `gemini-cli-oauth/${route.slice('google-gemini-cli/'.length)}`;
   }
   if (route.startsWith('gemini-cli/')) {
     return `gemini-cli-oauth/${route.slice('gemini-cli/'.length)}`;
@@ -540,7 +544,7 @@ function _normalizeRoute(route, abstractModel = 'anthropic_haiku') {
     return `gemini-codeassist-oauth/${route.slice('gemini-code-assist-oauth/'.length)}`;
   }
   if (route.startsWith('gemini/')) {
-    return `gemini-oauth/${route.slice('gemini/'.length)}`;
+    return `gemini-cli-oauth/${route.slice('gemini/'.length)}`;
   }
 
   return route;

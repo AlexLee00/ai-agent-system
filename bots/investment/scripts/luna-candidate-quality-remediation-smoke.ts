@@ -3,7 +3,7 @@
 
 import assert from 'node:assert/strict';
 import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
-import { CONFIRM, runLunaCandidateQualityRemediation } from './runtime-luna-candidate-quality-remediation.ts';
+import { CONFIRM, __test as remediationTest, runLunaCandidateQualityRemediation } from './runtime-luna-candidate-quality-remediation.ts';
 
 export async function runLunaCandidateQualityRemediationSmoke() {
   await assert.rejects(
@@ -27,6 +27,17 @@ export async function runLunaCandidateQualityRemediationSmoke() {
   assert.equal(planned.status, 'luna_candidate_quality_remediation_planned', 'plan-only status');
   assert.equal(planned.writeMode, 'plan-only', 'plan-only write mode');
   assert.equal(planned.summary.liveMutation, false, 'no live mutation');
+  assert.deepEqual(planned.cooldownSummary, {
+    total: 0,
+    byAction: {},
+    backtestStabilization: 0,
+    candidateCooldown: 0,
+    nextReleaseAt: null,
+    nextReleaseSymbol: null,
+    nextReleaseMarket: null,
+  }, 'fixture exposes cooldown summary');
+  assert.equal(planned.backtestCooldownBlockedCount, 0, 'fixture exposes cooldown-blocked count');
+  assert.deepEqual(planned.backtestCooldownBlocked, [], 'fixture has no cooldown-blocked backtest targets');
   assert.equal(planned.coverage.ok, true, 'fixture coverage passes');
   assert.equal(planned.remediationPlan.discoveryRefresh, true, 'fixture plans replacement discovery refresh');
   assert.equal(planned.remediationPlan.backtestRefresh, true, 'fixture plans backtest refresh');
@@ -55,6 +66,55 @@ export async function runLunaCandidateQualityRemediationSmoke() {
     assert.equal(planned.plannedCommands.some((cmd) => cmd.includes(expected)), true, `planned command includes targeted symbols: ${expected}`);
   }
   assert.equal(planned.plannedCommands.every((cmd) => !cmd.includes('launchctl') && !cmd.includes('live-fire')), true, 'planned commands avoid protected/live-fire operations');
+  const stabilizationTargets = remediationTest.backtestTargetSymbols([
+    {
+      symbol: 'UNREAL/USDT',
+      market: 'crypto',
+      primaryBlocker: 'backtest_unstable_or_unrealistic',
+      recommendedAction: 'stabilize_backtest_shadow',
+      reasons: ['backtest_unstable_or_unrealistic'],
+    },
+  ], 12, new Map([['UNREAL/USDT|crypto', 'candidate_cooldown_shadow']]));
+  assert.deepEqual(stabilizationTargets, ['UNREAL/USDT'], 'stabilization bypasses old cooldown for revalidation');
+  const stabilizationCooldownTargets = remediationTest.backtestTargetSymbols([
+    {
+      symbol: 'UNREAL/USDT',
+      market: 'crypto',
+      primaryBlocker: 'backtest_unstable_or_unrealistic',
+      recommendedAction: 'stabilize_backtest_shadow',
+      reasons: ['backtest_unstable_or_unrealistic'],
+    },
+  ], 12, new Map([['UNREAL/USDT|crypto', 'backtest_stabilization_shadow']]));
+  assert.deepEqual(stabilizationCooldownTargets, [], 'recent stabilization cooldown blocks repeated revalidation');
+  assert.deepEqual(remediationTest.backtestCooldownBlockedRows([
+    {
+      symbol: 'UNREAL/USDT',
+      market: 'crypto',
+      primaryBlocker: 'backtest_unstable_or_unrealistic',
+      recommendedAction: 'stabilize_backtest_shadow',
+      reasons: ['backtest_unstable_or_unrealistic'],
+    },
+  ], [{
+    key: 'UNREAL/USDT|crypto',
+    symbol: 'UNREAL/USDT',
+    market: 'crypto',
+    governanceAction: 'backtest_stabilization_shadow',
+    cooldownUntil: '2099-01-01T00:00:00.000Z',
+  }]), [{
+    symbol: 'UNREAL/USDT',
+    market: 'crypto',
+    primaryBlocker: 'backtest_unstable_or_unrealistic',
+    recommendedAction: 'stabilize_backtest_shadow',
+    cooldownAction: 'backtest_stabilization_shadow',
+    cooldownUntil: '2099-01-01T00:00:00.000Z',
+  }], 'cooldown-blocked backtest rows are visible');
+  assert.equal(remediationTest.shouldUseStabilityBacktestPeriods([{
+    symbol: 'UNREAL/USDT',
+    market: 'crypto',
+    primaryBlocker: 'backtest_unstable_or_unrealistic',
+    recommendedAction: 'stabilize_backtest_shadow',
+    reasons: ['backtest_unstable_or_unrealistic'],
+  }]), true, 'stabilization expands walk-forward periods');
 
   const capped = await runLunaCandidateQualityRemediation({
     fixture: true,
@@ -82,6 +142,8 @@ export async function runLunaCandidateQualityRemediationSmoke() {
       fullShadowLoop: true,
       qualityGovernance: true,
       symbolTargeted: true,
+      stabilizationCooldownBypass: true,
+      cooldownVisibility: true,
       symbolCaps: true,
       liveMutation: false,
     },

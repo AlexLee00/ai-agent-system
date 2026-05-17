@@ -3,7 +3,7 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 import { spawnSync } from 'child_process';
-import { checkTokenHealth, checkOpenAIOAuthHealth, checkGeminiOAuthHealth, checkGroqAccounts } from '../lib/llm/oauth-monitor.js';
+import { checkTokenHealth, checkOpenAIOAuthHealth, checkGroqAccounts } from '../lib/llm/oauth-monitor.js';
 const {
   readOpenAiCodexLocalCredentials,
   readClaudeCodeLocalCredentials,
@@ -37,6 +37,18 @@ function thresholdHours(name: string, fallback: number): number {
   return Number.isFinite(value) && value > 0 ? value : fallback;
 }
 
+function oauthRefreshHours(name: string): number {
+  return thresholdHours(name, 3);
+}
+
+function oauthAlarmHours(name: string): number {
+  return thresholdHours(name, 5);
+}
+
+function oauthCriticalHours(name: string): number {
+  return thresholdHours(name, 1);
+}
+
 function tokenExpiresInHours(token: any): number | null {
   const expiresAt = token?.expires_at || token?.expiresAt || null;
   const expiresMs = expiresAt ? new Date(expiresAt).getTime() : NaN;
@@ -53,17 +65,24 @@ function oauthAlarmCachePath(): string {
   return path.join(monitorStateDir(), 'oauth-monitor-alarm-cache.json');
 }
 
-function oauthAlarmCooldownMs(level: number): number {
-  const envKey = level >= 3
+function isHealthyReauthAlarm({ title, payload }: any): boolean {
+  return payload?.healthy === true && String(title || '').includes('재인증');
+}
+
+function oauthAlarmCooldownMs(level: number, context: any = {}): number {
+  const reauthAlarm = isHealthyReauthAlarm(context);
+  const envKey = reauthAlarm
+    ? 'HUB_OAUTH_MONITOR_REAUTH_ALARM_COOLDOWN_MINUTES'
+    : level >= 3
     ? 'HUB_OAUTH_MONITOR_CRITICAL_ALARM_COOLDOWN_MINUTES'
     : 'HUB_OAUTH_MONITOR_WARN_ALARM_COOLDOWN_MINUTES';
-  const fallbackMinutes = level >= 3 ? 15 : 120;
+  const fallbackMinutes = reauthAlarm ? 120 : level >= 3 ? 15 : 120;
   const minutes = Number(process.env[envKey] || fallbackMinutes);
   return Math.max(1, Number.isFinite(minutes) ? minutes : fallbackMinutes) * 60 * 1000;
 }
 
 function shouldSuppressOAuthAlarm({ level, title, payload }: any): boolean {
-  const cooldownMs = oauthAlarmCooldownMs(Number(level || 2));
+  const cooldownMs = oauthAlarmCooldownMs(Number(level || 2), { title, payload });
   const provider = String(payload?.provider || 'unknown').trim() || 'unknown';
   const signature = `${provider}|${String(title || 'oauth_alarm')}|${Number(level || 2)}`;
   try {
@@ -234,53 +253,6 @@ async function withMonitorOAuthLock(provider: string, reason: string, work: () =
   }
 }
 
-const DEFAULT_GEMINI_TOKEN_URL = 'https://oauth2.googleapis.com/token';
-const DEFAULT_GEMINI_SCOPE = 'https://www.googleapis.com/auth/cloud-platform https://www.googleapis.com/auth/generative-language.retriever';
-
-function resolveUserPath(filePath: string): string {
-  const raw = String(filePath || '').trim();
-  if (!raw) return raw;
-  if (raw === '~') return os.homedir();
-  if (raw.startsWith('~/')) return path.join(os.homedir(), raw.slice(2));
-  return path.resolve(raw);
-}
-
-function defaultGeminiAdcPath(): string {
-  return path.join(os.homedir(), '.config', 'gcloud', 'application_default_credentials.json');
-}
-
-function readJsonFileSafely(filePath: string) {
-  try {
-    return JSON.parse(fs.readFileSync(filePath, 'utf8'));
-  } catch {
-    return null;
-  }
-}
-
-function readGeminiAdcCredentials(record: any) {
-  const candidates = [
-    record?.metadata?.adc_path,
-    process.env.GEMINI_OAUTH_ADC_FILE,
-    process.env.GOOGLE_APPLICATION_CREDENTIALS,
-    defaultGeminiAdcPath(),
-  ].map(resolveUserPath).filter(Boolean);
-
-  for (const filePath of candidates) {
-    const payload = readJsonFileSafely(filePath);
-    if (payload?.client_id && payload?.refresh_token) {
-      return { ok: true, path: filePath, payload };
-    }
-  }
-
-  return {
-    ok: false,
-    error: 'gemini_adc_credentials_missing',
-    details: {
-      searched: candidates.map((candidate) => path.basename(candidate)),
-    },
-  };
-}
-
 function readGeminiCliCredentialForMonitor(record: any) {
   const imported = readGeminiCliCredentials({
     credentialsFile: record?.metadata?.credential_path || process.env.GEMINI_CLI_OAUTH_CREDS_FILE,
@@ -298,18 +270,10 @@ function readGeminiCliCredentialForMonitor(record: any) {
   return imported;
 }
 
-function geminiScopes(record: any, adc: any): string {
-  const tokenScopes = record?.token?.scopes;
-  if (Array.isArray(tokenScopes) && tokenScopes.length > 0) return tokenScopes.map(String).join(' ');
-  if (typeof record?.token?.scope === 'string' && record.token.scope.trim()) return record.token.scope.trim();
-  if (typeof adc?.payload?.scopes === 'string' && adc.payload.scopes.trim()) return adc.payload.scopes.trim();
-  if (Array.isArray(adc?.payload?.scopes) && adc.payload.scopes.length > 0) return adc.payload.scopes.map(String).join(' ');
-  return String(process.env.HUB_GEMINI_OAUTH_SCOPES || process.env.GEMINI_OAUTH_SCOPES || DEFAULT_GEMINI_SCOPE).trim();
-}
-
 function geminiQuotaProject(record: any, adc: any): string {
   return String(
-    process.env.GEMINI_OAUTH_PROJECT_ID
+    process.env.GEMINI_CLI_OAUTH_PROJECT_ID
+      || process.env.GEMINI_OAUTH_PROJECT_ID
       || process.env.GOOGLE_CLOUD_QUOTA_PROJECT
       || process.env.GOOGLE_CLOUD_PROJECT
       || record?.metadata?.quota_project_id
@@ -600,160 +564,6 @@ async function refreshOpenAiCodexHubToken(reason: string) {
   }
 }
 
-function buildGeminiRefreshConfig(record: any) {
-  const adc = readGeminiAdcCredentials(record);
-  const envConfig = buildOAuthProviderConfig('gemini-oauth', { query: {}, body: {} });
-  if (envConfig.ok) {
-    return {
-      ok: true,
-      source: 'env_oauth_config',
-      adc,
-      config: {
-        ...envConfig,
-        clientSecret: envConfig.clientSecret || (adc.ok ? adc.payload?.client_secret : '') || '',
-        scope: envConfig.scope || geminiScopes(record, adc.ok ? adc : null),
-      },
-    };
-  }
-
-  if (adc.ok) {
-    return {
-      ok: true,
-      source: 'google_adc',
-      adc,
-      config: {
-        ok: true,
-        provider: 'gemini-oauth',
-        publicProviderName: 'gemini',
-        tokenUrl: String(process.env.GEMINI_OAUTH_TOKEN_URL || process.env.HUB_GEMINI_OAUTH_TOKEN_URL || DEFAULT_GEMINI_TOKEN_URL).trim(),
-        clientId: String(adc.payload.client_id || '').trim(),
-        clientSecret: String(adc.payload.client_secret || '').trim(),
-        scope: geminiScopes(record, adc),
-        tokenBodyFormat: 'form',
-      },
-    };
-  }
-
-  return {
-    ok: false,
-    source: 'gemini_refresh_config',
-    error: envConfig.error || adc.error || 'gemini_oauth_config_missing',
-    details: {
-      missing: envConfig.missing || [],
-      adc_error: adc.error || null,
-    },
-  };
-}
-
-async function refreshGeminiOAuthHubToken(reason: string) {
-  const record = getProviderRecord('gemini-oauth');
-  const cliImport = readGeminiCliCredentialForMonitor(record);
-  if (cliImport.ok) {
-    const cliHours = tokenExpiresInHours(cliImport.token);
-    const cliFresh = Number.isFinite(Number(cliHours)) && Number(cliHours) > 0;
-    if (cliFresh) {
-      const metadata = {
-        ...(cliImport.metadata || {}),
-        imported_by: 'hub_oauth_monitor',
-        imported_at: new Date().toISOString(),
-        import_reason: reason,
-      };
-      setProviderToken('gemini-cli-oauth', cliImport.token, metadata);
-      setProviderCanary('gemini-cli-oauth', {
-        ok: true,
-        details: {
-          source: metadata.source,
-          expires_at: cliImport.token?.expires_at || null,
-          imported_by: 'hub_oauth_monitor',
-          quota_project_configured: Boolean(cliImport.quota_project_configured),
-          identity_present: Boolean(metadata.identity_present),
-        },
-      });
-    }
-  }
-
-  const built = buildGeminiRefreshConfig(record);
-  const refreshToken = String(
-    record?.token?.refresh_token
-      || record?.token?.refreshToken
-      || (built?.adc?.ok ? built.adc.payload?.refresh_token : '')
-      || '',
-  ).trim();
-  if (!refreshToken) {
-    return {
-      ok: false,
-      source: 'hub_oauth_refresh',
-      error: 'missing_refresh_token',
-    };
-  }
-
-  if (!built.ok) {
-    return {
-      ok: false,
-      source: 'hub_oauth_refresh',
-      error: built.error || 'oauth_config_missing',
-      details: built.details || {},
-    };
-  }
-
-  try {
-    const { response, payload } = await refreshOAuthToken(built.config, refreshToken);
-    if (!response.ok) {
-      return {
-        ok: false,
-        source: 'hub_oauth_refresh',
-        error: String(payload?.error_description || payload?.error?.message || payload?.error || `http_${response.status}`).slice(0, 240),
-        details: { status: response.status, config_source: built.source },
-      };
-    }
-
-    const normalized = normalizeOAuthToken('gemini-oauth', payload, record?.token || { refresh_token: refreshToken });
-    if (!normalized.ok) {
-      return {
-        ok: false,
-        source: 'hub_oauth_refresh',
-        error: normalized.error || 'token_normalize_failed',
-      };
-    }
-
-    const metadata = {
-      ...(record?.metadata || {}),
-      provider: 'gemini-oauth',
-      source: 'hub_oauth_refresh',
-      provider_name: 'gemini',
-      oauth_flow: 'refresh_token',
-      refreshed_at: new Date().toISOString(),
-      refresh_reason: reason,
-      refresh_config_source: built.source,
-      runtime_enabled: true,
-      ...(built.adc?.ok ? { adc_path: built.adc.path } : {}),
-      ...(geminiQuotaProject(record, built.adc?.ok ? built.adc : null) ? { quota_project_id: geminiQuotaProject(record, built.adc?.ok ? built.adc : null) } : {}),
-    };
-    setProviderToken('gemini-oauth', normalized.token, metadata);
-    setProviderCanary('gemini-oauth', {
-      ok: true,
-      details: {
-        source: metadata.source,
-        expires_at: normalized.token?.expires_at || null,
-        refreshed_by: 'hub_oauth_monitor',
-        refresh_config_source: built.source,
-      },
-    });
-    return {
-      ok: true,
-      source: 'hub_oauth_refresh',
-      refresh_config_source: built.source,
-      expires_in_hours: tokenExpiresInHours(normalized.token),
-    };
-  } catch (error) {
-    return {
-      ok: false,
-      source: 'hub_oauth_refresh',
-      error: String(error?.message || error).slice(0, 240),
-    };
-  }
-}
-
 async function sendOAuthAlarm({ level, title, message, payload }: any) {
   if (!flag('HUB_OAUTH_MONITOR_SEND_ALARM', true)) return { ok: false, skipped: true };
   if (shouldSuppressOAuthAlarm({ level, title, payload })) {
@@ -769,19 +579,20 @@ async function sendOAuthAlarm({ level, title, message, payload }: any) {
 }
 
 async function checkClaudeCodeOAuth() {
-  const warnHours = thresholdHours('HUB_CLAUDE_OAUTH_WARN_HOURS', 4);
-  const criticalHours = thresholdHours('HUB_CLAUDE_OAUTH_CRITICAL_HOURS', 1);
+  const alarmHours = oauthAlarmHours('HUB_CLAUDE_OAUTH_WARN_HOURS');
+  const refreshHours = oauthRefreshHours('HUB_CLAUDE_OAUTH_REFRESH_HOURS');
+  const criticalHours = oauthCriticalHours('HUB_CLAUDE_OAUTH_CRITICAL_HOURS');
   let claudeOauth = await checkTokenHealth();
   let refresh = null;
   let reimport = null;
   let liveProbe = null;
   const initialExpires = Number(claudeOauth.expires_in_hours || 0);
 
-  if (!claudeOauth.healthy || initialExpires <= warnHours) {
+  if (!claudeOauth.healthy || initialExpires <= refreshHours) {
     refresh = await withMonitorOAuthLock('claude-code-cli', claudeOauth.healthy ? 'refresh_window' : 'unhealthy', () =>
       refreshClaudeCodeHubToken(claudeOauth.healthy ? 'refresh_window' : 'unhealthy'));
     claudeOauth = await checkTokenHealth();
-    if (!refresh?.ok && (!claudeOauth.healthy || Number(claudeOauth.expires_in_hours || 0) <= warnHours)) {
+    if (!refresh?.ok && (!claudeOauth.healthy || Number(claudeOauth.expires_in_hours || 0) <= refreshHours)) {
       reimport = await withMonitorOAuthLock('claude-code-cli', claudeOauth.healthy ? 'refresh_window_after_refresh' : 'unhealthy_after_refresh', () =>
         maybeReimportClaudeCodeCredential(claudeOauth.healthy ? 'refresh_window_after_refresh' : 'unhealthy_after_refresh'));
       claudeOauth = await checkTokenHealth();
@@ -830,18 +641,20 @@ async function checkClaudeCodeOAuth() {
     return { ...claudeOauth, refresh, reimport, live_probe: liveProbe };
   }
 
-  if (expires <= warnHours) {
+  if (expires <= alarmHours) {
     const level = expires <= criticalHours ? 3 : 2;
     console.warn(`[oauth-monitor] Claude OAuth 갱신 필요: ${expires.toFixed(1)}h 후 만료`);
     await sendOAuthAlarm({
       level,
       title: '[Hub OAuth] Claude Code OAuth 재인증 예정',
-      message: `Claude Code OAuth 토큰이 ${expires.toFixed(1)}시간 후 만료됩니다. Hub는 refresh_token 갱신과 Keychain 재import를 순서대로 시도했습니다. 만료 전 브라우저 재인증을 진행해 주세요.`,
+      message: `Claude Code OAuth 토큰이 ${expires.toFixed(1)}시간 후 만료됩니다. Hub는 ${refreshHours}시간 이내부터 refresh_token 갱신과 Keychain 재import를 자동 시도합니다. 만료 전 브라우저 재인증 상태를 확인해 주세요.`,
       payload: {
         provider: 'claude-code-oauth',
         healthy: true,
-        needs_refresh: true,
+        needs_refresh: expires <= refreshHours,
         expires_in_hours: Math.round(expires * 10) / 10,
+        alarm_window_hours: alarmHours,
+        refresh_window_hours: refreshHours,
         refresh,
         reimport,
         live_probe: liveProbe,
@@ -857,21 +670,40 @@ async function checkClaudeCodeOAuth() {
 }
 
 async function checkOpenAiCodexOAuth() {
-  const warnHours = thresholdHours('HUB_OPENAI_OAUTH_WARN_HOURS', 24);
-  const criticalHours = thresholdHours('HUB_OPENAI_OAUTH_CRITICAL_HOURS', 4);
+  const alarmHours = oauthAlarmHours('HUB_OPENAI_OAUTH_WARN_HOURS');
+  const refreshHours = oauthRefreshHours('HUB_OPENAI_OAUTH_REFRESH_HOURS');
+  const criticalHours = oauthCriticalHours('HUB_OPENAI_OAUTH_CRITICAL_HOURS');
   let openaiOauth = await checkOpenAIOAuthHealth();
   let refresh = null;
   let reimport = null;
+  let manualReauthRequired = false;
+  let refreshConfigMissing: string[] = [];
   const expiresInHours = tokenExpiresInHours(getProviderRecord('openai-codex-oauth')?.token || null);
   const shouldRefresh = !openaiOauth.healthy
-    || (Number.isFinite(Number(expiresInHours)) && Number(expiresInHours) <= warnHours);
+    || (Number.isFinite(Number(expiresInHours)) && Number(expiresInHours) <= refreshHours);
 
   if (shouldRefresh) {
-    refresh = await withMonitorOAuthLock('openai-codex-oauth', openaiOauth.healthy ? 'refresh_window' : 'unhealthy', () =>
-      refreshOpenAiCodexHubToken(openaiOauth.healthy ? 'refresh_window' : 'unhealthy'));
+    const config = buildOAuthProviderConfig('openai-codex-oauth', { query: {}, body: {} });
+    if (!config.ok) {
+      refreshConfigMissing = Array.isArray(config.missing) ? config.missing : [];
+      manualReauthRequired = true;
+      refresh = {
+        ok: false,
+        skipped: true,
+        source: 'hub_oauth_refresh',
+        error: config.error || 'oauth_config_missing',
+        details: {
+          missing: refreshConfigMissing,
+          official_auth_boundary: 'OpenAI API official docs use API key Bearer auth; Codex ChatGPT OAuth unattended refresh requires an explicitly configured OAuth client or interactive codex login.',
+        },
+      };
+    } else {
+      refresh = await withMonitorOAuthLock('openai-codex-oauth', openaiOauth.healthy ? 'refresh_window' : 'unhealthy', () =>
+        refreshOpenAiCodexHubToken(openaiOauth.healthy ? 'refresh_window' : 'unhealthy'));
+    }
     openaiOauth = await checkOpenAIOAuthHealth();
     const refreshedHours = tokenExpiresInHours(getProviderRecord('openai-codex-oauth')?.token || null);
-    if (!refresh?.ok && (!openaiOauth.healthy || (Number.isFinite(Number(refreshedHours)) && Number(refreshedHours) <= warnHours))) {
+    if (!refresh?.ok && (!openaiOauth.healthy || (Number.isFinite(Number(refreshedHours)) && Number(refreshedHours) <= refreshHours))) {
       reimport = await withMonitorOAuthLock('openai-codex-oauth', openaiOauth.healthy ? 'refresh_window_after_refresh' : 'unhealthy_after_refresh', () =>
         maybeReimportOpenAiCodexCredential(openaiOauth.healthy ? 'refresh_window_after_refresh' : 'unhealthy_after_refresh'));
       openaiOauth = await checkOpenAIOAuthHealth();
@@ -896,20 +728,28 @@ async function checkOpenAiCodexOAuth() {
     return { ...openaiOauth, expires_in_hours: finalHours, refresh, reimport };
   }
 
-  if (Number.isFinite(Number(finalHours)) && Number(finalHours) <= warnHours) {
+  if (Number.isFinite(Number(finalHours)) && Number(finalHours) <= alarmHours) {
     const level = Number(finalHours) <= criticalHours ? 3 : 2;
+    const missingRefreshConfig = Array.isArray(refresh?.details?.missing) ? refresh.details.missing : refreshConfigMissing;
+    const refreshHint = refresh?.error === 'oauth_flow_disabled'
+      ? ` Hub OpenAI Codex OAuth refresh 설정이 비활성/누락되어 자동 refresh는 수행되지 않았습니다. missing=${missingRefreshConfig.join(',') || 'unknown'}. Codex auth.json 재동기화 결과 reimport_ok=${reimport?.ok === true}. 공식 OpenAI API 인증은 API key Bearer 방식이며, Codex ChatGPT OAuth 무인 refresh는 OAuth client 설정 또는 codex login 재인증이 필요합니다.`
+      : '';
     console.warn(`[oauth-monitor] OpenAI OAuth 갱신 필요: ${Number(finalHours).toFixed(1)}h 후 만료`);
     await sendOAuthAlarm({
       level,
-      title: '[Hub OAuth] OpenAI Codex OAuth 재인증 예정',
-      message: `OpenAI Codex OAuth 토큰이 ${Number(finalHours).toFixed(1)}시간 후 만료됩니다. Hub는 refresh_token 갱신과 Codex auth.json 재동기화를 순서대로 시도했습니다.`,
+      title: manualReauthRequired ? '[Hub OAuth] OpenAI Codex OAuth 수동 재인증 필요' : '[Hub OAuth] OpenAI Codex OAuth 재인증 예정',
+      message: `OpenAI Codex OAuth 토큰이 ${Number(finalHours).toFixed(1)}시간 후 만료됩니다. Hub는 ${refreshHours}시간 이내부터 refresh_token 갱신과 Codex auth.json 재동기화를 자동 시도합니다.${refreshHint}`,
       payload: {
         provider: 'openai-codex-oauth',
         healthy: true,
-        needs_refresh: true,
+        needs_refresh: Number(finalHours) <= refreshHours,
+        manual_reauth_required: manualReauthRequired,
         expires_in_hours: Math.round(Number(finalHours) * 10) / 10,
+        alarm_window_hours: alarmHours,
+        refresh_window_hours: refreshHours,
         refresh,
         reimport,
+        refresh_config_missing: missingRefreshConfig,
       },
     });
   } else {
@@ -917,12 +757,7 @@ async function checkOpenAiCodexOAuth() {
     console.log(`[oauth-monitor] OpenAI OAuth 정상: source=${openaiOauth.source || 'unknown'} model=${openaiOauth.model || 'unknown'}${suffix}`);
   }
 
-  return { ...openaiOauth, expires_in_hours: finalHours, refresh, reimport };
-}
-
-function geminiMonitorRequired(): boolean {
-  const record = getProviderRecord('gemini-oauth');
-  return flag('HUB_OAUTH_MONITOR_REQUIRE_GEMINI', Boolean(record?.token?.access_token || record?.token?.refresh_token));
+  return { ...openaiOauth, expires_in_hours: finalHours, refresh, reimport, manual_reauth_required: manualReauthRequired };
 }
 
 function geminiCliMonitorRequired(): boolean {
@@ -1010,8 +845,9 @@ function finalizeGeminiCliMonitorState({
 async function checkGeminiCliOAuth() {
   const record = getProviderRecord('gemini-cli-oauth');
   const required = geminiCliMonitorRequired();
-  const warnHours = thresholdHours('HUB_GEMINI_CLI_OAUTH_WARN_HOURS', 1);
-  const criticalHours = thresholdHours('HUB_GEMINI_CLI_OAUTH_CRITICAL_HOURS', 0.15);
+  const alarmHours = oauthAlarmHours('HUB_GEMINI_CLI_OAUTH_WARN_HOURS');
+  const refreshHours = oauthRefreshHours('HUB_GEMINI_CLI_OAUTH_REFRESH_HOURS');
+  const criticalHours = oauthCriticalHours('HUB_GEMINI_CLI_OAUTH_CRITICAL_HOURS');
   const cliImport = readGeminiCliCredentialForMonitor(record);
 
   if (cliImport.ok) {
@@ -1034,7 +870,10 @@ async function checkGeminiCliOAuth() {
     });
     const expiresInHours = tokenExpiresInHours(cliImport.token);
     const localCredentialNeedsRefresh = Number.isFinite(Number(expiresInHours))
-      ? Number(expiresInHours) <= warnHours
+      ? Number(expiresInHours) <= refreshHours
+      : false;
+    const inAlarmWindow = Number.isFinite(Number(expiresInHours))
+      ? Number(expiresInHours) <= alarmHours
       : false;
     const liveRefreshResult = localCredentialNeedsRefresh
       ? await runGeminiCliLiveRefreshProbeWithReimport('refresh_window', record)
@@ -1043,7 +882,7 @@ async function checkGeminiCliOAuth() {
     const postProbeReimport = liveRefreshResult?.reimport || null;
     const finalState = finalizeGeminiCliMonitorState({
       expiresInHours,
-      warnHours,
+      warnHours: refreshHours,
       liveRefreshProbe,
       postProbeReimport,
     });
@@ -1051,21 +890,25 @@ async function checkGeminiCliOAuth() {
     if (localCredentialNeedsRefresh && liveRefreshProbe?.ok) {
       console.log(`[oauth-monitor] Gemini CLI OAuth local token is near/after expiry, live CLI refresh probe succeeded in ${liveRefreshProbe.duration_ms || 0}ms, token-store reimport=${postProbeReimport?.ok ? 'ok' : 'not_updated'}`);
     }
-    if (needsRefresh) {
+    if (needsRefresh || (inAlarmWindow && !localCredentialNeedsRefresh)) {
       const level = Number(expiresInHours) <= criticalHours ? 3 : 2;
       await sendOAuthAlarm({
         level,
         title: '[Hub OAuth] Gemini CLI OAuth 재인증/자동갱신 확인 필요',
-        message: `Gemini CLI OAuth credential이 ${Number(expiresInHours).toFixed(2)}시간 후 만료되며 live refresh probe가 통과하지 못했습니다. gemini auth login 재인증이 필요할 수 있습니다.`,
+        message: localCredentialNeedsRefresh
+          ? `Gemini CLI OAuth credential이 ${Number(expiresInHours).toFixed(2)}시간 후 만료되며 live refresh probe가 통과하지 못했습니다. gemini auth login 재인증이 필요할 수 있습니다.`
+          : `Gemini CLI OAuth credential이 ${Number(expiresInHours).toFixed(2)}시간 후 만료됩니다. Hub는 ${refreshHours}시간 이내부터 live refresh probe와 token-store 재동기화를 자동 시도합니다.`,
         payload: {
           provider: 'gemini-cli-oauth',
           healthy: true,
-          needs_refresh: true,
-          local_credential_needs_refresh: true,
+          needs_refresh: localCredentialNeedsRefresh,
+          local_credential_needs_refresh: localCredentialNeedsRefresh,
           live_refresh_ok: Boolean(liveRefreshProbe?.ok),
           live_refresh_error: liveRefreshProbe?.error || null,
           post_probe_reimport_ok: postProbeReimport?.ok ?? null,
           expires_in_hours: Math.round(Number(expiresInHours) * 100) / 100,
+          alarm_window_hours: alarmHours,
+          refresh_window_hours: refreshHours,
           quota_project_configured: Boolean(cliImport.quota_project_configured),
         },
       });
@@ -1089,7 +932,10 @@ async function checkGeminiCliOAuth() {
   if (record?.token?.refresh_token) {
     const expiresInHours = tokenExpiresInHours(record.token);
     const localCredentialNeedsRefresh = Number.isFinite(Number(expiresInHours))
-      ? Number(expiresInHours) <= warnHours
+      ? Number(expiresInHours) <= refreshHours
+      : false;
+    const inAlarmWindow = Number.isFinite(Number(expiresInHours))
+      ? Number(expiresInHours) <= alarmHours
       : false;
     const liveRefreshResult = localCredentialNeedsRefresh
       ? await runGeminiCliLiveRefreshProbeWithReimport('token_store_refresh_window', record)
@@ -1098,7 +944,7 @@ async function checkGeminiCliOAuth() {
     const postProbeReimport = liveRefreshResult?.reimport || null;
     const finalState = finalizeGeminiCliMonitorState({
       expiresInHours,
-      warnHours,
+      warnHours: refreshHours,
       liveRefreshProbe,
       postProbeReimport,
     });
@@ -1106,22 +952,26 @@ async function checkGeminiCliOAuth() {
     if (localCredentialNeedsRefresh && liveRefreshProbe?.ok) {
       console.log(`[oauth-monitor] Gemini CLI OAuth token-store is near/after expiry, live CLI refresh probe succeeded in ${liveRefreshProbe.duration_ms || 0}ms, token-store reimport=${postProbeReimport?.ok ? 'ok' : 'not_updated'}`);
     }
-    if (needsRefresh && required) {
+    if ((needsRefresh || (inAlarmWindow && !localCredentialNeedsRefresh)) && required) {
       const level = Number(expiresInHours) <= criticalHours ? 3 : 2;
       await sendOAuthAlarm({
         level,
         title: '[Hub OAuth] Gemini CLI OAuth 로컬 credential 재동기화 필요',
-        message: `Gemini CLI OAuth token-store는 남아 있지만 로컬 credential 재동기화가 실패했고 ${Number(expiresInHours).toFixed(2)}시간 후 만료됩니다. live refresh probe도 통과하지 못했습니다.`,
+        message: localCredentialNeedsRefresh
+          ? `Gemini CLI OAuth token-store는 남아 있지만 로컬 credential 재동기화가 실패했고 ${Number(expiresInHours).toFixed(2)}시간 후 만료됩니다. live refresh probe도 통과하지 못했습니다.`
+          : `Gemini CLI OAuth token-store는 남아 있지만 로컬 credential 재동기화가 실패했고 ${Number(expiresInHours).toFixed(2)}시간 후 만료됩니다. Hub는 ${refreshHours}시간 이내부터 live refresh probe와 token-store 재동기화를 자동 시도합니다.`,
         payload: {
           provider: 'gemini-cli-oauth',
           healthy: true,
           degraded: true,
-          needs_refresh: true,
-          local_credential_needs_refresh: true,
+          needs_refresh: localCredentialNeedsRefresh,
+          local_credential_needs_refresh: localCredentialNeedsRefresh,
           live_refresh_ok: Boolean(liveRefreshProbe?.ok),
           live_refresh_error: liveRefreshProbe?.error || null,
           post_probe_reimport_ok: postProbeReimport?.ok ?? null,
           expires_in_hours: Math.round(Number(expiresInHours) * 100) / 100,
+          alarm_window_hours: alarmHours,
+          refresh_window_hours: refreshHours,
           error: cliImport.error || null,
         },
       });
@@ -1175,73 +1025,6 @@ async function checkGeminiCliOAuth() {
     quota_project_configured: false,
     error: cliImport.error || 'gemini_cli_credentials_missing',
   };
-}
-
-async function checkGeminiOAuth() {
-  if (!geminiMonitorRequired()) {
-    console.log('[oauth-monitor] Gemini OAuth 스킵: token-store에 등록된 토큰이 없고 필수 모드가 아닙니다.');
-    return {
-      healthy: true,
-      skipped: true,
-      token_present: false,
-      refresh: null,
-      error: null,
-    };
-  }
-
-  const warnHours = thresholdHours('HUB_GEMINI_OAUTH_WARN_HOURS', 0.25);
-  const criticalHours = thresholdHours('HUB_GEMINI_OAUTH_CRITICAL_HOURS', 0.05);
-  let geminiOauth = await checkGeminiOAuthHealth();
-  let refresh = null;
-  const expiresInHours = tokenExpiresInHours(getProviderRecord('gemini-oauth')?.token || null);
-  const shouldRefresh = !geminiOauth.healthy
-    || (Number.isFinite(Number(expiresInHours)) && Number(expiresInHours) <= warnHours);
-
-  if (shouldRefresh) {
-    refresh = await withMonitorOAuthLock('gemini-oauth', geminiOauth.healthy ? 'refresh_window' : 'unhealthy', () =>
-      refreshGeminiOAuthHubToken(geminiOauth.healthy ? 'refresh_window' : 'unhealthy'));
-    geminiOauth = await checkGeminiOAuthHealth();
-  }
-
-  const finalHours = tokenExpiresInHours(getProviderRecord('gemini-oauth')?.token || null);
-  if (!geminiOauth.healthy) {
-    console.error('[oauth-monitor] Gemini OAuth 오류:', geminiOauth.error);
-    await sendOAuthAlarm({
-      level: 3,
-      title: '[Hub OAuth] Gemini OAuth 만료/오류',
-      message: `Gemini OAuth가 unhealthy 상태입니다. ADC/OAuth 재인증 또는 quota project 설정을 확인해 주세요. error=${geminiOauth.error || 'unknown'}`,
-      payload: {
-        provider: 'gemini-oauth',
-        healthy: false,
-        error: geminiOauth.error || null,
-        quota_project_configured: Boolean(geminiOauth.quota_project_configured),
-        refresh,
-      },
-    });
-    return { ...geminiOauth, expires_in_hours: finalHours, refresh };
-  }
-
-  if (Number.isFinite(Number(finalHours)) && Number(finalHours) <= warnHours) {
-    const level = Number(finalHours) <= criticalHours ? 3 : 2;
-    console.warn(`[oauth-monitor] Gemini OAuth 갱신 필요: ${Number(finalHours).toFixed(2)}h 후 만료`);
-    await sendOAuthAlarm({
-      level,
-      title: '[Hub OAuth] Gemini OAuth 재인증 예정',
-      message: `Gemini OAuth 토큰이 ${Number(finalHours).toFixed(2)}시간 후 만료됩니다. Hub는 refresh_token 갱신을 시도했습니다.`,
-      payload: {
-        provider: 'gemini-oauth',
-        healthy: true,
-        needs_refresh: true,
-        expires_in_hours: Math.round(Number(finalHours) * 100) / 100,
-        refresh,
-      },
-    });
-  } else {
-    const suffix = Number.isFinite(Number(finalHours)) ? ` expires_in=${Number(finalHours).toFixed(2)}h` : '';
-    console.log(`[oauth-monitor] Gemini OAuth 정상: source=${geminiOauth.source || 'unknown'} quota_project=${geminiOauth.quota_project_configured ? 'configured' : 'missing'}${suffix}`);
-  }
-
-  return { ...geminiOauth, expires_in_hours: finalHours, refresh };
 }
 
 async function checkGeminiCodeAssistService() {
@@ -1307,7 +1090,6 @@ async function main() {
   const claudeOauth = await checkClaudeCodeOAuth();
   const openaiOauth = await checkOpenAiCodexOAuth();
   const geminiCliOauth = await checkGeminiCliOAuth();
-  const geminiOauth = await checkGeminiOAuth();
   const geminiCodeAssistService = await checkGeminiCodeAssistService();
 
   const groq = await checkGroqAccounts();
@@ -1318,7 +1100,6 @@ async function main() {
       claudeOauth.healthy
         && openaiOauth.healthy
         && (geminiCliOauth.skipped || geminiCliOauth.healthy)
-        && (geminiOauth.skipped || geminiOauth.healthy)
         && (geminiCodeAssistService.skipped || geminiCodeAssistService.healthy),
     ),
     generated_at: new Date().toISOString(),
@@ -1350,21 +1131,9 @@ async function main() {
       local_sync_ok: openaiOauth.refresh?.local_sync?.ok ?? null,
       reimport_ok: openaiOauth.reimport?.ok ?? null,
       reimport_source: openaiOauth.reimport?.source || null,
+      manual_reauth_required: Boolean(openaiOauth.manual_reauth_required),
+      refresh_config_missing: Array.isArray(openaiOauth.refresh?.details?.missing) ? openaiOauth.refresh.details.missing : [],
       error: openaiOauth.error || null,
-    },
-    gemini_oauth: {
-      healthy: Boolean(geminiOauth.healthy),
-      skipped: Boolean(geminiOauth.skipped),
-      source: geminiOauth.source || null,
-      expires_in_hours: Number.isFinite(Number(geminiOauth.expires_in_hours))
-        ? Math.round(Number(geminiOauth.expires_in_hours) * 100) / 100
-        : null,
-      needs_refresh: Boolean(geminiOauth.needs_refresh),
-      quota_project_configured: Boolean(geminiOauth.quota_project_configured),
-      refresh_ok: geminiOauth.refresh?.ok ?? null,
-      refresh_source: geminiOauth.refresh?.source || null,
-      refresh_config_source: geminiOauth.refresh?.refresh_config_source || null,
-      error: geminiOauth.error || null,
     },
     gemini_cli_oauth: {
       healthy: Boolean(geminiCliOauth.healthy),

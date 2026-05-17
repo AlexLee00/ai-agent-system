@@ -36,7 +36,6 @@ async function getOAuthOpsStatus() {
   const {
     checkTokenHealth,
     checkOpenAIOAuthHealth,
-    checkGeminiOAuthHealth,
     checkGroqAccounts,
   } = require('../llm/oauth-monitor');
   const { getProviderRecord } = require('../oauth/token-store');
@@ -44,12 +43,10 @@ async function getOAuthOpsStatus() {
   const [
     claude,
     openai,
-    gemini,
     groq,
   ] = await Promise.all([
     checkTokenHealth().catch((error) => ({ healthy: false, error: error?.message || String(error) })),
     checkOpenAIOAuthHealth().catch((error) => ({ healthy: false, error: error?.message || String(error) })),
-    checkGeminiOAuthHealth().catch((error) => ({ healthy: false, error: error?.message || String(error) })),
     checkGroqAccounts().catch(() => ({ available_accounts: 0, total_accounts: 0 })),
   ]);
 
@@ -61,7 +58,8 @@ async function getOAuthOpsStatus() {
     expires_in_hours: Number.isFinite(Number(geminiCliHours)) ? Math.round(Number(geminiCliHours) * 100) / 100 : null,
     needs_refresh: Number.isFinite(Number(geminiCliHours)) ? Number(geminiCliHours) <= 1 : false,
     quota_project_configured: Boolean(
-      process.env.GEMINI_OAUTH_PROJECT_ID
+      process.env.GEMINI_CLI_OAUTH_PROJECT_ID
+        || process.env.GEMINI_OAUTH_PROJECT_ID
         || process.env.GOOGLE_CLOUD_QUOTA_PROJECT
         || process.env.GOOGLE_CLOUD_PROJECT
         || geminiCliRecord?.metadata?.quota_project_id
@@ -86,14 +84,6 @@ async function getOAuthOpsStatus() {
         expires_at: openai.expires_at || null,
         needs_refresh: Boolean(openai.needs_refresh),
         error: openai.error || null,
-      },
-      gemini_oauth: {
-        healthy: Boolean(gemini.healthy),
-        source: gemini.source || null,
-        expires_in_hours: Number.isFinite(Number(gemini.expires_in_hours)) ? Math.round(Number(gemini.expires_in_hours) * 100) / 100 : null,
-        needs_refresh: Boolean(gemini.needs_refresh),
-        quota_project_configured: Boolean(gemini.quota_project_configured),
-        error: gemini.error || null,
       },
       gemini_cli_oauth: geminiCli,
       groq_pool: groq,

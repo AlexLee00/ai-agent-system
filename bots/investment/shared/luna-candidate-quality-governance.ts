@@ -133,6 +133,9 @@ function governanceActionFor(row: any = {}) {
   if (recommendedAction === 'quarantine_candidate_shadow' || severity === 'blocker') {
     return 'candidate_cooldown_shadow';
   }
+  if (hasReason(row, 'backtest_unstable_or_unrealistic')) {
+    return 'backtest_stabilization_shadow';
+  }
   if (hasReason(row, 'backtest_unhealthy_or_would_block') && recentUnhealthyCount >= 2) {
     return 'candidate_cooldown_shadow';
   }
@@ -147,12 +150,16 @@ function governanceActionFor(row: any = {}) {
 
 function priorityFor(row: any = {}, governanceAction = '') {
   if (governanceAction === 'refresh_backtest_priority') return 0.92;
+  if (governanceAction === 'backtest_stabilization_shadow') return 0.88;
   if (governanceAction === 'strategy_repair_shadow') return round(0.62 + n(row.candidateSelectionPenalty ?? row.candidate_selection_penalty, 0) * 0.25, 4);
   if (governanceAction === 'candidate_cooldown_shadow') return 0.18;
   return 0.42;
 }
 
 function cooldownHoursFor(row: any = {}, governanceAction = '', options: any = {}) {
+  if (governanceAction === 'backtest_stabilization_shadow') {
+    return n(options.stabilizationCooldownHours, 6);
+  }
   if (governanceAction !== 'candidate_cooldown_shadow') return null;
   const recentUnhealthyCount = n(row.recentUnhealthyCount24h ?? row.recent_unhealthy_count_24h, 0);
   if (String(row.recommendedAction || row.recommended_action || '') === 'quarantine_candidate_shadow') {
@@ -169,6 +176,9 @@ function commandFor(row: any = {}, governanceAction = '') {
   const symbolArg = symbol ? ` --symbols=${symbol}` : '';
   if (governanceAction === 'refresh_backtest_priority') {
     return `npm --prefix bots/investment run -s runtime:luna-candidate-backtest-refresh -- --json --force --market=${market}${symbolArg}`;
+  }
+  if (governanceAction === 'backtest_stabilization_shadow') {
+    return `npm --prefix bots/investment run -s runtime:luna-candidate-backtest-refresh -- --json --force --periods=30,90,180,365 --market=${market}${symbolArg}`;
   }
   if (governanceAction === 'strategy_repair_shadow') {
     return `npm --prefix bots/investment run -s runtime:luna-phase4-strategy-enhancement-shadow -- --json --dry-run --market=${market}${symbolArg}`;
@@ -217,6 +227,7 @@ export function buildLunaCandidateQualityGovernanceRows(inputs: any[] = [], opti
         backtestBudgetPolicy: {
           skipRepeatedUnhealthyUntilCooldown: skipBacktestUntilCooldown,
           prioritizeMissingOrStale: true,
+          stabilizeUnrealisticSharpeBeforeStrategyRepair: governanceAction === 'backtest_stabilization_shadow',
         },
         liveMutation: false,
       },
@@ -317,8 +328,7 @@ export async function loadLunaCandidateQualityCooldownSymbols({ market = null, l
     SELECT DISTINCT ON (symbol, market)
            symbol, market, governance_action, cooldown_until, observed_at
       FROM luna_candidate_quality_governance_shadow
-     WHERE governance_action = 'candidate_cooldown_shadow'
-       AND skip_backtest_until_cooldown IS TRUE
+     WHERE skip_backtest_until_cooldown IS TRUE
        AND cooldown_until > NOW()
        AND shadow_only IS TRUE
        ${marketWhere}

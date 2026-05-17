@@ -75,7 +75,7 @@ function hubAuthToken() {
 }
 
 async function resetGeminiCircuit(baseUrl, token) {
-  for (const provider of ['gemini-oauth', 'gemini-cli-oauth', 'gemini-codeassist-oauth']) {
+  for (const provider of ['gemini-cli-oauth', 'gemini-codeassist-oauth']) {
     try {
       await fetch(`${baseUrl}/hub/llm/circuit?provider=${encodeURIComponent(provider)}`, {
         method: 'DELETE',
@@ -96,7 +96,7 @@ function modelProvider(model) {
   const value = String(model || '');
   if (value.startsWith('gemini-codeassist-oauth/')) return 'gemini-codeassist-oauth';
   if (value.startsWith('gemini-cli-oauth/')) return 'gemini-cli-oauth';
-  return 'gemini-oauth';
+  return 'gemini-cli-oauth';
 }
 
 function scenarioChain(scenario) {

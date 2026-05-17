@@ -138,6 +138,7 @@ async function main() {
   const record = getProviderRecord('gemini-cli-oauth');
   const projectId = String(
     args.projectId
+      || process.env.GEMINI_CLI_OAUTH_PROJECT_ID
       || process.env.GEMINI_OAUTH_PROJECT_ID
       || process.env.GOOGLE_CLOUD_QUOTA_PROJECT
       || process.env.GOOGLE_CLOUD_PROJECT
@@ -226,10 +227,10 @@ async function main() {
     live,
     warnings: [
       ...(credentials.ok && quotaPolicy.status === 'optional_missing' ? [
-        'quota project is optional for Gemini CLI OAuth default mode; set GEMINI_OAUTH_PROJECT_ID or GOOGLE_CLOUD_PROJECT for direct Gemini API/pro quota attribution',
+        'quota project is optional for Gemini CLI OAuth default mode; set GEMINI_CLI_OAUTH_PROJECT_ID or GOOGLE_CLOUD_PROJECT for direct Gemini API/pro quota attribution',
       ] : []),
       ...(credentials.ok && quotaPolicy.status === 'required_missing' ? [
-        'quota project is required because strict Gemini CLI readiness is enabled; set GEMINI_OAUTH_PROJECT_ID or GOOGLE_CLOUD_PROJECT',
+        'quota project is required because strict Gemini CLI readiness is enabled; set GEMINI_CLI_OAUTH_PROJECT_ID or GOOGLE_CLOUD_PROJECT',
       ] : []),
       ...(credentials.ok && needsRefresh && live?.ok ? [
         'local Gemini CLI OAuth access token is expired/near expiry, but live CLI probe succeeded via refresh-token path',
@@ -241,7 +242,7 @@ async function main() {
     next_actions: ok ? [] : [
       ...(!command.ok ? ['Install Gemini CLI: npm install -g @google/gemini-cli or brew install gemini-cli'] : []),
       ...(!credentials.ok ? ['Run Gemini CLI login so ~/.gemini/oauth_creds.json exists'] : []),
-      ...(quotaPolicy.status === 'required_missing' ? ['Set GEMINI_OAUTH_PROJECT_ID or GOOGLE_CLOUD_PROJECT'] : []),
+      ...(quotaPolicy.status === 'required_missing' ? ['Set GEMINI_CLI_OAUTH_PROJECT_ID or GOOGLE_CLOUD_PROJECT'] : []),
       ...(live?.activation_url ? [`Enable required Google API: ${live.activation_url}`] : []),
       ...(live?.operator_action ? [live.operator_action] : []),
       ...(liveRequested && live && !live.ok ? ['Check Gemini CLI auth/session by running a tiny gemini CLI prompt manually'] : []),

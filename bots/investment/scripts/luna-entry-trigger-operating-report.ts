@@ -24,12 +24,86 @@ function argValue(name, fallback = null) {
   return found ? found.slice(prefix.length) : fallback;
 }
 
+function finiteNumber(value) {
+  const n = Number(value);
+  return Number.isFinite(n) ? n : null;
+}
+
+function addCount(map, key) {
+  if (!key) return;
+  map[key] = Number(map[key] || 0) + 1;
+}
+
+function readinessBlockers(item = {}) {
+  const details = item.fireReadiness || {};
+  const blockers = [];
+  if (item.fired === true) return blockers;
+  if (item.fireReason) blockers.push(String(item.fireReason));
+  if (details.mtfBullish === false) blockers.push('mtf_not_bullish');
+  if (details.mtfDominantSignal && String(details.mtfDominantSignal).toUpperCase() !== 'BUY') {
+    blockers.push('mtf_dominant_not_buy');
+  }
+  const predictiveScore = finiteNumber(details.predictiveScore);
+  if (predictiveScore != null && predictiveScore < 0.55) blockers.push('predictive_score_below_0_55');
+  const mtfAgreement = finiteNumber(details.mtfAgreement);
+  if (mtfAgreement != null && mtfAgreement < 0.72) blockers.push('mtf_agreement_below_0_72');
+  const volumeBurst = finiteNumber(details.volumeBurst);
+  if (volumeBurst != null && volumeBurst < 1.1) blockers.push('volume_burst_below_1_1');
+  const technical = details.technicalConfirmation || {};
+  if (technical.ok === false) {
+    blockers.push('technical_confirmation_incomplete');
+    const gaps = technical.gaps || {};
+    for (const [key, value] of Object.entries(gaps)) {
+      if (finiteNumber(value) != null && Number(value) > 0) blockers.push(`${key}_gap`);
+    }
+  }
+  return [...new Set(blockers)];
+}
+
+function summarizeReadinessResults(results = []) {
+  const waitReasonCounts = {};
+  const readiness = (results || []).map((item) => {
+    const details = item.fireReadiness || {};
+    const blockers = readinessBlockers(item);
+    for (const blocker of blockers) addCount(waitReasonCounts, blocker);
+    return {
+      triggerId: item.triggerId || null,
+      symbol: item.symbol || null,
+      state: item.state || null,
+      fired: item.fired === true,
+      reason: item.reason || null,
+      fireReason: item.fireReason || null,
+      blockers,
+      triggerType: details.triggerType || null,
+      confidence: finiteNumber(details.confidence),
+      predictiveScore: finiteNumber(details.predictiveScore),
+      discoveryScore: finiteNumber(details.discoveryScore),
+      mtfAgreement: finiteNumber(details.mtfAgreement),
+      mtfAlignmentScore: finiteNumber(details.mtfAlignmentScore),
+      mtfDominantSignal: details.mtfDominantSignal || null,
+      mtfBullish: details.mtfBullish === true,
+      volumeBurst: finiteNumber(details.volumeBurst),
+      breakoutRetest: details.breakoutRetest === true,
+      newsMomentum: finiteNumber(details.newsMomentum),
+      technicalConfirmation: details.technicalConfirmation || null,
+    };
+  });
+  return {
+    checked: readiness.length,
+    fired: readiness.filter((row) => row.fired).length,
+    waiting: readiness.filter((row) => !row.fired).length,
+    waitReasonCounts,
+    readiness,
+  };
+}
+
 export async function buildLunaEntryTriggerOperatingReport({ exchange = 'binance', hours = 24 } = {}) {
   const [stats, readiness] = await Promise.all([
     getEntryTriggerOperationalStats({ exchange, hours }),
     buildLunaEntryTriggerWorkerReadiness({ exchange, hours }),
   ]);
   const heartbeatResult = readiness?.heartbeat?.payload?.result || {};
+  const readinessSummary = summarizeReadinessResults(heartbeatResult?.results || []);
   const workerMigrated = readiness?.status === 'entry_trigger_worker_migrated_to_luna_skill';
   const fired = Number(stats?.recentByState?.fired || 0);
   const waiting = Number(stats?.recentByState?.waiting || 0);
@@ -59,7 +133,12 @@ export async function buildLunaEntryTriggerOperatingReport({ exchange = 'binance
       heartbeatChecked: workerMigrated ? 0 : Number(heartbeatResult?.checked || 0),
       heartbeatFired: workerMigrated ? 0 : Number(heartbeatResult?.fired || 0),
       heartbeatReadyBlocked: workerMigrated ? 0 : Number(heartbeatResult?.readyBlocked || 0),
+      readinessChecked: readinessSummary.checked,
+      readinessFired: readinessSummary.fired,
+      readinessWaiting: readinessSummary.waiting,
+      waitReasonCounts: readinessSummary.waitReasonCounts,
     },
+    tradeCompletionReadiness: readinessSummary,
     stats,
     readiness: {
       status: readiness?.status || null,
@@ -86,6 +165,8 @@ export function renderLunaEntryTriggerOperatingReport(report = {}) {
     summary.heartbeatSource === 'retired_legacy_ignored'
       ? `heartbeat: retired legacy ignored / legacyAge=${summary.legacyHeartbeatAgeMinutes ?? 'n/a'}m`
       : `heartbeat: ${summary.heartbeatAgeMinutes ?? 'n/a'}m / mode=${summary.heartbeatMode || 'n/a'} / live=${summary.heartbeatAllowLiveFire === true} / checked=${summary.heartbeatChecked ?? 'n/a'} / readyBlocked=${summary.heartbeatReadyBlocked ?? 'n/a'}`,
+    `readiness: checked=${summary.readinessChecked ?? 0} / waiting=${summary.readinessWaiting ?? 0} / fired=${summary.readinessFired ?? 0}`,
+    `waitReasons: ${Object.entries(summary.waitReasonCounts || {}).map(([key, count]) => `${key}:${count}`).join(', ') || 'none'}`,
     `warnings: ${(report.warnings || []).length ? report.warnings.join(' / ') : 'none'}`,
   ].join('\n');
 }
@@ -110,7 +191,10 @@ export async function runLunaEntryTriggerOperatingReportSmoke() {
   const report = await buildLunaEntryTriggerOperatingReport({ exchange: 'binance', hours: 24 });
   assert.ok(report.checkedAt);
   assert.ok(report.summary);
+  assert.ok(report.tradeCompletionReadiness);
+  assert.equal(typeof report.summary.waitReasonCounts, 'object');
   assert.ok(renderLunaEntryTriggerOperatingReport(report).includes('entry-trigger operating report'));
+  assert.ok(renderLunaEntryTriggerOperatingReport(report).includes('readiness:'));
   return report;
 }
 
