@@ -45,7 +45,7 @@ function buildDelta({
       status: 'closed',
       };
     },
-    buildDeterministicClientOrderId: () => 'ln_s_normal_orca_smoke',
+    buildDeterministicClientOrderId: ({ scope }) => `ln_s_${scope}_smoke`,
     normalizePartialExitRatio: (value) => {
       const n = Number(value);
       if (!Number.isFinite(n) || n <= 0 || n >= 1) return 1;
@@ -135,6 +135,36 @@ await assert.rejects(
 );
 assert.equal(calls.some((item) => item[0] === 'marketSell'), false);
 
+const crossModeDelta = buildDelta({
+  marketSellResult: {
+    filled: 921.5775,
+    price: 0.054,
+    cost: 49.765185,
+    status: 'closed',
+  },
+  assetBalances: { totalBalance: 0, freeBalance: 0 },
+  openJournalEntries: [{
+    trade_id: 'TRD-KAIA-VALIDATION',
+    symbol: 'KAIA/USDT',
+    is_paper: false,
+    trade_mode: 'validation',
+    entry_size: 922.5,
+    entry_value: 49.9995,
+  }],
+});
+const crossModeTrade = await crossModeDelta.executeSellTrade({
+  signalId: 'sig-kaia-sell',
+  symbol: 'KAIA/USDT',
+  amount: 921.5775,
+  sellPaperMode: false,
+  effectivePositionTradeMode: 'normal',
+  position: { amount: 921.5775, avg_price: 0.0542, unrealized_pnl: -2.1 },
+  sourcePositionAmount: 921.5775,
+  partialExitRatio: 1,
+});
+assert.equal(crossModeTrade.tradeMode, 'validation');
+assert.equal(calls.find((item) => item[0] === 'marketSell')?.[4]?.clientOrderId, 'ln_s_validation_smoke');
+
 const payload = {
   ok: true,
   smoke: 'hephaestos-portfolio-position-delta',
@@ -144,6 +174,7 @@ const payload = {
   partialRemaining: partialTrade.remainingAmount,
   fullSellPartial: fullTrade.partialExit,
   missingJournalBlockedBeforeSell: true,
+  crossModeLiveJournalTradeMode: crossModeTrade.tradeMode,
 };
 
 if (process.argv.includes('--json')) {

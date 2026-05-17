@@ -122,8 +122,8 @@ export function createPortfolioPositionDelta(context = {}) {
       isPaper: sellPaperMode,
       tradeMode: effectivePositionTradeMode || getInvestmentTradeMode(),
       soldAmount: amount,
-      allowCrossModeSingleLive: false,
-      allowCrossModeAmountMatch: false,
+      allowCrossModeSingleLive: true,
+      allowCrossModeAmountMatch: true,
     });
     if (!selection.entry) {
       throw buildSellJournalCompletenessError(selection, {
@@ -199,13 +199,14 @@ export function createPortfolioPositionDelta(context = {}) {
     partialExitRatio = null,
     qualityContext = null,
   }) {
-    await assertSellJournalCompleteness({
+    const journalSelection = await assertSellJournalCompleteness({
       signalId,
       symbol,
       amount,
       sellPaperMode,
       effectivePositionTradeMode,
     });
+    const resolvedJournalTradeMode = journalSelection?.entry?.trade_mode || effectivePositionTradeMode;
 
     const sellSubmittedAtMs = Date.now();
     const sellClientOrderId = !sellPaperMode
@@ -213,7 +214,7 @@ export function createPortfolioPositionDelta(context = {}) {
           signalId,
           symbol,
           action: ACTIONS.SELL,
-          scope: effectivePositionTradeMode || 'main',
+          scope: resolvedJournalTradeMode || 'main',
         })
       : null;
     const order = await marketSell(symbol, amount, sellPaperMode, {
@@ -241,7 +242,7 @@ export function createPortfolioPositionDelta(context = {}) {
       executedAt: extractExecutionTimestampMs(order, sellSubmittedAtMs),
       paper: sellPaperMode,
       exchange: 'binance',
-      tradeMode: effectivePositionTradeMode,
+      tradeMode: resolvedJournalTradeMode,
       partialExitRatio: isPartialExit
         ? (effectiveRatio < 1
             ? effectiveRatio
