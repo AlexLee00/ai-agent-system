@@ -108,6 +108,8 @@ defmodule Darwin.V2.Evaluator do
     end
   end
 
+  defp flush_batch(%{evaluating: true} = state), do: state
+
   defp flush_batch(state) do
     Logger.info("[다윈V2 평가자] 배치 평가 큐 처리 시작: #{length(state.queue)}건")
     start_evaluation_if_idle(state)
