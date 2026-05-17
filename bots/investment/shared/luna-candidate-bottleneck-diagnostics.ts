@@ -57,6 +57,23 @@ function actionFromReasons(reasons: string[], input: any = {}) {
   const predictive = input.predictive || {};
   const communitySources = n(input.community?.source_count, 0) + n(input.community?.market_source_count, 0);
   const predictiveScore = n(predictive.score, 0);
+  const hasFreshBacktestQualityIssue = !reasons.includes('backtest_missing_or_stale')
+    && (
+      reasons.includes('backtest_unhealthy_or_would_block')
+      || reasons.includes('sharpe_negative')
+      || reasons.includes('win_rate_low')
+      || reasons.includes('drawdown_high')
+    );
+  const severeUnconfirmedBacktestFailure = hasFreshBacktestQualityIssue
+    && reasons.includes('predictive_blocked')
+    && predictiveScore < 0.4
+    && communitySources < 2;
+  if (hasFreshBacktestQualityIssue && !severeUnconfirmedBacktestFailure) {
+    return 'strategy_enhancement_shadow';
+  }
+  if (severeUnconfirmedBacktestFailure) {
+    return 'quarantine_candidate_shadow';
+  }
   if (reasons.some((reason) => reason.includes('missing') || reason.includes('stale'))) {
     return 'refresh_evidence';
   }
