@@ -13,6 +13,7 @@ import {
 } from './luna-operating-epoch.ts';
 
 const DISABLE_VALUES = new Set(['0', 'false', 'off', 'disabled']);
+const ENABLE_VALUES = new Set(['1', 'true', 'on', 'enabled', 'yes']);
 
 export const EXPECTED_SELL_NOOP_CODES = new Set([
   'missing_position',
@@ -57,6 +58,10 @@ export const CRYPTO_STRUCTURAL_BLOCKED_SYMBOLS = Object.freeze({
 
 export function isTradeDataGuardEnabled(env = process.env) {
   return !DISABLE_VALUES.has(String(env.LUNA_TRADE_DATA_DERIVED_GUARDS || '').trim().toLowerCase());
+}
+
+export function isStrictTradeDataConfirmationGuardEnabled(env = process.env) {
+  return ENABLE_VALUES.has(String(env.LUNA_TRADE_DATA_STRICT_CONFIRMATION_GUARD || '').trim().toLowerCase());
 }
 
 export function normalizeTradeDataMarket(market = '') {
@@ -131,6 +136,14 @@ function clamp01(value, fallback = 1) {
   return Math.max(0, Math.min(1, numberValue));
 }
 
+function firstFinite(...values) {
+  for (const value of values) {
+    const numeric = Number(value);
+    if (Number.isFinite(numeric)) return numeric;
+  }
+  return null;
+}
+
 function applySizingAdjustment(meta, {
   code,
   multiplier,
@@ -175,6 +188,51 @@ function resolveExternalEvidenceCount(signal = {}) {
   return null;
 }
 
+function resolveExternalEvidenceObject(signal = {}) {
+  return [
+    signal?.externalEvidence,
+    signal?.external_evidence,
+    signal?.strategy_route?.externalEvidence,
+    signal?.strategyRoute?.externalEvidence,
+    signal?.block_meta?.externalEvidence,
+    signal?.block_meta?.entryEvidence,
+  ].find((value) => value && typeof value === 'object') || {};
+}
+
+function resolveExternalEvidenceMetrics(signal = {}) {
+  const source = resolveExternalEvidenceObject(signal);
+  const evidenceCount = resolveExternalEvidenceCount(signal);
+  const sourceDiversity = source.sourceDiversity || source.source_diversity || {};
+  const sourceCount = firstFinite(
+    source.sourceCount,
+    source.source_count,
+    source.uniqueSourceCount,
+    source.unique_source_count,
+    sourceDiversity.sourceCount,
+    Array.isArray(sourceDiversity.uniqueSources) ? sourceDiversity.uniqueSources.length : null,
+  );
+  const avgQuality = firstFinite(
+    source.avgQuality,
+    source.avg_quality,
+    source.qualityScore,
+    source.quality_score,
+    source.avgSourceQuality,
+    source.avg_source_quality,
+  );
+  const avgFreshness = firstFinite(
+    source.avgFreshness,
+    source.avg_freshness,
+    source.freshnessScore,
+    source.freshness_score,
+  );
+  return {
+    evidenceCount,
+    sourceCount,
+    avgQuality,
+    avgFreshness,
+  };
+}
+
 function hasTechnicalPresignal(signal = {}) {
   const values = [
     signal?.hasTechnicalPresignal,
@@ -187,6 +245,89 @@ function hasTechnicalPresignal(signal = {}) {
   if (values.some((value) => value === true || String(value).toLowerCase() === 'true')) return true;
   if (values.some((value) => value === false || String(value).toLowerCase() === 'false')) return false;
   return null;
+}
+
+function resolveTechnicalConfirmation(signal = {}) {
+  const direct = hasTechnicalPresignal(signal);
+  const hints = signal?.triggerHints || signal?.trigger_hints || signal?.block_meta?.entryEvidence || {};
+  const mtfAgreement = firstFinite(
+    signal?.mtfAgreement,
+    signal?.mtf_agreement,
+    hints?.mtfAgreement,
+    hints?.mtf_agreement,
+  );
+  const mtfAlignmentScore = firstFinite(
+    signal?.mtfAlignmentScore,
+    signal?.mtf_alignment_score,
+    hints?.mtfAlignmentScore,
+    hints?.mtf_alignment_score,
+  );
+  const volumeBurst = firstFinite(
+    signal?.volumeBurst,
+    signal?.volume_burst,
+    hints?.volumeBurst,
+    hints?.volume_burst,
+  );
+  const breakoutRetest = [
+    signal?.breakoutRetest,
+    signal?.breakout_retest,
+    hints?.breakoutRetest,
+    hints?.breakout_retest,
+  ].some((value) => value === true || String(value).toLowerCase() === 'true');
+  const numericScore = Math.max(
+    direct === true ? 1 : direct === false ? 0 : 0,
+    mtfAgreement == null ? 0 : clamp01(mtfAgreement, 0),
+    mtfAlignmentScore == null ? 0 : clamp01(mtfAlignmentScore, 0),
+    volumeBurst == null ? 0 : clamp01(volumeBurst / 2, 0),
+    breakoutRetest ? 0.62 : 0,
+  );
+  return {
+    ok: direct === true || numericScore >= 0.58,
+    direct,
+    score: Number(numericScore.toFixed(4)),
+    mtfAgreement,
+    mtfAlignmentScore,
+    volumeBurst,
+    breakoutRetest,
+  };
+}
+
+export function buildTradeDataConfirmationQuality(signal = {}) {
+  const external = resolveExternalEvidenceMetrics(signal);
+  const technical = resolveTechnicalConfirmation(signal);
+  const evidenceCount = external.evidenceCount;
+  const sourceCount = external.sourceCount;
+  const avgQuality = external.avgQuality;
+  const avgFreshness = external.avgFreshness;
+  const evidenceCoverage = evidenceCount == null ? 0 : clamp01(evidenceCount / 4, 0);
+  const sourceDiversity = sourceCount == null ? 0 : clamp01(sourceCount / 3, 0);
+  const qualityScore = avgQuality == null ? 0.5 : clamp01(avgQuality, 0.5);
+  const freshnessScore = avgFreshness == null ? 0.5 : clamp01(avgFreshness, 0.5);
+  const externalScore = Number((
+    evidenceCoverage * 0.45
+    + sourceDiversity * 0.15
+    + qualityScore * 0.22
+    + freshnessScore * 0.18
+  ).toFixed(4));
+  const score = Number((externalScore * 0.55 + technical.score * 0.45).toFixed(4));
+  const deficits = [];
+  if (evidenceCount == null) deficits.push('external_evidence_missing');
+  else if (evidenceCount < 2) deficits.push('external_evidence_count_lt_2');
+  if (sourceCount != null && sourceCount < 2) deficits.push('source_diversity_lt_2');
+  if (avgQuality != null && avgQuality < 0.55) deficits.push('source_quality_lt_0.55');
+  if (avgFreshness != null && avgFreshness < 0.5) deficits.push('freshness_lt_0.5');
+  if (technical.direct === false) deficits.push('technical_presignal_false');
+  else if (!technical.ok) deficits.push('technical_confirmation_missing');
+  return {
+    score,
+    grade: score >= 0.74 ? 'strong' : score >= 0.58 ? 'adequate' : score >= 0.42 ? 'thin' : 'missing',
+    external: {
+      ...external,
+      score: externalScore,
+    },
+    technical,
+    deficits,
+  };
 }
 
 export function evaluateLearningTradeQuality(row = {}, env = process.env) {
@@ -250,6 +391,9 @@ export function evaluateTradeDataEntryGuard(signal = {}, env = process.env) {
   const technicalPresignal = hasTechnicalPresignal(signal);
   const noExternalEvidence = externalEvidenceCount != null && externalEvidenceCount <= 0;
   const noTechnicalPresignal = technicalPresignal === false;
+  const strictConfirmationGuard = isStrictTradeDataConfirmationGuardEnabled(env);
+  const confirmationQuality = buildTradeDataConfirmationQuality(signal);
+  meta.confirmationQuality = confirmationQuality;
 
   if (market === 'crypto' && regime.includes('trending_bull')) {
     warnings.push('crypto_trending_bull_current_epoch_mtf_required');
@@ -266,6 +410,10 @@ export function evaluateTradeDataEntryGuard(signal = {}, env = process.env) {
     if (noTechnicalPresignal) {
       blockers.push('crypto_trending_bull_without_mtf_confirmation');
       meta.cryptoTrendingBullPressure.blockerReason = 'explicit technical presignal=false under current-epoch trending_bull loss pressure';
+    }
+    if (confirmationQuality.grade === 'thin' || confirmationQuality.grade === 'missing') {
+      warnings.push('crypto_trending_bull_confirmation_quality_thin');
+      if (strictConfirmationGuard) blockers.push('crypto_trending_bull_confirmation_quality_thin');
     }
   }
 
@@ -285,6 +433,10 @@ export function evaluateTradeDataEntryGuard(signal = {}, env = process.env) {
     if (noExternalEvidence || noTechnicalPresignal) {
       blockers.push('crypto_trend_following_without_confirmation');
       meta.cryptoTrendFollowing.blockerReason = 'underperforming trend_following requires external evidence and technical presignal';
+    }
+    if (confirmationQuality.grade === 'thin' || confirmationQuality.grade === 'missing') {
+      warnings.push('crypto_trend_following_confirmation_quality_thin');
+      if (strictConfirmationGuard) blockers.push('crypto_trend_following_confirmation_quality_thin');
     }
   }
 
@@ -331,6 +483,10 @@ export function evaluateTradeDataEntryGuard(signal = {}, env = process.env) {
         hasTechnicalPresignal: technicalPresignal,
       };
     }
+    if (confirmationQuality.grade === 'thin' || confirmationQuality.grade === 'missing') {
+      warnings.push('crypto_defensive_rotation_confirmation_quality_thin');
+      if (strictConfirmationGuard) blockers.push('crypto_defensive_rotation_confirmation_quality_thin');
+    }
   }
 
   if (market === 'crypto' && strategyFamily === 'mean_reversion') {
@@ -348,6 +504,10 @@ export function evaluateTradeDataEntryGuard(signal = {}, env = process.env) {
     if (noExternalEvidence || noTechnicalPresignal) {
       blockers.push('crypto_mean_reversion_without_reversal_evidence');
       meta.cryptoMeanReversion.blockerReason = 'mean_reversion requires positive external or technical reversal evidence under current-epoch loss pressure';
+    }
+    if (confirmationQuality.grade === 'thin' || confirmationQuality.grade === 'missing') {
+      warnings.push('crypto_mean_reversion_confirmation_quality_thin');
+      if (strictConfirmationGuard) blockers.push('crypto_mean_reversion_confirmation_quality_thin');
     }
   }
 
@@ -438,6 +598,7 @@ export default {
   normalizeTradeDataMarket,
   resolveExpectedSellNoopStatus,
   checkTradeDataWeakSymbol,
+  buildTradeDataConfirmationQuality,
   evaluateTradeDataEntryGuard,
   applyTradeDataEntryGuardToDecision,
 };
