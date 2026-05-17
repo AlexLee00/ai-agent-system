@@ -1,11 +1,12 @@
 'use strict';
 
 /**
- * auto-dev-watch.ts — docs/auto_dev/ 신규 ALARM_INCIDENT 문서 감시 및 auto-dev-pipeline 대기열 등록
+ * auto-dev-watch.ts — docs/auto_dev/ 신규 문서 감시 및 auto-dev-pipeline 대기열 등록
  *
- * 매 실행 시 docs/auto_dev/ALARM_INCIDENT_*.md 파일을 스캔하여
- * auto-dev-pipeline 상태 파일에 없는 신규 문서를 발견하면 처리 요청 후
- * docs/auto_dev/processed/로 이동한다.
+ * 매 실행 시 docs/auto_dev/ 아래 두 패턴을 스캔:
+ *   - ALARM_INCIDENT_*.md (알람 디스패치 허브 incident)
+ *   - CODEX_SKA_EXCEPTION_*.md (스카팀 자기복구 roundtable 결과)
+ * 신규 문서 발견 시 처리 요청 후 docs/auto_dev/processed/로 이동한다.
  *
  * launchd StartInterval: 300 (5분)
  */
@@ -41,7 +42,10 @@ async function scanAndEnqueue(): Promise<{
 
   syncAutoDevManifest(AUTO_DEV_DIR);
   const targets = listAutoDevManifestEntries(AUTO_DEV_DIR, ['inbox'])
-    .filter((relPath) => path.basename(relPath).startsWith('ALARM_INCIDENT_'))
+    .filter((relPath) => {
+      const name = path.basename(relPath);
+      return name.startsWith('ALARM_INCIDENT_') || name.startsWith('CODEX_SKA_EXCEPTION_');
+    })
     .map((relPath) => path.basename(relPath));
   result.scanned = targets;
 
