@@ -17,6 +17,7 @@ const { postAlarm } = require('../../../packages/core/lib/hub-alarm-client');
 const path = require('path');
 const { runIfOps } = require('../../../packages/core/lib/mode-guard');
 const pgPool = require('../../../packages/core/lib/pg-pool');
+const env = require('../../../packages/core/lib/env');
 const { loadStrategyBundle } = require('./strategy-loader.ts');
 const { getRecentPosts, selectAndValidateTopic } = require('./topic-selector.ts');
 const { blogToFacebookPost } = require('./cross-platform-adapter.ts');
@@ -26,6 +27,28 @@ const publishReporter = require('./publish-reporter');
 
 function isEnabled() {
   return process.env.BLOG_MULTI_PLATFORM_ENABLED === 'true';
+}
+
+function getProjectRoot() {
+  return env.PROJECT_ROOT || process.env.PROJECT_ROOT || process.cwd();
+}
+
+function buildDryRunInstagramContent(content = '', title = '', category = '') {
+  const summary = String(content || '')
+    .split(/\n+/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .slice(0, 4)
+    .join('\n');
+
+  return {
+    caption: [title, summary, '#스터디카페 #공부습관 #자기계발']
+      .filter(Boolean)
+      .join('\n\n'),
+    hashtags: ['#스터디카페', '#공부습관', '#자기계발', `#${String(category || '블로그').replace(/\s+/g, '')}`],
+    thumbnailUrl: '',
+    dryRun: true,
+  };
 }
 
 // 기본 플랫폼 전략 상수
@@ -214,6 +237,7 @@ function buildPlatformSpecificBody(platform = 'instagram', selection = {}, strat
 async function buildIndependentPlatformCampaign(options = {}) {
   const needInstagram = options.needInstagram !== false;
   const needFacebook = options.needFacebook !== false;
+  const dryRun = options.dryRun === true;
   const { plan } = loadStrategyBundle();
   const category = String(plan?.preferredCategory || 'IT정보와분석');
   const recentPosts = getRecentPosts(category, 8);
@@ -237,11 +261,12 @@ async function buildIndependentPlatformCampaign(options = {}) {
   const trackingFacebook = generateTrackingLink(`${syntheticPostId}_facebook`, 'facebook', '', facebookVariantLabel);
   let instaContent = null;
   if (needInstagram) {
-    const starSocial = require('./social.ts');
-    instaContent = await starSocial.createInstaContent(instagramContentBody, instagramTitle, category, 0, {
-      strategy: plan,
-      blogUrl: trackingInstagram.url,
-    });
+    instaContent = dryRun
+      ? buildDryRunInstagramContent(instagramContentBody, instagramTitle, category)
+      : await require('./social.ts').createInstaContent(instagramContentBody, instagramTitle, category, 0, {
+          strategy: plan,
+          blogUrl: trackingInstagram.url,
+        });
   }
 
   const facebookContent = needFacebook
@@ -290,7 +315,7 @@ async function buildIndependentPlatformCampaign(options = {}) {
  */
 async function crosspostToInstagram(blogPost, dryRun = false) {
   try {
-    const crossposter = require(path.join(process.env.PROJECT_ROOT || process.cwd(), 'bots/social-media/instagram/lib/insta-crosspost.ts'));
+    const crossposter = require(path.join(getProjectRoot(), 'bots/social-media/instagram/lib/insta-crosspost.ts'));
     const payload = blogPost?.sourceMode === 'strategy_native'
       ? blogPost?.instaContent
       : { caption: `${blogPost.title}\n\n#스터디카페 #집중력 #공부 #개발`, thumbnailUrl: blogPost.thumbnail_url };
@@ -324,7 +349,7 @@ async function crosspostToInstagram(blogPost, dryRun = false) {
  */
 async function crosspostToFacebook(blogPost, dryRun = false) {
   try {
-    const { publishFacebookPost } = require(path.join(process.env.PROJECT_ROOT || process.cwd(), 'bots/social-media/facebook/lib/facebook-publisher.ts'));
+    const { publishFacebookPost } = require(path.join(getProjectRoot(), 'bots/social-media/facebook/lib/facebook-publisher.ts'));
     const prepared = blogPost?.sourceMode === 'strategy_native'
       ? (blogPost.facebookContent || {})
       : {
@@ -357,6 +382,7 @@ async function runStrategyNativeFollowup(platform, dryRun = false) {
   const campaign = await buildIndependentPlatformCampaign({
     needInstagram: platform === 'instagram',
     needFacebook: platform === 'facebook',
+    dryRun,
   });
 
   if (platform === 'instagram') {
@@ -409,7 +435,7 @@ async function orchestrateDailyPublishing(dryRun = false) {
   ]);
   const latestBlogPost = await getLatestTodayPost();
   const blogPost = latestBlogPost || ((igQuota || fbQuota)
-    ? await buildIndependentPlatformCampaign({ needInstagram: igQuota, needFacebook: fbQuota })
+    ? await buildIndependentPlatformCampaign({ needInstagram: igQuota, needFacebook: fbQuota, dryRun })
     : null);
   if (!blogPost) {
     console.log('[platform-orchestrator] 오늘 발행된 네이버 포스팅도 없고 실행할 전략 기반 플랫폼 quota도 없음 — 건너뜀');

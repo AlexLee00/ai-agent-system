@@ -79,13 +79,27 @@ function eventText(event: any = {}) {
   return rawText.toLowerCase();
 }
 
+function escapeRegex(value = '') {
+  return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function matchesAlias(text: string, alias: string) {
+  const normalized = String(alias || '').toLowerCase().trim();
+  if (!normalized) return false;
+  if (/^[a-z0-9 ._-]+$/.test(normalized)) {
+    const pattern = new RegExp(`(^|[^a-z0-9])${escapeRegex(normalized)}([^a-z0-9]|$)`, 'i');
+    return pattern.test(text);
+  }
+  return text.includes(normalized);
+}
+
 function scoreSeed(seed: any, events: any[] = [], options: any = {}) {
   const aliases = (seed.aliases || []).map((alias) => String(alias || '').toLowerCase()).filter(Boolean);
   const matchedEvents = [];
   const matchedAliases = new Set();
   for (const event of events) {
     const text = eventText(event);
-    const hits = aliases.filter((alias) => text.includes(alias));
+    const hits = aliases.filter((alias) => matchesAlias(text, alias));
     if (hits.length > 0) {
       matchedEvents.push(event);
       hits.forEach((hit) => matchedAliases.add(hit));

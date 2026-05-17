@@ -26,7 +26,7 @@ export async function runLunaCandidateBottleneckDiagnosticsSmoke() {
   const rows = buildLunaCandidateBottleneckRows(fixtureCandidateBottleneckInputs());
   assert.equal(rows.length, 4, 'fixture row count');
   assert.equal(rows.find((row) => row.symbol === 'BTC/USDT')?.recommendedAction, 'monitor_pass_candidate');
-  assert.equal(rows.find((row) => row.symbol === 'NEG/USDT')?.recommendedAction, 'quarantine_candidate_shadow');
+  assert.equal(rows.find((row) => row.symbol === 'NEG/USDT')?.recommendedAction, 'strategy_enhancement_shadow');
   assert.equal(rows.find((row) => row.symbol === 'ALPHA/USDT')?.recommendedAction, 'strategy_enhancement_shadow');
   assert.equal(rows.find((row) => row.symbol === 'MISS/USDT')?.recommendedAction, 'refresh_evidence');
   assert.equal(rows.every((row) => row.shadowOnly === true && row.liveMutation === false), true, 'shadow-only rows');
@@ -38,7 +38,7 @@ export async function runLunaCandidateBottleneckDiagnosticsSmoke() {
   assert.equal(neg?.communityEvidenceCount24h, 5, 'trace includes communityEvidenceCount24h');
   assert.equal(neg?.communitySourceCount24h, 5, 'trace includes communitySourceCount24h');
   assert.ok(neg?.primaryBlocker, 'trace includes primaryBlocker');
-  assert.ok(String(neg?.recommendedRefreshCommand || '').includes('runtime:luna-candidate-backtest-refresh'), 'trace includes refresh command');
+  assert.ok(String(neg?.recommendedRefreshCommand || '').includes('runtime:luna-phase4-strategy-enhancement-shadow'), 'trace includes strategy enhancement command');
   assert.ok(
     String(rows.find((row) => row.symbol === 'ALPHA/USDT')?.recommendedRefreshCommand || '').includes('runtime:luna-phase4-strategy-enhancement-shadow'),
     'strategy enhancement rows point to phase4 shadow command',
@@ -48,7 +48,7 @@ export async function runLunaCandidateBottleneckDiagnosticsSmoke() {
   const runtime = await runLunaCandidateBottleneckDiagnostics({ fixture: true, dryRun: true, json: true });
   assert.equal(runtime.summary.total, 4, 'runtime fixture count');
   assert.equal(runtime.summary.liveMutation, false, 'runtime no live mutation');
-  assert.equal(runtime.summary.byAction.strategy_enhancement_shadow, 1, 'strategy action count');
+  assert.equal(runtime.summary.byAction.strategy_enhancement_shadow, 2, 'strategy action count');
   assert.ok(runtime.summary.topPrimaryBlockers.length > 0, 'runtime exposes top primary blockers');
 
   return {
