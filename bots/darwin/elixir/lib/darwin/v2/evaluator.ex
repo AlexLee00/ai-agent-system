@@ -17,6 +17,7 @@ defmodule Darwin.V2.Evaluator do
 
   @batch_size       5        # 5개 모이면 평가 실행
   @batch_wait_ms    60_000   # 또는 60초 대기
+  @eval_spacing_ms  1_000    # Hub rate limit(120/min) 아래로 직렬 평가
   @score_threshold  6        # 적용 후보 최소 점수
   @high_score_mem   7.5      # L1 메모리 저장 임계값
 
@@ -31,7 +32,8 @@ defmodule Darwin.V2.Evaluator do
   defstruct [
     queue: [],
     batch_timer: nil,
-    evaluated_count: 0
+    evaluated_count: 0,
+    evaluating: false
   ]
 
   def start_link(opts \\ []) do
@@ -69,7 +71,7 @@ defmodule Darwin.V2.Evaluator do
     title = paper["title"] || paper[:title] || "unknown"
     Logger.debug("[다윈V2 평가자] 평가 큐 추가: #{title}")
 
-    new_queue = [paper | state.queue]
+    new_queue = state.queue ++ [paper]
     new_state = %{state | queue: new_queue}
 
     new_state =
@@ -83,6 +85,8 @@ defmodule Darwin.V2.Evaluator do
   end
 
   def handle_info({:jay_event, _topic, _payload}, state), do: {:noreply, state}
+  def handle_info(:evaluate_next, state), do: {:noreply, evaluate_next(state)}
+  def handle_info(:evaluation_done, state), do: {:noreply, schedule_next_evaluation(state)}
   def handle_info(_msg, state), do: {:noreply, state}
 
   @impl GenServer
@@ -93,25 +97,51 @@ defmodule Darwin.V2.Evaluator do
   # ── 내부 ─────────────────────────────────────────────────────────────
 
   defp flush_batch(%{queue: []} = state) do
-    check_unscored_papers()
-    state
+    case fetch_unscored_papers() do
+      [] ->
+        state
+
+      papers ->
+        Logger.info("[다윈V2 평가자] 미평가 논문 #{length(papers)}건 발견")
+        %{state | queue: papers}
+        |> start_evaluation_if_idle()
+    end
   end
 
   defp flush_batch(state) do
-    batch = state.queue
-    Logger.info("[다윈V2 평가자] 배치 평가 시작: #{length(batch)}건")
+    Logger.info("[다윈V2 평가자] 배치 평가 큐 처리 시작: #{length(state.queue)}건")
+    start_evaluation_if_idle(state)
+  end
 
-    Enum.each(batch, fn paper ->
-      Task.start(fn -> evaluate_paper(paper) end)
+  defp start_evaluation_if_idle(%{evaluating: true} = state), do: state
+  defp start_evaluation_if_idle(state) do
+    send(self(), :evaluate_next)
+    %{state | evaluating: true}
+  end
+
+  defp evaluate_next(%{queue: []} = state), do: %{state | evaluating: false}
+  defp evaluate_next(%{queue: [paper | rest]} = state) do
+    parent = self()
+
+    Task.start(fn ->
+      evaluate_paper(paper)
+      send(parent, :evaluation_done)
     end)
 
     %{state |
-      queue: [],
-      evaluated_count: state.evaluated_count + length(batch)
+      queue: rest,
+      evaluating: true,
+      evaluated_count: state.evaluated_count + 1
     }
   end
 
-  defp check_unscored_papers do
+  defp schedule_next_evaluation(%{queue: []} = state), do: %{state | evaluating: false}
+  defp schedule_next_evaluation(state) do
+    Process.send_after(self(), :evaluate_next, @eval_spacing_ms)
+    state
+  end
+
+  defp fetch_unscored_papers do
     sql = """
     SELECT id, title, url, summary, source, tags
     FROM reservation.rag_research
@@ -122,16 +152,13 @@ defmodule Darwin.V2.Evaluator do
 
     case Ecto.Adapters.SQL.query(Jay.Core.Repo, sql, []) do
       {:ok, %{rows: rows, columns: cols}} when rows != [] ->
-        Logger.info("[다윈V2 평가자] 미평가 논문 #{length(rows)}건 발견")
-        Enum.each(rows, fn row ->
-          paper = cols |> Enum.zip(row) |> Map.new()
-          Task.start(fn -> evaluate_paper(paper) end)
-        end)
+        Enum.map(rows, fn row -> cols |> Enum.zip(row) |> Map.new() end)
+
       _ ->
-        :ok
+        []
     end
   rescue
-    _ -> :ok
+    _ -> []
   end
 
   defp evaluate_paper(paper) do

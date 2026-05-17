@@ -1,13 +1,1 @@
-{
-  "level": 5,
-  "reason": "promoted_to_full_autonomy_by_master_request",
-  "updated_at": "2026-04-20T03:00:00.000Z",
-  "error_count": 0,
-  "last_error": null,
-  "consecutiveSuccesses": 10,
-  "appliedSuccesses": 3,
-  "daysAtCurrentLevel": 14,
-  "killSwitch": false,
-  "pipelineRuns": 10,
-  "lastUpgradeAt": "2026-04-20T03:00:00.000Z"
-}
+{"level":3,"appliedSuccesses":3,"consecutiveSuccesses":0,"upgradedAt":"2026-05-17T02:01:21.739510Z"}

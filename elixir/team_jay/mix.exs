@@ -24,7 +24,11 @@ defmodule TeamJay.MixProject do
       "dashboard.phase_52_check": ["team_jay.dashboard.phase_52_check"],
       "sigma.migrate": ["sigma.migrate"],
       "darwin.migrate": ["darwin.migrate"],
-      "luna.migrate": ["luna.migrate"]
+      "luna.migrate": ["luna.migrate"],
+      # cycle #53 M2: assets pipeline
+      "assets.build": ["tailwind default"],
+      "assets.deploy": ["tailwind default --minify"],
+      "assets.watch": ["tailwind default --watch"]
     ]
   end
 
