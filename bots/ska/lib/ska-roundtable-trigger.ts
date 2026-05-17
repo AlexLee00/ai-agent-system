@@ -119,15 +119,24 @@ export async function checkTriggerConditions(): Promise<RoundtableCondition[]> {
 
 /**
  * 오늘 roundtable 횟수 확인 (daily limit 준수)
+ * roundtable 완료 시 agent='roundtable', error_type='roundtable_trigger' 행 insert
  */
 async function getDailyCount(): Promise<number> {
   const row = await pgPool.get(SCHEMA, `
     SELECT COUNT(*)::int AS cnt
     FROM ska.failure_reflexions
     WHERE agent = 'roundtable'
+      AND error_type = 'roundtable_trigger'
       AND created_at >= CURRENT_DATE
   `, []).catch(() => ({ cnt: 0 }));
   return Number(row?.cnt || 0);
+}
+
+async function persistRoundtableRun(roundtableId: string): Promise<void> {
+  await pgPool.run(SCHEMA, `
+    INSERT INTO ska.failure_reflexions (agent, error_type, hindsight)
+    VALUES ('roundtable', 'roundtable_trigger', $1)
+  `, [roundtableId]).catch(() => {/* 추적 실패는 무시 */});
 }
 
 /**
@@ -270,6 +279,7 @@ export async function checkAndTriggerRoundtable(): Promise<{
       autoDevPath = result?.path;
     }
 
+    await persistRoundtableRun(consensus.roundtable_id);
     console.log(`[ska-roundtable] 완료 roundtable_id=${consensus.roundtable_id} auto_dev=${autoDevPath || 'skipped'}`);
 
     return { triggered: true, conditions, consensus, autoDevPath };

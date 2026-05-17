@@ -33,6 +33,7 @@ const {
   getReservationRuntimeFile,
   ensureParentDir,
 } = require('../lib/runtime-paths');
+const { checkAndTriggerRoundtable } = require('../../ska/lib/ska-roundtable-trigger');
 
 // ─── 봇 정보 ─────────────────────────────────────────────────────────
 const BOT_NAME       = '스카';
@@ -164,7 +165,7 @@ const commandQueue = createSkaCommandQueue({
 
 // ─── 메인 루프 ───────────────────────────────────────────────────────
 const COMMAND_POLL_MS = 5000;
-// 5초 루프 기준: 12 tick = 1분, 4320 tick = 6시간
+// 5초 루프 기준: 12 tick = 1분, 720 tick = 1시간, 4320 tick = 6시간
 let _identityCounter = 0;
 
 async function main() {
@@ -200,6 +201,14 @@ async function main() {
         const message = e instanceof Error ? e.message : String(e);
         console.error(`[스카] 정체성 점검 오류:`, message);
       }
+    }
+
+    // Roundtable 트리거 체크: 시작 1분 후 첫 실행, 이후 1시간마다
+    // SKA_ROUNDTABLE_ENABLED=true 일 때만 실제 회의 실행 (kill switch)
+    if (_identityCounter % 720 === 12) {
+      setImmediate(() => {
+        checkAndTriggerRoundtable().catch(() => {/* 라운드테이블 오류는 모니터에 영향 없음 */});
+      });
     }
 
     await new Promise(r => setTimeout(r, COMMAND_POLL_MS));

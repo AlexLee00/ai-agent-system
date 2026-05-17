@@ -125,7 +125,7 @@ function buildSkaExceptionDocument(opts: {
     `incident_key: ska-exception-${slugify(condition.error_type)}-${slugify(condition.agent)}`,
     `alarm_event_type: ska_exception_${condition.error_type}`,
     `risk_tier: ${consensus.risk_level === 'high' ? 'high' : 'medium'}`,
-    'task_type: exception_case_implementation',
+    'task_type: implementation_task',
     'write_scope:',
     ...writeScope.map(s => `  - ${s}`),
     'test_scope:',
