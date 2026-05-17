@@ -81,6 +81,23 @@ function actionFromReasons(reasons: string[], input: any = {}) {
   return 'monitor_pass_candidate';
 }
 
+function refreshCommandFor(action: string, reasons: string[], row: any = {}) {
+  const market = normalizeLunaPhase2Market(row.market || row.candidate?.market);
+  if (action === 'strategy_enhancement_shadow') {
+    return `npm --prefix bots/investment run -s runtime:luna-phase4-strategy-enhancement-shadow -- --json --dry-run --market=${market}`;
+  }
+  if (reasons.some((reason) => reason.startsWith('backtest_') || reason === 'sharpe_negative' || reason === 'win_rate_low' || reason === 'drawdown_high')) {
+    return `npm --prefix bots/investment run -s runtime:luna-candidate-backtest-refresh -- --json --force --market=${market}`;
+  }
+  if (reasons.some((reason) => reason.startsWith('predictive_'))) {
+    return `npm --prefix bots/investment run -s runtime:luna-predictive-evidence-refresh -- --json --market=${market}`;
+  }
+  if (reasons.includes('community_coverage_low')) {
+    return `npm --prefix bots/investment run -s runtime:luna-community-evidence-refresh -- --json`;
+  }
+  return `npm --prefix bots/investment run -s runtime:luna-candidate-bottleneck-diagnostics -- --json --dry-run --market=${market}`;
+}
+
 function severityFrom(action: string, reasons: string[]) {
   if (action === 'monitor_pass_candidate') return 'pass';
   if (action === 'quarantine_candidate_shadow') return 'blocker';
@@ -129,31 +146,31 @@ export async function ensureLunaCandidateBottleneckSchema() {
 }
 
 export function fixtureCandidateBottleneckInputs() {
-  const now = new Date('2026-05-15T00:00:00.000Z').toISOString();
+  const now = new Date().toISOString();
   return [
     {
       candidate: { symbol: 'BTC/USDT', market: 'crypto', score: 0.88, source: 'fixture', discovered_at: now },
       backtest: { fresh: true, healthy: true, sharpe: 1.1, max_drawdown: 9, win_rate: 54, gate_status: 'pass', last_backtest_at: now },
       predictive: { decision: 'fire', score: 0.74, component_coverage: 1, created_at: now },
-      community: { avg_score: 0.35, source_count: 3, market_source_count: 8, last_seen_at: now },
+      community: { avg_score: 0.35, event_count: 4, source_count: 3, market_event_count: 12, market_source_count: 8, last_seen_at: now },
     },
     {
       candidate: { symbol: 'NEG/USDT', market: 'crypto', score: 0.79, source: 'fixture', discovered_at: now },
       backtest: { fresh: true, healthy: false, would_block: true, sharpe: -0.7, max_drawdown: 18, win_rate: 24, gate_status: 'would_block_unhealthy', last_backtest_at: now },
       predictive: { decision: 'block_backtest_gate', score: 0.32, component_coverage: 1, blocked_reason: 'backtest_unhealthy', created_at: now },
-      community: { avg_score: 0.12, source_count: 1, market_source_count: 4, last_seen_at: now },
+      community: { avg_score: 0.12, event_count: 1, source_count: 1, market_event_count: 4, market_source_count: 4, last_seen_at: now },
     },
     {
       candidate: { symbol: 'ALPHA/USDT', market: 'crypto', score: 0.82, source: 'fixture', discovered_at: now },
       backtest: { fresh: true, healthy: false, would_block: true, sharpe: -0.2, max_drawdown: 14, win_rate: 29, gate_status: 'would_block_unhealthy', last_backtest_at: now },
       predictive: { decision: 'fire', score: 0.68, component_coverage: 1, created_at: now },
-      community: { avg_score: 0.41, source_count: 3, market_source_count: 6, last_seen_at: now },
+      community: { avg_score: 0.41, event_count: 3, source_count: 3, market_event_count: 8, market_source_count: 6, last_seen_at: now },
     },
     {
       candidate: { symbol: 'MISS/USDT', market: 'crypto', score: 0.71, source: 'fixture', discovered_at: now },
       backtest: null,
       predictive: { decision: null, score: null, component_coverage: 0, created_at: null },
-      community: { avg_score: null, source_count: 0, market_source_count: 0, last_seen_at: null },
+      community: { avg_score: null, event_count: 0, source_count: 0, market_event_count: 0, market_source_count: 0, last_seen_at: null },
     },
   ];
 }
@@ -198,6 +215,10 @@ export function buildLunaCandidateBottleneckRows(inputs: any[] = [], options: an
     const recommendedAction = actionFromReasons(uniqueReasons, input);
     const severity = severityFrom(recommendedAction, uniqueReasons);
     const candidateSelectionPenalty = penaltyFromReasons(uniqueReasons, recommendedAction);
+    const communityEvidenceCount24h = n(community.event_count ?? community.eventCount, 0) + n(community.market_event_count ?? community.marketEventCount, 0);
+    const communitySourceCount24h = communitySources;
+    const primaryBlocker = uniqueReasons[0] || null;
+    const recommendedRefreshCommand = refreshCommandFor(recommendedAction, uniqueReasons, { market, candidate });
 
     return {
       ok: true,
@@ -206,10 +227,16 @@ export function buildLunaCandidateBottleneckRows(inputs: any[] = [], options: an
       exchange,
       severity,
       recommendedAction,
+      recommendedRefreshCommand,
       candidateScore: round(candidate.score, 4),
       backtestStatus: backtest.gate_status || (backtestFresh && backtestHealthy ? 'pass' : 'unknown'),
+      backtestFresh,
+      backtestGateStatus: backtest.gate_status || (backtestFresh && backtestHealthy ? 'pass' : 'unknown'),
       predictiveDecision,
       communitySources,
+      communityEvidenceCount24h,
+      communitySourceCount24h,
+      primaryBlocker,
       candidateSelectionPenalty,
       reasons: uniqueReasons,
       shadowOnly: true,
@@ -221,6 +248,15 @@ export function buildLunaCandidateBottleneckRows(inputs: any[] = [], options: an
         backtest,
         predictive,
         community,
+        trace: {
+          backtestFresh,
+          backtestGateStatus: backtest.gate_status || (backtestFresh && backtestHealthy ? 'pass' : 'unknown'),
+          predictiveDecision,
+          communityEvidenceCount24h,
+          communitySourceCount24h,
+          primaryBlocker,
+          recommendedRefreshCommand,
+        },
         thresholds: {
           staleBacktestHours,
           stalePredictiveHours,
@@ -250,6 +286,7 @@ export async function loadLunaCandidateBottleneckInputs({ limit = 50, market = n
       SELECT symbol, market,
              (SUM(score * GREATEST(0.05, COALESCE(source_quality, 0.5)) * GREATEST(0.2, COALESCE(freshness_score, 1.0)))
               / NULLIF(SUM(GREATEST(0.05, COALESCE(source_quality, 0.5)) * GREATEST(0.2, COALESCE(freshness_score, 1.0))), 0))::double precision AS avg_score,
+             COUNT(*)::int AS event_count,
              COUNT(DISTINCT source_name)::int AS source_count,
              AVG(source_quality)::double precision AS avg_source_quality,
              MAX(created_at) AS last_seen_at,
@@ -260,6 +297,7 @@ export async function loadLunaCandidateBottleneckInputs({ limit = 50, market = n
          AND created_at >= NOW() - INTERVAL '24 hours'
          AND symbol IS NOT NULL
          AND source_name <> 'community_candidate_gap'
+         AND COALESCE(source_name, '') <> 'cryptopanic_news'
          AND COALESCE((raw_ref->>'missing_data')::boolean, false) = false
        GROUP BY symbol, market
     ),
@@ -267,6 +305,7 @@ export async function loadLunaCandidateBottleneckInputs({ limit = 50, market = n
       SELECT market,
              (SUM(score * GREATEST(0.05, COALESCE(source_quality, 0.5)) * GREATEST(0.2, COALESCE(freshness_score, 1.0)))
               / NULLIF(SUM(GREATEST(0.05, COALESCE(source_quality, 0.5)) * GREATEST(0.2, COALESCE(freshness_score, 1.0))), 0))::double precision AS market_avg_score,
+             COUNT(*)::int AS market_event_count,
              COUNT(DISTINCT source_name)::int AS market_source_count,
              AVG(source_quality)::double precision AS market_avg_quality,
              MAX(created_at) AS market_last_seen_at
@@ -275,6 +314,7 @@ export async function loadLunaCandidateBottleneckInputs({ limit = 50, market = n
          AND created_at >= NOW() - INTERVAL '24 hours'
          AND symbol IS NULL
          AND source_name <> 'community_candidate_gap'
+         AND COALESCE(source_name, '') <> 'cryptopanic_news'
          AND COALESCE((raw_ref->>'missing_data')::boolean, false) = false
        GROUP BY market
     ),
@@ -312,12 +352,14 @@ export async function loadLunaCandidateBottleneckInputs({ limit = 50, market = n
            lp.threshold AS predictive_threshold, lp.component_coverage,
            lp.blocked_reason AS predictive_blocked_reason, lp.created_at AS predictive_created_at,
            symbol_community.avg_score AS community_avg_score,
+           symbol_community.event_count AS community_event_count,
            symbol_community.source_count AS community_source_count,
            symbol_community.avg_source_quality AS community_avg_source_quality,
            symbol_community.last_seen_at AS community_last_seen_at,
            symbol_community.bot_noise_flag AS community_bot_noise_flag,
            symbol_community.hype_spike_flag AS community_hype_spike_flag,
            market_community.market_avg_score AS community_market_avg_score,
+           market_community.market_event_count AS community_market_event_count,
            market_community.market_source_count AS community_market_source_count,
            market_community.market_avg_quality AS community_market_avg_quality,
            market_community.market_last_seen_at AS community_market_last_seen_at
@@ -366,10 +408,12 @@ export async function loadLunaCandidateBottleneckInputs({ limit = 50, market = n
     },
     community: {
       avg_score: row.community_avg_score,
+      event_count: row.community_event_count,
       source_count: row.community_source_count,
       avg_source_quality: row.community_avg_source_quality,
       last_seen_at: row.community_last_seen_at,
       market_avg_score: row.community_market_avg_score,
+      market_event_count: row.community_market_event_count,
       market_source_count: row.community_market_source_count,
       market_avg_quality: row.community_market_avg_quality,
       market_last_seen_at: row.community_market_last_seen_at,

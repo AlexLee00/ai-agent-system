@@ -178,7 +178,6 @@ async function initHubSecretsOnce() {
       naver_client_id:      c.news?.naver_client_id || '',
       naver_client_secret:  c.news?.naver_client_secret || '',
       dart_api_key:         c.news?.dart_api_key || '',
-      cryptopanic_api_key:  c.news?.cryptopanic_api_key || '',
       alpha_vantage_api_key: c.news?.alpha_vantage_api_key || '',
       trading_mode: normalizeMode(c.trading_mode) || (c.paper_mode === false ? 'live' : 'paper'),
       binance_mode: normalizeMode(c.binance_mode) || 'inherit',
@@ -247,7 +246,6 @@ export function loadSecrets() {
       naver_client_id:      c.news?.naver_client_id     || '',
       naver_client_secret:  c.news?.naver_client_secret || '',
       dart_api_key:         c.news?.dart_api_key        || '',
-      cryptopanic_api_key:  c.news?.cryptopanic_api_key || '',
       alpha_vantage_api_key:c.news?.alpha_vantage_api_key || '',
       // 모드
       trading_mode: normalizeMode(c.trading_mode) || (c.paper_mode === false ? 'live' : 'paper'),

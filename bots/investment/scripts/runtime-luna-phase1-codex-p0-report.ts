@@ -5,6 +5,11 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { get, query } from '../shared/db/core.ts';
+import { fetchLunaCommunityCoverageGate } from '../shared/luna-community-coverage-gate.ts';
+import {
+  buildLunaCandidateBottleneckRows,
+  loadLunaCandidateBottleneckInputs,
+} from '../shared/luna-candidate-bottleneck-diagnostics.ts';
 
 const ROOT = path.resolve(new URL('../../..', import.meta.url).pathname);
 const OUT = path.resolve(new URL('../output/luna-phase1-codex-p0-report.json', import.meta.url).pathname);
@@ -56,6 +61,22 @@ function launchdStatus(label: string) {
   };
 }
 
+function countBy(rows = [], key: string) {
+  return rows.reduce((acc, row) => {
+    const value = row?.[key] || 'unknown';
+    acc[value] = (acc[value] || 0) + 1;
+    return acc;
+  }, {});
+}
+
+function topCandidateBlockers(rows = [], limit = 10) {
+  return Object.entries(countBy(rows, 'primaryBlocker'))
+    .filter(([blocker]) => blocker !== 'unknown')
+    .map(([blocker, count]) => ({ blocker, count }))
+    .sort((a, b) => Number(b.count) - Number(a.count) || String(a.blocker).localeCompare(String(b.blocker)))
+    .slice(0, limit);
+}
+
 const community24h = await safeGet(`
   SELECT count(*)::int AS count
     FROM external_evidence_events
@@ -86,10 +107,24 @@ const launchd = [
   launchdStatus('ai.luna.candidate-backtest-refresh'),
 ];
 
+const communityCoverageGate = await fetchLunaCommunityCoverageGate({ hours: 24 }).catch((error) => ({
+  ok: false,
+  blockers: ['community_coverage_gate_failed'],
+  warnings: [],
+  markets: [],
+  summary: {},
+  error: String(error?.message || error),
+}));
+
+const candidateBottleneckRows = buildLunaCandidateBottleneckRows(
+  await loadLunaCandidateBottleneckInputs({ limit: 30 }).catch(() => []),
+).slice(0, 30);
+
 const maxTradeUsdt = execText('launchctl', ['getenv', 'LUNA_MAX_TRADE_USDT'], process.env.LUNA_MAX_TRADE_USDT || '');
 
 const goals = {
   communityEvidencePositive: Number(community24h?.count || 0) > 0,
+  communityCoverageGatePass: communityCoverageGate.ok === true,
   backtestFreshStatusExists: Number(backtestStatus?.fresh || 0) > 0,
   gateAuditExists: predictiveAudit24h.some((row) => !row.error && Number(row.count || 0) > 0),
   launchdLabelsVisible: launchd.every((item) => item.visible),
@@ -108,8 +143,25 @@ const payload = {
   goals,
   db: {
     community24h,
+    communityCoverageGate,
     candidateBacktestStatus: backtestStatus,
     predictiveAudit24h,
+    candidateBottleneckTrace: {
+      total: candidateBottleneckRows.length,
+      byPrimaryBlocker: countBy(candidateBottleneckRows, 'primaryBlocker'),
+      topPrimaryBlockers: topCandidateBlockers(candidateBottleneckRows),
+      sample: candidateBottleneckRows.slice(0, 5).map((row) => ({
+        symbol: row.symbol,
+        market: row.market,
+        backtestFresh: row.backtestFresh,
+        backtestGateStatus: row.backtestGateStatus,
+        predictiveDecision: row.predictiveDecision,
+        communityEvidenceCount24h: row.communityEvidenceCount24h,
+        communitySourceCount24h: row.communitySourceCount24h,
+        primaryBlocker: row.primaryBlocker,
+        recommendedRefreshCommand: row.recommendedRefreshCommand,
+      })),
+    },
   },
   launchd,
   safety: {

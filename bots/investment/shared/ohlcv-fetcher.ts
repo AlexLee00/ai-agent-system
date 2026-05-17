@@ -10,6 +10,8 @@ const pgPool = require('../../../packages/core/lib/pg-pool');
 const SCHEMA = 'investment';
 const DEFAULT_EXCHANGE = 'binance';
 const MAX_BATCH = 1000;
+const FETCH_TIMEOUT_MS = Math.max(3_000, Number(process.env.LUNA_OHLCV_FETCH_TIMEOUT_MS || 10_000));
+const FALLBACK_TIMEOUT_MS = Math.max(3_000, Number(process.env.LUNA_OHLCV_FALLBACK_TIMEOUT_MS || 15_000));
 const TRADINGVIEW_MCP_SCRIPT = new URL('../scripts/tradingview-mcp-server.py', import.meta.url);
 
 const TIMEFRAME_MS = {
@@ -26,7 +28,11 @@ let _cacheAvailable = null;
 
 function getExchange() {
   if (_exchange) return _exchange;
-  _exchange = new ccxt.binance({ options: { defaultType: 'spot' } });
+  _exchange = new ccxt.binance({
+    timeout: FETCH_TIMEOUT_MS,
+    enableRateLimit: true,
+    options: { defaultType: 'spot' },
+  });
   return _exchange;
 }
 
@@ -125,6 +131,7 @@ function fetchOHLCVFromTradingViewFallback(symbol, timeframe, from, to = null, e
       const raw = execFileSync('python3', args, {
         encoding: 'utf8',
         stdio: ['ignore', 'pipe', 'pipe'],
+        timeout: FALLBACK_TIMEOUT_MS,
       });
       payload = JSON.parse(String(raw || '{}'));
     } catch (error) {

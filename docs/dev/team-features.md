@@ -119,7 +119,7 @@ bash scripts/reload-monitor.sh
 | **아리아** | `team/aria.js` | TA MTF 기술분석 (RSI/MACD/BB/MA/스토캐스틱/ATR) | 규칙 기반 |
 | **오라클** | `team/oracle.js` | 온체인·매크로 (공포탐욕/펀딩비/롱숏비/OI) | Scout |
 | **헤르메스** | `team/hermes.js` | 뉴스 감성 (CoinDesk/Yahoo/MarketWatch/Naver/DART) | Scout |
-| **소피아** | `team/sophia.js` | 커뮤니티 감성 (Reddit/DCInside/CryptoPanic/Naver토론실) | Scout |
+| **소피아** | `team/sophia.js` | 커뮤니티 감성 (Reddit/DCInside/Fear & Greed/Naver토론실) | Scout |
 | **제우스** | `team/zeus.js` | 강세 리서처 (bull case 토론) | Claude |
 | **아테나** | `team/athena.js` | 약세 리서처 (bear case 토론) | Claude |
 | **네메시스** | `team/nemesis.js` | 리스크 매니저 (하드 규칙 + LLM) | Haiku(OPS) / Scout(DEV) |

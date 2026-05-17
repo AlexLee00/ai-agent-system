@@ -31,6 +31,15 @@ function countBy(rows: any[] = [], key: string) {
   }, {});
 }
 
+function topPrimaryBlockers(rows: any[] = [], limit = 8) {
+  const counts = countBy(rows, 'primaryBlocker');
+  return Object.entries(counts)
+    .filter(([blocker]) => blocker !== 'unknown')
+    .map(([blocker, count]) => ({ blocker, count }))
+    .sort((a, b) => Number(b.count) - Number(a.count) || String(a.blocker).localeCompare(String(b.blocker)))
+    .slice(0, limit);
+}
+
 export async function runLunaCandidateBottleneckDiagnostics(options: any = {}, deps: any = {}) {
   const apply = options.apply === true;
   const dryRun = options.dryRun === true || !apply;
@@ -73,6 +82,16 @@ export async function runLunaCandidateBottleneckDiagnostics(options: any = {}, d
     total: rows.length,
     bySeverity: countBy(rows, 'severity'),
     byAction: countBy(rows, 'recommendedAction'),
+    topPrimaryBlockers: topPrimaryBlockers(rows),
+    traceFields: [
+      'backtestFresh',
+      'backtestGateStatus',
+      'predictiveDecision',
+      'communityEvidenceCount24h',
+      'communitySourceCount24h',
+      'primaryBlocker',
+      'recommendedRefreshCommand',
+    ],
     averagePenalty: rows.length
       ? Number((rows.reduce((sum, row) => sum + Number(row.candidateSelectionPenalty || 0), 0) / rows.length).toFixed(4))
       : 0,
@@ -116,4 +135,3 @@ if (isDirectExecution(import.meta.url)) {
     errorPrefix: 'runtime-luna-candidate-bottleneck-diagnostics error:',
   });
 }
-

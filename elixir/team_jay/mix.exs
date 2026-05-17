@@ -89,7 +89,11 @@ defmodule TeamJay.MixProject do
       # Phase A: LiveView 대시보드
       {:phoenix, "~> 1.7"},
       {:phoenix_live_view, "~> 1.0"},
-      {:phoenix_html, "~> 4.0"}
+      {:phoenix_html, "~> 4.0"},
+
+      # cycle #53 M2: Tailwind JIT + esbuild assets pipeline
+      {:tailwind, "~> 0.2", runtime: Mix.env() == :dev},
+      {:esbuild, "~> 0.8", runtime: Mix.env() == :dev}
     ]
   end
 end

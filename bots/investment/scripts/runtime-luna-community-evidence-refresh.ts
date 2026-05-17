@@ -17,7 +17,6 @@ const {
 
 const SHADOW_MODE = process.env.LUNA_COMMUNITY_EVIDENCE_SHADOW_MODE !== 'false';
 const DEFAULT_TIMEOUT_MS = Number(process.env.LUNA_COMMUNITY_EVIDENCE_TIMEOUT_MS || 8000);
-const CRYPTOPANIC_RETIRED_REASON = 'retired_paid_source';
 
 const TICKER_SYMBOL_MAP: Record<string, string> = {
   BTC: 'BTC/USDT', ETH: 'ETH/USDT', SOL: 'SOL/USDT', BNB: 'BNB/USDT',
@@ -643,6 +642,84 @@ function rssFreshnessScore(pubDate = '') {
   if (ageHours <= 24) return 0.9;
   if (ageHours <= 72) return 0.7;
   return 0.45;
+}
+
+function buildDomesticMarketwideArticleEvents(feed: any, items: any[] = [], maxItems = 4) {
+  return items
+    .slice(0, Math.max(0, maxItems))
+    .map((item, index) => {
+      const text = `${item.title || ''} ${item.description || ''}`;
+      const { direction, bullScore, bearScore } = keywordDirection(text, KOREAN_BULLISH_KW, KOREAN_BEARISH_KW);
+      const freshnessScore = rssFreshnessScore(item.pubDate);
+      const magnitude = Math.min(0.52, 0.18 + Math.min(0.16, Math.abs(bullScore - bearScore) * 0.05) + Math.min(0.12, freshnessScore * 0.12));
+      return {
+        sourceType: 'community',
+        sourceName: `domestic_market_news_rss_${feed.key}`,
+        sourceUrl: item.link || feed.url,
+        symbol: null,
+        market: 'domestic',
+        strategyFamily: 'market_news_sentiment',
+        signalDirection: direction,
+        score: directionScore(direction, magnitude),
+        sourceQuality: feed.sourceQuality,
+        freshnessScore,
+        evidenceSummary: `${feed.publisher} RSS domestic article #${index + 1}: ${String(item.title || '').slice(0, 120)}`,
+        rawRef: {
+          marketWide: true,
+          articleEvent: true,
+          mentions: 1,
+          publisher: feed.publisher,
+          feedUrl: feed.url,
+          articleIndex: index + 1,
+          bullishHits: bullScore,
+          bearishHits: bearScore,
+          article: {
+            title: item.title,
+            link: item.link,
+            pubDate: item.pubDate || null,
+            source: item.source || feed.publisher,
+          },
+        },
+      };
+    });
+}
+
+function buildOverseasMarketwideArticleEvents(feed: any, items: any[] = [], maxItems = 3) {
+  return items
+    .slice(0, Math.max(0, maxItems))
+    .map((item, index) => {
+      const text = `${item.title || ''} ${item.description || ''}`;
+      const direction = inferDirection(text);
+      const freshnessScore = rssFreshnessScore(item.pubDate);
+      const magnitude = Math.min(0.54, 0.20 + Math.min(0.14, freshnessScore * 0.14));
+      return {
+        sourceType: 'community',
+        sourceName: `overseas_market_news_rss_${feed.key}`,
+        sourceUrl: item.link || feed.url,
+        symbol: null,
+        market: 'overseas',
+        strategyFamily: 'market_news_sentiment',
+        signalDirection: direction,
+        score: directionScore(direction, magnitude),
+        sourceQuality: feed.sourceQuality,
+        freshnessScore,
+        evidenceSummary: `${feed.publisher} RSS overseas article #${index + 1}: ${String(item.title || '').slice(0, 120)}`,
+        rawRef: {
+          marketWide: true,
+          articleEvent: true,
+          mentions: 1,
+          publisher: feed.publisher,
+          feedUrl: feed.url,
+          articleIndex: index + 1,
+          article: {
+            title: item.title,
+            link: item.link,
+            pubDate: item.pubDate || null,
+            source: item.source || feed.publisher,
+          },
+        },
+      };
+    });
 }
 
 async function fetchCryptoNewsRssBundle(activeSymbols: string[] = [], limit = 60): Promise<any[]> {
@@ -1551,6 +1628,7 @@ async function fetchDomesticMarketNewsRssBundle(activeCandidates: ActiveCandidat
           })),
         },
       });
+      feedEvents.push(...buildDomesticMarketwideArticleEvents(feed, items, 4));
     }
 
     for (const candidate of candidates) {
@@ -1664,6 +1742,7 @@ async function fetchOverseasMarketNewsRssBundle(activeCandidates: ActiveCandidat
           })),
         },
       });
+      feedEvents.push(...buildOverseasMarketwideArticleEvents(feed, items, 3));
     }
 
     for (const candidate of candidates) {
@@ -1812,16 +1891,6 @@ async function resolveLunaNaverNewsCredentials() {
       error: String(error?.message || error),
     };
   }
-}
-
-async function resolveLunaCryptoPanicApiKey() {
-  return { apiKey: '', source: CRYPTOPANIC_RETIRED_REASON, retired: true };
-}
-
-async function fetchCryptoPanic(apiKey: string | null, limit = 30): Promise<any[]> {
-  void apiKey;
-  void limit;
-  return [];
 }
 
 async function fetchNaverNews({ clientId, clientSecret, limit = 20 } = {}): Promise<any[]> {
@@ -1985,9 +2054,6 @@ export async function runCommunityEvidenceRefresh(options: any = {}): Promise<an
   const naverNewsCredentials = fixture
     ? { clientId: '', clientSecret: '', source: 'fixture_skipped' }
     : await resolveLunaNaverNewsCredentials();
-  const cryptoPanicCredentials = fixture
-    ? { apiKey: '', source: 'fixture_skipped' }
-    : await resolveLunaCryptoPanicApiKey();
 
   const sourceResults = fixture
     ? [{ source: 'fixture', ok: true, count: fixtureEvents(limit).length, events: fixtureEvents(limit), error: null }]
@@ -2001,7 +2067,6 @@ export async function runCommunityEvidenceRefresh(options: any = {}): Promise<an
       collectSource('coingecko_trending_community', () => fetchCoinGeckoTrendingCommunity(activeSymbols, limit)),
       collectSource('coingecko_search_interest', () => fetchCoinGeckoSearchInterest(activeSymbols, limit)),
       collectSource('alternative_fear_greed_index', () => fetchAlternativeFearGreed()),
-      collectSource('cryptopanic_news', () => fetchCryptoPanic(cryptoPanicCredentials.apiKey || null, limit)),
       collectSource('naver_news', () => fetchNaverNews({
         clientId: naverNewsCredentials.clientId,
         clientSecret: naverNewsCredentials.clientSecret,
@@ -2053,12 +2118,6 @@ export async function runCommunityEvidenceRefresh(options: any = {}): Promise<an
         source: naverNewsCredentials.source,
         present: Boolean(naverNewsCredentials.clientId && naverNewsCredentials.clientSecret),
         error: naverNewsCredentials.error || null,
-      },
-      cryptoPanic: {
-        source: cryptoPanicCredentials.source,
-        present: Boolean(cryptoPanicCredentials.apiKey),
-        retired: Boolean(cryptoPanicCredentials.retired),
-        error: cryptoPanicCredentials.error || null,
       },
     },
     activeCandidateSymbols: activeSymbols,

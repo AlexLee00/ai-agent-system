@@ -1,0 +1,24 @@
+/* ─────────────────────────────────────────────────────────────────
+   cycle #53 M2 — Tailwind JIT + 커스텀 컴포넌트 보존
+   ──────────────────────────────────────────────────────────────── */
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ============================================================
+   커스텀 컴포넌트 클래스 (기존 dashboard.css 보존, JIT 생성 X)
+============================================================ */
+
+/* 마스터 의도된 의미 클래스 — Phase A 인계 */
+.step-box {
+  @apply px-3 py-1 rounded text-xs font-mono font-semibold;
+}
+
+.severity-info  { color: #60a5fa; }
+.severity-warn  { color: #facc15; }
+.severity-error { color: #f87171; }
+
+/* 기본 reset (Tailwind base에 일부 포함되지만 명시) */
+table {
+  border-collapse: collapse;
+}

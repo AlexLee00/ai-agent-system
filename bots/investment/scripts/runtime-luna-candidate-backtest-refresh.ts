@@ -14,6 +14,7 @@ const REFRESH_UNHEALTHY = process.env.LUNA_BACKTEST_REFRESH_UNHEALTHY !== 'false
 const OHLCV_FALLBACK_ENABLED = process.env.LUNA_BACKTEST_OHLCV_FALLBACK_ENABLED !== 'false';
 const VECTORBT_ENABLED = process.env.LUNA_BACKTEST_VECTORBT_ENABLED !== 'false';
 const VECTORBT_TIMEOUT_MS = Math.max(5_000, Number(process.env.LUNA_VECTORBT_TIMEOUT_MS || 30_000));
+const OHLCV_TIMEOUT_MS = Math.max(5_000, Number(process.env.LUNA_BACKTEST_OHLCV_TIMEOUT_MS || 20_000));
 
 const GATE = {
   MIN_SHARPE: 0,
@@ -244,7 +245,10 @@ async function runOhlcvFallbackBacktest(symbol: string, market: string, days: nu
   const exchange = exchangeForLunaPhase2Market(market);
   const timeframe = process.env.LUNA_BACKTEST_OHLCV_FALLBACK_TIMEFRAME || (market === 'crypto' ? '1h' : '1d');
   const from = new Date(Date.now() - Math.max(7, days) * 24 * 3600 * 1000).toISOString();
-  const rows = await getOHLCV(symbol, timeframe, from, null, exchange).catch(() => []);
+  const rows = await Promise.race([
+    getOHLCV(symbol, timeframe, from, null, exchange),
+    new Promise((_, reject) => setTimeout(() => reject(new Error(`ohlcv_timeout(${OHLCV_TIMEOUT_MS}ms)`)), OHLCV_TIMEOUT_MS)),
+  ]).catch(() => []);
   return buildOhlcvMomentumBacktestRows(rows, days, market);
 }
 
@@ -338,6 +342,7 @@ async function upsertStatus(symbol: string, market: string, payload: any, dryRun
       shadowMode: SHADOW_MODE,
       refreshUnhealthy: REFRESH_UNHEALTHY,
       ohlcvFallbackEnabled: OHLCV_FALLBACK_ENABLED,
+      ohlcvTimeoutMs: OHLCV_TIMEOUT_MS,
       vectorbtEnabled: VECTORBT_ENABLED,
       vectorbtTimeoutMs: VECTORBT_TIMEOUT_MS,
       qualityGate: GATE,

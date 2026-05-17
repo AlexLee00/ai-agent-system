@@ -64,7 +64,6 @@ news:
   naver_client_id: "YOUR_NAVER_CLIENT_ID"
   naver_client_secret: "YOUR_NAVER_CLIENT_SECRET"
   dart_api_key: ""
-  cryptopanic_api_key: ""
   alpha_vantage_api_key: ""
 
 cost:

@@ -11,7 +11,6 @@ type NewsConfig = {
   google_books_api_key?: string;
   data4library_auth_key?: string;
   kakao_rest_api_key?: string;
-  cryptopanic_api_key?: string;
   dart_api_key?: string;
   alpha_vantage_api_key?: string;
 };
@@ -130,22 +129,6 @@ async function resolveKakaoApiKey(options: { timeoutMs?: number } = {}): Promise
   );
 }
 
-async function resolveCryptoPanicApiKey(options: { timeoutMs?: number } = {}): Promise<string> {
-  const { timeoutMs = 3000 } = options;
-  const hubNews = await fetchHubNewsConfig(timeoutMs);
-  const sharedNews = loadSharedNewsConfig();
-  const localNews = loadLocalSecretsNewsConfig();
-
-  return (
-    process.env.CRYPTOPANIC_API_KEY ||
-    process.env.CRYPTOPANIC_AUTH_TOKEN ||
-    hubNews?.cryptopanic_api_key ||
-    localNews.cryptopanic_api_key ||
-    sharedNews.cryptopanic_api_key ||
-    ''
-  );
-}
-
 async function resolveDartApiKey(options: { timeoutMs?: number } = {}): Promise<string> {
   const { timeoutMs = 3000 } = options;
   const hubNews = await fetchHubNewsConfig(timeoutMs);
@@ -185,7 +168,6 @@ module.exports = {
   resolveGoogleBooksApiKey,
   resolveData4LibraryKey,
   resolveKakaoApiKey,
-  resolveCryptoPanicApiKey,
   resolveDartApiKey,
   resolveAlphaVantageApiKey,
 };

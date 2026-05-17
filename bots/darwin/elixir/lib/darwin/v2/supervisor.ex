@@ -77,6 +77,7 @@ defmodule Darwin.V2.Supervisor do
       Darwin.V2.LLM.CostTracker,
       Darwin.V2.LLM.RoutingLog,
       Darwin.V2.RollbackScheduler,
+      Darwin.V2.AutonomyLevel,
       # Phase R: MAPE-K 완전자율 루프 (DARWIN_MAPEK_ENABLED=true 시 활성)
       Darwin.V2.MapeKLoop
     ]

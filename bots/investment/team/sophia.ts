@@ -242,13 +242,6 @@ async function fetchDCinside(gallId) {
   }
 }
 
-// ─── CryptoPanic ─────────────────────────────────────────────────────
-
-async function fetchCryptoPanic(symbol) {
-  void symbol;
-  return [];
-}
-
 // ─── 네이버 증권 종목토론실 ───────────────────────────────────────────
 
 async function fetchNaverDiscussion(stockCode) {
@@ -281,7 +274,7 @@ async function fetchNaverDiscussion(stockCode) {
 
 // ─── 게시물 필터링 ────────────────────────────────────────────────────
 
-function filterAndRankCrypto(redditPosts, dcPosts, cpPosts, symbol) {
+function filterAndRankCrypto(redditPosts, dcPosts, symbol) {
   const symbolKws = SYMBOL_KEYWORDS_CRYPTO[symbol] || [symbol.split('/')[0].toLowerCase()];
   const allKws    = [...symbolKws, ...COMMON_KWS_CRYPTO];
 
@@ -294,8 +287,6 @@ function filterAndRankCrypto(redditPosts, dcPosts, cpPosts, symbol) {
     .filter(p => allKws.some(kw => p.title.toLowerCase().includes(kw)))
     .sort((a, b) => b.recommend - a.recommend).slice(0, 5)
     .map(p => ({ source: 'dcinside', title: p.title, weight: Math.min(p.recommend / 10, 2) + 0.5 }));
-
-  void cpPosts;
 
   return [...filteredReddit, ...filteredDC];
 }
@@ -393,7 +384,6 @@ export async function analyzeSentiment(symbol = 'BTC/USDT', exchange = 'binance'
   console.log(`\n💬 [소피아] ${symbol}(${label}) 커뮤니티 수집 중...`);
 
   let posts;
-  let cpPostsRef = [];  // Retired paid news source placeholder.
   let fearGreed  = null;
 
   if (exchange === 'kis_overseas') {
@@ -413,18 +403,16 @@ export async function analyzeSentiment(symbol = 'BTC/USDT', exchange = 'binance'
     const subreddits = capSubreddits(REDDIT_SOURCES_CRYPTO[symbol] || DEFAULT_REDDIT_CRYPTO);
     const dcGallIds  = DC_SOURCES_CRYPTO[symbol] || [];
 
-    const [redditResults, dcResults, cpPosts, fg] = await Promise.all([
+    const [redditResults, dcResults, fg] = await Promise.all([
       Promise.all(subreddits.map(sub => fetchReddit(sub))),
       Promise.all(dcGallIds.map(id => fetchDCinside(id))),
-      fetchCryptoPanic(symbol),
       fetchFearGreedIndex(),
     ]);
-    cpPostsRef = cpPosts;
     fearGreed  = fg;
     const allReddit = redditResults.flat();
     const allDC     = dcResults.flat();
-    console.log(`  Reddit: ${allReddit.length}건 | DC: ${allDC.length}건 | CryptoPanic: retired`);
-    posts = filterAndRankCrypto(allReddit, allDC, cpPosts, symbol);
+    console.log(`  Reddit: ${allReddit.length}건 | DC: ${allDC.length}건`);
+    posts = filterAndRankCrypto(allReddit, allDC, symbol);
     console.log(`  관련 게시물: ${posts.length}건`);
   }
 

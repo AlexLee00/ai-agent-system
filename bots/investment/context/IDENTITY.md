@@ -52,7 +52,7 @@
 - Groq llama-3.1-8b-instant (최고속)
 
 ### 소피아 (Sophia) — 감성 분석가
-- **암호화폐**: Reddit + DCInside 비트코인갤 + CryptoPanic
+- **암호화폐**: Reddit + DCInside 비트코인갤 + RSS/Fear & Greed 보조 증거
 - **미국주식**: Reddit (r/stocks·r/investing·r/wallstreetbets)
 - **국내주식**: 네이버 증권 종목토론실
 - SambaNova Meta-Llama-3.3-70B → Groq 폴백

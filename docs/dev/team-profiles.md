@@ -293,7 +293,7 @@ docs/auto_dev/PATCH_REQUEST.md 생성 (patcher.js)  →  Claude Code RC 세션�
 
 | 시장 | 소스 |
 |------|------|
-| 암호화폐 | CoinDesk, CoinTelegraph, CryptoPanic |
+| 암호화폐 | CoinDesk, CoinTelegraph, CryptoSlate/RSS bundle |
 | 국내주식 | Naver 뉴스, DART 공시 |
 | 미국주식 | Yahoo Finance, MarketWatch |
 

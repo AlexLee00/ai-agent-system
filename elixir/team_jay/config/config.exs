@@ -46,6 +46,26 @@ config :jay_core, :dashboard_pubsub, TeamJay.PubSub
 # Phase 3: 코덱스 자동 실행 (true = 마스터 승인 없이 자동 실행)
 config :team_jay, :codex_auto_execute, true
 
+# cycle #53 M2: Tailwind JIT + esbuild assets pipeline
+config :tailwind,
+  version: "3.4.3",
+  default: [
+    args: ~w(
+      --config=tailwind.config.js
+      --input=css/app.css
+      --output=../priv/static/dashboard.css
+    ),
+    cd: Path.expand("../assets", __DIR__)
+  ]
+
+config :esbuild,
+  version: "0.21.5",
+  default: [
+    args: ~w(js/app.js --bundle --target=es2017 --outdir=../priv/static),
+    cd: Path.expand("../assets", __DIR__),
+    env: %{"NODE_PATH" => Path.expand("../deps", __DIR__)}
+  ]
+
 import_config "#{Mix.env()}.exs"
 
 config :team_jay, Jay.Core.Scheduler,

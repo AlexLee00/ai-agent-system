@@ -56,12 +56,6 @@ async function main() {
       naverClientSecret: redactedPresence(naver.clientSecret),
       data4Library: redactedPresence(data4Library),
       kakao: redactedPresence(kakao),
-      cryptoPanic: {
-        present: false,
-        length: 0,
-        retired: true,
-        reason: 'retired_paid_source',
-      },
       dart: redactedPresence(dart),
       alphaVantage: redactedPresence(alphaVantage),
     },

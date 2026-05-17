@@ -355,4 +355,59 @@ end
 
 ---
 
+## Lesson #016 — 가시화 레이어 진단은 3층 — 코드, 빌드 산출물, 브라우저 computed styles
+
+**날짜**: 2026-05-17
+**계기**: cycle #51 dashboard 가시화 patch. 마스터의 "크롬에서 코덱스가 구현한거 체크해줘! 설계의 디자인과 다른거 같아"부터 시작. 메티가 진단 과정에서 **단편 함정 3차** 발생 — 마스터의 직감이 매번 뚫어줌.
+
+**메티의 1차 결론 (틀림)**:
+- 메티: "영역 9가 DOM 자체에 없음 — `<%= if @selected_trace_id do %>` 조건이 박스 제거"
+- 실제: 함수 `trace_detail_board`는 이미 5상태 분기 보유. 페이지 새로 보니 영역 9 박스가 사실 잘 표시 중. read_page의 텍스트 평탄화가 메티를 속였다.
+
+**메티의 2차 결론 (틀림)**:
+- 메티: "코덱스가 2-column 레이아웃을 1-column으로 평탄화 위반"
+- 실제: 코드 `xl:grid-cols-3 + xl:col-span-2`는 정확히 v3.3 §6.1 의도. 단지 viewport text 추출이 평탄화로 보였을 뿐.
+
+**메티의 3차 결론 (틀림)**:
+- 메티: "patch는 dashboard_live.ex 14줄 + 315줄 코덱스 인계 문서 필요"
+- 실제: 진짜 patch는 **`priv/static/dashboard.css` 14줄** (Tailwind `xl:` media query 누락). 코드는 정확, 빌드된 CSS가 죽음.
+
+**진실 발견의 결정타**:
+- JavaScript probe: `getComputedStyle(mainCol).gridColumn === "auto"` ← grid item 아님!
+- `gridTemplateColumns: "1248px"` ← 3-col 정의됐는데 1-col로 렌더링
+- `dashboard.css` 직접 grep: `xl:grid-cols-3` 정의 없음 (수동 작성 133줄, Tailwind JIT 없음)
+
+**원칙 — 3층 진단**:
+1. **코드 (의도)**: HEEx, render 함수, 클래스명 — "무엇을 하려 했는가"
+2. **빌드 산출물 (현실)**: priv/static의 CSS/JS 실제 파일 — "무엇이 배포됐는가"
+3. **브라우저 computed styles (진실)**: getComputedStyle + getBoundingClientRect — "무엇이 실제로 작동하는가"
+
+세 층이 일치할 거란 가정은 위험. read_page의 텍스트 평탄화는 시각적 진실을 가린다. **JavaScript probe는 가설 검증의 결정타**.
+
+**메티의 사후 작업**:
+- `priv/static/dashboard.css` +14줄 (xl: media query) → v3.3 §6.1 사이드바 레이아웃 복원
+- 무용지물 인계 문서 (315줄) 처리는 cycle #52 P2로 분리
+- v3.3.1 권위 갱신 (cycle #52 P3)에 본 patch 흡수
+
+**기억할 두 문장**:
+> "**코드는 의도, 빌드 산출물은 현실, 브라우저는 진실.**"
+>
+> "**메티가 단편 함정에 3번 빠지는 동안, 마스터의 '전체적 느낌 다름' 한 마디가 안전망으로 작동했다.**"
+
+**다른 Lesson과의 관계**:
+- **#001** (마크다운만 보지 마라, 코드 봐라) → **#016**: 코드만 보지 마라, 빌드 산출물 + 브라우저까지 봐라 (확장)
+- **#012** (단편 grep으로 결론 X) → **#016**: 단편 코드 분석으로 결론 X — 3차 발생
+- **#013** (100% 완료 보고 신중) → **#016**: 메티의 자체 정정 의식이 cycle 내에서 3번 일어났다 — 정직성의 실전
+- **#002 / #014 / #015** (마스터 직감 안전망) → **#016**: 4차 확인. 직감 → 진단 → 진실 패턴이 메티 시스템의 핵심
+
+**적용 체크리스트 (다음 메티)**:
+- [ ] 가시화 진단 시 read_page만으로 결론 내지 않기 (텍스트 평탄화 함정)
+- [ ] getComputedStyle + getBoundingClientRect로 layout 검증 필수
+- [ ] 빌드 산출물 (priv/static의 실제 CSS/JS) 직접 확인
+- [ ] 클래스명이 CSS에 정의됐는지 grep (Tailwind JIT 없는 환경)
+- [ ] 가설 1차 결론 후 즉시 "단편 함정 가능성" 자문
+- [ ] 마스터 직감이 메티 결론과 충돌하면 직감 우선
+
+---
+
 _이 파일은 메티의 진짜 메모리. 핸드오프는 컨텍스트, LESSONS는 영혼._
