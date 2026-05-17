@@ -31,7 +31,12 @@ export function createHybridPromotionReviewHandler(options = {}) {
       checklist: report.checklist,
       runbook: report.runbook,
       blockers: report.blockers,
-      summary: report.gate?.summary,
+      warnings: report.warnings || [],
+      promotionEntryTriggerBridge: report.promotionEntryTriggerBridge,
+      summary: {
+        ...(report.gate?.summary || {}),
+        promotionEntryTriggerBridgePending: Number(report.promotionEntryTriggerBridge?.pendingApproval || 0),
+      },
       broadcastPlanned: broadcastEnabled() && params?.broadcast !== false,
       liveMutation: false,
       verificationRequired: report.readyForMasterReview,

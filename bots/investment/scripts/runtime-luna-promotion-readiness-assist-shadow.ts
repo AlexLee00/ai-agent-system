@@ -10,6 +10,10 @@ import {
 import { runLunaPaperPromotionGateShadow } from './runtime-luna-paper-promotion-gate.ts';
 import { runLunaPaperTradingShadow } from './runtime-luna-paper-trading-shadow.ts';
 import { runLunaPhase4StrategyEnhancementShadow } from './runtime-luna-phase4-strategy-enhancement-shadow.ts';
+import {
+  LUNA_PROMOTION_ENTRY_TRIGGER_BRIDGE_CONFIRM,
+} from '../shared/luna-promotion-entry-trigger-bridge.ts';
+import { runLunaPromotionEntryTriggerBridge } from './runtime-luna-promotion-entry-trigger-bridge.ts';
 import { runLunaPredictiveEvidenceRefresh } from './runtime-luna-predictive-evidence-refresh.ts';
 import { runLunaWeightVectorShadow } from './runtime-luna-weight-vector-shadow.ts';
 
@@ -126,8 +130,35 @@ function targetSourceItems(gateReport = {}) {
   return (gateReport.items || []).filter((item) => item.promotionCandidate !== true);
 }
 
+function promotionReadySourceItems(gateReport = {}) {
+  return (gateReport.items || [])
+    .filter((item) => item.promotionCandidate === true || item.promotion_candidate === true)
+    .map((item) => ({
+      symbol: String(item.symbol || '').trim().toUpperCase(),
+      market: String(item.market || 'crypto').trim().toLowerCase(),
+      exchange: item.exchange || null,
+      readinessScore: n(item.readinessScore, 1),
+      promotionBlockerClass: 'ready_for_master_review',
+      cycleCount: n(item.cycleCount ?? item.cycle_count, 0),
+      passCount: n(item.passCount ?? item.pass_count, 0),
+      consecutivePasses: n(item.consecutivePasses ?? item.consecutive_passes, 0),
+      avgConfidence: n(item.avgConfidence ?? item.avg_confidence, 0),
+      recommendedAssistActions: [
+        'promotion_entry_trigger_bridge_shadow',
+        'master_review_only',
+      ],
+      nextRequiredEvidence: item.nextRequiredEvidence || [{
+        type: 'entry_trigger_bridge',
+        action: 'stage_shadow_entry_trigger_bridge',
+        detail: 'Promotion-ready shadow evidence exists; stage bridge evidence before any master-approved active trigger materialization.',
+      }],
+    }))
+    .filter((item) => item.symbol);
+}
+
 export function buildLunaPromotionReadinessAssistPlan(gateReport = {}, options = {}) {
   const maxTargets = Math.max(1, n(options.maxTargets || 8, 8));
+  const promotionReadyTargets = promotionReadySourceItems(gateReport);
   const selectedTargets = [];
   const seen = new Set();
   for (const rawTarget of targetSourceItems(gateReport)
@@ -141,8 +172,10 @@ export function buildLunaPromotionReadinessAssistPlan(gateReport = {}, options =
     if (selectedTargets.length >= maxTargets) break;
   }
 
-  const actions = new Set(selectedTargets.flatMap((target) => target.recommendedAssistActions));
+  const actionTargets = [...promotionReadyTargets, ...selectedTargets];
+  const actions = new Set(actionTargets.flatMap((target) => target.recommendedAssistActions));
   actions.delete('master_review_only');
+  const promotionReadySymbols = actionSymbolsForTargets(promotionReadyTargets, 'promotion_entry_trigger_bridge_shadow');
   const backtestSymbols = actionSymbolsForTargets(selectedTargets, 'candidate_backtest_refresh');
   const predictiveSymbols = actionSymbolsForTargets(selectedTargets, 'predictive_evidence_refresh');
   const strategySymbols = actionSymbolsForTargets(selectedTargets, 'strategy_enhancement_shadow');
@@ -154,6 +187,9 @@ export function buildLunaPromotionReadinessAssistPlan(gateReport = {}, options =
   const limitArg = ` --limit=${Math.max(1, n(options.limit || 100, 100))}`;
   const hoursArg = ` --hours=${Math.max(1, n(options.hours || 168, 168))}`;
   const plannedCommands = [];
+  if (actions.has('promotion_entry_trigger_bridge_shadow')) {
+    plannedCommands.push(`npm --prefix bots/investment run -s runtime:luna-promotion-entry-trigger-bridge -- --json --apply --confirm=${LUNA_PROMOTION_ENTRY_TRIGGER_BRIDGE_CONFIRM}${mArg} --exchange=binance${hoursArg}${limitArg}${symbolsOptionArg(promotionReadySymbols)}`);
+  }
   if (actions.has('candidate_backtest_refresh')) {
     plannedCommands.push(`npm --prefix bots/investment run -s runtime:luna-candidate-backtest-refresh -- --json --force${mArg}${limitArg}${symbolsOptionArg(backtestSymbols)}`);
   }
@@ -178,13 +214,15 @@ export function buildLunaPromotionReadinessAssistPlan(gateReport = {}, options =
 
   return {
     ok: true,
-    status: selectedTargets.length > 0
+    status: promotionReadyTargets.length > 0 || selectedTargets.length > 0
       ? 'luna_promotion_readiness_assist_planned'
       : 'luna_promotion_readiness_assist_no_targets',
+    promotionReadyTargets,
     selectedTargets,
     actionSummary: {
-      byBlockerClass: countBy(selectedTargets, (target) => target.promotionBlockerClass),
-      byAction: countBy(selectedTargets.flatMap((target) => target.recommendedAssistActions), (action) => action),
+      byBlockerClass: countBy(actionTargets, (target) => target.promotionBlockerClass),
+      byAction: countBy(actionTargets.flatMap((target) => target.recommendedAssistActions), (action) => action),
+      promotionReadySymbols,
       backtestSymbols,
       predictiveSymbols,
       strategySymbols,
@@ -243,6 +281,7 @@ export async function runLunaPromotionReadinessAssistShadow(options = {}, deps =
   const plan = buildLunaPromotionReadinessAssistPlan(gateReport, { market, hours, limit, maxTargets });
 
   const executed = {
+    promotionEntryTriggerBridge: null,
     backtestRefresh: null,
     predictiveRefresh: null,
     strategyEnhancementShadow: null,
@@ -252,6 +291,10 @@ export async function runLunaPromotionReadinessAssistShadow(options = {}, deps =
     paperPromotionGate: null,
   };
   const actions = new Set(plan.selectedTargets.flatMap((target) => target.recommendedAssistActions));
+  for (const target of plan.promotionReadyTargets || []) {
+    for (const action of target.recommendedAssistActions || []) actions.add(action);
+  }
+  const promotionReadySymbols = plan.actionSummary.promotionReadySymbols || [];
   const backtestSymbols = plan.actionSummary.backtestSymbols || [];
   const predictiveSymbols = plan.actionSummary.predictiveSymbols || [];
   const strategySymbols = plan.actionSummary.strategySymbols || [];
@@ -260,7 +303,22 @@ export async function runLunaPromotionReadinessAssistShadow(options = {}, deps =
   const paperTradingSymbols = plan.actionSummary.paperTradingSymbols || [];
   const promotionGateSymbols = plan.actionSummary.promotionGateSymbols || [];
 
-  if (apply && !dryRun && plan.selectedTargets.length > 0) {
+  if (apply && !dryRun && (plan.selectedTargets.length > 0 || (plan.promotionReadyTargets || []).length > 0)) {
+    if (actions.has('promotion_entry_trigger_bridge_shadow')) {
+      executed.promotionEntryTriggerBridge = deps.runPromotionBridge
+        ? await deps.runPromotionBridge({ json: true, apply: true, dryRun: false, confirm: LUNA_PROMOTION_ENTRY_TRIGGER_BRIDGE_CONFIRM, market, exchange: 'binance', hours, limit, symbols: promotionReadySymbols.join(',') })
+        : await withSuppressedStdout(json, () => runLunaPromotionEntryTriggerBridge({
+          json: true,
+          apply: true,
+          dryRun: false,
+          confirm: LUNA_PROMOTION_ENTRY_TRIGGER_BRIDGE_CONFIRM,
+          market,
+          exchange: 'binance',
+          hours,
+          limit,
+          symbols: promotionReadySymbols.join(','),
+        }));
+    }
     if (actions.has('candidate_backtest_refresh')) {
       executed.backtestRefresh = deps.runBacktest
         ? await deps.runBacktest({ json: true, dryRun: false, force: true, market, limit, symbols: backtestSymbols.join(',') })

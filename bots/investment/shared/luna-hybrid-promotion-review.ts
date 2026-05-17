@@ -30,8 +30,24 @@ function phaseEvidenceSummary(gateReport = {}) {
     }));
 }
 
+function bridgeReviewDetail(bridge = {}, dataRequired = true) {
+  if (!dataRequired) return 'skipped in contract-only no-db mode';
+  if (bridge.ok === false) {
+    return `promotion entry-trigger bridge check failed: ${bridge.warning || bridge.status || 'unknown_error'}`;
+  }
+  if (bridge.checked === false) {
+    return 'promotion entry-trigger bridge status was not checked; run with DB access before master review';
+  }
+  const pending = Number(bridge.pendingApproval || 0);
+  return pending > 0
+    ? `${pending} promotion-ready symbol(s) require explicit master-approved entry-trigger materialization`
+    : 'no pending promotion-to-entry-trigger bridge items';
+}
+
 function buildReviewChecklist(gateReport = {}, options = {}) {
   const dataRequired = options.dataRequired !== false;
+  const bridge = options.promotionEntryTriggerBridge || {};
+  const bridgeReviewOk = !dataRequired || (bridge.ok !== false && bridge.checked !== false);
   const evidence = phaseEvidenceSummary(gateReport);
   return [
     {
@@ -68,6 +84,11 @@ function buildReviewChecklist(gateReport = {}, options = {}) {
         ? `${evidence.filter((item) => item.ok).length}/${evidence.length} Phase 1-8 evidence checks ready`
         : 'skipped in contract-only no-db mode',
     },
+    {
+      name: 'promotion_entry_trigger_bridge_reviewed',
+      ok: bridgeReviewOk,
+      detail: bridgeReviewDetail(bridge, dataRequired),
+    },
   ];
 }
 
@@ -82,6 +103,8 @@ function buildRunbook(gateReport = {}, options = {}) {
     prePromotionReviewCommands: [
       reviewCommand(PHASE10_RUNTIME_COMMAND, '-- --json --strict', investmentRoot),
       reviewCommand(PHASE11_RUNTIME_COMMAND, '-- --json --strict', investmentRoot),
+      reviewCommand('runtime:luna-promotion-entry-trigger-coverage', '-- --json --dry-run --market=crypto --exchange=binance --hours=168', investmentRoot),
+      reviewCommand('runtime:luna-promotion-entry-trigger-bridge', '-- --json --dry-run --market=crypto --exchange=binance --hours=168', investmentRoot),
       reviewCommand('runtime:luna-bottleneck-autonomy', '-- --json --no-fail', investmentRoot),
       reviewCommand('runtime:marketdata-realtime-connectivity', '-- --json --no-fail', investmentRoot),
     ],
@@ -101,6 +124,75 @@ function buildRunbook(gateReport = {}, options = {}) {
   };
 }
 
+async function loadPromotionEntryTriggerBridgeStatus({ queryFn = null, hours = 168 } = {}) {
+  if (!queryFn) {
+    return {
+      ok: false,
+      status: 'promotion_entry_trigger_bridge_not_checked',
+      checked: false,
+      pendingApproval: 0,
+      latestAt: null,
+      rows: [],
+      warning: 'queryFn unavailable; run without --no-db to check promotion entry-trigger bridge status',
+    };
+  }
+  let rows = [];
+  try {
+    rows = await Promise.resolve(queryFn(`
+      SELECT bridge_status,
+             COUNT(*)::int AS count,
+             MAX(updated_at) AS latest_at,
+             jsonb_agg(
+               jsonb_build_object(
+                 'symbol', symbol,
+                 'market', market,
+                 'exchange', exchange,
+                 'gapReason', gap_reason,
+                 'promotionConfidence', promotion_confidence,
+                 'updatedAt', updated_at
+               )
+               ORDER BY updated_at DESC
+             ) AS items
+        FROM luna_promotion_entry_trigger_bridge_shadow
+       WHERE updated_at >= now() - ($1::int * INTERVAL '1 hour')
+         AND shadow_only IS TRUE
+         AND live_mutation IS FALSE
+         AND entry_trigger_db_mutation IS FALSE
+       GROUP BY bridge_status
+       ORDER BY latest_at DESC
+    `, [Math.max(1, Number(hours || 168))]));
+  } catch (error) {
+    const warning = error instanceof Error ? error.message : String(error);
+    return {
+      ok: false,
+      status: 'promotion_entry_trigger_bridge_query_failed',
+      checked: false,
+      pendingApproval: 0,
+      latestAt: null,
+      rows: [],
+      warning,
+    };
+  }
+  const pending = (rows || [])
+    .filter((row) => String(row.bridge_status || '') === 'shadow_bridge_pending_approval')
+    .reduce((sum, row) => sum + Number(row.count || 0), 0);
+  const latestAt = (rows || [])
+    .map((row) => row.latest_at)
+    .filter(Boolean)
+    .sort()
+    .at(-1) || null;
+  return {
+    ok: true,
+    status: pending > 0
+      ? 'promotion_entry_trigger_bridge_pending_approval'
+      : 'promotion_entry_trigger_bridge_clear',
+    checked: true,
+    pendingApproval: pending,
+    latestAt,
+    rows: rows || [],
+  };
+}
+
 export async function buildLunaHybridPromotionReviewReport(options = {}) {
   const hours = Math.max(1, Number(options.hours || 168));
   const gateReport = await buildLunaHybridPromotionGateReport({
@@ -111,7 +203,11 @@ export async function buildLunaHybridPromotionReviewReport(options = {}) {
     projectRoot: options.projectRoot,
   });
   const dataRequired = options.dataRequired !== false;
-  const checklist = buildReviewChecklist(gateReport, { dataRequired });
+  const promotionEntryTriggerBridge = await loadPromotionEntryTriggerBridgeStatus({
+    queryFn: options.queryFn,
+    hours,
+  });
+  const checklist = buildReviewChecklist(gateReport, { dataRequired, promotionEntryTriggerBridge });
   const failures = checklist.filter((item) => !item.ok);
   const runbook = buildRunbook(gateReport, { investmentRoot: options.investmentRoot });
   const readyForMasterReview = dataRequired && failures.length === 0 && gateReport.manualPromotionReviewCandidate === true;
@@ -148,9 +244,19 @@ export async function buildLunaHybridPromotionReviewReport(options = {}) {
       blockers: gateReport.blockers,
       warnings: gateReport.warnings,
     },
+    promotionEntryTriggerBridge,
     checklist,
     evidenceSummary: phaseEvidenceSummary(gateReport),
     runbook,
+    warnings: [
+      ...(gateReport.warnings || []),
+      ...(promotionEntryTriggerBridge.warning
+        ? [`promotion_entry_trigger_bridge_check:${promotionEntryTriggerBridge.warning}`]
+        : []),
+      ...(Number(promotionEntryTriggerBridge.pendingApproval || 0) > 0
+        ? [`entry_trigger_bridge_pending_approval:${Number(promotionEntryTriggerBridge.pendingApproval || 0)}`]
+        : []),
+    ],
     blockers: failures.map((item) => ({
       type: 'review_check',
       name: item.name,

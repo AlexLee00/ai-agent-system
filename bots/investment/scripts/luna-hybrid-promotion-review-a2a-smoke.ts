@@ -24,6 +24,13 @@ function fakeQuery(sql) {
   return [];
 }
 
+function fakeQueryWithBridgeFailure(sql) {
+  if (sql.includes('luna_promotion_entry_trigger_bridge_shadow')) {
+    throw new Error('bridge table missing');
+  }
+  return fakeQuery(sql);
+}
+
 export async function runLunaHybridPromotionReviewA2ASmoke() {
   registerHybridPromotionReviewSkill({ queryFn: fakeQuery });
 
@@ -41,6 +48,8 @@ export async function runLunaHybridPromotionReviewA2ASmoke() {
   assert.equal(result.output.readyForMasterReview, true);
   assert.equal(result.output.masterApprovalRequired, true);
   assert.equal(result.output.promotionReady, false);
+  assert.equal(result.output.summary.promotionEntryTriggerBridgePending, 0);
+  assert.equal(result.output.promotionEntryTriggerBridge.status, 'promotion_entry_trigger_bridge_clear');
   assert.equal(result.output.broadcastPlanned, false);
   assert.ok(result.output.runbook.reviewOnly);
 
@@ -52,6 +61,19 @@ export async function runLunaHybridPromotionReviewA2ASmoke() {
   assert.equal(noDb.output.blockers.length, 0);
   assert.equal(noDb.output.summary.dataChecked, false);
   assert.equal(noDb.output.summary.dataRequired, false);
+
+  const failedBridge = await createHybridPromotionReviewHandler({ queryFn: fakeQueryWithBridgeFailure })({
+    broadcast: false,
+    hours: 168,
+  });
+  assert.equal(failedBridge.status, 'failed', JSON.stringify(failedBridge.error || failedBridge.output, null, 2));
+  assert.equal(failedBridge.output.ok, false);
+  assert.equal(failedBridge.output.readyForMasterReview, false);
+  assert.equal(failedBridge.output.promotionEntryTriggerBridge.status, 'promotion_entry_trigger_bridge_query_failed');
+  assert.equal(
+    failedBridge.output.blockers.some((blocker) => blocker.name === 'promotion_entry_trigger_bridge_reviewed'),
+    true,
+  );
 
   const previous = process.env.LUNA_A2A_BROADCAST_ENABLED;
   process.env.LUNA_A2A_BROADCAST_ENABLED = 'true';

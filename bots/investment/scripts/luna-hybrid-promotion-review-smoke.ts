@@ -23,6 +23,13 @@ function fakeQuery(sql) {
   return [];
 }
 
+function fakeQueryWithBridgeFailure(sql) {
+  if (sql.includes('luna_promotion_entry_trigger_bridge_shadow')) {
+    throw new Error('bridge table missing');
+  }
+  return fakeQuery(sql);
+}
+
 export async function runLunaHybridPromotionReviewSmoke() {
   const report = await buildLunaHybridPromotionReviewReport({ queryFn: fakeQuery, hours: 168 });
   assert.equal(report.ok, true, JSON.stringify(report.blockers, null, 2));
@@ -37,8 +44,31 @@ export async function runLunaHybridPromotionReviewSmoke() {
   assert.ok(report.runbook.reviewOnly);
   assert.equal(report.runbook.liveMutationAllowed, false);
   assert.equal(report.runbook.protectedPidMutationAllowed, false);
+  assert.equal(report.promotionEntryTriggerBridge.status, 'promotion_entry_trigger_bridge_clear');
+  assert.equal(report.promotionEntryTriggerBridge.pendingApproval, 0);
+  assert.ok(report.runbook.prePromotionReviewCommands.some((cmd) => cmd.includes('runtime:luna-promotion-entry-trigger-coverage')));
+  assert.ok(report.runbook.prePromotionReviewCommands.some((cmd) => cmd.includes('runtime:luna-promotion-entry-trigger-bridge')));
   assert.ok(report.runbook.prohibitedWithoutApproval.includes('live trade'));
   assert.ok(report.runbook.prohibitedWithoutApproval.includes('protected PID restart/kill/unload'));
+
+  const bridgeFailure = await buildLunaHybridPromotionReviewReport({ queryFn: fakeQueryWithBridgeFailure, hours: 168 });
+  assert.equal(bridgeFailure.ok, false);
+  assert.equal(bridgeFailure.readyForMasterReview, false);
+  assert.equal(bridgeFailure.status, 'luna_hybrid_promotion_review_shadow_data_pending');
+  assert.equal(bridgeFailure.promotionEntryTriggerBridge.status, 'promotion_entry_trigger_bridge_query_failed');
+  assert.equal(bridgeFailure.promotionEntryTriggerBridge.checked, false);
+  assert.equal(
+    bridgeFailure.checklist.find((item) => item.name === 'promotion_entry_trigger_bridge_reviewed')?.ok,
+    false,
+  );
+  assert.equal(
+    bridgeFailure.blockers.some((blocker) => blocker.name === 'promotion_entry_trigger_bridge_reviewed'),
+    true,
+  );
+  assert.equal(
+    bridgeFailure.warnings.some((warning) => warning.includes('promotion_entry_trigger_bridge_check:bridge table missing')),
+    true,
+  );
 
   const noDb = await runLunaHybridPromotionReview({ json: true, strict: true, noDb: true, hours: 168 });
   assert.equal(noDb.ok, true);
