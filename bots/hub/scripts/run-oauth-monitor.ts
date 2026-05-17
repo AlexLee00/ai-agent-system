@@ -44,6 +44,61 @@ function tokenExpiresInHours(token: any): number | null {
   return (expiresMs - Date.now()) / (60 * 60 * 1000);
 }
 
+function monitorStateDir(): string {
+  return String(process.env.AI_AGENT_WORKSPACE || '').trim()
+    || path.join(os.homedir(), '.ai-agent-system', 'workspace');
+}
+
+function oauthAlarmCachePath(): string {
+  return path.join(monitorStateDir(), 'oauth-monitor-alarm-cache.json');
+}
+
+function oauthAlarmCooldownMs(level: number): number {
+  const envKey = level >= 3
+    ? 'HUB_OAUTH_MONITOR_CRITICAL_ALARM_COOLDOWN_MINUTES'
+    : 'HUB_OAUTH_MONITOR_WARN_ALARM_COOLDOWN_MINUTES';
+  const fallbackMinutes = level >= 3 ? 15 : 120;
+  const minutes = Number(process.env[envKey] || fallbackMinutes);
+  return Math.max(1, Number.isFinite(minutes) ? minutes : fallbackMinutes) * 60 * 1000;
+}
+
+function shouldSuppressOAuthAlarm({ level, title, payload }: any): boolean {
+  const cooldownMs = oauthAlarmCooldownMs(Number(level || 2));
+  const provider = String(payload?.provider || 'unknown').trim() || 'unknown';
+  const signature = `${provider}|${String(title || 'oauth_alarm')}|${Number(level || 2)}`;
+  try {
+    const cachePath = oauthAlarmCachePath();
+    fs.mkdirSync(path.dirname(cachePath), { recursive: true });
+    const now = Date.now();
+    let cache = {};
+    if (fs.existsSync(cachePath)) {
+      cache = JSON.parse(fs.readFileSync(cachePath, 'utf8') || '{}');
+    }
+    cache = Object.fromEntries(
+      Object.entries(cache).filter(([, row]) => now - Number((row as any)?.last_seen_at || (row as any)?.emitted_at || 0) < 24 * 60 * 60 * 1000),
+    );
+    const prev = (cache as any)[signature];
+    if (prev && now - Number(prev.emitted_at || 0) < cooldownMs) {
+      (cache as any)[signature] = {
+        ...prev,
+        last_seen_at: now,
+        count: Number(prev.count || 0) + 1,
+      };
+      fs.writeFileSync(cachePath, JSON.stringify(cache, null, 2));
+      return true;
+    }
+    (cache as any)[signature] = {
+      emitted_at: now,
+      last_seen_at: now,
+      count: 1,
+    };
+    fs.writeFileSync(cachePath, JSON.stringify(cache, null, 2));
+  } catch (error) {
+    console.warn(`[oauth-monitor] alarm cooldown cache failed: ${String(error?.message || error)}`);
+  }
+  return false;
+}
+
 function scrubClaudeProbeEnv() {
   const childEnv = { ...process.env };
   for (const key of [
@@ -701,6 +756,9 @@ async function refreshGeminiOAuthHubToken(reason: string) {
 
 async function sendOAuthAlarm({ level, title, message, payload }: any) {
   if (!flag('HUB_OAUTH_MONITOR_SEND_ALARM', true)) return { ok: false, skipped: true };
+  if (shouldSuppressOAuthAlarm({ level, title, payload })) {
+    return { ok: false, skipped: true, reason: 'cooldown' };
+  }
   return postAlarm({
     team: payload?.provider === 'claude-code-oauth' ? 'claude' : 'hub',
     fromBot: 'hub-oauth-monitor',
