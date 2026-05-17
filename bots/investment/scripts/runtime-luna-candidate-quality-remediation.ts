@@ -149,15 +149,30 @@ function shouldUseStabilityBacktestPeriods(initialRows = []) {
     || row?.recommendedAction === 'stabilize_backtest_shadow');
 }
 
-function backtestRefreshPriority(row = {}) {
+function shouldUseStabilityBacktestPeriodsForTargets(initialRows = [], targetSymbols = []) {
+  const targets = new Set((targetSymbols || []).map((symbol) => normalizeLunaPhase2Symbol(symbol)));
+  if (targets.size === 0) return false;
+  return (initialRows || []).some((row) => targets.has(normalizeLunaPhase2Symbol(row?.symbol)) && isBacktestStabilizationRow(row));
+}
+
+function staleBacktestCooldownBypassEnabled() {
+  return String(process.env.LUNA_CANDIDATE_QUALITY_STALE_BACKTEST_COOLDOWN_BYPASS || 'true').toLowerCase() !== 'false';
+}
+
+function rowHasMissingOrStaleBacktest(row = {}) {
   const reasons = (row?.reasons || []).map((reason) => String(reason));
   const primary = String(row?.primaryBlocker || '');
-  const hasMissingOrStale = primary === 'backtest_missing_or_stale'
+  return primary === 'backtest_missing_or_stale'
     || reasons.some((reason) => reason === 'backtest_missing_or_stale'
       || reason.includes('missing')
       || reason.includes('stale')
       || reason === 'no_backtest_data');
-  if (hasMissingOrStale) return 0;
+}
+
+function backtestRefreshPriority(row = {}) {
+  const reasons = (row?.reasons || []).map((reason) => String(reason));
+  const primary = String(row?.primaryBlocker || '');
+  if (rowHasMissingOrStaleBacktest(row)) return 0;
   if (primary === 'backtest_unstable_or_unrealistic') return 1;
   if (reasons.some((reason) => reason === 'backtest_unstable_or_unrealistic')) return 1;
   if (['drawdown_high', 'sharpe_negative', 'win_rate_low'].includes(primary)) return 1;
@@ -183,6 +198,20 @@ function cooldownActionFor(row = {}, cooldownIndex = new Set()) {
   return cooldownIndex.has(key) ? 'candidate_cooldown_shadow' : null;
 }
 
+function backtestRefreshBlockedByCooldown(row = {}, cooldownAction = null) {
+  if (!cooldownAction) return false;
+  if (cooldownAction === 'backtest_stabilization_shadow') return true;
+  if (isBacktestStabilizationRow(row)) return false;
+  if (
+    cooldownAction === 'candidate_cooldown_shadow'
+    && rowHasMissingOrStaleBacktest(row)
+    && staleBacktestCooldownBypassEnabled()
+  ) {
+    return false;
+  }
+  return true;
+}
+
 function backtestTargetSymbols(initialRows = [], maxSymbols = 12, cooldownKeys = new Set()) {
   const targets = [];
   const prioritizedRows = [...(initialRows || [])]
@@ -191,8 +220,7 @@ function backtestTargetSymbols(initialRows = [], maxSymbols = 12, cooldownKeys =
     .map((item) => item.row);
   for (const row of prioritizedRows) {
     const cooldownAction = cooldownActionFor(row, cooldownKeys);
-    const cooldownBlocked = cooldownAction === 'backtest_stabilization_shadow'
-      || (Boolean(cooldownAction) && !isBacktestStabilizationRow(row));
+    const cooldownBlocked = backtestRefreshBlockedByCooldown(row, cooldownAction);
     if (rowNeedsBacktestRefresh(row) && row?.symbol && !cooldownBlocked) targets.push(String(row.symbol).toUpperCase());
   }
   return [...new Set(targets)].slice(0, Math.max(1, Number(maxSymbols || 12)));
@@ -225,8 +253,7 @@ function backtestCooldownBlockedRows(initialRows = [], cooldownRows = [], max = 
     const cooldown = cooldownByKey.get(cooldownKey(row));
     if (!cooldown) continue;
     const action = cooldown.governanceAction || null;
-    const blockedByCooldown = action === 'backtest_stabilization_shadow'
-      || (Boolean(action) && !isBacktestStabilizationRow(row));
+    const blockedByCooldown = backtestRefreshBlockedByCooldown(row, action);
     if (!blockedByCooldown) continue;
     blocked.push({
       symbol: row.symbol,
@@ -324,7 +351,7 @@ export async function runLunaCandidateQualityRemediation(options = {}) {
   const targetedStrategySymbols = symbolsFromRows(initialRows, needsStrategyRefresh, Math.min(limit, maxStrategySymbols));
   const targetedEvidenceSymbols = symbolsFromRows(initialRows, () => true, Math.min(limit, maxShadowSymbols));
   const effectiveForceBacktest = forceBacktest || targetedBacktestSymbols.length > 0;
-  const backtestPeriods = shouldUseStabilityBacktestPeriods(initialRows) ? '30,90,180,365' : null;
+  const backtestPeriods = shouldUseStabilityBacktestPeriodsForTargets(initialRows, targetedBacktestSymbols) ? '30,90,180,365' : null;
   const marketCandidateSeedRefresh = shouldRunMarketSeed(coverage, initialRows, market);
   const plannedBacktestRefresh = needsBacktestRefresh
     && (forceBacktest || targetedBacktestSymbols.length > 0 || marketCandidateSeedRefresh);
@@ -606,4 +633,5 @@ export const __test = {
   backtestCooldownBlockedRows,
   summarizeCooldownRows,
   shouldUseStabilityBacktestPeriods,
+  shouldUseStabilityBacktestPeriodsForTargets,
 };

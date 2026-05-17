@@ -107,6 +107,198 @@ function boolConfig(value, fallback = false) {
   return fallback;
 }
 
+function normalizeEntryTriggerMarket(exchange = 'binance') {
+  const value = String(exchange || '').trim().toLowerCase();
+  if (value === 'binance') return 'crypto';
+  if (value === 'kis') return 'domestic';
+  if (value === 'kis_overseas') return 'overseas';
+  return value || 'crypto';
+}
+
+function isTruthy(value) {
+  return value === true || String(value).trim().toLowerCase() === 'true';
+}
+
+function normalizeQualityMap(input = null) {
+  if (!input) return new Map();
+  if (input instanceof Map) {
+    return new Map([...input.entries()].map(([symbol, quality]) => [normalizeSymbol(symbol), quality]));
+  }
+  if (Array.isArray(input)) {
+    return new Map(input.map((quality) => [normalizeSymbol(quality?.symbol), quality]).filter(([symbol]) => symbol));
+  }
+  if (typeof input === 'object') {
+    return new Map(Object.entries(input).map(([symbol, quality]) => [normalizeSymbol(symbol), quality]));
+  }
+  return new Map();
+}
+
+export async function loadActiveEntryTriggerQuality(symbols = [], context = {}) {
+  const normalized = [...new Set((symbols || []).map(normalizeSymbol).filter(Boolean))];
+  if (normalized.length === 0) return new Map();
+  const market = String(context.market || normalizeEntryTriggerMarket(context.exchange || 'binance'));
+  const queryFn = context.queryFn || dbQuery;
+  const [backtestRows, predictiveRows] = await Promise.all([
+    queryFn(
+      `SELECT symbol, market, fresh, healthy, sharpe, max_drawdown, win_rate,
+              last_backtest_at, gate_status, would_block, block_reasons, updated_at
+         FROM candidate_backtest_status
+        WHERE symbol = ANY($1::text[])
+          AND market = $2`,
+      [normalized, market],
+    ).catch(() => []),
+    queryFn(
+      `SELECT DISTINCT ON (symbol, market)
+              symbol, market, decision, score, threshold, component_coverage,
+              blocked_reason, created_at
+         FROM predictive_validation_log
+        WHERE symbol = ANY($1::text[])
+          AND market = $2
+        ORDER BY symbol, market, created_at DESC`,
+      [normalized, market],
+    ).catch(() => []),
+  ]);
+
+  const qualityBySymbol = new Map();
+  for (const row of backtestRows || []) {
+    const symbol = normalizeSymbol(row.symbol);
+    if (!symbol) continue;
+    qualityBySymbol.set(symbol, {
+      ...(qualityBySymbol.get(symbol) || {}),
+      symbol,
+      market,
+      backtest: {
+        fresh: row.fresh,
+        healthy: row.healthy,
+        sharpe: row.sharpe == null ? null : Number(row.sharpe),
+        maxDrawdown: row.max_drawdown == null ? null : Number(row.max_drawdown),
+        winRate: row.win_rate == null ? null : Number(row.win_rate),
+        lastBacktestAt: row.last_backtest_at || null,
+        gateStatus: row.gate_status || null,
+        wouldBlock: row.would_block,
+        blockReasons: Array.isArray(row.block_reasons) ? row.block_reasons : parseJsonMaybe(row.block_reasons, []),
+        updatedAt: row.updated_at || null,
+      },
+    });
+  }
+  for (const row of predictiveRows || []) {
+    const symbol = normalizeSymbol(row.symbol);
+    if (!symbol) continue;
+    qualityBySymbol.set(symbol, {
+      ...(qualityBySymbol.get(symbol) || {}),
+      symbol,
+      market,
+      predictive: {
+        decision: row.decision || null,
+        score: row.score == null ? null : Number(row.score),
+        threshold: row.threshold == null ? null : Number(row.threshold),
+        componentCoverage: row.component_coverage == null ? null : Number(row.component_coverage),
+        blockedReason: row.blocked_reason || null,
+        createdAt: row.created_at || null,
+      },
+    });
+  }
+  return qualityBySymbol;
+}
+
+export function evaluateActiveEntryTriggerQualityGate(trigger = {}, quality = null, context = {}) {
+  const enabled = boolConfig(
+    context?.activeQualityGateEnabled ?? process.env.LUNA_ENTRY_TRIGGER_ACTIVE_QUALITY_GATE_ENABLED,
+    true,
+  );
+  if (!enabled) return { ok: true, enabled: false, reason: 'active_quality_gate_disabled' };
+
+  const minPredictiveScore = clamp01(
+    context?.activeQualityGateMinPredictiveScore ?? process.env.LUNA_ENTRY_TRIGGER_ACTIVE_QUALITY_GATE_MIN_PREDICTIVE_SCORE,
+    0.55,
+  );
+  const maxBacktestAgeHours = Math.max(1, finiteNumber(
+    context?.activeQualityGateMaxBacktestAgeHours ?? process.env.LUNA_ENTRY_TRIGGER_ACTIVE_QUALITY_GATE_MAX_BACKTEST_AGE_HOURS,
+    36,
+  ));
+  const nowMs = Number(context.nowMs || Date.now());
+  const reasons = [];
+  const backtest = quality?.backtest || null;
+  const predictive = quality?.predictive || null;
+
+  if (!quality || (!backtest && !predictive)) {
+    reasons.push('active_quality_evidence_missing');
+  }
+
+  if (!backtest) {
+    reasons.push('backtest_missing_or_stale');
+  } else {
+    const gateStatus = String(backtest.gateStatus || backtest.gate_status || '').trim().toLowerCase();
+    const lastBacktestAt = backtest.lastBacktestAt || backtest.last_backtest_at || null;
+    const ageHours = lastBacktestAt ? (nowMs - new Date(lastBacktestAt).getTime()) / 3600000 : null;
+    if (backtest.fresh !== true || !lastBacktestAt || (Number.isFinite(ageHours) && ageHours > maxBacktestAgeHours)) {
+      reasons.push('backtest_missing_or_stale');
+    }
+    if (
+      backtest.healthy !== true
+      || isTruthy(backtest.wouldBlock ?? backtest.would_block)
+      || gateStatus.startsWith('would_block')
+    ) {
+      reasons.push('backtest_unhealthy_or_would_block');
+    }
+  }
+
+  if (!predictive) {
+    reasons.push('predictive_evidence_missing');
+  } else {
+    const decision = String(predictive.decision || '').trim().toLowerCase();
+    const score = finiteNumber(predictive.score, null);
+    if (decision.includes('block') || decision.includes('would_block') || predictive.blockedReason || predictive.blocked_reason) {
+      reasons.push('predictive_blocked');
+    }
+    if (score != null && score < minPredictiveScore) {
+      reasons.push('predictive_score_below_min');
+    }
+  }
+
+  const uniqueReasons = [...new Set(reasons)];
+  return {
+    ok: uniqueReasons.length === 0,
+    enabled: true,
+    reason: uniqueReasons[0] || 'active_quality_gate_passed',
+    reasons: uniqueReasons,
+    symbol: normalizeSymbol(trigger.symbol || quality?.symbol || ''),
+    minPredictiveScore,
+    maxBacktestAgeHours,
+    backtest: backtest ? {
+      fresh: backtest.fresh === true,
+      healthy: backtest.healthy === true,
+      gateStatus: backtest.gateStatus || backtest.gate_status || null,
+      wouldBlock: isTruthy(backtest.wouldBlock ?? backtest.would_block),
+      sharpe: backtest.sharpe ?? null,
+      maxDrawdown: backtest.maxDrawdown ?? backtest.max_drawdown ?? null,
+      winRate: backtest.winRate ?? backtest.win_rate ?? null,
+      lastBacktestAt: backtest.lastBacktestAt || backtest.last_backtest_at || null,
+    } : null,
+    predictive: predictive ? {
+      decision: predictive.decision || null,
+      score: predictive.score == null ? null : Number(predictive.score),
+      threshold: predictive.threshold == null ? null : Number(predictive.threshold),
+      componentCoverage: predictive.componentCoverage ?? predictive.component_coverage ?? null,
+      blockedReason: predictive.blockedReason || predictive.blocked_reason || null,
+      createdAt: predictive.createdAt || predictive.created_at || null,
+    } : null,
+  };
+}
+
+function shouldExpireQualityBlockedActiveTriggers(context = {}) {
+  return boolConfig(
+    context?.expireQualityBlockedActiveTriggers ?? process.env.LUNA_ENTRY_TRIGGER_ACTIVE_QUALITY_EXPIRE_BLOCKED_ENABLED,
+    true,
+  );
+}
+
+function isTerminalActiveEntryTriggerQualityGateBlock(qualityGate = {}) {
+  if (!qualityGate?.enabled || qualityGate?.ok === true) return false;
+  const reasons = new Set((qualityGate.reasons || []).map((reason) => String(reason || '').trim()));
+  return reasons.has('backtest_unhealthy_or_would_block') || reasons.has('predictive_blocked');
+}
+
 function resolvePullbackTechnicalConfirmation(details = {}, thresholds = {}, context = {}) {
   const enabled = boolConfig(
     context?.pullbackTechnicalConfirmationEnabled ?? process.env.LUNA_ENTRY_TRIGGER_PULLBACK_TECHNICAL_CONFIRMATION_ENABLED,
@@ -1249,23 +1441,85 @@ export async function evaluateActiveEntryTriggersAgainstMarketEvents(events = []
     : null;
   const eventsBySymbol = new Map();
   for (const event of events || []) {
-    const symbol = String(event?.symbol || '').trim();
+    const symbol = normalizeSymbol(event?.symbol || '');
     if (!symbol) continue;
     eventsBySymbol.set(symbol, event);
   }
 
   const active = await listActiveEntryTriggers({ exchange, limit: Number(context.limit || 1000) }).catch(() => []);
+  const activeQualityGateEnabled = boolConfig(
+    context?.activeQualityGateEnabled ?? process.env.LUNA_ENTRY_TRIGGER_ACTIVE_QUALITY_GATE_ENABLED,
+    true,
+  );
+  const expireQualityBlockedActive = activeQualityGateEnabled && shouldExpireQualityBlockedActiveTriggers(context);
+  const providedQualityBySymbol = normalizeQualityMap(context.activeQualityBySymbol || context.activeQualityMap);
+  let activeQualityBySymbol = new Map(providedQualityBySymbol);
+  if (activeQualityGateEnabled && context.skipActiveQualityLoad !== true) {
+    const qualitySymbols = [...new Set((active || [])
+      .map((trigger) => normalizeSymbol(trigger.symbol))
+      .filter((symbol) => symbol && (expireQualityBlockedActive || eventsBySymbol.has(symbol))))];
+    const loadedQualityBySymbol = context.loadActiveTriggerQuality
+      ? await context.loadActiveTriggerQuality(qualitySymbols, { exchange, market: normalizeEntryTriggerMarket(exchange), context }).catch(() => new Map())
+      : await loadActiveEntryTriggerQuality(qualitySymbols, { exchange, market: normalizeEntryTriggerMarket(exchange) }).catch(() => new Map());
+    activeQualityBySymbol = new Map([
+      ...normalizeQualityMap(loadedQualityBySymbol),
+      ...providedQualityBySymbol,
+    ]);
+  }
   const results = [];
   let fired = 0;
   let readyBlocked = 0;
   let checked = 0;
+  let qualityExpired = 0;
 
   for (const trigger of active || []) {
     if (openPositionSymbols.has(normalizeSymbol(trigger.symbol))) {
       results.push({ triggerId: trigger.id, symbol: trigger.symbol, state: 'expired', fired: false, reason: 'open_position_reentry_guard' });
       continue;
     }
-    const event = eventsBySymbol.get(String(trigger.symbol || ''));
+    const triggerQuality = activeQualityBySymbol.get(normalizeSymbol(trigger.symbol));
+    const preflightQualityGate = activeQualityGateEnabled
+      ? evaluateActiveEntryTriggerQualityGate(trigger, triggerQuality, context)
+      : null;
+    if (
+      expireQualityBlockedActive
+      && preflightQualityGate
+      && !preflightQualityGate.ok
+      && isTerminalActiveEntryTriggerQualityGateBlock(preflightQualityGate)
+    ) {
+      checked++;
+      readyBlocked++;
+      qualityExpired++;
+      await updateEntryTriggerState(trigger.id, {
+        triggerState: 'expired',
+        triggerMetaPatch: {
+          lastReadyAt: nowIso(),
+          reason: 'active_entry_trigger_quality_terminal_blocked',
+          activeQualityGate: preflightQualityGate,
+          riskGateReason: null,
+          riskGateDetails: null,
+          tradingViewReason: null,
+          tradingViewGuard: null,
+          readyBlockedByMode: null,
+          duplicateFireCooldownMinutes: null,
+          recentFiredTriggerId: null,
+          terminalBlock: true,
+          terminalBlockedAt: nowIso(),
+        },
+      }).catch(() => null);
+      results.push({
+        triggerId: trigger.id,
+        symbol: trigger.symbol,
+        state: 'expired',
+        fired: false,
+        reason: 'active_entry_trigger_quality_terminal_blocked',
+        qualityGateReason: preflightQualityGate.reason,
+        qualityGate: preflightQualityGate,
+        terminalBlock: true,
+      });
+      continue;
+    }
+    const event = eventsBySymbol.get(normalizeSymbol(trigger.symbol || ''));
     if (!event) continue;
     checked++;
     if (exchange === 'binance') {
@@ -1343,6 +1597,37 @@ export async function evaluateActiveEntryTriggersAgainstMarketEvents(events = []
         reason: 'conditions_not_met',
         fireReason: fireReadiness.reason,
         fireReadiness: fireReadiness.details,
+      });
+      continue;
+    }
+    const qualityGate = preflightQualityGate || evaluateActiveEntryTriggerQualityGate(trigger, triggerQuality, context);
+    if (!qualityGate.ok) {
+      readyBlocked++;
+      await updateEntryTriggerState(trigger.id, {
+        triggerState: 'waiting',
+        triggerMetaPatch: {
+          lastReadyAt: nowIso(),
+          reason: 'active_entry_trigger_quality_gate_blocked',
+          activeQualityGate: qualityGate,
+          riskGateReason: null,
+          riskGateDetails: null,
+          tradingViewReason: null,
+          tradingViewGuard: null,
+          readyBlockedByMode: null,
+          duplicateFireCooldownMinutes: null,
+          recentFiredTriggerId: null,
+          terminalBlock: false,
+          terminalBlockedAt: null,
+        },
+      }).catch(() => null);
+      results.push({
+        triggerId: trigger.id,
+        symbol: trigger.symbol,
+        state: 'waiting',
+        fired: false,
+        reason: 'active_entry_trigger_quality_gate_blocked',
+        qualityGateReason: qualityGate.reason,
+        qualityGate,
       });
       continue;
     }
@@ -1463,6 +1748,7 @@ export async function evaluateActiveEntryTriggersAgainstMarketEvents(events = []
     checked,
     fired,
     readyBlocked,
+    qualityExpired,
     results,
   };
 }

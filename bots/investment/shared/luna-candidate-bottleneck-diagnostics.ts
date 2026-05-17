@@ -68,6 +68,53 @@ function hasReasonPrefix(reasons: any[] = [], prefix: string) {
   return (reasons || []).some((reason) => String(reason).startsWith(prefix));
 }
 
+function summarizeBacktestMetadata(metadata: any = {}) {
+  const parsed = parseJsonMaybe(metadata, {});
+  const rowsByPeriod = parseJsonMaybe(parsed.rowsByPeriod, {});
+  const periods = Object.entries(rowsByPeriod || {}).map(([period, rows]) => {
+    const usable = Array.isArray(rows)
+      ? rows.filter((row) => (!row?.status || row.status === 'ok') && n(row?.total_trades, 0) > 0)
+      : [];
+    const best = usable[0] || null;
+    const positiveCount = usable.filter((row) => n(row?.sharpe_ratio, 0) >= 0).length;
+    const negativeCount = usable.filter((row) => n(row?.sharpe_ratio, 0) < 0).length;
+    const strategyFamilies = [...new Set(usable
+      .map((row) => String(row?.params?.strategy || 'unknown').trim())
+      .filter(Boolean))];
+    return {
+      periodDays: Number(period),
+      usableRows: usable.length,
+      positiveCount,
+      negativeCount,
+      bestStrategy: best?.params?.strategy || null,
+      bestSharpe: best ? round(best.sharpe_ratio, 4) : null,
+      bestRobustScore: best?.robust_score == null ? null : round(best.robust_score, 4),
+      bestTotalTrades: best == null ? null : n(best.total_trades, 0),
+      bestMaxDrawdown: best == null ? null : round(Math.abs(n(best.max_drawdown, 0)), 4),
+      bestWinRate: best == null ? null : round(best.win_rate, 4),
+      strategyFamilies,
+    };
+  }).sort((a, b) => n(a.periodDays, 0) - n(b.periodDays, 0));
+  const families = [...new Set(periods.flatMap((period) => period.strategyFamilies || []))];
+  const failingPeriods = periods
+    .filter((period) => {
+      if (!period.usableRows) return true;
+      if (period.bestSharpe == null || period.bestSharpe < 0) return true;
+      if (period.bestMaxDrawdown != null && period.bestMaxDrawdown > 30) return true;
+      if (period.bestWinRate != null && period.bestWinRate < 30) return true;
+      return false;
+    })
+    .map((period) => period.periodDays);
+  return {
+    periods,
+    families,
+    failingPeriods,
+    fallbackUsed: parsed.fallbackUsed === true,
+    vectorbtEnabled: parsed.vectorbtEnabled !== false,
+    qualityGate: parsed.qualityGate || null,
+  };
+}
+
 function actionFromReasons(reasons: string[], input: any = {}) {
   const predictive = input.predictive || {};
   const communitySources = n(input.community?.source_count, 0) + n(input.community?.market_source_count, 0);
@@ -199,7 +246,28 @@ export function fixtureCandidateBottleneckInputs() {
     },
     {
       candidate: { symbol: 'NEG/USDT', market: 'crypto', score: 0.79, source: 'fixture', discovered_at: now },
-      backtest: { fresh: true, healthy: false, would_block: true, sharpe: -0.7, max_drawdown: 18, win_rate: 24, gate_status: 'would_block_unhealthy', last_backtest_at: now },
+      backtest: {
+        fresh: true,
+        healthy: false,
+        would_block: true,
+        sharpe: -0.7,
+        max_drawdown: 18,
+        win_rate: 24,
+        gate_status: 'would_block_unhealthy',
+        last_backtest_at: now,
+        backtest_run_metadata: {
+          rowsByPeriod: {
+            30: [
+              { status: 'ok', sharpe_ratio: 1.2, robust_score: 0.9, max_drawdown: 12, win_rate: 44, total_trades: 32, params: { strategy: 'ema_trend_pullback' } },
+            ],
+            90: [
+              { status: 'ok', sharpe_ratio: -0.7, robust_score: -0.3, max_drawdown: 18, win_rate: 24, total_trades: 28, params: { strategy: 'rsi_macd_reversal' } },
+            ],
+          },
+          fallbackUsed: false,
+          vectorbtEnabled: true,
+        },
+      },
       predictive: { decision: 'block_backtest_gate', score: 0.32, component_coverage: 1, blocked_reason: 'backtest_unhealthy', created_at: now },
       community: { avg_score: 0.12, event_count: 1, source_count: 1, market_event_count: 4, market_source_count: 4, last_seen_at: now },
       binanceTop30Gate: evaluateBinanceTopVolumeUniverseGate('NEG/USDT', topVolumeUniverse),
@@ -245,6 +313,7 @@ export function buildLunaCandidateBottleneckRows(inputs: any[] = [], options: an
     const backtestHealthy = isTrue(backtest.healthy);
     const backtestWouldBlock = isTrue(backtest.would_block) || isTrue(backtest.wouldBlock);
     const backtestBlockReasons = parseJsonMaybe(backtest.block_reasons ?? backtest.blockReasons, []);
+    const backtestMetadataSummary = summarizeBacktestMetadata(backtest.backtest_run_metadata ?? backtest.backtestRunMetadata ?? {});
     const backtestUnstableOrUnrealistic = String(backtest.gate_status || backtest.gateStatus || '').toLowerCase().includes('unstable')
       || hasReasonPrefix(backtestBlockReasons, 'unrealistic_sharpe')
       || hasReasonPrefix(backtestBlockReasons, 'backtest_unstable_sample');
@@ -290,6 +359,8 @@ export function buildLunaCandidateBottleneckRows(inputs: any[] = [], options: an
       backtestStatus: backtest.gate_status || (backtestFresh && backtestHealthy ? 'pass' : 'unknown'),
       backtestFresh,
       backtestGateStatus: backtest.gate_status || (backtestFresh && backtestHealthy ? 'pass' : 'unknown'),
+      backtestPeriodSummary: backtestMetadataSummary.periods,
+      backtestStrategyFamilies: backtestMetadataSummary.families,
       predictiveDecision,
       communitySources,
       communityEvidenceCount24h,
@@ -314,6 +385,11 @@ export function buildLunaCandidateBottleneckRows(inputs: any[] = [], options: an
           backtestFresh,
           backtestGateStatus: backtest.gate_status || (backtestFresh && backtestHealthy ? 'pass' : 'unknown'),
           backtestBlockReasons,
+          backtestPeriodSummary: backtestMetadataSummary.periods,
+          backtestStrategyFamilies: backtestMetadataSummary.families,
+          backtestFailingPeriods: backtestMetadataSummary.failingPeriods,
+          backtestFallbackUsed: backtestMetadataSummary.fallbackUsed,
+          backtestVectorbtEnabled: backtestMetadataSummary.vectorbtEnabled,
           backtestUnstableOrUnrealistic,
           predictiveDecision,
           communityEvidenceCount24h,
@@ -419,6 +495,7 @@ export async function loadLunaCandidateBottleneckInputs({ limit = 50, market = n
            cu.discovered_at, cu.expires_at, cu.reason, cu.raw_data,
            cbs.fresh, cbs.healthy, cbs.sharpe, cbs.max_drawdown, cbs.win_rate,
            cbs.last_backtest_at, cbs.gate_status, cbs.would_block, cbs.block_reasons,
+           cbs.backtest_run_metadata,
            lp.decision AS predictive_decision, lp.score AS predictive_score,
            lp.threshold AS predictive_threshold, lp.component_coverage,
            lp.blocked_reason AS predictive_blocked_reason, lp.created_at AS predictive_created_at,
@@ -475,6 +552,7 @@ export async function loadLunaCandidateBottleneckInputs({ limit = 50, market = n
       gate_status: row.gate_status,
       would_block: row.would_block,
       block_reasons: parseJsonMaybe(row.block_reasons, []),
+      backtest_run_metadata: parseJsonMaybe(row.backtest_run_metadata, {}),
     },
     predictive: {
       decision: row.predictive_decision,

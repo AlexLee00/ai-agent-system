@@ -14,6 +14,12 @@ function finiteNumber(value, fallback = 0) {
   return Number.isFinite(n) ? n : fallback;
 }
 
+function finiteNumberOrNull(value) {
+  if (value === null || value === undefined || value === '') return null;
+  const n = Number(value);
+  return Number.isFinite(n) ? n : null;
+}
+
 function round(value, digits = 6) {
   return Number(Number(value || 0).toFixed(digits));
 }
@@ -45,6 +51,11 @@ export function normalizeLunaPaperPromotionGateConfig(config = {}) {
     minAvgConfidence: Math.max(0, Math.min(1, finiteNumber(config.minAvgConfidence ?? process.env.LUNA_PAPER_PROMOTION_MIN_AVG_CONFIDENCE, 0.62))),
     maxOrderUsdt: Math.max(0, finiteNumber(config.maxOrderUsdt ?? process.env.LUNA_MAX_TRADE_USDT, 50)),
     maxPromotionSharpe: Math.max(1, finiteNumber(config.maxPromotionSharpe ?? process.env.LUNA_PAPER_PROMOTION_MAX_SHARPE, 8)),
+    minPromotionSharpe: finiteNumber(config.minPromotionSharpe ?? process.env.LUNA_PAPER_PROMOTION_MIN_SHARPE, 0),
+    maxPromotionDrawdown: Math.max(0, finiteNumber(config.maxPromotionDrawdown ?? process.env.LUNA_PAPER_PROMOTION_MAX_DRAWDOWN, 30)),
+    minPromotionWinRate: Math.max(0, finiteNumber(config.minPromotionWinRate ?? process.env.LUNA_PAPER_PROMOTION_MIN_WIN_RATE, 30)),
+    minPromotionPeriodTrades: Math.max(1, finiteNumber(config.minPromotionPeriodTrades ?? process.env.LUNA_PAPER_PROMOTION_MIN_PERIOD_TRADES, 5)),
+    minPromotionTotalTrades: Math.max(1, finiteNumber(config.minPromotionTotalTrades ?? process.env.LUNA_PAPER_PROMOTION_MIN_TOTAL_TRADES, 12)),
   };
 }
 
@@ -111,6 +122,13 @@ function promotionBlockerClass(blockReasons = [], promotionCandidate = false) {
     'missing_backtest_quality_seen',
     'missing_strategy_quality_seen',
     'unrealistic_sharpe_seen',
+    'unhealthy_backtest_seen',
+    'backtest_would_block_seen',
+    'backtest_gate_not_pass_seen',
+    'backtest_low_trade_sample_seen',
+    'sharpe_below_promotion_floor_seen',
+    'drawdown_above_promotion_ceiling_seen',
+    'win_rate_below_promotion_floor_seen',
     'strategy_hyperopt_planned_seen',
     'strategy_quality_not_shadow_ready_seen',
   ].some((reason) => reasons.has(reason))) return 'strategy_or_backtest_quality';
@@ -165,11 +183,18 @@ function buildNextRequiredEvidence({
     || reasons.has('non_vectorbt_backtest_seen')
     || reasons.has('missing_backtest_quality_seen')
     || reasons.has('unrealistic_sharpe_seen')
+    || reasons.has('unhealthy_backtest_seen')
+    || reasons.has('backtest_would_block_seen')
+    || reasons.has('backtest_gate_not_pass_seen')
+    || reasons.has('backtest_low_trade_sample_seen')
+    || reasons.has('sharpe_below_promotion_floor_seen')
+    || reasons.has('drawdown_above_promotion_ceiling_seen')
+    || reasons.has('win_rate_below_promotion_floor_seen')
   ) {
     evidence.push({
       type: 'backtest_quality',
       action: 'refresh_vectorbt_backtest_before_promotion',
-      detail: 'Promotion evidence needs stable vectorbt-backed backtest quality, not fallback-only or unrealistic Sharpe evidence.',
+      detail: 'Promotion evidence needs stable vectorbt-backed backtest quality with pass gate status, non-negative Sharpe, controlled drawdown, and acceptable win rate.',
     });
   }
   if (
@@ -248,19 +273,64 @@ function getPromotionBacktestQuality(row = {}, config = {}) {
   const quality = row.promotionBacktestQuality || row.evidence?.promotionBacktestQuality || {};
   const fallbackUsed = normalizeBool(quality.fallbackUsed, false);
   const vectorbtEnabled = normalizeBool(quality.vectorbtEnabled, false);
-  const sharpe = finiteNumber(quality.sharpe, null);
+  const sharpe = finiteNumberOrNull(quality.sharpe);
+  const maxDrawdown = finiteNumberOrNull(quality.maxDrawdown ?? quality.max_drawdown);
+  const winRate = finiteNumberOrNull(quality.winRate ?? quality.win_rate);
+  const runMetadata = parseJsonMaybe(quality.runMetadata ?? quality.run_metadata, {});
+  const totalTrades = finiteNumberOrNull(quality.totalTrades ?? quality.total_trades ?? runMetadata.totalTrades);
+  const minPeriodTrades = finiteNumberOrNull(quality.minPeriodTrades ?? quality.min_period_trades ?? runMetadata.minPeriodTrades);
+  const healthy = quality.healthy === undefined && quality.healthy !== false
+    ? null
+    : normalizeBool(quality.healthy, false);
+  const gateStatus = String(quality.gateStatus ?? quality.gate_status ?? '').trim();
+  const wouldBlock = normalizeBool(quality.wouldBlock ?? quality.would_block, false);
   const maxPromotionSharpe = finiteNumber(config.maxPromotionSharpe, 8);
+  const minPromotionSharpe = finiteNumber(config.minPromotionSharpe, 0);
+  const maxPromotionDrawdown = finiteNumber(config.maxPromotionDrawdown, 30);
+  const minPromotionWinRate = finiteNumber(config.minPromotionWinRate, 30);
+  const minPromotionPeriodTrades = finiteNumber(config.minPromotionPeriodTrades, 5);
+  const minPromotionTotalTrades = finiteNumber(config.minPromotionTotalTrades, 12);
+  const blockReasons = Array.isArray(quality.blockReasons)
+    ? quality.blockReasons
+    : Array.isArray(quality.block_reasons)
+      ? quality.block_reasons
+      : typeof quality.blockReasons === 'string'
+        ? parseJsonMaybe(quality.blockReasons, [])
+        : typeof quality.block_reasons === 'string'
+          ? parseJsonMaybe(quality.block_reasons, [])
+          : [];
   const reasons = [
     fallbackUsed && !vectorbtEnabled ? 'fallback_only_backtest' : null,
     !vectorbtEnabled ? 'non_vectorbt_backtest' : null,
+    healthy === false ? 'backtest_unhealthy' : null,
+    wouldBlock ? 'backtest_would_block' : null,
+    gateStatus && gateStatus !== 'pass' ? 'backtest_gate_not_pass' : null,
     sharpe != null && Math.abs(sharpe) > maxPromotionSharpe ? 'unrealistic_sharpe' : null,
+    totalTrades != null && totalTrades < minPromotionTotalTrades ? 'backtest_low_trade_sample' : null,
+    minPeriodTrades != null && minPeriodTrades < minPromotionPeriodTrades ? 'backtest_low_trade_sample' : null,
+    sharpe != null && sharpe < minPromotionSharpe ? 'sharpe_below_promotion_floor' : null,
+    maxDrawdown != null && Math.abs(maxDrawdown) > maxPromotionDrawdown ? 'drawdown_above_promotion_ceiling' : null,
+    winRate != null && winRate < minPromotionWinRate ? 'win_rate_below_promotion_floor' : null,
   ].filter(Boolean);
   return {
     present: Object.keys(quality || {}).length > 0,
     fallbackUsed,
     vectorbtEnabled,
     sharpe,
+    maxDrawdown,
+    winRate,
+    totalTrades,
+    minPeriodTrades,
+    healthy,
+    gateStatus: gateStatus || null,
+    wouldBlock,
+    blockReasons,
     maxPromotionSharpe,
+    minPromotionSharpe,
+    maxPromotionDrawdown,
+    minPromotionWinRate,
+    minPromotionPeriodTrades,
+    minPromotionTotalTrades,
     stable: reasons.length === 0,
     reasons,
   };
@@ -305,15 +375,18 @@ function getPromotionStrategyQuality(row = {}) {
   };
 }
 
-function isPaperPass(row = {}) {
+function isPaperPass(row = {}, config = {}) {
   const bottleneck = getBottleneckAvoidance(row);
+  const backtestQuality = getPromotionBacktestQuality(row, config);
+  const backtestStable = !backtestQuality.present || backtestQuality.stable;
   return row.paperSide === 'BUY'
     && row.status === 'planned'
     && row.paperNotionalUsdt > 0
     && normalizeBool(row.shadowOnly, true) === true
     && normalizeBool(bottleneck.hardHold, false) === false
     && normalizeBool(bottleneck.preventedOrder, false) === false
-    && noLookaheadOk(row) === true;
+    && noLookaheadOk(row) === true
+    && backtestStable;
 }
 
 export function evaluateLunaPaperPromotionHistory(rows = [], config = {}) {
@@ -325,11 +398,11 @@ export function evaluateLunaPaperPromotionHistory(rows = [], config = {}) {
   const head = history[0] || {};
   let consecutivePasses = 0;
   for (const row of history) {
-    if (!isPaperPass(row)) break;
+    if (!isPaperPass(row, cfg)) break;
     consecutivePasses += 1;
   }
 
-  const passRows = history.filter(isPaperPass);
+  const passRows = history.filter((row) => isPaperPass(row, cfg));
   const hardHoldRows = history.filter((row) => normalizeBool(getBottleneckAvoidance(row).hardHold, false));
   const preventedRows = history.filter((row) => normalizeBool(getBottleneckAvoidance(row).preventedOrder, false));
   const noLookaheadViolationRows = history.filter((row) => noLookaheadOk(row) === false);
@@ -343,6 +416,13 @@ export function evaluateLunaPaperPromotionHistory(rows = [], config = {}) {
   const fallbackOnlyRows = backtestQualityRows.filter((quality) => quality.reasons.includes('fallback_only_backtest'));
   const nonVectorbtRows = backtestQualityRows.filter((quality) => quality.reasons.includes('non_vectorbt_backtest'));
   const unrealisticSharpeRows = backtestQualityRows.filter((quality) => quality.reasons.includes('unrealistic_sharpe'));
+  const unhealthyBacktestRows = backtestQualityRows.filter((quality) => quality.reasons.includes('backtest_unhealthy'));
+  const backtestWouldBlockRows = backtestQualityRows.filter((quality) => quality.reasons.includes('backtest_would_block'));
+  const backtestGateNotPassRows = backtestQualityRows.filter((quality) => quality.reasons.includes('backtest_gate_not_pass'));
+  const backtestLowTradeSampleRows = backtestQualityRows.filter((quality) => quality.reasons.includes('backtest_low_trade_sample'));
+  const sharpeBelowFloorRows = backtestQualityRows.filter((quality) => quality.reasons.includes('sharpe_below_promotion_floor'));
+  const drawdownAboveCeilingRows = backtestQualityRows.filter((quality) => quality.reasons.includes('drawdown_above_promotion_ceiling'));
+  const winRateBelowFloorRows = backtestQualityRows.filter((quality) => quality.reasons.includes('win_rate_below_promotion_floor'));
   const strategyQualityRows = history
     .map((row) => getPromotionStrategyQuality(row))
     .filter((quality) => quality.present);
@@ -373,6 +453,13 @@ export function evaluateLunaPaperPromotionHistory(rows = [], config = {}) {
     fallbackOnlyRows.length > 0 ? 'fallback_only_backtest_seen' : null,
     nonVectorbtRows.length > 0 ? 'non_vectorbt_backtest_seen' : null,
     unrealisticSharpeRows.length > 0 ? 'unrealistic_sharpe_seen' : null,
+    unhealthyBacktestRows.length > 0 ? 'unhealthy_backtest_seen' : null,
+    backtestWouldBlockRows.length > 0 ? 'backtest_would_block_seen' : null,
+    backtestGateNotPassRows.length > 0 ? 'backtest_gate_not_pass_seen' : null,
+    backtestLowTradeSampleRows.length > 0 ? 'backtest_low_trade_sample_seen' : null,
+    sharpeBelowFloorRows.length > 0 ? 'sharpe_below_promotion_floor_seen' : null,
+    drawdownAboveCeilingRows.length > 0 ? 'drawdown_above_promotion_ceiling_seen' : null,
+    winRateBelowFloorRows.length > 0 ? 'win_rate_below_promotion_floor_seen' : null,
     !latestStrategyQuality.present ? 'missing_strategy_quality_seen' : null,
     latestStrategyHardHold ? 'strategy_quality_block_live_forward_seen' : null,
     latestStrategyHyperoptPlanned ? 'strategy_hyperopt_planned_seen' : null,
@@ -434,6 +521,13 @@ export function evaluateLunaPaperPromotionHistory(rows = [], config = {}) {
       fallbackOnlyBacktestCount: fallbackOnlyRows.length,
       nonVectorbtBacktestCount: nonVectorbtRows.length,
       unrealisticSharpeCount: unrealisticSharpeRows.length,
+      unhealthyBacktestCount: unhealthyBacktestRows.length,
+      backtestWouldBlockCount: backtestWouldBlockRows.length,
+      backtestGateNotPassCount: backtestGateNotPassRows.length,
+      backtestLowTradeSampleCount: backtestLowTradeSampleRows.length,
+      sharpeBelowFloorCount: sharpeBelowFloorRows.length,
+      drawdownAboveCeilingCount: drawdownAboveCeilingRows.length,
+      winRateBelowFloorCount: winRateBelowFloorRows.length,
       missingStrategyQuality: !latestStrategyQuality.present,
       strategyQualityHardHoldCount: strategyHardHoldRows.length,
       strategyHyperoptPlannedCount: strategyHyperoptPlannedRows.length,
@@ -451,7 +545,7 @@ export function evaluateLunaPaperPromotionHistory(rows = [], config = {}) {
         noLookaheadOk: noLookaheadOk(row),
         backtestQuality: getPromotionBacktestQuality(row, cfg),
         strategyQuality: getPromotionStrategyQuality(row),
-        pass: isPaperPass(row),
+        pass: isPaperPass(row, cfg),
       })),
       promotionRequiresExplicitMasterApproval: true,
       liveMutation: false,
@@ -572,10 +666,16 @@ export function buildLunaPaperPromotionRowsSql({ marketWhere = '', symbolWhere =
                  'fresh', cbs.fresh,
                  'healthy', cbs.healthy,
                  'sharpe', cbs.sharpe,
+                 'maxDrawdown', cbs.max_drawdown,
                  'winRate', cbs.win_rate,
                  'gateStatus', cbs.gate_status,
+                 'wouldBlock', cbs.would_block,
+                 'blockReasons', COALESCE(cbs.block_reasons, '[]'::jsonb),
                  'fallbackUsed', COALESCE((cbs.backtest_run_metadata->>'fallbackUsed')::boolean, false),
                  'vectorbtEnabled', COALESCE((cbs.backtest_run_metadata->>'vectorbtEnabled')::boolean, false),
+                 'runMetadata', COALESCE(cbs.backtest_run_metadata, '{}'::jsonb),
+                 'totalTrades', NULLIF(cbs.backtest_run_metadata->>'totalTrades', '')::double precision,
+                 'minPeriodTrades', NULLIF(cbs.backtest_run_metadata->>'minPeriodTrades', '')::double precision,
                  'lastBacktestAt', cbs.last_backtest_at
                ),
                true

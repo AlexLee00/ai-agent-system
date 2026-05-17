@@ -43,7 +43,7 @@ export async function runLunaPhase4CodexP2Smoke() {
   assert.equal(liveRows.find((row) => row.symbol === 'DOGE/USDT')?.reasons.includes('community_source_diversity_low'), true, 'crypto hype fixture still requires community diversity');
   assert.equal(liveRows.every((row) => row.shadowOnly === true && row.liveMutation === false), true, 'live-forward rows are shadow-only');
   assert.equal(liveRows.every((row) => row.evidence?.llmGateway?.directProviderCall === false), true, 'Hub LLM route metadata forbids direct provider');
-  assert.equal(strategyRows.some((row) => row.hyperoptStatus === 'planned'), true, 'weak fixture should plan hyperopt');
+  assert.equal(strategyRows.some((row) => row.hyperoptStatus === 'shadow_evaluated_blocked'), true, 'weak fixture should evaluate and block unsafe hyperopt');
   assert.equal(strategyRows.some((row) => row.maxDrawdownGuard === 'block_live_forward'), true, 'high drawdown fixture should block live-forward');
   assert.equal(strategyRows.every((row) => row.bestParams?.paperOnlyDays === 7), true, 'strategy params stay paper-first');
   assert.equal(strategyRows.every((row) => row.shadowOnly === true && row.liveMutation === false), true, 'strategy rows are shadow-only');
@@ -64,6 +64,7 @@ export async function runLunaPhase4CodexP2Smoke() {
       strategyRows: strategyRows.length,
       shadowPass: liveRows.filter((row) => row.liveForwardStatus === 'shadow_pass').length,
       hyperoptPlanned: strategyRows.filter((row) => row.hyperoptStatus === 'planned').length,
+      hyperoptShadowBlocked: strategyRows.filter((row) => row.hyperoptStatus === 'shadow_evaluated_blocked').length,
       maxDrawdownBlocks: strategyRows.filter((row) => row.maxDrawdownGuard === 'block_live_forward').length,
       applyDryRunRejected: true,
       liveMutation: false,

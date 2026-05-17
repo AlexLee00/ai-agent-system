@@ -537,12 +537,13 @@ async function queryRecentAnalysis({ exchange, hours, symbols }) {
   ).catch(() => []);
 }
 
-async function queryActiveCandidateUniverse({ market, limit }) {
+async function queryActiveCandidateUniverse({ market, limit, binanceTopVolumeUniverse = null } = {}) {
   const universe = await buildDiscoveryUniverse(market, new Date(), {
     refresh: false,
     fallbackSymbols: [],
     preferCandidates: true,
     limit: Math.max(1, Number(limit || 50)),
+    ...(binanceTopVolumeUniverse ? { binanceTopVolumeUniverse } : {}),
   }).catch(() => null);
   const candidates = Array.isArray(universe?.candidates) ? universe.candidates : [];
   const candidateMeta = {};
@@ -581,7 +582,7 @@ export async function buildLunaDecisionFilterReport(options = {}) {
       : await loadOpenCandidateSymbols({ exchange, market })
     : new Set();
   const activeUniverse = options.activeCandidates
-    ? await queryActiveCandidateUniverse({ market, limit })
+    ? await queryActiveCandidateUniverse({ market, limit, binanceTopVolumeUniverse: options.binanceTopVolumeUniverse || null })
     : { symbols: [], candidateMeta: {} };
   const rawCandidateSymbols = activeUniverse.symbols || [];
   const excludedOpenPositionSymbols = rawCandidateSymbols.filter((symbol) => openPositionSymbols.has(symbol));

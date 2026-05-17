@@ -301,9 +301,9 @@ export function buildLunaPhase4StrategyEnhancementRows(inputs = [], ohlcvByKey =
     const hyperoptStatus = !hyperoptRequired
       ? 'not_required'
       : hyperoptEvaluationBlocked
-        ? 'planned'
+        ? 'shadow_evaluated_blocked'
         : 'shadow_evaluated';
-    const enhancementStatus = hyperoptStatus === 'planned'
+    const enhancementStatus = hyperoptStatus === 'shadow_evaluated_blocked'
       ? 'shadow_review'
       : maxDrawdownGuard === 'tighten_risk'
         ? 'shadow_ready_with_risk_tightening'
@@ -319,6 +319,7 @@ export function buildLunaPhase4StrategyEnhancementRows(inputs = [], ohlcvByKey =
     const reasons = [
       hyperoptRequired ? 'hyperopt_required' : null,
       hyperoptStatus === 'shadow_evaluated' ? 'hyperopt_shadow_evaluated' : null,
+      hyperoptStatus === 'shadow_evaluated_blocked' ? 'hyperopt_shadow_evaluated_blocked' : null,
       backtest.sharpe < 0 ? 'negative_sharpe' : null,
       strategyDrawdownBlock ? 'strategy_drawdown_gt_20pct' : null,
       !strategyDrawdownBlock && marketRegimeRisk ? 'market_regime_drawdown_gt_20pct_tighten_risk' : null,
@@ -352,7 +353,7 @@ export function buildLunaPhase4StrategyEnhancementRows(inputs = [], ohlcvByKey =
         hyperoptShadow: {
           required: hyperoptRequired,
           status: hyperoptStatus,
-          evaluated: hyperoptStatus === 'shadow_evaluated',
+          evaluated: hyperoptStatus === 'shadow_evaluated' || hyperoptStatus === 'shadow_evaluated_blocked',
           blocked: hyperoptEvaluationBlocked,
           bestParams,
           riskGuard: maxDrawdownGuard,

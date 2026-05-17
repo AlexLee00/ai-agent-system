@@ -99,7 +99,8 @@ export async function runLunaPhase4StrategyEnhancementShadow(options = {}, deps 
     shadowReady: rows.filter((row) => isShadowReadyEnhancementStatus(row.enhancementStatus)).length,
     shadowReview: rows.filter((row) => !isShadowReadyEnhancementStatus(row.enhancementStatus)).length,
     hyperoptPlanned: rows.filter((row) => row.hyperoptStatus === 'planned').length,
-    hyperoptShadowEvaluated: rows.filter((row) => row.hyperoptStatus === 'shadow_evaluated').length,
+    hyperoptShadowEvaluated: rows.filter((row) => String(row.hyperoptStatus || '').startsWith('shadow_evaluated')).length,
+    hyperoptShadowBlocked: rows.filter((row) => row.hyperoptStatus === 'shadow_evaluated_blocked').length,
     maxDrawdownBlocks: rows.filter((row) => row.maxDrawdownGuard === 'block_live_forward').length,
     liveMutation: false,
   };

@@ -27,6 +27,8 @@ const GATE = {
   MAX_DRAWDOWN: 30,
   MIN_WIN_RATE: 30,
   MAX_ABS_SHARPE: Number(process.env.LUNA_BACKTEST_MAX_ABS_SHARPE || 8),
+  MIN_PERIOD_TRADES: Math.max(1, Number(process.env.LUNA_BACKTEST_MIN_PERIOD_TRADES || 5)),
+  MIN_TOTAL_TRADES: Math.max(1, Number(process.env.LUNA_BACKTEST_MIN_TOTAL_TRADES || 12)),
   STALE_HOURS,
 };
 
@@ -148,6 +150,40 @@ function rowsHaveUsableTrades(rows: any[]) {
   return Array.isArray(rows) && rows.some((row) => (!row?.status || row.status === 'ok') && safeNum(row?.total_trades) > 0);
 }
 
+function qualityRank(row: any) {
+  const robust = safeNum(row?.robust_score, NaN);
+  if (Number.isFinite(robust)) return robust;
+  return safeNum(row?.sharpe_ratio, -Infinity);
+}
+
+function qualityPeriodKey(row: any, index = 0) {
+  const period = row?.walk_forward_days ?? row?.period_days ?? row?.days ?? row?.params?.walk_forward_days;
+  return period == null || period === '' ? `row:${index}` : String(period);
+}
+
+function selectBestQualityRows(rows: any[]) {
+  const groups = new Map();
+  (rows || []).forEach((row, index) => {
+    const key = qualityPeriodKey(row, index);
+    const current = groups.get(key);
+    if (!current || qualityRank(row) > qualityRank(current)) {
+      groups.set(key, row);
+      return;
+    }
+    if (qualityRank(row) === qualityRank(current) && safeNum(row?.total_trades) > safeNum(current?.total_trades)) {
+      groups.set(key, row);
+    }
+  });
+  return [...groups.entries()]
+    .sort(([a], [b]) => {
+      const an = Number(a);
+      const bn = Number(b);
+      if (Number.isFinite(an) && Number.isFinite(bn)) return an - bn;
+      return String(a).localeCompare(String(b));
+    })
+    .map(([period, row]) => ({ ...row, quality_period: period }));
+}
+
 function mean(values: number[]) {
   return values.length ? values.reduce((sum, value) => sum + value, 0) / values.length : 0;
 }
@@ -252,10 +288,7 @@ async function runOhlcvFallbackBacktest(symbol: string, market: string, days: nu
   const exchange = exchangeForLunaPhase2Market(market);
   const timeframe = process.env.LUNA_BACKTEST_OHLCV_FALLBACK_TIMEFRAME || (market === 'crypto' ? '1h' : '1d');
   const from = new Date(Date.now() - Math.max(7, days) * 24 * 3600 * 1000).toISOString();
-  const rows = await Promise.race([
-    getOHLCV(symbol, timeframe, from, null, exchange),
-    new Promise((_, reject) => setTimeout(() => reject(new Error(`ohlcv_timeout(${OHLCV_TIMEOUT_MS}ms)`)), OHLCV_TIMEOUT_MS)),
-  ]).catch(() => []);
+  const rows = await getOHLCV(symbol, timeframe, from, null, exchange).catch(() => []);
   return buildOhlcvMomentumBacktestRows(rows, days, market);
 }
 
@@ -277,26 +310,44 @@ function evaluateQuality(rows: any[]) {
     };
   }
 
-  const rawAvgSharpe = usable.reduce((s, r) => s + safeNum(r?.sharpe_ratio), 0) / usable.length;
+  const qualityRows = selectBestQualityRows(usable);
+  const rawAvgSharpe = qualityRows.reduce((s, r) => s + safeNum(r?.sharpe_ratio), 0) / qualityRows.length;
   const avgSharpe = Math.max(-GATE.MAX_ABS_SHARPE, Math.min(GATE.MAX_ABS_SHARPE, rawAvgSharpe));
-  const totalTrades = usable.reduce((sum, r) => sum + safeNum(r?.total_trades), 0);
-  const minTrades = Math.min(...usable.map((r) => safeNum(r?.total_trades)));
-  const maxDD = Math.max(...usable.map((r) => Math.abs(safeNum(r?.max_drawdown))));
-  const avgWinRate = usable.reduce((s, r) => s + safeNum(r?.win_rate), 0) / usable.length;
+  const totalTrades = qualityRows.reduce((sum, r) => sum + safeNum(r?.total_trades), 0);
+  const minTrades = Math.min(...qualityRows.map((r) => safeNum(r?.total_trades)));
+  const maxDD = Math.max(...qualityRows.map((r) => Math.abs(safeNum(r?.max_drawdown))));
+  const avgWinRate = qualityRows.reduce((s, r) => s + safeNum(r?.win_rate), 0) / qualityRows.length;
   const reasons: string[] = [];
   if (avgSharpe < GATE.MIN_SHARPE) reasons.push(`sharpe_negative(${avgSharpe.toFixed(2)})`);
+  const periodFailures = qualityRows
+    .filter((r) => safeNum(r?.sharpe_ratio) < GATE.MIN_SHARPE
+      || Math.abs(safeNum(r?.max_drawdown)) > GATE.MAX_DRAWDOWN
+      || safeNum(r?.win_rate) < GATE.MIN_WIN_RATE)
+    .map((r) => `${r.quality_period}d:sharpe=${safeNum(r?.sharpe_ratio).toFixed(2)},drawdown=${Math.abs(safeNum(r?.max_drawdown)).toFixed(1)}%,winRate=${safeNum(r?.win_rate).toFixed(1)}%`);
+  for (const failure of periodFailures) {
+    reasons.push(`walk_forward_period_failed(${failure})`);
+  }
   const unrealisticSharpe = Math.abs(rawAvgSharpe) > GATE.MAX_ABS_SHARPE;
+  const lowTradeSample = totalTrades < GATE.MIN_TOTAL_TRADES || minTrades < GATE.MIN_PERIOD_TRADES;
   if (unrealisticSharpe) {
     reasons.push(`unrealistic_sharpe(${rawAvgSharpe.toFixed(2)})`);
     reasons.push(`backtest_unstable_sample(total_trades=${totalTrades},min_period_trades=${minTrades})`);
   }
+  if (lowTradeSample) {
+    reasons.push(`backtest_low_trade_sample(total_trades=${totalTrades},min_period_trades=${minTrades})`);
+  }
   if (maxDD > GATE.MAX_DRAWDOWN) reasons.push(`drawdown_high(${maxDD.toFixed(1)}%)`);
   if (avgWinRate < GATE.MIN_WIN_RATE) reasons.push(`win_rate_low(${avgWinRate.toFixed(1)}%)`);
 
-  const wouldBlock = reasons.some((r) => r.startsWith('sharpe_') || r.startsWith('unrealistic_') || r.startsWith('win_rate_') || r.startsWith('drawdown_'));
+  const wouldBlock = reasons.some((r) => r.startsWith('sharpe_')
+    || r.startsWith('unrealistic_')
+    || r.startsWith('backtest_low_trade_sample')
+    || r.startsWith('walk_forward_period_failed')
+    || r.startsWith('win_rate_')
+    || r.startsWith('drawdown_'));
   const onlyUnstable = wouldBlock
-    && unrealisticSharpe
-    && !reasons.some((r) => r.startsWith('sharpe_negative') || r.startsWith('win_rate_low') || r.startsWith('drawdown_high'));
+    && (unrealisticSharpe || lowTradeSample)
+    && !reasons.some((r) => r.startsWith('sharpe_negative') || r.startsWith('walk_forward_period_failed') || r.startsWith('win_rate_low') || r.startsWith('drawdown_high'));
   return {
     sharpe: Number(avgSharpe.toFixed(4)),
     maxDrawdown: Number(maxDD.toFixed(4)),
@@ -305,6 +356,10 @@ function evaluateQuality(rows: any[]) {
     gateStatus: wouldBlock ? (onlyUnstable ? 'would_block_unstable_backtest' : 'would_block_unhealthy') : 'pass',
     wouldBlock,
     reasons,
+    totalTrades,
+    minPeriodTrades: minTrades,
+    qualityRows,
+    qualityRowSelection: 'best_per_walk_forward_period',
   };
 }
 
@@ -364,8 +419,16 @@ async function upsertStatus(symbol: string, market: string, payload: any, dryRun
       vectorbtEnabled: VECTORBT_ENABLED,
       vectorbtTimeoutMs: VECTORBT_TIMEOUT_MS,
       qualityGate: GATE,
+      qualityRows: payload.qualityRows || [],
+      qualityRowSelection: payload.qualityRowSelection || null,
+      totalTrades: payload.totalTrades ?? null,
+      minPeriodTrades: payload.minPeriodTrades ?? null,
     }),
   ]);
+}
+
+function backtestAuditScore(payload: any = {}) {
+  return payload.wouldBlock ? 0 : 1;
 }
 
 async function recordPredictiveAudit(symbol: string, market: string, payload: any, dryRun = false) {
@@ -379,8 +442,8 @@ async function recordPredictiveAudit(symbol: string, market: string, payload: an
     symbol,
     market,
     payload.wouldBlock ? 'would_block_backtest' : 'pass_backtest',
-    payload.sharpe,
-    0,
+    backtestAuditScore(payload),
+    0.5,
     null,
     payload.reasons?.join(',') || null,
     JSON.stringify({ backtest: { fresh: payload.fresh, healthy: payload.healthy, sharpe: payload.sharpe } }),
@@ -595,6 +658,7 @@ export const __test = {
   buildOhlcvMomentumBacktestRows,
   evaluateQuality,
   rowsHaveUsableTrades,
+  selectBestQualityRows,
 };
 
 export { evaluateCandidateBacktestStatus };

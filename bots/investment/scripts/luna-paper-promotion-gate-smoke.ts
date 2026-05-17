@@ -22,8 +22,13 @@ const passEvidence = {
     fresh: true,
     healthy: true,
     sharpe: 1.5,
+    maxDrawdown: 12,
     winRate: 55,
+    totalTrades: 42,
+    minPeriodTrades: 12,
     gateStatus: 'pass',
+    wouldBlock: false,
+    blockReasons: [],
     fallbackUsed: false,
     vectorbtEnabled: true,
   },
@@ -52,6 +57,40 @@ const strategyQualityEvidence = {
     maxDrawdownGuard: 'block_live_forward',
     indicatorScore: 0.2,
     reasons: ['max_drawdown_gt_20pct'],
+  },
+};
+const unhealthyBacktestEvidence = {
+  ...passEvidence,
+  promotionBacktestQuality: {
+    fresh: true,
+    healthy: false,
+    sharpe: -4.2,
+    maxDrawdown: 39.6,
+    winRate: 37.1,
+    totalTrades: 36,
+    minPeriodTrades: 10,
+    gateStatus: 'would_block_unhealthy',
+    wouldBlock: true,
+    blockReasons: ['sharpe_negative(-4.20)', 'drawdown_high(39.6%)'],
+    fallbackUsed: false,
+    vectorbtEnabled: true,
+  },
+};
+const lowTradeBacktestEvidence = {
+  ...passEvidence,
+  promotionBacktestQuality: {
+    fresh: true,
+    healthy: true,
+    sharpe: 1.2,
+    maxDrawdown: 8,
+    winRate: 58,
+    totalTrades: 7,
+    minPeriodTrades: 3,
+    gateStatus: 'pass',
+    wouldBlock: false,
+    blockReasons: [],
+    fallbackUsed: false,
+    vectorbtEnabled: true,
   },
 };
 
@@ -167,6 +206,42 @@ assert.equal(missingQuality.promotionCandidate, false);
 assert.ok(missingQuality.blockReasons.includes('non_vectorbt_backtest_seen'));
 assert.ok(missingQuality.blockReasons.includes('missing_strategy_quality_seen'));
 assert.equal(missingQuality.promotionBlockerClass, 'strategy_or_backtest_quality');
+
+const unhealthyBacktestBlocked = evaluateLunaPaperPromotionHistory(passHistory.map((row) => ({
+  ...row,
+  symbol: 'NEG/USDT',
+  evidence: unhealthyBacktestEvidence,
+})), {
+  minCycles: 3,
+  minConsecutivePasses: 3,
+  minAvgConfidence: 0.62,
+  maxOrderUsdt: 50,
+});
+assert.equal(unhealthyBacktestBlocked.promotionCandidate, false);
+assert.equal(unhealthyBacktestBlocked.decision, 'shadow_promotion_blocked');
+assert.equal(unhealthyBacktestBlocked.passCount, 0);
+assert.ok(unhealthyBacktestBlocked.blockReasons.includes('unhealthy_backtest_seen'));
+assert.ok(unhealthyBacktestBlocked.blockReasons.includes('backtest_would_block_seen'));
+assert.ok(unhealthyBacktestBlocked.blockReasons.includes('backtest_gate_not_pass_seen'));
+assert.ok(unhealthyBacktestBlocked.blockReasons.includes('sharpe_below_promotion_floor_seen'));
+assert.ok(unhealthyBacktestBlocked.blockReasons.includes('drawdown_above_promotion_ceiling_seen'));
+assert.equal(unhealthyBacktestBlocked.promotionBlockerClass, 'strategy_or_backtest_quality');
+assert.equal(unhealthyBacktestBlocked.evidence.recent[0].pass, false);
+
+const lowTradeBacktestBlocked = evaluateLunaPaperPromotionHistory(passHistory.map((row) => ({
+  ...row,
+  symbol: 'LOW-SAMPLE/USDT',
+  evidence: lowTradeBacktestEvidence,
+})), {
+  minCycles: 3,
+  minConsecutivePasses: 3,
+  minAvgConfidence: 0.62,
+  maxOrderUsdt: 50,
+});
+assert.equal(lowTradeBacktestBlocked.promotionCandidate, false);
+assert.equal(lowTradeBacktestBlocked.passCount, 0);
+assert.ok(lowTradeBacktestBlocked.blockReasons.includes('backtest_low_trade_sample_seen'));
+assert.equal(lowTradeBacktestBlocked.promotionBlockerClass, 'strategy_or_backtest_quality');
 
 const onePassAway = evaluateLunaPaperPromotionHistory([
   { symbol: 'NEAR/USDT', market: 'crypto', exchange: 'binance', paper_side: 'BUY', paper_notional_usdt: 20, confidence: 0.75, status: 'planned', shadow_only: true, evidence: passEvidence, observed_at: iso(1) },
@@ -291,6 +366,10 @@ const payload = {
   missingQuality: {
     decision: missingQuality.decision,
     reasons: missingQuality.blockReasons,
+  },
+  lowTradeBacktestBlocked: {
+    decision: lowTradeBacktestBlocked.decision,
+    reasons: lowTradeBacktestBlocked.blockReasons,
   },
   onePassAway: {
     cyclesRemaining: onePassAway.cyclesRemaining,

@@ -2,6 +2,7 @@
 // @ts-nocheck
 
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { get } from '../shared/db/core.ts';
 import { __test as candidateBacktestTest, runCandidateBacktestRefresh } from './runtime-luna-candidate-backtest-refresh.ts';
 
@@ -46,6 +47,7 @@ const fallbackRows = candidateBacktestTest.buildOhlcvMomentumBacktestRows(synthe
 assert.equal(candidateBacktestTest.rowsHaveUsableTrades(fallbackRows), true, 'OHLCV fallback should produce usable trade rows for trending candles');
 const fallbackQuality = candidateBacktestTest.evaluateQuality(fallbackRows);
 assert.equal(fallbackQuality.fresh ?? true, true, 'usable OHLCV fallback should be considered fresh');
+assert.equal(fallbackQuality.qualityRowSelection, 'best_per_walk_forward_period', 'quality gate should use period representatives');
 
 const drawdownOnlyQuality = candidateBacktestTest.evaluateQuality([
   { status: 'ok', total_trades: 8, sharpe_ratio: 1.4, max_drawdown: 42, win_rate: 62 },
@@ -63,6 +65,34 @@ assert.equal(unrealisticSharpeQuality.sharpe, 8, 'stored sharpe should be capped
 assert.ok(unrealisticSharpeQuality.reasons.some((reason) => reason.startsWith('unrealistic_sharpe')), 'unrealistic sharpe reason should be explicit');
 assert.ok(unrealisticSharpeQuality.reasons.some((reason) => reason.startsWith('backtest_unstable_sample')), 'unstable sample reason should be explicit');
 
+const periodRepresentativeQuality = candidateBacktestTest.evaluateQuality([
+  { status: 'ok', walk_forward_days: 30, total_trades: 40, sharpe_ratio: 1.4, robust_score: 1.2, max_drawdown: 10, win_rate: 55 },
+  { status: 'ok', walk_forward_days: 30, total_trades: 45, sharpe_ratio: -9.2, robust_score: -9.2, max_drawdown: 80, win_rate: 8 },
+  { status: 'ok', walk_forward_days: 90, total_trades: 35, sharpe_ratio: 0.8, robust_score: 0.6, max_drawdown: 14, win_rate: 48 },
+]);
+assert.equal(periodRepresentativeQuality.gateStatus, 'pass', 'bad non-representative grid rows must not dominate candidate quality');
+assert.equal(periodRepresentativeQuality.qualityRows.length, 2, 'one representative row per walk-forward period should be evaluated');
+
+const periodFailureQuality = candidateBacktestTest.evaluateQuality([
+  { status: 'ok', walk_forward_days: 30, total_trades: 40, sharpe_ratio: 1.4, robust_score: 1.2, max_drawdown: 10, win_rate: 55 },
+  { status: 'ok', walk_forward_days: 90, total_trades: 35, sharpe_ratio: -0.4, robust_score: -0.2, max_drawdown: 12, win_rate: 42 },
+]);
+assert.equal(periodFailureQuality.wouldBlock, true, 'any failing representative walk-forward period must block');
+assert.ok(periodFailureQuality.reasons.some((reason) => reason.startsWith('walk_forward_period_failed')), 'walk-forward failure reason should identify the failing period');
+
+const lowSampleQuality = candidateBacktestTest.evaluateQuality([
+  { status: 'ok', walk_forward_days: 30, total_trades: 3, sharpe_ratio: 1.2, robust_score: 0.9, max_drawdown: 4, win_rate: 67 },
+  { status: 'ok', walk_forward_days: 90, total_trades: 4, sharpe_ratio: 1.1, robust_score: 0.8, max_drawdown: 5, win_rate: 60 },
+]);
+assert.equal(lowSampleQuality.gateStatus, 'would_block_unstable_backtest', 'low trade samples should stabilize before promotion');
+assert.ok(lowSampleQuality.reasons.some((reason) => reason.startsWith('backtest_low_trade_sample')), 'low sample reason should be explicit');
+
+const vectorbtSource = readFileSync(new URL('./backtest-vectorbt.py', import.meta.url), 'utf8');
+assert.match(vectorbtSource, /ema_trend_pullback/, 'vectorbt grid should include trend-following strategy family');
+assert.match(vectorbtSource, /breakout_momentum/, 'vectorbt grid should include breakout strategy family');
+assert.match(vectorbtSource, /bollinger_mean_reversion/, 'vectorbt grid should include mean-reversion strategy family');
+assert.match(vectorbtSource, /robust_rank_score/, 'vectorbt grid should rank by robust score, not raw Sharpe only');
+
 const payload = {
   ok: true,
   smoke: 'luna-phase1-candidate-backtest',
@@ -75,6 +105,10 @@ const payload = {
   negativeReasons: negative?.reasons || [],
   ohlcvFallbackUsable: candidateBacktestTest.rowsHaveUsableTrades(fallbackRows),
   unrealisticSharpeCapped: unrealisticSharpeQuality.sharpe,
+  periodRepresentativeRows: periodRepresentativeQuality.qualityRows.length,
+  periodFailureReasons: periodFailureQuality.reasons,
+  lowSampleReasons: lowSampleQuality.reasons,
+  vectorbtStrategyFamilies: ['rsi_macd_reversal', 'ema_trend_pullback', 'breakout_momentum', 'bollinger_mean_reversion'],
 };
 
 if (process.argv.includes('--json')) {

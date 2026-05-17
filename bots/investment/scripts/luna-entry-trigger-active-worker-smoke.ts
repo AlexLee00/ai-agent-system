@@ -56,6 +56,7 @@ export async function runLunaEntryTriggerActiveWorkerSmoke() {
     LUNA_INTELLIGENT_DISCOVERY_MODE: 'autonomous_l5',
     LUNA_LIVE_FIRE_ENABLED: 'true',
     LUNA_ENTRY_TRIGGER_FIRE_IN_AUTONOMOUS: 'true',
+    LUNA_ENTRY_TRIGGER_ACTIVE_QUALITY_GATE_ENABLED: 'false',
     LUNA_MAX_TRADE_USDT: '50',
   }, async () => {
     const symbol = `ACTIVE${Date.now().toString(36).toUpperCase()}/USDT`;
@@ -67,6 +68,7 @@ export async function runLunaEntryTriggerActiveWorkerSmoke() {
     const weakPullbackSymbol = `WEAKPULL${Date.now().toString(36).toUpperCase()}/USDT`;
     const technicalProbePullbackSymbol = `TECHPULL${Date.now().toString(36).toUpperCase()}/USDT`;
     const terminalLowConfSymbol = `TERMINALCONF${Date.now().toString(36).toUpperCase()}/USDT`;
+    const qualityBlockedSymbol = `QUALITYBLOCK${Date.now().toString(36).toUpperCase()}/USDT`;
     const binanceTopVolumeUniverse = makeSmokeTop30Universe([
       symbol,
       pullbackSymbol,
@@ -77,6 +79,7 @@ export async function runLunaEntryTriggerActiveWorkerSmoke() {
       weakPullbackSymbol,
       technicalProbePullbackSymbol,
       terminalLowConfSymbol,
+      qualityBlockedSymbol,
       'FAKE/USDT',
       'RLUSD/USDT',
     ]);
@@ -497,6 +500,81 @@ export async function runLunaEntryTriggerActiveWorkerSmoke() {
       assert.equal(terminalLowConfRow?.trigger_state, 'expired');
       assert.equal(terminalLowConfRow?.trigger_meta?.terminalBlock, true);
 
+      const qualityBlockedTrigger = await insertEntryTrigger({
+        symbol: qualityBlockedSymbol,
+        exchange: 'binance',
+        setupType: 'breakout_confirmation',
+        triggerType: 'mtf_alignment',
+        triggerState: 'armed',
+        confidence: 0.82,
+        predictiveScore: 0.81,
+        waitingFor: 'mtf_alignment',
+        triggerContext: {
+          hints: { mtfAgreement: 0.9, discoveryScore: 0.82 },
+        },
+        expiresAt: new Date(Date.now() + 3600_000).toISOString(),
+      });
+      assert.ok(qualityBlockedTrigger?.id);
+      const qualityBlockedResult = await evaluateActiveEntryTriggersAgainstMarketEvents([
+        {
+          symbol: qualityBlockedSymbol,
+          mtfAgreement: 0.9,
+          mtfAlignmentScore: 0.8,
+          mtfDominantSignal: 'BUY',
+          discoveryScore: 0.82,
+          breakoutRetest: true,
+          tradingViewSnapshot: {
+            ok: true,
+            source: 'tradingview_ws_service',
+            providerMode: 'websocket',
+            market: 'tradingview',
+            price: 101,
+            open: 100,
+            stale: false,
+          },
+        },
+      ], {
+        exchange: 'binance',
+        capitalSnapshot,
+        binanceTopVolumeUniverse,
+        activeQualityGateEnabled: true,
+        skipActiveQualityLoad: true,
+        activeQualityBySymbol: {
+          [qualityBlockedSymbol]: {
+            backtest: {
+              fresh: true,
+              healthy: false,
+              sharpe: -0.42,
+              maxDrawdown: 28,
+              winRate: 31,
+              gateStatus: 'would_block_unhealthy',
+              wouldBlock: true,
+              lastBacktestAt: new Date().toISOString(),
+            },
+            predictive: {
+              decision: 'block_backtest_gate',
+              score: 0.2,
+              threshold: 0.55,
+              componentCoverage: 1,
+              blockedReason: 'backtest_unhealthy_or_would_block',
+              createdAt: new Date().toISOString(),
+            },
+          },
+        },
+      });
+      assert.equal(qualityBlockedResult.results[0].fired, false, 'active trigger must not fire when latest quality gate would block');
+      assert.equal(qualityBlockedResult.results[0].reason, 'active_entry_trigger_quality_terminal_blocked');
+      assert.equal(qualityBlockedResult.results[0].state, 'expired');
+      assert.equal(qualityBlockedResult.qualityExpired, 1);
+      assert.ok(
+        qualityBlockedResult.results[0].qualityGate.reasons.includes('backtest_unhealthy_or_would_block'),
+        'quality gate should expose latest backtest blocker',
+      );
+      const qualityBlockedRow = await db.get(`SELECT trigger_state, trigger_meta FROM entry_triggers WHERE id = $1`, [qualityBlockedTrigger.id]);
+      assert.equal(qualityBlockedRow?.trigger_state, 'expired');
+      assert.equal(qualityBlockedRow?.trigger_meta?.reason, 'active_entry_trigger_quality_terminal_blocked');
+      assert.equal(qualityBlockedRow?.trigger_meta?.terminalBlock, true);
+
       const workerRiskContext = await buildEntryTriggerWorkerRiskContext({
         exchange: 'binance',
         buyingPowerSnapshotBuilder: async () => capitalSnapshot,
@@ -632,6 +710,7 @@ export async function runLunaEntryTriggerActiveWorkerSmoke() {
       await db.run(`DELETE FROM entry_triggers WHERE symbol = $1`, [weakPullbackSymbol]).catch(() => {});
       await db.run(`DELETE FROM entry_triggers WHERE symbol = $1`, [technicalProbePullbackSymbol]).catch(() => {});
       await db.run(`DELETE FROM entry_triggers WHERE symbol = $1`, [terminalLowConfSymbol]).catch(() => {});
+      await db.run(`DELETE FROM entry_triggers WHERE symbol = $1`, [qualityBlockedSymbol]).catch(() => {});
       await db.run(`DELETE FROM entry_triggers WHERE symbol LIKE 'STALEBLOCK%'`).catch(() => {});
       if (signalId) await db.run(`DELETE FROM signals WHERE id = $1`, [signalId]).catch(() => {});
       if (openSignalId) await db.run(`DELETE FROM signals WHERE id = $1`, [openSignalId]).catch(() => {});

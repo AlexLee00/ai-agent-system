@@ -86,6 +86,63 @@ export async function runLunaCandidateQualityRemediationSmoke() {
     },
   ], 12, new Map([['UNREAL/USDT|crypto', 'backtest_stabilization_shadow']]));
   assert.deepEqual(stabilizationCooldownTargets, [], 'recent stabilization cooldown blocks repeated revalidation');
+  const staleCooldownTargets = remediationTest.backtestTargetSymbols([
+    {
+      symbol: 'STALE/USDT',
+      market: 'crypto',
+      primaryBlocker: 'backtest_missing_or_stale',
+      recommendedAction: 'refresh_evidence',
+      reasons: ['backtest_missing_or_stale'],
+    },
+  ], 12, new Map([['STALE/USDT|crypto', 'candidate_cooldown_shadow']]));
+  assert.deepEqual(staleCooldownTargets, ['STALE/USDT'], 'missing/stale backtest bypasses candidate cooldown for evidence refresh');
+  const unhealthyCooldownTargets = remediationTest.backtestTargetSymbols([
+    {
+      symbol: 'UNHEALTHY/USDT',
+      market: 'crypto',
+      primaryBlocker: 'backtest_unhealthy_or_would_block',
+      recommendedAction: 'strategy_enhancement_shadow',
+      reasons: ['backtest_unhealthy_or_would_block'],
+    },
+  ], 12, new Map([['UNHEALTHY/USDT|crypto', 'candidate_cooldown_shadow']]));
+  assert.deepEqual(unhealthyCooldownTargets, [], 'unhealthy backtest remains cooldown-blocked without force');
+  assert.deepEqual(remediationTest.backtestCooldownBlockedRows([
+    {
+      symbol: 'STALE/USDT',
+      market: 'crypto',
+      primaryBlocker: 'backtest_missing_or_stale',
+      recommendedAction: 'refresh_evidence',
+      reasons: ['backtest_missing_or_stale'],
+    },
+  ], [{
+    key: 'STALE/USDT|crypto',
+    symbol: 'STALE/USDT',
+    market: 'crypto',
+    governanceAction: 'candidate_cooldown_shadow',
+    cooldownUntil: '2099-01-01T00:00:00.000Z',
+  }]), [], 'stale backtest cooldown bypass is not reported as blocked');
+  assert.deepEqual(remediationTest.backtestCooldownBlockedRows([
+    {
+      symbol: 'UNHEALTHY/USDT',
+      market: 'crypto',
+      primaryBlocker: 'backtest_unhealthy_or_would_block',
+      recommendedAction: 'strategy_enhancement_shadow',
+      reasons: ['backtest_unhealthy_or_would_block'],
+    },
+  ], [{
+    key: 'UNHEALTHY/USDT|crypto',
+    symbol: 'UNHEALTHY/USDT',
+    market: 'crypto',
+    governanceAction: 'candidate_cooldown_shadow',
+    cooldownUntil: '2099-01-01T00:00:00.000Z',
+  }]), [{
+    symbol: 'UNHEALTHY/USDT',
+    market: 'crypto',
+    primaryBlocker: 'backtest_unhealthy_or_would_block',
+    recommendedAction: 'strategy_enhancement_shadow',
+    cooldownAction: 'candidate_cooldown_shadow',
+    cooldownUntil: '2099-01-01T00:00:00.000Z',
+  }], 'unhealthy backtest cooldown remains visible');
   assert.deepEqual(remediationTest.backtestCooldownBlockedRows([
     {
       symbol: 'UNREAL/USDT',
@@ -115,6 +172,26 @@ export async function runLunaCandidateQualityRemediationSmoke() {
     recommendedAction: 'stabilize_backtest_shadow',
     reasons: ['backtest_unstable_or_unrealistic'],
   }]), true, 'stabilization expands walk-forward periods');
+  assert.equal(remediationTest.shouldUseStabilityBacktestPeriodsForTargets([{
+    symbol: 'UNREAL/USDT',
+    market: 'crypto',
+    primaryBlocker: 'backtest_unstable_or_unrealistic',
+    recommendedAction: 'stabilize_backtest_shadow',
+    reasons: ['backtest_unstable_or_unrealistic'],
+  }, {
+    symbol: 'STALE/USDT',
+    market: 'crypto',
+    primaryBlocker: 'backtest_missing_or_stale',
+    recommendedAction: 'refresh_evidence',
+    reasons: ['backtest_missing_or_stale'],
+  }], ['STALE/USDT']), false, 'stability periods are not expanded when stabilization row is cooldown-blocked');
+  assert.equal(remediationTest.shouldUseStabilityBacktestPeriodsForTargets([{
+    symbol: 'UNREAL/USDT',
+    market: 'crypto',
+    primaryBlocker: 'backtest_unstable_or_unrealistic',
+    recommendedAction: 'stabilize_backtest_shadow',
+    reasons: ['backtest_unstable_or_unrealistic'],
+  }], ['UNREAL/USDT']), true, 'stability periods expand when stabilization row is targeted');
 
   const capped = await runLunaCandidateQualityRemediation({
     fixture: true,
@@ -143,6 +220,8 @@ export async function runLunaCandidateQualityRemediationSmoke() {
       qualityGovernance: true,
       symbolTargeted: true,
       stabilizationCooldownBypass: true,
+      staleBacktestCooldownBypass: true,
+      targetScopedStabilityPeriods: true,
       cooldownVisibility: true,
       symbolCaps: true,
       liveMutation: false,

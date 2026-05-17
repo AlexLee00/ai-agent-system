@@ -300,6 +300,25 @@ export async function runLunaDecisionFilterReportSmoke() {
 
   const fixtureSymbol = `DFILTER${Date.now()}/USDT`;
   const openFixtureSymbol = `DFILTEROPEN${Date.now()}/USDT`;
+  const missingAnalysisFixtureSymbol = `DFILTERMISS${Date.now()}/USDT`;
+  const smokeBinanceTopVolumeUniverse = {
+    source: 'smoke_binance_top30_universe',
+    fetchedAt: now,
+    quote: 'USDT',
+    limit: 30,
+    symbols: [fixtureSymbol, openFixtureSymbol, missingAnalysisFixtureSymbol],
+    ranks: {
+      [fixtureSymbol]: 1,
+      [openFixtureSymbol]: 2,
+      [missingAnalysisFixtureSymbol]: 3,
+    },
+    rows: [
+      { symbol: fixtureSymbol, quoteVolume: 30_000_000 },
+      { symbol: openFixtureSymbol, quoteVolume: 29_000_000 },
+      { symbol: missingAnalysisFixtureSymbol, quoteVolume: 28_000_000 },
+    ],
+    excluded: {},
+  };
   await db.initSchema();
   await ensureCandidateUniverseTable();
   try {
@@ -327,6 +346,18 @@ export async function runLunaDecisionFilterReportSmoke() {
          expires_at = now() + interval '2 hours'`,
       [openFixtureSymbol],
     );
+    await db.run(
+      `INSERT INTO candidate_universe
+         (symbol, market, source, source_tier, score, confidence, reason, reason_code, ttl_hours, raw_data, expires_at)
+       VALUES
+         ($1, 'crypto', 'binance_market_momentum', 1, 0.89, 0.82, 'decision filter missing analysis smoke', 'decision_filter_missing_analysis_smoke', 2, '{}'::jsonb, now() + interval '2 hours')
+       ON CONFLICT (symbol, market, source) DO UPDATE SET
+         score = excluded.score,
+         confidence = excluded.confidence,
+         discovered_at = now(),
+         expires_at = now() + interval '2 hours'`,
+      [missingAnalysisFixtureSymbol],
+    );
     await db.insertAnalysis({
       symbol: fixtureSymbol,
       analyst: 'ta_mtf',
@@ -352,6 +383,7 @@ export async function runLunaDecisionFilterReportSmoke() {
       openPositionSymbols: [openFixtureSymbol],
       hours: 1,
       limit: 20,
+      binanceTopVolumeUniverse: smokeBinanceTopVolumeUniverse,
     });
     assert.equal(activeReport.symbolScope, 'active_candidates');
     assert.ok(activeReport.activeCandidateSymbols.includes(fixtureSymbol));
@@ -374,6 +406,7 @@ export async function runLunaDecisionFilterReportSmoke() {
     await db.run(`DELETE FROM analysis WHERE symbol = $1 AND metadata->>'smoke' = 'true'`, [openFixtureSymbol]).catch(() => null);
     await db.run(`DELETE FROM candidate_universe WHERE symbol = $1 AND source = 'binance_market_momentum'`, [fixtureSymbol]).catch(() => null);
     await db.run(`DELETE FROM candidate_universe WHERE symbol = $1 AND source = 'binance_market_momentum'`, [openFixtureSymbol]).catch(() => null);
+    await db.run(`DELETE FROM candidate_universe WHERE symbol = $1 AND source = 'binance_market_momentum'`, [missingAnalysisFixtureSymbol]).catch(() => null);
   }
 
   return {

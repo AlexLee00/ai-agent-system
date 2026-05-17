@@ -36,6 +36,14 @@ function getExchange() {
   return _exchange;
 }
 
+async function closeExchange() {
+  const ex = _exchange;
+  _exchange = null;
+  if (ex && typeof ex.close === 'function') {
+    await ex.close().catch(() => null);
+  }
+}
+
 function isBinanceExchange(exchange = DEFAULT_EXCHANGE) {
   return String(exchange || DEFAULT_EXCHANGE).trim().toLowerCase() === DEFAULT_EXCHANGE;
 }
@@ -276,6 +284,8 @@ export async function fetchAndCacheOHLCV(symbol, timeframe, from, to = null, exc
       return fallbackRows;
     }
     throw error;
+  } finally {
+    await closeExchange();
   }
 
   if (useCache) {

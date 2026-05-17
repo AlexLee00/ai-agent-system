@@ -37,6 +37,9 @@ export async function runLunaCandidateBottleneckDiagnosticsSmoke() {
   assert.equal(neg?.predictiveDecision, 'block_backtest_gate', 'trace includes predictiveDecision');
   assert.equal(neg?.communityEvidenceCount24h, 5, 'trace includes communityEvidenceCount24h');
   assert.equal(neg?.communitySourceCount24h, 5, 'trace includes communitySourceCount24h');
+  assert.equal(neg?.backtestPeriodSummary?.length, 2, 'trace includes backtest period summary');
+  assert.ok(neg?.backtestStrategyFamilies?.includes('ema_trend_pullback'), 'trace includes strategy family breakdown');
+  assert.ok(neg?.evidence?.trace?.backtestFailingPeriods?.includes(90), 'trace marks failing walk-forward periods');
   assert.ok(neg?.primaryBlocker, 'trace includes primaryBlocker');
   assert.ok(String(neg?.recommendedRefreshCommand || '').includes('runtime:luna-phase4-strategy-enhancement-shadow'), 'trace includes strategy enhancement command');
   assert.ok(

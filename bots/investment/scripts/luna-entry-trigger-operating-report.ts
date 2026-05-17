@@ -6,8 +6,12 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
-import { getEntryTriggerOperationalStats } from '../shared/luna-discovery-entry-store.ts';
+import { getEntryTriggerOperationalStats, listActiveEntryTriggers } from '../shared/luna-discovery-entry-store.ts';
 import { publishAlert } from '../shared/alert-publisher.ts';
+import {
+  evaluateActiveEntryTriggerQualityGate,
+  loadActiveEntryTriggerQuality,
+} from '../shared/entry-trigger-engine.ts';
 import { buildLunaEntryTriggerWorkerReadiness } from './luna-entry-trigger-worker-readiness.ts';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -97,10 +101,43 @@ function summarizeReadinessResults(results = []) {
   };
 }
 
+async function buildActiveQualityGateSummary({ exchange = 'binance' } = {}) {
+  const active = await listActiveEntryTriggers({ exchange, limit: 1000 }).catch(() => []);
+  const symbols = [...new Set((active || []).map((row) => String(row.symbol || '').trim().toUpperCase()).filter(Boolean))];
+  const qualityBySymbol = await loadActiveEntryTriggerQuality(symbols, { exchange }).catch(() => new Map());
+  const byReason = {};
+  const items = (active || []).map((trigger) => {
+    const symbol = String(trigger.symbol || '').trim().toUpperCase();
+    const gate = evaluateActiveEntryTriggerQualityGate(trigger, qualityBySymbol.get(symbol), {});
+    if (!gate.ok) addCount(byReason, gate.reason);
+    return {
+      triggerId: trigger.id || null,
+      symbol,
+      state: trigger.trigger_state || null,
+      ok: gate.ok === true,
+      reason: gate.reason || null,
+      reasons: gate.reasons || [],
+      backtestGateStatus: gate.backtest?.gateStatus || null,
+      backtestFresh: gate.backtest?.fresh ?? null,
+      backtestHealthy: gate.backtest?.healthy ?? null,
+      predictiveDecision: gate.predictive?.decision || null,
+      predictiveScore: finiteNumber(gate.predictive?.score),
+    };
+  });
+  return {
+    checked: items.length,
+    pass: items.filter((item) => item.ok).length,
+    blocked: items.filter((item) => !item.ok).length,
+    byReason,
+    items,
+  };
+}
+
 export async function buildLunaEntryTriggerOperatingReport({ exchange = 'binance', hours = 24 } = {}) {
-  const [stats, readiness] = await Promise.all([
+  const [stats, readiness, activeQualityGate] = await Promise.all([
     getEntryTriggerOperationalStats({ exchange, hours }),
     buildLunaEntryTriggerWorkerReadiness({ exchange, hours }),
+    buildActiveQualityGateSummary({ exchange }),
   ]);
   const heartbeatResult = readiness?.heartbeat?.payload?.result || {};
   const readinessSummary = summarizeReadinessResults(heartbeatResult?.results || []);
@@ -137,8 +174,13 @@ export async function buildLunaEntryTriggerOperatingReport({ exchange = 'binance
       readinessFired: readinessSummary.fired,
       readinessWaiting: readinessSummary.waiting,
       waitReasonCounts: readinessSummary.waitReasonCounts,
+      activeQualityChecked: activeQualityGate.checked,
+      activeQualityBlocked: activeQualityGate.blocked,
+      activeQualityPass: activeQualityGate.pass,
+      activeQualityBlockReasons: activeQualityGate.byReason,
     },
     tradeCompletionReadiness: readinessSummary,
+    activeQualityGate,
     stats,
     readiness: {
       status: readiness?.status || null,
@@ -167,6 +209,7 @@ export function renderLunaEntryTriggerOperatingReport(report = {}) {
       : `heartbeat: ${summary.heartbeatAgeMinutes ?? 'n/a'}m / mode=${summary.heartbeatMode || 'n/a'} / live=${summary.heartbeatAllowLiveFire === true} / checked=${summary.heartbeatChecked ?? 'n/a'} / readyBlocked=${summary.heartbeatReadyBlocked ?? 'n/a'}`,
     `readiness: checked=${summary.readinessChecked ?? 0} / waiting=${summary.readinessWaiting ?? 0} / fired=${summary.readinessFired ?? 0}`,
     `waitReasons: ${Object.entries(summary.waitReasonCounts || {}).map(([key, count]) => `${key}:${count}`).join(', ') || 'none'}`,
+    `activeQuality: checked=${summary.activeQualityChecked ?? 0} / blocked=${summary.activeQualityBlocked ?? 0} / pass=${summary.activeQualityPass ?? 0} / reasons=${Object.entries(summary.activeQualityBlockReasons || {}).map(([key, count]) => `${key}:${count}`).join(', ') || 'none'}`,
     `warnings: ${(report.warnings || []).length ? report.warnings.join(' / ') : 'none'}`,
   ].join('\n');
 }
@@ -192,9 +235,12 @@ export async function runLunaEntryTriggerOperatingReportSmoke() {
   assert.ok(report.checkedAt);
   assert.ok(report.summary);
   assert.ok(report.tradeCompletionReadiness);
+  assert.ok(report.activeQualityGate);
   assert.equal(typeof report.summary.waitReasonCounts, 'object');
+  assert.equal(typeof report.summary.activeQualityBlockReasons, 'object');
   assert.ok(renderLunaEntryTriggerOperatingReport(report).includes('entry-trigger operating report'));
   assert.ok(renderLunaEntryTriggerOperatingReport(report).includes('readiness:'));
+  assert.ok(renderLunaEntryTriggerOperatingReport(report).includes('activeQuality:'));
   return report;
 }
 
