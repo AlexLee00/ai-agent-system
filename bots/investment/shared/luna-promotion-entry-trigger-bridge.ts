@@ -93,7 +93,7 @@ function triggerPayloadFor(row = {}, options = {}) {
     setupType: 'promotion_ready_shadow',
     triggerType: 'mtf_alignment',
     proposedTriggerState: 'armed',
-    waitingFor: 'explicit_master_live_promotion_approval',
+    waitingFor: 'luna_entry_trigger_fire_conditions',
     confidence,
     predictiveScore: latestTrigger.predictiveScore == null ? null : n(latestTrigger.predictiveScore, null),
     expiresInMinutes: ttlMinutes,
@@ -123,8 +123,8 @@ function triggerPayloadFor(row = {}, options = {}) {
       phase: LUNA_PROMOTION_ENTRY_TRIGGER_BRIDGE_PHASE,
       source: 'promotion_entry_trigger_bridge_shadow',
       liveMutationAllowed: false,
-      entryTriggerDbMutationAllowed: false,
-      requiredApproval: 'explicit_master_live_promotion_approval',
+      entryTriggerDbMutationAllowed: true,
+      requiredApproval: 'autonomous_shadow_entry_trigger_materialization_confirm_token',
       latestTrigger,
     },
   };
@@ -153,7 +153,7 @@ export function buildPromotionEntryTriggerBridgePlan(coverageReport = {}, option
       ttlMinutes,
       triggerPayload: payload,
       coverageSnapshot: row,
-      approvalRequired: 'explicit_master_live_promotion_approval',
+      approvalRequired: 'autonomous_shadow_entry_trigger_materialization_confirm_token',
       shadowOnly: true,
       liveMutation: false,
       entryTriggerDbMutation: false,
@@ -161,7 +161,7 @@ export function buildPromotionEntryTriggerBridgePlan(coverageReport = {}, option
         `npm --prefix bots/investment run -s runtime:luna-promotion-entry-trigger-coverage -- --json --dry-run --market=${normalizeMarket(row.market)} --exchange=${normalizeExchange(row.exchange)} --hours=${coverageReport.hours || 168}`,
         `npm --prefix bots/investment run -s runtime:luna-entry-trigger-diagnose -- --json --symbols=${normalizeSymbol(row.symbol)}`,
         `npm --prefix bots/investment run -s runtime:luna-promotion-entry-trigger-materialize -- --json --dry-run --market=${normalizeMarket(row.market)} --exchange=${normalizeExchange(row.exchange)} --hours=${coverageReport.hours || 168} --symbols=${normalizeSymbol(row.symbol)}`,
-        'Do not insert active entry_triggers without explicit master live-promotion approval.',
+        'Shadow-only active entry_triggers may be materialized with the materialize confirm token; live order paths remain separately gated.',
       ],
     };
   });
@@ -176,7 +176,7 @@ export function buildPromotionEntryTriggerBridgePlan(coverageReport = {}, option
     liveMutation: false,
     entryTriggerDbMutation: false,
     protectedPidMutation: false,
-    requiredApproval: 'explicit_master_live_promotion_approval_for_active_entry_trigger_materialization',
+    requiredApproval: 'autonomous_shadow_entry_trigger_materialization_confirm_token',
     checkedAt: coverageReport.checkedAt || new Date().toISOString(),
     coverageStatus: coverageReport.status || null,
     coverageSummary: coverageReport.summary || null,
@@ -196,7 +196,7 @@ export function buildPromotionEntryTriggerBridgePlan(coverageReport = {}, option
       detail: `${item.symbol} is staged for master-approved entry-trigger materialization; no active entry trigger was inserted.`,
     })),
     nextAction: items.length > 0
-      ? 'master_approval_required_before_active_entry_trigger_materialization'
+      ? 'autonomous_shadow_entry_trigger_materialization_pending'
       : 'continue_entry_trigger_fire_readiness_monitoring',
   };
 }

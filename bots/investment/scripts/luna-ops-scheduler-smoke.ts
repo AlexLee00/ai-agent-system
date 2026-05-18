@@ -92,12 +92,13 @@ export async function runLunaOpsSchedulerSmoke() {
   assert.equal(jobs.find((job) => job.name === 'promotion_entry_trigger_bridge_shadow')?.args?.includes('--confirm=luna-promotion-entry-trigger-bridge-shadow'), true);
   assert.equal(jobs.find((job) => job.name === 'promotion_entry_trigger_bridge_shadow')?.args?.includes('--market=all'), true);
   assert.equal(jobs.find((job) => job.name === 'promotion_entry_trigger_bridge_shadow')?.args?.includes('--exchange=all'), true);
-  assert.equal(jobs.some((job) => job.name === 'promotion_entry_trigger_materialize_dry_run'), true);
-  assert.equal(jobs.find((job) => job.name === 'promotion_entry_trigger_materialize_dry_run')?.category, 'promotion_shadow_readonly');
-  assert.equal(jobs.find((job) => job.name === 'promotion_entry_trigger_materialize_dry_run')?.cadence?.seconds, 600);
-  assert.equal(jobs.find((job) => job.name === 'promotion_entry_trigger_materialize_dry_run')?.args?.includes('--dry-run'), true);
-  assert.equal(jobs.find((job) => job.name === 'promotion_entry_trigger_materialize_dry_run')?.args?.includes('--market=all'), true);
-  assert.equal(jobs.find((job) => job.name === 'promotion_entry_trigger_materialize_dry_run')?.args?.includes('--exchange=all'), true);
+  assert.equal(jobs.some((job) => job.name === 'promotion_entry_trigger_materialize_shadow'), true);
+  assert.equal(jobs.find((job) => job.name === 'promotion_entry_trigger_materialize_shadow')?.category, 'promotion_shadow');
+  assert.equal(jobs.find((job) => job.name === 'promotion_entry_trigger_materialize_shadow')?.cadence?.seconds, 600);
+  assert.equal(jobs.find((job) => job.name === 'promotion_entry_trigger_materialize_shadow')?.args?.includes('--apply'), true);
+  assert.equal(jobs.find((job) => job.name === 'promotion_entry_trigger_materialize_shadow')?.args?.includes('--confirm=luna-promotion-entry-trigger-materialize-active'), true);
+  assert.equal(jobs.find((job) => job.name === 'promotion_entry_trigger_materialize_shadow')?.args?.includes('--market=all'), true);
+  assert.equal(jobs.find((job) => job.name === 'promotion_entry_trigger_materialize_shadow')?.args?.includes('--exchange=all'), true);
   assert.equal(jobs.some((job) => job.name === 'promotion_readiness_assist_shadow'), true);
   assert.equal(jobs.find((job) => job.name === 'promotion_readiness_assist_shadow')?.category, 'promotion_shadow');
   assert.equal(jobs.find((job) => job.name === 'promotion_readiness_assist_shadow')?.cadence?.seconds, 3600);
@@ -300,7 +301,7 @@ export async function runLunaOpsSchedulerSmoke() {
   assert.equal(calls.length, 42);
   assert.equal(calls.includes('promotion_entry_trigger_coverage_all'), true);
   assert.equal(calls.includes('promotion_entry_trigger_bridge_shadow'), true);
-  assert.equal(calls.includes('promotion_entry_trigger_materialize_dry_run'), true);
+  assert.equal(calls.includes('promotion_entry_trigger_materialize_shadow'), true);
   assert.equal(calls.includes('market_cycle_domestic'), false);
   assert.equal(calls.includes('market_cycle_domestic_open_catchup'), false);
   assert.equal(calls.includes('market_cycle_overseas'), false);

@@ -316,13 +316,14 @@ export function getOpsSchedulerJobs() {
       ]),
     },
     {
-      name: 'promotion_entry_trigger_materialize_dry_run',
-      category: 'promotion_shadow_readonly',
+      name: 'promotion_entry_trigger_materialize_shadow',
+      category: 'promotion_shadow',
       market: 'all',
       cadence: { type: 'interval', seconds: 600 },
       timeoutMs: 60_000,
       ...nodeScript('runtime-luna-promotion-entry-trigger-materialize.ts', [
-        '--dry-run',
+        '--apply',
+        '--confirm=luna-promotion-entry-trigger-materialize-active',
         '--market=all',
         '--exchange=all',
         '--hours=168',

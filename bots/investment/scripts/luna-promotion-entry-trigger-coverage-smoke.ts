@@ -102,7 +102,7 @@ const bridgeRows = [
     promotion_confidence: 0.7405,
     trigger_type: 'mtf_alignment',
     proposed_trigger_state: 'armed',
-    approval_required: 'explicit_master_live_promotion_approval',
+    approval_required: 'autonomous_shadow_entry_trigger_materialization_confirm_token',
     shadow_only: true,
     live_mutation: false,
     entry_trigger_db_mutation: false,
@@ -131,7 +131,7 @@ assert.equal(report.summary.unstagedMissingActiveTrigger, 0);
 assert.equal(report.rows.find((row) => row.symbol === 'ZEC/USDT')?.coverageStatus, 'covered_by_active_entry_trigger');
 const missing = report.rows.find((row) => row.symbol === 'AIGENSYN/USDT');
 assert.equal(missing?.coverageStatus, 'promotion_ready_staged_for_entry_trigger_materialization');
-assert.equal(missing?.gapReason, 'promotion_ready_materialization_approval_required');
+assert.equal(missing?.gapReason, 'promotion_ready_shadow_materialization_pending');
 assert.equal(missing?.bridge?.pendingMaterialization, true);
 assert.equal(missing?.bridgePreview?.liveMutationAllowed, false);
 

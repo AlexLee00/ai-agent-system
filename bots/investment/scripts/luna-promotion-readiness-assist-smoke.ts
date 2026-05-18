@@ -172,13 +172,13 @@ export async function runLunaPromotionReadinessAssistSmoke() {
   assert.equal(promotionPlan.promotionReadyTargets.length, 1);
   assert.deepEqual(promotionPlan.actionSummary.promotionReadySymbols, ['AIGENSYN/USDT']);
   assert.equal(promotionPlan.actionSummary.byAction.promotion_entry_trigger_bridge_shadow, 1);
-  assert.equal(promotionPlan.actionSummary.byAction.promotion_entry_trigger_materialize_dry_run, 1);
+  assert.equal(promotionPlan.actionSummary.byAction.promotion_entry_trigger_materialize_shadow, 1);
   assert.equal(
     promotionPlan.plannedCommands.some((cmd) => cmd.includes('runtime:luna-promotion-entry-trigger-bridge') && cmd.includes('--symbols=AIGENSYN/USDT')),
     true,
   );
   assert.equal(
-    promotionPlan.plannedCommands.some((cmd) => cmd.includes('runtime:luna-promotion-entry-trigger-materialize') && cmd.includes('--dry-run') && cmd.includes('--symbols=AIGENSYN/USDT')),
+    promotionPlan.plannedCommands.some((cmd) => cmd.includes('runtime:luna-promotion-entry-trigger-materialize') && cmd.includes('--apply') && cmd.includes('--confirm=luna-promotion-entry-trigger-materialize-active') && cmd.includes('--symbols=AIGENSYN/USDT')),
     true,
   );
   assert.equal(promotionPlan.plannedCommands.every((cmd) => !cmd.includes('launchctl') && !cmd.includes('live-fire') && !cmd.includes('rollback')), true);

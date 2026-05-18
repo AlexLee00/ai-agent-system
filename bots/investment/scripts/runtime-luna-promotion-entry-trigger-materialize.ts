@@ -133,7 +133,7 @@ function fixtureBridgeRows(now = new Date()) {
         triggerMeta: { source: 'fixture_bridge_shadow' },
       },
       coverage_snapshot: { activeTriggerCount: 0 },
-      approval_required: 'explicit_master_live_promotion_approval',
+      approval_required: 'autonomous_shadow_entry_trigger_materialization_confirm_token',
     },
   ];
 }
@@ -192,6 +192,8 @@ async function markBridgeMaterialized({ bridgeId, entryTriggerId, materializedAt
   return run(`
     UPDATE luna_promotion_entry_trigger_bridge_shadow
        SET bridge_status = 'active_entry_trigger_materialized',
+           gap_reason = 'shadow_entry_trigger_materialized',
+           approval_required = 'autonomous_shadow_entry_trigger_materialization_confirm_token',
            entry_trigger_db_mutation = true,
            live_mutation = false,
            shadow_only = true,
@@ -253,7 +255,7 @@ function buildEntryTrigger(row = {}, gate = {}, options = {}) {
       ...meta,
       phase: LUNA_PROMOTION_ENTRY_TRIGGER_MATERIALIZE_PHASE,
       source: 'promotion_entry_trigger_materialize',
-      requiredApproval: 'explicit_master_live_promotion_approval_for_active_entry_trigger_materialization',
+      requiredApproval: 'autonomous_shadow_entry_trigger_materialization_confirm_token',
       approvalConfirmToken: LUNA_PROMOTION_ENTRY_TRIGGER_MATERIALIZE_CONFIRM,
       liveMutation: false,
       entryTriggerDbMutation: true,
@@ -317,6 +319,7 @@ export async function runLunaPromotionEntryTriggerMaterialize(options = parseArg
   const items = [];
   let materialized = 0;
   let alreadyActive = 0;
+  let bridgeMaterialized = 0;
   let blocked = 0;
 
   for (const row of bridgeRows || []) {
@@ -340,6 +343,7 @@ export async function runLunaPromotionEntryTriggerMaterialize(options = parseArg
       top30Blocker: gate.blocked ? BINANCE_TOP_VOLUME_BLOCK_REASON : null,
       liveMutation: false,
       entryTriggerDbMutation: false,
+      bridgeDbMutation: false,
       protectedPidMutation: false,
       status: 'eligible_dry_run',
       entryTriggerId: null,
@@ -363,6 +367,20 @@ export async function runLunaPromotionEntryTriggerMaterialize(options = parseArg
       item.status = 'already_active_entry_trigger';
       item.entryTriggerId = active.id;
       item.entryTriggerDbMutation = false;
+      if (options.apply) {
+        const materializedAt = now.toISOString();
+        const materializedPayload = {
+          ...trigger,
+          existingActiveEntryTriggerId: active.id,
+        };
+        if (deps.markBridgeMaterialized) {
+          await deps.markBridgeMaterialized({ bridgeId: item.bridgeId, entryTriggerId: active.id, materializedAt, materializedPayload });
+        } else {
+          await markBridgeMaterialized({ bridgeId: item.bridgeId, entryTriggerId: active.id, materializedAt, materializedPayload });
+        }
+        bridgeMaterialized += 1;
+        item.bridgeDbMutation = true;
+      }
       items.push(item);
       continue;
     }
@@ -382,6 +400,8 @@ export async function runLunaPromotionEntryTriggerMaterialize(options = parseArg
         } else {
           await markBridgeMaterialized({ bridgeId: item.bridgeId, entryTriggerId: inserted.id, materializedAt, materializedPayload: trigger });
         }
+        bridgeMaterialized += 1;
+        item.bridgeDbMutation = true;
       } else {
         blocked += 1;
         item.status = 'entry_trigger_insert_failed';
@@ -401,10 +421,12 @@ export async function runLunaPromotionEntryTriggerMaterialize(options = parseArg
   const status = bridgeRows.length === 0
     ? 'luna_promotion_entry_trigger_materialize_no_targets'
     : options.apply
-      ? materialized > 0 && blocked > 0
+      ? (materialized > 0 || bridgeMaterialized > 0) && blocked > 0
         ? 'luna_promotion_entry_trigger_materialize_partial'
         : materialized > 0
         ? 'luna_promotion_entry_trigger_materialize_written'
+        : bridgeMaterialized > 0
+          ? 'luna_promotion_entry_trigger_materialize_bridge_synced'
         : blocked > 0
           ? 'luna_promotion_entry_trigger_materialize_blocked'
           : 'luna_promotion_entry_trigger_materialize_noop'
@@ -421,7 +443,7 @@ export async function runLunaPromotionEntryTriggerMaterialize(options = parseArg
     apply: options.apply,
     fixture: options.fixture === true,
     confirmToken: LUNA_PROMOTION_ENTRY_TRIGGER_MATERIALIZE_CONFIRM,
-    requiredApproval: 'explicit_master_live_promotion_approval_for_active_entry_trigger_materialization',
+    requiredApproval: 'autonomous_shadow_entry_trigger_materialization_confirm_token',
     liveMutation: false,
     entryTriggerDbMutation: options.apply && materialized > 0,
     protectedPidMutation: false,
@@ -430,10 +452,12 @@ export async function runLunaPromotionEntryTriggerMaterialize(options = parseArg
       eligibleDryRun: eligible,
       materialized,
       alreadyActive,
+      bridgeMaterialized,
       blocked,
       byStatus: summarizeItems(items),
       liveMutation: false,
       entryTriggerDbMutation: options.apply && materialized > 0,
+      bridgeDbMutation: options.apply && bridgeMaterialized > 0,
     },
     universe: {
       source: universe.source,
@@ -451,7 +475,7 @@ export async function runLunaPromotionEntryTriggerMaterialize(options = parseArg
     },
     nextAction: options.apply
       ? 'monitor_materialized_entry_trigger_fire_conditions'
-      : `If approved, rerun with --apply --confirm=${LUNA_PROMOTION_ENTRY_TRIGGER_MATERIALIZE_CONFIRM}.`,
+      : `For pending shadow rows, rerun with --apply --confirm=${LUNA_PROMOTION_ENTRY_TRIGGER_MATERIALIZE_CONFIRM}; this inserts entry_triggers only and does not execute live orders.`,
   };
 }
 

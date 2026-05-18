@@ -169,6 +169,7 @@ assert.equal(applied.status, 'luna_promotion_entry_trigger_materialize_partial')
 assert.equal(applied.ok, false);
 assert.equal(applied.summary.materialized, 1);
 assert.equal(applied.summary.alreadyActive, 1);
+assert.equal(applied.summary.bridgeMaterialized, 2);
 assert.equal(applied.summary.blocked, 1);
 assert.equal(applyDeps.inserted.length, 1);
 assert.equal(applyDeps.inserted[0].symbol, 'BTC/USDT');
@@ -177,8 +178,10 @@ assert.equal(applyDeps.inserted[0].triggerContext.hints.promotionReady, true);
 assert.equal(applyDeps.inserted[0].triggerContext.hints.promotionConsecutivePasses, 5);
 assert.equal(applyDeps.inserted[0].triggerMeta.liveMutation, false);
 assert.equal(applyDeps.inserted[0].triggerMeta.entryTriggerDbMutation, true);
-assert.equal(applyDeps.marked.length, 1);
+assert.equal(applyDeps.marked.length, 2);
 assert.equal(applyDeps.marked[0].bridgeId, 'bridge-btc');
+assert.equal(applyDeps.marked[1].bridgeId, 'bridge-eth');
+assert.equal(applyDeps.marked[1].entryTriggerId, 'active-eth');
 assert.equal(applied.liveMutation, false);
 assert.equal(applied.entryTriggerDbMutation, true);
 
