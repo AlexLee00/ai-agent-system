@@ -9,6 +9,7 @@ import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
 import {
   createDecisionDebateBudgetGate,
   createDecisionLlmBudgetGate,
+  inspectDecisionLlmBudgetForSymbols,
   prefilterConfidence,
   resolveDecisionDebateBudget,
   resolveDecisionLlmBudget,
@@ -87,6 +88,18 @@ export async function runPipelineDecisionLlmBudgetSmoke() {
   assert.equal(cooled.allow, false);
   assert.equal(cooled.reason, 'decision_llm_symbol_cooldown');
   assert.equal(secondCooldownGate.snapshot().cooldownSkipped, 1);
+  const cooldownInspection = inspectDecisionLlmBudgetForSymbols({
+    exchange: 'binance',
+    env: {
+      LUNA_CRYPTO_DECISION_LLM_MAX_SYMBOLS_PER_CYCLE: '2',
+      LUNA_CRYPTO_DECISION_LLM_COOLDOWN_MINUTES: '30',
+    },
+    stateFile: cooldownStateFile,
+    now: () => new Date('2026-05-09T12:10:00.000Z'),
+    symbols: ['BTC/USDT', 'ETH/USDT'],
+  });
+  assert.deepEqual(cooldownInspection.cooldownSymbols, ['BTC/USDT']);
+  assert.deepEqual(cooldownInspection.allowedSymbols, ['ETH/USDT']);
 
   const debateGate = createDecisionDebateBudgetGate({
     exchange: 'binance',

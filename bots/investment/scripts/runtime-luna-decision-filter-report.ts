@@ -366,6 +366,41 @@ export function promoteStockDailyBullishActiveCandidateProbe(item = {}, env = pr
   };
 }
 
+export function promoteCryptoDailyBullishActiveCandidateProbe(item = {}, env = process.env) {
+  if (item.actionability !== 'filtered_before_signal') return item;
+  if (!isDailyBullishProbeCandidate(item)) return item;
+  const reasons = new Set(item.reasons || []);
+  if (reasons.has('conflict_detected') || reasons.has('news_only_buy')) return item;
+  const fused = item.fused || {};
+  const candidate = item.activeCandidate || {};
+  const minFusedScore = Number(env?.LUNA_CRYPTO_DAILY_BULLISH_PROBE_MIN_FUSED_SCORE ?? -0.08);
+  const minAverageConfidence = Number(env?.LUNA_CRYPTO_DAILY_BULLISH_PROBE_MIN_AVG_CONFIDENCE ?? 0.18);
+  const fusedScore = Number(fused.fusedScore || 0);
+  const averageConfidence = Number(fused.averageConfidence || 0);
+  if (Number.isFinite(minFusedScore) && fusedScore < minFusedScore) return item;
+  if (Number.isFinite(minAverageConfidence) && averageConfidence < minAverageConfidence) return item;
+
+  return {
+    ...item,
+    actionability: 'relaxed_probe_candidate',
+    recommendation: 'run_l13_probe_with_reduced_sizing',
+    relaxation: {
+      enabled: true,
+      ok: true,
+      marketType: 'crypto',
+      reason: 'crypto_daily_bullish_active_candidate_probe',
+      sizeRatio: 0.25,
+      summary: {
+        source: 'daily_bullish_active_candidate',
+        activeCandidateRank: Number(candidate.rank || 0) || null,
+        activeCandidateConfidence: activeCandidateConfidence(item),
+        dailyTechnical: item.dailyTechnical || item.dailyTechnicalCoverage || null,
+      },
+      fused,
+    },
+  };
+}
+
 export function buildNearMissWatchCandidate(item = {}) {
   if (item.actionability === 'likely_actionable') return null;
   const reasons = new Set(item.reasons || []);
@@ -613,6 +648,7 @@ export async function buildLunaDecisionFilterReport(options = {}) {
     .map((item) => activeUniverse.candidateMeta?.[item.symbol]
     ? { ...item, activeCandidate: activeUniverse.candidateMeta[item.symbol] }
     : item)
+    .map((item) => promoteCryptoDailyBullishActiveCandidateProbe(item, options.env || process.env))
     .map((item) => promoteStockDailyBullishActiveCandidateProbe(item, options.env || process.env));
   const checkedSymbolSet = new Set(diagnostics.map((item) => item.symbol));
   const missingActiveCandidateSymbols = candidateSymbols.filter((symbol) => !checkedSymbolSet.has(symbol));

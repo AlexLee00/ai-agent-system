@@ -18,11 +18,13 @@ import {
 import { buildDiscoveryUniverse } from '../team/discovery/discovery-universe.ts';
 import {
   buildDecisionFilterDiagnostics,
+  promoteCryptoDailyBullishActiveCandidateProbe,
   promoteStockDailyBullishActiveCandidateProbe,
 } from './runtime-luna-decision-filter-report.ts';
 import { getLunaIntelligentDiscoveryFlags } from '../shared/luna-intelligent-discovery-config.ts';
 import { investmentOpsRuntimeFile } from '../shared/runtime-ops-path.ts';
 import { isStockIntradayEnrichmentEnabled } from '../shared/stock-intraday-llm-policy.ts';
+import { inspectDecisionLlmBudgetForSymbols } from '../shared/pipeline-decision-llm-budget.ts';
 
 const MARKET_EXCHANGES = {
   crypto: 'binance',
@@ -359,6 +361,13 @@ export function getRequiredAnalystsForMarket(market, env = process.env) {
   return required;
 }
 
+function coverageAnalystsForRequiredAnalyst(market, analyst) {
+  if (market === 'crypto' && analyst === ANALYST_TYPES.SENTIMENT) {
+    return [ANALYST_TYPES.SENTIMENT, ANALYST_TYPES.SENTINEL, ANALYST_TYPES.NEWS];
+  }
+  return [analyst];
+}
+
 export function buildRequiredAnalystCoverage({
   market,
   analysisSymbols = [],
@@ -406,7 +415,10 @@ export function buildRequiredAnalystCoverage({
   const missingByAnalyst = {};
   const bottlenecks = [];
   for (const analyst of requiredAnalysts) {
-    const covered = new Set(byAnalyst[analyst]?.symbols || []);
+    const covered = new Set();
+    for (const coverageAnalyst of coverageAnalystsForRequiredAnalyst(market, analyst)) {
+      for (const symbol of byAnalyst[coverageAnalyst]?.symbols || []) covered.add(symbol);
+    }
     const missingSymbols = (scopedSymbols || []).filter((symbol) => {
       if (covered.has(symbol)) return false;
       if (analyst === ANALYST_TYPES.TA_MTF && market !== 'crypto' && dailyTechnicalSymbols.has(symbol)) return false;
@@ -1105,11 +1117,12 @@ async function buildMarketFunnel(market, {
     dailyTechnicalBySymbol,
   }).map((item) => {
     const symbol = normalizeCandidateSymbolForAnalysis(item?.symbol, market);
-    return promoteStockDailyBullishActiveCandidateProbe({
+    const enriched = {
       ...item,
       activeCandidate: activeCandidateMetaBySymbol[symbol] || item.activeCandidate || null,
       dailyTechnical: dailyTechnicalBySymbol[symbol] || item.dailyTechnical || null,
-    });
+    };
+    return promoteStockDailyBullishActiveCandidateProbe(promoteCryptoDailyBullishActiveCandidateProbe(enriched));
   });
   const decisionFilterScope = filterEntryDecisionDiagnosticsForOpenPositions(rawDecisionDiagnostics, currentOpenSymbols);
   const openPositionDecisionCandidates = decisionFilterScope.excluded;
@@ -1145,8 +1158,15 @@ async function buildMarketFunnel(market, {
   const relaxedProbeCooldownSymbols = relaxedProbeCandidates
     .map((item) => String(item.symbol || '').trim())
     .filter((symbol) => relaxedProbeCooldowns.has(symbol));
-  const relaxedProbeReadyCandidates = relaxedProbeCandidates
+  const recentTradeReadyCandidates = relaxedProbeCandidates
     .filter((item) => !relaxedProbeCooldowns.has(String(item.symbol || '').trim()));
+  const relaxedProbeDecisionBudget = inspectDecisionLlmBudgetForSymbols({
+    exchange,
+    symbols: recentTradeReadyCandidates.map((item) => item.symbol),
+  });
+  const relaxedProbeDecisionCooldownSymbols = new Set(relaxedProbeDecisionBudget.cooldownSymbols || []);
+  const relaxedProbeReadyCandidates = recentTradeReadyCandidates
+    .filter((item) => !relaxedProbeDecisionCooldownSymbols.has(String(item.symbol || '').trim()));
 
   const candidate = candidateRows?.[0] || {};
   const signalsByStatus = {};
@@ -1224,7 +1244,7 @@ async function buildMarketFunnel(market, {
   if (
     activeTriggerCount === 0
     && number(triggerByState.expired) > 0
-    && (triggerEligibleBuySignals > 0 || likelyActionable.length > 0 || relaxedProbeReadyCandidates.length > 0)
+    && (triggerEligibleBuySignals > 0 || likelyActionable.length > 0)
   ) {
     bottlenecks.push('entry_triggers_expired_without_active_replacement');
   }
@@ -1241,6 +1261,8 @@ async function buildMarketFunnel(market, {
       && reentryRows.every((row) => currentOpenSymbols.has(String(row.symbol || '').trim()));
     if (allBlockedSymbolsStillOpen) {
       addObservation('open_position_reentry_block_expected_for_current_position');
+    } else if (reentryRows.length > 0) {
+      addObservation('historical_live_reentry_block_resolved_no_current_position');
     } else {
       bottlenecks.push('live_position_reentry_blocked_recent_buy_signal');
     }
@@ -1327,6 +1349,7 @@ async function buildMarketFunnel(market, {
         symbols: relaxedProbeCooldownSymbols,
         bySymbol: Object.fromEntries([...relaxedProbeCooldowns.entries()]),
       },
+      relaxedProbeDecisionBudget,
       entryPrefilterWaitState,
       top: decisionDiagnostics.slice(0, 5),
     },
@@ -1426,11 +1449,16 @@ export async function buildLunaDiscoveryFunnelReport({
     return sum + number(item.decisionFilter?.likelyActionableCount);
   }, 0);
   const relaxedProbeReadyTotal = liveMarketReports.reduce((sum, item) => sum + number(item.decisionFilter?.relaxedProbeReadyCount), 0);
+  const relaxedProbeWaitingWithoutRecentL13 = liveMarketReports.some((item) =>
+    number(item.decisionFilter?.relaxedProbeReadyCount) > 0
+    && !item.signalPersistence?.pipelineEntryTriggerEvidence?.latestRelaxedProbeL13);
   const recommendations = [];
   if (candidateTotal === 0) recommendations.push('all_markets_discovery_candidate_empty');
   if (allBottlenecks.length === 0 && preopenGaps.length > 0) recommendations.push('preopen_market_preparation_pending');
   if (candidateTotal > 0 && activeTriggerTotal === 0 && signalPersistenceGapActionableTotal > 0) recommendations.push('actionable_candidates_waiting_market_cycle_or_signal_persistence');
-  if (candidateTotal > 0 && activeTriggerTotal === 0 && actionableWaitingTotal === 0 && relaxedProbeReadyTotal > 0) recommendations.push('relaxed_probe_candidates_waiting_l13_probe');
+  if (candidateTotal > 0 && activeTriggerTotal === 0 && actionableWaitingTotal === 0 && relaxedProbeReadyTotal > 0 && relaxedProbeWaitingWithoutRecentL13) {
+    recommendations.push('relaxed_probe_candidates_waiting_l13_probe');
+  }
   if (
     allBottlenecks.length > 0
     && candidateTotal > 0

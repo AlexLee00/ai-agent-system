@@ -24,8 +24,8 @@ function parseArgs(argv = process.argv.slice(2)) {
     strict: hasFlag('strict', argv),
     dryRun: hasFlag('dry-run', argv) || !hasFlag('apply', argv),
     apply: hasFlag('apply', argv),
-    market: String(argValue('market', 'crypto', argv) || 'crypto').trim().toLowerCase(),
-    exchange: String(argValue('exchange', 'binance', argv) || 'binance').trim().toLowerCase(),
+    market: String(argValue('market', 'all', argv) || 'all').trim().toLowerCase(),
+    exchange: String(argValue('exchange', 'all', argv) || 'all').trim().toLowerCase(),
     hours: Math.max(1, Number(argValue('hours', 168, argv)) || 168),
     limit: Math.max(1, Number(argValue('limit', 100, argv)) || 100),
   };

@@ -23,6 +23,9 @@ const PROTECTED_6 = [
   'ai.claude.auto-dev.autonomous',
   'ai.hub.resource-api',
 ];
+const MIN_CRYPTO_STRATEGY_PRESSURE_CLOSED = 3;
+const MIN_CRYPTO_REGIME_PRESSURE_CLOSED = 5;
+const MIN_CRYPTO_MARKET_PRESSURE_CLOSED = 5;
 
 function hasFlag(name, argv = process.argv.slice(2)) {
   return argv.includes(`--${name}`);
@@ -116,33 +119,47 @@ function findNamedBucket(buckets = [], names = []) {
   return (buckets || []).find((bucket) => wanted.has(String(bucket?.name || '').toLowerCase()));
 }
 
+function getMarketSegment(tradeData = {}, market = 'crypto') {
+  return tradeData.journal?.marketSegments?.[market] || null;
+}
+
+function closedCount(bucket = {}) {
+  return Number(bucket?.closed || 0);
+}
+
 function buildTradeDataBottlenecks(tradeData = {}) {
   const bottlenecks = [];
   if (!tradeData || tradeData.status !== 'needs_attention') return bottlenecks;
+  const cryptoSegment = getMarketSegment(tradeData, 'crypto');
   const crypto = findNamedBucket(tradeData.journal?.markets, ['crypto', 'binance']);
-  const trendFollowing = findNamedBucket(tradeData.journal?.strategyFamily?.buckets, ['trend_following']);
-  const meanReversion = findNamedBucket(tradeData.journal?.strategyFamily?.buckets, ['mean_reversion']);
-  const trendingBull = findNamedBucket(tradeData.journal?.marketRegime?.buckets, ['trending_bull']);
-  if (crypto && Number(crypto.pnlSum) < 0) {
+  const strategyBuckets = cryptoSegment?.strategyFamily?.buckets || tradeData.journal?.strategyFamily?.buckets || [];
+  const regimeBuckets = cryptoSegment?.marketRegime?.buckets || tradeData.journal?.marketRegime?.buckets || [];
+  const trendFollowing = findNamedBucket(strategyBuckets, ['trend_following']);
+  const meanReversion = findNamedBucket(strategyBuckets, ['mean_reversion']);
+  const trendingBull = findNamedBucket(regimeBuckets, ['trending_bull']);
+  if (crypto && closedCount(crypto) >= MIN_CRYPTO_MARKET_PRESSURE_CLOSED && Number(crypto.pnlSum) < 0) {
     bottlenecks.push('crypto_performance_needs_attention');
   }
-  if (trendFollowing && Number(trendFollowing.pnlSum) < 0 && Number(trendFollowing.winRate) <= 0.3) {
+  if (trendFollowing && closedCount(trendFollowing) >= MIN_CRYPTO_STRATEGY_PRESSURE_CLOSED && Number(trendFollowing.pnlSum) < 0 && Number(trendFollowing.winRate) <= 0.3) {
     bottlenecks.push('crypto_trend_following_underperforming');
   }
-  if (meanReversion && Number(meanReversion.pnlSum) < 0 && Number(meanReversion.winRate) <= 0.3) {
+  if (meanReversion && closedCount(meanReversion) >= MIN_CRYPTO_STRATEGY_PRESSURE_CLOSED && Number(meanReversion.pnlSum) < 0 && Number(meanReversion.winRate) <= 0.3) {
     bottlenecks.push('crypto_mean_reversion_underperforming');
   }
-  if (trendingBull && Number(trendingBull.pnlSum) < 0 && Number(trendingBull.winRate) <= 0.3) {
+  if (trendingBull && closedCount(trendingBull) >= MIN_CRYPTO_REGIME_PRESSURE_CLOSED && Number(trendingBull.pnlSum) < 0 && Number(trendingBull.winRate) <= 0.3) {
     bottlenecks.push('crypto_trending_bull_loss_pressure');
   }
   return bottlenecks;
 }
 
 function compactTradeDataEvidence(tradeData = {}) {
+  const cryptoSegment = getMarketSegment(tradeData, 'crypto');
   const crypto = findNamedBucket(tradeData.journal?.markets, ['crypto', 'binance']);
-  const trendFollowing = findNamedBucket(tradeData.journal?.strategyFamily?.buckets, ['trend_following']);
-  const meanReversion = findNamedBucket(tradeData.journal?.strategyFamily?.buckets, ['mean_reversion']);
-  const trendingBull = findNamedBucket(tradeData.journal?.marketRegime?.buckets, ['trending_bull']);
+  const strategyBuckets = cryptoSegment?.strategyFamily?.buckets || tradeData.journal?.strategyFamily?.buckets || [];
+  const regimeBuckets = cryptoSegment?.marketRegime?.buckets || tradeData.journal?.marketRegime?.buckets || [];
+  const trendFollowing = findNamedBucket(strategyBuckets, ['trend_following']);
+  const meanReversion = findNamedBucket(strategyBuckets, ['mean_reversion']);
+  const trendingBull = findNamedBucket(regimeBuckets, ['trending_bull']);
   return {
     status: tradeData.status || null,
     warnings: tradeData.warnings || [],
@@ -157,6 +174,10 @@ function compactTradeDataEvidence(tradeData = {}) {
       winRate: crypto.winRate,
       pnlSum: crypto.pnlSum,
       avgPnlPercent: crypto.avgPnlPercent,
+    } : null,
+    cryptoMarketSegment: cryptoSegment ? {
+      status: cryptoSegment.status || null,
+      summary: cryptoSegment.summary || null,
     } : null,
     strategyPressure: {
       trendFollowing: trendFollowing ? {
@@ -740,6 +761,21 @@ export async function runLunaBottleneckAutonomyOperatorSmoke() {
             { name: 'trending_bull', closed: 9, winRate: 0.2222, pnlSum: -10.8977, avgPnlPercent: -1.2109 },
           ],
         },
+        marketSegments: {
+          crypto: {
+            strategyFamily: {
+              buckets: [
+                { name: 'trend_following', closed: 2, winRate: 0, pnlSum: -7.4649, avgPnlPercent: -3.7325 },
+                { name: 'mean_reversion', closed: 4, winRate: 0.25, pnlSum: -8.5501, avgPnlPercent: -2.1375 },
+              ],
+            },
+            marketRegime: {
+              buckets: [
+                { name: 'trending_bull', closed: 9, winRate: 0.2222, pnlSum: -10.8977, avgPnlPercent: -1.2109 },
+              ],
+            },
+          },
+        },
       },
     },
     blockerPack: { status: 'operational_clear', hardBlockers: [] },
@@ -748,7 +784,7 @@ export async function runLunaBottleneckAutonomyOperatorSmoke() {
   });
   assert.equal(cryptoTradeDataPressureReport.status, 'luna_bottleneck_attention');
   assert.ok(cryptoTradeDataPressureReport.bottlenecks.includes('trade_data:crypto_performance_needs_attention'));
-  assert.ok(cryptoTradeDataPressureReport.bottlenecks.includes('trade_data:crypto_trend_following_underperforming'));
+  assert.ok(!cryptoTradeDataPressureReport.bottlenecks.includes('trade_data:crypto_trend_following_underperforming'));
   assert.ok(cryptoTradeDataPressureReport.bottlenecks.includes('trade_data:crypto_mean_reversion_underperforming'));
   assert.ok(cryptoTradeDataPressureReport.bottlenecks.includes('trade_data:crypto_trending_bull_loss_pressure'));
   assert.ok(cryptoTradeDataPressureReport.safeFixCandidates.some((item) =>

@@ -5,6 +5,7 @@ import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
 import { buildStockIntradayLlmPolicyMeta } from '../shared/stock-intraday-llm-policy.ts';
 import { runMarketCollectPipeline } from '../shared/pipeline-market-runner.ts';
 import { runDecisionExecutionPipeline } from '../shared/pipeline-decision-runner.ts';
+import { inspectDecisionLlmBudgetForSymbols } from '../shared/pipeline-decision-llm-budget.ts';
 import { query } from '../shared/db.ts';
 import { expireActiveEntryTriggersForSymbols } from '../shared/luna-discovery-entry-store.ts';
 import { buildLunaNearMissWatchlist } from './runtime-luna-near-miss-watchlist.ts';
@@ -126,6 +127,51 @@ function applyRecentTradeCooldown(plan = {}, cooldownsInput = new Map(), cooldow
   };
 }
 
+function applyDecisionLlmCooldown(plan = {}, budgetInspection = {}) {
+  const cooldowns = new Map((budgetInspection?.symbols || [])
+    .filter((item) => item?.allowed === false)
+    .map((item) => [String(item.symbol || '').trim(), item]));
+  if (cooldowns.size === 0) {
+    return {
+      ...plan,
+      decisionLlmBudget: budgetInspection || null,
+    };
+  }
+  const selected = [];
+  const cooldownSkipped = [];
+  for (const item of plan.selected || []) {
+    const symbol = String(item?.symbol || '').trim();
+    const cooldown = cooldowns.get(symbol);
+    if (!cooldown) {
+      selected.push(item);
+      continue;
+    }
+    cooldownSkipped.push({
+      symbol,
+      readiness: item.readiness || null,
+      nextAction: item.nextAction || null,
+      reason: 'decision_llm_symbol_cooldown',
+      lastAllowedAt: cooldown.lastAllowedAt || null,
+      nextEligibleAt: cooldown.nextEligibleAt || null,
+      cooldownMinutes: cooldown.cooldownMinutes ?? null,
+    });
+  }
+  return {
+    ...plan,
+    status: selected.length > 0 ? 'relaxed_probe_l13_ready' : 'relaxed_probe_l13_clear',
+    selected,
+    selectedSymbols: selected.map((item) => item.symbol).filter(Boolean),
+    skipped: [
+      ...(plan.skipped || []),
+      ...cooldownSkipped,
+    ],
+    decisionLlmBudget: {
+      ...(budgetInspection || {}),
+      skipped: cooldownSkipped.length,
+    },
+  };
+}
+
 function buildCollectNodeIds({ exchange, plan = {} } = {}) {
   const nodeIds = new Set(['L06', 'L02']);
   for (const item of plan.selected || []) {
@@ -233,6 +279,7 @@ export async function runLunaRelaxedProbeRunner({
   confirm = null,
   watchlistBuilder = buildLunaNearMissWatchlist,
   recentTradeCooldownLoader = loadRecentTradeCooldowns,
+  decisionBudgetInspector = inspectDecisionLlmBudgetForSymbols,
   expireCooldownTriggers = expireActiveEntryTriggersForSymbols,
   collectRunner = runMarketCollectPipeline,
   decisionRunner = runDecisionExecutionPipeline,
@@ -253,18 +300,25 @@ export async function runLunaRelaxedProbeRunner({
     hours: cooldownHours,
   });
   const plan = applyRecentTradeCooldown(initialPlan, cooldowns, cooldownHours);
+  const decisionBudget = decisionBudgetInspector
+    ? await decisionBudgetInspector({
+        exchange: resolvedExchange,
+        symbols: plan.selectedSymbols,
+      })
+    : null;
+  const finalPlan = applyDecisionLlmCooldown(plan, decisionBudget);
 
   if (!apply) {
     return {
       ok: true,
-      status: plan.status,
+      status: finalPlan.status,
       dryRun: true,
       applied: false,
       market: normalizedMarket,
       exchange: resolvedExchange,
       hours,
       limit,
-      plan,
+      plan: finalPlan,
       applyCommand: `node scripts/runtime-luna-relaxed-probe-runner.ts --apply --confirm=${CONFIRM} --json`,
     };
   }
@@ -278,12 +332,12 @@ export async function runLunaRelaxedProbeRunner({
       market: normalizedMarket,
       exchange: resolvedExchange,
       confirmRequired: CONFIRM,
-      plan,
+      plan: finalPlan,
     };
   }
 
   let expiredCooldownTriggers = null;
-  const cooldownSkippedSymbols = (plan.skipped || [])
+  const cooldownSkippedSymbols = (finalPlan.skipped || [])
     .filter((item) => item?.reason === 'recent_executed_trade_cooldown')
     .map((item) => item.symbol)
     .filter(Boolean);
@@ -303,41 +357,41 @@ export async function runLunaRelaxedProbeRunner({
     }));
   }
 
-  if (plan.selectedSymbols.length === 0) {
+  if (finalPlan.selectedSymbols.length === 0) {
     return {
       ok: true,
-      status: plan.status,
+      status: finalPlan.status,
       dryRun: false,
       applied: false,
       market: normalizedMarket,
       exchange: resolvedExchange,
-      plan,
+      plan: finalPlan,
       expiredCooldownTriggers,
     };
   }
 
   const collectMeta = buildCollectMeta({
     exchange: resolvedExchange,
-    symbols: plan.selectedSymbols,
-    plan,
+    symbols: finalPlan.selectedSymbols,
+    plan: finalPlan,
   });
   const collect = await collectRunner({
     market: resolvedExchange,
-    symbols: plan.selectedSymbols,
+    symbols: finalPlan.selectedSymbols,
     triggerType: 'relaxed_probe_l13',
     meta: collectMeta,
     universeMeta: {
-      screeningSymbolCount: plan.selectedSymbols.length,
+      screeningSymbolCount: finalPlan.selectedSymbols.length,
       relaxedProbeRunner: true,
     },
   });
   const decision = await decisionRunner({
     sessionId: collect.sessionId,
-    symbols: plan.selectedSymbols,
+    symbols: finalPlan.selectedSymbols,
     exchange: resolvedExchange,
     meta: {
       relaxed_probe_runner: true,
-      relaxed_probe_context: buildRelaxedProbeContext(plan),
+      relaxed_probe_context: buildRelaxedProbeContext(finalPlan),
       manualUniverseMode: 'explicit_symbols',
       disableDiscoveryExpansion: true,
       llm_call_policy: {
@@ -354,7 +408,7 @@ export async function runLunaRelaxedProbeRunner({
     applied: true,
     market: normalizedMarket,
     exchange: resolvedExchange,
-    plan,
+    plan: finalPlan,
     collect: {
       sessionId: collect.sessionId,
       symbols: collect.symbols,

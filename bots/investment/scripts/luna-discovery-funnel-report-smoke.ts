@@ -768,6 +768,22 @@ export async function runLunaDiscoveryFunnelReportSmoke() {
       cryptoCoverage.bottlenecks.includes('onchain_analysis_missing_for_candidates'),
       'crypto missing onchain should be visible in required analyst coverage',
     );
+    const cryptoNewsCoverage = buildRequiredAnalystCoverage({
+      market: 'crypto',
+      marketOpen: true,
+      analysisSymbols: ['FIDA/USDT'],
+      requiredSymbols: ['FIDA/USDT'],
+      analysisRows: [
+        { symbol: 'FIDA/USDT', analyst: 'ta_mtf', count: 1, latest_created_at: new Date().toISOString() },
+        { symbol: 'FIDA/USDT', analyst: 'news', count: 1, latest_created_at: new Date().toISOString() },
+        { symbol: 'FIDA/USDT', analyst: 'onchain', count: 1, latest_created_at: new Date().toISOString() },
+      ],
+    });
+    assert.equal(
+      cryptoNewsCoverage.bottlenecks.includes('sentiment_analysis_missing_for_candidates'),
+      false,
+      'crypto news evidence should satisfy narrative coverage without weakening signal confirmation gates',
+    );
     const cryptoScopedSymbols = buildRequiredCoverageSymbols({
       market: 'crypto',
       analysisSymbols: ['SAHARA/USDT', 'PLUME/USDT'],

@@ -8,6 +8,7 @@ import {
   buildNearMissWatchCandidate,
   buildDecisionFilterDiagnostics,
   buildLunaDecisionFilterReport,
+  promoteCryptoDailyBullishActiveCandidateProbe,
   promoteStockDailyBullishActiveCandidateProbe,
 } from './runtime-luna-decision-filter-report.ts';
 import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
@@ -229,6 +230,14 @@ export async function runLunaDecisionFilterReportSmoke() {
   assert.equal(dailyBullishProbe.watchReason, 'daily_bullish_active_candidate_probe');
   assert.equal(dailyBullishProbe.nextAction, 'run_l13_probe_with_existing_risk_and_entry_guards');
   assert.ok(dailyBullishProbe.missingConfirmations.includes('intraday_technical'));
+
+  const promotedCryptoDailyBullishProbe = promoteCryptoDailyBullishActiveCandidateProbe({
+    ...dailyBullishProbeInput,
+    fused: { recommendation: 'HOLD', fusedScore: 0.01, averageConfidence: 0.28, hasConflict: false },
+  });
+  assert.equal(promotedCryptoDailyBullishProbe.actionability, 'relaxed_probe_candidate');
+  assert.equal(promotedCryptoDailyBullishProbe.relaxation.reason, 'crypto_daily_bullish_active_candidate_probe');
+  assert.equal(promotedCryptoDailyBullishProbe.relaxation.sizeRatio, 0.25);
 
   const dailyBullishWithExistingEvidence = buildNearMissWatchCandidate({
     ...dailyBullishProbeInput,

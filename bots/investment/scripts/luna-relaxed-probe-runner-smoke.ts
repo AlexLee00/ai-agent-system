@@ -52,6 +52,19 @@ function stockFixtureWatchlist() {
   };
 }
 
+async function allowDecisionBudget({ symbols = [] } = {}) {
+  return {
+    policy: { enabled: true, cooldownMinutes: 30 },
+    symbols: symbols.map((symbol) => ({
+      symbol,
+      allowed: true,
+      reason: 'decision_llm_available',
+    })),
+    allowedSymbols: symbols,
+    cooldownSymbols: [],
+  };
+}
+
 export async function runLunaRelaxedProbeRunnerSmoke() {
   const plan = buildLunaRelaxedProbeRunnerPlan(fixtureWatchlist(), { maxSymbols: 1 });
   assert.equal(plan.status, 'relaxed_probe_l13_ready');
@@ -64,6 +77,7 @@ export async function runLunaRelaxedProbeRunnerSmoke() {
   const dryRun = await runLunaRelaxedProbeRunner({
     watchlistBuilder: async () => fixtureWatchlist(),
     recentTradeCooldownLoader: async () => new Map(),
+    decisionBudgetInspector: allowDecisionBudget,
   });
   assert.equal(dryRun.ok, true);
   assert.equal(dryRun.dryRun, true);
@@ -74,6 +88,7 @@ export async function runLunaRelaxedProbeRunnerSmoke() {
     recentTradeCooldownLoader: async () => new Map([
       ['USUAL/USDT', { symbol: 'USUAL/USDT', action: 'SELL', status: 'executed', created_at: '2026-05-09T11:58:44.880Z' }],
     ]),
+    decisionBudgetInspector: allowDecisionBudget,
   });
   assert.equal(cooldown.status, 'relaxed_probe_l13_clear');
   assert.equal(cooldown.plan.selectedSymbols.length, 0);
@@ -87,6 +102,7 @@ export async function runLunaRelaxedProbeRunnerSmoke() {
     recentTradeCooldownLoader: async () => new Map([
       ['USUAL/USDT', { symbol: 'USUAL/USDT', action: 'SELL', status: 'executed', created_at: '2026-05-09T11:58:44.880Z' }],
     ]),
+    decisionBudgetInspector: allowDecisionBudget,
     expireCooldownTriggers: async ({ symbols, reason }) => {
       expiredSymbols = { symbols, reason };
       return { count: symbols.length, symbols };
@@ -100,11 +116,36 @@ export async function runLunaRelaxedProbeRunnerSmoke() {
   assert.equal(cooldownApplied.expiredCooldownTriggers.count, 1);
   assert.deepEqual(expiredSymbols, { symbols: ['USUAL/USDT'], reason: 'recent_executed_trade_cooldown' });
 
+  const decisionCooldown = await runLunaRelaxedProbeRunner({
+    watchlistBuilder: async () => fixtureWatchlist(),
+    recentTradeCooldownLoader: async () => new Map(),
+    decisionBudgetInspector: async ({ symbols = [] } = {}) => ({
+      policy: { enabled: true, cooldownMinutes: 30 },
+      symbols: symbols.map((symbol) => ({
+        symbol,
+        allowed: false,
+        reason: 'decision_llm_symbol_cooldown',
+        lastAllowedAt: '2026-05-09T11:58:44.880Z',
+        nextEligibleAt: '2026-05-09T12:28:44.880Z',
+        cooldownMinutes: 30,
+      })),
+      allowedSymbols: [],
+      cooldownSymbols: symbols,
+    }),
+    collectRunner: async () => {
+      throw new Error('collect must not run when decision cooldown removes all symbols');
+    },
+  });
+  assert.equal(decisionCooldown.status, 'relaxed_probe_l13_clear');
+  assert.equal(decisionCooldown.plan.selectedSymbols.length, 0);
+  assert.equal(decisionCooldown.plan.skipped.some((item) => item.reason === 'decision_llm_symbol_cooldown'), true);
+
   const blocked = await runLunaRelaxedProbeRunner({
     apply: true,
     confirm: null,
     watchlistBuilder: async () => fixtureWatchlist(),
     recentTradeCooldownLoader: async () => new Map(),
+    decisionBudgetInspector: allowDecisionBudget,
     collectRunner: async () => {
       throw new Error('collect must not run without confirm');
     },
@@ -118,6 +159,7 @@ export async function runLunaRelaxedProbeRunnerSmoke() {
     confirm: 'luna-relaxed-probe-runner',
     watchlistBuilder: async () => fixtureWatchlist(),
     recentTradeCooldownLoader: async () => new Map(),
+    decisionBudgetInspector: allowDecisionBudget,
     collectRunner: async ({ market, symbols, triggerType, meta, universeMeta }) => {
       calls.push({ type: 'collect', market, symbols, triggerType, meta, universeMeta });
       assert.equal(market, 'binance');
@@ -163,6 +205,7 @@ export async function runLunaRelaxedProbeRunnerSmoke() {
     confirm: 'luna-relaxed-probe-runner',
     watchlistBuilder: async () => stockFixtureWatchlist(),
     recentTradeCooldownLoader: async () => new Map(),
+    decisionBudgetInspector: allowDecisionBudget,
     collectRunner: async ({ market, symbols, triggerType, meta }) => {
       stockCalls.push({ type: 'collect', market, symbols, triggerType, meta });
       assert.equal(market, 'kis_overseas');

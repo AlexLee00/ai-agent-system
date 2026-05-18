@@ -239,6 +239,51 @@ export function createDecisionLlmBudgetGate({
   };
 }
 
+export function inspectDecisionLlmBudgetForSymbols({
+  exchange,
+  symbols = [],
+  env = process.env,
+  stateFile = DEFAULT_DECISION_LLM_STATE_FILE,
+  now = () => new Date(),
+} = {}) {
+  const policy = resolveDecisionLlmBudget({ exchange, env });
+  const market = normalizeMarket(exchange);
+  const nowDate = now();
+  const nowMs = nowDate.getTime();
+  const persistedState = compactDecisionLlmState(readJsonSafe(stateFile, { symbols: {} }), nowMs);
+  const cooldownMs = Number(policy.cooldownMinutes || 0) * 60 * 1000;
+  const rows = [...new Set((symbols || []).map((symbol) => String(symbol || '').trim()).filter(Boolean))]
+    .map((symbol) => {
+      const key = stateKeyFor({ market, symbol });
+      const lastAllowedAt = persistedState?.symbols?.[key]?.lastAllowedAt || null;
+      const lastMs = Date.parse(lastAllowedAt || '');
+      const ageMs = Number.isFinite(lastMs) ? nowMs - lastMs : null;
+      const inCooldown = Boolean(
+        policy.enabled
+        && cooldownMs > 0
+        && Number.isFinite(lastMs)
+        && ageMs < cooldownMs,
+      );
+      return {
+        symbol,
+        key,
+        allowed: !inCooldown,
+        reason: inCooldown ? 'decision_llm_symbol_cooldown' : 'decision_llm_available',
+        lastAllowedAt,
+        nextEligibleAt: inCooldown ? new Date(lastMs + cooldownMs).toISOString() : null,
+        cooldownMinutes: policy.cooldownMinutes,
+      };
+    });
+  return {
+    policy,
+    stateFile,
+    checkedAt: nowDate.toISOString(),
+    symbols: rows,
+    allowedSymbols: rows.filter((row) => row.allowed).map((row) => row.symbol),
+    cooldownSymbols: rows.filter((row) => !row.allowed).map((row) => row.symbol),
+  };
+}
+
 export function createDecisionDebateBudgetGate({ exchange, env = process.env } = {}) {
   const policy = resolveDecisionDebateBudget({ exchange, env });
   const state = {

@@ -147,11 +147,12 @@ function buildActions({ summary, strategyFamily, tpSl, marketRegime, earlyExit }
   return actions;
 }
 
-export function buildTradeAnalyticsReport(rows = [], { generatedAt = new Date().toISOString() } = {}) {
+export function buildTradeAnalyticsReport(rows = [], { generatedAt = new Date().toISOString(), includeMarketSegments = true } = {}) {
   const marketBuckets = {};
   const regimeBuckets = {};
   const strategyBuckets = {};
   const symbolBuckets = {};
+  const rowsByMarket = {};
   const tpSlBuckets = { set: createBucket('set'), unset: createBucket('unset') };
   let closed = 0;
   let rawPnlOutlierCount = 0;
@@ -175,6 +176,10 @@ export function buildTradeAnalyticsReport(rows = [], { generatedAt = new Date().
     if (pnl.corrected) potentiallyCorrectedPnlCount += 1;
 
     const market = normalizeMarket(row);
+    if (includeMarketSegments) {
+      if (!rowsByMarket[market]) rowsByMarket[market] = [];
+      rowsByMarket[market].push(row);
+    }
     const regime = row.market_regime || row.marketRegime || 'unknown';
     const effectiveFamily = resolveEffectiveStrategyFamily(row);
     const originalStrategyFamily = effectiveFamily.originalFamily;
@@ -243,7 +248,7 @@ export function buildTradeAnalyticsReport(rows = [], { generatedAt = new Date().
   if (earlyExit.total > 0) nextActions.push('review sub-1h exits and keep early small-profit/loss HOLD guard active before closing fresh positions');
   if (summary.closed < 30) nextActions.push('keep autotune in sample-collection mode until at least 30 current-epoch closed trades');
 
-  return {
+  const report = {
     ok: true,
     status: actions.some((action) => action.status === 'warning') ? 'needs_attention' : 'ready',
     generatedAt,
@@ -257,6 +262,15 @@ export function buildTradeAnalyticsReport(rows = [], { generatedAt = new Date().
     reinforcementActions: actions,
     nextActions,
   };
+  if (includeMarketSegments) {
+    report.marketSegments = Object.fromEntries(
+      Object.entries(rowsByMarket).map(([market, marketRows]) => [
+        market,
+        buildTradeAnalyticsReport(marketRows, { generatedAt, includeMarketSegments: false }),
+      ]),
+    );
+  }
+  return report;
 }
 
 export default {

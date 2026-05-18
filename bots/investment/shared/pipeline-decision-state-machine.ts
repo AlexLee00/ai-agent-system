@@ -71,14 +71,8 @@ export async function runDecisionExecutionStateMachine({
     defaultDebateLimit: configuredDebateLimit,
     runtimeFlags: intelligentFlags,
   });
-  const l10Node = getDecisionNode('L10'), l11Node = getDecisionNode('L11'), l12Node = getDecisionNode('L12');
-  const l13Node = getDecisionNode('L13'), l14Node = getDecisionNode('L14');
-  const l21Node = getDecisionNode('L21');
-  const l30Node = getDecisionNode('L30');
-  const l31Node = getDecisionNode('L31');
-  const l32Node = getDecisionNode('L32');
-  const l33Node = getDecisionNode('L33');
-  const l34Node = getDecisionNode('L34');
+  const l10Node = getDecisionNode('L10'), l11Node = getDecisionNode('L11'), l12Node = getDecisionNode('L12'), l13Node = getDecisionNode('L13'), l14Node = getDecisionNode('L14');
+  const l21Node = getDecisionNode('L21'), l30Node = getDecisionNode('L30'), l31Node = getDecisionNode('L31'), l32Node = getDecisionNode('L32'), l33Node = getDecisionNode('L33'), l34Node = getDecisionNode('L34');
 
   if (Object.values(intelligentFlags.phases || {}).some(Boolean)) {
     await ensureLunaDiscoveryEntryTables().catch(() => {});

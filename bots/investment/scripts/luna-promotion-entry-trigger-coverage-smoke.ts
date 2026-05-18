@@ -43,6 +43,22 @@ const promotionRows = [
   },
 ];
 
+const allMarketPromotionRows = [
+  ...promotionRows,
+  {
+    symbol: 'MSFT',
+    market: 'overseas',
+    exchange: 'kis_overseas',
+    decision: 'shadow_promotion_candidate_ready',
+    promotion_candidate: true,
+    cycle_count: 70,
+    pass_count: 70,
+    consecutive_passes: 70,
+    avg_confidence: 0.7099,
+    observed_at: '2026-05-17T11:47:00.000Z',
+  },
+];
+
 const activeTriggerRows = [
   {
     id: 'trigger-zec',
@@ -137,6 +153,19 @@ const runtime = await runLunaPromotionEntryTriggerCoverage({
 assert.equal(runtime.summary.missingActiveTrigger, 1);
 assert.equal(runtime.summary.stagedPendingMaterialization, 1);
 assert.equal(runtime.liveMutation, false);
+
+const defaultRuntime = await runLunaPromotionEntryTriggerCoverage(undefined, {
+  now,
+  promotionRows: allMarketPromotionRows,
+  activeTriggerRows,
+  latestTriggerRows,
+  bridgeRows,
+});
+assert.equal(defaultRuntime.market, 'all');
+assert.equal(defaultRuntime.exchange, 'all');
+assert.equal(defaultRuntime.summary.promotionCandidates, 3);
+assert.equal(defaultRuntime.summary.unstagedMissingActiveTrigger, 1);
+assert.equal(defaultRuntime.rows.some((row) => row.symbol === 'MSFT' && row.market === 'overseas'), true);
 
 const applyBlocked = await runLunaPromotionEntryTriggerCoverage({ apply: true, json: true });
 assert.equal(applyBlocked.ok, false);
