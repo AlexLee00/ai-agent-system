@@ -46,8 +46,9 @@ export async function runLunaHybridPromotionReviewSmoke() {
   assert.equal(report.runbook.protectedPidMutationAllowed, false);
   assert.equal(report.promotionEntryTriggerBridge.status, 'promotion_entry_trigger_bridge_clear');
   assert.equal(report.promotionEntryTriggerBridge.pendingApproval, 0);
-  assert.ok(report.runbook.prePromotionReviewCommands.some((cmd) => cmd.includes('runtime:luna-promotion-entry-trigger-coverage')));
-  assert.ok(report.runbook.prePromotionReviewCommands.some((cmd) => cmd.includes('runtime:luna-promotion-entry-trigger-bridge')));
+  assert.ok(report.runbook.prePromotionReviewCommands.some((cmd) => cmd.includes('runtime:luna-promotion-entry-trigger-coverage') && cmd.includes('--market=all') && cmd.includes('--exchange=all')));
+  assert.ok(report.runbook.prePromotionReviewCommands.some((cmd) => cmd.includes('runtime:luna-promotion-entry-trigger-bridge') && cmd.includes('--market=all') && cmd.includes('--exchange=all')));
+  assert.ok(report.runbook.prePromotionReviewCommands.some((cmd) => cmd.includes('runtime:luna-promotion-entry-trigger-materialize') && cmd.includes('--market=all') && cmd.includes('--exchange=all')));
   assert.ok(report.runbook.prohibitedWithoutApproval.includes('live trade'));
   assert.ok(report.runbook.prohibitedWithoutApproval.includes('protected PID restart/kill/unload'));
 

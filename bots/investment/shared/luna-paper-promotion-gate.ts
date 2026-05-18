@@ -614,16 +614,22 @@ export function buildLunaPaperPromotionGateReport(rows = [], config = {}) {
   const nearReadyItems = items.filter(isNearReadyPromotionItem);
   const promotionTargets = nextPaperCycleTargets(items);
   const topBlockers = topBlockReasonSummary(items);
+  const promotionCandidateItems = items.filter((item) => item.promotionCandidate);
+  const promotionCandidateCount = promotionCandidateItems.length;
   return {
     ok: true,
     status: 'luna_paper_promotion_gate_shadow_ready',
     phase: 'luna_phase2_finrlx',
     shadowMode: true,
+    promotionCandidateReady: promotionCandidateCount > 0,
+    readyForMasterReview: promotionCandidateCount > 0,
     promotionReady: false,
+    masterApprovalRequired: true,
     requiredApproval: 'explicit_master_live_promotion_approval',
     summary: {
       totalSymbols: items.length,
-      promotionCandidates: items.filter((item) => item.promotionCandidate).length,
+      promotionCandidates: promotionCandidateCount,
+      approvalBlockedCandidates: promotionCandidateCount,
       observe: items.filter((item) => item.decision === 'shadow_promotion_observe').length,
       blocked: items.filter((item) => item.decision === 'shadow_promotion_blocked').length,
       nearReady: nearReadyItems.length,
@@ -633,10 +639,15 @@ export function buildLunaPaperPromotionGateReport(rows = [], config = {}) {
       liveMutation: false,
     },
     readinessSummary: {
+      promotionCandidateReady: promotionCandidateCount > 0,
+      approvalBlockedCandidates: promotionCandidateCount,
       nearReady: nearReadyItems.length,
       topBlockers,
       nextPaperCycleTargets: promotionTargets,
       promotionRequiresExplicitMasterApproval: true,
+      nextApprovalAction: promotionCandidateCount > 0
+        ? 'run_explicit_master_review_before_active_entry_trigger_materialization'
+        : 'continue_shadow_evidence_until_promotion_candidate_ready',
       liveMutation: false,
     },
     items,

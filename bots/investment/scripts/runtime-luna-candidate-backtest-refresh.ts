@@ -165,9 +165,30 @@ function rowsHaveUsableTrades(rows: any[]) {
 }
 
 function qualityRank(row: any) {
+  const trades = safeNum(row?.total_trades, 0);
+  const sharpe = safeNum(row?.sharpe_ratio, NaN);
+  const drawdown = Math.abs(safeNum(row?.max_drawdown, 0));
+  const winRate = safeNum(row?.win_rate, 0);
+  const sampleOk = trades >= GATE.MIN_PERIOD_TRADES;
+  const saneSharpe = Number.isFinite(sharpe) && Math.abs(sharpe) <= GATE.MAX_ABS_SHARPE;
+  const gateOk = sampleOk
+    && saneSharpe
+    && sharpe >= GATE.MIN_SHARPE
+    && drawdown <= GATE.MAX_DRAWDOWN
+    && winRate >= GATE.MIN_WIN_RATE;
+  const selectionTier = gateOk
+    ? 4
+    : sampleOk && saneSharpe
+      ? 3
+      : sampleOk
+        ? 2
+        : saneSharpe
+          ? 1
+          : 0;
   const robust = safeNum(row?.robust_score, NaN);
-  if (Number.isFinite(robust)) return robust;
-  return safeNum(row?.sharpe_ratio, -Infinity);
+  const rawRank = Number.isFinite(robust) ? robust : safeNum(row?.sharpe_ratio, -Infinity);
+  const boundedRank = Math.max(-1_000, Math.min(1_000, rawRank));
+  return selectionTier * 1_000_000 + boundedRank;
 }
 
 function qualityPeriodKey(row: any, index = 0) {
@@ -297,12 +318,24 @@ function buildOhlcvMomentumBacktestRows(rows: any[], days: number, market: strin
   }];
 }
 
-async function runOhlcvFallbackBacktest(symbol: string, market: string, days: number) {
+function withTimeout(promise: Promise<any>, timeoutMs: number, label = 'timeout') {
+  if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) return promise;
+  let timer: any = null;
+  const timeout = new Promise((_, reject) => {
+    timer = setTimeout(() => reject(new Error(`${label}(${timeoutMs}ms)`)), timeoutMs);
+  });
+  return Promise.race([promise, timeout]).finally(() => {
+    if (timer) clearTimeout(timer);
+  });
+}
+
+async function runOhlcvFallbackBacktest(symbol: string, market: string, days: number, options: any = {}) {
   if (!OHLCV_FALLBACK_ENABLED) return [];
   const exchange = exchangeForLunaPhase2Market(market);
   const timeframe = process.env.LUNA_BACKTEST_OHLCV_FALLBACK_TIMEFRAME || (market === 'crypto' ? '1h' : '1d');
   const from = new Date(Date.now() - Math.max(7, days) * 24 * 3600 * 1000).toISOString();
-  const rows = await getOHLCV(symbol, timeframe, from, null, exchange).catch(() => []);
+  const timeoutMs = Math.max(1_000, Math.min(OHLCV_TIMEOUT_MS, Number(options.timeoutMs || OHLCV_TIMEOUT_MS)));
+  const rows = await withTimeout(getOHLCV(symbol, timeframe, from, null, exchange), timeoutMs, 'ohlcv_fallback_timeout');
   return buildOhlcvMomentumBacktestRows(rows, days, market);
 }
 
@@ -374,6 +407,7 @@ function evaluateQuality(rows: any[]) {
     minPeriodTrades: minTrades,
     qualityRows,
     qualityRowSelection: 'best_per_walk_forward_period',
+    qualityRowSelectionPolicy: 'stable_sample_first',
   };
 }
 
@@ -435,6 +469,7 @@ async function upsertStatus(symbol: string, market: string, payload: any, dryRun
       qualityGate: GATE,
       qualityRows: payload.qualityRows || [],
       qualityRowSelection: payload.qualityRowSelection || null,
+      qualityRowSelectionPolicy: payload.qualityRowSelectionPolicy || null,
       totalTrades: payload.totalTrades ?? null,
       minPeriodTrades: payload.minPeriodTrades ?? null,
     }),
@@ -507,7 +542,7 @@ async function recordTop30BacktestBlock(candidate: any, gate: any, dryRun = fals
 }
 
 async function refreshCandidate(symbol: string, market: string, periods: number[], options: any = {}) {
-  const { dryRun = false, fixture = false, force = false } = options;
+  const { dryRun = false, fixture = false, force = false, deadlineAt = null } = options;
   const existing = await getBacktestStatus(symbol, market);
   const existingHealthy = existing?.healthy === true || String(existing?.healthy).toLowerCase() === 'true';
   const existingWouldBlock = existing?.would_block === true || String(existing?.would_block).toLowerCase() === 'true';
@@ -532,24 +567,48 @@ async function refreshCandidate(symbol: string, market: string, periods: number[
     const periodErrors: any = {};
     const allRows = [];
     let fallbackUsed = false;
+    let budgetPartial = false;
     for (const days of periods) {
+      const remainingRuntimeMs = deadlineAt == null ? null : deadlineAt - Date.now();
+      if (remainingRuntimeMs != null && remainingRuntimeMs <= 1_000) {
+        periodErrors[String(days)] = `runtime_budget_stop_before_period(remainingMs=${Math.max(0, remainingRuntimeMs)})`;
+        budgetPartial = true;
+        break;
+      }
+      const vectorbtTimeoutMs = remainingRuntimeMs == null
+        ? VECTORBT_TIMEOUT_MS
+        : Math.max(1_000, Math.min(VECTORBT_TIMEOUT_MS, remainingRuntimeMs));
       let rows = fixture
         ? fixtureRows(symbol)
         : VECTORBT_ENABLED
-          ? runVectorBtGrid(symbol, days, { timeoutMs: VECTORBT_TIMEOUT_MS })
+          ? runVectorBtGrid(symbol, days, { timeoutMs: vectorbtTimeoutMs })
           : { status: 'skipped', message: 'vectorbt_disabled' };
       if (!Array.isArray(rows)) {
         periodErrors[String(days)] = rows?.message || rows?.error || 'vectorbt_no_rows';
         rows = [];
       }
       if (!fixture && !rowsHaveUsableTrades(rows)) {
-        const fallbackRows = await runOhlcvFallbackBacktest(symbol, market, days).catch((error) => {
+        const fallbackRemainingMs = deadlineAt == null ? null : deadlineAt - Date.now();
+        if (fallbackRemainingMs != null && fallbackRemainingMs <= OHLCV_TIMEOUT_MS + 1_000) {
+          periodErrors[String(days)] = `${periodErrors[String(days)] || 'vectorbt_no_usable_rows'}; runtime_budget_stop_before_fallback(remainingMs=${Math.max(0, fallbackRemainingMs)},requiredMs=${OHLCV_TIMEOUT_MS + 1_000})`;
+          budgetPartial = true;
+          break;
+        }
+        const fallbackTimeoutMs = fallbackRemainingMs == null
+          ? OHLCV_TIMEOUT_MS
+          : Math.max(1_000, Math.min(OHLCV_TIMEOUT_MS, fallbackRemainingMs));
+        const fallbackRows = await runOhlcvFallbackBacktest(symbol, market, days, { timeoutMs: fallbackTimeoutMs }).catch((error) => {
           periodErrors[String(days)] = `${periodErrors[String(days)] || 'vectorbt_no_usable_rows'}; fallback_error=${error?.message || error}`;
+          if (fallbackRemainingMs != null && fallbackTimeoutMs < OHLCV_TIMEOUT_MS) budgetPartial = true;
           return [];
         });
         if (Array.isArray(fallbackRows) && fallbackRows.length > 0) {
           rows = fallbackRows;
           fallbackUsed = true;
+        }
+        if (fallbackRemainingMs != null && Date.now() >= deadlineAt - 1_000 && !rowsHaveUsableTrades(rows)) {
+          budgetPartial = true;
+          break;
         }
       }
       if (Array.isArray(rows)) {
@@ -558,6 +617,12 @@ async function refreshCandidate(symbol: string, market: string, periods: number[
       }
     }
     const quality = evaluateQuality(allRows);
+    if (budgetPartial) {
+      quality.healthy = false;
+      quality.wouldBlock = true;
+      quality.gateStatus = 'would_block_unstable_backtest';
+      quality.reasons = [...(quality.reasons || []), `backtest_runtime_budget_partial(periods_processed=${Object.keys(rowsByPeriod).length},periods_requested=${periods.length})`];
+    }
     const payload = { fresh: true, ...quality, periods, rowsByPeriod, periodErrors, fallbackUsed };
     await upsertStatus(symbol, market, payload, dryRun);
     await recordPredictiveAudit(symbol, market, payload, dryRun);
@@ -655,7 +720,8 @@ export async function runCandidateBacktestRefresh(options: any = {}): Promise<an
       emitProgress(`blocked-top30 symbol=${symbol} rank=${top30Gate.rank ?? 'n/a'}`);
       continue;
     }
-    const result = await refreshCandidate(symbol, market, periods, { dryRun, fixture, force });
+    const deadlineAt = maxRuntimeMs == null ? null : startedAt + maxRuntimeMs;
+    const result = await refreshCandidate(symbol, market, periods, { dryRun, fixture, force, deadlineAt });
     result.binanceTop30Rank = top30Gate.rank;
     result.inBinanceTop30Universe = true;
     results.push(result);

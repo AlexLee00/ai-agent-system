@@ -230,6 +230,24 @@ def build_signal_masks(df, params: dict, deps: dict):
     return entries, exits
 
 
+def infer_portfolio_freq(df) -> str:
+    try:
+        if df is None or df.index is None or len(df.index) < 2:
+            return "5min"
+        deltas = df.index.to_series().diff().dropna().dt.total_seconds()
+        if deltas.empty:
+            return "5min"
+        median_seconds = float(deltas.median())
+    except Exception:
+        return "5min"
+
+    if median_seconds <= 10 * 60:
+        return "5min"
+    if median_seconds <= 2 * 3600:
+        return "1h"
+    return "1d"
+
+
 def run_backtest(df, params: dict, deps: dict):
     vbt = deps["vbt"]
     pd = deps["pd"]
@@ -240,6 +258,7 @@ def run_backtest(df, params: dict, deps: dict):
     tp_pct = params.get("tp_pct", 0.06)
     sl_pct = params.get("sl_pct", 0.03)
     entries, exits = build_signal_masks(df, params, deps)
+    portfolio_freq = infer_portfolio_freq(df)
 
     pf = vbt.Portfolio.from_signals(
         close=close,
@@ -249,7 +268,7 @@ def run_backtest(df, params: dict, deps: dict):
         sl_stop=sl_pct,
         init_cash=10_000,
         fees=0.001,
-        freq="5min",
+        freq=portfolio_freq,
     )
 
     stats = pf.stats()
@@ -260,7 +279,7 @@ def run_backtest(df, params: dict, deps: dict):
         "win_rate": float(stats.get("Win Rate [%]", 0) or 0),
         "total_trades": int(stats.get("Total Trades", 0) or 0),
         "profit_factor": float(stats.get("Profit Factor", 0) or 0),
-        "params": params,
+        "params": {**params, "portfolio_freq": portfolio_freq},
     }
     result["robust_score"] = robust_rank_score(result)
     return result

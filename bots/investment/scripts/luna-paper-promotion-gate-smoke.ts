@@ -266,9 +266,16 @@ const report = buildLunaPaperPromotionGateReport([...passHistory, ...passHistory
   maxOrderUsdt: 50,
 });
 assert.equal(report.promotionReady, false);
+assert.equal(report.promotionCandidateReady, true);
+assert.equal(report.readyForMasterReview, true);
+assert.equal(report.masterApprovalRequired, true);
 assert.equal(report.requiredApproval, 'explicit_master_live_promotion_approval');
 assert.equal(report.summary.promotionCandidates, 1);
+assert.equal(report.summary.approvalBlockedCandidates, 1);
+assert.equal(report.readinessSummary.promotionCandidateReady, true);
+assert.equal(report.readinessSummary.approvalBlockedCandidates, 1);
 assert.equal(report.readinessSummary.promotionRequiresExplicitMasterApproval, true);
+assert.equal(report.readinessSummary.nextApprovalAction, 'run_explicit_master_review_before_active_entry_trigger_materialization');
 assert.ok(Array.isArray(report.readinessSummary.topBlockers));
 assert.ok(Array.isArray(report.readinessSummary.nextPaperCycleTargets));
 
@@ -284,6 +291,9 @@ const runtime = await runLunaPaperPromotionGateShadow({
 assert.equal(runtime.ok, true);
 assert.equal(runtime.writeMode, 'plan-only');
 assert.equal(runtime.summary.promotionCandidates, 1);
+assert.equal(runtime.summary.approvalBlockedCandidates, 1);
+assert.equal(runtime.promotionCandidateReady, true);
+assert.equal(runtime.readyForMasterReview, true);
 assert.equal(runtime.limitSemantics, LUNA_PAPER_PROMOTION_LOADER_LIMIT_SEMANTICS);
 assert.equal(inserted.length, 0);
 

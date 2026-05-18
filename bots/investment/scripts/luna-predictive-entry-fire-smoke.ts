@@ -95,6 +95,58 @@ export async function runLunaPredictiveEntryFireSmoke() {
     assert.equal(weakPullback.ok, false);
     assert.equal(weakPullback.reason, 'pullback_confirmation_incomplete');
 
+    const promotionReady = buildEntryTriggerFireReadiness({
+      symbol: 'PROMOREADY',
+      action: 'BUY',
+      confidence: 0.67,
+      setup_type: 'promotion_ready_shadow',
+      triggerType: 'mtf_alignment',
+      triggerHints: {
+        promotionReady: true,
+        promotionPassCount: 4,
+        promotionConsecutivePasses: 4,
+        discoveryScore: 0.67,
+        mtfAgreement: 0.74,
+        mtfDominantSignal: 'BUY',
+      },
+    });
+    assert.equal(promotionReady.ok, true);
+    assert.equal(promotionReady.reason, 'mtf_discovery_confirmed');
+    assert.equal(promotionReady.details.promotionShadowReadinessConfirmed, true);
+
+    const promotionReadyButNoCurrentFireSignal = buildEntryTriggerFireReadiness({
+      symbol: 'PROMONOFIRE',
+      action: 'BUY',
+      confidence: 0.67,
+      setup_type: 'promotion_ready_shadow',
+      triggerType: 'mtf_alignment',
+      triggerHints: {
+        promotionReady: true,
+        promotionPassCount: 4,
+        promotionConsecutivePasses: 4,
+        discoveryScore: 0.67,
+      },
+    });
+    assert.equal(promotionReadyButNoCurrentFireSignal.ok, false);
+    assert.equal(promotionReadyButNoCurrentFireSignal.reason, 'fire_condition_unmet');
+    assert.equal(promotionReadyButNoCurrentFireSignal.details.promotionShadowReadinessConfirmed, true);
+
+    const promotionIncomplete = buildEntryTriggerFireReadiness({
+      symbol: 'PROMOWAIT',
+      action: 'BUY',
+      confidence: 0.67,
+      setup_type: 'promotion_ready_shadow',
+      triggerType: 'mtf_alignment',
+      triggerHints: {
+        promotionReady: true,
+        promotionPassCount: 2,
+        promotionConsecutivePasses: 2,
+        discoveryScore: 0.67,
+      },
+    });
+    assert.equal(promotionIncomplete.ok, false);
+    assert.equal(promotionIncomplete.reason, 'promotion_shadow_readiness_incomplete');
+
     const pullbackRiskGate = evaluateEntryTriggerLiveRiskGate({
       candidate: {
         symbol: 'PULLBACKPASS/USDT',

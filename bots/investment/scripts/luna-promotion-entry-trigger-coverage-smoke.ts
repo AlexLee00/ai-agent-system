@@ -74,10 +74,32 @@ const latestTriggerRows = [
   },
 ];
 
+const bridgeRows = [
+  {
+    id: 'promotion-entry-trigger-bridge:crypto:binance:AIGENSYN_USDT',
+    symbol: 'AIGENSYN/USDT',
+    market: 'crypto',
+    exchange: 'binance',
+    bridge_status: 'shadow_bridge_pending_approval',
+    gap_reason: 'promotion_ready_active_entry_trigger_missing',
+    promotion_observed_at: '2026-05-17T11:50:00.000Z',
+    promotion_confidence: 0.7405,
+    trigger_type: 'mtf_alignment',
+    proposed_trigger_state: 'armed',
+    approval_required: 'explicit_master_live_promotion_approval',
+    shadow_only: true,
+    live_mutation: false,
+    entry_trigger_db_mutation: false,
+    created_at: '2026-05-17T11:51:00.000Z',
+    updated_at: '2026-05-17T11:51:00.000Z',
+  },
+];
+
 const report = buildPromotionEntryTriggerCoverageReport({
   promotionRows,
   activeTriggerRows,
   latestTriggerRows,
+  bridgeRows,
   now,
   hours: 168,
   market: 'crypto',
@@ -88,10 +110,13 @@ assert.equal(report.ok, false);
 assert.equal(report.summary.promotionCandidates, 2);
 assert.equal(report.summary.coveredByActiveTrigger, 1);
 assert.equal(report.summary.missingActiveTrigger, 1);
+assert.equal(report.summary.stagedPendingMaterialization, 1);
+assert.equal(report.summary.unstagedMissingActiveTrigger, 0);
 assert.equal(report.rows.find((row) => row.symbol === 'ZEC/USDT')?.coverageStatus, 'covered_by_active_entry_trigger');
 const missing = report.rows.find((row) => row.symbol === 'AIGENSYN/USDT');
-assert.equal(missing?.coverageStatus, 'promotion_ready_without_active_entry_trigger');
-assert.equal(missing?.gapReason, 'promotion_ready_active_entry_trigger_missing');
+assert.equal(missing?.coverageStatus, 'promotion_ready_staged_for_entry_trigger_materialization');
+assert.equal(missing?.gapReason, 'promotion_ready_materialization_approval_required');
+assert.equal(missing?.bridge?.pendingMaterialization, true);
 assert.equal(missing?.bridgePreview?.liveMutationAllowed, false);
 
 const runtime = await runLunaPromotionEntryTriggerCoverage({
@@ -106,9 +131,11 @@ const runtime = await runLunaPromotionEntryTriggerCoverage({
   promotionRows,
   activeTriggerRows,
   latestTriggerRows,
+  bridgeRows,
 });
 
 assert.equal(runtime.summary.missingActiveTrigger, 1);
+assert.equal(runtime.summary.stagedPendingMaterialization, 1);
 assert.equal(runtime.liveMutation, false);
 
 const applyBlocked = await runLunaPromotionEntryTriggerCoverage({ apply: true, json: true });

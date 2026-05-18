@@ -5,6 +5,7 @@ import { query as defaultQuery } from '../shared/db.ts';
 import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
 import { ensureLunaDiscoveryEntryTables } from '../shared/luna-discovery-entry-store.ts';
 import { ensureLunaPaperPromotionGateSchema } from '../shared/luna-paper-promotion-gate.ts';
+import { ensureLunaPromotionEntryTriggerBridgeSchema } from '../shared/luna-promotion-entry-trigger-bridge.ts';
 import { buildPromotionEntryTriggerCoverageReport } from '../shared/luna-promotion-entry-trigger-coverage.ts';
 
 function argValue(name, fallback = null, argv = process.argv.slice(2)) {
@@ -82,6 +83,24 @@ async function loadTriggerRows({ queryFn, exchange, symbols = [], activeOnly = f
   ).catch(() => []);
 }
 
+async function loadBridgeRows({ queryFn, market, exchange, hours, symbols = [] }) {
+  if (!symbols.length) return [];
+  return queryFn(
+    `SELECT id, symbol, market, exchange, bridge_status, gap_reason,
+            promotion_observed_at, promotion_confidence, trigger_type,
+            proposed_trigger_state, approval_required, shadow_only,
+            live_mutation, entry_trigger_db_mutation, created_at, updated_at
+       FROM luna_promotion_entry_trigger_bridge_shadow
+      WHERE symbol = ANY($1)
+        AND ($2 = 'all' OR market = $2)
+        AND ($3 = 'all' OR exchange = $3)
+        AND updated_at >= now() - ($4::int * interval '1 hour')
+      ORDER BY updated_at DESC, created_at DESC
+      LIMIT 500`,
+    [symbols, market, exchange, hours],
+  ).catch(() => []);
+}
+
 export async function runLunaPromotionEntryTriggerCoverage(options = parseArgs(), deps = {}) {
   if (options.apply) {
     return {
@@ -102,6 +121,7 @@ export async function runLunaPromotionEntryTriggerCoverage(options = parseArgs()
   const queryFn = deps.queryFn || defaultQuery;
   await ensureLunaPaperPromotionGateSchema().catch(() => {});
   await ensureLunaDiscoveryEntryTables().catch(() => {});
+  await ensureLunaPromotionEntryTriggerBridgeSchema().catch(() => {});
 
   const symbols = String(options.symbols || argValue('symbols', '') || '')
     .split(',')
@@ -129,11 +149,19 @@ export async function runLunaPromotionEntryTriggerCoverage(options = parseArgs()
     symbols: promotionSymbols,
     activeOnly: false,
   });
+  const bridgeRows = deps.bridgeRows || await loadBridgeRows({
+    queryFn,
+    market: options.market,
+    exchange: options.exchange,
+    hours: options.hours,
+    symbols: promotionSymbols,
+  });
 
   return buildPromotionEntryTriggerCoverageReport({
     promotionRows,
     activeTriggerRows,
     latestTriggerRows,
+    bridgeRows,
     now: deps.now || new Date(),
     hours: options.hours,
     market: options.market,

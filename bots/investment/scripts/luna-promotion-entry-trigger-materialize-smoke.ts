@@ -31,7 +31,15 @@ const bridgeRows = [
       confidence: 0.78,
       predictiveScore: 0.74,
       waitingFor: 'explicit_master_live_promotion_approval',
-      triggerContext: { source: 'smoke_promotion_gate' },
+      triggerContext: {
+        source: 'smoke_promotion_gate',
+        hints: {
+          promotionReady: true,
+          promotionPassCount: 7,
+          promotionConsecutivePasses: 5,
+          discoveryScore: 0.78,
+        },
+      },
       triggerMeta: { latestTrigger: { predictiveScore: 0.74 } },
     },
     coverage_snapshot: { activeTriggerCount: 0 },
@@ -165,6 +173,8 @@ assert.equal(applied.summary.blocked, 1);
 assert.equal(applyDeps.inserted.length, 1);
 assert.equal(applyDeps.inserted[0].symbol, 'BTC/USDT');
 assert.equal(applyDeps.inserted[0].waitingFor, 'luna_entry_trigger_fire_conditions');
+assert.equal(applyDeps.inserted[0].triggerContext.hints.promotionReady, true);
+assert.equal(applyDeps.inserted[0].triggerContext.hints.promotionConsecutivePasses, 5);
 assert.equal(applyDeps.inserted[0].triggerMeta.liveMutation, false);
 assert.equal(applyDeps.inserted[0].triggerMeta.entryTriggerDbMutation, true);
 assert.equal(applyDeps.marked.length, 1);

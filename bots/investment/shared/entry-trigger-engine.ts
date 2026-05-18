@@ -397,8 +397,10 @@ export function buildEntryTriggerFireReadiness(candidate = {}, context = {}) {
   const confidence = Number(candidate?.confidence ?? context?.confidence ?? 0);
   const predictiveScore = Number(candidate?.predictiveScore ?? context?.predictiveScore ?? 0);
   const triggerType = String(candidate?.triggerType || candidate?.trigger_type || resolveTriggerType(candidate));
+  const setupType = String(candidate?.setup_type || candidate?.setupType || '').trim().toLowerCase();
   const details = {
     triggerType,
+    setupType: setupType || null,
     mtfAgreement,
     mtfAlignmentScore: Number.isFinite(mtfAlignmentScore) ? mtfAlignmentScore : null,
     mtfDominantSignal: mtfDominantSignal || null,
@@ -410,6 +412,42 @@ export function buildEntryTriggerFireReadiness(candidate = {}, context = {}) {
     confidence,
     predictiveScore,
   };
+  const promotionReadyTrigger = setupType === 'promotion_ready_shadow' || hints.promotionReady === true || context?.promotionReady === true;
+  if (promotionReadyTrigger) {
+    const minConfidence = clamp01(
+      context?.promotionReadyMinConfidence ?? process.env.LUNA_ENTRY_TRIGGER_PROMOTION_READY_MIN_CONFIDENCE,
+      0.65,
+    );
+    const minPassCount = Math.max(1, finiteNumber(
+      context?.promotionReadyMinPassCount ?? process.env.LUNA_ENTRY_TRIGGER_PROMOTION_READY_MIN_PASS_COUNT,
+      3,
+    ));
+    const minConsecutivePasses = Math.max(1, finiteNumber(
+      context?.promotionReadyMinConsecutivePasses ?? process.env.LUNA_ENTRY_TRIGGER_PROMOTION_READY_MIN_CONSECUTIVE_PASSES,
+      3,
+    ));
+    const passCount = finiteNumber(hints.promotionPassCount ?? context?.promotionPassCount, 0);
+    const consecutivePasses = finiteNumber(hints.promotionConsecutivePasses ?? context?.promotionConsecutivePasses, 0);
+    const promotionDetails = {
+      ...details,
+      minConfidence,
+      minPassCount,
+      minConsecutivePasses,
+      promotionPassCount: passCount,
+      promotionConsecutivePasses: consecutivePasses,
+    };
+    if (confidence < minConfidence || passCount < minPassCount || consecutivePasses < minConsecutivePasses) {
+      return { ok: false, reason: 'promotion_shadow_readiness_incomplete', details: promotionDetails };
+    }
+    Object.assign(details, {
+      promotionShadowReadinessConfirmed: true,
+      minConfidence,
+      minPassCount,
+      minConsecutivePasses,
+      promotionPassCount: passCount,
+      promotionConsecutivePasses: consecutivePasses,
+    });
+  }
 
   if (triggerType === 'pullback_to_support') {
     const minConfidence = resolvePullbackMinConfidence(context);

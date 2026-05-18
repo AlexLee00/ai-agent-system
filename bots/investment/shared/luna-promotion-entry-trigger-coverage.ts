@@ -34,6 +34,18 @@ function latestBySymbol(rows = []) {
   return map;
 }
 
+function latestBridgeBySymbol(rows = []) {
+  const map = new Map();
+  for (const row of rows || []) {
+    const key = triggerKey(row);
+    const prev = map.get(key);
+    const rowTime = parseTime(row.updated_at || row.created_at || row.promotion_observed_at || row.observed_at) || 0;
+    const prevTime = parseTime(prev?.updated_at || prev?.created_at || prev?.promotion_observed_at || prev?.observed_at) || 0;
+    if (!prev || rowTime >= prevTime) map.set(key, row);
+  }
+  return map;
+}
+
 function activeUnexpiredTriggers(rows = [], nowMs = Date.now()) {
   return (rows || []).filter((row) => {
     const state = String(row.trigger_state || '').toLowerCase();
@@ -76,10 +88,33 @@ function bridgePreview(row = {}) {
   };
 }
 
+function summarizeBridge(row = null) {
+  if (!row) return null;
+  const status = row.bridge_status || row.bridgeStatus || null;
+  const entryTriggerDbMutation = bool(row.entry_trigger_db_mutation ?? row.entryTriggerDbMutation);
+  const liveMutation = bool(row.live_mutation ?? row.liveMutation);
+  return {
+    id: row.id || null,
+    status,
+    gapReason: row.gap_reason || row.gapReason || null,
+    promotionObservedAt: row.promotion_observed_at || row.promotionObservedAt || null,
+    promotionConfidence: number(row.promotion_confidence ?? row.promotionConfidence, null),
+    triggerType: row.trigger_type || row.triggerType || null,
+    proposedTriggerState: row.proposed_trigger_state || row.proposedTriggerState || null,
+    updatedAt: row.updated_at || row.updatedAt || null,
+    approvalRequired: row.approval_required || row.approvalRequired || 'explicit_master_live_promotion_approval',
+    shadowOnly: bool(row.shadow_only ?? row.shadowOnly ?? true),
+    liveMutation,
+    entryTriggerDbMutation,
+    pendingMaterialization: status === 'shadow_bridge_pending_approval' && !entryTriggerDbMutation && !liveMutation,
+  };
+}
+
 export function buildPromotionEntryTriggerCoverageReport({
   promotionRows = [],
   activeTriggerRows = [],
   latestTriggerRows = [],
+  bridgeRows = [],
   now = new Date(),
   hours = 168,
   market = 'crypto',
@@ -94,6 +129,7 @@ export function buildPromotionEntryTriggerCoverageReport({
     activeByKey.set(key, list);
   }
   const latestByKey = latestBySymbol(latestTriggerRows);
+  const bridgeByKey = latestBridgeBySymbol(bridgeRows);
 
   const candidates = (promotionRows || [])
     .filter((row) => bool(row.promotion_candidate ?? row.promotionCandidate))
@@ -113,14 +149,23 @@ export function buildPromotionEntryTriggerCoverageReport({
     const key = triggerKey(candidate);
     const active = activeByKey.get(key) || [];
     const latest = latestByKey.get(key) || null;
+    const bridge = bridgeByKey.get(key) || null;
+    const bridgeSummary = summarizeBridge(bridge);
     const covered = active.length > 0;
     const latestSummary = summarizeLatestTrigger(latest, nowMs);
+    const staged = !covered && bridgeSummary?.pendingMaterialization === true;
     const coverageStatus = covered
       ? 'covered_by_active_entry_trigger'
-      : latestSummary
-        ? 'promotion_ready_without_active_entry_trigger'
-        : 'promotion_ready_without_entry_trigger_history';
-    const gapReason = covered ? null : 'promotion_ready_active_entry_trigger_missing';
+      : staged
+        ? 'promotion_ready_staged_for_entry_trigger_materialization'
+        : latestSummary
+          ? 'promotion_ready_without_active_entry_trigger'
+          : 'promotion_ready_without_entry_trigger_history';
+    const gapReason = covered
+      ? null
+      : staged
+        ? 'promotion_ready_materialization_approval_required'
+        : 'promotion_ready_active_entry_trigger_missing';
     return {
       symbol: candidate.symbol,
       market: candidate.market,
@@ -135,6 +180,7 @@ export function buildPromotionEntryTriggerCoverageReport({
       activeTriggerCount: active.length,
       activeTriggerTypes: [...new Set(active.map((row) => row.trigger_type).filter(Boolean))],
       latestTrigger: latestSummary,
+      bridge: bridgeSummary,
       coverageStatus,
       gapReason,
       bridgePreview: covered ? null : bridgePreview(candidate),
@@ -146,6 +192,8 @@ export function buildPromotionEntryTriggerCoverageReport({
 
   const uncovered = rows.filter((row) => row.activeTriggerCount === 0);
   const covered = rows.filter((row) => row.activeTriggerCount > 0);
+  const staged = uncovered.filter((row) => row.bridge?.pendingMaterialization === true);
+  const unstaged = uncovered.filter((row) => row.bridge?.pendingMaterialization !== true);
 
   return {
     ok: uncovered.length === 0,
@@ -153,7 +201,9 @@ export function buildPromotionEntryTriggerCoverageReport({
       ? 'luna_promotion_entry_trigger_coverage_no_candidates'
       : uncovered.length === 0
         ? 'luna_promotion_entry_trigger_coverage_clear'
-        : 'luna_promotion_entry_trigger_coverage_attention',
+        : unstaged.length === 0
+          ? 'luna_promotion_entry_trigger_coverage_staged_pending_materialization'
+          : 'luna_promotion_entry_trigger_coverage_attention',
     phase: 'luna_promotion_to_entry_trigger_coverage',
     shadowMode: true,
     liveMutation: false,
@@ -165,6 +215,8 @@ export function buildPromotionEntryTriggerCoverageReport({
     summary: {
       promotionCandidates: rows.length,
       coveredByActiveTrigger: covered.length,
+      stagedPendingMaterialization: staged.length,
+      unstagedMissingActiveTrigger: unstaged.length,
       missingActiveTrigger: uncovered.length,
       coverageRatio: rows.length ? Number((covered.length / rows.length).toFixed(4)) : 1,
       gapReasons: uncovered.reduce((acc, row) => {
@@ -175,14 +227,18 @@ export function buildPromotionEntryTriggerCoverageReport({
     },
     rows,
     blockers: uncovered.map((row) => ({
-      type: 'coverage',
+      type: row.bridge?.pendingMaterialization ? 'materialization_approval' : 'coverage',
       symbol: row.symbol,
       name: row.gapReason,
-      detail: `${row.symbol} is promotion-ready but has no active unexpired entry trigger.`,
+      detail: row.bridge?.pendingMaterialization
+        ? `${row.symbol} is promotion-ready and staged in the bridge, but active entry-trigger materialization still requires explicit approval.`
+        : `${row.symbol} is promotion-ready but has no active unexpired entry trigger.`,
     })),
     requiredApproval: 'explicit_master_live_promotion_approval_for_any_live_priority_change',
     nextAction: uncovered.length > 0
-      ? 'inspect_promotion_ready_entry_trigger_bridge_before_live_priority_change'
+      ? unstaged.length === 0
+        ? 'run_master_approved_entry_trigger_materialization_or_continue_shadow_review'
+        : 'inspect_promotion_ready_entry_trigger_bridge_before_live_priority_change'
       : 'continue_entry_trigger_fire_readiness_monitoring',
   };
 }

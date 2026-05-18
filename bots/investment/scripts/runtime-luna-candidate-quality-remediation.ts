@@ -39,6 +39,11 @@ function n(value, fallback = 0) {
   return Number.isFinite(parsed) ? parsed : fallback;
 }
 
+function positiveInt(value, fallback) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : fallback;
+}
+
 function countBy(rows = [], key) {
   return rows.reduce((acc, row) => {
     const value = row?.[key] || 'unknown';
@@ -82,15 +87,16 @@ function fixtureCoverageGate() {
   };
 }
 
-function plannedCommands({ market, limit, forceBacktest = false, plan = {}, targetSymbols = {}, backtestPeriods = null }) {
+function plannedCommands({ market, limit, forceBacktest = false, plan = {}, targetSymbols = {}, backtestPeriods = null, maxBacktestRuntimeMs = null }) {
   const marketArg = market && market !== 'all' ? ` --market=${market}` : ' --market=all';
   const limitArg = ` --limit=${limit}`;
   const forceArg = forceBacktest ? ' --force' : '';
   const periodsArg = backtestPeriods ? ` --periods=${backtestPeriods}` : '';
+  const maxRuntimeArg = maxBacktestRuntimeMs ? ` --max-runtime-ms=${maxBacktestRuntimeMs}` : '';
   const commands = [];
   if (plan.discoveryRefresh) commands.push('npm --prefix bots/investment run -s runtime:luna-discovery-refresh -- --json --force --markets=crypto,domestic,overseas --limit=30 --ttl-hours=6');
   if (plan.marketCandidateSeedRefresh) commands.push(`npm --prefix bots/investment run -s runtime:luna-market-candidate-seed-refresh -- --json --apply --confirm=${MARKET_SEED_CONFIRM} --markets=domestic,overseas --limit=5`);
-  if (plan.backtestRefresh || plan.marketCandidateSeedRefresh) commands.push(`npm --prefix bots/investment run -s runtime:luna-candidate-backtest-refresh -- --json${forceArg}${periodsArg}${marketArg}${limitArg}${symbolsArg(targetSymbols.backtestSymbols)}`);
+  if (plan.backtestRefresh || plan.marketCandidateSeedRefresh) commands.push(`npm --prefix bots/investment run -s runtime:luna-candidate-backtest-refresh -- --json${forceArg}${periodsArg}${marketArg}${limitArg}${symbolsArg(targetSymbols.backtestSymbols)}${maxRuntimeArg}`);
   if (plan.predictiveRefresh || plan.marketCandidateSeedRefresh) commands.push(`npm --prefix bots/investment run -s runtime:luna-predictive-evidence-refresh -- --json${marketArg}${limitArg}${symbolsArg(targetSymbols.predictiveSymbols)}`);
   if (plan.strategyEnhancementShadow || plan.backtestRefresh || plan.marketCandidateSeedRefresh) commands.push(`npm --prefix bots/investment run -s runtime:luna-phase4-strategy-enhancement-shadow -- --json --apply --confirm=luna-phase4-strategy-enhancement-shadow${marketArg}${limitArg}${symbolsArg(targetSymbols.strategySymbols)}`);
   if (plan.bottleneckShadowAudit || plan.strategyEnhancementShadow || plan.backtestRefresh || plan.marketCandidateSeedRefresh) commands.push(`npm --prefix bots/investment run -s runtime:luna-candidate-bottleneck-diagnostics -- --json --apply --confirm=luna-candidate-bottleneck-shadow${marketArg}${limitArg}${symbolsArg(targetSymbols.bottleneckSymbols)}`);
@@ -318,6 +324,7 @@ export async function runLunaCandidateQualityRemediation(options = {}) {
   const maxPredictiveSymbols = Math.max(1, n(options.maxPredictiveSymbols || process.env.LUNA_CANDIDATE_QUALITY_MAX_PREDICTIVE_SYMBOLS || 24, 24));
   const maxStrategySymbols = Math.max(1, n(options.maxStrategySymbols || process.env.LUNA_CANDIDATE_QUALITY_MAX_STRATEGY_SYMBOLS || 16, 16));
   const maxShadowSymbols = Math.max(1, n(options.maxShadowSymbols || process.env.LUNA_CANDIDATE_QUALITY_MAX_SHADOW_SYMBOLS || 30, 30));
+  const maxBacktestRuntimeMs = positiveInt(options.maxBacktestRuntimeMs ?? process.env.LUNA_CANDIDATE_QUALITY_MAX_BACKTEST_RUNTIME_MS, 180000);
   const forceBacktest = options.forceBacktest === true || String(process.env.LUNA_CANDIDATE_QUALITY_FORCE_BACKTEST || '').toLowerCase() === 'true';
 
   if (apply && options.dryRun === true) {
@@ -374,6 +381,7 @@ export async function runLunaCandidateQualityRemediation(options = {}) {
     forceBacktest: effectiveForceBacktest,
     plan: remediationPlan,
     backtestPeriods,
+    maxBacktestRuntimeMs,
     targetSymbols: {
       backtestSymbols: targetedBacktestSymbols,
       predictiveSymbols: targetedPredictiveSymbols,
@@ -430,6 +438,7 @@ export async function runLunaCandidateQualityRemediation(options = {}) {
         dryRun: false,
         force: effectiveForceBacktest || remediationPlan.marketCandidateSeedRefresh,
         periods: backtestPeriods || undefined,
+        maxRuntimeMs: maxBacktestRuntimeMs,
         market,
         limit,
         symbols: targetedBacktestSymbols.join(','),
@@ -549,6 +558,7 @@ export async function runLunaCandidateQualityRemediation(options = {}) {
     maxPredictiveSymbols,
     maxStrategySymbols,
     maxShadowSymbols,
+    maxBacktestRuntimeMs,
     backtestCooldownBlockedCount: allBacktestCooldownBlocked.length,
     targetedBacktestSymbols,
     backtestCooldownBlocked,
@@ -617,6 +627,7 @@ if (isDirectExecution(import.meta.url)) {
       market: argValue('market', process.env.LUNA_CANDIDATE_QUALITY_REMEDIATION_MARKET || 'all'),
       limit: Number(argValue('limit', process.env.LUNA_CANDIDATE_QUALITY_REMEDIATION_LIMIT || 50)),
       maxBacktestSymbols: Number(argValue('max-backtest-symbols', process.env.LUNA_CANDIDATE_QUALITY_MAX_BACKTEST_SYMBOLS || 12)),
+      maxBacktestRuntimeMs: Number(argValue('max-backtest-runtime-ms', process.env.LUNA_CANDIDATE_QUALITY_MAX_BACKTEST_RUNTIME_MS || 180000)),
       maxPredictiveSymbols: Number(argValue('max-predictive-symbols', process.env.LUNA_CANDIDATE_QUALITY_MAX_PREDICTIVE_SYMBOLS || 24)),
       maxStrategySymbols: Number(argValue('max-strategy-symbols', process.env.LUNA_CANDIDATE_QUALITY_MAX_STRATEGY_SYMBOLS || 16)),
       maxShadowSymbols: Number(argValue('max-shadow-symbols', process.env.LUNA_CANDIDATE_QUALITY_MAX_SHADOW_SYMBOLS || 30)),

@@ -173,6 +173,32 @@ export function getOpsSchedulerJobs() {
       ]),
     },
     {
+      name: 'active_entry_trigger_evaluator_domestic',
+      category: 'decision_probe',
+      market: 'domestic',
+      immutable: true,
+      requiresMarketOpen: true,
+      cadence: { type: 'interval', seconds: 60 },
+      ...nodeScript('luna-entry-trigger-worker.ts', [
+        '--exchange=kis',
+        '--derive-market-events',
+        '--json',
+      ]),
+    },
+    {
+      name: 'active_entry_trigger_evaluator_overseas',
+      category: 'decision_probe',
+      market: 'overseas',
+      immutable: true,
+      requiresMarketOpen: true,
+      cadence: { type: 'interval', seconds: 60 },
+      ...nodeScript('luna-entry-trigger-worker.ts', [
+        '--exchange=kis_overseas',
+        '--derive-market-events',
+        '--json',
+      ]),
+    },
+    {
       name: 'entry_llm_shadow',
       category: 'decision_shadow',
       market: 'all',
@@ -1036,7 +1062,7 @@ export function classifyOpsSchedulerOutcome(job, result = {}) {
   if (/open-catchup: 장외 시간/.test(text)) {
     return { outcome: 'market_closed_catchup_wait', summary: compactOutcomeSummary(text, 'open-catchup') };
   }
-  if (name === 'active_entry_trigger_evaluator_crypto') {
+  if (name.startsWith('active_entry_trigger_evaluator_')) {
     const parsed = parseSchedulerJsonOutput(result.stdout || result.stdoutTail || text);
     const triggerResult = parsed?.result || {};
     const checked = Number(triggerResult.checked || 0);

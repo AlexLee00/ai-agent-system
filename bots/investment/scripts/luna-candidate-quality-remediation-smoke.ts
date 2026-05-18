@@ -27,6 +27,7 @@ export async function runLunaCandidateQualityRemediationSmoke() {
   assert.equal(planned.status, 'luna_candidate_quality_remediation_planned', 'plan-only status');
   assert.equal(planned.writeMode, 'plan-only', 'plan-only write mode');
   assert.equal(planned.summary.liveMutation, false, 'no live mutation');
+  assert.equal(planned.maxBacktestRuntimeMs, 180000, 'default remediation backtest runtime budget is exposed');
   assert.deepEqual(planned.cooldownSummary, {
     total: 0,
     byAction: {},
@@ -50,6 +51,7 @@ export async function runLunaCandidateQualityRemediationSmoke() {
   assert.equal(planned.remediationPlan.paperPromotionGate, true, 'fixture plans paper promotion gate');
   assert.equal(planned.plannedCommands.length, 10, 'planned command count');
   assert.equal(planned.plannedCommands.some((cmd) => cmd.includes('runtime:luna-candidate-quality-governance')), true, 'planned commands include governance shadow');
+  assert.equal(planned.plannedCommands.some((cmd) => cmd.includes('runtime:luna-candidate-backtest-refresh') && cmd.includes('--max-runtime-ms=180000')), true, 'planned backtest command includes runtime budget');
   assert.deepEqual(planned.targetedBacktestSymbols, ['MISS/USDT', 'NEG/USDT', 'ALPHA/USDT'], 'backtest refresh is symbol targeted');
   assert.deepEqual(planned.targetedSymbols.predictiveSymbols, ['NEG/USDT', 'ALPHA/USDT', 'MISS/USDT'], 'predictive refresh is symbol targeted');
   assert.deepEqual(planned.targetedSymbols.strategySymbols, ['NEG/USDT', 'ALPHA/USDT'], 'strategy enhancement is symbol targeted');
@@ -199,10 +201,13 @@ export async function runLunaCandidateQualityRemediationSmoke() {
     json: true,
     market: 'all',
     limit: 12,
+    maxBacktestRuntimeMs: 12345,
     maxPredictiveSymbols: 2,
     maxStrategySymbols: 1,
     maxShadowSymbols: 2,
   });
+  assert.equal(capped.maxBacktestRuntimeMs, 12345, 'custom runtime budget is exposed');
+  assert.equal(capped.plannedCommands.some((cmd) => cmd.includes('runtime:luna-candidate-backtest-refresh') && cmd.includes('--max-runtime-ms=12345')), true, 'custom runtime budget reaches planned backtest command');
   assert.deepEqual(capped.targetedSymbols.predictiveSymbols, ['NEG/USDT', 'ALPHA/USDT'], 'predictive symbol cap is enforced');
   assert.deepEqual(capped.targetedSymbols.strategySymbols, ['NEG/USDT'], 'strategy symbol cap is enforced');
   assert.deepEqual(capped.targetedSymbols.bottleneckSymbols, ['BTC/USDT', 'NEG/USDT'], 'shadow feedback symbol cap is enforced');
@@ -224,6 +229,7 @@ export async function runLunaCandidateQualityRemediationSmoke() {
       targetScopedStabilityPeriods: true,
       cooldownVisibility: true,
       symbolCaps: true,
+      backtestRuntimeBudget: true,
       liveMutation: false,
     },
   };

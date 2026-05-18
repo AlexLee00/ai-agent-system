@@ -97,6 +97,15 @@ const periodRepresentativeQuality = candidateBacktestTest.evaluateQuality([
 ]);
 assert.equal(periodRepresentativeQuality.gateStatus, 'pass', 'bad non-representative grid rows must not dominate candidate quality');
 assert.equal(periodRepresentativeQuality.qualityRows.length, 2, 'one representative row per walk-forward period should be evaluated');
+assert.equal(periodRepresentativeQuality.qualityRowSelectionPolicy, 'stable_sample_first', 'representative row selection should prioritize stable samples');
+
+const lowSampleHighSharpeRepresentativeQuality = candidateBacktestTest.evaluateQuality([
+  { status: 'ok', walk_forward_days: 30, total_trades: 4, sharpe_ratio: 52, robust_score: 30, max_drawdown: 2, win_rate: 75 },
+  { status: 'ok', walk_forward_days: 30, total_trades: 24, sharpe_ratio: 1.1, robust_score: 0.7, max_drawdown: 9, win_rate: 54 },
+  { status: 'ok', walk_forward_days: 90, total_trades: 28, sharpe_ratio: 0.9, robust_score: 0.5, max_drawdown: 11, win_rate: 51 },
+]);
+assert.equal(lowSampleHighSharpeRepresentativeQuality.gateStatus, 'pass', 'low-sample unrealistic Sharpe rows must not beat stable representative rows');
+assert.equal(lowSampleHighSharpeRepresentativeQuality.qualityRows[0].total_trades, 24, 'stable-sample row should represent the 30d period');
 
 const periodFailureQuality = candidateBacktestTest.evaluateQuality([
   { status: 'ok', walk_forward_days: 30, total_trades: 40, sharpe_ratio: 1.4, robust_score: 1.2, max_drawdown: 10, win_rate: 55 },
@@ -113,10 +122,17 @@ assert.equal(lowSampleQuality.gateStatus, 'would_block_unstable_backtest', 'low 
 assert.ok(lowSampleQuality.reasons.some((reason) => reason.startsWith('backtest_low_trade_sample')), 'low sample reason should be explicit');
 
 const vectorbtSource = readFileSync(new URL('./backtest-vectorbt.py', import.meta.url), 'utf8');
+const backtestRefreshSource = readFileSync(new URL('./runtime-luna-candidate-backtest-refresh.ts', import.meta.url), 'utf8');
 assert.match(vectorbtSource, /ema_trend_pullback/, 'vectorbt grid should include trend-following strategy family');
 assert.match(vectorbtSource, /breakout_momentum/, 'vectorbt grid should include breakout strategy family');
 assert.match(vectorbtSource, /bollinger_mean_reversion/, 'vectorbt grid should include mean-reversion strategy family');
 assert.match(vectorbtSource, /robust_rank_score/, 'vectorbt grid should rank by robust score, not raw Sharpe only');
+assert.match(vectorbtSource, /infer_portfolio_freq/, 'vectorbt backtest should infer portfolio frequency from OHLCV interval');
+assert.match(vectorbtSource, /freq=portfolio_freq/, 'vectorbt backtest should not hard-code 5min frequency for stock data');
+assert.match(backtestRefreshSource, /deadlineAt/, 'backtest refresh should enforce runtime budgets inside candidate periods');
+assert.match(backtestRefreshSource, /backtest_runtime_budget_partial/, 'partial runtime-budget backtests should not be allowed to pass silently');
+assert.match(backtestRefreshSource, /ohlcv_fallback_timeout/, 'OHLCV fallback should be bounded by the remaining runtime budget');
+assert.match(backtestRefreshSource, /runtime_budget_stop_before_fallback/, 'OHLCV fallback should not start when runtime budget is exhausted');
 
 const payload = {
   ok: true,
@@ -131,9 +147,13 @@ const payload = {
   ohlcvFallbackUsable: candidateBacktestTest.rowsHaveUsableTrades(fallbackRows),
   unrealisticSharpeCapped: unrealisticSharpeQuality.sharpe,
   periodRepresentativeRows: periodRepresentativeQuality.qualityRows.length,
+  stableSampleFirst: lowSampleHighSharpeRepresentativeQuality.gateStatus === 'pass',
   periodFailureReasons: periodFailureQuality.reasons,
   lowSampleReasons: lowSampleQuality.reasons,
   vectorbtStrategyFamilies: ['rsi_macd_reversal', 'ema_trend_pullback', 'breakout_momentum', 'bollinger_mean_reversion'],
+  vectorbtFrequencyInference: true,
+  runtimeBudgetPartialGuard: true,
+  fallbackRuntimeBudgetGuard: true,
   candidateBudget: {
     maxSymbolsCapWorks: cappedResult.candidateBudget.selected === 1,
     runtimeBudgetStopWorks: runtimeBudgetResult.candidateBudget.budgetStopped === true,

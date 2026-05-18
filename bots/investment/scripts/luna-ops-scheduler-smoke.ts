@@ -20,7 +20,7 @@ export async function runLunaOpsSchedulerSmoke() {
   const jobs = getOpsSchedulerJobs();
   const launchdPlist = fs.readFileSync(new URL('../launchd/ai.luna.ops-scheduler.plist', import.meta.url), 'utf8');
   assert.match(launchdPlist, /<key>StartInterval<\/key>\s*<integer>60<\/integer>/);
-  assert.equal(jobs.length, 55);
+  assert.equal(jobs.length, 57);
   assert.equal(jobs.some((job) => job.name === 'market_regime_llm_shadow'), true);
   assert.equal(jobs.find((job) => job.name === 'market_regime_llm_shadow')?.category, 'market_state');
   assert.equal(jobs.find((job) => job.name === 'market_regime_llm_shadow')?.cadence?.seconds, 3600);
@@ -50,6 +50,16 @@ export async function runLunaOpsSchedulerSmoke() {
   assert.equal(jobs.some((job) => job.name === 'active_entry_trigger_evaluator_crypto'), true);
   assert.equal(jobs.find((job) => job.name === 'active_entry_trigger_evaluator_crypto')?.cadence?.seconds, 60);
   assert.equal(jobs.find((job) => job.name === 'active_entry_trigger_evaluator_crypto')?.args?.includes('--derive-market-events'), true);
+  assert.equal(jobs.some((job) => job.name === 'active_entry_trigger_evaluator_domestic'), true);
+  assert.equal(jobs.find((job) => job.name === 'active_entry_trigger_evaluator_domestic')?.requiresMarketOpen, true);
+  assert.equal(jobs.find((job) => job.name === 'active_entry_trigger_evaluator_domestic')?.cadence?.seconds, 60);
+  assert.equal(jobs.find((job) => job.name === 'active_entry_trigger_evaluator_domestic')?.args?.includes('--exchange=kis'), true);
+  assert.equal(jobs.find((job) => job.name === 'active_entry_trigger_evaluator_domestic')?.args?.includes('--derive-market-events'), true);
+  assert.equal(jobs.some((job) => job.name === 'active_entry_trigger_evaluator_overseas'), true);
+  assert.equal(jobs.find((job) => job.name === 'active_entry_trigger_evaluator_overseas')?.requiresMarketOpen, true);
+  assert.equal(jobs.find((job) => job.name === 'active_entry_trigger_evaluator_overseas')?.cadence?.seconds, 60);
+  assert.equal(jobs.find((job) => job.name === 'active_entry_trigger_evaluator_overseas')?.args?.includes('--exchange=kis_overseas'), true);
+  assert.equal(jobs.find((job) => job.name === 'active_entry_trigger_evaluator_overseas')?.args?.includes('--derive-market-events'), true);
   assert.equal(jobs.some((job) => job.name === 'entry_llm_shadow'), true);
   assert.equal(jobs.find((job) => job.name === 'entry_llm_shadow')?.category, 'decision_shadow');
   assert.equal(jobs.find((job) => job.name === 'entry_llm_shadow')?.cadence?.seconds, 600);
@@ -294,6 +304,8 @@ export async function runLunaOpsSchedulerSmoke() {
   assert.equal(calls.includes('market_cycle_domestic'), false);
   assert.equal(calls.includes('market_cycle_domestic_open_catchup'), false);
   assert.equal(calls.includes('market_cycle_overseas'), false);
+  assert.equal(calls.includes('active_entry_trigger_evaluator_domestic'), false);
+  assert.equal(calls.includes('active_entry_trigger_evaluator_overseas'), false);
   const executedState = JSON.parse(fs.readFileSync(statePath, 'utf8'));
   assert.equal(Object.keys(executedState.jobs).length, 42);
 

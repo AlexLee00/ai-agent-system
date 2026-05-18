@@ -82,6 +82,10 @@ export async function ensureLunaPromotionEntryTriggerBridgeSchema() {
 function triggerPayloadFor(row = {}, options = {}) {
   const ttlMinutes = Math.max(30, n(options.ttlMinutes ?? process.env.LUNA_PROMOTION_ENTRY_TRIGGER_BRIDGE_TTL_MINUTES, 180));
   const latestTrigger = row.latestTrigger || {};
+  const confidence = n(row.avgConfidence ?? row.avg_confidence, 0);
+  const cycleCount = n(row.cycleCount ?? row.cycle_count, 0);
+  const passCount = n(row.passCount ?? row.pass_count, 0);
+  const consecutivePasses = n(row.consecutivePasses ?? row.consecutive_passes, 0);
   return {
     symbol: normalizeSymbol(row.symbol),
     market: normalizeMarket(row.market),
@@ -90,20 +94,29 @@ function triggerPayloadFor(row = {}, options = {}) {
     triggerType: 'mtf_alignment',
     proposedTriggerState: 'armed',
     waitingFor: 'explicit_master_live_promotion_approval',
-    confidence: n(row.avgConfidence ?? row.avg_confidence, 0),
+    confidence,
     predictiveScore: latestTrigger.predictiveScore == null ? null : n(latestTrigger.predictiveScore, null),
     expiresInMinutes: ttlMinutes,
     triggerContext: {
       phase: LUNA_PROMOTION_ENTRY_TRIGGER_BRIDGE_PHASE,
       source: 'paper_promotion_gate_shadow',
       bridgeShadowOnly: true,
+      hints: {
+        promotionReady: true,
+        promotionConfidence: confidence,
+        promotionCycleCount: cycleCount,
+        promotionPassCount: passCount,
+        promotionConsecutivePasses: consecutivePasses,
+        promotionObservedAt: row.observedAt || row.observed_at || null,
+        discoveryScore: Math.max(confidence, n(latestTrigger.discoveryScore, 0)),
+      },
       promotion: {
         decision: row.promotionDecision || row.decision || null,
         observedAt: row.observedAt || row.observed_at || null,
-        cycleCount: n(row.cycleCount ?? row.cycle_count, 0),
-        passCount: n(row.passCount ?? row.pass_count, 0),
-        consecutivePasses: n(row.consecutivePasses ?? row.consecutive_passes, 0),
-        avgConfidence: n(row.avgConfidence ?? row.avg_confidence, 0),
+        cycleCount,
+        passCount,
+        consecutivePasses,
+        avgConfidence: confidence,
       },
     },
     triggerMeta: {

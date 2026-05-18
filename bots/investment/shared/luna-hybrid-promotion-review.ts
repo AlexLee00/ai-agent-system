@@ -103,9 +103,9 @@ function buildRunbook(gateReport = {}, options = {}) {
     prePromotionReviewCommands: [
       reviewCommand(PHASE10_RUNTIME_COMMAND, '-- --json --strict', investmentRoot),
       reviewCommand(PHASE11_RUNTIME_COMMAND, '-- --json --strict', investmentRoot),
-      reviewCommand('runtime:luna-promotion-entry-trigger-coverage', '-- --json --dry-run --market=crypto --exchange=binance --hours=168', investmentRoot),
-      reviewCommand('runtime:luna-promotion-entry-trigger-bridge', '-- --json --dry-run --market=crypto --exchange=binance --hours=168', investmentRoot),
-      reviewCommand('runtime:luna-promotion-entry-trigger-materialize', '-- --json --dry-run --market=crypto --exchange=binance --hours=168', investmentRoot),
+      reviewCommand('runtime:luna-promotion-entry-trigger-coverage', '-- --json --dry-run --market=all --exchange=all --hours=168', investmentRoot),
+      reviewCommand('runtime:luna-promotion-entry-trigger-bridge', '-- --json --dry-run --market=all --exchange=all --hours=168', investmentRoot),
+      reviewCommand('runtime:luna-promotion-entry-trigger-materialize', '-- --json --dry-run --market=all --exchange=all --hours=168', investmentRoot),
       reviewCommand('runtime:luna-bottleneck-autonomy', '-- --json --no-fail', investmentRoot),
       reviewCommand('runtime:marketdata-realtime-connectivity', '-- --json --no-fail', investmentRoot),
     ],

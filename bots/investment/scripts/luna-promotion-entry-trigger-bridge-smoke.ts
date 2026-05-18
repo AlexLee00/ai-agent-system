@@ -77,6 +77,9 @@ assert.equal(plan.summary.entryTriggerDbMutation, false);
 assert.equal(plan.items[0].symbol, 'AIGENSYN/USDT');
 assert.equal(plan.items[0].bridgeStatus, 'shadow_bridge_pending_approval');
 assert.equal(plan.items[0].triggerPayload.waitingFor, 'explicit_master_live_promotion_approval');
+assert.equal(plan.items[0].triggerPayload.triggerContext.hints.promotionReady, true);
+assert.equal(plan.items[0].triggerPayload.triggerContext.hints.promotionPassCount, 4);
+assert.equal(plan.items[0].triggerPayload.triggerContext.hints.promotionConsecutivePasses, 4);
 assert.equal(plan.items[0].liveMutation, false);
 assert.equal(plan.items[0].entryTriggerDbMutation, false);
 
