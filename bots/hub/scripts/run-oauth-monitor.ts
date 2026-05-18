@@ -775,7 +775,7 @@ async function runGeminiCliLiveRefreshProbe() {
   }
   try {
     const probeModel = String(process.env.GEMINI_CLI_MONITOR_PROBE_MODEL || '').trim();
-    if (probeModel) process.env.LLM_GEMINI_FLASH_LITE_MODEL = probeModel;
+    if (probeModel) process.env.LLM_GEMINI_FLASH_MODEL = probeModel;
     const { callWithFallback } = await import('../lib/llm/unified-caller.ts');
     const started = Date.now();
     const result = await callWithFallback({

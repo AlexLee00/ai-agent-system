@@ -1409,6 +1409,35 @@ function _extractGeminiCliText(payload: any): string {
   return pieces.join('\n').trim();
 }
 
+function _classifyGeminiCliDiagnostic(stdout = '', stderr = ''): string {
+  const combined = `${stderr || ''}\n${stdout || ''}`;
+  if (/MODEL_CAPACITY_EXHAUSTED|No capacity available|RESOURCE_EXHAUSTED|rateLimitExceeded|status 429|\"code\"\s*:\s*429/i.test(combined)) {
+    return 'gemini_cli_model_capacity_exhausted';
+  }
+  if (/UNAUTHENTICATED|invalid authentication credentials|auth login|OAuth/i.test(combined)) {
+    return 'gemini_cli_auth_required';
+  }
+  return '';
+}
+
+function _parseGeminiCliJsonWithDiagnostics(stdout: string, stderr: string): any {
+  if (!String(stdout || '').trim()) {
+    throw new Error(_classifyGeminiCliDiagnostic(stdout, stderr) || 'Gemini CLI 빈 응답');
+  }
+  return _parseGeminiCliJson(stdout);
+}
+
+function _normalizeGeminiCliError(error: ExecFileErrorLike): ExecFileErrorLike {
+  const diagnostic = _classifyGeminiCliDiagnostic(error?.stdout || '', error?.stderr || '');
+  if (!diagnostic) return error;
+  const normalized = new Error(diagnostic) as ExecFileErrorLike;
+  normalized.code = error?.code;
+  normalized.signal = error?.signal;
+  normalized.stdout = error?.stdout;
+  normalized.stderr = error?.stderr;
+  return normalized;
+}
+
 async function _callGeminiCliOAuth({ model, systemPrompt, userPrompt, timeoutMs = 60000 }: ProviderCallOptions) {
   const command = String(process.env.GEMINI_CLI_BIN || 'gemini').trim() || 'gemini';
   const resolvedModel = _normalizeGeminiCliModel(model);
@@ -1436,7 +1465,7 @@ async function _callGeminiCliOAuth({ model, systemPrompt, userPrompt, timeoutMs 
       error.code = 'ETIMEDOUT';
       error.stdout = stdoutBuffer;
       error.stderr = stderrBuffer;
-      reject(error);
+      reject(_normalizeGeminiCliError(error as ExecFileErrorLike));
     }, effectiveTimeoutMs);
 
     child.stdout.on('data', (chunk: Buffer | string) => { stdoutBuffer += String(chunk || ''); });
@@ -1463,11 +1492,11 @@ async function _callGeminiCliOAuth({ model, systemPrompt, userPrompt, timeoutMs 
       error.signal = signal ?? undefined;
       error.stdout = stdoutBuffer;
       error.stderr = stderrBuffer;
-      reject(error);
+      reject(_normalizeGeminiCliError(error));
     });
   });
 
-  const payload = _parseGeminiCliJson(result.stdout);
+  const payload = _parseGeminiCliJsonWithDiagnostics(result.stdout, result.stderr);
   const text = _extractGeminiCliText(payload);
   if (!text) throw new Error('Gemini CLI OAuth 빈 응답');
   return {

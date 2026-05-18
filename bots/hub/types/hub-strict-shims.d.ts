@@ -25,6 +25,7 @@ declare module 'express' {
     use(...handlers: any[]): this;
     get(path: string, ...handlers: any[]): this;
     post(path: string, ...handlers: any[]): this;
+    patch(path: string, ...handlers: any[]): this;
     delete(path: string, ...handlers: any[]): this;
     listen(port: number, host: string, callback: () => void): any;
   }

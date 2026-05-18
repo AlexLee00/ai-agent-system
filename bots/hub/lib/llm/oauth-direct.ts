@@ -453,6 +453,31 @@ function extractGeminiCliText(payload) {
   return extractGeminiText(payload);
 }
 
+function classifyGeminiCliDiagnostic(stdout, stderr) {
+  const combined = `${stderr || ''}\n${stdout || ''}`;
+  if (/MODEL_CAPACITY_EXHAUSTED|No capacity available|RESOURCE_EXHAUSTED|rateLimitExceeded|status 429|\"code\"\\s*:\\s*429/i.test(combined)) {
+    return 'gemini_cli_model_capacity_exhausted';
+  }
+  if (/UNAUTHENTICATED|invalid authentication credentials|auth login|OAuth/i.test(combined)) {
+    return 'gemini_cli_auth_required';
+  }
+  return '';
+}
+
+function parseGeminiCliJsonWithDiagnostics(stdout, stderr) {
+  const raw = String(stdout || '').trim();
+  if (!raw) throw new Error(classifyGeminiCliDiagnostic(stdout, stderr) || 'gemini_cli_empty_stdout');
+  return parseGeminiCliJson(stdout);
+}
+
+function normalizeGeminiCliError(error) {
+  const diagnostic = classifyGeminiCliDiagnostic(error?.stdout, error?.stderr);
+  if (diagnostic) return diagnostic;
+  if (error?.code === 'ENOENT') return 'gemini_cli_unavailable';
+  if (error?.killed || error?.signal === 'SIGTERM') return 'gemini_cli_timeout';
+  return error?.message || String(error);
+}
+
 function normalizeGeminiCliUsage(payload) {
   const usage = payload?.usage || {};
   const stats = payload?.stats || {};
@@ -627,12 +652,12 @@ async function callGeminiCliOAuth(input) {
       buildGeminiCliPrompt(input),
     ];
     const timeout = Number(input?.timeoutMs || process.env.GEMINI_CLI_TIMEOUT_MS || 60_000);
-    const { stdout } = await execFileAsync(command, args, {
+    const { stdout, stderr } = await execFileAsync(command, args, {
       timeout: Number.isFinite(timeout) && timeout > 0 ? timeout : 60_000,
       maxBuffer: Number(process.env.GEMINI_CLI_MAX_BUFFER_BYTES || 4 * 1024 * 1024),
       env: process.env,
     });
-    const payload = parseGeminiCliJson(stdout);
+    const payload = parseGeminiCliJsonWithDiagnostics(stdout, stderr);
     const text = extractGeminiCliText(payload);
     if (!text) throw new Error('gemini_cli_oauth_empty_response');
     return {
@@ -648,11 +673,7 @@ async function callGeminiCliOAuth(input) {
       sessionId: payload?.session_id || payload?.sessionId || null,
     };
   } catch (error) {
-    const message = error?.code === 'ENOENT'
-      ? 'gemini_cli_unavailable'
-      : (error?.killed || error?.signal === 'SIGTERM'
-          ? 'gemini_cli_timeout'
-          : (error?.message || String(error)));
+    const message = normalizeGeminiCliError(error);
     return {
       ok: false,
       provider: 'failed',
