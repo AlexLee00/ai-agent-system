@@ -34,6 +34,7 @@
     "runtime:luna-candidate-quality-remediation": "node scripts/runtime-luna-candidate-quality-remediation.ts --json",
     "runtime:luna-paper-trading-shadow": "node scripts/runtime-luna-paper-trading-shadow.ts --json",
     "runtime:luna-paper-promotion-gate": "node scripts/runtime-luna-paper-promotion-gate.ts --json",
+    "runtime:luna-promotion-readiness": "node scripts/runtime-luna-promotion-readiness-assist-shadow.ts --json",
     "runtime:luna-promotion-readiness-assist": "node scripts/runtime-luna-promotion-readiness-assist-shadow.ts --json",
     "runtime:luna-promotion-entry-trigger-coverage": "node scripts/runtime-luna-promotion-entry-trigger-coverage.ts --json",
     "runtime:luna-promotion-entry-trigger-bridge": "node scripts/runtime-luna-promotion-entry-trigger-bridge.ts --json",

@@ -39,6 +39,31 @@ const negative = result.results.find((item) => item.symbol === 'NEG/USDT');
 assert.ok(negative?.wouldBlock, 'negative fixture should be a would-block result');
 assert.ok(negative?.reasons?.length > 0, 'would-block fixture should explain reasons');
 
+const cappedResult = await runCandidateBacktestRefresh({
+  json: true,
+  dryRun: true,
+  fixture: true,
+  periods: '30',
+  limit: 10,
+  maxSymbols: 1,
+});
+assert.equal(cappedResult.total, 1, 'maxSymbols should cap processed candidates');
+assert.equal(cappedResult.candidateBudget.truncatedByMaxSymbols, true, 'candidate budget should report symbol truncation');
+assert.equal(cappedResult.candidateBudget.selectedBeforeBudget, 2, 'candidate budget should expose pre-cap selection size');
+assert.equal(cappedResult.candidateBudget.selected, 1, 'candidate budget should expose capped selection size');
+
+const runtimeBudgetResult = await runCandidateBacktestRefresh({
+  json: true,
+  dryRun: true,
+  fixture: true,
+  periods: '30',
+  limit: 10,
+  maxRuntimeMs: 0,
+});
+assert.equal(runtimeBudgetResult.total, 0, 'zero runtime budget should skip processing before first candidate');
+assert.equal(runtimeBudgetResult.candidateBudget.budgetStopped, true, 'candidate budget should report runtime stop');
+assert.equal(runtimeBudgetResult.candidateBudget.skippedByRuntimeBudget, 2, 'candidate budget should count runtime-budget skipped candidates');
+
 const syntheticOhlcv = Array.from({ length: 80 }, (_, index) => {
   const close = 100 + index * 0.25 + Math.sin(index / 5) * 1.5;
   return [Date.now() - (80 - index) * 3600_000, close - 0.5, close + 0.8, close - 0.9, close, 1000 + index];
@@ -109,6 +134,10 @@ const payload = {
   periodFailureReasons: periodFailureQuality.reasons,
   lowSampleReasons: lowSampleQuality.reasons,
   vectorbtStrategyFamilies: ['rsi_macd_reversal', 'ema_trend_pullback', 'breakout_momentum', 'bollinger_mean_reversion'],
+  candidateBudget: {
+    maxSymbolsCapWorks: cappedResult.candidateBudget.selected === 1,
+    runtimeBudgetStopWorks: runtimeBudgetResult.candidateBudget.budgetStopped === true,
+  },
 };
 
 if (process.argv.includes('--json')) {

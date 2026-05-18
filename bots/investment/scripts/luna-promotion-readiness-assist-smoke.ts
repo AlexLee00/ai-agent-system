@@ -89,6 +89,52 @@ function fixturePromotionReadyGateReport() {
   };
 }
 
+function fixtureMixedPromotionReadyGateReport() {
+  return {
+    ok: true,
+    status: 'luna_paper_promotion_gate_shadow_ready',
+    summary: {
+      totalSymbols: 2,
+      promotionCandidates: 2,
+      nearReady: 0,
+      liveMutation: false,
+    },
+    readinessSummary: {
+      nearReady: 0,
+      nextPaperCycleTargets: [],
+      liveMutation: false,
+    },
+    items: [
+      {
+        symbol: '037460',
+        market: 'domestic',
+        exchange: 'kis',
+        decision: 'shadow_promotion_candidate_ready',
+        promotionCandidate: true,
+        cycleCount: 6,
+        passCount: 6,
+        consecutivePasses: 6,
+        avgConfidence: 0.68,
+        readinessScore: 1,
+        blockReasons: [],
+      },
+      {
+        symbol: 'MSFT',
+        market: 'overseas',
+        exchange: 'kis_overseas',
+        decision: 'shadow_promotion_candidate_ready',
+        promotionCandidate: true,
+        cycleCount: 6,
+        passCount: 6,
+        consecutivePasses: 6,
+        avgConfidence: 0.71,
+        readinessScore: 1,
+        blockReasons: [],
+      },
+    ],
+  };
+}
+
 export async function runLunaPromotionReadinessAssistSmoke() {
   const plan = buildLunaPromotionReadinessAssistPlan(fixtureGateReport(), {
     market: 'all',
@@ -136,6 +182,22 @@ export async function runLunaPromotionReadinessAssistSmoke() {
     true,
   );
   assert.equal(promotionPlan.plannedCommands.every((cmd) => !cmd.includes('launchctl') && !cmd.includes('live-fire') && !cmd.includes('rollback')), true);
+
+  const mixedPromotionPlan = buildLunaPromotionReadinessAssistPlan(fixtureMixedPromotionReadyGateReport(), {
+    market: 'all',
+    hours: 168,
+    limit: 50,
+    maxTargets: 4,
+  });
+  assert.deepEqual(mixedPromotionPlan.actionSummary.promotionReadySymbols, ['037460', 'MSFT']);
+  assert.equal(
+    mixedPromotionPlan.plannedCommands.some((cmd) => cmd.includes('runtime:luna-promotion-entry-trigger-bridge') && cmd.includes('--market=all') && cmd.includes('--exchange=all')),
+    true,
+  );
+  assert.equal(
+    mixedPromotionPlan.plannedCommands.some((cmd) => cmd.includes('runtime:luna-promotion-entry-trigger-materialize') && cmd.includes('--market=all') && cmd.includes('--exchange=all')),
+    true,
+  );
 
   await assert.rejects(
     () => runLunaPromotionReadinessAssistShadow({
@@ -189,8 +251,33 @@ export async function runLunaPromotionReadinessAssistSmoke() {
   });
   assert.equal(promotionApplied.executed.promotionEntryTriggerBridge.written, 1);
   assert.equal(bridgeCalls[0].symbols, 'AIGENSYN/USDT');
+  assert.equal(bridgeCalls[0].exchange, 'binance');
   assert.equal(bridgeCalls[0].confirm, 'luna-promotion-entry-trigger-bridge-shadow');
   assert.equal(promotionApplied.liveMutation, false);
+
+  const mixedBridgeCalls = [];
+  await runLunaPromotionReadinessAssistShadow({
+    json: true,
+    apply: true,
+    confirm: CONFIRM,
+    market: 'all',
+    limit: 50,
+    maxTargets: 4,
+  }, {
+    runGate: async () => fixtureMixedPromotionReadyGateReport(),
+    runPromotionBridge: async (options) => {
+      mixedBridgeCalls.push(options);
+      return {
+        ok: false,
+        status: 'luna_promotion_entry_trigger_bridge_pending_approval',
+        written: 2,
+        liveMutation: false,
+        entryTriggerDbMutation: false,
+      };
+    },
+  });
+  assert.equal(mixedBridgeCalls[0].exchange, 'all');
+  assert.equal(mixedBridgeCalls[0].symbols, '037460,MSFT');
 
   const calls = [];
   const applied = await runLunaPromotionReadinessAssistShadow({

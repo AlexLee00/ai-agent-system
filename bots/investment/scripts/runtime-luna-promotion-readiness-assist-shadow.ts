@@ -39,6 +39,18 @@ function marketArg(market) {
   return normalized === 'all' ? ' --market=all' : ` --market=${normalized}`;
 }
 
+function exchangeForMarket(market) {
+  const normalized = String(market || 'all').trim().toLowerCase() || 'all';
+  if (normalized === 'crypto') return 'binance';
+  if (normalized === 'domestic') return 'kis';
+  if (normalized === 'overseas') return 'kis_overseas';
+  return 'all';
+}
+
+function exchangeArgForMarket(market) {
+  return ` --exchange=${exchangeForMarket(market)}`;
+}
+
 function unique(values = []) {
   return [...new Set((values || []).map((value) => String(value || '').trim()).filter(Boolean))];
 }
@@ -185,14 +197,15 @@ export function buildLunaPromotionReadinessAssistPlan(gateReport = {}, options =
   const paperTradingSymbols = actionSymbolsForTargets(selectedTargets, 'paper_trading_shadow');
   const promotionGateSymbols = actionSymbolsForTargets(selectedTargets, 'paper_promotion_gate_shadow');
   const mArg = marketArg(options.market || 'all');
+  const eArg = exchangeArgForMarket(options.market || 'all');
   const limitArg = ` --limit=${Math.max(1, n(options.limit || 100, 100))}`;
   const hoursArg = ` --hours=${Math.max(1, n(options.hours || 168, 168))}`;
   const plannedCommands = [];
   if (actions.has('promotion_entry_trigger_bridge_shadow')) {
-    plannedCommands.push(`npm --prefix bots/investment run -s runtime:luna-promotion-entry-trigger-bridge -- --json --apply --confirm=${LUNA_PROMOTION_ENTRY_TRIGGER_BRIDGE_CONFIRM}${mArg} --exchange=binance${hoursArg}${limitArg}${symbolsOptionArg(promotionReadySymbols)}`);
+    plannedCommands.push(`npm --prefix bots/investment run -s runtime:luna-promotion-entry-trigger-bridge -- --json --apply --confirm=${LUNA_PROMOTION_ENTRY_TRIGGER_BRIDGE_CONFIRM}${mArg}${eArg}${hoursArg}${limitArg}${symbolsOptionArg(promotionReadySymbols)}`);
   }
   if (actions.has('promotion_entry_trigger_materialize_dry_run')) {
-    plannedCommands.push(`npm --prefix bots/investment run -s runtime:luna-promotion-entry-trigger-materialize -- --json --dry-run${mArg} --exchange=binance${hoursArg}${limitArg}${symbolsOptionArg(promotionReadySymbols)}`);
+    plannedCommands.push(`npm --prefix bots/investment run -s runtime:luna-promotion-entry-trigger-materialize -- --json --dry-run${mArg}${eArg}${hoursArg}${limitArg}${symbolsOptionArg(promotionReadySymbols)}`);
   }
   if (actions.has('candidate_backtest_refresh')) {
     plannedCommands.push(`npm --prefix bots/investment run -s runtime:luna-candidate-backtest-refresh -- --json --force${mArg}${limitArg}${symbolsOptionArg(backtestSymbols)}`);
@@ -260,6 +273,7 @@ export async function runLunaPromotionReadinessAssistShadow(options = {}, deps =
   const json = options.json === true;
   const confirm = String(options.confirm || '');
   const market = String(options.market || 'all').trim().toLowerCase() || 'all';
+  const exchange = exchangeForMarket(market);
   const hours = Math.max(1, n(options.hours || 168, 168));
   const limit = Math.max(1, n(options.limit || 100, 100));
   const maxTargets = Math.max(1, n(options.maxTargets || 8, 8));
@@ -310,14 +324,14 @@ export async function runLunaPromotionReadinessAssistShadow(options = {}, deps =
   if (apply && !dryRun && (plan.selectedTargets.length > 0 || (plan.promotionReadyTargets || []).length > 0)) {
     if (actions.has('promotion_entry_trigger_bridge_shadow')) {
       executed.promotionEntryTriggerBridge = deps.runPromotionBridge
-        ? await deps.runPromotionBridge({ json: true, apply: true, dryRun: false, confirm: LUNA_PROMOTION_ENTRY_TRIGGER_BRIDGE_CONFIRM, market, exchange: 'binance', hours, limit, symbols: promotionReadySymbols.join(',') })
+        ? await deps.runPromotionBridge({ json: true, apply: true, dryRun: false, confirm: LUNA_PROMOTION_ENTRY_TRIGGER_BRIDGE_CONFIRM, market, exchange, hours, limit, symbols: promotionReadySymbols.join(',') })
         : await withSuppressedStdout(json, () => runLunaPromotionEntryTriggerBridge({
           json: true,
           apply: true,
           dryRun: false,
           confirm: LUNA_PROMOTION_ENTRY_TRIGGER_BRIDGE_CONFIRM,
           market,
-          exchange: 'binance',
+          exchange,
           hours,
           limit,
           symbols: promotionReadySymbols.join(','),

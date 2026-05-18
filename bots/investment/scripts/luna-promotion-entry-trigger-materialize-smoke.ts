@@ -65,6 +65,19 @@ const bridgeRows = [
 ];
 
 const universe = buildFixtureBinanceTopVolumeUniverse({ limit: 30 });
+const domesticBridgeRow = {
+  id: 'bridge-domestic',
+  symbol: '037460',
+  market: 'domestic',
+  exchange: 'kis',
+  bridge_status: 'shadow_bridge_pending_approval',
+  promotion_confidence: 0.71,
+  trigger_type: 'mtf_alignment',
+  proposed_trigger_state: 'armed',
+  ttl_minutes: 180,
+  trigger_payload: { confidence: 0.71 },
+  coverage_snapshot: {},
+};
 
 function deps(overrides = {}) {
   const inserted = [];
@@ -107,6 +120,23 @@ assert.equal(dryRun.summary.materialized, 0);
 assert.equal(dryDeps.inserted.length, 0);
 assert.equal(dryDeps.marked.length, 0);
 assert.equal(dryRun.items.find((item) => item.symbol === 'PEPE/USDT').top30Blocker, 'outside_binance_top30_volume_universe');
+
+const domesticDryRun = await runLunaPromotionEntryTriggerMaterialize({
+  apply: false,
+  dryRun: true,
+  fixture: true,
+  market: 'domestic',
+  exchange: 'kis',
+  ttlMinutes: 180,
+}, deps({
+  bridgeRows: [domesticBridgeRow],
+  loadActiveEntryTrigger: async () => null,
+}));
+assert.equal(domesticDryRun.status, 'luna_promotion_entry_trigger_materialize_planned');
+assert.equal(domesticDryRun.summary.eligibleDryRun, 1);
+assert.equal(domesticDryRun.summary.blocked, 0);
+assert.equal(domesticDryRun.items[0].binanceTop30Applicable, false);
+assert.equal(domesticDryRun.items[0].top30Blocker, null);
 
 const blockedApply = await runLunaPromotionEntryTriggerMaterialize({
   apply: true,

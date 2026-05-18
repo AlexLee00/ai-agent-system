@@ -49,6 +49,31 @@ function normalizeSymbol(value = '') {
   return canonical || String(value || '').trim().toUpperCase();
 }
 
+function top30GateForBridgeRow(row = {}, universe = {}) {
+  const market = String(row.market || 'crypto').trim().toLowerCase();
+  const exchange = String(row.exchange || 'binance').trim().toLowerCase();
+  const symbol = normalizeSymbol(row.symbol);
+  if (market !== 'crypto' || exchange !== 'binance') {
+    return {
+      ok: true,
+      blocked: false,
+      applies: false,
+      reason: 'non_crypto_binance_top30_not_applicable',
+      code: 'non_crypto_binance_top30_not_applicable',
+      symbol,
+      canonicalSymbol: symbol,
+      rank: null,
+      limit: universe?.limit || 30,
+      source: universe?.source || 'binance_top30_not_applicable',
+      fetchedAt: universe?.fetchedAt || null,
+    };
+  }
+  return {
+    ...evaluateBinanceTopVolumeUniverseGate(symbol, universe),
+    applies: true,
+  };
+}
+
 function splitSymbols(value = '') {
   return [...new Set(String(value || '')
     .split(',')
@@ -297,7 +322,7 @@ export async function runLunaPromotionEntryTriggerMaterialize(options = parseArg
   for (const row of bridgeRows || []) {
     const symbol = normalizeSymbol(row.symbol);
     const exchange = String(row.exchange || options.exchange || 'binance').trim().toLowerCase();
-    const gate = evaluateBinanceTopVolumeUniverseGate(symbol, universe);
+    const gate = top30GateForBridgeRow({ ...row, symbol, exchange }, universe);
     const trigger = buildEntryTrigger({ ...row, symbol, exchange }, gate, { ...options, now });
     const item = {
       bridgeId: row.id || null,
@@ -310,6 +335,7 @@ export async function runLunaPromotionEntryTriggerMaterialize(options = parseArg
       predictiveScore: trigger.predictiveScore,
       expiresAt: trigger.expiresAt,
       binanceTop30Rank: gate.rank,
+      binanceTop30Applicable: gate.applies === true,
       inBinanceTop30Universe: gate.ok,
       top30Blocker: gate.blocked ? BINANCE_TOP_VOLUME_BLOCK_REASON : null,
       liveMutation: false,

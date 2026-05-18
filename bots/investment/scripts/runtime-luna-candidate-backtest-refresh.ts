@@ -49,6 +49,20 @@ function periodsFrom(value: any) {
     .filter((item) => Number.isFinite(item) && item > 0);
 }
 
+function optionalPositiveInt(value: any, fallback: number | null = null): number | null {
+  if (value == null || value === '') return fallback;
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed <= 0) return fallback;
+  return Math.floor(parsed);
+}
+
+function optionalNonNegativeInt(value: any, fallback: number | null = null): number | null {
+  if (value == null || value === '') return fallback;
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed < 0) return fallback;
+  return Math.floor(parsed);
+}
+
 function symbolsFrom(value: any): string[] {
   return String(value || '')
     .split(',')
@@ -584,11 +598,15 @@ export async function runCandidateBacktestRefresh(options: any = {}): Promise<an
   const dryRun = options.dryRun === true;
   const fixture = options.fixture === true;
   const json = options.json === true;
+  const progress = options.progress === true;
+  const startedAt = Date.now();
   const periods = periodsFrom(options.periods);
   const limit = Math.max(1, Number(options.limit || process.env.LUNA_CANDIDATE_BACKTEST_LIMIT || 100));
   const market = normalizeMarket(options.market || process.env.LUNA_CANDIDATE_BACKTEST_MARKET || 'all');
   const force = options.force === true || String(process.env.LUNA_CANDIDATE_BACKTEST_FORCE || '').toLowerCase() === 'true';
   const requestedSymbols = symbolsFrom(options.symbols || process.env.LUNA_CANDIDATE_BACKTEST_SYMBOLS || '');
+  const maxSymbols = optionalPositiveInt(options.maxSymbols ?? process.env.LUNA_CANDIDATE_BACKTEST_MAX_SYMBOLS, null);
+  const maxRuntimeMs = optionalNonNegativeInt(options.maxRuntimeMs ?? process.env.LUNA_CANDIDATE_BACKTEST_MAX_RUNTIME_MS, null);
   if (!dryRun) {
     await db.initSchema();
     await ensureCandidateBacktestSchema();
@@ -609,20 +627,39 @@ export async function runCandidateBacktestRefresh(options: any = {}): Promise<an
   const selectedCandidates = requestedSymbols.length
     ? candidates.filter((candidate) => requestedSymbols.includes(String(candidate.symbol || '').toUpperCase()))
     : candidates;
+  const budgetedCandidates = maxSymbols == null
+    ? selectedCandidates
+    : selectedCandidates.slice(0, maxSymbols);
 
-  if (!json) console.log(`[luna-backtest-refresh] 활성 후보 ${selectedCandidates.length}/${candidates.length}건 market=${market} (shadow=${SHADOW_MODE}, dryRun=${dryRun})`);
+  if (!json) console.log(`[luna-backtest-refresh] 활성 후보 ${budgetedCandidates.length}/${candidates.length}건 market=${market} (shadow=${SHADOW_MODE}, dryRun=${dryRun})`);
 
   const results = [];
-  for (const { symbol, market } of selectedCandidates) {
+  let budgetStopped = false;
+  let skippedByRuntimeBudget = 0;
+  const emitProgress = (message: string) => {
+    if (progress) console.error(`[luna-backtest-refresh] ${message}`);
+  };
+  for (let index = 0; index < budgetedCandidates.length; index += 1) {
+    const { symbol, market } = budgetedCandidates[index];
+    const elapsedMs = Date.now() - startedAt;
+    if (maxRuntimeMs != null && elapsedMs >= maxRuntimeMs) {
+      budgetStopped = true;
+      skippedByRuntimeBudget = budgetedCandidates.length - index;
+      emitProgress(`runtime-budget-stop processed=${results.length} skipped=${skippedByRuntimeBudget} elapsedMs=${elapsedMs} maxRuntimeMs=${maxRuntimeMs}`);
+      break;
+    }
+    emitProgress(`start ${index + 1}/${budgetedCandidates.length} symbol=${symbol} market=${market} elapsedMs=${elapsedMs}`);
     const top30Gate = evaluateTop30GateForCandidate({ symbol, market }, binanceTopVolumeUniverse);
     if (top30Gate.blocked) {
       results.push(await recordTop30BacktestBlock({ symbol, market }, top30Gate, dryRun));
+      emitProgress(`blocked-top30 symbol=${symbol} rank=${top30Gate.rank ?? 'n/a'}`);
       continue;
     }
     const result = await refreshCandidate(symbol, market, periods, { dryRun, fixture, force });
     result.binanceTop30Rank = top30Gate.rank;
     result.inBinanceTop30Universe = true;
     results.push(result);
+    emitProgress(`done symbol=${symbol} gate=${result.gateStatus} elapsedMs=${Date.now() - startedAt}`);
     if (!json) {
       const icon = result.skipped ? 'skip' : result.wouldBlock ? 'would-block' : 'pass';
       console.log(`[luna-backtest-refresh] ${icon} ${symbol} gate=${result.gateStatus}`);
@@ -646,6 +683,19 @@ export async function runCandidateBacktestRefresh(options: any = {}): Promise<an
     passed,
     wouldBlocked,
     skipped,
+    elapsedMs: Date.now() - startedAt,
+    candidateBudget: {
+      requested: requestedSymbols.length || null,
+      discovered: candidates.length,
+      selectedBeforeBudget: selectedCandidates.length,
+      selected: budgetedCandidates.length,
+      processed: results.length,
+      maxSymbols,
+      maxRuntimeMs,
+      truncatedByMaxSymbols: maxSymbols != null && selectedCandidates.length > budgetedCandidates.length,
+      budgetStopped,
+      skippedByRuntimeBudget,
+    },
     gateThresholds: GATE,
     results,
   };
@@ -670,9 +720,12 @@ if (isDirectExecution(import.meta.url)) {
       limit: Number(argValue('limit', process.env.LUNA_CANDIDATE_BACKTEST_LIMIT || 100)),
       market: argValue('market', process.env.LUNA_CANDIDATE_BACKTEST_MARKET || 'all'),
       symbols: argValue('symbols', process.env.LUNA_CANDIDATE_BACKTEST_SYMBOLS || ''),
+      maxSymbols: argValue('max-symbols', process.env.LUNA_CANDIDATE_BACKTEST_MAX_SYMBOLS || ''),
+      maxRuntimeMs: argValue('max-runtime-ms', process.env.LUNA_CANDIDATE_BACKTEST_MAX_RUNTIME_MS || ''),
       dryRun: hasFlag('dry-run'),
       fixture: hasFlag('fixture'),
       force: hasFlag('force'),
+      progress: hasFlag('progress'),
       json: hasFlag('json'),
     }),
     onSuccess: async (result) => {
