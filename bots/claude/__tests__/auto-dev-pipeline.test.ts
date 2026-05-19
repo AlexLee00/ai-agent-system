@@ -1405,6 +1405,8 @@ async function test_lock_heartbeat_sidecar_enforces_parent_liveness() {
   const sidecarScript = spawnedScripts.join('\n');
   assert.match(sidecarScript, /process\.ppid\s*!==\s*ownerPid/);
   assert.match(sidecarScript, /process\.kill\(pid,\s*0\)/);
+  assert.match(sidecarScript, /setInterval\(tick,\s*intervalMs\);/);
+  assert.doesNotMatch(sidecarScript, /setInterval\(tick,\s*intervalMs\)\.unref\(\)/);
 
   fs.rmSync(tmpRoot, { recursive: true, force: true });
   console.log('✅ auto-dev: lock heartbeat sidecar validates parent liveness');
@@ -1417,6 +1419,7 @@ async function test_dirty_base_blocks_when_within_write_scope() {
     'CODEX_DIRTY_SCOPE.md',
     withRequiredMetadata('# Dirty\nscope', { write_scope: ['bots/claude/**'] })
   );
+  let gitStatusOutput = ' M bots/claude/src/reviewer.ts\n';
 
   const { mocks } = makeMocks(tmpRoot, {
     child_process: {
@@ -1428,7 +1431,7 @@ async function test_dirty_base_blocks_when_within_write_scope() {
         return '';
       },
       execSync: (command) => {
-        if (String(command).includes('git status --short')) return ' M bots/claude/src/reviewer.ts\n';
+        if (String(command).includes('git status --short')) return gitStatusOutput;
         return '';
       },
     },
@@ -1446,6 +1449,18 @@ async function test_dirty_base_blocks_when_within_write_scope() {
     assert.strictEqual(result.skipped, true);
     assert.strictEqual(result.reason, 'blocked_dirty_worktree');
     assert.deepStrictEqual(result.job.baseDirtyBlocking, ['bots/claude/src/reviewer.ts']);
+
+    gitStatusOutput = ' M output/metty-trace-state.json\n';
+    const recovered = await pipeline.processAutoDevDocument(doc, {
+      force: true,
+      test: false,
+      dryRun: false,
+      executeImplementation: true,
+      maxRevisionPasses: 0,
+    });
+    assert.strictEqual(recovered.ok, true);
+    assert.deepStrictEqual(recovered.job.baseDirtyBlocking, []);
+    assert.deepStrictEqual(recovered.job.baseDirtyIgnored, ['output/metty-trace-state.json']);
   }, testEnv(tmpRoot, {
     CLAUDE_AUTO_DEV_PROFILE: 'autonomous_l5',
     CLAUDE_AUTO_DEV_EXECUTE_IMPLEMENTATION: 'true',

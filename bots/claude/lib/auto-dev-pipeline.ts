@@ -1073,7 +1073,7 @@ function startLockHeartbeat(lockHandle, intervalMs = DEFAULT_LOCK_HEARTBEAT_MS) 
         '    fs.writeFileSync(lockPath, JSON.stringify(parsed, null, 2), "utf8");',
         '  } catch (_) {}',
         '}',
-        'setInterval(tick, intervalMs).unref();',
+        'setInterval(tick, intervalMs);',
         'tick();',
       ].join('\n');
       if (nodeExecutable) {
@@ -2901,6 +2901,11 @@ async function processAutoDevDocument(filePath, options = {}) {
         worktreePath: executionContext.worktreePath,
         profile: executionContext.profile,
       },
+      reason: null,
+      baseStatus: executionContext.baseStatus || [],
+      baseDirty: executionContext.baseDirty || [],
+      baseDirtyBlocking: executionContext.baseDirtyBlocking || [],
+      baseDirtyIgnored: executionContext.baseDirtyIgnored || [],
       targetTeam: policy.targetTeam,
       writeScope: policy.writeScope,
       riskTier: policy.riskTier,
