@@ -379,19 +379,41 @@ function applyEntryTriggerEffectiveScores(candidate = {}, fireReadiness = {}) {
   };
 }
 
+function resolveActiveEntryTriggerPredictiveScore(trigger = {}, triggerQuality = null) {
+  const stored = finiteNumber(trigger.predictive_score ?? trigger.predictiveScore, null);
+  if (stored != null && stored > 0) return stored;
+  const qualityScore = finiteNumber(triggerQuality?.predictive?.score, null);
+  if (qualityScore != null && qualityScore > 0) return qualityScore;
+  return null;
+}
+
 export function buildEntryTriggerFireReadiness(candidate = {}, context = {}) {
   const hints = candidate?.triggerHints || {};
-  const mtfAgreement = Number(hints.mtfAgreement ?? context?.mtfAgreement ?? 0);
+  const rawMtfAgreement = hints.mtfAgreement ?? context?.mtfAgreement ?? null;
+  const mtfAgreementValue = finiteNumber(rawMtfAgreement, null);
+  const mtfAgreement = mtfAgreementValue == null ? 0 : mtfAgreementValue;
   const rawMtfAlignmentScore = hints.mtfAlignmentScore ?? hints.alignmentScore ?? context?.mtfAlignmentScore ?? null;
   const mtfAlignmentScore = rawMtfAlignmentScore == null ? null : Number(rawMtfAlignmentScore);
   const mtfDominantSignal = String(hints.mtfDominantSignal ?? hints.dominantSignal ?? context?.mtfDominantSignal ?? '').toUpperCase();
-  const mtfBullish = mtfDominantSignal
-    ? mtfDominantSignal === ACTIONS.BUY
-    : Number.isFinite(mtfAlignmentScore)
-      ? mtfAlignmentScore > 0
-      : true;
+  const technicalTelemetry = hints.technicalTelemetry || context?.technicalTelemetry || {};
+  const mtfTelemetryAvailable = technicalTelemetry.mtfAvailable === true
+    || (
+      technicalTelemetry.mtfAvailable !== false
+      && mtfAgreementValue != null
+    );
+  const mtfBullish = mtfTelemetryAvailable
+    ? mtfDominantSignal
+      ? mtfDominantSignal === ACTIONS.BUY
+      : Number.isFinite(mtfAlignmentScore)
+        ? mtfAlignmentScore > 0
+        : mtfAgreement > 0
+    : false;
   const discoveryScore = Number(hints.discoveryScore ?? context?.discoveryScore ?? 0);
-  const volumeBurst = Number(hints.volumeBurst ?? 0);
+  const rawVolumeBurst = hints.volumeBurst ?? context?.volumeBurst ?? null;
+  const volumeBurstValue = finiteNumber(rawVolumeBurst, null);
+  const volumeBurst = volumeBurstValue == null ? 0 : volumeBurstValue;
+  const volumeTelemetryAvailable = technicalTelemetry.volumeAvailable === true
+    || (technicalTelemetry.volumeAvailable !== false && volumeBurstValue != null);
   const breakoutRetest = hints.breakoutRetest === true;
   const newsMomentum = Number(hints.newsMomentum ?? 0);
   const confidence = Number(candidate?.confidence ?? context?.confidence ?? 0);
@@ -407,6 +429,12 @@ export function buildEntryTriggerFireReadiness(candidate = {}, context = {}) {
     mtfBullish,
     discoveryScore,
     volumeBurst,
+    technicalTelemetry: {
+      ...technicalTelemetry,
+      mtfAvailable: mtfTelemetryAvailable,
+      volumeAvailable: volumeTelemetryAvailable,
+      missing: hints.technicalTelemetryMissing === true || context?.technicalTelemetryMissing === true || !mtfTelemetryAvailable || !volumeTelemetryAvailable,
+    },
     breakoutRetest,
     newsMomentum,
     confidence,
@@ -1583,14 +1611,18 @@ export async function evaluateActiveEntryTriggersAgainstMarketEvents(events = []
         continue;
       }
     }
+    const predictiveScore = resolveActiveEntryTriggerPredictiveScore(trigger, triggerQuality);
     const candidate = {
       symbol: trigger.symbol,
       action: ACTIONS.BUY,
       confidence: Number(trigger.confidence || 0),
       setup_type: trigger.setup_type || null,
       triggerType: trigger.trigger_type || null,
-      predictiveScore: Number(trigger.predictive_score || 0) || null,
-      prediction: Number(trigger.predictive_score || 0) > 0 ? { score: Number(trigger.predictive_score || 0) } : undefined,
+      predictiveScore,
+      prediction: predictiveScore != null ? {
+        score: predictiveScore,
+        source: trigger.predictive_score != null ? 'entry_trigger' : 'active_quality_gate',
+      } : undefined,
       analystAccuracy: Number(trigger.confidence || 0),
       setupOutcome: trigger.trigger_context?.setupOutcome || trigger.trigger_meta?.setupOutcome || undefined,
       triggerHints: {

@@ -169,6 +169,14 @@ function listEnv(name, fallback = []) {
   return values.length > 0 ? values : fallback;
 }
 
+function entryTriggerMtfTimeframes(exchange = 'binance') {
+  const normalizedExchange = String(exchange || 'binance').trim().toLowerCase();
+  if (normalizedExchange === 'binance') {
+    return listEnv('LUNA_ENTRY_TRIGGER_DERIVE_MTF_TIMEFRAMES', ['1m', '5m', '15m']);
+  }
+  return listEnv('LUNA_ENTRY_TRIGGER_DERIVE_STOCK_MTF_TIMEFRAMES', ['15m', '1h', '1d']);
+}
+
 function average(values = []) {
   const nums = values.map(Number).filter(Number.isFinite);
   if (nums.length === 0) return null;
@@ -184,7 +192,8 @@ function entryTriggerMtfLookbackDays(timeframe = '1m') {
 }
 
 function analyzeEntryTriggerTimeframe(candles = []) {
-  const closes = (Array.isArray(candles) ? candles : [])
+  const rows = Array.isArray(candles) ? candles : [];
+  const closes = rows
     .map((row) => Number(row?.[4]))
     .filter((value) => Number.isFinite(value) && value > 0);
   if (closes.length < 8) return null;
@@ -192,6 +201,12 @@ function analyzeEntryTriggerTimeframe(candles = []) {
   const previous = closes[Math.max(0, closes.length - 4)];
   const fast = average(closes.slice(-5));
   const slow = average(closes.slice(-Math.min(20, closes.length)));
+  const volumes = rows
+    .map((row) => Number(row?.[5]))
+    .filter((value) => Number.isFinite(value) && value >= 0);
+  const recentVolume = volumes.length > 0 ? volumes[volumes.length - 1] : null;
+  const volumeBase = average(volumes.slice(-Math.min(20, volumes.length)));
+  const volumeBurst = recentVolume != null && volumeBase > 0 ? recentVolume / volumeBase : null;
   if (!(close > 0) || !(fast > 0) || !(slow > 0) || !(previous > 0)) return null;
 
   const recentChange = (close - previous) / previous;
@@ -208,6 +223,7 @@ function analyzeEntryTriggerTimeframe(candles = []) {
     slowSma: Number(slow.toFixed(8)),
     recentChange: Number(recentChange.toFixed(6)),
     maSpread: Number(maSpread.toFixed(6)),
+    volumeBurst: volumeBurst == null ? null : Number(volumeBurst.toFixed(4)),
   };
 }
 
@@ -226,6 +242,7 @@ function summarizeEntryTriggerMtf(frames = {}) {
   let total = 0;
   let bullish = 0;
   let bearish = 0;
+  const volumeBursts = [];
   for (const [tf, row] of rows) {
     const weight = Number(weights[tf] || 0.1);
     const score = row.signal === 'BUY' ? 1 : row.signal === 'SELL' ? -1 : 0;
@@ -233,6 +250,8 @@ function summarizeEntryTriggerMtf(frames = {}) {
     total += weight;
     if (score > 0) bullish += 1;
     if (score < 0) bearish += 1;
+    const volumeBurst = finiteNumber(row.volumeBurst, null);
+    if (volumeBurst != null) volumeBursts.push(volumeBurst);
   }
   const alignmentScore = total > 0 ? Math.max(-1, Math.min(1, weighted / total)) : 0;
   const dominantSignal = alignmentScore > 0.12 ? 'BUY' : alignmentScore < -0.12 ? 'SELL' : 'HOLD';
@@ -243,13 +262,13 @@ function summarizeEntryTriggerMtf(frames = {}) {
     mtfDominantSignal: dominantSignal,
     bullishFrames: bullish,
     bearishFrames: bearish,
+    volumeBurst: volumeBursts.length > 0 ? Number(Math.max(...volumeBursts).toFixed(4)) : null,
     frames,
   };
 }
 
 async function deriveFreshEntryTriggerMtf({ symbol, exchange = 'binance', ohlcvFetcher = getOHLCV } = {}) {
-  if (exchange !== 'binance') return null;
-  const timeframes = listEnv('LUNA_ENTRY_TRIGGER_DERIVE_MTF_TIMEFRAMES', ['1m', '5m', '15m']);
+  const timeframes = entryTriggerMtfTimeframes(exchange);
   const frames = {};
   for (const timeframe of timeframes) {
     const from = isoDaysAgo(entryTriggerMtfLookbackDays(timeframe));
@@ -257,7 +276,15 @@ async function deriveFreshEntryTriggerMtf({ symbol, exchange = 'binance', ohlcvF
     const analysis = analyzeEntryTriggerTimeframe(candles);
     if (analysis) frames[timeframe] = analysis;
   }
-  return summarizeEntryTriggerMtf(frames);
+  const summary = summarizeEntryTriggerMtf(frames);
+  return summary
+    ? {
+        ...summary,
+        source: 'ohlcv_mtf_refresh',
+        exchange: String(exchange || 'binance').trim().toLowerCase(),
+        timeframes: Object.keys(frames || {}),
+      }
+    : null;
 }
 
 function resolveEntryTriggerStrategyMetadata(trigger = {}) {
@@ -350,8 +377,10 @@ export async function deriveMarketEvents({ exchange = 'binance', limit = 100, oh
       const candles = await ohlcvFetcher(symbol, '1m', isoDaysAgo(1), null, exchange).catch(() => []);
       close = latestClose(candles);
     }
-    const storedMtfAgreement = Number(hints.mtfAgreement || 0);
-    const freshMtf = storedMtfAgreement > 0.05 || mtfEnriched >= mtfMaxSymbols
+    const storedMtfAgreement = finiteNumber(hints.mtfAgreement, null);
+    const storedMtfAlignmentScore = finiteNumber(hints.mtfAlignmentScore, null);
+    const storedMtfDominantSignal = hints.mtfDominantSignal || null;
+    const freshMtf = storedMtfAgreement != null && storedMtfAgreement > 0.05 || mtfEnriched >= mtfMaxSymbols
       ? null
       : await deriveFreshEntryTriggerMtf({ symbol, exchange, ohlcvFetcher }).catch(() => null);
     if (freshMtf) mtfEnriched += 1;
@@ -359,9 +388,19 @@ export async function deriveMarketEvents({ exchange = 'binance', limit = 100, oh
     const breakoutRetest = targetPrice > 0 && close != null
       ? close >= targetPrice
       : hints.breakoutRetest === true;
-    const mtfAgreement = Number(freshMtf?.mtfAgreement ?? storedMtfAgreement);
-    const mtfAlignmentScore = Number(freshMtf?.mtfAlignmentScore ?? hints.mtfAlignmentScore ?? 0);
-    const mtfDominantSignal = freshMtf?.mtfDominantSignal || hints.mtfDominantSignal || null;
+    const mtfAgreement = finiteNumber(freshMtf?.mtfAgreement, storedMtfAgreement);
+    const mtfAlignmentScore = finiteNumber(freshMtf?.mtfAlignmentScore, storedMtfAlignmentScore);
+    const mtfDominantSignal = freshMtf?.mtfDominantSignal || storedMtfDominantSignal || null;
+    const mtfTelemetryAvailable = mtfAgreement != null;
+    const volumeBurst = finiteNumber(freshMtf?.volumeBurst, finiteNumber(hints.volumeBurst, null));
+    const volumeTelemetryAvailable = volumeBurst != null;
+    const technicalTelemetry = {
+      mtfAvailable: mtfTelemetryAvailable,
+      volumeAvailable: volumeTelemetryAvailable,
+      source: freshMtf?.source || hints.technicalTelemetry?.source || null,
+      exchange: String(exchange || 'binance').trim().toLowerCase(),
+      timeframes: freshMtf?.timeframes || Object.keys(freshMtf?.frames || {}),
+    };
     events.push({
       symbol,
       price: close,
@@ -370,20 +409,26 @@ export async function deriveMarketEvents({ exchange = 'binance', limit = 100, oh
       mtfAlignmentScore,
       mtfDominantSignal,
       discoveryScore: Number(hints.discoveryScore || 0),
-      volumeBurst: Number(hints.volumeBurst || 0),
+      volumeBurst,
       breakoutRetest,
       newsMomentum: Number(hints.newsMomentum || 0),
+      technicalTelemetry,
       triggerHints: {
         ...hints,
         mtfAgreement,
         mtfAlignmentScore,
         mtfDominantSignal,
+        volumeBurst,
+        technicalTelemetry,
+        technicalTelemetryMissing: !mtfTelemetryAvailable || !volumeTelemetryAvailable,
         entryTriggerMtfRefresh: freshMtf
           ? {
-              source: 'ohlcv_mtf_refresh',
-              timeframes: Object.keys(freshMtf.frames || {}),
+              source: freshMtf.source || 'ohlcv_mtf_refresh',
+              exchange: freshMtf.exchange || String(exchange || 'binance').trim().toLowerCase(),
+              timeframes: freshMtf.timeframes || Object.keys(freshMtf.frames || {}),
               bullishFrames: freshMtf.bullishFrames,
               bearishFrames: freshMtf.bearishFrames,
+              volumeBurst: freshMtf.volumeBurst ?? null,
             }
           : undefined,
         breakoutRetest,

@@ -64,25 +64,28 @@ export async function runLunaEntryTriggerActiveWorkerSmoke() {
     const refreshSymbol = `REFRESH${Date.now().toString(36).toUpperCase()}/USDT`;
     const openSymbol = `OPENPOS${Date.now().toString(36).toUpperCase()}/USDT`;
     const mtfRefreshSymbol = `MTFREFRESH${Date.now().toString(36).toUpperCase()}/USDT`;
+    const kisMtfRefreshSymbol = `KISMTF${Date.now().toString(36).toUpperCase()}`;
     const bearishMtfSymbol = `BEARMTF${Date.now().toString(36).toUpperCase()}/USDT`;
     const weakPullbackSymbol = `WEAKPULL${Date.now().toString(36).toUpperCase()}/USDT`;
     const technicalProbePullbackSymbol = `TECHPULL${Date.now().toString(36).toUpperCase()}/USDT`;
-    const terminalLowConfSymbol = `TERMINALCONF${Date.now().toString(36).toUpperCase()}/USDT`;
-    const qualityBlockedSymbol = `QUALITYBLOCK${Date.now().toString(36).toUpperCase()}/USDT`;
-    const binanceTopVolumeUniverse = makeSmokeTop30Universe([
-      symbol,
-      pullbackSymbol,
-      refreshSymbol,
+      const terminalLowConfSymbol = `TERMINALCONF${Date.now().toString(36).toUpperCase()}/USDT`;
+      const qualityBlockedSymbol = `QUALITYBLOCK${Date.now().toString(36).toUpperCase()}/USDT`;
+      const qualityPredictiveFallbackSymbol = `QUALITYPRED${Date.now().toString(36).toUpperCase()}/USDT`;
+      const binanceTopVolumeUniverse = makeSmokeTop30Universe([
+        symbol,
+        pullbackSymbol,
+        refreshSymbol,
       openSymbol,
       mtfRefreshSymbol,
       bearishMtfSymbol,
       weakPullbackSymbol,
-      technicalProbePullbackSymbol,
-      terminalLowConfSymbol,
-      qualityBlockedSymbol,
-      'FAKE/USDT',
-      'RLUSD/USDT',
-    ]);
+        technicalProbePullbackSymbol,
+        terminalLowConfSymbol,
+        qualityBlockedSymbol,
+        qualityPredictiveFallbackSymbol,
+        'FAKE/USDT',
+        'RLUSD/USDT',
+      ]);
     let signalId = null;
     let openSignalId = null;
     let smokeOriginSignalId = null;
@@ -427,6 +430,34 @@ export async function runLunaEntryTriggerActiveWorkerSmoke() {
       assert.ok(Number(mtfRefreshEvent?.mtfAgreement || 0) > 0, 'fresh MTF agreement should be available when stored hints are empty');
       assert.equal(mtfRefreshEvent?.triggerHints?.entryTriggerMtfRefresh?.source, 'ohlcv_mtf_refresh');
 
+      const kisMtfRefreshTrigger = await insertEntryTrigger({
+        symbol: kisMtfRefreshSymbol,
+        exchange: 'kis',
+        setupType: 'breakout_confirmation',
+        triggerType: 'mtf_alignment',
+        triggerState: 'armed',
+        confidence: 0.74,
+        waitingFor: 'mtf_alignment',
+        triggerContext: {
+          hints: { discoveryScore: 0.68 },
+        },
+        expiresAt: new Date(Date.now() + 3600_000).toISOString(),
+      });
+      assert.ok(kisMtfRefreshTrigger?.id);
+      const kisDerivedEvents = await deriveMarketEvents({
+        exchange: 'kis',
+        limit: 50,
+        ohlcvFetcher: async (requestedSymbol) => {
+          if (requestedSymbol === kisMtfRefreshSymbol) return bullishCandles();
+          return [];
+        },
+      });
+      const kisMtfRefreshEvent = kisDerivedEvents.find((item) => item.symbol === kisMtfRefreshSymbol);
+      assert.equal(kisMtfRefreshEvent?.mtfDominantSignal, 'BUY', 'non-binance entry triggers should refresh missing MTF from OHLCV fallback');
+      assert.equal(kisMtfRefreshEvent?.technicalTelemetry?.mtfAvailable, true);
+      assert.equal(kisMtfRefreshEvent?.technicalTelemetry?.volumeAvailable, true);
+      assert.equal(kisMtfRefreshEvent?.triggerHints?.entryTriggerMtfRefresh?.exchange, 'kis');
+
       const bearishMtfTrigger = await insertEntryTrigger({
         symbol: bearishMtfSymbol,
         exchange: 'binance',
@@ -575,6 +606,62 @@ export async function runLunaEntryTriggerActiveWorkerSmoke() {
       assert.equal(qualityBlockedRow?.trigger_meta?.reason, 'active_entry_trigger_quality_terminal_blocked');
       assert.equal(qualityBlockedRow?.trigger_meta?.terminalBlock, true);
 
+      const qualityPredictiveFallbackTrigger = await insertEntryTrigger({
+        symbol: qualityPredictiveFallbackSymbol,
+        exchange: 'binance',
+        setupType: 'promotion_ready_shadow',
+        triggerType: 'mtf_alignment',
+        triggerState: 'armed',
+        confidence: 0.72,
+        waitingFor: 'mtf_alignment',
+        triggerContext: {
+          hints: {
+            discoveryScore: 0.72,
+            promotionReady: true,
+            promotionPassCount: 8,
+            promotionConsecutivePasses: 6,
+          },
+        },
+        expiresAt: new Date(Date.now() + 3600_000).toISOString(),
+      });
+      assert.ok(qualityPredictiveFallbackTrigger?.id);
+      const qualityPredictiveFallbackResult = await evaluateActiveEntryTriggersAgainstMarketEvents([
+        {
+          symbol: qualityPredictiveFallbackSymbol,
+          mtfAgreement: 0,
+          mtfAlignmentScore: 0,
+          discoveryScore: 0.72,
+        },
+      ], {
+        exchange: 'binance',
+        binanceTopVolumeUniverse,
+        activeQualityGateEnabled: true,
+        skipActiveQualityLoad: true,
+        activeQualityBySymbol: {
+          [qualityPredictiveFallbackSymbol]: {
+            backtest: {
+              fresh: true,
+              healthy: true,
+              sharpe: 1.1,
+              maxDrawdown: 12,
+              winRate: 55,
+              gateStatus: 'pass',
+              wouldBlock: false,
+              lastBacktestAt: new Date().toISOString(),
+            },
+            predictive: {
+              decision: 'fire',
+              score: 0.77,
+              threshold: 0.55,
+              componentCoverage: 1,
+              createdAt: new Date().toISOString(),
+            },
+          },
+        },
+      });
+      assert.equal(qualityPredictiveFallbackResult.results[0].fired, false, 'missing MTF should still wait');
+      assert.equal(qualityPredictiveFallbackResult.results[0].fireReadiness.predictiveScore, 0.77, 'fire readiness should reuse latest active quality predictive score when trigger score is missing');
+
       const workerRiskContext = await buildEntryTriggerWorkerRiskContext({
         exchange: 'binance',
         buyingPowerSnapshotBuilder: async () => capitalSnapshot,
@@ -706,11 +793,13 @@ export async function runLunaEntryTriggerActiveWorkerSmoke() {
       await db.run(`DELETE FROM entry_triggers WHERE symbol = $1`, [refreshSymbol]).catch(() => {});
       await db.run(`DELETE FROM entry_triggers WHERE symbol = $1`, [openSymbol]).catch(() => {});
       await db.run(`DELETE FROM entry_triggers WHERE symbol = $1`, [mtfRefreshSymbol]).catch(() => {});
+      await db.run(`DELETE FROM entry_triggers WHERE symbol = $1`, [kisMtfRefreshSymbol]).catch(() => {});
       await db.run(`DELETE FROM entry_triggers WHERE symbol = $1`, [bearishMtfSymbol]).catch(() => {});
       await db.run(`DELETE FROM entry_triggers WHERE symbol = $1`, [weakPullbackSymbol]).catch(() => {});
       await db.run(`DELETE FROM entry_triggers WHERE symbol = $1`, [technicalProbePullbackSymbol]).catch(() => {});
       await db.run(`DELETE FROM entry_triggers WHERE symbol = $1`, [terminalLowConfSymbol]).catch(() => {});
       await db.run(`DELETE FROM entry_triggers WHERE symbol = $1`, [qualityBlockedSymbol]).catch(() => {});
+      await db.run(`DELETE FROM entry_triggers WHERE symbol = $1`, [qualityPredictiveFallbackSymbol]).catch(() => {});
       await db.run(`DELETE FROM entry_triggers WHERE symbol LIKE 'STALEBLOCK%'`).catch(() => {});
       if (signalId) await db.run(`DELETE FROM signals WHERE id = $1`, [signalId]).catch(() => {});
       if (openSignalId) await db.run(`DELETE FROM signals WHERE id = $1`, [openSignalId]).catch(() => {});

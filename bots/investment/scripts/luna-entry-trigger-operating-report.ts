@@ -38,21 +38,54 @@ function addCount(map, key) {
   map[key] = Number(map[key] || 0) + 1;
 }
 
+function normalizeExchange(value = '') {
+  return String(value || '').trim().toLowerCase();
+}
+
+function selectExchangeScopedHeartbeat(readiness = {}, exchange = 'binance') {
+  const requestedExchange = normalizeExchange(exchange || 'binance');
+  const payload = readiness?.heartbeat?.payload || {};
+  const heartbeatExchange = normalizeExchange(payload.exchange || '');
+  const heartbeatResult = payload.result || {};
+  const matchesExchange = requestedExchange === 'all'
+    || (heartbeatExchange && heartbeatExchange === requestedExchange);
+  const ignoredReason = matchesExchange
+    ? null
+    : heartbeatExchange
+      ? `heartbeat_exchange_mismatch:${heartbeatExchange}`
+      : 'heartbeat_exchange_missing';
+  return {
+    payload,
+    result: matchesExchange ? heartbeatResult : {},
+    results: matchesExchange ? (heartbeatResult.results || []) : [],
+    heartbeatExchange: heartbeatExchange || null,
+    matchesExchange,
+    ignoredReason,
+  };
+}
+
 function readinessBlockers(item = {}) {
   const details = item.fireReadiness || {};
   const blockers = [];
   if (item.fired === true) return blockers;
   if (item.fireReason) blockers.push(String(item.fireReason));
-  if (details.mtfBullish === false) blockers.push('mtf_not_bullish');
-  if (details.mtfDominantSignal && String(details.mtfDominantSignal).toUpperCase() !== 'BUY') {
-    blockers.push('mtf_dominant_not_buy');
+  const telemetry = details.technicalTelemetry || {};
+  const mtfTelemetryMissing = telemetry.mtfAvailable === false || telemetry.missing === true;
+  const volumeTelemetryMissing = telemetry.volumeAvailable === false || telemetry.missing === true;
+  if (mtfTelemetryMissing) blockers.push('mtf_telemetry_missing');
+  else {
+    if (details.mtfBullish === false) blockers.push('mtf_not_bullish');
+    if (details.mtfDominantSignal && String(details.mtfDominantSignal).toUpperCase() !== 'BUY') {
+      blockers.push('mtf_dominant_not_buy');
+    }
   }
   const predictiveScore = finiteNumber(details.predictiveScore);
   if (predictiveScore != null && predictiveScore < 0.55) blockers.push('predictive_score_below_0_55');
   const mtfAgreement = finiteNumber(details.mtfAgreement);
-  if (mtfAgreement != null && mtfAgreement < 0.72) blockers.push('mtf_agreement_below_0_72');
+  if (!mtfTelemetryMissing && mtfAgreement != null && mtfAgreement < 0.72) blockers.push('mtf_agreement_below_0_72');
   const volumeBurst = finiteNumber(details.volumeBurst);
-  if (volumeBurst != null && volumeBurst < 1.1) blockers.push('volume_burst_below_1_1');
+  if (volumeTelemetryMissing) blockers.push('volume_telemetry_missing');
+  else if (volumeBurst != null && volumeBurst < 1.1) blockers.push('volume_burst_below_1_1');
   const technical = details.technicalConfirmation || {};
   if (technical.ok === false) {
     blockers.push('technical_confirmation_incomplete');
@@ -87,6 +120,7 @@ function summarizeReadinessResults(results = []) {
       mtfDominantSignal: details.mtfDominantSignal || null,
       mtfBullish: details.mtfBullish === true,
       volumeBurst: finiteNumber(details.volumeBurst),
+      technicalTelemetry: details.technicalTelemetry || null,
       breakoutRetest: details.breakoutRetest === true,
       newsMomentum: finiteNumber(details.newsMomentum),
       technicalConfirmation: details.technicalConfirmation || null,
@@ -139,8 +173,9 @@ export async function buildLunaEntryTriggerOperatingReport({ exchange = 'binance
     buildLunaEntryTriggerWorkerReadiness({ exchange, hours }),
     buildActiveQualityGateSummary({ exchange }),
   ]);
-  const heartbeatResult = readiness?.heartbeat?.payload?.result || {};
-  const readinessSummary = summarizeReadinessResults(heartbeatResult?.results || []);
+  const heartbeatScope = selectExchangeScopedHeartbeat(readiness, exchange);
+  const heartbeatResult = heartbeatScope.result || {};
+  const readinessSummary = summarizeReadinessResults(heartbeatScope.results || []);
   const workerMigrated = readiness?.status === 'entry_trigger_worker_migrated_to_luna_skill';
   const fired = Number(stats?.recentByState?.fired || 0);
   const waiting = Number(stats?.recentByState?.waiting || 0);
@@ -163,6 +198,9 @@ export async function buildLunaEntryTriggerOperatingReport({ exchange = 'binance
       armed,
       duplicateFiredScopeCount,
       heartbeatSource: workerMigrated ? 'retired_legacy_ignored' : 'worker_heartbeat',
+      heartbeatExchange: heartbeatScope.heartbeatExchange,
+      heartbeatMatchesExchange: heartbeatScope.matchesExchange,
+      heartbeatIgnoredReason: heartbeatScope.ignoredReason,
       heartbeatAgeMinutes: workerMigrated ? null : (readiness?.heartbeat?.ageMinutes ?? null),
       legacyHeartbeatAgeMinutes: workerMigrated ? (readiness?.heartbeat?.ageMinutes ?? null) : null,
       heartbeatMode: workerMigrated ? null : (heartbeatResult?.mode || null),
@@ -205,8 +243,8 @@ export function renderLunaEntryTriggerOperatingReport(report = {}) {
     `status: ${report.status || 'unknown'} / exchange=${report.exchange || 'n/a'} / ${report.hours || 24}h`,
     `active=${summary.activeCount ?? 'n/a'} / armed=${summary.armed ?? 'n/a'} / waiting=${summary.waiting ?? 'n/a'} / fired=${summary.fired ?? 'n/a'} / dup=${summary.duplicateFiredScopeCount ?? 'n/a'}`,
     summary.heartbeatSource === 'retired_legacy_ignored'
-      ? `heartbeat: retired legacy ignored / legacyAge=${summary.legacyHeartbeatAgeMinutes ?? 'n/a'}m`
-      : `heartbeat: ${summary.heartbeatAgeMinutes ?? 'n/a'}m / mode=${summary.heartbeatMode || 'n/a'} / live=${summary.heartbeatAllowLiveFire === true} / checked=${summary.heartbeatChecked ?? 'n/a'} / readyBlocked=${summary.heartbeatReadyBlocked ?? 'n/a'}`,
+      ? `heartbeat: retired legacy ignored / legacyAge=${summary.legacyHeartbeatAgeMinutes ?? 'n/a'}m / exchange=${summary.heartbeatExchange || 'n/a'} / matched=${summary.heartbeatMatchesExchange === true}${summary.heartbeatIgnoredReason ? ` / ignored=${summary.heartbeatIgnoredReason}` : ''}`
+      : `heartbeat: ${summary.heartbeatAgeMinutes ?? 'n/a'}m / exchange=${summary.heartbeatExchange || 'n/a'} / matched=${summary.heartbeatMatchesExchange === true} / mode=${summary.heartbeatMode || 'n/a'} / live=${summary.heartbeatAllowLiveFire === true} / checked=${summary.heartbeatChecked ?? 'n/a'} / readyBlocked=${summary.heartbeatReadyBlocked ?? 'n/a'}${summary.heartbeatIgnoredReason ? ` / ignored=${summary.heartbeatIgnoredReason}` : ''}`,
     `readiness: checked=${summary.readinessChecked ?? 0} / waiting=${summary.readinessWaiting ?? 0} / fired=${summary.readinessFired ?? 0}`,
     `waitReasons: ${Object.entries(summary.waitReasonCounts || {}).map(([key, count]) => `${key}:${count}`).join(', ') || 'none'}`,
     `activeQuality: checked=${summary.activeQualityChecked ?? 0} / blocked=${summary.activeQualityBlocked ?? 0} / pass=${summary.activeQualityPass ?? 0} / reasons=${Object.entries(summary.activeQualityBlockReasons || {}).map(([key, count]) => `${key}:${count}`).join(', ') || 'none'}`,
@@ -231,6 +269,43 @@ export async function publishLunaEntryTriggerOperatingReport(report = {}) {
 }
 
 export async function runLunaEntryTriggerOperatingReportSmoke() {
+  const scopedMismatch = selectExchangeScopedHeartbeat({
+    heartbeat: {
+      payload: {
+        exchange: 'kis',
+        result: { checked: 1, results: [{ symbol: '005930', fireReadiness: { mtfAgreement: 0 } }] },
+      },
+    },
+  }, 'binance');
+  assert.equal(scopedMismatch.matchesExchange, false);
+  assert.equal(scopedMismatch.results.length, 0);
+  assert.equal(scopedMismatch.ignoredReason, 'heartbeat_exchange_mismatch:kis');
+  const scopedMatch = selectExchangeScopedHeartbeat({
+    heartbeat: {
+      payload: {
+        exchange: 'binance',
+        result: { checked: 1, results: [{ symbol: 'BTC/USDT', fireReadiness: { mtfAgreement: 0.9 } }] },
+      },
+    },
+  }, 'binance');
+  assert.equal(scopedMatch.matchesExchange, true);
+  assert.equal(scopedMatch.results.length, 1);
+  const telemetryMissing = summarizeReadinessResults([
+    {
+      fired: false,
+      fireReason: 'fire_condition_unmet',
+      fireReadiness: {
+        mtfBullish: false,
+        mtfAgreement: 0,
+        volumeBurst: 0,
+        technicalTelemetry: { mtfAvailable: false, volumeAvailable: false, missing: true },
+      },
+    },
+  ]);
+  assert.equal(telemetryMissing.waitReasonCounts.mtf_telemetry_missing, 1);
+  assert.equal(telemetryMissing.waitReasonCounts.volume_telemetry_missing, 1);
+  assert.equal(telemetryMissing.waitReasonCounts.mtf_not_bullish, undefined);
+  assert.equal(telemetryMissing.waitReasonCounts.mtf_agreement_below_0_72, undefined);
   const report = await buildLunaEntryTriggerOperatingReport({ exchange: 'binance', hours: 24 });
   assert.ok(report.checkedAt);
   assert.ok(report.summary);
