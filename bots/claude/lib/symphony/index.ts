@@ -7,4 +7,6 @@ module.exports = {
   ...require('./runner-adapter.ts'),
   ...require('./validation-adapter.ts'),
   ...require('./state-store.ts'),
+  ...require('./team-dispatcher.ts'),
+  ...require('./orchestrator.ts'),
 };

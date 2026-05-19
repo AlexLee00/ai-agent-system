@@ -7,7 +7,10 @@
   "capabilities": {
     "streaming": true,
     "pushNotifications": true,
-    "stateTransitionHistory": true
+    "stateTransitionHistory": true,
+    "orchestration": true,
+    "dispatch": true,
+    "learning": true
   },
   "defaultInputModes": ["application/json"],
   "defaultOutputModes": ["application/json"],
@@ -49,6 +52,70 @@
       "name": "비용 체크",
       "description": "LLM API·인프라 비용 현황 및 BillingGuard 임계값 대비 상태",
       "tags": ["ops", "billing", "cost", "a2a"],
+      "inputModes": ["application/json"],
+      "outputModes": ["application/json"]
+    },
+    {
+      "id": "dispatch-ticket",
+      "name": "Symphony 티켓 디스패치",
+      "description": "ticket 입력을 팀·agent·Hub task payload로 라우팅",
+      "tags": ["symphony", "orchestration", "dispatch", "a2a"],
+      "inputModes": ["application/json"],
+      "outputModes": ["application/json"]
+    },
+    {
+      "id": "poll-tasks",
+      "name": "Symphony 태스크 폴링",
+      "description": "Hub /hub/tasks 큐를 읽고 처리 후보 반환",
+      "tags": ["symphony", "hub", "polling", "a2a"],
+      "inputModes": ["application/json"],
+      "outputModes": ["application/json"]
+    },
+    {
+      "id": "assign-agent",
+      "name": "Symphony Agent 할당",
+      "description": "태스크별 담당 agent와 격리 workspace 계획 생성",
+      "tags": ["symphony", "agent", "workspace", "a2a"],
+      "inputModes": ["application/json"],
+      "outputModes": ["application/json"]
+    },
+    {
+      "id": "report-status",
+      "name": "Symphony 상태 보고",
+      "description": "상태 전환 검증 및 Hub/GitHub 동기화 payload 생성",
+      "tags": ["symphony", "status", "github", "a2a"],
+      "inputModes": ["application/json"],
+      "outputModes": ["application/json"]
+    },
+    {
+      "id": "sync-github",
+      "name": "Symphony GitHub 동기화",
+      "description": "GitHub Issue/Webhook payload를 Symphony task로 정규화",
+      "tags": ["symphony", "github", "webhook", "a2a"],
+      "inputModes": ["application/json"],
+      "outputModes": ["application/json"]
+    },
+    {
+      "id": "hermes-learn",
+      "name": "Hermes 4-Stage 학습",
+      "description": "운영 evidence를 pattern/skill 후보로 변환하는 loopback 계획 생성",
+      "tags": ["symphony", "hermes", "learning", "a2a"],
+      "inputModes": ["application/json"],
+      "outputModes": ["application/json"]
+    },
+    {
+      "id": "self-heal",
+      "name": "Symphony Self Heal",
+      "description": "Doctor L1/L2/L3 복구 계획과 실행 게이트 반환",
+      "tags": ["symphony", "doctor", "self-heal", "a2a"],
+      "inputModes": ["application/json"],
+      "outputModes": ["application/json"]
+    },
+    {
+      "id": "quality-gate",
+      "name": "Symphony Quality Gate",
+      "description": "Reviewer/Guardian/Builder/Test 결과를 promotion gate로 판정",
+      "tags": ["symphony", "quality", "promotion", "a2a"],
       "inputModes": ["application/json"],
       "outputModes": ["application/json"]
     }

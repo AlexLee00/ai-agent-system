@@ -13,6 +13,7 @@ import { registerErrorDiagnosisSkill } from './skills/error-diagnosis.ts';
 import { registerDoctorHealSkill } from './skills/doctor-heal.ts';
 import { registerSystemMonitorSkill } from './skills/system-monitor.ts';
 import { registerBillingCheckSkill } from './skills/billing-check.ts';
+import { registerSymphonyA2ASkills } from './skills/index.ts';
 
 const _require = createRequire(import.meta.url);
 const express = _require('express');
@@ -30,6 +31,7 @@ registerErrorDiagnosisSkill();
 registerDoctorHealSkill();
 registerSystemMonitorSkill();
 registerBillingCheckSkill();
+registerSymphonyA2ASkills();
 
 const _streams: Map<string, any[]> = new Map();
 
