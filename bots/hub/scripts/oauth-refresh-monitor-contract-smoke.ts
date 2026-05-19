@@ -8,6 +8,9 @@ const path = require('node:path');
 const repoRoot = path.resolve(__dirname, '..', '..', '..');
 const monitorSource = fs.readFileSync(path.join(repoRoot, 'bots/hub/scripts/run-oauth-monitor.ts'), 'utf8');
 const readinessSource = fs.readFileSync(path.join(repoRoot, 'bots/hub/scripts/team-oauth-readiness-report.ts'), 'utf8');
+const {
+  buildOAuthMonitorAlarmEnvelope,
+} = require('../lib/oauth/monitor-alarm-policy.ts');
 
 for (const provider of [
   'claude-code-cli',
@@ -57,6 +60,26 @@ assert.ok(monitorSource.includes('isRetiredGeminiOAuthAlarm'), 'retired gemini-o
 assert.ok(monitorSource.includes('normalizedPayload'), 'OAuth alarm suppression must use normalizedPayload to avoid provider alias divergence');
 assert.ok(monitorSource.includes('HUB_OAUTH_MONITOR_REAUTH_ALARM_COOLDOWN_MINUTES'), 'healthy reauth alarms must use a longer dedicated cooldown');
 assert.ok(monitorSource.includes('refresh_config_missing'), 'OpenAI Codex OAuth alarms must expose missing refresh configuration');
+assert.ok(monitorSource.includes('buildOAuthMonitorAlarmEnvelope'), 'OAuth monitor must build an explicit Hub alarm envelope');
+assert.ok(monitorSource.includes('incidentKey: envelope.incidentKey'), 'OAuth monitor must pass a stable incidentKey to postAlarm');
+assert.ok(monitorSource.includes('eventType: envelope.eventType'), 'OAuth monitor must pass explicit eventType to postAlarm');
+assert.ok(monitorSource.includes('dedupeMinutes: envelope.dedupeMinutes'), 'OAuth monitor must propagate producer cooldown to Hub dedupe');
+assert.ok(monitorSource.includes('actionability: envelope.actionability'), 'OAuth monitor must preserve auto-repair actionability');
+const geminiRefreshEnvelope = buildOAuthMonitorAlarmEnvelope({
+  level: 3,
+  title: '[Hub OAuth] Gemini CLI OAuth 재인증/자동갱신 확인 필요',
+  payload: { provider: 'gemini-cli-oauth' },
+  cooldownMs: 120 * 60 * 1000,
+});
+assert.equal(
+  geminiRefreshEnvelope.incidentKey,
+  'hub:hub-oauth-monitor:hub-oauth-monitor_error:f691f557b002',
+  'Gemini CLI OAuth refresh incident key must stay compatible with existing unresolved incident',
+);
+assert.equal(geminiRefreshEnvelope.eventType, 'hub-oauth-monitor_error', 'error envelope eventType mismatch');
+assert.equal(geminiRefreshEnvelope.visibility, 'internal', 'error envelope visibility mismatch');
+assert.equal(geminiRefreshEnvelope.actionability, 'auto_repair', 'error envelope actionability mismatch');
+assert.equal(geminiRefreshEnvelope.dedupeMinutes, 120, 'producer cooldown must be propagated as dedupeMinutes');
 const oauthFlowSource = fs.readFileSync(path.join(repoRoot, 'bots/hub/lib/oauth/oauth-flow.ts'), 'utf8');
 assert.ok(oauthFlowSource.includes('app_EMoamEEZ73f0CkXaXp7hrann'), 'OpenAI Codex OAuth refresh must use the public Codex-compatible client id by default');
 assert.ok(oauthFlowSource.includes('refreshIncludesScope: false'), 'OpenAI Codex OAuth refresh must match Codex-compatible refresh grant and omit scope');

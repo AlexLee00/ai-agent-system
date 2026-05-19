@@ -15,6 +15,10 @@ const { parseNaverBlogUrl } = require('../../../packages/core/lib/naver-blog-url
 const { getBlogCommenterConfig, getBlogNeighborCommenterConfig } = require('./runtime-config.ts');
 const { loadStrategyBundle, resolveExecutionTarget } = require('./strategy-loader.ts');
 const { writeBlogEvalCase } = require('./eval-case-telemetry.ts');
+const {
+  appendIncidentLine,
+  canonicalizeBlogCriticalAlert,
+} = require('./critical-alerts.js');
 
 const TABLE = 'blog.comments';
 const ACTION_TABLE = 'blog.comment_actions';
@@ -5611,12 +5615,21 @@ function _checkOpsAndWindow(config, { testMode = false, enabledForceEnv = '' } =
 
 async function _postCommenterAlarm({ fromBot, alertLevel, message, shouldSend }) {
   if (!shouldSend) return;
+  const alarmType = alertLevel >= 3 ? 'error' : 'work';
+  const eventType = `${fromBot}_${alarmType}`;
+  const incidentState = canonicalizeBlogCriticalAlert({
+    event_type: eventType,
+    alert_level: alertLevel,
+    message,
+  });
+  if (incidentState.suppress) return;
   await postAlarm({
     team: 'blog',
     fromBot,
     alertLevel,
-    message,
-    alarmType: alertLevel >= 3 ? 'error' : 'work',
+    message: appendIncidentLine(message, incidentState.signature, incidentState.incident),
+    alarmType,
+    eventType,
   }).catch(() => {});
 }
 

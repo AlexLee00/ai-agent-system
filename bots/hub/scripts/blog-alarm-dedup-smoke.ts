@@ -66,6 +66,7 @@ function classifyReason(message: string): string {
   if (/미로드/i.test(compact)) return 'launchd_unloaded';
   if (/pid 없음|다운/i.test(compact)) return 'service_down';
   if (/발행 대기|미발행|ready 상태|naver.*publish/i.test(compact)) return 'naver_publish_pending';
+  if (/이웃\s*댓글.*실패\s*[1-9]\d*건|blog-neighbor-commenter/i.test(compact)) return 'neighbor_commenter_failures';
   return 'other';
 }
 
@@ -170,6 +171,46 @@ async function main() {
     ALERT_DEDUPE_PATH.endsWith('blog-alert-dedupe.json'),
     `ALERT_DEDUPE_PATH must end with blog-alert-dedupe.json. got: ${ALERT_DEDUPE_PATH}`,
   );
+
+  // ── 9. Hub smoke는 blog 런타임(commenter.ts)을 직접 로드하면 안 된다 ──
+  // Hub 경계 smoke는 lightweight helper만 검증한다. Puppeteer/DB 의존 런타임 import는 auto_dev에서 실패한다.
+  const fs = require('fs');
+  const source = fs.readFileSync(__filename, 'utf8');
+  const forbiddenRelativeImport = ['..', '..', 'blog', 'lib', 'commenter.ts'].join('/');
+  const forbiddenRuntimePath = ['blog', 'lib', 'commenter.ts'].join('/');
+  assert(!source.includes(forbiddenRelativeImport), `Hub smoke must not import blog runtime module: ${forbiddenRelativeImport}`);
+  assert(!source.includes(`require('${forbiddenRuntimePath}`), `Hub smoke must not require blog runtime module: ${forbiddenRuntimePath}`);
+
+  // ── 10. neighbor-commenter 실패 알람은 canonical reason과 안정 cluster로 묶여야 한다 ──
+  const neighborMsg1 = '이웃 댓글 0건 완료, 댓글 공감 0건 완료, 실패 2건, 스킵 1건 (오늘 댓글 총 5/20, 댓글공감 총 5)';
+  const neighborMsg2 = '이웃 댓글 0건 완료, 댓글 공감 0건 완료, 실패 3건, 스킵 2건 (오늘 댓글 총 6/20, 댓글공감 총 6)';
+  assert(classifyReason(neighborMsg1) === 'neighbor_commenter_failures', 'neighbor commenter failure reason broken');
+  assert(
+    classifyBlogCriticalReason(neighborMsg1) === 'neighbor_commenter_failures',
+    `blog critical-alerts neighbor reason mismatch: ${classifyBlogCriticalReason(neighborMsg1)}`,
+  );
+  assert(
+    REASON_DEDUP_WINDOWS?.neighbor_commenter_failures === 4 * 60 * 60 * 1000,
+    `critical-alerts neighbor_commenter_failures dedup window must be 4h, got: ${REASON_DEDUP_WINDOWS?.neighbor_commenter_failures}`,
+  );
+  const neighborCluster1 = buildAlarmClusterKey({
+    team: 'blog',
+    fromBot: 'blog-neighbor-commenter',
+    eventType: 'blog-neighbor-commenter_error',
+    title: 'blog alarm',
+    message: neighborMsg1,
+    payload: { event_type: 'blog-neighbor-commenter_error' },
+  });
+  const neighborCluster2 = buildAlarmClusterKey({
+    team: 'blog',
+    fromBot: 'blog-neighbor-commenter',
+    eventType: 'blog-neighbor-commenter_error',
+    title: 'blog alarm',
+    message: neighborMsg2,
+    payload: { event_type: 'blog-neighbor-commenter_error' },
+  });
+  assert(neighborCluster1.includes('blog_neighbor_commenter'), `neighbor cluster family missing: ${neighborCluster1}`);
+  assert(neighborCluster1 === neighborCluster2, `neighbor cluster key must be stable. got:\n  ${neighborCluster1}\n  ${neighborCluster2}`);
 
   console.log('blog_alarm_dedup_smoke_ok');
 }

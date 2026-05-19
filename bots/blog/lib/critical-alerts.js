@@ -17,10 +17,12 @@ const ALERT_DEDUPE_WINDOW_MS = 15 * 60 * 1000;
 // 지속성 상태(데이터 이슈, 코드 자동 수정 불가)는 더 긴 창으로 알람 폭주 방지.
 const REASON_DEDUP_WINDOWS = {
   naver_publish_pending: 4 * 60 * 60 * 1000,
+  neighbor_commenter_failures: 4 * 60 * 60 * 1000,
 };
 const CANONICAL_EVENT_TYPES = new Set([
   'blog_health_check',
   'blog-health_error',
+  'blog-neighbor-commenter_error',
   'alert',
   'system_error',
   'health_check',
@@ -34,6 +36,7 @@ function classifyReason(message) {
   if (/미로드/i.test(compact)) return 'launchd_unloaded';
   if (/pid 없음|다운/i.test(compact)) return 'service_down';
   if (/발행 대기|미발행|ready 상태|naver.*publish/i.test(compact)) return 'naver_publish_pending';
+  if (/이웃\s*댓글.*실패\s*[1-9]\d*건|blog-neighbor-commenter/i.test(compact)) return 'neighbor_commenter_failures';
   const reasonMatch = compact.match(/(?:사유|reason):\s*(.+)$/i);
   const reason = reasonMatch ? reasonMatch[1].trim() : compact;
   return reason

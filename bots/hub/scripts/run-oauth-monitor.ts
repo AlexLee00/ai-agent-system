@@ -4,6 +4,7 @@ import os from 'os';
 import path from 'path';
 import { spawnSync } from 'child_process';
 import { checkTokenHealth, checkOpenAIOAuthHealth, checkGroqAccounts } from '../lib/llm/oauth-monitor.js';
+import { buildOAuthMonitorAlarmEnvelope } from '../lib/oauth/monitor-alarm-policy.ts';
 const {
   readOpenAiCodexLocalCredentials,
   readClaudeCodeLocalCredentials,
@@ -597,10 +598,22 @@ async function sendOAuthAlarm({ level, title, message, payload }: any) {
   if (shouldSuppressOAuthAlarm({ level, title, payload, normalizedPayload })) {
     return { ok: false, skipped: true, reason: 'cooldown' };
   }
+  const envelope = buildOAuthMonitorAlarmEnvelope({
+    level,
+    title,
+    payload: normalizedPayload,
+    cooldownMs: oauthAlarmCooldownMs(Number(level || 2), { title, payload: normalizedPayload }),
+  });
   return postAlarm({
-    team: normalizedPayload?.provider === 'claude-code-oauth' ? 'claude' : 'hub',
-    fromBot: 'hub-oauth-monitor',
+    team: envelope.team,
+    fromBot: envelope.fromBot,
     alertLevel: level,
+    alarmType: envelope.alarmType,
+    visibility: envelope.visibility,
+    actionability: envelope.actionability,
+    eventType: envelope.eventType,
+    incidentKey: envelope.incidentKey,
+    dedupeMinutes: envelope.dedupeMinutes,
     message: `${title}\n${message}`,
     payload: normalizedPayload,
   });

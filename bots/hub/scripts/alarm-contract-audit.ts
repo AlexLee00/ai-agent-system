@@ -66,7 +66,8 @@ function findPostAlarmFiles() {
 function isAuditTarget(file) {
   if (IGNORE_FILES.has(file)) return false;
   if (/(^|\/)(__tests__|docs|context)\//.test(file)) return false;
-  if (/(\.md|\.markdown)$/.test(file)) return false;
+  if (/(\.md|\.markdown|\.log)$/.test(file)) return false;
+  if (/(^|\/)(logs|output)\//.test(file)) return false;
   if (/(smoke|test|fixture)\.(t|j)s$/.test(file)) return false;
   return true;
 }

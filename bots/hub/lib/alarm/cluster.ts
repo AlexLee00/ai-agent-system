@@ -45,6 +45,7 @@ function classifyClusterFamily(corpus: string): string {
   if (/queue|claim|lease|stale|preparing/.test(corpus)) return 'queue_lifecycle';
   if (/openclaw|legacy[_\s-]?gateway|18789/.test(corpus)) return 'retired_gateway_regression';
   if (/발행 대기|미발행|naver[_\s-]?publish|네이버 발행|blog[_\s-]?publish|ready 상태/.test(corpus)) return 'blog_publish';
+  if (/blog-neighbor-commenter|neighbor[_\s-]?commenter|이웃\s*댓글|댓글\s*공감/.test(corpus)) return 'blog_neighbor_commenter';
   return 'generic';
 }
 
@@ -82,4 +83,3 @@ export function buildAlarmClusterKey({
 module.exports = {
   buildAlarmClusterKey,
 };
-
