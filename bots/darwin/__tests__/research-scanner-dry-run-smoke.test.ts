@@ -107,6 +107,16 @@ async function main() {
   try {
     delete require.cache[scannerPath];
     const scanner = require(scannerPath);
+    const weeklyMeta = scanner._testOnly_weeklyResearchAlarmMeta('weekly_research_report');
+    assert.strictEqual(weeklyMeta.alarmType, 'report');
+    assert.strictEqual(weeklyMeta.visibility, 'notify');
+    assert.strictEqual(weeklyMeta.actionability, 'none');
+    assert.strictEqual(weeklyMeta.eventType, 'darwin_weekly_research_report');
+    assert.ok(
+      String(weeklyMeta.incidentKey || '').startsWith('darwin:research-scanner:weekly_research_report:'),
+      `unexpected weekly incident key: ${weeklyMeta.incidentKey}`,
+    );
+
     const result = await scanner.run({ dryRun: true, maxEvaluations: 2 });
 
     assert.strictEqual(result.dryRun, true);

@@ -803,6 +803,7 @@ async function run(options: RunOptions = {}): Promise<ScanResult> {
 module.exports = {
   run,
   _selectSearchers,
+  _testOnly_weeklyResearchAlarmMeta: _weeklyResearchAlarmMeta,
 };
 
 if (require.main === module) {

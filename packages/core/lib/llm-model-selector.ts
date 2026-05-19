@@ -423,7 +423,7 @@ const TEAM_SELECTOR_DEFAULTS_LEGACY: Record<string, any> = {
       ],
     },
     'oauth.gemini_cli.expiry_probe': {
-      primary: { provider: 'gemini-cli-oauth', model: GEMINI_CLI_FLASH_MODEL, maxTokens: 24, temperature: 0 },
+      primary: { provider: 'openai-oauth', model: OPENAI_MINI_MODEL, maxTokens: 24, temperature: 0 },
       fallbacks: [],
     },
     'gemini.cli.adapter.smoke': {

@@ -74,6 +74,19 @@ test('downgrades blog weekly evolution completion to report', async () => {
   assert.deepEqual(result, { type: 'report', confidence: 0.96 });
 });
 
+test('downgrades darwin weekly research snapshot even when legacy event says error', async () => {
+  const { classifyAlarmTypeWithConfidence } = await loadModule();
+  const result = classifyAlarmTypeWithConfidence({
+    severity: 'info',
+    eventType: 'research-scanner_error',
+    title: 'general alarm',
+    message: '🔬 다윈팀 주간 리서치 (2026-05-19)\n수집: 131건 | 평가: 40건 | 저장: 40건\n\n⭐ 적합성 7점+ 논문 2건:',
+  });
+
+  assert.equal(result.type, 'report');
+  assert.ok(result.confidence >= 0.8);
+});
+
 test('keeps actionable runtime failure as error', async () => {
   const { classifyAlarmTypeWithConfidence } = await loadModule();
   const result = classifyAlarmTypeWithConfidence({

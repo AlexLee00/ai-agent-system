@@ -11,6 +11,9 @@ const readinessSource = fs.readFileSync(path.join(repoRoot, 'bots/hub/scripts/te
 const {
   buildOAuthMonitorAlarmEnvelope,
 } = require('../lib/oauth/monitor-alarm-policy.ts');
+const {
+  selectLLMChain,
+} = require('../../../packages/core/lib/llm-model-selector.ts');
 
 for (const provider of [
   'claude-code-cli',
@@ -46,8 +49,21 @@ assert.ok(monitorSource.includes('HUB_OPENAI_OAUTH_REFRESH_HOURS'), 'OpenAI OAut
 assert.ok(monitorSource.includes('HUB_GEMINI_CLI_OAUTH_REFRESH_HOURS'), 'Gemini CLI OAuth refresh window must be separate from alarm window');
 assert.ok(monitorSource.includes('HUB_GEMINI_CLI_OAUTH_WARN_HOURS'), 'Gemini CLI OAuth must have expiry warning thresholds');
 assert.ok(monitorSource.includes('[Hub OAuth] Gemini CLI OAuth'), 'Gemini CLI OAuth must alarm on expiry/degraded refresh windows');
-assert.ok(monitorSource.includes('HUB_GEMINI_CLI_OAUTH_LIVE_PROBE_ON_EXPIRY'), 'Gemini CLI OAuth expiry monitor must verify live CLI refresh before alarming');
-assert.ok(monitorSource.includes('runGeminiCliLiveRefreshProbeWithReimport'), 'Gemini CLI live refresh probe must reimport refreshed CLI credentials into token-store');
+assert.ok(monitorSource.includes('HUB_GEMINI_CLI_OAUTH_LIVE_PROBE_ON_EXPIRY'), 'Gemini CLI OAuth expiry monitor must keep the probe runtime-gated');
+assert.ok(monitorSource.includes('runGeminiCliLiveRefreshProbeWithReimport'), 'Gemini CLI monitor must reimport refreshed CLI credentials into token-store after probe');
+assert.ok(monitorSource.includes('synthetic_openai_oauth_probe_for_gemini_capacity_outage'), 'Gemini CLI monitor probe must expose the capacity-outage bypass path');
+assert.ok(monitorSource.includes('capacity-bypass probe provider='), 'Gemini CLI monitor logs must identify the bypass probe provider');
+assert.ok(monitorSource.includes('live_refresh_provider'), 'Gemini CLI monitor report must expose bypass probe provider');
+assert.ok(monitorSource.includes('live_refresh_auth_path'), 'Gemini CLI monitor report must expose bypass auth path');
+const geminiExpiryProbeChain = selectLLMChain('hub.oauth.gemini_cli.expiry_probe', {
+  selectorVersion: 'v3.0_oauth_4',
+});
+assert.equal(geminiExpiryProbeChain[0]?.provider, 'openai-oauth', 'OAuth monitor Gemini expiry probe must bypass gemini-cli-oauth during capacity incidents');
+assert.equal(
+  geminiExpiryProbeChain.some((entry) => entry?.provider === 'gemini-cli-oauth'),
+  false,
+  'OAuth monitor Gemini expiry probe must not fall back to gemini-cli-oauth',
+);
 assert.ok(monitorSource.includes('post_probe_reimport_ok'), 'Gemini CLI monitor result must expose post-probe reimport status');
 assert.ok(monitorSource.includes('local_credential_needs_refresh'), 'Gemini CLI OAuth monitor must distinguish stale local access token from live route failure');
 assert.ok(monitorSource.includes('checkGeminiCodeAssistServiceStatus'), 'OAuth monitor must verify Gemini Code Assist service status');

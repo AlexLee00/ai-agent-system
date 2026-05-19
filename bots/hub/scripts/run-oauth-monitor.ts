@@ -834,6 +834,7 @@ async function runGeminiCliLiveRefreshProbe() {
       duration_ms: Number(result.durationMs || Date.now() - started),
       provider: result.provider || null,
       selected_route: result.selected_route || null,
+      auth_path: 'synthetic_openai_oauth_probe_for_gemini_capacity_outage',
       error: result.error || null,
     };
   } catch (error) {
@@ -929,7 +930,7 @@ async function checkGeminiCliOAuth() {
     });
     const needsRefresh = finalState.needs_refresh;
     if (localCredentialNeedsRefresh && liveRefreshProbe?.ok) {
-      console.log(`[oauth-monitor] Gemini CLI OAuth local token is near/after expiry, live CLI refresh probe succeeded in ${liveRefreshProbe.duration_ms || 0}ms, token-store reimport=${postProbeReimport?.ok ? 'ok' : 'not_updated'}`);
+      console.log(`[oauth-monitor] Gemini CLI OAuth local token is near/after expiry, capacity-bypass probe provider=${liveRefreshProbe.provider || 'unknown'} succeeded in ${liveRefreshProbe.duration_ms || 0}ms, token-store reimport=${postProbeReimport?.ok ? 'ok' : 'not_updated'}`);
     }
     if (needsRefresh || (inAlarmWindow && !localCredentialNeedsRefresh)) {
       const level = Number(expiresInHours) <= criticalHours ? 3 : 2;
@@ -963,6 +964,9 @@ async function checkGeminiCliOAuth() {
       needs_refresh: finalState.needs_refresh,
       local_credential_needs_refresh: finalState.local_credential_needs_refresh,
       live_refresh_ok: liveRefreshProbe?.ok ?? null,
+      live_refresh_provider: liveRefreshProbe?.provider || null,
+      live_refresh_route: liveRefreshProbe?.selected_route || null,
+      live_refresh_auth_path: liveRefreshProbe?.auth_path || null,
       post_probe_reimport_ok: postProbeReimport?.ok ?? null,
       post_probe_expires_in_hours: postProbeReimport?.expires_in_hours ?? null,
       quota_project_configured: Boolean(cliImport.quota_project_configured),
@@ -991,7 +995,7 @@ async function checkGeminiCliOAuth() {
     });
     const needsRefresh = finalState.needs_refresh;
     if (localCredentialNeedsRefresh && liveRefreshProbe?.ok) {
-      console.log(`[oauth-monitor] Gemini CLI OAuth token-store is near/after expiry, live CLI refresh probe succeeded in ${liveRefreshProbe.duration_ms || 0}ms, token-store reimport=${postProbeReimport?.ok ? 'ok' : 'not_updated'}`);
+      console.log(`[oauth-monitor] Gemini CLI OAuth token-store is near/after expiry, capacity-bypass probe provider=${liveRefreshProbe.provider || 'unknown'} succeeded in ${liveRefreshProbe.duration_ms || 0}ms, token-store reimport=${postProbeReimport?.ok ? 'ok' : 'not_updated'}`);
     }
     if ((needsRefresh || (inAlarmWindow && !localCredentialNeedsRefresh)) && required) {
       const level = Number(expiresInHours) <= criticalHours ? 3 : 2;
@@ -1027,6 +1031,9 @@ async function checkGeminiCliOAuth() {
       needs_refresh: finalState.needs_refresh,
       local_credential_needs_refresh: finalState.local_credential_needs_refresh,
       live_refresh_ok: liveRefreshProbe?.ok ?? null,
+      live_refresh_provider: liveRefreshProbe?.provider || null,
+      live_refresh_route: liveRefreshProbe?.selected_route || null,
+      live_refresh_auth_path: liveRefreshProbe?.auth_path || null,
       post_probe_reimport_ok: postProbeReimport?.ok ?? null,
       post_probe_expires_in_hours: postProbeReimport?.expires_in_hours ?? null,
       quota_project_configured: Boolean(record?.metadata?.quota_project_configured),
@@ -1187,6 +1194,9 @@ async function main() {
       needs_refresh: Boolean(geminiCliOauth.needs_refresh),
       local_credential_needs_refresh: Boolean(geminiCliOauth.local_credential_needs_refresh),
       live_refresh_ok: geminiCliOauth.live_refresh_ok ?? null,
+      live_refresh_provider: geminiCliOauth.live_refresh_provider || null,
+      live_refresh_route: geminiCliOauth.live_refresh_route || null,
+      live_refresh_auth_path: geminiCliOauth.live_refresh_auth_path || null,
       post_probe_reimport_ok: geminiCliOauth.post_probe_reimport_ok ?? null,
       post_probe_expires_in_hours: Number.isFinite(Number(geminiCliOauth.post_probe_expires_in_hours))
         ? Math.round(Number(geminiCliOauth.post_probe_expires_in_hours) * 100) / 100

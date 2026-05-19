@@ -153,6 +153,7 @@ function normalizeTeam(value: unknown): string {
     'ops-error-resolution': 'ops-error-resolution',
     'ops-emergency': 'ops-emergency',
     blog: 'blog',
+    darwin: 'darwin',
     general: 'general',
   };
   return aliases[normalized] || 'general';
