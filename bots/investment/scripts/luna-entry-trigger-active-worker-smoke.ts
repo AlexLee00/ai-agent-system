@@ -68,24 +68,28 @@ export async function runLunaEntryTriggerActiveWorkerSmoke() {
     const bearishMtfSymbol = `BEARMTF${Date.now().toString(36).toUpperCase()}/USDT`;
     const weakPullbackSymbol = `WEAKPULL${Date.now().toString(36).toUpperCase()}/USDT`;
     const technicalProbePullbackSymbol = `TECHPULL${Date.now().toString(36).toUpperCase()}/USDT`;
-      const terminalLowConfSymbol = `TERMINALCONF${Date.now().toString(36).toUpperCase()}/USDT`;
-      const qualityBlockedSymbol = `QUALITYBLOCK${Date.now().toString(36).toUpperCase()}/USDT`;
-      const qualityPredictiveFallbackSymbol = `QUALITYPRED${Date.now().toString(36).toUpperCase()}/USDT`;
-      const binanceTopVolumeUniverse = makeSmokeTop30Universe([
-        symbol,
-        pullbackSymbol,
-        refreshSymbol,
+    const dryRunFireSymbol = `DRYRUNFIRE${Date.now().toString(36).toUpperCase()}/USDT`;
+    const missingEventSymbol = `MISSVEVENT${Date.now().toString(36).toUpperCase()}/USDT`;
+    const terminalLowConfSymbol = `TERMINALCONF${Date.now().toString(36).toUpperCase()}/USDT`;
+    const qualityBlockedSymbol = `QUALITYBLOCK${Date.now().toString(36).toUpperCase()}/USDT`;
+    const qualityPredictiveFallbackSymbol = `QUALITYPRED${Date.now().toString(36).toUpperCase()}/USDT`;
+    const binanceTopVolumeUniverse = makeSmokeTop30Universe([
+      symbol,
+      pullbackSymbol,
+      refreshSymbol,
       openSymbol,
       mtfRefreshSymbol,
       bearishMtfSymbol,
       weakPullbackSymbol,
-        technicalProbePullbackSymbol,
-        terminalLowConfSymbol,
-        qualityBlockedSymbol,
-        qualityPredictiveFallbackSymbol,
-        'FAKE/USDT',
-        'RLUSD/USDT',
-      ]);
+      technicalProbePullbackSymbol,
+      dryRunFireSymbol,
+      missingEventSymbol,
+      terminalLowConfSymbol,
+      qualityBlockedSymbol,
+      qualityPredictiveFallbackSymbol,
+      'FAKE/USDT',
+      'RLUSD/USDT',
+    ]);
     let signalId = null;
     let openSignalId = null;
     let smokeOriginSignalId = null;
@@ -662,6 +666,80 @@ export async function runLunaEntryTriggerActiveWorkerSmoke() {
       assert.equal(qualityPredictiveFallbackResult.results[0].fired, false, 'missing MTF should still wait');
       assert.equal(qualityPredictiveFallbackResult.results[0].fireReadiness.predictiveScore, 0.77, 'fire readiness should reuse latest active quality predictive score when trigger score is missing');
 
+      const dryRunFireTrigger = await insertEntryTrigger({
+        symbol: dryRunFireSymbol,
+        exchange: 'binance',
+        setupType: 'breakout_confirmation',
+        triggerType: 'mtf_alignment',
+        triggerState: 'armed',
+        confidence: 0.81,
+        predictiveScore: 0.78,
+        waitingFor: 'mtf_alignment',
+        triggerContext: {
+          hints: { mtfAgreement: 0.9, discoveryScore: 0.81 },
+        },
+        expiresAt: new Date(Date.now() + 3600_000).toISOString(),
+      });
+      assert.ok(dryRunFireTrigger?.id);
+      const dryRunFireResult = await evaluateActiveEntryTriggersAgainstMarketEvents([
+        {
+          symbol: dryRunFireSymbol,
+          mtfAgreement: 0.9,
+          mtfAlignmentScore: 0.84,
+          mtfDominantSignal: 'BUY',
+          discoveryScore: 0.81,
+          breakoutRetest: true,
+          tradingViewSnapshot: {
+            ok: true,
+            source: 'tradingview_ws_service',
+            providerMode: 'websocket',
+            market: 'tradingview',
+            price: 101,
+            open: 100,
+            stale: false,
+          },
+        },
+      ], {
+        exchange: 'binance',
+        capitalSnapshot,
+        binanceTopVolumeUniverse,
+        dryRun: true,
+      });
+      assert.equal(dryRunFireResult.dryRun, true);
+      assert.equal(dryRunFireResult.results.find((item) => item.symbol === dryRunFireSymbol)?.fired, true, 'dry-run should still expose would-fire readiness');
+      const dryRunFireRow = await db.get(`SELECT trigger_state, fired_at FROM entry_triggers WHERE id = $1`, [dryRunFireTrigger.id]);
+      assert.equal(dryRunFireRow?.trigger_state, 'armed', 'dry-run must not mutate trigger state to fired');
+      assert.equal(dryRunFireRow?.fired_at, null, 'dry-run must not stamp fired_at');
+
+      const missingEventTrigger = await insertEntryTrigger({
+        symbol: missingEventSymbol,
+        exchange: 'binance',
+        setupType: 'breakout_confirmation',
+        triggerType: 'mtf_alignment',
+        triggerState: 'armed',
+        confidence: 0.79,
+        predictiveScore: 0.75,
+        waitingFor: 'mtf_alignment',
+        triggerContext: {
+          hints: { mtfAgreement: 0.9, discoveryScore: 0.79 },
+        },
+        expiresAt: new Date(Date.now() + 3600_000).toISOString(),
+      });
+      assert.ok(missingEventTrigger?.id);
+      const missingEventResult = await evaluateActiveEntryTriggersAgainstMarketEvents([], {
+        exchange: 'binance',
+        capitalSnapshot,
+        binanceTopVolumeUniverse,
+        dryRun: true,
+        reportMissingMarketEvents: true,
+      });
+      const missingEventItem = missingEventResult.results.find((item) => item.symbol === missingEventSymbol);
+      assert.equal(missingEventItem?.reason, 'market_event_missing', 'explicit missing-event reporting should expose active triggers with no market event');
+      assert.equal(missingEventItem?.fireReadiness?.technicalTelemetry?.missing, true);
+      const missingEventRow = await db.get(`SELECT trigger_state, trigger_meta FROM entry_triggers WHERE id = $1`, [missingEventTrigger.id]);
+      assert.equal(missingEventRow?.trigger_state, 'armed', 'dry-run missing-event reporting must not mutate trigger state');
+      assert.equal(missingEventRow?.trigger_meta?.reason, undefined, 'dry-run missing-event reporting must not write trigger meta');
+
       const workerRiskContext = await buildEntryTriggerWorkerRiskContext({
         exchange: 'binance',
         buyingPowerSnapshotBuilder: async () => capitalSnapshot,
@@ -797,6 +875,8 @@ export async function runLunaEntryTriggerActiveWorkerSmoke() {
       await db.run(`DELETE FROM entry_triggers WHERE symbol = $1`, [bearishMtfSymbol]).catch(() => {});
       await db.run(`DELETE FROM entry_triggers WHERE symbol = $1`, [weakPullbackSymbol]).catch(() => {});
       await db.run(`DELETE FROM entry_triggers WHERE symbol = $1`, [technicalProbePullbackSymbol]).catch(() => {});
+      await db.run(`DELETE FROM entry_triggers WHERE symbol = $1`, [dryRunFireSymbol]).catch(() => {});
+      await db.run(`DELETE FROM entry_triggers WHERE symbol = $1`, [missingEventSymbol]).catch(() => {});
       await db.run(`DELETE FROM entry_triggers WHERE symbol = $1`, [terminalLowConfSymbol]).catch(() => {});
       await db.run(`DELETE FROM entry_triggers WHERE symbol = $1`, [qualityBlockedSymbol]).catch(() => {});
       await db.run(`DELETE FROM entry_triggers WHERE symbol = $1`, [qualityPredictiveFallbackSymbol]).catch(() => {});

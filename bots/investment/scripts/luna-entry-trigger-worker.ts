@@ -708,6 +708,7 @@ export async function runLunaEntryTriggerWorker() {
   hydrateEntryTriggerEnvFromLaunchctl();
   const exchange = argValue('--exchange', process.env.LUNA_ENTRY_TRIGGER_EXCHANGE || 'binance');
   const eventsRequested = hasFlag('--derive-market-events');
+  const dryRun = hasFlag('--dry-run');
   const flags = getLunaIntelligentDiscoveryFlags();
   const agentPlan = buildEntryTriggerAgentPlan({
     agentPlan: readAgentPlanArg(),
@@ -717,7 +718,18 @@ export async function runLunaEntryTriggerWorker() {
       deriveMarketEventsRequested: eventsRequested,
     },
   });
-  const refresh = agentPlan.signalRefreshEnabled
+  const refresh = dryRun
+    ? {
+        enabled: true,
+        refreshEnabled: false,
+        reason: 'dry_run',
+        refreshed: 0,
+        armed: 0,
+        fired: 0,
+        blocked: 0,
+        sourceSignals: 0,
+      }
+    : agentPlan.signalRefreshEnabled
     ? await refreshEntryTriggersFromRecentBuySignals({
       exchange,
       hours: Number(argValue('--refresh-hours', process.env.LUNA_ENTRY_TRIGGER_SIGNAL_REFRESH_HOURS || '6') || 6),
@@ -750,16 +762,17 @@ export async function runLunaEntryTriggerWorker() {
     ? await buildEntryTriggerWorkerRiskContext({ exchange })
     : { capitalSnapshot: null };
   const result = agentPlan.activeEvaluationEnabled
-    ? await evaluateActiveEntryTriggersAgainstMarketEvents(events, { exchange, ...riskContext })
+    ? await evaluateActiveEntryTriggersAgainstMarketEvents(events, { exchange, ...riskContext, dryRun, reportMissingMarketEvents: true })
     : { enabled: false, fired: 0, readyBlocked: 0, checked: 0, results: [], reason: 'agent_plan_active_evaluation_disabled' };
-  const materializedSignals = agentPlan.activeEvaluationEnabled && result?.allowLiveFire === true
+  const materializedSignals = !dryRun && agentPlan.activeEvaluationEnabled && result?.allowLiveFire === true
     ? await materializeFiredEntryTriggerSignals({ exchange, result, riskContext, events })
-    : { enabled: false, materialized: 0, skipped: 0, items: [], reason: 'active_evaluation_disabled_or_live_fire_off' };
-  const recoveredFiredSignals = agentPlan.activeEvaluationEnabled && result?.allowLiveFire === true
+    : { enabled: false, materialized: 0, skipped: 0, items: [], reason: dryRun ? 'dry_run' : 'active_evaluation_disabled_or_live_fire_off' };
+  const recoveredFiredSignals = !dryRun && agentPlan.activeEvaluationEnabled && result?.allowLiveFire === true
     ? await recoverRecentFiredEntryTriggerSignals({ exchange, riskContext, events })
-    : { enabled: false, materialized: 0, skipped: 0, items: [], reason: 'active_evaluation_disabled_or_live_fire_off' };
+    : { enabled: false, materialized: 0, skipped: 0, items: [], reason: dryRun ? 'dry_run' : 'active_evaluation_disabled_or_live_fire_off' };
   const output = {
     ok: true,
+    dryRun,
     exchange,
     eventSource: events.length > 0 ? 'provided_or_derived' : 'none',
     eventCount: events.length,
@@ -777,7 +790,7 @@ export async function runLunaEntryTriggerWorker() {
     recoveredFiredSignals,
     result,
   };
-  const heartbeat = writeEntryTriggerWorkerHeartbeat(output);
+  const heartbeat = dryRun ? null : writeEntryTriggerWorkerHeartbeat(output);
   if (heartbeat) output.heartbeatPath = heartbeat.path;
   return output;
 }

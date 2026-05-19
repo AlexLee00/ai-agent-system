@@ -64,6 +64,20 @@ assert.equal(runtimeBudgetResult.total, 0, 'zero runtime budget should skip proc
 assert.equal(runtimeBudgetResult.candidateBudget.budgetStopped, true, 'candidate budget should report runtime stop');
 assert.equal(runtimeBudgetResult.candidateBudget.skippedByRuntimeBudget, 2, 'candidate budget should count runtime-budget skipped candidates');
 
+const requestedOutsideUniverseResult = await runCandidateBacktestRefresh({
+  json: true,
+  dryRun: true,
+  fixture: true,
+  periods: '30',
+  market: 'domestic',
+  symbols: '071200',
+  limit: 10,
+});
+assert.equal(requestedOutsideUniverseResult.total, 1, 'explicit requested symbol should run even when absent from active candidate selection');
+assert.equal(requestedOutsideUniverseResult.results[0].symbol, '071200', 'requested symbol should be preserved');
+assert.equal(requestedOutsideUniverseResult.results[0].market, 'domestic', 'requested symbol should use requested market');
+assert.equal(requestedOutsideUniverseResult.candidateBudget.selectedBeforeBudget, 1, 'requested symbol override should count as selected candidate');
+
 const syntheticOhlcv = Array.from({ length: 80 }, (_, index) => {
   const close = 100 + index * 0.25 + Math.sin(index / 5) * 1.5;
   return [Date.now() - (80 - index) * 3600_000, close - 0.5, close + 0.8, close - 0.9, close, 1000 + index];
@@ -157,6 +171,7 @@ const payload = {
   candidateBudget: {
     maxSymbolsCapWorks: cappedResult.candidateBudget.selected === 1,
     runtimeBudgetStopWorks: runtimeBudgetResult.candidateBudget.budgetStopped === true,
+    requestedOutsideUniverseWorks: requestedOutsideUniverseResult.total === 1,
   },
 };
 

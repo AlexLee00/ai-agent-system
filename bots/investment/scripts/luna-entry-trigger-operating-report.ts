@@ -38,6 +38,19 @@ function addCount(map, key) {
   map[key] = Number(map[key] || 0) + 1;
 }
 
+function marketForExchange(exchange = 'binance') {
+  const normalized = String(exchange || 'binance').trim().toLowerCase();
+  if (normalized === 'kis') return 'domestic';
+  if (normalized === 'kis_overseas') return 'overseas';
+  return 'crypto';
+}
+
+function buildBacktestRefreshCommand({ exchange = 'binance', symbol = '' } = {}) {
+  const normalizedSymbol = String(symbol || '').trim().toUpperCase();
+  if (!normalizedSymbol) return null;
+  return `npm --prefix bots/investment run -s runtime:luna-candidate-backtest-refresh -- --json --force --market=${marketForExchange(exchange)} --symbols=${normalizedSymbol}`;
+}
+
 function normalizeExchange(value = '') {
   return String(value || '').trim().toLowerCase();
 }
@@ -124,6 +137,14 @@ function summarizeReadinessResults(results = []) {
       breakoutRetest: details.breakoutRetest === true,
       newsMomentum: finiteNumber(details.newsMomentum),
       technicalConfirmation: details.technicalConfirmation || null,
+      minConfidence: finiteNumber(details.minConfidence),
+      confidenceGap: finiteNumber(details.minConfidence) == null || finiteNumber(details.confidence) == null
+        ? null
+        : Number(Math.max(0, finiteNumber(details.minConfidence) - finiteNumber(details.confidence)).toFixed(4)),
+      minPassCount: finiteNumber(details.minPassCount),
+      minConsecutivePasses: finiteNumber(details.minConsecutivePasses),
+      promotionPassCount: finiteNumber(details.promotionPassCount),
+      promotionConsecutivePasses: finiteNumber(details.promotionConsecutivePasses),
     };
   });
   return {
@@ -144,6 +165,9 @@ async function buildActiveQualityGateSummary({ exchange = 'binance' } = {}) {
     const symbol = String(trigger.symbol || '').trim().toUpperCase();
     const gate = evaluateActiveEntryTriggerQualityGate(trigger, qualityBySymbol.get(symbol), {});
     if (!gate.ok) addCount(byReason, gate.reason);
+    const needsBacktestRefresh = (gate.reasons || []).includes('backtest_missing_or_stale');
+    const backtestAgeHours = finiteNumber(gate.backtest?.ageHours);
+    const maxBacktestAgeHours = finiteNumber(gate.maxBacktestAgeHours);
     return {
       triggerId: trigger.id || null,
       symbol,
@@ -153,9 +177,15 @@ async function buildActiveQualityGateSummary({ exchange = 'binance' } = {}) {
       reasons: gate.reasons || [],
       backtestGateStatus: gate.backtest?.gateStatus || null,
       backtestFresh: gate.backtest?.fresh ?? null,
+      backtestAgeHours,
+      maxBacktestAgeHours,
+      backtestStaleByHours: backtestAgeHours == null || maxBacktestAgeHours == null
+        ? null
+        : Number(Math.max(0, backtestAgeHours - maxBacktestAgeHours).toFixed(2)),
       backtestHealthy: gate.backtest?.healthy ?? null,
       predictiveDecision: gate.predictive?.decision || null,
       predictiveScore: finiteNumber(gate.predictive?.score),
+      recommendedRefreshCommand: needsBacktestRefresh ? buildBacktestRefreshCommand({ exchange, symbol }) : null,
     };
   });
   return {

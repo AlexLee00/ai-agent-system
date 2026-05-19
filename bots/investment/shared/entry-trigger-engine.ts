@@ -220,6 +220,9 @@ export function evaluateActiveEntryTriggerQualityGate(trigger = {}, quality = nu
   const reasons = [];
   const backtest = quality?.backtest || null;
   const predictive = quality?.predictive || null;
+  let backtestRawFresh = false;
+  let backtestFresh = false;
+  let backtestAgeHours = null;
 
   if (!quality || (!backtest && !predictive)) {
     reasons.push('active_quality_evidence_missing');
@@ -231,6 +234,11 @@ export function evaluateActiveEntryTriggerQualityGate(trigger = {}, quality = nu
     const gateStatus = String(backtest.gateStatus || backtest.gate_status || '').trim().toLowerCase();
     const lastBacktestAt = backtest.lastBacktestAt || backtest.last_backtest_at || null;
     const ageHours = lastBacktestAt ? (nowMs - new Date(lastBacktestAt).getTime()) / 3600000 : null;
+    backtestRawFresh = backtest.fresh === true;
+    backtestAgeHours = Number.isFinite(ageHours) ? Number(ageHours.toFixed(2)) : null;
+    backtestFresh = backtestRawFresh
+      && Boolean(lastBacktestAt)
+      && !(Number.isFinite(ageHours) && ageHours > maxBacktestAgeHours);
     if (backtest.fresh !== true || !lastBacktestAt || (Number.isFinite(ageHours) && ageHours > maxBacktestAgeHours)) {
       reasons.push('backtest_missing_or_stale');
     }
@@ -266,7 +274,8 @@ export function evaluateActiveEntryTriggerQualityGate(trigger = {}, quality = nu
     minPredictiveScore,
     maxBacktestAgeHours,
     backtest: backtest ? {
-      fresh: backtest.fresh === true,
+      fresh: backtestFresh,
+      rawFresh: backtestRawFresh,
       healthy: backtest.healthy === true,
       gateStatus: backtest.gateStatus || backtest.gate_status || null,
       wouldBlock: isTruthy(backtest.wouldBlock ?? backtest.would_block),
@@ -274,6 +283,7 @@ export function evaluateActiveEntryTriggerQualityGate(trigger = {}, quality = nu
       maxDrawdown: backtest.maxDrawdown ?? backtest.max_drawdown ?? null,
       winRate: backtest.winRate ?? backtest.win_rate ?? null,
       lastBacktestAt: backtest.lastBacktestAt || backtest.last_backtest_at || null,
+      ageHours: backtestAgeHours,
     } : null,
     predictive: predictive ? {
       decision: predictive.decision || null,
@@ -1489,11 +1499,13 @@ export async function evaluateActiveEntryTriggersAgainstMarketEvents(events = []
     return { enabled: false, fired: 0, readyBlocked: 0, checked: 0, results: [] };
   }
   await ensureLunaDiscoveryEntryTables();
-  await expireEntryTriggers().catch(() => 0);
+  const dryRun = context.dryRun === true;
+  const updateTriggerState = (id, patch) => dryRun ? Promise.resolve(null) : updateEntryTriggerState(id, patch);
+  if (!dryRun) await expireEntryTriggers().catch(() => 0);
 
   const exchange = String(context.exchange || 'binance');
   const openPositionSymbols = await loadOpenEntryPositionSymbols(exchange, context);
-  await expireOpenPositionEntryTriggers(exchange, openPositionSymbols);
+  if (!dryRun) await expireOpenPositionEntryTriggers(exchange, openPositionSymbols);
   const allowLiveFire = flags.shouldAllowLiveEntryFire();
   const fireCooldownMinutes = Number(flags.entryTrigger.fireCooldownMinutes || 10);
   const binanceTopVolumeUniverse = exchange === 'binance'
@@ -1537,6 +1549,7 @@ export async function evaluateActiveEntryTriggersAgainstMarketEvents(events = []
   let readyBlocked = 0;
   let checked = 0;
   let qualityExpired = 0;
+  const reportMissingMarketEvents = context.reportMissingMarketEvents === true;
 
   for (const trigger of active || []) {
     if (openPositionSymbols.has(normalizeSymbol(trigger.symbol))) {
@@ -1556,7 +1569,7 @@ export async function evaluateActiveEntryTriggersAgainstMarketEvents(events = []
       checked++;
       readyBlocked++;
       qualityExpired++;
-      await updateEntryTriggerState(trigger.id, {
+      await updateTriggerState(trigger.id, {
         triggerState: 'expired',
         triggerMetaPatch: {
           lastReadyAt: nowIso(),
@@ -1586,13 +1599,57 @@ export async function evaluateActiveEntryTriggersAgainstMarketEvents(events = []
       continue;
     }
     const event = eventsBySymbol.get(normalizeSymbol(trigger.symbol || ''));
-    if (!event) continue;
+    if (!event) {
+      if (!reportMissingMarketEvents) continue;
+      checked++;
+      const predictiveScore = resolveActiveEntryTriggerPredictiveScore(trigger, triggerQuality);
+      const missingEventReadiness = {
+        triggerType: trigger.trigger_type || null,
+        setupType: trigger.setup_type || null,
+        confidence: Number(trigger.confidence || 0),
+        predictiveScore: predictiveScore == null ? 0 : predictiveScore,
+        discoveryScore: Number(trigger.trigger_context?.hints?.discoveryScore || 0),
+        mtfAgreement: 0,
+        mtfAlignmentScore: null,
+        mtfDominantSignal: null,
+        mtfBullish: false,
+        volumeBurst: 0,
+        breakoutRetest: false,
+        newsMomentum: Number(trigger.trigger_context?.hints?.newsMomentum || 0),
+        technicalTelemetry: {
+          mtfAvailable: false,
+          volumeAvailable: false,
+          missing: true,
+          source: 'entry_trigger_market_event_missing',
+          exchange,
+        },
+      };
+      await updateTriggerState(trigger.id, {
+        triggerState: 'waiting',
+        triggerMetaPatch: {
+          reason: 'market_event_missing',
+          fireReason: 'market_event_missing',
+          fireReadiness: missingEventReadiness,
+          lastCheckedAt: nowIso(),
+        },
+      }).catch(() => null);
+      results.push({
+        triggerId: trigger.id,
+        symbol: trigger.symbol,
+        state: 'waiting',
+        fired: false,
+        reason: 'market_event_missing',
+        fireReason: 'market_event_missing',
+        fireReadiness: missingEventReadiness,
+      });
+      continue;
+    }
     checked++;
     if (exchange === 'binance') {
       const top30Gate = evaluateBinanceTopVolumeUniverseGate(trigger.symbol, binanceTopVolumeUniverse);
       if (top30Gate.blocked) {
         readyBlocked++;
-        await updateEntryTriggerState(trigger.id, {
+        await updateTriggerState(trigger.id, {
           triggerState: 'waiting',
           triggerMetaPatch: {
             lastReadyAt: nowIso(),
@@ -1641,7 +1698,7 @@ export async function evaluateActiveEntryTriggersAgainstMarketEvents(events = []
     const effectiveCandidate = applyEntryTriggerEffectiveScores(candidate, fireReadiness);
     const fireNow = fireReadiness.ok;
     if (!fireNow) {
-      await updateEntryTriggerState(trigger.id, {
+      await updateTriggerState(trigger.id, {
         triggerState: 'waiting',
         triggerMetaPatch: {
           reason: 'conditions_not_met',
@@ -1673,7 +1730,7 @@ export async function evaluateActiveEntryTriggersAgainstMarketEvents(events = []
     const qualityGate = preflightQualityGate || evaluateActiveEntryTriggerQualityGate(trigger, triggerQuality, context);
     if (!qualityGate.ok) {
       readyBlocked++;
-      await updateEntryTriggerState(trigger.id, {
+      await updateTriggerState(trigger.id, {
         triggerState: 'waiting',
         triggerMetaPatch: {
           lastReadyAt: nowIso(),
@@ -1703,7 +1760,7 @@ export async function evaluateActiveEntryTriggersAgainstMarketEvents(events = []
     }
     if (!allowLiveFire) {
       readyBlocked++;
-      await updateEntryTriggerState(trigger.id, {
+      await updateTriggerState(trigger.id, {
         triggerState: 'waiting',
         triggerMetaPatch: {
           lastReadyAt: nowIso(),
@@ -1722,7 +1779,7 @@ export async function evaluateActiveEntryTriggersAgainstMarketEvents(events = []
     }));
     if (tradingViewGuard?.blocked) {
       readyBlocked++;
-      await updateEntryTriggerState(trigger.id, {
+      await updateTriggerState(trigger.id, {
         triggerState: 'waiting',
         triggerMetaPatch: {
           lastReadyAt: nowIso(),
@@ -1745,7 +1802,7 @@ export async function evaluateActiveEntryTriggersAgainstMarketEvents(events = []
     if (!riskGate.ok) {
       readyBlocked++;
       const terminalBlock = isTerminalEntryTriggerLiveRiskGateBlock(riskGate);
-      await updateEntryTriggerState(trigger.id, {
+      await updateTriggerState(trigger.id, {
         triggerState: terminalBlock ? 'expired' : 'waiting',
         triggerMetaPatch: {
           reason: terminalBlock ? 'live_risk_gate_terminal_blocked' : 'live_risk_gate_blocked',
@@ -1774,7 +1831,7 @@ export async function evaluateActiveEntryTriggersAgainstMarketEvents(events = []
     }).catch(() => null);
     if (recentFired && recentFired.id !== trigger.id) {
       readyBlocked++;
-      await updateEntryTriggerState(trigger.id, {
+      await updateTriggerState(trigger.id, {
         triggerState: 'waiting',
         triggerMetaPatch: {
           duplicateFireCooldownMinutes: fireCooldownMinutes,
@@ -1793,7 +1850,7 @@ export async function evaluateActiveEntryTriggersAgainstMarketEvents(events = []
       continue;
     }
     fired++;
-    const updated = await updateEntryTriggerState(trigger.id, {
+    const updated = await updateTriggerState(trigger.id, {
       triggerState: 'fired',
       firedAt: nowIso(),
       triggerMetaPatch: {
@@ -1813,6 +1870,7 @@ export async function evaluateActiveEntryTriggersAgainstMarketEvents(events = []
 
   return {
     enabled: true,
+    dryRun,
     mode: flags.mode,
     allowLiveFire,
     checked,

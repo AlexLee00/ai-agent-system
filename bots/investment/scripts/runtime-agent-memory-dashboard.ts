@@ -5,6 +5,7 @@ import * as db from '../shared/db.ts';
 import { publishAlert } from '../shared/alert-publisher.ts';
 import { getAllCurriculumStates } from '../shared/agent-curriculum-tracker.ts';
 import { resolveAgentMemoryRuntimeFlags } from '../shared/agent-memory-runtime.ts';
+import { getMessageBusHygiene } from '../shared/agent-message-bus.ts';
 import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
 
 function parseArgs(argv = process.argv.slice(2)) {
@@ -157,19 +158,17 @@ export async function buildAgentMemoryDashboard({ days = 7, market = 'all' } = {
     [dayWindow, normalizedMarket],
   ).catch(() => []);
 
-  const busHygieneRows = await db.query(
-    `SELECT
-       to_agent,
-       COUNT(*) AS stale_unanswered,
-       MIN(created_at) AS oldest_created_at
-     FROM investment.agent_messages
-     WHERE responded_at IS NULL
-       AND message_type IN ('query', 'broadcast')
-       AND created_at < NOW() - INTERVAL '6 hours'
-     GROUP BY to_agent
-     ORDER BY stale_unanswered DESC
-     LIMIT 50`,
-  ).catch(() => []);
+  const busHygiene = await getMessageBusHygiene({ staleHours: 6, limit: 50 }).catch(() => ({
+    ok: false,
+    staleCount: 0,
+    rows: [],
+  }));
+  const busHygieneRows = (busHygiene.rows || []).map((row) => ({
+    to_agent: row.to_agent,
+    message_type: row.message_type,
+    stale_unanswered: Number(row.stale_count || 0),
+    oldest_created_at: row.oldest_created_at,
+  }));
 
   const curriculumRows = await getAllCurriculumStates(
     normalizedMarket === 'all' ? undefined : normalizedMarket,
@@ -180,7 +179,7 @@ export async function buildAgentMemoryDashboard({ days = 7, market = 'all' } = {
   const routeCallCount = routeRows.reduce((sum, row) => sum + Number(row.calls || 0), 0);
   const routeFailureCount = routeRows.reduce((sum, row) => sum + Number(row.failed_calls || 0), 0);
   const routeFallbackCount = routeRows.reduce((sum, row) => sum + Number(row.fallback_calls || 0), 0);
-  const staleMessageCount = busHygieneRows.reduce((sum, row) => sum + Number(row.stale_unanswered || 0), 0);
+  const staleMessageCount = Number(busHygiene.staleCount || 0);
 
   const report = {
     ok: true,

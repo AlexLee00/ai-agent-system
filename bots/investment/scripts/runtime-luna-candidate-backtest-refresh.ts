@@ -70,6 +70,37 @@ function symbolsFrom(value: any): string[] {
     .filter(Boolean);
 }
 
+function inferRequestedSymbolMarket(symbol: string, requestedMarket = 'all') {
+  const normalizedMarket = normalizeMarket(requestedMarket);
+  if (normalizedMarket !== 'all') return normalizedMarket;
+  const normalizedSymbol = String(symbol || '').trim().toUpperCase();
+  if (normalizedSymbol.includes('/') || normalizedSymbol.endsWith('USDT')) return 'crypto';
+  if (/^\d{6}$/.test(normalizedSymbol)) return 'domestic';
+  return 'overseas';
+}
+
+function selectRequestedCandidates(candidates: any[] = [], requestedSymbols: string[] = [], market = 'all') {
+  if (!requestedSymbols.length) return candidates;
+  const bySymbol = new Map();
+  for (const candidate of candidates || []) {
+    const symbol = String(candidate?.symbol || '').trim().toUpperCase();
+    if (!symbol || bySymbol.has(symbol)) continue;
+    bySymbol.set(symbol, {
+      ...candidate,
+      symbol,
+      market: normalizeMarket(candidate?.market || market),
+    });
+  }
+  return requestedSymbols.map((symbol) => {
+    const normalizedSymbol = String(symbol || '').trim().toUpperCase();
+    return bySymbol.get(normalizedSymbol) || {
+      symbol: normalizedSymbol,
+      market: inferRequestedSymbolMarket(normalizedSymbol, market),
+      source: 'requested_symbol_override',
+    };
+  });
+}
+
 async function getActiveCandidates(limit = 100) {
   return getActiveCandidatesByMarket({ limit, market: 'crypto' });
 }
@@ -689,9 +720,7 @@ export async function runCandidateBacktestRefresh(options: any = {}): Promise<an
       ranks: {},
       error: String(error?.message || error),
     }));
-  const selectedCandidates = requestedSymbols.length
-    ? candidates.filter((candidate) => requestedSymbols.includes(String(candidate.symbol || '').toUpperCase()))
-    : candidates;
+  const selectedCandidates = selectRequestedCandidates(candidates, requestedSymbols, market);
   const budgetedCandidates = maxSymbols == null
     ? selectedCandidates
     : selectedCandidates.slice(0, maxSymbols);
