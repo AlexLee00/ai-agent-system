@@ -55,6 +55,8 @@ function summarizeRuntimeState({
   const jobs = Object.values(state.jobs || {});
   const missing = jobs.filter((job) => /ENOENT|no such file/i.test(String(job.error || job.lastError || '')));
   const historical = jobs.filter((job) => ['failed', 'blocked', 'completed'].includes(String(job.status || '')));
+  const activeMissing = missing.filter((job) => !['failed', 'blocked', 'completed'].includes(String(job.status || '')));
+  const historicalMissing = missing.filter((job) => ['failed', 'blocked', 'completed'].includes(String(job.status || '')));
   return {
     updatedAt: state.updatedAt || null,
     total: jobs.length,
@@ -62,6 +64,8 @@ function summarizeRuntimeState({
     stages: countBy(jobs, (job) => job.stage),
     historicalStateCount: historical.length,
     missingJobCount: missing.length,
+    activeMissingJobCount: activeMissing.length,
+    historicalMissingJobCount: historicalMissing.length,
     missingJobs: missing.slice(-20).map((job) => ({
       id: job.id || null,
       relPath: job.relPath || null,

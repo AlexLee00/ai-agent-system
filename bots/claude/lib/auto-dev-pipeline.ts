@@ -924,6 +924,39 @@ function isPathWithinWriteScope(filePath, writeScope = []) {
   });
 }
 
+function hasGitStatusError(statusLines = []) {
+  return statusLines.some(line => String(line || '').startsWith('[git-status-error]'));
+}
+
+function pathsOverlap(left, right) {
+  const a = normalizeRelPath(left);
+  const b = normalizeRelPath(right);
+  if (!a || !b) return false;
+  return a === b || a.startsWith(`${b}/`) || b.startsWith(`${a}/`);
+}
+
+function partitionDirtyBaseForWriteScope(dirtyPaths = [], writeScope = []) {
+  const blocking = [];
+  const ignored = [];
+  for (const dirtyPath of dirtyPaths || []) {
+    if (isPathWithinWriteScope(dirtyPath, writeScope)) blocking.push(dirtyPath);
+    else ignored.push(dirtyPath);
+  }
+  return {
+    blocking,
+    ignored,
+    hasBlocking: blocking.length > 0,
+  };
+}
+
+function findDirtyPathConflicts(dirtyPaths = [], changedFiles = []) {
+  const changed = (changedFiles || []).map(normalizeRelPath).filter(Boolean);
+  return (dirtyPaths || [])
+    .map(normalizeRelPath)
+    .filter(Boolean)
+    .filter(dirtyPath => changed.some(changedPath => pathsOverlap(dirtyPath, changedPath)));
+}
+
 function getHostName() {
   try {
     return os.hostname();
@@ -969,6 +1002,30 @@ function refreshFileLock(lockHandle) {
   }
 }
 
+function isExecutableFile(candidate) {
+  try {
+    return Boolean(candidate) && fs.existsSync(candidate) && fs.statSync(candidate).isFile();
+  } catch {
+    return false;
+  }
+}
+
+function resolveNodeExecutable({
+  execPath = process.execPath,
+  pathEnv = process.env.PATH || '',
+} = {}) {
+  const candidates = [];
+  if (execPath) candidates.push(execPath);
+  for (const dir of String(pathEnv || '').split(path.delimiter).filter(Boolean)) {
+    candidates.push(path.join(dir, 'node'));
+  }
+  candidates.push('/opt/homebrew/bin/node', '/usr/local/bin/node', '/usr/bin/node');
+  for (const candidate of candidates) {
+    if (isExecutableFile(candidate)) return candidate;
+  }
+  return null;
+}
+
 function startLockHeartbeat(lockHandle, intervalMs = DEFAULT_LOCK_HEARTBEAT_MS) {
   const safeInterval = Number(intervalMs);
   if (!lockHandle?.acquired || !(safeInterval > 0)) return () => {};
@@ -988,6 +1045,7 @@ function startLockHeartbeat(lockHandle, intervalMs = DEFAULT_LOCK_HEARTBEAT_MS) 
   // Primary heartbeat (sidecar process). 동기 exec 블로킹 중에도 updatedAt 갱신을 유지한다.
   if (typeof spawn === 'function' && token && lockPath) {
     try {
+      const nodeExecutable = resolveNodeExecutable();
       const script = [
         'const fs = require("fs");',
         `const lockPath = ${JSON.stringify(lockPath)};`,
@@ -1018,17 +1076,24 @@ function startLockHeartbeat(lockHandle, intervalMs = DEFAULT_LOCK_HEARTBEAT_MS) 
         'setInterval(tick, intervalMs).unref();',
         'tick();',
       ].join('\n');
-      const child = spawn(process.execPath, ['-e', script], {
-        stdio: 'ignore',
-        detached: false,
-      });
-      lockHandle.heartbeatProcess = child;
-      if (typeof child.unref === 'function') child.unref();
-      child.on('exit', () => {
-        if (lockHandle.heartbeatProcess === child) {
-          lockHandle.heartbeatProcess = null;
-        }
-      });
+      if (nodeExecutable) {
+        const child = spawn(nodeExecutable, ['-e', script], {
+          stdio: 'ignore',
+          detached: false,
+        });
+        lockHandle.heartbeatProcess = child;
+        if (typeof child.unref === 'function') child.unref();
+        child.on('exit', () => {
+          if (lockHandle.heartbeatProcess === child) {
+            lockHandle.heartbeatProcess = null;
+          }
+        });
+        child.on('error', () => {
+          if (lockHandle.heartbeatProcess === child) {
+            lockHandle.heartbeatProcess = null;
+          }
+        });
+      }
     } catch {}
   }
 
@@ -1142,6 +1207,7 @@ function ensureExecutionContext(job, options = {}) {
   const runtimeConfig = getRuntimeConfig(options);
   const dryRun = runtimeConfig.dryRun;
   const allowDirtyBase = runtimeConfig.allowDirtyBase;
+  const writeScope = options.writeScope || job.writeScope || job.metadata?.write_scope || [];
 
   if (dryRun || !isGitRepository(ROOT)) {
     return {
@@ -1159,14 +1225,19 @@ function ensureExecutionContext(job, options = {}) {
 
   const baseStatus = captureGitStatusShort(ROOT);
   const baseDirty = collectChangedPaths(baseStatus);
-  if (baseDirty.size > 0 && !allowDirtyBase) {
+  const dirtyPartition = partitionDirtyBaseForWriteScope([...baseDirty], writeScope);
+  if ((hasGitStatusError(baseStatus) || dirtyPartition.hasBlocking) && !allowDirtyBase) {
     return {
       ok: false,
       stage: 'blocked_dirty_worktree',
       status: 'blocked',
-      reason: '기본 worktree가 dirty 상태라 자동 구현을 차단합니다 (CLAUDE_AUTO_DEV_ALLOW_DIRTY_BASE=true로 예외 허용 가능).',
+      reason: hasGitStatusError(baseStatus)
+        ? '기본 worktree git status 확인에 실패해 자동 구현을 차단합니다.'
+        : '기본 worktree 변경이 write_scope와 겹쳐 자동 구현을 차단합니다 (CLAUDE_AUTO_DEV_ALLOW_DIRTY_BASE=true로 예외 허용 가능).',
       baseStatus,
       baseDirty: [...baseDirty],
+      baseDirtyBlocking: dirtyPartition.blocking,
+      baseDirtyIgnored: dirtyPartition.ignored,
     };
   }
 
@@ -1189,6 +1260,8 @@ function ensureExecutionContext(job, options = {}) {
       baseSha,
       baseStatus,
       baseDirty: [...baseDirty],
+      baseDirtyBlocking: dirtyPartition.blocking,
+      baseDirtyIgnored: dirtyPartition.ignored,
       profile: runtimeConfig.profile,
     },
   };
@@ -2212,15 +2285,19 @@ function integrateWorktreeChanges(job, executionContext, {
 
   const rootStatus = captureGitStatusShort(ROOT);
   const rootDirty = [...collectChangedPaths(rootStatus)];
-  if (rootDirty.length > 0 && !runtimeConfig.allowDirtyBase) {
+  const rootDirtyConflicts = findDirtyPathConflicts(rootDirty, changedFiles);
+  if ((hasGitStatusError(rootStatus) || rootDirtyConflicts.length > 0) && !runtimeConfig.allowDirtyBase) {
     return {
       ...patchResult,
       ok: false,
       reason: 'target_worktree_dirty',
-      error: '기본 worktree가 dirty 상태라 cherry-pick 자동 통합을 차단합니다.',
+      error: hasGitStatusError(rootStatus)
+        ? '기본 worktree git status 확인에 실패해 cherry-pick 자동 통합을 차단합니다.'
+        : '기본 worktree 변경이 통합 대상 파일과 겹쳐 cherry-pick 자동 통합을 차단합니다.',
       integrationMode: runtimeConfig.integrationMode,
       targetStatus: rootStatus,
       targetDirty: rootDirty,
+      targetDirtyConflicts: rootDirtyConflicts,
     };
   }
 
@@ -2786,7 +2863,10 @@ async function processAutoDevDocument(filePath, options = {}) {
       return { ok: true, skipped: true, reason: policy.decision, job: blockedJob };
     }
 
-    const contextResult = ensureExecutionContext(job, options);
+    const contextResult = ensureExecutionContext(job, {
+      ...options,
+      writeScope: policy.writeScope,
+    });
     if (!contextResult.ok) {
       const blockedJob = updateJobState(job, contextResult.stage || 'blocked_dirty_worktree', {
         contentHash,
@@ -2798,6 +2878,8 @@ async function processAutoDevDocument(filePath, options = {}) {
         riskTier: policy.riskTier,
         baseStatus: contextResult.baseStatus || [],
         baseDirty: contextResult.baseDirty || [],
+        baseDirtyBlocking: contextResult.baseDirtyBlocking || [],
+        baseDirtyIgnored: contextResult.baseDirtyIgnored || [],
         profile: runtimeConfig.profile,
       });
       await markAgentDone();
@@ -3352,5 +3434,8 @@ module.exports = {
   _testOnly_extractAlarmIncidentContext: extractAlarmIncidentContext,
   _testOnly_formatAlarmRepairResultMessage: formatAlarmRepairResultMessage,
   _testOnly_normalizeSymphonyMode: normalizeSymphonyMode,
+  _testOnly_partitionDirtyBaseForWriteScope: partitionDirtyBaseForWriteScope,
+  _testOnly_findDirtyPathConflicts: findDirtyPathConflicts,
+  _testOnly_resolveNodeExecutable: resolveNodeExecutable,
   _testOnly_resolveScopedTestCommands: resolveScopedTestCommands,
 };

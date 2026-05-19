@@ -14,6 +14,8 @@
 		<string>false</string>
 		<key>CLAUDE_AUTO_DEV_PROFILE</key>
 		<string>autonomous_l5</string>
+		<key>CLAUDE_AUTO_DEV_SYMPHONY_MODE</key>
+		<string>shadow</string>
 		<key>CLAUDE_AUTO_DEV_MODEL</key>
 		<string>openai-oauth/gpt-5.4</string>
 		<key>CLAUDE_AUTO_DEV_CODEX_CLI</key>

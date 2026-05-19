@@ -1410,6 +1410,51 @@ async function test_lock_heartbeat_sidecar_enforces_parent_liveness() {
   console.log('✅ auto-dev: lock heartbeat sidecar validates parent liveness');
 }
 
+async function test_dirty_base_blocks_when_within_write_scope() {
+  const tmpRoot = makeTempRoot();
+  const doc = makeDoc(
+    tmpRoot,
+    'CODEX_DIRTY_SCOPE.md',
+    withRequiredMetadata('# Dirty\nscope', { write_scope: ['bots/claude/**'] })
+  );
+
+  const { mocks } = makeMocks(tmpRoot, {
+    child_process: {
+      execFileSync: (command, args = []) => {
+        if (command === 'git' && args[0] === 'rev-parse' && args[1] === '--is-inside-work-tree') return 'true\n';
+        if (command === 'bash') return '/usr/local/bin/claude\n';
+        if (command === 'claude') return 'ok';
+        if (command === 'rg') throw new Error('no match');
+        return '';
+      },
+      execSync: (command) => {
+        if (String(command).includes('git status --short')) return ' M bots/claude/src/reviewer.ts\n';
+        return '';
+      },
+    },
+  });
+
+  await withMocks(mocks, async pipeline => {
+    const result = await pipeline.processAutoDevDocument(doc, {
+      force: true,
+      test: false,
+      dryRun: false,
+      executeImplementation: true,
+      maxRevisionPasses: 0,
+    });
+    assert.strictEqual(result.ok, true);
+    assert.strictEqual(result.skipped, true);
+    assert.strictEqual(result.reason, 'blocked_dirty_worktree');
+    assert.deepStrictEqual(result.job.baseDirtyBlocking, ['bots/claude/src/reviewer.ts']);
+  }, testEnv(tmpRoot, {
+    CLAUDE_AUTO_DEV_PROFILE: 'autonomous_l5',
+    CLAUDE_AUTO_DEV_EXECUTE_IMPLEMENTATION: 'true',
+  }));
+
+  fs.rmSync(tmpRoot, { recursive: true, force: true });
+  console.log('✅ auto-dev: dirty base blocks when changed path overlaps write_scope');
+}
+
 async function test_review_cycle_uses_execution_context() {
   const tmpRoot = makeTempRoot();
   const doc = makeDoc(tmpRoot, 'CODEX_REVIEW_SCOPE.md', '# Review\nscope');
@@ -2046,6 +2091,7 @@ async function main() {
     test_claude_code_compat_invocation_includes_model_arg,
     test_bash_is_fail_closed_without_allowlist,
     test_lock_heartbeat_sidecar_enforces_parent_liveness,
+    test_dirty_base_blocks_when_within_write_scope,
     test_review_cycle_uses_execution_context,
     test_test_scope_is_executed_in_non_test_mode,
     test_test_scope_rejects_unsafe_shell_command,

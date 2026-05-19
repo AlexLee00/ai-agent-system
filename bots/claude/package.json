@@ -39,6 +39,8 @@
     "check:symphony-a2a": "node --check a2a/server.ts && node --check a2a/skills/symphony-common.ts && node --check a2a/skills/dispatch-ticket.ts && node --check a2a/skills/poll-tasks.ts && node --check a2a/skills/assign-agent.ts && node --check a2a/skills/report-status.ts && node --check a2a/skills/sync-github.ts && node --check a2a/skills/hermes-learn.ts && node --check a2a/skills/self-heal.ts && node --check a2a/skills/quality-gate.ts && node --check a2a/skills/index.ts && node --check scripts/symphony-a2a-skills-smoke.ts && ../../node_modules/.bin/tsx scripts/symphony-a2a-skills-smoke.ts --json",
     "check:symphony-orchestrator": "node --check lib/symphony/team-dispatcher.ts && node --check lib/symphony/orchestrator.ts && node --check scripts/symphony-orchestrator-smoke.ts && node --check scripts/symphony-autonomy-readiness.ts && node scripts/symphony-orchestrator-smoke.ts --json && node scripts/symphony-autonomy-readiness.ts --json",
     "symphony:audit":    "node scripts/symphony-migration-audit.ts",
+    "symphony:readiness": "node scripts/symphony-autonomy-readiness.ts --json",
+    "symphony:readiness:full": "node scripts/symphony-autonomy-readiness.ts --json --strict-runtime",
     "symphony:shadow":   "node scripts/symphony-shadow-runner.ts",
     "auto-dev":          "node scripts/auto-dev-runner.ts",
     "auto-dev:once":     "node scripts/auto-dev-runner.ts --once",

@@ -61,8 +61,17 @@ function checkFilesystemSkills() {
   };
 }
 
-function buildRecommendedActions({ audit, warnings, blockers }) {
+function buildRecommendedActions({ audit, warnings, blockers, notices = [] }) {
   const actions = [];
+  const launchdConfig = audit.launchdConfig || {};
+  const repoSymphonyMode = launchdConfig.repo?.symphonyMode || null;
+  const installedSymphonyMode = launchdConfig.installed?.symphonyMode || null;
+  const hasInstalledPlistDrift = Boolean(
+    launchdConfig.repo?.ok
+    && launchdConfig.installed?.ok
+    && repoSymphonyMode
+    && repoSymphonyMode !== installedSymphonyMode
+  );
   if (warnings.includes('dirty_worktree_present')) {
     actions.push({
       id: 'clean_or_commit_worktree',
@@ -83,17 +92,37 @@ function buildRecommendedActions({ audit, warnings, blockers }) {
       command: 'node bots/claude/scripts/symphony-migration-audit.ts --json',
     });
   }
-  if (warnings.includes('symphony_mode_off_runtime_not_yet_cut_over')) {
+  if (notices.includes('historical_enoent_jobs_present')) {
+    actions.push({
+      id: 'review_historical_enoent_jobs',
+      priority: 'P3',
+      approvalRequired: false,
+      mutatesRuntime: false,
+      reason: 'historical missing docs are retained as audit evidence and no longer affect readiness',
+      command: 'node bots/claude/scripts/symphony-migration-audit.ts --json',
+    });
+  }
+  if (
+    warnings.includes('symphony_mode_off_runtime_not_yet_cut_over')
+    || blockers.includes('symphony_mode_off_runtime_not_cut_over')
+  ) {
     actions.push({
       id: 'enable_symphony_shadow_mode',
       priority: 'P1',
       approvalRequired: true,
       mutatesRuntime: true,
-      reason: 'runtime is autonomous_l5 but Symphony integration is not yet enabled',
-      command: 'Set CLAUDE_AUTO_DEV_SYMPHONY_MODE=shadow in the approved runtime environment, then restart the approved Claude auto-dev owner process.',
+      reason: hasInstalledPlistDrift
+        ? 'tracked launchd plist enables Symphony mode, but installed LaunchAgent plist is stale'
+        : 'runtime is autonomous_l5 but Symphony integration is not yet enabled',
+      command: hasInstalledPlistDrift
+        ? `cp ${launchdConfig.repoPath} ${launchdConfig.installedPath} && launchctl kickstart -k gui/$(id -u)/ai.claude.auto-dev.autonomous`
+        : 'Set CLAUDE_AUTO_DEV_SYMPHONY_MODE=shadow in the approved runtime environment, then restart the approved Claude auto-dev owner process.',
     });
   }
-  if (warnings.includes('claude_auto_dev_launchd_visible_but_not_running')) {
+  if (
+    warnings.includes('claude_auto_dev_launchd_visible_but_not_running')
+    || blockers.includes('claude_auto_dev_launchd_visible_but_not_running')
+  ) {
     actions.push({
       id: 'restart_claude_auto_dev_autonomous',
       priority: 'P1',
@@ -102,6 +131,17 @@ function buildRecommendedActions({ audit, warnings, blockers }) {
       protectedLabel: audit.launchd?.label || 'ai.claude.auto-dev.autonomous',
       reason: 'launchd label is loaded but PID is absent; autonomous watcher is not currently executing',
       command: 'launchctl kickstart -k gui/$(id -u)/ai.claude.auto-dev.autonomous',
+    });
+  }
+  if (blockers.includes('claude_auto_dev_launchd_not_visible')) {
+    actions.push({
+      id: 'load_or_restore_claude_auto_dev_autonomous',
+      priority: 'P1',
+      approvalRequired: true,
+      mutatesRuntime: true,
+      protectedLabel: audit.launchd?.label || 'ai.claude.auto-dev.autonomous',
+      reason: 'launchd label is not visible; autonomous watcher cannot execute until the approved owner process is restored',
+      command: 'launchctl list | rg ai.claude.auto-dev.autonomous',
     });
   }
   if (blockers.length > 0) {
@@ -117,7 +157,8 @@ function buildRecommendedActions({ audit, warnings, blockers }) {
   return actions;
 }
 
-async function buildReadinessReport() {
+async function buildReadinessReport(options = {}) {
+  const strictRuntime = options.strictRuntime === true || hasFlag('strict-runtime');
   const audit = buildAuditReport();
   const a2a = checkA2ASkills();
   const filesystemSkills = checkFilesystemSkills();
@@ -137,6 +178,7 @@ async function buildReadinessReport() {
 
   const blockers = [];
   const warnings = [...(audit.warnings || [])];
+  const notices = [...(audit.notices || [])];
 
   if (!a2a.ok) blockers.push(`missing_a2a_skills:${a2a.missing.join(',')}`);
   if (!filesystemSkills.ok) blockers.push(`missing_filesystem_skills:${filesystemSkills.missing.join(',')}`);
@@ -144,17 +186,29 @@ async function buildReadinessReport() {
   if (audit.modelRoute?.implementationProvider !== 'openai-oauth' || audit.modelRoute?.implementationRunner !== 'codex') {
     blockers.push('implementation_route_not_openai_codex');
   }
-  if (audit.modelRoute?.symphonyMode === 'off') {
+  if (audit.modelRoute?.symphonyMode === 'off' && strictRuntime) {
+    blockers.push('symphony_mode_off_runtime_not_cut_over');
+  } else if (audit.modelRoute?.symphonyMode === 'off') {
     warnings.push('symphony_mode_off_runtime_not_yet_cut_over');
   }
-  if (audit.launchd?.visible && !audit.launchd?.pid) {
+  if (audit.launchd?.visible && !audit.launchd?.pid && strictRuntime) {
+    blockers.push('claude_auto_dev_launchd_visible_but_not_running');
+  } else if (audit.launchd?.visible && !audit.launchd?.pid) {
     warnings.push('claude_auto_dev_launchd_visible_but_not_running');
   }
-  if (!audit.launchd?.visible) {
+  if (!audit.launchd?.visible && strictRuntime) {
+    blockers.push('claude_auto_dev_launchd_not_visible');
+  } else if (!audit.launchd?.visible) {
     warnings.push('claude_auto_dev_launchd_not_visible');
   }
   const uniqueWarnings = [...new Set(warnings)];
-  const recommendedActions = buildRecommendedActions({ audit, warnings: uniqueWarnings, blockers });
+  const uniqueNotices = [...new Set(notices)];
+  const recommendedActions = buildRecommendedActions({
+    audit,
+    warnings: uniqueWarnings,
+    blockers,
+    notices: uniqueNotices,
+  });
 
   return {
     ok: blockers.length === 0,
@@ -164,9 +218,10 @@ async function buildReadinessReport() {
         ? 'claude_symphony_autonomy_ready_with_warnings'
         : 'claude_symphony_autonomy_ready',
     generatedAt: new Date().toISOString(),
-    mode: 'readiness_only',
+    mode: strictRuntime ? 'strict_runtime_readiness' : 'readiness_only',
     blockers,
     warnings: uniqueWarnings,
+    notices: uniqueNotices,
     recommendedActions,
     checks: {
       a2a,
@@ -185,6 +240,8 @@ async function buildReadinessReport() {
       },
       runtimeState: {
         missingJobCount: audit.runtimeState?.missingJobCount,
+        activeMissingJobCount: audit.runtimeState?.activeMissingJobCount,
+        historicalMissingJobCount: audit.runtimeState?.historicalMissingJobCount,
         historicalStateCount: audit.runtimeState?.historicalStateCount,
       },
     },
