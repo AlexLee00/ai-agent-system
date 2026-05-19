@@ -52,6 +52,9 @@ assert.ok(monitorSource.includes('HUB_OAUTH_MONITOR_REQUIRE_GEMINI_CODEASSIST_SE
 assert.ok(monitorSource.includes('gemini_codeassist_service'), 'OAuth monitor report must expose Gemini Code Assist service readiness');
 assert.ok(!monitorSource.includes('checkGeminiOAuth()'), 'retired gemini-oauth must not run in oauth monitor');
 assert.ok(!monitorSource.includes('gemini_oauth:'), 'oauth monitor report must not expose retired gemini_oauth status');
+assert.ok(monitorSource.includes('normalizeOAuthAlarmPayload'), 'OAuth monitor must normalize alarm payload before cooldown/postAlarm routing');
+assert.ok(monitorSource.includes('isRetiredGeminiOAuthAlarm'), 'retired gemini-oauth alarms must be suppressed at the alarm boundary');
+assert.ok(monitorSource.includes('normalizedPayload'), 'OAuth alarm suppression must use normalizedPayload to avoid provider alias divergence');
 assert.ok(monitorSource.includes('HUB_OAUTH_MONITOR_REAUTH_ALARM_COOLDOWN_MINUTES'), 'healthy reauth alarms must use a longer dedicated cooldown');
 assert.ok(monitorSource.includes('refresh_config_missing'), 'OpenAI Codex OAuth alarms must expose missing refresh configuration');
 const oauthFlowSource = fs.readFileSync(path.join(repoRoot, 'bots/hub/lib/oauth/oauth-flow.ts'), 'utf8');

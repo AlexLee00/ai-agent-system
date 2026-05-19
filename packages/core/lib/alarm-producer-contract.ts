@@ -140,6 +140,7 @@ export async function postStandardizedAlarm(envelope: AlarmEnvelope): Promise<{ 
       message: valid.message,
       eventType: valid.event_type,
       incidentKey: valid.incident_key,
+      dedupeMinutes: valid.digest_window_minutes,
       payload,
     });
     return result?.ok ? { ok: true } : { ok: false, error: result?.error || 'unknown' };

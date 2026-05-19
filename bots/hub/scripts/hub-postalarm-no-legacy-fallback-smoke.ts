@@ -224,6 +224,56 @@ async function runCriticalContractFallbackCase(tempWorkspace) {
   assert(calls[0].body.actionability === 'needs_human', `expected needs_human actionability, got ${calls[0].body.actionability}`);
 }
 
+async function runExplicitReportContractCase(tempWorkspace) {
+  resetEnv(tempWorkspace);
+  resetClientModule();
+  const calls = [];
+  global.fetch = async (url, init = {}) => {
+    const normalizedUrl = String(url);
+    calls.push({
+      url: normalizedUrl,
+      method: String(init.method || 'GET'),
+      body: init.body ? JSON.parse(String(init.body)) : null,
+    });
+    if (normalizedUrl.endsWith('/hub/alarm')) {
+      return new Response(
+        JSON.stringify({
+          ok: true,
+          delivered: true,
+          event_id: 126,
+        }),
+        { status: 200, headers: { 'content-type': 'application/json' } },
+      );
+    }
+    throw new Error(`unexpected fetch url for explicit report contract case: ${normalizedUrl}`);
+  };
+
+  const { postAlarm } = require('../../../packages/core/lib/hub-alarm-client.ts');
+  const result = await postAlarm({
+    message: 'weekly research report smoke',
+    team: 'general',
+    alertLevel: 1,
+    fromBot: 'research-scanner',
+    alarmType: 'report',
+    visibility: 'notify',
+    actionability: 'none',
+    eventType: 'darwin_weekly_research_report',
+    incidentKey: 'darwin:research-scanner:weekly_research_report:2026-05-18',
+    dedupeMinutes: 720,
+    payload: { report: true },
+  });
+
+  assert(result && result.ok === true, 'expected explicit report contract case to deliver');
+  assert(calls.length === 1, `expected 1 hub call, got ${calls.length}`);
+  assert(calls[0].body.alarmType === 'report', `expected report alarm type, got ${calls[0].body.alarmType}`);
+  assert(calls[0].body.visibility === 'notify', `expected notify visibility, got ${calls[0].body.visibility}`);
+  assert(calls[0].body.actionability === 'none', `expected none actionability, got ${calls[0].body.actionability}`);
+  assert(calls[0].body.eventType === 'darwin_weekly_research_report', `expected explicit eventType, got ${calls[0].body.eventType}`);
+  assert(calls[0].body.incidentKey === 'darwin:research-scanner:weekly_research_report:2026-05-18', `unexpected incidentKey: ${calls[0].body.incidentKey}`);
+  assert(calls[0].body.dedupeMinutes === 720, `expected dedupeMinutes=720, got ${calls[0].body.dedupeMinutes}`);
+  assert(calls[0].body.payload.event_type === 'darwin_weekly_research_report', 'expected payload event_type to match explicit eventType');
+}
+
 async function main() {
   const tempWorkspace = fs.mkdtempSync(path.join(os.tmpdir(), 'legacy-webhook-smoke-'));
   const originalFetch = global.fetch;
@@ -238,6 +288,7 @@ async function main() {
     await runTelegramSenderCanUseHubDirectCase(tempWorkspace);
     await runStandardContractFallbackCase(tempWorkspace);
     await runCriticalContractFallbackCase(tempWorkspace);
+    await runExplicitReportContractCase(tempWorkspace);
     console.log('hub_postalarm_no_legacy_fallback_smoke_ok');
   } finally {
     global.fetch = originalFetch;

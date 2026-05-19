@@ -39,6 +39,21 @@ const AUTO_TASK_MIN_FILES = 20;
 const MAX_WEEKLY_TASKS = 3;
 const logger = createLogger('scanner', { team: 'darwin' });
 
+function _weeklyResearchAlarmMeta(kind = 'weekly_research_report') {
+  const date = kst.today();
+  const eventType = kind === 'weekly_research_summary'
+    ? 'darwin_weekly_research_summary'
+    : 'darwin_weekly_research_report';
+  return {
+    alarmType: 'report',
+    visibility: 'notify',
+    actionability: 'none',
+    eventType,
+    incidentKey: `darwin:research-scanner:${kind}:${date}`,
+    dedupeMinutes: 720,
+  };
+}
+
 function _readPositiveIntEnv(name: string, fallback: number, options: { min?: number; max?: number } = {}): number {
   const raw = String(process.env[name] || '').trim();
   if (!raw) return fallback;
@@ -484,6 +499,15 @@ async function _alertHighRelevance(
     team: 'general',
     alertLevel: 1,
     fromBot: 'research-scanner',
+    ..._weeklyResearchAlarmMeta('weekly_research_report'),
+    payload: {
+      event_type: 'darwin_weekly_research_report',
+      report: true,
+      high_relevance_count: highRelevance.length,
+      collected_count: uniqueCount,
+      evaluated_count: evaluated.length,
+      stored_count: storedCount,
+    },
   });
   const alarmSent = alarmResult?.ok === true;
   if (!alarmSent) {
@@ -640,6 +664,13 @@ async function _generateWeeklyReport(): Promise<{ report: string; keywordEvoluti
     team: 'general',
     alertLevel: 1,
     fromBot: 'research-scanner',
+    ..._weeklyResearchAlarmMeta('weekly_research_summary'),
+    payload: {
+      event_type: 'darwin_weekly_research_summary',
+      report: true,
+      keyword_evolution_count: keywordEvolutionCount,
+      tasks_registered: tasksRegistered,
+    },
   });
 
   return { report, keywordEvolutionCount, tasksRegistered };

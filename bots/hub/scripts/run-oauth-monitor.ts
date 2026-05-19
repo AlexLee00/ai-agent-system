@@ -69,6 +69,28 @@ function isHealthyReauthAlarm({ title, payload }: any): boolean {
   return payload?.healthy === true && String(title || '').includes('재인증');
 }
 
+function normalizeOAuthAlarmPayload(payload: any): any {
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return payload || {};
+  const provider = String(payload.provider || '').trim();
+  if (provider === 'gemini-oauth') {
+    return {
+      ...payload,
+      provider: 'gemini-cli-oauth',
+      retired_provider: provider,
+    };
+  }
+  return { ...payload };
+}
+
+function isRetiredGeminiOAuthAlarm({ title, payload, normalizedPayload }: any): boolean {
+  const rawProvider = String(payload?.provider || '').trim();
+  const retiredProvider = String(normalizedPayload?.retired_provider || '').trim();
+  const alarmTitle = String(title || '');
+  return rawProvider === 'gemini-oauth'
+    || retiredProvider === 'gemini-oauth'
+    || (alarmTitle.includes('Gemini OAuth') && !alarmTitle.includes('Gemini CLI OAuth'));
+}
+
 function oauthAlarmCooldownMs(level: number, context: any = {}): number {
   const reauthAlarm = isHealthyReauthAlarm(context);
   const envKey = reauthAlarm
@@ -81,9 +103,14 @@ function oauthAlarmCooldownMs(level: number, context: any = {}): number {
   return Math.max(1, Number.isFinite(minutes) ? minutes : fallbackMinutes) * 60 * 1000;
 }
 
-function shouldSuppressOAuthAlarm({ level, title, payload }: any): boolean {
-  const cooldownMs = oauthAlarmCooldownMs(Number(level || 2), { title, payload });
-  const provider = String(payload?.provider || 'unknown').trim() || 'unknown';
+function shouldSuppressOAuthAlarm({ level, title, payload, normalizedPayload }: any): boolean {
+  const effectivePayload = normalizedPayload || payload || {};
+  if (isRetiredGeminiOAuthAlarm({ title, payload, normalizedPayload: effectivePayload })) {
+    console.warn('[oauth-monitor] retired gemini-oauth alarm suppressed; Gemini CLI OAuth is the active boundary');
+    return true;
+  }
+  const cooldownMs = oauthAlarmCooldownMs(Number(level || 2), { title, payload: effectivePayload });
+  const provider = String(effectivePayload?.provider || 'unknown').trim() || 'unknown';
   const signature = `${provider}|${String(title || 'oauth_alarm')}|${Number(level || 2)}`;
   try {
     const cachePath = oauthAlarmCachePath();
@@ -566,15 +593,16 @@ async function refreshOpenAiCodexHubToken(reason: string) {
 
 async function sendOAuthAlarm({ level, title, message, payload }: any) {
   if (!flag('HUB_OAUTH_MONITOR_SEND_ALARM', true)) return { ok: false, skipped: true };
-  if (shouldSuppressOAuthAlarm({ level, title, payload })) {
+  const normalizedPayload = normalizeOAuthAlarmPayload(payload);
+  if (shouldSuppressOAuthAlarm({ level, title, payload, normalizedPayload })) {
     return { ok: false, skipped: true, reason: 'cooldown' };
   }
   return postAlarm({
-    team: payload?.provider === 'claude-code-oauth' ? 'claude' : 'hub',
+    team: normalizedPayload?.provider === 'claude-code-oauth' ? 'claude' : 'hub',
     fromBot: 'hub-oauth-monitor',
     alertLevel: level,
     message: `${title}\n${message}`,
-    payload,
+    payload: normalizedPayload,
   });
 }
 

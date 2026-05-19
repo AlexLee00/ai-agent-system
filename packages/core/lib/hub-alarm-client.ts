@@ -115,6 +115,8 @@ type PostAlarmInput = {
   title?: string;
   eventType?: string;
   event_type?: string;
+  dedupeMinutes?: number;
+  cooldownMinutes?: number;
   criticalTelegramMode?: string;
   inlineKeyboard?: InlineKeyboard | null;
 };
@@ -554,6 +556,7 @@ async function _postAlarmViaHub({
   incidentKey,
   title,
   eventType,
+  dedupeMinutes,
 }: {
   message: string;
   team: string;
@@ -566,6 +569,7 @@ async function _postAlarmViaHub({
   incidentKey?: string;
   title?: string;
   eventType?: string;
+  dedupeMinutes?: number;
 }) {
   const hubBaseUrl = String(env.HUB_BASE_URL || '').trim().replace(/\/+$/, '');
   const hubToken = String(env.HUB_AUTH_TOKEN || '').trim();
@@ -607,6 +611,9 @@ async function _postAlarmViaHub({
     eventType: normalizedEventType,
     message,
   });
+  const normalizedDedupeMinutes = Number.isFinite(Number(dedupeMinutes))
+    ? Math.max(1, Math.min(1440, Math.trunc(Number(dedupeMinutes))))
+    : null;
   try {
     const response = await fetch(url, {
       method: 'POST',
@@ -625,6 +632,7 @@ async function _postAlarmViaHub({
         actionability: normalizedActionability,
         incidentKey: normalizedIncidentKey,
         eventType: normalizedEventType,
+        dedupeMinutes: normalizedDedupeMinutes,
         payload: {
           ...(payload && typeof payload === 'object' && !Array.isArray(payload) ? (payload as Record<string, unknown>) : {}),
           event_type: normalizedEventType,
@@ -786,6 +794,8 @@ export async function postAlarm({
   title,
   eventType,
   event_type,
+  dedupeMinutes,
+  cooldownMinutes,
   inlineKeyboard = null,
 }: PostAlarmInput) {
   const normalizedAlertLevel = _normalizeLegacyAlertLevel(level) ?? alertLevel;
@@ -842,6 +852,7 @@ export async function postAlarm({
       incidentKey: incidentKey || sessionKey,
       title,
       eventType: normalizedEventTypeInput,
+      dedupeMinutes: dedupeMinutes ?? cooldownMinutes,
     });
   if (hubResult?.ok) {
     _recordRecentAlertSnapshot({ message: safeMessage, team: requestedTeam, alertLevel: normalizedAlertLevel, fromBot: safeFromBot, payload });
