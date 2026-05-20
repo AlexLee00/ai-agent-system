@@ -96,6 +96,29 @@ assert.equal(geminiRefreshEnvelope.eventType, 'hub-oauth-monitor_error', 'error 
 assert.equal(geminiRefreshEnvelope.visibility, 'internal', 'error envelope visibility mismatch');
 assert.equal(geminiRefreshEnvelope.actionability, 'auto_repair', 'error envelope actionability mismatch');
 assert.equal(geminiRefreshEnvelope.dedupeMinutes, 120, 'producer cooldown must be propagated as dedupeMinutes');
+const geminiCodeAssistReauthEnvelope = buildOAuthMonitorAlarmEnvelope({
+  level: 3,
+  title: '[Hub OAuth] Gemini Code Assist 재인증 필요',
+  payload: {
+    provider: 'gemini-cli-oauth',
+    service: 'cloudaicompanion.googleapis.com',
+    error: {
+      kind: 'auth_required',
+      status: 401,
+      google_status: 'UNAUTHENTICATED',
+    },
+    manual_reauth_required: true,
+  },
+  cooldownMs: 120 * 60 * 1000,
+});
+assert.equal(
+  geminiCodeAssistReauthEnvelope.incidentKey,
+  'hub:hub-oauth-monitor:hub-oauth-monitor_error:545330eba13b',
+  'Gemini Code Assist auth-required incident key must stay compatible with existing unresolved incident',
+);
+assert.equal(geminiCodeAssistReauthEnvelope.visibility, 'human_action', 'manual reauth must route to human action visibility');
+assert.equal(geminiCodeAssistReauthEnvelope.actionability, 'needs_human', 'manual reauth must not route to auto repair');
+assert.equal(geminiCodeAssistReauthEnvelope.dedupeMinutes, 120, 'manual reauth cooldown must be propagated');
 const oauthFlowSource = fs.readFileSync(path.join(repoRoot, 'bots/hub/lib/oauth/oauth-flow.ts'), 'utf8');
 assert.ok(oauthFlowSource.includes('app_EMoamEEZ73f0CkXaXp7hrann'), 'OpenAI Codex OAuth refresh must use the public Codex-compatible client id by default');
 assert.ok(oauthFlowSource.includes('refreshIncludesScope: false'), 'OpenAI Codex OAuth refresh must match Codex-compatible refresh grant and omit scope');

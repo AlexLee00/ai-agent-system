@@ -42,6 +42,24 @@ function summarizeServiceUsageError(status, body = {}) {
   };
 }
 
+function buildOperatorAction(error, activationUrl) {
+  const kind = typeof error === 'string' ? error : String(error?.kind || '').trim();
+  const googleStatus = typeof error === 'object' ? String(error?.google_status || '').trim() : '';
+  const status = typeof error === 'object' ? Number(error?.status || 0) : 0;
+  if (
+    kind === 'auth_required'
+    || googleStatus === 'UNAUTHENTICATED'
+    || status === 401
+    || kind === 'gemini_codeassist_access_token_missing'
+  ) {
+    return 'Gemini CLI OAuth 재인증이 필요합니다. `gemini auth login` 실행 후 Hub OAuth monitor를 재실행하세요.';
+  }
+  if (kind === 'permission_denied' || kind === 'forbidden') {
+    return 'Gemini Code Assist quota project 권한을 확인하세요.';
+  }
+  return `Enable Gemini for Google Cloud API for the quota project: ${activationUrl}`;
+}
+
 function serviceActivationUrl(projectId) {
   const project = normalizeProjectId(projectId);
   if (!project) return null;
@@ -63,13 +81,16 @@ async function checkGeminiCodeAssistServiceStatus(options = {}) {
     };
   }
   if (!accessToken) {
+    const error = 'gemini_codeassist_access_token_missing';
+    const activationUrl = serviceActivationUrl(projectId);
     return {
       ok: false,
       service: CLOUD_AI_COMPANION_SERVICE,
       project_id_configured: true,
       state: null,
-      error: 'gemini_codeassist_access_token_missing',
-      activation_url: serviceActivationUrl(projectId),
+      error,
+      activation_url: activationUrl,
+      operator_action: buildOperatorAction(error, activationUrl),
     };
   }
 
@@ -84,6 +105,15 @@ async function checkGeminiCodeAssistServiceStatus(options = {}) {
   const state = String(body?.state || '').trim().toUpperCase() || null;
   const enabled = response.ok && state === 'ENABLED';
   const activationUrl = serviceActivationUrl(projectId);
+  const error = enabled ? null : (
+    response.ok
+      ? {
+        kind: state === 'DISABLED' ? 'service_disabled' : 'service_not_enabled',
+        status: Number(response.status || 0),
+        message: `${CLOUD_AI_COMPANION_SERVICE} state=${state || 'unknown'}`,
+      }
+      : summarizeServiceUsageError(Number(response.status || 0), body)
+  );
   return {
     ok: enabled,
     service: CLOUD_AI_COMPANION_SERVICE,
@@ -91,23 +121,14 @@ async function checkGeminiCodeAssistServiceStatus(options = {}) {
     http_status: Number(response.status || 0),
     state,
     activation_url: activationUrl,
-    error: enabled ? null : (
-      response.ok
-        ? {
-          kind: state === 'DISABLED' ? 'service_disabled' : 'service_not_enabled',
-          status: Number(response.status || 0),
-          message: `${CLOUD_AI_COMPANION_SERVICE} state=${state || 'unknown'}`,
-        }
-        : summarizeServiceUsageError(Number(response.status || 0), body)
-    ),
-    operator_action: enabled
-      ? null
-      : `Enable Gemini for Google Cloud API for the quota project: ${activationUrl}`,
+    error,
+    operator_action: enabled ? null : buildOperatorAction(error, activationUrl),
   };
 }
 
 module.exports = {
   CLOUD_AI_COMPANION_SERVICE,
+  buildOperatorAction,
   buildServiceUsageUrl,
   checkGeminiCodeAssistServiceStatus,
   serviceActivationUrl,

@@ -46,12 +46,37 @@ function oauthEventCachePath() {
 }
 
 function oauthEventCooldownMs(event) {
+  if (event.kind === 'manual_reauth_required') return 2 * 60 * 60 * 1000;
   if (event.severity === 'error') return 0;
   if (event.kind === 'degraded' || event.kind === 'near_expiry') return 15 * 60 * 1000;
   if (event.kind === 'reimport_success' || event.kind === 'refresh_success' || event.kind === 'live_probe_success' || event.kind === 'success') {
     return 2 * 60 * 60 * 1000;
   }
   return 0;
+}
+
+function summarizeStatusError(error, fallback = 'oauth_provider_unhealthy') {
+  if (!error) return fallback;
+  if (typeof error === 'string') return error.slice(0, 240);
+  const kind = String(error.kind || '').trim();
+  const googleStatus = String(error.google_status || '').trim();
+  const status = Number(error.status || 0);
+  const message = String(error.message || '').trim();
+  return [
+    kind || null,
+    googleStatus || null,
+    status ? `status=${status}` : null,
+    message || null,
+  ].filter(Boolean).join(' ') || fallback;
+}
+
+function isManualReauthStatus(status) {
+  const error = status?.error;
+  return status?.manual_reauth_required === true
+    || String(error?.kind || '').trim() === 'auth_required'
+    || String(error?.google_status || '').trim() === 'UNAUTHENTICATED'
+    || Number(error?.status || 0) === 401
+    || String(error || '').trim() === 'gemini_codeassist_access_token_missing';
 }
 
 function shouldSuppressRepeatedEvent(event) {
@@ -120,13 +145,25 @@ function buildProviderEvents(report) {
       ? Number(status.expires_in_hours)
       : null;
 
+    if (!healthy && !skipped && isManualReauthStatus(status)) {
+      events.push({
+        kind: 'manual_reauth_required',
+        severity: 'error',
+        provider,
+        title: `OAuth manual reauth required: ${provider}`,
+        message: summarizeStatusError(status.error, 'oauth_manual_reauth_required'),
+        metadata: status,
+      });
+      continue;
+    }
+
     if (!healthy && !skipped) {
       events.push({
         kind: 'failure',
         severity: 'error',
         provider,
         title: `OAuth provider unhealthy: ${provider}`,
-        message: String(status.error || 'oauth_provider_unhealthy').slice(0, 240),
+        message: summarizeStatusError(status.error, 'oauth_provider_unhealthy'),
         metadata: status,
       });
       continue;

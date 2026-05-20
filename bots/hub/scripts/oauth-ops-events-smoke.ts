@@ -34,10 +34,14 @@ const report = {
     },
   },
   gemini_codeassist_service: {
-    healthy: true,
-    local_credential_needs_refresh: true,
-    live_refresh_ok: true,
-    post_probe_reimport_ok: false,
+    healthy: false,
+    manual_reauth_required: true,
+    error: {
+      kind: 'auth_required',
+      status: 401,
+      google_status: 'UNAUTHENTICATED',
+      message: 'Request had invalid authentication credentials.',
+    },
   },
 };
 
@@ -49,7 +53,11 @@ assert(!events.some((event) => event.provider === 'gemini-oauth'), 'retired gemi
 assert(events.some((event) => event.kind === 'reimport_success' && event.provider === 'gemini-cli-oauth'), 'gemini local credential stale state should emit reimport success');
 assert(!events.some((event) => event.kind === 'near_expiry' && event.provider === 'gemini-cli-oauth'), 'local credential stale state alone should not be treated as near-expiry');
 assert(!events.some((event) => event.kind === 'live_probe_success' && event.provider === 'gemini-cli-oauth'), 'live probe success should not emit by default');
-assert(events.some((event) => event.kind === 'degraded' && event.provider === 'gemini-codeassist-service'), 'live refresh success without reimport must remain visible as degraded');
+const codeAssistManualReauth = events.find((event) => event.kind === 'manual_reauth_required' && event.provider === 'gemini-codeassist-service');
+assert(codeAssistManualReauth, 'Gemini Code Assist auth failure must emit manual reauth event');
+assert.match(codeAssistManualReauth.message, /auth_required/);
+assert.match(codeAssistManualReauth.message, /UNAUTHENTICATED/);
+assert.doesNotMatch(codeAssistManualReauth.message, /\[object Object\]/);
 
 const tmpWorkspace = fs.mkdtempSync(path.join(os.tmpdir(), 'oauth-ops-events-'));
 process.env.AI_AGENT_WORKSPACE = tmpWorkspace;

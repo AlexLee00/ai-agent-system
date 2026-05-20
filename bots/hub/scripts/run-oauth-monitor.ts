@@ -67,7 +67,8 @@ function oauthAlarmCachePath(): string {
 }
 
 function isHealthyReauthAlarm({ title, payload }: any): boolean {
-  return payload?.healthy === true && String(title || '').includes('재인증');
+  return (payload?.healthy === true || payload?.manual_reauth_required === true)
+    && String(title || '').includes('재인증');
 }
 
 function normalizeOAuthAlarmPayload(payload: any): any {
@@ -619,6 +620,30 @@ async function sendOAuthAlarm({ level, title, message, payload }: any) {
   });
 }
 
+function isAuthRequiredOAuthError(error: any): boolean {
+  if (!error) return false;
+  if (typeof error === 'string') return error === 'gemini_codeassist_access_token_missing';
+  return String(error.kind || '').trim() === 'auth_required'
+    || String(error.google_status || '').trim() === 'UNAUTHENTICATED'
+    || Number(error.status || 0) === 401;
+}
+
+function buildGeminiCodeAssistAlarmDetails(status: any) {
+  const manualReauthRequired = isAuthRequiredOAuthError(status?.error);
+  if (manualReauthRequired) {
+    return {
+      title: '[Hub OAuth] Gemini Code Assist 재인증 필요',
+      message: `Gemini Code Assist service 인증이 유효하지 않습니다. ${status.operator_action || 'gemini auth login 후 Hub OAuth monitor를 재실행하세요.'}`,
+      manual_reauth_required: true,
+    };
+  }
+  return {
+    title: '[Hub OAuth] Gemini Code Assist API 비활성/오류',
+    message: `Gemini Code Assist service 상태가 ${status.state || 'unknown'}입니다. ${status.operator_action || 'Google Cloud API 상태를 확인하세요.'}`,
+    manual_reauth_required: false,
+  };
+}
+
 async function checkClaudeCodeOAuth() {
   const alarmHours = oauthAlarmHours('HUB_CLAUDE_OAUTH_WARN_HOURS');
   const refreshHours = oauthRefreshHours('HUB_CLAUDE_OAUTH_REFRESH_HOURS');
@@ -1108,16 +1133,18 @@ async function checkGeminiCodeAssistService() {
   const status = await checkGeminiCodeAssistServiceStatus({ projectId, accessToken });
   const healthy = status.ok === true && status.state === 'ENABLED';
   if (!healthy && required) {
+    const alarm = buildGeminiCodeAssistAlarmDetails(status);
     await sendOAuthAlarm({
       level: 3,
-      title: '[Hub OAuth] Gemini Code Assist API 비활성/오류',
-      message: `Gemini Code Assist service 상태가 ${status.state || 'unknown'}입니다. ${status.operator_action || 'Google Cloud API 상태를 확인하세요.'}`,
+      title: alarm.title,
+      message: alarm.message,
       payload: {
         provider: 'gemini-cli-oauth',
         service: status.service,
         state: status.state || null,
         error: status.error || null,
         activation_url: status.activation_url || null,
+        manual_reauth_required: alarm.manual_reauth_required,
       },
     });
   }
@@ -1131,6 +1158,7 @@ async function checkGeminiCodeAssistService() {
     state: status.state || null,
     error: status.error || null,
     activation_url: status.activation_url || null,
+    manual_reauth_required: isAuthRequiredOAuthError(status.error),
   };
 }
 

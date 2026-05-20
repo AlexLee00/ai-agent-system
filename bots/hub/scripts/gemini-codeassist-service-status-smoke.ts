@@ -44,6 +44,26 @@ async function main() {
   assert.equal(disabled.error.kind, 'service_disabled');
   assert.match(disabled.operator_action, /Enable Gemini for Google Cloud API/);
 
+  const unauthenticated = await checkGeminiCodeAssistServiceStatus({
+    projectId: 'p1',
+    accessToken: 'expired-token',
+    fetchImpl: async () => ({
+      ok: false,
+      status: 401,
+      json: async () => ({
+        error: {
+          status: 'UNAUTHENTICATED',
+          message: 'Request had invalid authentication credentials.',
+        },
+      }),
+    }),
+  });
+  assert.equal(unauthenticated.ok, false);
+  assert.equal(unauthenticated.error.kind, 'auth_required');
+  assert.equal(unauthenticated.error.google_status, 'UNAUTHENTICATED');
+  assert.match(unauthenticated.operator_action, /gemini auth login/);
+  assert.doesNotMatch(unauthenticated.operator_action, /Enable Gemini for Google Cloud API/);
+
   const denied = summarizeServiceUsageError(403, {
     error: {
       status: 'PERMISSION_DENIED',
@@ -56,7 +76,7 @@ async function main() {
   const missing = await checkGeminiCodeAssistServiceStatus({ projectId: '', accessToken: 'token' });
   assert.equal(missing.error, 'gemini_codeassist_project_missing');
 
-  console.log(JSON.stringify({ ok: true, checked: 5 }));
+  console.log(JSON.stringify({ ok: true, checked: 6 }));
 }
 
 main().catch((error) => {
