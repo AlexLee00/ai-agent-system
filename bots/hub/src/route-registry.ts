@@ -30,6 +30,7 @@ const {
   eventsSearchRoute,
   eventsStatsRoute,
   eventsFeedbackRoute,
+  eventsPublishRoute,
   commandEventsRecentRoute,
   commandEventsSummaryRoute,
   commandEventsStuckRoute,
@@ -195,6 +196,8 @@ export function registerHubRoutes(app: Express, opts: HubRouteOptions): void {
   app.get('/hub/errors/recent', generalLimiter, errorsRecentRoute);
   app.get('/hub/errors/summary', generalLimiter, errorsSummaryRoute);
   app.get('/hub/events/search', generalLimiter, eventsSearchRoute);
+  app.post('/hub/events/publish', generalLimiter, eventsPublishRoute);
+  app.post('/events/publish', authMiddleware, generalLimiter, eventsPublishRoute);
   app.get('/hub/events/commands', generalLimiter, commandEventsRecentRoute);
   app.get('/hub/events/commands/summary', generalLimiter, commandEventsSummaryRoute);
   app.get('/hub/events/commands/stuck', generalLimiter, commandEventsStuckRoute);

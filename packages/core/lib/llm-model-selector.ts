@@ -634,6 +634,29 @@ const TEAM_SELECTOR_DEFAULTS_LEGACY: Record<string, any> = {
       ],
     },
   },
+  elsa: {
+    'chat.answer': {
+      primary: { provider: 'gemini-cli-oauth', model: GEMINI_CLI_FLASH_MODEL, maxTokens: 1800, temperature: 0.2, timeoutMs: 30_000 },
+      fallbacks: [
+        { provider: 'groq', model: GROQ_FAST_MODEL, maxTokens: 1600, temperature: 0.2, timeoutMs: 15_000 },
+        { provider: 'openai-oauth', model: OPENAI_MINI_MODEL, maxTokens: 1800, temperature: 0.2, timeoutMs: 30_000 },
+      ],
+    },
+    'chat.card_gen': {
+      primary: { provider: 'groq', model: GROQ_FAST_MODEL, maxTokens: 900, temperature: 0.1, timeoutMs: 12_000 },
+      fallbacks: [
+        { provider: 'gemini-cli-oauth', model: GEMINI_CLI_FLASH_LITE_MODEL, maxTokens: 900, temperature: 0.1, timeoutMs: 15_000 },
+        { provider: 'openai-oauth', model: OPENAI_MINI_MODEL, maxTokens: 900, temperature: 0.1, timeoutMs: 20_000 },
+      ],
+    },
+    _fallback: {
+      primary: { provider: 'gemini-cli-oauth', model: GEMINI_CLI_FLASH_MODEL, maxTokens: 1500, temperature: 0.2, timeoutMs: 30_000 },
+      fallbacks: [
+        { provider: 'groq', model: GROQ_FAST_MODEL, maxTokens: 1500, temperature: 0.2, timeoutMs: 15_000 },
+        { provider: 'openai-oauth', model: OPENAI_MINI_MODEL, maxTokens: 1500, temperature: 0.2, timeoutMs: 30_000 },
+      ],
+    },
+  },
   ska: {
     'parsing.level3': {
       primary: { provider: 'claude-code', model: 'claude-code/opus', maxTokens: 2000, temperature: 0.1, timeoutMs: 15000 },
@@ -951,6 +974,13 @@ const AGENT_MODEL_REGISTRY: Record<string, Record<string, string | null>> = {
   core: {
     'chunked-gpt4o': 'core.chunked.gpt4o',
     'chunked-default': 'core.chunked.default',
+  },
+  elsa: {
+    chat: 'elsa.chat.answer',
+    rag: 'elsa.chat.answer',
+    vision: 'elsa.chat.answer',
+    voice: 'elsa.chat.answer',
+    'chat.card_gen': 'elsa.chat.card_gen',
   },
   justin: {
     default: 'justin._default',
@@ -1397,6 +1427,9 @@ function buildSelectorRegistry(): Record<string, any> {
     'hub.gemini.cli.readiness.live': (options: SelectorOptions = {}) => resolveFromTeamDefault('hub.gemini.cli.readiness.live', options),
     'hub.unified.oauth.openai.smoke': (options: SelectorOptions = {}) => resolveFromTeamDefault('hub.unified.oauth.openai.smoke', options),
     'hub.unified.oauth.gemini.smoke': (options: SelectorOptions = {}) => resolveFromTeamDefault('hub.unified.oauth.gemini.smoke', options),
+    'elsa._default': (options: SelectorOptions = {}) => resolveFromTeamDefault('elsa._default', options),
+    'elsa.chat.answer': (options: SelectorOptions = {}) => resolveFromTeamDefault('elsa.chat.answer', options),
+    'elsa.chat.card_gen': (options: SelectorOptions = {}) => resolveFromTeamDefault('elsa.chat.card_gen', options),
 
     'claude._default': (options: SelectorOptions = {}) => resolveFromTeamDefault('claude._default', options),
     'claude.archer.tech_analysis': (options: SelectorOptions = {}) => resolveFromTeamDefault('claude.archer.tech_analysis', options),

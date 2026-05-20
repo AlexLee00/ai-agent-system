@@ -216,6 +216,27 @@ function main() {
     'orchestrator/summary must keep OpenAI OAuth as a safety fallback route',
   );
 
+  const elsaChat = selector.describeAgentModel('elsa', 'chat');
+  assert.equal(elsaChat?.selectorKey, 'elsa.chat.answer', 'elsa/chat must use the production Elsa chat selector');
+  assert.equal(
+    elsaChat?.chain?.[0]?.provider,
+    'gemini-cli-oauth',
+    'elsa/chat must not depend on the single-route OpenAI smoke selector as primary',
+  );
+  assert.ok(
+    elsaChat?.chain?.some((entry) => entry.provider === 'groq'),
+    'elsa/chat must keep Groq as a non-OpenAI fallback',
+  );
+  assert.ok(
+    elsaChat?.chain?.some((entry) => entry.provider === 'openai-oauth'),
+    'elsa/chat may keep OpenAI OAuth only as a safety fallback',
+  );
+
+  const elsaCard = selector.selectLLMChain('elsa.chat.card_gen');
+  assert.equal(elsaCard[0]?.provider, 'groq', 'elsa card generation should start on fast Groq route');
+  assert.ok(elsaCard.some((entry) => entry.provider === 'gemini-cli-oauth'), 'elsa card generation must keep Gemini CLI fallback');
+  assert.ok(elsaCard.some((entry) => entry.provider === 'openai-oauth'), 'elsa card generation must keep OpenAI safety fallback');
+
   const hubClient = require('../../../packages/core/lib/hub-client');
   assert.strictEqual(typeof hubClient.callHubLlm, 'function', 'hub-client must export callHubLlm');
 

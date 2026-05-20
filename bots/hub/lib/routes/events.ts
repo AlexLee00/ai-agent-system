@@ -1,9 +1,53 @@
 const eventLake = require('../../../../packages/core/lib/event-lake');
 const { collectHealthSnapshot } = require('./health');
 
+function text(value: unknown, fallback = '') {
+  const normalized = String(value == null ? fallback : value).trim();
+  return normalized || fallback;
+}
+
 function toInt(value: unknown, fallback: number) {
   const parsed = Number.parseInt(String(value ?? ''), 10);
   return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function deriveTeam(source: string, topic: string) {
+  const candidate = text(source || topic).split(/[.:/-]/)[0]?.toLowerCase() || '';
+  if (candidate === 'luna' || candidate === 'investment') return 'investment';
+  if (candidate === 'ska' || candidate === 'reservation') return 'reservation';
+  if (candidate === 'hub') return 'hub';
+  if (candidate === 'blog') return 'blog';
+  if (candidate === 'claude') return 'claude';
+  if (candidate === 'darwin') return 'darwin';
+  if (candidate === 'sigma') return 'sigma';
+  return candidate || 'general';
+}
+
+export async function eventsPublishRoute(req: any, res: any) {
+  try {
+    const body = req.body || {};
+    const source = text(body.source || body.botName || body.bot_name, 'unknown');
+    const topic = text(body.topic || body.eventType || body.event_type, 'general_event');
+    const severity = text(body.severity, 'info').toLowerCase();
+    const id = await eventLake.record({
+      eventType: topic,
+      team: text(body.team, deriveTeam(source, topic)),
+      botName: source,
+      severity: ['debug', 'info', 'warn', 'error', 'critical'].includes(severity) ? severity : 'info',
+      title: text(body.title, topic),
+      message: text(body.message, ''),
+      tags: ['hub-events-publish', source].filter(Boolean),
+      metadata: {
+        source,
+        topic,
+        payload: body.payload ?? null,
+        timestamp: body.timestamp ?? Date.now(),
+      },
+    });
+    return res.json({ ok: true, id });
+  } catch (error: any) {
+    return res.status(500).json({ ok: false, error: error.message });
+  }
 }
 
 export async function eventsSearchRoute(req: any, res: any) {
