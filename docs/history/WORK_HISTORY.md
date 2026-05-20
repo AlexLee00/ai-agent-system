@@ -4,6 +4,15 @@
 > 상세 내용: `reservation-dev-summary.md` / `reservation-handoff.md`
 > 최초 작성: 2026-02-27
 
+## 2026-05-21: CODEX_EDUX_INTEGRATION — 버그 수정 + 상태 점검 (Promotion Gate 4/5)
+
+- **버그 수정 2건**:
+  - `runtime-edux-kis-daily.ts`, `runtime-edux-overseas-daily.ts`: `latestTwoNumeric`에서 `Number(null)=0` 변환으로 -100% 등락률 계산되던 버그 수정
+  - `runtime-edux-integration-report.ts`, `edux-promotion-gate.ts`: fixture dry_run 레코드 이미지 정책 검사에서 제외 (오 탐 해소)
+- **dry-run 실행**: 오늘(05-21) 5슬롯 DB 기록 (총 10/35건)
+- **Promotion Gate**: 4/5 통과 — dry_run_7d_below_35만 남음 (약 2026-05-26~27 충족 예상)
+- **마스터 액션 필요**: OPS launchd 5개 로드 (`ai.edux.crypto-daily-0600` 외 4개)
+
 ## 2026-05-21: CODEX_BLOG_V3_UNIFIED_MASTER — H영역 재검증 (전체 V3 상태 확인)
 
 - **목적**: pre-rollback 커밋 후 CODEX 실행 전 현황 파악 + H영역 Goal-Driven 5/5 재검증

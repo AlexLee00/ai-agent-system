@@ -1,3 +1,46 @@
+# 세션 인수인계 — 2026-05-21 (CODEX_EDUX_INTEGRATION_UNIFIED_IMPLEMENTATION 버그 수정 + 상태 점검)
+
+## 완료 요약 ✅ (Edu-X 통합 — 버그 수정 2건 + 오늘 dry-run 5슬롯 실행)
+
+### 오늘 세션 작업 내역
+
+| # | 작업 | 결과 |
+|---|------|------|
+| 1 | bots/edu-x/ 전체 상태 점검 | Phase 1~3 구현 완료 확인 |
+| 2 | integration-report image 오 탐 수정 | fixture 레코드 제외 조건 추가 |
+| 3 | promotion-gate image 오 탐 수정 | fixture 레코드 제외 조건 추가 |
+| 4 | KIS Yahoo Finance null→0 변환 버그 수정 | latestTwoNumeric null/0 필터 추가 |
+| 5 | Overseas Yahoo Finance 동일 버그 수정 | 동일 수정 적용 |
+| 6 | 오늘 dry-run 5슬롯 DB 기록 생성 | 10/35건 누적 |
+
+### Promotion Gate 현황 (4/5 통과)
+
+| 항목 | 결과 | 값 |
+|------|------|----|
+| 7일 Dry-run 35건+ | ❌ HOLD | 10건 (5/20: 5건, 5/21: 5건) |
+| 본문 생성 정상 | ✅ | 10/10건, 평균 1,623자 |
+| 이미지 미첨부 정책 | ✅ | 0건 (fixture 제외) |
+| JWT 갱신 정상 | ✅ | 24h 내 36건 |
+| Rate Limit 위반 | ✅ | 0건 |
+
+### 마스터 액션 필요
+
+1. **OPS에 launchd 5개 로드** (현재 미로드):
+   ```bash
+   for f in bots/edu-x/launchd/ai.edux.*.plist; do
+     cp "$f" ~/Library/LaunchAgents/ && launchctl load "$f"
+   done
+   ```
+2. **1주 dry-run 누적 진행** — 자동으로 매일 5슬롯 실행됨
+   - 2026-05-20: 5건 (fixture), 2026-05-21: 5건 → 총 10건
+   - 35건 달성: 약 2026-05-26~27 예상
+3. **Promotion Gate 재검사** 후 실 발행 승인
+
+### 참고: 어제 실 발행 현황
+어제(05-20) one_off_live_test 모드로 26건 edu-x.io 실 발행됨. Promotion Gate 우회 방식이었으므로 1주 dry-run 정책은 아직 미충족.
+
+---
+
 # 세션 인수인계 — 2026-05-17 (CODEX_LUNA_PHASE1_UNIFIED_IMPLEMENTATION Goal-Driven 5/5 완료 검증)
 
 ## 완료 요약 ✅ (루나팀 Phase 1 — community evidence + backtest + predictive validation + launchd)
