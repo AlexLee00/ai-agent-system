@@ -150,6 +150,7 @@
     "test": "tsx scripts/run-tests.ts all",
     "test:unit": "tsx scripts/run-tests.ts unit",
     "test:secrets-meta": "node --test __tests__/secrets-meta.node.test.js",
+    "test:symphony-webhook": "../../node_modules/.bin/tsx __tests__/symphony-github-webhook.test.ts",
     "check:runtime": "tsx scripts/run-tests.ts runtime",
     "check:runtime:live-llm": "tsx scripts/run-tests.ts runtime-live",
     "check:l5": "tsx scripts/run-tests.ts all && tsx scripts/run-tests.ts runtime && tsx scripts/generate-hub-alarm-inventory.ts && tsx scripts/hub-l5-acceptance-report.ts --write",

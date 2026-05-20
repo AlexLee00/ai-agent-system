@@ -34,6 +34,7 @@
     "test:dexter-event-filter": "node __tests__/dexter-reportable-event-filter.test.ts",
     "test:dexter-pattern-severity": "node __tests__/dexter-pattern-severity.test.ts",
     "test:auto-dev":     "node __tests__/auto-dev-pipeline.test.ts",
+    "test:symphony":     "node __tests__/symphony-team-dispatcher.test.ts && node __tests__/symphony-orchestrator.test.ts",
     "test:llm-leak":     "../../node_modules/.bin/tsx scripts/claude-llm-leak-guard-smoke.ts",
     "check:symphony-migration": "node --check lib/auto-dev-pipeline.ts && node --check lib/symphony/index.ts && node --check lib/symphony/task-adapter.ts && node --check lib/symphony/workspace-adapter.ts && node --check lib/symphony/runner-adapter.ts && node --check lib/symphony/validation-adapter.ts && node --check lib/symphony/state-store.ts && node --check scripts/symphony-migration-audit.ts && node --check scripts/symphony-shadow-runner.ts && node --check scripts/symphony-migration-smoke.ts && node scripts/symphony-migration-smoke.ts --json && node scripts/symphony-shadow-runner.ts --json --fixture --no-write",
     "check:symphony-a2a": "node --check a2a/server.ts && node --check a2a/skills/symphony-common.ts && node --check a2a/skills/dispatch-ticket.ts && node --check a2a/skills/poll-tasks.ts && node --check a2a/skills/assign-agent.ts && node --check a2a/skills/report-status.ts && node --check a2a/skills/sync-github.ts && node --check a2a/skills/hermes-learn.ts && node --check a2a/skills/self-heal.ts && node --check a2a/skills/quality-gate.ts && node --check a2a/skills/index.ts && node --check scripts/symphony-a2a-skills-smoke.ts && ../../node_modules/.bin/tsx scripts/symphony-a2a-skills-smoke.ts --json",
@@ -44,6 +45,6 @@
     "symphony:shadow":   "node scripts/symphony-shadow-runner.ts",
     "auto-dev":          "node scripts/auto-dev-runner.ts",
     "auto-dev:once":     "node scripts/auto-dev-runner.ts --once",
-    "test:unit":         "node __tests__/reviewer.test.ts && node __tests__/guardian.test.ts && node __tests__/builder.test.ts && node __tests__/doctor-verify-loop.test.ts && node __tests__/retired-luna-launchd.test.ts && node __tests__/commander.test.ts && node __tests__/codex-plan-notifier.test.ts && node __tests__/claude-lead-triage-throttle.test.ts && node __tests__/dexter-reportable-event-filter.test.ts && node __tests__/dexter-pattern-severity.test.ts && node __tests__/auto-dev-pipeline.test.ts && ../../node_modules/.bin/tsx scripts/claude-llm-leak-guard-smoke.ts"
+    "test:unit":         "node __tests__/reviewer.test.ts && node __tests__/guardian.test.ts && node __tests__/builder.test.ts && node __tests__/doctor-verify-loop.test.ts && node __tests__/retired-luna-launchd.test.ts && node __tests__/commander.test.ts && node __tests__/codex-plan-notifier.test.ts && node __tests__/claude-lead-triage-throttle.test.ts && node __tests__/dexter-reportable-event-filter.test.ts && node __tests__/dexter-pattern-severity.test.ts && node __tests__/auto-dev-pipeline.test.ts && node __tests__/symphony-team-dispatcher.test.ts && node __tests__/symphony-orchestrator.test.ts && ../../node_modules/.bin/tsx scripts/claude-llm-leak-guard-smoke.ts"
   }
 }
