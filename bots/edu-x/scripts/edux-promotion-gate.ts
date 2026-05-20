@@ -92,7 +92,7 @@ async function check3_ImageAttachmentPolicy() {
     const result = await dbQuery(pgPool, `
       SELECT
         COUNT(*) AS total,
-        COUNT(*) FILTER (WHERE jsonb_array_length(image_urls) > 0) AS with_images
+        COUNT(*) FILTER (WHERE jsonb_array_length(image_urls) > 0 AND (metadata->>'fixture')::boolean IS NOT TRUE) AS with_images
       FROM edux_publish_log
       WHERE status = 'dry_run' AND created_at >= $1
     `, [sevenDaysAgo], 'public');

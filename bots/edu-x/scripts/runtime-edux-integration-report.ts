@@ -54,7 +54,7 @@ async function generateReport(options = {}) {
       COUNT(*) FILTER (WHERE status = 'dry_run' AND created_at >= NOW() - INTERVAL '7 days') AS dry_run_7d,
       COUNT(*) FILTER (WHERE status = 'success' AND created_at >= NOW() - INTERVAL '7 days') AS success_7d,
       ROUND(AVG((metadata->>'contentLen')::int) FILTER (WHERE metadata->>'contentLen' IS NOT NULL AND created_at >= NOW() - INTERVAL '7 days')) AS avg_content_len,
-      COUNT(*) FILTER (WHERE status = 'dry_run' AND jsonb_array_length(image_urls) > 0 AND created_at >= NOW() - INTERVAL '7 days') AS image_attached
+      COUNT(*) FILTER (WHERE status = 'dry_run' AND jsonb_array_length(image_urls) > 0 AND (metadata->>'fixture')::boolean IS NOT TRUE AND created_at >= NOW() - INTERVAL '7 days') AS image_attached
     FROM edux_publish_log
   `, [], 'public');
   const row = rows.rows?.[0] || {};

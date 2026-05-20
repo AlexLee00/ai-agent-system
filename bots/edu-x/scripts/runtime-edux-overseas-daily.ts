@@ -52,7 +52,7 @@ function titleForPublish(title, liveGate) {
 // ─── 해외주식 데이터 수집 ─────────────────────────────────────────
 
 function latestTwoNumeric(values = []) {
-  const numeric = values.filter((value) => Number.isFinite(Number(value))).map(Number).slice(-2);
+  const numeric = values.filter((value) => value != null && Number.isFinite(Number(value)) && Number(value) !== 0).map(Number).slice(-2);
   if (numeric.length === 1) return [null, numeric[0]];
   return numeric;
 }
