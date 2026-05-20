@@ -410,7 +410,24 @@ async function checkAlreadyPublished(slot) {
 // ─── DB 로그 ──────────────────────────────────────────────────────
 
 async function logPublish({ slot, postId, postUrl, title, content, imageUrls, status, errorMsg, metadata }) {
-  const result = await insertPublishLog(pgPool, { category: CATEGORY, slot, postId, postUrl, title, content, imageUrls, status, errorMsg, metadata });
+  const testPost = ARGS.testPost === true || ARGS.oneOffLiveTest === true;
+  const result = await insertPublishLog(pgPool, {
+    category: CATEGORY,
+    slot,
+    postId,
+    postUrl,
+    title,
+    content,
+    imageUrls,
+    status,
+    errorMsg,
+    metadata: {
+      ...(metadata || {}),
+      testPost,
+      oneOffLiveTest: ARGS.oneOffLiveTest === true,
+      excludeFromLunaEvidence: ARGS.excludeFromLunaEvidence === true || testPost,
+    },
+  });
   if (result.ok) console.log(`[edu-x/crypto] 로그 저장: ${status} (슬롯: ${slot})`);
   else console.warn('[edu-x/crypto] 로그 저장 스킵/실패:', result.reason);
 }

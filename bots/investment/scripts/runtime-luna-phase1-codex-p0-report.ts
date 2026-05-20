@@ -14,6 +14,7 @@ import { runLunaBinanceTopVolumeUniverse } from './runtime-luna-binance-top-volu
 
 const ROOT = path.resolve(new URL('../../..', import.meta.url).pathname);
 const OUT = path.resolve(new URL('../output/luna-phase1-codex-p0-report.json', import.meta.url).pathname);
+const EDUX_BRIDGE_OUT = path.resolve(new URL('../output/luna-edux-post-evidence-bridge.json', import.meta.url).pathname);
 
 function hasFlag(name: string) {
   return process.argv.includes(`--${name}`);
@@ -78,10 +79,28 @@ function topCandidateBlockers(rows = [], limit = 10) {
     .slice(0, limit);
 }
 
+function readJsonSafe(file: string) {
+  try {
+    return JSON.parse(fs.readFileSync(file, 'utf8'));
+  } catch {
+    return null;
+  }
+}
+
 const community24h = await safeGet(`
   SELECT count(*)::int AS count
     FROM external_evidence_events
    WHERE source_type = 'community'
+     AND created_at > NOW() - INTERVAL '24 hours'
+`);
+
+const eduxPostShadow24h = await safeGet(`
+  SELECT count(*)::int AS count,
+         count(DISTINCT market)::int AS market_count,
+         count(DISTINCT symbol) FILTER (WHERE symbol IS NOT NULL)::int AS symbol_count,
+         max(created_at) AS latest_created_at
+    FROM external_evidence_events
+   WHERE source_type = 'edux_post_shadow'
      AND created_at > NOW() - INTERVAL '24 hours'
 `);
 
@@ -156,6 +175,8 @@ const payload = {
   goals,
   db: {
     community24h,
+    eduxPostShadow24h,
+    eduxPostEvidenceBridge: readJsonSafe(EDUX_BRIDGE_OUT),
     communityCoverageGate,
     candidateBacktestStatus: backtestStatus,
     predictiveAudit24h,

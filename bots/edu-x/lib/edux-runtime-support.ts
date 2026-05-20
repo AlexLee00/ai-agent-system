@@ -121,6 +121,8 @@ function parseArgs(argv = process.argv.slice(2)) {
     fixture: false,
     noWrite: false,
     oneOffLiveTest: false,
+    testPost: false,
+    excludeFromLunaEvidence: false,
     slot: null,
     category: null,
   };
@@ -131,12 +133,76 @@ function parseArgs(argv = process.argv.slice(2)) {
     else if (item === '--fixture') args.fixture = true;
     else if (item === '--no-write') args.noWrite = true;
     else if (item === '--one-off-live-test') args.oneOffLiveTest = true;
+    else if (item === '--test-post') args.testPost = true;
+    else if (item === '--exclude-from-luna-evidence') args.excludeFromLunaEvidence = true;
     else if (item === '--slot' && argv[i + 1]) args.slot = argv[++i];
     else if (item.startsWith('--slot=')) args.slot = item.split('=', 2)[1];
     else if (item === '--category' && argv[i + 1]) args.category = argv[++i];
     else if (item.startsWith('--category=')) args.category = item.split('=', 2)[1];
   }
   return args;
+}
+
+function resolvePublishLogSafetyMetadata(record = {}) {
+  const metadata = record.metadata || {};
+  const liveGate = metadata.liveGate || {};
+  const title = String(record.title || '').trim();
+  const testPost = record.testPost === true
+    || metadata.testPost === true
+    || metadata.oneOffLiveTest === true
+    || liveGate.mode === 'one_off_live_test'
+    || /^\[TEST\]/i.test(title);
+  const excludeFromLunaEvidence = testPost
+    || record.excludeFromLunaEvidence === true
+    || metadata.excludeFromLunaEvidence === true;
+  return {
+    testPost,
+    oneOffLiveTest: metadata.oneOffLiveTest === true || liveGate.mode === 'one_off_live_test',
+    excludeFromLunaEvidence,
+    lunaEvidencePolicy: excludeFromLunaEvidence ? 'exclude_test_post' : 'eligible_shadow_context',
+  };
+}
+
+function normalizePublishLogContentPreview(content = '') {
+  return String(content || '')
+    .replace(/<p>\s*&nbsp;\s*<\/p>/gi, '\n\n')
+    .replace(/<\/p>\s*<p>/gi, '\n')
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<\/?(?:p|strong|b|em|span|div)[^>]*>/gi, '')
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/&amp;/gi, '&')
+    .replace(/&lt;/gi, '<')
+    .replace(/&gt;/gi, '>')
+    .replace(/&#39;/gi, "'")
+    .replace(/&quot;/gi, '"')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/[ \t]+\n/g, '\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
+
+function buildLunaEvidenceContentPreview(record = {}) {
+  const title = String(record.title || '').replace(/^\[TEST\]\s*/i, '').trim();
+  const content = normalizePublishLogContentPreview(record.content || '');
+  const lines = content
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .filter((line) => !/^#EduX\b/i.test(line))
+    .slice(0, 14);
+  return [title ? `# ${title}` : null, ...lines].filter(Boolean).join('\n').slice(0, 1800);
+}
+
+function buildLunaEvidenceSummary(record = {}) {
+  const preview = buildLunaEvidenceContentPreview(record);
+  const lines = preview
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .filter((line) => !/^#\s/.test(line))
+    .filter((line) => !/^(?:⚠️?|#EduX)/u.test(line))
+    .slice(0, 5);
+  return lines.join(' | ').slice(0, 700);
 }
 
 function resolveDryRun(args = parseArgs()) {
@@ -234,6 +300,9 @@ async function insertPublishLog(pgModule, record) {
 
   const metadata = {
     ...(record.metadata || {}),
+    ...resolvePublishLogSafetyMetadata(record),
+    lunaEvidenceSummary: buildLunaEvidenceSummary(record),
+    lunaEvidenceContentPreview: buildLunaEvidenceContentPreview(record),
     contentLen: String(record.content || '').length,
     imageCount: Array.isArray(record.imageUrls) ? record.imageUrls.length : 0,
     dryRun: record.status === 'dry_run',
@@ -539,6 +608,10 @@ module.exports = {
   MIN_CONTENT_LEN,
   MIN_IMAGES_PER_POST,
   parseArgs,
+  resolvePublishLogSafetyMetadata,
+  normalizePublishLogContentPreview,
+  buildLunaEvidenceContentPreview,
+  buildLunaEvidenceSummary,
   resolveDryRun,
   ensureDir,
   dbQuery,

@@ -167,7 +167,24 @@ async function checkAlreadyPublished() {
 }
 
 async function logPublish({ postId, postUrl, title, content, imageUrls, status, errorMsg, metadata }) {
-  const result = await insertPublishLog(pgPool, { category: CATEGORY, slot: SLOT, postId, postUrl, title, content, imageUrls, status, errorMsg, metadata });
+  const testPost = ARGS.testPost === true || ARGS.oneOffLiveTest === true;
+  const result = await insertPublishLog(pgPool, {
+    category: CATEGORY,
+    slot: SLOT,
+    postId,
+    postUrl,
+    title,
+    content,
+    imageUrls,
+    status,
+    errorMsg,
+    metadata: {
+      ...(metadata || {}),
+      testPost,
+      oneOffLiveTest: ARGS.oneOffLiveTest === true,
+      excludeFromLunaEvidence: ARGS.excludeFromLunaEvidence === true || testPost,
+    },
+  });
   if (!result.ok) console.warn('[edu-x/kis] 로그 저장 스킵/실패:', result.reason);
 }
 

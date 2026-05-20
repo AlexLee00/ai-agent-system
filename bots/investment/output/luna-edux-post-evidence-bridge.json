@@ -1,0 +1,34 @@
+{
+  "ok": true,
+  "status": "edux_shadow_evidence_planned",
+  "generatedAt": "2026-05-20T14:10:03.699Z",
+  "dryRun": true,
+  "writeRequested": false,
+  "source": "all",
+  "sources": [
+    "db:10",
+    "artifacts:5"
+  ],
+  "lookbackHours": 48,
+  "includeTestPosts": false,
+  "postsRead": 0,
+  "evidencePlanned": 0,
+  "evidenceInserted": 0,
+  "duplicateSkipped": 0,
+  "summary": {
+    "total": 0,
+    "byMarket": {},
+    "symbols": [],
+    "sourceType": "edux_post_shadow",
+    "shadowOnly": true,
+    "liveMutation": false
+  },
+  "safety": {
+    "shadowOnly": true,
+    "liveMutation": false,
+    "tradingDecisionPriorityChanged": false,
+    "liveBuySellPathTouched": false,
+    "protectedPidTouched": false
+  },
+  "sample": []
+}
