@@ -15,7 +15,8 @@ async function check(category, slot) {
   assert.equal(result.content.includes('[이미지'), false, `${category} still contains image placeholder`);
   assert.equal(/[①②③④⑤⑥⑦⑧⑨⑩]/.test(result.content), false, `${category} should not render legacy section numbers`);
   const html = formatContentForEduXWeb(result.content);
-  assert.equal(html.includes('<h3>🧭'), true, `${category} html conversion missing section block`);
+  const expectedHeading = category === 'crypto' ? '<h3>⚡' : '<h3>🧭';
+  assert.equal(html.includes(expectedHeading), true, `${category} html conversion missing section block`);
   assert.equal(html.includes('<p>'), true, `${category} html conversion missing paragraph block`);
   assert.equal(html.includes('**'), false, `${category} html conversion should strip markdown bold markers`);
   if (category === 'kis') {
@@ -26,7 +27,7 @@ async function check(category, slot) {
     assert.equal(/BTC\/USDT|비트코인|Fear & Greed|암호화폐 커뮤니티/.test(result.content), false, 'overseas fallback should not contain crypto-specific sections');
     assert.equal(/해외주식|S&P500|Magnificent 7/.test(result.content), true, 'overseas fallback should contain overseas market sections');
   }
-  return { category, slot, contentLen: quality.contentLen, sectionCount: 10 };
+  return { category, slot, contentLen: quality.contentLen, sectionCount: quality.sectionCount };
 }
 
 async function main() {
@@ -50,13 +51,26 @@ async function main() {
   assert.equal(cryptoPost.content.includes('BTC/USDT'), true, 'crypto post should display BTC/USDT');
   assert.equal(cryptoPost.content.includes('ETH/USDT'), true, 'crypto post should display ETH/USDT');
   assert.equal(/BTCUSDT|ETHUSDT|SOLUSDT|XRPUSDT/.test(cryptoPost.content), false, 'crypto post should not expose raw exchange symbols');
-  const btcInfoIndex = cryptoPost.content.indexOf('₿ BTC/USDT 핵심 정보 카드');
-  const communityIndex = cryptoPost.content.indexOf('🌐 암호화폐 커뮤니티 이슈');
-  const lunaIndex = cryptoPost.content.indexOf('🤖 루나팀 자동매매 정보');
-  assert.ok(btcInfoIndex > -1 && communityIndex > btcInfoIndex && lunaIndex > communityIndex, 'crypto post priority should be BTC info -> crypto community -> Luna automation');
+  const quickIndex = cryptoPost.content.indexOf('⚡ 핵심 3줄');
+  const priceIndex = cryptoPost.content.indexOf('📌 BTC/USDT 가격 지도');
+  const scenarioIndex = cryptoPost.content.indexOf('📈 상승/하락 시나리오');
+  const communityIndex = cryptoPost.content.indexOf('🌐 커뮤니티·뉴스 이슈 Top 3');
+  const checkpointIndex = cryptoPost.content.indexOf('⚠️ 오늘 체크포인트 + 면책');
+  assert.ok(
+    quickIndex > -1 && priceIndex > quickIndex && scenarioIndex > priceIndex && communityIndex > scenarioIndex && checkpointIndex > communityIndex,
+    'crypto post priority should be quick read -> BTC price map -> scenario -> community/news -> disclaimer',
+  );
   assert.equal(cryptoPost.content.includes('이미지 대신'), false, 'crypto post should not mention image replacement');
-  assert.equal(/🧭|⚡|₿|🌐|📈|🛡️|👀|🗓️|🤖|⚠️/.test(cryptoPost.content), true, 'crypto post should include section header emojis');
+  assert.equal(/⚡|📌|📈|🌐|⚠️/.test(cryptoPost.content), true, 'crypto post should include section header emojis');
   assert.equal(/[①②③④⑤⑥⑦⑧⑨⑩]/.test(cryptoPost.content), false, 'crypto post should not include legacy section numbers');
+  assert.equal(/수집 대기|데이터 없음|N\/A/.test(cryptoPost.content), false, 'crypto post should not expose placeholder text');
+  assert.equal(/현재가|가격/.test(cryptoPost.content), true, 'crypto post should include BTC current price');
+  assert.equal(/지지/.test(cryptoPost.content), true, 'crypto post should include support level');
+  assert.equal(/저항/.test(cryptoPost.content), true, 'crypto post should include resistance level');
+  assert.equal(/상승 시나리오/.test(cryptoPost.content), true, 'crypto post should include bull scenario');
+  assert.equal(/하락 시나리오/.test(cryptoPost.content), true, 'crypto post should include bear scenario');
+  assert.equal(/무효화|이탈|돌파 실패/.test(cryptoPost.content), true, 'crypto post should include invalidation condition');
+  assert.equal(validateContentQuality(cryptoPost.content, 'crypto').infoIssues.length, 0, 'crypto post should pass information-density gate');
   const tableHtml = formatContentForEduXWeb('🧭 **제목**\n\n| symbol | 가격 |\n| --- | --- |\n| BTC/USDT | $1 |\n\n1. 첫 이슈\n2. 둘째 이슈');
   assert.equal(tableHtml.includes('<h3>🧭 제목</h3>'), true, 'html conversion should strip bold markers in headings');
   const legacyHtml = formatContentForEduXWeb('① 🧭 **제목**');
@@ -65,13 +79,13 @@ async function main() {
   assert.equal(tableHtml.includes('<table>'), false, 'html conversion should avoid table tags because Edu-X strips them');
   assert.equal(tableHtml.includes('<ol>'), false, 'html conversion should avoid ordered-list restart issues');
   assert.equal(tableHtml.includes('<p>1. 첫 이슈</p>'), true, 'html conversion should preserve numbered issue rows as paragraphs');
-  const duplicateHeadings = Array.from({ length: 10 }, (_, index) => `🧭 중복 요약 ${index + 1}\n본문`).join('\n\n');
+  const duplicateHeadings = Array.from({ length: 5 }, (_, index) => `⚡ 핵심 3줄 ${index + 1}\n본문`).join('\n\n');
   const duplicateFormatterQuality = validateContentQuality(duplicateHeadings, 'crypto');
   assert.equal(duplicateFormatterQuality.ok, false, 'formatter quality should reject duplicate headings with missing required sections');
-  assert.equal(duplicateFormatterQuality.missingSections.includes('disclaimer'), true, 'formatter quality should report missing disclaimer section');
+  assert.equal(duplicateFormatterQuality.missingSections.includes('checkpoint_disclaimer'), true, 'formatter quality should report missing disclaimer section');
   const duplicateRuntimeQuality = validatePostQuality({ content: duplicateHeadings, category: 'crypto' });
   assert.equal(duplicateRuntimeQuality.ok, false, 'runtime quality should reject duplicate headings with missing required sections');
-  assert.equal(duplicateRuntimeQuality.missingSections.includes('disclaimer'), true, 'runtime quality should report missing disclaimer section');
+  assert.equal(duplicateRuntimeQuality.missingSections.includes('checkpoint_disclaimer'), true, 'runtime quality should report missing disclaimer section');
   console.log(JSON.stringify({ ok: true, results }, null, 2));
 }
 

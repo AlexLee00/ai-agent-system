@@ -18,16 +18,11 @@ const SECTION_HEADING_EMOJI_RE = /^(?:[①②③④⑤⑥⑦⑧⑨⑩]\s*)?(?:�
 const REQUIRED_SECTION_COUNT = 10;
 const REQUIRED_SECTIONS_BY_CATEGORY = {
   crypto: [
-    { key: 'summary', prefix: '🧭', keywords: ['btc/usdt', '브리핑', '요약', '제목'] },
-    { key: 'tldr', prefix: '⚡', keywords: ['tl;dr', 'tldr', '요약'] },
-    { key: 'btc_info', prefix: '₿', keywords: ['btc/usdt', '핵심', '정보'] },
-    { key: 'community', prefix: '🌐', keywords: ['커뮤니티', '이슈'] },
-    { key: 'technical', prefix: '📈', keywords: ['기술', '분석'] },
-    { key: 'macro_risk', prefix: '🛡', keywords: ['거시', '리스크'] },
-    { key: 'watchlist', prefix: '👀', keywords: ['워치', '알트코인'] },
-    { key: 'schedule', prefix: '🗓', keywords: ['일정', '오늘'] },
-    { key: 'luna_automation', prefix: '🤖', keywords: ['루나', '자동매매'] },
-    { key: 'disclaimer', prefix: '⚠', keywords: ['면책', '출처'] },
+    { key: 'quick_read', prefix: '⚡', keywords: ['핵심', '3줄', '요약'] },
+    { key: 'price_map', prefix: '📌', keywords: ['btc/usdt', '가격', '지도'] },
+    { key: 'scenarios', prefix: '📈', keywords: ['상승', '하락', '시나리오'] },
+    { key: 'community_news', prefix: '🌐', keywords: ['커뮤니티', '뉴스', '이슈'] },
+    { key: 'checkpoint_disclaimer', prefix: '⚠', keywords: ['체크포인트', '면책'] },
   ],
   kis: [
     { key: 'summary', prefix: '🧭', keywords: ['국내주식', '장전', '브리핑', '요약', '제목'] },
@@ -54,6 +49,7 @@ const REQUIRED_SECTIONS_BY_CATEGORY = {
     { key: 'disclaimer', prefix: '⚠', keywords: ['면책', '출처'] },
   ],
 };
+const CRYPTO_PLACEHOLDER_RE = /수집 대기|데이터 없음|데이터 부족|충분히 수집되지|확인 필요|N\/A/i;
 
 function isSectionHeadingLine(line) {
   return SECTION_HEADING_EMOJI_RE.test(String(line || '').trim());
@@ -98,6 +94,30 @@ function resolveSectionValidation(content, category) {
     return { category: key, headings, missingSections };
   });
   return candidates.sort((a, b) => a.missingSections.length - b.missingSections.length)[0];
+}
+
+function requiredSectionCountFor(category) {
+  return REQUIRED_SECTIONS_BY_CATEGORY[category]?.length || REQUIRED_SECTION_COUNT;
+}
+
+function validateCryptoInformationDensity(text) {
+  const issues = [];
+  if (CRYPTO_PLACEHOLDER_RE.test(text)) issues.push('crypto_placeholder_text');
+  const numericSignalCount = (String(text).match(/\$[\d,.]+[KMBT]?|\b\d+(?:\.\d+)?K\b|\b\d+(?:\.\d+)?%|\b\d+(?:\.\d+)?점/g) || []).length;
+  if (numericSignalCount < 8) issues.push(`crypto_numeric_signals:${numericSignalCount}/8`);
+  const requiredTerms = [
+    { key: 'current_price', re: /현재가|가격/ },
+    { key: 'support', re: /지지/ },
+    { key: 'resistance', re: /저항/ },
+    { key: 'bull_scenario', re: /상승 시나리오/ },
+    { key: 'bear_scenario', re: /하락 시나리오/ },
+    { key: 'invalidation', re: /무효화|이탈|돌파 실패/ },
+    { key: 'community_issue', re: /커뮤니티|뉴스|이슈/ },
+  ];
+  for (const item of requiredTerms) {
+    if (!item.re.test(text)) issues.push(`crypto_missing_${item.key}`);
+  }
+  return issues;
 }
 
 function parseArgs(argv = process.argv.slice(2)) {
@@ -253,25 +273,28 @@ function validatePostQuality({ content, imagePaths = [], imageUrls = [], categor
   const text = String(content || '');
   const sectionValidation = resolveSectionValidation(text, category);
   const sectionCount = sectionValidation.headings.length;
+  const requiredSectionCount = requiredSectionCountFor(sectionValidation.category);
+  const infoIssues = sectionValidation.category === 'crypto' ? validateCryptoInformationDensity(text) : [];
   const forbidden = [];
   if (/\bactivity\b/i.test(text) || /카테고리\s*:\s*activity/i.test(text)) forbidden.push('activity');
   if (/notion/i.test(text)) forbidden.push('notion');
   if (/좋아요|댓글/.test(text)) forbidden.push('likes_or_comments');
   const imageCount = Math.max(imagePaths.length, imageUrls.length);
   return {
-    ok: text.length >= MIN_CONTENT_LEN && sectionCount >= REQUIRED_SECTION_COUNT && sectionValidation.missingSections.length === 0 && forbidden.length === 0 && imageCount >= MIN_IMAGES_PER_POST,
+    ok: text.length >= MIN_CONTENT_LEN && sectionCount >= requiredSectionCount && sectionValidation.missingSections.length === 0 && infoIssues.length === 0 && forbidden.length === 0 && imageCount >= MIN_IMAGES_PER_POST,
     contentLen: text.length,
     sectionCount,
     imageCount,
     category: sectionValidation.category,
     missingSections: [
-      ...(sectionCount >= REQUIRED_SECTION_COUNT ? [] : [`section_count:${sectionCount}/${REQUIRED_SECTION_COUNT}`]),
+      ...(sectionCount >= requiredSectionCount ? [] : [`section_count:${sectionCount}/${requiredSectionCount}`]),
       ...sectionValidation.missingSections,
     ],
+    infoIssues,
     forbidden,
     requirements: {
       minContentLen: MIN_CONTENT_LEN,
-      minSections: REQUIRED_SECTION_COUNT,
+      minSections: requiredSectionCount,
       minImages: MIN_IMAGES_PER_POST,
     },
   };
