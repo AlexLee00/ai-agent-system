@@ -1,0 +1,16 @@
+{
+  "name": "@ai-agent/edu-x",
+  "version": "1.0.0",
+  "description": "Edu-X 커뮤니티 자동 기여 봇 (7번째 봇) — 루나팀 데이터 → Edu-X 자유게시판",
+  "main": "scripts/runtime-edux-crypto-daily.ts",
+  "type": "commonjs",
+  "scripts": {
+    "crypto-daily": "node scripts/runtime-edux-crypto-daily.ts",
+    "kis-daily": "node scripts/runtime-edux-kis-daily.ts",
+    "overseas-daily": "node scripts/runtime-edux-overseas-daily.ts",
+    "promotion-gate": "node scripts/edux-promotion-gate.ts"
+  },
+  "dependencies": {
+    "@ai-agent/core": "*"
+  }
+}
