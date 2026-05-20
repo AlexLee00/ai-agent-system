@@ -3,12 +3,14 @@ defmodule Jay.Core.EventLake do
   실시간 event_lake 수신 + 캐시 + 통계 관리 GenServer.
   """
   use GenServer
+  import Ecto.Query
   require Logger
 
   alias Jay.Core.Repo
   alias Jay.Core.Schemas.EventLake, as: EventLakeSchema
 
   @max_cache 1_000
+  @stats_top_limit 100
   defstruct [:events, :stats, :started_at, :pg_pid, :ref, :channel]
 
   def start_link(opts \\ []) do
@@ -19,6 +21,7 @@ defmodule Jay.Core.EventLake do
   def init(_opts) do
     channel = Jay.Core.Config.pg_notify_channel()
     db_opts = Jay.Core.Config.notification_db_opts()
+    {events, stats} = load_initial_state()
 
     {:ok, pid} = Postgrex.Notifications.start_link(db_opts)
     {:ok, ref} = Postgrex.Notifications.listen(pid, channel)
@@ -27,8 +30,8 @@ defmodule Jay.Core.EventLake do
 
     {:ok,
      %__MODULE__{
-       events: [],
-       stats: %{total: 0, by_type: %{}, by_team: %{}},
+       events: events,
+       stats: stats,
        started_at: DateTime.utc_now(),
        pg_pid: pid,
        ref: ref,
@@ -184,6 +187,59 @@ defmodule Jay.Core.EventLake do
 
   defp map_get(map, key, default \\ nil) do
     Map.get(map, key, Map.get(map, Atom.to_string(key), default))
+  end
+
+  defp load_initial_state do
+    {load_recent_events_from_db(), load_stats_from_db()}
+  rescue
+    error ->
+      Logger.warning("[EventLake] DB 초기 캐시 로드 실패: #{inspect(error)}")
+      {[], %{total: 0, by_type: %{}, by_team: %{}}}
+  end
+
+  defp load_recent_events_from_db do
+    EventLakeSchema
+    |> order_by([event], desc: event.created_at, desc: event.id)
+    |> limit(^@max_cache)
+    |> Repo.all()
+    |> Enum.map(&schema_event_to_dashboard_map/1)
+  end
+
+  defp load_stats_from_db do
+    %{
+      total: Repo.aggregate(EventLakeSchema, :count, :id),
+      by_type: grouped_counts(:event_type),
+      by_team: grouped_counts(:team)
+    }
+  end
+
+  defp grouped_counts(field) do
+    EventLakeSchema
+    |> group_by([event], field(event, ^field))
+    |> order_by([event], desc: count(event.id))
+    |> limit(^@stats_top_limit)
+    |> select([event], {field(event, ^field), count(event.id)})
+    |> Repo.all()
+    |> Map.new(fn {key, count} -> {key || "unknown", count} end)
+  end
+
+  defp schema_event_to_dashboard_map(%EventLakeSchema{} = event) do
+    %{
+      "id" => event.id,
+      "event_type" => event.event_type,
+      "team" => event.team,
+      "bot_name" => event.bot_name,
+      "severity" => event.severity,
+      "trace_id" => event.trace_id,
+      "title" => event.title,
+      "message" => event.message,
+      "tags" => event.tags || [],
+      "metadata" => event.metadata || %{},
+      "feedback_score" => event.feedback_score,
+      "feedback" => event.feedback,
+      "created_at" => event.created_at,
+      "updated_at" => event.updated_at
+    }
   end
 
   defp update_stats(stats, event) do
