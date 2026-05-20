@@ -907,7 +907,7 @@ function buildOverseasFallbackContent(marketData = {}, evidenceItems = {}) {
     : 'NVDA/MSFT/AAPL 등 대형 기술주 정규장 반응';
 
   return `⚡ 핵심 3줄
-- S&P500 ${sp500} (${sp500Change}), Nasdaq ${nasdaq} (${nasdaqChange}). VIX ${vix}, DXY ${dxy}을 같이 봅니다.
+- S&P500 ${sp500} (${sp500Change}), Nasdaq ${nasdaq} (${nasdaqChange}). VIX ${vix}과 DXY ${dxy}를 함께 봅니다.
 - Magnificent 7에서는 ${strongestMag7Text}가 첫 확인 대상입니다. 지수보다 대형주 동조가 더 중요합니다.
 - 장전 뉴스는 선물 반응만으로 단정하지 않고, 정규장 초반 거래량과 섹터 ETF 반응으로 검증합니다.
 
