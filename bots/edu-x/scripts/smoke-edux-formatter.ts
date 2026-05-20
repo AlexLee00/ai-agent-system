@@ -112,6 +112,34 @@ async function main() {
   assert.equal(/naver_news_rss|positive|Samsung Electronics/.test(kisPatternPost.content), false, 'kis post should not expose raw source, raw signal, or untranslated English issue titles');
   assert.equal(kisPatternPost.content.includes('반도체·HBM 이슈'), true, 'kis post should rewrite semiconductor/HBM community patterns');
   assert.equal(kisPatternPost.content.includes('근거: 네이버 뉴스, 해석: 긍정'), true, 'kis post should map equity source and tone labels');
+  const kisInternalSignalPost = await formatPost(
+    'kis',
+    '0900',
+    {},
+    [{
+      sourceName: 'luna-kis-signal',
+      signalDirection: 'SELL',
+      symbol: '031330',
+      evidenceSummary: '[031330] 승인형 strategy-exit 실행 (stop_loss_threshold)',
+    }],
+    {},
+    { fixture: true },
+  );
+  assert.equal(/strategy-|stop_loss|SELL|031330|승인형/.test(kisInternalSignalPost.content), false, 'kis post should filter internal trading signals from community issue rows');
+  assert.equal(/미확인/.test(kisInternalSignalPost.content), false, 'kis fallback should avoid repeated unknown placeholders in reader-facing cards');
+  const kisApprovedNewsPost = await formatPost(
+    'kis',
+    '0900',
+    kisFixture.marketData,
+    [{
+      sourceName: 'naver_news_rss',
+      signalDirection: 'positive',
+      evidenceSummary: 'Korean biotech export candidate approved in overseas market while healthcare stocks gain',
+    }],
+    {},
+    { fixture: true },
+  );
+  assert.equal(kisApprovedNewsPost.content.includes('근거: 네이버 뉴스'), true, 'kis post should not drop legitimate approved/news evidence from public sources');
   const overseasPatternPost = await formatPost(
     'overseas',
     '2200',

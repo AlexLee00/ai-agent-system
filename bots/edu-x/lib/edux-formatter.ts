@@ -56,6 +56,8 @@ const FORBIDDEN_PATTERNS = [
   { key: 'likes_or_comments', re: /좋아요|댓글/ },
 ];
 const CRYPTO_PLACEHOLDER_RE = /수집 대기|데이터 없음|데이터 부족|충분히 수집되지|확인 필요|N\/A/i;
+const INTERNAL_EQUITY_SOURCE_RE = /^(?:luna|investment|strategy|runtime|worker|ai\.|bot)/i;
+const INTERNAL_EQUITY_EVIDENCE_RE = /strategy-|stop_loss|take_profit|blocked_reason|reconcile|승인형\s*strategy|매수\s*신호|매도\s*신호/i;
 
 function isSectionHeadingLine(line) {
   return SECTION_HEADING_EMOJI_RE.test(String(line || '').trim());
@@ -348,10 +350,25 @@ function formatEquityIssueTone(item, summary = '') {
   return formatSignalDirectionLabel(item?.signalDirection);
 }
 
+function isInternalEquityEvidence(item) {
+  const sourceText = [
+    item?.sourceName,
+    item?.source,
+  ].filter(Boolean).join(' ');
+  const joined = [
+    item?.signalDirection,
+    item?.evidenceSummary,
+    item?.summary,
+    item?.symbol,
+  ].filter(Boolean).join(' ');
+  return INTERNAL_EQUITY_SOURCE_RE.test(sourceText) && INTERNAL_EQUITY_EVIDENCE_RE.test(joined);
+}
+
 function buildEquityIssueRows(evidenceItems, category, fallbackSummary, limit = 3) {
   const rows = [];
   const seen = new Set();
   for (const item of (evidenceItems || [])) {
+    if (isInternalEquityEvidence(item)) continue;
     const summary = category === 'overseas' ? formatOverseasIssueSummary(item) : formatKisIssueSummary(item);
     const key = summary.replace(/\s+/g, ' ').trim().toLowerCase();
     if (!key || seen.has(key)) continue;
@@ -385,6 +402,18 @@ function formatPointValue(value, suffix = 'pt') {
 function formatPercentOrUnknown(value) {
   const text = formatPercent(value);
   return text === '수집 대기' ? '미확인' : text;
+}
+
+function displayOr(text, fallback) {
+  return !text || text === '미확인' || text === '수집 대기' ? fallback : text;
+}
+
+function hasNumericValue(value) {
+  return hasValue(value) && Number.isFinite(Number(value));
+}
+
+function isDeferredFlowText(text) {
+  return /09:30 이후|장중 확인|순매수 방향 확인/.test(String(text || ''));
 }
 
 // ─── 헤드라인 생성 ────────────────────────────────────────────────
@@ -776,11 +805,12 @@ ${scheduleRows || `- ${btcSymbol} ${support} 지지 유지 여부\n- ${btcSymbol
 
 function buildKisFallbackContent(marketData = {}, evidenceItems = {}) {
   const issueRows = buildEquityIssueRows(evidenceItems, 'kis', [
-    '코스피·코스닥 장초반 방향은 외국인·기관 수급 확인 후 해석합니다.',
-    '반도체·2차전지·바이오 중 거래대금이 먼저 붙는 섹터를 우선 관찰합니다.',
-    '환율과 미국 선물 흐름은 장초반 대형주 수급의 보조 변수로 확인합니다.',
+    '원/달러 환율과 미국 선물 흐름은 외국인 대형주 수급의 첫 번째 체크포인트입니다.',
+    '반도체·HBM은 코스피 방향을 설명하는 핵심 업종으로, 대형주 거래대금 동반 여부가 중요합니다.',
+    '2차전지·바이오 등 성장주는 지수보다 거래대금과 개별 재료 반응을 우선 확인합니다.',
   ]);
   const sectorWatch = (marketData?.sectors || [])
+    .filter((item) => hasNumericValue(item.change_1d ?? item.change))
     .slice(0, 5)
     .map((item, index) => {
       const change = item.change_1d ?? item.change;
@@ -792,24 +822,28 @@ function buildKisFallbackContent(marketData = {}, evidenceItems = {}) {
     .slice(0, 4)
     .map((item) => `- ${item.time || '시간 미정'} KST: ${item.event || item.title || '일정 확인'}`)
     .join('\n');
-  const kospi = formatPointValue(marketData?.kospi_index);
-  const kosdaq = formatPointValue(marketData?.kosdaq_index);
-  const kospiChange = formatPercentOrUnknown(marketData?.kospi_change);
-  const kosdaqChange = formatPercentOrUnknown(marketData?.kosdaq_change);
-  const usdKrw = hasValue(marketData?.usd_krw) ? `${Number(marketData.usd_krw).toLocaleString('ko-KR')}원` : '미확인';
-  const foreignFlow = formatKrwNetBuy(marketData?.foreign_net_buy);
-  const institutionFlow = formatKrwNetBuy(marketData?.institution_net_buy);
+  const kospi = displayOr(formatPointValue(marketData?.kospi_index), '코스피 실시간 지수는 장중 확인');
+  const kosdaq = displayOr(formatPointValue(marketData?.kosdaq_index), '코스닥 실시간 지수는 장중 확인');
+  const kospiChange = displayOr(formatPercentOrUnknown(marketData?.kospi_change), '전일 대비 흐름 장중 확인');
+  const kosdaqChange = displayOr(formatPercentOrUnknown(marketData?.kosdaq_change), '전일 대비 흐름 장중 확인');
+  const usdKrw = hasValue(marketData?.usd_krw) ? `${Number(marketData.usd_krw).toLocaleString('ko-KR')}원` : '환율 실시간 값은 장중 확인';
+  const foreignFlow = displayOr(formatKrwNetBuy(marketData?.foreign_net_buy), '09:30 이후 순매수 방향 확인');
+  const institutionFlow = displayOr(formatKrwNetBuy(marketData?.institution_net_buy), '09:30 이후 순매수 방향 확인');
+  const flowLine = isDeferredFlowText(foreignFlow) && isDeferredFlowText(institutionFlow)
+    ? '외국인·기관 수급은 09:30 이후 순매수 방향을 확인해야 합니다. 두 주체가 같은 방향인지가 지수 신뢰도 핵심입니다.'
+    : `수급은 외국인 ${foreignFlow}, 기관 ${institutionFlow}. 두 주체가 같은 방향인지가 지수 신뢰도 핵심입니다.`;
   const leadSector = (marketData?.sectors || [])
+    .filter((item) => hasNumericValue(item.change_1d ?? item.change))
     .slice()
     .sort((a, b) => Number(b.change_1d ?? b.change ?? -999) - Number(a.change_1d ?? a.change ?? -999))[0];
   const leadSectorText = leadSector
     ? `${leadSector.name} ${formatPercentOrUnknown(leadSector.change_1d ?? leadSector.change)}`
-    : '반도체·2차전지·바이오 중 거래대금 우위 섹터';
+    : '반도체·HBM, 2차전지, 바이오 중 거래대금 우위 섹터';
 
   return `⚡ 핵심 3줄
 - 코스피 ${kospi} (${kospiChange}), 코스닥 ${kosdaq} (${kosdaqChange}). 원·달러는 ${usdKrw}입니다.
-- 수급은 외국인 ${foreignFlow}, 기관 ${institutionFlow}. 두 주체가 같은 방향인지가 장초반 지수 신뢰도 핵심입니다.
-- 오늘은 ${leadSectorText}와 거래대금 증가 섹터를 먼저 보고, 뉴스는 실제 수급 반응으로 확인합니다.
+- ${flowLine}
+- 오늘은 ${leadSectorText}를 먼저 보고, 뉴스는 실제 수급 반응으로 확인합니다.
 
 📌 지수·수급 지도
 • 코스피: ${kospi} (${kospiChange})
@@ -820,7 +854,7 @@ function buildKisFallbackContent(marketData = {}, evidenceItems = {}) {
 • 해석 기준: 지수 상승 + 외국인/기관 동반 순매수면 추세 신뢰도를 높이고, 지수 상승 + 수급 엇갈림이면 섹터 순환매로 봅니다.
 
 👀 오늘 볼 섹터
-${sectorWatch || '1. 반도체: 장초반 거래대금 확인\n2. 2차전지: 수급 반전 여부 확인\n3. 바이오: 코스닥 변동성 확대 여부 확인'}
+${sectorWatch || '1. 반도체·HBM: 코스피 대형주와 외국인 수급 동반 여부 확인\n2. 2차전지: 코스닥 성장주 거래대금 회복 여부 확인\n3. 바이오: 개별 재료와 지수 변동성 확대 여부 확인'}
 섹터는 등락률보다 대형주 동조, 거래대금 증가, 외국인 수급 지속성을 같이 확인합니다.
 
 🌐 커뮤니티·뉴스 이슈 Top 3
@@ -841,28 +875,31 @@ function buildOverseasFallbackContent(marketData = {}, evidenceItems = {}) {
     '실적·가이던스 이벤트는 개별 종목뿐 아니라 같은 섹터 ETF 반응까지 같이 봅니다.',
   ]);
   const mag7 = (marketData?.mag7 || [])
+    .filter((item) => hasNumericValue(item.price) || hasNumericValue(item.change_1d))
     .slice(0, 7)
-    .map((item, index) => `${index + 1}. ${item.symbol}: ${hasValue(item.price) ? `$${Number(item.price).toLocaleString('en-US', { maximumFractionDigits: 2 })}` : '가격 미확인'} (${formatPercentOrUnknown(item.change_1d)})`)
+    .map((item, index) => `${index + 1}. ${item.symbol}: ${hasValue(item.price) ? `$${Number(item.price).toLocaleString('en-US', { maximumFractionDigits: 2 })}` : '가격 장중 확인'} (${displayOr(formatPercentOrUnknown(item.change_1d), '등락률 장중 확인')})`)
     .join('\n');
   const etfs = (marketData?.top_etfs || [])
     .slice(0, 5)
     .map((item) => {
       if (hasValue(item.change_1d)) return `- ${item.symbol}: ${formatPercentOrUnknown(item.change_1d)}`;
+      if (hasValue(item.price)) return `- ${item.symbol}: $${Number(item.price).toLocaleString('en-US', { maximumFractionDigits: 2 })}`;
       if (hasValue(item.market_cap)) return `- ${item.symbol}: 시총/규모 ${item.market_cap}`;
-      return `- ${item.symbol}: 흐름 미확인`;
+      return `- ${item.symbol}: 정규장 초반 흐름 확인`;
     })
     .join('\n');
   const earnings = (marketData?.earnings || [])
     .slice(0, 4)
     .map((item) => `- ${item.date || '일정 미정'} ${item.symbol || ''}: EPS 예상 ${item.eps_est || '미확인'}`)
     .join('\n');
-  const sp500 = formatPointValue(marketData?.sp500_index);
-  const nasdaq = formatPointValue(marketData?.nasdaq_index);
-  const sp500Change = formatPercentOrUnknown(marketData?.sp500_change);
-  const nasdaqChange = formatPercentOrUnknown(marketData?.nasdaq_change);
-  const vix = hasValue(marketData?.vix) ? String(marketData.vix) : '미확인';
-  const dxy = hasValue(marketData?.dxy) ? String(marketData.dxy) : '미확인';
+  const sp500 = displayOr(formatPointValue(marketData?.sp500_index), 'S&P500 지수는 장전 확인');
+  const nasdaq = displayOr(formatPointValue(marketData?.nasdaq_index), 'Nasdaq 지수는 장전 확인');
+  const sp500Change = displayOr(formatPercentOrUnknown(marketData?.sp500_change), '등락률 장전 확인');
+  const nasdaqChange = displayOr(formatPercentOrUnknown(marketData?.nasdaq_change), '등락률 장전 확인');
+  const vix = hasValue(marketData?.vix) ? String(marketData.vix) : '장전 확인';
+  const dxy = hasValue(marketData?.dxy) ? String(marketData.dxy) : '장전 확인';
   const strongestMag7 = (marketData?.mag7 || [])
+    .filter((item) => hasNumericValue(item.change_1d))
     .slice()
     .sort((a, b) => Number(b.change_1d ?? -999) - Number(a.change_1d ?? -999))[0];
   const strongestMag7Text = strongestMag7
@@ -870,7 +907,7 @@ function buildOverseasFallbackContent(marketData = {}, evidenceItems = {}) {
     : 'NVDA/MSFT/AAPL 등 대형 기술주 정규장 반응';
 
   return `⚡ 핵심 3줄
-- S&P500 ${sp500} (${sp500Change}), Nasdaq ${nasdaq} (${nasdaqChange}). VIX ${vix}, DXY ${dxy}를 같이 봅니다.
+- S&P500 ${sp500} (${sp500Change}), Nasdaq ${nasdaq} (${nasdaqChange}). VIX ${vix}, DXY ${dxy}을 같이 봅니다.
 - Magnificent 7에서는 ${strongestMag7Text}가 첫 확인 대상입니다. 지수보다 대형주 동조가 더 중요합니다.
 - 장전 뉴스는 선물 반응만으로 단정하지 않고, 정규장 초반 거래량과 섹터 ETF 반응으로 검증합니다.
 

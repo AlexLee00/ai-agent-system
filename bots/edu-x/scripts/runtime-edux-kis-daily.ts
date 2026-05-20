@@ -51,10 +51,55 @@ function titleForPublish(title, liveGate) {
 
 // ─── KIS 데이터 수집 ──────────────────────────────────────────────
 
+function latestTwoNumeric(values = []) {
+  const numeric = values.filter((value) => Number.isFinite(Number(value))).map(Number).slice(-2);
+  if (numeric.length === 1) return [null, numeric[0]];
+  return numeric;
+}
+
+async function fetchYahooChart(symbol) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 8000);
+  try {
+    const resp = await fetch(`https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?interval=1d&range=5d`, {
+      headers: { 'User-Agent': 'luna-edu-x-bot/1.0 (team-jay research)' },
+      signal: controller.signal,
+    });
+    if (!resp.ok) return null;
+    const json = await resp.json();
+    const closes = json?.chart?.result?.[0]?.indicators?.quote?.[0]?.close || [];
+    const [prev, latest] = latestTwoNumeric(closes);
+    if (!Number.isFinite(Number(latest))) return null;
+    const change = Number.isFinite(Number(prev)) && Number(prev) !== 0
+      ? ((Number(latest) - Number(prev)) / Number(prev)) * 100
+      : null;
+    return { latest: Number(latest), change };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function fetchKisYahooMarketSnapshot() {
+  const [kospi, kosdaq, usdKrw] = await Promise.allSettled([
+    fetchYahooChart('^KS11'),
+    fetchYahooChart('^KQ11'),
+    fetchYahooChart('KRW=X'),
+  ]).then((items) => items.map((item) => (item.status === 'fulfilled' ? item.value : null)));
+
+  return {
+    kospi_index: kospi?.latest || null,
+    kospi_change: kospi?.change ?? null,
+    kosdaq_index: kosdaq?.latest || null,
+    kosdaq_change: kosdaq?.change ?? null,
+    usd_krw: usdKrw?.latest || null,
+  };
+}
+
 async function fetchKisMarketData() {
   if (ARGS.fixture) return getFixturePayload(CATEGORY).marketData || {};
   try {
-    if (!pgPool) return {};
+    const yahoo = await fetchKisYahooMarketSnapshot();
+    if (!pgPool) return yahoo;
     // 루나팀 KIS WebSocket 데이터에서 최신 코스피/코스닥 조회
     const result = await dbQuery(pgPool, `
       SELECT symbol, action, confidence, reasoning, analyst_signals, block_meta, strategy_family, created_at
@@ -68,19 +113,18 @@ async function fetchKisMarketData() {
 
     // KIS 데이터에서 지수 추출 (raw_ref에 포함)
     const kisRow = rows.find((r) => r.block_meta?.kospi_index || r.block_meta?.triggerEvent || r.block_meta?.executionPrice);
+    const sectors = Array.isArray(kisRow?.block_meta?.sectors)
+      ? kisRow.block_meta.sectors.filter((item) => item && (item.change != null || item.change_1d != null))
+      : [];
     return {
-      kospi_index: kisRow?.block_meta?.kospi_index || null,
-      kospi_change: kisRow?.block_meta?.kospi_change || null,
-      kosdaq_index: kisRow?.block_meta?.kosdaq_index || null,
-      kosdaq_change: kisRow?.block_meta?.kosdaq_change || null,
-      usd_krw: kisRow?.block_meta?.usd_krw || null,
+      kospi_index: kisRow?.block_meta?.kospi_index ?? yahoo.kospi_index ?? null,
+      kospi_change: kisRow?.block_meta?.kospi_change ?? yahoo.kospi_change ?? null,
+      kosdaq_index: kisRow?.block_meta?.kosdaq_index ?? yahoo.kosdaq_index ?? null,
+      kosdaq_change: kisRow?.block_meta?.kosdaq_change ?? yahoo.kosdaq_change ?? null,
+      usd_krw: kisRow?.block_meta?.usd_krw ?? yahoo.usd_krw ?? null,
       foreign_net_buy: kisRow?.block_meta?.foreign_net_buy || null,
       institution_net_buy: kisRow?.block_meta?.institution_net_buy || null,
-      sectors: kisRow?.block_meta?.sectors || [
-        { name: '반도체', change: null, change_1d: null },
-        { name: '2차전지', change: null, change_1d: null },
-        { name: '바이오', change: null, change_1d: null },
-      ],
+      sectors,
       indexSeries: kisRow?.block_meta?.indexSeries || {},
       events: kisRow?.block_meta?.events || [],
     };

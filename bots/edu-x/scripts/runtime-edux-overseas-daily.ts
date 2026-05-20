@@ -51,51 +51,71 @@ function titleForPublish(title, liveGate) {
 
 // ─── 해외주식 데이터 수집 ─────────────────────────────────────────
 
+function latestTwoNumeric(values = []) {
+  const numeric = values.filter((value) => Number.isFinite(Number(value))).map(Number).slice(-2);
+  if (numeric.length === 1) return [null, numeric[0]];
+  return numeric;
+}
+
+async function fetchYahooChart(symbol) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 8000);
+  try {
+    const resp = await fetch(`https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?interval=1d&range=5d`, {
+      headers: { 'User-Agent': 'luna-edu-x-bot/1.0 (team-jay research)' },
+      signal: controller.signal,
+    });
+    if (!resp.ok) return null;
+    const json = await resp.json();
+    const closes = json?.chart?.result?.[0]?.indicators?.quote?.[0]?.close || [];
+    const [prev, latest] = latestTwoNumeric(closes);
+    if (!Number.isFinite(Number(latest))) return null;
+    const change = Number.isFinite(Number(prev)) && Number(prev) !== 0
+      ? ((Number(latest) - Number(prev)) / Number(prev)) * 100
+      : null;
+    return { latest: Number(latest), change };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function fetchYahooSymbols(symbols) {
+  const entries = await Promise.allSettled(symbols.map(async (symbol) => [symbol, await fetchYahooChart(symbol)]));
+  return Object.fromEntries(entries
+    .filter((entry) => entry.status === 'fulfilled')
+    .map((entry) => entry.value)
+    .filter(([, value]) => value));
+}
+
 async function fetchOverseasMarketData() {
   if (ARGS.fixture) return getFixturePayload(CATEGORY).marketData || {};
   try {
-    // Yahoo Finance 간단 조회 (무료, robots.txt 준수)
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 10000);
-    let sp500Data = null;
-    try {
-      const resp = await fetch('https://query1.finance.yahoo.com/v8/finance/chart/%5EGSPC?interval=1d&range=2d', {
-        headers: { 'User-Agent': 'luna-edu-x-bot/1.0 (team-jay research)' },
-        signal: controller.signal,
-      });
-      if (resp.ok) sp500Data = await resp.json();
-    } finally {
-      clearTimeout(timer);
-    }
-
-    const sp500Close = sp500Data?.chart?.result?.[0]?.indicators?.quote?.[0]?.close?.slice(-1)?.[0];
-    const sp500PrevClose = sp500Data?.chart?.result?.[0]?.indicators?.quote?.[0]?.close?.slice(-2, -1)?.[0];
-    const sp500Change = sp500Close && sp500PrevClose
-      ? ((sp500Close - sp500PrevClose) / sp500PrevClose) * 100
-      : null;
+    const quoteMap = await fetchYahooSymbols([
+      '^GSPC', '^IXIC', '^VIX', 'DX-Y.NYB',
+      'AAPL', 'MSFT', 'GOOGL', 'AMZN', 'NVDA', 'META', 'TSLA',
+      'QQQ', 'XLK', 'XLE',
+    ]);
+    const mag7Symbols = ['AAPL', 'MSFT', 'GOOGL', 'AMZN', 'NVDA', 'META', 'TSLA'];
+    const etfSymbols = ['QQQ', 'XLK', 'XLE'];
 
     return {
-      sp500_index: sp500Close ? Math.round(sp500Close) : null,
-      sp500_change: sp500Change,
-      nasdaq_index: null,
-      nasdaq_change: null,
-      dxy: null,
-      vix: null,
-      mag7: [
-        { symbol: 'AAPL', price: null, change_1d: null },
-        { symbol: 'MSFT', price: null, change_1d: null },
-        { symbol: 'GOOGL', price: null, change_1d: null },
-        { symbol: 'AMZN', price: null, change_1d: null },
-        { symbol: 'NVDA', price: null, change_1d: null },
-        { symbol: 'META', price: null, change_1d: null },
-        { symbol: 'TSLA', price: null, change_1d: null },
-      ],
+      sp500_index: quoteMap['^GSPC']?.latest ? Math.round(quoteMap['^GSPC'].latest) : null,
+      sp500_change: quoteMap['^GSPC']?.change ?? null,
+      nasdaq_index: quoteMap['^IXIC']?.latest ? Math.round(quoteMap['^IXIC'].latest) : null,
+      nasdaq_change: quoteMap['^IXIC']?.change ?? null,
+      dxy: quoteMap['DX-Y.NYB']?.latest ? Number(quoteMap['DX-Y.NYB'].latest.toFixed(2)) : null,
+      vix: quoteMap['^VIX']?.latest ? Number(quoteMap['^VIX'].latest.toFixed(2)) : null,
+      mag7: mag7Symbols.map((symbol) => ({
+        symbol,
+        price: quoteMap[symbol]?.latest ?? null,
+        change_1d: quoteMap[symbol]?.change ?? null,
+      })),
       earnings: [],
-      top_etfs: [
-        { symbol: 'QQQ', market_cap: 200 },
-        { symbol: 'XLK', market_cap: 60 },
-        { symbol: 'XLE', market_cap: 40 },
-      ],
+      top_etfs: etfSymbols.map((symbol) => ({
+        symbol,
+        price: quoteMap[symbol]?.latest ?? null,
+        change_1d: quoteMap[symbol]?.change ?? null,
+      })),
     };
   } catch (err) {
     console.warn('[edu-x/overseas] 시장 데이터 수집 실패:', err?.message);
