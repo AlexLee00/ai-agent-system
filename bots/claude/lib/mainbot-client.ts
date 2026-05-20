@@ -52,8 +52,21 @@ function updateIncidentCache(signature, message) {
  * @param {number} [opts.alert_level] 1~4 (기본: 2=MEDIUM, 3+=CRITICAL 이중 발송)
  * @param {string} opts.message      사람이 읽는 메시지
  * @param {object} [opts.payload]    JSON 구조화 데이터 (무시됨 — 로그 호환용)
+ * @param {string} [opts.incident_key] 안정적인 Hub incident key
+ * @param {number} [opts.dedupe_minutes] Hub alarm dedupe window
  */
-async function publishToMainBot({ from_bot, team = 'claude', event_type, alert_level = 2, message, payload }) {
+async function publishToMainBot({
+  from_bot,
+  team = 'claude',
+  event_type,
+  alert_level = 2,
+  message,
+  payload,
+  incident_key,
+  dedupe_minutes,
+  incidentKey,
+  dedupeMinutes,
+}) {
   const signature = normalizeAlertSignature({ team, event_type, alert_level, message });
   const incidentState = updateIncidentCache(signature, message);
   if (incidentState.suppress) {
@@ -79,6 +92,8 @@ async function publishToMainBot({ from_bot, team = 'claude', event_type, alert_l
     team,
     alertLevel: alert_level,
     fromBot: from_bot || event_type || 'claude',
+    incidentKey: incident_key || incidentKey,
+    dedupeMinutes: dedupe_minutes ?? dedupeMinutes,
   });
   return result.ok;
 }

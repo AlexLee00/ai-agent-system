@@ -54,6 +54,15 @@ const SERVICES = [
   { id: 'ai.ska.kiosk-monitor',     label: '지미 키오스크모니터',     restartable: false }, // Playwright
 ];
 
+const TEAM_LEAD_SERVICE_IDS = {
+  naver_monitor: 'ai.ska.naver-monitor',
+  kiosk_monitor: 'ai.ska.kiosk-monitor',
+  luna_marketdata_mcp: 'ai.luna.marketdata-mcp',
+  luna_elixir_supervisor: 'ai.elixir.supervisor',
+  skaya: 'ai.ska.commander',
+};
+const QUICKCHECK_SERVICE_IDS = new Set(SERVICES.map((svc) => svc.id));
+
 // ── 유틸 ─────────────────────────────────────────────────────────────
 
 function kstNow() {
@@ -79,6 +88,33 @@ function saveState(state) {
 function cooldownExpired(lastAt, cdMs = ALERT_CD_MS) {
   if (!lastAt) return true;
   return (Date.now() - new Date(lastAt).getTime()) > cdMs;
+}
+
+function getTeamLeadServiceId(key) {
+  return TEAM_LEAD_SERVICE_IDS[String(key || '').trim()] || null;
+}
+
+function shouldSkipQuickcheckTeamLeadAlert(key) {
+  const serviceId = getTeamLeadServiceId(key);
+  return serviceId ? QUICKCHECK_SERVICE_IDS.has(serviceId) : false;
+}
+
+function normalizeIncidentPart(value) {
+  return String(value || '')
+    .toLowerCase()
+    .replace(/[^a-z0-9._:-]+/g, '_')
+    .replace(/^_+|_+$/g, '')
+    .slice(0, 80) || 'unknown';
+}
+
+function buildQuickcheckIncidentKey(kind, rows) {
+  const sourceIds = (rows || [])
+    .map((row) => row.sourceId || row.label)
+    .map(normalizeIncidentPart)
+    .filter(Boolean)
+    .sort();
+  const signature = sourceIds.length > 0 ? sourceIds.join('+') : 'unknown';
+  return `claude:dexter:quickcheck_${normalizeIncidentPart(kind)}:${signature}`;
 }
 
 // ── launchd 조회 ──────────────────────────────────────────────────────
@@ -130,8 +166,8 @@ async function main() {
   const state    = loadState();
   const now      = kstNow();
 
-  const alerts    = []; // { label, detail, restartable, restarted? }
-  const recoveries = []; // { label, downSince }
+  const alerts    = []; // { label, detail, restartable, restarted?, sourceId? }
+  const recoveries = []; // { label, downSince, sourceId? }
 
   // ── 1. 서비스 생존 체크 ─────────────────────────────────────────────
   for (const svc of SERVICES) {
@@ -216,13 +252,14 @@ async function main() {
           restartable: svc.restartable,
           restarted,
           failCount,
+          sourceId: svc.id,
         });
       }
 
     } else {
       // 정상 — 회복 감지
       if (prev.status === 'down') {
-        recoveries.push({ label: svc.label, downSince: prev.downSince });
+        recoveries.push({ label: svc.label, downSince: prev.downSince, sourceId: svc.id });
       }
       state.services[svc.id] = { status: 'ok', restartCount: 0, restartedAt: null, restartResult: null };
     }
@@ -233,6 +270,8 @@ async function main() {
     const leadResult = await teamLeadsCheck.run();
     const leadErrors = (leadResult.items || []).filter(i => i.status === 'error');
     for (const item of leadErrors) {
+      if (shouldSkipQuickcheckTeamLeadAlert(item._key)) continue;
+
       const prev = state.services?.[`team-lead:${item.label}`] || {};
       const needAlert = !prev.status || prev.status === 'ok' ||
         (prev.status === 'down' && cooldownExpired(prev.alertedAt));
@@ -243,15 +282,27 @@ async function main() {
       };
 
       if (needAlert) {
-        alerts.push({ label: item.label, detail: item.detail, restartable: false, restarted: false });
+        alerts.push({
+          label: item.label,
+          detail: item.detail,
+          restartable: false,
+          restarted: false,
+          sourceId: getTeamLeadServiceId(item._key) || `team-lead:${item.label}`,
+        });
       }
     }
     // 정상 회복 감지
     for (const item of (leadResult.items || []).filter(i => i.status === 'ok')) {
+      if (shouldSkipQuickcheckTeamLeadAlert(item._key)) continue;
+
       const key  = `team-lead:${item.label}`;
       const prev = state.services?.[key];
       if (prev?.status === 'down') {
-        recoveries.push({ label: item.label, downSince: null });
+        recoveries.push({
+          label: item.label,
+          downSince: null,
+          sourceId: getTeamLeadServiceId(item._key) || `team-lead:${item.label}`,
+        });
       }
       if (state.services) state.services[key] = { status: 'ok' };
     }
@@ -284,11 +335,12 @@ async function main() {
         restartable: false,
         restarted: false,
         failCount,
+        sourceId: 'disk:/',
       });
     }
   } else {
     if (diskPrev.status === 'critical') {
-      recoveries.push({ label: '디스크', detail: `${diskUsage}%로 회복`, downSince: null });
+      recoveries.push({ label: '디스크', detail: `${diskUsage}%로 회복`, downSince: null, sourceId: 'disk:/' });
     }
     state.disk = { status: 'ok', usage: diskUsage, failCount: 0, alertedAt: null };
   }
@@ -316,6 +368,8 @@ async function main() {
     const isCritical = maxFail >= 2;
     const header     = isCritical ? `🚨 덱스터 긴급 감지 (퀵체크)` : `⚠️ 덱스터 감지 (퀵체크)`;
     const alertLevel = isCritical ? 4 : 2;
+    const dedupeMinutes = Math.max(1, Math.ceil(ALERT_CD_MS / 60000));
+    const incidentKey = buildQuickcheckIncidentKey('issue', alerts);
 
     const lines = [
       header,
@@ -338,12 +392,16 @@ async function main() {
       from_bot:    'dexter',
       event_type:  'system',
       alert_level: alertLevel,
+      incident_key: incidentKey,
+      dedupe_minutes: dedupeMinutes,
       message:     lines.join('\n'),
       payload:     { quickcheck: true, issue_count: alerts.length },
     });
   }
 
   if (recoveries.length > 0) {
+    const dedupeMinutes = Math.max(1, Math.ceil(ALERT_CD_MS / 60000));
+    const incidentKey = buildQuickcheckIncidentKey('recovery', recoveries);
     const lines = [
       `✅ 덱스터 회복 감지 (퀵체크)`,
       ...recoveries.map(r =>
@@ -355,6 +413,8 @@ async function main() {
       from_bot:    'dexter',
       event_type:  'system',
       alert_level: 2,
+      incident_key: incidentKey,
+      dedupe_minutes: dedupeMinutes,
       message:     lines.join('\n'),
       payload:     { quickcheck: true, recovery: true },
     });
