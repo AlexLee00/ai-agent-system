@@ -48,12 +48,12 @@ async function main() {
   const originalFormatterFixture = process.env.EDUX_FORMATTER_FIXTURE;
   delete process.env.EDUX_FORMATTER_FIXTURE;
   const cryptoDefault = await formatPost('crypto', '1400', cryptoFixture.marketData, cryptoFixture.evidenceItems, cryptoFixture.technicalData);
-  if (originalFormatterFixture !== undefined) process.env.EDUX_FORMATTER_FIXTURE = originalFormatterFixture;
   assert.equal(cryptoDefault.source, 'crypto_deterministic', 'crypto formatter should default to deterministic mode');
   const kisFixture = getFixturePayload('kis');
   const overseasFixture = getFixturePayload('overseas');
   const kisDefault = await formatPost('kis', '0900', kisFixture.marketData, kisFixture.evidenceItems, {});
   const overseasDefault = await formatPost('overseas', '2200', overseasFixture.marketData, overseasFixture.evidenceItems, {});
+  if (originalFormatterFixture !== undefined) process.env.EDUX_FORMATTER_FIXTURE = originalFormatterFixture;
   assert.equal(kisDefault.source, 'kis_deterministic', 'kis formatter should default to deterministic card mode');
   assert.equal(overseasDefault.source, 'overseas_deterministic', 'overseas formatter should default to deterministic card mode');
   assert.equal(cryptoPost.content.includes('BTC/USDT'), true, 'crypto post should display BTC/USDT');

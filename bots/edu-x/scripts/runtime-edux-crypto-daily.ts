@@ -12,7 +12,7 @@
  *   ① 슬롯 확인
  *   ② BTC 커뮤니티/뉴스 evidence 수집 (기본 72h)
  *   ③ Binance 가격 데이터
- *   ④ Hub LLM → 10섹션 본문 생성
+ *   ④ deterministic formatter → 5블록 시황 카드 생성
  *   ⑤ 웹 렌더링용 HTML 블록 변환
  *   ⑥ POST /api/community/posts
  *   ⑦ edux_publish_log INSERT

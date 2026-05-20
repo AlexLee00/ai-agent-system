@@ -1,6 +1,6 @@
 {
   "name": "Edu-X Community Bot",
-  "description": "BTC 커뮤니티/시장 데이터 기반 Edu-X 자유게시판 dry-run 자동 기여 봇. 실 발행은 promotion gate와 명시 승인 후만 허용한다.",
+  "description": "암호화폐·국내주식·해외주식 커뮤니티/시장 데이터 기반 Edu-X 자유게시판 dry-run 자동 기여 봇. 실 발행은 promotion gate와 명시 승인 후만 허용한다.",
   "version": "1.0.0",
   "url": "http://localhost:8786",
   "documentationUrl": "docs/strategy/EDUX_INTEGRATION_STRATEGY_2026-05-20.md",
