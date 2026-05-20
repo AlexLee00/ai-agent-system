@@ -33,6 +33,7 @@ defmodule Mix.Tasks.TeamJay.Dashboard.PhaseACheck do
         String.contains?(autonomy_controller, ~s(@state_key "jay.autonomy_controller_state")) and
           String.contains?(autonomy_controller, "save_state_to_db(new_state)") and
           String.contains?(autonomy_controller, "load_state_from_kv") and
+          String.contains?(autonomy_controller, "load_state_from_repo_kv") and
           String.contains?(autonomy_controller, "load_state_from_event_lake") and
           String.contains?(autonomy_controller, "load_state_from_legacy_events") and
           String.contains?(autonomy_controller, "kv.phase != legacy.phase") and

@@ -296,7 +296,12 @@ defmodule Jay.V2.AutonomyController do
   end
 
   defp load_state_from_db do
-    kv_state = load_state_from_kv()
+    kv_state =
+      case load_state_from_kv() do
+        {:ok, %__MODULE__{} = state} -> {:ok, state}
+        :error -> load_state_from_repo_kv()
+      end
+
     legacy_state = load_state_from_legacy_events()
 
     case {kv_state, legacy_state} do
@@ -359,6 +364,50 @@ defmodule Jay.V2.AutonomyController do
     end
   rescue
     _ -> :error
+  end
+
+  defp load_state_from_repo_kv do
+    ensure_repo_kv_store!()
+
+    case Ecto.Adapters.SQL.query!(
+           Jay.Core.Repo,
+           "SELECT value FROM agent.kv_store WHERE key = $1 LIMIT 1",
+           [@state_key]
+         ) do
+      %{rows: [[value]]} ->
+        case state_from_payload(value) do
+          {:ok, %__MODULE__{} = state} -> {:ok, state}
+          _ -> load_legacy_phase_from_repo_kv()
+        end
+
+      _ ->
+        load_legacy_phase_from_repo_kv()
+    end
+  rescue
+    _ -> :error
+  catch
+    :exit, _ -> :error
+  end
+
+  defp load_legacy_phase_from_repo_kv do
+    case Ecto.Adapters.SQL.query!(
+           Jay.Core.Repo,
+           "SELECT value FROM agent.kv_store WHERE key = $1 LIMIT 1",
+           [@phase_key]
+         ) do
+      %{rows: [[value]]} ->
+        case phase_from_payload(value) do
+          {:ok, phase} -> {:ok, %__MODULE__{phase: phase, phase_since: kst_today()}}
+          _ -> :error
+        end
+
+      _ ->
+        :error
+    end
+  rescue
+    _ -> :error
+  catch
+    :exit, _ -> :error
   end
 
   defp load_state_from_event_lake do
