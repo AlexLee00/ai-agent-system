@@ -2,7 +2,7 @@
 'use strict';
 
 /**
- * edux-formatter.ts — 루나팀 데이터 → 10섹션 표준 게시글 (1,800~2,500자)
+ * edux-formatter.ts — 커뮤니티/시장 데이터 → 10섹션 표준 게시글
  *
  * 3 카테고리 차별:
  *   crypto: BTC/ETH/알트코인, 기술적 분석, Fear&Greed
@@ -18,25 +18,100 @@ const env = require('../../../packages/core/lib/env');
 const { callHubLlm } = require(path.join(env.PROJECT_ROOT, 'packages/core/lib/hub-client'));
 const kst = require('../../../packages/core/lib/kst');
 
-const CALLER_TEAM = 'edu-x';
+const CALLER_TEAM = 'luna';
+const LLM_AGENT = 'reporter';
+const LLM_SELECTOR_KEY = 'investment.reporter';
 const LLM_TIMEOUT_MS = 90000;
 const MAX_CONTENT_LEN = 19500;
-const TARGET_MIN_LEN = 1800;
+const TARGET_MIN_LEN = 0;
+const REQUIRED_SECTION_MARKERS = ['①', '②', '③', '④', '⑤', '⑥', '⑦', '⑧', '⑨', '⑩'];
+const FORBIDDEN_PATTERNS = [
+  { key: 'notion', re: /notion/i },
+  { key: 'activity', re: /\bactivity\b/i },
+  { key: 'likes_or_comments', re: /좋아요|댓글/ },
+];
+
+function hasValue(value) {
+  return value !== null && value !== undefined && value !== '';
+}
+
+function formatUsd(value, decimals = 0) {
+  if (!hasValue(value)) return '수집 대기';
+  const n = Number(value);
+  if (!Number.isFinite(n)) return '수집 대기';
+  return `$${n.toLocaleString(undefined, {
+    minimumFractionDigits: decimals,
+    maximumFractionDigits: decimals,
+  })}`;
+}
+
+function formatUsdCompact(value) {
+  if (!hasValue(value)) return '수집 대기';
+  const n = Number(value);
+  if (!Number.isFinite(n)) return '수집 대기';
+  const abs = Math.abs(n);
+  if (abs >= 1e12) return `$${(n / 1e12).toFixed(2)}T`;
+  if (abs >= 1e9) return `$${(n / 1e9).toFixed(2)}B`;
+  if (abs >= 1e6) return `$${(n / 1e6).toFixed(2)}M`;
+  return `$${n.toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
+}
+
+function formatPercent(value) {
+  if (!hasValue(value)) return '수집 대기';
+  const n = Number(value);
+  if (!Number.isFinite(n)) return '수집 대기';
+  return `${n > 0 ? '+' : ''}${n.toFixed(1)}%`;
+}
+
+function formatPlain(value, suffix = '') {
+  if (!hasValue(value)) return '수집 대기';
+  return `${value}${suffix}`;
+}
+
+function formatScore(value, label = '', scale = '0~100') {
+  if (!hasValue(value)) return '수집 대기';
+  const n = Number(value);
+  if (!Number.isFinite(n)) return '수집 대기';
+  const score = Number.isInteger(n) ? String(n) : n.toFixed(1);
+  const details = [label, scale].filter(Boolean).join(', ');
+  return `${score}점${details ? `(${details})` : ''}`;
+}
+
+function formatMacdValue(value) {
+  if (!hasValue(value)) return '수집 대기';
+  if (typeof value === 'number') return `${value.toFixed(2)} USDT`;
+  const text = String(value);
+  const match = text.match(/^([+-]?\d+(?:\.\d+)?)(.*)$/);
+  if (!match) return text;
+  const tail = match[2] || '';
+  return `${match[1]} USDT${tail}`;
+}
+
+function displayMarketSymbol(symbol, fallbackQuote = 'USDT') {
+  const normalized = String(symbol || '').trim().toUpperCase();
+  if (!normalized) return '';
+  if (normalized.includes('/')) return normalized;
+  if (fallbackQuote && normalized.endsWith(fallbackQuote)) {
+    return `${normalized.slice(0, -fallbackQuote.length)}/${fallbackQuote}`;
+  }
+  if (/^[A-Z0-9]{2,10}$/.test(normalized) && fallbackQuote) return `${normalized}/${fallbackQuote}`;
+  return normalized;
+}
 
 // ─── 헤드라인 생성 ────────────────────────────────────────────────
 
 function buildCryptoTitle(slot, marketData) {
-  const slotLabel = { '0600': '아시아', '1400': '유럽', '2230': '미국' }[slot] || '';
+  const btcSymbol = displayMarketSymbol(marketData?.btc_symbol || 'BTC/USDT');
   const btcPrice = marketData?.btc_price
-    ? `BTC $${Number(marketData.btc_price).toLocaleString()}`
-    : 'BTC 시세';
+    ? `${btcSymbol} $${Number(marketData.btc_price).toLocaleString()}`
+    : `${btcSymbol} 시세`;
   const btcChange = marketData?.btc_change_24h != null
     ? ` (${marketData.btc_change_24h > 0 ? '+' : ''}${Number(marketData.btc_change_24h).toFixed(1)}%)`
     : '';
   const now = kst.now ? kst.now() : new Date();
   const mm = String(now.getMonth() + 1).padStart(2, '0');
   const dd = String(now.getDate()).padStart(2, '0');
-  return `[일일 암호화폐 브리핑${slotLabel ? ` — ${slotLabel}` : ''}] ${mm}/${dd} ${btcPrice}${btcChange}`;
+  return `${mm}/${dd} 암호화폐 브리핑 | ${btcPrice}${btcChange}`;
 }
 
 function buildKisTitle(marketData) {
@@ -47,7 +122,7 @@ function buildKisTitle(marketData) {
   const now = kst.now ? kst.now() : new Date();
   const mm = String(now.getMonth() + 1).padStart(2, '0');
   const dd = String(now.getDate()).padStart(2, '0');
-  return `[국내주식 일일 브리핑] ${mm}/${dd} ${kospi}${kospiChange} 장시작 30분 전 점검`;
+  return `${mm}/${dd} 국내주식 장전 브리핑 | ${kospi}${kospiChange}`;
 }
 
 function buildOverseasTitle(marketData) {
@@ -58,22 +133,26 @@ function buildOverseasTitle(marketData) {
   const now = kst.now ? kst.now() : new Date();
   const mm = String(now.getMonth() + 1).padStart(2, '0');
   const dd = String(now.getDate()).padStart(2, '0');
-  return `[해외주식 일일 브리핑] ${mm}/${dd} ${sp500}${sp500Change} NY 개장 30분 전 점검`;
+  return `${mm}/${dd} 해외주식 장전 브리핑 | ${sp500}${sp500Change}`;
 }
 
 // ─── 시스템 프롬프트 ───────────────────────────────────────────────
 
 function buildCryptoSystemPrompt() {
   return `당신은 Edu-X 금융교육 플랫폼의 암호화폐 전문 분석가입니다.
-루나팀 AI가 수집한 시장 데이터를 바탕으로 교육적이고 균형 잡힌 일일 브리핑을 작성합니다.
+BTC/USDT 가격·기술·리스크 정보, 암호화폐 커뮤니티 이슈, 루나팀 자동매매 정보를 바탕으로 교육적이고 균형 잡힌 일일 브리핑을 작성합니다.
 
 규칙:
-- 총 1,800~2,500자 (한국어)
+- 분량은 자연스럽게 작성하고, 같은 말을 반복해 글자수를 채우지 말 것
 - 10개 섹션 구조를 정확히 따를 것
 - 투자 권유 절대 금지 (교육 목적만)
 - 단정적 표현 금지 ("반드시 오른다" 등)
-- 커뮤니티 멘션/트렌드 데이터를 객관적으로 제시
-- 전문 용어는 간단한 설명 병기`;
+- 우선순위는 1순위 BTC/USDT 정보, 2순위 암호화폐 커뮤니티 이슈, 3순위 루나팀 자동매매 정보로 고정할 것
+- BTC/USDT 정보는 가격, 등락률, Fear & Greed, 기술지표, 지지·저항, 거래대금을 먼저 다룰 것
+- 암호화폐 커뮤니티 이슈는 BTC/USDT 이후 보조 맥락으로 제시하고, 알트코인은 워치리스트 수준으로만 다룰 것
+- 루나팀 자동매매는 아직 개발/테스트 중인 내부 자동화로만 언급하고, 성과·권위·매매 추천처럼 표현하지 말 것
+- 전문 용어는 간단한 설명 병기
+- Notion, activity 카테고리, 좋아요/댓글 지표는 언급하지 말 것`;
 }
 
 function buildKisSystemPrompt() {
@@ -81,11 +160,12 @@ function buildKisSystemPrompt() {
 KIS WebSocket 데이터와 네이버 뉴스를 바탕으로 장 시작 전 브리핑을 작성합니다.
 
 규칙:
-- 총 1,800~2,500자 (한국어)
+- 분량은 자연스럽게 작성하고, 같은 말을 반복해 글자수를 채우지 말 것
 - 10개 섹션 구조를 정확히 따를 것
 - 외인/기관 동향은 수치 중심으로 객관 서술
 - 투자 권유 절대 금지
-- 공시/이벤트 일정은 KST 기준`;
+- 공시/이벤트 일정은 KST 기준
+- Notion, activity 카테고리, 좋아요/댓글 지표는 언급하지 말 것`;
 }
 
 function buildOverseasSystemPrompt() {
@@ -93,27 +173,46 @@ function buildOverseasSystemPrompt() {
 루나팀 해외주식 데이터와 Reuters/Bloomberg 뉴스를 바탕으로 NY 개장 전 브리핑을 작성합니다.
 
 규칙:
-- 총 1,800~2,500자 (한국어)
+- 분량은 자연스럽게 작성하고, 같은 말을 반복해 글자수를 채우지 말 것
 - 10개 섹션 구조를 정확히 따를 것
 - Magnificent 7 동향은 개별 종목 수치 포함
 - 어닝 캘린더는 날짜/EPS 예상치 포함
-- 투자 권유 절대 금지`;
+- 투자 권유 절대 금지
+- Notion, activity 카테고리, 좋아요/댓글 지표는 언급하지 말 것`;
 }
 
 // ─── 사용자 프롬프트 ──────────────────────────────────────────────
 
 function buildCryptoUserPrompt(slot, marketData, evidenceItems, technicalData) {
-  const slotLabel = { '0600': '아시아', '1400': '유럽', '2230': '미국' }[slot] || '';
+  const slotLabel = { '0600': '오전 업데이트', '1400': '오후 업데이트', '2230': '심야 업데이트' }[slot] || '정기 업데이트';
   const now = kst.now ? kst.now() : new Date();
+  const btcSymbol = displayMarketSymbol(marketData?.btc_symbol || 'BTC/USDT');
+  const ethSymbol = displayMarketSymbol(marketData?.eth_symbol || 'ETH/USDT');
+  const fearGreedText = formatScore(marketData?.fear_greed_index, marketData?.fear_greed_label, '0~100');
+
+  const macroItems = [
+    hasValue(marketData?.sp500) ? `- S&P500: ${marketData.sp500}` : null,
+    hasValue(marketData?.nasdaq) ? `- Nasdaq: ${marketData.nasdaq}` : null,
+    hasValue(marketData?.dxy) ? `- DXY: ${marketData.dxy}` : null,
+    hasValue(marketData?.us10y) ? `- 미국 10년물: ${marketData.us10y}%` : null,
+    hasValue(marketData?.fomc_hike_prob) ? `- FOMC 인상 확률: ${marketData.fomc_hike_prob}%` : null,
+  ].filter(Boolean);
+  const macroBlock = macroItems.length
+    ? macroItems.join('\n')
+    : '- 이번 암호화폐 슬롯은 거시 지표를 별도 수집하지 않고, 가격·거래량·커뮤니티·Fear & Greed를 우선 반영합니다.';
 
   const topIssues = (evidenceItems || [])
     .slice(0, 5)
-    .map((e, i) => `${i + 1}. [${e.sourceName || 'unknown'}] ${e.evidenceSummary || ''} (멘션: ${e.rawRef?.mentions || 0}, 방향: ${e.signalDirection || 'neutral'})`)
+    .map((e, i) => {
+      const mentions = e.rawRef?.mentions != null ? `, 언급 ${e.rawRef.mentions}건` : '';
+      const symbol = displayMarketSymbol(e.symbol || btcSymbol);
+      return `${i + 1}. [${symbol}] [${e.sourceName || 'unknown'}] ${e.evidenceSummary || ''} (방향: ${e.signalDirection || 'neutral'}${mentions})`;
+    })
     .join('\n');
 
   const altcoins = (marketData?.altcoins || [])
     .slice(0, 5)
-    .map((a) => `${a.symbol} | ${a.price ? '$' + Number(a.price).toFixed(2) : '-'} | ${a.change_24h != null ? (a.change_24h > 0 ? '+' : '') + Number(a.change_24h).toFixed(1) + '%' : '-'} | ${a.trigger || '-'}`)
+    .map((a) => `${displayMarketSymbol(a.symbol)} | ${a.price ? '$' + Number(a.price).toFixed(2) : '-'} | ${a.change_24h != null ? (a.change_24h > 0 ? '+' : '') + Number(a.change_24h).toFixed(1) + '%' : '-'} | ${a.trigger || '-'}`)
     .join('\n');
 
   const todaySchedule = (marketData?.schedule || [])
@@ -121,30 +220,31 @@ function buildCryptoUserPrompt(slot, marketData, evidenceItems, technicalData) {
     .map((s) => `- ${s.time} KST: ${s.event}`)
     .join('\n');
 
-  return `현재 시각: ${now.toLocaleString('ko-KR')} KST (${slotLabel} 세션)
+  return `현재 시각: ${now.toLocaleString('ko-KR')} KST (${slotLabel})
 
-📊 시장 현황:
-- BTC: $${marketData?.btc_price ? Number(marketData.btc_price).toLocaleString() : 'N/A'} (24h: ${marketData?.btc_change_24h != null ? (marketData.btc_change_24h > 0 ? '+' : '') + Number(marketData.btc_change_24h).toFixed(1) + '%' : 'N/A'})
-- ETH: $${marketData?.eth_price ? Number(marketData.eth_price).toLocaleString() : 'N/A'} (24h: ${marketData?.eth_change_24h != null ? (marketData.eth_change_24h > 0 ? '+' : '') + Number(marketData.eth_change_24h).toFixed(1) + '%' : 'N/A'})
-- 시총: $${marketData?.total_market_cap ? (Number(marketData.total_market_cap) / 1e12).toFixed(2) + 'T' : 'N/A'}
-- Fear & Greed: ${marketData?.fear_greed_index || 'N/A'} (${marketData?.fear_greed_label || ''})
+🥇 1순위 — BTC/USDT 핵심 정보:
+- ${btcSymbol} 가격: ${formatUsd(marketData?.btc_price)} (24h 등락률: ${formatPercent(marketData?.btc_change_24h)})
+- Fear & Greed: ${fearGreedText}
+- 기술지표(${btcSymbol} 1H): RSI ${formatScore(technicalData?.rsi, '', '0~100')}, MACD ${formatMacdValue(technicalData?.macd)}
+- 지지선(USDT): ${formatUsd(technicalData?.support)} / 저항선(USDT): ${formatUsd(technicalData?.resistance)}
+- 24h 거래대금(USDT): ${formatPlain(technicalData?.volume_24h)}
 
-🔥 커뮤니티 Top 5 이슈 (루나팀 4,688건+ 수집):
-${topIssues || '데이터 없음'}
+🥈 2순위 — 암호화폐 커뮤니티/뉴스 이슈:
+${topIssues || `${btcSymbol} 관련 커뮤니티/뉴스 이슈가 충분히 수집되지 않았습니다.`}
 
-📈 기술적 분석 (BTC 1H):
-- RSI 14: ${technicalData?.rsi || 'N/A'}
-- MACD: ${technicalData?.macd || 'N/A'}
-- 지지선: $${technicalData?.support || 'N/A'} / 저항선: $${technicalData?.resistance || 'N/A'}
-- 볼륨 (24h): ${technicalData?.volume_24h || 'N/A'}
+🥉 3순위 — 루나팀 자동매매 정보:
+- 루나팀 자동매매는 개발 및 테스트 중인 내부 자동화입니다.
+- 게시글에서는 자동매매 판단을 권위 있는 근거로 쓰지 않고, 공개 데이터 해석을 보조하는 운영 메모로만 다룹니다.
+
+📊 보조 시장 현황:
+- ${ethSymbol} 가격: ${formatUsd(marketData?.eth_price)} (24h 등락률: ${formatPercent(marketData?.eth_change_24h)})
+- 글로벌 시총: ${formatUsdCompact(marketData?.total_market_cap)}
 
 🌐 거시 환경:
-- S&P500: ${marketData?.sp500 || 'N/A'} | Nasdaq: ${marketData?.nasdaq || 'N/A'}
-- DXY: ${marketData?.dxy || 'N/A'} | 10Y: ${marketData?.us10y || 'N/A'}%
-- FOMC 인상 확률: ${marketData?.fomc_hike_prob || 'N/A'}%
+${macroBlock}
 
 🏆 알트코인 워치 Top 5:
-symbol | 가격 | 24h | 트리거
+symbol | 가격(USDT) | 24h 등락률(%) | 트리거
 ${altcoins || 'SOL / XRP / AVAX / SUI / DOGE 데이터 없음'}
 
 📅 오늘 일정 (KST):
@@ -153,18 +253,18 @@ ${todaySchedule || '일정 없음'}
 ---
 위 데이터를 바탕으로 아래 10개 섹션 구조로 게시글을 작성해주세요:
 
-① 제목 + 해시태그 (제목은 별도로 반환, 해시태그는 본문에)
-② TL;DR 박스 (3~4줄 핵심 요약)
-③ [이미지 2장 플레이스홀더 — 실제 URL은 후처리]
-④ 주요 이슈 Top 5 (헤드라인 + 핵심내용 + 영향분석 + 출처)
-⑤ 기술적 분석 (RSI/MACD/지지저항/볼륨)
-⑥ 거시 환경 (1~2 단락)
-⑦ 알트코인 워치 Top 5 (테이블)
-⑧ 오늘 일정 (KST 기준)
-⑨ 루나봇 인사이트 (1~2 단락, AI 분석 관점)
-⑩ 면책 + 출처 (투자 권유 아님, 자동 작성 명시)
+① 🧭 제목 + 해시태그 (제목은 별도로 반환, 해시태그는 본문에)
+② ⚡ TL;DR 박스 (3~4줄 핵심 요약)
+③ ₿ ${btcSymbol} 핵심 정보 카드 (1순위: 가격/Fear & Greed/시총/지표 기준)
+④ 🌐 암호화폐 커뮤니티 이슈 Top 5 (2순위: 헤드라인 + 핵심내용 + 영향분석 + 출처)
+⑤ 📈 ${btcSymbol} 기술적 분석 (RSI/MACD/지지저항/거래대금)
+⑥ 🛡️ 거시·리스크 환경 (1~2 단락)
+⑦ 👀 알트코인 워치 Top 5 (테이블)
+⑧ 🗓️ 오늘 일정 (KST 기준)
+⑨ 🤖 루나팀 자동매매 정보 (3순위: 개발/테스트 중인 내부 자동화로만 설명)
+⑩ ⚠️ 면책 + 출처 (투자 권유 아님, 자동 작성 명시)
 
-총 1,800~2,500자로 작성하세요.`;
+중복 문장 없이 자연스럽게 작성하세요.`;
 }
 
 function buildKisUserPrompt(marketData, evidenceItems) {
@@ -203,18 +303,18 @@ ${(marketData?.events || []).slice(0, 4).map((e) => `- ${e.time || ''}: ${e.even
 ---
 아래 10개 섹션 구조로 국내주식 브리핑을 작성해주세요:
 
-① 제목 + 해시태그
-② TL;DR (코스피/코스닥 핵심 3~4줄)
-③ [이미지 플레이스홀더]
-④ Top 5 이슈 (네이버 뉴스 기반)
-⑤ 기술적 분석 (KOSPI 일봉)
-⑥ 외인/기관 동향 ⭐ (수치 중심)
-⑦ 섹터 ETF 워치 (반도체/2차전지/바이오)
-⑧ 공시/이벤트 일정
-⑨ 루나봇 인사이트
-⑩ 면책
+① 🧭 제목 + 해시태그
+② ⚡ TL;DR (코스피/코스닥 핵심 3~4줄)
+③ 📌 핵심 데이터 체크포인트
+④ 📰 Top 5 이슈 (네이버 뉴스 기반)
+⑤ 📈 기술적 분석 (KOSPI 일봉)
+⑥ 💸 외인/기관 동향 ⭐ (수치 중심)
+⑦ 👀 섹터 ETF 워치 (반도체/2차전지/바이오)
+⑧ 🗓️ 공시/이벤트 일정
+⑨ 🤖 루나봇 인사이트
+⑩ ⚠️ 면책
 
-총 1,800~2,500자.`;
+중복 문장 없이 자연스럽게 작성하세요.`;
 }
 
 function buildOverseasUserPrompt(marketData, evidenceItems) {
@@ -248,18 +348,249 @@ ${(marketData?.earnings || []).slice(0, 4).map((e) => `- ${e.date} ${e.symbol}: 
 ---
 아래 10개 섹션 구조로 해외주식 브리핑을 작성해주세요:
 
-① 제목 + 해시태그
-② TL;DR (S&P/Nasdaq 핵심 3~4줄)
-③ [이미지 플레이스홀더]
-④ Top 5 이슈 (Reuters/Bloomberg 기반)
-⑤ 기술적 분석 (S&P 일봉)
-⑥ Magnificent 7 동향 ⭐
-⑦ 섹터 ETF (QQQ/XLK/XLE)
-⑧ 어닝 캘린더
-⑨ 루나봇 인사이트
-⑩ 면책
+① 🧭 제목 + 해시태그
+② ⚡ TL;DR (S&P/Nasdaq 핵심 3~4줄)
+③ 📌 핵심 데이터 체크포인트
+④ 📰 Top 5 이슈 (Reuters/Bloomberg 기반)
+⑤ 📈 기술적 분석 (S&P 일봉)
+⑥ 💎 Magnificent 7 동향 ⭐
+⑦ 👀 섹터 ETF (QQQ/XLK/XLE)
+⑧ 🗓️ 어닝 캘린더
+⑨ 🤖 루나봇 인사이트
+⑩ ⚠️ 면책
 
-총 1,800~2,500자.`;
+중복 문장 없이 자연스럽게 작성하세요.`;
+}
+
+// ─── 품질 게이트/폴백 ─────────────────────────────────────────────
+
+function validateContentQuality(content) {
+  const text = String(content || '');
+  const missingSections = REQUIRED_SECTION_MARKERS.filter((marker) => !text.includes(marker));
+  const forbidden = FORBIDDEN_PATTERNS.filter((item) => item.re.test(text)).map((item) => item.key);
+  return {
+    ok: text.length >= TARGET_MIN_LEN && missingSections.length === 0 && forbidden.length === 0,
+    contentLen: text.length,
+    missingSections,
+    forbidden,
+  };
+}
+
+function bulletList(items, fallback, options = {}) {
+  const rows = (items || []).slice(0, 5).map((item, index) => {
+    const summary = item.evidenceSummary || item.summary || fallback;
+    const source = item.sourceName || item.source || 'luna';
+    const symbol = options.marketSymbols && item.symbol ? `[${displayMarketSymbol(item.symbol)}] ` : '';
+    return `${index + 1}. ${symbol}${summary} (출처: ${source})`;
+  });
+  return rows.length ? rows.join('\n') : `1. ${fallback}\n2. 수치가 확인되는 항목만 선별합니다.\n3. 변동성 확대 구간에서는 포지션 크기를 보수적으로 해석합니다.`;
+}
+
+function padToMinLength(content, category) {
+  let text = String(content || '').trim();
+  const categoryLabel = { crypto: '암호화폐', kis: '국내주식', overseas: '해외주식' }[category] || '시장';
+  const appendBeforeDisclaimer = (current, addition) => {
+    const marker = '\n\n⑩ ';
+    const index = current.indexOf(marker);
+    if (index === -1) return `${current}\n\n${addition}`;
+    return `${current.slice(0, index)}\n\n${addition}${current.slice(index)}`;
+  };
+  const additions = [
+    `운영 해석: 이번 ${categoryLabel} 브리핑은 단기 방향을 단정하지 않고 루나팀이 수집한 가격, 수급, 커뮤니티 언급, 이벤트 일정을 교육용 관점으로 분리해 해석합니다. 단일 지표가 강해도 후속 거래량과 변동성 확인이 없으면 신호 신뢰도는 낮게 보는 것이 안전합니다.`,
+    '리스크 기준: 한 가지 신호만 강할 때보다 거래량, 추세, 일정, 변동성 지표가 함께 확인될 때 신뢰도가 높아집니다. 신호가 엇갈리면 관망 또는 비중 축소 관점이 더 합리적이며, 자동 분석도 보류 판단을 정상 운영 결과로 취급해야 합니다.',
+    '활용 방법: 본문은 매수·매도 지시가 아니라 체크리스트입니다. 독자는 자신의 투자 목적, 손실 감내 범위, 보유 기간에 맞춰 별도 판단해야 하며 자동 분석 결과는 참고 자료로만 사용해야 합니다.',
+    '데이터 한계: 일부 지표가 수집 대기로 표시될 때는 결론을 강화하지 않습니다. 확인되지 않은 값은 모르는 값으로 남겨 두고, 다음 슬롯에서 데이터가 보강되는지 비교하는 방식이 더 정확합니다.',
+    '검증 관점: 같은 방향의 신호가 여러 출처에서 반복될 때만 해석 강도를 높입니다. 가격만 움직이고 수급이나 일정 근거가 약하면 이벤트성 노이즈일 가능성도 함께 열어 둡니다.',
+    '운영 메모: 자동 작성 콘텐츠는 빠른 현황 파악을 돕기 위한 요약입니다. 실제 의사결정에는 원문 데이터, 체결 환경, 개인별 리스크 한도 확인이 필요합니다.',
+  ];
+  let index = 0;
+  while (text.length < TARGET_MIN_LEN && index < additions.length) {
+    text = appendBeforeDisclaimer(text, additions[index]);
+    index += 1;
+  }
+  while (text.length < TARGET_MIN_LEN) {
+    text = appendBeforeDisclaimer(text, '보충 메모: 다음 슬롯에서는 신규 가격, 거래량, 수급, 일정 데이터를 다시 대조해 현재 판단의 유지 여부를 확인합니다.');
+  }
+  return text;
+}
+
+function buildCryptoFallbackContent(slot, marketData = {}, evidenceItems = {}, technicalData = {}) {
+  const btcSymbol = displayMarketSymbol(marketData?.btc_symbol || 'BTC/USDT');
+  const ethSymbol = displayMarketSymbol(marketData?.eth_symbol || 'ETH/USDT');
+  const topIssues = bulletList(evidenceItems, `${btcSymbol} 관련 커뮤니티/뉴스 이슈가 충분히 수집되지 않았습니다.`, { marketSymbols: true });
+  const marketLine = `${btcSymbol} ${formatUsd(marketData?.btc_price)}, ${ethSymbol} ${formatUsd(marketData?.eth_price)}, 시총 ${formatUsdCompact(marketData?.total_market_cap)}, Fear & Greed ${formatScore(marketData?.fear_greed_index, marketData?.fear_greed_label, '0~100')}`;
+  const watchList = (marketData?.altcoins || marketData?.top_coins || [])
+    .slice(0, 5)
+    .map((item) => `- ${displayMarketSymbol(item.symbol)}: ${hasValue(item.change_24h ?? item.change_1d) ? `${item.change_24h ?? item.change_1d}%` : '수집 대기'}`)
+    .join('\n');
+
+  const body = `① 🧭 BTC/USDT 브리핑 요약
+${btcSymbol} 핵심 정보를 먼저 보고, 암호화폐 커뮤니티 이슈와 루나팀 자동매매 정보를 보조로 점검합니다.
+#EduX #비트코인 #금융교육 #시장브리핑
+
+② ⚡ TL;DR
+- 현재 핵심 데이터: ${marketLine}
+- 1순위는 ${btcSymbol} 가격·기술·리스크 정보, 2순위는 암호화폐 커뮤니티 이슈, 3순위는 루나팀 자동매매 정보입니다.
+- 오늘의 관찰 포인트는 과열 추격보다 ${btcSymbol} 리스크 관리와 데이터 검증입니다.
+
+③ ₿ ${btcSymbol} 핵심 정보 카드 (1순위)
+• 가격: ${btcSymbol} ${formatUsd(marketData?.btc_price)} / 24h 등락률 ${formatPercent(marketData?.btc_change_24h)}
+• 시장 심리: Fear & Greed ${formatScore(marketData?.fear_greed_index, marketData?.fear_greed_label, '0~100')}
+• 시장 규모: 글로벌 시총 ${formatUsdCompact(marketData?.total_market_cap)}
+• 기준: Binance Spot 가격, ${btcSymbol} 1시간봉 기술지표
+• 핵심 구간: 지지 ${formatUsd(technicalData?.support)} USDT / 저항 ${formatUsd(technicalData?.resistance)} USDT
+
+④ 🌐 암호화폐 커뮤니티 이슈 Top 5 (2순위)
+${topIssues}
+커뮤니티 이슈는 ${btcSymbol} 핵심 정보 다음에 보는 보조 맥락입니다. 각 이슈는 단독 매수·매도 신호가 아니라 관찰해야 할 데이터 포인트이며, 단기 급등락 뒤에는 유동성 부족이나 이벤트성 수급이 섞일 수 있으므로 후속 거래량 확인이 필요합니다.
+
+⑤ 📈 ${btcSymbol} 기술적 분석
+기술적 지표는 ${btcSymbol} 1시간봉(Binance Spot) 기준으로 계산합니다. RSI는 ${formatScore(technicalData?.rsi, '', '0~100')}, MACD는 ${formatMacdValue(technicalData?.macd)}로 기록되며, 지지·저항은 최근 48개 1시간봉의 저가·고가 범위인 ${formatUsd(technicalData?.support)} / ${formatUsd(technicalData?.resistance)} USDT, 24h 거래대금은 최근 24개 1시간봉 quote volume 합산 기준 ${formatPlain(technicalData?.volume_24h)} USDT 수준을 참고합니다.
+
+⑥ 🛡️ 거시·리스크 환경
+시장 전반은 달러, 금리, 주요 지수의 움직임과 함께 해석해야 합니다. 같은 뉴스라도 유동성이 풍부한 구간과 긴축 우려가 커지는 구간에서는 가격 반응이 달라질 수 있습니다. 이번 암호화폐 슬롯은 실시간 수집이 안정적인 가격, 거래량, 글로벌 시총, Fear & Greed, ${btcSymbol} 커뮤니티/뉴스 이슈를 우선 반영하고, 별도 거시 지표는 확인 가능한 경우에만 해석 강도를 높입니다.
+
+⑦ 👀 워치리스트
+${watchList || '- 데이터 부족: 상위 후보군은 다음 dry-run에서 재확인합니다.'}
+워치리스트는 관심 목록이며 투자 권유가 아닙니다. 변동성이 큰 종목은 손실 범위를 먼저 정한 뒤 관찰하는 것이 안전합니다. 등락률이 크더라도 거래량, 커뮤니티 신호, 이벤트 근거가 함께 확인되지 않으면 단기 노이즈로 분류하는 것이 더 보수적인 해석입니다.
+
+⑧ 🗓️ 오늘 일정
+주요 경제지표, 기업 이벤트, 거래소 공지, 정책 발언을 KST 기준으로 확인합니다. 일정 직전에는 스프레드와 체결 변동성이 커질 수 있어 자동화 전략도 보수적으로 평가해야 합니다.
+
+⑨ 🤖 루나팀 자동매매 정보 (3순위)
+루나팀 자동매매 시스템은 아직 개발 및 테스트 중인 내부 자동화입니다. 따라서 이 글에서는 루나팀의 매매 판단을 권위 있는 근거로 제시하지 않고, ${btcSymbol} 핵심 정보와 암호화폐 커뮤니티 이슈가 서로 맞물리는지 점검하는 보조 운영 정보로만 다룹니다. 신호가 엇갈릴 때는 자동화 결과보다 확인 가능한 ${btcSymbol} 관련 정보와 리스크 관리 관점을 우선합니다.
+
+⑩ ⚠️ 면책 + 출처
+본 글은 Edu-X 커뮤니티용 자동 작성 교육 콘텐츠이며 투자 권유가 아닙니다. 데이터는 ${btcSymbol} 관련 커뮤니티/뉴스 수집 결과, Binance 공개 시장 데이터, CoinGecko 글로벌 시총, Alternative.me Fear & Greed, 개발/테스트 중인 자동 분석 결과를 기반으로 하며 실제 투자 판단과 책임은 독자에게 있습니다.`;
+
+  return body.trim();
+}
+
+function buildKisFallbackContent(marketData = {}, evidenceItems = {}) {
+  const topIssues = bulletList(evidenceItems, '국내 증시 관련 주요 뉴스/이슈가 충분히 수집되지 않았습니다.');
+  const sectorWatch = (marketData?.sectors || [])
+    .slice(0, 5)
+    .map((item) => `- ${item.name}: ${hasValue(item.change_1d ?? item.change) ? `${item.change_1d ?? item.change}%` : '수집 대기'}`)
+    .join('\n');
+  const events = (marketData?.events || [])
+    .slice(0, 4)
+    .map((item) => `- ${item.time || '시간 미정'}: ${item.event || item.title || '일정 확인 필요'}`)
+    .join('\n');
+
+  return `① 🧭 국내주식 장전 브리핑 요약
+국내 증시는 코스피·코스닥 지수, 원/달러 환율, 외국인·기관 수급, 섹터 흐름을 분리해 확인합니다.
+#EduX #국내주식 #장전브리핑 #금융교육
+
+② ⚡ TL;DR
+- 코스피 ${formatPlain(marketData?.kospi_index, 'pt')} / 코스닥 ${formatPlain(marketData?.kosdaq_index, 'pt')} / 원·달러 ${formatPlain(marketData?.usd_krw, '원')}
+- 외국인 순매수 ${hasValue(marketData?.foreign_net_buy) ? `${Number(marketData.foreign_net_buy / 1e8).toFixed(0)}억원` : '수집 대기'} / 기관 순매수 ${hasValue(marketData?.institution_net_buy) ? `${Number(marketData.institution_net_buy / 1e8).toFixed(0)}억원` : '수집 대기'}
+- 장전에는 방향 단정보다 지수·수급·섹터의 동시 확인이 우선입니다.
+
+③ 📌 핵심 데이터 체크포인트
+• 코스피: ${formatPlain(marketData?.kospi_index, 'pt')} (${formatPercent(marketData?.kospi_change)})
+• 코스닥: ${formatPlain(marketData?.kosdaq_index, 'pt')} (${formatPercent(marketData?.kosdaq_change)})
+• 환율: 원·달러 ${formatPlain(marketData?.usd_krw, '원')}
+• 수급: 외국인 ${hasValue(marketData?.foreign_net_buy) ? `${Number(marketData.foreign_net_buy / 1e8).toFixed(0)}억원` : '수집 대기'}, 기관 ${hasValue(marketData?.institution_net_buy) ? `${Number(marketData.institution_net_buy / 1e8).toFixed(0)}억원` : '수집 대기'}
+
+④ 📰 국내 주요 이슈 Top 5
+${topIssues}
+이슈는 장전 방향을 단정하기 위한 재료가 아니라, 개장 후 어떤 섹터와 대형주에 수급이 붙는지 확인하기 위한 관찰 목록입니다.
+
+⑤ 📈 기술적 분석
+코스피와 코스닥은 전일 종가, 장초반 갭, 20일선 근처의 반응을 함께 봅니다. 지수가 상승해도 거래대금이 부족하면 추세 신뢰도는 낮아지고, 하락 출발 후 낙폭 축소가 빠르면 저가 매수세 유입 가능성을 별도로 확인해야 합니다.
+
+⑥ 💸 외인·기관 동향
+외국인과 기관 수급은 장중 방향성을 해석하는 핵심 보조 지표입니다. 두 주체가 같은 방향이면 지수 추세 신뢰도가 높아지고, 서로 엇갈리면 업종별 순환매 가능성이 커집니다. 숫자가 수집 대기일 때는 전일 종가와 장초반 거래대금을 먼저 확인합니다.
+
+⑦ 👀 섹터 ETF 워치
+${sectorWatch || '- 반도체: 수집 대기\n- 2차전지: 수집 대기\n- 바이오: 수집 대기'}
+섹터 워치는 관심 목록입니다. 단기 등락률보다 수급 지속성, 대형주 동조 여부, 장중 거래대금 증가를 함께 봐야 합니다.
+
+⑧ 🗓️ 공시·이벤트 일정
+${events || '- 장전 확정 일정 수집 대기'}
+공시와 이벤트는 KST 기준으로 확인합니다. 개별 기업 공시는 지수 흐름보다 개별 변동성을 크게 만들 수 있으므로 포지션 크기 관리가 우선입니다.
+
+⑨ 🤖 루나봇 인사이트
+루나팀 자동화는 국내주식 데이터 수집과 브리핑 보조를 위한 개발·테스트 중인 내부 시스템입니다. 본문은 자동매매 성과나 매수·매도 권고가 아니라, 공개적으로 확인 가능한 지수·수급·섹터 정보를 정리한 교육용 체크리스트입니다.
+
+⑩ ⚠️ 면책 + 출처
+본 글은 Edu-X 커뮤니티용 자동 작성 교육 콘텐츠이며 투자 권유가 아닙니다. 데이터는 KIS 계열 시장 데이터, 국내 증시 신호, 공개 뉴스/이벤트 요약, 개발·테스트 중인 자동 분석 결과를 기반으로 하며 실제 투자 판단과 책임은 독자에게 있습니다.`.trim();
+}
+
+function buildOverseasFallbackContent(marketData = {}, evidenceItems = {}) {
+  const topIssues = bulletList(evidenceItems, '해외 증시 관련 주요 뉴스/이슈가 충분히 수집되지 않았습니다.');
+  const mag7 = (marketData?.mag7 || [])
+    .slice(0, 7)
+    .map((item) => `- ${item.symbol}: ${hasValue(item.price) ? `$${item.price}` : '가격 수집 대기'} (${hasValue(item.change_1d) ? `${item.change_1d}%` : '등락률 수집 대기'})`)
+    .join('\n');
+  const etfs = (marketData?.top_etfs || [])
+    .slice(0, 5)
+    .map((item) => `- ${item.symbol}: ${hasValue(item.change_1d ?? item.market_cap) ? `${item.change_1d ?? item.market_cap}` : '수집 대기'}`)
+    .join('\n');
+  const earnings = (marketData?.earnings || [])
+    .slice(0, 4)
+    .map((item) => `- ${item.date || '일정 미정'} ${item.symbol || ''}: EPS 예상 ${item.eps_est || '수집 대기'}`)
+    .join('\n');
+
+  return `① 🧭 해외주식 장전 브리핑 요약
+해외 증시는 S&P500·Nasdaq 지수, VIX, 달러·금리 변수, 대형 기술주 흐름을 분리해 확인합니다.
+#EduX #해외주식 #미국증시 #금융교육
+
+② ⚡ TL;DR
+- S&P500 ${formatPlain(marketData?.sp500_index, 'pt')} (${formatPercent(marketData?.sp500_change)}) / Nasdaq ${formatPlain(marketData?.nasdaq_index, 'pt')} (${formatPercent(marketData?.nasdaq_change)})
+- VIX ${formatPlain(marketData?.vix)} / DXY ${formatPlain(marketData?.dxy)}
+- NY 개장 전에는 지수 방향, 대형 기술주 동조 여부, 변동성 확대 가능성을 먼저 점검합니다.
+
+③ 📌 핵심 데이터 체크포인트
+• S&P500: ${formatPlain(marketData?.sp500_index, 'pt')} (${formatPercent(marketData?.sp500_change)})
+• Nasdaq: ${formatPlain(marketData?.nasdaq_index, 'pt')} (${formatPercent(marketData?.nasdaq_change)})
+• VIX: ${formatPlain(marketData?.vix)}
+• DXY: ${formatPlain(marketData?.dxy)}
+
+④ 📰 해외 주요 이슈 Top 5
+${topIssues}
+해외 이슈는 지수와 섹터에 어떤 경로로 반영되는지 확인해야 합니다. 헤드라인만으로 방향을 단정하지 않고, 개장 후 선물·현물·대형주 반응을 함께 봅니다.
+
+⑤ 📈 S&P500 기술적 분석
+S&P500은 전일 종가, 장전 선물, 주요 이동평균 근처의 반응을 같이 봅니다. 지수가 상승해도 VIX가 함께 오르면 방어적 수요가 남아 있다는 뜻일 수 있고, Nasdaq이 S&P500보다 강하면 성장주 중심의 위험 선호를 의심해볼 수 있습니다.
+
+⑥ 💎 Magnificent 7 동향
+${mag7 || '- AAPL: 수집 대기\n- MSFT: 수집 대기\n- NVDA: 수집 대기\n- AMZN: 수집 대기\n- META: 수집 대기\n- GOOGL: 수집 대기\n- TSLA: 수집 대기'}
+대형 기술주는 지수 기여도가 높아 개별 종목 흐름이 전체 시장 체감 방향을 바꿀 수 있습니다.
+
+⑦ 👀 섹터 ETF 워치
+${etfs || '- QQQ: 수집 대기\n- XLK: 수집 대기\n- XLE: 수집 대기'}
+섹터 ETF는 자금이 성장주, 기술주, 에너지, 방어주 중 어디로 이동하는지 보기 위한 보조 지표입니다.
+
+⑧ 🗓️ 어닝 캘린더
+${earnings || '- 확인된 주요 어닝 일정 수집 대기'}
+실적 발표 전후에는 가이던스와 마진 전망이 가격 반응을 좌우할 수 있으므로 EPS 숫자와 함께 컨퍼런스콜 코멘트를 확인해야 합니다.
+
+⑨ 🤖 루나봇 인사이트
+루나팀 자동화는 해외주식 데이터 수집과 브리핑 보조를 위한 개발·테스트 중인 내부 시스템입니다. 본문은 자동매매 권고가 아니라, 공개 지수·대형주·섹터 정보를 교육용으로 정리한 운영 메모입니다.
+
+⑩ ⚠️ 면책 + 출처
+본 글은 Edu-X 커뮤니티용 자동 작성 교육 콘텐츠이며 투자 권유가 아닙니다. 데이터는 공개 시장 데이터, 해외주식 신호, 뉴스/이벤트 요약, 개발·테스트 중인 자동 분석 결과를 기반으로 하며 실제 투자 판단과 책임은 독자에게 있습니다.`.trim();
+}
+
+function buildFallbackContent(category, slot, marketData = {}, evidenceItems = {}, technicalData = {}) {
+  if (category === 'crypto') return buildCryptoFallbackContent(slot, marketData, evidenceItems, technicalData);
+  if (category === 'kis') return buildKisFallbackContent(marketData, evidenceItems);
+  if (category === 'overseas') return buildOverseasFallbackContent(marketData, evidenceItems);
+  return buildCryptoFallbackContent(slot, marketData, evidenceItems, technicalData);
+}
+
+async function callFormatterLlm({ systemPrompt, userPrompt }) {
+  return await callHubLlm({
+    callerTeam: CALLER_TEAM,
+    agent: LLM_AGENT,
+    selectorKey: LLM_SELECTOR_KEY,
+    abstractModel: 'anthropic_sonnet',
+    systemPrompt,
+    prompt: userPrompt,
+    maxTokens: 4096,
+    timeoutMs: LLM_TIMEOUT_MS,
+  });
 }
 
 // ─── LLM 호출 ─────────────────────────────────────────────────────
@@ -272,7 +603,7 @@ ${(marketData?.earnings || []).slice(0, 4).map((e) => `- ${e.date} ${e.symbol}: 
  * @param {object} [technicalData]
  * @returns {Promise<{title: string, content: string} | null>}
  */
-async function formatPost(category, slot, marketData, evidenceItems, technicalData = {}) {
+async function formatPost(category, slot, marketData, evidenceItems, technicalData = {}, options = {}) {
   let systemPrompt, userPrompt, title;
 
   if (category === 'crypto') {
@@ -292,37 +623,56 @@ async function formatPost(category, slot, marketData, evidenceItems, technicalDa
     return null;
   }
 
-  let llmResp;
-  try {
-    llmResp = await callHubLlm({
-      callerTeam: CALLER_TEAM,
-      agent: 'edux-formatter',
-      selectorKey: 'edu-x.formatter',
-      abstractModel: 'anthropic_sonnet',
-      systemPrompt,
-      prompt: userPrompt,
-      maxTokens: 4096,
-      timeoutMs: LLM_TIMEOUT_MS,
-    });
-  } catch (err) {
-    console.error('[edu-x/formatter] callHubLlm 예외:', err?.message);
-    return null;
+  if (options.fixture || process.env.EDUX_FORMATTER_FIXTURE === 'true') {
+    return { title, content: buildFallbackContent(category, slot, marketData, evidenceItems, technicalData), source: 'fixture_fallback' };
   }
 
-  if (!llmResp?.ok || !llmResp?.text) {
-    console.error('[edu-x/formatter] LLM 응답 실패:', llmResp?.error);
-    return null;
+  if (category === 'crypto' && process.env.EDUX_CRYPTO_FORMATTER_MODE !== 'llm') {
+    return { title, content: buildFallbackContent(category, slot, marketData, evidenceItems, technicalData), source: 'crypto_deterministic' };
   }
 
-  let content = llmResp.text.trim();
-  if (content.length < TARGET_MIN_LEN) {
-    console.warn(`[edu-x/formatter] 본문 ${content.length}자 — 목표 ${TARGET_MIN_LEN}자 미달`);
-  }
-  if (content.length > MAX_CONTENT_LEN) {
-    content = content.slice(0, MAX_CONTENT_LEN);
+  let content = null;
+  let quality = null;
+  let source = 'hub_llm';
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    let llmResp;
+    try {
+      const prompt = attempt === 0
+        ? userPrompt
+        : `${userPrompt}\n\n이전 응답이 품질 게이트를 통과하지 못했습니다. 반드시 ①~⑩ 섹션을 모두 포함하고, 중복 문장 없이 자연스럽게 작성하며, Notion/activity/좋아요/댓글 언급은 제외하세요.`;
+      llmResp = await callFormatterLlm({ systemPrompt, userPrompt: prompt });
+    } catch (err) {
+      console.error('[edu-x/formatter] callHubLlm 예외:', err?.message);
+      break;
+    }
+
+    if (!llmResp?.ok || !llmResp?.text) {
+      console.error('[edu-x/formatter] LLM 응답 실패:', llmResp?.error);
+      continue;
+    }
+
+    content = llmResp.text.trim();
+    if (content.length > MAX_CONTENT_LEN) content = content.slice(0, MAX_CONTENT_LEN);
+    quality = validateContentQuality(content);
+    if (quality.ok) break;
+    console.warn(`[edu-x/formatter] 품질 미달 attempt=${attempt + 1}: ${JSON.stringify(quality)}`);
   }
 
-  return { title, content };
+  if (!content || !quality?.ok) {
+    source = 'fallback_after_quality_gate';
+    content = buildFallbackContent(category, slot, marketData, evidenceItems, technicalData);
+    quality = validateContentQuality(content);
+  }
+
+  return { title, content, quality, source };
 }
 
-module.exports = { formatPost, buildCryptoTitle, buildKisTitle, buildOverseasTitle };
+module.exports = {
+  formatPost,
+  validateContentQuality,
+  buildFallbackContent,
+  buildCryptoTitle,
+  buildKisTitle,
+  buildOverseasTitle,
+  displayMarketSymbol,
+};

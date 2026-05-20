@@ -15,7 +15,7 @@
 const fs = require('fs');
 const path = require('path');
 const env = require('../../../packages/core/lib/env');
-const { getEduxClient } = require('./edux-client');
+const { getEduxClient } = require('./edux-client.ts');
 const { fetchHubSecrets } = require(path.join(env.PROJECT_ROOT, 'packages/core/lib/hub-client'));
 
 const DEFAULT_TIMEOUT_MS = 30000;
@@ -52,12 +52,10 @@ async function uploadImage(filePath) {
   const client = getEduxClient();
   const initialized = await client.init();
   if (!initialized) return null;
-  if (!client._accessToken) {
-    const ok = await client.login();
-    if (!ok) return null;
-  }
+  const ok = await client.ensureAuthenticated();
+  if (!ok) return null;
 
-  const baseUrl = await getBaseUrl();
+  const baseUrl = client.getBaseUrl ? client.getBaseUrl() : await getBaseUrl();
   const fileName = path.basename(filePath);
   const fileBuffer = fs.readFileSync(filePath);
   const mimeType = filePath.endsWith('.jpg') || filePath.endsWith('.jpeg')
@@ -77,7 +75,7 @@ async function uploadImage(filePath) {
       try {
         resp = await fetch(`${baseUrl}/api/community/upload`, {
           method: 'POST',
-          headers: { Authorization: `Bearer ${client._accessToken}` },
+          headers: { Authorization: `Bearer ${client.getAccessToken()}` },
           body: formData,
           signal: controller.signal,
         });
@@ -139,10 +137,11 @@ async function uploadImage(filePath) {
  */
 async function uploadMultiple(filePaths) {
   const results = [];
-  for (const filePath of filePaths) {
+  for (let i = 0; i < filePaths.length; i += 1) {
+    const filePath = filePaths[i];
     const url = await uploadImage(filePath);
     if (url) results.push(url);
-    if (filePaths.indexOf(filePath) < filePaths.length - 1) {
+    if (i < filePaths.length - 1) {
       await new Promise((r) => setTimeout(r, BETWEEN_UPLOAD_DELAY_MS));
     }
   }

@@ -283,6 +283,16 @@ const CATEGORY_HANDLERS: Record<string, CategoryHandler> = {
     };
   },
 
+  edux: () => {
+    const store = loadSecretsStore();
+    const d = store?.edux || {};
+    return {
+      base_url: d.base_url || 'https://edu-x.io',
+      bot_email: d.bot_email || '',
+      bot_password: d.bot_password || '',
+    };
+  },
+
   config: () => {
     const runtime = loadConfigYaml();
     const store = loadSecretsStore();

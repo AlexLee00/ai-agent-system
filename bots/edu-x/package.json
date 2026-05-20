@@ -5,10 +5,22 @@
   "main": "scripts/runtime-edux-crypto-daily.ts",
   "type": "commonjs",
   "scripts": {
+    "check": "node scripts/check-edux-integration.ts",
+    "secrets-doctor": "node scripts/secrets-doctor.ts",
     "crypto-daily": "node scripts/runtime-edux-crypto-daily.ts",
     "kis-daily": "node scripts/runtime-edux-kis-daily.ts",
     "overseas-daily": "node scripts/runtime-edux-overseas-daily.ts",
-    "promotion-gate": "node scripts/edux-promotion-gate.ts"
+    "runtime:crypto-daily": "node scripts/runtime-edux-crypto-daily.ts",
+    "runtime:kis-daily": "node scripts/runtime-edux-kis-daily.ts",
+    "runtime:overseas-daily": "node scripts/runtime-edux-overseas-daily.ts",
+    "runtime:integration-report": "node scripts/runtime-edux-integration-report.ts",
+    "integration-report": "node scripts/runtime-edux-integration-report.ts",
+    "promotion-gate": "node scripts/edux-promotion-gate.ts",
+    "smoke:client": "node scripts/smoke-edux-client.ts",
+    "smoke:formatter": "node scripts/smoke-edux-formatter.ts",
+    "smoke:image": "node scripts/smoke-edux-image.ts",
+    "smoke:runtime-fixture": "node scripts/smoke-edux-runtime-fixture.ts",
+    "smoke:promotion-gate": "node scripts/smoke-edux-promotion-gate.ts"
   },
   "dependencies": {
     "@ai-agent/core": "*"

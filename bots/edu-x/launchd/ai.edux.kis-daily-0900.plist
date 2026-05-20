@@ -10,6 +10,10 @@
 		<string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
 		<key>EDUX_DRY_RUN</key>
 		<string>true</string>
+		<key>EDUX_LIVE_PUBLISH_APPROVED</key>
+		<string>false</string>
+		<key>EDUX_PROMOTION_GATE_PASSED</key>
+		<string>false</string>
 	</dict>
 	<key>KeepAlive</key>
 	<false/>

@@ -16,27 +16,45 @@ const { fetchHubSecrets } = require(path.join(env.PROJECT_ROOT, 'packages/core/l
 
 const MAX_RETRY = 3;
 const DEFAULT_TIMEOUT_MS = 15000;
+const EDUX_CATEGORY = 'free';
+const REQUIRED_SECRET_KEYS = ['base_url', 'bot_email', 'bot_password'];
 
-/** @returns {Promise<{base_url: string, bot_email: string, bot_password: string} | null>} */
-async function getEduxSecrets() {
-  try {
-    const secrets = await fetchHubSecrets('edux', 5000);
-    if (!secrets?.base_url || !secrets?.bot_email || !secrets?.bot_password) {
-      console.error('[edu-x] secrets-store에 edux 설정 없음 (base_url, bot_email, bot_password 필요)');
-      return null;
-    }
-    return secrets;
-  } catch (err) {
-    console.error('[edu-x] secrets 로딩 실패:', err?.message);
-    return null;
-  }
+function normalizeEduxCredentials(raw, source = 'unknown') {
+  if (!raw || typeof raw !== 'object') return null;
+  const baseUrl = String(raw.base_url || '').trim().replace(/\/$/, '');
+  const botEmail = String(raw.bot_email || '').trim();
+  const botPassword = String(raw.bot_password || '');
+  if (!baseUrl || !botEmail || !botPassword) return null;
+  return {
+    base_url: baseUrl,
+    bot_email: botEmail,
+    bot_password: botPassword,
+    _source: source,
+  };
 }
 
-async function fetchWithTimeout(url, options = {}, timeoutMs = DEFAULT_TIMEOUT_MS) {
+/** @returns {Promise<{base_url: string, bot_email: string, bot_password: string, _source?: string} | null>} */
+async function getEduxSecrets() {
+  try {
+    const hubSecrets = normalizeEduxCredentials(await fetchHubSecrets('edux', 5000), 'hub:edux');
+    if (hubSecrets) return hubSecrets;
+  } catch (err) {
+    console.warn('[edu-x] Hub credentials 조회 실패:', err?.message);
+  }
+
+  console.error('[edu-x] Hub secret edux 설정 없음 (base_url, bot_email, bot_password 필요)');
+  return null;
+}
+
+async function sleep(ms) {
+  await new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function fetchWithTimeout(url, options = {}, timeoutMs = DEFAULT_TIMEOUT_MS, fetchImpl = fetch) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
-    return await fetch(url, { ...options, signal: controller.signal });
+    return await fetchImpl(url, { ...options, signal: controller.signal });
   } finally {
     clearTimeout(timer);
   }
@@ -51,23 +69,39 @@ async function parseJsonSafe(resp) {
 }
 
 class EduxClient {
-  constructor() {
+  constructor(opts = {}) {
     this._baseUrl = null;
     this._email = null;
     this._password = null;
     this._accessToken = null;
     this._refreshToken = null;
     this._initialized = false;
+    this._fetch = opts.fetchImpl || fetch;
+    this._sleep = opts.sleep || sleep;
+    this._secrets = opts.secrets || null;
   }
 
   async init() {
     if (this._initialized) return true;
-    const secrets = await getEduxSecrets();
+    const secrets = this._secrets || await getEduxSecrets();
     if (!secrets) return false;
     this._baseUrl = String(secrets.base_url).replace(/\/$/, '');
     this._email = secrets.bot_email;
     this._password = secrets.bot_password;
     this._initialized = true;
+    return true;
+  }
+
+  getBaseUrl() {
+    return this._baseUrl || 'https://edu-x.io';
+  }
+
+  getAccessToken() {
+    return this._accessToken || null;
+  }
+
+  async ensureAuthenticated() {
+    if (!this._accessToken) return await this.login();
     return true;
   }
 
@@ -80,7 +114,7 @@ class EduxClient {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email: this._email, password: this._password }),
-      });
+      }, DEFAULT_TIMEOUT_MS, this._fetch);
       if (!resp.ok) {
         const data = await parseJsonSafe(resp);
         console.error('[edu-x] login 실패:', resp.status, JSON.stringify(data));
@@ -105,7 +139,7 @@ class EduxClient {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ refreshToken: this._refreshToken }),
-      });
+      }, DEFAULT_TIMEOUT_MS, this._fetch);
       if (resp.status === 401) {
         console.warn('[edu-x] refresh 토큰 만료 → 재로그인');
         this._refreshToken = null;
@@ -164,7 +198,7 @@ class EduxClient {
 
     for (let attempt = 0; attempt < MAX_RETRY; attempt++) {
       try {
-        const resp = await fetchWithTimeout(`${this._baseUrl}${urlPath}`, fetchOpts, timeoutMs);
+        const resp = await fetchWithTimeout(`${this._baseUrl}${urlPath}`, fetchOpts, timeoutMs, this._fetch);
 
         if (resp.status === 401) {
           const refreshed = await this.refreshAccess();
@@ -178,7 +212,7 @@ class EduxClient {
           const wait = Number(data?.retryAfter || 5) * 1000;
           console.warn(`[edu-x] 429 Rate Limit — ${wait / 1000}s 대기 (시도 ${attempt + 1}/${MAX_RETRY})`);
           if (attempt < MAX_RETRY - 1) {
-            await new Promise((r) => setTimeout(r, wait));
+            await this._sleep(wait);
             continue;
           }
           return null;
@@ -194,7 +228,7 @@ class EduxClient {
       } catch (err) {
         if (attempt < MAX_RETRY - 1) {
           console.warn(`[edu-x] request 예외 (재시도 ${attempt + 1}/${MAX_RETRY}):`, err?.message);
-          await new Promise((r) => setTimeout(r, 2000));
+          await this._sleep(2000);
           continue;
         }
         console.error('[edu-x] request 최종 실패:', err?.message);
@@ -221,9 +255,9 @@ class EduxClient {
     if (title && title.length > 200) {
       title = title.slice(0, 200);
     }
-    return this.request('POST', '/api/community/posts', {
-      body: { title: title || null, content, category: 'free', imageUrl },
-    });
+    const body = { title: title || null, content, category: EDUX_CATEGORY };
+    if (imageUrl) body.imageUrl = imageUrl;
+    return this.request('POST', '/api/community/posts', { body });
   }
 
   /**
@@ -243,6 +277,18 @@ class EduxClient {
   async getPost(postId) {
     return this.request('GET', `/api/community/posts/${postId}`);
   }
+
+  /**
+   * DELETE /api/community/posts/:id — 테스트 게시글 정리
+   * @param {string} postId
+   */
+  async deletePost(postId) {
+    if (!postId) {
+      console.error('[edu-x] postId 필수');
+      return null;
+    }
+    return this.request('DELETE', `/api/community/posts/${postId}`);
+  }
 }
 
 /** 싱글턴 인스턴스 */
@@ -254,4 +300,13 @@ function getEduxClient() {
   return _instance;
 }
 
-module.exports = { EduxClient, getEduxClient };
+module.exports = {
+  EduxClient,
+  getEduxClient,
+  EDUX_CATEGORY,
+  REQUIRED_SECRET_KEYS,
+  normalizeEduxCredentials,
+  getEduxSecrets,
+  fetchWithTimeout,
+  parseJsonSafe,
+};

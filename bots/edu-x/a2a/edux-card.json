@@ -1,0 +1,48 @@
+{
+  "name": "Edu-X Community Bot",
+  "description": "BTC 커뮤니티/시장 데이터 기반 Edu-X 자유게시판 dry-run 자동 기여 봇. 실 발행은 promotion gate와 명시 승인 후만 허용한다.",
+  "version": "1.0.0",
+  "url": "http://localhost:8786",
+  "documentationUrl": "docs/strategy/EDUX_INTEGRATION_STRATEGY_2026-05-20.md",
+  "capabilities": {
+    "streaming": false,
+    "pushNotifications": false,
+    "stateTransitionHistory": false
+  },
+  "defaultInputModes": ["application/json"],
+  "defaultOutputModes": ["application/json"],
+  "skills": [
+    {
+      "id": "edux-status-report",
+      "name": "Edu-X 상태 리포트",
+      "description": "Dry-run 누적, 본문 생성 로그, 이미지 미첨부 정책, promotion gate 상태를 읽기 전용으로 요약한다.",
+      "tags": ["edux", "status", "dry-run", "readonly"],
+      "inputModes": ["application/json"],
+      "outputModes": ["application/json"]
+    },
+    {
+      "id": "edux-dry-run-slot",
+      "name": "Edu-X 슬롯 Dry-run",
+      "description": "지정 슬롯을 fixture 또는 실제 데이터 기반 dry-run으로 실행한다. 실 게시와 이미지 업로드는 수행하지 않는다.",
+      "tags": ["edux", "dry-run", "slot"],
+      "inputModes": ["application/json"],
+      "outputModes": ["application/json"]
+    },
+    {
+      "id": "edux-promotion-report",
+      "name": "Edu-X 승격 게이트 보고서",
+      "description": "7일 dry-run 35건, 본문 생성 로그, 이미지 미첨부 정책, JWT health, 429 기준을 보고서로 산출한다.",
+      "tags": ["edux", "promotion", "gate", "readonly"],
+      "inputModes": ["application/json"],
+      "outputModes": ["application/json"]
+    },
+    {
+      "id": "edux-retry-failed-dry-run",
+      "name": "Edu-X 실패 Dry-run 재시도",
+      "description": "실 발행이 아닌 dry-run 모드로 실패 슬롯을 재시도한다.",
+      "tags": ["edux", "retry", "dry-run"],
+      "inputModes": ["application/json"],
+      "outputModes": ["application/json"]
+    }
+  ]
+}

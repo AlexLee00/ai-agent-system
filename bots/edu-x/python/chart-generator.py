@@ -157,11 +157,89 @@ def chart_bar_kospi_sector(data: dict, out_path: str):
     print(f"saved: {out_path}")
 
 
+def chart_line_kis_index(data: dict, out_path: str):
+    """KOSPI/KOSDAQ 6-session line chart"""
+    series = data.get('series', {}) or {}
+    times = series.get('times') or ['D-5', 'D-4', 'D-3', 'D-2', 'D-1', 'D']
+    kospi = series.get('kospi') or [2870, 2888, 2894, 2910, 2904, 2920]
+    kosdaq = series.get('kosdaq') or [862, 870, 875, 879, 881, 884]
+
+    fig, ax1 = plt.subplots(figsize=(12, 6), facecolor='#1a1a2e')
+    ax1.set_facecolor('#16213e')
+    x = list(range(len(times)))
+    ax1.plot(x, kospi, color='#00ccff', linewidth=2.5, marker='o', label='KOSPI')
+    ax2 = ax1.twinx()
+    ax2.plot(x, kosdaq, color='#ffaa33', linewidth=2.5, marker='o', label='KOSDAQ')
+
+    ax1.set_xticks(x)
+    ax1.set_xticklabels(times, color='#aaaaaa')
+    ax1.tick_params(colors='white')
+    ax2.tick_params(colors='white')
+    ax1.spines['bottom'].set_color('#333355')
+    ax1.spines['left'].set_color('#333355')
+    ax2.spines['right'].set_color('#333355')
+    ax1.spines['top'].set_visible(False)
+    ax2.spines['top'].set_visible(False)
+    ax1.set_title('국내 주요 지수 흐름', color='white', fontsize=14, fontweight='bold', pad=15)
+    lines = ax1.get_lines() + ax2.get_lines()
+    labels = [line.get_label() for line in lines]
+    legend = ax1.legend(lines, labels, loc='upper left', frameon=False)
+    for text in legend.get_texts():
+        text.set_color('white')
+    plt.tight_layout()
+
+    os.makedirs(os.path.dirname(out_path), exist_ok=True)
+    plt.savefig(out_path, dpi=150, bbox_inches='tight', facecolor=fig.get_facecolor())
+    plt.close()
+    print(f"saved: {out_path}")
+
+
+def chart_bar_mag7(data: dict, out_path: str):
+    """Magnificent 7 daily change chart"""
+    rows = data.get('mag7') or [
+        {'symbol': 'NVDA', 'change_1d': 2.1},
+        {'symbol': 'MSFT', 'change_1d': 0.8},
+        {'symbol': 'AAPL', 'change_1d': -0.3},
+        {'symbol': 'AMZN', 'change_1d': 0.5},
+        {'symbol': 'META', 'change_1d': 1.1},
+        {'symbol': 'GOOGL', 'change_1d': 0.6},
+        {'symbol': 'TSLA', 'change_1d': -1.2},
+    ]
+    symbols = [r.get('symbol', '-') for r in rows[:7]]
+    changes = [float(r.get('change_1d') or 0) for r in rows[:7]]
+    colors = ['#00cc66' if value >= 0 else '#ff3355' for value in changes]
+
+    fig, ax = plt.subplots(figsize=(12, 6), facecolor='#1a1a2e')
+    ax.set_facecolor('#16213e')
+    bars = ax.bar(symbols, changes, color=colors, alpha=0.85, edgecolor='white', linewidth=0.5)
+    for bar, value in zip(bars, changes):
+        ax.text(bar.get_x() + bar.get_width() / 2,
+                bar.get_height() + (0.05 if value >= 0 else -0.08),
+                f'{value:+.1f}%', ha='center', va='bottom' if value >= 0 else 'top',
+                color='white', fontsize=10, fontweight='bold')
+    ax.axhline(0, color='#555577', linewidth=0.8)
+    ax.set_title('Magnificent 7 등락률', color='white', fontsize=14, fontweight='bold', pad=15)
+    ax.tick_params(colors='white')
+    ax.spines['bottom'].set_color('#333355')
+    ax.spines['left'].set_color('#333355')
+    ax.spines['top'].set_visible(False)
+    ax.spines['right'].set_visible(False)
+    ax.yaxis.set_major_formatter(mticker.FuncFormatter(lambda x, _: f'{x:+.1f}%'))
+    plt.tight_layout()
+
+    os.makedirs(os.path.dirname(out_path), exist_ok=True)
+    plt.savefig(out_path, dpi=150, bbox_inches='tight', facecolor=fig.get_facecolor())
+    plt.close()
+    print(f"saved: {out_path}")
+
+
 CHART_MAP = {
     'crypto_bar': chart_bar_market_cap,
     'crypto_line': chart_line_btc_24h,
     'kis_sector': chart_bar_kospi_sector,
+    'kis_index_line': chart_line_kis_index,
     'overseas_bar': chart_bar_market_cap,
+    'overseas_mag7': chart_bar_mag7,
 }
 
 
