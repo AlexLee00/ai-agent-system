@@ -226,6 +226,7 @@ defmodule TeamJay.Dashboard.Live.DashboardLive do
       safe_call(fn -> load_growth_scheduler_status() end, socket.assigns.growth_scheduler)
 
     Process.send_after(self(), :refresh_agents, 30_000)
+
     {:noreply,
      assign(socket,
        team_health: team_health,
@@ -645,14 +646,15 @@ defmodule TeamJay.Dashboard.Live.DashboardLive do
   end
 
   defp merge_growth_cycle_seed(current, seed) when is_map(current) and is_map(seed) do
-    if current[:last_result] || current["last_result"] || current[:last_error] || current["last_error"] do
+    if current[:last_result] || current["last_result"] || current[:last_error] ||
+         current["last_error"] do
       current
     else
       Map.merge(current, seed)
     end
   end
 
-  defp normalize_collection_count(value, fallback \\ 0)
+  defp normalize_collection_count(value, fallback)
   defp normalize_collection_count(value, _fallback) when is_list(value), do: length(value)
   defp normalize_collection_count(value, _fallback) when is_integer(value), do: value
   defp normalize_collection_count(_value, fallback) when is_integer(fallback), do: fallback
@@ -1258,8 +1260,12 @@ defmodule TeamJay.Dashboard.Live.DashboardLive do
   defp sigma_board(assigns) do
     mapek = assigns.sigma_status[:mapek] || %{}
 
+    event_activity =
+      assigns.sigma_status[:event_activity] || %{count: 0, last_at: nil}
+
     assigns =
       assign(assigns,
+        event_activity: event_activity,
         mapek: mapek,
         mapek_cycle_count: mapek_cycle_count(mapek),
         mapek_current_phase: mapek_current_phase(mapek),
@@ -1293,6 +1299,10 @@ defmodule TeamJay.Dashboard.Live.DashboardLive do
           <span class="text-[10px] text-gray-500 ml-2">
             마지막: {format_relative_time(@mapek_last_at)}
           </span>
+        </div>
+        <div class="mt-2 text-[10px] text-gray-400">
+          EventLake 24h: <span class="text-blue-300">{@event_activity[:count] || 0}건</span>
+          · {format_relative_time(@event_activity[:last_at])}
         </div>
       </div>
 
@@ -1339,7 +1349,7 @@ defmodule TeamJay.Dashboard.Live.DashboardLive do
         <span class="text-sm font-semibold text-gray-300 uppercase tracking-wider">
           [8] Luna 매매 흐름
         </span>
-        <span class="text-xs text-gray-400">13 토픽 실시간</span>
+        <span class="text-xs text-gray-400">EventLake + DB 24h</span>
       </div>
 
       <div class="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 gap-2">
@@ -1821,7 +1831,8 @@ defmodule TeamJay.Dashboard.Live.DashboardLive do
       commander_alive: Process.whereis(Sigma.V2.Commander) != nil,
       trend_alive: Process.whereis(Sigma.V2.Pod.Trend) != nil,
       growth_alive: Process.whereis(Sigma.V2.Pod.Growth) != nil,
-      risk_alive: Process.whereis(Sigma.V2.Pod.Risk) != nil
+      risk_alive: Process.whereis(Sigma.V2.Pod.Risk) != nil,
+      event_activity: load_sigma_event_activity()
     }
   rescue
     _ ->
@@ -1830,8 +1841,29 @@ defmodule TeamJay.Dashboard.Live.DashboardLive do
         commander_alive: false,
         trend_alive: false,
         growth_alive: false,
-        risk_alive: false
+        risk_alive: false,
+        event_activity: %{count: 0, last_at: nil}
       }
+  end
+
+  defp load_sigma_event_activity do
+    sql = """
+    SELECT COUNT(*)::int AS cnt, MAX(created_at) AS last_at
+    FROM agent.event_lake
+    WHERE created_at > NOW() - INTERVAL '24 hours'
+      AND (
+        team = 'sigma'
+        OR bot_name ILIKE '%sigma%'
+        OR event_type ILIKE '%sigma%'
+      )
+    """
+
+    case Jay.Core.Repo.query(sql, []) do
+      {:ok, %{rows: [[count, last_at]]}} -> %{count: count || 0, last_at: last_at}
+      _ -> %{count: 0, last_at: nil}
+    end
+  rescue
+    _ -> %{count: 0, last_at: nil}
   end
 
   defp init_luna_pipeline do
@@ -1857,30 +1889,121 @@ defmodule TeamJay.Dashboard.Live.DashboardLive do
 
     base = init_luna_pipeline()
 
+    event_seed =
+      case Jay.Core.Repo.query(sql, []) do
+        {:ok, %{rows: rows}} ->
+          Enum.reduce(rows, base, fn [event_type, cnt, last_at], acc ->
+            stage = topic_to_stage(event_type)
+
+            if stage == :other do
+              acc
+            else
+              existing = Map.get(acc, stage, %{count: 0, last_at: nil, recent: []})
+
+              Map.put(acc, stage, %{
+                count: (existing[:count] || 0) + cnt,
+                last_at: pick_later(existing[:last_at], last_at),
+                recent: existing[:recent] || []
+              })
+            end
+          end)
+
+        _ ->
+          base
+      end
+
+    merge_luna_pipeline_seed(event_seed, load_luna_operational_seed())
+  rescue
+    _ -> init_luna_pipeline()
+  end
+
+  defp load_luna_operational_seed do
+    sql = """
+    SELECT stage, SUM(cnt)::int AS cnt, MAX(last_at) AS last_at
+    FROM (
+      SELECT 'analyst' AS stage, COUNT(*)::int AS cnt,
+             MAX(COALESCE(updated_at, last_backtest_at, created_at)) AS last_at
+      FROM investment.candidate_backtest_status
+      WHERE COALESCE(updated_at, last_backtest_at, created_at) > NOW() - INTERVAL '24 hours'
+      UNION ALL
+      SELECT 'analyst' AS stage, COUNT(*)::int AS cnt, MAX(created_at) AS last_at
+      FROM investment.predictive_validation_log
+      WHERE created_at > NOW() - INTERVAL '24 hours'
+      UNION ALL
+      SELECT 'decision' AS stage, COUNT(*)::int AS cnt, MAX(discovered_at) AS last_at
+      FROM investment.candidate_universe
+      WHERE discovered_at > NOW() - INTERVAL '24 hours'
+      UNION ALL
+      SELECT 'decision' AS stage, COUNT(*)::int AS cnt,
+             MAX(COALESCE(updated_at, created_at)) AS last_at
+      FROM investment.luna_promotion_entry_trigger_bridge_shadow
+      WHERE COALESCE(updated_at, created_at) > NOW() - INTERVAL '24 hours'
+      UNION ALL
+      SELECT 'policy' AS stage, COUNT(*)::int AS cnt, MAX(observed_at) AS last_at
+      FROM investment.luna_candidate_quality_governance_shadow
+      WHERE observed_at > NOW() - INTERVAL '24 hours'
+      UNION ALL
+      SELECT 'policy' AS stage, COUNT(*)::int AS cnt, MAX(observed_at) AS last_at
+      FROM investment.luna_candidate_bottleneck_shadow
+      WHERE observed_at > NOW() - INTERVAL '24 hours'
+      UNION ALL
+      SELECT 'execution' AS stage, COUNT(*)::int AS cnt,
+             MAX(COALESCE(updated_at, fired_at, created_at)) AS last_at
+      FROM investment.entry_triggers
+      WHERE COALESCE(updated_at, fired_at, created_at) > NOW() - INTERVAL '24 hours'
+      UNION ALL
+      SELECT 'execution' AS stage, COUNT(*)::int AS cnt, MAX(executed_at) AS last_at
+      FROM investment.trades
+      WHERE executed_at > NOW() - INTERVAL '24 hours'
+      UNION ALL
+      SELECT 'review' AS stage, COUNT(*)::int AS cnt, MAX(created_at) AS last_at
+      FROM investment.position_reevaluation_runs
+      WHERE created_at > NOW() - INTERVAL '24 hours'
+      UNION ALL
+      SELECT 'review' AS stage, COUNT(*)::int AS cnt,
+             MAX(COALESCE(reviewed_at, created_at)) AS last_at
+      FROM investment.position_closeout_reviews
+      WHERE COALESCE(reviewed_at, created_at) > NOW() - INTERVAL '24 hours'
+      UNION ALL
+      SELECT 'review' AS stage, COUNT(*)::int AS cnt, MAX(evaluated_at) AS last_at
+      FROM investment.trade_quality_evaluations
+      WHERE evaluated_at > NOW() - INTERVAL '24 hours'
+    ) s
+    WHERE last_at IS NOT NULL
+    GROUP BY stage
+    """
+
     case Jay.Core.Repo.query(sql, []) do
       {:ok, %{rows: rows}} ->
-        Enum.reduce(rows, base, fn [event_type, cnt, last_at], acc ->
-          stage = topic_to_stage(event_type)
+        Enum.reduce(rows, init_luna_pipeline(), fn [stage_name, cnt, last_at], acc ->
+          case luna_stage_from_operational_name(stage_name) do
+            nil ->
+              acc
 
-          if stage == :other do
-            acc
-          else
-            existing = Map.get(acc, stage, %{count: 0, last_at: nil, recent: []})
+            stage ->
+              existing = Map.get(acc, stage, %{count: 0, last_at: nil, recent: []})
 
-            Map.put(acc, stage, %{
-              count: (existing[:count] || 0) + cnt,
-              last_at: pick_later(existing[:last_at], last_at),
-              recent: existing[:recent] || []
-            })
+              Map.put(acc, stage, %{
+                count: (existing[:count] || 0) + (cnt || 0),
+                last_at: pick_later(existing[:last_at], last_at),
+                recent: existing[:recent] || []
+              })
           end
         end)
 
       _ ->
-        base
+        init_luna_pipeline()
     end
   rescue
     _ -> init_luna_pipeline()
   end
+
+  defp luna_stage_from_operational_name("analyst"), do: :analyst
+  defp luna_stage_from_operational_name("decision"), do: :decision
+  defp luna_stage_from_operational_name("policy"), do: :policy
+  defp luna_stage_from_operational_name("execution"), do: :execution
+  defp luna_stage_from_operational_name("review"), do: :review
+  defp luna_stage_from_operational_name(_), do: nil
 
   defp merge_luna_pipeline_seed(current, seed) do
     Enum.reduce(init_luna_pipeline(), current, fn {stage, default_stage}, acc ->
