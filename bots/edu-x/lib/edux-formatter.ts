@@ -211,6 +211,28 @@ function displayMarketSymbol(symbol, fallbackQuote = 'USDT') {
   return normalized;
 }
 
+function formatCommunitySourceLabel(sourceName) {
+  const text = String(sourceName || '').trim();
+  const key = text.toLowerCase();
+  if (!key || key.startsWith('luna') || key.includes('community')) return '커뮤니티 수집';
+  if (key.includes('reddit')) return 'Reddit 커뮤니티';
+  if (key.includes('fear_greed')) return 'Fear & Greed 지수';
+  if (key.includes('coingecko')) return 'CoinGecko 트렌드';
+  if (key.includes('apewisdom')) return 'ApeWisdom 트렌드';
+  if (key.includes('google_news') || key.includes('news_rss') || key.endsWith('_rss')) return '뉴스 RSS';
+  if (key.includes('naver')) return '네이버 뉴스';
+  if (key.includes('yahoo')) return 'Yahoo Finance 뉴스';
+  return '외부 커뮤니티/뉴스';
+}
+
+function formatSignalDirectionLabel(direction) {
+  const key = String(direction || '').trim().toLowerCase();
+  if (key === 'positive' || key === 'bullish') return '긍정';
+  if (key === 'negative' || key === 'bearish') return '부정';
+  if (key === 'neutral') return '중립';
+  return key || '중립';
+}
+
 // ─── 헤드라인 생성 ────────────────────────────────────────────────
 
 function buildCryptoTitle(slot, marketData) {
@@ -319,7 +341,7 @@ function buildCryptoUserPrompt(slot, marketData, evidenceItems, technicalData) {
     .map((e, i) => {
       const mentions = e.rawRef?.mentions != null ? `, 언급 ${e.rawRef.mentions}건` : '';
       const symbol = displayMarketSymbol(e.symbol || btcSymbol);
-      return `${i + 1}. [${symbol}] [${e.sourceName || 'unknown'}] ${e.evidenceSummary || ''} (방향: ${e.signalDirection || 'neutral'}${mentions})`;
+      return `${i + 1}. [${symbol}] [${formatCommunitySourceLabel(e.sourceName)}] ${e.evidenceSummary || ''} (해석: ${formatSignalDirectionLabel(e.signalDirection)}${mentions})`;
     })
     .join('\n');
 
@@ -551,8 +573,9 @@ function buildCryptoFallbackContent(slot, marketData = {}, evidenceItems = {}, t
   const macd = formatMacdValue(technicalData?.macd);
   const issueRows = (evidenceItems || []).slice(0, 3).map((item, index) => {
     const symbol = displayMarketSymbol(item.symbol || btcSymbol);
-    const direction = item.signalDirection ? ` / ${item.signalDirection}` : '';
-    return `${index + 1}. [${symbol}] ${item.evidenceSummary || `${btcSymbol} 가격 반응 관련 토론 증가`} (${item.sourceName || 'luna-community'}${direction})`;
+    const source = formatCommunitySourceLabel(item.sourceName);
+    const direction = formatSignalDirectionLabel(item.signalDirection);
+    return `${index + 1}. [${symbol}] ${item.evidenceSummary || `${btcSymbol} 가격 반응 관련 토론 증가`} (근거: ${source}, 해석: ${direction})`;
   });
   while (issueRows.length < 3) {
     const fallbackIssue = [

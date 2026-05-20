@@ -70,6 +70,18 @@ async function main() {
   assert.equal(/상승 시나리오/.test(cryptoPost.content), true, 'crypto post should include bull scenario');
   assert.equal(/하락 시나리오/.test(cryptoPost.content), true, 'crypto post should include bear scenario');
   assert.equal(/무효화|이탈|돌파 실패/.test(cryptoPost.content), true, 'crypto post should include invalidation condition');
+  assert.equal(/luna-community|positive|neutral|negative/.test(cryptoPost.content), false, 'crypto post should not expose internal source or raw signal labels');
+  assert.equal(/근거: 커뮤니티 수집, 해석:/.test(cryptoPost.content), true, 'crypto post should translate community source and signal labels for users');
+  const machineSourcePost = await formatPost(
+    'crypto',
+    '1400',
+    cryptoFixture.marketData,
+    [{ ...cryptoFixture.evidenceItems[0], sourceName: 'google_news_crypto_rss', signalDirection: 'bearish' }],
+    cryptoFixture.technicalData,
+    { fixture: true },
+  );
+  assert.equal(/google_news_crypto_rss|bearish/.test(machineSourcePost.content), false, 'crypto post should not expose machine source names or raw bearish labels');
+  assert.equal(machineSourcePost.content.includes('근거: 뉴스 RSS, 해석: 부정'), true, 'crypto post should map machine source names to reader-facing labels');
   assert.equal(validateContentQuality(cryptoPost.content, 'crypto').infoIssues.length, 0, 'crypto post should pass information-density gate');
   const tableHtml = formatContentForEduXWeb('🧭 **제목**\n\n| symbol | 가격 |\n| --- | --- |\n| BTC/USDT | $1 |\n\n1. 첫 이슈\n2. 둘째 이슈');
   assert.equal(tableHtml.includes('<h3>🧭 제목</h3>'), true, 'html conversion should strip bold markers in headings');
