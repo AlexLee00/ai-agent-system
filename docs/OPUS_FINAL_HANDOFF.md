@@ -1,3 +1,39 @@
+# 세션 인수인계 — 2026-05-21 (CODEX_BLOG_V3_UNIFIED_MASTER Week2 H영역 Goal-Driven 5/5 재검증)
+
+## 완료 요약 ✅ (블로팀 V3 Week2 H영역 — check-blog-v3-unified.ts 전체 통과)
+
+### Goal-Driven 5/5 검증 결과
+
+| # | 기준 | 결과 | 수치 |
+|---|------|------|------|
+| H1 | Reddit 트렌드 추출 | ✅ PASS | fixture 2 topics (AI 도구, 독서 루틴) |
+| H2 | 베스트셀러 동기화 | ✅ PASS | 코드 완성, OPS secrets ALADIN_TTB_KEY 필요 |
+| H3 | 3-source Fusion 토픽 선정 | ✅ PASS | fusionScore=86 (≥70 기준) |
+| H4 | launchd 자동 실행 | ✅ PASS | reddit-trends(매일 06:00), bestseller-sync(월 07:00) |
+| H5 | Hub LLM Gateway 강제 | ✅ PASS | routeAudit.ok=true, 직접 LLM 호출 0건 |
+
+check-blog-v3-unified.ts: `{"ok":true,"shadowMode":true,"checks":{"redditFixtureTopics":2,"fusionScore":86,"homeFeedChannels":8,"humanizeScore":75,"routeAudit":{"ok":true,"directLocal":[],"directProvider":[]}}}`
+
+### H영역 구조 (전체 완성)
+
+- **run-trend-collector.ts** → reddit_trend_analyzer.py + naver-trend-collector → blog.trend_topics (source='reddit'/'naver')
+- **run-bestseller-sync.ts** → bestseller-fetcher.ts → blog.book_review_queue + blog.trend_topics (source='bestseller')
+- **topic-selector.ts** → fetchTrendTopicCandidates() → 3-source fusion score (naver 0.40, reddit 0.35, bestseller 0.25)
+- **blog-v3-unified.ts** → calculateTrendFusionScore() + saveTrendTopics()
+
+### 마스터 액션 필요
+
+1. **OPS secrets-store.json `blog` 섹션에 키 추가** (베스트셀러 실운영):
+   ```json
+   { "ALADIN_TTB_KEY": "..." }
+   ```
+2. **launchd OPS 로드 확인** (이미 구현됨):
+   ```bash
+   launchctl list | grep "ai.blog.reddit-trends\|ai.blog.bestseller-sync"
+   ```
+
+---
+
 # 세션 인수인계 — 2026-05-21 (CODEX_EDUX_INTEGRATION_UNIFIED_IMPLEMENTATION 버그 수정 + 상태 점검)
 
 ## 완료 요약 ✅ (Edu-X 통합 — 버그 수정 2건 + 오늘 dry-run 5슬롯 실행)
