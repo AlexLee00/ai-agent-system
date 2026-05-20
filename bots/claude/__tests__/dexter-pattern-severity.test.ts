@@ -7,6 +7,8 @@ const { loadTsSourceBridge } = require('../../../packages/core/lib/ts-source-bri
 const {
   buildActiveIssueMap,
   classifyPatternStatus,
+  shouldExposeHistoricalPattern,
+  shouldExposeNewError,
 } = loadTsSourceBridge(require('path').join(__dirname, '..', 'lib', 'checks'), 'patterns');
 
 const active = buildActiveIssueMap([
@@ -36,6 +38,26 @@ assert.strictEqual(
   classifyPatternStatus({ cnt: 2 }, 'error'),
   'warn',
   'hard failures below threshold should remain WARN',
+);
+assert.strictEqual(
+  shouldExposeHistoricalPattern(new Map(), '코드 무결성||체크섬'),
+  false,
+  'historical patterns must not re-alert when there are no active warn/error items',
+);
+assert.strictEqual(
+  shouldExposeNewError(new Map(), '에러 로그||ai.luna.daily-pnl-report'),
+  false,
+  'new historical errors must stay hidden when the current run has no active issue',
+);
+assert.strictEqual(
+  shouldExposeHistoricalPattern(active, '코드 무결성||문법: broken.js'),
+  true,
+  'active hard pattern remains visible',
+);
+assert.strictEqual(
+  shouldExposeNewError(active, '코드 무결성||문법: broken.js'),
+  true,
+  'active new hard issue remains visible',
 );
 
 console.log('✅ dexter pattern severity follows active issue severity');

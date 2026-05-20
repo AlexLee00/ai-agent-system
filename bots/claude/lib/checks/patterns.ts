@@ -53,6 +53,14 @@ function classifyPatternStatus(pattern, activeStatus) {
   return repeatedEnough ? 'error' : 'warn';
 }
 
+function shouldExposeHistoricalPattern(activeIssues, key) {
+  return activeIssues instanceof Map && activeIssues.size > 0 && activeIssues.has(key);
+}
+
+function shouldExposeNewError(activeIssues, key) {
+  return shouldExposeHistoricalPattern(activeIssues, key);
+}
+
 async function run(results = []) {
   const items = [];
   const activeIssues = buildActiveIssueMap(results);
@@ -71,15 +79,21 @@ async function run(results = []) {
 
   if (patterns.length === 0) {
     items.push({ label: `반복 패턴 (${PATTERN_DAYS}일)`, status: 'ok', detail: '반복 오류 없음' });
+  } else if (activeIssues.size === 0) {
+    items.push({
+      label: '과거 반복 패턴 보류',
+      status: 'ok',
+      detail: `현재 활성 warn/error가 없어 과거 반복 패턴 ${patterns.length}건은 재승격하지 않음`,
+    });
   } else {
     for (const p of patterns) {
       const key = `${p.check_name}||${String(p.label || '').trim()}`;
       const activeStatus = activeIssues.get(key);
-      if (activeIssues.size > 0 && !activeStatus) {
+      if (!shouldExposeHistoricalPattern(activeIssues, key)) {
         hiddenResolvedPatterns++;
         continue;
       }
-      const status = classifyPatternStatus(p, activeStatus || (activeIssues.size > 0 ? 'warn' : 'unknown'));
+      const status = classifyPatternStatus(p, activeStatus);
       if (status === 'ok') {
         trackedSoftPatterns++;
         continue;
@@ -111,7 +125,7 @@ async function run(results = []) {
   if (newErrors.length > 0) {
     for (const e of newErrors) {
       const key = `${e.check_name}||${String(e.label || '').trim()}`;
-      if (activeIssues.size > 0 && !activeIssues.has(key)) {
+      if (!shouldExposeNewError(activeIssues, key)) {
         hiddenResolvedNew++;
         continue;
       }
@@ -146,4 +160,10 @@ async function run(results = []) {
   };
 }
 
-module.exports = { run, buildActiveIssueMap, classifyPatternStatus };
+module.exports = {
+  run,
+  buildActiveIssueMap,
+  classifyPatternStatus,
+  shouldExposeHistoricalPattern,
+  shouldExposeNewError,
+};
