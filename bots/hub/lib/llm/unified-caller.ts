@@ -255,7 +255,9 @@ async function _callWithSelectorChain(req, selectorChain, team) {
     console.warn(`[llm/unified] ${selectorChain.selectorKey}:${selectedRoute} 실패 (${result.error}) → 다음 시도`);
   }
 
-  await _notifyFallbackExhaustion(req, attempts, team);
+  if (!req.suppressFallbackExhaustionAlarm) {
+    await _notifyFallbackExhaustion(req, attempts, team);
+  }
   return {
     ok: false,
     provider: 'failed',
@@ -300,7 +302,9 @@ async function _callWithProfileChain(req, profile, team) {
     console.warn(`[llm/unified] ${selectedRoute} 실패 (${result.error}) → 다음 시도`);
   }
 
-  await _notifyFallbackExhaustion(req, attempts, team);
+  if (!req.suppressFallbackExhaustionAlarm) {
+    await _notifyFallbackExhaustion(req, attempts, team);
+  }
   return {
     ok: false, provider: 'failed',
     durationMs: attempts.reduce((s, a) => s + a.durationMs, 0),

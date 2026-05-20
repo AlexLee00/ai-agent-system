@@ -10,6 +10,7 @@ const originalEnv: Record<string, string | undefined> = {
   OPENAI_CODEX_BACKEND_BASE_URL: process.env.OPENAI_CODEX_BACKEND_BASE_URL,
   HUB_BUDGET_GUARDIAN_ENABLED: process.env.HUB_BUDGET_GUARDIAN_ENABLED,
   HUB_LLM_PROVIDER_CIRCUIT_ENABLED: process.env.HUB_LLM_PROVIDER_CIRCUIT_ENABLED,
+  HUB_LLM_ALLOW_ADHOC_CHAIN: process.env.HUB_LLM_ALLOW_ADHOC_CHAIN,
 };
 const originalFetch = globalThis.fetch;
 
@@ -41,6 +42,7 @@ async function main() {
   process.env.OPENAI_CODEX_BACKEND_BASE_URL = 'https://hub-unified-openai.local/backend-api';
   process.env.HUB_BUDGET_GUARDIAN_ENABLED = 'false';
   process.env.HUB_LLM_PROVIDER_CIRCUIT_ENABLED = 'false';
+  process.env.HUB_LLM_ALLOW_ADHOC_CHAIN = '1';
 
   const calls: Array<{ provider: string; url: string }> = [];
   globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -76,6 +78,7 @@ async function main() {
 
   try {
     const { callWithFallback } = await import('../lib/llm/unified-caller.ts');
+    const sender = await import('../../../packages/core/lib/telegram-sender.ts');
 
     const openAiResult = await callWithFallback({
       callerTeam: 'blog',
@@ -91,10 +94,40 @@ async function main() {
 
     assert.deepEqual(calls.map((call) => call.provider), ['openai-oauth']);
 
+    let criticalCalls = 0;
+    const originalSendCritical = sender.default?.sendCritical || sender.sendCritical;
+    const patchedSendCritical = async () => {
+      criticalCalls += 1;
+      return true;
+    };
+    if (sender.default?.sendCritical) sender.default.sendCritical = patchedSendCritical;
+    if (sender.sendCritical) sender.sendCritical = patchedSendCritical;
+    try {
+      globalThis.fetch = (async () => {
+        throw new DOMException('This operation was aborted', 'AbortError');
+      }) as typeof fetch;
+      const suppressed = await callWithFallback({
+        callerTeam: 'hub',
+        agent: 'oauth-monitor',
+        chain: [{ provider: 'openai-oauth', model: 'gpt-5.4-mini' }],
+        prompt: 'This path intentionally fails.',
+        timeoutMs: 5000,
+        cacheEnabled: false,
+        suppressFallbackExhaustionAlarm: true,
+      });
+      assert.equal(suppressed.ok, false);
+      assert.match(suppressed.error, /fallback_exhausted/);
+      assert.equal(criticalCalls, 0, 'suppressed probe must not emit fallback exhaustion critical');
+    } finally {
+      if (sender.default?.sendCritical) sender.default.sendCritical = originalSendCritical;
+      if (sender.sendCritical) sender.sendCritical = originalSendCritical;
+    }
+
     console.log(JSON.stringify({
       ok: true,
       providers: calls.map((call) => call.provider),
       gemini_oauth_retired: true,
+      fallback_exhaustion_suppressed: true,
       core_fallback_used: false,
     }));
   } finally {

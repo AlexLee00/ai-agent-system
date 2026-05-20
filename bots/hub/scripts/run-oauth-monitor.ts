@@ -839,36 +839,68 @@ async function runGeminiCliLiveRefreshProbe() {
   if (!flag('HUB_GEMINI_CLI_OAUTH_LIVE_PROBE_ON_EXPIRY', true)) {
     return { ok: false, skipped: true, error: 'live_probe_disabled' };
   }
+  const maxAttempts = Math.max(1, Math.min(5, Number(process.env.HUB_GEMINI_CLI_MONITOR_PROBE_RETRIES || 2) || 2));
+  let lastResult = null;
   try {
     const probeModel = String(process.env.GEMINI_CLI_MONITOR_PROBE_MODEL || '').trim();
     if (probeModel) process.env.LLM_GEMINI_FLASH_MODEL = probeModel;
     const { callWithFallback } = await import('../lib/llm/unified-caller.ts');
-    const started = Date.now();
-    const result = await callWithFallback({
-      callerTeam: 'hub',
-      agent: 'oauth-monitor',
-      selectorKey: 'hub.oauth.gemini_cli.expiry_probe',
-      systemPrompt: 'You are an OAuth readiness probe. Do not reveal secrets.',
-      prompt: 'Reply exactly: gemini oauth ok',
-      timeoutMs: Number(process.env.GEMINI_CLI_MONITOR_PROBE_TIMEOUT_MS || 30_000),
-      cacheEnabled: false,
-    });
-    return {
-      ok: Boolean(result.ok),
-      skipped: false,
-      duration_ms: Number(result.durationMs || Date.now() - started),
-      provider: result.provider || null,
-      selected_route: result.selected_route || null,
-      auth_path: 'synthetic_openai_oauth_probe_for_gemini_capacity_outage',
-      error: result.error || null,
-    };
+    const startedAll = Date.now();
+    for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+      const started = Date.now();
+      const result = await callWithFallback({
+        callerTeam: 'hub',
+        agent: 'oauth-monitor',
+        selectorKey: 'hub.oauth.gemini_cli.expiry_probe',
+        systemPrompt: 'You are an OAuth readiness probe. Do not reveal secrets.',
+        prompt: 'Reply exactly: gemini oauth ok',
+        timeoutMs: Number(process.env.GEMINI_CLI_MONITOR_PROBE_TIMEOUT_MS || 30_000),
+        cacheEnabled: false,
+        suppressFallbackExhaustionAlarm: true,
+      });
+      lastResult = {
+        ok: Boolean(result.ok),
+        skipped: false,
+        duration_ms: Number(result.durationMs || Date.now() - started),
+        total_duration_ms: Date.now() - startedAll,
+        attempts: attempt,
+        provider: result.provider || null,
+        selected_route: result.selected_route || null,
+        auth_path: 'synthetic_openai_oauth_probe_for_gemini_capacity_outage',
+        error: result.error || null,
+      };
+      if (lastResult.ok || !isTransientGeminiCliProbeError(lastResult.error) || attempt >= maxAttempts) {
+        return lastResult;
+      }
+      await sleep(Math.min(2_000, 250 * attempt));
+    }
+    return lastResult || { ok: false, skipped: false, attempts: 0, error: 'live_probe_no_result' };
   } catch (error) {
     return {
       ok: false,
       skipped: false,
-      error: String(error?.message || error).slice(0, 240),
+      attempts: maxAttempts,
+      error: normalizeProbeException(error),
     };
   }
+}
+
+function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, Math.max(0, ms)));
+}
+
+function normalizeProbeException(error: any): string {
+  const name = String(error?.name || '').trim();
+  const message = String(error?.message || error || 'unknown').trim();
+  if (name === 'AbortError' || name === 'TimeoutError' || /aborted|abort|timeout|timed out/i.test(message)) {
+    return `probe_timeout_or_abort:${message || name || 'aborted'}`.slice(0, 240);
+  }
+  return message.slice(0, 240);
+}
+
+function isTransientGeminiCliProbeError(error: any): boolean {
+  const message = String(error || '').trim();
+  return /fallback_exhausted:.*(openai_codex_oauth_timeout_or_abort|aborted|abort|timeout|timed out)|openai_codex_oauth_timeout_or_abort|probe_timeout_or_abort/i.test(message);
 }
 
 async function runGeminiCliLiveRefreshProbeWithReimport(reason: string, record: any) {
@@ -992,6 +1024,7 @@ async function checkGeminiCliOAuth() {
       live_refresh_provider: liveRefreshProbe?.provider || null,
       live_refresh_route: liveRefreshProbe?.selected_route || null,
       live_refresh_auth_path: liveRefreshProbe?.auth_path || null,
+      live_refresh_attempts: liveRefreshProbe?.attempts ?? null,
       post_probe_reimport_ok: postProbeReimport?.ok ?? null,
       post_probe_expires_in_hours: postProbeReimport?.expires_in_hours ?? null,
       quota_project_configured: Boolean(cliImport.quota_project_configured),
@@ -1059,6 +1092,7 @@ async function checkGeminiCliOAuth() {
       live_refresh_provider: liveRefreshProbe?.provider || null,
       live_refresh_route: liveRefreshProbe?.selected_route || null,
       live_refresh_auth_path: liveRefreshProbe?.auth_path || null,
+      live_refresh_attempts: liveRefreshProbe?.attempts ?? null,
       post_probe_reimport_ok: postProbeReimport?.ok ?? null,
       post_probe_expires_in_hours: postProbeReimport?.expires_in_hours ?? null,
       quota_project_configured: Boolean(record?.metadata?.quota_project_configured),
@@ -1225,6 +1259,7 @@ async function main() {
       live_refresh_provider: geminiCliOauth.live_refresh_provider || null,
       live_refresh_route: geminiCliOauth.live_refresh_route || null,
       live_refresh_auth_path: geminiCliOauth.live_refresh_auth_path || null,
+      live_refresh_attempts: geminiCliOauth.live_refresh_attempts ?? null,
       post_probe_reimport_ok: geminiCliOauth.post_probe_reimport_ok ?? null,
       post_probe_expires_in_hours: Number.isFinite(Number(geminiCliOauth.post_probe_expires_in_hours))
         ? Math.round(Number(geminiCliOauth.post_probe_expires_in_hours) * 100) / 100

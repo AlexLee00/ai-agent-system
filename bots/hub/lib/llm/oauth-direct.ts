@@ -45,6 +45,19 @@ function extractOpenAiCodexAccountId(accessToken, fallback) {
   return typeof claim === 'string' && claim.trim() ? claim.trim() : null;
 }
 
+function normalizeOpenAiCodexOAuthError(error) {
+  const name = String(error?.name || '').trim();
+  const message = String(error?.message || error || 'unknown').trim();
+  if (
+    name === 'AbortError'
+    || name === 'TimeoutError'
+    || /aborted|abort|timeout|timed out/i.test(message)
+  ) {
+    return `openai_codex_oauth_timeout_or_abort:${message || name || 'aborted'}`.slice(0, 400);
+  }
+  return message || 'openai_codex_oauth_unknown_error';
+}
+
 function resolveOpenAiCodexCredential() {
   const records = [
     getProviderRecord('openai-codex-oauth'),
@@ -358,7 +371,7 @@ async function callOpenAiCodexOAuth(input) {
       provider: 'failed',
       model,
       durationMs: Date.now() - started,
-      error: error?.message || String(error),
+      error: normalizeOpenAiCodexOAuthError(error),
     };
   }
 }

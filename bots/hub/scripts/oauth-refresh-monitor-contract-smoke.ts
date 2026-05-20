@@ -55,6 +55,11 @@ assert.ok(monitorSource.includes('synthetic_openai_oauth_probe_for_gemini_capaci
 assert.ok(monitorSource.includes('capacity-bypass probe provider='), 'Gemini CLI monitor logs must identify the bypass probe provider');
 assert.ok(monitorSource.includes('live_refresh_provider'), 'Gemini CLI monitor report must expose bypass probe provider');
 assert.ok(monitorSource.includes('live_refresh_auth_path'), 'Gemini CLI monitor report must expose bypass auth path');
+assert.ok(monitorSource.includes('HUB_GEMINI_CLI_MONITOR_PROBE_RETRIES'), 'Gemini CLI monitor must retry transient OAuth probe aborts');
+assert.ok(monitorSource.includes('isTransientGeminiCliProbeError'), 'Gemini CLI monitor must classify transient probe aborts before alarming');
+assert.ok(monitorSource.includes('live_refresh_attempts'), 'Gemini CLI monitor report must expose live refresh attempt count');
+assert.ok(monitorSource.includes('suppressFallbackExhaustionAlarm: true'), 'Gemini CLI monitor retries must suppress inner fallback exhaustion alarms');
+assert.ok(fs.readFileSync(path.join(repoRoot, 'bots/hub/lib/llm/unified-caller.ts'), 'utf8').includes('suppressFallbackExhaustionAlarm'), 'Unified caller must support per-request fallback exhaustion alarm suppression');
 const geminiExpiryProbeChain = selectLLMChain('hub.oauth.gemini_cli.expiry_probe', {
   selectorVersion: 'v3.0_oauth_4',
 });

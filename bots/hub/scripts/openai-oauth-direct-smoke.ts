@@ -81,11 +81,23 @@ async function main() {
     assert.equal(result.model, 'gpt-5.4-mini');
     assert.equal(calls.length, 1);
 
+    globalThis.fetch = (async () => {
+      throw new DOMException('This operation was aborted', 'AbortError');
+    }) as typeof fetch;
+    const aborted = await callOpenAiCodexOAuth({
+      model: 'gpt-5.4-mini',
+      prompt: 'Return a tiny success string.',
+      timeoutMs: 1,
+    });
+    assert.equal(aborted.ok, false);
+    assert.match(aborted.error, /openai_codex_oauth_timeout_or_abort/);
+
     console.log(JSON.stringify({
       ok: true,
       provider: result.provider,
       model: result.model,
       endpoint: calls[0].url,
+      abort_error_normalized: true,
       public_api_used: false,
     }));
   } finally {
