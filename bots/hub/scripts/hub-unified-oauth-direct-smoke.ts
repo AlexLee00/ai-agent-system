@@ -78,6 +78,7 @@ async function main() {
 
   try {
     const { callWithFallback } = await import('../lib/llm/unified-caller.ts');
+    const unifiedCaller = await import('../lib/llm/unified-caller.ts');
     const sender = await import('../../../packages/core/lib/telegram-sender.ts');
 
     const openAiResult = await callWithFallback({
@@ -94,6 +95,23 @@ async function main() {
 
     assert.deepEqual(calls.map((call) => call.provider), ['openai-oauth']);
 
+    assert.equal(
+      unifiedCaller.default._testOnly._shouldSuppressFallbackExhaustionAlarm(
+        { selectorKey: 'hub.unified.oauth.openai.smoke' },
+        null,
+      ),
+      true,
+      'Hub smoke selectors must suppress production fallback exhaustion alarms',
+    );
+    assert.equal(
+      unifiedCaller.default._testOnly._shouldSuppressFallbackExhaustionAlarm(
+        { selectorKey: 'blog.pos.writer', taskType: 'smoke_test_name_must_not_suppress' },
+        null,
+      ),
+      false,
+      'production selectors must not suppress fallback exhaustion based on taskType alone',
+    );
+
     let criticalCalls = 0;
     const originalSendCritical = sender.default?.sendCritical || sender.sendCritical;
     const patchedSendCritical = async () => {
@@ -106,6 +124,19 @@ async function main() {
       globalThis.fetch = (async () => {
         throw new DOMException('This operation was aborted', 'AbortError');
       }) as typeof fetch;
+      const autoSuppressed = await callWithFallback({
+        callerTeam: 'hub',
+        agent: 'unified-oauth-openai-smoke',
+        selectorKey: 'hub.unified.oauth.openai.smoke',
+        systemPrompt: 'You are a smoke test.',
+        prompt: 'This smoke path intentionally fails.',
+        timeoutMs: 5000,
+        cacheEnabled: false,
+      });
+      assert.equal(autoSuppressed.ok, false);
+      assert.match(autoSuppressed.error, /fallback_exhausted/);
+      assert.equal(criticalCalls, 0, 'smoke selectors must not emit fallback exhaustion criticals');
+
       const suppressed = await callWithFallback({
         callerTeam: 'hub',
         agent: 'oauth-monitor',
@@ -117,7 +148,7 @@ async function main() {
       });
       assert.equal(suppressed.ok, false);
       assert.match(suppressed.error, /fallback_exhausted/);
-      assert.equal(criticalCalls, 0, 'suppressed probe must not emit fallback exhaustion critical');
+      assert.equal(criticalCalls, 0, 'explicitly suppressed probe must not emit fallback exhaustion critical');
     } finally {
       if (sender.default?.sendCritical) sender.default.sendCritical = originalSendCritical;
       if (sender.sendCritical) sender.sendCritical = originalSendCritical;

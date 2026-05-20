@@ -8,6 +8,7 @@ const path = require('node:path');
 const repoRoot = path.resolve(__dirname, '..', '..', '..');
 const monitorSource = fs.readFileSync(path.join(repoRoot, 'bots/hub/scripts/run-oauth-monitor.ts'), 'utf8');
 const readinessSource = fs.readFileSync(path.join(repoRoot, 'bots/hub/scripts/team-oauth-readiness-report.ts'), 'utf8');
+const liveCanarySource = fs.readFileSync(path.join(repoRoot, 'bots/hub/scripts/llm-stage-a-live-canary.ts'), 'utf8');
 const {
   buildOAuthMonitorAlarmEnvelope,
 } = require('../lib/oauth/monitor-alarm-policy.ts');
@@ -59,6 +60,7 @@ assert.ok(monitorSource.includes('HUB_GEMINI_CLI_MONITOR_PROBE_RETRIES'), 'Gemin
 assert.ok(monitorSource.includes('isTransientGeminiCliProbeError'), 'Gemini CLI monitor must classify transient probe aborts before alarming');
 assert.ok(monitorSource.includes('live_refresh_attempts'), 'Gemini CLI monitor report must expose live refresh attempt count');
 assert.ok(monitorSource.includes('suppressFallbackExhaustionAlarm: true'), 'Gemini CLI monitor retries must suppress inner fallback exhaustion alarms');
+assert.ok(liveCanarySource.includes('suppressFallbackExhaustionAlarm: true'), 'Hub live canaries must not emit production fallback exhaustion alarms');
 assert.ok(fs.readFileSync(path.join(repoRoot, 'bots/hub/lib/llm/unified-caller.ts'), 'utf8').includes('suppressFallbackExhaustionAlarm'), 'Unified caller must support per-request fallback exhaustion alarm suppression');
 const geminiExpiryProbeChain = selectLLMChain('hub.oauth.gemini_cli.expiry_probe', {
   selectorVersion: 'v3.0_oauth_4',

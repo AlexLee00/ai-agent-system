@@ -255,7 +255,7 @@ async function _callWithSelectorChain(req, selectorChain, team) {
     console.warn(`[llm/unified] ${selectorChain.selectorKey}:${selectedRoute} 실패 (${result.error}) → 다음 시도`);
   }
 
-  if (!req.suppressFallbackExhaustionAlarm) {
+  if (!_shouldSuppressFallbackExhaustionAlarm(req, selectorChain)) {
     await _notifyFallbackExhaustion(req, attempts, team);
   }
   return {
@@ -302,7 +302,7 @@ async function _callWithProfileChain(req, profile, team) {
     console.warn(`[llm/unified] ${selectedRoute} 실패 (${result.error}) → 다음 시도`);
   }
 
-  if (!req.suppressFallbackExhaustionAlarm) {
+  if (!_shouldSuppressFallbackExhaustionAlarm(req, null)) {
     await _notifyFallbackExhaustion(req, attempts, team);
   }
   return {
@@ -660,6 +660,14 @@ function _cacheKey(req) {
   };
 }
 
+function _shouldSuppressFallbackExhaustionAlarm(req, selectorChain) {
+  if (req?.suppressFallbackExhaustionAlarm === true) return true;
+  const selectorKey = String(req?.selectorKey || selectorChain?.selectorKey || '').trim().toLowerCase();
+  if (selectorKey.startsWith('hub.') && (selectorKey.endsWith('.smoke') || selectorKey.includes('.smoke.'))) return true;
+  if (selectorKey.startsWith('hub.') && (selectorKey.includes('.probe') || selectorKey.includes('expiry_probe'))) return true;
+  return false;
+}
+
 async function _notifyFallbackExhaustion(req, attempts, team) {
   const tried = attempts.map(a => a.provider).join(' → ');
   const lastErr = (attempts[attempts.length - 1] || {}).error || 'unknown';
@@ -680,5 +688,6 @@ module.exports = {
     _providerCircuitKey,
     _resolveSelectorChain,
     _adhocChainAllowed,
+    _shouldSuppressFallbackExhaustionAlarm,
   },
 };

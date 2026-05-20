@@ -105,6 +105,7 @@ async function callScenario(scenario: any, token: string, targetBaseUrl: string)
       maxBudgetUsd: scenario.maxBudgetUsd,
       estimatedCostUsd: Math.min(0.01, scenario.maxBudgetUsd),
       cacheEnabled: false,
+      suppressFallbackExhaustionAlarm: true,
     }),
     signal: AbortSignal.timeout(timeoutMs() + 5000),
   });
