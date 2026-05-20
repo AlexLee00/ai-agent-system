@@ -310,24 +310,33 @@ function buildTodayAuditHealth() {
       });
 
     const latestCompletion = completionRows[completionRows.length - 1] || null;
-    const latestSuccessfulToday = [...completionRows].reverse().find((row) =>
-      row.lastExitCode === 0 && row.lastAuditDate === kst.isoDate
-    ) || null;
-    const selected = latestSuccessfulToday || latestCompletion;
+    const selected = latestCompletion;
     const lastCompleted = selected?.line || null;
     const lastExitCode = selected?.lastExitCode ?? null;
     const lastAuditDate = selected?.lastAuditDate || null;
     const lastStarted = selected?.lastStarted || null;
     const lastWrapperStarted = selected?.lastWrapperStarted || null;
     const summary = selected?.summary || null;
-    const recentSuccess = Boolean(latestSuccessfulToday || lastExitCode === 0);
-    const missingTodayRun = shouldHaveRunToday && !latestSuccessfulToday && lastAuditDate !== kst.isoDate;
+    const isTodayCompletion = lastAuditDate === kst.isoDate;
+    const hasInternalFailure = Number(summary?.failedCount || 0) > 0;
+    const isExpectedCompletion = shouldHaveRunToday ? isTodayCompletion : Boolean(selected);
+    const recentSuccess = isExpectedCompletion && lastExitCode === 0 && !hasInternalFailure;
+    const missingTodayRun = shouldHaveRunToday && !isTodayCompletion;
+    const issue = missingTodayRun
+      ? 'missing'
+      : hasInternalFailure
+        ? 'partial'
+        : lastExitCode != null && lastExitCode !== 0
+          ? 'failed'
+          : recentSuccess
+            ? 'ok'
+            : 'unknown';
     const completionIndex = selected?.index ?? -1;
     const samples = completionIndex >= 0
       ? recentLines.slice(Math.max(0, completionIndex - 4), completionIndex + 1).map((line) => `  ${line}`)
       : recentLines.slice(-5).map((line) => `  ${line}`);
 
-    if (recentSuccess && !missingTodayRun && (!summary || summary.failedCount === 0)) {
+    if (issue === 'ok') {
       return {
         ok: [
           '  today-audit 로그: 최근 실행 성공',
@@ -344,6 +353,7 @@ function buildTodayAuditHealth() {
         missingTodayRun,
         summary,
         recentSuccess,
+        issue,
       };
     }
 
@@ -367,6 +377,7 @@ function buildTodayAuditHealth() {
       missingTodayRun,
       summary,
       recentSuccess,
+      issue,
     };
   } catch (error) {
     return {

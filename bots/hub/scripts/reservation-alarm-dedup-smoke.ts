@@ -52,6 +52,16 @@ function main(): void {
       healthCheck.includes("k.startsWith('audit-missing:ai.ska.today-audit:')"),
     'health-check must pass dedupe to publishReservationAlert and clear dated missing keys',
   );
+  assert(
+    healthCheck.includes('const todayAuditIssue = todayAudit.issue') &&
+      healthCheck.includes("todayAuditIssue === 'ok'") &&
+      healthCheck.includes("todayAuditIssue === 'partial'") &&
+      healthCheck.includes('const selected = latestCompletion') &&
+      healthCheck.includes('const hasInternalFailure = Number(summary?.failedCount || 0) > 0') &&
+      healthCheck.includes('const isExpectedCompletion = shouldHaveRunToday ? isTodayCompletion : Boolean(selected)') &&
+      healthCheck.includes('const recentSuccess = isExpectedCompletion && lastExitCode === 0 && !hasInternalFailure'),
+    'health-check must classify the latest today-audit completion before alert/recovery decisions',
+  );
 
   console.log('✅ reservation_alarm_dedup_smoke_ok');
 }

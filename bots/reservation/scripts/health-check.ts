@@ -87,7 +87,7 @@ function checkNaverLogStaleness() {
 function readTodayAuditStatus() {
   try {
     if (!fs.existsSync(TODAY_AUDIT_LOG)) {
-      return { exists: false, lastExitCode: null, lastCompletedLine: null, recentSuccess: false };
+      return { exists: false, lastExitCode: null, lastCompletedLine: null, recentSuccess: false, issue: 'missing_log' };
     }
 
     const text = fs.readFileSync(TODAY_AUDIT_LOG, 'utf8');
@@ -122,15 +122,25 @@ function readTodayAuditStatus() {
         };
       });
     const latestCompletion = completionRows[completionRows.length - 1] || null;
-    const latestSuccessfulToday = [...completionRows].reverse().find((row) =>
-      row.lastExitCode === 0 && row.lastAuditDate === kst.isoDate
-    ) || null;
-    const selected = latestSuccessfulToday || latestCompletion;
+    const selected = latestCompletion;
     const lastCompletedLine = selected?.line || null;
     const lastExitCode = selected?.lastExitCode ?? null;
     const summary = selected?.summary || null;
     const lastAuditDate = selected?.lastAuditDate || null;
-    const missingTodayRun = shouldHaveRunToday && !latestSuccessfulToday && lastAuditDate !== kst.isoDate;
+    const isTodayCompletion = lastAuditDate === kst.isoDate;
+    const hasInternalFailure = Number(summary?.failedCount || 0) > 0;
+    const isExpectedCompletion = shouldHaveRunToday ? isTodayCompletion : Boolean(selected);
+    const recentSuccess = isExpectedCompletion && lastExitCode === 0 && !hasInternalFailure;
+    const missingTodayRun = shouldHaveRunToday && !isTodayCompletion;
+    const issue = missingTodayRun
+      ? 'missing'
+      : hasInternalFailure
+        ? 'partial'
+        : lastExitCode != null && lastExitCode !== 0
+          ? 'failed'
+          : recentSuccess
+            ? 'ok'
+            : 'unknown';
 
     return {
       exists: true,
@@ -139,7 +149,8 @@ function readTodayAuditStatus() {
       lastAuditDate,
       missingTodayRun,
       summary,
-      recentSuccess: Boolean(latestSuccessfulToday || lastExitCode === 0),
+      recentSuccess,
+      issue,
     };
   } catch (error) {
     return {
@@ -150,6 +161,7 @@ function readTodayAuditStatus() {
       missingTodayRun: false,
       summary: null,
       recentSuccess: false,
+      issue: 'read_failed',
     };
   }
 }
@@ -270,8 +282,9 @@ async function main() {
 
   // 5. today-audit 최근 실행 결과 체크
   const todayAudit = readTodayAuditStatus();
+  const todayAuditIssue = todayAudit.issue;
   const todayAuditIncidentDate = getCurrentKstParts().isoDate.replace(/-/g, '');
-  if (todayAudit.exists && todayAudit.missingTodayRun) {
+  if (todayAudit.exists && todayAuditIssue === 'missing') {
     const key = `audit-missing:ai.ska.today-audit:${todayAuditIncidentDate}`;
     if (canAlert(state, key)) {
       issues.push({
@@ -282,7 +295,7 @@ async function main() {
         dedupeMinutes: TODAY_AUDIT_DEDUPE_MINUTES,
       });
     }
-  } else if (todayAudit.exists && todayAudit.recentSuccess && todayAudit.summary?.failedCount > 0) {
+  } else if (todayAudit.exists && todayAuditIssue === 'partial' && todayAudit.summary?.failedCount > 0) {
     const key = `audit-partial:ai.ska.today-audit:${todayAuditIncidentDate}:${todayAudit.summary.failedCount}`;
     if (canAlert(state, key)) {
       issues.push({
@@ -293,7 +306,7 @@ async function main() {
         dedupeMinutes: TODAY_AUDIT_DEDUPE_MINUTES,
       });
     }
-  } else if (todayAudit.exists && todayAudit.lastExitCode != null && todayAudit.lastExitCode !== 0) {
+  } else if (todayAudit.exists && todayAuditIssue === 'failed' && todayAudit.lastExitCode != null) {
     const key = `audit-failed:ai.ska.today-audit:${todayAuditIncidentDate}:${todayAudit.lastExitCode}`;
     if (canAlert(state, key)) {
       issues.push({
@@ -304,7 +317,7 @@ async function main() {
         dedupeMinutes: TODAY_AUDIT_DEDUPE_MINUTES,
       });
     }
-  } else if (todayAudit.exists && todayAudit.recentSuccess) {
+  } else if (todayAudit.exists && todayAuditIssue === 'ok') {
     const prevKeys = Object.keys(state).filter((k) =>
       k.startsWith('audit-failed:ai.ska.today-audit:')
       || k.startsWith('audit-missing:ai.ska.today-audit:')
