@@ -7,14 +7,8 @@
 	<string>ai.jay.growth</string>
 	<key>ProgramArguments</key>
 	<array>
-		<string>/opt/homebrew/bin/elixir</string>
-		<string>--sname</string>
-		<string>team_jay</string>
-		<string>-S</string>
-		<string>mix</string>
-		<string>run</string>
-		<string>-e</string>
-		<string>Jay.V2.Commander.daily_growth_cycle() |> IO.inspect(label: "growth_cycle")</string>
+		<string>/opt/homebrew/bin/mix</string>
+		<string>jay.growth_cycle.run</string>
 	</array>
 	<key>WorkingDirectory</key>
 	<string>/Users/alexlee/projects/ai-agent-system/elixir/team_jay</string>
@@ -27,6 +21,8 @@
 		<key>JAY_V2_ENABLED</key>
 		<string>true</string>
 		<key>JAY_COMMANDER_ENABLED</key>
+		<string>false</string>
+		<key>TEAM_JAY_ENABLE_ALARM_DELIVERY</key>
 		<string>false</string>
 		<key>JAY_LLM_DAILY_BUDGET_USD</key>
 		<string>5.00</string>

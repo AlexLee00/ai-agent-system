@@ -23,19 +23,19 @@ defmodule Jay.V2.ModulesTest do
 
   describe "module_definitions" do
     for mod <- [
-      Jay.V2.AutonomyController,
-      Jay.V2.CommandEnvelope,
-      Jay.V2.CommandTracker,
-      Jay.V2.CrossTeamRouter,
-      Jay.V2.DailyBriefing,
-      Jay.V2.DecisionEngine,
-      Jay.V2.GrowthCycle,
-      Jay.V2.N8nBridge,
-      Jay.V2.TeamConnector,
-      Jay.V2.Topics,
-      Jay.V2.WeeklyReport,
-      Jay.V2.Supervisor
-    ] do
+          Jay.V2.AutonomyController,
+          Jay.V2.CommandEnvelope,
+          Jay.V2.CommandTracker,
+          Jay.V2.CrossTeamRouter,
+          Jay.V2.DailyBriefing,
+          Jay.V2.DecisionEngine,
+          Jay.V2.GrowthCycle,
+          Jay.V2.N8nBridge,
+          Jay.V2.TeamConnector,
+          Jay.V2.Topics,
+          Jay.V2.WeeklyReport,
+          Jay.V2.Supervisor
+        ] do
       test "#{mod} 정의됨" do
         assert Code.ensure_loaded?(unquote(mod))
       end
@@ -73,6 +73,10 @@ defmodule Jay.V2.ModulesTest do
 
     test "GrowthCycle.run_cycle/0 export" do
       assert function_exported?(Jay.V2.GrowthCycle, :run_cycle, 0)
+    end
+
+    test "GrowthCycle.run_cycle_sync/1 export" do
+      assert function_exported?(Jay.V2.GrowthCycle, :run_cycle_sync, 1)
     end
 
     test "N8nBridge.get_status/0 export" do
@@ -121,10 +125,49 @@ defmodule Jay.V2.ModulesTest do
       assert is_binary(result)
     end
 
+    test "DailyBriefing.generate/2 accepts string agent scores from DB adapters" do
+      result =
+        Jay.V2.DailyBriefing.generate(
+          %{
+            platform: %{
+              metric_type: :agent_health,
+              active_agents: 0,
+              avg_score: "0.0",
+              low_score_agents: 0
+            }
+          },
+          "2026-05-21"
+        )
+
+      assert result =~ "평균점수 0.0"
+    end
+
     test "Topics.all_topics/0 반환 목록" do
       topics = Jay.V2.Topics.all_topics()
       assert is_list(topics)
       assert length(topics) > 0
+    end
+  end
+
+  describe "launchd_contracts" do
+    test "ai.jay.growth invokes synchronous GrowthCycle runner without team_jay node collision" do
+      plist =
+        Path.expand("../../../../launchd/ai.jay.growth.plist", __DIR__)
+        |> File.read!()
+
+      assert plist =~ "jay.growth_cycle.run"
+      refute plist =~ "<string>team_jay</string>"
+      refute plist =~ "Jay.V2.Commander.daily_growth_cycle()"
+      refute plist =~ "mix</string>\n\t\t<string>run</string>"
+    end
+
+    test "GrowthCycle records a completed event with briefing length for dashboard seed" do
+      source =
+        Path.expand("../../../lib/jay/v2/growth_cycle.ex", __DIR__)
+        |> File.read!()
+
+      assert source =~ ~s(event_type: "growth_cycle.completed")
+      assert source =~ "briefing_len: String.length(briefing)"
     end
   end
 end

@@ -50,7 +50,7 @@ defmodule Jay.V2.Commander do
     Logger.info("[Jay.V2.Commander] 일일 성장 사이클 시작")
 
     with {:ok, health} <- run_team_health_check(),
-         {:ok, formation} <- decide_formation(Keyword.get(opts, :date, Date.utc_today())),
+         {:ok, formation} <- decide_formation(Keyword.get(opts, :date, kst_today())),
          :ok <- broadcast_formation(formation) do
       {:ok, %{health: health, formation: formation}}
     end
@@ -113,5 +113,11 @@ defmodule Jay.V2.Commander do
   defp broadcast_formation(formation) do
     Jay.V2.Topics.broadcast("jay.formation.decided", formation)
     :ok
+  end
+
+  defp kst_today do
+    DateTime.utc_now()
+    |> DateTime.add(9 * 60 * 60, :second)
+    |> DateTime.to_date()
   end
 end

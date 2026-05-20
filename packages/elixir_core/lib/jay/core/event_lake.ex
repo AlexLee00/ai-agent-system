@@ -60,6 +60,11 @@ defmodule Jay.Core.EventLake do
     GenServer.cast(__MODULE__, {:record, maybe_attach_current_trace_id(attrs)})
   end
 
+  def record_sync(attrs) when is_map(attrs) do
+    attrs = maybe_attach_current_trace_id(attrs)
+    insert_record(attrs)
+  end
+
   @impl true
   def handle_call({:get_recent, count}, _from, state) do
     {:reply, Enum.take(state.events, count), state}
@@ -80,22 +85,28 @@ defmodule Jay.Core.EventLake do
 
   @impl true
   def handle_cast({:record, attrs}, state) do
+    insert_record(attrs)
+    {:noreply, state}
+  end
+
+  defp insert_record(attrs) do
     changeset =
       attrs
       |> normalize_record_attrs()
       |> then(&EventLakeSchema.changeset(%EventLakeSchema{}, &1))
 
     case Repo.insert(changeset) do
-      {:ok, _row} ->
+      {:ok, row} ->
         Logger.debug(
           "[EventLake] 기록 성공: #{Map.get(attrs, :event_type) || Map.get(attrs, "event_type")}"
         )
 
+        {:ok, row}
+
       {:error, err} ->
         Logger.error("[EventLake] 기록 실패: #{inspect(err)}")
+        {:error, err}
     end
-
-    {:noreply, state}
   end
 
   defp ensure_event_time(event) when is_map(event) do

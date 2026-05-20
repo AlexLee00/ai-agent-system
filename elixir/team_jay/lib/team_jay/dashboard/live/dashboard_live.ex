@@ -632,7 +632,7 @@ defmodule TeamJay.Dashboard.Live.DashboardLive do
             teams_collected:
               get_in(payload, ["payload", "teams"])
               |> normalize_collection_count(payload["teams_collected"]),
-            briefing_len: payload["briefing_len"],
+            briefing_len: get_in(payload, ["payload", "briefing_len"]) || payload["briefing_len"],
             source: event_type,
             created_at: created_at
           }

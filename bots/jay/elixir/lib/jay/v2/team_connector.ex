@@ -21,6 +21,10 @@ defmodule Jay.V2.TeamConnector do
       e ->
         Logger.warning("[TeamConnector] #{team} 수집 실패: #{Exception.message(e)}")
         nil
+    catch
+      :exit, reason ->
+        Logger.warning("[TeamConnector] #{team} 수집 프로세스 없음/종료: #{inspect(reason)}")
+        nil
     end
   end
 
@@ -44,18 +48,26 @@ defmodule Jay.V2.TeamConnector do
   # ────────────────────────────────────────────────────────────────
 
   defp do_collect(:luna) do
-    trades = query_one("""
-      SELECT
-        COUNT(*)::int AS trades_7d,
-        COALESCE(SUM(pnl_usdt), 0.0) AS pnl_usdt_7d,
-        COALESCE(SUM(amount_usdt), 0.0) AS traded_usdt_7d,
-        COUNT(*) FILTER (WHERE pnl_usdt > 0)::int AS win_count,
-        COUNT(*) FILTER (WHERE status = 'active')::int AS live_positions
-      FROM investment.trades
-      WHERE executed_at >= NOW() - interval '7 days'
-    """, "investment")
+    trades =
+      query_one(
+        """
+          SELECT
+            COUNT(*)::int AS trades_7d,
+            COALESCE(SUM(pnl_usdt), 0.0) AS pnl_usdt_7d,
+            COALESCE(SUM(amount_usdt), 0.0) AS traded_usdt_7d,
+            COUNT(*) FILTER (WHERE pnl_usdt > 0)::int AS win_count,
+            COUNT(*) FILTER (WHERE status = 'active')::int AS live_positions
+          FROM investment.trades
+          WHERE executed_at >= NOW() - interval '7 days'
+        """,
+        "investment"
+      )
 
-    regime = query_one("SELECT regime FROM investment.market_regimes ORDER BY recorded_at DESC LIMIT 1", "investment")
+    regime =
+      query_one(
+        "SELECT regime FROM investment.market_regimes ORDER BY recorded_at DESC LIMIT 1",
+        "investment"
+      )
 
     %{
       metric_type: :trading_ops,
@@ -70,11 +82,7 @@ defmodule Jay.V2.TeamConnector do
 
   defp do_collect(:ska) do
     # Dashboard GenServer에서 집계된 KPI 우선 사용 (빠름 + 캐시)
-    jay_data = try do
-      TeamJay.Ska.Analytics.Dashboard.get_jay_data()
-    rescue
-      _ -> %{}
-    end
+    jay_data = safe_ska_dashboard_data()
 
     if map_size(jay_data) > 0 do
       %{
@@ -89,21 +97,29 @@ defmodule Jay.V2.TeamConnector do
       }
     else
       # Fallback: DB 직접 조회
-      today_bookings = query_one("""
-        SELECT
-          COUNT(*)::int AS total,
-          COUNT(*) FILTER (WHERE status = 'completed')::int AS completed,
-          COUNT(*) FILTER (WHERE status = 'pending')::int AS pending,
-          COUNT(*) FILTER (WHERE status = 'failed')::int AS failed
-        FROM reservation.reservations
-        WHERE date >= CURRENT_DATE - 1 AND date <= CURRENT_DATE
-      """, "reservation")
+      today_bookings =
+        query_one(
+          """
+            SELECT
+              COUNT(*)::int AS total,
+              COUNT(*) FILTER (WHERE status = 'completed')::int AS completed,
+              COUNT(*) FILTER (WHERE status = 'pending')::int AS pending,
+              COUNT(*) FILTER (WHERE status = 'failed')::int AS failed
+            FROM reservation.reservations
+            WHERE date >= CURRENT_DATE - 1 AND date <= CURRENT_DATE
+          """,
+          "reservation"
+        )
 
-      revenue = query_one("""
-        SELECT COALESCE(SUM(amount), 0)::int AS revenue_7d
-        FROM reservation.payments
-        WHERE paid_at >= NOW() - interval '7 days' AND status = 'paid'
-      """, "reservation")
+      revenue =
+        query_one(
+          """
+            SELECT COALESCE(SUM(amount), 0)::int AS revenue_7d
+            FROM reservation.payments
+            WHERE paid_at >= NOW() - interval '7 days' AND status = 'paid'
+          """,
+          "reservation"
+        )
 
       %{
         metric_type: :reservation_ops,
@@ -117,64 +133,80 @@ defmodule Jay.V2.TeamConnector do
   end
 
   defp do_collect(:blog) do
-    posts = query_one("""
-      SELECT
-        COUNT(*) FILTER (WHERE created_at >= NOW() - interval '7 days' AND status IN ('ready','published'))::int AS published_7d,
-        COUNT(*) FILTER (WHERE status = 'ready')::int  AS ready_count,
-        COUNT(*) FILTER (WHERE status = 'draft')::int  AS draft_count,
-        COALESCE(AVG(view_count) FILTER (WHERE created_at >= NOW() - interval '7 days' AND status IN ('ready','published')), 0)::numeric(10,1) AS avg_views_7d
-      FROM blog.posts
-    """, "blog")
+    posts =
+      query_one(
+        """
+          SELECT
+            COUNT(*) FILTER (WHERE created_at >= NOW() - interval '7 days' AND status IN ('ready','published'))::int AS published_7d,
+            COUNT(*) FILTER (WHERE status = 'ready')::int  AS ready_count,
+            COUNT(*) FILTER (WHERE status = 'draft')::int  AS draft_count,
+            COALESCE(AVG(view_count) FILTER (WHERE created_at >= NOW() - interval '7 days' AND status IN ('ready','published')), 0)::numeric(10,1) AS avg_views_7d
+          FROM blog.posts
+        """,
+        "blog"
+      )
 
-    top_category = query_one("""
-      SELECT category
-      FROM blog.posts
-      WHERE created_at >= NOW() - interval '7 days'
-        AND status IN ('ready','published')
-        AND category IS NOT NULL
-      GROUP BY category
-      ORDER BY COUNT(*) DESC
-      LIMIT 1
-    """, "blog")
+    top_category =
+      query_one(
+        """
+          SELECT category
+          FROM blog.posts
+          WHERE created_at >= NOW() - interval '7 days'
+            AND status IN ('ready','published')
+            AND category IS NOT NULL
+          GROUP BY category
+          ORDER BY COUNT(*) DESC
+          LIMIT 1
+        """,
+        "blog"
+      )
 
-    insta = query_one("""
-      SELECT
-        COUNT(*) FILTER (WHERE status = 'ok')::int          AS ok_7d,
-        COUNT(*) FILTER (WHERE status = 'failed')::int      AS fail_7d,
-        COUNT(*) FILTER (WHERE status = 'token_error')::int AS token_error_7d
-      FROM blog.instagram_crosspost
-      WHERE created_at >= NOW() - interval '7 days'
-        AND dry_run = false
-    """, "blog")
+    insta =
+      query_one(
+        """
+          SELECT
+            COUNT(*) FILTER (WHERE status = 'ok')::int          AS ok_7d,
+            COUNT(*) FILTER (WHERE status = 'failed')::int      AS fail_7d,
+            COUNT(*) FILTER (WHERE status = 'token_error')::int AS token_error_7d
+          FROM blog.instagram_crosspost
+          WHERE created_at >= NOW() - interval '7 days'
+            AND dry_run = false
+        """,
+        "blog"
+      )
 
     %{
-      metric_type:       :content_ops,
-      published_7d:      get_in(posts, ["published_7d"])  || 0,
-      ready_count:       get_in(posts, ["ready_count"])   || 0,
-      draft_count:       get_in(posts, ["draft_count"])   || 0,
-      avg_views_7d:      get_in(posts, ["avg_views_7d"])  || 0.0,
-      top_category_7d:   get_in(top_category, ["category"]),
-      insta_ok_7d:       get_in(insta, ["ok_7d"])         || 0,
-      insta_fail_7d:     get_in(insta, ["fail_7d"])       || 0,
+      metric_type: :content_ops,
+      published_7d: get_in(posts, ["published_7d"]) || 0,
+      ready_count: get_in(posts, ["ready_count"]) || 0,
+      draft_count: get_in(posts, ["draft_count"]) || 0,
+      avg_views_7d: get_in(posts, ["avg_views_7d"]) || 0.0,
+      top_category_7d: get_in(top_category, ["category"]),
+      insta_ok_7d: get_in(insta, ["ok_7d"]) || 0,
+      insta_fail_7d: get_in(insta, ["fail_7d"]) || 0,
       insta_token_err_7d: get_in(insta, ["token_error_7d"]) || 0
     }
   end
 
   defp do_collect(:claude) do
-    health = query_rows("""
-      SELECT service, exit_code, checked_at
-      FROM (
-        SELECT
-          service,
-          exit_code,
-          checked_at,
-          ROW_NUMBER() OVER (PARTITION BY service ORDER BY checked_at DESC) AS rn
-        FROM claude.service_health
-        WHERE checked_at >= NOW() - interval '1 hour'
-      ) latest
-      WHERE rn = 1
-      ORDER BY checked_at DESC
-    """, "claude")
+    health =
+      query_rows(
+        """
+          SELECT service, exit_code, checked_at
+          FROM (
+            SELECT
+              service,
+              exit_code,
+              checked_at,
+              ROW_NUMBER() OVER (PARTITION BY service ORDER BY checked_at DESC) AS rn
+            FROM claude.service_health
+            WHERE checked_at >= NOW() - interval '1 hour'
+          ) latest
+          WHERE rn = 1
+          ORDER BY checked_at DESC
+        """,
+        "claude"
+      )
 
     unhealthy = Enum.filter(health || [], &(&1["exit_code"] != 0))
     core_health = current_core_health()
@@ -194,14 +226,18 @@ defmodule Jay.V2.TeamConnector do
     rescue
       _ ->
         # Fallback: rag_research 직접 조회
-        research = query_one("""
-          SELECT
-            COUNT(*)::int AS papers_7d,
-            COUNT(*) FILTER (WHERE score >= 6)::int AS high_quality_7d,
-            COALESCE(AVG(score), 0)::numeric(4,1) AS avg_score
-          FROM rag_research
-          WHERE created_at >= NOW() - INTERVAL '7 days'
-        """, "jay")
+        research =
+          query_one(
+            """
+              SELECT
+                COUNT(*)::int AS papers_7d,
+                COUNT(*) FILTER (WHERE score >= 6)::int AS high_quality_7d,
+                COALESCE(AVG(score), 0)::numeric(4,1) AS avg_score
+              FROM rag_research
+              WHERE created_at >= NOW() - INTERVAL '7 days'
+            """,
+            "jay"
+          )
 
         %{
           metric_type: :research_ops,
@@ -213,14 +249,18 @@ defmodule Jay.V2.TeamConnector do
   end
 
   defp do_collect(team) when team in [:platform, :justin] do
-    agents = query_one("""
-      SELECT
-        COUNT(*)::int AS active_agents,
-        COALESCE(AVG(score), 0.0) AS avg_score,
-        COUNT(*) FILTER (WHERE score < 5)::int AS low_score_agents
-      FROM agent.registry
-      WHERE team = '#{team}' AND status = 'active'
-    """, "agent")
+    agents =
+      query_one(
+        """
+          SELECT
+            COUNT(*)::int AS active_agents,
+            COALESCE(AVG(score), 0.0) AS avg_score,
+            COUNT(*) FILTER (WHERE score < 5)::int AS low_score_agents
+          FROM agent.registry
+          WHERE team = '#{team}' AND status = 'active'
+        """,
+        "agent"
+      )
 
     %{
       metric_type: :agent_health,
@@ -234,6 +274,16 @@ defmodule Jay.V2.TeamConnector do
   # ────────────────────────────────────────────────────────────────
   # DB 헬퍼
   # ────────────────────────────────────────────────────────────────
+
+  defp safe_ska_dashboard_data do
+    try do
+      TeamJay.Ska.Analytics.Dashboard.get_jay_data()
+    rescue
+      _ -> %{}
+    catch
+      :exit, _ -> %{}
+    end
+  end
 
   defp query_one(sql, schema) do
     case Jay.Core.HubClient.pg_query(sql, schema) do
@@ -257,7 +307,8 @@ defmodule Jay.V2.TeamConnector do
     end
   end
 
-  defp suppress_stale_core_aliases(unhealthy_services, resources) when is_list(unhealthy_services) do
+  defp suppress_stale_core_aliases(unhealthy_services, resources)
+       when is_list(unhealthy_services) do
     api_ok? = resource_ok?(resources, "core_services")
     db_ok? = resource_ok?(resources, "postgresql") and resource_ok?(resources, "pg_pool")
 

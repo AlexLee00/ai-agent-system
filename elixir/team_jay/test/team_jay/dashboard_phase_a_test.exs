@@ -105,6 +105,7 @@ defmodule TeamJay.DashboardPhaseATest do
     assert source =~ ~s(["list", "ai.jay.growth"])
     assert source =~ "growth_scheduler_label"
     assert source =~ "not loaded"
+    assert source =~ ~s(["payload", "briefing_len"])
   end
 
   test "area 7 and 8 include DB-backed freshness indicators" do

@@ -10,7 +10,8 @@ defmodule Jay.V2.GrowthCycle do
   require Logger
   alias Jay.V2.{Topics, TeamConnector, DailyBriefing, DecisionEngine}
 
-  @cycle_timeout_ms 30 * 60 * 1_000  # 30분 타임아웃
+  # 30분 타임아웃
+  @cycle_timeout_ms 30 * 60 * 1_000
 
   # ────────────────────────────────────────────────────────────────
   # GenServer 생명주기
@@ -34,6 +35,16 @@ defmodule Jay.V2.GrowthCycle do
     GenServer.cast(__MODULE__, :run_cycle)
   end
 
+  @doc """
+  성장 사이클을 동기 실행한다.
+
+  launchd처럼 단발성 BEAM 프로세스에서 실행할 때는 GenServer.cast/2가
+  완료되기 전에 VM이 종료될 수 있으므로 이 API를 사용한다.
+  """
+  def run_cycle_sync(opts \\ []) do
+    execute_cycle(opts)
+  end
+
   def status do
     GenServer.call(__MODULE__, :status)
   end
@@ -44,11 +55,13 @@ defmodule Jay.V2.GrowthCycle do
 
   @impl true
   def handle_cast(:run_cycle, state) do
-    task = Task.async(fn -> execute_cycle() end)
+    task = Task.async(fn -> execute_cycle([]) end)
+
     case Task.yield(task, @cycle_timeout_ms) || Task.shutdown(task, :brutal_kill) do
       {:ok, result} ->
         Logger.info("[GrowthCycle] 완료: #{inspect(result)}")
         {:noreply, Map.put(state, :last_result, result)}
+
       nil ->
         Logger.error("[GrowthCycle] 타임아웃 (30분)")
         {:noreply, Map.put(state, :last_error, :timeout)}
@@ -64,8 +77,8 @@ defmodule Jay.V2.GrowthCycle do
   # 사이클 실행 (SENSE ~ LEARN)
   # ────────────────────────────────────────────────────────────────
 
-  defp execute_cycle do
-    date = Date.utc_today() |> Date.to_string()
+  defp execute_cycle(opts) do
+    date = opts |> Keyword.get(:date, kst_today()) |> normalize_date()
     Logger.info("[GrowthCycle] ▶ #{date} 사이클 시작")
     Topics.broadcast_growth_cycle_started(date)
 
@@ -79,13 +92,18 @@ defmodule Jay.V2.GrowthCycle do
     decisions = decide(team_data, analysis)
 
     # ── ACT: PubSub 지시 + 팀 간 파이프라인 트리거 ──────────
-    act(decisions, team_data)
+    if Keyword.get(opts, :execute_actions, true) do
+      act(decisions, team_data)
+    else
+      Logger.info("[GrowthCycle] ACT: execute_actions=false — side effect skip")
+    end
 
     # ── MEASURE: KPI 저장 ────────────────────────────────────
     measure(date, team_data, analysis, decisions)
 
     # ── LEARN: 브리핑 생성 + 텔레그램 발송 ──────────────────
-    briefing = learn(date, team_data, analysis)
+    briefing = learn(date, team_data, analysis, opts)
+    record_completion(date, team_data, analysis, decisions, briefing)
 
     Topics.broadcast(:growth_cycle_completed, %{date: date, briefing: briefing})
     %{date: date, teams_collected: map_size(team_data), briefing_len: String.length(briefing)}
@@ -98,29 +116,33 @@ defmodule Jay.V2.GrowthCycle do
   defp sense(_date) do
     Logger.info("[GrowthCycle] SENSE: 9팀 데이터 수집 중...")
     team_data = TeamConnector.collect_all()
+
     Enum.each(team_data, fn {team, data} ->
       Topics.broadcast_team_data_collected(team, data)
       Logger.debug("[GrowthCycle] SENSE #{team}: #{inspect(data, limit: 3)}")
     end)
+
     Logger.info("[GrowthCycle] SENSE 완료: #{map_size(team_data)}팀")
     team_data
   end
 
   defp analyze(team_data, _date) do
-    ska_health = case team_data[:ska] do
-      %{failed: f} when f >= 3 -> :degraded
-      %{pending: p} when p >= 5 -> :backlogged
-      nil -> :unknown
-      _ -> :healthy
-    end
+    ska_health =
+      case team_data[:ska] do
+        %{failed: f} when f >= 3 -> :degraded
+        %{pending: p} when p >= 5 -> :backlogged
+        nil -> :unknown
+        _ -> :healthy
+      end
 
     luna_regime = get_in(team_data, [:luna, :market_regime]) || "unknown"
 
-    system_ok = case team_data[:claude] do
-      %{unhealthy_count: 0} -> true
-      nil -> true
-      _ -> false
-    end
+    system_ok =
+      case team_data[:claude] do
+        %{unhealthy_count: 0} -> true
+        nil -> true
+        _ -> false
+      end
 
     blog_output = get_in(team_data, [:blog, :published_7d]) || 0
 
@@ -149,38 +171,54 @@ defmodule Jay.V2.GrowthCycle do
     decisions = []
 
     # 스카 매출 하락 → 블로팀 프로모션
-    decisions = case team_data[:ska] do
-      %{revenue_7d: rev} when is_integer(rev) and rev < 300_000 ->
-        drop_pct = 20  # 임시 — TODO: 전주 대비 계산
-        decision = DecisionEngine.evaluate(:ska_revenue_drop, %{drop_pct: drop_pct, revenue: rev})
-        [{:ska_to_blog, decision} | decisions]
-      _ -> decisions
-    end
+    decisions =
+      case team_data[:ska] do
+        %{revenue_7d: rev} when is_integer(rev) and rev < 300_000 ->
+          # 임시 — TODO: 전주 대비 계산
+          drop_pct = 20
+
+          decision =
+            DecisionEngine.evaluate(:ska_revenue_drop, %{drop_pct: drop_pct, revenue: rev})
+
+          [{:ska_to_blog, decision} | decisions]
+
+        _ ->
+          decisions
+      end
 
     # 시스템 위험 → 워크로드 축소
-    decisions = case team_data[:claude] do
-      %{unhealthy_count: n, unhealthy_services: services} when n >= 3 ->
-        if stale_core_system_risk?(services) do
-          decisions
-        else
-          decision = DecisionEngine.evaluate(:system_risk, %{risk_level: min(n * 2, 10), count: n})
+    decisions =
+      case team_data[:claude] do
+        %{unhealthy_count: n, unhealthy_services: services} when n >= 3 ->
+          if stale_core_system_risk?(services) do
+            decisions
+          else
+            decision =
+              DecisionEngine.evaluate(:system_risk, %{risk_level: min(n * 2, 10), count: n})
+
+            [{:claude_to_all, decision} | decisions]
+          end
+
+        %{unhealthy_count: n} when n >= 3 ->
+          decision =
+            DecisionEngine.evaluate(:system_risk, %{risk_level: min(n * 2, 10), count: n})
+
           [{:claude_to_all, decision} | decisions]
-        end
 
-      %{unhealthy_count: n} when n >= 3 ->
-        decision = DecisionEngine.evaluate(:system_risk, %{risk_level: min(n * 2, 10), count: n})
-        [{:claude_to_all, decision} | decisions]
-
-      _ -> decisions
-    end
+        _ ->
+          decisions
+      end
 
     # 루나 시장 급변 → 블로 콘텐츠
-    decisions = case analysis[:luna_regime] do
-      r when r in ["volatile", "crisis"] ->
-        decision = DecisionEngine.evaluate(:luna_market_shock, %{regime: r})
-        [{:luna_to_blog, decision} | decisions]
-      _ -> decisions
-    end
+    decisions =
+      case analysis[:luna_regime] do
+        r when r in ["volatile", "crisis"] ->
+          decision = DecisionEngine.evaluate(:luna_market_shock, %{regime: r})
+          [{:luna_to_blog, decision} | decisions]
+
+        _ ->
+          decisions
+      end
 
     decisions
   end
@@ -194,9 +232,11 @@ defmodule Jay.V2.GrowthCycle do
 
         :escalate ->
           Logger.info("[GrowthCycle] ACT: #{pipeline} ESCALATE → 마스터 알림")
+
           Jay.Core.HubClient.post_alarm(
             "⚡ [제이] #{pipeline} 연동 판단: ESCALATE\n마스터 확인 필요",
-            "jay", "growth_cycle"
+            "jay",
+            "growth_cycle"
           )
 
         :block ->
@@ -238,7 +278,10 @@ defmodule Jay.V2.GrowthCycle do
       |> Enum.reject(&(&1 == ""))
 
     normalized != [] and
-      Enum.all?(normalized, &(&1 in ["api", "db", "database", "postgres", "postgresql", "pg_pool", "hub"])) and
+      Enum.all?(
+        normalized,
+        &(&1 in ["api", "db", "database", "postgres", "postgresql", "pg_pool", "hub"])
+      ) and
       current_core_health_ok?()
   end
 
@@ -264,7 +307,7 @@ defmodule Jay.V2.GrowthCycle do
   end
 
   defp measure(date, team_data, analysis, decisions) do
-    Jay.Core.EventLake.record(%{
+    Jay.Core.EventLake.record_sync(%{
       source: "jay.growth_cycle",
       event_type: "growth_cycle.measured",
       severity: "info",
@@ -279,22 +322,57 @@ defmodule Jay.V2.GrowthCycle do
     _ -> :ok
   end
 
-  defp learn(date, team_data, _analysis) do
+  defp record_completion(date, team_data, analysis, decisions, briefing) do
+    Jay.Core.EventLake.record_sync(%{
+      source: "jay.growth_cycle",
+      event_type: "growth_cycle.completed",
+      severity: "info",
+      metadata: %{
+        date: date,
+        teams_collected: map_size(team_data),
+        briefing_len: String.length(briefing)
+      },
+      payload: %{
+        date: date,
+        teams: Map.keys(team_data),
+        analysis: analysis,
+        decision_count: length(decisions),
+        briefing_len: String.length(briefing)
+      }
+    })
+  rescue
+    _ -> :ok
+  end
+
+  defp learn(date, team_data, _analysis, opts) do
     Logger.info("[GrowthCycle] LEARN: 브리핑 생성 중...")
     briefing = DailyBriefing.generate(team_data, date)
     Topics.broadcast_briefing_ready(briefing)
 
     # 자율화 단계에 따라 발송 여부 결정
-    if Jay.V2.AutonomyController.should_send_daily_briefing?() do
+    if Keyword.get(opts, :notify, true) and
+         Jay.V2.AutonomyController.should_send_daily_briefing?() do
       Jay.Core.HubClient.post_alarm(briefing, "jay", "growth_cycle")
       Logger.info("[GrowthCycle] LEARN: 브리핑 발송 완료 (#{String.length(briefing)}자)")
     else
-      Logger.info("[GrowthCycle] LEARN: Phase 3 자율 — 브리핑 로그만 (발송 생략)")
+      Logger.info("[GrowthCycle] LEARN: 브리핑 로그만 (발송 생략)")
     end
 
     # 이상 없는 날 기록 (자율화 단계 전환용)
-    Jay.V2.AutonomyController.record_clean_day()
+    if Keyword.get(opts, :record_clean_day, true) do
+      Jay.V2.AutonomyController.record_clean_day()
+    end
 
     briefing
   end
+
+  defp kst_today do
+    DateTime.utc_now()
+    |> DateTime.add(9 * 60 * 60, :second)
+    |> DateTime.to_date()
+  end
+
+  defp normalize_date(%Date{} = date), do: Date.to_iso8601(date)
+  defp normalize_date(date) when is_binary(date), do: date
+  defp normalize_date(_), do: Date.to_iso8601(kst_today())
 end
