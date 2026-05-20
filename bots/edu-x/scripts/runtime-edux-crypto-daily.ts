@@ -486,7 +486,7 @@ async function main() {
   const imagePaths = [];
   console.log('[edu-x/crypto] 이미지 생성/업로드 비활성화 — 본문 텍스트만 게시');
 
-  const quality = validatePostQuality({ content, imagePaths });
+  const quality = validatePostQuality({ content, imagePaths, category: CATEGORY });
   if (!quality.ok) {
     const errMsg = `품질 게이트 미달: ${JSON.stringify(quality)}`;
     console.error(`[edu-x/crypto] ${errMsg}`);

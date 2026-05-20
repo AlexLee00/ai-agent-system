@@ -179,7 +179,7 @@ async function main() {
 
   const imagePaths = [];
   console.log('[edu-x/kis] 이미지 생성/업로드 비활성화 — 본문 텍스트만 게시');
-  const quality = validatePostQuality({ content, imagePaths });
+  const quality = validatePostQuality({ content, imagePaths, category: CATEGORY });
   if (!quality.ok) {
     const errMsg = `품질 게이트 미달: ${JSON.stringify(quality)}`;
     await logPublish({ title, content, imageUrls: [], status: 'fail', errorMsg: errMsg, metadata: { quality, formatterSource: formatted.source, imageAttachmentDisabled: true } });

@@ -13,6 +13,92 @@ const PROMOTION_GATE_REPORT = path.join(OUTPUT_DIR, 'edux-promotion-gate.json');
 const INTEGRATION_REPORT = path.join(OUTPUT_DIR, 'edux-integration-report.json');
 const MIN_CONTENT_LEN = 0;
 const MIN_IMAGES_PER_POST = 0;
+const LEGACY_SECTION_MARKERS_RE = /^[①②③④⑤⑥⑦⑧⑨⑩]\s*/;
+const SECTION_HEADING_EMOJI_RE = /^(?:[①②③④⑤⑥⑦⑧⑨⑩]\s*)?(?:🧭|⚡|₿|📌|🌐|📰|📈|🛡️?|💸|💎|👀|🗓️?|🤖|⚠️?)\s+/u;
+const REQUIRED_SECTION_COUNT = 10;
+const REQUIRED_SECTIONS_BY_CATEGORY = {
+  crypto: [
+    { key: 'summary', prefix: '🧭', keywords: ['btc/usdt', '브리핑', '요약', '제목'] },
+    { key: 'tldr', prefix: '⚡', keywords: ['tl;dr', 'tldr', '요약'] },
+    { key: 'btc_info', prefix: '₿', keywords: ['btc/usdt', '핵심', '정보'] },
+    { key: 'community', prefix: '🌐', keywords: ['커뮤니티', '이슈'] },
+    { key: 'technical', prefix: '📈', keywords: ['기술', '분석'] },
+    { key: 'macro_risk', prefix: '🛡', keywords: ['거시', '리스크'] },
+    { key: 'watchlist', prefix: '👀', keywords: ['워치', '알트코인'] },
+    { key: 'schedule', prefix: '🗓', keywords: ['일정', '오늘'] },
+    { key: 'luna_automation', prefix: '🤖', keywords: ['루나', '자동매매'] },
+    { key: 'disclaimer', prefix: '⚠', keywords: ['면책', '출처'] },
+  ],
+  kis: [
+    { key: 'summary', prefix: '🧭', keywords: ['국내주식', '장전', '브리핑', '요약', '제목'] },
+    { key: 'tldr', prefix: '⚡', keywords: ['tl;dr', 'tldr', '요약'] },
+    { key: 'checkpoint', prefix: '📌', keywords: ['핵심', '데이터', '체크포인트'] },
+    { key: 'issues', prefix: '📰', keywords: ['이슈', '뉴스', 'top'] },
+    { key: 'technical', prefix: '📈', keywords: ['기술', '분석'] },
+    { key: 'flow', prefix: '💸', keywords: ['외인', '기관', '수급', '동향'] },
+    { key: 'sector_watch', prefix: '👀', keywords: ['섹터', 'etf', '워치'] },
+    { key: 'schedule', prefix: '🗓', keywords: ['공시', '이벤트', '일정'] },
+    { key: 'luna_insight', prefix: '🤖', keywords: ['루나', '인사이트', '자동화'] },
+    { key: 'disclaimer', prefix: '⚠', keywords: ['면책', '출처'] },
+  ],
+  overseas: [
+    { key: 'summary', prefix: '🧭', keywords: ['해외주식', '장전', '브리핑', '요약', '제목'] },
+    { key: 'tldr', prefix: '⚡', keywords: ['tl;dr', 'tldr', '요약'] },
+    { key: 'checkpoint', prefix: '📌', keywords: ['핵심', '데이터', '체크포인트'] },
+    { key: 'issues', prefix: '📰', keywords: ['이슈', '뉴스', 'top'] },
+    { key: 'technical', prefix: '📈', keywords: ['기술', '분석'] },
+    { key: 'mag7', prefix: '💎', keywords: ['magnificent', '7', '동향'] },
+    { key: 'sector_watch', prefix: '👀', keywords: ['섹터', 'etf', 'qqq', 'xlk', 'xle'] },
+    { key: 'earnings', prefix: '🗓', keywords: ['어닝', '캘린더', '일정'] },
+    { key: 'luna_insight', prefix: '🤖', keywords: ['루나', '인사이트', '자동화'] },
+    { key: 'disclaimer', prefix: '⚠', keywords: ['면책', '출처'] },
+  ],
+};
+
+function isSectionHeadingLine(line) {
+  return SECTION_HEADING_EMOJI_RE.test(String(line || '').trim());
+}
+
+function normalizeSectionHeadingLine(line) {
+  const text = String(line || '').trim();
+  return isSectionHeadingLine(text) ? text.replace(LEGACY_SECTION_MARKERS_RE, '') : text;
+}
+
+function extractSectionHeadings(content) {
+  return String(content || '')
+    .split(/\r?\n/)
+    .map((line) => normalizeSectionHeadingLine(line))
+    .filter((line) => isSectionHeadingLine(line));
+}
+
+function normalizeHeadingForMatch(heading) {
+  return String(heading || '')
+    .replace(/\uFE0F/g, '')
+    .trim()
+    .toLowerCase();
+}
+
+function headingMatchesRule(heading, rule) {
+  const text = normalizeHeadingForMatch(heading);
+  const prefix = normalizeHeadingForMatch(rule.prefix);
+  if (!text.startsWith(prefix)) return false;
+  return (rule.keywords || []).some((keyword) => text.includes(String(keyword).toLowerCase()));
+}
+
+function resolveSectionValidation(content, category) {
+  const headings = extractSectionHeadings(content);
+  const categoryKeys = category && REQUIRED_SECTIONS_BY_CATEGORY[category]
+    ? [category]
+    : Object.keys(REQUIRED_SECTIONS_BY_CATEGORY);
+  const candidates = categoryKeys.map((key) => {
+    const rules = REQUIRED_SECTIONS_BY_CATEGORY[key];
+    const missingSections = rules
+      .filter((rule) => !headings.some((heading) => headingMatchesRule(heading, rule)))
+      .map((rule) => rule.key);
+    return { category: key, headings, missingSections };
+  });
+  return candidates.sort((a, b) => a.missingSections.length - b.missingSections.length)[0];
+}
 
 function parseArgs(argv = process.argv.slice(2)) {
   const args = {
@@ -163,23 +249,29 @@ async function insertPublishLog(pgModule, record) {
   }
 }
 
-function validatePostQuality({ content, imagePaths = [], imageUrls = [] }) {
+function validatePostQuality({ content, imagePaths = [], imageUrls = [], category = null }) {
   const text = String(content || '');
-  const sectionCount = (text.match(/[①②③④⑤⑥⑦⑧⑨⑩]/g) || []).length;
+  const sectionValidation = resolveSectionValidation(text, category);
+  const sectionCount = sectionValidation.headings.length;
   const forbidden = [];
   if (/\bactivity\b/i.test(text) || /카테고리\s*:\s*activity/i.test(text)) forbidden.push('activity');
   if (/notion/i.test(text)) forbidden.push('notion');
   if (/좋아요|댓글/.test(text)) forbidden.push('likes_or_comments');
   const imageCount = Math.max(imagePaths.length, imageUrls.length);
   return {
-    ok: text.length >= MIN_CONTENT_LEN && sectionCount >= 10 && forbidden.length === 0 && imageCount >= MIN_IMAGES_PER_POST,
+    ok: text.length >= MIN_CONTENT_LEN && sectionCount >= REQUIRED_SECTION_COUNT && sectionValidation.missingSections.length === 0 && forbidden.length === 0 && imageCount >= MIN_IMAGES_PER_POST,
     contentLen: text.length,
     sectionCount,
     imageCount,
+    category: sectionValidation.category,
+    missingSections: [
+      ...(sectionCount >= REQUIRED_SECTION_COUNT ? [] : [`section_count:${sectionCount}/${REQUIRED_SECTION_COUNT}`]),
+      ...sectionValidation.missingSections,
+    ],
     forbidden,
     requirements: {
       minContentLen: MIN_CONTENT_LEN,
-      minSections: 10,
+      minSections: REQUIRED_SECTION_COUNT,
       minImages: MIN_IMAGES_PER_POST,
     },
   };
@@ -187,8 +279,8 @@ function validatePostQuality({ content, imagePaths = [], imageUrls = [] }) {
 
 function stripImagePlaceholders(content) {
   return String(content || '')
-    .replace(/\n?③\s*\[이미지 2장 플레이스홀더 — 실제 URL은 후처리\]\n?/g, '\n③ 핵심 데이터 체크포인트\n')
-    .replace(/\n?③\s*\[이미지 플레이스홀더\]\n?/g, '\n③ 핵심 데이터 체크포인트\n')
+    .replace(/\n?(?:③\s*)?\[이미지 2장 플레이스홀더 — 실제 URL은 후처리\]\n?/g, '\n📌 핵심 데이터 체크포인트\n')
+    .replace(/\n?(?:③\s*)?\[이미지 플레이스홀더\]\n?/g, '\n📌 핵심 데이터 체크포인트\n')
     .replace(/\[이미지 2장 플레이스홀더 — 실제 URL은 후처리\]/g, '')
     .replace(/\[이미지 플레이스홀더\]/g, '')
     .replace(/차트 이미지는[^\n]*(?:\n[^\n]*){0,2}/g, '')
@@ -318,9 +410,9 @@ function formatContentForEduXWeb(content) {
       continue;
     }
 
-    const cleanedLine = cleanInlineMarkdown(line);
+    const cleanedLine = cleanInlineMarkdown(normalizeSectionHeadingLine(line));
     const safe = escapeHtml(cleanedLine);
-    if (/^[①②③④⑤⑥⑦⑧⑨⑩]\s*/.test(line)) {
+    if (isSectionHeadingLine(line)) {
       html.push(`<h3>${safe}</h3>`);
     } else {
       html.push(`<p>${safe}</p>`);
