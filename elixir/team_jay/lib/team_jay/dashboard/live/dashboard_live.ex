@@ -1952,9 +1952,9 @@ defmodule TeamJay.Dashboard.Live.DashboardLive do
       FROM investment.entry_triggers
       WHERE COALESCE(updated_at, fired_at, created_at) > NOW() - INTERVAL '24 hours'
       UNION ALL
-      SELECT 'execution' AS stage, COUNT(*)::int AS cnt, MAX(executed_at) AS last_at
+      SELECT 'execution' AS stage, COUNT(*)::int AS cnt, MAX(executed_at AT TIME ZONE 'UTC') AS last_at
       FROM investment.trades
-      WHERE executed_at > NOW() - INTERVAL '24 hours'
+      WHERE executed_at > (NOW() AT TIME ZONE 'UTC') - INTERVAL '24 hours'
       UNION ALL
       SELECT 'review' AS stage, COUNT(*)::int AS cnt, MAX(created_at) AS last_at
       FROM investment.position_reevaluation_runs
