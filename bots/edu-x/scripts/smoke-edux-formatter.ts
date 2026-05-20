@@ -14,6 +14,8 @@ async function check(category, slot) {
   assert.equal(quality.ok, true, `${category} formatter quality failed: ${JSON.stringify(quality)}`);
   assert.equal(result.content.includes('[이미지'), false, `${category} still contains image placeholder`);
   assert.equal(/[①②③④⑤⑥⑦⑧⑨⑩]/.test(result.content), false, `${category} should not render legacy section numbers`);
+  assert.equal(result.content.includes('🤖 인공지능 추천안'), true, `${category} should include AI recommendation block`);
+  assert.equal(/N\/A|데이터 없음/.test(result.content), false, `${category} should not expose N/A placeholders`);
   const html = formatContentForEduXWeb(result.content);
   assert.equal(html.includes('<h3>⚡'), true, `${category} html conversion missing first card block`);
   assert.equal(html.includes('<p>&nbsp;</p>\n<h3>'), true, `${category} html conversion should add visible spacing between section blocks`);
@@ -63,13 +65,14 @@ async function main() {
   const priceIndex = cryptoPost.content.indexOf('📌 BTC/USDT 가격 지도');
   const scenarioIndex = cryptoPost.content.indexOf('📈 상승/하락 시나리오');
   const communityIndex = cryptoPost.content.indexOf('🌐 커뮤니티·뉴스 이슈 Top 3');
+  const aiRecommendationIndex = cryptoPost.content.indexOf('🤖 인공지능 추천안');
   const checkpointIndex = cryptoPost.content.indexOf('⚠️ 오늘 체크포인트 + 면책');
   assert.ok(
-    quickIndex > -1 && priceIndex > quickIndex && scenarioIndex > priceIndex && communityIndex > scenarioIndex && checkpointIndex > communityIndex,
-    'crypto post priority should be quick read -> BTC price map -> scenario -> community/news -> disclaimer',
+    quickIndex > -1 && priceIndex > quickIndex && scenarioIndex > priceIndex && communityIndex > scenarioIndex && aiRecommendationIndex > communityIndex && checkpointIndex > aiRecommendationIndex,
+    'crypto post priority should be quick read -> BTC price map -> scenario -> community/news -> AI recommendation -> disclaimer',
   );
   assert.equal(cryptoPost.content.includes('이미지 대신'), false, 'crypto post should not mention image replacement');
-  assert.equal(/⚡|📌|📈|🌐|⚠️/.test(cryptoPost.content), true, 'crypto post should include section header emojis');
+  assert.equal(/⚡|📌|📈|🌐|🤖|⚠️/.test(cryptoPost.content), true, 'crypto post should include section header emojis');
   assert.equal(/[①②③④⑤⑥⑦⑧⑨⑩]/.test(cryptoPost.content), false, 'crypto post should not include legacy section numbers');
   assert.equal(/수집 대기|데이터 없음|N\/A/.test(cryptoPost.content), false, 'crypto post should not expose placeholder text');
   assert.equal(/현재가|가격/.test(cryptoPost.content), true, 'crypto post should include BTC current price');
@@ -97,6 +100,26 @@ async function main() {
   assert.equal(machineSourcePost.content.includes('근거: 뉴스 RSS, 해석: 주의'), true, 'crypto post should map machine source names to reader-facing labels');
   assert.equal(machineSourcePost.content.includes('ETF/ETP에서 $1B 규모의 자금 유출'), true, 'crypto post should preserve outflow direction and amount in Korean issue summaries');
   assert.equal(validateContentQuality(cryptoPost.content, 'crypto').infoIssues.length, 0, 'crypto post should pass information-density gate');
+  const missingTechnicalPost = await formatPost(
+    'crypto',
+    '2230',
+    {
+      btc_symbol: 'BTC/USDT',
+      btc_price: 77000,
+      btc_change_24h: 0.2,
+      eth_symbol: 'ETH/USDT',
+      eth_price: 2100,
+      eth_change_24h: 0.1,
+      fear_greed_index: 27,
+      fear_greed_label: 'Fear',
+    },
+    [],
+    {},
+    { fixture: true },
+  );
+  const missingTechnicalQuality = validateContentQuality(missingTechnicalPost.content, 'crypto');
+  assert.equal(missingTechnicalQuality.ok, false, 'crypto quality should fail when support/resistance technical data is missing');
+  assert.equal(missingTechnicalQuality.infoIssues.includes('crypto_placeholder_text'), true, 'crypto missing technical data should be reported as placeholder text');
   const kisPatternPost = await formatPost(
     'kis',
     '0900',

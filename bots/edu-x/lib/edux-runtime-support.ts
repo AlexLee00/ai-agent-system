@@ -23,6 +23,7 @@ const REQUIRED_SECTIONS_BY_CATEGORY = {
     { key: 'price_map', prefix: '📌', keywords: ['btc/usdt', '가격', '지도'] },
     { key: 'scenarios', prefix: '📈', keywords: ['상승', '하락', '시나리오'] },
     { key: 'community_news', prefix: '🌐', keywords: ['커뮤니티', '뉴스', '이슈'] },
+    { key: 'ai_recommendation', prefix: '🤖', keywords: ['인공지능', '추천'] },
     { key: 'checkpoint_disclaimer', prefix: '⚠', keywords: ['체크포인트', '면책'] },
   ],
   kis: [
@@ -30,6 +31,7 @@ const REQUIRED_SECTIONS_BY_CATEGORY = {
     { key: 'market_flow_map', prefix: '📌', keywords: ['지수', '수급', '지도'] },
     { key: 'sector_watch', prefix: '👀', keywords: ['섹터', '워치'] },
     { key: 'community_news', prefix: '🌐', keywords: ['커뮤니티', '뉴스', '이슈'] },
+    { key: 'ai_recommendation', prefix: '🤖', keywords: ['인공지능', '추천'] },
     { key: 'checkpoint_disclaimer', prefix: '⚠', keywords: ['체크포인트', '면책'] },
   ],
   overseas: [
@@ -37,10 +39,11 @@ const REQUIRED_SECTIONS_BY_CATEGORY = {
     { key: 'market_risk_map', prefix: '📌', keywords: ['지수', '리스크', '지도'] },
     { key: 'mag7_sector_map', prefix: '💎', keywords: ['magnificent', '7', '섹터', '지도'] },
     { key: 'community_news', prefix: '🌐', keywords: ['커뮤니티', '뉴스', '이슈'] },
+    { key: 'ai_recommendation', prefix: '🤖', keywords: ['인공지능', '추천'] },
     { key: 'checkpoint_disclaimer', prefix: '⚠', keywords: ['체크포인트', '면책'] },
   ],
 };
-const CRYPTO_PLACEHOLDER_RE = /수집 대기|데이터 없음|데이터 부족|충분히 수집되지|확인 필요|N\/A/i;
+const CRYPTO_PLACEHOLDER_RE = /수집 대기|데이터 없음|데이터 부족|충분히 수집되지|확인 필요|N\/A|다음 슬롯에서 재확인|차트에서 재확인/i;
 
 function isSectionHeadingLine(line) {
   return SECTION_HEADING_EMOJI_RE.test(String(line || '').trim());
