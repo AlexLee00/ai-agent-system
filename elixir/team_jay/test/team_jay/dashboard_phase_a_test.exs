@@ -82,6 +82,7 @@ defmodule TeamJay.DashboardPhaseATest do
     assert source =~ "load_state_from_legacy_events"
     assert source =~ "autonomy.phase_changed"
     assert source =~ "save_state_to_db(new_state)"
+    assert source =~ "save_state_to_repo_kv"
     assert source =~ "consecutive_clean_days"
     assert source =~ "master_intervention_count"
     assert source =~ "last_escalation_at"

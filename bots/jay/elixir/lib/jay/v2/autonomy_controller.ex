@@ -443,23 +443,63 @@ defmodule Jay.V2.AutonomyController do
   end
 
   defp save_state_to_kv(%__MODULE__{} = state) do
-    if kv_store_available?() do
-      state_json = state |> persisted_state_payload() |> Jason.encode!() |> sql_quote()
-      phase_json = state.phase |> Jason.encode!() |> sql_quote()
-
-      Jay.Core.HubClient.pg_query(
-        """
-          INSERT INTO agent.kv_store (key, value, updated_at)
-          VALUES
-            ('#{@state_key}', '#{state_json}'::jsonb, NOW()),
-            ('#{@phase_key}', '#{phase_json}'::jsonb, NOW())
-          ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()
-        """,
-        "agent"
-      )
+    unless save_state_to_hub_kv(state) do
+      save_state_to_repo_kv(state)
     end
   rescue
     _ -> :ok
+  end
+
+  defp save_state_to_hub_kv(%__MODULE__{} = state) do
+    if kv_store_available?() do
+      case Jay.Core.HubClient.pg_query(state_upsert_sql(state), "agent") do
+        {:ok, _body} -> true
+        _ -> false
+      end
+    else
+      false
+    end
+  rescue
+    _ -> false
+  end
+
+  defp save_state_to_repo_kv(%__MODULE__{} = state) do
+    ensure_repo_kv_store!()
+    Ecto.Adapters.SQL.query!(Jay.Core.Repo, state_upsert_sql(state), [])
+    true
+  rescue
+    _ -> false
+  catch
+    :exit, _ -> false
+  end
+
+  defp ensure_repo_kv_store! do
+    Ecto.Adapters.SQL.query!(Jay.Core.Repo, "CREATE SCHEMA IF NOT EXISTS agent", [])
+
+    Ecto.Adapters.SQL.query!(
+      Jay.Core.Repo,
+      """
+        CREATE TABLE IF NOT EXISTS agent.kv_store (
+          key TEXT PRIMARY KEY,
+          value JSONB NOT NULL,
+          updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+      """,
+      []
+    )
+  end
+
+  defp state_upsert_sql(%__MODULE__{} = state) do
+    state_json = state |> persisted_state_payload() |> Jason.encode!() |> sql_quote()
+    phase_json = state.phase |> Jason.encode!() |> sql_quote()
+
+    """
+      INSERT INTO agent.kv_store (key, value, updated_at)
+      VALUES
+        ('#{@state_key}', '#{state_json}'::jsonb, NOW()),
+        ('#{@phase_key}', '#{phase_json}'::jsonb, NOW())
+      ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()
+    """
   end
 
   defp record_state_snapshot_event(%__MODULE__{} = state) do
