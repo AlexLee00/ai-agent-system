@@ -1,3 +1,45 @@
+# 세션 인수인계 — 2026-05-21 (CODEX_CLAUDE_TEAM_SYMPHONY_TRANSITION Phase 1 검증 + 테스트)
+
+## 완료 요약 ✅
+
+### Phase 1 검증 결과 (이미 2026-05-17 완료됨)
+
+| 항목 | 파일 | 상태 |
+|------|------|------|
+| SPEC.md | `bots/claude/SPEC.md` | ✅ |
+| DB 마이그레이션 | `bots/hub/migrations/20260517000001_symphony_tasks.sql` | ✅ |
+| Hub /tasks API | `bots/hub/lib/routes/tasks.ts` | ✅ |
+| GitHub Webhook | `bots/hub/lib/webhooks/github-issues.ts` + `routes/github-webhook.ts` | ✅ |
+| route-registry 등록 | `bots/hub/src/route-registry.ts` line 148, 176–179 | ✅ |
+| Symphony 레이어 | `bots/claude/lib/symphony/` (7파일) | ✅ |
+
+### 이번 세션 신규 작업
+
+| 작업 | 결과 |
+|------|------|
+| symphony-team-dispatcher 테스트 | 26/26 ✅ |
+| symphony-orchestrator 테스트 | 13/13 ✅ |
+| symphony-github-webhook 테스트 | 12/12 ✅ |
+| typecheck | 통과 ✅ |
+| git tag | `claude-symphony-phase1-spec-20260521-0206` ✅ |
+
+### Phase 2 다음 단계
+
+Phase 2 구현 필요 항목 (`bots/claude/SPEC.md` Section 6 기준):
+1. **Notion Control Plane 연동** — Notion API → Hub → symphony_tasks INSERT
+2. **Telegram Control Plane 연동** — `/task @팀명 제목` → Hub → symphony_tasks INSERT
+3. **Orchestrator polling loop (launchd)** — 5분 간격, `npm run check:symphony-orchestrator` 현재 smoke 실행 OK
+4. **workspace-adapter 업그레이드** — `mutatesGit: true` 전환 (승인 후!)
+
+### 검증 명령 (현재 동작 확인)
+```bash
+npm --prefix bots/claude run test:symphony      # 39케이스
+node_modules/.bin/tsx bots/hub/__tests__/symphony-github-webhook.test.ts  # 12케이스
+npm --prefix bots/claude run check:symphony-orchestrator  # smoke 실행
+```
+
+---
+
 # 세션 인수인계 — 2026-05-21 (CODEX_BLOG_V3_UNIFIED_MASTER Week2 H영역 Goal-Driven 5/5 재검증)
 
 ## 완료 요약 ✅ (블로팀 V3 Week2 H영역 — check-blog-v3-unified.ts 전체 통과)

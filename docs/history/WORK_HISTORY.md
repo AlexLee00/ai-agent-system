@@ -4,6 +4,18 @@
 > 상세 내용: `reservation-dev-summary.md` / `reservation-handoff.md`
 > 최초 작성: 2026-02-27
 
+## 2026-05-21: CODEX_CLAUDE_TEAM_SYMPHONY_TRANSITION — Phase 1 완료 검증 + 단위 테스트 추가
+
+- **Phase 1 현황 검증**: SPEC.md / DB migration / Hub /tasks API / GitHub webhook / route-registry 전체 확인 → 이미 완료 (2026-05-17)
+- **Symphony 단위 테스트 3종 신규 작성**:
+  - `bots/claude/__tests__/symphony-team-dispatcher.test.ts`: 26케이스 (normalizeTicket / inferTargetTeam 6팀 / inferAgent 7봇 / buildDispatchPlan / validate)
+  - `bots/claude/__tests__/symphony-orchestrator.test.ts`: 13케이스 (normalizeHubTask / buildTaskPlan 안전블로커 / runSymphonyOrchestratorCycle dry_run)
+  - `bots/hub/__tests__/symphony-github-webhook.test.ts`: 12케이스 (HMAC 서명검증 + issue opened/closed/reopened 핸들러)
+- **package.json 업데이트**: claude `test:symphony` + `test:unit` 통합, hub `test:symphony-webhook`
+- **모든 테스트 통과**: 51/51케이스 + typecheck 통과
+- **태그**: `claude-symphony-phase1-spec-20260521-0206`
+- **다음**: Phase 2 — Notion+Telegram Control Plane 연동 + Orchestrator 폴링 루프 launchd
+
 ## 2026-05-21: CODEX_EDUX_INTEGRATION — 버그 수정 + 상태 점검 (Promotion Gate 4/5)
 
 - **버그 수정 2건**:
