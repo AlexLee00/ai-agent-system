@@ -315,13 +315,14 @@ async function main() {
       },
       query: {},
     };
+    const sendBeforeFlush = sendCount;
     const digestFlushRes = makeRes();
     await alarmDigestFlushRoute(digestFlushReq, digestFlushRes);
     assert(digestFlushRes.statusCode === 200, `expected digest flush 200, got ${digestFlushRes.statusCode}`);
     assert(digestFlushRes.body.ok === true, 'expected digest flush ok');
     assert(Array.isArray(digestFlushRes.body.teams), 'expected digest flush team list');
     assert(digestFlushRes.body.teams[0]?.sent === true, 'expected digest flush delivered');
-    assert(sendCount >= 5, `expected digest flush to send telegram summary, got ${sendCount}`);
+    assert(sendCount === sendBeforeFlush + 1, `expected digest flush to send exactly one telegram summary, got ${sendCount - sendBeforeFlush}`);
 
     console.log('alarm_governor_smoke_ok');
   } finally {
