@@ -108,6 +108,16 @@ defmodule TeamJay.DashboardPhaseATest do
     assert source =~ ~s(["payload", "briefing_len"])
   end
 
+  test "area 2 prepends live collaboration events when cycle_id is stale" do
+    source =
+      File.read!(Path.expand("../../lib/team_jay/dashboard/live/dashboard_live.ex", __DIR__))
+
+    assert source =~ "prepend_live_cycle"
+    assert source =~ "load_live_collab_events"
+    assert source =~ ~s(event_type LIKE 'growth_cycle.%')
+    assert source =~ ~s(%{cycle_id: "Live")
+  end
+
   test "area 7 and 8 include DB-backed freshness indicators" do
     source =
       File.read!(Path.expand("../../lib/team_jay/dashboard/live/dashboard_live.ex", __DIR__))

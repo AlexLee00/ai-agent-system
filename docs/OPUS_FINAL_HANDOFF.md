@@ -1,3 +1,44 @@
+# 세션 인수인계 — 2026-05-21 (CODEX_CLAUDE_SYMPHONY_LUNA_PATTERNS_ENHANCED Phase 4+5 구현)
+
+## 완료 요약 ✅ (Phase 4+5)
+
+### Phase 4 — Hooks 5개 신규 추가
+
+| 훅 | 트리거 | 목적 |
+|---|---|---|
+| `posttooluse-hermes-record.sh` | Write/Edit/MultiEdit | Loopback Loop 2: .claude/hermes-buffer.jsonl에 파일 변경 기록 |
+| `posttooluse-pattern-extractor.sh` | Bash | Loopback Loop 3: 버퍼 30줄 이상 시 빈번 변경 파일(5회+) 감지 |
+| `precompact-skill-refresh.sh` | PreCompact | 압축 전 skills/a2a skills/Hermes버퍼 상태 요약 출력 |
+| `stop-handoff-verify.sh` | Stop | HANDOFF 6시간 이내 업데이트 여부 + 미커밋 변경 수 알림 |
+| `stop-ticket-status-final.sh` | Stop | Hub 온라인 시 in_progress 티켓 목록 최종 보고 |
+
+hooks.json: PreCompact 2개, PostToolUse 7개, Stop 5개 (총 17개 트리거)
+
+### Phase 5 — MCP 3개 신규 구현
+
+| MCP 서버 | 포트 | 도구 |
+|---|---|---|
+| `claude-symphony-mcp` | 8770 | poll_tasks, dispatch_ticket, get_task_status, update_task |
+| `claude-doctor-mcp` | 8771 | diagnose_system, get_health, heal_service (PROTECTED 차단), get_recovery_log |
+| `claude-dexter-mcp` | 8772 | run_checks, get_health_summary, get_alert_history, subscribe_alerts |
+
+smoke 결과: 3/3 ✅ (Hub 오프라인 시 hubReachable=false, 정상 동작)
+
+### 커밋 + 태그
+- `23eb5d229` feat(claude): Symphony Phase 4+5 — hooks 5개 + MCP 3개 구현
+- tag: `claude-symphony-phase45-20260521-HHMM`
+
+---
+
+## 다음 단계 (Phase 6)
+
+1. **Orchestrator launchd 등록** — 5분 polling loop (OPS 배포 시 마스터 승인 필요)
+2. **Telegram Control Plane** — `/task @팀명 제목` → Hub → symphony_tasks INSERT
+3. **workspace-adapter mutatesGit: true** — 마스터 승인 필요
+4. **Hermes 4-Stage 실제 루프백 통합** — hermes-buffer.jsonl → hermes-learn A2A skill 자동 호출
+
+---
+
 # 세션 인수인계 — 2026-05-21 (CODEX_CLAUDE_TEAM_SYMPHONY_TRANSITION Phase 1 검증 + 테스트)
 
 ## 완료 요약 ✅

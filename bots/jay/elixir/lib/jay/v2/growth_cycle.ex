@@ -311,6 +311,11 @@ defmodule Jay.V2.GrowthCycle do
       source: "jay.growth_cycle",
       event_type: "growth_cycle.measured",
       severity: "info",
+      metadata: %{
+        date: date,
+        cycle_id: cycle_id_for_date(date),
+        teams_collected: map_size(team_data)
+      },
       payload: %{
         date: date,
         teams: Map.keys(team_data),
@@ -329,6 +334,7 @@ defmodule Jay.V2.GrowthCycle do
       severity: "info",
       metadata: %{
         date: date,
+        cycle_id: cycle_id_for_date(date),
         teams_collected: map_size(team_data),
         briefing_len: String.length(briefing)
       },
@@ -375,4 +381,15 @@ defmodule Jay.V2.GrowthCycle do
   defp normalize_date(%Date{} = date), do: Date.to_iso8601(date)
   defp normalize_date(date) when is_binary(date), do: date
   defp normalize_date(_), do: Date.to_iso8601(kst_today())
+
+  defp cycle_id_for_date(date) when is_binary(date) do
+    date
+    |> String.replace(~r/\D/, "")
+    |> case do
+      "" -> Date.to_iso8601(kst_today()) |> String.replace("-", "")
+      value -> value
+    end
+  end
+
+  defp cycle_id_for_date(_date), do: Date.to_iso8601(kst_today()) |> String.replace("-", "")
 end

@@ -2539,12 +2539,47 @@ defmodule TeamJay.Dashboard.Live.DashboardLive do
 
     case Jay.Core.Repo.query(sql, []) do
       {:ok, %{rows: rows}} ->
-        Enum.map(rows, fn [cycle_id] ->
-          %{cycle_id: cycle_id, events: load_cycle_events(cycle_id)}
-        end)
+        cycles =
+          Enum.map(rows, fn [cycle_id] ->
+            %{cycle_id: cycle_id, events: load_cycle_events(cycle_id)}
+          end)
+
+        prepend_live_cycle(cycles)
 
       _ ->
-        []
+        prepend_live_cycle([])
+    end
+  rescue
+    _ -> []
+  end
+
+  defp prepend_live_cycle(cycles) do
+    case load_live_collab_events() do
+      [] -> cycles
+      events -> [%{cycle_id: "Live", events: events} | Enum.take(cycles, 4)]
+    end
+  end
+
+  defp load_live_collab_events do
+    sql = """
+    SELECT event_type, team, bot_name, title, severity, created_at
+    FROM agent.event_lake
+    WHERE created_at >= NOW() - interval '24 hours'
+      AND (
+        event_type LIKE 'growth_cycle.%'
+        OR event_type LIKE 'master.intervention.%'
+        OR event_type LIKE 'metty.session.%'
+        OR event_type LIKE 'codex.task.%'
+        OR event_type LIKE 'project.%'
+        OR event_type LIKE 'milestone.%'
+      )
+    ORDER BY created_at DESC, id DESC
+    LIMIT 12
+    """
+
+    case Jay.Core.Repo.query(sql, []) do
+      {:ok, %{rows: rows}} -> Enum.map(rows, &row_to_cycle_event/1)
+      _ -> []
     end
   rescue
     _ -> []

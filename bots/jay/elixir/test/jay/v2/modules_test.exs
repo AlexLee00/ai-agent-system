@@ -168,6 +168,7 @@ defmodule Jay.V2.ModulesTest do
 
       assert source =~ ~s(event_type: "growth_cycle.completed")
       assert source =~ "briefing_len: String.length(briefing)"
+      assert source =~ "cycle_id_for_date(date)"
     end
   end
 end
