@@ -1,6 +1,6 @@
 defmodule TeamJay.Dashboard.ProjectVisibility do
   @moduledoc """
-  Visibility v3.3 project/milestone/timeline data adapter.
+  Visibility v3.4 project/milestone/timeline data adapter.
 
   The dashboard can render from PostgreSQL when the `project` schema exists,
   and falls back to deterministic marker data so area 10/11 remain visible
@@ -12,6 +12,8 @@ defmodule TeamJay.Dashboard.ProjectVisibility do
   alias Jay.Core.Repo
   alias TeamJay.Dashboard.SessionTracker
 
+  @kst_offset_seconds 9 * 60 * 60
+  @visibility_doc_path "docs/strategy/VISIBILITY_SYSTEM_v3.4.md"
   @stage_keys ~w(spec building verify observing done)
   @kanban_stages [
     %{stage: "spec", label: "Spec", icon: "📋", class: "bg-gray-900/40"},
@@ -529,7 +531,7 @@ defmodule TeamJay.Dashboard.ProjectVisibility do
               do: DateTime.diff(finished_at, started_at, :second),
               else: DateTime.diff(now, started_at, :second)
             ),
-          source_doc: "docs/strategy/VISIBILITY_SYSTEM_v3.3.md",
+          source_doc: @visibility_doc_path,
           active_session_id: "sess_v33_#{project_idx + 1}",
           verify: %{
             "runs" => task_idx + 1,
@@ -549,7 +551,7 @@ defmodule TeamJay.Dashboard.ProjectVisibility do
   end
 
   defp marker_milestones(projects, tasks) do
-    today = Date.utc_today()
+    today = kst_today()
 
     projects
     |> Enum.with_index()
@@ -596,9 +598,9 @@ defmodule TeamJay.Dashboard.ProjectVisibility do
         started_at: DateTime.add(now, -3_600, :second),
         ended_at: nil,
         task_ids: tasks |> Enum.take(3) |> Enum.map(& &1.id),
-        files_touched: ["docs/strategy/VISIBILITY_SYSTEM_v3.3.md"],
-        handover_doc: "docs/strategy/VISIBILITY_SYSTEM_v3.3.md",
-        summary: "v3.3 권위 문서 및 Phase G 인계"
+        files_touched: [@visibility_doc_path],
+        handover_doc: @visibility_doc_path,
+        summary: "v3.4 권위 문서 및 Phase G 인계"
       },
       %{
         id: "sess_v33_codex",
@@ -634,7 +636,7 @@ defmodule TeamJay.Dashboard.ProjectVisibility do
   end
 
   defp build_gantt(projects, tasks, milestones) do
-    start_date = Date.utc_today()
+    start_date = kst_today()
     dates = Enum.map(0..14, &Date.add(start_date, &1))
     end_date = List.last(dates)
 
@@ -950,7 +952,7 @@ defmodule TeamJay.Dashboard.ProjectVisibility do
 
     milestone = %{
       id: map_value(metadata, :id) || map_value(metadata, :milestone_id) || event_slug(event),
-      date: parse_date(map_value(metadata, :date)) || Date.utc_today(),
+      date: parse_date(map_value(metadata, :date)) || kst_today(),
       title: map_value(metadata, :title, map_value(event, :title, "project milestone")),
       owner: map_value(metadata, :owner, "codex"),
       task_ids: list_value(map_value(metadata, :task_ids, [])),
@@ -1223,8 +1225,14 @@ defmodule TeamJay.Dashboard.ProjectVisibility do
   defp elapsed_seconds(started_at, finished_at),
     do: DateTime.diff(finished_at, started_at, :second)
 
-  defp overdue?(%Date{} = date), do: Date.compare(date, Date.utc_today()) == :lt
+  defp overdue?(%Date{} = date), do: Date.compare(date, kst_today()) == :lt
   defp overdue?(_), do: false
+
+  defp kst_today do
+    DateTime.utc_now()
+    |> DateTime.add(@kst_offset_seconds, :second)
+    |> DateTime.to_date()
+  end
 
   defp status_counter_key("achieved"), do: :achieved
   defp status_counter_key("missed"), do: :missed

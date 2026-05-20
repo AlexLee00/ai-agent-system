@@ -1,6 +1,6 @@
 defmodule TeamJay.Dashboard.ProjectRepo do
   @moduledoc """
-  Visibility v3.3 project persistence facade.
+  Visibility v3.4 project persistence facade.
 
   `ProjectVisibility` remains the compatibility adapter used by the LiveView.
   This module gives Phase G/Cycle #52 a stable repo boundary for schema,

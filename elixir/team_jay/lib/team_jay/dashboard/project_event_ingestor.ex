@@ -1,6 +1,6 @@
 defmodule TeamJay.Dashboard.ProjectEventIngestor do
   @moduledoc """
-  EventLake -> project schema bridge for Visibility v3.3.
+  EventLake -> project schema bridge for Visibility v3.4.
 
   It listens to dashboard EventLake broadcasts and converts `codex.task.*` and
   `project.*` events into Project/Task/Milestone rows. The path is append/upsert

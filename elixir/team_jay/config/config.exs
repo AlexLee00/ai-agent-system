@@ -35,6 +35,11 @@ config :team_jay, TeamJay.Dashboard.Endpoint,
   adapter: Bandit.PhoenixAdapter,
   http: [port: String.to_integer(dashboard_port)],
   server: true,
+  check_origin: [
+    "//localhost:#{dashboard_port}",
+    "//127.0.0.1:#{dashboard_port}",
+    "//[::1]:#{dashboard_port}"
+  ],
   # 로컬 내부 도구용 — 운영 배포 시 환경변수로 교체 필수
   secret_key_base: dashboard_secret_key_base,
   live_view: [signing_salt: "tvdashboard"],
@@ -71,7 +76,7 @@ import_config "#{Mix.env()}.exs"
 config :team_jay, Jay.Core.Scheduler,
   jobs: [
     # ─── 기존 스케줄 ────────────────────────────────────────
-    {"*/30 * * * *", {Jay.Core.Diagnostics, :publish_shadow_report, []}},
+    {"*/30 * * * *", {Jay.Core.Diagnostics, :publish_shadow_report, []}}
     # launchd가 canonical owner인 wall-clock/periodic 작업은 Quantum에서 중복 실행하지 않는다.
     # - ai.ska.etl
     # - ai.ska.forecast-daily

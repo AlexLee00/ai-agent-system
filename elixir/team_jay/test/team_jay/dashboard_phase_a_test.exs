@@ -10,7 +10,7 @@ defmodule TeamJay.DashboardPhaseATest do
     assert payload["ok"] == true
     assert payload["service"] == "team_jay_dashboard"
     assert payload["phase"] == "G"
-    assert payload["layer"] == "Visibility v3.3 영역 1~11 + Project/Milestone/Timeline"
+    assert payload["layer"] == "Visibility v3.4 영역 1~11 + Project/Milestone/Timeline"
   end
 
   test "dashboard endpoint is wired to Bandit and TeamJay PubSub" do
@@ -26,6 +26,7 @@ defmodule TeamJay.DashboardPhaseATest do
     routes = TeamJay.Dashboard.Router.__routes__()
 
     assert Enum.any?(routes, &(&1.path == "/" and &1.plug == Phoenix.LiveView.Plug))
+    assert Enum.any?(routes, &(&1.path == "/health" or String.starts_with?(&1.path, "/health/")))
     assert Enum.any?(routes, &String.starts_with?(&1.path, "/healthz"))
   end
 
@@ -39,7 +40,7 @@ defmodule TeamJay.DashboardPhaseATest do
            )
   end
 
-  test "Visibility v3.3 project marker snapshot covers Phase G area 10/11 data" do
+  test "Visibility v3.4 project marker snapshot covers Phase G area 10/11 data" do
     snapshot = TeamJay.Dashboard.ProjectVisibility.snapshot()
     marker_counts = TeamJay.Dashboard.ProjectVisibility.marker_counts()
 
@@ -51,7 +52,7 @@ defmodule TeamJay.DashboardPhaseATest do
     assert Map.has_key?(snapshot.tasks_by_stage, "done")
   end
 
-  test "Visibility v3.3 Cycle #52 support modules are available" do
+  test "Visibility v3.4 Cycle #52 support modules are available" do
     assert Code.ensure_loaded?(TeamJay.Dashboard.ProjectRepo)
     assert Code.ensure_loaded?(TeamJay.Dashboard.SessionTracker)
     assert Code.ensure_loaded?(TeamJay.Dashboard.MilestoneSentry)
@@ -61,7 +62,7 @@ defmodule TeamJay.DashboardPhaseATest do
     assert function_exported?(TeamJay.Dashboard.MilestoneSentry, :reconcile_now, 0)
   end
 
-  test "Visibility v3.3 session tracker detects touched-file conflicts" do
+  test "Visibility v3.4 session tracker detects touched-file conflicts" do
     sessions = [
       %{files_touched: ["a.ex", "b.ex"]},
       %{files_touched: ["b.ex", "c.ex"]},

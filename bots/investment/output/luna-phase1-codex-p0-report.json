@@ -1,6 +1,6 @@
 {
   "ok": true,
-  "generatedAt": "2026-05-17T09:58:41.080Z",
+  "generatedAt": "2026-05-20T14:21:13.571Z",
   "phase": "luna-phase1-codex-p0",
   "tags": {
     "preRollback": "pre-luna-phase1-codex-p0-20260514-200517",
@@ -17,11 +17,51 @@
   },
   "db": {
     "community24h": {
-      "count": 419
+      "count": 430
+    },
+    "eduxPostShadow24h": {
+      "count": 8,
+      "market_count": 3,
+      "symbol_count": 2,
+      "latest_created_at": "2026-05-20T13:59:22.471Z"
+    },
+    "eduxPostEvidenceBridge": {
+      "ok": true,
+      "status": "edux_shadow_evidence_planned",
+      "generatedAt": "2026-05-20T14:10:03.699Z",
+      "dryRun": true,
+      "writeRequested": false,
+      "source": "all",
+      "sources": [
+        "db:10",
+        "artifacts:5"
+      ],
+      "lookbackHours": 48,
+      "includeTestPosts": false,
+      "postsRead": 0,
+      "evidencePlanned": 0,
+      "evidenceInserted": 0,
+      "duplicateSkipped": 0,
+      "summary": {
+        "total": 0,
+        "byMarket": {},
+        "symbols": [],
+        "sourceType": "edux_post_shadow",
+        "shadowOnly": true,
+        "liveMutation": false
+      },
+      "safety": {
+        "shadowOnly": true,
+        "liveMutation": false,
+        "tradingDecisionPriorityChanged": false,
+        "liveBuySellPathTouched": false,
+        "protectedPidTouched": false
+      },
+      "sample": []
     },
     "communityCoverageGate": {
       "ok": true,
-      "generatedAt": "2026-05-17T09:58:41.035Z",
+      "generatedAt": "2026-05-20T14:21:12.922Z",
       "hours": 24,
       "thresholds": {
         "crypto": {
@@ -46,24 +86,24 @@
       "summary": {
         "totalMarkets": 3,
         "passMarkets": 3,
-        "totalEvents": 399,
-        "totalUniqueSources": 32
+        "totalEvents": 428,
+        "totalUniqueSources": 41
       },
       "blockers": [],
       "warnings": [],
       "markets": [
         {
           "market": "crypto",
-          "eventCount": 351,
+          "eventCount": 185,
           "uniqueSourceCount": 23,
-          "avgFreshness": 0.9629629629629636,
-          "avgSourceQuality": 0.3037669515669528,
-          "missingErrorRate": 0,
+          "avgFreshness": 0.9848648648648649,
+          "avgSourceQuality": 0.2951345945945953,
+          "missingErrorRate": 0.005405405405405406,
           "botNoiseRate": 0,
           "hypeSpikeRate": 0,
-          "symbolCount": 47,
+          "symbolCount": 27,
           "seedCandidateCount": 0,
-          "newestEventAt": "2026-05-17T01:04:21.443Z",
+          "newestEventAt": "2026-05-19T21:00:14.837Z",
           "pass": true,
           "thresholds": {
             "minEvents": 20,
@@ -79,16 +119,16 @@
         },
         {
           "market": "domestic",
-          "eventCount": 18,
-          "uniqueSourceCount": 3,
-          "avgFreshness": 0.9722222222222222,
-          "avgSourceQuality": 0.3159444444444444,
+          "eventCount": 72,
+          "uniqueSourceCount": 6,
+          "avgFreshness": 0.9847222222222223,
+          "avgSourceQuality": 0.360243055555556,
           "missingErrorRate": 0,
           "botNoiseRate": 0,
           "hypeSpikeRate": 0,
-          "symbolCount": 0,
-          "seedCandidateCount": 5,
-          "newestEventAt": "2026-05-17T01:04:21.446Z",
+          "symbolCount": 20,
+          "seedCandidateCount": 0,
+          "newestEventAt": "2026-05-19T21:00:14.854Z",
           "pass": true,
           "thresholds": {
             "minEvents": 10,
@@ -104,16 +144,16 @@
         },
         {
           "market": "overseas",
-          "eventCount": 30,
-          "uniqueSourceCount": 6,
-          "avgFreshness": 0.9299999999999997,
-          "avgSourceQuality": 0.47293,
+          "eventCount": 171,
+          "uniqueSourceCount": 12,
+          "avgFreshness": 0.9722222222222222,
+          "avgSourceQuality": 0.36681169590643353,
           "missingErrorRate": 0,
           "botNoiseRate": 0,
           "hypeSpikeRate": 0,
-          "symbolCount": 0,
-          "seedCandidateCount": 5,
-          "newestEventAt": "2026-05-17T01:04:21.451Z",
+          "symbolCount": 44,
+          "seedCandidateCount": 0,
+          "newestEventAt": "2026-05-19T21:00:14.887Z",
           "pass": true,
           "thresholds": {
             "minEvents": 10,
@@ -131,121 +171,195 @@
       "queryError": null
     },
     "candidateBacktestStatus": {
-      "total": 196,
-      "fresh": 189,
-      "healthy": 50,
-      "would_block": 146,
-      "newest_updated_at": "2026-05-17T09:45:25.404Z"
+      "total": 320,
+      "fresh": 303,
+      "healthy": 53,
+      "would_block": 267,
+      "newest_updated_at": "2026-05-20T14:20:25.959Z"
     },
     "predictiveAudit24h": [
       {
         "decision": "block_backtest_gate",
-        "count": 1908
+        "count": 2847
       },
       {
         "decision": "fire",
-        "count": 431
+        "count": 308
       },
       {
         "decision": "would_block_backtest",
-        "count": 124
-      },
-      {
-        "decision": "block_stale_backtest",
-        "count": 94
-      },
-      {
-        "decision": "would_block_backtest_gate",
-        "count": 38
+        "count": 151
       },
       {
         "decision": "pass_backtest",
-        "count": 16
+        "count": 26
+      },
+      {
+        "decision": "block_stale_backtest",
+        "count": 25
       },
       {
         "decision": "hold",
-        "count": 6
+        "count": 17
+      },
+      {
+        "decision": "block_coverage",
+        "count": 12
+      },
+      {
+        "decision": "block_no_prediction",
+        "count": 8
+      },
+      {
+        "decision": "block",
+        "count": 5
+      },
+      {
+        "decision": "would_block_backtest_gate",
+        "count": 1
       }
     ],
     "candidateBottleneckTrace": {
       "total": 30,
       "byPrimaryBlocker": {
-        "backtest_unstable_or_unrealistic": 13,
-        "unknown": 4,
-        "backtest_unhealthy_or_would_block": 9,
-        "backtest_missing_or_stale": 4
+        "backtest_unstable_or_unrealistic": 17,
+        "backtest_unhealthy_or_would_block": 8,
+        "backtest_missing_or_stale": 3,
+        "unknown": 2
       },
       "topPrimaryBlockers": [
         {
           "blocker": "backtest_unstable_or_unrealistic",
-          "count": 13
+          "count": 17
         },
         {
           "blocker": "backtest_unhealthy_or_would_block",
-          "count": 9
+          "count": 8
         },
         {
           "blocker": "backtest_missing_or_stale",
-          "count": 4
+          "count": 3
         }
       ],
       "sample": [
         {
           "symbol": "NVDA",
           "market": "overseas",
+          "binanceTop30Rank": null,
+          "inBinanceTop30Universe": null,
+          "top30Blocker": null,
+          "liquidationCandidate": false,
           "backtestFresh": true,
           "backtestGateStatus": "would_block_unstable_backtest",
-          "predictiveDecision": "block_backtest_gate",
+          "predictiveDecision": "would_block_backtest",
           "communityEvidenceCount24h": 30,
-          "communitySourceCount24h": 6,
+          "communitySourceCount24h": 12,
           "primaryBlocker": "backtest_unstable_or_unrealistic",
           "recommendedRefreshCommand": "npm --prefix bots/investment run -s runtime:luna-candidate-backtest-refresh -- --json --force --periods=30,90,180,365 --market=overseas --symbols=NVDA"
         },
         {
-          "symbol": "GOOGL",
-          "market": "overseas",
-          "backtestFresh": true,
-          "backtestGateStatus": "would_block_unstable_backtest",
-          "predictiveDecision": "block_backtest_gate",
-          "communityEvidenceCount24h": 30,
-          "communitySourceCount24h": 6,
-          "primaryBlocker": "backtest_unstable_or_unrealistic",
-          "recommendedRefreshCommand": "npm --prefix bots/investment run -s runtime:luna-candidate-backtest-refresh -- --json --force --periods=30,90,180,365 --market=overseas --symbols=GOOGL"
-        },
-        {
-          "symbol": "META",
-          "market": "overseas",
-          "backtestFresh": true,
-          "backtestGateStatus": "would_block_unstable_backtest",
-          "predictiveDecision": "block_backtest_gate",
-          "communityEvidenceCount24h": 30,
-          "communitySourceCount24h": 6,
-          "primaryBlocker": "backtest_unstable_or_unrealistic",
-          "recommendedRefreshCommand": "npm --prefix bots/investment run -s runtime:luna-candidate-backtest-refresh -- --json --force --periods=30,90,180,365 --market=overseas --symbols=META"
-        },
-        {
           "symbol": "MSFT",
           "market": "overseas",
+          "binanceTop30Rank": null,
+          "inBinanceTop30Universe": null,
+          "top30Blocker": null,
+          "liquidationCandidate": false,
           "backtestFresh": true,
-          "backtestGateStatus": "pass",
-          "predictiveDecision": "fire",
-          "communityEvidenceCount24h": 30,
-          "communitySourceCount24h": 6,
-          "primaryBlocker": null,
-          "recommendedRefreshCommand": "npm --prefix bots/investment run -s runtime:luna-candidate-bottleneck-diagnostics -- --json --dry-run --market=overseas"
+          "backtestGateStatus": "would_block_unstable_backtest",
+          "predictiveDecision": "would_block_backtest",
+          "communityEvidenceCount24h": 31,
+          "communitySourceCount24h": 13,
+          "primaryBlocker": "backtest_unstable_or_unrealistic",
+          "recommendedRefreshCommand": "npm --prefix bots/investment run -s runtime:luna-candidate-backtest-refresh -- --json --force --periods=30,90,180,365 --market=overseas --symbols=MSFT"
         },
         {
           "symbol": "AAPL",
           "market": "overseas",
+          "binanceTop30Rank": null,
+          "inBinanceTop30Universe": null,
+          "top30Blocker": null,
+          "liquidationCandidate": false,
           "backtestFresh": true,
           "backtestGateStatus": "would_block_unstable_backtest",
-          "predictiveDecision": "block_backtest_gate",
+          "predictiveDecision": "would_block_backtest",
           "communityEvidenceCount24h": 30,
-          "communitySourceCount24h": 6,
+          "communitySourceCount24h": 12,
           "primaryBlocker": "backtest_unstable_or_unrealistic",
           "recommendedRefreshCommand": "npm --prefix bots/investment run -s runtime:luna-candidate-backtest-refresh -- --json --force --periods=30,90,180,365 --market=overseas --symbols=AAPL"
+        },
+        {
+          "symbol": "FIDA/USDT",
+          "market": "crypto",
+          "binanceTop30Rank": 18,
+          "inBinanceTop30Universe": true,
+          "top30Blocker": null,
+          "liquidationCandidate": false,
+          "backtestFresh": true,
+          "backtestGateStatus": "would_block_unhealthy",
+          "predictiveDecision": "block_backtest_gate",
+          "communityEvidenceCount24h": 2,
+          "communitySourceCount24h": 2,
+          "primaryBlocker": "backtest_unhealthy_or_would_block",
+          "recommendedRefreshCommand": "npm --prefix bots/investment run -s runtime:luna-phase4-strategy-enhancement-shadow -- --json --dry-run --market=crypto --symbols=FIDA/USDT"
+        },
+        {
+          "symbol": "DASH/USDT",
+          "market": "crypto",
+          "binanceTop30Rank": 17,
+          "inBinanceTop30Universe": true,
+          "top30Blocker": null,
+          "liquidationCandidate": false,
+          "backtestFresh": true,
+          "backtestGateStatus": "would_block_unhealthy",
+          "predictiveDecision": "block_backtest_gate",
+          "communityEvidenceCount24h": 4,
+          "communitySourceCount24h": 4,
+          "primaryBlocker": "backtest_unhealthy_or_would_block",
+          "recommendedRefreshCommand": "npm --prefix bots/investment run -s runtime:luna-phase4-strategy-enhancement-shadow -- --json --dry-run --market=crypto --symbols=DASH/USDT"
         }
       ]
+    },
+    "binanceTopVolumeUniverse": {
+      "ok": true,
+      "status": "luna_binance_top_volume_universe_ready",
+      "source": "binance_spot_usdt_quote_volume_top30",
+      "fetchedAt": "2026-05-20T14:21:13.555Z",
+      "limit": 30,
+      "symbols": [
+        "BTC/USDT",
+        "ETH/USDT",
+        "SOL/USDT",
+        "XRP/USDT",
+        "ZEC/USDT",
+        "BNB/USDT",
+        "DOGE/USDT",
+        "币安人生/USDT",
+        "SUI/USDT",
+        "TRX/USDT",
+        "NEAR/USDT",
+        "ALT/USDT",
+        "EDEN/USDT",
+        "SPK/USDT",
+        "TON/USDT",
+        "ONDO/USDT",
+        "DASH/USDT",
+        "FIDA/USDT",
+        "LINK/USDT",
+        "XAUT/USDT",
+        "ADA/USDT",
+        "PAXG/USDT",
+        "U/USDT",
+        "LTC/USDT",
+        "TAO/USDT",
+        "BCH/USDT",
+        "UNI/USDT",
+        "PEPE/USDT",
+        "ENJ/USDT",
+        "FOGO/USDT"
+      ],
+      "excludedActiveCandidates": [],
+      "offUniverseHoldings": [],
+      "error": null
     }
   },
   "launchd": [

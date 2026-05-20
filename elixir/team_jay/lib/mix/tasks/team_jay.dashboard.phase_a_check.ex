@@ -19,8 +19,12 @@ defmodule Mix.Tasks.TeamJay.Dashboard.PhaseACheck do
       health_plug_loaded: Code.ensure_loaded?(TeamJay.Dashboard.HealthPlug),
       bandit_adapter: Keyword.get(endpoint_config, :adapter) == Bandit.PhoenixAdapter,
       root_live_route: Enum.any?(routes, &(&1.path == "/" and &1.plug == Phoenix.LiveView.Plug)),
+      health_alias_route:
+        Enum.any?(routes, &(&1.path == "/health" or String.starts_with?(&1.path, "/health/"))),
       health_route: Enum.any?(routes, &String.starts_with?(&1.path, "/healthz")),
       endpoint_port: endpoint_port(endpoint_config) == dashboard_port(),
+      dashboard_origin_localhost: dashboard_origin_allowed?(endpoint_config, "localhost"),
+      dashboard_origin_loopback: dashboard_origin_allowed?(endpoint_config, "127.0.0.1"),
       team_jay_pubsub: Application.get_env(:team_jay, :dashboard_pubsub) == TeamJay.PubSub,
       jay_core_pubsub: Application.get_env(:jay_core, :dashboard_pubsub) == TeamJay.PubSub,
       local_css: File.exists?(Path.expand("priv/static/dashboard.css", File.cwd!()))
@@ -49,6 +53,14 @@ defmodule Mix.Tasks.TeamJay.Dashboard.PhaseACheck do
     config
     |> Keyword.get(:http, [])
     |> Keyword.get(:port)
+  end
+
+  defp dashboard_origin_allowed?(config, host) do
+    origin = "//#{host}:#{dashboard_port()}"
+
+    config
+    |> Keyword.get(:check_origin, [])
+    |> Enum.member?(origin)
   end
 
   defp dashboard_port do

@@ -1,6 +1,6 @@
 defmodule Mix.Tasks.TeamJay.Dashboard.Phase52Check do
   @moduledoc """
-  Visibility v3.3 Cycle #52 verification.
+  Visibility v3.4 Cycle #52 verification.
 
   The default mode is read-only. Optional flags:
 
@@ -11,7 +11,8 @@ defmodule Mix.Tasks.TeamJay.Dashboard.Phase52Check do
   """
   use Mix.Task
 
-  @shortdoc "Verifies Visibility v3.3 Cycle #52 readiness"
+  @shortdoc "Verifies Visibility v3.4 Cycle #52 readiness"
+  @expected_dashboard_layer "Visibility v3.4 영역 1~11 + Project/Milestone/Timeline"
 
   @impl true
   def run(args) do
@@ -41,6 +42,7 @@ defmodule Mix.Tasks.TeamJay.Dashboard.Phase52Check do
     checks =
       Map.merge(source_checks, %{
         runtime_phase_g: runtime.phase == "G",
+        runtime_visibility_latest: runtime.layer == @expected_dashboard_layer,
         project_schema_ready: snapshot.schema_ready?,
         project_data_visible: length(snapshot.projects) >= 4 and length(snapshot.tasks) >= 30,
         area_11_gantt_ready: length(snapshot.gantt.dates) == 15,
@@ -51,10 +53,11 @@ defmodule Mix.Tasks.TeamJay.Dashboard.Phase52Check do
     result = %{
       ok: Enum.all?(Map.values(checks)),
       phase: "Cycle #52",
-      visibility_version: "v3.3",
+      visibility_version: "v3.4",
       checks: checks,
       runtime_health: runtime,
       runtime_dom: runtime_dom,
+      expected_dashboard_layer: @expected_dashboard_layer,
       trace_kpi: trace_kpi,
       project_snapshot: %{
         projects: length(snapshot.projects),

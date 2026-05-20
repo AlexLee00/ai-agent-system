@@ -16,6 +16,7 @@ defmodule TeamJay.Dashboard.Router do
   end
 
   scope "/" do
+    forward("/health", TeamJay.Dashboard.HealthPlug)
     forward("/healthz", TeamJay.Dashboard.HealthPlug)
   end
 

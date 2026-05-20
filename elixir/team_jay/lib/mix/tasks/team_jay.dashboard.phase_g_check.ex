@@ -1,13 +1,13 @@
 defmodule Mix.Tasks.TeamJay.Dashboard.PhaseGCheck do
   @moduledoc """
-  Visibility v3.3 Phase G dashboard smoke.
+  Visibility v3.4 Phase G dashboard smoke.
 
   Default mode is static and non-mutating. Use `--apply-schema` to create the
   append-only project schema, and `--seed` to insert deterministic marker data.
   """
   use Mix.Task
 
-  @shortdoc "Checks TeamJay Visibility v3.3 Phase G wiring"
+  @shortdoc "Checks TeamJay Visibility v3.4 Phase G wiring"
 
   @impl true
   def run(args) do
@@ -41,12 +41,14 @@ defmodule Mix.Tasks.TeamJay.Dashboard.PhaseGCheck do
       read!("priv/repo/migrations/20260516000001_create_project_visibility_schema.exs")
 
     config_source = read!(Path.join(repo_root, "config/projects.yaml"))
-    v33_doc = read!(Path.join(repo_root, "docs/strategy/VISIBILITY_SYSTEM_v3.3.md"))
+    visibility_doc = read_visibility_doc!(repo_root)
     marker_counts = TeamJay.Dashboard.ProjectVisibility.marker_counts()
     schema_ready? = schema_ready_readonly?()
 
     checks = %{
-      v33_doc_authority: String.contains?(v33_doc, "v3.3 본질 100% 도달 조건"),
+      visibility_doc_authority:
+        String.contains?(visibility_doc, "v3.4 = v3.3") or
+          String.contains?(visibility_doc, "v3.3 본질 100% 도달 조건"),
       phase_g_header: String.contains?(dashboard_source, "Phase G • 영역 1~11"),
       area_10_rendered:
         String.contains?(dashboard_source, "project_milestone_board") and
@@ -114,7 +116,7 @@ defmodule Mix.Tasks.TeamJay.Dashboard.PhaseGCheck do
       marker_milestone_count: marker_counts.milestones >= 8,
       health_phase_g:
         String.contains?(health_source, ~s(@dashboard_phase "G")) and
-          String.contains?(health_source, "Visibility v3.3")
+          String.contains?(health_source, "Visibility v3.4")
     }
 
     result = %{
@@ -151,6 +153,19 @@ defmodule Mix.Tasks.TeamJay.Dashboard.PhaseGCheck do
       end
 
     File.read!(path)
+  end
+
+  defp read_visibility_doc!(repo_root) do
+    ["VISIBILITY_SYSTEM_v3.4.md", "VISIBILITY_SYSTEM_v3.3.md"]
+    |> Enum.map(&Path.join([repo_root, "docs/strategy", &1]))
+    |> Enum.find(&File.exists?/1)
+    |> case do
+      nil ->
+        raise File.Error, reason: :enoent, action: "read file", path: "VISIBILITY_SYSTEM_v3.4.md"
+
+      path ->
+        File.read!(path)
+    end
   end
 
   defp repo_root do

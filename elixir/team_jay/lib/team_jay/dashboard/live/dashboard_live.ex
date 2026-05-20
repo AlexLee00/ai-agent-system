@@ -1454,8 +1454,8 @@ defmodule TeamJay.Dashboard.Live.DashboardLive do
           conflicts: 0
         },
         gantt: %{
-          start_date: Date.utc_today(),
-          end_date: Date.utc_today(),
+          start_date: kst_today(),
+          end_date: kst_today(),
           dates: [],
           projects: [],
           tasks_by_project: %{},
@@ -1600,7 +1600,7 @@ defmodule TeamJay.Dashboard.Live.DashboardLive do
 
   defp task_on_date?(task, date) do
     start_date = to_date(task.started_at)
-    end_date = task.finished_at |> to_date() |> Kernel.||(Date.utc_today())
+    end_date = task.finished_at |> to_date() |> Kernel.||(kst_today())
     Date.compare(date, start_date) in [:eq, :gt] and Date.compare(date, end_date) in [:eq, :lt]
   rescue
     _ -> false
@@ -2292,7 +2292,7 @@ defmodule TeamJay.Dashboard.Live.DashboardLive do
   defp days_since_phase_start(nil), do: 0
 
   defp days_since_phase_start(%Date{} = since) do
-    Date.diff(Date.utc_today(), since)
+    Date.diff(kst_today(), since)
     |> max(0)
   end
 
@@ -2307,13 +2307,22 @@ defmodule TeamJay.Dashboard.Live.DashboardLive do
 
   # cycle #62 A: 영역 10 task started_at으로부터 며칠 지났는지 (시드 간극 가시화)
   defp days_since_started(nil), do: 0
+
   defp days_since_started(%DateTime{} = dt) do
     DateTime.diff(DateTime.utc_now(), dt, :day) |> max(0)
   end
+
   defp days_since_started(_), do: 0
+
+  defp kst_today do
+    DateTime.utc_now()
+    |> DateTime.add(@kst_offset_seconds, :second)
+    |> DateTime.to_date()
+  end
 
   defp task_stale_class(started_at) do
     days = days_since_started(started_at)
+
     cond do
       days >= 7 -> "text-yellow-500/80"
       days >= 3 -> "text-gray-400"

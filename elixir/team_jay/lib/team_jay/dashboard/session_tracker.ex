@@ -1,6 +1,6 @@
 defmodule TeamJay.Dashboard.SessionTracker do
   @moduledoc """
-  Visibility v3.3 active-session helper.
+  Visibility v3.4 active-session helper.
 
   Keeps conflict detection out of the LiveView adapter and makes the
   "active sessions + touched file overlap" rule testable.

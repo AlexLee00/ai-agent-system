@@ -1,6 +1,6 @@
 defmodule TeamJay.Dashboard.MilestoneSentry do
   @moduledoc """
-  Visibility v3.3 milestone status sentry.
+  Visibility v3.4 milestone status sentry.
 
   The sentry periodically reconciles project milestones without destructive
   writes: done-linked milestones become `achieved`, overdue incomplete

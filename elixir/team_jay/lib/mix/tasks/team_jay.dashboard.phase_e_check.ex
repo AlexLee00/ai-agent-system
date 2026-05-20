@@ -34,7 +34,7 @@ defmodule Mix.Tasks.TeamJay.Dashboard.PhaseECheck do
       health_phase_e:
         Regex.match?(~r/@dashboard_phase "(E|F|G)"/, health_plug_source) and
           (String.contains?(health_plug_source, "Langfuse") or
-             String.contains?(health_plug_source, "Visibility v3.3")),
+             String.contains?(health_plug_source, "Visibility v3.4")),
       trace_column_rendered:
         String.contains?(dashboard_source, "langfuse_trace_url") and
           String.contains?(dashboard_source, "target=\"_blank\"") and
