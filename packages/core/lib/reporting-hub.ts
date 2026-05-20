@@ -58,6 +58,7 @@ type NormalizedEvent = {
   alarm_type?: string;
   actionability?: string;
   incident_key?: string;
+  dedupe_minutes?: number;
   title?: string;
 };
 
@@ -72,6 +73,10 @@ type EventInput = {
   alarm_type?: string;
   actionability?: string;
   incident_key?: string;
+  dedupe_minutes?: number;
+  dedupeMinutes?: number;
+  cooldown_minutes?: number;
+  cooldownMinutes?: number;
   title?: string;
 };
 
@@ -481,6 +486,12 @@ function getDefaultCooldownMs(alertLevel: number): number {
   return 30 * 60_000;
 }
 
+function normalizeDedupeMinutes(value: unknown): number | undefined {
+  const normalized = Number(value);
+  if (!Number.isFinite(normalized)) return undefined;
+  return Math.max(1, Math.min(1440, Math.trunc(normalized)));
+}
+
 function getKstHour(): number {
   return new Date(Date.now() + 9 * 60 * 60 * 1000).getUTCHours();
 }
@@ -562,6 +573,10 @@ export function normalizeEvent({
   alarm_type,
   actionability,
   incident_key,
+  dedupe_minutes,
+  dedupeMinutes,
+  cooldown_minutes,
+  cooldownMinutes,
   title,
 }: {
   from_bot?: string;
@@ -574,6 +589,10 @@ export function normalizeEvent({
   alarm_type?: string;
   actionability?: string;
   incident_key?: string;
+  dedupe_minutes?: number;
+  dedupeMinutes?: number;
+  cooldown_minutes?: number;
+  cooldownMinutes?: number;
   title?: string;
 } = {}): NormalizedEvent {
   const validated = validatePayloadSchema(payload);
@@ -608,6 +627,9 @@ export function normalizeEvent({
     alarm_type: normalizeDisplayText(alarm_type) || undefined,
     actionability: normalizeDisplayText(actionability) || undefined,
     incident_key: normalizeDisplayText(incident_key) || undefined,
+    dedupe_minutes: normalizeDedupeMinutes(
+      dedupe_minutes ?? dedupeMinutes ?? cooldown_minutes ?? cooldownMinutes,
+    ),
     title: normalizeDisplayText(title) || undefined,
   };
   recordPayloadWarnings(normalized, warnings);
@@ -694,6 +716,7 @@ export async function publishToWebhook({
       alarmType: normalized.alarm_type,
       actionability: normalized.actionability,
       incidentKey: normalized.incident_key,
+      dedupeMinutes: normalized.dedupe_minutes,
       title: normalized.title,
     });
     return {

@@ -55,6 +55,7 @@ const { buildIssueHints, rememberHealthEvent } = createHealthMemoryHelper({
 const NAVER_LOG = '/tmp/naver-ops-mode.log';
 const TODAY_AUDIT_LOG = '/tmp/today-audit.log';
 const LOG_STALE_MS = 15 * 60 * 1000; // 15분 무활동 → 크래시루프 의심
+const TODAY_AUDIT_DEDUPE_MINUTES = 12 * 60;
 
 function getCurrentKstParts() {
   const now = new Date(Date.now() + 9 * 60 * 60 * 1000);
@@ -269,37 +270,44 @@ async function main() {
 
   // 5. today-audit 최근 실행 결과 체크
   const todayAudit = readTodayAuditStatus();
+  const todayAuditIncidentDate = getCurrentKstParts().isoDate.replace(/-/g, '');
   if (todayAudit.exists && todayAudit.missingTodayRun) {
-    const key = 'audit-missing:ai.ska.today-audit';
+    const key = `audit-missing:ai.ska.today-audit:${todayAuditIncidentDate}`;
     if (canAlert(state, key)) {
       issues.push({
         key,
         level: 3,
         msg: `⚠️ [스카 헬스] today-audit 오늘 실행 누락 의심\n오늘(${getCurrentKstParts().isoDate}) 성공 이력 없음`,
+        incidentKey: `reservation:ska:health_check:today_audit_missing:${todayAuditIncidentDate}`,
+        dedupeMinutes: TODAY_AUDIT_DEDUPE_MINUTES,
       });
     }
   } else if (todayAudit.exists && todayAudit.recentSuccess && todayAudit.summary?.failedCount > 0) {
-    const key = `audit-partial:ai.ska.today-audit:${todayAudit.summary.failedCount}`;
+    const key = `audit-partial:ai.ska.today-audit:${todayAuditIncidentDate}:${todayAudit.summary.failedCount}`;
     if (canAlert(state, key)) {
       issues.push({
         key,
         level: 2,
         msg: `⚠️ [스카 헬스] today-audit 내부 실패 감지\n확인 ${todayAudit.summary.okCount} / 차단추가 ${todayAudit.summary.blockedCount} / 해제 ${todayAudit.summary.unblockedCount} / 실패 ${todayAudit.summary.failedCount}`,
+        incidentKey: `reservation:ska:health_check:today_audit_partial:${todayAuditIncidentDate}:${todayAudit.summary.failedCount}`,
+        dedupeMinutes: TODAY_AUDIT_DEDUPE_MINUTES,
       });
     }
   } else if (todayAudit.exists && todayAudit.lastExitCode != null && todayAudit.lastExitCode !== 0) {
-    const key = `audit-failed:ai.ska.today-audit:${todayAudit.lastExitCode}`;
+    const key = `audit-failed:ai.ska.today-audit:${todayAuditIncidentDate}:${todayAudit.lastExitCode}`;
     if (canAlert(state, key)) {
       issues.push({
         key,
         level: 3,
         msg: `⚠️ [스카 헬스] today-audit 최근 실행 실패\n${todayAudit.lastCompletedLine || `exit code: ${todayAudit.lastExitCode}`}`,
+        incidentKey: `reservation:ska:health_check:today_audit_failed:${todayAuditIncidentDate}:${todayAudit.lastExitCode}`,
+        dedupeMinutes: TODAY_AUDIT_DEDUPE_MINUTES,
       });
     }
   } else if (todayAudit.exists && todayAudit.recentSuccess) {
     const prevKeys = Object.keys(state).filter((k) =>
       k.startsWith('audit-failed:ai.ska.today-audit:')
-      || k === 'audit-missing:ai.ska.today-audit'
+      || k.startsWith('audit-missing:ai.ska.today-audit:')
       || k.startsWith('audit-partial:ai.ska.today-audit:'));
     if (prevKeys.length > 0) {
       console.log('[헬스체크] today-audit 최근 성공 확인');
@@ -314,10 +322,17 @@ async function main() {
   }
 
   // 알림 발송 + 상태 기록
-  for (const { key, level, msg } of issues) {
+  for (const { key, level, msg, incidentKey, dedupeMinutes } of issues) {
     console.warn(`[헬스체크] 이슈 감지: ${msg}`);
     const memoryHints = await buildIssueHints(key, msg);
-    await publishReservationAlert({ from_bot: 'ska', event_type: 'health_check', alert_level: level, message: `${msg}${memoryHints}` });
+    await publishReservationAlert({
+      from_bot: 'ska',
+      event_type: 'health_check',
+      alert_level: level,
+      message: `${msg}${memoryHints}`,
+      incident_key: incidentKey,
+      dedupe_minutes: dedupeMinutes,
+    });
     await rememberHealthEvent(key, 'issue', msg, level);
     hsm.recordAlert(state, key);
   }

@@ -10,6 +10,11 @@ export interface PublishReservationAlertOptions {
   alert_level?: number;
   message: string;
   payload?: Record<string, unknown> | null;
+  incident_key?: string;
+  dedupe_minutes?: number;
+  dedupeMinutes?: number;
+  cooldown_minutes?: number;
+  cooldownMinutes?: number;
 }
 
 const ALERT_DEDUPE_PATH = path.join(os.tmpdir(), 'reservation-alert-dedupe.json');
@@ -70,6 +75,11 @@ export async function publishReservationAlert({
   alert_level = 2,
   message,
   payload,
+  incident_key,
+  dedupe_minutes,
+  dedupeMinutes,
+  cooldown_minutes,
+  cooldownMinutes,
 }: PublishReservationAlertOptions): Promise<boolean> {
   if (process.env.TELEGRAM_ENABLED === '0') {
     console.log('[publishReservationAlert] suppressed by TELEGRAM_ENABLED=0');
@@ -104,6 +114,8 @@ export async function publishReservationAlert({
       alert_level,
       message: lines.filter(Boolean).join('\n'),
       payload: payload || undefined,
+      incident_key,
+      dedupe_minutes: dedupe_minutes ?? dedupeMinutes ?? cooldown_minutes ?? cooldownMinutes,
     },
   });
   return result.ok === true;

@@ -200,6 +200,7 @@ function unitSmokeScripts(): string[] {
     'local-embedding-health-smoke.ts',
     'steward-local-embedding-alarm-smoke.ts',
     'retired-gateway-marker-precommit-smoke.ts',
+    'reservation-alarm-dedup-smoke.ts',
     'blog-alarm-dedup-smoke.ts',
     'alarm-activation-stage1-smoke.ts',
     'alarm-activation-stage2-smoke.ts',
