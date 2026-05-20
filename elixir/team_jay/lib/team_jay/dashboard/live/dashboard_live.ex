@@ -220,12 +220,18 @@ defmodule TeamJay.Dashboard.Live.DashboardLive do
   # Phase C: Andy/Jimmy 주기적 갱신
   def handle_info(:refresh_agents, socket) do
     team_health = safe_call(fn -> load_team_health() end, socket.assigns.team_health)
+    growth_cycle = safe_call(fn -> load_growth_cycle_status() end, socket.assigns.growth_cycle)
 
     growth_scheduler =
       safe_call(fn -> load_growth_scheduler_status() end, socket.assigns.growth_scheduler)
 
     Process.send_after(self(), :refresh_agents, 30_000)
-    {:noreply, assign(socket, team_health: team_health, growth_scheduler: growth_scheduler)}
+    {:noreply,
+     assign(socket,
+       team_health: team_health,
+       growth_cycle: growth_cycle,
+       growth_scheduler: growth_scheduler
+     )}
   end
 
   # Phase D: Sigma MAPE-K/Pod 상태와 Luna EventLake seed 주기 갱신
@@ -570,7 +576,7 @@ defmodule TeamJay.Dashboard.Live.DashboardLive do
       <!-- 다음 실행 -->
       <div class="flex items-center gap-2 text-xs text-gray-400 border-t border-gray-700 pt-3">
         <span>⏰ 다음 실행:</span>
-        <span class="text-yellow-400 font-medium">{next_cycle_label()}</span>
+        <span class="text-yellow-400 font-medium">{next_cycle_label(@growth_scheduler)}</span>
       </div>
       <div class="flex items-center gap-2 text-xs text-gray-400">
         <span>launchd:</span>
@@ -578,15 +584,83 @@ defmodule TeamJay.Dashboard.Live.DashboardLive do
           ai.jay.growth {growth_scheduler_label(@growth_scheduler)}
         </span>
       </div>
+      <%= if warning = growth_scheduler_warning(@growth_scheduler) do %>
+        <div class="text-[10px] text-orange-300">
+          ⚠️ {warning}
+        </div>
+      <% end %>
     </div>
     """
   end
 
   defp default_growth_scheduler do
-    %{label: "ai.jay.growth", loaded?: false, pid: nil, exit_status: nil, state: :unknown}
+    %{
+      label: "ai.jay.growth",
+      loaded?: false,
+      pid: nil,
+      exit_status: nil,
+      state: :unknown,
+      schedule: nil
+    }
   end
 
+  defp load_growth_cycle_status do
+    Jay.V2.GrowthCycle.status()
+    |> merge_growth_cycle_seed(load_growth_cycle_seed())
+  rescue
+    _ -> merge_growth_cycle_seed(%{}, load_growth_cycle_seed())
+  end
+
+  defp load_growth_cycle_seed do
+    sql = """
+    SELECT event_type, metadata, created_at
+    FROM agent.event_lake
+    WHERE event_type LIKE 'growth_cycle.%'
+       OR event_type IN ('growth_cycle_started', 'growth_cycle_completed')
+    ORDER BY created_at DESC, id DESC
+    LIMIT 1
+    """
+
+    case Jay.Core.Repo.query(sql, []) do
+      {:ok, %{rows: [[event_type, metadata, created_at] | _]}} ->
+        payload = metadata || %{}
+
+        %{
+          last_result: %{
+            date: get_in(payload, ["payload", "date"]) || payload["date"],
+            teams_collected:
+              get_in(payload, ["payload", "teams"])
+              |> normalize_collection_count(payload["teams_collected"]),
+            briefing_len: payload["briefing_len"],
+            source: event_type,
+            created_at: created_at
+          }
+        }
+
+      _ ->
+        %{}
+    end
+  rescue
+    _ -> %{}
+  end
+
+  defp merge_growth_cycle_seed(current, seed) when is_map(current) and is_map(seed) do
+    if current[:last_result] || current["last_result"] || current[:last_error] || current["last_error"] do
+      current
+    else
+      Map.merge(current, seed)
+    end
+  end
+
+  defp normalize_collection_count(value, fallback \\ 0)
+  defp normalize_collection_count(value, _fallback) when is_list(value), do: length(value)
+  defp normalize_collection_count(value, _fallback) when is_integer(value), do: value
+  defp normalize_collection_count(_value, fallback) when is_integer(fallback), do: fallback
+  defp normalize_collection_count(_value, _fallback), do: 0
+
   defp load_growth_scheduler_status do
+    schedule = load_growth_scheduler_schedule()
+
     case System.cmd("launchctl", ["list", "ai.jay.growth"], stderr_to_stdout: true) do
       {output, 0} ->
         %{
@@ -594,7 +668,8 @@ defmodule TeamJay.Dashboard.Live.DashboardLive do
           loaded?: true,
           pid: launchctl_integer(output, "PID"),
           exit_status: launchctl_integer(output, "LastExitStatus"),
-          state: :loaded
+          state: :loaded,
+          schedule: schedule
         }
 
       {output, _status} ->
@@ -604,11 +679,34 @@ defmodule TeamJay.Dashboard.Live.DashboardLive do
           pid: nil,
           exit_status: nil,
           state:
-            if(String.contains?(output, "Could not find service"), do: :not_loaded, else: :error)
+            if(String.contains?(output, "Could not find service"), do: :not_loaded, else: :error),
+          schedule: schedule
         }
     end
   rescue
     _ -> default_growth_scheduler()
+  end
+
+  defp load_growth_scheduler_schedule do
+    path = Path.expand("~/Library/LaunchAgents/ai.jay.growth.plist")
+
+    case System.cmd("plutil", ["-extract", "StartCalendarInterval", "json", "-o", "-", path],
+           stderr_to_stdout: true
+         ) do
+      {output, 0} ->
+        with {:ok, %{"Hour" => hour, "Minute" => minute}} <- Jason.decode(output),
+             true <- is_integer(hour),
+             true <- is_integer(minute) do
+          %{hour: hour, minute: minute, source: path}
+        else
+          _ -> nil
+        end
+
+      _ ->
+        nil
+    end
+  rescue
+    _ -> nil
   end
 
   defp launchctl_integer(output, key) when is_binary(output) do
@@ -636,6 +734,15 @@ defmodule TeamJay.Dashboard.Live.DashboardLive do
 
   defp growth_scheduler_class(_),
     do: "text-orange-400 font-medium"
+
+  defp growth_scheduler_warning(%{schedule: %{hour: 6, minute: 30}}), do: nil
+
+  defp growth_scheduler_warning(%{schedule: %{hour: hour, minute: minute}})
+       when is_integer(hour) and is_integer(minute) do
+    "문서 기준 06:30 KST와 launchd 설정 #{pad2(hour)}:#{pad2(minute)} KST가 다릅니다."
+  end
+
+  defp growth_scheduler_warning(_), do: "launchd StartCalendarInterval을 읽지 못했습니다."
 
   # ── 영역 4: EventLake 보드 ───────────────────────────────────────
 
@@ -2236,7 +2343,7 @@ defmodule TeamJay.Dashboard.Live.DashboardLive do
         last_escalation_at: nil
       })
 
-    growth_cycle = safe_call(fn -> Jay.V2.GrowthCycle.status() end, %{})
+    growth_cycle = safe_call(fn -> load_growth_cycle_status() end, %{})
 
     growth_scheduler =
       safe_call(fn -> load_growth_scheduler_status() end, default_growth_scheduler())
@@ -2589,20 +2696,21 @@ defmodule TeamJay.Dashboard.Live.DashboardLive do
     |> Enum.take(n)
   end
 
-  defp next_cycle_label do
-    # 06:30 KST = 21:30 UTC
-    now = DateTime.utc_now()
-    target_hour = 21
-    target_min = 30
-    today_target = %{now | hour: target_hour, minute: target_min, second: 0, microsecond: {0, 0}}
+  defp next_cycle_label(%{schedule: %{hour: hour, minute: minute}})
+       when is_integer(hour) and is_integer(minute) do
+    kst_now = DateTime.utc_now() |> DateTime.add(9 * 60 * 60, :second)
+    today_target = %{kst_now | hour: hour, minute: minute, second: 0, microsecond: {0, 0}}
+    time_label = "#{pad2(hour)}:#{pad2(minute)} KST"
 
-    if DateTime.compare(now, today_target) == :gt do
-      "내일 06:30 KST"
+    if DateTime.compare(kst_now, today_target) == :gt do
+      "내일 #{time_label}"
     else
-      diff_secs = DateTime.diff(today_target, now)
+      diff_secs = DateTime.diff(today_target, kst_now)
       hours = div(diff_secs, 3600)
       mins = div(rem(diff_secs, 3600), 60)
-      "오늘 06:30 KST (#{hours}시간 #{mins}분 후)"
+      "오늘 #{time_label} (#{hours}시간 #{mins}분 후)"
     end
   end
+
+  defp next_cycle_label(_), do: "스케줄 미확인"
 end
