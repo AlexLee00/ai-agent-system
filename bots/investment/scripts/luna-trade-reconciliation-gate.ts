@@ -4,6 +4,7 @@
 import assert from 'node:assert/strict';
 import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
 import { isReconcileAcked, parseReconcileBlockMeta } from './luna-reconcile-blocker-report.ts';
+import { isExpectedExecutionPolicyBlock } from '../team/hephaestos/execution-failure.ts';
 import * as db from '../shared/db.ts';
 
 const HARD_BLOCK_CODES = new Set([
@@ -31,18 +32,24 @@ function argValue(name, fallback = null) {
 
 function summarizeRows(rows = []) {
   const byStatus = {};
+  const rawByStatus = {};
   const byBlockCode = {};
   let pendingReconcile = 0;
   let hardReconcile = 0;
   let acknowledged = 0;
   let firedEntryTriggers = 0;
   let executed = 0;
+  let policyBlocked = 0;
   for (const row of rows) {
     const status = String(row.status || 'unknown');
     const blockCode = String(row.block_code || '').trim() || 'none';
+    const expectedPolicyBlock = isExpectedExecutionPolicyBlock(blockCode);
+    const effectiveStatus = expectedPolicyBlock ? 'blocked' : status;
     const meta = parseReconcileBlockMeta(row.block_meta);
-    byStatus[status] = (byStatus[status] || 0) + 1;
+    rawByStatus[status] = (rawByStatus[status] || 0) + 1;
+    byStatus[effectiveStatus] = (byStatus[effectiveStatus] || 0) + 1;
     byBlockCode[blockCode] = (byBlockCode[blockCode] || 0) + 1;
+    if (expectedPolicyBlock) policyBlocked++;
     if (isReconcileAcked(meta)) {
       acknowledged++;
       if (meta?.entryTrigger?.state === 'fired' || meta?.event_type === 'autonomous_action_executed') firedEntryTriggers++;
@@ -54,7 +61,7 @@ function summarizeRows(rows = []) {
     if (meta?.entryTrigger?.state === 'fired' || meta?.event_type === 'autonomous_action_executed') firedEntryTriggers++;
     if (status === 'executed') executed++;
   }
-  return { total: rows.length, byStatus, byBlockCode, pendingReconcile, hardReconcile, acknowledged, firedEntryTriggers, executed };
+  return { total: rows.length, byStatus, rawByStatus, byBlockCode, pendingReconcile, hardReconcile, policyBlocked, acknowledged, firedEntryTriggers, executed };
 }
 
 async function loadRecentSignals({ exchange = 'binance', hours = 6, limit = 200 } = {}) {
@@ -151,6 +158,12 @@ export async function runLunaTradeReconciliationGateSmoke() {
   assert.equal(syntheticBlocked.hardReconcile, 1);
   assert.equal(syntheticBlocked.pendingReconcile, 1);
   assert.equal(syntheticBlocked.acknowledged, 1);
+  const syntheticPolicyBlocked = summarizeRows([
+    { status: 'failed', block_code: 'live_position_reentry_blocked', block_meta: {} },
+  ]);
+  assert.equal(syntheticPolicyBlocked.policyBlocked, 1);
+  assert.equal(syntheticPolicyBlocked.byStatus.blocked, 1);
+  assert.equal(syntheticPolicyBlocked.rawByStatus.failed, 1);
   return { ok: true, syntheticClear, syntheticBlocked };
 }
 

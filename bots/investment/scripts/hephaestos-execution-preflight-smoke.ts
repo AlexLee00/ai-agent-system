@@ -3,7 +3,11 @@
 
 import assert from 'node:assert/strict';
 import { buildHephaestosExecutionPreflight } from '../team/hephaestos/execution-preflight.ts';
-import { createSignalFailurePersister } from '../team/hephaestos/execution-failure.ts';
+import {
+  createSignalFailurePersister,
+  isExpectedExecutionPolicyBlock,
+  rejectExecution,
+} from '../team/hephaestos/execution-failure.ts';
 
 const preflight = await buildHephaestosExecutionPreflight({
   id: 'sig-preflight',
@@ -47,11 +51,27 @@ assert.equal(captured.payload.code, 'test_code');
 assert.equal(captured.payload.meta.symbol, 'ORCA/USDT');
 assert.equal(captured.payload.meta.detail, 'x');
 
+let reentryPersisted = null;
+const reentryReject = await rejectExecution({
+  persistFailure: async (reason, payload) => {
+    reentryPersisted = { reason, payload };
+  },
+  symbol: 'ORCA/USDT',
+  action: 'BUY',
+  reason: '동일 LIVE 포지션 보유 중 — 추가매수 차단',
+  code: 'live_position_reentry_blocked',
+  notify: 'none',
+});
+assert.equal(reentryReject.success, false);
+assert.equal(isExpectedExecutionPolicyBlock('live_position_reentry_blocked'), true);
+assert.equal(reentryPersisted.payload.status, 'blocked');
+
 const payload = {
   ok: true,
   smoke: 'hephaestos-execution-preflight',
   context: preflight.executionContext,
   captured,
+  reentryPolicyBlockStatus: reentryPersisted.payload.status,
 };
 
 if (process.argv.includes('--json')) {

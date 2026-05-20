@@ -11,6 +11,17 @@
 import { notifyCircuitBreaker, notifyTradeSkip } from '../../shared/report.ts';
 import { resolveExpectedSellNoopStatus } from '../../shared/trade-data-derived-guards.ts';
 
+const EXPECTED_POLICY_BLOCK_CODES = new Set([
+  'position_mode_conflict',
+  'paper_position_reentry_blocked',
+  'live_position_reentry_blocked',
+  'same_day_reentry_blocked',
+]);
+
+export function isExpectedExecutionPolicyBlock(code = '') {
+  return EXPECTED_POLICY_BLOCK_CODES.has(String(code || '').trim());
+}
+
 export function createSignalFailurePersister({
   db,
   signalId,
@@ -56,7 +67,8 @@ export async function rejectExecution({
   meta = {},
   notify = 'skip',
 }) {
-  await persistFailure(reason, { code, meta });
+  const status = isExpectedExecutionPolicyBlock(code) ? 'blocked' : null;
+  await persistFailure(reason, { code, meta, status });
   if (notify === 'circuit') {
     notifyCircuitBreaker({ reason, type: meta.circuitType ?? null }).catch(() => {});
   } else if (notify === 'skip') {
@@ -74,5 +86,6 @@ export async function rejectExecution({
 
 export default {
   createSignalFailurePersister,
+  isExpectedExecutionPolicyBlock,
   rejectExecution,
 };
