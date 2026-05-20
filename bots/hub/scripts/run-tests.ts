@@ -112,6 +112,7 @@ function unitSmokeScripts(): string[] {
     'legacy-gateway-admin-guard-smoke.ts',
     'public-api-optional-smoke.ts',
     legacyIsolationScript('claude'),
+    'claude-dexter-quickcheck-disk-smoke.ts',
     legacyIsolationScript('investment'),
     legacyIsolationScript('reservation'),
     'llm-control-independence-smoke.ts',
