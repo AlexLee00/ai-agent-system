@@ -583,6 +583,12 @@ function assertLivePublishAllowed({ tableOk = false, oneOffLiveTest = false, fix
   };
 }
 
+function shouldSendPublishSuccessTelegram({ args = {}, liveGate = {} } = {}) {
+  const oneOffLiveTest = args.oneOffLiveTest === true || liveGate?.mode === 'one_off_live_test';
+  if (!oneOffLiveTest) return true;
+  return process.env.EDUX_NOTIFY_ONE_OFF_LIVE_TEST === 'true';
+}
+
 function emitJsonIfRequested(enabled, payload) {
   if (enabled) console.log(JSON.stringify(payload, null, 2));
 }
@@ -626,6 +632,7 @@ module.exports = {
   writeDryRunArtifact,
   loadPromotionGateReport,
   assertLivePublishAllowed,
+  shouldSendPublishSuccessTelegram,
   emitJsonIfRequested,
   redact,
   postUrlFor,

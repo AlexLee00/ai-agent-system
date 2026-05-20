@@ -11,6 +11,7 @@ const {
   resolvePublishLogSafetyMetadata,
   buildLunaEvidenceContentPreview,
   buildLunaEvidenceSummary,
+  shouldSendPublishSuccessTelegram,
 } = require('../lib/edux-runtime-support.ts');
 
 const EDUX_ROOT = path.join(env.PROJECT_ROOT, 'bots', 'edu-x');
@@ -45,6 +46,18 @@ function main() {
   assert.equal(oneOffSafety.testPost, true, 'one-off live test must be flagged as testPost');
   assert.equal(oneOffSafety.excludeFromLunaEvidence, true, 'one-off live test must be excluded from Luna evidence');
   assert.equal(oneOffSafety.lunaEvidencePolicy, 'exclude_test_post');
+  assert.equal(
+    shouldSendPublishSuccessTelegram({ args: { oneOffLiveTest: true }, liveGate: { mode: 'one_off_live_test' } }),
+    false,
+    'one-off live test success telegram must be suppressed by default',
+  );
+  process.env.EDUX_NOTIFY_ONE_OFF_LIVE_TEST = 'true';
+  assert.equal(
+    shouldSendPublishSuccessTelegram({ args: { oneOffLiveTest: true }, liveGate: { mode: 'one_off_live_test' } }),
+    true,
+    'one-off live test success telegram can be explicitly enabled',
+  );
+  delete process.env.EDUX_NOTIFY_ONE_OFF_LIVE_TEST;
 
   const productionSafety = resolvePublishLogSafetyMetadata({
     title: '05/20 BTC/USDT 시황 카드',
@@ -52,6 +65,11 @@ function main() {
   });
   assert.equal(productionSafety.testPost, false, 'normal publish must not be marked as testPost');
   assert.equal(productionSafety.excludeFromLunaEvidence, false, 'normal publish remains eligible for Luna shadow evidence');
+  assert.equal(
+    shouldSendPublishSuccessTelegram({ args: {}, liveGate: { mode: 'promotion_gate' } }),
+    true,
+    'normal publish success telegram remains enabled',
+  );
 
   const htmlPreview = buildLunaEvidenceContentPreview({
     title: '05/20 BTC/USDT 시황 카드',

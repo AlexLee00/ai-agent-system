@@ -37,6 +37,7 @@ const {
   formatContentForEduXWeb,
   writeDryRunArtifact,
   assertLivePublishAllowed,
+  shouldSendPublishSuccessTelegram,
   emitJsonIfRequested,
   postUrlFor,
 } = require('../lib/edux-runtime-support.ts');
@@ -581,7 +582,11 @@ async function main() {
   });
 
   console.log(`[edu-x/crypto] ✅ 발행 성공: ${postUrl} (${elapsed}s)`);
-  await sendTelegram(`✅ [edu-x/crypto] ${slot} 발행 완료!\n📝 ${publishTitle}\n🔗 ${postUrl}\n📊 ${finalContent.length}자`);
+  if (shouldSendPublishSuccessTelegram({ args: ARGS, liveGate })) {
+    await sendTelegram(`✅ [edu-x/crypto] ${slot} 발행 완료!\n📝 ${publishTitle}\n🔗 ${postUrl}\n📊 ${finalContent.length}자`);
+  } else {
+    console.log('[edu-x/crypto] one-off live test 성공 알림 억제됨');
+  }
   emitJsonIfRequested(ARGS.json, { ok: true, category: CATEGORY, slot, status: 'success', postId, postUrl, quality });
 }
 

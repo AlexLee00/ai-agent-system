@@ -26,6 +26,7 @@ const {
   formatContentForEduXWeb,
   writeDryRunArtifact,
   assertLivePublishAllowed,
+  shouldSendPublishSuccessTelegram,
   emitJsonIfRequested,
   postUrlFor,
 } = require('../lib/edux-runtime-support.ts');
@@ -281,7 +282,11 @@ async function main() {
 
   await logPublish({ postId, postUrl, title: publishTitle, content: finalContent, imageUrls, status: 'success', metadata: { elapsedSec: Number(elapsed), liveGate, imageAttachmentDisabled: true, contentFormat: 'html_blocks' } });
   console.log(`[edu-x/overseas] ✅ 발행 성공: ${postUrl} (${elapsed}s)`);
-  await sendTelegram(`✅ [edu-x/overseas] ${SLOT} 발행 완료!\n📝 ${publishTitle}\n🔗 ${postUrl}`);
+  if (shouldSendPublishSuccessTelegram({ args: ARGS, liveGate })) {
+    await sendTelegram(`✅ [edu-x/overseas] ${SLOT} 발행 완료!\n📝 ${publishTitle}\n🔗 ${postUrl}`);
+  } else {
+    console.log('[edu-x/overseas] one-off live test 성공 알림 억제됨');
+  }
   emitJsonIfRequested(ARGS.json, { ok: true, category: CATEGORY, slot: SLOT, status: 'success', postId, postUrl, quality });
 }
 
