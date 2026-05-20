@@ -9,6 +9,9 @@
 	<array>
 		<string>/opt/homebrew/bin/mix</string>
 		<string>jay.growth_cycle.run</string>
+		<string>--no-actions</string>
+		<string>--no-notify</string>
+		<string>--no-clean-day</string>
 	</array>
 	<key>WorkingDirectory</key>
 	<string>/Users/alexlee/projects/ai-agent-system/elixir/team_jay</string>

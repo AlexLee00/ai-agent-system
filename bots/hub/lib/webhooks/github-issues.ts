@@ -181,11 +181,11 @@ export async function handleIssueLabeled(issue: any): Promise<void> {
 
 /**
  * GitHub Webhook Signature 검증 (HMAC-SHA256)
- * GITHUB_WEBHOOK_SECRET 미설정 시 검증 건너뜀
+ * 운영 기본값은 fail-closed: GITHUB_WEBHOOK_SECRET 누락 시 거부한다.
  */
 export function verifyGithubSignature(payload: Buffer, signature: string | undefined): boolean {
   const secret = process.env.GITHUB_WEBHOOK_SECRET;
-  if (!secret) return true;
+  if (!secret) return false;
   if (!signature) return false;
 
   const expected = `sha256=${crypto.createHmac('sha256', secret).update(payload).digest('hex')}`;

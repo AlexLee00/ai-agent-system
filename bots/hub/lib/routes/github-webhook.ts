@@ -2,7 +2,7 @@
  * POST /github/webhook — GitHub Issues Webhook 수신 엔드포인트
  *
  * Hub Bearer 인증 범위 밖(/hub/ 아님) — GitHub Webhook Signature로 검증
- * GITHUB_WEBHOOK_SECRET 설정 시 X-Hub-Signature-256 검증 필수
+ * GITHUB_WEBHOOK_SECRET 기반 X-Hub-Signature-256 검증 필수
  */
 
 const {
@@ -17,17 +17,15 @@ export async function githubWebhookRoute(req: any, res: any) {
   const signature = req.headers['x-hub-signature-256'] as string | undefined;
   const event = req.headers['x-github-event'] as string | undefined;
   const rawBody: Buffer | undefined = req.rawBody;
-  const hasSecret = !!process.env.GITHUB_WEBHOOK_SECRET;
 
-  if (hasSecret) {
-    if (!rawBody) {
-      console.error('[github-webhook] GITHUB_WEBHOOK_SECRET 설정됐으나 rawBody 없음');
-      return res.status(500).json({ ok: false, error: 'server config error: rawBody unavailable' });
-    }
-    if (!verifyGithubSignature(rawBody, signature)) {
-      console.warn('[github-webhook] 서명 검증 실패');
-      return res.status(401).json({ ok: false, error: 'invalid signature' });
-    }
+  if (!rawBody) {
+    console.error('[github-webhook] rawBody 없음');
+    return res.status(500).json({ ok: false, error: 'server config error: rawBody unavailable' });
+  }
+
+  if (!verifyGithubSignature(rawBody, signature)) {
+    console.warn('[github-webhook] 서명 검증 실패 또는 GITHUB_WEBHOOK_SECRET 누락');
+    return res.status(401).json({ ok: false, error: 'invalid signature' });
   }
 
   if (event !== 'issues') {

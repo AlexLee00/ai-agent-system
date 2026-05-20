@@ -104,19 +104,19 @@ async function test_verifyGithubSignature_invalid_hmac() {
   console.log('✅ verifyGithubSignature: invalid HMAC rejected');
 }
 
-async function test_verifyGithubSignature_no_secret_always_passes() {
+async function test_verifyGithubSignature_no_secret_fails_closed() {
   delete require.cache[HANDLER_PATH];
   const { verifyGithubSignature } = require(HANDLER_PATH);
   const originalSecret = process.env.GITHUB_WEBHOOK_SECRET;
   delete process.env.GITHUB_WEBHOOK_SECRET;
   try {
-    assert.ok(verifyGithubSignature(Buffer.from('{}'), undefined), 'no secret → always pass');
-    assert.ok(verifyGithubSignature(Buffer.from('{}'), 'anything'), 'no secret → always pass with any sig');
+    assert.strictEqual(verifyGithubSignature(Buffer.from('{}'), undefined), false, 'no secret → fail closed');
+    assert.strictEqual(verifyGithubSignature(Buffer.from('{}'), 'anything'), false, 'no secret → reject any sig');
   } finally {
     if (originalSecret !== undefined) process.env.GITHUB_WEBHOOK_SECRET = originalSecret;
     delete require.cache[HANDLER_PATH];
   }
-  console.log('✅ verifyGithubSignature: no GITHUB_WEBHOOK_SECRET → always passes');
+  console.log('✅ verifyGithubSignature: no GITHUB_WEBHOOK_SECRET → fail closed');
 }
 
 async function test_verifyGithubSignature_missing_signature_fails_when_secret_set() {
@@ -267,7 +267,7 @@ async function main() {
   const tests = [
     test_verifyGithubSignature_valid_hmac,
     test_verifyGithubSignature_invalid_hmac,
-    test_verifyGithubSignature_no_secret_always_passes,
+    test_verifyGithubSignature_no_secret_fails_closed,
     test_verifyGithubSignature_missing_signature_fails_when_secret_set,
     test_handleIssueOpened_inserts_symphony_task,
     test_handleIssueOpened_skips_non_symphony_issues,
