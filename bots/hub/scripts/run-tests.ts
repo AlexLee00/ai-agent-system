@@ -14,8 +14,34 @@ type Step = {
   env?: NodeJS.ProcessEnv;
 };
 
+const NODE26_TSX_DEPRECATION_WARNING_FLAG = '--disable-warning=DEP0205';
+
+function mergeNodeOptions(...values: Array<string | undefined>): string {
+  const tokens = values
+    .flatMap((value) => String(value || '').split(/\s+/))
+    .map((value) => value.trim())
+    .filter(Boolean);
+
+  if (!tokens.includes(NODE26_TSX_DEPRECATION_WARNING_FLAG)) {
+    tokens.push(NODE26_TSX_DEPRECATION_WARNING_FLAG);
+  }
+
+  return Array.from(new Set(tokens)).join(' ');
+}
+
+function withNode26TsxWarningSuppressed(env: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
+  return {
+    ...env,
+    NODE_OPTIONS: mergeNodeOptions(env.NODE_OPTIONS),
+  };
+}
+
 function run(command: string, args: string[], cwd?: string, env?: NodeJS.ProcessEnv): number {
-  const result = spawnSync(command, args, { stdio: 'inherit', cwd, env: env || process.env });
+  const result = spawnSync(command, args, {
+    stdio: 'inherit',
+    cwd,
+    env: withNode26TsxWarningSuppressed(env || process.env),
+  });
   return Number(result.status ?? 1);
 }
 
@@ -54,10 +80,10 @@ function runSteps(steps: Step[]): void {
 }
 
 function unitJestStep(jestBin: string, hubRoot: string): Step {
-  const nodeOptions = [
-    process.env.NODE_OPTIONS || '',
+  const nodeOptions = mergeNodeOptions(
+    process.env.NODE_OPTIONS,
     `--localstorage-file=${path.join(os.tmpdir(), 'hub-jest-localstorage.sqlite')}`,
-  ].filter(Boolean).join(' ');
+  );
   return {
     label: 'jest unit suites',
     command: jestBin,
@@ -196,6 +222,7 @@ function unitSmokeScripts(): string[] {
     'oauth-refresh-lock-janitor-smoke.ts',
     'oauth-provider-boundary-smoke.ts',
     'oauth-monitor-launchd-smoke.ts',
+    'node26-tsx-deprecation-warning-smoke.ts',
     'runtime-profile-settings-smoke.ts',
     'server-hardening-smoke.ts',
     'local-embedding-health-smoke.ts',
@@ -223,7 +250,7 @@ function runNodeImportTest(hubRoot: string, relativeFile: string): void {
   runStep({
     label: relativeFile,
     command: process.execPath,
-    args: ['--import', 'tsx', '--test', relativeFile],
+    args: [NODE26_TSX_DEPRECATION_WARNING_FLAG, '--import', 'tsx', '--test', relativeFile],
     cwd: hubRoot,
   });
 }
