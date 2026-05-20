@@ -220,8 +220,12 @@ defmodule TeamJay.Dashboard.Live.DashboardLive do
   # Phase C: Andy/Jimmy 주기적 갱신
   def handle_info(:refresh_agents, socket) do
     team_health = safe_call(fn -> load_team_health() end, socket.assigns.team_health)
+
+    growth_scheduler =
+      safe_call(fn -> load_growth_scheduler_status() end, socket.assigns.growth_scheduler)
+
     Process.send_after(self(), :refresh_agents, 30_000)
-    {:noreply, assign(socket, team_health: team_health)}
+    {:noreply, assign(socket, team_health: team_health, growth_scheduler: growth_scheduler)}
   end
 
   # Phase D: Sigma MAPE-K/Pod 상태와 Luna EventLake seed 주기 갱신
@@ -349,6 +353,7 @@ defmodule TeamJay.Dashboard.Live.DashboardLive do
               growth_cycle={@growth_cycle}
               cycle_status={@cycle_status}
               teams_collected={@teams_collected}
+              growth_scheduler={@growth_scheduler}
             />
           </div>
 
@@ -507,6 +512,7 @@ defmodule TeamJay.Dashboard.Live.DashboardLive do
   attr(:growth_cycle, :map, required: true)
   attr(:cycle_status, :atom, required: true)
   attr(:teams_collected, :list, required: true)
+  attr(:growth_scheduler, :map, required: true)
 
   defp growth_cycle_board(assigns) do
     last_result = assigns.growth_cycle[:last_result]
@@ -566,9 +572,70 @@ defmodule TeamJay.Dashboard.Live.DashboardLive do
         <span>⏰ 다음 실행:</span>
         <span class="text-yellow-400 font-medium">{next_cycle_label()}</span>
       </div>
+      <div class="flex items-center gap-2 text-xs text-gray-400">
+        <span>launchd:</span>
+        <span class={growth_scheduler_class(@growth_scheduler)}>
+          ai.jay.growth {growth_scheduler_label(@growth_scheduler)}
+        </span>
+      </div>
     </div>
     """
   end
+
+  defp default_growth_scheduler do
+    %{label: "ai.jay.growth", loaded?: false, pid: nil, exit_status: nil, state: :unknown}
+  end
+
+  defp load_growth_scheduler_status do
+    case System.cmd("launchctl", ["list", "ai.jay.growth"], stderr_to_stdout: true) do
+      {output, 0} ->
+        %{
+          label: "ai.jay.growth",
+          loaded?: true,
+          pid: launchctl_integer(output, "PID"),
+          exit_status: launchctl_integer(output, "LastExitStatus"),
+          state: :loaded
+        }
+
+      {output, _status} ->
+        %{
+          label: "ai.jay.growth",
+          loaded?: false,
+          pid: nil,
+          exit_status: nil,
+          state:
+            if(String.contains?(output, "Could not find service"), do: :not_loaded, else: :error)
+        }
+    end
+  rescue
+    _ -> default_growth_scheduler()
+  end
+
+  defp launchctl_integer(output, key) when is_binary(output) do
+    case Regex.run(~r/"#{Regex.escape(key)}" = (-?\d+);/, output) do
+      [_, value] -> String.to_integer(value)
+      _ -> nil
+    end
+  end
+
+  defp growth_scheduler_label(%{loaded?: true, pid: pid}) when is_integer(pid) and pid > 0,
+    do: "loaded · pid #{pid}"
+
+  defp growth_scheduler_label(%{loaded?: true, exit_status: status}) when is_integer(status),
+    do: "loaded · idle · last exit #{status}"
+
+  defp growth_scheduler_label(%{loaded?: true}), do: "loaded"
+  defp growth_scheduler_label(%{state: :error}), do: "status error"
+  defp growth_scheduler_label(_), do: "not loaded"
+
+  defp growth_scheduler_class(%{loaded?: true}),
+    do: "text-green-400 font-medium"
+
+  defp growth_scheduler_class(%{state: :error}),
+    do: "text-red-400 font-medium"
+
+  defp growth_scheduler_class(_),
+    do: "text-orange-400 font-medium"
 
   # ── 영역 4: EventLake 보드 ───────────────────────────────────────
 
@@ -2170,6 +2237,10 @@ defmodule TeamJay.Dashboard.Live.DashboardLive do
       })
 
     growth_cycle = safe_call(fn -> Jay.V2.GrowthCycle.status() end, %{})
+
+    growth_scheduler =
+      safe_call(fn -> load_growth_scheduler_status() end, default_growth_scheduler())
+
     events = safe_call(fn -> Jay.Core.EventLake.get_recent(50) end, [])
 
     event_stats =
@@ -2185,6 +2256,7 @@ defmodule TeamJay.Dashboard.Live.DashboardLive do
     socket
     |> assign(:phase_status, phase_status)
     |> assign(:growth_cycle, growth_cycle)
+    |> assign(:growth_scheduler, growth_scheduler)
     |> assign(:cycle_status, :idle)
     |> assign(:cycle_start_payload, nil)
     |> assign(:teams_collected, [])

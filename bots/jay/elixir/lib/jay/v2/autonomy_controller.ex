@@ -15,6 +15,8 @@ defmodule Jay.V2.AutonomyController do
   require Logger
 
   @phase_key "jay.autonomy_phase"
+  @state_key "jay.autonomy_controller_state"
+  @state_event_type "autonomy.controller_state_snapshot"
   # 매일
   @check_interval_ms 24 * 60 * 60 * 1_000
 
@@ -61,7 +63,8 @@ defmodule Jay.V2.AutonomyController do
 
   @impl true
   def init(_opts) do
-    state = load_phase_from_db()
+    state = load_state_from_db()
+    save_state_to_db(state)
     Process.send_after(self(), :daily_check, @check_interval_ms)
     Logger.info("[AutonomyController] 시작! Phase #{state.phase} (#{phase_label(state.phase)})")
     {:ok, state}
@@ -85,7 +88,7 @@ defmodule Jay.V2.AutonomyController do
     send? =
       case state.phase do
         # 월요일
-        3 -> Date.day_of_week(Date.utc_today()) == 1
+        3 -> Date.day_of_week(kst_today()) == 1
         _ -> true
       end
 
@@ -133,11 +136,12 @@ defmodule Jay.V2.AutonomyController do
       if state.phase == 3 do
         Logger.warning("[AutonomyController] Phase 3 → Phase 2 다운그레이드 (마스터 개입)")
         broadcast_phase_change(3, 2)
-        save_phase_to_db(2)
-        %{new_state | phase: 2, phase_since: Date.utc_today()}
+        %{new_state | phase: 2, phase_since: kst_today()}
       else
         new_state
       end
+
+    save_state_to_db(new_state)
 
     {:noreply, new_state}
   end
@@ -153,18 +157,18 @@ defmodule Jay.V2.AutonomyController do
         state.phase == 1 and days >= 7 ->
           Logger.info("[AutonomyController] Phase 1 → Phase 2 전환! (#{days}일 연속 이상 없음)")
           broadcast_phase_change(1, 2)
-          save_phase_to_db(2)
-          %{new_state | phase: 2, phase_since: Date.utc_today(), consecutive_clean_days: 0}
+          %{new_state | phase: 2, phase_since: kst_today(), consecutive_clean_days: 0}
 
         state.phase == 2 and days >= 30 ->
           Logger.info("[AutonomyController] Phase 2 → Phase 3 전환! (#{days}일 연속 마스터 개입 없음)")
           broadcast_phase_change(2, 3)
-          save_phase_to_db(3)
-          %{new_state | phase: 3, phase_since: Date.utc_today(), consecutive_clean_days: 0}
+          %{new_state | phase: 3, phase_since: kst_today(), consecutive_clean_days: 0}
 
         true ->
           new_state
       end
+
+    save_state_to_db(new_state)
 
     {:noreply, new_state}
   end
@@ -242,7 +246,7 @@ defmodule Jay.V2.AutonomyController do
   end
 
   defp escalation_today? do
-    today = Date.utc_today() |> Date.to_string()
+    today = kst_today() |> Date.to_string()
 
     case Jay.Core.HubClient.pg_query(
            """
@@ -250,7 +254,8 @@ defmodule Jay.V2.AutonomyController do
              FROM agent.event_lake
              WHERE event_type = 'decision.escalate'
                AND metadata->>'source' = 'jay.decision_engine'
-               AND created_at >= '#{today}'::date
+               AND created_at >= (TIMESTAMP '#{today} 00:00:00' AT TIME ZONE 'Asia/Seoul')
+               AND created_at < ((TIMESTAMP '#{today} 00:00:00' + INTERVAL '1 day') AT TIME ZONE 'Asia/Seoul')
            """,
            "agent"
          ) do
@@ -266,51 +271,189 @@ defmodule Jay.V2.AutonomyController do
   # ────────────────────────────────────────────────────────────────
 
   defp kv_store_available? do
-    case Jay.Core.HubClient.pg_query(
-           """
-             SELECT to_regclass('agent.kv_store') AS table_name
-           """,
-           "agent"
-         ) do
-      {:ok, %{"rows" => [%{"table_name" => "agent.kv_store"}]}} -> true
+    with {:ok, _} <-
+           Jay.Core.HubClient.pg_query(
+             "CREATE SCHEMA IF NOT EXISTS agent",
+             "agent"
+           ),
+         {:ok, _} <-
+           Jay.Core.HubClient.pg_query(
+             """
+               CREATE TABLE IF NOT EXISTS agent.kv_store (
+                 key TEXT PRIMARY KEY,
+                 value JSONB NOT NULL,
+                 updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+               )
+             """,
+             "agent"
+           ) do
+      true
+    else
       _ -> false
     end
   rescue
     _ -> false
   end
 
-  defp load_phase_from_db do
+  defp load_state_from_db do
+    load_state_from_kv()
+    |> case do
+      {:ok, state} -> state
+      :error -> load_state_from_event_lake()
+    end
+    |> case do
+      {:ok, state} -> state
+      :error -> load_state_from_legacy_events()
+    end
+    |> case do
+      {:ok, state} -> state
+      :error -> default_state()
+    end
+  rescue
+    _ -> default_state()
+  end
+
+  defp load_state_from_kv do
     if not kv_store_available?() do
-      %__MODULE__{phase: 1, phase_since: Date.utc_today()}
+      :error
     else
-      case Jay.Core.HubClient.pg_query(
+      with {:ok, %{"rows" => [%{"value" => value}]}} <-
+             Jay.Core.HubClient.pg_query(
+               """
+                 SELECT value FROM agent.kv_store
+                 WHERE key = '#{@state_key}'
+                 LIMIT 1
+               """,
+               "agent"
+             ),
+           {:ok, state} <- state_from_payload(value) do
+        {:ok, state}
+      else
+        _ -> load_legacy_phase_from_kv()
+      end
+    end
+  rescue
+    _ -> :error
+  end
+
+  defp load_legacy_phase_from_kv do
+    with {:ok, %{"rows" => [%{"value" => value}]}} <-
+           Jay.Core.HubClient.pg_query(
              """
                SELECT value FROM agent.kv_store
                WHERE key = '#{@phase_key}'
                LIMIT 1
              """,
              "agent"
-           ) do
-        {:ok, %{"rows" => [%{"value" => v}]}} when is_integer(v) ->
-          %__MODULE__{phase: v, phase_since: Date.utc_today()}
-
-        _ ->
-          %__MODULE__{phase: 1, phase_since: Date.utc_today()}
-      end
+           ),
+         {:ok, phase} <- phase_from_payload(value) do
+      {:ok, %__MODULE__{phase: phase, phase_since: kst_today()}}
+    else
+      _ -> :error
     end
   rescue
-    _ -> %__MODULE__{phase: 1, phase_since: Date.utc_today()}
+    _ -> :error
   end
 
-  defp save_phase_to_db(phase) do
-    if not kv_store_available?() do
-      :ok
+  defp load_state_from_event_lake do
+    with {:ok, %{"rows" => [%{"metadata" => metadata}]}} <-
+           Jay.Core.HubClient.pg_query(
+             """
+               SELECT metadata
+               FROM agent.event_lake
+               WHERE event_type = '#{@state_event_type}'
+                 AND team = 'jay'
+                 AND bot_name = 'autonomy_controller'
+               ORDER BY created_at DESC, id DESC
+               LIMIT 1
+             """,
+             "agent"
+           ),
+         {:ok, state} <- state_from_payload(metadata) do
+      {:ok, state}
     else
+      _ -> :error
+    end
+  rescue
+    _ -> :error
+  end
+
+  defp load_state_from_legacy_events do
+    with {:ok, %{"rows" => [%{} = row]}} <-
+           Jay.Core.HubClient.pg_query(
+             """
+               WITH latest_phase AS (
+                 SELECT
+                   COALESCE(metadata->'payload'->>'to', metadata->>'to') AS phase,
+                   created_at AS phase_since_at
+                 FROM agent.event_lake
+                 WHERE event_type = 'autonomy.phase_changed'
+                 ORDER BY created_at DESC, id DESC
+                 LIMIT 1
+               ),
+               interventions AS (
+                 SELECT
+                   COUNT(*)::int AS master_intervention_count,
+                   MAX(created_at) AS last_escalation_at
+                 FROM agent.event_lake
+                 WHERE event_type LIKE 'master.intervention.%'
+                   AND created_at >= (SELECT phase_since_at FROM latest_phase)
+               )
+               SELECT
+                 latest_phase.phase,
+                 latest_phase.phase_since_at,
+                 interventions.master_intervention_count,
+                 interventions.last_escalation_at
+               FROM latest_phase
+               CROSS JOIN interventions
+             """,
+             "agent"
+           ) do
+      phase = row |> map_get("phase", 1) |> parse_int(1) |> normalize_phase()
+      phase_since_at = row |> map_get("phase_since_at") |> parse_datetime()
+      last_escalation_at = row |> map_get("last_escalation_at") |> parse_datetime()
+      phase_since = kst_date_from_datetime(phase_since_at) || kst_today()
+      clean_since = kst_date_from_datetime(last_escalation_at) || phase_since
+
+      {:ok,
+       %__MODULE__{
+         phase: phase,
+         phase_since: phase_since,
+         consecutive_clean_days: max(Date.diff(kst_today(), clean_since), 0),
+         last_escalation_at: last_escalation_at,
+         master_intervention_count:
+           row
+           |> map_get("master_intervention_count", 0)
+           |> parse_int(0)
+           |> max(0)
+       }}
+    else
+      _ -> :error
+    end
+  rescue
+    _ -> :error
+  end
+
+  defp save_state_to_db(%__MODULE__{} = state) do
+    save_state_to_kv(state)
+    record_state_snapshot_event(state)
+    :ok
+  rescue
+    _ -> :ok
+  end
+
+  defp save_state_to_kv(%__MODULE__{} = state) do
+    if kv_store_available?() do
+      state_json = state |> persisted_state_payload() |> Jason.encode!() |> sql_quote()
+      phase_json = state.phase |> Jason.encode!() |> sql_quote()
+
       Jay.Core.HubClient.pg_query(
         """
           INSERT INTO agent.kv_store (key, value, updated_at)
-          VALUES ('#{@phase_key}', #{phase}, NOW())
-          ON CONFLICT (key) DO UPDATE SET value = #{phase}, updated_at = NOW()
+          VALUES
+            ('#{@state_key}', '#{state_json}'::jsonb, NOW()),
+            ('#{@phase_key}', '#{phase_json}'::jsonb, NOW())
+          ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()
         """,
         "agent"
       )
@@ -318,6 +461,160 @@ defmodule Jay.V2.AutonomyController do
   rescue
     _ -> :ok
   end
+
+  defp record_state_snapshot_event(%__MODULE__{} = state) do
+    Jay.Core.EventLake.record(%{
+      event_type: @state_event_type,
+      team: "jay",
+      bot_name: "autonomy_controller",
+      severity: "info",
+      title: "자율화 상태 스냅샷",
+      message: "dashboard area 1 autonomy state persisted",
+      tags: ["jay", "autonomy", "dashboard", "state"],
+      metadata: persisted_state_payload(state)
+    })
+  rescue
+    _ -> :ok
+  end
+
+  defp state_from_payload(value) when is_map(value) do
+    {:ok,
+     %__MODULE__{
+       phase: value |> map_get("phase", 1) |> parse_int(1) |> normalize_phase(),
+       phase_since:
+         value
+         |> map_get("phase_since")
+         |> parse_date()
+         |> Kernel.||(kst_today()),
+       consecutive_clean_days:
+         value
+         |> map_get("consecutive_clean_days", 0)
+         |> parse_int(0)
+         |> max(0),
+       last_escalation_at:
+         value
+         |> map_get("last_escalation_at")
+         |> parse_datetime(),
+       master_intervention_count:
+         value
+         |> map_get("master_intervention_count", 0)
+         |> parse_int(0)
+         |> max(0)
+     }}
+  end
+
+  defp state_from_payload(value) when is_binary(value) do
+    case Jason.decode(value) do
+      {:ok, decoded} -> state_from_payload(decoded)
+      _ -> :error
+    end
+  end
+
+  defp state_from_payload(_), do: :error
+
+  defp phase_from_payload(value) when is_integer(value), do: {:ok, normalize_phase(value)}
+
+  defp phase_from_payload(value) when is_binary(value) do
+    case Integer.parse(value) do
+      {phase, ""} ->
+        {:ok, normalize_phase(phase)}
+
+      _ ->
+        case Jason.decode(value) do
+          {:ok, decoded} -> phase_from_payload(decoded)
+          _ -> :error
+        end
+    end
+  end
+
+  defp phase_from_payload(value) when is_float(value), do: {:ok, normalize_phase(round(value))}
+  defp phase_from_payload(_), do: :error
+
+  defp persisted_state_payload(%__MODULE__{} = state) do
+    %{
+      "phase" => normalize_phase(state.phase),
+      "phase_since" => date_to_iso8601(state.phase_since || kst_today()),
+      "consecutive_clean_days" => max(parse_int(state.consecutive_clean_days, 0), 0),
+      "last_escalation_at" => datetime_to_iso8601(state.last_escalation_at),
+      "master_intervention_count" => max(parse_int(state.master_intervention_count, 0), 0),
+      "timezone" => "Asia/Seoul",
+      "persisted_at" => DateTime.utc_now() |> DateTime.truncate(:second) |> DateTime.to_iso8601()
+    }
+  end
+
+  defp default_state do
+    %__MODULE__{phase: 1, phase_since: kst_today()}
+  end
+
+  defp kst_today do
+    DateTime.utc_now()
+    |> DateTime.add(9 * 60 * 60, :second)
+    |> DateTime.to_date()
+  end
+
+  defp parse_date(%Date{} = date), do: date
+
+  defp parse_date(value) when is_binary(value) do
+    case Date.from_iso8601(value) do
+      {:ok, date} -> date
+      _ -> nil
+    end
+  end
+
+  defp parse_date(_), do: nil
+
+  defp parse_datetime(%DateTime{} = datetime), do: datetime
+
+  defp parse_datetime(%NaiveDateTime{} = datetime), do: DateTime.from_naive!(datetime, "Etc/UTC")
+
+  defp parse_datetime(value) when is_binary(value) do
+    case DateTime.from_iso8601(value) do
+      {:ok, datetime, _offset} -> datetime
+      _ -> nil
+    end
+  end
+
+  defp parse_datetime(_), do: nil
+
+  defp kst_date_from_datetime(%DateTime{} = datetime) do
+    datetime
+    |> DateTime.add(9 * 60 * 60, :second)
+    |> DateTime.to_date()
+  end
+
+  defp kst_date_from_datetime(_), do: nil
+
+  defp date_to_iso8601(%Date{} = date), do: Date.to_iso8601(date)
+  defp date_to_iso8601(_), do: Date.to_iso8601(kst_today())
+
+  defp datetime_to_iso8601(%DateTime{} = datetime) do
+    datetime
+    |> DateTime.truncate(:second)
+    |> DateTime.to_iso8601()
+  end
+
+  defp datetime_to_iso8601(_), do: nil
+
+  defp parse_int(value, _default) when is_integer(value), do: value
+  defp parse_int(value, _default) when is_float(value), do: round(value)
+
+  defp parse_int(value, default) when is_binary(value) do
+    case Integer.parse(value) do
+      {int, ""} -> int
+      _ -> default
+    end
+  end
+
+  defp parse_int(_, default), do: default
+
+  defp normalize_phase(phase) when phase in [1, 2, 3], do: phase
+  defp normalize_phase(_), do: 1
+
+  defp map_get(map, key, default \\ nil) when is_map(map) do
+    Map.get(map, key, Map.get(map, to_string(key), default))
+  end
+
+  defp sql_quote(value) when is_binary(value), do: String.replace(value, "'", "''")
 
   defp broadcast_phase_change(from, to) do
     Jay.Core.HubClient.post_alarm(

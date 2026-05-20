@@ -62,6 +62,45 @@ defmodule TeamJay.DashboardPhaseATest do
     assert function_exported?(TeamJay.Dashboard.MilestoneSentry, :reconcile_now, 0)
   end
 
+  test "area 1 autonomy state survives runtime restarts" do
+    source =
+      File.read!(
+        Path.expand("../../../../bots/jay/elixir/lib/jay/v2/autonomy_controller.ex", __DIR__)
+      )
+
+    migration =
+      File.read!(
+        Path.expand(
+          "../../priv/repo/migrations/20260521000001_create_agent_kv_store.exs",
+          __DIR__
+        )
+      )
+
+    assert source =~ ~s(@state_key "jay.autonomy_controller_state")
+    assert source =~ "load_state_from_kv"
+    assert source =~ "load_state_from_event_lake"
+    assert source =~ "load_state_from_legacy_events"
+    assert source =~ "autonomy.phase_changed"
+    assert source =~ "save_state_to_db(new_state)"
+    assert source =~ "consecutive_clean_days"
+    assert source =~ "master_intervention_count"
+    assert source =~ "last_escalation_at"
+    assert source =~ "defp kst_today"
+    refute source =~ "Date.utc_today()"
+    assert migration =~ "CREATE TABLE IF NOT EXISTS agent.kv_store"
+    assert migration =~ "value JSONB NOT NULL"
+  end
+
+  test "area 3 exposes GrowthCycle launchd linkage" do
+    source =
+      File.read!(Path.expand("../../lib/team_jay/dashboard/live/dashboard_live.ex", __DIR__))
+
+    assert source =~ "load_growth_scheduler_status"
+    assert source =~ ~s(["list", "ai.jay.growth"])
+    assert source =~ "growth_scheduler_label"
+    assert source =~ "not loaded"
+  end
+
   test "Visibility v3.4 session tracker detects touched-file conflicts" do
     sessions = [
       %{files_touched: ["a.ex", "b.ex"]},
