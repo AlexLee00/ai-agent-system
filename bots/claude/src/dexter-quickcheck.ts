@@ -266,21 +266,31 @@ async function main() {
     const isNew     = !diskPrev.status || diskPrev.status === 'ok';
     const reAlert   = diskPrev.status === 'critical' && cooldownExpired(diskPrev.alertedAt);
     const needAlert = isNew || reAlert;
+    const failCount = diskPrev.status === 'critical' ? (diskPrev.failCount || 1) + 1 : 1;
 
     state.disk = {
       status:    'critical',
       usage:     diskUsage,
+      failCount,
       alertedAt: needAlert ? now : (diskPrev.alertedAt || now),
     };
 
     if (needAlert) {
-      alerts.push({ label: '디스크', detail: `사용률 ${diskUsage}% (${DISK_CRITICAL}% 초과 — 즉시 정리 필요)`, restartable: false, restarted: false });
+      alerts.push({
+        label: '디스크',
+        detail: failCount === 1
+          ? `사용률 ${diskUsage}% (${DISK_CRITICAL}% 초과 — 즉시 정리 필요)`
+          : `사용률 ${diskUsage}% (${DISK_CRITICAL}% 초과 — 연속 ${failCount}회 감지)`,
+        restartable: false,
+        restarted: false,
+        failCount,
+      });
     }
   } else {
     if (diskPrev.status === 'critical') {
       recoveries.push({ label: '디스크', detail: `${diskUsage}%로 회복`, downSince: null });
     }
-    state.disk = { status: 'ok', usage: diskUsage, alertedAt: null };
+    state.disk = { status: 'ok', usage: diskUsage, failCount: 0, alertedAt: null };
   }
 
   // ── 3. 상태 저장 ────────────────────────────────────────────────────
