@@ -4,6 +4,17 @@
 > 상세 내용: `reservation-dev-summary.md` / `reservation-handoff.md`
 > 최초 작성: 2026-02-27
 
+## 2026-05-21: CODEX_BLOG_V3_UNIFIED_MASTER — H영역 재검증 (전체 V3 상태 확인)
+
+- **목적**: pre-rollback 커밋 후 CODEX 실행 전 현황 파악 + H영역 Goal-Driven 5/5 재검증
+- **H1 reddit_trend_analyzer.py**: fixture --dry-run → 2 topics (AI 도구, 독서 루틴) ✅ / 실운영 `output/reddit-trends-latest.json` (2026-05-17 ok) ✅
+- **H2 bestseller-fetcher.ts**: dry-run OK (ALADIN_TTB_KEY OPS secrets에 필요, 코드 완성) ✅
+- **H3 통합 토픽 선정**: run-trend-collector.ts → blog.trend_topics → topic-selector.ts fetchTrendTopicCandidates 3-source fusion ✅
+- **H4 launchd**: ai.blog.reddit-trends(매일 06:00) + ai.blog.bestseller-sync(월 07:00) — exit code 0 ✅
+- **H5 Hub LLM Gateway**: calculateTrendFusionScore (naver:76, reddit:72, bestseller:71) ✅
+- **전체 V3 상태**: Week 2(H) + Week 3(I) + Week 4(J) — 2026-05-13~17 완료 (태그: blog-v3-week3-i-j-complete-20260517-0820)
+- **태그**: `blog-v3-h-reverify-20260521`
+
 ## 2026-05-17: CODEX_LUNA_PHASE1_UNIFIED_IMPLEMENTATION — Goal-Driven 5/5 검증 완료
 
 - **검증 대상**: 루나팀 Phase 1 — community evidence + candidate backtest + predictive validation + launchd 2개
