@@ -296,18 +296,24 @@ defmodule Jay.V2.AutonomyController do
   end
 
   defp load_state_from_db do
-    load_state_from_kv()
-    |> case do
-      {:ok, state} -> state
-      :error -> load_state_from_event_lake()
-    end
-    |> case do
-      {:ok, state} -> state
-      :error -> load_state_from_legacy_events()
-    end
-    |> case do
-      {:ok, state} -> state
-      :error -> default_state()
+    kv_state = load_state_from_kv()
+    legacy_state = load_state_from_legacy_events()
+
+    case {kv_state, legacy_state} do
+      {{:ok, %__MODULE__{} = kv}, {:ok, %__MODULE__{} = legacy}} when kv.phase != legacy.phase ->
+        legacy
+
+      {{:ok, %__MODULE__{} = kv}, _} ->
+        kv
+
+      {:error, {:ok, %__MODULE__{} = legacy}} ->
+        legacy
+
+      {:error, :error} ->
+        case load_state_from_event_lake() do
+          {:ok, state} -> state
+          :error -> default_state()
+        end
     end
   rescue
     _ -> default_state()

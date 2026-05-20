@@ -80,6 +80,7 @@ defmodule TeamJay.DashboardPhaseATest do
     assert source =~ "load_state_from_kv"
     assert source =~ "load_state_from_event_lake"
     assert source =~ "load_state_from_legacy_events"
+    assert source =~ "kv.phase != legacy.phase"
     assert source =~ "autonomy.phase_changed"
     assert source =~ "save_state_to_db(new_state)"
     assert source =~ "save_state_to_repo_kv"
