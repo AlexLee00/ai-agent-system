@@ -228,9 +228,60 @@ function formatCommunitySourceLabel(sourceName) {
 function formatSignalDirectionLabel(direction) {
   const key = String(direction || '').trim().toLowerCase();
   if (key === 'positive' || key === 'bullish') return '긍정';
-  if (key === 'negative' || key === 'bearish') return '부정';
+  if (key === 'negative' || key === 'bearish') return '주의';
   if (key === 'neutral') return '중립';
   return key || '중립';
+}
+
+function extractFlowAmount(text) {
+  const match = String(text || '').match(/(?:\$|usd\s*)?\d+(?:[.,]\d+)?\s*(?:b|bn|billion|m|mn|million)\b/i);
+  return match ? match[0].replace(/\s+/g, ' ') : '';
+}
+
+function formatCryptoIssueSummary(item, btcSymbol = 'BTC/USDT') {
+  const summary = String(item?.evidenceSummary || '').trim();
+  if (!summary) return `${btcSymbol} 가격 반응 관련 커뮤니티 이슈가 관측됐습니다.`;
+  if (/[가-힣]/.test(summary)) return summary;
+
+  const text = summary.toLowerCase();
+  const flowAmount = extractFlowAmount(summary);
+  const flowAmountText = flowAmount ? `${flowAmount} 규모의 ` : '';
+  if (/outflow|withdrawal|redemption/.test(text)) {
+    return `ETF/ETP에서 ${flowAmountText}자금 유출이 언급되며, 단기 수급 부담으로 확인됩니다.`;
+  }
+  if (/inflow|net add|adding|addition/.test(text)) {
+    return `ETF/ETP에서 ${flowAmountText}자금 유입이 언급되며, 단기 수급 지지 요인으로 확인됩니다.`;
+  }
+  if (/etf|etp|coinshares/.test(text)) {
+    return 'ETF/ETP 자금 흐름 변화가 단기 수급 이슈로 언급됩니다.';
+  }
+  if (/bond|yield|interest rate|rates|fomc|fed/.test(text)) {
+    return '미국 금리·채권금리 부담이 변동성 요인으로 언급됩니다.';
+  }
+  if (/bear market|pessimistic|downside|slides?|slump|below|under|gives up|sell|loss/.test(text)) {
+    return '약세 흐름과 손절·위험회피 심리가 단기 경계 요인으로 언급됩니다.';
+  }
+  if (/treasury|strategy|saylor|buys?|adding|holdings?|positions?/.test(text)) {
+    return `기관·상장사의 BTC 보유 확대 이슈가 중장기 수요 근거로 언급됩니다.`;
+  }
+  if (/defi|programmable|private|privacy|verifiedx/.test(text)) {
+    return `비트코인 기반 DeFi·프라이버시 확장 논의가 중장기 내러티브로 언급됩니다.`;
+  }
+  if (/miner|mining|hive|canaan|ai facility|infrastructure/.test(text)) {
+    return `비트코인 채굴·AI 인프라 관련 기업 뉴스가 BTC 관련 섹터 이슈로 언급됩니다.`;
+  }
+  if (/congress|clarity act|regulat|china|u\.s\.|us /.test(text)) {
+    return `미국 규제·정책 논의가 암호화폐 위험 선호에 영향을 줄 이슈로 언급됩니다.`;
+  }
+  return '관련 해외 뉴스 이슈가 관측됐으며, 가격 반응과 거래량 확인이 필요합니다.';
+}
+
+function formatCryptoIssueTone(item, summary = '') {
+  const text = `${summary || ''} ${item?.evidenceSummary || ''}`.toLowerCase();
+  if (/약세|손절|위험회피|금리|채권금리|부담|유출|outflow|withdrawal|redemption/.test(text)) return '주의';
+  if (/유입|inflow/.test(text)) return '긍정';
+  if (/기관|상장사|보유 확대|defi|프라이버시|확장 논의|정책|규제/.test(text)) return '중립';
+  return formatSignalDirectionLabel(item?.signalDirection);
 }
 
 // ─── 헤드라인 생성 ────────────────────────────────────────────────
@@ -238,15 +289,15 @@ function formatSignalDirectionLabel(direction) {
 function buildCryptoTitle(slot, marketData) {
   const btcSymbol = displayMarketSymbol(marketData?.btc_symbol || 'BTC/USDT');
   const btcPrice = marketData?.btc_price
-    ? `${btcSymbol} $${Number(marketData.btc_price).toLocaleString()}`
-    : `${btcSymbol} 시세`;
+    ? `$${Number(marketData.btc_price).toLocaleString()}`
+    : '시세';
   const btcChange = marketData?.btc_change_24h != null
-    ? ` (${marketData.btc_change_24h > 0 ? '+' : ''}${Number(marketData.btc_change_24h).toFixed(1)}%)`
+    ? ` ${marketData.btc_change_24h > 0 ? '+' : ''}${Number(marketData.btc_change_24h).toFixed(1)}%`
     : '';
   const now = kst.now ? kst.now() : new Date();
   const mm = String(now.getMonth() + 1).padStart(2, '0');
   const dd = String(now.getDate()).padStart(2, '0');
-  return `${mm}/${dd} BTC 시황 | ${btcPrice}${btcChange} 핵심 레벨 체크`;
+  return `${mm}/${dd} ${btcSymbol} 시황 카드 | ${btcPrice}${btcChange}`;
 }
 
 function buildKisTitle(marketData) {
@@ -341,7 +392,8 @@ function buildCryptoUserPrompt(slot, marketData, evidenceItems, technicalData) {
     .map((e, i) => {
       const mentions = e.rawRef?.mentions != null ? `, 언급 ${e.rawRef.mentions}건` : '';
       const symbol = displayMarketSymbol(e.symbol || btcSymbol);
-      return `${i + 1}. [${symbol}] [${formatCommunitySourceLabel(e.sourceName)}] ${e.evidenceSummary || ''} (해석: ${formatSignalDirectionLabel(e.signalDirection)}${mentions})`;
+      const summary = formatCryptoIssueSummary(e, btcSymbol);
+      return `${i + 1}. [${symbol}] [${formatCommunitySourceLabel(e.sourceName)}] ${summary} (해석: ${formatCryptoIssueTone(e, summary)}${mentions})`;
     })
     .join('\n');
 
@@ -571,12 +623,19 @@ function buildCryptoFallbackContent(slot, marketData = {}, evidenceItems = {}, t
   const volume24h = formatPlain(technicalData?.volume_24h);
   const rsi = formatScore(technicalData?.rsi, '', '0~100');
   const macd = formatMacdValue(technicalData?.macd);
-  const issueRows = (evidenceItems || []).slice(0, 3).map((item, index) => {
+  const issueRows = [];
+  const seenIssueSummaries = new Set();
+  for (const item of (evidenceItems || [])) {
     const symbol = displayMarketSymbol(item.symbol || btcSymbol);
     const source = formatCommunitySourceLabel(item.sourceName);
-    const direction = formatSignalDirectionLabel(item.signalDirection);
-    return `${index + 1}. [${symbol}] ${item.evidenceSummary || `${btcSymbol} 가격 반응 관련 토론 증가`} (근거: ${source}, 해석: ${direction})`;
-  });
+    const summary = formatCryptoIssueSummary(item, btcSymbol);
+    const summaryKey = summary.replace(/\s+/g, ' ').trim().toLowerCase();
+    if (seenIssueSummaries.has(summaryKey)) continue;
+    seenIssueSummaries.add(summaryKey);
+    const direction = formatCryptoIssueTone(item, summary);
+    issueRows.push(`${issueRows.length + 1}. [${symbol}] ${summary} (근거: ${source}, 해석: ${direction})`);
+    if (issueRows.length >= 3) break;
+  }
   while (issueRows.length < 3) {
     const fallbackIssue = [
       `${btcSymbol}가 ${support} 지지와 ${resistance} 저항 사이에서 다음 방향을 대기 중입니다.`,

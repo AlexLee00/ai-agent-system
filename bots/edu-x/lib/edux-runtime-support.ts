@@ -13,6 +13,7 @@ const PROMOTION_GATE_REPORT = path.join(OUTPUT_DIR, 'edux-promotion-gate.json');
 const INTEGRATION_REPORT = path.join(OUTPUT_DIR, 'edux-integration-report.json');
 const MIN_CONTENT_LEN = 0;
 const MIN_IMAGES_PER_POST = 0;
+const SECTION_BLOCK_SPACER_HTML = '<p>&nbsp;</p>';
 const LEGACY_SECTION_MARKERS_RE = /^[①②③④⑤⑥⑦⑧⑨⑩]\s*/;
 const SECTION_HEADING_EMOJI_RE = /^(?:[①②③④⑤⑥⑦⑧⑨⑩]\s*)?(?:🧭|⚡|₿|📌|🌐|📰|📈|🛡️?|💸|💎|👀|🗓️?|🤖|⚠️?)\s+/u;
 const REQUIRED_SECTION_COUNT = 10;
@@ -436,6 +437,7 @@ function formatContentForEduXWeb(content) {
     const cleanedLine = cleanInlineMarkdown(normalizeSectionHeadingLine(line));
     const safe = escapeHtml(cleanedLine);
     if (isSectionHeadingLine(line)) {
+      if (html.length > 0) html.push(SECTION_BLOCK_SPACER_HTML);
       html.push(`<h3>${safe}</h3>`);
     } else {
       html.push(`<p>${safe}</p>`);

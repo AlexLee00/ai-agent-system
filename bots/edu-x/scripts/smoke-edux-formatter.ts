@@ -17,6 +17,7 @@ async function check(category, slot) {
   const html = formatContentForEduXWeb(result.content);
   const expectedHeading = category === 'crypto' ? '<h3>⚡' : '<h3>🧭';
   assert.equal(html.includes(expectedHeading), true, `${category} html conversion missing section block`);
+  assert.equal(html.includes('<p>&nbsp;</p>\n<h3>'), true, `${category} html conversion should add visible spacing between section blocks`);
   assert.equal(html.includes('<p>'), true, `${category} html conversion missing paragraph block`);
   assert.equal(html.includes('**'), false, `${category} html conversion should strip markdown bold markers`);
   if (category === 'kis') {
@@ -76,12 +77,18 @@ async function main() {
     'crypto',
     '1400',
     cryptoFixture.marketData,
-    [{ ...cryptoFixture.evidenceItems[0], sourceName: 'google_news_crypto_rss', signalDirection: 'bearish' }],
+    [{
+      ...cryptoFixture.evidenceItems[0],
+      sourceName: 'google_news_crypto_rss',
+      signalDirection: 'bearish',
+      evidenceSummary: 'Weekly crypto ETP outflows top $1B, ending six-week positive streak amid risk-off',
+    }],
     cryptoFixture.technicalData,
     { fixture: true },
   );
   assert.equal(/google_news_crypto_rss|bearish/.test(machineSourcePost.content), false, 'crypto post should not expose machine source names or raw bearish labels');
-  assert.equal(machineSourcePost.content.includes('근거: 뉴스 RSS, 해석: 부정'), true, 'crypto post should map machine source names to reader-facing labels');
+  assert.equal(machineSourcePost.content.includes('근거: 뉴스 RSS, 해석: 주의'), true, 'crypto post should map machine source names to reader-facing labels');
+  assert.equal(machineSourcePost.content.includes('ETF/ETP에서 $1B 규모의 자금 유출'), true, 'crypto post should preserve outflow direction and amount in Korean issue summaries');
   assert.equal(validateContentQuality(cryptoPost.content, 'crypto').infoIssues.length, 0, 'crypto post should pass information-density gate');
   const tableHtml = formatContentForEduXWeb('🧭 **제목**\n\n| symbol | 가격 |\n| --- | --- |\n| BTC/USDT | $1 |\n\n1. 첫 이슈\n2. 둘째 이슈');
   assert.equal(tableHtml.includes('<h3>🧭 제목</h3>'), true, 'html conversion should strip bold markers in headings');

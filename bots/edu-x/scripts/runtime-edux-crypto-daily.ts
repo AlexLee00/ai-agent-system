@@ -118,9 +118,10 @@ function summarizeCommunityEvidence(row) {
   const articles = Array.isArray(row?.raw_ref?.articles) ? row.raw_ref.articles : [];
   const titles = articles
     .map((article) => article?.title)
-    .filter(Boolean)
-    .slice(0, 1);
-  if (titles.length) return sanitizePublicEvidenceSummary(titles.join(' / '));
+    .filter(Boolean);
+  const btcTitle = titles.find((title) => /BTC|Bitcoin|비트코인/i.test(String(title || '')));
+  if (btcTitle) return sanitizePublicEvidenceSummary(btcTitle);
+  if (titles.length) return sanitizePublicEvidenceSummary(titles[0]);
   return sanitizePublicEvidenceSummary(row?.evidence_summary || 'BTC 관련 커뮤니티 이슈가 감지되었습니다.');
 }
 
