@@ -3,7 +3,7 @@
 'use strict';
 
 const assert = require('assert');
-const { formatPost, validateContentQuality, buildCryptoTitle, displayMarketSymbol } = require('../lib/edux-formatter.ts');
+const { formatPost, validateContentQuality, buildCryptoTitle, buildKisTitle, buildOverseasTitle, displayMarketSymbol } = require('../lib/edux-formatter.ts');
 const { formatContentForEduXWeb, validatePostQuality } = require('../lib/edux-runtime-support.ts');
 const { getFixturePayload } = require('../lib/edux-fixtures.ts');
 
@@ -15,18 +15,17 @@ async function check(category, slot) {
   assert.equal(result.content.includes('[이미지'), false, `${category} still contains image placeholder`);
   assert.equal(/[①②③④⑤⑥⑦⑧⑨⑩]/.test(result.content), false, `${category} should not render legacy section numbers`);
   const html = formatContentForEduXWeb(result.content);
-  const expectedHeading = category === 'crypto' ? '<h3>⚡' : '<h3>🧭';
-  assert.equal(html.includes(expectedHeading), true, `${category} html conversion missing section block`);
+  assert.equal(html.includes('<h3>⚡'), true, `${category} html conversion missing first card block`);
   assert.equal(html.includes('<p>&nbsp;</p>\n<h3>'), true, `${category} html conversion should add visible spacing between section blocks`);
   assert.equal(html.includes('<p>'), true, `${category} html conversion missing paragraph block`);
   assert.equal(html.includes('**'), false, `${category} html conversion should strip markdown bold markers`);
   if (category === 'kis') {
     assert.equal(/BTC\/USDT|비트코인|Fear & Greed|암호화폐 커뮤니티/.test(result.content), false, 'kis fallback should not contain crypto-specific sections');
-    assert.equal(/국내주식|코스피|외인/.test(result.content), true, 'kis fallback should contain domestic market sections');
+    assert.equal(/국내주식|코스피|외국인|오늘 볼 섹터/.test(result.content), true, 'kis fallback should contain domestic card sections');
   }
   if (category === 'overseas') {
     assert.equal(/BTC\/USDT|비트코인|Fear & Greed|암호화폐 커뮤니티/.test(result.content), false, 'overseas fallback should not contain crypto-specific sections');
-    assert.equal(/해외주식|S&P500|Magnificent 7/.test(result.content), true, 'overseas fallback should contain overseas market sections');
+    assert.equal(/해외주식|S&P500|Magnificent 7|지수·리스크 지도/.test(result.content), true, 'overseas fallback should contain overseas card sections');
   }
   return { category, slot, contentLen: quality.contentLen, sectionCount: quality.sectionCount };
 }
@@ -40,6 +39,8 @@ async function main() {
   const cryptoTitle = buildCryptoTitle('1400', { btc_price: 90000, btc_change_24h: 1.2 });
   assert.equal(/유럽|아시아|미국/.test(cryptoTitle), false, `crypto title includes unnatural region label: ${cryptoTitle}`);
   assert.equal(buildCryptoTitle('1400', { btc_symbol: 'BTCUSDT', btc_price: 90000 }).includes('BTC/USDT'), true, 'crypto title should display BTC/USDT');
+  assert.equal(buildKisTitle({ kospi_index: 2920, kospi_change: 0.7 }).includes('국내주식 시황 카드'), true, 'kis title should use card pattern');
+  assert.equal(buildOverseasTitle({ sp500_index: 6250, sp500_change: 0.5 }).includes('해외주식 시황 카드'), true, 'overseas title should use card pattern');
   assert.equal(displayMarketSymbol('ETHUSDT'), 'ETH/USDT');
   assert.equal(displayMarketSymbol('SOL'), 'SOL/USDT');
   const cryptoFixture = getFixturePayload('crypto');
@@ -49,6 +50,12 @@ async function main() {
   const cryptoDefault = await formatPost('crypto', '1400', cryptoFixture.marketData, cryptoFixture.evidenceItems, cryptoFixture.technicalData);
   if (originalFormatterFixture !== undefined) process.env.EDUX_FORMATTER_FIXTURE = originalFormatterFixture;
   assert.equal(cryptoDefault.source, 'crypto_deterministic', 'crypto formatter should default to deterministic mode');
+  const kisFixture = getFixturePayload('kis');
+  const overseasFixture = getFixturePayload('overseas');
+  const kisDefault = await formatPost('kis', '0900', kisFixture.marketData, kisFixture.evidenceItems, {});
+  const overseasDefault = await formatPost('overseas', '2200', overseasFixture.marketData, overseasFixture.evidenceItems, {});
+  assert.equal(kisDefault.source, 'kis_deterministic', 'kis formatter should default to deterministic card mode');
+  assert.equal(overseasDefault.source, 'overseas_deterministic', 'overseas formatter should default to deterministic card mode');
   assert.equal(cryptoPost.content.includes('BTC/USDT'), true, 'crypto post should display BTC/USDT');
   assert.equal(cryptoPost.content.includes('ETH/USDT'), true, 'crypto post should display ETH/USDT');
   assert.equal(/BTCUSDT|ETHUSDT|SOLUSDT|XRPUSDT/.test(cryptoPost.content), false, 'crypto post should not expose raw exchange symbols');
@@ -90,6 +97,36 @@ async function main() {
   assert.equal(machineSourcePost.content.includes('근거: 뉴스 RSS, 해석: 주의'), true, 'crypto post should map machine source names to reader-facing labels');
   assert.equal(machineSourcePost.content.includes('ETF/ETP에서 $1B 규모의 자금 유출'), true, 'crypto post should preserve outflow direction and amount in Korean issue summaries');
   assert.equal(validateContentQuality(cryptoPost.content, 'crypto').infoIssues.length, 0, 'crypto post should pass information-density gate');
+  const kisPatternPost = await formatPost(
+    'kis',
+    '0900',
+    kisFixture.marketData,
+    [{
+      sourceName: 'naver_news_rss',
+      signalDirection: 'positive',
+      evidenceSummary: 'Samsung Electronics and SK Hynix rally on HBM AI demand while foreign investors return',
+    }],
+    {},
+    { fixture: true },
+  );
+  assert.equal(/naver_news_rss|positive|Samsung Electronics/.test(kisPatternPost.content), false, 'kis post should not expose raw source, raw signal, or untranslated English issue titles');
+  assert.equal(kisPatternPost.content.includes('반도체·HBM 이슈'), true, 'kis post should rewrite semiconductor/HBM community patterns');
+  assert.equal(kisPatternPost.content.includes('근거: 네이버 뉴스, 해석: 긍정'), true, 'kis post should map equity source and tone labels');
+  const overseasPatternPost = await formatPost(
+    'overseas',
+    '2200',
+    overseasFixture.marketData,
+    [{
+      sourceName: 'reuters_news_rss',
+      signalDirection: 'positive',
+      evidenceSummary: 'Nvidia leads megacap gains as AI infrastructure demand lifts Nasdaq futures ahead of earnings',
+    }],
+    {},
+    { fixture: true },
+  );
+  assert.equal(/reuters_news_rss|positive|Nvidia leads/.test(overseasPatternPost.content), false, 'overseas post should not expose raw source, raw signal, or untranslated English issue titles');
+  assert.equal(overseasPatternPost.content.includes('AI 인프라·반도체 대형주 이슈'), true, 'overseas post should rewrite AI infrastructure community patterns');
+  assert.equal(overseasPatternPost.content.includes('근거: Reuters 뉴스, 해석: 긍정'), true, 'overseas post should map overseas source and tone labels');
   const tableHtml = formatContentForEduXWeb('🧭 **제목**\n\n| symbol | 가격 |\n| --- | --- |\n| BTC/USDT | $1 |\n\n1. 첫 이슈\n2. 둘째 이슈');
   assert.equal(tableHtml.includes('<h3>🧭 제목</h3>'), true, 'html conversion should strip bold markers in headings');
   const legacyHtml = formatContentForEduXWeb('① 🧭 **제목**');
