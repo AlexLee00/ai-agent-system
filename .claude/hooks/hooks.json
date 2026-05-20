@@ -8,6 +8,14 @@
             "command": "./.claude/hooks/scripts/precompact-blog-context.sh"
           }
         ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "./.claude/hooks/scripts/precompact-skill-refresh.sh"
+          }
+        ]
       }
     ],
     "PreToolUse": [
@@ -66,6 +74,24 @@
             "command": "./.claude/hooks/scripts/posttooluse-security-scan.sh"
           }
         ]
+      },
+      {
+        "matcher": "Write|Edit|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "./.claude/hooks/scripts/posttooluse-hermes-record.sh"
+          }
+        ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "./.claude/hooks/scripts/posttooluse-pattern-extractor.sh"
+          }
+        ]
       }
     ],
     "SessionStart": [
@@ -108,6 +134,22 @@
           {
             "type": "command",
             "command": "./.claude/hooks/scripts/stop-session-wrap.sh"
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "./.claude/hooks/scripts/stop-handoff-verify.sh"
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "./.claude/hooks/scripts/stop-ticket-status-final.sh"
           }
         ]
       }
