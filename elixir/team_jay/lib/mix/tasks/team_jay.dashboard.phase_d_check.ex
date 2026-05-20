@@ -13,6 +13,8 @@ defmodule Mix.Tasks.TeamJay.Dashboard.PhaseDCheck do
   @sigma_markers [
     "defp sigma_board",
     "load_sigma_status",
+    "load_sigma_event_activity",
+    "EventLake 24h",
     "Sigma.V2.MapeKLoop.status()",
     "Sigma.V2.Commander",
     "Sigma.V2.Pod.Trend",
@@ -27,6 +29,9 @@ defmodule Mix.Tasks.TeamJay.Dashboard.PhaseDCheck do
     "safe_jay_bus_subscribe",
     "init_luna_pipeline",
     "load_luna_pipeline_seed",
+    "load_luna_operational_seed",
+    "luna_stage_from_operational_name",
+    "EventLake + DB 24h",
     "topic_to_stage",
     "update_luna_pipeline",
     "@luna_stages_meta",

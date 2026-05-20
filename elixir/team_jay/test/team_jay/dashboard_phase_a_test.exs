@@ -99,9 +99,23 @@ defmodule TeamJay.DashboardPhaseATest do
       File.read!(Path.expand("../../lib/team_jay/dashboard/live/dashboard_live.ex", __DIR__))
 
     assert source =~ "load_growth_scheduler_status"
+    assert source =~ "load_growth_scheduler_schedule"
+    assert source =~ "next_cycle_label(@growth_scheduler)"
+    assert source =~ "growth_scheduler_warning"
     assert source =~ ~s(["list", "ai.jay.growth"])
     assert source =~ "growth_scheduler_label"
     assert source =~ "not loaded"
+  end
+
+  test "area 7 and 8 include DB-backed freshness indicators" do
+    source =
+      File.read!(Path.expand("../../lib/team_jay/dashboard/live/dashboard_live.ex", __DIR__))
+
+    assert source =~ "load_sigma_event_activity"
+    assert source =~ "EventLake 24h"
+    assert source =~ "load_luna_operational_seed"
+    assert source =~ "luna_stage_from_operational_name"
+    assert source =~ "EventLake + DB 24h"
   end
 
   test "Visibility v3.4 session tracker detects touched-file conflicts" do

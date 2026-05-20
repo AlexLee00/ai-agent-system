@@ -47,6 +47,9 @@ defmodule Mix.Tasks.TeamJay.Dashboard.PhaseACheck do
           not String.contains?(autonomy_controller, "Date.utc_today()"),
       growth_scheduler_visibility:
         String.contains?(dashboard_live_source(), "load_growth_scheduler_status") and
+          String.contains?(dashboard_live_source(), "load_growth_scheduler_schedule") and
+          String.contains?(dashboard_live_source(), "next_cycle_label(@growth_scheduler)") and
+          String.contains?(dashboard_live_source(), "growth_scheduler_warning") and
           String.contains?(dashboard_live_source(), ~s(["list", "ai.jay.growth"])) and
           String.contains?(dashboard_live_source(), "growth_scheduler_label"),
       agent_kv_store_migration:
