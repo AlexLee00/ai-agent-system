@@ -27,6 +27,9 @@ const {
 const { postAlarm } = require('../../../packages/core/lib/hub-alarm-client.ts');
 const { publishOAuthMonitorEvents } = require('../lib/oauth/ops-events.ts');
 
+const DEFAULT_GEMINI_CODEASSIST_OAUTH_CLIENT_ID = '681255809395-oo8ft2oprdrnp9e3aqf6av3hmdib135j.apps.googleusercontent.com';
+const DEFAULT_GEMINI_CODEASSIST_CLIENT_SECRET_FILE = path.join(os.homedir(), '.config/ai-agent-system/oauth/gemini-client-secret.json');
+
 function flag(name: string, fallback = false): boolean {
   const raw = String(process.env[name] || '').trim().toLowerCase();
   if (!raw) return fallback;
@@ -48,6 +51,47 @@ function oauthAlarmHours(name: string): number {
 
 function oauthCriticalHours(name: string): number {
   return thresholdHours(name, 1);
+}
+
+function readGeminiCodeAssistClientSecretFile() {
+  const filePath = String(
+    process.env.GEMINI_CLI_OAUTH_CLIENT_SECRET_FILE
+      || process.env.GEMINI_CODEASSIST_CLIENT_SECRET_FILE
+      || DEFAULT_GEMINI_CODEASSIST_CLIENT_SECRET_FILE,
+  ).trim();
+  if (!filePath || !fs.existsSync(filePath)) return {};
+  try {
+    const payload = JSON.parse(fs.readFileSync(filePath, 'utf8') || '{}');
+    const installed = payload.installed && typeof payload.installed === 'object' ? payload.installed : {};
+    const web = payload.web && typeof payload.web === 'object' ? payload.web : {};
+    return {
+      client_id: String(payload.client_id || installed.client_id || web.client_id || '').trim(),
+      client_secret: String(payload.client_secret || installed.client_secret || web.client_secret || '').trim(),
+    };
+  } catch {
+    return {};
+  }
+}
+
+function readGeminiCliBundledCodeAssistOAuthClient() {
+  const candidates = [
+    '/opt/homebrew/lib/node_modules/@google/gemini-cli/bundle/chunk-UIBQS45C.js',
+    '/usr/local/lib/node_modules/@google/gemini-cli/bundle/chunk-UIBQS45C.js',
+  ];
+  for (const filePath of candidates) {
+    if (!fs.existsSync(filePath)) continue;
+    try {
+      const source = fs.readFileSync(filePath, 'utf8');
+      const clientId = source.match(/var OAUTH_CLIENT_ID = "([^"]+)"/)?.[1] || '';
+      const clientSecret = source.match(/var OAUTH_CLIENT_SECRET = "([^"]+)"/)?.[1] || '';
+      if (clientId && clientSecret) {
+        return { client_id: clientId, client_secret: clientSecret };
+      }
+    } catch {
+      // Continue to the next installed Gemini CLI candidate.
+    }
+  }
+  return {};
 }
 
 function tokenExpiresInHours(token: any): number | null {
@@ -419,6 +463,102 @@ async function maybeReimportGeminiCliCredential(reason: string, record: any) {
     expires_in_hours: tokenExpiresInHours(imported.token),
     quota_project_configured: Boolean(imported.quota_project_configured),
   };
+}
+
+async function refreshGeminiCliCredentialFile(reason: string, imported: any) {
+  const filePath = String(imported?.filePath || '').trim();
+  const refreshToken = String(imported?.token?.refresh_token || '').trim();
+  if (!filePath || !fs.existsSync(filePath)) {
+    return {
+      ok: false,
+      source: 'gemini_cli_oauth_refresh',
+      skipped: true,
+      reason,
+      error: 'gemini_cli_credential_file_missing',
+    };
+  }
+  if (!refreshToken) {
+    return {
+      ok: false,
+      source: 'gemini_cli_oauth_refresh',
+      skipped: true,
+      reason,
+      error: 'gemini_cli_refresh_token_missing',
+    };
+  }
+
+  const bundledClientConfig = readGeminiCliBundledCodeAssistOAuthClient();
+  const fileClientConfig = readGeminiCodeAssistClientSecretFile();
+  const clientId = String(process.env.GEMINI_CLI_OAUTH_CLIENT_ID || bundledClientConfig.client_id || fileClientConfig.client_id || DEFAULT_GEMINI_CODEASSIST_OAUTH_CLIENT_ID).trim();
+  const clientSecret = String(process.env.GEMINI_CLI_OAUTH_CLIENT_SECRET || bundledClientConfig.client_secret || fileClientConfig.client_secret || '').trim();
+  const tokenUrl = String(process.env.GEMINI_CLI_OAUTH_TOKEN_URL || 'https://oauth2.googleapis.com/token').trim();
+  if (!clientSecret) {
+    return {
+      ok: false,
+      source: 'gemini_cli_oauth_refresh',
+      skipped: true,
+      reason,
+      error: 'gemini_cli_oauth_client_secret_missing',
+    };
+  }
+  const body = new URLSearchParams({
+    client_id: clientId,
+    client_secret: clientSecret,
+    refresh_token: refreshToken,
+    grant_type: 'refresh_token',
+  });
+
+  try {
+    const response = await fetch(tokenUrl, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/x-www-form-urlencoded',
+        accept: 'application/json',
+      },
+      body,
+      signal: AbortSignal.timeout(Number(process.env.GEMINI_CLI_OAUTH_REFRESH_TIMEOUT_MS || 20_000)),
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok || !payload?.access_token) {
+      return {
+        ok: false,
+        source: 'gemini_cli_oauth_refresh',
+        reason,
+        status: response.status,
+        error: String(payload?.error || 'gemini_cli_refresh_failed').slice(0, 160),
+        error_description: String(payload?.error_description || '').slice(0, 240) || null,
+      };
+    }
+
+    const previous = JSON.parse(fs.readFileSync(filePath, 'utf8') || '{}');
+    const expiresIn = Number(payload.expires_in || 3600);
+    const next = {
+      ...previous,
+      access_token: payload.access_token,
+      token_type: payload.token_type || previous.token_type || 'Bearer',
+      scope: payload.scope || previous.scope,
+      expiry_date: Date.now() + (Number.isFinite(expiresIn) && expiresIn > 0 ? expiresIn : 3600) * 1000,
+      refresh_token: payload.refresh_token || previous.refresh_token || refreshToken,
+      ...(payload.id_token ? { id_token: payload.id_token } : {}),
+    };
+    const tmpPath = `${filePath}.tmp-${process.pid}`;
+    fs.writeFileSync(tmpPath, JSON.stringify(next, null, 2));
+    fs.chmodSync(tmpPath, 0o600);
+    fs.renameSync(tmpPath, filePath);
+    return {
+      ok: true,
+      source: 'gemini_cli_oauth_refresh',
+      reason,
+      expires_in_hours: tokenExpiresInHours({ expires_at: new Date(next.expiry_date).toISOString() }),
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      source: 'gemini_cli_oauth_refresh',
+      reason,
+      error: normalizeProbeException(error),
+    };
+  }
 }
 
 async function refreshClaudeCodeHubToken(reason: string) {
@@ -974,11 +1114,28 @@ async function checkGeminiCliOAuth() {
     const inAlarmWindow = Number.isFinite(Number(expiresInHours))
       ? Number(expiresInHours) <= alarmHours
       : false;
-    const liveRefreshResult = localCredentialNeedsRefresh
+    let credentialRefresh = null;
+    let credentialRefreshReimport = null;
+    if (localCredentialNeedsRefresh) {
+      credentialRefresh = await withMonitorOAuthLock('gemini-cli-oauth', 'refresh_window', () =>
+        refreshGeminiCliCredentialFile('refresh_window', cliImport));
+      if (credentialRefresh?.ok) {
+        credentialRefreshReimport = await maybeReimportGeminiCliCredential('refresh_window_after_direct_refresh', record);
+      }
+    }
+    const liveRefreshResult = localCredentialNeedsRefresh && !credentialRefresh?.ok
       ? await runGeminiCliLiveRefreshProbeWithReimport('refresh_window', record)
       : null;
-    const liveRefreshProbe = liveRefreshResult?.probe || null;
-    const postProbeReimport = liveRefreshResult?.reimport || null;
+    const liveRefreshProbe = credentialRefresh?.ok
+      ? {
+        ok: true,
+        provider: 'gemini-cli-oauth',
+        selected_route: 'gemini-cli-oauth/direct-refresh-token',
+        auth_path: 'direct_google_oauth_refresh_token',
+        attempts: 1,
+      }
+      : liveRefreshResult?.probe || null;
+    const postProbeReimport = credentialRefreshReimport || liveRefreshResult?.reimport || null;
     const finalState = finalizeGeminiCliMonitorState({
       expiresInHours,
       warnHours: refreshHours,
@@ -987,7 +1144,7 @@ async function checkGeminiCliOAuth() {
     });
     const needsRefresh = finalState.needs_refresh;
     if (localCredentialNeedsRefresh && liveRefreshProbe?.ok) {
-      console.log(`[oauth-monitor] Gemini CLI OAuth local token is near/after expiry, capacity-bypass probe provider=${liveRefreshProbe.provider || 'unknown'} succeeded in ${liveRefreshProbe.duration_ms || 0}ms, token-store reimport=${postProbeReimport?.ok ? 'ok' : 'not_updated'}`);
+      console.log(`[oauth-monitor] Gemini CLI OAuth local token is near/after expiry, refresh path=${liveRefreshProbe.auth_path || 'unknown'} provider=${liveRefreshProbe.provider || 'unknown'} succeeded, token-store reimport=${postProbeReimport?.ok ? 'ok' : 'not_updated'}`);
     }
     if (needsRefresh || (inAlarmWindow && !localCredentialNeedsRefresh)) {
       const level = Number(expiresInHours) <= criticalHours ? 3 : 2;
@@ -1005,6 +1162,8 @@ async function checkGeminiCliOAuth() {
           live_refresh_ok: Boolean(liveRefreshProbe?.ok),
           live_refresh_error: liveRefreshProbe?.error || null,
           post_probe_reimport_ok: postProbeReimport?.ok ?? null,
+          credential_refresh_ok: credentialRefresh?.ok ?? null,
+          credential_refresh_error: credentialRefresh?.error || null,
           expires_in_hours: Math.round(Number(expiresInHours) * 100) / 100,
           alarm_window_hours: alarmHours,
           refresh_window_hours: refreshHours,
@@ -1027,6 +1186,8 @@ async function checkGeminiCliOAuth() {
       live_refresh_attempts: liveRefreshProbe?.attempts ?? null,
       post_probe_reimport_ok: postProbeReimport?.ok ?? null,
       post_probe_expires_in_hours: postProbeReimport?.expires_in_hours ?? null,
+      credential_refresh_ok: credentialRefresh?.ok ?? null,
+      credential_refresh_error: credentialRefresh?.error || null,
       quota_project_configured: Boolean(cliImport.quota_project_configured),
       error: null,
     };
@@ -1264,6 +1425,8 @@ async function main() {
       post_probe_expires_in_hours: Number.isFinite(Number(geminiCliOauth.post_probe_expires_in_hours))
         ? Math.round(Number(geminiCliOauth.post_probe_expires_in_hours) * 100) / 100
         : null,
+      credential_refresh_ok: geminiCliOauth.credential_refresh_ok ?? null,
+      credential_refresh_error: geminiCliOauth.credential_refresh_error || null,
       quota_project_configured: Boolean(geminiCliOauth.quota_project_configured),
       error: geminiCliOauth.error || null,
     },
