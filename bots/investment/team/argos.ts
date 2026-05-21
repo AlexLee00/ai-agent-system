@@ -42,6 +42,11 @@ import {
   buildBinanceTopVolumeUniverse,
   evaluateBinanceTopVolumeUniverseGate,
 } from '../shared/binance-top-volume-universe.ts';
+import {
+  annotateDomesticOfficialReferenceCandidates,
+  getCachedDomesticOfficialReference,
+  summarizeDomesticOfficialReference,
+} from '../shared/domestic-official-reference.ts';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const _require = createRequire(import.meta.url);
@@ -1223,22 +1228,24 @@ async function _finalizeDomesticResult(candidates, max) {
   if (!candidates.length) return null;
   const enrichedCandidates = await _enrichDomesticCandidatesWithKis(candidates);
   let liquidCandidates = _filterCandidatesByLiquidity(enrichedCandidates, 'domestic');
+  liquidCandidates = await _applyDomesticOfficialReferenceGate(liquidCandidates);
   if (!liquidCandidates.length) {
     const fallbackCandidates = _buildDomesticLiquidFallbackCandidates();
     if (fallbackCandidates.length) {
       console.warn('[아르고스] 국내주식 동적 후보 유동성 탈락 — KIS 설정 종목 fallback 평가');
       const enrichedFallback = await _enrichDomesticCandidatesWithKis(fallbackCandidates);
       liquidCandidates = _filterCandidatesByLiquidity(enrichedFallback, 'domestic');
+      liquidCandidates = await _applyDomesticOfficialReferenceGate(liquidCandidates);
     }
   }
   if (!liquidCandidates.length) {
-    console.warn('[아르고스] 국내주식 유동성 필터 통과 후보 없음');
+    console.warn('[아르고스] 국내주식 유동성/공식 기준정보 필터 통과 후보 없음');
     return {
       core: CORE_KIS,
       dynamic: [],
       all: [],
       screening: [],
-      error: 'liquidity_filtered_all',
+      error: 'liquidity_or_official_reference_filtered_all',
     };
   }
 
@@ -1252,6 +1259,33 @@ async function _finalizeDomesticResult(candidates, max) {
     )
   );
   return { core: CORE_KIS, dynamic: dynamicSymbols, all: dynamicSymbols, screening: ranked };
+}
+
+async function _applyDomesticOfficialReferenceGate(candidates) {
+  if (!Array.isArray(candidates) || candidates.length === 0) return [];
+  const reference = await getCachedDomesticOfficialReference({
+    allowNetwork: process.env.LUNA_DOMESTIC_OFFICIAL_REFERENCE_ENABLED,
+  }).catch((error) => {
+    _warnExternalOnce(
+      'domestic_official_reference:argos',
+      `[아르고스] 국내 공식 기준정보 조회 실패: ${error?.message || error}`,
+    );
+    return null;
+  });
+  const annotated = annotateDomesticOfficialReferenceCandidates(candidates, reference);
+  const summary = summarizeDomesticOfficialReference(reference);
+  if (!summary.available) return annotated.candidates;
+  const blocked = annotated.candidates.filter((item) => item.officialReferenceWouldBlock).length + annotated.excluded.length;
+  console.log(
+    `[아르고스] 국내 공식 기준정보 shadow: available=${summary.available}`
+    + ` symbols=${summary.symbols} wouldBlock=${blocked} hardBlocked=${annotated.excluded.length}`
+  );
+  annotated.excluded.slice(0, 8).forEach((candidate) => {
+    console.log(
+      `  공식 기준정보 제외 ${candidate.symbol}: ${(candidate.officialReferenceBlockers || []).join(',') || 'unknown'}`
+    );
+  });
+  return annotated.candidates;
 }
 
 async function _enrichDomesticCandidatesWithKis(candidates) {

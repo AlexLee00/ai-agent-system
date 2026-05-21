@@ -293,6 +293,51 @@ const CATEGORY_HANDLERS: Record<string, CategoryHandler> = {
     };
   },
 
+  official_market_reference: () => {
+    const store = loadSecretsStore();
+    const d = store?.official_market_reference || {};
+    const krx = store?.krx || {};
+    const dataGoKr = store?.data_go_kr || {};
+    const publicData = store?.public_data || {};
+    const reservation = store?.reservation || {};
+    return {
+      krx_openapi_auth_key:
+        d.krx_openapi_auth_key ||
+        d.krx_open_api_auth_key ||
+        d.krx_auth_key ||
+        d.krx?.openapi_auth_key ||
+        d.krx?.auth_key ||
+        krx.openapi_auth_key ||
+        krx.open_api_auth_key ||
+        krx.auth_key ||
+        '',
+      data_go_kr_stock_price_service_key:
+        d.data_go_kr_stock_price_service_key ||
+        d.stock_price_service_key ||
+        d.data_go_kr?.stock_price_service_key ||
+        dataGoKr.stock_price_service_key ||
+        dataGoKr.stock_service_key ||
+        publicData.stock_price_service_key ||
+        publicData.stock_service_key ||
+        reservation.datagokr_stock_key ||
+        '',
+      data_go_kr_corporate_finance_service_key:
+        d.data_go_kr_corporate_finance_service_key ||
+        d.corporate_finance_service_key ||
+        d.company_finance_service_key ||
+        d.data_go_kr?.corporate_finance_service_key ||
+        d.data_go_kr?.company_finance_service_key ||
+        dataGoKr.corporate_finance_service_key ||
+        dataGoKr.company_finance_service_key ||
+        publicData.corporate_finance_service_key ||
+        publicData.company_finance_service_key ||
+        reservation.datagokr_corporate_finance_key ||
+        '',
+      krx_openapi_base_url: d.krx_openapi_base_url || d.krx_base_url || '',
+      data_go_kr_stock_price_url: d.data_go_kr_stock_price_url || d.stock_price_url || '',
+    };
+  },
+
   config: () => {
     const runtime = loadConfigYaml();
     const store = loadSecretsStore();

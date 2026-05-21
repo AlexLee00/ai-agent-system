@@ -11,6 +11,11 @@ const SECRET_KEY_SUFFIXES = [
 
 export const REQUIRED_FIELDS: Record<string, string[]> = {
   edux: ['base_url', 'bot_email', 'bot_password'],
+  official_market_reference: [
+    'krx_openapi_auth_key',
+    'data_go_kr_stock_price_service_key',
+    'data_go_kr_corporate_finance_service_key',
+  ],
   justin: ['korea_law.user_id', 'korea_law.user_name', 'korea_law.oc'],
   openai_oauth: ['access_token'],
   telegram: ['bot_token'],

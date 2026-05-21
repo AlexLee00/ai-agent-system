@@ -11,6 +11,10 @@ import {
   evaluateBinanceTopVolumeUniverseGate,
   getCachedBinanceTopVolumeUniverse,
 } from '../../shared/binance-top-volume-universe.ts';
+import {
+  annotateDomesticOfficialReferenceCandidates,
+  getCachedDomesticOfficialReference,
+} from '../../shared/domestic-official-reference.ts';
 
 const db = createSchemaDbHelpers(pgPool, 'investment');
 
@@ -113,6 +117,11 @@ export async function upsertCandidateSignals(
   const binanceTopVolumeUniverse = market === 'crypto'
     ? await getCachedBinanceTopVolumeUniverse().catch(() => null)
     : null;
+  const domesticOfficialReference = market === 'domestic'
+    ? await getCachedDomesticOfficialReference({
+      allowNetwork: process.env.LUNA_DOMESTIC_OFFICIAL_REFERENCE_ENABLED,
+    }).catch(() => null)
+    : null;
 
   for (const sig of signals) {
     const symbol = normalizeCandidateSymbolForMarket(sig.symbol, market);
@@ -127,6 +136,22 @@ export async function upsertCandidateSignals(
         inBinanceTop30Universe: true,
       };
       sig.qualityFlags = [...new Set([...(Array.isArray(sig.qualityFlags) ? sig.qualityFlags : []), 'binance_top30_volume_universe'])];
+    }
+    if (market === 'domestic') {
+      const annotated = annotateDomesticOfficialReferenceCandidates([{ ...sig, symbol }], domesticOfficialReference);
+      if (annotated.excluded.length > 0) continue;
+      const official = annotated.candidates[0];
+      sig.raw = {
+        ...(sig.raw || {}),
+        officialReference: official?.raw?.officialReference || null,
+      };
+      if (official?.officialReferenceStatus === 'available') {
+        sig.qualityFlags = [...new Set([
+          ...(Array.isArray(sig.qualityFlags) ? sig.qualityFlags : []),
+          'domestic_official_reference_shadow',
+          ...(official.officialReferenceWouldBlock ? ['domestic_official_reference_would_block'] : []),
+        ])];
+      }
     }
     const result = await db.get(`
       INSERT INTO candidate_universe

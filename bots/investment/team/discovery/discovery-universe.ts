@@ -8,6 +8,12 @@ import {
   evaluateBinanceTopVolumeUniverseGate,
   getCachedBinanceTopVolumeUniverse,
 } from '../../shared/binance-top-volume-universe.ts';
+import {
+  DOMESTIC_OFFICIAL_REFERENCE_BLOCK_SOURCE,
+  evaluateDomesticOfficialReferenceGate,
+  getCachedDomesticOfficialReference,
+  summarizeDomesticOfficialReference,
+} from '../../shared/domestic-official-reference.ts';
 import * as db from '../../shared/db.ts';
 
 export function toDiscoveryMarket(exchange = 'binance') {
@@ -74,6 +80,19 @@ async function resolveCryptoTopVolumeUniverse(market = 'crypto', options = {}) {
   });
 }
 
+async function resolveDomesticOfficialReference(market = 'crypto', options = {}) {
+  if (market !== 'domestic') return null;
+  if (options.enforceDomesticOfficialReference === false) return null;
+  if (options.domesticOfficialReference) return options.domesticOfficialReference;
+  return getCachedDomesticOfficialReference({
+    allowNetwork: options.fetchDomesticOfficialReference === true || process.env.LUNA_DOMESTIC_OFFICIAL_REFERENCE_ENABLED,
+    timeoutMs: Math.max(3000, Number(options.timeoutMs || 8000)),
+  }).catch((error) => {
+    console.warn(`[discovery-universe] domestic official reference fetch failed: ${error?.message || error}`);
+    return null;
+  });
+}
+
 function getBinanceTopVolumeSelectionBlock(symbol, market = 'crypto', universe = null) {
   if (market !== 'crypto' || !universe) return null;
   const gate = evaluateBinanceTopVolumeUniverseGate(symbol, universe);
@@ -82,6 +101,18 @@ function getBinanceTopVolumeSelectionBlock(symbol, market = 'crypto', universe =
     blocked: true,
     source: 'pre_entry/binance_top30_volume_universe',
     reason: BINANCE_TOP_VOLUME_BLOCK_REASON,
+    gate,
+  };
+}
+
+function getDomesticOfficialReferenceSelectionBlock(symbol, market = 'crypto', reference = null) {
+  if (market !== 'domestic' || !reference) return null;
+  const gate = evaluateDomesticOfficialReferenceGate(symbol, reference);
+  if (!gate.hardBlocked) return null;
+  return {
+    blocked: true,
+    source: DOMESTIC_OFFICIAL_REFERENCE_BLOCK_SOURCE,
+    reason: gate.reason,
     gate,
   };
 }
@@ -188,6 +219,7 @@ export async function buildDiscoveryUniverse(market, now = new Date(), options =
 
   const rows = await getActiveCandidates(market, candidateScanLimit).catch(() => []);
   const binanceTopVolumeUniverse = await resolveCryptoTopVolumeUniverse(market, options);
+  const domesticOfficialReference = await resolveDomesticOfficialReference(market, options);
   const excludedSymbols = [];
   function rememberExcluded(symbol, block, source = 'candidate') {
     if (!symbol || !block?.blocked) return;
@@ -221,7 +253,8 @@ export async function buildDiscoveryUniverse(market, now = new Date(), options =
       .filter((row) => {
         if (!row) return false;
         const block = getDiscoverySelectionBlock(row.symbol, market)
-          || getBinanceTopVolumeSelectionBlock(row.symbol, market, binanceTopVolumeUniverse);
+          || getBinanceTopVolumeSelectionBlock(row.symbol, market, binanceTopVolumeUniverse)
+          || getDomesticOfficialReferenceSelectionBlock(row.symbol, market, domesticOfficialReference);
         if (block) {
           rememberExcluded(row.symbol, block, 'candidate_universe');
           return false;
@@ -238,7 +271,8 @@ export async function buildDiscoveryUniverse(market, now = new Date(), options =
     const normalized = normalizeDiscoverySymbol(item, market);
     if (!normalized || seen.has(normalized)) return;
     const block = getDiscoverySelectionBlock(normalized, market)
-      || getBinanceTopVolumeSelectionBlock(normalized, market, binanceTopVolumeUniverse);
+      || getBinanceTopVolumeSelectionBlock(normalized, market, binanceTopVolumeUniverse)
+      || getDomesticOfficialReferenceSelectionBlock(normalized, market, domesticOfficialReference);
     if (block) {
       rememberExcluded(normalized, block, source);
       return;
@@ -276,6 +310,7 @@ export async function buildDiscoveryUniverse(market, now = new Date(), options =
       limit: binanceTopVolumeUniverse.limit,
       symbols: binanceTopVolumeUniverse.symbols,
     } : null,
+    domesticOfficialReference: domesticOfficialReference ? summarizeDomesticOfficialReference(domesticOfficialReference) : null,
     source: candidates.length > 0 ? 'candidate_universe' : 'fallback',
   };
 }
