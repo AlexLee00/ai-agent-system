@@ -74,6 +74,12 @@ function hasReasonPrefix(reasons: any[] = [], prefix: string) {
   return (reasons || []).some((reason) => String(reason).startsWith(prefix));
 }
 
+function hasOfficialOhlcvGap(gateStatus: any, blockReasons: any[] = []) {
+  const status = String(gateStatus || '').toLowerCase();
+  return status.includes('insufficient_official_ohlcv')
+    || (blockReasons || []).some((reason) => String(reason).toLowerCase().includes('insufficient_official_ohlcv'));
+}
+
 function summarizeBacktestMetadata(metadata: any = {}) {
   const parsed = parseJsonMaybe(metadata, {});
   const rowsByPeriod = parseJsonMaybe(parsed.rowsByPeriod, {});
@@ -125,6 +131,9 @@ function actionFromReasons(reasons: string[], input: any = {}) {
   const predictive = input.predictive || {};
   const communitySources = n(input.community?.source_count, 0) + n(input.community?.market_source_count, 0);
   const predictiveScore = n(predictive.score, 0);
+  if (reasons.includes('official_ohlcv_missing')) {
+    return 'official_ohlcv_reference_refresh';
+  }
   if (reasons.includes('backtest_unstable_or_unrealistic')) {
     return 'stabilize_backtest_shadow';
   }
@@ -173,6 +182,12 @@ function refreshCommandFor(action: string, reasons: string[], row: any = {}) {
   const market = normalizeLunaPhase2Market(row.market || row.candidate?.market);
   const symbol = normalizeLunaPhase2Symbol(row.symbol || row.candidate?.symbol);
   const symbolArg = symbol ? ` --symbols=${symbol}` : '';
+  if (action === 'official_ohlcv_reference_refresh') {
+    if (market === 'domestic') {
+      return 'npm --prefix bots/investment run -s runtime:luna-domestic-official-reference -- --json --dry-run --refresh --network --candidate-limit=200';
+    }
+    return `npm --prefix bots/investment run -s runtime:luna-candidate-backtest-refresh -- --json --force --market=${market}${symbolArg}`;
+  }
   if (action === 'stabilize_backtest_shadow') {
     return `npm --prefix bots/investment run -s runtime:luna-candidate-backtest-refresh -- --json --force --periods=30,90,180,365 --market=${market}${symbolArg}`;
   }
@@ -209,6 +224,7 @@ function penaltyFromReasons(reasons: string[], action: string) {
   if (reasons.includes('predictive_blocked')) penalty += 0.14;
   if (reasons.includes('predictive_coverage_low')) penalty += 0.10;
   if (reasons.includes('community_coverage_low')) penalty += 0.08;
+  if (reasons.includes('official_ohlcv_missing')) penalty += 0.10;
   if (action === 'quarantine_candidate_shadow') penalty += 0.12;
   return round(clamp(penalty, 0, 0.75, 0), 4);
 }
@@ -324,11 +340,13 @@ export function buildLunaCandidateBottleneckRows(inputs: any[] = [], options: an
     const backtestUnstableOrUnrealistic = String(backtest.gate_status || backtest.gateStatus || '').toLowerCase().includes('unstable')
       || hasReasonPrefix(backtestBlockReasons, 'unrealistic_sharpe')
       || hasReasonPrefix(backtestBlockReasons, 'backtest_unstable_sample');
+    const backtestOfficialOhlcvGap = hasOfficialOhlcvGap(backtest.gate_status || backtest.gateStatus, backtestBlockReasons);
     const sharpe = n(backtest.sharpe, 0);
     const winRate = n(backtest.win_rate ?? backtest.winRate, 0);
     const drawdown = Math.abs(n(backtest.max_drawdown ?? backtest.maxDrawdown, 0));
 
     if (!backtest || Object.keys(backtest).length === 0 || !backtestFresh) reasons.push('backtest_missing_or_stale');
+    if (backtest && Object.keys(backtest).length > 0 && backtestOfficialOhlcvGap) reasons.push('official_ohlcv_missing');
     if (backtest && Object.keys(backtest).length > 0 && backtestUnstableOrUnrealistic) reasons.push('backtest_unstable_or_unrealistic');
     if (backtest && Object.keys(backtest).length > 0 && (!backtestHealthy || backtestWouldBlock || String(backtest.gate_status || '').startsWith('would_block'))) reasons.push('backtest_unhealthy_or_would_block');
     if (backtest && Object.keys(backtest).length > 0 && sharpe < 0) reasons.push('sharpe_negative');
@@ -410,6 +428,7 @@ export function buildLunaCandidateBottleneckRows(inputs: any[] = [], options: an
           backtestFallbackUsed: backtestMetadataSummary.fallbackUsed,
           backtestVectorbtEnabled: backtestMetadataSummary.vectorbtEnabled,
           backtestUnstableOrUnrealistic,
+          backtestOfficialOhlcvGap,
           predictiveDecision,
           predictiveScore,
           predictiveCoverage,

@@ -89,6 +89,8 @@ export async function runLunaPhase4CodexP2Smoke() {
   assert.equal(blockedFormulationPlan?.mode, 'hard_block_reformulation', 'blocked strategy should expose reformulation mode');
   assert.equal(blockedFormulationPlan?.blockedExperiments.includes('live_forward'), true, 'blocked strategy should keep live-forward forbidden');
   assert.equal(blockedFormulationPlan?.allowedExperiments.length > 0, true, 'blocked strategy should expose next shadow experiments');
+  assert.equal(blockedFormulationPlan?.blockerExitCriteria.some((criterion) => criterion.blocker === 'strategy_drawdown_gt_20pct'), true, 'blocked strategy should expose strategy drawdown exit criteria');
+  assert.equal(blockedFormulationPlan?.nextEvaluationOrder.includes('strategy_drawdown_gt_20pct'), true, 'blocked strategy should expose next evaluation order');
   assert.equal(blockedFormulationPlan?.nextShadowCommands.every((cmd) => cmd.includes('--dry-run') && !cmd.includes('--apply')), true, 'strategy formulation commands must stay dry-run');
   assert.equal(nearMissProbation.enhancementStatus, 'shadow_probation_with_risk_tightening', 'near-miss indicator should enter paper-only probation');
   assert.equal(nearMissProbation.hyperoptStatus, 'shadow_probation_evaluated', 'near-miss indicator should not be hard-blocked');
@@ -110,6 +112,8 @@ export async function runLunaPhase4CodexP2Smoke() {
   assert.equal(Object.keys(strategyRuntime.summary.remediationTopWatchSignals || {}).length >= 1, true, 'strategy runtime reports watch signals separately');
   assert.equal(strategyRuntime.summary.strategyFormulationModes.hard_block_reformulation >= 1, true, 'strategy runtime reports formulation modes');
   assert.equal(Object.keys(strategyRuntime.summary.strategyFormulationAllowedFamilies || {}).length >= 1, true, 'strategy runtime reports allowed experiment families');
+  assert.equal(strategyRuntime.summary.strategyFormulationExitCriteria.strategy_drawdown_gt_20pct >= 1, true, 'strategy runtime reports exit criteria by blocker');
+  assert.equal(strategyRuntime.summary.strategyFormulationExitGaps.some((gap) => gap.blocker === 'strategy_drawdown_gt_20pct'), true, 'strategy runtime reports concrete exit gaps');
   assert.equal(strategyRuntime.summary.shadowHardReview, strategyRuntime.summary.remediationRequired, 'hard review count should match remediation-required rows');
   assert.equal(strategyRuntime.summary.shadowProbation, strategyRuntime.summary.paperOnlyProbation, 'probation count should be separated from hard review');
   assert.equal(strategyRuntime.summary.shadowMonitor, strategyRuntime.summary.riskTightenedMonitor + strategyRuntime.summary.readyMonitor, 'monitor count should cover non-blocked monitor states');

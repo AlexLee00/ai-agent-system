@@ -22,6 +22,19 @@ function round(value, digits = 6) {
   return Number(Number(value || 0).toFixed(digits));
 }
 
+function timeMs(value) {
+  if (!value) return null;
+  const parsed = new Date(value).getTime();
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function ageHoursAt(value, asOf = new Date()) {
+  const observed = timeMs(value);
+  const asOfMs = timeMs(asOf);
+  if (observed == null || asOfMs == null) return Infinity;
+  return Math.max(0, (asOfMs - observed) / 3600_000);
+}
+
 function parseJsonMaybe(value, fallback = {}) {
   if (value && typeof value === 'object') return value;
   if (typeof value !== 'string' || value.trim() === '') return fallback;
@@ -284,11 +297,14 @@ function scoreBacktest(backtest = {}) {
 function scorePredictive(predictive = {}) {
   const decision = String(predictive?.decision || '').toLowerCase();
   const score = clamp(predictive?.score, 0, 1, 0);
+  const componentCoverage = clamp(predictive?.component_coverage ?? predictive?.componentCoverage, 0, 1, 0);
   const pass = ['fire', 'pass', 'pass_prediction'].includes(decision);
   return {
     score: pass ? score : round(score * 0.35, 4),
     pass,
     decision: predictive?.decision || null,
+    componentCoverage,
+    createdAt: predictive?.created_at || predictive?.createdAt || null,
   };
 }
 
@@ -440,6 +456,49 @@ function buildQualityActionPlan(context = {}) {
   };
 }
 
+function reconcileBottleneckWithCurrentEvidence(bottleneck = {}, evidence = {}, options = {}) {
+  const predictive = evidence.predictive || {};
+  const originalReasons = Array.isArray(bottleneck.reasons) ? bottleneck.reasons : [];
+  const resolvedReasons = [];
+  const stalePredictiveHours = finiteNumber(options.stalePredictiveHours, 24 * 7);
+  const predictiveObservedAt = predictive.createdAt || predictive.created_at || null;
+  const predictiveObservedMs = timeMs(predictiveObservedAt);
+  const bottleneckObservedMs = timeMs(bottleneck.observedAt);
+  const predictiveFresh = ageHoursAt(predictiveObservedAt, options.asOf || new Date()) <= stalePredictiveHours;
+  const predictiveNewerThanBottleneck = bottleneckObservedMs == null
+    || (predictiveObservedMs != null && predictiveObservedMs >= bottleneckObservedMs - 1000);
+  const predictiveCanResolve = predictiveFresh && predictiveNewerThanBottleneck;
+  const predictiveCoverageOk = predictiveCanResolve && predictive.pass === true && Number(predictive.componentCoverage || 0) >= 0.75;
+  const predictivePass = predictiveCanResolve && predictive.pass === true && Boolean(predictive.decision);
+  const reasons = originalReasons.filter((reason) => {
+    const value = String(reason || '');
+    if (value === 'predictive_coverage_low' && predictiveCoverageOk) {
+      resolvedReasons.push(value);
+      return false;
+    }
+    if ((value === 'predictive_blocked' || value === 'predictive_missing_or_stale') && predictivePass) {
+      resolvedReasons.push(value);
+      return false;
+    }
+    return true;
+  });
+  const predictiveActionResolved = bottleneck.action === 'predictive_refresh'
+    && originalReasons.some((reason) => String(reason || '').startsWith('predictive_'))
+    && !reasons.some((reason) => String(reason || '').startsWith('predictive_'));
+  const fullyResolved = predictiveActionResolved && reasons.length === 0;
+  return {
+    ...bottleneck,
+    present: fullyResolved ? false : bottleneck.present,
+    action: fullyResolved ? null : bottleneck.action,
+    severity: fullyResolved ? null : bottleneck.severity,
+    reasons,
+    penalty: fullyResolved ? 0 : bottleneck.penalty,
+    hardHold: fullyResolved ? false : (bottleneck.hardHold && reasons.length > 0),
+    resolvedReasons,
+    resolvedByCurrentEvidence: resolvedReasons.length > 0,
+  };
+}
+
 export function buildLunaWeightVector(input = {}, config = {}) {
   const candidate = input.candidate || input;
   const symbol = normalizeLunaPhase2Symbol(candidate?.symbol);
@@ -447,13 +506,17 @@ export function buildLunaWeightVector(input = {}, config = {}) {
   const exchange = candidate?.exchange || exchangeForLunaPhase2Market(market);
   const asOf = input.asOf || new Date().toISOString();
   const rawCandidateScore = clamp(candidate?.score ?? candidate?.candidate_score, 0, 1, 0.5);
-  const bottleneck = normalizeBottleneck(input.bottleneck || candidate?.bottleneck || {});
   const strategyQuality = normalizeStrategyQuality(input.strategyQuality || input.strategy_quality || candidate?.strategyQuality || candidate?.strategy_quality || {});
-  const bottleneckAdjustedCandidateScore = rawCandidateScore * (1 - bottleneck.penalty);
-  const candidateScore = round(bottleneckAdjustedCandidateScore * (1 - strategyQuality.penalty), 4);
   const backtest = scoreBacktest(input.backtest || candidate?.backtest || {});
   const predictive = scorePredictive(input.predictive || candidate?.predictive || {});
   const community = scoreCommunity(input.community || candidate?.community || {});
+  const bottleneck = reconcileBottleneckWithCurrentEvidence(
+    normalizeBottleneck(input.bottleneck || candidate?.bottleneck || {}),
+    { predictive, backtest, community },
+    { asOf, stalePredictiveHours: config?.stalePredictiveHours || config?.stalePredictiveEvidenceHours || 24 * 7 },
+  );
+  const bottleneckAdjustedCandidateScore = rawCandidateScore * (1 - bottleneck.penalty);
+  const candidateScore = round(bottleneckAdjustedCandidateScore * (1 - strategyQuality.penalty), 4);
   const decisionSpec = buildLunaDeploymentDecisionSpec({
     ...input,
     candidate,
@@ -588,7 +651,14 @@ export function buildLunaWeightVector(input = {}, config = {}) {
           raw: candidate,
         },
         backtest: { score: round(backtest.score, 4), pass: backtest.pass, raw: input.backtest || null },
-        predictive: { score: round(predictive.score, 4), pass: predictive.pass, decision: predictive.decision, raw: input.predictive || null },
+        predictive: {
+          score: round(predictive.score, 4),
+          pass: predictive.pass,
+          decision: predictive.decision,
+          componentCoverage: round(predictive.componentCoverage, 4),
+          createdAt: predictive.createdAt,
+          raw: input.predictive || null,
+        },
         community: { score: round(community.score, 4), ...community, raw: input.community || null },
       },
       bottleneck: {
@@ -596,6 +666,8 @@ export function buildLunaWeightVector(input = {}, config = {}) {
         action: bottleneck.action,
         severity: bottleneck.severity,
         reasons: bottleneck.reasons,
+        resolvedReasons: bottleneck.resolvedReasons || [],
+        resolvedByCurrentEvidence: bottleneck.resolvedByCurrentEvidence === true,
         penalty: round(bottleneck.penalty, 4),
         hardHold: bottleneck.hardHold,
         observedAt: bottleneck.observedAt,

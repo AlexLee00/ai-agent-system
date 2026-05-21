@@ -56,6 +56,14 @@ function countReason(rows: any[] = [], reason: string) {
   return rows.filter((row) => Array.isArray(row?.reasons) && row.reasons.includes(reason)).length;
 }
 
+function isBacktestGatePredictiveBlock(row: any = {}) {
+  const decision = String(row?.predictiveDecision || '').trim().toLowerCase();
+  const blockedReason = String(row?.predictiveBlockedReason || '').trim().toLowerCase();
+  return decision === 'block_backtest_gate'
+    || blockedReason.startsWith('backtest_')
+    || blockedReason.includes('backtest');
+}
+
 function buildBacktestQualityTarget(rows: any[] = [], summary: any = {}, options: any = {}) {
   const total = rows.length;
   const actionableRows = rows.filter((row) => row?.qualityGovernanceCooldownActive !== true);
@@ -112,15 +120,17 @@ function buildBacktestQualityTarget(rows: any[] = [], summary: any = {}, options
 
 function buildPredictiveQualityTarget(rows: any[] = [], options: any = {}) {
   const total = rows.length;
+  const targetRows = rows.filter((row) => !isBacktestGatePredictiveBlock(row));
+  const backtestGateSuppressed = total - targetRows.length;
   const minCoverage = numberOption(options, 'targetMinPredictiveCoverage', 'LUNA_PREDICTIVE_TARGET_MIN_COVERAGE', 0.75);
   const maxBlocked = Math.max(0, Math.floor(numberOption(options, 'targetMaxPredictiveBlocked', 'LUNA_PREDICTIVE_TARGET_MAX_BLOCKED', 0)));
   const maxMissingOrStale = Math.max(0, Math.floor(numberOption(options, 'targetMaxPredictiveMissingOrStale', 'LUNA_PREDICTIVE_TARGET_MAX_MISSING_OR_STALE', 0)));
   const maxCoverageLow = Math.max(0, Math.floor(numberOption(options, 'targetMaxPredictiveCoverageLow', 'LUNA_PREDICTIVE_TARGET_MAX_COVERAGE_LOW', 0)));
-  const predictiveBlocked = countReason(rows, 'predictive_blocked');
-  const predictiveMissingOrStale = countReason(rows, 'predictive_missing_or_stale');
-  const predictiveCoverageLow = countReason(rows, 'predictive_coverage_low');
-  const passCandidates = rows.filter((row) => row?.recommendedAction === 'monitor_pass_candidate' || String(row?.predictiveDecision || '').toLowerCase() === 'fire').length;
-  const coverageRows = rows
+  const predictiveBlocked = countReason(targetRows, 'predictive_blocked');
+  const predictiveMissingOrStale = countReason(targetRows, 'predictive_missing_or_stale');
+  const predictiveCoverageLow = countReason(targetRows, 'predictive_coverage_low');
+  const passCandidates = targetRows.filter((row) => row?.recommendedAction === 'monitor_pass_candidate' || String(row?.predictiveDecision || '').toLowerCase() === 'fire').length;
+  const coverageRows = targetRows
     .map((row) => Number(row?.predictiveCoverage))
     .filter((value) => Number.isFinite(value));
   const minObservedCoverage = coverageRows.length ? Number(Math.min(...coverageRows).toFixed(4)) : null;
@@ -131,16 +141,22 @@ function buildPredictiveQualityTarget(rows: any[] = [], options: any = {}) {
     { name: 'max_predictive_blocked', current: predictiveBlocked, target: maxBlocked, ok: predictiveBlocked <= maxBlocked },
     { name: 'max_predictive_missing_or_stale', current: predictiveMissingOrStale, target: maxMissingOrStale, ok: predictiveMissingOrStale <= maxMissingOrStale },
     { name: 'max_predictive_coverage_low', current: predictiveCoverageLow, target: maxCoverageLow, ok: predictiveCoverageLow <= maxCoverageLow },
-    { name: 'min_predictive_component_coverage', current: minObservedCoverage, target: minCoverage, ok: minObservedCoverage == null ? total === 0 : minObservedCoverage >= minCoverage },
+    { name: 'min_predictive_component_coverage', current: minObservedCoverage, target: minCoverage, ok: minObservedCoverage == null ? targetRows.length === 0 : minObservedCoverage >= minCoverage },
   ];
   const gaps = checks.filter((check) => !check.ok);
-  const refreshSymbols = rows
+  const refreshSymbols = targetRows
     .filter((row) => (row?.reasons || []).some((reason) => String(reason).startsWith('predictive_')))
+    .map((row) => row.symbol);
+  const backtestGateSuppressedSymbols = rows
+    .filter((row) => isBacktestGatePredictiveBlock(row))
     .map((row) => row.symbol);
   return {
     achieved: gaps.length === 0,
     mode: 'shadow_predictive_quality_slo',
     total,
+    targetTotal: targetRows.length,
+    backtestGateSuppressed,
+    backtestGateSuppressedSymbols,
     passCandidates,
     predictiveBlocked,
     predictiveMissingOrStale,

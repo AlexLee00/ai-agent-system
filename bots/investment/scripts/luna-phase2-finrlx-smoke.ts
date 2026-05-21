@@ -163,6 +163,46 @@ assert.equal(strategyRiskMonitor.evidence.strategyQuality.operatingState, 'risk_
 assert.equal(strategyRiskMonitor.evidence.qualityActionPlan.primaryAction, 'risk_tightened_shadow_monitor');
 assert.ok(strategyRiskMonitor.evidence.qualityActionPlan.monitorComponents.includes('strategy_quality_monitor'));
 
+const resolvedPredictiveBottleneck = buildLunaWeightVector({
+  asOf: now,
+  candidate: { symbol: 'RPB/USDT', market: 'crypto', score: 0.86, discovered_at: now },
+  backtest: { fresh: true, healthy: true, sharpe: 1.2, win_rate: 58, max_drawdown: 10, last_backtest_at: now },
+  predictive: { decision: 'fire', score: 0.74, component_coverage: 1, created_at: now },
+  community: { avg_score: 0.44, source_count: 3, last_seen_at: now },
+  bottleneck: {
+    severity: 'review',
+    recommended_action: 'predictive_refresh',
+    candidate_selection_penalty: 0.22,
+    reasons: ['predictive_coverage_low'],
+    observed_at: now,
+  },
+}, { riskBudgetUsdt: 50 });
+assert.equal(resolvedPredictiveBottleneck.evidence.bottleneck.resolvedByCurrentEvidence, true);
+assert.ok(resolvedPredictiveBottleneck.evidence.bottleneck.resolvedReasons.includes('predictive_coverage_low'));
+assert.equal(resolvedPredictiveBottleneck.evidence.bottleneck.penalty, 0);
+assert.equal(resolvedPredictiveBottleneck.evidence.hardReasons.includes('candidate_bottleneck_predictive_coverage_low'), false);
+assert.equal(resolvedPredictiveBottleneck.gateStatus, 'shadow_pass');
+
+const stalePredictiveAt = new Date(Date.parse(now) - 10 * 24 * 3600_000).toISOString();
+const unresolvedStalePredictiveBottleneck = buildLunaWeightVector({
+  asOf: now,
+  candidate: { symbol: 'SPB/USDT', market: 'crypto', score: 0.86, discovered_at: now },
+  backtest: { fresh: true, healthy: true, sharpe: 1.2, win_rate: 58, max_drawdown: 10, last_backtest_at: now },
+  predictive: { decision: 'fire', score: 0.74, component_coverage: 1, created_at: stalePredictiveAt },
+  community: { avg_score: 0.44, source_count: 3, last_seen_at: now },
+  bottleneck: {
+    severity: 'review',
+    recommended_action: 'predictive_refresh',
+    candidate_selection_penalty: 0.22,
+    reasons: ['predictive_missing_or_stale'],
+    observed_at: now,
+  },
+}, { riskBudgetUsdt: 50, stalePredictiveHours: 24 * 7 });
+assert.equal(unresolvedStalePredictiveBottleneck.evidence.bottleneck.resolvedByCurrentEvidence, false);
+assert.ok(unresolvedStalePredictiveBottleneck.evidence.bottleneck.reasons.includes('predictive_missing_or_stale'));
+assert.equal(unresolvedStalePredictiveBottleneck.evidence.bottleneck.penalty, 0.22);
+assert.ok(unresolvedStalePredictiveBottleneck.evidence.hardReasons.includes('candidate_bottleneck_predictive_missing_or_stale'));
+
 const paper = buildLunaPaperTradingPlan(pass, {
   position: { amount: 0, avg_price: 65000 },
   equityUsdt: 1000,

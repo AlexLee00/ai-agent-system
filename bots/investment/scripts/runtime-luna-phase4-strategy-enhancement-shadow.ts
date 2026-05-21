@@ -139,6 +139,24 @@ export async function runLunaPhase4StrategyEnhancementShadow(options = {}, deps 
       rows.flatMap((row) => row.strategyRemediation?.strategyFormulationPlan?.allowedExperiments || []),
       (experiment) => experiment?.family || 'unknown',
     ),
+    strategyFormulationExitCriteria: countBy(
+      rows.flatMap((row) => row.strategyRemediation?.strategyFormulationPlan?.blockerExitCriteria || []),
+      (criterion) => criterion?.blocker || 'unknown',
+    ),
+    strategyFormulationExitGaps: rows
+      .flatMap((row) => (row.strategyRemediation?.strategyFormulationPlan?.blockerExitCriteria || []).map((criterion) => ({
+        symbol: row.symbol,
+        market: row.market,
+        blocker: criterion.blocker,
+        metric: criterion.metric,
+        current: criterion.current,
+        targetMin: criterion.targetMin ?? null,
+        targetMax: criterion.targetMax ?? null,
+        target: criterion.target ?? null,
+        gap: criterion.gap,
+        requiredAction: criterion.requiredAction,
+      })))
+      .filter((item) => Number(item.gap || 0) > 0 || item.target),
     liveMutation: false,
   };
 

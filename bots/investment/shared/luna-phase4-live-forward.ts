@@ -279,6 +279,7 @@ function buildStrategyFormulationPlan({
   const hardBlocked = blockers.length > 0;
   const allowedExperiments = [];
   const blockedExperiments = [];
+  const blockerExitCriteria = [];
 
   if (hardBlocked) {
     blockedExperiments.push(
@@ -300,6 +301,16 @@ function buildStrategyFormulationPlan({
       },
     });
   }
+  if (blockers.includes('hyperopt_shadow_blocked')) {
+    blockerExitCriteria.push({
+      blocker: 'hyperopt_shadow_blocked',
+      metric: 'hyperoptStatus',
+      current: 'shadow_evaluated_blocked',
+      target: 'shadow_evaluated_or_shadow_probation_evaluated',
+      requiredAction: 'run_allowed_shadow_reformulation_family_before_any_paper_buy_probe',
+      gap: 1,
+    });
+  }
   if (blockers.includes('strategy_drawdown_gt_20pct')) {
     blockedExperiments.push('current_strategy_live_forward', 'wide_stop_momentum_reuse');
     allowedExperiments.push({
@@ -310,6 +321,14 @@ function buildStrategyFormulationPlan({
         stopLossPctCeiling: -1.25,
         requireWalkForwardRetest: true,
       },
+    });
+    blockerExitCriteria.push({
+      blocker: 'strategy_drawdown_gt_20pct',
+      metric: 'strategyDrawdownPct',
+      current: round(strategyDrawdown, 4),
+      targetMax: 20,
+      gap: round(Math.max(0, strategyDrawdown - 20), 4),
+      requiredAction: 'volatility_adjusted_defensive_retest',
     });
   }
   if (blockers.includes('market_regime_drawdown_gt_20pct')) {
@@ -322,6 +341,14 @@ function buildStrategyFormulationPlan({
         requireFreshOhlcv: true,
       },
     });
+    blockerExitCriteria.push({
+      blocker: 'market_regime_drawdown_gt_20pct',
+      metric: 'marketRegimeDrawdownPct',
+      current: round(marketRegimeDrawdown, 4),
+      targetMax: 20,
+      gap: round(Math.max(0, marketRegimeDrawdown - 20), 4),
+      requiredAction: 'regime_recovery_wait',
+    });
   }
   if (blockers.includes('indicator_score_below_unblock_floor')) {
     blockedExperiments.push('indicator_blind_entry', 'increase_weight_below_indicator_floor');
@@ -332,6 +359,15 @@ function buildStrategyFormulationPlan({
         minIndicatorScore: 0.35,
         preferredIndicatorScore: 0.45,
       },
+    });
+    blockerExitCriteria.push({
+      blocker: 'indicator_score_below_unblock_floor',
+      metric: 'indicatorScore',
+      current: round(indicators.indicatorScore, 4),
+      targetMin: 0.35,
+      preferredMin: 0.45,
+      gap: round(Math.max(0, 0.35 - indicators.indicatorScore), 4),
+      requiredAction: 'indicator_recovery_probe',
     });
   }
   if (watchSignals.includes('macd_histogram_negative')) {
@@ -388,6 +424,8 @@ function buildStrategyFormulationPlan({
     primaryExperimentFamily: allowedExperiments[0]?.family || 'current_strategy_shadow_continuation',
     allowedExperiments,
     blockedExperiments: [...new Set(blockedExperiments)],
+    blockerExitCriteria,
+    nextEvaluationOrder: blockerExitCriteria.map((criterion) => criterion.blocker),
     readinessCriteria: {
       allRequired: true,
       maxStrategyDrawdownPct: 20,

@@ -72,6 +72,25 @@ export async function runLunaCandidateBottleneckDiagnosticsSmoke() {
   assert.ok(String(unstable?.recommendedRefreshCommand || '').includes('--periods=30,90,180,365'), 'stabilization command expands walk-forward periods');
   assert.equal(unstable?.evidence?.trace?.backtestUnstableOrUnrealistic, true, 'trace marks unstable backtest');
 
+  const officialOhlcvRows = buildLunaCandidateBottleneckRows([{
+    candidate: { symbol: '477850', market: 'domestic', score: 0.6, source: 'fixture', discovered_at: new Date().toISOString() },
+    backtest: {
+      fresh: true,
+      healthy: false,
+      would_block: true,
+      gate_status: 'would_block_no_data',
+      block_reasons: ['backtest_insufficient_official_ohlcv'],
+      last_backtest_at: new Date().toISOString(),
+    },
+    predictive: { decision: 'block_backtest_gate', score: 0, component_coverage: 0.75, blocked_reason: 'backtest_unhealthy', created_at: new Date().toISOString() },
+    community: { avg_score: 0.42, event_count: 8, source_count: 3, market_event_count: 8, market_source_count: 3, last_seen_at: new Date().toISOString() },
+  }]);
+  const officialOhlcv = officialOhlcvRows[0];
+  assert.equal(officialOhlcv?.primaryBlocker, 'official_ohlcv_missing', 'official OHLCV gaps become a distinct primary blocker');
+  assert.equal(officialOhlcv?.recommendedAction, 'official_ohlcv_reference_refresh', 'official OHLCV gaps route to official reference refresh');
+  assert.ok(String(officialOhlcv?.recommendedRefreshCommand || '').includes('runtime:luna-domestic-official-reference'), 'official OHLCV gaps point to domestic official reference check');
+  assert.equal(officialOhlcv?.evidence?.trace?.backtestOfficialOhlcvGap, true, 'trace marks official OHLCV gap');
+
   await expectRejectsApplyDryRun();
   const runtime = await runLunaCandidateBottleneckDiagnostics({ fixture: true, dryRun: true, json: true });
   assert.equal(runtime.summary.total, 4, 'runtime fixture count');
@@ -86,8 +105,11 @@ export async function runLunaCandidateBottleneckDiagnosticsSmoke() {
   assert.ok(runtime.summary.backtestQualityTarget.recommendedLoop[0].includes('runtime:luna-candidate-backtest-refresh'), 'runtime exposes remediation loop command');
   assert.equal(runtime.summary.predictiveQualityTarget.mode, 'shadow_predictive_quality_slo', 'runtime exposes predictive quality target mode');
   assert.equal(runtime.summary.predictiveQualityTarget.achieved, false, 'fixture predictive target should remain unmet until refresh runs');
+  assert.equal(runtime.summary.predictiveQualityTarget.backtestGateSuppressed, 1, 'backtest-gate predictive blocks are excluded from predictive refresh SLO');
+  assert.ok(runtime.summary.predictiveQualityTarget.backtestGateSuppressedSymbols.includes('NEG/USDT'), 'suppressed backtest-gate symbols are exposed');
   assert.ok(runtime.summary.predictiveQualityTarget.gaps.length > 0, 'runtime exposes predictive target gaps');
-  assert.ok(runtime.summary.predictiveQualityTarget.refreshSymbols.includes('NEG/USDT'), 'runtime exposes predictive refresh target symbols');
+  assert.equal(runtime.summary.predictiveQualityTarget.refreshSymbols.includes('NEG/USDT'), false, 'backtest-gate blocks should not be routed to predictive refresh');
+  assert.ok(runtime.summary.predictiveQualityTarget.refreshSymbols.includes('MISS/USDT'), 'true predictive missing/stale rows remain refresh targets');
   assert.ok(runtime.summary.predictiveQualityTarget.recommendedLoop[0].includes('runtime:luna-predictive-evidence-refresh'), 'runtime exposes predictive refresh loop command');
 
   return {
