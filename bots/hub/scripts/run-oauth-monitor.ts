@@ -109,6 +109,12 @@ function tokenExpiresInHours(token: any): number | null {
   return (expiresMs - Date.now()) / (60 * 60 * 1000);
 }
 
+function finiteNumberOrNull(value: any): number | null {
+  if (value == null || value === '') return null;
+  const numeric = Number(value);
+  return Number.isFinite(numeric) ? numeric : null;
+}
+
 function monitorStateDir(): string {
   return String(process.env.AI_AGENT_WORKSPACE || '').trim()
     || path.join(os.homedir(), '.ai-agent-system', 'workspace');
@@ -473,18 +479,35 @@ async function maybeReimportGeminiCliCredential(reason: string, record: any) {
   };
 }
 
-async function refreshGeminiCliCredentialFile(reason: string, imported: any) {
-  const filePath = String(imported?.filePath || '').trim();
-  const refreshToken = String(imported?.token?.refresh_token || '').trim();
-  if (!filePath || !fs.existsSync(filePath)) {
-    return {
-      ok: false,
-      source: 'gemini_cli_oauth_refresh',
-      skipped: true,
-      reason,
-      error: 'gemini_cli_credential_file_missing',
-    };
-  }
+function buildGeminiCliRefreshedToken(previousToken: any, payload: any) {
+  const expiresIn = Number(payload.expires_in || 3600);
+  const expiresAt = new Date(Date.now() + (Number.isFinite(expiresIn) && expiresIn > 0 ? expiresIn : 3600) * 1000).toISOString();
+  return {
+    ...(previousToken || {}),
+    access_token: payload.access_token,
+    token_type: payload.token_type || previousToken?.token_type || previousToken?.tokenType || 'Bearer',
+    scope: payload.scope || previousToken?.scope,
+    scopes: Array.isArray(previousToken?.scopes) ? previousToken.scopes : previousToken?.scopes,
+    expires_at: expiresAt,
+    refresh_token: payload.refresh_token || previousToken?.refresh_token || previousToken?.refreshToken,
+    ...(payload.id_token ? { id_token: payload.id_token } : {}),
+  };
+}
+
+function geminiCliTokenForCredentialFile(token: any) {
+  const expiresMs = Date.parse(String(token?.expires_at || ''));
+  return {
+    access_token: token.access_token,
+    token_type: token.token_type || 'Bearer',
+    scope: token.scope || (Array.isArray(token.scopes) ? token.scopes.join(' ') : undefined),
+    expiry_date: Number.isFinite(expiresMs) ? expiresMs : Date.now() + 3600 * 1000,
+    refresh_token: token.refresh_token,
+    ...(token.id_token ? { id_token: token.id_token } : {}),
+  };
+}
+
+async function refreshGeminiCliOAuthToken(reason: string, previousToken: any) {
+  const refreshToken = String(previousToken?.refresh_token || previousToken?.refreshToken || '').trim();
   if (!refreshToken) {
     return {
       ok: false,
@@ -538,16 +561,44 @@ async function refreshGeminiCliCredentialFile(reason: string, imported: any) {
       };
     }
 
+    const token = buildGeminiCliRefreshedToken(previousToken, payload);
+    return {
+      ok: true,
+      source: 'gemini_cli_oauth_refresh',
+      reason,
+      token,
+      expires_in_hours: tokenExpiresInHours(token),
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      source: 'gemini_cli_oauth_refresh',
+      reason,
+      error: normalizeProbeException(error),
+    };
+  }
+}
+
+async function refreshGeminiCliCredentialFile(reason: string, imported: any) {
+  const filePath = String(imported?.filePath || '').trim();
+  if (!filePath || !fs.existsSync(filePath)) {
+    return {
+      ok: false,
+      source: 'gemini_cli_oauth_refresh',
+      skipped: true,
+      reason,
+      error: 'gemini_cli_credential_file_missing',
+    };
+  }
+
+  const refresh = await refreshGeminiCliOAuthToken(reason, imported?.token || null);
+  if (!refresh?.ok || !refresh.token) return refresh;
+
+  try {
     const previous = JSON.parse(fs.readFileSync(filePath, 'utf8') || '{}');
-    const expiresIn = Number(payload.expires_in || 3600);
     const next = {
       ...previous,
-      access_token: payload.access_token,
-      token_type: payload.token_type || previous.token_type || 'Bearer',
-      scope: payload.scope || previous.scope,
-      expiry_date: Date.now() + (Number.isFinite(expiresIn) && expiresIn > 0 ? expiresIn : 3600) * 1000,
-      refresh_token: payload.refresh_token || previous.refresh_token || refreshToken,
-      ...(payload.id_token ? { id_token: payload.id_token } : {}),
+      ...geminiCliTokenForCredentialFile(refresh.token),
     };
     const tmpPath = `${filePath}.tmp-${process.pid}`;
     fs.writeFileSync(tmpPath, JSON.stringify(next, null, 2));
@@ -557,7 +608,8 @@ async function refreshGeminiCliCredentialFile(reason: string, imported: any) {
       ok: true,
       source: 'gemini_cli_oauth_refresh',
       reason,
-      expires_in_hours: tokenExpiresInHours({ expires_at: new Date(next.expiry_date).toISOString() }),
+      token: refresh.token,
+      expires_in_hours: refresh.expires_in_hours,
     };
   } catch (error) {
     return {
@@ -1209,11 +1261,49 @@ async function checkGeminiCliOAuth() {
     const inAlarmWindow = Number.isFinite(Number(expiresInHours))
       ? Number(expiresInHours) <= alarmHours
       : false;
-    const liveRefreshResult = localCredentialNeedsRefresh
+    let credentialRefresh = null;
+    let tokenStoreSync = null;
+    if (localCredentialNeedsRefresh) {
+      credentialRefresh = await withMonitorOAuthLock('gemini-cli-oauth', 'token_store_refresh_window', () =>
+        refreshGeminiCliOAuthToken('token_store_refresh_window', record.token));
+      if (credentialRefresh?.ok && credentialRefresh.token) {
+        const metadata = {
+          ...(record.metadata || {}),
+          imported_by: 'hub_oauth_monitor',
+          imported_at: new Date().toISOString(),
+          import_reason: 'token_store_refresh_window_after_direct_refresh',
+        };
+        setProviderToken('gemini-cli-oauth', credentialRefresh.token, metadata);
+        setProviderCanary('gemini-cli-oauth', {
+          ok: true,
+          details: {
+            source: metadata.source || 'token_store',
+            expires_at: credentialRefresh.token?.expires_at || null,
+            imported_by: 'hub_oauth_monitor',
+            quota_project_configured: Boolean(metadata.quota_project_configured),
+            identity_present: Boolean(metadata.identity_present),
+          },
+        });
+        tokenStoreSync = {
+          ok: true,
+          source: 'token_store',
+          expires_in_hours: tokenExpiresInHours(credentialRefresh.token),
+        };
+      }
+    }
+    const liveRefreshResult = localCredentialNeedsRefresh && !credentialRefresh?.ok
       ? await runGeminiCliLiveRefreshProbeWithReimport('token_store_refresh_window', record)
       : null;
-    const liveRefreshProbe = liveRefreshResult?.probe || null;
-    const postProbeReimport = liveRefreshResult?.reimport || null;
+    const liveRefreshProbe = credentialRefresh?.ok
+      ? {
+        ok: true,
+        provider: 'gemini-cli-oauth',
+        selected_route: 'gemini-cli-oauth/direct-refresh-token',
+        auth_path: 'direct_google_oauth_refresh_token',
+        attempts: 1,
+      }
+      : liveRefreshResult?.probe || null;
+    const postProbeReimport = tokenStoreSync || liveRefreshResult?.reimport || null;
     const finalState = finalizeGeminiCliMonitorState({
       expiresInHours,
       warnHours: refreshHours,
@@ -1222,7 +1312,7 @@ async function checkGeminiCliOAuth() {
     });
     const needsRefresh = finalState.needs_refresh;
     if (localCredentialNeedsRefresh && liveRefreshProbe?.ok) {
-      console.log(`[oauth-monitor] Gemini CLI OAuth token-store is near/after expiry, capacity-bypass probe provider=${liveRefreshProbe.provider || 'unknown'} succeeded in ${liveRefreshProbe.duration_ms || 0}ms, token-store reimport=${postProbeReimport?.ok ? 'ok' : 'not_updated'}`);
+      console.log(`[oauth-monitor] Gemini CLI OAuth token-store is near/after expiry, refresh path=${liveRefreshProbe.auth_path || 'unknown'} provider=${liveRefreshProbe.provider || 'unknown'} succeeded, token-store sync=${postProbeReimport?.ok ? 'ok' : 'not_updated'}`);
     }
     if ((needsRefresh || (inAlarmWindow && !localCredentialNeedsRefresh)) && required) {
       const level = Number(expiresInHours) <= criticalHours ? 3 : 2;
@@ -1241,6 +1331,8 @@ async function checkGeminiCliOAuth() {
           live_refresh_ok: Boolean(liveRefreshProbe?.ok),
           live_refresh_error: liveRefreshProbe?.error || null,
           post_probe_reimport_ok: postProbeReimport?.ok ?? null,
+          credential_refresh_ok: credentialRefresh?.ok ?? null,
+          credential_refresh_error: credentialRefresh?.error || null,
           expires_in_hours: Math.round(Number(expiresInHours) * 100) / 100,
           alarm_window_hours: alarmHours,
           refresh_window_hours: refreshHours,
@@ -1264,6 +1356,8 @@ async function checkGeminiCliOAuth() {
       live_refresh_attempts: liveRefreshProbe?.attempts ?? null,
       post_probe_reimport_ok: postProbeReimport?.ok ?? null,
       post_probe_expires_in_hours: postProbeReimport?.expires_in_hours ?? null,
+      credential_refresh_ok: credentialRefresh?.ok ?? null,
+      credential_refresh_error: credentialRefresh?.error || null,
       quota_project_configured: Boolean(record?.metadata?.quota_project_configured),
       error: cliImport.error || null,
     };
@@ -1430,9 +1524,9 @@ async function main() {
       live_refresh_auth_path: geminiCliOauth.live_refresh_auth_path || null,
       live_refresh_attempts: geminiCliOauth.live_refresh_attempts ?? null,
       post_probe_reimport_ok: geminiCliOauth.post_probe_reimport_ok ?? null,
-      post_probe_expires_in_hours: Number.isFinite(Number(geminiCliOauth.post_probe_expires_in_hours))
-        ? Math.round(Number(geminiCliOauth.post_probe_expires_in_hours) * 100) / 100
-        : null,
+      post_probe_expires_in_hours: finiteNumberOrNull(geminiCliOauth.post_probe_expires_in_hours) == null
+        ? null
+        : Math.round(Number(geminiCliOauth.post_probe_expires_in_hours) * 100) / 100,
       credential_refresh_ok: geminiCliOauth.credential_refresh_ok ?? null,
       credential_refresh_error: geminiCliOauth.credential_refresh_error || null,
       quota_project_configured: Boolean(geminiCliOauth.quota_project_configured),

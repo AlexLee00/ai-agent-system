@@ -84,6 +84,7 @@ function providerOk(report: any) {
   const openaiRefresh = refreshWindowCovered(openai, thresholdHours('HUB_OPENAI_OAUTH_REFRESH_HOURS', 3));
   const geminiCliNearExpiry = Boolean(geminiCli.local_credential_needs_refresh);
   const geminiCliRefreshCovered = !geminiCliNearExpiry
+    || (geminiCli.credential_refresh_ok === true && geminiCli.post_probe_reimport_ok === true)
     || (geminiCli.live_refresh_ok === true && geminiCli.post_probe_reimport_ok === true);
 
   return {
@@ -150,6 +151,7 @@ function main() {
         local_credential_needs_refresh: Boolean(report.gemini_cli_oauth?.local_credential_needs_refresh)
           && !providers.gemini_cli_refresh_covered,
         live_refresh_ok: report.gemini_cli_oauth?.live_refresh_ok ?? null,
+        credential_refresh_ok: report.gemini_cli_oauth?.credential_refresh_ok ?? null,
         post_probe_reimport_ok: report.gemini_cli_oauth?.post_probe_reimport_ok ?? null,
         expires_in_hours: report.gemini_cli_oauth?.expires_in_hours ?? null,
       },
@@ -175,7 +177,7 @@ function main() {
     notes: [
       'No provider token, account id, or raw secret is included in this report.',
       'Near-expiry OAuth providers are accepted only when refresh/reimport coverage is verified or the final token is outside the monitor warn window.',
-      'Near-expiry Gemini CLI OAuth is accepted only when live refresh probe and token-store reimport both succeed.',
+      'Near-expiry Gemini CLI OAuth is accepted only when direct refresh or live probe plus token-store reimport succeeds.',
     ],
     ...(ok ? {} : { monitor_output_preview: monitor.outputPreview }),
   };
