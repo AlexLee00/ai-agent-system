@@ -40,12 +40,15 @@ function main() {
   assert.equal(String(env.HUB_OAUTH_MONITOR_SYNC_LOCAL_CODEX || '').trim(), 'true', 'OpenAI Codex OAuth refresh must sync refreshed tokens back into Codex auth.json');
   assert.notEqual(String(env.HUB_CLAUDE_CODE_LIVE_PROBE_ON_MONITOR || '').trim().toLowerCase(), 'false', 'Claude Code OAuth monitor must keep the live CLI probe enabled');
   assert.equal(String(env.GEMINI_CLI_OAUTH_PROJECT_ID || '').trim(), 'gen-lang-client-0627707293', 'Gemini CLI quota project must be wired into oauth monitor launchd');
-  for (const provider of ['CLAUDE', 'OPENAI', 'GEMINI_CLI']) {
+  for (const provider of ['CLAUDE', 'OPENAI']) {
     const prefix = provider === 'OPENAI' ? 'HUB_OPENAI_OAUTH' : `HUB_${provider}_OAUTH`;
     assert.equal(asNumber(env[`${prefix}_WARN_HOURS`], `${prefix}_WARN_HOURS`), 5, `${prefix} alarm window must be 5h`);
     assert.equal(asNumber(env[`${prefix}_REFRESH_HOURS`], `${prefix}_REFRESH_HOURS`), 3, `${prefix} refresh window must be 3h`);
     assert.equal(asNumber(env[`${prefix}_CRITICAL_HOURS`], `${prefix}_CRITICAL_HOURS`), 1, `${prefix} critical window must be 1h`);
   }
+  assert(asNumber(env.HUB_GEMINI_CLI_OAUTH_WARN_HOURS, 'HUB_GEMINI_CLI_OAUTH_WARN_HOURS') <= 10 / 60 + 0.001, 'Gemini CLI alarm window must be 10 minutes or less');
+  assert(asNumber(env.HUB_GEMINI_CLI_OAUTH_REFRESH_HOURS, 'HUB_GEMINI_CLI_OAUTH_REFRESH_HOURS') <= 10 / 60 + 0.001, 'Gemini CLI refresh window must be 10 minutes or less');
+  assert.equal(asNumber(env.HUB_GEMINI_CLI_OAUTH_CRITICAL_HOURS, 'HUB_GEMINI_CLI_OAUTH_CRITICAL_HOURS'), 1, 'Gemini CLI critical window must be 1h');
   assert(asNumber(env.HUB_OAUTH_MONITOR_REAUTH_ALARM_COOLDOWN_MINUTES, 'HUB_OAUTH_MONITOR_REAUTH_ALARM_COOLDOWN_MINUTES') >= 120, 'reauth alarms must be throttled for at least 120 minutes');
 
   for (const key of Object.keys(env)) {

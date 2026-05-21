@@ -45,8 +45,16 @@ function oauthRefreshHours(name: string): number {
   return thresholdHours(name, 3);
 }
 
+function geminiCliOAuthRefreshHours(): number {
+  return thresholdHours('HUB_GEMINI_CLI_OAUTH_REFRESH_HOURS', 10 / 60);
+}
+
 function oauthAlarmHours(name: string): number {
   return thresholdHours(name, 5);
+}
+
+function geminiCliOAuthAlarmHours(): number {
+  return thresholdHours('HUB_GEMINI_CLI_OAUTH_WARN_HOURS', 10 / 60);
 }
 
 function oauthCriticalHours(name: string): number {
@@ -1084,8 +1092,8 @@ function finalizeGeminiCliMonitorState({
 async function checkGeminiCliOAuth() {
   const record = getProviderRecord('gemini-cli-oauth');
   const required = geminiCliMonitorRequired();
-  const alarmHours = oauthAlarmHours('HUB_GEMINI_CLI_OAUTH_WARN_HOURS');
-  const refreshHours = oauthRefreshHours('HUB_GEMINI_CLI_OAUTH_REFRESH_HOURS');
+  const alarmHours = geminiCliOAuthAlarmHours();
+  const refreshHours = geminiCliOAuthRefreshHours();
   const criticalHours = oauthCriticalHours('HUB_GEMINI_CLI_OAUTH_CRITICAL_HOURS');
   const cliImport = readGeminiCliCredentialForMonitor(record);
 
