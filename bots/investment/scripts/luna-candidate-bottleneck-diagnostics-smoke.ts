@@ -35,8 +35,12 @@ export async function runLunaCandidateBottleneckDiagnosticsSmoke() {
   assert.equal(neg?.backtestFresh, true, 'trace includes backtestFresh');
   assert.equal(neg?.backtestGateStatus, 'would_block_unhealthy', 'trace includes backtestGateStatus');
   assert.equal(neg?.predictiveDecision, 'block_backtest_gate', 'trace includes predictiveDecision');
+  assert.equal(neg?.predictiveScore, 0.32, 'trace includes predictiveScore');
+  assert.equal(neg?.predictiveCoverage, 1, 'trace includes predictiveCoverage');
+  assert.equal(neg?.predictiveBlockedReason, 'backtest_unhealthy', 'trace includes predictiveBlockedReason');
   assert.equal(neg?.communityEvidenceCount24h, 5, 'trace includes communityEvidenceCount24h');
   assert.equal(neg?.communitySourceCount24h, 5, 'trace includes communitySourceCount24h');
+  assert.equal(neg?.candidateQualityAdjustedScore, 0.79, 'trace includes quality-adjusted candidate score fallback');
   assert.equal(neg?.backtestPeriodSummary?.length, 2, 'trace includes backtest period summary');
   assert.ok(neg?.backtestStrategyFamilies?.includes('ema_trend_pullback'), 'trace includes strategy family breakdown');
   assert.ok(neg?.evidence?.trace?.backtestFailingPeriods?.includes(90), 'trace marks failing walk-forward periods');
@@ -73,7 +77,18 @@ export async function runLunaCandidateBottleneckDiagnosticsSmoke() {
   assert.equal(runtime.summary.total, 4, 'runtime fixture count');
   assert.equal(runtime.summary.liveMutation, false, 'runtime no live mutation');
   assert.equal(runtime.summary.byAction.strategy_enhancement_shadow, 2, 'strategy action count');
+  assert.equal(runtime.summary.selectionPolicy, 'quality_adjusted_score_desc_with_prior_bottleneck_penalty', 'runtime exposes selection policy');
   assert.ok(runtime.summary.topPrimaryBlockers.length > 0, 'runtime exposes top primary blockers');
+  assert.equal(runtime.summary.backtestQualityTarget.mode, 'shadow_actionable_quality_slo', 'runtime exposes backtest quality target mode');
+  assert.equal(runtime.summary.backtestQualityTarget.targetTotal, 4, 'runtime target defaults to all rows without active cooldown');
+  assert.equal(runtime.summary.backtestQualityTarget.achieved, false, 'fixture target should remain unmet until remediation runs');
+  assert.ok(runtime.summary.backtestQualityTarget.gaps.length > 0, 'runtime exposes target gaps');
+  assert.ok(runtime.summary.backtestQualityTarget.recommendedLoop[0].includes('runtime:luna-candidate-backtest-refresh'), 'runtime exposes remediation loop command');
+  assert.equal(runtime.summary.predictiveQualityTarget.mode, 'shadow_predictive_quality_slo', 'runtime exposes predictive quality target mode');
+  assert.equal(runtime.summary.predictiveQualityTarget.achieved, false, 'fixture predictive target should remain unmet until refresh runs');
+  assert.ok(runtime.summary.predictiveQualityTarget.gaps.length > 0, 'runtime exposes predictive target gaps');
+  assert.ok(runtime.summary.predictiveQualityTarget.refreshSymbols.includes('NEG/USDT'), 'runtime exposes predictive refresh target symbols');
+  assert.ok(runtime.summary.predictiveQualityTarget.recommendedLoop[0].includes('runtime:luna-predictive-evidence-refresh'), 'runtime exposes predictive refresh loop command');
 
   return {
     ok: true,
@@ -82,6 +97,8 @@ export async function runLunaCandidateBottleneckDiagnosticsSmoke() {
       rows: rows.length,
       actions: runtime.summary.byAction,
       averagePenalty: runtime.summary.averagePenalty,
+      backtestQualityTarget: runtime.summary.backtestQualityTarget,
+      predictiveQualityTarget: runtime.summary.predictiveQualityTarget,
       liveMutation: false,
       applyDryRunRejected: true,
     },

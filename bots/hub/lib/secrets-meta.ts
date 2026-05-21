@@ -14,6 +14,7 @@ export const REQUIRED_FIELDS: Record<string, string[]> = {
   official_market_reference: [
     'krx_openapi_auth_key',
     'data_go_kr_stock_price_service_key',
+    'data_go_kr_krx_listed_info_service_key',
     'data_go_kr_corporate_finance_service_key',
   ],
   justin: ['korea_law.user_id', 'korea_law.user_name', 'korea_law.oc'],
@@ -41,7 +42,9 @@ export function isSecretKey(key: string): boolean {
 }
 
 function isPresentScalar(value: unknown): boolean {
-  return value !== undefined && value !== null && value !== '';
+  if (value === undefined || value === null || value === '') return false;
+  if (typeof value === 'string' && /^<[^>]+>$/.test(value.trim())) return false;
+  return true;
 }
 
 function mergeRepresentativeField(base: unknown, next: unknown): unknown {

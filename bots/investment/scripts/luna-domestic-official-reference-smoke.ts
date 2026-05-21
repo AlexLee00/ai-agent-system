@@ -8,6 +8,7 @@ import {
   annotateDomesticOfficialReferenceCandidates,
   buildFixtureDomesticOfficialReference,
   evaluateDomesticOfficialReferenceGate,
+  probeDataGoCorporateFinance,
   resolveDomesticOfficialReferenceCredentialStatus,
 } from '../shared/domestic-official-reference.ts';
 import { runLunaDomesticOfficialReference } from './runtime-luna-domestic-official-reference.ts';
@@ -17,35 +18,43 @@ const hubClient = require('../../../packages/core/lib/hub-client');
 
 export async function runLunaDomesticOfficialReferenceSmoke() {
   const originalFetchHubSecrets = hubClient.fetchHubSecrets;
+  const originalDirectCategory = process.env.LUNA_OFFICIAL_MARKET_REFERENCE_DIRECT_SECRET_CATEGORY;
   const categories = [];
   try {
-    delete process.env.LUNA_OFFICIAL_MARKET_REFERENCE_DIRECT_SECRET_CATEGORY;
+    process.env.LUNA_OFFICIAL_MARKET_REFERENCE_DIRECT_SECRET_CATEGORY = 'true';
     hubClient.fetchHubSecrets = async (category) => {
       categories.push(category);
       if (category !== 'official_market_reference') return {};
       return {
         krx_openapi_auth_key: 'fixture-krx-key',
         data_go_kr_stock_price_service_key: 'fixture-stock-key',
+        data_go_kr_krx_listed_info_service_key: 'fixture-listed-info-key',
         data_go_kr_corporate_finance_service_key: 'fixture-corporate-key',
       };
     };
     const credentialStatus = await resolveDomesticOfficialReferenceCredentialStatus({ timeoutMs: 1000 });
     assert.equal(credentialStatus.krxConfigured, true);
+    assert.equal(credentialStatus.krxListedInfoConfigured, true);
     assert.equal(credentialStatus.krxAuthKeySource, 'hub:official_market_reference');
     assert.ok(categories.includes('official_market_reference'));
   } finally {
     hubClient.fetchHubSecrets = originalFetchHubSecrets;
+    if (originalDirectCategory == null) delete process.env.LUNA_OFFICIAL_MARKET_REFERENCE_DIRECT_SECRET_CATEGORY;
+    else process.env.LUNA_OFFICIAL_MARKET_REFERENCE_DIRECT_SECRET_CATEGORY = originalDirectCategory;
   }
 
   const reference = buildFixtureDomesticOfficialReference();
   assert.equal(reference.available, true);
   assert.equal(reference.bySymbol['005930'].officialEligible, true);
+  assert.equal(reference.bySymbol['005930'].crno, '1301110006246');
   assert.equal(reference.bySymbol['069500'].officialEligible, false);
   assert.ok(reference.bySymbol['069500'].officialBlockers.includes('security_type_etf'));
   assert.ok(reference.bySymbol['005935'].officialBlockers.includes('security_type_preferred_stock'));
   assert.ok(reference.bySymbol['123450'].officialBlockers.includes('security_type_spac'));
   assert.ok(reference.bySymbol['000020'].officialBlockers.includes('turnover_below_official_floor'));
   assert.ok(reference.bySymbol['111111'].officialBlockers.includes('trading_halt_or_suspended'));
+  assert.ok(reference.bySymbol['477850'].officialBlockers.includes('listing_history_too_short'));
+  assert.equal(reference.bySymbol['477850'].listingAgeDays, 0);
 
   const commonGate = evaluateDomesticOfficialReferenceGate('005930', reference, { hardGate: true });
   assert.equal(commonGate.ok, true);
@@ -60,13 +69,19 @@ export async function runLunaDomesticOfficialReferenceSmoke() {
   assert.equal(shadowGate.blocked, true);
   assert.equal(shadowGate.hardBlocked, false);
 
+  const newListingGate = evaluateDomesticOfficialReferenceGate('477850', reference, { hardGate: true });
+  assert.equal(newListingGate.blocked, true);
+  assert.equal(newListingGate.reason, 'listing_history_too_short');
+  assert.equal(newListingGate.row.listingAgeDays, 0);
+
   const annotated = annotateDomesticOfficialReferenceCandidates([
     { symbol: '005930', score: 0.9 },
     { symbol: '069500', score: 0.8 },
     { symbol: '000020', score: 0.7 },
+    { symbol: '477850', score: 0.6 },
   ], reference, { hardGate: true });
   assert.equal(annotated.candidates.length, 1);
-  assert.equal(annotated.excluded.length, 2);
+  assert.equal(annotated.excluded.length, 3);
 
   const runtime = await runLunaDomesticOfficialReference({ fixture: true, dryRun: true, hardGate: true });
   assert.equal(runtime.ok, true);
@@ -74,6 +89,52 @@ export async function runLunaDomesticOfficialReferenceSmoke() {
   assert.ok(runtime.officialReferenceCandidates.some((item) => item.symbol === '005930' && !item.officialReferenceHardBlocked));
   assert.ok(runtime.officialReferenceCandidates.some((item) => item.symbol === '069500' && item.officialReferenceHardBlocked));
   assert.ok(runtime.officialReferenceHoldings.some((item) => item.symbol === '069500' && item.officialReferenceWouldBlock));
+
+  const originalFetch = globalThis.fetch;
+  const originalCorporateKey = process.env.DATA_GO_KR_CORPORATE_FINANCE_SERVICE_KEY;
+  try {
+    process.env.DATA_GO_KR_CORPORATE_FINANCE_SERVICE_KEY = 'fixture-corporate-key';
+    globalThis.fetch = async () => ({
+      ok: true,
+      status: 200,
+      text: async () => JSON.stringify({
+        response: {
+          header: { resultCode: '00', resultMsg: 'NORMAL SERVICE.' },
+          body: {
+            totalCount: 1,
+            items: {
+              item: {
+                basDt: '20260520',
+                crno: '1746110000741',
+                bizYear: '2019',
+                enpSaleAmt: '1000000',
+              },
+            },
+          },
+        },
+      }),
+    });
+    const corporateFinanceProbe = await probeDataGoCorporateFinance({ timeoutMs: 1000 });
+    assert.equal(corporateFinanceProbe.ok, true);
+    assert.equal(corporateFinanceProbe.rows, 1);
+    assert.ok(corporateFinanceProbe.sampleKeys.includes('enpSaleAmt'));
+
+    const enrichedRuntime = await runLunaDomesticOfficialReference({
+      fixture: true,
+      dryRun: true,
+      corporateFinanceCandidateProbe: true,
+      corporateFinanceCandidateLimit: 1,
+      timeoutMs: 1000,
+    });
+    const enrichedSamsung = enrichedRuntime.officialReferenceCandidates.find((item) => item.symbol === '005930');
+    assert.equal(enrichedSamsung.officialReferenceCrno, '1301110006246');
+    assert.equal(enrichedSamsung.corporateFinanceStatus, 'available');
+    assert.ok(enrichedSamsung.corporateFinanceFlags.includes('operating_loss') === false);
+  } finally {
+    globalThis.fetch = originalFetch;
+    if (originalCorporateKey == null) delete process.env.DATA_GO_KR_CORPORATE_FINANCE_SERVICE_KEY;
+    else process.env.DATA_GO_KR_CORPORATE_FINANCE_SERVICE_KEY = originalCorporateKey;
+  }
 
   return {
     ok: true,

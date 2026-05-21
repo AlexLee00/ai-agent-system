@@ -74,11 +74,23 @@ function normalizeStrategyQuality(strategyQuality = {}) {
   const providerStatus = String(strategyQuality?.provider_status ?? strategyQuality?.providerStatus ?? '').trim();
   const hasIndicatorScore = strategyQuality?.indicator_score != null || strategyQuality?.indicatorScore != null;
   const indicatorScore = clamp(strategyQuality?.indicator_score ?? strategyQuality?.indicatorScore, 0, 1, 0);
+  const evidence = parseJsonMaybe(strategyQuality?.evidence, {});
+  const remediation = strategyQuality?.strategyRemediation || evidence?.strategyRemediation || {};
+  const formulationPlan = remediation?.strategyFormulationPlan || {};
+  const remediationStatus = String(remediation?.status || '').trim();
+  const formulationMode = String(formulationPlan?.mode || '').trim();
   const present = Boolean(enhancementStatus || hyperoptStatus || maxDrawdownGuard || providerStatus || hasIndicatorScore || reasons.length > 0);
-  const hardHold = maxDrawdownGuard === 'block_live_forward';
-  const readyStatus = ['shadow_ready', 'shadow_ready_with_risk_tightening', 'shadow_tuned', 'shadow_evaluated']
+  const readyStatus = ['shadow_ready', 'shadow_ready_with_risk_tightening', 'shadow_probation_with_risk_tightening', 'shadow_tuned', 'shadow_evaluated']
     .includes(enhancementStatus);
+  const strategyNotReady = present && enhancementStatus && !readyStatus;
+  const hardHold = maxDrawdownGuard === 'block_live_forward' || strategyNotReady;
+  const hardHoldReason = maxDrawdownGuard === 'block_live_forward'
+    ? 'strategy_quality_block_live_forward'
+    : strategyNotReady
+      ? 'strategy_quality_not_shadow_ready'
+      : null;
   const statusPenalty = enhancementStatus && !readyStatus ? 0.18 : 0;
+  const probationPenalty = enhancementStatus === 'shadow_probation_with_risk_tightening' ? 0.35 : 0;
   const hyperoptPenalty = hyperoptStatus === 'planned' ? 0.12 : 0;
   const drawdownPenalty = hardHold ? 0.85 : maxDrawdownGuard === 'tighten_risk' ? 0.22 : 0;
   const indicatorPenalty = hasIndicatorScore ? clamp((0.55 - indicatorScore) * 0.30, 0, 0.25, 0) : 0;
@@ -87,9 +99,18 @@ function normalizeStrategyQuality(strategyQuality = {}) {
       strategyQuality?.strategy_quality_penalty ?? strategyQuality?.strategyQualityPenalty,
       0,
       0.85,
-      Math.max(statusPenalty, hyperoptPenalty, drawdownPenalty, indicatorPenalty),
+      Math.max(statusPenalty, probationPenalty, hyperoptPenalty, drawdownPenalty, indicatorPenalty),
     )
     : 0;
+  const operatingState = !present
+    ? 'missing'
+    : hardHold
+      ? 'hard_hold'
+      : remediationStatus === 'paper_only_probation' || enhancementStatus === 'shadow_probation_with_risk_tightening'
+        ? 'paper_probation'
+        : remediationStatus === 'risk_tightened_monitor' || maxDrawdownGuard === 'tighten_risk'
+          ? 'risk_tightened_monitor'
+          : 'ready_monitor';
   return {
     present,
     enhancementStatus: enhancementStatus || null,
@@ -97,9 +118,13 @@ function normalizeStrategyQuality(strategyQuality = {}) {
     maxDrawdownGuard: maxDrawdownGuard || null,
     indicatorScore,
     providerStatus: providerStatus || null,
+    remediationStatus: remediationStatus || null,
+    formulationMode: formulationMode || null,
+    operatingState,
     reasons: Array.isArray(reasons) ? reasons : [],
     penalty,
     hardHold,
+    hardHoldReason,
     observedAt: strategyQuality?.observed_at || strategyQuality?.observedAt || null,
     raw: strategyQuality || null,
   };
@@ -302,6 +327,119 @@ function scoreCommunity(community = {}) {
   };
 }
 
+function uniqueList(values = []) {
+  return [...new Set(values.filter(Boolean))];
+}
+
+function buildQualityActionPlan(context = {}) {
+  const {
+    symbol,
+    market,
+    signal,
+    confidence,
+    eligible,
+    hardReasons = [],
+    bottleneck = {},
+    strategyQuality = {},
+    backtest = {},
+    predictive = {},
+    noLookahead = {},
+  } = context;
+  const blockedComponents = uniqueList([
+    bottleneck.hardHold || hardReasons.some((reason) => String(reason).startsWith('candidate_bottleneck_')) ? 'candidate_bottleneck' : null,
+    strategyQuality.hardHold || hardReasons.some((reason) => String(reason).startsWith('strategy_quality_')) ? 'strategy_quality' : null,
+    !backtest.pass ? 'backtest' : null,
+    !predictive.decision || !predictive.pass ? 'predictive' : null,
+    !noLookahead.ok ? 'no_lookahead' : null,
+  ]);
+  const monitorComponents = uniqueList([
+    strategyQuality.operatingState === 'paper_probation' ? 'strategy_quality_probation' : null,
+    strategyQuality.operatingState === 'risk_tightened_monitor' ? 'strategy_quality_monitor' : null,
+  ]);
+  const requiredConditions = [];
+  const nextShadowCommands = [];
+  const addCommand = (script) => {
+    if (!nextShadowCommands.includes(script)) nextShadowCommands.push(script);
+  };
+  const scopedArgs = `--dry-run --market=${market || 'all'} --symbols=${symbol} --limit=20`;
+
+  let primaryAction = 'shadow_monitor';
+  let priority = 'p3';
+
+  if (!noLookahead.ok) {
+    primaryAction = 'repair_source_timestamp_contract';
+    priority = 'p0';
+    requiredConditions.push('all source timestamps must be <= asOf before any shadow allocation can be trusted');
+    addCommand(`npm --prefix bots/investment run -s runtime:luna-weight-vector-shadow -- --json ${scopedArgs}`);
+  } else if (strategyQuality.hardHold) {
+    primaryAction = 'strategy_reformulation_shadow_required';
+    priority = 'p0';
+    requiredConditions.push('strategy quality must leave hard_hold');
+    requiredConditions.push('max_drawdown_guard must not be block_live_forward');
+    requiredConditions.push('indicator recovery or explicit paper-probation evidence is required');
+    addCommand(`npm --prefix bots/investment run -s runtime:luna-phase4-strategy-enhancement-shadow -- --json ${scopedArgs}`);
+  } else if (bottleneck.hardHold) {
+    primaryAction = 'candidate_bottleneck_remediation_required';
+    priority = 'p0';
+    requiredConditions.push('candidate bottleneck severity must clear blocker/quarantine state');
+    requiredConditions.push('bottleneck reasons must be reduced before allocation is reconsidered');
+    addCommand(`npm --prefix bots/investment run -s runtime:luna-candidate-bottleneck-diagnostics -- --json ${scopedArgs}`);
+    addCommand(`npm --prefix bots/investment run -s runtime:luna-candidate-quality-remediation -- --json ${scopedArgs}`);
+  } else if (!backtest.pass) {
+    primaryAction = 'backtest_refresh_required';
+    priority = 'p1';
+    requiredConditions.push('backtest must be fresh and healthy');
+    requiredConditions.push('max drawdown must remain within the backtest guard');
+    addCommand(`npm --prefix bots/investment run -s runtime:luna-candidate-backtest-refresh -- --json ${scopedArgs}`);
+  } else if (!predictive.decision || !predictive.pass) {
+    primaryAction = 'predictive_refresh_required';
+    priority = 'p1';
+    requiredConditions.push('predictive decision must pass with sufficient component coverage');
+    requiredConditions.push('candidate bottleneck predictive coverage reason must clear');
+    addCommand(`npm --prefix bots/investment run -s runtime:luna-predictive-evidence-refresh -- --json ${scopedArgs}`);
+    addCommand(`npm --prefix bots/investment run -s runtime:luna-candidate-bottleneck-diagnostics -- --json ${scopedArgs}`);
+  } else if (strategyQuality.operatingState === 'paper_probation') {
+    primaryAction = 'paper_probation_shadow_required';
+    priority = 'p2';
+    requiredConditions.push('paper-probation must remain shadow-only until consecutive evidence clears promotion gate');
+    addCommand(`npm --prefix bots/investment run -s runtime:luna-phase4-strategy-enhancement-shadow -- --json ${scopedArgs}`);
+  } else if (strategyQuality.operatingState === 'risk_tightened_monitor') {
+    primaryAction = 'risk_tightened_shadow_monitor';
+    priority = 'p2';
+    requiredConditions.push('risk-tightened monitor must keep drawdown and indicator guards stable');
+    addCommand(`npm --prefix bots/investment run -s runtime:luna-weight-vector-shadow -- --json ${scopedArgs}`);
+  } else if (eligible && signal === 'hold') {
+    primaryAction = 'confidence_below_allocation_floor';
+    priority = 'p2';
+    requiredConditions.push('confidence must reach watch/increase threshold without weakening hard gates');
+    addCommand(`npm --prefix bots/investment run -s runtime:luna-weight-vector-shadow -- --json ${scopedArgs}`);
+  } else if (eligible && signal === 'watch') {
+    primaryAction = 'watchlist_shadow_monitor';
+    priority = 'p3';
+    requiredConditions.push('continue shadow monitoring before any promotion decision');
+    addCommand(`npm --prefix bots/investment run -s runtime:luna-weight-vector-shadow -- --json ${scopedArgs}`);
+  } else if (eligible && signal === 'increase') {
+    primaryAction = 'allocation_candidate_shadow_ready';
+    priority = 'p3';
+    requiredConditions.push('shadow allocation candidate only; live promotion still requires explicit gate and approval');
+    addCommand(`npm --prefix bots/investment run -s runtime:luna-weight-vector-shadow -- --json ${scopedArgs}`);
+  }
+
+  return {
+    primaryAction,
+    priority,
+    blockedComponents,
+    monitorComponents,
+    requiredConditions,
+    hardReasons,
+    confidence: round(confidence, 4),
+    signal,
+    shadowOnly: true,
+    liveMutation: false,
+    nextShadowCommands,
+  };
+}
+
 export function buildLunaWeightVector(input = {}, config = {}) {
   const candidate = input.candidate || input;
   const symbol = normalizeLunaPhase2Symbol(candidate?.symbol);
@@ -366,7 +504,7 @@ export function buildLunaWeightVector(input = {}, config = {}) {
   };
   const hardReasons = [
     bottleneck.hardHold ? 'candidate_bottleneck_quarantine' : null,
-    strategyQuality.hardHold ? 'strategy_quality_block_live_forward' : null,
+    strategyQuality.hardHold ? strategyQuality.hardHoldReason || 'strategy_quality_hard_hold' : null,
     ...((bottleneck.reasons || []).map((reason) => `candidate_bottleneck_${reason}`)),
     ...((strategyQuality.hardHold ? strategyQuality.reasons : []).map((reason) => `strategy_quality_${reason}`)),
     ...backtest.reasons,
@@ -405,6 +543,19 @@ export function buildLunaWeightVector(input = {}, config = {}) {
       ? cap * counterfactualConfidence * 0.35
       : 0;
   const riskBudgetUsdt = finiteNumber(config?.riskBudgetUsdt, 50);
+  const qualityActionPlan = buildQualityActionPlan({
+    symbol,
+    market,
+    signal,
+    confidence,
+    eligible,
+    hardReasons,
+    bottleneck,
+    strategyQuality,
+    backtest,
+    predictive,
+    noLookahead,
+  });
 
   return {
     ok: true,
@@ -467,9 +618,13 @@ export function buildLunaWeightVector(input = {}, config = {}) {
         maxDrawdownGuard: strategyQuality.maxDrawdownGuard,
         indicatorScore: round(strategyQuality.indicatorScore, 4),
         providerStatus: strategyQuality.providerStatus,
+        remediationStatus: strategyQuality.remediationStatus,
+        formulationMode: strategyQuality.formulationMode,
+        operatingState: strategyQuality.operatingState,
         reasons: strategyQuality.reasons,
         penalty: round(strategyQuality.penalty, 4),
         hardHold: strategyQuality.hardHold,
+        hardHoldReason: strategyQuality.hardHoldReason || null,
         observedAt: strategyQuality.observedAt,
         counterfactual: {
           eligible: !bottleneck.hardHold && backtest.pass && predictive.pass && Boolean(predictive.decision) && noLookahead.ok,
@@ -493,6 +648,7 @@ export function buildLunaWeightVector(input = {}, config = {}) {
       },
       noLookahead,
       hardReasons,
+      qualityActionPlan,
       liveMutation: false,
     },
   };
@@ -578,7 +734,11 @@ export function buildLunaPaperTradingPlan(weightVector = {}, context = {}) {
         hyperoptStatus: strategyQuality?.hyperoptStatus || null,
         maxDrawdownGuard: strategyQuality?.maxDrawdownGuard || null,
         indicatorScore: round(strategyQuality?.indicatorScore || 0, 4),
+        remediationStatus: strategyQuality?.remediationStatus || null,
+        formulationMode: strategyQuality?.formulationMode || null,
+        operatingState: strategyQuality?.operatingState || null,
         hardHold: strategyQuality?.hardHold === true,
+        hardHoldReason: strategyQuality?.hardHoldReason || null,
         penalty: round(strategyQuality?.penalty || 0, 4),
         reasons: strategyQuality?.reasons || [],
         observedAt: strategyQuality?.observedAt || null,
@@ -618,14 +778,14 @@ async function loadLatestStrategyQualityMap(rows = []) {
   if (!table?.table_name) return new Map();
   const strategyRows = await query(`
     SELECT DISTINCT ON (symbol, market)
-           symbol, market, exchange, enhancement_status, hyperopt_status, best_params,
+           id, symbol, market, exchange, enhancement_status, hyperopt_status, best_params,
            max_drawdown_guard, indicator_score, provider_status, reasons, evidence, observed_at
       FROM investment.luna_phase4_strategy_enhancement_shadow
      WHERE symbol = ANY($1::text[])
        AND market = ANY($2::text[])
        AND observed_at >= NOW() - INTERVAL '24 hours'
        AND shadow_only IS TRUE
-     ORDER BY symbol, market, observed_at DESC
+     ORDER BY symbol, market, observed_at DESC, id DESC
   `, [symbols, markets]).catch(() => []);
   return new Map((strategyRows || []).map((row) => [`${normalizeLunaPhase2Symbol(row.symbol)}|${normalizeLunaPhase2Market(row.market)}`, row]));
 }

@@ -70,6 +70,9 @@ assert.equal(bottleneckHold.signal, 'hold');
 assert.equal(bottleneckHold.targetWeight, 0);
 assert.equal(bottleneckHold.evidence.bottleneck.hardHold, true);
 assert.ok(bottleneckHold.evidence.hardReasons.includes('candidate_bottleneck_quarantine'));
+assert.equal(bottleneckHold.evidence.qualityActionPlan.primaryAction, 'candidate_bottleneck_remediation_required');
+assert.equal(bottleneckHold.evidence.qualityActionPlan.priority, 'p0');
+assert.ok(bottleneckHold.evidence.qualityActionPlan.blockedComponents.includes('candidate_bottleneck'));
 
 const strategyQualityHold = buildLunaWeightVector({
   asOf: now,
@@ -89,7 +92,76 @@ const strategyQualityHold = buildLunaWeightVector({
 assert.equal(strategyQualityHold.signal, 'hold');
 assert.equal(strategyQualityHold.targetWeight, 0);
 assert.equal(strategyQualityHold.evidence.strategyQuality.hardHold, true);
+assert.equal(strategyQualityHold.evidence.strategyQuality.operatingState, 'hard_hold');
 assert.ok(strategyQualityHold.evidence.hardReasons.includes('strategy_quality_block_live_forward'));
+assert.equal(strategyQualityHold.evidence.qualityActionPlan.primaryAction, 'strategy_reformulation_shadow_required');
+assert.equal(strategyQualityHold.evidence.qualityActionPlan.priority, 'p0');
+assert.ok(strategyQualityHold.evidence.qualityActionPlan.blockedComponents.includes('strategy_quality'));
+assert.ok(strategyQualityHold.evidence.qualityActionPlan.nextShadowCommands.some((command) => command.includes('runtime:luna-phase4-strategy-enhancement-shadow')));
+
+const strategyNotReadyHold = buildLunaWeightVector({
+  asOf: now,
+  candidate: { symbol: 'SNR/USDT', market: 'crypto', score: 0.94, discovered_at: now },
+  backtest: { fresh: true, healthy: true, sharpe: 1.5, win_rate: 64, max_drawdown: 9, last_backtest_at: now },
+  predictive: { decision: 'pass_prediction', score: 0.84, created_at: now },
+  community: { avg_score: 0.52, source_count: 4, last_seen_at: now },
+  strategyQuality: {
+    enhancement_status: 'shadow_review',
+    hyperopt_status: 'shadow_evaluated_blocked',
+    max_drawdown_guard: 'tighten_risk',
+    indicator_score: 0.33,
+    reasons: ['indicator_score_weak'],
+    observed_at: now,
+  },
+}, { riskBudgetUsdt: 50 });
+assert.equal(strategyNotReadyHold.signal, 'hold');
+assert.equal(strategyNotReadyHold.targetWeight, 0);
+assert.equal(strategyNotReadyHold.evidence.strategyQuality.hardHold, true);
+assert.equal(strategyNotReadyHold.evidence.strategyQuality.hardHoldReason, 'strategy_quality_not_shadow_ready');
+assert.ok(strategyNotReadyHold.evidence.hardReasons.includes('strategy_quality_not_shadow_ready'));
+
+const strategyProbationWatch = buildLunaWeightVector({
+  asOf: now,
+  candidate: { symbol: 'SPROB/USDT', market: 'crypto', score: 0.94, discovered_at: now },
+  backtest: { fresh: true, healthy: true, sharpe: 1.5, win_rate: 64, max_drawdown: 9, last_backtest_at: now },
+  predictive: { decision: 'pass_prediction', score: 0.84, created_at: now },
+  community: { avg_score: 0.52, source_count: 4, last_seen_at: now },
+  strategyQuality: {
+    enhancement_status: 'shadow_probation_with_risk_tightening',
+    hyperopt_status: 'shadow_probation_evaluated',
+    max_drawdown_guard: 'tighten_risk',
+    indicator_score: 0.33,
+    reasons: ['indicator_near_miss_paper_only_probation'],
+    observed_at: now,
+  },
+}, { riskBudgetUsdt: 50 });
+assert.equal(strategyProbationWatch.evidence.strategyQuality.hardHold, false);
+assert.equal(strategyProbationWatch.evidence.strategyQuality.hardHoldReason, null);
+assert.equal(strategyProbationWatch.evidence.strategyQuality.operatingState, 'paper_probation');
+assert.equal(strategyProbationWatch.evidence.strategyQuality.penalty >= 0.35, true);
+assert.equal(strategyProbationWatch.evidence.qualityActionPlan.primaryAction, 'paper_probation_shadow_required');
+assert.equal(strategyProbationWatch.evidence.qualityActionPlan.priority, 'p2');
+assert.ok(['watch', 'increase'].includes(strategyProbationWatch.signal));
+assert.ok(strategyProbationWatch.targetWeight > 0);
+
+const strategyRiskMonitor = buildLunaWeightVector({
+  asOf: now,
+  candidate: { symbol: 'SRM/USDT', market: 'crypto', score: 0.94, discovered_at: now },
+  backtest: { fresh: true, healthy: true, sharpe: 1.5, win_rate: 64, max_drawdown: 9, last_backtest_at: now },
+  predictive: { decision: 'pass_prediction', score: 0.84, created_at: now },
+  community: { avg_score: 0.52, source_count: 4, last_seen_at: now },
+  strategyQuality: {
+    enhancement_status: 'shadow_ready_with_risk_tightening',
+    hyperopt_status: 'shadow_evaluated',
+    max_drawdown_guard: 'tighten_risk',
+    indicator_score: 0.62,
+    reasons: ['macd_watch'],
+    observed_at: now,
+  },
+}, { riskBudgetUsdt: 50 });
+assert.equal(strategyRiskMonitor.evidence.strategyQuality.operatingState, 'risk_tightened_monitor');
+assert.equal(strategyRiskMonitor.evidence.qualityActionPlan.primaryAction, 'risk_tightened_shadow_monitor');
+assert.ok(strategyRiskMonitor.evidence.qualityActionPlan.monitorComponents.includes('strategy_quality_monitor'));
 
 const paper = buildLunaPaperTradingPlan(pass, {
   position: { amount: 0, avg_price: 65000 },
@@ -118,6 +190,13 @@ assert.equal(weightInserts.length, 0);
 assert.ok(weightRuntime.summary.total >= 2);
 assert.ok(weightRuntime.summary.bottleneckHardHold >= 1);
 assert.ok(weightRuntime.summary.strategyQualityHardHold >= 1);
+assert.ok(weightRuntime.summary.strategyQualityOperatingStates.hard_hold >= 1);
+assert.ok(weightRuntime.summary.strategyQualityOperatingStates.missing >= 1);
+assert.ok(weightRuntime.summary.strategyQualityHardHoldSymbols.includes('NEG/USDT'));
+assert.ok(weightRuntime.summary.qualityActionPriorities.p0 >= 1);
+assert.ok(weightRuntime.summary.qualityActionPrimaryActions.strategy_reformulation_shadow_required >= 1);
+assert.ok(weightRuntime.summary.qualityActionBlockedComponents.strategy_quality >= 1);
+assert.ok(weightRuntime.summary.qualityActionStrategyReformulationSymbols.includes('NEG/USDT'));
 
 const paperInserts = [];
 const paperRuntime = await runLunaPaperTradingShadow({
@@ -200,6 +279,7 @@ const payload = {
     paperBottleneckHardHold: paperRuntime.summary.bottleneckHardHold,
     paperBottleneckPreventedOrder: paperRuntime.summary.bottleneckPreventedOrder,
     strategyQualityHardHold: weightRuntime.summary.strategyQualityHardHold,
+    strategyQualityOperatingStates: weightRuntime.summary.strategyQualityOperatingStates,
   },
 };
 

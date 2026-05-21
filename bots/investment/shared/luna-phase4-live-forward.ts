@@ -266,6 +266,249 @@ function calcIndicatorSnapshot(rows = []) {
   };
 }
 
+function buildStrategyFormulationPlan({
+  symbol,
+  market,
+  blockers = [],
+  watchSignals = [],
+  indicators,
+  strategyDrawdown,
+  marketRegimeDrawdown,
+  nearMissIndicatorProbation = false,
+}) {
+  const hardBlocked = blockers.length > 0;
+  const allowedExperiments = [];
+  const blockedExperiments = [];
+
+  if (hardBlocked) {
+    blockedExperiments.push(
+      'live_forward',
+      'weight_increase',
+      'entry_trigger_materialization',
+      'paper_buy_probe',
+    );
+  }
+  if (nearMissIndicatorProbation) {
+    blockedExperiments.push('live_forward', 'entry_trigger_materialization', 'promotion_without_master_approval');
+    allowedExperiments.push({
+      family: 'reduced_risk_paper_probation',
+      objective: 'observe near-miss indicator recovery without promotion or live mutation',
+      constraints: {
+        maxWeightMultiplier: 0.5,
+        minPaperOnlyCycles: 3,
+        promotionRequiresMasterApproval: true,
+      },
+    });
+  }
+  if (blockers.includes('strategy_drawdown_gt_20pct')) {
+    blockedExperiments.push('current_strategy_live_forward', 'wide_stop_momentum_reuse');
+    allowedExperiments.push({
+      family: 'volatility_adjusted_defensive_retest',
+      objective: 'reduce strategy drawdown below 20pct before any paper-buy path',
+      constraints: {
+        maxStrategyDrawdownPct: 20,
+        stopLossPctCeiling: -1.25,
+        requireWalkForwardRetest: true,
+      },
+    });
+  }
+  if (blockers.includes('market_regime_drawdown_gt_20pct')) {
+    blockedExperiments.push('buy_the_dip_before_regime_recovery');
+    allowedExperiments.push({
+      family: 'regime_recovery_wait',
+      objective: 'wait for market-regime drawdown normalization before re-enabling weight expansion',
+      constraints: {
+        maxMarketRegimeDrawdownPct: 20,
+        requireFreshOhlcv: true,
+      },
+    });
+  }
+  if (blockers.includes('indicator_score_below_unblock_floor')) {
+    blockedExperiments.push('indicator_blind_entry', 'increase_weight_below_indicator_floor');
+    allowedExperiments.push({
+      family: 'indicator_recovery_probe',
+      objective: 'require indicator score recovery above unblock floor',
+      constraints: {
+        minIndicatorScore: 0.35,
+        preferredIndicatorScore: 0.45,
+      },
+    });
+  }
+  if (watchSignals.includes('macd_histogram_negative')) {
+    allowedExperiments.push({
+      family: 'macd_recovery_cross_probe',
+      objective: 'observe MACD histogram recovery or switch to non-momentum family',
+      constraints: {
+        preferredMacdHistogramMin: 0,
+      },
+    });
+  }
+  if (watchSignals.includes('bollinger_overextended')) {
+    blockedExperiments.push('chase_upper_band_breakout');
+    allowedExperiments.push({
+      family: 'pullback_to_mid_band_probe',
+      objective: 'avoid upper-band chase and wait for pullback confirmation',
+      constraints: {
+        bollingerPositionMax: 0.85,
+        preferredBollingerPositionMax: 0.80,
+      },
+    });
+  }
+  if (watchSignals.includes('bollinger_oversold_instability')) {
+    allowedExperiments.push({
+      family: 'reversal_confirmation_probe',
+      objective: 'require reversal confirmation before mean-reversion reentry',
+      constraints: {
+        bollingerPositionMin: 0.20,
+        requireMacdStabilization: true,
+      },
+    });
+  }
+  if (allowedExperiments.length === 0) {
+    allowedExperiments.push({
+      family: 'current_strategy_shadow_continuation',
+      objective: 'continue shadow monitoring with current strategy quality controls',
+      constraints: {
+        promotionRequiresMasterApproval: true,
+      },
+    });
+  }
+
+  const mode = hardBlocked
+    ? 'hard_block_reformulation'
+    : nearMissIndicatorProbation
+      ? 'paper_probation_monitor'
+      : watchSignals.length > 0
+        ? 'risk_tightened_shadow_monitor'
+        : 'ready_shadow_monitor';
+  const normalizedSymbol = normalizeLunaPhase2Symbol(symbol);
+  const normalizedMarket = normalizeLunaPhase2Market(market);
+  return {
+    mode,
+    primaryExperimentFamily: allowedExperiments[0]?.family || 'current_strategy_shadow_continuation',
+    allowedExperiments,
+    blockedExperiments: [...new Set(blockedExperiments)],
+    readinessCriteria: {
+      allRequired: true,
+      maxStrategyDrawdownPct: 20,
+      maxMarketRegimeDrawdownPct: 20,
+      minUnblockIndicatorScore: 0.35,
+      minPromotionIndicatorScore: 0.45,
+      preferredMacdHistogramMin: 0,
+      bollingerPositionRange: [0.20, 0.85],
+      minPaperOnlyCycles: nearMissIndicatorProbation ? 3 : 0,
+    },
+    qualityGaps: {
+      strategyDrawdownPct: round(Math.max(0, strategyDrawdown - 20), 4),
+      marketRegimeDrawdownPct: round(Math.max(0, marketRegimeDrawdown - 20), 4),
+      indicatorScore: round(Math.max(0, 0.35 - indicators.indicatorScore), 4),
+      macdHistogram: round(Math.max(0, 0 - indicators.macdHistogram), 6),
+      bollingerOverextension: round(Math.max(0, indicators.bollingerPosition - 0.85), 4),
+      bollingerOversoldGap: round(Math.max(0, 0.20 - indicators.bollingerPosition), 4),
+    },
+    nextShadowCommands: [
+      `npm --prefix bots/investment run -s runtime:luna-phase4-strategy-enhancement-shadow -- --json --dry-run --market=${normalizedMarket} --symbols=${normalizedSymbol}`,
+      `npm --prefix bots/investment run -s runtime:luna-weight-vector-shadow -- --json --dry-run --market=${normalizedMarket} --symbols=${normalizedSymbol}`,
+    ],
+    liveMutation: false,
+  };
+}
+
+function buildStrategyRemediation({
+  symbol,
+  market,
+  enhancementStatus,
+  hyperoptStatus,
+  maxDrawdownGuard,
+  indicators,
+  strategyDrawdown,
+  marketRegimeDrawdown,
+  reasons = [],
+  nearMissIndicatorProbation = false,
+}) {
+  const blockers = [];
+  if (hyperoptStatus === 'shadow_evaluated_blocked') blockers.push('hyperopt_shadow_blocked');
+  if (maxDrawdownGuard === 'block_live_forward') blockers.push('strategy_drawdown_gt_20pct');
+  if (marketRegimeDrawdown > 20) blockers.push('market_regime_drawdown_gt_20pct');
+  if (!indicators.ok) blockers.push(indicators.providerStatus || 'indicator_provider_not_ready');
+  if (indicators.indicatorScore < 0.35 && !nearMissIndicatorProbation) blockers.push('indicator_score_below_unblock_floor');
+  const watchSignals = [
+    nearMissIndicatorProbation ? 'indicator_score_near_unblock_floor_probation' : null,
+    indicators.indicatorScore >= 0.35 && indicators.indicatorScore < 0.45 ? 'indicator_score_below_promotion_floor' : null,
+    indicators.macdHistogram < 0 ? 'macd_histogram_negative' : null,
+    indicators.bollingerPosition > 0.85 ? 'bollinger_overextended' : null,
+    indicators.bollingerPosition < 0.20 ? 'bollinger_oversold_instability' : null,
+  ].filter(Boolean);
+
+  const recommendedActions = [
+    blockers.includes('strategy_drawdown_gt_20pct') ? 'exclude_from_live_forward_until_strategy_drawdown_below_20pct' : null,
+    blockers.includes('market_regime_drawdown_gt_20pct') ? 'continue_shadow_until_market_regime_drawdown_below_20pct' : null,
+    blockers.includes('indicator_score_below_unblock_floor') ? 'wait_for_indicator_score_above_0_35_before_weight_or_paper_buy' : null,
+    nearMissIndicatorProbation ? 'collect_paper_only_probation_cycles_before_promotion_review' : null,
+    watchSignals.includes('indicator_score_below_promotion_floor') ? 'keep_risk_tightened_until_indicator_score_above_0_45' : null,
+    watchSignals.includes('macd_histogram_negative') ? 'require_macd_histogram_recovery_or_alternate_strategy_family' : null,
+    watchSignals.includes('bollinger_overextended') ? 'avoid_chasing_upper_band_extension' : null,
+    watchSignals.includes('bollinger_oversold_instability') ? 'require_reversal_confirmation_before_reentry' : null,
+    !indicators.ok ? 'refresh_ohlcv_provider_before_strategy_review' : null,
+  ].filter(Boolean);
+
+  const shadowReady = ['shadow_ready', 'shadow_ready_with_risk_tightening', 'shadow_tuned', 'shadow_evaluated']
+    .includes(String(enhancementStatus || '').trim());
+  const status = nearMissIndicatorProbation
+    ? 'paper_only_probation'
+    : !shadowReady
+    ? 'remediation_required'
+    : maxDrawdownGuard === 'tighten_risk' || indicators.indicatorScore < 0.45
+      ? 'risk_tightened_monitor'
+      : 'ready_monitor';
+  const priority = blockers.includes('strategy_drawdown_gt_20pct') || blockers.includes('indicator_score_below_unblock_floor')
+    ? 'high'
+    : blockers.length > 0 || watchSignals.length > 0
+      ? 'medium'
+      : 'low';
+  const strategyFormulationPlan = buildStrategyFormulationPlan({
+    symbol,
+    market,
+    blockers,
+    watchSignals,
+    indicators,
+    strategyDrawdown,
+    marketRegimeDrawdown,
+    nearMissIndicatorProbation,
+  });
+
+  return {
+    status,
+    priority,
+    blockers,
+    watchSignals,
+    recommendedActions,
+    strategyFormulationPlan,
+    qualityTargets: {
+      minUnblockIndicatorScore: 0.35,
+      minPromotionIndicatorScore: 0.45,
+      maxStrategyDrawdownPct: 20,
+      maxMarketRegimeDrawdownPct: 20,
+      preferredMacdHistogramMin: 0,
+      bollingerPositionRange: [0.20, 0.85],
+    },
+    current: {
+      enhancementStatus,
+      hyperoptStatus,
+      maxDrawdownGuard,
+      indicatorScore: round(indicators.indicatorScore, 4),
+      strategyDrawdownPct: round(strategyDrawdown, 4),
+      marketRegimeDrawdownPct: round(marketRegimeDrawdown, 4),
+      macdHistogram: round(indicators.macdHistogram, 6),
+      bollingerPosition: round(indicators.bollingerPosition, 4),
+      reasons,
+    },
+    paperOnlyProbation: nearMissIndicatorProbation,
+    promotionSafeWithoutMasterApproval: false,
+    liveMutation: false,
+  };
+}
+
 export function buildLunaPhase4StrategyEnhancementRows(inputs = [], ohlcvByKey = {}) {
   return inputs.map((input) => {
     const candidate = input.candidate || input;
@@ -291,19 +534,35 @@ export function buildLunaPhase4StrategyEnhancementRows(inputs = [], ohlcvByKey =
       || strategyDrawdown > 12
       || marketRegimeRisk
       || indicators.indicatorScore < 0.45;
+    const nearMissIndicatorProbation = hyperoptRequired
+      && backtest.healthy
+      && !backtest.wouldBlock
+      && backtest.sharpe >= 0.5
+      && !strategyDrawdownBlock
+      && strategyDrawdown <= 15
+      && !marketRegimeRisk
+      && indicators.ok
+      && indicators.indicatorScore >= 0.30
+      && indicators.indicatorScore < 0.35
+      && indicators.bollingerPosition >= 0.20
+      && indicators.bollingerPosition <= 0.85;
     const hyperoptEvaluationBlocked = hyperoptRequired && (
       backtest.sharpe < 0
       || backtest.wouldBlock
       || strategyDrawdownBlock
       || !indicators.ok
-      || indicators.indicatorScore < 0.35
+      || (indicators.indicatorScore < 0.35 && !nearMissIndicatorProbation)
     );
     const hyperoptStatus = !hyperoptRequired
       ? 'not_required'
+      : nearMissIndicatorProbation
+        ? 'shadow_probation_evaluated'
       : hyperoptEvaluationBlocked
         ? 'shadow_evaluated_blocked'
         : 'shadow_evaluated';
-    const enhancementStatus = hyperoptStatus === 'shadow_evaluated_blocked'
+    const enhancementStatus = nearMissIndicatorProbation
+      ? 'shadow_probation_with_risk_tightening'
+      : hyperoptStatus === 'shadow_evaluated_blocked'
       ? 'shadow_review'
       : maxDrawdownGuard === 'tighten_risk'
         ? 'shadow_ready_with_risk_tightening'
@@ -320,12 +579,25 @@ export function buildLunaPhase4StrategyEnhancementRows(inputs = [], ohlcvByKey =
       hyperoptRequired ? 'hyperopt_required' : null,
       hyperoptStatus === 'shadow_evaluated' ? 'hyperopt_shadow_evaluated' : null,
       hyperoptStatus === 'shadow_evaluated_blocked' ? 'hyperopt_shadow_evaluated_blocked' : null,
+      nearMissIndicatorProbation ? 'indicator_near_miss_paper_only_probation' : null,
       backtest.sharpe < 0 ? 'negative_sharpe' : null,
       strategyDrawdownBlock ? 'strategy_drawdown_gt_20pct' : null,
       !strategyDrawdownBlock && marketRegimeRisk ? 'market_regime_drawdown_gt_20pct_tighten_risk' : null,
       !indicators.ok ? indicators.providerStatus : null,
       indicators.indicatorScore < 0.45 ? 'indicator_score_weak' : null,
     ].filter(Boolean);
+    const strategyRemediation = buildStrategyRemediation({
+      symbol,
+      market,
+      enhancementStatus,
+      hyperoptStatus,
+      maxDrawdownGuard,
+      indicators,
+      strategyDrawdown,
+      marketRegimeDrawdown,
+      reasons,
+      nearMissIndicatorProbation,
+    });
     return {
       symbol,
       market,
@@ -340,12 +612,14 @@ export function buildLunaPhase4StrategyEnhancementRows(inputs = [], ohlcvByKey =
       liveMutation: false,
       shadowOnly: true,
       reasons,
+      strategyRemediation,
       evidence: {
         phase: 'luna_phase4_codex_p2',
         source: 'strategy_enhancement_shadow',
         task: 'hyperopt_maxdrawdown_macd_bollinger_yfinance',
         backtest,
         indicators,
+        strategyRemediation,
         yfinance: {
           status: indicators.providerStatus === 'missing_ohlcv' ? 'available_as_fallback_not_called' : 'cache_or_fixture_used',
           directExternalFetch: false,
@@ -353,8 +627,11 @@ export function buildLunaPhase4StrategyEnhancementRows(inputs = [], ohlcvByKey =
         hyperoptShadow: {
           required: hyperoptRequired,
           status: hyperoptStatus,
-          evaluated: hyperoptStatus === 'shadow_evaluated' || hyperoptStatus === 'shadow_evaluated_blocked',
+          evaluated: hyperoptStatus === 'shadow_evaluated'
+            || hyperoptStatus === 'shadow_evaluated_blocked'
+            || hyperoptStatus === 'shadow_probation_evaluated',
           blocked: hyperoptEvaluationBlocked,
+          nearMissIndicatorProbation,
           bestParams,
           riskGuard: maxDrawdownGuard,
           strategyDrawdownPct: round(strategyDrawdown, 4),

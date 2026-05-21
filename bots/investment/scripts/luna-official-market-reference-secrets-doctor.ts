@@ -29,6 +29,7 @@ export async function runLunaOfficialMarketReferenceSecretsDoctor(options = {}) 
   const required = [
     field('official_market_reference.krx_openapi_auth_key', status.krxConfigured, status.krxAuthKeySource),
     field('official_market_reference.data_go_kr_stock_price_service_key', status.stockPriceConfigured, status.stockPriceServiceKeySource),
+    field('official_market_reference.data_go_kr_krx_listed_info_service_key', status.krxListedInfoConfigured, status.krxListedInfoServiceKeySource),
     field('official_market_reference.data_go_kr_corporate_finance_service_key', status.corporateFinanceConfigured, status.corporateFinanceServiceKeySource),
   ];
   const ready = required.every((item) => item.present);
@@ -46,7 +47,9 @@ export async function runLunaOfficialMarketReferenceSecretsDoctor(options = {}) 
       ],
       dataGoKr: [
         'official_market_reference.data_go_kr_stock_price_service_key',
+        'official_market_reference.data_go_kr_krx_listed_info_service_key',
         'official_market_reference.data_go_kr.stock_price_service_key',
+        'official_market_reference.data_go_kr.krx_listed_info_service_key',
       ],
       corporateFinance: [
         'official_market_reference.corporate_finance_service_key',
@@ -61,6 +64,7 @@ export async function runLunaOfficialMarketReferenceSecretsDoctor(options = {}) 
           official_market_reference: {
             krx_openapi_auth_key: '<KRX_OPEN_API_KEY>',
             data_go_kr_stock_price_service_key: '<DATA_GO_KR_FINANCIAL_STOCK_PRICE_SERVICE_KEY>',
+            data_go_kr_krx_listed_info_service_key: '<DATA_GO_KR_KRX_LISTED_INFO_SERVICE_KEY>',
             data_go_kr_corporate_finance_service_key: '<DATA_GO_KR_CORPORATE_FINANCE_SERVICE_KEY>',
           },
         }

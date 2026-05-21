@@ -6,6 +6,7 @@ import { runVectorBtGrid } from '../shared/vectorbt-runner.ts';
 import { getOHLCV } from '../shared/ohlcv-fetcher.ts';
 import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
 import { ensureCandidateBacktestSchema, evaluateCandidateBacktestStatus } from '../shared/candidate-backtest-gate.ts';
+import { fetchDataGoStockPriceHistoryForSymbol } from '../shared/domestic-official-reference.ts';
 import { exchangeForLunaPhase2Market } from '../shared/luna-weight-vector.ts';
 import {
   BINANCE_TOP_VOLUME_BLOCK_REASON,
@@ -99,6 +100,39 @@ function selectRequestedCandidates(candidates: any[] = [], requestedSymbols: str
       source: 'requested_symbol_override',
     };
   });
+}
+
+function marketSortRank(market: any) {
+  const normalized = normalizeMarket(market);
+  if (normalized === 'crypto') return 0;
+  if (normalized === 'domestic') return 1;
+  if (normalized === 'overseas') return 2;
+  return 9;
+}
+
+function interleaveCandidatesByMarket(candidates: any[] = []) {
+  const buckets = new Map();
+  for (const candidate of candidates || []) {
+    const market = normalizeMarket(candidate?.market || 'all');
+    if (!buckets.has(market)) buckets.set(market, []);
+    buckets.get(market).push(candidate);
+  }
+  const markets = [...buckets.keys()].sort((a, b) => marketSortRank(a) - marketSortRank(b) || String(a).localeCompare(String(b)));
+  const output = [];
+  let index = 0;
+  while (output.length < (candidates || []).length) {
+    let added = false;
+    for (const market of markets) {
+      const bucket = buckets.get(market) || [];
+      if (bucket[index]) {
+        output.push(bucket[index]);
+        added = true;
+      }
+    }
+    if (!added) break;
+    index += 1;
+  }
+  return output;
 }
 
 async function getActiveCandidates(limit = 100) {
@@ -349,6 +383,39 @@ function buildOhlcvMomentumBacktestRows(rows: any[], days: number, market: strin
   }];
 }
 
+function basDtToTimestamp(row: any = {}) {
+  const raw = String(row.basDt || row.BAS_DD || '').trim();
+  if (!/^\d{8}$/.test(raw)) return null;
+  const year = Number(raw.slice(0, 4));
+  const month = Number(raw.slice(4, 6));
+  const day = Number(raw.slice(6, 8));
+  const ms = Date.UTC(year, month - 1, day, 6, 30, 0);
+  return Number.isFinite(ms) ? ms : null;
+}
+
+function buildOfficialDomesticOhlcvRows(rows: any[] = []) {
+  return (rows || [])
+    .map((row) => {
+      const ts = basDtToTimestamp(row);
+      const close = safeNum(row?.clpr ?? row?.TDD_CLSPRC, NaN);
+      const open = safeNum(row?.mkp ?? row?.TDD_OPNPRC, close);
+      const high = safeNum(row?.hipr ?? row?.TDD_HGPRC, close);
+      const low = safeNum(row?.lopr ?? row?.TDD_LWPRC, close);
+      const volume = safeNum(row?.trqu ?? row?.ACC_TRDVOL, 0);
+      if (!Number.isFinite(ts) || !Number.isFinite(close) || close <= 0) return null;
+      return [
+        ts,
+        Number.isFinite(open) && open > 0 ? open : close,
+        Number.isFinite(high) && high > 0 ? high : close,
+        Number.isFinite(low) && low > 0 ? low : close,
+        close,
+        Number.isFinite(volume) ? volume : 0,
+      ];
+    })
+    .filter(Boolean)
+    .sort((a, b) => a[0] - b[0]);
+}
+
 function withTimeout(promise: Promise<any>, timeoutMs: number, label = 'timeout') {
   if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) return promise;
   let timer: any = null;
@@ -366,7 +433,38 @@ async function runOhlcvFallbackBacktest(symbol: string, market: string, days: nu
   const timeframe = process.env.LUNA_BACKTEST_OHLCV_FALLBACK_TIMEFRAME || (market === 'crypto' ? '1h' : '1d');
   const from = new Date(Date.now() - Math.max(7, days) * 24 * 3600 * 1000).toISOString();
   const timeoutMs = Math.max(1_000, Math.min(OHLCV_TIMEOUT_MS, Number(options.timeoutMs || OHLCV_TIMEOUT_MS)));
-  const rows = await withTimeout(getOHLCV(symbol, timeframe, from, null, exchange), timeoutMs, 'ohlcv_fallback_timeout');
+  let rows = [];
+  let primaryError = null;
+  try {
+    rows = await withTimeout(getOHLCV(symbol, timeframe, from, null, exchange), timeoutMs, 'ohlcv_fallback_timeout');
+  } catch (error) {
+    primaryError = error;
+  }
+  const minFallbackRows = market === 'crypto' ? 60 : 20;
+  if (Array.isArray(rows) && rows.length >= minFallbackRows) return buildOhlcvMomentumBacktestRows(rows, days, market);
+  if (market === 'domestic') {
+    const history = await fetchDataGoStockPriceHistoryForSymbol({
+      symbol,
+      lookbackDays: Math.max(days + 7, days),
+      maxRows: Math.max(30, days + 7),
+      timeoutMs,
+    }).catch((error) => ({ ok: false, rows: [], errors: [String(error?.message || error)] }));
+    const officialRows = buildOfficialDomesticOhlcvRows(history.rows || []);
+    if (officialRows.length > 0) {
+      return buildOhlcvMomentumBacktestRows(officialRows, days, market).map((row) => ({
+        ...row,
+        status: row.status === 'insufficient_ohlcv' ? 'insufficient_official_ohlcv' : row.status,
+        message: row.message ? `data_go_kr_stock_price_${row.message}` : row.message,
+        params: {
+          ...(row.params || {}),
+          fallback: 'data_go_kr_stock_price_history',
+          officialRows: officialRows.length,
+          requestedRows: history.rowCount || officialRows.length,
+        },
+      }));
+    }
+  }
+  if (primaryError) throw primaryError;
   return buildOhlcvMomentumBacktestRows(rows, days, market);
 }
 
@@ -374,17 +472,21 @@ function evaluateQuality(rows: any[]) {
   const usable = (rows || []).filter((r) => (!r?.status || r.status === 'ok') && safeNum(r?.total_trades) > 0);
   if (usable.length === 0) {
     const statuses = (rows || []).map((r) => String(r?.status || '').trim()).filter(Boolean);
-    const sawNoTrades = statuses.includes('no_trades') || (rows || []).some((r) => safeNum(r?.total_trades) === 0 && r?.status !== 'insufficient_ohlcv');
+    const sawNoTrades = statuses.includes('no_trades') || (rows || []).some((r) => {
+      const status = String(r?.status || '').trim();
+      return safeNum(r?.total_trades) === 0 && !['insufficient_ohlcv', 'insufficient_official_ohlcv'].includes(status);
+    });
     const sawInsufficient = statuses.includes('insufficient_ohlcv');
+    const sawInsufficientOfficial = statuses.includes('insufficient_official_ohlcv');
     return {
-      fresh: sawNoTrades,
+      fresh: (rows || []).length > 0,
       sharpe: null,
       maxDrawdown: null,
       winRate: null,
       healthy: false,
       gateStatus: sawNoTrades ? 'would_block_no_trades' : 'would_block_no_data',
       wouldBlock: true,
-      reasons: [sawNoTrades ? 'backtest_no_trades' : sawInsufficient ? 'backtest_insufficient_ohlcv' : 'backtest_no_data'],
+      reasons: [sawNoTrades ? 'backtest_no_trades' : sawInsufficientOfficial ? 'backtest_insufficient_official_ohlcv' : sawInsufficient ? 'backtest_insufficient_ohlcv' : 'backtest_no_data'],
     };
   }
 
@@ -721,9 +823,12 @@ export async function runCandidateBacktestRefresh(options: any = {}): Promise<an
       error: String(error?.message || error),
     }));
   const selectedCandidates = selectRequestedCandidates(candidates, requestedSymbols, market);
-  const budgetedCandidates = maxSymbols == null
+  const scheduledCandidates = requestedSymbols.length
     ? selectedCandidates
-    : selectedCandidates.slice(0, maxSymbols);
+    : interleaveCandidatesByMarket(selectedCandidates);
+  const budgetedCandidates = maxSymbols == null
+    ? scheduledCandidates
+    : scheduledCandidates.slice(0, maxSymbols);
 
   if (!json) console.log(`[luna-backtest-refresh] 활성 후보 ${budgetedCandidates.length}/${candidates.length}건 market=${market} (shadow=${SHADOW_MODE}, dryRun=${dryRun})`);
 
@@ -752,7 +857,7 @@ export async function runCandidateBacktestRefresh(options: any = {}): Promise<an
     const deadlineAt = maxRuntimeMs == null ? null : startedAt + maxRuntimeMs;
     const result = await refreshCandidate(symbol, market, periods, { dryRun, fixture, force, deadlineAt });
     result.binanceTop30Rank = top30Gate.rank;
-    result.inBinanceTop30Universe = true;
+    result.inBinanceTop30Universe = normalizeMarket(market) === 'crypto' ? top30Gate.ok === true : null;
     results.push(result);
     emitProgress(`done symbol=${symbol} gate=${result.gateStatus} elapsedMs=${Date.now() - startedAt}`);
     if (!json) {
@@ -785,9 +890,10 @@ export async function runCandidateBacktestRefresh(options: any = {}): Promise<an
       selectedBeforeBudget: selectedCandidates.length,
       selected: budgetedCandidates.length,
       processed: results.length,
+      orderingPolicy: requestedSymbols.length ? 'requested_symbol_order' : 'market_round_robin_score_desc',
       maxSymbols,
       maxRuntimeMs,
-      truncatedByMaxSymbols: maxSymbols != null && selectedCandidates.length > budgetedCandidates.length,
+      truncatedByMaxSymbols: maxSymbols != null && scheduledCandidates.length > budgetedCandidates.length,
       budgetStopped,
       skippedByRuntimeBudget,
     },
@@ -801,7 +907,9 @@ export async function runCandidateBacktestRefresh(options: any = {}): Promise<an
 
 export const __test = {
   buildOhlcvMomentumBacktestRows,
+  buildOfficialDomesticOhlcvRows,
   evaluateQuality,
+  interleaveCandidatesByMarket,
   rowsHaveUsableTrades,
   selectBestQualityRows,
 };

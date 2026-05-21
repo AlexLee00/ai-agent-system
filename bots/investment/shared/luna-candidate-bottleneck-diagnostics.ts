@@ -48,6 +48,12 @@ function isTrue(value: any) {
   return value === true || String(value).toLowerCase() === 'true';
 }
 
+function futureIso(value: any) {
+  if (!value) return false;
+  const ts = new Date(value).getTime();
+  return Number.isFinite(ts) && ts > Date.now();
+}
+
 function ageHours(value: any) {
   if (!value) return Infinity;
   const ts = new Date(value).getTime();
@@ -297,6 +303,7 @@ export function buildLunaCandidateBottleneckRows(inputs: any[] = [], options: an
     const backtest = input.backtest || {};
     const predictive = input.predictive || {};
     const community = input.community || {};
+    const qualityGovernance = input.qualityGovernance || {};
     const symbol = normalizeLunaPhase2Symbol(candidate.symbol);
     const market = normalizeLunaPhase2Market(candidate.market || input.market);
     const exchange = candidate.exchange || exchangeForLunaPhase2Market(market);
@@ -329,9 +336,11 @@ export function buildLunaCandidateBottleneckRows(inputs: any[] = [], options: an
     if (backtest && Object.keys(backtest).length > 0 && drawdown > 30) reasons.push('drawdown_high');
 
     const predictiveDecision = predictive.decision || null;
+    const predictiveScore = predictive.score == null ? null : round(predictive.score, 4);
     const predictiveCoverage = clamp(predictive.component_coverage, 0, 1, 0);
+    const predictiveBlockedReason = predictive.blocked_reason || predictive.blockedReason || null;
     if (!predictiveDecision || ageHours(predictive.created_at) > stalePredictiveHours) reasons.push('predictive_missing_or_stale');
-    if (predictiveDecision && isPredictiveBlocked(predictiveDecision, predictive.blocked_reason)) reasons.push('predictive_blocked');
+    if (predictiveDecision && isPredictiveBlocked(predictiveDecision, predictiveBlockedReason)) reasons.push('predictive_blocked');
     if (predictiveDecision && predictiveCoverage < 0.75) reasons.push('predictive_coverage_low');
 
     const communitySources = n(community.source_count, 0) + n(community.market_source_count, 0);
@@ -346,6 +355,8 @@ export function buildLunaCandidateBottleneckRows(inputs: any[] = [], options: an
     const communitySourceCount24h = communitySources;
     const primaryBlocker = uniqueReasons[0] || null;
     const recommendedRefreshCommand = refreshCommandFor(recommendedAction, uniqueReasons, { market, candidate });
+    const qualityGovernanceCooldownActive = isTrue(qualityGovernance.skip_backtest_until_cooldown ?? qualityGovernance.skipBacktestUntilCooldown)
+      && futureIso(qualityGovernance.cooldown_until ?? qualityGovernance.cooldownUntil);
 
     return {
       ok: true,
@@ -356,12 +367,20 @@ export function buildLunaCandidateBottleneckRows(inputs: any[] = [], options: an
       recommendedAction,
       recommendedRefreshCommand,
       candidateScore: round(candidate.score, 4),
+      candidateQualityAdjustedScore: round(candidate.quality_adjusted_score ?? candidate.score, 4),
+      priorCandidateSelectionPenalty: round(candidate.prior_candidate_selection_penalty, 4),
+      qualityGovernanceAction: qualityGovernance.governance_action || qualityGovernance.governanceAction || null,
+      qualityGovernanceCooldownUntil: qualityGovernance.cooldown_until || qualityGovernance.cooldownUntil || null,
+      qualityGovernanceCooldownActive,
       backtestStatus: backtest.gate_status || (backtestFresh && backtestHealthy ? 'pass' : 'unknown'),
       backtestFresh,
       backtestGateStatus: backtest.gate_status || (backtestFresh && backtestHealthy ? 'pass' : 'unknown'),
       backtestPeriodSummary: backtestMetadataSummary.periods,
       backtestStrategyFamilies: backtestMetadataSummary.families,
       predictiveDecision,
+      predictiveScore,
+      predictiveCoverage,
+      predictiveBlockedReason,
       communitySources,
       communityEvidenceCount24h,
       communitySourceCount24h,
@@ -392,6 +411,9 @@ export function buildLunaCandidateBottleneckRows(inputs: any[] = [], options: an
           backtestVectorbtEnabled: backtestMetadataSummary.vectorbtEnabled,
           backtestUnstableOrUnrealistic,
           predictiveDecision,
+          predictiveScore,
+          predictiveCoverage,
+          predictiveBlockedReason,
           communityEvidenceCount24h,
           communitySourceCount24h,
           primaryBlocker,
@@ -400,6 +422,14 @@ export function buildLunaCandidateBottleneckRows(inputs: any[] = [], options: an
           inBinanceTop30Universe,
           top30Blocker: binanceTop30Gate?.blocked ? BINANCE_TOP_VOLUME_BLOCK_REASON : null,
           liquidationCandidate: input.liquidationCandidate === true || false,
+          candidateQualityAdjustedScore: round(candidate.quality_adjusted_score ?? candidate.score, 4),
+          priorCandidateSelectionPenalty: round(candidate.prior_candidate_selection_penalty, 4),
+          priorBottleneck: input.priorBottleneck || null,
+          qualityGovernance: {
+            action: qualityGovernance.governance_action || qualityGovernance.governanceAction || null,
+            cooldownUntil: qualityGovernance.cooldown_until || qualityGovernance.cooldownUntil || null,
+            cooldownActive: qualityGovernanceCooldownActive,
+          },
         },
         thresholds: {
           staleBacktestHours,
@@ -472,18 +502,35 @@ export async function loadLunaCandidateBottleneckInputs({ limit = 50, market = n
        WHERE created_at >= NOW() - INTERVAL '7 days'
        ORDER BY symbol, market, created_at DESC
     ),
+    latest_bottleneck AS (
+      SELECT DISTINCT ON (symbol, market)
+             symbol, market, severity, recommended_action, candidate_selection_penalty,
+             reasons, observed_at
+        FROM luna_candidate_bottleneck_shadow
+       WHERE observed_at >= NOW() - INTERVAL '24 hours'
+         AND shadow_only IS TRUE
+       ORDER BY symbol, market, observed_at DESC
+    ),
     active_candidates AS (
       SELECT DISTINCT ON (symbol, market)
-             symbol, market, score, source, discovered_at, expires_at, reason, raw_data
-       FROM candidate_universe
-       WHERE expires_at > NOW()
+             cu.symbol, cu.market, cu.score, cu.source, cu.discovered_at, cu.expires_at, cu.reason, cu.raw_data,
+             COALESCE(lb.candidate_selection_penalty, 0)::double precision AS prior_candidate_selection_penalty,
+             lb.severity AS prior_bottleneck_severity,
+             lb.recommended_action AS prior_bottleneck_action,
+             lb.reasons AS prior_bottleneck_reasons,
+             lb.observed_at AS prior_bottleneck_observed_at,
+             GREATEST(0, cu.score::double precision - LEAST(0.9, COALESCE(lb.candidate_selection_penalty, 0)::double precision)) AS quality_adjusted_score
+       FROM candidate_universe cu
+       LEFT JOIN latest_bottleneck lb
+         ON lb.symbol = cu.symbol AND lb.market = cu.market
+       WHERE cu.expires_at > NOW()
          ${marketWhere}
          ${symbolWhere}
-       ORDER BY symbol, market, score DESC, discovered_at DESC
+       ORDER BY cu.symbol, cu.market, quality_adjusted_score DESC, cu.score DESC, cu.discovered_at DESC
     ),
     balanced_candidates AS (
       SELECT *,
-             ROW_NUMBER() OVER (PARTITION BY market ORDER BY score DESC, discovered_at DESC) AS market_rank
+             ROW_NUMBER() OVER (PARTITION BY market ORDER BY quality_adjusted_score DESC, score DESC, discovered_at DESC) AS market_rank
         FROM active_candidates
     ),
     selected_candidates AS (
@@ -491,8 +538,12 @@ export async function loadLunaCandidateBottleneckInputs({ limit = 50, market = n
         FROM balanced_candidates
         ${marketRankWhere}
     )
-    SELECT cu.symbol, cu.market, cu.score::double precision AS candidate_score, cu.source,
-           cu.discovered_at, cu.expires_at, cu.reason, cu.raw_data,
+    SELECT cu.symbol, cu.market, cu.score::double precision AS candidate_score,
+           cu.quality_adjusted_score::double precision AS quality_adjusted_score,
+           cu.prior_candidate_selection_penalty::double precision AS prior_candidate_selection_penalty,
+           cu.prior_bottleneck_severity, cu.prior_bottleneck_action,
+           cu.prior_bottleneck_reasons, cu.prior_bottleneck_observed_at,
+           cu.source, cu.discovered_at, cu.expires_at, cu.reason, cu.raw_data,
            cbs.fresh, cbs.healthy, cbs.sharpe, cbs.max_drawdown, cbs.win_rate,
            cbs.last_backtest_at, cbs.gate_status, cbs.would_block, cbs.block_reasons,
            cbs.backtest_run_metadata,
@@ -523,6 +574,29 @@ export async function loadLunaCandidateBottleneckInputs({ limit = 50, market = n
      ORDER BY cu.score DESC, cu.discovered_at DESC
      LIMIT $${params.length}
   `, params).catch(() => []);
+  const governanceByKey = new Map();
+  const symbolsInRows = [...new Set((rows || []).map((row) => normalizeLunaPhase2Symbol(row.symbol)).filter(Boolean))];
+  const marketsInRows = [...new Set((rows || []).map((row) => normalizeLunaPhase2Market(row.market)).filter(Boolean))];
+  if (symbolsInRows.length > 0 && marketsInRows.length > 0) {
+    const governanceTable = await query(`SELECT to_regclass('investment.luna_candidate_quality_governance_shadow') AS table_name`)
+      .then((items) => items?.[0])
+      .catch(() => null);
+    if (governanceTable?.table_name) {
+      const governanceRows = await query(`
+        SELECT DISTINCT ON (symbol, market)
+               symbol, market, governance_action, cooldown_until,
+               replacement_needed, skip_backtest_until_cooldown, observed_at
+          FROM luna_candidate_quality_governance_shadow
+         WHERE symbol = ANY($1::text[])
+           AND market = ANY($2::text[])
+           AND shadow_only IS TRUE
+         ORDER BY symbol, market, observed_at DESC
+      `, [symbolsInRows, marketsInRows]).catch(() => []);
+      for (const row of governanceRows || []) {
+        governanceByKey.set(`${normalizeLunaPhase2Symbol(row.symbol)}|${normalizeLunaPhase2Market(row.market)}`, row);
+      }
+    }
+  }
   const binanceTopVolumeUniverse = await getCachedBinanceTopVolumeUniverse().catch((error) => ({
     source: 'binance_top30_unavailable',
     limit: 30,
@@ -536,6 +610,8 @@ export async function loadLunaCandidateBottleneckInputs({ limit = 50, market = n
       symbol: row.symbol,
       market: row.market,
       score: row.candidate_score,
+      quality_adjusted_score: row.quality_adjusted_score,
+      prior_candidate_selection_penalty: row.prior_candidate_selection_penalty,
       source: row.source,
       discovered_at: row.discovered_at,
       expires_at: row.expires_at,
@@ -576,6 +652,14 @@ export async function loadLunaCandidateBottleneckInputs({ limit = 50, market = n
       bot_noise_score: row.community_bot_noise_flag ? 0.6 : 0,
       hype_spike: row.community_hype_spike_flag === 1,
     },
+    priorBottleneck: {
+      severity: row.prior_bottleneck_severity,
+      action: row.prior_bottleneck_action,
+      penalty: row.prior_candidate_selection_penalty,
+      reasons: parseJsonMaybe(row.prior_bottleneck_reasons, []),
+      observed_at: row.prior_bottleneck_observed_at,
+    },
+    qualityGovernance: governanceByKey.get(`${normalizeLunaPhase2Symbol(row.symbol)}|${normalizeLunaPhase2Market(row.market)}`) || null,
     binanceTop30Gate: normalizeLunaPhase2Market(row.market) === 'crypto'
       ? evaluateBinanceTopVolumeUniverseGate(row.symbol, binanceTopVolumeUniverse)
       : null,

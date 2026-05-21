@@ -46,6 +46,14 @@ function isShadowReadyEnhancementStatus(status = '') {
   ].includes(String(status || '').trim());
 }
 
+function countBy(rows = [], selector = () => 'unknown') {
+  return rows.reduce((acc, row) => {
+    const key = selector(row) || 'unknown';
+    acc[key] = (acc[key] || 0) + 1;
+    return acc;
+  }, {});
+}
+
 export async function runLunaPhase4StrategyEnhancementShadow(options = {}, deps = {}) {
   const apply = options.apply === true;
   const dryRun = options.dryRun === true || !apply;
@@ -102,6 +110,35 @@ export async function runLunaPhase4StrategyEnhancementShadow(options = {}, deps 
     hyperoptShadowEvaluated: rows.filter((row) => String(row.hyperoptStatus || '').startsWith('shadow_evaluated')).length,
     hyperoptShadowBlocked: rows.filter((row) => row.hyperoptStatus === 'shadow_evaluated_blocked').length,
     maxDrawdownBlocks: rows.filter((row) => row.maxDrawdownGuard === 'block_live_forward').length,
+    remediationRequired: rows.filter((row) => row.strategyRemediation?.status === 'remediation_required').length,
+    paperOnlyProbation: rows.filter((row) => row.strategyRemediation?.status === 'paper_only_probation').length,
+    riskTightenedMonitor: rows.filter((row) => row.strategyRemediation?.status === 'risk_tightened_monitor').length,
+    readyMonitor: rows.filter((row) => row.strategyRemediation?.status === 'ready_monitor').length,
+    shadowHardReview: rows.filter((row) => row.strategyRemediation?.status === 'remediation_required').length,
+    shadowProbation: rows.filter((row) => row.strategyRemediation?.status === 'paper_only_probation').length,
+    shadowMonitor: rows.filter((row) => ['risk_tightened_monitor', 'ready_monitor'].includes(row.strategyRemediation?.status)).length,
+    strategyOperatingStates: countBy(rows, (row) => row.strategyRemediation?.status || 'unknown'),
+    remediationByPriority: countBy(rows, (row) => row.strategyRemediation?.priority || 'unknown'),
+    remediationTopBlockers: countBy(
+      rows.flatMap((row) => row.strategyRemediation?.blockers || []),
+      (blocker) => blocker,
+    ),
+    remediationTopWatchSignals: countBy(
+      rows.flatMap((row) => row.strategyRemediation?.watchSignals || []),
+      (signal) => signal,
+    ),
+    strategyFormulationModes: countBy(
+      rows,
+      (row) => row.strategyRemediation?.strategyFormulationPlan?.mode || 'unknown',
+    ),
+    strategyFormulationPrimaryFamilies: countBy(
+      rows,
+      (row) => row.strategyRemediation?.strategyFormulationPlan?.primaryExperimentFamily || 'unknown',
+    ),
+    strategyFormulationAllowedFamilies: countBy(
+      rows.flatMap((row) => row.strategyRemediation?.strategyFormulationPlan?.allowedExperiments || []),
+      (experiment) => experiment?.family || 'unknown',
+    ),
     liveMutation: false,
   };
 

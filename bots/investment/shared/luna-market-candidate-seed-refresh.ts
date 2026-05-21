@@ -3,8 +3,8 @@
  * Shadow-safe market candidate seed refresh.
  *
  * Domestic/overseas community coverage can pass while active candidates remain
- * empty because recent evidence is marketwide. This module turns marketwide
- * evidence into low-priority candidate_universe seeds without changing live
+ * empty because recent evidence is marketwide or outside the candidate table.
+ * This module turns community evidence into low-priority candidate_universe seeds without changing live
  * trading priority.
  */
 
@@ -13,15 +13,42 @@ import { query } from './db/core.ts';
 export const LUNA_MARKET_CANDIDATE_SEED_SOURCE = 'luna_market_candidate_seed_refresh';
 
 const SUPPORTED_MARKETS = ['domestic', 'overseas'];
+const BROAD_MARKET_ALIASES = new Set([
+  'ai',
+  'ai chip',
+  'ai 반도체',
+  'aws',
+  'azure',
+  'bio',
+  'cdmo',
+  'cloud',
+  'ecommerce',
+  'ev',
+  'gpu',
+  'hbm',
+  'ios',
+  '메모리',
+  '반도체',
+  '바이오',
+  '배터리',
+  '전기차',
+  '커머스',
+  '클라우드',
+  '플랫폼',
+  '화학',
+  '2차전지',
+]);
+
+const ADVERSE_CONTEXT_PATTERN = /상장폐지|거래정지|관리종목|감사의견|의견거절|횡령|배임|부도|하한가|급락|폭락|퇴출|delist|halt|fraud|bankrupt/i;
 
 export const DEFAULT_MARKET_SEED_WATCHLIST = {
   domestic: [
-    { symbol: '005930', label: 'Samsung Electronics', aliases: ['삼성전자', '삼성', '반도체', '메모리', 'hbm'] },
-    { symbol: '000660', label: 'SK Hynix', aliases: ['sk하이닉스', '하이닉스', '반도체', '메모리', 'hbm'] },
-    { symbol: '035420', label: 'NAVER', aliases: ['네이버', 'naver', '검색', '커머스', '웹툰'] },
-    { symbol: '035720', label: 'Kakao', aliases: ['카카오', 'kakao', '플랫폼', '톡비즈'] },
-    { symbol: '051910', label: 'LG Chem', aliases: ['lg화학', '배터리', '2차전지', '화학'] },
-    { symbol: '207940', label: 'Samsung Biologics', aliases: ['삼성바이오로직스', '바이오', '의약품', 'cdmo'] },
+    { symbol: '005930', label: 'Samsung Electronics', aliases: ['삼성전자'] },
+    { symbol: '000660', label: 'SK Hynix', aliases: ['sk하이닉스', '하이닉스'] },
+    { symbol: '035420', label: 'NAVER', aliases: ['네이버'] },
+    { symbol: '035720', label: 'Kakao', aliases: ['카카오'] },
+    { symbol: '051910', label: 'LG Chem', aliases: ['lg화학'] },
+    { symbol: '207940', label: 'Samsung Biologics', aliases: ['삼성바이오로직스'] },
   ],
   overseas: [
     { symbol: 'NVDA', label: 'NVIDIA', aliases: ['nvidia', '엔비디아', 'gpu', 'blackwell', 'ai chip', 'ai 반도체'] },
@@ -64,17 +91,18 @@ function normalizeMarkets(markets: any = null) {
   return [...new Set(normalized)].length > 0 ? [...new Set(normalized)] : [...SUPPORTED_MARKETS];
 }
 
+function cleanEvidenceSummary(value: any = '') {
+  return String(value || '').replace(/^[^:]{1,80}:\s*/u, '');
+}
+
 function eventText(event: any = {}) {
   const rawRef = event.raw_ref || event.rawRef || {};
   const rawText = [
-    event.evidence_summary,
-    event.source_name,
-    event.source_url,
+    event.symbol,
+    cleanEvidenceSummary(event.evidence_summary || event.evidenceSummary),
     rawRef.title,
     rawRef.summary,
     rawRef.description,
-    rawRef.link,
-    rawRef.source,
   ].filter(Boolean).join(' ');
   return rawText.toLowerCase();
 }
@@ -93,14 +121,28 @@ function matchesAlias(text: string, alias: string) {
   return text.includes(normalized);
 }
 
+function isBroadMarketAlias(alias = '') {
+  return BROAD_MARKET_ALIASES.has(String(alias || '').toLowerCase().trim());
+}
+
 function scoreSeed(seed: any, events: any[] = [], options: any = {}) {
-  const aliases = (seed.aliases || []).map((alias) => String(alias || '').toLowerCase()).filter(Boolean);
+  const aliases = [...new Set([seed.symbol, ...(seed.aliases || [])].map((alias) => String(alias || '').toLowerCase()).filter(Boolean))];
   const matchedEvents = [];
   const matchedAliases = new Set();
+  const exactMatchedEvents = [];
+  const broadMatchedEvents = [];
+  const broadAdverseEvents = [];
   for (const event of events) {
     const text = eventText(event);
     const hits = aliases.filter((alias) => matchesAlias(text, alias));
     if (hits.length > 0) {
+      const exactHits = hits.filter((hit) => !isBroadMarketAlias(hit));
+      const broadHits = hits.filter((hit) => isBroadMarketAlias(hit));
+      if (exactHits.length > 0) exactMatchedEvents.push(event);
+      if (broadHits.length > 0) {
+        if (ADVERSE_CONTEXT_PATTERN.test(text)) broadAdverseEvents.push(event);
+        else broadMatchedEvents.push(event);
+      }
       matchedEvents.push(event);
       hits.forEach((hit) => matchedAliases.add(hit));
     }
@@ -115,7 +157,12 @@ function scoreSeed(seed: any, events: any[] = [], options: any = {}) {
     ? events.reduce((sum, event) => sum + clamp(event.source_quality ?? event.sourceQuality, 0, 1, 0.5), 0) / eventCount
     : 0;
   const matchedSourceCount = new Set(matchedEvents.map((event) => String(event.source_name || event.sourceName || 'unknown'))).size;
-  const hasAliasMatch = matchedEvents.length > 0;
+  const exactSourceCount = new Set(exactMatchedEvents.map((event) => String(event.source_name || event.sourceName || 'unknown'))).size;
+  const broadSourceCount = new Set(broadMatchedEvents.map((event) => String(event.source_name || event.sourceName || 'unknown'))).size;
+  const hasExactAliasMatch = exactMatchedEvents.length > 0;
+  const hasQualifiedBroadMatch = broadMatchedEvents.length >= 2 && broadSourceCount >= 2;
+  const hasAliasMatch = hasExactAliasMatch || hasQualifiedBroadMatch;
+  if (!hasAliasMatch) return null;
   const base = hasAliasMatch ? 0.50 : 0.43;
   const score = clamp(
     base
@@ -134,20 +181,20 @@ function scoreSeed(seed: any, events: any[] = [], options: any = {}) {
     symbol: seed.symbol,
     score: round(score),
     reason: hasAliasMatch
-      ? `marketwide community evidence matched ${seed.label}`
-      : `marketwide community coverage seed for ${seed.label}`,
+      ? `community evidence matched ${seed.label}`
+      : `community coverage seed for ${seed.label}`,
     confidence: round(clamp(0.42 + uniqueSources * 0.04 + avgFreshness * 0.12 + avgSourceQuality * 0.12 + (hasAliasMatch ? 0.10 : 0), 0.35, 0.78, 0.5)),
-    reasonCode: hasAliasMatch ? 'marketwide_symbol_hint' : 'marketwide_fallback_seed',
+    reasonCode: hasAliasMatch ? 'community_symbol_hint' : 'community_fallback_seed',
     evidenceRef: {
       source: LUNA_MARKET_CANDIDATE_SEED_SOURCE,
-      marketwideEvidenceCount: eventCount,
+      communityEvidenceCount: eventCount,
       uniqueSourceCount: uniqueSources,
       matchedEventCount: matchedEvents.length,
       matchedSourceCount,
     },
     qualityFlags: [
       'shadow_seed',
-      'marketwide_community_evidence',
+      'community_evidence_seed',
       hasAliasMatch ? 'alias_match' : 'marketwide_fallback',
     ],
     raw: {
@@ -155,11 +202,17 @@ function scoreSeed(seed: any, events: any[] = [], options: any = {}) {
       shadowSeed: true,
       liveMutation: false,
       seedLabel: seed.label,
-      marketwideEvidenceCount: eventCount,
+      matchType: hasExactAliasMatch ? 'exact_alias' : 'qualified_broad_alias',
+      communityEvidenceCount: eventCount,
       uniqueSourceCount: uniqueSources,
       avgFreshness: round(avgFreshness),
       avgSourceQuality: round(avgSourceQuality),
       matchedEventCount: matchedEvents.length,
+      exactMatchedEventCount: exactMatchedEvents.length,
+      exactMatchedSourceCount: exactSourceCount,
+      broadMatchedEventCount: broadMatchedEvents.length,
+      broadMatchedSourceCount: broadSourceCount,
+      broadAdverseSkippedCount: broadAdverseEvents.length,
       matchedSources: [...new Set(matchedEvents.map((event) => String(event.source_name || event.sourceName || 'unknown')))],
       matchedAliases: Array.from(matchedAliases),
       sampledEvidence: matchedEvents.slice(0, 3).map((event) => ({
@@ -168,7 +221,7 @@ function scoreSeed(seed: any, events: any[] = [], options: any = {}) {
         createdAt: event.created_at || event.createdAt || null,
       })),
       thresholds: {
-        minMarketwideEvents: Number(options.minEvents || 3),
+        minCommunityEvents: Number(options.minEvents || 3),
         minUniqueSources: Number(options.minUniqueSources || 1),
       },
     },
@@ -201,6 +254,7 @@ export function buildLunaMarketCandidateSeedPlan(input: any = {}) {
     const signals = blockers.length === 0
       ? (watchlist[market] || [])
         .map((seed) => scoreSeed(seed, marketEvents, { minEvents, minUniqueSources }))
+        .filter(Boolean)
         .sort((a, b) => Number(b.score || 0) - Number(a.score || 0))
         .slice(0, limit)
       : [];
@@ -239,11 +293,10 @@ export async function fetchLunaMarketCandidateSeedEvents(options: any = {}) {
   const hours = Math.max(1, Number(options.hours || 24));
   const markets = normalizeMarkets(options.markets);
   return query(
-    `SELECT market, source_name, source_url, score, source_quality, freshness_score,
+    `SELECT market, symbol, source_name, source_url, score, source_quality, freshness_score,
             evidence_summary, raw_ref, created_at
        FROM external_evidence_events
       WHERE source_type = 'community'
-        AND symbol IS NULL
         AND market = ANY($2::text[])
         AND created_at >= NOW() - ($1::int * INTERVAL '1 hour')
         AND COALESCE(source_name, '') <> 'community_candidate_gap'

@@ -172,16 +172,33 @@ export async function runLunaPromotionReadinessAssistSmoke() {
   assert.equal(promotionPlan.promotionReadyTargets.length, 1);
   assert.deepEqual(promotionPlan.actionSummary.promotionReadySymbols, ['AIGENSYN/USDT']);
   assert.equal(promotionPlan.actionSummary.byAction.promotion_entry_trigger_bridge_shadow, 1);
-  assert.equal(promotionPlan.actionSummary.byAction.promotion_entry_trigger_materialize_shadow, 1);
+  assert.equal(promotionPlan.actionSummary.byAction.promotion_entry_trigger_materialize_shadow, undefined);
   assert.equal(
     promotionPlan.plannedCommands.some((cmd) => cmd.includes('runtime:luna-promotion-entry-trigger-bridge') && cmd.includes('--symbols=AIGENSYN/USDT')),
     true,
   );
   assert.equal(
-    promotionPlan.plannedCommands.some((cmd) => cmd.includes('runtime:luna-promotion-entry-trigger-materialize') && cmd.includes('--apply') && cmd.includes('--confirm=luna-promotion-entry-trigger-materialize-active') && cmd.includes('--symbols=AIGENSYN/USDT')),
+    promotionPlan.plannedCommands.some((cmd) => cmd.includes('runtime:luna-promotion-entry-trigger-materialize')),
+    false,
+  );
+  assert.equal(
+    promotionPlan.manualApprovalCommands.some((cmd) => cmd.includes('runtime:luna-promotion-entry-trigger-materialize') && cmd.includes('--apply') && cmd.includes('--confirm=luna-promotion-entry-trigger-materialize-active') && cmd.includes('--symbols=AIGENSYN/USDT')),
     true,
   );
   assert.equal(promotionPlan.plannedCommands.every((cmd) => !cmd.includes('launchctl') && !cmd.includes('live-fire') && !cmd.includes('rollback')), true);
+
+  const explicitMaterializePlan = buildLunaPromotionReadinessAssistPlan(fixturePromotionReadyGateReport(), {
+    market: 'crypto',
+    hours: 168,
+    limit: 50,
+    maxTargets: 4,
+    includeEntryTriggerMaterialize: true,
+  });
+  assert.equal(explicitMaterializePlan.actionSummary.byAction.promotion_entry_trigger_materialize_shadow, 1);
+  assert.equal(
+    explicitMaterializePlan.plannedCommands.some((cmd) => cmd.includes('runtime:luna-promotion-entry-trigger-materialize') && cmd.includes('--symbols=AIGENSYN/USDT')),
+    true,
+  );
 
   const mixedPromotionPlan = buildLunaPromotionReadinessAssistPlan(fixtureMixedPromotionReadyGateReport(), {
     market: 'all',
@@ -196,6 +213,10 @@ export async function runLunaPromotionReadinessAssistSmoke() {
   );
   assert.equal(
     mixedPromotionPlan.plannedCommands.some((cmd) => cmd.includes('runtime:luna-promotion-entry-trigger-materialize') && cmd.includes('--market=all') && cmd.includes('--exchange=all')),
+    false,
+  );
+  assert.equal(
+    mixedPromotionPlan.manualApprovalCommands.some((cmd) => cmd.includes('runtime:luna-promotion-entry-trigger-materialize') && cmd.includes('--market=all') && cmd.includes('--exchange=all')),
     true,
   );
 

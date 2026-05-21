@@ -51,6 +51,7 @@ assert.equal(cappedResult.total, 1, 'maxSymbols should cap processed candidates'
 assert.equal(cappedResult.candidateBudget.truncatedByMaxSymbols, true, 'candidate budget should report symbol truncation');
 assert.equal(cappedResult.candidateBudget.selectedBeforeBudget, 2, 'candidate budget should expose pre-cap selection size');
 assert.equal(cappedResult.candidateBudget.selected, 1, 'candidate budget should expose capped selection size');
+assert.equal(cappedResult.candidateBudget.orderingPolicy, 'market_round_robin_score_desc', 'candidate budget should expose ordering policy');
 
 const runtimeBudgetResult = await runCandidateBacktestRefresh({
   json: true,
@@ -87,6 +88,32 @@ assert.equal(candidateBacktestTest.rowsHaveUsableTrades(fallbackRows), true, 'OH
 const fallbackQuality = candidateBacktestTest.evaluateQuality(fallbackRows);
 assert.equal(fallbackQuality.fresh ?? true, true, 'usable OHLCV fallback should be considered fresh');
 assert.equal(fallbackQuality.qualityRowSelection, 'best_per_walk_forward_period', 'quality gate should use period representatives');
+
+const officialDomesticRows = candidateBacktestTest.buildOfficialDomesticOhlcvRows([
+  { basDt: '20260520', mkp: '1000', hipr: '1030', lopr: '990', clpr: '1020', trqu: '10000' },
+  { basDt: '20260519', mkp: '980', hipr: '1010', lopr: '970', clpr: '1000', trqu: '9000' },
+]);
+assert.equal(officialDomesticRows.length, 2, 'Data.go.kr stock price rows should convert to OHLCV rows');
+assert.ok(officialDomesticRows[0][0] < officialDomesticRows[1][0], 'official domestic OHLCV rows should be sorted oldest first');
+const insufficientOfficialQuality = candidateBacktestTest.evaluateQuality([
+  { status: 'insufficient_official_ohlcv', total_trades: 0, params: { fallback: 'data_go_kr_stock_price_history', officialRows: 1 } },
+]);
+assert.equal(insufficientOfficialQuality.fresh, true, 'attempted official fallback should be fresh even when history is insufficient');
+assert.ok(insufficientOfficialQuality.reasons.includes('backtest_insufficient_official_ohlcv'), 'official fallback insufficiency should be explicit');
+
+const interleavedMarkets = candidateBacktestTest.interleaveCandidatesByMarket([
+  { symbol: 'ZEC/USDT', market: 'crypto' },
+  { symbol: 'DASH/USDT', market: 'crypto' },
+  { symbol: '005930', market: 'domestic' },
+  { symbol: '000660', market: 'domestic' },
+  { symbol: 'NVDA', market: 'overseas' },
+  { symbol: 'MSFT', market: 'overseas' },
+]).map((item) => item.market);
+assert.deepEqual(
+  interleavedMarkets,
+  ['crypto', 'domestic', 'overseas', 'crypto', 'domestic', 'overseas'],
+  'backtest refresh should not spend the entire runtime budget on one market first',
+);
 
 const drawdownOnlyQuality = candidateBacktestTest.evaluateQuality([
   { status: 'ok', total_trades: 8, sharpe_ratio: 1.4, max_drawdown: 42, win_rate: 62 },
@@ -168,6 +195,7 @@ const payload = {
   vectorbtFrequencyInference: true,
   runtimeBudgetPartialGuard: true,
   fallbackRuntimeBudgetGuard: true,
+  marketRoundRobinScheduling: true,
   candidateBudget: {
     maxSymbolsCapWorks: cappedResult.candidateBudget.selected === 1,
     runtimeBudgetStopWorks: runtimeBudgetResult.candidateBudget.budgetStopped === true,

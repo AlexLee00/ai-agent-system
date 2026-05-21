@@ -46,6 +46,17 @@ function symbolsFrom(value: any = '') {
   return [...new Set(values.map((symbol) => normalizeLunaPhase2Symbol(symbol)).filter(Boolean))];
 }
 
+async function withJsonStdoutGuard(fn: any, enabled = false) {
+  if (!enabled) return fn();
+  const originalLog = console.log;
+  console.log = (...args: any[]) => console.error(...args);
+  try {
+    return await fn();
+  } finally {
+    console.log = originalLog;
+  }
+}
+
 async function getActiveCandidates({ limit = 100, market = 'all', symbols = [] } = {}) {
   const normalizedMarket = normalizeMarketOption(market);
   const requestedSymbols = symbolsFrom(symbols);
@@ -180,12 +191,12 @@ async function forecastSymbolWithFallback(symbol: string, market: string, option
   const evidence = [];
   let best: any = null;
   for (const attempt of attempts) {
-    const forecast = await forecastSymbol(symbol, {
+    const forecast = await withJsonStdoutGuard(() => forecastSymbol(symbol, {
       timeframe: attempt.timeframe,
       limit: attempt.limit,
       horizon,
       exchange,
-    }).catch((error: any) => ({
+    }), options.json === true).catch((error: any) => ({
       ok: false,
       symbol,
       dataHealth: 'forecast_error',

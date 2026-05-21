@@ -9,6 +9,7 @@ import {
   buildFixtureDomesticOfficialReference,
   evaluateDomesticOfficialReferenceGate,
   fetchDomesticOfficialReference,
+  fetchDataGoCorporateFinanceSummary,
   getCachedDomesticOfficialReference,
   summarizeDomesticOfficialReference,
   writeDomesticOfficialReferenceCache,
@@ -80,6 +81,8 @@ function evaluateHolding(row = {}, reference = {}, options = {}) {
     updatedAt: row.updated_at || null,
     officialReferenceStatus: gate.referenceStatus || 'invalid',
     krxUniverseRank: gate.krxUniverseRank || null,
+    officialReferenceName: gate.row?.name || null,
+    officialReferenceCrno: gate.row?.crno || null,
     officialReferenceWouldBlock: gate.wouldBlock,
     officialReferenceHardBlocked: gate.hardBlocked,
     officialReferenceBlocker: gate.wouldBlock ? gate.reason : null,
@@ -96,6 +99,8 @@ async function resolveReference(options = {}) {
       baseDate: options.baseDate,
       timeoutMs: options.timeoutMs,
       minTurnoverKrw: options.minTurnoverKrw,
+      minListingAgeDays: options.minListingAgeDays,
+      corporateFinanceProbe: options.corporateFinanceProbe,
     });
     if (options.writeCache && fetched.available) {
       writeDomesticOfficialReferenceCache(fetched, options);
@@ -108,11 +113,43 @@ async function resolveReference(options = {}) {
     baseDate: options.baseDate,
     timeoutMs: options.timeoutMs,
     minTurnoverKrw: options.minTurnoverKrw,
+    minListingAgeDays: options.minListingAgeDays,
   });
   if (options.writeCache && reference.available) {
     writeDomesticOfficialReferenceCache(reference, options);
   }
   return reference;
+}
+
+async function enrichCandidatesWithCorporateFinance(candidates = [], options = {}) {
+  if (!options.corporateFinanceCandidateProbe) return candidates;
+  const limit = Math.max(0, Math.min(20, Number(options.corporateFinanceCandidateLimit || 5)));
+  if (limit <= 0) return candidates;
+  const targets = candidates
+    .filter((item) => item.officialReferenceCrno)
+    .slice(0, limit);
+  const bySymbol = new Map();
+  for (const item of targets) {
+    const result = await fetchDataGoCorporateFinanceSummary({
+      crno: item.officialReferenceCrno,
+      bizYear: options.corporateFinanceBizYear,
+      timeoutMs: options.timeoutMs,
+    });
+    bySymbol.set(item.symbol, result);
+  }
+  return candidates.map((item) => {
+    const finance = bySymbol.get(item.symbol);
+    if (!finance) return item;
+    return {
+      ...item,
+      corporateFinanceStatus: finance.ok && finance.summary ? 'available' : 'missing',
+      corporateFinanceRows: finance.rows,
+      corporateFinanceTotalCount: finance.totalCount,
+      corporateFinanceBizYear: finance.bizYear,
+      corporateFinanceFlags: finance.flags || (finance.reason ? [finance.reason] : []),
+      corporateFinance: finance.summary || null,
+    };
+  });
 }
 
 export async function runLunaDomesticOfficialReference(options: any = {}) {
@@ -125,8 +162,9 @@ export async function runLunaDomesticOfficialReference(options: any = {}) {
   const annotated = annotateDomesticOfficialReferenceCandidates(candidateRows, reference, {
     hardGate: options.hardGate,
   });
-  const evaluatedCandidates = [...annotated.candidates, ...annotated.excluded]
+  let evaluatedCandidates = [...annotated.candidates, ...annotated.excluded]
     .sort((a, b) => Number(b.score || 0) - Number(a.score || 0));
+  evaluatedCandidates = await enrichCandidatesWithCorporateFinance(evaluatedCandidates, options);
   const evaluatedHoldings = positionRows.map((row) => evaluateHolding(row, reference, {
     hardGate: options.hardGate,
   }));
@@ -142,6 +180,7 @@ export async function runLunaDomesticOfficialReference(options: any = {}) {
       liveMutation: false,
       liveBuyBlockedOnlyWhenHardGateEnabled: true,
       minTurnoverKrw: reference.minTurnoverKrw,
+      minListingAgeDays: reference.minListingAgeDays,
     },
     reference: summarizeDomesticOfficialReference(reference),
     activeCandidates: {
@@ -156,13 +195,22 @@ export async function runLunaDomesticOfficialReference(options: any = {}) {
       score: Number(item.score || 0),
       officialReferenceStatus: item.officialReferenceStatus,
       krxUniverseRank: item.krxUniverseRank,
+      officialReferenceName: item.officialReferenceName || null,
+      officialReferenceCrno: item.officialReferenceCrno || null,
       officialReferenceMarket: item.officialReferenceMarket,
       officialReferenceSecurityType: item.officialReferenceSecurityType,
       officialReferenceStockType: item.officialReferenceStockType,
+      officialReferenceListedDate: item.officialReferenceListedDate || null,
+      officialReferenceListingAgeDays: item.officialReferenceListingAgeDays ?? null,
       officialReferenceTurnoverKrw: item.officialReferenceTurnoverKrw,
       officialReferenceBlockers: item.officialReferenceBlockers,
       officialReferenceWouldBlock: item.officialReferenceWouldBlock,
       officialReferenceHardBlocked: item.officialReferenceHardBlocked,
+      corporateFinanceStatus: item.corporateFinanceStatus || null,
+      corporateFinanceRows: item.corporateFinanceRows ?? null,
+      corporateFinanceBizYear: item.corporateFinanceBizYear || null,
+      corporateFinanceFlags: item.corporateFinanceFlags || [],
+      corporateFinance: item.corporateFinance || null,
     })),
     holdings: {
       total: evaluatedHoldings.length,
@@ -193,6 +241,11 @@ async function main() {
     candidateLimit: Number(argValue('candidate-limit', 200)),
     timeoutMs: Number(argValue('timeout-ms', 8000)),
     minTurnoverKrw: Number(argValue('min-turnover-krw', process.env.LUNA_DOMESTIC_OFFICIAL_MIN_TURNOVER_KRW || 1_000_000_000)),
+    minListingAgeDays: Number(argValue('min-listing-age-days', process.env.LUNA_DOMESTIC_OFFICIAL_MIN_LISTING_AGE_DAYS || 90)),
+    corporateFinanceProbe: hasFlag('corporate-finance-probe'),
+    corporateFinanceCandidateProbe: hasFlag('corporate-finance-candidate-probe'),
+    corporateFinanceCandidateLimit: Number(argValue('corporate-finance-candidate-limit', 5)),
+    corporateFinanceBizYear: argValue('corporate-finance-biz-year', process.env.LUNA_CORPORATE_FINANCE_BIZ_YEAR || '2024'),
   });
   if (hasFlag('json')) console.log(JSON.stringify(result, null, 2));
   else {

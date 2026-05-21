@@ -31,6 +31,14 @@ function symbolsFrom(value: any = '') {
   return [...new Set(values.map((symbol) => normalizeLunaPhase2Symbol(symbol)).filter(Boolean))];
 }
 
+function countBy(rows = [], selector = () => 'unknown') {
+  return rows.reduce((acc, row) => {
+    const key = selector(row) || 'unknown';
+    acc[key] = (acc[key] || 0) + 1;
+    return acc;
+  }, {});
+}
+
 function fixtureInputs() {
   const now = new Date().toISOString();
   return [
@@ -136,6 +144,33 @@ export async function runLunaWeightVectorShadow(options: any = {}, deps: any = {
     bottleneckHardHold: rows.filter((row) => row.evidence?.bottleneck?.hardHold === true).length,
     strategyQualityPenalized: rows.filter((row) => Number(row.evidence?.strategyQuality?.penalty || 0) > 0).length,
     strategyQualityHardHold: rows.filter((row) => row.evidence?.strategyQuality?.hardHold === true).length,
+    strategyQualityProbation: rows.filter((row) => row.evidence?.strategyQuality?.operatingState === 'paper_probation').length,
+    strategyQualityRiskTightenedMonitor: rows.filter((row) => row.evidence?.strategyQuality?.operatingState === 'risk_tightened_monitor').length,
+    strategyQualityOperatingStates: countBy(rows, (row) => row.evidence?.strategyQuality?.operatingState || 'unknown'),
+    strategyQualityRemediationStatuses: countBy(rows, (row) => row.evidence?.strategyQuality?.remediationStatus || 'unknown'),
+    strategyQualityFormulationModes: countBy(rows, (row) => row.evidence?.strategyQuality?.formulationMode || 'unknown'),
+    strategyQualityHardHoldSymbols: rows
+      .filter((row) => row.evidence?.strategyQuality?.hardHold === true)
+      .map((row) => row.symbol),
+    qualityActionPriorities: countBy(rows, (row) => row.evidence?.qualityActionPlan?.priority || 'unknown'),
+    qualityActionPrimaryActions: countBy(rows, (row) => row.evidence?.qualityActionPlan?.primaryAction || 'unknown'),
+    qualityActionBlockedComponents: countBy(
+      rows.flatMap((row) => row.evidence?.qualityActionPlan?.blockedComponents || []),
+      (component) => component,
+    ),
+    qualityActionMonitorComponents: countBy(
+      rows.flatMap((row) => row.evidence?.qualityActionPlan?.monitorComponents || []),
+      (component) => component,
+    ),
+    qualityActionStrategyReformulationSymbols: rows
+      .filter((row) => row.evidence?.qualityActionPlan?.primaryAction === 'strategy_reformulation_shadow_required')
+      .map((row) => row.symbol),
+    qualityActionPredictiveRefreshSymbols: rows
+      .filter((row) => (row.evidence?.qualityActionPlan?.blockedComponents || []).includes('predictive'))
+      .map((row) => row.symbol),
+    qualityActionCandidateRemediationSymbols: rows
+      .filter((row) => (row.evidence?.qualityActionPlan?.blockedComponents || []).includes('candidate_bottleneck'))
+      .map((row) => row.symbol),
     liveMutation: false,
   };
 

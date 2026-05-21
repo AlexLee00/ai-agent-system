@@ -2127,6 +2127,16 @@ export async function runCommunityEvidenceRefresh(options: any = {}): Promise<an
       overseas: activeOverseasCandidates.map((candidate: ActiveCandidate) => candidate.symbol),
     },
     gapEvidence: gapEvents.length,
+    gapEvidenceByMarket: gapEvents.reduce((acc: Record<string, number>, event: any) => {
+      const market = event.market || 'unknown';
+      acc[market] = (acc[market] || 0) + 1;
+      return acc;
+    }, {}),
+    gapEvidenceSymbols: gapEvents.slice(0, 20).map((event: any) => ({
+      market: event.market || null,
+      symbol: event.symbol || null,
+      reason: event.rawRef?.reason || 'community_evidence_gap',
+    })),
     sourceQualityFeedback: {
       enabled: !fixture && options.sourceQualityFeedback !== false,
       ok: sourceQualityFeedback.audit?.ok ?? null,

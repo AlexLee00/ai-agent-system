@@ -142,7 +142,8 @@ function targetSourceItems(gateReport = {}) {
   return (gateReport.items || []).filter((item) => item.promotionCandidate !== true);
 }
 
-function promotionReadySourceItems(gateReport = {}) {
+function promotionReadySourceItems(gateReport = {}, options = {}) {
+  const includeEntryTriggerMaterialize = options.includeEntryTriggerMaterialize === true;
   return (gateReport.items || [])
     .filter((item) => item.promotionCandidate === true || item.promotion_candidate === true)
     .map((item) => ({
@@ -157,13 +158,15 @@ function promotionReadySourceItems(gateReport = {}) {
       avgConfidence: n(item.avgConfidence ?? item.avg_confidence, 0),
       recommendedAssistActions: [
         'promotion_entry_trigger_bridge_shadow',
-        'promotion_entry_trigger_materialize_shadow',
+        ...(includeEntryTriggerMaterialize ? ['promotion_entry_trigger_materialize_shadow'] : []),
         'master_review_only',
       ],
       nextRequiredEvidence: item.nextRequiredEvidence || [{
         type: 'entry_trigger_bridge',
         action: 'stage_shadow_entry_trigger_bridge',
-        detail: 'Promotion-ready shadow evidence exists; stage bridge evidence before any master-approved active trigger materialization.',
+        detail: includeEntryTriggerMaterialize
+          ? 'Promotion-ready shadow evidence exists; entry-trigger materialization was explicitly included for a master-approved review flow.'
+          : 'Promotion-ready shadow evidence exists; stage bridge evidence only until explicit master approval enables active trigger materialization.',
       }],
     }))
     .filter((item) => item.symbol);
@@ -171,7 +174,8 @@ function promotionReadySourceItems(gateReport = {}) {
 
 export function buildLunaPromotionReadinessAssistPlan(gateReport = {}, options = {}) {
   const maxTargets = Math.max(1, n(options.maxTargets || 8, 8));
-  const promotionReadyTargets = promotionReadySourceItems(gateReport);
+  const includeEntryTriggerMaterialize = options.includeEntryTriggerMaterialize === true;
+  const promotionReadyTargets = promotionReadySourceItems(gateReport, { includeEntryTriggerMaterialize });
   const selectedTargets = [];
   const seen = new Set();
   for (const rawTarget of targetSourceItems(gateReport)
@@ -201,11 +205,17 @@ export function buildLunaPromotionReadinessAssistPlan(gateReport = {}, options =
   const limitArg = ` --limit=${Math.max(1, n(options.limit || 100, 100))}`;
   const hoursArg = ` --hours=${Math.max(1, n(options.hours || 168, 168))}`;
   const plannedCommands = [];
+  const manualApprovalCommands = [];
   if (actions.has('promotion_entry_trigger_bridge_shadow')) {
     plannedCommands.push(`npm --prefix bots/investment run -s runtime:luna-promotion-entry-trigger-bridge -- --json --apply --confirm=${LUNA_PROMOTION_ENTRY_TRIGGER_BRIDGE_CONFIRM}${mArg}${eArg}${hoursArg}${limitArg}${symbolsOptionArg(promotionReadySymbols)}`);
   }
-  if (actions.has('promotion_entry_trigger_materialize_shadow')) {
-    plannedCommands.push(`npm --prefix bots/investment run -s runtime:luna-promotion-entry-trigger-materialize -- --json --apply --confirm=luna-promotion-entry-trigger-materialize-active${mArg}${eArg}${hoursArg}${limitArg}${symbolsOptionArg(promotionReadySymbols)}`);
+  if (promotionReadySymbols.length > 0) {
+    const materializeCommand = `npm --prefix bots/investment run -s runtime:luna-promotion-entry-trigger-materialize -- --json --apply --confirm=luna-promotion-entry-trigger-materialize-active${mArg}${eArg}${hoursArg}${limitArg}${symbolsOptionArg(promotionReadySymbols)}`;
+    if (actions.has('promotion_entry_trigger_materialize_shadow')) {
+      plannedCommands.push(materializeCommand);
+    } else {
+      manualApprovalCommands.push(materializeCommand);
+    }
   }
   if (actions.has('candidate_backtest_refresh')) {
     plannedCommands.push(`npm --prefix bots/investment run -s runtime:luna-candidate-backtest-refresh -- --json --force${mArg}${limitArg}${symbolsOptionArg(backtestSymbols)}`);
@@ -250,7 +260,10 @@ export function buildLunaPromotionReadinessAssistPlan(gateReport = {}, options =
       liveMutation: false,
     },
     plannedCommands,
+    manualApprovalCommands,
     requiredApproval: 'explicit_master_live_promotion_approval_for_any_live_priority_change',
+    materializeRequiresExplicitApproval: true,
+    includeEntryTriggerMaterialize,
     liveMutation: false,
   };
 }
@@ -277,6 +290,7 @@ export async function runLunaPromotionReadinessAssistShadow(options = {}, deps =
   const hours = Math.max(1, n(options.hours || 168, 168));
   const limit = Math.max(1, n(options.limit || 100, 100));
   const maxTargets = Math.max(1, n(options.maxTargets || 8, 8));
+  const includeEntryTriggerMaterialize = options.includeEntryTriggerMaterialize === true;
 
   if (apply && options.dryRun === true) {
     throw new Error('runtime:luna-promotion-readiness-assist cannot combine --apply with --dry-run');
@@ -296,7 +310,7 @@ export async function runLunaPromotionReadinessAssistShadow(options = {}, deps =
       hours,
       limit: 1000,
     }));
-  const plan = buildLunaPromotionReadinessAssistPlan(gateReport, { market, hours, limit, maxTargets });
+  const plan = buildLunaPromotionReadinessAssistPlan(gateReport, { market, hours, limit, maxTargets, includeEntryTriggerMaterialize });
 
   const executed = {
     promotionEntryTriggerBridge: null,
@@ -466,6 +480,7 @@ if (isDirectExecution(import.meta.url)) {
       hours: Number(argValue('hours', 168)),
       limit: Number(argValue('limit', 100)),
       maxTargets: Number(argValue('max-targets', 8)),
+      includeEntryTriggerMaterialize: hasFlag('include-entry-trigger-materialize'),
       confirm: argValue('confirm', ''),
     }),
     onSuccess: async (result) => console.log(JSON.stringify(result, null, 2)),

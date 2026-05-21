@@ -15,12 +15,20 @@ const hubClient = require('../../../packages/core/lib/hub-client');
 export const DOMESTIC_OFFICIAL_REFERENCE_SOURCE = 'krx_data_go_kr_official_reference';
 export const DOMESTIC_OFFICIAL_REFERENCE_BLOCK_SOURCE = 'pre_entry/domestic_official_reference';
 export const DEFAULT_DOMESTIC_OFFICIAL_MIN_TURNOVER_KRW = 1_000_000_000;
+export const DEFAULT_DOMESTIC_OFFICIAL_MIN_LISTING_AGE_DAYS = 90;
 
 const DEFAULT_TIMEOUT_MS = 8_000;
 const DEFAULT_CACHE_TTL_MS = 6 * 60 * 60_000;
 const DEFAULT_CACHE_FILE = resolve(INVESTMENT_ROOT, 'output', 'luna-domestic-official-reference-cache.json');
-const KRX_STOCK_BASE_URL = 'https://data-dbg.krx.co.kr/svc/apis/sto';
+const KRX_STOCK_BASE_URL = 'http://data-dbg.krx.co.kr/svc/apis/sto';
 const DATA_GO_STOCK_PRICE_URL = 'https://apis.data.go.kr/1160100/service/GetStockSecuritiesInfoService/getStockPriceInfo';
+const DATA_GO_KRX_LISTED_INFO_URL = 'https://apis.data.go.kr/1160100/service/GetKrxListedInfoService/getItemInfo';
+const DATA_GO_CORPORATE_FINANCE_URL = 'https://apis.data.go.kr/1160100/service/GetFinaStatInfoService_V2/getSummFinaStat_V2';
+const DATA_GO_STOCK_PRICE_PAGE_SIZE = 1000;
+const DATA_GO_KRX_LISTED_INFO_PAGE_SIZE = 1000;
+const DEFAULT_REFERENCE_LOOKBACK_DAYS = 7;
+const DEFAULT_CORPORATE_FINANCE_PROBE_CRNO = '1746110000741';
+const DEFAULT_CORPORATE_FINANCE_PROBE_BIZ_YEAR = '2019';
 
 let cachedReference = null;
 let cachedHubSecrets = null;
@@ -44,6 +52,11 @@ function num(value, fallback = null) {
 
 function text(value, fallback = '') {
   return String(value ?? fallback ?? '').trim();
+}
+
+function secretText(value) {
+  const normalized = text(value);
+  return /^<[^>]+>$/u.test(normalized) ? '' : normalized;
 }
 
 function upper(value) {
@@ -74,7 +87,7 @@ function nestedValueOf(source = {}, paths = []) {
 async function loadHubOfficialReferenceSecrets(timeoutMs = 3000) {
   if (cachedHubSecrets) return cachedHubSecrets;
   try {
-    const directCategoryEnabled = bool(process.env.LUNA_OFFICIAL_MARKET_REFERENCE_DIRECT_SECRET_CATEGORY, true);
+    const directCategoryEnabled = bool(process.env.LUNA_OFFICIAL_MARKET_REFERENCE_DIRECT_SECRET_CATEGORY, false);
     const officialPromise = directCategoryEnabled
       ? hubClient.fetchHubSecrets('official_market_reference', timeoutMs).catch(() => null)
       : Promise.resolve(null);
@@ -92,14 +105,16 @@ async function loadHubOfficialReferenceSecrets(timeoutMs = 3000) {
 
 export async function resolveDomesticOfficialReferenceCredentials(options = {}) {
   const timeoutMs = Math.max(1000, Number(options.timeoutMs || DEFAULT_TIMEOUT_MS));
-  let krxAuthKey = text(options.krxAuthKey || process.env.KRX_OPENAPI_AUTH_KEY || process.env.KRX_OPEN_API_AUTH_KEY || process.env.KRX_AUTH_KEY);
-  let stockPriceServiceKey = text(options.dataGoKrStockPriceServiceKey || options.stockPriceServiceKey || process.env.DATA_GO_KR_STOCK_PRICE_SERVICE_KEY || process.env.PUBLIC_DATA_STOCK_PRICE_SERVICE_KEY);
-  let corporateFinanceServiceKey = text(options.corporateFinanceServiceKey || process.env.DATA_GO_KR_CORPORATE_FINANCE_SERVICE_KEY || process.env.PUBLIC_DATA_CORPORATE_FINANCE_SERVICE_KEY);
+  let krxAuthKey = secretText(options.krxAuthKey || process.env.KRX_OPENAPI_AUTH_KEY || process.env.KRX_OPEN_API_AUTH_KEY || process.env.KRX_AUTH_KEY);
+  let stockPriceServiceKey = secretText(options.dataGoKrStockPriceServiceKey || options.stockPriceServiceKey || process.env.DATA_GO_KR_STOCK_PRICE_SERVICE_KEY || process.env.PUBLIC_DATA_STOCK_PRICE_SERVICE_KEY);
+  let krxListedInfoServiceKey = secretText(options.dataGoKrKrxListedInfoServiceKey || options.krxListedInfoServiceKey || process.env.DATA_GO_KR_KRX_LISTED_INFO_SERVICE_KEY || process.env.PUBLIC_DATA_KRX_LISTED_INFO_SERVICE_KEY);
+  let corporateFinanceServiceKey = secretText(options.corporateFinanceServiceKey || process.env.DATA_GO_KR_CORPORATE_FINANCE_SERVICE_KEY || process.env.PUBLIC_DATA_CORPORATE_FINANCE_SERVICE_KEY);
   let krxAuthKeySource = krxAuthKey ? 'env' : null;
   let stockPriceServiceKeySource = stockPriceServiceKey ? 'env' : null;
+  let krxListedInfoServiceKeySource = krxListedInfoServiceKey ? 'env' : null;
   let corporateFinanceServiceKeySource = corporateFinanceServiceKey ? 'env' : null;
 
-  if (!krxAuthKey || !stockPriceServiceKey || !corporateFinanceServiceKey) {
+  if (!krxAuthKey || !stockPriceServiceKey || !krxListedInfoServiceKey || !corporateFinanceServiceKey) {
     const hub = await loadHubOfficialReferenceSecrets(timeoutMs);
     const official = hub.official || {};
     const config = hub.config || {};
@@ -125,7 +140,7 @@ export async function resolveDomesticOfficialReferenceCredentials(options = {}) 
         'public_data.krx_openapi_auth_key',
         'news.krx_openapi_auth_key',
       ]);
-      krxAuthKey = text(value);
+      krxAuthKey = secretText(value);
       krxAuthKeySource = krxAuthKey ? (nestedValueOf(official, ['krx_openapi_auth_key', 'krx_open_api_auth_key', 'krx_auth_key', 'krx.openapi_auth_key', 'krx.auth_key']) ? 'hub:official_market_reference' : 'hub:config.official_market_reference') : null;
     }
     if (!stockPriceServiceKey) {
@@ -145,8 +160,32 @@ export async function resolveDomesticOfficialReferenceCredentials(options = {}) 
       ]) || nestedValueOf(reservation, [
         'datagokr_stock_key',
       ]);
-      stockPriceServiceKey = text(value);
+      stockPriceServiceKey = secretText(value);
       stockPriceServiceKeySource = stockPriceServiceKey ? (nestedValueOf(official, ['data_go_kr_stock_price_service_key', 'stock_price_service_key', 'data_go_kr.stock_price_service_key']) ? 'hub:official_market_reference' : 'hub:config/reservation') : null;
+    }
+    if (!krxListedInfoServiceKey) {
+      const value = nestedValueOf(official, [
+        'data_go_kr_krx_listed_info_service_key',
+        'krx_listed_info_service_key',
+        'listed_info_service_key',
+        'data_go_kr.krx_listed_info_service_key',
+        'data_go_kr.listed_info_service_key',
+      ]) || nestedValueOf(config, [
+        'official_market_reference.data_go_kr_krx_listed_info_service_key',
+        'official_market_reference.krx_listed_info_service_key',
+        'official_market_reference.listed_info_service_key',
+        'official_market_reference.data_go_kr.krx_listed_info_service_key',
+        'official_market_reference.data_go_kr.listed_info_service_key',
+        'data_go_kr.krx_listed_info_service_key',
+        'data_go_kr.listed_info_service_key',
+        'public_data.krx_listed_info_service_key',
+        'public_data.listed_info_service_key',
+        'reservation.datagokr_krx_listed_info_key',
+      ]) || nestedValueOf(reservation, [
+        'datagokr_krx_listed_info_key',
+      ]);
+      krxListedInfoServiceKey = secretText(value);
+      krxListedInfoServiceKeySource = krxListedInfoServiceKey ? (nestedValueOf(official, ['data_go_kr_krx_listed_info_service_key', 'krx_listed_info_service_key', 'listed_info_service_key', 'data_go_kr.krx_listed_info_service_key', 'data_go_kr.listed_info_service_key']) ? 'hub:official_market_reference' : 'hub:config/reservation') : null;
     }
     if (!corporateFinanceServiceKey) {
       const value = nestedValueOf(official, [
@@ -169,7 +208,7 @@ export async function resolveDomesticOfficialReferenceCredentials(options = {}) 
       ]) || nestedValueOf(reservation, [
         'datagokr_corporate_finance_key',
       ]);
-      corporateFinanceServiceKey = text(value);
+      corporateFinanceServiceKey = secretText(value);
       corporateFinanceServiceKeySource = corporateFinanceServiceKey ? (nestedValueOf(official, ['data_go_kr_corporate_finance_service_key', 'corporate_finance_service_key', 'company_finance_service_key', 'data_go_kr.corporate_finance_service_key', 'data_go_kr.company_finance_service_key']) ? 'hub:official_market_reference' : 'hub:config/reservation') : null;
     }
   }
@@ -177,13 +216,16 @@ export async function resolveDomesticOfficialReferenceCredentials(options = {}) 
   return {
     krxAuthKey,
     stockPriceServiceKey,
+    krxListedInfoServiceKey,
     corporateFinanceServiceKey,
     status: {
       krxConfigured: Boolean(krxAuthKey),
       stockPriceConfigured: Boolean(stockPriceServiceKey),
+      krxListedInfoConfigured: Boolean(krxListedInfoServiceKey),
       corporateFinanceConfigured: Boolean(corporateFinanceServiceKey),
       krxAuthKeySource,
       stockPriceServiceKeySource,
+      krxListedInfoServiceKeySource,
       corporateFinanceServiceKeySource,
     },
   };
@@ -204,8 +246,60 @@ function yyyymmddKst(date = new Date()) {
   return formatter.format(date).replace(/-/g, '');
 }
 
+function addDaysYyyymmdd(value, deltaDays) {
+  const raw = text(value);
+  if (!/^\d{8}$/u.test(raw)) return null;
+  const year = Number(raw.slice(0, 4));
+  const month = Number(raw.slice(4, 6));
+  const day = Number(raw.slice(6, 8));
+  const date = new Date(Date.UTC(year, month - 1, day + Number(deltaDays || 0)));
+  const yyyy = date.getUTCFullYear();
+  const mm = String(date.getUTCMonth() + 1).padStart(2, '0');
+  const dd = String(date.getUTCDate()).padStart(2, '0');
+  return `${yyyy}${mm}${dd}`;
+}
+
+function parseYyyymmddMs(value) {
+  const raw = text(value);
+  if (!/^\d{8}$/u.test(raw)) return null;
+  const year = Number(raw.slice(0, 4));
+  const month = Number(raw.slice(4, 6));
+  const day = Number(raw.slice(6, 8));
+  const ms = Date.UTC(year, month - 1, day);
+  return Number.isFinite(ms) ? ms : null;
+}
+
+function daysBetweenYyyymmdd(start, end) {
+  const startMs = parseYyyymmddMs(start);
+  const endMs = parseYyyymmddMs(end);
+  if (startMs == null || endMs == null) return null;
+  return Math.floor((endMs - startMs) / 86_400_000);
+}
+
+function isWeekendYyyymmdd(value) {
+  const ms = parseYyyymmddMs(value);
+  if (ms == null) return false;
+  const day = new Date(ms).getUTCDay();
+  return day === 0 || day === 6;
+}
+
+function recentBaseDates(startBasDd, lookbackDays = DEFAULT_REFERENCE_LOOKBACK_DAYS) {
+  const first = text(startBasDd || yyyymmddKst());
+  const days = Math.max(0, Math.min(30, Number(lookbackDays || DEFAULT_REFERENCE_LOOKBACK_DAYS)));
+  return Array.from({ length: days + 1 }, (_, index) => addDaysYyyymmdd(first, -index)).filter(Boolean);
+}
+
+function historicalBaseDates(startBasDd, lookbackDays = 365) {
+  const first = text(startBasDd || yyyymmddKst());
+  const days = Math.max(0, Math.min(550, Number(lookbackDays || 365)));
+  return Array.from({ length: days + 1 }, (_, index) => addDaysYyyymmdd(first, -index)).filter(Boolean);
+}
+
 export function normalizeDomesticOfficialSymbol(value = '') {
   const raw = text(value).toUpperCase();
+  const compact = raw.replace(/[^0-9A-Z]/gu, '');
+  const compactMatch = compact.match(/^A?(\d{6})$/u);
+  if (compactMatch) return compactMatch[1];
   const match = raw.match(/\b(\d{6})\b/u);
   return match ? match[1] : null;
 }
@@ -250,6 +344,7 @@ function normalizeOfficialRow(raw = {}, source = 'unknown') {
   const baseDate = text(valueOf(raw, ['BAS_DD', 'basDt', 'baseDate']));
   const isin = text(valueOf(raw, ['ISU_CD', 'isinCd', 'isuCd', 'isin']));
   const listedDate = text(valueOf(raw, ['LIST_DD', 'listDd', 'listedDate']));
+  const crno = text(valueOf(raw, ['crno', 'CRNO', 'corporateRegistrationNumber']));
 
   const statusText = [
     valueOf(raw, ['TRD_STOP_YN', 'trdStopYn', 'tradingHalt', 'haltYn']),
@@ -277,6 +372,7 @@ function normalizeOfficialRow(raw = {}, source = 'unknown') {
     marketCap,
     changeRate,
     baseDate,
+    crno,
     sources: [source],
     rawRefs: [{ source, row: raw }],
     tradingHalt: /Y|YES|TRUE|거래정지|정지/u.test(statusText),
@@ -318,7 +414,7 @@ function isSpac(row = {}) {
 }
 
 function securityTypeBlocker(row = {}) {
-  const combined = `${row.securityGroup || ''} ${row.stockCertificateType || ''} ${row.sectorType || ''}`.toUpperCase();
+  const combined = `${row.name || ''} ${row.securityGroup || ''} ${row.stockCertificateType || ''} ${row.sectorType || ''}`.toUpperCase();
   if (/ETF/u.test(combined)) return 'security_type_etf';
   if (/ETN/u.test(combined)) return 'security_type_etn';
   if (/ELW/u.test(combined)) return 'security_type_elw';
@@ -333,6 +429,7 @@ function securityTypeBlocker(row = {}) {
 export function classifyDomesticOfficialReferenceRow(row = {}, options = {}) {
   const blockers = [];
   const minTurnoverKrw = Math.max(0, Number(options.minTurnoverKrw ?? process.env.LUNA_DOMESTIC_OFFICIAL_MIN_TURNOVER_KRW ?? DEFAULT_DOMESTIC_OFFICIAL_MIN_TURNOVER_KRW));
+  const minListingAgeDays = Math.max(0, Number(options.minListingAgeDays ?? process.env.LUNA_DOMESTIC_OFFICIAL_MIN_LISTING_AGE_DAYS ?? DEFAULT_DOMESTIC_OFFICIAL_MIN_LISTING_AGE_DAYS));
   if (!normalizeDomesticOfficialSymbol(row.symbol)) blockers.push('invalid_domestic_symbol');
   if (row.tradingHalt) blockers.push('trading_halt_or_suspended');
   if (row.adminIssue) blockers.push('admin_issue');
@@ -342,6 +439,9 @@ export function classifyDomesticOfficialReferenceRow(row = {}, options = {}) {
   if (row.turnoverKrw != null && minTurnoverKrw > 0 && Number(row.turnoverKrw || 0) < minTurnoverKrw) {
     blockers.push('turnover_below_official_floor');
   }
+  if (row.listedDate && row.listingAgeDays != null && minListingAgeDays > 0 && Number(row.listingAgeDays) < minListingAgeDays) {
+    blockers.push('listing_history_too_short');
+  }
   return unique(blockers);
 }
 
@@ -349,18 +449,21 @@ export function buildDomesticOfficialReference({
   baseInfoRows = [],
   dailyTradeRows = [],
   publicPriceRows = [],
+  krxListedInfoRows = [],
   ksdRows = [],
   fetchedAt = new Date().toISOString(),
   baseDate = null,
   source = DOMESTIC_OFFICIAL_REFERENCE_SOURCE,
   fixture = false,
   minTurnoverKrw = DEFAULT_DOMESTIC_OFFICIAL_MIN_TURNOVER_KRW,
+  minListingAgeDays = DEFAULT_DOMESTIC_OFFICIAL_MIN_LISTING_AGE_DAYS,
 } = {}) {
   const bySymbol = new Map();
   const inputGroups = [
     ['krx_base_info', baseInfoRows],
     ['krx_daily_trade', dailyTradeRows],
     ['data_go_kr_stock_price', publicPriceRows],
+    ['data_go_kr_krx_listed_info', krxListedInfoRows],
     ['ksd_stock_info', ksdRows],
   ];
 
@@ -373,9 +476,14 @@ export function buildDomesticOfficialReference({
   }
 
   const rows = Array.from(bySymbol.values()).map((row) => {
-    const blockers = classifyDomesticOfficialReferenceRow(row, { minTurnoverKrw });
-    return {
+    const listingAgeDays = daysBetweenYyyymmdd(row.listedDate, row.baseDate || baseDate || yyyymmddKst());
+    const enriched = {
       ...row,
+      listingAgeDays,
+    };
+    const blockers = classifyDomesticOfficialReferenceRow(enriched, { minTurnoverKrw, minListingAgeDays });
+    return {
+      ...enriched,
       officialEligible: blockers.length === 0,
       officialBlockers: blockers,
     };
@@ -396,6 +504,7 @@ export function buildDomesticOfficialReference({
     available: rows.length > 0,
     fullUniverse: fixture || baseInfoRows.length >= 100 || rows.length >= 100,
     minTurnoverKrw,
+    minListingAgeDays,
     rows,
     symbols: rows.map((row) => row.symbol).sort(),
     bySymbol: Object.fromEntries(rows.map((row) => [row.symbol, row])),
@@ -411,6 +520,7 @@ export function buildDomesticOfficialReference({
       krxBaseInfoRows: baseInfoRows.length,
       krxDailyTradeRows: dailyTradeRows.length,
       publicPriceRows: publicPriceRows.length,
+      krxListedInfoRows: krxListedInfoRows.length,
       ksdRows: ksdRows.length,
     },
   };
@@ -425,6 +535,7 @@ export function buildUnavailableDomesticOfficialReference(reason = 'official_ref
     available: false,
     fullUniverse: false,
     minTurnoverKrw: DEFAULT_DOMESTIC_OFFICIAL_MIN_TURNOVER_KRW,
+    minListingAgeDays: DEFAULT_DOMESTIC_OFFICIAL_MIN_LISTING_AGE_DAYS,
     rows: [],
     symbols: [],
     bySymbol: {},
@@ -447,6 +558,7 @@ export function buildFixtureDomesticOfficialReference() {
       { ISU_SRT_CD: '123450', ISU_ABBRV: '테스트스팩', MKT_TP_NM: 'KOSDAQ', SECUGRP_NM: '주권', KIND_STKCERT_TP_NM: '보통주' },
       { ISU_SRT_CD: '000020', ISU_ABBRV: '동화약품', MKT_TP_NM: 'KOSPI', SECUGRP_NM: '주권', KIND_STKCERT_TP_NM: '보통주' },
       { ISU_SRT_CD: '111111', ISU_ABBRV: '거래정지테스트', MKT_TP_NM: 'KOSPI', SECUGRP_NM: '주권', KIND_STKCERT_TP_NM: '보통주', TRD_STOP_YN: 'Y' },
+      { ISU_SRT_CD: '477850', ISU_ABBRV: '마키나락스', MKT_TP_NM: 'KOSDAQ', SECUGRP_NM: '주권', SECT_TP_NM: '기술성장기업부', KIND_STKCERT_TP_NM: '보통주', LIST_DD: '20260520', LIST_SHRS: '17541640' },
     ],
     dailyTradeRows: [
       { ISU_SRT_CD: '005930', TDD_CLSPRC: '80000', ACC_TRDVOL: '20000000', ACC_TRDVAL: '1600000000000', FLUC_RT: '1.2' },
@@ -456,6 +568,12 @@ export function buildFixtureDomesticOfficialReference() {
       { ISU_SRT_CD: '123450', TDD_CLSPRC: '2100', ACC_TRDVOL: '2000000', ACC_TRDVAL: '4200000000', FLUC_RT: '0.1' },
       { ISU_SRT_CD: '000020', TDD_CLSPRC: '9000', ACC_TRDVOL: '50000', ACC_TRDVAL: '450000000', FLUC_RT: '-0.2' },
       { ISU_SRT_CD: '111111', TDD_CLSPRC: '1000', ACC_TRDVOL: '0', ACC_TRDVAL: '0', FLUC_RT: '0' },
+      { ISU_SRT_CD: '477850', TDD_CLSPRC: '60000', ACC_TRDVOL: '569912', ACC_TRDVAL: '34194720000', FLUC_RT: '300' },
+    ],
+    krxListedInfoRows: [
+      { srtnCd: 'A005930', itmsNm: '삼성전자', basDt: '20260520', crno: '1301110006246', corpNm: '삼성전자(주)', mrktCtg: 'KOSPI' },
+      { srtnCd: 'A000660', itmsNm: 'SK하이닉스', basDt: '20260520', crno: '1101110006167', corpNm: '에스케이하이닉스(주)', mrktCtg: 'KOSPI' },
+      { srtnCd: 'A477850', itmsNm: '마키나락스', basDt: '20260520', crno: '1101116605856', corpNm: '(주)마키나락스', mrktCtg: 'KOSDAQ' },
     ],
   });
 }
@@ -488,8 +606,18 @@ async function fetchJson(url, options = {}) {
       },
       body: options.body,
     });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    return await res.json();
+    const bodyText = await res.text();
+    let payload = null;
+    try {
+      payload = bodyText ? JSON.parse(bodyText) : null;
+    } catch {
+      payload = null;
+    }
+    if (!res.ok) {
+      const detail = text(payload?.respMsg || payload?.response?.header?.resultMsg || bodyText.slice(0, 120));
+      throw new Error(`HTTP ${res.status}${detail ? ` ${detail}` : ''}`);
+    }
+    return payload;
   } finally {
     clearTimeout(timer);
   }
@@ -497,20 +625,17 @@ async function fetchJson(url, options = {}) {
 
 async function fetchKrxRows({ endpoint, authKey, basDd, timeoutMs }) {
   const baseUrl = text(process.env.KRX_OPENAPI_BASE_URL || KRX_STOCK_BASE_URL).replace(/\/$/u, '');
-  const payload = await fetchJson(`${baseUrl}${endpoint}`, {
-    method: 'POST',
+  const payload = await fetchJson(`${baseUrl}${endpoint}?basDd=${encodeURIComponent(basDd)}`, {
+    method: 'GET',
     timeoutMs,
     headers: {
       'AUTH_KEY': text(authKey),
-      'Content-Type': 'application/json',
     },
-    body: JSON.stringify({ basDd }),
   });
   return extractRows(payload);
 }
 
-async function fetchKrxOfficialReferenceRows({ authKey, basDd, timeoutMs }) {
-  if (!authKey) return { baseInfoRows: [], dailyTradeRows: [], errors: ['krx_auth_key_missing'] };
+async function fetchKrxOfficialReferenceRowsForDate({ authKey, basDd, timeoutMs }) {
   const endpoints = [
     ['/stk_isu_base_info', 'baseInfoRows'],
     ['/ksq_isu_base_info', 'baseInfoRows'],
@@ -531,17 +656,347 @@ async function fetchKrxOfficialReferenceRows({ authKey, basDd, timeoutMs }) {
   return out;
 }
 
-async function fetchDataGoStockPriceRows({ serviceKey, basDd, timeoutMs }) {
-  if (!serviceKey) return { publicPriceRows: [], errors: ['data_go_kr_stock_price_service_key_missing'] };
+async function fetchKrxOfficialReferenceRows({ authKey, basDd, timeoutMs, lookbackDays = DEFAULT_REFERENCE_LOOKBACK_DAYS }) {
+  if (!authKey) return { baseInfoRows: [], dailyTradeRows: [], baseDate: basDd, lookbackDays: 0, errors: ['krx_auth_key_missing'] };
+  const errors = [];
+  const emptyDates = [];
+  const dates = recentBaseDates(basDd, lookbackDays);
+  for (let index = 0; index < dates.length; index += 1) {
+    const candidateBasDd = dates[index];
+    const result = await fetchKrxOfficialReferenceRowsForDate({ authKey, basDd: candidateBasDd, timeoutMs });
+    errors.push(...(result.errors || []));
+    if ((result.baseInfoRows.length + result.dailyTradeRows.length) > 0) {
+      return {
+        ...result,
+        baseDate: candidateBasDd,
+        lookbackDays: index,
+        emptyDates,
+        errors,
+      };
+    }
+    emptyDates.push(candidateBasDd);
+  }
+  errors.push(...emptyDates.map((date) => `krx_openapi:${date}:empty_result`));
+  return { baseInfoRows: [], dailyTradeRows: [], baseDate: basDd, lookbackDays: 0, errors };
+}
+
+async function fetchDataGoStockPriceRowsForDate({ serviceKey, basDd, timeoutMs }) {
   const endpoint = text(process.env.DATA_GO_KR_STOCK_PRICE_URL || DATA_GO_STOCK_PRICE_URL);
   const serviceKeyParam = String(serviceKey).includes('%') ? serviceKey : encodeURIComponent(serviceKey);
-  const url = `${endpoint}?serviceKey=${serviceKeyParam}&numOfRows=1000&pageNo=1&resultType=json&basDt=${encodeURIComponent(basDd)}`;
-  try {
+  const rows = [];
+  let totalCount = null;
+  let pageNo = 1;
+  let pagesFetched = 0;
+  const maxPages = Math.max(1, Math.min(20, Number(process.env.LUNA_DOMESTIC_OFFICIAL_REFERENCE_PUBLIC_MAX_PAGES || 10)));
+  while (pageNo <= maxPages) {
+    const url = `${endpoint}?serviceKey=${serviceKeyParam}&numOfRows=${DATA_GO_STOCK_PRICE_PAGE_SIZE}&pageNo=${pageNo}&resultType=json&basDt=${encodeURIComponent(basDd)}`;
     const payload = await fetchJson(url, { timeoutMs });
-    return { publicPriceRows: extractRows(payload), errors: [] };
-  } catch (error) {
-    return { publicPriceRows: [], errors: [`data_go_kr_stock_price:${error?.message || error}`] };
+    const resultCode = text(payload?.response?.header?.resultCode);
+    const resultMsg = text(payload?.response?.header?.resultMsg);
+    if (resultCode && resultCode !== '00') {
+      throw new Error(`resultCode=${resultCode}${resultMsg ? ` ${resultMsg}` : ''}`);
+    }
+    const pageRows = extractRows(payload);
+    pagesFetched += 1;
+    rows.push(...pageRows);
+    totalCount = Number(payload?.response?.body?.totalCount ?? rows.length);
+    if (!pageRows.length || rows.length >= totalCount) break;
+    pageNo += 1;
   }
+  return { rows, totalCount: Number(totalCount || rows.length), pagesFetched };
+}
+
+async function fetchDataGoStockPriceRows({ serviceKey, basDd, timeoutMs, lookbackDays = DEFAULT_REFERENCE_LOOKBACK_DAYS }) {
+  if (!serviceKey) return { publicPriceRows: [], baseDate: basDd, totalCount: 0, pagesFetched: 0, errors: ['data_go_kr_stock_price_service_key_missing'] };
+  const errors = [];
+  const emptyDates = [];
+  const dates = recentBaseDates(basDd, lookbackDays);
+  for (let index = 0; index < dates.length; index += 1) {
+    const candidateBasDd = dates[index];
+    try {
+      const result = await fetchDataGoStockPriceRowsForDate({ serviceKey, basDd: candidateBasDd, timeoutMs });
+      if (result.rows.length > 0) {
+        return {
+          publicPriceRows: result.rows,
+          baseDate: candidateBasDd,
+          lookbackDays: index,
+          totalCount: result.totalCount,
+          pagesFetched: result.pagesFetched,
+          emptyDates,
+          errors,
+        };
+      }
+      emptyDates.push(candidateBasDd);
+    } catch (error) {
+      errors.push(`data_go_kr_stock_price:${candidateBasDd}:${error?.message || error}`);
+    }
+  }
+  errors.push(...emptyDates.map((date) => `data_go_kr_stock_price:${date}:empty_result`));
+  return { publicPriceRows: [], baseDate: basDd, totalCount: 0, pagesFetched: 0, errors };
+}
+
+export async function fetchDataGoStockPriceHistoryForSymbol(options = {}) {
+  const symbol = normalizeDomesticOfficialSymbol(options.symbol);
+  if (!symbol) {
+    return { ok: false, symbol: String(options.symbol || ''), rows: [], errors: ['invalid_domestic_symbol'] };
+  }
+  const timeoutMs = Math.max(1000, Number(options.timeoutMs || DEFAULT_TIMEOUT_MS));
+  const credentials = await resolveDomesticOfficialReferenceCredentials({ ...options, timeoutMs });
+  const serviceKey = secretText(options.serviceKey || credentials.stockPriceServiceKey);
+  if (!serviceKey) {
+    return { ok: false, symbol, rows: [], errors: ['data_go_kr_stock_price_service_key_missing'] };
+  }
+  const endpoint = text(process.env.DATA_GO_KR_STOCK_PRICE_URL || DATA_GO_STOCK_PRICE_URL);
+  const serviceKeyParam = String(serviceKey).includes('%') ? serviceKey : encodeURIComponent(serviceKey);
+  const endBasDt = text(options.endDate || options.baseDate || yyyymmddKst());
+  const lookbackDays = Math.max(1, Math.min(550, Number(options.lookbackDays || 365)));
+  const maxRows = Math.max(1, Math.min(400, Number(options.maxRows || lookbackDays + 1)));
+  const emptyAfterSeenLimit = Math.max(1, Math.min(30, Number(options.emptyAfterSeenLimit || process.env.LUNA_DATA_GO_STOCK_HISTORY_EMPTY_AFTER_SEEN_LIMIT || 10)));
+  const errors = [];
+  const rows = [];
+  let sawRow = false;
+  let emptyAfterSeen = 0;
+  for (const basDt of historicalBaseDates(endBasDt, lookbackDays)) {
+    if (rows.length >= maxRows) break;
+    if (options.skipWeekends !== false && isWeekendYyyymmdd(basDt)) continue;
+    try {
+      const url = `${endpoint}?serviceKey=${serviceKeyParam}&numOfRows=10&pageNo=1&resultType=json&basDt=${encodeURIComponent(basDt)}&likeSrtnCd=${encodeURIComponent(symbol)}`;
+      const payload = await fetchJson(url, { timeoutMs });
+      const resultCode = text(payload?.response?.header?.resultCode);
+      const resultMsg = text(payload?.response?.header?.resultMsg);
+      if (resultCode && resultCode !== '00') {
+        errors.push(`data_go_kr_stock_price_history:${basDt}:resultCode=${resultCode}${resultMsg ? ` ${resultMsg}` : ''}`);
+        continue;
+      }
+      const exact = extractRows(payload).find((row) => normalizeDomesticOfficialSymbol(row?.srtnCd || row?.ISU_SRT_CD || row?.symbol) === symbol);
+      if (exact) {
+        rows.push(exact);
+        sawRow = true;
+        emptyAfterSeen = 0;
+      } else if (sawRow) {
+        emptyAfterSeen += 1;
+        if (emptyAfterSeen >= emptyAfterSeenLimit) break;
+      }
+    } catch (error) {
+      errors.push(`data_go_kr_stock_price_history:${basDt}:${error?.message || error}`);
+    }
+  }
+  rows.sort((a, b) => text(a?.basDt || a?.BAS_DD).localeCompare(text(b?.basDt || b?.BAS_DD)));
+  return {
+    ok: rows.length > 0,
+    symbol,
+    rows,
+    rowCount: rows.length,
+    requestedEndDate: endBasDt,
+    lookbackDays,
+    source: 'data_go_kr_stock_price_history',
+    keySource: credentials.status.stockPriceServiceKeySource || null,
+    errors: errors.slice(0, 20),
+  };
+}
+
+async function fetchDataGoKrxListedInfoRowsForDate({ serviceKey, basDd, timeoutMs }) {
+  const endpoint = text(process.env.DATA_GO_KR_KRX_LISTED_INFO_URL || DATA_GO_KRX_LISTED_INFO_URL);
+  const serviceKeyParam = String(serviceKey);
+  const rows = [];
+  let totalCount = null;
+  let pageNo = 1;
+  let pagesFetched = 0;
+  const maxPages = Math.max(1, Math.min(20, Number(process.env.LUNA_DOMESTIC_OFFICIAL_REFERENCE_LISTED_INFO_MAX_PAGES || 10)));
+  while (pageNo <= maxPages) {
+    const url = `${endpoint}?serviceKey=${serviceKeyParam}&numOfRows=${DATA_GO_KRX_LISTED_INFO_PAGE_SIZE}&pageNo=${pageNo}&resultType=json&basDt=${encodeURIComponent(basDd)}`;
+    const payload = await fetchJson(url, { timeoutMs });
+    const resultCode = text(payload?.response?.header?.resultCode);
+    const resultMsg = text(payload?.response?.header?.resultMsg);
+    if (resultCode && resultCode !== '00') {
+      throw new Error(`resultCode=${resultCode}${resultMsg ? ` ${resultMsg}` : ''}`);
+    }
+    const pageRows = extractRows(payload);
+    pagesFetched += 1;
+    rows.push(...pageRows);
+    totalCount = Number(payload?.response?.body?.totalCount ?? rows.length);
+    if (!pageRows.length || rows.length >= totalCount) break;
+    pageNo += 1;
+  }
+  return { rows, totalCount: Number(totalCount || rows.length), pagesFetched };
+}
+
+async function fetchDataGoKrxListedInfoRows({ serviceKey, basDd, timeoutMs, lookbackDays = DEFAULT_REFERENCE_LOOKBACK_DAYS }) {
+  if (!serviceKey) return { krxListedInfoRows: [], baseDate: basDd, totalCount: 0, pagesFetched: 0, errors: ['data_go_kr_krx_listed_info_service_key_missing'] };
+  const errors = [];
+  const emptyDates = [];
+  const dates = recentBaseDates(basDd, lookbackDays);
+  for (let index = 0; index < dates.length; index += 1) {
+    const candidateBasDd = dates[index];
+    try {
+      const result = await fetchDataGoKrxListedInfoRowsForDate({ serviceKey, basDd: candidateBasDd, timeoutMs });
+      if (result.rows.length > 0) {
+        return {
+          krxListedInfoRows: result.rows,
+          baseDate: candidateBasDd,
+          lookbackDays: index,
+          totalCount: result.totalCount,
+          pagesFetched: result.pagesFetched,
+          emptyDates,
+          errors,
+        };
+      }
+      emptyDates.push(candidateBasDd);
+    } catch (error) {
+      errors.push(`data_go_kr_krx_listed_info:${candidateBasDd}:${error?.message || error}`);
+    }
+  }
+  errors.push(...emptyDates.map((date) => `data_go_kr_krx_listed_info:${date}:empty_result`));
+  return { krxListedInfoRows: [], baseDate: basDd, totalCount: 0, pagesFetched: 0, errors };
+}
+
+async function fetchDataGoCorporateFinanceRows({ serviceKey, crno, bizYear, timeoutMs }) {
+  if (!serviceKey) throw new Error('data_go_kr_corporate_finance_service_key_missing');
+  const endpoint = text(process.env.DATA_GO_KR_CORPORATE_FINANCE_URL || DATA_GO_CORPORATE_FINANCE_URL);
+  const serviceKeyParam = String(serviceKey).includes('%') ? serviceKey : encodeURIComponent(serviceKey);
+  const url = `${endpoint}?serviceKey=${serviceKeyParam}&numOfRows=20&pageNo=1&resultType=json&crno=${encodeURIComponent(crno)}&bizYear=${encodeURIComponent(bizYear)}`;
+  const payload = await fetchJson(url, { timeoutMs });
+  const resultCode = text(payload?.response?.header?.resultCode);
+  const resultMsg = text(payload?.response?.header?.resultMsg);
+  if (resultCode && resultCode !== '00') {
+    throw new Error(`resultCode=${resultCode}${resultMsg ? ` ${resultMsg}` : ''}`);
+  }
+  return {
+    rows: extractRows(payload),
+    totalCount: Number(payload?.response?.body?.totalCount ?? 0),
+    resultCode: resultCode || null,
+    resultMsg: resultMsg || null,
+  };
+}
+
+export async function probeDataGoCorporateFinance(options = {}) {
+  const timeoutMs = Math.max(1000, Number(options.timeoutMs || DEFAULT_TIMEOUT_MS));
+  const credentials = await resolveDomesticOfficialReferenceCredentials({ ...options, timeoutMs });
+  const crno = text(options.crno || process.env.LUNA_CORPORATE_FINANCE_PROBE_CRNO || DEFAULT_CORPORATE_FINANCE_PROBE_CRNO);
+  const bizYear = text(options.bizYear || process.env.LUNA_CORPORATE_FINANCE_PROBE_BIZ_YEAR || DEFAULT_CORPORATE_FINANCE_PROBE_BIZ_YEAR);
+  const base = {
+    configured: Boolean(credentials.corporateFinanceServiceKey),
+    healthProbeEnabled: true,
+    endpoint: DATA_GO_CORPORATE_FINANCE_URL,
+    crno,
+    bizYear,
+    keySource: credentials.status.corporateFinanceServiceKeySource || null,
+  };
+  if (!credentials.corporateFinanceServiceKey) {
+    return {
+      ...base,
+      ok: false,
+      rows: 0,
+      totalCount: 0,
+      error: 'data_go_kr_corporate_finance_service_key_missing',
+    };
+  }
+  try {
+    const result = await fetchDataGoCorporateFinanceRows({
+      serviceKey: credentials.corporateFinanceServiceKey,
+      crno,
+      bizYear,
+      timeoutMs,
+    });
+    const first = Array.isArray(result.rows) ? result.rows[0] : null;
+    return {
+      ...base,
+      ok: true,
+      resultCode: result.resultCode,
+      resultMsg: result.resultMsg,
+      rows: result.rows.length,
+      totalCount: result.totalCount,
+      sampleKeys: first ? Object.keys(first).slice(0, 12) : [],
+    };
+  } catch (error) {
+    return {
+      ...base,
+      ok: false,
+      rows: 0,
+      totalCount: 0,
+      error: error?.message || String(error),
+    };
+  }
+}
+
+function pickCorporateFinanceRow(rows = []) {
+  const candidates = Array.isArray(rows) ? rows : [];
+  return candidates.find((row) => /연결/u.test(text(row?.fnclDcdNm))) || candidates[0] || null;
+}
+
+export function summarizeCorporateFinanceRow(row = null) {
+  if (!row) return null;
+  return {
+    baseDate: text(row.basDt),
+    crno: text(row.crno),
+    bizYear: text(row.bizYear),
+    statementType: text(row.fnclDcdNm || row.fnclDcd),
+    currency: text(row.curCd || 'KRW'),
+    sales: num(row.enpSaleAmt, null),
+    operatingProfit: num(row.enpBzopPft, null),
+    netIncome: num(row.enpCrtmNpf, null),
+    totalAssets: num(row.enpTastAmt, null),
+    totalDebt: num(row.enpTdbtAmt, null),
+    totalEquity: num(row.enpTcptAmt, null),
+    debtRatio: num(row.fnclDebtRto, null),
+  };
+}
+
+export async function fetchDataGoCorporateFinanceSummary(options = {}) {
+  const timeoutMs = Math.max(1000, Number(options.timeoutMs || DEFAULT_TIMEOUT_MS));
+  const credentials = await resolveDomesticOfficialReferenceCredentials({ ...options, timeoutMs });
+  const crno = text(options.crno);
+  const bizYear = text(options.bizYear || process.env.LUNA_CORPORATE_FINANCE_BIZ_YEAR || '2024');
+  const base = {
+    crno,
+    bizYear,
+    configured: Boolean(credentials.corporateFinanceServiceKey),
+    keySource: credentials.status.corporateFinanceServiceKeySource || null,
+  };
+  if (!crno || crno === '0000000000000') {
+    return { ...base, ok: false, rows: 0, totalCount: 0, reason: 'crno_missing' };
+  }
+  if (!credentials.corporateFinanceServiceKey) {
+    return { ...base, ok: false, rows: 0, totalCount: 0, reason: 'data_go_kr_corporate_finance_service_key_missing' };
+  }
+  try {
+    const result = await fetchDataGoCorporateFinanceRows({
+      serviceKey: credentials.corporateFinanceServiceKey,
+      crno,
+      bizYear,
+      timeoutMs,
+    });
+    const summary = summarizeCorporateFinanceRow(pickCorporateFinanceRow(result.rows));
+    return {
+      ...base,
+      ok: true,
+      resultCode: result.resultCode,
+      resultMsg: result.resultMsg,
+      rows: result.rows.length,
+      totalCount: result.totalCount,
+      summary,
+      flags: corporateFinanceFlags(summary),
+    };
+  } catch (error) {
+    return {
+      ...base,
+      ok: false,
+      rows: 0,
+      totalCount: 0,
+      reason: error?.message || String(error),
+    };
+  }
+}
+
+export function corporateFinanceFlags(summary = null) {
+  if (!summary) return ['corporate_finance_missing'];
+  const flags = [];
+  if (summary.sales != null && summary.sales <= 0) flags.push('sales_non_positive');
+  if (summary.operatingProfit != null && summary.operatingProfit < 0) flags.push('operating_loss');
+  if (summary.netIncome != null && summary.netIncome < 0) flags.push('net_loss');
+  if (summary.debtRatio != null && summary.debtRatio >= 300) flags.push('debt_ratio_high');
+  if (summary.totalEquity != null && summary.totalEquity <= 0) flags.push('equity_non_positive');
+  return flags;
 }
 
 export async function fetchDomesticOfficialReference(options = {}) {
@@ -550,23 +1005,88 @@ export async function fetchDomesticOfficialReference(options = {}) {
   const timeoutMs = Math.max(1000, Number(options.timeoutMs || DEFAULT_TIMEOUT_MS));
   const credentials = await resolveDomesticOfficialReferenceCredentials({ ...options, timeoutMs });
 
-  const [krx, publicPrice] = await Promise.all([
-    fetchKrxOfficialReferenceRows({ authKey: credentials.krxAuthKey, basDd, timeoutMs }),
-    fetchDataGoStockPriceRows({ serviceKey: credentials.stockPriceServiceKey, basDd, timeoutMs }),
+  const lookbackDays = Number(options.lookbackDays ?? process.env.LUNA_DOMESTIC_OFFICIAL_REFERENCE_LOOKBACK_DAYS ?? DEFAULT_REFERENCE_LOOKBACK_DAYS);
+  const [krx, publicPrice, krxListedInfo] = await Promise.all([
+    fetchKrxOfficialReferenceRows({
+      authKey: credentials.krxAuthKey,
+      basDd,
+      timeoutMs,
+      lookbackDays,
+    }),
+    fetchDataGoStockPriceRows({
+      serviceKey: credentials.stockPriceServiceKey,
+      basDd,
+      timeoutMs,
+      lookbackDays,
+    }),
+    fetchDataGoKrxListedInfoRows({
+      serviceKey: credentials.krxListedInfoServiceKey,
+      basDd,
+      timeoutMs,
+      lookbackDays,
+    }),
   ]);
+  const corporateFinanceProbeEnabled = bool(options.corporateFinanceProbe, bool(process.env.LUNA_CORPORATE_FINANCE_HEALTH_PROBE, false));
+  const corporateFinance = corporateFinanceProbeEnabled
+    ? await probeDataGoCorporateFinance({ ...options, timeoutMs })
+    : {
+        configured: Boolean(credentials.corporateFinanceServiceKey),
+        healthProbeEnabled: false,
+        endpoint: DATA_GO_CORPORATE_FINANCE_URL,
+        keySource: credentials.status.corporateFinanceServiceKeySource || null,
+        ok: null,
+        rows: 0,
+        totalCount: 0,
+        note: 'health_probe_disabled',
+      };
 
   const reference = buildDomesticOfficialReference({
     baseInfoRows: krx.baseInfoRows,
     dailyTradeRows: krx.dailyTradeRows,
     publicPriceRows: publicPrice.publicPriceRows,
-    baseDate: basDd,
+    krxListedInfoRows: krxListedInfo.krxListedInfoRows,
+    baseDate: krx.baseDate || publicPrice.baseDate || krxListedInfo.baseDate || basDd,
     fetchedAt: new Date().toISOString(),
     minTurnoverKrw: Number(options.minTurnoverKrw || process.env.LUNA_DOMESTIC_OFFICIAL_MIN_TURNOVER_KRW || DEFAULT_DOMESTIC_OFFICIAL_MIN_TURNOVER_KRW),
+    minListingAgeDays: Number(options.minListingAgeDays || process.env.LUNA_DOMESTIC_OFFICIAL_MIN_LISTING_AGE_DAYS || DEFAULT_DOMESTIC_OFFICIAL_MIN_LISTING_AGE_DAYS),
   });
   return {
     ...reference,
     credentialStatus: credentials.status,
-    fetchErrors: [...(krx.errors || []), ...(publicPrice.errors || [])],
+    dataGoKrStockPrice: {
+      requestedBaseDate: basDd,
+      resolvedBaseDate: publicPrice.baseDate || basDd,
+      lookbackDays: Number(publicPrice.lookbackDays || 0),
+      emptyDates: Array.isArray(publicPrice.emptyDates) ? publicPrice.emptyDates : [],
+      totalCount: Number(publicPrice.totalCount || publicPrice.publicPriceRows?.length || 0),
+      pagesFetched: Number(publicPrice.pagesFetched || 0),
+    },
+    krxOpenApi: {
+      requestedBaseDate: basDd,
+      resolvedBaseDate: krx.baseDate || basDd,
+      lookbackDays: Number(krx.lookbackDays || 0),
+      emptyDates: Array.isArray(krx.emptyDates) ? krx.emptyDates : [],
+      baseInfoRows: Number(krx.baseInfoRows?.length || 0),
+      dailyTradeRows: Number(krx.dailyTradeRows?.length || 0),
+    },
+    dataGoKrKrxListedInfo: {
+      requestedBaseDate: basDd,
+      resolvedBaseDate: krxListedInfo.baseDate || basDd,
+      lookbackDays: Number(krxListedInfo.lookbackDays || 0),
+      emptyDates: Array.isArray(krxListedInfo.emptyDates) ? krxListedInfo.emptyDates : [],
+      totalCount: Number(krxListedInfo.totalCount || krxListedInfo.krxListedInfoRows?.length || 0),
+      pagesFetched: Number(krxListedInfo.pagesFetched || 0),
+      crnoRows: (Array.isArray(krxListedInfo.krxListedInfoRows) ? krxListedInfo.krxListedInfoRows : [])
+        .filter((row) => text(row?.crno) && text(row?.crno) !== '0000000000000')
+        .length,
+    },
+    dataGoKrCorporateFinance: {
+      ...corporateFinance,
+      integrationMode: krxListedInfo.krxListedInfoRows?.length ? 'health_probe_plus_symbol_crno_mapping_available' : 'health_probe_only_until_symbol_crno_mapping_is_available',
+      symbolCrnoMappingRequired: !krxListedInfo.krxListedInfoRows?.length,
+      symbolCrnoMappingSource: 'data_go_kr_krx_listed_info_or_equivalent',
+    },
+    fetchErrors: [...(krx.errors || []), ...(publicPrice.errors || []), ...(krxListedInfo.errors || [])],
   };
 }
 
@@ -674,9 +1194,12 @@ export function evaluateDomesticOfficialReferenceGate(symbol, reference = null, 
       market: row.market,
       securityGroup: row.securityGroup,
       stockCertificateType: row.stockCertificateType,
+      listedDate: row.listedDate,
+      listingAgeDays: row.listingAgeDays,
       turnoverKrw: row.turnoverKrw,
       volume: row.volume,
       price: row.price,
+      crno: row.crno || null,
       officialBlockers: blockers,
     } : null,
   };
@@ -692,9 +1215,13 @@ export function annotateDomesticOfficialReferenceCandidates(candidates = [], ref
       officialReferenceStatus: gate.referenceStatus || 'invalid',
       officialReferenceSource: gate.source || DOMESTIC_OFFICIAL_REFERENCE_SOURCE,
       krxUniverseRank: gate.krxUniverseRank || null,
+      officialReferenceName: gate.row?.name || null,
+      officialReferenceCrno: gate.row?.crno || null,
       officialReferenceMarket: gate.row?.market || null,
       officialReferenceSecurityType: gate.row?.securityGroup || null,
       officialReferenceStockType: gate.row?.stockCertificateType || null,
+      officialReferenceListedDate: gate.row?.listedDate || null,
+      officialReferenceListingAgeDays: gate.row?.listingAgeDays ?? null,
       officialReferenceTurnoverKrw: gate.row?.turnoverKrw ?? null,
       officialReferenceBlockers: gate.row?.officialBlockers || (gate.blocked ? [gate.reason] : []),
       officialReferenceWouldBlock: gate.wouldBlock,
@@ -707,6 +1234,9 @@ export function annotateDomesticOfficialReferenceCandidates(candidates = [], ref
           fetchedAt: gate.fetchedAt || null,
           baseDate: gate.baseDate || null,
           rank: gate.krxUniverseRank || null,
+          crno: gate.row?.crno || null,
+          listedDate: gate.row?.listedDate || null,
+          listingAgeDays: gate.row?.listingAgeDays ?? null,
           blockers: gate.row?.officialBlockers || (gate.blocked ? [gate.reason] : []),
           hardGateEnabled: gate.hardGateEnabled,
         },
@@ -730,10 +1260,15 @@ export function summarizeDomesticOfficialReference(reference = null) {
     baseDate: reference?.baseDate || null,
     available: reference?.available === true,
     fullUniverse: reference?.fullUniverse === true,
+    minListingAgeDays: reference?.minListingAgeDays ?? DEFAULT_DOMESTIC_OFFICIAL_MIN_LISTING_AGE_DAYS,
     symbols: Array.isArray(reference?.symbols) ? reference.symbols.length : 0,
     ineligibleCount: Number(reference?.excluded?.ineligibleCount || 0),
     byReason: reference?.excluded?.byReason || {},
     resources: reference?.resources || {},
+    krxOpenApi: reference?.krxOpenApi || null,
+    dataGoKrStockPrice: reference?.dataGoKrStockPrice || null,
+    dataGoKrKrxListedInfo: reference?.dataGoKrKrxListedInfo || null,
+    dataGoKrCorporateFinance: reference?.dataGoKrCorporateFinance || null,
     unavailableReason: reference?.unavailableReason || null,
     credentialStatus: reference?.credentialStatus || null,
     fetchErrors: Array.isArray(reference?.fetchErrors) ? reference.fetchErrors.slice(0, 12) : [],
@@ -746,6 +1281,11 @@ export default {
   buildDomesticOfficialReference,
   buildFixtureDomesticOfficialReference,
   fetchDomesticOfficialReference,
+  fetchDataGoStockPriceHistoryForSymbol,
+  probeDataGoCorporateFinance,
+  fetchDataGoCorporateFinanceSummary,
+  summarizeCorporateFinanceRow,
+  corporateFinanceFlags,
   getCachedDomesticOfficialReference,
   evaluateDomesticOfficialReferenceGate,
   annotateDomesticOfficialReferenceCandidates,
