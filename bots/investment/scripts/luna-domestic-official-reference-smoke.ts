@@ -90,6 +90,26 @@ export async function runLunaDomesticOfficialReferenceSmoke() {
   assert.ok(runtime.officialReferenceCandidates.some((item) => item.symbol === '069500' && item.officialReferenceHardBlocked));
   assert.ok(runtime.officialReferenceHoldings.some((item) => item.symbol === '069500' && item.officialReferenceWouldBlock));
 
+  const targetedRuntime = await runLunaDomesticOfficialReference({
+    fixture: true,
+    dryRun: true,
+    hardGate: false,
+    symbols: '477850,999999',
+  });
+  assert.deepEqual(targetedRuntime.requestedSymbols, ['477850', '999999']);
+  assert.equal(targetedRuntime.officialReferenceCandidates.some((item) => item.symbol === '005930'), false);
+  assert.ok(targetedRuntime.officialReferenceCandidates.some((item) => (
+    item.symbol === '477850'
+    && item.officialReferenceWouldBlock
+    && item.officialReferenceBlockers.includes('listing_history_too_short')
+  )));
+  assert.ok(targetedRuntime.officialReferenceCandidates.some((item) => (
+    item.symbol === '999999'
+    && item.source === 'direct_symbol_probe'
+    && item.officialReferenceStatus === 'available'
+    && item.officialReferenceBlockers.includes('not_in_official_domestic_universe')
+  )));
+
   const originalFetch = globalThis.fetch;
   const originalCorporateKey = process.env.DATA_GO_KR_CORPORATE_FINANCE_SERVICE_KEY;
   try {

@@ -76,6 +76,11 @@ function latestClose(candles = []) {
   return Number.isFinite(close) && close > 0 ? close : null;
 }
 
+function finiteNumberOrNull(value: any): number | null {
+  const numeric = Number(value);
+  return Number.isFinite(numeric) ? numeric : null;
+}
+
 function normalizeTriggerContext(context: any) {
   if (!context) return {};
   if (typeof context === 'object') return context;
@@ -85,6 +90,79 @@ function normalizeTriggerContext(context: any) {
   } catch {
     return {};
   }
+}
+
+function normalizeTriggerMeta(meta: any) {
+  if (!meta) return {};
+  if (typeof meta === 'object') return meta;
+  try {
+    const parsed = JSON.parse(String(meta));
+    return parsed && typeof parsed === 'object' ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+function resolveTriggerPredictiveScore(trigger: any): { score: number | null; source: string | null } {
+  const context = normalizeTriggerContext(trigger?.trigger_context);
+  const meta = normalizeTriggerMeta(trigger?.trigger_meta);
+  const candidates = [
+    ['entry_triggers.predictive_score', trigger?.predictive_score],
+    ['trigger_context.hints.predictiveScore', context?.hints?.predictiveScore],
+    ['trigger_context.hints.prediction.score', context?.hints?.prediction?.score],
+    ['trigger_context.prediction.score', context?.prediction?.score],
+    ['trigger_meta.fireReadiness.predictiveScore', meta?.fireReadiness?.predictiveScore],
+    ['trigger_meta.latestTrigger.predictiveScore', meta?.latestTrigger?.predictiveScore],
+  ];
+  for (const [source, value] of candidates) {
+    const score = finiteNumberOrNull(value);
+    if (score != null && score > 0) return { score, source: String(source) };
+  }
+  return { score: null, source: null };
+}
+
+function classifyFireReadinessBlockers(trigger: any): string[] {
+  const readiness = trigger?.fire_readiness || {};
+  const details = readiness.details || {};
+  const blockers: string[] = [];
+  const promotionPassCount = finiteNumberOrNull(details.promotionPassCount);
+  const minPassCount = finiteNumberOrNull(details.minPassCount);
+  const promotionConsecutivePasses = finiteNumberOrNull(details.promotionConsecutivePasses);
+  const minConsecutivePasses = finiteNumberOrNull(details.minConsecutivePasses);
+  const confidence = finiteNumberOrNull(details.confidence);
+  const minConfidence = finiteNumberOrNull(details.minConfidence);
+  const promotionEvidenceReady = promotionPassCount != null
+    && minPassCount != null
+    && promotionPassCount >= minPassCount
+    && promotionConsecutivePasses != null
+    && minConsecutivePasses != null
+    && promotionConsecutivePasses >= minConsecutivePasses;
+  const promotionConfidenceReady = minConfidence == null || (confidence != null && confidence >= minConfidence);
+  if (readiness.reason === 'promotion_shadow_readiness_incomplete' && promotionEvidenceReady) {
+    blockers.push(promotionConfidenceReady
+      ? 'promotion_ready_entry_confirmation_pending'
+      : 'promotion_ready_confidence_below_min');
+  } else if (readiness.reason) {
+    blockers.push(readiness.reason);
+  }
+  const telemetry = details.technicalTelemetry || {};
+  const mtfTelemetryMissing = telemetry.mtfAvailable === false || telemetry.missing === true;
+  const volumeTelemetryMissing = telemetry.volumeAvailable === false || telemetry.missing === true;
+  if (mtfTelemetryMissing) blockers.push('mtf_telemetry_missing');
+  else {
+    if (details.mtfBullish === false) blockers.push('mtf_not_bullish');
+    if (details.mtfDominantSignal && String(details.mtfDominantSignal).toUpperCase() !== 'BUY') {
+      blockers.push('mtf_dominant_not_buy');
+    }
+  }
+  const mtfAgreement = finiteNumberOrNull(details.mtfAgreement);
+  if (!mtfTelemetryMissing && mtfAgreement != null && mtfAgreement < 0.72) blockers.push('mtf_agreement_below_0_72');
+  const predictiveScore = finiteNumberOrNull(details.predictiveScore);
+  if (predictiveScore != null && predictiveScore < 0.55) blockers.push('predictive_score_below_0_55');
+  const volumeBurst = finiteNumberOrNull(details.volumeBurst);
+  if (volumeTelemetryMissing) blockers.push('volume_telemetry_missing');
+  else if (volumeBurst != null && volumeBurst < 1.1) blockers.push('volume_burst_below_1_1');
+  return [...new Set(blockers)];
 }
 
 async function getActiveEntryTriggers(exchange: string) {
@@ -273,14 +351,18 @@ function diagnoseBlockReasons(flags: any, activeTriggers: any[], env: Record<str
 
   for (const t of activeTriggers) {
     const hints = t.trigger_context?.hints || {};
+    const predictive = resolveTriggerPredictiveScore(t);
+    t.diagnostic_predictive_score = predictive.score;
+    t.diagnostic_predictive_score_source = predictive.source;
     t.fire_readiness = buildEntryTriggerFireReadiness({
       symbol: t.symbol,
       confidence: Number(t.confidence || 0),
       setup_type: t.setup_type || null,
       triggerType: t.trigger_type || null,
-      predictiveScore: Number(t.predictive_score || 0) || null,
+      predictiveScore: predictive.score,
       triggerHints: hints,
     });
+    t.diagnostic_readiness_blockers = classifyFireReadinessBlockers(t);
   }
 
   // 1. shadow 모드 점검
@@ -301,12 +383,18 @@ function diagnoseBlockReasons(flags: any, activeTriggers: any[], env: Record<str
   const predRequired = (env['LUNA_PREDICTIVE_REQUIRE_COMPONENTS'] || 'false').toLowerCase() === 'true';
   if (predMode === 'hard_gate') {
     if (predRequired) {
-      blocks.predictive_blocked = activeTriggers.filter((t) => t.fire_readiness?.ok !== true && (!t.predictive_score || Number(t.predictive_score) < 0.55)).length;
+      blocks.predictive_blocked = activeTriggers.filter((t) => {
+        const predictiveScore = resolveTriggerPredictiveScore(t).score;
+        return t.fire_readiness?.ok !== true && (predictiveScore == null || predictiveScore < 0.55);
+      }).length;
       if (blocks.predictive_blocked > 0) {
         issues.push(`[predictive_hard_gate + require_components=true] predictive_score 없거나 낮음 → ${blocks.predictive_blocked}개 트리거 차단`);
       }
     } else {
-      const lowScore = activeTriggers.filter((t) => t.fire_readiness?.ok !== true && t.predictive_score != null && Number(t.predictive_score) < 0.55).length;
+      const lowScore = activeTriggers.filter((t) => {
+        const predictiveScore = resolveTriggerPredictiveScore(t).score;
+        return t.fire_readiness?.ok !== true && predictiveScore != null && predictiveScore < 0.55;
+      }).length;
       if (lowScore > 0) {
         blocks.predictive_blocked = lowScore;
         issues.push(`[predictive_hard_gate] predictive_score < 0.55 → ${lowScore}개 트리거 차단`);
@@ -328,7 +416,11 @@ function diagnoseBlockReasons(flags: any, activeTriggers: any[], env: Record<str
   });
   if (noFireCondition.length > 0) {
     blocks.live_gate_blocked = noFireCondition.length;
-    const reasons = [...new Set(noFireCondition.map((t) => t.fire_readiness?.reason || 'fire_condition_unmet'))].join(',');
+    const reasons = [...new Set(noFireCondition.flatMap((t) => (
+      t.diagnostic_readiness_blockers?.length > 0
+        ? t.diagnostic_readiness_blockers
+        : [t.fire_readiness?.reason || 'fire_condition_unmet']
+    )))].join(',');
     issues.push(`[fire_condition_unmet] ${reasons} → ${noFireCondition.length}개 관망 중`);
   }
 
@@ -338,13 +430,20 @@ function diagnoseBlockReasons(flags: any, activeTriggers: any[], env: Record<str
 function renderActiveTrigger(t: any, verbose: boolean) {
   const hints = normalizeTriggerContext(t.trigger_context)?.hints || {};
   const marketEvent = t.diagnostic_market_event || {};
+  const predictiveScore = t.diagnostic_predictive_score ?? resolveTriggerPredictiveScore(t).score;
   const lines = [
-    `  ${t.symbol} [${t.trigger_type}] state=${t.trigger_state} conf=${Number(t.confidence || 0).toFixed(2)} pred=${t.predictive_score != null ? Number(t.predictive_score).toFixed(2) : 'n/a'}`,
+    `  ${t.symbol} [${t.trigger_type}] state=${t.trigger_state} conf=${Number(t.confidence || 0).toFixed(2)} pred=${predictiveScore != null ? Number(predictiveScore).toFixed(2) : 'n/a'}`,
   ];
   if (verbose) {
     lines.push(`    mtf=${Number(hints.mtfAgreement || 0).toFixed(2)} disc=${Number(hints.discoveryScore || 0).toFixed(2)} vol=${Number(hints.volumeBurst || 0).toFixed(2)} breakout=${hints.breakoutRetest === true}`);
     if (marketEvent.source) {
       lines.push(`    market=${marketEvent.source} latest=${marketEvent.latestPrice ?? 'n/a'} target=${marketEvent.targetPrice ?? 'n/a'} retest=${marketEvent.breakoutRetest === true}`);
+    }
+    if (t.diagnostic_predictive_score_source) {
+      lines.push(`    predictiveSource=${t.diagnostic_predictive_score_source}`);
+    }
+    if (Array.isArray(t.diagnostic_readiness_blockers) && t.diagnostic_readiness_blockers.length > 0) {
+      lines.push(`    blockers=${t.diagnostic_readiness_blockers.join(',')}`);
     }
     lines.push(`    expires=${t.expires_at ? new Date(t.expires_at).toLocaleString('ko-KR') : 'n/a'} created=${t.created_at ? new Date(t.created_at).toLocaleString('ko-KR') : 'n/a'}`);
   }

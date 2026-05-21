@@ -25,6 +25,15 @@ function argValue(name: string, fallback = null) {
   return found ? found.slice(prefix.length) : fallback;
 }
 
+function normalizeDomesticSymbol(value = '') {
+  return String(value || '').trim().toUpperCase();
+}
+
+function symbolsFrom(value = '') {
+  const values = Array.isArray(value) ? value : String(value || '').split(',');
+  return [...new Set(values.map((symbol) => normalizeDomesticSymbol(symbol)).filter(Boolean))];
+}
+
 function fixtureCandidates() {
   return [
     { symbol: '005930', market: 'domestic', source: 'fixture', score: 0.91, discovered_at: new Date().toISOString(), expires_at: new Date(Date.now() + 3600_000).toISOString() },
@@ -154,12 +163,28 @@ async function enrichCandidatesWithCorporateFinance(candidates = [], options = {
 
 export async function runLunaDomesticOfficialReference(options: any = {}) {
   const fixture = options.fixture === true;
+  const requestedSymbols = symbolsFrom(options.symbols || '');
   const reference = await resolveReference(options);
   const [candidateRows, positionRows] = await Promise.all([
     loadActiveDomesticCandidates({ fixture, limit: options.candidateLimit || 200 }),
     loadOpenDomesticPositions({ fixture }),
   ]);
-  const annotated = annotateDomesticOfficialReferenceCandidates(candidateRows, reference, {
+  const filteredCandidateRows = requestedSymbols.length
+    ? candidateRows.filter((row) => requestedSymbols.includes(normalizeDomesticSymbol(row.symbol)))
+    : candidateRows;
+  const presentSymbols = new Set(filteredCandidateRows.map((row) => normalizeDomesticSymbol(row.symbol)));
+  const directSymbolProbeRows = requestedSymbols
+    .filter((symbol) => !presentSymbols.has(symbol))
+    .map((symbol) => ({
+      symbol,
+      market: 'domestic',
+      source: 'direct_symbol_probe',
+      score: 0,
+      discovered_at: new Date().toISOString(),
+      expires_at: null,
+      reason: 'requested_official_reference_probe',
+    }));
+  const annotated = annotateDomesticOfficialReferenceCandidates([...filteredCandidateRows, ...directSymbolProbeRows], reference, {
     hardGate: options.hardGate,
   });
   let evaluatedCandidates = [...annotated.candidates, ...annotated.excluded]
@@ -173,6 +198,7 @@ export async function runLunaDomesticOfficialReference(options: any = {}) {
     status: reference.available ? 'luna_domestic_official_reference_ready' : 'luna_domestic_official_reference_unavailable',
     dryRun: options.dryRun !== false,
     fixture,
+    requestedSymbols,
     policy: {
       source: reference.source,
       blockSource: DOMESTIC_OFFICIAL_REFERENCE_BLOCK_SOURCE,
@@ -246,6 +272,7 @@ async function main() {
     corporateFinanceCandidateProbe: hasFlag('corporate-finance-candidate-probe'),
     corporateFinanceCandidateLimit: Number(argValue('corporate-finance-candidate-limit', 5)),
     corporateFinanceBizYear: argValue('corporate-finance-biz-year', process.env.LUNA_CORPORATE_FINANCE_BIZ_YEAR || '2024'),
+    symbols: argValue('symbols', ''),
   });
   if (hasFlag('json')) console.log(JSON.stringify(result, null, 2));
   else {

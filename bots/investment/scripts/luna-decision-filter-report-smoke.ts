@@ -98,6 +98,27 @@ export async function runLunaDecisionFilterReportSmoke() {
   assert.equal(domesticNeutral.actionability, 'likely_actionable');
   assert.equal(domesticNeutral.reasons.includes('sentiment_not_confirmed'), false);
 
+  const domesticDailyBearishGuard = buildDecisionFilterDiagnostics(domesticNeutralSentimentRows, {
+    exchange: 'kis',
+    minConfidence: 0.18,
+    dailyTechnicalBySymbol: {
+      '005380': {
+        ok: false,
+        reason: 'kis_daily_trend_not_bullish',
+        source: 'kis_domestic_daily_price',
+        providerMode: 'websocket',
+        cachedAt: now,
+      },
+    },
+  })[0];
+  assert.equal(domesticDailyBearishGuard.actionability, 'filtered_before_signal');
+  assert.equal(domesticDailyBearishGuard.recommendation, 'wait_for_daily_technical_confirmation');
+  assert.equal(domesticDailyBearishGuard.reasons.includes('daily_technical_not_confirmed'), true);
+  const domesticDailyBearishWatch = buildNearMissWatchCandidate(domesticDailyBearishGuard);
+  assert.equal(domesticDailyBearishWatch.watchReason, 'stock_daily_technical_not_confirmed');
+  assert.equal(domesticDailyBearishWatch.nextAction, 'wait_for_daily_technical_confirmation_before_signal_persistence');
+  assert.equal(domesticDailyBearishWatch.dailyTechnical.reason, 'kis_daily_trend_not_bullish');
+
   const domesticDailyTechnicalPresignal = buildDecisionFilterDiagnostics([
     row('000500', 'market_flow', 'BUY', 0.55),
   ], {

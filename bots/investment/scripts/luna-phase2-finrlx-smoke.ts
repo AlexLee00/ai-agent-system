@@ -233,10 +233,19 @@ assert.ok(weightRuntime.summary.strategyQualityHardHold >= 1);
 assert.ok(weightRuntime.summary.strategyQualityOperatingStates.hard_hold >= 1);
 assert.ok(weightRuntime.summary.strategyQualityOperatingStates.missing >= 1);
 assert.ok(weightRuntime.summary.strategyQualityHardHoldSymbols.includes('NEG/USDT'));
+assert.ok(weightRuntime.summary.strategyQualityPrimaryFamilies.volatility_adjusted_defensive_retest >= 1);
+assert.ok(weightRuntime.summary.strategyQualityRemediationBlockers.strategy_drawdown_gt_20pct >= 1);
+assert.ok(weightRuntime.summary.strategyQualityRecommendedActions.exclude_from_live_forward_until_strategy_drawdown_below_20pct >= 1);
+assert.ok(weightRuntime.summary.strategyQualityExitCriteria.strategy_drawdown_gt_20pct >= 1);
+assert.ok(weightRuntime.summary.strategyQualityExitGaps.some((item) => (
+  item.symbol === 'NEG/USDT'
+  && item.requiredAction === 'volatility_adjusted_defensive_retest'
+)));
 assert.ok(weightRuntime.summary.qualityActionPriorities.p0 >= 1);
 assert.ok(weightRuntime.summary.qualityActionPrimaryActions.strategy_reformulation_shadow_required >= 1);
 assert.ok(weightRuntime.summary.qualityActionBlockedComponents.strategy_quality >= 1);
 assert.ok(weightRuntime.summary.qualityActionStrategyReformulationSymbols.includes('NEG/USDT'));
+assert.equal(weightRuntime.summary.qualityActionPredictiveRefreshSymbols.includes('NEG/USDT'), false);
 
 const paperInserts = [];
 const paperRuntime = await runLunaPaperTradingShadow({

@@ -89,6 +89,7 @@ export async function runLunaCandidateBottleneckDiagnosticsSmoke() {
   assert.equal(officialOhlcv?.primaryBlocker, 'official_ohlcv_missing', 'official OHLCV gaps become a distinct primary blocker');
   assert.equal(officialOhlcv?.recommendedAction, 'official_ohlcv_reference_refresh', 'official OHLCV gaps route to official reference refresh');
   assert.ok(String(officialOhlcv?.recommendedRefreshCommand || '').includes('runtime:luna-domestic-official-reference'), 'official OHLCV gaps point to domestic official reference check');
+  assert.ok(String(officialOhlcv?.recommendedRefreshCommand || '').includes('--symbols=477850'), 'official OHLCV refresh command scopes to the affected symbol');
   assert.equal(officialOhlcv?.evidence?.trace?.backtestOfficialOhlcvGap, true, 'trace marks official OHLCV gap');
 
   await expectRejectsApplyDryRun();
@@ -98,11 +99,14 @@ export async function runLunaCandidateBottleneckDiagnosticsSmoke() {
   assert.equal(runtime.summary.byAction.strategy_enhancement_shadow, 2, 'strategy action count');
   assert.equal(runtime.summary.selectionPolicy, 'quality_adjusted_score_desc_with_prior_bottleneck_penalty', 'runtime exposes selection policy');
   assert.ok(runtime.summary.topPrimaryBlockers.length > 0, 'runtime exposes top primary blockers');
+  assert.ok(runtime.summary.traceFields.includes('backtestOfficialOhlcvGap'), 'runtime summary exposes official OHLCV trace field');
   assert.equal(runtime.summary.backtestQualityTarget.mode, 'shadow_actionable_quality_slo', 'runtime exposes backtest quality target mode');
   assert.equal(runtime.summary.backtestQualityTarget.targetTotal, 4, 'runtime target defaults to all rows without active cooldown');
   assert.equal(runtime.summary.backtestQualityTarget.achieved, false, 'fixture target should remain unmet until remediation runs');
   assert.ok(runtime.summary.backtestQualityTarget.gaps.length > 0, 'runtime exposes target gaps');
+  assert.ok(runtime.summary.backtestQualityTarget.refreshSymbols.includes('NEG/USDT'), 'runtime exposes targeted backtest refresh symbols');
   assert.ok(runtime.summary.backtestQualityTarget.recommendedLoop[0].includes('runtime:luna-candidate-backtest-refresh'), 'runtime exposes remediation loop command');
+  assert.ok(runtime.summary.backtestQualityTarget.recommendedLoop[0].includes('--symbols='), 'runtime scopes backtest remediation loop to target symbols');
   assert.equal(runtime.summary.predictiveQualityTarget.mode, 'shadow_predictive_quality_slo', 'runtime exposes predictive quality target mode');
   assert.equal(runtime.summary.predictiveQualityTarget.achieved, false, 'fixture predictive target should remain unmet until refresh runs');
   assert.equal(runtime.summary.predictiveQualityTarget.backtestGateSuppressed, 1, 'backtest-gate predictive blocks are excluded from predictive refresh SLO');

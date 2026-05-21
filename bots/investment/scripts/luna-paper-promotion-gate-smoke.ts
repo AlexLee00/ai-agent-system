@@ -116,6 +116,23 @@ assert.equal(pass.nextRequiredEvidence[0].type, 'master_review');
 assert.equal(pass.evidence.promotionRequiresExplicitMasterApproval, true);
 assert.equal(pass.liveMutation, false);
 
+const entryTriggerConfidenceAligned = evaluateLunaPaperPromotionHistory([
+  { symbol: 'ALIGN/USDT', market: 'crypto', exchange: 'binance', paper_side: 'BUY', paper_notional_usdt: 20, confidence: 0.64, status: 'planned', shadow_only: true, evidence: passEvidence, observed_at: iso(1) },
+  { symbol: 'ALIGN/USDT', market: 'crypto', exchange: 'binance', paper_side: 'BUY', paper_notional_usdt: 18, confidence: 0.63, status: 'planned', shadow_only: true, evidence: passEvidence, observed_at: iso(31) },
+  { symbol: 'ALIGN/USDT', market: 'crypto', exchange: 'binance', paper_side: 'BUY', paper_notional_usdt: 16, confidence: 0.63, status: 'planned', shadow_only: true, evidence: passEvidence, observed_at: iso(61) },
+], {
+  minCycles: 3,
+  minConsecutivePasses: 3,
+  minAvgConfidence: 0.62,
+  entryTriggerPromotionMinConfidence: 0.65,
+  maxOrderUsdt: 50,
+});
+assert.equal(entryTriggerConfidenceAligned.promotionCandidate, false);
+assert.ok(entryTriggerConfidenceAligned.blockReasons.includes('avg_confidence_below_promotion_floor'));
+assert.equal(entryTriggerConfidenceAligned.evidence.config.minAvgConfidence, 0.65);
+assert.equal(entryTriggerConfidenceAligned.evidence.config.paperMinAvgConfidence, 0.62);
+assert.equal(entryTriggerConfidenceAligned.evidence.config.entryTriggerPromotionMinConfidence, 0.65);
+
 const blocked = evaluateLunaPaperPromotionHistory([
   { symbol: 'RISK/USDT', market: 'crypto', exchange: 'binance', paper_side: 'HOLD', paper_notional_usdt: 0, confidence: 0.55, status: 'no_action', shadow_only: true, evidence: hardHoldEvidence, observed_at: iso(1) },
   ...passHistory.slice(1).map((row) => ({ ...row, symbol: 'RISK/USDT' })),

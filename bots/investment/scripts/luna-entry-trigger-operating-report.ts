@@ -51,6 +51,22 @@ function buildBacktestRefreshCommand({ exchange = 'binance', symbol = '' } = {})
   return `npm --prefix bots/investment run -s runtime:luna-candidate-backtest-refresh -- --json --force --market=${marketForExchange(exchange)} --symbols=${normalizedSymbol}`;
 }
 
+function buildPredictiveRefreshCommand({ exchange = 'binance', symbol = '' } = {}) {
+  const normalizedSymbol = String(symbol || '').trim().toUpperCase();
+  if (!normalizedSymbol) return null;
+  return `npm --prefix bots/investment run -s runtime:luna-predictive-evidence-refresh -- --json --dry-run --market=${marketForExchange(exchange)} --symbols=${normalizedSymbol}`;
+}
+
+function buildPaperPromotionGateCommand({ exchange = 'binance', symbol = '' } = {}) {
+  const normalizedSymbol = String(symbol || '').trim().toUpperCase();
+  if (!normalizedSymbol) return null;
+  return `npm --prefix bots/investment run -s runtime:luna-paper-promotion-gate -- --json --dry-run --market=${marketForExchange(exchange)} --limit=1000 --symbols=${normalizedSymbol}`;
+}
+
+function buildEntryTriggerDiagnoseCommand({ exchange = 'binance', hours = 24 } = {}) {
+  return `npm --prefix bots/investment run -s runtime:luna-entry-trigger-diagnose -- --json --exchange=${normalizeExchange(exchange || 'binance')} --hours=${Number(hours || 24)}`;
+}
+
 function normalizeExchange(value = '') {
   return String(value || '').trim().toLowerCase();
 }
@@ -81,7 +97,31 @@ function readinessBlockers(item = {}) {
   const details = item.fireReadiness || {};
   const blockers = [];
   if (item.fired === true) return blockers;
-  if (item.fireReason) blockers.push(String(item.fireReason));
+  const promotionPassCount = finiteNumber(details.promotionPassCount);
+  const minPassCount = finiteNumber(details.minPassCount);
+  const promotionConsecutivePasses = finiteNumber(details.promotionConsecutivePasses);
+  const minConsecutivePasses = finiteNumber(details.minConsecutivePasses);
+  const confidence = finiteNumber(details.confidence);
+  const minConfidence = finiteNumber(details.minConfidence);
+  const promotionEvidenceReady = (
+    promotionPassCount != null
+    && minPassCount != null
+    && promotionPassCount >= minPassCount
+    && promotionConsecutivePasses != null
+    && minConsecutivePasses != null
+    && promotionConsecutivePasses >= minConsecutivePasses
+  );
+  const promotionConfidenceReady = minConfidence == null || (confidence != null && confidence >= minConfidence);
+  if (item.fireReason) {
+    const fireReason = String(item.fireReason);
+    if (fireReason === 'promotion_shadow_readiness_incomplete' && promotionEvidenceReady) {
+      blockers.push(promotionConfidenceReady
+        ? 'promotion_ready_entry_confirmation_pending'
+        : 'promotion_ready_confidence_below_min');
+    } else {
+      blockers.push(fireReason);
+    }
+  }
   const telemetry = details.technicalTelemetry || {};
   const mtfTelemetryMissing = telemetry.mtfAvailable === false || telemetry.missing === true;
   const volumeTelemetryMissing = telemetry.volumeAvailable === false || telemetry.missing === true;
@@ -156,6 +196,61 @@ function summarizeReadinessResults(results = []) {
   };
 }
 
+function commandsForReadinessBlockers(row = {}, { exchange = 'binance', hours = 24 } = {}) {
+  const symbol = String(row.symbol || '').trim().toUpperCase();
+  const commands = [];
+  const add = (command) => {
+    if (command && !commands.includes(command)) commands.push(command);
+  };
+  for (const blocker of row.blockers || []) {
+    if (blocker === 'promotion_shadow_readiness_incomplete') {
+      add(buildPaperPromotionGateCommand({ exchange, symbol }));
+    }
+    if (blocker === 'promotion_ready_confidence_below_min') {
+      add(buildPaperPromotionGateCommand({ exchange, symbol }));
+      add(buildEntryTriggerDiagnoseCommand({ exchange, hours }));
+    }
+    if (blocker === 'promotion_ready_entry_confirmation_pending') {
+      add(buildEntryTriggerDiagnoseCommand({ exchange, hours }));
+    }
+    if (blocker === 'predictive_score_below_0_55') {
+      add(buildPredictiveRefreshCommand({ exchange, symbol }));
+    }
+    if (
+      blocker.startsWith('mtf_')
+      || blocker.startsWith('volume_')
+      || blocker === 'technical_confirmation_incomplete'
+      || blocker.endsWith('_gap')
+    ) {
+      add(buildEntryTriggerDiagnoseCommand({ exchange, hours }));
+    }
+  }
+  return commands;
+}
+
+function buildReadinessRemediationPlan(readinessSummary = {}, { exchange = 'binance', hours = 24 } = {}) {
+  const waitingRows = (readinessSummary.readiness || []).filter((row) => row.fired !== true);
+  const byBlocker = {};
+  const items = waitingRows.map((row) => {
+    for (const blocker of row.blockers || []) addCount(byBlocker, blocker);
+    return {
+      triggerId: row.triggerId || null,
+      symbol: row.symbol || null,
+      blockers: row.blockers || [],
+      nextShadowCommands: commandsForReadinessBlockers(row, { exchange, hours }),
+      liveMutation: false,
+    };
+  });
+  return {
+    status: items.length === 0 ? 'no_waiting_entry_triggers' : 'entry_trigger_waiting_remediation_ready',
+    waitingSymbols: [...new Set(items.map((item) => item.symbol).filter(Boolean))],
+    byBlocker,
+    nextShadowCommands: [...new Set(items.flatMap((item) => item.nextShadowCommands || []))],
+    items,
+    liveMutation: false,
+  };
+}
+
 async function buildActiveQualityGateSummary({ exchange = 'binance' } = {}) {
   const active = await listActiveEntryTriggers({ exchange, limit: 1000 }).catch(() => []);
   const symbols = [...new Set((active || []).map((row) => String(row.symbol || '').trim().toUpperCase()).filter(Boolean))];
@@ -206,6 +301,7 @@ export async function buildLunaEntryTriggerOperatingReport({ exchange = 'binance
   const heartbeatScope = selectExchangeScopedHeartbeat(readiness, exchange);
   const heartbeatResult = heartbeatScope.result || {};
   const readinessSummary = summarizeReadinessResults(heartbeatScope.results || []);
+  const readinessRemediationPlan = buildReadinessRemediationPlan(readinessSummary, { exchange, hours });
   const workerMigrated = readiness?.status === 'entry_trigger_worker_migrated_to_luna_skill';
   const fired = Number(stats?.recentByState?.fired || 0);
   const waiting = Number(stats?.recentByState?.waiting || 0);
@@ -246,8 +342,10 @@ export async function buildLunaEntryTriggerOperatingReport({ exchange = 'binance
       activeQualityBlocked: activeQualityGate.blocked,
       activeQualityPass: activeQualityGate.pass,
       activeQualityBlockReasons: activeQualityGate.byReason,
+      readinessRemediationCommands: readinessRemediationPlan.nextShadowCommands.length,
     },
     tradeCompletionReadiness: readinessSummary,
+    readinessRemediationPlan,
     activeQualityGate,
     stats,
     readiness: {
@@ -277,6 +375,7 @@ export function renderLunaEntryTriggerOperatingReport(report = {}) {
       : `heartbeat: ${summary.heartbeatAgeMinutes ?? 'n/a'}m / exchange=${summary.heartbeatExchange || 'n/a'} / matched=${summary.heartbeatMatchesExchange === true} / mode=${summary.heartbeatMode || 'n/a'} / live=${summary.heartbeatAllowLiveFire === true} / checked=${summary.heartbeatChecked ?? 'n/a'} / readyBlocked=${summary.heartbeatReadyBlocked ?? 'n/a'}${summary.heartbeatIgnoredReason ? ` / ignored=${summary.heartbeatIgnoredReason}` : ''}`,
     `readiness: checked=${summary.readinessChecked ?? 0} / waiting=${summary.readinessWaiting ?? 0} / fired=${summary.readinessFired ?? 0}`,
     `waitReasons: ${Object.entries(summary.waitReasonCounts || {}).map(([key, count]) => `${key}:${count}`).join(', ') || 'none'}`,
+    `readinessActions: ${summary.readinessRemediationCommands ?? 0}`,
     `activeQuality: checked=${summary.activeQualityChecked ?? 0} / blocked=${summary.activeQualityBlocked ?? 0} / pass=${summary.activeQualityPass ?? 0} / reasons=${Object.entries(summary.activeQualityBlockReasons || {}).map(([key, count]) => `${key}:${count}`).join(', ') || 'none'}`,
     `warnings: ${(report.warnings || []).length ? report.warnings.join(' / ') : 'none'}`,
   ].join('\n');
@@ -293,6 +392,7 @@ export async function publishLunaEntryTriggerOperatingReport(report = {}) {
       status: report.status,
       exchange: report.exchange,
       summary: report.summary,
+      readinessRemediationPlan: report.readinessRemediationPlan || null,
       warnings: report.warnings || [],
     },
   });
@@ -336,6 +436,49 @@ export async function runLunaEntryTriggerOperatingReportSmoke() {
   assert.equal(telemetryMissing.waitReasonCounts.volume_telemetry_missing, 1);
   assert.equal(telemetryMissing.waitReasonCounts.mtf_not_bullish, undefined);
   assert.equal(telemetryMissing.waitReasonCounts.mtf_agreement_below_0_72, undefined);
+  const promotionReadyButMtfWaiting = summarizeReadinessResults([
+    {
+      symbol: 'PEPE/USDT',
+      fired: false,
+      fireReason: 'promotion_shadow_readiness_incomplete',
+      fireReadiness: {
+        promotionPassCount: 14,
+        promotionConsecutivePasses: 14,
+        minPassCount: 3,
+        minConsecutivePasses: 3,
+        confidence: 0.66,
+        minConfidence: 0.65,
+        mtfBullish: false,
+        mtfDominantSignal: 'HOLD',
+        mtfAgreement: 0.66,
+        technicalTelemetry: { mtfAvailable: true, volumeAvailable: true },
+      },
+    },
+  ]);
+  assert.equal(promotionReadyButMtfWaiting.waitReasonCounts.promotion_shadow_readiness_incomplete, undefined);
+  assert.equal(promotionReadyButMtfWaiting.waitReasonCounts.promotion_ready_entry_confirmation_pending, 1);
+  assert.equal(promotionReadyButMtfWaiting.waitReasonCounts.mtf_not_bullish, 1);
+  const promotionReadyButConfidenceLow = summarizeReadinessResults([
+    {
+      symbol: 'PEPE/USDT',
+      fired: false,
+      fireReason: 'promotion_shadow_readiness_incomplete',
+      fireReadiness: {
+        promotionPassCount: 14,
+        promotionConsecutivePasses: 14,
+        minPassCount: 3,
+        minConsecutivePasses: 3,
+        confidence: 0.6312,
+        minConfidence: 0.65,
+        mtfBullish: false,
+        mtfDominantSignal: 'HOLD',
+        mtfAgreement: 0.66,
+        technicalTelemetry: { mtfAvailable: true, volumeAvailable: true },
+      },
+    },
+  ]);
+  assert.equal(promotionReadyButConfidenceLow.waitReasonCounts.promotion_ready_entry_confirmation_pending, undefined);
+  assert.equal(promotionReadyButConfidenceLow.waitReasonCounts.promotion_ready_confidence_below_min, 1);
   const report = await buildLunaEntryTriggerOperatingReport({ exchange: 'binance', hours: 24 });
   assert.ok(report.checkedAt);
   assert.ok(report.summary);
@@ -343,9 +486,32 @@ export async function runLunaEntryTriggerOperatingReportSmoke() {
   assert.ok(report.activeQualityGate);
   assert.equal(typeof report.summary.waitReasonCounts, 'object');
   assert.equal(typeof report.summary.activeQualityBlockReasons, 'object');
+  assert.ok(report.readinessRemediationPlan);
+  assert.equal(report.readinessRemediationPlan.liveMutation, false);
+  assert.equal(Array.isArray(report.readinessRemediationPlan.nextShadowCommands), true);
   assert.ok(renderLunaEntryTriggerOperatingReport(report).includes('entry-trigger operating report'));
   assert.ok(renderLunaEntryTriggerOperatingReport(report).includes('readiness:'));
+  assert.ok(renderLunaEntryTriggerOperatingReport(report).includes('readinessActions:'));
   assert.ok(renderLunaEntryTriggerOperatingReport(report).includes('activeQuality:'));
+
+  const remediationPlan = buildReadinessRemediationPlan({
+    readiness: [{
+      symbol: 'BTC/USDT',
+      fired: false,
+      blockers: ['promotion_shadow_readiness_incomplete', 'mtf_not_bullish', 'predictive_score_below_0_55'],
+    }],
+  }, { exchange: 'binance', hours: 24 });
+  assert.equal(remediationPlan.waitingSymbols.includes('BTC/USDT'), true);
+  assert.equal(remediationPlan.liveMutation, false);
+  assert.equal(remediationPlan.nextShadowCommands.some((command) => command.includes('runtime:luna-paper-promotion-gate') && command.includes('--dry-run')), true);
+  assert.equal(remediationPlan.nextShadowCommands.some((command) => command.includes('runtime:luna-entry-trigger-diagnose')), true);
+  assert.equal(remediationPlan.nextShadowCommands.some((command) => command.includes('runtime:luna-predictive-evidence-refresh') && command.includes('--dry-run')), true);
+  const entryConfirmationPlan = buildReadinessRemediationPlan(promotionReadyButMtfWaiting, { exchange: 'binance', hours: 24 });
+  assert.equal(entryConfirmationPlan.nextShadowCommands.some((command) => command.includes('runtime:luna-paper-promotion-gate')), false);
+  assert.equal(entryConfirmationPlan.nextShadowCommands.some((command) => command.includes('runtime:luna-entry-trigger-diagnose')), true);
+  const confidencePlan = buildReadinessRemediationPlan(promotionReadyButConfidenceLow, { exchange: 'binance', hours: 24 });
+  assert.equal(confidencePlan.nextShadowCommands.some((command) => command.includes('runtime:luna-paper-promotion-gate') && command.includes('--dry-run')), true);
+  assert.equal(confidencePlan.nextShadowCommands.some((command) => command.includes('runtime:luna-entry-trigger-diagnose')), true);
   return report;
 }
 

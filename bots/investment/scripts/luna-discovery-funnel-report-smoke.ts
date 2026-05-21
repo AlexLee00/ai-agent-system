@@ -300,7 +300,7 @@ export async function runLunaDiscoveryFunnelReportSmoke() {
         {
           symbol: 'NVDA',
           actionability: 'not_actionable',
-          reasons: ['fusion_not_long', 'average_confidence_below_min', 'market_flow_not_confirmed'],
+          reasons: ['fusion_not_long', 'average_confidence_below_min', 'market_flow_not_confirmed', 'daily_technical_not_confirmed'],
         },
       ],
     });

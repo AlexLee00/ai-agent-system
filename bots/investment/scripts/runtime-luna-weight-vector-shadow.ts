@@ -54,7 +54,36 @@ function fixtureInputs() {
       predictive: { decision: 'would_block_prediction', score: 0.33, component_coverage: 0.5, created_at: now },
       community: { avg_score: 0.2, source_count: 1, last_seen_at: now, bot_noise_score: 0.6, hype_spike: true },
       bottleneck: { severity: 'blocker', recommended_action: 'quarantine_candidate_shadow', candidate_selection_penalty: 0.75, reasons: ['backtest_unhealthy_or_would_block', 'sharpe_negative'], observed_at: now },
-      strategyQuality: { enhancement_status: 'shadow_review', hyperopt_status: 'planned', max_drawdown_guard: 'block_live_forward', indicator_score: 0.18, reasons: ['max_drawdown_gt_20pct'], observed_at: now },
+      strategyQuality: {
+        enhancement_status: 'shadow_review',
+        hyperopt_status: 'planned',
+        max_drawdown_guard: 'block_live_forward',
+        indicator_score: 0.18,
+        reasons: ['max_drawdown_gt_20pct'],
+        evidence: {
+          strategyRemediation: {
+            status: 'remediation_required',
+            blockers: ['strategy_drawdown_gt_20pct'],
+            watchSignals: ['macd_histogram_negative'],
+            recommendedActions: ['exclude_from_live_forward_until_strategy_drawdown_below_20pct'],
+            strategyFormulationPlan: {
+              mode: 'hard_block_reformulation',
+              primaryExperimentFamily: 'volatility_adjusted_defensive_retest',
+              allowedExperiments: [{ family: 'volatility_adjusted_defensive_retest' }],
+              qualityGaps: { strategyDrawdownPct: 10 },
+              blockerExitCriteria: [{
+                blocker: 'strategy_drawdown_gt_20pct',
+                metric: 'strategyDrawdownPct',
+                current: 30,
+                targetMax: 20,
+                gap: 10,
+                requiredAction: 'volatility_adjusted_defensive_retest',
+              }],
+            },
+          },
+        },
+        observed_at: now,
+      },
     },
   ];
 }
@@ -149,6 +178,33 @@ export async function runLunaWeightVectorShadow(options: any = {}, deps: any = {
     strategyQualityOperatingStates: countBy(rows, (row) => row.evidence?.strategyQuality?.operatingState || 'unknown'),
     strategyQualityRemediationStatuses: countBy(rows, (row) => row.evidence?.strategyQuality?.remediationStatus || 'unknown'),
     strategyQualityFormulationModes: countBy(rows, (row) => row.evidence?.strategyQuality?.formulationMode || 'unknown'),
+    strategyQualityPrimaryFamilies: countBy(rows, (row) => row.evidence?.strategyQuality?.formulationPrimaryFamily || 'unknown'),
+    strategyQualityRemediationBlockers: countBy(
+      rows.flatMap((row) => row.evidence?.strategyQuality?.remediationBlockers || []),
+      (blocker) => blocker,
+    ),
+    strategyQualityRecommendedActions: countBy(
+      rows.flatMap((row) => row.evidence?.strategyQuality?.recommendedActions || []),
+      (action) => action,
+    ),
+    strategyQualityExitCriteria: countBy(
+      rows.flatMap((row) => row.evidence?.strategyQuality?.formulationExitCriteria || []),
+      (criterion) => criterion?.blocker || 'unknown',
+    ),
+    strategyQualityExitGaps: rows
+      .flatMap((row) => (row.evidence?.strategyQuality?.formulationExitCriteria || []).map((criterion) => ({
+        symbol: row.symbol,
+        market: row.market,
+        blocker: criterion?.blocker || 'unknown',
+        metric: criterion?.metric || 'unknown',
+        current: criterion?.current ?? null,
+        targetMin: criterion?.targetMin ?? null,
+        targetMax: criterion?.targetMax ?? null,
+        target: criterion?.target ?? null,
+        gap: criterion?.gap ?? null,
+        requiredAction: criterion?.requiredAction || null,
+      })))
+      .filter((item) => Number(item.gap || 0) > 0 || item.target),
     strategyQualityHardHoldSymbols: rows
       .filter((row) => row.evidence?.strategyQuality?.hardHold === true)
       .map((row) => row.symbol),
@@ -166,7 +222,7 @@ export async function runLunaWeightVectorShadow(options: any = {}, deps: any = {
       .filter((row) => row.evidence?.qualityActionPlan?.primaryAction === 'strategy_reformulation_shadow_required')
       .map((row) => row.symbol),
     qualityActionPredictiveRefreshSymbols: rows
-      .filter((row) => (row.evidence?.qualityActionPlan?.blockedComponents || []).includes('predictive'))
+      .filter((row) => row.evidence?.qualityActionPlan?.primaryAction === 'predictive_refresh_required')
       .map((row) => row.symbol),
     qualityActionCandidateRemediationSymbols: rows
       .filter((row) => (row.evidence?.qualityActionPlan?.blockedComponents || []).includes('candidate_bottleneck'))

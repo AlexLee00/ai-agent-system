@@ -184,7 +184,7 @@ function refreshCommandFor(action: string, reasons: string[], row: any = {}) {
   const symbolArg = symbol ? ` --symbols=${symbol}` : '';
   if (action === 'official_ohlcv_reference_refresh') {
     if (market === 'domestic') {
-      return 'npm --prefix bots/investment run -s runtime:luna-domestic-official-reference -- --json --dry-run --refresh --network --candidate-limit=200';
+      return `npm --prefix bots/investment run -s runtime:luna-domestic-official-reference -- --json --dry-run --refresh --network --candidate-limit=200${symbolArg}`;
     }
     return `npm --prefix bots/investment run -s runtime:luna-candidate-backtest-refresh -- --json --force --market=${market}${symbolArg}`;
   }

@@ -212,7 +212,14 @@ function hasCryptoMtfTechnicalPresignal(analyses = [], env = process.env) {
     && !hasSellConflict;
 }
 
-function buildFilterReasons(analyses, fused, { exchange, minConfidence, env = process.env }) {
+function hasExplicitDailyTechnicalBearishBlock(row = {}) {
+  if (!row || typeof row !== 'object' || Array.isArray(row)) return false;
+  if (row.ok === true) return false;
+  const reason = String(row.reason || '').toLowerCase();
+  return reason.includes('not_bullish') || reason.includes('not_confirmed');
+}
+
+function buildFilterReasons(analyses, fused, { exchange, minConfidence, dailyTechnical = null, env = process.env }) {
   const reasons = [];
   const buyAnalysts = analyses.filter((analysis) => analysis.signal === ACTIONS.BUY);
   const sellAnalysts = analyses.filter((analysis) => analysis.signal === ACTIONS.SELL);
@@ -240,6 +247,7 @@ function buildFilterReasons(analyses, fused, { exchange, minConfidence, env = pr
     || !marketFlow
     || (marketFlow.signal === ACTIONS.BUY && Number(marketFlow.confidence || 0) >= getStockFlowDecisionPrefilterConfidence(env));
   if (STOCK_EXCHANGES.has(exchange) && marketFlow && !stockFlowConfirmed) reasons.push('market_flow_not_confirmed');
+  if (STOCK_EXCHANGES.has(exchange) && hasExplicitDailyTechnicalBearishBlock(dailyTechnical)) reasons.push('daily_technical_not_confirmed');
   if (
     (!sentiment && !stockMissingSentimentAllowed)
     || (sentiment && sentiment.signal === ACTIONS.SELL)
@@ -254,6 +262,7 @@ function buildFilterReasons(analyses, fused, { exchange, minConfidence, env = pr
 
 function buildRecommendation(reasons = []) {
   if (reasons.includes('news_only_buy')) return 'wait_for_technical_and_flow_confirmation';
+  if (reasons.includes('daily_technical_not_confirmed')) return 'wait_for_daily_technical_confirmation';
   if (reasons.includes('technical_not_confirmed')) return 'wait_for_trend_confirmation';
   if (reasons.includes('onchain_not_confirmed')) return 'wait_for_onchain_confirmation';
   if (reasons.includes('market_flow_not_confirmed')) return 'wait_for_market_flow_confirmation';
@@ -417,6 +426,7 @@ export function buildNearMissWatchCandidate(item = {}) {
     ) {
       missingConfirmations.push('market_flow');
     }
+    if (reasons.has('daily_technical_not_confirmed')) missingConfirmations.push('daily_technical');
     if (reasons.has('average_confidence_below_min')) missingConfirmations.push('confidence');
     if (reasons.has('fusion_not_long')) missingConfirmations.push('fusion');
     return {
@@ -458,15 +468,19 @@ export function buildNearMissWatchCandidate(item = {}) {
   ) {
     missingConfirmations.push('market_flow');
   }
+  if (reasons.has('daily_technical_not_confirmed')) missingConfirmations.push('daily_technical');
   if (reasons.has('average_confidence_below_min')) missingConfirmations.push('confidence');
   if (reasons.has('fusion_not_long')) missingConfirmations.push('fusion');
   if (missingConfirmations.length === 0) return null;
+  const dailyTechnicalBlocked = reasons.has('daily_technical_not_confirmed');
 
   return {
     symbol: item.symbol,
     exchange: item.exchange,
     readiness: dailyBullishProbeCandidate || stockDailyBullishProbeCandidate ? 'relaxed_probe_watch' : 'near_miss_watch',
-    watchReason: dailyBullishProbeCandidate
+    watchReason: dailyTechnicalBlocked
+      ? 'stock_daily_technical_not_confirmed'
+      : dailyBullishProbeCandidate
       ? 'daily_bullish_active_candidate_probe'
       : stockDailyBullishProbeCandidate
         ? 'stock_daily_bullish_active_candidate_probe'
@@ -476,7 +490,9 @@ export function buildNearMissWatchCandidate(item = {}) {
         ? 'technical_buy_waiting_sentiment'
         : 'technical_buy_waiting_fusion_quality',
     missingConfirmations,
-    nextAction: dailyBullishProbeCandidate
+    nextAction: dailyTechnicalBlocked
+      ? 'wait_for_daily_technical_confirmation_before_signal_persistence'
+      : dailyBullishProbeCandidate
       ? 'run_l13_probe_with_existing_risk_and_entry_guards'
       : stockDailyBullishProbeCandidate
         ? 'refresh_market_flow_then_l13_probe_with_existing_guards'
@@ -486,7 +502,9 @@ export function buildNearMissWatchCandidate(item = {}) {
     fused: item.fused,
     analystSummary: item.analystSummary,
     recommendation: item.recommendation,
-    dailyTechnical: dailyBullishProbeCandidate || stockDailyBullishProbeCandidate ? (item.dailyTechnical || item.dailyTechnicalCoverage || null) : null,
+    dailyTechnical: dailyBullishProbeCandidate || stockDailyBullishProbeCandidate || dailyTechnicalBlocked
+      ? (item.dailyTechnical || item.dailyTechnicalCoverage || null)
+      : null,
   };
 }
 
@@ -511,8 +529,15 @@ export function buildDecisionFilterDiagnostics(analysisRows = [], options = {}) 
   for (const [symbol, rows] of grouped.entries()) {
     const analyses = latestByAnalyst(rows);
     const fused = fuseSignals(analyses, weights);
-    const reasons = buildFilterReasons(analyses, fused, { exchange, minConfidence, env: options.env || process.env });
-    const relaxation = reasons.length > 0
+    const dailyTechnical = options.dailyTechnicalBySymbol?.[symbol] || null;
+    const reasons = buildFilterReasons(analyses, fused, {
+      exchange,
+      minConfidence,
+      dailyTechnical,
+      env: options.env || process.env,
+    });
+    const relaxationBypassed = reasons.includes('daily_technical_not_confirmed');
+    const relaxation = reasons.length > 0 && !relaxationBypassed
       ? evaluateConservativeRelaxation({ exchange, analyses, fused, env: options.env || process.env })
       : { ok: false, reason: 'strict_actionable' };
     const actionability = reasons.length === 0
@@ -539,7 +564,7 @@ export function buildDecisionFilterDiagnostics(analysisRows = [], options = {}) 
       },
       analystCount: analyses.length,
       analystSummary,
-      dailyTechnical: options.dailyTechnicalBySymbol?.[symbol] || null,
+      dailyTechnical,
       latestAt: analyses
         .map((analysis) => analysis.created_at)
         .filter(Boolean)

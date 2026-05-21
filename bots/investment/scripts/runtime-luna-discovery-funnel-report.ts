@@ -283,6 +283,7 @@ export function classifyEntryPrefilterWaitState({
     : new Set([
         'fusion_not_long',
         'technical_not_confirmed',
+        'daily_technical_not_confirmed',
         'market_flow_not_confirmed',
         'average_confidence_below_min',
       ]);

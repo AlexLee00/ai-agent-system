@@ -45,10 +45,18 @@ function normalizeBool(value, fallback = false) {
 export const LUNA_PAPER_PROMOTION_LOADER_LIMIT_SEMANTICS = 'per_symbol_history_cap';
 
 export function normalizeLunaPaperPromotionGateConfig(config = {}) {
+  const paperMinAvgConfidence = finiteNumber(config.minAvgConfidence ?? process.env.LUNA_PAPER_PROMOTION_MIN_AVG_CONFIDENCE, 0.62);
+  const entryTriggerMinConfidence = finiteNumber(
+    config.entryTriggerPromotionMinConfidence ?? process.env.LUNA_ENTRY_TRIGGER_PROMOTION_READY_MIN_CONFIDENCE,
+    0.65,
+  );
+  const minAvgConfidence = Math.max(paperMinAvgConfidence, entryTriggerMinConfidence);
   return {
     minCycles: Math.max(1, finiteNumber(config.minCycles ?? process.env.LUNA_PAPER_PROMOTION_MIN_CYCLES, 3)),
     minConsecutivePasses: Math.max(1, finiteNumber(config.minConsecutivePasses ?? process.env.LUNA_PAPER_PROMOTION_MIN_CONSECUTIVE_PASSES, 3)),
-    minAvgConfidence: Math.max(0, Math.min(1, finiteNumber(config.minAvgConfidence ?? process.env.LUNA_PAPER_PROMOTION_MIN_AVG_CONFIDENCE, 0.62))),
+    minAvgConfidence: Math.max(0, Math.min(1, minAvgConfidence)),
+    paperMinAvgConfidence: Math.max(0, Math.min(1, paperMinAvgConfidence)),
+    entryTriggerPromotionMinConfidence: Math.max(0, Math.min(1, entryTriggerMinConfidence)),
     maxOrderUsdt: Math.max(0, finiteNumber(config.maxOrderUsdt ?? process.env.LUNA_MAX_TRADE_USDT, 50)),
     maxPromotionSharpe: Math.max(1, finiteNumber(config.maxPromotionSharpe ?? process.env.LUNA_PAPER_PROMOTION_MAX_SHARPE, 8)),
     minPromotionSharpe: finiteNumber(config.minPromotionSharpe ?? process.env.LUNA_PAPER_PROMOTION_MIN_SHARPE, 0),

@@ -86,6 +86,29 @@ function buildBacktestQualityTarget(rows: any[] = [], summary: any = {}, options
   const maxUnhealthyOrWouldBlock = Math.max(0, Math.floor(numberOption(options, 'targetMaxUnhealthyOrWouldBlock', 'LUNA_BACKTEST_TARGET_MAX_UNHEALTHY_OR_WOULD_BLOCK', Math.floor(targetTotal * 0.4))));
   const maxAveragePenalty = numberOption(options, 'targetMaxAveragePenalty', 'LUNA_BACKTEST_TARGET_MAX_AVERAGE_PENALTY', 0.5);
   const maxBlockerSeverity = Math.max(0, Math.floor(numberOption(options, 'targetMaxBlockerSeverity', 'LUNA_BACKTEST_TARGET_MAX_BLOCKER_SEVERITY', 0)));
+  const refreshSymbols = [...new Set(targetRows
+    .filter((row) => row?.recommendedAction === 'stabilize_backtest_shadow'
+      || row?.recommendedAction === 'strategy_enhancement_shadow'
+      || countReason([row], 'backtest_missing_or_stale') > 0
+      || countReason([row], 'backtest_unstable_or_unrealistic') > 0
+      || countReason([row], 'backtest_unhealthy_or_would_block') > 0)
+    .map((row) => normalizeLunaPhase2Symbol(row?.symbol))
+    .filter(Boolean))];
+  const officialOhlcvRefreshSymbols = [...new Set(targetRows
+    .filter((row) => countReason([row], 'official_ohlcv_missing') > 0)
+    .map((row) => normalizeLunaPhase2Symbol(row?.symbol))
+    .filter(Boolean))];
+  const allTargetSymbols = [...new Set([...refreshSymbols, ...officialOhlcvRefreshSymbols])];
+  const refreshSymbolArg = refreshSymbols.length ? ` --symbols=${refreshSymbols.join(',')}` : '';
+  const officialSymbolArg = officialOhlcvRefreshSymbols.length ? ` --symbols=${officialOhlcvRefreshSymbols.join(',')}` : '';
+  const diagnosisSymbolArg = allTargetSymbols.length ? ` --symbols=${allTargetSymbols.join(',')}` : '';
+  const recommendedLoop = [
+    officialOhlcvRefreshSymbols.length
+      ? `npm --prefix bots/investment run -s runtime:luna-domestic-official-reference -- --json --dry-run --refresh --network --candidate-limit=200${officialSymbolArg}`
+      : null,
+    `npm --prefix bots/investment run -s runtime:luna-candidate-backtest-refresh -- --json --force --periods=30,90,180,365 --market=all --max-runtime-ms=240000${refreshSymbolArg}`,
+    `npm --prefix bots/investment run -s runtime:luna-candidate-bottleneck-diagnostics -- --json --dry-run --market=all${diagnosisSymbolArg}`,
+  ].filter(Boolean);
   const checks = [
     { name: 'min_pass_candidates', current: passCandidates, target: minPassCount, ok: passCandidates >= minPassCount },
     { name: 'min_pass_rate', current: Number(passRate.toFixed(4)), target: minPassRate, ok: passRate >= minPassRate },
@@ -111,10 +134,9 @@ function buildBacktestQualityTarget(rows: any[] = [], summary: any = {}, options
     averagePenalty,
     checks,
     gaps,
-    recommendedLoop: [
-      'npm --prefix bots/investment run -s runtime:luna-candidate-backtest-refresh -- --json --force --periods=30,90,180,365 --market=all --max-runtime-ms=240000',
-      'npm --prefix bots/investment run -s runtime:luna-candidate-bottleneck-diagnostics -- --json --dry-run --market=all',
-    ],
+    refreshSymbols,
+    officialOhlcvRefreshSymbols,
+    recommendedLoop,
   };
 }
 
@@ -238,6 +260,7 @@ export async function runLunaCandidateBottleneckDiagnostics(options: any = {}, d
       'backtestStrategyFamilies',
       'backtestFailingPeriods',
       'backtestUnstableOrUnrealistic',
+      'backtestOfficialOhlcvGap',
       'predictiveDecision',
       'predictiveScore',
       'predictiveCoverage',

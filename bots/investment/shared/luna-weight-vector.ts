@@ -45,6 +45,11 @@ function parseJsonMaybe(value, fallback = {}) {
   }
 }
 
+function listMaybe(value = []) {
+  const parsed = Array.isArray(value) ? value : parseJsonMaybe(value, []);
+  return Array.isArray(parsed) ? parsed : [];
+}
+
 function roundWeightMap(weights = {}) {
   return Object.fromEntries(
     Object.entries(weights || {}).map(([key, value]) => [key, round(value, 6)]),
@@ -78,9 +83,7 @@ function normalizeBottleneck(bottleneck = {}) {
 }
 
 function normalizeStrategyQuality(strategyQuality = {}) {
-  const reasons = Array.isArray(strategyQuality?.reasons)
-    ? strategyQuality.reasons
-    : parseJsonMaybe(strategyQuality?.reasons, []);
+  const reasons = listMaybe(strategyQuality?.reasons);
   const enhancementStatus = String(strategyQuality?.enhancement_status ?? strategyQuality?.enhancementStatus ?? '').trim();
   const hyperoptStatus = String(strategyQuality?.hyperopt_status ?? strategyQuality?.hyperoptStatus ?? '').trim();
   const maxDrawdownGuard = String(strategyQuality?.max_drawdown_guard ?? strategyQuality?.maxDrawdownGuard ?? '').trim();
@@ -90,8 +93,14 @@ function normalizeStrategyQuality(strategyQuality = {}) {
   const evidence = parseJsonMaybe(strategyQuality?.evidence, {});
   const remediation = strategyQuality?.strategyRemediation || evidence?.strategyRemediation || {};
   const formulationPlan = remediation?.strategyFormulationPlan || {};
+  const remediationBlockers = listMaybe(remediation?.blockers);
+  const remediationWatchSignals = listMaybe(remediation?.watchSignals);
+  const recommendedActions = listMaybe(remediation?.recommendedActions);
+  const formulationExitCriteria = listMaybe(formulationPlan?.blockerExitCriteria);
+  const formulationAllowedExperiments = listMaybe(formulationPlan?.allowedExperiments);
   const remediationStatus = String(remediation?.status || '').trim();
   const formulationMode = String(formulationPlan?.mode || '').trim();
+  const formulationPrimaryFamily = String(formulationPlan?.primaryExperimentFamily || '').trim();
   const present = Boolean(enhancementStatus || hyperoptStatus || maxDrawdownGuard || providerStatus || hasIndicatorScore || reasons.length > 0);
   const readyStatus = ['shadow_ready', 'shadow_ready_with_risk_tightening', 'shadow_probation_with_risk_tightening', 'shadow_tuned', 'shadow_evaluated']
     .includes(enhancementStatus);
@@ -133,8 +142,15 @@ function normalizeStrategyQuality(strategyQuality = {}) {
     providerStatus: providerStatus || null,
     remediationStatus: remediationStatus || null,
     formulationMode: formulationMode || null,
+    formulationPrimaryFamily: formulationPrimaryFamily || null,
+    formulationAllowedFamilies: formulationAllowedExperiments.map((experiment) => experiment?.family).filter(Boolean),
+    formulationExitCriteria,
+    formulationQualityGaps: formulationPlan?.qualityGaps || {},
+    remediationBlockers,
+    remediationWatchSignals,
+    recommendedActions,
     operatingState,
-    reasons: Array.isArray(reasons) ? reasons : [],
+    reasons,
     penalty,
     hardHold,
     hardHoldReason,
@@ -692,6 +708,13 @@ export function buildLunaWeightVector(input = {}, config = {}) {
         providerStatus: strategyQuality.providerStatus,
         remediationStatus: strategyQuality.remediationStatus,
         formulationMode: strategyQuality.formulationMode,
+        formulationPrimaryFamily: strategyQuality.formulationPrimaryFamily,
+        formulationAllowedFamilies: strategyQuality.formulationAllowedFamilies,
+        formulationExitCriteria: strategyQuality.formulationExitCriteria,
+        formulationQualityGaps: strategyQuality.formulationQualityGaps,
+        remediationBlockers: strategyQuality.remediationBlockers,
+        remediationWatchSignals: strategyQuality.remediationWatchSignals,
+        recommendedActions: strategyQuality.recommendedActions,
         operatingState: strategyQuality.operatingState,
         reasons: strategyQuality.reasons,
         penalty: round(strategyQuality.penalty, 4),
