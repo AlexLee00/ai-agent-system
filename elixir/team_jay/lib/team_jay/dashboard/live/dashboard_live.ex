@@ -392,6 +392,7 @@ defmodule TeamJay.Dashboard.Live.DashboardLive do
             metrics={@project_metrics}
             tasks_by_stage={@tasks_by_stage}
             milestones={@milestones}
+            action_items={@project_action_items}
             kanban_stages={@kanban_stages}
             selected_task={@selected_project_task}
             schema_ready={@project_schema_ready?}
@@ -1383,6 +1384,7 @@ defmodule TeamJay.Dashboard.Live.DashboardLive do
   attr(:metrics, :map, required: true)
   attr(:tasks_by_stage, :map, required: true)
   attr(:milestones, :list, required: true)
+  attr(:action_items, :list, required: true)
   attr(:kanban_stages, :list, required: true)
   attr(:selected_task, :any, required: true)
   attr(:schema_ready, :boolean, required: true)
@@ -1401,12 +1403,13 @@ defmodule TeamJay.Dashboard.Live.DashboardLive do
         </span>
       </div>
 
-      <div class="grid grid-cols-2 lg:grid-cols-5 gap-2 text-xs">
+      <div class="grid grid-cols-2 lg:grid-cols-6 gap-2 text-xs">
         <.metric_card label="Projects" value={@metrics[:active_projects] || 0} tone="green" />
         <.metric_card label="Sessions" value={@metrics[:active_sessions] || 0} tone="blue" />
         <.metric_card label="Building" value={get_in(@metrics, [:by_stage, "building"]) || 0} tone="amber" />
         <.metric_card label="Observe Warn" value={@metrics[:observe_warnings] || 0} tone="purple" />
         <.metric_card label="Conflicts" value={@metrics[:conflicts] || 0} tone="red" />
+        <.metric_card label="Action" value={@metrics[:action_items] || 0} tone="cyan" />
       </div>
 
       <div class="text-[10px] text-gray-500 truncate">
@@ -1442,6 +1445,43 @@ defmodule TeamJay.Dashboard.Live.DashboardLive do
             </div>
           </div>
         <% end %>
+      </div>
+
+      <div class="border border-cyan-500/30 rounded-lg bg-cyan-950/10 p-3 space-y-2">
+        <div class="flex items-center justify-between">
+          <div class="text-xs font-semibold text-cyan-200">진행 후보 · 마일스톤/장기대기 우선순위</div>
+          <div class="text-[10px] text-gray-500">
+            missed {@metrics[:missed_milestones] || 0} · stale {@metrics[:stale_building_tasks] || 0}
+          </div>
+        </div>
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-2">
+          <%= for item <- Enum.take(@action_items, 6) do %>
+            <button
+              type="button"
+              phx-click="task_view"
+              phx-value-id={item.task_id}
+              class="text-left rounded-lg border border-gray-700 bg-gray-950/70 hover:bg-gray-800/80 px-3 py-2"
+            >
+              <div class="flex items-center gap-2">
+                <span class={"px-1.5 py-0.5 rounded text-[10px] #{action_item_badge(item.kind)}"}>
+                  {action_item_label(item.kind)}
+                </span>
+                <span class="text-[11px] text-gray-100 truncate">{item.title}</span>
+              </div>
+              <div class="text-[9px] text-gray-500 mt-1 truncate">
+                {item.project_id} · {item.stage} · {item.assignee || "—"} · {action_item_due_label(item)}
+              </div>
+              <div class="text-[9px] text-cyan-300/80 mt-1 truncate">
+                {item.reason}
+              </div>
+            </button>
+          <% end %>
+          <%= if @action_items == [] do %>
+            <div class="lg:col-span-2 text-center text-[10px] text-gray-600 py-4">
+              진행 후보 없음 · missed/upcoming/stale task clear
+            </div>
+          <% end %>
+        </div>
       </div>
 
       <div class="grid grid-cols-1 xl:grid-cols-5 gap-2">
@@ -1629,13 +1669,17 @@ defmodule TeamJay.Dashboard.Live.DashboardLive do
         projects: [],
         tasks_by_stage: %{},
         milestones: [],
+        action_items: [],
         active_sessions: [],
         metrics: %{
           active_projects: 0,
           active_sessions: 0,
           by_stage: %{},
           observe_warnings: 0,
-          conflicts: 0
+          conflicts: 0,
+          action_items: 0,
+          missed_milestones: 0,
+          stale_building_tasks: 0
         },
         gantt: %{
           start_date: kst_today(),
@@ -1662,6 +1706,7 @@ defmodule TeamJay.Dashboard.Live.DashboardLive do
     |> assign(:projects, visibility[:projects] || [])
     |> assign(:tasks_by_stage, visibility[:tasks_by_stage] || %{})
     |> assign(:milestones, visibility[:milestones] || [])
+    |> assign(:project_action_items, visibility[:action_items] || [])
     |> assign(:active_sessions, visibility[:active_sessions] || [])
     |> assign(:project_metrics, visibility[:metrics] || %{})
     |> assign(:gantt_data, visibility[:gantt] || %{})
@@ -1687,6 +1732,7 @@ defmodule TeamJay.Dashboard.Live.DashboardLive do
   defp metric_card_class("amber"), do: "bg-amber-950/30 border-amber-500/40"
   defp metric_card_class("purple"), do: "bg-purple-950/30 border-purple-500/40"
   defp metric_card_class("red"), do: "bg-red-950/30 border-red-500/40"
+  defp metric_card_class("cyan"), do: "bg-cyan-950/30 border-cyan-500/40"
   defp metric_card_class(_), do: "bg-gray-900/40 border-gray-700"
 
   defp project_color_class("green"), do: "border-green-500/50 bg-green-950/25"
@@ -1725,6 +1771,29 @@ defmodule TeamJay.Dashboard.Live.DashboardLive do
   defp milestone_dot_class("achieved"), do: "bg-green-400"
   defp milestone_dot_class("missed"), do: "bg-red-400"
   defp milestone_dot_class(_), do: "bg-blue-400"
+
+  defp action_item_label("missed_milestone"), do: "MISSED"
+  defp action_item_label("upcoming_milestone"), do: "DUE"
+  defp action_item_label("stale_task"), do: "STALE"
+  defp action_item_label(_), do: "TASK"
+
+  defp action_item_badge("missed_milestone"), do: "bg-red-900/70 text-red-200"
+  defp action_item_badge("upcoming_milestone"), do: "bg-cyan-900/70 text-cyan-200"
+  defp action_item_badge("stale_task"), do: "bg-amber-900/70 text-amber-200"
+  defp action_item_badge(_), do: "bg-gray-800 text-gray-300"
+
+  defp action_item_due_label(%{due_in_days: days}) when is_integer(days) and days < 0,
+    do: "#{abs(days)}d overdue"
+
+  defp action_item_due_label(%{due_in_days: 0}), do: "today"
+
+  defp action_item_due_label(%{due_in_days: days}) when is_integer(days),
+    do: "D-#{days}"
+
+  defp action_item_due_label(%{age_days: days}) when is_integer(days),
+    do: "#{days}d open"
+
+  defp action_item_due_label(_), do: "open"
 
   defp stage_dot_class("building"), do: "bg-blue-500"
   defp stage_dot_class("verify"), do: "bg-amber-500"

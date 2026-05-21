@@ -47,9 +47,64 @@ defmodule TeamJay.DashboardPhaseATest do
     assert marker_counts.projects >= 4
     assert marker_counts.tasks >= 30
     assert marker_counts.milestones >= 8
+    assert is_list(snapshot.action_items)
+    assert is_integer(snapshot.metrics.action_items)
     assert length(snapshot.gantt.dates) == 15
     assert Map.has_key?(snapshot.tasks_by_stage, "spec")
     assert Map.has_key?(snapshot.tasks_by_stage, "done")
+  end
+
+  test "Visibility v3.4 milestone action queue prioritizes missed and stale work" do
+    now = DateTime.utc_now()
+    yesterday = Date.utc_today() |> Date.add(-1)
+    tomorrow = Date.utc_today() |> Date.add(1)
+
+    tasks = [
+      %{
+        id: "missed-task",
+        title: "missed task",
+        project_id: "ai-agent-system",
+        stage: "verify",
+        assignee: "codex",
+        source_doc: "test",
+        started_at: DateTime.add(now, -86_400 * 2, :second)
+      },
+      %{
+        id: "stale-task",
+        title: "stale task",
+        project_id: "ai-agent-system",
+        stage: "building",
+        assignee: "codex",
+        source_doc: "test",
+        started_at: DateTime.add(now, -86_400 * 5, :second)
+      }
+    ]
+
+    milestones = [
+      %{
+        id: "ms-missed",
+        date: yesterday,
+        title: "missed milestone",
+        owner: "codex",
+        task_ids: ["missed-task"],
+        status: "missed",
+        project_id: "ai-agent-system"
+      },
+      %{
+        id: "ms-upcoming",
+        date: tomorrow,
+        title: "upcoming milestone",
+        owner: "codex",
+        task_ids: [],
+        status: "upcoming",
+        project_id: "ai-agent-system"
+      }
+    ]
+
+    items = TeamJay.Dashboard.ProjectVisibility.build_action_items(tasks, milestones)
+
+    assert [%{kind: "missed_milestone", task_id: "missed-task"} | _] = items
+    assert Enum.any?(items, &(&1.kind == "stale_task" and &1.task_id == "stale-task"))
   end
 
   test "Visibility v3.4 Cycle #52 support modules are available" do

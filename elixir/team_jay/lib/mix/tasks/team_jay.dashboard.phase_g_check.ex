@@ -53,6 +53,11 @@ defmodule Mix.Tasks.TeamJay.Dashboard.PhaseGCheck do
       area_10_rendered:
         String.contains?(dashboard_source, "project_milestone_board") and
           String.contains?(dashboard_source, "[10] Project + Milestone 보드"),
+      area_10_action_queue:
+        String.contains?(dashboard_source, "진행 후보 · 마일스톤/장기대기 우선순위") and
+          String.contains?(project_source, "def build_action_items") and
+          String.contains?(project_source, "missed_milestone") and
+          String.contains?(project_source, "stale_task"),
       area_11_rendered:
         String.contains?(dashboard_source, "timeline_gantt_board") and
           String.contains?(dashboard_source, "[11] TimelineGantt 2주"),

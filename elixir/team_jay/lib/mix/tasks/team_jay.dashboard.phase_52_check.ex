@@ -46,7 +46,8 @@ defmodule Mix.Tasks.TeamJay.Dashboard.Phase52Check do
         project_schema_ready: snapshot.schema_ready?,
         project_data_visible: length(snapshot.projects) >= 4 and length(snapshot.tasks) >= 30,
         area_11_gantt_ready: length(snapshot.gantt.dates) == 15,
-        milestone_data_visible: length(snapshot.milestones) >= 8
+        milestone_data_visible: length(snapshot.milestones) >= 8,
+        milestone_action_queue_visible: is_list(snapshot[:action_items])
       })
       |> maybe_put_runtime_dom_check(runtime_dom)
 
@@ -63,6 +64,7 @@ defmodule Mix.Tasks.TeamJay.Dashboard.Phase52Check do
         projects: length(snapshot.projects),
         tasks: length(snapshot.tasks),
         milestones: length(snapshot.milestones),
+        action_items: length(snapshot[:action_items] || []),
         active_sessions: length(snapshot.active_sessions),
         conflicts: get_in(snapshot, [:metrics, :conflicts]) || 0
       },

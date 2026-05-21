@@ -15,6 +15,8 @@ defmodule TeamJay.Dashboard.ProjectVisibility do
   @kst_offset_seconds 9 * 60 * 60
   @visibility_doc_path "docs/strategy/VISIBILITY_SYSTEM_v3.4.md"
   @stage_keys ~w(spec building verify observing done)
+  @stale_task_days 3
+  @upcoming_milestone_days 7
   @kanban_stages [
     %{stage: "spec", label: "Spec", icon: "📋", class: "bg-gray-900/40"},
     %{stage: "building", label: "Building", icon: "🔨", class: "bg-blue-900/30"},
@@ -106,7 +108,8 @@ defmodule TeamJay.Dashboard.ProjectVisibility do
     milestones = list_milestones(projects)
     active_sessions = list_active_sessions()
     tasks_by_stage = group_tasks_by_stage(tasks)
-    metrics = build_metrics(projects, active_sessions, tasks_by_stage)
+    action_items = build_action_items(tasks, milestones)
+    metrics = build_metrics(projects, active_sessions, tasks_by_stage, milestones, action_items)
 
     %{
       schema_ready?: schema_ready?,
@@ -115,6 +118,7 @@ defmodule TeamJay.Dashboard.ProjectVisibility do
       tasks: tasks,
       tasks_by_stage: tasks_by_stage,
       milestones: milestones,
+      action_items: action_items,
       active_sessions: active_sessions,
       metrics: metrics,
       gantt: build_gantt(projects, tasks, milestones)
@@ -310,6 +314,80 @@ defmodule TeamJay.Dashboard.ProjectVisibility do
     milestones = marker_milestones(projects, tasks)
 
     %{projects: length(projects), tasks: length(tasks), milestones: length(milestones)}
+  end
+
+  def build_action_items(tasks, milestones, opts \\ []) do
+    stale_days = Keyword.get(opts, :stale_days, @stale_task_days)
+    upcoming_days = Keyword.get(opts, :upcoming_days, @upcoming_milestone_days)
+    today = kst_today()
+    tasks_by_id = Map.new(tasks, &{&1.id, &1})
+
+    milestone_items =
+      milestones
+      |> Enum.flat_map(fn milestone ->
+        due_in_days = Date.diff(date_value(milestone.date) || today, today)
+
+        kind =
+          cond do
+            milestone.status == "missed" ->
+              "missed_milestone"
+
+            milestone.status != "achieved" and due_in_days >= 0 and due_in_days <= upcoming_days ->
+              "upcoming_milestone"
+
+            true ->
+              nil
+          end
+
+        if kind do
+          milestone.task_ids
+          |> Enum.map(&Map.get(tasks_by_id, &1))
+          |> Enum.reject(&is_nil/1)
+          |> Enum.reject(&(&1.stage == "done"))
+          |> Enum.map(fn task ->
+            action_item(task, %{
+              kind: kind,
+              priority: action_priority(kind, due_in_days, task),
+              due_in_days: due_in_days,
+              milestone_id: milestone.id,
+              milestone_title: milestone.title,
+              milestone_date: milestone.date,
+              milestone_status: milestone.status,
+              reason: action_reason(kind, due_in_days)
+            })
+          end)
+        else
+          []
+        end
+      end)
+
+    milestone_task_ids = MapSet.new(Enum.map(milestone_items, & &1.task_id))
+
+    stale_items =
+      tasks
+      |> Enum.reject(&(&1.stage == "done"))
+      |> Enum.reject(&MapSet.member?(milestone_task_ids, &1.id))
+      |> Enum.filter(&(age_days(&1.started_at) >= stale_days))
+      |> Enum.map(fn task ->
+        task_age_days = age_days(task.started_at)
+
+        action_item(task, %{
+          kind: "stale_task",
+          priority: 80 + min(task_age_days, 30),
+          due_in_days: nil,
+          milestone_id: nil,
+          milestone_title: nil,
+          milestone_date: nil,
+          milestone_status: nil,
+          reason: "#{task_age_days}일 이상 #{task.stage} 상태"
+        })
+      end)
+
+    (milestone_items ++ stale_items)
+    |> Enum.sort_by(
+      &{-&1.priority, &1.due_in_days || 999, -&1.age_days, &1.project_id, &1.task_id}
+    )
+    |> Enum.take(12)
   end
 
   defp schema_sql do
@@ -623,7 +701,7 @@ defmodule TeamJay.Dashboard.ProjectVisibility do
     |> then(&Map.merge(base, &1))
   end
 
-  defp build_metrics(projects, sessions, tasks_by_stage) do
+  defp build_metrics(projects, sessions, tasks_by_stage, milestones, action_items) do
     by_stage = Map.new(@stage_keys, &{&1, length(Map.get(tasks_by_stage, &1, []))})
 
     %{
@@ -631,7 +709,10 @@ defmodule TeamJay.Dashboard.ProjectVisibility do
       active_sessions: length(sessions),
       by_stage: by_stage,
       observe_warnings: count_observe_warnings(Map.get(tasks_by_stage, "observing", [])),
-      conflicts: SessionTracker.count_conflicts(sessions)
+      conflicts: SessionTracker.count_conflicts(sessions),
+      action_items: length(action_items),
+      missed_milestones: Enum.count(milestones, &(&1.status == "missed")),
+      stale_building_tasks: Enum.count(action_items, &(&1.kind == "stale_task"))
     }
   end
 
@@ -656,6 +737,7 @@ defmodule TeamJay.Dashboard.ProjectVisibility do
     milestones = marker_milestones(projects, tasks)
     sessions = marker_sessions(tasks)
     tasks_by_stage = group_tasks_by_stage(tasks)
+    action_items = build_action_items(tasks, milestones)
 
     %{
       schema_ready?: false,
@@ -664,8 +746,9 @@ defmodule TeamJay.Dashboard.ProjectVisibility do
       tasks: tasks,
       tasks_by_stage: tasks_by_stage,
       milestones: milestones,
+      action_items: action_items,
       active_sessions: sessions,
-      metrics: build_metrics(projects, sessions, tasks_by_stage),
+      metrics: build_metrics(projects, sessions, tasks_by_stage, milestones, action_items),
       gantt: build_gantt(projects, tasks, milestones),
       error: inspect(reason)
     }
@@ -1111,6 +1194,36 @@ defmodule TeamJay.Dashboard.ProjectVisibility do
   defp milestone_event_topic("missed"), do: "project.milestone.missed"
   defp milestone_event_topic(_), do: "project.milestone.added"
 
+  defp action_item(task, meta) do
+    %{
+      kind: meta.kind,
+      priority: meta.priority,
+      reason: meta.reason,
+      task_id: task.id,
+      title: task.title,
+      project_id: task.project_id,
+      stage: task.stage,
+      assignee: task.assignee,
+      source_doc: task.source_doc,
+      started_at: task.started_at,
+      age_days: age_days(task.started_at),
+      due_in_days: meta.due_in_days,
+      milestone_id: meta.milestone_id,
+      milestone_title: meta.milestone_title,
+      milestone_date: meta.milestone_date,
+      milestone_status: meta.milestone_status
+    }
+  end
+
+  defp action_priority("missed_milestone", _due_in_days, _task), do: 300
+  defp action_priority("upcoming_milestone", due_in_days, _task), do: 200 - max(due_in_days, 0)
+  defp action_priority(_, _due_in_days, task), do: 80 + min(age_days(task.started_at), 30)
+
+  defp action_reason("missed_milestone", _due_in_days), do: "기한 경과 마일스톤 미완료"
+  defp action_reason("upcoming_milestone", 0), do: "오늘 마감 마일스톤"
+  defp action_reason("upcoming_milestone", due_in_days), do: "#{due_in_days}일 후 마감 마일스톤"
+  defp action_reason(_, _), do: "진행 상태 점검 필요"
+
   defp ensure_schema_cached! do
     unless Process.get(:team_jay_project_visibility_schema_ready) == true do
       ensure_schema!()
@@ -1219,6 +1332,12 @@ defmodule TeamJay.Dashboard.ProjectVisibility do
 
   defp parse_date(_), do: nil
 
+  defp date_value(%Date{} = value), do: value
+  defp date_value(%NaiveDateTime{} = value), do: NaiveDateTime.to_date(value)
+  defp date_value(%DateTime{} = value), do: DateTime.to_date(value)
+  defp date_value(value) when is_binary(value), do: parse_date(value)
+  defp date_value(_), do: nil
+
   defp elapsed_seconds(started_at, nil),
     do: DateTime.diff(DateTime.utc_now(), started_at, :second)
 
@@ -1227,6 +1346,13 @@ defmodule TeamJay.Dashboard.ProjectVisibility do
 
   defp overdue?(%Date{} = date), do: Date.compare(date, kst_today()) == :lt
   defp overdue?(_), do: false
+
+  defp age_days(value) do
+    started_at = parse_datetime(value) || DateTime.utc_now()
+    max(div(DateTime.diff(DateTime.utc_now(), started_at, :second), 86_400), 0)
+  rescue
+    _ -> 0
+  end
 
   defp kst_today do
     DateTime.utc_now()
