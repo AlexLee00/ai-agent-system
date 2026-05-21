@@ -140,13 +140,13 @@ function main() {
   const darwinResearchRoutes = (darwinResearchSelection.chain || []).map((entry) => entry.route);
   assert.equal(
     darwinResearchRoutes[0],
-    'openai-oauth/gpt-5.4-mini',
-    'darwin research paper evaluation must use OpenAI OAuth first',
+    'gemini-cli-oauth/gemini-2.5-flash-lite',
+    'darwin research paper evaluation must use Gemini CLI OAuth first to avoid openai->groq-only exhaustion',
   );
   assert.equal(
     darwinResearchRoutes.some((route) => String(route).startsWith('gemini-cli-oauth/')),
-    false,
-    'darwin research paper evaluation must not fall back to Gemini CLI',
+    true,
+    'darwin research paper evaluation must keep Gemini CLI in the route chain',
   );
 
   for (const agent of REQUIRED_BLOG_AGENTS) {

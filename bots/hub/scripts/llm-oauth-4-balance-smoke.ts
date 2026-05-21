@@ -164,6 +164,16 @@ function main(): void {
     assert.equal(chain[0]?.provider, 'openai-oauth', `${key} commander primary should keep Sonnet as fallback, not default`);
   }
 
+  const darwinEvaluatorChain = selector.selectLLMChain('darwin.agent_policy', {
+    ...selectorOptions,
+    agentName: 'darwin.evaluator',
+  });
+  assert.deepEqual(
+    darwinEvaluatorChain.map((entry: any) => entry.provider),
+    ['gemini-cli-oauth', 'openai-oauth', 'groq'],
+    'darwin.evaluator must avoid the openai->groq-only exhaustion path by using Gemini as the first live route',
+  );
+
   const total = Object.values(providerCounts).reduce((acc, value) => acc + value, 0);
   const shares = {
     claudeCodePct: Number(pct(providerCounts['claude-code'], total).toFixed(2)),
