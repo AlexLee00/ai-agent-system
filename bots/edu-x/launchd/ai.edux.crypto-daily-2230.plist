@@ -14,6 +14,12 @@
 		<string>false</string>
 		<key>EDUX_PROMOTION_GATE_PASSED</key>
 		<string>false</string>
+		<key>EDUX_FORMATTER_MODE</key>
+		<string>llm</string>
+		<key>EDUX_FORMATTER_ABSTRACT_MODEL</key>
+		<string>anthropic_opus</string>
+		<key>EDUX_FORMATTER_SELECTOR_KEY</key>
+		<string>investment.reporter</string>
 		<key>EDUX_FORCE_SLOT</key>
 		<string>2230</string>
 	</dict>

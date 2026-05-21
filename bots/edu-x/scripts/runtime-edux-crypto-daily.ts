@@ -499,6 +499,11 @@ async function main() {
   }
 
   const { title, content } = formatted;
+  const formatterMetadata = {
+    formatterSource: formatted.source,
+    formatterMode: formatted.formatterMode,
+    formatterLlm: formatted.llm || null,
+  };
   console.log(`[edu-x/crypto] 본문 생성: ${content.length}자 (제목: ${title}, source=${formatted.source || 'hub_llm'})`);
 
   // ③ 이미지 첨부는 운영 피드백에 따라 비활성화한다.
@@ -509,7 +514,7 @@ async function main() {
   if (!quality.ok) {
     const errMsg = `품질 게이트 미달: ${JSON.stringify(quality)}`;
     console.error(`[edu-x/crypto] ${errMsg}`);
-    await logPublish({ slot, title, content, imageUrls: [], status: 'fail', errorMsg: errMsg, metadata: { quality, formatterSource: formatted.source, imageAttachmentDisabled: true } });
+    await logPublish({ slot, title, content, imageUrls: [], status: 'fail', errorMsg: errMsg, metadata: { quality, ...formatterMetadata, imageAttachmentDisabled: true } });
     emitJsonIfRequested(ARGS.json, { ok: false, category: CATEGORY, slot, status: 'quality_failed', quality });
     return;
   }
@@ -522,7 +527,7 @@ async function main() {
       title,
       content,
       imagePaths,
-      metadata: { evidenceCount: evidenceItems.length, quality, formatterSource: formatted.source, fixture: ARGS.fixture, imageAttachmentDisabled: true },
+      metadata: { evidenceCount: evidenceItems.length, quality, ...formatterMetadata, fixture: ARGS.fixture, imageAttachmentDisabled: true },
     });
     await logPublish({
       slot,
@@ -530,7 +535,7 @@ async function main() {
       content,
       imageUrls: [],
       status: 'dry_run',
-      metadata: { evidenceCount: evidenceItems.length, quality, formatterSource: formatted.source, fixture: ARGS.fixture, artifact, imageAttachmentDisabled: true },
+      metadata: { evidenceCount: evidenceItems.length, quality, ...formatterMetadata, fixture: ARGS.fixture, artifact, imageAttachmentDisabled: true },
     });
     console.log(`[edu-x/crypto] ✅ DRY-RUN 완료 — 실 발행 없음 (${slot})`);
     await sendTelegram(`🔍 [edu-x/crypto] Dry-run ${slot} — ${content.length}자, 이미지 첨부 없음`);
@@ -541,7 +546,7 @@ async function main() {
   const liveGate = assertLivePublishAllowed({ tableOk: dbTable.ok, oneOffLiveTest: ARGS.oneOffLiveTest, fixture: ARGS.fixture });
   if (!liveGate.ok) {
     const errMsg = `live_publish_blocked: ${liveGate.reasons.join('; ')}`;
-    await logPublish({ slot, title, content, imageUrls: [], status: 'skipped', errorMsg: errMsg, metadata: { liveGate, quality, imageAttachmentDisabled: true } });
+    await logPublish({ slot, title, content, imageUrls: [], status: 'skipped', errorMsg: errMsg, metadata: { liveGate, quality, ...formatterMetadata, imageAttachmentDisabled: true } });
     console.error(`[edu-x/crypto] ${errMsg}`);
     emitJsonIfRequested(ARGS.json, { ok: false, category: CATEGORY, slot, status: 'live_blocked', reasons: liveGate.reasons });
     return;
@@ -558,7 +563,7 @@ async function main() {
   if (!result?.id) {
     const errMsg = '발행 실패 (API 오류)';
     console.error(`[edu-x/crypto] ${errMsg}:`, JSON.stringify(result));
-    await logPublish({ slot, title: publishTitle, content: finalContent, imageUrls, status: 'fail', errorMsg: errMsg, metadata: { result, liveGate, imageAttachmentDisabled: true, contentFormat: 'html_blocks' } });
+    await logPublish({ slot, title: publishTitle, content: finalContent, imageUrls, status: 'fail', errorMsg: errMsg, metadata: { result, liveGate, ...formatterMetadata, imageAttachmentDisabled: true, contentFormat: 'html_blocks' } });
     await sendTelegram(`❌ [edu-x/crypto] ${slot} ${errMsg}`);
     return;
   }
@@ -576,6 +581,7 @@ async function main() {
       contentLen: finalContent.length,
       elapsedSec: Number(elapsed),
       liveGate,
+      ...formatterMetadata,
       imageAttachmentDisabled: true,
       contentFormat: 'html_blocks',
     },

@@ -3,132 +3,144 @@
     "keyword": "transformer",
     "score": 1.0,
     "source": "evolved",
-    "used_at": "2026-05-20T07:57:49.493603Z"
+    "used_at": "2026-05-21T16:35:57.904839Z"
   },
   {
     "keyword": "LLM",
     "score": 1.0,
     "source": "evolved",
-    "used_at": "2026-05-20T07:57:49.493619Z"
+    "used_at": "2026-05-21T16:35:57.904852Z"
   },
   {
     "keyword": "language model",
     "score": 1.0,
     "source": "evolved",
-    "used_at": "2026-05-20T07:57:49.493620Z"
+    "used_at": "2026-05-21T16:35:57.904854Z"
   },
   {
     "keyword": "neural architecture",
     "score": 1.0,
     "source": "evolved",
-    "used_at": "2026-05-20T07:57:49.493621Z"
+    "used_at": "2026-05-21T16:35:57.904855Z"
   },
   {
     "keyword": "reinforcement learning",
     "score": 1.0,
     "source": "evolved",
-    "used_at": "2026-05-20T07:57:49.493622Z"
+    "used_at": "2026-05-21T16:35:57.904865Z"
   },
   {
     "keyword": "agent",
     "score": 1.0,
     "source": "evolved",
-    "used_at": "2026-05-20T07:57:49.493623Z"
+    "used_at": "2026-05-21T16:35:57.904867Z"
   },
   {
     "keyword": "RAG",
     "score": 1.0,
     "source": "evolved",
-    "used_at": "2026-05-20T07:57:49.493623Z"
+    "used_at": "2026-05-21T16:35:57.904868Z"
   },
   {
     "keyword": "code generation",
     "score": 1.0,
     "source": "evolved",
-    "used_at": "2026-05-20T07:57:49.493624Z"
+    "used_at": "2026-05-21T16:35:57.904869Z"
   },
   {
     "keyword": "multimodal",
     "score": 1.0,
     "source": "evolved",
-    "used_at": "2026-05-20T07:57:49.493625Z"
+    "used_at": "2026-05-21T16:35:57.904873Z"
   },
   {
     "keyword": "embedding",
     "score": 1.0,
     "source": "evolved",
-    "used_at": "2026-05-20T07:57:49.493625Z"
+    "used_at": "2026-05-21T16:35:57.904875Z"
   },
   {
     "keyword": "diffusion model",
     "score": 1.0,
     "source": "evolved",
-    "used_at": "2026-05-20T07:57:49.493626Z"
+    "used_at": "2026-05-21T16:35:57.904876Z"
   },
   {
     "keyword": "self-supervised learning",
     "score": 1.0,
     "source": "evolved",
-    "used_at": "2026-05-20T07:57:49.493627Z"
+    "used_at": "2026-05-21T16:35:57.904877Z"
   },
   {
     "keyword": "fine-tuning",
     "score": 1.0,
     "source": "evolved",
-    "used_at": "2026-05-20T07:57:49.493628Z"
+    "used_at": "2026-05-21T16:35:57.904878Z"
   },
   {
     "keyword": "prompt engineering",
     "score": 1.0,
     "source": "evolved",
-    "used_at": "2026-05-20T07:57:49.493628Z"
+    "used_at": "2026-05-21T16:35:57.904879Z"
   },
   {
     "keyword": "graph neural network",
     "score": 1.0,
     "source": "evolved",
-    "used_at": "2026-05-20T07:57:49.493629Z"
+    "used_at": "2026-05-21T16:35:57.904880Z"
   },
   {
     "keyword": "reasoning models",
     "score": 1.0,
     "source": "evolved",
-    "used_at": "2026-05-20T07:57:49.493630Z"
+    "used_at": "2026-05-21T16:35:57.904884Z"
   },
   {
     "keyword": "diffusion models",
     "score": 1.0,
     "source": "evolved",
-    "used_at": "2026-05-20T07:57:49.493630Z"
+    "used_at": "2026-05-21T16:35:57.904885Z"
   },
   {
     "keyword": "tool use",
     "score": 1.0,
     "source": "evolved",
-    "used_at": "2026-05-20T07:57:49.493631Z"
+    "used_at": "2026-05-21T16:35:57.904886Z"
   },
   {
     "keyword": "alignment",
     "score": 1.0,
     "source": "evolved",
-    "used_at": "2026-05-20T07:57:49.493632Z"
+    "used_at": "2026-05-21T16:35:57.904887Z"
   },
   {
     "keyword": "reasoning model",
     "score": 1.0,
     "source": "evolved",
-    "used_at": "2026-05-20T07:57:49.493632Z"
+    "used_at": "2026-05-21T16:35:57.904888Z"
   },
   {
     "keyword": "synthetic data",
     "score": 1.0,
     "source": "evolved",
-    "used_at": "2026-05-20T07:57:49.493633Z"
+    "used_at": "2026-05-21T16:35:57.904889Z"
   },
   {
     "keyword": "long context",
     "score": 1.0,
     "source": "evolved",
-    "used_at": "2026-05-20T07:57:49.493634Z"
+    "used_at": "2026-05-21T16:35:57.904890Z"
+  },
+  {
+    "keyword": "test-time adaptation",
+    "score": 1.0,
+    "source": "evolved",
+    "used_at": "2026-05-21T16:35:57.904891Z"
+  },
+  {
+    "keyword": "vector database",
+    "score": 1.0,
+    "source": "evolved",
+    "used_at": "2026-05-21T16:35:57.904892Z"
   }
 ]

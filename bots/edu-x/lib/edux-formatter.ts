@@ -22,6 +22,14 @@ const CALLER_TEAM = 'luna';
 const LLM_AGENT = 'reporter';
 const LLM_SELECTOR_KEY = 'investment.reporter';
 const LLM_TIMEOUT_MS = 90000;
+const DEFAULT_FORMATTER_MODE = 'llm';
+const DEFAULT_LLM_ABSTRACT_MODEL = 'anthropic_opus';
+const DEFAULT_LLM_MAX_TOKENS = 4096;
+const DEFAULT_LLM_TEMPERATURE = 0.2;
+const DEFAULT_LLM_PRIMARY_MODEL = 'gpt-5.4';
+const DEFAULT_LLM_GEMINI_PRO_MODEL = 'gemini-2.5-pro';
+const DEFAULT_LLM_DEEP_FALLBACK_MODEL = 'qwen/qwen3-32b';
+const DEFAULT_LLM_MINI_FALLBACK_MODEL = 'gpt-5.4-mini';
 const MAX_CONTENT_LEN = 19500;
 const TARGET_MIN_LEN = 0;
 const LEGACY_SECTION_MARKERS_RE = /^[①②③④⑤⑥⑦⑧⑨⑩]\s*/;
@@ -137,6 +145,104 @@ function validateCryptoInformationDensity(text) {
     if (!item.re.test(text)) issues.push(`crypto_missing_${item.key}`);
   }
   return issues;
+}
+
+function cleanConfigValue(value) {
+  return String(value || '').trim();
+}
+
+function categoryEnvName(category, suffix) {
+  return `EDUX_${String(category || '').toUpperCase()}_${suffix}`;
+}
+
+function normalizeFormatterMode(value) {
+  const mode = cleanConfigValue(value || DEFAULT_FORMATTER_MODE).toLowerCase();
+  if (['llm', 'hub_llm', 'hub-llm'].includes(mode)) return 'llm';
+  if (['deterministic', 'fallback', 'card', 'static', 'off', 'false', '0'].includes(mode)) return 'deterministic';
+  return DEFAULT_FORMATTER_MODE;
+}
+
+function resolveFormatterMode(category, options = {}) {
+  if (options.formatterMode) return normalizeFormatterMode(options.formatterMode);
+  const categoryMode = process.env[categoryEnvName(category, 'FORMATTER_MODE')];
+  if (categoryMode) return normalizeFormatterMode(categoryMode);
+  return normalizeFormatterMode(process.env.EDUX_FORMATTER_MODE || DEFAULT_FORMATTER_MODE);
+}
+
+function resolveFormatterLlmConfig(category, options = {}) {
+  const categoryPrefix = String(category || '').toUpperCase();
+  const abstractModel = cleanConfigValue(
+    options.abstractModel
+    || process.env[`EDUX_${categoryPrefix}_FORMATTER_ABSTRACT_MODEL`]
+    || process.env.EDUX_FORMATTER_ABSTRACT_MODEL
+    || DEFAULT_LLM_ABSTRACT_MODEL,
+  );
+  const selectorKey = cleanConfigValue(
+    options.selectorKey
+    || process.env[`EDUX_${categoryPrefix}_FORMATTER_SELECTOR_KEY`]
+    || process.env.EDUX_FORMATTER_SELECTOR_KEY
+    || LLM_SELECTOR_KEY,
+  );
+  const agent = cleanConfigValue(
+    options.agent
+    || process.env[`EDUX_${categoryPrefix}_FORMATTER_AGENT`]
+    || process.env.EDUX_FORMATTER_AGENT
+    || LLM_AGENT,
+  );
+  const maxTokens = Math.max(1024, Number(
+    options.maxTokens
+    || process.env[`EDUX_${categoryPrefix}_FORMATTER_MAX_TOKENS`]
+    || process.env.EDUX_FORMATTER_MAX_TOKENS
+    || DEFAULT_LLM_MAX_TOKENS,
+  ) || DEFAULT_LLM_MAX_TOKENS);
+  const temperature = Number.isFinite(Number(options.temperature))
+    ? Number(options.temperature)
+    : Number(
+      process.env[`EDUX_${categoryPrefix}_FORMATTER_TEMPERATURE`]
+      || process.env.EDUX_FORMATTER_TEMPERATURE
+      || DEFAULT_LLM_TEMPERATURE,
+    );
+
+  return {
+    mode: resolveFormatterMode(category, options),
+    callerTeam: CALLER_TEAM,
+    agent,
+    selectorKey,
+    abstractModel,
+    maxTokens,
+    temperature: Number.isFinite(temperature) ? temperature : DEFAULT_LLM_TEMPERATURE,
+    timeoutMs: Math.max(10000, Number(
+      options.timeoutMs
+      || process.env[`EDUX_${categoryPrefix}_FORMATTER_TIMEOUT_MS`]
+      || process.env.EDUX_FORMATTER_TIMEOUT_MS
+      || LLM_TIMEOUT_MS,
+    ) || LLM_TIMEOUT_MS),
+  };
+}
+
+function flagDisabled(value) {
+  return ['0', 'false', 'no', 'off'].includes(String(value || '').trim().toLowerCase());
+}
+
+function resolveFormatterPolicyOverride(llmConfig, options = {}) {
+  if (options.policyOverride) return options.policyOverride;
+  if (flagDisabled(process.env.EDUX_FORMATTER_POLICY_OVERRIDE)) return undefined;
+
+  const maxTokens = llmConfig.maxTokens || DEFAULT_LLM_MAX_TOKENS;
+  const temperature = llmConfig.temperature ?? DEFAULT_LLM_TEMPERATURE;
+  const primaryModel = cleanConfigValue(process.env.EDUX_FORMATTER_PRIMARY_MODEL || DEFAULT_LLM_PRIMARY_MODEL);
+  const geminiProModel = cleanConfigValue(process.env.EDUX_FORMATTER_GEMINI_PRO_MODEL || DEFAULT_LLM_GEMINI_PRO_MODEL);
+  const deepFallbackModel = cleanConfigValue(process.env.EDUX_FORMATTER_DEEP_FALLBACK_MODEL || DEFAULT_LLM_DEEP_FALLBACK_MODEL);
+  const miniFallbackModel = cleanConfigValue(process.env.EDUX_FORMATTER_MINI_FALLBACK_MODEL || DEFAULT_LLM_MINI_FALLBACK_MODEL);
+
+  return {
+    chain: [
+      { provider: 'openai-oauth', model: primaryModel, maxTokens, temperature, timeoutMs: llmConfig.timeoutMs },
+      { provider: 'gemini-cli-oauth', model: geminiProModel, maxTokens, temperature, timeoutMs: llmConfig.timeoutMs },
+      { provider: 'groq', model: deepFallbackModel, maxTokens, temperature, timeoutMs: Math.min(llmConfig.timeoutMs, 60000) },
+      { provider: 'openai-oauth', model: miniFallbackModel, maxTokens, temperature, timeoutMs: Math.min(llmConfig.timeoutMs, 60000) },
+    ],
+  };
 }
 
 function hasValue(value) {
@@ -976,16 +1082,22 @@ function buildFallbackContent(category, slot, marketData = {}, evidenceItems = {
   return buildCryptoFallbackContent(slot, marketData, evidenceItems, technicalData);
 }
 
-async function callFormatterLlm({ systemPrompt, userPrompt }) {
+async function callFormatterLlm({ category, systemPrompt, userPrompt, options = {} }) {
+  const llmConfig = resolveFormatterLlmConfig(category, options);
+  const policyOverride = resolveFormatterPolicyOverride(llmConfig, options);
   return await callHubLlm({
-    callerTeam: CALLER_TEAM,
-    agent: LLM_AGENT,
-    selectorKey: LLM_SELECTOR_KEY,
-    abstractModel: 'anthropic_sonnet',
+    callerTeam: llmConfig.callerTeam,
+    agent: llmConfig.agent,
+    selectorKey: llmConfig.selectorKey,
+    abstractModel: llmConfig.abstractModel,
     systemPrompt,
     prompt: userPrompt,
-    maxTokens: 4096,
-    timeoutMs: LLM_TIMEOUT_MS,
+    maxTokens: llmConfig.maxTokens,
+    temperature: llmConfig.temperature,
+    timeoutMs: llmConfig.timeoutMs,
+    taskType: `edux_market_post_${category}`,
+    cacheEnabled: false,
+    policyOverride,
   });
 }
 
@@ -1024,19 +1136,17 @@ async function formatPost(category, slot, marketData, evidenceItems, technicalDa
     return { title, content, source: 'fixture_fallback' };
   }
 
-  const formatterModeEnv = {
-    crypto: 'EDUX_CRYPTO_FORMATTER_MODE',
-    kis: 'EDUX_KIS_FORMATTER_MODE',
-    overseas: 'EDUX_OVERSEAS_FORMATTER_MODE',
-  }[category];
-  if (formatterModeEnv && process.env[formatterModeEnv] !== 'llm') {
+  const llmConfig = resolveFormatterLlmConfig(category, options);
+  if (llmConfig.mode !== 'llm') {
     const content = normalizeSectionHeadingNumbers(buildFallbackContent(category, slot, marketData, evidenceItems, technicalData));
-    return { title, content, source: `${category}_deterministic` };
+    return { title, content, source: `${category}_deterministic`, formatterMode: llmConfig.mode };
   }
 
   let content = null;
   let quality = null;
   let source = 'hub_llm';
+  let lastLlmResponse = null;
+  let lastLlmError = null;
   for (let attempt = 0; attempt < 2; attempt += 1) {
     let llmResp;
     try {
@@ -1045,14 +1155,17 @@ async function formatPost(category, slot, marketData, evidenceItems, technicalDa
         : category === 'crypto'
           ? `${userPrompt}\n\n이전 응답이 품질 게이트를 통과하지 못했습니다. 반드시 순번 없이 이모지로 시작하는 6개 블록을 모두 포함하고, BTC/USDT 현재가·지지·저항·상승/하락 시나리오·무효화 조건·커뮤니티/뉴스 이슈·인공지능 추천안을 구체적으로 작성하세요. N/A/수집 대기/데이터 없음과 Notion/activity/좋아요/댓글 언급은 제외하세요.`
           : `${userPrompt}\n\n이전 응답이 품질 게이트를 통과하지 못했습니다. 반드시 순번 없이 이모지로 시작하는 6개 블록을 모두 포함하고, 중복 문장 없이 지수·수급·섹터·커뮤니티/뉴스 이슈·인공지능 추천안을 구체적으로 작성하며, Notion/activity/좋아요/댓글 언급은 제외하세요.`;
-      llmResp = await callFormatterLlm({ systemPrompt, userPrompt: prompt });
+      llmResp = await callFormatterLlm({ category, systemPrompt, userPrompt: prompt, options });
+      lastLlmResponse = llmResp;
     } catch (err) {
       console.error('[edu-x/formatter] callHubLlm 예외:', err?.message);
+      lastLlmError = err?.message || String(err);
       break;
     }
 
     if (!llmResp?.ok || !llmResp?.text) {
       console.error('[edu-x/formatter] LLM 응답 실패:', llmResp?.error);
+      lastLlmError = llmResp?.error || 'empty_llm_response';
       continue;
     }
 
@@ -1069,7 +1182,24 @@ async function formatPost(category, slot, marketData, evidenceItems, technicalDa
     quality = validateContentQuality(content, category);
   }
 
-  return { title, content, quality, source };
+  return {
+    title,
+    content,
+    quality,
+    source,
+    formatterMode: llmConfig.mode,
+    llm: {
+      requested: llmConfig,
+      used: source === 'hub_llm',
+      provider: lastLlmResponse?.provider || null,
+      model: lastLlmResponse?.model || null,
+      selectedRoute: lastLlmResponse?.selected_route || null,
+      fallbackCount: lastLlmResponse?.fallbackCount ?? null,
+      traceId: lastLlmResponse?.traceId || null,
+      error: lastLlmError,
+      policyOverrideEnabled: Boolean(resolveFormatterPolicyOverride(llmConfig, options)),
+    },
+  };
 }
 
 module.exports = {
@@ -1080,4 +1210,7 @@ module.exports = {
   buildKisTitle,
   buildOverseasTitle,
   displayMarketSymbol,
+  resolveFormatterMode,
+  resolveFormatterLlmConfig,
+  resolveFormatterPolicyOverride,
 };

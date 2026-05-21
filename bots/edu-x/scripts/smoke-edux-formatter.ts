@@ -3,9 +3,47 @@
 'use strict';
 
 const assert = require('assert');
-const { formatPost, validateContentQuality, buildCryptoTitle, buildKisTitle, buildOverseasTitle, displayMarketSymbol } = require('../lib/edux-formatter.ts');
+const {
+  formatPost,
+  validateContentQuality,
+  buildCryptoTitle,
+  buildKisTitle,
+  buildOverseasTitle,
+  displayMarketSymbol,
+  resolveFormatterMode,
+  resolveFormatterLlmConfig,
+  resolveFormatterPolicyOverride,
+} = require('../lib/edux-formatter.ts');
 const { formatContentForEduXWeb, validatePostQuality } = require('../lib/edux-runtime-support.ts');
 const { getFixturePayload } = require('../lib/edux-fixtures.ts');
+
+async function withCleanFormatterEnv(fn) {
+  const keys = [
+    'EDUX_FORMATTER_FIXTURE',
+    'EDUX_FORMATTER_MODE',
+    'EDUX_CRYPTO_FORMATTER_MODE',
+    'EDUX_KIS_FORMATTER_MODE',
+    'EDUX_OVERSEAS_FORMATTER_MODE',
+    'EDUX_FORMATTER_ABSTRACT_MODEL',
+    'EDUX_CRYPTO_FORMATTER_ABSTRACT_MODEL',
+    'EDUX_KIS_FORMATTER_ABSTRACT_MODEL',
+    'EDUX_OVERSEAS_FORMATTER_ABSTRACT_MODEL',
+    'EDUX_FORMATTER_SELECTOR_KEY',
+    'EDUX_CRYPTO_FORMATTER_SELECTOR_KEY',
+    'EDUX_KIS_FORMATTER_SELECTOR_KEY',
+    'EDUX_OVERSEAS_FORMATTER_SELECTOR_KEY',
+  ];
+  const saved = Object.fromEntries(keys.map((key) => [key, process.env[key]]));
+  for (const key of keys) delete process.env[key];
+  try {
+    return await fn();
+  } finally {
+    for (const key of keys) {
+      if (saved[key] === undefined) delete process.env[key];
+      else process.env[key] = saved[key];
+    }
+  }
+}
 
 async function check(category, slot) {
   const fixture = getFixturePayload(category);
@@ -47,17 +85,23 @@ async function main() {
   assert.equal(displayMarketSymbol('SOL'), 'SOL/USDT');
   const cryptoFixture = getFixturePayload('crypto');
   const cryptoPost = await formatPost('crypto', '1400', cryptoFixture.marketData, cryptoFixture.evidenceItems, cryptoFixture.technicalData, { fixture: true });
-  const originalFormatterFixture = process.env.EDUX_FORMATTER_FIXTURE;
-  delete process.env.EDUX_FORMATTER_FIXTURE;
-  const cryptoDefault = await formatPost('crypto', '1400', cryptoFixture.marketData, cryptoFixture.evidenceItems, cryptoFixture.technicalData);
-  assert.equal(cryptoDefault.source, 'crypto_deterministic', 'crypto formatter should default to deterministic mode');
+  const defaultLlmConfig = await withCleanFormatterEnv(() => {
+    assert.equal(resolveFormatterMode('crypto'), 'llm', 'formatter should default to LLM mode');
+    return resolveFormatterLlmConfig('crypto');
+  });
+  const defaultPolicyOverride = await withCleanFormatterEnv(() => resolveFormatterPolicyOverride(defaultLlmConfig));
+  assert.equal(defaultLlmConfig.abstractModel, 'anthropic_opus', 'formatter should request the high-quality abstract model by default');
+  assert.equal(defaultLlmConfig.selectorKey, 'investment.reporter', 'formatter should route through investment.reporter');
+  assert.equal(defaultPolicyOverride.chain[0].provider, 'openai-oauth', 'formatter should prefer the high-quality OpenAI route');
+  assert.equal(defaultPolicyOverride.chain[0].model, 'gpt-5.4', 'formatter should prefer the high-quality OpenAI model');
+  const cryptoDefault = await withCleanFormatterEnv(() => formatPost('crypto', '1400', cryptoFixture.marketData, cryptoFixture.evidenceItems, cryptoFixture.technicalData, { formatterMode: 'deterministic' }));
+  assert.equal(cryptoDefault.source, 'crypto_deterministic', 'crypto formatter should support deterministic override');
   const kisFixture = getFixturePayload('kis');
   const overseasFixture = getFixturePayload('overseas');
-  const kisDefault = await formatPost('kis', '0900', kisFixture.marketData, kisFixture.evidenceItems, {});
-  const overseasDefault = await formatPost('overseas', '2200', overseasFixture.marketData, overseasFixture.evidenceItems, {});
-  if (originalFormatterFixture !== undefined) process.env.EDUX_FORMATTER_FIXTURE = originalFormatterFixture;
-  assert.equal(kisDefault.source, 'kis_deterministic', 'kis formatter should default to deterministic card mode');
-  assert.equal(overseasDefault.source, 'overseas_deterministic', 'overseas formatter should default to deterministic card mode');
+  const kisDefault = await withCleanFormatterEnv(() => formatPost('kis', '0900', kisFixture.marketData, kisFixture.evidenceItems, {}, { formatterMode: 'deterministic' }));
+  const overseasDefault = await withCleanFormatterEnv(() => formatPost('overseas', '2200', overseasFixture.marketData, overseasFixture.evidenceItems, {}, { formatterMode: 'deterministic' }));
+  assert.equal(kisDefault.source, 'kis_deterministic', 'kis formatter should support deterministic card override');
+  assert.equal(overseasDefault.source, 'overseas_deterministic', 'overseas formatter should support deterministic card override');
   assert.equal(cryptoPost.content.includes('BTC/USDT'), true, 'crypto post should display BTC/USDT');
   assert.equal(cryptoPost.content.includes('ETH/USDT'), true, 'crypto post should display ETH/USDT');
   assert.equal(/BTCUSDT|ETHUSDT|SOLUSDT|XRPUSDT/.test(cryptoPost.content), false, 'crypto post should not expose raw exchange symbols');

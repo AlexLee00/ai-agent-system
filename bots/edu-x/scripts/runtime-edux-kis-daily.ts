@@ -237,6 +237,11 @@ async function main() {
   }
 
   const { title, content } = formatted;
+  const formatterMetadata = {
+    formatterSource: formatted.source,
+    formatterMode: formatted.formatterMode,
+    formatterLlm: formatted.llm || null,
+  };
   console.log(`[edu-x/kis] 본문: ${content.length}자`);
 
   const imagePaths = [];
@@ -244,7 +249,7 @@ async function main() {
   const quality = validatePostQuality({ content, imagePaths, category: CATEGORY });
   if (!quality.ok) {
     const errMsg = `품질 게이트 미달: ${JSON.stringify(quality)}`;
-    await logPublish({ title, content, imageUrls: [], status: 'fail', errorMsg: errMsg, metadata: { quality, formatterSource: formatted.source, imageAttachmentDisabled: true } });
+    await logPublish({ title, content, imageUrls: [], status: 'fail', errorMsg: errMsg, metadata: { quality, ...formatterMetadata, imageAttachmentDisabled: true } });
     console.error(`[edu-x/kis] ${errMsg}`);
     emitJsonIfRequested(ARGS.json, { ok: false, category: CATEGORY, slot: SLOT, status: 'quality_failed', quality });
     return;
@@ -257,9 +262,9 @@ async function main() {
       title,
       content,
       imagePaths,
-      metadata: { evidenceCount: evidenceItems.length, quality, formatterSource: formatted.source, fixture: ARGS.fixture, imageAttachmentDisabled: true },
+      metadata: { evidenceCount: evidenceItems.length, quality, ...formatterMetadata, fixture: ARGS.fixture, imageAttachmentDisabled: true },
     });
-    await logPublish({ title, content, imageUrls: [], status: 'dry_run', metadata: { evidenceCount: evidenceItems.length, quality, formatterSource: formatted.source, fixture: ARGS.fixture, artifact, imageAttachmentDisabled: true } });
+    await logPublish({ title, content, imageUrls: [], status: 'dry_run', metadata: { evidenceCount: evidenceItems.length, quality, ...formatterMetadata, fixture: ARGS.fixture, artifact, imageAttachmentDisabled: true } });
     console.log(`[edu-x/kis] ✅ DRY-RUN 완료`);
     await sendTelegram(`🔍 [edu-x/kis] Dry-run ${SLOT} — ${content.length}자, 이미지 첨부 없음`);
     emitJsonIfRequested(ARGS.json, { ok: true, category: CATEGORY, slot: SLOT, status: 'dry_run', quality, artifact, imagePaths });
@@ -269,7 +274,7 @@ async function main() {
   const liveGate = assertLivePublishAllowed({ tableOk: dbTable.ok, oneOffLiveTest: ARGS.oneOffLiveTest, fixture: ARGS.fixture });
   if (!liveGate.ok) {
     const errMsg = `live_publish_blocked: ${liveGate.reasons.join('; ')}`;
-    await logPublish({ title, content, imageUrls: [], status: 'skipped', errorMsg: errMsg, metadata: { liveGate, quality, imageAttachmentDisabled: true } });
+    await logPublish({ title, content, imageUrls: [], status: 'skipped', errorMsg: errMsg, metadata: { liveGate, quality, ...formatterMetadata, imageAttachmentDisabled: true } });
     console.error(`[edu-x/kis] ${errMsg}`);
     emitJsonIfRequested(ARGS.json, { ok: false, category: CATEGORY, slot: SLOT, status: 'live_blocked', reasons: liveGate.reasons });
     return;
@@ -282,7 +287,7 @@ async function main() {
   const client = getEduxClient();
   const result = await client.post({ title: publishTitle, content: finalContent });
   if (!result?.id) {
-    await logPublish({ title: publishTitle, content: finalContent, imageUrls, status: 'fail', errorMsg: 'API 발행 실패', metadata: { result, liveGate, imageAttachmentDisabled: true, contentFormat: 'html_blocks' } });
+    await logPublish({ title: publishTitle, content: finalContent, imageUrls, status: 'fail', errorMsg: 'API 발행 실패', metadata: { result, liveGate, ...formatterMetadata, imageAttachmentDisabled: true, contentFormat: 'html_blocks' } });
     await sendTelegram(`❌ [edu-x/kis] ${SLOT} 발행 실패`);
     return;
   }
@@ -291,7 +296,7 @@ async function main() {
   const postUrl = postUrlFor(client.getBaseUrl ? client.getBaseUrl() : 'https://edu-x.io', postId);
   const elapsed = ((Date.now() - startedAt) / 1000).toFixed(1);
 
-  await logPublish({ postId, postUrl, title: publishTitle, content: finalContent, imageUrls, status: 'success', metadata: { elapsedSec: Number(elapsed), liveGate, imageAttachmentDisabled: true, contentFormat: 'html_blocks' } });
+  await logPublish({ postId, postUrl, title: publishTitle, content: finalContent, imageUrls, status: 'success', metadata: { elapsedSec: Number(elapsed), liveGate, ...formatterMetadata, imageAttachmentDisabled: true, contentFormat: 'html_blocks' } });
   console.log(`[edu-x/kis] ✅ 발행 성공: ${postUrl} (${elapsed}s)`);
   if (shouldSendPublishSuccessTelegram({ args: ARGS, liveGate })) {
     await sendTelegram(`✅ [edu-x/kis] ${SLOT} 발행 완료!\n📝 ${publishTitle}\n🔗 ${postUrl}`);
