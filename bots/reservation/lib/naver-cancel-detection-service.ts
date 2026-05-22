@@ -76,11 +76,11 @@ export function createNaverCancelDetectionService(deps: CreateNaverCancelDetecti
           const cancelKey = buildCancelKey(candidate, todaySeoul);
           const tracked = await shouldProcessCancelledBooking(candidate);
           await addCancelledKey(cancelKey);
+          cycleNewCancelDetections += 1;
           if (!tracked) {
-            log(`ℹ️ [취소탭] 미추적 과거 취소건 스킵: ${maskPhone(candidate.phone || candidate.phoneRaw)} ${candidate.date} ${candidate.start}~${candidate.end} ${candidate.room || ''} (DB 추적 없음)`);
+            log(`ℹ️ [취소탭] 미추적 취소건 키 등록 후 픽코 취소 스킵: ${maskPhone(candidate.phone || candidate.phoneRaw)} ${candidate.date} ${candidate.start}~${candidate.end} ${candidate.room || ''} (DB 추적 없음)`);
             continue;
           }
-          cycleNewCancelDetections += 1;
           await runPickkoCancel(candidate, cancelKey);
         }
       } else {
@@ -118,11 +118,11 @@ export function createNaverCancelDetectionService(deps: CreateNaverCancelDetecti
           const key = buildCancelKey(candidate, todaySeoul);
           const tracked = await shouldProcessCancelledBooking(candidate);
           await addCancelledKey(key);
+          cycleNewCancelDetections += 1;
           if (!tracked) {
-            log(`ℹ️ [취소감지2E] 미추적 과거 취소건 스킵: ${maskPhone(candidate.phone || candidate.phoneRaw)} ${candidate.date} ${candidate.start}~${candidate.end} ${candidate.room || ''} (DB 추적 없음)`);
+            log(`ℹ️ [취소감지2E] 미추적 취소건 키 등록 후 픽코 취소 스킵: ${maskPhone(candidate.phone || candidate.phoneRaw)} ${candidate.date} ${candidate.start}~${candidate.end} ${candidate.room || ''} (DB 추적 없음)`);
             continue;
           }
-          cycleNewCancelDetections += 1;
           await runPickkoCancel(candidate, key);
         }
       } else {
