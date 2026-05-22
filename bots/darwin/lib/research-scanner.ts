@@ -156,6 +156,36 @@ function _sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+async function _postAlarmWithRetry(payload: Record<string, unknown>, label: string, maxAttempts = 3): Promise<{ ok?: boolean; error?: unknown; body?: Record<string, unknown> } | null> {
+  let lastResult: { ok?: boolean; error?: unknown; body?: Record<string, unknown> } | null = null;
+  let lastError = 'unknown_error';
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    try {
+      lastResult = await postAlarm(payload);
+      if (lastResult?.ok === true) return lastResult;
+
+      lastError = String(
+        lastResult?.error
+          || lastResult?.body?.delivery_error
+          || lastResult?.body?.reason
+          || lastResult?.body?.error
+          || 'not_delivered'
+      );
+    } catch (err) {
+      lastResult = null;
+      lastError = toErrorMessage(err);
+    }
+
+    console.warn(`[research-scanner] ${label} 알림 전달 실패 (${attempt}/${maxAttempts}): ${lastError}`);
+    if (attempt < maxAttempts) {
+      await _sleep(1000 * attempt);
+    }
+  }
+
+  return lastResult || { ok: false, error: lastError };
+}
+
 async function _mapWithConcurrency<T, R>(
   items: T[],
   concurrency: number,
@@ -494,7 +524,7 @@ async function _alertHighRelevance(
 
   lines.push('', `소요: ${Math.round((Date.now() - startTime) / 1000)}초`);
 
-  const alarmResult = await postAlarm({
+  const alarmResult = await _postAlarmWithRetry({
     message: lines.join('\n'),
     team: 'general',
     alertLevel: 1,
@@ -508,7 +538,7 @@ async function _alertHighRelevance(
       evaluated_count: evaluated.length,
       stored_count: storedCount,
     },
-  });
+  }, 'weekly_research_report');
   const alarmSent = alarmResult?.ok === true;
   if (!alarmSent) {
     console.warn('[research-scanner] 텔레그램 알림 전달 실패');
@@ -659,7 +689,7 @@ async function _generateWeeklyReport(): Promise<{ report: string; keywordEvoluti
   }
 
   const report = lines.join('\n');
-  await postAlarm({
+  await _postAlarmWithRetry({
     message: report.slice(0, 4000),
     team: 'general',
     alertLevel: 1,
@@ -671,7 +701,7 @@ async function _generateWeeklyReport(): Promise<{ report: string; keywordEvoluti
       keyword_evolution_count: keywordEvolutionCount,
       tasks_registered: tasksRegistered,
     },
-  });
+  }, 'weekly_research_summary');
 
   return { report, keywordEvolutionCount, tasksRegistered };
 }
@@ -804,6 +834,7 @@ module.exports = {
   run,
   _selectSearchers,
   _testOnly_weeklyResearchAlarmMeta: _weeklyResearchAlarmMeta,
+  _testOnly_postAlarmWithRetry: _postAlarmWithRetry,
 };
 
 if (require.main === module) {

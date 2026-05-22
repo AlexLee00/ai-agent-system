@@ -153,6 +153,24 @@
           }
         ]
       }
+    ],
+    "Notification": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "./bots/claude/scripts/notification-github-issue-update.sh"
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "./bots/claude/scripts/notification-telegram-alert.sh"
+          }
+        ]
+      }
     ]
   }
 }

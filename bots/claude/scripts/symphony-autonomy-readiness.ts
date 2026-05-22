@@ -6,6 +6,7 @@ const fs = require('fs');
 const path = require('path');
 const { buildAuditReport } = require('./symphony-migration-audit.ts');
 const { runSymphonyOrchestratorCycle } = require('../lib/symphony/orchestrator.ts');
+const { buildPatternReadinessReport } = require('../lib/symphony/pattern-readiness.ts');
 
 const ROOT = path.resolve(__dirname, '..', '..', '..');
 const REQUIRED_A2A_SKILLS = [
@@ -162,6 +163,7 @@ async function buildReadinessReport(options = {}) {
   const audit = buildAuditReport();
   const a2a = checkA2ASkills();
   const filesystemSkills = checkFilesystemSkills();
+  const patterns = buildPatternReadinessReport(ROOT);
   const orchestrator = await runSymphonyOrchestratorCycle({
     tasks: [{
       id: 'readiness_fixture',
@@ -182,6 +184,8 @@ async function buildReadinessReport(options = {}) {
 
   if (!a2a.ok) blockers.push(`missing_a2a_skills:${a2a.missing.join(',')}`);
   if (!filesystemSkills.ok) blockers.push(`missing_filesystem_skills:${filesystemSkills.missing.join(',')}`);
+  if (!patterns.ok) blockers.push(...patterns.blockers);
+  warnings.push(...(patterns.warnings || []));
   if (!orchestrator.ok) blockers.push(...orchestrator.blockers.map((blocker) => `orchestrator:${blocker}`));
   if (audit.modelRoute?.implementationProvider !== 'openai-oauth' || audit.modelRoute?.implementationRunner !== 'codex') {
     blockers.push('implementation_route_not_openai_codex');
@@ -232,6 +236,7 @@ async function buildReadinessReport(options = {}) {
         safety: orchestrator.safety,
         count: orchestrator.count,
       },
+      patterns,
       modelRoute: audit.modelRoute,
       launchd: audit.launchd,
       manifest: {

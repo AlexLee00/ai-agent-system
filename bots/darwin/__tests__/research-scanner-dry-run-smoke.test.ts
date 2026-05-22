@@ -10,6 +10,8 @@ type ModuleLoad = (request: string, parent: NodeModule | null, isMain: boolean) 
 async function main() {
   const originalLoad: ModuleLoad = Module._load as ModuleLoad;
   const forbiddenCalls: string[] = [];
+  const postAlarmResults: unknown[] = [];
+  let postAlarmCalls = 0;
 
   Module._load = function patchedLoad(request: string, parent: NodeModule | null, isMain: boolean) {
     if (request === './arxiv-client') {
@@ -93,7 +95,14 @@ async function main() {
       return {};
     }
     if (request === '../../../packages/core/lib/hub-alarm-client') {
-      return { postAlarm: async () => forbiddenCalls.push('postAlarm') };
+      return {
+        postAlarm: async () => {
+          postAlarmCalls += 1;
+          if (postAlarmResults.length > 0) return postAlarmResults.shift();
+          forbiddenCalls.push('postAlarm');
+          return { ok: false };
+        },
+      };
     }
     if (request === '../../../packages/core/lib/central-logger') {
       return { createLogger: () => ({ info: () => {}, warn: () => {}, error: () => {} }) };
@@ -116,6 +125,12 @@ async function main() {
       String(weeklyMeta.incidentKey || '').startsWith('darwin:research-scanner:weekly_research_report:'),
       `unexpected weekly incident key: ${weeklyMeta.incidentKey}`,
     );
+
+    postAlarmResults.push({ ok: false, error: 'timeout' }, { ok: true });
+    const retryResult = await scanner._testOnly_postAlarmWithRetry({ message: 'retry test' }, 'retry_test', 2);
+    assert.strictEqual(retryResult?.ok, true);
+    assert.strictEqual(postAlarmCalls, 2);
+    postAlarmCalls = 0;
 
     const result = await scanner.run({ dryRun: true, maxEvaluations: 2 });
 

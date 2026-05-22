@@ -21,7 +21,7 @@
 ### 목표 상태
 ```
 마스터(Alex)
-  → Notion/Telegram에 ticket 생성 (자동!)
+  → GitHub Issue / Telegram / Hub ticket 생성 (자동!)
     → Team Jay Symphony Orchestrator (클로드팀장!)
       → 각 팀 agent에 자동 dispatch
         → 격리된 workspace에서 실행
@@ -46,7 +46,7 @@
 ```
 ┌─────────────────────────────────────────────────────────┐
 │  Control Plane (다중 소스!)                                │
-│  Notion / Telegram / GitHub Issues / Hub /tasks           │
+│  GitHub Issues / Telegram / Hub /tasks                    │
 └────────────────┬────────────────────────────────────────┘
                  │ poll (5분 간격)
                  ▼
@@ -90,7 +90,7 @@ interface OrchestratorConfig {
 
 interface SymphonyTask {
   id: string;
-  source: 'notion' | 'telegram' | 'github' | 'hub';
+  source: 'telegram' | 'github' | 'hub';
   targetTeam: TeamId;
   title: string;
   body: string;
@@ -111,31 +111,30 @@ type TeamId = 'claude' | 'luna' | 'blog' | 'ska' | 'darwin' | 'sigma';
 3. 팀 라우팅 (targetTeam 결정)
 4. Agent Workspace 할당
 5. Agent Runner 실행 (Hub LLM Gateway)
-6. 상태 업데이트 (Notion + Telegram)
+6. 상태 업데이트 (GitHub + Telegram + Hub)
 7. 완료 시 PR 생성 + 마스터 알림
 
 ### 2-2. Control Plane Integration
 
 ```
-소스 1: Notion
-  - `/hub/notion/tasks` 또는 MCP notion-fetch
-  - DB: "Team Jay Tasks" 페이지
-  - 필터: status=todo, assignee=claude-team
+소스 1: GitHub Issues
+  - bots/hub/lib/webhooks/github-issues.ts
+  - label: symphony-task, team:<teamId>
+  - issue opened/closed/reopened → Hub tasks 동기화
 
 소스 2: Telegram
   - 12 topics 중 "task" prefix 메시지
   - /task @팀명 제목 형식
   - Bot webhook → Hub → Orchestrator
 
-소스 3: GitHub Issues
-  - bots/hub/src/routes/github.ts (Phase 2 추가)
-  - label: symphony-task, 팀명 label
-  - GitHub MCP 활용
-
-소스 4: Hub /tasks (신규!)
+소스 3: Hub /tasks
   - POST /hub/tasks — ticket 생성
   - GET  /hub/tasks?status=todo&team=:teamId — 폴링
   - PATCH /hub/tasks/:id — 상태 업데이트
+
+제외 소스: Notion
+  - 2026-05-17 enhanced plan의 "Notion 제외" 정책을 우선 적용
+  - dispatcher는 notion source를 hub fallback으로 정규화
 ```
 
 ### 2-3. Agent Workspace
@@ -181,14 +180,14 @@ DB: PostgreSQL (jay DB)
 
 CREATE TABLE IF NOT EXISTS symphony_tasks (
   id           TEXT PRIMARY KEY,
-  source       TEXT NOT NULL,          -- notion/telegram/github/hub
+  source       TEXT NOT NULL,          -- telegram/github/hub
   target_team  TEXT NOT NULL,
   title        TEXT NOT NULL,
   body         TEXT,
   priority     TEXT DEFAULT 'normal',
   status       TEXT DEFAULT 'todo',    -- todo/in_progress/review/done/blocked
   workspace_id TEXT,
-  source_ref   TEXT,                   -- 원본 ID (Notion page ID 등)
+  source_ref   TEXT,                   -- 원본 ID (GitHub issue URL 등)
   pr_url       TEXT,
   error_msg    TEXT,
   created_at   TIMESTAMPTZ DEFAULT NOW(),
@@ -305,7 +304,7 @@ bots/claude/lib/symphony/
   
   [Phase 2 추가]
   orchestrator.ts    🔲 (신규!)
-  control-plane.ts   🔲 (신규! — Notion/Telegram/GitHub/Hub)
+  control-plane.ts   🔲 (신규! — GitHub/Telegram/Hub)
   team-dispatcher.ts 🔲 (신규! — 6팀 라우팅)
   pr-publisher.ts    🔲 (신규! — PR 자동 생성)
 ```
@@ -355,7 +354,7 @@ Python:  Darwin R&D 서브프로세스 유지 (현행)
 ```
 구현 목표:
   1. Hub /tasks API 추가 (bots/hub/src/routes/tasks.ts)
-  2. Notion + Telegram Control Plane 연동
+  2. GitHub + Telegram + Hub Control Plane 연동
   3. orchestrator.ts (TypeScript, polling loop)
   4. team-dispatcher.ts (6팀 라우팅)
   5. workspace-adapter.ts 업그레이드 (mutatesGit: true)
@@ -399,7 +398,8 @@ Python:  Darwin R&D 서브프로세스 유지 (현행)
 
 **Phase 2에서 확장 전략**:
 - 기존 `source: 'docs_auto_dev'` 유지 (하위 호환)
-- `source: 'notion' | 'telegram' | 'github' | 'hub'` 추가
+- `source: 'telegram' | 'github' | 'hub'` 유지
+- `source: 'notion'`은 Notion 제외 정책에 따라 `hub` fallback 처리
 - `workspace-adapter.ts`: `mutatesGit: false` → `true` 업그레이드
 - `runner-adapter.ts`: plan → 실제 실행으로 업그레이드
 
@@ -410,7 +410,7 @@ Python:  Darwin R&D 서브프로세스 유지 (현행)
 ```
 Phase 2 완료 기준:
   ✅ Hub /tasks API: POST/GET/PATCH 동작
-  ✅ Notion ticket 1개 → symphony_tasks 자동 삽입
+  ✅ GitHub/Telegram/Hub ticket 1개 → symphony_tasks 자동 삽입
   ✅ Telegram /task 명령 → ticket 생성
   ✅ Orchestrator polling loop 5분 동작 (launchd)
 
