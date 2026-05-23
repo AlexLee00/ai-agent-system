@@ -444,6 +444,31 @@ export function evaluateTradeDataEntryGuard(signal = {}, env = process.env) {
     }
   }
 
+  if (strategyFamily === 'promotion_ready_shadow') {
+    warnings.push('promotion_ready_shadow_current_epoch_probe_only');
+    meta.promotionReadyShadow = {
+      reason: 'current operating-epoch promotion_ready_shadow closed=3, winRate=0%, avgPnl=-5.12%; keep observation/probe until sample quality recovers',
+      familyPerformanceBias,
+      externalEvidenceCount,
+      hasTechnicalPresignal: technicalPresignal,
+    };
+    applySizingAdjustment(meta, {
+      code: 'promotion_ready_shadow_current_epoch_probe_only',
+      multiplier: market === 'domestic' ? 0.25 : market === 'overseas' ? 0.35 : 0.5,
+      reason: 'promotion_ready_shadow 최근 실현 성과가 약해 신규 진입은 observation/probe 수준으로 축소',
+    });
+    if ((market === 'domestic' || market === 'overseas') && (noExternalEvidence || noTechnicalPresignal)) {
+      blockers.push('promotion_ready_shadow_without_confirmation');
+      meta.promotionReadyShadow.blockerReason = 'promotion_ready_shadow requires fresh external evidence and technical confirmation before equity BUY';
+    }
+    if (confirmationQuality.grade === 'thin' || confirmationQuality.grade === 'missing') {
+      warnings.push('promotion_ready_shadow_confirmation_quality_thin');
+      if (strictConfirmationGuard || market === 'domestic' || market === 'overseas') {
+        blockers.push('promotion_ready_shadow_confirmation_quality_thin');
+      }
+    }
+  }
+
   const weak = checkTradeDataWeakSymbol(signal.symbol, market, env);
   if (weak.key) {
     meta.weakSymbol = weak;
@@ -515,6 +540,47 @@ export function evaluateTradeDataEntryGuard(signal = {}, env = process.env) {
     }
   }
 
+  if (market === 'crypto' && strategyFamily === 'short_term_scalping') {
+    warnings.push('crypto_short_term_scalping_early_exit_loss_pressure');
+    meta.cryptoShortTermScalping = {
+      reason: 'current operating-epoch sub-1h exits include 11 crypto samples with 6 losses; require fast-read confirmation before fresh scalp BUY',
+      externalEvidenceCount,
+      hasTechnicalPresignal: technicalPresignal,
+      confirmationGrade: confirmationQuality.grade,
+    };
+    applySizingAdjustment(meta, {
+      code: 'crypto_short_term_scalping_early_exit_loss_pressure',
+      multiplier: tradeMode === 'validation' ? 0.75 : 0.65,
+      reason: 'short-term/scalp 조기 손실 압력이 있어 신규 진입 sizing을 축소',
+    });
+    if (regime.includes('ranging') && (noExternalEvidence || noTechnicalPresignal)) {
+      blockers.push('crypto_short_term_scalping_ranging_without_confirmation');
+      meta.cryptoShortTermScalping.blockerReason = 'ranging scalp entries require external evidence and technical presignal after early-exit loss cluster';
+    }
+    if (confirmationQuality.grade === 'thin' || confirmationQuality.grade === 'missing') {
+      warnings.push('crypto_short_term_scalping_confirmation_quality_thin');
+      if (strictConfirmationGuard) blockers.push('crypto_short_term_scalping_confirmation_quality_thin');
+    }
+  }
+
+  if (market === 'crypto' && regime.includes('ranging')) {
+    warnings.push('crypto_ranging_current_epoch_probe_only');
+    meta.cryptoRangingPressure = {
+      reason: 'current operating-epoch ranging closed=12, avgPnl=-2.59%, winRate=25%; new BUY requires reversal/technical confirmation',
+      externalEvidenceCount,
+      hasTechnicalPresignal: technicalPresignal,
+    };
+    applySizingAdjustment(meta, {
+      code: 'crypto_ranging_current_epoch_probe_only',
+      multiplier: tradeMode === 'validation' ? 0.7 : 0.55,
+      reason: 'ranging 장세 손실 압력으로 신규 BUY sizing 축소',
+    });
+    if ((strategyFamily === 'mean_reversion' || strategyFamily === 'short_term_scalping') && (noExternalEvidence || noTechnicalPresignal)) {
+      blockers.push('crypto_ranging_without_reversal_confirmation');
+      meta.cryptoRangingPressure.blockerReason = 'ranging mean-reversion/scalp entries require reversal evidence and technical presignal';
+    }
+  }
+
   if (tradeMode === 'validation' && (regime.includes('bear') || regime.includes('ranging'))) {
     warnings.push('validation_regime_probe_only');
     meta.validationRegime = {
@@ -534,6 +600,11 @@ export function evaluateTradeDataEntryGuard(signal = {}, env = process.env) {
     meta.overseas = {
       reason: 'overseas sample is small and avgPnl=-9.63%; keep capped until >=30 closed outcomes',
     };
+    applySizingAdjustment(meta, {
+      code: 'overseas_sample_cap_required',
+      multiplier: tradeMode === 'validation' ? 0.55 : 0.45,
+      reason: 'overseas 표본이 작고 현재 평균 손실이라 신규 BUY sizing을 캡',
+    });
   }
 
   return {

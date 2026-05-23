@@ -151,11 +151,11 @@ export function applyExitPlanGuard(candidate) {
     }
 
     if (familyBias === 'downweight_by_pnl') {
-      minHoldHours *= 0.75;
-      if (Number.isFinite(mildLossGracePct)) mildLossGracePct *= 0.7;
+      minHoldHours *= 1.1;
+      if (Number.isFinite(mildLossGracePct)) mildLossGracePct *= 1.1;
     } else if (familyBias === 'downweight_by_win_rate') {
-      minHoldHours *= 0.88;
-      if (Number.isFinite(mildLossGracePct)) mildLossGracePct *= 0.85;
+      minHoldHours *= 1.05;
+      if (Number.isFinite(mildLossGracePct)) mildLossGracePct *= 1.05;
     } else if (familyBias === 'upweight_candidate') {
       minHoldHours *= 1.1;
       if (Number.isFinite(mildLossGracePct)) mildLossGracePct *= 1.1;
@@ -175,6 +175,7 @@ export function applyExitPlanGuard(candidate) {
     if (watchMission === 'risk_sentinel' && String(candidate.reasonCode || '').includes('bearish')) {
       minHoldHours *= 0.8;
     }
+
   }
 
   if (!hardReason && minHoldHours > 0 && candidate.heldHours < minHoldHours) {
@@ -182,6 +183,14 @@ export function applyExitPlanGuard(candidate) {
       allowed: false,
       level: 'guarded',
       reason: `전략 최소 보유시간 ${formatHours(minHoldHours)}h 미만 (${formatHours(candidate.heldHours)}h)`,
+    };
+  }
+
+  if (!hardReason && candidate.pnlPct < 0 && candidate.heldHours < 1) {
+    return {
+      allowed: false,
+      level: 'guarded',
+      reason: `비하드스탑 조기 손실 종료 재확인 필요 (${formatHours(candidate.heldHours)}h < 1.0h, ${formatPct(candidate.pnlPct)}%)`,
     };
   }
 

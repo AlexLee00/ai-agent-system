@@ -8,6 +8,7 @@ import {
   summarizeRowsByOperatingEpoch,
 } from './luna-operating-epoch.ts';
 import { deriveTradeJournalNumericId } from './posttrade-trade-journal-adapter.ts';
+import { buildTradeDataHygieneReport } from './trade-data-hygiene.ts';
 
 function rowsOf(result) {
   if (Array.isArray(result)) return result;
@@ -43,6 +44,7 @@ export const TRADE_DATA_REINFORCEMENT_CONTRACT = [
   'signal_pre_filter',
   'trade_data_derived_guards',
   'trade_pattern_clusterer',
+  'trade_data_hygiene_doctor',
 ];
 
 export async function buildTradeDataAnalysisReport({ limit = 5000, generatedAt = new Date().toISOString() } = {}) {
@@ -148,19 +150,36 @@ export async function buildTradeDataAnalysisReport({ limit = 5000, generatedAt =
   const realizedCount = num(realized.realized_count);
   const qualityCount = num(qualityRows[0]?.count);
   const reflexionCount = num(reflexionRows[0]?.count);
+  const realizedPnlCoverage = {
+    sellCount,
+    realizedCount,
+    coverage: sellCount > 0 ? Number((realizedCount / sellCount).toFixed(4)) : 1,
+  };
+  const qualityCoverage = {
+    closedJournalTrades: closedJournalTradeIds.length,
+    evaluatedClosedJournalTrades: qualityCount,
+    coverage: closedJournalTradeIds.length > 0 ? Number((qualityCount / closedJournalTradeIds.length).toFixed(4)) : 1,
+  };
+  const hygiene = await buildTradeDataHygieneReport({
+    generatedAt,
+    realizedPnlCoverage,
+    qualityCoverage,
+  });
 
   const reinforcementCoverage = TRADE_DATA_REINFORCEMENT_CONTRACT.map((id) => ({ id, status: 'implemented' }));
   const warnings = [];
   if (signalFailureRate != null && signalFailureRate > 0.3) warnings.push('signal_failure_rate_high');
   if (analytics.status !== 'ready') warnings.push('trade_analytics_needs_attention');
+  if (hygiene.status !== 'ready') warnings.push(...hygiene.findings.map((finding) => finding.id));
   if (analytics.tpSl.unset.closed > 0) warnings.push('closed_trade_tp_sl_missing_history');
   if (sellCount > realizedCount) warnings.push('realized_pnl_backfill_pending');
   if (qualityCount < closedJournalTradeIds.length) warnings.push('posttrade_evaluation_backfill_pending');
   if (failedSignals > reflexionCount) warnings.push('failed_reflexion_backfill_pending');
+  const uniqueWarnings = [...new Set(warnings)];
 
   return {
     ok: true,
-    status: warnings.length ? 'needs_attention' : 'ready',
+    status: uniqueWarnings.length ? 'needs_attention' : 'ready',
     generatedAt,
     operatingEpoch: getLunaOperatingEpoch(),
     signals: {
@@ -174,30 +193,24 @@ export async function buildTradeDataAnalysisReport({ limit = 5000, generatedAt =
     },
     trades: {
       byExchangeSide: tradeRows,
-      realizedPnlCoverage: {
-        sellCount,
-        realizedCount,
-        coverage: sellCount > 0 ? Number((realizedCount / sellCount).toFixed(4)) : 1,
-      },
+      realizedPnlCoverage,
     },
     journal: analytics,
     posttrade: {
       qualityEvaluations: qualityCount,
-      qualityCoverage: {
-        closedJournalTrades: closedJournalTradeIds.length,
-        evaluatedClosedJournalTrades: qualityCount,
-        coverage: closedJournalTradeIds.length > 0 ? Number((qualityCount / closedJournalTradeIds.length).toFixed(4)) : 1,
-      },
+      qualityCoverage,
       failureReflexions: reflexionCount,
       posttradeSkills: num(skillRows[0]?.count),
     },
+    hygiene,
     agents: {
       topContextAgents: agentRows,
     },
     reinforcementCoverage,
-    warnings,
+    warnings: uniqueWarnings,
     nextActions: [
       ...(analytics.nextActions || []),
+      ...(hygiene.nextActions || []),
       ...(sellCount > realizedCount ? ['npm --prefix bots/investment run -s runtime:pnl-backfill -- --json, then apply with --apply --confirm=runtime-pnl-backfill after review'] : []),
       ...(analytics.tpSl.unset.closed > 0 ? ['review historical closed trades without tp_sl_set=true'] : []),
       ...(qualityCount < closedJournalTradeIds.length ? ['npm --prefix bots/investment run -s runtime:posttrade-feedback-worker -- --once --force --market=all --limit=20 --dry-run --json (current operating epoch only), then run without --dry-run after review'] : []),

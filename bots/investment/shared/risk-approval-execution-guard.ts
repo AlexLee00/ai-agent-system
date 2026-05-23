@@ -36,6 +36,7 @@ export function buildExecutionRiskApprovalGuard(signal = {}, {
     return {
       approved: false,
       code: `${codePrefix}_nemesis_bypass_guard`,
+      status: 'blocked',
       reason: `네메시스 승인 없는 BUY signal 실행 차단 (verdict=${verdict || 'null'})`,
       meta: {
         market,
@@ -64,6 +65,7 @@ export function buildExecutionRiskApprovalGuard(signal = {}, {
     return {
       approved: false,
       code: `${codePrefix}_stale_approval`,
+      status: 'blocked',
       reason: result.rejectReason || staleStep?.reason || '승인 freshness 재검증 실패',
       meta: {
         market,

@@ -82,6 +82,16 @@ function findBucket(buckets = [], name) {
   return (buckets || []).find((bucket) => bucket.name === name) || null;
 }
 
+const STRATEGY_WARNING_MIN_CLOSED = 10;
+
+function buildStrategyQualityStatus(bucket = null) {
+  const closed = Number(bucket?.closed || 0);
+  const avgPnlPercent = Number(bucket?.avgPnlPercent);
+  if (!Number.isFinite(avgPnlPercent) || avgPnlPercent >= 0) return 'ok';
+  if (closed >= STRATEGY_WARNING_MIN_CLOSED) return 'warning';
+  return 'watch';
+}
+
 function buildActions({ summary, strategyFamily, tpSl, marketRegime, earlyExit }) {
   const trendFollowing = findBucket(strategyFamily.buckets, 'trend_following');
   const actions = [
@@ -97,11 +107,12 @@ function buildActions({ summary, strategyFamily, tpSl, marketRegime, earlyExit }
     },
     {
       id: 'trend_following_quality_review',
-      status: trendFollowing?.closed >= 3 && Number(trendFollowing.avgPnlPercent) < 0 ? 'warning' : 'ok',
+      status: buildStrategyQualityStatus(trendFollowing),
       evidence: {
         closed: trendFollowing?.closed || 0,
         avgPnlPercent: trendFollowing?.avgPnlPercent ?? null,
         winRate: trendFollowing?.winRate ?? null,
+        minimumClosedForWarning: STRATEGY_WARNING_MIN_CLOSED,
       },
     },
     {

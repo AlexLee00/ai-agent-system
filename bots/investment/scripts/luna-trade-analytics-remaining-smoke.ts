@@ -150,6 +150,36 @@ export async function runSmoke() {
     assert.ok(meanReversionGuard.blockers.includes('crypto_mean_reversion_without_reversal_evidence'));
     assert.equal(meanReversionGuard.meta.sizingMultiplier, 0.55);
 
+    const rangingScalpGuard = evaluateTradeDataEntryGuard({
+      symbol: 'AIGENSYN/USDT',
+      exchange: 'binance',
+      action: 'BUY',
+      confidence: 0.7,
+      amount_usdt: 100,
+      strategy_family: 'short_term_scalping',
+      market_regime: 'ranging',
+      strategy_route: { selectedFamily: 'short_term_scalping', externalEvidence: { evidenceCount: 0 } },
+      hasTechnicalPresignal: false,
+    });
+    assert.equal(rangingScalpGuard.blocked, true, 'ranging short-term scalp without confirmation must be blocked');
+    assert.ok(rangingScalpGuard.blockers.includes('crypto_short_term_scalping_ranging_without_confirmation'));
+    assert.ok(rangingScalpGuard.blockers.includes('crypto_ranging_without_reversal_confirmation'));
+    assert.equal(rangingScalpGuard.meta.sizingMultiplier, 0.55);
+
+    const promotionReadyGuard = evaluateTradeDataEntryGuard({
+      symbol: '031330',
+      exchange: 'kis',
+      action: 'BUY',
+      confidence: 0.72,
+      amount_usdt: 200000,
+      strategy_family: 'promotion_ready_shadow',
+      strategy_route: { selectedFamily: 'promotion_ready_shadow', externalEvidence: { evidenceCount: 0 } },
+      hasTechnicalPresignal: false,
+    });
+    assert.equal(promotionReadyGuard.blocked, true, 'promotion_ready_shadow equity entry must require confirmation');
+    assert.ok(promotionReadyGuard.blockers.includes('promotion_ready_shadow_without_confirmation'));
+    assert.equal(promotionReadyGuard.meta.sizingMultiplier, 0.25);
+
     const stablecoinGuard = evaluateTradeDataEntryGuard({
       symbol: 'RLUSD/USDT',
       exchange: 'binance',
@@ -285,6 +315,8 @@ export async function runSmoke() {
       trendStrictConfirmationGuard,
       trendingBullGuard,
       meanReversionGuard,
+      rangingScalpGuard,
+      promotionReadyGuard,
       sellNoop,
       domesticGuard,
       autotune: { learningRows: dataset.learningRows, preAutotuneIncluded: dataset.preAutotuneIncluded },

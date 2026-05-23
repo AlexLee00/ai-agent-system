@@ -35,6 +35,21 @@ const hardExit = applyExitPlanGuard({
 });
 assert.equal(hardExit.allowed, true);
 
+const earlyLossExit = applyExitPlanGuard({
+  ...guardedCandidate,
+  heldHours: 0.5,
+  pnlPct: -0.9,
+  reasonCode: 'dynamic_trail_stop_breached',
+  strategyProfile: {
+    exitPlan: {
+      minHoldHours: 0,
+      mildLossGracePct: -0.5,
+    },
+  },
+});
+assert.equal(earlyLossExit.allowed, false);
+assert.match(earlyLossExit.reason, /조기 손실 종료 재확인/);
+
 const hardPreflight = await getExecutionPreflight({
   ...guardedCandidate,
   reasonCode: 'stop_loss_threshold',
@@ -47,5 +62,6 @@ console.log(JSON.stringify({
   ok: true,
   smoke: 'strategy-exit-preflight-guard',
   guarded: guardedPreflight.code,
+  earlyLossExit: earlyLossExit.level,
   hardExit: hardPreflight.code,
 }, null, 2));

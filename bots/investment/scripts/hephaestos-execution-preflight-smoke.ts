@@ -64,6 +64,10 @@ const reentryReject = await rejectExecution({
 });
 assert.equal(reentryReject.success, false);
 assert.equal(isExpectedExecutionPolicyBlock('live_position_reentry_blocked'), true);
+assert.equal(isExpectedExecutionPolicyBlock('capital_guard_rejected'), true);
+assert.equal(isExpectedExecutionPolicyBlock('position_sizing_rejected'), true);
+assert.equal(isExpectedExecutionPolicyBlock('trade_data_entry_guard_rejected'), true);
+assert.equal(isExpectedExecutionPolicyBlock('journal_open_entry_missing_for_sell'), true);
 assert.equal(reentryPersisted.payload.status, 'blocked');
 
 const payload = {

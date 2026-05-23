@@ -69,10 +69,12 @@ export function runRiskApprovalExecutionGuardSmoke() {
 
   assert(bypass.approved === false, 'expected missing nemesis approval to block');
   assert(bypass.code === 'test_nemesis_bypass_guard', `unexpected bypass code: ${bypass.code}`);
+  assert(bypass.status === 'blocked', `unexpected bypass status: ${bypass.status}`);
   assert(bypass.meta?.execution_blocked_by === 'smoke_guard', 'expected blocked_by metadata');
 
   assert(stale.approved === false, 'expected stale approval to block');
   assert(stale.code === 'test_stale_approval', `unexpected stale code: ${stale.code}`);
+  assert(stale.status === 'blocked', `unexpected stale status: ${stale.status}`);
   assert(stale.meta?.risk_approval_execution?.decision === 'REJECT', 'expected freshness model rejection metadata');
   assert(stale.meta?.risk_approval_execution?.steps?.[0]?.model === 'execution_freshness', 'expected execution_freshness step');
 

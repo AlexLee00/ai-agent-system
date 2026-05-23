@@ -10,16 +10,10 @@
 
 import { notifyCircuitBreaker, notifyTradeSkip } from '../../shared/report.ts';
 import { resolveExpectedSellNoopStatus } from '../../shared/trade-data-derived-guards.ts';
-
-const EXPECTED_POLICY_BLOCK_CODES = new Set([
-  'position_mode_conflict',
-  'paper_position_reentry_blocked',
-  'live_position_reentry_blocked',
-  'same_day_reentry_blocked',
-]);
+import { isExpectedPolicyBlockCode } from '../../shared/trade-data-hygiene.ts';
 
 export function isExpectedExecutionPolicyBlock(code = '') {
-  return EXPECTED_POLICY_BLOCK_CODES.has(String(code || '').trim());
+  return isExpectedPolicyBlockCode(code);
 }
 
 export function createSignalFailurePersister({

@@ -143,7 +143,7 @@ async function executeSignal(signal) {
       console.error(`  🛡️ [헤파이스토스] ${reason}`);
       if (signalId) {
         await db.updateSignalBlock(signalId, {
-          status: SIGNAL_STATUS.FAILED,
+          status: executionGuard.status || SIGNAL_STATUS.FAILED,
           reason: reason.slice(0, 180),
           code: executionGuard.code,
           meta: executionGuard.meta,

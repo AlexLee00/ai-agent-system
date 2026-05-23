@@ -40,6 +40,7 @@ import { getMarketOrderRule } from '../shared/order-rules.ts';
 import { buildExecutionRiskApprovalGuard } from '../shared/risk-approval-execution-guard.ts';
 import { attachExecutionToPositionStrategyTracked } from '../shared/execution-attach.ts';
 import { resolveExpectedSellNoopStatus } from '../shared/trade-data-derived-guards.ts';
+import { resolveExpectedPolicyBlockStatus } from '../shared/trade-data-hygiene.ts';
 import { buildHanulExecutionAgentPlan } from './hanul/execution-agent-plan.ts';
 import pgPool from '../../../packages/core/lib/pg-pool.js';
 
@@ -108,6 +109,7 @@ async function markSignalFailed(signalId, reason) {
 async function failHanulSignal(signalId, {
   reason,
   code = null,
+  status = null,
   market = 'domestic',
   symbol = null,
   action = null,
@@ -118,6 +120,7 @@ async function failHanulSignal(signalId, {
   await markSignalFailedDetailed(signalId, {
     reason,
     code,
+    status,
     market,
     symbol,
     action,
@@ -126,6 +129,10 @@ async function failHanulSignal(signalId, {
     meta,
   });
   return { success: false, reason: reason || error || null, error: error || null };
+}
+
+function resolveHanulFailureStatus(code = null, fallback = SIGNAL_STATUS.FAILED) {
+  return resolveExpectedPolicyBlockStatus(code, fallback);
 }
 
 async function enforceHanulNemesisApproval(signal, market = 'domestic') {
@@ -145,7 +152,7 @@ async function enforceHanulNemesisApproval(signal, market = 'domestic') {
     console.error(`  🛡️ [한울] ${reason}`);
     if (signalId) {
       await db.updateSignalBlock(signalId, {
-        status: SIGNAL_STATUS.FAILED,
+        status: executionGuard.status || resolveHanulFailureStatus(executionGuard.code),
         reason: reason.slice(0, 180),
         code: executionGuard.code,
         meta: executionGuard.meta,
@@ -154,6 +161,7 @@ async function enforceHanulNemesisApproval(signal, market = 'domestic') {
     const failed = await failHanulSignal(signalId, {
       reason,
       code: executionGuard.code,
+      status: executionGuard.status || resolveHanulFailureStatus(executionGuard.code),
       market,
       symbol,
       action,
@@ -331,6 +339,7 @@ export function alignHanulSellQuantityWithBroker({
 async function markSignalFailedDetailed(signalId, {
   reason = null,
   code = null,
+  status = null,
   market = 'domestic',
   symbol = null,
   action = null,
@@ -342,7 +351,7 @@ async function markSignalFailedDetailed(signalId, {
   const resolvedCode = code || inferHanulBlockCode(normalizedReason || '', market);
   const noop = resolveExpectedSellNoopStatus({ action, code: resolvedCode });
   await db.updateSignalBlock(signalId, {
-    status: noop.status || SIGNAL_STATUS.FAILED,
+    status: status || noop.status || resolveHanulFailureStatus(resolvedCode),
     reason: normalizedReason,
     code: resolvedCode,
     meta: {

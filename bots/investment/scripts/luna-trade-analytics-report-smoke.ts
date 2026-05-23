@@ -3,6 +3,7 @@
 import assert from 'node:assert/strict';
 import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
 import { safeJournalPnlPercent } from '../shared/trade-journal-db.ts';
+import { buildTradeAnalyticsReport } from '../shared/trade-analytics-report.ts';
 import { runTradeAnalyticsReport } from './runtime-luna-trade-analytics-report.ts';
 
 function findAction(report, id) {
@@ -43,6 +44,26 @@ export async function runSmoke() {
   assert.equal(findAction(report, 'early_exit_cluster_review')?.status, 'watch');
   assert.ok(report.nextActions.some((action) => action.includes('rebuild-pnl-percent')));
   assert.ok(report.nextActions.some((action) => action.includes('autotune')));
+
+  const immatureTrendReport = buildTradeAnalyticsReport([
+    { status: 'closed', market: 'crypto', symbol: 'A/USDT', strategy_family: 'trend_following', pnl_percent: -1, tp_sl_set: true },
+    { status: 'closed', market: 'crypto', symbol: 'B/USDT', strategy_family: 'trend_following', pnl_percent: -2, tp_sl_set: true },
+    { status: 'closed', market: 'crypto', symbol: 'C/USDT', strategy_family: 'trend_following', pnl_percent: -3, tp_sl_set: true },
+  ], { includeMarketSegments: false });
+  assert.equal(findAction(immatureTrendReport, 'trend_following_quality_review')?.status, 'watch');
+  assert.equal(immatureTrendReport.status, 'ready');
+
+  const matureTrendRows = Array.from({ length: 10 }, (_, index) => ({
+    status: 'closed',
+    market: 'crypto',
+    symbol: `T${index}/USDT`,
+    strategy_family: 'trend_following',
+    pnl_percent: -1,
+    tp_sl_set: true,
+  }));
+  const matureTrendReport = buildTradeAnalyticsReport(matureTrendRows, { includeMarketSegments: false });
+  assert.equal(findAction(matureTrendReport, 'trend_following_quality_review')?.status, 'warning');
+  assert.equal(matureTrendReport.status, 'needs_attention');
   return {
     ok: true,
     status: report.status,
