@@ -255,11 +255,11 @@ async function _callWithSelectorChain(req, selectorChain, team) {
     console.warn(`[llm/unified] ${selectorChain.selectorKey}:${selectedRoute} 실패 (${result.error}) → 다음 시도`);
   }
 
+  const safeFallback = _safeFallbackForSelectorExhaustion(req, selectorChain, attempts, team);
+  if (safeFallback) return safeFallback;
   if (!_shouldSuppressFallbackExhaustionAlarm(req, selectorChain)) {
     await _notifyFallbackExhaustion(req, attempts, team);
   }
-  const safeFallback = _safeFallbackForSelectorExhaustion(req, selectorChain, attempts, team);
-  if (safeFallback) return safeFallback;
   return {
     ok: false,
     provider: 'failed',

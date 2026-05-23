@@ -1,9 +1,12 @@
 #!/usr/bin/env tsx
 
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import path from 'node:path';
 
 const unifiedCaller = require('../lib/llm/unified-caller.ts');
 const safeFallback = unifiedCaller._testOnly._safeFallbackForSelectorExhaustion;
+const unifiedCallerSource = fs.readFileSync(path.resolve(__dirname, '../lib/llm/unified-caller.ts'), 'utf8');
 
 const attempts = [
   { provider: 'gemini-cli-oauth/gemini-2.5-flash', error: 'gemini_cli_empty_stdout', durationMs: 1000 },
@@ -25,6 +28,10 @@ assert.equal(result.safeFallback, true);
 assert.equal(result.degraded, true);
 assert.match(result.error, /fallback_exhausted: openai_codex_oauth_timeout_or_abort/);
 assert.deepEqual(result.attempted_providers, attempts.map((attempt) => attempt.provider));
+assert.ok(
+  unifiedCallerSource.indexOf('const safeFallback = _safeFallbackForSelectorExhaustion') < unifiedCallerSource.indexOf('await _notifyFallbackExhaustion(req, attempts, team)'),
+  'Elsa safe fallback must return before production fallback exhaustion critical alarm is emitted',
+);
 
 assert.equal(
   safeFallback(
