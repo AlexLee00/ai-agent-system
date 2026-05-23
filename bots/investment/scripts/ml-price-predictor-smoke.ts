@@ -9,6 +9,8 @@ export async function runSmoke() {
   const oldShadow = process.env.LUNA_ML_PRICE_PREDICTOR_SHADOW_MODE;
   try {
     const closes = Array.from({ length: 80 }, (_, i) => 100 + i * 0.5);
+    process.env.LUNA_ML_PRICE_PREDICTOR_ENABLED = 'false';
+    process.env.LUNA_ML_PRICE_PREDICTOR_SHADOW_MODE = 'true';
     const disabled = predictPrice(closes, 5);
     assert.equal(disabled.enabled, false);
     assert.equal(disabled.usable, false);

@@ -22,6 +22,7 @@ import {
   evaluateBinanceTopVolumeUniverseGate,
   getCachedBinanceTopVolumeUniverse,
 } from './binance-top-volume-universe.ts';
+import { evaluateTechnicalEntryChangeGate } from './technical-change-gates.ts';
 
 const ACTIONS = {
   BUY: 'BUY',
@@ -971,7 +972,8 @@ export async function evaluateEntryTriggers(candidates = [], context = {}) {
     const key = `${candidate.symbol}:${triggerType}`;
     const existingTrigger = activeMap.get(key) || null;
     const predictiveObservation = isPredictiveObservationCandidate(candidate);
-    const fireNow = predictiveObservation || shouldFireTrigger(candidate, context);
+    const fireReadiness = buildEntryTriggerFireReadiness(candidate, context);
+    const fireNow = predictiveObservation || fireReadiness.ok;
     const strategyRoute = resolveCandidateStrategyRoute(candidate);
     const strategyQuality = resolveCandidateStrategyQuality(candidate, strategyRoute);
     const strategyReadiness = resolveCandidateStrategyReadiness(candidate, strategyRoute);
@@ -1287,6 +1289,43 @@ export async function evaluateEntryTriggers(candidates = [], context = {}) {
       continue;
     }
 
+    const technicalChangeGate = evaluateTechnicalEntryChangeGate({
+      candidate: activeCandidate,
+      chartGuard: tradingViewGuard,
+      context,
+      fireReadiness,
+    });
+    if (!technicalChangeGate.ok) {
+      blocked++;
+      await updateEntryTriggerState(persisted.id, {
+        triggerState: 'waiting',
+        triggerMetaPatch: {
+          reason: 'technical_change_gate_blocked',
+          technicalChangeReason: technicalChangeGate.reason,
+          technicalChangeGate,
+        },
+      }).catch(() => {});
+      output.push({
+        ...activeCandidate,
+        action: ACTIONS.HOLD,
+        amount_usdt: 0,
+        reasoning: `entry_trigger_blocked: ${technicalChangeGate.reason} | ${candidate.reasoning || ''}`.slice(0, 220),
+        block_meta: {
+          ...(activeCandidate.block_meta || {}),
+          event_type: 'entry_trigger_blocked',
+          entryTrigger: {
+            triggerId: persisted.id,
+            triggerType,
+            state: 'waiting',
+            reason: 'technical_change_gate_blocked',
+            technicalChangeReason: technicalChangeGate.reason,
+          },
+          technicalChangeGate,
+        },
+      });
+      continue;
+    }
+
     const riskGate = evaluateEntryTriggerLiveRiskGate({ candidate: activeCandidate, trigger: persisted, context, flags });
     if (!riskGate.ok) {
       blocked++;
@@ -1396,6 +1435,8 @@ export async function evaluateEntryTriggers(candidates = [], context = {}) {
         eventType: 'entry_trigger_fired',
         tradingViewReason: tradingViewGuard.reason || null,
         tradingViewGuard: summarizeEntryChartGuard(tradingViewGuard),
+        technicalChangeReason: technicalChangeGate.reason || null,
+        technicalChangeGate,
         riskGateReason: riskGate.reason || null,
         riskGateDetails: riskGate.details || {},
       },
@@ -1798,6 +1839,35 @@ export async function evaluateActiveEntryTriggersAgainstMarketEvents(events = []
       });
       continue;
     }
+    const technicalChangeGate = evaluateTechnicalEntryChangeGate({
+      candidate: effectiveCandidate,
+      event,
+      chartGuard: tradingViewGuard,
+      context,
+      fireReadiness,
+    });
+    if (!technicalChangeGate.ok) {
+      readyBlocked++;
+      await updateTriggerState(trigger.id, {
+        triggerState: 'waiting',
+        triggerMetaPatch: {
+          lastReadyAt: nowIso(),
+          reason: 'technical_change_gate_blocked',
+          technicalChangeReason: technicalChangeGate.reason,
+          technicalChangeGate,
+        },
+      }).catch(() => null);
+      results.push({
+        triggerId: trigger.id,
+        symbol: trigger.symbol,
+        state: 'waiting',
+        fired: false,
+        reason: 'technical_change_gate_blocked',
+        technicalChangeReason: technicalChangeGate.reason,
+        technicalChangeGate,
+      });
+      continue;
+    }
     const riskGate = evaluateEntryTriggerLiveRiskGate({ candidate: effectiveCandidate, trigger, context, flags });
     if (!riskGate.ok) {
       readyBlocked++;
@@ -1860,6 +1930,8 @@ export async function evaluateActiveEntryTriggersAgainstMarketEvents(events = []
         event,
         tradingViewReason: tradingViewGuard.reason || null,
         tradingViewGuard: summarizeEntryChartGuard(tradingViewGuard),
+        technicalChangeReason: technicalChangeGate.reason || null,
+        technicalChangeGate,
         riskGateReason: riskGate.reason || null,
         riskGateDetails: riskGate.details || {},
         fireReadiness: fireReadiness.details,

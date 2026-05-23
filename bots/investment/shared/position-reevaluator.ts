@@ -18,6 +18,7 @@ import { refreshPositionSignals } from './position-signal-refresh.ts';
 import { computeDynamicTrail } from './dynamic-trail-engine.ts';
 import { computeDynamicPositionSizing } from './dynamic-position-sizer.ts';
 import { analyzeReflexivePortfolioState } from './portfolio-reflexive-monitor.ts';
+import { applyTechnicalExitChangeReview } from './technical-change-gates.ts';
 import { fetchEntryChartSnapshot, fetchTradingViewHttpLatestSnapshot, normalizeTradingViewTimeframe } from './tradingview-entry-guard.ts';
 import {
   buildDisabledDynamicPositionSizingSnapshot,
@@ -1607,6 +1608,13 @@ export async function reevaluateOpenPositions({
         reason: `dynamic trail breached but chart exit is unconfirmed: close=${dynamicTrail.close}, previousStop=${dynamicTrail.previousStopPrice}`,
       };
     }
+    const technicalExitChangeReview = applyTechnicalExitChangeReview(effectiveDecision, {
+      pnlPct,
+      heldHours,
+      analysisSummary,
+      dynamicTrail,
+    });
+    effectiveDecision = technicalExitChangeReview.decision;
     effectiveDecision = applyFreshSmallProfitAdjustGuard(effectiveDecision, {
       pnlPct,
       heldHours,
@@ -1644,6 +1652,7 @@ export async function reevaluateOpenPositions({
       monitor: monitorAgentPlan,
     };
     runtimeState.entryEvidenceCarryover = entryEvidenceCarryover;
+    runtimeState.technicalChangeReview = technicalExitChangeReview.review;
     if (strategyProfile?.id) {
       const attentionAt = effectiveDecision.recommendation === 'HOLD' ? null : new Date().toISOString();
       const baseStrategyState = buildStrategyStateUpdate({
@@ -1703,6 +1712,7 @@ export async function reevaluateOpenPositions({
           strategyValidityAction: validityResult.recommendedAction,
           dynamicSizingMode: dynamicSizing?.mode || null,
           dynamicTrailBreached: dynamicTrail?.breached === true,
+          technicalChangeReview: technicalExitChangeReview.review,
         },
         policySnapshot: runtimeState?.policyMatrix || {},
         evidenceSnapshot: {
@@ -1739,6 +1749,7 @@ export async function reevaluateOpenPositions({
           monitorAgentPlanWarnings: monitorAgentPlan.warnings || [],
           dynamicTrailBreached: dynamicTrail?.breached === true,
           dynamicSizingMode: dynamicSizing?.mode || null,
+          technicalChangeReview: technicalExitChangeReview.review,
         },
         policySnapshot: {
           monitoringPolicy: runtimeState?.monitoringPolicy || {},
@@ -1781,6 +1792,7 @@ export async function reevaluateOpenPositions({
       },
       dynamicPositionSizing: dynamicSizing,
       dynamicTrail,
+      technicalChangeReview: technicalExitChangeReview.review,
       positionSnapshot: {
         amount: safeNumber(position.amount),
         avgPrice: safeNumber(position.avg_price),
