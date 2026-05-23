@@ -197,6 +197,7 @@ export function buildKoreaDataPromotionGate(metrics = {}, options = {}) {
       domesticBacktestPassRate7d: domesticPassRate,
       domesticBacktestActiveCandidates: countMetric(metrics.domesticBacktestActiveCandidates),
       domesticBacktestCooldownExcluded: countMetric(metrics.domesticBacktestCooldownExcluded),
+      domesticBacktestBlockExcluded: countMetric(metrics.domesticBacktestBlockExcluded),
       domesticBacktestMetricScope: metrics.domesticBacktestMetricScope || null,
       disclosuresCurrentDate: countMetric(metrics.disclosuresCurrentDate ?? metrics.disclosuresToday?.currentDateCount),
       disclosuresLatestDate: metrics.disclosuresLatestDate || metrics.disclosuresToday?.latestDate || null,

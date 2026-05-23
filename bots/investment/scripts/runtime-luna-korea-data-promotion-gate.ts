@@ -65,12 +65,25 @@ async function safeBacktestMetrics() {
         cooldown AS (
           ${cooldownCte}
         ),
+        backtest_block AS (
+          SELECT DISTINCT symbol, market
+            FROM candidate_backtest_status
+           WHERE market = 'domestic'
+             AND updated_at >= NOW() - INTERVAL '7 days'
+             AND (
+               healthy IS FALSE
+               OR would_block IS TRUE
+               OR gate_status LIKE 'would_block%'
+             )
+        ),
         eligible AS (
           SELECT active.symbol, active.market
             FROM active
             LEFT JOIN cooldown USING (symbol, market)
+            LEFT JOIN backtest_block USING (symbol, market)
            WHERE active.symbol IS NOT NULL
              AND cooldown.symbol IS NULL
+             AND backtest_block.symbol IS NULL
         ),
         backtest AS (
           SELECT b.*
@@ -84,7 +97,8 @@ async function safeBacktestMetrics() {
                COUNT(*) FILTER (WHERE healthy = true)::int AS healthy,
                COUNT(*) FILTER (WHERE gate_status = 'pass')::int AS pass,
                (SELECT COUNT(*)::int FROM eligible)::int AS active_candidates,
-               (SELECT COUNT(*)::int FROM cooldown)::int AS cooldown_excluded
+               (SELECT COUNT(*)::int FROM cooldown)::int AS cooldown_excluded,
+               (SELECT COUNT(*)::int FROM backtest_block)::int AS backtest_block_excluded
           FROM backtest`,
     ).catch((error) => ({ error: String(error?.message || error) }));
     if (!row?.error) {
@@ -95,7 +109,8 @@ async function safeBacktestMetrics() {
         pass: Number(row?.pass || 0),
         activeCandidates: Number(row?.active_candidates || 0),
         cooldownExcluded: Number(row?.cooldown_excluded || 0),
-        scope: 'active_candidate_universe_excluding_quality_cooldown',
+        backtestBlockExcluded: Number(row?.backtest_block_excluded || 0),
+        scope: 'active_candidate_universe_excluding_quality_cooldown_and_recent_7d_backtest_blocks',
       };
     }
   }
@@ -116,6 +131,7 @@ async function safeBacktestMetrics() {
       pass: 0,
       activeCandidates: 0,
       cooldownExcluded: 0,
+      backtestBlockExcluded: 0,
       scope: 'candidate_backtest_status_fallback',
     };
   }
@@ -126,6 +142,7 @@ async function safeBacktestMetrics() {
     pass: Number(row?.pass || 0),
     activeCandidates: Number(row?.rows || 0),
     cooldownExcluded: 0,
+    backtestBlockExcluded: 0,
     scope: 'candidate_backtest_status_fallback',
   };
 }
@@ -291,6 +308,7 @@ async function loadDbMetrics() {
     domesticBacktestPassRows7d: backtest.pass,
     domesticBacktestActiveCandidates: backtest.activeCandidates,
     domesticBacktestCooldownExcluded: backtest.cooldownExcluded,
+    domesticBacktestBlockExcluded: backtest.backtestBlockExcluded,
     domesticBacktestMetricScope: backtest.scope,
     shadowObservationDays: shadowDays,
     strategyShadowSignals7d: strategySignalCount,
@@ -314,6 +332,7 @@ function fixtureMetrics() {
     domesticBacktestPassRows7d: 22,
     domesticBacktestActiveCandidates: 30,
     domesticBacktestCooldownExcluded: 0,
+    domesticBacktestBlockExcluded: 0,
     domesticBacktestMetricScope: 'fixture_active_candidate_universe',
     shadowObservationDays: 8,
     strategyShadowSignals7d: 18,

@@ -23,15 +23,47 @@ function qualityCooldownPrefilterEnabled(): boolean {
   return process.env.LUNA_DISCOVERY_QUALITY_COOLDOWN_PREFILTER_ENABLED !== 'false';
 }
 
-async function loadQualityCooldownKeySet(market: DiscoveryMarket, options: any = {}): Promise<Set<string>> {
-  if (!qualityCooldownPrefilterEnabled()) return new Set();
-  if (Array.isArray(options.qualityCooldownSymbols)) {
-    return new Set(options.qualityCooldownSymbols
-      .map((symbol: string) => `${normalizeCandidateSymbolForMarket(symbol, market)}|${market}`)
-      .filter((key: string) => !key.startsWith('null|')));
+function backtestBlockPrefilterEnabled(): boolean {
+  return process.env.LUNA_DISCOVERY_BACKTEST_BLOCK_PREFILTER_ENABLED !== 'false';
+}
+
+async function loadQualityBlockKeySet(market: DiscoveryMarket, options: any = {}): Promise<Set<string>> {
+  const keys = new Set<string>();
+  if (qualityCooldownPrefilterEnabled()) {
+    if (Array.isArray(options.qualityCooldownSymbols)) {
+      for (const key of options.qualityCooldownSymbols
+        .map((symbol: string) => `${normalizeCandidateSymbolForMarket(symbol, market)}|${market}`)
+        .filter((key: string) => !key.startsWith('null|'))) {
+        keys.add(key);
+      }
+    } else {
+      const rows = await loadLunaCandidateQualityCooldownSymbols({ market }).catch(() => []);
+      for (const row of rows || []) keys.add(`${row.symbol}|${row.market}`);
+    }
   }
-  const rows = await loadLunaCandidateQualityCooldownSymbols({ market }).catch(() => []);
-  return new Set((rows || []).map((row: any) => `${row.symbol}|${row.market}`));
+  if (backtestBlockPrefilterEnabled()) {
+    if (Array.isArray(options.qualityBlockedSymbols)) {
+      for (const key of options.qualityBlockedSymbols
+        .map((symbol: string) => `${normalizeCandidateSymbolForMarket(symbol, market)}|${market}`)
+        .filter((key: string) => !key.startsWith('null|'))) {
+        keys.add(key);
+      }
+    } else {
+      const rows = await db.query(`
+        SELECT symbol, market
+          FROM candidate_backtest_status
+         WHERE market = $1
+           AND updated_at >= NOW() - INTERVAL '24 hours'
+           AND (
+             healthy IS FALSE
+             OR would_block IS TRUE
+             OR gate_status LIKE 'would_block%'
+           )
+      `, [market]).catch(() => []);
+      for (const row of rows || []) keys.add(`${normalizeCandidateSymbolForMarket(row.symbol, market)}|${market}`);
+    }
+  }
+  return keys;
 }
 
 // candidate_universe 테이블 초기화 (없으면 생성)
@@ -132,7 +164,7 @@ export async function upsertCandidateSignals(
   let inserted = 0;
   let updated = 0;
   let skippedCooldown = 0;
-  const qualityCooldownKeys = await loadQualityCooldownKeySet(market, options);
+  const qualityBlockKeys = await loadQualityBlockKeySet(market, options);
   const binanceTopVolumeUniverse = market === 'crypto'
     ? await getCachedBinanceTopVolumeUniverse().catch(() => null)
     : null;
@@ -145,7 +177,7 @@ export async function upsertCandidateSignals(
   for (const sig of signals) {
     const symbol = normalizeCandidateSymbolForMarket(sig.symbol, market);
     if (!symbol || typeof sig.score !== 'number') continue;
-    if (qualityCooldownKeys.has(`${symbol}|${market}`)) {
+    if (qualityBlockKeys.has(`${symbol}|${market}`)) {
       skippedCooldown++;
       continue;
     }
@@ -224,7 +256,7 @@ export async function pruneSourceCandidatesNotInSignals(
   const binanceTopVolumeUniverse = market === 'crypto'
     ? options.binanceTopVolumeUniverse || await getCachedBinanceTopVolumeUniverse().catch(() => null)
     : null;
-  const qualityCooldownKeys = await loadQualityCooldownKeySet(market, options);
+  const qualityBlockKeys = await loadQualityBlockKeySet(market, options);
   const normalizedSymbols = [...new Set((signals || [])
     .map((sig) => normalizeCandidateSymbolForMarket(sig.symbol, market))
     .filter(Boolean)
@@ -233,10 +265,10 @@ export async function pruneSourceCandidatesNotInSignals(
       return evaluateBinanceTopVolumeUniverseGate(symbol, binanceTopVolumeUniverse).ok;
     }))];
   const activeSymbols = normalizedSymbols
-    .filter((symbol) => !qualityCooldownKeys.has(`${symbol}|${market}`));
+    .filter((symbol) => !qualityBlockKeys.has(`${symbol}|${market}`));
   if (!source) return 0;
   if (activeSymbols.length === 0) {
-    if (normalizedSymbols.length === 0 || qualityCooldownKeys.size === 0) return 0;
+    if (normalizedSymbols.length === 0 || qualityBlockKeys.size === 0) return 0;
     const result = await db.run(`
       DELETE FROM candidate_universe
       WHERE market = $1
@@ -283,8 +315,8 @@ export async function getActiveCandidates(
   market: DiscoveryMarket,
   limit = 150,
 ): Promise<Array<{ symbol: string; market: string; source: string; score: number; reason: string }>> {
-  const qualityCooldownKeys = await loadQualityCooldownKeySet(market);
-  const scanLimit = qualityCooldownKeys.size > 0
+  const qualityBlockKeys = await loadQualityBlockKeySet(market);
+  const scanLimit = qualityBlockKeys.size > 0
     ? Math.max(limit, Math.min(1000, Number(limit || 150) * 4))
     : limit;
   const rows = await db.query(`
@@ -332,7 +364,7 @@ export async function getActiveCandidates(
 	    LIMIT $2
 	  `, [market, scanLimit]);
   return (rows || [])
-    .filter((row) => !qualityCooldownKeys.has(`${row.symbol}|${row.market}`))
+    .filter((row) => !qualityBlockKeys.has(`${row.symbol}|${row.market}`))
     .slice(0, limit);
 }
 

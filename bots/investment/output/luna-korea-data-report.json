@@ -1,7 +1,7 @@
 {
   "ok": true,
   "status": "luna_korea_public_data_shadow_ready",
-  "generatedAt": "2026-05-23T09:43:33.549Z",
+  "generatedAt": "2026-05-23T10:21:45.909Z",
   "shadowOnly": true,
   "liveTradeImpact": false,
   "openDart": {
@@ -58,21 +58,6 @@
       "promotionRequired": true,
       "blockers": [
         {
-          "code": "domestic_backtest_rows_7d_below_target",
-          "actual": 2,
-          "expected": 20
-        },
-        {
-          "code": "domestic_backtest_fresh_rows_7d_below_target",
-          "actual": 2,
-          "expected": 15
-        },
-        {
-          "code": "domestic_backtest_healthy_rows_7d_below_target",
-          "actual": 2,
-          "expected": 15
-        },
-        {
           "code": "shadow_observation_days_below_target",
           "actual": 1,
           "expected": 7
@@ -84,7 +69,7 @@
   "promotionGate": {
     "ok": true,
     "status": "luna_korea_data_promotion_blocked",
-    "generatedAt": "2026-05-23T09:43:33.540Z",
+    "generatedAt": "2026-05-23T10:21:45.890Z",
     "shadowOnly": true,
     "liveTradeImpact": false,
     "liveOrderAllowed": false,
@@ -111,17 +96,18 @@
       "freshCorpFundamentals24h": 244,
       "disclosuresToday": 100,
       "koreanFactorRows7d": 1360,
-      "domesticBacktestRows7d": 2,
-      "domesticBacktestFreshRows7d": 2,
-      "domesticBacktestHealthyRows7d": 2,
-      "domesticBacktestPassRows7d": 2,
+      "domesticBacktestRows7d": 20,
+      "domesticBacktestFreshRows7d": 20,
+      "domesticBacktestHealthyRows7d": 20,
+      "domesticBacktestPassRows7d": 20,
       "shadowObservationDays": 1,
       "strategyShadowSignals7d": 31,
       "worldquantAlphaCount": 20,
       "domesticBacktestPassRate7d": 1,
-      "domesticBacktestActiveCandidates": 2,
-      "domesticBacktestCooldownExcluded": 35,
-      "domesticBacktestMetricScope": "active_candidate_universe_excluding_quality_cooldown",
+      "domesticBacktestActiveCandidates": 46,
+      "domesticBacktestCooldownExcluded": 41,
+      "domesticBacktestBlockExcluded": 166,
+      "domesticBacktestMetricScope": "active_candidate_universe_excluding_quality_cooldown_and_recent_7d_backtest_blocks",
       "disclosuresCurrentDate": 0,
       "disclosuresLatestDate": "2026-05-22",
       "disclosuresLatestDateCount": 100,
@@ -142,26 +128,11 @@
       },
       "stage3": {
         "name": "WorldQuant Korea backtest and promotion gate",
-        "ready": false,
-        "status": "blocked"
+        "ready": true,
+        "status": "ready"
       }
     },
     "blockers": [
-      {
-        "code": "domestic_backtest_rows_7d_below_target",
-        "actual": 2,
-        "expected": 20
-      },
-      {
-        "code": "domestic_backtest_fresh_rows_7d_below_target",
-        "actual": 2,
-        "expected": 15
-      },
-      {
-        "code": "domestic_backtest_healthy_rows_7d_below_target",
-        "actual": 2,
-        "expected": 15
-      },
       {
         "code": "shadow_observation_days_below_target",
         "actual": 1,
@@ -170,21 +141,6 @@
     ],
     "warnings": [],
     "nextActions": [
-      {
-        "blocker": "domestic_backtest_rows_7d_below_target",
-        "action": "refresh_domestic_candidate_discovery_and_backtests_before_promotion",
-        "command": "npm --prefix bots/investment run -s runtime:luna-discovery-refresh -- --json --force --markets=domestic --limit=30 --ttl-hours=6 && npm --prefix bots/investment run -s runtime:luna-candidate-backtest-refresh -- --json --dry-run --market=domestic"
-      },
-      {
-        "blocker": "domestic_backtest_fresh_rows_7d_below_target",
-        "action": "refresh_domestic_candidate_discovery_and_stale_backtests",
-        "command": "npm --prefix bots/investment run -s runtime:luna-discovery-refresh -- --json --force --markets=domestic --limit=30 --ttl-hours=6 && npm --prefix bots/investment run -s runtime:luna-candidate-backtest-refresh -- --json --dry-run --force --market=domestic"
-      },
-      {
-        "blocker": "domestic_backtest_healthy_rows_7d_below_target",
-        "action": "improve_or_filter_unhealthy_domestic_candidates",
-        "command": "npm --prefix bots/investment run -s runtime:luna-candidate-quality-governance -- --json --dry-run --market=domestic"
-      },
       {
         "blocker": "shadow_observation_days_below_target",
         "action": "continue_shadow_observation_without_live_promotion",

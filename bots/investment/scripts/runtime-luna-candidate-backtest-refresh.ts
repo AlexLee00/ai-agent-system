@@ -8,6 +8,7 @@ import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
 import { ensureCandidateBacktestSchema, evaluateCandidateBacktestStatus } from '../shared/candidate-backtest-gate.ts';
 import { fetchDataGoStockPriceHistoryForSymbol } from '../shared/domestic-official-reference.ts';
 import { exchangeForLunaPhase2Market } from '../shared/luna-weight-vector.ts';
+import { getActiveCandidates as getDiscoveryActiveCandidates } from '../team/discovery/discovery-store.ts';
 import {
   BINANCE_TOP_VOLUME_BLOCK_REASON,
   buildFixtureBinanceTopVolumeUniverse,
@@ -135,6 +136,79 @@ function interleaveCandidatesByMarket(candidates: any[] = []) {
   return output;
 }
 
+function candidateKey(symbol: any, market: any) {
+  return `${String(market || '').trim().toLowerCase()}::${String(symbol || '').trim().toUpperCase()}`;
+}
+
+function booleanish(value: any) {
+  return value === true || String(value).toLowerCase() === 'true';
+}
+
+function backtestPriorityForStatus(status: any) {
+  if (!status) return 0; // Never-tested candidates should consume the next batch budget first.
+  const fresh = !isStale(status.last_backtest_at);
+  const healthy = booleanish(status.healthy);
+  const wouldBlock = booleanish(status.would_block);
+  const refreshDue = isRefreshDue(status.next_refresh_at);
+  if (!fresh) return 1;
+  if (refreshDue && (!healthy || REFRESH_UNHEALTHY)) return 2;
+  if (!healthy && !wouldBlock) return 3;
+  if (healthy) return 4;
+  return 5;
+}
+
+async function prioritizeCandidatesForBacktest(candidates: any[] = []) {
+  if (!Array.isArray(candidates) || candidates.length === 0) return [];
+  const params: any[] = [];
+  const values = candidates.map((candidate, index) => {
+    const symbol = String(candidate?.symbol || '').trim().toUpperCase();
+    const market = normalizeMarket(candidate?.market || 'all');
+    params.push(symbol, market, index);
+    const base = index * 3;
+    return `($${base + 1}, $${base + 2}, $${base + 3})`;
+  });
+  const rows = await db.query(`
+    WITH input(symbol, market, idx) AS (
+      VALUES ${values.join(',')}
+    )
+    SELECT
+      input.symbol,
+      input.market,
+      input.idx,
+      status.id AS status_id,
+      status.healthy,
+      status.would_block,
+      status.last_backtest_at,
+      status.next_refresh_at,
+      status.gate_status
+    FROM input
+    LEFT JOIN candidate_backtest_status status
+      ON status.symbol = input.symbol
+     AND status.market = input.market
+  `, params).catch(() => []);
+  const statusByKey = new Map((rows || [])
+    .filter((row) => row.status_id != null)
+    .map((row) => [candidateKey(row.symbol, row.market), row]));
+  return candidates
+    .map((candidate, index) => {
+      const symbol = String(candidate?.symbol || '').trim().toUpperCase();
+      const market = normalizeMarket(candidate?.market || 'all');
+      const status = statusByKey.get(candidateKey(symbol, market));
+      return {
+        ...candidate,
+        symbol,
+        market,
+        __backtestPriority: backtestPriorityForStatus(status),
+        __backtestOriginalIndex: index,
+      };
+    })
+    .sort((a, b) => a.__backtestPriority - b.__backtestPriority
+      || marketSortRank(a.market) - marketSortRank(b.market)
+      || (b.score ?? b.qualityScore ?? 0) - (a.score ?? a.qualityScore ?? 0)
+      || a.__backtestOriginalIndex - b.__backtestOriginalIndex)
+    .map(({ __backtestPriority, __backtestOriginalIndex, ...candidate }) => candidate);
+}
+
 async function getActiveCandidates(limit = 100) {
   return getActiveCandidatesByMarket({ limit, market: 'crypto' });
 }
@@ -149,40 +223,18 @@ function normalizeMarket(value: any = 'all') {
 
 async function getActiveCandidatesByMarket({ limit = 100, market = 'all' } = {}) {
   const normalizedMarket = normalizeMarket(market);
-  const params: any[] = [];
-  const marketWhere = normalizedMarket === 'all'
-    ? ''
-    : `AND market = $${params.push(normalizedMarket)}`;
   const perMarketLimit = Math.max(1, Math.ceil(Number(limit || 100) / 3));
-  const marketRankWhere = normalizedMarket === 'all'
-    ? `WHERE market_rank <= $${params.push(perMarketLimit)}`
-    : '';
-  params.push(limit);
-  return db.query(
-    `WITH active_candidates AS (
-      SELECT DISTINCT ON (symbol, market)
-             symbol, market, score, discovered_at
-        FROM candidate_universe
-       WHERE expires_at > NOW()
-         ${marketWhere}
-       ORDER BY symbol, market, score DESC, discovered_at DESC
-    ),
-    balanced_candidates AS (
-      SELECT *,
-             ROW_NUMBER() OVER (PARTITION BY market ORDER BY score DESC, discovered_at DESC) AS market_rank
-        FROM active_candidates
-    ),
-    selected_candidates AS (
-      SELECT *
-        FROM balanced_candidates
-        ${marketRankWhere}
-    )
-    SELECT symbol, market
-      FROM selected_candidates
-     ORDER BY score DESC, discovered_at DESC
-     LIMIT $${params.length}`,
-    params,
-  ).catch(() => []);
+  if (normalizedMarket !== 'all') {
+    return getDiscoveryActiveCandidates(normalizedMarket, limit)
+      .then((rows) => rows.map((row) => ({ symbol: row.symbol, market: row.market })))
+      .catch(() => []);
+  }
+  const rows = await Promise.all([
+    getDiscoveryActiveCandidates('crypto', perMarketLimit).catch(() => []),
+    getDiscoveryActiveCandidates('domestic', perMarketLimit).catch(() => []),
+    getDiscoveryActiveCandidates('overseas', perMarketLimit).catch(() => []),
+  ]);
+  return rows.flat().slice(0, limit).map((row) => ({ symbol: row.symbol, market: row.market }));
 }
 
 async function getBacktestStatus(symbol: string, market: string) {
@@ -468,7 +520,7 @@ async function runOhlcvFallbackBacktest(symbol: string, market: string, days: nu
   return buildOhlcvMomentumBacktestRows(rows, days, market);
 }
 
-function evaluateQuality(rows: any[]) {
+function evaluateQuality(rows: any[], market: string = 'all') {
   const usable = (rows || []).filter((r) => (!r?.status || r.status === 'ok') && safeNum(r?.total_trades) > 0);
   if (usable.length === 0) {
     const statuses = (rows || []).map((r) => String(r?.status || '').trim()).filter(Boolean);
@@ -508,7 +560,15 @@ function evaluateQuality(rows: any[]) {
     reasons.push(`walk_forward_period_failed(${failure})`);
   }
   const unrealisticSharpe = Math.abs(rawAvgSharpe) > GATE.MAX_ABS_SHARPE;
-  const lowTradeSample = totalTrades < GATE.MIN_TOTAL_TRADES || minTrades < GATE.MIN_PERIOD_TRADES;
+  const normalizedMarket = normalizeMarket(market);
+  const stablePeriodCount = qualityRows.filter((r) => safeNum(r?.total_trades) >= GATE.MIN_PERIOD_TRADES).length;
+  const totalTradesLow = totalTrades < GATE.MIN_TOTAL_TRADES;
+  const lowTradeShortWindowTolerated = normalizedMarket === 'domestic'
+    && !totalTradesLow
+    && qualityRows.length >= 3
+    && stablePeriodCount >= 2
+    && minTrades < GATE.MIN_PERIOD_TRADES;
+  const lowTradeSample = totalTradesLow || (minTrades < GATE.MIN_PERIOD_TRADES && !lowTradeShortWindowTolerated);
   if (unrealisticSharpe) {
     reasons.push(`unrealistic_sharpe(${rawAvgSharpe.toFixed(2)})`);
     reasons.push(`backtest_unstable_sample(total_trades=${totalTrades},min_period_trades=${minTrades})`);
@@ -538,6 +598,8 @@ function evaluateQuality(rows: any[]) {
     reasons,
     totalTrades,
     minPeriodTrades: minTrades,
+    stablePeriodCount,
+    lowTradeShortWindowTolerated,
     qualityRows,
     qualityRowSelection: 'best_per_walk_forward_period',
     qualityRowSelectionPolicy: 'stable_sample_first',
@@ -605,6 +667,8 @@ async function upsertStatus(symbol: string, market: string, payload: any, dryRun
       qualityRowSelectionPolicy: payload.qualityRowSelectionPolicy || null,
       totalTrades: payload.totalTrades ?? null,
       minPeriodTrades: payload.minPeriodTrades ?? null,
+      stablePeriodCount: payload.stablePeriodCount ?? null,
+      lowTradeShortWindowTolerated: payload.lowTradeShortWindowTolerated === true,
     }),
   ]);
 }
@@ -749,7 +813,7 @@ async function refreshCandidate(symbol: string, market: string, periods: number[
         allRows.push(...rows.map((row) => ({ ...row, walk_forward_days: days })));
       }
     }
-    const quality = evaluateQuality(allRows);
+    const quality = evaluateQuality(allRows, market);
     if (budgetPartial) {
       quality.healthy = false;
       quality.wouldBlock = true;
@@ -823,9 +887,12 @@ export async function runCandidateBacktestRefresh(options: any = {}): Promise<an
       error: String(error?.message || error),
     }));
   const selectedCandidates = selectRequestedCandidates(candidates, requestedSymbols, market);
-  const scheduledCandidates = requestedSymbols.length
+  const prioritizedCandidates = requestedSymbols.length
     ? selectedCandidates
-    : interleaveCandidatesByMarket(selectedCandidates);
+    : await prioritizeCandidatesForBacktest(selectedCandidates);
+  const scheduledCandidates = requestedSymbols.length
+    ? prioritizedCandidates
+    : interleaveCandidatesByMarket(prioritizedCandidates);
   const budgetedCandidates = maxSymbols == null
     ? scheduledCandidates
     : scheduledCandidates.slice(0, maxSymbols);
@@ -890,7 +957,7 @@ export async function runCandidateBacktestRefresh(options: any = {}): Promise<an
       selectedBeforeBudget: selectedCandidates.length,
       selected: budgetedCandidates.length,
       processed: results.length,
-      orderingPolicy: requestedSymbols.length ? 'requested_symbol_order' : 'market_round_robin_score_desc',
+      orderingPolicy: requestedSymbols.length ? 'requested_symbol_order' : 'backtest_due_priority_then_market_round_robin_score_desc',
       maxSymbols,
       maxRuntimeMs,
       truncatedByMaxSymbols: maxSymbols != null && scheduledCandidates.length > budgetedCandidates.length,
