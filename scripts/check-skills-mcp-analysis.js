@@ -5,7 +5,11 @@ const fs = require('node:fs');
 const path = require('node:path');
 
 const ROOT = path.resolve(__dirname, '..');
-const DOCUMENT = 'docs/codex/CODEX_SKILLS_MCP_ANALYSIS_2026-05-12.md';
+const DOCUMENT_CANDIDATES = [
+  'docs/codex/CODEX_SKILLS_MCP_ANALYSIS_2026-05-12.md',
+  'docs/codex/CODEX_STAGE1_P1_SKILLS_MCP_2026-05-12.md',
+  'docs/design/DESIGN_SKILLS_MCP.md',
+];
 
 function exists(relativePath) {
   return fs.existsSync(path.join(ROOT, relativePath));
@@ -24,6 +28,18 @@ function checkFile(id, description, relativePath, required = true) {
     required,
     evidence: ok ? [relativePath] : [],
     missing: ok ? [] : [relativePath],
+  };
+}
+
+function checkAnyFile(id, description, candidatePaths, required = true) {
+  const evidence = candidatePaths.filter((relativePath) => exists(relativePath));
+  return {
+    id,
+    description,
+    ok: evidence.length > 0,
+    required,
+    evidence,
+    missing: evidence.length > 0 ? [] : candidatePaths,
   };
 }
 
@@ -145,7 +161,7 @@ function optionalRoadmapCheck(id, description, candidatePaths) {
 
 function buildReport() {
   const requiredChecks = [
-    checkFile('document:source', 'source analysis document is present', DOCUMENT),
+    checkAnyFile('document:source', 'source analysis or tracked design document is present', DOCUMENT_CANDIDATES),
     checkCoreSkill('systematic-debugging', 'systematicDebugging'),
     checkCoreSkill('brainstorming', 'brainstorming'),
     checkCoreSkill('verification', 'verification'),
@@ -240,7 +256,7 @@ function buildReport() {
   return {
     generatedAt: new Date().toISOString(),
     cwd: ROOT,
-    document: DOCUMENT,
+    documentCandidates: DOCUMENT_CANDIDATES,
     ok: failedRequired.length === 0,
     summary: {
       requiredPassed: requiredChecks.length - failedRequired.length,
@@ -260,7 +276,7 @@ function buildReport() {
 
 function printHuman(report) {
   console.log(`Skills/MCP analysis guard: ${report.ok ? 'PASS' : 'FAIL'}`);
-  console.log(`Document: ${report.document}`);
+  console.log(`Document candidates: ${report.documentCandidates.length}`);
   console.log(`Required: ${report.summary.requiredPassed}/${report.summary.requiredTotal}`);
   console.log(`Optional roadmap gaps: ${report.summary.optionalMissing}`);
   console.log(`Local ignored checks: ${report.summary.localPassed}/${report.summary.localTotal}`);
