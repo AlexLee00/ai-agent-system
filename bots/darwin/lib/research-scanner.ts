@@ -162,7 +162,17 @@ async function _postAlarmWithRetry(payload: Record<string, unknown>, label: stri
 
   for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
     try {
-      lastResult = await postAlarm(payload);
+      lastResult = await postAlarm({
+        message: payload.message || `[darwin research-scanner] ${label}`,
+        team: payload.team || 'darwin',
+        fromBot: payload.fromBot || 'research-scanner',
+        alertLevel: payload.alertLevel || 2,
+        alarmType: payload.alarmType || 'work',
+        visibility: payload.visibility || 'notify',
+        eventType: payload.eventType || label,
+        incidentKey: payload.incidentKey || `darwin:research-scanner:${label}`,
+        ...payload,
+      });
       if (lastResult?.ok === true) return lastResult;
 
       lastError = String(

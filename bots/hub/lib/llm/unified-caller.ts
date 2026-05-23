@@ -258,6 +258,8 @@ async function _callWithSelectorChain(req, selectorChain, team) {
   if (!_shouldSuppressFallbackExhaustionAlarm(req, selectorChain)) {
     await _notifyFallbackExhaustion(req, attempts, team);
   }
+  const safeFallback = _safeFallbackForSelectorExhaustion(req, selectorChain, attempts, team);
+  if (safeFallback) return safeFallback;
   return {
     ok: false,
     provider: 'failed',
@@ -668,6 +670,38 @@ function _shouldSuppressFallbackExhaustionAlarm(req, selectorChain) {
   return false;
 }
 
+function _safeFallbackForSelectorExhaustion(req, selectorChain, attempts, team) {
+  if (_flagDisabled('HUB_ELSA_CHAT_SAFE_FALLBACK_ENABLED')) return null;
+  const selectorKey = String(req?.selectorKey || selectorChain?.selectorKey || '').trim().toLowerCase();
+  const callerTeam = String(req?.callerTeam || team || '').trim().toLowerCase();
+  const agent = String(req?.agent || '').trim().toLowerCase();
+  const isElsaChat = selectorKey === 'elsa.chat.answer' || (callerTeam === 'elsa' && ['chat', 'rag', 'vision', 'voice'].includes(agent));
+  if (!isElsaChat) return null;
+  if (req?.jsonSchema) return null;
+
+  const lastErr = (attempts[attempts.length - 1] || {}).error || 'unknown';
+  return {
+    ok: true,
+    provider: 'safe-fallback',
+    selected_route: 'safe-fallback/elsa-chat-answer',
+    result: '현재 답변 생성 경로가 일시적으로 불안정합니다. 요청은 접수되었고, 잠시 후 다시 시도해 주세요.',
+    durationMs: attempts.reduce((sum, attempt) => sum + Number(attempt.durationMs || 0), 0),
+    degraded: true,
+    safeFallback: true,
+    error: `fallback_exhausted: ${lastErr}`,
+    attempted_providers: attempts.map((attempt) => attempt.provider),
+    avoidedProviders: selectorChain?.avoidedProviders || [],
+    fallbackCount: attempts.length,
+    selectorKey: selectorChain?.selectorKey || req?.selectorKey || null,
+    runtimeProfile: selectorChain?.runtimeProfile || null,
+    runtimePurpose: selectorChain?.runtimePurpose || null,
+    routeTargetKind: selectorChain?.routeTargetKind || selectorChain?.target?.kind || null,
+    providerTiers: selectorChain?.providerTiers || [],
+    estimatedCostUsd: req?._estimatedCostUsd || null,
+    budgetGuardStatus: req?._budgetGuardStatus || null,
+  };
+}
+
 async function _notifyFallbackExhaustion(req, attempts, team) {
   const tried = attempts.map(a => a.provider).join(' → ');
   const lastErr = (attempts[attempts.length - 1] || {}).error || 'unknown';
@@ -689,5 +723,6 @@ module.exports = {
     _resolveSelectorChain,
     _adhocChainAllowed,
     _shouldSuppressFallbackExhaustionAlarm,
+    _safeFallbackForSelectorExhaustion,
   },
 };

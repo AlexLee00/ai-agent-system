@@ -78,7 +78,7 @@ function classifyRepoFinding(file: string): { category: Category; reason: string
   if (file.endsWith('.md')) {
     return { category: 'documentation', reason: 'markdown documentation/report reference' };
   }
-  if (file.startsWith('bots/hub/output/') || file === 'docs/hub/OPENCLAW_RESIDUE_AUDIT.md' || file === 'docs/hub/HUB_ALARM_DEPENDENCY_INVENTORY.md') {
+  if (file.includes('/output/') || file.startsWith('output/') || file.startsWith('bots/hub/output/') || file === 'docs/hub/OPENCLAW_RESIDUE_AUDIT.md' || file === 'docs/hub/HUB_ALARM_DEPENDENCY_INVENTORY.md') {
     return { category: 'generated_inventory', reason: 'generated audit output' };
   }
   if (file.startsWith('bots/hub/scripts/') && /(?:smoke|audit|inventory|transition|readiness|report|monitor)/.test(path.basename(file))) {

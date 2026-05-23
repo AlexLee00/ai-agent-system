@@ -163,6 +163,7 @@ function unitSmokeScripts(): string[] {
     'agent-hub-transition-audit.ts',
     'hub-transition-completion-gate.ts',
     'llm-routing-standard-smoke.ts',
+    'elsa-chat-safe-fallback-smoke.ts',
     'investment-selector-explicit-keys-smoke.ts',
     'llm-oauth-4-balance-smoke.ts',
     'llm-oauth4-rollout-launchd-smoke.ts',
