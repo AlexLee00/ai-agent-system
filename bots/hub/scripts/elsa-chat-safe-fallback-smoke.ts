@@ -26,11 +26,22 @@ assert.equal(result.provider, 'safe-fallback');
 assert.equal(result.selected_route, 'safe-fallback/elsa-chat-answer');
 assert.equal(result.safeFallback, true);
 assert.equal(result.degraded, true);
-assert.match(result.error, /fallback_exhausted: openai_codex_oauth_timeout_or_abort/);
+assert.equal(result.error, undefined, 'safe fallback responses must not expose error fields that downstream alarm mappers treat as failures');
+assert.equal(result.degradedReason, 'selector_chain_exhausted');
+assert.match(result.suppressedError, /fallback_exhausted: openai_codex_oauth_timeout_or_abort/);
+assert.equal(result.fallbackExhaustionSuppressed, true);
 assert.deepEqual(result.attempted_providers, attempts.map((attempt) => attempt.provider));
 assert.ok(
   unifiedCallerSource.indexOf('const safeFallback = _safeFallbackForSelectorExhaustion') < unifiedCallerSource.indexOf('await _notifyFallbackExhaustion(req, attempts, team)'),
   'Elsa safe fallback must return before production fallback exhaustion critical alarm is emitted',
+);
+assert.equal(
+  unifiedCaller._testOnly._shouldSuppressFallbackExhaustionAlarm(
+    { callerTeam: 'elsa', agent: 'chat' },
+    { selectorKey: 'elsa.chat.answer' },
+  ),
+  true,
+  'Elsa chat exhaustion must not emit duplicate ops-emergency critical alarms',
 );
 
 assert.equal(

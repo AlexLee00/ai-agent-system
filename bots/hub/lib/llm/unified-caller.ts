@@ -665,6 +665,9 @@ function _cacheKey(req) {
 function _shouldSuppressFallbackExhaustionAlarm(req, selectorChain) {
   if (req?.suppressFallbackExhaustionAlarm === true) return true;
   const selectorKey = String(req?.selectorKey || selectorChain?.selectorKey || '').trim().toLowerCase();
+  const callerTeam = String(req?.callerTeam || '').trim().toLowerCase();
+  const agent = String(req?.agent || '').trim().toLowerCase();
+  if (selectorKey === 'elsa.chat.answer' || (callerTeam === 'elsa' && ['chat', 'rag', 'vision', 'voice'].includes(agent))) return true;
   if (selectorKey === 'hub.alarm.classifier' || selectorKey.startsWith('hub.alarm.interpreter.')) return true;
   if (selectorKey.startsWith('hub.') && (selectorKey.endsWith('.smoke') || selectorKey.includes('.smoke.'))) return true;
   if (selectorKey.startsWith('hub.') && (selectorKey.includes('.probe') || selectorKey.includes('expiry_probe'))) return true;
@@ -689,7 +692,9 @@ function _safeFallbackForSelectorExhaustion(req, selectorChain, attempts, team) 
     durationMs: attempts.reduce((sum, attempt) => sum + Number(attempt.durationMs || 0), 0),
     degraded: true,
     safeFallback: true,
-    error: `fallback_exhausted: ${lastErr}`,
+    degradedReason: 'selector_chain_exhausted',
+    suppressedError: `fallback_exhausted: ${lastErr}`,
+    fallbackExhaustionSuppressed: true,
     attempted_providers: attempts.map((attempt) => attempt.provider),
     avoidedProviders: selectorChain?.avoidedProviders || [],
     fallbackCount: attempts.length,
