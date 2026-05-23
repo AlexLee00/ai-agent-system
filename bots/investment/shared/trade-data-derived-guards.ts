@@ -39,6 +39,8 @@ export const TRADE_DATA_WEAK_SYMBOLS = Object.freeze({
   'CRYPTO:ATOM/USDT': { reason: 'current epoch loss=-1.66%; require fresh confirmation before re-entry' },
   'CRYPTO:UNI/USDT': { reason: 'current epoch loss=-1.70%; require fresh confirmation before re-entry' },
   'DOMESTIC:006340': { reason: 'closed=6, winRate=0%, avgPnl=-11.48%' },
+  'DOMESTIC:031330': { reason: 'current epoch closed=2, winRate=0%, avgPnl=-4.99%; require fresh confirmation before re-entry' },
+  'DOMESTIC:067310': { reason: 'current epoch loss=-5.39%; require fresh confirmation before re-entry' },
   'OVERSEAS:POET': { reason: 'closed=3, avgPnl=-15.11%; require cooldown/probe-only evidence before re-entry' },
 });
 
@@ -393,10 +395,12 @@ export function evaluateTradeDataEntryGuard(signal = {}, env = process.env) {
   const familyPerformanceBias = resolveStrategyFamilyPerformanceBias(signal, strategyFamily);
   const externalEvidenceCount = resolveExternalEvidenceCount(signal);
   const technicalPresignal = hasTechnicalPresignal(signal);
-  const noExternalEvidence = externalEvidenceCount != null && externalEvidenceCount <= 0;
-  const noTechnicalPresignal = technicalPresignal === false;
   const strictConfirmationGuard = isStrictTradeDataConfirmationGuardEnabled(env);
   const confirmationQuality = buildTradeDataConfirmationQuality(signal);
+  const noExternalEvidence = externalEvidenceCount != null && externalEvidenceCount <= 0;
+  const noTechnicalPresignal = technicalPresignal === false;
+  const missingOrNoExternalEvidence = externalEvidenceCount == null || externalEvidenceCount <= 0;
+  const missingOrNoTechnicalConfirmation = technicalPresignal !== true && confirmationQuality.technical?.ok !== true;
   meta.confirmationQuality = confirmationQuality;
 
   if (market === 'crypto' && regime.includes('trending_bull')) {
@@ -457,7 +461,7 @@ export function evaluateTradeDataEntryGuard(signal = {}, env = process.env) {
       multiplier: market === 'domestic' ? 0.25 : market === 'overseas' ? 0.35 : 0.5,
       reason: 'promotion_ready_shadow 최근 실현 성과가 약해 신규 진입은 observation/probe 수준으로 축소',
     });
-    if ((market === 'domestic' || market === 'overseas') && (noExternalEvidence || noTechnicalPresignal)) {
+    if ((market === 'domestic' || market === 'overseas') && (missingOrNoExternalEvidence || missingOrNoTechnicalConfirmation)) {
       blockers.push('promotion_ready_shadow_without_confirmation');
       meta.promotionReadyShadow.blockerReason = 'promotion_ready_shadow requires fresh external evidence and technical confirmation before equity BUY';
     }
@@ -521,7 +525,7 @@ export function evaluateTradeDataEntryGuard(signal = {}, env = process.env) {
   if (market === 'crypto' && strategyFamily === 'mean_reversion') {
     warnings.push('crypto_mean_reversion_current_epoch_probe_only');
     meta.cryptoMeanReversion = {
-      reason: 'current operating-epoch mean_reversion closed=4, avgPnl=-2.14%, winRate=25%; require reversal evidence before live-sized entry',
+      reason: 'current operating-epoch mean_reversion closed=5, avgPnl=-2.65%, winRate=20%; require reversal evidence before live-sized entry',
       externalEvidenceCount,
       hasTechnicalPresignal: technicalPresignal,
     };
@@ -530,7 +534,7 @@ export function evaluateTradeDataEntryGuard(signal = {}, env = process.env) {
       multiplier: tradeMode === 'validation' ? 0.65 : 0.55,
       reason: 'mean_reversion 최근 실현 성과가 약해 reversal evidence 확인 전까지 sizing 축소',
     });
-    if (noExternalEvidence || noTechnicalPresignal) {
+    if (missingOrNoExternalEvidence || missingOrNoTechnicalConfirmation) {
       blockers.push('crypto_mean_reversion_without_reversal_evidence');
       meta.cryptoMeanReversion.blockerReason = 'mean_reversion requires positive external or technical reversal evidence under current-epoch loss pressure';
     }
@@ -553,7 +557,7 @@ export function evaluateTradeDataEntryGuard(signal = {}, env = process.env) {
       multiplier: tradeMode === 'validation' ? 0.75 : 0.65,
       reason: 'short-term/scalp 조기 손실 압력이 있어 신규 진입 sizing을 축소',
     });
-    if (regime.includes('ranging') && (noExternalEvidence || noTechnicalPresignal)) {
+    if (regime.includes('ranging') && (missingOrNoExternalEvidence || missingOrNoTechnicalConfirmation)) {
       blockers.push('crypto_short_term_scalping_ranging_without_confirmation');
       meta.cryptoShortTermScalping.blockerReason = 'ranging scalp entries require external evidence and technical presignal after early-exit loss cluster';
     }
@@ -575,7 +579,7 @@ export function evaluateTradeDataEntryGuard(signal = {}, env = process.env) {
       multiplier: tradeMode === 'validation' ? 0.7 : 0.55,
       reason: 'ranging 장세 손실 압력으로 신규 BUY sizing 축소',
     });
-    if ((strategyFamily === 'mean_reversion' || strategyFamily === 'short_term_scalping') && (noExternalEvidence || noTechnicalPresignal)) {
+    if ((strategyFamily === 'mean_reversion' || strategyFamily === 'short_term_scalping') && (missingOrNoExternalEvidence || missingOrNoTechnicalConfirmation)) {
       blockers.push('crypto_ranging_without_reversal_confirmation');
       meta.cryptoRangingPressure.blockerReason = 'ranging mean-reversion/scalp entries require reversal evidence and technical presignal';
     }

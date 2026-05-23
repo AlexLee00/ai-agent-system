@@ -38,16 +38,16 @@ async function loadRows(days = 14) {
       action,
       amount_usdt,
       confidence,
-      block_code,
+      COALESCE(NULLIF(block_code, ''), NULLIF(block_reason, ''), '') AS block_code,
       block_reason,
       block_meta,
       created_at
     FROM investment.signals
-    WHERE created_at >= NOW() - ($1::int || ' days')::interval
+    WHERE created_at >= NOW() - ($1::int * INTERVAL '1 day')
       AND status IN ('failed', 'blocked', 'rejected')
       AND (
-        COALESCE(block_code, '') = ANY($2)
-        OR block_meta ? 'risk_approval_execution'
+        COALESCE(NULLIF(block_code, ''), NULLIF(block_reason, ''), '') = ANY($2)
+        OR jsonb_exists(COALESCE(block_meta, '{}'::jsonb), 'risk_approval_execution')
       )
     ORDER BY created_at DESC
   `, [safeDays, EXECUTION_GUARD_CODES]).catch(() => []);

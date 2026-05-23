@@ -270,7 +270,7 @@ export async function loadSignalBlockHealth(pgPool) {
     'investment',
     `
       SELECT
-        COALESCE(NULLIF(block_code, ''), 'legacy_unclassified') AS block_code,
+        COALESCE(NULLIF(block_code, ''), NULLIF(block_reason, ''), 'legacy_unclassified') AS block_code,
         COALESCE(block_reason, '') AS block_reason,
         COUNT(*)::int AS cnt
       FROM investment.signals
@@ -319,7 +319,7 @@ export async function loadExecutionRiskApprovalGuardHealth(pgPool, periodHours =
       WHERE created_at >= NOW() - INTERVAL '1 hour' * $1
         AND status IN ('failed', 'blocked', 'rejected')
         AND (
-          COALESCE(block_code, '') IN (
+          COALESCE(NULLIF(block_code, ''), NULLIF(block_reason, ''), '') IN (
             'sec004_nemesis_bypass_guard',
             'sec004_stale_approval',
             'sec015_nemesis_bypass_guard',
@@ -327,7 +327,7 @@ export async function loadExecutionRiskApprovalGuardHealth(pgPool, periodHours =
             'sec015_overseas_nemesis_bypass_guard',
             'sec015_overseas_stale_approval'
           )
-          OR block_meta ? 'risk_approval_execution'
+          OR jsonb_exists(COALESCE(block_meta, '{}'::jsonb), 'risk_approval_execution')
         )
       GROUP BY 1, 2, 3
       ORDER BY cnt DESC, latest_at DESC
@@ -345,7 +345,7 @@ export async function loadExecutionRiskApprovalGuardHealth(pgPool, periodHours =
         action,
         amount_usdt,
         confidence,
-        block_code,
+        COALESCE(NULLIF(block_code, ''), NULLIF(block_reason, ''), '') AS block_code,
         block_reason,
         block_meta,
         created_at
@@ -353,7 +353,7 @@ export async function loadExecutionRiskApprovalGuardHealth(pgPool, periodHours =
       WHERE created_at >= NOW() - INTERVAL '1 hour' * $1
         AND status IN ('failed', 'blocked', 'rejected')
         AND (
-          COALESCE(block_code, '') IN (
+          COALESCE(NULLIF(block_code, ''), NULLIF(block_reason, ''), '') IN (
             'sec004_nemesis_bypass_guard',
             'sec004_stale_approval',
             'sec015_nemesis_bypass_guard',
@@ -361,7 +361,7 @@ export async function loadExecutionRiskApprovalGuardHealth(pgPool, periodHours =
             'sec015_overseas_nemesis_bypass_guard',
             'sec015_overseas_stale_approval'
           )
-          OR block_meta ? 'risk_approval_execution'
+          OR jsonb_exists(COALESCE(block_meta, '{}'::jsonb), 'risk_approval_execution')
         )
       ORDER BY created_at DESC
       LIMIT 8

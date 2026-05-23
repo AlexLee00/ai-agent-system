@@ -135,6 +135,54 @@ function resolveHanulFailureStatus(code = null, fallback = SIGNAL_STATUS.FAILED)
   return resolveExpectedPolicyBlockStatus(code, fallback);
 }
 
+function resolveHanulApprovalMarket(exchange = 'kis') {
+  return exchange === 'kis_overseas' ? 'overseas' : 'domestic';
+}
+
+async function preflightHanulApprovedSignals(approvedSignals = [], exchange = 'kis') {
+  const market = resolveHanulApprovalMarket(exchange);
+  const paperMode = isPaperMode();
+  const marketPrefix = market === 'overseas' ? 'sec015_overseas' : 'sec015';
+  const executable = [];
+  const blocked = [];
+
+  for (const signal of approvedSignals || []) {
+    const guard = buildExecutionRiskApprovalGuard(signal, {
+      market,
+      codePrefix: marketPrefix,
+      executionBlockedBy: 'hanul_approval_freshness_preflight',
+      paperMode,
+    });
+
+    if (guard.approved) {
+      executable.push(signal);
+      continue;
+    }
+
+    const reason = `SEC-015: ${guard.reason}`;
+    await markSignalFailedDetailed(signal.id, {
+      reason,
+      code: guard.code,
+      status: guard.status || resolveHanulFailureStatus(guard.code),
+      market,
+      symbol: signal.symbol,
+      action: signal.action,
+      amount: signal.amount_usdt,
+      meta: {
+        ...(guard.meta || {}),
+        approval_preflight: {
+          stage: 'approval_freshness_preflight',
+          source: 'list_hanul_executable_signals',
+          skipped_execution_path: true,
+        },
+      },
+    });
+    blocked.push({ signal, guard, reason });
+  }
+
+  return { executable, blocked };
+}
+
 async function enforceHanulNemesisApproval(signal, market = 'domestic') {
   const paperMode = isPaperMode();
   const { id: signalId, symbol, action } = signal;
@@ -1481,8 +1529,9 @@ export async function listHanulExecutableSignals(exchange, tradeMode = getInvest
     db.getPendingSignals(exchange, tradeMode),
     db.getApprovedSignals(exchange, tradeMode),
   ]);
+  const approvalPreflight = await preflightHanulApprovedSignals(approvedSignals, exchange);
   const signalsById = new Map();
-  for (const signal of [...pendingSignals, ...approvedSignals]) {
+  for (const signal of [...pendingSignals, ...approvalPreflight.executable]) {
     signalsById.set(signal.id, signal);
   }
   const signals = [...signalsById.values()].sort((a, b) => {
@@ -1494,6 +1543,7 @@ export async function listHanulExecutableSignals(exchange, tradeMode = getInvest
     signals,
     pendingCount: pendingSignals.length,
     approvedCount: approvedSignals.length,
+    approvalPreflightBlockedCount: approvalPreflight.blocked.length,
   };
 }
 
@@ -1501,11 +1551,12 @@ async function processPendingHanulSignals({ exchange, label, execute, delayMs = 
   const startedAt = Date.now();
   const tradeMode = getInvestmentTradeMode();
   console.log(`[한울] ${label} 실행대상 조회 시작 ${JSON.stringify({ pool: getInvestmentPoolStats() })}`);
-  const { signals, pendingCount, approvedCount } = await listHanulExecutableSignals(exchange, tradeMode);
+  const { signals, pendingCount, approvedCount, approvalPreflightBlockedCount } = await listHanulExecutableSignals(exchange, tradeMode);
   logHanulPhase(`${label} 실행대상 조회 완료`, startedAt, {
     signal_count: signals.length,
     pending_count: pendingCount,
     approved_count: approvedCount,
+    approval_preflight_blocked_count: approvalPreflightBlockedCount,
     trade_mode: tradeMode,
   });
   if (signals.length === 0) {

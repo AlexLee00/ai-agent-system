@@ -8,7 +8,7 @@ import {
   summarizeRowsByOperatingEpoch,
 } from './luna-operating-epoch.ts';
 import { deriveTradeJournalNumericId } from './posttrade-trade-journal-adapter.ts';
-import { buildTradeDataHygieneReport } from './trade-data-hygiene.ts';
+import { buildTradeDataHygieneReport, isExpectedPolicyBlockCode } from './trade-data-hygiene.ts';
 
 function rowsOf(result) {
   if (Array.isArray(result)) return result;
@@ -126,8 +126,15 @@ export async function buildTradeDataAnalysisReport({ limit = 5000, generatedAt =
   const totalSignals = Object.values(signalStatus).reduce((sum, value) => sum + value, 0);
   const failedSignals = num(signalStatus.failed);
   const executedSignals = num(signalStatus.executed);
+  const policyBlockedSignals = blockRows.reduce((sum, row) => {
+    return sum + (isExpectedPolicyBlockCode(row.reason) ? num(row.count) : 0);
+  }, 0);
+  const executionCandidateSignals = Math.max(0, totalSignals - policyBlockedSignals);
   const signalFailureRate = totalSignals > 0 ? Number((failedSignals / totalSignals).toFixed(4)) : null;
   const signalExecutionRate = totalSignals > 0 ? Number((executedSignals / totalSignals).toFixed(4)) : null;
+  const policyAdjustedExecutionRate = executionCandidateSignals > 0
+    ? Number((executedSignals / executionCandidateSignals).toFixed(4))
+    : signalExecutionRate;
   const journalRows = filterRowsForPolicyLearning(journalSourceRows, ['exit_time', 'entry_time']);
   const analytics = buildTradeAnalyticsReport(journalRows, { generatedAt });
   analytics.operatingEpochSummary = summarizeRowsByOperatingEpoch(journalSourceRows, ['exit_time', 'entry_time']);
@@ -187,6 +194,9 @@ export async function buildTradeDataAnalysisReport({ limit = 5000, generatedAt =
       byStatus: signalStatus,
       failureRate: signalFailureRate,
       executionRate: signalExecutionRate,
+      policyAdjustedExecutionRate,
+      policyBlockedSignals,
+      executionCandidateSignals,
       byMarketStatus: marketSignalRows,
       failedByExchangeAction: failedRows,
       blockedReasons: blockRows,
