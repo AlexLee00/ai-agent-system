@@ -24,11 +24,18 @@ const KRX_STOCK_BASE_URL = 'http://data-dbg.krx.co.kr/svc/apis/sto';
 const DATA_GO_STOCK_PRICE_URL = 'https://apis.data.go.kr/1160100/service/GetStockSecuritiesInfoService/getStockPriceInfo';
 const DATA_GO_KRX_LISTED_INFO_URL = 'https://apis.data.go.kr/1160100/service/GetKrxListedInfoService/getItemInfo';
 const DATA_GO_CORPORATE_FINANCE_URL = 'https://apis.data.go.kr/1160100/service/GetFinaStatInfoService_V2/getSummFinaStat_V2';
+const DATA_GO_COMPANY_BASIC_URLS = [
+  'https://apis.data.go.kr/1160100/service/GetCorpBasicInfoService_V2/getCorpOutline_V2',
+  'http://apis.data.go.kr/1160100/service/GetCorpBasicInfoService_V2/getCorpOutline_V2',
+  'https://apis.data.go.kr/1160100/service/GetCorpBasicInfoService/getCorpOutline',
+  'http://apis.data.go.kr/1160100/service/GetCorpBasicInfoService/getCorpOutline',
+];
 const DATA_GO_STOCK_PRICE_PAGE_SIZE = 1000;
 const DATA_GO_KRX_LISTED_INFO_PAGE_SIZE = 1000;
 const DEFAULT_REFERENCE_LOOKBACK_DAYS = 7;
 const DEFAULT_CORPORATE_FINANCE_PROBE_CRNO = '1746110000741';
 const DEFAULT_CORPORATE_FINANCE_PROBE_BIZ_YEAR = '2019';
+const DEFAULT_COMPANY_BASIC_PROBE_CRNO = '1301110006246';
 
 let cachedReference = null;
 let cachedHubSecrets = null;
@@ -109,12 +116,14 @@ export async function resolveDomesticOfficialReferenceCredentials(options = {}) 
   let stockPriceServiceKey = secretText(options.dataGoKrStockPriceServiceKey || options.stockPriceServiceKey || process.env.DATA_GO_KR_STOCK_PRICE_SERVICE_KEY || process.env.PUBLIC_DATA_STOCK_PRICE_SERVICE_KEY);
   let krxListedInfoServiceKey = secretText(options.dataGoKrKrxListedInfoServiceKey || options.krxListedInfoServiceKey || process.env.DATA_GO_KR_KRX_LISTED_INFO_SERVICE_KEY || process.env.PUBLIC_DATA_KRX_LISTED_INFO_SERVICE_KEY);
   let corporateFinanceServiceKey = secretText(options.corporateFinanceServiceKey || process.env.DATA_GO_KR_CORPORATE_FINANCE_SERVICE_KEY || process.env.PUBLIC_DATA_CORPORATE_FINANCE_SERVICE_KEY);
+  let companyBasicServiceKey = secretText(options.companyBasicServiceKey || options.dataGoKrCompanyBasicServiceKey || process.env.DATA_GO_KR_COMPANY_BASIC_SERVICE_KEY || process.env.PUBLIC_DATA_COMPANY_BASIC_SERVICE_KEY);
   let krxAuthKeySource = krxAuthKey ? 'env' : null;
   let stockPriceServiceKeySource = stockPriceServiceKey ? 'env' : null;
   let krxListedInfoServiceKeySource = krxListedInfoServiceKey ? 'env' : null;
   let corporateFinanceServiceKeySource = corporateFinanceServiceKey ? 'env' : null;
+  let companyBasicServiceKeySource = companyBasicServiceKey ? 'env' : null;
 
-  if (!krxAuthKey || !stockPriceServiceKey || !krxListedInfoServiceKey || !corporateFinanceServiceKey) {
+  if (!krxAuthKey || !stockPriceServiceKey || !krxListedInfoServiceKey || !corporateFinanceServiceKey || !companyBasicServiceKey) {
     const hub = await loadHubOfficialReferenceSecrets(timeoutMs);
     const official = hub.official || {};
     const config = hub.config || {};
@@ -211,6 +220,32 @@ export async function resolveDomesticOfficialReferenceCredentials(options = {}) 
       corporateFinanceServiceKey = secretText(value);
       corporateFinanceServiceKeySource = corporateFinanceServiceKey ? (nestedValueOf(official, ['data_go_kr_corporate_finance_service_key', 'corporate_finance_service_key', 'company_finance_service_key', 'data_go_kr.corporate_finance_service_key', 'data_go_kr.company_finance_service_key']) ? 'hub:official_market_reference' : 'hub:config/reservation') : null;
     }
+    if (!companyBasicServiceKey) {
+      const value = nestedValueOf(official, [
+        'data_go_kr_company_basic_service_key',
+        'company_basic_service_key',
+        'company_info_service_key',
+        'corporate_basic_service_key',
+        'data_go_kr.company_basic_service_key',
+        'data_go_kr.company_info_service_key',
+      ]) || nestedValueOf(config, [
+        'official_market_reference.data_go_kr_company_basic_service_key',
+        'official_market_reference.company_basic_service_key',
+        'official_market_reference.company_info_service_key',
+        'official_market_reference.corporate_basic_service_key',
+        'official_market_reference.data_go_kr.company_basic_service_key',
+        'official_market_reference.data_go_kr.company_info_service_key',
+        'data_go_kr.company_basic_service_key',
+        'data_go_kr.company_info_service_key',
+        'public_data.company_basic_service_key',
+        'public_data.company_info_service_key',
+        'reservation.datagokr_company_basic_key',
+      ]) || nestedValueOf(reservation, [
+        'datagokr_company_basic_key',
+      ]);
+      companyBasicServiceKey = secretText(value);
+      companyBasicServiceKeySource = companyBasicServiceKey ? (nestedValueOf(official, ['data_go_kr_company_basic_service_key', 'company_basic_service_key', 'company_info_service_key', 'corporate_basic_service_key', 'data_go_kr.company_basic_service_key', 'data_go_kr.company_info_service_key']) ? 'hub:official_market_reference' : 'hub:config/reservation') : null;
+    }
   }
 
   return {
@@ -218,15 +253,18 @@ export async function resolveDomesticOfficialReferenceCredentials(options = {}) 
     stockPriceServiceKey,
     krxListedInfoServiceKey,
     corporateFinanceServiceKey,
+    companyBasicServiceKey,
     status: {
       krxConfigured: Boolean(krxAuthKey),
       stockPriceConfigured: Boolean(stockPriceServiceKey),
       krxListedInfoConfigured: Boolean(krxListedInfoServiceKey),
       corporateFinanceConfigured: Boolean(corporateFinanceServiceKey),
+      companyBasicConfigured: Boolean(companyBasicServiceKey),
       krxAuthKeySource,
       stockPriceServiceKeySource,
       krxListedInfoServiceKeySource,
       corporateFinanceServiceKeySource,
+      companyBasicServiceKeySource,
     },
   };
 }
@@ -999,6 +1037,249 @@ export function corporateFinanceFlags(summary = null) {
   return flags;
 }
 
+function dataGoCompanyBasicUrls() {
+  const override = text(process.env.DATA_GO_KR_COMPANY_BASIC_URL || process.env.PUBLIC_DATA_COMPANY_BASIC_URL);
+  if (override) return override.split(',').map((item) => text(item)).filter(Boolean);
+  return DATA_GO_COMPANY_BASIC_URLS;
+}
+
+function normalizeDateDigits(value) {
+  const digits = text(value).replace(/\D/gu, '');
+  return digits.length >= 8 ? digits.slice(0, 8) : '';
+}
+
+async function fetchDataGoCompanyBasicRows({ serviceKey, crno, corpNm, timeoutMs }) {
+  if (!serviceKey) throw new Error('data_go_kr_company_basic_service_key_missing');
+  const normalizedCrno = text(crno);
+  const normalizedCorpNm = text(corpNm);
+  if (!normalizedCrno && !normalizedCorpNm) throw new Error('company_basic_identifier_missing');
+  const serviceKeyParam = String(serviceKey).includes('%') ? serviceKey : encodeURIComponent(serviceKey);
+  const criteria = [
+    'numOfRows=10',
+    'pageNo=1',
+    'resultType=json',
+    normalizedCrno ? `crno=${encodeURIComponent(normalizedCrno)}` : '',
+    normalizedCorpNm ? `corpNm=${encodeURIComponent(normalizedCorpNm)}` : '',
+  ].filter(Boolean).join('&');
+  const keyParamNames = unique([
+    text(process.env.DATA_GO_KR_COMPANY_BASIC_SERVICE_KEY_PARAM || ''),
+    'serviceKey',
+    'ServiceKey',
+  ]);
+
+  let emptyResult = null;
+  const errors = [];
+  for (const endpoint of dataGoCompanyBasicUrls()) {
+    for (const keyParamName of keyParamNames) {
+      try {
+        const payload = await fetchJson(`${endpoint}?${keyParamName}=${serviceKeyParam}&${criteria}`, { timeoutMs });
+        const resultCode = text(payload?.response?.header?.resultCode);
+        const resultMsg = text(payload?.response?.header?.resultMsg);
+        if (resultCode && resultCode !== '00') {
+          throw new Error(`resultCode=${resultCode}${resultMsg ? ` ${resultMsg}` : ''}`);
+        }
+        const rows = extractRows(payload);
+        const result = {
+          rows,
+          totalCount: Number(payload?.response?.body?.totalCount ?? rows.length),
+          resultCode: resultCode || null,
+          resultMsg: resultMsg || null,
+          endpoint,
+          keyParamName,
+        };
+        if (rows.length > 0) return result;
+        emptyResult = emptyResult || result;
+      } catch (error) {
+        errors.push(`${endpoint}:${keyParamName}:${error?.message || error}`);
+      }
+    }
+  }
+  if (emptyResult) return emptyResult;
+  throw new Error(errors.slice(0, 3).join(' | ') || 'company_basic_request_failed');
+}
+
+function pickCompanyBasicRow(rows = [], options = {}) {
+  const candidates = Array.isArray(rows) ? rows : [];
+  const crno = text(options.crno);
+  const corpNm = text(options.corpNm);
+  const rank = (row) => Number(normalizeDateDigits(row?.lastOpegDt || row?.fstOpegDt || row?.basDt) || 0);
+  const sorted = [...candidates].sort((a, b) => rank(b) - rank(a));
+  if (crno) {
+    const exactCrno = sorted.find((row) => text(row?.crno) === crno);
+    if (exactCrno) return exactCrno;
+  }
+  if (corpNm) {
+    const exactName = sorted.find((row) => text(row?.corpNm) === corpNm || text(row?.enpPbanCmpyNm) === corpNm);
+    if (exactName) return exactName;
+  }
+  return sorted[0] || null;
+}
+
+export function summarizeCompanyBasicRow(row = null) {
+  if (!row) return null;
+  const exchangeListedDate = normalizeDateDigits(row.enpXchgLstgDt);
+  const kosdaqListedDate = normalizeDateDigits(row.enpKosdaqLstgDt);
+  const krxListedDate = normalizeDateDigits(row.enpKrxLstgDt);
+  const exchangeDelistedDate = normalizeDateDigits(row.enpXchgLstgAbolDt);
+  const kosdaqDelistedDate = normalizeDateDigits(row.enpKosdaqLstgAbolDt);
+  const krxDelistedDate = normalizeDateDigits(row.enpKrxLstgAbolDt);
+  return {
+    baseDate: normalizeDateDigits(row.basDt),
+    crno: text(row.crno),
+    corpName: text(row.corpNm),
+    corpEnglishName: text(row.corpEnsnNm),
+    disclosureCompanyName: text(row.enpPbanCmpyNm),
+    representativeName: text(row.enpRprFnm),
+    businessRegistrationNumber: text(row.bzno),
+    marketCode: text(row.corpRegMrktDcd),
+    marketName: text(row.corpRegMrktDcdNm),
+    corporateTypeCode: text(row.corpDcd),
+    corporateTypeName: text(row.corpDcdNm),
+    industryCode: text(row.sicNm),
+    establishedDate: normalizeDateDigits(row.enpEstbDt),
+    settlementMonth: text(row.enpStacMm),
+    listedDate: krxListedDate || exchangeListedDate || kosdaqListedDate,
+    exchangeListedDate,
+    kosdaqListedDate,
+    krxListedDate,
+    exchangeDelistedDate,
+    kosdaqDelistedDate,
+    krxDelistedDate,
+    smeYn: text(row.smenpYn),
+    employeeCount: num(row.enpEmpeCnt, null),
+    averageServiceTerm: text(row.empeAvgCnwkTermCtt),
+    previousAverageSalary: num(row.enpPn1AvgSlryAmt, null),
+    monitorBankName: text(row.enpMntrBnkNm),
+    auditorName: text(row.actnAudpnNm),
+    auditorOpinion: text(row.audtRptOpnnCtt),
+    mainBusiness: text(row.enpMainBizNm),
+    homepageUrl: text(row.enpHmpgUrl),
+    phone: text(row.enpTlno),
+    fax: text(row.enpFxno),
+    postalCode: text(row.enpOzpno),
+    address: text(row.enpBsadr),
+    detailAddress: text(row.enpDtadr),
+    fssCorpUniqueNo: text(row.fssCorpUnqNo),
+    fssCorpChangedAt: text(row.fssCorpChgDtm),
+    firstOpenDate: normalizeDateDigits(row.fstOpegDt),
+    lastOpenDate: normalizeDateDigits(row.lastOpegDt),
+  };
+}
+
+export async function probeDataGoCompanyBasic(options = {}) {
+  const timeoutMs = Math.max(1000, Number(options.timeoutMs || DEFAULT_TIMEOUT_MS));
+  const credentials = await resolveDomesticOfficialReferenceCredentials({ ...options, timeoutMs });
+  const crno = text(options.crno || process.env.LUNA_COMPANY_BASIC_PROBE_CRNO || DEFAULT_COMPANY_BASIC_PROBE_CRNO);
+  const corpNm = text(options.corpNm || process.env.LUNA_COMPANY_BASIC_PROBE_CORP_NM || '');
+  const base = {
+    configured: Boolean(credentials.companyBasicServiceKey),
+    healthProbeEnabled: true,
+    endpoints: dataGoCompanyBasicUrls(),
+    crno,
+    corpNm,
+    keySource: credentials.status.companyBasicServiceKeySource || null,
+  };
+  if (!credentials.companyBasicServiceKey) {
+    return {
+      ...base,
+      ok: false,
+      rows: 0,
+      totalCount: 0,
+      error: 'data_go_kr_company_basic_service_key_missing',
+    };
+  }
+  try {
+    const result = await fetchDataGoCompanyBasicRows({
+      serviceKey: credentials.companyBasicServiceKey,
+      crno,
+      corpNm,
+      timeoutMs,
+    });
+    const first = Array.isArray(result.rows) ? result.rows[0] : null;
+    return {
+      ...base,
+      ok: true,
+      endpoint: result.endpoint,
+      keyParamName: result.keyParamName,
+      resultCode: result.resultCode,
+      resultMsg: result.resultMsg,
+      rows: result.rows.length,
+      totalCount: result.totalCount,
+      sampleKeys: first ? Object.keys(first).slice(0, 12) : [],
+    };
+  } catch (error) {
+    return {
+      ...base,
+      ok: false,
+      rows: 0,
+      totalCount: 0,
+      error: error?.message || String(error),
+    };
+  }
+}
+
+export async function fetchDataGoCompanyBasicProfile(options = {}) {
+  const timeoutMs = Math.max(1000, Number(options.timeoutMs || DEFAULT_TIMEOUT_MS));
+  const credentials = await resolveDomesticOfficialReferenceCredentials({ ...options, timeoutMs });
+  const crno = text(options.crno);
+  const corpNm = text(options.corpNm);
+  const base = {
+    crno,
+    corpNm,
+    configured: Boolean(credentials.companyBasicServiceKey),
+    keySource: credentials.status.companyBasicServiceKeySource || null,
+  };
+  if (!crno && !corpNm) {
+    return { ...base, ok: false, rows: 0, totalCount: 0, reason: 'company_basic_identifier_missing' };
+  }
+  if (!credentials.companyBasicServiceKey) {
+    return { ...base, ok: false, rows: 0, totalCount: 0, reason: 'data_go_kr_company_basic_service_key_missing' };
+  }
+  try {
+    const result = await fetchDataGoCompanyBasicRows({
+      serviceKey: credentials.companyBasicServiceKey,
+      crno,
+      corpNm,
+      timeoutMs,
+    });
+    const summary = summarizeCompanyBasicRow(pickCompanyBasicRow(result.rows, { crno, corpNm }));
+    return {
+      ...base,
+      ok: true,
+      endpoint: result.endpoint,
+      keyParamName: result.keyParamName,
+      resultCode: result.resultCode,
+      resultMsg: result.resultMsg,
+      rows: result.rows.length,
+      totalCount: result.totalCount,
+      summary,
+      flags: companyBasicFlags(summary),
+    };
+  } catch (error) {
+    return {
+      ...base,
+      ok: false,
+      rows: 0,
+      totalCount: 0,
+      reason: error?.message || String(error),
+    };
+  }
+}
+
+export function companyBasicFlags(summary = null) {
+  if (!summary) return ['company_basic_missing'];
+  const flags = [];
+  if (!summary.crno) flags.push('company_crno_missing');
+  if (!summary.corpName) flags.push('company_name_missing');
+  if (!summary.businessRegistrationNumber) flags.push('business_registration_number_missing');
+  if (!summary.industryCode) flags.push('industry_code_missing');
+  if (!summary.establishedDate) flags.push('established_date_missing');
+  if (!summary.listedDate) flags.push('company_listing_date_missing');
+  if (summary.exchangeDelistedDate || summary.kosdaqDelistedDate || summary.krxDelistedDate) flags.push('company_delisted_date_present');
+  if (summary.employeeCount != null && summary.employeeCount <= 0) flags.push('employee_count_non_positive');
+  return flags;
+}
+
 export async function fetchDomesticOfficialReference(options = {}) {
   if (options.fixture) return buildFixtureDomesticOfficialReference();
   const basDd = text(options.baseDate || process.env.LUNA_DOMESTIC_OFFICIAL_REFERENCE_BASE_DATE || yyyymmddKst());
@@ -1034,6 +1315,19 @@ export async function fetchDomesticOfficialReference(options = {}) {
         healthProbeEnabled: false,
         endpoint: DATA_GO_CORPORATE_FINANCE_URL,
         keySource: credentials.status.corporateFinanceServiceKeySource || null,
+        ok: null,
+        rows: 0,
+        totalCount: 0,
+        note: 'health_probe_disabled',
+      };
+  const companyBasicProbeEnabled = bool(options.companyBasicProbe, bool(process.env.LUNA_COMPANY_BASIC_HEALTH_PROBE, false));
+  const companyBasic = companyBasicProbeEnabled
+    ? await probeDataGoCompanyBasic({ ...options, timeoutMs })
+    : {
+        configured: Boolean(credentials.companyBasicServiceKey),
+        healthProbeEnabled: false,
+        endpoints: dataGoCompanyBasicUrls(),
+        keySource: credentials.status.companyBasicServiceKeySource || null,
         ok: null,
         rows: 0,
         totalCount: 0,
@@ -1082,6 +1376,12 @@ export async function fetchDomesticOfficialReference(options = {}) {
     },
     dataGoKrCorporateFinance: {
       ...corporateFinance,
+      integrationMode: krxListedInfo.krxListedInfoRows?.length ? 'health_probe_plus_symbol_crno_mapping_available' : 'health_probe_only_until_symbol_crno_mapping_is_available',
+      symbolCrnoMappingRequired: !krxListedInfo.krxListedInfoRows?.length,
+      symbolCrnoMappingSource: 'data_go_kr_krx_listed_info_or_equivalent',
+    },
+    dataGoKrCompanyBasic: {
+      ...companyBasic,
       integrationMode: krxListedInfo.krxListedInfoRows?.length ? 'health_probe_plus_symbol_crno_mapping_available' : 'health_probe_only_until_symbol_crno_mapping_is_available',
       symbolCrnoMappingRequired: !krxListedInfo.krxListedInfoRows?.length,
       symbolCrnoMappingSource: 'data_go_kr_krx_listed_info_or_equivalent',
@@ -1269,6 +1569,7 @@ export function summarizeDomesticOfficialReference(reference = null) {
     dataGoKrStockPrice: reference?.dataGoKrStockPrice || null,
     dataGoKrKrxListedInfo: reference?.dataGoKrKrxListedInfo || null,
     dataGoKrCorporateFinance: reference?.dataGoKrCorporateFinance || null,
+    dataGoKrCompanyBasic: reference?.dataGoKrCompanyBasic || null,
     unavailableReason: reference?.unavailableReason || null,
     credentialStatus: reference?.credentialStatus || null,
     fetchErrors: Array.isArray(reference?.fetchErrors) ? reference.fetchErrors.slice(0, 12) : [],
@@ -1286,6 +1587,10 @@ export default {
   fetchDataGoCorporateFinanceSummary,
   summarizeCorporateFinanceRow,
   corporateFinanceFlags,
+  probeDataGoCompanyBasic,
+  fetchDataGoCompanyBasicProfile,
+  summarizeCompanyBasicRow,
+  companyBasicFlags,
   getCachedDomesticOfficialReference,
   evaluateDomesticOfficialReferenceGate,
   annotateDomesticOfficialReferenceCandidates,

@@ -26,6 +26,9 @@ import { registerCommunicationInfrastructureGateSkill } from './skills/communica
 import { registerHybridPromotionGateSkill } from './skills/hybrid-promotion-gate.ts';
 import { registerHybridPromotionReviewSkill } from './skills/hybrid-promotion-review.ts';
 import { registerHybridFinalClosureSkill } from './skills/hybrid-final-closure.ts';
+import { registerFundamentalQuantTradingSkill } from './skills/fundamental-quant-trading.ts';
+import { registerEarningsSurpriseTradingSkill } from './skills/earnings-surprise-trading.ts';
+import { registerDisclosureEventDrivenSkill } from './skills/disclosure-event-driven.ts';
 
 const _require = createRequire(import.meta.url);
 const express = _require('express');
@@ -50,6 +53,9 @@ registerCommunicationInfrastructureGateSkill();
 registerHybridPromotionGateSkill();
 registerHybridPromotionReviewSkill();
 registerHybridFinalClosureSkill();
+registerFundamentalQuantTradingSkill();
+registerEarningsSurpriseTradingSkill();
+registerDisclosureEventDrivenSkill();
 
 // ── SSE 스트림 저장소 ──────────────────────────────────────────────
 const _streams: Map<string, ReturnType<typeof express.response.write>[]> = new Map();

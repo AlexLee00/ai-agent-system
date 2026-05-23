@@ -74,6 +74,20 @@ export function blacklistGroqKey(apiKey: string, ms = BLACKLIST_DURATION_MS): vo
   blacklistedKeys.set(apiKey, Date.now() + ms);
 }
 
+export function getGroqAccountPoolStatus(): { total: number; available: number; cooldown: number } {
+  const accounts = loadGroqAccounts();
+  const now = Date.now();
+  let cooldown = 0;
+  for (const key of accounts) {
+    if (isBlacklisted(key, now)) cooldown += 1;
+  }
+  return {
+    total: accounts.length,
+    available: Math.max(0, accounts.length - cooldown),
+    cooldown,
+  };
+}
+
 export function resetGroqKeyBlacklistForTests(): void {
   blacklistedKeys.clear();
   rotationIndex = 0;

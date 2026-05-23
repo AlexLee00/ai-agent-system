@@ -97,6 +97,7 @@ export async function interpretAlarm({
       taskType: 'alarm_interpretation',
       systemPrompt: config.systemPrompt,
       prompt: userPrompt,
+      suppressFallbackExhaustionAlarm: true,
       logMeta: { team: 'hub', bot: `alarm-interpreter-${alarmType}`, requestType: 'alarm_interpretation', selectorKey: config.selectorKey },
     });
     const output = result?.result || result?.text || '';

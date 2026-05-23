@@ -345,6 +345,19 @@ const CATEGORY_HANDLERS: Record<string, CategoryHandler> = {
         publicData.company_finance_service_key ||
         reservation.datagokr_corporate_finance_key ||
         '',
+      data_go_kr_company_basic_service_key:
+        d.data_go_kr_company_basic_service_key ||
+        d.company_basic_service_key ||
+        d.company_info_service_key ||
+        d.corporate_basic_service_key ||
+        d.data_go_kr?.company_basic_service_key ||
+        d.data_go_kr?.company_info_service_key ||
+        dataGoKr.company_basic_service_key ||
+        dataGoKr.company_info_service_key ||
+        publicData.company_basic_service_key ||
+        publicData.company_info_service_key ||
+        reservation.datagokr_company_basic_key ||
+        '',
       krx_openapi_base_url: d.krx_openapi_base_url || d.krx_base_url || '',
       data_go_kr_stock_price_url: d.data_go_kr_stock_price_url || d.stock_price_url || '',
     };

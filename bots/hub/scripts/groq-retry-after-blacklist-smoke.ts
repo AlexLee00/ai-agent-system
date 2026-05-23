@@ -3,6 +3,7 @@
 const assert = require('node:assert/strict');
 const { callGroqFallback, _testOnly } = require('../lib/llm/groq-fallback.ts');
 const {
+  getGroqAccountPoolStatus,
   resetGroqKeyBlacklistForTests,
   _testOnlySetGroqAccounts,
   _testOnlyResetGroqAccounts,
@@ -68,6 +69,7 @@ async function main() {
   delete process.env.GROQ_API_KEY;
   delete process.env.HUB_GROQ_SERVICE_TIER;
   _testOnlySetGroqAccounts(['groq-smoke-1', 'groq-smoke-2', 'groq-smoke-3', 'groq-smoke-4', 'groq-smoke-5']);
+  assert.deepEqual(getGroqAccountPoolStatus(), { total: 5, available: 5, cooldown: 0 });
 
   fetchCalls = 0;
   global.fetch = async (_url, init) => {
@@ -94,6 +96,7 @@ async function main() {
   assert.equal(pooled.result, 'ok');
   assert.equal(fetchCalls, 5, 'Groq fallback must exhaust the configured key pool before failing');
   assert.equal(pooled.rateLimit['x-ratelimit-remaining-requests'], '999');
+  assert.deepEqual(getGroqAccountPoolStatus(), { total: 5, available: 1, cooldown: 4 });
 
   const { _testOnly: unifiedTestOnly } = require('../lib/llm/unified-caller.ts');
   assert.equal(

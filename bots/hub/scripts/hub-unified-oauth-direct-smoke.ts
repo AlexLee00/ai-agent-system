@@ -105,6 +105,22 @@ async function main() {
     );
     assert.equal(
       unifiedCaller.default._testOnly._shouldSuppressFallbackExhaustionAlarm(
+        { selectorKey: 'hub.alarm.interpreter.work' },
+        null,
+      ),
+      true,
+      'Hub alarm interpreter enrichment must fail open without emitting fallback exhaustion criticals',
+    );
+    assert.equal(
+      unifiedCaller.default._testOnly._shouldSuppressFallbackExhaustionAlarm(
+        { selectorKey: 'hub.alarm.classifier' },
+        null,
+      ),
+      true,
+      'Hub alarm classifier enrichment must fail open without emitting fallback exhaustion criticals',
+    );
+    assert.equal(
+      unifiedCaller.default._testOnly._shouldSuppressFallbackExhaustionAlarm(
         { selectorKey: 'blog.pos.writer', taskType: 'smoke_test_name_must_not_suppress' },
         null,
       ),

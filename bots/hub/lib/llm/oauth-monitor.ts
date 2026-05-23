@@ -159,9 +159,13 @@ export async function checkOpenAIOAuthHealth(): Promise<OpenAIOAuthHealth> {
 
 export async function checkGroqAccounts(): Promise<{ available_accounts: number; total_accounts: number }> {
   try {
-    const { loadGroqAccounts } = require('./secrets-loader');
-    const accounts = await loadGroqAccounts();
-    return { available_accounts: accounts.length, total_accounts: accounts.length };
+    const { getGroqAccountPoolStatus } = require('./secrets-loader');
+    const status = await getGroqAccountPoolStatus();
+    return {
+      available_accounts: status.available,
+      total_accounts: status.total,
+      cooldown_accounts: status.cooldown,
+    } as { available_accounts: number; total_accounts: number; cooldown_accounts: number };
   } catch {
     return { available_accounts: 0, total_accounts: 0 };
   }

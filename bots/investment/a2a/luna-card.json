@@ -141,6 +141,30 @@
       "outputModes": ["application/json"]
     },
     {
+      "id": "fundamental-quant-trading",
+      "name": "Korea Fundamental Quant Shadow",
+      "description": "Open DART 재무지표 기반 Value/Quality/Growth 추천을 Shadow Mode로 산출하고 live 주문에는 반영하지 않음",
+      "tags": ["finance", "korea", "opendart", "fundamental", "shadow"],
+      "inputModes": ["application/json"],
+      "outputModes": ["application/json"]
+    },
+    {
+      "id": "earnings-surprise-trading",
+      "name": "Korea Earnings Surprise Shadow",
+      "description": "Open DART 실적 변화 기반 실적 서프라이즈 후보를 Shadow Mode로 산출하고 live 주문에는 반영하지 않음",
+      "tags": ["finance", "korea", "earnings", "opendart", "shadow"],
+      "inputModes": ["application/json"],
+      "outputModes": ["application/json"]
+    },
+    {
+      "id": "disclosure-event-driven",
+      "name": "Korea Disclosure Event Shadow",
+      "description": "Open DART 공시 유형·중요도 기반 이벤트 드리븐 후보를 Shadow Mode로 산출하고 live 주문에는 반영하지 않음",
+      "tags": ["finance", "korea", "disclosure", "event-driven", "shadow"],
+      "inputModes": ["application/json"],
+      "outputModes": ["application/json"]
+    },
+    {
       "id": "trade-signal-generation",
       "name": "매매 시그널 생성",
       "description": "Phase 2에서는 Entry Decision Shadow 결과를 반환하고 실제 시그널 생성은 수행하지 않음",

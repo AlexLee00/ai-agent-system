@@ -9,6 +9,7 @@ import {
   buildFixtureDomesticOfficialReference,
   evaluateDomesticOfficialReferenceGate,
   fetchDomesticOfficialReference,
+  fetchDataGoCompanyBasicProfile,
   fetchDataGoCorporateFinanceSummary,
   getCachedDomesticOfficialReference,
   summarizeDomesticOfficialReference,
@@ -110,6 +111,7 @@ async function resolveReference(options = {}) {
       minTurnoverKrw: options.minTurnoverKrw,
       minListingAgeDays: options.minListingAgeDays,
       corporateFinanceProbe: options.corporateFinanceProbe,
+      companyBasicProbe: options.companyBasicProbe,
     });
     if (options.writeCache && fetched.available) {
       writeDomesticOfficialReferenceCache(fetched, options);
@@ -123,6 +125,8 @@ async function resolveReference(options = {}) {
     timeoutMs: options.timeoutMs,
     minTurnoverKrw: options.minTurnoverKrw,
     minListingAgeDays: options.minListingAgeDays,
+    corporateFinanceProbe: options.corporateFinanceProbe,
+    companyBasicProbe: options.companyBasicProbe,
   });
   if (options.writeCache && reference.available) {
     writeDomesticOfficialReferenceCache(reference, options);
@@ -161,6 +165,36 @@ async function enrichCandidatesWithCorporateFinance(candidates = [], options = {
   });
 }
 
+async function enrichCandidatesWithCompanyBasic(candidates = [], options = {}) {
+  if (!options.companyBasicCandidateProbe) return candidates;
+  const limit = Math.max(0, Math.min(20, Number(options.companyBasicCandidateLimit || 5)));
+  if (limit <= 0) return candidates;
+  const targets = candidates
+    .filter((item) => item.officialReferenceCrno || item.officialReferenceName)
+    .slice(0, limit);
+  const bySymbol = new Map();
+  for (const item of targets) {
+    const result = await fetchDataGoCompanyBasicProfile({
+      crno: item.officialReferenceCrno,
+      corpNm: item.officialReferenceName,
+      timeoutMs: options.timeoutMs,
+    });
+    bySymbol.set(item.symbol, result);
+  }
+  return candidates.map((item) => {
+    const profile = bySymbol.get(item.symbol);
+    if (!profile) return item;
+    return {
+      ...item,
+      companyBasicStatus: profile.ok && profile.summary ? 'available' : 'missing',
+      companyBasicRows: profile.rows,
+      companyBasicTotalCount: profile.totalCount,
+      companyBasicFlags: profile.flags || (profile.reason ? [profile.reason] : []),
+      companyBasic: profile.summary || null,
+    };
+  });
+}
+
 export async function runLunaDomesticOfficialReference(options: any = {}) {
   const fixture = options.fixture === true;
   const requestedSymbols = symbolsFrom(options.symbols || '');
@@ -190,6 +224,7 @@ export async function runLunaDomesticOfficialReference(options: any = {}) {
   let evaluatedCandidates = [...annotated.candidates, ...annotated.excluded]
     .sort((a, b) => Number(b.score || 0) - Number(a.score || 0));
   evaluatedCandidates = await enrichCandidatesWithCorporateFinance(evaluatedCandidates, options);
+  evaluatedCandidates = await enrichCandidatesWithCompanyBasic(evaluatedCandidates, options);
   const evaluatedHoldings = positionRows.map((row) => evaluateHolding(row, reference, {
     hardGate: options.hardGate,
   }));
@@ -237,6 +272,10 @@ export async function runLunaDomesticOfficialReference(options: any = {}) {
       corporateFinanceBizYear: item.corporateFinanceBizYear || null,
       corporateFinanceFlags: item.corporateFinanceFlags || [],
       corporateFinance: item.corporateFinance || null,
+      companyBasicStatus: item.companyBasicStatus || null,
+      companyBasicRows: item.companyBasicRows ?? null,
+      companyBasicFlags: item.companyBasicFlags || [],
+      companyBasic: item.companyBasic || null,
     })),
     holdings: {
       total: evaluatedHoldings.length,
@@ -272,6 +311,9 @@ async function main() {
     corporateFinanceCandidateProbe: hasFlag('corporate-finance-candidate-probe'),
     corporateFinanceCandidateLimit: Number(argValue('corporate-finance-candidate-limit', 5)),
     corporateFinanceBizYear: argValue('corporate-finance-biz-year', process.env.LUNA_CORPORATE_FINANCE_BIZ_YEAR || '2024'),
+    companyBasicProbe: hasFlag('company-basic-probe'),
+    companyBasicCandidateProbe: hasFlag('company-basic-candidate-probe'),
+    companyBasicCandidateLimit: Number(argValue('company-basic-candidate-limit', 5)),
     symbols: argValue('symbols', ''),
   });
   if (hasFlag('json')) console.log(JSON.stringify(result, null, 2));

@@ -32,6 +32,9 @@ export async function runLunaOfficialMarketReferenceSecretsDoctor(options = {}) 
     field('official_market_reference.data_go_kr_krx_listed_info_service_key', status.krxListedInfoConfigured, status.krxListedInfoServiceKeySource),
     field('official_market_reference.data_go_kr_corporate_finance_service_key', status.corporateFinanceConfigured, status.corporateFinanceServiceKeySource),
   ];
+  const optional = [
+    field('official_market_reference.data_go_kr_company_basic_service_key', status.companyBasicConfigured, status.companyBasicServiceKeySource),
+  ];
   const ready = required.every((item) => item.present);
   return {
     ok: true,
@@ -39,6 +42,7 @@ export async function runLunaOfficialMarketReferenceSecretsDoctor(options = {}) 
     status: ready ? 'official_market_reference_secrets_ready' : 'official_market_reference_secrets_missing',
     valuesRedacted: true,
     required,
+    optional,
     acceptedFallbacks: {
       krx: [
         'krx.auth_key',
@@ -58,6 +62,15 @@ export async function runLunaOfficialMarketReferenceSecretsDoctor(options = {}) 
         'data_go_kr.corporate_finance_service_key',
         'public_data.corporate_finance_service_key',
       ],
+      companyBasic: [
+        'official_market_reference.data_go_kr_company_basic_service_key',
+        'official_market_reference.company_basic_service_key',
+        'official_market_reference.company_info_service_key',
+        'official_market_reference.data_go_kr.company_basic_service_key',
+        'data_go_kr.company_basic_service_key',
+        'public_data.company_basic_service_key',
+        'reservation.datagokr_company_basic_key',
+      ],
     },
     template: options.template
       ? {
@@ -66,12 +79,13 @@ export async function runLunaOfficialMarketReferenceSecretsDoctor(options = {}) 
             data_go_kr_stock_price_service_key: '<DATA_GO_KR_FINANCIAL_STOCK_PRICE_SERVICE_KEY>',
             data_go_kr_krx_listed_info_service_key: '<DATA_GO_KR_KRX_LISTED_INFO_SERVICE_KEY>',
             data_go_kr_corporate_finance_service_key: '<DATA_GO_KR_CORPORATE_FINANCE_SERVICE_KEY>',
+            data_go_kr_company_basic_service_key: '<DATA_GO_KR_COMPANY_BASIC_SERVICE_KEY>',
           },
         }
       : undefined,
     nextCommands: [
       'npm --prefix bots/investment run -s secrets-doctor:luna-official-market-reference',
-      'npm --prefix bots/investment run -s runtime:luna-domestic-official-reference -- --network --refresh --write-cache',
+      'npm --prefix bots/investment run -s runtime:luna-domestic-official-reference -- --network --refresh --write-cache --company-basic-probe',
     ],
   };
 }

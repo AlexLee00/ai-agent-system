@@ -665,6 +665,7 @@ function _cacheKey(req) {
 function _shouldSuppressFallbackExhaustionAlarm(req, selectorChain) {
   if (req?.suppressFallbackExhaustionAlarm === true) return true;
   const selectorKey = String(req?.selectorKey || selectorChain?.selectorKey || '').trim().toLowerCase();
+  if (selectorKey === 'hub.alarm.classifier' || selectorKey.startsWith('hub.alarm.interpreter.')) return true;
   if (selectorKey.startsWith('hub.') && (selectorKey.endsWith('.smoke') || selectorKey.includes('.smoke.'))) return true;
   if (selectorKey.startsWith('hub.') && (selectorKey.includes('.probe') || selectorKey.includes('expiry_probe'))) return true;
   return false;

@@ -73,6 +73,7 @@ export async function classifyAlarmWithLLM({
       taskType: 'alarm_classification',
       systemPrompt: SYSTEM_PROMPT,
       prompt: userPrompt,
+      suppressFallbackExhaustionAlarm: true,
       logMeta: { team: 'hub', bot: 'alarm-classifier', requestType: 'alarm_classification', selectorKey: 'hub.alarm.classifier' },
     });
     const output = result?.result || result?.text || '';

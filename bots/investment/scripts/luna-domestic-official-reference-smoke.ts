@@ -8,6 +8,7 @@ import {
   annotateDomesticOfficialReferenceCandidates,
   buildFixtureDomesticOfficialReference,
   evaluateDomesticOfficialReferenceGate,
+  probeDataGoCompanyBasic,
   probeDataGoCorporateFinance,
   resolveDomesticOfficialReferenceCredentialStatus,
 } from '../shared/domestic-official-reference.ts';
@@ -30,11 +31,13 @@ export async function runLunaDomesticOfficialReferenceSmoke() {
         data_go_kr_stock_price_service_key: 'fixture-stock-key',
         data_go_kr_krx_listed_info_service_key: 'fixture-listed-info-key',
         data_go_kr_corporate_finance_service_key: 'fixture-corporate-key',
+        data_go_kr_company_basic_service_key: 'fixture-company-basic-key',
       };
     };
     const credentialStatus = await resolveDomesticOfficialReferenceCredentialStatus({ timeoutMs: 1000 });
     assert.equal(credentialStatus.krxConfigured, true);
     assert.equal(credentialStatus.krxListedInfoConfigured, true);
+    assert.equal(credentialStatus.companyBasicConfigured, true);
     assert.equal(credentialStatus.krxAuthKeySource, 'hub:official_market_reference');
     assert.ok(categories.includes('official_market_reference'));
   } finally {
@@ -112,48 +115,98 @@ export async function runLunaDomesticOfficialReferenceSmoke() {
 
   const originalFetch = globalThis.fetch;
   const originalCorporateKey = process.env.DATA_GO_KR_CORPORATE_FINANCE_SERVICE_KEY;
+  const originalCompanyBasicKey = process.env.DATA_GO_KR_COMPANY_BASIC_SERVICE_KEY;
   try {
     process.env.DATA_GO_KR_CORPORATE_FINANCE_SERVICE_KEY = 'fixture-corporate-key';
-    globalThis.fetch = async () => ({
-      ok: true,
-      status: 200,
-      text: async () => JSON.stringify({
-        response: {
-          header: { resultCode: '00', resultMsg: 'NORMAL SERVICE.' },
-          body: {
-            totalCount: 1,
-            items: {
-              item: {
-                basDt: '20260520',
-                crno: '1746110000741',
-                bizYear: '2019',
-                enpSaleAmt: '1000000',
+    process.env.DATA_GO_KR_COMPANY_BASIC_SERVICE_KEY = 'fixture-company-basic-key';
+    globalThis.fetch = async (url) => {
+      const href = String(url || '');
+      if (href.includes('GetCorpBasicInfoService')) {
+        return {
+          ok: true,
+          status: 200,
+          text: async () => JSON.stringify({
+            response: {
+              header: { resultCode: '00', resultMsg: 'NORMAL SERVICE.' },
+              body: {
+                totalCount: 1,
+                items: {
+                  item: {
+                    basDt: '20260520',
+                    crno: '1301110006246',
+                    corpNm: '삼성전자(주)',
+                    corpEnsnNm: 'Samsung Electronics Co., Ltd.',
+                    enpPbanCmpyNm: '삼성전자',
+                    enpRprFnm: '한종희',
+                    bzno: '1248100998',
+                    corpRegMrktDcdNm: '유가증권시장',
+                    sicNm: '264',
+                    enpEstbDt: '19690113',
+                    enpXchgLstgDt: '19750611',
+                    enpEmpeCnt: '120000',
+                    enpMainBizNm: '전자제품 제조',
+                    fssCorpUnqNo: '00126380',
+                    lastOpegDt: '20260520',
+                  },
+                },
+              },
+            },
+          }),
+        };
+      }
+      return {
+        ok: true,
+        status: 200,
+        text: async () => JSON.stringify({
+          response: {
+            header: { resultCode: '00', resultMsg: 'NORMAL SERVICE.' },
+            body: {
+              totalCount: 1,
+              items: {
+                item: {
+                  basDt: '20260520',
+                  crno: '1746110000741',
+                  bizYear: '2019',
+                  enpSaleAmt: '1000000',
+                },
               },
             },
           },
-        },
-      }),
-    });
+        }),
+      };
+    };
     const corporateFinanceProbe = await probeDataGoCorporateFinance({ timeoutMs: 1000 });
     assert.equal(corporateFinanceProbe.ok, true);
     assert.equal(corporateFinanceProbe.rows, 1);
     assert.ok(corporateFinanceProbe.sampleKeys.includes('enpSaleAmt'));
+
+    const companyBasicProbe = await probeDataGoCompanyBasic({ timeoutMs: 1000 });
+    assert.equal(companyBasicProbe.ok, true);
+    assert.equal(companyBasicProbe.rows, 1);
+    assert.ok(companyBasicProbe.sampleKeys.includes('corpNm'));
 
     const enrichedRuntime = await runLunaDomesticOfficialReference({
       fixture: true,
       dryRun: true,
       corporateFinanceCandidateProbe: true,
       corporateFinanceCandidateLimit: 1,
+      companyBasicCandidateProbe: true,
+      companyBasicCandidateLimit: 1,
       timeoutMs: 1000,
     });
     const enrichedSamsung = enrichedRuntime.officialReferenceCandidates.find((item) => item.symbol === '005930');
     assert.equal(enrichedSamsung.officialReferenceCrno, '1301110006246');
     assert.equal(enrichedSamsung.corporateFinanceStatus, 'available');
     assert.ok(enrichedSamsung.corporateFinanceFlags.includes('operating_loss') === false);
+    assert.equal(enrichedSamsung.companyBasicStatus, 'available');
+    assert.equal(enrichedSamsung.companyBasic.corpName, '삼성전자(주)');
+    assert.ok(enrichedSamsung.companyBasicFlags.includes('business_registration_number_missing') === false);
   } finally {
     globalThis.fetch = originalFetch;
     if (originalCorporateKey == null) delete process.env.DATA_GO_KR_CORPORATE_FINANCE_SERVICE_KEY;
     else process.env.DATA_GO_KR_CORPORATE_FINANCE_SERVICE_KEY = originalCorporateKey;
+    if (originalCompanyBasicKey == null) delete process.env.DATA_GO_KR_COMPANY_BASIC_SERVICE_KEY;
+    else process.env.DATA_GO_KR_COMPANY_BASIC_SERVICE_KEY = originalCompanyBasicKey;
   }
 
   return {
