@@ -180,6 +180,23 @@ async function test_stages_define_required_lifecycle() {
   console.log('✅ auto-dev: lifecycle stages are defined');
 }
 
+async function test_js_bridge_loads_pipeline_status_snapshot() {
+  const bridgePath = path.resolve(__dirname, '../lib/auto-dev-pipeline.js');
+  delete require.cache[bridgePath];
+
+  const pipeline = require(bridgePath);
+  const snapshot = pipeline.getAutoDevStatusSnapshot({
+    profile: 'shadow',
+  });
+
+  assert.strictEqual(snapshot.ok, true);
+  assert.ok(snapshot.counts && typeof snapshot.counts.pendingDocs === 'number');
+  assert.ok(Array.isArray(snapshot.pendingDocs));
+
+  delete require.cache[bridgePath];
+  console.log('✅ auto-dev: js bridge loads status snapshot');
+}
+
 async function test_listAutoDevDocuments_uses_auto_dev_only() {
   const tmpRoot = makeTempRoot();
   fs.mkdirSync(path.join(tmpRoot, 'docs', 'auto_dev'), { recursive: true });
@@ -2068,6 +2085,7 @@ async function main() {
   console.log('=== Auto Dev Pipeline 테스트 시작 ===\n');
   const tests = [
     test_stages_define_required_lifecycle,
+    test_js_bridge_loads_pipeline_status_snapshot,
     test_listAutoDevDocuments_uses_auto_dev_only,
     test_listAutoDevDocuments_respects_manifest_states,
     test_missing_auto_dev_document_is_skipped,
