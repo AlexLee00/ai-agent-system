@@ -63,14 +63,10 @@ const ERROR_TYPE_LABELS: Record<string, string> = {
 };
 
 function buildTestScope(errorType: string): string[] {
-  const base = ['npm --prefix bots/reservation run -s test:unit 2>/dev/null || true'];
-  if (/selector/.test(errorType)) {
-    base.push('npm --prefix bots/reservation run -s test:selector-smoke 2>/dev/null || true');
-  }
-  if (/auth/.test(errorType)) {
-    base.push('npm --prefix bots/reservation run -s test:auth-smoke 2>/dev/null || true');
-  }
-  return base;
+  return [
+    'npm --prefix bots/hub run test:unit',
+    'npm --prefix bots/hub run transition:completion-gate',
+  ];
 }
 
 function buildWriteScope(condition: { agent: string; error_type: string }): string[] {

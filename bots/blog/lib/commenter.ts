@@ -39,6 +39,10 @@ const BLOG_COMMENTER_DEBUG_DIR = path.join(env.PROJECT_ROOT, 'tmp', 'blog-commen
 const BLOG_OPS_DIR = path.join(env.PROJECT_ROOT, 'bots', 'blog', 'output', 'ops');
 const BLOG_NEIGHBOR_COLLECT_DIAG_PATH = path.join(BLOG_OPS_DIR, 'neighbor-collect-diagnostics.json');
 const STALE_REPLY_TARGET_DAYS = Number(process.env.BLOG_COMMENTER_STALE_REPLY_TARGET_DAYS || 7);
+const RECOVERABLE_REPLY_REQUEUE_COOLDOWN_MS = Math.max(
+  5 * 60 * 1000,
+  Number(process.env.BLOG_COMMENTER_RECOVERABLE_REQUEUE_COOLDOWN_MS || 6 * 60 * 60 * 1000),
+);
 
 function traceCommenter(...args) {
   if (process.env.BLOG_COMMENTER_TRACE !== 'true') return;
@@ -360,8 +364,14 @@ function isRecoverableNeighborCommentFailure(error) {
 function isDirectReplyUiError(error) {
   const message = String(error?.message || '');
   return (
-    message.startsWith('reply_button_not_found:')
+    message === 'reply_process_timeout'
+    || message.startsWith('reply_process_timeout:')
+    || error?.code === 'reply_process_timeout'
+    || isTransientBrowserNavigationError(error)
+    || message === 'reply_button_not_found'
+    || message.startsWith('reply_button_not_found:')
     || message === 'reply_editor_not_found'
+    || message === 'reply_submit_not_confirmed'
     || message.startsWith('reply_submit_not_confirmed:')
     || message.includes('detached Frame')
     || /Waiting failed: \d+ms exceeded/.test(message)
@@ -598,6 +608,14 @@ function toTimestamp(value) {
   return Number.isFinite(time) ? time : 0;
 }
 
+function shouldDeferRecoverableReplyRequeue(row, nowMs = Date.now()) {
+  const meta = row?.meta && typeof row.meta === 'object' ? row.meta : {};
+  const lastUiErrorAt = toTimestamp(meta.last_ui_error_at || meta.last_requeue_deferred_at);
+  if (!lastUiErrorAt) return false;
+  const ageMs = Number(nowMs || Date.now()) - lastUiErrorAt;
+  return ageMs >= 0 && ageMs < RECOVERABLE_REPLY_REQUEUE_COOLDOWN_MS;
+}
+
 function isReplyTargetUnavailableError(errorMessage = '') {
   const text = String(errorMessage || '');
   return (
@@ -678,19 +696,25 @@ async function retireStaleRecoverableReplies(limit = 10) {
 }
 
 async function requeueRecoverableReplyFailures(limit = 10) {
+  const cooldownMs = RECOVERABLE_REPLY_REQUEUE_COOLDOWN_MS;
   const rows = await pgPool.query('blog', `
     SELECT *
     FROM ${TABLE}
     WHERE reply_at IS NULL
       AND status IN ('failed', 'skipped')
+      AND NOT (
+        COALESCE(meta->>'last_ui_error_at', meta->>'last_requeue_deferred_at', '') ~ '^\\d{4}-\\d{2}-\\d{2}T'
+        AND COALESCE(meta->>'last_ui_error_at', meta->>'last_requeue_deferred_at')::timestamptz > now() - ($2::text || ' milliseconds')::interval
+      )
     ORDER BY detected_at DESC
     LIMIT $1
-  `, [Math.max(limit * 3, limit)]);
+  `, [Math.max(limit * 3, limit), cooldownMs]);
 
   let requeued = 0;
   for (const row of rows) {
     if (requeued >= limit) break;
     if (!isRecoverableReplyFailure(row)) continue;
+    if (shouldDeferRecoverableReplyRequeue(row)) continue;
     const inboundAssessment = assessInboundComment(row);
     if (!inboundAssessment.ok) {
       await pgPool.run('blog', `
@@ -723,6 +747,7 @@ async function requeueRecoverableReplyFailures(limit = 10) {
       JSON.stringify({
         phase: 'recoverable_requeue',
         previous_error: row.error_message || null,
+        requeued_at: new Date().toISOString(),
       }),
     ]);
     requeued += 1;
@@ -5716,10 +5741,11 @@ async function runCommentReply({ testMode = false } = {}) {
             : 'reply_ui_unavailable'
         : rawErrorMessage;
       if (uiError) {
+        const nowIso = new Date().toISOString();
         skipped += 1;
         await updateCommentStatus(comment.id, 'skipped', {
           errorMessage: summarizedUiError,
-          meta: { phase: 'post', uiError: rawErrorMessage },
+          meta: { phase: 'post', uiError: rawErrorMessage, last_ui_error_at: nowIso },
         });
       } else {
         failed += 1;
@@ -6174,6 +6200,8 @@ module.exports = {
   processCommentWithTimeout,
   isTransientBrowserNavigationError,
   isRecoverableNeighborCommentFailure,
+  isDirectReplyUiError,
+  shouldDeferRecoverableReplyRequeue,
   isStaleRecoverableReply,
   prioritizePendingComments,
   requeueRecoverableReplyFailures,
