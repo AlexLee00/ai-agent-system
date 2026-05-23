@@ -60,6 +60,11 @@ export async function runLunaKoreaDataPromotionGateSmoke() {
   assert.ok(blocked.blockers.some((item) => item.code === 'domestic_backtest_pass_rate_below_target'));
   assert.ok(blocked.blockers.some((item) => item.code === 'shadow_observation_days_below_target'));
   assert.ok(blocked.warnings.some((item) => item.code === 'dart_fss_python_adapter_missing'));
+  const financialAction = blocked.nextActions.find((item) => item.blocker === 'financial_report_rows_below_target');
+  assert.ok(financialAction.command.includes('runtime:luna-opendart-financial-batch-refresh'));
+  assert.ok(financialAction.command.includes('--confirm=luna-opendart-financial-batch-write'));
+  assert.equal(financialAction.requiresDataWriteApproval, true);
+  assert.equal(financialAction.liveTradeImpact, false);
 
   const runtime = await runLunaKoreaDataPromotionGate({ fixture: true, writeReport: false });
   assert.equal(runtime.fixture, true);

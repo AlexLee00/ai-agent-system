@@ -1,0 +1,180 @@
+{
+  "ok": true,
+  "status": "luna_disclosure_event_shadow_ready",
+  "dryRun": false,
+  "shadowOnly": true,
+  "liveOrderAllowed": false,
+  "shadowSignalLedger": {
+    "writeApplied": true,
+    "writeMode": "shadow-signal-ledger-apply",
+    "total": 5,
+    "byStrategy": {
+      "disclosure-event-driven": 5
+    },
+    "byAction": {
+      "avoid_or_reduce_watchlist": 4,
+      "event_review": 1
+    },
+    "shadowOnly": true,
+    "liveOrderAllowed": false
+  },
+  "result": {
+    "status": "completed",
+    "output": {
+      "ok": true,
+      "skill": "disclosure-event-driven",
+      "market": "domestic",
+      "shadowOnly": true,
+      "liveOrderAllowed": false,
+      "dataHealth": "shadow_ready",
+      "events": [
+        {
+          "stockCode": "052770",
+          "companyName": "아이톡시",
+          "reportName": "소송등의제기ㆍ신청(일정금액이상의청구)",
+          "reportType": "risk_event",
+          "importanceScore": 9,
+          "direction": "avoid_or_reduce_watchlist",
+          "keywords": [
+            "lawsuit"
+          ],
+          "receiptNo": "20260522901016",
+          "receiptDate": "2026-05-21T15:00:00.000Z",
+          "shadowOnly": true,
+          "liveOrderAllowed": false
+        },
+        {
+          "stockCode": "052710",
+          "companyName": "아모텍",
+          "reportName": "주요사항보고서(유무상증자결정)",
+          "reportType": "dilution",
+          "importanceScore": 8,
+          "direction": "avoid_or_reduce_watchlist",
+          "keywords": [
+            "dilution"
+          ],
+          "receiptNo": "20260522000661",
+          "receiptDate": "2026-05-21T15:00:00.000Z",
+          "shadowOnly": true,
+          "liveOrderAllowed": false
+        },
+        {
+          "stockCode": "008830",
+          "companyName": "대동기어",
+          "reportName": "[기재정정]증권신고서(지분증권)",
+          "reportType": "dilution",
+          "importanceScore": 8,
+          "direction": "avoid_or_reduce_watchlist",
+          "keywords": [
+            "dilution"
+          ],
+          "receiptNo": "20260522000666",
+          "receiptDate": "2026-05-21T15:00:00.000Z",
+          "shadowOnly": true,
+          "liveOrderAllowed": false
+        },
+        {
+          "stockCode": "052710",
+          "companyName": "아모텍",
+          "reportName": "증권신고서(지분증권)",
+          "reportType": "dilution",
+          "importanceScore": 8,
+          "direction": "avoid_or_reduce_watchlist",
+          "keywords": [
+            "dilution"
+          ],
+          "receiptNo": "20260522000667",
+          "receiptDate": "2026-05-21T15:00:00.000Z",
+          "shadowOnly": true,
+          "liveOrderAllowed": false
+        },
+        {
+          "stockCode": "024720",
+          "companyName": "콜마홀딩스",
+          "reportName": "투자판단관련주요경영사항(자회사의 주요경영사항)",
+          "reportType": "corporate_action",
+          "importanceScore": 6,
+          "direction": "event_review",
+          "keywords": [],
+          "receiptNo": "20260522800995",
+          "receiptDate": "2026-05-21T15:00:00.000Z",
+          "shadowOnly": true,
+          "liveOrderAllowed": false
+        }
+      ],
+      "highImportanceEvents": [
+        {
+          "stockCode": "052770",
+          "companyName": "아이톡시",
+          "reportName": "소송등의제기ㆍ신청(일정금액이상의청구)",
+          "reportType": "risk_event",
+          "importanceScore": 9,
+          "direction": "avoid_or_reduce_watchlist",
+          "keywords": [
+            "lawsuit"
+          ],
+          "receiptNo": "20260522901016",
+          "receiptDate": "2026-05-21T15:00:00.000Z",
+          "shadowOnly": true,
+          "liveOrderAllowed": false
+        },
+        {
+          "stockCode": "052710",
+          "companyName": "아모텍",
+          "reportName": "주요사항보고서(유무상증자결정)",
+          "reportType": "dilution",
+          "importanceScore": 8,
+          "direction": "avoid_or_reduce_watchlist",
+          "keywords": [
+            "dilution"
+          ],
+          "receiptNo": "20260522000661",
+          "receiptDate": "2026-05-21T15:00:00.000Z",
+          "shadowOnly": true,
+          "liveOrderAllowed": false
+        },
+        {
+          "stockCode": "008830",
+          "companyName": "대동기어",
+          "reportName": "[기재정정]증권신고서(지분증권)",
+          "reportType": "dilution",
+          "importanceScore": 8,
+          "direction": "avoid_or_reduce_watchlist",
+          "keywords": [
+            "dilution"
+          ],
+          "receiptNo": "20260522000666",
+          "receiptDate": "2026-05-21T15:00:00.000Z",
+          "shadowOnly": true,
+          "liveOrderAllowed": false
+        },
+        {
+          "stockCode": "052710",
+          "companyName": "아모텍",
+          "reportName": "증권신고서(지분증권)",
+          "reportType": "dilution",
+          "importanceScore": 8,
+          "direction": "avoid_or_reduce_watchlist",
+          "keywords": [
+            "dilution"
+          ],
+          "receiptNo": "20260522000667",
+          "receiptDate": "2026-05-21T15:00:00.000Z",
+          "shadowOnly": true,
+          "liveOrderAllowed": false
+        }
+      ],
+      "hubLlmPolicy": {
+        "requiredBeforePromotion": true,
+        "deterministicFallback": true
+      },
+      "evidence": {
+        "source": "investment.corp_disclosures"
+      }
+    },
+    "metadata": {
+      "shadowOnly": true,
+      "liveOrderAllowed": false
+    }
+  }
+}

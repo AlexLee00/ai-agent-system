@@ -1,0 +1,65 @@
+{
+  "ok": true,
+  "status": "luna_earnings_surprise_shadow_ready",
+  "dryRun": false,
+  "shadowOnly": true,
+  "liveOrderAllowed": false,
+  "shadowSignalLedger": {
+    "writeApplied": true,
+    "writeMode": "shadow-signal-ledger-apply",
+    "total": 1,
+    "byStrategy": {
+      "earnings-surprise-trading": 1
+    },
+    "byAction": {
+      "positive_surprise_watchlist": 1
+    },
+    "shadowOnly": true,
+    "liveOrderAllowed": false
+  },
+  "result": {
+    "status": "completed",
+    "output": {
+      "ok": true,
+      "skill": "earnings-surprise-trading",
+      "market": "domestic",
+      "shadowOnly": true,
+      "liveOrderAllowed": false,
+      "dataHealth": "shadow_ready",
+      "recommendation": {
+        "stockCode": "005930",
+        "companyName": "삼성전자",
+        "action": "positive_surprise_watchlist",
+        "operatingSurprise": 1.113111,
+        "revenueSurprise": 0.161953,
+        "confidence": 1,
+        "holdingWindowTradingDays": 5,
+        "shadowOnly": true,
+        "liveOrderAllowed": false
+      },
+      "recommendations": [
+        {
+          "stockCode": "005930",
+          "companyName": "삼성전자",
+          "action": "positive_surprise_watchlist",
+          "operatingSurprise": 1.113111,
+          "revenueSurprise": 0.161953,
+          "confidence": 1,
+          "holdingWindowTradingDays": 5,
+          "shadowOnly": true,
+          "liveOrderAllowed": false
+        }
+      ],
+      "evidence": {
+        "source": "investment.corp_financial_reports",
+        "mode": "all_symbols"
+      }
+    },
+    "metadata": {
+      "shadowOnly": true,
+      "liveOrderAllowed": false,
+      "rows": 26,
+      "symbols": 25
+    }
+  }
+}

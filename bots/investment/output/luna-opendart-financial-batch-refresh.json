@@ -1,0 +1,2302 @@
+{
+  "ok": true,
+  "status": "luna_opendart_financial_batch_refresh_completed",
+  "generatedAt": "2026-05-23T09:35:42.105Z",
+  "dryRun": false,
+  "shadowOnly": true,
+  "liveOrderAllowed": false,
+  "liveTradeImpact": false,
+  "writeApplied": true,
+  "writeMode": "opendart-financial-batch-write",
+  "policy": {
+    "networkFinancialFetch": true,
+    "corpCodeMapNetwork": true,
+    "referenceNetwork": false,
+    "refreshReference": false,
+    "dbWriteRequiresConfirm": "luna-opendart-financial-batch-write",
+    "bsnsYear": "2024",
+    "reprtCode": "11011",
+    "fsDiv": "CFS",
+    "offset": 0,
+    "skipFresh": true,
+    "freshSymbolsSkipped": 164
+  },
+  "coverageBefore": {
+    "corpFinancialReports": 35173,
+    "corpFundamentals": 164,
+    "freshCorpFundamentals24h": 164
+  },
+  "reference": {
+    "source": "krx_data_go_kr_official_reference",
+    "fetchedAt": "2026-05-21T04:32:15.881Z",
+    "baseDate": "20260520",
+    "available": true,
+    "fullUniverse": true,
+    "minListingAgeDays": 90,
+    "symbols": 2808,
+    "ineligibleCount": 1713,
+    "byReason": {
+      "turnover_below_official_floor": 1677,
+      "security_type_preferred_stock": 90,
+      "security_type_reit": 26,
+      "security_type_not_common_stock": 12,
+      "listing_history_too_short": 9,
+      "security_type_spac": 46
+    },
+    "resources": {
+      "krxBaseInfoRows": 2878,
+      "krxDailyTradeRows": 2878,
+      "publicPriceRows": 2878,
+      "krxListedInfoRows": 2764,
+      "ksdRows": 0
+    },
+    "krxOpenApi": {
+      "requestedBaseDate": "20260521",
+      "resolvedBaseDate": "20260520",
+      "lookbackDays": 1,
+      "emptyDates": [
+        "20260521"
+      ],
+      "baseInfoRows": 2878,
+      "dailyTradeRows": 2878
+    },
+    "dataGoKrStockPrice": {
+      "requestedBaseDate": "20260521",
+      "resolvedBaseDate": "20260520",
+      "lookbackDays": 1,
+      "emptyDates": [
+        "20260521"
+      ],
+      "totalCount": 2878,
+      "pagesFetched": 3
+    },
+    "dataGoKrKrxListedInfo": {
+      "requestedBaseDate": "20260521",
+      "resolvedBaseDate": "20260520",
+      "lookbackDays": 1,
+      "emptyDates": [
+        "20260521"
+      ],
+      "totalCount": 2764,
+      "pagesFetched": 3,
+      "crnoRows": 2745
+    },
+    "dataGoKrCorporateFinance": {
+      "configured": true,
+      "healthProbeEnabled": false,
+      "endpoint": "https://apis.data.go.kr/1160100/service/GetFinaStatInfoService_V2/getSummFinaStat_V2",
+      "keySource": "hub:config/reservation",
+      "ok": null,
+      "rows": 0,
+      "totalCount": 0,
+      "note": "health_probe_disabled",
+      "integrationMode": "health_probe_plus_symbol_crno_mapping_available",
+      "symbolCrnoMappingRequired": false,
+      "symbolCrnoMappingSource": "data_go_kr_krx_listed_info_or_equivalent"
+    },
+    "dataGoKrCompanyBasic": null,
+    "unavailableReason": null,
+    "credentialStatus": {
+      "krxConfigured": true,
+      "stockPriceConfigured": true,
+      "krxListedInfoConfigured": true,
+      "corporateFinanceConfigured": true,
+      "krxAuthKeySource": "hub:config.official_market_reference",
+      "stockPriceServiceKeySource": "hub:config/reservation",
+      "krxListedInfoServiceKeySource": "hub:config/reservation",
+      "corporateFinanceServiceKeySource": "hub:config/reservation"
+    },
+    "fetchErrors": []
+  },
+  "corpCodeMap": {
+    "ok": true,
+    "source": "opendart_corpcode_xml",
+    "requested": 80,
+    "resolved": 80,
+    "missing": 0,
+    "networkUsed": true,
+    "errors": []
+  },
+  "counts": {
+    "candidates": 80,
+    "planned": 80,
+    "readyToFetch": 80,
+    "missingCorpCode": 0,
+    "refreshed": 80,
+    "skipped": 0,
+    "rows": 14098,
+    "successful": 65
+  },
+  "planned": [
+    {
+      "symbol": "062970",
+      "corpCode": "00403766",
+      "companyName": "한국첨단소재",
+      "marketCap": 156708245430,
+      "listedShares": 57088614,
+      "price": 2745,
+      "turnoverKrw": 36052255277,
+      "officialEligible": true,
+      "officialBlockers": [],
+      "status": "ready_to_fetch"
+    },
+    {
+      "symbol": "036570",
+      "corpCode": "00261443",
+      "companyName": "NC",
+      "marketCap": 5612217731000,
+      "listedShares": 21544022,
+      "price": 260500,
+      "turnoverKrw": 35822748750,
+      "officialEligible": true,
+      "officialBlockers": [],
+      "status": "ready_to_fetch"
+    },
+    {
+      "symbol": "100590",
+      "corpCode": "00364740",
+      "companyName": "머큐리",
+      "marketCap": 123404724000,
+      "listedShares": 17139545,
+      "price": 7200,
+      "turnoverKrw": 35429415065,
+      "officialEligible": true,
+      "officialBlockers": [],
+      "status": "ready_to_fetch"
+    },
+    {
+      "symbol": "046890",
+      "corpCode": "00130763",
+      "companyName": "서울반도체",
+      "marketCap": 841929976000,
+      "listedShares": 58305400,
+      "price": 14440,
+      "turnoverKrw": 34771185075,
+      "officialEligible": true,
+      "officialBlockers": [],
+      "status": "ready_to_fetch"
+    },
+    {
+      "symbol": "005940",
+      "corpCode": "00120182",
+      "companyName": "NH투자증권",
+      "marketCap": 10850686036050,
+      "listedShares": 356344369,
+      "price": 30450,
+      "turnoverKrw": 34412450475,
+      "officialEligible": true,
+      "officialBlockers": [],
+      "status": "ready_to_fetch"
+    },
+    {
+      "symbol": "082920",
+      "corpCode": "00154718",
+      "companyName": "비츠로셀",
+      "marketCap": 2443797810300,
+      "listedShares": 45339477,
+      "price": 53900,
+      "turnoverKrw": 34366043375,
+      "officialEligible": true,
+      "officialBlockers": [],
+      "status": "ready_to_fetch"
+    },
+    {
+      "symbol": "006360",
+      "corpCode": "00120030",
+      "companyName": "GS건설",
+      "marketCap": 2481863210000,
+      "listedShares": 85581490,
+      "price": 29000,
+      "turnoverKrw": 34330156875,
+      "officialEligible": true,
+      "officialBlockers": [],
+      "status": "ready_to_fetch"
+    },
+    {
+      "symbol": "417840",
+      "corpCode": "01383229",
+      "companyName": "저스템",
+      "marketCap": 400471660770,
+      "listedShares": 22663931,
+      "price": 17670,
+      "turnoverKrw": 34328329605,
+      "officialEligible": true,
+      "officialBlockers": [],
+      "status": "ready_to_fetch"
+    },
+    {
+      "symbol": "355150",
+      "corpCode": "01476219",
+      "companyName": "코스텍시스",
+      "marketCap": 349711147500,
+      "listedShares": 7797350,
+      "price": 44850,
+      "turnoverKrw": 34326110200,
+      "officialEligible": true,
+      "officialBlockers": [],
+      "status": "ready_to_fetch"
+    },
+    {
+      "symbol": "189300",
+      "corpCode": "00664181",
+      "companyName": "인텔리안테크",
+      "marketCap": 1420570853100,
+      "listedShares": 10737497,
+      "price": 132300,
+      "turnoverKrw": 33977354450,
+      "officialEligible": true,
+      "officialBlockers": [],
+      "status": "ready_to_fetch"
+    },
+    {
+      "symbol": "030200",
+      "corpCode": "00190321",
+      "companyName": "케이티",
+      "marketCap": 14062810023000,
+      "listedShares": 252021685,
+      "price": 55800,
+      "turnoverKrw": 32977314185,
+      "officialEligible": true,
+      "officialBlockers": [],
+      "status": "ready_to_fetch"
+    },
+    {
+      "symbol": "161390",
+      "corpCode": "00937324",
+      "companyName": "한국타이어앤테크놀로지",
+      "marketCap": 7345791591700,
+      "listedShares": 123875069,
+      "price": 59300,
+      "turnoverKrw": 32928877950,
+      "officialEligible": true,
+      "officialBlockers": [],
+      "status": "ready_to_fetch"
+    },
+    {
+      "symbol": "014680",
+      "corpCode": "00140955",
+      "companyName": "한솔케미칼",
+      "marketCap": 3143858917500,
+      "listedShares": 11370195,
+      "price": 276500,
+      "turnoverKrw": 32927147500,
+      "officialEligible": true,
+      "officialBlockers": [],
+      "status": "ready_to_fetch"
+    },
+    {
+      "symbol": "090430",
+      "corpCode": "00583424",
+      "companyName": "아모레퍼시픽",
+      "marketCap": 6791009319900,
+      "listedShares": 58492759,
+      "price": 116100,
+      "turnoverKrw": 31906288400,
+      "officialEligible": true,
+      "officialBlockers": [],
+      "status": "ready_to_fetch"
+    },
+    {
+      "symbol": "332570",
+      "corpCode": "01015160",
+      "companyName": "PS일렉트로닉스",
+      "marketCap": 514294308630,
+      "listedShares": 46711563,
+      "price": 11010,
+      "turnoverKrw": 31746550585,
+      "officialEligible": true,
+      "officialBlockers": [],
+      "status": "ready_to_fetch"
+    },
+    {
+      "symbol": "217590",
+      "corpCode": "00949161",
+      "companyName": "티엠씨",
+      "marketCap": 633678117500,
+      "listedShares": 24094225,
+      "price": 26300,
+      "turnoverKrw": 31534252000,
+      "officialEligible": true,
+      "officialBlockers": [],
+      "status": "ready_to_fetch"
+    },
+    {
+      "symbol": "491000",
+      "corpCode": "01385005",
+      "companyName": "리브스메드",
+      "marketCap": 1575276633000,
+      "listedShares": 25004391,
+      "price": 63000,
+      "turnoverKrw": 30691843900,
+      "officialEligible": true,
+      "officialBlockers": [],
+      "status": "ready_to_fetch"
+    },
+    {
+      "symbol": "259960",
+      "corpCode": "00760971",
+      "companyName": "크래프톤",
+      "marketCap": 12248150341500,
+      "listedShares": 46132393,
+      "price": 265500,
+      "turnoverKrw": 30401662750,
+      "officialEligible": true,
+      "officialBlockers": [],
+      "status": "ready_to_fetch"
+    },
+    {
+      "symbol": "087010",
+      "corpCode": "00415868",
+      "companyName": "펩트론",
+      "marketCap": 5456259900000,
+      "listedShares": 23317350,
+      "price": 234000,
+      "turnoverKrw": 30354930000,
+      "officialEligible": true,
+      "officialBlockers": [],
+      "status": "ready_to_fetch"
+    },
+    {
+      "symbol": "214450",
+      "corpCode": "00970453",
+      "companyName": "파마리서치",
+      "marketCap": 3064946160000,
+      "listedShares": 10389648,
+      "price": 295000,
+      "turnoverKrw": 30230836250,
+      "officialEligible": true,
+      "officialBlockers": [],
+      "status": "ready_to_fetch"
+    },
+    {
+      "symbol": "052690",
+      "corpCode": "00159209",
+      "companyName": "한전기술",
+      "marketCap": 5178810000000,
+      "listedShares": 38220000,
+      "price": 135500,
+      "turnoverKrw": 30084909900,
+      "officialEligible": true,
+      "officialBlockers": [],
+      "status": "ready_to_fetch"
+    },
+    {
+      "symbol": "047050",
+      "corpCode": "00124504",
+      "companyName": "포스코인터내셔널",
+      "marketCap": 11997934141600,
+      "listedShares": 175922788,
+      "price": 68200,
+      "turnoverKrw": 29903228550,
+      "officialEligible": true,
+      "officialBlockers": [],
+      "status": "ready_to_fetch"
+    },
+    {
+      "symbol": "028300",
+      "corpCode": "00199252",
+      "companyName": "HLB",
+      "marketCap": 6339523985200,
+      "listedShares": 133183277,
+      "price": 47600,
+      "turnoverKrw": 29902974200,
+      "officialEligible": true,
+      "officialBlockers": [],
+      "status": "ready_to_fetch"
+    },
+    {
+      "symbol": "083650",
+      "corpCode": "00409788",
+      "companyName": "비에이치아이",
+      "marketCap": 2258939375000,
+      "listedShares": 30944375,
+      "price": 73000,
+      "turnoverKrw": 29700333950,
+      "officialEligible": true,
+      "officialBlockers": [],
+      "status": "ready_to_fetch"
+    },
+    {
+      "symbol": "095340",
+      "corpCode": "00572905",
+      "companyName": "ISC",
+      "marketCap": 4120708075200,
+      "listedShares": 21197058,
+      "price": 194400,
+      "turnoverKrw": 29657373600,
+      "officialEligible": true,
+      "officialBlockers": [],
+      "status": "ready_to_fetch"
+    },
+    {
+      "symbol": "031980",
+      "corpCode": "00208444",
+      "companyName": "피에스케이홀딩스",
+      "marketCap": 2675893219500,
+      "listedShares": 21562395,
+      "price": 124100,
+      "turnoverKrw": 29189078900,
+      "officialEligible": true,
+      "officialBlockers": [],
+      "status": "ready_to_fetch"
+    },
+    {
+      "symbol": "000100",
+      "corpCode": "00145109",
+      "companyName": "유한양행",
+      "marketCap": 6491279481500,
+      "listedShares": 79647601,
+      "price": 81500,
+      "turnoverKrw": 28560052100,
+      "officialEligible": true,
+      "officialBlockers": [],
+      "status": "ready_to_fetch"
+    },
+    {
+      "symbol": "011930",
+      "corpCode": "00136271",
+      "companyName": "신성이엔지",
+      "marketCap": 549614560500,
+      "listedShares": 20584815,
+      "price": 26700,
+      "turnoverKrw": 28415361500,
+      "officialEligible": true,
+      "officialBlockers": [],
+      "status": "ready_to_fetch"
+    },
+    {
+      "symbol": "001040",
+      "corpCode": "00148540",
+      "companyName": "CJ",
+      "marketCap": 4887147165000,
+      "listedShares": 29176998,
+      "price": 167500,
+      "turnoverKrw": 28082146700,
+      "officialEligible": true,
+      "officialBlockers": [],
+      "status": "ready_to_fetch"
+    },
+    {
+      "symbol": "036540",
+      "corpCode": "00301246",
+      "companyName": "SFA반도체",
+      "marketCap": 1279501157340,
+      "listedShares": 164460303,
+      "price": 7780,
+      "turnoverKrw": 28034095280,
+      "officialEligible": true,
+      "officialBlockers": [],
+      "status": "ready_to_fetch"
+    },
+    {
+      "symbol": "001430",
+      "corpCode": "00106669",
+      "companyName": "세아베스틸지주",
+      "marketCap": 2176830623300,
+      "listedShares": 35862119,
+      "price": 60700,
+      "turnoverKrw": 27874300300,
+      "officialEligible": true,
+      "officialBlockers": [],
+      "status": "ready_to_fetch"
+    },
+    {
+      "symbol": "114450",
+      "corpCode": "00532059",
+      "companyName": "그린생명과학",
+      "marketCap": 60000000000,
+      "listedShares": 20000000,
+      "price": 3000,
+      "turnoverKrw": 27796850964,
+      "officialEligible": true,
+      "officialBlockers": [],
+      "status": "ready_to_fetch"
+    },
+    {
+      "symbol": "005290",
+      "corpCode": "00118804",
+      "companyName": "동진쎄미켐",
+      "marketCap": 2839036018200,
+      "listedShares": 50970126,
+      "price": 55700,
+      "turnoverKrw": 27684827200,
+      "officialEligible": true,
+      "officialBlockers": [],
+      "status": "ready_to_fetch"
+    },
+    {
+      "symbol": "024110",
+      "corpCode": "00149646",
+      "companyName": "기업은행",
+      "marketCap": 16187745140700,
+      "listedShares": 797425869,
+      "price": 20300,
+      "turnoverKrw": 27678330000,
+      "officialEligible": true,
+      "officialBlockers": [],
+      "status": "ready_to_fetch"
+    },
+    {
+      "symbol": "356680",
+      "corpCode": "01372782",
+      "companyName": "엑스게이트",
+      "marketCap": 469825878320,
+      "listedShares": 28543492,
+      "price": 16460,
+      "turnoverKrw": 27238531910,
+      "officialEligible": true,
+      "officialBlockers": [],
+      "status": "ready_to_fetch"
+    },
+    {
+      "symbol": "084650",
+      "corpCode": "00545114",
+      "companyName": "랩지노믹스",
+      "marketCap": 101708786300,
+      "listedShares": 74239990,
+      "price": 1370,
+      "turnoverKrw": 27233540115,
+      "officialEligible": true,
+      "officialBlockers": [],
+      "status": "ready_to_fetch"
+    },
+    {
+      "symbol": "263750",
+      "corpCode": "01152470",
+      "companyName": "펄어비스",
+      "marketCap": 2916852617000,
+      "listedShares": 64247855,
+      "price": 45400,
+      "turnoverKrw": 27153525525,
+      "officialEligible": true,
+      "officialBlockers": [],
+      "status": "ready_to_fetch"
+    },
+    {
+      "symbol": "017800",
+      "corpCode": "00164724",
+      "companyName": "현대엘리베이터",
+      "marketCap": 3174301662000,
+      "listedShares": 39092385,
+      "price": 81200,
+      "turnoverKrw": 26532007050,
+      "officialEligible": true,
+      "officialBlockers": [],
+      "status": "ready_to_fetch"
+    },
+    {
+      "symbol": "066980",
+      "corpCode": "00389998",
+      "companyName": "한성크린텍",
+      "marketCap": 98157386250,
+      "listedShares": 51935125,
+      "price": 1890,
+      "turnoverKrw": 26075923360,
+      "officialEligible": true,
+      "officialBlockers": [],
+      "status": "ready_to_fetch"
+    },
+    {
+      "symbol": "388210",
+      "corpCode": "01529982",
+      "companyName": "씨엠티엑스",
+      "marketCap": 1065568842800,
+      "listedShares": 9634438,
+      "price": 110600,
+      "turnoverKrw": 25952281750,
+      "officialEligible": true,
+      "officialBlockers": [],
+      "status": "ready_to_fetch"
+    },
+    {
+      "symbol": "417200",
+      "corpCode": "01528141",
+      "companyName": "LS머트리얼즈",
+      "marketCap": 1359818445900,
+      "listedShares": 67652659,
+      "price": 20100,
+      "turnoverKrw": 25850028695,
+      "officialEligible": true,
+      "officialBlockers": [],
+      "status": "ready_to_fetch"
+    },
+    {
+      "symbol": "218410",
+      "corpCode": "01078178",
+      "companyName": "RFHIC",
+      "marketCap": 2440261319800,
+      "listedShares": 26553442,
+      "price": 91900,
+      "turnoverKrw": 25841585500,
+      "officialEligible": true,
+      "officialBlockers": [],
+      "status": "ready_to_fetch"
+    },
+    {
+      "symbol": "021240",
+      "corpCode": "00170558",
+      "companyName": "코웨이",
+      "marketCap": 6241686973200,
+      "listedShares": 70767426,
+      "price": 88200,
+      "turnoverKrw": 25832751050,
+      "officialEligible": true,
+      "officialBlockers": [],
+      "status": "ready_to_fetch"
+    },
+    {
+      "symbol": "018700",
+      "corpCode": "00122205",
+      "companyName": "졸스",
+      "marketCap": 24525297670,
+      "listedShares": 11706586,
+      "price": 2095,
+      "turnoverKrw": 25650813961,
+      "officialEligible": true,
+      "officialBlockers": [],
+      "status": "ready_to_fetch"
+    },
+    {
+      "symbol": "033160",
+      "corpCode": "00121686",
+      "companyName": "엠케이전자",
+      "marketCap": 703785740700,
+      "listedShares": 24185077,
+      "price": 29100,
+      "turnoverKrw": 25619877475,
+      "officialEligible": true,
+      "officialBlockers": [],
+      "status": "ready_to_fetch"
+    },
+    {
+      "symbol": "000880",
+      "corpCode": "00160588",
+      "companyName": "한화",
+      "marketCap": 8672474037000,
+      "listedShares": 70507919,
+      "price": 123000,
+      "turnoverKrw": 25486942650,
+      "officialEligible": true,
+      "officialBlockers": [],
+      "status": "ready_to_fetch"
+    },
+    {
+      "symbol": "138080",
+      "corpCode": "00571483",
+      "companyName": "오이솔루션",
+      "marketCap": 453025942800,
+      "listedShares": 12377758,
+      "price": 36600,
+      "turnoverKrw": 25036626800,
+      "officialEligible": true,
+      "officialBlockers": [],
+      "status": "ready_to_fetch"
+    },
+    {
+      "symbol": "185490",
+      "corpCode": "00945457",
+      "companyName": "아이진",
+      "marketCap": 96618567240,
+      "listedShares": 43229784,
+      "price": 2235,
+      "turnoverKrw": 24921254912,
+      "officialEligible": true,
+      "officialBlockers": [],
+      "status": "ready_to_fetch"
+    },
+    {
+      "symbol": "011200",
+      "corpCode": "00164645",
+      "companyName": "HMM",
+      "marketCap": 18553490869900,
+      "listedShares": 943237970,
+      "price": 19670,
+      "turnoverKrw": 24809980050,
+      "officialEligible": true,
+      "officialBlockers": [],
+      "status": "ready_to_fetch"
+    },
+    {
+      "symbol": "326030",
+      "corpCode": "00878696",
+      "companyName": "에스케이바이오팜",
+      "marketCap": 7126505750000,
+      "listedShares": 78313250,
+      "price": 91000,
+      "turnoverKrw": 24679589050,
+      "officialEligible": true,
+      "officialBlockers": [],
+      "status": "ready_to_fetch"
+    },
+    {
+      "symbol": "310210",
+      "corpCode": "01327746",
+      "companyName": "보로노이",
+      "marketCap": 4453325382000,
+      "listedShares": 18402171,
+      "price": 242000,
+      "turnoverKrw": 24539806000,
+      "officialEligible": true,
+      "officialBlockers": [],
+      "status": "ready_to_fetch"
+    },
+    {
+      "symbol": "023530",
+      "corpCode": "00120526",
+      "companyName": "롯데쇼핑",
+      "marketCap": 4331008390500,
+      "listedShares": 28288755,
+      "price": 153100,
+      "turnoverKrw": 24438269250,
+      "officialEligible": true,
+      "officialBlockers": [],
+      "status": "ready_to_fetch"
+    },
+    {
+      "symbol": "204320",
+      "corpCode": "01042775",
+      "companyName": "HL만도",
+      "marketCap": 2469944512000,
+      "listedShares": 46957120,
+      "price": 52600,
+      "turnoverKrw": 24390127050,
+      "officialEligible": true,
+      "officialBlockers": [],
+      "status": "ready_to_fetch"
+    },
+    {
+      "symbol": "067170",
+      "corpCode": "00397289",
+      "companyName": "오텍",
+      "marketCap": 91981040640,
+      "listedShares": 24994848,
+      "price": 3680,
+      "turnoverKrw": 24276416755,
+      "officialEligible": true,
+      "officialBlockers": [],
+      "status": "ready_to_fetch"
+    },
+    {
+      "symbol": "071970",
+      "corpCode": "00406046",
+      "companyName": "HD현대마린엔진",
+      "marketCap": 2503406331000,
+      "listedShares": 33921495,
+      "price": 73800,
+      "turnoverKrw": 23850057750,
+      "officialEligible": true,
+      "officialBlockers": [],
+      "status": "ready_to_fetch"
+    },
+    {
+      "symbol": "323280",
+      "corpCode": "01366000",
+      "companyName": "태성",
+      "marketCap": 1896408558000,
+      "listedShares": 30537980,
+      "price": 62100,
+      "turnoverKrw": 23846360600,
+      "officialEligible": true,
+      "officialBlockers": [],
+      "status": "ready_to_fetch"
+    },
+    {
+      "symbol": "139480",
+      "corpCode": "00872984",
+      "companyName": "이마트",
+      "marketCap": 2442229981500,
+      "listedShares": 27595819,
+      "price": 88500,
+      "turnoverKrw": 23391214150,
+      "officialEligible": true,
+      "officialBlockers": [],
+      "status": "ready_to_fetch"
+    },
+    {
+      "symbol": "448900",
+      "corpCode": "00765897",
+      "companyName": "한국피아이엠",
+      "marketCap": 476844874500,
+      "listedShares": 6074457,
+      "price": 78500,
+      "turnoverKrw": 22870390600,
+      "officialEligible": true,
+      "officialBlockers": [],
+      "status": "ready_to_fetch"
+    },
+    {
+      "symbol": "183300",
+      "corpCode": "00997812",
+      "companyName": "코미코",
+      "marketCap": 1536674479600,
+      "listedShares": 10460684,
+      "price": 146900,
+      "turnoverKrw": 22854736300,
+      "officialEligible": true,
+      "officialBlockers": [],
+      "status": "ready_to_fetch"
+    },
+    {
+      "symbol": "099320",
+      "corpCode": "00449254",
+      "companyName": "쎄트렉아이",
+      "marketCap": 1530988664400,
+      "listedShares": 10951278,
+      "price": 139800,
+      "turnoverKrw": 22748089150,
+      "officialEligible": true,
+      "officialBlockers": [],
+      "status": "ready_to_fetch"
+    },
+    {
+      "symbol": "452280",
+      "corpCode": "00958451",
+      "companyName": "한선엔지니어링",
+      "marketCap": 608186872000,
+      "listedShares": 19246420,
+      "price": 31600,
+      "turnoverKrw": 22586510225,
+      "officialEligible": true,
+      "officialBlockers": [],
+      "status": "ready_to_fetch"
+    },
+    {
+      "symbol": "090460",
+      "corpCode": "00447609",
+      "companyName": "비에이치",
+      "marketCap": 1087197100500,
+      "listedShares": 33711538,
+      "price": 32250,
+      "turnoverKrw": 22512112400,
+      "officialEligible": true,
+      "officialBlockers": [],
+      "status": "ready_to_fetch"
+    },
+    {
+      "symbol": "003280",
+      "corpCode": "00167208",
+      "companyName": "흥아해운",
+      "marketCap": 591445251540,
+      "listedShares": 240424899,
+      "price": 2460,
+      "turnoverKrw": 21774319740,
+      "officialEligible": true,
+      "officialBlockers": [],
+      "status": "ready_to_fetch"
+    },
+    {
+      "symbol": "257720",
+      "corpCode": "00982023",
+      "companyName": "실리콘투",
+      "marketCap": 2485339950800,
+      "listedShares": 65576252,
+      "price": 37900,
+      "turnoverKrw": 21655041025,
+      "officialEligible": true,
+      "officialBlockers": [],
+      "status": "ready_to_fetch"
+    },
+    {
+      "symbol": "323410",
+      "corpCode": "01133217",
+      "companyName": "카카오뱅크",
+      "marketCap": 10472793592150,
+      "listedShares": 477120437,
+      "price": 21950,
+      "turnoverKrw": 21557150550,
+      "officialEligible": true,
+      "officialBlockers": [],
+      "status": "ready_to_fetch"
+    },
+    {
+      "symbol": "144960",
+      "corpCode": "00521390",
+      "companyName": "뉴파워프라즈마",
+      "marketCap": 412895296800,
+      "listedShares": 43692624,
+      "price": 9450,
+      "turnoverKrw": 21404414750,
+      "officialEligible": true,
+      "officialBlockers": [],
+      "status": "ready_to_fetch"
+    },
+    {
+      "symbol": "406820",
+      "corpCode": "01147487",
+      "companyName": "뷰티스킨",
+      "marketCap": 48981784005,
+      "listedShares": 14136157,
+      "price": 3465,
+      "turnoverKrw": 21299500800,
+      "officialEligible": true,
+      "officialBlockers": [],
+      "status": "ready_to_fetch"
+    },
+    {
+      "symbol": "347850",
+      "corpCode": "01376715",
+      "companyName": "디앤디파마텍",
+      "marketCap": 2575683843600,
+      "listedShares": 43804147,
+      "price": 58800,
+      "turnoverKrw": 21204890800,
+      "officialEligible": true,
+      "officialBlockers": [],
+      "status": "ready_to_fetch"
+    },
+    {
+      "symbol": "005500",
+      "corpCode": "00128412",
+      "companyName": "삼진제약",
+      "marketCap": 287712000000,
+      "listedShares": 13320000,
+      "price": 21600,
+      "turnoverKrw": 20887689225,
+      "officialEligible": true,
+      "officialBlockers": [],
+      "status": "ready_to_fetch"
+    },
+    {
+      "symbol": "008770",
+      "corpCode": "00165680",
+      "companyName": "호텔신라",
+      "marketCap": 2213594024400,
+      "listedShares": 39248121,
+      "price": 56400,
+      "turnoverKrw": 20795094450,
+      "officialEligible": true,
+      "officialBlockers": [],
+      "status": "ready_to_fetch"
+    },
+    {
+      "symbol": "001510",
+      "corpCode": "00131850",
+      "companyName": "SK증권",
+      "marketCap": 859261240775,
+      "listedShares": 231295085,
+      "price": 3715,
+      "turnoverKrw": 20760736866,
+      "officialEligible": true,
+      "officialBlockers": [],
+      "status": "ready_to_fetch"
+    },
+    {
+      "symbol": "490470",
+      "corpCode": "01627363",
+      "companyName": "세미파이브",
+      "marketCap": 1189996150000,
+      "listedShares": 33999890,
+      "price": 35000,
+      "turnoverKrw": 20685906750,
+      "officialEligible": true,
+      "officialBlockers": [],
+      "status": "ready_to_fetch"
+    },
+    {
+      "symbol": "081180",
+      "corpCode": "00406222",
+      "companyName": "쎄크",
+      "marketCap": 95845310100,
+      "listedShares": 8825535,
+      "price": 10860,
+      "turnoverKrw": 20469217325,
+      "officialEligible": true,
+      "officialBlockers": [],
+      "status": "ready_to_fetch"
+    },
+    {
+      "symbol": "009420",
+      "corpCode": "00162586",
+      "companyName": "한올바이오파마",
+      "marketCap": 2047833009600,
+      "listedShares": 52240638,
+      "price": 39200,
+      "turnoverKrw": 20459277425,
+      "officialEligible": true,
+      "officialBlockers": [],
+      "status": "ready_to_fetch"
+    },
+    {
+      "symbol": "020150",
+      "corpCode": "00113997",
+      "companyName": "롯데에너지머티리얼즈",
+      "marketCap": 2817261909400,
+      "listedShares": 52365463,
+      "price": 53800,
+      "turnoverKrw": 20280259450,
+      "officialEligible": true,
+      "officialBlockers": [],
+      "status": "ready_to_fetch"
+    },
+    {
+      "symbol": "489790",
+      "corpCode": "01867758",
+      "companyName": "한화비전",
+      "marketCap": 3322136062000,
+      "listedShares": 50488390,
+      "price": 65800,
+      "turnoverKrw": 20191947100,
+      "officialEligible": true,
+      "officialBlockers": [],
+      "status": "ready_to_fetch"
+    },
+    {
+      "symbol": "161890",
+      "corpCode": "00939331",
+      "companyName": "한국콜마",
+      "marketCap": 2105572868400,
+      "listedShares": 23605077,
+      "price": 89200,
+      "turnoverKrw": 20160059500,
+      "officialEligible": true,
+      "officialBlockers": [],
+      "status": "ready_to_fetch"
+    },
+    {
+      "symbol": "084370",
+      "corpCode": "00531014",
+      "companyName": "유진테크",
+      "marketCap": 2800340332400,
+      "listedShares": 22916042,
+      "price": 122200,
+      "turnoverKrw": 20133417700,
+      "officialEligible": true,
+      "officialBlockers": [],
+      "status": "ready_to_fetch"
+    },
+    {
+      "symbol": "261780",
+      "corpCode": "01141599",
+      "companyName": "차백신연구소",
+      "marketCap": 86525282140,
+      "listedShares": 26912996,
+      "price": 3215,
+      "turnoverKrw": 19916359968,
+      "officialEligible": true,
+      "officialBlockers": [],
+      "status": "ready_to_fetch"
+    },
+    {
+      "symbol": "321260",
+      "corpCode": "01359736",
+      "companyName": "프로이천",
+      "marketCap": 105015512900,
+      "listedShares": 28192084,
+      "price": 3725,
+      "turnoverKrw": 19575772451,
+      "officialEligible": true,
+      "officialBlockers": [],
+      "status": "ready_to_fetch"
+    }
+  ],
+  "refreshed": [
+    {
+      "symbol": "062970",
+      "corpCode": "00403766",
+      "companyName": "한국첨단소재",
+      "ok": false,
+      "status": "luna_opendart_financial_refresh_empty",
+      "rows": 0,
+      "composite": 0.5,
+      "writeApplied": true,
+      "request": {
+        "ok": false,
+        "dartStatus": "013",
+        "error": "조회된 데이타가 없습니다."
+      }
+    },
+    {
+      "symbol": "036570",
+      "corpCode": "00261443",
+      "companyName": "NC",
+      "ok": true,
+      "status": "luna_opendart_financial_refresh_ready",
+      "rows": 302,
+      "composite": 0.5765,
+      "writeApplied": true,
+      "request": {
+        "ok": true,
+        "dartStatus": "000",
+        "error": null
+      }
+    },
+    {
+      "symbol": "100590",
+      "corpCode": "00364740",
+      "companyName": "머큐리",
+      "ok": true,
+      "status": "luna_opendart_financial_refresh_ready",
+      "rows": 130,
+      "composite": 0.6547,
+      "writeApplied": true,
+      "request": {
+        "ok": true,
+        "dartStatus": "000",
+        "error": null
+      }
+    },
+    {
+      "symbol": "046890",
+      "corpCode": "00130763",
+      "companyName": "서울반도체",
+      "ok": true,
+      "status": "luna_opendart_financial_refresh_ready",
+      "rows": 153,
+      "composite": 0.604,
+      "writeApplied": true,
+      "request": {
+        "ok": true,
+        "dartStatus": "000",
+        "error": null
+      }
+    },
+    {
+      "symbol": "005940",
+      "corpCode": "00120182",
+      "companyName": "NH투자증권",
+      "ok": true,
+      "status": "luna_opendart_financial_refresh_ready",
+      "rows": 168,
+      "composite": 0.5431,
+      "writeApplied": true,
+      "request": {
+        "ok": true,
+        "dartStatus": "000",
+        "error": null
+      }
+    },
+    {
+      "symbol": "082920",
+      "corpCode": "00154718",
+      "companyName": "비츠로셀",
+      "ok": true,
+      "status": "luna_opendart_financial_refresh_ready",
+      "rows": 138,
+      "composite": 0.5281,
+      "writeApplied": true,
+      "request": {
+        "ok": true,
+        "dartStatus": "000",
+        "error": null
+      }
+    },
+    {
+      "symbol": "006360",
+      "corpCode": "00120030",
+      "companyName": "GS건설",
+      "ok": true,
+      "status": "luna_opendart_financial_refresh_ready",
+      "rows": 189,
+      "composite": 0.6001,
+      "writeApplied": true,
+      "request": {
+        "ok": true,
+        "dartStatus": "000",
+        "error": null
+      }
+    },
+    {
+      "symbol": "417840",
+      "corpCode": "01383229",
+      "companyName": "저스템",
+      "ok": true,
+      "status": "luna_opendart_financial_refresh_ready",
+      "rows": 193,
+      "composite": 0.4159,
+      "writeApplied": true,
+      "request": {
+        "ok": true,
+        "dartStatus": "000",
+        "error": null
+      }
+    },
+    {
+      "symbol": "355150",
+      "corpCode": "01476219",
+      "companyName": "코스텍시스",
+      "ok": false,
+      "status": "luna_opendart_financial_refresh_empty",
+      "rows": 0,
+      "composite": 0.5,
+      "writeApplied": true,
+      "request": {
+        "ok": false,
+        "dartStatus": "013",
+        "error": "조회된 데이타가 없습니다."
+      }
+    },
+    {
+      "symbol": "189300",
+      "corpCode": "00664181",
+      "companyName": "인텔리안테크",
+      "ok": true,
+      "status": "luna_opendart_financial_refresh_ready",
+      "rows": 148,
+      "composite": 0.5527,
+      "writeApplied": true,
+      "request": {
+        "ok": true,
+        "dartStatus": "000",
+        "error": null
+      }
+    },
+    {
+      "symbol": "030200",
+      "corpCode": "00190321",
+      "companyName": "케이티",
+      "ok": true,
+      "status": "luna_opendart_financial_refresh_ready",
+      "rows": 270,
+      "composite": 0.527,
+      "writeApplied": true,
+      "request": {
+        "ok": true,
+        "dartStatus": "000",
+        "error": null
+      }
+    },
+    {
+      "symbol": "161390",
+      "corpCode": "00937324",
+      "companyName": "한국타이어앤테크놀로지",
+      "ok": true,
+      "status": "luna_opendart_financial_refresh_ready",
+      "rows": 185,
+      "composite": 0.7744,
+      "writeApplied": true,
+      "request": {
+        "ok": true,
+        "dartStatus": "000",
+        "error": null
+      }
+    },
+    {
+      "symbol": "014680",
+      "corpCode": "00140955",
+      "companyName": "한솔케미칼",
+      "ok": true,
+      "status": "luna_opendart_financial_refresh_ready",
+      "rows": 303,
+      "composite": 0.6138,
+      "writeApplied": true,
+      "request": {
+        "ok": true,
+        "dartStatus": "000",
+        "error": null
+      }
+    },
+    {
+      "symbol": "090430",
+      "corpCode": "00583424",
+      "companyName": "아모레퍼시픽",
+      "ok": true,
+      "status": "luna_opendart_financial_refresh_ready",
+      "rows": 256,
+      "composite": 0.7319,
+      "writeApplied": true,
+      "request": {
+        "ok": true,
+        "dartStatus": "000",
+        "error": null
+      }
+    },
+    {
+      "symbol": "332570",
+      "corpCode": "01015160",
+      "companyName": "PS일렉트로닉스",
+      "ok": true,
+      "status": "luna_opendart_financial_refresh_ready",
+      "rows": 172,
+      "composite": 0.4992,
+      "writeApplied": true,
+      "request": {
+        "ok": true,
+        "dartStatus": "000",
+        "error": null
+      }
+    },
+    {
+      "symbol": "217590",
+      "corpCode": "00949161",
+      "companyName": "티엠씨",
+      "ok": false,
+      "status": "luna_opendart_financial_refresh_empty",
+      "rows": 0,
+      "composite": 0.5,
+      "writeApplied": true,
+      "request": {
+        "ok": false,
+        "dartStatus": "013",
+        "error": "조회된 데이타가 없습니다."
+      }
+    },
+    {
+      "symbol": "491000",
+      "corpCode": "01385005",
+      "companyName": "리브스메드",
+      "ok": false,
+      "status": "luna_opendart_financial_refresh_empty",
+      "rows": 0,
+      "composite": 0.5,
+      "writeApplied": true,
+      "request": {
+        "ok": false,
+        "dartStatus": "013",
+        "error": "조회된 데이타가 없습니다."
+      }
+    },
+    {
+      "symbol": "259960",
+      "corpCode": "00760971",
+      "companyName": "크래프톤",
+      "ok": true,
+      "status": "luna_opendart_financial_refresh_ready",
+      "rows": 260,
+      "composite": 0.7996,
+      "writeApplied": true,
+      "request": {
+        "ok": true,
+        "dartStatus": "000",
+        "error": null
+      }
+    },
+    {
+      "symbol": "087010",
+      "corpCode": "00415868",
+      "companyName": "펩트론",
+      "ok": false,
+      "status": "luna_opendart_financial_refresh_empty",
+      "rows": 0,
+      "composite": 0.5,
+      "writeApplied": true,
+      "request": {
+        "ok": false,
+        "dartStatus": "013",
+        "error": "조회된 데이타가 없습니다."
+      }
+    },
+    {
+      "symbol": "214450",
+      "corpCode": "00970453",
+      "companyName": "파마리서치",
+      "ok": true,
+      "status": "luna_opendart_financial_refresh_ready",
+      "rows": 286,
+      "composite": 0.5704,
+      "writeApplied": true,
+      "request": {
+        "ok": true,
+        "dartStatus": "000",
+        "error": null
+      }
+    },
+    {
+      "symbol": "052690",
+      "corpCode": "00159209",
+      "companyName": "한전기술",
+      "ok": true,
+      "status": "luna_opendart_financial_refresh_ready",
+      "rows": 261,
+      "composite": 0.4344,
+      "writeApplied": true,
+      "request": {
+        "ok": true,
+        "dartStatus": "000",
+        "error": null
+      }
+    },
+    {
+      "symbol": "047050",
+      "corpCode": "00124504",
+      "companyName": "포스코인터내셔널",
+      "ok": true,
+      "status": "luna_opendart_financial_refresh_ready",
+      "rows": 341,
+      "composite": 0.5791,
+      "writeApplied": true,
+      "request": {
+        "ok": true,
+        "dartStatus": "000",
+        "error": null
+      }
+    },
+    {
+      "symbol": "028300",
+      "corpCode": "00199252",
+      "companyName": "HLB",
+      "ok": true,
+      "status": "luna_opendart_financial_refresh_ready",
+      "rows": 309,
+      "composite": 0.3809,
+      "writeApplied": true,
+      "request": {
+        "ok": true,
+        "dartStatus": "000",
+        "error": null
+      }
+    },
+    {
+      "symbol": "083650",
+      "corpCode": "00409788",
+      "companyName": "비에이치아이",
+      "ok": true,
+      "status": "luna_opendart_financial_refresh_ready",
+      "rows": 168,
+      "composite": 0.2996,
+      "writeApplied": true,
+      "request": {
+        "ok": true,
+        "dartStatus": "000",
+        "error": null
+      }
+    },
+    {
+      "symbol": "095340",
+      "corpCode": "00572905",
+      "companyName": "ISC",
+      "ok": true,
+      "status": "luna_opendart_financial_refresh_ready",
+      "rows": 241,
+      "composite": 0.4913,
+      "writeApplied": true,
+      "request": {
+        "ok": true,
+        "dartStatus": "000",
+        "error": null
+      }
+    },
+    {
+      "symbol": "031980",
+      "corpCode": "00208444",
+      "companyName": "피에스케이홀딩스",
+      "ok": true,
+      "status": "luna_opendart_financial_refresh_ready",
+      "rows": 138,
+      "composite": 0.6287,
+      "writeApplied": true,
+      "request": {
+        "ok": true,
+        "dartStatus": "000",
+        "error": null
+      }
+    },
+    {
+      "symbol": "000100",
+      "corpCode": "00145109",
+      "companyName": "유한양행",
+      "ok": true,
+      "status": "luna_opendart_financial_refresh_ready",
+      "rows": 366,
+      "composite": 0.5448,
+      "writeApplied": true,
+      "request": {
+        "ok": true,
+        "dartStatus": "000",
+        "error": null
+      }
+    },
+    {
+      "symbol": "011930",
+      "corpCode": "00136271",
+      "companyName": "신성이엔지",
+      "ok": true,
+      "status": "luna_opendart_financial_refresh_ready",
+      "rows": 236,
+      "composite": 0.5041,
+      "writeApplied": true,
+      "request": {
+        "ok": true,
+        "dartStatus": "000",
+        "error": null
+      }
+    },
+    {
+      "symbol": "001040",
+      "corpCode": "00148540",
+      "companyName": "CJ",
+      "ok": true,
+      "status": "luna_opendart_financial_refresh_ready",
+      "rows": 252,
+      "composite": 0.5132,
+      "writeApplied": true,
+      "request": {
+        "ok": true,
+        "dartStatus": "000",
+        "error": null
+      }
+    },
+    {
+      "symbol": "036540",
+      "corpCode": "00301246",
+      "companyName": "SFA반도체",
+      "ok": true,
+      "status": "luna_opendart_financial_refresh_ready",
+      "rows": 180,
+      "composite": 0.5671,
+      "writeApplied": true,
+      "request": {
+        "ok": true,
+        "dartStatus": "000",
+        "error": null
+      }
+    },
+    {
+      "symbol": "001430",
+      "corpCode": "00106669",
+      "companyName": "세아베스틸지주",
+      "ok": true,
+      "status": "luna_opendart_financial_refresh_ready",
+      "rows": 245,
+      "composite": 0.5322,
+      "writeApplied": true,
+      "request": {
+        "ok": true,
+        "dartStatus": "000",
+        "error": null
+      }
+    },
+    {
+      "symbol": "114450",
+      "corpCode": "00532059",
+      "companyName": "그린생명과학",
+      "ok": false,
+      "status": "luna_opendart_financial_refresh_empty",
+      "rows": 0,
+      "composite": 0.5,
+      "writeApplied": true,
+      "request": {
+        "ok": false,
+        "dartStatus": "013",
+        "error": "조회된 데이타가 없습니다."
+      }
+    },
+    {
+      "symbol": "005290",
+      "corpCode": "00118804",
+      "companyName": "동진쎄미켐",
+      "ok": true,
+      "status": "luna_opendart_financial_refresh_ready",
+      "rows": 227,
+      "composite": 0.6309,
+      "writeApplied": true,
+      "request": {
+        "ok": true,
+        "dartStatus": "000",
+        "error": null
+      }
+    },
+    {
+      "symbol": "024110",
+      "corpCode": "00149646",
+      "companyName": "기업은행",
+      "ok": true,
+      "status": "luna_opendart_financial_refresh_ready",
+      "rows": 374,
+      "composite": 0.6011,
+      "writeApplied": true,
+      "request": {
+        "ok": true,
+        "dartStatus": "000",
+        "error": null
+      }
+    },
+    {
+      "symbol": "356680",
+      "corpCode": "01372782",
+      "companyName": "엑스게이트",
+      "ok": false,
+      "status": "luna_opendart_financial_refresh_empty",
+      "rows": 0,
+      "composite": 0.5,
+      "writeApplied": true,
+      "request": {
+        "ok": false,
+        "dartStatus": "013",
+        "error": "조회된 데이타가 없습니다."
+      }
+    },
+    {
+      "symbol": "084650",
+      "corpCode": "00545114",
+      "companyName": "랩지노믹스",
+      "ok": true,
+      "status": "luna_opendart_financial_refresh_ready",
+      "rows": 169,
+      "composite": 0.6112,
+      "writeApplied": true,
+      "request": {
+        "ok": true,
+        "dartStatus": "000",
+        "error": null
+      }
+    },
+    {
+      "symbol": "263750",
+      "corpCode": "01152470",
+      "companyName": "펄어비스",
+      "ok": true,
+      "status": "luna_opendart_financial_refresh_ready",
+      "rows": 286,
+      "composite": 0.5523,
+      "writeApplied": true,
+      "request": {
+        "ok": true,
+        "dartStatus": "000",
+        "error": null
+      }
+    },
+    {
+      "symbol": "017800",
+      "corpCode": "00164724",
+      "companyName": "현대엘리베이터",
+      "ok": true,
+      "status": "luna_opendart_financial_refresh_ready",
+      "rows": 284,
+      "composite": 0.5929,
+      "writeApplied": true,
+      "request": {
+        "ok": true,
+        "dartStatus": "000",
+        "error": null
+      }
+    },
+    {
+      "symbol": "066980",
+      "corpCode": "00389998",
+      "companyName": "한성크린텍",
+      "ok": true,
+      "status": "luna_opendart_financial_refresh_ready",
+      "rows": 183,
+      "composite": 0.4219,
+      "writeApplied": true,
+      "request": {
+        "ok": true,
+        "dartStatus": "000",
+        "error": null
+      }
+    },
+    {
+      "symbol": "388210",
+      "corpCode": "01529982",
+      "companyName": "씨엠티엑스",
+      "ok": false,
+      "status": "luna_opendart_financial_refresh_empty",
+      "rows": 0,
+      "composite": 0.5,
+      "writeApplied": true,
+      "request": {
+        "ok": false,
+        "dartStatus": "013",
+        "error": "조회된 데이타가 없습니다."
+      }
+    },
+    {
+      "symbol": "417200",
+      "corpCode": "01528141",
+      "companyName": "LS머트리얼즈",
+      "ok": true,
+      "status": "luna_opendart_financial_refresh_ready",
+      "rows": 148,
+      "composite": 0.4743,
+      "writeApplied": true,
+      "request": {
+        "ok": true,
+        "dartStatus": "000",
+        "error": null
+      }
+    },
+    {
+      "symbol": "218410",
+      "corpCode": "01078178",
+      "companyName": "RFHIC",
+      "ok": true,
+      "status": "luna_opendart_financial_refresh_ready",
+      "rows": 260,
+      "composite": 0.4764,
+      "writeApplied": true,
+      "request": {
+        "ok": true,
+        "dartStatus": "000",
+        "error": null
+      }
+    },
+    {
+      "symbol": "021240",
+      "corpCode": "00170558",
+      "companyName": "코웨이",
+      "ok": true,
+      "status": "luna_opendart_financial_refresh_ready",
+      "rows": 180,
+      "composite": 0.6799,
+      "writeApplied": true,
+      "request": {
+        "ok": true,
+        "dartStatus": "000",
+        "error": null
+      }
+    },
+    {
+      "symbol": "018700",
+      "corpCode": "00122205",
+      "companyName": "졸스",
+      "ok": true,
+      "status": "luna_opendart_financial_refresh_ready",
+      "rows": 152,
+      "composite": 0.5287,
+      "writeApplied": true,
+      "request": {
+        "ok": true,
+        "dartStatus": "000",
+        "error": null
+      }
+    },
+    {
+      "symbol": "033160",
+      "corpCode": "00121686",
+      "companyName": "엠케이전자",
+      "ok": true,
+      "status": "luna_opendart_financial_refresh_ready",
+      "rows": 315,
+      "composite": 0.5402,
+      "writeApplied": true,
+      "request": {
+        "ok": true,
+        "dartStatus": "000",
+        "error": null
+      }
+    },
+    {
+      "symbol": "000880",
+      "corpCode": "00160588",
+      "companyName": "한화",
+      "ok": true,
+      "status": "luna_opendart_financial_refresh_ready",
+      "rows": 284,
+      "composite": 0.6268,
+      "writeApplied": true,
+      "request": {
+        "ok": true,
+        "dartStatus": "000",
+        "error": null
+      }
+    },
+    {
+      "symbol": "138080",
+      "corpCode": "00571483",
+      "companyName": "오이솔루션",
+      "ok": true,
+      "status": "luna_opendart_financial_refresh_ready",
+      "rows": 148,
+      "composite": 0.3813,
+      "writeApplied": true,
+      "request": {
+        "ok": true,
+        "dartStatus": "000",
+        "error": null
+      }
+    },
+    {
+      "symbol": "185490",
+      "corpCode": "00945457",
+      "companyName": "아이진",
+      "ok": true,
+      "status": "luna_opendart_financial_refresh_ready",
+      "rows": 149,
+      "composite": 0.5353,
+      "writeApplied": true,
+      "request": {
+        "ok": true,
+        "dartStatus": "000",
+        "error": null
+      }
+    },
+    {
+      "symbol": "011200",
+      "corpCode": "00164645",
+      "companyName": "HMM",
+      "ok": true,
+      "status": "luna_opendart_financial_refresh_ready",
+      "rows": 174,
+      "composite": 0.8117,
+      "writeApplied": true,
+      "request": {
+        "ok": true,
+        "dartStatus": "000",
+        "error": null
+      }
+    },
+    {
+      "symbol": "326030",
+      "corpCode": "00878696",
+      "companyName": "에스케이바이오팜",
+      "ok": true,
+      "status": "luna_opendart_financial_refresh_ready",
+      "rows": 173,
+      "composite": 0.5374,
+      "writeApplied": true,
+      "request": {
+        "ok": true,
+        "dartStatus": "000",
+        "error": null
+      }
+    },
+    {
+      "symbol": "310210",
+      "corpCode": "01327746",
+      "companyName": "보로노이",
+      "ok": true,
+      "status": "luna_opendart_financial_refresh_ready",
+      "rows": 180,
+      "composite": 0.4084,
+      "writeApplied": true,
+      "request": {
+        "ok": true,
+        "dartStatus": "000",
+        "error": null
+      }
+    },
+    {
+      "symbol": "023530",
+      "corpCode": "00120526",
+      "companyName": "롯데쇼핑",
+      "ok": true,
+      "status": "luna_opendart_financial_refresh_ready",
+      "rows": 322,
+      "composite": 0.5434,
+      "writeApplied": true,
+      "request": {
+        "ok": true,
+        "dartStatus": "000",
+        "error": null
+      }
+    },
+    {
+      "symbol": "204320",
+      "corpCode": "01042775",
+      "companyName": "HL만도",
+      "ok": true,
+      "status": "luna_opendart_financial_refresh_ready",
+      "rows": 278,
+      "composite": 0.6173,
+      "writeApplied": true,
+      "request": {
+        "ok": true,
+        "dartStatus": "000",
+        "error": null
+      }
+    },
+    {
+      "symbol": "067170",
+      "corpCode": "00397289",
+      "companyName": "오텍",
+      "ok": true,
+      "status": "luna_opendart_financial_refresh_ready",
+      "rows": 162,
+      "composite": 0.4367,
+      "writeApplied": true,
+      "request": {
+        "ok": true,
+        "dartStatus": "000",
+        "error": null
+      }
+    },
+    {
+      "symbol": "071970",
+      "corpCode": "00406046",
+      "companyName": "HD현대마린엔진",
+      "ok": true,
+      "status": "luna_opendart_financial_refresh_ready",
+      "rows": 154,
+      "composite": 0.5311,
+      "writeApplied": true,
+      "request": {
+        "ok": true,
+        "dartStatus": "000",
+        "error": null
+      }
+    },
+    {
+      "symbol": "323280",
+      "corpCode": "01366000",
+      "companyName": "태성",
+      "ok": true,
+      "status": "luna_opendart_financial_refresh_ready",
+      "rows": 153,
+      "composite": 0.4331,
+      "writeApplied": true,
+      "request": {
+        "ok": true,
+        "dartStatus": "000",
+        "error": null
+      }
+    },
+    {
+      "symbol": "139480",
+      "corpCode": "00872984",
+      "companyName": "이마트",
+      "ok": true,
+      "status": "luna_opendart_financial_refresh_ready",
+      "rows": 232,
+      "composite": 0.5632,
+      "writeApplied": true,
+      "request": {
+        "ok": true,
+        "dartStatus": "000",
+        "error": null
+      }
+    },
+    {
+      "symbol": "448900",
+      "corpCode": "00765897",
+      "companyName": "한국피아이엠",
+      "ok": false,
+      "status": "luna_opendart_financial_refresh_empty",
+      "rows": 0,
+      "composite": 0.5,
+      "writeApplied": true,
+      "request": {
+        "ok": false,
+        "dartStatus": "013",
+        "error": "조회된 데이타가 없습니다."
+      }
+    },
+    {
+      "symbol": "183300",
+      "corpCode": "00997812",
+      "companyName": "코미코",
+      "ok": true,
+      "status": "luna_opendart_financial_refresh_ready",
+      "rows": 239,
+      "composite": 0.6213,
+      "writeApplied": true,
+      "request": {
+        "ok": true,
+        "dartStatus": "000",
+        "error": null
+      }
+    },
+    {
+      "symbol": "099320",
+      "corpCode": "00449254",
+      "companyName": "쎄트렉아이",
+      "ok": true,
+      "status": "luna_opendart_financial_refresh_ready",
+      "rows": 186,
+      "composite": 0.4017,
+      "writeApplied": true,
+      "request": {
+        "ok": true,
+        "dartStatus": "000",
+        "error": null
+      }
+    },
+    {
+      "symbol": "452280",
+      "corpCode": "00958451",
+      "companyName": "한선엔지니어링",
+      "ok": false,
+      "status": "luna_opendart_financial_refresh_empty",
+      "rows": 0,
+      "composite": 0.5,
+      "writeApplied": true,
+      "request": {
+        "ok": false,
+        "dartStatus": "013",
+        "error": "조회된 데이타가 없습니다."
+      }
+    },
+    {
+      "symbol": "090460",
+      "corpCode": "00447609",
+      "companyName": "비에이치",
+      "ok": true,
+      "status": "luna_opendart_financial_refresh_ready",
+      "rows": 294,
+      "composite": 0.6853,
+      "writeApplied": true,
+      "request": {
+        "ok": true,
+        "dartStatus": "000",
+        "error": null
+      }
+    },
+    {
+      "symbol": "003280",
+      "corpCode": "00167208",
+      "companyName": "흥아해운",
+      "ok": true,
+      "status": "luna_opendart_financial_refresh_ready",
+      "rows": 141,
+      "composite": 0.678,
+      "writeApplied": true,
+      "request": {
+        "ok": true,
+        "dartStatus": "000",
+        "error": null
+      }
+    },
+    {
+      "symbol": "257720",
+      "corpCode": "00982023",
+      "companyName": "실리콘투",
+      "ok": true,
+      "status": "luna_opendart_financial_refresh_ready",
+      "rows": 144,
+      "composite": 0.5826,
+      "writeApplied": true,
+      "request": {
+        "ok": true,
+        "dartStatus": "000",
+        "error": null
+      }
+    },
+    {
+      "symbol": "323410",
+      "corpCode": "01133217",
+      "companyName": "카카오뱅크",
+      "ok": false,
+      "status": "luna_opendart_financial_refresh_empty",
+      "rows": 0,
+      "composite": 0.5,
+      "writeApplied": true,
+      "request": {
+        "ok": false,
+        "dartStatus": "013",
+        "error": "조회된 데이타가 없습니다."
+      }
+    },
+    {
+      "symbol": "144960",
+      "corpCode": "00521390",
+      "companyName": "뉴파워프라즈마",
+      "ok": true,
+      "status": "luna_opendart_financial_refresh_ready",
+      "rows": 270,
+      "composite": 0.5839,
+      "writeApplied": true,
+      "request": {
+        "ok": true,
+        "dartStatus": "000",
+        "error": null
+      }
+    },
+    {
+      "symbol": "406820",
+      "corpCode": "01147487",
+      "companyName": "뷰티스킨",
+      "ok": true,
+      "status": "luna_opendart_financial_refresh_ready",
+      "rows": 145,
+      "composite": 0.5044,
+      "writeApplied": true,
+      "request": {
+        "ok": true,
+        "dartStatus": "000",
+        "error": null
+      }
+    },
+    {
+      "symbol": "347850",
+      "corpCode": "01376715",
+      "companyName": "디앤디파마텍",
+      "ok": true,
+      "status": "luna_opendart_financial_refresh_ready",
+      "rows": 200,
+      "composite": 0.3974,
+      "writeApplied": true,
+      "request": {
+        "ok": true,
+        "dartStatus": "000",
+        "error": null
+      }
+    },
+    {
+      "symbol": "005500",
+      "corpCode": "00128412",
+      "companyName": "삼진제약",
+      "ok": false,
+      "status": "luna_opendart_financial_refresh_empty",
+      "rows": 0,
+      "composite": 0.5,
+      "writeApplied": true,
+      "request": {
+        "ok": false,
+        "dartStatus": "013",
+        "error": "조회된 데이타가 없습니다."
+      }
+    },
+    {
+      "symbol": "008770",
+      "corpCode": "00165680",
+      "companyName": "호텔신라",
+      "ok": true,
+      "status": "luna_opendart_financial_refresh_ready",
+      "rows": 243,
+      "composite": 0.5287,
+      "writeApplied": true,
+      "request": {
+        "ok": true,
+        "dartStatus": "000",
+        "error": null
+      }
+    },
+    {
+      "symbol": "001510",
+      "corpCode": "00131850",
+      "companyName": "SK증권",
+      "ok": true,
+      "status": "luna_opendart_financial_refresh_ready",
+      "rows": 215,
+      "composite": 0.4595,
+      "writeApplied": true,
+      "request": {
+        "ok": true,
+        "dartStatus": "000",
+        "error": null
+      }
+    },
+    {
+      "symbol": "490470",
+      "corpCode": "01627363",
+      "companyName": "세미파이브",
+      "ok": false,
+      "status": "luna_opendart_financial_refresh_empty",
+      "rows": 0,
+      "composite": 0.5,
+      "writeApplied": true,
+      "request": {
+        "ok": false,
+        "dartStatus": "013",
+        "error": "조회된 데이타가 없습니다."
+      }
+    },
+    {
+      "symbol": "081180",
+      "corpCode": "00406222",
+      "companyName": "쎄크",
+      "ok": false,
+      "status": "luna_opendart_financial_refresh_empty",
+      "rows": 0,
+      "composite": 0.5,
+      "writeApplied": true,
+      "request": {
+        "ok": false,
+        "dartStatus": "013",
+        "error": "조회된 데이타가 없습니다."
+      }
+    },
+    {
+      "symbol": "009420",
+      "corpCode": "00162586",
+      "companyName": "한올바이오파마",
+      "ok": true,
+      "status": "luna_opendart_financial_refresh_ready",
+      "rows": 138,
+      "composite": 0.5098,
+      "writeApplied": true,
+      "request": {
+        "ok": true,
+        "dartStatus": "000",
+        "error": null
+      }
+    },
+    {
+      "symbol": "020150",
+      "corpCode": "00113997",
+      "companyName": "롯데에너지머티리얼즈",
+      "ok": true,
+      "status": "luna_opendart_financial_refresh_ready",
+      "rows": 251,
+      "composite": 0.5803,
+      "writeApplied": true,
+      "request": {
+        "ok": true,
+        "dartStatus": "000",
+        "error": null
+      }
+    },
+    {
+      "symbol": "489790",
+      "corpCode": "01867758",
+      "companyName": "한화비전",
+      "ok": true,
+      "status": "luna_opendart_financial_refresh_ready",
+      "rows": 183,
+      "composite": 0.4843,
+      "writeApplied": true,
+      "request": {
+        "ok": true,
+        "dartStatus": "000",
+        "error": null
+      }
+    },
+    {
+      "symbol": "161890",
+      "corpCode": "00939331",
+      "companyName": "한국콜마",
+      "ok": true,
+      "status": "luna_opendart_financial_refresh_ready",
+      "rows": 274,
+      "composite": 0.6025,
+      "writeApplied": true,
+      "request": {
+        "ok": true,
+        "dartStatus": "000",
+        "error": null
+      }
+    },
+    {
+      "symbol": "084370",
+      "corpCode": "00531014",
+      "companyName": "유진테크",
+      "ok": true,
+      "status": "luna_opendart_financial_refresh_ready",
+      "rows": 158,
+      "composite": 0.5377,
+      "writeApplied": true,
+      "request": {
+        "ok": true,
+        "dartStatus": "000",
+        "error": null
+      }
+    },
+    {
+      "symbol": "261780",
+      "corpCode": "01141599",
+      "companyName": "차백신연구소",
+      "ok": false,
+      "status": "luna_opendart_financial_refresh_empty",
+      "rows": 0,
+      "composite": 0.5,
+      "writeApplied": true,
+      "request": {
+        "ok": false,
+        "dartStatus": "013",
+        "error": "조회된 데이타가 없습니다."
+      }
+    },
+    {
+      "symbol": "321260",
+      "corpCode": "01359736",
+      "companyName": "프로이천",
+      "ok": true,
+      "status": "luna_opendart_financial_refresh_ready",
+      "rows": 140,
+      "composite": 0.7157,
+      "writeApplied": true,
+      "request": {
+        "ok": true,
+        "dartStatus": "000",
+        "error": null
+      }
+    }
+  ],
+  "skipped": [],
+  "safety": {
+    "secretMutation": false,
+    "protectedProcessTouched": false,
+    "launchctlTouched": false,
+    "liveTradeExecuted": false,
+    "liveOrderAllowed": false
+  }
+}

@@ -11,10 +11,12 @@ import {
   getActiveCandidates,
   normalizeLegacyCryptoCandidateSymbols,
   pruneSourceCandidatesNotInSignals,
+  upsertCandidateSignals,
 } from '../team/discovery/discovery-store.ts';
 import { BinanceMarketMomentumCollector } from '../team/discovery/crypto/binance-market-momentum.ts';
 import { CoinGeckoTrendingCollector } from '../team/discovery/crypto/coingecko-trending.ts';
 import { buildFixtureBinanceTopVolumeUniverse } from '../shared/binance-top-volume-universe.ts';
+import { ensureLunaCandidateQualityGovernanceSchema } from '../shared/luna-candidate-quality-governance.ts';
 
 function makeSmokeTop30Universe(symbols = []) {
   const canonical = [...new Set(symbols)];
@@ -76,6 +78,8 @@ export async function runLunaDiscoveryUniverseSmoke() {
   const cryptoSources = (dryRun?.markets?.crypto || []).map((item) => item.source);
   assert.ok(cryptoSources.includes('binance_market_momentum'));
   assert.ok(cryptoSources.includes('coingecko_trending'));
+  const domesticSources = (dryRun?.markets?.domestic || []).map((item) => item.source);
+  assert.ok(domesticSources.includes('korea_public_data_quality'));
 
   const binanceCollector = new BinanceMarketMomentumCollector();
   const coingeckoCollector = new CoinGeckoTrendingCollector();
@@ -113,6 +117,8 @@ export async function runLunaDiscoveryUniverseSmoke() {
       'SMOKEMOMENTUM/USDT',
       'SMOKEKEEP/USDT',
       'SMOKESTALE/USDT',
+      'SMOKECOOL/USDT',
+      'SMOKECOOLDOWN/USDT',
     ]);
     const preferred = await buildDiscoveryUniverse('crypto', new Date(), {
       refresh: false,
@@ -202,8 +208,57 @@ export async function runLunaDiscoveryUniverseSmoke() {
       [pruneSource],
     );
     assert.deepEqual(afterPrune.map((row) => row.symbol), ['SMOKEKEEP/USDT']);
+    const cooldownSource = `${smokeSource}_cooldown`;
+    const cooldownInsert = await upsertCandidateSignals(
+      [{ symbol: 'SMOKECOOL/USDT', score: 0.91, confidence: 0.91, reason: 'cooldown smoke' }],
+      'crypto',
+      cooldownSource,
+      1,
+      1,
+      { qualityCooldownSymbols: ['SMOKECOOL/USDT'] },
+    );
+    assert.equal(cooldownInsert.skippedCooldown, 1);
+    const cooldownRows = await db.query(
+      `SELECT symbol FROM candidate_universe WHERE market = 'crypto' AND source = $1`,
+      [cooldownSource],
+    );
+    assert.deepEqual(cooldownRows, []);
+    await db.run(
+      `INSERT INTO candidate_universe
+         (symbol, market, source, source_tier, score, confidence, reason, ttl_hours, raw_data, expires_at)
+       VALUES
+         ('SMOKECOOL/USDT', 'crypto', $1, 1, 0.9000, 0.90, 'cooldown prune smoke', 1, '{}'::jsonb, now() + interval '1 hour')`,
+      [cooldownSource],
+    );
+    const cooldownPruned = await pruneSourceCandidatesNotInSignals(
+      [{ symbol: 'SMOKECOOL/USDT', score: 0.91 }],
+      'crypto',
+      cooldownSource,
+      { binanceTopVolumeUniverse: smokeTop30Universe, qualityCooldownSymbols: ['SMOKECOOL/USDT'] },
+    );
+    assert.equal(cooldownPruned, 1);
+    await ensureLunaCandidateQualityGovernanceSchema();
+    await db.run(
+      `INSERT INTO luna_candidate_quality_governance_shadow
+         (symbol, market, exchange, governance_action, priority_score, cooldown_until,
+          replacement_needed, skip_backtest_until_cooldown, recommended_next_command,
+          shadow_only, live_mutation, reasons, evidence)
+       VALUES
+         ('SMOKECOOLDOWN/USDT', 'crypto', 'binance', 'candidate_cooldown_shadow', 0.18,
+          now() + interval '1 hour', true, true, null, true, false,
+          '["smoke_quality_cooldown"]'::jsonb, '{"smoke":true}'::jsonb)`,
+    );
+    await db.run(
+      `INSERT INTO candidate_universe
+         (symbol, market, source, source_tier, score, confidence, reason, ttl_hours, raw_data, expires_at)
+       VALUES
+         ('SMOKECOOLDOWN/USDT', 'crypto', 'binance_market_momentum', 1, 0.9990, 0.99, 'active cooldown smoke', 1, '{}'::jsonb, now() + interval '1 hour')`,
+    );
+    const activeAfterCooldown = await getActiveCandidates('crypto', 500);
+    assert.equal(activeAfterCooldown.some((row) => row.symbol === 'SMOKECOOLDOWN/USDT'), false);
   } finally {
-    await db.run(`DELETE FROM candidate_universe WHERE source LIKE $1 OR symbol IN ('SMOKEMOMENTUM/USDT', 'SMOKEPREFER/USDT', 'SMOKEACTION/USDT')`, [`${smokeSource}%`]).catch(() => null);
+    await db.run(`DELETE FROM candidate_universe WHERE source LIKE $1 OR symbol IN ('SMOKEMOMENTUM/USDT', 'SMOKEPREFER/USDT', 'SMOKEACTION/USDT', 'SMOKECOOLDOWN/USDT')`, [`${smokeSource}%`]).catch(() => null);
+    await db.run(`DELETE FROM luna_candidate_quality_governance_shadow WHERE symbol IN ('SMOKECOOLDOWN/USDT')`).catch(() => null);
     await db.run(`DELETE FROM analysis WHERE symbol = 'SMOKEACTION/USDT' AND reasoning LIKE 'promotion smoke%'`).catch(() => null);
   }
 

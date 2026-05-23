@@ -195,6 +195,12 @@ export function buildKoreaDataPromotionGate(metrics = {}, options = {}) {
     metrics: {
       ...counts,
       domesticBacktestPassRate7d: domesticPassRate,
+      domesticBacktestActiveCandidates: countMetric(metrics.domesticBacktestActiveCandidates),
+      domesticBacktestCooldownExcluded: countMetric(metrics.domesticBacktestCooldownExcluded),
+      domesticBacktestMetricScope: metrics.domesticBacktestMetricScope || null,
+      disclosuresCurrentDate: countMetric(metrics.disclosuresCurrentDate ?? metrics.disclosuresToday?.currentDateCount),
+      disclosuresLatestDate: metrics.disclosuresLatestDate || metrics.disclosuresToday?.latestDate || null,
+      disclosuresLatestDateCount: countMetric(metrics.disclosuresLatestDateCount ?? metrics.disclosuresToday?.latestDateCount),
       openDartConfigured,
       dartFssAvailable,
       openDartSource: metrics.openDartSource || null,
@@ -218,7 +224,7 @@ export function buildKoreaDataPromotionGate(metrics = {}, options = {}) {
     },
     blockers,
     warnings,
-    nextActions: blockers.length ? blockers.slice(0, 8).map((item) => actionForBlocker(item.code)) : [
+    nextActions: blockers.length ? blockers.slice(0, 12).map((item) => actionForBlocker(item.code)) : [
       {
         blocker: null,
         action: 'manual_master_review_only',
@@ -235,33 +241,43 @@ function actionForBlocker(code) {
       action: 'enter_redacted_opendart_key',
       command: 'npm --prefix bots/investment run -s secrets-doctor:luna-opendart -- --template',
     },
-	    financial_report_rows_below_target: {
-	      action: 'run_shadow_financial_refresh_until_coverage_target',
-	      command: 'npm --prefix bots/investment run -s runtime:luna-opendart-financial-refresh -- --json --write',
-	    },
-	    corp_fundamentals_below_target: {
-	      action: 'run_shadow_financial_refresh_until_fundamental_target',
-	      command: 'npm --prefix bots/investment run -s runtime:luna-opendart-financial-refresh -- --json --write',
-	    },
-	    fresh_fundamentals_24h_below_target: {
-	      action: 'refresh_daily_fundamental_shadow_snapshot',
-	      command: 'npm --prefix bots/investment run -s runtime:luna-opendart-financial-refresh -- --json --write',
-	    },
-	    daily_disclosures_below_target: {
-	      action: 'refresh_open_dart_disclosures_and_recheck_market_day_volume',
-	      command: 'npm --prefix bots/investment run -s runtime:luna-opendart-disclosure-refresh -- --json --write',
-	    },
-	    korean_factor_rows_7d_below_target: {
-	      action: 'run_korean_factor_shadow_refresh',
-	      command: 'npm --prefix bots/investment run -s runtime:luna-korean-factor-refresh -- --json --write',
-	    },
+    financial_report_rows_below_target: {
+      action: 'run_shadow_financial_refresh_until_coverage_target',
+      command: 'npm --prefix bots/investment run -s runtime:luna-opendart-financial-batch-refresh -- --json --network --limit=25 --skip-fresh --write --confirm=luna-opendart-financial-batch-write',
+      requiresDataWriteApproval: true,
+      liveTradeImpact: false,
+    },
+    corp_fundamentals_below_target: {
+      action: 'run_shadow_financial_refresh_until_fundamental_target',
+      command: 'npm --prefix bots/investment run -s runtime:luna-opendart-financial-batch-refresh -- --json --network --limit=25 --skip-fresh --write --confirm=luna-opendart-financial-batch-write',
+      requiresDataWriteApproval: true,
+      liveTradeImpact: false,
+    },
+    fresh_fundamentals_24h_below_target: {
+      action: 'refresh_daily_fundamental_shadow_snapshot',
+      command: 'npm --prefix bots/investment run -s runtime:luna-opendart-financial-batch-refresh -- --json --network --limit=25 --skip-fresh --write --confirm=luna-opendart-financial-batch-write',
+      requiresDataWriteApproval: true,
+      liveTradeImpact: false,
+    },
+    daily_disclosures_below_target: {
+      action: 'refresh_open_dart_disclosures_and_recheck_market_day_volume',
+      command: 'npm --prefix bots/investment run -s runtime:luna-opendart-disclosure-refresh -- --json --write',
+      requiresDataWriteApproval: true,
+      liveTradeImpact: false,
+    },
+    korean_factor_rows_7d_below_target: {
+      action: 'run_korean_factor_shadow_refresh',
+      command: 'npm --prefix bots/investment run -s runtime:luna-korean-factor-refresh -- --json --write',
+      requiresDataWriteApproval: true,
+      liveTradeImpact: false,
+    },
     domestic_backtest_rows_7d_below_target: {
-      action: 'run_domestic_candidate_backtests_before_promotion',
-      command: 'npm --prefix bots/investment run -s runtime:luna-candidate-backtest-refresh -- --json --dry-run --market=domestic',
+      action: 'refresh_domestic_candidate_discovery_and_backtests_before_promotion',
+      command: 'npm --prefix bots/investment run -s runtime:luna-discovery-refresh -- --json --force --markets=domestic --limit=30 --ttl-hours=6 && npm --prefix bots/investment run -s runtime:luna-candidate-backtest-refresh -- --json --dry-run --market=domestic',
     },
     domestic_backtest_fresh_rows_7d_below_target: {
-      action: 'refresh_stale_domestic_candidate_backtests',
-      command: 'npm --prefix bots/investment run -s runtime:luna-candidate-backtest-refresh -- --json --dry-run --force --market=domestic',
+      action: 'refresh_domestic_candidate_discovery_and_stale_backtests',
+      command: 'npm --prefix bots/investment run -s runtime:luna-discovery-refresh -- --json --force --markets=domestic --limit=30 --ttl-hours=6 && npm --prefix bots/investment run -s runtime:luna-candidate-backtest-refresh -- --json --dry-run --force --market=domestic',
     },
     domestic_backtest_healthy_rows_7d_below_target: {
       action: 'improve_or_filter_unhealthy_domestic_candidates',
@@ -276,8 +292,10 @@ function actionForBlocker(code) {
       command: 'npm --prefix bots/investment run -s runtime:luna-korea-data-promotion-gate -- --json --no-write',
     },
     strategy_shadow_signals_7d_below_target: {
-      action: 'run_three_public_data_strategy_shadow_runtimes',
-      command: 'npm --prefix bots/investment run -s runtime:luna-fundamental-quant-trading -- --json --no-write && npm --prefix bots/investment run -s runtime:luna-earnings-surprise-trading -- --json --no-write && npm --prefix bots/investment run -s runtime:luna-disclosure-event-driven -- --json --no-write',
+      action: 'run_three_public_data_strategy_shadow_runtimes_and_record_ledger',
+      command: 'npm --prefix bots/investment run -s runtime:luna-fundamental-quant-trading -- --json --apply --confirm=luna-fundamental-quant-shadow-signal && npm --prefix bots/investment run -s runtime:luna-earnings-surprise-trading -- --json --apply --confirm=luna-earnings-surprise-shadow-signal && npm --prefix bots/investment run -s runtime:luna-disclosure-event-driven -- --json --apply --confirm=luna-disclosure-event-shadow-signal',
+      requiresDataWriteApproval: true,
+      liveTradeImpact: false,
     },
     worldquant_alpha_count_below_target: {
       action: 'verify_worldquant_korean_alpha_coverage',

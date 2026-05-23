@@ -15,8 +15,24 @@ import {
   annotateDomesticOfficialReferenceCandidates,
   getCachedDomesticOfficialReference,
 } from '../../shared/domestic-official-reference.ts';
+import { loadLunaCandidateQualityCooldownSymbols } from '../../shared/luna-candidate-quality-governance.ts';
 
 const db = createSchemaDbHelpers(pgPool, 'investment');
+
+function qualityCooldownPrefilterEnabled(): boolean {
+  return process.env.LUNA_DISCOVERY_QUALITY_COOLDOWN_PREFILTER_ENABLED !== 'false';
+}
+
+async function loadQualityCooldownKeySet(market: DiscoveryMarket, options: any = {}): Promise<Set<string>> {
+  if (!qualityCooldownPrefilterEnabled()) return new Set();
+  if (Array.isArray(options.qualityCooldownSymbols)) {
+    return new Set(options.qualityCooldownSymbols
+      .map((symbol: string) => `${normalizeCandidateSymbolForMarket(symbol, market)}|${market}`)
+      .filter((key: string) => !key.startsWith('null|')));
+  }
+  const rows = await loadLunaCandidateQualityCooldownSymbols({ market }).catch(() => []);
+  return new Set((rows || []).map((row: any) => `${row.symbol}|${row.market}`));
+}
 
 // candidate_universe 테이블 초기화 (없으면 생성)
 export async function ensureCandidateUniverseTable(): Promise<void> {
@@ -109,11 +125,14 @@ export async function upsertCandidateSignals(
   source: string,
   sourceTier: 1 | 2,
   ttlHours = 24,
-): Promise<{ inserted: number; updated: number }> {
-  if (!signals || signals.length === 0) return { inserted: 0, updated: 0 };
+  options: any = {},
+): Promise<{ inserted: number; updated: number; skippedCooldown: number }> {
+  if (!signals || signals.length === 0) return { inserted: 0, updated: 0, skippedCooldown: 0 };
 
   let inserted = 0;
   let updated = 0;
+  let skippedCooldown = 0;
+  const qualityCooldownKeys = await loadQualityCooldownKeySet(market, options);
   const binanceTopVolumeUniverse = market === 'crypto'
     ? await getCachedBinanceTopVolumeUniverse().catch(() => null)
     : null;
@@ -126,6 +145,10 @@ export async function upsertCandidateSignals(
   for (const sig of signals) {
     const symbol = normalizeCandidateSymbolForMarket(sig.symbol, market);
     if (!symbol || typeof sig.score !== 'number') continue;
+    if (qualityCooldownKeys.has(`${symbol}|${market}`)) {
+      skippedCooldown++;
+      continue;
+    }
     if (market === 'crypto' && !binanceTopVolumeUniverse) continue;
     if (market === 'crypto' && binanceTopVolumeUniverse) {
       const top30Gate = evaluateBinanceTopVolumeUniverseGate(symbol, binanceTopVolumeUniverse);
@@ -189,7 +212,7 @@ export async function upsertCandidateSignals(
     else updated++;
   }
 
-  return { inserted, updated };
+  return { inserted, updated, skippedCooldown };
 }
 
 export async function pruneSourceCandidatesNotInSignals(
@@ -201,14 +224,27 @@ export async function pruneSourceCandidatesNotInSignals(
   const binanceTopVolumeUniverse = market === 'crypto'
     ? options.binanceTopVolumeUniverse || await getCachedBinanceTopVolumeUniverse().catch(() => null)
     : null;
-  const activeSymbols = [...new Set((signals || [])
+  const qualityCooldownKeys = await loadQualityCooldownKeySet(market, options);
+  const normalizedSymbols = [...new Set((signals || [])
     .map((sig) => normalizeCandidateSymbolForMarket(sig.symbol, market))
     .filter(Boolean)
     .filter((symbol) => {
       if (market !== 'crypto' || !binanceTopVolumeUniverse) return true;
       return evaluateBinanceTopVolumeUniverseGate(symbol, binanceTopVolumeUniverse).ok;
     }))];
-  if (!source || activeSymbols.length === 0) return 0;
+  const activeSymbols = normalizedSymbols
+    .filter((symbol) => !qualityCooldownKeys.has(`${symbol}|${market}`));
+  if (!source) return 0;
+  if (activeSymbols.length === 0) {
+    if (normalizedSymbols.length === 0 || qualityCooldownKeys.size === 0) return 0;
+    const result = await db.run(`
+      DELETE FROM candidate_universe
+      WHERE market = $1
+        AND source = $2
+        AND expires_at > NOW()
+    `, [market, source]);
+    return result.rowCount || 0;
+  }
   const result = await db.run(`
     DELETE FROM candidate_universe
     WHERE market = $1
@@ -247,7 +283,11 @@ export async function getActiveCandidates(
   market: DiscoveryMarket,
   limit = 150,
 ): Promise<Array<{ symbol: string; market: string; source: string; score: number; reason: string }>> {
-  return db.query(`
+  const qualityCooldownKeys = await loadQualityCooldownKeySet(market);
+  const scanLimit = qualityCooldownKeys.size > 0
+    ? Math.max(limit, Math.min(1000, Number(limit || 150) * 4))
+    : limit;
+  const rows = await db.query(`
     WITH normalized AS (
       SELECT *,
              CASE
@@ -286,11 +326,14 @@ export async function getActiveCandidates(
            quality_flags,
            discovered_at,
            expires_at
-    FROM ranked
-    WHERE rn = 1
-    ORDER BY ${candidateSourcePrioritySql()} DESC, score DESC, confidence DESC NULLS LAST, discovered_at DESC
-    LIMIT $2
-  `, [market, limit]);
+	    FROM ranked
+	    WHERE rn = 1
+	    ORDER BY ${candidateSourcePrioritySql()} DESC, score DESC, confidence DESC NULLS LAST, discovered_at DESC
+	    LIMIT $2
+	  `, [market, scanLimit]);
+  return (rows || [])
+    .filter((row) => !qualityCooldownKeys.has(`${row.symbol}|${row.market}`))
+    .slice(0, limit);
 }
 
 // 소스별 최신 수집 시각 (staleness 모니터링용)

@@ -38,6 +38,67 @@ async function safeCount(sql) {
 }
 
 async function safeBacktestMetrics() {
+  const candidateUniverse = await get(`SELECT to_regclass('investment.candidate_universe') AS table_name`).catch(() => null);
+  const governanceShadow = await get(`SELECT to_regclass('investment.luna_candidate_quality_governance_shadow') AS table_name`).catch(() => null);
+  if (candidateUniverse?.table_name) {
+    const cooldownCte = governanceShadow?.table_name
+      ? `SELECT DISTINCT ON (symbol, market) symbol, market, cooldown_until
+           FROM investment.luna_candidate_quality_governance_shadow
+          WHERE market = 'domestic'
+            AND skip_backtest_until_cooldown IS TRUE
+            AND cooldown_until > NOW()
+            AND shadow_only IS TRUE
+          ORDER BY symbol, market, observed_at DESC`
+      : `SELECT NULL::text AS symbol, NULL::text AS market, NULL::timestamptz AS cooldown_until WHERE false`;
+    const row = await get(
+      `WITH active AS (
+          SELECT DISTINCT
+                 CASE
+                   WHEN symbol ~ '^[0-9]{6}$' THEN symbol
+                   ELSE NULL
+                 END AS symbol,
+                 market
+            FROM investment.candidate_universe
+           WHERE market = 'domestic'
+             AND expires_at > NOW()
+        ),
+        cooldown AS (
+          ${cooldownCte}
+        ),
+        eligible AS (
+          SELECT active.symbol, active.market
+            FROM active
+            LEFT JOIN cooldown USING (symbol, market)
+           WHERE active.symbol IS NOT NULL
+             AND cooldown.symbol IS NULL
+        ),
+        backtest AS (
+          SELECT b.*
+            FROM candidate_backtest_status b
+            JOIN eligible e USING (symbol, market)
+           WHERE b.market = 'domestic'
+             AND b.updated_at >= NOW() - INTERVAL '7 days'
+        )
+        SELECT COUNT(*)::int AS rows,
+               COUNT(*) FILTER (WHERE fresh = true)::int AS fresh,
+               COUNT(*) FILTER (WHERE healthy = true)::int AS healthy,
+               COUNT(*) FILTER (WHERE gate_status = 'pass')::int AS pass,
+               (SELECT COUNT(*)::int FROM eligible)::int AS active_candidates,
+               (SELECT COUNT(*)::int FROM cooldown)::int AS cooldown_excluded
+          FROM backtest`,
+    ).catch((error) => ({ error: String(error?.message || error) }));
+    if (!row?.error) {
+      return {
+        rows: { count: Number(row?.rows || 0), error: null, tableMissing: false },
+        fresh: Number(row?.fresh || 0),
+        healthy: Number(row?.healthy || 0),
+        pass: Number(row?.pass || 0),
+        activeCandidates: Number(row?.active_candidates || 0),
+        cooldownExcluded: Number(row?.cooldown_excluded || 0),
+        scope: 'active_candidate_universe_excluding_quality_cooldown',
+      };
+    }
+  }
   const row = await get(
     `SELECT COUNT(*)::int AS rows,
             COUNT(*) FILTER (WHERE fresh = true)::int AS fresh,
@@ -53,6 +114,9 @@ async function safeBacktestMetrics() {
       fresh: 0,
       healthy: 0,
       pass: 0,
+      activeCandidates: 0,
+      cooldownExcluded: 0,
+      scope: 'candidate_backtest_status_fallback',
     };
   }
   return {
@@ -60,6 +124,50 @@ async function safeBacktestMetrics() {
     fresh: Number(row?.fresh || 0),
     healthy: Number(row?.healthy || 0),
     pass: Number(row?.pass || 0),
+    activeCandidates: Number(row?.rows || 0),
+    cooldownExcluded: 0,
+    scope: 'candidate_backtest_status_fallback',
+  };
+}
+
+async function safeDisclosureMetrics() {
+  const row = await get(
+    `WITH current_day AS (
+        SELECT COUNT(*)::int AS count
+          FROM investment.corp_disclosures
+         WHERE rcept_dt = CURRENT_DATE
+      ),
+      latest_day AS (
+        SELECT rcept_dt, COUNT(*)::int AS count
+          FROM investment.corp_disclosures
+         WHERE rcept_dt >= CURRENT_DATE - INTERVAL '7 days'
+         GROUP BY rcept_dt
+         ORDER BY rcept_dt DESC
+         LIMIT 1
+      )
+      SELECT COALESCE((SELECT count FROM current_day), 0)::int AS current_count,
+             COALESCE((SELECT count FROM latest_day), 0)::int AS latest_count,
+             (SELECT rcept_dt::text FROM latest_day) AS latest_date`,
+  ).catch((error) => ({ error: String(error?.message || error) }));
+  if (row?.error) {
+    return {
+      count: 0,
+      currentDateCount: 0,
+      latestDateCount: 0,
+      latestDate: null,
+      error: row.error,
+      tableMissing: /does not exist|relation .* does not exist/i.test(row.error),
+    };
+  }
+  const currentDateCount = Number(row?.current_count || 0);
+  const latestDateCount = Number(row?.latest_count || 0);
+  return {
+    count: currentDateCount > 0 ? currentDateCount : latestDateCount,
+    currentDateCount,
+    latestDateCount,
+    latestDate: row?.latest_date || null,
+    error: null,
+    tableMissing: false,
   };
 }
 
@@ -149,7 +257,7 @@ async function loadDbMetrics() {
     safeCount('SELECT COUNT(*)::int AS count FROM investment.corp_financial_reports'),
     safeCount('SELECT COUNT(DISTINCT stock_code)::int AS count FROM investment.corp_fundamentals'),
     safeCount(`SELECT COUNT(DISTINCT stock_code)::int AS count FROM investment.corp_fundamentals WHERE updated_at >= NOW() - INTERVAL '24 hours'`),
-    safeCount('SELECT COUNT(*)::int AS count FROM investment.corp_disclosures WHERE rcept_dt = CURRENT_DATE'),
+    safeDisclosureMetrics(),
     safeCount(`SELECT COUNT(*)::int AS count FROM investment.korean_factor_log WHERE created_at >= NOW() - INTERVAL '7 days'`),
     safeCount(`SELECT COUNT(DISTINCT observed_day)::int AS count
                  FROM (
@@ -181,6 +289,9 @@ async function loadDbMetrics() {
     domesticBacktestFreshRows7d: backtest.fresh,
     domesticBacktestHealthyRows7d: backtest.healthy,
     domesticBacktestPassRows7d: backtest.pass,
+    domesticBacktestActiveCandidates: backtest.activeCandidates,
+    domesticBacktestCooldownExcluded: backtest.cooldownExcluded,
+    domesticBacktestMetricScope: backtest.scope,
     shadowObservationDays: shadowDays,
     strategyShadowSignals7d: strategySignalCount,
     worldquantAlphaCount: worldquantAlphaCount(),
@@ -201,6 +312,9 @@ function fixtureMetrics() {
     domesticBacktestFreshRows7d: 28,
     domesticBacktestHealthyRows7d: 24,
     domesticBacktestPassRows7d: 22,
+    domesticBacktestActiveCandidates: 30,
+    domesticBacktestCooldownExcluded: 0,
+    domesticBacktestMetricScope: 'fixture_active_candidate_universe',
     shadowObservationDays: 8,
     strategyShadowSignals7d: 18,
     worldquantAlphaCount: 20,

@@ -19,6 +19,7 @@ import {
 import { buildKoreanFactorSnapshot } from '../shared/korean-factor-model.ts';
 import { calculateKoreanWorldQuantAlphas } from '../shared/worldquant-101-korean.ts';
 import { runLunaOpenDartDisclosureRefresh } from './runtime-luna-opendart-disclosure-refresh.ts';
+import { runLunaOpenDartFinancialBatchRefresh } from './runtime-luna-opendart-financial-batch-refresh.ts';
 import { runLunaOpenDartFinancialRefresh } from './runtime-luna-opendart-financial-refresh.ts';
 import { runLunaEarningsSurpriseTrading } from './runtime-luna-earnings-surprise-trading.ts';
 
@@ -112,6 +113,15 @@ export async function runLunaKoreaDataSmoke() {
   const financialRuntime = await runLunaOpenDartFinancialRefresh({ fixture: true });
   assert.equal(financialRuntime.dryRun, true);
   assert.ok(financialRuntime.factorScores.composite > 0);
+  const financialBatchRuntime = await runLunaOpenDartFinancialBatchRefresh({
+    fixture: true,
+    limit: 2,
+    writeReport: false,
+  });
+  assert.equal(financialBatchRuntime.dryRun, true);
+  assert.equal(financialBatchRuntime.counts.readyToFetch, 2);
+  assert.equal(financialBatchRuntime.counts.refreshed, 2);
+  assert.ok(financialBatchRuntime.counts.rows >= 16);
   const earningsRuntime = await runLunaEarningsSurpriseTrading({ fixture: true, writeReport: false });
   assert.equal(earningsRuntime.result.output.recommendation.action, 'positive_surprise_watchlist');
 
@@ -121,6 +131,7 @@ export async function runLunaKoreaDataSmoke() {
     migrations: migrations.length,
     disclosureRows: disclosureRuntime.rows,
     financialRows: financialRuntime.rows,
+    financialBatchRows: financialBatchRuntime.counts.rows,
     earningsAction: earningsRuntime.result.output.recommendation.action,
     worldquantAlphas: Object.keys(worldquant.alphas).length,
     shadowOnly: true,

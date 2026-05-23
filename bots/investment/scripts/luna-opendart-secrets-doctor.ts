@@ -81,6 +81,7 @@ export async function runLunaOpenDartSecretsDoctor(options = {}) {
       'npm --prefix bots/investment run -s secrets-doctor:luna-opendart -- --template',
       'npm --prefix bots/investment run -s runtime:luna-opendart-disclosure-refresh -- --json --fixture',
       'npm --prefix bots/investment run -s runtime:luna-opendart-financial-refresh -- --json --fixture',
+      'npm --prefix bots/investment run -s runtime:luna-opendart-financial-batch-refresh -- --json --fixture --limit=2 --no-write',
     ],
   };
 }

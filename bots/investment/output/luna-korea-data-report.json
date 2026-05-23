@@ -1,7 +1,7 @@
 {
   "ok": true,
   "status": "luna_korea_public_data_shadow_ready",
-  "generatedAt": "2026-05-23T09:06:50.942Z",
+  "generatedAt": "2026-05-23T09:43:33.549Z",
   "shadowOnly": true,
   "liveTradeImpact": false,
   "openDart": {
@@ -14,6 +14,7 @@
     "opendartClient": true,
     "dartFssAdapter": true,
     "corpFundamental": true,
+    "opendartFinancialBatchRefresh": true,
     "koreanFactorModel": true,
     "worldquantKorean": true,
     "disclosureLaunchd": true,
@@ -22,7 +23,7 @@
   },
   "counts": {
     "corpFundamentals": {
-      "count": 2,
+      "count": 245,
       "error": null,
       "tableMissing": false
     },
@@ -32,12 +33,12 @@
       "tableMissing": false
     },
     "corpFinancialReports": {
-      "count": 389,
+      "count": 49271,
       "error": null,
       "tableMissing": false
     },
     "koreanFactorLog": {
-      "count": 5,
+      "count": 1360,
       "error": null,
       "tableMissing": false
     }
@@ -57,63 +58,33 @@
       "promotionRequired": true,
       "blockers": [
         {
-          "code": "financial_report_rows_below_target",
-          "actual": 389,
-          "expected": 1000
+          "code": "domestic_backtest_rows_7d_below_target",
+          "actual": 2,
+          "expected": 20
         },
         {
-          "code": "corp_fundamentals_below_target",
-          "actual": 1,
-          "expected": 200
-        },
-        {
-          "code": "fresh_fundamentals_24h_below_target",
-          "actual": 1,
-          "expected": 200
-        },
-        {
-          "code": "daily_disclosures_below_target",
-          "actual": 0,
-          "expected": 100
-        },
-        {
-          "code": "korean_factor_rows_7d_below_target",
-          "actual": 5,
-          "expected": 1000
-        },
-        {
-          "code": "domestic_backtest_healthy_rows_7d_below_target",
-          "actual": 14,
+          "code": "domestic_backtest_fresh_rows_7d_below_target",
+          "actual": 2,
           "expected": 15
         },
         {
-          "code": "domestic_backtest_pass_rate_below_target",
-          "actual": 0.087,
-          "expected": 0.65
+          "code": "domestic_backtest_healthy_rows_7d_below_target",
+          "actual": 2,
+          "expected": 15
         },
         {
           "code": "shadow_observation_days_below_target",
           "actual": 1,
           "expected": 7
-        },
-        {
-          "code": "strategy_shadow_signals_7d_below_target",
-          "actual": 0,
-          "expected": 15
         }
       ],
-      "warnings": [
-        {
-          "code": "dart_fss_python_adapter_missing",
-          "command": "python3 -m pip install -r bots/investment/python/korea-data/requirements.txt"
-        }
-      ]
+      "warnings": []
     }
   },
   "promotionGate": {
     "ok": true,
     "status": "luna_korea_data_promotion_blocked",
-    "generatedAt": "2026-05-23T09:06:50.940Z",
+    "generatedAt": "2026-05-23T09:43:33.540Z",
     "shadowOnly": true,
     "liveTradeImpact": false,
     "liveOrderAllowed": false,
@@ -135,28 +106,34 @@
       "minWorldquantAlphaCount": 20
     },
     "metrics": {
-      "corpFinancialReports": 389,
-      "corpFundamentals": 1,
-      "freshCorpFundamentals24h": 1,
-      "disclosuresToday": 0,
-      "koreanFactorRows7d": 5,
-      "domesticBacktestRows7d": 161,
-      "domesticBacktestFreshRows7d": 150,
-      "domesticBacktestHealthyRows7d": 14,
-      "domesticBacktestPassRows7d": 14,
+      "corpFinancialReports": 49271,
+      "corpFundamentals": 244,
+      "freshCorpFundamentals24h": 244,
+      "disclosuresToday": 100,
+      "koreanFactorRows7d": 1360,
+      "domesticBacktestRows7d": 2,
+      "domesticBacktestFreshRows7d": 2,
+      "domesticBacktestHealthyRows7d": 2,
+      "domesticBacktestPassRows7d": 2,
       "shadowObservationDays": 1,
-      "strategyShadowSignals7d": 0,
+      "strategyShadowSignals7d": 31,
       "worldquantAlphaCount": 20,
-      "domesticBacktestPassRate7d": 0.087,
+      "domesticBacktestPassRate7d": 1,
+      "domesticBacktestActiveCandidates": 2,
+      "domesticBacktestCooldownExcluded": 35,
+      "domesticBacktestMetricScope": "active_candidate_universe_excluding_quality_cooldown",
+      "disclosuresCurrentDate": 0,
+      "disclosuresLatestDate": "2026-05-22",
+      "disclosuresLatestDateCount": 100,
       "openDartConfigured": true,
-      "dartFssAvailable": false,
+      "dartFssAvailable": true,
       "openDartSource": "hub:config/news"
     },
     "stages": {
       "stage1": {
         "name": "Open DART data accumulation",
-        "ready": false,
-        "status": "blocked"
+        "ready": true,
+        "status": "ready"
       },
       "stage2": {
         "name": "3 domestic public-data strategies shadow run",
@@ -171,91 +148,41 @@
     },
     "blockers": [
       {
-        "code": "financial_report_rows_below_target",
-        "actual": 389,
-        "expected": 1000
+        "code": "domestic_backtest_rows_7d_below_target",
+        "actual": 2,
+        "expected": 20
       },
       {
-        "code": "corp_fundamentals_below_target",
-        "actual": 1,
-        "expected": 200
-      },
-      {
-        "code": "fresh_fundamentals_24h_below_target",
-        "actual": 1,
-        "expected": 200
-      },
-      {
-        "code": "daily_disclosures_below_target",
-        "actual": 0,
-        "expected": 100
-      },
-      {
-        "code": "korean_factor_rows_7d_below_target",
-        "actual": 5,
-        "expected": 1000
-      },
-      {
-        "code": "domestic_backtest_healthy_rows_7d_below_target",
-        "actual": 14,
+        "code": "domestic_backtest_fresh_rows_7d_below_target",
+        "actual": 2,
         "expected": 15
       },
       {
-        "code": "domestic_backtest_pass_rate_below_target",
-        "actual": 0.087,
-        "expected": 0.65
+        "code": "domestic_backtest_healthy_rows_7d_below_target",
+        "actual": 2,
+        "expected": 15
       },
       {
         "code": "shadow_observation_days_below_target",
         "actual": 1,
         "expected": 7
-      },
-      {
-        "code": "strategy_shadow_signals_7d_below_target",
-        "actual": 0,
-        "expected": 15
       }
     ],
-    "warnings": [
-      {
-        "code": "dart_fss_python_adapter_missing",
-        "command": "python3 -m pip install -r bots/investment/python/korea-data/requirements.txt"
-      }
-    ],
+    "warnings": [],
     "nextActions": [
       {
-        "blocker": "financial_report_rows_below_target",
-        "action": "run_shadow_financial_refresh_until_coverage_target",
-        "command": "npm --prefix bots/investment run -s runtime:luna-opendart-financial-refresh -- --json --dry-run"
+        "blocker": "domestic_backtest_rows_7d_below_target",
+        "action": "refresh_domestic_candidate_discovery_and_backtests_before_promotion",
+        "command": "npm --prefix bots/investment run -s runtime:luna-discovery-refresh -- --json --force --markets=domestic --limit=30 --ttl-hours=6 && npm --prefix bots/investment run -s runtime:luna-candidate-backtest-refresh -- --json --dry-run --market=domestic"
       },
       {
-        "blocker": "corp_fundamentals_below_target",
-        "action": "run_shadow_financial_refresh_until_fundamental_target",
-        "command": "npm --prefix bots/investment run -s runtime:luna-opendart-financial-refresh -- --json --dry-run"
-      },
-      {
-        "blocker": "fresh_fundamentals_24h_below_target",
-        "action": "refresh_daily_fundamental_shadow_snapshot",
-        "command": "npm --prefix bots/investment run -s runtime:luna-opendart-financial-refresh -- --json --dry-run"
-      },
-      {
-        "blocker": "daily_disclosures_below_target",
-        "action": "refresh_open_dart_disclosures_and_recheck_market_day_volume",
-        "command": "npm --prefix bots/investment run -s runtime:luna-opendart-disclosure-refresh -- --json --dry-run"
-      },
-      {
-        "blocker": "korean_factor_rows_7d_below_target",
-        "action": "run_korean_factor_shadow_refresh",
-        "command": "npm --prefix bots/investment run -s runtime:luna-korean-factor-refresh -- --json --dry-run"
+        "blocker": "domestic_backtest_fresh_rows_7d_below_target",
+        "action": "refresh_domestic_candidate_discovery_and_stale_backtests",
+        "command": "npm --prefix bots/investment run -s runtime:luna-discovery-refresh -- --json --force --markets=domestic --limit=30 --ttl-hours=6 && npm --prefix bots/investment run -s runtime:luna-candidate-backtest-refresh -- --json --dry-run --force --market=domestic"
       },
       {
         "blocker": "domestic_backtest_healthy_rows_7d_below_target",
         "action": "improve_or_filter_unhealthy_domestic_candidates",
-        "command": "npm --prefix bots/investment run -s runtime:luna-candidate-quality-governance -- --json --dry-run --market=domestic"
-      },
-      {
-        "blocker": "domestic_backtest_pass_rate_below_target",
-        "action": "lower_domestic_strategy_bias_until_backtest_pass_rate_recovers",
         "command": "npm --prefix bots/investment run -s runtime:luna-candidate-quality-governance -- --json --dry-run --market=domestic"
       },
       {
@@ -273,6 +200,7 @@
     "npm --prefix bots/investment run -s secrets-doctor:luna-opendart -- --template",
     "npm --prefix bots/investment run -s runtime:luna-opendart-disclosure-refresh -- --json --fixture",
     "npm --prefix bots/investment run -s runtime:luna-opendart-financial-refresh -- --json --fixture",
+    "npm --prefix bots/investment run -s runtime:luna-opendart-financial-batch-refresh -- --json --fixture --limit=2 --no-write",
     "npm --prefix bots/investment run -s runtime:luna-earnings-surprise-trading -- --json --fixture --no-write",
     "npm --prefix bots/investment run -s runtime:luna-korea-data-promotion-gate -- --json --no-write"
   ]

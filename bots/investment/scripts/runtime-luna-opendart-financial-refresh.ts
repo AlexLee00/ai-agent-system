@@ -92,6 +92,12 @@ function fixtureFinancialRows() {
   ].map(normalizeOpenDartFinancialRow);
 }
 
+function bigintAmount(value) {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return null;
+  return Math.round(n);
+}
+
 async function insertFinancialRow(row, meta, runFn = run) {
   await Promise.resolve(runFn(
     `INSERT INTO investment.corp_financial_reports
@@ -119,9 +125,9 @@ async function insertFinancialRow(row, meta, runFn = run) {
       row.accountId,
       row.accountName,
       row.accountDetail || null,
-      row.currentAmount,
-      row.previousAmount,
-      row.beforePreviousAmount,
+      bigintAmount(row.currentAmount),
+      bigintAmount(row.previousAmount),
+      bigintAmount(row.beforePreviousAmount),
       row.ordinal,
       JSON.stringify(row.raw || {}),
       'opendart',

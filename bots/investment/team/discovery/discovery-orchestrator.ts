@@ -16,6 +16,7 @@ import type {
 
 import { TossPopular100Collector } from './domestic/toss-popular-100.ts';
 import { DartDisclosureCollector } from './domestic/dart-disclosure-collector.ts';
+import { KoreaPublicDataQualityCollector } from './domestic/korea-public-data-quality.ts';
 import { KisArgosScreenerCollector } from './domestic/kis-argos-screener.ts';
 import { BinanceMarketMomentumCollector } from './crypto/binance-market-momentum.ts';
 import { CoinGeckoTrendingCollector } from './crypto/coingecko-trending.ts';
@@ -36,6 +37,7 @@ function buildAdapters(): DiscoveryAdapter[] {
     // 국내장 tier1
     new TossPopular100Collector(),
     new DartDisclosureCollector(),
+    new KoreaPublicDataQualityCollector(),
     new KisArgosScreenerCollector(),
     // 암호화폐 tier1
     new BinanceMarketMomentumCollector(),
