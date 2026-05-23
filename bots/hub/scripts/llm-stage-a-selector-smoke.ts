@@ -12,6 +12,13 @@ const require = createRequire(import.meta.url);
 const hubSelector = require('../src/llm-selector.ts');
 const { AGENTS } = require('../../orchestrator/scripts/seed-agent-registry.ts');
 
+assert(AGENTS.length >= 35, 'seed-agent-registry must expose the Stage A 35+ agent runtime map');
+assert.equal(
+  new Set(AGENTS.map((agent: any) => `${agent.team}.${agent.name}`)).size,
+  AGENTS.length,
+  'seed-agent-registry must not contain duplicate team.agent entries',
+);
+
 const nonLlmAgents = AGENTS.filter((agent: any) => agent.config?.llm_management === 'non-llm');
 assert.equal(nonLlmAgents.length, 5, 'seed-agent-registry must explicitly mark exactly five non-LLM agents');
 assert.deepEqual(
@@ -54,6 +61,7 @@ for (const target of [
 
 console.log(JSON.stringify({
   ok: true,
+  seed_agents: AGENTS.length,
   runtime_managed: runtimeManaged.length,
   non_llm: nonLlmAgents.length,
   blog_writer_selector: blogWriter.selectorKey,

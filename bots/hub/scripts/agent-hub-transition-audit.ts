@@ -11,6 +11,7 @@ const REGISTRY_SOURCES = [
   {
     path: 'bots/orchestrator/scripts/seed-agent-registry.ts',
     arrayName: 'AGENTS',
+    exportName: 'AGENTS',
   },
   {
     path: 'bots/orchestrator/scripts/seed-team-reinforce-phase6.ts',
@@ -103,8 +104,15 @@ function extractArrayLiteral(source: string, arrayName: string): string {
   throw new Error(`unterminated ${arrayName} array`);
 }
 
-function loadAgentsFromSource(sourcePath: string, arrayName: string) {
+function loadAgentsFromSource(sourcePath: string, arrayName: string, exportName?: string) {
   const absolutePath = path.join(REPO_ROOT, sourcePath);
+
+  if (exportName) {
+    const exported = require(absolutePath)[exportName];
+    assert(Array.isArray(exported), `${sourcePath}:${exportName} export must be an array`);
+    return exported.map((agent: any) => ({ ...agent, _source: sourcePath }));
+  }
+
   const source = fs.readFileSync(absolutePath, 'utf8');
   const literal = extractArrayLiteral(source, arrayName);
   const runtimeConfig = sourcePath.includes('seed-blog-')
@@ -147,7 +155,7 @@ function getRuntimePurpose(agent: any): string {
 }
 
 function main() {
-  const agents = REGISTRY_SOURCES.flatMap((source) => loadAgentsFromSource(source.path, source.arrayName));
+  const agents = REGISTRY_SOURCES.flatMap((source) => loadAgentsFromSource(source.path, source.arrayName, source.exportName));
   const findings: Array<Record<string, string>> = [];
   let runtimeManaged = 0;
   let nonLlm = 0;

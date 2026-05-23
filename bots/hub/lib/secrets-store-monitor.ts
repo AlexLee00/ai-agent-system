@@ -6,8 +6,9 @@
  * - 스캔 결과를 hub.secrets_rotation_log 에 기록
  * - 일일 요약 리포트
  * - Telegram 알림 (기존 패턴 유지)
+ * - secret 값은 변경하지 않는다. 자동 갱신은 별도 승인/전용 rotator가 필요하다.
  *
- * launchd: ai.hub.secrets-auto-rotate (매일 06:00 KST)
+ * launchd: ai.hub.secrets-auto-rotate (legacy label, monitor-only, 매일 06:00 KST)
  */
 
 import fs from 'fs';

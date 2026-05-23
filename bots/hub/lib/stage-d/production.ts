@@ -112,6 +112,11 @@ function checkSecretsAutoRotate() {
     { name: 'monitor_library_exists', ok: fileExists('bots/hub/lib/secrets-store-monitor.ts') },
     { name: 'monitor_runner_exists', ok: fileExists('bots/hub/scripts/secrets-store-monitor-runner.ts') },
     { name: 'auto_rotate_plist_exists', ok: fileExists('bots/hub/launchd/ai.hub.secrets-auto-rotate.plist') },
+    {
+      name: 'monitor_only_no_secret_mutation',
+      ok: monitorSource.includes('secret 값은 변경하지 않는다')
+        && !/writeFileSync\s*\(\s*STORE_PATH/.test(monitorSource),
+    },
     { name: 'manual_dry_run_supported', ok: runnerSource.includes('--dry-run') && monitorSource.includes('options.dryRun') },
   ];
   return { ok: checks.every((c) => c.ok), checks };

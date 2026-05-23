@@ -3,6 +3,7 @@
  * secrets-store-monitor-runner.ts — Stage D2 secrets 모니터 CLI
  *
  * launchd ai.hub.secrets-auto-rotate 가 매일 06:00 KST에 실행.
+ * 라벨은 과거 호환명이며, 이 러너는 secret 값을 변경하지 않는 만료 모니터다.
  * 직접 실행: npm run hub:secrets-monitor
  */
 

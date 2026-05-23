@@ -2,6 +2,7 @@
 'use strict';
 
 const { registerAgent } = require('../../../packages/core/lib/agent-registry');
+const { NEW_AGENTS: PHASE6_REINFORCE_AGENTS } = require('./seed-team-reinforce-phase6.ts');
 
 function runtimeConfig(runtimeTeam, runtimePurpose = 'default', selectorKey = null) {
   return {
@@ -20,7 +21,7 @@ function nonLlmConfig(reason) {
   };
 }
 
-const AGENTS = [
+const BASE_AGENTS = [
   { name: 'blo', display_name: '블로', team: 'blog', role: 'leader', specialty: '블로그 팀장', code_path: 'bots/blog/lib/blo.js', config: runtimeConfig('blog', 'default', 'blog._default') },
   { name: 'pos', display_name: '포스', team: 'blog', role: 'writer', specialty: 'IT기술작가', code_path: 'bots/blog/lib/pos-writer.js', dot_character: { color: '#6366f1', accessory: 'glasses' }, config: runtimeConfig('blog', 'writer', 'blog.pos.writer') },
   { name: 'gems', display_name: '젬스', team: 'blog', role: 'writer', specialty: '감성에세이작가', code_path: 'bots/blog/lib/gems-writer.js', dot_character: { color: '#a855f7', accessory: 'pen' }, config: runtimeConfig('blog', 'writer', 'blog.gems.writer') },
@@ -55,6 +56,11 @@ const AGENTS = [
   { name: 'steward', display_name: '스튜어드', team: 'jay', role: 'ops_assistant', specialty: '운영비서(TRACKER+코덱스+git+동기화+텔레그램+일일요약)', is_always_on: true, code_path: 'bots/orchestrator/src/steward.js', config: nonLlmConfig('ops-assistant-deterministic-logic') },
 ];
 
+const AGENTS = [
+  ...BASE_AGENTS,
+  ...PHASE6_REINFORCE_AGENTS,
+];
+
 async function main() {
   console.log(`🌱 Agent Registry 시딩 시작 (${AGENTS.length}건)...`);
   let ok = 0;
@@ -84,6 +90,8 @@ if (require.main === module) {
 
 module.exports = {
   AGENTS,
+  BASE_AGENTS,
+  PHASE6_REINFORCE_AGENTS,
   nonLlmConfig,
   runtimeConfig,
 };

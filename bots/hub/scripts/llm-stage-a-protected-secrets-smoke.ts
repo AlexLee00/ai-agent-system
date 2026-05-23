@@ -64,6 +64,11 @@ const stageBSource = fs.readFileSync(stageBPath, 'utf8');
 assert(stageBSource.includes('readLaunchctlPrintState'), 'Stage B protected status must inspect launchctl print state');
 assert(stageBSource.includes('historicalExitStatus'), 'Stage B must separate historical launchctl status from current running state');
 
+const secretsMonitorSource = fs.readFileSync(path.join(repoRoot, 'bots', 'hub', 'lib', 'secrets-store-monitor.ts'), 'utf8');
+assert(secretsMonitorSource.includes('secret 값은 변경하지 않는다'), 'secrets monitor must explicitly declare monitor-only behavior');
+assert(!/writeFileSync\s*\(\s*STORE_PATH/.test(secretsMonitorSource), 'secrets monitor must not mutate secrets-store.json');
+assert(!/action_taken:\s*'rotated'/.test(secretsMonitorSource), 'secrets monitor must not claim rotation without a rotator');
+
 const hubServiceLabels = new Set(getHubServiceLabels());
 for (const label of getHubCoreServiceLabels()) {
   assert(hubServiceLabels.has(label), `Hub service status labels must include core label: ${label}`);
@@ -73,6 +78,7 @@ console.log(JSON.stringify({
   ok: true,
   protected_hub_labels: PROTECTED_14.length,
   secrets_expiry_monitored: true,
+  secrets_monitor_only: true,
   launchctl_detail_redacted: true,
   historical_status_separated: true,
   core_service_labels_covered: true,

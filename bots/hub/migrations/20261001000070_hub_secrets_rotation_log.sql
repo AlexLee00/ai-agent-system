@@ -1,5 +1,5 @@
--- Stage D2: secrets 자동 갱신 감사 로그
--- hub.secrets_rotation_log — 모든 갱신/스캔 이력 추적
+-- Stage D2: secrets 만료 모니터링 감사 로그
+-- hub.secrets_rotation_log — 만료 스캔 이력 추적. 실제 secret 값 갱신은 별도 승인된 rotator만 수행한다.
 
 CREATE SCHEMA IF NOT EXISTS hub;
 
@@ -21,4 +21,4 @@ CREATE INDEX IF NOT EXISTS idx_secrets_rotation_log_checked_at
 CREATE INDEX IF NOT EXISTS idx_secrets_rotation_log_level
   ON hub.secrets_rotation_log (level, checked_at DESC);
 
-COMMENT ON TABLE hub.secrets_rotation_log IS 'Stage D2: secrets 만료 스캔 + 자동 갱신 감사 로그';
+COMMENT ON TABLE hub.secrets_rotation_log IS 'Stage D2: secrets 만료 스캔 감사 로그. secret 값 자동 변경 없음';
