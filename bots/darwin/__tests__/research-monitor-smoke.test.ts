@@ -14,6 +14,7 @@ interface AlarmPayload {
 async function main() {
   const originalLoad: ModuleLoad = Module._load as ModuleLoad;
   const alarmCalls: AlarmPayload[] = [];
+  const alarmResults: unknown[] = [];
 
   Module._load = function patchedLoad(request: string, parent: NodeModule | null, isMain: boolean) {
     if (request === '../../../packages/core/lib/rag') {
@@ -32,6 +33,8 @@ async function main() {
       return {
         postAlarm: async (payload: AlarmPayload) => {
           alarmCalls.push(payload);
+          if (alarmResults.length > 0) return alarmResults.shift();
+          return { ok: true };
         },
       };
     }
@@ -108,6 +111,23 @@ async function main() {
     assert.strictEqual(alarmCalls[0].actionability, 'none');
     assert.strictEqual(alarmCalls[0].incidentKey, 'claude:research-monitor:evaluator-instability');
 
+    alarmResults.push({ ok: false, error: 'timeout' }, { ok: true });
+    const retriedAlerts = await monitor.checkAnomalies({
+      total_collected: 10,
+      store_success_rate: 100,
+      duration_sec: 260,
+      relevance_rate: 0,
+      alarm_sent: true,
+      high_relevance: 0,
+      proposals_generated: 0,
+      proposal_pass_rate: 0,
+      evaluated: 40,
+      effective_evaluated: 29,
+      evaluation_failures: 11,
+    });
+    assert.ok(retriedAlerts.some((alert: string) => String(alert).includes('평가 실패율')));
+    assert.strictEqual(alarmCalls.length, 3);
+
     const unhealthyAlerts = await monitor.checkAnomalies({
       total_collected: 0,
       store_success_rate: 50,
@@ -120,10 +140,10 @@ async function main() {
       evaluated: 6,
     });
     assert.ok(unhealthyAlerts.length >= 5);
-    assert.strictEqual(alarmCalls.length, 2);
-    assert.strictEqual(alarmCalls[1].alarmType, 'error');
-    assert.strictEqual(alarmCalls[1].visibility, 'notify');
-    assert.strictEqual(alarmCalls[1].actionability, 'needs_human');
+    assert.strictEqual(alarmCalls.length, 4);
+    assert.strictEqual(alarmCalls[3].alarmType, 'error');
+    assert.strictEqual(alarmCalls[3].visibility, 'notify');
+    assert.strictEqual(alarmCalls[3].actionability, 'needs_human');
 
     const trend = await monitor.weeklyTrend();
     assert.ok(String(trend).includes('주간 트렌드'));

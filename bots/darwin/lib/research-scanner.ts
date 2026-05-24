@@ -41,6 +41,7 @@ const logger = createLogger('scanner', { team: 'darwin' });
 
 function _weeklyResearchAlarmMeta(kind = 'weekly_research_report') {
   const date = kst.today();
+  const hourBucket = new Date().toISOString().slice(0, 13).replace(/[-T]/g, '');
   const eventType = kind === 'weekly_research_summary'
     ? 'darwin_weekly_research_summary'
     : 'darwin_weekly_research_report';
@@ -49,8 +50,8 @@ function _weeklyResearchAlarmMeta(kind = 'weekly_research_report') {
     visibility: 'notify',
     actionability: 'none',
     eventType,
-    incidentKey: `darwin:research-scanner:${kind}:${date}`,
-    dedupeMinutes: 720,
+    incidentKey: `darwin:research-scanner:${kind}:${date}:${hourBucket}`,
+    dedupeMinutes: 45,
   };
 }
 

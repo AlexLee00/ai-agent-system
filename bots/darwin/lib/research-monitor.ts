@@ -85,6 +85,36 @@ const kst: KstClient = require('../../../packages/core/lib/kst');
 const SCHEMA = 'reservation';
 const TABLE = 'rag_research';
 
+function toErrorMessage(err: unknown): string {
+  return typeof err === 'object' && err !== null && 'message' in err
+    ? String((err as { message?: unknown }).message || 'unknown error')
+    : String(err || 'unknown error');
+}
+
+async function postMonitorAlarmWithRetry(payload: AlarmPayload, maxAttempts = 3): Promise<boolean> {
+  let lastError = 'not_delivered';
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    try {
+      const result = await postAlarm(payload) as { ok?: boolean; error?: unknown; body?: Record<string, unknown> } | null;
+      if (result?.ok === true) return true;
+      lastError = String(
+        result?.error
+          || result?.body?.delivery_error
+          || result?.body?.reason
+          || result?.body?.error
+          || 'not_delivered'
+      );
+    } catch (err) {
+      lastError = toErrorMessage(err);
+    }
+    console.warn(`[research-monitor] postAlarm 실패 (${attempt}/${maxAttempts}): ${lastError}`);
+    if (attempt < maxAttempts) {
+      await new Promise((resolve) => setTimeout(resolve, 1000 * attempt));
+    }
+  }
+  return false;
+}
+
 function collectMetrics(scanResult: ScanResult, durationMs: number): ResearchMetrics {
   const totalCollected = Number(scanResult.total || 0);
   const totalRaw = Number(scanResult.totalRaw || totalCollected);
@@ -258,7 +288,7 @@ async function checkAnomalies(metrics: ResearchMetrics): Promise<string[]> {
       eventType: 'research_monitor_metrics_anomaly',
       title: '[다윈 리서치] 메트릭 이상 감지',
     };
-    await postAlarm({
+    await postMonitorAlarmWithRetry({
       message: `🔍 다윈 연구 모니터링 이상 감지\n${alerts.join('\n')}\n\n메트릭: ${JSON.stringify(metrics)}`,
       team: 'claude',
       alertLevel: finalRoute.alertLevel,

@@ -122,9 +122,10 @@ async function main() {
     assert.strictEqual(weeklyMeta.actionability, 'none');
     assert.strictEqual(weeklyMeta.eventType, 'darwin_weekly_research_report');
     assert.ok(
-      String(weeklyMeta.incidentKey || '').startsWith('darwin:research-scanner:weekly_research_report:'),
+      /^darwin:research-scanner:weekly_research_report:2026-05-03:\d{10}$/.test(String(weeklyMeta.incidentKey || '')),
       `unexpected weekly incident key: ${weeklyMeta.incidentKey}`,
     );
+    assert.strictEqual(weeklyMeta.dedupeMinutes, 45);
 
     postAlarmResults.push({ ok: false, error: 'timeout' }, { ok: true });
     const retryResult = await scanner._testOnly_postAlarmWithRetry({ message: 'retry test' }, 'retry_test', 2);
