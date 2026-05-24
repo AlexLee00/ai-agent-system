@@ -118,6 +118,12 @@ defmodule TeamJay.Dashboard.Live.DashboardLive do
         safe_jay_bus_subscribe(topic)
       end
 
+      # 영역 1/2/4/5: 이벤트가 없어도 상대 시간과 24h 윈도우를 최신화한다.
+      Process.send_after(self(), :refresh_core_visibility, 30_000)
+
+      # 영역 9: 선택된 trace는 Langfuse 지연 도착/일시 오류 후에도 재조회한다.
+      Process.send_after(self(), :refresh_trace_detail, 30_000)
+
       # Phase C/D: Andy/Jimmy + Sigma/Luna 30초 주기 갱신
       Process.send_after(self(), :refresh_agents, 30_000)
       Process.send_after(self(), :refresh_sigma_luna, 30_000)
@@ -215,6 +221,23 @@ defmodule TeamJay.Dashboard.Live.DashboardLive do
       true ->
         {:noreply, socket}
     end
+  end
+
+  # 영역 1/2/4/5: 실시간 이벤트가 잠잠할 때도 dashboard snapshot을 재계산한다.
+  def handle_info(:refresh_core_visibility, socket) do
+    Process.send_after(self(), :refresh_core_visibility, 30_000)
+    {:noreply, refresh_core_visibility(socket)}
+  end
+
+  # 영역 9: 상세 패널이 열려 있으면 비동기 재조회로 최신 trace 상태를 반영한다.
+  def handle_info(:refresh_trace_detail, socket) do
+    Process.send_after(self(), :refresh_trace_detail, 30_000)
+
+    if valid_trace_id?(socket.assigns.selected_trace_id) and not socket.assigns.trace_loading do
+      send(self(), {:fetch_trace, socket.assigns.selected_trace_id})
+    end
+
+    {:noreply, socket}
   end
 
   # Phase C: Andy/Jimmy 주기적 갱신
@@ -1717,6 +1740,27 @@ defmodule TeamJay.Dashboard.Live.DashboardLive do
     |> Map.values()
     |> List.flatten()
     |> Enum.find(&(&1.id == task_id))
+  end
+
+  defp refresh_core_visibility(socket) do
+    socket
+    |> refresh_phase_status()
+    |> assign(
+      :events,
+      safe_call(fn -> Jay.Core.EventLake.get_recent(50) end, socket.assigns.events)
+    )
+    |> assign(
+      :event_stats,
+      safe_call(
+        fn -> Jay.Core.EventLake.get_stats() end,
+        socket.assigns.event_stats
+      )
+    )
+    |> assign(:cycles, safe_call(fn -> load_recent_cycles() end, socket.assigns.cycles))
+    |> assign(
+      :cross_pipelines,
+      safe_call(fn -> load_cross_pipelines() end, socket.assigns.cross_pipelines)
+    )
   end
 
   defp project_schema_badge(true),

@@ -68,6 +68,29 @@ defmodule Mix.Tasks.TeamJay.Dashboard.PhaseGCheck do
           String.contains?(dashboard_source, "영역 4의 trace_id 클릭") and
           String.contains?(dashboard_source, "Trace 선택 안 됨") and
           not String.contains?(dashboard_source, "<%= if @selected_trace_id do %>"),
+      core_box_freshness_loop:
+        String.contains?(
+          dashboard_source,
+          "Process.send_after(self(), :refresh_core_visibility, 30_000)"
+        ) and
+          String.contains?(dashboard_source, "def handle_info(:refresh_core_visibility, socket)") and
+          String.contains?(dashboard_source, "defp refresh_core_visibility(socket)") and
+          String.contains?(dashboard_source, "Jay.Core.EventLake.get_recent(50)") and
+          String.contains?(dashboard_source, "Jay.Core.EventLake.get_stats()") and
+          String.contains?(dashboard_source, "load_recent_cycles()") and
+          String.contains?(dashboard_source, "load_cross_pipelines()") and
+          String.contains?(dashboard_source, "|> refresh_phase_status()"),
+      langfuse_trace_freshness_loop:
+        String.contains?(
+          dashboard_source,
+          "Process.send_after(self(), :refresh_trace_detail, 30_000)"
+        ) and
+          String.contains?(dashboard_source, "def handle_info(:refresh_trace_detail, socket)") and
+          String.contains?(dashboard_source, "valid_trace_id?(socket.assigns.selected_trace_id)") and
+          String.contains?(
+            dashboard_source,
+            "send(self(), {:fetch_trace, socket.assigns.selected_trace_id})"
+          ),
       project_topics:
         Enum.all?(
           [

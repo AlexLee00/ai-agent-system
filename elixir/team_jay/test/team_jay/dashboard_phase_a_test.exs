@@ -173,6 +173,30 @@ defmodule TeamJay.DashboardPhaseATest do
     assert source =~ ~s(%{cycle_id: "Live")
   end
 
+  test "area 1, 2, 4, and 5 refresh even when no realtime event arrives" do
+    source =
+      File.read!(Path.expand("../../lib/team_jay/dashboard/live/dashboard_live.ex", __DIR__))
+
+    assert source =~ "Process.send_after(self(), :refresh_core_visibility, 30_000)"
+    assert source =~ "def handle_info(:refresh_core_visibility, socket)"
+    assert source =~ "defp refresh_core_visibility(socket)"
+    assert source =~ "Jay.Core.EventLake.get_recent(50)"
+    assert source =~ "Jay.Core.EventLake.get_stats()"
+    assert source =~ "load_recent_cycles()"
+    assert source =~ "load_cross_pipelines()"
+    assert source =~ "|> refresh_phase_status()"
+  end
+
+  test "area 9 refreshes selected Langfuse trace detail after delayed arrival" do
+    source =
+      File.read!(Path.expand("../../lib/team_jay/dashboard/live/dashboard_live.ex", __DIR__))
+
+    assert source =~ "Process.send_after(self(), :refresh_trace_detail, 30_000)"
+    assert source =~ "def handle_info(:refresh_trace_detail, socket)"
+    assert source =~ "valid_trace_id?(socket.assigns.selected_trace_id)"
+    assert source =~ "send(self(), {:fetch_trace, socket.assigns.selected_trace_id})"
+  end
+
   test "area 7 and 8 include DB-backed freshness indicators" do
     source =
       File.read!(Path.expand("../../lib/team_jay/dashboard/live/dashboard_live.ex", __DIR__))
