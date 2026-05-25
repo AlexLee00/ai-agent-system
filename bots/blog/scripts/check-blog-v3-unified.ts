@@ -49,8 +49,10 @@ function auditHubLlmRoutes() {
 async function main() {
   const json = process.argv.includes('--json');
   const {
+    buildTrendTopicFusionClusters,
     calculateTrendFusionScore,
     buildNaverTrendTopics,
+    topicSimilarity,
   } = require('../lib/blog-v3-unified.ts');
   const { generateHomeFeedReport } = require('../lib/naver-home-feed-optimizer.ts');
   const { detectAiSignals, scoreSentenceNaturalness } = require('../lib/humanize-agent.ts');
@@ -75,6 +77,18 @@ async function main() {
   });
   assert.ok(fusion.score >= 70, 'fusion score should prioritize Naver+multi-source');
   assert.ok(buildNaverTrendTopics().length >= 1, 'naver fixture topics should exist');
+  assert.ok(
+    topicSimilarity('AI 도구 자동화 흐름에서 지금 확인할 실행 기준', 'AI 개발 자동화 도구 선택 기준') >= 0.34,
+    'semantic topic similarity should cluster related V3 sources',
+  );
+  const semanticClusters = buildTrendTopicFusionClusters([
+    { source: 'reddit', topic_ko: 'AI 도구 자동화 흐름에서 지금 확인할 실행 기준', trend_score: 84, korea_relevance: 78 },
+    { source: 'naver', topic_ko: 'AI 개발 자동화 도구 선택 기준', trend_score: 80, korea_relevance: 90 },
+  ]);
+  assert.ok(
+    semanticClusters.some((cluster) => cluster.sourceCount >= 2 && cluster.sources.includes('reddit') && cluster.sources.includes('naver')),
+    'V3 fusion should merge semantically related Reddit/Naver rows',
+  );
 
   const sampleText = '제가 직접 써보니 생각보다 기준이 중요했습니다. 오늘 오전 30분 동안 확인한 내용만 정리합니다. 어떻게 적용하면 좋을까요?';
   const homeFeed = await generateHomeFeedReport({
@@ -113,6 +127,7 @@ async function main() {
     checks: {
       redditFixtureTopics: reddit.topics.length,
       fusionScore: fusion.score,
+      semanticFusionClusters: semanticClusters.length,
       homeFeedChannels: homeFeed.channels.length,
       humanizeScore: humanize.humanizeScore,
       routeAudit,

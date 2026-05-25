@@ -57,6 +57,127 @@ function normalizeSource(source) {
   return raw || 'unknown';
 }
 
+const TOPIC_TOKEN_STOPWORDS = new Set([
+  '에서', '으로', '하는', '하기', '위한', '기준', '확인', '지금', '먼저', '정리', '흐름', '실행',
+  'the', 'and', 'for', 'with', 'that', 'this', 'from', 'into', 'about', 'after', 'before',
+]);
+
+function extractTopicTokens(value = '') {
+  const normalized = String(value || '')
+    .toLowerCase()
+    .replace(/[^0-9a-z가-힣\s]/gi, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  if (!normalized) return [];
+  const tokens = new Set();
+  for (const raw of normalized.split(' ')) {
+    const token = raw.trim();
+    if (!token || TOPIC_TOKEN_STOPWORDS.has(token)) continue;
+    if (/^[a-z0-9]+$/.test(token) && token.length < 2) continue;
+    if (/^[가-힣]+$/.test(token) && token.length < 2) continue;
+    tokens.add(token);
+  }
+  return [...tokens];
+}
+
+function topicSimilarity(a = '', b = '') {
+  const aTokens = extractTopicTokens(a);
+  const bTokens = extractTopicTokens(b);
+  if (!aTokens.length || !bTokens.length) return 0;
+  const aSet = new Set(aTokens);
+  const bSet = new Set(bTokens);
+  const intersection = aTokens.filter((token) => bSet.has(token)).length;
+  if (!intersection) return 0;
+  const union = new Set([...aTokens, ...bTokens]).size;
+  const jaccard = intersection / Math.max(1, union);
+  const containment = intersection / Math.max(1, Math.min(aSet.size, bSet.size));
+  return Math.max(jaccard, containment * 0.72);
+}
+
+function buildTrendTopicFusionClusters(rows = [], options = {}) {
+  const threshold = Number.isFinite(Number(options.threshold)) ? Number(options.threshold) : 0.34;
+  const clusters = [];
+  const candidates = (rows || [])
+    .filter(Boolean)
+    .map((row) => {
+      const fusion = calculateTrendFusionScore(row);
+      return {
+        row,
+        title: row.topic_ko || row.title || '',
+        source: normalizeSource(row.source),
+        fusion,
+      };
+    })
+    .sort((a, b) => (b.fusion.score || 0) - (a.fusion.score || 0));
+
+  for (const candidate of candidates) {
+    let target = null;
+    let bestSimilarity = 0;
+    for (const cluster of clusters) {
+      const similarityToRepresentative = topicSimilarity(candidate.title, cluster.representative.topic_ko || cluster.representative.title || '');
+      const similarityToAny = Math.max(
+        similarityToRepresentative,
+        ...cluster.rows.map((row) => topicSimilarity(candidate.title, row.topic_ko || row.title || '')),
+      );
+      if (similarityToAny >= threshold && similarityToAny > bestSimilarity) {
+        target = cluster;
+        bestSimilarity = similarityToAny;
+      }
+    }
+    if (!target) {
+      clusters.push({
+        representative: candidate.row,
+        rows: [candidate.row],
+        sources: [candidate.source],
+        similarity: 1,
+      });
+    } else {
+      target.rows.push(candidate.row);
+      target.sources = [...new Set([...target.sources, candidate.source])];
+      target.similarity = Math.max(target.similarity || 0, bestSimilarity);
+      const targetFusion = calculateTrendFusionScore({
+        ...target.representative,
+        meta: {
+          ...safeJson(target.representative.meta),
+          source_count: target.sources.length,
+          sources: target.sources,
+        },
+      });
+      const candidateFusion = calculateTrendFusionScore({
+        ...candidate.row,
+        meta: {
+          ...safeJson(candidate.row.meta),
+          source_count: target.sources.length,
+          sources: target.sources,
+        },
+      });
+      if (candidateFusion.score > targetFusion.score) target.representative = candidate.row;
+    }
+  }
+
+  return clusters
+    .map((cluster) => {
+      const sources = [...new Set(cluster.sources)];
+      const representativeMeta = safeJson(cluster.representative.meta);
+      const fusion = calculateTrendFusionScore({
+        ...cluster.representative,
+        meta: {
+          ...representativeMeta,
+          source_count: sources.length,
+          sources,
+        },
+      });
+      return {
+        ...cluster,
+        sources,
+        sourceCount: sources.length,
+        fusion,
+        titles: cluster.rows.map((row) => row.topic_ko || row.title).filter(Boolean),
+      };
+    })
+    .sort((a, b) => (b.fusion.score || 0) - (a.fusion.score || 0));
+}
+
 function sourceWeightFor(source) {
   return SOURCE_WEIGHTS[normalizeSource(source)] || 0.20;
 }
@@ -322,12 +443,15 @@ module.exports = {
   SOURCE_LABELS,
   NAVER_TREND_FIXTURES,
   buildNaverTrendTopics,
+  buildTrendTopicFusionClusters,
   calculateTrendFusionScore,
   ensureBlogV3Tables,
   evaluateBlogV3PromotionGate,
+  extractTopicTokens,
   normalizeSource,
   recordShadowEvidence,
   saveTrendTopics,
   safeJson,
   sourceWeightFor,
+  topicSimilarity,
 };

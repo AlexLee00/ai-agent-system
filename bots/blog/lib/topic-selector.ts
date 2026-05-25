@@ -17,6 +17,7 @@ const {
 } = require('./topic-title-guard.ts');
 const {
   SOURCE_LABELS,
+  buildTrendTopicFusionClusters,
   calculateTrendFusionScore,
   normalizeSource,
   recordShadowEvidence,
@@ -1164,40 +1165,42 @@ async function fetchTrendTopicCandidates(targetDate, category = null) {
       params,
     );
     if (!rows?.rows?.length) return null;
-    const sourceSetsByTitle = new Map();
-    for (const row of rows.rows) {
-      const key = normalizeTitle(row.topic_ko || '');
-      const set = sourceSetsByTitle.get(key) || new Set();
-      set.add(normalizeSource(row.source));
-      sourceSetsByTitle.set(key, set);
-    }
-
-    return rows.rows
-      .map((row) => {
-        const meta = safeJson(row.meta);
-        const titleKey = normalizeTitle(row.topic_ko || '');
-        const sourceSet = sourceSetsByTitle.get(titleKey) || new Set([normalizeSource(row.source)]);
-        const fusion = calculateTrendFusionScore({
+    return buildTrendTopicFusionClusters(rows.rows)
+      .map((cluster) => {
+        const row = cluster.representative;
+        const fusion = cluster.fusion || calculateTrendFusionScore({
           ...row,
           meta: {
-            ...meta,
-            source_count: sourceSet.size,
-            sources: Array.from(sourceSet),
+            ...safeJson(row.meta),
+            source_count: cluster.sourceCount || 1,
+            sources: cluster.sources || [normalizeSource(row.source)],
           },
         });
         const sourceLabel = SOURCE_LABELS[fusion.source] || row.source;
+        const sourceSummary = (cluster.sources || [fusion.source])
+          .map((source) => SOURCE_LABELS[source] || source)
+          .join('+');
         return {
           id: row.id,
           category: row.category || category || '최신IT트렌드',
           title: row.topic_ko,
           topic: row.topic_ko,
           question: `${row.topic_ko}에 대해 무엇을 먼저 알아야 할까`,
-          diff: `트렌드 기반 (${sourceLabel}, fusion ${fusion.score}/100)`,
+          diff: cluster.sourceCount > 1
+            ? `트렌드 통합 (${sourceSummary}, fusion ${fusion.score}/100)`
+            : `트렌드 기반 (${sourceLabel}, fusion ${fusion.score}/100)`,
           score: fusion.score / 100,
-          source: `trend_${fusion.source}`,
+          source: cluster.sourceCount > 1 ? `trend_multi_${(cluster.sources || []).join('_')}` : `trend_${fusion.source}`,
           trendId: row.id,
           fusionScore: fusion.score,
-          fusionEvidence: fusion,
+          fusionEvidence: {
+            ...fusion,
+            clusterSourceCount: cluster.sourceCount,
+            clusterSources: cluster.sources,
+            clusterTitles: cluster.titles,
+            clusterSize: cluster.rows.length,
+            clusterSimilarity: cluster.similarity,
+          },
         };
       })
       .sort((a, b) => (b.fusionScore || 0) - (a.fusionScore || 0))

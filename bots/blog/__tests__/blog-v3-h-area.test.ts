@@ -251,7 +251,14 @@ describe('④ 매일/매주 자동 — launchd plist', () => {
 // ── ⑤ Hub LLM Gateway 통과 — dry-run 통합 검증 ─────────────────────────────
 
 describe('⑤ Hub LLM Gateway 통과 — dry-run 통합 검증', () => {
-  const { saveTrendTopics, buildNaverTrendTopics, ensureBlogV3Tables, calculateTrendFusionScore } = require(
+  const {
+    saveTrendTopics,
+    buildNaverTrendTopics,
+    ensureBlogV3Tables,
+    calculateTrendFusionScore,
+    buildTrendTopicFusionClusters,
+    topicSimilarity,
+  } = require(
     path.join(env.PROJECT_ROOT, 'bots/blog/lib/blog-v3-unified.ts')
   );
 
@@ -310,5 +317,43 @@ describe('⑤ Hub LLM Gateway 통과 — dry-run 통합 검증', () => {
     const [redditScore, naverScore, bestsellerScore] = scores.map((s) => s.score);
     expect(naverScore).toBeGreaterThanOrEqual(redditScore);
     expect(redditScore).toBeGreaterThan(bestsellerScore);
+  });
+
+  test('semantic 3원 fusion — 제목이 달라도 관련 토픽은 하나의 클러스터로 묶는다', () => {
+    const similarity = topicSimilarity('AI 도구 자동화 흐름에서 지금 확인할 실행 기준', 'AI 개발 자동화 도구 선택 기준');
+    expect(similarity).toBeGreaterThanOrEqual(0.34);
+
+    const clusters = buildTrendTopicFusionClusters([
+      {
+        id: 1,
+        source: 'reddit',
+        topic_ko: 'AI 도구 자동화 흐름에서 지금 확인할 실행 기준',
+        category: '최신IT트렌드',
+        trend_score: 84,
+        korea_relevance: 78,
+      },
+      {
+        id: 2,
+        source: 'naver',
+        topic_ko: 'AI 개발 자동화 도구 선택 기준',
+        category: '최신IT트렌드',
+        trend_score: 80,
+        korea_relevance: 90,
+      },
+      {
+        id: 3,
+        source: 'bestseller',
+        topic_ko: '자동화 시대에 다시 읽는 실무 생산성',
+        category: '자기계발',
+        trend_score: 70,
+        korea_relevance: 85,
+        is_book_topic: true,
+      },
+    ]);
+
+    const multi = clusters.find((cluster) => cluster.sourceCount >= 2);
+    expect(multi).toBeTruthy();
+    expect(multi.sources).toEqual(expect.arrayContaining(['reddit', 'naver']));
+    expect(multi.fusion.score).toBeGreaterThan(70);
   });
 });
