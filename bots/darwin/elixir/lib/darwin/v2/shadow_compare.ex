@@ -179,7 +179,7 @@ defmodule Darwin.V2.ShadowCompare do
       AVG(match_score) AS avg_match,
       COUNT(*) FILTER (WHERE match_score < 0.8) AS regressions
     FROM darwin_v2_shadow_runs
-    WHERE run_at >= NOW() - INTERVAL '7 days'
+    WHERE inserted_at >= NOW() - INTERVAL '7 days'
     """
 
     case Jay.Core.Repo.query(sql, []) do

@@ -2,7 +2,7 @@ defmodule Mix.Tasks.Blog.Phase4.Competition do
   use Mix.Task
 
   @shortdoc "블로그팀 Phase 4 경쟁 실험 요약을 출력합니다"
-  @requirements ["app.start"]
+  @requirements ["app.config"]
 
   @moduledoc """
   agent.competitions 최근 데이터를 읽어
@@ -19,6 +19,8 @@ defmodule Mix.Tasks.Blog.Phase4.Competition do
 
   @impl Mix.Task
   def run(args) do
+    TeamJay.Blog.ReadOnlyRuntime.start!()
+
     {opts, _argv, _invalid} =
       OptionParser.parse(args, strict: [json: :boolean, days: :integer])
 

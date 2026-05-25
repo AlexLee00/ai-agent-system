@@ -38,6 +38,7 @@ function resolveLatestFile(args) {
 
   const dirs = [DRAFT_DIR, OUTPUT_DIR];
   const candidates = [];
+  const typeFilter = args.type === 'lecture' || args.type === 'general' ? `_${args.type}_` : '';
   for (const dir of dirs) {
     for (const name of safeReadDir(dir)) {
       const fullPath = path.join(dir, name);
@@ -45,6 +46,7 @@ function resolveLatestFile(args) {
         const stat = fs.statSync(fullPath);
         if (!stat.isFile()) continue;
         if (!/\.html?$/i.test(name)) continue;
+        if (typeFilter && !name.includes(typeFilter)) continue;
         candidates.push({ fullPath, mtimeMs: stat.mtimeMs });
       } catch {
         // ignore
@@ -132,6 +134,16 @@ function hasEmotionLine(html = '') {
   return /놀랐|감동|기뻤|아쉬웠|뿌듯|설레|두근|가슴이|반가웠|인상적/.test(String(html));
 }
 
+function hasCafeBrandMention(html = '') {
+  return /커피랑도서관|분당서현/.test(String(html || ''));
+}
+
+function buildCafeBrandHtml() {
+  return [
+    '<p>공간이 집중력을 좌우하는 날에는 커피랑도서관 분당서현점처럼 조용한 좌석, 안정적인 작업 동선, 공기질 관리가 함께 갖춰진 환경을 활용해보는 것도 좋습니다. 글쓰기나 기획처럼 오래 몰입해야 하는 작업은 장소의 방해 요소를 줄이는 것만으로도 실행 부담이 확실히 낮아집니다.</p>',
+  ].join('\n');
+}
+
 function buildPersonalVoiceHtml(title, type) {
   const text = type === 'lecture'
     ? [
@@ -200,6 +212,26 @@ function ensurePersonalVoice(html, title, type) {
   return `${html}\n${paragraph}`;
 }
 
+function ensureCafeBrandMention(html, type) {
+  if (type !== 'general' || hasCafeBrandMention(html)) return html;
+
+  const paragraph = buildCafeBrandHtml();
+  const cafeSection = '<h2 class="section-title">스터디카페 홍보 섹션</h2>';
+  if (html.includes(cafeSection)) {
+    return html.replace(cafeSection, `${cafeSection}\n${paragraph}`);
+  }
+
+  const anchor = html.includes('<h2 class="section-title">질문형 Q&A</h2>')
+    ? '<h2 class="section-title">질문형 Q&A</h2>'
+    : '<h2 class="section-title">마무리 제언</h2>';
+  const section = `${cafeSection}\n${paragraph}`;
+  if (html.includes(anchor)) {
+    return html.replace(anchor, `${section}\n<br>\n${anchor}`);
+  }
+
+  return `${html}\n${section}`;
+}
+
 function main() {
   const args = parseArgs(process.argv.slice(2));
   const filePath = resolveLatestFile(args);
@@ -213,6 +245,7 @@ function main() {
   let next = html;
   next = ensureLearningPoints(next, title, type);
   next = ensureFaq(next, title, type);
+  next = ensureCafeBrandMention(next, type);
   next = ensurePersonalVoice(next, title, type);
 
   if (next !== html) fs.writeFileSync(filePath, next, 'utf8');
@@ -224,6 +257,7 @@ function main() {
     faqCount: countHtmlFaq(next),
     answeredFaqCount: countAnsweredFaqPairs(next),
     hasLearningPoints: next.includes('<h2 class="section-title">이 글에서 배울 수 있는 것</h2>'),
+    hasCafeBrandMention: hasCafeBrandMention(next),
   };
 
   if (args.json) {

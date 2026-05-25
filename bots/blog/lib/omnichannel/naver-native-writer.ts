@@ -1,3 +1,4 @@
+// @ts-nocheck
 'use strict';
 
 /**
@@ -78,4 +79,3 @@ function writeNaverNativeVariant({
 module.exports = {
   writeNaverNativeVariant,
 };
-

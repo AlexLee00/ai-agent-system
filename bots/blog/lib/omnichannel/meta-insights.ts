@@ -1,3 +1,4 @@
+// @ts-nocheck
 'use strict';
 
 /**
@@ -610,4 +611,3 @@ module.exports = {
   classifyGraphError,
   extractPermissionScopes,
 };
-

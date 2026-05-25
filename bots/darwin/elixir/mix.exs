@@ -46,7 +46,7 @@ defmodule Darwin.MixProject do
         "cmd --cd #{@team_jay_dir} mix compile --warnings-as-errors"
       ],
       test: [
-        "cmd --cd #{@team_jay_dir} mix test #{@darwin_test_dir}"
+        "cmd --cd #{@team_jay_dir} mix test --no-start #{@darwin_test_dir}"
       ],
       shadow: [
         "cmd --cd #{@team_jay_dir} mix run -e 'Darwin.V2.ShadowRunner.run_once() |> IO.inspect'"

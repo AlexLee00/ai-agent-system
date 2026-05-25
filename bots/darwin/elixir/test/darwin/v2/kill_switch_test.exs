@@ -1,13 +1,42 @@
 defmodule Darwin.V2.KillSwitchTest do
-  use ExUnit.Case, async: true
+  use ExUnit.Case, async: false
 
   alias Darwin.V2.KillSwitch
+
+  @feature_envs ~w(
+    DARWIN_V2_ENABLED
+    DARWIN_CYCLE_ENABLED
+    DARWIN_SHADOW_ENABLED
+    DARWIN_L5_ENABLED
+    DARWIN_MCP_ENABLED
+    DARWIN_ESPL_ENABLED
+    DARWIN_SELF_RAG_ENABLED
+    DARWIN_MAPEK_ENABLED
+    DARWIN_SELF_REWARDING_ENABLED
+    DARWIN_AGENTIC_RAG_ENABLED
+    DARWIN_RESEARCH_REGISTRY_ENABLED
+    DARWIN_TELEGRAM_ENHANCED_ENABLED
+    DARWIN_AUTO_PROMOTION_ENABLED
+    DARWIN_TEAM_INTEGRATION_ENABLED
+    DARWIN_HYPOTHESIS_ENGINE_ENABLED
+    DARWIN_MEASURE_STAGE_ENABLED
+  )
+
+  setup do
+    original_env = Map.new(@feature_envs, &{&1, System.get_env(&1)})
+    Enum.each(@feature_envs, &System.delete_env/1)
+
+    on_exit(fn ->
+      Enum.each(original_env, fn
+        {key, nil} -> System.delete_env(key)
+        {key, value} -> System.put_env(key, value)
+      end)
+    end)
+  end
 
   describe "enabled?/1" do
     test "환경변수 없으면 모든 기능 비활성" do
       for feature <- [:v2, :cycle, :shadow, :l5, :mcp, :espl, :self_rag] do
-        env_key = "DARWIN_#{String.upcase(to_string(feature))}_ENABLED"
-        System.delete_env(env_key)
         refute KillSwitch.enabled?(feature), "#{feature}가 비활성이어야 함"
       end
     end
@@ -27,9 +56,6 @@ defmodule Darwin.V2.KillSwitchTest do
 
   describe "active_features/0" do
     test "환경변수 없으면 빈 목록" do
-      for f <- [:v2, :cycle, :shadow, :l5, :mcp, :espl, :self_rag] do
-        System.delete_env("DARWIN_#{String.upcase(to_string(f))}_ENABLED")
-      end
       assert KillSwitch.active_features() == []
     end
 

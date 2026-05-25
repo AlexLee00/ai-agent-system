@@ -18,10 +18,11 @@ const DEFAULT_PREPARING_LEASE_MINUTES = 20;
 const DEFAULT_MAX_ATTEMPTS = 4;
 
 class QueueUnavailableError extends Error {
+  code = 'queue_unavailable';
+
   constructor(message = 'queue_unavailable') {
     super(message);
     this.name = 'QueueUnavailableError';
-    this.code = 'queue_unavailable';
   }
 }
 
@@ -302,7 +303,7 @@ async function markPublishSuccess(queueId, { publishedAt = null } = {}) {
  * @param {string} [opts.failureKind]
  * @param {boolean} [opts.block] - true이면 status=blocked (재시도 안 함)
  */
-async function markPublishFailure(queueId, { error, failureKind = 'unknown', block = false } = {}) {
+async function markPublishFailure(queueId, { error = '', failureKind = 'unknown', block = false } = { error: '' }) {
   await ensureMarketingOsSchema();
   const newStatus = block ? 'blocked' : 'failed';
   await pgPool.query('blog', `

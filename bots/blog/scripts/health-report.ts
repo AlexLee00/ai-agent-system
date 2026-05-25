@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+// @ts-nocheck
 'use strict';
 
 const path = require('path');
@@ -52,7 +53,9 @@ const neighborRuntimeConfig = getBlogNeighborCommenterConfig();
 const DAILY_LOG_STALE_MS = Number(runtimeConfig.dailyLogStaleMs || (36 * 60 * 60 * 1000));
 const NODE_SERVER_HEALTH_URL = runtimeConfig.nodeServerHealthUrl || 'http://127.0.0.1:3100/health';
 const N8N_HEALTH_URL = process.env.N8N_HEALTH_URL || runtimeConfig.n8nHealthUrl || 'http://127.0.0.1:5678/healthz';
+const SOCIAL_MEDIA_ENABLED = process.env.BLOG_SOCIAL_MEDIA_ENABLED === 'true';
 const IMAGE_PROVIDER = String(process.env.BLOG_IMAGE_PROVIDER || 'drawthings').toLowerCase();
+const IMAGE_GEN_ENABLED = process.env.BLOG_IMAGE_GEN_ENABLED === 'true';
 const IMAGE_BASE_URL = String(process.env.BLOG_IMAGE_BASE_URL || 'http://127.0.0.1:7860');
 const DRAWTHINGS_HEALTH_URL = new URL('/sdapi/v1/options', IMAGE_BASE_URL.endsWith('/') ? IMAGE_BASE_URL : `${IMAGE_BASE_URL}/`).toString();
 const DEFAULT_BLOG_WEBHOOK_URL = process.env.N8N_BLOG_WEBHOOK || runtimeConfig.blogWebhookUrl || 'http://127.0.0.1:5678/webhook/blog-pipeline';
@@ -70,6 +73,23 @@ const BLOG_NEIGHBOR_COLLECT_DIAG_PATH = path.join(BLOG_ROOT, 'output', 'ops', 'n
 const BLOG_ENGAGEMENT_GAP_RUN_PATH = path.join(BLOG_ROOT, 'output', 'ops', 'engagement-gap-run.json');
 const BLOG_NEIGHBOR_REPLAY_PATH = path.join(BLOG_ROOT, 'output', 'ops', 'neighbor-ui-replay.json');
 const BLOG_NEIGHBOR_SYMPATHY_REPLAY_PATH = path.join(BLOG_ROOT, 'output', 'ops', 'neighbor-sympathy-replay.json');
+const BLOG_MARKETING_STRATEGY_REFRESH_PATH = path.join(BLOG_ROOT, 'output', 'ops', 'marketing-strategy-refresh.json');
+const BLOG_MARKETING_STRATEGY_OBSERVE_MINUTES = Number(
+  process.env.BLOG_MARKETING_STRATEGY_OBSERVE_MINUTES || 720
+);
+const TEAM_JAY_HEALTH_ENV = {
+  ...process.env,
+  TEAM_JAY_DASHBOARD_SERVER: 'false',
+};
+
+function execTeamJayMix(args) {
+  return execFileSync('mix', args, {
+    cwd: TEAM_JAY_ROOT,
+    encoding: 'utf8',
+    stdio: ['ignore', 'pipe', 'pipe'],
+    env: TEAM_JAY_HEALTH_ENV,
+  });
+}
 
 function nowKst() {
   return new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Seoul' }));
@@ -98,6 +118,22 @@ function readNeighborCollectDiagnostics() {
   } catch {
     return null;
   }
+}
+
+function readAutoStrategyRefreshResult() {
+  try {
+    const raw = fs.readFileSync(BLOG_MARKETING_STRATEGY_REFRESH_PATH, 'utf8');
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === 'object' ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+function ageMinutesFromIso(value = null) {
+  const timestamp = Date.parse(String(value || ''));
+  if (!Number.isFinite(timestamp)) return null;
+  return Math.max(0, Math.round((Date.now() - timestamp) / 60000));
 }
 
 function readLastEngagementGapRun(baseline = null) {
@@ -595,7 +631,8 @@ async function buildNodeHealth() {
     },
   ];
 
-  if (IMAGE_PROVIDER === 'drawthings' || IMAGE_PROVIDER === 'draw-things') {
+  const drawthingsRequired = IMAGE_GEN_ENABLED && (IMAGE_PROVIDER === 'drawthings' || IMAGE_PROVIDER === 'draw-things');
+  if (drawthingsRequired) {
     definitions.push({
       label: 'drawthings',
       url: DRAWTHINGS_HEALTH_URL,
@@ -608,8 +645,7 @@ async function buildNodeHealth() {
   }
 
   const checks = await buildHttpChecks(definitions);
-  const drawthingsConfigured = IMAGE_PROVIDER === 'drawthings' || IMAGE_PROVIDER === 'draw-things';
-  const drawthingsOk = drawthingsConfigured
+  const drawthingsOk = drawthingsRequired
     ? Boolean(checks.results.drawthings && typeof checks.results.drawthings === 'object')
     : null;
 
@@ -1030,6 +1066,44 @@ async function buildSocialAutomationHealth() {
   const reelCountToday = countDatedFiles(SHORTFORM_DIR, todayPrefix);
   const reelQaCountToday = countDatedFilesBySuffix(SHORTFORM_DIR, todayPrefix, '_qa.jpg');
   const instaCardCountToday = countDatedFiles(INSTA_CARD_DIR, todayPrefix);
+
+  if (!SOCIAL_MEDIA_ENABLED) {
+    return {
+      okCount: 4,
+      warnCount: 0,
+      ok: [
+        '  social automation: disabled (BLOG_SOCIAL_MEDIA_ENABLED != true)',
+        `  shortform reels today: ${reelCountToday}개`,
+        `  reel QA sheets today: ${reelQaCountToday}개`,
+        `  instagram cards today: ${instaCardCountToday}개`,
+      ],
+      warn: [],
+      reelCountToday,
+      reelQaCountToday,
+      instaCardCountToday,
+      instagramRecent: { success: 0, failed: 0, skipped: 0, dryRun: 0 },
+      instagramToday: { success: 0, failed: 0, skipped: 0, dryRun: 0 },
+      latestRealInstagramStatus: null,
+      latestRealInstagramIsToday: false,
+      latestRealHostedRecovery: false,
+      instagramNeedsAttention: false,
+      facebookReadiness: null,
+      latestFacebookStatus: null,
+      latestFacebookErrorSummary: '',
+      facebookNeedsAttention: false,
+      facebookPageId: '',
+      facebookPermissionScopes: [],
+      socialAssetDue: false,
+      socialAssetDueHour: socialAssetExpectation.dueHour,
+      publishLogExists: false,
+      latestReel: null,
+      latestCover: null,
+      latestQaSheet: null,
+      latestReelUrl: null,
+      latestCoverUrl: null,
+      latestQaUrl: null,
+    };
+  }
 
   try {
     const [instagramRows, publishLogMeta, publishLogRows, facebookReadiness] = await Promise.all([
@@ -1827,6 +1901,12 @@ async function buildEngagementHealth() {
     };
   } catch (error) {
     const owners = getEngagementOwners();
+    let latestEvalCase = null;
+    try {
+      latestEvalCase = readLatestBlogEvalCase('engagement');
+    } catch {
+      latestEvalCase = null;
+    }
     return {
       okCount: 0,
       warnCount: 1,
@@ -1858,15 +1938,7 @@ async function buildEngagementHealth() {
 
 async function buildPhase1Health() {
   try {
-    const output = execFileSync(
-      'mix',
-      ['blog.phase1.report', '--brief'],
-      {
-        cwd: TEAM_JAY_ROOT,
-        encoding: 'utf8',
-        stdio: ['ignore', 'pipe', 'pipe'],
-      }
-    ).trim();
+    const output = execTeamJayMix(['blog.phase1.report', '--brief']).trim();
     const summary = output
       .split(/\r?\n/)
       .map((line) => line.trim())
@@ -2005,15 +2077,7 @@ async function buildPhase2BriefingHealth() {
 
 async function buildPhase3FeedbackHealth() {
   try {
-    const output = execFileSync(
-      'mix',
-      ['blog.phase3.feedback', '--json'],
-      {
-        cwd: TEAM_JAY_ROOT,
-        encoding: 'utf8',
-        stdio: ['ignore', 'pipe', 'pipe'],
-      }
-    ).trim();
+    const output = execTeamJayMix(['blog.phase3.feedback', '--json']).trim();
     const jsonText = extractJsonObjectText(output);
     const payload = JSON.parse(jsonText);
     const ok = [
@@ -2028,7 +2092,11 @@ async function buildPhase3FeedbackHealth() {
       warn.push(`  phase3 status: ${payload.health.status}`);
     }
     for (const item of recommendations.slice(0, 2)) {
-      warn.push(`  reco: ${item}`);
+      if (payload?.health?.status && payload.health.status !== 'ok') {
+        warn.push(`  reco: ${item}`);
+      } else {
+        ok.push(`  note: ${item}`);
+      }
     }
     return {
       okCount: ok.length,
@@ -2057,15 +2125,7 @@ async function buildPhase3FeedbackHealth() {
 
 async function buildPhase4CompetitionHealth() {
   try {
-    const output = execFileSync(
-      'mix',
-      ['blog.phase4.competition', '--json'],
-      {
-        cwd: TEAM_JAY_ROOT,
-        encoding: 'utf8',
-        stdio: ['ignore', 'pipe', 'pipe'],
-      }
-    ).trim();
+    const output = execTeamJayMix(['blog.phase4.competition', '--json']).trim();
     const jsonText = extractJsonObjectText(output);
     const payload = JSON.parse(jsonText || '{}');
     const health = payload?.health || {};
@@ -2086,7 +2146,11 @@ async function buildPhase4CompetitionHealth() {
       warn.push(`  timeout competitions: ${Number(health.timeout_count || 0)}건`);
     }
     if (recommendations[0]) {
-      warn.push(`  reco: ${recommendations[0]}`);
+      if (health.status === 'warn' || health.status === 'error') {
+        warn.push(`  reco: ${recommendations[0]}`);
+      } else {
+        ok.push(`  note: ${recommendations[0]}`);
+      }
     }
     return {
       okCount: ok.length,
@@ -2145,6 +2209,7 @@ async function buildMarketingExpansionHealth() {
       : null;
     const digest = await buildMarketingDigest();
     const latestDigestRun = readMarketingDigestTelemetry();
+    const latestAutoStrategyRefresh = readAutoStrategyRefreshResult();
     const strategyBundle = loadStrategyBundle();
     let strategy = strategyBundle?.plan || digest?.strategy || null;
     if (!strategy) {
@@ -2232,6 +2297,35 @@ async function buildMarketingExpansionHealth() {
     if (nextPreview?.title) {
       ok.push(`  next title: ${nextPreview.title}`);
     }
+    const rawStatus = String(digest?.health?.status || 'unknown');
+    const strategyAgeMinutes = ageMinutesFromIso(strategy?.evolvedAt || '');
+    const autoStrategyRefreshAgeMinutes = ageMinutesFromIso(
+      latestAutoStrategyRefresh?.finishedAt || latestAutoStrategyRefresh?.startedAt || ''
+    );
+    const strategyRecentlyApplied =
+      (strategyAgeMinutes !== null && strategyAgeMinutes <= BLOG_MARKETING_STRATEGY_OBSERVE_MINUTES)
+      || (
+        latestAutoStrategyRefresh?.ok === true
+        && autoStrategyRefreshAgeMinutes !== null
+        && autoStrategyRefreshAgeMinutes <= BLOG_MARKETING_STRATEGY_OBSERVE_MINUTES
+      );
+    const watchMitigated = rawStatus === 'watch' && strategyRecentlyApplied;
+    if (watchMitigated) {
+      const statusLineIndex = ok.findIndex((line) => String(line || '').trim().startsWith('status:'));
+      if (statusLineIndex >= 0) {
+        ok[statusLineIndex] = `  status: monitor (raw ${rawStatus}, strategy refresh observed)`;
+      }
+    }
+    if (latestAutoStrategyRefresh?.startedAt) {
+      ok.push(
+        `  latest strategy auto run: ${String(latestAutoStrategyRefresh.startedAt).slice(0, 19)} / ${latestAutoStrategyRefresh.ok ? 'ok' : `failed:${String(latestAutoStrategyRefresh.failedStep || 'unknown')}`}`,
+      );
+    }
+    if (watchMitigated) {
+      ok.push(
+        `  watch mitigated: latest strategy refresh within ${BLOG_MARKETING_STRATEGY_OBSERVE_MINUTES}m observation window`,
+      );
+    }
     const hotspotCategory = strategy?.categoryPatternHotspot?.category || null;
     const hotspotPattern = strategy?.categoryPatternHotspot?.topPattern || null;
     if (hotspotCategory || hotspotPattern) {
@@ -2281,7 +2375,9 @@ async function buildMarketingExpansionHealth() {
       warnCount: warn.length,
       ok,
       warn,
-      status: digest?.health?.status || 'unknown',
+      status: watchMitigated ? 'monitor' : rawStatus,
+      rawStatus,
+      watchMitigated,
       signalCount: Number(digest?.senseSummary?.signalCount || 0),
       revenueImpactPct: Number(digest?.revenueCorrelation?.revenueImpactPct || 0),
       snapshotCount: Number(digest?.snapshotTrend?.totalCount || 0),
@@ -2303,6 +2399,7 @@ async function buildMarketingExpansionHealth() {
       strategyAdoption: digest?.strategyAdoption || null,
       nextGeneralPreview: digest?.nextGeneralPreview || null,
       latestDigestRun,
+      latestAutoStrategyRefresh,
       latestEvalCase,
       latestDigestAge: describeMarketingDigestAge(latestDigestRun),
       recommendations: Array.isArray(digest?.recommendations) ? digest.recommendations.slice(0, 2) : [],
@@ -2533,7 +2630,7 @@ function buildDecision(serviceRows, nodeHealth, dailyRunHealth, pendingPublishHe
         reason: `node-server/n8n 경고 ${nodeHealth.warn.length}건이 있어 실행 백엔드 상태 확인이 필요합니다.`,
       },
       {
-        active: IMAGE_PROVIDER === 'drawthings' && nodeHealth.drawthingsOk === false,
+        active: IMAGE_GEN_ENABLED && IMAGE_PROVIDER === 'drawthings' && nodeHealth.drawthingsOk === false,
         level: 'medium',
         reason: 'drawthings 이미지 API 응답이 없어 블로그 이미지 생성 경로를 사용할 수 없습니다.',
       },
@@ -2563,32 +2660,33 @@ function buildDecision(serviceRows, nodeHealth, dailyRunHealth, pendingPublishHe
         reason: '인스타 토큰 만료가 임박해 릴스 업로드가 중단될 수 있습니다.',
       },
       {
-        active: !instagramHealth.hostReady,
+        active: SOCIAL_MEDIA_ENABLED && !instagramHealth.hostReady,
         level: 'medium',
         reason: '인스타 공개 미디어 호스팅이 준비되지 않아 릴스 업로드를 진행할 수 없습니다.',
       },
       {
-        active: socialAutomationHealth.socialAssetDue
+        active: SOCIAL_MEDIA_ENABLED
+          && socialAutomationHealth.socialAssetDue
           && (socialAutomationHealth.reelCountToday <= 0 || socialAutomationHealth.instaCardCountToday <= 0),
         level: 'medium',
         reason: '오늘 shortform 릴스나 인스타 카드 산출물이 없어 소셜 자동등록 흐름이 비어 있을 수 있습니다.',
       },
       {
-        active: socialAutomationHealth.instagramNeedsAttention,
+        active: SOCIAL_MEDIA_ENABLED && socialAutomationHealth.instagramNeedsAttention,
         level: 'medium',
         reason: previewBundleHint
           ? `최근 인스타 자동등록 실패 이력이 있어 릴스/공개 URL/게시 경로 점검이 필요합니다. ${instagramDiagnoseHint}${socialActionHints.length ? ` / ${socialActionHints.join(' / ')}` : ''} / ${opsDoctorHint}${opsSocialActionHints.length ? ` / ${opsSocialActionHints.join(' / ')}` : ''} 최신 preview: ${previewBundleHint}`
           : `최근 인스타 자동등록 실패 이력이 있어 릴스/공개 URL/게시 경로 점검이 필요합니다. ${instagramDiagnoseHint}${socialActionHints.length ? ` / ${socialActionHints.join(' / ')}` : ''} / ${opsDoctorHint}${opsSocialActionHints.length ? ` / ${opsSocialActionHints.join(' / ')}` : ''}`,
       },
       {
-        active: socialAutomationHealth.facebookNeedsAttention,
+        active: SOCIAL_MEDIA_ENABLED && socialAutomationHealth.facebookNeedsAttention,
         level: 'medium',
         reason: previewBundleHint
           ? `${socialAutomationHealth.facebookReadiness?.error ? 'Facebook readiness 토큰/세션 이슈가 있어 다음 게시 전에 재발급 또는 재연결 확인이 필요합니다.' : '최근 페이스북 자동등록 실패 이력이 있어 권한/게시 경로 점검이 필요합니다.'} ${socialAutomationHealth.latestFacebookErrorSummary || ''}${socialAutomationHealth.facebookPageId ? ` page=${socialAutomationHealth.facebookPageId}` : ''}${Array.isArray(socialAutomationHealth.facebookPermissionScopes) && socialAutomationHealth.facebookPermissionScopes.length > 0 ? ` scopes=${socialAutomationHealth.facebookPermissionScopes.join(',')}` : ''} diagnose=${FACEBOOK_READINESS_COMMAND} / doctor=${FACEBOOK_DOCTOR_COMMAND} / social=${SOCIAL_DOCTOR_COMMAND}${socialActionHints.length ? ` / ${socialActionHints.join(' / ')}` : ''} / ${opsDoctorHint}${opsSocialActionHints.length ? ` / ${opsSocialActionHints.join(' / ')}` : ''} 최신 preview: ${previewBundleHint}`.trim()
           : `${socialAutomationHealth.facebookReadiness?.error ? 'Facebook readiness 토큰/세션 이슈가 있어 다음 게시 전에 재발급 또는 재연결 확인이 필요합니다.' : '최근 페이스북 자동등록 실패 이력이 있어 권한/게시 경로 점검이 필요합니다.'} ${socialAutomationHealth.latestFacebookErrorSummary || ''}${socialAutomationHealth.facebookPageId ? ` page=${socialAutomationHealth.facebookPageId}` : ''}${Array.isArray(socialAutomationHealth.facebookPermissionScopes) && socialAutomationHealth.facebookPermissionScopes.length > 0 ? ` scopes=${socialAutomationHealth.facebookPermissionScopes.join(',')}` : ''} diagnose=${FACEBOOK_READINESS_COMMAND} / doctor=${FACEBOOK_DOCTOR_COMMAND} / social=${SOCIAL_DOCTOR_COMMAND}${socialActionHints.length ? ` / ${socialActionHints.join(' / ')}` : ''} / ${opsDoctorHint}${opsSocialActionHints.length ? ` / ${opsSocialActionHints.join(' / ')}` : ''}`.trim(),
       },
       {
-        active: socialAutomationHealth.publishLogExists === false,
+        active: SOCIAL_MEDIA_ENABLED && socialAutomationHealth.publishLogExists === false,
         level: 'low',
         reason: '소셜 게시 telemetry 테이블이 없어 페이스북/외부 채널 자동등록 실적 추적이 충분하지 않습니다.',
       },

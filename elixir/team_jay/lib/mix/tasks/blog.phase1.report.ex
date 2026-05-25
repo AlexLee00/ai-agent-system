@@ -2,7 +2,7 @@ defmodule Mix.Tasks.Blog.Phase1.Report do
   use Mix.Task
 
   @shortdoc "블로그팀 Phase 1 운영 메시지를 출력합니다"
-  @requirements ["app.start"]
+  @requirements ["app.config"]
 
   @moduledoc """
   블로그팀 Elixir 리모델링 Phase 1 상태를
@@ -20,6 +20,8 @@ defmodule Mix.Tasks.Blog.Phase1.Report do
 
   @impl Mix.Task
   def run(args) do
+    TeamJay.Blog.ReadOnlyRuntime.start!()
+
     summary = DailySummary.build()
 
     cond do

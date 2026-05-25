@@ -27,6 +27,11 @@ interface SettledQueryResult {
   value?: QueryResult;
 }
 
+interface SettledRowResult {
+  status: "fulfilled" | "rejected";
+  value?: QueryResultRow;
+}
+
 interface WeeklyReviewStats {
   week: string;
   total_cycles: number;
@@ -40,11 +45,39 @@ interface WeeklyReviewStats {
   weekly_cost_usd: number;
 }
 
+interface CliOptions {
+  dryRun: boolean;
+  json: boolean;
+}
+
+function parseArgs(argv: string[]): CliOptions {
+  return {
+    dryRun: argv.includes("--dry-run") || process.env.DARWIN_WEEKLY_REVIEW_DRY_RUN === "1",
+    json: argv.includes("--json") || process.env.DARWIN_WEEKLY_REVIEW_JSON === "1",
+  };
+}
+
+function log(options: CliOptions, message: string): void {
+  if (!options.json) console.log(message);
+}
+
 function getWeekString(): string {
   const now = new Date();
   const start = new Date(now);
   start.setDate(now.getDate() - 7);
   return `${start.toISOString().slice(0, 10)} ~ ${now.toISOString().slice(0, 10)}`;
+}
+
+async function firstSuccessfulRow(sqlStatements: string[]): Promise<Record<string, unknown>> {
+  for (const sql of sqlStatements) {
+    try {
+      const result = await query(sql);
+      return result?.rows?.[0] ?? {};
+    } catch {
+      // Try the next known historical schema variant.
+    }
+  }
+  return {};
 }
 
 async function collectWeeklyStats(): Promise<WeeklyReviewStats> {
@@ -75,13 +108,35 @@ async function collectWeeklyStats(): Promise<WeeklyReviewStats> {
       query(`
         SELECT AVG(match_score) AS avg_match
         FROM darwin_v2_shadow_runs
-        WHERE run_at >= NOW() - INTERVAL '7 days'
+        WHERE inserted_at >= NOW() - INTERVAL '7 days'
       `),
-      query(`
-        SELECT COALESCE(SUM(cost_usd), 0) AS weekly_cost
-        FROM darwin_v2_llm_cost_log
-        WHERE logged_at >= NOW() - INTERVAL '7 days'
-      `),
+      firstSuccessfulRow([
+        `
+          SELECT COALESCE(SUM(cost_usd), 0) AS weekly_cost
+          FROM darwin_llm_cost_tracking
+          WHERE inserted_at >= NOW() - INTERVAL '7 days'
+        `,
+        `
+          SELECT COALESCE(SUM(cost_usd), 0) AS weekly_cost
+          FROM darwin_llm_cost_tracking
+          WHERE logged_at >= NOW() - INTERVAL '7 days'
+        `,
+        `
+          SELECT COALESCE(SUM(cost_usd), 0) AS weekly_cost
+          FROM darwin_llm_cost_tracking
+          WHERE call_date >= CURRENT_DATE - INTERVAL '7 days'
+        `,
+        `
+          SELECT COALESCE(SUM(cost_usd), 0) AS weekly_cost
+          FROM darwin_llm_cost_tracking
+          WHERE date >= CURRENT_DATE - INTERVAL '7 days'
+        `,
+        `
+          SELECT COALESCE(SUM(cost_usd), 0) AS weekly_cost
+          FROM darwin_v2_llm_cost_log
+          WHERE logged_at >= NOW() - INTERVAL '7 days'
+        `,
+      ]),
     ]);
 
   const cycle =
@@ -101,8 +156,8 @@ async function collectWeeklyStats(): Promise<WeeklyReviewStats> {
       ? (shadowRows as SettledQueryResult).value?.rows?.[0] ?? {}
       : {};
   const cost =
-    (costRows as SettledQueryResult).status === "fulfilled"
-      ? (costRows as SettledQueryResult).value?.rows?.[0] ?? {}
+    (costRows as SettledRowResult).status === "fulfilled"
+      ? (costRows as SettledRowResult).value ?? {}
       : {};
 
   const total = Number(cycle.total ?? 0);
@@ -126,8 +181,8 @@ async function collectWeeklyStats(): Promise<WeeklyReviewStats> {
   };
 }
 
-async function main(): Promise<void> {
-  console.log("[darwin-weekly-review] 주간 리뷰 수집 시작");
+async function main(options: CliOptions = parseArgs(process.argv.slice(2))): Promise<void> {
+  log(options, "[darwin-weekly-review] 주간 리뷰 수집 시작");
   const stats = await collectWeeklyStats();
 
   const msg = `
@@ -149,13 +204,29 @@ async function main(): Promise<void> {
 💰 주간 LLM 비용: $${stats.weekly_cost_usd}
 `.trim();
 
-  await postAlarm({
+  const payload = {
     message: msg,
     team: "darwin",
     fromBot: "darwin-weekly-review",
     alertLevel: 2,
-  });
-  console.log("[darwin-weekly-review] 발송 완료");
+  };
+
+  if (!options.dryRun) {
+    await postAlarm(payload);
+    log(options, "[darwin-weekly-review] 발송 완료");
+  } else {
+    log(options, "[darwin-weekly-review][dry-run] 실제 알림 발송 생략");
+  }
+
+  if (options.json) {
+    console.log(JSON.stringify({
+      ok: true,
+      dryRun: options.dryRun,
+      stats,
+      payload,
+      alarmSent: !options.dryRun,
+    }, null, 2));
+  }
 }
 
 if (require.main === module) {

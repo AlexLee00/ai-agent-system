@@ -106,6 +106,11 @@ const RUNTIME_STATUS_KEYS = new Set([
   'merge_error',
   'updated_at',
 ]);
+const DEFAULT_STALE_RUNNING_MS = _parsePositiveInteger(
+  process.env.DARWIN_TASK_STALE_RUNNING_MS,
+  6 * 60 * 60 * 1000,
+  7 * 24 * 60 * 60 * 1000,
+);
 let _statusInitPromise: Promise<unknown> | null = null;
 
 type ResearchTaskStatus = 'pending' | 'running' | 'completed' | 'failed';
@@ -127,6 +132,8 @@ interface ResearchTask {
   targetCategory?: string;
   skillName?: string;
   runtime_updated_at?: string | null;
+  stale_recovered?: boolean;
+  stale_previous_status?: string;
   [key: string]: unknown;
 }
 
@@ -137,6 +144,13 @@ interface TaskStatusRow {
   completed_at?: string | null;
   runtime?: Record<string, unknown>;
   updated_at?: string | null;
+}
+
+interface TaskReadOptions {
+  skipRuntimeStatus?: boolean;
+  includeStaleRunning?: boolean;
+  staleRunningMs?: number;
+  now?: Date | string | number;
 }
 
 interface GitHubAnalysisResult {
@@ -170,6 +184,35 @@ interface SkillCreationResult {
 function ensureDir(): void {
   fs.mkdirSync(TASKS_DIR, { recursive: true });
   fs.mkdirSync(DOCS_DIR, { recursive: true });
+}
+
+function _parsePositiveInteger(value: unknown, fallback: number, max: number): number {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed <= 0) return fallback;
+  return Math.max(1, Math.min(Math.floor(parsed), max));
+}
+
+function _timestampMs(value: unknown): number | null {
+  if (value instanceof Date) {
+    const dateMs = value.getTime();
+    return Number.isFinite(dateMs) ? dateMs : null;
+  }
+  if (typeof value === 'number') return Number.isFinite(value) ? value : null;
+  if (typeof value !== 'string' || value.trim() === '') return null;
+  const parsed = new Date(value).getTime();
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function _readNowMs(options: TaskReadOptions): number {
+  return _timestampMs(options.now) ?? Date.now();
+}
+
+function _staleRunningMs(options: TaskReadOptions): number {
+  return _parsePositiveInteger(
+    options.staleRunningMs,
+    DEFAULT_STALE_RUNNING_MS,
+    30 * 24 * 60 * 60 * 1000,
+  );
 }
 
 async function ensureTaskStatusSchema(): Promise<unknown> {
@@ -209,7 +252,8 @@ function _loadAllTasks(): ResearchTask[] {
     .sort((a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime());
 }
 
-async function _loadTaskStatusMap(taskIds: string[] = []): Promise<Map<string, TaskStatusRow>> {
+async function _loadTaskStatusMap(taskIds: string[] = [], options: TaskReadOptions = {}): Promise<Map<string, TaskStatusRow>> {
+  if (options.skipRuntimeStatus) return new Map();
   await ensureTaskStatusSchema();
   const ids = Array.from(new Set((taskIds || []).filter(Boolean)));
   if (ids.length === 0) return new Map();
@@ -236,6 +280,24 @@ function _mergeTaskWithStatus(task: ResearchTask, statusRow?: TaskStatusRow): Re
     completed_at: statusRow.completed_at || task.completed_at || null,
     ...(statusRow.runtime && typeof statusRow.runtime === 'object' ? statusRow.runtime : {}),
     runtime_updated_at: statusRow.updated_at || null,
+  };
+}
+
+function _isStaleRunningTask(task: ResearchTask, options: TaskReadOptions): boolean {
+  if (!options.includeStaleRunning) return false;
+  if (String(task.status || '').trim().toLowerCase() !== 'running') return false;
+  const lastTouchedMs = _timestampMs(task.runtime_updated_at || task.started_at);
+  if (lastTouchedMs === null) return false;
+  return _readNowMs(options) - lastTouchedMs >= _staleRunningMs(options);
+}
+
+function _markStaleRunningAsPending(task: ResearchTask, options: TaskReadOptions): ResearchTask {
+  if (!_isStaleRunningTask(task, options)) return task;
+  return {
+    ...task,
+    status: 'pending',
+    stale_recovered: true,
+    stale_previous_status: 'running',
   };
 }
 
@@ -311,22 +373,23 @@ function createTask(task: ResearchTask): ResearchTask {
  * @param {string} taskId
  * @returns {Promise<ResearchTask|null>}
  */
-async function loadTask(taskId: string): Promise<ResearchTask | null> {
+async function loadTask(taskId: string, options: TaskReadOptions = {}): Promise<ResearchTask | null> {
   const filePath = _taskPath(taskId);
   if (!fs.existsSync(filePath)) return null;
   const task = JSON.parse(fs.readFileSync(filePath, 'utf8')) as ResearchTask;
-  const statusMap = await _loadTaskStatusMap([taskId]).catch(() => new Map());
+  const statusMap = await _loadTaskStatusMap([taskId], options).catch(() => new Map());
   return _mergeTaskWithStatus(task, statusMap.get(taskId));
 }
 
 /**
  * @returns {Promise<ResearchTask[]>}
  */
-async function getPendingTasks(): Promise<ResearchTask[]> {
+async function getPendingTasks(options: TaskReadOptions = {}): Promise<ResearchTask[]> {
   const tasks = _loadAllTasks();
-  const statusMap = await _loadTaskStatusMap(tasks.map((task) => task.id)).catch(() => new Map());
+  const statusMap = await _loadTaskStatusMap(tasks.map((task) => task.id), options).catch(() => new Map());
   return tasks
     .map((task) => _mergeTaskWithStatus(task, statusMap.get(task.id)))
+    .map((task) => _markStaleRunningAsPending(task, options))
     .filter((task) => task.status === 'pending')
     .sort((a, b) => Number(a.priority || 5) - Number(b.priority || 5));
 }
@@ -334,9 +397,9 @@ async function getPendingTasks(): Promise<ResearchTask[]> {
 /**
  * @returns {Promise<ResearchTask[]>}
  */
-async function getCompletedTasks(): Promise<ResearchTask[]> {
+async function getCompletedTasks(options: TaskReadOptions = {}): Promise<ResearchTask[]> {
   const tasks = _loadAllTasks();
-  const statusMap = await _loadTaskStatusMap(tasks.map((task) => task.id)).catch(() => new Map());
+  const statusMap = await _loadTaskStatusMap(tasks.map((task) => task.id), options).catch(() => new Map());
   return tasks
     .map((task) => _mergeTaskWithStatus(task, statusMap.get(task.id)))
     .filter((task) => task.status === 'completed');

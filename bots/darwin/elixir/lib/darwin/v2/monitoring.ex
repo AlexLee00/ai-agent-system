@@ -62,16 +62,43 @@ defmodule Darwin.V2.Monitoring do
 
   defp cost_by_period(opts) do
     interval = build_interval(opts)
-    sql = """
-    SELECT COALESCE(SUM(cost_usd), 0) AS total_cost
-    FROM darwin_v2_llm_cost_log
-    WHERE logged_at >= NOW() - INTERVAL '#{interval}'
-    """
 
-    case Jay.Core.Repo.query(sql, []) do
-      {:ok, %{rows: [[cost]]}} -> %{total_usd: to_float(cost)}
-      _ -> %{total_usd: 0.0}
-    end
+    cost =
+      [
+        """
+        SELECT COALESCE(SUM(cost_usd), 0) AS total_cost
+        FROM darwin_llm_cost_tracking
+        WHERE inserted_at >= NOW() - INTERVAL '#{interval}'
+        """,
+        """
+        SELECT COALESCE(SUM(cost_usd), 0) AS total_cost
+        FROM darwin_llm_cost_tracking
+        WHERE logged_at >= NOW() - INTERVAL '#{interval}'
+        """,
+        """
+        SELECT COALESCE(SUM(cost_usd), 0) AS total_cost
+        FROM darwin_llm_cost_tracking
+        WHERE call_date >= CURRENT_DATE - INTERVAL '#{interval}'
+        """,
+        """
+        SELECT COALESCE(SUM(cost_usd), 0) AS total_cost
+        FROM darwin_llm_cost_tracking
+        WHERE date >= CURRENT_DATE - INTERVAL '#{interval}'
+        """,
+        """
+        SELECT COALESCE(SUM(cost_usd), 0) AS total_cost
+        FROM darwin_v2_llm_cost_log
+        WHERE logged_at >= NOW() - INTERVAL '#{interval}'
+        """
+      ]
+      |> Enum.find_value(fn sql ->
+        case Jay.Core.Repo.query(sql, []) do
+          {:ok, %{rows: [[cost]]}} -> cost
+          _ -> nil
+        end
+      end)
+
+    %{total_usd: to_float(cost)}
   rescue
     _ -> %{total_usd: 0.0}
   end
@@ -130,7 +157,7 @@ defmodule Darwin.V2.Monitoring do
     case Jay.Core.Repo.query("""
     SELECT COUNT(*) AS runs, AVG(match_score) AS avg_match
     FROM darwin_v2_shadow_runs
-    WHERE run_at >= NOW() - INTERVAL '24 hours'
+    WHERE inserted_at >= NOW() - INTERVAL '24 hours'
     """, []) do
       {:ok, %{rows: [[runs, avg]]}} ->
         %{runs: to_int(runs), avg_match: to_float(avg)}

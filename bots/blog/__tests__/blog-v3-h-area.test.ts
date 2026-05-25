@@ -27,6 +27,7 @@ jest.mock('../../../packages/core/lib/hub-client', () => ({
 }));
 
 const pgPool = require('../../../packages/core/lib/pg-pool');
+const { queryOpsDb } = require('../../../packages/core/lib/hub-client');
 
 // ── ① Reddit 트렌드 추출 (fixture 모드) ────────────────────────────────────
 
@@ -355,5 +356,47 @@ describe('⑤ Hub LLM Gateway 통과 — dry-run 통합 검증', () => {
     expect(multi).toBeTruthy();
     expect(multi.sources).toEqual(expect.arrayContaining(['reddit', 'naver']));
     expect(multi.fusion.score).toBeGreaterThan(70);
+  });
+
+  test('trend topic dry-run 선택은 used/evidence DB 상태를 변경하지 않는다', async () => {
+    const { selectTopicWithCandidateFallback } = require(
+      path.join(env.PROJECT_ROOT, 'bots/blog/lib/topic-selector.ts')
+    );
+    jest.clearAllMocks();
+    queryOpsDb.mockImplementation(async (sql) => {
+      const text = String(sql);
+      if (text.includes('FROM blog.trend_topics')) {
+        return {
+          rows: [{
+            id: 77,
+            source: 'naver',
+            topic_ko: 'AI 자동화 도구 선택법 3가지',
+            category: '최신IT트렌드',
+            trend_score: 88,
+            korea_relevance: 92,
+            is_book_topic: false,
+            meta: {},
+            date: '2026-05-25',
+            created_at: new Date().toISOString(),
+          }],
+        };
+      }
+      return { rows: [], rowCount: 0 };
+    });
+
+    const selected = await selectTopicWithCandidateFallback(
+      '최신IT트렌드',
+      '2026-05-25',
+      [],
+      {},
+      null,
+      null,
+      [],
+      { dryRun: true },
+    );
+
+    expect(selected?.source).toBe('trend_naver');
+    expect(queryOpsDb.mock.calls.some(([sql]) => /UPDATE\s+blog\.trend_topics/i.test(String(sql)))).toBe(false);
+    expect(pgPool.run.mock.calls.some(([sql]) => /blog_v3_shadow_evidence/i.test(String(sql)))).toBe(false);
   });
 });

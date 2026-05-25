@@ -419,8 +419,7 @@ function withObjectParticle(value = '') {
   return `${text}${hasFinalConsonant(text) ? '을' : '를'}`;
 }
 
-function buildTitle(frame, candidate, index) {
-  const strategy = arguments[3] || null;
+function buildTitle(frame, candidate, index, strategy = null) {
   const directives = normalizeExecutionDirectives(strategy);
   const titleTone = directives.titlePolicy.tone;
   const countBase = titleTone === 'conversion' ? 3 : titleTone === 'amplify' ? 5 : 4;
@@ -852,7 +851,9 @@ async function getRecentPublishedTitles(targetDate, days = 90, limit = 80) {
  * @param {object} senseState
  * @param {object} revenueCorrelation
  */
-async function selectTopicWithCandidateFallback(category, targetDate, recentPosts = [], strategyPlan = null, senseState = null, revenueCorrelation = null, itNews = []) {
+async function selectTopicWithCandidateFallback(category, targetDate, recentPosts = [], strategyPlan = null, senseState = null, revenueCorrelation = null, itNews = [], options = {}) {
+  const normalizedOptions = Object.assign({ dryRun: false }, options || {});
+  const dryRun = normalizedOptions.dryRun === true;
   const recentTitles = mergeRecentTitles(
     recentPosts.map(post => post.title).filter(Boolean),
     await getRecentPublishedTitles(targetDate)
@@ -923,29 +924,31 @@ async function selectTopicWithCandidateFallback(category, targetDate, recentPost
     if (selected) {
       console.log(`[토픽] 트렌드 후보 채택 (${selected.source}): ${selected.title}`);
       // 사용 표시 + shadow evidence — 중복 방지 (fire-and-forget)
-      queryOpsDb(
-        `UPDATE blog.trend_topics
-         SET used = true,
-             evidence = COALESCE(evidence, '{}'::jsonb) || $2::jsonb
-         WHERE id = $1`,
-        'blog', [selected.trendId, JSON.stringify({ selected_by: 'blog_v3_unified', selected_at: new Date().toISOString() })],
-      ).catch(() => {});
-      recordShadowEvidence('topic_fusion', {
-        ok: true,
-        selected: {
-          trendId: selected.trendId,
-          title: selected.title,
-          source: selected.source,
-          fusionScore: selected.fusionScore,
-        },
-        candidates: scored.slice(0, 5).map((c) => ({
-          trendId: c.trendId,
-          title: c.title,
-          source: c.source,
-          fusionScore: c.fusionScore,
-          score: c.score,
-        })),
-      }).catch(() => {});
+      if (!dryRun) {
+        queryOpsDb(
+          `UPDATE blog.trend_topics
+           SET used = true,
+               evidence = COALESCE(evidence, '{}'::jsonb) || $2::jsonb
+           WHERE id = $1`,
+          'blog', [selected.trendId, JSON.stringify({ selected_by: 'blog_v3_unified', selected_at: new Date().toISOString() })],
+        ).catch(() => {});
+        recordShadowEvidence('topic_fusion', {
+          ok: true,
+          selected: {
+            trendId: selected.trendId,
+            title: selected.title,
+            source: selected.source,
+            fusionScore: selected.fusionScore,
+          },
+          candidates: scored.slice(0, 5).map((c) => ({
+            trendId: c.trendId,
+            title: c.title,
+            source: c.source,
+            fusionScore: c.fusionScore,
+            score: c.score,
+          })),
+        }).catch(() => {});
+      }
       return enrichTopicSelection({
         ...selected,
         pattern: 'trend',

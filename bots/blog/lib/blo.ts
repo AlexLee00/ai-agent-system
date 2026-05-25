@@ -492,7 +492,8 @@ function _normalizeBlogRunDate(value = null) {
 }
 
 function _isDbBackedTopicSelection(selectedTopic = null) {
-  return ['topic_queue', 'db_curated'].includes(String(selectedTopic?.source || ''));
+  const source = String(selectedTopic?.source || '');
+  return ['topic_queue', 'db_curated'].includes(source) || source.startsWith('trend_');
 }
 
 async function _selectGeneralTopicForRun(category, strategyPlan, dailyState = {}, options = {}) {
@@ -505,7 +506,10 @@ async function _selectGeneralTopicForRun(category, strategyPlan, dailyState = {}
     strategyPlan,
     dailyState?.senseState || null,
     dailyState?.revenueCorrelation || null,
-    Array.isArray(options.itNews) ? options.itNews : []
+    Array.isArray(options.itNews) ? options.itNews : [],
+    {
+      dryRun: options.dryRun === true || DEV_HUB_READONLY,
+    }
   );
 
   let selectedTopic = await select();

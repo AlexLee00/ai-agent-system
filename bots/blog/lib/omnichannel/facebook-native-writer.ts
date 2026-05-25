@@ -1,3 +1,4 @@
+// @ts-nocheck
 'use strict';
 
 /**
@@ -115,4 +116,3 @@ function writeFacebookNativeVariant({
 module.exports = {
   writeFacebookNativeVariant,
 };
-

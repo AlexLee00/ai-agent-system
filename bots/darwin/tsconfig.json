@@ -13,6 +13,8 @@
   "include": [
     "__tests__/research-monitor-smoke.test.ts",
     "__tests__/research-task-runner-smoke.test.ts",
+    "__tests__/research-tasks-stale-queue-smoke.test.ts",
+    "__tests__/weekly-report-dry-run-smoke.test.ts",
     "lib/autonomy-level.ts",
     "lib/proposal-store.ts",
     "lib/research-monitor.ts",

@@ -30,11 +30,18 @@ dashboard_secret_key_base =
     System.get_env("DASHBOARD_SECRET_KEY_BASE") ||
     "teamjay_dashboard_dev_key_changeme_in_prod_xxxxxxxxxxxxxxxxxxxxxxxx"
 
+dashboard_server_value =
+  System.get_env("TEAM_JAY_DASHBOARD_SERVER", "true")
+  |> String.trim()
+  |> String.downcase()
+
+dashboard_server? = dashboard_server_value in ["1", "true", "yes", "on"]
+
 # Phase A: LiveView 대시보드 (http://localhost:7787)
 config :team_jay, TeamJay.Dashboard.Endpoint,
   adapter: Bandit.PhoenixAdapter,
   http: [port: String.to_integer(dashboard_port)],
-  server: true,
+  server: dashboard_server?,
   check_origin: [
     "//localhost:#{dashboard_port}",
     "//127.0.0.1:#{dashboard_port}",

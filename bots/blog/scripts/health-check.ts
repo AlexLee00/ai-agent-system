@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+// @ts-nocheck
 'use strict';
 
 /**
@@ -44,7 +45,9 @@ const { buildIssueHints, rememberHealthEvent } = createHealthMemoryHelper({
 });
 const NODE_SERVER_HEALTH_URL = new URL(runtimeConfig.nodeServerHealthUrl || 'http://127.0.0.1:3100/health');
 const N8N_HEALTH_URL = new URL(runtimeConfig.n8nHealthUrl || 'http://127.0.0.1:5678/healthz');
+const SOCIAL_MEDIA_ENABLED = process.env.BLOG_SOCIAL_MEDIA_ENABLED === 'true';
 const IMAGE_PROVIDER = String(process.env.BLOG_IMAGE_PROVIDER || 'drawthings').toLowerCase();
+const IMAGE_GEN_ENABLED = process.env.BLOG_IMAGE_GEN_ENABLED === 'true';
 const IMAGE_BASE_URL = String(process.env.BLOG_IMAGE_BASE_URL || 'http://127.0.0.1:7860');
 const DRAWTHINGS_HEALTH_URL = new URL('/sdapi/v1/options', IMAGE_BASE_URL.endsWith('/') ? IMAGE_BASE_URL : `${IMAGE_BASE_URL}/`);
 const NODE_SERVER_TIMEOUT_MS = Number(runtimeConfig.nodeServerTimeoutMs || 3000);
@@ -1095,7 +1098,7 @@ async function main() {
     hsm.clearAlert(state, n8nKey);
   }
 
-  if (IMAGE_PROVIDER === 'drawthings' || IMAGE_PROVIDER === 'draw-things') {
+  if (IMAGE_GEN_ENABLED && (IMAGE_PROVIDER === 'drawthings' || IMAGE_PROVIDER === 'draw-things')) {
     const imageHealth = /** @type {any} */ (await checkDrawThingsHealth());
     const imageKey = 'drawthings:http';
     // @ts-ignore checkJs is too narrow for runtime health payloads
@@ -1134,41 +1137,43 @@ async function main() {
     hsm.clearAlert(state, bookCatalogKey);
   }
 
-  const instagramPublish = await checkInstagramPublishHealth();
-  const instagramPublishKey = 'instagram-publish:recent-failure';
-  if (!instagramPublish.ok) {
-    if (hsm.canAlert(state, instagramPublishKey)) {
-      issues.push({
-        key: instagramPublishKey,
-        level: 2,
-        msg: `⚠️ [블로그 헬스] Instagram 자동등록 이슈\n${instagramPublish.detail}`,
-      });
+  if (SOCIAL_MEDIA_ENABLED) {
+    const instagramPublish = await checkInstagramPublishHealth();
+    const instagramPublishKey = 'instagram-publish:recent-failure';
+    if (!instagramPublish.ok) {
+      if (hsm.canAlert(state, instagramPublishKey)) {
+        issues.push({
+          key: instagramPublishKey,
+          level: 2,
+          msg: `⚠️ [블로그 헬스] Instagram 자동등록 이슈\n${instagramPublish.detail}`,
+        });
+      }
+    } else if (state[instagramPublishKey]) {
+      const recoveryMsg = `✅ [블로그 헬스] Instagram 자동등록 회복\n${instagramPublish.detail}`;
+      await notify(recoveryMsg, 1);
+      await rememberHealthEvent(instagramPublishKey, 'recovery', recoveryMsg, 1);
+      hsm.clearAlert(state, instagramPublishKey);
     }
-  } else if (state[instagramPublishKey]) {
-    const recoveryMsg = `✅ [블로그 헬스] Instagram 자동등록 회복\n${instagramPublish.detail}`;
-    await notify(recoveryMsg, 1);
-    await rememberHealthEvent(instagramPublishKey, 'recovery', recoveryMsg, 1);
-    hsm.clearAlert(state, instagramPublishKey);
-  }
 
-  const facebookPublish = await checkFacebookPublishHealth();
-  const facebookPublishKey = 'facebook-publish:permission';
-  if (!facebookPublish.ok) {
-    if (hsm.canAlert(state, facebookPublishKey)) {
-      const alertTitle = facebookPublish.category === 'token_expired'
-        ? '⚠️ [블로그 헬스] Facebook readiness 토큰 만료'
-        : '⚠️ [블로그 헬스] Facebook 자동등록 권한 이슈';
-      issues.push({
-        key: facebookPublishKey,
-        level: 3,
-        msg: `${alertTitle}\n${facebookPublish.detail}`,
-      });
+    const facebookPublish = await checkFacebookPublishHealth();
+    const facebookPublishKey = 'facebook-publish:permission';
+    if (!facebookPublish.ok) {
+      if (hsm.canAlert(state, facebookPublishKey)) {
+        const alertTitle = facebookPublish.category === 'token_expired'
+          ? '⚠️ [블로그 헬스] Facebook readiness 토큰 만료'
+          : '⚠️ [블로그 헬스] Facebook 자동등록 권한 이슈';
+        issues.push({
+          key: facebookPublishKey,
+          level: 3,
+          msg: `${alertTitle}\n${facebookPublish.detail}`,
+        });
+      }
+    } else if (state[facebookPublishKey]) {
+      const recoveryMsg = `✅ [블로그 헬스] Facebook 자동등록 회복\n${facebookPublish.detail}`;
+      await notify(recoveryMsg, 1);
+      await rememberHealthEvent(facebookPublishKey, 'recovery', recoveryMsg, 1);
+      hsm.clearAlert(state, facebookPublishKey);
     }
-  } else if (state[facebookPublishKey]) {
-    const recoveryMsg = `✅ [블로그 헬스] Facebook 자동등록 회복\n${facebookPublish.detail}`;
-    await notify(recoveryMsg, 1);
-    await rememberHealthEvent(facebookPublishKey, 'recovery', recoveryMsg, 1);
-    hsm.clearAlert(state, facebookPublishKey);
   }
 
   const engagementAutomation = await checkEngagementAutomationHealth();

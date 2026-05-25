@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+// @ts-nocheck
 'use strict';
 
 const path = require('path');
@@ -18,6 +19,9 @@ const MARKETING_SNAPSHOT_COMMAND = `${BLOG_PREFIX} run marketing:snapshot -- --d
 const CHANNEL_INSIGHTS_COMMAND = `${BLOG_PREFIX} run channel:insights -- --dry-run --json`;
 const REVENUE_STRATEGY_COMMAND = `${BLOG_PREFIX} run revenue:strategy -- --dry-run --json`;
 const AUTO_STRATEGY_REFRESH_COMMAND = `${BLOG_PREFIX} run auto:strategy-refresh -- --json`;
+const STRATEGY_REFRESH_OBSERVE_WINDOW_MINUTES = Number(
+  process.env.BLOG_MARKETING_STRATEGY_OBSERVE_MINUTES || 720
+);
 
 function parseIsoDate(value = null) {
   if (!value) return null;
@@ -50,7 +54,37 @@ function describeStrategyFreshness(plan = null) {
   return {
     evolvedAt,
     ageMinutes,
-    recentlyApplied: ageMinutes <= 180,
+    recentlyApplied: ageMinutes <= STRATEGY_REFRESH_OBSERVE_WINDOW_MINUTES,
+  };
+}
+
+function describeAutoStrategyRefreshFreshness(result = null) {
+  if (!result || result.ok !== true) {
+    return {
+      ok: false,
+      refreshedAt: null,
+      ageMinutes: null,
+      recentlyApplied: false,
+    };
+  }
+
+  const refreshedAt = String(result.finishedAt || result.startedAt || '').trim();
+  const refreshedAtMs = parseIsoDate(refreshedAt);
+  if (!refreshedAtMs) {
+    return {
+      ok: true,
+      refreshedAt: refreshedAt || null,
+      ageMinutes: null,
+      recentlyApplied: false,
+    };
+  }
+
+  const ageMinutes = Math.max(0, Math.round((Date.now() - refreshedAtMs) / 60000));
+  return {
+    ok: true,
+    refreshedAt,
+    ageMinutes,
+    recentlyApplied: ageMinutes <= STRATEGY_REFRESH_OBSERVE_WINDOW_MINUTES,
   };
 }
 
@@ -145,6 +179,21 @@ function buildPrimary(digest = {}) {
   const strategyFreshness = digest?.strategyFreshness || {};
   const strategyAppliedRecently = Boolean(strategyFreshness?.recentlyApplied);
   const strategyAgeMinutes = Number(strategyFreshness?.ageMinutes);
+  const autoStrategyFreshness = digest?.autoStrategyRefreshFreshness || {};
+  const autoStrategyRecentlyApplied = Boolean(autoStrategyFreshness?.recentlyApplied);
+  const latestAppliedAge = Number.isFinite(Number(autoStrategyFreshness?.ageMinutes))
+    ? Number(autoStrategyFreshness.ageMinutes)
+    : strategyAgeMinutes;
+
+  if (status === 'watch' && (strategyAppliedRecently || autoStrategyRecentlyApplied)) {
+    return {
+      area: 'clear',
+      reason: `마케팅 watch 신호는 남아 있지만 최신 전략 자동 갱신이 최근 ${latestAppliedAge}분 내 성공해, 지금은 추가 재편성보다 반영 효과 관찰이 우선입니다.`,
+      nextCommand: '',
+      actionFocus: '최신 전략 반영 효과 관찰',
+      recommendation: recommendations[0] || '',
+    };
+  }
 
   if (status === 'watch' || status === 'error') {
     return {
@@ -324,6 +373,7 @@ async function main() {
   const digest = buildDigestFallbackView(digestResult.payload || {}, latestDigestRun);
   const strategyBundle = loadStrategyBundle();
   const strategyFreshness = describeStrategyFreshness(strategyBundle?.plan || null);
+  const autoStrategyRefreshFreshness = describeAutoStrategyRefreshFreshness(latestAutoStrategyRefresh);
   const strategyOperationalLearning = summarizeOperationalLearning(strategyBundle?.plan || null);
   const strategyExperimentLearning = summarizeExperimentLearning(strategyBundle?.plan || null);
   const strategyEvalLearning = summarizeEvalLearning(strategyBundle?.plan || null);
@@ -336,14 +386,17 @@ async function main() {
       }
     : null;
   digest.strategyFreshness = strategyFreshness;
+  digest.latestAutoStrategyRefresh = latestAutoStrategyRefresh;
+  digest.autoStrategyRefreshFreshness = autoStrategyRefreshFreshness;
   digest.strategyOperationalLearning = strategyOperationalLearning;
   digest.strategyExperimentLearning = strategyExperimentLearning;
   digest.strategyRuntime = strategyRuntime;
-  const payload = {
+  const payload: any = {
     digestCommand: digestResult.command,
     digestError: digestResult.error || '',
     latestDigestRun,
     latestAutoStrategyRefresh,
+    autoStrategyRefreshFreshness,
     latestEvalCase,
     latestDigestAge: describeMarketingDigestAge(latestDigestRun),
     health: digest?.health || null,

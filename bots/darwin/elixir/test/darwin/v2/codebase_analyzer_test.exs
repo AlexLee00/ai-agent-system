@@ -5,6 +5,7 @@ defmodule Darwin.V2.CodebaseAnalyzerTest do
 
   setup_all do
     Code.ensure_loaded?(CodebaseAnalyzer)
+    Code.ensure_loaded?(Darwin.V2.Config)
     :ok
   end
 

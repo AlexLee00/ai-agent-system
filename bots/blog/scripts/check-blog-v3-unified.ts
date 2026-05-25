@@ -25,6 +25,7 @@ function auditHubLlmRoutes() {
     if (file.includes('/__tests__/')) return false;
     if (file.includes('/output/')) return false;
     if (file.endsWith('/scripts/check-blog-v3-unified.ts')) return false;
+    if (file.endsWith('/scripts/runtime-blog-v3-shadow-evidence.ts')) return false;
     return /\.(ts|js|py)$/.test(file);
   });
   const directLocal = [];

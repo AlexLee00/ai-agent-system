@@ -42,6 +42,22 @@ interface WeeklyOpsStats {
   violations: number;
 }
 
+interface CliOptions {
+  dryRun: boolean;
+  json: boolean;
+}
+
+function parseArgs(argv: string[]): CliOptions {
+  return {
+    dryRun: argv.includes("--dry-run") || process.env.DARWIN_WEEKLY_OPS_DRY_RUN === "1",
+    json: argv.includes("--json") || process.env.DARWIN_WEEKLY_OPS_JSON === "1",
+  };
+}
+
+function log(options: CliOptions, message: string): void {
+  if (!options.json) console.log(message);
+}
+
 async function collectStats(): Promise<WeeklyOpsStats> {
   const [cycleRows, registryRows, violationRows] = await Promise.allSettled([
     query(`
@@ -105,8 +121,8 @@ async function collectStats(): Promise<WeeklyOpsStats> {
   };
 }
 
-async function main(): Promise<void> {
-  console.log("[darwin-weekly-ops-report] 주간 운영 리포트 수집 시작");
+async function main(options: CliOptions = parseArgs(process.argv.slice(2))): Promise<void> {
+  log(options, "[darwin-weekly-ops-report] 주간 운영 리포트 수집 시작");
   const stats = await collectStats();
 
   const msg = `
@@ -124,13 +140,29 @@ async function main(): Promise<void> {
 ⚠️ 지난 7일 원칙 위반: ${stats.violations}회
 `.trim();
 
-  await postAlarm({
+  const payload = {
     message: msg,
     team: "darwin",
     fromBot: "darwin-weekly-ops",
     alertLevel: 2,
-  });
-  console.log("[darwin-weekly-ops-report] 발송 완료");
+  };
+
+  if (!options.dryRun) {
+    await postAlarm(payload);
+    log(options, "[darwin-weekly-ops-report] 발송 완료");
+  } else {
+    log(options, "[darwin-weekly-ops-report][dry-run] 실제 알림 발송 생략");
+  }
+
+  if (options.json) {
+    console.log(JSON.stringify({
+      ok: true,
+      dryRun: options.dryRun,
+      stats,
+      payload,
+      alarmSent: !options.dryRun,
+    }, null, 2));
+  }
 }
 
 if (require.main === module) {

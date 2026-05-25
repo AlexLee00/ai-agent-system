@@ -2,7 +2,7 @@ defmodule Mix.Tasks.Blog.Phase3.Feedback do
   use Mix.Task
 
   @shortdoc "블로그팀 Phase 3 피드백 다이제스트를 출력합니다"
-  @requirements ["app.start"]
+  @requirements ["app.config"]
 
   @moduledoc """
   블로그팀 Elixir 리모델링 Phase 3용 피드백 신호를 한 번에 묶어
@@ -18,6 +18,8 @@ defmodule Mix.Tasks.Blog.Phase3.Feedback do
 
   @impl Mix.Task
   def run(args) do
+    TeamJay.Blog.ReadOnlyRuntime.start!()
+
     digest = FeedbackDigest.build()
 
     if "--json" in args do

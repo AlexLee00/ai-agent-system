@@ -408,6 +408,6 @@ defmodule Darwin.V2.CodebaseAnalyzer do
   end
 
   defp enabled? do
-    System.get_env("DARWIN_CODEBASE_ANALYZER_ENABLED") == "true"
+    Darwin.V2.Config.codebase_analyzer_enabled?()
   end
 end
