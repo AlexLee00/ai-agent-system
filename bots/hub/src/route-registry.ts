@@ -126,6 +126,8 @@ type HubRouteOptions = {
   isStartupComplete: RuntimeFlag;
   authMiddleware: RequestHandler;
   generalLimiter: RequestHandler;
+  alarmLimiter: RequestHandler;
+  eventsLimiter: RequestHandler;
   pgLimiter: RequestHandler;
   secretsLimiter: RequestHandler;
   llmLimiter: RequestHandler;
@@ -138,6 +140,8 @@ export function registerHubRoutes(app: Express, opts: HubRouteOptions): void {
     isStartupComplete,
     authMiddleware,
     generalLimiter,
+    alarmLimiter,
+    eventsLimiter,
     pgLimiter,
     secretsLimiter,
     llmLimiter,
@@ -179,14 +183,14 @@ export function registerHubRoutes(app: Express, opts: HubRouteOptions): void {
   app.patch('/hub/tasks/:id', generalLimiter, tasksPatchRoute);
 
   app.post('/hub/pg/query', pgLimiter, pgQueryRoute);
-  app.post('/hub/alarm', generalLimiter, alarmRoute);
-  app.get('/hub/alarm/noisy-producers', generalLimiter, alarmNoisyProducersRoute);
-  app.post('/hub/alarm/suppress/dry-run', generalLimiter, alarmSuppressDryRunRoute);
-  app.post('/hub/alarm/digest/flush', generalLimiter, alarmDigestFlushRoute);
-  app.post('/hub/alarm/auto-repair/callback', generalLimiter, alarmAutoRepairCallbackRoute);
-  app.get('/hub/alarm/readiness', generalLimiter, alarmReadinessRoute);
-  app.get('/hub/alarm/suppression/proposals', generalLimiter, alarmSuppressionProposalsRoute);
-  app.post('/hub/alarm/suppression/apply', generalLimiter, alarmSuppressionApplyRoute);
+  app.post('/hub/alarm', alarmLimiter, alarmRoute);
+  app.get('/hub/alarm/noisy-producers', alarmLimiter, alarmNoisyProducersRoute);
+  app.post('/hub/alarm/suppress/dry-run', alarmLimiter, alarmSuppressDryRunRoute);
+  app.post('/hub/alarm/digest/flush', alarmLimiter, alarmDigestFlushRoute);
+  app.post('/hub/alarm/auto-repair/callback', alarmLimiter, alarmAutoRepairCallbackRoute);
+  app.get('/hub/alarm/readiness', alarmLimiter, alarmReadinessRoute);
+  app.get('/hub/alarm/suppression/proposals', alarmLimiter, alarmSuppressionProposalsRoute);
+  app.post('/hub/alarm/suppression/apply', alarmLimiter, alarmSuppressionApplyRoute);
   app.post('/hub/n8n/webhook/:path', generalLimiter, n8nWebhookRoute);
   app.get('/hub/n8n/health', generalLimiter, n8nHealthRoute);
   app.get('/hub/n8n/workflows', generalLimiter, n8nWorkflowsRoute);
@@ -195,17 +199,17 @@ export function registerHubRoutes(app: Express, opts: HubRouteOptions): void {
   app.get('/hub/env', generalLimiter, envRoute);
   app.get('/hub/errors/recent', generalLimiter, errorsRecentRoute);
   app.get('/hub/errors/summary', generalLimiter, errorsSummaryRoute);
-  app.get('/hub/events/search', generalLimiter, eventsSearchRoute);
-  app.post('/hub/events/publish', generalLimiter, eventsPublishRoute);
-  app.post('/events/publish', authMiddleware, generalLimiter, eventsPublishRoute);
-  app.get('/hub/events/commands', generalLimiter, commandEventsRecentRoute);
-  app.get('/hub/events/commands/summary', generalLimiter, commandEventsSummaryRoute);
-  app.get('/hub/events/commands/stuck', generalLimiter, commandEventsStuckRoute);
-  app.get('/hub/events/commands/failed', generalLimiter, commandEventsFailedRoute);
-  app.get('/hub/events/commands/inbox', generalLimiter, commandEventsInboxRoute);
-  app.post('/hub/events/commands/lifecycle', generalLimiter, commandEventsLifecycleRoute);
-  app.get('/hub/events/stats', generalLimiter, eventsStatsRoute);
-  app.post('/hub/events/feedback', generalLimiter, eventsFeedbackRoute);
+  app.get('/hub/events/search', eventsLimiter, eventsSearchRoute);
+  app.post('/hub/events/publish', eventsLimiter, eventsPublishRoute);
+  app.post('/events/publish', authMiddleware, eventsLimiter, eventsPublishRoute);
+  app.get('/hub/events/commands', eventsLimiter, commandEventsRecentRoute);
+  app.get('/hub/events/commands/summary', eventsLimiter, commandEventsSummaryRoute);
+  app.get('/hub/events/commands/stuck', eventsLimiter, commandEventsStuckRoute);
+  app.get('/hub/events/commands/failed', eventsLimiter, commandEventsFailedRoute);
+  app.get('/hub/events/commands/inbox', eventsLimiter, commandEventsInboxRoute);
+  app.post('/hub/events/commands/lifecycle', eventsLimiter, commandEventsLifecycleRoute);
+  app.get('/hub/events/stats', eventsLimiter, eventsStatsRoute);
+  app.post('/hub/events/feedback', eventsLimiter, eventsFeedbackRoute);
   app.get('/hub/logs/search', generalLimiter, logsSearchRoute);
   app.get('/hub/logs/stats', generalLimiter, logsStatsRoute);
   app.post('/hub/darwin/callback', generalLimiter, darwinCallbackRoute);

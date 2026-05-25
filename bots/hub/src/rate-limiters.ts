@@ -7,22 +7,41 @@ const rateLimit = rateLimitModule.default || rateLimitModule;
 
 type HubRateLimiters = {
   generalLimiter: RequestHandler;
+  alarmLimiter: RequestHandler;
+  eventsLimiter: RequestHandler;
   pgLimiter: RequestHandler;
   secretsLimiter: RequestHandler;
   llmLimiter: RequestHandler;
 };
 
 function createHubRateLimiters(): HubRateLimiters {
+  const generalRateLimitPerMinute = parsePositiveIntEnv('HUB_GENERAL_RATE_LIMIT_PER_MIN', 200);
+  const alarmRateLimitPerMinute = parsePositiveIntEnv('HUB_ALARM_RATE_LIMIT_PER_MIN', 900);
+  const eventsRateLimitPerMinute = parsePositiveIntEnv('HUB_EVENTS_RATE_LIMIT_PER_MIN', 2400);
   const secretsRateLimitPerMinute = parsePositiveIntEnv('HUB_SECRETS_RATE_LIMIT_PER_MIN', 240);
   const llmRateLimitPerMinute = parsePositiveIntEnv('HUB_LLM_RATE_LIMIT_PER_MIN', 120);
 
   return {
     generalLimiter: rateLimit({
       windowMs: 60 * 1000,
-      max: 200,
+      max: generalRateLimitPerMinute,
       standardHeaders: true,
       legacyHeaders: false,
-      message: { error: 'rate limit exceeded (200/min)' },
+      message: { error: `rate limit exceeded (${generalRateLimitPerMinute}/min)` },
+    }),
+    alarmLimiter: rateLimit({
+      windowMs: 60 * 1000,
+      max: alarmRateLimitPerMinute,
+      standardHeaders: true,
+      legacyHeaders: false,
+      message: { error: `alarm rate limit exceeded (${alarmRateLimitPerMinute}/min)` },
+    }),
+    eventsLimiter: rateLimit({
+      windowMs: 60 * 1000,
+      max: eventsRateLimitPerMinute,
+      standardHeaders: true,
+      legacyHeaders: false,
+      message: { error: `events rate limit exceeded (${eventsRateLimitPerMinute}/min)` },
     }),
     pgLimiter: rateLimit({
       windowMs: 60 * 1000,

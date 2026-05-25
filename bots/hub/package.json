@@ -132,6 +132,7 @@
     "hub:stage-d-backup": "tsx scripts/hub-stage-d-daily-backup.ts",
     "hub:stage-d-restore-drill": "tsx scripts/hub-stage-d-restore-drill.ts",
     "hub:stage-d-live-chaos": "tsx scripts/hub-stage-d-live-chaos.ts",
+    "hub:log-rotate": "tsx scripts/hub-log-rotate.ts",
     "hub:bg-status": "tsx scripts/hub-blue-green-deploy.ts status",
     "hub:bg-deploy": "tsx scripts/hub-blue-green-deploy.ts deploy",
     "hub:bg-switch": "tsx scripts/hub-blue-green-deploy.ts switch",

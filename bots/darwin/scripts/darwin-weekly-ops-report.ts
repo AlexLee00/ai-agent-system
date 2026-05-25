@@ -375,10 +375,26 @@ async function main(options: CliOptions = parseArgs(process.argv.slice(2))): Pro
     team: "darwin",
     fromBot: "darwin-weekly-ops",
     alertLevel: 2,
+    alarmType: "report",
+    visibility: "digest",
+    actionability: "none",
+    eventType: "darwin_weekly_ops_report",
+    incidentKey: `darwin:weekly-ops:${new Date().toISOString().slice(0, 10)}`,
+    title: "다윈 주간 운영 리포트",
   };
 
   if (!options.dryRun) {
-    await postAlarm(payload);
+    await postAlarm({
+      ...payload,
+      message: payload.message,
+      team: payload.team,
+      fromBot: payload.fromBot,
+      alertLevel: payload.alertLevel,
+      alarmType: payload.alarmType,
+      visibility: payload.visibility,
+      eventType: payload.eventType,
+      incidentKey: payload.incidentKey,
+    });
     log(options, "[darwin-weekly-ops-report] 발송 완료");
   } else {
     log(options, "[darwin-weekly-ops-report][dry-run] 실제 알림 발송 생략");

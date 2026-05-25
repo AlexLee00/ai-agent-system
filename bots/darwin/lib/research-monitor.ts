@@ -119,7 +119,17 @@ async function postMonitorAlarmWithRetry(payload: AlarmPayload, maxAttempts = 3)
   let lastError = 'not_delivered';
   for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
     try {
-      const result = await postAlarm(payload) as { ok?: boolean; error?: unknown; body?: Record<string, unknown> } | null;
+      const result = await postAlarm({
+        ...payload,
+        message: payload.message,
+        team: payload.team,
+        fromBot: payload.fromBot,
+        alertLevel: payload.alertLevel,
+        alarmType: payload.alarmType,
+        visibility: payload.visibility,
+        eventType: payload.eventType,
+        incidentKey: payload.incidentKey,
+      }) as { ok?: boolean; error?: unknown; body?: Record<string, unknown> } | null;
       if (result?.ok === true) return true;
       lastError = String(
         result?.error

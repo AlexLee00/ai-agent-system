@@ -38,6 +38,8 @@ export function createHubApp(options: HubAppOptions = {}): Express {
 
   const {
     generalLimiter,
+    alarmLimiter,
+    eventsLimiter,
     pgLimiter,
     secretsLimiter,
     llmLimiter,
@@ -48,6 +50,8 @@ export function createHubApp(options: HubAppOptions = {}): Express {
     isStartupComplete,
     authMiddleware,
     generalLimiter,
+    alarmLimiter,
+    eventsLimiter,
     pgLimiter,
     secretsLimiter,
     llmLimiter,
