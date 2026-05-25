@@ -128,6 +128,28 @@ function applyExternalEvidenceFeatures({
   }
 }
 
+function applyPhaseAFeatures({ exchange = 'binance', phaseAEvidence = null, influenceMode = 'diagnostic', scores, reasons }) {
+  if (!phaseAEvidence || phaseAEvidence.shadowOnly !== true || influenceMode !== 'shadow_bias') return;
+  const strategyBias = phaseAEvidence.strategy?.bias || {};
+  for (const [family, value] of Object.entries(strategyBias)) {
+    if (scores[family] != null && Number.isFinite(Number(value))) {
+      add(scores, family, clamp(Number(value), -0.16, 0.16), 'Phase A shadow analysis/prediction bias', reasons);
+    }
+  }
+  const predictiveScore = Number(phaseAEvidence.predictiveScore);
+  if (Number.isFinite(predictiveScore)) {
+    if (predictiveScore >= 0.62) {
+      add(scores, exchange === 'binance' ? 'momentum_rotation' : 'equity_swing', 0.04, 'Phase A predictive score strong', reasons);
+    } else if (predictiveScore < 0.42) {
+      add(scores, 'defensive_rotation', 0.05, 'Phase A predictive score weak', reasons);
+    }
+  }
+  const positionSizeFactor = Number(phaseAEvidence.positionSizeFactor);
+  if (Number.isFinite(positionSizeFactor) && positionSizeFactor < 0.65) {
+    add(scores, 'defensive_rotation', 0.05, 'Phase A GARCH volatility size dampener', reasons);
+  }
+}
+
 function applyAnalystFeatures({ analyses = [], exchange = 'binance', scores, reasons }) {
   const byType = new Map();
   for (const item of analyses || []) {
@@ -264,6 +286,8 @@ export async function buildStrategyRoute({
   analyses = [],
   fused = null,
   marketRegime = null,
+  phaseAEvidence = null,
+  phaseAInfluence = 'diagnostic',
   argosStrategy = null,
   decision = null,
 } = {}) {
@@ -288,6 +312,7 @@ export async function buildStrategyRoute({
     scores,
     reasons,
   });
+  applyPhaseAFeatures({ exchange, phaseAEvidence, influenceMode: phaseAInfluence, scores, reasons });
 
   const argosSetup = normalizeSetupType(argosStrategy?.setup_type || argosStrategy?.strategy_name || argosStrategy?.summary, exchange);
   if (argosSetup && scores[argosSetup] != null) {
@@ -371,6 +396,16 @@ export async function buildStrategyRoute({
       signals: externalEvidenceSummary.signals || { bullish: 0, bearish: 0, neutral: 0 },
       warning: externalEvidenceSummary.warning || null,
     } : null,
+    phaseA: phaseAEvidence ? {
+      status: phaseAEvidence.status || null,
+      predictiveScore: phaseAEvidence.predictiveScore ?? null,
+      positionSizeFactor: phaseAEvidence.positionSizeFactor ?? null,
+      currentRegime: phaseAEvidence.modules?.hmm?.currentRegime || null,
+      sentiment: phaseAEvidence.modules?.finbert?.aggregate?.sentiment || null,
+      worldquantSignal: phaseAEvidence.modules?.worldquant?.signal || null,
+      shadowOnly: phaseAEvidence.shadowOnly === true,
+      influenceMode: phaseAInfluence,
+    } : null,
     familyPerformance: {
       bias: familyFeedback.bias,
       notes: familyFeedback.notes,
@@ -439,6 +474,10 @@ export function applyStrategyRouteDecisionBias(decision = null, route = null, ex
     else if (quality === 'watch') amount *= 0.9;
     if (family === 'defensive_rotation') amount *= 0.82;
     if (familyPerformanceBias < 0) amount *= familyPerformanceBias <= -0.14 ? 0.72 : 0.84;
+    const phaseASizeFactor = Number(route.phaseA?.positionSizeFactor);
+    if (route.phaseA?.influenceMode === 'shadow_bias' && Number.isFinite(phaseASizeFactor) && phaseASizeFactor > 0 && phaseASizeFactor < 1) {
+      amount *= Math.max(0.25, phaseASizeFactor);
+    }
     if ((exchange === 'kis' || exchange === 'kis_overseas') && amount > 0) {
       amount = Math.round(amount / 1000) * 1000;
     }
