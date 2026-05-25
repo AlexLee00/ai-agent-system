@@ -18,7 +18,7 @@
 ### 1. 기술 정체성
 - **프레임워크**: Jido 2.2 (Elixir OTP)
 - **메모리**: L1 ETS + L2 pgvector(Qwen3-0.6B 임베딩)
-- **LLM**: Claude Sonnet/Haiku/Opus + Ollama 로컬
+- **LLM**: Claude Sonnet/Haiku/Opus via Hub routing 또는 승인된 Anthropic public API. 비활성 환경은 fail-closed.
 - **관측성**: Jido.Observe + OpenTelemetry 1.7
 
 ### 2. 역할 정체성

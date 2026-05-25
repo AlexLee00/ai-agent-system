@@ -78,7 +78,7 @@ Phoenix 미사용 환경에 맞춰 **Plug + Bandit** 채택:
 
 | KPI | Phase 0 시작 | Phase 5 목표 | 현황 |
 |-----|-------------|-------------|------|
-| 마스터 개입 | 5~10회/일 | 0.5회/일 | Shadow Mode 완료 후 검증 예정 |
+| 마스터 개입 | 5~10회/일 | 0.5회/일 | 7일 관측 gate ready, 실제 외부 실행은 승인 후 |
 | 피드백 효과 발현 | 7일 | 24h | E-SPL 4세대 목표 |
 | 자동 롤백 성공률 | N/A | >99% | Phase 4 Reflexion 기반 |
 | Reflexion 노트 | 0 | 10~20건/일 | Phase 4 구현 |
@@ -110,12 +110,12 @@ SIGMA_V2_ENDPOINT=http://localhost:4000/sigma/v2  # TS adapter용
 
 ---
 
-## 잔여 사항
+## 현재 운영 검증 상태
 
-- `mix deps.get` 실행 필요 (Plug + Bandit 신규 의존성)
-- `mix ecto.migrate` 실행 필요 (Phase 1 마이그레이션)
-- OPS 배포 후 SIGMA_MCP_TOKEN 환경변수 설정 필요
-- E2E 테스트: `mix test --only e2e` 로 독립 실행 가능
+- `mix test`는 `bots/sigma/elixir` 진입점에서 TeamJay 앱을 기동하지 않는 safe test env로 실행된다.
+- Library data/observation/autonomous/full smoke는 dry-run 또는 smoke 경로로 검증한다.
+- Autonomous gate 기준: final activation 19/19, protected labels 6/6, 7-day observation ready, hard blockers 0.
+- MCP runtime smoke는 로컬 런타임이 떠 있을 때만 health/tool/auth/audit를 확인한다. launchd 재시작과 secret 변경은 마스터 승인 전 실행하지 않는다.
 
 ---
 

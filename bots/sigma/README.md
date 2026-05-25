@@ -75,8 +75,9 @@ bots/sigma/
 - ✅ Phase 0~5 코덱스 구현 완료
 - ✅ `bots/sigma/` 물리적 분리 완료 (2026-04-17)
 - ✅ `bots/sigma/elixir` 독립 Mix 진입점 복구
-- 🔶 LLM Selector 모듈 구현 대기 (Phase 1.5 후속)
-- 🔶 루나팀 표준 정비 중 (LUNA_ALIGN 진행)
+- ✅ LLM Selector / Hub routing / 비용 fail-closed 테스트 경로 구현
+- ✅ Autonomous operation gate ready: final activation 19/19, protected labels 6/6, 7-day observation ready
+- 🔶 실제 외부 실행·전송·secret/launchd 변경은 마스터 승인 후 별도 수행
 
 ## 관련 문서
 

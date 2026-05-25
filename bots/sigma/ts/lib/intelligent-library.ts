@@ -505,6 +505,7 @@ export function createDashboardSummary(input: {
   texts?: string[];
   signals?: SelfImprovementSignal[];
   env?: SigmaLibraryEnv;
+  generatedAt?: string;
 } = {}): DashboardSummary {
   const envProvided = input.env != null;
   const env = input.env ?? process.env as SigmaLibraryEnv;
@@ -521,7 +522,7 @@ export function createDashboardSummary(input: {
   return {
     ok: blockers.length === 0,
     status: blockers.length === 0 ? 'sigma_library_contract_ready' : 'sigma_library_contract_blocked',
-    generatedAt: new Date(0).toISOString(),
+    generatedAt: input.generatedAt ?? new Date().toISOString(),
     teams: SIGMA_TEAMS.length,
     datasets: datasets.length,
     graph: {

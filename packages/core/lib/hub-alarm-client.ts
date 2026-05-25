@@ -25,6 +25,10 @@ const HUB_ALARM_WARN_THROTTLE_MS = Math.max(
   1000,
   Number(process.env.HUB_ALARM_WARN_THROTTLE_MS || 60_000) || 60_000,
 );
+const HUB_ALARM_RATE_LIMIT_RETRY_AFTER_MS = Math.max(
+  1000,
+  Number(process.env.HUB_ALARM_RATE_LIMIT_RETRY_AFTER_MS || 60_000) || 60_000,
+);
 const STORE_PATH = path.join(env.PROJECT_ROOT, 'bots', 'hub', 'secrets-store.json');
 const TELEGRAM_RETRY_ATTEMPTS = 2;
 const RECENT_ALERT_SNAPSHOT_PATH = String(process.env.HUB_ALARM_RECENT_ALERTS_PATH || '').trim()
@@ -208,6 +212,32 @@ function _resolveTelegramRetryDelayMs(res: Response | null, body: any, fallbackM
   if (Number.isFinite(retryAfterSec) && retryAfterSec > 0) {
     return Math.max(1000, retryAfterSec * 1000);
   }
+  return fallbackMs;
+}
+
+function _resolveHttpRetryDelayMs(res: Response | null, body: any, fallbackMs = HUB_ALARM_RATE_LIMIT_RETRY_AFTER_MS): number {
+  const bodyMs = Number(body?.retryAfterMs ?? body?.retry_after_ms ?? 0);
+  if (Number.isFinite(bodyMs) && bodyMs > 0) {
+    return Math.max(1, Math.trunc(bodyMs));
+  }
+
+  const bodySec = Number(body?.retryAfter ?? body?.retry_after ?? 0);
+  if (Number.isFinite(bodySec) && bodySec > 0) {
+    return Math.max(1000, Math.trunc(bodySec * 1000));
+  }
+
+  const retryAfter = String(res?.headers?.get('retry-after') || '').trim();
+  if (retryAfter) {
+    const retryAfterSec = Number(retryAfter);
+    if (Number.isFinite(retryAfterSec) && retryAfterSec > 0) {
+      return Math.max(1000, Math.trunc(retryAfterSec * 1000));
+    }
+    const retryAfterDate = Date.parse(retryAfter);
+    if (Number.isFinite(retryAfterDate)) {
+      return Math.max(1000, retryAfterDate - Date.now());
+    }
+  }
+
   return fallbackMs;
 }
 
@@ -646,12 +676,17 @@ async function _postAlarmViaHub({
     const error = !accepted
       ? (body?.reason || body?.delivery_error || body?.error || 'hub_alarm_not_delivered')
       : null;
+    const retryAfterMs = response.status === 429
+      ? _resolveHttpRetryDelayMs(response, body)
+      : undefined;
     return {
       ok: accepted,
       status: response.status,
       body,
       source: 'hub_alarm',
       error: response.ok ? error : (body?.error || `hub_alarm_http_${response.status}`),
+      retryable: response.status === 429 ? true : undefined,
+      retryAfterMs,
     };
   } catch (error) {
     const err = error as ExecError;
@@ -863,9 +898,12 @@ export async function postAlarm({
   }
   return {
     ok: false,
+    status: hubResult?.status,
     source: 'hub_alarm',
     error: hubResult?.error || 'hub_alarm_not_delivered',
     fallback: 'disabled',
+    retryable: hubResult?.retryable,
+    retryAfterMs: hubResult?.retryAfterMs,
   };
 }
 

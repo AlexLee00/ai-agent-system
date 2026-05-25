@@ -25,17 +25,11 @@
 - **모델**: Claude Opus 4.7 / Sonnet 4.6 / Haiku 4.5
 - **용도**: Commander(Sonnet), Skill 고품질(Sonnet), Self-Critique(Opus), 경량(Haiku)
 
-### Ollama 로컬 (Apple Silicon Metal)
-- **속도 티어**:
-  - 8B (실시간, <1초): `qwen2.5-coder:7b-instruct-q4_K_M`
-  - 14B (준실시간, 3초): `qwen2.5:14b-instruct-q4_K_M`
-  - 32B (배치, 10초): `qwen2.5:32b-instruct-q4_K_M`
-  - 70B 4-bit (대용량 배치): `llama3.3:70b-instruct-q4_K_M`
-
-### LLM Selector (Phase 1.5 대기 중)
+### LLM Selector (구현 완료)
 - **위치**: `bots/sigma/shared/llm-client.ts` + `elixir/lib/sigma/v2/llm/selector.ex`
-- **정책**: `packages/core/lib/llm-model-selector.js` 의 `sigma.agent_policy`
-- **참고**: `bots/investment/shared/llm-client.ts` (706줄) 패턴
+- **정책**: `bots/sigma/elixir/lib/sigma/v2/llm/policy.ex`
+- **라우팅**: Hub routing/shadow 또는 승인된 Anthropic public API가 없으면 fail-closed
+- **금지**: v2 LLM 정책에 Ollama route/fallback 추가 금지
 
 ## 3. 데이터 계층
 
@@ -128,7 +122,7 @@
 ## 10. 금지 도구 (신중 사용)
 
 - ❌ **Ecto ORM** — 시그마 규모에 과도. Postgrex 직접 사용.
-- ❌ **vLLM** — Apple Silicon 호환 미흡. Ollama만 사용.
+- ❌ **vLLM** — Apple Silicon 호환 미흡. 시그마 v2 LLM 경로는 Hub/Claude 정책으로 통일.
 - ❌ **ChromaDB** — pgvector로 통합. 별도 벡터 DB 없음.
 - ⚠️ **CloudEvents 패키지** — 별도 설치 불필요. jido_signal에 내장.
 

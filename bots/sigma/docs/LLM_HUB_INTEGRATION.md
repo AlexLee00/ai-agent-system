@@ -21,11 +21,15 @@ Sigma 에이전트
 ## 환경변수
 
 ```bash
-LLM_HUB_ROUTING_ENABLED=false   # true = Hub 경유 (기본 false = 직접 Anthropic)
-LLM_HUB_ROUTING_SHADOW=true     # true = 양쪽 병렬 실행 (결과는 직접 호출 반환)
+LLM_HUB_ROUTING_ENABLED=false   # true = Hub 경유
+LLM_HUB_ROUTING_SHADOW=true     # true = Hub shadow 경로 활성
+HUB_ENABLE_CLAUDE_PUBLIC_API=false      # true일 때만 직접 Anthropic public API 허용
+HUB_ENABLE_ANTHROPIC_PUBLIC_API=false   # 위와 동일한 public API 허용 플래그
 HUB_BASE_URL=http://localhost:7788
 HUB_AUTH_TOKEN=<토큰>
 ```
+
+Hub routing/shadow와 public API 허용 플래그가 모두 꺼져 있으면 Selector는 외부 호출을 시도하지 않고 `:llm_routing_unavailable`로 fail-closed 한다.
 
 ## 단계적 활성화
 

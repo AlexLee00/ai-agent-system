@@ -45,7 +45,7 @@ pre-commit 훅이 차단. 우회 금지.
 | 3 | ✅ 완료 | config snapshot + rollback + reflexion |
 | 4 | ✅ 완료 | ESPL + registry + mailbox |
 | 5 | ✅ 완료 | TS 폐기 + MCP Server + 다윈 분리 |
-| 1.5 | 🔶 대기 | **LLM Selector** 모듈 (본 문서 §5) |
+| 1.5 | ✅ 완료 | **LLM Selector** + Hub routing + 비용 fail-closed 검증 완료 |
 
 ## 4. 코드 작성 표준
 
@@ -60,42 +60,36 @@ pre-commit 훅이 차단. 우회 금지.
 - ESM import/export (`import { x } from './y.ts'`)
 - 루나 `bots/investment/shared/llm-client.ts` 패턴 참고
 
-## 5. LLM Selector 작업 시 (Phase 1.5)
+## 5. LLM Selector 운영 기준
 
-### 참조 파일
-1. `bots/investment/shared/llm-client.ts` (706줄) — 패턴 원본
-2. `bots/investment/shared/llm.ts` (21줄) — 하위호환 래퍼
-3. `packages/core/lib/llm-model-selector.js` — 중앙 레지스트리
-4. `packages/core/lib/llm-fallback.js` — 폴백 체인
-5. `packages/core/lib/agent-registry.js` — 에이전트 정책
+### 주요 파일
+1. `bots/sigma/elixir/lib/sigma/v2/llm/selector.ex` — 공용 LLM selector 위임
+2. `bots/sigma/elixir/lib/sigma/v2/llm/policy.ex` — 시그마 에이전트 라우팅 정책
+3. `bots/sigma/elixir/lib/sigma/v2/llm/cost_tracker.ex` — 비용 추적 및 예산 fail-closed
+4. `bots/sigma/elixir/test/sigma/v2/llm*_test.exs` — API 키 없음/예산 초과/Ollama 제거 회귀 테스트
+5. `bots/sigma/shared/llm-client.ts` — TS 호환 LLM 게이트웨이
 
-### 만들어야 할 파일
-- `bots/sigma/shared/llm-client.ts` — 시그마 LLM 게이트웨이
-- `bots/sigma/shared/llm.ts` — callHaiku/callSonnet/callOpus 어댑터
-- `bots/sigma/shared/cost-tracker.ts` — 비용 추적
-- `bots/sigma/shared/secrets.ts` — 시크릿 로더
-- `bots/sigma/elixir/lib/sigma/v2/llm/selector.ex` — Elixir Selector
-- `bots/sigma/elixir/lib/sigma/v2/llm/cost_tracker.ex` — Elixir 비용 추적
+### 운영 원칙
+- Hub routing/shadow 또는 승인된 Anthropic public API가 없으면 `:llm_routing_unavailable`로 fail-closed.
+- 예산 값이 0 이하이거나 비용 집계 DB 조회가 실패하면 `:budget_exceeded`로 fail-closed.
+- 현재 v2 정책에는 Ollama route/fallback을 넣지 않는다. 로컬 모델은 legacy/별도 임베딩 경로와 혼동하지 않는다.
 
-### 수정해야 할 파일
-- `packages/core/lib/llm-model-selector.js` — `sigma.agent_policy` 키 추가
-
-### 시그마 LLM 정책 (기본값)
+### 시그마 LLM 정책 (현재값)
 
 ```yaml
 sigma.agent_policy:
-  commander:       { route: anthropic_sonnet, fallback: [haiku, ollama_32b] }
-  pod.risk:        { route: anthropic_sonnet, fallback: [haiku, ollama_32b] }
-  pod.growth:      { route: anthropic_haiku,  fallback: [ollama_14b] }
-  pod.trend:       { route: anthropic_haiku,  fallback: [ollama_14b] }
-  skill.data_quality:      { route: ollama_8b,      fallback: [haiku] }
-  skill.causal:            { route: anthropic_sonnet, fallback: [haiku] }
-  skill.experiment_design: { route: anthropic_sonnet, fallback: [haiku] }
-  skill.feature_planner:   { route: anthropic_haiku,  fallback: [ollama_14b] }
-  skill.observability:     { route: anthropic_haiku,  fallback: [ollama_14b] }
-  principle.self_critique: { route: anthropic_opus,  fallback: [sonnet] }
-  reflexion:               { route: anthropic_sonnet, fallback: [haiku] }
-  espl:                    { route: anthropic_sonnet, fallback: [haiku] }
+  commander:       { route: anthropic_sonnet, fallback: [anthropic_haiku] }
+  pod.risk:        { route: anthropic_sonnet, fallback: [anthropic_haiku] }
+  pod.growth:      { route: anthropic_haiku,  fallback: [] }
+  pod.trend:       { route: anthropic_haiku,  fallback: [] }
+  skill.data_quality:      { route: anthropic_haiku,  fallback: [] }
+  skill.causal:            { route: anthropic_sonnet, fallback: [anthropic_haiku] }
+  skill.experiment_design: { route: anthropic_sonnet, fallback: [anthropic_haiku] }
+  skill.feature_planner:   { route: anthropic_haiku,  fallback: [] }
+  skill.observability:     { route: anthropic_haiku,  fallback: [] }
+  principle.self_critique: { route: anthropic_opus,   fallback: [anthropic_sonnet] }
+  reflexion:               { route: anthropic_sonnet, fallback: [anthropic_haiku] }
+  espl:                    { route: anthropic_sonnet, fallback: [anthropic_haiku] }
 ```
 
 ## 6. 문서 참조 우선순위

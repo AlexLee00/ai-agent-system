@@ -1,13 +1,13 @@
 {
   "ok": true,
   "status": "sigma_library_contract_ready",
-  "generatedAt": "1970-01-01T00:00:00.000Z",
+  "generatedAt": "2026-05-25T04:47:09.130Z",
   "teams": 9,
   "datasets": 18,
   "graph": {
-    "nodes": 35,
-    "edges": 33,
-    "backlinks": 33
+    "nodes": 430,
+    "edges": 572,
+    "backlinks": 572
   },
   "memoryCoverage": [
     {
@@ -355,5 +355,37 @@
     }
   ],
   "warnings": [],
-  "blockers": []
+  "blockers": [],
+  "realMetrics": {
+    "source": {
+      "total": 203,
+      "bySource": {
+        "mcp_usage": 15,
+        "hub_alarm": 80,
+        "dpo_preference": 21,
+        "sigma_directive": 73,
+        "agent_message": 8,
+        "luna_reflexion": 6
+      },
+      "byTeam": {
+        "sigma": 55,
+        "blog": 42,
+        "claude": 25,
+        "darwin": 16,
+        "jay": 15,
+        "luna": 27,
+        "ska": 21,
+        "justin": 2
+      },
+      "redacted": 12,
+      "constitutionBlocked": 0
+    },
+    "persistence": {
+      "entityRelationships": 895,
+      "dataLineage": 798,
+      "datasetSnapshots": 36,
+      "warnings": []
+    }
+  },
+  "sourceWarnings": []
 }

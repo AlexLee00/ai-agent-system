@@ -274,6 +274,51 @@ async function runExplicitReportContractCase(tempWorkspace) {
   assert(calls[0].body.payload.event_type === 'darwin_weekly_research_report', 'expected payload event_type to match explicit eventType');
 }
 
+async function runHubRateLimitMetadataCase(tempWorkspace) {
+  resetEnv(tempWorkspace);
+  resetClientModule();
+  const calls = [];
+  global.fetch = async (url, init = {}) => {
+    const normalizedUrl = String(url);
+    calls.push({
+      url: normalizedUrl,
+      method: String(init.method || 'GET'),
+      body: init.body ? JSON.parse(String(init.body)) : null,
+    });
+    if (normalizedUrl.endsWith('/hub/alarm')) {
+      return new Response(
+        JSON.stringify({
+          error: 'rate limit exceeded (200/min)',
+        }),
+        {
+          status: 429,
+          headers: {
+            'content-type': 'application/json',
+            'retry-after': '2',
+          },
+        },
+      );
+    }
+    throw new Error(`unexpected fetch url for rate-limit metadata case: ${normalizedUrl}`);
+  };
+
+  const { postAlarm } = require('../../../packages/core/lib/hub-alarm-client.ts');
+  const result = await postAlarm({
+    message: 'rate limit metadata smoke',
+    team: 'sigma',
+    alertLevel: 1,
+    fromBot: 'rate-limit-smoke',
+    payload: { event_type: 'hub_alarm_rate_limit_metadata_smoke' },
+  });
+
+  assert(result && result.ok === false, 'expected rate-limited postAlarm result ok=false');
+  assert(result.error === 'rate limit exceeded (200/min)', `expected rate-limit error, got ${result.error}`);
+  assert(result.fallback === 'disabled', 'expected fallback=disabled for rate-limited hub alarm');
+  assert(result.retryable === true, 'expected retryable=true for Hub 429');
+  assert(result.retryAfterMs === 2000, `expected retryAfterMs=2000, got ${result.retryAfterMs}`);
+  assert(calls.length === 1, `expected 1 hub call, got ${calls.length}`);
+}
+
 async function main() {
   const tempWorkspace = fs.mkdtempSync(path.join(os.tmpdir(), 'legacy-webhook-smoke-'));
   const originalFetch = global.fetch;
@@ -289,6 +334,7 @@ async function main() {
     await runStandardContractFallbackCase(tempWorkspace);
     await runCriticalContractFallbackCase(tempWorkspace);
     await runExplicitReportContractCase(tempWorkspace);
+    await runHubRateLimitMetadataCase(tempWorkspace);
     console.log('hub_postalarm_no_legacy_fallback_smoke_ok');
   } finally {
     global.fetch = originalFetch;

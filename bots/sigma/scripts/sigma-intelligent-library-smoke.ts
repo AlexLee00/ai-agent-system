@@ -93,6 +93,15 @@ assert.equal(dashboard.ok, true);
 assert.equal(dashboard.teams, 9);
 assert.equal(dashboard.datasets, 18);
 assert.ok(dashboard.selfImprovement.skillCandidates >= 2);
+assert.notEqual(dashboard.generatedAt, new Date(0).toISOString());
+assert.equal(new Date(dashboard.generatedAt).toISOString(), dashboard.generatedAt);
+
+const fixedDashboard = createDashboardSummary({
+  texts: ['sigma library graph memory'],
+  signals,
+  generatedAt: '2026-05-25T00:00:00.000Z',
+});
+assert.equal(fixedDashboard.generatedAt, '2026-05-25T00:00:00.000Z');
 
 console.log(JSON.stringify({
   ok: true,
