@@ -11,10 +11,11 @@ const { callHubLlm } = require('../../../packages/core/lib/hub-client');
 const { createLogger } = require('../../../packages/core/lib/central-logger');
 const { postAlarm } = require('../../../packages/core/lib/hub-alarm-client');
 const eventLake = require('../../../packages/core/lib/event-lake');
+const env = require('../../../packages/core/lib/env');
 const proposalStore = require('./proposal-store');
 const autonomyLevel = require('./autonomy-level');
 
-const REPO_ROOT = path.join(__dirname, '../../../..');
+const REPO_ROOT = env.PROJECT_ROOT;
 const ALLOWED_PREFIXES = ['packages/', 'bots/', 'docs/', 'scripts/', 'config/', 'prototypes/'];
 const TEAM_BASE_DIRS = {
   luna: 'bots/investment/experimental',
@@ -495,4 +496,5 @@ ${JSON.stringify(proposal.verification || {})}`,
 module.exports = {
   triggerImplementation,
   _extractFiles,
+  _testOnly_REPO_ROOT: REPO_ROOT,
 };

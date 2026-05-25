@@ -25,6 +25,31 @@ defmodule Darwin.V2.ShadowRunnerTest do
     end
   end
 
+  describe "score parsing + prompt context" do
+    test "소수점과 영어 score 포맷을 파싱한다" do
+      assert ShadowRunner.__test_parse_score("점수: 7.25\n이유: good") == 7.25
+      assert ShadowRunner.__test_parse_score("Score: 8/10") == 8.0
+      assert ShadowRunner.__test_parse_score("9.5/10") == 9.5
+    end
+
+    test "shadow 평가 프롬프트에 title/source 외 context를 포함한다" do
+      prompt =
+        ShadowRunner.__test_build_eval_prompt(%{
+          title: "Agentic retrieval",
+          source: "arxiv",
+          domain: "neuron",
+          summary: "multi-agent retrieval with tool feedback",
+          reason: "V1 saw strong relevance"
+        })
+
+      assert prompt =~ "Agentic retrieval"
+      assert prompt =~ "arxiv"
+      assert prompt =~ "neuron"
+      assert prompt =~ "multi-agent retrieval"
+      assert prompt =~ "V1 saw strong relevance"
+    end
+  end
+
   describe "승격 조건 — 논리 검증" do
     test "7일 미만 → 승격 불가" do
       days = 3

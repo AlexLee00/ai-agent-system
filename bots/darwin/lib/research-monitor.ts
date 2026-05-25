@@ -41,10 +41,16 @@ interface ScanResult {
   stored?: number;
   highRelevance?: number;
   alarmSent?: boolean;
+  alarmFailure?: string;
+  alarmBypassed?: boolean;
   evaluationFailures?: number;
   keywordEvolutionCount?: number;
   proposals?: number;
   verified?: number;
+  weeklySummaryAlarmSent?: boolean;
+  weeklySummaryAlarmFailure?: string;
+  registrySynced?: number;
+  registrySyncFailures?: number;
 }
 
 interface ResearchMetrics {
@@ -57,6 +63,8 @@ interface ResearchMetrics {
   stored: number;
   high_relevance: number;
   alarm_sent: boolean;
+  alarm_failure: string;
+  alarm_bypassed: boolean;
   duration_sec: number;
   evaluation_failures: number;
   relevance_rate: number;
@@ -65,6 +73,10 @@ interface ResearchMetrics {
   proposals_generated: number;
   proposals_verified: number;
   proposal_pass_rate: number;
+  weekly_summary_alarm_sent?: boolean;
+  weekly_summary_alarm_failure?: string;
+  registry_synced?: number;
+  registry_sync_failures?: number;
 }
 
 interface AnomalyRoute {
@@ -149,6 +161,8 @@ function collectMetrics(scanResult: ScanResult, durationMs: number): ResearchMet
     stored,
     high_relevance: highRelevance,
     alarm_sent: scanResult.alarmSent || false,
+    alarm_failure: String(scanResult.alarmFailure || ''),
+    alarm_bypassed: scanResult.alarmBypassed === true,
     duration_sec: Math.round(durationMs / 1000),
     evaluation_failures: evaluationFailures,
     relevance_rate: relevanceRate,
@@ -159,6 +173,10 @@ function collectMetrics(scanResult: ScanResult, durationMs: number): ResearchMet
     proposal_pass_rate: Number(scanResult.proposals || 0) > 0
       ? Math.round((Number(scanResult.verified || 0) / Number(scanResult.proposals || 0)) * 100)
       : 0,
+    weekly_summary_alarm_sent: scanResult.weeklySummaryAlarmSent === true,
+    weekly_summary_alarm_failure: String(scanResult.weeklySummaryAlarmFailure || ''),
+    registry_synced: Number(scanResult.registrySynced || 0),
+    registry_sync_failures: Number(scanResult.registrySyncFailures || 0),
   };
 }
 
@@ -265,8 +283,9 @@ async function checkAnomalies(metrics: ResearchMetrics): Promise<string[]> {
       title: '[다윈 리서치] 키워드 튜닝 필요',
     });
   }
-  if (!metrics.alarm_sent && metrics.high_relevance > 0) {
-    alerts.push('🚨 알림 전달 실패! postAlarm 점검 필요');
+  if (!metrics.alarm_sent && !metrics.alarm_bypassed && metrics.high_relevance > 0) {
+    const alarmFailure = String(metrics.alarm_failure || '').trim();
+    alerts.push(`🚨 알림 전달 실패${alarmFailure ? `: ${alarmFailure}` : ''} — postAlarm 점검 필요`);
     upgradeRoute({
       alertLevel: 3,
       alarmType: 'error',
@@ -275,6 +294,31 @@ async function checkAnomalies(metrics: ResearchMetrics): Promise<string[]> {
       incidentKey: 'claude:research-monitor:delivery-failed',
       eventType: 'research_monitor_delivery_failed',
       title: '[다윈 리서치] 후보 알림 전달 실패',
+    });
+  }
+  if (metrics.weekly_summary_alarm_failure) {
+    alerts.push(`🚨 주간 summary 알림 전달 실패: ${metrics.weekly_summary_alarm_failure}`);
+    upgradeRoute({
+      alertLevel: 3,
+      alarmType: 'error',
+      visibility: 'notify',
+      actionability: 'needs_human',
+      incidentKey: 'claude:research-monitor:weekly-summary-delivery-failed',
+      eventType: 'research_monitor_weekly_summary_delivery_failed',
+      title: '[다윈 리서치] 주간 summary 알림 전달 실패',
+    });
+  }
+  const registrySyncFailures = Number(metrics.registry_sync_failures || 0);
+  if (registrySyncFailures > 0) {
+    alerts.push(`🚨 Research Registry sync 실패 ${registrySyncFailures}건 — 후보 운영 객체 누락 가능`);
+    upgradeRoute({
+      alertLevel: 3,
+      alarmType: 'error',
+      visibility: 'notify',
+      actionability: 'needs_human',
+      incidentKey: 'claude:research-monitor:registry-sync-failed',
+      eventType: 'research_monitor_registry_sync_failed',
+      title: '[다윈 리서치] Registry sync 실패',
     });
   }
   if (metrics.proposals_generated > 0 && metrics.proposal_pass_rate < 30) {

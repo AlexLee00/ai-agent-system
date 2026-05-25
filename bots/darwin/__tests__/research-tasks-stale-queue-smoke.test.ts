@@ -6,7 +6,7 @@ const os = require('os');
 const path = require('path');
 const Module = require('module');
 
-const tasksPath = '/Users/alexlee/projects/ai-agent-system/bots/darwin/lib/research-tasks.ts';
+const tasksPath = path.join(__dirname, '../lib/research-tasks.ts');
 
 type ModuleLoad = (request: string, parent: NodeModule | null, isMain: boolean) => unknown;
 

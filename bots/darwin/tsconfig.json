@@ -12,8 +12,13 @@
   },
   "include": [
     "__tests__/research-monitor-smoke.test.ts",
+    "__tests__/research-scanner-observe-only-smoke.test.ts",
     "__tests__/research-task-runner-smoke.test.ts",
     "__tests__/research-tasks-stale-queue-smoke.test.ts",
+    "__tests__/autonomous-readiness-smoke.test.ts",
+    "__tests__/arxiv-client-rate-limit-smoke.test.ts",
+    "__tests__/auto-apply-root-smoke.test.ts",
+    "__tests__/research-registry-sync-smoke.test.ts",
     "__tests__/weekly-report-dry-run-smoke.test.ts",
     "lib/autonomy-level.ts",
     "lib/proposal-store.ts",
@@ -29,6 +34,7 @@
     "lib/implementor.ts",
     "lib/verifier.ts",
     "scripts/research-task-runner.ts",
+    "scripts/darwin-autonomous-readiness.ts",
     "scripts/darwin-weekly-ops-report.ts",
     "scripts/darwin-weekly-review.ts",
     "src/signal-receiver.ts"

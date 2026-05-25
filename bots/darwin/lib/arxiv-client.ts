@@ -11,6 +11,8 @@ const KEYWORD_DELAY_MS = _readPositiveIntEnv('DARWIN_ARXIV_KEYWORD_DELAY_MS', 1_
 const DOMAIN_DELAY_MS = _readPositiveIntEnv('DARWIN_ARXIV_DOMAIN_DELAY_MS', 1_000, { min: 500, max: 60_000 });
 const MAX_RETRIES = _readPositiveIntEnv('DARWIN_ARXIV_MAX_RETRIES', 2, { min: 0, max: 5 });
 const RETRY_BASE_DELAY_MS = _readPositiveIntEnv('DARWIN_ARXIV_RETRY_BASE_DELAY_MS', 1_000, { min: 500, max: 60_000 });
+const RATE_LIMIT_RETRY_DELAY_MS = _readPositiveIntEnv('DARWIN_ARXIV_RATE_LIMIT_RETRY_DELAY_MS', 15_000, { min: 500, max: 120_000 });
+const GLOBAL_REQUEST_GAP_MS = _readPositiveIntEnv('DARWIN_ARXIV_GLOBAL_REQUEST_GAP_MS', 3_000, { min: 500, max: 60_000 });
 
 type DarwinDomain =
   | 'neuron'
@@ -46,6 +48,9 @@ const DOMAIN_KEYWORDS: Record<DarwinDomain, string[]> = {
   frontier: ['arXiv trending AI 2026', 'latest agent framework', 'MCP protocol agent'],
 };
 
+let _requestSlot: Promise<void> = Promise.resolve();
+let _lastRequestAt = 0;
+
 function _readPositiveIntEnv(name: string, fallback: number, options: { min?: number; max?: number } = {}): number {
   const raw = String(process.env[name] || '').trim();
   if (!raw) return fallback;
@@ -60,6 +65,51 @@ function _readPositiveIntEnv(name: string, fallback: number, options: { min?: nu
 
 function _sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function _retryAfterMs(res?: Pick<Response, 'headers'> | null): number | null {
+  const raw = String(res?.headers?.get?.('retry-after') || '').trim();
+  if (!raw) return null;
+
+  const seconds = Number(raw);
+  if (Number.isFinite(seconds)) {
+    return Math.max(0, seconds * 1_000);
+  }
+
+  const retryAt = Date.parse(raw);
+  if (!Number.isFinite(retryAt)) return null;
+  return Math.max(0, retryAt - Date.now());
+}
+
+function _retryDelayMs(res: Pick<Response, 'headers'> | null, status: number | undefined, attempt: number): number {
+  const retryAfter = _retryAfterMs(res);
+  if (retryAfter !== null) return retryAfter;
+
+  const exponentialDelay = RETRY_BASE_DELAY_MS * (2 ** attempt);
+  if (status === 429) {
+    return Math.max(RATE_LIMIT_RETRY_DELAY_MS, exponentialDelay);
+  }
+
+  return exponentialDelay;
+}
+
+async function _waitForRequestSlot(): Promise<void> {
+  const run = _requestSlot.then(async () => {
+    const elapsed = Date.now() - _lastRequestAt;
+    const waitMs = Math.max(0, GLOBAL_REQUEST_GAP_MS - elapsed);
+    if (waitMs > 0) {
+      await _sleep(waitMs);
+    }
+    _lastRequestAt = Date.now();
+  });
+
+  _requestSlot = run.catch(() => undefined);
+  await run;
+}
+
+function _resetRequestThrottleForTest(): void {
+  _requestSlot = Promise.resolve();
+  _lastRequestAt = 0;
 }
 
 function _shouldRetry(err?: unknown, status?: number): boolean {
@@ -81,6 +131,7 @@ async function _fetchWithRetry(url: string, context: string): Promise<Response> 
 
   for (let attempt = 0; attempt <= MAX_RETRIES; attempt += 1) {
     try {
+      await _waitForRequestSlot();
       const res = await fetch(url, { signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) });
       if (res.ok) return res;
 
@@ -89,8 +140,8 @@ async function _fetchWithRetry(url: string, context: string): Promise<Response> 
         return res;
       }
 
-      const delay = RETRY_BASE_DELAY_MS * (2 ** attempt);
-      console.warn(`[arxiv-client] ${context} 재시도 예정: HTTP ${res.status} (${attempt + 1}/${MAX_RETRIES})`);
+      const delay = _retryDelayMs(res, res.status, attempt);
+      console.warn(`[arxiv-client] ${context} 재시도 예정: HTTP ${res.status}, ${Math.round(delay / 1_000)}초 후 (${attempt + 1}/${MAX_RETRIES})`);
       await _sleep(delay);
     } catch (err) {
       lastError = err;
@@ -99,15 +150,15 @@ async function _fetchWithRetry(url: string, context: string): Promise<Response> 
         throw err;
       }
 
-      const delay = RETRY_BASE_DELAY_MS * (2 ** attempt);
-        const errorMessage =
-          typeof err === 'object' && err !== null && 'message' in err
-            ? String((err as { message?: unknown }).message || 'unknown error')
-            : String(err || 'unknown error');
-        console.warn(`[arxiv-client] ${context} 재시도 예정: ${errorMessage} (${attempt + 1}/${MAX_RETRIES})`);
-        await _sleep(delay);
-      }
+      const delay = _retryDelayMs(null, undefined, attempt);
+      const errorMessage =
+        typeof err === 'object' && err !== null && 'message' in err
+          ? String((err as { message?: unknown }).message || 'unknown error')
+          : String(err || 'unknown error');
+      console.warn(`[arxiv-client] ${context} 재시도 예정: ${errorMessage}, ${Math.round(delay / 1_000)}초 후 (${attempt + 1}/${MAX_RETRIES})`);
+      await _sleep(delay);
     }
+  }
 
   throw lastError || new Error(`${context} arXiv fetch 실패`);
 }
@@ -192,4 +243,8 @@ async function searchByDomain(domain: DarwinDomain, maxResults = 20): Promise<Ar
 module.exports = {
   searchByDomain,
   DOMAIN_KEYWORDS,
+  _testOnly_buildQuery: _buildQuery,
+  _testOnly_fetchWithRetry: _fetchWithRetry,
+  _testOnly_resetRequestThrottle: _resetRequestThrottleForTest,
+  _testOnly_retryDelayMs: _retryDelayMs,
 };

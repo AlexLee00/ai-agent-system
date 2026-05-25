@@ -37,6 +37,7 @@ const MAX_DAILY_PROPOSALS = 2;
 const AUTO_TASK_MIN_STARS = 100;
 const AUTO_TASK_MIN_FILES = 20;
 const MAX_WEEKLY_TASKS = 3;
+const ALARM_RATE_LIMIT_COOLDOWN_MS = _readPositiveIntEnv('DARWIN_ALARM_RATE_LIMIT_COOLDOWN_MS', 15 * 60_000, { min: 1_000, max: 60 * 60_000 });
 const logger = createLogger('scanner', { team: 'darwin' });
 
 function _weeklyResearchAlarmMeta(kind = 'weekly_research_report') {
@@ -126,6 +127,8 @@ interface ScanResult {
   experiencesStored: number;
   highRelevance: number;
   alarmSent: boolean;
+  alarmFailure?: string;
+  alarmBypassed?: boolean;
   evaluationFailures: number;
   githubAnalyzed: number;
   tasksRegistered: number;
@@ -133,6 +136,10 @@ interface ScanResult {
   keywordEvolutionCount: number;
   proposals: number;
   verified: number;
+  weeklySummaryAlarmSent?: boolean;
+  weeklySummaryAlarmFailure?: string;
+  registrySynced?: number;
+  registrySyncFailures?: number;
   searchers: Array<{
     name: string;
     domain: string;
@@ -141,8 +148,25 @@ interface ScanResult {
   }>;
 }
 
+interface AlarmPostResult {
+  ok?: boolean;
+  error?: unknown;
+  body?: Record<string, unknown>;
+  skipped?: boolean;
+  retryAfterMs?: number;
+}
+
+interface ProposalApplySummary {
+  arxiv_id?: string;
+  proposal?: string | null;
+  verification?: {
+    passed?: boolean;
+  } | null;
+}
+
 interface RunOptions {
   dryRun?: boolean;
+  observeOnly?: boolean;
   maxDomains?: number;
   maxEvaluations?: number;
 }
@@ -162,6 +186,33 @@ function _isRateLimitError(error: unknown): boolean {
   return /rate[_\s-]?limit|rate[_\s-]?limited|too many requests|429/i.test(text);
 }
 
+let _alarmRateLimitCooldownUntil = 0;
+let _alarmRateLimitCooldownReason = '';
+
+function _alarmRateLimitRemainingMs(): number {
+  return Math.max(0, _alarmRateLimitCooldownUntil - Date.now());
+}
+
+function _resetAlarmRateLimitCooldown(): void {
+  _alarmRateLimitCooldownUntil = 0;
+  _alarmRateLimitCooldownReason = '';
+}
+
+function _activateAlarmRateLimitCooldown(reason: unknown): void {
+  _alarmRateLimitCooldownUntil = Date.now() + ALARM_RATE_LIMIT_COOLDOWN_MS;
+  _alarmRateLimitCooldownReason = String(reason || 'rate_limit');
+}
+
+function _alarmFailureReason(result: AlarmPostResult | null | undefined): string {
+  return String(
+    result?.error
+      || result?.body?.delivery_error
+      || result?.body?.reason
+      || result?.body?.error
+      || 'not_delivered'
+  ).slice(0, 240);
+}
+
 function _postAlarmRetryDelayMs(error: unknown, attempt: number): number {
   if (_isRateLimitError(error)) {
     return Math.min(60_000, 20_000 * attempt);
@@ -169,8 +220,23 @@ function _postAlarmRetryDelayMs(error: unknown, attempt: number): number {
   return 1000 * attempt;
 }
 
-async function _postAlarmWithRetry(payload: Record<string, unknown>, label: string, maxAttempts = 3): Promise<{ ok?: boolean; error?: unknown; body?: Record<string, unknown> } | null> {
-  let lastResult: { ok?: boolean; error?: unknown; body?: Record<string, unknown> } | null = null;
+async function _postAlarmWithRetry(payload: Record<string, unknown>, label: string, maxAttempts = 3): Promise<AlarmPostResult | null> {
+  const cooldownRemaining = _alarmRateLimitRemainingMs();
+  if (cooldownRemaining > 0) {
+    console.warn(`[research-scanner] ${label} 알림 rate-limit cooldown: ${Math.ceil(cooldownRemaining / 1000)}초 남음`);
+    return {
+      ok: false,
+      skipped: true,
+      error: 'rate_limit_cooldown',
+      retryAfterMs: cooldownRemaining,
+      body: {
+        reason: _alarmRateLimitCooldownReason || 'rate_limit_cooldown',
+        retry_after_ms: cooldownRemaining,
+      },
+    };
+  }
+
+  let lastResult: AlarmPostResult | null = null;
   let lastError = 'unknown_error';
 
   for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
@@ -186,15 +252,12 @@ async function _postAlarmWithRetry(payload: Record<string, unknown>, label: stri
         incidentKey: payload.incidentKey || `darwin:research-scanner:${label}`,
         ...payload,
       });
-      if (lastResult?.ok === true) return lastResult;
+      if (lastResult?.ok === true) {
+        _resetAlarmRateLimitCooldown();
+        return lastResult;
+      }
 
-      lastError = String(
-        lastResult?.error
-          || lastResult?.body?.delivery_error
-          || lastResult?.body?.reason
-          || lastResult?.body?.error
-          || 'not_delivered'
-      );
+      lastError = _alarmFailureReason(lastResult);
     } catch (err) {
       lastResult = null;
       lastError = toErrorMessage(err);
@@ -204,6 +267,10 @@ async function _postAlarmWithRetry(payload: Record<string, unknown>, label: stri
     if (attempt < maxAttempts) {
       await _sleep(_postAlarmRetryDelayMs(lastError, attempt));
     }
+  }
+
+  if (_isRateLimitError(lastError)) {
+    _activateAlarmRateLimitCooldown(lastError);
   }
 
   return lastResult || { ok: false, error: lastError };
@@ -263,6 +330,118 @@ function _dedupePapers(papers: ResearchPaper[]): ResearchPaper[] {
   }
 
   return unique;
+}
+
+function _paperRegistryId(paper: Partial<ResearchPaper>): string {
+  const raw = String(
+    paper.arxiv_id
+    || paper.source_url
+    || paper.url
+    || paper.title
+    || ''
+  ).trim();
+  return raw || `paper-${Date.now()}`;
+}
+
+function _paperAuthors(paper: Partial<ResearchPaper>): string[] {
+  const authors = paper.authors;
+  if (Array.isArray(authors)) return authors.map((item) => String(item || '').trim()).filter(Boolean);
+  return String(authors || '')
+    .split(',')
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function _paperKeywords(paper: Partial<ResearchPaper>): string[] {
+  return [
+    paper.keyword,
+    paper.domain,
+    paper.source,
+  ].map((item) => String(item || '').trim()).filter(Boolean);
+}
+
+function _stageRank(stage: string): number {
+  const stages = ['discovered', 'evaluated', 'planned', 'implemented', 'verified', 'applied', 'measured', 'retired'];
+  const index = stages.indexOf(stage);
+  return index >= 0 ? index : 0;
+}
+
+function _registryStageForPaper(paper: Partial<ResearchPaper>, plannedPaperIds: Set<string>): string {
+  const paperId = _paperRegistryId(paper);
+  if (plannedPaperIds.has(paperId)) return 'planned';
+  if (paper.evaluation_failed === true) return 'discovered';
+  return 'evaluated';
+}
+
+async function _syncResearchRegistry(
+  evaluated: ResearchPaper[],
+  proposalResults: ProposalApplySummary[] = []
+): Promise<{ synced: number; failures: number }> {
+  const plannedPaperIds = new Set(
+    proposalResults
+      .filter((item) => item?.proposal)
+      .map((item) => String(item.arxiv_id || '').trim())
+      .filter(Boolean)
+  );
+  let synced = 0;
+  let failures = 0;
+
+  for (const paper of evaluated) {
+    const paperId = _paperRegistryId(paper);
+    const stage = _registryStageForPaper(paper, plannedPaperIds);
+    const metadata = {
+      domain: paper.domain || '',
+      relevance_score: Number(paper.relevance_score || 0),
+      reason: paper.reason || '',
+      evaluation_failed: paper.evaluation_failed === true,
+      failure_code: paper.failure_code || '',
+      github_repo: paper.github ? `${paper.github.owner}/${paper.github.repo}` : '',
+      github_stars: Number(paper.github?.stars || 0),
+      registry_stage_source: 'research-scanner',
+      registry_stage_rank: _stageRank(stage),
+      synced_at: new Date().toISOString(),
+    };
+
+    try {
+      await pgPool.run('public', `
+        INSERT INTO public.darwin_research_registry (
+          paper_id, title, authors, source, url, discovered_at, stage, keywords, metadata, inserted_at, updated_at
+        ) VALUES (
+          $1, $2, $3::text[], $4, $5, COALESCE($6::timestamp, NOW()), $7, $8::text[], $9::jsonb, NOW(), NOW()
+        )
+        ON CONFLICT (paper_id) DO UPDATE SET
+          title = EXCLUDED.title,
+          authors = CASE WHEN COALESCE(array_length(EXCLUDED.authors, 1), 0) > 0 THEN EXCLUDED.authors ELSE public.darwin_research_registry.authors END,
+          source = EXCLUDED.source,
+          url = COALESCE(NULLIF(EXCLUDED.url, ''), public.darwin_research_registry.url),
+          stage = CASE
+            WHEN array_position(ARRAY['discovered','evaluated','planned','implemented','verified','applied','measured','retired'], EXCLUDED.stage)
+              >= COALESCE(array_position(ARRAY['discovered','evaluated','planned','implemented','verified','applied','measured','retired'], public.darwin_research_registry.stage), 1)
+            THEN EXCLUDED.stage
+            ELSE public.darwin_research_registry.stage
+          END,
+          keywords = CASE WHEN COALESCE(array_length(EXCLUDED.keywords, 1), 0) > 0 THEN EXCLUDED.keywords ELSE public.darwin_research_registry.keywords END,
+          metadata = COALESCE(public.darwin_research_registry.metadata, '{}'::jsonb) || EXCLUDED.metadata,
+          updated_at = NOW()
+      `, [
+        paperId,
+        String(paper.title || 'Unknown').slice(0, 1000),
+        _paperAuthors(paper),
+        String(paper.source || 'unknown').slice(0, 50),
+        String(paper.url || paper.source_url || (paper.arxiv_id ? `https://arxiv.org/abs/${paper.arxiv_id}` : '')).slice(0, 2000),
+        paper.published || null,
+        stage,
+        _paperKeywords(paper),
+        JSON.stringify(metadata),
+      ]);
+      synced += 1;
+    } catch (err) {
+      failures += 1;
+      console.warn(`[research-scanner] registry sync 실패 (${paperId}): ${toErrorMessage(err)}`);
+    }
+  }
+
+  return { synced, failures };
 }
 
 function _safeTaskId(prefix: string, paper: Partial<ResearchPaper>, owner: string, repo: string): string {
@@ -528,9 +707,9 @@ async function _alertHighRelevance(
   evaluated: ResearchPaper[],
   storedCount: number,
   startTime: number
-): Promise<{ highRelevanceCount: number; alarmSent: boolean }> {
+): Promise<{ highRelevanceCount: number; alarmSent: boolean; alarmFailure: string }> {
   const highRelevance = evaluated.filter((paper) => Number(paper.relevance_score || 0) >= 7);
-  if (highRelevance.length === 0) return { highRelevanceCount: 0, alarmSent: false };
+  if (highRelevance.length === 0) return { highRelevanceCount: 0, alarmSent: false, alarmFailure: '' };
 
   const lines = [
     `🔬 다윈팀 주간 리서치 (${kst.today()})`,
@@ -563,11 +742,12 @@ async function _alertHighRelevance(
     },
   }, 'weekly_research_report');
   const alarmSent = alarmResult?.ok === true;
+  const alarmFailure = alarmSent ? '' : _alarmFailureReason(alarmResult);
   if (!alarmSent) {
-    console.warn('[research-scanner] 텔레그램 알림 전달 실패');
+    console.warn(`[research-scanner] 텔레그램 알림 전달 실패: ${alarmFailure}`);
   }
 
-  return { highRelevanceCount: highRelevance.length, alarmSent };
+  return { highRelevanceCount: highRelevance.length, alarmSent, alarmFailure };
 }
 
 async function _loadWeeklyResearchRows(): Promise<WeeklyResearchRow[]> {
@@ -635,9 +815,17 @@ function _registerWeeklyResearchTasks(weekData: WeeklyResearchRow[]): number {
   return tasksRegistered;
 }
 
-async function _generateWeeklyReport(): Promise<{ report: string; keywordEvolutionCount: number; tasksRegistered: number }> {
+async function _generateWeeklyReport(): Promise<{
+  report: string;
+  keywordEvolutionCount: number;
+  tasksRegistered: number;
+  alarmSent: boolean;
+  alarmFailure: string;
+}> {
   const weekData = await _loadWeeklyResearchRows();
-  if (!weekData || weekData.length === 0) return { report: '', keywordEvolutionCount: 0, tasksRegistered: 0 };
+  if (!weekData || weekData.length === 0) {
+    return { report: '', keywordEvolutionCount: 0, tasksRegistered: 0, alarmSent: false, alarmFailure: '' };
+  }
 
   const sevenPlus = weekData.filter((row) => Number(row.metadata?.relevance_score || 0) >= 7).length;
   const fiveToSix = weekData.filter((row) => {
@@ -712,7 +900,7 @@ async function _generateWeeklyReport(): Promise<{ report: string; keywordEvoluti
   }
 
   const report = lines.join('\n');
-  await _postAlarmWithRetry({
+  const alarmResult = await _postAlarmWithRetry({
     message: report.slice(0, 4000),
     team: 'general',
     alertLevel: 1,
@@ -725,8 +913,18 @@ async function _generateWeeklyReport(): Promise<{ report: string; keywordEvoluti
       tasks_registered: tasksRegistered,
     },
   }, 'weekly_research_summary');
+  const alarmSent = alarmResult?.ok === true;
+  const alarmFailure = alarmSent
+    ? ''
+    : String(
+        alarmResult?.error
+        || alarmResult?.body?.delivery_error
+        || alarmResult?.body?.reason
+        || alarmResult?.body?.error
+        || 'not_delivered'
+      ).slice(0, 240);
 
-  return { report, keywordEvolutionCount, tasksRegistered };
+  return { report, keywordEvolutionCount, tasksRegistered, alarmSent, alarmFailure };
 }
 
 function _parseCliArgs(argv: string[]): RunOptions {
@@ -734,6 +932,7 @@ function _parseCliArgs(argv: string[]): RunOptions {
   for (let index = 2; index < argv.length; index += 1) {
     const arg = argv[index];
     if (arg === '--dry-run') options.dryRun = true;
+    else if (arg === '--observe-only') options.observeOnly = true;
     else if (arg === '--max-domains') {
       const value = Number.parseInt(String(argv[index + 1] || ''), 10);
       if (Number.isFinite(value) && value > 0) options.maxDomains = value;
@@ -756,6 +955,7 @@ function _parseCliArgs(argv: string[]): RunOptions {
 async function run(options: RunOptions = {}): Promise<ScanResult> {
   const startTime = Date.now();
   const dryRun = Boolean(options.dryRun || process.env.DARWIN_RESEARCH_DRY_RUN === '1');
+  const observeOnly = !dryRun && Boolean(options.observeOnly || process.env.DARWIN_RESEARCH_OBSERVE_ONLY === '1');
   const maxEvaluations = Math.max(1, Math.min(Number(options.maxEvaluations || MAX_EVALUATIONS_PER_RUN), MAX_EVALUATIONS_PER_RUN));
   console.log(`[research-scanner] 시작: ${kst.datetimeStr()}`);
   if (!dryRun) {
@@ -780,22 +980,33 @@ async function run(options: RunOptions = {}): Promise<ScanResult> {
   );
   const evaluationFailures = evaluated.filter((paper) => paper.evaluation_failed === true).length;
 
-  const enrichment = dryRun ? { githubEnriched: 0, tasksRegistered: 0 } : await _enrichWithGitHub(evaluated);
+  const enrichment = dryRun || observeOnly ? { githubEnriched: 0, tasksRegistered: 0 } : await _enrichWithGitHub(evaluated);
   const { storedCount, experienceCount } = dryRun
     ? { storedCount: 0, experienceCount: 0 }
     : await _storeEvaluatedPapers(evaluated);
-  const { highRelevanceCount, alarmSent } = dryRun
+  const { highRelevanceCount, alarmSent, alarmFailure } = dryRun
     ? {
         highRelevanceCount: evaluated.filter((paper) => Number(paper.relevance_score || 0) >= 7).length,
         alarmSent: false,
+        alarmFailure: '',
       }
+    : observeOnly
+      ? (() => {
+          const observedHighRelevance = evaluated.filter((paper) => Number(paper.relevance_score || 0) >= 7).length;
+          return {
+            highRelevanceCount: observedHighRelevance,
+            alarmSent: false,
+            alarmFailure: observedHighRelevance > 0 ? 'observe_only' : '',
+          };
+        })()
     : await _alertHighRelevance(unique.length, evaluated, storedCount, startTime);
+  const alarmBypassed = observeOnly && highRelevanceCount > 0;
   const highRelevance = evaluated.filter((paper) => Number(paper.relevance_score || 0) >= 7);
   const proposalCandidates = [...highRelevance]
     .sort((a, b) => Number(b.relevance_score || 0) - Number(a.relevance_score || 0))
     .slice(0, MAX_DAILY_PROPOSALS);
   const proposalResults = [];
-  if (!dryRun) {
+  if (!dryRun && !observeOnly) {
     for (const paper of proposalCandidates) {
       try {
         const applied = await applicator.apply(paper);
@@ -806,17 +1017,24 @@ async function run(options: RunOptions = {}): Promise<ScanResult> {
       }
     }
   } else if (proposalCandidates.length > 0) {
-    console.log(`[research-scanner] dry-run: 제안 적용 ${proposalCandidates.length}건 스킵`);
+    console.log(`[research-scanner] ${dryRun ? 'dry-run' : 'observe-only'}: 제안 적용 ${proposalCandidates.length}건 스킵`);
   }
   const proposalCount = proposalResults.filter((item: any) => item.proposal).length;
   const verifiedCount = proposalResults.filter((item: any) => item.verification?.passed).length;
+  const registrySync = dryRun
+    ? { synced: 0, failures: 0 }
+    : await _syncResearchRegistry(evaluated, proposalResults);
   let keywordEvolutionCount = 0;
   let weeklyTasksRegistered = 0;
+  let weeklySummaryAlarmSent = false;
+  let weeklySummaryAlarmFailure = '';
 
-  if (!dryRun && new Date().getDay() === 0) {
+  if (!dryRun && !observeOnly && new Date().getDay() === 0) {
     const weekly = await _generateWeeklyReport();
     keywordEvolutionCount = Number(weekly?.keywordEvolutionCount || 0);
     weeklyTasksRegistered = Number(weekly?.tasksRegistered || 0);
+    weeklySummaryAlarmSent = weekly?.alarmSent === true;
+    weeklySummaryAlarmFailure = String(weekly?.alarmFailure || '');
   }
 
   const durationSec = Math.round((Date.now() - startTime) / 1000);
@@ -832,6 +1050,8 @@ async function run(options: RunOptions = {}): Promise<ScanResult> {
     experiencesStored: experienceCount,
     highRelevance: highRelevanceCount,
     alarmSent,
+    alarmFailure,
+    alarmBypassed,
     evaluationFailures,
     githubAnalyzed: Number(enrichment?.githubEnriched || 0),
     tasksRegistered: Number(enrichment?.tasksRegistered || 0) + weeklyTasksRegistered,
@@ -839,13 +1059,19 @@ async function run(options: RunOptions = {}): Promise<ScanResult> {
     keywordEvolutionCount,
     proposals: proposalCount,
     verified: verifiedCount,
+    weeklySummaryAlarmSent,
+    weeklySummaryAlarmFailure,
+    registrySynced: registrySync.synced,
+    registrySyncFailures: registrySync.failures,
     searchers: activeSearchers.map(({ name, domain, score, hired }) => ({ name, domain, score, hired })),
   };
 
   const metrics = monitor.collectMetrics(result, Date.now() - startTime);
   if (!dryRun) {
     await monitor.storeMetrics(metrics);
-    await monitor.checkAnomalies(metrics);
+    if (!observeOnly) {
+      await monitor.checkAnomalies(metrics);
+    }
   }
   console.log(`[research-scanner] 메트릭: ${JSON.stringify(metrics)}`);
   console.log(`[research-scanner] 완료: ${storedCount}건 저장, ${experienceCount}건 경험 저장, GitHub 분석 ${result.githubAnalyzed}건, 과제 등록 ${result.tasksRegistered}건, ${highRelevanceCount}건 후보 알림, 제안 ${proposalCount}건/검증통과 ${verifiedCount}건, 전달=${alarmSent ? '성공' : '실패/없음'}, ${durationSec}초`);
@@ -859,6 +1085,9 @@ module.exports = {
   _testOnly_weeklyResearchAlarmMeta: _weeklyResearchAlarmMeta,
   _testOnly_postAlarmWithRetry: _postAlarmWithRetry,
   _testOnly_postAlarmRetryDelayMs: _postAlarmRetryDelayMs,
+  _testOnly_alarmRateLimitRemainingMs: _alarmRateLimitRemainingMs,
+  _testOnly_resetAlarmRateLimitCooldown: _resetAlarmRateLimitCooldown,
+  _testOnly_syncResearchRegistry: _syncResearchRegistry,
 };
 
 if (require.main === module) {

@@ -6,6 +6,7 @@
 
 const fs: typeof import('fs') = require('fs');
 const path: typeof import('path') = require('path');
+const env: { PROJECT_ROOT: string } = require('../../../packages/core/lib/env');
 
 interface ProposalRecord {
   id: string;
@@ -16,8 +17,8 @@ interface ProposalRecord {
   [key: string]: unknown;
 }
 
-const SANDBOX_DIR = path.join(__dirname, 'sandbox');
-const PROPOSALS_DIR = path.join(__dirname, '../../../../docs/research/proposals');
+const SANDBOX_DIR = path.join(env.PROJECT_ROOT, 'bots/darwin/sandbox/prototypes');
+const PROPOSALS_DIR = path.join(env.PROJECT_ROOT, 'docs/research/proposals');
 
 function ensureDirs() {
   fs.mkdirSync(SANDBOX_DIR, { recursive: true });

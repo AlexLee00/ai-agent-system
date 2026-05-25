@@ -95,6 +95,12 @@ defmodule Darwin.V2.ShadowRunner do
     run_once()
   end
 
+  @doc false
+  def __test_parse_score(text), do: parse_score(text)
+
+  @doc false
+  def __test_build_eval_prompt(paper), do: build_eval_prompt(paper)
+
   @doc "승격 조건 충족 여부 (avg_match ≥ 95% AND total_runs ≥ 20 AND days ≥ 7)."
   @spec shadow_ready?() :: boolean()
   def shadow_ready? do
@@ -127,7 +133,7 @@ defmodule Darwin.V2.ShadowRunner do
   def handle_info({:jay_event, "darwin.paper.evaluated", payload}, state) do
     if enabled?() do
       paper    = payload[:paper] || payload
-      v1_score = paper["score"] || paper[:score]
+      v1_score = normalize_score_value(paper["score"] || paper[:score])
       Task.start(fn -> do_shadow_eval(paper, v1_score) end)
     end
 
@@ -163,9 +169,8 @@ defmodule Darwin.V2.ShadowRunner do
 
   defp do_shadow_eval(paper, v1_score) when is_number(v1_score) do
     title  = paper["title"]  || paper[:title]  || "unknown"
-    source = paper["source"] || paper[:source] || "unknown"
 
-    prompt = build_eval_prompt(title, source)
+    prompt = build_eval_prompt(paper)
 
     case Darwin.V2.LLM.Selector.call_with_fallback(
            "darwin.evaluator",
@@ -210,10 +215,9 @@ defmodule Darwin.V2.ShadowRunner do
 
   defp do_run_comparison(paper) do
     title  = paper["title"]  || paper[:title]  || "unknown"
-    source = paper["source"] || paper[:source] || "unknown"
-    v1_score = paper["score"] || paper[:score]
+    v1_score = normalize_score_value(paper["score"] || paper[:score])
 
-    prompt = build_eval_prompt(title, source)
+    prompt = build_eval_prompt(paper)
 
     v2_result =
       case Darwin.V2.LLM.Selector.call_with_fallback(
@@ -248,6 +252,8 @@ defmodule Darwin.V2.ShadowRunner do
   # -------------------------------------------------------------------
 
   defp record_shadow_run(data) do
+    enriched = enrich_shadow_record(data)
+
     Repo.query(
       """
       INSERT INTO darwin_v2_shadow_runs
@@ -255,9 +261,9 @@ defmodule Darwin.V2.ShadowRunner do
       VALUES (CURRENT_DATE, $1, $2, $3, NOW(), NOW())
       """,
       [
-        Jason.encode!(data),
-        if(data[:matched], do: 1.0, else: 0.0),
-        "v1=#{data[:v1_score]} v2=#{data[:v2_score]}"
+        Jason.encode!(enriched),
+        if(enriched[:matched], do: 1.0, else: 0.0),
+        "v1=#{enriched[:v1_score]} v2=#{enriched[:v2_score]} delta=#{enriched[:score_delta]} version=#{enriched[:shadow_version]}"
       ]
     )
     |> case do
@@ -266,6 +272,22 @@ defmodule Darwin.V2.ShadowRunner do
     end
   rescue
     e -> Logger.warning("[다윈V2 섀도우] record_shadow_run 예외: #{Exception.message(e)}")
+  end
+
+  defp enrich_shadow_record(data) do
+    delta =
+      if is_number(data[:v1_score]) and is_number(data[:v2_score]) do
+        Float.round(abs(data[:v1_score] - data[:v2_score]) * 1.0, 3)
+      else
+        nil
+      end
+
+    Map.merge(%{
+      shadow_version: "contextual_v2",
+      prompt_context: "title_source_domain_url_summary_reason",
+      match_tolerance: @match_tolerance,
+      score_delta: delta
+    }, data)
   end
 
   defp query_avg_match(days) do
@@ -342,18 +364,33 @@ defmodule Darwin.V2.ShadowRunner do
   # Private — 유틸
   # -------------------------------------------------------------------
 
-  defp build_eval_prompt(title, source) do
+  defp build_eval_prompt(paper) when is_map(paper) do
+    title  = paper["title"]  || paper[:title]  || "unknown"
+    source = paper["source"] || paper[:source] || "unknown"
+    domain = paper["domain"] || paper[:domain] || "unknown"
+    summary = paper["summary"] || paper[:summary] || paper["korean_summary"] || paper[:korean_summary] || ""
+    reason = paper["reason"] || paper[:reason] || ""
+    url = paper["url"] || paper[:url] || paper["source_url"] || paper[:source_url] || ""
+
     """
     다음 논문이 AI 에이전트 시스템(루나/블로/스카/시그마/다윈팀) 개선에 적합한지 평가하세요.
 
     제목: #{title}
     출처: #{source}
+    도메인: #{domain}
+    URL: #{url}
+    초록/요약:
+    #{String.slice(to_string(summary), 0, 1800)}
+    기존 평가 근거:
+    #{String.slice(to_string(reason), 0, 700)}
 
     다음 형식으로만 답하세요:
-    점수: (0-10 정수)
+    점수: (0-10 숫자)
     이유: (한 줄)
     """
   end
+
+  defp build_eval_prompt(_paper), do: build_eval_prompt(%{})
 
   defp handle_shadow_response(title, v1_score, text) do
     v2_score = parse_score(text)
@@ -372,13 +409,35 @@ defmodule Darwin.V2.ShadowRunner do
   end
 
   defp parse_score(text) do
-    case Regex.run(~r/점수:\s*(\d+)/u, text) do
-      [_, s] -> s |> String.to_integer() |> min(10) |> max(0)
-      _ ->
-        case Regex.run(~r/(\d+)\s*\/\s*10/u, text) do
-          [_, s] -> s |> String.to_integer() |> min(10) |> max(0)
-          _      -> 5
-        end
+    normalized = to_string(text)
+
+    [
+      ~r/(?:점수|score)\s*[:：]\s*([0-9]+(?:\.[0-9]+)?)/iu,
+      ~r/([0-9]+(?:\.[0-9]+)?)\s*\/\s*10/u
+    ]
+    |> Enum.find_value(fn regex ->
+      case Regex.run(regex, normalized) do
+        [_, score] -> normalize_score_value(score)
+        _ -> nil
+      end
+    end)
+    |> case do
+      score when is_number(score) -> score
+      _ -> 5.0
+    end
+  end
+
+  defp normalize_score_value(value) when is_number(value) do
+    value
+    |> min(10)
+    |> max(0)
+    |> then(&Float.round(&1 * 1.0, 2))
+  end
+
+  defp normalize_score_value(value) do
+    case Float.parse(to_string(value)) do
+      {score, _} -> normalize_score_value(score)
+      :error -> nil
     end
   end
 end

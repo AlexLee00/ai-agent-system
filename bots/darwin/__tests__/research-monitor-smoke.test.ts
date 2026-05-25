@@ -2,8 +2,9 @@
 
 const assert = require('assert');
 const Module = require('module');
+const path = require('path');
 
-const monitorPath = '/Users/alexlee/projects/ai-agent-system/bots/darwin/lib/research-monitor.ts';
+const monitorPath = path.join(__dirname, '../lib/research-monitor.ts');
 
 type ModuleLoad = (request: string, parent: NodeModule | null, isMain: boolean) => unknown;
 
@@ -77,9 +78,16 @@ async function main() {
       stored: 8,
       highRelevance: 2,
       alarmSent: true,
+      weeklySummaryAlarmSent: false,
+      weeklySummaryAlarmFailure: 'rate limit exceeded',
+      alarmFailure: 'rate_limit_cooldown',
     }, 90_000);
     assert.strictEqual(failedEvalMetrics.effective_evaluated, 5);
     assert.strictEqual(failedEvalMetrics.relevance_rate, 40);
+    assert.strictEqual(failedEvalMetrics.weekly_summary_alarm_sent, false);
+    assert.strictEqual(failedEvalMetrics.weekly_summary_alarm_failure, 'rate limit exceeded');
+    assert.strictEqual(failedEvalMetrics.alarm_failure, 'rate_limit_cooldown');
+    assert.strictEqual(failedEvalMetrics.alarm_bypassed, false);
 
     const healthyAlerts = await monitor.checkAnomalies({
       total_collected: 10,
@@ -93,6 +101,22 @@ async function main() {
       evaluated: 8,
     });
     assert.deepStrictEqual(healthyAlerts, []);
+    assert.strictEqual(alarmCalls.length, 0);
+
+    const observeOnlyAlerts = await monitor.checkAnomalies({
+      total_collected: 10,
+      store_success_rate: 100,
+      duration_sec: 90,
+      relevance_rate: 25,
+      alarm_sent: false,
+      alarm_bypassed: true,
+      alarm_failure: 'observe_only',
+      high_relevance: 2,
+      proposals_generated: 1,
+      proposal_pass_rate: 100,
+      evaluated: 8,
+    });
+    assert.deepStrictEqual(observeOnlyAlerts, []);
     assert.strictEqual(alarmCalls.length, 0);
 
     const evaluatorInstabilityAlerts = await monitor.checkAnomalies({
@@ -142,7 +166,10 @@ async function main() {
       proposals_generated: 2,
       proposal_pass_rate: 20,
       evaluated: 6,
+      weekly_summary_alarm_sent: false,
+      weekly_summary_alarm_failure: 'rate limit exceeded',
     });
+    assert.ok(unhealthyAlerts.some((alert: string) => String(alert).includes('주간 summary 알림 전달 실패')));
     assert.ok(unhealthyAlerts.length >= 5);
     assert.strictEqual(alarmCalls.length, 4);
     assert.strictEqual(alarmCalls[3].alarmType, 'error');

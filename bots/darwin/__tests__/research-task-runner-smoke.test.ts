@@ -2,8 +2,9 @@
 
 const assert = require('assert');
 const Module = require('module');
+const path = require('path');
 
-const runnerPath = '/Users/alexlee/projects/ai-agent-system/bots/darwin/scripts/research-task-runner.ts';
+const runnerPath = path.join(__dirname, '../scripts/research-task-runner.ts');
 
 type ModuleLoad = (request: string, parent: NodeModule | null, isMain: boolean) => unknown;
 

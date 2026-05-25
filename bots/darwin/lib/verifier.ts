@@ -13,10 +13,11 @@ const { postAlarm } = require('../../../packages/core/lib/hub-alarm-client');
 const eventLake = require('../../../packages/core/lib/event-lake');
 const rag = require('../../../packages/core/lib/rag');
 const { runFullVerification } = require('../../../packages/core/lib/skills/verify-loop');
+const env = require('../../../packages/core/lib/env');
 const proposalStore = require('./proposal-store');
 const autonomyLevel = require('./autonomy-level');
 
-const REPO_ROOT = path.join(__dirname, '../../../..');
+const REPO_ROOT = env.PROJECT_ROOT;
 const logger = createLogger('verifier', { team: 'darwin' });
 
 type ExecFileOptions = Omit<import('child_process').ExecFileSyncOptionsWithStringEncoding, 'encoding'>;
@@ -367,4 +368,5 @@ module.exports = {
   triggerVerification,
   mergeVerifiedProposal,
   mergeBranch,
+  _testOnly_REPO_ROOT: REPO_ROOT,
 };

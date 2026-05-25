@@ -2,8 +2,9 @@
 
 const assert = require('assert');
 const Module = require('module');
+const path = require('path');
 
-const scannerPath = '/Users/alexlee/projects/ai-agent-system/bots/darwin/lib/research-scanner.ts';
+const scannerPath = path.join(__dirname, '../lib/research-scanner.ts');
 
 type ModuleLoad = (request: string, parent: NodeModule | null, isMain: boolean) => unknown;
 
@@ -135,6 +136,21 @@ async function main() {
     const retryResult = await scanner._testOnly_postAlarmWithRetry({ message: 'retry test' }, 'retry_test', 2);
     assert.strictEqual(retryResult?.ok, true);
     assert.strictEqual(postAlarmCalls, 2);
+    postAlarmCalls = 0;
+
+    scanner._testOnly_resetAlarmRateLimitCooldown();
+    postAlarmResults.push({ ok: false, error: 'rate limit exceeded (200/min)' });
+    const rateLimitResult = await scanner._testOnly_postAlarmWithRetry({ message: 'rate limit test' }, 'rate_limit_test', 1);
+    assert.strictEqual(rateLimitResult?.ok, false);
+    assert.match(String(rateLimitResult?.error), /rate limit/i);
+    assert.ok(scanner._testOnly_alarmRateLimitRemainingMs() > 0);
+
+    const cooldownResult = await scanner._testOnly_postAlarmWithRetry({ message: 'follow up' }, 'rate_limit_followup', 1);
+    assert.strictEqual(cooldownResult?.ok, false);
+    assert.strictEqual(cooldownResult?.skipped, true);
+    assert.strictEqual(cooldownResult?.error, 'rate_limit_cooldown');
+    assert.strictEqual(postAlarmCalls, 1);
+    scanner._testOnly_resetAlarmRateLimitCooldown();
     postAlarmCalls = 0;
 
     const result = await scanner.run({ dryRun: true, maxEvaluations: 2 });
