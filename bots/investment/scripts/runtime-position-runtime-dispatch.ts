@@ -29,6 +29,7 @@ const STALE_CANDIDATE_STATUSES = new Set(['candidate_not_found']);
 const IDEMPOTENT_SKIP_STATUSES = new Set(['closeout_guard_cooldown']);
 const DEFERRED_GUARD_STATUSES = new Set([
   'strategy_exit_min_hold_guard',
+  'strategy_exit_recovery_recheck_guard',
   'partial_adjust_balance_locked_by_open_sell_orders',
 ]);
 
@@ -459,6 +460,12 @@ export function detectTerminalChildFailure(message = '', stdout = '', stderr = '
     && (text.includes('최소 보유시간') || text.includes('minimum hold'))
   ) {
     return 'strategy_exit_min_hold_guard';
+  }
+  if (
+    (text.includes('strategy-exit preflight blocked') || text.includes('strategy exit guard'))
+    && (text.includes('회복 신호 재확인') || text.includes('recovery signal recheck'))
+  ) {
+    return 'strategy_exit_recovery_recheck_guard';
   }
   if (
     (text.includes('partial-adjust preflight blocked') || text.includes('partial_adjust_balance_locked_by_open_sell_orders'))

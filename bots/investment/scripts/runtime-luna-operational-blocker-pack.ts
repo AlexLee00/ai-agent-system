@@ -14,6 +14,11 @@ import { buildLunaFullIntegrationClosureGateFromReports } from './runtime-luna-f
 import { buildLunaReconcileEvidencePack } from './runtime-luna-reconcile-evidence-pack.ts';
 import { buildLunaReconcileAckPreflight } from './luna-reconcile-ack-preflight.ts';
 import { runLunaCurriculumBootstrap } from './runtime-luna-curriculum-bootstrap.ts';
+import { buildTradeDataAnalysisReport } from '../shared/trade-data-analysis-report.ts';
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
 
 function hasFlag(name) {
   return process.argv.includes(name);
@@ -25,13 +30,23 @@ function argValue(name, fallback = null) {
   return found ? found.slice(prefix.length) : fallback;
 }
 
+export function isSettleableLiveFireBlocker(liveFire = {}) {
+  if (liveFire?.ok !== false) return false;
+  const blockers = (liveFire.blockers || []).map((item) => String(item || ''));
+  return blockers.some((item) =>
+    item.startsWith('post_live_fire_attention:') ||
+    item.startsWith('live_fire_readiness_blocked:'));
+}
+
 export async function buildLunaOperationalBlockerPack({
   exchange = 'binance',
   hours = 24,
   days = 7,
   validationFixture = false,
+  settleLiveFire = true,
+  settleDelayMs = 1500,
 } = {}) {
-  const [fullIntegration, reconcile, liveFire, sevenDay, busHygiene, voyager, reconcileEvidence, ackPreflight, curriculum] = await Promise.all([
+  const [fullIntegration, reconcile, initialLiveFire, sevenDay, busHygiene, voyager, reconcileEvidence, ackPreflight, curriculum, tradeData] = await Promise.all([
     runLuna100PercentCompletionReport({ outputFile: null }),
     buildLunaReconcileBlockerReport({ exchange, hours }),
     buildLunaLiveFireFinalGate({ exchange, hours: Math.min(hours, 24), liveLookup: false, withPositionParity: true }),
@@ -41,7 +56,26 @@ export async function buildLunaOperationalBlockerPack({
     buildLunaReconcileEvidencePack({ exchange, hours, limit: 100 }),
     buildLunaReconcileAckPreflight({ exchange, hours, limit: 100, liveLookup: false }),
     runLunaCurriculumBootstrap({ market: 'any', apply: false }),
+    buildTradeDataAnalysisReport({ limit: 5000 }),
   ]);
+  let liveFire = initialLiveFire;
+  if (settleLiveFire && isSettleableLiveFireBlocker(initialLiveFire)) {
+    if (settleDelayMs > 0) await sleep(settleDelayMs);
+    const retried = await buildLunaLiveFireFinalGate({
+      exchange,
+      hours: Math.min(hours, 24),
+      liveLookup: false,
+      withPositionParity: true,
+    });
+    liveFire = {
+      ...retried,
+      settledFrom: {
+        status: initialLiveFire.status || null,
+        blockers: initialLiveFire.blockers || [],
+        checkedAt: initialLiveFire.checkedAt || null,
+      },
+    };
+  }
   const closure = buildLunaFullIntegrationClosureGateFromReports({
     fullIntegration,
     reconcile,
@@ -54,6 +88,7 @@ export async function buildLunaOperationalBlockerPack({
     reconcileEvidence,
     ackPreflight,
     curriculum,
+    tradeData,
   });
   return buildLunaOperationalClosurePackFromReports({
     closure,
@@ -66,10 +101,19 @@ export async function buildLunaOperationalBlockerPack({
     curriculum,
     reconcileEvidence,
     ackPreflight,
+    tradeData,
   });
 }
 
 export async function runLunaOperationalBlockerPackSmoke() {
+  assert.equal(isSettleableLiveFireBlocker({
+    ok: false,
+    blockers: ['live_fire_readiness_blocked:1'],
+  }), true);
+  assert.equal(isSettleableLiveFireBlocker({
+    ok: false,
+    blockers: ['manual_reconcile_tasks:1'],
+  }), false);
   const pack = buildLunaOperationalClosurePackFromReports({
     closure: {
       ok: false,
@@ -137,6 +181,8 @@ async function main() {
     hours: Number(argValue('--hours', 24)),
     days: Number(argValue('--days', 7)),
     validationFixture: hasFlag('--validation-fixture'),
+    settleLiveFire: !hasFlag('--no-live-fire-settle'),
+    settleDelayMs: Number(argValue('--live-fire-settle-delay-ms', 1500)),
   });
   if (json) console.log(JSON.stringify(result, null, 2));
   else if (smoke) console.log('luna operational blocker pack smoke ok');

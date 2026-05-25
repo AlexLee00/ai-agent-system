@@ -31,6 +31,46 @@ async function countRows(sql: string, params: unknown[] = []) {
   return Number(row?.cnt || 0);
 }
 
+export function normalizeConstitutionViolationCode(value: unknown) {
+  const raw = String(value || '').trim().replace(/^"|"$/g, '');
+  if (!raw) return '';
+
+  const parseNested = (input: unknown): unknown => {
+    if (typeof input !== 'string') return input;
+    const trimmed = input.trim();
+    if (!trimmed) return '';
+    try {
+      return JSON.parse(trimmed);
+    } catch {
+      return trimmed;
+    }
+  };
+
+  const parsed = parseNested(parseNested(raw));
+  if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+    const code = String((parsed as Record<string, unknown>).code || '').trim();
+    if (code) return code;
+  }
+  return String(parsed || raw).trim();
+}
+
+export function summarizeConstitutionViolationRows(rows: Array<{ violation?: unknown; cnt?: unknown }> = []) {
+  const counts = new Map<string, number>();
+  for (const row of rows || []) {
+    const code = normalizeConstitutionViolationCode(row?.violation);
+    if (!code) continue;
+    counts.set(code, (counts.get(code) || 0) + Number(row?.cnt || 0));
+  }
+  const topViolations = Array.from(counts.entries())
+    .map(([code, count]) => ({ code, count }))
+    .sort((a, b) => b.count - a.count || a.code.localeCompare(b.code))
+    .slice(0, 10);
+  return {
+    violationCount: topViolations.reduce((sum, item) => sum + Number(item.count || 0), 0),
+    topViolations,
+  };
+}
+
 async function buildQualitySummary(days = 14, market = 'all') {
   const normalized = normalizeMarket(market);
   const params: unknown[] = [Math.max(1, Number(days || 14))];
@@ -110,8 +150,7 @@ async function buildConstitutionSummary(days = 14, market = 'all') {
      WHERE tqe.evaluated_at >= NOW() - ($1::int * INTERVAL '1 day')
        ${marketClause}
      GROUP BY 1
-     ORDER BY cnt DESC, violation ASC
-     LIMIT 10`,
+     ORDER BY cnt DESC, violation ASC`,
     params,
   ).catch(async (error) => {
     const message = String(error?.message || error || '');
@@ -130,19 +169,11 @@ async function buildConstitutionSummary(days = 14, market = 'all') {
        ) AS violation(value)
        WHERE tqe.evaluated_at >= NOW() - ($1::int * INTERVAL '1 day')
        GROUP BY 1
-       ORDER BY cnt DESC, violation ASC
-       LIMIT 10`,
+       ORDER BY cnt DESC, violation ASC`,
       [Math.max(1, Number(days || 14))],
     ).catch(() => []);
   });
-  const topViolations = (rows || []).map((row) => ({
-    code: String(row.violation || '').replace(/^"|"$/g, ''),
-    count: Number(row.cnt || 0),
-  })).filter((item) => item.code);
-  return {
-    violationCount: topViolations.reduce((sum, item) => sum + Number(item.count || 0), 0),
-    topViolations,
-  };
+  return summarizeConstitutionViolationRows(rows || []);
 }
 
 export async function buildPosttradeFeedbackDashboard({ days = 14, market = 'all' } = {}) {

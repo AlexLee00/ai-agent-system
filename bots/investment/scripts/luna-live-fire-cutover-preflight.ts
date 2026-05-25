@@ -102,6 +102,7 @@ export async function buildLunaLiveFireCutoverPreflight({
       blockers: postVerify.blockers || [],
       entryTrigger: postVerify.entryTrigger || {},
       tradeGate: postVerify.tradeGate || {},
+      tradeDataHygiene: postVerify.tradeDataHygiene || {},
     },
     readiness,
     parity: parity ? {

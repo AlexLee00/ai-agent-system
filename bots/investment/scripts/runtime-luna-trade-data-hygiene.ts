@@ -15,18 +15,25 @@ function parseArgs(args = []) {
 
 export async function buildRuntimeTradeDataHygiene(options = {}) {
   const report = await buildTradeDataAnalysisReport({ limit: options.limit || 5000 });
+  const status = report.hygiene?.status || 'unknown';
+  const findings = Array.isArray(report.hygiene?.findings) ? report.hygiene.findings : [];
   return {
-    ok: report.ok === true,
-    status: report.hygiene?.status || 'unknown',
+    ok: report.ok === true && status === 'ready',
+    status,
     severity: report.hygiene?.severity || 'unknown',
     generatedAt: report.generatedAt,
     hygiene: report.hygiene,
+    blockers: status === 'ready'
+      ? []
+      : findings.map((finding) => `trade_data_hygiene:${finding.id || finding.reason || 'finding'}`),
     coverage: {
       realizedPnl: report.trades?.realizedPnlCoverage || null,
       posttrade: report.posttrade?.qualityCoverage || null,
     },
     signalFailureRate: report.signals?.failureRate ?? null,
     warnings: report.warnings || [],
+    nextActions: report.hygiene?.nextActions || [],
+    analysisNextActions: report.nextActions || [],
   };
 }
 

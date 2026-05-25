@@ -23,6 +23,7 @@ import {
   evaluateBinanceTopVolumeUniverseGate,
   getCachedBinanceTopVolumeUniverse,
 } from '../shared/binance-top-volume-universe.ts';
+import { buildRuntimeTradeDataHygiene } from './runtime-luna-trade-data-hygiene.ts';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const INVESTMENT_DIR = path.resolve(__dirname, '..');
@@ -47,6 +48,7 @@ const LAUNCHCTL_ENV_KEYS = [
   'LUNA_ENTRY_TRIGGER_SIGNAL_REFRESH_ENABLED',
   'LUNA_ENTRY_TRIGGER_SIGNAL_REFRESH_HOURS',
   'LUNA_ENTRY_TRIGGER_SIGNAL_REFRESH_LIMIT',
+  'LUNA_ENTRY_TRIGGER_TRADE_DATA_HYGIENE_GATE',
 ];
 
 function hydrateEntryTriggerEnvFromLaunchctl() {
@@ -129,6 +131,46 @@ function shouldWriteHeartbeat() {
 function materializeSignalsEnabled() {
   const raw = String(process.env.LUNA_ENTRY_TRIGGER_MATERIALIZE_SIGNAL_ENABLED ?? 'true').trim().toLowerCase();
   return raw !== '0' && raw !== 'false' && raw !== 'off' && raw !== 'no';
+}
+
+function tradeDataHygieneGateEnabled() {
+  const raw = String(process.env.LUNA_ENTRY_TRIGGER_TRADE_DATA_HYGIENE_GATE ?? 'true').trim().toLowerCase();
+  return raw !== '0' && raw !== 'false' && raw !== 'off' && raw !== 'no';
+}
+
+function summarizeTradeDataHygieneGate(report = {}) {
+  return {
+    ok: report?.ok === true,
+    status: report?.status || report?.hygiene?.status || 'unknown',
+    severity: report?.severity || report?.hygiene?.severity || 'unknown',
+    blockers: report?.blockers || [],
+    generatedAt: report?.generatedAt || null,
+  };
+}
+
+async function buildMaterializationTradeDataHygieneGate(deps = {}) {
+  if (!tradeDataHygieneGateEnabled()) {
+    return { blocked: false, disabled: true, report: { ok: true, status: 'disabled', blockers: [] } };
+  }
+  const builder = deps.tradeDataHygieneBuilder || buildRuntimeTradeDataHygiene;
+  try {
+    const report = summarizeTradeDataHygieneGate(await Promise.resolve(builder()));
+    return {
+      blocked: !(report.ok === true && report.status === 'ready'),
+      report,
+    };
+  } catch (error) {
+    return {
+      blocked: true,
+      report: {
+        ok: false,
+        status: 'hygiene_check_failed',
+        severity: 'P0',
+        blockers: [`trade_data_hygiene_check_failed:${error?.message || error}`],
+        generatedAt: new Date().toISOString(),
+      },
+    };
+  }
 }
 
 function recoverFiredSignalsEnabled() {
@@ -526,6 +568,31 @@ export async function materializeFiredEntryTriggerSignals({
   const items = [];
   let materialized = 0;
   let skipped = 0;
+  if (firedResults.length > 0) {
+    const hygieneGate = await buildMaterializationTradeDataHygieneGate(deps);
+    if (hygieneGate.blocked) {
+      for (const fired of firedResults) {
+        skipped += 1;
+        await Promise.resolve(triggerUpdater(fired.triggerId, {
+          triggerState: 'fired',
+          triggerMetaPatch: {
+            materializeStatus: 'blocked_by_trade_data_hygiene',
+            tradeDataHygiene: hygieneGate.report,
+            materializeBlockedAt: new Date().toISOString(),
+          },
+        })).catch(() => null);
+        items.push({
+          triggerId: fired.triggerId,
+          symbol: fired.symbol || null,
+          status: 'skipped',
+          reason: 'trade_data_hygiene_not_ready',
+          blockers: hygieneGate.report.blockers || [],
+          tradeDataHygiene: hygieneGate.report,
+        });
+      }
+      return { enabled: true, materialized, skipped, items, tradeDataHygiene: hygieneGate.report };
+    }
+  }
   for (const fired of firedResults) {
     const trigger = await triggerFetcher(fired.triggerId);
     if (!trigger) {

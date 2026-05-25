@@ -71,6 +71,10 @@ function summarizeNextAction({
   }
   if ((manualPlaybook?.summary?.manualReconcileRequired || 0) > 0) return 'complete_manual_wallet_journal_position_reconcile';
   if (preflight?.parity?.clear === false) return 'resolve_position_parity_before_live_fire';
+  if (preflight?.postVerify?.tradeDataHygiene?.ok === false || (
+    preflight?.postVerify?.tradeDataHygiene?.status
+    && preflight.postVerify.tradeDataHygiene.status !== 'ready'
+  )) return 'resolve_trade_data_hygiene_before_live_fire';
   if (!killSwitch?.ok) return 'fix_luna_kill_switch_consistency';
   if (!worker?.ok) return 'repair_entry_trigger_worker_runtime';
   if (blockers.length > 0) return 'resolve_live_fire_blockers';
@@ -94,6 +98,8 @@ function buildOperatingSummary({
     manualReconcileRequired: Number(manualPlaybook?.summary?.manualReconcileRequired || 0),
     parityRequired: preflight?.withPositionParity === true,
     parityClear: preflight?.parity?.clear ?? null,
+    tradeDataHygieneStatus: preflight?.postVerify?.tradeDataHygiene?.status || null,
+    tradeDataHygieneSeverity: preflight?.postVerify?.tradeDataHygiene?.severity || null,
     killSwitchClear: killSwitch?.ok === true,
     workerReady: worker?.ok === true,
     liveFireReady: blockers.length === 0,
@@ -173,6 +179,7 @@ export async function buildLunaLiveFireFinalGate({
         ? [`npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run -s runtime:luna-reconcile-ack-batch -- --apply --confirm=ack-luna-reconcile-batch --reason=operator_verified_absent_order --evidence=binance_client_order_lookup_not_found`]
         : []),
       ...(ackPreflight.nextCommands || []),
+      ...(preflight?.postVerify?.tradeDataHygiene?.nextActions || []),
       ...(killSwitch.commands || []),
       ...(!worker.ok && worker.installCommand ? [worker.installCommand] : []),
     ].filter(Boolean),
@@ -187,6 +194,7 @@ export function renderLunaLiveFireFinalGate(report = {}) {
     `nextAction: ${report.operatingSummary?.nextAction || 'unknown'}`,
     `authority: ${report.delegatedAuthority?.masterRole || 'unknown'} / selfApprove=${report.delegatedAuthority?.canSelfApprove ?? false}`,
     `ackReady=${report.operatingSummary?.safeAckReady ?? 'n/a'} / manualReconcile=${report.operatingSummary?.manualReconcileRequired ?? 'n/a'} / parity=${report.operatingSummary?.parityClear ?? 'n/a'} / killSwitch=${report.killSwitch?.status || 'unknown'} / worker=${report.worker?.status || 'unknown'}`,
+    `trade-data-hygiene=${report.operatingSummary?.tradeDataHygieneStatus || 'unknown'} / severity=${report.operatingSummary?.tradeDataHygieneSeverity || 'unknown'}`,
     `next: ${(report.nextCommands || []).length ? report.nextCommands[0] : 'none'}`,
   ].join('\n');
 }

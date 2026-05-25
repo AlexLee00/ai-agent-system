@@ -425,10 +425,10 @@ export function evaluateTradeDataEntryGuard(signal = {}, env = process.env) {
     }
   }
 
-  if (market === 'crypto' && strategyFamily === 'trend_following' && familyPerformanceBias <= -0.14) {
+  if (market === 'crypto' && strategyFamily === 'trend_following' && familyPerformanceBias <= 0.05) {
     warnings.push('crypto_trend_following_current_epoch_probe_only');
     meta.cryptoTrendFollowing = {
-      reason: 'current operating-epoch trend_following closed=2, avgPnl=-3.73%, winRate=0%; keep learning but require confirmation and reduce live exposure',
+      reason: 'current operating-epoch trend_following closed=3, avgPnl=-1.01%, winRate=33.33%; require pullback/volume evidence before full live exposure',
       familyPerformanceBias,
       externalEvidenceCount,
       hasTechnicalPresignal: technicalPresignal,
@@ -557,6 +557,10 @@ export function evaluateTradeDataEntryGuard(signal = {}, env = process.env) {
       multiplier: tradeMode === 'validation' ? 0.75 : 0.65,
       reason: 'short-term/scalp 조기 손실 압력이 있어 신규 진입 sizing을 축소',
     });
+    if (noExternalEvidence || noTechnicalPresignal) {
+      blockers.push('crypto_short_term_scalping_without_fast_confirmation');
+      meta.cryptoShortTermScalping.blockerReason = 'short-term scalp entries require explicit fast-read evidence after early-exit loss cluster';
+    }
     if (regime.includes('ranging') && (missingOrNoExternalEvidence || missingOrNoTechnicalConfirmation)) {
       blockers.push('crypto_short_term_scalping_ranging_without_confirmation');
       meta.cryptoShortTermScalping.blockerReason = 'ranging scalp entries require external evidence and technical presignal after early-exit loss cluster';

@@ -74,6 +74,12 @@ function formatPct(value) {
   return n.toFixed(2);
 }
 
+function formatNumber(value, digits = 2) {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return 'n/a';
+  return n.toFixed(digits);
+}
+
 function heldHoursFromEntry(entryTime) {
   if (!entryTime) return 0;
   const ts = new Date(entryTime).getTime();
@@ -107,6 +113,86 @@ function normalizeFamilyPerformanceFeedback(feedback = null) {
   return feedback && typeof feedback === 'object' ? feedback : {};
 }
 
+function firstFiniteNumber(...values) {
+  for (const value of values) {
+    if (value == null || value === '') continue;
+    const parsed = Number(value);
+    if (Number.isFinite(parsed)) return parsed;
+  }
+  return null;
+}
+
+function normalizeRuntimeSignal(value = '') {
+  const signal = String(value || '').trim().toUpperCase();
+  if (signal === 'BUY' || signal === 'BULLISH' || signal === 'LONG') return 'BUY';
+  if (signal === 'SELL' || signal === 'BEARISH' || signal === 'SHORT') return 'SELL';
+  return 'HOLD';
+}
+
+function normalizeRuntimeFrames(liveIndicator = null) {
+  const frames = Array.isArray(liveIndicator?.timeframes) ? liveIndicator.timeframes : [];
+  return frames
+    .filter(Boolean)
+    .map((frame) => ({
+      interval: String(frame?.interval || frame?.timeframe || '').trim() || null,
+      signal: normalizeRuntimeSignal(frame?.signal),
+      rsi: firstFiniteNumber(frame?.rsi, frame?.rsi14),
+      macdHist: firstFiniteNumber(frame?.macdHist, frame?.macd_hist, frame?.macd),
+    }));
+}
+
+function buildExitRecoverySignalState(candidate = {}) {
+  const runtimeState = candidate?.strategyProfile?.positionRuntimeState
+    || candidate?.runtimeState
+    || null;
+  const marketState = runtimeState?.marketState || {};
+  const liveIndicator = marketState?.liveIndicator || candidate?.analysisSnapshot?.liveIndicator || null;
+  const counts = marketState?.analysisCounts || {};
+  const frames = normalizeRuntimeFrames(liveIndicator);
+  const compositeSignal = normalizeRuntimeSignal(liveIndicator?.compositeSignal);
+  const weightedBias = firstFiniteNumber(
+    candidate?.executionIntent?.weightedBias,
+    runtimeState?.executionIntent?.weightedBias,
+    liveIndicator?.weightedBias,
+  );
+  const buy = safeNumber(counts?.buy ?? liveIndicator?.buy, 0);
+  const hold = safeNumber(counts?.hold ?? liveIndicator?.hold, 0);
+  const sell = safeNumber(counts?.sell ?? liveIndicator?.sell, 0);
+  const bearishFrames = frames.filter((frame) => frame.signal === 'SELL').length
+    + (compositeSignal === 'SELL' ? 1 : 0);
+  const recoverySignals = [
+    compositeSignal === 'BUY' || (weightedBias != null && weightedBias >= 0.15),
+    buy > sell && buy > 0,
+    frames.some((frame) => frame.signal === 'BUY'),
+    frames.some((frame) => frame.rsi != null && frame.rsi >= 50),
+    frames.some((frame) => frame.macdHist != null && frame.macdHist >= 0),
+  ].filter(Boolean).length;
+  const hasRuntimeEvidence = Boolean(liveIndicator) || (buy + hold + sell) > 0 || weightedBias != null;
+  const stackedBearish = bearishFrames >= 2 || (sell >= Math.max(2, buy + 2));
+  return {
+    active: hasRuntimeEvidence && recoverySignals >= 2 && !stackedBearish,
+    hasRuntimeEvidence,
+    recoverySignals,
+    weightedBias,
+    compositeSignal,
+    buy,
+    hold,
+    sell,
+    bearishFrames,
+    stackedBearish,
+  };
+}
+
+function shouldDeferLossExitForRecovery(candidate = {}, recoveryState = {}, { hardReason = false } = {}) {
+  const pnlPct = safeNumber(candidate?.pnlPct, 0);
+  const heldHours = safeNumber(candidate?.heldHours, 0);
+  return !hardReason
+    && recoveryState?.active === true
+    && pnlPct < 0
+    && pnlPct > -5
+    && heldHours < 6;
+}
+
 function buildFamilyFeedbackIncidentSuffix(strategyProfile = null) {
   const feedback = normalizeFamilyPerformanceFeedback(strategyProfile?.familyPerformanceFeedback);
   const bias = String(feedback?.bias || '').trim();
@@ -129,13 +215,22 @@ export function applyExitPlanGuard(candidate) {
   const responsibilityPlan = normalizeResponsibilityPlan(candidate?.strategyProfile?.responsibilityPlan);
   const executionPlan = normalizeExecutionPlan(candidate?.strategyProfile?.executionPlan);
   const familyFeedback = normalizeFamilyPerformanceFeedback(candidate?.strategyProfile?.familyPerformanceFeedback);
+  const hardReason = isHardExitReason(candidate?.reasonCode);
+  const recoveryState = buildExitRecoverySignalState(candidate);
+  if (shouldDeferLossExitForRecovery(candidate, recoveryState, { hardReason })) {
+    return {
+      allowed: false,
+      level: 'guarded',
+      reason: `회복 신호 재확인 필요 (recovery ${recoveryState.recoverySignals}/5, bias ${formatNumber(recoveryState.weightedBias)}, BUY/SELL ${recoveryState.buy}/${recoveryState.sell}, ${formatPct(candidate.pnlPct)}%, ${formatHours(candidate.heldHours)}h)`,
+      recoveryState,
+    };
+  }
   if (!exitPlan || Object.keys(exitPlan).length === 0) {
     return { allowed: true, level: 'fallback', reason: null };
   }
 
   let minHoldHours = safeNumber(exitPlan.minHoldHours, 0);
   let mildLossGracePct = safeNumber(exitPlan.mildLossGracePct, null);
-  const hardReason = isHardExitReason(candidate.reasonCode);
   const riskMission = String(responsibilityPlan?.riskMission || '').trim().toLowerCase();
   const watchMission = String(responsibilityPlan?.watchMission || '').trim().toLowerCase();
   const exitUrgency = String(executionPlan?.exitUrgency || '').trim().toLowerCase();

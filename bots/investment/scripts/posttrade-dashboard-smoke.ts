@@ -2,7 +2,11 @@
 // @ts-nocheck
 
 import assert from 'node:assert/strict';
-import { buildPosttradeFeedbackDashboard } from './runtime-posttrade-feedback-dashboard.ts';
+import {
+  buildPosttradeFeedbackDashboard,
+  normalizeConstitutionViolationCode,
+  summarizeConstitutionViolationRows,
+} from './runtime-posttrade-feedback-dashboard.ts';
 import * as db from '../shared/db.ts';
 import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
 
@@ -24,6 +28,25 @@ async function runSmoke() {
   const crypto = await buildPosttradeFeedbackDashboard({ days: 7, market: 'crypto' });
   assert.equal(crypto?.ok, true, 'dashboard crypto ok');
   assert.equal(crypto?.market, 'crypto', 'market filter applied');
+
+  assert.equal(
+    normalizeConstitutionViolationCode('{"code":"single_trade_loss_over_3pct","pnlPct":-4.2}'),
+    'single_trade_loss_over_3pct',
+    'json object violation is normalized to code',
+  );
+  const violationFixture = summarizeConstitutionViolationRows([
+    { violation: '{"code":"single_trade_loss_over_3pct","pnlPct":-4.2}', cnt: 1 },
+    { violation: '{"code":"single_trade_loss_over_3pct","pnlPct":-5.1}', cnt: 2 },
+    { violation: '"confidence_below_constitution_minimum"', cnt: 1 },
+  ]);
+  assert.deepEqual(
+    violationFixture.topViolations,
+    [
+      { code: 'single_trade_loss_over_3pct', count: 3 },
+      { code: 'confidence_below_constitution_minimum', count: 1 },
+    ],
+    'constitution violations are grouped by normalized code',
+  );
 
   return {
     ok: true,

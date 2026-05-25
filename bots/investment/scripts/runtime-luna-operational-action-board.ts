@@ -126,6 +126,13 @@ export function buildLunaOperationalActionBoardFromPack(pack = {}) {
       status: pack.evidence?.curriculum?.status || null,
       toCreate: Number(pack.evidence?.curriculum?.toCreate || 0),
     },
+    qualityWatch: {
+      count: (pack.qualityWatchTasks || []).length,
+      tasks: pack.qualityWatchTasks || [],
+      status: pack.evidence?.tradeDataQuality?.status || null,
+      warnings: pack.evidence?.tradeDataQuality?.warnings || [],
+      nextCommand: 'npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run -s runtime:luna-trade-data-analysis-report -- --json --no-write',
+    },
     pendingObservation: pack.pendingObservation || [],
     sevenDayObservation: {
       status: pack.evidence?.sevenDay?.status || null,
@@ -170,6 +177,14 @@ export async function runLunaOperationalActionBoardSmoke() {
       }],
       safeAckCandidates: [],
       curriculumTasks: [],
+      qualityWatchTasks: [{
+        type: 'trade_quality_watch',
+        id: 'trending_bull_entry_quality_gate',
+        status: 'watch',
+        safeToApply: false,
+        evidence: { trendingBullLosses: 6 },
+        nextAction: 'tighten trending_bull entries with chart/MTF confirmation',
+      }],
       pendingObservation: ['7day:fired 0/5'],
       nextActions: ['complete manual wallet/journal/position reconcile evidence'],
       evidence: {
@@ -196,6 +211,7 @@ export async function runLunaOperationalActionBoardSmoke() {
           pendingReasons: ['fired 0/5'],
         },
         curriculum: { status: 'curriculum_bootstrap_already_seeded', toCreate: 0 },
+        tradeDataQuality: { status: 'ready', warnings: [], watchCount: 1 },
       },
     },
   });
@@ -206,6 +222,8 @@ export async function runLunaOperationalActionBoardSmoke() {
   assert.equal(board.agentBusHygiene.status, 'operator_review_required');
   assert.equal(board.agentBusHygiene.applyAllowedNow, false);
   assert.equal(board.sevenDayObservation.status, 'pending_observation');
+  assert.equal(board.qualityWatch.count, 1);
+  assert.equal(board.qualityWatch.tasks[0].safeToApply, false);
   assert.equal(board.acknowledgedHistory.auditOnly, true);
   assert.equal(board.commands.busHygieneApply, null);
   return { ok: true, board };

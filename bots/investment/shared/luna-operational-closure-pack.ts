@@ -206,6 +206,32 @@ export function buildCurriculumClosureTasks(curriculum = {}) {
   }];
 }
 
+function tradeQualityNextAction(id = '', fallbackActions = []) {
+  const key = String(id || '');
+  const actions = asArray(fallbackActions);
+  if (key.includes('trending_bull')) return actions.find((item) => item.includes('trending_bull')) || null;
+  if (key.includes('trend_following')) return actions.find((item) => item.includes('trend_following')) || null;
+  if (key.includes('early_exit')) return actions.find((item) => item.includes('early')) || null;
+  if (key.includes('autotune')) return actions.find((item) => item.includes('autotune')) || null;
+  if (key.includes('short_term')) return actions.find((item) => item.includes('short')) || null;
+  return null;
+}
+
+export function buildTradeQualityWatchTasks(tradeData = {}) {
+  const nextActions = asArray(tradeData.nextActions);
+  return asArray(tradeData.journal?.reinforcementActions)
+    .filter((item) => String(item.status || '').toLowerCase() === 'watch')
+    .map((item) => ({
+      type: 'trade_quality_watch',
+      id: item.id || 'unknown_trade_quality_watch',
+      status: item.status || 'watch',
+      safeToApply: false,
+      evidence: item.evidence || {},
+      nextAction: tradeQualityNextAction(item.id, nextActions),
+      nextCommand: 'npm --prefix /Users/alexlee/projects/ai-agent-system/bots/investment run -s runtime:luna-trade-data-analysis-report -- --json --no-write',
+    }));
+}
+
 function buildPendingObservation({ sevenDay = {}, fullIntegration = {}, voyager = {} } = {}) {
   return uniq([
     ...asArray(sevenDay.pendingReasons).map((item) => `7day:${item}`),
@@ -220,6 +246,7 @@ function buildNextActions({
   lookupRetryTasks = [],
   hygieneTasks = [],
   curriculumTasks = [],
+  qualityWatchTasks = [],
   pendingObservation = [],
   liveFireTasks = [],
   cutover = {},
@@ -231,6 +258,7 @@ function buildNextActions({
   if (safeAckCandidates.length > 0) actions.push('run live lookup/ack preflight and apply ACK only with explicit evidence and confirm');
   if (hygieneTasks.length > 0) actions.push('run agent message bus hygiene dry-run; apply only with --confirm=luna-agent-bus-hygiene');
   if (curriculumTasks.length > 0) actions.push('run curriculum bootstrap dry-run; apply only with --confirm=luna-curriculum-bootstrap');
+  if (qualityWatchTasks.length > 0) actions.push('review trade quality watch items before loosening live sizing or entry gates');
   if (pendingObservation.some((item) => item.includes('voyager') || item.includes('skill'))) actions.push('wait for natural reflexion count or use validation fixture without production skill promotion');
   if (pendingObservation.some((item) => item.includes('7day') || item.includes('reflexion'))) actions.push('continue natural 7-day observation before operational-complete status');
   if (cutover.ok === false) actions.push('keep launchd cutover blocked until readiness pack has no blockers');
@@ -250,6 +278,7 @@ export function buildLunaOperationalClosurePackFromReports({
   curriculum = {},
   reconcileEvidence = {},
   ackPreflight = {},
+  tradeData = {},
 } = {}) {
   const blockers = asArray(reconcile.blockers);
   const manualTasks = blockers
@@ -264,6 +293,7 @@ export function buildLunaOperationalClosurePackFromReports({
   const lookupRetryTasks = asArray(reconcileEvidence.lookupRetryTasks);
   const hygieneTasks = buildAgentMessageBusHygienePlan(busHygiene);
   const curriculumTasks = buildCurriculumClosureTasks(curriculum);
+  const qualityWatchTasks = buildTradeQualityWatchTasks(tradeData);
   const liveFireTasks = buildLiveFireClosureTasks(liveFire);
   const pendingObservation = buildPendingObservation({ sevenDay, fullIntegration, voyager });
   const hardBlockers = uniq([
@@ -274,7 +304,7 @@ export function buildLunaOperationalClosurePackFromReports({
     ? 'operational_blocked'
     : pendingObservation.length > 0
       ? 'operational_pending'
-      : hygieneTasks.length > 0 || curriculumTasks.length > 0
+      : hygieneTasks.length > 0 || curriculumTasks.length > 0 || qualityWatchTasks.length > 0
         ? 'operational_warning'
         : 'operational_clear';
   return {
@@ -286,9 +316,10 @@ export function buildLunaOperationalClosurePackFromReports({
     liveFireTasks,
     hygieneTasks,
     curriculumTasks,
+    qualityWatchTasks,
     acknowledgedHistory,
     pendingObservation,
-    nextActions: buildNextActions({ manualTasks, safeAckCandidates, lookupRetryTasks, hygieneTasks, curriculumTasks, pendingObservation, liveFireTasks, cutover }),
+    nextActions: buildNextActions({ manualTasks, safeAckCandidates, lookupRetryTasks, hygieneTasks, curriculumTasks, qualityWatchTasks, pendingObservation, liveFireTasks, cutover }),
     evidence: {
       closure: {
         ok: closure.ok === true,
@@ -352,6 +383,14 @@ export function buildLunaOperationalClosurePackFromReports({
         toCreate: Number(curriculum.toCreate || 0),
         dryRun: curriculum.dryRun !== false,
       },
+      tradeDataQuality: {
+        status: tradeData.status || null,
+        warnings: asArray(tradeData.warnings),
+        watchCount: qualityWatchTasks.length,
+        nextActions: asArray(tradeData.nextActions),
+        realizedPnlCoverage: tradeData.trades?.realizedPnlCoverage || null,
+        posttradeQualityCoverage: tradeData.posttrade?.qualityCoverage || null,
+      },
       voyager: {
         status: voyager.status || null,
         naturalDataReady: voyager.naturalDataReady ?? voyager.readyForExtraction ?? false,
@@ -372,6 +411,7 @@ export default {
   buildAgentMessageBusHygienePlan,
   buildCurriculumClosureTasks,
   buildLiveFireClosureTasks,
+  buildTradeQualityWatchTasks,
   classifyAgentMessageBusHygiene,
   buildLunaOperationalClosurePackFromReports,
   buildManualTaskFromReconcile,

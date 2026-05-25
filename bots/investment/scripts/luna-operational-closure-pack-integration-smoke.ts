@@ -53,6 +53,22 @@ export async function runLunaOperationalClosurePackIntegrationSmoke() {
     },
     voyager: { status: 'pending_observation', pendingReason: 'insufficient_natural_data: reflexion 4/5' },
     curriculum: { status: 'curriculum_bootstrap_plan_ready', toCreate: 3, dryRun: true },
+    tradeData: {
+      status: 'ready',
+      warnings: [],
+      nextActions: ['tighten trending_bull entries with chart/MTF confirmation or route to validation until current-epoch win rate recovers'],
+      journal: {
+        reinforcementActions: [
+          {
+            id: 'trending_bull_entry_quality_gate',
+            status: 'watch',
+            evidence: { trendingBullLosses: 6 },
+          },
+        ],
+      },
+      trades: { realizedPnlCoverage: { coverage: 1 } },
+      posttrade: { qualityCoverage: { coverage: 1 } },
+    },
   });
   assert.equal(pack.status, 'operational_blocked');
   assert.equal(pack.manualTasks.length, 1);
@@ -60,6 +76,8 @@ export async function runLunaOperationalClosurePackIntegrationSmoke() {
   assert.equal(pack.hygieneTasks[0].classification.safeExpire, 7);
   assert.equal(pack.hygieneTasks[0].classification.reviewRequired, 5);
   assert.equal(pack.curriculumTasks.length, 1);
+  assert.equal(pack.qualityWatchTasks.length, 1);
+  assert.equal(pack.qualityWatchTasks[0].nextAction.includes('trending_bull'), true);
   assert.ok(pack.pendingObservation.some((item) => item.includes('7day')));
   return { ok: true, pack };
 }

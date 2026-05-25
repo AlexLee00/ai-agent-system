@@ -31,6 +31,32 @@ export async function runSmoke() {
   assert.equal(weakSymbol.decision, 'watch');
   assert.ok(weakSymbol.warnings.includes('trade_data_weak_symbol_development_stage'));
 
+  const trendFollowingNoBias = preFilterSignal({
+    symbol: 'BTC/USDT',
+    exchange: 'binance',
+    action: 'BUY',
+    confidence: 0.8,
+    strategy_route: { selectedFamily: 'trend_following' },
+  });
+  assert.equal(trendFollowingNoBias.ok, true);
+  assert.equal(trendFollowingNoBias.decision, 'watch');
+  assert.ok(trendFollowingNoBias.warnings.includes('crypto_trend_following_current_epoch_probe_only'));
+  assert.ok(trendFollowingNoBias.adjustments.some((item) => item.code === 'crypto_trend_following_current_epoch_probe_only'));
+
+  const explicitNoFastConfirmationScalp = preFilterSignal({
+    symbol: 'SOL/USDT',
+    exchange: 'binance',
+    action: 'BUY',
+    confidence: 0.8,
+    strategy_family: 'short_term_scalping',
+    market_regime: 'volatile',
+    strategy_route: { selectedFamily: 'short_term_scalping', externalEvidence: { evidenceCount: 0 } },
+    hasTechnicalPresignal: false,
+  });
+  assert.equal(explicitNoFastConfirmationScalp.ok, false);
+  assert.equal(explicitNoFastConfirmationScalp.decision, 'blocked');
+  assert.ok(explicitNoFastConfirmationScalp.blockers.includes('crypto_short_term_scalping_without_fast_confirmation'));
+
   const defensiveDomestic = preFilterSignal({
     symbol: '005930',
     exchange: 'kis',
@@ -43,7 +69,7 @@ export async function runSmoke() {
   assert.ok(defensiveDomestic.warnings.includes('domestic_defensive_rotation_probe_only'));
   assert.ok(defensiveDomestic.adjustments.some((item) => item.code === 'domestic_defensive_rotation_probe_only'));
 
-  return { ok: true, pass, blocked, watch, batch, weakSymbol, defensiveDomestic };
+  return { ok: true, pass, blocked, watch, batch, weakSymbol, trendFollowingNoBias, explicitNoFastConfirmationScalp, defensiveDomestic };
 }
 
 async function main() {

@@ -77,6 +77,19 @@ export async function runSmoke() {
     assert.ok(trendGuard.warnings.includes('crypto_trend_following_confirmation_quality_thin'));
     assert.equal(trendGuard.meta.sizingMultiplier, 0.75);
     assert.equal(trendGuard.meta.confirmationQuality.grade, 'missing');
+    const trendNoBiasGuard = evaluateTradeDataEntryGuard({
+      symbol: 'BTC/USDT',
+      exchange: 'binance',
+      action: 'BUY',
+      confidence: 0.7,
+      amount_usdt: 100,
+      strategy_route: {
+        selectedFamily: 'trend_following',
+      },
+    });
+    assert.equal(trendNoBiasGuard.blocked, false, 'trend_following without positive bias must stay probe-only, not hard-blocked');
+    assert.ok(trendNoBiasGuard.warnings.includes('crypto_trend_following_current_epoch_probe_only'));
+    assert.equal(trendNoBiasGuard.meta.sizingMultiplier, 0.75);
     const trendThinConfirmationGuard = evaluateTradeDataEntryGuard({
       symbol: 'BTC/USDT',
       exchange: 'binance',
@@ -165,6 +178,21 @@ export async function runSmoke() {
     assert.ok(rangingScalpGuard.blockers.includes('crypto_short_term_scalping_ranging_without_confirmation'));
     assert.ok(rangingScalpGuard.blockers.includes('crypto_ranging_without_reversal_confirmation'));
     assert.equal(rangingScalpGuard.meta.sizingMultiplier, 0.55);
+
+    const explicitNoFastConfirmationScalp = evaluateTradeDataEntryGuard({
+      symbol: 'SOL/USDT',
+      exchange: 'binance',
+      action: 'BUY',
+      confidence: 0.72,
+      amount_usdt: 100,
+      strategy_family: 'short_term_scalping',
+      market_regime: 'volatile',
+      strategy_route: { selectedFamily: 'short_term_scalping', externalEvidence: { evidenceCount: 0 } },
+      hasTechnicalPresignal: false,
+    });
+    assert.equal(explicitNoFastConfirmationScalp.blocked, true, 'explicit no-evidence short-term scalp must be blocked outside ranging too');
+    assert.ok(explicitNoFastConfirmationScalp.blockers.includes('crypto_short_term_scalping_without_fast_confirmation'));
+    assert.equal(explicitNoFastConfirmationScalp.meta.sizingMultiplier, 0.65);
 
     const promotionReadyGuard = evaluateTradeDataEntryGuard({
       symbol: '031330',
