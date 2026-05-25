@@ -23,24 +23,48 @@ defmodule Sigma.V2.LLM.CostTracker do
     daily_limit =
       case Float.parse(System.get_env(@budget_env, to_string(@default_budget))) do
         {f, _} -> f
-        :error  -> @default_budget
+        :error -> @default_budget
       end
 
-    daily_spent =
+    if daily_limit <= 0.0 do
+      Logger.error("#{@log_prefix} 일일 예산 초과: budget_limit=$#{daily_limit}")
+      {:error, :budget_exceeded}
+    else
+      case daily_spent_today() do
+        {:ok, daily_spent} ->
+          if daily_spent < daily_limit do
+            ratio = 1.0 - daily_spent / max(daily_limit, 0.001)
+            {:ok, Float.round(ratio, 4)}
+          else
+            Logger.error("#{@log_prefix} 일일 예산 초과: $#{daily_spent} / $#{daily_limit}")
+            {:error, :budget_exceeded}
+          end
+
+        {:error, reason} ->
+          Logger.error("#{@log_prefix} 예산 조회 불가로 LLM 호출 차단: #{inspect(reason)}")
+          {:error, :budget_exceeded}
+      end
+    end
+  end
+
+  defp daily_spent_today do
+    try do
       case Jay.Core.Repo.query(
              "SELECT COALESCE(SUM(cost_usd), 0.0) FROM #{@table} WHERE timestamp::date = CURRENT_DATE",
              []
            ) do
-        {:ok, %{rows: [[sum]]}} when is_number(sum) -> sum
-        _ -> 0.0
-      end
+        {:ok, %{rows: [[sum]]}} when is_number(sum) ->
+          {:ok, sum}
 
-    if daily_spent < daily_limit do
-      ratio = 1.0 - daily_spent / max(daily_limit, 0.001)
-      {:ok, Float.round(ratio, 4)}
-    else
-      Logger.error("#{@log_prefix} 일일 예산 초과: $#{daily_spent} / $#{daily_limit}")
-      {:error, :budget_exceeded}
+        other ->
+          {:error, {:unexpected_budget_query_result, other}}
+      end
+    rescue
+      e ->
+        {:error, Exception.message(e)}
+    catch
+      :exit, reason ->
+        {:error, {:exit, reason}}
     end
   end
 end

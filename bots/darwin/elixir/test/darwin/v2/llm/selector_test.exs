@@ -71,6 +71,12 @@ defmodule Darwin.V2.LLM.SelectorTest do
     test "principle.critique agent 정책" do
       assert Darwin.V2.LLM.Selector.policy_for("darwin.principle.critique") != nil
     end
+
+    test "RAG query planner has direct-mode fallback" do
+      policy = Darwin.V2.LLM.Selector.policy_for("darwin.rag.query_planner")
+      assert policy.route == :anthropic_haiku
+      assert :anthropic_sonnet in policy.fallback
+    end
   end
 
   describe "integration_skip" do

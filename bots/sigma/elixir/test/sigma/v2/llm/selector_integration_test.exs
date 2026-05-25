@@ -3,34 +3,38 @@ defmodule Sigma.V2.LLM.SelectorIntegrationTest do
 
   alias Sigma.V2.LLM.Selector
 
+  @llm_env_keys [
+    "ANTHROPIC_API_KEY",
+    "SIGMA_ANTHROPIC_API_KEY",
+    "LLM_HUB_ROUTING_ENABLED",
+    "LLM_HUB_ROUTING_SHADOW",
+    "HUB_ENABLE_CLAUDE_PUBLIC_API",
+    "HUB_ENABLE_ANTHROPIC_PUBLIC_API",
+    "JAY_LLM_DIRECT_FALLBACK",
+    "HUB_LLM_DIRECT_FALLBACK",
+    "SIGMA_LLM_DIRECT_FALLBACK"
+  ]
+
   describe "call_with_fallback/3 — API 키 없는 환경" do
-    test "API 키 없으면 모든 route 실패 → {:error, :all_routes_failed}" do
-      orig  = System.get_env("ANTHROPIC_API_KEY")
-      orig2 = System.get_env("SIGMA_ANTHROPIC_API_KEY")
-
-      System.delete_env("ANTHROPIC_API_KEY")
-      System.delete_env("SIGMA_ANTHROPIC_API_KEY")
-
-      result = Selector.call_with_fallback(:reflexion, "test prompt")
-      assert match?({:error, _}, result)
-
-      if orig,  do: System.put_env("ANTHROPIC_API_KEY", orig)
-      if orig2, do: System.put_env("SIGMA_ANTHROPIC_API_KEY", orig2)
+    test "API 키와 Hub route가 없으면 routing unavailable을 반환" do
+      without_env(@llm_env_keys, fn ->
+        assert {:error, :llm_routing_unavailable} =
+                 Selector.call_with_fallback(:reflexion, "test prompt")
+      end)
     end
   end
 
   describe "call_with_fallback/3 — 예산 초과 시뮬레이션" do
     test "budget_exceeded 환경 — 원래 예산 임시 0으로 줄임" do
-      # 환경변수로 예산을 0으로 설정하여 즉시 budget_exceeded 유발
-      orig_budget = System.get_env("SIGMA_LLM_DAILY_BUDGET_USD")
-      System.put_env("SIGMA_LLM_DAILY_BUDGET_USD", "0.0")
-
-      result = Selector.call_with_fallback(:reflexion, "test")
-      # 예산 초과 or 폴백 실패 (둘 다 {error, _})
-      assert match?({:error, _}, result)
-
-      if orig_budget, do: System.put_env("SIGMA_LLM_DAILY_BUDGET_USD", orig_budget),
-                     else: System.delete_env("SIGMA_LLM_DAILY_BUDGET_USD")
+      with_env(
+        Map.merge(clear_llm_env(), %{
+          "LLM_HUB_ROUTING_ENABLED" => "true",
+          "SIGMA_LLM_DAILY_BUDGET_USD" => "0.0"
+        }),
+        fn ->
+          assert {:error, :budget_exceeded} = Selector.call_with_fallback(:reflexion, "test")
+        end
+      )
     end
   end
 
@@ -53,16 +57,26 @@ defmodule Sigma.V2.LLM.SelectorIntegrationTest do
 
     test "Ollama route 없음 — Claude 전용 확인" do
       agents = [
-        "commander", "pod.risk", "pod.growth", "pod.trend",
-        "skill.data_quality", "skill.causal", "skill.experiment_design",
-        "skill.feature_planner", "skill.observability",
-        "principle.self_critique", "reflexion", "espl"
+        "commander",
+        "pod.risk",
+        "pod.growth",
+        "pod.trend",
+        "skill.data_quality",
+        "skill.causal",
+        "skill.experiment_design",
+        "skill.feature_planner",
+        "skill.observability",
+        "principle.self_critique",
+        "reflexion",
+        "espl"
       ]
 
       for agent <- agents do
         policy = Selector.policy_for(agent)
+
         assert policy.route not in [:ollama_8b, :ollama_32b],
                "Ollama route가 남아있음: #{inspect(policy.route)} for #{agent}"
+
         for fb <- policy.fallback do
           assert fb not in [:ollama_8b, :ollama_32b],
                  "Ollama fallback이 남아있음: #{inspect(fb)} for #{agent}"
@@ -73,21 +87,44 @@ defmodule Sigma.V2.LLM.SelectorIntegrationTest do
 
   describe "build_context (via call_with_fallback 간접 확인)" do
     test "call_with_fallback opts로 urgency/task_type 전달 가능" do
-      orig  = System.get_env("ANTHROPIC_API_KEY")
-      orig2 = System.get_env("SIGMA_ANTHROPIC_API_KEY")
+      without_env(@llm_env_keys, fn ->
+        assert {:error, :llm_routing_unavailable} =
+                 Selector.call_with_fallback(
+                   :reflexion,
+                   "prompt",
+                   urgency: :high,
+                   task_type: :structured_reasoning,
+                   max_tokens: 50
+                 )
+      end)
+    end
+  end
 
-      System.delete_env("ANTHROPIC_API_KEY")
-      System.delete_env("SIGMA_ANTHROPIC_API_KEY")
+  defp clear_llm_env do
+    Map.new(@llm_env_keys, &{&1, nil})
+  end
 
-      # 에러 반환되더라도 crash 없이 opts 처리됨 확인
-      result = Selector.call_with_fallback(
-        :reflexion, "prompt",
-        urgency: :high, task_type: :structured_reasoning, max_tokens: 50
-      )
-      assert match?({:error, _}, result)
+  defp without_env(keys, fun) do
+    keys
+    |> Map.new(&{&1, nil})
+    |> with_env(fun)
+  end
 
-      if orig,  do: System.put_env("ANTHROPIC_API_KEY", orig)
-      if orig2, do: System.put_env("SIGMA_ANTHROPIC_API_KEY", orig2)
+  defp with_env(values, fun) do
+    previous = Map.new(Map.keys(values), &{&1, System.get_env(&1)})
+
+    Enum.each(values, fn
+      {key, nil} -> System.delete_env(key)
+      {key, value} -> System.put_env(key, value)
+    end)
+
+    try do
+      fun.()
+    after
+      Enum.each(previous, fn
+        {key, nil} -> System.delete_env(key)
+        {key, value} -> System.put_env(key, value)
+      end)
     end
   end
 end

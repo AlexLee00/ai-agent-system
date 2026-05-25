@@ -1563,7 +1563,7 @@ function buildSelectorRegistry(): Record<string, any> {
         'darwin.espl':                 { route: 'anthropic_haiku', fallback: ['anthropic_sonnet'] },
         'darwin.self_rag':             { route: 'anthropic_haiku', fallback: [] },
         'darwin.self_rewarding_judge': { route: 'anthropic_haiku', fallback: ['anthropic_sonnet'] },
-        'darwin.rag.query_planner':    { route: 'anthropic_haiku', fallback: [] },
+        'darwin.rag.query_planner':    { route: 'openai_mini', fallback: ['qwen_deep'] },
         'darwin.rag.synthesizer':      { route: 'anthropic_haiku', fallback: ['anthropic_sonnet'] },
         research:                      { route: 'gemini_flash_lite', fallback: ['openai_mini', 'qwen_deep'] },
         commander:                     { route: 'openai_perf', fallback: ['anthropic_sonnet', 'anthropic_haiku'] },
