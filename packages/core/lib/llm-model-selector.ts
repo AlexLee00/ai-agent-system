@@ -1134,6 +1134,16 @@ const AGENT_MODEL_REGISTRY: Record<string, Record<string, string | null>> = {
 const RETIRED_GATEWAY_NAME = ['open', 'claw'].join('');
 const RETIRED_GATEWAY_LABEL = [RETIRED_GATEWAY_NAME, 'gateway'].join('-');
 
+const RETIRED_TEAM_NAMES = new Set([
+  'worker',
+  'video',
+  'edi',
+  'academic',
+  'business',
+  'data',
+  'secretary',
+]);
+
 const RETIRED_TARGET_MARKERS = new Set([
   'worker',
   'video',
@@ -1154,8 +1164,11 @@ function normalizeTargetToken(value: any): string {
 }
 
 function containsRetiredTargetMarker(team: string, agent: string, selectorKey: string | null): boolean {
+  const teamToken = normalizeTargetToken(team);
+  if (RETIRED_TEAM_NAMES.has(teamToken)) return true;
+
   const tokens = [
-    normalizeTargetToken(team),
+    teamToken,
     normalizeTargetToken(agent),
     normalizeTargetToken(selectorKey),
   ].filter(Boolean);

@@ -14,36 +14,89 @@ const codexManager = require('./codex-manager');
 const REPO_ROOT = env.PROJECT_ROOT;
 const README_PATH = path.join(REPO_ROOT, 'README.md');
 
-const SEED_FILES = [
-  'bots/orchestrator/scripts/seed-agent-registry.js',
-  'bots/orchestrator/scripts/seed-three-teams.js',
-  'bots/orchestrator/scripts/seed-team-reinforce-phase6.js',
-  'bots/orchestrator/scripts/seed-sigma-expansion.js',
+const SEED_FILE_STEMS = [
+  'bots/orchestrator/scripts/seed-agent-registry',
+  'bots/orchestrator/scripts/seed-three-teams',
+  'bots/orchestrator/scripts/seed-team-reinforce-phase6',
+  'bots/orchestrator/scripts/seed-sigma-expansion',
+  'bots/orchestrator/scripts/seed-blog-agents-phase2',
+  'bots/orchestrator/scripts/seed-blog-reinforce',
 ];
 
-function countAgentsFromSeeds() {
-  let total = 0;
-  for (const relativePath of SEED_FILES) {
-    const filePath = path.join(REPO_ROOT, relativePath);
-    if (!fs.existsSync(filePath)) continue;
-    const content = fs.readFileSync(filePath, 'utf8');
-    total += (content.match(/name:\s*'/g) || []).length;
-  }
-  return total;
+function resolveSeedFile(relativeStem) {
+  const candidates = /\.[cm]?[jt]s$/.test(relativeStem)
+    ? [relativeStem]
+    : [`${relativeStem}.ts`, `${relativeStem}.js`];
+  return candidates.find((relativePath) => fs.existsSync(path.join(REPO_ROOT, relativePath))) || null;
 }
 
-async function countAgents() {
+function extractSeedAgentRefs(content) {
+  const refs = [];
+  const pattern = /\{\s*name:\s*['"]([^'"]+)['"][\s\S]*?team:\s*['"]([^'"]+)['"]/g;
+  let match;
+  while ((match = pattern.exec(content)) !== null) {
+    refs.push({ name: match[1], team: match[2] });
+  }
+  return refs;
+}
+
+function countAgentStatsFromSeeds() {
+  const agents = new Set();
+  const teams = new Set();
+  const seedFiles = [];
+  let fallbackNameCount = 0;
+
+  for (const relativeStem of SEED_FILE_STEMS) {
+    const relativePath = resolveSeedFile(relativeStem);
+    if (!relativePath) continue;
+    const filePath = path.join(REPO_ROOT, relativePath);
+    const content = fs.readFileSync(filePath, 'utf8');
+    seedFiles.push(relativePath);
+
+    const refs = extractSeedAgentRefs(content);
+    if (refs.length === 0) {
+      fallbackNameCount += (content.match(/name:\s*['"]/g) || []).length;
+      continue;
+    }
+
+    for (const ref of refs) {
+      agents.add(`${ref.team}.${ref.name}`);
+      teams.add(ref.team);
+    }
+  }
+
+  return {
+    agentCount: agents.size || fallbackNameCount,
+    teamCount: teams.size,
+    seedFiles,
+  };
+}
+
+function countAgentsFromSeeds() {
+  return countAgentStatsFromSeeds().agentCount;
+}
+
+async function countRegistryStats() {
   try {
     const row = await pgPool.get('agent', `
-      SELECT COUNT(*)::int AS total
+      SELECT
+        COUNT(*)::int AS agent_total,
+        COUNT(DISTINCT team)::int AS team_total
       FROM agent.registry
       WHERE status != 'archived'
     `, []);
-    const total = Number(row?.total || 0);
-    if (total > 0) return total;
+    const agentCount = Number(row?.agent_total || 0);
+    const teamCount = Number(row?.team_total || 0);
+    if (agentCount > 0) return { agentCount, teamCount };
   } catch {
     // seed fallback
   }
+  return null;
+}
+
+async function countAgents() {
+  const registryStats = await countRegistryStats();
+  if (registryStats?.agentCount) return registryStats.agentCount;
   return countAgentsFromSeeds();
 }
 
@@ -64,10 +117,12 @@ async function getSystemStats() {
   const launchd = launchdManager.checkHealth();
   const topics = telegramManager.listTopics();
   const codex = codexManager.summarize();
+  const seedStats = countAgentStatsFromSeeds();
+  const registryStats = await countRegistryStats();
 
   return {
-    agentCount: await countAgents(),
-    teamCount: 10,
+    agentCount: registryStats?.agentCount || seedStats.agentCount,
+    teamCount: registryStats?.teamCount || Math.max(seedStats.teamCount || 0, 10),
     launchdTotal: Number(launchd.total || 0),
     launchdRunning: Number(launchd.running || 0),
     topicCount: topics.filter((item) => item.configured).length,
@@ -108,6 +163,8 @@ async function updateReadme(stats = null) {
 
 module.exports = {
   README_PATH,
+  countAgentStatsFromSeeds,
+  countAgentsFromSeeds,
   getSystemStats,
   updateReadme,
 };
