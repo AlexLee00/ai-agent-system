@@ -126,6 +126,10 @@ async function main() {
       `unexpected weekly incident key: ${weeklyMeta.incidentKey}`,
     );
     assert.strictEqual(weeklyMeta.dedupeMinutes, 45);
+    assert.strictEqual(scanner._testOnly_postAlarmRetryDelayMs('timeout', 2), 2000);
+    assert.strictEqual(scanner._testOnly_postAlarmRetryDelayMs('rate limit exceeded (200/min)', 2), 40000);
+    assert.strictEqual(scanner._testOnly_postAlarmRetryDelayMs('provider_rate_limit', 2), 40000);
+    assert.strictEqual(scanner._testOnly_postAlarmRetryDelayMs('rate-limited', 2), 40000);
 
     postAlarmResults.push({ ok: false, error: 'timeout' }, { ok: true });
     const retryResult = await scanner._testOnly_postAlarmWithRetry({ message: 'retry test' }, 'retry_test', 2);

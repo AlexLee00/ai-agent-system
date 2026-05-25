@@ -47,6 +47,10 @@ async function main() {
   try {
     delete require.cache[monitorPath];
     const monitor = require(monitorPath);
+    assert.strictEqual(monitor._testOnly_postAlarmRetryDelayMs('timeout', 2), 2000);
+    assert.strictEqual(monitor._testOnly_postAlarmRetryDelayMs('429 too many requests', 2), 40000);
+    assert.strictEqual(monitor._testOnly_postAlarmRetryDelayMs('provider_rate_limit', 2), 40000);
+    assert.strictEqual(monitor._testOnly_postAlarmRetryDelayMs('rate-limited', 2), 40000);
 
     const metrics = monitor.collectMetrics({
       totalRaw: 12,

@@ -157,6 +157,18 @@ function _sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+function _isRateLimitError(error: unknown): boolean {
+  const text = String(error || '').toLowerCase();
+  return /rate[_\s-]?limit|rate[_\s-]?limited|too many requests|429/i.test(text);
+}
+
+function _postAlarmRetryDelayMs(error: unknown, attempt: number): number {
+  if (_isRateLimitError(error)) {
+    return Math.min(60_000, 20_000 * attempt);
+  }
+  return 1000 * attempt;
+}
+
 async function _postAlarmWithRetry(payload: Record<string, unknown>, label: string, maxAttempts = 3): Promise<{ ok?: boolean; error?: unknown; body?: Record<string, unknown> } | null> {
   let lastResult: { ok?: boolean; error?: unknown; body?: Record<string, unknown> } | null = null;
   let lastError = 'unknown_error';
@@ -190,7 +202,7 @@ async function _postAlarmWithRetry(payload: Record<string, unknown>, label: stri
 
     console.warn(`[research-scanner] ${label} 알림 전달 실패 (${attempt}/${maxAttempts}): ${lastError}`);
     if (attempt < maxAttempts) {
-      await _sleep(1000 * attempt);
+      await _sleep(_postAlarmRetryDelayMs(lastError, attempt));
     }
   }
 
@@ -846,6 +858,7 @@ module.exports = {
   _selectSearchers,
   _testOnly_weeklyResearchAlarmMeta: _weeklyResearchAlarmMeta,
   _testOnly_postAlarmWithRetry: _postAlarmWithRetry,
+  _testOnly_postAlarmRetryDelayMs: _postAlarmRetryDelayMs,
 };
 
 if (require.main === module) {

@@ -91,6 +91,18 @@ function toErrorMessage(err: unknown): string {
     : String(err || 'unknown error');
 }
 
+function isRateLimitError(error: unknown): boolean {
+  const text = String(error || '').toLowerCase();
+  return /rate[_\s-]?limit|rate[_\s-]?limited|too many requests|429/i.test(text);
+}
+
+function postAlarmRetryDelayMs(error: unknown, attempt: number): number {
+  if (isRateLimitError(error)) {
+    return Math.min(60_000, 20_000 * attempt);
+  }
+  return 1000 * attempt;
+}
+
 async function postMonitorAlarmWithRetry(payload: AlarmPayload, maxAttempts = 3): Promise<boolean> {
   let lastError = 'not_delivered';
   for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
@@ -109,7 +121,7 @@ async function postMonitorAlarmWithRetry(payload: AlarmPayload, maxAttempts = 3)
     }
     console.warn(`[research-monitor] postAlarm 실패 (${attempt}/${maxAttempts}): ${lastError}`);
     if (attempt < maxAttempts) {
-      await new Promise((resolve) => setTimeout(resolve, 1000 * attempt));
+      await new Promise((resolve) => setTimeout(resolve, postAlarmRetryDelayMs(lastError, attempt)));
     }
   }
   return false;
@@ -333,4 +345,5 @@ module.exports = {
   storeMetrics,
   checkAnomalies,
   weeklyTrend,
+  _testOnly_postAlarmRetryDelayMs: postAlarmRetryDelayMs,
 };
