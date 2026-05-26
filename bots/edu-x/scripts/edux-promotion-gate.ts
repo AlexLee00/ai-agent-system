@@ -39,7 +39,25 @@ try {
   telegramSender = require(path.join(env.PROJECT_ROOT, 'packages/core/lib/telegram-sender'));
 } catch { telegramSender = null; }
 
+let launchdDoctor;
+try {
+  launchdDoctor = require('./edux-launchd-doctor.ts');
+} catch { launchdDoctor = null; }
+
 const GATE_REPORT_PATH = PROMOTION_GATE_REPORT;
+
+function launchdSummary() {
+  if (!launchdDoctor?.buildReport) return { ok: false, reason: 'launchd_doctor_unavailable' };
+  const report = launchdDoctor.buildReport({ apply: false, confirm: null, json: false, noWrite: true, strict: false });
+  return {
+    ok: report.ok,
+    loadedCount: report.loadedCount,
+    expectedCount: report.expectedCount,
+    missingLabels: report.missingLabels,
+    reloadRequiredLabels: report.reloadRequiredLabels || [],
+    validationFailureCount: report.validationFailureCount,
+  };
+}
 
 // ─── 검증 항목 ────────────────────────────────────────────────────
 
@@ -171,6 +189,7 @@ async function generateReport(options = {}) {
 
   const passed = checks.filter((c) => c.ok).length;
   const allPass = passed === 5;
+  const launchd = options.fixture ? null : launchdSummary();
 
   const now = kst.now ? kst.now() : new Date();
   const report = {
@@ -180,6 +199,9 @@ async function generateReport(options = {}) {
     summary: `${passed}/5 통과`,
     allPass,
     promotion: allPass ? 'PASS — 마스터 승인 후 실 발행 가능' : `HOLD — ${5 - passed}개 항목 미달`,
+    diagnostics: {
+      launchd,
+    },
     checks: checks.map((c, i) => ({
       label: labels[i],
       ok: c.ok,
@@ -193,7 +215,10 @@ async function generateReport(options = {}) {
           '2. 별도 승인 후 EDUX_DRY_RUN=false, EDUX_LIVE_PUBLISH_APPROVED=true, EDUX_PROMOTION_GATE_PASSED=true 적용',
           '3. launchd 리로드는 별도 명시 승인 후만 수행',
         ]
-      : ['Dry-run 계속 운영 → 미달 항목 해결 후 재검사'],
+      : [
+          launchd && !launchd.ok ? `Edu-X dry-run LaunchAgent 로드 필요: ${launchd.loadedCount}/${launchd.expectedCount}` : null,
+          'Dry-run 계속 운영 → 미달 항목 해결 후 재검사',
+        ].filter(Boolean),
   };
 
   return report;

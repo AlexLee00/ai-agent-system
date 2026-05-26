@@ -258,7 +258,10 @@ function collectHardBlockers({ actionBoard = {}, sourceHealth = {}, finalGate = 
   for (const item of actionBoard.hardBlockers || []) blockers.push(`operational:${item}`);
   for (const item of finalGate.blockers || []) blockers.push(`live_fire:${item}`);
   for (const item of sourceHealth.blockers || []) blockers.push(`source_health:${item}`);
-  for (const item of tradeData.hygiene?.findings || []) blockers.push(`trade_data_hygiene:${item.code || item.reason || 'finding'}`);
+  for (const item of tradeData.hygiene?.findings || []) {
+    const stableId = item.id || item.code || item.reason || 'finding';
+    blockers.push(`trade_data_hygiene:${stableId}`);
+  }
   if (actionBoard.manualReconcile?.count > 0) blockers.push(`manual_reconcile_tasks:${actionBoard.manualReconcile.count}`);
   if (actionBoard.exchangeLookupRetry?.count > 0) blockers.push(`exchange_lookup_retry_tasks:${actionBoard.exchangeLookupRetry.count}`);
   if (actionBoard.ackQueue?.count > 0) blockers.push(`ack_queue_pending:${actionBoard.ackQueue.count}`);
@@ -574,6 +577,30 @@ export async function runLunaProcessIntegrityLoopSmoke() {
   assert.equal(blocked.ok, false);
   assert.equal(blocked.status, 'process_integrity_blocked');
   assert.ok(blocked.hardBlockers.some((item) => item.includes('manual_reconcile')));
+
+  const hygieneBlocked = buildLunaProcessIntegrityLoopReport({
+    actionBoard: { sourceStatus: 'operational_clear', hardBlockers: [] },
+    finalGate: { status: 'luna_live_fire_final_gate_clear', blockers: [] },
+    sourceHealth: { status: 'luna_source_health_guarded', blockers: [], warnings: [] },
+    tradeData: {
+      status: 'needs_attention',
+      signals: { total: 0, blockedReasons: [] },
+      hygiene: {
+        status: 'needs_attention',
+        findings: [{
+          id: 'realized_pnl_backfill_pending',
+          severity: 'P1',
+          reason: 'closed sell trades are missing realized_pnl_pct and will weaken learning labels',
+        }],
+      },
+      journal: {},
+    },
+  });
+  assert.ok(hygieneBlocked.hardBlockers.includes('trade_data_hygiene:realized_pnl_backfill_pending'));
+  assert.equal(
+    hygieneBlocked.hardBlockers.some((item) => item.includes('closed sell trades are missing')),
+    false,
+  );
   return { ok: true, report, blocked };
 }
 

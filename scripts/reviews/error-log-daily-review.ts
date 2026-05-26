@@ -10,6 +10,7 @@ const AI_AGENT_HOME = process.env.AI_AGENT_HOME || process.env.JAY_HOME || path.
 const AI_AGENT_WORKSPACE = process.env.AI_AGENT_WORKSPACE || process.env.JAY_WORKSPACE || path.join(AI_AGENT_HOME, 'workspace');
 const AI_AGENT_LOGS = process.env.AI_AGENT_LOGS || process.env.JAY_LOGS || path.join(AI_AGENT_HOME, 'logs');
 const WORKSPACE_LOGS = path.join(AI_AGENT_WORKSPACE, 'logs');
+const PROJECT_ROOT = path.resolve(__dirname, '..', '..');
 
 const LOG_TARGETS = [
   { team: 'orchestrator', bot: 'jay', label: '제이 runtime', path: path.join(AI_AGENT_LOGS, 'orchestrator-error.log') },
@@ -25,7 +26,8 @@ const LOG_TARGETS = [
 ];
 
 const CATEGORY_RULES = [
-  { id: 'llm_rate_limit', label: 'LLM rate limit', severity: 'high', re: /rate.?limit|too many requests|http 429/i },
+  { id: 'api_rate_limit', label: '외부 API rate limit', severity: 'medium', re: /(?:KIS|Binance|OpenDART|DART|Naver|Toss|Yahoo|SEC).*rate.?limit|rate.?limit.*(?:KIS|Binance|OpenDART|DART|Naver|Toss|Yahoo|SEC)/i },
+  { id: 'llm_rate_limit', label: 'LLM rate limit', severity: 'high', re: /(?:LLM|OpenAI|Gemini|Groq|Claude|Anthropic).*rate.?limit|rate.?limit.*(?:LLM|OpenAI|Gemini|Groq|Claude|Anthropic)|too many requests|http 429/i },
   { id: 'dns_resolution', label: 'DNS/호스트 해석 실패', severity: 'high', re: /enotfound|getaddrinfo|dns/i },
   { id: 'missing_module', label: '모듈 누락', severity: 'high', re: /cannot find module|module not found/i },
   { id: 'node_missing', label: 'node 명령 누락', severity: 'high', re: /node: command not found|command not found: node/i },
@@ -46,6 +48,12 @@ const TIMESTAMP_PATTERNS = [
 ];
 
 const ACTIVE_WINDOW_MS = 3 * 60 * 60 * 1000;
+const REPORT_SCAN_DIRS = [
+  path.join(PROJECT_ROOT, 'output'),
+  path.join(PROJECT_ROOT, 'bots', 'investment', 'output'),
+  path.join(PROJECT_ROOT, 'bots', 'hub', 'output'),
+  path.join(PROJECT_ROOT, 'bots', 'claude', 'output'),
+];
 
 function parseArgs(argv = process.argv.slice(2)) {
   const daysArg = argv.find((arg) => arg.startsWith('--days='));
@@ -73,6 +81,14 @@ function readLastLines(filePath, limit) {
     return fs.readFileSync(filePath, 'utf8').split('\n').filter(Boolean).slice(-limit);
   } catch {
     return [];
+  }
+}
+
+function statMtimeMs(filePath) {
+  try {
+    return fs.statSync(filePath).mtimeMs;
+  } catch {
+    return null;
   }
 }
 
@@ -164,6 +180,162 @@ function collectIncidents(target, days, maxLines) {
   }
 
   return incidents;
+}
+
+function walkReportFiles(root, maxFiles = 400) {
+  const out = [];
+  const stack = [root];
+  while (stack.length && out.length < maxFiles) {
+    const dir = stack.pop();
+    let entries = [];
+    try {
+      entries = fs.readdirSync(dir, { withFileTypes: true });
+    } catch {
+      continue;
+    }
+    for (const entry of entries) {
+      if (entry.name === 'node_modules' || entry.name === '.git') continue;
+      const fullPath = path.join(dir, entry.name);
+      if (entry.isDirectory()) {
+        stack.push(fullPath);
+      } else if (/\.(json|md)$/i.test(entry.name) && !isSensitiveReportPath(fullPath)) {
+        out.push(fullPath);
+      }
+    }
+  }
+  return out;
+}
+
+function isSensitiveReportPath(filePath = '') {
+  const normalized = String(filePath || '').toLowerCase();
+  return /token-store|token_store|credential|private-key|api-key|apikey/.test(normalized);
+}
+
+function getByPath(object, pathParts) {
+  let current = object;
+  for (const part of pathParts) {
+    if (!current || typeof current !== 'object') return undefined;
+    current = current[part];
+  }
+  return current;
+}
+
+function compactJsonEvidence(value) {
+  if (value == null) return null;
+  if (Array.isArray(value)) return value.slice(0, 5);
+  if (typeof value === 'object') {
+    const picked = {};
+    for (const key of ['status', 'ok', 'blockers', 'hardBlockers', 'failures', 'criticalFailures', 'warningCount', 'failedCount', 'warnings']) {
+      if (value[key] != null) picked[key] = value[key];
+    }
+    return Object.keys(picked).length ? picked : value;
+  }
+  return value;
+}
+
+function asArray(value) {
+  return Array.isArray(value) ? value : [];
+}
+
+function finiteNumber(value, fallback = 0) {
+  const n = Number(value);
+  return Number.isFinite(n) ? n : fallback;
+}
+
+function classifyReportPayload(payload = {}) {
+  const status = String(payload.status || getByPath(payload, ['report', 'status']) || '').trim();
+  const ok = payload.ok ?? getByPath(payload, ['report', 'ok']);
+  const blockers = payload.blockers || payload.hardBlockers || payload.failures || payload.criticalFailures || [];
+  const warnings = [
+    ...asArray(payload.warnings),
+    ...asArray(getByPath(payload, ['summary', 'warnings'])),
+    ...asArray(getByPath(payload, ['report', 'warnings'])),
+  ];
+  const warningCount = finiteNumber(
+    payload.warningCount ?? getByPath(payload, ['summary', 'warningCount']) ?? warnings.length,
+    warnings.length,
+  );
+  const failedCount = finiteNumber(
+    getByPath(payload, ['summary', 'failed_calls'])
+      ?? getByPath(payload, ['summary', 'failed'])
+      ?? getByPath(payload, ['totals', 'failed_calls'])
+      ?? getByPath(payload, ['providers', 'failed', 'failed_count'])
+      ?? 0,
+    0,
+  );
+  const hasBlocker = Array.isArray(blockers) ? blockers.length > 0 : Boolean(blockers);
+
+  if (ok === false || hasBlocker || /failed|blocked|rollback|critical/i.test(status)) {
+    return {
+      interesting: true,
+      category: 'report_blocker',
+      label: '리포트 blocker/failure',
+      severity: ok === false || /rollback|critical/i.test(status) ? 'high' : 'medium',
+      summary: status || (ok === false ? 'ok=false' : 'blocker_present'),
+      evidence: compactJsonEvidence({ status, ok, blockers, warnings, warningCount, failedCount }),
+    };
+  }
+  if (/needs_attention|attention|not_ready|pending/i.test(status) || warningCount > 0 || warnings.length > 0 || failedCount > 0) {
+    return {
+      interesting: true,
+      category: 'report_attention',
+      label: '리포트 attention/pending',
+      severity: 'medium',
+      summary: status || `warnings=${warningCount} failed=${failedCount}`,
+      evidence: compactJsonEvidence({ status, ok, warnings: warnings.slice(0, 5), warningCount, failedCount }),
+    };
+  }
+  return { interesting: false };
+}
+
+function collectReportIncidents(days, maxFiles = 400) {
+  const recentCutoff = Date.now() - (days * 24 * 60 * 60 * 1000);
+  const files = REPORT_SCAN_DIRS.flatMap((dir) => walkReportFiles(dir, maxFiles));
+  const uniqueFiles = Array.from(new Set(files));
+  const incidents = [];
+  const scannedReports = [];
+
+  for (const filePath of uniqueFiles) {
+    const mtime = statMtimeMs(filePath) || 0;
+    scannedReports.push({ path: filePath, exists: true, mtime });
+    if (mtime && mtime < recentCutoff) continue;
+    if (!filePath.endsWith('.json')) continue;
+    let payload = null;
+    try {
+      payload = JSON.parse(fs.readFileSync(filePath, 'utf8'));
+    } catch {
+      incidents.push({
+        team: 'project',
+        bot: 'reports',
+        label: '프로젝트 리포트',
+        path: filePath,
+        category: 'report_parse_error',
+        categoryLabel: '리포트 파싱 오류',
+        severity: 'medium',
+        line: `JSON parse failed: ${path.relative(PROJECT_ROOT, filePath)}`,
+        normalized: `json_parse_failed:${path.relative(PROJECT_ROOT, filePath)}`,
+        timestamp: mtime,
+      });
+      continue;
+    }
+    const classified = classifyReportPayload(payload);
+    if (!classified.interesting) continue;
+    incidents.push({
+      team: 'project',
+      bot: 'reports',
+      label: '프로젝트 리포트',
+      path: filePath,
+      category: classified.category,
+      categoryLabel: classified.label,
+      severity: classified.severity,
+      line: `${classified.summary}: ${path.relative(PROJECT_ROOT, filePath)}`,
+      normalized: `${classified.category}:${path.relative(PROJECT_ROOT, filePath)}:${classified.summary}`,
+      timestamp: mtime,
+      evidence: classified.evidence,
+    });
+  }
+
+  return { incidents, scannedReports };
 }
 
 function aggregateIncidents(incidents) {
@@ -260,6 +432,12 @@ function buildRecommendations(categories, repeated) {
   if (has('llm_rate_limit')) {
     lines.push('- LLM rate limit 반복이 있어 모델 우선순위와 fallback 체인을 다시 점검하는 게 좋습니다.');
   }
+  if (has('api_rate_limit')) {
+    lines.push('- 외부 API rate limit 반복이 있어 해당 공급자별 backoff/cooldown과 캐시 폴백을 먼저 점검해야 합니다.');
+  }
+  if (has('report_blocker') || has('report_attention')) {
+    lines.push('- 프로젝트 리포트에 blocker/attention 상태가 남아 있어 해당 runtime smoke와 리포트 생성 루틴을 우선 재검증해야 합니다.');
+  }
   if (has('dns_resolution')) {
     lines.push('- DNS/호스트 해석 실패가 있어 네트워크/DNS 설정 또는 curl 폴백 경로를 우선 확인해야 합니다.');
   }
@@ -284,14 +462,19 @@ function buildRecommendations(categories, repeated) {
 
 function main() {
   const { days, lines, json } = parseArgs();
-  const incidents = LOG_TARGETS.flatMap((target) => collectIncidents(target, days, lines));
+  const logIncidents = LOG_TARGETS.flatMap((target) => collectIncidents(target, days, lines));
+  const reportScan = collectReportIncidents(days);
+  const incidents = [...logIncidents, ...reportScan.incidents];
   const aggregated = aggregateIncidents(incidents);
   const activeIncidents = incidents.filter((item) => item.timestamp && (Date.now() - item.timestamp) <= ACTIVE_WINDOW_MS);
   const report = {
     periodDays: days,
     activeWindowHours: ACTIVE_WINDOW_MS / (60 * 60 * 1000),
     scannedLogs: LOG_TARGETS.map(({ label, path: filePath }) => ({ label, path: filePath, exists: fs.existsSync(filePath) })),
+    scannedReports: reportScan.scannedReports,
     totalIncidents: incidents.length,
+    logIncidents: logIncidents.length,
+    reportIncidents: reportScan.incidents.length,
     activeIncidents: activeIncidents.length,
     teams: aggregated.teams,
     categories: aggregated.categories,
@@ -310,6 +493,7 @@ function main() {
   out.push(`📕 전체 봇 일일 오류 리뷰 (${days}일)`);
   out.push('');
   out.push(`총 감지 오류/경고: ${fmt(report.totalIncidents)}건`);
+  out.push(`로그 기반: ${fmt(report.logIncidents)}건 / 프로젝트 리포트 기반: ${fmt(report.reportIncidents)}건`);
   out.push(`최근 ${fmt(report.activeWindowHours)}시간 활성 오류/경고: ${fmt(report.activeIncidents)}건`);
 
   if (report.teams.length) {

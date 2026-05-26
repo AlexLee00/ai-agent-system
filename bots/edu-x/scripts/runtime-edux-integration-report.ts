@@ -20,6 +20,24 @@ try {
   pgPool = require(path.join(env.PROJECT_ROOT, 'packages/core/lib/pg-pool'));
 } catch { pgPool = null; }
 
+let launchdDoctor;
+try {
+  launchdDoctor = require('./edux-launchd-doctor.ts');
+} catch { launchdDoctor = null; }
+
+function launchdSummary() {
+  if (!launchdDoctor?.buildReport) return { ok: false, reason: 'launchd_doctor_unavailable' };
+  const report = launchdDoctor.buildReport({ apply: false, confirm: null, json: false, noWrite: true, strict: false });
+  return {
+    ok: report.ok,
+    loadedCount: report.loadedCount,
+    expectedCount: report.expectedCount,
+    missingLabels: report.missingLabels,
+    reloadRequiredLabels: report.reloadRequiredLabels || [],
+    validationFailureCount: report.validationFailureCount,
+  };
+}
+
 function fixtureReport() {
   return {
     ok: true,
@@ -39,6 +57,7 @@ async function generateReport(options = {}) {
     ok: table.ok,
     mode: 'live-db-readonly',
     db: table,
+    launchd: launchdSummary(),
     summary: {},
     blockers: [],
     generatedAt: new Date().toISOString(),
@@ -65,6 +84,7 @@ async function generateReport(options = {}) {
     imageAttachmentCount7d: Number(row.image_attached || 0),
   };
   if (report.summary.dryRunCount7d < 35) report.blockers.push('dry_run_7d_below_35');
+  if (report.launchd && report.launchd.ok === false) report.blockers.push('launchd_dry_run_agents_not_loaded');
   if (report.summary.imageAttachmentCount7d > 0) report.blockers.push('image_attachment_policy_violation');
   report.ok = report.blockers.length === 0;
   return report;

@@ -109,12 +109,13 @@ jay DB → edux_publish_log
      "bot_password": "실제 비밀번호"
    }
    ```
-3. launchd 5개 로드. 실제 load/unload는 별도 명시 승인 후만 수행:
+3. launchd 5개 로드. 실제 load/unload는 별도 명시 승인 후만 수행한다. 로드 전에는 doctor가 모든 plist의 dry-run 안전값을 검증해야 한다:
    ```bash
-   for f in bots/edu-x/launchd/ai.edux.*.plist; do
-     cp "$f" ~/Library/LaunchAgents/ && launchctl load "$f"
-   done
+   npm --prefix bots/edu-x run -s launchd:doctor -- --json
+   npm --prefix bots/edu-x run -s launchd:install-dry-run -- --json
    ```
+   - doctor는 `EDUX_DRY_RUN=true`, `EDUX_LIVE_PUBLISH_APPROVED=false`, `EDUX_PROMOTION_GATE_PASSED=false`, `RunAtLoad=false`일 때만 누락된 `ai.edux.*` LaunchAgent를 bootstrap한다.
+   - 이미 로드된 LaunchAgent의 plist 내용이 바뀐 경우 `reload_required`로만 보고한다. unload/restart/kickstart는 별도 명시 승인 없이는 수행하지 않는다.
 4. 1주 Dry-run 검토 → 실 발행 승인
 
 ## 8. 절대 금지
