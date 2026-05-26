@@ -395,9 +395,25 @@ function getExitGuardConfig() {
     mildLossHoldThresholdPct: safeNumber(guards?.mildLossHoldThresholdPct, -1.0),
     smallProfitHoldThresholdPct: safeNumber(guards?.smallProfitHoldThresholdPct, 1.5),
     smallProfitHoldHours: safeNumber(guards?.smallProfitHoldHours, safeNumber(guards?.shortHoldHours, 6)),
+    earlyLossRecheckThresholdPct: safeNumber(guards?.earlyLossRecheckThresholdPct, -5.0),
+    earlyLossRecheckHours: safeNumber(guards?.earlyLossRecheckHours, 1),
     shortHoldHours: safeNumber(guards?.shortHoldHours, 6),
     overwhelmingSellVotes: Math.max(1, Math.round(safeNumber(guards?.overwhelmingSellVotes, 3))),
   };
+}
+
+export function shouldHoldFreshLossExit({
+  pnlPct = 0,
+  heldHours = 0,
+  strongBearishExit = false,
+  exitGuards = getExitGuardConfig(),
+} = {}) {
+  const normalizedPnlPct = safeNumber(pnlPct, 0);
+  const normalizedHeldHours = safeNumber(heldHours, 0);
+  return normalizedPnlPct < exitGuards.mildLossHoldThresholdPct
+    && normalizedPnlPct > exitGuards.earlyLossRecheckThresholdPct
+    && normalizedHeldHours < exitGuards.earlyLossRecheckHours
+    && !strongBearishExit;
 }
 
 function getBacktestDriftConfig() {
@@ -921,6 +937,12 @@ function decideReevaluation(position, analysisSummary, strategyProfile = null, l
     && pnlPct > exitGuards.mildLossHoldThresholdPct
     && heldHours < exitGuards.shortHoldHours
     && !strongBearishExit;
+  const earlyLossRecheckGuard = shouldHoldFreshLossExit({
+    pnlPct,
+    heldHours,
+    strongBearishExit,
+    exitGuards,
+  });
 
   let baseDecision = null;
 
@@ -935,6 +957,12 @@ function decideReevaluation(position, analysisSummary, strategyProfile = null, l
       recommendation: 'HOLD',
       reasonCode: 'mild_loss_hold_guard',
       reason: `작은 손실 ${pnlPct.toFixed(2)}% / 짧은 보유 ${heldHours.toFixed(1)}h 구간이라 즉시 청산보다 관찰 유지`,
+    };
+  } else if (earlyLossRecheckGuard) {
+    baseDecision = {
+      recommendation: 'HOLD',
+      reasonCode: 'early_loss_recheck_guard',
+      reason: `비하드스탑 조기 손실 ${pnlPct.toFixed(2)}% / 짧은 보유 ${heldHours.toFixed(1)}h 구간이라 청산 전 재확인`,
     };
   } else if (sell >= buy && pnlPct < 0 && sell > 0 && chartExitPolicy.chartBearishConfirmed) {
     baseDecision = {

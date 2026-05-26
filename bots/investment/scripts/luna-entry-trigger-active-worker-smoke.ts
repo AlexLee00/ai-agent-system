@@ -73,6 +73,7 @@ export async function runLunaEntryTriggerActiveWorkerSmoke() {
     const terminalLowConfSymbol = `TERMINALCONF${Date.now().toString(36).toUpperCase()}/USDT`;
     const qualityBlockedSymbol = `QUALITYBLOCK${Date.now().toString(36).toUpperCase()}/USDT`;
     const qualityPredictiveFallbackSymbol = `QUALITYPRED${Date.now().toString(36).toUpperCase()}/USDT`;
+    const trendingBullNoMtfSymbol = `TRENDNOMTF${Date.now().toString(36).toUpperCase()}/USDT`;
     const binanceTopVolumeUniverse = makeSmokeTop30Universe([
       symbol,
       pullbackSymbol,
@@ -87,6 +88,7 @@ export async function runLunaEntryTriggerActiveWorkerSmoke() {
       terminalLowConfSymbol,
       qualityBlockedSymbol,
       qualityPredictiveFallbackSymbol,
+      trendingBullNoMtfSymbol,
       'FAKE/USDT',
       'RLUSD/USDT',
     ]);
@@ -932,6 +934,61 @@ export async function runLunaEntryTriggerActiveWorkerSmoke() {
       assert.equal(blockedPayloads.length, 0);
       assert.equal(blockedMaterializeResult.items[0].reason, 'trade_data_entry_guard_blocked');
       assert.equal(blockedUpdates[0].patch.triggerMetaPatch.materializeStatus, 'blocked_by_trade_data_entry_guard');
+
+      const trendNoMtfPayloads = [];
+      const trendNoMtfUpdates = [];
+      const trendNoMtfResult = await materializeFiredEntryTriggerSignals({
+        exchange: 'binance',
+        result: {
+          allowLiveFire: true,
+          results: [{ triggerId: 'fake-trigger-trend-no-mtf', symbol: trendingBullNoMtfSymbol, fired: true }],
+        },
+        riskContext: { capitalSnapshot },
+        events: [{ symbol: trendingBullNoMtfSymbol, price: 10, targetPrice: 10 }],
+        deps: {
+          binanceTopVolumeUniverse,
+          tradeDataHygieneBuilder: readyTradeDataHygieneBuilder,
+          triggerFetcher: async () => ({
+            id: 'fake-trigger-trend-no-mtf',
+            symbol: trendingBullNoMtfSymbol,
+            exchange: 'binance',
+            setup_type: 'trend_following',
+            trigger_type: 'breakout_retest',
+            trigger_state: 'fired',
+            confidence: 0.82,
+            predictive_score: 0.8,
+            trigger_context: {
+              marketRegime: 'trending_bull',
+              hasTechnicalPresignal: false,
+              strategyRoute: {
+                selectedFamily: 'trend_following',
+                setupType: 'breakout_retest',
+                quality: 'ready',
+                readinessScore: 0.84,
+              },
+            },
+            trigger_meta: {},
+          }),
+          duplicateFinder: async () => null,
+          signalInserter: async (payload) => {
+            trendNoMtfPayloads.push(payload);
+            return 'should-not-insert';
+          },
+          blockMetaMerger: async () => null,
+          triggerUpdater: async (id, patch) => {
+            trendNoMtfUpdates.push({ id, patch });
+          },
+        },
+      });
+      assert.equal(trendNoMtfResult.materialized, 0);
+      assert.equal(trendNoMtfResult.skipped, 1);
+      assert.equal(trendNoMtfPayloads.length, 0);
+      assert.equal(trendNoMtfResult.items[0].reason, 'trade_data_entry_guard_blocked');
+      assert.ok(
+        trendNoMtfResult.items[0].blockers.includes('crypto_trending_bull_without_mtf_confirmation'),
+        'trending_bull trigger context must reach trade-data entry guard',
+      );
+      assert.equal(trendNoMtfUpdates[0].patch.triggerMetaPatch.materializeStatus, 'blocked_by_trade_data_entry_guard');
 
       return {
         ok: true,

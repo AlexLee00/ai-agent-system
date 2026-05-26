@@ -59,6 +59,20 @@ const smallProfitGuarded = applyExitGuard({
 assert.equal(smallProfitGuarded.action, ACTIONS.HOLD);
 assert.equal(smallProfitGuarded.reasoning.includes('작은 수익'), true);
 
+const earlyLossRecheckGuarded = applyExitGuard({
+  ...position,
+  symbol: 'MITO/USDT',
+  current_price: 9.7,
+  unrealized_pnl: -3,
+  held_hours: 0.5,
+  analyses: [
+    { analyst: ANALYST_TYPES.TA_MTF, signal: 'BUY', confidence: 0.45, reasoning: 'not yet invalidated' },
+    { analyst: ANALYST_TYPES.NEWS, signal: 'SELL', confidence: 0.55, reasoning: 'short-term risk' },
+  ],
+}, normalizeExitDecision({ symbol: 'MITO/USDT', action: 'SELL', confidence: 0.66, reasoning: 'early loss' }, position));
+assert.equal(earlyLossRecheckGuarded.action, ACTIONS.HOLD);
+assert.equal(earlyLossRecheckGuarded.reasoning.includes('비하드스탑 조기 손실'), true);
+
 const fallback = buildExitFallback([
   { symbol: 'OLD/USDT', avg_price: 10, current_price: 11, held_hours: 80, analyses: [] },
   { symbol: 'LOSS/USDT', avg_price: 10, current_price: 9.4, held_hours: 1, analyses: [] },
@@ -78,6 +92,7 @@ const payload = {
   smoke: 'luna-exit-policy',
   guarded,
   smallProfitGuarded,
+  earlyLossRecheckGuarded,
   fallback,
   normalizedResult,
 };

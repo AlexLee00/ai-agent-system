@@ -17,6 +17,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import assert from 'node:assert/strict';
 import * as db from '../shared/db.ts';
 import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
 
@@ -47,11 +48,13 @@ export interface Luna7DayReportData {
     mock: number;
     avgPnlPct: number;
     totalPnlUsdt: number;
+    source?: string;
   };
   markets: {
     binance: number;
     kis: number;
     kis_overseas: number;
+    source?: string;
   };
   reflexions: {
     count: number;
@@ -111,7 +114,24 @@ async function collectSignalStats(days: number): Promise<Luna7DayReportData['sig
 }
 
 async function collectTradeStats(days: number): Promise<Luna7DayReportData['trades']> {
-  const row = await db.get(
+  const authoritative = await db.get(
+     `SELECT
+       COUNT(*)::int AS total,
+       SUM(CASE WHEN COALESCE(trade_mode = 'live' OR paper = false, false) THEN 1 ELSE 0 END)::int AS live,
+       SUM(CASE WHEN NOT COALESCE(trade_mode = 'live' OR paper = false, false) THEN 1 ELSE 0 END)::int AS mock,
+       COALESCE(AVG(realized_pnl_pct) FILTER (
+         WHERE LOWER(COALESCE(side, '')) = 'sell' AND realized_pnl_pct IS NOT NULL
+       ), 0)::numeric(8,4) AS avg_pnl_pct,
+       COALESCE(SUM(realized_pnl_usdt) FILTER (
+         WHERE LOWER(COALESCE(side, '')) = 'sell' AND exchange = 'binance'
+       ), 0)::numeric(12,4) AS total_pnl_usdt
+     FROM investment.trades
+     WHERE executed_at >= NOW() - ($1 * INTERVAL '1 day')`,
+    [days],
+  ).catch(() => null);
+  if (authoritative) return normalizeTradeStatsRow(authoritative, 'investment.trades');
+
+  const legacy = await db.get(
     `SELECT
        COUNT(*)::int AS total,
        SUM(CASE WHEN trade_mode = 'live' THEN 1 ELSE 0 END)::int  AS live,
@@ -122,16 +142,19 @@ async function collectTradeStats(days: number): Promise<Luna7DayReportData['trad
      WHERE created_at >= NOW() - ($1 * INTERVAL '1 day')`,
     [days],
   ).catch(() => null);
-  return {
-    total: Number(row?.total || 0),
-    live: Number(row?.live || 0),
-    mock: Number(row?.mock || 0),
-    avgPnlPct: Number(row?.avg_pnl_pct || 0),
-    totalPnlUsdt: Number(row?.total_pnl_usdt || 0),
-  };
+  return normalizeTradeStatsRow(legacy, legacy ? 'investment.trade_history' : 'none');
 }
 
 async function collectMarketStats(days: number): Promise<Luna7DayReportData['markets']> {
+  const authoritativeRows = await db.query(
+    `SELECT exchange, COUNT(*)::int AS cnt
+     FROM investment.trades
+     WHERE executed_at >= NOW() - ($1 * INTERVAL '1 day')
+     GROUP BY exchange`,
+    [days],
+  ).catch(() => null);
+  if (authoritativeRows) return normalizeMarketStatsRows(authoritativeRows, 'investment.trades');
+
   const rows = await db.query(
     `SELECT exchange, COUNT(*)::int AS cnt
      FROM investment.trade_history
@@ -139,12 +162,28 @@ async function collectMarketStats(days: number): Promise<Luna7DayReportData['mar
      GROUP BY exchange`,
     [days],
   ).catch(() => []);
+  return normalizeMarketStatsRows(rows, rows ? 'investment.trade_history' : 'none');
+}
+
+export function normalizeTradeStatsRow(row: any, source = 'none'): Luna7DayReportData['trades'] {
+  return {
+    total: Number(row?.total || 0),
+    live: Number(row?.live || 0),
+    mock: Number(row?.mock || 0),
+    avgPnlPct: Number(row?.avg_pnl_pct || 0),
+    totalPnlUsdt: Number(row?.total_pnl_usdt || 0),
+    source,
+  };
+}
+
+export function normalizeMarketStatsRows(rows: any[] = [], source = 'none'): Luna7DayReportData['markets'] {
   const m: Record<string, number> = {};
   for (const r of rows || []) m[r.exchange] = Number(r.cnt);
   return {
     binance: m['binance'] ?? 0,
     kis: m['kis'] ?? 0,
     kis_overseas: m['kis_overseas'] ?? 0,
+    source,
   };
 }
 
@@ -246,6 +285,7 @@ function renderReport(data: Luna7DayReportData): string {
   line(`    총 거래   : ${data.trades.total}건`);
   line(`    LIVE      : ${data.trades.live}건`);
   line(`    MOCK      : ${data.trades.mock}건`);
+  if (data.trades.source) line(`    소스      : ${data.trades.source}`);
   line(`    평균 PnL  : ${(data.trades.avgPnlPct * 100).toFixed(2)}%`);
   line(`    총 PnL    : $${data.trades.totalPnlUsdt.toFixed(2)}`);
   line('');
@@ -315,8 +355,8 @@ export async function runLuna7DayReport(
     status: 'pending_observation',
     pendingReasons: [],
     signals: safe(signals, { fired: 0, blocked: 0, approved: 0, executed: 0, rejected: 0, statusCounts: {} }),
-    trades: safe(trades, { total: 0, live: 0, mock: 0, avgPnlPct: 0, totalPnlUsdt: 0 }),
-    markets: safe(markets, { binance: 0, kis: 0, kis_overseas: 0 }),
+    trades: safe(trades, { total: 0, live: 0, mock: 0, avgPnlPct: 0, totalPnlUsdt: 0, source: 'none' }),
+    markets: safe(markets, { binance: 0, kis: 0, kis_overseas: 0, source: 'none' }),
     reflexions: safe(reflexions, { count: 0, llmFailures: 0 }),
     skills: safe(skills, { extracted: 0, libraryTotal: 0 }),
     lifecycle: safe(lifecycle, { stage8Covered: 0, totalPositions: 0 }),
@@ -352,9 +392,43 @@ export async function runLuna7DayReport(
   return { ...data, reportText };
 }
 
+export async function runLuna7DayReportSmoke() {
+  const stats = normalizeTradeStatsRow({
+    total: 17,
+    live: 17,
+    mock: 0,
+    avg_pnl_pct: '0.068',
+    total_pnl_usdt: '15.6269',
+  }, 'investment.trades');
+  assert.equal(stats.total, 17);
+  assert.equal(stats.live + stats.mock, stats.total, 'live/mock counts must be mutually exclusive');
+  assert.equal(stats.source, 'investment.trades');
+  assert.equal(stats.totalPnlUsdt, 15.6269);
+
+  const markets = normalizeMarketStatsRows([
+    { exchange: 'binance', cnt: 12 },
+    { exchange: 'kis', cnt: 4 },
+    { exchange: 'kis_overseas', cnt: 1 },
+  ], 'investment.trades');
+  assert.deepEqual(markets, {
+    binance: 12,
+    kis: 4,
+    kis_overseas: 1,
+    source: 'investment.trades',
+  });
+  return { ok: true, stats, markets };
+}
+
 async function main() {
   if (!ENABLED()) {
     console.log('[7day-report] 비활성. LUNA_7DAY_OPERATION_VERIFY_ENABLED=true로 활성화.');
+    return;
+  }
+  const smoke = process.argv.includes('--smoke');
+  if (smoke) {
+    const result = await runLuna7DayReportSmoke();
+    if (process.argv.includes('--json')) console.log(JSON.stringify(result, null, 2));
+    else console.log('luna 7day report smoke ok');
     return;
   }
   const days = Number(process.argv.find(a => a.startsWith('--days='))?.split('=')[1] || 7);

@@ -101,6 +101,12 @@ export function getExitGuardConfig() {
     smallProfitHoldThresholdPct: Number.isFinite(Number(guards?.smallProfitHoldThresholdPct))
       ? Number(guards.smallProfitHoldThresholdPct)
       : 1.0,
+    earlyLossRecheckThresholdPct: Number.isFinite(Number(guards?.earlyLossRecheckThresholdPct))
+      ? Number(guards.earlyLossRecheckThresholdPct)
+      : -5.0,
+    earlyLossRecheckHours: Number.isFinite(Number(guards?.earlyLossRecheckHours))
+      ? Number(guards.earlyLossRecheckHours)
+      : 1,
     overwhelmingSellVotes: Math.max(
       1,
       Number.isFinite(Number(guards?.overwhelmingSellVotes))
@@ -137,10 +143,13 @@ export function shouldDowngradeEarlyExit(position, decision) {
   const earlyMildLoss = pnlPct < 0
     && pnlPct > guards.mildLossHoldThresholdPct
     && heldHours < guards.shortHoldHours;
+  const earlyLossRecheck = pnlPct < guards.mildLossHoldThresholdPct
+    && pnlPct > guards.earlyLossRecheckThresholdPct
+    && heldHours < guards.earlyLossRecheckHours;
   const earlySmallProfit = pnlPct >= 0
     && pnlPct < guards.smallProfitHoldThresholdPct
     && heldHours < guards.shortHoldHours;
-  if (!earlyMildLoss && !earlySmallProfit) {
+  if (!earlyMildLoss && !earlyLossRecheck && !earlySmallProfit) {
     return false;
   }
   const { buy, sellLike } = countExitVotes(position);
@@ -153,13 +162,16 @@ export function applyExitGuard(position, decision) {
   if (!shouldDowngradeEarlyExit(position, decision)) return decision;
   const heldHours = Number(position?.held_hours || 0);
   const pnlPct = getPositionPnlPct(position);
+  const guards = getExitGuardConfig();
   return {
     ...decision,
     action: ACTIONS.HOLD,
     confidence: Math.min(Number(decision?.confidence ?? 0.5), 0.58),
     reasoning: pnlPct >= 0
       ? `EXIT 가드 — 작은 수익 ${pnlPct.toFixed(2)}% / 짧은 보유 ${heldHours.toFixed(1)}h 구간이라 관찰 유지`
-      : `EXIT 가드 — 작은 손실 ${pnlPct.toFixed(2)}% / 짧은 보유 ${heldHours.toFixed(1)}h 구간이라 관찰 유지`,
+      : (pnlPct > guards.mildLossHoldThresholdPct
+          ? `EXIT 가드 — 작은 손실 ${pnlPct.toFixed(2)}% / 짧은 보유 ${heldHours.toFixed(1)}h 구간이라 관찰 유지`
+          : `EXIT 가드 — 비하드스탑 조기 손실 ${pnlPct.toFixed(2)}% / 짧은 보유 ${heldHours.toFixed(1)}h 구간이라 재확인 전 관찰 유지`),
   };
 }
 

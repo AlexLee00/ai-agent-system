@@ -5,6 +5,7 @@ import assert from 'assert/strict';
 import {
   buildChartExitPolicySnapshot,
   buildDynamicTrailInputFromChart,
+  shouldHoldFreshLossExit,
 } from '../shared/position-reevaluator.ts';
 import { computeDynamicTrail } from '../shared/dynamic-trail-engine.ts';
 
@@ -50,6 +51,16 @@ try {
   const sellPolicy = buildChartExitPolicySnapshot(sellChart);
   assert.equal(sellPolicy.chartBearishConfirmed, true);
   assert.equal(sellPolicy.stackedBearishConfirmed, true);
+  assert.equal(
+    shouldHoldFreshLossExit({ pnlPct: -3.2, heldHours: 0.4, strongBearishExit: false }),
+    true,
+    'sub-1h non-hard loss exits should recheck before closing',
+  );
+  assert.equal(
+    shouldHoldFreshLossExit({ pnlPct: -5.2, heldHours: 0.4, strongBearishExit: false }),
+    false,
+    'hard stop losses bypass fresh-loss recheck',
+  );
 
   const trailInput = buildDynamicTrailInputFromChart({
     position: { exchange: 'binance', avg_price: 100 },

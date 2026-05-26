@@ -21,7 +21,11 @@ import * as db from '../shared/db.ts';
 import fs from 'node:fs';
 import path from 'node:path';
 import { getPosttradeFeedbackRuntimeConfig } from '../shared/runtime-config.ts';
-import { evaluateTradeQuality, fetchPendingPosttradeCandidates } from '../shared/trade-quality-evaluator.ts';
+import {
+  evaluateTradeQuality,
+  fetchPendingPosttradeCandidates,
+  normalizeTradeQualityResult,
+} from '../shared/trade-quality-evaluator.ts';
 import { analyzeStageAttribution } from '../shared/stage-attribution-analyzer.ts';
 import { runReflexion } from '../shared/reflexion-engine.ts';
 import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
@@ -165,6 +169,7 @@ async function runPosttradeFeedback(args) {
     queuedSource: candidates.filter((item) => item.source === 'knowledge').length,
     fallbackSource: candidates.filter((item) => item.source === 'fallback_scan').length,
     journalSource: candidates.filter((item) => item.source === 'trade_journal_scan').length,
+    reflexionRetrySource: candidates.filter((item) => item.source === 'reflexion_retry').length,
   };
 
   for (const candidate of candidates) {
@@ -175,7 +180,16 @@ async function runPosttradeFeedback(args) {
       }
       // ── Phase A: Trade Quality Score ──────────────────────────────────────
       let quality = null;
-      if (runA) {
+      if (candidate.source === 'reflexion_retry') {
+        quality = normalizeTradeQualityResult(await db.get(
+          `SELECT * FROM investment.trade_quality_evaluations WHERE trade_id = $1`,
+          [tradeId],
+        ));
+        if (quality) {
+          results[quality.category]++;
+          posttradeLog(args, `[A:cached] trade=${tradeId} category=${quality.category}`);
+        }
+      } else if (runA) {
         quality = await evaluateTradeQuality(tradeId, { dryRun: args.dryRun });
         if (quality) {
           results[quality.category]++;

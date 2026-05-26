@@ -16,6 +16,8 @@ import { evaluateLunaConstitutionForTrade } from './luna-constitution.ts';
 import {
   fetchPendingTradeJournalPosttradeCandidates,
   fetchTradeJournalPosttradeTrade,
+  tradeJournalMarketSql,
+  tradeJournalNumericIdSql,
 } from './posttrade-trade-journal-adapter.ts';
 
 const MARKET_ALIASES = {
@@ -46,6 +48,26 @@ export interface TradeQualityResult {
   category: 'preferred' | 'neutral' | 'rejected';
   rationale: string;
   sub_score_breakdown: Record<string, unknown>;
+}
+
+export function normalizeTradeQualityResult(row: any): TradeQualityResult | null {
+  if (!row) return null;
+  const category = String(row.category || 'neutral').toLowerCase();
+  const normalizedCategory = ['preferred', 'neutral', 'rejected'].includes(category)
+    ? category
+    : 'neutral';
+  return {
+    ...row,
+    trade_id: Number(row.trade_id || 0),
+    market_decision_score: numericScore(row.market_decision_score, 0),
+    pipeline_quality_score: numericScore(row.pipeline_quality_score, 0),
+    monitoring_score: numericScore(row.monitoring_score, 0),
+    backtest_utilization_score: numericScore(row.backtest_utilization_score, 0),
+    overall_score: numericScore(row.overall_score, 0),
+    category: normalizedCategory,
+    rationale: String(row.rationale || ''),
+    sub_score_breakdown: normalizeJsonObject(row.sub_score_breakdown),
+  };
 }
 
 /**
@@ -157,9 +179,13 @@ export async function fetchPendingPosttradeCandidates({
 }: {
   limit?: number;
   market?: string;
-} = {}): Promise<Array<{ tradeId: number; source: 'knowledge' | 'fallback_scan' | 'trade_journal_scan'; knowledgeId?: number | null; journalId?: string | null }>> {
+} = {}): Promise<Array<{ tradeId: number; source: 'knowledge' | 'fallback_scan' | 'trade_journal_scan' | 'reflexion_retry'; knowledgeId?: number | null; journalId?: string | null }>> {
   const safeLimit = Math.max(1, Number(limit || 50));
   const targetMarket = normalizeMarketKey(market);
+  const reflexionRetryReserve = safeLimit > 1
+    ? Math.min(5, Math.max(1, Math.ceil(safeLimit * 0.2)))
+    : 0;
+  const primaryCandidateLimit = Math.max(1, safeLimit - reflexionRetryReserve);
   const rows = await db.query(
     `SELECT
        mk.id AS knowledge_id,
@@ -224,9 +250,17 @@ export async function fetchPendingPosttradeCandidates({
     if (seen.has(tradeId)) continue;
     seen.add(tradeId);
     fromKnowledge.push({ tradeId, source: 'knowledge' as const, knowledgeId: Number(row.knowledge_id) || null });
-    if (fromKnowledge.length >= safeLimit) return fromKnowledge;
+    if (fromKnowledge.length >= primaryCandidateLimit) break;
   }
 
+  if (fromKnowledge.length < safeLimit) {
+    const reflexionRetryCandidates = await fetchRejectedReflexionRetryCandidates({
+      limit: safeLimit - fromKnowledge.length,
+      market: targetMarket,
+      seen,
+    });
+    fromKnowledge.push(...reflexionRetryCandidates);
+  }
   const fallbackRows = await db.query(
     `SELECT th.id
        FROM investment.trade_history th
@@ -257,6 +291,55 @@ export async function fetchPendingPosttradeCandidates({
 }
 
 // ─── Private helpers ──────────────────────────────────────────────────────────
+
+async function fetchRejectedReflexionRetryCandidates({
+  limit = 50,
+  market = 'all',
+  seen = new Set(),
+} = {}) {
+  const safeLimit = Math.max(1, Number(limit || 50));
+  const targetMarket = normalizeMarketKey(market);
+  const idExpr = tradeJournalNumericIdSql('tj');
+  const marketExpr = tradeJournalMarketSql('tj');
+  const params = [safeLimit * 3];
+  const marketClause = targetMarket === 'all'
+    ? ''
+    : (() => {
+        params.push(targetMarket);
+        return `AND ${marketExpr} = $${params.length}`;
+      })();
+  const rows = await db.query(
+    `SELECT tqe.trade_id,
+            tqe.evaluated_at,
+            tj.id AS journal_id,
+            ${marketExpr} AS market
+       FROM investment.trade_quality_evaluations tqe
+       LEFT JOIN investment.luna_failure_reflexions lfr
+         ON lfr.trade_id = tqe.trade_id
+       LEFT JOIN investment.trade_journal tj
+         ON ${idExpr} = tqe.trade_id
+      WHERE LOWER(COALESCE(tqe.category, '')) = 'rejected'
+        AND lfr.trade_id IS NULL
+        ${marketClause}
+      ORDER BY tqe.evaluated_at DESC NULLS LAST
+      LIMIT $1`,
+    params,
+  ).catch(() => []);
+  const output = [];
+  for (const row of rows || []) {
+    const tradeId = Number(row.trade_id);
+    if (!Number.isSafeInteger(tradeId) || tradeId <= 0 || seen.has(tradeId)) continue;
+    seen.add(tradeId);
+    output.push({
+      tradeId,
+      source: 'reflexion_retry' as const,
+      knowledgeId: null,
+      journalId: row.journal_id || null,
+    });
+    if (output.length >= safeLimit) break;
+  }
+  return output;
+}
 
 async function fetchTrade(tradeId: number) {
   const historyTrade = await db.get(`
@@ -539,6 +622,23 @@ function normalizeMarketKey(market: unknown) {
   if (raw === 'kis_overseas') return MARKET_ALIASES.overseas;
   if (raw === 'domestic' || raw === 'overseas' || raw === 'crypto' || raw === 'all') return raw;
   return 'all';
+}
+
+function numericScore(value: unknown, fallback = 0): number {
+  const numberValue = Number(value);
+  return Number.isFinite(numberValue) ? numberValue : fallback;
+}
+
+function normalizeJsonObject(value: unknown): Record<string, unknown> {
+  if (!value) return {};
+  if (typeof value === 'object') return value as Record<string, unknown>;
+  if (typeof value !== 'string') return {};
+  try {
+    const parsed = JSON.parse(value);
+    return parsed && typeof parsed === 'object' ? parsed : {};
+  } catch {
+    return {};
+  }
 }
 
 async function ensureDailyEvaluationBudget({

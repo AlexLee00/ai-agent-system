@@ -290,6 +290,8 @@ const DEFAULT_RUNTIME_CONFIG = {
       mildLossHoldThresholdPct: -1.0,
       shortHoldHours: 6,
       smallProfitHoldThresholdPct: 1.0,
+      earlyLossRecheckThresholdPct: -5.0,
+      earlyLossRecheckHours: 1,
       overwhelmingSellVotes: 3,
     },
     backtestDrift: {

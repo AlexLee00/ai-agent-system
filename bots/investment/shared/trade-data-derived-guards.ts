@@ -406,7 +406,7 @@ export function evaluateTradeDataEntryGuard(signal = {}, env = process.env) {
   if (market === 'crypto' && regime.includes('trending_bull')) {
     warnings.push('crypto_trending_bull_current_epoch_mtf_required');
     meta.cryptoTrendingBullPressure = {
-      reason: 'current operating-epoch trending_bull closed=9, avgPnl=-1.21%, winRate=22%; new BUY requires explicit MTF/technical confirmation',
+      reason: 'current operating-epoch trending_bull loss pressure requires explicit MTF/technical confirmation before new BUY',
       externalEvidenceCount,
       hasTechnicalPresignal: technicalPresignal,
     };

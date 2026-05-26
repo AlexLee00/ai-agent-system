@@ -14,9 +14,11 @@
 
 import * as db from './db.ts';
 import { callLLM } from './llm-client.ts';
+import { normalizeTradeQualityResult } from './trade-quality-evaluator.ts';
 import type { TradeQualityResult } from './trade-quality-evaluator.ts';
 import type { StageAttribution } from './stage-attribution-analyzer.ts';
 import { getPosttradeFeedbackRuntimeConfig } from './runtime-config.ts';
+import { fetchTradeJournalPosttradeTrade } from './posttrade-trade-journal-adapter.ts';
 
 export interface ReflexionResult {
   trade_id: number;
@@ -40,9 +42,10 @@ export async function runReflexion(
   stageAttrs: StageAttribution[],
   opts: { dryRun?: boolean } = {}
 ): Promise<ReflexionResult | null> {
-  if (quality.category !== 'rejected') return null;
+  const normalizedQuality = normalizeTradeQualityResult(quality);
+  if (!normalizedQuality || normalizedQuality.category !== 'rejected') return null;
 
-  const trade    = await fetchTradeDetail(quality.trade_id);
+  const trade    = await fetchTradeDetail(normalizedQuality.trade_id);
   if (!trade) return null;
 
   const reflexionCfg = getPosttradeFeedbackRuntimeConfig()?.reflexion || {};
@@ -51,17 +54,19 @@ export async function runReflexion(
     budgetUsd: Number(reflexionCfg?.llm_daily_budget_usd || 3),
   });
   if (!withinBudget.ok) {
-    await recordReflexionFailure(quality.trade_id, 'reflexion_llm_daily_budget_exceeded', {
+    await recordReflexionFailure(normalizedQuality.trade_id, 'reflexion_llm_daily_budget_exceeded', {
       budgetUsd: reflexionCfg?.llm_daily_budget_usd,
       usedEstimateUsd: withinBudget.usedEstimateUsd,
     }).catch(() => {});
     return null;
   }
 
-  const result   = await llmReflect(trade, quality, stageAttrs);
+  let result = await llmReflect(trade, normalizedQuality, stageAttrs);
   if (!result) {
-    await recordReflexionFailure(quality.trade_id, 'reflexion_llm_unavailable', {}).catch(() => {});
-    return null;
+    if (!opts.dryRun) {
+      await recordReflexionFailure(normalizedQuality.trade_id, 'reflexion_llm_unavailable', {}).catch(() => {});
+    }
+    result = buildRuleBasedReflexion(trade, normalizedQuality, stageAttrs, 'rule_based_fallback_llm_unavailable');
   }
 
   if (!opts.dryRun) {
@@ -70,8 +75,8 @@ export async function runReflexion(
       `INSERT INTO investment.mapek_knowledge (event_type, payload)
        VALUES ('reflexion_created', $1)`,
       [JSON.stringify({
-        trade_id: quality.trade_id,
-        category: quality.category,
+        trade_id: normalizedQuality.trade_id,
+        category: normalizedQuality.category,
         hindsight: result.hindsight,
         created_at: new Date().toISOString(),
       })],
@@ -149,6 +154,16 @@ async function fetchTradeDetail(tradeId: number) {
     WHERE th.id = $1
   `, [tradeId]).catch(() => null);
   if (historyTrade) return historyTrade;
+
+  const journalTrade = await fetchTradeJournalPosttradeTrade(tradeId).catch(() => null);
+  if (journalTrade) {
+    return {
+      ...journalTrade,
+      regime: journalTrade.market_regime || 'trade_journal',
+      strategy_family: journalTrade.strategy_family || journalTrade.setup_type || 'trade_journal',
+      analyst_accuracy: null,
+    };
+  }
 
   const closeTrade = await db.get(
     `SELECT id, signal_id, symbol, side, amount, price, total_usdt,
@@ -281,6 +296,41 @@ JSON:
 function buildRuleBasedReflexion(trade: any, quality: TradeQualityResult, stageAttrs: StageAttribution[] = [], source = 'rule_based'): ReflexionResult {
   const symbol = String(trade?.symbol || 'unknown');
   const base = symbol.split('/')[0] || symbol;
+  const setup = String(trade?.strategy_family || trade?.setup_type || 'unknown_setup');
+  const regime = String(trade?.regime || trade?.market_regime || 'unknown_regime');
+  const direction = String(trade?.direction || trade?.side || 'long').toLowerCase();
+  const avoidAction = direction.includes('short') ? 'short_entry' : 'long_entry';
+  const score = Number.isFinite(Number(quality?.overall_score)) ? Number(quality.overall_score) : 0;
+  const weakestStages = [...(stageAttrs || [])]
+    .sort((a, b) => Number(a.contribution_to_outcome || 0) - Number(b.contribution_to_outcome || 0))
+    .slice(0, 3)
+    .map((item) => item.stage_id)
+    .filter(Boolean);
+  const weakStageText = weakestStages.length ? weakestStages.join(', ') : 'stage attribution 부족';
+  const isFirstCycle = String(source).includes('first_cycle')
+    || String(trade?.setup_type || '').includes('first_close_cycle')
+    || String(trade?.regime || '').includes('first_cycle');
+  if (!isFirstCycle) {
+    return {
+      trade_id: quality.trade_id,
+      five_why: [
+        { q: '왜 거래가 rejected 되었나?', a: `품질 점수 ${score.toFixed(3)}으로 rejected 기준에 들어왔고, ${setup}/${regime} 조건의 근거가 충분하지 않았습니다.` },
+        { q: '어느 단계가 취약했나?', a: `${weakStageText} 단계의 기여도가 낮거나 검증 데이터가 부족했습니다.` },
+        { q: '왜 재진입을 바로 허용하면 위험한가?', a: '동일 심볼과 동일 전략 조건에서 근거 부족 패턴이 반복될 수 있습니다.' },
+        { q: '다음 판단에서 무엇을 확인해야 하나?', a: 'MTF/외부근거/리스크 보상비와 posttrade stage attribution이 개선됐는지 확인해야 합니다.' },
+        { q: '운영적으로 무엇을 남겨야 하나?', a: '같은 패턴의 진입 후보에는 confidence penalty를 적용할 수 있도록 evidence trail을 남겨야 합니다.' },
+      ],
+      stage_attribution: buildStageMap(stageAttrs),
+      hindsight: `${source}: ${symbol} ${setup}/${regime} rejected 거래는 동일 조건 재진입 전에 추가 근거와 리스크 보상비 재검증을 요구했어야 했다.`,
+      avoid_pattern: {
+        symbol_pattern: base,
+        avoid_action: avoidAction,
+        reason: `${symbol} ${setup}/${regime} rejected 결과에 따라 유사 ${avoidAction} 후보는 추가 확인 전 감점합니다.`,
+        evidence: [quality.trade_id],
+        source,
+      },
+    };
+  }
   return {
     trade_id: quality.trade_id,
     five_why: [
@@ -297,6 +347,7 @@ function buildRuleBasedReflexion(trade: any, quality: TradeQualityResult, stageA
       avoid_action: 'long_entry',
       reason: `${symbol} first close cycle rejected 결과에 따라 유사 LONG 재진입은 감점합니다.`,
       evidence: [quality.trade_id],
+      source,
     },
   };
 }

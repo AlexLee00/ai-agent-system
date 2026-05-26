@@ -333,6 +333,7 @@ function resolveEntryTriggerStrategyMetadata(trigger = {}) {
   const context = parseJsonMaybe(trigger.trigger_context, {}) || {};
   const meta = parseJsonMaybe(trigger.trigger_meta, {}) || {};
   const route = context.strategyRoute || context.strategy_route || meta.strategyRoute || meta.strategy_route || {};
+  const firstPresent = (...values) => values.find((value) => value !== undefined && value !== null && value !== '');
   const setupType = trigger.setup_type || route.setupType || route.selectedFamily || trigger.trigger_type || 'entry_trigger';
   const confidence = clamp01(trigger.confidence, 0);
   const predictiveScore = clamp01(trigger.predictive_score ?? route.predictiveScore, 0);
@@ -353,11 +354,55 @@ function resolveEntryTriggerStrategyMetadata(trigger = {}) {
     || route.quality
     || (readiness >= 0.72 ? 'ready' : readiness >= 0.56 ? 'watch' : 'thin');
   const family = route.selectedFamily || route.strategyFamily || trigger.strategy_family || setupType || 'entry_trigger';
+  const regime = firstPresent(
+    trigger.market_regime,
+    trigger.regime,
+    context.marketRegime,
+    context.market_regime,
+    context.regime,
+    meta.marketRegime,
+    meta.market_regime,
+    meta.regime,
+    route.marketRegime,
+    route.market_regime,
+    route.regime,
+  );
+  const externalEvidence = context.externalEvidence
+    || context.external_evidence
+    || meta.externalEvidence
+    || meta.external_evidence
+    || route.externalEvidence
+    || route.external_evidence
+    || {};
+  const triggerHints = context.triggerHints
+    || context.trigger_hints
+    || context.hints
+    || meta.triggerHints
+    || meta.trigger_hints
+    || meta.hints
+    || route.triggerHints
+    || route.trigger_hints
+    || route.hints
+    || {};
+  const hasTechnicalPresignal = firstPresent(
+    context.hasTechnicalPresignal,
+    context.has_technical_presignal,
+    meta.hasTechnicalPresignal,
+    meta.has_technical_presignal,
+    route.hasTechnicalPresignal,
+    route.has_technical_presignal,
+    triggerHints.hasTechnicalPresignal,
+    triggerHints.has_technical_presignal,
+  );
 
   return {
     family,
     quality,
     readiness: Number(readiness.toFixed(4)),
+    regime: regime || null,
+    externalEvidence,
+    triggerHints,
+    hasTechnicalPresignal,
     route: {
       ...route,
       source: 'entry_trigger_fired',
@@ -367,6 +412,10 @@ function resolveEntryTriggerStrategyMetadata(trigger = {}) {
       predictiveScore: predictiveScore > 0 ? predictiveScore : null,
       quality,
       readinessScore: Number(readiness.toFixed(4)),
+      marketRegime: regime || route.marketRegime || route.market_regime || null,
+      externalEvidence,
+      triggerHints,
+      hasTechnicalPresignal,
     },
   };
 }
@@ -636,6 +685,11 @@ export async function materializeFiredEntryTriggerSignals({
       market: resolveMaterializedSignalMarket(exchange),
       strategy_family: strategy.family,
       strategy_route: strategy.route,
+      regime: strategy.regime,
+      marketRegime: strategy.regime,
+      externalEvidence: strategy.externalEvidence,
+      triggerHints: strategy.triggerHints,
+      hasTechnicalPresignal: strategy.hasTechnicalPresignal,
     }, process.env);
     if (tradeDataGuard.blocked) {
       skipped += 1;

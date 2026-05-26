@@ -1,19 +1,19 @@
 {
   "ok": true,
-  "generated_at": "2026-05-26T02:44:20.264Z",
+  "generated_at": "2026-05-26T04:33:02.392Z",
   "hours": 168,
   "stats_source": "hub_http",
   "totals": {
-    "total_calls": 91913,
-    "oauth_calls": 77112,
-    "oauth_share_pct": 83.9,
+    "total_calls": 92688,
+    "oauth_calls": 77753,
+    "oauth_share_pct": 83.89,
     "failed_calls": 68,
     "failed_rate_pct": 0.07,
-    "reported_cost_usd": 3.925558,
+    "reported_cost_usd": 3.967639,
     "oauth_reported_cost_usd": 0,
     "claude_code_reported_cost_usd": 0,
     "claude_code_runtime_cost_share_pct": 0,
-    "non_oauth_reported_cost_usd": 3.925558,
+    "non_oauth_reported_cost_usd": 3.967639,
     "anthropic_provider_calls": 0
   },
   "providers": {
@@ -30,24 +30,24 @@
     },
     "openai-oauth": {
       "provider": "openai-oauth",
-      "calls": 71816,
-      "success_count": 71816,
+      "calls": 72462,
+      "success_count": 72462,
       "failed_count": 0,
-      "avg_duration_ms": 2167,
+      "avg_duration_ms": 2178,
       "max_duration_ms": 106150,
       "total_cost_usd": 0,
-      "share_pct": 78.13,
+      "share_pct": 78.18,
       "success_rate_pct": 100
     },
     "gemini-cli-oauth": {
       "provider": "gemini-cli-oauth",
-      "calls": 5296,
-      "success_count": 5296,
+      "calls": 5291,
+      "success_count": 5291,
       "failed_count": 0,
-      "avg_duration_ms": 13812,
+      "avg_duration_ms": 13814,
       "max_duration_ms": 69002,
       "total_cost_usd": 0,
-      "share_pct": 5.76,
+      "share_pct": 5.71,
       "success_rate_pct": 100
     },
     "anthropic": {
@@ -63,13 +63,13 @@
     },
     "groq": {
       "provider": "groq",
-      "calls": 9501,
-      "success_count": 9501,
+      "calls": 9635,
+      "success_count": 9635,
       "failed_count": 0,
-      "avg_duration_ms": 1564,
+      "avg_duration_ms": 1565,
       "max_duration_ms": 42760,
-      "total_cost_usd": 3.925558,
-      "share_pct": 10.34,
+      "total_cost_usd": 3.967639,
+      "share_pct": 10.4,
       "success_rate_pct": 100
     },
     "failed": {
