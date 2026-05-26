@@ -11,7 +11,7 @@
 import { createRequire } from 'module';
 const require = createRequire(import.meta.url);
 const pgPool = require('../../../packages/core/lib/pg-pool');
-const { postAlarm } = require('../../../packages/core/lib/hub-alarm-client');
+const { deliverScheduledAlarm } = require('../lib/alarm/scheduled-delivery.ts');
 const kst = require('../../../packages/core/lib/kst');
 
 interface RiskGuardRow {
@@ -142,7 +142,7 @@ async function main() {
   const totalTriggers = guards.reduce((s, r) => s + r.triggered, 0);
   const hasIssues = totalTriggers > 0 || parity > 0;
 
-  const sent = await postAlarm({
+  const sent = await deliverScheduledAlarm({
     team: 'hub',
     fromBot: 'weekly-audit-digest',
     alertLevel: hasIssues ? 2 : 1,
@@ -163,6 +163,9 @@ async function main() {
   if (!sent?.ok) {
     console.error('[weekly-audit-digest] 알람 발송 실패:', sent?.error);
     process.exit(1);
+  }
+  if (sent.deferred) {
+    console.warn(`[weekly-audit-digest] 알람 발송 지연: ${sent.error} (attempts=${sent.attempts})`);
   }
   console.log('[weekly-audit-digest] 완료');
 }

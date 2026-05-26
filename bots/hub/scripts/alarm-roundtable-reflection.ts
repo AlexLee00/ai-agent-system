@@ -17,7 +17,7 @@
 import { createRequire } from 'module';
 const require = createRequire(import.meta.url);
 const pgPool = require('../../../packages/core/lib/pg-pool');
-const { postAlarm } = require('../../../packages/core/lib/hub-alarm-client');
+const { deliverScheduledAlarm } = require('../lib/alarm/scheduled-delivery.ts');
 const kst = require('../../../packages/core/lib/kst');
 
 const REFLECTION_WINDOW_DAYS = Number(process.env.HUB_ROUNDTABLE_REFLECTION_WINDOW_DAYS || 30) || 30;
@@ -247,7 +247,7 @@ async function main() {
     return;
   }
 
-  const sent = await postAlarm({
+  const sent = await deliverScheduledAlarm({
     team: 'hub',
     fromBot: 'roundtable-reflection',
     alertLevel: stats && stats.open_count > stats.resolved_count ? 2 : 1,
@@ -267,6 +267,9 @@ async function main() {
   if (!sent?.ok) {
     console.error('[roundtable-reflection] 알람 발송 실패:', sent?.error);
     process.exit(1);
+  }
+  if (sent.deferred) {
+    console.warn(`[roundtable-reflection] 알람 발송 지연: ${sent.error} (attempts=${sent.attempts})`);
   }
 
   console.log('[roundtable-reflection] 완료');

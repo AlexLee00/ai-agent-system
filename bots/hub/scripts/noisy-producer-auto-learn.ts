@@ -16,7 +16,7 @@
 
 import { createRequire } from 'module';
 const require = createRequire(import.meta.url);
-const { postAlarm } = require('../../../packages/core/lib/hub-alarm-client');
+const { deliverScheduledAlarm } = require('../lib/alarm/scheduled-delivery.ts');
 const kst = require('../../../packages/core/lib/kst');
 
 const HUB_BASE = process.env.HUB_BASE_URL || 'http://localhost:7788';
@@ -333,7 +333,7 @@ async function main() {
     return;
   }
 
-  const sent = await postAlarm({
+  const sent = await deliverScheduledAlarm({
     team: 'hub',
     fromBot: 'noisy-producer-auto-learn',
     alertLevel: proposals.length > 0 ? 2 : 1,
@@ -358,6 +358,9 @@ async function main() {
   if (!sent?.ok) {
     console.error('[noisy-auto-learn] meeting 발송 실패:', sent?.error);
     process.exit(1);
+  }
+  if (sent.deferred) {
+    console.warn(`[noisy-auto-learn] meeting 발송 지연: ${sent.error} (attempts=${sent.attempts})`);
   }
 
   console.log(`[noisy-auto-learn] 완료: 제안 ${proposals.length}건, 자동적용 ${autoApplyResult?.applied || 0}건`);

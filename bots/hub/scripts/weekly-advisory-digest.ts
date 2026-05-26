@@ -11,7 +11,7 @@
 import { createRequire } from 'module';
 const require = createRequire(import.meta.url);
 const pgPool = require('../../../packages/core/lib/pg-pool');
-const { postAlarm } = require('../../../packages/core/lib/hub-alarm-client');
+const { deliverScheduledAlarm } = require('../lib/alarm/scheduled-delivery.ts');
 const kst = require('../../../packages/core/lib/kst');
 
 interface AutotuneRow {
@@ -169,7 +169,7 @@ async function main() {
 
   const needsApproval = suppressions > 0;
 
-  const sent = await postAlarm({
+  const sent = await deliverScheduledAlarm({
     team: 'hub',
     fromBot: 'weekly-advisory-digest',
     alertLevel: needsApproval ? 2 : 1,
@@ -192,6 +192,9 @@ async function main() {
   if (!sent?.ok) {
     console.error('[weekly-advisory-digest] 알람 발송 실패:', sent?.error);
     process.exit(1);
+  }
+  if (sent.deferred) {
+    console.warn(`[weekly-advisory-digest] 알람 발송 지연: ${sent.error} (attempts=${sent.attempts})`);
   }
   console.log('[weekly-advisory-digest] 완료');
 }

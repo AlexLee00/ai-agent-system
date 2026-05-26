@@ -2,7 +2,7 @@
 'use strict';
 
 const pgPool = require('../../../packages/core/lib/pg-pool');
-const { postAlarm } = require('../../../packages/core/lib/hub-alarm-client');
+const { deliverScheduledAlarm } = require('../lib/alarm/scheduled-delivery.ts');
 
 function argValue(name: string, fallback = ''): string {
   const prefix = `--${name}=`;
@@ -88,7 +88,7 @@ async function main() {
     console.log(result.message);
   }
   if (hasFlag('send')) {
-    const sent = await postAlarm({
+    const sent = await deliverScheduledAlarm({
       message: result.message,
       team: 'hub',
       fromBot: 'alarm-noise-report',
@@ -104,6 +104,9 @@ async function main() {
     });
     if (!sent?.ok) {
       throw new Error(sent?.error || 'alarm_noise_report_send_failed');
+    }
+    if (sent.deferred) {
+      console.warn(`[alarm-noise-report] 알람 발송 지연: ${sent.error} (attempts=${sent.attempts})`);
     }
   }
 }

@@ -50,6 +50,17 @@ The Stage B report includes:
 
 Sentry MCP is treated as optional enrichment. If Sentry credentials are absent, Hub incidents and reports remain the primary error system, and the report marks the mode as `adapter_ready_config_pending`.
 
+## Scheduled Alarm Delivery
+
+Launchd report jobs use `bots/hub/lib/alarm/scheduled-delivery.ts` for bounded
+Hub alarm retries. Retryable Hub API failures such as HTTP 429 are retried with
+`HUB_SCHEDULED_ALARM_ATTEMPTS` and
+`HUB_SCHEDULED_ALARM_RETRY_MAX_DELAY_MS`. If a low-risk scheduled report is
+still rate-limited after retries, the job logs `deferred_retryable_failure` and
+exits successfully so the generated report is not misclassified as a runtime
+failure. Non-retryable failures and critical/human-action paths remain hard
+failures.
+
 ## Close Criteria
 
 - `check:llm-stage-a` passes.

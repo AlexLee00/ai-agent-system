@@ -11,7 +11,7 @@
 import { createRequire } from 'module';
 const require = createRequire(import.meta.url);
 const pgPool = require('../../../packages/core/lib/pg-pool');
-const { postAlarm } = require('../../../packages/core/lib/hub-alarm-client');
+const { deliverScheduledAlarm } = require('../lib/alarm/scheduled-delivery.ts');
 const kst = require('../../../packages/core/lib/kst');
 
 const HUB_BASE = process.env.HUB_BASE_URL || 'http://localhost:7788';
@@ -161,7 +161,7 @@ async function main() {
 
   const totalErrors = stats.reduce((s, t) => s + t.errors, 0);
 
-  const sent = await postAlarm({
+  const sent = await deliverScheduledAlarm({
     team: 'hub',
     fromBot: 'daily-metrics-digest',
     alertLevel: totalErrors > 0 ? 2 : 1,
@@ -184,6 +184,9 @@ async function main() {
   if (!sent?.ok) {
     console.error('[daily-metrics-digest] 알람 발송 실패:', sent?.error);
     process.exit(1);
+  }
+  if (sent.deferred) {
+    console.warn(`[daily-metrics-digest] 알람 발송 지연: ${sent.error} (attempts=${sent.attempts})`);
   }
   console.log('[daily-metrics-digest] 완료');
 }

@@ -11,7 +11,7 @@
 import { createRequire } from 'module';
 const require = createRequire(import.meta.url);
 const pgPool = require('../../../packages/core/lib/pg-pool');
-const { postAlarm } = require('../../../packages/core/lib/hub-alarm-client');
+const { deliverScheduledAlarm } = require('../lib/alarm/scheduled-delivery.ts');
 const kst = require('../../../packages/core/lib/kst');
 const fs = require('fs');
 const path = require('path');
@@ -150,7 +150,7 @@ async function main() {
   const open = rt.filter((r) => ['open', 'in_progress'].includes(r.status));
   const hasIssues = open.length > 0;
 
-  const sent = await postAlarm({
+  const sent = await deliverScheduledAlarm({
     team: 'hub',
     fromBot: 'incident-summary',
     alertLevel: hasIssues ? 2 : 1,
@@ -172,6 +172,9 @@ async function main() {
   if (!sent?.ok) {
     console.error('[incident-summary] 알람 발송 실패:', sent?.error);
     process.exit(1);
+  }
+  if (sent.deferred) {
+    console.warn(`[incident-summary] 알람 발송 지연: ${sent.error} (attempts=${sent.attempts})`);
   }
   console.log('[incident-summary] 완료');
 }

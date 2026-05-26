@@ -10,7 +10,7 @@
 
 import { createRequire } from 'module';
 const require = createRequire(import.meta.url);
-const { postAlarm } = require('../../../packages/core/lib/hub-alarm-client');
+const { deliverScheduledAlarm } = require('../lib/alarm/scheduled-delivery.ts');
 const kst = require('../../../packages/core/lib/kst');
 const { getLaunchctlStatus } = require('../../../packages/core/lib/health-provider');
 const { isExpectedIdleService, isOptionalService } = require('../../../packages/core/lib/service-ownership');
@@ -201,7 +201,7 @@ async function main() {
   const alarmType = failed.length === 0 ? 'report' : 'error';
   const visibility = failed.length === 0 ? 'digest' : 'notify';
 
-  const sent = await postAlarm({
+  const sent = await deliverScheduledAlarm({
     team: 'hub',
     fromBot: 'hourly-status-digest',
     alertLevel: severity === 'error' ? 3 : severity === 'warn' ? 2 : 1,
@@ -217,11 +217,16 @@ async function main() {
       failed: failed.map((f) => f.name),
       event_type: 'hourly_status_digest',
     },
+  }, {
+    deferRetryableFailure: alarmType === 'report',
   });
 
   if (!sent?.ok) {
     console.error('[hourly-status-digest] 알람 발송 실패:', sent?.error);
     process.exit(1);
+  }
+  if (sent.deferred) {
+    console.warn(`[hourly-status-digest] 알람 발송 지연: ${sent.error} (attempts=${sent.attempts})`);
   }
   console.log('[hourly-status-digest] 완료');
 }
