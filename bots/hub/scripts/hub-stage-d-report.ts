@@ -11,13 +11,50 @@ const {
   buildHubStageDProductionReport,
   writeHubStageDReport,
 } = require('../lib/stage-d/production');
+const {
+  buildHubStageBStabilityReport,
+  writeHubStageBStabilityReport,
+} = require('../lib/stage-b/stability.ts');
+const {
+  buildHubStageCResilienceReport,
+  writeHubStageCResilienceReport,
+} = require('../lib/stage-c/resilience');
+
+async function refreshDependencyReports() {
+  const stageB = await buildHubStageBStabilityReport();
+  const stageBOutputPath = await writeHubStageBStabilityReport(stageB);
+  const stageC = await buildHubStageCResilienceReport();
+  const stageCOutputPath = await writeHubStageCResilienceReport(stageC);
+  return {
+    stageB: {
+      ok: stageB.ok === true,
+      status: stageB.status,
+      checkedAt: stageB.checkedAt,
+      outputPath: stageBOutputPath,
+    },
+    stageC: {
+      ok: stageC.ok === true,
+      status: stageC.status,
+      checkedAt: stageC.checkedAt,
+      outputPath: stageCOutputPath,
+    },
+  };
+}
 
 (async () => {
   const write = process.argv.includes('--write');
   const json = process.argv.includes('--json');
+  const refreshDependencies = process.argv.includes('--refresh-dependencies');
   if (!json) console.log(`[stage-d] ${new Date().toISOString()} 보고서 생성 시작...`);
 
+  let dependencyRefresh = null;
+  if (refreshDependencies) {
+    if (!json) console.log('[stage-d] Stage B/C dependency report refresh...');
+    dependencyRefresh = await refreshDependencyReports();
+  }
+
   const report = await buildHubStageDProductionReport();
+  if (dependencyRefresh) report.dependencyRefresh = dependencyRefresh;
 
   if (write) {
     const outputPath = await writeHubStageDReport(report);

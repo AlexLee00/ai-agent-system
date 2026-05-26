@@ -8,6 +8,7 @@
 
 import fs from 'fs';
 import path from 'path';
+import { spawnSync } from 'child_process';
 
 const env = require('../../../packages/core/lib/env');
 
@@ -15,12 +16,33 @@ const STORE_PATH = path.join(env.PROJECT_ROOT, 'bots', 'hub', 'secrets-store.jso
 const HUB_PORT = process.env.HUB_PORT || '7788';
 const PROBE_URL = `http://127.0.0.1:${HUB_PORT}/hub/llm/tier-probe`;
 
+function usableAuthToken(value: string): boolean {
+  const trimmed = String(value || '').trim();
+  return Boolean(trimmed)
+    && !trimmed.startsWith('__')
+    && !trimmed.endsWith('__')
+    && !trimmed.includes('SET_IN_LOCAL_LAUNCHAGENT')
+    && !trimmed.includes('<');
+}
+
+function loadLaunchctlAuthToken(): string {
+  const result = spawnSync('launchctl', ['getenv', 'HUB_AUTH_TOKEN'], {
+    encoding: 'utf8',
+    timeout: 3000,
+  });
+  const token = String(result.stdout || '').trim();
+  return usableAuthToken(token) ? token : '';
+}
+
 function loadAuthToken(): string {
   const fromEnv = (process.env.HUB_AUTH_TOKEN || '').trim();
-  if (fromEnv) return fromEnv;
+  if (usableAuthToken(fromEnv)) return fromEnv;
+  const fromLaunchctl = loadLaunchctlAuthToken();
+  if (fromLaunchctl) return fromLaunchctl;
   try {
     const store = JSON.parse(fs.readFileSync(STORE_PATH, 'utf8'));
-    return (store?.hub?.auth_token || '').trim();
+    const fromStore = (store?.hub?.auth_token || '').trim();
+    return usableAuthToken(fromStore) ? fromStore : '';
   } catch {
     return '';
   }

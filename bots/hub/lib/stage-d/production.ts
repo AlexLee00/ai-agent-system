@@ -9,6 +9,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const http = require('node:http');
+const { spawnSync } = require('node:child_process');
 
 const PROJECT_ROOT = path.resolve(__dirname, '../../../..');
 const HUB_DIR = path.join(PROJECT_ROOT, 'bots/hub');
@@ -52,6 +53,20 @@ function readJsonIfExists(relativePath) {
   } catch {
     return null;
   }
+}
+
+function launchctlPrint(label) {
+  const uid = process.getuid ? process.getuid() : Number(spawnSync('id', ['-u'], { encoding: 'utf8' }).stdout.trim());
+  const result = spawnSync('launchctl', ['print', `gui/${uid}/${label}`], {
+    encoding: 'utf8',
+    timeout: 5000,
+  });
+  return {
+    label,
+    loaded: result.status === 0,
+    status: result.status,
+    detail: `${result.stdout || ''}${result.stderr || ''}`.trim().split('\n').slice(0, 3).join('\n'),
+  };
 }
 
 function parseReportTimestamp(report) {
@@ -150,9 +165,27 @@ function checkSecretsAutoRotate() {
 
 function checkSelfHealing() {
   const script = fileExists('bots/hub/scripts/hub-stage-d-self-healing.ts');
+  const runnerSource = fileExists('bots/hub/scripts/run-tier-probe.ts')
+    ? readText('bots/hub/scripts/run-tier-probe.ts')
+    : '';
   const protectedOverlap = SELF_HEALING_CANARY_LABELS.filter((label) => PROTECTED_HUB_LABELS.includes(label));
+  const canaryLaunchd = SELF_HEALING_CANARY_LABELS.map((label) => ({
+    label,
+    plistExists: fileExists(`bots/hub/launchd/${label}.plist`),
+    launchctl: launchctlPrint(label),
+    bootstrapCommand: `launchctl bootstrap gui/$(id -u) ${repoPath(`bots/hub/launchd/${label}.plist`)}`,
+  }));
   const checks = [
     { name: 'self_healing_operator_exists', ok: script },
+    {
+      name: 'canary_plists_exist',
+      ok: canaryLaunchd.every((item) => item.plistExists),
+      evidence: canaryLaunchd.map(({ label, plistExists }) => ({ label, plistExists })),
+    },
+    {
+      name: 'tier_probe_placeholder_token_fallback',
+      ok: runnerSource.includes('usableAuthToken') && runnerSource.includes('SET_IN_LOCAL_LAUNCHAGENT'),
+    },
     { name: 'canary_labels_are_non_protected', ok: protectedOverlap.length === 0, evidence: { protectedOverlap } },
     { name: 'protected_14_declared', ok: PROTECTED_HUB_LABELS.length === 14, evidence: { count: PROTECTED_HUB_LABELS.length } },
   ];
@@ -162,6 +195,11 @@ function checkSelfHealing() {
     currentPhase: 'phase_1_shadow_ready',
     applyGate: '--apply --confirm=hub-stage-d-self-healing-canary --label=ai.hub.llm-tier-probe',
     canaryLabels: SELF_HEALING_CANARY_LABELS,
+    canaryLaunchd,
+    canaryLoaded: canaryLaunchd.every((item) => item.launchctl.loaded),
+    missingLoadedCanaries: canaryLaunchd
+      .filter((item) => !item.launchctl.loaded)
+      .map((item) => item.label),
     protectedLabels: PROTECTED_HUB_LABELS,
     checks,
   };
@@ -306,14 +344,215 @@ async function checkHubUptime() {
   };
 }
 
-function buildPromotionEvidence() {
+function truthyEnv(env, name) {
+  return env[name] === 'true';
+}
+
+function buildRequirement({ id, label, required, attested, observedOk, evidence, nextAction }) {
+  const certificationOk = Boolean(attested);
   return {
-    shadowWindowDays: Number(process.env.HUB_STAGE_D_SHADOW_DAYS || 0),
-    canaryPercent: Number(process.env.HUB_STAGE_D_CANARY_PERCENT || 0),
-    uptimeTargetMet: process.env.HUB_STAGE_D_UPTIME_99_9 === 'true',
-    latencyTargetMet: process.env.HUB_STAGE_D_LATENCY_LT_500MS === 'true',
-    errorRateTargetMet: process.env.HUB_STAGE_D_ERROR_RATE_LT_0_1 === 'true',
-    selfHealingTargetMet: process.env.HUB_STAGE_D_SELF_HEALING_GT_95 === 'true',
+    id,
+    label,
+    required,
+    attested: certificationOk,
+    observedOk: Boolean(observedOk),
+    certificationOk,
+    evidence,
+    nextAction,
+  };
+}
+
+function buildPromotionEvidence(options = {}) {
+  const env = options.env || process.env;
+  const stageBReport = options.stageBReport || readJsonIfExists('bots/hub/output/hub-stage-b-stability-report.json');
+  const l5Report = options.l5Report || readJsonIfExists('bots/hub/output/l5-acceptance-report.json');
+  const uptime = options.uptime || {};
+  const requestLog = stageBReport?.requestLog || {};
+  const totalRequests = Number(requestLog.total || 0);
+  const failures = Number(requestLog.failures || 0);
+  const unresolvedFailures = Number(requestLog.unresolvedFailures || 0);
+  const rawFailureRatePct = requestLog.failureRatePct == null
+    ? (totalRequests > 0 ? (failures / totalRequests) * 100 : 0)
+    : Number(requestLog.failureRatePct);
+  const failureRatePct = Number.isFinite(rawFailureRatePct)
+    ? Number(rawFailureRatePct.toFixed(4))
+    : 0;
+  const avgDurationMs = Number(requestLog.avgDurationMs || 0);
+  const latencyByProvider = Array.isArray(requestLog.latencyByProvider)
+    ? requestLog.latencyByProvider
+    : [];
+  const slowRoutes = Array.isArray(requestLog.slowRoutes)
+    ? requestLog.slowRoutes
+    : [];
+  const uptimeSeconds = Number(uptime.uptimeSeconds || 0);
+  const uptimeDays = Number((uptimeSeconds / 86_400).toFixed(2));
+  const shadowWindowDays = Number(env.HUB_STAGE_D_SHADOW_DAYS || 0);
+  const canaryPercent = Number(env.HUB_STAGE_D_CANARY_PERCENT || 0);
+  const uptimeTargetMet = truthyEnv(env, 'HUB_STAGE_D_UPTIME_99_9');
+  const latencyTargetMet = truthyEnv(env, 'HUB_STAGE_D_LATENCY_LT_500MS');
+  const errorRateTargetMet = truthyEnv(env, 'HUB_STAGE_D_ERROR_RATE_LT_0_1');
+  const selfHealingTargetMet = truthyEnv(env, 'HUB_STAGE_D_SELF_HEALING_GT_95');
+
+  const observed = {
+    source: 'read_only_stage_reports',
+    stageBCheckedAt: stageBReport?.checkedAt || null,
+    requestLogHours: Number(requestLog.hours || 0),
+    totalRequests,
+    failures,
+    unresolvedFailures,
+    failureRatePct: Number(failureRatePct || 0),
+    avgDurationMs,
+    maxDurationMs: Number(requestLog.maxDurationMs || 0),
+    latencyByProvider,
+    slowRoutes: slowRoutes.slice(0, 5),
+    uptimeSeconds,
+    uptimeDays,
+    l5Status: l5Report?.status || null,
+    l5Ok: l5Report?.ok === true,
+    errorRateObservedOk: totalRequests > 0 && Number(failureRatePct || 0) < 0.1 && unresolvedFailures === 0,
+    latencyObservedOk: avgDurationMs > 0 && avgDurationMs < 500,
+    uptimeWindowObservedOk: uptimeDays >= 7 && uptime.ok === true,
+    selfHealingReadinessObservedOk: stageBReport?.selfHealing?.ok === true,
+  };
+
+  const requirements = [
+    buildRequirement({
+      id: 'shadow_7d',
+      label: '7d shadow evidence',
+      required: 'HUB_STAGE_D_SHADOW_DAYS >= 7',
+      attested: shadowWindowDays >= 7,
+      observedOk: false,
+      evidence: { shadowWindowDays },
+      nextAction: 'Run the approved Stage D shadow window and set HUB_STAGE_D_SHADOW_DAYS only from retained operations evidence.',
+    }),
+    buildRequirement({
+      id: 'canary_1pct',
+      label: '1% canary pass',
+      required: 'HUB_STAGE_D_CANARY_PERCENT >= 1',
+      attested: canaryPercent >= 1,
+      observedOk: false,
+      evidence: { canaryPercent },
+      nextAction: 'Run the approved 1% canary gate before increasing rollout.',
+    }),
+    buildRequirement({
+      id: 'uptime_99_9_1w',
+      label: '99.9% uptime for 1w',
+      required: 'HUB_STAGE_D_UPTIME_99_9=true',
+      attested: uptimeTargetMet,
+      observedOk: observed.uptimeWindowObservedOk,
+      evidence: { uptimeSeconds, uptimeDays, currentStartupOk: uptime.ok === true },
+      nextAction: 'Accumulate a 7d uptime window from the runtime monitor before attesting.',
+    }),
+    buildRequirement({
+      id: 'latency_lt_500ms',
+      label: 'avg latency < 500ms',
+      required: 'HUB_STAGE_D_LATENCY_LT_500MS=true',
+      attested: latencyTargetMet,
+      observedOk: observed.latencyObservedOk,
+      evidence: {
+        requestLogHours: observed.requestLogHours,
+        avgDurationMs,
+        maxDurationMs: observed.maxDurationMs,
+        latencyByProvider: latencyByProvider.slice(0, 5),
+        slowRoutes: slowRoutes.slice(0, 5),
+      },
+      nextAction: slowRoutes.length
+        ? `Reduce or isolate slow routes before attesting; top hotspot: ${slowRoutes[0].route || 'unknown'} avg=${slowRoutes[0].avg_duration_ms || slowRoutes[0].avgDurationMs || 'unknown'}ms.`
+        : 'Use Stage B request-log latency or approved load evidence before attesting.',
+    }),
+    buildRequirement({
+      id: 'error_rate_lt_0_1',
+      label: 'error rate < 0.1%',
+      required: 'HUB_STAGE_D_ERROR_RATE_LT_0_1=true',
+      attested: errorRateTargetMet,
+      observedOk: observed.errorRateObservedOk,
+      evidence: {
+        requestLogHours: observed.requestLogHours,
+        totalRequests,
+        failures,
+        unresolvedFailures,
+        failureRatePct: observed.failureRatePct,
+      },
+      nextAction: 'Keep unresolved failures at zero and retain the observation window before attesting.',
+    }),
+    buildRequirement({
+      id: 'self_healing_gt_95',
+      label: 'self-healing success > 95%',
+      required: 'HUB_STAGE_D_SELF_HEALING_GT_95=true',
+      attested: selfHealingTargetMet,
+      observedOk: observed.selfHealingReadinessObservedOk,
+      evidence: {
+        stageBReadOnlyPlanOk: stageBReport?.selfHealing?.ok === true,
+        safeReadOnlyActions: stageBReport?.selfHealing?.safeReadOnlyActions?.length || 0,
+        confirmRequiredActions: stageBReport?.selfHealing?.confirmRequiredActions?.length || 0,
+      },
+      nextAction: 'Run the approved Stage D self-healing shadow/canary window and retain success-rate evidence before attesting.',
+    }),
+  ];
+
+  return {
+    shadowWindowDays,
+    canaryPercent,
+    uptimeTargetMet,
+    latencyTargetMet,
+    errorRateTargetMet,
+    selfHealingTargetMet,
+    observed,
+    requirements,
+    remainingForProductionCertified: requirements
+      .filter((item) => !item.certificationOk)
+      .map((item) => item.id),
+    observedReadyButNotAttested: requirements
+      .filter((item) => item.observedOk && !item.certificationOk)
+      .map((item) => item.id),
+  };
+}
+
+function buildPromotionGateSummary(promotionEvidence) {
+  const observed = promotionEvidence.observed || {};
+  const topLatencyHotspot = Array.isArray(observed.slowRoutes) && observed.slowRoutes.length > 0
+    ? observed.slowRoutes[0]
+    : null;
+  const requirements = Array.isArray(promotionEvidence.requirements)
+    ? promotionEvidence.requirements
+    : [];
+  return {
+    requiredBeforeProductionCertified: [
+      '7d shadow evidence',
+      '1% canary pass, then approved 10%/100% rollout',
+      '99.9% uptime for 1w',
+      'avg latency < 500ms',
+      'error rate < 0.1%',
+      'self-healing success > 95%',
+    ],
+    remainingForProductionCertified: promotionEvidence.remainingForProductionCertified || [],
+    observedReadyButNotAttested: promotionEvidence.observedReadyButNotAttested || [],
+    observedSnapshot: {
+      totalRequests: observed.totalRequests || 0,
+      failureRatePct: observed.failureRatePct || 0,
+      avgDurationMs: observed.avgDurationMs || 0,
+      maxDurationMs: observed.maxDurationMs || 0,
+      uptimeDays: observed.uptimeDays || 0,
+      topLatencyHotspot: topLatencyHotspot
+        ? {
+            route: topLatencyHotspot.route || null,
+            provider: topLatencyHotspot.provider || null,
+            callerTeam: topLatencyHotspot.caller_team || topLatencyHotspot.callerTeam || null,
+            agent: topLatencyHotspot.agent || null,
+            runtimePurpose: topLatencyHotspot.runtime_purpose || topLatencyHotspot.runtimePurpose || null,
+            avgDurationMs: topLatencyHotspot.avg_duration_ms || topLatencyHotspot.avgDurationMs || 0,
+            p95DurationMs: topLatencyHotspot.p95_duration_ms || topLatencyHotspot.p95DurationMs || 0,
+            count: topLatencyHotspot.count || 0,
+          }
+        : null,
+    },
+    nextActions: requirements
+      .filter((item) => !item.certificationOk)
+      .map((item) => ({
+        id: item.id,
+        observedOk: item.observedOk,
+        nextAction: item.nextAction,
+      })),
   };
 }
 
@@ -328,7 +567,8 @@ async function buildHubStageDProductionReport() {
   const liveChaos = checkLiveChaos();
   const sentry = checkSentryIntegration();
   const externalGateway = checkExternalGateway();
-  const promotionEvidence = buildPromotionEvidence();
+  const stageBReport = readJsonIfExists('bots/hub/output/hub-stage-b-stability-report.json');
+  const promotionEvidence = buildPromotionEvidence({ stageBReport, uptime });
 
   const goals = {
     stageA_llmControlPlane: stageB.ok,
@@ -386,16 +626,7 @@ async function buildHubStageDProductionReport() {
       blueNeverStopped: true,
       protectedHubLabels: PROTECTED_HUB_LABELS,
     },
-    promotionGate: {
-      requiredBeforeProductionCertified: [
-        '7d shadow evidence',
-        '1% canary pass, then approved 10%/100% rollout',
-        '99.9% uptime for 1w',
-        'avg latency < 500ms',
-        'error rate < 0.1%',
-        'self-healing success > 95%',
-      ],
-    },
+    promotionGate: buildPromotionGateSummary(promotionEvidence),
   };
 
   return report;
@@ -412,6 +643,7 @@ module.exports = {
   PROTECTED_HUB_LABELS,
   SELF_HEALING_CANARY_LABELS,
   buildHubStageDProductionReport,
+  buildPromotionGateSummary,
   buildPromotionEvidence,
   buildDependencyReportStatus,
   checkBlueGreen,

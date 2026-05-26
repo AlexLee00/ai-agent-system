@@ -1,0 +1,1654 @@
+{
+  "ok": true,
+  "status": "process_improvement_required",
+  "generatedAt": "2026-05-26T17:17:45.733Z",
+  "readOnly": true,
+  "liveTradeImpact": false,
+  "summary": {
+    "dataQualityStatus": "ready",
+    "entryPrefilterStatus": "watch",
+    "strategyBiasStatus": "watch",
+    "exitTimingStatus": "priority",
+    "symbolExitPolicyStatus": "priority",
+    "agenticOperatingModelStatus": "priority",
+    "learningLoopStatus": "watch",
+    "currentEpochTrades": {
+      "total": 29,
+      "closed": 27,
+      "open": 2,
+      "rawPnlOutlierCount": 0,
+      "potentiallyCorrectedPnlCount": 0,
+      "pnlOutlierThreshold": 1000
+    },
+    "currentEpochAvgPnlPct": -1.4341,
+    "currentEpochWinRate": 0.2963,
+    "rawExecutionRate": 0.5922,
+    "policyAdjustedExecutionRate": 0.9531,
+    "optimalExitAnalyzedTrades": 697,
+    "optimalExitLearningEligibleTrades": 318,
+    "symbolExitAnalyzedSymbols": 175,
+    "symbolExitP0Symbols": 8,
+    "roadmapCount": 23,
+    "p0Count": 4,
+    "p1Count": 15,
+    "p2Count": 4
+  },
+  "pillars": [
+    {
+      "id": "data_quality",
+      "status": "ready",
+      "blockers": [],
+      "evidence": {
+        "tradeDataStatus": "ready",
+        "hygieneStatus": "ready",
+        "openJournalStatus": "ready",
+        "openJournalSummary": {
+          "totalOpenEntries": 2,
+          "affectedTradeCount": 0,
+          "staleNoPositionScopes": 0,
+          "duplicateScopes": 0,
+          "latestMismatchScopes": 0
+        },
+        "realizedCoverage": 1,
+        "posttradeCoverage": 1,
+        "findingCount": 0
+      },
+      "actions": []
+    },
+    {
+      "id": "entry_prefilter",
+      "status": "watch",
+      "evidence": {
+        "totalSignals": 103,
+        "rawExecutionRate": 0.5922,
+        "policyAdjustedExecutionRate": 0.9531,
+        "policyBlockedSignals": 39,
+        "executionCandidateSignals": 64,
+        "blockedReasons": [
+          {
+            "reason": "capital_guard_rejected",
+            "count": 12
+          },
+          {
+            "reason": "sec015_overseas_stale_approval",
+            "count": 12
+          },
+          {
+            "reason": "live_position_reentry_blocked",
+            "count": 5
+          },
+          {
+            "reason": "position_sizing_rejected",
+            "count": 4
+          },
+          {
+            "reason": "safety_gate_blocked",
+            "count": 2
+          },
+          {
+            "reason": "sec015_stale_approval",
+            "count": 2
+          },
+          {
+            "reason": "trade_data_entry_guard_rejected",
+            "count": 1
+          },
+          {
+            "reason": "journal_open_entry_missing_for_sell",
+            "count": 1
+          }
+        ]
+      },
+      "actions": [
+        {
+          "id": "prefilter_capital_guard_rejected",
+          "priority": "P1",
+          "area": "entry_prefilter",
+          "title": "capital_guard_rejected should be absorbed before execution.",
+          "evidence": {
+            "reason": "capital_guard_rejected",
+            "count": 12,
+            "stage": "capital_preflight",
+            "rawExecutionRate": 0.5922,
+            "policyAdjustedExecutionRate": 0.9531
+          },
+          "action": "Move capital backpressure into candidate scoring and sizing preflight before execution.",
+          "validationCommand": "npm --prefix bots/investment run -s runtime:binance-failure-pressure -- --json --days=14",
+          "liveMutation": false
+        },
+        {
+          "id": "prefilter_sec015_overseas_stale_approval",
+          "priority": "P1",
+          "area": "entry_prefilter",
+          "title": "sec015_overseas_stale_approval should be absorbed before execution.",
+          "evidence": {
+            "reason": "sec015_overseas_stale_approval",
+            "count": 12,
+            "stage": "approval_freshness_preflight",
+            "rawExecutionRate": 0.5922,
+            "policyAdjustedExecutionRate": 0.9531
+          },
+          "action": "Check overseas SEC015 approval freshness before order construction and defer stale approvals to refresh queue.",
+          "validationCommand": "npm --prefix bots/investment run -s runtime:execution-risk-guard -- --json --days=14",
+          "liveMutation": false
+        },
+        {
+          "id": "prefilter_live_position_reentry_blocked",
+          "priority": "P1",
+          "area": "entry_prefilter",
+          "title": "live_position_reentry_blocked should be absorbed before execution.",
+          "evidence": {
+            "reason": "live_position_reentry_blocked",
+            "count": 5,
+            "stage": "reentry_prefilter",
+            "rawExecutionRate": 0.5922,
+            "policyAdjustedExecutionRate": 0.9531
+          },
+          "action": "Inject live position and recent-buy cooldown state into candidate generation to suppress repeated reentry signals.",
+          "validationCommand": "npm --prefix bots/investment run -s runtime:binance-failure-pressure -- --json --days=14",
+          "liveMutation": false
+        },
+        {
+          "id": "prefilter_position_sizing_rejected",
+          "priority": "P1",
+          "area": "entry_prefilter",
+          "title": "position_sizing_rejected should be absorbed before execution.",
+          "evidence": {
+            "reason": "position_sizing_rejected",
+            "count": 4,
+            "stage": "sizing_preflight",
+            "rawExecutionRate": 0.5922,
+            "policyAdjustedExecutionRate": 0.9531
+          },
+          "action": "Record min-notional, max-risk, and quantity-normalization rejects during sizing instead of order preflight.",
+          "validationCommand": "npm --prefix bots/investment run -s runtime:position-runtime-autopilot-bottleneck -- --json",
+          "liveMutation": false
+        },
+        {
+          "id": "prefilter_safety_gate_blocked",
+          "priority": "P1",
+          "area": "entry_prefilter",
+          "title": "safety_gate_blocked should be absorbed before execution.",
+          "evidence": {
+            "reason": "safety_gate_blocked",
+            "count": 2,
+            "stage": "safety_preflight",
+            "rawExecutionRate": 0.5922,
+            "policyAdjustedExecutionRate": 0.9531
+          },
+          "action": "Attach safety-gate outcome before execution request creation.",
+          "validationCommand": "npm --prefix bots/investment run -s runtime:luna-operational-action-board -- --json",
+          "liveMutation": false
+        },
+        {
+          "id": "prefilter_sec015_stale_approval",
+          "priority": "P1",
+          "area": "entry_prefilter",
+          "title": "sec015_stale_approval should be absorbed before execution.",
+          "evidence": {
+            "reason": "sec015_stale_approval",
+            "count": 2,
+            "stage": "approval_freshness_preflight",
+            "rawExecutionRate": 0.5922,
+            "policyAdjustedExecutionRate": 0.9531
+          },
+          "action": "Enforce approval TTL at entry preflight so stale approvals do not reach execution.",
+          "validationCommand": "npm --prefix bots/investment run -s runtime:execution-risk-guard -- --json --days=14",
+          "liveMutation": false
+        },
+        {
+          "id": "prefilter_trade_data_entry_guard_rejected",
+          "priority": "P1",
+          "area": "entry_prefilter",
+          "title": "trade_data_entry_guard_rejected should be absorbed before execution.",
+          "evidence": {
+            "reason": "trade_data_entry_guard_rejected",
+            "count": 1,
+            "stage": "trade_data_entry_guard",
+            "rawExecutionRate": 0.5922,
+            "policyAdjustedExecutionRate": 0.9531
+          },
+          "action": "Feed trade-data entry guard rejections into candidate score penalties and observation-mode routing.",
+          "validationCommand": "npm --prefix bots/investment run -s runtime:luna-trade-data-analysis-report -- --json",
+          "liveMutation": false
+        },
+        {
+          "id": "prefilter_journal_open_entry_missing_for_sell",
+          "priority": "P1",
+          "area": "entry_prefilter",
+          "title": "journal_open_entry_missing_for_sell should be absorbed before execution.",
+          "evidence": {
+            "reason": "journal_open_entry_missing_for_sell",
+            "count": 1,
+            "stage": "journal_integrity_preflight",
+            "rawExecutionRate": 0.5922,
+            "policyAdjustedExecutionRate": 0.9531
+          },
+          "action": "Verify open-journal existence before SELL signal creation and route misses to reconcile evidence.",
+          "validationCommand": "npm --prefix bots/investment run -s runtime:luna-trade-data-hygiene -- --json",
+          "liveMutation": false
+        }
+      ]
+    },
+    {
+      "id": "strategy_bias",
+      "status": "watch",
+      "evidence": {
+        "strategyCoverage": 1,
+        "weakStrategies": [
+          {
+            "strategy": "promotion_ready_shadow",
+            "closed": 3,
+            "avgPnlPercent": -5.1238,
+            "winRate": 0
+          },
+          {
+            "strategy": "mean_reversion",
+            "closed": 5,
+            "avgPnlPercent": -2.6532,
+            "winRate": 0.2
+          },
+          {
+            "strategy": "trend_following",
+            "closed": 4,
+            "avgPnlPercent": -0.8554,
+            "winRate": 0.25
+          },
+          {
+            "strategy": "short_term_scalping",
+            "closed": 11,
+            "avgPnlPercent": -0.5665,
+            "winRate": 0.4545
+          }
+        ]
+      },
+      "actions": [
+        {
+          "id": "strategy_bias_promotion_ready_shadow",
+          "priority": "P1",
+          "area": "strategy_bias",
+          "title": "promotion_ready_shadow has negative current-epoch expectancy.",
+          "evidence": {
+            "closed": 3,
+            "avgPnlPercent": -5.1238,
+            "winRate": 0
+          },
+          "action": "Demote new entries to observation/probe until closed samples and expectancy recover.",
+          "validationCommand": "npm --prefix bots/investment run -s runtime:luna-process-integrity-loop -- --json",
+          "liveMutation": false
+        },
+        {
+          "id": "strategy_bias_mean_reversion",
+          "priority": "P2",
+          "area": "strategy_bias",
+          "title": "mean_reversion has negative current-epoch expectancy.",
+          "evidence": {
+            "closed": 5,
+            "avgPnlPercent": -2.6532,
+            "winRate": 0.2
+          },
+          "action": "Require reversal evidence in ranging markets and downweight weak mean-reversion candidates.",
+          "validationCommand": "npm --prefix bots/investment run -s runtime:luna-trade-data-analysis-report -- --json",
+          "liveMutation": false
+        },
+        {
+          "id": "strategy_bias_trend_following",
+          "priority": "P2",
+          "area": "strategy_bias",
+          "title": "trend_following has negative current-epoch expectancy.",
+          "evidence": {
+            "closed": 4,
+            "avgPnlPercent": -0.8554,
+            "winRate": 0.25
+          },
+          "action": "Require pullback, volume, or multi-timeframe confirmation before trend-following live sizing.",
+          "validationCommand": "npm --prefix bots/investment run -s runtime:luna-trade-data-analysis-report -- --json",
+          "liveMutation": false
+        },
+        {
+          "id": "strategy_bias_short_term_scalping",
+          "priority": "P2",
+          "area": "strategy_bias",
+          "title": "short_term_scalping has negative current-epoch expectancy.",
+          "evidence": {
+            "closed": 11,
+            "avgPnlPercent": -0.5665,
+            "winRate": 0.4545
+          },
+          "action": "Keep early-exit loss-pressure guard active and require confirmation before fast scalp entries.",
+          "validationCommand": "npm --prefix bots/investment run -s runtime:luna-process-integrity-loop -- --json",
+          "liveMutation": false
+        }
+      ]
+    },
+    {
+      "id": "exit_timing",
+      "status": "priority",
+      "evidence": {
+        "optimalExitStatus": "ready",
+        "analyzedTrades": 697,
+        "learningEligibleTrades": 318,
+        "actualAvgPnlPct": -1.4781,
+        "winRate": 0.2389,
+        "missedDuringHoldAvgPct": 4.7144,
+        "missedToNowAvgPct": 30.7875,
+        "timingCategories": {
+          "near_optimal_within_hold": 82,
+          "early_loss_exit_recovered_later": 79,
+          "late_exit_after_peak": 68,
+          "non_optimal_small_gap": 40,
+          "early_profit_exit_left_upside": 31,
+          "loss_exit_no_clear_recovery": 17,
+          "open_position_observe": 1
+        },
+        "optimalReasonTags": [
+          {
+            "key": "next5d_drawdown_over_5pct",
+            "count": 309
+          },
+          {
+            "key": "sma20_extension_6pct",
+            "count": 275
+          },
+          {
+            "key": "local_7d_peak",
+            "count": 262
+          },
+          {
+            "key": "upper_bollinger_band",
+            "count": 249
+          },
+          {
+            "key": "next_day_drop_over_2pct",
+            "count": 241
+          },
+          {
+            "key": "rsi_overbought",
+            "count": 171
+          },
+          {
+            "key": "volume_spike",
+            "count": 114
+          },
+          {
+            "key": "macd_cooling",
+            "count": 48
+          }
+        ],
+        "earlyExit": {
+          "total": 13,
+          "smallProfit": 3,
+          "losses": 7,
+          "underOneHour": true,
+          "samples": [
+            {
+              "symbol": "031330",
+              "holdMinutes": 45.48,
+              "pnlPercent": -4.3004,
+              "strategyFamily": "promotion_ready_shadow",
+              "originalStrategyFamily": "promotion_ready_shadow",
+              "horizonAdjusted": false,
+              "marketRegime": "ranging"
+            },
+            {
+              "symbol": "AIGENSYN/USDT",
+              "holdMinutes": 36.84,
+              "pnlPercent": -4.4654,
+              "strategyFamily": "short_term_scalping",
+              "originalStrategyFamily": "mean_reversion",
+              "horizonAdjusted": true,
+              "marketRegime": "ranging"
+            },
+            {
+              "symbol": "MITO/USDT",
+              "holdMinutes": 0.01,
+              "pnlPercent": -2.8834,
+              "strategyFamily": "short_term_scalping",
+              "originalStrategyFamily": "mean_reversion",
+              "horizonAdjusted": true,
+              "marketRegime": "ranging"
+            },
+            {
+              "symbol": "DYM/USDT",
+              "holdMinutes": 0.01,
+              "pnlPercent": 5.795,
+              "strategyFamily": "short_term_scalping",
+              "originalStrategyFamily": "defensive_rotation",
+              "horizonAdjusted": true,
+              "marketRegime": "trending_bear"
+            },
+            {
+              "symbol": "KITE/USDT",
+              "holdMinutes": 0.01,
+              "pnlPercent": -5.3712,
+              "strategyFamily": "short_term_scalping",
+              "originalStrategyFamily": "mean_reversion",
+              "horizonAdjusted": true,
+              "marketRegime": "ranging"
+            }
+          ]
+        }
+      },
+      "actions": [
+        {
+          "id": "exit_dual_horizon_labels",
+          "priority": "P0",
+          "area": "exit_timing",
+          "title": "Train exit labels across actual, best-within-hold, and forward-return horizons.",
+          "evidence": {
+            "missedDuringHoldAvgPct": 4.7144,
+            "missedToNowAvgPct": 30.7875,
+            "lateExitCount": 68,
+            "earlyRecoveredCount": 79
+          },
+          "action": "Add dual-horizon exit labels and use them as inputs for exit patience, partial profit, and trailing decisions.",
+          "validationCommand": "npm --prefix bots/investment run -s runtime:luna-optimal-exit-analysis -- --json --no-write",
+          "liveMutation": false
+        },
+        {
+          "id": "exit_peak_reversal_probability",
+          "priority": "P0",
+          "area": "exit_timing",
+          "title": "Add peak/reversal probability head for sell timing.",
+          "evidence": {
+            "topOptimalReasonTags": [
+              {
+                "key": "next5d_drawdown_over_5pct",
+                "count": 309
+              },
+              {
+                "key": "sma20_extension_6pct",
+                "count": 275
+              },
+              {
+                "key": "local_7d_peak",
+                "count": 262
+              },
+              {
+                "key": "upper_bollinger_band",
+                "count": 249
+              },
+              {
+                "key": "next_day_drop_over_2pct",
+                "count": 241
+              },
+              {
+                "key": "rsi_overbought",
+                "count": 171
+              }
+            ]
+          },
+          "action": "Use RSI overbought, Bollinger position, SMA20 extension, volume spike, MACD cooling, local peak, and forward drawdown tags to estimate reversal risk.",
+          "validationCommand": "npm --prefix bots/investment run -s smoke:luna-optimal-exit-analysis",
+          "liveMutation": false
+        },
+        {
+          "id": "exit_early_loss_recheck_gate",
+          "priority": "P1",
+          "area": "exit_timing",
+          "title": "Require a recheck before non-hard early loss exits.",
+          "evidence": {
+            "underOneHour": true,
+            "total": 13,
+            "losses": 7,
+            "samples": [
+              {
+                "symbol": "031330",
+                "holdMinutes": 45.48,
+                "pnlPercent": -4.3004,
+                "strategyFamily": "promotion_ready_shadow",
+                "originalStrategyFamily": "promotion_ready_shadow",
+                "horizonAdjusted": false,
+                "marketRegime": "ranging"
+              },
+              {
+                "symbol": "AIGENSYN/USDT",
+                "holdMinutes": 36.84,
+                "pnlPercent": -4.4654,
+                "strategyFamily": "short_term_scalping",
+                "originalStrategyFamily": "mean_reversion",
+                "horizonAdjusted": true,
+                "marketRegime": "ranging"
+              },
+              {
+                "symbol": "MITO/USDT",
+                "holdMinutes": 0.01,
+                "pnlPercent": -2.8834,
+                "strategyFamily": "short_term_scalping",
+                "originalStrategyFamily": "mean_reversion",
+                "horizonAdjusted": true,
+                "marketRegime": "ranging"
+              },
+              {
+                "symbol": "DYM/USDT",
+                "holdMinutes": 0.01,
+                "pnlPercent": 5.795,
+                "strategyFamily": "short_term_scalping",
+                "originalStrategyFamily": "defensive_rotation",
+                "horizonAdjusted": true,
+                "marketRegime": "trending_bear"
+              },
+              {
+                "symbol": "KITE/USDT",
+                "holdMinutes": 0.01,
+                "pnlPercent": -5.3712,
+                "strategyFamily": "short_term_scalping",
+                "originalStrategyFamily": "mean_reversion",
+                "horizonAdjusted": true,
+                "marketRegime": "ranging"
+              }
+            ]
+          },
+          "action": "For non-hard exits under one hour, require technical recheck unless stop-loss, safety, or reconciliation rules force close.",
+          "validationCommand": "npm --prefix bots/investment run -s runtime:luna-process-integrity-loop -- --json",
+          "liveMutation": false
+        },
+        {
+          "id": "exit_partial_profit_trailing",
+          "priority": "P1",
+          "area": "exit_timing",
+          "title": "Replace all-or-nothing profit exits with partial lock and trailing logic.",
+          "evidence": {
+            "lateExitCount": 68,
+            "nearOptimal": 82,
+            "optimalReasonTags": [
+              {
+                "key": "next5d_drawdown_over_5pct",
+                "count": 309
+              },
+              {
+                "key": "sma20_extension_6pct",
+                "count": 275
+              },
+              {
+                "key": "local_7d_peak",
+                "count": 262
+              },
+              {
+                "key": "upper_bollinger_band",
+                "count": 249
+              },
+              {
+                "key": "next_day_drop_over_2pct",
+                "count": 241
+              }
+            ]
+          },
+          "action": "Use partial profit lock plus ATR/chandelier trailing when peak/reversal risk rises but trend continuation is not fully broken.",
+          "validationCommand": "npm --prefix bots/investment run -s runtime:position-runtime -- --json",
+          "liveMutation": false
+        }
+      ]
+    },
+    {
+      "id": "symbol_exit_policy",
+      "status": "priority",
+      "evidence": {
+        "status": "sell_timing_strategy_required",
+        "source": "existing_report:/Users/alexlee/projects/ai-agent-system/bots/investment/output/reports/luna-symbol-exit-timing-strategy-report.json",
+        "scope": {
+          "optimalExitStatus": "ready",
+          "optimalExitGeneratedAt": "2026-05-26T17:06:30.648Z",
+          "analyzedTrades": 704,
+          "symbols": 175,
+          "p0Symbols": 8,
+          "p1Symbols": 19
+        },
+        "topLateExitAfterPeak": [
+          {
+            "symbolKey": "crypto:D/USDT",
+            "policy": "peak_reversal_partial_trailing",
+            "missedDuringHoldAvgPct": 56.1983
+          },
+          {
+            "symbolKey": "overseas:POET",
+            "policy": "peak_reversal_partial_trailing",
+            "missedDuringHoldAvgPct": 33.6707
+          },
+          {
+            "symbolKey": "crypto:SIGN/USDT",
+            "policy": "peak_reversal_partial_trailing",
+            "missedDuringHoldAvgPct": 19.3365
+          },
+          {
+            "symbolKey": "crypto:KITE/USDT",
+            "policy": "peak_reversal_partial_trailing",
+            "missedDuringHoldAvgPct": 11.7695
+          },
+          {
+            "symbolKey": "domestic:006340",
+            "policy": "peak_reversal_partial_trailing",
+            "missedDuringHoldAvgPct": 11.0013
+          }
+        ],
+        "topSoldTooEarlyVsCurrentClose": [
+          {
+            "symbolKey": "domestic:006340",
+            "currentFromExitAvgPct": 154.087
+          },
+          {
+            "symbolKey": "crypto:PHA/USDT",
+            "currentFromExitAvgPct": 76.5673
+          },
+          {
+            "symbolKey": "crypto:ZEC/USDT",
+            "currentFromExitAvgPct": 69.6977
+          },
+          {
+            "symbolKey": "crypto:SAHARA/USDT",
+            "currentFromExitAvgPct": 52.2158
+          },
+          {
+            "symbolKey": "crypto:KITE/USDT",
+            "currentFromExitAvgPct": 43.061
+          }
+        ]
+      },
+      "actions": [
+        {
+          "id": "symbol_exit_policy_matrix_materialize",
+          "priority": "P0",
+          "area": "symbol_exit_policy",
+          "title": "Materialize symbol-specific exit policies before changing live sell behavior.",
+          "evidence": {
+            "status": "sell_timing_strategy_required",
+            "symbols": 175,
+            "p0Symbols": 8,
+            "p1Symbols": 19,
+            "byPolicy": {
+              "collect_more_samples_with_exit_labels": 74,
+              "review_only_excluded_from_learning": 71,
+              "loss_exit_recheck_before_sell": 14,
+              "peak_reversal_partial_trailing": 8,
+              "preserve_current_exit_rule": 3,
+              "winner_continuation_trailing": 3,
+              "entry_downweight_or_probe_only": 2
+            },
+            "topP0Symbols": [
+              {
+                "symbolKey": "crypto:D/USDT",
+                "policy": "peak_reversal_partial_trailing",
+                "missedDuringHoldAvgPct": 56.1983
+              },
+              {
+                "symbolKey": "overseas:POET",
+                "policy": "peak_reversal_partial_trailing",
+                "missedDuringHoldAvgPct": 33.6707
+              },
+              {
+                "symbolKey": "crypto:SIGN/USDT",
+                "policy": "peak_reversal_partial_trailing",
+                "missedDuringHoldAvgPct": 19.3365
+              },
+              {
+                "symbolKey": "crypto:KITE/USDT",
+                "policy": "peak_reversal_partial_trailing",
+                "missedDuringHoldAvgPct": 11.7695
+              },
+              {
+                "symbolKey": "domestic:006340",
+                "policy": "peak_reversal_partial_trailing",
+                "missedDuringHoldAvgPct": 11.0013
+              },
+              {
+                "symbolKey": "crypto:PHA/USDT",
+                "policy": "peak_reversal_partial_trailing",
+                "missedDuringHoldAvgPct": 10.4438
+              },
+              {
+                "symbolKey": "crypto:BARD/USDT",
+                "policy": "peak_reversal_partial_trailing",
+                "missedDuringHoldAvgPct": 10.391
+              },
+              {
+                "symbolKey": "crypto:ZEC/USDT",
+                "policy": "peak_reversal_partial_trailing",
+                "missedDuringHoldAvgPct": 8.2897
+              }
+            ]
+          },
+          "action": "Feed recommendedExitPolicy into exit patience, partial-profit, trailing-stop, and non-hard loss recheck gates by symbol.",
+          "validationCommand": "npm --prefix bots/investment run -s runtime:luna-symbol-exit-timing-strategy-report -- --json --no-write",
+          "liveMutation": false
+        },
+        {
+          "id": "post_exit_drift_label_backfill",
+          "priority": "P1",
+          "area": "symbol_exit_policy",
+          "title": "Backfill post-exit drift labels to separate protected exits from premature exits.",
+          "evidence": {
+            "soldTooEarlySymbols": [
+              {
+                "symbolKey": "crypto:D/USDT",
+                "currentFromExitAvgPct": 36.075
+              },
+              {
+                "symbolKey": "overseas:POET",
+                "currentFromExitAvgPct": 32.4673
+              },
+              {
+                "symbolKey": "crypto:KITE/USDT",
+                "currentFromExitAvgPct": 43.061
+              },
+              {
+                "symbolKey": "domestic:006340",
+                "currentFromExitAvgPct": 154.087
+              },
+              {
+                "symbolKey": "crypto:PHA/USDT",
+                "currentFromExitAvgPct": 76.5673
+              },
+              {
+                "symbolKey": "crypto:ZEC/USDT",
+                "currentFromExitAvgPct": 69.6977
+              },
+              {
+                "symbolKey": "crypto:PENDLE/USDT",
+                "currentFromExitAvgPct": 23.6185
+              },
+              {
+                "symbolKey": "crypto:SAHARA/USDT",
+                "currentFromExitAvgPct": 52.2158
+              },
+              {
+                "symbolKey": "crypto:RENDER/USDT",
+                "currentFromExitAvgPct": 27.3514
+              },
+              {
+                "symbolKey": "domestic:006110",
+                "currentFromExitAvgPct": 32.2485
+              }
+            ]
+          },
+          "action": "For each closed trade, train current/5d/10d/20d post-exit drift labels so the model can distinguish protected exits from premature exits.",
+          "validationCommand": "npm --prefix bots/investment run -s runtime:luna-optimal-exit-analysis -- --json --no-write --include-records",
+          "liveMutation": false
+        },
+        {
+          "id": "peak_tag_partial_exit_gate",
+          "priority": "P1",
+          "area": "symbol_exit_policy",
+          "title": "Convert peak/reversal tags into partial-exit gates.",
+          "evidence": {
+            "commonTags": [
+              {
+                "key": "next5d_drawdown_over_5pct",
+                "count": 668
+              },
+              {
+                "key": "sma20_extension_6pct",
+                "count": 609
+              },
+              {
+                "key": "local_7d_peak",
+                "count": 605
+              },
+              {
+                "key": "next_day_drop_over_2pct",
+                "count": 534
+              },
+              {
+                "key": "upper_bollinger_band",
+                "count": 505
+              },
+              {
+                "key": "rsi_overbought",
+                "count": 405
+              },
+              {
+                "key": "volume_spike",
+                "count": 164
+              },
+              {
+                "key": "macd_cooling",
+                "count": 58
+              }
+            ]
+          },
+          "action": "When RSI overbought, upper Bollinger, SMA20 extension, local peak, volume spike, or MACD cooling clusters appear, lock partial gains and tighten trailing.",
+          "validationCommand": "npm --prefix bots/investment run -s smoke:luna-symbol-exit-timing-strategy",
+          "liveMutation": false
+        }
+      ]
+    },
+    {
+      "id": "agentic_operating_model",
+      "status": "priority",
+      "evidence": {
+        "model": "quant_risk_primary_llm_critic_secondary",
+        "deterministicOwners": [
+          "candidate_scoring",
+          "position_sizing",
+          "risk_limits",
+          "exit_policy",
+          "promotion_gate"
+        ],
+        "llmAllowedRoles": [
+          "critic",
+          "rationale_reviewer",
+          "posttrade_label_explainer",
+          "roadmap_prioritizer"
+        ],
+        "llmForbiddenRoles": [
+          "unvalidated_live_signal_owner",
+          "direct_threshold_mutator",
+          "live_order_executor"
+        ],
+        "signalFailureRate": 0,
+        "currentEpochClosedTrades": 27,
+        "currentEpochWinRate": 0.2963,
+        "p0ExitSymbols": 8
+      },
+      "actions": [
+        {
+          "id": "deterministic_exit_policy_before_llm_override",
+          "priority": "P0",
+          "area": "agentic_operating_model",
+          "title": "Keep sell timing controlled by deterministic policy labels before any LLM override.",
+          "evidence": {
+            "p0ExitSymbols": 8,
+            "missedDuringHoldAvgPct": 4.7144
+          },
+          "action": "Use LLM only as critic/explainer for candidate sell plans; require symbol policy, peak tags, and post-exit drift labels to approve timing changes.",
+          "validationCommand": "npm --prefix bots/investment run -s check:luna-trading-process-improvement",
+          "liveMutation": false
+        },
+        {
+          "id": "analyze_simulate_promote_observe_loop",
+          "priority": "P1",
+          "area": "agentic_operating_model",
+          "title": "Gate every strategy change through analyze, simulate, promote, and observe stages.",
+          "evidence": {
+            "signalFailureRate": 0,
+            "closedTrades": 27,
+            "currentEpochWinRate": 0.2963
+          },
+          "action": "Do not let agents mutate strategy thresholds directly; stage proposals with validation commands, smoke tests, and posttrade outcome checks.",
+          "validationCommand": "npm --prefix bots/investment run -s runtime:luna-trading-process-improvement-report -- --json --no-write",
+          "liveMutation": false
+        }
+      ]
+    },
+    {
+      "id": "learning_loop",
+      "status": "watch",
+      "evidence": {
+        "currentEpochClosedTrades": 27,
+        "posttradeStatus": "posttrade_feedback_action_staged",
+        "strategyFeedbackStatus": "strategy_feedback_outcome_attention"
+      },
+      "actions": [
+        {
+          "id": "learning_sample_floor",
+          "priority": "P2",
+          "area": "learning_loop",
+          "title": "Keep autotune in sample-collection mode until the current epoch has enough closed trades.",
+          "evidence": {
+            "closed": 27,
+            "minimumClosedForStableLearning": 30
+          },
+          "action": "Do not promote sample-thin strategy changes; compare post-guard samples only after the closed-trade floor is met.",
+          "validationCommand": "npm --prefix bots/investment run -s runtime:luna-trade-data-analysis-report -- --json",
+          "liveMutation": false
+        },
+        {
+          "id": "strategy_feedback_attention",
+          "priority": "P1",
+          "area": "learning_loop",
+          "title": "Strategy feedback outcomes require bias review.",
+          "evidence": {
+            "total": 336,
+            "closed": 131,
+            "pnlNet": 53112.65389999998,
+            "pnlByExchange": {
+              "binance": 0.724,
+              "kis": 53179.9999,
+              "kis_overseas": -68.07
+            },
+            "pnlSummary": "mixed: binance +$0.72 / kis +53,180원 / kis_overseas -$68.07",
+            "weak": {
+              "familyBias": "insufficient_sample",
+              "family": "promotion_ready_shadow",
+              "executionKind": "strategy_exit",
+              "total": 6,
+              "closed": 6,
+              "wins": 0,
+              "winRate": 0,
+              "avgPnlPercent": -2.5619,
+              "pnlNet": -26940,
+              "pnlByExchange": {
+                "kis": -26940
+              },
+              "pnlSummary": "-26,940원",
+              "latestCreatedAt": 1779244359177
+            },
+            "strong": {
+              "familyBias": "downweight_by_win_rate",
+              "family": "momentum_rotation",
+              "executionKind": "partial_adjust",
+              "total": 8,
+              "closed": 8,
+              "wins": 4,
+              "winRate": 0.5,
+              "avgPnlPercent": 6.3205,
+              "pnlNet": 10.8082,
+              "pnlByExchange": {
+                "binance": 10.8082
+              },
+              "pnlSummary": "+$10.81",
+              "latestCreatedAt": 1777013183527
+            },
+            "sampleContext": {
+              "days": 90,
+              "feedbackSignals": 746,
+              "taggedFeedbackSignals": 746,
+              "strategySellSignals": 1284,
+              "taggedExecutedSignals": 23,
+              "taggedTrades": 22,
+              "taggedJournals": 22,
+              "journalPartialAdjusts": 9,
+              "journalStrategyExits": 13,
+              "closeoutReviews": 1567,
+              "closeoutTaggedReviews": 314,
+              "activeFeedbackCandidates": 0,
+              "activeFamilyBiasProfiles": 0
+            }
+          },
+          "action": "Compare feedback-tagged partial-adjust and strategy-exit outcomes before restoring weak family bias.",
+          "validationCommand": "npm --prefix bots/investment run -s runtime:strategy-feedback-outcomes -- --json --days=90",
+          "liveMutation": false
+        }
+      ]
+    }
+  ],
+  "roadmap": [
+    {
+      "id": "deterministic_exit_policy_before_llm_override",
+      "priority": "P0",
+      "area": "agentic_operating_model",
+      "title": "Keep sell timing controlled by deterministic policy labels before any LLM override.",
+      "evidence": {
+        "p0ExitSymbols": 8,
+        "missedDuringHoldAvgPct": 4.7144
+      },
+      "action": "Use LLM only as critic/explainer for candidate sell plans; require symbol policy, peak tags, and post-exit drift labels to approve timing changes.",
+      "validationCommand": "npm --prefix bots/investment run -s check:luna-trading-process-improvement",
+      "liveMutation": false
+    },
+    {
+      "id": "exit_dual_horizon_labels",
+      "priority": "P0",
+      "area": "exit_timing",
+      "title": "Train exit labels across actual, best-within-hold, and forward-return horizons.",
+      "evidence": {
+        "missedDuringHoldAvgPct": 4.7144,
+        "missedToNowAvgPct": 30.7875,
+        "lateExitCount": 68,
+        "earlyRecoveredCount": 79
+      },
+      "action": "Add dual-horizon exit labels and use them as inputs for exit patience, partial profit, and trailing decisions.",
+      "validationCommand": "npm --prefix bots/investment run -s runtime:luna-optimal-exit-analysis -- --json --no-write",
+      "liveMutation": false
+    },
+    {
+      "id": "exit_peak_reversal_probability",
+      "priority": "P0",
+      "area": "exit_timing",
+      "title": "Add peak/reversal probability head for sell timing.",
+      "evidence": {
+        "topOptimalReasonTags": [
+          {
+            "key": "next5d_drawdown_over_5pct",
+            "count": 309
+          },
+          {
+            "key": "sma20_extension_6pct",
+            "count": 275
+          },
+          {
+            "key": "local_7d_peak",
+            "count": 262
+          },
+          {
+            "key": "upper_bollinger_band",
+            "count": 249
+          },
+          {
+            "key": "next_day_drop_over_2pct",
+            "count": 241
+          },
+          {
+            "key": "rsi_overbought",
+            "count": 171
+          }
+        ]
+      },
+      "action": "Use RSI overbought, Bollinger position, SMA20 extension, volume spike, MACD cooling, local peak, and forward drawdown tags to estimate reversal risk.",
+      "validationCommand": "npm --prefix bots/investment run -s smoke:luna-optimal-exit-analysis",
+      "liveMutation": false
+    },
+    {
+      "id": "symbol_exit_policy_matrix_materialize",
+      "priority": "P0",
+      "area": "symbol_exit_policy",
+      "title": "Materialize symbol-specific exit policies before changing live sell behavior.",
+      "evidence": {
+        "status": "sell_timing_strategy_required",
+        "symbols": 175,
+        "p0Symbols": 8,
+        "p1Symbols": 19,
+        "byPolicy": {
+          "collect_more_samples_with_exit_labels": 74,
+          "review_only_excluded_from_learning": 71,
+          "loss_exit_recheck_before_sell": 14,
+          "peak_reversal_partial_trailing": 8,
+          "preserve_current_exit_rule": 3,
+          "winner_continuation_trailing": 3,
+          "entry_downweight_or_probe_only": 2
+        },
+        "topP0Symbols": [
+          {
+            "symbolKey": "crypto:D/USDT",
+            "policy": "peak_reversal_partial_trailing",
+            "missedDuringHoldAvgPct": 56.1983
+          },
+          {
+            "symbolKey": "overseas:POET",
+            "policy": "peak_reversal_partial_trailing",
+            "missedDuringHoldAvgPct": 33.6707
+          },
+          {
+            "symbolKey": "crypto:SIGN/USDT",
+            "policy": "peak_reversal_partial_trailing",
+            "missedDuringHoldAvgPct": 19.3365
+          },
+          {
+            "symbolKey": "crypto:KITE/USDT",
+            "policy": "peak_reversal_partial_trailing",
+            "missedDuringHoldAvgPct": 11.7695
+          },
+          {
+            "symbolKey": "domestic:006340",
+            "policy": "peak_reversal_partial_trailing",
+            "missedDuringHoldAvgPct": 11.0013
+          },
+          {
+            "symbolKey": "crypto:PHA/USDT",
+            "policy": "peak_reversal_partial_trailing",
+            "missedDuringHoldAvgPct": 10.4438
+          },
+          {
+            "symbolKey": "crypto:BARD/USDT",
+            "policy": "peak_reversal_partial_trailing",
+            "missedDuringHoldAvgPct": 10.391
+          },
+          {
+            "symbolKey": "crypto:ZEC/USDT",
+            "policy": "peak_reversal_partial_trailing",
+            "missedDuringHoldAvgPct": 8.2897
+          }
+        ]
+      },
+      "action": "Feed recommendedExitPolicy into exit patience, partial-profit, trailing-stop, and non-hard loss recheck gates by symbol.",
+      "validationCommand": "npm --prefix bots/investment run -s runtime:luna-symbol-exit-timing-strategy-report -- --json --no-write",
+      "liveMutation": false
+    },
+    {
+      "id": "analyze_simulate_promote_observe_loop",
+      "priority": "P1",
+      "area": "agentic_operating_model",
+      "title": "Gate every strategy change through analyze, simulate, promote, and observe stages.",
+      "evidence": {
+        "signalFailureRate": 0,
+        "closedTrades": 27,
+        "currentEpochWinRate": 0.2963
+      },
+      "action": "Do not let agents mutate strategy thresholds directly; stage proposals with validation commands, smoke tests, and posttrade outcome checks.",
+      "validationCommand": "npm --prefix bots/investment run -s runtime:luna-trading-process-improvement-report -- --json --no-write",
+      "liveMutation": false
+    },
+    {
+      "id": "prefilter_capital_guard_rejected",
+      "priority": "P1",
+      "area": "entry_prefilter",
+      "title": "capital_guard_rejected should be absorbed before execution.",
+      "evidence": {
+        "reason": "capital_guard_rejected",
+        "count": 12,
+        "stage": "capital_preflight",
+        "rawExecutionRate": 0.5922,
+        "policyAdjustedExecutionRate": 0.9531
+      },
+      "action": "Move capital backpressure into candidate scoring and sizing preflight before execution.",
+      "validationCommand": "npm --prefix bots/investment run -s runtime:binance-failure-pressure -- --json --days=14",
+      "liveMutation": false
+    },
+    {
+      "id": "prefilter_sec015_overseas_stale_approval",
+      "priority": "P1",
+      "area": "entry_prefilter",
+      "title": "sec015_overseas_stale_approval should be absorbed before execution.",
+      "evidence": {
+        "reason": "sec015_overseas_stale_approval",
+        "count": 12,
+        "stage": "approval_freshness_preflight",
+        "rawExecutionRate": 0.5922,
+        "policyAdjustedExecutionRate": 0.9531
+      },
+      "action": "Check overseas SEC015 approval freshness before order construction and defer stale approvals to refresh queue.",
+      "validationCommand": "npm --prefix bots/investment run -s runtime:execution-risk-guard -- --json --days=14",
+      "liveMutation": false
+    },
+    {
+      "id": "prefilter_live_position_reentry_blocked",
+      "priority": "P1",
+      "area": "entry_prefilter",
+      "title": "live_position_reentry_blocked should be absorbed before execution.",
+      "evidence": {
+        "reason": "live_position_reentry_blocked",
+        "count": 5,
+        "stage": "reentry_prefilter",
+        "rawExecutionRate": 0.5922,
+        "policyAdjustedExecutionRate": 0.9531
+      },
+      "action": "Inject live position and recent-buy cooldown state into candidate generation to suppress repeated reentry signals.",
+      "validationCommand": "npm --prefix bots/investment run -s runtime:binance-failure-pressure -- --json --days=14",
+      "liveMutation": false
+    },
+    {
+      "id": "prefilter_position_sizing_rejected",
+      "priority": "P1",
+      "area": "entry_prefilter",
+      "title": "position_sizing_rejected should be absorbed before execution.",
+      "evidence": {
+        "reason": "position_sizing_rejected",
+        "count": 4,
+        "stage": "sizing_preflight",
+        "rawExecutionRate": 0.5922,
+        "policyAdjustedExecutionRate": 0.9531
+      },
+      "action": "Record min-notional, max-risk, and quantity-normalization rejects during sizing instead of order preflight.",
+      "validationCommand": "npm --prefix bots/investment run -s runtime:position-runtime-autopilot-bottleneck -- --json",
+      "liveMutation": false
+    },
+    {
+      "id": "prefilter_safety_gate_blocked",
+      "priority": "P1",
+      "area": "entry_prefilter",
+      "title": "safety_gate_blocked should be absorbed before execution.",
+      "evidence": {
+        "reason": "safety_gate_blocked",
+        "count": 2,
+        "stage": "safety_preflight",
+        "rawExecutionRate": 0.5922,
+        "policyAdjustedExecutionRate": 0.9531
+      },
+      "action": "Attach safety-gate outcome before execution request creation.",
+      "validationCommand": "npm --prefix bots/investment run -s runtime:luna-operational-action-board -- --json",
+      "liveMutation": false
+    },
+    {
+      "id": "prefilter_sec015_stale_approval",
+      "priority": "P1",
+      "area": "entry_prefilter",
+      "title": "sec015_stale_approval should be absorbed before execution.",
+      "evidence": {
+        "reason": "sec015_stale_approval",
+        "count": 2,
+        "stage": "approval_freshness_preflight",
+        "rawExecutionRate": 0.5922,
+        "policyAdjustedExecutionRate": 0.9531
+      },
+      "action": "Enforce approval TTL at entry preflight so stale approvals do not reach execution.",
+      "validationCommand": "npm --prefix bots/investment run -s runtime:execution-risk-guard -- --json --days=14",
+      "liveMutation": false
+    },
+    {
+      "id": "prefilter_trade_data_entry_guard_rejected",
+      "priority": "P1",
+      "area": "entry_prefilter",
+      "title": "trade_data_entry_guard_rejected should be absorbed before execution.",
+      "evidence": {
+        "reason": "trade_data_entry_guard_rejected",
+        "count": 1,
+        "stage": "trade_data_entry_guard",
+        "rawExecutionRate": 0.5922,
+        "policyAdjustedExecutionRate": 0.9531
+      },
+      "action": "Feed trade-data entry guard rejections into candidate score penalties and observation-mode routing.",
+      "validationCommand": "npm --prefix bots/investment run -s runtime:luna-trade-data-analysis-report -- --json",
+      "liveMutation": false
+    },
+    {
+      "id": "prefilter_journal_open_entry_missing_for_sell",
+      "priority": "P1",
+      "area": "entry_prefilter",
+      "title": "journal_open_entry_missing_for_sell should be absorbed before execution.",
+      "evidence": {
+        "reason": "journal_open_entry_missing_for_sell",
+        "count": 1,
+        "stage": "journal_integrity_preflight",
+        "rawExecutionRate": 0.5922,
+        "policyAdjustedExecutionRate": 0.9531
+      },
+      "action": "Verify open-journal existence before SELL signal creation and route misses to reconcile evidence.",
+      "validationCommand": "npm --prefix bots/investment run -s runtime:luna-trade-data-hygiene -- --json",
+      "liveMutation": false
+    },
+    {
+      "id": "exit_early_loss_recheck_gate",
+      "priority": "P1",
+      "area": "exit_timing",
+      "title": "Require a recheck before non-hard early loss exits.",
+      "evidence": {
+        "underOneHour": true,
+        "total": 13,
+        "losses": 7,
+        "samples": [
+          {
+            "symbol": "031330",
+            "holdMinutes": 45.48,
+            "pnlPercent": -4.3004,
+            "strategyFamily": "promotion_ready_shadow",
+            "originalStrategyFamily": "promotion_ready_shadow",
+            "horizonAdjusted": false,
+            "marketRegime": "ranging"
+          },
+          {
+            "symbol": "AIGENSYN/USDT",
+            "holdMinutes": 36.84,
+            "pnlPercent": -4.4654,
+            "strategyFamily": "short_term_scalping",
+            "originalStrategyFamily": "mean_reversion",
+            "horizonAdjusted": true,
+            "marketRegime": "ranging"
+          },
+          {
+            "symbol": "MITO/USDT",
+            "holdMinutes": 0.01,
+            "pnlPercent": -2.8834,
+            "strategyFamily": "short_term_scalping",
+            "originalStrategyFamily": "mean_reversion",
+            "horizonAdjusted": true,
+            "marketRegime": "ranging"
+          },
+          {
+            "symbol": "DYM/USDT",
+            "holdMinutes": 0.01,
+            "pnlPercent": 5.795,
+            "strategyFamily": "short_term_scalping",
+            "originalStrategyFamily": "defensive_rotation",
+            "horizonAdjusted": true,
+            "marketRegime": "trending_bear"
+          },
+          {
+            "symbol": "KITE/USDT",
+            "holdMinutes": 0.01,
+            "pnlPercent": -5.3712,
+            "strategyFamily": "short_term_scalping",
+            "originalStrategyFamily": "mean_reversion",
+            "horizonAdjusted": true,
+            "marketRegime": "ranging"
+          }
+        ]
+      },
+      "action": "For non-hard exits under one hour, require technical recheck unless stop-loss, safety, or reconciliation rules force close.",
+      "validationCommand": "npm --prefix bots/investment run -s runtime:luna-process-integrity-loop -- --json",
+      "liveMutation": false
+    },
+    {
+      "id": "exit_partial_profit_trailing",
+      "priority": "P1",
+      "area": "exit_timing",
+      "title": "Replace all-or-nothing profit exits with partial lock and trailing logic.",
+      "evidence": {
+        "lateExitCount": 68,
+        "nearOptimal": 82,
+        "optimalReasonTags": [
+          {
+            "key": "next5d_drawdown_over_5pct",
+            "count": 309
+          },
+          {
+            "key": "sma20_extension_6pct",
+            "count": 275
+          },
+          {
+            "key": "local_7d_peak",
+            "count": 262
+          },
+          {
+            "key": "upper_bollinger_band",
+            "count": 249
+          },
+          {
+            "key": "next_day_drop_over_2pct",
+            "count": 241
+          }
+        ]
+      },
+      "action": "Use partial profit lock plus ATR/chandelier trailing when peak/reversal risk rises but trend continuation is not fully broken.",
+      "validationCommand": "npm --prefix bots/investment run -s runtime:position-runtime -- --json",
+      "liveMutation": false
+    },
+    {
+      "id": "strategy_feedback_attention",
+      "priority": "P1",
+      "area": "learning_loop",
+      "title": "Strategy feedback outcomes require bias review.",
+      "evidence": {
+        "total": 336,
+        "closed": 131,
+        "pnlNet": 53112.65389999998,
+        "pnlByExchange": {
+          "binance": 0.724,
+          "kis": 53179.9999,
+          "kis_overseas": -68.07
+        },
+        "pnlSummary": "mixed: binance +$0.72 / kis +53,180원 / kis_overseas -$68.07",
+        "weak": {
+          "familyBias": "insufficient_sample",
+          "family": "promotion_ready_shadow",
+          "executionKind": "strategy_exit",
+          "total": 6,
+          "closed": 6,
+          "wins": 0,
+          "winRate": 0,
+          "avgPnlPercent": -2.5619,
+          "pnlNet": -26940,
+          "pnlByExchange": {
+            "kis": -26940
+          },
+          "pnlSummary": "-26,940원",
+          "latestCreatedAt": 1779244359177
+        },
+        "strong": {
+          "familyBias": "downweight_by_win_rate",
+          "family": "momentum_rotation",
+          "executionKind": "partial_adjust",
+          "total": 8,
+          "closed": 8,
+          "wins": 4,
+          "winRate": 0.5,
+          "avgPnlPercent": 6.3205,
+          "pnlNet": 10.8082,
+          "pnlByExchange": {
+            "binance": 10.8082
+          },
+          "pnlSummary": "+$10.81",
+          "latestCreatedAt": 1777013183527
+        },
+        "sampleContext": {
+          "days": 90,
+          "feedbackSignals": 746,
+          "taggedFeedbackSignals": 746,
+          "strategySellSignals": 1284,
+          "taggedExecutedSignals": 23,
+          "taggedTrades": 22,
+          "taggedJournals": 22,
+          "journalPartialAdjusts": 9,
+          "journalStrategyExits": 13,
+          "closeoutReviews": 1567,
+          "closeoutTaggedReviews": 314,
+          "activeFeedbackCandidates": 0,
+          "activeFamilyBiasProfiles": 0
+        }
+      },
+      "action": "Compare feedback-tagged partial-adjust and strategy-exit outcomes before restoring weak family bias.",
+      "validationCommand": "npm --prefix bots/investment run -s runtime:strategy-feedback-outcomes -- --json --days=90",
+      "liveMutation": false
+    },
+    {
+      "id": "strategy_bias_promotion_ready_shadow",
+      "priority": "P1",
+      "area": "strategy_bias",
+      "title": "promotion_ready_shadow has negative current-epoch expectancy.",
+      "evidence": {
+        "closed": 3,
+        "avgPnlPercent": -5.1238,
+        "winRate": 0
+      },
+      "action": "Demote new entries to observation/probe until closed samples and expectancy recover.",
+      "validationCommand": "npm --prefix bots/investment run -s runtime:luna-process-integrity-loop -- --json",
+      "liveMutation": false
+    },
+    {
+      "id": "post_exit_drift_label_backfill",
+      "priority": "P1",
+      "area": "symbol_exit_policy",
+      "title": "Backfill post-exit drift labels to separate protected exits from premature exits.",
+      "evidence": {
+        "soldTooEarlySymbols": [
+          {
+            "symbolKey": "crypto:D/USDT",
+            "currentFromExitAvgPct": 36.075
+          },
+          {
+            "symbolKey": "overseas:POET",
+            "currentFromExitAvgPct": 32.4673
+          },
+          {
+            "symbolKey": "crypto:KITE/USDT",
+            "currentFromExitAvgPct": 43.061
+          },
+          {
+            "symbolKey": "domestic:006340",
+            "currentFromExitAvgPct": 154.087
+          },
+          {
+            "symbolKey": "crypto:PHA/USDT",
+            "currentFromExitAvgPct": 76.5673
+          },
+          {
+            "symbolKey": "crypto:ZEC/USDT",
+            "currentFromExitAvgPct": 69.6977
+          },
+          {
+            "symbolKey": "crypto:PENDLE/USDT",
+            "currentFromExitAvgPct": 23.6185
+          },
+          {
+            "symbolKey": "crypto:SAHARA/USDT",
+            "currentFromExitAvgPct": 52.2158
+          },
+          {
+            "symbolKey": "crypto:RENDER/USDT",
+            "currentFromExitAvgPct": 27.3514
+          },
+          {
+            "symbolKey": "domestic:006110",
+            "currentFromExitAvgPct": 32.2485
+          }
+        ]
+      },
+      "action": "For each closed trade, train current/5d/10d/20d post-exit drift labels so the model can distinguish protected exits from premature exits.",
+      "validationCommand": "npm --prefix bots/investment run -s runtime:luna-optimal-exit-analysis -- --json --no-write --include-records",
+      "liveMutation": false
+    },
+    {
+      "id": "peak_tag_partial_exit_gate",
+      "priority": "P1",
+      "area": "symbol_exit_policy",
+      "title": "Convert peak/reversal tags into partial-exit gates.",
+      "evidence": {
+        "commonTags": [
+          {
+            "key": "next5d_drawdown_over_5pct",
+            "count": 668
+          },
+          {
+            "key": "sma20_extension_6pct",
+            "count": 609
+          },
+          {
+            "key": "local_7d_peak",
+            "count": 605
+          },
+          {
+            "key": "next_day_drop_over_2pct",
+            "count": 534
+          },
+          {
+            "key": "upper_bollinger_band",
+            "count": 505
+          },
+          {
+            "key": "rsi_overbought",
+            "count": 405
+          },
+          {
+            "key": "volume_spike",
+            "count": 164
+          },
+          {
+            "key": "macd_cooling",
+            "count": 58
+          }
+        ]
+      },
+      "action": "When RSI overbought, upper Bollinger, SMA20 extension, local peak, volume spike, or MACD cooling clusters appear, lock partial gains and tighten trailing.",
+      "validationCommand": "npm --prefix bots/investment run -s smoke:luna-symbol-exit-timing-strategy",
+      "liveMutation": false
+    },
+    {
+      "id": "learning_sample_floor",
+      "priority": "P2",
+      "area": "learning_loop",
+      "title": "Keep autotune in sample-collection mode until the current epoch has enough closed trades.",
+      "evidence": {
+        "closed": 27,
+        "minimumClosedForStableLearning": 30
+      },
+      "action": "Do not promote sample-thin strategy changes; compare post-guard samples only after the closed-trade floor is met.",
+      "validationCommand": "npm --prefix bots/investment run -s runtime:luna-trade-data-analysis-report -- --json",
+      "liveMutation": false
+    },
+    {
+      "id": "strategy_bias_mean_reversion",
+      "priority": "P2",
+      "area": "strategy_bias",
+      "title": "mean_reversion has negative current-epoch expectancy.",
+      "evidence": {
+        "closed": 5,
+        "avgPnlPercent": -2.6532,
+        "winRate": 0.2
+      },
+      "action": "Require reversal evidence in ranging markets and downweight weak mean-reversion candidates.",
+      "validationCommand": "npm --prefix bots/investment run -s runtime:luna-trade-data-analysis-report -- --json",
+      "liveMutation": false
+    },
+    {
+      "id": "strategy_bias_trend_following",
+      "priority": "P2",
+      "area": "strategy_bias",
+      "title": "trend_following has negative current-epoch expectancy.",
+      "evidence": {
+        "closed": 4,
+        "avgPnlPercent": -0.8554,
+        "winRate": 0.25
+      },
+      "action": "Require pullback, volume, or multi-timeframe confirmation before trend-following live sizing.",
+      "validationCommand": "npm --prefix bots/investment run -s runtime:luna-trade-data-analysis-report -- --json",
+      "liveMutation": false
+    },
+    {
+      "id": "strategy_bias_short_term_scalping",
+      "priority": "P2",
+      "area": "strategy_bias",
+      "title": "short_term_scalping has negative current-epoch expectancy.",
+      "evidence": {
+        "closed": 11,
+        "avgPnlPercent": -0.5665,
+        "winRate": 0.4545
+      },
+      "action": "Keep early-exit loss-pressure guard active and require confirmation before fast scalp entries.",
+      "validationCommand": "npm --prefix bots/investment run -s runtime:luna-process-integrity-loop -- --json",
+      "liveMutation": false
+    }
+  ],
+  "executionLoop": [
+    {
+      "stage": "analyze",
+      "owner": "deterministic_reports",
+      "objective": "Collect trade quality, symbol exit timing, strategy feedback, and posttrade staging evidence.",
+      "requiredInputs": [
+        "trade_data_analysis",
+        "optimal_exit_analysis",
+        "symbol_exit_policy",
+        "strategy_feedback_outcomes"
+      ],
+      "currentFocus": [
+        "deterministic_exit_policy_before_llm_override",
+        "exit_dual_horizon_labels",
+        "exit_peak_reversal_probability",
+        "symbol_exit_policy_matrix_materialize"
+      ]
+    },
+    {
+      "stage": "simulate",
+      "owner": "backtest_and_smoke",
+      "objective": "Validate policy candidates before any runtime threshold or live-flow change.",
+      "requiredInputs": [
+        "npm --prefix bots/investment run -s check:luna-trading-process-improvement",
+        "npm --prefix bots/investment run -s runtime:luna-optimal-exit-analysis -- --json --no-write",
+        "npm --prefix bots/investment run -s smoke:luna-optimal-exit-analysis",
+        "npm --prefix bots/investment run -s runtime:luna-symbol-exit-timing-strategy-report -- --json --no-write",
+        "npm --prefix bots/investment run -s runtime:luna-trading-process-improvement-report -- --json --no-write",
+        "npm --prefix bots/investment run -s runtime:binance-failure-pressure -- --json --days=14",
+        "npm --prefix bots/investment run -s runtime:execution-risk-guard -- --json --days=14",
+        "npm --prefix bots/investment run -s runtime:position-runtime-autopilot-bottleneck -- --json"
+      ],
+      "currentFocus": [
+        "analyze_simulate_promote_observe_loop",
+        "prefilter_capital_guard_rejected",
+        "prefilter_sec015_overseas_stale_approval",
+        "prefilter_live_position_reentry_blocked",
+        "prefilter_position_sizing_rejected"
+      ]
+    },
+    {
+      "stage": "stage",
+      "owner": "posttrade_action_staging",
+      "objective": "Convert only safe runtime-config proposals into approval-required patches.",
+      "guardrail": "No secret, launchd, live trade, reconcile apply, or protected PID mutation."
+    },
+    {
+      "stage": "promote",
+      "owner": "promotion_gate",
+      "objective": "Promote only after sample floor, positive expectancy, and safety gates pass.",
+      "guardrail": "LLM review cannot bypass deterministic promotion gates."
+    },
+    {
+      "stage": "observe",
+      "owner": "watchdog_posttrade_feedback",
+      "objective": "Feed realized PnL, post-exit drift, and family-bias outcomes back into the next cycle.",
+      "guardrail": "Failures become prefilters or observation-mode downgrades, not repeated execution attempts."
+    }
+  ],
+  "nextCommands": [
+    "npm --prefix bots/investment run -s check:luna-trading-process-improvement",
+    "npm --prefix bots/investment run -s runtime:luna-optimal-exit-analysis -- --json --no-write",
+    "npm --prefix bots/investment run -s smoke:luna-optimal-exit-analysis",
+    "npm --prefix bots/investment run -s runtime:luna-symbol-exit-timing-strategy-report -- --json --no-write",
+    "npm --prefix bots/investment run -s runtime:luna-trading-process-improvement-report -- --json --no-write",
+    "npm --prefix bots/investment run -s runtime:binance-failure-pressure -- --json --days=14",
+    "npm --prefix bots/investment run -s runtime:execution-risk-guard -- --json --days=14",
+    "npm --prefix bots/investment run -s runtime:position-runtime-autopilot-bottleneck -- --json",
+    "npm --prefix bots/investment run -s runtime:luna-operational-action-board -- --json",
+    "npm --prefix bots/investment run -s runtime:luna-trade-data-analysis-report -- --json",
+    "npm --prefix bots/investment run -s runtime:luna-trade-data-hygiene -- --json",
+    "npm --prefix bots/investment run -s runtime:luna-process-integrity-loop -- --json",
+    "npm --prefix bots/investment run -s runtime:position-runtime -- --json",
+    "npm --prefix bots/investment run -s runtime:strategy-feedback-outcomes -- --json --days=90",
+    "npm --prefix bots/investment run -s runtime:luna-optimal-exit-analysis -- --json --no-write --include-records",
+    "npm --prefix bots/investment run -s smoke:luna-symbol-exit-timing-strategy",
+    "npm --prefix bots/investment run -s smoke:luna-trading-process-improvement"
+  ],
+  "sourceReports": {
+    "tradeData": "db",
+    "optimalExit": "existing_report:/Users/alexlee/projects/ai-agent-system/bots/investment/output/reports/luna-optimal-exit-analysis-report.json",
+    "symbolExit": "existing_report:/Users/alexlee/projects/ai-agent-system/bots/investment/output/reports/luna-symbol-exit-timing-strategy-report.json",
+    "strategyFeedback": "db",
+    "posttrade": "db"
+  }
+}

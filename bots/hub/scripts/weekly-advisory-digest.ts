@@ -14,6 +14,18 @@ const pgPool = require('../../../packages/core/lib/pg-pool');
 const { deliverScheduledAlarm } = require('../lib/alarm/scheduled-delivery.ts');
 const kst = require('../../../packages/core/lib/kst');
 
+function hasFlag(name: string): boolean {
+  return process.argv.includes(`--${name}`);
+}
+
+const DRY_RUN = hasFlag('dry-run') || ['1', 'true', 'yes', 'y', 'on'].includes(
+  String(process.env.HUB_WEEKLY_ADVISORY_DIGEST_DRY_RUN || '').trim().toLowerCase(),
+);
+const JSON_OUTPUT = hasFlag('json');
+const FIXTURE_MODE = hasFlag('fixture') || ['1', 'true', 'yes', 'y', 'on'].includes(
+  String(process.env.HUB_WEEKLY_ADVISORY_DIGEST_FIXTURE || '').trim().toLowerCase(),
+);
+
 interface AutotuneRow {
   experiment_type: string;
   total: number;
@@ -152,22 +164,64 @@ function formatAdvisoryDigest(
 }
 
 async function main() {
-  const [autotuneStats, posttradeData, remodelData, suppCount] = await Promise.allSettled([
-    fetchAutotuneStats(),
-    fetchPosttradeFeedback(),
-    fetchRemodelBlockers(),
-    fetchSuppressionProposals(),
-  ]);
+  let autotune: AutotuneRow[] = [];
+  let posttrade: PosttradeRow[] = [];
+  let remodel: RemodelRow[] = [];
+  let suppressions = 0;
 
-  const autotune = autotuneStats.status === 'fulfilled' ? autotuneStats.value : [];
-  const posttrade = posttradeData.status === 'fulfilled' ? posttradeData.value : [];
-  const remodel = remodelData.status === 'fulfilled' ? remodelData.value : [];
-  const suppressions = suppCount.status === 'fulfilled' ? suppCount.value : 0;
+  if (FIXTURE_MODE) {
+    autotune = [
+      { experiment_type: 'route_policy', total: 12, promoted: 3, rejected: 2 },
+      { experiment_type: 'alarm_noise', total: 7, promoted: 1, rejected: 1 },
+    ];
+    posttrade = [
+      { feedback_type: 'risk_gate', count: 8, avg_score: 0.78 },
+      { feedback_type: 'position_sizing', count: 4, avg_score: 0.72 },
+    ];
+    remodel = [
+      { blocker_type: 'stale_dashboard', count: 2 },
+      { blocker_type: 'missing_evidence', count: 1 },
+    ];
+    suppressions = 2;
+  } else {
+    const [autotuneStats, posttradeData, remodelData, suppCount] = await Promise.allSettled([
+      fetchAutotuneStats(),
+      fetchPosttradeFeedback(),
+      fetchRemodelBlockers(),
+      fetchSuppressionProposals(),
+    ]);
+
+    autotune = autotuneStats.status === 'fulfilled' ? autotuneStats.value : [];
+    posttrade = posttradeData.status === 'fulfilled' ? posttradeData.value : [];
+    remodel = remodelData.status === 'fulfilled' ? remodelData.value : [];
+    suppressions = suppCount.status === 'fulfilled' ? suppCount.value : 0;
+  }
 
   const message = formatAdvisoryDigest(autotune, posttrade, remodel, suppressions);
   console.log('[weekly-advisory-digest]', message);
 
   const needsApproval = suppressions > 0;
+  const payload = {
+    ok: true,
+    dry_run: DRY_RUN,
+    fixture: FIXTURE_MODE,
+    autotune_total: autotune.reduce((s, r) => s + r.total, 0),
+    autotune_promoted: autotune.reduce((s, r) => s + r.promoted, 0),
+    posttrade_feedback_count: posttrade.reduce((s, r) => s + r.count, 0),
+    remodel_blocker_count: remodel.reduce((s, r) => s + r.count, 0),
+    suppression_proposals_pending: suppressions,
+    needs_approval: needsApproval,
+    message,
+  };
+
+  if (JSON_OUTPUT) {
+    console.log(JSON.stringify(payload, null, 2));
+  }
+
+  if (DRY_RUN) {
+    console.log('[weekly-advisory-digest] dry-run — alarm send skipped');
+    return;
+  }
 
   const sent = await deliverScheduledAlarm({
     team: 'hub',
@@ -182,10 +236,10 @@ async function main() {
     incidentKey: `hub:weekly_advisory:${kst.today()}`,
     payload: {
       event_type: 'weekly_advisory_digest',
-      autotune_total: autotune.reduce((s, r) => s + r.total, 0),
-      autotune_promoted: autotune.reduce((s, r) => s + r.promoted, 0),
-      suppression_proposals_pending: suppressions,
-      needs_approval: needsApproval,
+      autotune_total: payload.autotune_total,
+      autotune_promoted: payload.autotune_promoted,
+      suppression_proposals_pending: payload.suppression_proposals_pending,
+      needs_approval: payload.needs_approval,
     },
   });
 

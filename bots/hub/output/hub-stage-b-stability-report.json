@@ -1,6 +1,6 @@
 {
   "ok": true,
-  "checkedAt": "2026-05-26T06:07:21.078Z",
+  "checkedAt": "2026-05-26T17:21:57.293Z",
   "stage": "hub_stage_b",
   "status": "stage_b_operational_ready",
   "goals": {
@@ -56,21 +56,54 @@
         "exitStatus": "1",
         "runs": 6,
         "lastTerminatingSignal": null,
-        "reason": "expected-idle launchd job is loaded but last run exited non-zero"
+        "reason": "expected-idle launchd job is loaded but last run exited non-zero",
+        "diagnostic": {
+          "dryRunCommand": "npm --prefix bots/hub run -s alarm:noisy-producer-auto-learn:dry-run",
+          "tailCommand": "tail -n 120 /tmp/hub-noisy-producer-auto-learn.err.log",
+          "errorLog": {
+            "path": "/tmp/hub-noisy-producer-auto-learn.err.log",
+            "exists": true,
+            "sizeBytes": 400,
+            "modifiedAt": "2026-05-25T00:00:05.345Z"
+          },
+          "currentVerification": "dry_run_available"
+        }
       },
       {
         "label": "ai.hub.roundtable-reflection",
         "exitStatus": "1",
         "runs": 2,
         "lastTerminatingSignal": null,
-        "reason": "expected-idle launchd job is loaded but last run exited non-zero"
+        "reason": "expected-idle launchd job is loaded but last run exited non-zero",
+        "diagnostic": {
+          "dryRunCommand": "npm --prefix bots/hub run -s alarm:roundtable-reflection:dry-run",
+          "tailCommand": "tail -n 120 /tmp/hub-roundtable-reflection.err.log",
+          "errorLog": {
+            "path": "/tmp/hub-roundtable-reflection.err.log",
+            "exists": false,
+            "sizeBytes": 0,
+            "modifiedAt": null
+          },
+          "currentVerification": "dry_run_available"
+        }
       },
       {
         "label": "ai.hub.weekly-advisory-digest",
         "exitStatus": "1",
         "runs": 5,
         "lastTerminatingSignal": null,
-        "reason": "expected-idle launchd job is loaded but last run exited non-zero"
+        "reason": "expected-idle launchd job is loaded but last run exited non-zero",
+        "diagnostic": {
+          "dryRunCommand": "npm --prefix bots/hub run -s alarm:weekly-advisory-digest:dry-run",
+          "tailCommand": "tail -n 120 /tmp/hub-weekly-advisory-digest.err.log",
+          "errorLog": {
+            "path": "/tmp/hub-weekly-advisory-digest.err.log",
+            "exists": true,
+            "sizeBytes": 335,
+            "modifiedAt": "2026-05-25T02:00:02.340Z"
+          },
+          "currentVerification": "dry_run_available"
+        }
       }
     ],
     "labels": [
@@ -105,7 +138,7 @@
         "idleExitStatus": null,
         "attention": false,
         "lastTerminatingSignal": null,
-        "runs": 414,
+        "runs": 458,
         "checked": true
       },
       {
@@ -190,7 +223,7 @@
         "idleExitStatus": null,
         "attention": false,
         "lastTerminatingSignal": null,
-        "runs": 25,
+        "runs": 26,
         "checked": true
       },
       {
@@ -207,7 +240,7 @@
         "idleExitStatus": null,
         "attention": false,
         "lastTerminatingSignal": null,
-        "runs": 586,
+        "runs": 597,
         "checked": true
       },
       {
@@ -275,7 +308,7 @@
         "idleExitStatus": null,
         "attention": false,
         "lastTerminatingSignal": null,
-        "runs": 592,
+        "runs": 603,
         "checked": true
       },
       {
@@ -318,49 +351,228 @@
     "ok": true,
     "skipped": false,
     "hours": 24,
-    "total": 18366,
+    "total": 18427,
     "failures": 0,
+    "failureRatePct": 0,
     "unresolvedFailures": 0,
     "byProvider": [
       {
         "provider": "openai-oauth",
-        "count": 14681,
+        "count": 13477,
         "cost_usd": 0
       },
       {
         "provider": "groq",
-        "count": 2021,
-        "cost_usd": 0.9608658100000003
+        "count": 2133,
+        "cost_usd": 1.0329588599999995
       },
       {
         "provider": "gemini-cli-oauth",
-        "count": 1478,
+        "count": 1556,
         "cost_usd": 0
       },
       {
         "provider": "dedupe",
-        "count": 186,
+        "count": 1261,
         "cost_usd": 0
       }
     ],
     "byBudgetStatus": [
       {
         "budget_guard_status": "allowed",
-        "count": 18366
+        "count": 18427
       }
     ],
     "byTier": [
       {
         "provider_tier": "1",
-        "count": 14681
+        "count": 13477
       },
       {
         "provider_tier": "2",
-        "count": 2207
+        "count": 3394
       },
       {
         "provider_tier": "3",
-        "count": 1478
+        "count": 1556
+      }
+    ],
+    "avgDurationMs": 3490,
+    "maxDurationMs": 77951,
+    "latencyByProvider": [
+      {
+        "provider": "gemini-cli-oauth",
+        "count": 1556,
+        "failures": 0,
+        "avg_duration_ms": 16903,
+        "max_duration_ms": 59889,
+        "p95_duration_ms": 33694
+      },
+      {
+        "provider": "openai-oauth",
+        "count": 13477,
+        "failures": 0,
+        "avg_duration_ms": 2322,
+        "max_duration_ms": 77951,
+        "p95_duration_ms": 4008
+      },
+      {
+        "provider": "dedupe",
+        "count": 1261,
+        "failures": 0,
+        "avg_duration_ms": 2075,
+        "max_duration_ms": 3633,
+        "p95_duration_ms": 2910
+      },
+      {
+        "provider": "groq",
+        "count": 2133,
+        "failures": 0,
+        "avg_duration_ms": 1921,
+        "max_duration_ms": 9787,
+        "p95_duration_ms": 3813
+      }
+    ],
+    "slowRoutes": [
+      {
+        "route": "openai-oauth/gpt-5.4",
+        "provider": "openai-oauth",
+        "caller_team": "luna",
+        "agent": "reporter",
+        "abstract_model": "anthropic_opus",
+        "runtime_purpose": "edux_market_post_crypto",
+        "provider_tier": "1",
+        "count": 5,
+        "failures": 0,
+        "avg_duration_ms": 31679,
+        "max_duration_ms": 47476,
+        "p95_duration_ms": 44822
+      },
+      {
+        "route": "gemini-cli-oauth/gemini-2.5-flash",
+        "provider": "gemini-cli-oauth",
+        "caller_team": "darwin",
+        "agent": "darwin.planner",
+        "abstract_model": "anthropic_sonnet",
+        "runtime_purpose": "unknown",
+        "provider_tier": "3",
+        "count": 187,
+        "failures": 0,
+        "avg_duration_ms": 18129,
+        "max_duration_ms": 52525,
+        "p95_duration_ms": 31488
+      },
+      {
+        "route": "gemini-cli-oauth/gemini-2.5-flash-lite",
+        "provider": "gemini-cli-oauth",
+        "caller_team": "darwin",
+        "agent": "darwin.evaluator",
+        "abstract_model": "anthropic_sonnet",
+        "runtime_purpose": "evaluation_scoring",
+        "provider_tier": "3",
+        "count": 1369,
+        "failures": 0,
+        "avg_duration_ms": 16736,
+        "max_duration_ms": 59889,
+        "p95_duration_ms": 33857
+      },
+      {
+        "route": "openai-oauth/gpt-5.4",
+        "provider": "openai-oauth",
+        "caller_team": "blog",
+        "agent": "neighbor-commenter",
+        "abstract_model": "anthropic_haiku",
+        "runtime_purpose": "comment",
+        "provider_tier": "1",
+        "count": 32,
+        "failures": 0,
+        "avg_duration_ms": 5320,
+        "max_duration_ms": 18643,
+        "p95_duration_ms": 10455
+      },
+      {
+        "route": "openai-oauth/gpt-5.4",
+        "provider": "openai-oauth",
+        "caller_team": "claude",
+        "agent": "ai-analyst",
+        "abstract_model": "anthropic_haiku",
+        "runtime_purpose": "system_diagnosis",
+        "provider_tier": "1",
+        "count": 8,
+        "failures": 0,
+        "avg_duration_ms": 3568,
+        "max_duration_ms": 6145,
+        "p95_duration_ms": 5288
+      },
+      {
+        "route": "openai-oauth/gpt-5.4",
+        "provider": "openai-oauth",
+        "caller_team": "claude",
+        "agent": "lead",
+        "abstract_model": "anthropic_sonnet",
+        "runtime_purpose": "system_issue_triage",
+        "provider_tier": "1",
+        "count": 9,
+        "failures": 0,
+        "avg_duration_ms": 3357,
+        "max_duration_ms": 4218,
+        "p95_duration_ms": 4028
+      },
+      {
+        "route": "groq/qwen/qwen3-32b",
+        "provider": "groq",
+        "caller_team": "darwin",
+        "agent": "darwin.planner",
+        "abstract_model": "anthropic_sonnet",
+        "runtime_purpose": "unknown",
+        "provider_tier": "2",
+        "count": 331,
+        "failures": 0,
+        "avg_duration_ms": 3017,
+        "max_duration_ms": 6460,
+        "p95_duration_ms": 4521
+      },
+      {
+        "route": "groq/qwen/qwen3-32b",
+        "provider": "groq",
+        "caller_team": "luna",
+        "agent": "luna",
+        "abstract_model": "anthropic_haiku",
+        "runtime_purpose": "regime_analysis",
+        "provider_tier": "2",
+        "count": 19,
+        "failures": 0,
+        "avg_duration_ms": 2983,
+        "max_duration_ms": 6087,
+        "p95_duration_ms": 5222
+      },
+      {
+        "route": "openai-oauth/gpt-5.4-mini",
+        "provider": "openai-oauth",
+        "caller_team": "darwin",
+        "agent": "darwin.evaluator",
+        "abstract_model": "anthropic_haiku",
+        "runtime_purpose": "paper_evaluation",
+        "provider_tier": "1",
+        "count": 40,
+        "failures": 0,
+        "avg_duration_ms": 2730,
+        "max_duration_ms": 6744,
+        "p95_duration_ms": 5322
+      },
+      {
+        "route": "groq/qwen/qwen3-32b",
+        "provider": "groq",
+        "caller_team": "luna",
+        "agent": "zeus",
+        "abstract_model": "anthropic_haiku",
+        "runtime_purpose": "debate_bull",
+        "provider_tier": "2",
+        "count": 49,
+        "failures": 0,
+        "avg_duration_ms": 2352,
+        "max_duration_ms": 9787,
+        "p95_duration_ms": 4017
       }
     ],
     "recentErrors": []
@@ -433,9 +645,11 @@
     "refreshCommand": "npm --prefix bots/hub run -s hub:stage-b-stability-report -- --write",
     "panels": [
       "provider_tier_usage",
+      "provider_latency_hotspots",
       "budget_guard_status",
       "llm_error_rate",
       "protected_launchd_status",
+      "expected_idle_exit_diagnostics",
       "oauth_and_sentry_readiness",
       "self_healing_action_plan"
     ]
@@ -448,22 +662,25 @@
         "action": "expected_idle_exit_status_review",
         "label": "ai.hub.noisy-producer-auto-learn",
         "reason": "expected-idle Hub launchd job last exited with status 1",
-        "command": "tail -n 120 /tmp/hub-noisy-producer-auto-learn.err.log",
-        "effect": "read-only log review; restart or unload still requires separate explicit approval"
+        "command": "npm --prefix bots/hub run -s alarm:noisy-producer-auto-learn:dry-run",
+        "evidenceCommand": "tail -n 120 /tmp/hub-noisy-producer-auto-learn.err.log",
+        "effect": "safe dry-run verifies current script path without external sends; restart or unload still requires separate explicit approval"
       },
       {
         "action": "expected_idle_exit_status_review",
         "label": "ai.hub.roundtable-reflection",
         "reason": "expected-idle Hub launchd job last exited with status 1",
-        "command": "tail -n 120 /tmp/hub-roundtable-reflection.err.log",
-        "effect": "read-only log review; restart or unload still requires separate explicit approval"
+        "command": "npm --prefix bots/hub run -s alarm:roundtable-reflection:dry-run",
+        "evidenceCommand": "tail -n 120 /tmp/hub-roundtable-reflection.err.log",
+        "effect": "safe dry-run verifies current script path without external sends; restart or unload still requires separate explicit approval"
       },
       {
         "action": "expected_idle_exit_status_review",
         "label": "ai.hub.weekly-advisory-digest",
         "reason": "expected-idle Hub launchd job last exited with status 1",
-        "command": "tail -n 120 /tmp/hub-weekly-advisory-digest.err.log",
-        "effect": "read-only log review; restart or unload still requires separate explicit approval"
+        "command": "npm --prefix bots/hub run -s alarm:weekly-advisory-digest:dry-run",
+        "evidenceCommand": "tail -n 120 /tmp/hub-weekly-advisory-digest.err.log",
+        "effect": "safe dry-run verifies current script path without external sends; restart or unload still requires separate explicit approval"
       }
     ],
     "confirmRequiredActions": [],

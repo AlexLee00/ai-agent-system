@@ -19,9 +19,15 @@ async function main() {
   const report = await buildHubStageBStabilityReport({ skipDb: true, skipLaunchctl: true });
   assert.equal(report.stage, 'hub_stage_b');
   assert.equal(report.dashboard.type, 'json');
+  assert.equal(typeof report.requestLog.failureRatePct, 'number', 'request log must expose failure-rate evidence');
+  assert.equal(typeof report.requestLog.avgDurationMs, 'number', 'request log must expose latency evidence');
+  assert(Array.isArray(report.requestLog.latencyByProvider), 'request log must expose provider latency breakdown');
+  assert(Array.isArray(report.requestLog.slowRoutes), 'request log must expose slow route hotspots');
   assert(report.dashboard.panels.includes('provider_tier_usage'), 'dashboard must expose provider tier usage');
+  assert(report.dashboard.panels.includes('provider_latency_hotspots'), 'dashboard must expose provider latency hotspots');
   assert(report.dashboard.panels.includes('budget_guard_status'), 'dashboard must expose BillingGuard status');
   assert(report.dashboard.panels.includes('protected_launchd_status'), 'dashboard must expose protected launchd status');
+  assert(report.dashboard.panels.includes('expected_idle_exit_diagnostics'), 'dashboard must expose expected-idle diagnostics');
   assert(Array.isArray(report.protected.idleExitWarnings), 'protected status must expose expected-idle non-zero exit warnings');
   assert.equal(report.sentry.ok, true, 'Sentry readiness contract must be fail-closed and reportable');
   assert.equal(report.sentry.contract.noSecretLogging, true, 'Sentry contract must forbid secret logging');

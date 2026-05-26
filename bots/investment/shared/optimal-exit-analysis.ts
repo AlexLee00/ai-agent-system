@@ -470,6 +470,8 @@ export function buildOptimalExitAnalysisReport({
   barsBySymbol = {},
   generatedAt = new Date().toISOString(),
   priceFetchErrors = [],
+  includeRecords = false,
+  maxRecords = null,
 } = {}) {
   const records = [];
   const errors = [...priceFetchErrors];
@@ -491,7 +493,7 @@ export function buildOptimalExitAnalysisReport({
   const topMissedToNow = [...records]
     .sort((left, right) => number(right.missedToNowClosePct, -Infinity) - number(left.missedToNowClosePct, -Infinity))
     .slice(0, 25);
-  return {
+  const report = {
     ok: records.length > 0,
     status: records.length > 0 ? 'ready' : 'insufficient_data',
     generatedAt,
@@ -513,6 +515,11 @@ export function buildOptimalExitAnalysisReport({
     recommendations: buildRecommendations(learningEligibleSummary.total > 0 ? learningEligibleSummary : summary),
     errors: errors.slice(0, 100),
   };
+  if (includeRecords) {
+    const limit = Number(maxRecords);
+    report.records = Number.isFinite(limit) && limit > 0 ? records.slice(0, limit) : records;
+  }
+  return report;
 }
 
 export default {

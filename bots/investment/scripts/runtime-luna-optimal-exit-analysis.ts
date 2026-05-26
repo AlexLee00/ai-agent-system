@@ -17,6 +17,8 @@ function parseArgs(argv = process.argv.slice(2)) {
     output: argv.find((arg) => arg.startsWith('--output='))?.split('=')[1] || DEFAULT_OUTPUT,
     limit: Number(argv.find((arg) => arg.startsWith('--limit='))?.split('=')[1] || '5000'),
     concurrency: Number(argv.find((arg) => arg.startsWith('--concurrency='))?.split('=')[1] || '5'),
+    includeRecords: argv.includes('--include-records'),
+    maxRecords: Number(argv.find((arg) => arg.startsWith('--max-records='))?.split('=')[1] || '0'),
   };
 }
 
@@ -264,6 +266,8 @@ export async function runOptimalExitAnalysis(args = parseArgs()) {
     trades: rows,
     barsBySymbol: priceData.barsBySymbol,
     priceFetchErrors: priceData.errors,
+    includeRecords: args.includeRecords,
+    maxRecords: args.maxRecords,
   });
   if (!args.noWrite) {
     fs.mkdirSync(path.dirname(args.output), { recursive: true });

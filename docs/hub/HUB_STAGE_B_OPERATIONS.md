@@ -41,14 +41,27 @@ Never run these from Stage B automation without a separate current approval:
 The Stage B report includes:
 
 - provider tier usage from `hub.llm_request_log`;
+- provider latency and slow route hotspots from `hub.llm_request_log`;
 - BillingGuard usage status;
 - protected Hub launchd visibility;
 - expected-idle launchd jobs whose latest run exited non-zero as `protected.idleExitWarnings`;
+- expected-idle diagnostics with stderr log metadata plus a safe dry-run command when the scheduled report supports one;
 - provider circuit state;
 - Sentry MCP readiness contract;
 - Self-Healing action plan.
 
 Sentry MCP is treated as optional enrichment. If Sentry credentials are absent, Hub incidents and reports remain the primary error system, and the report marks the mode as `adapter_ready_config_pending`.
+
+Expected-idle non-zero launchd status is not treated as a protected service outage
+when the job is loaded and otherwise healthy. Stage B keeps it as an operations
+warning and attaches read-only evidence commands. Use the dry-run commands below
+to verify the current code path without sending external alarms:
+
+```bash
+npm --prefix bots/hub run -s alarm:noisy-producer-auto-learn:dry-run
+npm --prefix bots/hub run -s alarm:weekly-advisory-digest:dry-run
+npm --prefix bots/hub run -s alarm:roundtable-reflection:dry-run
+```
 
 ## Scheduled Alarm Delivery
 

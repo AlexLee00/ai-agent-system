@@ -1,6 +1,6 @@
 {
   "ok": true,
-  "checkedAt": "2026-05-26T06:07:25.757Z",
+  "checkedAt": "2026-05-26T17:21:57.637Z",
   "stage": "hub_stage_d",
   "status": "stage_d_code_complete_promotion_evidence_pending",
   "codeComplete": true,
@@ -21,7 +21,7 @@
     "stageB": {
       "ok": true,
       "status": "stage_b_operational_ready",
-      "checkedAt": "2026-05-26T06:07:21.078Z",
+      "checkedAt": "2026-05-26T17:21:57.293Z",
       "maxAgeHours": 24,
       "ageHours": 0,
       "stale": false,
@@ -30,7 +30,7 @@
     "stageC": {
       "ok": true,
       "status": "stage_c_resilience_ready",
-      "checkedAt": "2026-05-26T06:07:20.993Z",
+      "checkedAt": "2026-05-26T17:21:57.635Z",
       "maxAgeHours": 24,
       "ageHours": 0,
       "stale": false,
@@ -101,6 +101,21 @@
       "canaryLabels": [
         "ai.hub.llm-tier-probe"
       ],
+      "canaryLaunchd": [
+        {
+          "label": "ai.hub.llm-tier-probe",
+          "plistExists": true,
+          "launchctl": {
+            "label": "ai.hub.llm-tier-probe",
+            "loaded": true,
+            "status": 0,
+            "detail": "gui/501/ai.hub.llm-tier-probe = {\n\tactive count = 0\n\tpath = /Users/alexlee/projects/ai-agent-system/bots/hub/launchd/ai.hub.llm-tier-probe.plist"
+          },
+          "bootstrapCommand": "launchctl bootstrap gui/$(id -u) /Users/alexlee/projects/ai-agent-system/bots/hub/launchd/ai.hub.llm-tier-probe.plist"
+        }
+      ],
+      "canaryLoaded": true,
+      "missingLoadedCanaries": [],
       "protectedLabels": [
         "ai.hub.resource-api",
         "ai.hub.llm-oauth-monitor",
@@ -120,6 +135,20 @@
       "checks": [
         {
           "name": "self_healing_operator_exists",
+          "ok": true
+        },
+        {
+          "name": "canary_plists_exist",
+          "ok": true,
+          "evidence": [
+            {
+              "label": "ai.hub.llm-tier-probe",
+              "plistExists": true
+            }
+          ]
+        },
+        {
+          "name": "tier_probe_placeholder_token_fallback",
           "ok": true
         },
         {
@@ -391,7 +420,7 @@
     },
     "uptime": {
       "ok": true,
-      "uptimeSeconds": 26944,
+      "uptimeSeconds": 67416,
       "startupComplete": true,
       "httpStatus": 200
     },
@@ -401,7 +430,334 @@
       "uptimeTargetMet": false,
       "latencyTargetMet": false,
       "errorRateTargetMet": false,
-      "selfHealingTargetMet": false
+      "selfHealingTargetMet": false,
+      "observed": {
+        "source": "read_only_stage_reports",
+        "stageBCheckedAt": "2026-05-26T17:21:57.293Z",
+        "requestLogHours": 24,
+        "totalRequests": 18427,
+        "failures": 0,
+        "unresolvedFailures": 0,
+        "failureRatePct": 0,
+        "avgDurationMs": 3490,
+        "maxDurationMs": 77951,
+        "latencyByProvider": [
+          {
+            "provider": "gemini-cli-oauth",
+            "count": 1556,
+            "failures": 0,
+            "avg_duration_ms": 16903,
+            "max_duration_ms": 59889,
+            "p95_duration_ms": 33694
+          },
+          {
+            "provider": "openai-oauth",
+            "count": 13477,
+            "failures": 0,
+            "avg_duration_ms": 2322,
+            "max_duration_ms": 77951,
+            "p95_duration_ms": 4008
+          },
+          {
+            "provider": "dedupe",
+            "count": 1261,
+            "failures": 0,
+            "avg_duration_ms": 2075,
+            "max_duration_ms": 3633,
+            "p95_duration_ms": 2910
+          },
+          {
+            "provider": "groq",
+            "count": 2133,
+            "failures": 0,
+            "avg_duration_ms": 1921,
+            "max_duration_ms": 9787,
+            "p95_duration_ms": 3813
+          }
+        ],
+        "slowRoutes": [
+          {
+            "route": "openai-oauth/gpt-5.4",
+            "provider": "openai-oauth",
+            "caller_team": "luna",
+            "agent": "reporter",
+            "abstract_model": "anthropic_opus",
+            "runtime_purpose": "edux_market_post_crypto",
+            "provider_tier": "1",
+            "count": 5,
+            "failures": 0,
+            "avg_duration_ms": 31679,
+            "max_duration_ms": 47476,
+            "p95_duration_ms": 44822
+          },
+          {
+            "route": "gemini-cli-oauth/gemini-2.5-flash",
+            "provider": "gemini-cli-oauth",
+            "caller_team": "darwin",
+            "agent": "darwin.planner",
+            "abstract_model": "anthropic_sonnet",
+            "runtime_purpose": "unknown",
+            "provider_tier": "3",
+            "count": 187,
+            "failures": 0,
+            "avg_duration_ms": 18129,
+            "max_duration_ms": 52525,
+            "p95_duration_ms": 31488
+          },
+          {
+            "route": "gemini-cli-oauth/gemini-2.5-flash-lite",
+            "provider": "gemini-cli-oauth",
+            "caller_team": "darwin",
+            "agent": "darwin.evaluator",
+            "abstract_model": "anthropic_sonnet",
+            "runtime_purpose": "evaluation_scoring",
+            "provider_tier": "3",
+            "count": 1369,
+            "failures": 0,
+            "avg_duration_ms": 16736,
+            "max_duration_ms": 59889,
+            "p95_duration_ms": 33857
+          },
+          {
+            "route": "openai-oauth/gpt-5.4",
+            "provider": "openai-oauth",
+            "caller_team": "blog",
+            "agent": "neighbor-commenter",
+            "abstract_model": "anthropic_haiku",
+            "runtime_purpose": "comment",
+            "provider_tier": "1",
+            "count": 32,
+            "failures": 0,
+            "avg_duration_ms": 5320,
+            "max_duration_ms": 18643,
+            "p95_duration_ms": 10455
+          },
+          {
+            "route": "openai-oauth/gpt-5.4",
+            "provider": "openai-oauth",
+            "caller_team": "claude",
+            "agent": "ai-analyst",
+            "abstract_model": "anthropic_haiku",
+            "runtime_purpose": "system_diagnosis",
+            "provider_tier": "1",
+            "count": 8,
+            "failures": 0,
+            "avg_duration_ms": 3568,
+            "max_duration_ms": 6145,
+            "p95_duration_ms": 5288
+          }
+        ],
+        "uptimeSeconds": 67416,
+        "uptimeDays": 0.78,
+        "l5Status": "l5_acceptance_evidence_ready",
+        "l5Ok": true,
+        "errorRateObservedOk": true,
+        "latencyObservedOk": false,
+        "uptimeWindowObservedOk": false,
+        "selfHealingReadinessObservedOk": true
+      },
+      "requirements": [
+        {
+          "id": "shadow_7d",
+          "label": "7d shadow evidence",
+          "required": "HUB_STAGE_D_SHADOW_DAYS >= 7",
+          "attested": false,
+          "observedOk": false,
+          "certificationOk": false,
+          "evidence": {
+            "shadowWindowDays": 0
+          },
+          "nextAction": "Run the approved Stage D shadow window and set HUB_STAGE_D_SHADOW_DAYS only from retained operations evidence."
+        },
+        {
+          "id": "canary_1pct",
+          "label": "1% canary pass",
+          "required": "HUB_STAGE_D_CANARY_PERCENT >= 1",
+          "attested": false,
+          "observedOk": false,
+          "certificationOk": false,
+          "evidence": {
+            "canaryPercent": 0
+          },
+          "nextAction": "Run the approved 1% canary gate before increasing rollout."
+        },
+        {
+          "id": "uptime_99_9_1w",
+          "label": "99.9% uptime for 1w",
+          "required": "HUB_STAGE_D_UPTIME_99_9=true",
+          "attested": false,
+          "observedOk": false,
+          "certificationOk": false,
+          "evidence": {
+            "uptimeSeconds": 67416,
+            "uptimeDays": 0.78,
+            "currentStartupOk": true
+          },
+          "nextAction": "Accumulate a 7d uptime window from the runtime monitor before attesting."
+        },
+        {
+          "id": "latency_lt_500ms",
+          "label": "avg latency < 500ms",
+          "required": "HUB_STAGE_D_LATENCY_LT_500MS=true",
+          "attested": false,
+          "observedOk": false,
+          "certificationOk": false,
+          "evidence": {
+            "requestLogHours": 24,
+            "avgDurationMs": 3490,
+            "maxDurationMs": 77951,
+            "latencyByProvider": [
+              {
+                "provider": "gemini-cli-oauth",
+                "count": 1556,
+                "failures": 0,
+                "avg_duration_ms": 16903,
+                "max_duration_ms": 59889,
+                "p95_duration_ms": 33694
+              },
+              {
+                "provider": "openai-oauth",
+                "count": 13477,
+                "failures": 0,
+                "avg_duration_ms": 2322,
+                "max_duration_ms": 77951,
+                "p95_duration_ms": 4008
+              },
+              {
+                "provider": "dedupe",
+                "count": 1261,
+                "failures": 0,
+                "avg_duration_ms": 2075,
+                "max_duration_ms": 3633,
+                "p95_duration_ms": 2910
+              },
+              {
+                "provider": "groq",
+                "count": 2133,
+                "failures": 0,
+                "avg_duration_ms": 1921,
+                "max_duration_ms": 9787,
+                "p95_duration_ms": 3813
+              }
+            ],
+            "slowRoutes": [
+              {
+                "route": "openai-oauth/gpt-5.4",
+                "provider": "openai-oauth",
+                "caller_team": "luna",
+                "agent": "reporter",
+                "abstract_model": "anthropic_opus",
+                "runtime_purpose": "edux_market_post_crypto",
+                "provider_tier": "1",
+                "count": 5,
+                "failures": 0,
+                "avg_duration_ms": 31679,
+                "max_duration_ms": 47476,
+                "p95_duration_ms": 44822
+              },
+              {
+                "route": "gemini-cli-oauth/gemini-2.5-flash",
+                "provider": "gemini-cli-oauth",
+                "caller_team": "darwin",
+                "agent": "darwin.planner",
+                "abstract_model": "anthropic_sonnet",
+                "runtime_purpose": "unknown",
+                "provider_tier": "3",
+                "count": 187,
+                "failures": 0,
+                "avg_duration_ms": 18129,
+                "max_duration_ms": 52525,
+                "p95_duration_ms": 31488
+              },
+              {
+                "route": "gemini-cli-oauth/gemini-2.5-flash-lite",
+                "provider": "gemini-cli-oauth",
+                "caller_team": "darwin",
+                "agent": "darwin.evaluator",
+                "abstract_model": "anthropic_sonnet",
+                "runtime_purpose": "evaluation_scoring",
+                "provider_tier": "3",
+                "count": 1369,
+                "failures": 0,
+                "avg_duration_ms": 16736,
+                "max_duration_ms": 59889,
+                "p95_duration_ms": 33857
+              },
+              {
+                "route": "openai-oauth/gpt-5.4",
+                "provider": "openai-oauth",
+                "caller_team": "blog",
+                "agent": "neighbor-commenter",
+                "abstract_model": "anthropic_haiku",
+                "runtime_purpose": "comment",
+                "provider_tier": "1",
+                "count": 32,
+                "failures": 0,
+                "avg_duration_ms": 5320,
+                "max_duration_ms": 18643,
+                "p95_duration_ms": 10455
+              },
+              {
+                "route": "openai-oauth/gpt-5.4",
+                "provider": "openai-oauth",
+                "caller_team": "claude",
+                "agent": "ai-analyst",
+                "abstract_model": "anthropic_haiku",
+                "runtime_purpose": "system_diagnosis",
+                "provider_tier": "1",
+                "count": 8,
+                "failures": 0,
+                "avg_duration_ms": 3568,
+                "max_duration_ms": 6145,
+                "p95_duration_ms": 5288
+              }
+            ]
+          },
+          "nextAction": "Reduce or isolate slow routes before attesting; top hotspot: openai-oauth/gpt-5.4 avg=31679ms."
+        },
+        {
+          "id": "error_rate_lt_0_1",
+          "label": "error rate < 0.1%",
+          "required": "HUB_STAGE_D_ERROR_RATE_LT_0_1=true",
+          "attested": false,
+          "observedOk": true,
+          "certificationOk": false,
+          "evidence": {
+            "requestLogHours": 24,
+            "totalRequests": 18427,
+            "failures": 0,
+            "unresolvedFailures": 0,
+            "failureRatePct": 0
+          },
+          "nextAction": "Keep unresolved failures at zero and retain the observation window before attesting."
+        },
+        {
+          "id": "self_healing_gt_95",
+          "label": "self-healing success > 95%",
+          "required": "HUB_STAGE_D_SELF_HEALING_GT_95=true",
+          "attested": false,
+          "observedOk": true,
+          "certificationOk": false,
+          "evidence": {
+            "stageBReadOnlyPlanOk": true,
+            "safeReadOnlyActions": 3,
+            "confirmRequiredActions": 0
+          },
+          "nextAction": "Run the approved Stage D self-healing shadow/canary window and retain success-rate evidence before attesting."
+        }
+      ],
+      "remainingForProductionCertified": [
+        "shadow_7d",
+        "canary_1pct",
+        "uptime_99_9_1w",
+        "latency_lt_500ms",
+        "error_rate_lt_0_1",
+        "self_healing_gt_95"
+      ],
+      "observedReadyButNotAttested": [
+        "error_rate_lt_0_1",
+        "self_healing_gt_95"
+      ]
     }
   },
   "safetyBoundary": {
@@ -434,6 +790,81 @@
       "avg latency < 500ms",
       "error rate < 0.1%",
       "self-healing success > 95%"
+    ],
+    "remainingForProductionCertified": [
+      "shadow_7d",
+      "canary_1pct",
+      "uptime_99_9_1w",
+      "latency_lt_500ms",
+      "error_rate_lt_0_1",
+      "self_healing_gt_95"
+    ],
+    "observedReadyButNotAttested": [
+      "error_rate_lt_0_1",
+      "self_healing_gt_95"
+    ],
+    "observedSnapshot": {
+      "totalRequests": 18427,
+      "failureRatePct": 0,
+      "avgDurationMs": 3490,
+      "maxDurationMs": 77951,
+      "uptimeDays": 0.78,
+      "topLatencyHotspot": {
+        "route": "openai-oauth/gpt-5.4",
+        "provider": "openai-oauth",
+        "callerTeam": "luna",
+        "agent": "reporter",
+        "runtimePurpose": "edux_market_post_crypto",
+        "avgDurationMs": 31679,
+        "p95DurationMs": 44822,
+        "count": 5
+      }
+    },
+    "nextActions": [
+      {
+        "id": "shadow_7d",
+        "observedOk": false,
+        "nextAction": "Run the approved Stage D shadow window and set HUB_STAGE_D_SHADOW_DAYS only from retained operations evidence."
+      },
+      {
+        "id": "canary_1pct",
+        "observedOk": false,
+        "nextAction": "Run the approved 1% canary gate before increasing rollout."
+      },
+      {
+        "id": "uptime_99_9_1w",
+        "observedOk": false,
+        "nextAction": "Accumulate a 7d uptime window from the runtime monitor before attesting."
+      },
+      {
+        "id": "latency_lt_500ms",
+        "observedOk": false,
+        "nextAction": "Reduce or isolate slow routes before attesting; top hotspot: openai-oauth/gpt-5.4 avg=31679ms."
+      },
+      {
+        "id": "error_rate_lt_0_1",
+        "observedOk": true,
+        "nextAction": "Keep unresolved failures at zero and retain the observation window before attesting."
+      },
+      {
+        "id": "self_healing_gt_95",
+        "observedOk": true,
+        "nextAction": "Run the approved Stage D self-healing shadow/canary window and retain success-rate evidence before attesting."
+      }
     ]
+  },
+  "dependencyRefresh": {
+    "stageB": {
+      "ok": true,
+      "status": "stage_b_operational_ready",
+      "checkedAt": "2026-05-26T17:21:57.293Z",
+      "outputPath": "/Users/alexlee/projects/ai-agent-system/bots/hub/output/hub-stage-b-stability-report.json"
+    },
+    "stageC": {
+      "ok": true,
+      "status": "stage_c_resilience_ready",
+      "checkedAt": "2026-05-26T17:21:57.635Z",
+      "outputPath": "/Users/alexlee/projects/ai-agent-system/bots/hub/output/hub-stage-c-resilience-report.json"
+    }
   }
 }

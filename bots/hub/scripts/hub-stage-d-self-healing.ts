@@ -1,8 +1,10 @@
 #!/usr/bin/env tsx
 
 const { spawnSync } = require('node:child_process');
+const path = require('node:path');
 
 const CONFIRM = 'hub-stage-d-self-healing-canary';
+const PROJECT_ROOT = path.resolve(__dirname, '../../..');
 const PROTECTED = new Set([
   'ai.hub.resource-api',
   'ai.hub.llm-oauth-monitor',
@@ -62,6 +64,15 @@ function launchctl(args) {
   };
 }
 
+function launchctlPrint(label) {
+  const uid = process.getuid ? process.getuid() : Number(spawnSync('id', ['-u'], { encoding: 'utf8' }).stdout.trim());
+  return launchctl(['print', `gui/${uid}/${label}`]);
+}
+
+function canaryPlistPath(label) {
+  return path.join(PROJECT_ROOT, 'bots', 'hub', 'launchd', `${label}.plist`);
+}
+
 async function main() {
   const apply = hasFlag('--apply');
   const confirm = argValue('--confirm');
@@ -99,6 +110,17 @@ async function main() {
     result.ok = false;
     result.error = 'unsupported_canary_label';
     result.allowedLabels = CANARY_LABELS;
+    console.log(JSON.stringify(result, null, 2));
+    process.exit(2);
+  }
+
+  const loaded = launchctlPrint(label);
+  if (!loaded.ok) {
+    result.ok = false;
+    result.error = 'canary_label_not_loaded';
+    result.loaded = loaded;
+    result.bootstrapCommand = `launchctl bootstrap gui/$(id -u) ${canaryPlistPath(label)}`;
+    result.note = 'Bootstrap is required before canary kickstart; PROTECTED 14 labels are still excluded.';
     console.log(JSON.stringify(result, null, 2));
     process.exit(2);
   }

@@ -2,6 +2,8 @@
 'use strict';
 
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
 const { deliverScheduledAlarm } = require('../lib/alarm/scheduled-delivery.ts');
 
 async function assertRetryThenDeliver() {
@@ -102,11 +104,35 @@ async function assertStrictRetryableFailureFails() {
   assert.equal(delivery.retryable, true);
 }
 
+function assertScheduledJobDryRunsCovered() {
+  const packageJson = require('../package.json');
+  const requiredScripts = [
+    'alarm:noisy-producer-auto-learn:dry-run',
+    'alarm:weekly-advisory-digest:dry-run',
+    'alarm:roundtable-reflection:dry-run',
+  ];
+  for (const script of requiredScripts) {
+    assert(packageJson.scripts[script], `missing scheduled report dry-run script: ${script}`);
+  }
+
+  const scriptSources = [
+    'scripts/noisy-producer-auto-learn.ts',
+    'scripts/weekly-advisory-digest.ts',
+    'scripts/alarm-roundtable-reflection.ts',
+  ];
+  for (const relativePath of scriptSources) {
+    const source = fs.readFileSync(path.join(__dirname, '..', relativePath), 'utf8');
+    assert(source.includes('deliverScheduledAlarm'), `${relativePath} must use bounded scheduled delivery`);
+    assert(/DRY_RUN/.test(source), `${relativePath} must support dry-run verification`);
+  }
+}
+
 async function main() {
   await assertRetryThenDeliver();
   await assertRetryableExhaustionDefers();
   await assertNonRetryableFailureFails();
   await assertStrictRetryableFailureFails();
+  assertScheduledJobDryRunsCovered();
   console.log('[scheduled-alarm-delivery-smoke] ok');
 }
 

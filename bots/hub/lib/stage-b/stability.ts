@@ -28,6 +28,18 @@ const PROTECTED_HUB_LABELS = [
   'ai.hub.weekly-advisory-digest',
 ];
 
+const EXPECTED_IDLE_DIAGNOSTICS = {
+  'ai.hub.noisy-producer-auto-learn': {
+    dryRunCommand: 'npm --prefix bots/hub run -s alarm:noisy-producer-auto-learn:dry-run',
+  },
+  'ai.hub.roundtable-reflection': {
+    dryRunCommand: 'npm --prefix bots/hub run -s alarm:roundtable-reflection:dry-run',
+  },
+  'ai.hub.weekly-advisory-digest': {
+    dryRunCommand: 'npm --prefix bots/hub run -s alarm:weekly-advisory-digest:dry-run',
+  },
+};
+
 function readText(relativePath) {
   return fs.readFileSync(path.join(PROJECT_ROOT, relativePath), 'utf8');
 }
@@ -102,6 +114,36 @@ function readLaunchctlPrintState(label) {
   }
 }
 
+function buildExpectedIdleDiagnostic(label) {
+  const defaultErrorLogPath = `/tmp/${label.replace(/^ai\.hub\./, 'hub-')}.err.log`;
+  const diagnostic = EXPECTED_IDLE_DIAGNOSTICS[label] || {};
+  const errorLogPath = diagnostic.errorLogPath || defaultErrorLogPath;
+  let errorLog = {
+    path: errorLogPath,
+    exists: false,
+    sizeBytes: 0,
+    modifiedAt: null,
+  };
+  try {
+    const stat = fs.statSync(errorLogPath);
+    errorLog = {
+      path: errorLogPath,
+      exists: true,
+      sizeBytes: stat.size,
+      modifiedAt: stat.mtime.toISOString(),
+    };
+  } catch {
+    // Missing stderr logs are still useful evidence for expected-idle jobs.
+  }
+  const tailCommand = `tail -n 120 ${errorLogPath}`;
+  return {
+    dryRunCommand: diagnostic.dryRunCommand || null,
+    tailCommand,
+    errorLog,
+    currentVerification: diagnostic.dryRunCommand ? 'dry_run_available' : 'log_review_only',
+  };
+}
+
 function buildSelectorEnforcement() {
   const llmRouteSource = readText('bots/hub/lib/routes/llm.ts');
   const unifiedCallerSource = readText('bots/hub/lib/llm/unified-caller.ts');
@@ -155,15 +197,28 @@ async function buildRequestLogSummary(skipDb = false, hours = 24) {
       hours,
       total: 0,
       failures: 0,
+      failureRatePct: 0,
       byProvider: [],
       byBudgetStatus: [],
       byTier: [],
+      avgDurationMs: 0,
+      maxDurationMs: 0,
+      latencyByProvider: [],
+      slowRoutes: [],
       recentErrors: [],
     };
   }
 
   try {
-    const [totals, byProvider, byBudgetStatus, byTier, recentErrors] = await Promise.all([
+    const [
+      totals,
+      byProvider,
+      byBudgetStatus,
+      byTier,
+      latencyByProvider,
+      slowRoutes,
+      recentErrors,
+    ] = await Promise.all([
       pgPool.query('public', `
         SELECT count(*)::int AS total,
                count(*) FILTER (WHERE success IS FALSE)::int AS failures,
@@ -178,7 +233,9 @@ async function buildRequestLogSummary(skipDb = false, hours = 24) {
                        AND COALESCE(s.agent, '') = COALESCE(hub.llm_request_log.agent, '')
                        AND COALESCE(s.abstract_model, '') = COALESCE(hub.llm_request_log.abstract_model, '')
                    )
-               )::int AS unresolved_failures
+               )::int AS unresolved_failures,
+               COALESCE(ROUND(AVG(duration_ms))::int, 0) AS avg_duration_ms,
+               COALESCE(MAX(duration_ms)::int, 0) AS max_duration_ms
         FROM hub.llm_request_log
         WHERE created_at >= now() - ($1::int * interval '1 hour')
       `, [hours]),
@@ -206,6 +263,47 @@ async function buildRequestLogSummary(skipDb = false, hours = 24) {
         ORDER BY provider_tier
       `, [hours]),
       pgPool.query('public', `
+        SELECT COALESCE(NULLIF(provider, ''), 'unknown') AS provider,
+               count(*)::int AS count,
+               count(*) FILTER (WHERE success IS FALSE)::int AS failures,
+               COALESCE(ROUND(AVG(duration_ms))::int, 0) AS avg_duration_ms,
+               COALESCE(MAX(duration_ms)::int, 0) AS max_duration_ms,
+               COALESCE(ROUND(PERCENTILE_CONT(0.95) WITHIN GROUP (ORDER BY duration_ms))::int, 0) AS p95_duration_ms
+        FROM hub.llm_request_log
+        WHERE created_at >= now() - ($1::int * interval '1 hour')
+          AND duration_ms IS NOT NULL
+        GROUP BY COALESCE(NULLIF(provider, ''), 'unknown')
+        ORDER BY avg_duration_ms DESC, count DESC, provider
+      `, [hours]),
+      pgPool.query('public', `
+        SELECT COALESCE(NULLIF(selected_route, ''), CONCAT(COALESCE(NULLIF(provider, ''), 'unknown'), '/', COALESCE(NULLIF(abstract_model, ''), 'unknown'))) AS route,
+               COALESCE(NULLIF(provider, ''), 'unknown') AS provider,
+               COALESCE(NULLIF(caller_team, ''), 'unknown') AS caller_team,
+               COALESCE(NULLIF(agent, ''), 'unknown') AS agent,
+               COALESCE(NULLIF(abstract_model, ''), 'unknown') AS abstract_model,
+               COALESCE(NULLIF(runtime_purpose, ''), 'unknown') AS runtime_purpose,
+               COALESCE(NULLIF(provider_tier, ''), 'unknown') AS provider_tier,
+               count(*)::int AS count,
+               count(*) FILTER (WHERE success IS FALSE)::int AS failures,
+               COALESCE(ROUND(AVG(duration_ms))::int, 0) AS avg_duration_ms,
+               COALESCE(MAX(duration_ms)::int, 0) AS max_duration_ms,
+               COALESCE(ROUND(PERCENTILE_CONT(0.95) WITHIN GROUP (ORDER BY duration_ms))::int, 0) AS p95_duration_ms
+        FROM hub.llm_request_log
+        WHERE created_at >= now() - ($1::int * interval '1 hour')
+          AND duration_ms IS NOT NULL
+        GROUP BY
+          COALESCE(NULLIF(selected_route, ''), CONCAT(COALESCE(NULLIF(provider, ''), 'unknown'), '/', COALESCE(NULLIF(abstract_model, ''), 'unknown'))),
+          COALESCE(NULLIF(provider, ''), 'unknown'),
+          COALESCE(NULLIF(caller_team, ''), 'unknown'),
+          COALESCE(NULLIF(agent, ''), 'unknown'),
+          COALESCE(NULLIF(abstract_model, ''), 'unknown'),
+          COALESCE(NULLIF(runtime_purpose, ''), 'unknown'),
+          COALESCE(NULLIF(provider_tier, ''), 'unknown')
+        HAVING count(*) >= 5
+        ORDER BY avg_duration_ms DESC, p95_duration_ms DESC, count DESC
+        LIMIT 10
+      `, [hours]),
+      pgPool.query('public', `
         SELECT f.request_id,
                f.provider,
                f.caller_team,
@@ -230,16 +328,23 @@ async function buildRequestLogSummary(skipDb = false, hours = 24) {
       `, [hours]),
     ]);
 
+    const total = Number(totals?.[0]?.total || 0);
+    const failures = Number(totals?.[0]?.failures || 0);
     return {
       ok: true,
       skipped: false,
       hours,
-      total: Number(totals?.[0]?.total || 0),
-      failures: Number(totals?.[0]?.failures || 0),
+      total,
+      failures,
+      failureRatePct: total > 0 ? Number(((failures / total) * 100).toFixed(4)) : 0,
       unresolvedFailures: Number(totals?.[0]?.unresolved_failures || 0),
       byProvider,
       byBudgetStatus,
       byTier,
+      avgDurationMs: Number(totals?.[0]?.avg_duration_ms || 0),
+      maxDurationMs: Number(totals?.[0]?.max_duration_ms || 0),
+      latencyByProvider,
+      slowRoutes,
       recentErrors,
     };
   } catch (error) {
@@ -250,9 +355,14 @@ async function buildRequestLogSummary(skipDb = false, hours = 24) {
       error: String(error?.message || error),
       total: 0,
       failures: 0,
+      failureRatePct: 0,
       byProvider: [],
       byBudgetStatus: [],
       byTier: [],
+      avgDurationMs: 0,
+      maxDurationMs: 0,
+      latencyByProvider: [],
+      slowRoutes: [],
       recentErrors: [],
     };
   }
@@ -309,6 +419,7 @@ function buildProtectedStatus(options = {}) {
           runs: item.runs,
           lastTerminatingSignal: item.lastTerminatingSignal,
           reason: 'expected-idle launchd job is loaded but last run exited non-zero',
+          diagnostic: buildExpectedIdleDiagnostic(item.label),
         }));
   return {
     ok: launchctl.ok && missing.length === 0,
@@ -418,12 +529,16 @@ function buildSelfHealingPlan(report) {
   }
 
   for (const warning of report.protected?.idleExitWarnings || []) {
+    const dryRunCommand = warning.diagnostic?.dryRunCommand || null;
     safeReadOnlyActions.push({
       action: 'expected_idle_exit_status_review',
       label: warning.label,
       reason: `expected-idle Hub launchd job last exited with status ${warning.exitStatus}`,
-      command: `tail -n 120 /tmp/${warning.label.replace(/^ai\.hub\./, 'hub-')}.err.log`,
-      effect: 'read-only log review; restart or unload still requires separate explicit approval',
+      command: dryRunCommand || warning.diagnostic?.tailCommand || `tail -n 120 /tmp/${warning.label.replace(/^ai\.hub\./, 'hub-')}.err.log`,
+      evidenceCommand: warning.diagnostic?.tailCommand || null,
+      effect: dryRunCommand
+        ? 'safe dry-run verifies current script path without external sends; restart or unload still requires separate explicit approval'
+        : 'read-only log review; restart or unload still requires separate explicit approval',
     });
   }
 
@@ -505,9 +620,11 @@ async function buildHubStageBStabilityReport(options = {}) {
       refreshCommand: 'npm --prefix bots/hub run -s hub:stage-b-stability-report -- --write',
       panels: [
         'provider_tier_usage',
+        'provider_latency_hotspots',
         'budget_guard_status',
         'llm_error_rate',
         'protected_launchd_status',
+        'expected_idle_exit_diagnostics',
         'oauth_and_sentry_readiness',
         'self_healing_action_plan',
       ],
