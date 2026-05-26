@@ -1,6 +1,6 @@
 {
   "ok": true,
-  "checkedAt": "2026-05-13T01:38:10.987Z",
+  "checkedAt": "2026-05-26T06:07:21.078Z",
   "stage": "hub_stage_b",
   "status": "stage_b_operational_ready",
   "goals": {
@@ -48,7 +48,31 @@
     "protectedCount": 14,
     "running": 1,
     "healthy": 14,
+    "attention": 3,
     "missing": [],
+    "idleExitWarnings": [
+      {
+        "label": "ai.hub.noisy-producer-auto-learn",
+        "exitStatus": "1",
+        "runs": 6,
+        "lastTerminatingSignal": null,
+        "reason": "expected-idle launchd job is loaded but last run exited non-zero"
+      },
+      {
+        "label": "ai.hub.roundtable-reflection",
+        "exitStatus": "1",
+        "runs": 2,
+        "lastTerminatingSignal": null,
+        "reason": "expected-idle launchd job is loaded but last run exited non-zero"
+      },
+      {
+        "label": "ai.hub.weekly-advisory-digest",
+        "exitStatus": "1",
+        "runs": 5,
+        "lastTerminatingSignal": null,
+        "reason": "expected-idle launchd job is loaded but last run exited non-zero"
+      }
+    ],
     "labels": [
       {
         "label": "ai.hub.resource-api",
@@ -56,13 +80,15 @@
         "loaded": true,
         "expectedIdle": false,
         "healthy": true,
-        "pid": 57033,
+        "pid": 79277,
         "state": "running",
         "status": "running",
         "lastLaunchctlListStatus": "-9",
         "historicalExitStatus": "-9",
+        "idleExitStatus": null,
+        "attention": false,
         "lastTerminatingSignal": "Killed: 9",
-        "runs": 12,
+        "runs": 25,
         "checked": true
       },
       {
@@ -76,8 +102,10 @@
         "status": "0",
         "lastLaunchctlListStatus": "0",
         "historicalExitStatus": null,
+        "idleExitStatus": null,
+        "attention": false,
         "lastTerminatingSignal": null,
-        "runs": 192,
+        "runs": 414,
         "checked": true
       },
       {
@@ -91,8 +119,10 @@
         "status": "0",
         "lastLaunchctlListStatus": "0",
         "historicalExitStatus": null,
+        "idleExitStatus": null,
+        "attention": false,
         "lastTerminatingSignal": null,
-        "runs": 4,
+        "runs": 18,
         "checked": true
       },
       {
@@ -103,11 +133,13 @@
         "healthy": true,
         "pid": null,
         "state": "not running",
-        "status": "1",
-        "lastLaunchctlListStatus": "1",
+        "status": "0",
+        "lastLaunchctlListStatus": "0",
         "historicalExitStatus": null,
+        "idleExitStatus": null,
+        "attention": false,
         "lastTerminatingSignal": null,
-        "runs": 3,
+        "runs": 7,
         "checked": true
       },
       {
@@ -121,8 +153,10 @@
         "status": "0",
         "lastLaunchctlListStatus": "0",
         "historicalExitStatus": null,
+        "idleExitStatus": null,
+        "attention": false,
         "lastTerminatingSignal": null,
-        "runs": 3,
+        "runs": 6,
         "checked": true
       },
       {
@@ -136,8 +170,10 @@
         "status": "0",
         "lastLaunchctlListStatus": "0",
         "historicalExitStatus": null,
+        "idleExitStatus": null,
+        "attention": false,
         "lastTerminatingSignal": null,
-        "runs": 23,
+        "runs": 37,
         "checked": true
       },
       {
@@ -151,8 +187,10 @@
         "status": "0",
         "lastLaunchctlListStatus": "0",
         "historicalExitStatus": null,
+        "idleExitStatus": null,
+        "attention": false,
         "lastTerminatingSignal": null,
-        "runs": 11,
+        "runs": 25,
         "checked": true
       },
       {
@@ -166,8 +204,10 @@
         "status": "0",
         "lastLaunchctlListStatus": "0",
         "historicalExitStatus": null,
+        "idleExitStatus": null,
+        "attention": false,
         "lastTerminatingSignal": null,
-        "runs": 269,
+        "runs": 586,
         "checked": true
       },
       {
@@ -178,11 +218,13 @@
         "healthy": true,
         "pid": null,
         "state": "not running",
-        "status": "0",
-        "lastLaunchctlListStatus": "0",
+        "status": "1",
+        "lastLaunchctlListStatus": "1",
         "historicalExitStatus": null,
+        "idleExitStatus": "1",
+        "attention": true,
         "lastTerminatingSignal": null,
-        "runs": 3,
+        "runs": 6,
         "checked": true
       },
       {
@@ -193,11 +235,13 @@
         "healthy": true,
         "pid": null,
         "state": "not running",
-        "status": "0",
-        "lastLaunchctlListStatus": "0",
+        "status": "1",
+        "lastLaunchctlListStatus": "1",
         "historicalExitStatus": null,
+        "idleExitStatus": "1",
+        "attention": true,
         "lastTerminatingSignal": null,
-        "runs": 1,
+        "runs": 2,
         "checked": true
       },
       {
@@ -211,8 +255,10 @@
         "status": "0",
         "lastLaunchctlListStatus": "0",
         "historicalExitStatus": null,
+        "idleExitStatus": null,
+        "attention": false,
         "lastTerminatingSignal": null,
-        "runs": 12,
+        "runs": 26,
         "checked": true
       },
       {
@@ -226,8 +272,10 @@
         "status": "0",
         "lastLaunchctlListStatus": "0",
         "historicalExitStatus": null,
+        "idleExitStatus": null,
+        "attention": false,
         "lastTerminatingSignal": null,
-        "runs": 275,
+        "runs": 592,
         "checked": true
       },
       {
@@ -241,8 +289,10 @@
         "status": "0",
         "lastLaunchctlListStatus": "0",
         "historicalExitStatus": null,
+        "idleExitStatus": null,
+        "attention": false,
         "lastTerminatingSignal": null,
-        "runs": 2,
+        "runs": 5,
         "checked": true
       },
       {
@@ -253,11 +303,13 @@
         "healthy": true,
         "pid": null,
         "state": "not running",
-        "status": "0",
-        "lastLaunchctlListStatus": "0",
+        "status": "1",
+        "lastLaunchctlListStatus": "1",
         "historicalExitStatus": null,
+        "idleExitStatus": "1",
+        "attention": true,
         "lastTerminatingSignal": null,
-        "runs": 2,
+        "runs": 5,
         "checked": true
       }
     ]
@@ -266,71 +318,52 @@
     "ok": true,
     "skipped": false,
     "hours": 24,
-    "total": 1132,
-    "failures": 1,
+    "total": 18366,
+    "failures": 0,
     "unresolvedFailures": 0,
     "byProvider": [
       {
+        "provider": "openai-oauth",
+        "count": 14681,
+        "cost_usd": 0
+      },
+      {
         "provider": "groq",
-        "count": 688,
-        "cost_usd": 0.260795655
+        "count": 2021,
+        "cost_usd": 0.9608658100000003
       },
       {
         "provider": "gemini-cli-oauth",
-        "count": 237,
+        "count": 1478,
         "cost_usd": 0
       },
       {
-        "provider": "openai-oauth",
-        "count": 206,
-        "cost_usd": 0
-      },
-      {
-        "provider": "failed",
-        "count": 1,
+        "provider": "dedupe",
+        "count": 186,
         "cost_usd": 0
       }
     ],
     "byBudgetStatus": [
       {
-        "budget_guard_status": "unknown",
-        "count": 637
-      },
-      {
         "budget_guard_status": "allowed",
-        "count": 495
+        "count": 18366
       }
     ],
     "byTier": [
       {
         "provider_tier": "1",
-        "count": 126
+        "count": 14681
       },
       {
         "provider_tier": "2",
-        "count": 172
+        "count": 2207
       },
       {
         "provider_tier": "3",
-        "count": 196
-      },
-      {
-        "provider_tier": "unknown",
-        "count": 638
+        "count": 1478
       }
     ],
-    "recentErrors": [
-      {
-        "request_id": "8fcdbaf6-7c8b-4b92-bb2a-a1490b946c94",
-        "provider": "failed",
-        "caller_team": "ska",
-        "agent": "andy",
-        "abstract_model": "anthropic_haiku",
-        "error": "fallback_exhausted: gemini_cli_empty_stdout",
-        "created_at": "2026-05-12T23:20:36.605Z",
-        "resolved_by_later_success": true
-      }
-    ]
+    "recentErrors": []
   },
   "circuits": {
     "ok": true,
@@ -410,7 +443,29 @@
   "selfHealing": {
     "ok": true,
     "mode": "read_only_by_default",
-    "safeReadOnlyActions": [],
+    "safeReadOnlyActions": [
+      {
+        "action": "expected_idle_exit_status_review",
+        "label": "ai.hub.noisy-producer-auto-learn",
+        "reason": "expected-idle Hub launchd job last exited with status 1",
+        "command": "tail -n 120 /tmp/hub-noisy-producer-auto-learn.err.log",
+        "effect": "read-only log review; restart or unload still requires separate explicit approval"
+      },
+      {
+        "action": "expected_idle_exit_status_review",
+        "label": "ai.hub.roundtable-reflection",
+        "reason": "expected-idle Hub launchd job last exited with status 1",
+        "command": "tail -n 120 /tmp/hub-roundtable-reflection.err.log",
+        "effect": "read-only log review; restart or unload still requires separate explicit approval"
+      },
+      {
+        "action": "expected_idle_exit_status_review",
+        "label": "ai.hub.weekly-advisory-digest",
+        "reason": "expected-idle Hub launchd job last exited with status 1",
+        "command": "tail -n 120 /tmp/hub-weekly-advisory-digest.err.log",
+        "effect": "read-only log review; restart or unload still requires separate explicit approval"
+      }
+    ],
     "confirmRequiredActions": [],
     "prohibitedActions": [
       "launchctl bootout/unload/kickstart -k on PROTECTED labels",

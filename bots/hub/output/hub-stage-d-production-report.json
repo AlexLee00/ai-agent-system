@@ -1,6 +1,6 @@
 {
   "ok": true,
-  "checkedAt": "2026-05-13T06:43:44.968Z",
+  "checkedAt": "2026-05-26T06:07:25.757Z",
   "stage": "hub_stage_d",
   "status": "stage_d_code_complete_promotion_evidence_pending",
   "codeComplete": true,
@@ -20,11 +20,21 @@
   "details": {
     "stageB": {
       "ok": true,
-      "status": "stage_b_operational_ready"
+      "status": "stage_b_operational_ready",
+      "checkedAt": "2026-05-26T06:07:21.078Z",
+      "maxAgeHours": 24,
+      "ageHours": 0,
+      "stale": false,
+      "warning": null
     },
     "stageC": {
       "ok": true,
-      "status": "stage_c_resilience_ready"
+      "status": "stage_c_resilience_ready",
+      "checkedAt": "2026-05-26T06:07:20.993Z",
+      "maxAgeHours": 24,
+      "ageHours": 0,
+      "stale": false,
+      "warning": null
     },
     "blueGreen": {
       "ok": true,
@@ -47,6 +57,10 @@
         {
           "name": "deploy_script_exists",
           "ok": true
+        },
+        {
+          "name": "deploy_script_uses_repo_root",
+          "ok": true
         }
       ]
     },
@@ -67,6 +81,14 @@
         },
         {
           "name": "auto_rotate_plist_exists",
+          "ok": true
+        },
+        {
+          "name": "monitor_only_no_secret_mutation",
+          "ok": true
+        },
+        {
+          "name": "manual_dry_run_supported",
           "ok": true
         }
       ]
@@ -137,6 +159,14 @@
         },
         {
           "name": "monthly_restore_drill_plist_exists",
+          "ok": true
+        },
+        {
+          "name": "daily_backup_gpg_recipient_configured",
+          "ok": true
+        },
+        {
+          "name": "daily_backup_requires_encrypted_secrets",
           "ok": true
         }
       ]
@@ -361,7 +391,7 @@
     },
     "uptime": {
       "ok": true,
-      "uptimeSeconds": 7855,
+      "uptimeSeconds": 26944,
       "startupComplete": true,
       "httpStatus": 200
     },

@@ -276,6 +276,9 @@ function buildProtectedStatus(options = {}) {
     const running = Boolean(detail?.running || row?.running);
     const pid = detail?.pid || row?.pid || null;
     const historicalExitStatus = running && row?.status && row.status !== '0' ? row.status : null;
+    const idleExitStatus = !running && expectedIdle && loaded && row?.status && row.status !== '0'
+      ? row.status
+      : null;
     const healthy = launchctl.skipped || running || (expectedIdle && loaded);
     return {
       label,
@@ -288,12 +291,25 @@ function buildProtectedStatus(options = {}) {
       status: running ? 'running' : row?.status || null,
       lastLaunchctlListStatus: row?.status || null,
       historicalExitStatus,
+      idleExitStatus,
+      attention: Boolean(idleExitStatus),
       lastTerminatingSignal: detail?.lastTerminatingSignal || null,
       runs: detail?.runs || null,
       checked: !launchctl.skipped,
     };
   });
   const missing = launchctl.skipped ? [] : labels.filter((item) => !item.healthy).map((item) => item.label);
+  const idleExitWarnings = launchctl.skipped
+    ? []
+    : labels
+        .filter((item) => item.idleExitStatus)
+        .map((item) => ({
+          label: item.label,
+          exitStatus: item.idleExitStatus,
+          runs: item.runs,
+          lastTerminatingSignal: item.lastTerminatingSignal,
+          reason: 'expected-idle launchd job is loaded but last run exited non-zero',
+        }));
   return {
     ok: launchctl.ok && missing.length === 0,
     launchctlAvailable: launchctl.ok,
@@ -302,7 +318,9 @@ function buildProtectedStatus(options = {}) {
     protectedCount: PROTECTED_HUB_LABELS.length,
     running: labels.filter((item) => item.running).length,
     healthy: labels.filter((item) => item.healthy).length,
+    attention: idleExitWarnings.length,
     missing,
+    idleExitWarnings,
     labels,
   };
 }
@@ -396,6 +414,16 @@ function buildSelfHealingPlan(report) {
       reason: 'protected Hub label is not running',
       command: `launchctl print gui/$(id -u)/${label}`,
       effect: 'diagnostic only; restart requires separate explicit approval',
+    });
+  }
+
+  for (const warning of report.protected?.idleExitWarnings || []) {
+    safeReadOnlyActions.push({
+      action: 'expected_idle_exit_status_review',
+      label: warning.label,
+      reason: `expected-idle Hub launchd job last exited with status ${warning.exitStatus}`,
+      command: `tail -n 120 /tmp/${warning.label.replace(/^ai\.hub\./, 'hub-')}.err.log`,
+      effect: 'read-only log review; restart or unload still requires separate explicit approval',
     });
   }
 

@@ -22,6 +22,7 @@ async function main() {
   assert(report.dashboard.panels.includes('provider_tier_usage'), 'dashboard must expose provider tier usage');
   assert(report.dashboard.panels.includes('budget_guard_status'), 'dashboard must expose BillingGuard status');
   assert(report.dashboard.panels.includes('protected_launchd_status'), 'dashboard must expose protected launchd status');
+  assert(Array.isArray(report.protected.idleExitWarnings), 'protected status must expose expected-idle non-zero exit warnings');
   assert.equal(report.sentry.ok, true, 'Sentry readiness contract must be fail-closed and reportable');
   assert.equal(report.sentry.contract.noSecretLogging, true, 'Sentry contract must forbid secret logging');
   assert.equal(report.sentry.contract.failClosedOnMissingToken, true, 'Sentry contract must fail closed on missing token');

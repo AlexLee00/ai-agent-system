@@ -14,13 +14,20 @@ const {
 
 (async () => {
   const write = process.argv.includes('--write');
-  console.log(`[stage-d] ${new Date().toISOString()} 보고서 생성 시작...`);
+  const json = process.argv.includes('--json');
+  if (!json) console.log(`[stage-d] ${new Date().toISOString()} 보고서 생성 시작...`);
 
   const report = await buildHubStageDProductionReport();
 
   if (write) {
     const outputPath = await writeHubStageDReport(report);
-    console.log(`[stage-d] 저장: ${outputPath}`);
+    report.outputPath = outputPath;
+    if (!json) console.log(`[stage-d] 저장: ${outputPath}`);
+  }
+
+  if (json) {
+    console.log(JSON.stringify(report, null, 2));
+    process.exit(report.ok ? 0 : 0); // Stage D는 multi-week — non-zero 종료 X
   }
 
   const { goals, codeComplete, productionCertified, status } = report;

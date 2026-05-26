@@ -43,6 +43,7 @@ The Stage B report includes:
 - provider tier usage from `hub.llm_request_log`;
 - BillingGuard usage status;
 - protected Hub launchd visibility;
+- expected-idle launchd jobs whose latest run exited non-zero as `protected.idleExitWarnings`;
 - provider circuit state;
 - Sentry MCP readiness contract;
 - Self-Healing action plan.

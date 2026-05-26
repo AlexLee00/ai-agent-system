@@ -5,6 +5,7 @@ const {
   PROTECTED_HUB_LABELS,
   SELF_HEALING_CANARY_LABELS,
   buildHubStageDProductionReport,
+  buildDependencyReportStatus,
   checkDrpActual,
   checkExternalGateway,
   checkLiveChaos,
@@ -48,6 +49,14 @@ async function main() {
   const external = checkExternalGateway();
   assert.equal(external.ok, true, 'external gateway readiness must pass');
   assert.equal(external.selector.ok, true, 'justin-court-appraisal selector must resolve');
+
+  const staleDependency = buildDependencyReportStatus({
+    ok: true,
+    checkedAt: '2026-01-01T00:00:00.000Z',
+    status: 'old_report',
+  }, { name: 'smoke', maxAgeHours: 1 });
+  assert.equal(staleDependency.ok, false, 'Stage D must reject stale dependency reports');
+  assert.equal(staleDependency.stale, true);
 
   const report = await buildHubStageDProductionReport();
   assert.equal(report.ok, true, `Stage D code gate must pass: ${report.status}`);

@@ -54,6 +54,32 @@ function readJsonIfExists(relativePath) {
   }
 }
 
+function parseReportTimestamp(report) {
+  const raw = report?.checkedAt || report?.generatedAt || report?.generated_at || report?.generated || null;
+  if (!raw) return null;
+  const ms = Date.parse(raw);
+  return Number.isFinite(ms) ? ms : null;
+}
+
+function buildDependencyReportStatus(report, {
+  name,
+  maxAgeHours = Number(process.env.HUB_STAGE_D_DEPENDENCY_REPORT_MAX_AGE_HOURS || 24),
+} = {}) {
+  if (!report) return { ok: false, error: `${name} report not found or parse failed` };
+  const timestampMs = parseReportTimestamp(report);
+  const ageHours = timestampMs == null ? null : Number(((Date.now() - timestampMs) / 3_600_000).toFixed(2));
+  const stale = ageHours == null || ageHours > maxAgeHours;
+  return {
+    ok: report.ok === true && !stale,
+    status: report.status || 'unknown',
+    checkedAt: report.checkedAt || report.generatedAt || report.generated_at || null,
+    maxAgeHours,
+    ageHours,
+    stale,
+    warning: stale ? `${name}_report_stale_or_missing_timestamp` : null,
+  };
+}
+
 function httpGet(port, urlPath) {
   return new Promise((resolve) => {
     const req = http.request(
@@ -254,14 +280,12 @@ function checkExternalGateway() {
 
 function checkStageBReport() {
   const report = readJsonIfExists('bots/hub/output/hub-stage-b-stability-report.json');
-  if (!report) return { ok: false, error: 'Stage B report not found or parse failed' };
-  return { ok: report.ok === true, status: report.status || 'unknown' };
+  return buildDependencyReportStatus(report, { name: 'stage_b' });
 }
 
 function checkStageCReport() {
   const report = readJsonIfExists('bots/hub/output/hub-stage-c-resilience-report.json');
-  if (!report) return { ok: false, error: 'Stage C report not found or parse failed' };
-  return { ok: report.ok === true, status: report.status || 'unknown' };
+  return buildDependencyReportStatus(report, { name: 'stage_c' });
 }
 
 async function checkHubUptime() {
@@ -389,6 +413,7 @@ module.exports = {
   SELF_HEALING_CANARY_LABELS,
   buildHubStageDProductionReport,
   buildPromotionEvidence,
+  buildDependencyReportStatus,
   checkBlueGreen,
   checkDrpActual,
   checkExternalGateway,
