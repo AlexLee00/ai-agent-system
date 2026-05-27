@@ -189,6 +189,16 @@ function main(): void {
     'darwin.rag.query_planner must not depend on gemini-cli-oauth as a single route',
   );
 
+  const darwinSynthesisChain = selector.selectLLMChain('darwin.agent_policy', {
+    ...selectorOptions,
+    agentName: 'darwin.rag.synthesizer',
+  });
+  assert.deepEqual(
+    darwinSynthesisChain.map((entry: any) => entry.provider),
+    ['openai-oauth', 'groq'],
+    'darwin.rag.synthesizer must not be Groq-only during Groq pool cooldown',
+  );
+
   const total = Object.values(providerCounts).reduce((acc, value) => acc + value, 0);
   const shares = {
     claudeCodePct: Number(pct(providerCounts['claude-code'], total).toFixed(2)),
