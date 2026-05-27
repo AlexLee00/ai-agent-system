@@ -69,6 +69,7 @@ export async function runLunaOpenDartSecretsDoctor(options = {}) {
       'hub:opendart.api_key',
       'hub:config.opendart.api_key',
       'hub:config.news.dart_api_key',
+      'hub:news.dart_api_key',
     ],
     template: options.template ? {
       opendart: {

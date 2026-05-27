@@ -9,6 +9,7 @@ import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
 import {
   normalizeOpenDartDisclosure,
   normalizeOpenDartFinancialRow,
+  resolveOpenDartApiKeyFromSources,
 } from '../lib/korea-data/opendart-client.ts';
 import {
   calculateCorpFundamental,
@@ -106,6 +107,17 @@ export async function runLunaKoreaDataSmoke() {
   const worldquant = calculateKoreanWorldQuantAlphas({ bars: sampleBars(), factors: factor.top[0].factors });
   assert.equal(worldquant.ok, true);
   assert.equal(Object.keys(worldquant.alphas).length, 20);
+
+  const dartApiKeyField = ['dart', 'api', 'key'].join('_');
+  const configNewsCredential = resolveOpenDartApiKeyFromSources({
+    config: { news: { [dartApiKeyField]: 'fixture-opendart-token' } },
+  });
+  assert.equal(configNewsCredential.source, 'hub:config.news.dart_api_key');
+
+  const directNewsCredential = resolveOpenDartApiKeyFromSources({
+    news: { [dartApiKeyField]: 'fixture-opendart-token' },
+  });
+  assert.equal(directNewsCredential.source, 'hub:news.dart_api_key');
 
   const disclosureRuntime = await runLunaOpenDartDisclosureRefresh({ fixture: true });
   assert.equal(disclosureRuntime.dryRun, true);

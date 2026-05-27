@@ -363,6 +363,36 @@ const CATEGORY_HANDLERS: Record<string, CategoryHandler> = {
     };
   },
 
+  opendart: () => {
+    const store = loadSecretsStore();
+    const d = store?.opendart || {};
+    const news = store?.news || {};
+    return {
+      ...d,
+      api_key:
+        d.api_key ||
+        d.open_dart_api_key ||
+        d.dart_api_key ||
+        news.opendart_api_key ||
+        news.open_dart_api_key ||
+        news.dart_api_key ||
+        '',
+      open_dart_api_key: d.open_dart_api_key || d.api_key || d.dart_api_key || news.open_dart_api_key || news.dart_api_key || '',
+      dart_api_key: d.dart_api_key || d.api_key || d.open_dart_api_key || news.dart_api_key || news.opendart_api_key || '',
+      base_url: d.base_url || 'https://opendart.fss.or.kr/api',
+    };
+  },
+
+  news: () => {
+    const store = loadSecretsStore();
+    const d = store?.news || {};
+    return {
+      ...d,
+      dart_api_key: d.dart_api_key || d.opendart_api_key || d.open_dart_api_key || '',
+      opendart_api_key: d.opendart_api_key || d.dart_api_key || d.open_dart_api_key || '',
+    };
+  },
+
   config: () => {
     const runtime = loadConfigYaml();
     const store = loadSecretsStore();

@@ -4,6 +4,9 @@
 import { createRequire } from 'module';
 
 const require = createRequire(import.meta.url);
+const fs = require('fs');
+const path = require('path');
+const env = require('../../../../packages/core/lib/env.legacy.js');
 const hubClient = require('../../../../packages/core/lib/hub-client');
 
 export const DEFAULT_OPENDART_BASE_URL = 'https://opendart.fss.or.kr/api';
@@ -12,6 +15,7 @@ export const DEFAULT_OPENDART_RETRY_CAP = 2;
 export const DEFAULT_OPENDART_DAILY_LIMIT = 10_000;
 
 let cachedHubSecrets = null;
+const LOCAL_HUB_SECRETS_PATH = path.join(env.PROJECT_ROOT || process.cwd(), 'bots/hub/secrets-store.json');
 
 function text(value, fallback = '') {
   return String(value ?? fallback ?? '').trim();
@@ -33,6 +37,26 @@ function nestedValueOf(source = {}, paths = []) {
   return null;
 }
 
+export function resolveOpenDartApiKeyFromSources({ direct = {}, config = {}, news = {} } = {}) {
+  const candidates = [
+    ['hub:opendart.api_key', nestedValueOf(direct, ['api_key'])],
+    ['hub:opendart.open_dart_api_key', nestedValueOf(direct, ['open_dart_api_key'])],
+    ['hub:opendart.dart_api_key', nestedValueOf(direct, ['dart_api_key'])],
+    ['hub:config.opendart.api_key', nestedValueOf(config, ['opendart.api_key'])],
+    ['hub:config.open_dart.api_key', nestedValueOf(config, ['open_dart.api_key'])],
+    ['hub:config.news.dart_api_key', nestedValueOf(config, ['news.dart_api_key'])],
+    ['hub:config.news.opendart_api_key', nestedValueOf(config, ['news.opendart_api_key'])],
+    ['hub:config.dart.api_key', nestedValueOf(config, ['dart.api_key'])],
+    ['hub:news.dart_api_key', nestedValueOf(news, ['dart_api_key'])],
+    ['hub:news.opendart_api_key', nestedValueOf(news, ['opendart_api_key'])],
+  ];
+  for (const [source, value] of candidates) {
+    const apiKey = secretText(value);
+    if (apiKey) return { apiKey, source };
+  }
+  return { apiKey: '', source: null };
+}
+
 function num(value, fallback = null) {
   if (value == null || value === '') return fallback;
   const normalized = typeof value === 'string'
@@ -40,6 +64,20 @@ function num(value, fallback = null) {
     : value;
   const parsed = Number(normalized);
   return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function loadLocalOpenDartSecrets() {
+  try {
+    if (!fs.existsSync(LOCAL_HUB_SECRETS_PATH)) return { opendart: {}, config: {}, news: {} };
+    const store = JSON.parse(fs.readFileSync(LOCAL_HUB_SECRETS_PATH, 'utf8'));
+    return {
+      opendart: store?.opendart || {},
+      config: store || {},
+      news: store?.news || {},
+    };
+  } catch {
+    return { opendart: {}, config: {}, news: {} };
+  }
 }
 
 function yyyymmddKst(date = new Date()) {
@@ -66,13 +104,20 @@ async function loadHubOpenDartSecrets(timeoutMs = 3000) {
   if (cachedHubSecrets) return cachedHubSecrets;
   try {
     const directCategoryEnabled = String(process.env.LUNA_OPENDART_DIRECT_SECRET_CATEGORY || '').toLowerCase() === 'true';
-    const [opendart, config] = await Promise.all([
+    const newsCategoryEnabled = String(process.env.LUNA_OPENDART_NEWS_SECRET_CATEGORY || '').toLowerCase() === 'true';
+    const [opendart, config, news] = await Promise.all([
       directCategoryEnabled ? hubClient.fetchHubSecrets('opendart', timeoutMs).catch(() => null) : Promise.resolve(null),
       hubClient.fetchHubSecrets('config', timeoutMs).catch(() => null),
+      newsCategoryEnabled ? hubClient.fetchHubSecrets('news', timeoutMs).catch(() => null) : Promise.resolve(null),
     ]);
-    cachedHubSecrets = { opendart: opendart || {}, config: config || {}, news: {} };
+    const local = loadLocalOpenDartSecrets();
+    cachedHubSecrets = {
+      opendart: opendart || local.opendart || {},
+      config: config || local.config || {},
+      news: news || local.news || {},
+    };
   } catch {
-    cachedHubSecrets = { opendart: {}, config: {}, news: {} };
+    cachedHubSecrets = loadLocalOpenDartSecrets();
   }
   return cachedHubSecrets;
 }
@@ -94,13 +139,9 @@ export async function resolveOpenDartCredentials(options = {}) {
     const config = hub.config || {};
     const news = hub.news || {};
     if (!apiKey) {
-      const value = nestedValueOf(direct, ['api_key', 'open_dart_api_key', 'dart_api_key'])
-        || nestedValueOf(config, ['opendart.api_key', 'open_dart.api_key', 'news.dart_api_key', 'dart.api_key'])
-        || nestedValueOf(news, ['dart_api_key', 'opendart_api_key']);
-      apiKey = secretText(value);
-      source = apiKey
-        ? (nestedValueOf(direct, ['api_key', 'open_dart_api_key', 'dart_api_key']) ? 'hub:opendart' : 'hub:config/news')
-        : null;
+      const resolved = resolveOpenDartApiKeyFromSources({ direct, config, news });
+      apiKey = resolved.apiKey;
+      source = resolved.source;
     }
     const hubBaseUrl = nestedValueOf(direct, ['base_url'])
       || nestedValueOf(config, ['opendart.base_url', 'open_dart.base_url']);
@@ -384,6 +425,7 @@ export default {
   OpenDartRateLimiter,
   resolveOpenDartCredentials,
   resolveOpenDartCredentialStatus,
+  resolveOpenDartApiKeyFromSources,
   normalizeOpenDartDisclosure,
   normalizeOpenDartFinancialRow,
   classifyDisclosureReport,
