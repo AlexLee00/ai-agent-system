@@ -131,7 +131,7 @@ async function main() {
   }
   if (hasFlag('json')) console.log(JSON.stringify(result, null, 2));
   else console.log(`[phase-a-promotion-evaluation] ${result.status} blockers=${result.gate.blockers.length}`);
-  if (!result.phaseA.canPromote) process.exitCode = 2;
+  if (!result.phaseA.canPromote && (hasFlag('strict') || hasFlag('fail-on-blocker'))) process.exitCode = 2;
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {

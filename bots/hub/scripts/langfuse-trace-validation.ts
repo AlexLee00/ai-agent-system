@@ -59,6 +59,7 @@ interface ValidationResult {
   targetCount: number;
   flushOk: boolean;
   apiVisibleCount: number | null;
+  apiVerificationError: string | null;
   stats: TraceStats;
   message: string;
 }
@@ -68,6 +69,7 @@ export async function runLangfuseTraceValidation(options: { count?: number } = {
   const langfuseTracer = require(path.join(PROJECT_ROOT, 'bots/hub/lib/langfuse-tracer'));
 
   const targetCount = options.count ?? parseInt(argValue('count', '100'), 10);
+  const visibilityWaitMs = parseInt(argValue('visibility-wait-ms', '30000'), 10);
   const configured = ['true', '1', 'yes'].includes(String(process.env.LANGFUSE_ENABLED || '').toLowerCase())
     && process.env.LANGFUSE_PUBLIC_KEY
     && process.env.LANGFUSE_SECRET_KEY;
@@ -79,6 +81,7 @@ export async function runLangfuseTraceValidation(options: { count?: number } = {
       targetCount,
       flushOk: false,
       apiVisibleCount: null,
+      apiVerificationError: null,
       stats: { total: 0, byProvider: {}, byTeam: {}, byTaskType: {}, avgDurationMs: 0, totalCostUsd: 0 },
       message: 'Langfuse key/env 미설정 - docker/.env.langfuse 또는 launchctl env 확인 필요',
     };
@@ -135,6 +138,7 @@ export async function runLangfuseTraceValidation(options: { count?: number } = {
   }
 
   let apiVisibleCount: number | null = null;
+  let apiVerificationError: string | null = null;
   try {
     const { Langfuse } = require('langfuse');
     const client = new Langfuse({
@@ -142,30 +146,36 @@ export async function runLangfuseTraceValidation(options: { count?: number } = {
       secretKey: process.env.LANGFUSE_SECRET_KEY,
       baseUrl: process.env.LANGFUSE_HOST || 'http://localhost:3000',
     });
-    const listed = await client.api.traceList({
-      limit: Math.min(100, targetCount),
-      name: 'llm_call',
-      fromTimestamp: new Date(Date.now() - 10 * 60_000).toISOString(),
-      orderBy: 'timestamp.desc',
-    });
-    apiVisibleCount = Number(listed?.meta?.totalItems ?? listed?.data?.length ?? 0);
-  } catch (_) {
+    const deadline = Date.now() + Math.max(0, visibilityWaitMs);
+    do {
+      const listed = await client.api.traceList({
+        limit: Math.min(100, targetCount),
+        name: 'llm_call',
+        fromTimestamp: new Date(Date.now() - 10 * 60_000).toISOString(),
+        orderBy: 'timestamp.desc',
+      });
+      apiVisibleCount = Number(listed?.meta?.totalItems ?? listed?.data?.length ?? 0);
+      if (apiVisibleCount > 0 || Date.now() >= deadline) break;
+      await new Promise((res) => setTimeout(res, 2000));
+    } while (true);
+  } catch (error) {
     apiVisibleCount = null;
+    apiVerificationError = String(error?.message || error);
   }
 
-  const ok = stats.total === targetCount && flushOk && (apiVisibleCount == null || apiVisibleCount > 0);
+  const ok = stats.total === targetCount && flushOk && apiVisibleCount !== null && apiVisibleCount > 0;
 
   const message = [
     `trace 발송: ${stats.total}/${targetCount} ${ok ? '✅' : '❌'}`,
     `flush (5s 후): ${flushOk ? '✅' : '⚠️ 비동기 처리 중'}`,
-    `API visible traces: ${apiVisibleCount == null ? 'not_verified' : apiVisibleCount}`,
+    `API visible traces: ${apiVisibleCount == null ? `not_verified (${apiVerificationError || 'unknown error'})` : apiVisibleCount}`,
     `Provider 분포: ${JSON.stringify(stats.byProvider)}`,
     `Team 분포: ${JSON.stringify(stats.byTeam)}`,
     `평균 latency: ${stats.avgDurationMs.toFixed(0)}ms`,
     `총 비용: $${stats.totalCostUsd.toFixed(4)}`,
   ].join('\n');
 
-  return { ok, ts: new Date().toISOString(), traceCount: stats.total, targetCount, flushOk, apiVisibleCount, stats, message };
+  return { ok, ts: new Date().toISOString(), traceCount: stats.total, targetCount, flushOk, apiVisibleCount, apiVerificationError, stats, message };
 }
 
 async function main() {
