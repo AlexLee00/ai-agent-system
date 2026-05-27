@@ -10,6 +10,18 @@
 
 import * as db from './db/core.ts';
 
+const ANALYST_ACCURACY_COLUMNS: Record<string, string> = {
+  aria: 'aria_accurate',
+  sophia: 'sophia_accurate',
+  oracle: 'oracle_accurate',
+  hermes: 'hermes_accurate',
+};
+
+function analystAccuracyColumn(agentName: string): string | null {
+  const key = String(agentName || '').trim().toLowerCase();
+  return ANALYST_ACCURACY_COLUMNS[key] || null;
+}
+
 // ─── 타입 정의 ─────────────────────────────────────────────────
 
 export interface TradeOutcomePayload {
@@ -169,7 +181,7 @@ async function stepEvaluateTradeQuality(p: TradeOutcomePayload): Promise<Feedbac
       ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW())
       ON CONFLICT (trade_id) DO UPDATE SET
         overall_score = EXCLUDED.overall_score,
-        updated_at = NOW()
+        evaluated_at = NOW()
     `, [
       p.tradeId,
       score.marketDecision,
@@ -198,14 +210,28 @@ async function stepUpdateAnalystAccuracy(p: TradeOutcomePayload): Promise<Feedba
           : null;   // neutral은 평가 제외
 
       if (accurate === null) continue;
+      const column = analystAccuracyColumn(call.botName);
+      if (!column) {
+        console.warn(`[FeedbackLoop] unknown analyst skipped: ${call.botName}`);
+        continue;
+      }
 
-      await db.query(`
-        INSERT INTO investment.trade_review (
-          trade_id, market, ${call.botName}_accurate, created_at
-        ) VALUES ($1, $2, $3, NOW())
-        ON CONFLICT (trade_id) DO UPDATE SET
-          ${call.botName}_accurate = EXCLUDED.${call.botName}_accurate
-      `, [p.tradeId, p.market, accurate]);
+      const updated = await db.query(`
+        UPDATE investment.trade_review
+           SET ${column} = $2,
+               analyst_accuracy = COALESCE(analyst_accuracy, '{}'::jsonb)
+                 || jsonb_build_object($3::text, $2::boolean),
+               reviewed_at = $4
+         WHERE trade_id = $1::text
+         RETURNING id
+      `, [p.tradeId, accurate, String(call.botName).toLowerCase(), Date.now()]);
+      if (!Array.isArray(updated) || updated.length === 0) {
+        await db.query(`
+          INSERT INTO investment.trade_review (
+            trade_id, ${column}, analyst_accuracy, reviewed_at
+          ) VALUES ($1::text, $2, jsonb_build_object($3::text, $2::boolean), $4)
+        `, [p.tradeId, accurate, String(call.botName).toLowerCase(), Date.now()]);
+      }
     }
     return { step: 'update_analyst_accuracy', success: true };
   } catch (err) {
@@ -215,6 +241,8 @@ async function stepUpdateAnalystAccuracy(p: TradeOutcomePayload): Promise<Feedba
 
 async function stepCreateFailureReflexion(p: TradeOutcomePayload): Promise<FeedbackStep> {
   try {
+    const sourceTradeId = /^\d+$/.test(String(p.tradeId || '')) ? Number(p.tradeId) : null;
+    if (sourceTradeId == null) return { step: 'create_failure_reflexion', success: true, detail: 'skip (non-numeric trade_id)' };
     const fiveWhy = [
       `Why 1: PnL ${p.pnlPct?.toFixed(2)}% — 목표 미달`,
       `Why 2: 레짐 불일치 — ${p.regime ?? '알 수 없음'} 에서 ${p.side}`,
@@ -229,7 +257,7 @@ async function stepCreateFailureReflexion(p: TradeOutcomePayload): Promise<Feedb
       ) VALUES ($1, $2::jsonb, $3::jsonb, $4, $5::jsonb, NOW())
       ON CONFLICT (trade_id) DO NOTHING
     `, [
-      p.tradeId,
+      sourceTradeId,
       JSON.stringify(fiveWhy),
       JSON.stringify({ pnl_pct: p.pnlPct, regime: p.regime, analysts: p.analystCalls.map(a => a.botName) }),
       `${p.symbol} ${p.side} — PnL ${p.pnlPct?.toFixed(2)}%. 레짐/분석 재검토 필요.`,
@@ -248,16 +276,17 @@ async function stepUpdateFeedbackActionMap(p: TradeOutcomePayload): Promise<Feed
     const profitable = p.pnlPct > 0;
     const paramName = profitable ? 'confidence_threshold_relax' : 'confidence_threshold_tighten';
     const delta = Math.abs(p.pnlPct) * 0.001;  // 손익률 기반 미세 조정
+    const sourceTradeId = /^\d+$/.test(String(p.tradeId || '')) ? Number(p.tradeId) : null;
 
     await db.query(`
       INSERT INTO investment.feedback_to_action_map (
-        source_trade_id, parameter_name, old_value, new_value, reason, created_at
-      ) VALUES ($1, $2, $3, $4, $5, NOW())
+        source_trade_id, parameter_name, old_value, new_value, reason, applied_at
+      ) VALUES ($1, $2, $3::jsonb, $4::jsonb, $5, NOW())
     `, [
-      p.tradeId,
+      sourceTradeId,
       paramName,
-      '0.000',
-      delta.toFixed(4),
+      JSON.stringify(0),
+      JSON.stringify(Number(delta.toFixed(4))),
       `${p.symbol} PnL=${p.pnlPct?.toFixed(2)}% → ${profitable ? '신뢰도 완화' : '신뢰도 강화'} 제안`,
     ]);
 
@@ -272,28 +301,43 @@ async function stepGenerateStrategyMutations(market: string): Promise<number> {
   // 최근 7일 성과가 나쁜 전략 식별 → mutation 후보 생성
   const res = await db.query(`
     SELECT
-      sp.position_scope_key,
+      COALESCE(tj.trade_id, sp.id::text) AS position_scope_key,
+      COALESCE(tj.exchange, sp.exchange, 'unknown') AS exchange,
+      COALESCE(tj.symbol, sp.symbol, 'unknown') AS symbol,
+      COALESCE(tj.trade_mode, sp.trade_mode, 'normal') AS trade_mode,
       sp.setup_type,
       AVG(tqe.overall_score) AS avg_score,
       COUNT(*) AS trade_count
-    FROM investment.position_strategy_profiles sp
-    JOIN investment.trade_quality_evaluations tqe ON tqe.trade_id = sp.position_scope_key
-    WHERE sp.market = $1
-      AND sp.created_at >= NOW() - INTERVAL '7 days'
-    GROUP BY sp.position_scope_key, sp.setup_type
+    FROM investment.trade_quality_evaluations tqe
+    JOIN investment.trade_journal tj ON tj.trade_id = tqe.trade_id::text
+    LEFT JOIN investment.position_strategy_profiles sp
+      ON sp.symbol = tj.symbol
+     AND sp.exchange = tj.exchange
+    WHERE tj.market = $1
+      AND tqe.evaluated_at >= NOW() - INTERVAL '7 days'
+    GROUP BY COALESCE(tj.trade_id, sp.id::text), COALESCE(tj.exchange, sp.exchange, 'unknown'),
+      COALESCE(tj.symbol, sp.symbol, 'unknown'), COALESCE(tj.trade_mode, sp.trade_mode, 'normal'), sp.setup_type
     HAVING AVG(tqe.overall_score) < 0.5 AND COUNT(*) >= 2
     LIMIT 5
   `, [market]);
 
   let count = 0;
-  for (const row of res.rows) {
+  for (const row of Array.isArray(res) ? res : []) {
     try {
       await db.query(`
         INSERT INTO investment.strategy_mutation_events (
           event_type, lifecycle_phase, position_scope_key,
-          old_setup_type, validity_score, predictive_score, created_at
-        ) VALUES ('performance_degradation', 'shadow', $1, $2, $3, $3, NOW())
-      `, [row.position_scope_key, row.setup_type, Number(row.avg_score)]);
+          exchange, symbol, trade_mode, old_setup_type, validity_score, predictive_score, reason, created_at
+        ) VALUES ('performance_degradation', 'shadow', $1, $2, $3, $4, $5, $6, $6, $7, NOW())
+      `, [
+        row.position_scope_key,
+        row.exchange,
+        row.symbol,
+        row.trade_mode,
+        row.setup_type,
+        Number(row.avg_score),
+        `7d trade_quality avg=${Number(row.avg_score).toFixed(3)} count=${row.trade_count}`,
+      ]);
       count++;
     } catch (_err) {
       // 중복 시 skip
@@ -304,24 +348,29 @@ async function stepGenerateStrategyMutations(market: string): Promise<number> {
 
 async function stepUpdateAgentCurriculum(market: string): Promise<number> {
   // 최근 30일 성과 기반 에이전트 레벨 갱신
-  const agents = ['aria', 'sophia', 'hermes', 'oracle', 'nemesis'];
+  const agents = Object.keys(ANALYST_ACCURACY_COLUMNS);
   let updated = 0;
 
   for (const agent of agents) {
     try {
+      const column = analystAccuracyColumn(agent);
+      if (!column) continue;
       const res = await db.query(`
         SELECT
           COUNT(*) AS total,
-          COUNT(*) FILTER (WHERE ${agent}_accurate = true) AS wins
+          COUNT(*) FILTER (WHERE ${column} = true) AS wins
         FROM investment.trade_review
-        WHERE market = $1 AND created_at >= NOW() - INTERVAL '30 days'
-          AND ${agent}_accurate IS NOT NULL
+        JOIN investment.trade_journal tj ON tj.trade_id = investment.trade_review.trade_id
+        WHERE tj.market = $1
+          AND investment.trade_review.reviewed_at >= EXTRACT(EPOCH FROM (NOW() - INTERVAL '30 days')) * 1000
+          AND ${column} IS NOT NULL
       `, [market]);
 
-      const total = Number(res.rows[0]?.total ?? 0);
+      const row = Array.isArray(res) ? res[0] : null;
+      const total = Number(row?.total ?? 0);
       if (total < 5) continue;
 
-      const winRate = Number(res.rows[0]?.wins ?? 0) / total;
+      const winRate = Number(row?.wins ?? 0) / total;
       const level = winRate >= 0.65 ? 'expert' : winRate >= 0.50 ? 'intermediate' : 'novice';
 
       await db.query(`
@@ -348,10 +397,12 @@ async function stepAnalyzeResourceFeedback(market: string): Promise<number> {
     const res = await db.query(`
       SELECT COUNT(*) AS cnt
       FROM investment.mapek_knowledge
-      WHERE knowledge_type = 'posttrade' AND market = $1
-        AND processed_at IS NULL
+      WHERE event_type IN ('quality_evaluation_pending', 'posttrade_quality_evaluated')
+        AND COALESCE(payload->>'market', $1) = $1
+        AND COALESCE(payload->>'posttrade_processed', 'false') <> 'true'
     `, [market]);
-    return Number(res.rows[0]?.cnt ?? 0);
+    const row = Array.isArray(res) ? res[0] : null;
+    return Number(row?.cnt ?? 0);
   } catch (_err) {
     return 0;
   }

@@ -14,13 +14,17 @@
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import * as path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import * as db from './db/core.ts';
 import { buildWeeklyLearningReport } from './luna-self-rewarding-engine.ts';
 
 const execFileAsync = promisify(execFile);
 
-const PYTHON_BIN = '/opt/homebrew/bin/python3';
-const FINRL_DIR = path.join(process.env.PROJECT_ROOT || '', 'bots/investment/python/finrl-x');
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const INVESTMENT_ROOT = path.resolve(__dirname, '..');
+const PROJECT_ROOT = process.env.PROJECT_ROOT || path.resolve(INVESTMENT_ROOT, '../..');
+const PYTHON_BIN = process.env.LUNA_PYTHON_BIN || '/opt/homebrew/bin/python3';
+const FINRL_DIR = path.join(PROJECT_ROOT, 'bots/investment/python/finrl-x');
 
 // ─── 타입 ────────────────────────────────────────────────────
 
