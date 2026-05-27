@@ -9,10 +9,27 @@
 //   tsx bots/hub/scripts/langfuse-tracer-smoke.ts --json
 
 import path from 'node:path';
+import fs from 'node:fs';
 const PROJECT_ROOT = path.resolve(__dirname, '../../..');
 
 function hasFlag(name: string): boolean {
   return process.argv.includes(`--${name}`);
+}
+
+function loadLangfuseEnvFromDockerInit(): string | null {
+  const envPath = path.join(PROJECT_ROOT, 'docker/.env.langfuse');
+  if (!fs.existsSync(envPath)) return null;
+  const parsed: Record<string, string> = {};
+  for (const line of fs.readFileSync(envPath, 'utf8').split(/\r?\n/u)) {
+    if (!line || line.trim().startsWith('#') || !line.includes('=')) continue;
+    const [key, ...rest] = line.split('=');
+    parsed[key.trim()] = rest.join('=').trim().replace(/^['"]|['"]$/g, '');
+  }
+  if (!process.env.LANGFUSE_HOST && parsed.LANGFUSE_HOST) process.env.LANGFUSE_HOST = parsed.LANGFUSE_HOST;
+  if (!process.env.LANGFUSE_PUBLIC_KEY && parsed.LANGFUSE_INIT_PROJECT_PUBLIC_KEY) process.env.LANGFUSE_PUBLIC_KEY = parsed.LANGFUSE_INIT_PROJECT_PUBLIC_KEY;
+  if (!process.env.LANGFUSE_SECRET_KEY && parsed.LANGFUSE_INIT_PROJECT_SECRET_KEY) process.env.LANGFUSE_SECRET_KEY = parsed.LANGFUSE_INIT_PROJECT_SECRET_KEY;
+  if (!process.env.LANGFUSE_ENABLED && process.env.LANGFUSE_PUBLIC_KEY && process.env.LANGFUSE_SECRET_KEY) process.env.LANGFUSE_ENABLED = 'true';
+  return envPath;
 }
 
 interface TracerSmokeResult {
@@ -28,6 +45,7 @@ interface TracerSmokeResult {
 }
 
 export async function runLangfuseTracerSmoke(): Promise<TracerSmokeResult> {
+  const envSource = loadLangfuseEnvFromDockerInit();
   const langfuseTracer = require(path.join(PROJECT_ROOT, 'bots/hub/lib/langfuse-tracer'));
 
   const enabled = ['true', '1', 'yes'].includes((process.env.LANGFUSE_ENABLED || '').toLowerCase());
@@ -43,7 +61,7 @@ export async function runLangfuseTracerSmoke(): Promise<TracerSmokeResult> {
       clientInit: false,
       traceSent: false,
       flushOk: false,
-      hubUptimeImpact: false,
+      hubUptimeImpact: true,
       message: 'LANGFUSE_ENABLED 미설정. 마스터 action 필요: launchctl setenv LANGFUSE_ENABLED true',
     };
   }
@@ -56,8 +74,8 @@ export async function runLangfuseTracerSmoke(): Promise<TracerSmokeResult> {
       clientInit: false,
       traceSent: false,
       flushOk: false,
-      hubUptimeImpact: false,
-      message: `API Keys 미설정 (pk=${hasPublicKey}, sk=${hasSecretKey}). Langfuse 가입 후 발급 필요!`,
+      hubUptimeImpact: true,
+      message: `API Keys 미설정 (pk=${hasPublicKey}, sk=${hasSecretKey}). envSource=${envSource || 'none'}`,
     };
   }
 
@@ -71,8 +89,8 @@ export async function runLangfuseTracerSmoke(): Promise<TracerSmokeResult> {
     // traceLLMCall 호출 (fire-and-forget — Hub uptime 영향 없음)
     const startMs = Date.now();
     langfuseTracer.traceLLMCall(
-      { userPrompt: 'langfuse smoke test prompt', systemPrompt: 'test' },
-      { provider: 'smoke', selected_route: 'smoke', durationMs: 1, totalCostUsd: 0, cacheHit: false },
+      { prompt: 'langfuse smoke test prompt', systemPrompt: 'test' },
+      { ok: true, provider: 'smoke', selected_route: 'smoke', durationMs: 1, totalCostUsd: 0, cacheHit: false },
       { agent: 'shadow-smoke', callerTeam: 'system', taskType: 'smoke', autoRouted: false },
     );
     traceSent = true;
@@ -91,7 +109,7 @@ export async function runLangfuseTracerSmoke(): Promise<TracerSmokeResult> {
 
     const elapsed = Date.now() - startMs;
     message = [
-      `✅ Langfuse 연결 성공 (host: ${host})`,
+      `✅ Langfuse 연결 성공 (host: ${host}, envSource: ${envSource ? 'docker-init' : 'process-env'})`,
       `trace 발송: ✅ (fire-and-forget, ${elapsed}ms)`,
       `flush: ${flushOk ? '✅' : '⏱ 비동기 배치 대기 중 (flushAt:20)'}`,
       `Hub uptime 영향: 없음 (fire-and-forget 보장) ✅`,
@@ -108,7 +126,7 @@ export async function runLangfuseTracerSmoke(): Promise<TracerSmokeResult> {
     traceId,
     traceSent,
     flushOk,
-    hubUptimeImpact: false,
+    hubUptimeImpact: true,
     message,
   };
 }

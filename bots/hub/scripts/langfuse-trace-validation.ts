@@ -7,6 +7,7 @@
 //   tsx bots/hub/scripts/langfuse-trace-validation.ts --count=50 --json
 
 import path from 'node:path';
+import fs from 'node:fs';
 const PROJECT_ROOT = path.resolve(__dirname, '../../..');
 
 function hasFlag(name: string): boolean {
@@ -17,6 +18,21 @@ function argValue(name: string, fallback: string): string {
   const prefix = `--${name}=`;
   const found = process.argv.find((a) => a.startsWith(prefix));
   return found ? found.slice(prefix.length) : fallback;
+}
+
+function loadLangfuseEnvFromDockerInit(): void {
+  const envPath = path.join(PROJECT_ROOT, 'docker/.env.langfuse');
+  if (!fs.existsSync(envPath)) return;
+  const parsed: Record<string, string> = {};
+  for (const line of fs.readFileSync(envPath, 'utf8').split(/\r?\n/u)) {
+    if (!line || line.trim().startsWith('#') || !line.includes('=')) continue;
+    const [key, ...rest] = line.split('=');
+    parsed[key.trim()] = rest.join('=').trim().replace(/^['"]|['"]$/g, '');
+  }
+  if (!process.env.LANGFUSE_HOST && parsed.LANGFUSE_HOST) process.env.LANGFUSE_HOST = parsed.LANGFUSE_HOST;
+  if (!process.env.LANGFUSE_PUBLIC_KEY && parsed.LANGFUSE_INIT_PROJECT_PUBLIC_KEY) process.env.LANGFUSE_PUBLIC_KEY = parsed.LANGFUSE_INIT_PROJECT_PUBLIC_KEY;
+  if (!process.env.LANGFUSE_SECRET_KEY && parsed.LANGFUSE_INIT_PROJECT_SECRET_KEY) process.env.LANGFUSE_SECRET_KEY = parsed.LANGFUSE_INIT_PROJECT_SECRET_KEY;
+  if (!process.env.LANGFUSE_ENABLED && process.env.LANGFUSE_PUBLIC_KEY && process.env.LANGFUSE_SECRET_KEY) process.env.LANGFUSE_ENABLED = 'true';
 }
 
 const PROVIDERS = ['anthropic', 'openai', 'groq', 'local'];
@@ -42,14 +58,31 @@ interface ValidationResult {
   traceCount: number;
   targetCount: number;
   flushOk: boolean;
+  apiVisibleCount: number | null;
   stats: TraceStats;
   message: string;
 }
 
 export async function runLangfuseTraceValidation(options: { count?: number } = {}): Promise<ValidationResult> {
+  loadLangfuseEnvFromDockerInit();
   const langfuseTracer = require(path.join(PROJECT_ROOT, 'bots/hub/lib/langfuse-tracer'));
 
   const targetCount = options.count ?? parseInt(argValue('count', '100'), 10);
+  const configured = ['true', '1', 'yes'].includes(String(process.env.LANGFUSE_ENABLED || '').toLowerCase())
+    && process.env.LANGFUSE_PUBLIC_KEY
+    && process.env.LANGFUSE_SECRET_KEY;
+  if (!configured) {
+    return {
+      ok: false,
+      ts: new Date().toISOString(),
+      traceCount: 0,
+      targetCount,
+      flushOk: false,
+      apiVisibleCount: null,
+      stats: { total: 0, byProvider: {}, byTeam: {}, byTaskType: {}, avgDurationMs: 0, totalCostUsd: 0 },
+      message: 'Langfuse key/env 미설정 - docker/.env.langfuse 또는 launchctl env 확인 필요',
+    };
+  }
   const stats: TraceStats = {
     total: 0,
     byProvider: {},
@@ -69,8 +102,8 @@ export async function runLangfuseTraceValidation(options: { count?: number } = {
     const costUsd = provider === 'local' ? 0 : Math.random() * 0.01;
 
     langfuseTracer.traceLLMCall(
-      { userPrompt: `trace-validation test ${i}`, systemPrompt: 'you are a test agent' },
-      { provider, selected_route: provider, durationMs, totalCostUsd: costUsd, cacheHit: i % 10 === 0 },
+      { prompt: `trace-validation test ${i}`, systemPrompt: 'you are a test agent' },
+      { ok: true, provider, selected_route: provider, durationMs, totalCostUsd: costUsd, cacheHit: i % 10 === 0 },
       { agent: `test-agent-${i % 5}`, callerTeam: team, taskType, autoRouted: i % 3 === 0 },
     );
 
@@ -101,18 +134,38 @@ export async function runLangfuseTraceValidation(options: { count?: number } = {
     flushOk = false;
   }
 
-  const ok = stats.total === targetCount;
+  let apiVisibleCount: number | null = null;
+  try {
+    const { Langfuse } = require('langfuse');
+    const client = new Langfuse({
+      publicKey: process.env.LANGFUSE_PUBLIC_KEY,
+      secretKey: process.env.LANGFUSE_SECRET_KEY,
+      baseUrl: process.env.LANGFUSE_HOST || 'http://localhost:3000',
+    });
+    const listed = await client.api.traceList({
+      limit: Math.min(100, targetCount),
+      name: 'llm_call',
+      fromTimestamp: new Date(Date.now() - 10 * 60_000).toISOString(),
+      orderBy: 'timestamp.desc',
+    });
+    apiVisibleCount = Number(listed?.meta?.totalItems ?? listed?.data?.length ?? 0);
+  } catch (_) {
+    apiVisibleCount = null;
+  }
+
+  const ok = stats.total === targetCount && flushOk && (apiVisibleCount == null || apiVisibleCount > 0);
 
   const message = [
     `trace 발송: ${stats.total}/${targetCount} ${ok ? '✅' : '❌'}`,
     `flush (5s 후): ${flushOk ? '✅' : '⚠️ 비동기 처리 중'}`,
+    `API visible traces: ${apiVisibleCount == null ? 'not_verified' : apiVisibleCount}`,
     `Provider 분포: ${JSON.stringify(stats.byProvider)}`,
     `Team 분포: ${JSON.stringify(stats.byTeam)}`,
     `평균 latency: ${stats.avgDurationMs.toFixed(0)}ms`,
     `총 비용: $${stats.totalCostUsd.toFixed(4)}`,
   ].join('\n');
 
-  return { ok, ts: new Date().toISOString(), traceCount: stats.total, targetCount, flushOk, stats, message };
+  return { ok, ts: new Date().toISOString(), traceCount: stats.total, targetCount, flushOk, apiVisibleCount, stats, message };
 }
 
 async function main() {
