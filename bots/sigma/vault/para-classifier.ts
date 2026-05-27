@@ -5,6 +5,8 @@
 // Hub LLM 호출 (anthropic_haiku tier) + 규칙 기반 fallback
 
 import path from 'node:path';
+import { createRequire } from 'node:module';
+const require = createRequire(import.meta.url);
 const PROJECT_ROOT = path.resolve(
   path.dirname(new URL(import.meta.url).pathname),
   '../../..'

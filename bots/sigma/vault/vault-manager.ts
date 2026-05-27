@@ -6,6 +6,8 @@
 // 파일 기반 vault (ts/lib/vault-manager.ts)와 DB를 동기화하는 상위 레이어
 
 import path from 'node:path';
+import { createRequire } from 'node:module';
+const require = createRequire(import.meta.url);
 const PROJECT_ROOT = path.resolve(
   path.dirname(new URL(import.meta.url).pathname),
   '../../..'

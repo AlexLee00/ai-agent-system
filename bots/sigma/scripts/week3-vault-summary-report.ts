@@ -4,10 +4,12 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
+import { createRequire } from 'node:module';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { DEFAULT_SIGMA_VAULT_ROOT, scanSigmaVault } from '../ts/lib/vault-manager.ts';
 
+const require = createRequire(import.meta.url);
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const SIGMA_ROOT = resolve(__dirname, '..');
 const PROJECT_ROOT = resolve(SIGMA_ROOT, '../..');
@@ -39,7 +41,10 @@ function normalizeRows(result) {
 }
 
 function fileVaultStats(root) {
-  const rows = scanSigmaVault({ root });
+  const rows = scanSigmaVault({ root }).filter((row) => {
+    const first = row.relativePath.split(path.sep)[0] || '';
+    return /^\d{2}-/u.test(first);
+  });
   const byCategory = {};
   for (const row of rows) {
     const category = row.relativePath.split(path.sep)[0] || 'unknown';
