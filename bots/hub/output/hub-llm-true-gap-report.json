@@ -1,0 +1,77 @@
+{
+  "report_ts": "2026-05-27T10:50:00+09:00",
+  "codex_task": "CODEX_HUB_LLM_TRUE_GAP_ACTIVATION_2026-05-27",
+  "status": "completed",
+  "gaps_activated": [
+    {
+      "gap": 1,
+      "title": "DB Schema 마이그레이션",
+      "status": "completed",
+      "tables_applied": [
+        "hub.llm_auto_routing_log",
+        "hub.permission_audit_log",
+        "hub.token_budget_log"
+      ],
+      "migration_files": [
+        "bots/hub/migrations/20260527000001_llm_auto_routing_log.sql",
+        "bots/hub/migrations/20260527000002_permission_audit_log.sql",
+        "bots/hub/migrations/20260527000003_token_budget_log.sql"
+      ]
+    },
+    {
+      "gap": 2,
+      "title": "환경변수 Shadow Mode 활성화",
+      "status": "completed",
+      "plist_updated": "bots/hub/launchd/ai.hub.resource-api.plist",
+      "env_vars_added": {
+        "LLM_AUTO_ROUTING_ENABLED": "shadow",
+        "HUB_BUDGET_GUARDIAN_ENABLED": "true",
+        "LANGFUSE_HOST": "http://localhost:3000",
+        "LANGFUSE_ENABLED": "true"
+      },
+      "note": "OPS에서 launchd reload 필요 (git pull 후 자동 배포)"
+    },
+    {
+      "gap": 3,
+      "title": "Langfuse 통합",
+      "status": "completed",
+      "files_created": [
+        "bots/hub/lib/langfuse-tracer.ts",
+        "bots/hub/scripts/langfuse-integration-smoke.ts"
+      ],
+      "files_modified": [
+        "bots/hub/lib/llm/unified-caller.ts",
+        "bots/hub/lib/routes/secrets.ts",
+        "bots/hub/package.json"
+      ],
+      "design": "non-blocking setImmediate + silent on failure",
+      "pending_master_action": [
+        "1. http://localhost:3000 접속 (OPS 머신)",
+        "2. 회원가입 → 프로젝트 생성",
+        "3. Settings → API Keys 발급",
+        "4. secrets-store.json에 langfuse.public_key / langfuse.secret_key 입력",
+        "5. launchd plist에 LANGFUSE_PUBLIC_KEY / LANGFUSE_SECRET_KEY 추가",
+        "6. npm --prefix bots/hub run langfuse:smoke 으로 검증"
+      ]
+    }
+  ],
+  "goal_driven_5x5": {
+    "goal1_db_tables": "✅ 3 테이블 적용 완료",
+    "goal2_auto_router_shadow": "⏳ OPS launchd reload 후 Shadow 데이터 누적 시작",
+    "goal3_permission_audit": "⏳ OPS launchd reload 후 누적",
+    "goal4_langfuse_trace": "⏳ 마스터 API Key 발급 후 활성화",
+    "goal5_protected_launchd": "✅ DEV 60개 무중단 확인됨"
+  },
+  "safety": {
+    "shadow_mode": true,
+    "langfuse_non_blocking": true,
+    "db_destructive_ops": false,
+    "protected_launchd_touched": false
+  },
+  "commit": "df92b2abe",
+  "next_steps": [
+    "OPS: git pull → launchd reload ai.hub.resource-api",
+    "마스터: Langfuse API Key 발급 + secrets-store.json 입력",
+    "7일 후: Shadow 데이터 100+건 확인 → Promotion Gate 검토"
+  ]
+}
