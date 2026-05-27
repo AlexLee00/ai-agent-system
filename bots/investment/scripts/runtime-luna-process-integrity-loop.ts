@@ -259,6 +259,7 @@ function collectHardBlockers({ actionBoard = {}, sourceHealth = {}, finalGate = 
   for (const item of finalGate.blockers || []) blockers.push(`live_fire:${item}`);
   for (const item of sourceHealth.blockers || []) blockers.push(`source_health:${item}`);
   for (const item of tradeData.hygiene?.findings || []) {
+    if (String(item.severity || '').toUpperCase() !== 'P0') continue;
     const stableId = item.id || item.code || item.reason || 'finding';
     blockers.push(`trade_data_hygiene:${stableId}`);
   }
@@ -270,6 +271,22 @@ function collectHardBlockers({ actionBoard = {}, sourceHealth = {}, finalGate = 
 
 function collectWatchItems({ tradeData = {}, sourceHealth = {} } = {}) {
   const watch = [];
+  const advisoryHygieneFindings = (tradeData.hygiene?.findings || [])
+    .filter((item) => String(item.severity || '').toUpperCase() !== 'P0');
+  if (advisoryHygieneFindings.length > 0) {
+    watch.push({
+      id: 'trade_data_hygiene_advisory_backlog',
+      severity: 'advisory',
+      summary: 'P1 이하 trade-data hygiene 항목은 학습 품질 백로그로 추적하되 live-fire hard blocker로 승격하지 않습니다.',
+      evidence: advisoryHygieneFindings.map((item) => ({
+        id: item.id || item.code || item.reason || 'finding',
+        severity: item.severity || 'unknown',
+        count: item.count ?? null,
+        reason: item.reason || null,
+      })),
+      nextAction: 'realized PnL/posttrade 백필을 운영 백로그로 처리하고 P0 정합성 이슈가 발생할 때만 live-fire 차단으로 승격',
+    });
+  }
   const blockedReasons = topItems(tradeData.signals?.blockedReasons || [], 6);
   const remediationPlan = buildPrefilterRemediationPlan(tradeData.signals?.blockedReasons || [], 6);
   const policyCoverage = buildPolicyBlockCoverage(blockedReasons);
@@ -578,7 +595,7 @@ export async function runLunaProcessIntegrityLoopSmoke() {
   assert.equal(blocked.status, 'process_integrity_blocked');
   assert.ok(blocked.hardBlockers.some((item) => item.includes('manual_reconcile')));
 
-  const hygieneBlocked = buildLunaProcessIntegrityLoopReport({
+  const hygieneAdvisory = buildLunaProcessIntegrityLoopReport({
     actionBoard: { sourceStatus: 'operational_clear', hardBlockers: [] },
     finalGate: { status: 'luna_live_fire_final_gate_clear', blockers: [] },
     sourceHealth: { status: 'luna_source_health_guarded', blockers: [], warnings: [] },
@@ -596,9 +613,11 @@ export async function runLunaProcessIntegrityLoopSmoke() {
       journal: {},
     },
   });
-  assert.ok(hygieneBlocked.hardBlockers.includes('trade_data_hygiene:realized_pnl_backfill_pending'));
+  assert.equal(hygieneAdvisory.ok, true);
+  assert.equal(hygieneAdvisory.hardBlockers.includes('trade_data_hygiene:realized_pnl_backfill_pending'), false);
+  assert.ok(hygieneAdvisory.watchItems.some((item) => item.id === 'trade_data_hygiene_advisory_backlog'));
   assert.equal(
-    hygieneBlocked.hardBlockers.some((item) => item.includes('closed sell trades are missing')),
+    hygieneAdvisory.hardBlockers.some((item) => item.includes('closed sell trades are missing')),
     false,
   );
   return { ok: true, report, blocked };

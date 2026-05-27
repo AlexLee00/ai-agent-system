@@ -8,7 +8,10 @@ import { buildLunaEntryTriggerOperatingReport } from './luna-entry-trigger-opera
 import { buildLunaEntryTriggerWorkerReadiness } from './luna-entry-trigger-worker-readiness.ts';
 import { buildLunaLiveFireReadinessGate } from './luna-live-fire-readiness-gate.ts';
 import { buildLunaTradeReconciliationGate } from './luna-trade-reconciliation-gate.ts';
-import { buildRuntimeTradeDataHygiene } from './runtime-luna-trade-data-hygiene.ts';
+import {
+  buildRuntimeTradeDataHygiene,
+  isTradeDataHygieneGateClear,
+} from './runtime-luna-trade-data-hygiene.ts';
 
 function hasFlag(name) {
   return process.argv.includes(name);
@@ -25,7 +28,7 @@ function tradeDataHygieneStatus(tradeDataHygiene = {}) {
 }
 
 function tradeDataHygieneReady(tradeDataHygiene = {}) {
-  return tradeDataHygiene?.ok === true && tradeDataHygieneStatus(tradeDataHygiene) === 'ready';
+  return isTradeDataHygieneGateClear(tradeDataHygiene);
 }
 
 function sleep(ms) {
@@ -101,8 +104,11 @@ async function buildLunaPostLiveFireVerificationSnapshot({ exchange = 'binance',
     tradeDataHygiene: {
       ok: tradeDataHygiene.ok,
       status: tradeDataHygiene.status,
+      rawStatus: tradeDataHygiene.rawStatus || null,
       severity: tradeDataHygiene.severity,
       blockers: tradeDataHygiene.blockers || [],
+      warnings: tradeDataHygiene.warnings || [],
+      advisoryFindings: tradeDataHygiene.advisoryFindings || [],
       openJournal: tradeDataHygiene.hygiene?.openJournal || null,
       coverage: tradeDataHygiene.coverage || {},
       signalFailureRate: tradeDataHygiene.signalFailureRate ?? null,
@@ -195,11 +201,27 @@ export async function runLunaPostLiveFireVerificationSmoke() {
     entryTrigger: { ok: false, status: 'entry_trigger_attention' },
     worker: { ok: false, status: 'entry_trigger_worker_attention' },
     tradeGate: { ok: false, status: 'trade_reconciliation_attention' },
-    tradeDataHygiene: { ok: false, status: 'needs_attention' },
+    tradeDataHygiene: { ok: false, status: 'needs_attention', blockers: ['trade_data_hygiene:open_journal_reconcile_pending'] },
     liveFireGate: { status: 'live_fire_blocked' },
   });
   assert.ok(blocked.includes('live_fire_gate_blocked'));
   assert.ok(blocked.includes('trade_data_hygiene_not_ready:needs_attention'));
+  const advisoryOnly = verifyBlockers({
+    operating: { status: 'luna_l5_operating' },
+    entryTrigger: { ok: true, status: 'entry_trigger_operating' },
+    worker: { ok: true, status: 'entry_trigger_worker_ready' },
+    tradeGate: { ok: true, status: 'trade_reconciliation_clear' },
+    tradeDataHygiene: {
+      ok: true,
+      status: 'ready_with_warnings',
+      rawStatus: 'needs_attention',
+      severity: 'P1',
+      blockers: [],
+      warnings: ['trade_data_hygiene:realized_pnl_backfill_pending:P1'],
+    },
+    liveFireGate: { status: 'live_fire_ready' },
+  });
+  assert.deepEqual(advisoryOnly, []);
   return { ok: true, blockers, blocked };
 }
 

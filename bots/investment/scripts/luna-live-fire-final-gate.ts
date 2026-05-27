@@ -11,6 +11,7 @@ import { buildLunaReconcileAckPreflight } from './luna-reconcile-ack-preflight.t
 import { buildLunaManualReconcilePlaybook } from './luna-manual-reconcile-playbook.ts';
 import { buildLunaKillSwitchConsistency } from './luna-kill-switch-consistency.ts';
 import { buildLunaEntryTriggerWorkerReadiness } from './luna-entry-trigger-worker-readiness.ts';
+import { isTradeDataHygieneGateClear } from './runtime-luna-trade-data-hygiene.ts';
 
 const require = createRequire(import.meta.url);
 
@@ -71,10 +72,10 @@ function summarizeNextAction({
   }
   if ((manualPlaybook?.summary?.manualReconcileRequired || 0) > 0) return 'complete_manual_wallet_journal_position_reconcile';
   if (preflight?.parity?.clear === false) return 'resolve_position_parity_before_live_fire';
-  if (preflight?.postVerify?.tradeDataHygiene?.ok === false || (
-    preflight?.postVerify?.tradeDataHygiene?.status
-    && preflight.postVerify.tradeDataHygiene.status !== 'ready'
-  )) return 'resolve_trade_data_hygiene_before_live_fire';
+  if (preflight?.postVerify?.tradeDataHygiene
+    && !isTradeDataHygieneGateClear(preflight.postVerify.tradeDataHygiene)) {
+    return 'resolve_trade_data_hygiene_before_live_fire';
+  }
   if (!killSwitch?.ok) return 'fix_luna_kill_switch_consistency';
   if (!worker?.ok) return 'repair_entry_trigger_worker_runtime';
   if (blockers.length > 0) return 'resolve_live_fire_blockers';
@@ -280,6 +281,20 @@ export async function runLunaLiveFireFinalGateSmoke() {
     worker: { ok: true },
   });
   assert.equal(alreadyEnabled.nextAction, 'continue_live_fire_watchdog_monitoring');
+  const advisoryHygiene = buildOperatingSummary({
+    blockers: [],
+    preflight: {
+      withPositionParity: true,
+      parity: { clear: true },
+      readiness: { status: 'live_fire_ready' },
+      postVerify: { tradeDataHygiene: { ok: true, status: 'ready_with_warnings', blockers: [] } },
+    },
+    ackPreflight: { summary: { readyToAck: 0, unsafe: 0, lookupFailed: 0 } },
+    manualPlaybook: { summary: { manualReconcileRequired: 0 } },
+    killSwitch: { ok: true },
+    worker: { ok: true },
+  });
+  assert.equal(advisoryHygiene.nextAction, 'enable_live_fire_cutover');
   return { ok: true, blockers, summary };
 }
 

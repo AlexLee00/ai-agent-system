@@ -5,6 +5,30 @@ import { isDirectExecution, runCliMain } from '../shared/cli-runtime.ts';
 import { buildTradeDataAnalysisReport } from '../shared/trade-data-analysis-report.ts';
 import { close } from '../shared/db/core.ts';
 
+function normalizeSeverity(value = '') {
+  return String(value || '').trim().toUpperCase();
+}
+
+function findingRef(finding = {}) {
+  return `trade_data_hygiene:${finding.id || finding.reason || 'finding'}`;
+}
+
+function isBlockingTradeDataHygieneFinding(finding = {}) {
+  return normalizeSeverity(finding.severity) === 'P0';
+}
+
+export function isTradeDataHygieneStatusClear(status = '') {
+  const normalized = String(status || '').trim().toLowerCase();
+  return normalized === 'ready' || normalized === 'ready_with_warnings';
+}
+
+export function isTradeDataHygieneGateClear(report = {}) {
+  const status = report?.status || report?.hygiene?.status || 'unknown';
+  return report?.ok === true
+    && isTradeDataHygieneStatusClear(status)
+    && (report.blockers || []).length === 0;
+}
+
 function parseArgs(args = []) {
   const limitArg = args.find((arg) => arg.startsWith('--limit='))?.split('=')[1];
   return {
@@ -15,23 +39,40 @@ function parseArgs(args = []) {
 
 export async function buildRuntimeTradeDataHygiene(options = {}) {
   const report = await buildTradeDataAnalysisReport({ limit: options.limit || 5000 });
-  const status = report.hygiene?.status || 'unknown';
+  const rawStatus = report.hygiene?.status || 'unknown';
   const findings = Array.isArray(report.hygiene?.findings) ? report.hygiene.findings : [];
+  const blockingFindings = findings.filter(isBlockingTradeDataHygieneFinding);
+  const advisoryFindings = findings.filter((finding) => !isBlockingTradeDataHygieneFinding(finding));
+  const gateClear = report.ok === true && blockingFindings.length === 0;
+  const status = gateClear
+    ? (rawStatus === 'ready' ? 'ready' : 'ready_with_warnings')
+    : rawStatus;
   return {
-    ok: report.ok === true && status === 'ready',
+    ok: gateClear,
     status,
+    rawStatus,
     severity: report.hygiene?.severity || 'unknown',
     generatedAt: report.generatedAt,
     hygiene: report.hygiene,
-    blockers: status === 'ready'
+    blockers: blockingFindings.length === 0
       ? []
-      : findings.map((finding) => `trade_data_hygiene:${finding.id || finding.reason || 'finding'}`),
+      : blockingFindings.map(findingRef),
+    advisoryFindings: advisoryFindings.map((finding) => ({
+      id: finding.id || finding.reason || 'finding',
+      severity: finding.severity || 'unknown',
+      count: finding.count ?? null,
+      reason: finding.reason || null,
+      command: finding.command || null,
+    })),
     coverage: {
       realizedPnl: report.trades?.realizedPnlCoverage || null,
       posttrade: report.posttrade?.qualityCoverage || null,
     },
     signalFailureRate: report.signals?.failureRate ?? null,
-    warnings: report.warnings || [],
+    warnings: [
+      ...(report.warnings || []),
+      ...advisoryFindings.map((finding) => `${findingRef(finding)}:${finding.severity || 'unknown'}`),
+    ],
     nextActions: report.hygiene?.nextActions || [],
     analysisNextActions: report.nextActions || [],
   };
@@ -46,7 +87,7 @@ async function main() {
       console.log(`trade-data-hygiene status=${result.status} severity=${result.severity}`);
       console.log(`findings=${result.hygiene?.findings?.length || 0} warnings=${result.warnings.length}`);
     }
-    if (result.status !== 'ready') process.exitCode = 2;
+    if (result.ok !== true) process.exitCode = 2;
   } finally {
     await Promise.resolve(close()).catch(() => {});
   }

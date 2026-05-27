@@ -23,7 +23,10 @@ import {
   evaluateBinanceTopVolumeUniverseGate,
   getCachedBinanceTopVolumeUniverse,
 } from '../shared/binance-top-volume-universe.ts';
-import { buildRuntimeTradeDataHygiene } from './runtime-luna-trade-data-hygiene.ts';
+import {
+  buildRuntimeTradeDataHygiene,
+  isTradeDataHygieneGateClear,
+} from './runtime-luna-trade-data-hygiene.ts';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const INVESTMENT_DIR = path.resolve(__dirname, '..');
@@ -156,7 +159,7 @@ async function buildMaterializationTradeDataHygieneGate(deps = {}) {
   try {
     const report = summarizeTradeDataHygieneGate(await Promise.resolve(builder()));
     return {
-      blocked: !(report.ok === true && report.status === 'ready'),
+      blocked: !isTradeDataHygieneGateClear(report),
       report,
     };
   } catch (error) {
