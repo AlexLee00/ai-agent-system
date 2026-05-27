@@ -435,6 +435,7 @@ async function _callRouteUnchecked(normalizedRoute, req, timeoutMs, chainEntry =
       maxTokens: chainEntry.maxTokens,
       temperature: chainEntry.temperature,
       timeoutMs,
+      retryAttempts: chainEntry.retryAttempts,
     });
   }
   if (normalizedRoute.startsWith('gemini-oauth/')
@@ -469,7 +470,9 @@ async function _callRouteUnchecked(normalizedRoute, req, timeoutMs, chainEntry =
 
 async function _callOpenAiCodexOAuthWithRetry(input) {
   const started = Date.now();
-  const retryAttempts = _openAiOAuthRetryAttempts();
+  const retryAttempts = input?.retryAttempts == null
+    ? _openAiOAuthRetryAttempts()
+    : _boundedIntegerValue(input.retryAttempts, DEFAULT_OPENAI_OAUTH_RETRY_ATTEMPTS, 0, MAX_OPENAI_OAUTH_RETRY_ATTEMPTS);
   const retryErrors = [];
 
   for (let attempt = 0; ; attempt += 1) {
@@ -713,9 +716,13 @@ function _positiveNumber(value, fallback = null) {
 
 function _boundedIntegerEnv(name, fallback, min, max) {
   const raw = process.env[name];
-  const parsed = raw == null || raw === '' ? fallback : Number(raw);
-  const value = Number.isFinite(parsed) ? Math.floor(parsed) : fallback;
-  return Math.min(max, Math.max(min, value));
+  return _boundedIntegerValue(raw == null || raw === '' ? fallback : raw, fallback, min, max);
+}
+
+function _boundedIntegerValue(value, fallback, min, max) {
+  const parsed = Number(value);
+  const numeric = Number.isFinite(parsed) ? Math.floor(parsed) : fallback;
+  return Math.min(max, Math.max(min, numeric));
 }
 
 function _estimatedCostUsd(req) {

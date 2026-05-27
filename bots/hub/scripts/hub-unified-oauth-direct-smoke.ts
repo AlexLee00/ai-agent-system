@@ -131,6 +131,29 @@ async function main() {
       globalThis.fetch = successfulOpenAiFetch;
     }
 
+    let noRetryOpenAiCalls = 0;
+    try {
+      globalThis.fetch = (async () => {
+        noRetryOpenAiCalls += 1;
+        throw new DOMException('This operation was aborted', 'AbortError');
+      }) as typeof fetch;
+
+      const noRetryFailure = await callWithFallback({
+        callerTeam: 'hub',
+        agent: 'unified-oauth-openai-no-retry-smoke',
+        chain: [{ provider: 'openai-oauth', model: 'gpt-5.4-mini', retryAttempts: 0 }],
+        prompt: 'This path should not retry inside the OpenAI OAuth route.',
+        timeoutMs: 5000,
+        cacheEnabled: false,
+        suppressFallbackExhaustionAlarm: true,
+      });
+      assert.equal(noRetryFailure.ok, false);
+      assert.match(noRetryFailure.error, /fallback_exhausted/);
+      assert.equal(noRetryOpenAiCalls, 1, 'route-level retryAttempts=0 should skip OpenAI OAuth retry');
+    } finally {
+      globalThis.fetch = successfulOpenAiFetch;
+    }
+
     process.env.HUB_LLM_GEMINI_DISABLED = 'true';
     const geminiDisabledFallback = await callWithFallback({
       callerTeam: 'hub',

@@ -240,7 +240,13 @@ function buildGeminiParts(input) {
   return parts;
 }
 
-function buildOpenAiCodexBody({ model, systemPrompt, prompt, temperature, images, imageBase64, imageDataUrl, mimeType, imageDetail }) {
+function resolveOpenAiCodexMaxOutputTokens(value) {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed <= 0) return null;
+  return Math.min(8192, Math.max(16, Math.floor(parsed)));
+}
+
+function buildOpenAiCodexBody({ model, systemPrompt, prompt, temperature, maxTokens, images, imageBase64, imageDataUrl, mimeType, imageDetail }) {
   const body = {
     model: String(model || 'gpt-5.4').replace(/^openai-oauth\//, '').replace(/^openai-codex\//, ''),
     store: false,
@@ -261,6 +267,8 @@ function buildOpenAiCodexBody({ model, systemPrompt, prompt, temperature, images
   if (process.env.OPENAI_CODEX_BACKEND_ENABLE_TEMPERATURE === 'true' && temperature !== undefined) {
     body.temperature = temperature;
   }
+  const maxOutputTokens = resolveOpenAiCodexMaxOutputTokens(maxTokens);
+  if (maxOutputTokens) body.max_output_tokens = maxOutputTokens;
   return body;
 }
 
@@ -347,6 +355,7 @@ async function callOpenAiCodexOAuth(input) {
           systemPrompt: input?.systemPrompt || '',
           prompt: input?.prompt || '',
           temperature: input?.temperature ?? 0.3,
+          maxTokens: input?.maxTokens,
           images: input?.images,
           imageBase64: input?.imageBase64,
           imageDataUrl: input?.imageDataUrl,

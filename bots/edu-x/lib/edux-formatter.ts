@@ -21,7 +21,7 @@ const kst = require('../../../packages/core/lib/kst');
 const CALLER_TEAM = 'luna';
 const LLM_AGENT = 'reporter';
 const LLM_SELECTOR_KEY = 'investment.reporter';
-const LLM_TIMEOUT_MS = 90000;
+const LLM_TIMEOUT_MS = 180000;
 const DEFAULT_FORMATTER_MODE = 'llm';
 const DEFAULT_LLM_ABSTRACT_MODEL = 'anthropic_opus';
 const DEFAULT_LLM_MAX_TOKENS = 4096;
@@ -30,6 +30,11 @@ const DEFAULT_LLM_PRIMARY_MODEL = 'gpt-5.4';
 const DEFAULT_LLM_GEMINI_PRO_MODEL = 'gemini-2.5-pro';
 const DEFAULT_LLM_DEEP_FALLBACK_MODEL = 'qwen/qwen3-32b';
 const DEFAULT_LLM_MINI_FALLBACK_MODEL = 'gpt-5.4-mini';
+const DEFAULT_LLM_PRIMARY_TIMEOUT_MS = 135000;
+const DEFAULT_LLM_DEEP_FALLBACK_TIMEOUT_MS = 25000;
+const DEFAULT_LLM_MINI_FALLBACK_TIMEOUT_MS = 15000;
+const DEFAULT_LLM_FALLBACK_MAX_TOKENS = 2048;
+const GEMINI_PROVIDER_NAMES = ['gemini-oauth', 'gemini-cli-oauth', 'gemini-codeassist-oauth'];
 const MAX_CONTENT_LEN = 19500;
 const TARGET_MIN_LEN = 0;
 const LEGACY_SECTION_MARKERS_RE = /^[①②③④⑤⑥⑦⑧⑨⑩]\s*/;
@@ -224,6 +229,46 @@ function flagDisabled(value) {
   return ['0', 'false', 'no', 'off'].includes(String(value || '').trim().toLowerCase());
 }
 
+function flagEnabled(value) {
+  return ['1', 'true', 'yes', 'y', 'on'].includes(String(value || '').trim().toLowerCase());
+}
+
+function boundedInteger(value, fallback, min, max) {
+  const parsed = Number(value);
+  const numeric = Number.isFinite(parsed) ? Math.floor(parsed) : fallback;
+  return Math.min(max, Math.max(min, numeric));
+}
+
+function resolveFormatterRouteTimeoutMs(category, key, fallback, llmTimeoutMs) {
+  const categoryPrefix = String(category || '').toUpperCase();
+  return boundedInteger(
+    process.env[`EDUX_${categoryPrefix}_FORMATTER_${key}_TIMEOUT_MS`]
+      || process.env[`EDUX_FORMATTER_${key}_TIMEOUT_MS`],
+    Math.min(fallback, llmTimeoutMs),
+    1000,
+    llmTimeoutMs,
+  );
+}
+
+function resolveFormatterFallbackMaxTokens(llmConfig) {
+  return boundedInteger(
+    process.env.EDUX_FORMATTER_FALLBACK_MAX_TOKENS,
+    Math.min(DEFAULT_LLM_FALLBACK_MAX_TOKENS, llmConfig.maxTokens || DEFAULT_LLM_MAX_TOKENS),
+    512,
+    llmConfig.maxTokens || DEFAULT_LLM_MAX_TOKENS,
+  );
+}
+
+function formatterGeminiEnabled() {
+  if (flagEnabled(process.env.HUB_LLM_GEMINI_DISABLED)) return false;
+  return flagEnabled(process.env.EDUX_FORMATTER_GEMINI_ENABLED);
+}
+
+function resolveFormatterAvoidProviders() {
+  if (formatterGeminiEnabled()) return [];
+  return GEMINI_PROVIDER_NAMES.slice();
+}
+
 function resolveFormatterPolicyOverride(llmConfig, options = {}) {
   if (options.policyOverride) return options.policyOverride;
   if (flagDisabled(process.env.EDUX_FORMATTER_POLICY_OVERRIDE)) return undefined;
@@ -234,14 +279,39 @@ function resolveFormatterPolicyOverride(llmConfig, options = {}) {
   const geminiProModel = cleanConfigValue(process.env.EDUX_FORMATTER_GEMINI_PRO_MODEL || DEFAULT_LLM_GEMINI_PRO_MODEL);
   const deepFallbackModel = cleanConfigValue(process.env.EDUX_FORMATTER_DEEP_FALLBACK_MODEL || DEFAULT_LLM_DEEP_FALLBACK_MODEL);
   const miniFallbackModel = cleanConfigValue(process.env.EDUX_FORMATTER_MINI_FALLBACK_MODEL || DEFAULT_LLM_MINI_FALLBACK_MODEL);
+  const category = options.category || 'crypto';
+  const fallbackMaxTokens = resolveFormatterFallbackMaxTokens(llmConfig);
+  const primaryTimeoutMs = resolveFormatterRouteTimeoutMs(category, 'PRIMARY', DEFAULT_LLM_PRIMARY_TIMEOUT_MS, llmConfig.timeoutMs);
+  const deepFallbackTimeoutMs = resolveFormatterRouteTimeoutMs(category, 'DEEP_FALLBACK', DEFAULT_LLM_DEEP_FALLBACK_TIMEOUT_MS, llmConfig.timeoutMs);
+  const miniFallbackTimeoutMs = resolveFormatterRouteTimeoutMs(category, 'MINI_FALLBACK', DEFAULT_LLM_MINI_FALLBACK_TIMEOUT_MS, llmConfig.timeoutMs);
+  const chain = [
+    {
+      provider: 'openai-oauth',
+      model: primaryModel,
+      maxTokens,
+      temperature,
+      timeoutMs: primaryTimeoutMs,
+      retryAttempts: 0,
+    },
+  ];
+
+  if (formatterGeminiEnabled()) {
+    chain.push({
+      provider: 'gemini-cli-oauth',
+      model: geminiProModel,
+      maxTokens,
+      temperature,
+      timeoutMs: resolveFormatterRouteTimeoutMs(category, 'GEMINI', DEFAULT_LLM_DEEP_FALLBACK_TIMEOUT_MS, llmConfig.timeoutMs),
+    });
+  }
+
+  chain.push(
+    { provider: 'groq', model: deepFallbackModel, maxTokens: fallbackMaxTokens, temperature, timeoutMs: deepFallbackTimeoutMs },
+    { provider: 'openai-oauth', model: miniFallbackModel, maxTokens: fallbackMaxTokens, temperature, timeoutMs: miniFallbackTimeoutMs, retryAttempts: 0 },
+  );
 
   return {
-    chain: [
-      { provider: 'openai-oauth', model: primaryModel, maxTokens, temperature, timeoutMs: llmConfig.timeoutMs },
-      { provider: 'gemini-cli-oauth', model: geminiProModel, maxTokens, temperature, timeoutMs: llmConfig.timeoutMs },
-      { provider: 'groq', model: deepFallbackModel, maxTokens, temperature, timeoutMs: Math.min(llmConfig.timeoutMs, 60000) },
-      { provider: 'openai-oauth', model: miniFallbackModel, maxTokens, temperature, timeoutMs: Math.min(llmConfig.timeoutMs, 60000) },
-    ],
+    chain,
   };
 }
 
@@ -1084,7 +1154,8 @@ function buildFallbackContent(category, slot, marketData = {}, evidenceItems = {
 
 async function callFormatterLlm({ category, systemPrompt, userPrompt, options = {} }) {
   const llmConfig = resolveFormatterLlmConfig(category, options);
-  const policyOverride = resolveFormatterPolicyOverride(llmConfig, options);
+  const policyOptions = { ...options, category };
+  const policyOverride = resolveFormatterPolicyOverride(llmConfig, policyOptions);
   return await callHubLlm({
     callerTeam: llmConfig.callerTeam,
     agent: llmConfig.agent,
@@ -1097,6 +1168,7 @@ async function callFormatterLlm({ category, systemPrompt, userPrompt, options = 
     timeoutMs: llmConfig.timeoutMs,
     taskType: `edux_market_post_${category}`,
     cacheEnabled: false,
+    avoidProviders: resolveFormatterAvoidProviders(),
     policyOverride,
   });
 }
@@ -1197,7 +1269,7 @@ async function formatPost(category, slot, marketData, evidenceItems, technicalDa
       fallbackCount: lastLlmResponse?.fallbackCount ?? null,
       traceId: lastLlmResponse?.traceId || null,
       error: lastLlmError,
-      policyOverrideEnabled: Boolean(resolveFormatterPolicyOverride(llmConfig, options)),
+      policyOverrideEnabled: Boolean(resolveFormatterPolicyOverride(llmConfig, { ...options, category })),
     },
   };
 }
@@ -1213,4 +1285,5 @@ module.exports = {
   resolveFormatterMode,
   resolveFormatterLlmConfig,
   resolveFormatterPolicyOverride,
+  resolveFormatterAvoidProviders,
 };

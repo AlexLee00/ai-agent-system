@@ -51,6 +51,7 @@ async function main() {
     assert.equal(headers?.['chatgpt-account-id'], 'acct_openai_oauth_direct_smoke');
     assert.equal(headers?.accept, 'text/event-stream');
     assert.equal(body.model, 'gpt-5.4-mini');
+    assert.equal(body.max_output_tokens, 64);
 
     return new Response([
       'data: {"type":"response.output_text.delta","delta":"direct oauth "}',

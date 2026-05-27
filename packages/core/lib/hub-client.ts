@@ -31,6 +31,9 @@ type HubLlmCallRequest = {
   preferredApi?: string;
   groqModel?: string;
   configuredProviders?: string[];
+  avoidProviders?: string[];
+  chain?: any[];
+  policyOverride?: any;
   urgency?: 'low' | 'normal' | 'high' | 'critical';
   priority?: 'low' | 'normal' | 'high' | 'critical';
   cacheEnabled?: boolean;
